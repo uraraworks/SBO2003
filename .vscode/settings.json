@@ -1,0 +1,17 @@
+{
+	// C++ の補完・ジャンプは clangd を使う（Microsoft の C/C++ 拡張は使わない）
+	"clangd.arguments": [
+		"--compile-commands-dir=${workspaceFolder}/out/cmake-server",
+		"--header-insertion=never"
+	],
+	"C_Cpp.intelliSenseEngine": "disabled",
+	// CMake Tools は CMakePresets.json の mac-debug を使う
+	"cmake.useCMakePresets": "always",
+	"cmake.configureOnOpen": false,
+	"files.exclude": {
+		"out/cmake-*": true
+	},
+	"search.exclude": {
+		"out/**": true
+	}
+}

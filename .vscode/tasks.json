@@ -1,0 +1,94 @@
+{
+	// Mac（VSCode）でサーバーとブラウザ版をビルド・起動するタスク
+	// 手順は docs/vscode-mac.md を参照
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "サーバー: ビルド",
+			"type": "shell",
+			"command": "${workspaceFolder}/tools/server/build.sh debug",
+			"group": "build",
+			"problemMatcher": {
+				"base": "$gcc",
+				"fileLocation": "absolute"
+			}
+		},
+		{
+			"label": "サーバー: リリースビルド",
+			"type": "shell",
+			"command": "${workspaceFolder}/tools/server/build.sh release",
+			"group": "build",
+			"problemMatcher": {
+				"base": "$gcc",
+				"fileLocation": "absolute"
+			}
+		},
+		{
+			"label": "サーバー: データ準備",
+			"type": "shell",
+			"command": "${workspaceFolder}/tools/server/setup-data.sh",
+			"problemMatcher": []
+		},
+		{
+			"label": "サーバー: デバッグ準備",
+			"dependsOn": ["サーバー: ビルド", "サーバー: データ準備"],
+			"dependsOrder": "sequence",
+			"problemMatcher": []
+		},
+		{
+			"label": "サーバー: 起動",
+			"type": "shell",
+			"command": "${workspaceFolder}/tools/server/run.sh",
+			"dependsOn": "サーバー: ビルド",
+			"isBackground": true,
+			"problemMatcher": {
+				"owner": "sbosvr",
+				"pattern": { "regexp": "^__never_match__$" },
+				"background": {
+					"activesBegins": true,
+					"beginsPattern": "\\[SboSvr\\] 起動します",
+					"endsPattern": "HTTP ポート \\d+ で待ち受けを開始しました|TCP ポート \\d+ で待ち受けを開始しました"
+				}
+			}
+		},
+		{
+			"label": "サーバー: 停止",
+			"type": "shell",
+			"command": "${workspaceFolder}/tools/server/stop.sh",
+			"problemMatcher": []
+		},
+		{
+			"label": "サーバー: 接続テスト",
+			"type": "shell",
+			"command": "python3 ${workspaceFolder}/tools/server/check_tcp.py",
+			"problemMatcher": []
+		},
+		{
+			"label": "ブラウザ版: ビルド",
+			"type": "shell",
+			"command": "${workspaceFolder}/tools/web/build.sh",
+			"group": "build",
+			"problemMatcher": {
+				"base": "$gcc",
+				"fileLocation": "absolute"
+			}
+		},
+		{
+			"label": "ブラウザ版: デバッグビルド",
+			"type": "shell",
+			"command": "${workspaceFolder}/tools/web/build.sh debug",
+			"group": "build",
+			"problemMatcher": {
+				"base": "$gcc",
+				"fileLocation": "absolute"
+			}
+		},
+		{
+			"label": "全部ビルド",
+			"dependsOn": ["ブラウザ版: ビルド", "サーバー: ビルド"],
+			"dependsOrder": "sequence",
+			"group": { "kind": "build", "isDefault": true },
+			"problemMatcher": []
+		}
+	]
+}

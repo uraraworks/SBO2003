@@ -1,0 +1,107 @@
+# Sbo2003 本番（SBOP2 と同じ Windows Server の VPS）
+
+SBOP2 の本番と同じく、GitHub Actions で **配布 zip を作るところまで** を自動にし、VPS への展開は手で行います。
+ステージング（`deploy/staging`、GCP・main への push で自動デプロイ）はそのまま残ります。
+
+```
+ブラウザ ──https──▶ IIS（VPS、80/443・TLS。SBOP2 と同じ IIS に Sbo2003 用のサイトを足す）
+                     └─ Sbo2003 のホスト名のサイト（iis\web.config）
+                          └─ すべて ─▶ 127.0.0.1:18090（ブラウザ版の配布と WebSocket /ws）
+                                         Sbo2003 サーバー（node\node.exe server\SboSvr.js）
+                                         タスクスケジューラ「SBO2003_SboSvr」が起動時に start.ps1 を動かす
+```
+
+- サーバーは wasm なので、Windows でもビルドし直さずに同梱の Node.js でそのまま動きます。VPS に Node.js を入れる必要はありません。
+- VPS が再起動してもタスクが起動時にサーバーを立ち上げます。サーバーが落ちた時は `start.ps1` が 10 秒後に起動し直します。
+- 止める時は必ず `stop.ps1` を使います。`data\stop.request` を置くとサーバーがデータを保存してから終わります
+  （Windows ではタスクから起こしたプロセスに Ctrl+C を送れず、`Stop-Process` だと保存されないため）。
+- サーバーはパスがルート（`/`）にある前提です（WebSocket は `/ws`）。IIS のサブアプリではなく、専用のホスト名のサイトにします。
+- Windows 版クライアント用の TCP（`SboSvr.ini` の `PortNo=2004`）も待ち受けますが、ファイアウォールでは開けません（ブラウザ版だけ）。
+  SBOP2 のポート（2007・18080・18081）とはぶつかりません。
+
+## zip の作り方
+
+Actions の「production-publish」を手動実行します（`v*` のタグを push した時も動きます）。
+終わったら実行結果の Artifacts から `Sbo2003_Server_yyyyMMdd_HHmmss` を落とします（中に zip が入っています）。
+
+Actions の中では次を行います。
+
+1. ステージングと同じ `deploy/staging/Dockerfile` のビルド段（emsdk）で、サーバーとブラウザ版をビルドする
+2. `deploy/production/make-zip.sh` で zip にまとめる（Windows 用の Node.js を公式から取り、ハッシュを確かめて同梱）
+3. Windows のランナーで zip を展開し、`start.ps1` で起動 → `/health` とページを確認 → `stop.ps1` で保存して止まることを確かめる
+
+手元（Mac・Linux）で作る時は、`tools/server/build.sh release` と `tools/web/build.sh release` のあとに:
+
+```bash
+deploy/production/make-zip.sh out/server-release out/web/dist publish
+```
+
+## 初回のセットアップ（VPS で 1 回だけ）
+
+SBOP2 のサイトで IIS・URL Rewrite・Application Request Routing（ARR）・WebSocket プロトコルは用意済みの前提です。
+
+1. **展開する**: zip を `C:\SBO2003` に展開します（別の場所でもよい。以下は `C:\SBO2003` で書きます）。
+2. **設定ファイル**: `sbo2003.env.example` を `sbo2003.env` にコピーし、`SBO2003_ADMIN_PASSWORD`（ゲームの管理者 `administrator` のパスワード）を決めて書きます。
+3. **タスクを登録**: 管理者の PowerShell で
+   ```powershell
+   cd C:\SBO2003
+   powershell -NoProfile -ExecutionPolicy Bypass -File .\install-task.ps1
+   Start-ScheduledTask -TaskName SBO2003_SboSvr
+   ```
+   `log\start.log` に「サーバーを起動しました」が出て、`curl.exe http://127.0.0.1:18090/health` が `ok` を返せば動いています。
+   初回は `seed\` から `data\` に元データがコピーされます。
+4. **IIS のサイトを作る**: IIS マネージャーで新しいサイトを追加します。
+   - 物理パス: `C:\SBO2003\iis`（`web.config` が入っています）
+   - バインド: Sbo2003 用のホスト名（DNS をこの VPS に向けておく）で http と https。証明書は SBOP2 と同じやり方で取ります
+   - ARR のプロキシが有効になっていること（サーバーノードの「Application Request Routing Cache」→「Server Proxy Settings」→「Enable proxy」）。SBOP2 で有効にしてあればそのままで大丈夫です
+5. **確かめる**: `https://<Sbo2003 のホスト名>/` を開いてログイン画面が出れば完了です。アカウントは最初のログインで作られます（`FreeAcount=1`）。
+
+### 手元やステージングのデータを持っていく時
+
+データは `SBODATA\` フォルダと `SboSvr.ini` の 2 つだけです。サーバーを `stop.ps1` で止めている間に、
+`C:\SBO2003\data\SBODATA\` と `C:\SBO2003\data\SboSvr.ini` になるよう置けば、次の起動からそのデータで動きます
+（動いている間に置くと、止まる時の保存で上書きされます）。初回の起動より前に置いておけば、`seed\` からのコピーは行われません。
+
+- 手元（Mac）の `tools/server/run.sh` で遊んだデータは `out/server-data/` にあります（`SboSvr.pid` は要りません）。
+- 管理者パスワードは起動のたびに `sbo2003.env` の値で上書きされます。
+
+ステージングのデータを本番に持っていく時は、ステージングのボリューム `sbo2003-staging_data` の中身（`SBODATA/` と `SboSvr.ini`）を、
+サーバーを止めてから `C:\SBO2003\data\` に置きます（取り出し方は `deploy/staging/README.md` の「運用」のバックアップ）。
+
+## 再デプロイ
+
+```powershell
+cd C:\SBO2003
+.\stop.ps1                                  # データを保存してから止まる
+Expand-Archive -Force <新しい zip> C:\SBO2003
+Start-ScheduledTask -TaskName SBO2003_SboSvr
+```
+
+`data\`・`log\`・`sbo2003.env` は zip に入っていないので、上書き展開しても残ります。
+古い版のファイルを残したくない時は、展開の前に `server\`・`web\` を消してもかまいません。
+
+## 運用
+
+| やりたいこと | コマンド（C:\SBO2003 で） |
+|---|---|
+| 止める（保存してから） | `.\stop.ps1` |
+| 起動する | `Start-ScheduledTask -TaskName SBO2003_SboSvr` |
+| 起動・停止の記録 | `Get-Content log\start.log -Tail 20` |
+| サーバーのログ | `log\sbosvr-<日時>.out.log`（エラーは `.err.log`。30 日で消える） |
+| バックアップ | 止めてから `Compress-Archive data\* backup\sbo2003-data-<日付>.zip` |
+
+`Stop-ScheduledTask` や `Stop-Process` でいきなり止めると、最後の保存のあとのデータが失われます。
+
+## ファイル
+
+| ファイル | 役割 |
+|---|---|
+| `make-zip.sh` | ビルド結果・元データ・スクリプト・Node.js を zip にまとめる |
+| `start.ps1` | 初回のデータコピー、管理者パスワードの設定、サーバーの起動と落ちた時の起動し直し |
+| `stop.ps1` | 停止ファイルを置いて、保存して止まるのを待つ |
+| `install-task.ps1` | 起動時に自動で立ち上がるタスクを登録する |
+| `set-admin-password.js` | `SboSvr.ini` の管理者パスワードを書き換える（ステージングの `entrypoint.sh` と同じ処理） |
+| `web.config` | IIS サイトの設定（zip では `iis\web.config`） |
+| `sbo2003.env.example` | 設定の雛形 |
+| `README.txt` | zip に入れる短い説明 |
+| `../../.github/workflows/production-publish.yml` | zip を作って Windows で動作確認する |

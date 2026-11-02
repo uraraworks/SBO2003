@@ -1,0 +1,1094 @@
+//Microsoft Developer Studio generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// 日本語 resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_JPN)
+#ifdef _WIN32
+LANGUAGE LANG_JAPANESE, SUBLANG_DEFAULT
+#pragma code_page(65001)
+#endif //_WIN32
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE MOVEABLE PURE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE MOVEABLE PURE 
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE MOVEABLE PURE 
+BEGIN
+    "\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Menu
+//
+
+IDR_MENU1 MENU DISCARDABLE 
+BEGIN
+    POPUP "ﾏｯﾌﾟ(&M)"
+    BEGIN
+        MENUITEM "新規ﾏｯﾌﾟ追加(&N)",            IDM_MAP_ADD
+        MENUITEM "ﾊﾟｰﾂ(&P)",                    IDM_MAP_PARTS
+        MENUITEM "ﾏｯﾌﾟ情報(&I)",                IDM_MAP_INFO
+        MENUITEM "ｲﾍﾞﾝﾄ情報(&E)",               IDM_MAP_EVENT
+        MENUITEM "ﾒｯｾｰｼﾞ(&M)",                  IDM_MAP_MSG
+        MENUITEM "店情報(&S)",                  IDM_MAP_SHOP
+    END
+    POPUP "ｷｬﾗ(&C)"
+    BEGIN
+        MENUITEM "ｷｬﾗ情報(&C)",                 IDM_CHAR_INFO
+        MENUITEM "追加(&A)",                    IDM_CHAR_ADD
+        MENUITEM "所持ｱｲﾃﾑ情報(&I)",            IDM_CHAR_ITEM
+        MENUITEM "所持魔法情報(&M)",            IDM_CHAR_MAGIC
+        MENUITEM "ｽﾃｰﾀｽ情報(&S)",               IDM_CHAR_STATUS
+        MENUITEM "預かり所情報(&L)",            IDM_CHAR_LEAVE
+        MENUITEM "ｽﾃｰﾀｽﾃﾝﾌﾟﾚｰﾄ情報(&T)",        IDM_CHAR_STTMP
+    END
+    POPUP "ｱｲﾃﾑ(&I)"
+    BEGIN
+        MENUITEM "一覧(&L)",                    IDM_ITEM_LIST
+    END
+    POPUP "ｱｶｳﾝﾄ(&A)"
+    BEGIN
+        MENUITEM "編集(&E)",                    IDM_ACC_INFO
+        MENUITEM "追加(&A)",                    IDM_ACC_ADD
+        MENUITEM "検索(&S)",                    IDM_ACC_SEARCH
+    END
+    POPUP "ｴﾌｪｸﾄ(&E)"
+    BEGIN
+        MENUITEM "ふきだし(&C)",                IDM_CEF_EDIT
+        MENUITEM "効果いろいろ(&E)",            IDM_EFC_EDIT
+    END
+    POPUP "その他(&E)"
+    BEGIN
+        MENUITEM "各種通知(&S)",                IDM_ETC_VERSION
+        MENUITEM "ｻｰﾊﾞｰ情報(&I)",               IDM_ETC_SVRINFO
+        MENUITEM "ｻﾌﾞｹﾞｰﾑ情報(&G)",             IDM_ETC_SUBGAME
+        MENUITEM "職業情報(&J)",                IDM_ETC_JOBINFO
+        MENUITEM "魔法情報(&M)",                IDM_ETC_MAGICINFO
+        MENUITEM "魔法利用者情報(&U)",          IDM_ETC_MAGICUSERINFO
+        MENUITEM "装備職業情報(&E)",            IDM_ETC_EQUUSERINFO
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// 24
+//
+
+1                       24      MOVEABLE PURE   "sbocli.exe.manifest"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_MAP_ADD DIALOGEX 0, 0, 223, 214
+STYLE WS_CHILD
+EXSTYLE WS_EX_STATICEDGE
+FONT 9, "ＭＳ Ｐゴシック", 0, 0, 0x1
+BEGIN
+    PUSHBUTTON      "マップを追加",IDC_BUTTON1,7,19,65,32
+END
+
+IDD_MAP_PARTS DIALOGEX 0, 0, 223, 198
+STYLE WS_CHILD
+EXSTYLE WS_EX_STATICEDGE
+FONT 9, "ＭＳ Ｐゴシック", 0, 0, 0x1
+BEGIN
+    LTEXT           "パーツ数：",IDC_PARTSCOUNT,7,7,46,8
+    PUSHBUTTON      "追加",IDC_BUTTON1,62,7,27,14
+    PUSHBUTTON      "送信",IDC_BUTTON2,95,7,27,14
+    PUSHBUTTON      "更新",IDC_BUTTON3,129,7,27,14
+    PUSHBUTTON      "クリア",IDC_BUTTON4,189,7,27,14
+    COMBOBOX        IDC_COMBO1,44,30,59,64,CBS_DROPDOWNLIST | WS_VSCROLL | 
+                    WS_TABSTOP
+    LTEXT           "パーツID：",IDC_PARTSID,7,20,46,8
+    LTEXT           "表示判定：",IDC_STATIC,7,46,46,8
+    LTEXT           "当たり判定：",IDC_STATIC,7,33,37,8
+    LTEXT           "メインGrpID：",IDC_MAINGRP,7,64,46,8
+    LTEXT           "透明度：",IDC_STATIC,59,49,25,10
+    EDITTEXT        IDC_EDIT2,86,46,24,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "追加",IDC_BUTTON5,52,78,19,12
+    PUSHBUTTON      "←",IDC_BUTTON6,75,78,12,12
+    PUSHBUTTON      "→",IDC_BUTTON7,116,78,12,12
+    EDITTEXT        IDC_EDIT1,89,77,24,14,ES_AUTOHSCROLL
+    SCROLLBAR       IDC_SCRGRP,119,59,93,11
+    GROUPBOX        "パーツグラフィック",IDC_STATIC,113,23,103,50
+    GROUPBOX        "マップパーツ",IDC_STATIC,7,91,209,100
+    LTEXT           "背景GrpID：",IDC_BACKGRP,62,64,46,8
+    SCROLLBAR       IDC_SCRPARTS,201,100,10,88,SBS_VERT
+    LTEXT           "アニメ：",IDC_ANIME,7,80,41,8
+    CONTROL         "",IDC_PARTS,"Static",SS_BLACKFRAME,13,102,184,83
+    CONTROL         "",IDC_PARTSGRP,"Static",SS_BLACKFRAME,120,33,90,23
+    CONTROL         "当たり判定マーク",IDC_MARK,"Button",BS_AUTOCHECKBOX | 
+                    WS_TABSTOP,153,79,63,10
+END
+
+IDD_JOBINFO DIALOGEX 0, 0, 223, 198
+STYLE WS_CHILD
+EXSTYLE WS_EX_STATICEDGE
+FONT 9, "ＭＳ Ｐゴシック", 0, 0, 0x1
+BEGIN
+    PUSHBUTTON      "取得",IDC_GET,7,7,38,14
+    PUSHBUTTON      "編集",IDC_EDIT,53,7,38,14
+    PUSHBUTTON      "追加",IDC_ADD,100,7,38,14
+    PUSHBUTTON      "送信",IDC_SEND,167,7,38,14
+    LTEXT           "職業一覧：",IDC_STATIC,7,26,32,8
+    CONTROL         "List2",IDC_LIST,"SysListView32",LVS_REPORT | 
+                    LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_NOSORTHEADER | 
+                    WS_BORDER | WS_TABSTOP,7,37,199,131
+END
+
+IDD_JOBINFO_EDIT DIALOGEX 0, 0, 187, 93
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION
+EXSTYLE WS_EX_CONTROLPARENT
+CAPTION "職業情報の編集"
+FONT 9, "ＭＳ Ｐゴシック", 0, 0, 0x1
+BEGIN
+    LTEXT           "職業名（全角１５文字以内）：",IDC_STATIC,7,7,82,8
+    EDITTEXT        IDC_NAME,7,18,108,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "レベルアップ情報の設定",IDC_LVUPINFO,7,38,80,14
+    DEFPUSHBUTTON   "OK",IDOK,70,72,50,14
+    PUSHBUTTON      "ｷｬﾝｾﾙ",IDCANCEL,130,72,50,14
+    CONTROL         "アイテム情報を見る",IDC_VIEWITEMINFO,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,107,40,73,10
+END
+
+IDD_MAGICINFO DIALOGEX 0, 0, 223, 198
+STYLE WS_CHILD
+EXSTYLE WS_EX_STATICEDGE
+FONT 9, "ＭＳ Ｐゴシック", 0, 0, 0x1
+BEGIN
+    CONTROL         "List2",IDC_LIST,"SysListView32",LVS_REPORT | 
+                    LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_NOSORTHEADER | 
+                    WS_BORDER | WS_TABSTOP,7,37,199,87
+    PUSHBUTTON      "送信",IDC_SEND,167,7,38,14
+    PUSHBUTTON      "取得",IDC_GET,7,7,38,14
+    PUSHBUTTON      "編集",IDC_EDIT,53,7,38,14
+    LTEXT           "魔法一覧：",IDC_STATIC,7,26,32,8
+    PUSHBUTTON      "追加",IDC_ADD,100,7,38,14
+END
+
+IDD_MAGICINFO_EDIT DIALOG DISCARDABLE  0, 0, 241, 173
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "魔法情報の編集"
+FONT 9, "ＭＳ Ｐゴシック"
+BEGIN
+    LTEXT           "名前（全角１５文字以内）：",IDC_STATIC,7,7,75,8
+    EDITTEXT        IDC_NAME,7,18,110,14
+    LTEXT           "効果：",IDC_STATIC,127,7,18,8
+    COMBOBOX        IDC_TYPE,127,17,48,74,CBS_DROPDOWNLIST | WS_VSCROLL | 
+                    WS_TABSTOP
+    LTEXT           "種別：",IDC_STATIC,181,7,18,8
+    COMBOBOX        IDC_TYPEINFO,181,17,48,70,CBS_DROPDOWNLIST | WS_VSCROLL | 
+                    WS_TABSTOP
+    LTEXT           "利用者：",IDC_STATIC,8,38,25,8
+    COMBOBOX        IDC_USERINFO,7,48,48,70,CBS_DROPDOWNLIST | WS_VSCROLL | 
+                    WS_TABSTOP
+    LTEXT           "対象：",IDC_STATIC,66,38,18,8
+    COMBOBOX        IDC_TARGET,65,48,48,70,CBS_DROPDOWNLIST | WS_VSCROLL | 
+                    WS_TABSTOP
+    LTEXT           "人数：",IDC_STATIC,126,38,18,8
+    COMBOBOX        IDC_TARGETCOUNT,126,48,48,70,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    LTEXT           "発動：",IDC_STATIC,181,38,18,8
+    COMBOBOX        IDC_TARGETTYPE,181,48,48,70,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    LTEXT           "エフェクト（相手）：",IDC_STATIC,7,69,52,8
+    EDITTEXT        IDC_TARGETEFECTID,7,79,23,14
+    LTEXT           "エフェクト（利用者）：",IDC_STATIC,66,69,59,8
+    EDITTEXT        IDC_USEREFECTID,66,79,23,14
+    LTEXT           "消費Mana：",IDC_STATIC,135,69,34,8
+    EDITTEXT        IDC_MANA,135,80,23,14
+    LTEXT           "発動範囲：",IDC_STATIC,181,69,32,8
+    EDITTEXT        IDC_TARGETAREA,181,80,23,14
+    LTEXT           "付加データ：",IDC_STATIC_DATA1,7,103,52,8
+    EDITTEXT        IDC_DATA1,7,114,23,14
+    LTEXT           "付加データ：",IDC_STATIC_DATA2,62,103,52,8
+    EDITTEXT        IDC_DATA2,62,114,23,14
+    LTEXT           "付加データ：",IDC_STATIC_DATA3,118,103,52,8
+    EDITTEXT        IDC_DATA3,118,114,23,14
+    LTEXT           "付加データ：",IDC_STATIC_DATA4,176,103,52,8
+    EDITTEXT        IDC_DATA4,176,114,23,14
+    DEFPUSHBUTTON   "OK",IDOK,125,152,50,14
+    PUSHBUTTON      "ｷｬﾝｾﾙ",IDCANCEL,184,152,50,14
+    COMBOBOX        IDC_DATACOMBO1,7,114,103,100,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    COMBOBOX        IDC_TIME,7,142,36,137,CBS_DROPDOWNLIST | WS_VSCROLL | 
+                    WS_TABSTOP
+    LTEXT           "基本詠唱時間：",IDC_STATIC,7,132,46,8
+    COMBOBOX        IDC_ATTR,61,142,36,137,CBS_DROPDOWNLIST | WS_VSCROLL | 
+                    WS_TABSTOP
+    LTEXT           "属性：",IDC_STATIC,61,132,18,8
+END
+
+IDD_MAGICUSERINFO DIALOGEX 0, 0, 223, 198
+STYLE WS_CHILD
+EXSTYLE WS_EX_STATICEDGE
+FONT 9, "ＭＳ Ｐゴシック", 0, 0, 0x1
+BEGIN
+    CONTROL         "List2",IDC_LIST,"SysListView32",LVS_REPORT | 
+                    LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_NOSORTHEADER | 
+                    WS_BORDER | WS_TABSTOP,7,37,199,87
+    PUSHBUTTON      "送信",IDC_SEND,167,7,38,14
+    PUSHBUTTON      "取得",IDC_GET,7,7,38,14
+    PUSHBUTTON      "編集",IDC_EDIT,53,7,38,14
+    LTEXT           "魔法利用者情報一覧：",IDC_STATIC,7,26,66,8
+    PUSHBUTTON      "追加",IDC_ADD,100,7,38,14
+END
+
+IDD_MAGICUSERINFO_EDIT DIALOG DISCARDABLE  0, 0, 187, 149
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "魔法利用者情報の編集"
+FONT 9, "ＭＳ Ｐゴシック"
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,71,128,50,14
+    PUSHBUTTON      "ｷｬﾝｾﾙ",IDCANCEL,130,128,50,14
+    EDITTEXT        IDC_NAME,7,18,108,14,ES_AUTOHSCROLL
+    LTEXT           "魔法利用者情報名（全角１５文字以内）：",IDC_STATIC,7,7,
+                    116,8
+    CONTROL         "List1",IDC_LIST,"SysListView32",LVS_REPORT | 
+                    LVS_SINGLESEL | LVS_NOSORTHEADER | WS_BORDER | 
+                    WS_TABSTOP,7,50,173,70
+    LTEXT           "職業一覧：",IDC_STATIC,7,39,32,8
+END
+
+IDD_CHARMAGICINFO DIALOGEX 0, 0, 223, 198
+STYLE WS_CHILD
+EXSTYLE WS_EX_STATICEDGE
+FONT 9, "ＭＳ Ｐゴシック", 0, 0, 0x1
+BEGIN
+    CONTROL         "List2",IDC_LIST,"SysListView32",LVS_REPORT | 
+                    LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_NOSORTHEADER | 
+                    WS_BORDER | WS_TABSTOP,7,27,105,153
+    PUSHBUTTON      "送信",IDC_SEND,167,7,38,14
+    LTEXT           "[○○]の所持魔法：",IDC_NAME,7,16,105,8
+    COMBOBOX        IDC_MAGIC,127,49,78,116,CBS_DROPDOWNLIST | WS_VSCROLL | 
+                    WS_TABSTOP
+    LTEXT           "魔法一覧：",IDC_STATIC,128,39,32,8
+    COMBOBOX        IDC_STTMP,127,102,78,79,CBS_DROPDOWNLIST | WS_VSCROLL | 
+                    WS_TABSTOP
+    LTEXT           "ｽﾃｰﾀｽﾃﾝﾌﾟﾚｰﾄ一覧：",IDC_STATIC,128,91,65,8
+    PUSHBUTTON      "追加",IDC_ADD,128,67,22,14
+    PUSHBUTTON      "更新",IDC_MODIFY,155,67,22,14
+    PUSHBUTTON      "消去",IDC_DELETE,182,67,22,14
+    PUSHBUTTON      "←取得",IDC_GET,132,120,28,14
+    PUSHBUTTON      "反映→",IDC_PUT,170,120,28,14
+END
+
+IDD_EQUUSERINFO DIALOGEX 0, 0, 223, 198
+STYLE WS_CHILD
+EXSTYLE WS_EX_STATICEDGE
+FONT 9, "ＭＳ Ｐゴシック", 0, 0, 0x1
+BEGIN
+    CONTROL         "List2",IDC_LIST,"SysListView32",LVS_REPORT | 
+                    LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_NOSORTHEADER | 
+                    WS_BORDER | WS_TABSTOP,7,37,199,87
+    PUSHBUTTON      "送信",IDC_SEND,167,7,38,14
+    PUSHBUTTON      "取得",IDC_GET,7,7,38,14
+    PUSHBUTTON      "編集",IDC_EDIT,53,7,38,14
+    LTEXT           "装備職業情報一覧：",IDC_STATIC,7,26,59,8
+    PUSHBUTTON      "追加",IDC_ADD,100,7,38,14
+END
+
+IDD_EQUUSERINFO_EDIT DIALOG DISCARDABLE  0, 0, 187, 149
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "装備職業情報の編集"
+FONT 9, "ＭＳ Ｐゴシック"
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,71,128,50,14
+    PUSHBUTTON      "ｷｬﾝｾﾙ",IDCANCEL,130,128,50,14
+    EDITTEXT        IDC_NAME,7,18,108,14,ES_AUTOHSCROLL
+    LTEXT           "装備職業情報名（全角１５文字以内）：",IDC_STATIC,7,7,
+                    110,8
+    CONTROL         "List1",IDC_LIST,"SysListView32",LVS_REPORT | 
+                    LVS_SINGLESEL | LVS_NOSORTHEADER | WS_BORDER | 
+                    WS_TABSTOP,7,50,173,70
+    LTEXT           "職業一覧：",IDC_STATIC,7,39,32,8
+END
+
+IDD_ACC_SEARCH DIALOGEX 0, 0, 223, 214
+STYLE WS_CHILD
+EXSTYLE WS_EX_STATICEDGE
+FONT 9, "ＭＳ Ｐゴシック", 0, 0, 0x1
+BEGIN
+    LTEXT           "検索開始ID：",IDC_STATIC,7,7,38,8,NOT WS_GROUP
+    EDITTEXT        IDC_TBLID,7,18,40,14,ES_AUTOHSCROLL
+    LTEXT           "検索キー：",IDC_STATIC,56,7,32,8,NOT WS_GROUP
+    EDITTEXT        IDC_KEY,56,18,82,14,ES_AUTOHSCROLL
+    GROUPBOX        "検索方法",IDC_STATIC,7,41,132,40
+    CONTROL         "アカウント名で検索",IDC_ACCOUNT,"Button",
+                    BS_AUTORADIOBUTTON | WS_GROUP,11,53,71,10
+    CONTROL         "キャラ名で検索",IDC_CHARNAME,"Button",
+                    BS_AUTORADIOBUTTON,11,65,61,10
+    PUSHBUTTON      "検索",IDC_SEARCH,153,13,50,30,WS_GROUP
+    PUSHBUTTON      "次を検索",IDC_SEARCHNEXT,153,48,50,30
+END
+
+IDD_OLD_ETC_SUBGAME DIALOGEX 0, 0, 223, 214
+STYLE WS_CHILD
+EXSTYLE WS_EX_STATICEDGE
+FONT 9, "ＭＳ Ｐゴシック", 0, 0, 0x1
+BEGIN
+    LTEXT           "サブゲームID：",IDC_STATIC,7,7,44,8
+    COMBOBOX        IDC_ID,7,17,48,90,CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON      "取得",IDC_GET,62,17,32,14
+    PUSHBUTTON      "追加",IDC_ADD,184,7,32,14
+    PUSHBUTTON      "送信",IDC_SEND,141,17,32,14
+    PUSHBUTTON      "編集",IDC_MODIFY,101,17,32,14
+    PUSHBUTTON      "クリア",IDC_CLEAR,184,26,32,14
+    LTEXT           "情報：",IDC_INFO,7,46,209,93
+END
+
+IDD_ETC_SUBGAME_EDIT DIALOG DISCARDABLE  0, 0, 241, 173
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "サブゲーム情報の編集"
+FONT 9, "ＭＳ Ｐゴシック"
+BEGIN
+    LTEXT           "種別：",-1,7,7,18,8
+    COMBOBOX        IDC_TYPE,7,17,76,70,CBS_DROPDOWNLIST | WS_VSCROLL | 
+                    WS_TABSTOP
+    DEFPUSHBUTTON   "OK",IDOK,125,152,50,14
+    PUSHBUTTON      "ｷｬﾝｾﾙ",IDCANCEL,184,152,50,14
+    LTEXT           "種類別エディットエリア",IDC_INFO,7,37,227,107
+END
+
+IDD_ETC_SUBGAME_EDIT_BOMB DIALOG DISCARDABLE  0, 0, 213, 99
+STYLE WS_CHILD
+FONT 9, "ＭＳ Ｐゴシック"
+BEGIN
+    LTEXT           "マップID：",IDC_STATIC,7,7,28,8
+    EDITTEXT        IDC_MAPID,7,18,14,14
+    LTEXT           "参加受付：",IDC_STATIC,42,7,32,8
+    LTEXT           "X：",IDC_STATIC,44,21,8,8
+    EDITTEXT        IDC_X,53,18,14,14
+    LTEXT           "Y：",IDC_STATIC,71,21,8,8
+    EDITTEXT        IDC_Y,80,18,14,14
+    LTEXT           "開始位置：",IDC_STATIC,126,7,32,8
+    LTEXT           "X：",IDC_STATIC,128,21,8,8
+    EDITTEXT        IDC_STARTX,137,18,14,14
+    LTEXT           "Y：",IDC_STATIC,155,21,8,8
+    EDITTEXT        IDC_STARTY,164,18,14,14
+    LTEXT           "ゲームエリア：",IDC_STATIC,7,37,43,8
+    LTEXT           "(",IDC_STATIC,9,52,8,8
+    EDITTEXT        IDC_AREAX1,17,48,14,14
+    LTEXT           ",",IDC_STATIC,35,52,8,8
+    EDITTEXT        IDC_AREAY1,45,48,14,14
+    LTEXT           ") - (",IDC_STATIC,65,52,14,8
+    EDITTEXT        IDC_AREAX2,81,48,14,14
+    EDITTEXT        IDC_AREAY2,108,48,14,14
+    LTEXT           ")",IDC_STATIC,128,52,8,8
+    LTEXT           ",",IDC_STATIC,99,52,8,8
+END
+
+IDD_ETC_SUBGAME_EDIT_MAZE DIALOG DISCARDABLE  0, 0, 213, 105
+STYLE WS_CHILD
+FONT 9, "ＭＳ Ｐゴシック"
+BEGIN
+    LTEXT           "マップID：",IDC_STATIC,7,7,28,8
+    EDITTEXT        IDC_MAPID,7,18,14,14
+    LTEXT           "スタート位置：",IDC_STATIC,42,7,41,8
+    LTEXT           "X：",IDC_STATIC,44,21,8,8
+    EDITTEXT        IDC_STARTX,53,18,14,14
+    LTEXT           "Y：",IDC_STATIC,71,21,8,8
+    EDITTEXT        IDC_STARTY,80,18,14,14
+    LTEXT           "ゲームエリア：",IDC_STATIC,7,37,43,8
+    LTEXT           "(",IDC_STATIC,9,52,8,8
+    EDITTEXT        IDC_AREAX1,17,48,14,14
+    LTEXT           ",",IDC_STATIC,34,52,8,8
+    EDITTEXT        IDC_AREAY1,44,48,14,14
+    LTEXT           ") - (",IDC_STATIC,62,52,14,8
+    EDITTEXT        IDC_AREAX2,78,48,14,14
+    LTEXT           ",",IDC_STATIC,95,52,8,8
+    EDITTEXT        IDC_AREAY2,104,48,14,14
+    LTEXT           ")",IDC_STATIC,122,52,8,8
+    LTEXT           "ゴール地点(移動元)：",IDC_STATIC,7,73,63,8
+    LTEXT           "X：",IDC_STATIC,9,87,8,8
+    EDITTEXT        IDC_GOALFROMX,18,84,14,14
+    LTEXT           "Y：",IDC_STATIC,36,87,8,8
+    EDITTEXT        IDC_GOALFROMY,45,84,14,14
+    LTEXT           "→",IDC_STATIC,63,87,8,8
+    LTEXT           "ゴール地点(移動先)：",IDC_STATIC,74,73,63,8
+    LTEXT           "X：",IDC_STATIC,76,87,8,8
+    EDITTEXT        IDC_GOALTOX,86,84,14,14
+    LTEXT           "Y：",IDC_STATIC,103,87,8,8
+    EDITTEXT        IDC_GOALTOY,112,84,14,14
+    LTEXT           "入り口：",IDC_STATIC,139,7,23,8
+    LTEXT           "ゴール：",IDC_STATIC,182,7,24,8
+    LTEXT           "道：",IDC_STATIC,139,42,11,8
+    LTEXT           "壁：",IDC_STATIC,182,42,11,8
+    CONTROL         "",IDC_GRPSTART,"Static",SS_BLACKFRAME,138,18,20,22
+    CONTROL         "",IDC_GRPGOAL,"Static",SS_BLACKFRAME,181,18,20,22
+    CONTROL         "",IDC_GRPROAD,"Static",SS_BLACKFRAME,138,53,20,22
+    CONTROL         "",IDC_GRPBLOCK,"Static",SS_BLACKFRAME,181,54,20,22
+END
+
+IDD_ETC_SUBGAME_EDIT_DUNGEON DIALOG DISCARDABLE  0, 0, 213, 105
+STYLE WS_CHILD
+FONT 9, "ＭＳ Ｐゴシック"
+BEGIN
+    LTEXT           "マップID：",-1,7,7,28,8
+    EDITTEXT        IDC_MAPID,7,18,14,14
+    LTEXT           "入り口：",-1,42,7,23,8
+    LTEXT           "X：",-1,44,21,8,8
+    EDITTEXT        IDC_STARTX,53,18,14,14
+    LTEXT           "Y：",-1,71,21,8,8
+    EDITTEXT        IDC_STARTY,80,18,14,14
+    LTEXT           "エリア：",-1,7,37,22,8
+    LTEXT           "(",-1,9,52,8,8
+    EDITTEXT        IDC_AREAX1,17,48,14,14
+    LTEXT           ",",-1,34,52,8,8
+    EDITTEXT        IDC_AREAY1,44,48,14,14
+    LTEXT           ") - (",-1,62,52,14,8
+    EDITTEXT        IDC_AREAX2,78,48,14,14
+    LTEXT           ",",-1,95,52,8,8
+    EDITTEXT        IDC_AREAY2,104,48,14,14
+    LTEXT           ")",-1,122,52,8,8
+    LTEXT           "出口：",-1,7,73,18,8
+    LTEXT           "X：",-1,9,87,8,8
+    EDITTEXT        IDC_GOALX,18,84,14,14
+    LTEXT           "Y：",-1,36,87,8,8
+    EDITTEXT        IDC_GOALY,45,84,14,14
+    LTEXT           "入り口：",-1,139,7,23,8
+    LTEXT           "出口：",-1,183,7,18,8
+    LTEXT           "道：",-1,139,42,11,8
+    LTEXT           "壁：",-1,182,42,11,8
+    CONTROL         "",IDC_GRPSTART,"Static",SS_BLACKFRAME,138,18,20,20
+    CONTROL         "",IDC_GRPGOAL,"Static",SS_BLACKFRAME,181,18,20,20
+    CONTROL         "",IDC_GRPROAD,"Static",SS_BLACKFRAME,138,53,20,20
+    CONTROL         "",IDC_GRPBLOCK,"Static",SS_BLACKFRAME,181,54,20,20
+END
+
+IDD_ETC_SUBGAME_EDIT_WAR DIALOGEX 0, 0, 213, 107
+STYLE WS_CHILD
+FONT 9, "ＭＳ Ｐゴシック", 0, 0, 0x1
+BEGIN
+    LTEXT           "マップID：",IDC_STATIC,7,7,28,8
+    EDITTEXT        IDC_MAPID,7,18,14,14
+    LTEXT           "メンバー数：",IDC_STATIC,41,7,36,8
+    COMBOBOX        IDC_MEMBER,41,19,33,53,CBS_DROPDOWNLIST | WS_VSCROLL | 
+                    WS_TABSTOP
+    CONTROL         "参加受付",IDC_XY,"Button",BS_AUTORADIOBUTTON | WS_GROUP,
+                    7,36,43,10
+    CONTROL         "審判ｷｬﾗ座標",IDC_JUDGE,"Button",BS_AUTORADIOBUTTON,7,45,
+                    55,10
+    CONTROL         "ｴﾘｱ(左上)",IDC_AREA1,"Button",BS_AUTORADIOBUTTON,70,35,
+                    46,10
+    CONTROL         "ｴﾘｱ(右下)",IDC_AREA2,"Button",BS_AUTORADIOBUTTON,70,45,
+                    46,10
+    CONTROL         "HP",IDC_HP1,"Button",BS_AUTORADIOBUTTON,7,60,25,10
+    CONTROL         "蘇生ｶｳﾝﾀ",IDC_RES1,"Button",BS_AUTORADIOBUTTON,7,70,46,
+                    10
+    CONTROL         "開始位置",IDC_START1,"Button",BS_AUTORADIOBUTTON,7,80,
+                    43,10
+    CONTROL         "城の位置",IDC_GOAL1,"Button",BS_AUTORADIOBUTTON,7,90,43,
+                    10
+    CONTROL         "HP",IDC_HP2,"Button",BS_AUTORADIOBUTTON,70,60,25,10
+    CONTROL         "蘇生ｶｳﾝﾀ",IDC_RES2,"Button",BS_AUTORADIOBUTTON,70,70,46,
+                    10
+    CONTROL         "開始位置",IDC_START2,"Button",BS_AUTORADIOBUTTON,70,80,
+                    43,10
+    CONTROL         "城の位置",IDC_GOAL2,"Button",BS_AUTORADIOBUTTON,70,90,
+                    43,10
+    LTEXT           "情報",IDC_INFO,132,21,74,79,0,WS_EX_STATICEDGE
+    LTEXT           "座標情報：",IDC_STATIC,132,11,32,8
+END
+
+IDD_ETC_SUBGAME_EDIT_SUGOROKU DIALOGEX 0, 0, 213, 107
+STYLE WS_CHILD
+FONT 9, "ＭＳ Ｐゴシック", 0, 0, 0x1
+BEGIN
+    EDITTEXT        IDC_X,52,19,20,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_Y,92,19,20,14,ES_AUTOHSCROLL
+    LTEXT           "最大参加人数：",IDC_STATIC,7,67,46,8
+    LTEXT           "X：",IDC_STATIC,43,22,8,8
+    LTEXT           "Y：",IDC_STATIC,82,22,8,8
+    COMBOBOX        IDC_TYPE,7,49,81,114,CBS_DROPDOWNLIST | CBS_SORT | 
+                    WS_VSCROLL | WS_TABSTOP
+    LTEXT           "ルール：",IDC_STATIC,7,39,25,8
+    EDITTEXT        IDC_COUNT,7,78,25,14,ES_AUTOHSCROLL
+    LTEXT           "受付座標：",IDC_STATIC,43,7,32,8
+    PUSHBUTTON      "イベント情報",IDC_EVENT,121,7,50,14
+    PUSHBUTTON      "マップパーツ情報",IDC_PARTS,121,33,64,14
+    LTEXT           "マップID：",IDC_STATIC,7,7,28,8
+    EDITTEXT        IDC_MAPID,7,18,14,14
+END
+
+IDD_SUGOROKU_PARTS DIALOGEX 0, 0, 266, 154
+STYLE DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION
+CAPTION "マップパーツ情報"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,146,133,50,14
+    PUSHBUTTON      "キャンセル",IDCANCEL,209,133,50,14
+    CONTROL         "",IDC_LIST,"SysListView32",LVS_REPORT | LVS_ALIGNLEFT | 
+                    WS_BORDER | WS_TABSTOP,7,28,252,97
+    PUSHBUTTON      "追加",IDC_ADD,7,7,50,14
+    PUSHBUTTON      "変更",IDC_MOD,66,7,50,14
+    PUSHBUTTON      "削除",IDC_DELETE,126,7,50,14
+END
+
+IDD_SUGOROKU_PARTS_EDIT DIALOGEX 0, 0, 186, 84
+STYLE DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "マップパーツの編集"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,73,63,50,14
+    PUSHBUTTON      "キャンセル",IDCANCEL,129,63,50,14
+    COMBOBOX        IDC_TYPE,60,17,119,59,CBS_DROPDOWNLIST | WS_VSCROLL | 
+                    WS_TABSTOP
+    LTEXT           "種別：",IDC_STATIC,60,7,21,8
+    LTEXT           "画像：",IDC_STATIC,7,7,21,8
+    CONTROL         "",IDC_GRP,"Static",SS_BLACKFRAME,7,16,23,22
+END
+
+IDD_SUGOROKU_EVENT DIALOGEX 0, 0, 266, 154
+STYLE DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION
+CAPTION "イベント情報"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,146,133,50,14
+    PUSHBUTTON      "キャンセル",IDCANCEL,209,133,50,14
+    CONTROL         "",IDC_LIST,"SysListView32",LVS_REPORT | LVS_ALIGNLEFT | 
+                    WS_BORDER | WS_TABSTOP,7,28,252,97
+    PUSHBUTTON      "追加",IDC_ADD,7,7,50,14
+    PUSHBUTTON      "変更",IDC_MOD,66,7,50,14
+    PUSHBUTTON      "削除",IDC_DELETE,126,7,50,14
+END
+
+IDD_SUGOROKU_EVENT_EDIT DIALOGEX 0, 0, 186, 90
+STYLE DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "イベントの編集"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,73,69,50,14
+    PUSHBUTTON      "キャンセル",IDCANCEL,129,69,50,14
+    LTEXT           "パラメータ：",IDC_STATIC,7,37,34,8
+    EDITTEXT        IDC_X,22,18,29,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_Y,64,18,29,14,ES_AUTOHSCROLL
+    LTEXT           "X：",IDC_STATIC,7,20,11,8
+    LTEXT           "Y：",IDC_STATIC,54,20,8,8
+    COMBOBOX        IDC_TYPE,103,19,76,96,CBS_DROPDOWNLIST | WS_VSCROLL | 
+                    WS_TABSTOP
+    LTEXT           "イベント種別：",IDC_STATIC,104,7,45,8
+    EDITTEXT        IDC_PARA1,7,49,29,14,ES_AUTOHSCROLL
+    LTEXT           "座標：",IDC_STATIC,7,7,21,8
+END
+
+IDD_LVUPINFO DIALOGEX 0, 0, 222, 193
+STYLE WS_VISIBLE | WS_CAPTION | WS_THICKFRAME
+EXSTYLE WS_EX_CONTROLPARENT
+CAPTION "レベルアップ情報の編集"
+FONT 9, "ＭＳ Ｐゴシック", 0, 0, 0x1
+BEGIN
+    PUSHBUTTON      "追加",IDC_ADD,7,7,38,14
+    PUSHBUTTON      "編集",IDC_EDIT,53,7,38,14
+    PUSHBUTTON      "削除",IDC_DELETE,100,7,38,14
+    CONTROL         "List2",IDC_LIST,"SysListView32",LVS_REPORT | 
+                    LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_NOSORTHEADER | 
+                    WS_BORDER | WS_TABSTOP,7,27,208,129
+    DEFPUSHBUTTON   "OK",IDOK,103,168,50,14
+    PUSHBUTTON      "ｷｬﾝｾﾙ",IDCANCEL,165,168,50,14
+END
+
+IDD_LVUPINFO_EDIT DIALOGEX 0, 0, 175, 133
+STYLE WS_VISIBLE | WS_CAPTION | WS_THICKFRAME
+EXSTYLE WS_EX_CONTROLPARENT
+CAPTION "レベルアップ情報の編集"
+FONT 9, "ＭＳ Ｐゴシック", 0, 0, 0x1
+BEGIN
+    LTEXT           "力：",IDC_STATIC,7,9,11,8
+    EDITTEXT        IDC_PW,43,7,40,14,ES_AUTOHSCROLL
+    LTEXT           "素早さ：",IDC_STATIC,7,30,23,8
+    EDITTEXT        IDC_DEX,43,27,40,14,ES_AUTOHSCROLL
+    LTEXT           "体力：",IDC_STATIC,7,49,18,8
+    EDITTEXT        IDC_ST,43,47,40,14,ES_AUTOHSCROLL
+    LTEXT           "賢さ：",IDC_STATIC,92,9,16,8
+    EDITTEXT        IDC_IT,128,7,40,14,ES_AUTOHSCROLL
+    LTEXT           "運のよさ：",IDC_STATIC,92,30,29,8
+    EDITTEXT        IDC_LK,128,27,40,14,ES_AUTOHSCROLL
+    LTEXT           "最大HP：",IDC_STATIC,7,70,27,8
+    EDITTEXT        IDC_MAXHP,43,67,40,14,ES_AUTOHSCROLL
+    LTEXT           "最大Mana：",IDC_STATIC,7,90,34,8
+    EDITTEXT        IDC_MAXMANA,43,87,40,14,ES_AUTOHSCROLL
+    LTEXT           "経験値：",IDC_STATIC,92,90,25,8
+    EDITTEXT        IDC_EXP,128,87,40,14,ES_AUTOHSCROLL
+    DEFPUSHBUTTON   "OK",IDOK,56,108,50,14
+    PUSHBUTTON      "ｷｬﾝｾﾙ",IDCANCEL,118,108,50,14
+END
+
+IDD_ETC_SUBGAME DIALOGEX 0, 0, 223, 164
+STYLE WS_CHILD
+EXSTYLE WS_EX_STATICEDGE
+FONT 9, "ＭＳ Ｐゴシック", 0, 0, 0x1
+BEGIN
+    PUSHBUTTON      "取得",IDC_GET,7,7,32,14
+    PUSHBUTTON      "追加",IDC_ADD,145,7,32,14
+    PUSHBUTTON      "送信",IDC_SEND,86,7,32,14
+    PUSHBUTTON      "編集",IDC_MODIFY,46,7,32,14
+    PUSHBUTTON      "クリア",IDC_CLEAR,184,7,32,14
+    CONTROL         "List2",IDC_LIST,"SysListView32",LVS_REPORT | 
+                    LVS_SINGLESEL | WS_BORDER | WS_TABSTOP,7,35,209,122
+    LTEXT           "サブゲーム一覧：",IDC_STATIC,7,26,52,8
+END
+
+IDD_STTMPINFO DIALOGEX 0, 0, 223, 167
+STYLE WS_CHILD
+EXSTYLE WS_EX_STATICEDGE
+FONT 9, "ＭＳ Ｐゴシック", 0, 0, 0x1
+BEGIN
+    PUSHBUTTON      "取得",IDC_GET,7,7,38,14
+    PUSHBUTTON      "編集",IDC_EDIT,53,7,38,14
+    PUSHBUTTON      "追加",IDC_ADD,100,7,38,14
+    PUSHBUTTON      "送信",IDC_SEND,167,7,38,14
+    LTEXT           "ステータステンプレート一覧：",IDC_STATIC,7,26,84,8
+    CONTROL         "List2",IDC_LIST,"SysListView32",LVS_REPORT | 
+                    LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_BORDER | 
+                    WS_TABSTOP,7,37,209,119
+END
+
+IDD_STTMPINFO_EDIT DIALOG DISCARDABLE  0, 0, 277, 163
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "ステータステンプレート情報の編集"
+FONT 9, "ＭＳ Ｐゴシック"
+BEGIN
+    LTEXT           "名前：",IDC_STATIC,7,10,18,8
+    EDITTEXT        IDC_NAME,30,7,80,14,ES_AUTOHSCROLL
+    LTEXT           "移動種別：",IDC_STATIC,119,9,32,8
+    COMBOBOX        IDC_MOVETYPE,156,7,96,138,CBS_DROPDOWNLIST | WS_VSCROLL | 
+                    WS_TABSTOP
+    LTEXT           "力：",IDC_STATIC,7,30,11,8
+    EDITTEXT        IDC_PW,37,27,40,14,ES_AUTOHSCROLL
+    LTEXT           "素早さ：",IDC_STATIC,7,47,23,8
+    EDITTEXT        IDC_DEX,37,44,40,14,ES_AUTOHSCROLL
+    LTEXT           "体力：",IDC_STATIC,7,64,18,8
+    EDITTEXT        IDC_ST,37,61,40,14,ES_AUTOHSCROLL
+    LTEXT           "賢さ：",IDC_STATIC,7,81,16,8
+    EDITTEXT        IDC_IT,37,78,40,14,ES_AUTOHSCROLL
+    LTEXT           "運のよさ：",IDC_STATIC,7,98,29,8
+    EDITTEXT        IDC_LK,37,95,40,14,ES_AUTOHSCROLL
+    LTEXT           "最大HP：",IDC_STATIC,87,30,27,8
+    EDITTEXT        IDC_MAXHP,123,27,40,14,ES_AUTOHSCROLL
+    LTEXT           "最大Mana：",IDC_STATIC,86,47,34,8
+    EDITTEXT        IDC_MAXMANA,123,44,40,14,ES_AUTOHSCROLL
+    LTEXT           "所持金：",IDC_STATIC,87,64,25,8
+    EDITTEXT        IDC_GOLD,123,61,40,14,ES_AUTOHSCROLL
+    LTEXT           "ドロップ率：",IDC_STATIC,86,81,33,8
+    EDITTEXT        IDC_DROP,123,78,40,14,ES_AUTOHSCROLL
+    LTEXT           "移動確立X：",IDC_STATIC,173,30,36,8
+    EDITTEXT        IDC_MOVEX,212,27,40,14,ES_AUTOHSCROLL
+    LTEXT           "移動確立Y：",IDC_STATIC,173,47,36,8
+    EDITTEXT        IDC_MOVEY,212,44,40,14,ES_AUTOHSCROLL
+    LTEXT           "魔法防御：",IDC_STATIC,173,64,32,8
+    EDITTEXT        IDC_REGMAGIC,212,61,40,14,ES_AUTOHSCROLL
+    LTEXT           "レベル：",IDC_STATIC,173,81,23,8
+    EDITTEXT        IDC_LV,212,78,40,14,ES_AUTOHSCROLL
+    LTEXT           "経験値：",IDC_STATIC,173,98,25,8
+    EDITTEXT        IDC_EXP,212,95,40,14,ES_AUTOHSCROLL
+    LTEXT           "火：",IDC_STATIC,7,121,11,8
+    EDITTEXT        IDC_FIRE,19,119,19,14,ES_AUTOHSCROLL
+    LTEXT           "水：",IDC_STATIC,42,121,11,8
+    EDITTEXT        IDC_WATER,55,119,19,14,ES_AUTOHSCROLL
+    LTEXT           "風：",IDC_STATIC,77,121,11,8
+    EDITTEXT        IDC_WIND,89,119,19,14,ES_AUTOHSCROLL
+    LTEXT           "土：",IDC_STATIC,112,121,11,8
+    EDITTEXT        IDC_EARTH,124,119,19,14,ES_AUTOHSCROLL
+    LTEXT           "光：",IDC_STATIC,147,121,11,8
+    EDITTEXT        IDC_LIGHT,159,119,19,14,ES_AUTOHSCROLL
+    LTEXT           "闇：",IDC_STATIC,182,121,11,8
+    EDITTEXT        IDC_DARK,194,119,19,14,ES_AUTOHSCROLL
+    DEFPUSHBUTTON   "OK",IDOK,163,142,50,14
+    PUSHBUTTON      "ｷｬﾝｾﾙ",IDCANCEL,220,142,50,14
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO MOVEABLE PURE 
+BEGIN
+    IDD_MAP_ADD, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 216
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 207
+    END
+
+    IDD_MAP_PARTS, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 216
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 191
+    END
+
+    IDD_JOBINFO, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 216
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 187
+    END
+
+    IDD_JOBINFO_EDIT, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 180
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 86
+    END
+
+    IDD_MAGICINFO, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 216
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 187
+    END
+
+    IDD_MAGICINFO_EDIT, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 234
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 166
+    END
+
+    IDD_MAGICUSERINFO, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 216
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 187
+    END
+
+    IDD_MAGICUSERINFO_EDIT, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 180
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 142
+    END
+
+    IDD_CHARMAGICINFO, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 216
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 187
+    END
+
+    IDD_EQUUSERINFO, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 216
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 187
+    END
+
+    IDD_EQUUSERINFO_EDIT, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 180
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 142
+    END
+
+    IDD_ACC_SEARCH, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 216
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 207
+    END
+
+    IDD_OLD_ETC_SUBGAME, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 216
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 207
+    END
+
+    IDD_ETC_SUBGAME_EDIT, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 234
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 166
+    END
+
+    IDD_ETC_SUBGAME_EDIT_BOMB, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 206
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 92
+    END
+
+    IDD_ETC_SUBGAME_EDIT_MAZE, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 206
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 98
+    END
+
+    IDD_ETC_SUBGAME_EDIT_DUNGEON, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 206
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 98
+    END
+
+    IDD_ETC_SUBGAME_EDIT_WAR, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 206
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 100
+    END
+
+    IDD_ETC_SUBGAME_EDIT_SUGOROKU, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 206
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 100
+    END
+
+    IDD_SUGOROKU_PARTS, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 259
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 147
+    END
+
+    IDD_SUGOROKU_PARTS_EDIT, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 179
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 77
+    END
+
+    IDD_SUGOROKU_EVENT, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 259
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 147
+    END
+
+    IDD_SUGOROKU_EVENT_EDIT, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 179
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 83
+    END
+
+    IDD_LVUPINFO, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 215
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 182
+    END
+
+    IDD_LVUPINFO_EDIT, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 168
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 122
+    END
+
+    IDD_ETC_SUBGAME, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 216
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 157
+    END
+
+    IDD_STTMPINFO, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 216
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 156
+    END
+
+    IDD_STTMPINFO_EDIT, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 270
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 156
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog Info
+//
+
+IDD_MAGICINFO_EDIT DLGINIT
+BEGIN
+    IDC_TIME, 0x403, 4, 0
+0x9530, 0x0062, 
+    IDC_TIME, 0x403, 4, 0
+0x9531, 0x0062, 
+    IDC_TIME, 0x403, 4, 0
+0x9532, 0x0062, 
+    IDC_TIME, 0x403, 4, 0
+0x9533, 0x0062, 
+    IDC_TIME, 0x403, 4, 0
+0x9534, 0x0062, 
+    IDC_TIME, 0x403, 4, 0
+0x9535, 0x0062, 
+    IDC_TIME, 0x403, 4, 0
+0x9536, 0x0062, 
+    IDC_TIME, 0x403, 4, 0
+0x9537, 0x0062, 
+    IDC_TIME, 0x403, 4, 0
+0x9538, 0x0062, 
+    IDC_TIME, 0x403, 4, 0
+0x9539, 0x0062, 
+    IDC_TIME, 0x403, 5, 0
+0x3031, 0x6295, "\000" 
+    IDC_ATTR, 0x403, 4, 0
+0x9530, 0x0062, 
+    IDC_ATTR, 0x403, 4, 0
+0x9531, 0x0062, 
+    IDC_ATTR, 0x403, 4, 0
+0x9532, 0x0062, 
+    IDC_ATTR, 0x403, 4, 0
+0x9533, 0x0062, 
+    IDC_ATTR, 0x403, 4, 0
+0x9534, 0x0062, 
+    IDC_ATTR, 0x403, 4, 0
+0x9535, 0x0062, 
+    IDC_ATTR, 0x403, 4, 0
+0x9536, 0x0062, 
+    IDC_ATTR, 0x403, 4, 0
+0x9537, 0x0062, 
+    IDC_ATTR, 0x403, 4, 0
+0x9538, 0x0062, 
+    IDC_ATTR, 0x403, 4, 0
+0x9539, 0x0062, 
+    IDC_ATTR, 0x403, 5, 0
+0x3031, 0x6295, "\000" 
+    0
+END
+
+
+#ifndef _MAC
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 0,1,1,6
+ PRODUCTVERSION 0,1,1,6
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x40004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "041104b0"
+        BEGIN
+            VALUE "Comments", "\0"
+            VALUE "CompanyName", "URARA-WORKS\0"
+            VALUE "FileDescription", "SboCli\0"
+            VALUE "FileVersion", "0.116\0"
+            VALUE "InternalName", "SboCli\0"
+            VALUE "LegalCopyright", "Copyright(C)URARA-works 2003-2007\0"
+            VALUE "LegalTrademarks", "\0"
+            VALUE "OriginalFilename", "SboCli.exe\0"
+            VALUE "PrivateBuild", "\0"
+            VALUE "ProductName", "スクラップブックオンライン クライアント\0"
+            VALUE "ProductVersion", "0.103\0"
+            VALUE "SpecialBuild", "\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x411, 1200
+    END
+END
+
+#endif    // !_MAC
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDI_ICON1               ICON    DISCARDABLE     "res\\SBOｱｲｺﾝ.ico"
+#endif    // 日本語 resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

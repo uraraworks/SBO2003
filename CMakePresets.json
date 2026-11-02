@@ -1,0 +1,31 @@
+{
+	"version": 3,
+	"configurePresets": [
+		{
+			"name": "mac-debug",
+			"displayName": "サーバー（Node.js 版・デバッグ）",
+			"description": "Emscripten で wasm にして Node.js で動かす。emsdk の環境（EMSDK）が必要",
+			"generator": "Unix Makefiles",
+			"binaryDir": "${sourceDir}/out/cmake-server",
+			"toolchainFile": "$env{EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake",
+			"cacheVariables": {
+				"CMAKE_BUILD_TYPE": "Debug",
+				"CMAKE_RUNTIME_OUTPUT_DIRECTORY": "${sourceDir}/out/server"
+			}
+		},
+		{
+			"name": "mac-release",
+			"displayName": "サーバー（Node.js 版・リリース）",
+			"inherits": "mac-debug",
+			"binaryDir": "${sourceDir}/out/cmake-server-release",
+			"cacheVariables": {
+				"CMAKE_BUILD_TYPE": "Release",
+				"CMAKE_RUNTIME_OUTPUT_DIRECTORY": "${sourceDir}/out/server-release"
+			}
+		}
+	],
+	"buildPresets": [
+		{ "name": "mac-debug", "configurePreset": "mac-debug" },
+		{ "name": "mac-release", "configurePreset": "mac-release" }
+	]
+}
