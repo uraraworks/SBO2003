@@ -38,7 +38,7 @@ cp -R "$ROOT/Release/SBODATA" "$STAGE/seed/SBODATA"
 cp "$ROOT/Release/sbosvr.ini" "$STAGE/seed/SboSvr.ini"
 
 # VPS で使うスクリプト類（.ps1 は Windows PowerShell 5.1 が日本語を読めるよう BOM 付き UTF-8 で置く）
-for f in start.ps1 stop.ps1 install-task.ps1; do
+for f in start.ps1 stop.ps1 install-task.ps1 setup-iis.ps1 remote-deploy.ps1; do
 	printf '\xEF\xBB\xBF' > "$STAGE/$f"
 	sed 's/$/\r/' "$HERE/$f" >> "$STAGE/$f"
 done
