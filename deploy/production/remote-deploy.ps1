@@ -85,8 +85,9 @@ if ($Data) {
 	$work = Join-Path $Root 'upload\data.new'
 	if (Test-Path $work) { Remove-Item $work -Recurse -Force }
 	New-Item -ItemType Directory -Path $work | Out-Null
-	# Windows 10 / Server 2019 以降に入っている tar.exe で展開する
-	& tar.exe -xzf $Data -C $work
+	# Windows 10 / Server 2019 以降に入っている tar.exe（bsdtar）で展開する。
+	# Git の GNU tar が PATH にあると「C:」をホスト名と取り違えるので、System32 のものをはっきり指定する
+	& (Join-Path $env:SystemRoot 'System32\tar.exe') -xzf $Data -C $work
 	if ($LASTEXITCODE -ne 0) { throw "データの展開に失敗しました（$LASTEXITCODE）" }
 	if (-not (Test-Path (Join-Path $work 'SBODATA'))) { throw '渡されたデータに SBODATA\ がありません' }
 	Say 'データを入れ替えます'
