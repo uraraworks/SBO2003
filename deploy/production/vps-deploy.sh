@@ -13,6 +13,8 @@
 #   SSH_KEY    秘密鍵のファイル（既定 ~/.ssh/urara_vps_deploy）
 #   VPS_ROOT   VPS 上の置き場所（既定 C:/SBO2003）
 #   HEALTH_URL 外から確かめる URL（任意。例 https://sbo2003.urara-works.jp/health）
+#   IIS_HOST   IIS のサイトのホスト名（任意。例 sbo2003.urara-works.jp）。指定すると毎回 setup-iis.ps1 で
+#              サイトとバインドを確かめ、足りないものだけ足す（既存のサイトには触らない）
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -75,6 +77,11 @@ scp "${SCP_OPTS[@]}" "${FILES[@]}" "$TARGET:$VPS_ROOT/upload/"
 
 echo "==> VPS で入れ替え"
 remote "-File $WIN_ROOT\\upload\\remote-deploy.ps1 -Root $WIN_ROOT $ARGS"
+
+if [ -n "${IIS_HOST:-}" ]; then
+	echo "==> IIS のサイトを確かめる: $IIS_HOST"
+	remote "-File $WIN_ROOT\\setup-iis.ps1 -Root $WIN_ROOT -HostName $IIS_HOST"
+fi
 
 if [ -n "${HEALTH_URL:-}" ]; then
 	echo "==> 外から確かめる: $HEALTH_URL"

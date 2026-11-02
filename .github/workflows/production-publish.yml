@@ -21,6 +21,7 @@
 #   Secret SBO2003_VPS_SSH_KEY     上のユーザーでログインできる SSH 秘密鍵（そのままか base64 の1行）
 #   Secret SBO2003_VPS_KNOWN_HOSTS ssh-keyscan -p <ポート> <ホスト> の出力（なりすまし防止）
 #   変数 SBO2003_VPS_HEALTH_URL    外から確かめる URL（任意。例 https://sbo2003.urara-works.jp/health）
+#   変数 SBO2003_VPS_IIS_HOST      IIS のサイトのホスト名（未設定なら sbo2003.urara-works.jp。setup-iis.ps1 でサイトを確かめる）
 
 name: production-publish
 
@@ -236,5 +237,6 @@ jobs:
           VPS_USER: ${{ vars.SBO2003_VPS_USER }}
           VPS_PORT: ${{ vars.SBO2003_VPS_PORT || '22' }}
           SSH_KEY: ~/.ssh/id_vps
-          HEALTH_URL: ${{ vars.SBO2003_VPS_HEALTH_URL }}
+          HEALTH_URL: ${{ vars.SBO2003_VPS_HEALTH_URL }}  # 外から届くようになってから設定する
+          IIS_HOST: ${{ vars.SBO2003_VPS_IIS_HOST || 'sbo2003.urara-works.jp' }}
         run: deploy/production/vps-deploy.sh "$(ls dl/Sbo2003_Server_*.zip | head -n 1)"
