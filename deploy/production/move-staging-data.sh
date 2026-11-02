@@ -4,9 +4,9 @@
 #   deploy/production/move-staging-data.sh
 #
 # 1. ステージングのサーバーを止めて（SIGTERM でデータを保存してから止まる）、ボリュームの
-#    SBODATA/ と SboSvr.ini を tgz にして手元に持ってくる。終わったらステージングを起動し直す
+#    SBODATA/ と SboSvr.ini を手元に持ってきて zip にする。終わったらステージングを起動し直す
 # 2. vps-deploy.sh --data で本番に送り、本番のサーバーを止めて今のデータを backup\ に控えてから置き換え、起動し直す
-# 3. 手元の tgz を消す（プレイヤーのデータが入っているので残さない。GitHub にも上げない）
+# 3. 手元の一時ファイルを消す（プレイヤーのデータが入っているので残さない。GitHub にも上げない）
 #
 # 設定は deploy/production/deploy.local.env（deploy.env.example をコピー）に書く:
 #   STAGING_TARGET   ステージングの SSH 先（ユーザー@ホスト）
@@ -25,7 +25,8 @@ if [ -n "${STAGING_SSH_KEY:-}" ]; then STAGING_SSH+=(-i "${STAGING_SSH_KEY/#\~/$
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
-TGZ="$WORK/sbo2003-data-$(date +%Y%m%d_%H%M%S).tgz"
+TGZ="$WORK/staging-data.tgz"
+ZIP="$WORK/sbo2003-data-$(date +%Y%m%d_%H%M%S).zip"
 
 echo "==> ステージングを止めてデータを取り出します（少しの間ステージングに入れなくなります）"
 # 標準出力には tgz だけを流す（docker compose の表示は標準エラーへ）
@@ -38,7 +39,11 @@ docker compose start sbosvr >&2
 exit $rc' > "$TGZ"
 tar tzf "$TGZ" | grep -q '^SBODATA/' || { echo "取り出したデータに SBODATA/ がありません" >&2; exit 1; }
 echo "   $(du -h "$TGZ" | cut -f1)、$(tar tzf "$TGZ" | grep -c -v '/$') ファイル"
+# VPS では Expand-Archive で展開するので zip にしなおす
+mkdir "$WORK/data"
+tar xzf "$TGZ" -C "$WORK/data"
+(cd "$WORK/data" && zip -qr -X "$ZIP" SBODATA SboSvr.ini)
 
 echo "==> 本番 VPS へ送って入れ替えます"
-"$HERE/vps-deploy.sh" --data "$TGZ"
+"$HERE/vps-deploy.sh" --data "$ZIP"
 echo "==> 完了（手元の一時ファイルは消しました）"
