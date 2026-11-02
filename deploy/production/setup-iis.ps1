@@ -12,6 +12,9 @@ param(
 	[string]$SiteName = 'SBO2003'
 )
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+# SSH 越しでも日本語が化けないよう、出力を UTF-8 にする
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
 Import-Module WebAdministration
 
 $principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()

@@ -19,6 +19,8 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+# SSH 越しでも日本語が化けないよう、出力を UTF-8 にする
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
 $TaskName = 'SBO2003_SboSvr'
 $Parts = @('server', 'web', 'node', 'seed')
 
