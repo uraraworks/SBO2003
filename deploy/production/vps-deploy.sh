@@ -3,7 +3,7 @@
 # Actions の production-publish から呼ばれる。Mac から手で動かしてもよい。
 #
 #   deploy/production/vps-deploy.sh <zip>              # 新しい版を入れる
-#   deploy/production/vps-deploy.sh --data <tgz>       # データだけ入れ替える（move-staging-data.sh から）
+#   deploy/production/vps-deploy.sh --data <zip>       # データだけ入れ替える（SBODATA/ と SboSvr.ini の zip）（move-staging-data.sh から）
 #   deploy/production/vps-deploy.sh --rollback         # 1 つ前の版に戻す
 #
 # 接続先は環境変数で渡す（Mac では deploy/production/deploy.local.env に書いておくと読み込む）:
@@ -23,9 +23,9 @@ fi
 
 ZIP="" DATA="" ROLLBACK=0
 case "${1:-}" in
-	--data) DATA="${2:?データの tgz を指定してください}" ;;
+	--data) DATA="${2:?データの zip を指定してください}" ;;
 	--rollback) ROLLBACK=1 ;;
-	""|-*) echo "使い方: $0 <zip> | --data <tgz> | --rollback" >&2; exit 2 ;;
+	""|-*) echo "使い方: $0 <zip> | --data <zip> | --rollback" >&2; exit 2 ;;
 	*) ZIP="$1" ;;
 esac
 

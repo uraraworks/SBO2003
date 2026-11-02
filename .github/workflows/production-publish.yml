@@ -168,10 +168,8 @@ jobs:
           Write-Host '----- 1 つ前の版に戻す'
           Run @('-Rollback')
           Write-Host '----- データの入れ替え（前の確認で作ったデータを持ってくる）'
-          # Git の GNU tar ではなく Windows の tar.exe を使う（VPS の remote-deploy.ps1 と同じもの）
-          & "$env:SystemRoot\System32\tar.exe" -czf "$root\upload\data.tgz" -C C:\sbo2003-test\data SBODATA SboSvr.ini
-          if ($LASTEXITCODE -ne 0) { throw 'tgz を作れません' }
-          Run @('-Data', "$root\upload\data.tgz")
+          Compress-Archive -Path C:\sbo2003-test\data\SBODATA, C:\sbo2003-test\data\SboSvr.ini -DestinationPath "$root\upload\data.zip"
+          Run @('-Data', "$root\upload\data.zip")
           if (-not (Get-ChildItem "$root\backup" -Filter 'sbo2003-data-*.zip')) { throw '入れ替え前のデータが控えられていません' }
           $ini = Get-Content "$root\data\SboSvr.ini" -Raw
           if ($ini -notmatch 'Password=ci-test-pass') { throw '持ってきた SboSvr.ini になっていません' }

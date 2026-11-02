@@ -1,12 +1,12 @@
 # Sbo2003 本番 VPS での入れ替え（SSH 越しに vps-deploy.sh から呼ばれる。手で動かしてもよい）。管理者で実行する。
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File C:\SBO2003\upload\remote-deploy.ps1 -Zip C:\SBO2003\upload\Sbo2003_Server_xxx.zip
-#   powershell ... remote-deploy.ps1 -Data C:\SBO2003\upload\sbo2003-data.tgz   # データだけ入れ替える
+#   powershell ... remote-deploy.ps1 -Data C:\SBO2003\upload\sbo2003-data.zip   # データだけ入れ替える
 #   powershell ... remote-deploy.ps1 -Rollback                                  # 1 つ前の版に戻す
 #
 # 1. stop.ps1 でデータを保存してからサーバーを止める
 # 2. -Zip: 今の server\ web\ node\ seed\ を prev\ に退避して、新しい zip を展開する
-#    -Data: 今の data\ を backup\ に zip で控えてから、渡されたデータ（SBODATA/ と SboSvr.ini の tgz）に置き換える
+#    -Data: 今の data\ を backup\ に zip で控えてから、渡されたデータ（SBODATA/ と SboSvr.ini の zip）に置き換える
 #    -Rollback: prev\ と今の版を入れ替える（data\ はそのまま）
 # 3. 初回はタスク SBO2003_SboSvr を登録し、sbo2003.env が無ければ雛形から作る
 # 4. タスクを起動して /health が ok を返すまで待つ
@@ -85,10 +85,7 @@ if ($Data) {
 	$work = Join-Path $Root 'upload\data.new'
 	if (Test-Path $work) { Remove-Item $work -Recurse -Force }
 	New-Item -ItemType Directory -Path $work | Out-Null
-	# Windows 10 / Server 2019 以降に入っている tar.exe（bsdtar）で展開する。
-	# Git の GNU tar が PATH にあると「C:」をホスト名と取り違えるので、System32 のものをはっきり指定する
-	& (Join-Path $env:SystemRoot 'System32\tar.exe') -xzf $Data -C $work
-	if ($LASTEXITCODE -ne 0) { throw "データの展開に失敗しました（$LASTEXITCODE）" }
+	Expand-Archive -Path $Data -DestinationPath $work -Force
 	if (-not (Test-Path (Join-Path $work 'SBODATA'))) { throw '渡されたデータに SBODATA\ がありません' }
 	Say 'データを入れ替えます'
 	New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
