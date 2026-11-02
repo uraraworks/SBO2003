@@ -12,6 +12,8 @@
 - start.ps1        サーバーを起動し続ける（タスク SBO2003_SboSvr から呼ばれる。落ちたら起動し直す）
 - stop.ps1         データを保存してから止める
 - install-task.ps1 起動時に自動で立ち上がるタスクを登録する（初回だけ）
+- setup-iis.ps1    IIS のサイトを作る（初回だけ。-HostName sbo2003.urara-works.jp）
+- remote-deploy.ps1 新しい zip・データへの入れ替えと、1 つ前の版への戻し（Actions から SSH で呼ばれる）
 - sbo2003.env.example  設定の雛形（sbo2003.env にコピーして使う）
 
 zip に入っていないもの（上書き展開しても消えない）:
