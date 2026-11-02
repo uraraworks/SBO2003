@@ -45,6 +45,7 @@ Actions の中では次を行います。
 | Variable | `SBO2003_VPS_USER` | SSH ユーザー（Administrators に入っていること。MangaViewer と同じでよい） |
 | Variable | `SBO2003_VPS_PORT` | SSH のポート（22 なら不要） |
 | Variable | `SBO2003_VPS_HEALTH_URL` | 外から確かめる URL（任意。`https://sbo2003.urara-works.jp/health`） |
+| Variable | `SBO2003_VPS_IIS_HOST` | IIS のサイトのホスト名（未設定なら `sbo2003.urara-works.jp`。デプロイのたびに `setup-iis.ps1` でサイトを確かめ、足りないものだけ足す） |
 | Secret | `SBO2003_VPS_SSH_KEY` | SSH 秘密鍵（`base64 -i ~/.ssh/urara_vps_deploy` の1行がおすすめ） |
 | Secret | `SBO2003_VPS_KNOWN_HOSTS` | `ssh-keyscan -p <ポート> <ホスト>` の出力 |
 
