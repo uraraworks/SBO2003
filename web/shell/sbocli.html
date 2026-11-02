@@ -609,9 +609,97 @@
 	#sbo-recover label.sbo-check input {
 		width: auto;
 	}
+
+	/* ===================================================================
+	   パッドなし表示（PC など）：SBOP2 に合わせた見た目
+	   ベージュの背景にゲーム画面を影付きで置き、上下にヘッダー・フッターを出す。
+	   スマホ（body.sbo-pad）は今までどおり黒っぽい全画面のまま。
+	   =================================================================== */
+	.site-header,
+	.site-footer {
+		display: none;
+	}
+	html:has(body:not(.sbo-pad)),
+	body:not(.sbo-pad) {
+		--page-bg: #efe6d2;
+		background: var(--page-bg);
+	}
+	/* ヘッダー・ゲーム画面・フッターを縦に並べ、ゲーム画面は残りの高さの中央に置く */
+	body:not(.sbo-pad) {
+		min-height: 100vh;
+		display: flex;
+		flex-direction: column;
+	}
+	body:not(.sbo-pad) #sbo-wrap {
+		flex: 1 1 auto;
+		justify-content: center;
+		padding: 24px 16px;
+		box-sizing: border-box;
+	}
+	body:not(.sbo-pad) .site-header,
+	body:not(.sbo-pad) .site-footer {
+		display: block;
+	}
+	.site-header {
+		flex: 0 0 auto;
+		text-align: center;
+		background: #0c0c0c;
+		padding: 10px 16px;
+		box-shadow:
+			inset 0 -1px 0 rgba(255, 255, 255, 0.06),
+			0 2px 6px rgba(0, 0, 0, 0.4);
+	}
+	.site-header h1 {
+		margin: 0;
+		font-size: 15px;
+		font-weight: 600;
+		color: #f2f2f2;
+		letter-spacing: 0.03em;
+	}
+	.site-header .site-tagline {
+		margin: 2px 0 0;
+		font-size: 11px;
+		color: #a8a8a8;
+	}
+	.site-footer {
+		flex: 0 0 auto;
+		width: 100%;
+		box-sizing: border-box;
+		padding: 8px 16px;
+		font-size: 11px;
+		text-align: center;
+		color: #8c8c8c;
+		background: #1a1a1a;
+		border-top: 1px solid rgba(255, 255, 255, 0.1);
+	}
+	.site-footer a {
+		color: #8c8c8c;
+	}
+	@media (max-height: 560px) {
+		.site-header { padding: 6px 10px; }
+		.site-header .site-tagline { display: none; }
+	}
+	body:not(.sbo-pad) #canvas {
+		box-shadow:
+			0 2px 6px rgba(60, 45, 20, 0.22),
+			0 14px 36px rgba(60, 45, 20, 0.30);
+	}
+	/* ベージュの上に出る文字は濃い色にする（ログイン画面のカードの中は黒いままなので対象外） */
+	body:not(.sbo-pad) #sbo-status,
+	body:not(.sbo-pad) #sbo-forgot {
+		color: #6b5d45;
+	}
+	/* チャット欄はフッターに重ならないよう、その上に浮かせる */
+	body:not(.sbo-pad) #sbo-chat-panel {
+		bottom: calc(var(--site-footer-h, 0px) + 16px);
+	}
 </style>
 </head>
 <body>
+<header class="site-header">
+	<h1>スクラップブックオンライン</h1>
+	<p class="site-tagline">2003年に始まった個人制作MMORPG</p>
+</header>
 <div id="sbo-wrap">
 	<div id="sbo-screen">
 		<canvas id="canvas" tabindex="0" width="480" height="480" oncontextmenu="event.preventDefault()"></canvas>
@@ -654,6 +742,11 @@
 	</div>
 	<div id="sbo-status">読み込み中...</div>
 </div>
+<footer class="site-footer">
+	<a href="https://www.urara-works.jp/" target="_blank" rel="noopener">© URARA-works</a> /
+	<a href="https://github.com/uraraworks/SBO2003" target="_blank" rel="noopener">GitHubで見る</a> /
+	<a href="https://uraraworks.github.io/SBOP2/" target="_blank" rel="noopener">後継作 SBOP2</a>
+</footer>
 <!-- スマホ縦持ちのチャットログ -->
 <div id="sbo-chat-area"></div>
 
@@ -790,9 +883,16 @@
 			}
 			cssW = Math.max(160, Math.floor(cssW));
 		} else {
+			/* ヘッダー・フッターの分を除いた高さに収める */
+			var header = document.querySelector('.site-header');
+			var footer = document.querySelector('.site-footer');
+			var headerH = header ? header.offsetHeight : 0;
+			var footerH = footer ? footer.offsetHeight : 0;
+			document.documentElement.style.setProperty('--site-footer-h', footerH + 'px');
 			var s = parseFloat(params.get('scale') || '0');
 			if (!s) {
-				s = Math.max(1, Math.floor(Math.min((window.innerWidth - 32) / w, (window.innerHeight - 64) / h)));
+				s = Math.max(1, Math.floor(Math.min((window.innerWidth - 32) / w,
+					(window.innerHeight - headerH - footerH - 96) / h)));
 			}
 			cssW = w * s;
 		}
