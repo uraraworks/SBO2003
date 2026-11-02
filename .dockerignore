@@ -1,0 +1,4 @@
+# ステージング用イメージ（deploy/staging/Dockerfile）のビルドに要らないもの
+.git
+out
+deploy/staging/staging.env

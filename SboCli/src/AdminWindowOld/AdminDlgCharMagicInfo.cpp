@@ -1,0 +1,348 @@
+/* Copyright(C)URARA-works 2003-2005 */
+/* ========================================================================= */
+/* 概要：		所持魔法情報ダイアログ処理実装ファイル						 */
+/* ファイル名：	AdminDlgCharMagicInfo.cpp									 */
+/* 作成：		年がら年中春うらら(URARA-works)								 */
+/* 作成日：		2004/07/15													 */
+/* ========================================================================= */
+#include "stdafx.h"
+#include "../../resource.h"
+#include "../Glbldata.h"
+#include "../SboCliSendCmd.h"
+#include "../SboCliRecvCmd.h"
+
+/* ========================================================================= */
+/* グローバル変数定義														 */
+/* ========================================================================= */
+static HWND s_hWndDlg = NULL;									/* ダイアログのウィンドウハンドル */
+static HWND s_hWndParent = NULL;								/* 親ウィンドウ */
+static PCHARINFO s_pChar = NULL;								/* 編集中のキャラ情報 */
+static int s_nTblID = -1;										/* 編集中のキャラID */
+
+/* ========================================================================= */
+/* 関数プロトタイプ宣言														 */
+/* ========================================================================= */
+void ShowDlgCharMagicInfo(HWND hWndParent);										/* ダイアログ表示(所持魔法情報) */
+void CloseDlgCharMagicInfo(void);												/* ダイアログ終了(所持魔法情報) */
+void RenewCharMagicInfo(void);													/* 所持魔法情報更新 */
+void SetCharMagicInfo(PCHARINFO);												/* 編集するキャラの設定 */
+static LRESULT CALLBACK DlgProc(HWND, UINT, WPARAM, LPARAM);					/* ダイアログ処理 */
+static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam);				/* メッセージハンドラ(WM_INITDIALOG) */
+static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify);		/* メッセージハンドラ(WM_COMMAND) */
+static void RenewList(void);													/* リスト更新 */
+
+/* ========================================================================= */
+/* 関数名：ShowDlgCharMagicInfo												 */
+/* 内容：ダイアログ表示(所持魔法情報)										 */
+/* 日付：2004/07/15															 */
+/* ========================================================================= */
+void ShowDlgCharMagicInfo(HWND hWndParent)
+{
+	if (s_hWndDlg) {
+		return;
+	}
+
+	s_hWndParent = hWndParent;
+	s_hWndDlg = CreateDialog (NULL, (LPCTSTR)IDD_CHARMAGICINFO, hWndParent, (DLGPROC)DlgProc);
+	if (s_hWndDlg == NULL) {
+		return;
+	}
+
+	RenewList ();
+	ShowWindow (s_hWndDlg, SW_SHOW);
+}
+
+/* ========================================================================= */
+/* 関数名：CloseDlgCharMagicInfo											 */
+/* 内容：ダイアログ終了(所持魔法情報)										 */
+/* 日付：2004/07/15															 */
+/* ========================================================================= */
+void CloseDlgCharMagicInfo(void)
+{
+	DestroyWindow (s_hWndDlg);
+	s_hWndDlg = NULL;
+	s_hWndParent = NULL;
+}
+
+/* ========================================================================= */
+/* 関数名：RenewCharMagicInfo												 */
+/* 内容：所持魔法情報更新													 */
+/* 日付：2004/07/15															 */
+/* ========================================================================= */
+void RenewCharMagicInfo(void)
+{
+	RenewList ();
+}
+
+/* ========================================================================= */
+/* 関数名：SetCharMagicInfo													 */
+/* 内容：編集するキャラの設定												 */
+/* 日付：2004/07/15															 */
+/* ========================================================================= */
+void SetCharMagicInfo(PCHARINFO pChar)
+{
+	if (pChar == NULL) {
+		ZeroMemory (s_pChar, sizeof (CHARINFO));
+		s_nTblID = -1;
+
+	} else {
+		if ((s_nTblID >= 0) && (s_pChar != pChar)) {
+			return;
+		}
+		CopyMemory (s_pChar, pChar, sizeof (CHARINFO));
+		s_nTblID = (int)pChar->dwTblID;
+	}
+
+	RenewList ();
+}
+
+/* ========================================================================= */
+/* 関数名：DlgProc															 */
+/* 内容：ダイアログ処理														 */
+/* 日付：2004/07/15															 */
+/* ========================================================================= */
+static LRESULT CALLBACK DlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    switch (msg) {
+	HANDLE_MSG (hWnd, WM_INITDIALOG, OnInitDialog);
+	HANDLE_MSG (hWnd, WM_COMMAND, OnCommand);
+
+	case WM_DESTROY:
+		SAFE_DELETE (s_pChar);
+		break;
+
+	default:
+		return 0;
+	}
+	return 1;
+}
+
+/* ========================================================================= */
+/* 関数名：OnInitDialog														 */
+/* 内容：メッセージハンドラ(WM_INITDIALOG)									 */
+/* 日付：2004/07/15															 */
+/* ========================================================================= */
+static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
+{
+	RECT rt;
+	int i, nCount;
+	HWND hWndTmp;
+	LV_COLUMN lvcol;
+
+	s_pChar = new CHARINFO;
+	ZeroMemory (s_pChar, sizeof (CHARINFO));
+
+	hWndTmp = GetDlgItem (hWnd, IDC_LIST);
+
+	/* ウィンドウサイズを親のクライアント領域に合わせる */
+	GetClientRect (s_hWndParent, &rt);
+	SetWindowPos (hWnd, NULL, 0, 0, rt.right, rt.bottom, SWP_NOZORDER | SWP_NOMOVE);
+
+	ZeroMemory (&lvcol, sizeof (lvcol));
+	lvcol.mask = LVCF_FMT | LVCF_WIDTH | LVCF_TEXT | LVCF_SUBITEM;
+	lvcol.fmt = LVCFMT_LEFT;
+
+	lvcol.cx = 180;
+	lvcol.pszText = "魔法名";
+	ListView_InsertColumn (hWndTmp, 0, &lvcol);
+
+	ListView_SetExtendedListViewStyle (hWndTmp, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
+
+
+	hWndTmp = GetDlgItem (hWnd, IDC_MAGIC);
+	nCount = g_aMagicInfo.GetSize ();
+	for (i = 0; i < nCount; i ++) {
+		PMAGICINFO pInfo;
+
+		pInfo = g_aMagicInfo[i];
+		/* 魔法名 */
+		SendMessage (hWndTmp, CB_ADDSTRING, (WPARAM)i, (LPARAM)pInfo->szName);
+	}
+
+
+	hWndTmp = GetDlgItem (hWnd, IDC_STTMP);
+	nCount = g_aStTmpInfo.GetSize ();
+	for (i = 0; i < nCount; i ++) {
+		PSTATUSTEMPLATEINFO pInfo = g_aStTmpInfo[i];
+		SendMessage (hWndTmp, CB_ADDSTRING, (WPARAM)i, (LPARAM)pInfo->szName);
+	}
+	return FALSE;
+}
+
+/* ========================================================================= */
+/* 関数名：OnCommand														 */
+/* 内容：メッセージハンドラ(WM_COMMAND)										 */
+/* 日付：2004/07/15															 */
+/* ========================================================================= */
+static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
+{
+	switch (nID) {
+	case IDC_SEND:		/* 送信 */
+		{
+			PCHARINFO pChar;
+			int nNo;
+
+			if (s_nTblID < 0) {
+				break;
+			}
+			nNo = GetCharNo2 (s_nTblID);
+			if (nNo < 0) {
+				break;
+			}
+
+			pChar = g_aCharInfo[nNo];
+			CopyMemory (pChar->abyMagic, s_pChar->abyMagic, sizeof (pChar->abyMagic));
+			SendCmdCHARSTATUS ((DWORD)nNo);
+			SetCharMagicInfo (NULL);
+		}
+		break;
+
+	case IDC_ADD:		/* 追加 */
+		{
+			int nNo;
+			BYTE byNo;
+			HWND hWndTmp;
+
+			for (nNo = 0; nNo < MAX_USEMAGIC; nNo ++) {
+				if (s_pChar->abyMagic[nNo] == 0) {
+					break;
+				}
+			}
+			if (nNo >= MAX_USEMAGIC) {
+				break;
+			}
+
+			hWndTmp = GetDlgItem (s_hWndDlg, IDC_MAGIC);
+			byNo = (BYTE)SendMessage (hWndTmp, CB_GETCURSEL, 0, 0);
+			if ((int)byNo < 0) {
+				break;
+			}
+			s_pChar->abyMagic[nNo] = byNo;
+			RenewList ();
+		}
+		break;
+
+	case IDC_MODIFY:	/* 更新 */
+		{
+			int nNo;
+			BYTE byNo;
+			HWND hWndTmp;
+
+			hWndTmp = GetDlgItem (s_hWndDlg, IDC_LIST);
+			nNo = ListView_GetNextItem (hWndTmp, -1, LVNI_ALL | LVNI_SELECTED);
+			if (nNo < 0) {
+				break;
+			}
+
+			hWndTmp = GetDlgItem (s_hWndDlg, IDC_MAGIC);
+			byNo = (BYTE)SendMessage (hWndTmp, CB_GETCURSEL, 0, 0);
+			if ((int)byNo < 0) {
+				break;
+			}
+			s_pChar->abyMagic[nNo] = byNo;
+			RenewList ();
+		}
+		break;
+
+	case IDC_DELETE:	/* 消去 */
+		{
+			int nNo;
+			HWND hWndTmp;
+
+			hWndTmp = GetDlgItem (s_hWndDlg, IDC_LIST);
+			nNo = ListView_GetNextItem (hWndTmp, -1, LVNI_ALL | LVNI_SELECTED);
+			if (nNo < 0) {
+				break;
+			}
+
+			for (; nNo < MAX_USEMAGIC - 1; nNo ++) {
+				s_pChar->abyMagic[nNo] = s_pChar->abyMagic[nNo + 1];
+			}
+			s_pChar->abyMagic[nNo] = 0;
+			RenewList ();
+		}
+		break;
+
+	case IDC_GET:		/* ←取得 */
+		{
+			int nNo;
+			HWND hWndTmp;
+			PSTATUSTEMPLATEINFO pInfo;
+
+			hWndTmp = GetDlgItem (s_hWndDlg, IDC_STTMP);
+			nNo = (int)SendMessage (hWndTmp, CB_GETCURSEL, 0, 0);
+			if (nNo < 0) {
+				break;
+			}
+			pInfo = g_aStTmpInfo[nNo];
+			CopyMemory (s_pChar->abyMagic, pInfo->abyMagic, sizeof (pInfo->abyMagic));
+			RenewList ();
+		}
+		break;
+
+	case IDC_PUT:		/* →反映 */
+		{
+			int nNo;
+			HWND hWndTmp;
+			PSTATUSTEMPLATEINFO pInfo;
+
+			hWndTmp = GetDlgItem (s_hWndDlg, IDC_STTMP);
+			nNo = (int)SendMessage (hWndTmp, CB_GETCURSEL, 0, 0);
+			if (nNo < 0) {
+				break;
+			}
+			pInfo = g_aStTmpInfo[nNo];
+			CopyMemory (pInfo->abyMagic, s_pChar->abyMagic, sizeof (pInfo->abyMagic));
+			SendCmdSTTMPLATE ((DWORD)nNo, CMDSTTMPLATETYPE_CHG);
+		}
+		break;
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：RenewList														 */
+/* 内容：リスト更新															 */
+/* 日付：2004/07/15															 */
+/* ========================================================================= */
+static void RenewList(void)
+{
+	/* リストへ登録 */
+	LV_ITEM item;
+	char szTmp[128];
+	int i, nCount;
+	HWND hWndTmp;
+
+	hWndTmp = GetDlgItem (s_hWndDlg, IDC_LIST);
+
+	ZeroMemory (&item, sizeof (item));
+	item.mask = LVIF_TEXT;
+
+	ListView_DeleteAllItems (hWndTmp);
+
+	if (s_pChar == NULL) {
+		SetWindowText (GetDlgItem (s_hWndDlg, IDC_NAME), "");
+		return;
+	}
+
+	nCount = g_aMagicInfo.GetSize ();
+	for (i = 0; i < MAX_USEMAGIC; i ++) {
+		PMAGICINFO pInfo;
+
+		pInfo = g_aMagicInfo[s_pChar->abyMagic[i]];
+		item.iItem = i;
+
+		/* 魔法名 */
+		item.pszText = pInfo->szName;
+		if (s_pChar->abyMagic[i] == 0) {
+			item.pszText = "";
+		}
+		item.iSubItem = 0;
+		ListView_InsertItem (hWndTmp, &item);
+	}
+
+	wsprintf (szTmp, "[%s]の所持魔法：", s_pChar->szName);
+	hWndTmp = GetDlgItem (s_hWndDlg, IDC_NAME);
+	SetWindowText (hWndTmp, szTmp);
+}
+
+/* Copyright(C)URARA-works 2003-2005 */

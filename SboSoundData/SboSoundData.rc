@@ -1,0 +1,383 @@
+//Microsoft Developer Studio generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// 日本語 resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_JPN)
+#ifdef _WIN32
+LANGUAGE LANG_JAPANESE, SUBLANG_DEFAULT
+#pragma code_page(65001)
+#endif //_WIN32
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE MOVEABLE PURE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE MOVEABLE PURE 
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE MOVEABLE PURE 
+BEGIN
+    "\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// WAVE
+//
+
+IDR_WAVE_MSG            WAVE    MOVEABLE PURE   "wave\\talk（話す時）.wav"
+IDR_WAVE_LVUP           WAVE    MOVEABLE PURE   "wave/LVUP.wav"
+IDR_WAVE_ATACK3         WAVE    MOVEABLE PURE   "wave\\puu11（敵の攻撃）.wav"
+IDR_WAVE_ATACK1         WAVE    MOVEABLE PURE   "wave\\pyoro35_c（自分の攻撃）.wav"
+IDR_WAVE_DAMAGE         WAVE    MOVEABLE PURE   "wave/ダメージ.wav"
+IDR_WAVE_WC             WAVE    MOVEABLE PURE   "wave/トイレ流す.wav"
+IDR_WAVE_DOWN           WAVE    MOVEABLE PURE   "wave\\fall03（落下音）.wav"
+IDR_WAVE_ATACK2         WAVE    MOVEABLE PURE   "wave\\metal34_a（会心の一撃？）.wav"
+IDR_WAVE_QUESTION       WAVE    MOVEABLE PURE   "wave\\puu58（確認）.wav"
+IDR_WAVE_OK             WAVE    MOVEABLE PURE   "wave\\pi73（決定音）.wav"
+IDR_WAVE_MAGIC          WAVE    MOVEABLE PURE   "wave\\power34（魔法詠唱）.wav"
+IDR_WAVE_BLOCK          WAVE    MOVEABLE PURE   "wave\\bosu10_a(壁に当たったとき).wav"
+IDR_WAVE_DOOR           WAVE    MOVEABLE PURE   "wave\\open52（扉を開ける）.wav"
+IDR_WAVE_BOX            WAVE    MOVEABLE PURE   "wave\\kachi23（宝箱）.wav"
+IDR_WAVE_MOVE           WAVE    MOVEABLE PURE   "wave\\step03（階段移動）.wav"
+IDR_MIDI_MENU           WAVE    MOVEABLE PURE   "MIDI\\のん太\\menu.mid"
+IDR_MIDI_CLIMAX         WAVE    MOVEABLE PURE   "MIDI\\のん太\\climax.mid"
+IDR_MIDI_PINCH1         WAVE    MOVEABLE PURE   "MIDI\\のん太\\pinch.mid"
+IDR_MIDI_PINCH2         WAVE    MOVEABLE PURE   "MIDI\\のん太\\pinch2.mid"
+IDR_MIDI_FIELD1         WAVE    MOVEABLE PURE   "MIDI\\のん太\\field1.mid"
+IDR_MIDI_FIELD2         WAVE    MOVEABLE PURE   "MIDI\\のん太\\field2.mid"
+IDR_MIDI_FIELD3         WAVE    MOVEABLE PURE   "MIDI\\のん太\\field3.mid"
+IDR_MIDI_FIELD4         WAVE    MOVEABLE PURE   "MIDI\\のん太\\field4.mid"
+IDR_MIDI_FIELD5         WAVE    MOVEABLE PURE   "MIDI\\のん太\\field5.mid"
+IDR_MIDI_FIELD6         WAVE    MOVEABLE PURE   "MIDI\\のん太\\field6.mid"
+IDR_MIDI_LASTBATTLE     WAVE    MOVEABLE PURE   "MIDI\\のん太\\lastbt1.mid"
+IDR_MIDI_TOWN1NIGHT     WAVE    MOVEABLE PURE   "MIDI\\のん太\\town1n.mid"
+IDR_MIDI_TOWN1          WAVE    MOVEABLE PURE   "MIDI\\のん太\\town1.mid"
+IDR_MIDI_TOWN2          WAVE    MOVEABLE PURE   "MIDI\\のん太\\town2.mid"
+IDR_MIDI_CHURCH1        WAVE    MOVEABLE PURE   "MIDI\\のん太\\church1.mid"
+IDR_MIDI_CHURCH2        WAVE    MOVEABLE PURE   "MIDI\\のん太\\church2.mid"
+IDR_MIDI_SHRINE         WAVE    MOVEABLE PURE   "MIDI\\のん太\\shrine.mid"
+IDR_MIDI_MOUNTAIN       WAVE    MOVEABLE PURE   "MIDI\\のん太\\mount.mid"
+IDR_MIDI_CASTLE1NIGHT   WAVE    MOVEABLE PURE   "MIDI\\のん太\\castle1n.mid"
+IDR_MIDI_CASTLE1        WAVE    MOVEABLE PURE   "MIDI\\のん太\\castle1.mid"
+IDR_MIDI_CASTLE2        WAVE    MOVEABLE PURE   "MIDI\\のん太\\castle2.mid"
+IDR_MIDI_CASTLE3        WAVE    MOVEABLE PURE   "MIDI\\のん太\\castle3.mid"
+IDR_MIDI_SANCT          WAVE    MOVEABLE PURE   "MIDI\\のん太\\sanct.mid"
+IDR_MIDI_VILLAGE        WAVE    MOVEABLE PURE   "MIDI\\のん太\\village1.mid"
+IDR_MIDI_BOSS1          WAVE    MOVEABLE PURE   "MIDI\\のん太\\boss.mid"
+IDR_MIDI_BOSS2          WAVE    MOVEABLE PURE   "MIDI\\のん太\\boss2.mid"
+IDR_MIDI_MEMORY         WAVE    MOVEABLE PURE   "MIDI\\のん太\\memory.mid"
+IDR_MIDI_TOWER1         WAVE    MOVEABLE PURE   "MIDI\\のん太\\tower1.mid"
+IDR_MIDI_TOWER2         WAVE    MOVEABLE PURE   "MIDI\\のん太\\tower2.mid"
+IDR_MIDI_TOWER3         WAVE    MOVEABLE PURE   "MIDI\\のん太\\tower3.mid"
+IDR_MIDI_MISSION        WAVE    MOVEABLE PURE   "MIDI\\のん太\\mission.mid"
+IDR_MIDI_BATTLE1        WAVE    MOVEABLE PURE   "MIDI\\のん太\\battle1.mid"
+IDR_MIDI_CLOCK          WAVE    MOVEABLE PURE   "MIDI\\kuni&kyoko\\clock.mid"
+IDR_MIDI_HALF           WAVE    MOVEABLE PURE   "MIDI\\kuni&kyoko\\half.mid"
+IDR_MIDI_MBOX007        WAVE    MOVEABLE PURE   "MIDI\\kuni&kyoko\\mbox007.mid"
+IDR_MIDI_NEKO           WAVE    MOVEABLE PURE   "MIDI\\kuni&kyoko\\neko.mid"
+IDR_MIDI_OPENING        WAVE    MOVEABLE PURE   "MIDI\\kuni&kyoko\\opening.mid"
+IDR_MIDI_ORGANEXACISE   WAVE    MOVEABLE PURE   "MIDI\\kuni&kyoko\\organexacise.mid"
+IDR_MIDI_TIRUTOKI       WAVE    MOVEABLE PURE   "MIDI\\kuni&kyoko\\tirutoki.mid"
+IDR_MIDI_TOMADOI        WAVE    MOVEABLE PURE   "MIDI\\kuni&kyoko\\tomadoi.mid"
+IDR_WAVE_BARD           WAVE    MOVEABLE PURE   "wave\\bard.wav"
+IDR_WAVE_CURE           WAVE    MOVEABLE PURE   "wave\\cure.wav"
+IDR_WAVE_FAIL           WAVE    MOVEABLE PURE   "wave\\fail.wav"
+IDR_WAVE_HEE            WAVE    MOVEABLE PURE   "wave\\へぇ.wav"
+IDR_WAVE_SIREN          WAVE    MOVEABLE PURE   "wave\\サイレン.wav"
+IDR_WAVE_PINPON         WAVE    MOVEABLE PURE   "wave\\ピンポンパンポーン.wav"
+IDR_WAVE_WHISTLE        WAVE    MOVEABLE PURE   "wave\\ホイッスル.wav"
+IDR_WAVE_VOICE          WAVE    MOVEABLE PURE   "wave\\歓声.wav"
+IDR_WAVE_GU             WAVE    MOVEABLE PURE   "wave\\(じゃんけん)ぐー.wav"
+IDR_WAVE_CHOKI          WAVE    MOVEABLE PURE   "wave\\(じゃんけん)ちょき.wav"
+IDR_WAVE_PA             WAVE    MOVEABLE PURE   "wave\\(じゃんけん)ぱー.wav"
+IDR_WAVE_RURA           WAVE    MOVEABLE PURE   "wave\\puu81（ルーラの音）.wav"
+IDR_MIDI_MBOX001        WAVE    MOVEABLE PURE   "MIDI\\kuni&kyoko\\mbox001.mid"
+IDR_MIDI_CREAM          WAVE    MOVEABLE PURE   "MIDI\\kuni&kyoko\\cream.mid"
+IDR_MIDI_NATUNO         WAVE    MOVEABLE PURE   "MIDI\\kuni&kyoko\\natunoyomaturi.mid"
+IDR_WAVE_HAKUSYU        WAVE    MOVEABLE PURE   "wave\\拍手.wav"
+IDR_WAVE_CONFIRM        WAVE    MOVEABLE PURE   "wave\\puu58（確認）.wav"
+IDR_MIDI_FOREST         WAVE    MOVEABLE PURE   "MIDI\\のん太\\forest.mid"
+IDR_WAVE_BOM25          WAVE    MOVEABLE PURE   "wave\\bom25.wav"
+IDR_WAVE_BOM28_A        WAVE    MOVEABLE PURE   "wave\\bom28_a.wav"
+IDR_WAVE_GUN08          WAVE    MOVEABLE PURE   "wave\\gun08.wav"
+IDR_WAVE_GUN16          WAVE    MOVEABLE PURE   "wave\\gun16.wav"
+IDR_WAVE_BURST00        WAVE    MOVEABLE PURE   "wave\\burst00.wav"
+IDR_WAVE_CLOSE01        WAVE    MOVEABLE PURE   "wave\\close01.wav"
+IDR_WAVE_VOICE011       WAVE    MOVEABLE PURE   "wave\\voice011.wav"
+IDR_WAVE_POWER01        WAVE    MOVEABLE PURE   "wave\\power01.wav"
+IDR_WAVE_POWER01_B      WAVE    MOVEABLE PURE   "wave\\power01_b.wav"
+IDR_WAVE_PYORO33        WAVE    MOVEABLE PURE   "wave\\pyoro33.wav"
+IDR_WAVE_PYORO57_B      WAVE    MOVEABLE PURE   "wave\\pyoro57_b.wav"
+IDR_WAVE_POWER26        WAVE    MOVEABLE PURE   "wave\\power26.wav"
+IDR_WAVE_POWER32        WAVE    MOVEABLE PURE   "wave\\power32.wav"
+IDR_WAVE_GUN10          WAVE    MOVEABLE PURE   "wave\\gun10.wav"
+IDR_WAVE_GORO02         WAVE    MOVEABLE PURE   "wave\\goro02.wav"
+IDR_WAVE_GORO03         WAVE    MOVEABLE PURE   "wave\\goro03.wav"
+IDR_WAVE_GUN11          WAVE    MOVEABLE PURE   "wave\\gun11.wav"
+IDR_WAVE_POWER10        WAVE    MOVEABLE PURE   "wave\\power10.wav"
+IDR_WAVE_FREEZE02       WAVE    MOVEABLE PURE   "wave\\freeze02.wav"
+IDR_WAVE_FREEZE00       WAVE    MOVEABLE PURE   "wave\\freeze00.wav"
+IDR_WAVE_PYORO08        WAVE    MOVEABLE PURE   "wave\\byoro08.wav"
+IDR_WAVE_HIT12          WAVE    MOVEABLE PURE   "wave\\hit12.wav"
+IDR_WAVE_POWER17        WAVE    MOVEABLE PURE   "wave\\power17.wav"
+IDR_WAVE_POWER14        WAVE    MOVEABLE PURE   "wave\\power14.wav"
+IDR_WAVE_PUU23          WAVE    MOVEABLE PURE   "wave\\puu23.wav"
+IDR_WAVE_SMOKE03        WAVE    MOVEABLE PURE   "wave\\smoke03.wav"
+IDR_WAVE_FREEZE01       WAVE    MOVEABLE PURE   "wave\\freeze01.wav"
+IDR_WAVE_FREEZE03       WAVE    MOVEABLE PURE   "wave\\freeze03.wav"
+IDR_WAVE_POWER07        WAVE    MOVEABLE PURE   "wave\\power07.wav"
+IDR_WAVE_POWER16        WAVE    MOVEABLE PURE   "wave\\power16.wav"
+IDR_WAVE_PUU27          WAVE    MOVEABLE PURE   "wave\\puu27.wav"
+IDR_WAVE_MECHA09        WAVE    MOVEABLE PURE   "wave\\mecha09.wav"
+IDR_WAVE_MECHA09_R      WAVE    MOVEABLE PURE   "wave\\mecha09_r.wav"
+IDR_WAVE_POWER23        WAVE    MOVEABLE PURE   "wave\\power23.wav"
+IDR_WAVE_PUU38          WAVE    MOVEABLE PURE   "wave\\puu38.wav"
+IDR_WAVE_BOM17_A        WAVE    MOVEABLE PURE   "wave\\bom17_a.wav"
+IDR_WAVE_DON07          WAVE    MOVEABLE PURE   "wave\\don07.wav"
+IDR_WAVE_GUN14_C        WAVE    MOVEABLE PURE   "wave\\gun14_c.wav"
+IDR_WAVE_BOM14          WAVE    MOVEABLE PURE   "wave\\bom14.wav"
+IDR_WAVE_GUN13_B        WAVE    MOVEABLE PURE   "wave\\gun13_b.wav"
+IDR_WAVE_BOM26_A        WAVE    MOVEABLE PURE   "wave\\bom26_a.wav"
+IDR_WAVE_BOM26_C        WAVE    MOVEABLE PURE   "wave\\bom26_c.wav"
+IDR_WAVE_PUSH40         WAVE    MOVEABLE PURE   "wave\\push40.wav"
+IDR_WAVE_PUU06          WAVE    MOVEABLE PURE   "wave\\puu06.wav"
+IDR_WAVE_PUU09          WAVE    MOVEABLE PURE   "wave\\puu09.wav"
+IDR_WAVE_PUU10          WAVE    MOVEABLE PURE   "wave\\puu10.wav"
+IDR_WAVE_DON00          WAVE    MOVEABLE PURE   "wave\\don00.wav"
+IDR_WAVE_DRAG02         WAVE    MOVEABLE PURE   "wave\\drag02.wav"
+IDR_WAVE_HIT_S02        WAVE    MOVEABLE PURE   "wave\\hit_s02.wav"
+IDR_WAVE_HIT17          WAVE    MOVEABLE PURE   "wave\\hit17.wav"
+IDR_WAVE_HIT65          WAVE    MOVEABLE PURE   "wave\\hit65.wav"
+IDR_WAVE_HIT67          WAVE    MOVEABLE PURE   "wave\\hit67.wav"
+IDR_WAVE_HIT_S01_B      WAVE    MOVEABLE PURE   "wave\\hit_s01_b.wav"
+IDR_WAVE_POWER22        WAVE    MOVEABLE PURE   "wave\\power22.wav"
+IDR_WAVE_POWER09        WAVE    MOVEABLE PURE   "wave\\power09.wav"
+IDR_WAVE_POWER19        WAVE    MOVEABLE PURE   "wave\\power19.wav"
+IDR_WAVE_POWER33        WAVE    MOVEABLE PURE   "wave\\power33.wav"
+IDR_WAVE_HIT_S06        WAVE    MOVEABLE PURE   "wave\\hit_s06.wav"
+IDR_WAVE_BOS09          WAVE    MOVEABLE PURE   "wave\\bosu09.wav"
+IDR_WAVE_HIT_P02_B      WAVE    MOVEABLE PURE   "wave\\hit_p02_b.wav"
+IDR_WAVE_SWING36_B      WAVE    MOVEABLE PURE   "wave\\swing36_b.wav"
+IDR_WAVE_HIT07          WAVE    MOVEABLE PURE   "wave\\hit07.wav"
+IDR_WAVE_HIT10_B        WAVE    MOVEABLE PURE   "wave\\hit10_b.wav"
+IDR_WAVE_HIT25          WAVE    MOVEABLE PURE   "wave\\hit25.wav"
+IDR_WAVE_HIT26          WAVE    MOVEABLE PURE   "wave\\hit26.wav"
+IDR_WAVE_SHA00          WAVE    MOVEABLE PURE   "wave\\sha00.wav"
+IDR_WAVE_SHA04          WAVE    MOVEABLE PURE   "wave\\sha04.wav"
+IDR_WAVE_FREEZE04       WAVE    MOVEABLE PURE   "wave\\freeze04.wav"
+IDR_WAVE_SWING14        WAVE    MOVEABLE PURE   "wave\\swing14.wav"
+IDR_WAVE_HIT68          WAVE    MOVEABLE PURE   "wave\\hit68.wav"
+IDR_WAVE_HIT70          WAVE    MOVEABLE PURE   "wave\\hit70.wav"
+IDR_WAVE_SEE            WAVE    MOVEABLE PURE   "wave\\波の音.wav"
+IDR_MIDI_BOKYO          WAVE    MOVEABLE PURE   "MIDI\\んじょもーず\\s2_bokyo.mid"
+IDR_MIDI_AIRSHIP1       WAVE    MOVEABLE PURE   "MIDI\\のん太\\airship1.mid"
+IDR_MIDI_MAIN2          WAVE    MOVEABLE PURE   "MIDI\\のん太\\main2.mid"
+IDR_WAVE_ATACKMISS      WAVE    MOVEABLE PURE   "wave\\fm004（ミス）.wav"
+IDR_WAVE_DAMAGE0        WAVE    MOVEABLE PURE   "wave\\bell08（攻撃が利かない）.wav"
+IDR_WAVE_BOMBSET        WAVE    MOVEABLE PURE   "wave\\爆弾設置.wav"
+IDR_WAVE_BOMBBOMBER     WAVE    MOVEABLE PURE   "wave\\爆弾爆発.wav"
+IDR_MIDI_YUKIZATO       WAVE    MOVEABLE PURE   "MIDI\\ジャガーの笛\\yukizato.mid"
+IDR_MIDI_BACATION       WAVE    MOVEABLE PURE   "MIDI\\ジャガーの笛\\bacation.mid"
+IDR_MIDI_BATTLE         WAVE    MOVEABLE PURE   "MIDI\\ジャガーの笛\\battle.mid"
+IDR_MIDI_DANCE          WAVE    MOVEABLE PURE   "MIDI\\ジャガーの笛\\dance.mid"
+IDR_MIDI_DENNEN         WAVE    MOVEABLE PURE   "MIDI\\ジャガーの笛\\dennenn.mid"
+IDR_MIDI_DESTRATION     WAVE    MOVEABLE PURE   "MIDI\\ジャガーの笛\\destration.mid"
+IDR_MIDI_DREAMING       WAVE    MOVEABLE PURE   "MIDI\\ジャガーの笛\\dreaming.mid"
+IDR_MIDI_KAZAN          WAVE    MOVEABLE PURE   "MIDI\\ジャガーの笛\\kazan.mid"
+IDR_MIDI_KOUJOUTITAI    WAVE    MOVEABLE PURE   "MIDI\\ジャガーの笛\\koujoutitai.mid"
+IDR_MIDI_MINAMI         WAVE    MOVEABLE PURE   "MIDI\\ジャガーの笛\\minami.mid"
+IDR_MIDI_OYASUMI03      WAVE    MOVEABLE PURE   "MIDI\\ジャガーの笛\\oyasumi03.mid"
+IDR_MIDI_RYOSHU         WAVE    MOVEABLE PURE   "MIDI\\ジャガーの笛\\ryoshu.mid"
+IDR_MIDI_SINSIN         WAVE    MOVEABLE PURE   "MIDI\\ジャガーの笛\\sinsin.mid"
+IDR_MIDI_SNOW           WAVE    MOVEABLE PURE   "MIDI\\ジャガーの笛\\snow.mid"
+IDR_MIDI_YELLOW         WAVE    MOVEABLE PURE   "MIDI\\ジャガーの笛\\yellow.mid"
+IDR_MIDI_ANSWER         WAVE    MOVEABLE PURE   "MIDI\\ジャガーの笛\\answer.mid"
+IDR_MIDI_NOUSONN        WAVE    MOVEABLE PURE   "MIDI\\ジャガーの笛\\nousonn.mid"
+IDR_WAVE_PUSH51_C       WAVE    MOVEABLE PURE   "wave\\push51_c（キャンセル・戻る）.wav"
+IDR_WAVE_SHOOT15        WAVE    MOVEABLE PURE   "wave\\shoot15（ターゲット指定）.wav"
+IDR_WAVE_CURSOR08       WAVE    MOVEABLE PURE   "wave\\cursor08（コマンド呼び出し）.wav"
+IDR_WAVE_POWER21        WAVE    MOVEABLE PURE   "wave\\power21（爆弾ゲーム用パワーアップ）.wav"
+IDR_WAVE_FM001          WAVE    MOVEABLE PURE   "wave\\fm001(爆弾ゲーム用パワーダウン).wav"
+IDR_WAVE_PI52           WAVE    MOVEABLE PURE   "wave\\pi52(アイテムドロップ音).wav"
+IDR_MIDI_W0053          WAVE    MOVEABLE PURE   "MIDI\\wanna\\w0053.mid"
+IDR_MIDI_W0054          WAVE    MOVEABLE PURE   "MIDI\\wanna\\w0054.mid"
+IDR_MIDI_W0077          WAVE    MOVEABLE PURE   "MIDI\\wanna\\w0077.mid"
+IDR_MIDI_W0035          WAVE    MOVEABLE PURE   "MIDI\\wanna\\w0035.mid"
+IDR_MIDI_W0021          WAVE    MOVEABLE PURE   "MIDI\\wanna\\w0021.mid"
+IDR_MIDI_W0068          WAVE    MOVEABLE PURE   "MIDI\\wanna\\w0068.mid"
+IDR_MIDI_W0102          WAVE    MOVEABLE PURE   "MIDI\\wanna\\w0102.mid"
+IDR_MIDI_W0030          WAVE    MOVEABLE PURE   "MIDI\\wanna\\w0030.mid"
+IDR_MIDI_W0075          WAVE    MOVEABLE PURE   "MIDI\\wanna\\w0075.mid"
+IDR_MIDI_W0016          WAVE    MOVEABLE PURE   "MIDI\\wanna\\w0016.mid"
+IDR_MIDI_W0040          WAVE    MOVEABLE PURE   "MIDI\\wanna\\w0040.mid"
+IDR_MIDI_W0069          WAVE    MOVEABLE PURE   "MIDI\\wanna\\w0069.mid"
+IDR_MIDI_W0071          WAVE    MOVEABLE PURE   "MIDI\\wanna\\w0071.mid"
+IDR_MIDI_W0014          WAVE    MOVEABLE PURE   "MIDI\\wanna\\w0014.mid"
+IDR_MIDI_W0113          WAVE    MOVEABLE PURE   "MIDI\\wanna\\w0113.mid"
+IDR_MIDI_W0081          WAVE    MOVEABLE PURE   "MIDI\\wanna\\w0081.mid"
+IDR_WAVE_CAT            WAVE    MOVEABLE PURE   "wave\\猫の鳴き声.wav"
+IDR_MIDI_W0020          WAVE    MOVEABLE PURE   "MIDI\\wanna\\w0020.mid"
+IDR_MIDI_W0029          WAVE    MOVEABLE PURE   "MIDI\\wanna\\w0029.mid"
+IDR_MIDI_W0039          WAVE    MOVEABLE PURE   "MIDI\\wanna\\w0039.mid"
+IDR_MIDI_W0041          WAVE    MOVEABLE PURE   "MIDI\\wanna\\w0041.mid"
+IDR_MIDI_W0057          WAVE    MOVEABLE PURE   "MIDI\\wanna\\w0057.mid"
+IDR_MIDI_W0067          WAVE    MOVEABLE PURE   "MIDI\\wanna\\w0067.mid"
+IDR_MIDI_W0120          WAVE    MOVEABLE PURE   "MIDI\\wanna\\w0120.mid"
+IDR_MIDI_W0123          WAVE    MOVEABLE PURE   "MIDI\\wanna\\w0123.mid"
+IDR_MIDI_W0125          WAVE    MOVEABLE PURE   "MIDI\\wanna\\w0125.mid"
+IDR_MIDI_W0130          WAVE    MOVEABLE PURE   "MIDI\\wanna\\w0130.mid"
+IDR_MIDI_W0136          WAVE    MOVEABLE PURE   "MIDI\\wanna\\w0136.mid"
+IDR_MIDI_WJ013          WAVE    MOVEABLE PURE   "MIDI\\wanna\\wj013.mid"
+IDR_MIDI_WJ014          WAVE    MOVEABLE PURE   "MIDI\\wanna\\wj014.mid"
+IDR_MIDI_WS003          WAVE    MOVEABLE PURE   "MIDI\\wanna\\ws003.mid"
+IDR_MIDI_W0043          WAVE    MOVEABLE PURE   "MIDI\\wanna\\w0043.mid"
+IDR_WAVE_CRASH18_C      WAVE    MOVEABLE PURE   "wave\\crash18_c.wav"
+IDR_WAVE_DON12          WAVE    MOVEABLE PURE   "wave\\don12.wav"
+IDR_WAVE_FM003          WAVE    MOVEABLE PURE   "wave\\fm003.wav"
+IDR_WAVE_LIP01          WAVE    MOVEABLE PURE   "wave\\lip01.wav"
+IDR_WAVE_SWING32        WAVE    MOVEABLE PURE   "wave\\swing32.wav"
+IDR_WAVE_KANE           WAVE    MOVEABLE PURE   "wave\\除夜の鐘用.wav"
+IDR_MIDI_KIRAKIRA       WAVE    MOVEABLE PURE   "MIDI\\kuni&kyoko\\kirakiraboshi.mid"
+IDR_MIDI_SILENT         WAVE    MOVEABLE PURE   "MIDI\\kuni&kyoko\\silent.mid"
+IDR_MIDI_TIRUFUSE       WAVE    MOVEABLE PURE   "MIDI\\kuni&kyoko\\tirufuse.mid"
+IDR_MIDI_HAPPYBIRTHDAY  WAVE    MOVEABLE PURE   "MIDI\\COSMOS\\happybirthday_s.mid"
+IDR_MIDI_JINGLEBELL     WAVE    MOVEABLE PURE   "MIDI\\COSMOS\\jinglebells_s.mid"
+IDR_MIDI_SHOGATU        WAVE    MOVEABLE PURE   "MIDI\\COSMOS\\mini-11f_s.mid"
+IDR_MIDI_S_NIGHT_S      WAVE    MOVEABLE PURE   "MIDI\\COSMOS\\s-night_s.mid"
+IDR_MIDI_JANGURU        WAVE    MOVEABLE PURE   "MIDI\\ジャガーの笛\\janguru.mid"
+IDR_WAVE_LVUP2          WAVE    DISCARDABLE     "wave\\lvup2.wav"
+IDR_MIDI_OMOIDE         WAVE    DISCARDABLE     "MIDI\\omoide.mid"
+IDR_MIDI_W0045          WAVE    DISCARDABLE     "MIDI\\w0045.mid"
+IDR_MIDI_W0064          WAVE    DISCARDABLE     "MIDI\\w0064.mid"
+IDR_MIDI_W0132          WAVE    DISCARDABLE     "MIDI\\w0132.mid"
+IDR_WAVE_VOICE012       WAVE    DISCARDABLE     "wave\\voice012.wav"
+IDR_WAVE_VOICE028       WAVE    DISCARDABLE     "wave\\voice028.wav"
+IDR_WAVE_BYORO02A       WAVE    DISCARDABLE     "wave\\byoro02a.wav"
+IDR_WAVE_BYORO06A       WAVE    DISCARDABLE     "wave\\byoro06a.wav"
+IDR_WAVE_PUQU1          WAVE    DISCARDABLE     "wave\\プクゥのような.wav"
+IDR_WAVE_PUQU2          WAVE    DISCARDABLE     "wave\\プクゥのようなもの.wav"
+IDR_WAVE_ONPA           WAVE    DISCARDABLE     "wave\\音波.wav"
+IDR_WAVE_KIDAN          WAVE    DISCARDABLE     "wave\\気弾.wav"
+IDR_WAVE_KIDANHIT       WAVE    DISCARDABLE     "wave\\気弾ヒット.wav"
+IDR_WAVE_LASER          WAVE    DISCARDABLE     "wave\\聖なる光のレーザー.wav"
+IDR_WAVE_TUTI1          WAVE    DISCARDABLE     "wave\\土属性（弱.wav"
+IDR_WAVE_TUTI2          WAVE    DISCARDABLE     "wave\\土属性（大.wav"
+IDR_WAVE_TUTIHIT        WAVE    DISCARDABLE     "wave\\土属性ヒット.wav"
+IDR_WAVE_ONPAATACK      WAVE    DISCARDABLE     "wave\\音波攻撃.wav"
+IDR_WAVE_EFFECT142      WAVE    DISCARDABLE     "wave\\$142.wav"
+IDR_WAVE_GUN24          WAVE    DISCARDABLE     "wave\\gun24.wav"
+IDR_WAVE_LVUP_SOUND     WAVE    DISCARDABLE     "wave\\lvup_sound.wav"
+IDR_WAVE_SANRENGEKI     WAVE    DISCARDABLE     "wave\\三連撃.wav"
+IDR_WAVE_SANRENZAN      WAVE    DISCARDABLE     "wave\\三連斬.wav"
+IDR_WAVE_JUJITUKI       WAVE    DISCARDABLE     "wave\\十字突き.wav"
+IDR_WAVE_JUJITUKI2      WAVE    DISCARDABLE     "wave\\十字突き２.wav"
+IDR_WAVE_SYOKAN         WAVE    DISCARDABLE     "wave\\召喚.wav"
+IDR_WAVE_DAIBAKUHATU    WAVE    DISCARDABLE     "wave\\大爆発.wav"
+IDR_WAVE_TRAP           WAVE    DISCARDABLE     "wave\\罠設置.wav"
+IDR_WAVE_BARA           WAVE    DISCARDABLE     "wave\\薔薇の舞.wav"
+IDR_WAVE_TUTIDAI        WAVE    DISCARDABLE     "wave\\土大.wav"
+IDR_MIDI_WO002          WAVE    DISCARDABLE     "MIDI\\wanna\\wo002.mid"
+IDR_MIDI_WO006          WAVE    DISCARDABLE     "MIDI\\wanna\\wo006.mid"
+IDR_MIDI_W0009          WAVE    DISCARDABLE     "MIDI\\wanna\\w0009.mid"
+IDR_MIDI_W0100          WAVE    DISCARDABLE     "MIDI\\wanna\\w0100.mid"
+IDR_MIDI_W0101          WAVE    DISCARDABLE     "MIDI\\wanna\\w0101.mid"
+
+#ifndef _MAC
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 0,0,3,4
+ PRODUCTVERSION 0,0,3,4
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x40004L
+ FILETYPE 0x2L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "041104b0"
+        BEGIN
+            VALUE "Comments", "\0"
+            VALUE "CompanyName", "URARA-works\0"
+            VALUE "FileDescription", "SboSoundData\0"
+            VALUE "FileVersion", "0, 0, 3, 4\0"
+            VALUE "InternalName", "SboSoundData\0"
+            VALUE "LegalCopyright", "Copyright(C)URARA-works 2003-2007\0"
+            VALUE "LegalTrademarks", "\0"
+            VALUE "OriginalFilename", "SboSoundData.dll\0"
+            VALUE "PrivateBuild", "\0"
+            VALUE "ProductName", "スクラップブックオンライン 音楽・効果音データ\0"
+            VALUE "ProductVersion", "0, 0, 3, 4\0"
+            VALUE "SpecialBuild", "\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x411, 1200
+    END
+END
+
+#endif    // !_MAC
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// String Table
+//
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDS_DLLVER              "34"
+END
+
+#endif    // 日本語 resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

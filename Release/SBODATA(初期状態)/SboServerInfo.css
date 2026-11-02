@@ -1,0 +1,66 @@
+HTML {
+	FONT-SIZE: 90%; COLOR: #fff; FONT-FAMILY: Arial, "‚l‚r ‚oƒSƒVƒbƒN", sans-serif; BACKGROUND-COLOR: #333
+}
+BODY {
+	BORDER-RIGHT: #666 1px solid; PADDING-RIGHT: 1em; BORDER-TOP: #666 1px solid; PADDING-LEFT: 1em; PADDING-BOTTOM: 1em; MARGIN: 1em auto; BORDER-LEFT: #666 1px solid; WIDTH: 40em; COLOR: #fff; PADDING-TOP: 1em; BORDER-BOTTOM: #666 1px solid; BACKGROUND-COLOR: #000; moz-border-radius: 1em; border-radius: 1em
+}
+H1 {
+	PADDING-RIGHT: 1ex; PADDING-LEFT: 1ex; FONT-SIZE: 200%; PADDING-BOTTOM: 1ex; MARGIN: 1ex 0px; PADDING-TOP: 1ex; BORDER-BOTTOM: #999 1px dashed
+}
+H2 {
+	PADDING-RIGHT: 1ex; BORDER-TOP: #333 1em solid; PADDING-LEFT: 1ex; FONT-SIZE: 150%; PADDING-BOTTOM: 1ex; MARGIN: 2em 0px 1em; PADDING-TOP: 2em
+}
+EM {
+	FONT-WEIGHT: bold; FONT-SIZE: 100%; COLOR: #9cf; FONT-STYLE: normal; FONT-FAMILY: Tahoma, sans-serif
+}
+STRONG {
+	FONT-WEIGHT: bold; FONT-SIZE: 120%; MARGIN: 0px 0.5ex; COLOR: #f90; FONT-STYLE: normal; FONT-FAMILY: Tahoma, sans-serif
+}
+P {
+	PADDING-RIGHT: 0px; PADDING-LEFT: 0px; PADDING-BOTTOM: 0px; MARGIN: 0.8em 0px; PADDING-TOP: 0px
+}
+TABLE {
+	PADDING-RIGHT: 0px; BORDER-TOP: #666 1px solid; PADDING-LEFT: 0px; PADDING-BOTTOM: 0px; MARGIN: 2em 1ex; BORDER-LEFT: #666 1px solid; COLOR: #fff; PADDING-TOP: 0px; BACKGROUND-COLOR: #000
+}
+TR {
+	
+}
+TH {
+	PADDING-RIGHT: 1ex; PADDING-LEFT: 1ex; FONT-WEIGHT: normal; PADDING-BOTTOM: 0px; MARGIN: 0px; PADDING-TOP: 0px
+}
+TD {
+	PADDING-RIGHT: 1ex; PADDING-LEFT: 1ex; FONT-WEIGHT: normal; PADDING-BOTTOM: 0px; MARGIN: 0px; PADDING-TOP: 0px
+}
+TH {
+	BORDER-RIGHT: #333 1px solid; FONT-SIZE: 80%; COLOR: #ccc; BORDER-BOTTOM: #666 1px dashed; FONT-FAMILY: monospace; BACKGROUND-COLOR: #111
+}
+TD {
+	FONT-SIZE: 120%; BORDER-BOTTOM: #333 1px dashed; TEXT-ALIGN: right
+}
+.graph {
+	TEXT-ALIGN: left
+}
+DL {
+	PADDING-RIGHT: 0px; PADDING-LEFT: 0px; PADDING-BOTTOM: 0px; MARGIN: 1ex 0px; PADDING-TOP: 0px
+}
+A:link {
+	COLOR: #00aaff
+}
+A:visited {
+	COLOR: #f000f0
+}
+A:active {
+	COLOR: #0000ff
+}
+#linker {
+	FONT-SIZE: 90%
+}
+#copyright {
+	FONT-SIZE: smaller; MARGIN: 2em 1ex 1ex; TEXT-ALIGN: center
+}
+#data {
+	TEXT-ALIGN: right
+}
+#ServerInfo {
+	BORDER-RIGHT: #999 1px inset; PADDING-RIGHT: 1ex; BORDER-TOP: #999 1px inset; PADDING-LEFT: 1ex; PADDING-BOTTOM: 1ex; MARGIN: 1ex; BORDER-LEFT: #999 1px inset; COLOR: #fff; PADDING-TOP: 1ex; BORDER-BOTTOM: #999 1px inset; BACKGROUND-COLOR: #333
+}

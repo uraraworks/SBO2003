@@ -1,0 +1,18 @@
+{
+	// サーバー（Node.js 版）をデバッガ付きで起動する
+	// C++ のソースにブレークポイントを置くには「WebAssembly DWARF Debugging」拡張が必要
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"name": "サーバー（Node.js 版）",
+			"type": "node",
+			"request": "launch",
+			"program": "${workspaceFolder}/out/server/SboSvr.js",
+			"args": ["--headless", "--data", "${workspaceFolder}/out/server-data"],
+			"cwd": "${workspaceFolder}",
+			"preLaunchTask": "サーバー: デバッグ準備",
+			"console": "integratedTerminal",
+			"skipFiles": ["<node_internals>/**"]
+		}
+	]
+}

@@ -1,0 +1,12 @@
+{
+  "name": "sbo2003-websocket-bridge",
+  "version": "1.0.0",
+  "description": "SBO2003 サーバー(TCP) と ブラウザ(WebSocket) の中継",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.0.0"
+  }
+}

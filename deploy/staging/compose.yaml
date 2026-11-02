@@ -1,0 +1,46 @@
+# Sbo2003 ステージング（SBOP2 のステージングの Caddy に相乗りする）
+#
+#   cd deploy/staging && cp staging.env.example staging.env（値を埋める）
+#   ./deploy.sh
+#
+# 80/443 は SBOP2 の Caddy（sbop2-staging-caddy-1）が持っているので、ここではポートを公開しない。
+# Caddy とは共有ネットワーク staging-shared でつながり、Caddy からは sbo2003-staging:8080 で届く。
+# サイト定義（sbo2003.caddy）は deploy.sh が ~/caddy-sites/ に置いて Caddy に読み直させる。
+name: sbo2003-staging
+
+services:
+  sbosvr:
+    build:
+      context: ../..
+      dockerfile: deploy/staging/Dockerfile
+    image: sbo2003-staging
+    restart: unless-stopped
+    # staging.env の SBO2003_ADMIN_PASSWORD を使う（bcrypt ハッシュの $ を展開させないよう raw で読む）
+    env_file:
+      - path: staging.env
+        format: raw
+    networks:
+      staging-shared:
+        aliases:
+          - sbo2003-staging
+    # データ保存に時間がかかっても強制終了されないよう長めに待つ
+    stop_grace_period: 60s
+    # e2-micro（メモリ 1GB）で SBOP2 ほか複数のプロジェクトと同居するので、使いすぎないよう上限を付ける
+    # （普段は 60MB ほど。空きは 500MB 弱しかないので、余裕を見て 160MB に抑える）
+    mem_limit: 160m
+    # サーバーは誰かつながっている間、元の作りのまま「キャラ処理 1 周ごとに 10ms 休む」で回り、
+    # CPU を 1 コアの 10% ほど使う（誰もいない時は長めに休むので 3〜4% ほど）。
+    # e2-micro の CPU は 2 つ合わせて常時 0.25 コア分しか使えないので、SBOP2 を圧迫しないよう上限を付ける
+    # （0.15 でもログイン・キャラ選択まで普通に動くことを確かめてある）
+    cpus: 0.2
+    volumes:
+      - data:/srv/sbo2003/data
+
+volumes:
+  data:
+
+networks:
+  # SBOP2 のステージングの Caddy と共有するネットワーク（deploy.sh が無ければ作る）
+  staging-shared:
+    external: true
+    name: staging-shared

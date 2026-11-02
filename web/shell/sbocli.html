@@ -1,0 +1,1687 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>スクラップブックオンライン</title>
+<style>
+	:root {
+		--bg: #1d1f24;
+		--fg: #e8e8e8;
+		--sub: #9aa0a6;
+		--panel: rgba(24, 28, 36, 0.94);
+		--border: #3a404a;
+		--accent: #f0b84a;
+		--app-height: 100vh;
+		--pad-h: 168px;
+		--pad-col-w: 136px;
+	}
+	html, body {
+		margin: 0;
+		padding: 0;
+		background: var(--bg);
+		color: var(--fg);
+		font-family: "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+	}
+	#sbo-wrap {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		padding: 16px;
+		gap: 8px;
+	}
+	#sbo-screen {
+		position: relative;
+		line-height: 0;
+		max-width: 100%;
+	}
+	#canvas {
+		display: block;
+		max-width: calc(100vw - 32px);
+		height: auto;
+		image-rendering: pixelated;
+		background: #000;
+		outline: none;
+	}
+	#sbo-status {
+		font-size: 13px;
+		color: var(--sub);
+		min-height: 1.4em;
+	}
+
+	/* ===================================================================
+	   チャット欄（共通）
+	   =================================================================== */
+	.sbo-chat-line {
+		line-height: 1.45;
+		word-break: break-all;
+		white-space: pre-wrap;
+	}
+	.sbo-chat-time {
+		color: #8a919c;
+		margin-right: 0.4em;
+		font-size: 0.9em;
+	}
+	.sbo-chat-input {
+		flex: 1;
+		min-width: 0;
+		background: #0f1217;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		color: var(--fg);
+		font: 14px/1.2 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		padding: 6px 8px;
+		outline: none;
+	}
+	.sbo-chat-input:focus {
+		border-color: var(--accent);
+	}
+	.sbo-chat-send {
+		flex: none;
+		background: var(--accent);
+		border: none;
+		border-radius: 6px;
+		color: #1d1f24;
+		font: bold 13px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		padding: 6px 12px;
+		cursor: pointer;
+	}
+
+	/* ---- PC：画面右下のチャットパネル（マップに入ってから出す） ---- */
+	#sbo-chat-panel {
+		display: none;
+		position: fixed;
+		right: 16px;
+		bottom: 16px;
+		width: 360px;
+		max-width: calc(100vw - 32px);
+		z-index: 900;
+		flex-direction: column;
+		font-size: 13px;
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+		border-radius: 10px;
+	}
+	body.sbo-on-map:not(.sbo-pad) #sbo-chat-panel {
+		display: flex;
+	}
+	#sbo-chat-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		background: var(--panel);
+		border: 1px solid var(--border);
+		border-radius: 10px 10px 0 0;
+		padding: 5px 10px;
+		user-select: none;
+	}
+	#sbo-chat-panel.sbo-collapsed #sbo-chat-head {
+		border-radius: 10px;
+	}
+	#sbo-chat-title {
+		color: var(--accent);
+		font-weight: bold;
+		font-size: 12px;
+	}
+	#sbo-chat-fold {
+		background: none;
+		border: none;
+		color: var(--sub);
+		font-size: 13px;
+		cursor: pointer;
+		padding: 0 2px;
+	}
+	#sbo-chat-log {
+		background: rgba(14, 16, 20, 0.92);
+		border: 1px solid var(--border);
+		border-top: none;
+		height: 200px;
+		min-height: 60px;
+		overflow-y: auto;
+		resize: vertical;
+		padding: 6px 8px;
+	}
+	#sbo-chat-row {
+		display: flex;
+		gap: 6px;
+		background: var(--panel);
+		border: 1px solid var(--border);
+		border-top: none;
+		border-radius: 0 0 10px 10px;
+		padding: 6px 8px;
+	}
+	#sbo-chat-panel.sbo-collapsed #sbo-chat-log,
+	#sbo-chat-panel.sbo-collapsed #sbo-chat-row {
+		display: none;
+	}
+
+	/* スマホ用の部品は PC では出さない */
+	#sbo-pad,
+	#sbo-chat-area,
+	#sbo-chat-sheet {
+		display: none;
+	}
+
+	/* ===================================================================
+	   スマホ（タッチ操作の端末）：body.sbo-pad
+	   縦持ち … ゲーム画面 → パッド → チャットログを縦に積む
+	   横持ち … スティック | ゲーム画面 | ボタン の 3 列
+	   =================================================================== */
+	body.sbo-pad {
+		position: fixed;
+		left: 0;
+		top: 0;
+		right: 0;
+		height: var(--app-height);
+		overflow: hidden;
+		overscroll-behavior: none;
+		touch-action: none;
+		-webkit-user-select: none;
+		user-select: none;
+		-webkit-tap-highlight-color: transparent;
+		display: flex;
+		flex-direction: column;
+	}
+	body.sbo-pad #sbo-wrap {
+		flex: none;
+		padding: 0;
+		padding-top: env(safe-area-inset-top);
+		gap: 0;
+	}
+	/* 管理者ウィンドウなどの小窓（Win32 のトップレベルウィンドウ）は、
+	   スマホではゲーム画面が隠れてしまうので出さない */
+	body.sbo-pad #sbo-popups,
+	body.sbo-pad .w32m-drop {
+		display: none !important;
+	}
+	body.sbo-pad #canvas {
+		max-width: none;
+	}
+	body.sbo-pad #sbo-status:empty {
+		display: none;
+	}
+	body.sbo-pad #sbo-status {
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: 40%;
+		text-align: center;
+	}
+	body.sbo-pad #sbo-pad {
+		display: flex;
+		width: 100%;
+		height: var(--pad-h);
+		box-sizing: border-box;
+		justify-content: space-between;
+		align-items: center;
+		padding: 8px calc(18px + env(safe-area-inset-right)) 8px calc(18px + env(safe-area-inset-left));
+		background: rgba(16, 18, 22, 0.96);
+		border-top: 1px solid var(--border);
+		border-bottom: 1px solid var(--border);
+		touch-action: none;
+	}
+	/* 縦持ちのチャットログ（パッドの下の残り全部） */
+	body.sbo-pad #sbo-chat-area {
+		display: block;
+		flex: 1 1 auto;
+		min-height: 0;
+		overflow-y: auto;
+		touch-action: pan-y;
+		-webkit-user-select: text;
+		user-select: text;
+		background: rgba(10, 12, 16, 0.9);
+		padding: 8px calc(12px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left));
+		font-size: 13px;
+	}
+
+	@media (orientation: landscape) {
+		body.sbo-pad {
+			flex-direction: row;
+			align-items: center;
+			justify-content: center;
+		}
+		body.sbo-pad #sbo-wrap {
+			display: contents;
+		}
+		body.sbo-pad #sbo-screen {
+			order: 0;
+		}
+		body.sbo-pad #sbo-pad {
+			display: contents;
+		}
+		body.sbo-pad .sbo-stick {
+			order: -1;
+			margin: 0 auto 0 calc(12px + env(safe-area-inset-left));
+		}
+		body.sbo-pad .sbo-buttons {
+			order: 1;
+			grid-template-columns: repeat(2, 54px);
+			margin: 0 calc(12px + env(safe-area-inset-right)) 0 auto;
+		}
+		/* 横持ちはゲーム画面にログが流れるので、ログ欄は出さずシートで読む */
+		body.sbo-pad #sbo-chat-area {
+			display: none;
+		}
+	}
+
+	/* ---- アナログスティック（上下左右の 4 方向） ---- */
+	.sbo-stick {
+		position: relative;
+		flex: none;
+		width: 128px;
+		height: 128px;
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.10);
+		border: 2px solid rgba(255, 255, 255, 0.40);
+		touch-action: none;
+	}
+	.sbo-stick::before,
+	.sbo-stick::after {
+		/* 4 方向の目印 */
+		content: "";
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		width: 70%;
+		height: 2px;
+		margin-left: -35%;
+		margin-top: -1px;
+		background: rgba(255, 255, 255, 0.08);
+		transform: rotate(45deg);
+		pointer-events: none;
+	}
+	.sbo-stick::after {
+		transform: rotate(-45deg);
+	}
+	.sbo-stick-knob {
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		width: 58px;
+		height: 58px;
+		margin: -29px 0 0 -29px;
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.38);
+		border: 2px solid rgba(255, 255, 255, 0.7);
+		box-sizing: border-box;
+		pointer-events: none;
+		transform: translate(0px, 0px);
+	}
+
+	/* ---- ボタン ---- */
+	.sbo-buttons {
+		display: grid;
+		grid-template-columns: repeat(3, 54px);
+		gap: 8px;
+		flex: none;
+	}
+	.sbo-buttons button {
+		width: 54px;
+		height: 50px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 2px;
+		padding: 0;
+		border: 2px solid rgba(255, 255, 255, 0.5);
+		border-radius: 14px;
+		background: rgba(255, 255, 255, 0.22);
+		color: #fff;
+		font: bold 11px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		-webkit-tap-highlight-color: transparent;
+		touch-action: none;
+		-webkit-user-select: none;
+		user-select: none;
+		cursor: pointer;
+	}
+	.sbo-buttons button.sbo-pressed {
+		background: rgba(240, 184, 74, 0.75);
+	}
+	.sbo-buttons button.sbo-main {
+		background: rgba(240, 184, 74, 0.32);
+	}
+	.sbo-buttons button.sbo-main.sbo-pressed {
+		background: rgba(240, 184, 74, 0.85);
+	}
+	.sbo-buttons button:disabled {
+		opacity: 0.35;
+	}
+	.sbo-btn-icon {
+		font-size: 16px;
+		line-height: 1;
+	}
+	.sbo-btn-label {
+		white-space: nowrap;
+		letter-spacing: -0.06em;
+	}
+	.sbo-btn-key {
+		font-size: 8px;
+		font-weight: normal;
+		opacity: 0.55;
+	}
+
+	/* ---- チャット入力用のシート（下からせり上がる） ---- */
+	body.sbo-pad #sbo-chat-sheet {
+		display: flex;
+		flex-direction: column;
+		position: fixed;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		height: 55%;
+		z-index: 1500;
+		box-sizing: border-box;
+		background: rgba(20, 23, 30, 0.98);
+		border-top: 1px solid var(--border);
+		border-radius: 14px 14px 0 0;
+		padding: 10px calc(12px + env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left));
+		transform: translateY(105%);
+		transition: transform 0.22s ease;
+		visibility: hidden;
+	}
+	body.sbo-pad #sbo-chat-sheet.sbo-open {
+		transform: translateY(0);
+		visibility: visible;
+	}
+	#sbo-sheet-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 6px;
+	}
+	#sbo-sheet-title {
+		color: var(--accent);
+		font-weight: bold;
+		font-size: 14px;
+	}
+	#sbo-sheet-close {
+		background: none;
+		border: none;
+		color: var(--sub);
+		font-size: 20px;
+		padding: 0 4px;
+		cursor: pointer;
+	}
+	#sbo-sheet-log {
+		flex: 1;
+		min-height: 0;
+		overflow-y: auto;
+		touch-action: pan-y;
+		-webkit-user-select: text;
+		user-select: text;
+		font-size: 13px;
+		padding: 2px;
+	}
+	#sbo-sheet-row {
+		display: flex;
+		gap: 8px;
+		padding-top: 8px;
+		border-top: 1px solid var(--border);
+	}
+	/* iOS は 16px 未満の入力欄にフォーカスすると画面を拡大するので 16px にする */
+	#sbo-sheet-input {
+		font-size: 16px;
+		padding: 8px 10px;
+	}
+	#sbo-sheet-send {
+		font-size: 14px;
+		padding: 8px 14px;
+	}
+	/* ===================================================================
+	   ボタンでログイン・アカウント復旧（ブラウザ版のアカウント関係）
+	   =================================================================== */
+	#sbo-quick {
+		display: none;
+		position: absolute;
+		left: 0; top: 0; right: 0; bottom: 0;
+		align-items: center;
+		justify-content: center;
+		background: rgba(10, 12, 16, 0.72);
+		line-height: 1.4;
+		z-index: 50;
+	}
+	#sbo-quick.sbo-show {
+		display: flex;
+	}
+	.sbo-card {
+		background: var(--panel);
+		border: 1px solid var(--border);
+		border-radius: 12px;
+		box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+		padding: 18px 20px;
+		color: var(--fg);
+		font-size: 14px;
+		max-width: calc(100% - 32px);
+		box-sizing: border-box;
+	}
+	#sbo-quick .sbo-card {
+		display: none;
+		text-align: center;
+		width: 320px;
+	}
+	#sbo-quick.sbo-back #sbo-quick-back,
+	#sbo-quick.sbo-new #sbo-quick-new {
+		display: block;
+	}
+	.sbo-quick-note {
+		margin: 8px 0 4px;
+		color: var(--sub);
+		font-size: 12px;
+		line-height: 1.5;
+	}
+	.sbo-card h2 {
+		margin: 0 0 10px;
+		font-size: 16px;
+		color: var(--accent);
+	}
+	.sbo-btn {
+		display: block;
+		width: 100%;
+		box-sizing: border-box;
+		background: var(--accent);
+		color: #1d1f24;
+		border: none;
+		border-radius: 8px;
+		font: bold 16px/1.3 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		padding: 12px;
+		cursor: pointer;
+		word-break: break-all;
+	}
+	.sbo-btn:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+	.sbo-btn-sub {
+		background: transparent;
+		color: var(--fg);
+		border: 1px solid var(--border);
+		font-size: 13px;
+		font-weight: normal;
+		padding: 8px;
+		margin-top: 8px;
+	}
+	.sbo-link {
+		background: none;
+		border: none;
+		color: var(--sub);
+		font: 12px/1.4 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		text-decoration: underline;
+		cursor: pointer;
+		padding: 4px;
+		margin-top: 6px;
+	}
+	#sbo-forgot {
+		display: none;
+		font-size: 13px;
+	}
+	#sbo-forgot.sbo-show {
+		display: block;
+	}
+	#sbo-recover {
+		display: none;
+		position: fixed;
+		left: 0; top: 0; right: 0; bottom: 0;
+		z-index: 1000;
+		align-items: center;
+		justify-content: center;
+		background: rgba(0, 0, 0, 0.6);
+		overflow-y: auto;
+		padding: 16px;
+		box-sizing: border-box;
+	}
+	#sbo-recover.sbo-show {
+		display: flex;
+	}
+	#sbo-recover .sbo-card {
+		width: 400px;
+		margin: auto;
+	}
+	#sbo-recover p {
+		margin: 0 0 10px;
+		line-height: 1.6;
+	}
+	#sbo-recover label {
+		display: block;
+		margin: 10px 0 4px;
+		font-size: 13px;
+	}
+	#sbo-recover .sbo-note {
+		color: var(--sub);
+		font-size: 12px;
+	}
+	#sbo-recover input, #sbo-recover textarea {
+		width: 100%;
+		box-sizing: border-box;
+		background: #0f1217;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		color: var(--fg);
+		font: 16px/1.3 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		padding: 8px;
+		outline: none;
+	}
+	#sbo-recover input:focus, #sbo-recover textarea:focus {
+		border-color: var(--accent);
+	}
+	#sbo-recover .sbo-msg {
+		min-height: 1.4em;
+		margin: 10px 0;
+		color: #ff9b8a;
+		font-size: 13px;
+	}
+	#sbo-recover .sbo-ok {
+		color: #9be39b;
+	}
+	#sbo-recover .sbo-step {
+		display: none;
+	}
+	#sbo-recover .sbo-step.sbo-show {
+		display: block;
+	}
+	.sbo-code {
+		font: bold 22px/1.4 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+		letter-spacing: 1px;
+		text-align: center;
+		background: #0f1217;
+		border: 1px dashed var(--accent);
+		border-radius: 8px;
+		padding: 10px 4px;
+		margin: 8px 0;
+		user-select: all;
+		-webkit-user-select: all;
+		word-break: break-all;
+	}
+	.sbo-row {
+		display: flex;
+		gap: 8px;
+	}
+	.sbo-row .sbo-btn {
+		flex: 1;
+		margin-top: 0;
+	}
+	#sbo-recover label.sbo-check {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin: 12px 0 0;
+		font-size: 14px;
+	}
+	#sbo-recover label.sbo-check input {
+		width: auto;
+	}
+</style>
+</head>
+<body>
+<div id="sbo-wrap">
+	<div id="sbo-screen">
+		<canvas id="canvas" tabindex="0" width="480" height="480" oncontextmenu="event.preventDefault()"></canvas>
+		<div id="sbo-overlay" style="position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none;"></div>
+		<!-- ログイン画面のボタン。ID・パスワードの入力欄は「ID・パスワードでログイン」を押した時だけ見せる -->
+		<div id="sbo-quick" data-sbo-ui="1">
+			<!-- この端末で前にログインしていた -->
+			<div class="sbo-card" id="sbo-quick-back">
+				<h2>おかえりなさい！</h2>
+				<button type="button" class="sbo-btn" id="sbo-quick-start">はじめる</button>
+				<button type="button" class="sbo-btn sbo-btn-sub" data-quick-other="1">別のアカウントでログイン</button>
+				<button type="button" class="sbo-link" id="sbo-quick-settings">アカウント設定</button>
+				<button type="button" class="sbo-link" id="sbo-quick-forget">この端末の記憶を消す</button>
+			</div>
+			<!-- はじめての端末 -->
+			<div class="sbo-card" id="sbo-quick-new">
+				<h2>ようこそ！</h2>
+				<button type="button" class="sbo-btn" id="sbo-quick-newstart">すぐにはじめる</button>
+				<p class="sbo-quick-note">アカウントは自動で作ります。次からはこの端末でボタンを押すだけで入れます。</p>
+				<button type="button" class="sbo-btn sbo-btn-sub" data-quick-other="1">ID・パスワードでログイン（前に遊んでいた方）</button>
+				<button type="button" class="sbo-link" id="sbo-quick-redeem">復旧キーをお持ちの方はこちら</button>
+				<button type="button" class="sbo-link" data-quick-recover="1">昔のアカウントを忘れてしまった方はこちら</button>
+			</div>
+		</div>
+	</div>
+	<button type="button" class="sbo-link" id="sbo-forgot" data-sbo-ui="1">昔のアカウントを忘れてしまった方はこちら</button>
+	<!-- 仮想パッド：タッチ操作の端末だけ出す（?pad=1 で PC でも出せる） -->
+	<div id="sbo-pad">
+		<div class="sbo-stick" id="sbo-stick">
+			<div class="sbo-stick-knob" id="sbo-stick-knob"></div>
+		</div>
+		<div class="sbo-buttons">
+			<button type="button" data-vk="90"><span class="sbo-btn-icon">✕</span><span class="sbo-btn-label" style="font-size:10px">キャンセル</span><span class="sbo-btn-key">Z</span></button>
+			<button type="button" data-vk="88" class="sbo-main"><span class="sbo-btn-icon">○</span>決定<span class="sbo-btn-key">X</span></button>
+			<button type="button" data-vk="83">調べる<span class="sbo-btn-key">S</span></button>
+			<button type="button" data-vk="9">表示<span class="sbo-btn-key">Tab</span></button>
+			<button type="button" data-vk="17">戦闘<span class="sbo-btn-key">Ctrl</span></button>
+			<button type="button" id="sbo-chat-open" disabled><span class="sbo-btn-icon">💬</span>チャット</button>
+		</div>
+	</div>
+	<div id="sbo-status">読み込み中...</div>
+</div>
+<!-- スマホ縦持ちのチャットログ -->
+<div id="sbo-chat-area"></div>
+
+<!-- PC のチャットパネル -->
+<div id="sbo-chat-panel">
+	<div id="sbo-chat-head">
+		<span id="sbo-chat-title">メッセージログ</span>
+		<button id="sbo-chat-fold" type="button" title="たたむ">▼</button>
+	</div>
+	<div id="sbo-chat-log"></div>
+	<div id="sbo-chat-row">
+		<input id="sbo-chat-input" class="sbo-chat-input" type="text" data-sbo-chat="1" placeholder="発言を入力して Enter"
+			autocomplete="off" spellcheck="false">
+		<button id="sbo-chat-send" class="sbo-chat-send" type="button">送信</button>
+	</div>
+</div>
+
+<!-- スマホのチャット入力シート -->
+<div id="sbo-chat-sheet">
+	<div id="sbo-sheet-head">
+		<span id="sbo-sheet-title">チャット</span>
+		<button id="sbo-sheet-close" type="button" title="閉じる">✕</button>
+	</div>
+	<div id="sbo-sheet-log"></div>
+	<div id="sbo-sheet-row">
+		<input id="sbo-sheet-input" class="sbo-chat-input" type="text" data-sbo-chat="1" placeholder="発言を入力"
+			enterkeyhint="send" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+		<button id="sbo-sheet-send" class="sbo-chat-send" type="button">送信</button>
+	</div>
+</div>
+
+<!-- アカウント復旧 -->
+<div id="sbo-recover" data-sbo-ui="1">
+	<div class="sbo-card">
+		<div class="sbo-step" data-step="form">
+			<h2>アカウントの復旧</h2>
+			<p>当時のキャラ名と、アカウント名かパスワードの一部を入れてください。両方覚えていればすぐに、片方だけなら管理者が確認してから復旧します。</p>
+			<label for="sbo-rc-name">キャラ名（必須）</label>
+			<input id="sbo-rc-name" type="text" maxlength="20" autocomplete="off" spellcheck="false">
+			<label for="sbo-rc-account">アカウント名</label>
+			<input id="sbo-rc-account" type="text" maxlength="13" autocomplete="off" autocapitalize="off" spellcheck="false">
+			<label for="sbo-rc-part">パスワードの一部 <span class="sbo-note">（続いている 3 文字以上・半分以上）</span></label>
+			<input id="sbo-rc-part" type="text" maxlength="13" autocomplete="off" autocapitalize="off" spellcheck="false">
+			<label for="sbo-rc-message">管理者へのひとこと <span class="sbo-note">（任意。当時の思い出など、本人だと分かること）</span></label>
+			<textarea id="sbo-rc-message" rows="2" maxlength="200"></textarea>
+			<div class="sbo-msg" id="sbo-rc-msg"></div>
+			<button type="button" class="sbo-btn" id="sbo-rc-submit">復旧する</button>
+			<button type="button" class="sbo-btn sbo-btn-sub" data-close="1">閉じる</button>
+		</div>
+		<div class="sbo-step" data-step="pending">
+			<h2>受け付けました</h2>
+			<p>管理者が確認するまで少しお待ちください。承認されると、この端末でボタンを押すだけでログインできるようになります。この画面を閉じても大丈夫です（次に開いた時に結果を確かめます）。</p>
+			<div class="sbo-msg" id="sbo-rc-pending-msg"></div>
+			<button type="button" class="sbo-btn" id="sbo-rc-check">結果を確かめる</button>
+			<button type="button" class="sbo-btn sbo-btn-sub" data-close="1">閉じる</button>
+		</div>
+		<div class="sbo-step" data-step="code">
+			<h2>復旧キーを保存してください</h2>
+			<p>ブラウザのデータが消えた時や、別の端末で遊ぶ時に、このキーを入れるとこのアカウントに戻れます。<br>
+				<span class="sbo-note">なくすと戻れなくなります。他の人には見せないでくださいね。</span></p>
+			<div class="sbo-code" id="sbo-code-text"></div>
+			<div class="sbo-row">
+				<button type="button" class="sbo-btn sbo-btn-sub" id="sbo-code-copy">コピー</button>
+				<button type="button" class="sbo-btn sbo-btn-sub" id="sbo-code-file">ファイルで保存</button>
+				<button type="button" class="sbo-btn sbo-btn-sub" id="sbo-code-share" hidden>共有</button>
+			</div>
+			<div class="sbo-msg sbo-ok" id="sbo-code-msg"></div>
+			<label class="sbo-check"><input type="checkbox" id="sbo-code-saved"> 保存しました</label>
+			<button type="button" class="sbo-btn" data-close="1" id="sbo-code-close" style="margin-top:12px" disabled>ゲームへ戻る</button>
+		</div>
+		<div class="sbo-step" data-step="redeem">
+			<h2>復旧キーで入る</h2>
+			<p>保存しておいた 16 文字の復旧キーを入れてください（ハイフンは無くても大丈夫です）。</p>
+			<input id="sbo-redeem-code" type="text" maxlength="24" autocomplete="off" autocapitalize="characters" spellcheck="false"
+				placeholder="XXXX-XXXX-XXXX-XXXX">
+			<div class="sbo-msg" id="sbo-redeem-msg"></div>
+			<button type="button" class="sbo-btn" id="sbo-redeem-submit">この端末で使う</button>
+			<button type="button" class="sbo-btn sbo-btn-sub" data-close="1">閉じる</button>
+		</div>
+		<div class="sbo-step" data-step="done">
+			<h2 id="sbo-rc-done-title">復旧できました！</h2>
+			<p id="sbo-rc-done-text"></p>
+			<p>パスワードを自分で決めておくと、別の端末からも ID とパスワードで入れます。</p>
+			<label for="sbo-rc-newpass">新しいパスワード <span class="sbo-note">（英数字・記号 4〜13 文字）</span></label>
+			<input id="sbo-rc-newpass" type="password" maxlength="13" autocomplete="new-password">
+			<div class="sbo-msg" id="sbo-rc-done-msg"></div>
+			<button type="button" class="sbo-btn sbo-btn-sub" id="sbo-rc-setpass">パスワードを変える</button>
+			<button type="button" class="sbo-btn sbo-btn-sub" id="sbo-rc-newcode">復旧キーを作り直す</button>
+			<button type="button" class="sbo-btn" data-close="1" style="margin-top:12px">ゲームへ戻る</button>
+		</div>
+	</div>
+</div>
+
+<script src="bgm/sbo_bgm.js"></script>
+<script>
+(function () {
+	var canvas = document.getElementById('canvas');
+	var status = document.getElementById('sbo-status');
+	var params = new URLSearchParams(location.search);
+	var sboReady = false;
+
+	/* タッチ操作が主の端末か（?pad=1 / ?pad=0 で決め打ちできる） */
+	var padParam = params.get('pad');
+	var usePad = padParam === '1' ? true : padParam === '0' ? false :
+		((('ontouchstart' in window) || navigator.maxTouchPoints > 0) &&
+			window.matchMedia('(pointer: coarse)').matches);
+	document.body.classList.toggle('sbo-pad', usePad);
+	if (usePad) {
+		/* iOS は小さい入力欄にフォーカスすると画面を拡大してしまうので、拡大しないようにする */
+		document.querySelector('meta[name="viewport"]').setAttribute('content',
+			'width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover');
+	}
+
+	/* 入力欄にフォーカスがあるか（ソフトキーボードが出ている間は画面の大きさを変えない） */
+	function isTyping() {
+		var a = document.activeElement;
+		return !!(a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA'));
+	}
+
+	/* 拡大率（?scale=2 など。指定が無ければ画面に収まる整数倍） */
+	function fitScale() {
+		var w = canvas.width || 480, h = canvas.height || 480;
+		var cssW;
+		if (usePad) {
+			var vw = window.innerWidth, vh = window.innerHeight;
+			if (window.matchMedia('(orientation: landscape)').matches) {
+				/* 横持ち：左右のパッドの列を除いた中で一番大きく */
+				var padW = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pad-col-w')) || 136;
+				cssW = Math.min(vh * w / h, vw - padW * 2);
+			} else {
+				/* 縦持ち：幅いっぱい。ただしパッドとログ欄（最低 3 行分）が残るように */
+				var padH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pad-h')) || 168;
+				cssW = Math.min(vw, (vh - padH - 72) * w / h);
+			}
+			cssW = Math.max(160, Math.floor(cssW));
+		} else {
+			var s = parseFloat(params.get('scale') || '0');
+			if (!s) {
+				s = Math.max(1, Math.floor(Math.min((window.innerWidth - 32) / w, (window.innerHeight - 64) / h)));
+			}
+			cssW = w * s;
+		}
+		canvas.style.width = cssW + 'px';
+		if (Module['w32UpdateScale']) {
+			Module['w32UpdateScale']();
+		}
+	}
+
+	/* スマホで使える高さ（iOS のアドレスバーやキーボードに合わせる） */
+	function updateAppHeight() {
+		var h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+		document.documentElement.style.setProperty('--app-height', Math.round(h) + 'px');
+	}
+	function onResize() {
+		if (usePad) {
+			updateAppHeight();
+			if (isTyping()) {
+				return;
+			}
+		}
+		fitScale();
+	}
+	window.addEventListener('resize', onResize);
+	window.addEventListener('orientationchange', function () {
+		setTimeout(onResize, 200);
+	});
+	updateAppHeight();
+
+	/* KeyboardEvent → Windows の仮想キーコード */
+	function keyToVk(ev) {
+		switch (ev.code) {
+		case 'ShiftLeft': case 'ShiftRight': return 16;
+		case 'ControlLeft': case 'ControlRight': return 17;
+		case 'AltLeft': case 'AltRight': return 18;
+		case 'Enter': case 'NumpadEnter': return 13;
+		}
+		return ev.keyCode || 0;
+	}
+
+	/* ゲーム画面でブラウザに渡したくないキー */
+	var blockKeys = {8: 1, 9: 1, 13: 1, 27: 1, 32: 1, 33: 1, 34: 1, 35: 1, 36: 1, 37: 1, 38: 1, 39: 1, 40: 1,
+		112: 1, 113: 1, 114: 1, 115: 1, 116: 1, 117: 1, 118: 1, 119: 1, 120: 1, 121: 1, 122: 1, 123: 1};
+
+	/* ゲームにキーを渡さない入力欄（HTML 部品・チャット欄） */
+	function isInput(el) {
+		return el && el.dataset && (el.dataset.w32Id || el.dataset.sboChat ||
+			(el.closest && el.closest('[data-sbo-ui]')));
+	}
+
+	document.addEventListener('keydown', function (ev) {
+		if (isInput(ev.target) || !sboReady) {
+			return;
+		}
+		var vk = keyToVk(ev);
+		if (blockKeys[vk] && !(vk === 122 && !ev.ctrlKey)) {
+			ev.preventDefault();
+		}
+		Module['_W32JsOnKey'](vk, 1, 0);
+	});
+	document.addEventListener('keyup', function (ev) {
+		if (isInput(ev.target) || !sboReady) {
+			return;
+		}
+		var vk = keyToVk(ev);
+		if (blockKeys[vk]) {
+			ev.preventDefault();
+		}
+		Module['_W32JsOnKey'](vk, 0, 0);
+	});
+
+	function mousePos(ev) {
+		var r = canvas.getBoundingClientRect();
+		return [Math.floor((ev.clientX - r.left) * canvas.width / r.width),
+			Math.floor((ev.clientY - r.top) * canvas.height / r.height)];
+	}
+	function onMouse(type) {
+		return function (ev) {
+			if (!sboReady) {
+				return;
+			}
+			var p = mousePos(ev);
+			if (type === 1) {
+				canvas.focus();
+				ev.preventDefault();
+			}
+			Module['_W32JsOnMouse'](type, ev.button || 0, p[0], p[1]);
+		};
+	}
+	canvas.addEventListener('mousemove', onMouse(0));
+	canvas.addEventListener('mousedown', onMouse(1));
+	canvas.addEventListener('mouseup', onMouse(2));
+	canvas.addEventListener('dblclick', onMouse(3));
+
+	window.addEventListener('blur', function () {
+		if (sboReady) {
+			Module['_W32JsOnActivate'](0);
+		}
+	});
+	window.addEventListener('focus', function () {
+		if (sboReady) {
+			Module['_W32JsOnActivate'](1);
+		}
+	});
+
+	/* ===================================================================
+	   仮想パッド
+	   =================================================================== */
+	/* ゲームはキーの状態を一定間隔で見に行くので、短いタップでも取りこぼさないよう
+	   押してから最低これだけは押したままにする */
+	var PAD_MIN_HOLD_MS = 150;
+	var padKeyDownAt = {};
+	var padKeyUpTimer = {};
+
+	function padKey(vk, down) {
+		if (!sboReady) {
+			return;
+		}
+		if (down) {
+			if (padKeyUpTimer[vk]) {
+				clearTimeout(padKeyUpTimer[vk]);
+				padKeyUpTimer[vk] = 0;
+			}
+			padKeyDownAt[vk] = Date.now();
+			Module['_W32JsOnKey'](vk, 1, 0);
+			return;
+		}
+		var wait = PAD_MIN_HOLD_MS - (Date.now() - (padKeyDownAt[vk] || 0));
+		if (wait > 0) {
+			padKeyUpTimer[vk] = setTimeout(function () {
+				padKeyUpTimer[vk] = 0;
+				Module['_W32JsOnKey'](vk, 0, 0);
+			}, wait);
+		} else {
+			Module['_W32JsOnKey'](vk, 0, 0);
+		}
+	}
+
+	/* 指を離さずにボタンの外へずらした時も離したことにする */
+	function bindPadButton(el, vk) {
+		var touchId = null;
+		function press() {
+			el.classList.add('sbo-pressed');
+			padKey(vk, true);
+		}
+		function release() {
+			if (!el.classList.contains('sbo-pressed')) {
+				return;
+			}
+			el.classList.remove('sbo-pressed');
+			padKey(vk, false);
+		}
+		el.addEventListener('touchstart', function (ev) {
+			ev.preventDefault();
+			touchId = ev.changedTouches[0].identifier;
+			press();
+		}, {passive: false});
+		function onTouchEnd(ev) {
+			for (var i = 0; i < ev.changedTouches.length; i ++) {
+				if (ev.changedTouches[i].identifier === touchId) {
+					ev.preventDefault();
+					touchId = null;
+					release();
+					return;
+				}
+			}
+		}
+		el.addEventListener('touchend', onTouchEnd, {passive: false});
+		el.addEventListener('touchcancel', onTouchEnd, {passive: false});
+		/* マウス（?pad=1 で PC から試す時） */
+		el.addEventListener('mousedown', function (ev) {
+			ev.preventDefault();
+			press();
+		});
+		el.addEventListener('mouseup', release);
+		el.addEventListener('mouseleave', release);
+	}
+	var padButtons = document.querySelectorAll('#sbo-pad button[data-vk]');
+	for (var i = 0; i < padButtons.length; i ++) {
+		bindPadButton(padButtons[i], parseInt(padButtons[i].dataset.vk, 10));
+	}
+
+	/* アナログスティック：このゲームは斜めに歩けないので上下左右の 4 方向にする */
+	(function () {
+		var stick = document.getElementById('sbo-stick');
+		var knob = document.getElementById('sbo-stick-knob');
+		var VK_DIR = [38, 40, 37, 39];	/* 上・下・左・右 */
+		var curDir = -1;
+		var touchId = null;
+		var mouseDown = false;
+
+		function setDir(dir) {
+			if (dir === curDir) {
+				return;
+			}
+			if (curDir >= 0) {
+				padKey(VK_DIR[curDir], false);
+			}
+			curDir = dir;
+			if (curDir >= 0) {
+				padKey(VK_DIR[curDir], true);
+			}
+		}
+
+		function update(x, y) {
+			var r = stick.getBoundingClientRect();
+			var dx = x - (r.left + r.width / 2);
+			var dy = y - (r.top + r.height / 2);
+			var maxR = Math.max(r.width / 2 - knob.offsetWidth / 2, r.width * 0.2);
+			var dist = Math.sqrt(dx * dx + dy * dy);
+			var kx = dx, ky = dy;
+			if (dist > maxR) {
+				kx = dx / dist * maxR;
+				ky = dy / dist * maxR;
+			}
+			knob.style.transform = 'translate(' + kx + 'px, ' + ky + 'px)';
+			if (dist < maxR * 0.35) {
+				setDir(-1);
+			} else if (Math.abs(dx) > Math.abs(dy)) {
+				setDir(dx < 0 ? 2 : 3);
+			} else {
+				setDir(dy < 0 ? 0 : 1);
+			}
+		}
+
+		function release() {
+			touchId = null;
+			mouseDown = false;
+			knob.style.transform = 'translate(0px, 0px)';
+			setDir(-1);
+		}
+
+		stick.addEventListener('touchstart', function (ev) {
+			ev.preventDefault();
+			if (touchId !== null) {
+				return;
+			}
+			var t = ev.changedTouches[0];
+			touchId = t.identifier;
+			update(t.clientX, t.clientY);
+		}, {passive: false});
+		stick.addEventListener('touchmove', function (ev) {
+			ev.preventDefault();
+			for (var i = 0; i < ev.changedTouches.length; i ++) {
+				var t = ev.changedTouches[i];
+				if (t.identifier === touchId) {
+					update(t.clientX, t.clientY);
+					return;
+				}
+			}
+		}, {passive: false});
+		function onTouchEnd(ev) {
+			for (var i = 0; i < ev.changedTouches.length; i ++) {
+				if (ev.changedTouches[i].identifier === touchId) {
+					release();
+					return;
+				}
+			}
+		}
+		stick.addEventListener('touchend', onTouchEnd);
+		stick.addEventListener('touchcancel', onTouchEnd);
+
+		stick.addEventListener('mousedown', function (ev) {
+			ev.preventDefault();
+			mouseDown = true;
+			update(ev.clientX, ev.clientY);
+		});
+		window.addEventListener('mousemove', function (ev) {
+			if (mouseDown) {
+				update(ev.clientX, ev.clientY);
+			}
+		});
+		window.addEventListener('mouseup', function () {
+			if (mouseDown) {
+				release();
+			}
+		});
+		/* 裏に回った時は押しっぱなしにしない */
+		document.addEventListener('visibilitychange', function () {
+			if (document.hidden) {
+				release();
+			}
+		});
+	})();
+
+	/* ===================================================================
+	   チャット欄（メッセージログ）
+	   ゲーム側（web/replace/SboCliMsgLogWindow_web.cpp）が sboChatLogAdd を呼ぶ
+	   =================================================================== */
+	var CHAT_LOG_MAX = 500;
+	var chatLogs = [];
+	var chatPanel = document.getElementById('sbo-chat-panel');
+	var chatLog = document.getElementById('sbo-chat-log');
+	var chatInput = document.getElementById('sbo-chat-input');
+	var chatArea = document.getElementById('sbo-chat-area');
+	var sheet = document.getElementById('sbo-chat-sheet');
+	var sheetLog = document.getElementById('sbo-sheet-log');
+	var sheetInput = document.getElementById('sbo-sheet-input');
+	var chatOpenBtn = document.getElementById('sbo-chat-open');
+
+	function makeLine(entry) {
+		var line = document.createElement('div');
+		line.className = 'sbo-chat-line';
+		var t = document.createElement('span');
+		t.className = 'sbo-chat-time';
+		t.textContent = entry.time;
+		var m = document.createElement('span');
+		m.textContent = entry.text;
+		m.style.color = entry.color;
+		line.appendChild(t);
+		line.appendChild(m);
+		return line;
+	}
+	/* 下端を見ている時だけ新しい行に追従する */
+	function appendTo(box, entry) {
+		var follow = box.scrollHeight - box.scrollTop - box.clientHeight < 8;
+		box.appendChild(makeLine(entry));
+		while (box.children.length > CHAT_LOG_MAX) {
+			box.removeChild(box.firstChild);
+		}
+		if (follow) {
+			box.scrollTop = box.scrollHeight;
+		}
+	}
+	function renderAll(box) {
+		box.textContent = '';
+		for (var i = 0; i < chatLogs.length; i ++) {
+			box.appendChild(makeLine(chatLogs[i]));
+		}
+		box.scrollTop = box.scrollHeight;
+	}
+
+	window.sboChatLogAdd = function (time, text, color) {
+		var entry = {time: time, text: text, color: color || '#fff'};
+		chatLogs.push(entry);
+		if (chatLogs.length > CHAT_LOG_MAX) {
+			chatLogs.shift();
+		}
+		appendTo(usePad ? chatArea : chatLog, entry);
+		if (sheet.classList.contains('sbo-open')) {
+			appendTo(sheetLog, entry);
+		}
+	};
+	/* マップに入った時（Windows 版でメッセージログウィンドウを作るところ） */
+	window.sboChatLogOpen = function () {
+		setOnMap(true);
+	};
+
+	function submitChat(input) {
+		var text = input.value;
+		input.value = '';
+		if (!text.trim() || !sboReady) {
+			return;
+		}
+		var p = Module['stringToNewUTF8'](text);
+		Module['_SboWebChatSubmit'](p);
+		Module['_free'](p);
+	}
+	function bindChatInput(input, sendBtn, afterSend) {
+		input.addEventListener('keydown', function (ev) {
+			/* IME の変換を確定する Enter では送らない */
+			if (ev.key === 'Enter' && !ev.isComposing && ev.keyCode !== 229) {
+				ev.preventDefault();
+				submitChat(input);
+				if (afterSend) {
+					afterSend();
+				}
+			}
+		});
+		sendBtn.addEventListener('click', function () {
+			submitChat(input);
+			input.focus();
+		});
+	}
+	bindChatInput(chatInput, document.getElementById('sbo-chat-send'), null);
+	bindChatInput(sheetInput, document.getElementById('sbo-sheet-send'), null);
+
+	var chatFold = document.getElementById('sbo-chat-fold');
+	chatFold.addEventListener('click', function () {
+		var folded = chatPanel.classList.toggle('sbo-collapsed');
+		chatFold.textContent = folded ? '▲' : '▼';
+		if (!folded) {
+			chatLog.scrollTop = chatLog.scrollHeight;
+		}
+	});
+
+	/* ---- スマホ：チャットのシート ---- */
+	function openSheet() {
+		renderAll(sheetLog);
+		sheet.classList.add('sbo-open');
+		/* iOS でキーボードを出すため、タップの処理の中でそのままフォーカスする */
+		sheetInput.focus();
+	}
+	function closeSheet() {
+		sheet.classList.remove('sbo-open');
+		sheet.style.bottom = '';
+		sheet.style.height = '';
+		sheetInput.blur();
+		canvas.focus();
+		setTimeout(onResize, 300);
+	}
+	chatOpenBtn.addEventListener('click', function () {
+		openSheet();
+	});
+	document.getElementById('sbo-sheet-close').addEventListener('click', closeSheet);
+	/* キーボードに隠れないようにシートを持ち上げる */
+	if (window.visualViewport) {
+		var vv = window.visualViewport;
+		var adjustSheet = function () {
+			if (!sheet.classList.contains('sbo-open')) {
+				return;
+			}
+			sheet.style.height = Math.floor(vv.height * 0.85) + 'px';
+			sheet.style.bottom = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)) + 'px';
+		};
+		vv.addEventListener('resize', adjustSheet);
+		vv.addEventListener('scroll', adjustSheet);
+	}
+
+	/* マップにいる間だけチャット欄を使えるようにする */
+	var GAMESTATE_MOVE = 5;
+	function setOnMap(onMap) {
+		if (document.body.classList.contains('sbo-on-map') === onMap) {
+			return;
+		}
+		document.body.classList.toggle('sbo-on-map', onMap);
+		chatOpenBtn.disabled = !onMap;
+		if (!onMap && sheet.classList.contains('sbo-open')) {
+			closeSheet();
+		}
+	}
+	setInterval(function () {
+		if (sboReady && Module['_SboWebGetGameState']) {
+			setOnMap(Module['_SboWebGetGameState']() >= GAMESTATE_MOVE);
+		}
+	}, 500);
+
+	var Module = window.Module = {
+		canvas: canvas,
+		w32KeyToVk: keyToVk,
+		/* 接続先: ?ws= → サーバー（Node.js 版）が配ったページなら同じ場所の /ws → INI の設定 */
+		sboWsUrl: params.get('ws') || window.SBO_DEFAULT_WS || '',
+		/* .wasm / .data に版（中身のハッシュ）を付けて読む。版の一覧はサーバー（Node.js 版）が
+		   ページに書き込む。版付きの URL はブラウザが長く覚えるので、リロードで読み直さない */
+		locateFile: function (name, prefix) {
+			var ver = window.SBO_ASSET_VER && window.SBO_ASSET_VER[name];
+			return prefix + name + (ver ? '?v=' + ver : '');
+		},
+		print: function (text) {
+			console.log(text);
+		},
+		printErr: function (text) {
+			console.warn(text);
+		},
+		setStatus: function (text) {
+			status.textContent = text || '';
+		},
+		onMessageBox: function (caption, text) {
+			alert(text);
+		},
+		onRuntimeInitialized: function () {
+			sboReady = true;
+			status.textContent = '';
+			canvas.focus();
+			/* 画面サイズが決まった後に拡大率を合わせる */
+			setTimeout(fitScale, 0);
+			setInterval(function () {
+				if (canvas.dataset.w32Width !== String(canvas.width)) {
+					canvas.dataset.w32Width = String(canvas.width);
+					fitScale();
+				}
+			}, 500);
+		},
+	};
+	fitScale();
+})();
+</script>
+<script>
+/* ======================================================================
+   ボタンでログイン・アカウント復旧
+     localStorage
+       sbo_device_token … 端末トークン（ID・パスワードでログインできた時にサーバーがくれる）
+       sbo_device_name  … ボタンに出す名前（キャラ名。まだ無ければアカウント名）
+       sbo_recover_req  … 承認待ちの復旧申請 {id, key}
+   ====================================================================== */
+(function () {
+	var KEY_TOKEN = 'sbo_device_token', KEY_NAME = 'sbo_device_name', KEY_REQ = 'sbo_recover_req';
+	var quick = document.getElementById('sbo-quick');
+	var quickStart = document.getElementById('sbo-quick-start');
+	var forgot = document.getElementById('sbo-forgot');
+	var recover = document.getElementById('sbo-recover');
+	var bDismissed = false;		/* 「別のアカウントでログイン」を押した */
+
+	function lsGet(k) {
+		try { return window.localStorage.getItem(k); } catch (e) { return null; }
+	}
+	function lsSet(k, v) {
+		try { window.localStorage.setItem(k, v); } catch (e) { /* 使えない環境では覚えない */ }
+	}
+	function lsDel(k) {
+		try { window.localStorage.removeItem(k); } catch (e) { /* 同上 */ }
+	}
+
+	function api(url, body) {
+		return fetch(url, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(body || {})
+		}).then(function (res) {
+			return res.json().catch(function () { return {}; }).then(function (data) {
+				data.httpStatus = res.status;
+				return data;
+			});
+		});
+	}
+
+	function setToken(token, name) {
+		lsSet(KEY_TOKEN, token);
+		if (name) {
+			lsSet(KEY_NAME, name);
+		}
+		bDismissed = false;
+		refreshName();
+	}
+	function clearToken() {
+		lsDel(KEY_TOKEN);
+		lsDel(KEY_NAME);
+	}
+
+	/* ボタンの名前をサーバーに聞き直す（キャラを作った後などに変わるので） */
+	function refreshName() {
+		var token = lsGet(KEY_TOKEN);
+		if (!token) {
+			return;
+		}
+		api('/api/device/me', { token: token }).then(function (data) {
+			if (data.httpStatus === 401) {
+				clearToken();
+			} else if (data.account) {
+				lsSet(KEY_NAME, data.name || data.account);
+			}
+		}).catch(function () { /* 通信できない時はそのまま */ });
+	}
+
+	/* ゲーム（C 側）から呼ばれる */
+	var bNewStart = false;		/* 「すぐにはじめる」で入ったところ（トークンが届いたら復旧キーを見せる） */
+	window.sboOnDeviceToken = function (token) {
+		setToken(token, '');
+		if (bNewStart) {
+			bNewStart = false;
+			showNewCode();
+		}
+	};
+	window.sboOnDeviceTokenNG = function () {
+		clearToken();
+	};
+
+	function loginState() {
+		var fn = window.Module && window.Module['_SboWebLoginState'];
+		return typeof fn === 'function' ? fn() : 0;
+	}
+
+	/* ログイン画面にいる間だけボタンを出す */
+	setInterval(function () {
+		var state = loginState();
+		var token = lsGet(KEY_TOKEN);
+		var bShow = state === 1 && !bDismissed && !recover.classList.contains('sbo-show');
+		quick.classList.toggle('sbo-back', !!token);
+		quick.classList.toggle('sbo-new', !token);
+		if (bShow && token) {
+			var name = lsGet(KEY_NAME) || '前回のアカウント';
+			var label = '「' + name + '」ではじめる';
+			if (quickStart.textContent !== label) {
+				quickStart.textContent = label;
+			}
+		}
+		quick.classList.toggle('sbo-show', bShow);
+		forgot.classList.toggle('sbo-show', state === 1 && !bShow);
+	}, 250);
+
+	quickStart.addEventListener('click', function () {
+		var token = lsGet(KEY_TOKEN);
+		var M = window.Module;
+		if (!token || !M || !M['_SboWebTokenLogin']) {
+			return;
+		}
+		var p = M['stringToNewUTF8'](token);
+		M['_SboWebTokenLogin'](p);
+		M['_free'](p);
+	});
+	Array.prototype.forEach.call(document.querySelectorAll('[data-quick-other]'), function (el) {
+		el.addEventListener('click', function () {
+			bDismissed = true;
+		});
+	});
+	document.querySelector('[data-quick-recover]').addEventListener('click', function () {
+		forgot.click();
+	});
+
+	/* 「すぐにはじめる」：アカウント名・パスワードを作り、知らない名前としてログインする
+	   （サーバーが新しいアカウントを作る。ログインできたら端末トークンが届く） */
+	function randomText(chars, n) {
+		var a = new Uint32Array(n), s = '';
+		window.crypto.getRandomValues(a);
+		for (var i = 0; i < n; i++) {
+			s += chars.charAt(a[i] % chars.length);
+		}
+		return s;
+	}
+	document.getElementById('sbo-quick-newstart').addEventListener('click', function () {
+		var M = window.Module;
+		if (!M || !M['_SboWebNewLogin']) {
+			return;
+		}
+		/* 見間違えやすい文字（0/o・1/l/i）は使わない。アカウント名は 11 文字、パスワードは 12 文字 */
+		var acc = 'sbo' + randomText('abcdefghjkmnpqrstuvwxyz23456789', 8);
+		var pas = randomText('ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789', 12);
+		bNewStart = true;
+		var pA = M['stringToNewUTF8'](acc), pP = M['stringToNewUTF8'](pas);
+		M['_SboWebNewLogin'](pA, pP);
+		M['_free'](pA);
+		M['_free'](pP);
+	});
+	document.getElementById('sbo-quick-forget').addEventListener('click', function () {
+		if (!window.confirm('この端末の記憶を消しますか？（次からは ID とパスワードでログインします）')) {
+			return;
+		}
+		var token = lsGet(KEY_TOKEN);
+		clearToken();
+		if (token) {
+			api('/api/device/forget', { token: token }).catch(function () {});
+		}
+	});
+
+	/* ---- アカウント復旧 ---- */
+	function $(id) {
+		return document.getElementById(id);
+	}
+	function showStep(name) {
+		Array.prototype.forEach.call(recover.querySelectorAll('.sbo-step'), function (el) {
+			el.classList.toggle('sbo-show', el.dataset.step === name);
+		});
+		recover.classList.add('sbo-show');
+	}
+	function closeRecover() {
+		recover.classList.remove('sbo-show');
+		var c = document.getElementById('canvas');
+		if (c) {
+			c.focus();
+		}
+	}
+	function setMsg(el, text, bOk) {
+		el.textContent = text || '';
+		el.classList.toggle('sbo-ok', !!bOk);
+	}
+	function showDone(account, name, title) {
+		$('sbo-rc-done-title').textContent = title || '復旧できました！';
+		$('sbo-rc-done-text').textContent = '「' + (name || account) + '」のアカウント名は「' + account +
+			'」です。ゲームへ戻ると、ボタンを押すだけで入れます。';
+		setMsg($('sbo-rc-done-msg'), '');
+		$('sbo-rc-newpass').value = '';
+		showStep('done');
+	}
+
+	/* アカウント設定：この端末のアカウント名を見せ、パスワードを決め直せるようにする */
+	document.getElementById('sbo-quick-settings').addEventListener('click', function () {
+		var token = lsGet(KEY_TOKEN);
+		if (!token) {
+			return;
+		}
+		api('/api/device/me', { token: token }).then(function (data) {
+			if (data.httpStatus === 401) {
+				clearToken();
+				return;
+			}
+			if (!data.account) {
+				return;
+			}
+			showDone(data.account, data.name, 'アカウント設定');
+			$('sbo-rc-done-text').textContent = 'この端末のアカウント名は「' + data.account + '」です。';
+		}).catch(function () { /* 通信できない時は何もしない */ });
+	});
+
+	/* ---- 復旧キー ---- */
+	var strCode = '', strCodeAcc = '';
+	function showCode(code, account) {
+		strCode = code;
+		strCodeAcc = account;
+		$('sbo-code-text').textContent = code;
+		setMsg($('sbo-code-msg'), '', true);
+		$('sbo-code-saved').checked = false;
+		$('sbo-code-close').disabled = true;
+		$('sbo-code-share').hidden = !navigator.share;
+		showStep('code');
+	}
+	/* 復旧キーを作って見せる（作り直すと前のキーは使えなくなる） */
+	function showNewCode() {
+		api('/api/device/issue-code', { token: lsGet(KEY_TOKEN) }).then(function (data) {
+			if (data.code) {
+				showCode(data.code, data.account);
+			}
+		}).catch(function () { /* 通信できない時は、あとでアカウント設定から作れる */ });
+	}
+	function codeFileText() {
+		return 'スクラップブックオンライン 復旧キー\r\n\r\n' +
+			'アカウント名: ' + strCodeAcc + '\r\n' +
+			'復旧キー: ' + strCode + '\r\n' +
+			'作った日: ' + new Date().toLocaleDateString('ja-JP') + '\r\n' +
+			'URL: ' + location.origin + '/\r\n\r\n' +
+			'ログイン画面の「復旧キーをお持ちの方はこちら」から入れると、このアカウントに戻れます。\r\n' +
+			'他の人には見せないでください。\r\n';
+	}
+	$('sbo-code-saved').addEventListener('change', function () {
+		$('sbo-code-close').disabled = !this.checked;
+	});
+	$('sbo-code-copy').addEventListener('click', function () {
+		var done = function () { setMsg($('sbo-code-msg'), 'コピーしました。メモ帳などに貼って保存してくださいね。', true); };
+		if (navigator.clipboard && navigator.clipboard.writeText) {
+			navigator.clipboard.writeText(strCode).then(done, function () {
+				setMsg($('sbo-code-msg'), 'コピーできませんでした。キーを長押し（選択）して写してください。');
+			});
+		}
+	});
+	$('sbo-code-file').addEventListener('click', function () {
+		var blob = new Blob(['\ufeff' + codeFileText()], { type: 'text/plain' });
+		var a = document.createElement('a');
+		a.href = URL.createObjectURL(blob);
+		a.download = 'SBO2003_復旧キー_' + strCodeAcc + '.txt';
+		document.body.appendChild(a);
+		a.click();
+		setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+		setMsg($('sbo-code-msg'), 'ファイルに保存しました。', true);
+	});
+	$('sbo-code-share').addEventListener('click', function () {
+		navigator.share({ title: 'SBO2003 復旧キー', text: codeFileText() }).catch(function () {});
+	});
+	$('sbo-rc-newcode').addEventListener('click', function () {
+		if (!window.confirm('復旧キーを作り直しますか？（前のキーは使えなくなります）')) {
+			return;
+		}
+		showNewCode();
+	});
+	$('sbo-quick-redeem').addEventListener('click', function () {
+		$('sbo-redeem-code').value = '';
+		setMsg($('sbo-redeem-msg'), '');
+		showStep('redeem');
+		$('sbo-redeem-code').focus();
+	});
+	$('sbo-redeem-submit').addEventListener('click', function () {
+		var btn = this, msg = $('sbo-redeem-msg');
+		var code = $('sbo-redeem-code').value;
+		if (code.replace(/[^0-9A-Za-z]/g, '').length !== 16) {
+			setMsg(msg, '16 文字の復旧キーを入れてください。');
+			return;
+		}
+		btn.disabled = true;
+		api('/api/device/redeem', { code: code }).then(function (data) {
+			btn.disabled = false;
+			if (data.token) {
+				setToken(data.token, data.name || data.account);
+				closeRecover();
+			} else if (data.error === 'too_many') {
+				setMsg(msg, '何度も間違えたので、しばらく時間をおいてから試してください。');
+			} else {
+				setMsg(msg, 'その復旧キーは見つかりませんでした。入力を確かめてください。');
+			}
+		}).catch(function () {
+			btn.disabled = false;
+			setMsg(msg, 'サーバーにつながりませんでした。');
+		});
+	});
+
+	var NG_TEXT = {
+		input: 'キャラ名と、アカウント名かパスワードの一部を入れてください。',
+		not_found: '一致するキャラが見つかりませんでした。入力を確かめてください。',
+		ambiguous: '同じ名前のキャラがいて決められませんでした。アカウント名も入れてみてください。',
+		online: 'そのキャラは今ログイン中のようです。',
+		too_many: '何度も間違えたので、しばらく時間をおいてから試してください。',
+		too_many_requests: '今日はこれ以上申請できません。また明日試してください。'
+	};
+
+	forgot.addEventListener('click', function () {
+		var req = null;
+		try { req = JSON.parse(lsGet(KEY_REQ) || 'null'); } catch (e) { req = null; }
+		if (req) {
+			showStep('pending');
+			checkRequest(false);
+		} else {
+			setMsg($('sbo-rc-msg'), '');
+			showStep('form');
+			$('sbo-rc-name').focus();
+		}
+	});
+	Array.prototype.forEach.call(recover.querySelectorAll('[data-close]'), function (el) {
+		el.addEventListener('click', closeRecover);
+	});
+
+	$('sbo-rc-submit').addEventListener('click', function () {
+		var btn = this;
+		var body = {
+			name: $('sbo-rc-name').value.trim(),
+			account: $('sbo-rc-account').value.trim(),
+			passwordPart: $('sbo-rc-part').value.trim(),
+			message: $('sbo-rc-message').value.trim()
+		};
+		if (!body.name || (!body.account && !body.passwordPart)) {
+			setMsg($('sbo-rc-msg'), NG_TEXT.input);
+			return;
+		}
+		btn.disabled = true;
+		setMsg($('sbo-rc-msg'), '確かめています...', true);
+		api('/api/recover', body).then(function (data) {
+			btn.disabled = false;
+			if (data.result === 'recovered') {
+				setToken(data.token, data.name || data.account);
+				showDone(data.account, data.name);
+			} else if (data.result === 'pending') {
+				lsSet(KEY_REQ, JSON.stringify({ id: data.requestId, key: data.requestKey }));
+				setMsg($('sbo-rc-pending-msg'), '');
+				showStep('pending');
+			} else {
+				setMsg($('sbo-rc-msg'), NG_TEXT[data.reason] || 'うまくいきませんでした。時間をおいて試してください。');
+			}
+		}).catch(function () {
+			btn.disabled = false;
+			setMsg($('sbo-rc-msg'), 'サーバーにつながりませんでした。');
+		});
+	});
+
+	/* 承認待ちの申請の結果を確かめる */
+	function checkRequest(bShowWait) {
+		var req = null;
+		try { req = JSON.parse(lsGet(KEY_REQ) || 'null'); } catch (e) { req = null; }
+		if (!req) {
+			return;
+		}
+		api('/api/recover/status', { requestId: req.id, requestKey: req.key }).then(function (data) {
+			if (data.status === 'recovered') {
+				lsDel(KEY_REQ);
+				setToken(data.token, data.name || data.account);
+				showDone(data.account, data.name);
+			} else if (data.status === 'pending' || data.status === 'approved') {
+				if (bShowWait || recover.classList.contains('sbo-show')) {
+					setMsg($('sbo-rc-pending-msg'), 'まだ確認中です。もう少し待ってくださいね。', true);
+				}
+			} else {
+				/* 却下・受け取り済み・見つからない */
+				lsDel(KEY_REQ);
+				if (recover.classList.contains('sbo-show')) {
+					setMsg($('sbo-rc-msg'), data.status === 'rejected' ?
+						'申請は承認されませんでした。入力を見直すか、管理者に相談してください。' : '');
+					showStep('form');
+				}
+			}
+		}).catch(function () {
+			setMsg($('sbo-rc-pending-msg'), 'サーバーにつながりませんでした。');
+		});
+	}
+	$('sbo-rc-check').addEventListener('click', function () {
+		checkRequest(true);
+	});
+
+	$('sbo-rc-setpass').addEventListener('click', function () {
+		var pass = $('sbo-rc-newpass').value;
+		var msg = $('sbo-rc-done-msg');
+		if (!/^[\x21-\x7e]{4,13}$/.test(pass)) {
+			setMsg(msg, '英数字・記号で 4〜13 文字にしてください。');
+			return;
+		}
+		api('/api/device/set-password', { token: lsGet(KEY_TOKEN), password: pass }).then(function (data) {
+			if (data.ok) {
+				setMsg(msg, 'パスワードを変えました。忘れないようにメモしておいてくださいね。', true);
+				$('sbo-rc-newpass').value = '';
+			} else if (data.error === 'online') {
+				setMsg(msg, 'ログイン中は変えられません。');
+			} else {
+				setMsg(msg, '変えられませんでした。');
+			}
+		}).catch(function () {
+			setMsg(msg, 'サーバーにつながりませんでした。');
+		});
+	});
+
+	/* 開いた時：名前を取り直し、承認待ちの申請があれば結果を確かめる */
+	refreshName();
+	checkRequest(false);
+	setInterval(function () { checkRequest(false); }, 60 * 1000);
+})();
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>

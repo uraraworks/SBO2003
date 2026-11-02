@@ -1,0 +1,164 @@
+//Microsoft Developer Studio generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// 日本語 resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_JPN)
+#ifdef _WIN32
+LANGUAGE LANG_JAPANESE, SUBLANG_DEFAULT
+#pragma code_page(65001)
+#endif //_WIN32
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE MOVEABLE PURE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE MOVEABLE PURE 
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE MOVEABLE PURE 
+BEGIN
+    "\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// PNG
+//
+
+IDP_SYSTEM              PNG     MOVEABLE PURE   "grp\\system.png"
+IDP_CHAR01              PNG     MOVEABLE PURE   "grp\\char01.png"
+IDP_CHAR02              PNG     MOVEABLE PURE   "grp\\char02.png"
+IDP_CHAR03              PNG     MOVEABLE PURE   "grp\\char03.png"
+IDP_CHAR04              PNG     MOVEABLE PURE   "grp\\char04.png"
+IDP_CHAR05              PNG     MOVEABLE PURE   "grp\\char05.png"
+IDP_EFC01               PNG     MOVEABLE PURE   "grp\\efc01.png"
+IDP_CHAR06              PNG     MOVEABLE PURE   "grp\\char06.png"
+IDP_CHAR07              PNG     MOVEABLE PURE   "grp\\char07.png"
+IDP_MAP02               PNG     MOVEABLE PURE   "grp\\map02.png"
+IDP_MAP01               PNG     MOVEABLE PURE   "grp\\map01.png"
+IDP_EFC02               PNG     MOVEABLE PURE   "grp\\efc02.png"
+IDP_EFC03               PNG     MOVEABLE PURE   "grp\\efc03.png"
+IDP_EFC04               PNG     MOVEABLE PURE   "grp\\efc04.png"
+IDP_LOGO                PNG     MOVEABLE PURE   "grp\\URARA-worksロゴ.png"
+IDP_TITLE               PNG     MOVEABLE PURE   "grp\\タイトル.png"
+IDP_SUBG_BOMB           PNG     MOVEABLE PURE   "grp\\SubGame_bomb.png"
+IDP_CHAR08              PNG     MOVEABLE PURE   "grp\\char08.png"
+IDP_CHAR09              PNG     MOVEABLE PURE   "grp\\char09.png"
+IDP_MAP03               PNG     MOVEABLE PURE   "grp\\map03.png"
+IDP_CHAR10              PNG     MOVEABLE PURE   "grp\\char10.png"
+IDP_EFC05               PNG     MOVEABLE PURE   "grp\\efc05.png"
+IDP_ANIME               PNG     MOVEABLE PURE   "grp\\アニメーションデータ.png"
+IDP_OBJ3232_01          PNG     MOVEABLE PURE   "grp\\obj3232_01.png"
+IDP_CHAR11              PNG     MOVEABLE PURE   "grp\\char11.png"
+IDP_CHAR12              PNG     MOVEABLE PURE   "grp\\char12.png"
+IDP_MAP04               PNG     MOVEABLE PURE   "grp\\map04.png"
+IDP_EFC06               PNG     MOVEABLE PURE   "grp\\efc06.png"
+IDP_CHAR13              PNG     MOVEABLE PURE   "grp\\char13.png"
+IDP_WCHAR01             PNG     MOVEABLE PURE   "grp\\wchar01.png"
+IDP_CHAR14              PNG     MOVEABLE PURE   "grp\\char14.png"
+IDP_CHAR1632_01         PNG     MOVEABLE PURE   "grp\\char1632_01.png"
+IDP_CHAR3232_01         PNG     MOVEABLE PURE   "grp\\char3232_01.png"
+IDP_CHAR4848_01         PNG     MOVEABLE PURE   "grp\\char4848_01.png"
+IDP_MAP05               PNG     MOVEABLE PURE   "grp\\map05.png"
+IDP_CHAR15              PNG     MOVEABLE PURE   "grp\\char15.png"
+IDP_CHAR16              PNG     MOVEABLE PURE   "grp\\char16.png"
+IDP_EFC1632_01          PNG     DISCARDABLE     "grp\\efc1632_01.png"
+
+#ifndef _MAC
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 0,0,0,5
+ PRODUCTVERSION 0,0,0,5
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x40004L
+ FILETYPE 0x2L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "041104b0"
+        BEGIN
+            VALUE "Comments", "\0"
+            VALUE "CompanyName", "URARA-works\0"
+            VALUE "FileDescription", "SboSoundData\0"
+            VALUE "FileVersion", "5\0"
+            VALUE "InternalName", "SboSoundData\0"
+            VALUE "LegalCopyright", "Copyright(C)URARA-works 2003-2006\0"
+            VALUE "LegalTrademarks", "\0"
+            VALUE "OriginalFilename", "SboSoundData.dll\0"
+            VALUE "PrivateBuild", "\0"
+            VALUE "ProductName", "スクラップブックオンライン 画像データ\0"
+            VALUE "ProductVersion", "5\0"
+            VALUE "SpecialBuild", "\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x411, 1200
+    END
+END
+
+#endif    // !_MAC
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// String Table
+//
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDS_DLLVER              "5"
+END
+
+#endif    // 日本語 resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

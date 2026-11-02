@@ -1,0 +1,78 @@
+# Sbo2003 ステージングへの自動デプロイ（SBOP2 のステージングのホストに相乗り）
+#
+# main への push と手動実行で動く。リポジトリ変数 SBO2003_STAGING_HOST が未設定の間は何もしない。
+# 必要な設定（Settings → Secrets and variables → Actions）:
+#   変数 SBO2003_STAGING_HOST           ステージングのホスト名か IP（SBOP2 と同じホスト）
+#   変数 SBO2003_STAGING_USER           SSH ユーザー（docker を sudo なしで使えること）
+#   Secret SBO2003_STAGING_SSH_KEY      上のユーザーでログインできる SSH 秘密鍵（そのままか base64 -w0 の1行）
+#   Secret SBO2003_STAGING_KNOWN_HOSTS  ssh-keyscan <ホスト> の出力（なりすまし防止）
+#   Secret SBO2003_PRIVATE_TOKEN        SBO2003-private を読めるトークン（BGM の MIDI を取るため。無ければ BGM 無し）
+#
+# ホスト側は ~/sbo2003-staging/deploy/staging/staging.env を用意しておく（初回のみ。手順は deploy/staging/README.md）。
+name: staging-deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: staging-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: ${{ vars.SBO2003_STAGING_HOST != '' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: 非公開の素材（MIDI）を取ってくる
+        env:
+          SBO2003_PRIVATE_TOKEN: ${{ secrets.SBO2003_PRIVATE_TOKEN }}
+        run: tools/public/fetch-private-assets.sh
+
+      - name: イメージを作る
+        run: |
+          # サーバー・ブラウザ版とも Dockerfile の中（emsdk のイメージ）でビルドする。
+          # メモリの少ないホストではビルドが重いので、ここで作って送る。
+          docker build -f deploy/staging/Dockerfile -t sbo2003-staging .
+          docker save sbo2003-staging | gzip > sbo2003-staging.tar.gz
+          # ホストには deploy/staging だけを置く（compose.yaml・サイト定義の雛形・スクリプト）
+          tar -czf deploy-files.tar.gz deploy/staging
+
+      - name: SSH の準備
+        env:
+          SSH_KEY: ${{ secrets.SBO2003_STAGING_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.SBO2003_STAGING_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          # 秘密鍵はそのままの形でも、base64 -w0 で1行にした形でもよい。CR と行末の空白は取り除く。
+          key=$(printf '%s\n' "$SSH_KEY" | tr -d '\r' | sed 's/[[:space:]]*$//')
+          case "$key" in
+            -----BEGIN*) printf '%s\n' "$key" > ~/.ssh/id_staging ;;
+            *) printf '%s' "$key" | tr -d ' \n' | base64 -d > ~/.ssh/id_staging ;;
+          esac
+          chmod 600 ~/.ssh/id_staging
+          # 鍵として読めるかをここで確かめる（読めない時は Secret の貼り方を見直す）
+          ssh-keygen -y -f ~/.ssh/id_staging > /dev/null
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: 転送してデプロイ
+        env:
+          TARGET: ${{ vars.SBO2003_STAGING_USER }}@${{ vars.SBO2003_STAGING_HOST }}
+        run: |
+          scp -i ~/.ssh/id_staging sbo2003-staging.tar.gz deploy-files.tar.gz "$TARGET:/tmp/"
+          # deploy/staging を新しくし（ホストにだけある staging.env は残す）、イメージを読み込んで入れ替える
+          ssh -i ~/.ssh/id_staging "$TARGET" 'set -euo pipefail
+            mkdir -p ~/sbo2003-staging
+            cd ~/sbo2003-staging
+            if [ -f deploy/staging/staging.env ]; then cp -p deploy/staging/staging.env /tmp/sbo2003-staging.env; fi
+            rm -rf deploy
+            tar -xzf /tmp/deploy-files.tar.gz
+            if [ -f /tmp/sbo2003-staging.env ]; then mv /tmp/sbo2003-staging.env deploy/staging/staging.env; fi
+            deploy/staging/deploy.sh --image /tmp/sbo2003-staging.tar.gz
+            rm -f /tmp/sbo2003-staging.tar.gz /tmp/deploy-files.tar.gz'

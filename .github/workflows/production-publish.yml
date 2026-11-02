@@ -1,0 +1,138 @@
+# Sbo2003 本番（SBOP2 と同じ Windows Server の VPS）用の配布 zip を作る
+#
+# SBOP2 の windows-publish.yml と同じく、zip を作って成果物に保存するところまで。
+# VPS への展開は手で行う（手順は deploy/production/README.md）。
+#
+#   1) ステージングと同じ deploy/staging/Dockerfile のビルド段（emsdk）でサーバーとブラウザ版をビルドし、
+#      deploy/production/make-zip.sh で zip にする（Windows 用の Node.js を同梱）。
+#   2) Windows のランナーで zip を展開して start.ps1 で起動し、/health とページを確かめてから
+#      stop.ps1 でデータを保存して止まることを確かめる。
+#
+# 手動実行・v* タグ・関係するファイルを変える PR の時だけ動く。
+# BGM の MIDI は Secret SBO2003_PRIVATE_TOKEN（SBO2003-private を読めるトークン）で取ってくる。無ければ BGM 無し。
+
+name: production-publish
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths:
+      - .github/workflows/production-publish.yml
+      - deploy/production/**
+      - server/node/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-publish-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    outputs:
+      name: ${{ steps.zip.outputs.name }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: 非公開の素材（MIDI）を取ってくる
+        env:
+          SBO2003_PRIVATE_TOKEN: ${{ secrets.SBO2003_PRIVATE_TOKEN }}
+        run: tools/public/fetch-private-assets.sh
+
+      - name: サーバーとブラウザ版をビルド
+        run: |
+          # ステージングのイメージと同じビルド段を使い、出来たものだけ取り出す
+          docker build --target build -f deploy/staging/Dockerfile -t sbo2003-build .
+          id=$(docker create sbo2003-build)
+          mkdir -p out/server-release out/web/dist
+          docker cp "$id:/src/out/server-release/." out/server-release/
+          docker cp "$id:/src/out/web/dist/." out/web/dist/
+          docker rm "$id"
+
+      - name: zip を作る
+        id: zip
+        run: |
+          deploy/production/make-zip.sh out/server-release out/web/dist publish
+          zip=$(ls publish/Sbo2003_Server_*.zip | head -n 1)
+          echo "name=$(basename "$zip" .zip)" >> "$GITHUB_OUTPUT"
+          echo "path=$zip" >> "$GITHUB_OUTPUT"
+
+      - name: zip を成果物として保存
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ steps.zip.outputs.name }}
+          path: ${{ steps.zip.outputs.path }}
+          if-no-files-found: error
+          retention-days: 30
+
+  smoke:
+    needs: build
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: ${{ needs.build.outputs.name }}
+          path: dl
+
+      - name: 展開して起動する
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = Get-ChildItem dl -Filter 'Sbo2003_Server_*.zip' | Select-Object -First 1
+          Expand-Archive -Path $zip.FullName -DestinationPath C:\sbo2003-test
+          Set-Content -Path C:\sbo2003-test\sbo2003.env -Encoding UTF8 -Value @(
+            'SBO2003_ADMIN_PASSWORD=ci-test-pass',
+            'SBO2003_HTTP_PORT=18090'
+          )
+          # 確かめる側は pwsh（BOM なしの UTF-8 を読める）。start.ps1・stop.ps1 は VPS と同じく
+          # Windows PowerShell 5.1（powershell.exe）で動かす（BOM 付き UTF-8 の .ps1 が読めることも確かめる）
+          $w = Start-Process powershell.exe -PassThru -WindowStyle Hidden `
+            -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File C:\sbo2003-test\start.ps1'
+          Set-Content -Path C:\sbo2003-test\wrapper.pid -Value $w.Id
+
+      - name: 動いていることを確かめる
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ok = $false
+          for ($i = 0; $i -lt 60 -and -not $ok; $i++) {
+            try {
+              $ok = (Invoke-WebRequest -UseBasicParsing http://127.0.0.1:18090/health).Content -match 'ok'
+            } catch { Start-Sleep -Seconds 2 }
+          }
+          if (-not $ok) { throw '/health に応答がありません' }
+          $page = (Invoke-WebRequest -UseBasicParsing http://127.0.0.1:18090/).Content
+          if ($page -notmatch 'SBO_DEFAULT_WS') { throw 'ブラウザ版のページが配られていません' }
+          if (-not (Test-Path C:\sbo2003-test\data\SBODATA)) { throw 'data\SBODATA が作られていません' }
+          $ini = Get-Content C:\sbo2003-test\data\SboSvr.ini -Raw
+          if ($ini -notmatch 'Password=ci-test-pass') { throw '管理者パスワードが設定されていません' }
+          Write-Host '起動を確認しました'
+
+      - name: stop.ps1 で保存して止まることを確かめる
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\sbo2003-test\stop.ps1 -TimeoutSec 60
+          if ($LASTEXITCODE -ne 0) { throw "stop.ps1 が失敗しました（$LASTEXITCODE）" }
+          $w = Get-Process -Id ([int](Get-Content C:\sbo2003-test\wrapper.pid)) -ErrorAction SilentlyContinue
+          if ($w -and -not $w.WaitForExit(30000)) { throw 'start.ps1 が終わりません（起動し直してしまった？）' }
+          $out = Get-ChildItem C:\sbo2003-test\log -Filter 'sbosvr-*.out.log' | Get-Content -Raw -Encoding UTF8
+          if ($out -notmatch '停止ファイル') { throw '停止ファイルで止まっていません' }
+          if ($out -notmatch '終了しました') { throw 'サーバーが保存して終わっていません' }
+          if (Get-NetTCPConnection -LocalPort 18090 -State Listen -ErrorAction SilentlyContinue) { throw 'まだ待ち受けています' }
+          Write-Host '保存して止まることを確認しました'
+
+      - name: ログを表示
+        if: always()
+        shell: pwsh
+        run: |
+          Get-ChildItem C:\sbo2003-test\log -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Host "===== $($_.Name)"
+            Get-Content $_.FullName -Encoding UTF8
+          }
