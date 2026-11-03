@@ -149,6 +149,20 @@
 		border-radius: 0 0 10px 10px;
 		padding: 6px 8px;
 	}
+	/* 切断された後はログを読むだけにする（入力欄は使えない） */
+	body.sbo-lost .sbo-chat-input {
+		opacity: 0.6;
+	}
+	body.sbo-lost .sbo-chat-send {
+		display: none;
+	}
+	/* 前回（再読み込みの前）のログとの区切り */
+	.sbo-chat-sep {
+		margin: 4px 0;
+		text-align: center;
+		color: var(--sub);
+		font-size: 11px;
+	}
 	#sbo-chat-panel.sbo-collapsed #sbo-chat-log,
 	#sbo-chat-panel.sbo-collapsed #sbo-chat-row {
 		display: none;
@@ -375,6 +389,20 @@
 		color: var(--accent);
 		font-weight: bold;
 		font-size: 14px;
+	}
+	#sbo-sheet-tools {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+	#sbo-sheet-save {
+		background: none;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		color: var(--fg);
+		font: 13px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		padding: 5px 10px;
+		cursor: pointer;
 	}
 	#sbo-sheet-close {
 		background: none;
@@ -688,7 +716,8 @@
 		align-items: center;
 		gap: 8px;
 	}
-	#sbo-shot-pc {
+	#sbo-shot-pc,
+	#sbo-log-pc {
 		background: none;
 		border: 1px solid var(--border);
 		border-radius: 6px;
@@ -697,7 +726,8 @@
 		padding: 3px 8px;
 		cursor: pointer;
 	}
-	#sbo-shot-pc:hover {
+	#sbo-shot-pc:hover,
+	#sbo-log-pc:hover {
 		border-color: var(--accent);
 		color: var(--accent);
 	}
@@ -906,6 +936,7 @@
 	<div id="sbo-chat-head">
 		<span id="sbo-chat-title">メッセージログ</span>
 		<span id="sbo-chat-tools">
+			<button id="sbo-log-pc" type="button" title="メッセージログをテキストファイルで保存します">💾 ログ保存</button>
 			<button id="sbo-shot-pc" type="button" title="ゲーム画面を画像で保存します">📷 スクショ</button>
 			<button id="sbo-chat-fold" type="button" title="たたむ">▼</button>
 		</span>
@@ -942,7 +973,10 @@
 <div id="sbo-chat-sheet">
 	<div id="sbo-sheet-head">
 		<span id="sbo-sheet-title">チャット</span>
-		<button id="sbo-sheet-close" type="button" title="閉じる">✕</button>
+		<span id="sbo-sheet-tools">
+			<button id="sbo-sheet-save" type="button" title="メッセージログをテキストファイルで保存します">💾 ログ保存</button>
+			<button id="sbo-sheet-close" type="button" title="閉じる">✕</button>
+		</span>
 	</div>
 	<div id="sbo-sheet-log"></div>
 	<div id="sbo-sheet-row">
@@ -1374,6 +1408,11 @@
 
 	function makeLine(entry) {
 		var line = document.createElement('div');
+		if (entry.sep) {
+			line.className = 'sbo-chat-sep';
+			line.textContent = entry.text;
+			return line;
+		}
 		line.className = 'sbo-chat-line';
 		var t = document.createElement('span');
 		t.className = 'sbo-chat-time';
@@ -1404,13 +1443,63 @@
 		box.scrollTop = box.scrollHeight;
 	}
 
-	window.sboChatLogAdd = function (time, text, color) {
-		var entry = {time: time, text: text, color: color || '#fff'};
+	/* ---- ログをブラウザに覚えておく ----
+	   切断されるとページを読み直すまで遊べず、読み直すとログが消えてしまうので、
+	   画面に出している分（最大 CHAT_LOG_MAX 行）を localStorage に残し、
+	   次に開いた時に「前回のログ」として戻す。 */
+	var CHAT_STORE_KEY = 'sbo_chat_log';
+	var chatStoreTimer = 0;
+	var chatSepPending = false;	/* 前回のログを戻した後、最初の新しい行の前に区切りを入れる */
+	function storeChatLog() {
+		chatStoreTimer = 0;
+		try {
+			window.localStorage.setItem(CHAT_STORE_KEY, JSON.stringify(chatLogs));
+		} catch (e) { /* 使えない環境では覚えない */ }
+	}
+	function storeChatLogLater() {
+		/* 1 行ごとに書くと重いので、少しまとめて書く */
+		if (!chatStoreTimer) {
+			chatStoreTimer = setTimeout(storeChatLog, 1000);
+		}
+	}
+	/* 閉じる・読み直す直前には待たずに書く */
+	window.addEventListener('pagehide', function () {
+		if (chatStoreTimer) {
+			clearTimeout(chatStoreTimer);
+			storeChatLog();
+		}
+	});
+	(function () {
+		var saved = null;
+		try {
+			saved = JSON.parse(window.localStorage.getItem(CHAT_STORE_KEY) || 'null');
+		} catch (e) { saved = null; }
+		if (!Array.isArray(saved)) {
+			return;
+		}
+		for (var i = Math.max(0, saved.length - CHAT_LOG_MAX); i < saved.length; i ++) {
+			var e = saved[i];
+			if (!e || typeof e.text !== 'string') {
+				continue;
+			}
+			var entry = e.sep ? {sep: true, text: e.text} :
+				{time: String(e.time || ''), text: e.text, color: String(e.color || '#fff')};
+			chatLogs.push(entry);
+			chatSaveLines.push(entry.sep ? entry.text : entry.time + ' ' + entry.text);
+		}
+		if (chatLogs.length > 0) {
+			chatSepPending = true;
+			renderAll(chatLog);
+			renderAll(chatArea);
+		}
+	})();
+
+	function pushChatEntry(entry) {
 		chatLogs.push(entry);
 		if (chatLogs.length > CHAT_LOG_MAX) {
 			chatLogs.shift();
 		}
-		chatSaveLines.push(time + ' ' + text);
+		chatSaveLines.push(entry.sep ? entry.text : entry.time + ' ' + entry.text);
 		if (chatSaveLines.length > CHAT_SAVE_MAX) {
 			chatSaveLines.shift();
 		}
@@ -1418,6 +1507,14 @@
 		if (sheet.classList.contains('sbo-open')) {
 			appendTo(sheetLog, entry);
 		}
+		storeChatLogLater();
+	}
+	window.sboChatLogAdd = function (time, text, color) {
+		if (chatSepPending) {
+			chatSepPending = false;
+			pushChatEntry({sep: true, text: '―― ここまで前回のログ ――'});
+		}
+		pushChatEntry({time: time, text: text, color: color || '#fff'});
 	};
 	/* マップに入った時（Windows 版でメッセージログウィンドウを作るところ） */
 	window.sboChatLogOpen = function () {
@@ -1517,6 +1614,10 @@
 	window.sboChatSplit = splitChat;
 
 	function submitChat(input) {
+		/* 切断された後は送れない（入力した文字は消さずに残す） */
+		if (document.body.classList.contains('sbo-lost')) {
+			return;
+		}
 		var text = input.value;
 		input.value = '';
 		if (!text.trim() || !sboReady) {
@@ -1592,7 +1693,9 @@
 		vv.addEventListener('scroll', adjustSheet);
 	}
 
-	/* マップにいる間だけチャット欄を使えるようにする */
+	/* マップにいる間だけチャット欄を使えるようにする。
+	   切断された後も、それまでのログを読めるよう欄は出したままにする */
+	var GAMESTATE_CONNECTLOST = 4;
 	var GAMESTATE_MOVE = 5;
 	function setOnMap(onMap) {
 		if (document.body.classList.contains('sbo-on-map') === onMap) {
@@ -1600,13 +1703,47 @@
 		}
 		document.body.classList.toggle('sbo-on-map', onMap);
 		chatOpenBtn.disabled = !onMap;
+		/* 隠れている間に戻した前回のログは下端に合わせられないので、出した時に合わせる */
+		if (onMap) {
+			chatLog.scrollTop = chatLog.scrollHeight;
+		}
 		if (!onMap && sheet.classList.contains('sbo-open')) {
 			closeSheet();
 		}
 	}
+	function setLost(lost) {
+		if (document.body.classList.contains('sbo-lost') === lost) {
+			return;
+		}
+		document.body.classList.toggle('sbo-lost', lost);
+		var ph = lost ? '切断されました（再読み込みで再接続）' : null;
+		chatInput.placeholder = ph || '発言を入力して Enter';
+		sheetInput.placeholder = ph || '発言を入力';
+		/* スマホで触ってもキーボードが出ないよう、読むだけにする */
+		chatInput.readOnly = lost;
+		sheetInput.readOnly = lost;
+		if (lost) {
+			var d = new Date();
+			var p2 = function (n) { return (n < 10 ? '0' : '') + n; };
+			pushChatEntry({
+				time: '[' + p2(d.getHours()) + ':' + p2(d.getMinutes()) + ':' + p2(d.getSeconds()) + ']',
+				text: 'サーバーとの接続が途切れました',
+				color: '#ff8080'
+			});
+		}
+	}
 	setInterval(function () {
 		if (sboReady && Module['_SboWebGetGameState']) {
-			setOnMap(Module['_SboWebGetGameState']() >= GAMESTATE_MOVE);
+			var st = Module['_SboWebGetGameState']();
+			if (st === GAMESTATE_CONNECTLOST) {
+				/* マップで遊んでいた時の切断だけログを残して出しておく */
+				if (document.body.classList.contains('sbo-on-map')) {
+					setLost(true);
+				}
+				return;
+			}
+			setLost(false);
+			setOnMap(st >= GAMESTATE_MOVE);
 		}
 	}, 500);
 
@@ -1841,6 +1978,13 @@
 				showView(log);
 			});
 		};
+		/* 切断された後はゲームのメニューが開けないので、チャット欄からも保存できるようにする */
+		document.getElementById('sbo-log-pc').addEventListener('click', function () {
+			window.sboChatLogSave();
+		});
+		document.getElementById('sbo-sheet-save').addEventListener('click', function () {
+			window.sboChatLogSave();
+		});
 	})();
 
 	var Module = window.Module = {
