@@ -3098,9 +3098,6 @@ void RecvDataProcLOGINREQ(PBYTE pData, DWORD dwDataSize)
 	} else {
 		pChar->wGrpID = 2;
 	}
-	if (g_bAllAdmin) {
-		pChar->byAdminLV = ADMINLV_ADMINISTRATOR;
-	}
 	pChar->wGrpIDBack = pChar->wGrpID;
 	pChar->byDirection = 1;
 
@@ -4880,9 +4877,6 @@ void RecvDataProcACCADD(PBYTE pData, DWORD dwDataSize)
 	strcat (pChar->szPas, pPara->szPas);
 	pChar->wGrpID = 2;
 	pChar->byDirection = 1;
-	if (g_bAllAdmin) {
-		pChar->byAdminLV = ADMINLV_ADMINISTRATOR;
-	}
 	AddChar (pChar);
 }
 
