@@ -429,7 +429,7 @@ BOOL OnCreate(HWND hWnd)
 	}
 
 	/* 待ち受け開始 */
-	svrSock.Host (hWnd, g_wPort, 100);
+	svrSock.Host (hWnd, g_wPort, MAX_CONNECTCOUNT + 100);	/* ログイン前の接続や管理者の分も見込んで定員より多めにとる */
 
 	for (i = 0; i < 24; i ++) {
 		char szTmp[10];
