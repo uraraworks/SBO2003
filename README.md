@@ -4,6 +4,10 @@
 当時の Windows 版（Visual C++ 6.0）のソースをほぼそのまま使い、小さな互換層で置き換えて、
 サーバーは Node.js、クライアントはブラウザで動かしています。
 
+<p align="center">
+  <a href="https://sbo2003.urara-works.jp/">▶ ブラウザで遊ぶ</a>
+</p>
+
 後継の「スクラップブックオンライン ページ.2」は [SBOP2](https://github.com/uraraworks/SBOP2) で公開しています。
 
 ## 動かし方（Mac / Linux）
