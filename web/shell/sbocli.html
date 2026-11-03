@@ -749,8 +749,10 @@
 		from { opacity: 0.7; }
 		to { opacity: 0; }
 	}
-	/* 共有できないブラウザ向け：画像を大きく出して長押しで保存してもらう */
-	#sbo-shot-view {
+	/* 共有できないブラウザ向け：画像を大きく出して長押しで保存してもらう
+	   （ログ保存の案内 #sbo-log-view も同じ見た目） */
+	#sbo-shot-view,
+	#sbo-log-view {
 		display: none;
 		position: fixed;
 		left: 0; top: 0; right: 0; bottom: 0;
@@ -763,7 +765,8 @@
 		padding: calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
 		box-sizing: border-box;
 	}
-	#sbo-shot-view.sbo-open {
+	#sbo-shot-view.sbo-open,
+	#sbo-log-view.sbo-open {
 		display: flex;
 	}
 	#sbo-shot-img {
@@ -776,19 +779,23 @@
 		user-select: auto;
 		touch-action: auto;
 	}
-	#sbo-shot-view p {
+	#sbo-shot-view p,
+	#sbo-log-view p {
 		margin: 0;
 		color: var(--fg);
 		font-size: 14px;
 		text-align: center;
 		line-height: 1.5;
 	}
-	#sbo-shot-view .sbo-shot-row {
+	#sbo-shot-view .sbo-shot-row,
+	#sbo-log-view .sbo-shot-row {
 		display: flex;
 		gap: 10px;
 	}
 	#sbo-shot-view .sbo-shot-row a,
-	#sbo-shot-view .sbo-shot-row button {
+	#sbo-shot-view .sbo-shot-row button,
+	#sbo-log-view .sbo-shot-row a,
+	#sbo-log-view .sbo-shot-row button {
 		border: none;
 		border-radius: 8px;
 		font: bold 14px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
@@ -796,11 +803,17 @@
 		cursor: pointer;
 		text-decoration: none;
 	}
-	#sbo-shot-dl {
+	#sbo-log-view .sbo-shot-row button[hidden] {
+		display: none;
+	}
+	#sbo-shot-dl,
+	#sbo-log-share,
+	#sbo-log-dl {
 		background: var(--accent);
 		color: #1d1f24;
 	}
-	#sbo-shot-close {
+	#sbo-shot-close,
+	#sbo-log-close {
 		background: #3a404a;
 		color: var(--fg);
 	}
@@ -912,6 +925,16 @@
 	<div class="sbo-shot-row">
 		<a id="sbo-shot-dl" href="#" download>ダウンロード</a>
 		<button id="sbo-shot-close" type="button">閉じる</button>
+	</div>
+</div>
+
+<!-- ログ保存（共有シートをその場で開けなかった時にボタンを出す） -->
+<div id="sbo-log-view" data-sbo-ui="1">
+	<p>メッセージログの準備ができました。<br>下のボタンから保存してください。</p>
+	<div class="sbo-shot-row">
+		<button id="sbo-log-share" type="button">保存する</button>
+		<a id="sbo-log-dl" href="#" download>ダウンロード</a>
+		<button id="sbo-log-close" type="button">閉じる</button>
 	</div>
 </div>
 
@@ -1336,7 +1359,10 @@
 	   ゲーム側（web/replace/SboCliMsgLogWindow_web.cpp）が sboChatLogAdd を呼ぶ
 	   =================================================================== */
 	var CHAT_LOG_MAX = 500;
+	/* ログ保存用に、画面に出すより多めに文字で取っておく */
+	var CHAT_SAVE_MAX = 5000;
 	var chatLogs = [];
+	var chatSaveLines = [];
 	var chatPanel = document.getElementById('sbo-chat-panel');
 	var chatLog = document.getElementById('sbo-chat-log');
 	var chatInput = document.getElementById('sbo-chat-input');
@@ -1383,6 +1409,10 @@
 		chatLogs.push(entry);
 		if (chatLogs.length > CHAT_LOG_MAX) {
 			chatLogs.shift();
+		}
+		chatSaveLines.push(time + ' ' + text);
+		if (chatSaveLines.length > CHAT_SAVE_MAX) {
+			chatSaveLines.shift();
 		}
 		appendTo(usePad ? chatArea : chatLog, entry);
 		if (sheet.classList.contains('sbo-open')) {
@@ -1699,6 +1729,118 @@
 		window.sboTakeScreenshot = takeShot;
 		document.getElementById('sbo-shot-pc').addEventListener('click', takeShot);
 		document.getElementById('sbo-shot-pad').addEventListener('click', takeShot);
+	})();
+
+	/* ---- ログ保存 ----
+	   ゲームのメニューの「ログ保存」で、ゲーム側（SboCliMsgLogWindow_web.cpp の SaveMsgLog）が
+	   sboChatLogSave を呼ぶ。Windows 版はファイルに書き出していたので、ブラウザ版では
+	   テキストファイル（UTF-8）としてダウンロードする。スマホは共有シートから「ファイルに保存」など。 */
+	(function () {
+		var view = document.getElementById('sbo-log-view');
+		var shareBtn = document.getElementById('sbo-log-share');
+		var dl = document.getElementById('sbo-log-dl');
+		var lastUrl = null;
+		var pending = null;
+
+		function pad2(n) {
+			return (n < 10 ? '0' : '') + n;
+		}
+		function makeLog() {
+			var d = new Date();
+			var stamp = d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) + '_' +
+				pad2(d.getHours()) + pad2(d.getMinutes()) + pad2(d.getSeconds());
+			var head = 'スクラップブックオンライン メッセージログ（' + d.getFullYear() + '/' +
+				pad2(d.getMonth() + 1) + '/' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' +
+				pad2(d.getMinutes()) + ':' + pad2(d.getSeconds()) + ' 保存）';
+			var text = [head, ''].concat(chatSaveLines).join('\r\n') + '\r\n';
+			/* Windows のメモ帳でも文字化けしないよう BOM を付けた UTF-8 にする */
+			return {
+				name: 'sbo2003_log_' + stamp + '.txt',
+				blob: new Blob(['\ufeff' + text], { type: 'text/plain;charset=utf-8' })
+			};
+		}
+		function setUrl(blob) {
+			if (lastUrl) {
+				URL.revokeObjectURL(lastUrl);
+			}
+			lastUrl = URL.createObjectURL(blob);
+			return lastUrl;
+		}
+		function download(log) {
+			var a = document.createElement('a');
+			a.href = setUrl(log.blob);
+			a.download = log.name;
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+		}
+		function makeFile(log) {
+			try {
+				var file = new File([log.blob], log.name, { type: 'text/plain' });
+				if (navigator.canShare && navigator.canShare({ files: [file] })) {
+					return file;
+				}
+			} catch (e) {
+			}
+			return null;
+		}
+		function closeView() {
+			view.classList.remove('sbo-open');
+			pending = null;
+			canvas.focus();
+		}
+		/* 共有シートはボタンを押した直後でないと開けないので、開けなかった時は
+		   ボタンを出してもう一度押してもらう */
+		function showView(log) {
+			pending = log;
+			dl.href = setUrl(log.blob);
+			dl.download = log.name;
+			shareBtn.hidden = !makeFile(log);
+			view.classList.add('sbo-open');
+		}
+		function share(log, onFail) {
+			var file = makeFile(log);
+			if (!file) {
+				onFail();
+				return;
+			}
+			navigator.share({ files: [file] }).catch(function (e) {
+				/* 自分で閉じた（AbortError）時は何もしない */
+				if (!e || e.name !== 'AbortError') {
+					onFail();
+				}
+			});
+		}
+		shareBtn.addEventListener('click', function () {
+			var log = pending;
+			if (!log) {
+				return;
+			}
+			closeView();
+			share(log, function () {
+				showView(log);
+			});
+		});
+		dl.addEventListener('click', function () {
+			setTimeout(closeView, 0);
+		});
+		document.getElementById('sbo-log-close').addEventListener('click', closeView);
+		view.addEventListener('click', function (ev) {
+			if (ev.target === view) {
+				closeView();
+			}
+		});
+
+		window.sboChatLogSave = function () {
+			var log = makeLog();
+			if (!usePad) {
+				download(log);
+				return;
+			}
+			share(log, function () {
+				showView(log);
+			});
+		};
 	})();
 
 	var Module = window.Module = {

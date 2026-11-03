@@ -9,7 +9,8 @@
  *
  *  - AddMsgLog   … 時刻と色付きの 1 行を window.sboChatLogAdd へ渡す（UTF-8）
  *  - 発言        … チャット欄の入力を SboWebChatSubmit で受け取り ChatMsgProc へ
- *  - SaveMsgLog  … ブラウザ版ではファイルに残さない
+ *  - SaveMsgLog  … メニューの「ログ保存」で window.sboChatLogSave を呼び、
+ *                  チャット欄のログをテキストファイル（UTF-8）としてダウンロードする
  */
 #include "StdAfx.h"
 #include "Glbldata.h"
@@ -37,6 +38,12 @@ EM_JS(void, SboJsChatLogAdd, (const char *pszTime, const char *pszText, int nCol
 /* 仮想パッドを出しているか（スマホなど） */
 EM_JS(int, SboJsIsPadMode, (void), {
 	return (typeof document !== 'undefined' && document.body.classList.contains('sbo-pad')) ? 1 : 0;
+});
+
+EM_JS(void, SboJsChatLogSave, (void), {
+	if (typeof window !== 'undefined' && typeof window['sboChatLogSave'] === 'function') {
+		window['sboChatLogSave']();
+	}
 });
 
 EM_JS(void, SboJsChatLogOpen, (void), {
@@ -82,10 +89,16 @@ void AddMsgLog(LPSTR lpStr, COLORREF cl)
 
 /* ========================================================================= */
 /* 関数名：SaveMsgLog														 */
-/* 内容：メッセージログ保存（ブラウザ版では何もしない）						 */
+/* 内容：メッセージログ保存（テキストファイルとしてダウンロード）			 */
 /* ========================================================================= */
 void SaveMsgLog(void)
 {
+	/* Windows 版は切断時にも自動で保存していたが、ブラウザで勝手に
+	   ダウンロードが始まると驚くので、メニューから選んだ時だけにする */
+	if (g_byGameState == GAMESTATE_CONNECTLOST) {
+		return;
+	}
+	SboJsChatLogSave ();
 }
 
 /* ========================================================================= */
