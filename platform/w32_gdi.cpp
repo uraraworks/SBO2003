@@ -163,6 +163,10 @@ EM_JS(void, W32JsPresent, (const unsigned char *pRgba, int cx, int cy), {
 		Module['w32ImgBuf'] = HEAPU8.buffer;
 	}
 	ctx.putImageData(img, 0, 0);
+	/* 表示側（シェル）が拡大表示用の後処理をしたい時のための呼び出し口 */
+	if (Module['w32OnPresent']) {
+		Module['w32OnPresent']();
+	}
 });
 
 void W32PresentScreen(void)
