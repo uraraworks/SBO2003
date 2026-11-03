@@ -1515,11 +1515,19 @@
 	}
 	/* テスト用に分割処理を外から呼べるようにしておく */
 	window.sboChatSplit = splitChat;
+	window.sboChatSend = function (text) {
+		sendChat(String(text));
+	};
 
 	function submitChat(input) {
 		var text = input.value;
 		input.value = '';
-		if (!text.trim() || !sboReady) {
+		sendChat(text);
+	}
+	/* 発言を分けて送信待ちに積む。Enter で開くゲーム内の発言欄も
+	   （SboCliMsgLogWindow_web.cpp の SboWebSpeechSubmit から）ここを通る */
+	function sendChat(text) {
+		if (!text || !text.trim() || !sboReady) {
 			return;
 		}
 		var parts = splitChat(text);
