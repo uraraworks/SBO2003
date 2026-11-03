@@ -9,7 +9,8 @@
 	管理者用のページ（スマホでも使える）。サーバーの INI にある管理者アカウントでログインする。
 	  ・キャラを探す … キャラ名・アカウント名（一部でよい）や前の名前から探し、キャラ名を変える
 	  ・復旧の承認   … アカウント復旧の申請を承認・却下する（前の recover-admin.html と同じ）
-	API は server/node/sbosvr_account.js の /api/admin/*。
+	  ・ご意見箱     … /feedback に届いた投稿を全部見て、返事・対応済み・隠す・消すをする
+	API は server/node/sbosvr_account.js の /api/admin/*（ご意見箱は server/node/sbosvr_feedback.js）。
 -->
 <style>
 	:root {
@@ -181,6 +182,25 @@
 	.tag.approved, .tag.delivered, .tag.online { color: var(--ok); border-color: var(--ok); }
 	.tag.rejected, .tag.disabled { color: var(--ng); border-color: var(--ng); }
 	.tag.old { color: var(--info); border-color: var(--info); }
+	.tag.private { color: var(--accent); border-color: var(--accent); }
+	.tag.done { color: var(--ok); border-color: var(--ok); }
+	textarea {
+		width: 100%;
+		min-height: 80px;
+		box-sizing: border-box;
+		background: var(--field);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		color: var(--fg);
+		font: 16px/1.5 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		padding: 8px 10px;
+		resize: vertical;
+	}
+	.reply-box {
+		margin-top: 10px;
+		padding-top: 10px;
+		border-top: 1px solid var(--border);
+	}
 	dl {
 		display: grid;
 		grid-template-columns: auto 1fr;
@@ -232,6 +252,7 @@
 	<nav id="tabs" hidden>
 		<button type="button" data-tab="search" class="active">キャラを探す</button>
 		<button type="button" data-tab="recover">復旧の承認<span class="badge" id="pending-count" hidden></span></button>
+		<button type="button" data-tab="feedback">ご意見箱<span class="badge" id="feedback-count" hidden></span></button>
 	</nav>
 </header>
 <main>
@@ -272,6 +293,25 @@
 		</div>
 		<div class="msg" id="list-msg"></div>
 		<div id="list"></div>
+	</section>
+
+	<!-- ご意見箱 -->
+	<section id="tab-feedback" hidden>
+		<p class="sub-text">
+			/feedback に届いた投稿です（「管理者だけ」の投稿や、匿名の人のキャラ名も見えます）。
+			返事は投稿した人に届き、みんなに見せる投稿なら一覧にも出ます。
+		</p>
+		<div class="row" style="justify-content:space-between">
+			<button type="button" class="sub" id="fb-reload">読み直す</button>
+			<label class="check" style="margin:0"><input type="checkbox" id="fb-show-all"> 対応済みも出す</label>
+		</div>
+		<div class="msg" id="fb-msg"></div>
+		<div id="fb-list"></div>
+		<div class="row" id="fb-pager" style="justify-content:space-between;margin-top:8px" hidden>
+			<button type="button" class="sub" id="fb-prev">← 新しい投稿</button>
+			<span class="sub-text" id="fb-page-text"></span>
+			<button type="button" class="sub" id="fb-next">前の投稿 →</button>
+		</div>
 	</section>
 </main>
 <script>
@@ -337,14 +377,16 @@
 		$('logout').hidden = true;
 		$('tab-search').hidden = true;
 		$('tab-recover').hidden = true;
+		$('tab-feedback').hidden = true;
 		setMsg($('login-msg'), text || '');
 	}
 	function showMain() {
 		$('login').hidden = true;
 		$('tabs').hidden = false;
 		$('logout').hidden = false;
-		selectTab(location.hash === '#recover' ? 'recover' : 'search');
+		selectTab(location.hash === '#recover' ? 'recover' : location.hash === '#feedback' ? 'feedback' : 'search');
 		loadRequests();
+		loadFeedback();
 	}
 	function login() {
 		setMsg($('login-msg'), '');
@@ -379,8 +421,9 @@
 		});
 		$('tab-search').hidden = name !== 'search';
 		$('tab-recover').hidden = name !== 'recover';
+		$('tab-feedback').hidden = name !== 'feedback';
 		if (history.replaceState) {
-			history.replaceState(null, '', name === 'recover' ? '#recover' : location.pathname);
+			history.replaceState(null, '', name === 'search' ? location.pathname : '#' + name);
 		}
 		if (name === 'search' && !$('results').childNodes.length) {
 			$('q').focus();
@@ -391,6 +434,8 @@
 			selectTab(b.dataset.tab);
 			if (b.dataset.tab === 'recover') {
 				loadRequests();
+			} else if (b.dataset.tab === 'feedback') {
+				loadFeedback();
 			}
 		});
 	});
@@ -625,6 +670,132 @@
 	}
 	$('reload').addEventListener('click', loadRequests);
 	$('show-all').addEventListener('change', renderRequests);
+
+	/* ---- ご意見箱 ---- */
+	var FB_CAT = { request: '要望', bug: '不具合', opinion: 'ご意見', other: 'その他' };
+	var nFbPage = 0;
+
+	function loadFeedback() {
+		api('/api/admin/feedback/list', {
+			session: session, filter: $('fb-show-all').checked ? 'all' : 'open', page: nFbPage
+		}).then(function (data) {
+			if (!data.posts) {
+				return;
+			}
+			setMsg($('fb-msg'), '');
+			$('feedback-count').hidden = !data.open;
+			$('feedback-count').textContent = data.open;
+			var list = $('fb-list');
+			list.textContent = '';
+			if (!data.posts.length) {
+				list.appendChild(el('p', 'sub-text', $('fb-show-all').checked ? '投稿はありません。' : '未対応の投稿はありません。'));
+			}
+			data.posts.forEach(function (p) {
+				list.appendChild(feedbackCard(p));
+			});
+			var nPages = Math.max(1, Math.ceil(data.total / data.pageSize));
+			if (nFbPage >= nPages && nFbPage > 0) {
+				nFbPage = nPages - 1;
+				loadFeedback();
+				return;
+			}
+			$('fb-pager').hidden = nPages <= 1;
+			$('fb-page-text').textContent = (nFbPage + 1) + ' / ' + nPages;
+			$('fb-prev').disabled = nFbPage <= 0;
+			$('fb-next').disabled = nFbPage + 1 >= nPages;
+		}).catch(function () {
+			setMsg($('fb-msg'), 'サーバーにつながりませんでした。');
+		});
+	}
+
+	function feedbackCard(p) {
+		var card = el('div', 'card');
+		var head = el('div', 'head');
+		head.appendChild(el('span', 'name', p.name || '（名前なし）'));
+		head.appendChild(el('span', 'tag', FB_CAT[p.category] || 'その他'));
+		head.appendChild(el('span', 'tag' + (p.public ? '' : ' private'), p.public ? 'みんなに公開' : '管理者だけ'));
+		if (p.anonymous) {
+			head.appendChild(el('span', 'tag', '匿名'));
+		}
+		if (p.hidden) {
+			head.appendChild(el('span', 'tag disabled', '隠している'));
+		}
+		if (p.done) {
+			head.appendChild(el('span', 'tag done', '対応済み'));
+		}
+		card.appendChild(head);
+		card.appendChild(el('div', 'sub-text', dateText(p.at) + '　アカウント ' + p.account +
+			(p.postedName && p.postedName !== p.name ? '（投稿した時は「' + p.postedName + '」）' : '') + '　IP ' + p.ip));
+		card.appendChild(el('div', 'message', p.body));
+
+		var box = el('div', 'reply-box');
+		box.appendChild(el('label', '', p.reply ? '返事（' + dateText(p.replyAt) + '）' : '返事'));
+		var ta = el('textarea');
+		ta.value = p.reply || '';
+		ta.placeholder = p.public ? '投稿した人と、一覧を見たみんなに見えます' : '投稿した人だけに見えます';
+		box.appendChild(ta);
+		var msg = el('div', 'msg');
+		box.appendChild(msg);
+
+		function update(param, text) {
+			if (text && !window.confirm(text)) {
+				return;
+			}
+			param.session = session;
+			param.id = p.id;
+			api('/api/admin/feedback/update', param).then(function (data) {
+				if (data.ok) {
+					loadFeedback();
+				} else if (data.httpStatus !== 401) {
+					setMsg(msg, data.error === 'long' ? '返事が長すぎます（' + data.maxLength + ' 文字まで）。' :
+						'できませんでした（' + (data.error || data.httpStatus) + '）');
+				}
+			}).catch(function () {
+				setMsg(msg, 'サーバーにつながりませんでした。');
+			});
+		}
+		var btnReply = el('button', '', p.reply ? '返事を直す' : '返事を送る');
+		btnReply.addEventListener('click', function () {
+			/* 返事を送ったら、ふつうは対応済みにする */
+			update({ reply: ta.value, done: ta.value.trim() ? true : undefined });
+		});
+		box.appendChild(btnReply);
+		var btnDone = el('button', 'sub', p.done ? '未対応に戻す' : '対応済みにする');
+		btnDone.addEventListener('click', function () { update({ done: !p.done }); });
+		box.appendChild(btnDone);
+		if (p.public) {
+			var btnHide = el('button', 'sub', p.hidden ? '一覧に戻す' : '一覧から隠す');
+			btnHide.addEventListener('click', function () {
+				update({ hidden: !p.hidden }, p.hidden ? null : 'この投稿をみんなの一覧から隠しますか？（投稿した人には見えます）');
+			});
+			box.appendChild(btnHide);
+		}
+		var btnDel = el('button', 'sub', '消す');
+		btnDel.addEventListener('click', function () {
+			if (!window.confirm('この投稿を消しますか？（元に戻せません）')) {
+				return;
+			}
+			api('/api/admin/feedback/delete', { session: session, id: p.id }).then(function () {
+				loadFeedback();
+			});
+		});
+		box.appendChild(btnDel);
+		card.appendChild(box);
+		return card;
+	}
+	$('fb-reload').addEventListener('click', loadFeedback);
+	$('fb-show-all').addEventListener('change', function () {
+		nFbPage = 0;
+		loadFeedback();
+	});
+	$('fb-prev').addEventListener('click', function () {
+		nFbPage = Math.max(0, nFbPage - 1);
+		loadFeedback();
+	});
+	$('fb-next').addEventListener('click', function () {
+		nFbPage++;
+		loadFeedback();
+	});
 
 	/* 開いた時：このタブでログイン済みなら続きから */
 	session = ssGet();

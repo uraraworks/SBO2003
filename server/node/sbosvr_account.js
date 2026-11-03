@@ -605,16 +605,24 @@ Module['sboAccount'] = (function () {
 		reply(res, 200, { session: session });
 	}
 
-	function checkAdmin(body, res) {
-		var hash = sha256(str(body.session, 128));
+	/* 管理ページのログインが続いているか（続いていれば期限を延ばす） */
+	function isAdminSession(session) {
+		var hash = sha256(str(session, 128));
 		var until = aAdminSession[hash];
 		if (!until || until < Date.now()) {
 			delete aAdminSession[hash];
-			reply(res, 401, { error: 'session' });
 			return false;
 		}
 		/* 使っている間は延ばす（最後に使ってから 2 時間） */
 		aAdminSession[hash] = Date.now() + 2 * HOUR;
+		return true;
+	}
+
+	function checkAdmin(body, res) {
+		if (!isAdminSession(body.session)) {
+			reply(res, 401, { error: 'session' });
+			return false;
+		}
 		return true;
 	}
 
@@ -764,9 +772,22 @@ Module['sboAccount'] = (function () {
 		return true;
 	}
 
+	/* 端末トークンからアカウントの情報を引く（ご意見箱などほかのページ用。見つからなければ null） */
+	function tokenInfo(token) {
+		var t = findToken(token);
+		return t ? accInfo(t.info.account) : null;
+	}
+
 	return {
 		handleHttp: handleHttp,
 		tokenToAccount: tokenToAccount,
-		issueToken: issueToken
+		issueToken: issueToken,
+		/* sbosvr_feedback.js などから使う */
+		tokenInfo: tokenInfo,
+		accInfo: accInfo,
+		isAdminSession: isAdminSession,
+		clientIp: clientIp,
+		reply: reply,
+		Limiter: Limiter
 	};
 })();
