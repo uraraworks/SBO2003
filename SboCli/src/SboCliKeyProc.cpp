@@ -93,6 +93,9 @@ LRESULT CALLBACK ChgPasswordWndProc			(HWND, UINT, WPARAM, LPARAM);	/* パスワ
 void CmdProcHanasu		(PWNDINFO);											/* コマンド処理(話す) */
 BOOL CmdProcSiraberu	(PWNDINFO);											/* コマンド処理(調べる) */
 void ChatMsgProc		(LPCTSTR);											/* 発言メッセージ処理 */
+#ifdef __EMSCRIPTEN__
+extern void SboWebSpeechSubmit(LPCSTR pszSjis);								/* 発言（ブラウザ版の分割送信） */
+#endif
 
 extern int GetWindowID(DWORD);										/* ウィンドウ番号を取得 */
 
@@ -6667,10 +6670,22 @@ LRESULT CALLBACK SpeechWndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp)
 			for (i = 0; i < g_WndInfo.GetSize (); i ++) {
 				/* 発言ウィンドウ検索 */
 				if (g_WndInfo[i]->nType == WNDTYPE_SPEECH) {
+#ifdef __EMSCRIPTEN__
+					/* ブラウザ版：長い発言はチャット欄と同じように分けて順に送る */
+					{
+						int nLen = GetWindowTextLength (hWnd);
+						LPSTR pszBuf = new char[nLen + 2];
+						ZeroMemory (pszBuf, nLen + 2);
+						GetWindowText (hWnd, pszBuf, nLen + 1);
+						SboWebSpeechSubmit (pszBuf);
+						SAFE_DELETE_ARRAY (pszBuf);
+					}
+#else
 					char szBuf[42];
 					ZeroMemory (szBuf, sizeof (szBuf));
 					GetWindowText (hWnd, szBuf, 41);
 					ChatMsgProc (szBuf);
+#endif
 
 					EraseWindow (g_WndInfo[i]);
 					g_bSpeech = FALSE;
