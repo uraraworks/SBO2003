@@ -305,6 +305,13 @@ Module['sboNet'] = (function () {
 		if (url === '/status') {
 			url = '/status.html';
 		}
+		/* 管理ページ（スマホでも使える）・キャラ名の変更ページ（web/account/） */
+		if (url === '/admin') {
+			url = '/admin.html';
+		}
+		if (url === '/rename') {
+			url = '/rename.html';
+		}
 		/* アカウント関係の API（sbosvr_account.js） */
 		if (Module['sboAccount'] && Module['sboAccount'].handleHttp(req, res, url)) {
 			return;

@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>管理ページ｜スクラップブックオンライン</title>
+<!--
+	管理者用のページ（スマホでも使える）。サーバーの INI にある管理者アカウントでログインする。
+	  ・キャラを探す … キャラ名・アカウント名（一部でよい）や前の名前から探し、キャラ名を変える
+	  ・復旧の承認   … アカウント復旧の申請を承認・却下する（前の recover-admin.html と同じ）
+	API は server/node/sbosvr_account.js の /api/admin/*。
+-->
+<style>
+	:root {
+		--bg: #1d1f24;
+		--fg: #e8e8e8;
+		--sub: #9aa0a6;
+		--panel: #262a33;
+		--field: #0f1217;
+		--border: #3a404a;
+		--accent: #f0b84a;
+		--ok: #7fd17f;
+		--ng: #ff9b8a;
+		--info: #6fa8dc;
+	}
+	html, body {
+		margin: 0;
+		background: var(--bg);
+		color: var(--fg);
+		font: 14px/1.6 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		-webkit-text-size-adjust: 100%;
+	}
+	header {
+		position: sticky;
+		top: 0;
+		z-index: 2;
+		background: #0c0c0c;
+		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+		padding: 8px 16px 0;
+		padding-top: max(8px, env(safe-area-inset-top));
+	}
+	header h1 {
+		margin: 0;
+		font-size: 15px;
+		color: var(--accent);
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+	}
+	header h1 button {
+		margin: 0;
+		font-size: 12px;
+		padding: 6px 10px;
+	}
+	nav {
+		display: flex;
+		gap: 4px;
+		margin-top: 8px;
+	}
+	nav button {
+		flex: 1 1 0;
+		margin: 0;
+		border-radius: 8px 8px 0 0;
+		background: transparent;
+		color: var(--sub);
+		border: none;
+		border-bottom: 3px solid transparent;
+		padding: 10px 4px;
+		font-size: 14px;
+	}
+	nav button.active {
+		color: var(--fg);
+		border-bottom-color: var(--accent);
+	}
+	.badge {
+		display: inline-block;
+		min-width: 18px;
+		border-radius: 9px;
+		background: var(--ng);
+		color: #1d1f24;
+		font-size: 11px;
+		line-height: 18px;
+		padding: 0 5px;
+		margin-left: 4px;
+		box-sizing: border-box;
+	}
+	main {
+		max-width: 760px;
+		margin: 0 auto;
+		padding: 16px;
+		padding-bottom: max(24px, env(safe-area-inset-bottom));
+	}
+	.card {
+		background: var(--panel);
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		padding: 14px 16px;
+		margin-bottom: 12px;
+	}
+	label {
+		display: block;
+		margin: 8px 0 4px;
+	}
+	input[type="text"], input[type="password"], input[type="search"] {
+		width: 100%;
+		box-sizing: border-box;
+		background: var(--field);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		color: var(--fg);
+		font: 16px/1.3 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;	/* 16px 未満だと iPhone で拡大される */
+		padding: 10px;
+	}
+	button {
+		background: var(--accent);
+		color: #1d1f24;
+		border: none;
+		border-radius: 8px;
+		font: bold 14px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		padding: 11px 16px;
+		margin: 10px 8px 0 0;
+		cursor: pointer;
+		touch-action: manipulation;
+	}
+	button.sub {
+		background: transparent;
+		color: var(--fg);
+		border: 1px solid var(--border);
+	}
+	button:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+	.row {
+		display: flex;
+		gap: 8px;
+		align-items: center;
+	}
+	.row input {
+		flex: 1 1 auto;
+		min-width: 0;
+	}
+	.row button {
+		flex: 0 0 auto;
+		margin: 0;
+	}
+	.msg {
+		color: var(--ng);
+		min-height: 1.4em;
+		margin-top: 6px;
+	}
+	.msg.ok {
+		color: var(--ok);
+	}
+	.head {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px 10px;
+		align-items: baseline;
+	}
+	.name {
+		font-size: 17px;
+		font-weight: bold;
+		word-break: break-all;
+	}
+	.sub-text {
+		color: var(--sub);
+		font-size: 13px;
+	}
+	.tag {
+		display: inline-block;
+		border-radius: 4px;
+		padding: 0 6px;
+		font-size: 12px;
+		border: 1px solid var(--border);
+		white-space: nowrap;
+	}
+	.tag.pending, .tag.admin { color: var(--accent); border-color: var(--accent); }
+	.tag.approved, .tag.delivered, .tag.online { color: var(--ok); border-color: var(--ok); }
+	.tag.rejected, .tag.disabled { color: var(--ng); border-color: var(--ng); }
+	.tag.old { color: var(--info); border-color: var(--info); }
+	dl {
+		display: grid;
+		grid-template-columns: auto 1fr;
+		gap: 2px 12px;
+		margin: 8px 0 0;
+		font-size: 13px;
+	}
+	dt {
+		color: var(--sub);
+	}
+	dd {
+		margin: 0;
+		word-break: break-all;
+	}
+	.history {
+		margin: 6px 0 0;
+		padding-left: 18px;
+		font-size: 13px;
+		color: var(--sub);
+	}
+	.message {
+		white-space: pre-wrap;
+		word-break: break-all;
+		background: var(--field);
+		border-radius: 6px;
+		padding: 6px 8px;
+		margin-top: 6px;
+	}
+	.rename {
+		margin-top: 10px;
+		padding-top: 10px;
+		border-top: 1px solid var(--border);
+	}
+	.check {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin-top: 10px;
+	}
+	[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+	<h1>
+		<span>管理ページ</span>
+		<button type="button" class="sub" id="logout" hidden>ログアウト</button>
+	</h1>
+	<nav id="tabs" hidden>
+		<button type="button" data-tab="search" class="active">キャラを探す</button>
+		<button type="button" data-tab="recover">復旧の承認<span class="badge" id="pending-count" hidden></span></button>
+	</nav>
+</header>
+<main>
+	<div class="card" id="login">
+		<p class="sub-text">サーバーの管理者アカウント（SboSvr.ini の [Administrator]）でログインしてください。</p>
+		<label for="acc">管理者アカウント</label>
+		<input id="acc" type="text" autocomplete="username" autocapitalize="off" autocorrect="off">
+		<label for="pas">パスワード</label>
+		<input id="pas" type="password" autocomplete="current-password">
+		<div><button type="button" id="login-btn">ログイン</button></div>
+		<div class="msg" id="login-msg"></div>
+	</div>
+
+	<!-- キャラを探す -->
+	<section id="tab-search" hidden>
+		<div class="card">
+			<label for="q" style="margin-top:0">キャラ名・アカウント名（一部でも OK）</label>
+			<div class="row">
+				<input id="q" type="search" enterkeyhint="search" autocapitalize="off" autocorrect="off">
+				<button type="button" id="search-btn">探す</button>
+			</div>
+			<p class="sub-text" style="margin:6px 0 0">前に使っていたキャラ名からも探せます。</p>
+		</div>
+		<div class="msg" id="search-msg"></div>
+		<div id="results"></div>
+	</section>
+
+	<!-- 復旧の承認 -->
+	<section id="tab-recover" hidden>
+		<p class="sub-text">
+			キャラ名に加えて、アカウント名かパスワードの一部の「どちらか片方だけ」が合った申請です。
+			当時の様子（レベル・作成日・プレイ時間）やひとことを見て、本人らしければ承認してください。
+			承認すると、申請した端末でボタンを押すだけでログインできるようになります。
+		</p>
+		<div class="row" style="justify-content:space-between">
+			<button type="button" class="sub" id="reload">読み直す</button>
+			<label class="check" style="margin:0"><input type="checkbox" id="show-all"> 処理済みも出す</label>
+		</div>
+		<div class="msg" id="list-msg"></div>
+		<div id="list"></div>
+	</section>
+</main>
+<script>
+(function () {
+	var KEY_SESSION = 'sbo_admin_session';
+	var session = '';
+	var aRequests = [];
+
+	function $(id) {
+		return document.getElementById(id);
+	}
+	function ssGet() {
+		try { return window.sessionStorage.getItem(KEY_SESSION) || ''; } catch (e) { return ''; }
+	}
+	function ssSet(v) {
+		try {
+			if (v) {
+				window.sessionStorage.setItem(KEY_SESSION, v);
+			} else {
+				window.sessionStorage.removeItem(KEY_SESSION);
+			}
+		} catch (e) { /* 保存できなくても、このページを開いている間は使える */ }
+	}
+	function api(url, body) {
+		return fetch(url, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(body)
+		}).then(function (res) {
+			return res.json().catch(function () { return {}; }).then(function (data) {
+				data.httpStatus = res.status;
+				if (res.status === 401 && data.error === 'session') {
+					showLogin('ログインの期限が切れました。もう一度ログインしてください。');
+				}
+				return data;
+			});
+		});
+	}
+	function el(tag, cls, text) {
+		var e = document.createElement(tag);
+		if (cls) {
+			e.className = cls;
+		}
+		if (text != null) {
+			e.textContent = text;
+		}
+		return e;
+	}
+	function setMsg(e, text, bOk) {
+		e.textContent = text || '';
+		e.classList.toggle('ok', !!bOk);
+	}
+	function dateText(ms) {
+		return ms ? new Date(ms).toLocaleString('ja-JP', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+	}
+
+	/* ---- ログイン ---- */
+	function showLogin(text) {
+		session = '';
+		ssSet('');
+		$('login').hidden = false;
+		$('tabs').hidden = true;
+		$('logout').hidden = true;
+		$('tab-search').hidden = true;
+		$('tab-recover').hidden = true;
+		setMsg($('login-msg'), text || '');
+	}
+	function showMain() {
+		$('login').hidden = true;
+		$('tabs').hidden = false;
+		$('logout').hidden = false;
+		selectTab(location.hash === '#recover' ? 'recover' : 'search');
+		loadRequests();
+	}
+	function login() {
+		setMsg($('login-msg'), '');
+		api('/api/admin/login', { account: $('acc').value, password: $('pas').value }).then(function (data) {
+			if (!data.session) {
+				setMsg($('login-msg'), data.error === 'too_many' ?
+					'何度も間違えたので、しばらく時間をおいてください。' : 'アカウントかパスワードが違います。');
+				return;
+			}
+			session = data.session;
+			ssSet(session);
+			$('pas').value = '';
+			showMain();
+		}).catch(function () {
+			setMsg($('login-msg'), 'サーバーにつながりませんでした。');
+		});
+	}
+	$('login-btn').addEventListener('click', login);
+	$('pas').addEventListener('keydown', function (ev) {
+		if (ev.key === 'Enter') {
+			login();
+		}
+	});
+	$('logout').addEventListener('click', function () {
+		showLogin('ログアウトしました。');
+	});
+
+	/* ---- タブ ---- */
+	function selectTab(name) {
+		Array.prototype.forEach.call(document.querySelectorAll('#tabs button'), function (b) {
+			b.classList.toggle('active', b.dataset.tab === name);
+		});
+		$('tab-search').hidden = name !== 'search';
+		$('tab-recover').hidden = name !== 'recover';
+		if (history.replaceState) {
+			history.replaceState(null, '', name === 'recover' ? '#recover' : location.pathname);
+		}
+		if (name === 'search' && !$('results').childNodes.length) {
+			$('q').focus();
+		}
+	}
+	Array.prototype.forEach.call(document.querySelectorAll('#tabs button'), function (b) {
+		b.addEventListener('click', function () {
+			selectTab(b.dataset.tab);
+			if (b.dataset.tab === 'recover') {
+				loadRequests();
+			}
+		});
+	});
+
+	/* ---- キャラを探す ---- */
+	var RENAME_NG = {
+		empty: '新しい名前を入れてください。',
+		charset: 'ゲームで使えない文字（絵文字・一部の記号や旧字）が入っています。',
+		long: '長すぎます（全角 7 文字・半角 14 文字まで）。',
+		char: '空白や制御文字は使えません。',
+		same: '今と同じ名前です。',
+		taken: 'その名前はもう使われています（NPC を含む）。',
+		notfound: 'このアカウントにはまだキャラがいません。'
+	};
+
+	function search() {
+		var q = $('q').value.trim();
+		if (!q) {
+			setMsg($('search-msg'), 'キャラ名かアカウント名を入れてください。');
+			return;
+		}
+		$('q').blur();
+		setMsg($('search-msg'), '探しています...', true);
+		api('/api/admin/search', { session: session, q: q }).then(function (data) {
+			if (!data.results) {
+				if (data.httpStatus !== 401) {
+					setMsg($('search-msg'), '探せませんでした（' + (data.error || data.httpStatus) + '）');
+				}
+				return;
+			}
+			setMsg($('search-msg'), data.results.length ?
+				data.results.length + ' 件見つかりました' + (data.more ? '（多いので先頭だけ。もう少し詳しく入れてね）' : '') :
+				'見つかりませんでした。', true);
+			var box = $('results');
+			box.textContent = '';
+			data.results.forEach(function (c) {
+				box.appendChild(charCard(c));
+			});
+		}).catch(function () {
+			setMsg($('search-msg'), 'サーバーにつながりませんでした。');
+		});
+	}
+	$('search-btn').addEventListener('click', search);
+	$('q').addEventListener('keydown', function (ev) {
+		if (ev.key === 'Enter') {
+			search();
+		}
+	});
+
+	function charCard(c) {
+		var card = el('div', 'card');
+		var head = el('div', 'head');
+		head.appendChild(el('span', 'name', c.name || '（キャラ未作成）'));
+		if (c.online) {
+			head.appendChild(el('span', 'tag online', 'ログイン中'));
+		}
+		if (c.admin) {
+			head.appendChild(el('span', 'tag admin', '管理者'));
+		}
+		if (c.disabled) {
+			head.appendChild(el('span', 'tag disabled', 'ログイン禁止'));
+		}
+		if (c.matchedOldName) {
+			head.appendChild(el('span', 'tag old', '前の名前「' + c.matchedOldName + '」'));
+		}
+		card.appendChild(head);
+
+		var dl = el('dl');
+		function item(k, v) {
+			dl.appendChild(el('dt', '', k));
+			dl.appendChild(el('dd', '', v));
+		}
+		item('アカウント', c.account);
+		item('レベル', 'Lv ' + c.level);
+		item('作成日', c.made);
+		item('プレイ', Math.floor(c.playMinutes / 60) + ' 時間 ／ ログイン ' + c.loginCount + ' 回');
+		item('場所', 'マップ ' + c.mapID + '（' + c.x + ', ' + c.y + '）');
+		item('ブラウザ版', c.devices ? c.devices + ' 台の端末' + (c.lastWebLogin ? '（最後 ' + dateText(c.lastWebLogin) + '）' : '') : 'まだ使っていない');
+		item('復旧キー', c.hasCode ? 'あり' : 'なし');
+		card.appendChild(dl);
+
+		if (c.renames && c.renames.length) {
+			card.appendChild(el('div', 'sub-text', '名前の変更の記録'));
+			var ul = el('ul', 'history');
+			c.renames.forEach(function (r) {
+				ul.appendChild(el('li', '', dateText(r.at) + '　' + r.from + ' → ' + r.to + (r.by === 'admin' ? '（管理者）' : '（本人）')));
+			});
+			card.appendChild(ul);
+		}
+
+		if (c.name) {
+			var btn = el('button', 'sub', 'キャラ名を変える');
+			var form = renameForm(c, card);
+			form.hidden = true;
+			btn.addEventListener('click', function () {
+				form.hidden = !form.hidden;
+				if (!form.hidden) {
+					form.querySelector('input').focus();
+				}
+			});
+			card.appendChild(btn);
+			card.appendChild(form);
+		}
+		return card;
+	}
+
+	function renameForm(c, card) {
+		var form = el('div', 'rename');
+		var label = el('label', '', '新しいキャラ名');
+		var input = el('input');
+		input.type = 'text';
+		input.autocomplete = 'off';
+		input.value = c.name;
+		var msg = el('div', 'msg');
+		var check = el('button', 'sub', '使えるか確かめる');
+		var apply = el('button', '', '変える');
+		form.appendChild(label);
+		form.appendChild(input);
+		if (c.online) {
+			form.appendChild(el('p', 'sub-text', 'ログイン中なので、本人と近くの人にはすぐ新しい名前が届きます（遠くの人は入り直すまで前の名前のことがあります）。'));
+		}
+		form.appendChild(msg);
+		form.appendChild(check);
+		form.appendChild(apply);
+
+		function run(bCheck) {
+			var name = input.value.trim();
+			if (!bCheck && !window.confirm('「' + c.name + '」を「' + name + '」に変えますか？')) {
+				return;
+			}
+			check.disabled = apply.disabled = true;
+			api('/api/admin/rename', { session: session, account: c.account, name: name, check: bCheck }).then(function (data) {
+				check.disabled = apply.disabled = false;
+				if (data.result === 'ok') {
+					if (bCheck) {
+						setMsg(msg, '「' + data.to + '」は使えます。', true);
+					} else if (data.char) {
+						var cardNew = charCard(data.char);
+						card.parentNode.replaceChild(cardNew, card);
+						cardNew.appendChild(el('div', 'msg ok', '「' + data.from + '」を「' + data.to + '」に変えました。'));
+					}
+				} else if (data.httpStatus !== 401) {
+					setMsg(msg, RENAME_NG[data.result] || '変えられませんでした（' + (data.result || data.error || data.httpStatus) + '）');
+				}
+			}).catch(function () {
+				check.disabled = apply.disabled = false;
+				setMsg(msg, 'サーバーにつながりませんでした。');
+			});
+		}
+		check.addEventListener('click', function () { run(true); });
+		apply.addEventListener('click', function () { run(false); });
+		input.addEventListener('keydown', function (ev) {
+			if (ev.key === 'Enter') {
+				run(true);
+			}
+		});
+		return form;
+	}
+
+	/* ---- 復旧の承認 ---- */
+	var STATUS = { pending: '承認待ち', approved: '承認済み（受け取り待ち）', delivered: '承認済み', rejected: '却下' };
+
+	function renderRequests() {
+		var list = $('list');
+		var bAll = $('show-all').checked;
+		list.textContent = '';
+		var nPending = aRequests.filter(function (r) { return r.status === 'pending'; }).length;
+		$('pending-count').hidden = !nPending;
+		$('pending-count').textContent = nPending;
+		var a = aRequests.filter(function (r) { return bAll || r.status === 'pending'; });
+		if (!a.length) {
+			list.appendChild(el('p', 'sub-text', bAll ? '申請はありません。' : '承認待ちの申請はありません。'));
+			return;
+		}
+		a.forEach(function (r) {
+			var card = el('div', 'card');
+			var head = el('div', 'head');
+			head.appendChild(el('span', 'name', r.name || '（名前なし）'));
+			head.appendChild(el('span', 'tag ' + r.status, STATUS[r.status] || r.status));
+			card.appendChild(head);
+			card.appendChild(el('div', 'sub-text', dateText(r.created)));
+			var dl = el('dl');
+			function item(k, v) {
+				dl.appendChild(el('dt', '', k));
+				dl.appendChild(el('dd', '', v));
+			}
+			item('アカウント', r.account);
+			item('レベル', 'Lv ' + r.level + ' ／ 作成 ' + r.made);
+			item('プレイ', Math.floor(r.playMinutes / 60) + ' 時間 ／ ログイン ' + r.loginCount + ' 回');
+			item('合っていた', r.byAccount ? 'アカウント名' : 'パスワードの一部');
+			item('IP', r.ip);
+			card.appendChild(dl);
+			if (r.message) {
+				card.appendChild(el('div', 'message', r.message));
+			}
+			if (r.status === 'pending') {
+				var ok = el('button', '', '承認する');
+				var ng = el('button', 'sub', '却下する');
+				ok.addEventListener('click', function () { decide(r, true); });
+				ng.addEventListener('click', function () { decide(r, false); });
+				card.appendChild(ok);
+				card.appendChild(ng);
+			}
+			list.appendChild(card);
+		});
+	}
+
+	function loadRequests() {
+		api('/api/admin/recover/list', { session: session }).then(function (data) {
+			if (!data.requests) {
+				return;
+			}
+			setMsg($('list-msg'), '');
+			aRequests = data.requests;
+			renderRequests();
+		}).catch(function () {
+			setMsg($('list-msg'), 'サーバーにつながりませんでした。');
+		});
+	}
+
+	function decide(r, bApprove) {
+		var text = bApprove ? '「' + (r.name || r.account) + '」の復旧を承認しますか？' : '「' + (r.name || r.account) + '」の申請を却下しますか？';
+		if (!window.confirm(text)) {
+			return;
+		}
+		api('/api/admin/recover/decide', { session: session, id: r.id, approve: bApprove }).then(function (data) {
+			if (!data.ok && data.httpStatus !== 401) {
+				setMsg($('list-msg'), '処理できませんでした（' + (data.error || data.httpStatus) + '）');
+			}
+			loadRequests();
+		});
+	}
+	$('reload').addEventListener('click', loadRequests);
+	$('show-all').addEventListener('change', renderRequests);
+
+	/* 開いた時：このタブでログイン済みなら続きから */
+	session = ssGet();
+	if (session) {
+		showMain();
+	} else {
+		showLogin('');
+	}
+})();
+</script>
+</body>
+</html>

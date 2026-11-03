@@ -173,8 +173,13 @@ cp "$ROOT/web/bgm/sbo_bgm.js" \
 	"$ROOT/web/soundfont/GeneralUserGS.sf3" \
 	"$DIST/bgm/"
 
-# アカウント復旧の承認ページ（管理者用。サーバーの /api/admin/* を使う）
-cp "$ROOT/web/account/recover-admin.html" "$DIST/"
+# 管理ページ（/admin。キャラ検索・キャラ名の変更・復旧の承認。サーバーの /api/admin/* を使う）
+# キャラ名の変更ページ（/rename。プレイヤー用）
+# recover-admin.html は前の URL を /admin#recover へ送るだけ
+cp "$ROOT/web/account/admin.html" \
+	"$ROOT/web/account/rename.html" \
+	"$ROOT/web/account/recover-admin.html" \
+	"$DIST/"
 
 # サーバー状況のページ（/status。サーバーの /api/status を読む）。フッターの版も書き込む
 sed "s/@@SBO_BUILD_DATE@@/$BUILD_DATE/g; s/@@SBO_BUILD_COMMIT@@/$BUILD_COMMIT/g" "$ROOT/web/status/status.html" > "$DIST/status.html"
