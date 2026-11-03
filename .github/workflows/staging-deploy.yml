@@ -39,7 +39,7 @@ jobs:
         run: |
           # サーバー・ブラウザ版とも Dockerfile の中（emsdk のイメージ）でビルドする。
           # メモリの少ないホストではビルドが重いので、ここで作って送る。
-          docker build -f deploy/staging/Dockerfile -t sbo2003-staging .
+          docker build -f deploy/staging/Dockerfile -t sbo2003-staging --build-arg SBO2003_BUILD_COMMIT="${GITHUB_SHA::7}" .
           docker save sbo2003-staging | gzip > sbo2003-staging.tar.gz
           # ホストには deploy/staging だけを置く（compose.yaml・サイト定義の雛形・スクリプト）
           tar -czf deploy-files.tar.gz deploy/staging
