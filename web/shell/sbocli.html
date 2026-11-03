@@ -1394,15 +1394,112 @@
 		setOnMap(true);
 	};
 
+	/* ---- 長い発言の自動分割 ----
+	   ゲーム本体の発言は Shift_JIS で 40 バイトまで（元の発言欄の上限）で、
+	   それを超えた分は SboWebChatSubmit で切り捨てられる。
+	   そこで 1 回の入力を 40 バイト以内の発言に分け、間隔を空けて順に送る。
+	   サーバーは発言を 1 キャラ 1 つだけ預かって次の巡回で配るので、
+	   続けて送ると前の発言が上書きされて消える。そのため間隔を空ける。 */
+	var CHAT_SPEECH_MAX = 40;		/* 1 回の発言の上限（Shift_JIS のバイト数） */
+	var CHAT_SEND_INTERVAL = 1200;	/* 分割した発言を送る間隔（ミリ秒） */
+	var chatQueue = [];
+	var chatTimer = 0;
+
+	/* 1 文字の Shift_JIS でのバイト数（半角英数と半角カナは 1、それ以外は 2 と多めに数える） */
+	function sjisLen(ch) {
+		var c = ch.codePointAt(0);
+		if (c < 0x80 || (c >= 0xFF61 && c <= 0xFF9F)) {
+			return 1;
+		}
+		return 2;
+	}
+	/* 区切りに向いた文字（この直後で切ると読みやすい） */
+	function isBreakChar(ch) {
+		return ' 　、。，．,.!?！？…」』）)'.indexOf(ch) >= 0;
+	}
+	/* 先頭にあるとゲームがコマンドとして扱う文字 */
+	function isCmdChar(ch) {
+		return '!<#$/'.indexOf(ch) >= 0;
+	}
+
+	function splitChat(text) {
+		var chars = Array.from(text);
+		var prefix = '';
+		/* コマンド（/ # $）は分けずにそのまま送る */
+		if (isCmdChar(chars[0]) && chars[0] !== '!' && chars[0] !== '<') {
+			return [text];
+		}
+		/* マップ内放送（!）と画面内放送（<）は、分けた発言すべてに付け直す */
+		if (chars[0] === '!' || chars[0] === '<') {
+			prefix = chars.shift();
+		}
+		var limit = CHAT_SPEECH_MAX - prefix.length;
+		var parts = [];
+		var start = 0;
+		while (start < chars.length) {
+			var end = start, bytes = 0;
+			while (end < chars.length && bytes + sjisLen(chars[end]) <= limit) {
+				bytes += sjisLen(chars[end]);
+				end ++;
+			}
+			if (end < chars.length) {
+				/* 後ろ 3 分の 1 に区切りに向いた文字があれば、その直後で切る */
+				for (var i = end; i > start + Math.floor((end - start) * 2 / 3); i --) {
+					/* 「。」だけが次の発言に残るような切り方は避ける */
+					if (isBreakChar(chars[i - 1]) && !isBreakChar(chars[i])) {
+						end = i;
+						break;
+					}
+				}
+				/* 次の発言の先頭が句読点やコマンド扱いの文字にならないよう、手前で切る */
+				while (end > start + 1 && (isCmdChar(chars[end]) ||
+					(isBreakChar(chars[end]) && chars[end].trim()))) {
+					end --;
+				}
+			}
+			var part = chars.slice(start, end).join('');
+			if (part.trim()) {
+				parts.push(prefix + part);
+			}
+			start = end;
+		}
+		return parts;
+	}
+
+	function sendChatNow(text) {
+		if (!sboReady) {
+			return;
+		}
+		var p = Module['stringToNewUTF8'](text);
+		Module['_SboWebChatSubmit'](p);
+		Module['_free'](p);
+	}
+	function flushChatQueue() {
+		chatTimer = 0;
+		if (chatQueue.length === 0) {
+			return;
+		}
+		sendChatNow(chatQueue.shift());
+		/* 最後の 1 つを送った後も間隔を空け、すぐ次の入力で上書きされないようにする */
+		chatTimer = setTimeout(flushChatQueue, CHAT_SEND_INTERVAL);
+	}
+	/* テスト用に分割処理を外から呼べるようにしておく */
+	window.sboChatSplit = splitChat;
+
 	function submitChat(input) {
 		var text = input.value;
 		input.value = '';
 		if (!text.trim() || !sboReady) {
 			return;
 		}
-		var p = Module['stringToNewUTF8'](text);
-		Module['_SboWebChatSubmit'](p);
-		Module['_free'](p);
+		var parts = splitChat(text);
+		for (var i = 0; i < parts.length; i ++) {
+			chatQueue.push(parts[i]);
+		}
+		/* 送信待ちがなければすぐ送り、あれば順番が来るまで待つ */
+		if (!chatTimer) {
+			flushChatQueue();
+		}
 	}
 	function bindChatInput(input, sendBtn, afterSend) {
 		input.addEventListener('keydown', function (ev) {
