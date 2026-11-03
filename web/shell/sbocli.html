@@ -492,6 +492,9 @@
 		padding: 4px;
 		margin-top: 6px;
 	}
+	a.sbo-link {
+		display: inline-block;
+	}
 	#sbo-forgot {
 		display: none;
 		font-size: 13px;
@@ -694,6 +697,7 @@
 				<button type="button" class="sbo-btn" id="sbo-quick-start">はじめる</button>
 				<button type="button" class="sbo-btn sbo-btn-sub" data-quick-other="1">別のアカウントでログイン</button>
 				<button type="button" class="sbo-link" id="sbo-quick-settings">アカウント設定</button>
+				<a class="sbo-link" href="/feedback" target="_blank" rel="noopener">ご意見箱（要望・不具合はこちら）</a>
 				<button type="button" class="sbo-link" id="sbo-quick-forget">この端末の記憶を消す</button>
 			</div>
 			<!-- はじめての端末 -->
@@ -727,6 +731,7 @@
 <footer class="site-footer">
 	<a href="https://www.urara-works.jp/" target="_blank" rel="noopener">© URARA-works</a> /
 	<a href="/status" target="_blank" rel="noopener" id="sbo-site-status">サーバー状況</a> /
+	<a href="/feedback" target="_blank" rel="noopener">ご意見箱</a> /
 	<a href="https://github.com/uraraworks/SBO2003" target="_blank" rel="noopener">GitHubで見る</a> /
 	<!-- 反映した日時とコミット（tools/web/build.sh がビルドの時に書き込む） -->
 	<span class="site-build" title="反映した日時とコミット">@@SBO_BUILD_DATE@@ <a href="https://github.com/uraraworks/SBO2003/commit/@@SBO_BUILD_COMMIT@@" target="_blank" rel="noopener">@@SBO_BUILD_COMMIT@@</a></span>
@@ -841,6 +846,7 @@
 			<button type="button" class="sbo-btn sbo-btn-sub" id="sbo-rc-setpass">パスワードを変える</button>
 			<button type="button" class="sbo-btn sbo-btn-sub" id="sbo-rc-newcode">復旧キーを作り直す</button>
 			<button type="button" class="sbo-btn sbo-btn-sub" id="sbo-rc-rename">キャラ名を変える</button>
+			<button type="button" class="sbo-btn sbo-btn-sub" id="sbo-rc-feedback">ご意見箱（要望・不具合を送る）</button>
 			<button type="button" class="sbo-btn" data-close="1" style="margin-top:12px">ゲームへ戻る</button>
 		</div>
 	</div>
@@ -1644,6 +1650,10 @@
 	/* キャラ名の変更は別のページ（/rename。web/account/rename.html）で行う */
 	$('sbo-rc-rename').addEventListener('click', function () {
 		location.href = '/rename';
+	});
+	/* ご意見箱（/feedback。web/account/feedback.html） */
+	$('sbo-rc-feedback').addEventListener('click', function () {
+		location.href = '/feedback';
 	});
 	$('sbo-quick-redeem').addEventListener('click', function () {
 		$('sbo-redeem-code').value = '';

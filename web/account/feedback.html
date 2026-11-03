@@ -1,0 +1,743 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>ご意見箱｜スクラップブックオンライン</title>
+<!--
+	ご意見箱（/feedback）。プレイヤーが管理者へ要望・ご意見・不具合を送るページ。
+	・投稿は、ブラウザ版でログインしたことのある人だけ（localStorage の sbo_device_token で本人確認）
+	・投稿ごとに「みんなに見せる／管理者だけ」と「キャラ名を出す／匿名」を選べる
+	・みんなに見せる投稿は、ログインしていなくても読める
+	API は server/node/sbosvr_feedback.js の /api/feedback/*。
+-->
+<style>
+	:root {
+		--page-bg: #efe6d2;
+		--ink: #2b2620;
+		--sub: #7a6f60;
+		--card: #fffaf0;
+		--card-border: #dccfb4;
+		--panel: #1d1f24;
+		--panel-fg: #e8e8e8;
+		--panel-sub: #9aa0a6;
+		--field: #0f1217;
+		--border: #3a404a;
+		--accent: #f0b84a;
+		--accent-ink: #9a6a10;
+		--ok: #8fe07a;
+		--ng: #ff9b8a;
+		--ng-ink: #b2412e;
+		--reply-bg: #f3ead6;
+	}
+	html, body {
+		margin: 0;
+		padding: 0;
+		background: var(--page-bg);
+		color: var(--ink);
+		font: 14px/1.6 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		-webkit-text-size-adjust: 100%;
+	}
+	body {
+		min-height: 100vh;
+		display: flex;
+		flex-direction: column;
+	}
+	.site-header {
+		text-align: center;
+		background: #0c0c0c;
+		padding: 10px 16px;
+		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+	}
+	.site-header h1 {
+		margin: 0;
+		font-size: 15px;
+		font-weight: 600;
+		color: #f2f2f2;
+	}
+	.site-header a {
+		color: inherit;
+		text-decoration: none;
+	}
+	main {
+		flex: 1 1 auto;
+		width: 100%;
+		max-width: 640px;
+		margin: 0 auto;
+		padding: 24px 16px 32px;
+		box-sizing: border-box;
+	}
+	h2 {
+		margin: 0 0 4px;
+		font-size: 20px;
+	}
+	h3 {
+		margin: 28px 0 8px;
+		font-size: 16px;
+	}
+	.lead {
+		margin: 0 0 18px;
+		color: var(--sub);
+		font-size: 13px;
+	}
+	.panel {
+		background: var(--panel);
+		color: var(--panel-fg);
+		border-radius: 12px;
+		padding: 18px 18px 20px;
+		box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+	}
+	.panel p {
+		margin: 0 0 8px;
+	}
+	.now {
+		color: var(--panel-sub);
+		font-size: 13px;
+	}
+	.field-label {
+		display: block;
+		margin: 16px 0 6px;
+		font-weight: bold;
+	}
+	.field-label:first-child {
+		margin-top: 0;
+	}
+	textarea {
+		width: 100%;
+		min-height: 140px;
+		box-sizing: border-box;
+		background: var(--field);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		color: var(--panel-fg);
+		font: 16px/1.5 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;	/* 16px 未満だと iPhone で拡大される */
+		padding: 10px;
+		resize: vertical;
+	}
+	.count {
+		text-align: right;
+		font-size: 12px;
+		color: var(--panel-sub);
+		margin-top: 4px;
+	}
+	.count.over {
+		color: var(--ng);
+	}
+	/* 選ぶボタン（ラジオ） */
+	.choices {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+	.choices label {
+		flex: 1 1 0;
+		min-width: 120px;
+		position: relative;
+		cursor: pointer;
+	}
+	.choices.cats label {
+		min-width: 64px;
+	}
+	.choices input {
+		position: absolute;
+		opacity: 0;
+		pointer-events: none;
+	}
+	.choices span {
+		display: block;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		padding: 10px 10px;
+		text-align: center;
+		color: var(--panel-sub);
+		line-height: 1.3;
+	}
+	.choices span small {
+		display: block;
+		font-size: 11px;
+		margin-top: 3px;
+	}
+	.choices input:checked + span {
+		border-color: var(--accent);
+		color: var(--panel-fg);
+		background: rgba(240, 184, 74, 0.14);
+		font-weight: bold;
+	}
+	.choices input:focus-visible + span {
+		outline: 2px solid var(--accent);
+	}
+	.note {
+		font-size: 12px;
+		color: var(--panel-sub);
+		margin: 6px 0 0;
+	}
+	.msg {
+		min-height: 1.5em;
+		margin-top: 10px;
+		color: var(--ng);
+	}
+	.msg.ok {
+		color: var(--ok);
+	}
+	.buttons {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin-top: 8px;
+	}
+	button, .btn {
+		display: inline-block;
+		box-sizing: border-box;
+		background: var(--accent);
+		color: #1d1f24;
+		border: none;
+		border-radius: 8px;
+		font: bold 15px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		padding: 13px 18px;
+		cursor: pointer;
+		text-decoration: none;
+		text-align: center;
+		touch-action: manipulation;
+	}
+	button.sub, .btn.sub {
+		background: transparent;
+		color: var(--panel-fg);
+		border: 1px solid var(--border);
+	}
+	button:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+	/* 一覧の切り替え */
+	.tabs {
+		display: flex;
+		gap: 4px;
+		border-bottom: 1px solid var(--card-border);
+		margin: 28px 0 12px;
+	}
+	.tabs button {
+		background: transparent;
+		color: var(--sub);
+		border-radius: 8px 8px 0 0;
+		border-bottom: 3px solid transparent;
+		padding: 10px 14px;
+		font-size: 14px;
+	}
+	.tabs button.active {
+		color: var(--ink);
+		border-bottom-color: var(--accent);
+	}
+	.filters {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin-bottom: 12px;
+	}
+	.filters button {
+		background: transparent;
+		color: var(--sub);
+		border: 1px solid var(--card-border);
+		border-radius: 999px;
+		padding: 7px 12px;
+		font-size: 13px;
+		font-weight: normal;
+	}
+	.filters button.active {
+		background: var(--ink);
+		color: var(--page-bg);
+		border-color: var(--ink);
+	}
+	/* 投稿 */
+	.post {
+		background: var(--card);
+		border: 1px solid var(--card-border);
+		border-radius: 10px;
+		padding: 12px 14px;
+		margin-bottom: 10px;
+	}
+	.post-head {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 4px 8px;
+		font-size: 13px;
+	}
+	.post-name {
+		font-weight: bold;
+		font-size: 14px;
+		word-break: break-all;
+	}
+	.post-name.anon {
+		color: var(--sub);
+	}
+	.post-date {
+		color: var(--sub);
+		font-size: 12px;
+		margin-left: auto;
+	}
+	.tag {
+		display: inline-block;
+		border-radius: 4px;
+		padding: 0 6px;
+		font-size: 11px;
+		line-height: 18px;
+		border: 1px solid var(--card-border);
+		color: var(--sub);
+		white-space: nowrap;
+	}
+	.tag.cat-request { color: #2f6db0; border-color: #9cbde0; }
+	.tag.cat-bug { color: var(--ng-ink); border-color: #e5aa9e; }
+	.tag.cat-opinion { color: #3d8a3d; border-color: #a9d3a9; }
+	.tag.done { color: #fff; background: #3d8a3d; border-color: #3d8a3d; }
+	.tag.private { color: var(--accent-ink); border-color: var(--accent); }
+	.post-body {
+		white-space: pre-wrap;
+		word-break: break-word;
+		margin-top: 6px;
+	}
+	.post-reply {
+		margin-top: 10px;
+		background: var(--reply-bg);
+		border-left: 3px solid var(--accent);
+		border-radius: 0 6px 6px 0;
+		padding: 8px 10px;
+	}
+	.post-reply-head {
+		font-size: 12px;
+		font-weight: bold;
+		color: var(--accent-ink);
+	}
+	.post-reply-body {
+		white-space: pre-wrap;
+		word-break: break-word;
+	}
+	.post-foot {
+		margin-top: 6px;
+		text-align: right;
+	}
+	.post-foot button {
+		background: transparent;
+		color: var(--sub);
+		border: none;
+		padding: 4px 0;
+		font-size: 12px;
+		font-weight: normal;
+		text-decoration: underline;
+	}
+	.empty {
+		color: var(--sub);
+		text-align: center;
+		padding: 24px 0;
+	}
+	.pager {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 8px;
+		margin-top: 8px;
+		color: var(--sub);
+		font-size: 13px;
+	}
+	.pager button {
+		background: transparent;
+		color: var(--ink);
+		border: 1px solid var(--card-border);
+		padding: 9px 14px;
+		font-size: 13px;
+	}
+	.back {
+		display: block;
+		margin-top: 18px;
+		text-align: center;
+		color: var(--ink);
+	}
+	[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header class="site-header">
+	<h1><a href="/">スクラップブックオンライン</a></h1>
+</header>
+<main>
+	<h2>ご意見箱</h2>
+	<p class="lead">「こうなったらいいな」「ここがおかしいかも」など、なんでも気軽に送ってくださいね。
+		管理者がちゃんと読んでいます！</p>
+
+	<section class="panel" id="loading">
+		<p class="now">読み込み中です...</p>
+	</section>
+
+	<!-- この端末にログインの記憶が無い -->
+	<section class="panel" id="no-token" hidden>
+		<p>投稿するには、このブラウザでゲームにログインしてね。</p>
+		<p class="now">ゲームに一度ログインすると、このページから投稿できるようになります。
+			みんなの投稿は、ログインしていなくても下で読めますよ。</p>
+		<div class="buttons"><a class="btn" href="/">ゲームを開く</a></div>
+	</section>
+
+	<!-- キャラがまだいない -->
+	<section class="panel" id="no-char" hidden>
+		<p>先にゲームでキャラを作ってから投稿してね。</p>
+		<div class="buttons"><a class="btn" href="/">ゲームを開く</a></div>
+	</section>
+
+	<!-- 投稿フォーム -->
+	<section class="panel" id="form" hidden>
+		<span class="field-label">どんな内容？</span>
+		<div class="choices cats" role="radiogroup" aria-label="内容の種類">
+			<label><input type="radio" name="category" value="request" checked><span>要望</span></label>
+			<label><input type="radio" name="category" value="bug"><span>不具合</span></label>
+			<label><input type="radio" name="category" value="opinion"><span>ご意見</span></label>
+			<label><input type="radio" name="category" value="other"><span>その他</span></label>
+		</div>
+
+		<label class="field-label" for="body">内容</label>
+		<textarea id="body" placeholder="例）倉庫をもっと広くしてほしいです！"></textarea>
+		<div class="count" id="count"></div>
+
+		<span class="field-label">だれに見せる？</span>
+		<div class="choices" role="radiogroup" aria-label="公開範囲">
+			<label><input type="radio" name="visibility" value="public" checked><span>みんなに見せる<small>下の一覧に出ます</small></span></label>
+			<label><input type="radio" name="visibility" value="admin"><span>管理者だけ<small>ほかの人には見えません</small></span></label>
+		</div>
+
+		<span class="field-label">名前は？</span>
+		<div class="choices" role="radiogroup" aria-label="名前の表示">
+			<label><input type="radio" name="anonymous" value="0" checked><span>キャラ名を出す<small id="my-name"></small></span></label>
+			<label><input type="radio" name="anonymous" value="1"><span>匿名にする<small>「匿名さん」と出ます</small></span></label>
+		</div>
+		<p class="note">匿名にしても、管理者にはだれの投稿か分かります（返事をお届けするためです）。
+			パスワードや復旧キーは書かないでね。</p>
+
+		<div class="msg" id="msg"></div>
+		<div class="buttons">
+			<button type="button" id="submit">送る</button>
+		</div>
+	</section>
+
+	<!-- 一覧 -->
+	<div class="tabs" role="tablist">
+		<button type="button" class="active" data-tab="all" role="tab">みんなの投稿</button>
+		<button type="button" data-tab="mine" role="tab" id="tab-mine" hidden>自分の投稿</button>
+	</div>
+	<div class="filters" id="filters">
+		<button type="button" class="active" data-cat="">すべて</button>
+		<button type="button" data-cat="request">要望</button>
+		<button type="button" data-cat="bug">不具合</button>
+		<button type="button" data-cat="opinion">ご意見</button>
+		<button type="button" data-cat="other">その他</button>
+	</div>
+	<div id="list"></div>
+	<div class="pager" id="pager" hidden>
+		<button type="button" id="prev">← 新しい投稿</button>
+		<span id="page-text"></span>
+		<button type="button" id="next">前の投稿 →</button>
+	</div>
+
+	<a class="back" href="/">ゲームへ戻る</a>
+</main>
+<script>
+(function () {
+	var KEY_TOKEN = 'sbo_device_token';
+	var CAT_TEXT = { request: '要望', bug: '不具合', opinion: 'ご意見', other: 'その他' };
+	var token = '', nMaxLength = 1000, nWaitUntil = 0;
+	var strTab = 'all', strCat = '', nPage = 0;
+
+	function $(id) {
+		return document.getElementById(id);
+	}
+	function lsGet(k) {
+		try { return window.localStorage.getItem(k); } catch (e) { return null; }
+	}
+	function api(url, body) {
+		return fetch(url, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(body)
+		}).then(function (res) {
+			return res.json().catch(function () { return {}; }).then(function (data) {
+				data.httpStatus = res.status;
+				return data;
+			});
+		});
+	}
+	function el(tag, cls, text) {
+		var e = document.createElement(tag);
+		if (cls) {
+			e.className = cls;
+		}
+		if (text != null) {
+			e.textContent = text;
+		}
+		return e;
+	}
+	function setMsg(text, bOk) {
+		$('msg').textContent = text || '';
+		$('msg').classList.toggle('ok', !!bOk);
+	}
+	function showPanel(id) {
+		['loading', 'no-token', 'no-char', 'form'].forEach(function (s) {
+			$(s).hidden = s !== id;
+		});
+	}
+	function dateText(ms) {
+		return new Date(ms).toLocaleString('ja-JP', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+	}
+	function radio(name) {
+		var e = document.querySelector('input[name="' + name + '"]:checked');
+		return e ? e.value : '';
+	}
+
+	/* ---- 投稿フォーム ---- */
+	function textLength() {
+		return Array.from($('body').value.trim()).length;
+	}
+	function updateCount() {
+		var n = textLength();
+		$('count').textContent = n + ' / ' + nMaxLength;
+		$('count').classList.toggle('over', n > nMaxLength);
+	}
+	$('body').addEventListener('input', function () {
+		updateCount();
+		if (!nWaitUntil) {
+			setMsg('');
+		}
+	});
+
+	var NG_TEXT = {
+		empty: '内容を書いてね。',
+		long: 'ちょっと長すぎます。分けて送ってね。',
+		wait: '続けて送るときは、少しだけ待ってね。',
+		too_many: '今日はたくさん送ってくれたので、また明日お願いします。ありがとう！',
+		no_char: '先にゲームでキャラを作ってね。'
+	};
+
+	/* 続けて送る時の待ち時間（サーバーが教えてくれた秒数だけボタンを止める） */
+	function startWait(nSec) {
+		if (nSec < 0) {
+			$('submit').disabled = true;
+			setMsg(NG_TEXT.too_many);
+			return;
+		}
+		nWaitUntil = Date.now() + nSec * 1000;
+		(function tick() {
+			var n = Math.ceil((nWaitUntil - Date.now()) / 1000);
+			if (n <= 0) {
+				nWaitUntil = 0;
+				$('submit').disabled = false;
+				$('submit').textContent = '送る';
+				return;
+			}
+			$('submit').disabled = true;
+			$('submit').textContent = 'あと ' + n + ' 秒で送れます';
+			setTimeout(tick, 1000);
+		})();
+	}
+
+	function submit() {
+		var n = textLength();
+		if (!n) {
+			setMsg(NG_TEXT.empty);
+			$('body').focus();
+			return;
+		}
+		if (n > nMaxLength) {
+			setMsg(NG_TEXT.long);
+			return;
+		}
+		var bPublic = radio('visibility') === 'public';
+		var bAnon = radio('anonymous') === '1';
+		var text = bPublic ?
+			'みんなに見える場所に' + (bAnon ? '匿名で' : 'キャラ名つきで') + '送ります。よろしいですか？' :
+			'管理者だけに' + (bAnon ? '（ほかの人には匿名で）' : '') + '送ります。よろしいですか？';
+		if (!window.confirm(text)) {
+			return;
+		}
+		$('submit').disabled = true;
+		setMsg('送っています...', true);
+		api('/api/feedback/post', {
+			token: token, category: radio('category'), body: $('body').value,
+			public: bPublic, anonymous: bAnon
+		}).then(function (data) {
+			$('submit').disabled = false;
+			if (data.httpStatus === 401) {
+				showPanel('no-token');
+				return;
+			}
+			if (!data.ok) {
+				setMsg(NG_TEXT[data.error] || 'うまく送れませんでした。時間をおいて試してね。');
+				if (data.error === 'wait' || data.error === 'too_many') {
+					startWait(data.error === 'too_many' ? -1 : data.waitSeconds);
+				}
+				return;
+			}
+			$('body').value = '';
+			updateCount();
+			setMsg(bPublic ? '送りました！ありがとう。下の一覧にも出ています。' :
+				'送りました！ありがとう。管理者からの返事は「自分の投稿」で見られます。', true);
+			startWait(60);
+			selectTab(bPublic ? 'all' : 'mine', true);
+		}).catch(function () {
+			$('submit').disabled = false;
+			setMsg('サーバーにつながりませんでした。');
+		});
+	}
+	$('submit').addEventListener('click', submit);
+
+	/* ---- 一覧 ---- */
+	function postCard(p) {
+		var card = el('article', 'post');
+		var head = el('div', 'post-head');
+		head.appendChild(el('span', 'tag cat-' + p.category, CAT_TEXT[p.category] || 'その他'));
+		head.appendChild(el('span', 'post-name' + (p.anonymous && strTab === 'all' ? ' anon' : ''),
+			p.anonymous && strTab === 'all' ? '匿名さん' : (p.name || '（名前なし）')));
+		if (strTab === 'mine') {
+			if (!p.public) {
+				head.appendChild(el('span', 'tag private', '管理者だけ'));
+			} else if (p.hidden) {
+				head.appendChild(el('span', 'tag private', '管理者が非公開にしました'));
+			}
+			if (p.anonymous) {
+				head.appendChild(el('span', 'tag', '匿名'));
+			}
+		}
+		if (p.done) {
+			head.appendChild(el('span', 'tag done', '対応済み'));
+		}
+		head.appendChild(el('span', 'post-date', dateText(p.at)));
+		card.appendChild(head);
+		card.appendChild(el('div', 'post-body', p.body));
+		if (p.reply) {
+			var r = el('div', 'post-reply');
+			r.appendChild(el('div', 'post-reply-head', '管理者からの返事（' + dateText(p.replyAt) + '）'));
+			r.appendChild(el('div', 'post-reply-body', p.reply));
+			card.appendChild(r);
+		}
+		if (p.mine) {
+			var foot = el('div', 'post-foot');
+			var del = el('button', '', 'この投稿を消す');
+			del.type = 'button';
+			del.addEventListener('click', function () {
+				if (!window.confirm('この投稿を消しますか？（元に戻せません）')) {
+					return;
+				}
+				api('/api/feedback/delete', { token: token, id: p.id }).then(function (data) {
+					if (data.ok) {
+						loadList();
+					}
+				});
+			});
+			foot.appendChild(del);
+			card.appendChild(foot);
+		}
+		return card;
+	}
+
+	function renderList(posts, text) {
+		var list = $('list');
+		list.textContent = '';
+		if (!posts.length) {
+			list.appendChild(el('p', 'empty', text));
+			return;
+		}
+		posts.forEach(function (p) {
+			list.appendChild(postCard(p));
+		});
+	}
+
+	function loadList() {
+		$('filters').hidden = strTab !== 'all';
+		if (strTab === 'mine') {
+			$('pager').hidden = true;
+			api('/api/feedback/mine', { token: token }).then(function (data) {
+				renderList((data.posts || []).map(function (p) { p.mine = true; return p; }),
+					'まだ投稿していません。');
+			}).catch(function () {
+				renderList([], 'サーバーにつながりませんでした。');
+			});
+			return;
+		}
+		api('/api/feedback/list', { token: token || undefined, page: nPage, category: strCat }).then(function (data) {
+			var posts = data.posts || [];
+			renderList(posts, strCat ? 'この種類の投稿はまだありません。' : 'まだ投稿はありません。一番乗りしてみませんか？');
+			var nPages = Math.max(1, Math.ceil((data.total || 0) / (data.pageSize || 20)));
+			$('pager').hidden = nPages <= 1;
+			$('page-text').textContent = (nPage + 1) + ' / ' + nPages + ' ページ（' + data.total + ' 件）';
+			$('prev').disabled = nPage <= 0;
+			$('next').disabled = nPage + 1 >= nPages;
+		}).catch(function () {
+			renderList([], 'サーバーにつながりませんでした。少し待ってから読み込み直してね。');
+		});
+	}
+
+	function selectTab(name, bScroll) {
+		strTab = name;
+		nPage = 0;
+		Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function (b) {
+			b.classList.toggle('active', b.dataset.tab === name);
+		});
+		loadList();
+		if (bScroll) {
+			document.querySelector('.tabs').scrollIntoView({ behavior: 'smooth', block: 'start' });
+		}
+	}
+	Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function (b) {
+		b.addEventListener('click', function () { selectTab(b.dataset.tab); });
+	});
+	Array.prototype.forEach.call(document.querySelectorAll('#filters button'), function (b) {
+		b.addEventListener('click', function () {
+			strCat = b.dataset.cat;
+			nPage = 0;
+			Array.prototype.forEach.call(document.querySelectorAll('#filters button'), function (x) {
+				x.classList.toggle('active', x === b);
+			});
+			loadList();
+		});
+	});
+	$('prev').addEventListener('click', function () {
+		nPage = Math.max(0, nPage - 1);
+		loadList();
+	});
+	$('next').addEventListener('click', function () {
+		nPage++;
+		loadList();
+	});
+
+	/* ---- 開いた時：この端末のアカウントを確かめる ---- */
+	token = lsGet(KEY_TOKEN) || '';
+	updateCount();
+	loadList();
+	if (!token) {
+		showPanel('no-token');
+		return;
+	}
+	api('/api/feedback/me', { token: token }).then(function (data) {
+		if (data.httpStatus === 401 || !data.account) {
+			token = '';
+			showPanel('no-token');
+			return;
+		}
+		$('tab-mine').hidden = false;
+		if (!data.canPost) {
+			showPanel('no-char');
+			return;
+		}
+		nMaxLength = data.maxLength || nMaxLength;
+		$('my-name').textContent = '「' + data.name + '」と出ます';
+		showPanel('form');
+		updateCount();
+		if (data.waitSeconds) {
+			startWait(data.waitSeconds);
+		}
+		/* ゲームから「自分の投稿」を開きたい時用（/feedback#mine） */
+		if (location.hash === '#mine') {
+			selectTab('mine');
+		}
+	}).catch(function () {
+		$('loading').firstElementChild.textContent = 'サーバーにつながりませんでした。少し待ってから読み込み直してね。';
+	});
+})();
+</script>
+</body>
+</html>
