@@ -48,9 +48,6 @@ void SvrLogSettingWarning(int nKind)
 	case 0:
 		printf("[SboSvr] 注意: SboSvr.ini の [Administrator] Password が空なので、管理者ではログインできません\n");
 		break;
-	case 1:
-		printf("[SboSvr] 注意: SboSvr.ini の AllAdmin=1 なので、新しいアカウントは全員管理者になります（開発用）\n");
-		break;
 	}
 }
 

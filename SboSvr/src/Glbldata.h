@@ -45,8 +45,7 @@ extern BYTE g_bySendDataCount,										/* 送信平均サイズ計算用 */
 		    g_byAdminCount,											/* 管理人数 */
 			g_byLastSendClock;										/* 最後に通知した時刻 */
 
-extern BOOL g_bFreeAcount,											/* アカウント自動追加モード？ */
-			g_bAllAdmin;											/* 全員管理人権限 */
+extern BOOL g_bFreeAcount;											/* アカウント自動追加モード？ */
 
 extern int g_nProcChar,												/* 処理ID(キャラ) */
 		   g_nProcMap,												/* 処理ID(マップ) */
