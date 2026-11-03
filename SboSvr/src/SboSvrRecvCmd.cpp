@@ -6657,7 +6657,9 @@ void RecvDataProcJOBCHG(PBYTE pData, DWORD dwDataSize)
 {
 	PCMDPARA_DATA1 pPara = (PCMDPARA_DATA1)pData;
 	PCHARINFO pChar;
-	int nNo;
+	int nNo, i;
+	BYTE byJobOld, byJobNew, byMagic;
+	BOOL bRestore;
 
 	nNo = GetCharNo (s_pIDRecv);
 	if (nNo < 0) {
@@ -6669,9 +6671,45 @@ void RecvDataProcJOBCHG(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	pChar = g_aCharInfo[nNo];
-	pChar->byJOB = pPara->byData;
-	/* 魔法を全て初期化 */
-	ZeroMemory (pChar->abyMagic, sizeof (pChar->abyMagic));
+	byJobOld = pChar->byJOB;
+	byJobNew = pPara->byData;
+
+	/* 同じ職業への登録し直しなら、覚えている呪文はそのまま */
+	if (byJobOld != byJobNew) {
+		/* 今の職業で覚えていた呪文を職業別に覚えておく（元の職業に戻した時に復活させる） */
+		if (byJobOld < MAX_JOBMAGIC) {
+			CopyMemory (pChar->abyJobMagic[byJobOld], pChar->abyMagic, sizeof (pChar->abyMagic));
+		}
+		/* 職業によって使えない呪文があるので、一旦全て初期化 */
+		ZeroMemory (pChar->abyMagic, sizeof (pChar->abyMagic));
+
+		/* 新しい職業で以前覚えていた呪文があれば復活させる */
+		bRestore = FALSE;
+		if (byJobNew < MAX_JOBMAGIC) {
+			for (i = 0; i < MAX_USEMAGIC; i ++) {
+				byMagic = pChar->abyJobMagic[byJobNew][i];
+				if (byMagic == 0) {
+					continue;
+				}
+				/* 管理画面で呪文や利用者情報が変わっているかもしれないので、今使えるものだけ */
+				if (byMagic >= g_aMagicInfo.GetSize ()) {
+					continue;
+				}
+				if (CheckMagicUserInfo (g_aMagicInfo[byMagic]->byUserInfo, byJobNew) == FALSE) {
+					continue;
+				}
+				/* 並び順も元のまま戻す */
+				pChar->abyMagic[i] = byMagic;
+				bRestore = TRUE;
+			}
+			/* 復活させた分は今の呪文になったので、保存場所は空にしておく */
+			ZeroMemory (pChar->abyJobMagic[byJobNew], sizeof (pChar->abyJobMagic[byJobNew]));
+		}
+		pChar->byJOB = byJobNew;
+		if (bRestore) {
+			SendCmdSYSMSG (pChar->pID, "以前この職業で覚えていた特技を思い出しました。", SPEECHCMD_BATTLE1);
+		}
+	}
 
 	/* 装備品をチェック */
 	CheckCharEqu (pChar);

@@ -41,6 +41,7 @@
 #define MAX_EQUTYPE			10										/* 装備可能アイテム数 */
 #define MAX_PARTYMEMBER		6										/* 最大パーティ数 */
 #define MAX_USEMAGIC		16										/* 覚えられる魔法数 */
+#define MAX_JOBMAGIC		32										/* 職業別に呪文を覚えておける職業数（職業IDがこれ未満の職業が対象） */
 #define MAX_SUBGAME_WARMEMBER	4									/* 戦場ゲーム最大参加人数 */
 
 #define SENDHARTBEATTIME	10000									/* 接続チェック送信周期 */
@@ -1874,6 +1875,7 @@ typedef struct _CHARINFO {
 	BYTE		byJOB;												/* 職業 */
 	BYTE		byLevel;											/* レベル */
 	BYTE		abyMagic[MAX_USEMAGIC];								/* 呪文 */
+	BYTE		abyJobMagic[MAX_JOBMAGIC][MAX_USEMAGIC];			/* 転職前の職業で覚えていた呪文（職業ID別） */
 	char		chAttrFire;											/* 属性(火) */
 	char		chAttrWater;										/* 属性(水) */
 	char		chAttrWind;											/* 属性(風) */
