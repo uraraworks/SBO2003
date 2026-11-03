@@ -159,6 +159,37 @@
 		text-align: center;
 		color: var(--ink);
 	}
+	.change {
+		background: var(--field);
+		border-radius: 10px;
+		padding: 12px 14px;
+		margin: 12px 0;
+	}
+	.change .arrow {
+		color: var(--accent);
+		font-size: 20px;
+		line-height: 1.2;
+		margin: 4px 0;
+	}
+	.change b.to {
+		color: var(--accent);
+	}
+	.rules.warn {
+		color: var(--panel-fg);
+		font-size: 13px;
+	}
+	label.check {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin: 16px 0 0;
+		font-weight: bold;
+	}
+	label.check input {
+		width: 22px;
+		height: 22px;
+		margin: 0;
+	}
 	[hidden] { display: none !important; }
 </style>
 </head>
@@ -199,9 +230,29 @@
 			</ul>
 			<div class="msg" id="msg"></div>
 			<div class="buttons">
-				<button type="button" class="sub" id="check">使えるか確かめる</button>
-				<button type="button" id="apply">この名前に変える</button>
+				<button type="button" id="next">確認へ進む</button>
 			</div>
+		</div>
+	</section>
+
+	<!-- 決める前の確認 -->
+	<section class="panel" id="confirm" hidden>
+		<p style="margin-top:0">この名前に変えます。よく確かめてね。</p>
+		<div class="change">
+			<div class="now">いまの名前<b id="cf-from"></b></div>
+			<div class="arrow" aria-hidden="true">↓</div>
+			<div class="now">新しい名前<b id="cf-to" class="to"></b></div>
+		</div>
+		<ul class="rules warn">
+			<li id="cf-cooldown"></li>
+			<li>いまの名前「<span id="cf-from2"></span>」は、しばらくほかの人は使えません（あなたは戻せます）。</li>
+			<li>ゲームの中のお友だちには、新しい名前で表示されます。</li>
+		</ul>
+		<label class="check"><input type="checkbox" id="cf-ok"> 名前と注意をたしかめました</label>
+		<div class="msg" id="cf-msg"></div>
+		<div class="buttons">
+			<button type="button" class="sub" id="cf-back">やめる（入力に戻る）</button>
+			<button type="button" id="cf-apply" disabled>この名前に決める</button>
 		</div>
 	</section>
 
@@ -218,7 +269,7 @@
 (function () {
 	var KEY_TOKEN = 'sbo_device_token', KEY_NAME = 'sbo_device_name';
 	var MAX_BYTES = 14;
-	var token = '', strNow = '';
+	var token = '', strNow = '', strNew = '', nCooldownDays = 7;
 
 	function $(id) {
 		return document.getElementById(id);
@@ -246,7 +297,7 @@
 		$('msg').classList.toggle('ok', !!bOk);
 	}
 	function show(id) {
-		['loading', 'no-token', 'form', 'done'].forEach(function (s) {
+		['loading', 'no-token', 'form', 'confirm', 'done'].forEach(function (s) {
 			$(s).hidden = s !== id;
 		});
 	}
@@ -291,7 +342,20 @@
 		}
 	}
 
-	function run(bCheck) {
+	function showNg(data, setter) {
+		if (data.result === 'cooldown') {
+			show('form');
+			setMsg('');
+			showCooldown(data.renameAfter);
+		} else if (data.result === 'invalid_token') {
+			show('no-token');
+		} else {
+			setter(NG_TEXT[data.result] || 'うまくいきませんでした。時間をおいて試してね。');
+		}
+	}
+
+	/* 「確認へ進む」：サーバーで使えるか確かめてから、確認の画面を出す（まだ変えない） */
+	function next() {
 		var name = $('name').value.trim();
 		if (!name) {
 			setMsg(NG_TEXT.empty);
@@ -301,32 +365,52 @@
 			setMsg(NG_TEXT.long);
 			return;
 		}
-		if (!bCheck && !window.confirm('キャラ名を「' + name + '」に変えますか？\n一度変えると、しばらくは変えられません。')) {
-			return;
-		}
-		$('check').disabled = $('apply').disabled = true;
-		setMsg(bCheck ? '確かめています...' : '変えています...', true);
-		api('/api/device/rename', { token: token, name: name, check: bCheck }).then(function (data) {
-			$('check').disabled = $('apply').disabled = false;
-			if (data.result === 'ok') {
-				if (bCheck) {
-					setMsg('「' + data.to + '」は使えます！', true);
-				} else {
-					lsSet(KEY_NAME, data.to);
-					$('done-name').textContent = data.to;
-					show('done');
-				}
-			} else if (data.result === 'cooldown') {
-				setMsg('');
-				showCooldown(data.renameAfter);
-			} else if (data.result === 'invalid_token') {
-				show('no-token');
-			} else {
-				setMsg(NG_TEXT[data.result] || 'うまくいきませんでした。時間をおいて試してね。');
+		$('next').disabled = true;
+		setMsg('確かめています...', true);
+		api('/api/device/rename', { token: token, name: name, check: true }).then(function (data) {
+			$('next').disabled = false;
+			if (data.result !== 'ok') {
+				showNg(data, setMsg);
+				return;
 			}
+			setMsg('');
+			strNew = data.to;
+			$('cf-from').textContent = data.from;
+			$('cf-from2').textContent = data.from;
+			$('cf-to').textContent = data.to;
+			$('cf-cooldown').textContent = nCooldownDays ?
+				'変えたあと ' + nCooldownDays + ' 日間（' + dateText(Date.now() + nCooldownDays * 86400000) + ' ごろまで）は、もう一度変えられません。' :
+				'あとからまた変えることもできます。';
+			$('cf-ok').checked = false;
+			$('cf-apply').disabled = true;
+			$('cf-msg').textContent = '';
+			show('confirm');
+			window.scrollTo(0, 0);
 		}).catch(function () {
-			$('check').disabled = $('apply').disabled = false;
+			$('next').disabled = false;
 			setMsg('サーバーにつながりませんでした。');
+		});
+	}
+
+	/* 「この名前に決める」：ここで初めて変える */
+	function apply() {
+		var setCf = function (t) { $('cf-msg').textContent = t || ''; };
+		$('cf-apply').disabled = $('cf-back').disabled = true;
+		setCf('');
+		api('/api/device/rename', { token: token, name: strNew }).then(function (data) {
+			$('cf-back').disabled = false;
+			if (data.result === 'ok') {
+				lsSet(KEY_NAME, data.to);
+				$('done-name').textContent = data.to;
+				show('done');
+				return;
+			}
+			$('cf-apply').disabled = !$('cf-ok').checked;
+			showNg(data, setCf);
+		}).catch(function () {
+			$('cf-back').disabled = false;
+			$('cf-apply').disabled = !$('cf-ok').checked;
+			setCf('サーバーにつながりませんでした。');
 		});
 	}
 
@@ -336,11 +420,18 @@
 	});
 	$('name').addEventListener('keydown', function (ev) {
 		if (ev.key === 'Enter') {
-			run(true);
+			next();
 		}
 	});
-	$('check').addEventListener('click', function () { run(true); });
-	$('apply').addEventListener('click', function () { run(false); });
+	$('next').addEventListener('click', next);
+	$('cf-ok').addEventListener('change', function () {
+		$('cf-apply').disabled = !this.checked;
+	});
+	$('cf-back').addEventListener('click', function () {
+		show('form');
+		$('name').focus();
+	});
+	$('cf-apply').addEventListener('click', apply);
 
 	/* 開いた時：この端末のアカウントを確かめる */
 	token = lsGet(KEY_TOKEN) || '';
@@ -364,6 +455,7 @@
 		$('now-name').textContent = strNow;
 		$('now-sub').textContent = 'Lv ' + data.level + '（アカウント ' + data.account + '）';
 		if (data.cooldownDays != null) {
+			nCooldownDays = data.cooldownDays;
 			$('cooldown-days').textContent = data.cooldownDays;
 			$('cooldown-days').parentNode.hidden = !data.cooldownDays;
 		}
