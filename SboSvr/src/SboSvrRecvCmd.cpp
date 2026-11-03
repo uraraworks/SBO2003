@@ -6657,7 +6657,7 @@ void RecvDataProcJOBCHG(PBYTE pData, DWORD dwDataSize)
 {
 	PCMDPARA_DATA1 pPara = (PCMDPARA_DATA1)pData;
 	PCHARINFO pChar;
-	int nNo, i;
+	int nNo, i, j;
 	BYTE byJobOld, byJobNew, byMagic;
 	BOOL bRestore;
 
@@ -6674,8 +6674,21 @@ void RecvDataProcJOBCHG(PBYTE pData, DWORD dwDataSize)
 	byJobOld = pChar->byJOB;
 	byJobNew = pPara->byData;
 
+	if (pChar->byAdminLV != ADMINLV_USER) {
+		/* 管理者は管理者ウィンドウで好きな呪文を持たせているので、転職しても消さない */
+		/* （空欄があれば詰めておく） */
+		j = 0;
+		for (i = 0; i < MAX_USEMAGIC; i ++) {
+			byMagic = pChar->abyMagic[i];
+			pChar->abyMagic[i] = 0;
+			if (byMagic) {
+				pChar->abyMagic[j ++] = byMagic;
+			}
+		}
+		pChar->byJOB = byJobNew;
+
 	/* 同じ職業への登録し直しなら、覚えている呪文はそのまま */
-	if (byJobOld != byJobNew) {
+	} else if (byJobOld != byJobNew) {
 		/* 今の職業で覚えていた呪文を職業別に覚えておく（元の職業に戻した時に復活させる） */
 		if (byJobOld < MAX_JOBMAGIC) {
 			CopyMemory (pChar->abyJobMagic[byJobOld], pChar->abyMagic, sizeof (pChar->abyMagic));
@@ -6686,6 +6699,7 @@ void RecvDataProcJOBCHG(PBYTE pData, DWORD dwDataSize)
 		/* 新しい職業で以前覚えていた呪文があれば復活させる */
 		bRestore = FALSE;
 		if (byJobNew < MAX_JOBMAGIC) {
+			j = 0;
 			for (i = 0; i < MAX_USEMAGIC; i ++) {
 				byMagic = pChar->abyJobMagic[byJobNew][i];
 				if (byMagic == 0) {
@@ -6698,8 +6712,8 @@ void RecvDataProcJOBCHG(PBYTE pData, DWORD dwDataSize)
 				if (CheckMagicUserInfo (g_aMagicInfo[byMagic]->byUserInfo, byJobNew) == FALSE) {
 					continue;
 				}
-				/* 並び順も元のまま戻す */
-				pChar->abyMagic[i] = byMagic;
+				/* 使えずに戻さなかった呪文の所が空欄にならないよう、前から詰めて戻す */
+				pChar->abyMagic[j ++] = byMagic;
 				bRestore = TRUE;
 			}
 			/* 復活させた分は今の呪文になったので、保存場所は空にしておく */
