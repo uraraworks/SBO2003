@@ -6,3 +6,6 @@ publish/
 # 公開リポジトリには入れないもの（tools/public/export.sh）
 /private/
 /SboSoundData/MIDI/
+
+# 本番 VPS への接続設定（deploy/production/deploy.env.example をコピーして作る）
+deploy/production/deploy.local.env
