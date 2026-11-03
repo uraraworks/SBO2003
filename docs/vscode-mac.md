@@ -91,6 +91,20 @@ tools/server/check_tcp.py     # 接続テスト
 - ブラウザ版の接続先は、サーバーが配ったページなら自動で同じサーバーの `/ws` になります。
   別の場所につなぐ時は `?ws=ws://ホスト:ポート/ws` を付けます。
 
+## サーバー状況（オンライン数など）
+
+SBOP2 と同じく、サーバーの様子を誰でも見られるようにしています（キャラ名などは出しません）。
+
+- <http://localhost:8080/status> … サーバー状況のページ。稼働状況・オンライン数・今日の最大・稼働時間・
+  直近 24 時間のオンライン数・時間帯ごとの最高記録を 30 秒ごとに更新して表示します。
+  ゲーム画面のフッター（PC 表示）にも「サーバー状況（オンライン N 人）」のリンクが出ます。
+- `/health` … `{"status":"ok","onlinePlayers":N}`。SBOP2 の `/health` と同じ形で、デプロイの確認にも使います。
+- `/api/status` … ページが読む詳しい値（JSON）。
+
+どちらも `Access-Control-Allow-Origin: *` を付けているので、紹介ページなど別のサイトからも読めます。
+直近 24 時間の記録は `SBODATA/SboWebStatus.json` に保存します。
+時間帯ごとの最高記録は Windows 版のサーバー画面と同じもの（`SboSvr.ini` の `[OnlineCount]`、毎時 0 分の時点の人数）です。
+
 ## 管理者ウィンドウ
 
 管理者権限のあるキャラでログインすると、ゲーム画面の横に「管理者用ウィンドウ」が出ます。
@@ -124,6 +138,8 @@ tools/server/check_tcp.py     # 接続テスト
 | `server/server_main.cpp` | 入口（引数を読んで WinMain を呼ぶ） |
 | `server/CUraraSockTCP_svr.cpp` | 通信クラスのサーバー版（パケットの切り出し・接続前チェック・CRC・圧縮） |
 | `server/node/sbosvr_net.js` | Node.js 側の TCP・HTTP・WebSocket と Ctrl+C の処理 |
+| `server/node/sbosvr_status.js` / `server/web_status_svr.cpp` | サーバー状況の HTTP（`/health`・`/api/status`）と、その値を C 側から取り出す部分 |
+| `web/status/status.html` | サーバー状況のページ（`/status`） |
 | `server/w32_headless.cpp` / `server/SvrStub.cpp` | 画面なしで使わない部分の代わり（HTML 部品・Web 更新・管理ダイアログ） |
 | `platform/` | Win32 互換層（ブラウザ版と共通）。`w32_dlg.cpp` はダイアログとメニュー、`w32_ctrl.cpp` はコンボ・リスト・スクロールバー・リストビュー、`w32_mfc.cpp` は MFC の互換クラス |
 | `web/w32_popup_js.inc` | 管理者ウィンドウなどの小窓を HTML で描く部分 |

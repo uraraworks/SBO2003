@@ -15,6 +15,8 @@ RUN tools/web/build.sh release \
 
 FROM node:22-bookworm-slim
 WORKDIR /srv/sbo2003
+# サーバーの時刻を日本時間にする（「〇時頃をお知らせします」や、サーバー状況の時間帯ごとの記録が日本時間になるように）
+ENV TZ=Asia/Tokyo
 COPY --from=build /src/out/server-release/ ./server/
 COPY --from=build /src/out/web/dist/ ./web/dist/
 # 初回起動時にデータフォルダ（ボリューム）へコピーする元データ
