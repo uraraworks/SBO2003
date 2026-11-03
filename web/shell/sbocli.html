@@ -726,10 +726,32 @@
 </div>
 <footer class="site-footer">
 	<a href="https://www.urara-works.jp/" target="_blank" rel="noopener">© URARA-works</a> /
+	<a href="/status" target="_blank" rel="noopener" id="sbo-site-status">サーバー状況</a> /
 	<a href="https://github.com/uraraworks/SBO2003" target="_blank" rel="noopener">GitHubで見る</a> /
 	<!-- 反映した日時とコミット（tools/web/build.sh がビルドの時に書き込む） -->
 	<span class="site-build" title="反映した日時とコミット">@@SBO_BUILD_DATE@@ <a href="https://github.com/uraraworks/SBO2003/commit/@@SBO_BUILD_COMMIT@@" target="_blank" rel="noopener">@@SBO_BUILD_COMMIT@@</a></span>
 </footer>
+<script>
+	/* フッターの「サーバー状況」にオンライン数を添える（/health は server/node/sbosvr_status.js） */
+	(function () {
+		var link = document.getElementById('sbo-site-status');
+		if (!link || location.protocol.indexOf('http') !== 0) {
+			return;
+		}
+		function update() {
+			fetch('/health', { cache: 'no-store' }).then(function (res) {
+				return res.ok ? res.json() : null;
+			}).then(function (data) {
+				link.textContent = (data && typeof data.onlinePlayers === 'number') ?
+					'サーバー状況（オンライン ' + data.onlinePlayers + ' 人）' : 'サーバー状況';
+			}).catch(function () {
+				link.textContent = 'サーバー状況';
+			});
+		}
+		update();
+		setInterval(update, 60000);
+	})();
+</script>
 <!-- スマホ縦持ちのチャットログ -->
 <div id="sbo-chat-area"></div>
 

@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>サーバー状況｜スクラップブックオンライン</title>
+<meta name="description" content="スクラップブックオンラインのサーバーの稼働状況とオンライン数です。">
+<!--
+	サーバー状況のページ（SBOP2 の「サーバー情報」と同じ考え方）。
+	サーバーの /api/status（server/node/sbosvr_status.js）を 30 秒ごとに読んで表示する。
+	キャラ名などの個人の情報は出さない。
+-->
+<style>
+	:root {
+		--page-bg: #efe6d2;
+		--ink: #2b2620;
+		--sub: #7a6f60;
+		--panel: #1d1f24;
+		--panel-fg: #e8e8e8;
+		--panel-sub: #9aa0a6;
+		--line: rgba(255, 255, 255, 0.1);
+		--accent: #f0b84a;
+		--online: #8fe07a;
+		--bar: #f0b84a;
+		--bar-record: #6fa8dc;
+		--bar-empty: rgba(255, 255, 255, 0.08);
+	}
+	html, body {
+		margin: 0;
+		padding: 0;
+		background: var(--page-bg);
+		color: var(--ink);
+		font: 14px/1.6 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+	}
+	body {
+		min-height: 100vh;
+		display: flex;
+		flex-direction: column;
+	}
+	.site-header {
+		text-align: center;
+		background: #0c0c0c;
+		padding: 10px 16px;
+		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+	}
+	.site-header h1 {
+		margin: 0;
+		font-size: 15px;
+		font-weight: 600;
+		color: #f2f2f2;
+		letter-spacing: 0.03em;
+	}
+	.site-header a {
+		color: inherit;
+		text-decoration: none;
+	}
+	.site-header p {
+		margin: 2px 0 0;
+		font-size: 11px;
+		color: #a8a8a8;
+	}
+	main {
+		flex: 1 1 auto;
+		width: 100%;
+		max-width: 760px;
+		margin: 0 auto;
+		padding: 24px 16px 32px;
+		box-sizing: border-box;
+	}
+	h2 {
+		margin: 0 0 4px;
+		font-size: 20px;
+	}
+	.lead {
+		margin: 0 0 18px;
+		color: var(--sub);
+		font-size: 13px;
+	}
+	.panel {
+		background: var(--panel);
+		color: var(--panel-fg);
+		border-radius: 12px;
+		box-shadow: 0 2px 6px rgba(60, 45, 20, 0.22), 0 14px 36px rgba(60, 45, 20, 0.22);
+		overflow: hidden;
+		margin-bottom: 18px;
+	}
+	.panel-head {
+		display: flex;
+		justify-content: space-between;
+		gap: 8px;
+		padding: 12px 18px;
+		color: var(--panel-sub);
+		font-size: 12px;
+		border-bottom: 1px solid var(--line);
+	}
+	.stats {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+	.stat {
+		padding: 18px;
+		border-bottom: 1px solid var(--line);
+	}
+	.stat:nth-child(odd) {
+		border-right: 1px solid var(--line);
+	}
+	.stat-label {
+		display: block;
+		color: var(--panel-sub);
+		font-size: 12px;
+		margin-bottom: 6px;
+	}
+	.stat-value {
+		display: flex;
+		align-items: baseline;
+		gap: 6px;
+		font-size: 22px;
+		font-weight: 700;
+	}
+	.stat-value strong {
+		font-size: 44px;
+		line-height: 1;
+		color: var(--accent);
+	}
+	.stat-unit {
+		font-size: 13px;
+		color: var(--panel-sub);
+		font-weight: 400;
+	}
+	.stat-note {
+		display: block;
+		margin-top: 4px;
+		font-size: 11px;
+		color: var(--panel-sub);
+	}
+	.dot {
+		width: 12px;
+		height: 12px;
+		border-radius: 50%;
+		background: #8fa3bb;
+		align-self: center;
+	}
+	.dot.is-online {
+		background: var(--online);
+		box-shadow: 0 0 12px var(--online);
+	}
+	.dot.is-down {
+		background: #ff9b8a;
+	}
+	.updated {
+		margin: 0;
+		padding: 10px 18px;
+		font-size: 11px;
+		color: var(--panel-sub);
+		text-align: right;
+	}
+	.chart {
+		padding: 16px 18px 12px;
+	}
+	.chart h3 {
+		margin: 0 0 2px;
+		font-size: 14px;
+	}
+	.chart p {
+		margin: 0 0 12px;
+		font-size: 11px;
+		color: var(--panel-sub);
+	}
+	.bars {
+		display: grid;
+		grid-template-columns: repeat(24, minmax(0, 1fr));
+		align-items: end;
+		gap: 3px;
+		height: 120px;
+		border-bottom: 1px solid var(--line);
+	}
+	.bar {
+		position: relative;
+		height: 100%;
+		display: flex;
+		align-items: flex-end;
+	}
+	.bar i {
+		display: block;
+		width: 100%;
+		min-height: 2px;
+		background: var(--bar);
+		border-radius: 3px 3px 0 0;
+	}
+	.bar.is-record i {
+		background: var(--bar-record);
+	}
+	.bar.is-empty i {
+		background: var(--bar-empty);
+	}
+	.bar.is-now i {
+		outline: 1px solid #fff;
+	}
+	.bar b {
+		position: absolute;
+		left: 50%;
+		transform: translateX(-50%);
+		font-size: 10px;
+		font-weight: 400;
+		color: var(--panel-fg);
+		white-space: nowrap;
+	}
+	.ticks {
+		display: grid;
+		grid-template-columns: repeat(24, minmax(0, 1fr));
+		gap: 3px;
+		margin-top: 4px;
+		font-size: 10px;
+		color: var(--panel-sub);
+		text-align: center;
+	}
+	.chart + .chart {
+		border-top: 1px solid var(--line);
+	}
+	.play {
+		text-align: center;
+		margin: 24px 0 0;
+	}
+	.play a {
+		display: inline-block;
+		padding: 10px 28px;
+		border-radius: 8px;
+		background: #1d1f24;
+		color: var(--accent);
+		font-weight: 700;
+		text-decoration: none;
+	}
+	.site-footer {
+		padding: 8px 16px;
+		font-size: 11px;
+		text-align: center;
+		color: #8c8c8c;
+		background: #1a1a1a;
+	}
+	.site-footer a {
+		color: #8c8c8c;
+	}
+	@media (max-width: 520px) {
+		.stat {
+			padding: 14px;
+		}
+		.stat-value {
+			font-size: 18px;
+		}
+		.stat-value strong {
+			font-size: 32px;
+		}
+		.bars, .ticks {
+			gap: 1px;
+		}
+		.bar b {
+			display: none;
+		}
+	}
+</style>
+</head>
+<body>
+<header class="site-header">
+	<h1><a href="/">スクラップブックオンライン</a></h1>
+	<p>2003年に始まった個人制作MMORPG</p>
+</header>
+<main>
+	<h2>サーバー状況</h2>
+	<p class="lead">30 秒ごとに自動で更新します。「確認できません」のときは、少し待ってから読み込み直してください。</p>
+
+	<section class="panel" aria-live="polite">
+		<div class="panel-head"><span>サーバー</span><span>30 秒ごとに更新</span></div>
+		<div class="stats">
+			<div class="stat">
+				<span class="stat-label">稼働状況</span>
+				<span class="stat-value"><i class="dot" id="st-dot"></i><span id="st-text">確認中</span></span>
+			</div>
+			<div class="stat">
+				<span class="stat-label">オンライン数</span>
+				<span class="stat-value"><strong id="st-online">—</strong><span class="stat-unit">人</span></span>
+				<span class="stat-note" id="st-online-note"></span>
+			</div>
+			<div class="stat">
+				<span class="stat-label">今日の最大（日本時間）</span>
+				<span class="stat-value"><strong id="st-today">—</strong><span class="stat-unit">人</span></span>
+				<span class="stat-note" id="st-peak-note"></span>
+			</div>
+			<div class="stat">
+				<span class="stat-label">稼働時間</span>
+				<span class="stat-value" id="st-uptime">—</span>
+				<span class="stat-note" id="st-started"></span>
+			</div>
+			<div class="stat">
+				<span class="stat-label">作られたキャラクター</span>
+				<span class="stat-value"><strong id="st-chars">—</strong><span class="stat-unit">人</span></span>
+			</div>
+			<div class="stat">
+				<span class="stat-label">マップの数</span>
+				<span class="stat-value"><strong id="st-maps">—</strong><span class="stat-unit">枚</span></span>
+			</div>
+		</div>
+		<p class="updated" id="st-updated">サーバーへ問い合わせています…</p>
+	</section>
+
+	<section class="panel">
+		<div class="chart">
+			<h3>直近 24 時間のオンライン数</h3>
+			<p>1 時間ごとの最大人数です（日本時間）。灰色は記録が無い時間です。</p>
+			<div class="bars" id="chart-recent"></div>
+			<div class="ticks" id="ticks-recent"></div>
+		</div>
+		<div class="chart">
+			<h3>時間帯ごとの最高記録</h3>
+			<p>これまでで一番多かった人数を、時間帯ごとに並べたものです（日本時間、毎時 0 分の時点の人数）。</p>
+			<div class="bars" id="chart-record"></div>
+			<div class="ticks" id="ticks-record"></div>
+		</div>
+	</section>
+
+	<p class="play"><a href="/">ブラウザで遊ぶ</a></p>
+</main>
+<footer class="site-footer">
+	<a href="https://www.urara-works.jp/" target="_blank" rel="noopener">© URARA-works</a> /
+	<a href="https://github.com/uraraworks/SBO2003" target="_blank" rel="noopener">GitHubで見る</a> /
+	<span title="反映した日時とコミット">@@SBO_BUILD_DATE@@ <a href="https://github.com/uraraworks/SBO2003/commit/@@SBO_BUILD_COMMIT@@" target="_blank" rel="noopener">@@SBO_BUILD_COMMIT@@</a></span>
+</footer>
+<script>
+(function () {
+	var INTERVAL_MS = 30000;
+	var JST_OFFSET_MIN = 9 * 60;
+
+	function $(id) {
+		return document.getElementById(id);
+	}
+
+	/* 日本時間の「何時」 */
+	function jstHour(date) {
+		return new Date(date.getTime() + JST_OFFSET_MIN * 60000).getUTCHours();
+	}
+	/* 日本時間の日付（YYYY-MM-DD） */
+	function jstDay(date) {
+		return new Date(date.getTime() + JST_OFFSET_MIN * 60000).toISOString().slice(0, 10);
+	}
+	function jstText(iso) {
+		var d = new Date(iso);
+		var j = new Date(d.getTime() + JST_OFFSET_MIN * 60000);
+		return (j.getUTCMonth() + 1) + '/' + j.getUTCDate() + ' ' +
+			String(j.getUTCHours()).padStart(2, '0') + ':' + String(j.getUTCMinutes()).padStart(2, '0');
+	}
+	function uptimeText(sec) {
+		var d = Math.floor(sec / 86400);
+		var h = Math.floor(sec % 86400 / 3600);
+		var m = Math.floor(sec % 3600 / 60);
+		if (d > 0) {
+			return d + '日 ' + h + '時間';
+		}
+		if (h > 0) {
+			return h + '時間 ' + m + '分';
+		}
+		return m + '分';
+	}
+
+	/* 棒グラフ。items: [{value(null で記録なし), label, now}] */
+	function drawBars(barsEl, ticksEl, items, cls) {
+		var max = 1;
+		items.forEach(function (it) {
+			if (it.value != null && it.value > max) {
+				max = it.value;
+			}
+		});
+		barsEl.textContent = '';
+		ticksEl.textContent = '';
+		items.forEach(function (it, i) {
+			var bar = document.createElement('div');
+			bar.className = 'bar' + (cls ? ' ' + cls : '') + (it.value == null ? ' is-empty' : '') + (it.now ? ' is-now' : '');
+			bar.title = it.label + '時 ' + (it.value == null ? '記録なし' : it.value + '人');
+			var fill = document.createElement('i');
+			var pct = it.value == null ? 0 : it.value / max * 100;
+			fill.style.height = pct + '%';
+			bar.appendChild(fill);
+			if (it.value) {
+				var num = document.createElement('b');
+				num.textContent = it.value;
+				num.style.bottom = 'calc(' + pct + '% + 2px)';
+				bar.appendChild(num);
+			}
+			barsEl.appendChild(bar);
+			var tick = document.createElement('span');
+			tick.textContent = (i % 3 === 0) ? it.label : '';
+			ticksEl.appendChild(tick);
+		});
+	}
+
+	function show(data) {
+		var now = new Date();
+		$('st-dot').className = 'dot is-online';
+		$('st-text').textContent = '稼働中';
+		$('st-online').textContent = data.onlinePlayers;
+		$('st-online-note').textContent = '定員 ' + data.maxConnect + ' 人';
+		$('st-uptime').textContent = uptimeText(data.uptimeSec);
+		$('st-started').textContent = jstText(data.startedAt) + ' から';
+		$('st-chars').textContent = data.playerChars;
+		$('st-maps').textContent = data.maps;
+
+		/* 今日の最大は直近 24 時間の記録から（日本時間の今日の分だけ） */
+		var today = jstDay(now);
+		var todayMax = data.onlinePlayers;
+		data.recentHours.forEach(function (h) {
+			if (h.max != null && jstDay(new Date(h.at)) === today && h.max > todayMax) {
+				todayMax = h.max;
+			}
+		});
+		$('st-today').textContent = todayMax;
+		$('st-peak-note').textContent = data.peak ?
+			'記録を取り始めてからの最高 ' + data.peak.count + ' 人（' + jstText(data.peak.at) + '）' : '';
+
+		var nRecent = data.recentHours.length;
+		drawBars($('chart-recent'), $('ticks-recent'), data.recentHours.map(function (h, i) {
+			return { value: h.max, label: String(jstHour(new Date(h.at))), now: i === nRecent - 1 };
+		}), '');
+
+		/* 時間帯ごとの記録はサーバーの時刻の 0〜23 時なので、日本時間の 0〜23 時に並べ直す */
+		var shift = Math.round((JST_OFFSET_MIN - data.serverUtcOffsetMin) / 60);
+		var record = [];
+		var nowHour = jstHour(now);
+		for (var jh = 0; jh < 24; jh ++) {
+			var sh = ((jh - shift) % 24 + 24) % 24;
+			record.push({ value: data.hourRecord[sh], label: String(jh), now: jh === nowHour });
+		}
+		drawBars($('chart-record'), $('ticks-record'), record, 'is-record');
+
+		$('st-updated').textContent = '最終確認 ' + now.toLocaleTimeString('ja-JP');
+	}
+
+	function showError() {
+		$('st-dot').className = 'dot is-down';
+		$('st-text').textContent = '確認できません';
+		$('st-online').textContent = '—';
+		$('st-updated').textContent = 'サーバー情報を取得できませんでした。しばらくしてから読み込み直してください。';
+	}
+
+	function update() {
+		fetch('/api/status', { cache: 'no-store' }).then(function (res) {
+			if (!res.ok) {
+				throw new Error('HTTP ' + res.status);
+			}
+			return res.json();
+		}).then(function (data) {
+			if (data.status !== 'ok') {
+				throw new Error('not ready');
+			}
+			show(data);
+		}).catch(showError);
+	}
+
+	update();
+	setInterval(update, INTERVAL_MS);
+})();
+</script>
+</body>
+</html>

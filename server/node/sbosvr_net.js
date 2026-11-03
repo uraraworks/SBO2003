@@ -298,11 +298,12 @@ Module['sboNet'] = (function () {
 		var aUrl = String(req.url || '/').split('?');
 		var url = decodeURIComponent(aUrl[0]);
 		var query = new URLSearchParams(aUrl.slice(1).join('?'));
-		/* 動いているかの確認用（ステージングの deploy.sh などが叩く） */
-		if (url === '/health') {
-			res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-cache' });
-			res.end('ok\n');
+		/* サーバー状況（/health・/api/status。sbosvr_status.js）。/health はデプロイの確認にも使う */
+		if (Module['sboStatus'] && Module['sboStatus'].handleHttp(req, res, url)) {
 			return;
+		}
+		if (url === '/status') {
+			url = '/status.html';
 		}
 		/* アカウント関係の API（sbosvr_account.js） */
 		if (Module['sboAccount'] && Module['sboAccount'].handleHttp(req, res, url)) {
@@ -412,6 +413,9 @@ Module['sboNet'] = (function () {
 				});
 				web.listen(nHttpPort, function () {
 					log('HTTP ポート ' + nHttpPort + ' で待ち受けを開始しました');
+					if (Module['sboStatus']) {
+						Module['sboStatus'].start();
+					}
 					log('  ブラウザ版: http://localhost:' + nHttpPort + '/  （WebSocket は ws://localhost:' + nHttpPort + '/ws）');
 				});
 				aServer.push(web);
