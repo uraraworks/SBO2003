@@ -677,6 +677,133 @@
 	body:not(.sbo-pad) #sbo-chat-panel {
 		bottom: calc(var(--site-footer-h, 0px) + 16px);
 	}
+
+	/* ===================================================================
+	   スクリーンショット（ゲーム画面を PNG で保存）
+	   PC … チャットパネルの見出しのボタンでダウンロード
+	   スマホ … パッドのカメラボタンで共有シート（「画像を保存」で写真へ）
+	   =================================================================== */
+	#sbo-chat-tools {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+	#sbo-shot-pc {
+		background: none;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		color: var(--fg);
+		font: 12px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		padding: 3px 8px;
+		cursor: pointer;
+	}
+	#sbo-shot-pc:hover {
+		border-color: var(--accent);
+		color: var(--accent);
+	}
+	/* スマホのカメラボタン（マップにいる間だけ） */
+	#sbo-shot-pad {
+		display: none;
+	}
+	body.sbo-pad.sbo-on-map #sbo-shot-pad {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex: none;
+		width: 44px;
+		height: 44px;
+		padding: 0;
+		border: 2px solid rgba(255, 255, 255, 0.4);
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.12);
+		color: #fff;
+		font-size: 20px;
+		line-height: 1;
+		-webkit-tap-highlight-color: transparent;
+		cursor: pointer;
+	}
+	body.sbo-pad #sbo-shot-pad:active {
+		background: rgba(240, 184, 74, 0.75);
+	}
+	/* 横持ちはスティックの下（左下）に置く */
+	@media (orientation: landscape) {
+		body.sbo-pad.sbo-on-map #sbo-shot-pad {
+			position: fixed;
+			left: calc(12px + env(safe-area-inset-left));
+			bottom: calc(10px + env(safe-area-inset-bottom));
+			z-index: 800;
+		}
+	}
+	/* 撮った時に画面を一瞬白く光らせる */
+	#sbo-shot-flash {
+		position: absolute;
+		left: 0; top: 0; right: 0; bottom: 0;
+		background: #fff;
+		opacity: 0;
+		pointer-events: none;
+	}
+	#sbo-shot-flash.sbo-flash {
+		animation: sbo-shot-flash 0.35s ease-out;
+	}
+	@keyframes sbo-shot-flash {
+		from { opacity: 0.7; }
+		to { opacity: 0; }
+	}
+	/* 共有できないブラウザ向け：画像を大きく出して長押しで保存してもらう */
+	#sbo-shot-view {
+		display: none;
+		position: fixed;
+		left: 0; top: 0; right: 0; bottom: 0;
+		z-index: 2500;
+		background: rgba(0, 0, 0, 0.88);
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 12px;
+		padding: calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
+		box-sizing: border-box;
+	}
+	#sbo-shot-view.sbo-open {
+		display: flex;
+	}
+	#sbo-shot-img {
+		max-width: 100%;
+		max-height: calc(100% - 120px);
+		image-rendering: pixelated;
+		/* 長押しメニュー（「写真に追加」など）を出せるようにする */
+		-webkit-touch-callout: default;
+		-webkit-user-select: auto;
+		user-select: auto;
+		touch-action: auto;
+	}
+	#sbo-shot-view p {
+		margin: 0;
+		color: var(--fg);
+		font-size: 14px;
+		text-align: center;
+		line-height: 1.5;
+	}
+	#sbo-shot-view .sbo-shot-row {
+		display: flex;
+		gap: 10px;
+	}
+	#sbo-shot-view .sbo-shot-row a,
+	#sbo-shot-view .sbo-shot-row button {
+		border: none;
+		border-radius: 8px;
+		font: bold 14px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		padding: 10px 16px;
+		cursor: pointer;
+		text-decoration: none;
+	}
+	#sbo-shot-dl {
+		background: var(--accent);
+		color: #1d1f24;
+	}
+	#sbo-shot-close {
+		background: #3a404a;
+		color: var(--fg);
+	}
 </style>
 </head>
 <body>
@@ -688,6 +815,7 @@
 	<div id="sbo-screen">
 		<canvas id="canvas" tabindex="0" width="480" height="480" oncontextmenu="event.preventDefault()"></canvas>
 		<div id="sbo-overlay" style="position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none;"></div>
+		<div id="sbo-shot-flash"></div>
 		<!-- ログイン画面のボタン。ID・パスワードの入力欄は「ID・パスワードでログイン」を押した時だけ見せる -->
 		<div id="sbo-quick" data-sbo-ui="1">
 			<!-- この端末で前にログインしていた -->
@@ -716,6 +844,7 @@
 		<div class="sbo-stick" id="sbo-stick">
 			<div class="sbo-stick-knob" id="sbo-stick-knob"></div>
 		</div>
+		<button type="button" id="sbo-shot-pad" title="スクリーンショット">📷</button>
 		<div class="sbo-buttons">
 			<button type="button" data-vk="90"><span class="sbo-btn-icon">✕</span><span class="sbo-btn-label" style="font-size:10px">キャンセル</span><span class="sbo-btn-key">Z</span></button>
 			<button type="button" data-vk="88" class="sbo-main"><span class="sbo-btn-icon">○</span>決定<span class="sbo-btn-key">X</span></button>
@@ -763,13 +892,26 @@
 <div id="sbo-chat-panel">
 	<div id="sbo-chat-head">
 		<span id="sbo-chat-title">メッセージログ</span>
-		<button id="sbo-chat-fold" type="button" title="たたむ">▼</button>
+		<span id="sbo-chat-tools">
+			<button id="sbo-shot-pc" type="button" title="ゲーム画面を画像で保存します">📷 スクショ</button>
+			<button id="sbo-chat-fold" type="button" title="たたむ">▼</button>
+		</span>
 	</div>
 	<div id="sbo-chat-log"></div>
 	<div id="sbo-chat-row">
 		<input id="sbo-chat-input" class="sbo-chat-input" type="text" data-sbo-chat="1" placeholder="発言を入力して Enter"
 			autocomplete="off" spellcheck="false">
 		<button id="sbo-chat-send" class="sbo-chat-send" type="button">送信</button>
+	</div>
+</div>
+
+<!-- スクリーンショット（共有シートが使えない時に画像を大きく出す） -->
+<div id="sbo-shot-view" data-sbo-ui="1">
+	<img id="sbo-shot-img" alt="スクリーンショット">
+	<p id="sbo-shot-msg">画像を長押しして「写真に追加」や「画像を保存」を選ぶと保存できます。</p>
+	<div class="sbo-shot-row">
+		<a id="sbo-shot-dl" href="#" download>ダウンロード</a>
+		<button id="sbo-shot-close" type="button">閉じる</button>
 	</div>
 </div>
 
@@ -1340,6 +1482,127 @@
 			setOnMap(Module['_SboWebGetGameState']() >= GAMESTATE_MOVE);
 		}
 	}, 500);
+
+	/* ---- スクリーンショット ----
+	   ゲーム画面の canvas は 2D（putImageData で描いている）なので、そのまま画像にできる。
+	   ドットがぼやけないよう 2 倍に拡大（補間なし）して PNG にする。 */
+	(function () {
+		var SHOT_SCALE = 2;
+		var view = document.getElementById('sbo-shot-view');
+		var img = document.getElementById('sbo-shot-img');
+		var dl = document.getElementById('sbo-shot-dl');
+		var flash = document.getElementById('sbo-shot-flash');
+		var lastUrl = null;
+
+		function pad2(n) {
+			return (n < 10 ? '0' : '') + n;
+		}
+		function fileName() {
+			var d = new Date();
+			return 'sbo2003_' + d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) + '_' +
+				pad2(d.getHours()) + pad2(d.getMinutes()) + pad2(d.getSeconds()) + '.png';
+		}
+
+		/* 共有シートはボタンを押した直後でないと開けない（特に iOS）ので、
+		   toBlob（非同期）ではなく toDataURL で同期的に画像を作る */
+		function capture() {
+			var w = canvas.width, h = canvas.height;
+			var c = document.createElement('canvas');
+			c.width = w * SHOT_SCALE;
+			c.height = h * SHOT_SCALE;
+			var cx = c.getContext('2d');
+			cx.imageSmoothingEnabled = false;
+			cx.drawImage(canvas, 0, 0, c.width, c.height);
+			var bin = atob(c.toDataURL('image/png').split(',')[1]);
+			var buf = new Uint8Array(bin.length);
+			for (var i = 0; i < bin.length; i ++) {
+				buf[i] = bin.charCodeAt(i);
+			}
+			return new Blob([buf], { type: 'image/png' });
+		}
+
+		function doFlash() {
+			flash.classList.remove('sbo-flash');
+			void flash.offsetWidth;
+			flash.classList.add('sbo-flash');
+		}
+
+		function setUrl(blob) {
+			if (lastUrl) {
+				URL.revokeObjectURL(lastUrl);
+			}
+			lastUrl = URL.createObjectURL(blob);
+			return lastUrl;
+		}
+
+		/* PC：そのままダウンロード */
+		function download(blob, name) {
+			var a = document.createElement('a');
+			a.href = setUrl(blob);
+			a.download = name;
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+		}
+
+		/* 共有できない時：画像を大きく出し、長押しかダウンロードで保存してもらう */
+		function showView(blob, name) {
+			var url = setUrl(blob);
+			img.src = url;
+			dl.href = url;
+			dl.download = name;
+			view.classList.add('sbo-open');
+		}
+		function closeView() {
+			view.classList.remove('sbo-open');
+			canvas.focus();
+		}
+		document.getElementById('sbo-shot-close').addEventListener('click', closeView);
+		view.addEventListener('click', function (ev) {
+			if (ev.target === view) {
+				closeView();
+			}
+		});
+
+		function takeShot() {
+			if (!sboReady) {
+				return;
+			}
+			var blob, name = fileName();
+			try {
+				blob = capture();
+			} catch (e) {
+				console.warn('スクリーンショットを作れませんでした', e);
+				return;
+			}
+			doFlash();
+			if (!usePad) {
+				download(blob, name);
+				canvas.focus();
+				return;
+			}
+			/* スマホ：共有シートから「画像を保存」で写真アプリへ */
+			var file = null;
+			try {
+				file = new File([blob], name, { type: 'image/png' });
+			} catch (e) {
+				file = null;
+			}
+			if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+				navigator.share({ files: [file] }).catch(function (e) {
+					/* 自分で閉じた（AbortError）時は何もしない */
+					if (!e || e.name !== 'AbortError') {
+						showView(blob, name);
+					}
+				});
+				return;
+			}
+			showView(blob, name);
+		}
+		window.sboTakeScreenshot = takeShot;
+		document.getElementById('sbo-shot-pc').addEventListener('click', takeShot);
+		document.getElementById('sbo-shot-pad').addEventListener('click', takeShot);
+	})();
 
 	var Module = window.Module = {
 		canvas: canvas,
