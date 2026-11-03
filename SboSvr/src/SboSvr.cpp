@@ -395,8 +395,6 @@ BOOL OnCreate(HWND hWnd)
 	g_wPort = GetPrivateProfileInt ("Port", "PortNo", 2004, szBuf);
 	/* アカウント自動追加モードの読み込み */
 	g_bFreeAcount = GetPrivateProfileInt ("Setting", "FreeAcount", TRUE, szBuf);
-	/* 全員管理人権限モードの読み込み */
-	g_bAllAdmin = GetPrivateProfileInt ("Setting", "AllAdmin", FALSE, szBuf);
 
 	/* 管理者アカウント名/パスワード読み込み */
 	ZeroMemory (g_szAdminAcc, sizeof (g_szAdminAcc));
@@ -407,11 +405,6 @@ BOOL OnCreate(HWND hWnd)
 		/* 空のままだと誰でも管理者になれてしまうので、管理者ログインは受け付けない */
 #ifdef __EMSCRIPTEN__
 		SvrLogSettingWarning (0);
-#endif
-	}
-	if (g_bAllAdmin) {
-#ifdef __EMSCRIPTEN__
-		SvrLogSettingWarning (1);
 #endif
 	}
 
@@ -553,8 +546,8 @@ void OnDestroy(HWND hWnd)
 	WritePrivateProfileString ("Port", "PortNo", szBuf, szName);
 	wsprintf (szBuf, "%d", g_bFreeAcount);
 	WritePrivateProfileString ("Setting", "FreeAcount", szBuf, szName);
-	wsprintf (szBuf, "%d", g_bAllAdmin);
-	WritePrivateProfileString ("Setting", "AllAdmin", szBuf, szName);
+	/* 昔の「全員管理人権限」（AllAdmin）は廃止したので、設定ファイルに残っていれば消す */
+	WritePrivateProfileString ("Setting", "AllAdmin", NULL, szName);
 	WritePrivateProfileString ("Administrator", "Account", g_szAdminAcc, szName);
 	WritePrivateProfileString ("Administrator", "Password", g_szAdminPas, szName);
 	WritePrivateProfileString ("Version", "Client", g_szCliVer, szName);
