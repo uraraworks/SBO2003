@@ -13,7 +13,7 @@
 /* ========================================================================= */
 /* 定数定義																	 */
 /* ========================================================================= */
-#define DATACOUNTCOLUMN		(72)									/* 保存データ数 */
+#define DATACOUNTCOLUMN		(73)									/* 保存データ数 */
 
 /* ========================================================================= */
 /* 構造体定義																 */
@@ -105,6 +105,7 @@ static const char *s_aszName[] = {
 	"szNpcSpeechLen",			/* NPC発言長 */
 	"pszNpcSpeech",				/* NPC発言 */
 	"dwLastIPAddress",			/* 最終IPアドレス */
+	"abyJobMagic",				/* 転職前の職業で覚えていた呪文（職業ID別） */
 	"z"
 };
 
@@ -113,6 +114,7 @@ static const char *s_aszName[] = {
 /* 関数プロトタイプ宣言														 */
 /* ========================================================================= */
 static BOOL CheckSaveChar(PCHARINFO);								/* キャラ情報を保存するかチェック */
+static DWORD GetJobMagicSaveCount(PCHARINFO);						/* 職業別の呪文を何職業分保存するか */
 BOOL SaveCharInfo(void);											/* キャラ情報保存 */
 BOOL LoadCharInfo(void);											/* キャラ情報読み込み */
 
@@ -148,6 +150,26 @@ BOOL CheckSaveChar(PCHARINFO pChar)
 		}
 	}
 	return bRet;
+}
+
+/* ========================================================================= */
+/* 関数名：GetJobMagicSaveCount												 */
+/* 内容：職業別の呪文を何職業分保存するか（最後の空でない職業まで）			 */
+/*       保存形式は キャラごとに [職業数(BYTE)][1職業の呪文数(BYTE)][呪文...]	 */
+/*       古いデータにはこのカラムが無いので、読み込み時は全て空のまま			 */
+/* ========================================================================= */
+static DWORD GetJobMagicSaveCount(PCHARINFO pChar)
+{
+	int i, j;
+
+	for (i = MAX_JOBMAGIC - 1; i >= 0; i --) {
+		for (j = 0; j < MAX_USEMAGIC; j ++) {
+			if (pChar->abyJobMagic[i][j]) {
+				return (DWORD)(i + 1);
+			}
+		}
+	}
+	return 0;
 }
 
 /* ========================================================================= */
@@ -327,6 +349,9 @@ BOOL SaveCharInfo(void)
 				}
 				break;
 			case 71:	dwDataSizeTmp += sizeof (DWORD);						break;	/* 最終IPアドレス */
+			case 72:	/* 転職前の職業で覚えていた呪文 */
+				dwDataSizeTmp += sizeof (BYTE) * 2 + GetJobMagicSaveCount (pInfo) * MAX_USEMAGIC;
+				break;
 			}
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
@@ -679,6 +704,16 @@ BOOL SaveCharInfo(void)
 			case 71:	/* 最終IPアドレス */
 				CopyMemory (&pData[dwOffset], &pInfo->dwLastIPAddress, sizeof (pInfo->dwLastIPAddress));
 				dwOffset += sizeof (pInfo->dwLastIPAddress);
+				break;
+			case 72:	/* 転職前の職業で覚えていた呪文 */
+				{
+					DWORD dwJobCount = GetJobMagicSaveCount (pInfo);
+
+					pData[dwOffset ++] = (BYTE)dwJobCount;		/* 職業数 */
+					pData[dwOffset ++] = (BYTE)MAX_USEMAGIC;	/* 1職業の呪文数 */
+					CopyMemory (&pData[dwOffset], pInfo->abyJobMagic, dwJobCount * MAX_USEMAGIC);
+					dwOffset += dwJobCount * MAX_USEMAGIC;
+				}
 				break;
 			}
 		}
@@ -1265,6 +1300,21 @@ BOOL LoadCharInfo(void)
 			if (strcmp (aHeaderInfo[i].szName, s_aszName[71]) == 0) {
 				CopyMemory (&pInfo->dwLastIPAddress, &pData[dwOffsetTmp], sizeof (pInfo->dwLastIPAddress));
 				dwOffsetTmp += sizeof (pInfo->dwLastIPAddress);
+			}
+
+			/* 転職前の職業で覚えていた呪文 */
+			if (strcmp (aHeaderInfo[i].szName, s_aszName[72]) == 0) {
+				DWORD dwJobCount, dwMagicCount, dwJob;
+
+				dwJobCount   = pData[dwOffsetTmp ++];
+				dwMagicCount = pData[dwOffsetTmp ++];
+				/* 保存時と定数が変わっていても読めるように、収まる分だけ取り込む */
+				for (dwJob = 0; dwJob < dwJobCount; dwJob ++) {
+					if (dwJob < MAX_JOBMAGIC) {
+						CopyMemory (pInfo->abyJobMagic[dwJob], &pData[dwOffsetTmp], min (dwMagicCount, (DWORD)MAX_USEMAGIC));
+					}
+					dwOffsetTmp += dwMagicCount;
+				}
 			}
 		}
 	}
