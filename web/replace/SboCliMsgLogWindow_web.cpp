@@ -9,6 +9,8 @@
  *
  *  - AddMsgLog   … 時刻と色付きの 1 行を window.sboChatLogAdd へ渡す（UTF-8）
  *  - 発言        … チャット欄の入力を SboWebChatSubmit で受け取り ChatMsgProc へ
+ *                  （Enter で開くゲーム内の発言欄も SboWebSpeechSubmit からシェルの
+ *                    分割送信に渡し、長い発言を分けて送る）
  *  - SaveMsgLog  … メニューの「ログ保存」で window.sboChatLogSave を呼び、
  *                  チャット欄のログをテキストファイル（UTF-8）としてダウンロードする
  */
@@ -25,6 +27,8 @@ std::string W32Utf8ToSjisStr(const char *pszUtf8);
 
 /* 発言できる長さ（Windows 版の入力欄と同じ 40 バイト） */
 #define MSGLOG_SPEECH_MAX	40
+
+extern "C" void SboWebChatSubmit(const char *pszUtf8);
 
 EM_JS(void, SboJsChatLogAdd, (const char *pszTime, const char *pszText, int nColor), {
 	if (typeof window === 'undefined' || typeof window['sboChatLogAdd'] !== 'function') {
@@ -108,6 +112,34 @@ void SaveMsgLog(void)
 extern "C" EMSCRIPTEN_KEEPALIVE int SboWebGetGameState(void)
 {
 	return (int)g_byGameState;
+}
+
+/* チャット欄と同じ分割送信（シェル HTML の window.sboChatSend）へ渡す。
+   シェルが古いなどで無い時は 0 を返す */
+EM_JS(int, SboJsChatSend, (const char *pszUtf8), {
+	if (typeof window === 'undefined' || typeof window['sboChatSend'] !== 'function') {
+		return 0;
+	}
+	window['sboChatSend'](UTF8ToString(pszUtf8));
+	return 1;
+});
+
+/* ========================================================================= */
+/* 関数名：SboWebSpeechSubmit												 */
+/* 内容：ゲーム内の発言入力欄（Enter で開く欄）から発言する（文字列は SJIS）	 */
+/*		 長い発言はチャット欄と同じように分けて順に送る						 */
+/* ========================================================================= */
+void SboWebSpeechSubmit(LPCSTR pszSjis)
+{
+	if ((pszSjis == NULL) || (pszSjis[0] == 0)) {
+		return;
+	}
+	std::string strUtf8 = W32SjisToUtf8Str (pszSjis, -1);
+	if (SboJsChatSend (strUtf8.c_str ())) {
+		return;
+	}
+	/* 分割送信が使えない時は、これまでどおり上限で切って発言する */
+	SboWebChatSubmit (strUtf8.c_str ());
 }
 
 /* ========================================================================= */
