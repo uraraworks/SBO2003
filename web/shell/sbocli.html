@@ -597,8 +597,8 @@
 
 	/* ===================================================================
 	   パッドなし表示（PC など）：SBOP2 に合わせた見た目
-	   ベージュの背景にゲーム画面を影付きで置き、上下にヘッダー・フッターを出す。
-	   スマホ（body.sbo-pad）は今までどおり黒っぽい全画面のまま。
+	   スマホと同じ暗い背景にゲーム画面を置き、上下にヘッダー・フッターを出す。
+	   スマホ（body.sbo-pad）はヘッダー・フッター無しの全画面。
 	   =================================================================== */
 	.site-header,
 	.site-footer {
@@ -606,7 +606,7 @@
 	}
 	html:has(body:not(.sbo-pad)),
 	body:not(.sbo-pad) {
-		--page-bg: #efe6d2;
+		--page-bg: var(--bg);
 		background: var(--page-bg);
 	}
 	/* ヘッダー・ゲーム画面・フッターを縦に並べ、ゲーム画面は残りの高さの中央に置く */
@@ -653,26 +653,25 @@
 		padding: 8px 16px;
 		font-size: 11px;
 		text-align: center;
-		color: #8c8c8c;
-		background: #1a1a1a;
-		border-top: 1px solid rgba(255, 255, 255, 0.1);
+		color: #9aa0a6;
+		background: #121418;
+		border-top: 1px solid rgba(255, 255, 255, 0.08);
 	}
 	.site-footer a {
-		color: #8c8c8c;
+		color: #b4bac2;
+	}
+	.site-footer a:hover {
+		color: var(--accent);
 	}
 	@media (max-height: 560px) {
 		.site-header { padding: 6px 10px; }
 		.site-header .site-tagline { display: none; }
 	}
 	body:not(.sbo-pad) #canvas {
+		/* 暗い背景に溶けないよう、うっすら縁取りと影を付ける */
 		box-shadow:
-			0 2px 6px rgba(60, 45, 20, 0.22),
-			0 14px 36px rgba(60, 45, 20, 0.30);
-	}
-	/* ベージュの上に出る文字は濃い色にする（ログイン画面のカードの中は黒いままなので対象外） */
-	body:not(.sbo-pad) #sbo-status,
-	body:not(.sbo-pad) #sbo-forgot {
-		color: #6b5d45;
+			0 0 0 1px rgba(255, 255, 255, 0.08),
+			0 14px 36px rgba(0, 0, 0, 0.55);
 	}
 	/* チャット欄はフッターに重ならないよう、その上に浮かせる */
 	body:not(.sbo-pad) #sbo-chat-panel {
