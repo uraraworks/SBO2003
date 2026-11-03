@@ -155,6 +155,16 @@ em++ "${OPT[@]}" ${SBO_LDFLAGS:-} "${PORTS[@]}" "${OBJS[@]}" -o "$DIST/sbocli.ht
 	-sDEFAULT_LIBRARY_FUNCS_TO_INCLUDE='$stringToNewUTF8,$UTF8ToString' \
 	-sEXPORTED_FUNCTIONS=_main,_malloc,_free,_W32JsOnKey,_W32JsOnMouse,_W32JsOnActivate,_W32JsOnButton
 
+# フッターに反映した日時とコミットを書き込む（SBOP2 と同じく、どの版が動いているか分かるように）。
+# Docker の中など git が使えない所では、環境変数 SBO2003_BUILD_COMMIT で渡す。
+BUILD_COMMIT="${SBO2003_BUILD_COMMIT:-$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || true)}"
+BUILD_COMMIT="${BUILD_COMMIT:-unknown}"
+BUILD_DATE="${SBO2003_BUILD_DATE:-$(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M')}"
+# （macOS の sed は -i の書き方が違うので、一時ファイルを経由する）
+sed "s/@@SBO_BUILD_DATE@@/$BUILD_DATE/g; s/@@SBO_BUILD_COMMIT@@/$BUILD_COMMIT/g" "$DIST/sbocli.html" > "$DIST/sbocli.html.tmp"
+mv "$DIST/sbocli.html.tmp" "$DIST/sbocli.html"
+echo "[build] 版: $BUILD_DATE $BUILD_COMMIT"
+
 # BGM（MIDI）用の JS シンセとサウンドフォントは、ページから後で読み込むので .data に入れずに置く
 mkdir -p "$DIST/bgm"
 cp "$ROOT/web/bgm/sbo_bgm.js" \

@@ -7,6 +7,9 @@
 FROM emscripten/emsdk:6.0.10 AS build
 WORKDIR /src
 COPY . .
+# フッターに出すコミット（.git はイメージに入れないので、ビルドの時に --build-arg で渡す）
+ARG SBO2003_BUILD_COMMIT=
+ENV SBO2003_BUILD_COMMIT=$SBO2003_BUILD_COMMIT
 RUN tools/web/build.sh release \
 	&& tools/server/build.sh release
 
