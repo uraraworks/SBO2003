@@ -65,7 +65,7 @@ jobs:
       - name: サーバーとブラウザ版をビルド
         run: |
           # ステージングのイメージと同じビルド段を使い、出来たものだけ取り出す
-          docker build --target build -f deploy/staging/Dockerfile -t sbo2003-build .
+          docker build --target build -f deploy/staging/Dockerfile -t sbo2003-build --build-arg SBO2003_BUILD_COMMIT="${GITHUB_SHA::7}" .
           id=$(docker create sbo2003-build)
           mkdir -p out/server-release out/web/dist
           docker cp "$id:/src/out/server-release/." out/server-release/
