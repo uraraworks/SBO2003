@@ -94,7 +94,10 @@ void CmdProcHanasu		(PWNDINFO);											/* コマンド処理(話す) */
 BOOL CmdProcSiraberu	(PWNDINFO);											/* コマンド処理(調べる) */
 void ChatMsgProc		(LPCTSTR);											/* 発言メッセージ処理 */
 #ifdef __EMSCRIPTEN__
-extern void SboWebSpeechSubmit(LPCSTR pszSjis);								/* 発言（ブラウザ版の分割送信） */
+extern void SboWebSpeechSubmit(LPCSTR pszSjis, int nKeyMod);					/* 発言（ブラウザ版の分割送信） */
+/* ブラウザ版：発言した時のキー（0:なし 1:Shift 2:Ctrl）。-1 ならキーの状態を見る。
+   チャット欄からの発言や、分けて後から送る発言は入力した時の状態をここに入れて渡す */
+int g_nWebSpeechKeyMod = -1;
 #endif
 
 extern int GetWindowID(DWORD);										/* ウィンドウ番号を取得 */
@@ -6677,7 +6680,14 @@ LRESULT CALLBACK SpeechWndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp)
 						LPSTR pszBuf = new char[nLen + 2];
 						ZeroMemory (pszBuf, nLen + 2);
 						GetWindowText (hWnd, pszBuf, nLen + 1);
-						SboWebSpeechSubmit (pszBuf);
+						/* 全体発言（Shift）・管理者用内線（Ctrl）は、分けた発言すべてに効かせる */
+						int nKeyMod = 0;
+						if (GetKeyState (VK_SHIFT) & 0x8000) {
+							nKeyMod = 1;
+						} else if (GetKeyState (VK_CONTROL) & 0x8000) {
+							nKeyMod = 2;
+						}
+						SboWebSpeechSubmit (pszBuf, nKeyMod);
 						SAFE_DELETE_ARRAY (pszBuf);
 					}
 #else
@@ -7173,12 +7183,21 @@ void ChatMsgProc(LPCTSTR pszMsg)
 
 	/* 管理人権限？ */
 	if (pChar->byAdminLV == ADMINLV_ADMINISTRATOR) {
+		BOOL bShift = (GetKeyState (VK_SHIFT) & 0x8000) ? TRUE : FALSE;
+		BOOL bCtrl = (GetKeyState (VK_CONTROL) & 0x8000) ? TRUE : FALSE;
+#ifdef __EMSCRIPTEN__
+		/* ブラウザ版：チャット欄などから渡された Shift/Ctrl を使う */
+		if (g_nWebSpeechKeyMod >= 0) {
+			bShift = (g_nWebSpeechKeyMod == 1) ? TRUE : FALSE;
+			bCtrl = (g_nWebSpeechKeyMod == 2) ? TRUE : FALSE;
+		}
+#endif
 		/* 一斉放送？ */
-		if (GetKeyState (VK_SHIFT) & 0x8000) {
+		if (bShift) {
 			byType = SPEECHCMD_ALL;
 
 		/* 管理者用内線？ */
-		} else if (GetKeyState (VK_CONTROL) & 0x8000) {
+		} else if (bCtrl) {
 			byType = SPEECHCMD_GM;
 		}
 	}
