@@ -175,9 +175,11 @@ cp "$ROOT/web/bgm/sbo_bgm.js" \
 
 # 管理ページ（/admin。キャラ検索・キャラ名の変更・復旧の承認。サーバーの /api/admin/* を使う）
 # キャラ名の変更ページ（/rename。プレイヤー用）
+# ご意見箱（/feedback。プレイヤー用。サーバーの /api/feedback/* を使う）
 # recover-admin.html は前の URL を /admin#recover へ送るだけ
 cp "$ROOT/web/account/admin.html" \
 	"$ROOT/web/account/rename.html" \
+	"$ROOT/web/account/feedback.html" \
 	"$ROOT/web/account/recover-admin.html" \
 	"$DIST/"
 
