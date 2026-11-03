@@ -1,7 +1,9 @@
 # Sbo2003 本番（SBOP2 と同じ Windows Server の VPS）
 
-SBOP2 の本番と同じく、GitHub Actions で **配布 zip を作るところまで** を自動にし、VPS への展開は手で行います。
+GitHub Actions の「production-publish」を手動実行すると、配布 zip を作って Windows で動作を確かめたあと、
+**SSH で VPS へ送って入れ替えるところまで** 自動で行います（MangaViewer と同じく、VPS の OpenSSH に鍵でログインします）。
 ステージング（`deploy/staging`、GCP・main への push で自動デプロイ）はそのまま残ります。
+公開 URL は `https://sbo2003.urara-works.jp/`（SBOP2 の `sbop2.urara-works.jp` と同じく専用のサブドメイン）の想定です。
 
 ```
 ブラウザ ──https──▶ IIS（VPS、80/443・TLS。SBOP2 と同じ IIS に Sbo2003 用のサイトを足す）
@@ -19,16 +21,44 @@ SBOP2 の本番と同じく、GitHub Actions で **配布 zip を作るところ
 - Windows 版クライアント用の TCP（`SboSvr.ini` の `PortNo=2004`）も待ち受けますが、ファイアウォールでは開けません（ブラウザ版だけ）。
   SBOP2 のポート（2007・18080・18081）とはぶつかりません。
 
-## zip の作り方
+## デプロイ（Actions から）
 
-Actions の「production-publish」を手動実行します（`v*` のタグを push した時も動きます）。
-終わったら実行結果の Artifacts から `Sbo2003_Server_yyyyMMdd_HHmmss` を落とします（中に zip が入っています）。
+Actions の「production-publish」を手動実行します（「VPS へデプロイする」のチェックを外すと zip を作るだけ）。
+`v*` のタグを push した時と、関係するファイルを変える PR の時は、zip を作って確かめるだけでデプロイはしません。
+zip は実行結果の Artifacts（`Sbo2003_Server_yyyyMMdd_HHmmss`）にも残ります。
 
 Actions の中では次を行います。
 
 1. ステージングと同じ `deploy/staging/Dockerfile` のビルド段（emsdk）で、サーバーとブラウザ版をビルドする
 2. `deploy/production/make-zip.sh` で zip にまとめる（Windows 用の Node.js を公式から取り、ハッシュを確かめて同梱）
-3. Windows のランナーで zip を展開し、`start.ps1` で起動 → `/health` とページを確認 → `stop.ps1` で保存して止まることを確かめる
+3. Windows のランナーで zip を展開し、`start.ps1` で起動 → `/health` とページを確認 → `stop.ps1` で保存して止まることを確かめる。
+   続けて `remote-deploy.ps1` で初回の導入・入れ替え・1 つ前の版への戻し・データの入れ替えを一通り確かめる
+4. `vps-deploy.sh` で zip を VPS の `C:\SBO2003\upload\` へ scp し、SSH で `remote-deploy.ps1` を動かす。
+   `stop.ps1` で保存して止める → 今の版を `prev\` に退避 → 展開 → 起動 → `/health` を確認、の順です。
+   初回はタスク `SBO2003_SboSvr` の登録と、`sbo2003.env` の作成（雛形から）もここで行います
+
+### 必要な設定（Settings → Secrets and variables → Actions）
+
+| 種類 | 名前 | 中身 |
+|---|---|---|
+| Variable | `SBO2003_VPS_HOST` | VPS のホスト名か IP（未設定の間はデプロイしない） |
+| Variable | `SBO2003_VPS_USER` | SSH ユーザー（Administrators に入っていること。MangaViewer と同じでよい） |
+| Variable | `SBO2003_VPS_PORT` | SSH のポート（22 なら不要） |
+| Variable | `SBO2003_VPS_HEALTH_URL` | 外から確かめる URL（任意。`https://sbo2003.urara-works.jp/health`） |
+| Variable | `SBO2003_VPS_IIS_HOST` | IIS のサイトのホスト名（未設定なら `sbo2003.urara-works.jp`。デプロイのたびに `setup-iis.ps1` でサイトを確かめ、足りないものだけ足す） |
+| Secret | `SBO2003_VPS_SSH_KEY` | SSH 秘密鍵（`base64 -i ~/.ssh/urara_vps_deploy` の1行がおすすめ） |
+| Secret | `SBO2003_VPS_KNOWN_HOSTS` | `ssh-keyscan -p <ポート> <ホスト>` の出力 |
+
+VPS 事業者のパケットフィルタで SSH（22）を特定の IP だけに絞っている時は、GitHub Actions からは届きません。
+その時は Mac から `deploy/production/vps-deploy.sh <zip>` を動かします（`deploy.env.example` を `deploy.local.env` にコピーして設定）。
+
+### 戻す
+
+```bash
+deploy/production/vps-deploy.sh --rollback    # Mac から。1 つ前の版（prev\）に戻す。data\ はそのまま
+```
+
+VPS で直接戻す時は `C:\SBO2003\remote-deploy.ps1 -Rollback` です。
 
 手元（Mac・Linux）で作る時は、`tools/server/build.sh release` と `tools/web/build.sh release` のあとに:
 
@@ -39,6 +69,21 @@ deploy/production/make-zip.sh out/server-release out/web/dist publish
 ## 初回のセットアップ（VPS で 1 回だけ）
 
 SBOP2 のサイトで IIS・URL Rewrite・Application Request Routing（ARR）・WebSocket プロトコルは用意済みの前提です。
+SSH（OpenSSH Server と鍵）は MangaViewer のデプロイで用意済みの前提です。
+
+SSH でデプロイする時の手順:
+
+1. DNS で `sbo2003.urara-works.jp` を VPS に向ける
+2. 上の設定をしてから Actions の「production-publish」を手動実行する（`C:\SBO2003` への展開・タスク登録・起動まで行われる）
+3. VPS の `C:\SBO2003\sbo2003.env` に `SBO2003_ADMIN_PASSWORD` を書き、`.\stop.ps1` → `Start-ScheduledTask -TaskName SBO2003_SboSvr` で起動し直す
+4. 管理者の PowerShell で IIS のサイトを作る（http と、証明書があれば https も付ける）
+   ```powershell
+   powershell -NoProfile -ExecutionPolicy Bypass -File C:\SBO2003\setup-iis.ps1 -HostName sbo2003.urara-works.jp
+   ```
+   証明書が無いと言われたら、SBOP2 のサイトと同じやり方で `sbo2003.urara-works.jp` の証明書を取って、もう一度実行します
+5. `https://sbo2003.urara-works.jp/` を開いてログイン画面が出れば完了です
+
+手で展開する時の手順:
 
 1. **展開する**: zip を `C:\SBO2003` に展開します（別の場所でもよい。以下は `C:\SBO2003` で書きます）。
 2. **設定ファイル**: `sbo2003.env.example` を `sbo2003.env` にコピーし、`SBO2003_ADMIN_PASSWORD`（ゲームの管理者 `administrator` のパスワード）を決めて書きます。
@@ -65,10 +110,17 @@ SBOP2 のサイトで IIS・URL Rewrite・Application Request Routing（ARR）�
 - 手元（Mac）の `tools/server/run.sh` で遊んだデータは `out/server-data/` にあります（`SboSvr.pid` は要りません）。
 - 管理者パスワードは起動のたびに `sbo2003.env` の値で上書きされます。
 
-ステージングのデータを本番に持っていく時は、ステージングのボリューム `sbo2003-staging_data` の中身（`SBODATA/` と `SboSvr.ini`）を、
-サーバーを止めてから `C:\SBO2003\data\` に置きます（取り出し方は `deploy/staging/README.md` の「運用」のバックアップ）。
+ステージングのデータを本番に持っていく時は、Mac から次を動かします（`deploy.local.env` に `STAGING_TARGET` も書いておく）。
 
-## 再デプロイ
+```bash
+deploy/production/move-staging-data.sh
+```
+
+ステージングを少しの間止めて（保存してから）ボリューム `sbo2003-staging_data` の `SBODATA/` と `SboSvr.ini` を取り出し、
+本番のサーバーを止めて今のデータを `C:\SBO2003\backup\` に zip で控えてから置き換え、起動し直します。
+プレイヤーのデータ（パスワードを含む）は Mac を通るだけで、GitHub には上げません。手元の一時ファイルも最後に消します。
+
+## 再デプロイ（手で行う時）
 
 ```powershell
 cd C:\SBO2003
@@ -100,6 +152,11 @@ Start-ScheduledTask -TaskName SBO2003_SboSvr
 | `start.ps1` | 初回のデータコピー、管理者パスワードの設定、サーバーの起動と落ちた時の起動し直し |
 | `stop.ps1` | 停止ファイルを置いて、保存して止まるのを待つ |
 | `install-task.ps1` | 起動時に自動で立ち上がるタスクを登録する |
+| `setup-iis.ps1` | IIS のサイト（http と、証明書があれば https）を作る |
+| `remote-deploy.ps1` | VPS で、新しい zip・データへの入れ替えと 1 つ前の版への戻しを行う |
+| `vps-deploy.sh` | zip やデータを SSH で VPS に送り、`remote-deploy.ps1` を動かす（Actions からも Mac からも） |
+| `move-staging-data.sh` | ステージングのデータを本番へ持っていく（Mac から） |
+| `deploy.env.example` | Mac から動かす時の接続設定の雛形（`deploy.local.env` にコピー） |
 | `set-admin-password.js` | `SboSvr.ini` の管理者パスワードを書き換える（ステージングの `entrypoint.sh` と同じ処理） |
 | `web.config` | IIS サイトの設定（zip では `iis\web.config`） |
 | `sbo2003.env.example` | 設定の雛形 |

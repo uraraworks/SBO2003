@@ -8,13 +8,30 @@
 #   2) Windows のランナーで zip を展開して start.ps1 で起動し、/health とページを確かめてから
 #      stop.ps1 でデータを保存して止まることを確かめる。
 #
-# 手動実行・v* タグ・関係するファイルを変える PR の時だけ動く。
+#   3) 手動実行で「VPS へデプロイする」にチェックがある時は、SSH で VPS へ送って入れ替える
+#      （deploy/production/vps-deploy.sh → VPS で remote-deploy.ps1。stop.ps1 で保存して止めてから展開して起動）。
+#
+# 手動実行・v* タグ・関係するファイルを変える PR の時だけ動く（VPS へのデプロイは手動実行の時だけ）。
 # BGM の MIDI は Secret SBO2003_PRIVATE_TOKEN（SBO2003-private を読めるトークン）で取ってくる。無ければ BGM 無し。
+#
+# VPS へのデプロイに必要な設定（Settings → Secrets and variables → Actions）:
+#   変数 SBO2003_VPS_HOST          VPS のホスト名か IP（未設定の間はデプロイしない）
+#   変数 SBO2003_VPS_USER          SSH ユーザー（Administrators に入っていること）
+#   変数 SBO2003_VPS_PORT          SSH のポート（未設定なら 22）
+#   Secret SBO2003_VPS_SSH_KEY     上のユーザーでログインできる SSH 秘密鍵（そのままか base64 の1行）
+#   Secret SBO2003_VPS_KNOWN_HOSTS ssh-keyscan -p <ポート> <ホスト> の出力（なりすまし防止）
+#   変数 SBO2003_VPS_HEALTH_URL    外から確かめる URL（任意。例 https://sbo2003.urara-works.jp/health）
+#   変数 SBO2003_VPS_IIS_HOST      IIS のサイトのホスト名（未設定なら sbo2003.urara-works.jp。setup-iis.ps1 でサイトを確かめる）
 
 name: production-publish
 
 on:
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: VPS へデプロイする（外すと zip を作って確かめるだけ）
+        type: boolean
+        default: true
   push:
     tags: ['v*']
   pull_request:
@@ -28,7 +45,8 @@ permissions:
 
 concurrency:
   group: production-publish-${{ github.ref }}
-  cancel-in-progress: true
+  # デプロイの途中で止めないよう、手動実行は取り消さない
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -128,11 +146,97 @@ jobs:
           if (Get-NetTCPConnection -LocalPort 18090 -State Listen -ErrorAction SilentlyContinue) { throw 'まだ待ち受けています' }
           Write-Host '保存して止まることを確認しました'
 
+      - name: remote-deploy.ps1 で入れ替え・戻し・データの入れ替えを確かめる
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # VPS と同じく Windows PowerShell 5.1 で動かす。zip に入っている（BOM 付き UTF-8・CRLF の）ものを使う
+          $root = 'C:\sbo2003-deploy'
+          New-Item -ItemType Directory -Force -Path "$root\upload" | Out-Null
+          Copy-Item C:\sbo2003-test\remote-deploy.ps1 "$root\upload\"
+          $zip = Get-ChildItem dl -Filter 'Sbo2003_Server_*.zip' | Select-Object -First 1
+          function Run([string[]]$a) {
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root\upload\remote-deploy.ps1" -Root $root @a
+            if ($LASTEXITCODE -ne 0) { throw "remote-deploy.ps1 $a が失敗しました（$LASTEXITCODE）" }
+          }
+          Write-Host '----- 初回（タスク登録・sbo2003.env 作成・起動）'
+          Copy-Item $zip.FullName "$root\upload\"
+          Run @('-Zip', "$root\upload\$($zip.Name)")
+          Write-Host '----- 2 回目（保存して止めて、prev\ に退避して入れ替え）'
+          Copy-Item $zip.FullName "$root\upload\"
+          Run @('-Zip', "$root\upload\$($zip.Name)")
+          if (-not (Test-Path "$root\prev\server\SboSvr.js")) { throw 'prev\ に前の版がありません' }
+          Write-Host '----- 1 つ前の版に戻す'
+          Run @('-Rollback')
+          Write-Host '----- データの入れ替え（前の確認で作ったデータを持ってくる）'
+          Compress-Archive -Path C:\sbo2003-test\data\SBODATA, C:\sbo2003-test\data\SboSvr.ini -DestinationPath "$root\upload\data.zip"
+          Run @('-Data', "$root\upload\data.zip")
+          if (-not (Get-ChildItem "$root\backup" -Filter 'sbo2003-data-*.zip')) { throw '入れ替え前のデータが控えられていません' }
+          $ini = Get-Content "$root\data\SboSvr.ini" -Raw
+          if ($ini -notmatch 'Password=ci-test-pass') { throw '持ってきた SboSvr.ini になっていません' }
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root\stop.ps1" -TimeoutSec 60
+          if ($LASTEXITCODE -ne 0) { throw "stop.ps1 が失敗しました（$LASTEXITCODE）" }
+          Write-Host '入れ替え・戻し・データの入れ替えを確認しました'
+
       - name: ログを表示
         if: always()
         shell: pwsh
         run: |
-          Get-ChildItem C:\sbo2003-test\log -ErrorAction SilentlyContinue | ForEach-Object {
+          Get-ChildItem C:\sbo2003-test\log, C:\sbo2003-deploy\log -ErrorAction SilentlyContinue | ForEach-Object {
             Write-Host "===== $($_.Name)"
             Get-Content $_.FullName -Encoding UTF8
           }
+
+  deploy:
+    needs: [build, smoke]
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: ${{ needs.build.outputs.name }}
+          path: dl
+
+      - name: 設定を確かめる
+        id: check
+        env:
+          VPS_HOST: ${{ vars.SBO2003_VPS_HOST }}
+        run: |
+          if [ -z "$VPS_HOST" ]; then
+            echo "::notice::変数 SBO2003_VPS_HOST が未設定なので、VPS へのデプロイはしません"
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: SSH の準備
+        if: steps.check.outputs.skip != '1'
+        env:
+          SSH_KEY: ${{ secrets.SBO2003_VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.SBO2003_VPS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          # 秘密鍵はそのままの形でも、base64 で1行にした形でもよい。CR と行末の空白は取り除く。
+          key=$(printf '%s\n' "$SSH_KEY" | tr -d '\r' | sed 's/[[:space:]]*$//')
+          case "$key" in
+            -----BEGIN*) printf '%s\n' "$key" > ~/.ssh/id_vps ;;
+            *) printf '%s' "$key" | tr -d ' \n' | base64 -d > ~/.ssh/id_vps ;;
+          esac
+          chmod 600 ~/.ssh/id_vps
+          ssh-keygen -y -f ~/.ssh/id_vps > /dev/null
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: VPS へ送って入れ替える
+        if: steps.check.outputs.skip != '1'
+        env:
+          VPS_HOST: ${{ vars.SBO2003_VPS_HOST }}
+          VPS_USER: ${{ vars.SBO2003_VPS_USER }}
+          VPS_PORT: ${{ vars.SBO2003_VPS_PORT || '22' }}
+          SSH_KEY: ~/.ssh/id_vps
+          HEALTH_URL: ${{ vars.SBO2003_VPS_HEALTH_URL }}  # 外から届くようになってから設定する
+          IIS_HOST: ${{ vars.SBO2003_VPS_IIS_HOST || 'sbo2003.urara-works.jp' }}
+        run: deploy/production/vps-deploy.sh "$(ls dl/Sbo2003_Server_*.zip | head -n 1)"
