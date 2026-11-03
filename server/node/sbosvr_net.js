@@ -312,6 +312,13 @@ Module['sboNet'] = (function () {
 		if (url === '/rename') {
 			url = '/rename.html';
 		}
+		/* ご意見箱のページと API（sbosvr_feedback.js） */
+		if (url === '/feedback') {
+			url = '/feedback.html';
+		}
+		if (Module['sboFeedback'] && Module['sboFeedback'].handleHttp(req, res, url)) {
+			return;
+		}
 		/* アカウント関係の API（sbosvr_account.js） */
 		if (Module['sboAccount'] && Module['sboAccount'].handleHttp(req, res, url)) {
 			return;
