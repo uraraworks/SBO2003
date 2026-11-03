@@ -1593,12 +1593,14 @@
 		return parts;
 	}
 
-	function sendChatNow(text) {
+	/* keyMod は入力した時のキー（0:なし 1:Shift 2:Ctrl）。管理者なら
+	   Shift で全体発言、Ctrl で管理者用内線になる（ゲーム内の発言欄と同じ） */
+	function sendChatNow(text, keyMod) {
 		if (!sboReady) {
 			return;
 		}
 		var p = Module['stringToNewUTF8'](text);
-		Module['_SboWebChatSubmit'](p);
+		Module['_SboWebChatSubmit'](p, keyMod | 0);
 		Module['_free'](p);
 	}
 	function flushChatQueue() {
@@ -1606,34 +1608,46 @@
 		if (chatQueue.length === 0) {
 			return;
 		}
-		sendChatNow(chatQueue.shift());
+		var item = chatQueue.shift();
+		sendChatNow(item.text, item.keyMod);
 		/* 最後の 1 つを送った後も間隔を空け、すぐ次の入力で上書きされないようにする */
 		chatTimer = setTimeout(flushChatQueue, CHAT_SEND_INTERVAL);
 	}
 	/* テスト用に分割処理を外から呼べるようにしておく */
 	window.sboChatSplit = splitChat;
-	window.sboChatSend = function (text) {
-		sendChat(String(text));
+	window.sboChatSend = function (text, keyMod) {
+		sendChat(String(text), keyMod | 0);
 	};
 
-	function submitChat(input) {
+	/* 押されていたキー（Shift が優先、無ければ Ctrl） */
+	function chatKeyMod(ev) {
+		if (ev && ev.shiftKey) {
+			return 1;
+		}
+		if (ev && (ev.ctrlKey || ev.metaKey)) {
+			return 2;
+		}
+		return 0;
+	}
+	function submitChat(input, keyMod) {
 		/* 切断された後は送れない（入力した文字は消さずに残す） */
 		if (document.body.classList.contains('sbo-lost')) {
 			return;
 		}
 		var text = input.value;
 		input.value = '';
-		sendChat(text);
+		sendChat(text, keyMod);
 	}
 	/* 発言を分けて送信待ちに積む。Enter で開くゲーム内の発言欄も
 	   （SboCliMsgLogWindow_web.cpp の SboWebSpeechSubmit から）ここを通る */
-	function sendChat(text) {
+	function sendChat(text, keyMod) {
 		if (!text || !text.trim() || !sboReady) {
 			return;
 		}
 		var parts = splitChat(text);
 		for (var i = 0; i < parts.length; i ++) {
-			chatQueue.push(parts[i]);
+			/* 分けた後の発言も、入力した時と同じ全体発言・内線のまま送る */
+			chatQueue.push({ text: parts[i], keyMod: keyMod | 0 });
 		}
 		/* 送信待ちがなければすぐ送り、あれば順番が来るまで待つ */
 		if (!chatTimer) {
@@ -1645,14 +1659,14 @@
 			/* IME の変換を確定する Enter では送らない */
 			if (ev.key === 'Enter' && !ev.isComposing && ev.keyCode !== 229) {
 				ev.preventDefault();
-				submitChat(input);
+				submitChat(input, chatKeyMod(ev));
 				if (afterSend) {
 					afterSend();
 				}
 			}
 		});
-		sendBtn.addEventListener('click', function () {
-			submitChat(input);
+		sendBtn.addEventListener('click', function (ev) {
+			submitChat(input, chatKeyMod(ev));
 			input.focus();
 		});
 	}

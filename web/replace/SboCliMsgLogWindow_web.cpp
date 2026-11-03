@@ -28,7 +28,10 @@ std::string W32Utf8ToSjisStr(const char *pszUtf8);
 /* 発言できる長さ（Windows 版の入力欄と同じ 40 バイト） */
 #define MSGLOG_SPEECH_MAX	40
 
-extern "C" void SboWebChatSubmit(const char *pszUtf8);
+extern "C" void SboWebChatSubmit(const char *pszUtf8, int nKeyMod);
+
+/* 発言した時の Shift/Ctrl（SboCliKeyProc.cpp。-1 ならキーの状態を見る） */
+extern int g_nWebSpeechKeyMod;
 
 EM_JS(void, SboJsChatLogAdd, (const char *pszTime, const char *pszText, int nColor), {
 	if (typeof window === 'undefined' || typeof window['sboChatLogAdd'] !== 'function') {
@@ -116,11 +119,11 @@ extern "C" EMSCRIPTEN_KEEPALIVE int SboWebGetGameState(void)
 
 /* チャット欄と同じ分割送信（シェル HTML の window.sboChatSend）へ渡す。
    シェルが古いなどで無い時は 0 を返す */
-EM_JS(int, SboJsChatSend, (const char *pszUtf8), {
+EM_JS(int, SboJsChatSend, (const char *pszUtf8, int nKeyMod), {
 	if (typeof window === 'undefined' || typeof window['sboChatSend'] !== 'function') {
 		return 0;
 	}
-	window['sboChatSend'](UTF8ToString(pszUtf8));
+	window['sboChatSend'](UTF8ToString(pszUtf8), nKeyMod);
 	return 1;
 });
 
@@ -129,24 +132,26 @@ EM_JS(int, SboJsChatSend, (const char *pszUtf8), {
 /* 内容：ゲーム内の発言入力欄（Enter で開く欄）から発言する（文字列は SJIS）	 */
 /*		 長い発言はチャット欄と同じように分けて順に送る						 */
 /* ========================================================================= */
-void SboWebSpeechSubmit(LPCSTR pszSjis)
+void SboWebSpeechSubmit(LPCSTR pszSjis, int nKeyMod)
 {
 	if ((pszSjis == NULL) || (pszSjis[0] == 0)) {
 		return;
 	}
 	std::string strUtf8 = W32SjisToUtf8Str (pszSjis, -1);
-	if (SboJsChatSend (strUtf8.c_str ())) {
+	if (SboJsChatSend (strUtf8.c_str (), nKeyMod)) {
 		return;
 	}
 	/* 分割送信が使えない時は、これまでどおり上限で切って発言する */
-	SboWebChatSubmit (strUtf8.c_str ());
+	SboWebChatSubmit (strUtf8.c_str (), nKeyMod);
 }
 
 /* ========================================================================= */
 /* 関数名：SboWebChatSubmit													 */
 /* 内容：チャット欄から発言する（文字列は UTF-8）							 */
+/*		 nKeyMod は入力した時のキー（0:なし 1:Shift 2:Ctrl）。管理者なら		 */
+/*		 Shift で全体発言、Ctrl で管理者用内線になる（ゲーム内の発言欄と同じ）	 */
 /* ========================================================================= */
-extern "C" EMSCRIPTEN_KEEPALIVE void SboWebChatSubmit(const char *pszUtf8)
+extern "C" EMSCRIPTEN_KEEPALIVE void SboWebChatSubmit(const char *pszUtf8, int nKeyMod)
 {
 	char szBuf[MSGLOG_SPEECH_MAX + 2];
 	int i, nLen;
@@ -176,5 +181,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE void SboWebChatSubmit(const char *pszUtf8)
 	if (nLen == 0) {
 		return;
 	}
+	g_nWebSpeechKeyMod = nKeyMod;
 	ChatMsgProc (szBuf);
+	g_nWebSpeechKeyMod = -1;
 }
