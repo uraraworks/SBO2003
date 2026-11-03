@@ -43,6 +43,22 @@
 		background: #000;
 		outline: none;
 	}
+	/* 表示倍率が画面の画素で整数倍にならない時（Windows の表示スケール 150% や
+	   スマホなど）だけ使う、拡大表示用の canvas。ゲーム画面の上に重ねて見せる。
+	   整数倍に拡大したものをブラウザに滑らかに縮めてもらうので、ドットの太さが揃う */
+	#sbo-sharp {
+		display: none;
+		position: absolute;
+		left: 0;
+		top: 0;
+		width: 100%;
+		height: 100%;
+		pointer-events: none;
+		image-rendering: auto;
+	}
+	#sbo-sharp.sbo-on {
+		display: block;
+	}
 	#sbo-status {
 		font-size: 13px;
 		color: var(--sub);
@@ -857,6 +873,7 @@
 <div id="sbo-wrap">
 	<div id="sbo-screen">
 		<canvas id="canvas" tabindex="0" width="480" height="480" oncontextmenu="event.preventDefault()"></canvas>
+		<canvas id="sbo-sharp" aria-hidden="true"></canvas>
 		<div id="sbo-overlay" style="position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none;"></div>
 		<div id="sbo-shot-flash"></div>
 		<!-- ログイン画面のボタン。ID・パスワードの入力欄は「ID・パスワードでログイン」を押した時だけ見せる -->
@@ -1110,7 +1127,73 @@
 		if (Module['w32UpdateScale']) {
 			Module['w32UpdateScale']();
 		}
+		updateSharp();
 	}
+
+	/* ===================================================================
+	   ドットのにじみ・ゆがみ対策
+	   CSS の拡大が整数倍でも、Windows の表示スケール（125%・150%）やスマホでは
+	   画面の画素では 1.5 倍・2.4 倍のような半端な倍率になる。そのまま
+	   pixelated で拡大すると、ドットの太さが 1 画素と 2 画素で交互になって
+	   文字がガタガタ・にじんで見える。
+	   そういう時だけ、いったん整数倍（切り上げ）で拡大した絵を別の canvas に描き、
+	   それをブラウザに滑らかに縮めてもらう（いわゆる sharp-bilinear）。
+	   ちょうど整数倍の時は今まで通り pixelated のまま何もしない。
+	   =================================================================== */
+	var sharp = document.getElementById('sbo-sharp');
+	var sharpCtx = null;
+	var sharpN = 0;	/* 0: 使わない。2 以上: この倍率で拡大して描く */
+
+	function updateSharp() {
+		var w = canvas.width || 480;
+		var cssW = canvas.getBoundingClientRect().width;
+		var dpr = window.devicePixelRatio || 1;
+		var d = cssW * dpr / w;	/* 画面の画素で見た拡大率 */
+		var n = 0;
+		if (cssW > 0 && Math.abs(d - Math.round(d)) > 0.02 && params.get('sharp') !== '0') {
+			n = Math.max(2, Math.ceil(d));
+		}
+		sharpN = n;
+		sharp.classList.toggle('sbo-on', n > 0);
+		if (n > 0) {
+			drawSharp();
+		}
+	}
+
+	function drawSharp() {
+		if (!sharpN) {
+			return;
+		}
+		var w = canvas.width, h = canvas.height;
+		if (!w || !h) {
+			return;
+		}
+		if (sharp.width !== w * sharpN || sharp.height !== h * sharpN || !sharpCtx) {
+			sharp.width = w * sharpN;
+			sharp.height = h * sharpN;
+			/* 大きさを変えると設定が初期化されるので、ここで毎回取り直す */
+			sharpCtx = sharp.getContext('2d', { alpha: false });
+		}
+		sharpCtx.imageSmoothingEnabled = false;
+		sharpCtx.drawImage(canvas, 0, 0, sharp.width, sharp.height);
+	}
+	/* ブラウザの拡大縮小や、表示倍率の違う画面へウィンドウを移した時 */
+	(function watchDpr() {
+		if (!window.matchMedia) {
+			return;
+		}
+		var mq = window.matchMedia('(resolution: ' + (window.devicePixelRatio || 1) + 'dppx)');
+		var onChange = function () {
+			if (mq.removeEventListener) {
+				mq.removeEventListener('change', onChange);
+			}
+			updateSharp();
+			watchDpr();
+		};
+		if (mq.addEventListener) {
+			mq.addEventListener('change', onChange);
+		}
+	})();
 
 	/* スマホで使える高さ（iOS のアドレスバーやキーボードに合わせる） */
 	function updateAppHeight() {
@@ -2012,6 +2095,8 @@
 	var Module = window.Module = {
 		canvas: canvas,
 		w32KeyToVk: keyToVk,
+		/* ゲーム画面を描くたびに呼ばれる（ドットのにじみ対策） */
+		w32OnPresent: drawSharp,
 		/* 接続先: ?ws= → サーバー（Node.js 版）が配ったページなら同じ場所の /ws → INI の設定 */
 		sboWsUrl: params.get('ws') || window.SBO_DEFAULT_WS || '',
 		/* .wasm / .data に版（中身のハッシュ）を付けて読む。版の一覧はサーバー（Node.js 版）が
