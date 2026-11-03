@@ -28,7 +28,7 @@ enum {
 #define SENDINSIDE_INSIDEMAP	0x04								/* 同マップ内全員に送信 */
 
 #define SENDTIMEOUT				(DWORD)(0)							/* 送信タイムアウト */
-#define MAX_CONNECTCOUNT		(100)								/* 接続人数 */
+#define MAX_CONNECTCOUNT		(500)								/* 接続人数 */
 
 /* ========================================================================= */
 /* 構造体定義																 */
