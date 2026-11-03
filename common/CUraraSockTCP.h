@@ -30,7 +30,7 @@ class CCRC;
 #define SAFE_DELETE(p)       { if(p) { delete (p);     (p)=NULL; } }
 #define SAFE_DELETE_ARRAY(p) { if(p) { delete[] (p);   (p)=NULL; } }
 
-#define URARASOCK_MAXCONNECT	200
+#define URARASOCK_MAXCONNECT	1000
 #define URARASOCK_IDBASE		100000
 #define URARASOCK_SENDALL		0xFFFFFFFF
 #define URARASOCK_PRECHECK		0x12BE46AC
