@@ -23,8 +23,19 @@
  *      auto     … どちらか片方が合えばすぐ
  *    復旧できたら、その端末に端末トークンを渡す（パスワードはその後で決め直せる）。
  *
+ * 4. キャラ名の変更
+ *    プレイヤー自身（端末トークンで本人確認）と管理者が変えられる。名前の決まり
+ *    （長さ・使える文字・同名がいないか）は C 側（SboWebAccRename）で確かめる。
+ *    プレイヤーが変える時だけ、次の決まりも足す（管理者は対象外）。
+ *      ・ログイン中は変えられない（ゲームから出てから）
+ *      ・一度変えたら RENAME_COOLDOWN_DAYS 日（環境変数 SBO_RENAME_COOLDOWN_DAYS、既定 7）は変えられない
+ *      ・他の人が手放した名前は RENAME_RESERVE_DAYS 日（SBO_RENAME_RESERVE_DAYS、既定 30）は使えない
+ *        （なりすまし防止。手放した本人は戻せる）
+ *      ・NG_WORDS（SBO_RENAME_NG_WORDS、カンマ区切り）を含む名前は使えない
+ *    変えた記録は SboWebAccount.json の renames に残し、管理ページで前の名前からも探せる。
+ *
  * HTTP（すべて POST・JSON。sbosvr_net.js が /api/ をここへ回す）
- *   /api/device/me            {token}                      → {account, name}
+ *   /api/device/me            {token}                      → {account, name, level, renameAfter}
  *   /api/device/forget        {token}                      → {ok}
  *   /api/device/set-password  {token, password}            → {ok}
  *   /api/device/issue-code    {token}                      → {code}（復旧キーを作る・作り直す）
@@ -37,6 +48,10 @@
  *   /api/admin/login          {account, password}          → {session}
  *   /api/admin/recover/list   {session}                    → {requests:[...]}
  *   /api/admin/recover/decide {session, id, approve}       → {ok}
+ *   /api/device/rename        {token, name, check}         → {result:"ok", from, to} / {result:<理由>, ...}
+ *                               check が true なら確かめるだけ（変えない）
+ *   /api/admin/search         {session, q}                 → {results:[...], more}
+ *   /api/admin/rename         {session, account, name, check} → {result:"ok", from, to} / {result:<理由>}
  */
 Module['sboAccount'] = (function () {
 	var fs = require('fs');
@@ -44,6 +59,15 @@ Module['sboAccount'] = (function () {
 	var crypto = require('crypto');
 
 	var RECOVER_POLICY = (process.env.SBO_RECOVER_POLICY || 'hybrid').toLowerCase();
+	function envNum(name, def) {
+		var n = parseFloat(process.env[name]);
+		return isFinite(n) && n >= 0 ? n : def;
+	}
+	var RENAME_COOLDOWN_DAYS = envNum('SBO_RENAME_COOLDOWN_DAYS', 7);
+	var RENAME_RESERVE_DAYS = envNum('SBO_RENAME_RESERVE_DAYS', 30);
+	var NG_WORDS = (process.env.SBO_RENAME_NG_WORDS != null ? process.env.SBO_RENAME_NG_WORDS :
+		'管理人,管理者,運営,ＧＭ').split(',').map(function (w) { return w.trim(); }).filter(Boolean);
+	var MAX_RENAMES = 5000;		/* 名前を変えた記録はこれだけ残す */
 	var MAX_BODY = 4096;
 	var MINUTE = 60 * 1000, HOUR = 60 * MINUTE, DAY = 24 * HOUR;
 
@@ -84,6 +108,7 @@ Module['sboAccount'] = (function () {
 		store.tokens = store.tokens || {};
 		store.requests = store.requests || [];
 		store.codes = store.codes || {};
+		store.renames = store.renames || [];
 		return store;
 	}
 
@@ -234,6 +259,7 @@ Module['sboAccount'] = (function () {
 	var limitRequestIp = new Limiter(3, DAY, DAY);						/* 承認待ちの申請は同じ IP から 1 日 3 件まで */
 	var limitAdminIp = new Limiter(5, 15 * MINUTE, 15 * MINUTE);		/* 承認ページのログイン */
 	var limitCodeIp = new Limiter(10, 30 * MINUTE, 30 * MINUTE);		/* 復旧キーの入力は同じ IP から 30 分に 10 回失敗まで */
+	var limitRenameIp = new Limiter(60, 30 * MINUTE, 30 * MINUTE);		/* キャラ名の変更（確かめるだけも含む）は同じ IP から 30 分に 60 回まで */
 
 	/* ------------------------------------------------------------------ */
 	/* HTTP の下請け															 */
@@ -294,7 +320,10 @@ Module['sboAccount'] = (function () {
 			reply(res, 401, { error: 'invalid_token' });
 			return;
 		}
-		reply(res, 200, { account: info.account, name: info.name, level: info.level });
+		reply(res, 200, {
+			account: info.account, name: info.name, level: info.level,
+			renameAfter: renameAfter(info.account), cooldownDays: RENAME_COOLDOWN_DAYS
+		});
 	}
 
 	function apiDeviceForget(body, req, res) {
@@ -463,6 +492,98 @@ Module['sboAccount'] = (function () {
 	}
 
 	/* ------------------------------------------------------------------ */
+	/* キャラ名の変更															 */
+	/* ------------------------------------------------------------------ */
+	function renameRecord(acc, from, to, by, ip) {
+		load();
+		store.renames.push({ account: acc, from: from, to: to, by: by, ip: ip, at: Date.now() });
+		if (store.renames.length > MAX_RENAMES) {
+			store.renames.splice(0, store.renames.length - MAX_RENAMES);
+		}
+		save();
+	}
+
+	/* プレイヤーが次に名前を変えられる時刻（今すぐなら 0） */
+	function renameAfter(acc) {
+		load();
+		var nLast = 0;
+		store.renames.forEach(function (r) {
+			if (r.account === acc && r.by === 'self' && r.at > nLast) {
+				nLast = r.at;
+			}
+		});
+		var nAfter = nLast ? nLast + RENAME_COOLDOWN_DAYS * DAY : 0;
+		return nAfter > Date.now() ? nAfter : 0;
+	}
+
+	/* 他の人が最近手放した名前か（なりすまし防止） */
+	function isReservedName(name, acc) {
+		load();
+		var nSince = Date.now() - RENAME_RESERVE_DAYS * DAY;
+		return store.renames.some(function (r) {
+			return r.from === name && r.account !== acc && r.at > nSince;
+		});
+	}
+
+	/* 比べやすくする（全角英数字→半角、大文字→小文字） */
+	function foldWidth(str) {
+		return String(str).replace(/[\uFF01-\uFF5E]/g, function (c) {
+			return String.fromCharCode(c.charCodeAt(0) - 0xFEE0);
+		}).toLowerCase();
+	}
+	function hasNgWord(name) {
+		var f = foldWidth(name);
+		return NG_WORDS.some(function (w) { return f.indexOf(foldWidth(w)) >= 0; });
+	}
+
+	function callRename(acc, name, bApply, bAllowOnline) {
+		var aPtr = [stringToNewUTF8(acc), stringToNewUTF8(name)];
+		try {
+			return JSON.parse(UTF8ToString(_SboWebAccRename(aPtr[0], aPtr[1], bApply ? 1 : 0, bAllowOnline ? 1 : 0)));
+		} finally {
+			aPtr.forEach(function (p) { _free(p); });
+		}
+	}
+
+	function apiDeviceRename(body, req, res) {
+		var ip = clientIp(req);
+		var nWait = limitRenameIp.check(ip);
+		if (nWait > 0) {
+			reply(res, 429, { result: 'too_many', retryAfterSeconds: nWait });
+			return;
+		}
+		limitRenameIp.fail(ip);
+		var t = findToken(body.token);
+		var info = t ? accInfo(t.info.account) : null;
+		if (!info) {
+			reply(res, 401, { result: 'invalid_token' });
+			return;
+		}
+		var name = str(body.name, 40).trim();
+		var nAfter = renameAfter(info.account);
+		if (nAfter) {
+			reply(res, 200, { result: 'cooldown', renameAfter: nAfter });
+			return;
+		}
+		if (name && hasNgWord(name)) {
+			reply(res, 200, { result: 'ng_word' });
+			return;
+		}
+		if (name && isReservedName(name, info.account)) {
+			reply(res, 200, { result: 'reserved', reserveDays: RENAME_RESERVE_DAYS });
+			return;
+		}
+		var bApply = !body.check;
+		var r = callRename(info.account, name, bApply, false);
+		if (r.result === 'ok' && bApply) {
+			renameRecord(info.account, r.from, r.to, 'self', ip);
+			log('キャラ名の変更（本人）: ' + info.account + ' ' + r.from + ' → ' + r.to + '（' + ip + '）');
+			r.renameAfter = renameAfter(info.account);
+		}
+		reply(res, 200, r);
+	}
+
+	/* ------------------------------------------------------------------ */
 	/* 承認ページ（管理者）の API												 */
 	/* ------------------------------------------------------------------ */
 	function apiAdminLogin(body, req, res) {
@@ -492,6 +613,8 @@ Module['sboAccount'] = (function () {
 			reply(res, 401, { error: 'session' });
 			return false;
 		}
+		/* 使っている間は延ばす（最後に使ってから 2 時間） */
+		aAdminSession[hash] = Date.now() + 2 * HOUR;
 		return true;
 	}
 
@@ -528,6 +651,74 @@ Module['sboAccount'] = (function () {
 		reply(res, 200, { ok: true });
 	}
 
+	/* 管理ページの表示用に、端末トークン・復旧キー・名前の変更の記録を足す */
+	function adminCharDetail(info) {
+		load();
+		var nTokens = 0, nLastUsed = 0;
+		Object.keys(store.tokens).forEach(function (hash) {
+			var tk = store.tokens[hash];
+			if (tk.account === info.account) {
+				nTokens++;
+				nLastUsed = Math.max(nLastUsed, tk.lastUsed || tk.created || 0);
+			}
+		});
+		info.devices = nTokens;
+		info.lastWebLogin = nLastUsed;
+		info.hasCode = Object.keys(store.codes).some(function (h) { return store.codes[h].account === info.account; });
+		info.renames = store.renames.filter(function (r) { return r.account === info.account; })
+			.slice(-10).reverse().map(function (r) { return { from: r.from, to: r.to, by: r.by, at: r.at }; });
+		info.renameAfter = renameAfter(info.account);
+		return info;
+	}
+
+	function apiAdminSearch(body, req, res) {
+		if (!checkAdmin(body, res)) {
+			return;
+		}
+		var q = str(body.q, 40).trim();
+		if (!q) {
+			reply(res, 200, { results: [], more: false });
+			return;
+		}
+		var MAX = 30;
+		var r = JSON.parse(callStr(_SboWebAdminSearch, [q, MAX]));
+		var aSeen = {};
+		r.results.forEach(function (c) { aSeen[c.account] = true; });
+		/* 前の名前からも探す */
+		load();
+		store.renames.slice().reverse().forEach(function (rn) {
+			if (r.results.length >= MAX || aSeen[rn.account]) {
+				return;
+			}
+			if (String(rn.from).indexOf(q) >= 0) {
+				var info = accInfo(rn.account);
+				if (info) {
+					info.matchedOldName = rn.from;
+					r.results.push(info);
+					aSeen[rn.account] = true;
+				}
+			}
+		});
+		r.results = r.results.map(adminCharDetail);
+		reply(res, 200, r);
+	}
+
+	function apiAdminRename(body, req, res) {
+		if (!checkAdmin(body, res)) {
+			return;
+		}
+		var acc = str(body.account, 32);
+		var bApply = !body.check;
+		var r = callRename(acc, str(body.name, 40).trim(), bApply, true);
+		if (r.result === 'ok' && bApply) {
+			renameRecord(acc, r.from, r.to, 'admin', clientIp(req));
+			log('キャラ名の変更（管理者）: ' + acc + ' ' + r.from + ' → ' + r.to);
+			var info = accInfo(acc);
+			r.char = info ? adminCharDetail(info) : null;
+		}
+		reply(res, 200, r);
+	}
+
 	var API = {
 		'/api/device/me': apiDeviceMe,
 		'/api/device/forget': apiDeviceForget,
@@ -538,7 +729,10 @@ Module['sboAccount'] = (function () {
 		'/api/recover/status': apiRecoverStatus,
 		'/api/admin/login': apiAdminLogin,
 		'/api/admin/recover/list': apiAdminList,
-		'/api/admin/recover/decide': apiAdminDecide
+		'/api/admin/recover/decide': apiAdminDecide,
+		'/api/device/rename': apiDeviceRename,
+		'/api/admin/search': apiAdminSearch,
+		'/api/admin/rename': apiAdminRename
 	};
 
 	/* sbosvr_net.js の HTTP から呼ばれる。/api/ で始まるものだけ受け持つ */

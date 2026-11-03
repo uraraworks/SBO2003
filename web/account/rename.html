@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>キャラ名の変更｜スクラップブックオンライン</title>
+<!--
+	プレイヤーが自分のキャラ名を変えるページ（/rename）。
+	本人確認はブラウザ版の端末トークン（localStorage の sbo_device_token。ボタンでログインと同じ）。
+	ゲームと同じブラウザで開くと使える。API は server/node/sbosvr_account.js の /api/device/rename。
+-->
+<style>
+	:root {
+		--page-bg: #efe6d2;
+		--ink: #2b2620;
+		--sub: #7a6f60;
+		--panel: #1d1f24;
+		--panel-fg: #e8e8e8;
+		--panel-sub: #9aa0a6;
+		--field: #0f1217;
+		--border: #3a404a;
+		--accent: #f0b84a;
+		--ok: #8fe07a;
+		--ng: #ff9b8a;
+	}
+	html, body {
+		margin: 0;
+		padding: 0;
+		background: var(--page-bg);
+		color: var(--ink);
+		font: 14px/1.6 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		-webkit-text-size-adjust: 100%;
+	}
+	body {
+		min-height: 100vh;
+		display: flex;
+		flex-direction: column;
+	}
+	.site-header {
+		text-align: center;
+		background: #0c0c0c;
+		padding: 10px 16px;
+		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+	}
+	.site-header h1 {
+		margin: 0;
+		font-size: 15px;
+		font-weight: 600;
+		color: #f2f2f2;
+	}
+	.site-header a {
+		color: inherit;
+		text-decoration: none;
+	}
+	main {
+		flex: 1 1 auto;
+		width: 100%;
+		max-width: 520px;
+		margin: 0 auto;
+		padding: 24px 16px 32px;
+		box-sizing: border-box;
+	}
+	h2 {
+		margin: 0 0 4px;
+		font-size: 20px;
+	}
+	.lead {
+		margin: 0 0 18px;
+		color: var(--sub);
+		font-size: 13px;
+	}
+	.panel {
+		background: var(--panel);
+		color: var(--panel-fg);
+		border-radius: 12px;
+		padding: 18px 18px 20px;
+		box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+	}
+	.now {
+		color: var(--panel-sub);
+		font-size: 13px;
+	}
+	.now b {
+		display: block;
+		color: var(--panel-fg);
+		font-size: 22px;
+		word-break: break-all;
+	}
+	label {
+		display: block;
+		margin: 16px 0 6px;
+	}
+	input[type="text"] {
+		width: 100%;
+		box-sizing: border-box;
+		background: var(--field);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		color: var(--panel-fg);
+		font: 18px/1.3 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		padding: 10px;
+	}
+	.count {
+		text-align: right;
+		font-size: 12px;
+		color: var(--panel-sub);
+		margin-top: 4px;
+	}
+	.count.over {
+		color: var(--ng);
+	}
+	.rules {
+		margin: 12px 0 0;
+		padding-left: 18px;
+		font-size: 12px;
+		color: var(--panel-sub);
+	}
+	.msg {
+		min-height: 1.5em;
+		margin-top: 10px;
+		color: var(--ng);
+	}
+	.msg.ok {
+		color: var(--ok);
+	}
+	.buttons {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin-top: 8px;
+	}
+	button, .btn {
+		display: inline-block;
+		box-sizing: border-box;
+		background: var(--accent);
+		color: #1d1f24;
+		border: none;
+		border-radius: 8px;
+		font: bold 15px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		padding: 13px 18px;
+		cursor: pointer;
+		text-decoration: none;
+		text-align: center;
+		touch-action: manipulation;
+	}
+	button.sub, .btn.sub {
+		background: transparent;
+		color: var(--panel-fg);
+		border: 1px solid var(--border);
+	}
+	button:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+	.back {
+		display: block;
+		margin-top: 18px;
+		text-align: center;
+		color: var(--ink);
+	}
+	.change {
+		background: var(--field);
+		border-radius: 10px;
+		padding: 12px 14px;
+		margin: 12px 0;
+	}
+	.change .arrow {
+		color: var(--accent);
+		font-size: 20px;
+		line-height: 1.2;
+		margin: 4px 0;
+	}
+	.change b.to {
+		color: var(--accent);
+	}
+	.rules.warn {
+		color: var(--panel-fg);
+		font-size: 13px;
+	}
+	label.check {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin: 16px 0 0;
+		font-weight: bold;
+	}
+	label.check input {
+		width: 22px;
+		height: 22px;
+		margin: 0;
+	}
+	[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header class="site-header">
+	<h1><a href="/">スクラップブックオンライン</a></h1>
+</header>
+<main>
+	<h2>キャラ名の変更</h2>
+	<p class="lead">ゲームで遊んでいるのと同じブラウザで開いてくださいね。</p>
+
+	<section class="panel" id="loading">
+		<p class="now">読み込み中です...</p>
+	</section>
+
+	<!-- この端末にログインの記憶が無い -->
+	<section class="panel" id="no-token" hidden>
+		<p>このブラウザでは、まだゲームにログインしていないみたいです。</p>
+		<p class="now">ゲームに一度ログインすると、次からはボタンでログインできるようになり、このページも使えるようになります。
+			別の端末で遊んでいる人は、ログイン画面の「復旧キーをお持ちの方はこちら」からこの端末を登録してね。</p>
+		<div class="buttons"><a class="btn" href="/">ゲームを開く</a></div>
+	</section>
+
+	<!-- 変更フォーム -->
+	<section class="panel" id="form" hidden>
+		<p class="now">いまの名前<b id="now-name"></b><span id="now-sub"></span></p>
+		<div id="cooldown" class="msg" style="color:var(--accent)" hidden></div>
+		<div id="form-body">
+			<label for="name">新しい名前</label>
+			<input id="name" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
+			<div class="count" id="count"></div>
+			<ul class="rules">
+				<li>全角 7 文字・半角 14 文字まで（全角は 2 つ分で数えます）</li>
+				<li>空白・絵文字・一部の記号や旧字は使えません</li>
+				<li>ほかの人と同じ名前や、最近ほかの人が使っていた名前は使えません</li>
+				<li>一度変えると、<span id="cooldown-days">7</span> 日間は変えられません</li>
+				<li>ゲームにログイン中は変えられません（ゲームから出てからにしてね）</li>
+			</ul>
+			<div class="msg" id="msg"></div>
+			<div class="buttons">
+				<button type="button" id="next">確認へ進む</button>
+			</div>
+		</div>
+	</section>
+
+	<!-- 決める前の確認 -->
+	<section class="panel" id="confirm" hidden>
+		<p style="margin-top:0">この名前に変えます。よく確かめてね。</p>
+		<div class="change">
+			<div class="now">いまの名前<b id="cf-from"></b></div>
+			<div class="arrow" aria-hidden="true">↓</div>
+			<div class="now">新しい名前<b id="cf-to" class="to"></b></div>
+		</div>
+		<ul class="rules warn">
+			<li id="cf-cooldown"></li>
+			<li>いまの名前「<span id="cf-from2"></span>」は、しばらくほかの人は使えません（あなたは戻せます）。</li>
+			<li>ゲームの中のお友だちには、新しい名前で表示されます。</li>
+		</ul>
+		<label class="check"><input type="checkbox" id="cf-ok"> 名前と注意をたしかめました</label>
+		<div class="msg" id="cf-msg"></div>
+		<div class="buttons">
+			<button type="button" class="sub" id="cf-back">やめる（入力に戻る）</button>
+			<button type="button" id="cf-apply" disabled>この名前に決める</button>
+		</div>
+	</section>
+
+	<!-- 変えた -->
+	<section class="panel" id="done" hidden>
+		<p>キャラ名を「<b id="done-name"></b>」に変えました！</p>
+		<p class="now">ゲームでも新しい名前で遊べます。これからもよろしくね。</p>
+		<div class="buttons"><a class="btn" href="/">ゲームへ戻る</a></div>
+	</section>
+
+	<a class="back" href="/">ゲームへ戻る</a>
+</main>
+<script>
+(function () {
+	var KEY_TOKEN = 'sbo_device_token', KEY_NAME = 'sbo_device_name';
+	var MAX_BYTES = 14;
+	var token = '', strNow = '', strNew = '', nCooldownDays = 7;
+
+	function $(id) {
+		return document.getElementById(id);
+	}
+	function lsGet(k) {
+		try { return window.localStorage.getItem(k); } catch (e) { return null; }
+	}
+	function lsSet(k, v) {
+		try { window.localStorage.setItem(k, v); } catch (e) { /* 保存できなくても続ける */ }
+	}
+	function api(url, body) {
+		return fetch(url, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(body)
+		}).then(function (res) {
+			return res.json().catch(function () { return {}; }).then(function (data) {
+				data.httpStatus = res.status;
+				return data;
+			});
+		});
+	}
+	function setMsg(text, bOk) {
+		$('msg').textContent = text || '';
+		$('msg').classList.toggle('ok', !!bOk);
+	}
+	function show(id) {
+		['loading', 'no-token', 'form', 'confirm', 'done'].forEach(function (s) {
+			$(s).hidden = s !== id;
+		});
+	}
+	function dateText(ms) {
+		return new Date(ms).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+	}
+
+	/* ゲームでの長さ（SJIS のバイト数）。半角英数字・半角カナは 1、ほかは 2 */
+	function nameBytes(str) {
+		var n = 0;
+		for (var i = 0; i < str.length; i++) {
+			var c = str.charCodeAt(i);
+			n += (c < 0x80 || (c >= 0xFF61 && c <= 0xFF9F)) ? 1 : 2;
+		}
+		return n;
+	}
+	function updateCount() {
+		var n = nameBytes($('name').value.trim());
+		$('count').textContent = n + ' / ' + MAX_BYTES;
+		$('count').classList.toggle('over', n > MAX_BYTES);
+	}
+
+	var NG_TEXT = {
+		empty: '新しい名前を入れてね。',
+		charset: 'ゲームで使えない文字（絵文字・一部の記号や旧字）が入っています。',
+		long: 'ちょっと長すぎます。全角 7 文字・半角 14 文字までにしてね。',
+		char: '空白は使えません。',
+		same: 'いまと同じ名前です。',
+		taken: 'その名前はもう使われています。ほかの名前にしてね。',
+		reserved: '最近ほかの人が使っていた名前なので、しばらくは使えません。',
+		ng_word: 'その言葉は名前に使えません。',
+		online: 'ゲームにログイン中は変えられません。ゲームから出てからもう一度押してね。',
+		notfound: 'まだキャラがいません。先にゲームでキャラを作ってね。',
+		too_many: 'たくさん試したので、少し時間をおいてからにしてね。'
+	};
+
+	function showCooldown(nAfter) {
+		$('cooldown').hidden = !nAfter;
+		$('form-body').hidden = !!nAfter;
+		if (nAfter) {
+			$('cooldown').textContent = '次に名前を変えられるのは ' + dateText(nAfter) + ' からです。';
+		}
+	}
+
+	function showNg(data, setter) {
+		if (data.result === 'cooldown') {
+			show('form');
+			setMsg('');
+			showCooldown(data.renameAfter);
+		} else if (data.result === 'invalid_token') {
+			show('no-token');
+		} else {
+			setter(NG_TEXT[data.result] || 'うまくいきませんでした。時間をおいて試してね。');
+		}
+	}
+
+	/* 「確認へ進む」：サーバーで使えるか確かめてから、確認の画面を出す（まだ変えない） */
+	function next() {
+		var name = $('name').value.trim();
+		if (!name) {
+			setMsg(NG_TEXT.empty);
+			return;
+		}
+		if (nameBytes(name) > MAX_BYTES) {
+			setMsg(NG_TEXT.long);
+			return;
+		}
+		$('next').disabled = true;
+		setMsg('確かめています...', true);
+		api('/api/device/rename', { token: token, name: name, check: true }).then(function (data) {
+			$('next').disabled = false;
+			if (data.result !== 'ok') {
+				showNg(data, setMsg);
+				return;
+			}
+			setMsg('');
+			strNew = data.to;
+			$('cf-from').textContent = data.from;
+			$('cf-from2').textContent = data.from;
+			$('cf-to').textContent = data.to;
+			$('cf-cooldown').textContent = nCooldownDays ?
+				'変えたあと ' + nCooldownDays + ' 日間（' + dateText(Date.now() + nCooldownDays * 86400000) + ' ごろまで）は、もう一度変えられません。' :
+				'あとからまた変えることもできます。';
+			$('cf-ok').checked = false;
+			$('cf-apply').disabled = true;
+			$('cf-msg').textContent = '';
+			show('confirm');
+			window.scrollTo(0, 0);
+		}).catch(function () {
+			$('next').disabled = false;
+			setMsg('サーバーにつながりませんでした。');
+		});
+	}
+
+	/* 「この名前に決める」：ここで初めて変える */
+	function apply() {
+		var setCf = function (t) { $('cf-msg').textContent = t || ''; };
+		$('cf-apply').disabled = $('cf-back').disabled = true;
+		setCf('');
+		api('/api/device/rename', { token: token, name: strNew }).then(function (data) {
+			$('cf-back').disabled = false;
+			if (data.result === 'ok') {
+				lsSet(KEY_NAME, data.to);
+				$('done-name').textContent = data.to;
+				show('done');
+				return;
+			}
+			$('cf-apply').disabled = !$('cf-ok').checked;
+			showNg(data, setCf);
+		}).catch(function () {
+			$('cf-back').disabled = false;
+			$('cf-apply').disabled = !$('cf-ok').checked;
+			setCf('サーバーにつながりませんでした。');
+		});
+	}
+
+	$('name').addEventListener('input', function () {
+		updateCount();
+		setMsg('');
+	});
+	$('name').addEventListener('keydown', function (ev) {
+		if (ev.key === 'Enter') {
+			next();
+		}
+	});
+	$('next').addEventListener('click', next);
+	$('cf-ok').addEventListener('change', function () {
+		$('cf-apply').disabled = !this.checked;
+	});
+	$('cf-back').addEventListener('click', function () {
+		show('form');
+		$('name').focus();
+	});
+	$('cf-apply').addEventListener('click', apply);
+
+	/* 開いた時：この端末のアカウントを確かめる */
+	token = lsGet(KEY_TOKEN) || '';
+	if (!token) {
+		show('no-token');
+		return;
+	}
+	api('/api/device/me', { token: token }).then(function (data) {
+		if (!data.account) {
+			show('no-token');
+			return;
+		}
+		strNow = data.name || '';
+		if (!strNow) {
+			show('form');
+			$('now-name').textContent = '（まだキャラがいません）';
+			$('form-body').hidden = true;
+			setMsg(NG_TEXT.notfound);
+			return;
+		}
+		$('now-name').textContent = strNow;
+		$('now-sub').textContent = 'Lv ' + data.level + '（アカウント ' + data.account + '）';
+		if (data.cooldownDays != null) {
+			nCooldownDays = data.cooldownDays;
+			$('cooldown-days').textContent = data.cooldownDays;
+			$('cooldown-days').parentNode.hidden = !data.cooldownDays;
+		}
+		lsSet(KEY_NAME, strNow);
+		show('form');
+		showCooldown(data.renameAfter);
+		updateCount();
+	}).catch(function () {
+		$('loading').firstElementChild.textContent = 'サーバーにつながりませんでした。少し待ってから読み込み直してね。';
+	});
+})();
+</script>
+</body>
+</html>

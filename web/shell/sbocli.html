@@ -840,6 +840,7 @@
 			<div class="sbo-msg" id="sbo-rc-done-msg"></div>
 			<button type="button" class="sbo-btn sbo-btn-sub" id="sbo-rc-setpass">パスワードを変える</button>
 			<button type="button" class="sbo-btn sbo-btn-sub" id="sbo-rc-newcode">復旧キーを作り直す</button>
+			<button type="button" class="sbo-btn sbo-btn-sub" id="sbo-rc-rename">キャラ名を変える</button>
 			<button type="button" class="sbo-btn" data-close="1" style="margin-top:12px">ゲームへ戻る</button>
 		</div>
 	</div>
@@ -1639,6 +1640,10 @@
 			return;
 		}
 		showNewCode();
+	});
+	/* キャラ名の変更は別のページ（/rename。web/account/rename.html）で行う */
+	$('sbo-rc-rename').addEventListener('click', function () {
+		location.href = '/rename';
 	});
 	$('sbo-quick-redeem').addEventListener('click', function () {
 		$('sbo-redeem-code').value = '';
