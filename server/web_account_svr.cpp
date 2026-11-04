@@ -138,13 +138,21 @@ static std::string CharInfoJson(PCHARINFO pChar)
 {
 	char sz[256];
 	std::string out;
+	DWORD dwPlayMinutes;
+
+	/* dwPlayTime は「分」で持っている（ログアウト時に経過ミリ秒 / 60000 を加算）。
+	   ログイン中なら、まだ加算されていない今回の分も足して見せる */
+	dwPlayMinutes = pChar->dwPlayTime;
+	if (pChar->pID && (pChar->dwTimeLogin > 0)) {
+		dwPlayMinutes += (timeGetTime() - pChar->dwTimeLogin) / 60000;
+	}
 	out += "\"account\":" + JsonStr(pChar->szAcc);
 	out += ",\"name\":" + JsonStr(W32SjisToUtf8Str(pChar->szName));
 	snprintf(sz, sizeof(sz),
 			",\"level\":%d,\"made\":\"%04d/%02d/%02d\",\"playMinutes\":%u,\"loginCount\":%u"
 			",\"admin\":%s,\"disabled\":%s,\"online\":%s",
 			pChar->byLevel, pChar->wMakeYear, pChar->wMakeMonth, pChar->wMakeDay,
-			(unsigned)(pChar->dwPlayTime / 60), (unsigned)pChar->dwLoginCount,
+			(unsigned)dwPlayMinutes, (unsigned)pChar->dwLoginCount,
 			(pChar->byAdminLV != ADMINLV_USER) ? "true" : "false",
 			(pChar->byAccState & ACCSTATE_DISABLE) ? "true" : "false",
 			pChar->pID ? "true" : "false");
