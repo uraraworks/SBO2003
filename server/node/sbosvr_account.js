@@ -21,6 +21,8 @@
  *      approval … 合っても必ず管理者の承認を待つ
  *      hybrid   … アカウント名とパスワードの一部の両方が合えばすぐ、片方なら承認待ち（既定）
  *      auto     … どちらか片方が合えばすぐ
+ *    アカウント名もパスワードも分からない人は、キャラ名＋ひとこと（必須）だけで
+ *    申請できる。この時はどの方式でも必ず管理者の承認待ちにする。
  *    復旧できたら、その端末に端末トークンを渡す（パスワードはその後で決め直せる）。
  *
  * 4. キャラ名の変更
@@ -401,8 +403,11 @@ Module['sboAccount'] = (function () {
 			reply(res, 429, { result: 'ng', reason: 'too_many', retryAfterSeconds: nWait });
 			return;
 		}
-		if (!name || (!account && !part)) {
-			reply(res, 400, { result: 'ng', reason: 'input' });
+		/* アカウント名もパスワードの一部も分からない時は、キャラ名だけで申請できる（必ず承認待ち）。
+		   管理者が判断する材料になるので、その時はひとことを必須にする */
+		var bNameOnly = !account && !part;
+		if (!name || (bNameOnly && !message.trim())) {
+			reply(res, 400, { result: 'ng', reason: bNameOnly && name ? 'need_message' : 'input' });
 			return;
 		}
 
@@ -425,7 +430,7 @@ Module['sboAccount'] = (function () {
 		}
 
 		var bBoth = m.byAccount && m.byPassword;
-		var bAuto = (RECOVER_POLICY === 'auto') || (RECOVER_POLICY === 'hybrid' && bBoth);
+		var bAuto = !bNameOnly && ((RECOVER_POLICY === 'auto') || (RECOVER_POLICY === 'hybrid' && bBoth));
 		if (bAuto) {
 			limitRecoverIp.reset(ip);
 			revokeAccount(m.account);
