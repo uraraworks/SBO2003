@@ -775,13 +775,8 @@ void OnDecPlayer(int nNo)
 	pChar->byEfect			= EFECTTYPE_NONE;
 
 	/* プレイ時間の更新 */
-	if (pChar->dwTimeLogin > 0) {
-		DWORD dwTmp;
-
-		dwTmp = timeGetTime () - pChar->dwTimeLogin;
-		pChar->dwPlayTime += (dwTmp / 60000);
-		pChar->dwTimeLogin = 0;
-	}
+	UpdatePlayTime (pChar);
+	pChar->dwTimeLogin = 0;
 	g_nProcChar = 0;
 }
 
