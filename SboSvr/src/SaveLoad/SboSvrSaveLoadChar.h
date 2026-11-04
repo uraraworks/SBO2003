@@ -10,5 +10,6 @@
 /* ========================================================================= */
 extern BOOL SaveCharInfo(void);										/* キャラ情報保存 */
 extern BOOL LoadCharInfo(void);										/* キャラ情報読み込み */
+extern void UpdatePlayTime(PCHARINFO pChar);						/* ログイン中のプレイ時間を加算 */
 
 /* Copyright(C)URARA-works 2003-2005 */

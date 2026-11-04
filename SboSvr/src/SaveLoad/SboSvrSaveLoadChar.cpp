@@ -117,6 +117,33 @@ static BOOL CheckSaveChar(PCHARINFO);								/* キャラ情報を保存する�
 static DWORD GetJobMagicSaveCount(PCHARINFO);						/* 職業別の呪文を何職業分保存するか */
 BOOL SaveCharInfo(void);											/* キャラ情報保存 */
 BOOL LoadCharInfo(void);											/* キャラ情報読み込み */
+void UpdatePlayTime(PCHARINFO pChar);								/* ログイン中のプレイ時間を加算 */
+
+/* ========================================================================= */
+/* 関数名：UpdatePlayTime													 */
+/* 内容：ログイン中のプレイ時間を総プレイ時間（分）へ加算する				 */
+/*       1分に満たない端数は dwTimeLogin に残して次回へ持ち越す。			 */
+/*       ログアウト時だけでなく保存の前にも呼ぶので、サーバーを止めたり		 */
+/*       落ちたりしても、最後に保存した所までのプレイ時間は残る。			 */
+/* ========================================================================= */
+void UpdatePlayTime(PCHARINFO pChar)
+{
+	DWORD dwMinutes;
+
+	if (pChar->dwTimeLogin == 0) {
+		return;
+	}
+	dwMinutes = (timeGetTime () - pChar->dwTimeLogin) / 60000;
+	if (dwMinutes == 0) {
+		return;
+	}
+	pChar->dwPlayTime	+= dwMinutes;
+	pChar->dwTimeLogin	+= dwMinutes * 60000;
+	if (pChar->dwTimeLogin == 0) {
+		/* 0 は「ログインしていない」の意味なので避ける */
+		pChar->dwTimeLogin = 1;
+	}
+}
 
 /* ========================================================================= */
 /* 関数名：CheckSaveChar													 */
@@ -220,6 +247,10 @@ BOOL SaveCharInfo(void)
 		bResult = CheckSaveChar (pInfo);
 		if (bResult == FALSE) {
 			continue;
+		}
+		/* ログイン中のプレイヤーは、ここまでのプレイ時間を加算してから保存する */
+		if ((pInfo->byNpcType == 0) && pInfo->pID) {
+			UpdatePlayTime (pInfo);
 		}
 		dwDataCountSave ++;
 	}

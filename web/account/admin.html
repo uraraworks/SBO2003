@@ -323,6 +323,11 @@
 	function $(id) {
 		return document.getElementById(id);
 	}
+	/* プレイ時間（サーバーからは分で届く）を「12 時間 34 分」のように */
+	function playTimeText(min) {
+		min = Math.max(0, Math.floor(min || 0));
+		return Math.floor(min / 60) + ' 時間 ' + (min % 60) + ' 分';
+	}
 	function ssGet() {
 		try { return window.sessionStorage.getItem(KEY_SESSION) || ''; } catch (e) { return ''; }
 	}
@@ -511,7 +516,7 @@
 		item('アカウント', c.account);
 		item('レベル', 'Lv ' + c.level);
 		item('作成日', c.made);
-		item('プレイ', Math.floor(c.playMinutes / 60) + ' 時間 ／ ログイン ' + c.loginCount + ' 回');
+		item('プレイ', playTimeText(c.playMinutes) + ' ／ ログイン ' + c.loginCount + ' 回');
 		item('場所', 'マップ ' + c.mapID + '（' + c.x + ', ' + c.y + '）');
 		item('ブラウザ版', c.devices ? c.devices + ' 台の端末' + (c.lastWebLogin ? '（最後 ' + dateText(c.lastWebLogin) + '）' : '') : 'まだ使っていない');
 		item('復旧キー', c.hasCode ? 'あり' : 'なし');
@@ -624,8 +629,10 @@
 			}
 			item('アカウント', r.account);
 			item('レベル', 'Lv ' + r.level + ' ／ 作成 ' + r.made);
-			item('プレイ', Math.floor(r.playMinutes / 60) + ' 時間 ／ ログイン ' + r.loginCount + ' 回');
-			item('合っていた', r.byAccount ? 'アカウント名' : 'パスワードの一部');
+			item('プレイ', playTimeText(r.playMinutes) + ' ／ ログイン ' + r.loginCount + ' 回');
+			item('合っていた', (r.byAccount && r.byPassword) ? 'アカウント名とパスワードの一部' :
+				r.byAccount ? 'アカウント名' : r.byPassword ? 'パスワードの一部' :
+				'キャラ名だけ（アカウント名・パスワードは分からない）');
 			item('IP', r.ip);
 			card.appendChild(dl);
 			if (r.message) {
