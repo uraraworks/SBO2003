@@ -949,19 +949,12 @@ static int ItemUse_SUBGAME_WAR(PCHARINFO pChar, CProcSubGameWAR *pProc, LPSTR ps
 	}
 
 	bCheck	= FALSE;
+	/* GetMemberType は1チームの人数(3か4)を返すので、2チーム分で満員か判定する
+	   （以前は設定値 SUBGAME_WAR_MEMBER_3/4 = 0/1 と比べていて、判定が効いていなかった） */
 	nMember	= pProc->GetMemberType ();
 	nCount	= pProc->GetAllMemberCount ();
-	switch (nMember) {
-	case SUBGAME_WAR_MEMBER_3:
-		if (nCount >= 6) {
-			bCheck = TRUE;
-		}
-		break;
-	case SUBGAME_WAR_MEMBER_4:
-		if (nCount >= 8) {
-			bCheck = TRUE;
-		}
-		break;
+	if (nCount >= nMember * 2) {
+		bCheck = TRUE;
 	}
 	/* 定員オーバー？ */
 	if (bCheck) {
