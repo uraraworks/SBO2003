@@ -226,6 +226,7 @@ extern BOOL MagicProc					(DWORD, BYTE, DWORD);				/* 魔法処理 */
 extern void MakeMazeProc				(BYTE);								/* 迷路作成処理 */
 extern void MakeDungeonProc				(BYTE);								/* ダンジョン作成処理 */
 extern void SubGameProcBombQuit			(BYTE);								/* 爆弾ゲーム試合終了処理 */
+extern void SubGameProcBombQuitMsg		(BYTE, LPCSTR);						/* 爆弾ゲーム試合終了処理(終わった理由を表示) */
 extern void SubGameProcBombMakeBlock	(BYTE);								/* 爆弾ゲーム壁作成処理 */
 extern void SubGameProcBombDeleteBlock	(BYTE);								/* 爆弾ゲーム壁消去処理 */
 extern BOOL SaveMapPartsInfo			(void);								/* マップパーツ情報保存 */
@@ -2590,7 +2591,7 @@ void SubProcMapMove(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY)
 		PSUBSTATUS_BOMB pSubStatus = (PSUBSTATUS_BOMB)pChar->abySubStatus;
 		/* ゲームマスター？ */
 		if (pSubStatus->byFlgGameMaster) {
-			SubGameProcBombQuit (pSubStatus->byID);
+			SubGameProcBombQuitMsg (pSubStatus->byID, "マスターが抜けたので爆弾ゲーム終了");
 		}
 
 	/* すごろくに参加中？ */
@@ -7640,7 +7641,7 @@ void RecvDataProcSubGameBOMB_SETBOMB(PBYTE pData, DWORD dwDataSize)
 		(pChar->dwY >= pBomb->byY1) && (pChar->dwY <= pBomb->byY2))) {
 		SendCmdSYSMSG (pChar->pID, "SYSTEM:爆弾ゲーム参加解除しました。", SPEECHCMD_BATTLE1);
 		if (pBomb->dwTblIDGameMaster == pChar->dwTblID) {
-			SubGameProcBombQuit (pSubStatus->byID);
+			SubGameProcBombQuitMsg (pSubStatus->byID, "マスターが抜けたので爆弾ゲーム終了");
 			return;
 		}
 		SendCmdSubBOMBSTOP (pChar->pID, pSubStatus->byID, pBomb);
@@ -7804,7 +7805,7 @@ void RecvDataProcSubGameBOMB_STOP(PBYTE pData, DWORD dwDataSize)
 	if (!IsRecvBombMaster (pRecv->byData)) {
 		return;
 	}
-	SubGameProcBombQuit (pRecv->byData);
+	SubGameProcBombQuitMsg (pRecv->byData, "マスターが試合を中止しました");
 }
 
 /* ========================================================================= */
