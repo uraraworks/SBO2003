@@ -194,6 +194,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebAccInfo(const char *pszAcc)
  * アカウント復旧の照合
  *   キャラ名（完全一致）が同じプレイヤーキャラを全部調べ、
  *   アカウント名（大文字・小文字は区別しない）とパスワードの一部が合うかを返す。
+ *   アカウント名もパスワードの一部も空の時は「キャラ名だけの申請」として、
+ *   キャラ名が合ったキャラを全部（byAccount・byPassword とも false で）返す。
  *   結果: {"candidates":キャラ名が合った数,"matches":[{...,"byAccount":bool,"byPassword":bool}]}
  */
 extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebAccRecoverFind(const char *pszName, const char *pszAcc, const char *pszPasPart)
@@ -202,6 +204,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebAccRecoverFind(const char *psz
 	std::string strAcc = Lower(Trim(pszAcc));
 	std::string strPart = Trim(pszPasPart);
 	int i, nCount = g_aCharInfo.GetSize(), nCandidates = 0;
+	BOOL bNameOnly = (strAcc.empty() && strPart.empty()) ? TRUE : FALSE;
 	std::string strMatches;
 
 	for (i = 0; i < nCount && !strName.empty(); i ++) {
@@ -212,7 +215,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebAccRecoverFind(const char *psz
 		nCandidates ++;
 		BOOL bAcc = (!strAcc.empty() && Lower(pChar->szAcc) == strAcc) ? TRUE : FALSE;
 		BOOL bPas = MatchPasswordPart(pChar->szPas, strPart);
-		if (!bAcc && !bPas) {
+		if (!bAcc && !bPas && !bNameOnly) {
 			continue;
 		}
 		if (!strMatches.empty()) {
