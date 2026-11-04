@@ -13,10 +13,13 @@
  *                    分割送信に渡し、長い発言を分けて送る）
  *  - SaveMsgLog  … メニューの「ログ保存」で window.sboChatLogSave を呼び、
  *                  チャット欄のログをテキストファイル（UTF-8）としてダウンロードする
+ *  - 吹き出し    … スマホは吹き出しウィンドウ（小窓）を出さないので、チャットの
+ *                  シートの「吹き出し」タブから SboWebBalloonGrp / SboWebBalloonSend で出す
  */
 #include "StdAfx.h"
 #include "Glbldata.h"
 #include "SboCliKeyProc.h"
+#include "SboCliSendCmd.h"
 
 #include <emscripten.h>
 #include <string>
@@ -184,4 +187,42 @@ extern "C" EMSCRIPTEN_KEEPALIVE void SboWebChatSubmit(const char *pszUtf8, int n
 	g_nWebSpeechKeyMod = nKeyMod;
 	ChatMsgProc (szBuf);
 	g_nWebSpeechKeyMod = -1;
+}
+
+/* ========================================================================= */
+/* 関数名：SboWebBalloonGrp													 */
+/* 内容：吹き出しの絵の番号を返す（シェル HTML が吹き出しの一覧を作るのに使う）	 */
+/*		 nNo は吹き出しの番号（1〜MAX_COMEFC。吹き出しウィンドウのマス番号と	 */
+/*		 同じ）、nFrame はアニメーションのコマ（0〜）。絵は IDP_EFC01 の		 */
+/*		 16x16 のマスで、横 8 マスずつ並んでいる。							 */
+/*		 その番号の吹き出しやコマが無ければ -1								 */
+/* ========================================================================= */
+extern "C" EMSCRIPTEN_KEEPALIVE int SboWebBalloonGrp(int nNo, int nFrame)
+{
+	if ((g_pComEfcInfo == NULL) || (nNo < 1) || (nNo > MAX_COMEFC)) {
+		return -1;
+	}
+	PCOMEFCINFO pComEfc = &g_pComEfcInfo[nNo - 1];
+	if ((pComEfc->pAnime == NULL) || (nFrame < 0) || (nFrame >= pComEfc->byAnimeCount)) {
+		return -1;
+	}
+	return (int)pComEfc->pAnime[nFrame].byGrpID;
+}
+
+/* ========================================================================= */
+/* 関数名：SboWebBalloonSend												 */
+/* 内容：吹き出しを出す（吹き出しウィンドウのマスを押した時と同じ）			 */
+/*		 出せた時は 1、マップを歩ける状態でない・吹き出しが無い時は 0		 */
+/* ========================================================================= */
+extern "C" EMSCRIPTEN_KEEPALIVE int SboWebBalloonSend(int nNo)
+{
+	if ((g_byGameState < GAMESTATE_MOVE) || (g_nMyCharID < 0) ||
+		(g_nMyCharID >= g_aCharInfo.GetSize ())) {
+		return 0;
+	}
+	if (SboWebBalloonGrp (nNo, 0) < 0) {
+		return 0;
+	}
+	SendCmdCOMEFC ((BYTE)nNo);
+	return 1;
 }
