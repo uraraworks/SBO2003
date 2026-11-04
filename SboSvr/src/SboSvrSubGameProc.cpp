@@ -21,6 +21,7 @@ static void SubGameProc_WAR(PSUBGAMEINFO pInfo);						/* サブゲーム処理(�
 static void SubGameProc_SUGOROKU(PSUBGAMEINFO pInfo);					/* サブゲーム処理(すごろく) */
 
 void SubGameProcBombQuit(BYTE);											/* 爆弾ゲーム試合終了処理 */
+void SubGameProcBombQuitMsg(BYTE, LPCSTR);								/* 爆弾ゲーム試合終了処理(終わった理由を表示) */
 void SubGameProcBombMakeBlock(BYTE);									/* 爆弾ゲーム壁作成処理 */
 void SubGameProcBombDeleteBlock(BYTE);									/* 爆弾ゲーム壁消去処理 */
 
@@ -87,7 +88,7 @@ static void SubGameProc_BOMB(PSUBGAMEINFO pInfo)
 				/* タイムオーバー？ */
 				if (pBomb->byGameTimeNow == 0) {
 					/* 試合終了処理 */
-					SubGameProcBombQuit ((BYTE)g_nProcSubGame);
+					SubGameProcBombQuitMsg ((BYTE)g_nProcSubGame, "時間切れ！爆弾ゲーム試合終了");
 				}
 			}
 		}
@@ -892,6 +893,17 @@ static void SubGameProc_SUGOROKU(PSUBGAMEINFO pInfo)
 /* ========================================================================= */
 void SubGameProcBombQuit(BYTE byID)
 {
+	SubGameProcBombQuitMsg (byID, NULL);
+}
+
+/* ========================================================================= */
+/* 関数名：SubGameProcBombQuitMsg											 */
+/* 内容：爆弾ゲーム試合終了処理(参加者に終わった理由を表示)					 */
+/*       pszMsg が NULL なら何も表示しない									 */
+/* 日付：2026/11/04															 */
+/* ========================================================================= */
+void SubGameProcBombQuitMsg(BYTE byID, LPCSTR pszMsg)
+{
 	PSUBGAMEINFO pInfo = g_aSubaGameInfo[byID];
 	PSUBGAME_BOMBINFO pBomb = (PSUBGAME_BOMBINFO)pInfo->pInfo;
 	PMAPINFO pMap = g_aMapInfo[pBomb->dwMapID];
@@ -916,6 +928,11 @@ void SubGameProcBombQuit(BYTE byID)
 			if (pSubStatus->byType == SUBGAMEID_BOMB) {
 				/* ゲームIDが一致？ */
 				if (byID == pSubStatus->byID) {
+					/* 終わった理由を知らせる（何も出ないと時間切れなどに気づけないため） */
+					if (pszMsg) {
+						SendCmdSYSMSG (pChar->pID, pszMsg, SPEECHCMD_BATTLE1);
+						SendCmdPLAYSOUND (pChar->pID, SOUND_WHISTLE);
+					}
 					/* 参加中？ */
 					if ((pSubStatus->byFlgEntry) ||
 						/* ゲームマスター以外で待機中？ */

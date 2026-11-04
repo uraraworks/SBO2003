@@ -504,7 +504,19 @@ void SendCmdCHARINFO(DWORD pIDSend, int nNo)
 		}
 	}
 
-	for (i = 0; i < nCount; i ++) {
+	/* 全キャラ分を送る時は、受け取る本人の情報を先頭で送る。
+	   クライアントはキャラ情報を受け取るたびに「自分から遠いキャラ」を消すので、
+	   ワープ直後に本人より前の番号のキャラ（NPC など）が先に届くと、
+	   ワープ前の自分の位置で判定されて、近くにいるのに消されてしまうため */
+	for (int j = (bSendAll ? -1 : 0); j < nCount; j ++) {
+		i = j;
+		if (bSendAll) {
+			if (j < 0) {
+				i = nNo;				/* 本人 */
+			} else if (j == nNo) {
+				continue;				/* 本人は先に送った */
+			}
+		}
 		if (g_aCharInfo[i + nTmp]->dwMapID == g_aCharInfo[nNo]->dwMapID) {
 			if (abs (g_aCharInfo[i + nTmp]->dwX - g_aCharInfo[nNo]->dwX) <= DRAW_PARTS_X + 2) {
 				if (abs (g_aCharInfo[i + nTmp]->dwY - g_aCharInfo[nNo]->dwY) <= DRAW_PARTS_Y + 2) {
