@@ -28,6 +28,7 @@
 #define MAX_JOBNAME			31										/* 最大職業名文字数 */
 #define MAX_EQUNAME			31										/* 最大装備情報文字数 */
 #define MAX_MAGICNAME		31										/* 最大魔法名文字数 */
+#define MAX_MAGICEXPLAIN	256										/* 最大魔法説明文バイト数（終端含む） */
 #define MAX_COMEFC			99										/* 最大吹き出し種類 */
 #define MAX_MYITEM			10										/* 最大所持アイテム */
 #define MAX_SHOPITEM		10										/* 最大売り物数 */
@@ -1744,6 +1745,7 @@ typedef struct _MAGICINFO {
 	WORD		wData3;												/* 付加データ */
 	WORD		wData4;												/* 付加データ */
 	WORD		wMana;												/* 消費Mana */
+	char		szExplain[MAX_MAGICEXPLAIN];						/* 説明文（空なら数値から自動で作る） */
 } MAGICINFO, *PMAGICINFO;
 
 /* 店情報 */
@@ -2649,6 +2651,7 @@ typedef struct _CMDPARA_MAGICINFO {
 	WORD		wData3;												/* 付加データ */
 	WORD		wData4;												/* 付加データ */
 	WORD		wMana;												/* 消費Mana */
+	char		szExplain[MAX_MAGICEXPLAIN];						/* 説明文（古い版との互換のため最後に置く） */
 } CMDPARA_MAGICINFO, *PCMDPARA_MAGICINFO;
 
 /* 魔法利用者情報通知 */

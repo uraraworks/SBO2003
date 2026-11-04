@@ -47,6 +47,7 @@ SboCli/src/SboCliDrawScreen.cpp
 SboCli/src/SboCliDrawWindow.cpp
 SboCli/src/SboCliKeyProc.cpp
 SboCli/src/SboCliMain.cpp
+SboCli/src/SboCliMagicExplain.cpp
 SboCli/src/SboCliMakeWindow.cpp
 SboCli/src/SboCliRecvCmd.cpp
 SboCli/src/SboCliSendCmd.cpp

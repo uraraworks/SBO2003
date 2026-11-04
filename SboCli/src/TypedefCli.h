@@ -16,6 +16,10 @@
 #define SYSMSG_SY	(DRAW_PARTS_Y * 2 * 32)						/* システムメッセージ表示開始位置(縦) */
 #define SYSMSG_EY	(DRAW_PARTS_Y * 2 * 32 - 140)				/* システムメッセージ表示終了位置(縦) */
 #define MAX_NUMMSGS		(10)
+#define ITEMINFO_CX					(16 * 10)					/* アイテム情報ウィンドウの幅 */
+#define ITEMINFO_CY					(16 * 2 + 12 * 4)			/* アイテム情報ウィンドウの高さ */
+#define ITEMINFO_MAGIC_CX			(16 * 18)					/* アイテム情報ウィンドウの幅（特技の書の時） */
+#define ITEMINFO_EXPLAIN_MAXLINE	(8)							/* アイテム情報ウィンドウに出す特技説明の最大行数 */
 
 #define IDC_CONNECT		100										/* 接続ボタン */
 #define IDC_MAKE		101										/* 作成ボタン */

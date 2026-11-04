@@ -2753,8 +2753,8 @@ PWNDINFO MakeWindowITEMINFO(int x, int y)
 	g_dwNewID ++;
 	pWnd->nX = x;
 	pWnd->nY = y;
-	pWnd->nCx = 16 * 10;
-	pWnd->nCy = 16 * 2 + 12 * 4;
+	pWnd->nCx = ITEMINFO_CX;
+	pWnd->nCy = ITEMINFO_CY;
 	pWnd->nType = WNDTYPE_ITEMINFO;
 	pWnd->pDib = new CImg32;
 	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
