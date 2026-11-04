@@ -2539,6 +2539,7 @@ void SendCMDMAGICINFO(BYTE byID)
 	pSendData->wData3 = pInfo->wData3;
 	pSendData->wData4 = pInfo->wData4;
 	pSendData->wMana = pInfo->wMana;
+	strcpy (pSendData->szExplain, pInfo->szExplain);
 
 	cliSock.Send ((PBYTE)pSendData, sizeof (CMDPARA_MAGICINFO));
 	delete pSendData;

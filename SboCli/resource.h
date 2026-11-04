@@ -173,6 +173,8 @@
 #define IDC_DEX                         1136
 #define IDC_MOVETYPE                    1137
 #define IDC_VIEWITEMINFO                1138
+#define IDC_EXPLAIN                     1139
+#define IDC_EXPLAIN_AUTO                1140
 #define IDM_MAP_PARTS                   40001
 #define IDM_MAP_INFO                    40002
 #define IDM_MAP_ADD                     40003
@@ -208,7 +210,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        231
 #define _APS_NEXT_COMMAND_VALUE         40029
-#define _APS_NEXT_CONTROL_VALUE         1139
+#define _APS_NEXT_CONTROL_VALUE         1141
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

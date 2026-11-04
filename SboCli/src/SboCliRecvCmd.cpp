@@ -5001,6 +5001,11 @@ void RecvDataProcMAGICINFO(BYTE *pData, DWORD dwDataSize)
 	pInfo->wData3 = pPara->wData3;
 	pInfo->wData4 = pPara->wData4;
 	pInfo->wMana = pPara->wMana;
+	/* 説明文（説明文の欄が無い古いサーバーから来た時は空のまま＝自動の説明を出す） */
+	if (dwDataSize >= sizeof (CMDPARA_MAGICINFO)) {
+		CopyMemory (pInfo->szExplain, pPara->szExplain, MAX_MAGICEXPLAIN);
+		pInfo->szExplain[MAX_MAGICEXPLAIN - 1] = 0;
+	}
 
 	RenewUseMagicInfo ();
 

@@ -13,7 +13,7 @@
 /* 定数定義																	 */
 /* ========================================================================= */
 
-#define DATACOUNTMAGICINFO		(17)					/* 保存データ数 */
+#define DATACOUNTMAGICINFO		(18)					/* 保存データ数 */
 
 /* ========================================================================= */
 /* 構造体定義																 */
@@ -50,6 +50,7 @@ static const char *s_aszName[] = {
 	"wData3",				/* 付加データ */
 	"wData4",				/* 付加データ */
 	"wMana",				/* 消費Mana */
+	"szExplain",			/* 説明文（後から追加。古いデータには無いので空になる） */
 	"z"
 };
 
@@ -158,6 +159,7 @@ BOOL SaveMagicInfo(void)
 			case 14:	dwDataSizeTmp += sizeof (WORD);						break;		/* 付加データ */
 			case 15:	dwDataSizeTmp += sizeof (WORD);						break;		/* 付加データ */
 			case 16:	dwDataSizeTmp += sizeof (WORD);						break;		/* 消費Mana */
+			case 17:	dwDataSizeTmp += (strlen (pInfo->szExplain) + 1);	break;		/* 説明文 */
 			}
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
@@ -269,6 +271,10 @@ BOOL SaveMagicInfo(void)
 			case 16:	/* 消費Mana */
 				CopyMemory (&pData[dwOffset], &pInfo->wMana, sizeof (WORD));
 				dwOffset += sizeof (WORD);
+				break;
+			case 17:	/* 説明文 */
+				strcpy ((LPSTR)&pData[dwOffset], pInfo->szExplain);
+				dwOffset += (strlen (pInfo->szExplain) + 1);
 				break;
 			}
 		}
@@ -478,6 +484,21 @@ BOOL LoadMagicInfo(void)
 			} else if (strcmp (aHeaderInfo[i].szName, s_aszName[16]) == 0) {			/* 消費Mana */
 				CopyMemory (&pInfo->wMana, &pData[dwOffsetTmp], sizeof (WORD));
 				dwOffsetTmp += sizeof (WORD);
+
+			} else if (strcmp (aHeaderInfo[i].szName, s_aszName[17]) == 0) {			/* 説明文 */
+				/* 長すぎる時は切り詰める（全角の途中で切れないよう、入る分だけ1文字ずつ写す） */
+				LPCSTR pszSrc = (LPCSTR)&pData[dwOffsetTmp];
+				int nLen = (int)strlen (pszSrc), nPos = 0;
+				while (nPos < nLen) {
+					int nChar = (IsDBCSLeadByte ((BYTE)pszSrc[nPos]) && (nPos + 1 < nLen)) ? 2 : 1;
+					if (nPos + nChar > MAX_MAGICEXPLAIN - 1) {
+						break;
+					}
+					nPos += nChar;
+				}
+				CopyMemory (pInfo->szExplain, pszSrc, nPos);
+				pInfo->szExplain[nPos] = 0;
+				dwOffsetTmp += (nLen + 1);
 			}
 		}
 	}
