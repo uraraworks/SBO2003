@@ -8089,8 +8089,9 @@ void RecvDataProcSubGameWAR_SELECTTEAM(PBYTE pData, DWORD dwDataSize)
 	}
 
 	/* 定員オーバー？ */
+	/* 1チームの定員は設定(3人/4人)に合わせる（HP 表示や待機場所もこの人数分しかない） */
 	nTmp = pProcSubGameWAR->GetMemberCount (pRecv->byData);
-	if (nTmp >= MAX_SUBGAME_WARMEMBER) {
+	if (nTmp >= pProcSubGameWAR->GetMemberType ()) {
 		wsprintf (szMsg, "そちらのチームは満員のようです。@2");
 		goto Exit;
 	}
@@ -8440,6 +8441,8 @@ void RecvDataProcSubGameWAR_WAIT(PBYTE pData, DWORD dwDataSize)
 		x = pTeamInfo->ptCastle.x;
 		y = pTeamInfo->ptCastle.y;
 
+		/* 城の広さ: 4人戦は 2×2 マス、3人戦は 1 マス（以前は 3人戦で nTmp が初期化されていなかった） */
+		nTmp = 0;
 		if (pInfoSubGameWAR->m_byMember == SUBGAME_WAR_MEMBER_4) {
 			nTmp = 1;
 		}
