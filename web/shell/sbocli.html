@@ -401,10 +401,88 @@
 		justify-content: space-between;
 		margin-bottom: 6px;
 	}
-	#sbo-sheet-title {
-		color: var(--accent);
-		font-weight: bold;
-		font-size: 14px;
+	/* チャット／吹き出しの切り替えタブ */
+	#sbo-sheet-tabs {
+		display: flex;
+		gap: 6px;
+	}
+	#sbo-sheet-tabs button {
+		background: none;
+		border: 1px solid var(--border);
+		border-radius: 14px;
+		color: var(--fg);
+		font: bold 13px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		padding: 6px 12px;
+		cursor: pointer;
+	}
+	#sbo-sheet-tabs button.sbo-on {
+		background: var(--accent);
+		border-color: var(--accent);
+		color: #1a1a1a;
+	}
+	/* 吹き出しの一覧（吹き出しタブの時だけ出す） */
+	#sbo-sheet-balloon {
+		display: none;
+		flex: 1;
+		min-height: 0;
+		overflow-y: auto;
+		touch-action: pan-y;
+		padding: 2px;
+	}
+	#sbo-chat-sheet.sbo-tab-balloon #sbo-sheet-balloon {
+		display: block;
+	}
+	#sbo-chat-sheet.sbo-tab-balloon #sbo-sheet-log,
+	#sbo-chat-sheet.sbo-tab-balloon #sbo-sheet-row,
+	#sbo-chat-sheet.sbo-tab-balloon #sbo-sheet-save {
+		display: none;
+	}
+	.sbo-bl-label {
+		color: var(--sub);
+		font-size: 11px;
+		margin: 2px 0 4px;
+	}
+	.sbo-bl-label:empty {
+		display: none;
+	}
+	.sbo-bl-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+		gap: 5px;
+		margin-bottom: 8px;
+	}
+	.sbo-bl-grid:empty {
+		display: none;
+	}
+	.sbo-bl-grid button {
+		height: 44px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0;
+		border: none;
+		border-radius: 8px;
+		background: rgba(255, 255, 255, 0.07);
+		touch-action: pan-y;
+		-webkit-tap-highlight-color: transparent;
+		cursor: pointer;
+	}
+	.sbo-bl-grid button:active {
+		background: rgba(240, 184, 74, 0.6);
+	}
+	/* 絵は 16x16 のドットを 2 倍（補間なし）で出す */
+	.sbo-bl-icon {
+		width: 32px;
+		height: 32px;
+		background-repeat: no-repeat;
+		background-size: 256px auto;
+		image-rendering: pixelated;
+		pointer-events: none;
+	}
+	#sbo-bl-none {
+		color: var(--sub);
+		font-size: 13px;
+		padding: 12px 4px;
 	}
 	#sbo-sheet-tools {
 		display: flex;
@@ -989,13 +1067,24 @@
 <!-- スマホのチャット入力シート -->
 <div id="sbo-chat-sheet">
 	<div id="sbo-sheet-head">
-		<span id="sbo-sheet-title">チャット</span>
+		<span id="sbo-sheet-tabs">
+			<button type="button" data-sheet-tab="chat" class="sbo-on">💬 チャット</button>
+			<button type="button" data-sheet-tab="balloon">😊 吹き出し</button>
+		</span>
 		<span id="sbo-sheet-tools">
 			<button id="sbo-sheet-save" type="button" title="メッセージログをテキストファイルで保存します">💾 ログ保存</button>
 			<button id="sbo-sheet-close" type="button" title="閉じる">✕</button>
 		</span>
 	</div>
 	<div id="sbo-sheet-log"></div>
+	<!-- 吹き出しタブ：押すとすぐ出してシートを閉じる -->
+	<div id="sbo-sheet-balloon">
+		<div class="sbo-bl-label" id="sbo-bl-recent-label"></div>
+		<div class="sbo-bl-grid" id="sbo-bl-recent"></div>
+		<div class="sbo-bl-label">すべて（押すとすぐ出ます）</div>
+		<div class="sbo-bl-grid" id="sbo-bl-all"></div>
+		<div id="sbo-bl-none" hidden>吹き出しを読み込み中です。少し待ってからもう一度開いてください。</div>
+	</div>
 	<div id="sbo-sheet-row">
 		<input id="sbo-sheet-input" class="sbo-chat-input" type="text" data-sbo-chat="1" placeholder="発言を入力"
 			enterkeyhint="send" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
@@ -1765,12 +1854,184 @@
 		}
 	});
 
-	/* ---- スマホ：チャットのシート ---- */
+	/* ---- スマホ：チャットのシート ----
+	   「チャット」と「吹き出し」のタブがあり、前に開いていた方を覚えておく */
+	var SHEET_TAB_KEY = 'sbo2003.sheetTab';
+	var sheetTab = 'chat';
+	try {
+		if (window.localStorage.getItem(SHEET_TAB_KEY) === 'balloon') {
+			sheetTab = 'balloon';
+		}
+	} catch (e) {}
+	function setSheetTab(tab) {
+		sheetTab = tab;
+		try { window.localStorage.setItem(SHEET_TAB_KEY, tab); } catch (e) {}
+		sheet.classList.toggle('sbo-tab-balloon', tab === 'balloon');
+		var tabs = document.querySelectorAll('#sbo-sheet-tabs button');
+		for (var i = 0; i < tabs.length; i++) {
+			tabs[i].classList.toggle('sbo-on', tabs[i].getAttribute('data-sheet-tab') === tab);
+		}
+		if (tab === 'balloon') {
+			renderBalloons();
+			/* 吹き出しを選ぶ時はキーボードを出さない */
+			sheetInput.blur();
+			sheet.style.bottom = '';
+			sheet.style.height = '';
+		} else {
+			renderAll(sheetLog);
+			sheetInput.focus();
+		}
+	}
+	(function () {
+		var tabs = document.querySelectorAll('#sbo-sheet-tabs button');
+		for (var i = 0; i < tabs.length; i++) {
+			tabs[i].addEventListener('click', function (ev) {
+				setSheetTab(ev.currentTarget.getAttribute('data-sheet-tab'));
+			});
+		}
+	})();
+
+	/* ---- 吹き出し ----
+	   PC 版の吹き出しウィンドウと同じく、番号（1〜99）をゲームに渡して出す。
+	   絵はゲームのデータ（IDP_EFC01：16x16 のマスが横 8 つずつ）から切り出す */
+	var BALLOON_MAX = 99;
+	var BALLOON_RECENT_KEY = 'sbo2003.balloonRecent';
+	var BALLOON_RECENT_MAX = 8;
+	var BALLOON_IMG_PATH = '/res/SboGrpData/grp/efc01.png';
+	var balloonImgUrl = null;
+	var balloonRecent = [];
+	try {
+		var savedRecent = JSON.parse(window.localStorage.getItem(BALLOON_RECENT_KEY) || '[]');
+		if (Array.isArray(savedRecent)) {
+			balloonRecent = savedRecent.filter(function (n) {
+				return typeof n === 'number' && n >= 1 && n <= BALLOON_MAX;
+			}).slice(0, BALLOON_RECENT_MAX);
+		}
+	} catch (e) {}
+	var balloonBlank = null;	/* 何も描かれていないマス（絵の番号 → true） */
+	function getBalloonImgUrl() {
+		if (balloonImgUrl === null) {
+			try {
+				var data = Module['FS'].readFile(BALLOON_IMG_PATH);
+				balloonImgUrl = URL.createObjectURL(new Blob([data], { type: 'image/png' }));
+			} catch (e) {
+				return null;
+			}
+			/* 最初のコマが空っぽ（だんだん出てくる吹き出し）だと一覧で真っ黒になるので、
+			   空のマスを調べておき、絵のあるコマを一覧に使う */
+			var img = new Image();
+			img.onload = function () {
+				var c = document.createElement('canvas');
+				c.width = img.width;
+				c.height = img.height;
+				var cx = c.getContext('2d');
+				cx.drawImage(img, 0, 0);
+				var px = cx.getImageData(0, 0, c.width, c.height).data;
+				var blank = {};
+				var rows = Math.floor(c.height / 16);
+				for (var g = 0; g < rows * 8; g++) {
+					var x0 = (g % 8) * 16, y0 = Math.floor(g / 8) * 16, empty = true;
+					for (var y = y0; y < y0 + 16 && empty; y++) {
+						for (var x = x0; x < x0 + 16; x++) {
+							var i = (y * c.width + x) * 4;
+							if (px[i + 3] && (px[i] || px[i + 1] || px[i + 2])) {
+								empty = false;
+								break;
+							}
+						}
+					}
+					if (empty) {
+						blank[g] = true;
+					}
+				}
+				balloonBlank = blank;
+				if (sheet.classList.contains('sbo-open') && sheetTab === 'balloon') {
+					renderBalloons();
+				}
+			};
+			img.src = balloonImgUrl;
+		}
+		return balloonImgUrl;
+	}
+	/* 一覧に出す絵（最初に絵のあるコマ）。どのコマも空っぽの吹き出しは
+	   使われていない番号なので -1 を返して一覧に出さない */
+	function balloonIconGrp(no) {
+		var first = Module['_SboWebBalloonGrp'](no, 0);
+		if (first < 0 || !balloonBlank || !balloonBlank[first]) {
+			return first;
+		}
+		for (var f = 1; f < 256; f++) {
+			var g = Module['_SboWebBalloonGrp'](no, f);
+			if (g < 0) {
+				break;
+			}
+			if (!balloonBlank[g]) {
+				return g;
+			}
+		}
+		return -1;
+	}
+	function makeBalloonButton(no, grp, url) {
+		var btn = document.createElement('button');
+		btn.type = 'button';
+		btn.title = '吹き出し ' + no;
+		btn.setAttribute('data-balloon', String(no));
+		var icon = document.createElement('div');
+		icon.className = 'sbo-bl-icon';
+		icon.style.backgroundImage = 'url(' + url + ')';
+		icon.style.backgroundPosition = (-(grp % 8) * 32) + 'px ' + (-Math.floor(grp / 8) * 32) + 'px';
+		btn.appendChild(icon);
+		return btn;
+	}
+	function renderBalloons() {
+		var recentBox = document.getElementById('sbo-bl-recent');
+		var allBox = document.getElementById('sbo-bl-all');
+		var none = document.getElementById('sbo-bl-none');
+		recentBox.textContent = '';
+		allBox.textContent = '';
+		var url = sboReady ? getBalloonImgUrl() : null;
+		var grps = {};
+		var count = 0;
+		if (url && Module['_SboWebBalloonGrp']) {
+			for (var no = 1; no <= BALLOON_MAX; no++) {
+				var grp = balloonIconGrp(no);
+				if (grp >= 0) {
+					grps[no] = grp;
+					allBox.appendChild(makeBalloonButton(no, grp, url));
+					count++;
+				}
+			}
+			balloonRecent.forEach(function (n) {
+				if (grps[n] !== undefined) {
+					recentBox.appendChild(makeBalloonButton(n, grps[n], url));
+				}
+			});
+		}
+		document.getElementById('sbo-bl-recent-label').textContent = recentBox.firstChild ? '最近使った' : '';
+		none.hidden = count > 0;
+		/* 開くたびに「最近使った」が見える一番上から */
+		document.getElementById('sbo-sheet-balloon').scrollTop = 0;
+	}
+	function sendBalloon(no) {
+		if (!sboReady || !Module['_SboWebBalloonSend'] || !Module['_SboWebBalloonSend'](no)) {
+			return;
+		}
+		balloonRecent = [no].concat(balloonRecent.filter(function (n) { return n !== no; })).slice(0, BALLOON_RECENT_MAX);
+		try { window.localStorage.setItem(BALLOON_RECENT_KEY, JSON.stringify(balloonRecent)); } catch (e) {}
+		/* 出した吹き出しが見えるようにシートを閉じる */
+		closeSheet();
+	}
+	document.getElementById('sbo-sheet-balloon').addEventListener('click', function (ev) {
+		var btn = ev.target.closest ? ev.target.closest('button[data-balloon]') : null;
+		if (btn) {
+			sendBalloon(parseInt(btn.getAttribute('data-balloon'), 10));
+		}
+	});
+
 	function openSheet() {
-		renderAll(sheetLog);
 		sheet.classList.add('sbo-open');
 		/* iOS でキーボードを出すため、タップの処理の中でそのままフォーカスする */
-		sheetInput.focus();
+		setSheetTab(sheetTab);
 	}
 	function closeSheet() {
 		sheet.classList.remove('sbo-open');
@@ -1788,7 +2049,8 @@
 	if (window.visualViewport) {
 		var vv = window.visualViewport;
 		var adjustSheet = function () {
-			if (!sheet.classList.contains('sbo-open')) {
+			/* 吹き出しタブはキーボードを出さないので、ふつうの高さのまま */
+			if (!sheet.classList.contains('sbo-open') || sheetTab === 'balloon') {
 				return;
 			}
 			sheet.style.height = Math.floor(vv.height * 0.85) + 'px';
