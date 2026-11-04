@@ -250,6 +250,11 @@
 		touch-action: none;
 	}
 	/* 縦持ちのチャットログ（パッドの下の残り全部） */
+	/* 今押しても効かないボタン（戦闘できないマップの「戦闘」、コマンドを開いている間の
+	   「調べる」など）は隠す。ほかのボタンの位置が変わらないよう場所は空けておく */
+	body.sbo-pad #sbo-pad button.sbo-pad-off {
+		visibility: hidden;
+	}
 	body.sbo-pad #sbo-chat-area {
 		display: block;
 		flex: 1 1 auto;
@@ -908,9 +913,9 @@
 		<div class="sbo-buttons">
 			<button type="button" data-vk="90"><span class="sbo-btn-icon">✕</span><span class="sbo-btn-label" style="font-size:10px">キャンセル</span><span class="sbo-btn-key">Z</span></button>
 			<button type="button" data-vk="88" class="sbo-main"><span class="sbo-btn-icon">○</span>決定<span class="sbo-btn-key">X</span></button>
-			<button type="button" data-vk="83">調べる<span class="sbo-btn-key">S</span></button>
-			<button type="button" data-vk="9">表示<span class="sbo-btn-key">Tab</span></button>
-			<button type="button" data-vk="17">戦闘<span class="sbo-btn-key">Ctrl</span></button>
+			<button type="button" data-vk="83" data-pad-need="1">調べる<span class="sbo-btn-key">S</span></button>
+			<button type="button" data-vk="9" data-pad-need="2">表示<span class="sbo-btn-key">Tab</span></button>
+			<button type="button" data-vk="17" data-pad-need="4">戦闘<span class="sbo-btn-key">Ctrl</span></button>
 			<button type="button" id="sbo-chat-open" disabled><span class="sbo-btn-icon">💬</span>チャット</button>
 		</div>
 	</div>
@@ -1851,6 +1856,31 @@
 			setOnMap(st >= GAMESTATE_MOVE);
 		}
 	}, 500);
+
+	/* 仮想パッドの「調べる」「表示」「戦闘」を、今押して効く時だけ出す。
+	   効くかどうかはゲーム側（SboCliKeyProc.cpp の SboWebGetPadState）が
+	   1=調べる 2=表示 4=戦闘 のビットで返す */
+	(function () {
+		var needButtons = document.querySelectorAll('#sbo-pad button[data-pad-need]');
+		var lastState = -1;
+		setInterval(function () {
+			if (!document.body.classList.contains('sbo-pad')) {
+				return;
+			}
+			var state = 7;	/* 準備前や古いゲーム本体の時は全部出しておく */
+			if (sboReady && Module['_SboWebGetPadState']) {
+				state = Module['_SboWebGetPadState']();
+			}
+			if (state === lastState) {
+				return;
+			}
+			lastState = state;
+			for (var i = 0; i < needButtons.length; i ++) {
+				var need = parseInt(needButtons[i].dataset.padNeed, 10);
+				needButtons[i].classList.toggle('sbo-pad-off', (state & need) === 0);
+			}
+		}, 100);
+	})();
 
 	/* ---- スクリーンショット ----
 	   ゲーム画面の canvas は 2D（putImageData で描いている）なので、そのまま画像にできる。
