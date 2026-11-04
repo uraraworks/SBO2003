@@ -622,12 +622,43 @@
 	a.sbo-link {
 		display: inline-block;
 	}
-	#sbo-forgot {
+	#sbo-forgot, #sbo-quick-return {
 		display: none;
 		font-size: 13px;
 	}
-	#sbo-forgot.sbo-show {
+	#sbo-forgot.sbo-show, #sbo-quick-return.sbo-show {
 		display: block;
+	}
+	/* 覚えているアカウントの一覧（多い時は中だけスクロール） */
+	#sbo-quick-list {
+		max-height: 220px;
+		overflow-y: auto;
+	}
+	.sbo-acc-row {
+		display: flex;
+		gap: 6px;
+		align-items: stretch;
+	}
+	.sbo-acc-row + .sbo-acc-row {
+		margin-top: 8px;
+	}
+	.sbo-acc-row .sbo-btn {
+		flex: 1;
+		min-width: 0;
+	}
+	.sbo-acc-gear {
+		flex: none;
+		width: 44px;
+		background: transparent;
+		color: var(--fg);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		font-size: 18px;
+		cursor: pointer;
+	}
+	#sbo-quick-back.sbo-multi #sbo-quick-settings,
+	#sbo-quick-back:not(.sbo-multi) .sbo-acc-gear {
+		display: none;
 	}
 	#sbo-recover {
 		display: none;
@@ -964,8 +995,10 @@
 			<!-- この端末で前にログインしていた -->
 			<div class="sbo-card" id="sbo-quick-back">
 				<h2>おかえりなさい！</h2>
-				<button type="button" class="sbo-btn" id="sbo-quick-start">はじめる</button>
-				<button type="button" class="sbo-btn sbo-btn-sub" data-quick-other="1">別のアカウントでログイン</button>
+				<!-- この端末で覚えているアカウント（新しく使った順。2 つ以上ある時は右の ⚙ で設定） -->
+				<div id="sbo-quick-list"></div>
+				<button type="button" class="sbo-btn sbo-btn-sub" data-quick-other="1">別のアカウントを追加（ID・パスワード）</button>
+				<button type="button" class="sbo-link" id="sbo-quick-add-code">復旧キーで追加</button>
 				<button type="button" class="sbo-link" id="sbo-quick-settings">アカウント設定</button>
 				<a class="sbo-link" href="/feedback" target="_blank" rel="noopener">ご意見箱（要望・不具合はこちら）</a>
 				<button type="button" class="sbo-link" id="sbo-quick-forget">この端末の記憶を消す</button>
@@ -981,6 +1014,7 @@
 			</div>
 		</div>
 	</div>
+	<button type="button" class="sbo-link" id="sbo-quick-return" data-sbo-ui="1">← ボタンでログインに戻る</button>
 	<button type="button" class="sbo-link" id="sbo-forgot" data-sbo-ui="1">昔のアカウントを忘れてしまった方はこちら</button>
 	<!-- 仮想パッド：タッチ操作の端末だけ出す（?pad=1 で PC でも出せる） -->
 	<div id="sbo-pad">
@@ -1156,6 +1190,7 @@
 			<button type="button" class="sbo-btn sbo-btn-sub" id="sbo-rc-newcode">復旧キーを作り直す</button>
 			<button type="button" class="sbo-btn sbo-btn-sub" id="sbo-rc-rename">キャラ名を変える</button>
 			<button type="button" class="sbo-btn sbo-btn-sub" id="sbo-rc-feedback">ご意見箱（要望・不具合を送る）</button>
+			<button type="button" class="sbo-btn sbo-btn-sub" id="sbo-rc-remove" hidden>この端末の一覧から外す</button>
 			<button type="button" class="sbo-btn" data-close="1" style="margin-top:12px">ゲームへ戻る</button>
 		</div>
 	</div>
@@ -2466,12 +2501,20 @@
      localStorage
        sbo_device_token … 端末トークン（ID・パスワードでログインできた時にサーバーがくれる）
        sbo_device_name  … ボタンに出す名前（キャラ名。まだ無ければアカウント名）
+       sbo_device_accounts … この端末で覚えているアカウントの一覧（新しく使った順）
+                          [{t: 端末トークン, n: ボタンに出す名前, a: アカウント名}]
        sbo_recover_req  … 承認待ちの復旧申請 {id, key}
+     sbo_device_token / sbo_device_name は「いま選んでいるアカウント」（一覧の先頭）の写し。
+     キャラ名の変更（/rename）・ご意見箱（/feedback）はこちらを見る。
    ====================================================================== */
 (function () {
 	var KEY_TOKEN = 'sbo_device_token', KEY_NAME = 'sbo_device_name', KEY_REQ = 'sbo_recover_req';
+	var KEY_LIST = 'sbo_device_accounts';
+	var MAX_ACCOUNTS = 10;		/* 1 つの端末で覚えておくアカウントの数 */
 	var quick = document.getElementById('sbo-quick');
-	var quickStart = document.getElementById('sbo-quick-start');
+	var quickList = document.getElementById('sbo-quick-list');
+	var quickBack = document.getElementById('sbo-quick-back');
+	var quickReturn = document.getElementById('sbo-quick-return');
 	var forgot = document.getElementById('sbo-forgot');
 	var recover = document.getElementById('sbo-recover');
 	var bDismissed = false;		/* 「別のアカウントでログイン」を押した */
@@ -2499,36 +2542,122 @@
 		});
 	}
 
-	function setToken(token, name) {
-		lsSet(KEY_TOKEN, token);
-		if (name) {
-			lsSet(KEY_NAME, name);
-		}
-		bDismissed = false;
-		refreshName();
+	/* ---- 覚えているアカウントの一覧 ---- */
+	function isToken(t) {
+		return /^[0-9a-f]{64}$/.test(String(t || ''));
 	}
-	function clearToken() {
-		lsDel(KEY_TOKEN);
-		lsDel(KEY_NAME);
+	function loadList() {
+		var list = null;
+		try { list = JSON.parse(lsGet(KEY_LIST) || 'null'); } catch (e) { list = null; }
+		if (!Array.isArray(list)) {
+			/* 前の版（1 つだけ覚えていた）からの引き継ぎ */
+			list = [];
+			var token = lsGet(KEY_TOKEN);
+			if (isToken(token)) {
+				list.push({ t: token, n: lsGet(KEY_NAME) || '', a: '' });
+			}
+		}
+		return list.filter(function (e) { return e && isToken(e.t); });
+	}
+	function saveList(list) {
+		list = list.slice(0, MAX_ACCOUNTS);
+		lsSet(KEY_LIST, JSON.stringify(list));
+		/* 先頭を「いま選んでいるアカウント」として写しておく（/rename・/feedback 用） */
+		if (list.length) {
+			lsSet(KEY_TOKEN, list[0].t);
+			lsSet(KEY_NAME, list[0].n || list[0].a || '');
+		} else {
+			lsDel(KEY_TOKEN);
+			lsDel(KEY_NAME);
+		}
+	}
+	function entryName(e) {
+		return (e && (e.n || e.a)) || '前回のアカウント';
+	}
+	/* そのトークンを先頭へ（いま選んでいるアカウントにする） */
+	function selectToken(token) {
+		var list = loadList(), hit = null;
+		list = list.filter(function (e) {
+			if (e.t === token) {
+				hit = e;
+				return false;
+			}
+			return true;
+		});
+		if (hit) {
+			list.unshift(hit);
+			saveList(list);
+		}
+		return hit;
+	}
+	function removeToken(token) {
+		saveList(loadList().filter(function (e) { return e.t !== token; }));
 	}
 
-	/* ボタンの名前をサーバーに聞き直す（キャラを作った後などに変わるので） */
-	function refreshName() {
-		var token = lsGet(KEY_TOKEN);
-		if (!token) {
+	/* 新しく届いたトークンを一覧の先頭に足す（同じアカウントの古いトークンは名前を聞いた後で外す） */
+	function setToken(token, name) {
+		if (!isToken(token)) {
 			return;
 		}
-		api('/api/device/me', { token: token }).then(function (data) {
-			if (data.httpStatus === 401) {
-				clearToken();
-			} else if (data.account) {
-				lsSet(KEY_NAME, data.name || data.account);
+		var list = loadList().filter(function (e) { return e.t !== token; });
+		list.unshift({ t: token, n: name || '', a: '' });
+		saveList(list);
+		bDismissed = false;
+		refreshName(token);
+	}
+
+	/* ボタンの名前をサーバーに聞き直す（キャラを作った後などに変わるので）
+	   token を渡せばそれだけ、無ければ全部。無効になったトークンは一覧から外す */
+	function refreshName(onlyToken) {
+		loadList().forEach(function (e) {
+			if (onlyToken && e.t !== onlyToken) {
+				return;
 			}
-		}).catch(function () { /* 通信できない時はそのまま */ });
+			api('/api/device/me', { token: e.t }).then(function (data) {
+				if (data.httpStatus === 401) {
+					removeToken(e.t);
+				} else if (data.account) {
+					updateEntry(e.t, data.account, data.name || data.account);
+				}
+			}).catch(function () { /* 通信できない時はそのまま */ });
+		});
+	}
+	function updateEntry(token, account, name) {
+		var list = loadList(), aOld = [], bFound = false;
+		list = list.filter(function (e) {
+			if (e.t === token) {
+				e.a = account;
+				e.n = name;
+				bFound = true;
+				return true;
+			}
+			return true;
+		});
+		if (!bFound) {
+			return;
+		}
+		/* 同じアカウントが 2 つあれば、先（新しく使った方）を残して後ろを外す */
+		var seen = {};
+		list = list.filter(function (e) {
+			if (!e.a) {
+				return true;
+			}
+			if (seen[e.a]) {
+				aOld.push(e.t);
+				return false;
+			}
+			seen[e.a] = true;
+			return true;
+		});
+		saveList(list);
+		aOld.forEach(function (t) {
+			api('/api/device/forget', { token: t }).catch(function () {});
+		});
 	}
 
 	/* ゲーム（C 側）から呼ばれる */
 	var bNewStart = false;		/* 「すぐにはじめる」で入ったところ（トークンが届いたら復旧キーを見せる） */
+	var strLoginToken = '';		/* ボタンでログインしようとしているトークン */
 	window.sboOnDeviceToken = function (token) {
 		setToken(token, '');
 		if (bNewStart) {
@@ -2537,7 +2666,8 @@
 		}
 	};
 	window.sboOnDeviceTokenNG = function () {
-		clearToken();
+		removeToken(strLoginToken || lsGet(KEY_TOKEN));
+		strLoginToken = '';
 	};
 
 	function loginState() {
@@ -2545,38 +2675,73 @@
 		return typeof fn === 'function' ? fn() : 0;
 	}
 
+	/* 覚えているアカウントのボタンを並べる（中身が変わった時だけ作り直す） */
+	var strListSig = null;
+	function renderList(list) {
+		var sig = JSON.stringify(list.map(function (e) { return [e.t.slice(0, 8), entryName(e)]; }));
+		if (sig === strListSig) {
+			return;
+		}
+		strListSig = sig;
+		quickList.textContent = '';
+		list.forEach(function (e) {
+			var row = document.createElement('div');
+			row.className = 'sbo-acc-row';
+			var btn = document.createElement('button');
+			btn.type = 'button';
+			btn.className = 'sbo-btn';
+			btn.textContent = '「' + entryName(e) + '」ではじめる';
+			btn.addEventListener('click', function () { tokenLogin(e.t); });
+			var gear = document.createElement('button');
+			gear.type = 'button';
+			gear.className = 'sbo-acc-gear';
+			gear.textContent = '⚙';
+			gear.title = '「' + entryName(e) + '」の設定';
+			gear.setAttribute('aria-label', gear.title);
+			gear.addEventListener('click', function () { openSettings(e.t); });
+			row.appendChild(btn);
+			row.appendChild(gear);
+			quickList.appendChild(row);
+		});
+		quickBack.classList.toggle('sbo-multi', list.length > 1);
+	}
+
 	/* ログイン画面にいる間だけボタンを出す */
 	setInterval(function () {
 		var state = loginState();
-		var token = lsGet(KEY_TOKEN);
+		var list = loadList();
+		var bHave = list.length > 0;
 		var bShow = state === 1 && !bDismissed && !recover.classList.contains('sbo-show');
-		quick.classList.toggle('sbo-back', !!token);
-		quick.classList.toggle('sbo-new', !token);
-		if (bShow && token) {
-			var name = lsGet(KEY_NAME) || '前回のアカウント';
-			var label = '「' + name + '」ではじめる';
-			if (quickStart.textContent !== label) {
-				quickStart.textContent = label;
-			}
+		quick.classList.toggle('sbo-back', bHave);
+		quick.classList.toggle('sbo-new', !bHave);
+		if (bShow && bHave) {
+			renderList(list);
 		}
 		quick.classList.toggle('sbo-show', bShow);
 		forgot.classList.toggle('sbo-show', state === 1 && !bShow);
+		/* ID・パスワードの入力中は、ボタンの画面へ戻れるようにする */
+		quickReturn.classList.toggle('sbo-show', state === 1 && bDismissed && bHave &&
+			!recover.classList.contains('sbo-show'));
 	}, 250);
 
-	quickStart.addEventListener('click', function () {
-		var token = lsGet(KEY_TOKEN);
+	function tokenLogin(token) {
 		var M = window.Module;
-		if (!token || !M || !M['_SboWebTokenLogin']) {
+		if (!isToken(token) || !M || !M['_SboWebTokenLogin']) {
 			return;
 		}
+		selectToken(token);
+		strLoginToken = token;
 		var p = M['stringToNewUTF8'](token);
 		M['_SboWebTokenLogin'](p);
 		M['_free'](p);
-	});
+	}
 	Array.prototype.forEach.call(document.querySelectorAll('[data-quick-other]'), function (el) {
 		el.addEventListener('click', function () {
 			bDismissed = true;
 		});
+	});
+	quickReturn.addEventListener('click', function () {
+		bDismissed = false;
 	});
 	document.querySelector('[data-quick-recover]').addEventListener('click', function () {
 		forgot.click();
@@ -2607,14 +2772,17 @@
 		M['_free'](pP);
 	});
 	document.getElementById('sbo-quick-forget').addEventListener('click', function () {
-		if (!window.confirm('この端末の記憶を消しますか？（次からは ID とパスワードでログインします）')) {
+		var list = loadList();
+		var text = list.length > 1 ?
+			'この端末で覚えている ' + list.length + ' つのアカウントを全部消しますか？（次からは ID とパスワードでログインします）' :
+			'この端末の記憶を消しますか？（次からは ID とパスワードでログインします）';
+		if (!window.confirm(text)) {
 			return;
 		}
-		var token = lsGet(KEY_TOKEN);
-		clearToken();
-		if (token) {
-			api('/api/device/forget', { token: token }).catch(function () {});
-		}
+		saveList([]);
+		list.forEach(function (e) {
+			api('/api/device/forget', { token: e.t }).catch(function () {});
+		});
 	});
 
 	/* ---- アカウント復旧 ---- */
@@ -2639,6 +2807,7 @@
 		el.classList.toggle('sbo-ok', !!bOk);
 	}
 	function showDone(account, name, title) {
+		$('sbo-rc-remove').hidden = true;
 		$('sbo-rc-done-title').textContent = title || '復旧できました！';
 		$('sbo-rc-done-text').textContent = '「' + (name || account) + '」のアカウント名は「' + account +
 			'」です。ゲームへ戻ると、ボタンを押すだけで入れます。';
@@ -2647,23 +2816,42 @@
 		showStep('done');
 	}
 
-	/* アカウント設定：この端末のアカウント名を見せ、パスワードを決め直せるようにする */
-	document.getElementById('sbo-quick-settings').addEventListener('click', function () {
-		var token = lsGet(KEY_TOKEN);
-		if (!token) {
+	/* アカウント設定：アカウント名を見せ、パスワードを決め直せるようにする
+	   （設定するアカウントを「いま選んでいるアカウント」にする。下のボタンは KEY_TOKEN を使う） */
+	function openSettings(token) {
+		if (!isToken(token) || !selectToken(token)) {
 			return;
 		}
 		api('/api/device/me', { token: token }).then(function (data) {
 			if (data.httpStatus === 401) {
-				clearToken();
+				removeToken(token);
 				return;
 			}
 			if (!data.account) {
 				return;
 			}
+			updateEntry(token, data.account, data.name || data.account);
 			showDone(data.account, data.name, 'アカウント設定');
-			$('sbo-rc-done-text').textContent = 'この端末のアカウント名は「' + data.account + '」です。';
+			$('sbo-rc-done-text').textContent = loadList().length > 1 ?
+				'「' + (data.name || data.account) + '」のアカウント名は「' + data.account + '」です。' :
+				'この端末のアカウント名は「' + data.account + '」です。';
+			$('sbo-rc-remove').hidden = false;
 		}).catch(function () { /* 通信できない時は何もしない */ });
+	}
+	document.getElementById('sbo-quick-settings').addEventListener('click', function () {
+		openSettings(lsGet(KEY_TOKEN));
+	});
+	/* この端末の一覧から外す（サーバー側のトークンも無効にする。アカウント自体は消えない） */
+	$('sbo-rc-remove').addEventListener('click', function () {
+		var token = lsGet(KEY_TOKEN);
+		var e = loadList()[0];
+		if (!token || !window.confirm('「' + entryName(e) + '」をこの端末の一覧から外しますか？\n' +
+				'（アカウントは消えません。ID・パスワードか復旧キーでまた追加できます）')) {
+			return;
+		}
+		removeToken(token);
+		api('/api/device/forget', { token: token }).catch(function () {});
+		closeRecover();
 	});
 
 	/* ---- 復旧キー ---- */
@@ -2732,6 +2920,9 @@
 	/* ご意見箱（/feedback。web/account/feedback.html） */
 	$('sbo-rc-feedback').addEventListener('click', function () {
 		location.href = '/feedback';
+	});
+	$('sbo-quick-add-code').addEventListener('click', function () {
+		$('sbo-quick-redeem').click();
 	});
 	$('sbo-quick-redeem').addEventListener('click', function () {
 		$('sbo-redeem-code').value = '';
@@ -2874,7 +3065,8 @@
 		});
 	});
 
-	/* 開いた時：名前を取り直し、承認待ちの申請があれば結果を確かめる */
+	/* 開いた時：一覧を新しい形で保存し直し、名前を取り直し、承認待ちの申請があれば結果を確かめる */
+	saveList(loadList());
 	refreshName();
 	checkRequest(false);
 	setInterval(function () { checkRequest(false); }, 60 * 1000);
