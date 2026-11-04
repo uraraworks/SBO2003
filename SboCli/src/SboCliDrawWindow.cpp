@@ -10,6 +10,7 @@
 #include "Glbldata.h"
 #include "SboCliRecvCmd.h"
 #include "SboCliKeyProc.h"
+#include "SboCliMagicExplain.h"
 
 /* ========================================================================= */
 /* 定数定義																	 */
@@ -3810,10 +3811,48 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 		return;
 	}
 
+	pItem = g_aItemInfo[pWnd->nData1];
+
+	/* 特技の書なら、覚える特技の名前と説明を出せるようにウィンドウを広げる */
+	PMAGICINFO pMagic = NULL;
+	char aszExplain[ITEMINFO_EXPLAIN_MAXLINE][128];
+	int nExplainLine = 0, nCxNew = ITEMINFO_CX, nCyNew = ITEMINFO_CY;
+	if ((pItem->byType == ITEMTYPE_MAGIC) && pItem->pData) {
+		BYTE byMagicID = ((PITEMINFO_MAGIC)pItem->pData)->byID;
+		if (byMagicID < g_aMagicInfo.GetSize ()) {
+			char szExplain[MAX_MAGICEXPLAIN + 64];
+
+			pMagic = g_aMagicInfo[byMagicID];
+			GetMagicExplain (pMagic, szExplain, sizeof (szExplain));
+			nCxNew = ITEMINFO_MAGIC_CX;
+			/* 12ドットの字は半角6ドット・全角12ドット。左右の枠と、「。」をぶら下げる */
+			/* 全角1文字分を引いた幅で折り返す */
+			nExplainLine = SplitMagicExplain (szExplain, (nCxNew - 32 - 12) / 6, aszExplain, ITEMINFO_EXPLAIN_MAXLINE);
+			/* 枠の絵は16ドット単位なので高さも16の倍数にする */
+			nCyNew = 16 * 2 + 12 * (3 + nExplainLine);
+			nCyNew = (nCyNew + 15) / 16 * 16;
+			nCyNew = max (nCyNew, ITEMINFO_CY);
+		}
+	}
+	if ((pWnd->nCx != nCxNew) || (pWnd->nCy != nCyNew)) {
+		/* 右端の位置はそのままで大きさを変える */
+		int nRight = pWnd->nX + pWnd->nCx;
+		pWnd->nCx = nCxNew;
+		pWnd->nCy = nCyNew;
+		pWnd->nX = max (0, nRight - nCxNew);
+		/* 画面の下にはみ出す時は上にずらす */
+		if (pWnd->nY + pWnd->nCy > SCRSIZEY) {
+			pWnd->nY = max (0, SCRSIZEY - pWnd->nCy);
+		}
+		SAFE_DELETE (pWnd->pDib);
+		pWnd->pDib = new CImg32;
+		pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
+		pWnd->pDib->SetColorKey (RGB (40, 40, 40));
+	}
+
 	DrawWindowFrame (pWnd);
 	HDC hDC = pWnd->pDib->Lock ();
 	HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFont12);
-	pItem = g_aItemInfo[pWnd->nData1];
 
 	SetBkColor (hDC, RGB (40, 40, 40));
 	wsprintf (szTmp, "%s", pItem->szName);
@@ -3895,6 +3934,18 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 		TextOut2 (hDC, 16, 16 + 12 * 3, "装備：", RGB (200, 200, 200));
 		wsprintf (szTmp, "%s", g_aEquUserInfo[wEqu]);
 		TextOut2 (hDC, 16 + 12 * 3, 16 + 12 * 3, szTmp, RGB (150, 255, 200));
+	}
+
+	/* 特技の書：覚える特技と説明 */
+	if (pMagic) {
+		int i;
+
+		TextOut2 (hDC, 16, 16 + 12 * 2, "特技：", RGB (200, 200, 200));
+		wsprintf (szTmp, "%s", pMagic->szName);
+		TextOut2 (hDC, 16 + 12 * 3, 16 + 12 * 2, szTmp, RGB (150, 255, 200));
+		for (i = 0; i < nExplainLine; i ++) {
+			TextOut2 (hDC, 16, 16 + 12 * (3 + i), aszExplain[i], RGB (255, 255, 255));
+		}
 	}
 
 	SelectObject (hDC, hFontOld);

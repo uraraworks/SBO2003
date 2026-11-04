@@ -2750,6 +2750,7 @@ void SendCmdMAGICINFO(DWORD pIDSend, BYTE byID)
 	pSendData->wData3 = pInfo->wData3;
 	pSendData->wData4 = pInfo->wData4;
 	pSendData->wMana = pInfo->wMana;
+	strcpy (pSendData->szExplain, pInfo->szExplain);
 
 	svrSock.SendTo (pIDSend, (LPBYTE)pSendData, sizeof (CMDPARA_MAGICINFO));
 	delete pSendData;
