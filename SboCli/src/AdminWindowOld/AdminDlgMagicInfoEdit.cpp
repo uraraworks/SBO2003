@@ -9,6 +9,7 @@
 #include "../../resource.h"
 #include "../Glbldata.h"
 #include "../SboCliSendCmd.h"
+#include "../SboCliMagicExplain.h"
 
 /* ========================================================================= */
 /* グローバル変数定義														 */
@@ -26,6 +27,9 @@ static LRESULT CALLBACK DlgProc(HWND, UINT, WPARAM, LPARAM);					/* ダイアロ
 static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam);				/* メッセージハンドラ(WM_INITDIALOG) */
 static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify);		/* メッセージハンドラ(WM_COMMAND) */
 static void OnInitEnd(HWND hWnd, WPARAM wParam, LPARAM lParam);					/* メッセージハンドラ(WM_INITEND) */
+static void GetDlgData(HWND hWnd, PMAGICINFO pInfo);							/* 入力欄の内容を取り出す（名前と説明文以外） */
+static void SetExplainText(HWND hWnd, LPCSTR pszSrc);							/* 説明文の欄に文字を入れる */
+static void GetExplainText(HWND hWnd, LPSTR pszDst);							/* 説明文の欄から文字を取り出す */
 
 /* ========================================================================= */
 /* 関数名：ShowDlgMagicInfoEdit												 */
@@ -197,38 +201,8 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 			GetWindowText (hWndTmp, szTmp, MAX_MAGICNAME - 1);
 			strcpy (pInfo->szName, szTmp);
 
-			pInfo->byType = (BYTE)SendMessage (GetDlgItem (hWnd, IDC_TYPE), CB_GETCURSEL, 0, 0);
-			pInfo->byTypeInfoID = (BYTE)SendMessage (GetDlgItem (hWnd, IDC_TYPEINFO), CB_GETCURSEL, 0, 0);
-			pInfo->byTarget = (BYTE)SendMessage (GetDlgItem (hWnd, IDC_TARGET), CB_GETCURSEL, 0, 0);
-			pInfo->byTargetCount = (BYTE)SendMessage (GetDlgItem (hWnd, IDC_TARGETCOUNT), CB_GETCURSEL, 0, 0);
-			pInfo->byTargetType = (BYTE)SendMessage (GetDlgItem (hWnd, IDC_TARGETTYPE), CB_GETCURSEL, 0, 0);
-			pInfo->byUserInfo = (BYTE)SendMessage (GetDlgItem (hWnd, IDC_USERINFO), CB_GETCURSEL, 0, 0);
-			pInfo->byTime = (BYTE)SendMessage (GetDlgItem (hWnd, IDC_TIME), CB_GETCURSEL, 0, 0);
-			pInfo->byAttr = (BYTE)SendMessage (GetDlgItem (hWnd, IDC_ATTR), CB_GETCURSEL, 0, 0);
-
-			GetWindowText (GetDlgItem (hWnd, IDC_TARGETAREA), szTmp, sizeof (szTmp) - 1);
-			pInfo->byTargetArea = (BYTE)atoi (szTmp);
-			GetWindowText (GetDlgItem (hWnd, IDC_TARGETEFECTID), szTmp, sizeof (szTmp) - 1);
-			pInfo->byTargetEfectID = (BYTE)atoi (szTmp);
-			GetWindowText (GetDlgItem (hWnd, IDC_USEREFECTID), szTmp, sizeof (szTmp) - 1);
-			pInfo->byUserEfectID = (BYTE)atoi (szTmp);
-			GetWindowText (GetDlgItem (hWnd, IDC_DATA1), szTmp, sizeof (szTmp) - 1);
-			pInfo->wData1 = (WORD)atoi (szTmp);
-			GetWindowText (GetDlgItem (hWnd, IDC_DATA2), szTmp, sizeof (szTmp) - 1);
-			pInfo->wData2 = (WORD)atoi (szTmp);
-			GetWindowText (GetDlgItem (hWnd, IDC_DATA3), szTmp, sizeof (szTmp) - 1);
-			pInfo->wData3 = (WORD)atoi (szTmp);
-			GetWindowText (GetDlgItem (hWnd, IDC_DATA4), szTmp, sizeof (szTmp) - 1);
-			pInfo->wData4 = (WORD)atoi (szTmp);
-			GetWindowText (GetDlgItem (hWnd, IDC_MANA), szTmp, sizeof (szTmp) - 1);
-			pInfo->wMana = (WORD)atoi (szTmp);
-
-			if ((pInfo->byType == MAGICTYPE_PUT) || (pInfo->byType == MAGICTYPE_PUTSELF)) {
-				pInfo->wData1 = (WORD)SendMessage (GetDlgItem (hWnd, IDC_DATACOMBO1), CB_GETCURSEL, 0, 0);
-				GetWindowText (GetDlgItem (hWnd, IDC_DATA3), szTmp, sizeof (szTmp) - 1);
-				pInfo->wData2 = (WORD)atoi (szTmp);
-			}
-
+			GetDlgData (hWnd, pInfo);
+			GetExplainText (hWnd, pInfo->szExplain);
 
 			if (s_nNo < 0) {
 				SendCMDMAGICINFO ((BYTE)(g_aMagicInfo.GetSize () - 1));
@@ -241,6 +215,18 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 
 	case IDCANCEL:
 		CloseDlgMagicInfoEdit ();
+		break;
+
+	case IDC_EXPLAIN_AUTO:	/* 説明文を今の入力内容から自動で作る */
+		{
+			MAGICINFO Info;
+			char szTmp[MAX_MAGICEXPLAIN];
+
+			ZeroMemory (&Info, sizeof (Info));
+			GetDlgData (hWnd, &Info);
+			MakeMagicExplainAuto (&Info, szTmp, sizeof (szTmp));
+			SetExplainText (hWnd, szTmp);
+		}
 		break;
 
 	case IDC_TYPE:
@@ -378,6 +364,7 @@ static void OnInitEnd(HWND hWnd, WPARAM wParam, LPARAM lParam)
 	SetWindowText (GetDlgItem (hWnd, IDC_DATA4), szTmp);
 	wsprintf (szTmp, "%d", pInfo->wMana);
 	SetWindowText (GetDlgItem (hWnd, IDC_MANA), szTmp);
+	SetExplainText (hWnd, pInfo->szExplain);
 
 	if ((pInfo->byType == MAGICTYPE_PUT) || (pInfo->byType == MAGICTYPE_PUTSELF)) {
 		/* 「魔法発生」コンボボックスに項目追加 */
@@ -392,6 +379,103 @@ static void OnInitEnd(HWND hWnd, WPARAM wParam, LPARAM lParam)
 	if (bDelete) {
 		SAFE_DELETE (pInfo);
 	}
+}
+
+/* ========================================================================= */
+/* 関数名：	GetDlgData														 */
+/* 内容：	入力欄の内容を取り出す（名前と説明文以外）						 */
+/*			OK の時と「自動作成」の時の両方で使う							 */
+/* ========================================================================= */
+static void GetDlgData(HWND hWnd, PMAGICINFO pInfo)
+{
+	char szTmp[128];
+
+	pInfo->byType = (BYTE)SendMessage (GetDlgItem (hWnd, IDC_TYPE), CB_GETCURSEL, 0, 0);
+	pInfo->byTypeInfoID = (BYTE)SendMessage (GetDlgItem (hWnd, IDC_TYPEINFO), CB_GETCURSEL, 0, 0);
+	pInfo->byTarget = (BYTE)SendMessage (GetDlgItem (hWnd, IDC_TARGET), CB_GETCURSEL, 0, 0);
+	pInfo->byTargetCount = (BYTE)SendMessage (GetDlgItem (hWnd, IDC_TARGETCOUNT), CB_GETCURSEL, 0, 0);
+	pInfo->byTargetType = (BYTE)SendMessage (GetDlgItem (hWnd, IDC_TARGETTYPE), CB_GETCURSEL, 0, 0);
+	pInfo->byUserInfo = (BYTE)SendMessage (GetDlgItem (hWnd, IDC_USERINFO), CB_GETCURSEL, 0, 0);
+	pInfo->byTime = (BYTE)SendMessage (GetDlgItem (hWnd, IDC_TIME), CB_GETCURSEL, 0, 0);
+	pInfo->byAttr = (BYTE)SendMessage (GetDlgItem (hWnd, IDC_ATTR), CB_GETCURSEL, 0, 0);
+
+	GetWindowText (GetDlgItem (hWnd, IDC_TARGETAREA), szTmp, sizeof (szTmp) - 1);
+	pInfo->byTargetArea = (BYTE)atoi (szTmp);
+	GetWindowText (GetDlgItem (hWnd, IDC_TARGETEFECTID), szTmp, sizeof (szTmp) - 1);
+	pInfo->byTargetEfectID = (BYTE)atoi (szTmp);
+	GetWindowText (GetDlgItem (hWnd, IDC_USEREFECTID), szTmp, sizeof (szTmp) - 1);
+	pInfo->byUserEfectID = (BYTE)atoi (szTmp);
+	GetWindowText (GetDlgItem (hWnd, IDC_DATA1), szTmp, sizeof (szTmp) - 1);
+	pInfo->wData1 = (WORD)atoi (szTmp);
+	GetWindowText (GetDlgItem (hWnd, IDC_DATA2), szTmp, sizeof (szTmp) - 1);
+	pInfo->wData2 = (WORD)atoi (szTmp);
+	GetWindowText (GetDlgItem (hWnd, IDC_DATA3), szTmp, sizeof (szTmp) - 1);
+	pInfo->wData3 = (WORD)atoi (szTmp);
+	GetWindowText (GetDlgItem (hWnd, IDC_DATA4), szTmp, sizeof (szTmp) - 1);
+	pInfo->wData4 = (WORD)atoi (szTmp);
+	GetWindowText (GetDlgItem (hWnd, IDC_MANA), szTmp, sizeof (szTmp) - 1);
+	pInfo->wMana = (WORD)atoi (szTmp);
+
+	if ((pInfo->byType == MAGICTYPE_PUT) || (pInfo->byType == MAGICTYPE_PUTSELF)) {
+		pInfo->wData1 = (WORD)SendMessage (GetDlgItem (hWnd, IDC_DATACOMBO1), CB_GETCURSEL, 0, 0);
+		GetWindowText (GetDlgItem (hWnd, IDC_DATA3), szTmp, sizeof (szTmp) - 1);
+		pInfo->wData2 = (WORD)atoi (szTmp);
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：	SetExplainText													 */
+/* 内容：	説明文の欄に文字を入れる（改行は \r\n にして入れる）			 */
+/* ========================================================================= */
+static void SetExplainText(HWND hWnd, LPCSTR pszSrc)
+{
+	char szTmp[MAX_MAGICEXPLAIN * 2];
+	int i, nPos;
+
+	nPos = 0;
+	for (i = 0; pszSrc[i] && (nPos < (int)sizeof (szTmp) - 3); i ++) {
+		if (pszSrc[i] == '\r') {
+			continue;
+		}
+		if (pszSrc[i] == '\n') {
+			szTmp[nPos ++] = '\r';
+		}
+		szTmp[nPos ++] = pszSrc[i];
+	}
+	szTmp[nPos] = 0;
+	SetWindowText (GetDlgItem (hWnd, IDC_EXPLAIN), szTmp);
+}
+
+/* ========================================================================= */
+/* 関数名：	GetExplainText													 */
+/* 内容：	説明文の欄から文字を取り出す									 */
+/*			改行は \n にし、入りきらない分は全角の途中で切らずに捨てる。	 */
+/*			後ろの改行と空白は取る											 */
+/* ========================================================================= */
+static void GetExplainText(HWND hWnd, LPSTR pszDst)
+{
+	char szTmp[1024];
+	int i, nChar, nPos;
+
+	ZeroMemory (szTmp, sizeof (szTmp));
+	GetWindowText (GetDlgItem (hWnd, IDC_EXPLAIN), szTmp, sizeof (szTmp) - 1);
+
+	nPos = 0;
+	for (i = 0; szTmp[i]; i += nChar) {
+		nChar = (IsDBCSLeadByte ((BYTE)szTmp[i]) && szTmp[i + 1]) ? 2 : 1;
+		if (szTmp[i] == '\r') {
+			continue;
+		}
+		if (nPos + nChar > MAX_MAGICEXPLAIN - 1) {
+			break;
+		}
+		CopyMemory (&pszDst[nPos], &szTmp[i], nChar);
+		nPos += nChar;
+	}
+	while ((nPos > 0) && ((pszDst[nPos - 1] == '\n') || (pszDst[nPos - 1] == ' '))) {
+		nPos --;
+	}
+	pszDst[nPos] = 0;
 }
 
 /* Copyright(C)URARA-works 2003-2005 */
