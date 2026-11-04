@@ -7474,4 +7474,72 @@ ChatMsgProc_END:
 	SAFE_DELETE_ARRAY (pszMsgTmp);
 }
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+
+/* ========================================================================= */
+/* 関数名：SboWebGetPadState												 */
+/* 内容：スマホの仮想パッドで今押して効くボタンを返す（ブラウザ版）			 */
+/*		 シェル HTML が効かないボタンを隠すのに使う。KeyProc・KeyProcMove・	 */
+/*		 KeyProcDead・KeyProcMSG が実際にキーを使う条件に合わせている		 */
+/*		 戻り値：1=調べる(S) 2=表示(Tab) 4=戦闘(Ctrl) の組み合わせ			 */
+/* ========================================================================= */
+#define PADSTATE_SIRABERU	(0x01)
+#define PADSTATE_VIEW		(0x02)
+#define PADSTATE_BATTLE		(0x04)
+
+extern "C" EMSCRIPTEN_KEEPALIVE int SboWebGetPadState(void)
+{
+	PCHARINFO pChar;
+	int nRet;
+
+	/* マップにいない（ログイン・キャラ選択など）時はどれも効かない */
+	if ((g_byGameState < GAMESTATE_MOVE) || (g_byGameState == GAMESTATE_CONNECTLOST)) {
+		return 0;
+	}
+	if ((g_pMapInfo == NULL) || (g_pMapInfo->pwMap == NULL)) {
+		return 0;
+	}
+	if ((g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ())) {
+		return 0;
+	}
+	/* 発言の入力欄を出している間はどれも効かない */
+	if (g_bSpeech) {
+		return 0;
+	}
+
+	/* ウィンドウ（コマンド・道具・お店など）を開いている間は、そのウィンドウにキーが渡る。
+	   S はメッセージ（NPC のセリフなど）を読み進める時だけ使える */
+	if (g_dwActiveMsgID) {
+		int nID = GetWindowID (g_dwActiveMsgID);
+		if ((nID >= 0) && (nID < g_WndInfo.GetSize ()) && (g_WndInfo[nID]->nType == WNDTYPE_MSG)) {
+			return PADSTATE_SIRABERU;
+		}
+		return 0;
+	}
+
+	pChar = g_aCharInfo[g_nMyCharID];
+	/* 死んでいる間は表示の切り替えだけ */
+	if (pChar->byCharState == CHARSTATE_DEAD) {
+		return PADSTATE_VIEW;
+	}
+
+	nRet = PADSTATE_VIEW;
+	/* 爆弾ゲームでは、試合をしていないゲームマスターの設定にだけ使う */
+	if (pChar->abySubStatus[0] == SUBGAMEID_BOMB) {
+		PSUBSTATUS_BOMB pSubStatus = (PSUBSTATUS_BOMB)pChar->abySubStatus;
+		if (pSubStatus->byFlgGameMaster && !pSubStatus->byFlgEntry) {
+			nRet |= PADSTATE_SIRABERU;
+		}
+	} else {
+		nRet |= PADSTATE_SIRABERU;
+	}
+	/* 戦闘モードは戦闘できるマップでだけ切り替えられる */
+	if (g_pMapInfo->byFlg & MAPFLG_BATTLE) {
+		nRet |= PADSTATE_BATTLE;
+	}
+	return nRet;
+}
+#endif
+
 /* Copyright(C)URARA-works 2003-2005 */
