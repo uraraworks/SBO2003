@@ -1300,43 +1300,77 @@
 	var padKeyDownAt = {};
 	var padKeyUpTimer = {};
 
-	function padKey(vk, down) {
+	/* nHtmlID はキーを渡す入力欄の番号（ゲーム画面に渡す時は 0） */
+	function padKey(vk, down, nHtmlID) {
 		if (!sboReady) {
 			return;
 		}
+		nHtmlID = nHtmlID || 0;
 		if (down) {
 			if (padKeyUpTimer[vk]) {
 				clearTimeout(padKeyUpTimer[vk]);
 				padKeyUpTimer[vk] = 0;
 			}
 			padKeyDownAt[vk] = Date.now();
-			Module['_W32JsOnKey'](vk, 1, 0);
+			Module['_W32JsOnKey'](vk, 1, nHtmlID);
 			return;
 		}
 		var wait = PAD_MIN_HOLD_MS - (Date.now() - (padKeyDownAt[vk] || 0));
 		if (wait > 0) {
 			padKeyUpTimer[vk] = setTimeout(function () {
 				padKeyUpTimer[vk] = 0;
-				Module['_W32JsOnKey'](vk, 0, 0);
+				Module['_W32JsOnKey'](vk, 0, nHtmlID);
 			}, wait);
 		} else {
-			Module['_W32JsOnKey'](vk, 0, 0);
+			Module['_W32JsOnKey'](vk, 0, nHtmlID);
 		}
+	}
+
+	/* ゲーム画面に出ている入力欄（パスワードの変更・自己紹介メッセージ設定・発言など）。
+	   小窓（ログイン画面など）の中の入力欄は含めない */
+	function gameInputShown() {
+		var overlay = Module['w32Overlay'];
+		if (!overlay) {
+			return null;
+		}
+		var inputs = overlay.querySelectorAll(':scope > input[data-w32-id]');
+		for (var i = 0; i < inputs.length; i ++) {
+			if (inputs[i].style.display !== 'none' && !inputs[i].disabled) {
+				return inputs[i];
+			}
+		}
+		return null;
+	}
+
+	/* 入力欄が出ている間は、キャンセル(Z)を ESC、決定(X)を Enter としてその入力欄に渡す。
+	   元の Windows 版は入力欄を ESC でしか閉じられず、スマホにはそのキーが無いため */
+	var PAD_INPUT_KEY = {90: 27, 88: 13};
+	function padTarget(vk) {
+		var input = PAD_INPUT_KEY[vk] ? gameInputShown() : null;
+		if (input) {
+			return {vk: PAD_INPUT_KEY[vk], id: parseInt(input.dataset.w32Id, 10) || 0};
+		}
+		return {vk: vk, id: 0};
 	}
 
 	/* 指を離さずにボタンの外へずらした時も離したことにする */
 	function bindPadButton(el, vk) {
 		var touchId = null;
+		var target = null;	/* 押した時に決めた送り先（離す時も同じ所へ送る） */
 		function press() {
 			el.classList.add('sbo-pressed');
-			padKey(vk, true);
+			target = padTarget(vk);
+			padKey(target.vk, true, target.id);
 		}
 		function release() {
 			if (!el.classList.contains('sbo-pressed')) {
 				return;
 			}
 			el.classList.remove('sbo-pressed');
-			padKey(vk, false);
+			if (target) {
+				padKey(target.vk, false, target.id);
+				target = null;
+			}
 		}
 		el.addEventListener('touchstart', function (ev) {
 			ev.preventDefault();
