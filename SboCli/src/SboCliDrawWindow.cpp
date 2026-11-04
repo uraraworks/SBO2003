@@ -797,91 +797,100 @@ void DrawWindowMSG(PWNDINFO pWnd)
 	}
 
 	DrawWindowFrame (pWnd);
-	LPSTR pszTmp = (LPSTR)new char [strlen (pWnd->pszMsg) + 1];
-	ZeroMemory (pszTmp, strlen (pWnd->pszMsg) + 1);
 	char szTmp[3] = {0, 0, 0};
 	HDC hDC = pWnd->pDib->Lock ();
 	HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFontBasic);
 	SetBkMode (hDC, TRANSPARENT);
 
-	int i, x = 16, y = 16, nCount = 0;
-	for (i = 0; i < pWnd->nData1; i ++) {
-		if (pWnd->pszMsg[i] == '@') {
-			switch (pWnd->pszMsg[i + 1]) {
-			case '0':		/* 入力待ち */
-				i ++;
-				x = 16;
-				y += 16;
-				nCount ++;
-				continue;
+	/* 以前は行があふれるたびに描いた画像を16ドット上へずらしていたが、
+	 * 黒縁取りやフォントのはみ出し（Web版のフォントは下に2ドットほどはみ出す）が
+	 * マスの外に残り、ウィンドウの上下にゴミが出ていた。
+	 * そこで1回目は描かずに何行ずれるかだけ数え、2回目にずれた後の位置へ直接描く */
+	int i, x, y, nCount, nPass;
+	int nScrollTotal = 0;		/* 全部描き終わった時点でずれた行数 */
+	for (nPass = 0; nPass < 2; nPass ++) {
+		BOOL bDraw = (nPass == 1);
+		int nScroll = 0;		/* その文字を描く時点でずれた行数 */
+		x = 16;
+		y = 16;
+		nCount = 0;
+		for (i = 0; i < pWnd->nData1; i ++) {
+			if (pWnd->pszMsg[i] == '@') {
+				switch (pWnd->pszMsg[i + 1]) {
+				case '0':		/* 入力待ち */
+					i ++;
+					x = 16;
+					y += 16;
+					nCount ++;
+					continue;
 
-			case '1':		/* 改行 */
-				i ++;
-				x = 16;
-				y += 16;
-				nCount ++;
-				if (y > pWnd->nCy - 32) {
-					pWnd->pDib->Blt (16, 16, pWnd->nCx - 32, pWnd->nCy - 48, pWnd->pDib, 16, 32, FALSE);
-					pWnd->pDib->FillRect (15, 15, pWnd->nCx - 30, 1, RGB (40, 40, 40));
-					pWnd->pDib->FillRect (15, 16, 1, pWnd->nCy - 48, RGB (40, 40, 40));
-					pWnd->pDib->FillRect (15, pWnd->nCy - 32, pWnd->nCx - 31, 16, RGB (40, 40, 40));
-					y = pWnd->nCy - 32;
-					nCount = pWnd->nCy / 16 - 3;
+				case '1':		/* 改行 */
+					i ++;
+					x = 16;
+					y += 16;
+					nCount ++;
+					if (y > pWnd->nCy - 32) {
+						nScroll ++;
+						y = pWnd->nCy - 32;
+						nCount = pWnd->nCy / 16 - 3;
+					}
+					continue;
+
+				case '2':		/* 点滅無しで入力待ち */
+					i ++;
+					continue;
+
+				case '3':		/* 効果音 */
+					i += 3;
+					continue;
+
+				case '4':		/* アイテム取得 */
+					i += 6;
+					continue;
+
+				case '8':		/* 復活座標指定 */
+					i += 10;
+					continue;
+
+				case '9':		/* キャラ画像記録 */
+					i += 6;
+					continue;
 				}
-				continue;
-
-			case '2':		/* 点滅無しで入力待ち */
+			}
+			szTmp[0] = pWnd->pszMsg[i];
+			szTmp[1] = 0;
+			if (IsDBCSLeadByte (szTmp[0])) {
+				szTmp[1] = pWnd->pszMsg[i + 1];
 				i ++;
-				continue;
-
-			case '3':		/* 効果音 */
-				i += 3;
-				continue;
-
-			case '4':		/* アイテム取得 */
-				i += 6;
-				continue;
-
-			case '8':		/* 復活座標指定 */
-				i += 10;
-				continue;
-
-			case '9':		/* キャラ画像記録 */
-				i += 6;
-				continue;
+			}
+			if (x > pWnd->nCx - 32) {
+				x = 16;
+				y += 16;
+				nCount ++;
+			}
+			if (y > pWnd->nCy - 32) {
+				nScroll ++;
+				y = pWnd->nCy - 32;
+				nCount = pWnd->nCy / 16 - 3;
+			}
+			if (bDraw) {
+				/* この後にずれる行数だけ上に描く。上へはみ出す行は描かない */
+				int yDraw = y - (nScrollTotal - nScroll) * 16;
+				if (yDraw >= 16) {
+					TextOut2 (hDC, x, yDraw, szTmp, RGB (255, 255, 255));
+				}
+			}
+			x += 8;
+			if (IsDBCSLeadByte (szTmp[0])) {
+				x += 8;
 			}
 		}
-		szTmp[0] = pWnd->pszMsg[i];
-		szTmp[1] = 0;
-		if (IsDBCSLeadByte (szTmp[0])) {
-			szTmp[1] = pWnd->pszMsg[i + 1];
-			i ++;
-		}
-		if (x > pWnd->nCx - 32) {
-			x = 16;
-			y += 16;
-			nCount ++;
-		}
-		if (y > pWnd->nCy - 32) {
-			pWnd->pDib->Blt (16, 16, pWnd->nCx - 32, pWnd->nCy - 48, pWnd->pDib, 16, 32, FALSE);
-			pWnd->pDib->FillRect (15, 15, pWnd->nCx - 30, 1, RGB (40, 40, 40));
-			pWnd->pDib->FillRect (15, 16, 1, pWnd->nCy - 48, RGB (40, 40, 40));
-			pWnd->pDib->FillRect (15, pWnd->nCy - 32, pWnd->nCx - 31, 16, RGB (40, 40, 40));
-			y = pWnd->nCy - 32;
-			nCount = pWnd->nCy / 16 - 3;
-		}
-		TextOut2 (hDC, x, y, szTmp, RGB (255, 255, 255));
-		x += 8;
-		if (IsDBCSLeadByte (szTmp[0])) {
-			x += 8;
-		}
+		nScrollTotal = nScroll;
 	}
 
 	SelectObject (hDC, hFontOld);
 	pWnd->pDib->Unlock ();
 	pWnd->dwTimeDrawStart = timeGetTime ();
-
-	SAFE_DELETE_ARRAY (pszTmp);
 
 	/* 入力待ち？ */
 	if (pWnd->nData2 == 1) {
