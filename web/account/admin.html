@@ -630,7 +630,9 @@
 			item('アカウント', r.account);
 			item('レベル', 'Lv ' + r.level + ' ／ 作成 ' + r.made);
 			item('プレイ', playTimeText(r.playMinutes) + ' ／ ログイン ' + r.loginCount + ' 回');
-			item('合っていた', r.byAccount ? 'アカウント名' : 'パスワードの一部');
+			item('合っていた', (r.byAccount && r.byPassword) ? 'アカウント名とパスワードの一部' :
+				r.byAccount ? 'アカウント名' : r.byPassword ? 'パスワードの一部' :
+				'キャラ名だけ（アカウント名・パスワードは分からない）');
 			item('IP', r.ip);
 			card.appendChild(dl);
 			if (r.message) {

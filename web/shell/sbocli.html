@@ -1136,14 +1136,15 @@
 	<div class="sbo-card">
 		<div class="sbo-step" data-step="form">
 			<h2>アカウントの復旧</h2>
-			<p>当時のキャラ名と、アカウント名かパスワードの一部を入れてください。両方覚えていればすぐに、片方だけなら管理者が確認してから復旧します。</p>
+			<p>当時のキャラ名と、アカウント名かパスワードの一部を入れてください。両方覚えていればすぐに、片方だけなら管理者が確認してから復旧します。<br>
+				<span class="sbo-note">どちらも分からない時は空のままで大丈夫です。「ひとこと」に当時のことを書いてもらえれば、管理者が確認します。</span></p>
 			<label for="sbo-rc-name">キャラ名（必須）</label>
 			<input id="sbo-rc-name" type="text" maxlength="20" autocomplete="off" spellcheck="false">
 			<label for="sbo-rc-account">アカウント名</label>
 			<input id="sbo-rc-account" type="text" maxlength="13" autocomplete="off" autocapitalize="off" spellcheck="false">
 			<label for="sbo-rc-part">パスワードの一部 <span class="sbo-note">（続いている 3 文字以上・半分以上）</span></label>
 			<input id="sbo-rc-part" type="text" maxlength="13" autocomplete="off" autocapitalize="off" spellcheck="false">
-			<label for="sbo-rc-message">管理者へのひとこと <span class="sbo-note">（任意。当時の思い出など、本人だと分かること）</span></label>
+			<label for="sbo-rc-message">管理者へのひとこと <span class="sbo-note">（当時の思い出など、本人だと分かること。アカウント名もパスワードも分からない時は必須）</span></label>
 			<textarea id="sbo-rc-message" rows="2" maxlength="200"></textarea>
 			<div class="sbo-msg" id="sbo-rc-msg"></div>
 			<button type="button" class="sbo-btn" id="sbo-rc-submit">復旧する</button>
@@ -2955,9 +2956,10 @@
 	});
 
 	var NG_TEXT = {
-		input: 'キャラ名と、アカウント名かパスワードの一部を入れてください。',
-		not_found: '一致するキャラが見つかりませんでした。入力を確かめてください。',
-		ambiguous: '同じ名前のキャラがいて決められませんでした。アカウント名も入れてみてください。',
+		input: 'キャラ名を入れてください。',
+		need_message: 'アカウント名もパスワードも分からない時は、「管理者へのひとこと」に当時のことを書いてください。',
+		not_found: '一致するキャラが見つかりませんでした。入力を確かめてください（アカウント名・パスワードが分からなければ空のままで申請できます）。',
+		ambiguous: '同じ名前のキャラがいて決められませんでした。アカウント名かパスワードの一部も入れてみてください。',
 		online: 'そのキャラは今ログイン中のようです。',
 		too_many: '何度も間違えたので、しばらく時間をおいてから試してください。',
 		too_many_requests: '今日はこれ以上申請できません。また明日試してください。'
@@ -2987,8 +2989,12 @@
 			passwordPart: $('sbo-rc-part').value.trim(),
 			message: $('sbo-rc-message').value.trim()
 		};
-		if (!body.name || (!body.account && !body.passwordPart)) {
+		if (!body.name) {
 			setMsg($('sbo-rc-msg'), NG_TEXT.input);
+			return;
+		}
+		if (!body.account && !body.passwordPart && !body.message) {
+			setMsg($('sbo-rc-msg'), NG_TEXT.need_message);
 			return;
 		}
 		btn.disabled = true;
