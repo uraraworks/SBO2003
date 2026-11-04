@@ -386,6 +386,7 @@ BOOL CCharProcBOMB::Proc(DWORD dwTime)
 						PSUBGAME_BOMBINFO pBomb = (PSUBGAME_BOMBINFO)pInfo->pInfo;
 						/* やられた。 */
 						CharTargetCancelPC (m_pChar);
+						SendCmdSYSMSG (pCharTmp->pID, "爆風に当たってアウト！", SPEECHCMD_BATTLE1);
 						if (pSubStatus->byFlgGameMaster) {
 							pSubStatus->byFlgEntry = 0;
 							pSubStatus->byFlgBlockThrough = 0;

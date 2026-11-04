@@ -728,7 +728,7 @@ void OnDecPlayer(int nNo)
 		pBomb		= (PSUBGAME_BOMBINFO)pInfo->pInfo;
 		/* ゲームマスター？ */
 		if (pSubStatus->byFlgGameMaster) {
-			SubGameProcBombQuit (pSubStatus->byID);
+			SubGameProcBombQuitMsg (pSubStatus->byID, "マスターが抜けたので爆弾ゲーム終了");
 		}
 		pChar->dwX = pBomb->dwX;
 		pChar->dwY = pBomb->dwY;
