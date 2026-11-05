@@ -91,6 +91,7 @@ LRESULT CALLBACK SpeechEditWndProc			(HWND, UINT, WPARAM, LPARAM);	/* 自己紹�
 LRESULT CALLBACK ChgPasswordWndProc			(HWND, UINT, WPARAM, LPARAM);	/* パスワード変更用メッセージ処理 */
 
 void CmdProcHanasu		(PWNDINFO);											/* コマンド処理(話す) */
+LPSTR MakeNpcSpeechNextExp	(LPCSTR);											/* 神父さんのセリフに次のレベルまでのお告げを足す */
 BOOL CmdProcSiraberu	(PWNDINFO);											/* コマンド処理(調べる) */
 int GetFrontTalkChar		(void);												/* 話しかけられる目の前のキャラを探す */
 BOOL CmdProcSKey		(void);												/* Sキー(調べる・話す・扉) */
@@ -6883,6 +6884,78 @@ LRESULT CALLBACK ChgPasswordWndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp)
 }
 
 /* ========================================================================= */
+/* 関数名：MakeNpcSpeechNextExp												 */
+/* 内容：復活地点を記録する神父さん（セリフに「@8」がある人）のセリフの		 */
+/*		 「@8」の直前に、次のレベルまでに必要な経験値のお告げを足す			 */
+/*		 「はい・いいえ」で記録を選ぶ場合も、聞く前に言うのでどちらでも聞ける */
+/*		 戻り値：新しいセリフ（呼んだ側で delete[]）。足さない時は NULL		 */
+/* ========================================================================= */
+LPSTR MakeNpcSpeechNextExp(LPCSTR pszSpeech)
+{
+	char szMsg[256];
+	int i, nPos, nLen;
+	PCHARINFO pChar;
+	PJOBINFO pJobInfo;
+
+	if ((pszSpeech == NULL) || (g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ())) {
+		return NULL;
+	}
+
+	/* 「@8」＋数字 9 桁（マップ・X・Y）を探す */
+	nLen = (int)strlen (pszSpeech);
+	nPos = -1;
+	for (i = 0; i + 11 <= nLen; i ++) {
+		if ((pszSpeech[i] == '@') && (pszSpeech[i + 1] == '8')) {
+			int j;
+			for (j = 0; j < 9; j ++) {
+				if ((pszSpeech[i + 2 + j] < '0') || (pszSpeech[i + 2 + j] > '9')) {
+					break;
+				}
+			}
+			if (j == 9) {
+				nPos = i;
+				break;
+			}
+		}
+	}
+	if (nPos < 0) {
+		return NULL;
+	}
+
+	pChar = g_aCharInfo[g_nMyCharID];
+	if (pChar->byJOB >= g_JobInfo.GetCount ()) {
+		return NULL;
+	}
+	pJobInfo = g_JobInfo.GetPtr (pChar->byJOB);
+	if (pJobInfo == NULL) {
+		return NULL;
+	}
+
+	if (pChar->byLevel >= pJobInfo->aLevelUpInfo.GetSize ()) {
+		/* 最高レベル（これ以上は経験値も増えない） */
+		_snprintf (szMsg, sizeof (szMsg), "@0%sさんは、もうこれ以上ないほど@1修行を積まれましたね。", pChar->szName);
+	} else {
+		/* aLevelUpInfo[今のレベル] が次のレベルに必要な累計経験値（サーバーの AddExp と同じ） */
+		PLVUPINFO pLvUpInfo = pJobInfo->aLevelUpInfo[pChar->byLevel];
+		DWORD dwRest = 0;
+		if (pLvUpInfo && (pLvUpInfo->dwExp > pChar->dwExp)) {
+			dwRest = pLvUpInfo->dwExp - pChar->dwExp;
+		}
+		_snprintf (szMsg, sizeof (szMsg), "@0%sさんが次のレベルになるには、@1あと %u の経験値が必要です。", pChar->szName, (unsigned)dwRest);
+	}
+	szMsg[sizeof (szMsg) - 1] = 0;
+
+	/* 「(ここまでのセリフ)(お告げ)@8...(続き)」に組み替える */
+	int nLenMsg = (int)strlen (szMsg);
+	LPSTR pszNew = new char[nLen + nLenMsg + 1];
+	CopyMemory (pszNew, pszSpeech, nPos);
+	CopyMemory (&pszNew[nPos], szMsg, nLenMsg);
+	CopyMemory (&pszNew[nPos + nLenMsg], &pszSpeech[nPos], nLen - nPos);
+	pszNew[nLen + nLenMsg] = 0;
+	return pszNew;
+}
+
+/* ========================================================================= */
 /* 関数名：CmdProcHanasu													 */
 /* 内容：コマンド処理(話す)													 */
 /* 日付：2003/07/12															 */
@@ -7080,7 +7153,14 @@ void CmdProcHanasu(PWNDINFO pWnd)
 		pChar2->byDirection = abyDirectionTbl[pChar->byDirection];
 
 	} else {
-		pWndTmp = MakeWindowMSG (pChar2->pszNpcSpeech, TRUE);
+		/* 復活地点を記録する神父さんなら、次のレベルまでのお告げを足す */
+		LPSTR pszNextExp = MakeNpcSpeechNextExp (pChar2->pszNpcSpeech);
+		if (pszNextExp) {
+			pWndTmp = MakeWindowMSG (pszNextExp, TRUE);
+			SAFE_DELETE_ARRAY (pszNextExp);
+		} else {
+			pWndTmp = MakeWindowMSG (pChar2->pszNpcSpeech, TRUE);
+		}
 		pChar2->byDirection = abyDirectionTbl[pChar->byDirection];
 
 		if ((pChar2->byNpcType == NPCTYPE_SEARCH) ||
