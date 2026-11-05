@@ -1071,8 +1071,6 @@ void KeyProcCOMMAND(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		/* 道具 */
 		case 3:
 			{
-				PJOBINFO pJobInfo;
-
 				if (GetItemCount (g_nMyCharID) == 0) {
 					PWNDINFO pWndTmp;
 					pWndTmp = MakeWindowMSG ("何も持っていません。@2", FALSE);
@@ -1089,15 +1087,9 @@ void KeyProcCOMMAND(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				g_dwActiveMsgID = pWndNew->dwID;
 				g_bDraw = TRUE;
 
-				pJobInfo = g_JobInfo.GetPtr (pChar->byJOB);
-				if (pJobInfo) {
-					if (pJobInfo->dwFlg & JOBINFOFLG_VIEWITEMINFO) {
-						PWNDINFO pWndItemInfo = MakeWindowITEMINFO (16 * 19, 16 * 4);
-						pWndNew->pWndTmp = pWndItemInfo;
-						pWndItemInfo->nData1 = pChar->waItem[0];
-						g_WndInfo.Add (pWndItemInfo);
-					}
-				}
+				/* 一覧の横にカーソルのアイテムの詳細を出す */
+				/* （以前は職業の「アイテム情報を見られる」フラグがある時だけだった） */
+				MakeWindowITEMINFOList (pWndNew);
 			}
 			break;
 
@@ -1528,15 +1520,8 @@ void KeyProcCOMMANDITEM(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			pWnd->dwTimeDrawStart = 0;
 			g_bDraw = TRUE;
 
-			if (pWnd->pWndTmp) {
-				PWNDINFO pWndTmp;
-				PCHARINFO pChar;
-
-				pChar = g_aCharInfo[g_nMyCharID];
-				pWndTmp = (PWNDINFO)pWnd->pWndTmp;
-				pWndTmp->nData1 = pChar->waItem[pWnd->nData1];
-				pWndTmp->dwTimeDrawStart = 0;
-			}
+			/* アイテムの詳細を出し直す */
+			UpdateWindowITEMINFOList (pWnd);
 		}
 
 	} else if (byEvent == KEY_UP) {
@@ -2571,8 +2556,13 @@ void KeyProcSHOP(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 
 				} else {
 					pWndTmp = MakeWindowSHOP_SELL ();
+					pWndNew = pWndTmp;
 				}
 				g_WndInfo.Add (pWndTmp);
+				if (pWndNew) {
+					/* 売る物の一覧の横にカーソルのアイテムの詳細を出す */
+					MakeWindowITEMINFOList (pWndNew);
+				}
 				g_dwActiveMsgID = pWndTmp->dwID;
 				g_bDraw = TRUE;
 				break;
@@ -2744,7 +2734,11 @@ void KeyProcSHOP(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			pWnd->dwTimeDrawStart = 0;
 			g_bDraw = TRUE;
 
-			if (pWnd->pWndTmp) {
+			if (g_nProcShopState == SHOPMSG_SELL) {
+				/* 売る物の一覧：自分の持ち物の詳細 */
+				UpdateWindowITEMINFOList (pWnd);
+
+			} else if (pWnd->pWndTmp) {
 				PWNDINFO pWndTmp;
 
 				pWndTmp = (PWNDINFO)pWnd->pWndTmp;
@@ -3207,6 +3201,7 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		pWnd->byAnime = 1;
 		g_bDraw = TRUE;
 		int i;
+		BOOL bItemInfo = FALSE;
 
 		switch (g_nProcShopState) {
 		/* 最初 */
@@ -3239,6 +3234,8 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 					break;
 				}
 				pWndTmp = MakeWindowLEAVE_ITEM ();
+				/* 一覧の横にカーソルのアイテムの詳細を出す（一覧を登録した後で付ける） */
+				bItemInfo = TRUE;
 				break;
 
 			case 1:		/* お金 */
@@ -3348,6 +3345,9 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		if (pWndTmp) {
 			g_WndInfo.Add (pWndTmp);
 			g_dwActiveMsgID = pWndTmp->dwID;
+			if (bItemInfo) {
+				MakeWindowITEMINFOList (pWndTmp);
+			}
 		}
 
 	} else if ((byEvent == KEY_DOWN) && (g_bEnableMove) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
@@ -3476,6 +3476,9 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			pWnd->dwTimeKey = timeGetTime ();
 			pWnd->dwTimeDrawStart = 0;
 			g_bDraw = TRUE;
+
+			/* アイテムの詳細を出し直す（アイテム一覧の時だけ付いている） */
+			UpdateWindowITEMINFOList (pWnd);
 		}
 
 	} else if ((byEvent == KEY_UP) && (g_bEnableMove)) {

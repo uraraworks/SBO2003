@@ -108,6 +108,8 @@ PWNDINFO MakeWindowSUBSUGOROKU_COMMAND			(void);				/* すごろく：行動状�
 PWNDINFO MakeWindowSUBSUGOROKU_IDLE				(void);				/* すごろく：平常状態 */
 
 PWNDINFO MakeWindowITEMINFO						(int x, int y);		/* アイテム情報 */
+PWNDINFO MakeWindowITEMINFOList					(PWNDINFO pWndList);	/* アイテム情報(一覧の横) */
+void UpdateWindowITEMINFOList					(PWNDINFO pWndList);	/* アイテム情報(一覧の横)の更新 */
 PWNDINFO MakeWindowDEAD_COMAND					(void);				/* 死亡中：コマンド */
 
 extern int GetWindowID(DWORD);										/* ウィンドウ番号を取得 */
@@ -2761,6 +2763,68 @@ PWNDINFO MakeWindowITEMINFO(int x, int y)
 	pWnd->pDib->SetColorKey (RGB (40, 40, 40));
 
 	return pWnd;
+}
+
+/* ========================================================================= */
+/* 関数名：MakeWindowITEMINFOList											 */
+/* 内容：アイテム一覧ウィンドウの横にアイテム情報ウィンドウを付ける		 */
+/* 備考：道具欄・預かり所・店で売る時に、カーソルのアイテムの詳細を出す	 */
+/*		 置き場所は描画の時に一覧ウィンドウを見て決める					 */
+/* ========================================================================= */
+PWNDINFO MakeWindowITEMINFOList(PWNDINFO pWndList)
+{
+	PWNDINFO pWnd;
+
+	pWnd = MakeWindowITEMINFO (pWndList->nX + pWndList->nCx, pWndList->nY);
+	pWnd->nType2 = ITEMINFOPOS_LIST;
+	pWnd->nData2 = (int)pWndList->dwID;
+	pWndList->pWndTmp = pWnd;
+	g_WndInfo.Add (pWnd);
+
+	UpdateWindowITEMINFOList (pWndList);
+	return pWnd;
+}
+
+/* ========================================================================= */
+/* 関数名：UpdateWindowITEMINFOList											 */
+/* 内容：一覧のカーソル位置のアイテムをアイテム情報ウィンドウに出す		 */
+/* ========================================================================= */
+void UpdateWindowITEMINFOList(PWNDINFO pWndList)
+{
+	PWNDINFO pWnd;
+	PCHARINFO pChar;
+	int nNo, nItemID;
+
+	if ((pWndList == NULL) || (pWndList->pWndTmp == NULL)) {
+		return;
+	}
+	pWnd = (PWNDINFO)pWndList->pWndTmp;
+	if (pWnd->nType != WNDTYPE_ITEMINFO) {
+		return;
+	}
+
+	nItemID = 0;
+	nNo = pWndList->nData1;
+	if ((pWndList->nType == WNDTYPE_LEAVE) && (g_nProcShopState == LEAVESTATE_ITEMSELECTGET)) {
+		/* 預かり所の引き取る一覧は byData1 だけスクロールしている */
+		nNo += pWndList->byData1;
+		if (g_pLeaveInfo && (nNo >= 0) && (nNo < g_pLeaveInfo->byCount) && (nNo < MAX_LEAVEITEM)) {
+			nItemID = g_pLeaveInfo->waItem[nNo];
+		}
+	} else {
+		/* 自分の持ち物の一覧 */
+		if ((g_nMyCharID >= 0) && (g_nMyCharID < g_aCharInfo.GetSize ()) && (nNo >= 0) && (nNo < MAX_MYITEM)) {
+			pChar = g_aCharInfo[g_nMyCharID];
+			nItemID = pChar->waItem[nNo];
+		}
+	}
+	if ((nItemID < 0) || (nItemID >= g_aItemInfo.GetSize ())) {
+		nItemID = 0;
+	}
+
+	pWnd->nData1 = nItemID;
+	pWnd->dwTimeDrawStart = 0;
+	g_bDraw = TRUE;
 }
 
 
