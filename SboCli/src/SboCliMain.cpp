@@ -1038,10 +1038,10 @@ void OnCommand(HWND hWnd, int nID)
 
 	case IDC_MAKE:		/* 作成ボタン */
 		pChar = g_aCharInfo[g_nMyCharID];
-		pszTmp = new char [MAX_CHARNAME * 2];
-		ZeroMemory (pszTmp, MAX_CHARNAME * 2);
+		pszTmp = new char [MAX_CHARNAMEBUF];
+		ZeroMemory (pszTmp, MAX_CHARNAMEBUF);
 		ZeroMemory (pChar->szName, sizeof (pChar->szName));
-		GetWindowText (g_hWndName, pszTmp, MAX_CHARNAME * 2);
+		GetWindowText (g_hWndName, pszTmp, MAX_CHARNAMEBUF);
 		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
 
 		/* 表示幅 14（全角 7 文字）まで、文字の途中で切らずに写す。空白・制御文字・全角空白が入っていたら名前なし */

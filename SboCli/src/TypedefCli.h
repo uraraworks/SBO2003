@@ -214,7 +214,7 @@ typedef struct _FADEINOUTINFO {
 
 /* 誰に使うか一覧情報 */
 typedef struct _USECHARINFO {
-	char		szName[MAX_CHARNAME * 2];						/* キャラ名 */
+	char		szName[MAX_CHARNAMEBUF];						/* キャラ名 */
 	DWORD		dwTblID;										/* テーブルID */
 } USECHARINFO, *PUSECHARINFO;
 typedef CmyArray<PUSECHARINFO, PUSECHARINFO>	  ARRAYUSECHARINFO;
