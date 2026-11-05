@@ -63,8 +63,8 @@
  * 5. 管理ページのログイン
  *    ログインすると、ランダムな値を HttpOnly・SameSite=Strict の Cookie（sbo_admin、https なら Secure）
  *    で渡す。サーバーはその SHA-256 だけを SboWebAccount.json の adminSessions に残す（再起動しても続く）。
- *      ・「このブラウザで覚えておく」あり … 最後に使ってから ADMIN_REMEMBER_DAYS 日（SBO_ADMIN_REMEMBER_DAYS、既定 30）
- *        使わないと切れる。使っていても ADMIN_MAX_DAYS 日（SBO_ADMIN_MAX_DAYS、既定 90）でパスワードを聞き直す
+ *      ・「このブラウザで覚えておく」あり … 最後に使ってから ADMIN_REMEMBER_DAYS 日（SBO_ADMIN_REMEMBER_DAYS、既定 365）
+ *        使わないと切れる。使っていても ADMIN_MAX_DAYS 日（SBO_ADMIN_MAX_DAYS、既定 365）でパスワードを聞き直す
  *      ・なし … 今までどおり、最後に使ってから 2 時間・ブラウザを閉じたら終わり
  *      ・INI の管理者パスワードを変えて再起動すると、覚えていたログインは全部使えなくなる（SboWebAccAdminStamp）
  *      ・管理ページの「ログイン中の端末」から、ほかの端末のログインを消せる
@@ -90,8 +90,8 @@ Module['sboAccount'] = (function () {
 
 	var store = null;			/* SboWebAccount.json の中身 */
 	var strStorePath = '';
-	var ADMIN_REMEMBER_DAYS = envNum('SBO_ADMIN_REMEMBER_DAYS', 30);
-	var ADMIN_MAX_DAYS = envNum('SBO_ADMIN_MAX_DAYS', 90);
+	var ADMIN_REMEMBER_DAYS = envNum('SBO_ADMIN_REMEMBER_DAYS', 365);
+	var ADMIN_MAX_DAYS = envNum('SBO_ADMIN_MAX_DAYS', 365);
 	var ADMIN_SHORT = 2 * HOUR;		/* 覚えない時は最後に使ってから 2 時間 */
 	var ADMIN_COOKIE = 'sbo_admin';
 	var MAX_ADMIN_SESSIONS = 50;
