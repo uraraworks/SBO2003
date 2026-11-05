@@ -22,6 +22,7 @@
 #include "Info/InfoJob.h"
 #include "SboSvrRecvCmd.h"
 #include "SboSvrSendCmd.h"
+#include "SboSvrAdminUndo.h"
 
 #include <emscripten.h>
 #include <string>
@@ -801,12 +802,22 @@ enum {
 	KIND_JOB,
 	KIND_STTMP,
 	KIND_ITEM,
+	/* ここから下は読むだけ */
+	KIND_CHAR,
+	KIND_MAP,
+	KIND_MAPPARTS,
+	KIND_EFC,
+	KIND_COMEFC,
+	KIND_LEAVE,
+	KIND_SUBGAME,
 	KIND_MAX
 };
+#define KIND_FIRST_READONLY	KIND_CHAR
 
-static const char *s_apszKindName[] = { "magic", "magicUser", "equUser", "job", "stTmp", "item" };
+static const char *s_apszKindName[] = { "magic", "magicUser", "equUser", "job", "stTmp", "item", "char", "map", "mapParts", "efc", "comEfc", "leave", "subGame" };
 static const char *s_apszKindLabel[] = {
-	"特技（魔法）情報", "特技を使える職業", "装備できる職業", "職業情報とレベルアップ情報", "ステータステンプレート（NPC・敵のひな形）", "アイテム情報"
+	"特技（魔法）情報", "特技を使える職業", "装備できる職業", "職業情報とレベルアップ情報", "ステータステンプレート（NPC・敵のひな形）", "アイテム情報",
+	"キャラ情報（プレイヤー・NPC）", "マップ情報", "マップパーツ", "エフェクト情報", "吹き出し情報", "預かり所", "サブゲーム情報"
 };
 static const char *s_apszKindNote[] = {
 	"番号は 0 から。item の detail.byID（特技の書）や stTmp の abyMagic から参照される",
@@ -814,9 +825,16 @@ static const char *s_apszKindNote[] = {
 	"jobIds に職業の番号（job の id、0 から）を並べる。装備アイテムの detail.wEqu から参照される",
 	"szName は職業名。levelUp の 1 件目が Lv1 の初期値、n 件目はレベル n になるのに必要な経験値（dwExp）と各能力の上限",
 	"変えると、このテンプレートを使っている NPC（発生元を除く）の能力もすぐ置き換わる",
-	"番号 0 は「なし」として使われる。detail は byType ごとに項目が違う（スキーマの detailByType を参照）。szMsg は使った時のメッセージ"
+	"番号 0 は「なし」として使われる。detail は byType ごとに項目が違う（スキーマの detailByType を参照）。szMsg は使った時のメッセージ",
+	"読むだけ。プレイヤーと NPC（敵・町の人・発生元など）の全キャラ。番号はキャラのテーブル番号。isPlayer でプレイヤーか分かる。アカウント名・パスワード・IP は出さない",
+	"読むだけ。マップの情報・イベント・店・メッセージ・アイテム配置。番号は配列の番号（dwID はマップID で、キャラの dwMapID はこちら）。マス目のパーツは sbo_map_tiles で読む",
+	"読むだけ。マップパーツ（マス目の pwMap に入る番号）の表示・当たり判定",
+	"読むだけ。エフェクト情報（特技の byTargetEfectID などから参照される）",
+	"読むだけ。吹き出しの種類（番号 0 から、ゲーム内の吹き出し番号は 1 から）。anime はコマごとの待ち時間（×10ミリ秒）と画像ID",
+	"読むだけ。プレイヤーごとの預かり所（キャラの dwLeaveID がこの番号）。items は item の番号と個数",
+	"読むだけ。爆弾ゲーム・迷路・ダンジョン・戦場ゲーム・すごろくの設定。detail は byType ごとに項目が違う"
 };
-static const int s_anKindMax[] = { 256, 256, 256, 256, 65535, 65535 };
+static const int s_anKindMax[] = { 256, 256, 256, 256, 65535, 65535, 0, 0, 0, 0, 0, 0, 0 };
 
 static int KindFromName(const char *pszKind)
 {
@@ -837,6 +855,13 @@ static int KindCount(int nKind)
 	case KIND_JOB:			return g_JobInfo.GetCount();
 	case KIND_STTMP:		return g_aStTmpInfo.GetSize();
 	case KIND_ITEM:			return g_aItemInfo.GetSize();
+	case KIND_CHAR:			return g_aCharInfo.GetSize();
+	case KIND_MAP:			return g_aMapInfo.GetSize();
+	case KIND_MAPPARTS:		return g_wCountMapParts;
+	case KIND_EFC:			return g_EfcInfo.GetCount();
+	case KIND_COMEFC:		return MAX_COMEFC;
+	case KIND_LEAVE:		return g_aLeaveInfo.GetSize();
+	case KIND_SUBGAME:		return g_aSubaGameInfo.GetSize();
 	}
 	return 0;
 }
@@ -1190,6 +1215,412 @@ static std::string UserWorkJson(const USERWORK &w, const DATAFIELD *paField)
 			JobIdsJson((BYTE)w.aJobIds.size(), w.aJobIds.empty() ? NULL : &w.aJobIds[0]);
 }
 
+
+/* ------------------------------------------------------------------------- */
+/* 読むだけのデータの項目表（シミュレーション・調べもの用）						 */
+/* ------------------------------------------------------------------------- */
+#define RO	FF_READONLY
+
+static const DATAFIELD s_aFieldChar[] = {
+	FLDS(CHARINFO, szName,				"名前",					FT_STR, RO, NULL),
+	FLD (CHARINFO, byNpcType,			"NPC種別",				FT_U8, RO, "0=プレイヤー（未設定） 1=移動しない 2=ランダム移動 5=NPC発生（発生元） 11=戦闘1 12=検索して追尾 13=戦闘2 16=重なったキャラに魔法 17=重なったキャラに攻撃 など"),
+	FLD (CHARINFO, byAdminLV,			"管理権限",				FT_U8, RO, NULL),
+	FLD (CHARINFO, dwMapID,				"マップID",				FT_U32, RO, "map の dwID"),
+	FLD (CHARINFO, dwX,					"X",					FT_U32, RO, NULL),
+	FLD (CHARINFO, dwY,					"Y",					FT_U32, RO, NULL),
+	FLD (CHARINFO, byDirection,			"向き",					FT_U8, RO, NULL),
+	FLD (CHARINFO, dwStTmplateID,		"ステータステンプレート",	FT_U32, RO, "stTmp の番号。4294967295 は無し"),
+	FLD (CHARINFO, dwParentTblID,		"発生元のキャラ",		FT_U32, RO, "NPC発生で出てきたキャラの発生元（char の番号）"),
+	FLD (CHARINFO, byPutCount,			"最大発生数",			FT_U8, RO, "NPC発生（発生元）の時"),
+	FLD (CHARINFO, wTimePutInterval,	"発生周期",				FT_U16, RO, NULL),
+	FLD (CHARINFO, byAreaX,				"移動範囲(横)",			FT_U8, RO, NULL),
+	FLD (CHARINFO, byAreaY,				"移動範囲(縦)",			FT_U8, RO, NULL),
+	FLD (CHARINFO, byMoveProbabilityX,	"移動確率X",			FT_U8, RO, NULL),
+	FLD (CHARINFO, byMoveProbabilityY,	"移動確率Y",			FT_U8, RO, NULL),
+	FLD (CHARINFO, bySearchCx,			"検索範囲X",			FT_U8, RO, NULL),
+	FLD (CHARINFO, bySearchCy,			"検索範囲Y",			FT_U8, RO, NULL),
+	FLD (CHARINFO, byDropProbability,	"ドロップ率",			FT_U8, RO, NULL),
+	FLD (CHARINFO, byAtackRate,			"攻撃力の割合",			FT_U8, RO, NULL),
+	FLD (CHARINFO, byJOB,				"職業",					FT_U8, RO, "job の番号"),
+	FLD (CHARINFO, byLevel,				"レベル",				FT_U8, RO, NULL),
+	FLD (CHARINFO, byPW,				"力",					FT_U8, RO, NULL),
+	FLD (CHARINFO, byDEX,				"素早さ",				FT_U8, RO, NULL),
+	FLD (CHARINFO, byST,				"体力",					FT_U8, RO, NULL),
+	FLD (CHARINFO, byIT,				"賢さ",					FT_U8, RO, NULL),
+	FLD (CHARINFO, byLK,				"運のよさ",				FT_U8, RO, NULL),
+	FLD (CHARINFO, wAT,					"攻撃力",				FT_U16, RO, "装備込みの値"),
+	FLD (CHARINFO, wDF,					"守備力",				FT_U16, RO, "装備込みの値"),
+	FLD (CHARINFO, wDFMagic,			"魔法防御",				FT_U16, RO, NULL),
+	FLD (CHARINFO, wMaxHP,				"最大HP",				FT_U16, RO, NULL),
+	FLD (CHARINFO, wHP,					"HP",					FT_U16, RO, NULL),
+	FLD (CHARINFO, wMaxMana,			"最大Mana",				FT_U16, RO, NULL),
+	FLD (CHARINFO, wMana,				"Mana",					FT_U16, RO, NULL),
+	FLD (CHARINFO, chAttrFire,			"属性(火)",				FT_S8, RO, NULL),
+	FLD (CHARINFO, chAttrWater,			"属性(水)",				FT_S8, RO, NULL),
+	FLD (CHARINFO, chAttrWind,			"属性(風)",				FT_S8, RO, NULL),
+	FLD (CHARINFO, chAttrEarth,			"属性(土)",				FT_S8, RO, NULL),
+	FLD (CHARINFO, chAttrLight,			"属性(光)",				FT_S8, RO, NULL),
+	FLD (CHARINFO, chAttrDark,			"属性(闇)",				FT_S8, RO, NULL),
+	FLDA(CHARINFO, abyMagic,			"覚えている特技",		FT_U8ARR, BYTE, RO, "magic の番号"),
+	FLDA(CHARINFO, waItem,				"持ち物",				FT_U16ARR, WORD, RO, "item の番号"),
+	FLDA(CHARINFO, waEqu,				"装備",					FT_U16ARR, WORD, RO, "持ち物（waItem）の何番目か。65535 は無し。順に 武器・鎧・盾・兜・小手・靴・首飾り・指輪1・指輪2"),
+	FLD (CHARINFO, dwGold,				"所持金",				FT_U32, RO, NULL),
+	FLD (CHARINFO, dwExp,				"経験値",				FT_U32, RO, NULL),
+	FLD (CHARINFO, wGrpID,				"画像ID",				FT_U16, RO, NULL),
+	FLD (CHARINFO, wMakeYear,			"作成年",				FT_U16, RO, NULL),
+	FLD (CHARINFO, wMakeMonth,			"作成月",				FT_U16, RO, NULL),
+	FLD (CHARINFO, wMakeDay,			"作成日",				FT_U16, RO, NULL),
+	FLD (CHARINFO, dwPlayTime,			"総プレイ時間(分)",		FT_U32, RO, NULL),
+	FLD (CHARINFO, dwLoginCount,		"ログイン回数",			FT_U32, RO, NULL),
+	FLD (CHARINFO, byCharState,			"キャラ状態",			FT_U8, RO, NULL),
+	FLD (CHARINFO, byAccState,			"アカウント状態",		FT_U8, RO, NULL),
+	FLD (CHARINFO, byRoofLV,			"屋根レベル",			FT_U8, RO, NULL),
+	FLD (CHARINFO, bySaveFlg,			"保存用フラグ",			FT_U8, RO, NULL),
+	FLD (CHARINFO, wGrpMain,			"画像の種別(メイン)",	FT_U16, RO, NULL),
+	FLD (CHARINFO, wGrpSub,				"画像の種別(サブ)",		FT_U16, RO, NULL),
+	FLD (CHARINFO, wGrpIDBack,			"画像ID(記録用)",		FT_U16, RO, NULL),
+	FLD (CHARINFO, dwStartMapID,		"開始マップID",			FT_U32, RO, "map の dwID"),
+	FLD (CHARINFO, dwStartX,			"開始X",				FT_U32, RO, NULL),
+	FLD (CHARINFO, dwStartY,			"開始Y",				FT_U32, RO, NULL),
+	FLD (CHARINFO, dwLeaveID,			"預かり所の番号",		FT_U32, RO, "leave の番号"),
+	FLD (CHARINFO, clName,				"名前の色",				FT_U32, RO, "COLORREF（0x00BBGGRR）"),
+	FLD (CHARINFO, clSpeech,			"発言の色",				FT_U32, RO, "COLORREF（0x00BBGGRR）"),
+};
+
+static const DATAFIELD s_aFieldMap[] = {
+	FLD (MAPINFO, dwID,					"マップID",				FT_U32, RO, "キャラの dwMapID・イベントの移動先で使う番号"),
+	FLD (MAPINFO, nCX,					"横のマス数",			FT_U32, RO, NULL),
+	FLD (MAPINFO, nCY,					"縦のマス数",			FT_U32, RO, NULL),
+	FLD (MAPINFO, nStartX,				"初期位置X",			FT_U32, RO, NULL),
+	FLD (MAPINFO, nStartY,				"初期位置Y",			FT_U32, RO, NULL),
+	FLD (MAPINFO, nEntranceX,			"入り口X",				FT_U32, RO, NULL),
+	FLD (MAPINFO, nEntranceY,			"入り口Y",				FT_U32, RO, NULL),
+	FLD (MAPINFO, byBGM,				"BGM",					FT_U8, RO, NULL),
+	FLD (MAPINFO, byFlg,				"フラグ",				FT_U8, RO, "ビット: 1=エフェクト可 2=戦闘可 4=サブゲーム 8=暗闇 16=マップ内放送 32=移動系効果禁止 64=魔法禁止"),
+	FLD (MAPINFO, byLightLevel,			"明るさ",				FT_U8, RO, NULL),
+	FLD (MAPINFO, byWeather,			"天候",					FT_U8, RO, NULL),
+};
+
+static const DATAFIELD s_aFieldMapParts[] = {
+	FLD (MAPPARTSINFO, byViewType,		"表示種別",				FT_U8, RO, NULL),
+	FLD (MAPPARTSINFO, byHitType,		"当たり判定種別",		FT_U8, RO, "0 なら通れる"),
+	FLD (MAPPARTSINFO, byAnimeType,		"アニメ種別",			FT_U8, RO, NULL),
+	FLD (MAPPARTSINFO, byAnimeCount,	"アニメのコマ数",		FT_U8, RO, NULL),
+	FLD (MAPPARTSINFO, byLevel,			"透明度",				FT_U8, RO, NULL),
+	FLD (MAPPARTSINFO, wGrpID,			"画像ID",				FT_U16, RO, NULL),
+	FLD (MAPPARTSINFO, wBackID,			"重ねる時の背景ID",		FT_U16, RO, NULL),
+};
+
+static const DATAFIELD s_aFieldEfc[] = {
+	FLD (EFCINFO, byType,				"画像の種別",			FT_U8, RO, NULL),
+	FLD (EFCINFO, bySound,				"効果音ID",				FT_U8, RO, NULL),
+};
+
+/* マップのイベントの種別ごとの詳細 */
+static const DATAFIELD s_aFieldEvMove[] = {
+	FLD (EVENTINFO_MOVE, dwX,			"移動先X",				FT_U32, RO, NULL),
+	FLD (EVENTINFO_MOVE, dwY,			"移動先Y",				FT_U32, RO, NULL),
+	FLD (EVENTINFO_MOVE, byEfect,		"エフェクト",			FT_U8, RO, NULL),
+};
+static const DATAFIELD s_aFieldEvMapChg[] = {
+	FLD (EVENTINFO_MAPCHG, dwMapID,		"移動先マップID",		FT_U32, RO, NULL),
+	FLD (EVENTINFO_MAPCHG, dwX,			"移動先X",				FT_U32, RO, NULL),
+	FLD (EVENTINFO_MAPCHG, dwY,			"移動先Y",				FT_U32, RO, NULL),
+	FLD (EVENTINFO_MAPCHG, byEfect,		"エフェクト",			FT_U8, RO, NULL),
+};
+static const DATAFIELD s_aFieldEvMsg[] = {
+	FLD (EVENTINFO_MSG, dwNo,			"メッセージ番号",		FT_U32, RO, "このマップの messages の番号"),
+	FLD (EVENTINFO_MSG, byType,			"種別",					FT_U8, RO, "0=自動 1=調べる 2=話すと同じ"),
+	FLD (EVENTINFO_MSG, wGrpID,			"書き換える画像ID",		FT_U16, RO, NULL),
+	FLD (EVENTINFO_MSG, dwX,			"X",					FT_U32, RO, NULL),
+	FLD (EVENTINFO_MSG, dwY,			"Y",					FT_U32, RO, NULL),
+};
+static const DATAFIELD s_aFieldEvDoor[] = {
+	FLD (EVENTINFO_DOOR, wGrpID,		"扉の画像ID",			FT_U16, RO, NULL),
+	FLD (EVENTINFO_DOOR, wBackGrpID,	"背景の画像ID",			FT_U16, RO, NULL),
+	FLD (EVENTINFO_DOOR, byTimeClose,	"閉まるまで(100ms)",	FT_U8, RO, NULL),
+	FLD (EVENTINFO_DOOR, byType,		"種別",					FT_U8, RO, NULL),
+};
+static const DATAFIELD s_aFieldEvHpMana[] = {
+	FLD (EVENTINFO_HPMANA, byType,		"種別",					FT_U8, RO, NULL),
+};
+static const DATAFIELD s_aFieldEvOnCharMap[] = {
+	FLD (EVENTINFO_ONCHARMAP, wGrpIDOn,	"乗っている時の画像ID",	FT_U16, RO, NULL),
+	FLD (EVENTINFO_ONCHARMAP, wGrpIDOff,	"乗っていない時の画像ID",	FT_U16, RO, NULL),
+	FLD (EVENTINFO_ONCHARMAP, dwX,		"X",					FT_U32, RO, NULL),
+	FLD (EVENTINFO_ONCHARMAP, dwY,		"Y",					FT_U32, RO, NULL),
+};
+
+static const DATAFIELD *EventFields(BYTE byType, int &nCount)
+{
+	switch (byType) {
+	case EVENTTYPE_MOVE:		nCount = COUNTOF(s_aFieldEvMove);		return s_aFieldEvMove;
+	case EVENTTYPE_MAPCHG:		nCount = COUNTOF(s_aFieldEvMapChg);		return s_aFieldEvMapChg;
+	case EVENTTYPE_MSG:			nCount = COUNTOF(s_aFieldEvMsg);		return s_aFieldEvMsg;
+	case EVENTTYPE_DOOR:		nCount = COUNTOF(s_aFieldEvDoor);		return s_aFieldEvDoor;
+	case EVENTTYPE_HPMANA:		nCount = COUNTOF(s_aFieldEvHpMana);		return s_aFieldEvHpMana;
+	case EVENTTYPE_ONCHARMAP:	nCount = COUNTOF(s_aFieldEvOnCharMap);	return s_aFieldEvOnCharMap;
+	}
+	nCount = 0;
+	return NULL;
+}
+
+static std::string TextJson(LPCSTR psz)
+{
+	return JsonStr(psz ? psz : "");
+}
+
+/* キャラ 1 件 */
+static std::string CharJson(PCHARINFO pChar)
+{
+	std::string out = FieldsJson((const BYTE *)pChar, s_aFieldChar, COUNTOF(s_aFieldChar));
+	bool bPlayer = (pChar->byNpcType == NPCTYPE_INIT) && pChar->szAcc[0];
+	out += std::string(",\"isPlayer\":") + (bPlayer ? "true" : "false");
+	out += std::string(",\"online\":") + ((bPlayer && pChar->pID) ? "true" : "false");
+	out += ",\"szNpcSpeech\":" + TextJson(pChar->pszNpcSpeech);
+	/* 転職前の職業で覚えていた特技（職業の番号: [magic の番号...]、空の職業は省く） */
+	out += ",\"jobMagic\":{";
+	bool bFirst = true;
+	for (int j = 0; j < MAX_JOBMAGIC; j ++) {
+		std::string strRow;
+		for (int k = 0; k < MAX_USEMAGIC; k ++) {
+			if (pChar->abyJobMagic[j][k] == 0) {
+				continue;
+			}
+			if (!strRow.empty()) strRow += ",";
+			strRow += JsonNum(pChar->abyJobMagic[j][k]);
+		}
+		if (strRow.empty()) {
+			continue;
+		}
+		if (!bFirst) out += ",";
+		bFirst = false;
+		out += "\"" + JsonNum(j) + "\":[" + strRow + "]";
+	}
+	out += "}";
+	return out;
+}
+
+/* マップ 1 件（マス目は入れない。SboWebDataMapTiles で読む） */
+static std::string MapJson(PMAPINFO pMap)
+{
+	std::string out = FieldsJson((const BYTE *)pMap, s_aFieldMap, COUNTOF(s_aFieldMap));
+	int i, j;
+	out += ",\"szName\":" + TextJson(pMap->pszName);
+
+	/* イベント */
+	out += ",\"events\":[";
+	for (i = 0; i < pMap->nEventCount && pMap->pEvent; i ++) {
+		PEVENTINFO pEv = &pMap->pEvent[i];
+		int nCount = 0;
+		const DATAFIELD *paField = EventFields(pEv->byType, nCount);
+		if (i) out += ",";
+		out += "{\"no\":" + JsonNum(i) + ",\"x\":" + JsonNum(pEv->dwX) + ",\"y\":" + JsonNum(pEv->dwY) +
+				",\"type\":" + JsonNum(pEv->byType) + ",\"detail\":{";
+		if (paField && pEv->pData) {
+			out += FieldsJson((const BYTE *)pEv->pData, paField, nCount);
+		}
+		out += "}}";
+	}
+	out += "]";
+
+	/* 店（NPC の台詞 "@5NN" の NN が店の番号） */
+	out += ",\"shops\":[";
+	for (i = 0; i < pMap->byCountShop && pMap->pShopInfo; i ++) {
+		PSHOPINFO pShop = &pMap->pShopInfo[i];
+		if (i) out += ",";
+		out += "{\"no\":" + JsonNum(i) + ",\"items\":[";
+		for (j = 0; j < pShop->byCountItem && j < MAX_SHOPITEM; j ++) {
+			if (j) out += ",";
+			out += JsonNum(pShop->awItem[j]);
+		}
+		out += "],\"messages\":[";
+		for (j = 0; j < MAX_SHOPMSG; j ++) {
+			if (j) out += ",";
+			out += TextJson(pShop->apMsg[j]);
+		}
+		out += "]}";
+	}
+	out += "]";
+
+	/* メッセージ（イベントのメッセージ番号から参照される） */
+	out += ",\"messages\":[";
+	for (i = 0; i < pMap->nMsgCount && pMap->pMsg; i ++) {
+		if (i) out += ",";
+		out += TextJson(pMap->pMsg[i]);
+	}
+	out += "]";
+
+	/* 置いてあるアイテム */
+	out += ",\"items\":[";
+	for (i = 0; i < pMap->nItemCount && pMap->pItem; i ++) {
+		PITEMPOSINFO pItem = &pMap->pItem[i];
+		if (i) out += ",";
+		out += "{\"item\":" + JsonNum(pItem->dwID) + ",\"x\":" + JsonNum(pItem->dwX) + ",\"y\":" + JsonNum(pItem->dwY) + "}";
+	}
+	out += "]";
+	return out;
+}
+
+static const DATAFIELD s_aFieldComEfc[] = {
+	FLD (COMEFCINFO, bySound,			"鳴らす音",				FT_U8, RO, NULL),
+};
+
+static std::string ComEfcJson(PCOMEFCINFO pInfo)
+{
+	std::string out = FieldsJson((const BYTE *)pInfo, s_aFieldComEfc, COUNTOF(s_aFieldComEfc));
+	out += ",\"anime\":[";
+	for (int i = 0; pInfo->pAnime && i < pInfo->byAnimeCount; i ++) {
+		if (i) out += ",";
+		out += "{\"byWait\":" + JsonNum(pInfo->pAnime[i].byWait) + ",\"byGrpID\":" + JsonNum(pInfo->pAnime[i].byGrpID) + "}";
+	}
+	return out + "]";
+}
+
+static std::string LeaveJson(PLEAVEINFO pInfo)
+{
+	std::string out = "\"byUse\":" + JsonNum(pInfo->byUse) + ",\"dwGold\":" + JsonNum(pInfo->dwGold) + ",\"items\":[";
+	int nCount = (pInfo->byCount < MAX_LEAVEITEM) ? pInfo->byCount : MAX_LEAVEITEM;
+	for (int i = 0; i < nCount; i ++) {
+		if (i) out += ",";
+		out += "{\"item\":" + JsonNum(pInfo->waItem[i]) + ",\"count\":" + JsonNum(pInfo->byItemCount[i]) + "}";
+	}
+	return out + "]";
+}
+
+/* サブゲームの種別ごとの詳細（保存される項目だけ） */
+static const DATAFIELD s_aFieldSgBomb[] = {
+	FLD (SUBGAME_BOMBINFO, dwMapID,		"マップID",				FT_U32, RO, "map の dwID"),
+	FLD (SUBGAME_BOMBINFO, dwX,			"参加受付X",			FT_U32, RO, NULL),
+	FLD (SUBGAME_BOMBINFO, dwY,			"参加受付Y",			FT_U32, RO, NULL),
+	FLD (SUBGAME_BOMBINFO, dwStartX,	"参加開始X",			FT_U32, RO, NULL),
+	FLD (SUBGAME_BOMBINFO, dwStartY,	"参加開始Y",			FT_U32, RO, NULL),
+	FLD (SUBGAME_BOMBINFO, byX1,		"エリア開始X",			FT_U8, RO, NULL),
+	FLD (SUBGAME_BOMBINFO, byY1,		"エリア開始Y",			FT_U8, RO, NULL),
+	FLD (SUBGAME_BOMBINFO, byX2,		"エリア終了X",			FT_U8, RO, NULL),
+	FLD (SUBGAME_BOMBINFO, byY2,		"エリア終了Y",			FT_U8, RO, NULL),
+	FLD (SUBGAME_BOMBINFO, byGameTime,	"制限時間",				FT_U8, RO, NULL),
+	FLD (SUBGAME_BOMBINFO, byMaxBomb,	"最大設置数",			FT_U8, RO, NULL),
+	FLD (SUBGAME_BOMBINFO, byMaxFire,	"最大火力",				FT_U8, RO, NULL),
+};
+static const DATAFIELD s_aFieldSgMaze[] = {
+	FLD (SUBGAME_MAZEINFO, dwMapID,		"マップID",				FT_U32, RO, "map の dwID"),
+	FLD (SUBGAME_MAZEINFO, byX1,		"エリア開始X",			FT_U8, RO, NULL),
+	FLD (SUBGAME_MAZEINFO, byY1,		"エリア開始Y",			FT_U8, RO, NULL),
+	FLD (SUBGAME_MAZEINFO, byX2,		"エリア終了X",			FT_U8, RO, NULL),
+	FLD (SUBGAME_MAZEINFO, byY2,		"エリア終了Y",			FT_U8, RO, NULL),
+	FLD (SUBGAME_MAZEINFO, byCharX,		"管理人X",				FT_U8, RO, NULL),
+	FLD (SUBGAME_MAZEINFO, byCharY,		"管理人Y",				FT_U8, RO, NULL),
+	FLD (SUBGAME_MAZEINFO, byStartX,	"スタートX",			FT_U8, RO, NULL),
+	FLD (SUBGAME_MAZEINFO, byStartY,	"スタートY",			FT_U8, RO, NULL),
+	FLD (SUBGAME_MAZEINFO, byGoalFromX,	"ゴール(移動元)X",		FT_U8, RO, NULL),
+	FLD (SUBGAME_MAZEINFO, byGoalFromY,	"ゴール(移動元)Y",		FT_U8, RO, NULL),
+	FLD (SUBGAME_MAZEINFO, byGoalToX,	"ゴール(移動先)X",		FT_U8, RO, NULL),
+	FLD (SUBGAME_MAZEINFO, byGoalToY,	"ゴール(移動先)Y",		FT_U8, RO, NULL),
+	FLD (SUBGAME_MAZEINFO, wChipIDStart,"開始地点へのパーツ",	FT_U16, RO, "mapParts の番号"),
+	FLD (SUBGAME_MAZEINFO, wChipIDGoal,	"ゴールのパーツ",		FT_U16, RO, "mapParts の番号"),
+	FLD (SUBGAME_MAZEINFO, wChipIDRoad,	"道のパーツ",			FT_U16, RO, "mapParts の番号"),
+	FLD (SUBGAME_MAZEINFO, wChipIDBlock,"壁のパーツ",			FT_U16, RO, "mapParts の番号"),
+};
+static const DATAFIELD s_aFieldSgDungeon[] = {
+	FLD (SUBGAME_DUNGEONINFO, dwMapID,	"マップID",				FT_U32, RO, "map の dwID"),
+	FLD (SUBGAME_DUNGEONINFO, byX1,		"エリア開始X",			FT_U8, RO, NULL),
+	FLD (SUBGAME_DUNGEONINFO, byY1,		"エリア開始Y",			FT_U8, RO, NULL),
+	FLD (SUBGAME_DUNGEONINFO, byX2,		"エリア終了X",			FT_U8, RO, NULL),
+	FLD (SUBGAME_DUNGEONINFO, byY2,		"エリア終了Y",			FT_U8, RO, NULL),
+	FLD (SUBGAME_DUNGEONINFO, byCharX,	"管理人X",				FT_U8, RO, NULL),
+	FLD (SUBGAME_DUNGEONINFO, byCharY,	"管理人Y",				FT_U8, RO, NULL),
+	FLD (SUBGAME_DUNGEONINFO, byStartX,	"スタートX",			FT_U8, RO, NULL),
+	FLD (SUBGAME_DUNGEONINFO, byStartY,	"スタートY",			FT_U8, RO, NULL),
+	FLD (SUBGAME_DUNGEONINFO, byGoalX,	"ゴール(移動元)X",		FT_U8, RO, NULL),
+	FLD (SUBGAME_DUNGEONINFO, byGoalY,	"ゴール(移動元)Y",		FT_U8, RO, NULL),
+	FLD (SUBGAME_DUNGEONINFO, wChipIDStart,"開始地点へのパーツ",FT_U16, RO, "mapParts の番号"),
+	FLD (SUBGAME_DUNGEONINFO, wChipIDGoal,"ゴールのパーツ",		FT_U16, RO, "mapParts の番号"),
+	FLD (SUBGAME_DUNGEONINFO, wChipIDRoad,"道のパーツ",			FT_U16, RO, "mapParts の番号"),
+	FLD (SUBGAME_DUNGEONINFO, wChipIDBlock,"壁のパーツ",		FT_U16, RO, "mapParts の番号"),
+};
+static const DATAFIELD s_aFieldSgWar[] = {
+	FLD (SUBGAME_WARINFO, dwMapID,		"マップID",				FT_U32, RO, "map の dwID"),
+	FLD (SUBGAME_WARINFO, byMember,		"1チームの人数",		FT_U8, RO, NULL),
+	FLD (SUBGAME_WARINFO, byX,			"参加受付X",			FT_U8, RO, NULL),
+	FLD (SUBGAME_WARINFO, byY,			"参加受付Y",			FT_U8, RO, NULL),
+	FLD (SUBGAME_WARINFO, byX1,			"エリア開始X",			FT_U8, RO, NULL),
+	FLD (SUBGAME_WARINFO, byY1,			"エリア開始Y",			FT_U8, RO, NULL),
+	FLD (SUBGAME_WARINFO, byX2,			"エリア終了X",			FT_U8, RO, NULL),
+	FLD (SUBGAME_WARINFO, byY2,			"エリア終了Y",			FT_U8, RO, NULL),
+	FLD (SUBGAME_WARINFO, byHP1X,		"チーム1のHP X",		FT_U8, RO, NULL),
+	FLD (SUBGAME_WARINFO, byHP2X,		"チーム2のHP X",		FT_U8, RO, NULL),
+	FLD (SUBGAME_WARINFO, byHPY,		"チームのHP Y",			FT_U8, RO, NULL),
+	FLD (SUBGAME_WARINFO, byJudgeX,		"審判X",				FT_U8, RO, NULL),
+	FLD (SUBGAME_WARINFO, byJudgeY,		"審判Y",				FT_U8, RO, NULL),
+	FLD (SUBGAME_WARINFO, byRes1X,		"チーム1の蘇生カウンタX",FT_U8, RO, NULL),
+	FLD (SUBGAME_WARINFO, byRes2X,		"チーム2の蘇生カウンタX",FT_U8, RO, NULL),
+	FLD (SUBGAME_WARINFO, byResY,		"蘇生カウンタY",		FT_U8, RO, NULL),
+	FLD (SUBGAME_WARINFO, byStart1X,	"チーム1の開始X",		FT_U8, RO, NULL),
+	FLD (SUBGAME_WARINFO, byStart2X,	"チーム2の開始X",		FT_U8, RO, NULL),
+	FLD (SUBGAME_WARINFO, byStartY,		"開始Y",				FT_U8, RO, NULL),
+	FLD (SUBGAME_WARINFO, byCastle1X,	"チーム1の城X",			FT_U8, RO, NULL),
+	FLD (SUBGAME_WARINFO, byCastle2X,	"チーム2の城X",			FT_U8, RO, NULL),
+	FLD (SUBGAME_WARINFO, byCastleY,	"城Y",					FT_U8, RO, NULL),
+};
+static const DATAFIELD s_aFieldSgSugoroku[] = {
+	FLD (SUBGAME_SUGOROKUINFO, dwMapID,	"マップID",				FT_U32, RO, "map の dwID"),
+	FLD (SUBGAME_SUGOROKUINFO, byX,		"参加受付X",			FT_U8, RO, NULL),
+	FLD (SUBGAME_SUGOROKUINFO, byY,		"参加受付Y",			FT_U8, RO, NULL),
+	FLD (SUBGAME_SUGOROKUINFO, byRule,	"ルール",				FT_U8, RO, NULL),
+	FLD (SUBGAME_SUGOROKUINFO, byMaxCount,"最大参加人数",		FT_U8, RO, NULL),
+};
+
+static const char *s_apszSubGameName[] = { "なし", "爆弾ゲーム", "迷路", "ダンジョン", "戦場ゲーム", "すごろく" };
+
+static const DATAFIELD *SubGameFields(int nType, int *pnCount)
+{
+	switch (nType) {
+	case SUBGAMEID_BOMB:		*pnCount = COUNTOF(s_aFieldSgBomb);		return s_aFieldSgBomb;
+	case SUBGAMEID_MAZE:		*pnCount = COUNTOF(s_aFieldSgMaze);		return s_aFieldSgMaze;
+	case SUBGAMEID_DUNGEON:		*pnCount = COUNTOF(s_aFieldSgDungeon);	return s_aFieldSgDungeon;
+	case SUBGAMEID_WAR:			*pnCount = COUNTOF(s_aFieldSgWar);		return s_aFieldSgWar;
+	case SUBGAMEID_SUGOROKU:	*pnCount = COUNTOF(s_aFieldSgSugoroku);	return s_aFieldSgSugoroku;
+	}
+	*pnCount = 0;
+	return NULL;
+}
+
+static std::string SubGameJson(PSUBGAMEINFO pInfo)
+{
+	std::string out = "\"byType\":" + JsonNum(pInfo->byType);
+	out += std::string(",\"typeName\":\"") + ((pInfo->byType < SUBGAMEID_MAX) ? s_apszSubGameName[pInfo->byType] : "?") + "\"";
+	int nCount = 0;
+	const DATAFIELD *paField = SubGameFields(pInfo->byType, &nCount);
+	out += ",\"detail\":{";
+	if (paField && pInfo->pInfo) {
+		out += FieldsJson((const BYTE *)pInfo->pInfo, paField, nCount);
+		if (pInfo->byType == SUBGAMEID_SUGOROKU) {
+			PSUBGAME_SUGOROKUINFO pSg = (PSUBGAME_SUGOROKUINFO)pInfo->pInfo;
+			out += ",\"events\":[";
+			for (int i = 0; i < pSg->aEventInfo.GetSize(); i ++) {
+				SUGOROKUEVENTINFO &Ev = pSg->aEventInfo[i];
+				if (i) out += ",";
+				out += "{\"x\":" + JsonNum(Ev.byX) + ",\"y\":" + JsonNum(Ev.byY) + ",\"byEventType\":" + JsonNum(Ev.byEventType) + ",\"byPara1\":" + JsonNum(Ev.byPara1) + "}";
+			}
+			out += "],\"parts\":[";
+			for (int i = 0; i < pSg->aPartsInfo.GetSize(); i ++) {
+				SUGOROKUPARTSINFO &Pt = pSg->aPartsInfo[i];
+				if (i) out += ",";
+				out += "{\"byType\":" + JsonNum(Pt.byType) + ",\"wPartsID\":" + JsonNum(Pt.wPartsID) + "}";
+			}
+			out += "]";
+		}
+	}
+	return out + "}";
+}
+
+static std::string EfcJson(PEFCINFO pEfc)
+{
+	return FieldsJson((const BYTE *)pEfc, s_aFieldEfc, COUNTOF(s_aFieldEfc)) +
+			",\"animeCount\":" + JsonNum(pEfc->aAnime.GetCount());
+}
+
 /* ------------------------------------------------------------------------- */
 /* JS（HTTP の受付）から呼ばれる												 */
 /* ------------------------------------------------------------------------- */
@@ -1249,6 +1680,60 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataSchema(void)
 			}
 			out += "}";
 			break;
+		case KIND_CHAR:
+			out += FieldSchemaJson(s_aFieldChar, COUNTOF(s_aFieldChar));
+			out.insert(out.size() - 1, ",{\"name\":\"isPlayer\",\"type\":\"bool\",\"label\":\"プレイヤーか\"},{\"name\":\"online\",\"type\":\"bool\",\"label\":\"ログイン中か\"}"
+					",{\"name\":\"szNpcSpeech\",\"type\":\"string\",\"label\":\"NPC の台詞\",\"note\":\"@5NN は店（NN はそのマップの店の番号）\"}");
+			break;
+		case KIND_MAP:
+			out += FieldSchemaJson(s_aFieldMap, COUNTOF(s_aFieldMap));
+			out.insert(out.size() - 1, ",{\"name\":\"szName\",\"type\":\"string\",\"label\":\"マップ名\"}"
+					",{\"name\":\"events\",\"type\":\"object[]\",\"label\":\"イベント\",\"note\":\"type: 0=座標変更 1=マップ間移動 2=メッセージ 3=扉 4=HP/Mana回復 5=ステータス初期化 6=乗っている間マップ変更。detail は eventDetailByType\"}"
+					",{\"name\":\"shops\",\"type\":\"object[]\",\"label\":\"店\",\"note\":\"items は item の番号\"}"
+					",{\"name\":\"messages\",\"type\":\"string[]\",\"label\":\"メッセージ\"}"
+					",{\"name\":\"items\",\"type\":\"object[]\",\"label\":\"置いてあるアイテム\"}");
+			out += ",\"eventDetailByType\":{";
+			for (int t = 0, nOut = 0; t < EVENTTYPE_MAX; t ++) {
+				int nCount = 0;
+				const DATAFIELD *paField = EventFields((BYTE)t, nCount);
+				if (!paField) {
+					continue;
+				}
+				if (nOut ++) {
+					out += ",";
+				}
+				out += "\"" + JsonNum(t) + "\":" + FieldSchemaJson(paField, nCount);
+			}
+			out += "}";
+			break;
+		case KIND_MAPPARTS:
+			out += FieldSchemaJson(s_aFieldMapParts, COUNTOF(s_aFieldMapParts));
+			break;
+		case KIND_EFC:
+			out += FieldSchemaJson(s_aFieldEfc, COUNTOF(s_aFieldEfc));
+			out.insert(out.size() - 1, ",{\"name\":\"animeCount\",\"type\":\"u32\",\"label\":\"アニメのコマ数\"}");
+			break;
+		case KIND_COMEFC:
+			out += FieldSchemaJson(s_aFieldComEfc, COUNTOF(s_aFieldComEfc));
+			out.insert(out.size() - 1, ",{\"name\":\"anime\",\"type\":\"object[]\",\"label\":\"コマ（byWait=待ち時間×10ミリ秒・byGrpID=画像ID）\"}");
+			break;
+		case KIND_LEAVE:
+			out += "[{\"name\":\"byUse\",\"type\":\"u8\",\"label\":\"使用中なら1\"},{\"name\":\"dwGold\",\"type\":\"u32\",\"label\":\"預けたお金\"},{\"name\":\"items\",\"type\":\"object[]\",\"label\":\"預けたアイテム（item=item の番号・count=個数）\"}]";
+			break;
+		case KIND_SUBGAME:
+			out += "[{\"name\":\"byType\",\"type\":\"u8\",\"label\":\"種別\",\"note\":\"1=爆弾ゲーム 2=迷路 3=ダンジョン 4=戦場ゲーム 5=すごろく\"},{\"name\":\"typeName\",\"type\":\"string\",\"label\":\"種別の名前\"},{\"name\":\"detail\",\"type\":\"object\",\"label\":\"種別ごとの設定（detailByType）。すごろくは events・parts も\"}]";
+			out += ",\"detailByType\":{";
+			for (int t = SUBGAMEID_BOMB; t < SUBGAMEID_MAX; t ++) {
+				int nCount = 0;
+				const DATAFIELD *paField = SubGameFields(t, &nCount);
+				if (t > SUBGAMEID_BOMB) out += ",";
+				out += "\"" + JsonNum(t) + "\":" + FieldSchemaJson(paField, nCount);
+			}
+			out += "}";
+			break;
+		}
+		if (i >= KIND_FIRST_READONLY) {
+			out += ",\"readonly\":true";
 		}
 		out += "}";
 	}
@@ -1306,6 +1791,42 @@ static std::string RecordJson(int nKind, int nID)
 			out += ItemWorkJson(w);
 		}
 		break;
+	case KIND_CHAR:
+		if (g_aCharInfo[nID] == NULL) {
+			return "null";
+		}
+		out += CharJson(g_aCharInfo[nID]);
+		break;
+	case KIND_MAP:
+		out += MapJson(g_aMapInfo[nID]);
+		break;
+	case KIND_MAPPARTS:
+		out += FieldsJson((const BYTE *)&g_aMapPartsInfo[nID], s_aFieldMapParts, COUNTOF(s_aFieldMapParts));
+		break;
+	case KIND_EFC:
+		{
+			PEFCINFO pEfc = g_EfcInfo.GetPtr(nID);
+			if (pEfc == NULL) {
+				return "null";
+			}
+			out += EfcJson(pEfc);
+		}
+		break;
+	case KIND_COMEFC:
+		out += ComEfcJson(&g_pComEfcInfo[nID]);
+		break;
+	case KIND_LEAVE:
+		if (g_aLeaveInfo[nID] == NULL) {
+			return "null";
+		}
+		out += LeaveJson(g_aLeaveInfo[nID]);
+		break;
+	case KIND_SUBGAME:
+		if (g_aSubaGameInfo[nID] == NULL) {
+			return "null";
+		}
+		out += SubGameJson(g_aSubaGameInfo[nID]);
+		break;
 	}
 	return out + "}";
 }
@@ -1323,8 +1844,10 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataGet(const char *pszKind, i
  *   結果: {"ok":true,"id":番号,"added":bool,"record":{変更後}} / {"ok":false,"error":"理由"}
  *   bApply が 0 の時は何も変えず、変更後の姿（record）だけ返す。
  */
-extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind, int nID, const char *pszChanges, int bApply)
+extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind, int nID, const char *pszChanges, int bApply, const char *pszSource)
 {
+	static const BYTE abyUndoCmd[] = { CMD_MAGICINFO, CMD_MAGICUSERINFO, CMD_EQUUSERINFO, CMD_JOBINFO, CMD_STTMPLATE, CMD_CHGITEM };
+	BOOL bUndo = FALSE;
 	std::string strErr;
 	int nKind = KindFromName(pszKind);
 	int nCount = (nKind < 0) ? 0 : KindCount(nKind);
@@ -1338,6 +1861,10 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 	}
 	if (nID < 0 || nID > nCount) {
 		strErr = "番号が範囲外です（0〜" + JsonNum(nCount - 1) + "、追加は " + JsonNum(nCount) + "）";
+		goto Exit;
+	}
+	if (nKind >= KIND_FIRST_READONLY) {
+		strErr = "読むだけのデータです";
 		goto Exit;
 	}
 	bAdd = (nID == nCount);
@@ -1357,6 +1884,14 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 			strErr = "id は変えられません";
 			goto Exit;
 		}
+	}
+
+	/*
+	 * 管理者ウィンドウの「元に戻す」（SboSvrAdminUndo.cpp）にも記録する（既存のデータを変える時だけ）。
+	 * 確かめの途中で失敗した時は AdminUndoAfter を呼ばないので記録されない（次の AdminUndoBefore* で捨てられる）。
+	 */
+	if (bApply && !bAdd) {
+		bUndo = AdminUndoBeforeTarget(abyUndoCmd[nKind], (DWORD)nID, pszSource ? pszSource : "API", 0);
 	}
 
 	switch (nKind) {
@@ -1513,11 +2048,62 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 	}
 
 Exit:
+	if (bUndo && strErr.empty()) {
+		AdminUndoAfter();
+	}
 	if (!strErr.empty()) {
 		s_strResult = "{\"ok\":false,\"error\":" + JsonStr(strErr.c_str()) + "}";
 	} else {
 		s_strResult = "{\"ok\":true,\"id\":" + JsonNum(nID) + ",\"added\":" + (bAdd ? "true" : "false") +
 				",\"record\":{\"id\":" + JsonNum(nID) + "," + strRecord + "}}";
 	}
+	return s_strResult.c_str();
+}
+
+/*
+ * マップのマス目（範囲を指定。1 回 128×128 マスまで）
+ *   {"id":番号,"mapId":マップID,"cx":横,"cy":縦,"x":..,"y":..,"w":..,"h":..,
+ *    "parts":[[パーツ番号,...],...],"flags":[[...]],"roof":[[...]]}（行ごと）
+ */
+extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataMapTiles(int nID, int x, int y, int w, int h)
+{
+	if (nID < 0 || nID >= g_aMapInfo.GetSize()) {
+		s_strResult = "{\"error\":\"マップの番号が範囲外です\"}";
+		return s_strResult.c_str();
+	}
+	PMAPINFO pMap = g_aMapInfo[nID];
+	if (x < 0) x = 0;
+	if (y < 0) y = 0;
+	if (w <= 0 || x + w > pMap->nCX) w = pMap->nCX - x;
+	if (h <= 0 || y + h > pMap->nCY) h = pMap->nCY - y;
+	if (w > 128) w = 128;
+	if (h > 128) h = 128;
+	if (w < 0) w = 0;
+	if (h < 0) h = 0;
+
+	std::string out = "{\"id\":" + JsonNum(nID) + ",\"mapId\":" + JsonNum(pMap->dwID) +
+			",\"cx\":" + JsonNum(pMap->nCX) + ",\"cy\":" + JsonNum(pMap->nCY) +
+			",\"x\":" + JsonNum(x) + ",\"y\":" + JsonNum(y) + ",\"w\":" + JsonNum(w) + ",\"h\":" + JsonNum(h);
+	const char *apszName[] = { "parts", "flags", "roof" };
+	for (int k = 0; k < 3; k ++) {
+		out += std::string(",\"") + apszName[k] + "\":[";
+		for (int yy = y; yy < y + h; yy ++) {
+			if (yy > y) out += ",";
+			out += "[";
+			for (int xx = x; xx < x + w; xx ++) {
+				int n = xx + yy * pMap->nCX;
+				long long v = 0;
+				if (k == 0 && pMap->pwMap)			v = pMap->pwMap[n];
+				else if (k == 1 && pMap->pbyFlg)	v = pMap->pbyFlg[n];
+				else if (k == 2 && pMap->pbyRoofLV)	v = pMap->pbyRoofLV[n];
+				if (xx > x) out += ",";
+				out += JsonNum(v);
+			}
+			out += "]";
+		}
+		out += "]";
+	}
+	out += "}";
+	s_strResult = out;
 	return s_strResult.c_str();
 }
