@@ -13,6 +13,7 @@
 #include "w32_resources.h"
 
 void W32HtmlCreate(W32Wnd *)	{}
+void W32HtmlSetNoIme(W32Wnd *, BOOL)	{}
 void W32HtmlDestroy(W32Wnd *)	{}
 void W32HtmlUpdate(W32Wnd *)	{}
 void W32HtmlSetText(W32Wnd *)	{}

@@ -1320,7 +1320,15 @@ HIMC ImmGetContext(HWND)					{ return (HIMC)1; }
 BOOL ImmReleaseContext(HWND, HIMC)			{ return TRUE; }
 BOOL ImmSetOpenStatus(HIMC, BOOL)			{ return TRUE; }
 BOOL ImmGetOpenStatus(HIMC)					{ return FALSE; }
-HIMC ImmAssociateContext(HWND, HIMC)		{ return NULL; }
+/* 入力欄から IME を外す（hImc が NULL）と、その欄は半角英数字記号だけになる */
+HIMC ImmAssociateContext(HWND hWnd, HIMC hImc)
+{
+	W32Wnd *pWnd = W32GetWnd(hWnd);
+	if (pWnd && pWnd->nKind == W32WND_EDIT) {
+		W32HtmlSetNoIme(pWnd, hImc == NULL);
+	}
+	return NULL;
+}
 
 /* JavaScript から呼ばれる：キーが押された/離された
    nHtmlID は入力欄にフォーカスがある時のその番号（無ければ 0） */
