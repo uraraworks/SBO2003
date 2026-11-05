@@ -684,6 +684,45 @@ HWND GetDlgItem(HWND hWnd, int nID)
 	return NULL;
 }
 
+/* 子ウィンドウを順に渡す（Windows と同じく孫も含む。途中で増減しても困らないよう先に一覧を作る） */
+BOOL EnumChildWindows(HWND hWndParent, WNDENUMPROC pfn, LPARAM lParam)
+{
+	if (pfn == NULL) {
+		return FALSE;
+	}
+	std::vector<HWND> aList;
+	for (size_t i = 0; i < s_apWnd.size(); i ++) {
+		W32Wnd *p = s_apWnd[i];
+		if (p->bDestroyed || p->hWndParent == NULL) {
+			continue;
+		}
+		if (hWndParent == NULL || IsChild(hWndParent, (HWND)p)) {
+			aList.push_back((HWND)p);
+		}
+	}
+	for (size_t i = 0; i < aList.size(); i ++) {
+		if (W32GetWnd(aList[i]) == NULL) {
+			continue;
+		}
+		if (!pfn(aList[i], lParam)) {
+			break;
+		}
+	}
+	return TRUE;
+}
+
+int GetClassName(HWND hWnd, LPSTR pszClass, int nMax)
+{
+	W32Wnd *p = W32GetWnd(hWnd);
+	if (p == NULL || pszClass == NULL || nMax <= 0) {
+		return 0;
+	}
+	int nLen = std::min((int)p->strClass.size(), nMax - 1);
+	memcpy(pszClass, p->strClass.c_str(), nLen);
+	pszClass[nLen] = '\0';
+	return nLen;
+}
+
 int GetDlgCtrlID(HWND hWnd)
 {
 	W32Wnd *p = W32GetWnd(hWnd);

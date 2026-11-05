@@ -96,7 +96,12 @@ EM_JS(void, W32JsPopInit, (void), {
 		'.w32-lv:focus-within tr.w32-sel td{background:#0078d7;color:#fff}',
 		'.w32-lv td input{margin:0 3px 0 0;vertical-align:-2px;display:none}',
 		'.w32-lv.w32-cb td input{display:inline-block}',
-		'.w32-wnd[inert],.w32f-client[inert]{filter:none}'
+		'.w32-wnd[inert],.w32f-client[inert]{filter:none}',
+		'.w32f-grip{position:absolute;z-index:5;touch-action:none}',
+		'.w32f-grip.w32-r{top:0;right:-3px;width:7px;bottom:12px;cursor:ew-resize}',
+		'.w32f-grip.w32-b{left:0;bottom:-3px;height:7px;right:12px;cursor:ns-resize}',
+		'.w32f-grip.w32-rb{right:-3px;bottom:-3px;width:15px;height:15px;cursor:nwse-resize;',
+		'background:linear-gradient(135deg,transparent 55%,#8a9bb8 55%,#8a9bb8 62%,transparent 62%,transparent 72%,#8a9bb8 72%,#8a9bb8 79%,transparent 79%)}'
 	].join('');
 	var style = document.createElement('style');
 	style.textContent = css;
@@ -334,6 +339,65 @@ EM_JS(void, W32JsPopInit, (void), {
 			window.addEventListener('mousemove', move);
 			window.addEventListener('mouseup', up);
 		});
+		/* 枠の右・下・右下を引っぱって大きさを変える（WS_THICKFRAME の小窓だけ） */
+		if (style & 0x00040000) {
+			['r', 'b', 'rb'].forEach(function (dir) {
+				var grip = document.createElement('div');
+				grip.className = 'w32f-grip w32-' + dir;
+				grip.addEventListener('pointerdown', function (ev) {
+					if (ev.button !== 0) {
+						return;
+					}
+					ev.preventDefault();
+					ev.stopPropagation();
+					P.front(frame);
+					var sx = ev.clientX, sy = ev.clientY;
+					var ow = frame.offsetWidth, oh = frame.offsetHeight;
+					/* 最初に出した大きさより小さくはしない（中身が作られた時の大きさなので） */
+					var minW = client.w32MinW || 160, minH = client.w32MinH || 100;
+					var cur = {w: ow, h: oh}, sent = {w: ow, h: oh}, timer = 0;
+					var flush = function () {
+						timer = 0;
+						if (cur.w !== sent.w || cur.h !== sent.h) {
+							sent.w = cur.w;
+							sent.h = cur.h;
+							_W32JsOnFrameSize(id, cur.w, cur.h);
+						}
+					};
+					var move = function (e) {
+						if (dir !== 'b') {
+							cur.w = Math.max(minW, Math.round(ow + e.clientX - sx));
+						}
+						if (dir !== 'r') {
+							cur.h = Math.max(minH, Math.round(oh + e.clientY - sy));
+						}
+						var menuH = (client.w32Menu.style.display === 'none') ? 0 : 19;
+						frame.style.width = cur.w + 'px';
+						frame.style.height = cur.h + 'px';
+						client.style.width = Math.max(0, cur.w - 6) + 'px';
+						client.style.height = Math.max(0, cur.h - 6 - 19 - menuH) + 'px';
+						/* 中身の並べ直しは C 側でするので、送るのは間引く */
+						if (!timer) {
+							timer = window.requestAnimationFrame(flush);
+						}
+					};
+					var up = function () {
+						grip.removeEventListener('pointermove', move);
+						grip.removeEventListener('pointerup', up);
+						grip.removeEventListener('pointercancel', up);
+						if (timer) {
+							window.cancelAnimationFrame(timer);
+						}
+						flush();
+					};
+					grip.setPointerCapture(ev.pointerId);
+					grip.addEventListener('pointermove', move);
+					grip.addEventListener('pointerup', up);
+					grip.addEventListener('pointercancel', up);
+				});
+				frame.appendChild(grip);
+			});
+		}
 		return client;
 	};
 
@@ -754,6 +818,10 @@ EM_JS(void, W32JsPopPos, (int nID, int x, int y, int cx, int cy, int bVisible, i
 			frame.style.left = Math.round(info.x + x * info.s) + 'px';
 			frame.style.top = Math.round(info.y + y * info.s) + 'px';
 			el.w32Placed = false;
+		}
+		if (!el.w32MinW) {
+			el.w32MinW = cx;
+			el.w32MinH = cy;
 		}
 		frame.style.width = cx + 'px';
 		frame.style.height = cy + 'px';

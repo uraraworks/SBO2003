@@ -6,6 +6,7 @@
 /* 作成日：		2026/10/28													 */
 /* ========================================================================= */
 #include "stdafx.h"
+#include "AdminAutoLayout.h"
 #include "../../../Common/Info/InfoJob.h"
 #include "../../resource.h"
 #include "../Glbldata.h"
@@ -89,6 +90,11 @@ static LRESULT CALLBACK DlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
     switch (msg) {
 	HANDLE_MSG (hWnd, WM_INITDIALOG, OnInitDialog);
 	HANDLE_MSG (hWnd, WM_COMMAND, OnCommand);
+
+	/* 枠を引っぱって大きさを変えた時は、一覧を広げてボタンをずらす */
+	case WM_SIZE:
+		AdminAutoLayout (hWnd, FALSE);
+		return 0;
 
 	default:
 		return 0;

@@ -19,6 +19,7 @@
 #include "AdminWindowOld/AdminDlgAccSearch.h"
 #include "AdminWindowOld/AdminDlgEtcSubGame.h"
 #include "AdminWindowOld/SelectCharGrpWindow.h"
+#include "AdminWindowOld/AdminAutoLayout.h"
 
 /* ========================================================================= */
 /* 定数定義																	 */
@@ -165,6 +166,7 @@ PCMDPARA_SVRINFO m_pSvrInfo;									/* サーバー情報 */
 void MyTextOut(HDC, int, int, char *, COLORREF Color = RGB (255, 255, 255));	/* 文字描画 */
 void MakeAdminWindow				(void);								/* 管理者ウィンドウ作成 */
 LRESULT WINAPI WndProcAdminWindow	(HWND, UINT, WPARAM, LPARAM);		/* メッセージの処理 */
+static LRESULT WndProcAdminWindowSub	(HWND, UINT, WPARAM, LPARAM);	/* メッセージの処理（本体） */
 LRESULT CALLBACK WndProcDialog		(HWND, UINT, WPARAM, LPARAM);		/* ダイアログのメッセージ処理 */
 void AdminOnCommand					(HWND, int, HWND, UINT);			/* メッセージハンドラ(WM_COMMAND) */
 void AdminOnCommandMapParts			(HWND, int, HWND, UINT);			/* メッセージハンドラ(WM_COMMAND)パーツ情報) */
@@ -319,9 +321,19 @@ void MakeAdminWindow(void)
 
 	/* ウィンドウ作成 */
 	g_hWndAdmin = CreateWindow (CLNAME, "管理者用ウィンドウ",
-				WS_OVERLAPPED/* | WS_THICKFRAME*/ | WS_CLIPCHILDREN,
+				WS_OVERLAPPED | WS_THICKFRAME | WS_CLIPCHILDREN,
 				rect.left, rect.top, rect.right, rect.bottom,
 				g_hWndMain, NULL, g_hInstance, NULL);
+	/* 400x350 を元の大きさとして覚え、前回広げていたらその大きさに戻す */
+	AdminAutoLayoutInit (g_hWndAdmin);
+	if (rcAdmin.right && rcAdmin.bottom) {
+		int cx = rcAdmin.right - rcAdmin.left;
+		int cy = rcAdmin.bottom - rcAdmin.top;
+		if (cx > rect.right || cy > rect.bottom) {
+			SetWindowPos (g_hWndAdmin, NULL, 0, 0, (cx > rect.right) ? cx : rect.right, (cy > rect.bottom) ? cy : rect.bottom,
+					SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+		}
+	}
 	ShowWindow (g_hWndAdmin, SW_SHOWNOACTIVATE);
 }
 
@@ -331,6 +343,33 @@ void MakeAdminWindow(void)
 /* 日付：2003/05/31															 */
 /* ========================================================================= */
 LRESULT WINAPI WndProcAdminWindow(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+	LRESULT lResult = WndProcAdminWindowSub (hWnd, msg, wParam, lParam);
+
+	/* 大きさが変わった時と、画面の部品が作り直されたかもしれない時に並べ直す */
+	switch (msg) {
+	case WM_SIZE:
+	case WM_COMMAND:
+	case WM_NOTIFY:
+	case WM_LBUTTONDOWN:
+	case WM_RBUTTONDOWN:
+		AdminAutoLayout (hWnd, TRUE);
+		break;
+	default:
+		if (msg >= WM_USER) {
+			AdminAutoLayout (hWnd, TRUE);
+		}
+		break;
+	}
+	return lResult;
+}
+
+/* ========================================================================= */
+/* 関数名：WndProcAdminWindowSub											 */
+/* 内容：メッセージの処理（本体）											 */
+/* 日付：2003/05/31															 */
+/* ========================================================================= */
+static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	switch (msg) {
 	HANDLE_MSG (hWnd, WM_COMMAND, AdminOnCommand);
