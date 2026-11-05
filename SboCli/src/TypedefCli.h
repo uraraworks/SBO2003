@@ -149,7 +149,11 @@ enum {
 	IDCONFIRMTYPE_PARTYJOIN,									/* 仲間に入る確認 */
 	IDCONFIRMTYPE_BREAKUP,										/* パーティ解散 */
 	IDCONFIRMTYPE_BREAKSUGOROKU,								/* すごろくを抜ける */
+	IDCONFIRMTYPE_STARTPOS,										/* 復活位置を記録する確認 */
 };
+
+/* メッセージウィンドウ(WNDTYPE_MSG)の nData2 の状態 */
+#define MSGSTATE_STARTPOSCONF	(3)								/* 復活位置の「はい・いいえ」待ち */
 
 /* ３秒メッセージ終了後イベントID */
 enum {
