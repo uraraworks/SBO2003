@@ -4365,10 +4365,13 @@ void RecvDataProcLEAVEITEMGET(BYTE *pData, DWORD dwDataSize)
 		PWNDINFO pWndTmp;
 		if (g_pLeaveInfo->byCount == 0) {
 			pWndTmp = MakeWindowLEAVE (4);
+			g_WndInfo.Add (pWndTmp);
 		} else {
 			pWndTmp = MakeWindowLEAVE_ITEMGET ();
+			g_WndInfo.Add (pWndTmp);
+			/* 一覧の横にカーソルのアイテムの詳細を出す */
+			MakeWindowITEMINFOList (pWndTmp);
 		}
-		g_WndInfo.Add (pWndTmp);
 		g_dwActiveMsgID = pWndTmp->dwID;
 		g_bEnableMove = TRUE;
 	}

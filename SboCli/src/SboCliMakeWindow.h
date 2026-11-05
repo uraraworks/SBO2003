@@ -91,6 +91,8 @@ extern PWNDINFO MakeWindowSUBSUGOROKU_COMMAND			(void);						/* すごろく：�
 extern PWNDINFO MakeWindowSUBSUGOROKU_IDLE				(void);						/* すごろく：平常状態 */
 
 extern PWNDINFO MakeWindowITEMINFO						(int x, int y);				/* アイテム情報 */
+extern PWNDINFO MakeWindowITEMINFOList					(PWNDINFO pWndList);		/* アイテム情報(一覧の横) */
+extern void UpdateWindowITEMINFOList						(PWNDINFO pWndList);		/* アイテム情報(一覧の横)の更新 */
 extern PWNDINFO MakeWindowDEAD_COMMAND					(void);						/* 死亡中：コマンド */
 
 /* Copyright(C)URARA-works 2003-2005 */
