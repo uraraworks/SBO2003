@@ -579,18 +579,18 @@ void SendCmdCHARINFO(DWORD pIDSend, int nNo)
 					pSendData->clSpeech				= pChar->clSpeech;
 					CopyMemory (pSendData->szName, pChar->szName, sizeof (pSendData->szName));
 
-					if (pChar->pszNpcSpeech) {
-						int nSize = sizeof (CMDPARA_CHARINFO) + strlen (pChar->pszNpcSpeech) + 1;
+					/* 名前は可変長に詰めて送る（後ろに NPC 発言） */
+					{
+						int nSpeech = pChar->pszNpcSpeech ? (int)strlen (pChar->pszNpcSpeech) + 1 : 0;
+						int nSize = (int)SboPackSizeCHARINFO (pSendData) + nSpeech;
 						pSendData2 = new BYTE[nSize];
-						CopyMemory (pSendData2, pSendData, sizeof (CMDPARA_CHARINFO));
-						CopyMemory (pSendData2 + sizeof (CMDPARA_CHARINFO),
-								pChar->pszNpcSpeech, strlen (pChar->pszNpcSpeech) + 1);
+						PBYTE pPos = SboPackPutCHARINFO (pSendData2, pSendData);
+						if (nSpeech) {
+							CopyMemory (pPos, pChar->pszNpcSpeech, nSpeech);
+						}
 						svrSock.SendTo (pIDSend, pSendData2, nSize, SENDTIMEOUT);
 						SAFE_DELETE_ARRAY (pSendData2);
-						continue;
 					}
-
-					svrSock.SendTo (pIDSend, (PBYTE)pSendData, sizeof (CMDPARA_CHARINFO), SENDTIMEOUT);
 				}
 			}
 		}
@@ -676,18 +676,18 @@ void SendCmdCHARINFO2(DWORD pIDSend, DWORD dwID, int nNo)
 					pSendData->clSpeech			= pChar->clSpeech;
 					CopyMemory (pSendData->szName, pChar->szName, sizeof (pSendData->szName));
 
-					if (pChar->pszNpcSpeech) {
-						int nSize = sizeof (CMDPARA_CHARINFO2) + strlen (pChar->pszNpcSpeech) + 1;
+					/* 名前は可変長に詰めて送る（後ろに NPC 発言） */
+					{
+						int nSpeech = pChar->pszNpcSpeech ? (int)strlen (pChar->pszNpcSpeech) + 1 : 0;
+						int nSize = (int)SboPackSizeCHARINFO2 (pSendData) + nSpeech;
 						pSendData2 = new BYTE[nSize];
-						CopyMemory (pSendData2, pSendData, sizeof (CMDPARA_CHARINFO2));
-						CopyMemory (pSendData2 + sizeof (CMDPARA_CHARINFO2),
-								pChar->pszNpcSpeech, strlen (pChar->pszNpcSpeech) + 1);
+						PBYTE pPos = SboPackPutCHARINFO2 (pSendData2, pSendData);
+						if (nSpeech) {
+							CopyMemory (pPos, pChar->pszNpcSpeech, nSpeech);
+						}
 						svrSock.SendTo (pIDSend, pSendData2, nSize, SENDTIMEOUT);
 						SAFE_DELETE_ARRAY (pSendData2);
-						continue;
 					}
-
-					svrSock.SendTo (pIDSend, (PBYTE)pSendData, sizeof (CMDPARA_CHARINFO2), SENDTIMEOUT);
 				}
 			}
 		}
@@ -761,16 +761,17 @@ void SendCmdCHARINFO3(int nNo)
 	pSendData->clSpeech				= pChar->clSpeech;
 	CopyMemory (pSendData->szName, pChar->szName, sizeof (pSendData->szName));
 
-	if (pChar->pszNpcSpeech) {
-		int nSize = sizeof (CMDPARA_CHARINFO) + strlen (pChar->pszNpcSpeech) + 1;
+	/* 名前は可変長に詰めて送る（後ろに NPC 発言） */
+	{
+		int nSpeech = pChar->pszNpcSpeech ? (int)strlen (pChar->pszNpcSpeech) + 1 : 0;
+		int nSize = (int)SboPackSizeCHARINFO (pSendData) + nSpeech;
 		pSendData2 = new BYTE[nSize];
-		CopyMemory (pSendData2, pSendData, sizeof (CMDPARA_CHARINFO));
-		CopyMemory (pSendData2 + sizeof (CMDPARA_CHARINFO),
-				pChar->pszNpcSpeech, strlen (pChar->pszNpcSpeech) + 1);
+		PBYTE pPos = SboPackPutCHARINFO (pSendData2, pSendData);
+		if (nSpeech) {
+			CopyMemory (pPos, pChar->pszNpcSpeech, nSpeech);
+		}
 		SendCmdInside2 (pChar, (LPBYTE)pSendData2, nSize, SENDTIMEOUT, SENDINSIDE_INSIDE);
 		SAFE_DELETE_ARRAY (pSendData2);
-	} else {
-		SendCmdInside2 (pChar, (LPBYTE)pSendData, sizeof (CMDPARA_CHARINFO), SENDTIMEOUT, SENDINSIDE_INSIDE);
 	}
 
 	delete pSendData;
@@ -1475,7 +1476,14 @@ void SendCmdGETACCINFO(DWORD pIDSend, DWORD dwTblID)
 	CopyMemory (pSendData->szPas, pChar->szPas, MAX_ACCNAME);
 	CopyMemory (pSendData->szMacAdr, pChar->szMacAdr, 6);
 
-	svrSock.SendTo (pIDSend, (PBYTE)pSendData, sizeof (CMDPARA_CHARINFO), SENDTIMEOUT);
+	/* 名前は可変長に詰めて送る */
+	{
+		DWORD dwSize = SboPackSizeCHARINFO (pSendData);
+		PBYTE pPack = new BYTE[dwSize];
+		SboPackPutCHARINFO (pPack, pSendData);
+		svrSock.SendTo (pIDSend, pPack, dwSize, SENDTIMEOUT);
+		delete [] pPack;
+	}
 	delete pSendData;
 }
 
@@ -1576,6 +1584,7 @@ void SendCmdFADEINOUT(DWORD pIDSend, BYTE byFade)
 /* ========================================================================= */
 void SendCmdCHGITEM(DWORD pIDSend, DWORD dwID)
 {
+	CMDPARA_CHGITEM Para;
 	PCMDPARA_CHGITEM pSendData;
 	PBYTE pData;
 	PITEMINFO pItem;
@@ -1609,10 +1618,12 @@ void SendCmdCHGITEM(DWORD pIDSend, DWORD dwID)
 	PBYTE pDataTmp = pData;
 	ZeroMemory (pData, dwSize);
 
-	pSendData = (PCMDPARA_CHGITEM)pData;
+	/* 名前は可変長に詰めて送るので、いったん構造体に入れる */
+	ZeroMemory (&Para, sizeof (Para));
+	pSendData = &Para;
 	pSendData->byCmd = CMD_CHGITEM;
 
-	strcat (pSendData->szName, pItem->szName);
+	SboTextCopy (pSendData->szName, sizeof (pSendData->szName), pItem->szName);
 	pSendData->dwID = dwID;
 	pSendData->byType = pItem->byType;
 	pSendData->byData = pItem->byData;
@@ -1625,7 +1636,7 @@ void SendCmdCHGITEM(DWORD pIDSend, DWORD dwID)
 	pSendData->pData = pItem->pData;
 	pSendData->pMsg = pItem->pMsg;
 
-	pDataTmp += sizeof (CMDPARA_CHGITEM);
+	pDataTmp = SboPackPutCHGITEM (pData, pSendData);
 	/* 使った時のメッセージ */
 	if (pItem->pMsg) {
 		strcat ((LPSTR)pDataTmp, (LPSTR)pItem->pMsg);
@@ -1634,8 +1645,8 @@ void SendCmdCHGITEM(DWORD pIDSend, DWORD dwID)
 
 	/* 詳細データ */
 	if (pSendData->pData) {
-		CopyMemory (pDataTmp, pSendData->pData, GetItemDataSize (pItem->byType));
-		pDataTmp += GetItemDataSize (pItem->byType);
+		/* 文字エフェクトなどの文字列も可変長に詰める */
+		pDataTmp = SboPackPutItemData (pDataTmp, pItem->byType, pSendData->pData, GetItemDataSize (pItem->byType));
 		if (pItem->byType == ITEMTYPE_MSG) {
 			PITEMINFO_MSG pInfo = (PITEMINFO_MSG)pItem->pData;
 			if (pInfo) {
@@ -1651,7 +1662,7 @@ void SendCmdCHGITEM(DWORD pIDSend, DWORD dwID)
 		}
 	}
 
-	svrSock.SendTo (pIDSend, pData, dwSize, SENDTIMEOUT);
+	svrSock.SendTo (pIDSend, pData, (DWORD)(pDataTmp - pData), SENDTIMEOUT);
 	delete [] pData;
 }
 
@@ -1705,8 +1716,8 @@ void SendCmdITEMINFO(DWORD pIDSend)
 	pSendDataTmp = pData + sizeof (CMDPARA_DATA3);
 	for (i = 0; i < nCount; i ++) {
 		pItem = g_aItemInfo[i];
-		CopyMemory (pSendDataTmp, pItem, sizeof (ITEMINFO));
-		pSendDataTmp += sizeof (ITEMINFO);
+		/* 名前は可変長に詰める */
+		pSendDataTmp = SboPackPutITEMINFO (pSendDataTmp, pItem);
 		/* 使った時のメッセージ */
 		if (pItem->pMsg) {
 			strcat ((LPSTR)pSendDataTmp, (LPSTR)pItem->pMsg);
@@ -1714,8 +1725,7 @@ void SendCmdITEMINFO(DWORD pIDSend)
 		}
 		/* 詳細データ */
 		if (pItem->pData) {
-			CopyMemory (pSendDataTmp, pItem->pData, GetItemDataSize (pItem->byType));
-			pSendDataTmp += GetItemDataSize (pItem->byType);
+			pSendDataTmp = SboPackPutItemData (pSendDataTmp, pItem->byType, pItem->pData, GetItemDataSize (pItem->byType));
 			if (pItem->byType == ITEMTYPE_MSG) {
 				PITEMINFO_MSG pInfo = (PITEMINFO_MSG)pItem->pData;
 				if (pInfo) {
@@ -1733,7 +1743,7 @@ void SendCmdITEMINFO(DWORD pIDSend)
 	}
 
 //	svr.SetPriority (1);
-	svrSock.SendTo (pIDSend, pData, dwSize, SENDTIMEOUT);
+	svrSock.SendTo (pIDSend, pData, (DWORD)(pSendDataTmp - pData), SENDTIMEOUT);
 	delete [] pData;
 }
 
@@ -2144,9 +2154,16 @@ void SendCmdADDCHAREFC(DWORD dwTblID, COLORREF color, LPSTR pszMsg)
 	pSendData->pID = pChar->pID;
 	pSendData->dwTblID = pChar->dwTblID;
 	pSendData->color = color;
-	strcat (pSendData->szMsg, pszMsg);
+	SboTextCopy (pSendData->szMsg, sizeof (pSendData->szMsg), pszMsg);
 
-	SendCmdInside2 (pChar, (LPBYTE)pSendData, sizeof (CMDPARA_ADDCHAREFC), SENDTIMEOUT, SENDINSIDE_INSIDE);
+	/* 文字列は可変長に詰めて送る */
+	{
+		DWORD dwPackSize = SboPackSizeADDCHAREFC (pSendData);
+		PBYTE pPack = new BYTE[dwPackSize];
+		SboPackPutADDCHAREFC (pPack, pSendData);
+		SendCmdInside2 (pChar, pPack, dwPackSize, SENDTIMEOUT, SENDINSIDE_INSIDE);
+		delete [] pPack;
+	}
 	delete pSendData;
 }
 
@@ -2192,7 +2209,9 @@ void SendCmdSTTMPLATE(DWORD dwNo, BYTE byType)
 		dwSize = sizeof (CMDPARA_DATA1) + sizeof (STATUSTEMPLATEINFO);
 		pData = new BYTE [dwSize];
 		ZeroMemory (pData, dwSize);
-		CopyMemory (pData + sizeof (CMDPARA_DATA1), g_aStTmpInfo[dwNo], sizeof (STATUSTEMPLATEINFO));
+		/* 名前は可変長に詰める */
+		pTmp = SboPackPutSTATUSTEMPLATEINFO (pData + sizeof (CMDPARA_DATA1), g_aStTmpInfo[dwNo]);
+		dwSize = (DWORD)(pTmp - pData);
 		break;
 
 	case CMDSTTMPLATETYPE_ALL:	/* 全て更新 */
@@ -2201,9 +2220,9 @@ void SendCmdSTTMPLATE(DWORD dwNo, BYTE byType)
 		ZeroMemory (pData, dwSize);
 		pTmp = pData + sizeof (CMDPARA_DATA1);
 		for (i = 0; i < g_aStTmpInfo.GetSize (); i ++) {
-			CopyMemory (pTmp, g_aStTmpInfo[i], sizeof (STATUSTEMPLATEINFO));
-			pTmp += sizeof (STATUSTEMPLATEINFO);
+			pTmp = SboPackPutSTATUSTEMPLATEINFO (pTmp, g_aStTmpInfo[i]);
 		}
+		dwSize = (DWORD)(pTmp - pData);
 		break;
 
 	default:
@@ -2733,7 +2752,7 @@ void SendCmdMAGICINFO(DWORD pIDSend, BYTE byID)
 	pSendData->byCmd = CMD_MAGICINFO;
 	pSendData->byID = byID;
 
-	strcpy (pSendData->szName, pInfo->szName);
+	SboTextCopy (pSendData->szName, sizeof (pSendData->szName), pInfo->szName);
 	pSendData->byType = pInfo->byType;
 	pSendData->byTypeInfoID = pInfo->byTypeInfoID;
 	pSendData->byUserInfo = pInfo->byUserInfo;
@@ -2750,9 +2769,16 @@ void SendCmdMAGICINFO(DWORD pIDSend, BYTE byID)
 	pSendData->wData3 = pInfo->wData3;
 	pSendData->wData4 = pInfo->wData4;
 	pSendData->wMana = pInfo->wMana;
-	strcpy (pSendData->szExplain, pInfo->szExplain);
+	SboTextCopy (pSendData->szExplain, sizeof (pSendData->szExplain), pInfo->szExplain);
 
-	svrSock.SendTo (pIDSend, (LPBYTE)pSendData, sizeof (CMDPARA_MAGICINFO));
+	/* 名前と説明文は可変長に詰めて送る */
+	{
+		DWORD dwPackSize = SboPackSizeMAGICINFO (pSendData);
+		PBYTE pPack = new BYTE[dwPackSize];
+		SboPackPutMAGICINFO (pPack, pSendData);
+		svrSock.SendTo (pIDSend, pPack, dwPackSize);
+		delete [] pPack;
+	}
 	delete pSendData;
 }
 
@@ -2763,7 +2789,9 @@ void SendCmdMAGICINFO(DWORD pIDSend, BYTE byID)
 /* ========================================================================= */
 void SendCmdMAGICUSERINFO(DWORD pIDSend, BYTE byID)
 {
+	CMDPARA_MAGICUSERINFO Para;
 	PCMDPARA_MAGICUSERINFO pSendData;
+	PBYTE pPos;
 	PMAGICUSERINFO pInfo;
 	PBYTE pSendDataTmp;
 	DWORD dwSize;
@@ -2777,15 +2805,19 @@ void SendCmdMAGICUSERINFO(DWORD pIDSend, BYTE byID)
 	pSendDataTmp = new BYTE[dwSize];
 	ZeroMemory (pSendDataTmp, dwSize);
 
-	pSendData = (PCMDPARA_MAGICUSERINFO)pSendDataTmp;
+	/* 名前は可変長に詰めて送る（後ろに職業 ID の表） */
+	ZeroMemory (&Para, sizeof (Para));
+	pSendData = &Para;
 	pSendData->byCmd = CMD_MAGICUSERINFO;
 	pSendData->byID = byID;
 
-	strcpy (pSendData->szName, pInfo->szName);
+	SboTextCopy (pSendData->szName, sizeof (pSendData->szName), pInfo->szName);
 	pSendData->byCount = pInfo->byCount;
+	pPos = SboPackPutMAGICUSERINFO (pSendDataTmp, pSendData);
 	if (pInfo->byCount) {
-		CopyMemory (pSendData + 1, pInfo->paJobIDTbl, pInfo->byCount);
+		CopyMemory (pPos, pInfo->paJobIDTbl, pInfo->byCount);
 	}
+	dwSize = (DWORD)(pPos - pSendDataTmp) + pInfo->byCount;
 
 	svrSock.SendTo (pIDSend, pSendDataTmp, dwSize);
 	delete [] pSendDataTmp;
@@ -2798,7 +2830,9 @@ void SendCmdMAGICUSERINFO(DWORD pIDSend, BYTE byID)
 /* ========================================================================= */
 void SendCmdEQUUSERINFO(DWORD pIDSend, BYTE byID)
 {
+	CMDPARA_EQUUSERINFO Para;
 	PCMDPARA_EQUUSERINFO pSendData;
+	PBYTE pPos;
 	PEQUUSERINFO pInfo;
 	PBYTE pSendDataTmp;
 	DWORD dwSize;
@@ -2812,15 +2846,19 @@ void SendCmdEQUUSERINFO(DWORD pIDSend, BYTE byID)
 	pSendDataTmp = new BYTE[dwSize];
 	ZeroMemory (pSendDataTmp, dwSize);
 
-	pSendData = (PCMDPARA_EQUUSERINFO)pSendDataTmp;
+	/* 名前は可変長に詰めて送る（後ろに職業 ID の表） */
+	ZeroMemory (&Para, sizeof (Para));
+	pSendData = &Para;
 	pSendData->byCmd = CMD_EQUUSERINFO;
 	pSendData->byID = byID;
 
-	strcpy (pSendData->szName, pInfo->szName);
+	SboTextCopy (pSendData->szName, sizeof (pSendData->szName), pInfo->szName);
 	pSendData->byCount = pInfo->byCount;
+	pPos = SboPackPutEQUUSERINFO (pSendDataTmp, pSendData);
 	if (pInfo->byCount) {
-		CopyMemory (pSendData + 1, pInfo->paJobIDTbl, pInfo->byCount);
+		CopyMemory (pPos, pInfo->paJobIDTbl, pInfo->byCount);
 	}
+	dwSize = (DWORD)(pPos - pSendDataTmp) + pInfo->byCount;
 
 	svrSock.SendTo (pIDSend, pSendDataTmp, dwSize);
 	delete [] pSendDataTmp;
@@ -2993,15 +3031,19 @@ void SendCmdSubWarSELECTTURN(CInfoSubGameWAR *pInfo, BYTE byTeam)
 	for (i = 0; i < nCount; i ++) {
 		pMemberInfo = pTeamInfo->aMemberInfo[i];
 		pChar = g_aCharInfo[pMemberInfo->dwTblID];
-		strcpy (pSendData->aszName[i], pChar->szName);
+		SboTextCopy (pSendData->aszName[i], sizeof (pSendData->aszName[i]), pChar->szName);
 	}
 
-	/* チーム内メンバーに通知 */
+	/* チーム内メンバーに通知（名前は可変長に詰める） */
+	DWORD dwPackSize = SboPackSizeWARSELECTTURN (pSendData);
+	PBYTE pPack = new BYTE[dwPackSize];
+	SboPackPutWARSELECTTURN (pPack, pSendData);
 	for (i = 0; i < nCount; i ++) {
 		pMemberInfo = pTeamInfo->aMemberInfo[i];
 		pChar = g_aCharInfo[pMemberInfo->dwTblID];
-		svrSock.SendTo (pChar->pID, (LPBYTE)pSendData, sizeof (CMDPARA_WARSELECTTURN));
+		svrSock.SendTo (pChar->pID, pPack, dwPackSize);
 	}
+	delete [] pPack;
 
 	delete pSendData;
 }
@@ -3019,7 +3061,12 @@ void SendCmdSubWarMAGIC_TARGET(DWORD pIDSend, PCMDPARA_WARSELECTMAGICTARGET pSen
 	pSendData->bySubGameID	= SUBGAMEID_WAR;
 	pSendData->byCmdSub		= CMDSUBWAR_MAGIC_TARGET;
 
-	svrSock.SendTo (pIDSend, (LPBYTE)pSendData, sizeof (CMDPARA_WARSELECTMAGICTARGET));
+	/* 名前は可変長に詰めて送る */
+	DWORD dwPackSize = SboPackSizeWARSELECTMAGICTARGET (pSendData);
+	PBYTE pPack = new BYTE[dwPackSize];
+	SboPackPutWARSELECTMAGICTARGET (pPack, pSendData);
+	svrSock.SendTo (pIDSend, pPack, dwPackSize);
+	delete [] pPack;
 }
 
 

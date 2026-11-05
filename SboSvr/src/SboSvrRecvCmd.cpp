@@ -471,6 +471,7 @@ static DWORD	s_pIDRecv		= 0;		/* 処理中のパケットを送ってきた接�
 static int		s_nCharNoRecv	= -1;		/* その接続のキャラ番号（未ログインなら -1） */
 static BOOL		s_bAdminRecv	= FALSE;	/* 管理者からのパケット？ */
 static DWORD	s_dwRecvSize	= 0;		/* 処理中のパケットの大きさ */
+static const BYTE *s_pRecvData	= NULL;		/* 処理中のパケットの先頭 */
 
 /* ========================================================================= */
 /* 関数名：	IsRecvChar														 */
@@ -529,6 +530,34 @@ static BOOL IsRecvSizeOK(DWORD dwHead, DWORD dwBody)
 static void TermRecvStr(char *pszStr, int nSize)
 {
 	pszStr[nSize - 1] = 0;
+}
+
+/* ========================================================================= */
+/* 関数名：	RecvEnd															 */
+/* 内容：	処理中のパケットの終わり（可変長の文字列を読む時の上限）		 */
+/* ========================================================================= */
+
+static const BYTE *RecvEnd(const BYTE *pData)
+{
+	return pData + s_dwRecvSize;
+}
+
+/* ========================================================================= */
+/* 関数名：	IsRecvStr														 */
+/* 内容：	pPos からの文字列がパケットの中で終端しているか					 */
+/* ========================================================================= */
+
+static BOOL IsRecvStr(const BYTE *pPos)
+{
+	const BYTE *pEnd = s_pRecvData + s_dwRecvSize;
+
+	while (pPos < pEnd) {
+		if (*pPos == 0) {
+			return TRUE;
+		}
+		pPos ++;
+	}
+	return FALSE;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -2894,6 +2923,7 @@ void RecvDataProc(PBYTE pData, DWORD dwDataSize)
 	int nNo;
 
 	s_dwRecvSize = SvrTakeRecvSize (pData);
+	s_pRecvData  = pData;
 	byCmd = *pData;
 
 	/* 知らないコマンド番号は捨てる（テーブルの外を読まないように） */
@@ -2935,6 +2965,7 @@ void RecvDataProc(PBYTE pData, DWORD dwDataSize)
 	s_nCharNoRecv	= -1;
 	s_bAdminRecv	= FALSE;
 	s_dwRecvSize	= 0;
+	s_pRecvData		= NULL;
 
 //char szTmp[128];
 //wsprintf (szTmp, "RecvDataProc:%X\n", pData);
@@ -3965,8 +3996,14 @@ void RecvDataProcEVENTCHECK(PBYTE pData, DWORD dwDataSize)
 /* ========================================================================= */
 void RecvDataProcADDCHAR(PBYTE pData, DWORD dwDataSize)
 {
-	PCMDPARA_ADDCHARINFO pChar = (PCMDPARA_ADDCHARINFO)pData;
+	CMDPARA_ADDCHARINFO Para;
+	PCMDPARA_ADDCHARINFO pChar = &Para;
 	int nNo;
+
+	/* 名前は可変長で届くので構造体に戻す */
+	if (SboPackGetADDCHARINFO (&Para, pData, RecvEnd (pData)) == NULL) {
+		return;
+	}
 
 	nNo = GetMapNo (pChar->dwMapID);
 	if (nNo < 0) {
@@ -4021,8 +4058,19 @@ void RecvDataProcBANCHAR(PBYTE pData, DWORD dwDataSize)
 /* ========================================================================= */
 void RecvDataProcCHARINFO(PBYTE pData, DWORD dwDataSize)
 {
-	PCMDPARA_CHARINFO pChar = (PCMDPARA_CHARINFO)pData;
+	CMDPARA_CHARINFO Para;
+	PCMDPARA_CHARINFO pChar = &Para;
 	PCHARINFO pCharDst;
+	PBYTE pDataNext;
+
+	/* 名前は可変長で届くので構造体に戻す（後ろに NPC 発言が続く） */
+	pDataNext = SboPackGetCHARINFO (&Para, pData, RecvEnd (pData));
+	if (pDataNext == NULL) {
+		return;
+	}
+	if (Para.pszNpcSpeech && !IsRecvStr (pDataNext)) {
+		return;
+	}
 
 	if (pChar->dwTblID >= (DWORD)g_aCharInfo.GetSize ()) {
 		return;
@@ -4077,7 +4125,7 @@ void RecvDataProcCHARINFO(PBYTE pData, DWORD dwDataSize)
 	pCharDst->clSpeech = pChar->clSpeech;
 	CopyMemory (pCharDst->szName, pChar->szName, sizeof (pCharDst->szName));
 	if (pChar->pszNpcSpeech) {
-		LPSTR pszTmp = (LPSTR)pData + sizeof (CMDPARA_CHARINFO);
+		LPSTR pszTmp = (LPSTR)pDataNext;
 		int nSize = strlen (pszTmp) + 1;
 
 		SAFE_DELETE_ARRAY (pCharDst->pszNpcSpeech);
@@ -4310,16 +4358,22 @@ void RecvDataProcCHGCHARGRPBACK(PBYTE pData, DWORD dwDataSize)
 /* ========================================================================= */
 void RecvDataProcCHGNAMESEX(PBYTE pData, DWORD dwDataSize)
 {
-	PCMDPARA_NAMESEX pPara = (PCMDPARA_NAMESEX)pData;
+	CMDPARA_NAMESEX Para;
+	PCMDPARA_NAMESEX pPara = &Para;
 	PCHARINFO pChar;
 	BOOL bName = TRUE;
 
+	/* 名前は可変長で届くので構造体に戻す */
+	if (SboPackGetNAMESEX (&Para, pData, RecvEnd (pData)) == NULL) {
+		return;
+	}
 	if (!IsRecvChar (pPara->dwTblID)) {
 		return;
 	}
 
-	/* 名前は半角 14 文字まで（クライアントと同じ決まり。必ず終端させる） */
-	TermRecvStr (pPara->szName, MAX_CHARNAME);
+	/* 名前は表示幅 14（半角 14 文字・全角 7 文字）まで（クライアントと同じ決まり。必ず終端させる） */
+	TermRecvStr (pPara->szName, sizeof (pPara->szName));
+	pPara->szName[SboTextFitWidth (pPara->szName, MAX_CHARNAME_WIDTH)] = 0;
 
 	pChar = g_aCharInfo[pPara->dwTblID];
 	pChar->bySaveFlg &= ~CHARINFOSAVEFLG_FEMALE;
@@ -5112,7 +5166,15 @@ void RecvDataProcADDITEM(PBYTE pData, DWORD dwDataSize)
 /* ========================================================================= */
 void RecvDataProcCHGITEM(PBYTE pData, DWORD dwDataSize)
 {
-	PCMDPARA_CHGITEM pPara = (PCMDPARA_CHGITEM)pData;
+	CMDPARA_CHGITEM Para;
+	PCMDPARA_CHGITEM pPara = &Para;
+	PBYTE pDataPtr;
+
+	/* 名前は可変長で届くので構造体に戻す（後ろにメッセージ・詳細データが続く） */
+	pDataPtr = SboPackGetCHGITEM (&Para, pData, RecvEnd (pData));
+	if (pDataPtr == NULL) {
+		return;
+	}
 
 	DWORD dwCount = g_aItemInfo.GetSize ();
 	PITEMINFO pItem = NULL;
@@ -5142,7 +5204,7 @@ void RecvDataProcCHGITEM(PBYTE pData, DWORD dwDataSize)
 	SAFE_DELETE_ARRAY (pItem->pMsg);
 	SAFE_DELETE_ARRAY (pItem->pData);
 	ZeroMemory (pItem->szName, sizeof (pItem->szName));
-	strcat (pItem->szName, pPara->szName);
+	SboTextCopy (pItem->szName, sizeof (pItem->szName), pPara->szName);
 	pItem->byType = pPara->byType;
 	pItem->byData = pPara->byData;
 	pItem->byFlg = pPara->byFlg;
@@ -5153,8 +5215,6 @@ void RecvDataProcCHGITEM(PBYTE pData, DWORD dwDataSize)
 	pItem->dwGold = pPara->dwGold;
 	pItem->pData = pPara->pData;
 
-	PBYTE pDataPtr = (PBYTE)pPara;
-	pDataPtr += sizeof (CMDPARA_CHGITEM);
 	/* 使った時のメッセージ */
 	if (pPara->pMsg) {
 		int nLen = strlen ((LPSTR)pDataPtr) + 1;
@@ -5168,8 +5228,8 @@ void RecvDataProcCHGITEM(PBYTE pData, DWORD dwDataSize)
 	if (pItem->pData) {
 		DWORD dwSize = GetItemDataSize (pItem->byType);
 		pItem->pData = new BYTE[dwSize];
-		CopyMemory (pItem->pData, pDataPtr, dwSize);
-		pDataPtr += dwSize;
+		ZeroMemory (pItem->pData, dwSize);
+		pDataPtr = SboPackGetItemData (pItem->pData, pItem->byType, dwSize, pDataPtr, NULL);
 		if (pItem->byType == ITEMTYPE_MSG) {
 			PITEMINFO_MSG pInfo = (PITEMINFO_MSG)pItem->pData;
 			if (pInfo) {
@@ -5694,7 +5754,7 @@ void RecvDataProcTARGETCHAR(PBYTE pData, DWORD dwDataSize)
 			} else {
 				/* 名前と色のコピー */
 				/* 名前の先頭を表示幅 4（全角 2 文字）まで */
-				char szTmp[MAX_CHARNAME * 2];
+				char szTmp[MAX_CHARNAMEBUF];
 				ZeroMemory (szTmp, sizeof (szTmp));
 				CopyMemory (szTmp, pChar->szName, SboTextFitWidth (pChar->szName, 4));
 				wsprintf (pCharTmp->szName, "[%s]", szTmp);
@@ -5795,7 +5855,12 @@ void RecvDataProcSTTMPLATE(PBYTE pData, DWORD dwDataSize)
 	case CMDSTTMPLATETYPE_ADD:	/* 追加 */
 		{
 			PSTATUSTEMPLATEINFO pInfo = new STATUSTEMPLATEINFO;
-			CopyMemory (pInfo, pPara + 1, sizeof (STATUSTEMPLATEINFO));
+			ZeroMemory (pInfo, sizeof (STATUSTEMPLATEINFO));
+			/* 名前は可変長で届くので構造体に戻す */
+			if (SboPackGetSTATUSTEMPLATEINFO (pInfo, (PBYTE)(pPara + 1), RecvEnd (pData)) == NULL) {
+				delete pInfo;
+				break;
+			}
 			g_aStTmpInfo.Add (pInfo);
 			SendCmdSTTMPLATE (g_aStTmpInfo.GetSize () - 1, CMDSTTMPLATETYPE_ADD);
 		}
@@ -5803,8 +5868,17 @@ void RecvDataProcSTTMPLATE(PBYTE pData, DWORD dwDataSize)
 
 	case CMDSTTMPLATETYPE_CHG:	/* 更新 */
 		{
+			STATUSTEMPLATEINFO InfoTmp;
+			if (pPara->dwTblID >= (DWORD)g_aStTmpInfo.GetSize ()) {
+				break;
+			}
+			/* 名前は可変長で届くので構造体に戻す */
+			ZeroMemory (&InfoTmp, sizeof (InfoTmp));
+			if (SboPackGetSTATUSTEMPLATEINFO (&InfoTmp, (PBYTE)(pPara + 1), RecvEnd (pData)) == NULL) {
+				break;
+			}
 			PSTATUSTEMPLATEINFO pInfo = g_aStTmpInfo[pPara->dwTblID];
-			CopyMemory (pInfo, pPara + 1, sizeof (STATUSTEMPLATEINFO));
+			CopyMemory (pInfo, &InfoTmp, sizeof (STATUSTEMPLATEINFO));
 			SendCmdSTTMPLATE (pPara->dwTblID, CMDSTTMPLATETYPE_CHG);
 
 			/* 更新されたテンプレートを使用しているキャラのデータを更新 */
@@ -6229,9 +6303,14 @@ void RecvDataProcLEAVEINFO(PBYTE pData, DWORD dwDataSize)
 /* ========================================================================= */
 void RecvDataProcACCSEARCH(PBYTE pData, DWORD dwDataSize)
 {
-	PCMDPARA_ACCSEARCH pRecv = (PCMDPARA_ACCSEARCH)pData;
+	CMDPARA_ACCSEARCH Para;
+	PCMDPARA_ACCSEARCH pRecv = &Para;
 	int i, nCount;
 
+	/* 名前は可変長で届くので構造体に戻す */
+	if (SboPackGetACCSEARCH (&Para, pData, RecvEnd (pData)) == NULL) {
+		return;
+	}
 	if (pRecv->dwTblIDStart >= (DWORD)g_aCharInfo.GetSize ()) {
 		return;
 	}
@@ -6838,9 +6917,15 @@ void RecvDataProcSHOPBUY(PBYTE pData, DWORD dwDataSize)
 /* ========================================================================= */
 void RecvDataProcMAGICINFO(PBYTE pData, DWORD dwDataSize)
 {
-	PCMDPARA_MAGICINFO pPara = (PCMDPARA_MAGICINFO)pData;
+	CMDPARA_MAGICINFO Para;
+	PCMDPARA_MAGICINFO pPara = &Para;
 	PMAGICINFO pInfo;
 	int nCount;
+
+	/* 名前と説明文は可変長で届くので構造体に戻す */
+	if (SboPackGetMAGICINFO (&Para, pData, RecvEnd (pData)) == NULL) {
+		return;
+	}
 
 	nCount = g_aMagicInfo.GetSize ();
 	/* 知っている情報よりも大きいID？ */
@@ -6854,7 +6939,7 @@ void RecvDataProcMAGICINFO(PBYTE pData, DWORD dwDataSize)
 		pInfo = g_aMagicInfo[pPara->byID];
 	}
 
-	strcpy (pInfo->szName, pPara->szName);
+	SboTextCopy (pInfo->szName, sizeof (pInfo->szName), pPara->szName);
 	pInfo->byType = pPara->byType;
 	pInfo->byTypeInfoID = pPara->byTypeInfoID;
 	pInfo->byUserInfo = pPara->byUserInfo;
@@ -6871,11 +6956,8 @@ void RecvDataProcMAGICINFO(PBYTE pData, DWORD dwDataSize)
 	pInfo->wData3 = pPara->wData3;
 	pInfo->wData4 = pPara->wData4;
 	pInfo->wMana = pPara->wMana;
-	/* 説明文（説明文の欄が無い古いクライアントから来た時は今のまま） */
-	if (dwDataSize >= sizeof (CMDPARA_MAGICINFO)) {
-		CopyMemory (pInfo->szExplain, pPara->szExplain, MAX_MAGICEXPLAIN);
-		pInfo->szExplain[MAX_MAGICEXPLAIN - 1] = 0;
-	}
+	/* 説明文（空なら数値から自動の説明を出す） */
+	SboTextCopy (pInfo->szExplain, sizeof (pInfo->szExplain), pPara->szExplain);
 
 	/* 全員に更新を通知 */
 	SendCmdMAGICINFO (URARASOCK_SENDALL, pPara->byID);
@@ -6906,9 +6988,20 @@ void RecvDataProcMAGICINFOREQ(PBYTE pData, DWORD dwDataSize)
 /* ========================================================================= */
 void RecvDataProcMAGICUSERINFO(PBYTE pData, DWORD dwDataSize)
 {
-	PCMDPARA_MAGICUSERINFO pPara = (PCMDPARA_MAGICUSERINFO)pData;
+	CMDPARA_MAGICUSERINFO Para;
+	PCMDPARA_MAGICUSERINFO pPara = &Para;
 	PMAGICUSERINFO pInfo;
 	int nCount;
+	PBYTE pDataNext;
+
+	/* 名前は可変長で届くので構造体に戻す（後ろに職業 ID の表が続く） */
+	pDataNext = SboPackGetMAGICUSERINFO (&Para, pData, RecvEnd (pData));
+	if (pDataNext == NULL) {
+		return;
+	}
+	if ((DWORD)(RecvEnd (pData) - pDataNext) < Para.byCount) {
+		return;
+	}
 
 	nCount = g_aMagicUserInfo.GetSize ();
 	/* 知っている情報よりも大きいID？ */
@@ -6924,13 +7017,13 @@ void RecvDataProcMAGICUSERINFO(PBYTE pData, DWORD dwDataSize)
 	}
 
 	SAFE_DELETE_ARRAY (pInfo->paJobIDTbl);
-	strcpy (pInfo->szName, pPara->szName);
+	SboTextCopy (pInfo->szName, sizeof (pInfo->szName), pPara->szName);
 
 	if (pPara->byCount) {
 		pInfo->byCount = pPara->byCount;
 		pInfo->paJobIDTbl = new BYTE[pPara->byCount];
 		ZeroMemory (pInfo->paJobIDTbl, pPara->byCount);
-		CopyMemory (pInfo->paJobIDTbl, pPara + 1, pPara->byCount);
+		CopyMemory (pInfo->paJobIDTbl, pDataNext, pPara->byCount);
 	}
 
 	/* 全員に更新を通知 */
@@ -6962,9 +7055,20 @@ void RecvDataProcMAGICUSERINFOREQ(PBYTE pData, DWORD dwDataSize)
 /* ========================================================================= */
 void RecvDataProcEQUUSERINFO(PBYTE pData, DWORD dwDataSize)
 {
-	PCMDPARA_EQUUSERINFO pPara = (PCMDPARA_EQUUSERINFO)pData;
+	CMDPARA_EQUUSERINFO Para;
+	PCMDPARA_EQUUSERINFO pPara = &Para;
 	PEQUUSERINFO pInfo;
 	int nCount;
+	PBYTE pDataNext;
+
+	/* 名前は可変長で届くので構造体に戻す（後ろに職業 ID の表が続く） */
+	pDataNext = SboPackGetEQUUSERINFO (&Para, pData, RecvEnd (pData));
+	if (pDataNext == NULL) {
+		return;
+	}
+	if ((DWORD)(RecvEnd (pData) - pDataNext) < Para.byCount) {
+		return;
+	}
 
 	nCount = g_aEquUserInfo.GetSize ();
 	/* 知っている情報よりも大きいID？ */
@@ -6980,13 +7084,13 @@ void RecvDataProcEQUUSERINFO(PBYTE pData, DWORD dwDataSize)
 	}
 
 	SAFE_DELETE_ARRAY (pInfo->paJobIDTbl);
-	strcpy (pInfo->szName, pPara->szName);
+	SboTextCopy (pInfo->szName, sizeof (pInfo->szName), pPara->szName);
 
 	if (pPara->byCount) {
 		pInfo->byCount = pPara->byCount;
 		pInfo->paJobIDTbl = new BYTE[pPara->byCount];
 		ZeroMemory (pInfo->paJobIDTbl, pPara->byCount);
-		CopyMemory (pInfo->paJobIDTbl, pPara + 1, pPara->byCount);
+		CopyMemory (pInfo->paJobIDTbl, pDataNext, pPara->byCount);
 	}
 
 	/* 全員に更新を通知 */

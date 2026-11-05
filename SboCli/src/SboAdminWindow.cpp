@@ -1102,7 +1102,7 @@ LRESULT WINAPI WndProcAdminWindow(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPa
 				ZeroMemory (&item, sizeof (item));
 				item.mask = LVIF_TEXT;
 				item.iItem = i;
-				char szTmp[MAX_CHARNAME * 2];
+				char szTmp[MAX_CHARNAMEBUF];
 
 				/* 名前 */
 				ZeroMemory (szTmp, sizeof (szTmp));
@@ -2618,7 +2618,7 @@ void AdminOnCommandCharStatus(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 				&m_hWndEdit15,
 				&m_hWndEdit16
 			};
-			char szTmp[MAX_CHARNAME * 2];
+			char szTmp[MAX_CHARNAMEBUF];
 
 			/* 名前 */
 			ZeroMemory (pInfo->szName, sizeof (pInfo->szName));
@@ -3679,6 +3679,7 @@ void AdminOnCommandItemList(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 			/* 名前を取得 */
 			ZeroMemory (pItem->szName, sizeof (pItem->szName));
 			GetWindowText (m_hWndEdit1, pItem->szName, sizeof (pItem->szName));
+			pItem->szName[SboTextFitWidth (pItem->szName, MAX_ITEMNAME_WIDTH)] = 0;		/* 画面に収まる長さまで */
 			/* 種別を取得 */
 			pItem->byType = (BYTE)SendMessage (m_hWndCombo1, CB_GETCURSEL, 0, 0);
 			/* 効果音を取得 */
@@ -3943,7 +3944,8 @@ void AdminOnCommandItemList(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 
 					/* 文字エフェクト */
 					ZeroMemory (szTmp, sizeof (szTmp));
-					GetWindowText (m_hWndEdit8, szTmp, MAX_LENCHAREFC);
+					GetWindowText (m_hWndEdit8, szTmp, sizeof (szTmp) - 1);
+					szTmp[SboTextFitWidth (szTmp, MAX_LENCHAREFC_WIDTH)] = 0;		/* 画面に収まる長さまで */
 					strcpy ((LPSTR)pInfo->szCharEfc, szTmp);
 					/* 表示種別 */
 					pInfo->byType = (BYTE)SendMessage (m_hWndCombo3, CB_GETCURSEL, 0, 0);
@@ -7922,7 +7924,7 @@ void MakeAdminWndCharStatus(void)
 		ZeroMemory (&item, sizeof (item));
 		item.mask = LVIF_TEXT;
 		item.iItem = i;
-		char szTmp[MAX_CHARNAME * 2];
+		char szTmp[MAX_CHARNAMEBUF];
 
 		/* 名前 */
 		ZeroMemory (szTmp, sizeof (szTmp));

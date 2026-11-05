@@ -18,6 +18,7 @@
 #include "../../common/SboText.h"
 #include "../../common/crc.h"
 #include "../../common/TypedefCommon.h"
+#include "../../common/SboPacket.h"
 #include "../../common/Info/InfoEfc.h"
 #include "Lib/Img32.h"
 #include "Lib/LibMusicLoader.h"

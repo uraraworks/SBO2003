@@ -81,4 +81,5 @@ common/crc.cpp
 common/mt19937int.cpp
 common/myString.cpp
 common/SboText.cpp
+common/SboPacket.cpp
 common/myZlib/myZlib.cpp

@@ -20,20 +20,22 @@
 /* ========================================================================= */
 #define WNDTITLE			"スクラップブックオンライン "			/* ウィンドウタイトル */
 #define VERTEXT				"Ver0.116(感謝祭)"						/* バージョン */
-#define VERSIONVAL			42										/* バージョン番号 */
+#define VERSIONVAL			43										/* バージョン番号（43: 文字列の欄を広げた） */
 #define DLLVER				"34"									/* DLLバージョン */
 #define GRPDATADLLVER		"5"										/* グラフィックデータDLLバージョン */
 #define MAX_ACCNAME			14										/* 最大アカウント名文字数 */
-#define MAX_CHARNAME		15										/* 最大キャラ名文字数 */
-#define MAX_JOBNAME			31										/* 最大職業名文字数 */
-#define MAX_EQUNAME			31										/* 最大装備情報文字数 */
-#define MAX_MAGICNAME		31										/* 最大魔法名文字数 */
-#define MAX_MAGICEXPLAIN	256										/* 最大魔法説明文バイト数（終端含む） */
+#define MAX_CHARNAME		15										/* 最大キャラ名文字数（表示幅の上限は MAX_CHARNAME_WIDTH） */
+#define MAX_CHARNAMEBUF		64										/* キャラ名の欄のバイト数（終端含む。UTF-8 や絵文字でも入るように広めにとる） */
+#define MAX_ITEMNAME		64										/* アイテム名の欄のバイト数（終端含む） */
+#define MAX_JOBNAME			64										/* 職業名の欄のバイト数（終端含む） */
+#define MAX_EQUNAME			64										/* 装備情報名の欄のバイト数（終端含む） */
+#define MAX_MAGICNAME		64										/* 魔法名の欄のバイト数（終端含む） */
+#define MAX_MAGICEXPLAIN	512										/* 魔法説明文の欄のバイト数（終端含む） */
 #define MAX_COMEFC			99										/* 最大吹き出し種類 */
 #define MAX_MYITEM			10										/* 最大所持アイテム */
 #define MAX_SHOPITEM		10										/* 最大売り物数 */
 #define MAX_SHOPMSG			12										/* メッセージ数 */
-#define MAX_LENCHAREFC		15										/* 文字エフェクト文字列長 */
+#define MAX_LENCHAREFC		32										/* 文字エフェクトの欄のバイト数（終端含む） */
 #define MAX_COUNTCHAREFC	5										/* 文字エフェクト数 */
 #define MAX_LEAVEITEM		100										/* 預けられるアイテム数 */
 #define MAX_LEAVEGOLD		10000000								/* 預けられるお金 */
@@ -44,6 +46,21 @@
 #define MAX_USEMAGIC		16										/* 覚えられる魔法数 */
 #define MAX_JOBMAGIC		32										/* 職業別に呪文を覚えておける職業数（職業IDがこれ未満の職業が対象） */
 #define MAX_SUBGAME_WARMEMBER	4									/* 戦場ゲーム最大参加人数 */
+
+/* 入力できる長さ（表示幅。半角1文字=1、全角1文字=2）
+ * 欄のバイト数は UTF-8 化（1文字が最大4バイト）に備えて広げてあるので、
+ * 画面に収まる長さはこちらで決める */
+#define MAX_CHARNAME_WIDTH		(MAX_CHARNAME - 1)						/* キャラ名（全角7文字） */
+#define MAX_ITEMNAME_WIDTH		30										/* アイテム名 */
+#define MAX_JOBNAME_WIDTH		30										/* 職業名 */
+#define MAX_EQUNAME_WIDTH		30										/* 装備情報名 */
+#define MAX_MAGICNAME_WIDTH		30										/* 魔法名 */
+#define MAX_MAGICEXPLAIN_WIDTH	255										/* 魔法説明文 */
+#define MAX_LENCHAREFC_WIDTH	14										/* 文字エフェクト */
+
+/* 古い保存データの欄のバイト数（読み込み時の互換用） */
+#define OLD_MAX_ITEMNAME		31										/* アイテム名（szName 列） */
+#define OLD_MAX_LENCHAREFC		15										/* 文字エフェクト（szCharEfc 列） */
 
 #define SENDHARTBEATTIME	10000									/* 接続チェック送信周期 */
 #define DRAW_PARTS_X	7											/* マップ表示数(横) */
@@ -1558,7 +1575,7 @@ typedef struct _ITEMPOSINFO {
 
 /* アイテム情報 */
 typedef struct _ITEMINFO {
-	char		szName[31];											/* アイテム名 */
+	char		szName[MAX_ITEMNAME];								/* アイテム名 */
 	BYTE		byType;												/* 種別 */
 	BYTE		byData;												/* 付加データ */
 	BYTE		byFlg;												/* フラグ */
@@ -1955,7 +1972,7 @@ typedef struct _CHARINFO {
 	DWORD		dwLastIPAddress;									/* 最終IPアドレス */
 	DWORD		dwSpeechCRC;										/* 発言内容のチェックサム */
 	DWORD		dwExp;												/* 経験値 */
-	char		szName[MAX_CHARNAME * 2];							/* キャラ名 */
+	char		szName[MAX_CHARNAMEBUF];							/* キャラ名 */
 	char		szAcc[MAX_ACCNAME];									/* アカウント名 */
 	char		szPas[MAX_ACCNAME];									/* パスワード */
 	char		szMacAdr[6];										/* MACアドレス */
@@ -2016,7 +2033,7 @@ typedef struct _CMDPARA_CHARINFO {
 	DWORD		dwLastIPAddress;									/* 最終IPアドレス */
 	DWORD		dwTailTblID;										/* ついていっているキャラのテーブルID */
 	DWORD		dwTailBackTblID;									/* ついてきているキャラのテーブルID */
-	char		szName[MAX_CHARNAME * 2];							/* キャラ名 */
+	char		szName[MAX_CHARNAMEBUF];							/* キャラ名 */
 	char		szAcc[MAX_ACCNAME];									/* アカウント名 */
 	char		szPas[MAX_ACCNAME];									/* パスワード */
 	char		szMacAdr[6];										/* MACアドレス */
@@ -2051,7 +2068,7 @@ typedef struct _CMDPARA_CHARINFO2 {
 	WORD		wMana;												/* Mana */
 	DWORD		dwX;												/* X座標 */
 	DWORD		dwY;												/* Y座標 */
-	char		szName[MAX_CHARNAME * 2];							/* キャラ名 */
+	char		szName[MAX_CHARNAMEBUF];							/* キャラ名 */
 	LPSTR		pszNpcSpeech;										/* NPC発言 */
 	COLORREF	clName;												/* 名前の色 */
 	COLORREF	clSpeech;											/* 発言の色 */
@@ -2096,7 +2113,7 @@ typedef struct _CMDPARA_LEAVEINFO {
 
 /* ステータステンプレート情報 */
 typedef struct _STATUSTEMPLATEINFO {
-	char		szName[MAX_CHARNAME * 2];							/* キャラ名 */
+	char		szName[MAX_CHARNAMEBUF];							/* キャラ名 */
 	BYTE		byLevel;											/* レベル */
 	BYTE		byPW;												/* 力 */
 	BYTE		byDEX;												/* 素早さ */
@@ -2133,7 +2150,7 @@ typedef struct _CMDPARA_ADDCHARINFO {
 	DWORD		dwMapID;											/* マップID */
 	DWORD		dwX;												/* X座標 */
 	DWORD		dwY;												/* Y座標 */
-	char		szName[MAX_CHARNAME * 2];							/* キャラ名 */
+	char		szName[MAX_CHARNAMEBUF];							/* キャラ名 */
 	LPSTR		pszNpcSpeech;										/* NPC発言 */
 } CMDPARA_ADDCHARINFO, *PCMDPARA_ADDCHARINFO;
 
@@ -2386,7 +2403,7 @@ typedef struct _CMDPARA_NAMESEX {
 	DWORD		pID;												/* プレイヤーID */
 	DWORD		dwTblID;											/* テーブルID */
 	BYTE		bySex;												/* 性別 */
-	char		szName[MAX_CHARNAME * 2];							/* キャラ名 */
+	char		szName[MAX_CHARNAMEBUF];							/* キャラ名 */
 } CMDPARA_NAMESEX, *PCMDPARA_NAMESEX;
 
 /* マップ移動 */
@@ -2431,7 +2448,7 @@ typedef struct _CMDPARA_CHGCEF {
 /* アイテム情報更新 */
 typedef struct _CMDPARA_CHGITEM {
 	BYTE		byCmd;												/* コマンドID */
-	char		szName[31];											/* アイテム名 */
+	char		szName[MAX_ITEMNAME];								/* アイテム名 */
 	BYTE		byType;												/* 種別 */
 	BYTE		byData;												/* 付加データ */
 	BYTE		byFlg;												/* フラグ */
@@ -2590,7 +2607,7 @@ typedef struct _CMDPARA_ACCSEARCH {
 	BYTE		byMode;												/* 検索モード */
 	DWORD		pID;												/* プレイヤーID */
 	DWORD		dwTblIDStart;										/* 検索開始テーブルID */
-	char		szName[MAX_CHARNAME * 2];							/* キャラ名 */
+	char		szName[MAX_CHARNAMEBUF];							/* キャラ名 */
 } CMDPARA_ACCSEARCH, *PCMDPARA_ACCSEARCH;
 
 /* サーバー情報アップロード情報 */
@@ -2623,13 +2640,7 @@ typedef struct _CMDPARA_PARTYCMD {
 typedef struct _CMDPARA_JOBINFO {
 	BYTE		byCmd;												/* コマンドID */
 	BYTE		byID;												/* 職業ID */
-	char		szName[MAX_JOBNAME];								/* 名前 */
-	BYTE		bySkillType;										/* 特技種別 */
-	BYTE		byMagicType;										/* 魔法種別 */
-	BYTE		byEquType;											/* 装備種別 */
-	DWORD		dwFlg;												/* フラグ */
-	DWORD		dwLvUpInfoCount;									/* レベルアップ情報数 */
-/* 以下レベルアップ情報 */
+/* 以下 CInfoJob::GetSendData の形（名前は可変長・レベルアップ情報） */
 } CMDPARA_JOBINFO, *PCMDPARA_JOBINFO;
 
 /* 魔法情報通知 */
@@ -2753,7 +2764,7 @@ typedef struct _CMDPARA_WARSELECTTURN {
 	BYTE		bySubGameID;										/* サブゲームID */
 	BYTE		byCmdSub;											/* コマンドID */
 	BYTE		byCount;											/* メンバー数 */
-	char		aszName[MAX_SUBGAME_WARMEMBER][MAX_CHARNAME * 2];	/* メンバー名 */
+	char		aszName[MAX_SUBGAME_WARMEMBER][MAX_CHARNAMEBUF];	/* メンバー名 */
 } CMDPARA_WARSELECTTURN, *PCMDPARA_WARSELECTTURN;
 
 /* 魔法対象者一覧通知 */
@@ -2763,7 +2774,7 @@ typedef struct _CMDPARA_WARSELECTMAGICTARGET {
 	BYTE		byCmdSub;											/* コマンドID */
 	BYTE		byCount;											/* メンバー数 */
 	BYTE		byMagic;											/* 魔法 */
-	char		aszName[MAX_SUBGAME_WARMEMBER][MAX_CHARNAME * 2];	/* メンバー名 */
+	char		aszName[MAX_SUBGAME_WARMEMBER][MAX_CHARNAMEBUF];	/* メンバー名 */
 	BYTE		abyNo[MAX_SUBGAME_WARMEMBER];						/* 配列番号 */
 } CMDPARA_WARSELECTMAGICTARGET, *PCMDPARA_WARSELECTMAGICTARGET;
 
