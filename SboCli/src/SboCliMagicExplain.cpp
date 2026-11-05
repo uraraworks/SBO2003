@@ -29,7 +29,7 @@ static void AppendStr(LPSTR pszDst, int nSize, LPCSTR pszSrc)
 
 	nPos = (int)strlen (pszDst);
 	for (i = 0; pszSrc[i]; i += nChar) {
-		nChar = (IsDBCSLeadByte ((BYTE)pszSrc[i]) && pszSrc[i + 1]) ? 2 : 1;
+		nChar = SboTextCharLen (&pszSrc[i]);
 		if (nPos + nChar > nSize - 1) {
 			break;
 		}
@@ -276,10 +276,11 @@ void GetMagicExplain(PMAGICINFO pInfo, LPSTR pszDst, int nSize)
 static BOOL IsHangChar(LPCSTR psz)
 {
 	static LPCSTR s_aszHang[] = {"。", "、", "）", "」", "！", "？"};
-	int i;
+	int i, nChar;
 
+	nChar = SboTextCharLen (psz);
 	for (i = 0; i < sizeof (s_aszHang) / sizeof (s_aszHang[0]); i ++) {
-		if ((psz[0] == s_aszHang[i][0]) && (psz[1] == s_aszHang[i][1])) {
+		if ((nChar == (int)strlen (s_aszHang[i])) && (memcmp (psz, s_aszHang[i], nChar) == 0)) {
 			return TRUE;
 		}
 	}
@@ -288,37 +289,46 @@ static BOOL IsHangChar(LPCSTR psz)
 
 /* ========================================================================= */
 /* 関数名：	SplitMagicExplain												 */
-/* 内容：	説明文を nLineBytes バイトごとに折り返して行に分ける			 */
+/* 内容：	説明文を表示幅 nLineWidth（半角1文字=1）ごとに折り返して行に分ける */
 /*			戻り値は行数。\r\n・\n で改行する								 */
 /*			「。」などは行の頭に来ないよう、全角1文字分まではみ出してよい	 */
 /*			（呼ぶ側はその分の余白を空けておく）							 */
 /* ========================================================================= */
-int SplitMagicExplain(LPCSTR pszSrc, int nLineBytes, char aszDst[][128], int nMaxLine)
+int SplitMagicExplain(LPCSTR pszSrc, int nLineWidth, char aszDst[][128], int nMaxLine)
 {
-	int i, nChar, nLine, nPos;
+	int i, nChar, nCharWidth, nLine, nPos, nWidth;
+	BOOL bOver;
 
 	nLine = 0;
-	nPos = 0;
+	nPos = 0;			/* 行のバイト数 */
+	nWidth = 0;			/* 行の表示幅 */
 	if ((pszSrc == NULL) || (nMaxLine <= 0)) {
 		return 0;
 	}
-	nLineBytes = min (nLineBytes, 125);
+	nLineWidth = min (nLineWidth, 125);
 	aszDst[0][0] = 0;
 
 	for (i = 0; pszSrc[i]; i += nChar) {
-		nChar = (IsDBCSLeadByte ((BYTE)pszSrc[i]) && pszSrc[i + 1]) ? 2 : 1;
+		nChar = SboTextCharLen (&pszSrc[i]);
+		nCharWidth = SboTextCharWidth (&pszSrc[i]);
 
 		if (pszSrc[i] == '\r') {
 			continue;
 		}
+		/* 幅が足りない（「。」などは全角1文字分まではみ出してよい）か、行のバッファに入らない */
+		bOver = ((nWidth + nCharWidth > nLineWidth) &&
+				!((nCharWidth == 2) && IsHangChar (&pszSrc[i]) && (nWidth + nCharWidth <= nLineWidth + 2)));
+		if (nPos + nChar > 127) {
+			bOver = TRUE;
+		}
 		/* 改行、または入りきらないので次の行へ */
-		if ((pszSrc[i] == '\n') ||
-			((nPos + nChar > nLineBytes) && !((nChar == 2) && IsHangChar (&pszSrc[i]) && (nPos + nChar <= nLineBytes + 2)))) {
+		if ((pszSrc[i] == '\n') || bOver) {
 			nLine ++;
 			if (nLine >= nMaxLine) {
 				return nLine;
 			}
 			nPos = 0;
+			nWidth = 0;
 			aszDst[nLine][0] = 0;
 			if (pszSrc[i] == '\n') {
 				continue;
@@ -326,6 +336,7 @@ int SplitMagicExplain(LPCSTR pszSrc, int nLineBytes, char aszDst[][128], int nMa
 		}
 		CopyMemory (&aszDst[nLine][nPos], &pszSrc[i], nChar);
 		nPos += nChar;
+		nWidth += nCharWidth;
 		aszDst[nLine][nPos] = 0;
 	}
 	if (nPos > 0) {

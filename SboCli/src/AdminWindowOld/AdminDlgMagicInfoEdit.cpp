@@ -462,7 +462,7 @@ static void GetExplainText(HWND hWnd, LPSTR pszDst)
 
 	nPos = 0;
 	for (i = 0; szTmp[i]; i += nChar) {
-		nChar = (IsDBCSLeadByte ((BYTE)szTmp[i]) && szTmp[i + 1]) ? 2 : 1;
+		nChar = SboTextCharLen (&szTmp[i]);
 		if (szTmp[i] == '\r') {
 			continue;
 		}

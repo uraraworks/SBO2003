@@ -1553,7 +1553,7 @@ int GetUseCharInfo(
 		ZeroMemory (pInfo, sizeof (USECHARINFO));
 		pInfo->dwTblID = pCharTmp->dwTblID;
 		strcat (pInfo->szName, pCharTmp->szName);
-		nLen = max ((int)strlen (pInfo->szName), nLen);
+		nLen = max (SboTextWidth (pInfo->szName), nLen);
 		aDst.Add (pInfo);
 	}
 

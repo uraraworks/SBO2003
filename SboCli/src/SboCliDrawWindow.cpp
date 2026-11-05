@@ -798,7 +798,8 @@ void DrawWindowMSG(PWNDINFO pWnd)
 	}
 
 	DrawWindowFrame (pWnd);
-	char szTmp[3] = {0, 0, 0};
+	char szTmp[8];			/* 1 文字ぶん（UTF-8 でも入る大きさ） */
+	int nChar;
 	HDC hDC = pWnd->pDib->Lock ();
 	HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFontBasic);
 	SetBkMode (hDC, TRANSPARENT);
@@ -858,12 +859,11 @@ void DrawWindowMSG(PWNDINFO pWnd)
 					continue;
 				}
 			}
-			szTmp[0] = pWnd->pszMsg[i];
-			szTmp[1] = 0;
-			if (IsDBCSLeadByte (szTmp[0])) {
-				szTmp[1] = pWnd->pszMsg[i + 1];
-				i ++;
-			}
+			/* 1 文字ぶん取り出す */
+			nChar = max (SboTextCharLen (&pWnd->pszMsg[i]), 1);
+			ZeroMemory (szTmp, sizeof (szTmp));
+			CopyMemory (szTmp, &pWnd->pszMsg[i], nChar);
+			i += (nChar - 1);
 			if (x > pWnd->nCx - 32) {
 				x = 16;
 				y += 16;
@@ -881,10 +881,8 @@ void DrawWindowMSG(PWNDINFO pWnd)
 					TextOut2 (hDC, x, yDraw, szTmp, RGB (255, 255, 255));
 				}
 			}
-			x += 8;
-			if (IsDBCSLeadByte (szTmp[0])) {
-				x += 8;
-			}
+			/* 半角は 8 ドット、全角は 16 ドット進む */
+			x += 8 * SboTextCharWidth (szTmp);
 		}
 		nScrollTotal = nScroll;
 	}
@@ -2259,8 +2257,8 @@ void DrawWindowLEAVE_ITEMGET(PWNDINFO pWnd)
 		} else {
 			wsprintf (szTmp, "%s", pItem->szName);
 		}
-		if ((int)strlen (szTmp) > nLen) {
-			nLen = strlen (szTmp);
+		if (SboTextWidth (szTmp) > nLen) {
+			nLen = SboTextWidth (szTmp);
 		}
 	}
 	nLen += 2;
@@ -2288,8 +2286,8 @@ void DrawWindowLEAVE_ITEMGET(PWNDINFO pWnd)
 		} else {
 			wsprintf (szTmp, "%s", pItem->szName);
 		}
-		if ((int)strlen (szTmp) > nLen) {
-			nLen = strlen (szTmp);
+		if (SboTextWidth (szTmp) > nLen) {
+			nLen = SboTextWidth (szTmp);
 		}
 		TextOut2 (hDC, 32, 16 + i * 16, szTmp, RGB (255, 255, 255));
 	}
@@ -3510,7 +3508,7 @@ void DrawWindowITEMEQU(PWNDINFO pWnd)
 			continue;
 		}
 		PITEMINFO pItem = g_aItemInfo[pChar->waItem[pChar->waEqu[i]]];
-		nLenTmp = strlen (pItem->szName);
+		nLenTmp = SboTextWidth (pItem->szName);
 		nLen = max (nLen, nLenTmp);
 	}
 	if (nLen % 2) {
@@ -3927,7 +3925,7 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 	}
 
 	if (wEqu != 0xFFFF) {
-		nLen = strlen (szTmp) / 2;
+		nLen = SboTextWidth (szTmp) / 2;
 		TextOut2 (hDC, 16, 16 + 12 * 2, szTmp, RGB (200, 200, 200));
 		wsprintf (szTmp, "%d", pItem->byData);
 		TextOut2 (hDC, 16 + 12 * nLen, 16 + 12 * 2, szTmp, RGB (150, 255, 200));

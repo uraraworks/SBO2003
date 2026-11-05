@@ -80,4 +80,5 @@ common/TextOutput.cpp
 common/crc.cpp
 common/mt19937int.cpp
 common/myString.cpp
+common/SboText.cpp
 common/myZlib/myZlib.cpp
