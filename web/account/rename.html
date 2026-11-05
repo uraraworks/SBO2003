@@ -419,7 +419,7 @@
 		setMsg('');
 	});
 	$('name').addEventListener('keydown', function (ev) {
-		if (ev.key === 'Enter') {
+		if (ev.key === 'Enter' && !ev.isComposing && ev.keyCode !== 229) {
 			next();
 		}
 	});
