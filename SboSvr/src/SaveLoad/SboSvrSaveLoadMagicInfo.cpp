@@ -488,14 +488,8 @@ BOOL LoadMagicInfo(void)
 			} else if (strcmp (aHeaderInfo[i].szName, s_aszName[17]) == 0) {			/* 説明文 */
 				/* 長すぎる時は切り詰める（全角の途中で切れないよう、入る分だけ1文字ずつ写す） */
 				LPCSTR pszSrc = (LPCSTR)&pData[dwOffsetTmp];
-				int nLen = (int)strlen (pszSrc), nPos = 0;
-				while (nPos < nLen) {
-					int nChar = (IsDBCSLeadByte ((BYTE)pszSrc[nPos]) && (nPos + 1 < nLen)) ? 2 : 1;
-					if (nPos + nChar > MAX_MAGICEXPLAIN - 1) {
-						break;
-					}
-					nPos += nChar;
-				}
+				int nLen = (int)strlen (pszSrc);
+				int nPos = SboTextFitBytes (pszSrc, MAX_MAGICEXPLAIN - 1);
 				CopyMemory (pInfo->szExplain, pszSrc, nPos);
 				pInfo->szExplain[nPos] = 0;
 				dwOffsetTmp += (nLen + 1);

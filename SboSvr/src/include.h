@@ -18,6 +18,7 @@
 #include <shlwapi.h>
 
 #include "../../common/myString.h"
+#include "../../common/SboText.h"
 #include "../../common/CUraraSockTCP.h"
 #include "../../common/myArray.h"
 #include "../../common/TextOutput.h"

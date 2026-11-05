@@ -157,7 +157,7 @@ void SboWebSpeechSubmit(LPCSTR pszSjis, int nKeyMod)
 extern "C" EMSCRIPTEN_KEEPALIVE void SboWebChatSubmit(const char *pszUtf8, int nKeyMod)
 {
 	char szBuf[MSGLOG_SPEECH_MAX + 2];
-	int i, nLen;
+	int nLen;
 
 	if (pszUtf8 == NULL) {
 		return;
@@ -170,17 +170,9 @@ extern "C" EMSCRIPTEN_KEEPALIVE void SboWebChatSubmit(const char *pszUtf8, int n
 
 	std::string strSjis = W32Utf8ToSjisStr (pszUtf8);
 	ZeroMemory (szBuf, sizeof (szBuf));
-	/* 全角文字の途中で切らないように詰める */
-	nLen = 0;
-	for (i = 0; i < (int)strSjis.size (); ) {
-		int nChar = IsDBCSLeadByte ((BYTE)strSjis[i]) ? 2 : 1;
-		if (nLen + nChar > MSGLOG_SPEECH_MAX) {
-			break;
-		}
-		memcpy (&szBuf[nLen], &strSjis[i], nChar);
-		nLen += nChar;
-		i += nChar;
-	}
+	/* 文字の途中で切らないように詰める */
+	nLen = SboTextFitBytes (strSjis.c_str (), MSGLOG_SPEECH_MAX);
+	memcpy (szBuf, strSjis.c_str (), nLen);
 	if (nLen == 0) {
 		return;
 	}

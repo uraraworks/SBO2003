@@ -85,4 +85,5 @@ common/Info/SubGame/InfoSubGameWAR.cpp
 common/TextOutput.cpp
 common/crc.cpp
 common/myString.cpp
+common/SboText.cpp
 common/myZlib/myZlib.cpp
