@@ -201,6 +201,7 @@ void		W32HtmlUpdate(W32Wnd *pWnd);			/* 位置・表示状態・有効状態を�
 void		W32HtmlSetText(W32Wnd *pWnd);			/* strText を部品へ反映 */
 void		W32HtmlGetText(W32Wnd *pWnd);			/* 部品の内容を strText へ取り込む */
 void		W32HtmlFocus(W32Wnd *pWnd);			/* 部品にフォーカスを移す(NULL ならゲーム画面へ) */
+void		W32HtmlSetNoIme(W32Wnd *pWnd, BOOL bNoIme);	/* 日本語入力を使わない（半角英数字記号だけの）入力欄にする */
 /* コンボボックス・リストボックスの項目 nOp 0:全消し 1:挿入 2:削除 3:選択 */
 void		W32HtmlItems(W32Wnd *pWnd, int nOp, int nIndex, const char *pszText);
 void		W32HtmlScroll(W32Wnd *pWnd);			/* スクロールバーの範囲と位置 */
