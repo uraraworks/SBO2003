@@ -285,6 +285,7 @@
 		<button type="button" data-tab="recover">復旧の承認<span class="badge" id="pending-count" hidden></span></button>
 		<button type="button" data-tab="feedback">ご意見箱<span class="badge" id="feedback-count" hidden></span></button>
 		<button type="button" data-tab="ai">AI連携</button>
+		<button type="button" data-tab="mapdoc">マップ資料</button>
 	</nav>
 </header>
 <main>
@@ -389,7 +390,32 @@
 		<div class="msg" id="ai-hist-msg"></div>
 		<div id="ai-hist"></div>
 	</section>
+
+	<!-- マップ資料 -->
+	<section id="tab-mapdoc" hidden>
+		<p class="sub-text">
+			マップごとの全体図（屋根を外して、NPC の番号・敵の出る範囲・入口を重ねた絵）と、
+			そこにいる NPC・敵・お店・イベントの資料（Markdown）を作って、zip で書き出します。
+			今のサーバーのデータから作るので、データを変えた後に作り直せます。プレイヤーのキャラは入りません。
+		</p>
+		<div class="card">
+			<label for="md-map" style="margin-top:0">書き出すマップ</label>
+			<div class="row" style="flex-wrap:wrap">
+				<select id="md-map">
+					<option value="">全部のマップ（目次・敵の索引つき）</option>
+				</select>
+				<select id="md-size">
+					<option value="">絵は 2 倍（見やすい）</option>
+					<option value="small">絵は等倍（軽い）</option>
+				</select>
+				<button type="button" id="md-run">書き出す</button>
+			</div>
+			<p class="sub-text" style="margin:6px 0 0">全部のマップだと、zip は 2 倍で 90MB・等倍で 30MB くらいです（PC で数十秒）。</p>
+			<div class="msg" id="md-msg"></div>
+		</div>
+	</section>
 </main>
+<script src="admin-mapdoc.js"></script>
 <script>
 (function () {
 	var KEY_SESSION = 'sbo_admin_session';
@@ -460,6 +486,7 @@
 		$('tab-recover').hidden = true;
 		$('tab-feedback').hidden = true;
 		$('tab-ai').hidden = true;
+		$('tab-mapdoc').hidden = true;
 		setMsg($('login-msg'), text || '');
 	}
 	function showMain() {
@@ -467,9 +494,11 @@
 		$('tabs').hidden = false;
 		$('logout').hidden = false;
 		selectTab(location.hash === '#recover' ? 'recover' : location.hash === '#feedback' ? 'feedback' :
-			location.hash === '#ai' ? 'ai' : 'search');
+			location.hash === '#ai' ? 'ai' : location.hash === '#mapdoc' ? 'mapdoc' : 'search');
 		if (location.hash === '#ai') {
 			loadAi();
+		} else if (location.hash === '#mapdoc') {
+			loadMapDoc();
 		}
 		loadRequests();
 		loadFeedback();
@@ -509,6 +538,7 @@
 		$('tab-recover').hidden = name !== 'recover';
 		$('tab-feedback').hidden = name !== 'feedback';
 		$('tab-ai').hidden = name !== 'ai';
+		$('tab-mapdoc').hidden = name !== 'mapdoc';
 		if (history.replaceState) {
 			history.replaceState(null, '', name === 'search' ? location.pathname : '#' + name);
 		}
@@ -525,6 +555,8 @@
 				loadFeedback();
 			} else if (b.dataset.tab === 'ai') {
 				loadAi();
+			} else if (b.dataset.tab === 'mapdoc') {
+				loadMapDoc();
 			}
 		});
 	});
@@ -1096,6 +1128,64 @@
 		});
 	}
 	$('ai-reload').addEventListener('click', loadAiHistory);
+
+	/* ---- マップ資料（admin-mapdoc.js が作る） ---- */
+	var bMapDocLoaded = false, bMapDocBusy = false;
+	function loadMapDoc() {
+		if (bMapDocLoaded) {
+			return;
+		}
+		api('/api/admin/data/list', { session: session, kind: 'map', limit: 500, fields: ['szName'] }).then(function (data) {
+			if (!data.records) {
+				setMsg($('md-msg'), data.message || 'マップの一覧が読めませんでした（' + (data.error || data.httpStatus) + '）');
+				return;
+			}
+			bMapDocLoaded = true;
+			var sel = $('md-map');
+			data.records.forEach(function (r) {
+				var o = document.createElement('option');
+				o.value = String(r.id);
+				o.textContent = ('00' + r.id).slice(-3) + ' ' + (r.szName || '（名前なし）');
+				sel.appendChild(o);
+			});
+		}).catch(function () {
+			setMsg($('md-msg'), 'サーバーにつながりませんでした。');
+		});
+	}
+	$('md-run').addEventListener('click', function () {
+		if (bMapDocBusy) {
+			return;
+		}
+		if (!window.SboMapDoc) {
+			setMsg($('md-msg'), '書き出し用のファイル（admin-mapdoc.js）が読めませんでした。');
+			return;
+		}
+		var v = $('md-map').value;
+		bMapDocBusy = true;
+		$('md-run').disabled = true;
+		window.SboMapDoc.build(function (url, body) {
+			body.session = session;
+			return api(url, body);
+		}, function (text) {
+			setMsg($('md-msg'), text);
+		}, { mapId: v === '' ? null : Number(v), small: $('md-size').value === 'small' }).then(function (r) {
+			var a = document.createElement('a');
+			a.href = URL.createObjectURL(r.blob);
+			a.download = r.name;
+			document.body.appendChild(a);
+			a.click();
+			setTimeout(function () {
+				URL.revokeObjectURL(a.href);
+				a.remove();
+			}, 60000);
+			setMsg($('md-msg'), r.name + ' を書き出しました（マップ ' + r.count + ' 枚・' + Math.round(r.blob.size / 1024 / 1024 * 10) / 10 + 'MB）。', true);
+		}).catch(function (e) {
+			setMsg($('md-msg'), '書き出せませんでした: ' + (e && e.message || e));
+		}).then(function () {
+			bMapDocBusy = false;
+			$('md-run').disabled = false;
+		});
+	});
 
 	/* 開いた時：このタブでログイン済みなら続きから */
 	session = ssGet();

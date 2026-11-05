@@ -97,6 +97,10 @@
   （遠くにいる人は入り直すまで前の名前のことがあります）。本人の場合の待ち時間・NG ワード・予約は管理者には効きません。
 - **復旧の承認** … 前の承認ページと同じです。承認待ちの数がタブに出ます。
 - **AI連携** … AI（Claude Code など）から設定データを読み書きするキーの発行・取り消しと、変更履歴・元に戻す。詳しくは [ai-data.md](ai-data.md)。
+- **マップ資料** … マップごとの全体図（屋根を外して NPC の番号・敵の出る範囲・入口を重ねた PNG）と、NPC・敵・お店・イベントの資料（Markdown）を
+  今のサーバーのデータから作って zip で書き出します（`/admin#mapdoc`）。1 マップだけも選べます。中身は `README.md`（目次・敵の索引・気づいたこと）・
+  `maps/番号.md`・`images/番号.png`・`data/maps.json`（AI に読ませる用）。作るのはブラウザで、データは読むだけの
+  `/api/admin/data/list`・`/api/admin/data/tiles` から読みます（`web/account/admin-mapdoc.js`、画像は `/admin-grp/`）。
 
 ## キャラ名の変更（/rename、プレイヤー用）
 
@@ -143,7 +147,8 @@
 | `server/web_account_svr.cpp` | キャラ情報を見る部分（照合・パスワード変更・キャラ名の変更と検索・管理者の確認）。パスワードは JS へ出さない |
 | `web/replace/SboCliWebAccount_web.cpp` | クライアント側（トークンでの接続・ページとのやり取り） |
 | `web/shell/sbocli.html` | ログイン画面のボタンと復旧の画面 |
-| `web/account/admin.html` | 管理ページ（`/admin`。キャラ検索・キャラ名の変更・復旧の承認・ご意見箱・AI連携（[ai-data.md](ai-data.md)）） |
+| `web/account/admin.html` | 管理ページ（`/admin`。キャラ検索・キャラ名の変更・復旧の承認・ご意見箱・AI連携（[ai-data.md](ai-data.md)）・マップ資料） |
+| `web/account/admin-mapdoc.js` | 管理ページの「マップ資料」（資料の Markdown・全体図・zip を作る） |
 | `web/account/rename.html` | キャラ名の変更ページ（`/rename`。プレイヤー用） |
 | `web/account/feedback.html` | ご意見箱（`/feedback`。プレイヤー用） |
 | `server/node/sbosvr_feedback.js` | ご意見箱の保存・API（`/api/feedback/*`・`/api/admin/feedback/*`） |
