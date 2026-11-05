@@ -985,11 +985,22 @@ void OnCommand(HWND hWnd, int nID)
 		}
 		/* ID・パスワードで入るので、端末トークンは使わない */
 		ZeroMemory (g_szWebToken, sizeof (g_szWebToken));
-		ZeroMemory (g_szAcc, sizeof (g_szAcc));
-		GetWindowText (g_hWndAcc, g_szAcc, MAX_ACCNAME);
-		/* アカウント名は 1 バイト文字だけ */
-		if (!SboTextIsSingleByteOnly (g_szAcc)) {
-			break;
+		{
+			char szAccTmp[MAX_ACCNAME];
+			ZeroMemory (szAccTmp, sizeof (szAccTmp));
+			GetWindowText (g_hWndAcc, szAccTmp, MAX_ACCNAME);
+			/* アカウント名は 1 バイト文字だけ（日本語入力のまま打った時など）。
+			   黙って何もしないと押しても反応しないように見えるので、知らせる */
+			if (!SboTextIsSingleByteOnly (szAccTmp)) {
+				EnableWindow (g_hWndCon, FALSE);
+				pWnd = MakeWindowMSG3SEC ("アカウント名は半角英数字で入力してください");
+				pWnd->nData1 = MSG3SEC_ACC;
+				g_WndInfo.Add (pWnd);
+				InvalidateRect (g_hWndMain, NULL, FALSE);
+				break;
+			}
+			ZeroMemory (g_szAcc, sizeof (g_szAcc));
+			strcpy (g_szAcc, szAccTmp);
 		}
 		EnableWindow (g_hWndCon, FALSE);
 
