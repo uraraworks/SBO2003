@@ -11,4 +11,4 @@ extern void GetMagicExplain			(PMAGICINFO pInfo, LPSTR pszDst, int nSize);
 /* 数値から説明文を作る（管理者用ウィンドウの「自動作成」でも使う） */
 extern void MakeMagicExplainAuto	(PMAGICINFO pInfo, LPSTR pszDst, int nSize);
 /* 説明文を決まった幅で折り返して行に分ける（全角の途中では切らない。改行もそのまま改行） */
-extern int	SplitMagicExplain		(LPCSTR pszSrc, int nLineBytes, char aszDst[][128], int nMaxLine);
+extern int	SplitMagicExplain		(LPCSTR pszSrc, int nLineWidth, char aszDst[][128], int nMaxLine);

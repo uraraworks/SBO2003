@@ -136,7 +136,7 @@ void DrawScreen(HWND hWnd, HDC hDC)
 						byLv = 100;
 					}
 
-					pDibDrawTmp.FillRect (0, 0, (strlen ((LPSTR)g_pMapInfo->pszName) + 1) * 16, 66, RGB (0, 0, 0));
+					pDibDrawTmp.FillRect (0, 0, (SboTextWidth ((LPSTR)g_pMapInfo->pszName) + 1) * 16, 66, RGB (0, 0, 0));
 
 					HDC hDC = pDibDrawTmp.Lock ();
 					HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFont32);
@@ -146,10 +146,10 @@ void DrawScreen(HWND hWnd, HDC hDC)
 
 					SelectObject (hDC, hFontOld);
 					pDibDrawTmp.Unlock ();
-					int xTmp = (SCRSIZEX / 2) - (strlen ((LPSTR)g_pMapInfo->pszName) * 8);
+					int xTmp = (SCRSIZEX / 2) - (SboTextWidth ((LPSTR)g_pMapInfo->pszName) * 8);
 					xTmp = max (xTmp, 0);
 					g_pDibDrawMap->BltAlpha (32 - x + xTmp,
-								32 - y + 5 * 32, (strlen ((LPSTR)g_pMapInfo->pszName) + 1) * 16, 64, &pDibDrawTmp, 0, 0, byLv, TRUE);
+								32 - y + 5 * 32, (SboTextWidth ((LPSTR)g_pMapInfo->pszName) + 1) * 16, 64, &pDibDrawTmp, 0, 0, byLv, TRUE);
 				}
 			}
 
@@ -213,9 +213,9 @@ void DrawScreenTITLE(void)
 	SetBkMode (hDC, TRANSPARENT);
 
 	wsprintf (szBuf, "スクラップブックオンライン");
-	TextOut2 (hDC, SCRSIZEX / 2 - (strlen (szBuf) * 8) / 2 - 8, SCRSIZEY / 2 + 52, szBuf, RGB (255, 255, 255));
+	TextOut2 (hDC, SCRSIZEX / 2 - (SboTextWidth (szBuf) * 8) / 2 - 8, SCRSIZEY / 2 + 52, szBuf, RGB (255, 255, 255));
 	wsprintf (szBuf, "Presented By URARA-works 2003-2007");
-	TextOut2 (hDC, SCRSIZEX / 2 - (strlen (szBuf) * 8) / 2 - 8, SCRSIZEY / 2 - 85 + 82 + 218, szBuf, RGB (255, 255, 255));
+	TextOut2 (hDC, SCRSIZEX / 2 - (SboTextWidth (szBuf) * 8) / 2 - 8, SCRSIZEY / 2 - 85 + 82 + 218, szBuf, RGB (255, 255, 255));
 
 	SelectObject (hDC, hFontOld);
 	g_pDibPrimary->Unlock ();
@@ -246,7 +246,7 @@ void DrawScreenLOGIN(void)
 	}
 	x = max (x, 0);
 	g_pDibPrimary->Blt (x, SCRSIZEY - 33 - 8, cx, 32, g_pDibAnime, (g_byAnimeNo % 8) * 32 + x2, 0, TRUE);
-	nX1 = x - strlen ("スクラップブックオンライン") * 6;
+	nX1 = x - SboTextWidth ("スクラップブックオンライン") * 6;
 	nX2 = nX1 - 48;
 
 	hDC = g_pDibPrimary->Lock ();
@@ -1204,25 +1204,24 @@ void DrawChar3(void)
 				cl = pChar->clSpeech;
 			}
 
-			int xx, yy, nLen = strlen (pChar->pszSpeech);
+			/* nLen は表示幅（半角 1 文字 = 1） */
+			int xx, yy, nLen = SboTextWidth (pChar->pszSpeech);
 			char szTmp[128];
 			if (nLen > 20) {
-				int j, nLenTmp;
-				ZeroMemory (szTmp, sizeof (szTmp));
-				for (j = 0; j < 20; j ++) {
-					szTmp[j] = pChar->pszSpeech[j];
-					if (IsDBCSLeadByte ((BYTE)pChar->pszSpeech[j])) {
-						j ++;
-						szTmp[j] = pChar->pszSpeech[j];
-					}
+				int j, nWidth, nLenTmp;
+				/* 表示幅 20 に届くまでを 1 行目にする（最後の全角ははみ出してよい） */
+				for (j = 0, nWidth = 0; pChar->pszSpeech[j] && (nWidth < 20); ) {
+					nWidth += SboTextCharWidth (&pChar->pszSpeech[j]);
+					j += SboTextCharLen (&pChar->pszSpeech[j]);
 				}
-				xx = x - j * 6 / 2 + 16;
-				TextOut2 (hdcTmp, 1, 1, szTmp, cl);
-				nLenTmp = strlen (szTmp);
-
 				ZeroMemory (szTmp, sizeof (szTmp));
-				CopyMemory (szTmp, &pChar->pszSpeech[j], nLen - j);
-				nLenTmp = max (nLenTmp, (int)strlen (szTmp));
+				CopyMemory (szTmp, pChar->pszSpeech, min (j, (int)sizeof (szTmp) - 1));
+				xx = x - nWidth * 6 / 2 + 16;
+				TextOut2 (hdcTmp, 1, 1, szTmp, cl);
+				nLenTmp = SboTextWidth (szTmp);
+
+				SboTextCopy (szTmp, sizeof (szTmp), &pChar->pszSpeech[j]);
+				nLenTmp = max (nLenTmp, SboTextWidth (szTmp));
 				TextOut2 (hdcTmp, 1, 12, szTmp, cl);
 
 				x = xx;
@@ -1275,7 +1274,7 @@ void DrawChar3(void)
 					}
 				} 
 				g_pDibDrawMap->BltAlpha (xx - 2, yy,
-						strlen (pChar->pszSpeech) * 6 - x + 1, 14 - y, &pDibDrawTmp, x, y,
+						nLen * 6 - x + 1, 14 - y, &pDibDrawTmp, x, y,
 						byLevel, TRUE);
 			}
 		}
@@ -1283,7 +1282,7 @@ void DrawChar3(void)
 		/* 文字エフェクトを表示 */
 		for (int j = 0; j < MAX_COUNTCHAREFC; j ++) {
 			PCHAREFCINFO pCharEfc = &pChar->aCharEfcInfo[j];
-			int nLen = strlen (pCharEfc->szMsg);
+			int nLen = SboTextWidth (pCharEfc->szMsg);
 			if (nLen) {
 				TextOut2 (hDC, nameX - nLen * 6 / 2 + GetCharCenterX (pChar),
 						nameY - 8 + pCharEfc->chY,
@@ -1298,7 +1297,7 @@ void DrawChar3(void)
 			}
 
 			/* キャラ名を表示 */
-			TextOut2 (hDC, nameX - strlen (pChar->szName) * 6 / 2 + GetCharCenterX (pChar), nameY + 32 - 8,
+			TextOut2 (hDC, nameX - SboTextWidth (pChar->szName) * 6 / 2 + GetCharCenterX (pChar), nameY + 32 - 8,
 					g_aCharInfo[i]->szName, cl);
 		}
 	}
@@ -1353,8 +1352,8 @@ void DrawETC(void)
 			}
 
 			nNameX = x + 3;
-			if (strlen (pChar->szName) >= 14) {
-				nNameX -= ((strlen (pChar->szName) - 14) * 6);
+			if (SboTextWidth (pChar->szName) >= 14) {
+				nNameX -= ((SboTextWidth (pChar->szName) - 14) * 6);
 			}
 
 			/* フレーム表示 */

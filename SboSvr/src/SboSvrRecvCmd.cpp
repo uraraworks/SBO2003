@@ -5693,20 +5693,10 @@ void RecvDataProcTARGETCHAR(PBYTE pData, DWORD dwDataSize)
 
 			} else {
 				/* 名前と色のコピー */
-				char szTmp[MAX_CHARNAME + 1];
-				int i;
+				/* 名前の先頭を表示幅 4（全角 2 文字）まで */
+				char szTmp[MAX_CHARNAME * 2];
 				ZeroMemory (szTmp, sizeof (szTmp));
-				for (i = 0; i < 4; i ++) {
-					szTmp[i] = pChar->szName[i];
-					if (IsDBCSLeadByte (pChar->szName[i])) {
-						szTmp[i + 1] = pChar->szName[i + 1];
-						if (i == 3) {
-							szTmp[i] = 0;
-							break;
-						}
-						i ++;
-					}
-				}
+				CopyMemory (szTmp, pChar->szName, SboTextFitWidth (pChar->szName, 4));
 				wsprintf (pCharTmp->szName, "[%s]", szTmp);
 				pCharTmp->clName = pChar->clName;
 				pCharTmp->clSpeech = pChar->clSpeech;

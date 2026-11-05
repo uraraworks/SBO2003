@@ -591,18 +591,9 @@ void CProcSubGameWAR::PrePare(void)
 
 			/* 名前と色のコピー */
 			pCharTmp = g_aCharInfo[pMemberInfo->dwTblIDHP];
+			/* 名前の先頭を表示幅 4（全角 2 文字）まで */
 			ZeroMemory (szTmp, sizeof (szTmp));
-			for (k = 0; k < 4; k ++) {
-				szTmp[k] = pChar->szName[k];
-				if (IsDBCSLeadByte (pChar->szName[k])) {
-					szTmp[k + 1] = pChar->szName[k + 1];
-					if (k == 3) {
-						szTmp[k] = 0;
-						break;
-					}
-					k ++;
-				}
-			}
+			CopyMemory (szTmp, pChar->szName, min (SboTextFitWidth (pChar->szName, 4), (int)sizeof (szTmp) - 1));
 			pCharTmp->byEfect = 0;
 			wsprintf (pCharTmp->szName, "[%s]", szTmp);
 			pCharTmp->clName	= pChar->clName;
