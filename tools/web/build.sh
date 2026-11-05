@@ -173,15 +173,20 @@ cp "$ROOT/web/bgm/sbo_bgm.js" \
 	"$ROOT/web/soundfont/GeneralUserGS.sf3" \
 	"$DIST/bgm/"
 
-# 管理ページ（/admin。キャラ検索・キャラ名の変更・復旧の承認。サーバーの /api/admin/* を使う）
+# 管理ページ（/admin。キャラ検索・キャラ名の変更・復旧の承認・マップ資料。サーバーの /api/admin/* を使う）
 # キャラ名の変更ページ（/rename。プレイヤー用）
 # ご意見箱（/feedback。プレイヤー用。サーバーの /api/feedback/* を使う）
 # recover-admin.html は前の URL を /admin#recover へ送るだけ
 cp "$ROOT/web/account/admin.html" \
+	"$ROOT/web/account/admin-mapdoc.js" \
 	"$ROOT/web/account/rename.html" \
 	"$ROOT/web/account/feedback.html" \
 	"$ROOT/web/account/recover-admin.html" \
 	"$DIST/"
+
+# 管理ページの「マップ資料」で全体図を描くための画像（マップパーツとキャラ。admin-mapdoc.js が読む）
+mkdir -p "$DIST/admin-grp"
+cp "$ROOT"/SboGrpData/grp/map0[1-5].png "$ROOT"/SboGrpData/grp/char[01][0-9].png "$DIST/admin-grp/"
 
 # サーバー状況のページ（/status。サーバーの /api/status を読む）。フッターの版も書き込む
 sed "s/@@SBO_BUILD_DATE@@/$BUILD_DATE/g; s/@@SBO_BUILD_COMMIT@@/$BUILD_COMMIT/g" "$ROOT/web/status/status.html" > "$DIST/status.html"
