@@ -590,6 +590,8 @@ static void TrimSteps(BYTE byScreen)
 /* 記録する																	 */
 /* ========================================================================= */
 
+static BOOL BeginPending(BYTE byCmd, const ADMINUNDO_KEY &Key, DWORD dwMapNo, DWORD pID, LPCSTR pszSource, BYTE byScreen);
+
 BOOL AdminUndoBefore(BYTE byCmd, const BYTE *pData, DWORD dwSize, DWORD pID, LPCSTR pszSource, BYTE byScreen)
 {
 	ADMINUNDO_KEY Key;
@@ -612,6 +614,38 @@ BOOL AdminUndoBefore(BYTE byCmd, const BYTE *pData, DWORD dwSize, DWORD pID, LPC
 		}
 	}
 
+	return BeginPending (byCmd, Key, dwMapNo, pID, pszSource, byScreen);
+}
+
+/* API から、パケットを使わずに直接データを変える時に呼ぶ（対象は番号 1 つで決まるコマンドだけ） */
+BOOL AdminUndoBeforeTarget(BYTE byCmd, DWORD dwID, LPCSTR pszSource, BYTE byScreen)
+{
+	ADMINUNDO_KEY Key;
+
+	s_bPending = FALSE;
+	if (s_bReplaying) {
+		return FALSE;
+	}
+	switch (byCmd) {
+	case CMD_STTMPLATE:
+	case CMD_CHGITEM:
+	case CMD_JOBINFO:
+	case CMD_MAGICINFO:
+	case CMD_MAGICUSERINFO:
+	case CMD_EQUUSERINFO:
+		break;
+	default:
+		return FALSE;
+	}
+	ZeroMemory (&Key, sizeof (Key));
+	Key.byCmd	= byCmd;
+	Key.a		= dwID;
+	return BeginPending (byCmd, Key, ADMINUNDO_NOMAP, 0, pszSource, byScreen);
+}
+
+/* 対象が決まった後の記録の準備（AdminUndoBefore・AdminUndoBeforeTarget から） */
+static BOOL BeginPending(BYTE byCmd, const ADMINUNDO_KEY &Key, DWORD dwMapNo, DWORD pID, LPCSTR pszSource, BYTE byScreen)
+{
 	s_Pending.Key		= Key;
 	s_Pending.dwMapNo	= dwMapNo;
 	s_Pending.aAfter.clear ();
