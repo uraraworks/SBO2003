@@ -573,9 +573,15 @@ EM_JS(void, W32JsPopInit, (void), {
 				_W32JsOnListView(id, rowOf(ev), 1);
 				return;
 			}
-			_W32JsOnListView(id, rowOf(ev), 0);
+			/* Ctrl（Mac は command）で追加・外す、Shift で範囲選択（一つしか選べない一覧では普通のクリック） */
+			var mod = ((ev.ctrlKey || ev.metaKey) ? 0x10 : 0) | (ev.shiftKey ? 0x20 : 0);
+			_W32JsOnListView(id, rowOf(ev), mod);
 		});
 		el.addEventListener('mousedown', function (ev) {
+			/* スクロールバーをつかんだ時は選択を外さない */
+			if (ev.target === el && (ev.offsetX >= el.clientWidth || ev.offsetY >= el.clientHeight)) {
+				return;
+			}
 			if (ev.target === el || ev.target === table) {
 				_W32JsOnListView(id, -1, 0);
 			}
