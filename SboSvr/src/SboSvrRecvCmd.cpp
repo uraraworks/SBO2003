@@ -110,6 +110,7 @@ void	RecvDataProcADDMSG						(PBYTE, DWORD);				/* メッセージ追加 */
 void	RecvDataProcMAPMSGREQ					(PBYTE, DWORD);				/* メッセージ要求 */
 void	RecvDataProcCHGMSG						(PBYTE, DWORD);				/* メッセージ更新 */
 void	RecvDataProcOPENDOOR					(PBYTE, DWORD);				/* 扉開け要求 */
+static BOOL OpenDoorFront						(PCHARINFO);				/* 目の前の扉を開ける */
 void	RecvDataProcCHGCHARGRP					(PBYTE, DWORD);				/* 着せ替え要求 */
 void	RecvDataProcCHGCHARGRPBACK				(PBYTE, DWORD);				/* キャラ画像記録 */
 void	RecvDataProcCHGNAMESEX					(PBYTE, DWORD);				/* 名前と性別更新 */
@@ -4009,6 +4010,13 @@ void RecvDataProcEVENTCHECK(PBYTE pData, DWORD dwDataSize)
 			return;
 		}
 	}
+
+	/* 目の前を調べた時（Sキー）は、目の前の扉なら開ける */
+	if (pPara->byData == 2) {
+		if (OpenDoorFront (pChar)) {
+			return;
+		}
+	}
 	SendCmdMAPMSG (pChar->pID, "何も見つかりませんでした。@2");
 }
 
@@ -4292,9 +4300,6 @@ void RecvDataProcOPENDOOR(PBYTE pData, DWORD dwDataSize)
 {
 	PCMDPARA_DATA1 pPara = (PCMDPARA_DATA1)pData;
 	PCHARINFO pChar;
-	PMAPINFO pMap;
-	PEVENTINFO pEvent;
-	int i;
 
 	if (!IsRecvChar (pPara->dwTblID)) {
 		return;
@@ -4304,12 +4309,33 @@ void RecvDataProcOPENDOOR(PBYTE pData, DWORD dwDataSize)
 	if (GetMapNo (pChar->dwMapID) < 0) {
 		return;
 	}
-	pMap = g_aMapInfo[GetMapNo (pChar->dwMapID)];
+	if (OpenDoorFront (pChar) == FALSE) {
+		SendCmdMAPMSG (pChar->pID, "そこには扉がありません。@2");
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：OpenDoorFront													 */
+/* 内容：目の前の扉を開ける													 */
+/*		 戻り値：開けた時 TRUE（扉が無い・もう開いている時は何もせず FALSE）	 */
+/*		 「扉」コマンドと、Sキーで目の前を調べた時の両方から使う				 */
+/* ========================================================================= */
+static BOOL OpenDoorFront(PCHARINFO pChar)
+{
+	PMAPINFO pMap;
+	PEVENTINFO pEvent;
 	DWORD dwX, dwY;
+	int i, nNo;
+
+	nNo = GetMapNo (pChar->dwMapID);
+	if (nNo < 0) {
+		return FALSE;
+	}
+	pMap = g_aMapInfo[nNo];
+	dwX = pChar->dwX + anPosAddTblX[pChar->byDirection];
+	dwY = pChar->dwY + anPosAddTblY[pChar->byDirection];
 	for (i = 0; i < pMap->nEventCount; i ++) {
 		pEvent = &pMap->pEvent[i];
-		dwX = pChar->dwX + anPosAddTblX[pChar->byDirection];
-		dwY = pChar->dwY + anPosAddTblY[pChar->byDirection];
 
 		/* イベント発見？ */
 		if ((pEvent->dwX == dwX) && (pEvent->dwY == dwY)) {
@@ -4320,18 +4346,17 @@ void RecvDataProcOPENDOOR(PBYTE pData, DWORD dwDataSize)
 			PEVENTINFO_DOOR pDoor = (PEVENTINFO_DOOR)pEvent->pData;
 			/* すでに開いてる？ */
 			if (pDoor->dwTimeOpen) {
-				SendCmdMAPMSG (pChar->pID, "そこには扉がありません。@2");
-				return;
+				return FALSE;
 			}
-			
+
 			pDoor->dwTimeOpen = timeGetTime ();
 			SendCmdCHGMAP (pChar->dwMapID, pDoor->wBackGrpID, dwX, dwY);
 			SendCmdPLAYSOUND (pChar->pID, SOUND_DOOR);
 			SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
-			return;
+			return TRUE;
 		}
 	}
-	SendCmdMAPMSG (pChar->pID, "そこには扉がありません。@2");
+	return FALSE;
 }
 
 /* ========================================================================= */
