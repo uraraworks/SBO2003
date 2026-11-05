@@ -985,10 +985,9 @@ PWNDINFO MakeWindowCOMMANDSTATUS(void)
 	g_dwNewID ++;
 
 	pWnd->nX	= 32;
-	/* 「次のレベルまで」の行を足したぶん1行上から出す（下の属性ウィンドウと重ならないように） */
-	pWnd->nY	= 50 + 16 * 1;
+	pWnd->nY	= 50 + 16 * 2;
 	pWnd->nCx	= 16 * 10;
-	pWnd->nCy	= 16 * 21;
+	pWnd->nCy	= 16 * 20;
 	pWnd->nType	= WNDTYPE_COMMANDSTATUS;
 	pWnd->pDib	= new CImg32;
 	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
