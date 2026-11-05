@@ -426,6 +426,9 @@ Module['sboFeedback'] = (function () {
 				reply(res, 400, { error: 'json' });
 				return;
 			}
+			if (url.indexOf('/api/admin/') === 0) {
+				acc().withAdminCookie(body, req);		/* 管理ページのログインは Cookie */
+			}
 			try {
 				fn(body, req, res);
 			} catch (e) {

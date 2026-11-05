@@ -14,6 +14,7 @@
  *            SboWebAccRename      キャラ名を変える（確かめるだけもできる）
  *            SboWebAdminSearch    管理ページのキャラ検索（キャラ名・アカウント名の一部）
  *            SboWebAdminOnline    管理ページのログイン中プレイヤー一覧（キャラ名・今いるマップ）
+ *            SboWebAccAdminStamp  管理者のアカウント名・パスワードの指紋（覚えたログインの取り消し用）
  *
  * パスワードは C 側の外へ出さない（照合もここで行う）。
  * キャラ名はゲームの中でも UTF-8 で持っている（JS とも UTF-8 でやり取りする）。
@@ -268,6 +269,31 @@ extern "C" EMSCRIPTEN_KEEPALIVE int SboWebAccCheckAdmin(const char *pszAcc, cons
 		return 0;
 	}
 	return (strcmp(pszAcc, g_szAdminAcc) == 0 && strcmp(pszPas, g_szAdminPas) == 0) ? 1 : 0;
+}
+
+/*
+ * 管理者のアカウント名・パスワードの「指紋」（管理ページの覚えたログインの取り消し用）
+ *   pszSalt（JS 側がランダムに決めて保存しているもの）を混ぜた FNV-1a 64bit を 16 進で返す。
+ *   パスワードそのものは C の外へ出さない。JS 側はこれをさらに SHA-256 してからログインの記録と比べる。
+ *   INI のパスワード（やアカウント名）を変えてサーバーを再起動すると値が変わり、
+ *   それまでに覚えたログインは全部使えなくなる。管理者が決まっていなければ空文字。
+ */
+extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebAccAdminStamp(const char *pszSalt)
+{
+	if (g_szAdminAcc[0] == 0 || g_szAdminPas[0] == 0) {
+		s_strResult = "";
+		return s_strResult.c_str();
+	}
+	std::string strSrc = std::string(pszSalt ? pszSalt : "") + '\n' + g_szAdminAcc + '\n' + g_szAdminPas;
+	unsigned long long qwHash = 1469598103934665603ULL;
+	for (size_t i = 0; i < strSrc.size(); i++) {
+		qwHash ^= (unsigned char)strSrc[i];
+		qwHash *= 1099511628211ULL;
+	}
+	char szBuf[32];
+	snprintf(szBuf, sizeof(szBuf), "%016llx", qwHash);
+	s_strResult = szBuf;
+	return s_strResult.c_str();
 }
 
 /* ------------------------------------------------------------------------- */

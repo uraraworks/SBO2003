@@ -272,6 +272,19 @@
 		font-size: 15px;
 		margin: 18px 0 8px;
 	}
+	#devices summary {
+		cursor: pointer;
+		font-weight: bold;
+	}
+	.dev-row {
+		padding: 8px 0;
+		border-top: 1px solid var(--border);
+		font-size: 13px;
+		word-break: break-all;
+	}
+	.dev-row button {
+		margin-top: 6px;
+	}
 	.online-list {
 		padding: 4px 16px;
 	}
@@ -318,6 +331,7 @@
 		<input id="acc" type="text" autocomplete="username" autocapitalize="off" autocorrect="off">
 		<label for="pas">パスワード</label>
 		<input id="pas" type="password" autocomplete="current-password">
+		<label class="check"><input type="checkbox" id="remember" checked> このブラウザで覚えておく（共用の端末では外してください）</label>
 		<div><button type="button" id="login-btn">ログイン</button></div>
 		<div class="msg" id="login-msg"></div>
 	</div>
@@ -451,11 +465,24 @@
 			<div class="msg" id="md-msg"></div>
 		</div>
 	</section>
+
+	<!-- ログイン中の端末（どのタブでも下に出す） -->
+	<details class="card" id="devices" hidden>
+		<summary>ログイン中の端末</summary>
+		<p class="sub-text" id="dev-note"></p>
+		<div id="dev-list"></div>
+		<button type="button" class="sub" id="dev-revoke-others">ほかの端末を全部ログアウト</button>
+		<div class="msg" id="dev-msg"></div>
+	</details>
 </main>
 <script src="admin-mapdoc.js"></script>
 <script>
 (function () {
-	var KEY_SESSION = 'sbo_admin_session';
+	/*
+	 * ログインはサーバーが HttpOnly の Cookie で覚える（ここからは読めない）。
+	 * session は API に渡す形を前と揃えるために残してある（いつも空）。
+	 */
+	var KEY_SESSION = 'sbo_admin_session';	/* 前の版が sessionStorage に入れていたもの（消すだけ） */
 	var session = '';
 	var aRequests = [];
 
@@ -467,21 +494,13 @@
 		min = Math.max(0, Math.floor(min || 0));
 		return Math.floor(min / 60) + ' 時間 ' + (min % 60) + ' 分';
 	}
-	function ssGet() {
-		try { return window.sessionStorage.getItem(KEY_SESSION) || ''; } catch (e) { return ''; }
-	}
-	function ssSet(v) {
-		try {
-			if (v) {
-				window.sessionStorage.setItem(KEY_SESSION, v);
-			} else {
-				window.sessionStorage.removeItem(KEY_SESSION);
-			}
-		} catch (e) { /* 保存できなくても、このページを開いている間は使える */ }
+	function ssClear() {
+		try { window.sessionStorage.removeItem(KEY_SESSION); } catch (e) { /* 消せなくても困らない */ }
 	}
 	function api(url, body) {
 		return fetch(url, {
 			method: 'POST',
+			credentials: 'same-origin',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(body)
 		}).then(function (res) {
@@ -515,8 +534,9 @@
 	/* ---- ログイン ---- */
 	function showLogin(text) {
 		session = '';
-		ssSet('');
 		$('login').hidden = false;
+		$('devices').hidden = true;
+		$('devices').open = false;
 		$('tabs').hidden = true;
 		$('logout').hidden = true;
 		$('tab-search').hidden = true;
@@ -531,6 +551,7 @@
 		$('login').hidden = true;
 		$('tabs').hidden = false;
 		$('logout').hidden = false;
+		$('devices').hidden = false;
 		selectTab(location.hash === '#online' ? 'online' : location.hash === '#recover' ? 'recover' : location.hash === '#feedback' ? 'feedback' :
 			location.hash === '#ai' ? 'ai' : location.hash === '#mapdoc' ? 'mapdoc' : 'search');
 		if (location.hash === '#ai') {
@@ -543,14 +564,12 @@
 	}
 	function login() {
 		setMsg($('login-msg'), '');
-		api('/api/admin/login', { account: $('acc').value, password: $('pas').value }).then(function (data) {
-			if (!data.session) {
+		api('/api/admin/login', { account: $('acc').value, password: $('pas').value, remember: $('remember').checked }).then(function (data) {
+			if (!data.ok) {
 				setMsg($('login-msg'), data.error === 'too_many' ?
 					'何度も間違えたので、しばらく時間をおいてください。' : 'アカウントかパスワードが違います。');
 				return;
 			}
-			session = data.session;
-			ssSet(session);
 			$('pas').value = '';
 			showMain();
 		}).catch(function () {
@@ -564,7 +583,63 @@
 		}
 	});
 	$('logout').addEventListener('click', function () {
-		showLogin('ログアウトしました。');
+		api('/api/admin/logout', { session: session }).catch(function () { /* つながらなくても画面は戻す */ }).then(function () {
+			showLogin('ログアウトしました。');
+		});
+	});
+
+	/* ---- ログイン中の端末 ---- */
+	function uaText(ua) {
+		/* ざっくり「iPhone の Safari」のように */
+		var os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' :
+			/Mac OS X/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : /Linux/.test(ua) ? 'Linux' : '';
+		var br = /Edg\//.test(ua) ? 'Edge' : /CriOS|Chrome\//.test(ua) ? 'Chrome' : /FxiOS|Firefox\//.test(ua) ? 'Firefox' :
+			/Safari\//.test(ua) ? 'Safari' : '';
+		return (os || br) ? (os + (os && br ? ' の ' : '') + br) : (ua || '不明な端末');
+	}
+	function loadDevices() {
+		setMsg($('dev-msg'), '');
+		api('/api/admin/sessions', { session: session }).then(function (data) {
+			if (!data.sessions) {
+				return;
+			}
+			$('dev-note').textContent = '「覚えておく」でログインした端末は、' + data.rememberDays + ' 日使わないか、ログインから ' +
+				data.maxDays + ' 日たつと、もう一度パスワードを聞きます。サーバーの管理者パスワードを変えると、全部の端末がログアウトします。';
+			var list = $('dev-list');
+			list.textContent = '';
+			var nOthers = 0;
+			data.sessions.forEach(function (d) {
+				var row = el('div', 'dev-row');
+				row.appendChild(el('div', '', (d.current ? '★ この端末：' : '') + uaText(d.ua) + (d.remember ? '（覚えておく）' : '（2 時間）')));
+				row.appendChild(el('div', 'sub-text', '最後に使った時 ' + dateText(d.lastUsed) + ' ／ ログイン ' + dateText(d.created) +
+					(d.ip ? ' ／ ' + d.ip : '')));
+				if (!d.current) {
+					nOthers++;
+					var b = el('button', 'sub', 'この端末をログアウト');
+					b.type = 'button';
+					b.addEventListener('click', function () {
+						api('/api/admin/sessions/revoke', { session: session, id: d.id }).then(loadDevices);
+					});
+					row.appendChild(b);
+				}
+				list.appendChild(row);
+			});
+			$('dev-revoke-others').hidden = nOthers === 0;
+		});
+	}
+	$('devices').addEventListener('toggle', function () {
+		if ($('devices').open) {
+			loadDevices();
+		}
+	});
+	$('dev-revoke-others').addEventListener('click', function () {
+		if (!window.confirm('この端末以外のログインを全部消します。よろしいですか？')) {
+			return;
+		}
+		api('/api/admin/sessions/revoke', { session: session, others: true }).then(function (data) {
+			loadDevices();
+			setMsg($('dev-msg'), (data.removed || 0) + ' 台の端末をログアウトしました。', true);
+		});
 	});
 
 	/* ---- タブ ---- */
@@ -1278,13 +1353,23 @@
 		});
 	});
 
-	/* 開いた時：このタブでログイン済みなら続きから */
-	session = ssGet();
-	if (session) {
-		showMain();
-	} else {
-		showLogin('');
-	}
+	/* 開いた時：このブラウザでログイン済み（Cookie が生きている）なら続きから */
+	ssClear();
+	$('login').hidden = true;
+	fetch('/api/admin/me', {
+		method: 'POST',
+		credentials: 'same-origin',
+		headers: { 'Content-Type': 'application/json' },
+		body: '{}'
+	}).then(function (res) {
+		if (res.ok) {
+			showMain();
+		} else {
+			showLogin('');
+		}
+	}).catch(function () {
+		showLogin('サーバーにつながりませんでした。');
+	});
 })();
 </script>
 </body>
