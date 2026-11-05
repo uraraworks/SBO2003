@@ -686,12 +686,19 @@ static LRESULT ListViewProc(W32Wnd *p, HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 }
 
 /* JavaScript から呼ばれる：リストビューの行が操作された
-   nKind 0:クリック 1:チェック欄のクリック 2:ダブルクリック 3:右クリック */
+   nKind 0:クリック 1:チェック欄のクリック 2:ダブルクリック 3:右クリック
+   （クリックには 0x10:Ctrl（Mac は command） 0x20:Shift を足して渡す） */
 extern "C" EMSCRIPTEN_KEEPALIVE void W32JsOnListView(int nHtmlID, int nRow, int nKind)
 {
 	W32Wnd *p = W32FindWndByHtmlID(nHtmlID);
 	if (p == NULL || !p->bEnabled) {
 		return;
+	}
+	BOOL bCtrl = (nKind & 0x10) != 0;
+	BOOL bShift = (nKind & 0x20) != 0;
+	nKind &= 0x0F;
+	if (p->dwStyle & LVS_SINGLESEL) {
+		bCtrl = bShift = FALSE;
 	}
 	if (nRow >= (int)p->aRows.size()) {
 		nRow = -1;
@@ -702,8 +709,46 @@ extern "C" EMSCRIPTEN_KEEPALIVE void W32JsOnListView(int nHtmlID, int nRow, int 
 		return;
 	}
 	if (nRow >= 0) {
-		SetRowState(p, nRow, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED, TRUE);
-	} else if (p->dwStyle & LVS_SINGLESEL) {
+		/* 右クリック・ダブルクリックで選択済みの行なら、複数選択はそのまま */
+		BOOL bKeep = (nKind != 0) && (p->aRows[nRow].uState & LVIS_SELECTED);
+		if (bShift) {
+			/* Shift：前にクリックした行から、ここまでを選ぶ */
+			int nAnchor = nRow;
+			for (int i = 0; i < (int)p->aRows.size(); i ++) {
+				if (p->aRows[i].uState & LVIS_FOCUSED) {
+					nAnchor = i;
+					break;
+				}
+			}
+			int nFrom = std::min(nAnchor, nRow), nTo = std::max(nAnchor, nRow);
+			for (int i = 0; i < (int)p->aRows.size(); i ++) {
+				if ((i < nFrom || i > nTo) && !bCtrl) {
+					SetRowState(p, i, 0, LVIS_SELECTED, TRUE);
+				} else if (i >= nFrom && i <= nTo) {
+					SetRowState(p, i, LVIS_SELECTED, LVIS_SELECTED, TRUE);
+				}
+			}
+		} else if (bCtrl) {
+			/* Ctrl：その行だけ選ぶ・外すを切り替える */
+			for (int i = 0; i < (int)p->aRows.size(); i ++) {
+				if (i != nRow) {
+					SetRowState(p, i, 0, LVIS_FOCUSED, FALSE);
+				}
+			}
+			UINT uSel = (p->aRows[nRow].uState & LVIS_SELECTED) ? 0 : LVIS_SELECTED;
+			SetRowState(p, nRow, uSel | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED, TRUE);
+		} else {
+			/* 普通のクリック：Windows と同じく、ほかの行の選択は外してその行だけにする */
+			if (!bKeep) {
+				for (int i = 0; i < (int)p->aRows.size(); i ++) {
+					if (i != nRow) {
+						SetRowState(p, i, 0, LVIS_SELECTED | LVIS_FOCUSED, TRUE);
+					}
+				}
+			}
+			SetRowState(p, nRow, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED, TRUE);
+		}
+	} else if (!bCtrl && !bShift) {
 		/* 何も無い所をクリックしたら選択を外す */
 		for (int i = 0; i < (int)p->aRows.size(); i ++) {
 			SetRowState(p, i, 0, LVIS_SELECTED | LVIS_FOCUSED, TRUE);
