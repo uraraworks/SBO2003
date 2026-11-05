@@ -23,6 +23,7 @@
 #include "../../common/myArray.h"
 #include "../../common/TextOutput.h"
 #include "../../common/TypedefCommon.h"
+#include "../../common/SboPacket.h"
 #include "../../common/Info/InfoEfc.h"
 #include "SboSvrSendCmd.h"
 #include "Glbldata.h"

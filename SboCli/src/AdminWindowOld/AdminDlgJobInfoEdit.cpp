@@ -134,7 +134,8 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 			}
 			hWndTmp = GetDlgItem (hWnd, IDC_NAME);
 			ZeroMemory (szTmp, sizeof (szTmp));
-			GetWindowText (hWndTmp, szTmp, MAX_JOBNAME - 1);
+			GetWindowText (hWndTmp, szTmp, sizeof (szTmp) - 1);
+			szTmp[SboTextFitWidth (szTmp, MAX_JOBNAME_WIDTH)] = 0;		/* 画面に収まる長さまで */
 
 			g_JobInfo.SetJobName (pInfo, szTmp);
 

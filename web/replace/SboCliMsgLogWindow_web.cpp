@@ -28,8 +28,8 @@
 std::string W32SjisToUtf8Str(const char *pszSjis, int nLen);
 std::string W32Utf8ToSjisStr(const char *pszUtf8);
 
-/* 発言できる長さ（Windows 版の入力欄と同じ 40 バイト） */
-#define MSGLOG_SPEECH_MAX	40
+/* 発言できる長さ（Windows 版の入力欄と同じ。SJIS の 40 バイトと同じ表示幅で数える） */
+#define MSGLOG_SPEECH_MAX	40		/* 1 回の発言の上限（表示幅。半角 40 文字・全角 20 文字） */
 
 extern "C" void SboWebChatSubmit(const char *pszUtf8, int nKeyMod);
 
@@ -156,7 +156,7 @@ void SboWebSpeechSubmit(LPCSTR pszSjis, int nKeyMod)
 /* ========================================================================= */
 extern "C" EMSCRIPTEN_KEEPALIVE void SboWebChatSubmit(const char *pszUtf8, int nKeyMod)
 {
-	char szBuf[MSGLOG_SPEECH_MAX + 2];
+	char szBuf[MSGLOG_SPEECH_MAX * 4 + 2];		/* UTF-8 でも入る大きさ */
 	int nLen;
 
 	if (pszUtf8 == NULL) {
@@ -171,7 +171,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE void SboWebChatSubmit(const char *pszUtf8, int n
 	std::string strSjis = W32Utf8ToSjisStr (pszUtf8);
 	ZeroMemory (szBuf, sizeof (szBuf));
 	/* 文字の途中で切らないように詰める */
-	nLen = SboTextFitBytes (strSjis.c_str (), MSGLOG_SPEECH_MAX);
+	nLen = SboTextFitWidth (strSjis.c_str (), MSGLOG_SPEECH_MAX);
 	memcpy (szBuf, strSjis.c_str (), nLen);
 	if (nLen == 0) {
 		return;
