@@ -21,13 +21,21 @@
 /* 定数・構造体の定義														 */
 /* ========================================================================= */
 
-#define	AAL_EDGE		48		/* 文字を描く画面で「右端・下端に接している」とみなす余白 */
 #define	AAL_ROWGAP		24		/* 上下の段で「右寄せの並び」とみなすボタンどうしの間 */
 
 /* 覚えている部品の位置 */
 struct AAL_ITEM {
 	RECT	rcBase;				/* 元の位置 */
 	RECT	rcSet;				/* 最後にここで動かした位置 */
+};
+
+/* 文字を描く画面のずらし方 */
+struct AAL_SHIFT {
+	BOOL	bValid;				/* ずらす一覧がある */
+	SIZE	sizeBase;			/* 元の大きさ */
+	RECT	rcMain;				/* 広げる一覧の元の位置（帯の境目） */
+	int		dx;					/* 右横の帯をずらす幅 */
+	int		dy;					/* 下の帯をずらす高さ */
 };
 
 /* 並べ直す時の作業用 */
@@ -46,6 +54,7 @@ struct AAL_WORK {
 
 static std::map<HWND, AAL_ITEM>	s_mapItem;		/* 部品ごとの元の位置 */
 static std::map<HWND, SIZE>		s_mapBase;		/* 文字を描く画面の元の大きさ */
+static std::map<HWND, AAL_SHIFT>	s_mapShift;		/* 文字を描く画面のずらし方 */
 
 /* ========================================================================= */
 /* 内部関数																	 */
@@ -103,6 +112,14 @@ static void CleanUp(void)
 			++ it;
 		} else {
 			it = s_mapItem.erase (it);
+		}
+	}
+	std::map<HWND, AAL_SHIFT>::iterator itShift = s_mapShift.begin ();
+	while (itShift != s_mapShift.end ()) {
+		if (IsWindow (itShift->first)) {
+			++ itShift;
+		} else {
+			itShift = s_mapShift.erase (itShift);
 		}
 	}
 	std::map<HWND, SIZE>::iterator itBase = s_mapBase.begin ();
@@ -166,7 +183,8 @@ static void MakeWork(HWND hParent, std::vector<AAL_WORK> &aWork)
 	}
 }
 
-/* 文字を描く画面：右端・下端に接していて、その先に部品の無い一覧だけ広げる */
+/* 文字を描く画面：一番大きな一覧を広げ、一覧の下の部品は下へ、一覧の右横の部品は右へずらす。
+   描いた文字も AdminAutoLayoutPaint で同じ帯ごとにずらすので、見出しと部品はずれない */
 static void LayoutPainted(HWND hParent, std::vector<AAL_WORK> &aWork, int cx, int cy)
 {
 	SIZE sizeBase;
@@ -178,37 +196,57 @@ static void LayoutPainted(HWND hParent, std::vector<AAL_WORK> &aWork, int cx, in
 	} else {
 		sizeBase = it->second;
 	}
-	int dx = AalMax (0, cx - (int)sizeBase.cx);
-	int dy = AalMax (0, cy - (int)sizeBase.cy);
 
+	AAL_SHIFT stShift;
+	ZeroMemory (&stShift, sizeof (stShift));
+	stShift.sizeBase = sizeBase;
+
+	int nMain = -1, nArea = 0;
 	for (size_t i = 0; i < aWork.size (); i ++) {
-		AAL_WORK &stList = aWork[i];
-		if (!stList.bList) {
+		if (!aWork[i].bList) {
 			continue;
 		}
-		const RECT &rcL = stList.rcBase;
-		BOOL bWidth  = (sizeBase.cx - rcL.right  <= AAL_EDGE);
-		BOOL bHeight = (sizeBase.cy - rcL.bottom <= AAL_EDGE);
-		for (size_t j = 0; j < aWork.size (); j ++) {
-			if (j == i || aWork[j].bFill) {
+		const RECT &rc = aWork[i].rcBase;
+		int n = (rc.right - rc.left) * (rc.bottom - rc.top);
+		if (n > nArea) {
+			nArea = n;
+			nMain = (int)i;
+		}
+	}
+	if (nMain >= 0) {
+		stShift.bValid	= TRUE;
+		stShift.rcMain	= aWork[nMain].rcBase;
+		stShift.dx		= AalMax (0, cx - (int)sizeBase.cx);
+		stShift.dy		= AalMax (0, cy - (int)sizeBase.cy);
+		/* 一覧の右端・下端は、帯の境目として 2 ドット内側に取る（枠線ぶんの誤差を許す） */
+		stShift.rcMain.right	-= 2;
+		stShift.rcMain.bottom	-= 2;
+	}
+
+	if (stShift.bValid) {
+		const RECT &rcMain = stShift.rcMain;
+		for (size_t i = 0; i < aWork.size (); i ++) {
+			AAL_WORK &stWork = aWork[i];
+			const RECT &rc = stWork.rcBase;
+			if (stWork.bFill) {
 				continue;
 			}
-			const RECT &rcO = aWork[j].rcBase;
-			/* 右に部品がある */
-			if (rcO.left >= rcL.right - 2 && IsOverlapV (rcO, rcL)) {
-				bWidth = FALSE;
+			if ((int)i == nMain) {
+				stWork.rcNew.right	+= stShift.dx;
+				stWork.rcNew.bottom	+= stShift.dy;
+			} else if (rc.top >= rcMain.bottom) {
+				OffsetRect (&stWork.rcNew, 0, stShift.dy);			/* 一覧の下 */
+			} else if (rc.left >= rcMain.right && rc.top >= rcMain.top) {
+				OffsetRect (&stWork.rcNew, stShift.dx, 0);			/* 一覧の右横 */
 			}
-			/* 下に部品がある */
-			if (rcO.top >= rcL.bottom - 2 && IsOverlapH (rcO, rcL)) {
-				bHeight = FALSE;
-			}
 		}
-		if (bWidth) {
-			stList.rcNew.right += dx;
-		}
-		if (bHeight) {
-			stList.rcNew.bottom += dy;
-		}
+	}
+
+	/* ずらし方が変わったら、描いた文字も描き直す */
+	std::map<HWND, AAL_SHIFT>::iterator itShift = s_mapShift.find (hParent);
+	if (itShift == s_mapShift.end () || memcmp (&itShift->second, &stShift, sizeof (stShift)) != 0) {
+		s_mapShift[hParent] = stShift;
+		InvalidateRect (hParent, NULL, TRUE);
 	}
 }
 
@@ -351,6 +389,48 @@ void AdminAutoLayout(HWND hWnd, BOOL bPainted)
 	if (bPainted) {
 		CleanUp ();
 	}
+}
+
+/* ========================================================================= */
+/* 関数名：	AdminAutoLayoutPaint											 */
+/* 内容：	文字を描く画面を、部品と同じずらし方で描く						 */
+/* ========================================================================= */
+
+void AdminAutoLayoutPaint(HWND hWnd, HDC hDC, void (*pfnPaint)(HDC))
+{
+	std::map<HWND, AAL_SHIFT>::iterator it = s_mapShift.find (hWnd);
+	if (it == s_mapShift.end () || !it->second.bValid || (it->second.dx == 0 && it->second.dy == 0)) {
+		/* ずらさない時は、そのまま描く */
+		pfnPaint (hDC);
+		return;
+	}
+	const AAL_SHIFT &stShift = it->second;
+	int cx = stShift.sizeBase.cx, cy = stShift.sizeBase.cy;
+	const RECT &rcMain = stShift.rcMain;
+
+	/* 元の大きさの裏画面に元の位置で描いてから、帯ごとにずらして写す */
+	HDC hDCMem = CreateCompatibleDC (hDC);
+	HBITMAP hBmp = CreateCompatibleBitmap (hDC, cx, cy);
+	HGDIOBJ hBmpOld = SelectObject (hDCMem, hBmp);
+	RECT rcAll = {0, 0, cx, cy};
+	FillRect (hDCMem, &rcAll, (HBRUSH)GetStockObject (BLACK_BRUSH));
+	pfnPaint (hDCMem);
+
+	int nTop = AalMax (0, AalMin (cy, (int)rcMain.top));
+	int nBottom = AalMax (nTop, AalMin (cy, (int)rcMain.bottom));
+	int nRight = AalMax (0, AalMin (cx, (int)rcMain.right));
+	/* 一覧より上 */
+	BitBlt (hDC, 0, 0, cx, nTop, hDCMem, 0, 0, SRCCOPY);
+	/* 一覧の段の左側（一覧そのものの場所を含む） */
+	BitBlt (hDC, 0, nTop, nRight, nBottom - nTop, hDCMem, 0, nTop, SRCCOPY);
+	/* 一覧の段の右横 → 右へ */
+	BitBlt (hDC, nRight + stShift.dx, nTop, cx - nRight, nBottom - nTop, hDCMem, nRight, nTop, SRCCOPY);
+	/* 一覧より下 → 下へ */
+	BitBlt (hDC, 0, nBottom + stShift.dy, cx, cy - nBottom, hDCMem, 0, nBottom, SRCCOPY);
+
+	SelectObject (hDCMem, hBmpOld);
+	DeleteObject (hBmp);
+	DeleteDC (hDCMem);
 }
 
 /* Copyright(C)URARA-works 2026 */
