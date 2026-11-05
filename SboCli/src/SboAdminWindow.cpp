@@ -20,6 +20,7 @@
 #include "AdminWindowOld/AdminDlgEtcSubGame.h"
 #include "AdminWindowOld/SelectCharGrpWindow.h"
 #include "AdminWindowOld/AdminAutoLayout.h"
+#include "AdminWindowOld/AdminDlgStTmpInfo.h"
 
 /* ========================================================================= */
 /* 定数定義																	 */
@@ -1140,6 +1141,10 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 	/* ステータステンプレート情報更新 */
 	case WM_ADMINSTTMPLATE:
 		{
+			if (g_nAdminWindowType == IDM_CHAR_STTMP) {
+				RenewStTmpInfo ();
+				break;
+			}
 			if (g_nAdminWindowType != IDM_CHAR_STATUS) {
 				break;
 			}
@@ -1433,6 +1438,11 @@ void AdminOnCommand(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 		g_nAdminWindowType = IDM_ETC_EQUUSERINFO;
 		ShowDlgEquUserInfo (hWnd);
 		break;
+	case IDM_CHAR_STTMP:
+		DeleteAdminWnd ();
+		g_nAdminWindowType = IDM_CHAR_STTMP;
+		ShowDlgStTmpInfo (hWnd);
+		break;
 	case IDM_ACC_SEARCH:
 		DeleteAdminWnd ();
 		g_nAdminWindowType = IDM_ACC_SEARCH;
@@ -1487,6 +1497,7 @@ static BYTE AdminUndoScreenFromType(int nType)
 	case IDM_CHAR_STATUS:		return ADMINSCR_CHARSTATUS;
 	case IDM_CHAR_ITEM:			return ADMINSCR_CHARITEM;
 	case IDM_CHAR_MAGIC:		return ADMINSCR_CHARMAGIC;
+	case IDM_CHAR_STTMP:		return ADMINSCR_STTMP;
 	case IDM_ITEM_LIST:			return ADMINSCR_ITEM;
 	case IDM_CEF_EDIT:			return ADMINSCR_CEF;
 	case IDM_EFC_EDIT:			return ADMINSCR_EFC;
@@ -1528,7 +1539,7 @@ static void AdminUndoRequest(void)
 		MessageBox (g_hWndAdmin,
 				"この画面は「元に戻す」に対応していません。\n\n"
 				"対応している画面：パーツ（マップの塗り替え）・マップ情報・イベント情報・メッセージ・店情報・"
-				"ステータス情報・所持アイテム情報・所持魔法情報・アイテム一覧・ふきだし・効果いろいろ・"
+				"ステータス情報・所持アイテム情報・所持魔法情報・ステータステンプレート情報・アイテム一覧・ふきだし・効果いろいろ・"
 				"職業情報（レベルアップ情報も）・魔法情報・魔法利用者情報・装備職業情報",
 				"元に戻す", MB_OK);
 		return;
@@ -1595,6 +1606,7 @@ static void AdminUndoRefresh(BYTE byScreen)
 	case IDM_ETC_MAGICUSERINFO:
 	case IDM_CHAR_MAGIC:
 	case IDM_ETC_EQUUSERINFO:
+	case IDM_CHAR_STTMP:
 		AdminOnCommand (g_hWndAdmin, nType, NULL, 0);
 		break;
 
@@ -7027,6 +7039,7 @@ void DeleteAdminWnd(void)
 	CloseDlgMagicUserInfo ();
 	CloseDlgCharMagicInfo ();
 	CloseDlgEquUserInfo ();
+	CloseDlgStTmpInfo ();
 	CloseDlgAccSearch ();
 	CloseDlgEtcSubGame ();
 	g_bAdminPos = FALSE;
