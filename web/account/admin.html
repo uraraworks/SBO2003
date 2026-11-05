@@ -559,7 +559,7 @@
 	}
 	$('login-btn').addEventListener('click', login);
 	$('pas').addEventListener('keydown', function (ev) {
-		if (ev.key === 'Enter') {
+		if (ev.key === 'Enter' && !ev.isComposing && ev.keyCode !== 229) {
 			login();
 		}
 	});
@@ -689,8 +689,10 @@
 		});
 	}
 	$('search-btn').addEventListener('click', search);
+	// 日本語入力の確定 Enter（isComposing / keyCode 229）では探さない。
+	// 変換中に blur すると確定した文字がもう一度入って二重になるため。
 	$('q').addEventListener('keydown', function (ev) {
-		if (ev.key === 'Enter') {
+		if (ev.key === 'Enter' && !ev.isComposing && ev.keyCode !== 229) {
 			search();
 		}
 	});
@@ -798,7 +800,7 @@
 		check.addEventListener('click', function () { run(true); });
 		apply.addEventListener('click', function () { run(false); });
 		input.addEventListener('keydown', function (ev) {
-			if (ev.key === 'Enter') {
+			if (ev.key === 'Enter' && !ev.isComposing && ev.keyCode !== 229) {
 				run(true);
 			}
 		});
