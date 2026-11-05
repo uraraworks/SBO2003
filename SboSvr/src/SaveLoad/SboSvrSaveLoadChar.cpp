@@ -13,7 +13,7 @@
 /* ========================================================================= */
 /* 定数定義																	 */
 /* ========================================================================= */
-#define DATACOUNTCOLUMN		(73)									/* 保存データ数 */
+#define DATACOUNTCOLUMN		(74)									/* 保存データ数 */
 
 /* ========================================================================= */
 /* 構造体定義																 */
@@ -106,6 +106,7 @@ static const char *s_aszName[] = {
 	"pszNpcSpeech",				/* NPC発言 */
 	"dwLastIPAddress",			/* 最終IPアドレス */
 	"abyJobMagic",				/* 転職前の職業で覚えていた呪文（職業ID別） */
+	"byOptBgm",					/* 音楽ON/OFFのアカウント設定 */
 	"z"
 };
 
@@ -383,6 +384,7 @@ BOOL SaveCharInfo(void)
 			case 72:	/* 転職前の職業で覚えていた呪文 */
 				dwDataSizeTmp += sizeof (BYTE) * 2 + GetJobMagicSaveCount (pInfo) * MAX_USEMAGIC;
 				break;
+			case 73:	dwDataSizeTmp += sizeof (pInfo->byOptBgm);				break;	/* 音楽ON/OFFのアカウント設定 */
 			}
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
@@ -745,6 +747,9 @@ BOOL SaveCharInfo(void)
 					CopyMemory (&pData[dwOffset], pInfo->abyJobMagic, dwJobCount * MAX_USEMAGIC);
 					dwOffset += dwJobCount * MAX_USEMAGIC;
 				}
+				break;
+			case 73:	/* 音楽ON/OFFのアカウント設定 */
+				pData[dwOffset ++] = pInfo->byOptBgm;
 				break;
 			}
 		}
@@ -1345,6 +1350,14 @@ BOOL LoadCharInfo(void)
 						CopyMemory (pInfo->abyJobMagic[dwJob], &pData[dwOffsetTmp], min (dwMagicCount, (DWORD)MAX_USEMAGIC));
 					}
 					dwOffsetTmp += dwMagicCount;
+				}
+			}
+
+			/* 音楽ON/OFFのアカウント設定（無い古いデータは「まだ決めていない」のまま） */
+			if (strcmp (aHeaderInfo[i].szName, s_aszName[73]) == 0) {
+				pInfo->byOptBgm = pData[dwOffsetTmp ++];
+				if (pInfo->byOptBgm > OPTBGM_OFF) {
+					pInfo->byOptBgm = OPTBGM_NONE;
 				}
 			}
 		}
