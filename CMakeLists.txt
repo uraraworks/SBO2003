@@ -89,6 +89,7 @@ set(SBO_PREJS_ACCOUNT "${CMAKE_SOURCE_DIR}/server/node/sbosvr_account.js")
 set(SBO_PREJS_STATUS "${CMAKE_SOURCE_DIR}/server/node/sbosvr_status.js")
 set(SBO_PREJS_FEEDBACK "${CMAKE_SOURCE_DIR}/server/node/sbosvr_feedback.js")
 set(SBO_PREJS_DATA "${CMAKE_SOURCE_DIR}/server/node/sbosvr_data.js")
+set(SBO_PREJS_MAPDESIGN "${CMAKE_SOURCE_DIR}/server/node/sbosvr_mapdesign.js")
 target_compile_options(SboSvr PRIVATE -sUSE_ZLIB=1)
 target_link_options(SboSvr PRIVATE
 	-sUSE_ZLIB=1
@@ -105,8 +106,9 @@ target_link_options(SboSvr PRIVATE
 	"--pre-js=${SBO_PREJS_ACCOUNT}"
 	"--pre-js=${SBO_PREJS_STATUS}"
 	"--pre-js=${SBO_PREJS_FEEDBACK}"
-	"--pre-js=${SBO_PREJS_DATA}")
-set_property(TARGET SboSvr APPEND PROPERTY LINK_DEPENDS "${SBO_PREJS}" "${SBO_PREJS_ACCOUNT}" "${SBO_PREJS_STATUS}" "${SBO_PREJS_FEEDBACK}" "${SBO_PREJS_DATA}")
+	"--pre-js=${SBO_PREJS_DATA}"
+	"--pre-js=${SBO_PREJS_MAPDESIGN}")
+set_property(TARGET SboSvr APPEND PROPERTY LINK_DEPENDS "${SBO_PREJS}" "${SBO_PREJS_ACCOUNT}" "${SBO_PREJS_STATUS}" "${SBO_PREJS_FEEDBACK}" "${SBO_PREJS_DATA}" "${SBO_PREJS_MAPDESIGN}")
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
 	# C++ のソースでブレークポイントを使えるよう DWARF を残す（VSCode の WebAssembly DWARF Debugging 拡張で見られる）
 	target_link_options(SboSvr PRIVATE -g -sASSERTIONS=1)
