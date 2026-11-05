@@ -98,6 +98,10 @@ BEGIN
         MENUITEM "魔法利用者情報(&U)",          IDM_ETC_MAGICUSERINFO
         MENUITEM "装備職業情報(&E)",            IDM_ETC_EQUUSERINFO
     END
+    POPUP "編集(&Z)"
+    BEGIN
+        MENUITEM "この画面の変更を元に戻す(&U)", IDM_ADMIN_UNDO
+    END
 END
 
 
