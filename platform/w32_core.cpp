@@ -1202,8 +1202,8 @@ static void W32JsAlert(const char *pszCaption, const char *pszText)
 
 int MessageBox(HWND, LPCSTR pszText, LPCSTR pszCaption, UINT uType)
 {
-	std::string strText = W32SjisToUtf8Str(pszText ? pszText : "");
-	std::string strCap = W32SjisToUtf8Str(pszCaption ? pszCaption : "");
+	std::string strText = W32TextToUtf8Str(pszText ? pszText : "");
+	std::string strCap = W32TextToUtf8Str(pszCaption ? pszCaption : "");
 	W32JsAlert(strCap.c_str(), strText.c_str());
 	/* はい/いいえ を聞かれても待てないので「はい」「OK」扱いにする */
 	if ((uType & 0x0F) == MB_YESNO) {
@@ -1659,7 +1659,7 @@ void CoUninitialize(void)									{}
 void OutputDebugString(LPCSTR pszText)
 {
 	if (pszText) {
-		printf("%s", W32SjisToUtf8Str(pszText).c_str());
+		printf("%s", W32TextToUtf8Str(pszText).c_str());
 	}
 }
 

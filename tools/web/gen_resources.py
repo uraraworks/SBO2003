@@ -284,20 +284,20 @@ def write_dialogs(f, dialogs, menus):
 		f.write('static const W32DlgItem s_aDlgItem%d[] = {\n' % n)
 		for cls, text, cid, pos, cstyle, cex in ctrls:
 			f.write('\t{%s, %s, %d, %d, %d, %d, %d, %s, %s},\n' % (
-				c_bytes(cls.encode()), c_bytes(text.encode('cp932', errors='replace')), cid,
+				c_bytes(cls.encode()), c_bytes(text.encode('utf-8')), cid,
 				pos[0], pos[1], pos[2], pos[3], cstyle, cex))
 		f.write('\t{NULL, NULL, 0, 0, 0, 0, 0, 0, 0}\n};\n')
 	f.write('\nconst W32DlgEntry g_aW32DlgEntry[] = {\n')
 	for n, (name, did, rc, style, exstyle, caption, font, ctrls) in enumerate(dialogs):
 		f.write('\t{%s, %d, %d, %d, %d, %d, %s, %s, %s, %d, s_aDlgItem%d},\n' % (
 			c_bytes(name.encode()), did, rc[0], rc[1], rc[2], rc[3], style, exstyle,
-			c_bytes(caption.encode('cp932', errors='replace')), font, n))
+			c_bytes(caption.encode('utf-8')), font, n))
 	f.write('\t{NULL, 0, 0, 0, 0, 0, 0, 0, NULL, 0, NULL}\n};\n\n')
 	kinds = {'POPUP': 'W32MENU_POPUP', 'ITEM': 'W32MENU_ITEM', 'SEP': 'W32MENU_SEPARATOR', 'END': 'W32MENU_END'}
 	for n, (name, mid, items) in enumerate(menus):
 		f.write('static const W32MenuTplItem s_aMenuItem%d[] = {\n' % n)
 		for depth, kind, iid, text in items:
-			f.write('\t{%s, %d, %s},\n' % (kinds[kind], iid, c_bytes(text.encode('cp932', errors='replace'))))
+			f.write('\t{%s, %d, %s},\n' % (kinds[kind], iid, c_bytes(text.encode('utf-8'))))
 		f.write('\t{W32MENU_END, 0, NULL}\n};\n')
 	f.write('\nconst W32MenuEntry g_aW32MenuEntry[] = {\n')
 	for n, (name, mid, items) in enumerate(menus):
@@ -336,7 +336,7 @@ def main():
 						sid = int(key) if key.isdigit() else defs.get(key)
 						if sid is not None:
 							text = m.group(2).replace('""', '"')
-							str_rows.append((module, sid, text.encode('cp932', errors='replace')))
+							str_rows.append((module, sid, text.encode('utf-8')))
 					continue
 				m = RES_RE.match(line)
 				if not m:

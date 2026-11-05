@@ -60,13 +60,7 @@ static std::string NormPath(LPCSTR pszName)
 	}
 	for (const char *p = pszName; *p; p ++) {
 		char c = *p;
-		/* SJIS の 2 バイト目の '\' は区切りではない */
-		if (IsDBCSLeadByte((BYTE)c) && p[1]) {
-			str += c;
-			str += p[1];
-			p ++;
-			continue;
-		}
+		/* 文字列は UTF-8 なので、マルチバイト文字の途中に '\' が来ることはない */
 		if (c == '\\') {
 			c = '/';
 		}
