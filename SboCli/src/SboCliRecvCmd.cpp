@@ -4125,6 +4125,17 @@ void RecvDataProcCHARSTATUSHP(BYTE *pData, DWORD dwDataSize)
 		if (g_aCharInfo[g_nMyCharID]->wHP == 0) {
 			AllEraseWindow ();
 		}
+		/* 倒れた？(溜めていたターンゲージ・詠唱は取りやめる) */
+		if ((pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0)) {
+			CancelTurnGage (pChar);
+			if (pChar->dwTimeTurnMagicLV) {
+				/* 詠唱エフェクトを消す */
+				SendCmdEFECTCHG (0, TRUE);
+			}
+			pChar->dwTimeTurnMagicLV	= 0;
+			pChar->byTurnMagicLV		= 0;
+			SAFE_DELETE (g_pTargetSelectInfo);
+		}
 	}
 }
 
