@@ -864,7 +864,9 @@
 		});
 	}
 
-	var api = { makeDocs: makeDocs, drawMap: drawMap, makeZip: makeZip, crc32: crc32, build: build };
+	/* loadSheets・partCanvas はパーツ図鑑・配置案（admin-design.js）でも使う */
+	var api = { makeDocs: makeDocs, drawMap: drawMap, makeZip: makeZip, crc32: crc32, build: build,
+		loadSheets: loadSheets, partCanvas: partCanvas, T: T };
 	if (typeof module !== 'undefined' && module.exports) {
 		module.exports = api;
 	} else {

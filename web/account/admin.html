@@ -12,6 +12,9 @@
 	  ・復旧の承認   … アカウント復旧の申請を承認・却下する（前の recover-admin.html と同じ）
 	  ・ご意見箱     … /feedback に届いた投稿を全部見て、返事・対応済み・隠す・消すをする
 	  ・AI連携       … AI（Claude Code など）から設定データを読み書きするキーの発行・取り消しと、変更履歴・元に戻す
+	  ・マップ資料   … マップごとの全体図と NPC・敵・お店・イベントの資料を zip で書き出す（admin-mapdoc.js）
+	  ・パーツ図鑑   … マップパーツに名前・タグ・説明を付ける・組み合わせの見本を作る（admin-design.js）
+	  ・配置案       … AI が考えたマップの配置案を画像で見る（ゲームのデータは変えない。admin-design.js）
 	API は server/node/sbosvr_account.js の /api/admin/*（ご意見箱は server/node/sbosvr_feedback.js、AI連携は server/node/sbosvr_data.js）。
 -->
 <style>
@@ -61,9 +64,12 @@
 		display: flex;
 		gap: 4px;
 		margin-top: 8px;
+		overflow-x: auto;		/* タブが増えたので、狭い画面では横にスクロールする */
+		scrollbar-width: none;
 	}
 	nav button {
-		flex: 1 1 0;
+		flex: 1 0 auto;
+		white-space: nowrap;
 		margin: 0;
 		border-radius: 8px 8px 0 0;
 		background: transparent;
@@ -307,6 +313,41 @@
 		word-break: break-all;
 	}
 	[hidden] { display: none !important; }
+	/* パーツ図鑑・配置案は横に広く使う */
+	body.wide main { max-width: 1240px; }
+	.pd-layout { display: flex; gap: 12px; align-items: flex-start; }
+	.pd-layout > .pd-left { flex: 1 1 60%; min-width: 0; }
+	.pd-layout > .pd-right { flex: 1 1 40%; min-width: 0; position: sticky; top: 90px; max-height: calc(100vh - 100px); overflow: auto; }
+	@media (max-width: 860px) {
+		.pd-layout { flex-direction: column; }
+		.pd-layout > .pd-right { position: static; max-height: none; width: 100%; }
+	}
+	.pd-grid { display: flex; flex-wrap: wrap; gap: 4px; }
+	.pd-cell { margin: 0; padding: 3px; width: 64px; background: var(--field); color: var(--fg); border: 1px solid var(--border);
+		display: flex; flex-direction: column; align-items: center; gap: 1px; font-weight: normal; }
+	.pd-cell.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+	.pd-cell.noname .pd-no { color: var(--sub); }
+	.pd-no { font-size: 11px; line-height: 1.2; }
+	.pd-name { font-size: 10px; line-height: 1.2; width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: center; }
+	.pd-img { image-rendering: pixelated; display: block; }
+	.pd-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+	.pd-chip { margin: 2px 4px 2px 0; padding: 2px 6px 2px 2px; display: inline-flex; align-items: center; gap: 4px;
+		background: var(--field); color: var(--fg); border: 1px solid var(--border); font: 12px/1.2 sans-serif; }
+	.pd-nb { display: flex; align-items: center; flex-wrap: wrap; margin: 2px 0; }
+	.pd-dir { width: 2em; color: var(--sub); }
+	.pd-maps button { margin: 4px 4px 0 0; padding: 6px 8px; font-size: 12px; }
+	.pd-tagpick button { margin: 4px 4px 0 0; padding: 4px 8px; font-size: 12px; font-weight: normal; }
+	.pd-map { image-rendering: pixelated; max-width: 100%; height: auto; display: block; margin-top: 8px; border: 1px solid var(--border); }
+	.pd-note { white-space: pre-wrap; margin-top: 6px; }
+	.pd-filters { flex-wrap: wrap; }
+	.pd-filters input { flex: 1 1 160px; }
+	.pl-item { display: block; width: 100%; text-align: left; margin: 0 0 6px; background: var(--field); color: var(--fg);
+		border: 1px solid var(--border); font-weight: normal; line-height: 1.5; }
+	.pl-item.sel { border-color: var(--accent); }
+	.pl-item .sub-text { display: block; margin: 0; }
+	.pl-opts label { display: inline-flex; align-items: center; gap: 4px; margin: 6px 12px 0 0; }
+	.pl-scroll { overflow: auto; max-height: 75vh; }
+	.pl-scroll .pd-map { max-width: none; }
 </style>
 </head>
 <body>
@@ -322,6 +363,8 @@
 		<button type="button" data-tab="feedback">ご意見箱<span class="badge" id="feedback-count" hidden></span></button>
 		<button type="button" data-tab="ai">AI連携</button>
 		<button type="button" data-tab="mapdoc">マップ資料</button>
+		<button type="button" data-tab="parts">パーツ図鑑</button>
+		<button type="button" data-tab="plans">配置案</button>
 	</nav>
 </header>
 <main>
@@ -466,6 +509,118 @@
 		</div>
 	</section>
 
+	<!-- パーツ図鑑 -->
+	<section id="tab-parts" hidden>
+		<p class="sub-text">
+			マップパーツ（マス目に入る番号）に名前・タグ・使い方のメモを付ける図鑑です。AI が新しい街やダンジョンを考える時の辞書になります
+			（AI からは sbo_parts_dex で引けます）。通れるか・使われた回数・よく隣に来るパーツはデータから自動で出します。
+			ゲームのデータは変わりません。
+		</p>
+		<div class="msg" id="pd-msg"></div>
+		<div class="pd-layout">
+			<div class="pd-left">
+				<div class="row pd-filters">
+					<input id="pd-q" type="search" placeholder="番号・名前・タグで探す">
+					<select id="pd-filter">
+						<option value="">全部</option>
+						<option value="unnamed-used">名前が無い（使われている）</option>
+						<option value="named">名前がある</option>
+						<option value="unnamed">名前が無い</option>
+						<option value="used">使われている</option>
+						<option value="unused">使われていない</option>
+						<option value="pass">通れる</option>
+						<option value="block">ぶつかる</option>
+						<option value="roof">上を歩くと消える（屋根など）</option>
+						<option value="anime">アニメする</option>
+					</select>
+					<select id="pd-tag"><option value="">タグ: 全部</option></select>
+					<select id="pd-sort">
+						<option value="id">番号順</option>
+						<option value="uses">よく使う順</option>
+					</select>
+				</div>
+				<div class="row" style="justify-content:space-between;margin:8px 0">
+					<span class="sub-text" id="pd-count"></span>
+					<span>
+						<button type="button" class="sub" id="pd-prev">前</button>
+						<span id="pd-page"></span>
+						<button type="button" class="sub" id="pd-next">次</button>
+						<button type="button" class="sub" id="pd-reload">読み直す</button>
+					</span>
+				</div>
+				<div class="pd-grid" id="pd-grid"></div>
+			</div>
+			<div class="pd-right">
+				<div class="card" id="pd-detail" hidden></div>
+			</div>
+		</div>
+
+		<h3>組み合わせの見本</h3>
+		<p class="sub-text">
+			「壁で囲った家」「道と草地の境目」のような、パーツを組み合わせたお手本です。AI は sbo_parts_samples で読んで配置の参考にします。
+			上のパーツの「使われているマップ」から切り取るか、マップと範囲を指定して作れます。
+		</p>
+		<button type="button" class="sub" id="ps-new">見本を作る</button>
+		<div class="card" id="ps-editor" hidden style="margin-top:10px">
+			<div class="row pd-filters" style="flex-wrap:wrap">
+				<select id="ps-map"></select>
+				<span>x</span><input id="ps-x" type="text" inputmode="numeric" value="0" style="width:4em;flex:0 0 4em">
+				<span>y</span><input id="ps-y" type="text" inputmode="numeric" value="0" style="width:4em;flex:0 0 4em">
+				<span>幅</span><input id="ps-w" type="text" inputmode="numeric" value="8" style="width:4em;flex:0 0 4em">
+				<span>高さ</span><input id="ps-h" type="text" inputmode="numeric" value="6" style="width:4em;flex:0 0 4em">
+				<button type="button" class="sub" id="ps-cut">マップから切り取る</button>
+			</div>
+			<label for="ps-grid">マス目（1 行に左から番号を並べる。空白・カンマ・タブ区切り）</label>
+			<textarea id="ps-grid" rows="6" spellcheck="false" style="font-family:monospace"></textarea>
+			<div id="ps-preview"></div>
+			<label for="ps-title">題名</label>
+			<input id="ps-title" type="text" maxlength="60" placeholder="例: 木の家（2×3）">
+			<label for="ps-tags">タグ</label>
+			<input id="ps-tags" type="text" placeholder="例: 家、町">
+			<label for="ps-note">こう使います（説明）</label>
+			<textarea id="ps-note" rows="3" maxlength="500" placeholder="例: 屋根は 2 段。入口は下の真ん中、扉のパーツは 1203"></textarea>
+			<button type="button" id="ps-save">見本として保存する</button>
+			<button type="button" class="sub" id="ps-cancel">やめる</button>
+			<div class="msg" id="ps-msg"></div>
+		</div>
+		<div id="ps-list" style="margin-top:10px"></div>
+	</section>
+
+	<!-- 配置案 -->
+	<section id="tab-plans" hidden>
+		<p class="sub-text">
+			AI（sbo_plan_save）が考えたマップの配置案を、画像で見るページです。ゲームのデータは変わりません。
+			気に入った案は、パーツ番号を重ねた絵や番号の表を見ながら、管理者ウィンドウで置いてください。
+		</p>
+		<div class="msg" id="pl-msg"></div>
+		<div class="pd-layout">
+			<div class="pd-left" style="flex:0 0 280px">
+				<button type="button" class="sub" id="pl-reload" style="margin-top:0;margin-bottom:8px">読み直す</button>
+				<div id="pl-list"></div>
+			</div>
+			<div class="pd-right" style="position:static;max-height:none;flex:1 1 auto">
+				<div class="card" id="pl-view" hidden>
+					<div class="name" id="pl-title"></div>
+					<div class="sub-text" id="pl-sub"></div>
+					<div class="pd-note" id="pl-note"></div>
+					<div class="pl-opts">
+						<label><input type="checkbox" id="pl-num">パーツ番号を重ねる</label>
+						<label><input type="checkbox" id="pl-lines">マス目の線</label>
+						<label><input type="checkbox" id="pl-marks" checked>書き込み</label>
+						<label><input type="checkbox" id="pl-roof" checked>屋根も描く</label>
+					</div>
+					<div class="pl-scroll" id="pl-canvas"></div>
+					<ul id="pl-marklist"></ul>
+					<button type="button" class="sub" id="pl-png">PNG で保存</button>
+					<button type="button" class="sub" id="pl-tsv">番号の表をコピー</button>
+					<button type="button" class="sub" id="pl-del">消す</button>
+					<h3>使っているパーツ</h3>
+					<div id="pl-used"></div>
+				</div>
+			</div>
+		</div>
+	</section>
+
 	<!-- ログイン中の端末（どのタブでも下に出す） -->
 	<details class="card" id="devices" hidden>
 		<summary>ログイン中の端末</summary>
@@ -476,6 +631,7 @@
 	</details>
 </main>
 <script src="admin-mapdoc.js"></script>
+<script src="admin-design.js"></script>
 <script>
 (function () {
 	/*
@@ -545,6 +701,8 @@
 		$('tab-feedback').hidden = true;
 		$('tab-ai').hidden = true;
 		$('tab-mapdoc').hidden = true;
+		$('tab-parts').hidden = true;
+		$('tab-plans').hidden = true;
 		setMsg($('login-msg'), text || '');
 	}
 	function showMain() {
@@ -553,11 +711,14 @@
 		$('logout').hidden = false;
 		$('devices').hidden = false;
 		selectTab(location.hash === '#online' ? 'online' : location.hash === '#recover' ? 'recover' : location.hash === '#feedback' ? 'feedback' :
-			location.hash === '#ai' ? 'ai' : location.hash === '#mapdoc' ? 'mapdoc' : 'search');
+			location.hash === '#ai' ? 'ai' : location.hash === '#mapdoc' ? 'mapdoc' :
+			location.hash === '#parts' ? 'parts' : location.hash === '#plans' ? 'plans' : 'search');
 		if (location.hash === '#ai') {
 			loadAi();
 		} else if (location.hash === '#mapdoc') {
 			loadMapDoc();
+		} else if (location.hash === '#parts' || location.hash === '#plans') {
+			openDesign(location.hash.slice(1));
 		}
 		loadRequests();
 		loadFeedback();
@@ -653,6 +814,9 @@
 		$('tab-feedback').hidden = name !== 'feedback';
 		$('tab-ai').hidden = name !== 'ai';
 		$('tab-mapdoc').hidden = name !== 'mapdoc';
+		$('tab-parts').hidden = name !== 'parts';
+		$('tab-plans').hidden = name !== 'plans';
+		document.body.classList.toggle('wide', name === 'parts' || name === 'plans');
 		if (history.replaceState) {
 			history.replaceState(null, '', name === 'search' ? location.pathname : '#' + name);
 		}
@@ -671,6 +835,8 @@
 				loadAi();
 			} else if (b.dataset.tab === 'mapdoc') {
 				loadMapDoc();
+			} else if (b.dataset.tab === 'parts' || b.dataset.tab === 'plans') {
+				openDesign(b.dataset.tab);
 			}
 		});
 	});
@@ -1352,6 +1518,23 @@
 			$('md-run').disabled = false;
 		});
 	});
+
+	/* ---- パーツ図鑑・配置案（admin-design.js が作る） ---- */
+	function openDesign(name) {
+		if (!window.SboDesign) {
+			setMsg($(name === 'parts' ? 'pd-msg' : 'pl-msg'), 'パーツ図鑑のファイル（admin-design.js）が読めませんでした。');
+			return;
+		}
+		var fn = function (url, body) {
+			body.session = session;
+			return api(url, body);
+		};
+		if (name === 'parts') {
+			window.SboDesign.openDex(fn);
+		} else {
+			window.SboDesign.openPlans(fn);
+		}
+	}
 
 	/* 開いた時：このブラウザでログイン済み（Cookie が生きている）なら続きから */
 	ssClear();
