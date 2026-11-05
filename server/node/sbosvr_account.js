@@ -47,7 +47,11 @@
  *                               {result:"pending", requestId, requestKey}
  *                               {result:"ng", reason}
  *   /api/recover/status       {requestId, requestKey}      → {status, token?, account?, name?}
- *   /api/admin/login          {account, password}          → {session}
+ *   /api/admin/login          {account, password, remember} → {ok, remember}（ログインは HttpOnly の Cookie で覚える）
+ *   /api/admin/me             {}                           → {ok, remember, created, lastUsed}（ログイン中か）
+ *   /api/admin/logout         {}                           → {ok}（このブラウザのログインを消す）
+ *   /api/admin/sessions       {}                           → {sessions:[{id, current, remember, created, lastUsed, ip, ua}]}
+ *   /api/admin/sessions/revoke {id} / {others:true}        → {ok, removed}（ほかの端末のログインを消す）
  *   /api/admin/recover/list   {session}                    → {requests:[...]}
  *   /api/admin/recover/decide {session, id, approve}       → {ok}
  *   /api/device/rename        {token, name, check}         → {result:"ok", from, to} / {result:<理由>, ...}
@@ -55,6 +59,16 @@
  *   /api/admin/search         {session, q}                 → {results:[...], more}
  *   /api/admin/rename         {session, account, name, check} → {result:"ok", from, to} / {result:<理由>}
  *   /api/admin/online         {session}                    → {players:[{name, account, level, mapID, mapName, x, y, ...}], online}
+ *
+ * 5. 管理ページのログイン
+ *    ログインすると、ランダムな値を HttpOnly・SameSite=Strict の Cookie（sbo_admin、https なら Secure）
+ *    で渡す。サーバーはその SHA-256 だけを SboWebAccount.json の adminSessions に残す（再起動しても続く）。
+ *      ・「このブラウザで覚えておく」あり … 最後に使ってから ADMIN_REMEMBER_DAYS 日（SBO_ADMIN_REMEMBER_DAYS、既定 365）
+ *        使わないと切れる。使っていても ADMIN_MAX_DAYS 日（SBO_ADMIN_MAX_DAYS、既定 365）でパスワードを聞き直す
+ *      ・なし … 今までどおり、最後に使ってから 2 時間・ブラウザを閉じたら終わり
+ *      ・INI の管理者パスワードを変えて再起動すると、覚えていたログインは全部使えなくなる（SboWebAccAdminStamp）
+ *      ・管理ページの「ログイン中の端末」から、ほかの端末のログインを消せる
+ *    Cookie が無い時は JSON の session も見る（ほかの API と同じ形のまま）。
  */
 Module['sboAccount'] = (function () {
 	var fs = require('fs');
@@ -76,7 +90,11 @@ Module['sboAccount'] = (function () {
 
 	var store = null;			/* SboWebAccount.json の中身 */
 	var strStorePath = '';
-	var aAdminSession = {};		/* 承認ページのログイン → 期限 */
+	var ADMIN_REMEMBER_DAYS = envNum('SBO_ADMIN_REMEMBER_DAYS', 365);
+	var ADMIN_MAX_DAYS = envNum('SBO_ADMIN_MAX_DAYS', 365);
+	var ADMIN_SHORT = 2 * HOUR;		/* 覚えない時は最後に使ってから 2 時間 */
+	var ADMIN_COOKIE = 'sbo_admin';
+	var MAX_ADMIN_SESSIONS = 50;
 
 	function log(msg) {
 		console.log('[account] ' + msg);
@@ -112,6 +130,10 @@ Module['sboAccount'] = (function () {
 		store.requests = store.requests || [];
 		store.codes = store.codes || {};
 		store.renames = store.renames || [];
+		store.adminSessions = store.adminSessions || {};
+		if (!store.adminSalt) {
+			store.adminSalt = randomHex(16);
+		}
 		return store;
 	}
 
@@ -592,6 +614,77 @@ Module['sboAccount'] = (function () {
 	/* ------------------------------------------------------------------ */
 	/* 承認ページ（管理者）の API												 */
 	/* ------------------------------------------------------------------ */
+	/* 今の管理者アカウント名・パスワードの指紋（変わったら覚えたログインは全部無効） */
+	function adminStamp() {
+		load();
+		var v = callStr(_SboWebAccAdminStamp, [store.adminSalt]);
+		return v ? sha256(v) : '';
+	}
+
+	function cookieValue(req, name) {
+		var a = String(req.headers['cookie'] || '').split(';');
+		for (var i = 0; i < a.length; i++) {
+			var n = a[i].indexOf('=');
+			if (n > 0 && a[i].slice(0, n).trim() === name) {
+				return a[i].slice(n + 1).trim();
+			}
+		}
+		return '';
+	}
+
+	/* 管理ページの Cookie に入っているログイン（無ければ空文字） */
+	function adminCookie(req) {
+		var v = cookieValue(req, ADMIN_COOKIE);
+		return /^[0-9a-f]{64}$/.test(v) ? v : '';
+	}
+
+	/* localhost で試す時以外は Secure を付ける（本番・ステージングは https だけ） */
+	function cookieSecure(req) {
+		var host = String(req.headers['host'] || '').toLowerCase();
+		return !/^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(host);
+	}
+
+	function setAdminCookie(req, res, value, nMaxAge) {
+		var a = [ADMIN_COOKIE + '=' + value, 'Path=/', 'HttpOnly', 'SameSite=Strict'];
+		if (nMaxAge != null) {
+			a.push('Max-Age=' + nMaxAge);
+		}
+		if (cookieSecure(req)) {
+			a.push('Secure');
+		}
+		res.setHeader('Set-Cookie', a.join('; '));
+	}
+
+	/* 切れたログインを片付ける（多すぎる時は古いものから） */
+	function pruneAdminSessions() {
+		var now = Date.now(), bChanged = false;
+		Object.keys(store.adminSessions).forEach(function (hash) {
+			if (!adminSessionAlive(store.adminSessions[hash], now)) {
+				delete store.adminSessions[hash];
+				bChanged = true;
+			}
+		});
+		var aKey = Object.keys(store.adminSessions);
+		if (aKey.length > MAX_ADMIN_SESSIONS) {
+			aKey.sort(function (a, b) { return store.adminSessions[a].lastUsed - store.adminSessions[b].lastUsed; });
+			aKey.slice(0, aKey.length - MAX_ADMIN_SESSIONS).forEach(function (hash) {
+				delete store.adminSessions[hash];
+			});
+			bChanged = true;
+		}
+		return bChanged;
+	}
+
+	function adminSessionAlive(s, now) {
+		if (!s || s.stamp !== adminStamp()) {
+			return false;
+		}
+		if (s.remember) {
+			return (now - s.lastUsed < ADMIN_REMEMBER_DAYS * DAY) && (now - s.created < ADMIN_MAX_DAYS * DAY);
+		}
+		return now - s.lastUsed < ADMIN_SHORT;
+	}
+
 	function apiAdminLogin(body, req, res) {
 		var ip = clientIp(req);
 		var nWait = limitAdminIp.check(ip);
@@ -601,27 +694,125 @@ Module['sboAccount'] = (function () {
 		}
 		if (!callInt(_SboWebAccCheckAdmin, [str(body.account, 32), str(body.password, 32)])) {
 			limitAdminIp.fail(ip);
-			log('承認ページ: ログイン失敗（' + ip + '）');
+			log('管理ページ: ログイン失敗（' + ip + '）');
 			reply(res, 401, { error: 'login' });
 			return;
 		}
 		limitAdminIp.reset(ip);
+		load();
+		var bRemember = !!body.remember;
 		var session = randomHex(32);
-		aAdminSession[sha256(session)] = Date.now() + 2 * HOUR;
-		reply(res, 200, { session: session });
+		var now = Date.now();
+		store.adminSessions[sha256(session)] = {
+			created: now,
+			lastUsed: now,
+			remember: bRemember,
+			ip: ip,
+			ua: str(req.headers['user-agent'], 200),
+			stamp: adminStamp()
+		};
+		pruneAdminSessions();
+		save();
+		log('管理ページ: ログイン（' + ip + (bRemember ? '、覚えておく' : '') + '）');
+		/* 覚える時は最長の日数まで Cookie を残す（本当の期限はサーバーで見る）。覚えない時はブラウザを閉じるまで */
+		setAdminCookie(req, res, session, bRemember ? Math.floor(ADMIN_MAX_DAYS * DAY / 1000) : null);
+		/* ログインの値は Cookie だけで渡す（ページの JS からは読めない） */
+		reply(res, 200, { ok: true, remember: bRemember });
 	}
 
-	/* 管理ページのログインが続いているか（続いていれば期限を延ばす） */
+	/* 管理ページのログインが続いているか（続いていれば最後に使った時を進める） */
 	function isAdminSession(session) {
+		load();
 		var hash = sha256(str(session, 128));
-		var until = aAdminSession[hash];
-		if (!until || until < Date.now()) {
-			delete aAdminSession[hash];
+		var s = store.adminSessions[hash];
+		var now = Date.now();
+		if (!s) {
 			return false;
 		}
-		/* 使っている間は延ばす（最後に使ってから 2 時間） */
-		aAdminSession[hash] = Date.now() + 2 * HOUR;
+		if (!adminSessionAlive(s, now)) {
+			delete store.adminSessions[hash];
+			save();
+			return false;
+		}
+		/* 書き込みが多くならないよう、覚えたログインは 10 分ごとにだけ保存する */
+		var bSave = s.remember && (now - s.lastUsed > 10 * MINUTE);
+		s.lastUsed = now;
+		if (bSave) {
+			save();
+		}
 		return true;
+	}
+
+	function apiAdminMe(body, req, res) {
+		if (!checkAdmin(body, res)) {
+			return;
+		}
+		var s = store.adminSessions[sha256(str(body.session, 128))];
+		reply(res, 200, { ok: true, remember: !!s.remember, created: s.created, lastUsed: s.lastUsed });
+	}
+
+	function apiAdminLogout(body, req, res) {
+		load();
+		if (body.session) {
+			var hash = sha256(str(body.session, 128));
+			if (store.adminSessions[hash]) {
+				delete store.adminSessions[hash];
+				save();
+			}
+		}
+		setAdminCookie(req, res, '', 0);
+		reply(res, 200, { ok: true });
+	}
+
+	/* 一覧に出す ID（保存しているハッシュの頭。ログインの値そのものは出さない） */
+	function adminSessionId(hash) {
+		return hash.slice(0, 12);
+	}
+
+	function apiAdminSessions(body, req, res) {
+		if (!checkAdmin(body, res)) {
+			return;
+		}
+		if (pruneAdminSessions()) {
+			save();
+		}
+		var cur = sha256(str(body.session, 128));
+		var a = Object.keys(store.adminSessions).map(function (hash) {
+			var s = store.adminSessions[hash];
+			return {
+				id: adminSessionId(hash),
+				current: hash === cur,
+				remember: !!s.remember,
+				created: s.created,
+				lastUsed: s.lastUsed,
+				ip: s.ip || '',
+				ua: s.ua || ''
+			};
+		});
+		a.sort(function (x, y) { return (y.current - x.current) || (y.lastUsed - x.lastUsed); });
+		reply(res, 200, { sessions: a, rememberDays: ADMIN_REMEMBER_DAYS, maxDays: ADMIN_MAX_DAYS });
+	}
+
+	function apiAdminSessionsRevoke(body, req, res) {
+		if (!checkAdmin(body, res)) {
+			return;
+		}
+		var cur = sha256(str(body.session, 128));
+		var nRemoved = 0;
+		Object.keys(store.adminSessions).forEach(function (hash) {
+			if (hash === cur) {
+				return;		/* 自分のログインはログアウトボタンで */
+			}
+			if (body.others === true || adminSessionId(hash) === String(body.id || '')) {
+				delete store.adminSessions[hash];
+				nRemoved++;
+			}
+		});
+		if (nRemoved) {
+			save();
+			log('管理ページ: ほかの端末のログインを ' + nRemoved + ' 件消した（' + clientIp(req) + '）');
+		}
+		reply(res, 200, { ok: true, removed: nRemoved });
 	}
 
 	function checkAdmin(body, res) {
@@ -752,6 +943,10 @@ Module['sboAccount'] = (function () {
 		'/api/recover': apiRecover,
 		'/api/recover/status': apiRecoverStatus,
 		'/api/admin/login': apiAdminLogin,
+		'/api/admin/me': apiAdminMe,
+		'/api/admin/logout': apiAdminLogout,
+		'/api/admin/sessions': apiAdminSessions,
+		'/api/admin/sessions/revoke': apiAdminSessionsRevoke,
 		'/api/admin/recover/list': apiAdminList,
 		'/api/admin/recover/decide': apiAdminDecide,
 		'/api/device/rename': apiDeviceRename,
@@ -779,6 +974,9 @@ Module['sboAccount'] = (function () {
 				reply(res, 400, { error: 'json' });
 				return;
 			}
+			if (url.indexOf('/api/admin/') === 0) {
+				withAdminCookie(body, req);
+			}
 			try {
 				fn(body, req, res);
 			} catch (e) {
@@ -787,6 +985,15 @@ Module['sboAccount'] = (function () {
 			}
 		});
 		return true;
+	}
+
+	/* 管理ページの API：Cookie のログインがあればそれを使う（無い時だけ JSON の session） */
+	function withAdminCookie(body, req) {
+		var v = adminCookie(req);
+		if (v) {
+			body.session = v;
+		}
+		return body;
 	}
 
 	/* 端末トークンからアカウントの情報を引く（ご意見箱などほかのページ用。見つからなければ null） */
@@ -803,6 +1010,7 @@ Module['sboAccount'] = (function () {
 		tokenInfo: tokenInfo,
 		accInfo: accInfo,
 		isAdminSession: isAdminSession,
+		withAdminCookie: withAdminCookie,
 		clientIp: clientIp,
 		reply: reply,
 		Limiter: Limiter
