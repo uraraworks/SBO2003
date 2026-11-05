@@ -1892,6 +1892,21 @@ void RecvDataProcWEBACCOUNT(PBYTE pData, DWORD dwDataSize)
 			WebAccSaveToken (pPara->szToken);
 		}
 		break;
+
+	case WEBACC_OPTBGM:			/* 音楽ON/OFFのアカウント設定 */
+		/*
+		 * ログインした直後に届く。ログイン画面の曲は設定に関係なく鳴らしているので、
+		 * ここでは覚えるだけで、マップに入った時の PlayBGM (0) から効く。
+		 * 端末の ini にも書いておき、次のログイン画面までの既定にする。
+		 */
+		if ((pPara->byData == OPTBGM_ON) || (pPara->byData == OPTBGM_OFF)) {
+			g_bBGMONOFF = (pPara->byData == OPTBGM_ON) ? TRUE : FALSE;
+			if (!g_bBGMONOFF && (g_byGameState != GAMESTATE_LOGIN)) {
+				StopBGM ();
+			}
+			SaveIniOption ();
+		}
+		break;
 	}
 }
 
