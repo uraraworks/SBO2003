@@ -19,6 +19,7 @@
 #include "AdminWindowOld/AdminDlgAccSearch.h"
 #include "AdminWindowOld/AdminDlgEtcSubGame.h"
 #include "AdminWindowOld/SelectCharGrpWindow.h"
+#include "AdminWindowOld/AdminAutoLayout.h"
 
 /* ========================================================================= */
 /* 定数定義																	 */
@@ -165,6 +166,7 @@ PCMDPARA_SVRINFO m_pSvrInfo;									/* サーバー情報 */
 void MyTextOut(HDC, int, int, char *, COLORREF Color = RGB (255, 255, 255));	/* 文字描画 */
 void MakeAdminWindow				(void);								/* 管理者ウィンドウ作成 */
 LRESULT WINAPI WndProcAdminWindow	(HWND, UINT, WPARAM, LPARAM);		/* メッセージの処理 */
+static LRESULT WndProcAdminWindowSub	(HWND, UINT, WPARAM, LPARAM);	/* メッセージの処理（本体） */
 LRESULT CALLBACK WndProcDialog		(HWND, UINT, WPARAM, LPARAM);		/* ダイアログのメッセージ処理 */
 void AdminOnCommand					(HWND, int, HWND, UINT);			/* メッセージハンドラ(WM_COMMAND) */
 void AdminOnCommandMapParts			(HWND, int, HWND, UINT);			/* メッセージハンドラ(WM_COMMAND)パーツ情報) */
@@ -319,9 +321,19 @@ void MakeAdminWindow(void)
 
 	/* ウィンドウ作成 */
 	g_hWndAdmin = CreateWindow (CLNAME, "管理者用ウィンドウ",
-				WS_OVERLAPPED/* | WS_THICKFRAME*/ | WS_CLIPCHILDREN,
+				WS_OVERLAPPED | WS_THICKFRAME | WS_CLIPCHILDREN,
 				rect.left, rect.top, rect.right, rect.bottom,
 				g_hWndMain, NULL, g_hInstance, NULL);
+	/* 400x350 を元の大きさとして覚え、前回広げていたらその大きさに戻す */
+	AdminAutoLayoutInit (g_hWndAdmin);
+	if (rcAdmin.right && rcAdmin.bottom) {
+		int cx = rcAdmin.right - rcAdmin.left;
+		int cy = rcAdmin.bottom - rcAdmin.top;
+		if (cx > rect.right || cy > rect.bottom) {
+			SetWindowPos (g_hWndAdmin, NULL, 0, 0, (cx > rect.right) ? cx : rect.right, (cy > rect.bottom) ? cy : rect.bottom,
+					SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+		}
+	}
 	ShowWindow (g_hWndAdmin, SW_SHOWNOACTIVATE);
 }
 
@@ -331,6 +343,33 @@ void MakeAdminWindow(void)
 /* 日付：2003/05/31															 */
 /* ========================================================================= */
 LRESULT WINAPI WndProcAdminWindow(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+	LRESULT lResult = WndProcAdminWindowSub (hWnd, msg, wParam, lParam);
+
+	/* 大きさが変わった時と、画面の部品が作り直されたかもしれない時に並べ直す */
+	switch (msg) {
+	case WM_SIZE:
+	case WM_COMMAND:
+	case WM_NOTIFY:
+	case WM_LBUTTONDOWN:
+	case WM_RBUTTONDOWN:
+		AdminAutoLayout (hWnd, TRUE);
+		break;
+	default:
+		if (msg >= WM_USER) {
+			AdminAutoLayout (hWnd, TRUE);
+		}
+		break;
+	}
+	return lResult;
+}
+
+/* ========================================================================= */
+/* 関数名：WndProcAdminWindowSub											 */
+/* 内容：メッセージの処理（本体）											 */
+/* 日付：2003/05/31															 */
+/* ========================================================================= */
+static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	switch (msg) {
 	HANDLE_MSG (hWnd, WM_COMMAND, AdminOnCommand);
@@ -5128,28 +5167,33 @@ void AdminOnPaint(HWND hWnd)
 {
 	HDC hdc;
 	PAINTSTRUCT ps;
+	void (*pfnPaint)(HDC) = NULL;
 
 	hdc = BeginPaint(hWnd, &ps);
 
 	/* 選択状態別に描画 */
 	switch (g_nAdminWindowType) {
-	case IDM_MAP_PARTS:		AdminOnPaintMapParts (hdc);			break;
-	case IDM_MAP_INFO:		AdminOnPaintMapInfo (hdc);			break;
-	case IDM_MAP_EVENT:		AdminOnPaintMapEvent (hdc);			break;
-	case IDM_MAP_MSG:		AdminOnPaintMsg (hdc);				break;
-	case IDM_CHAR_ADD:		AdminOnPaintAddChar (hdc);			break;
-	case IDM_CHAR_INFO:		AdminOnPaintCharInfo (hdc);			break;
-	case IDM_CHAR_STATUS:	AdminOnPaintCharStatus (hdc);		break;
-	case IDM_ACC_ADD:		AdminOnPaintAccAdd (hdc);			break;
-	case IDM_ACC_INFO:		AdminOnPaintAccInfo (hdc);			break;
-	case IDM_CEF_EDIT:		AdminOnPaintCefEdit (hdc);			break;
-	case IDM_ITEM_LIST:		AdminOnPaintItemList (hdc);			break;
-	case IDM_CHAR_ITEM:		AdminOnPaintCharItem (hdc);			break;
-	case IDM_ETC_SVRINFO:	AdminOnPaintSvrInfo (hdc);			break;
-	case IDM_MAP_SHOP:		AdminOnPaintShopInfo (hdc);			break;
-	case IDM_EFC_EDIT:		AdminOnPaintEfcEdit (hdc);			break;
-	case IDM_ETC_SUBGAME:	AdminOnPaintSubGame (hdc);			break;
-	case IDM_ETC_VERSION:	AdminOnPaintEtcVersion (hdc);		break;
+	case IDM_MAP_PARTS:	pfnPaint = AdminOnPaintMapParts;	break;
+	case IDM_MAP_INFO:	pfnPaint = AdminOnPaintMapInfo;	break;
+	case IDM_MAP_EVENT:	pfnPaint = AdminOnPaintMapEvent;	break;
+	case IDM_MAP_MSG:	pfnPaint = AdminOnPaintMsg;	break;
+	case IDM_CHAR_ADD:	pfnPaint = AdminOnPaintAddChar;	break;
+	case IDM_CHAR_INFO:	pfnPaint = AdminOnPaintCharInfo;	break;
+	case IDM_CHAR_STATUS:	pfnPaint = AdminOnPaintCharStatus;	break;
+	case IDM_ACC_ADD:	pfnPaint = AdminOnPaintAccAdd;	break;
+	case IDM_ACC_INFO:	pfnPaint = AdminOnPaintAccInfo;	break;
+	case IDM_CEF_EDIT:	pfnPaint = AdminOnPaintCefEdit;	break;
+	case IDM_ITEM_LIST:	pfnPaint = AdminOnPaintItemList;	break;
+	case IDM_CHAR_ITEM:	pfnPaint = AdminOnPaintCharItem;	break;
+	case IDM_ETC_SVRINFO:	pfnPaint = AdminOnPaintSvrInfo;	break;
+	case IDM_MAP_SHOP:	pfnPaint = AdminOnPaintShopInfo;	break;
+	case IDM_EFC_EDIT:	pfnPaint = AdminOnPaintEfcEdit;	break;
+	case IDM_ETC_SUBGAME:	pfnPaint = AdminOnPaintSubGame;	break;
+	case IDM_ETC_VERSION:	pfnPaint = AdminOnPaintEtcVersion;	break;
+	}
+	/* ウィンドウを広げた時は、一覧の右横・下に描いた文字も部品と一緒にずらす */
+	if (pfnPaint) {
+		AdminAutoLayoutPaint (hWnd, hdc, pfnPaint);
 	}
 
 	EndPaint(hWnd, &ps);
