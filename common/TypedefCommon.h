@@ -1897,6 +1897,7 @@ typedef struct _CHARINFO {
 	BYTE		byLevel;											/* レベル */
 	BYTE		abyMagic[MAX_USEMAGIC];								/* 呪文 */
 	BYTE		abyJobMagic[MAX_JOBMAGIC][MAX_USEMAGIC];			/* 転職前の職業で覚えていた呪文（職業ID別） */
+	BYTE		byOptBgm;											/* 音楽ON/OFFのアカウント設定(OPTBGM_*) */
 	char		chAttrFire;											/* 属性(火) */
 	char		chAttrWater;										/* 属性(水) */
 	char		chAttrWind;											/* 属性(風) */
@@ -2275,6 +2276,14 @@ enum {
 	WEBACC_TOKENLOGIN = 0,										/* 端末トークンでログイン要求（クライアント→サーバー） */
 	WEBACC_TOKENREQ,											/* 端末トークン発行要求（クライアント→サーバー） */
 	WEBACC_TOKEN,												/* 端末トークン通知（サーバー→クライアント） */
+	WEBACC_OPTBGM,												/* 音楽ON/OFFのアカウント設定（両方向。byData に OPTBGM_*） */
+};
+
+/* 音楽ON/OFFのアカウント設定（CHARINFO の byOptBgm） */
+enum {
+	OPTBGM_NONE = 0,											/* まだ決めていない（端末の設定に従う） */
+	OPTBGM_ON,													/* 音楽を鳴らす */
+	OPTBGM_OFF,													/* 音楽を止める */
 };
 
 #define MAX_WEBTOKEN		64										/* 端末トークンの文字数（16進） */
@@ -2286,6 +2295,7 @@ typedef struct _CMDPARA_WEBACCOUNT {
 	DWORD		pID;												/* プレイヤーID */
 	char		szToken[MAX_WEBTOKEN + 1];							/* 端末トークン */
 	char		szMacAdr[6];										/* MACアドレス */
+	BYTE		byData;												/* サブコマンドごとのデータ（WEBACC_OPTBGM の OPTBGM_*） */
 } CMDPARA_WEBACCOUNT, *PCMDPARA_WEBACCOUNT;
 
 /* 管理者画面の「元に戻す」（CMD_ADMINUNDO の byCmdSub） */
