@@ -85,6 +85,7 @@ void	TimerProcCharHartBeat		(PCHARINFO pChar);					/* タイマー処理(キャ�
 void	TimerProcCharTurnLV			(PCHARINFO pChar);					/* タイマー処理(キャラターンゲージ処理) */
 void	TimerProcCharMagicLV		(PCHARINFO pChar);					/* タイマー処理(キャラ魔法ターンゲージ処理) */
 BOOL	MsgProc						(PWNDINFO);							/* メッセージ処理 */
+void	StartPosConfirmOpen			(PWNDINFO, int, int, int, int);		/* 復活位置の確認を出す */
 int		GetWindowID					(DWORD);							/* ウィンドウ番号を取得 */
 int		GetCharID					(DWORD);							/* キャラ番号を取得 */
 void	StopBGM						();									/* BGM停止 */
@@ -2872,6 +2873,56 @@ void TimerProcCharMagicLV(PCHARINFO pChar)
 
 
 /* ========================================================================= */
+/* 関数名：StartPosConfirmOpen												 */
+/* 内容：教会などの「@8」で、復活位置を記録するか「はい・いいえ」で聞く		 */
+/*		 メッセージを「(ここまでのセリフ)@1復活位置を記録しますか？@k(続き)」 */
+/*		 に組み替え、続きは「はい」を選ぶまで止めておく						 */
+/*		 nPosAt：元のメッセージでの "@8" の '@' の位置						 */
+/* ========================================================================= */
+void StartPosConfirmOpen(PWNDINFO pWnd, int nPosAt, int nMapID, int nX, int nY)
+{
+	static const char *pszAsk = "@1復活位置を記録しますか？@k";
+	LPCSTR pszTail = "";
+	if ((int)strlen (pWnd->pszMsg) >= nPosAt + 11) {
+		pszTail = &pWnd->pszMsg[nPosAt + 11];		/* "@8" + 9 桁の後ろ */
+	}
+
+	/* 続きの先頭の入力待ちは、選んだ後に余計なので外す */
+	if ((pszTail[0] == '@') && (pszTail[1] == '0')) {
+		pszTail += 2;
+	}
+
+	int nLenHead = nPosAt;
+	int nLenAsk  = (int)strlen (pszAsk);
+	int nLenTail = (int)strlen (pszTail);
+	LPSTR pszNew = new char[nLenHead + nLenAsk + nLenTail + 1];
+	CopyMemory (pszNew, pWnd->pszMsg, nLenHead);
+	CopyMemory (&pszNew[nLenHead], pszAsk, nLenAsk);
+	CopyMemory (&pszNew[nLenHead + nLenAsk], pszTail, nLenTail);
+	pszNew[nLenHead + nLenAsk + nLenTail] = 0;
+
+	SAFE_DELETE_ARRAY (pWnd->pszMsg);
+	pWnd->pszMsg = pszNew;
+	/* 「@k」の 'k' まで処理済みにする（問いかけまで一度に出す） */
+	pWnd->nData1 = nLenHead + nLenAsk - 1;
+	pWnd->nData2 = MSGSTATE_STARTPOSCONF;
+	pWnd->dwTimeDrawStart = 0;
+	/* 待っている間は dwTime を使わないので、確認を出した時刻を入れておく */
+	pWnd->dwTime = timeGetTime ();
+
+	/* はい・いいえのウィンドウ（メッセージ欄の右上に出す） */
+	PWNDINFO pWndConf = MakeWindowCONF (pWnd->nX + pWnd->nCx - 16 * 6, pWnd->nY - 16 * 4, IDCONFIRMTYPE_STARTPOS);
+	pWndConf->nData1 = 0;
+	pWndConf->nData2 = ((nMapID & 0xFF) << 16) | ((nX & 0xFF) << 8) | (nY & 0xFF);
+	pWndConf->pParent = pWnd;
+	pWnd->pChild = pWndConf;
+	g_WndInfo.Add (pWndConf);
+	g_dwActiveMsgID = pWndConf->dwID;
+	g_bDraw = TRUE;
+}
+
+
+/* ========================================================================= */
 /* 関数名：MsgProc															 */
 /* 内容：メッセージ処理														 */
 /* 日付：2003/06/11															 */
@@ -2941,6 +2992,7 @@ BOOL MsgProc(PWNDINFO pWnd)
 		{
 			int i;
 			char szMspID[4], szX[4], szY[4];
+			int nPosAt = pWnd->nData1 - 1;		/* "@8" の '@' の位置 */
 			for (i = 0; i < 3; i ++) {
 				szMspID[i] = pWnd->pszMsg[pWnd->nData1 + i + 1];
 			}
@@ -2959,7 +3011,8 @@ BOOL MsgProc(PWNDINFO pWnd)
 			szY[i] = 0;
 			pWnd->nData1 += 3;
 
-			SendCmdSETSTARTPOS ((BYTE)atoi (szMspID), (BYTE)atoi (szX), (BYTE)atoi (szY));
+			/* 以前はここですぐ記録していたが、「はい・いいえ」で選んでもらう */
+			StartPosConfirmOpen (pWnd, nPosAt, atoi (szMspID), atoi (szX), atoi (szY));
 			bRet = FALSE;
 		}
 		break;
