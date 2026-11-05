@@ -25,6 +25,9 @@
 
 /* 管理者用コマンドを処理する前に呼ぶ。記録の対象なら TRUE（処理の後に AdminUndoAfter を呼ぶ） */
 BOOL	AdminUndoBefore		(BYTE byCmd, const BYTE *pData, DWORD dwSize, DWORD pID, LPCSTR pszSource, BYTE byScreen);
+/* API（server/web_data_svr.cpp）が直接データを変える前に呼ぶ。対象は byCmd と番号で指定する。
+   記録の対象なら TRUE（変えた後に AdminUndoAfter を呼ぶ） */
+BOOL	AdminUndoBeforeTarget	(BYTE byCmd, DWORD dwID, LPCSTR pszSource, BYTE byScreen);
 /* 管理者用コマンドを処理した後に呼ぶ（変わっていれば記録する） */
 void	AdminUndoAfter		(void);
 

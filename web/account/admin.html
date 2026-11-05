@@ -10,7 +10,8 @@
 	  ・キャラを探す … キャラ名・アカウント名（一部でよい）や前の名前から探し、キャラ名を変える
 	  ・復旧の承認   … アカウント復旧の申請を承認・却下する（前の recover-admin.html と同じ）
 	  ・ご意見箱     … /feedback に届いた投稿を全部見て、返事・対応済み・隠す・消すをする
-	API は server/node/sbosvr_account.js の /api/admin/*（ご意見箱は server/node/sbosvr_feedback.js）。
+	  ・AI連携       … AI（Claude Code など）から設定データを読み書きするキーの発行・取り消しと、変更履歴・元に戻す
+	API は server/node/sbosvr_account.js の /api/admin/*（ご意見箱は server/node/sbosvr_feedback.js、AI連携は server/node/sbosvr_data.js）。
 -->
 <style>
 	:root {
@@ -240,6 +241,36 @@
 		gap: 6px;
 		margin-top: 10px;
 	}
+	select {
+		background: var(--field);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		color: var(--fg);
+		font: 16px/1.3 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		padding: 8px;
+	}
+	.code {
+		font: 13px/1.5 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+		background: var(--field);
+		border-radius: 6px;
+		padding: 8px 10px;
+		margin-top: 6px;
+		white-space: pre-wrap;
+		word-break: break-all;
+		user-select: all;
+	}
+	.diff {
+		margin: 6px 0 0;
+		padding-left: 18px;
+		font-size: 13px;
+		word-break: break-all;
+	}
+	.diff .from { color: var(--ng); }
+	.diff .to { color: var(--ok); }
+	h3 {
+		font-size: 15px;
+		margin: 18px 0 8px;
+	}
 	[hidden] { display: none !important; }
 </style>
 </head>
@@ -253,6 +284,7 @@
 		<button type="button" data-tab="search" class="active">キャラを探す</button>
 		<button type="button" data-tab="recover">復旧の承認<span class="badge" id="pending-count" hidden></span></button>
 		<button type="button" data-tab="feedback">ご意見箱<span class="badge" id="feedback-count" hidden></span></button>
+		<button type="button" data-tab="ai">AI連携</button>
 	</nav>
 </header>
 <main>
@@ -312,6 +344,50 @@
 			<span class="sub-text" id="fb-page-text"></span>
 			<button type="button" class="sub" id="fb-next">前の投稿 →</button>
 		</div>
+	</section>
+
+	<!-- AI連携 -->
+	<section id="tab-ai" hidden>
+		<p class="sub-text">
+			AI（Claude Code など）から、特技・職業とレベルアップ・特技を使える職業・装備できる職業・ステータステンプレート・アイテムを
+			読み書きできるようにするキーです。書き込みは必ず「下見（差分を見る）→ 確定」の 2 段階で、確定した変更は下の履歴から元に戻せます。
+			キーは発行した時に一度だけ表示されます。人に見せないでください。
+		</p>
+		<div class="card">
+			<div class="name" style="font-size:15px">キーを発行する</div>
+			<label for="ai-name">名前（どこで使うかのメモ）</label>
+			<input id="ai-name" type="text" placeholder="例: Mac の Claude Code" maxlength="40">
+			<div class="row" style="margin-top:10px;flex-wrap:wrap">
+				<select id="ai-scope">
+					<option value="read">読むだけ</option>
+					<option value="write">書き込みもできる</option>
+				</select>
+				<select id="ai-days">
+					<option value="7">7 日で切れる</option>
+					<option value="30" selected>30 日で切れる</option>
+					<option value="90">90 日で切れる</option>
+					<option value="0">期限なし</option>
+				</select>
+				<button type="button" id="ai-issue">発行する</button>
+			</div>
+			<div class="msg" id="ai-issue-msg"></div>
+			<div id="ai-new" hidden>
+				<p class="sub-text" style="margin-bottom:0">キー（今だけ表示されます）</p>
+				<div class="code" id="ai-key"></div>
+				<p class="sub-text" style="margin-bottom:0">Claude Code につなぐコマンド（ターミナルで実行）</p>
+				<div class="code" id="ai-cmd"></div>
+				<button type="button" class="sub" id="ai-copy">コマンドをコピー</button>
+			</div>
+		</div>
+		<h3>発行したキー</h3>
+		<div class="msg" id="ai-keys-msg"></div>
+		<div id="ai-keys"></div>
+		<h3>変更履歴</h3>
+		<div class="row" style="justify-content:space-between">
+			<button type="button" class="sub" id="ai-reload">読み直す</button>
+		</div>
+		<div class="msg" id="ai-hist-msg"></div>
+		<div id="ai-hist"></div>
 	</section>
 </main>
 <script>
@@ -383,13 +459,18 @@
 		$('tab-search').hidden = true;
 		$('tab-recover').hidden = true;
 		$('tab-feedback').hidden = true;
+		$('tab-ai').hidden = true;
 		setMsg($('login-msg'), text || '');
 	}
 	function showMain() {
 		$('login').hidden = true;
 		$('tabs').hidden = false;
 		$('logout').hidden = false;
-		selectTab(location.hash === '#recover' ? 'recover' : location.hash === '#feedback' ? 'feedback' : 'search');
+		selectTab(location.hash === '#recover' ? 'recover' : location.hash === '#feedback' ? 'feedback' :
+			location.hash === '#ai' ? 'ai' : 'search');
+		if (location.hash === '#ai') {
+			loadAi();
+		}
 		loadRequests();
 		loadFeedback();
 	}
@@ -427,6 +508,7 @@
 		$('tab-search').hidden = name !== 'search';
 		$('tab-recover').hidden = name !== 'recover';
 		$('tab-feedback').hidden = name !== 'feedback';
+		$('tab-ai').hidden = name !== 'ai';
 		if (history.replaceState) {
 			history.replaceState(null, '', name === 'search' ? location.pathname : '#' + name);
 		}
@@ -441,6 +523,8 @@
 				loadRequests();
 			} else if (b.dataset.tab === 'feedback') {
 				loadFeedback();
+			} else if (b.dataset.tab === 'ai') {
+				loadAi();
 			}
 		});
 	});
@@ -803,6 +887,215 @@
 		nFbPage++;
 		loadFeedback();
 	});
+
+	/* ---- AI連携 ---- */
+	var AI_KIND = {
+		magic: '特技', magicUser: '特技を使える職業', equUser: '装備できる職業',
+		job: '職業', stTmp: 'ステータステンプレート', item: 'アイテム'
+	};
+	var AI_OP = { update: '変更', add: '追加', undo: '元に戻す' };
+
+	function loadAi() {
+		loadAiKeys();
+		loadAiHistory();
+	}
+
+	function loadAiKeys() {
+		api('/api/admin/ai/keys', { session: session }).then(function (data) {
+			if (!data.keys) {
+				return;
+			}
+			setMsg($('ai-keys-msg'), '');
+			var list = $('ai-keys');
+			list.textContent = '';
+			var a = data.keys.filter(function (k) { return !k.revoked; });
+			if (!a.length) {
+				list.appendChild(el('p', 'sub-text', 'まだキーはありません。'));
+			}
+			a.forEach(function (k) {
+				var card = el('div', 'card');
+				var head = el('div', 'head');
+				head.appendChild(el('span', 'name', k.name));
+				head.appendChild(el('span', 'tag ' + (k.write ? 'admin' : 'old'), k.write ? '書き込みもできる' : '読むだけ'));
+				if (!k.active) {
+					head.appendChild(el('span', 'tag rejected', '期限切れ'));
+				}
+				card.appendChild(head);
+				var dl = el('dl');
+				function item(t, v) {
+					dl.appendChild(el('dt', '', t));
+					dl.appendChild(el('dd', '', v));
+				}
+				item('キー', k.prefix + '…');
+				item('発行', dateText(k.created));
+				item('期限', k.expires ? dateText(k.expires) : 'なし');
+				item('最後に使った', k.lastUsed ? dateText(k.lastUsed) + '（' + k.lastIp + '）' : 'まだ使っていません');
+				card.appendChild(dl);
+				var btn = el('button', 'sub', '取り消す');
+				btn.addEventListener('click', function () {
+					if (!window.confirm('「' + k.name + '」のキーを取り消しますか？このキーではもう使えなくなります。')) {
+						return;
+					}
+					api('/api/admin/ai/revoke', { session: session, id: k.id }).then(loadAiKeys);
+				});
+				card.appendChild(btn);
+				list.appendChild(card);
+			});
+		}).catch(function () {
+			setMsg($('ai-keys-msg'), 'サーバーにつながりませんでした。');
+		});
+	}
+
+	$('ai-issue').addEventListener('click', function () {
+		setMsg($('ai-issue-msg'), '');
+		var bWrite = $('ai-scope').value === 'write';
+		if (bWrite && !window.confirm('書き込みもできるキーを発行しますか？\nAI がゲームの設定データを変えられるようになります（確定の前に必ず下見が入ります）。')) {
+			return;
+		}
+		api('/api/admin/ai/issue', {
+			session: session, name: $('ai-name').value, write: bWrite, days: Number($('ai-days').value)
+		}).then(function (data) {
+			if (!data.key) {
+				setMsg($('ai-issue-msg'), data.message || '発行できませんでした（' + (data.error || data.httpStatus) + '）');
+				return;
+			}
+			$('ai-new').hidden = false;
+			$('ai-key').textContent = data.key;
+			$('ai-cmd').textContent = 'claude mcp add --transport http sbo2003 ' + location.origin + '/mcp --header "Authorization: Bearer ' + data.key + '"';
+			setMsg($('ai-issue-msg'), '発行しました。キーはこの画面を閉じると二度と表示されません。', true);
+			$('ai-name').value = '';
+			loadAiKeys();
+		}).catch(function () {
+			setMsg($('ai-issue-msg'), 'サーバーにつながりませんでした。');
+		});
+	});
+	$('ai-copy').addEventListener('click', function () {
+		var text = $('ai-cmd').textContent;
+		if (navigator.clipboard) {
+			navigator.clipboard.writeText(text).then(function () {
+				setMsg($('ai-issue-msg'), 'コピーしました。', true);
+			});
+		}
+	});
+
+	function valueText(v) {
+		if (v === null || v === undefined) {
+			return '（なし）';
+		}
+		var s = typeof v === 'string' ? '「' + v + '」' : JSON.stringify(v);
+		return s.length > 120 ? s.slice(0, 120) + '…' : s;
+	}
+
+	/* 差分 {項目: {from, to}} を一覧にする（多い時は先頭だけ） */
+	function diffList(diff) {
+		var ul = el('ul', 'diff');
+		var aKey = Object.keys(diff || {});
+		aKey.slice(0, 12).forEach(function (k) {
+			var li = el('li');
+			li.appendChild(document.createTextNode(k + ': '));
+			li.appendChild(el('span', 'from', valueText(diff[k].from)));
+			li.appendChild(document.createTextNode(' → '));
+			li.appendChild(el('span', 'to', valueText(diff[k].to)));
+			ul.appendChild(li);
+		});
+		if (aKey.length > 12) {
+			ul.appendChild(el('li', 'sub-text', 'ほか ' + (aKey.length - 12) + ' 項目'));
+		}
+		return ul;
+	}
+
+	function diffText(items) {
+		var a = [];
+		items.forEach(function (it) {
+			Object.keys(it.diff || {}).forEach(function (k) {
+				a.push(it.id + '番 ' + k + ': ' + valueText(it.diff[k].from) + ' → ' + valueText(it.diff[k].to));
+			});
+		});
+		return a.length > 15 ? a.slice(0, 15).join('\n') + '\nほか ' + (a.length - 15) + ' 項目' : a.join('\n');
+	}
+
+	function loadAiHistory() {
+		api('/api/admin/ai/history', { session: session, limit: 30 }).then(function (data) {
+			if (!data.entries) {
+				return;
+			}
+			setMsg($('ai-hist-msg'), '');
+			var list = $('ai-hist');
+			list.textContent = '';
+			if (!data.entries.length) {
+				list.appendChild(el('p', 'sub-text', 'まだ変更はありません。'));
+			}
+			data.entries.forEach(function (e) {
+				list.appendChild(historyCard(e));
+			});
+		}).catch(function () {
+			setMsg($('ai-hist-msg'), 'サーバーにつながりませんでした。');
+		});
+	}
+
+	function historyCard(e) {
+		var card = el('div', 'card');
+		var head = el('div', 'head');
+		head.appendChild(el('span', 'name', '#' + e.historyId + ' ' + (AI_KIND[e.kind] || e.kind) + 'の' + (AI_OP[e.op] || e.op)));
+		if (e.undoOf) {
+			head.appendChild(el('span', 'tag old', '#' + e.undoOf + ' を戻した'));
+		}
+		if (e.undoneBy) {
+			head.appendChild(el('span', 'tag done', '#' + e.undoneBy + ' で戻し済み'));
+		}
+		card.appendChild(head);
+		card.appendChild(el('div', 'sub-text', dateText(Date.parse(e.at)) + ' ／ ' + e.by));
+		if (e.note) {
+			card.appendChild(el('div', 'message', e.note));
+		}
+		e.items.slice(0, 10).forEach(function (it) {
+			card.appendChild(el('div', '', it.id + '番 ' + (it.name || '') + (it.added ? '（追加）' : '')));
+			card.appendChild(diffList(it.diff));
+		});
+		if (e.items.length > 10) {
+			card.appendChild(el('div', 'sub-text', 'ほか ' + (e.items.length - 10) + ' 件'));
+		}
+		var bOnlyAdd = e.items.every(function (it) { return it.added; });
+		if (!e.undoneBy && !bOnlyAdd) {
+			var btn = el('button', 'sub', '元に戻す');
+			var msg = el('div', 'msg');
+			btn.addEventListener('click', function () { undo(e, false, msg); });
+			card.appendChild(btn);
+			card.appendChild(msg);
+		}
+		return card;
+	}
+
+	/* 元に戻す（下見 → 確かめてもらう → 確定） */
+	function undo(e, bForce, msg) {
+		setMsg(msg, '');
+		api('/api/admin/ai/undo', { session: session, historyId: e.historyId, force: bForce }).then(function (pv) {
+			if (pv.error === 'conflict') {
+				if (window.confirm('この後に変更されたデータがあります（' + pv.conflicts.join(', ') + ' 番）。\nそれでも戻しますか？（その後の変更も消えます）')) {
+					undo(e, true, msg);
+				}
+				return;
+			}
+			if (!pv.previewId) {
+				setMsg(msg, pv.message || '戻せませんでした（' + (pv.error || pv.httpStatus) + '）');
+				return;
+			}
+			if (!window.confirm('次のように戻します。よろしいですか？\n\n' + diffText(pv.items) +
+					(pv.skipped ? '\n\n（追加した ' + pv.skipped.join(', ') + ' 番は消せないので残ります）' : ''))) {
+				return;
+			}
+			api('/api/admin/ai/undo', { session: session, historyId: e.historyId, force: bForce, previewId: pv.previewId }).then(function (data) {
+				if (!data.ok) {
+					setMsg(msg, data.message || '戻せませんでした（' + (data.error || data.httpStatus) + '）');
+					return;
+				}
+				loadAiHistory();
+			});
+		}).catch(function () {
+			setMsg(msg, 'サーバーにつながりませんでした。');
+		});
+	}
+	$('ai-reload').addEventListener('click', loadAiHistory);
 
 	/* 開いた時：このタブでログイン済みなら続きから */
 	session = ssGet();
