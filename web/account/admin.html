@@ -8,6 +8,7 @@
 <!--
 	管理者用のページ（スマホでも使える）。サーバーの INI にある管理者アカウントでログインする。
 	  ・キャラを探す … キャラ名・アカウント名（一部でよい）や前の名前から探し、キャラ名を変える
+	  ・プレイヤー   … 「取得」を押した時にログイン中のプレイヤーのキャラ名と、今いるマップ（ID：名前）を一覧する
 	  ・復旧の承認   … アカウント復旧の申請を承認・却下する（前の recover-admin.html と同じ）
 	  ・ご意見箱     … /feedback に届いた投稿を全部見て、返事・対応済み・隠す・消すをする
 	  ・AI連携       … AI（Claude Code など）から設定データを読み書きするキーの発行・取り消しと、変更履歴・元に戻す
@@ -271,6 +272,27 @@
 		font-size: 15px;
 		margin: 18px 0 8px;
 	}
+	.online-list {
+		padding: 4px 16px;
+	}
+	.online-row {
+		padding: 8px 0;
+		border-top: 1px solid var(--border);
+	}
+	.online-row:first-child {
+		border-top: none;
+	}
+	.online-name {
+		color: var(--fg);
+		font-size: 16px;
+		font-weight: bold;
+		word-break: break-all;
+	}
+	.online-map {
+		color: var(--sub);
+		font-size: 13px;
+		word-break: break-all;
+	}
 	[hidden] { display: none !important; }
 </style>
 </head>
@@ -282,6 +304,7 @@
 	</h1>
 	<nav id="tabs" hidden>
 		<button type="button" data-tab="search" class="active">キャラを探す</button>
+		<button type="button" data-tab="online">プレイヤー</button>
 		<button type="button" data-tab="recover">復旧の承認<span class="badge" id="pending-count" hidden></span></button>
 		<button type="button" data-tab="feedback">ご意見箱<span class="badge" id="feedback-count" hidden></span></button>
 		<button type="button" data-tab="ai">AI連携</button>
@@ -311,6 +334,20 @@
 		</div>
 		<div class="msg" id="search-msg"></div>
 		<div id="results"></div>
+	</section>
+
+	<!-- プレイヤー（ログイン中） -->
+	<section id="tab-online" hidden>
+		<p class="sub-text">
+			「取得」を押した時点で、ゲームに入っているプレイヤーのキャラ名と今いるマップです（自動では更新されません）。
+			キャラ名を押すと「キャラを探す」で詳しく見られます。
+		</p>
+		<div class="row" style="justify-content:space-between">
+			<button type="button" id="online-get">取得</button>
+			<span class="sub-text" id="online-at"></span>
+		</div>
+		<div class="msg" id="online-msg"></div>
+		<div id="online-list"></div>
 	</section>
 
 	<!-- 復旧の承認 -->
@@ -483,6 +520,7 @@
 		$('tabs').hidden = true;
 		$('logout').hidden = true;
 		$('tab-search').hidden = true;
+		$('tab-online').hidden = true;
 		$('tab-recover').hidden = true;
 		$('tab-feedback').hidden = true;
 		$('tab-ai').hidden = true;
@@ -493,7 +531,7 @@
 		$('login').hidden = true;
 		$('tabs').hidden = false;
 		$('logout').hidden = false;
-		selectTab(location.hash === '#recover' ? 'recover' : location.hash === '#feedback' ? 'feedback' :
+		selectTab(location.hash === '#online' ? 'online' : location.hash === '#recover' ? 'recover' : location.hash === '#feedback' ? 'feedback' :
 			location.hash === '#ai' ? 'ai' : location.hash === '#mapdoc' ? 'mapdoc' : 'search');
 		if (location.hash === '#ai') {
 			loadAi();
@@ -535,6 +573,7 @@
 			b.classList.toggle('active', b.dataset.tab === name);
 		});
 		$('tab-search').hidden = name !== 'search';
+		$('tab-online').hidden = name !== 'online';
 		$('tab-recover').hidden = name !== 'recover';
 		$('tab-feedback').hidden = name !== 'feedback';
 		$('tab-ai').hidden = name !== 'ai';
@@ -560,6 +599,56 @@
 			}
 		});
 	});
+
+	/* ---- プレイヤー（ログイン中） ---- */
+	function loadOnline() {
+		var btn = $('online-get');
+		btn.disabled = true;
+		setMsg($('online-msg'), '取得しています...', true);
+		api('/api/admin/online', { session: session }).then(function (data) {
+			btn.disabled = false;
+			if (!data.players) {
+				if (data.httpStatus !== 401) {
+					setMsg($('online-msg'), '取得できませんでした（' + (data.error || data.httpStatus) + '）');
+				}
+				return;
+			}
+			$('online-at').textContent = dateText(data.at || Date.now()) + ' 時点';
+			setMsg($('online-msg'), data.players.length ? 'ログイン中 ' + data.players.length + ' 人' : '今はだれもログインしていません。', true);
+			var box = $('online-list');
+			box.textContent = '';
+			if (!data.players.length) {
+				return;
+			}
+			var card = el('div', 'card online-list');
+			data.players.forEach(function (p) {
+				var row = el('div', 'online-row');
+				var name = el('a', 'online-name', p.name || '（名前なし）');
+				name.href = '#';
+				name.addEventListener('click', function (ev) {
+					ev.preventDefault();
+					$('q').value = p.name || p.account;
+					selectTab('search');
+					search();
+				});
+				var head = el('div', 'head');
+				head.appendChild(name);
+				head.appendChild(el('span', 'sub-text', 'Lv ' + p.level));
+				if (p.admin) {
+					head.appendChild(el('span', 'tag admin', '管理者'));
+				}
+				row.appendChild(head);
+				row.appendChild(el('div', 'online-map', p.mapID + '：' + (p.mapName || '（名前の無いマップ）') +
+					'　(' + p.x + ', ' + p.y + ')'));
+				card.appendChild(row);
+			});
+			box.appendChild(card);
+		}).catch(function () {
+			btn.disabled = false;
+			setMsg($('online-msg'), 'サーバーにつながりませんでした。');
+		});
+	}
+	$('online-get').addEventListener('click', loadOnline);
 
 	/* ---- キャラを探す ---- */
 	var RENAME_NG = {
