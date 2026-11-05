@@ -135,7 +135,7 @@ SBOP2 と同じく、サーバーの様子を誰でも見られるようにし�
 | --- | --- |
 | `CMakeLists.txt` / `CMakePresets.json` | サーバーのビルド設定（`mac-debug` / `mac-release`） |
 | `tools/server/sources.txt` | コンパイルするゲーム側のソースの一覧（ブラウザ版は `tools/web/sources.txt`） |
-| `tools/server/prepare.py` | ソースを SJIS の文字列に直して `out/cmake-server/sbosvr/src` へ置き、ソース一覧を作る |
+| `tools/server/prepare.py` | ソースの #include パスなどを直して `out/cmake-server/sbosvr/src` へ置き、ソース一覧を作る |
 | `server/server_main.cpp` | 入口（引数を読んで WinMain を呼ぶ） |
 | `server/CUraraSockTCP_svr.cpp` | 通信クラスのサーバー版（パケットの切り出し・接続前チェック・CRC・圧縮） |
 | `server/node/sbosvr_net.js` | Node.js 側の TCP・HTTP・WebSocket と Ctrl+C の処理 |

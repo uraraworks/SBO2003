@@ -7447,9 +7447,9 @@ void ChatMsgProc(LPCTSTR pszMsg)
 
 		for (i = 0; pszMsgTmp[i]; i += nChar) {
 			nChar = SboTextCharLen (&pszMsgTmp[i]);
-			/* 1 バイト文字の制御文字は「･」にする */
-			if ((nChar == 1) && ((BYTE)pszMsgTmp[i] < ' ')) {
-				pszMsgTmp[i] = '･';
+			/* 制御文字と、UTF-8 として正しくないバイトは「?」にする */
+			if ((nChar == 1) && (((BYTE)pszMsgTmp[i] < ' ') || ((BYTE)pszMsgTmp[i] >= 0x80))) {
+				pszMsgTmp[i] = '?';
 			}
 		}
 	}

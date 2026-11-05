@@ -1100,7 +1100,7 @@ BOOL TextOut(HDC hDC, int x, int y, LPCSTR pszText, int nLen)
 	if (pTtf == NULL) {
 		return FALSE;
 	}
-	std::string strUtf8 = W32SjisToUtf8Str(pszText, nLen);
+	std::string strUtf8 = W32TextToUtf8Str(pszText, nLen);
 	if (strUtf8.empty()) {
 		return TRUE;
 	}
@@ -1144,7 +1144,7 @@ BOOL GetTextExtentPoint32(HDC hDC, LPCSTR pszText, int nLen, LPSIZE pSize)
 	if (pszText == NULL || nLen <= 0) {
 		return TRUE;
 	}
-	std::string strUtf8 = W32SjisToUtf8Str(pszText, nLen);
+	std::string strUtf8 = W32TextToUtf8Str(pszText, nLen);
 	int w = 0, h = 0;
 	TTF_SizeUTF8(pTtf, strUtf8.c_str(), &w, &h);
 	pSize->cx = w;

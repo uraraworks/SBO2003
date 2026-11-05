@@ -1,36 +1,94 @@
 /* Copyright(C)URARA-works 2026 */
 /* ========================================================================= */
 /* ファイル名：	SboText.cpp													 */
-/* 内容：		文字列の文字単位の扱い（Shift_JIS 版）						 */
+/* 内容：		文字列の文字単位の扱い（UTF-8 版）							 */
 /* ========================================================================= */
 
 #include "StdAfx.h"
 #include "SboText.h"
 
+/* ------------------------------------------------------------------------- */
+/* UTF-8 の 1 文字のバイト数を先頭バイトから求める（正しくない並びは 0）		 */
+/* ------------------------------------------------------------------------- */
+static int Utf8SeqLen(const BYTE *p)
+{
+	int i, nLen;
+
+	if (p[0] < 0x80) {
+		return 1;
+	} else if ((p[0] >= 0xC2) && (p[0] <= 0xDF)) {
+		nLen = 2;
+	} else if ((p[0] >= 0xE0) && (p[0] <= 0xEF)) {
+		nLen = 3;
+	} else if ((p[0] >= 0xF0) && (p[0] <= 0xF4)) {
+		nLen = 4;
+	} else {
+		return 0;
+	}
+	/* 続きのバイトは 0x80〜0xBF（終端が来たら正しくない） */
+	for (i = 1; i < nLen; i ++) {
+		if ((p[i] & 0xC0) != 0x80) {
+			return 0;
+		}
+	}
+	/* 短く書ける文字を長く書いたもの・サロゲート・範囲外は正しくない */
+	if ((p[0] == 0xE0) && (p[1] < 0xA0)) {
+		return 0;
+	}
+	if ((p[0] == 0xED) && (p[1] >= 0xA0)) {
+		return 0;
+	}
+	if ((p[0] == 0xF0) && (p[1] < 0x90)) {
+		return 0;
+	}
+	if ((p[0] == 0xF4) && (p[1] >= 0x90)) {
+		return 0;
+	}
+	return nLen;
+}
+
 /* ========================================================================= */
 /* 関数名：	SboTextCharLen													 */
 /* 内容：	先頭 1 文字のバイト数（終端なら 0）								 */
+/*			UTF-8 として正しくないバイトは 1 バイトで 1 文字と数える		 */
 /* ========================================================================= */
 int SboTextCharLen(LPCSTR psz)
 {
+	int nLen;
+
 	if ((psz == NULL) || (psz[0] == 0)) {
 		return 0;
 	}
-	/* 2 バイト文字の 1 バイト目で、2 バイト目が終端でない */
-	if (IsDBCSLeadByte ((BYTE)psz[0]) && psz[1]) {
-		return 2;
-	}
-	return 1;
+	nLen = Utf8SeqLen ((const BYTE *)psz);
+	return (nLen > 0) ? nLen : 1;
 }
 
 /* ========================================================================= */
 /* 関数名：	SboTextCharWidth												 */
 /* 内容：	先頭 1 文字の表示幅（終端なら 0）								 */
+/*			ASCII と半角カナは半角（1）、それ以外は全角（2）				 */
 /* ========================================================================= */
 int SboTextCharWidth(LPCSTR psz)
 {
-	/* Shift_JIS は「1 バイト文字 = 半角、2 バイト文字 = 全角」なのでバイト数と同じ */
-	return SboTextCharLen (psz);
+	const BYTE *p = (const BYTE *)psz;
+	int nLen;
+
+	if ((p == NULL) || (p[0] == 0)) {
+		return 0;
+	}
+	if (p[0] < 0x80) {
+		return 1;
+	}
+	nLen = Utf8SeqLen (p);
+	if (nLen == 0) {
+		return 1;	/* 正しくないバイトは「?」相当の半角 */
+	}
+	/* 半角カナ（U+FF61〜U+FF9F = EF BD A1〜EF BE 9F） */
+	if ((nLen == 3) && (p[0] == 0xEF) &&
+			(((p[1] == 0xBD) && (p[2] >= 0xA1)) || ((p[1] == 0xBE) && (p[2] <= 0x9F)))) {
+		return 1;
+	}
+	return 2;
 }
 
 /* ========================================================================= */
@@ -127,7 +185,7 @@ int SboTextCopy(LPSTR pszDst, int nDstSize, LPCSTR pszSrc)
 
 /* ========================================================================= */
 /* 関数名：	SboTextIsSingleByteOnly											 */
-/* 内容：	1 バイト文字だけでできているか									 */
+/* 内容：	ASCII（1 バイト文字）だけでできているか							 */
 /* ========================================================================= */
 BOOL SboTextIsSingleByteOnly(LPCSTR psz)
 {
@@ -138,9 +196,55 @@ BOOL SboTextIsSingleByteOnly(LPCSTR psz)
 	}
 	for (i = 0; psz[i]; i += nChar) {
 		nChar = SboTextCharLen (&psz[i]);
-		if (nChar > 1) {
+		if ((nChar > 1) || ((BYTE)psz[i] >= 0x80)) {
 			return FALSE;
 		}
 	}
 	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：	SboTextIsValid													 */
+/* 内容：	UTF-8 として正しい並びだけでできているか						 */
+/* ========================================================================= */
+BOOL SboTextIsValid(LPCSTR psz)
+{
+	const BYTE *p = (const BYTE *)psz;
+
+	if (p == NULL) {
+		return TRUE;
+	}
+	while (*p) {
+		int nLen = Utf8SeqLen (p);
+		if (nLen == 0) {
+			return FALSE;
+		}
+		p += nLen;
+	}
+	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：	SboTextSanitize													 */
+/* 内容：	UTF-8 として正しくないバイトを「?」に置き換える（その場で）		 */
+/*			戻り値は置き換えた数											 */
+/* ========================================================================= */
+int SboTextSanitize(LPSTR psz)
+{
+	BYTE *p = (BYTE *)psz;
+	int nCount = 0;
+
+	if (p == NULL) {
+		return 0;
+	}
+	while (*p) {
+		int nLen = Utf8SeqLen (p);
+		if (nLen == 0) {
+			*p = '?';
+			nLen = 1;
+			nCount ++;
+		}
+		p += nLen;
+	}
+	return nCount;
 }
