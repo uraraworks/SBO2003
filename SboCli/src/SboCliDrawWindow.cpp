@@ -1294,7 +1294,8 @@ void DrawWindowCOMMANDSTATUS(PWNDINFO pWnd)
 	}
 
 	DrawWindowFrame2 (pWnd, 0, 0, 16 * 10, 16 * 7);
-	DrawWindowFrame2 (pWnd, 0, 16 * 7, 16 * 10, 16 * 13);
+	/* 下の枠は「次のレベルまで」の行のぶん1行広げている */
+	DrawWindowFrame2 (pWnd, 0, 16 * 7, 16 * 10, 16 * 14);
 
 	HDC hDC = pWnd->pDib->Lock ();
 	HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFontBasic);
@@ -1406,10 +1407,30 @@ void DrawWindowCOMMANDSTATUS(PWNDINFO pWnd)
 	GetSystemGrpRectStatus (STATUSTYPE_DFMAGIC, &rect);
 	pWnd->pDib->Blt (x - 16, y, 16, 16, g_pDibSystem, rect.left, rect.top, TRUE);
 
+	/* 経験値と次のレベルまでの残り（アイコンが無いのでアイコン欄から書く） */
 	y += 16;
-	TextOut2 (hDC, x, y, "Exp:", RGB (200, 200, 200));
+	TextOut2 (hDC, x - 16, y, "経験値  :", RGB (200, 200, 200));
 	wsprintf (szTmp, "%u", pChar->dwExp);
-	TextOut2 (hDC, x + 8 * 5, y, szTmp, RGB (150, 255, 200));
+	TextOut2 (hDC, x - 16 + 8 * 9, y, szTmp, RGB (150, 255, 200));
+
+	y += 16;
+	TextOut2 (hDC, x - 16, y, "次Lvまで:", RGB (200, 200, 200));
+	if (pInfo == NULL) {
+		/* 職業情報がまだ届いていない */
+		TextOut2 (hDC, x - 16 + 8 * 9, y, "-", RGB (150, 255, 200));
+	} else if (pChar->byLevel >= pInfo->aLevelUpInfo.GetSize ()) {
+		/* 最高レベル（これ以上は経験値も増えない） */
+		TextOut2 (hDC, x - 16 + 8 * 9, y, "最高Lv", RGB (255, 230, 120));
+	} else {
+		/* aLevelUpInfo[今のレベル] が次のレベルに必要な累計経験値（サーバーの AddExp と同じ） */
+		PLVUPINFO pLvUpInfo = pInfo->aLevelUpInfo[pChar->byLevel];
+		DWORD dwRest = 0;
+		if (pLvUpInfo && (pLvUpInfo->dwExp > pChar->dwExp)) {
+			dwRest = pLvUpInfo->dwExp - pChar->dwExp;
+		}
+		wsprintf (szTmp, "%u", dwRest);
+		TextOut2 (hDC, x - 16 + 8 * 9, y, szTmp, RGB (150, 255, 200));
+	}
 //	GetSystemGrpRectStatus (STATUSTYPE_DFMAGIC, &rect);
 //	pWnd->pDib->Blt (x - 16, y, 16, 16, g_pDibSystem, rect.left, rect.top, TRUE);
 
