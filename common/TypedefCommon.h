@@ -20,20 +20,21 @@
 /* ========================================================================= */
 #define WNDTITLE			"スクラップブックオンライン "			/* ウィンドウタイトル */
 #define VERTEXT				"Ver0.116(感謝祭)"						/* バージョン */
-#define VERSIONVAL			42										/* バージョン番号 */
+#define VERSIONVAL			43										/* バージョン番号（43: 文字列の欄を広げた） */
 #define DLLVER				"34"									/* DLLバージョン */
 #define GRPDATADLLVER		"5"										/* グラフィックデータDLLバージョン */
 #define MAX_ACCNAME			14										/* 最大アカウント名文字数 */
 #define MAX_CHARNAME		15										/* 最大キャラ名文字数 */
-#define MAX_JOBNAME			31										/* 最大職業名文字数 */
-#define MAX_EQUNAME			31										/* 最大装備情報文字数 */
-#define MAX_MAGICNAME		31										/* 最大魔法名文字数 */
-#define MAX_MAGICEXPLAIN	256										/* 最大魔法説明文バイト数（終端含む） */
+#define MAX_ITEMNAME		64										/* アイテム名の欄のバイト数（終端含む） */
+#define MAX_JOBNAME			64										/* 職業名の欄のバイト数（終端含む） */
+#define MAX_EQUNAME			64										/* 装備情報名の欄のバイト数（終端含む） */
+#define MAX_MAGICNAME		64										/* 魔法名の欄のバイト数（終端含む） */
+#define MAX_MAGICEXPLAIN	512										/* 魔法説明文の欄のバイト数（終端含む） */
 #define MAX_COMEFC			99										/* 最大吹き出し種類 */
 #define MAX_MYITEM			10										/* 最大所持アイテム */
 #define MAX_SHOPITEM		10										/* 最大売り物数 */
 #define MAX_SHOPMSG			12										/* メッセージ数 */
-#define MAX_LENCHAREFC		15										/* 文字エフェクト文字列長 */
+#define MAX_LENCHAREFC		32										/* 文字エフェクトの欄のバイト数（終端含む） */
 #define MAX_COUNTCHAREFC	5										/* 文字エフェクト数 */
 #define MAX_LEAVEITEM		100										/* 預けられるアイテム数 */
 #define MAX_LEAVEGOLD		10000000								/* 預けられるお金 */
@@ -44,6 +45,21 @@
 #define MAX_USEMAGIC		16										/* 覚えられる魔法数 */
 #define MAX_JOBMAGIC		32										/* 職業別に呪文を覚えておける職業数（職業IDがこれ未満の職業が対象） */
 #define MAX_SUBGAME_WARMEMBER	4									/* 戦場ゲーム最大参加人数 */
+
+/* 入力できる長さ（表示幅。半角1文字=1、全角1文字=2）
+ * 欄のバイト数は UTF-8 化（1文字が最大4バイト）に備えて広げてあるので、
+ * 画面に収まる長さはこちらで決める */
+#define MAX_CHARNAME_WIDTH		(MAX_CHARNAME - 1)						/* キャラ名（全角7文字） */
+#define MAX_ITEMNAME_WIDTH		30										/* アイテム名 */
+#define MAX_JOBNAME_WIDTH		30										/* 職業名 */
+#define MAX_EQUNAME_WIDTH		30										/* 装備情報名 */
+#define MAX_MAGICNAME_WIDTH		30										/* 魔法名 */
+#define MAX_MAGICEXPLAIN_WIDTH	255										/* 魔法説明文 */
+#define MAX_LENCHAREFC_WIDTH	14										/* 文字エフェクト */
+
+/* 古い保存データの欄のバイト数（読み込み時の互換用） */
+#define OLD_MAX_ITEMNAME		31										/* アイテム名（szName 列） */
+#define OLD_MAX_LENCHAREFC		15										/* 文字エフェクト（szCharEfc 列） */
 
 #define SENDHARTBEATTIME	10000									/* 接続チェック送信周期 */
 #define DRAW_PARTS_X	7											/* マップ表示数(横) */
@@ -1558,7 +1574,7 @@ typedef struct _ITEMPOSINFO {
 
 /* アイテム情報 */
 typedef struct _ITEMINFO {
-	char		szName[31];											/* アイテム名 */
+	char		szName[MAX_ITEMNAME];								/* アイテム名 */
 	BYTE		byType;												/* 種別 */
 	BYTE		byData;												/* 付加データ */
 	BYTE		byFlg;												/* フラグ */
@@ -2431,7 +2447,7 @@ typedef struct _CMDPARA_CHGCEF {
 /* アイテム情報更新 */
 typedef struct _CMDPARA_CHGITEM {
 	BYTE		byCmd;												/* コマンドID */
-	char		szName[31];											/* アイテム名 */
+	char		szName[MAX_ITEMNAME];								/* アイテム名 */
 	BYTE		byType;												/* 種別 */
 	BYTE		byData;												/* 付加データ */
 	BYTE		byFlg;												/* フラグ */

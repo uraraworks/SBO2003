@@ -4318,8 +4318,9 @@ void RecvDataProcCHGNAMESEX(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 
-	/* 名前は半角 14 文字まで（クライアントと同じ決まり。必ず終端させる） */
-	TermRecvStr (pPara->szName, MAX_CHARNAME);
+	/* 名前は表示幅 14（半角 14 文字・全角 7 文字）まで（クライアントと同じ決まり。必ず終端させる） */
+	TermRecvStr (pPara->szName, sizeof (pPara->szName));
+	pPara->szName[SboTextFitWidth (pPara->szName, MAX_CHARNAME_WIDTH)] = 0;
 
 	pChar = g_aCharInfo[pPara->dwTblID];
 	pChar->bySaveFlg &= ~CHARINFOSAVEFLG_FEMALE;

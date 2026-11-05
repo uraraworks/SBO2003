@@ -3679,6 +3679,7 @@ void AdminOnCommandItemList(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 			/* 名前を取得 */
 			ZeroMemory (pItem->szName, sizeof (pItem->szName));
 			GetWindowText (m_hWndEdit1, pItem->szName, sizeof (pItem->szName));
+			pItem->szName[SboTextFitWidth (pItem->szName, MAX_ITEMNAME_WIDTH)] = 0;		/* 画面に収まる長さまで */
 			/* 種別を取得 */
 			pItem->byType = (BYTE)SendMessage (m_hWndCombo1, CB_GETCURSEL, 0, 0);
 			/* 効果音を取得 */
@@ -3943,7 +3944,8 @@ void AdminOnCommandItemList(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 
 					/* 文字エフェクト */
 					ZeroMemory (szTmp, sizeof (szTmp));
-					GetWindowText (m_hWndEdit8, szTmp, MAX_LENCHAREFC);
+					GetWindowText (m_hWndEdit8, szTmp, sizeof (szTmp) - 1);
+					szTmp[SboTextFitWidth (szTmp, MAX_LENCHAREFC_WIDTH)] = 0;		/* 画面に収まる長さまで */
 					strcpy ((LPSTR)pInfo->szCharEfc, szTmp);
 					/* 表示種別 */
 					pInfo->byType = (BYTE)SendMessage (m_hWndCombo3, CB_GETCURSEL, 0, 0);
