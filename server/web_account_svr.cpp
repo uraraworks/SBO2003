@@ -15,7 +15,7 @@
  *            SboWebAdminSearch    管理ページのキャラ検索（キャラ名・アカウント名の一部）
  *
  * パスワードは C 側の外へ出さない（照合もここで行う）。
- * キャラ名は SJIS で持っているので、JS とは UTF-8 でやり取りする。
+ * キャラ名はゲームの中でも UTF-8 で持っている（JS とも UTF-8 でやり取りする）。
  */
 #include "SboSvr/src/include.h"
 
@@ -25,9 +25,9 @@
 
 extern BOOL SaveCharInfo(void);
 
-/* 文字コード（platform/w32_sjis.cpp） */
-std::string W32SjisToUtf8Str(const char *pszSjis, int nLen = -1);
-std::string W32Utf8ToSjisStr(const char *pszUtf8);
+/* 文字コード（platform/w32_sjis.cpp。ゲーム内の文字列は UTF-8） */
+std::string W32TextToUtf8Str(const char *psz, int nLen = -1);
+std::string W32Utf8ToTextStr(const char *pszUtf8);
 
 /* ------------------------------------------------------------------------- */
 /* JS 側の端末トークン置き場													 */
@@ -147,7 +147,7 @@ static std::string CharInfoJson(PCHARINFO pChar)
 		dwPlayMinutes += (timeGetTime() - pChar->dwTimeLogin) / 60000;
 	}
 	out += "\"account\":" + JsonStr(pChar->szAcc);
-	out += ",\"name\":" + JsonStr(W32SjisToUtf8Str(pChar->szName));
+	out += ",\"name\":" + JsonStr(W32TextToUtf8Str(pChar->szName));
 	snprintf(sz, sizeof(sz),
 			",\"level\":%d,\"made\":\"%04d/%02d/%02d\",\"playMinutes\":%u,\"loginCount\":%u"
 			",\"admin\":%s,\"disabled\":%s,\"online\":%s",
@@ -200,7 +200,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebAccInfo(const char *pszAcc)
  */
 extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebAccRecoverFind(const char *pszName, const char *pszAcc, const char *pszPasPart)
 {
-	std::string strName = W32Utf8ToSjisStr(Trim(pszName).c_str());
+	std::string strName = W32Utf8ToTextStr(Trim(pszName).c_str());
 	std::string strAcc = Lower(Trim(pszAcc));
 	std::string strPart = Trim(pszPasPart);
 	int i, nCount = g_aCharInfo.GetSize(), nCandidates = 0;
@@ -270,46 +270,37 @@ extern "C" EMSCRIPTEN_KEEPALIVE int SboWebAccCheckAdmin(const char *pszAcc, cons
 /* キャラ名の変更																 */
 /* ------------------------------------------------------------------------- */
 
-/* SJIS の 2 バイト文字の 1 バイト目か */
-static BOOL IsSjisLead(unsigned char c)
-{
-	return ((c >= 0x81 && c <= 0x9F) || (c >= 0xE0 && c <= 0xFC)) ? TRUE : FALSE;
-}
-
 /*
- * キャラ名として使えるか確かめ、SJIS にしたものを返す
+ * キャラ名として使えるか確かめ、ゲームの中の文字列（UTF-8）にしたものを返す
  *   ゲームの作成画面（SboCliMain.cpp の IDC_MAKE）・サーバーの RecvDataProcCHGNAMESEX と同じ決まり
  *     ・表示幅 1〜MAX_CHARNAME_WIDTH（全角 7 文字・半角 14 文字まで）
  *     ・空白（半角・全角）や制御文字は使えない
- *     ・SJIS に無い文字（絵文字・一部の旧字など）は使えない
+ *     ・ゲームで使えない文字（いまは CP932 に無い絵文字・一部の旧字など）は使えない
  *   戻り値: NULL = 使える、それ以外 = 使えない理由
  */
-static const char *CheckCharName(const std::string &strUtf8, std::string &strSjis)
+static const char *CheckCharName(const std::string &strUtf8, std::string &strText)
 {
 	if (strUtf8.empty()) {
 		return "empty";
 	}
-	strSjis = W32Utf8ToSjisStr(strUtf8.c_str());
-	/* SJIS に直して戻した時に元どおりでなければ、SJIS に無い文字が入っている */
-	if (W32SjisToUtf8Str(strSjis.c_str()) != strUtf8) {
+	strText = W32Utf8ToTextStr(strUtf8.c_str());
+	/* ゲームに入れた時に元どおりでなければ、使えない文字が入っている */
+	if ((strText != strUtf8) || !SboTextIsValid(strText.c_str())) {
 		return "charset";
 	}
-	if ((SboTextWidth(strSjis.c_str()) > MAX_CHARNAME_WIDTH) ||
-		(strSjis.size() > sizeof(((PCHARINFO)0)->szName) - 1)) {
+	if ((SboTextWidth(strText.c_str()) > MAX_CHARNAME_WIDTH) ||
+		(strText.size() > sizeof(((PCHARINFO)0)->szName) - 1)) {
 		return "long";
 	}
-	for (size_t i = 0; i < strSjis.size(); ) {
-		int nChar = SboTextCharLen(&strSjis[i]);
-		unsigned char c = (unsigned char)strSjis[i];
+	for (size_t i = 0; i < strText.size(); ) {
+		int nChar = SboTextCharLen(&strText[i]);
+		unsigned char c = (unsigned char)strText[i];
 		if (nChar >= 2) {
-			/* 全角空白（SJIS の 0x81 0x40） */
-			if (c == 0x81 && (unsigned char)strSjis[i + 1] == 0x40) {
+			/* 全角空白（U+3000 = E3 80 80） */
+			if (strText.compare(i, nChar, "\xE3\x80\x80") == 0) {
 				return "char";
 			}
-		} else if (IsSjisLead(c)) {
-			/* 2 バイト文字の 1 バイト目で終わっている */
-			return "charset";
-		} else if (c <= 0x20 || c == 0x7F || c == 0x80 || c == 0xA0 || c >= 0xFD) {
+		} else if (c <= 0x20 || c == 0x7F) {
 			return "char";
 		}
 		i += nChar;
@@ -329,7 +320,7 @@ static const char *CheckCharName(const std::string &strUtf8, std::string &strSji
  */
 extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebAccRename(const char *pszAcc, const char *pszName, int bApply, int bAllowOnline)
 {
-	std::string strUtf8 = Trim(pszName), strSjis;
+	std::string strUtf8 = Trim(pszName), strText;
 	PCHARINFO pChar = FindPlayerByAcc(pszAcc ? pszAcc : "");
 	const char *pszResult = NULL;
 	int i, nCount = g_aCharInfo.GetSize();
@@ -342,14 +333,14 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebAccRename(const char *pszAcc, 
 	} else if (pChar->pID && !bAllowOnline) {
 		pszResult = "online";
 	} else {
-		pszResult = CheckCharName(strUtf8, strSjis);
+		pszResult = CheckCharName(strUtf8, strText);
 	}
-	if (pszResult == NULL && strcmp(pChar->szName, strSjis.c_str()) == 0) {
+	if (pszResult == NULL && strcmp(pChar->szName, strText.c_str()) == 0) {
 		pszResult = "same";
 	}
 	for (i = 0; i < nCount && pszResult == NULL; i ++) {
 		PCHARINFO pCharCheck = g_aCharInfo[i];
-		if (pCharCheck != pChar && strcmp(pCharCheck->szName, strSjis.c_str()) == 0) {
+		if (pCharCheck != pChar && strcmp(pCharCheck->szName, strText.c_str()) == 0) {
 			pszResult = "taken";
 		}
 	}
@@ -358,15 +349,15 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebAccRename(const char *pszAcc, 
 		return s_strResult.c_str();
 	}
 
-	std::string strFrom = W32SjisToUtf8Str(pChar->szName);
+	std::string strFrom = W32TextToUtf8Str(pChar->szName);
 	if (bApply) {
 		ZeroMemory(pChar->szName, sizeof(pChar->szName));
-		strcpy(pChar->szName, strSjis.c_str());
+		strcpy(pChar->szName, strText.c_str());
 		SaveCharInfo();
 		/* ログイン中なら、本人と周りの人に新しい名前を送る */
 		if (pChar->pID) {
 			SendCmdCHARINFO3((int)pChar->dwTblID);
-			std::string strMsg = W32Utf8ToSjisStr(("SYSTEM:キャラ名が「" + strUtf8 + "」に変わりました。").c_str());
+			std::string strMsg = W32Utf8ToTextStr(("SYSTEM:キャラ名が「" + strUtf8 + "」に変わりました。").c_str());
 			SendCmdSYSMSG(pChar->pID, strMsg.c_str());
 		}
 	}
@@ -392,7 +383,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebAdminSearch(const char *pszKey
 		}
 		BOOL bHit = (Lower(pChar->szAcc).find(strKeyLower) != std::string::npos) ? TRUE : FALSE;
 		if (!bHit && pChar->szName[0]) {
-			bHit = (W32SjisToUtf8Str(pChar->szName).find(strKey) != std::string::npos) ? TRUE : FALSE;
+			bHit = (W32TextToUtf8Str(pChar->szName).find(strKey) != std::string::npos) ? TRUE : FALSE;
 		}
 		if (!bHit) {
 			continue;

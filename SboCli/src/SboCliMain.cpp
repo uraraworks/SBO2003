@@ -3180,6 +3180,13 @@ BOOL LoadAdminRura(void)
 			SAFE_DELETE (pInfoNew);
 			break;
 		}
+		/* 文字コードを UTF-8 にする前（Shift_JIS）に保存したコメントは読み替える */
+		pInfoNew->szComment[sizeof (pInfoNew->szComment) - 1] = 0;
+		if (!SboTextIsValid (pInfoNew->szComment)) {
+			char szTmp[sizeof (pInfoNew->szComment) * 2];
+			W32SjisToUtf8 (pInfoNew->szComment, -1, szTmp, sizeof (szTmp));
+			SboTextCopy (pInfoNew->szComment, sizeof (pInfoNew->szComment), szTmp);
+		}
 		g_AdminRuraInfo.Add (pInfoNew);
 	}
 	CloseHandle (hFile);

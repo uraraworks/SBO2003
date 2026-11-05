@@ -25,8 +25,8 @@
 #include <string>
 
 /* 互換層（platform/w32_sjis.cpp）の文字コード変換 */
-std::string W32SjisToUtf8Str(const char *pszSjis, int nLen);
-std::string W32Utf8ToSjisStr(const char *pszUtf8);
+std::string W32TextToUtf8Str(const char *psz, int nLen);
+std::string W32Utf8ToTextStr(const char *pszUtf8);
 
 /* 発言できる長さ（Windows 版の入力欄と同じ。SJIS の 40 バイトと同じ表示幅で数える） */
 #define MSGLOG_SPEECH_MAX	40		/* 1 回の発言の上限（表示幅。半角 40 文字・全角 20 文字） */
@@ -93,7 +93,7 @@ void AddMsgLog(LPSTR lpStr, COLORREF cl)
 	if (cl == 0) {
 		cl = RGB (255, 255, 255);
 	}
-	std::string strText = W32SjisToUtf8Str (lpStr, -1);
+	std::string strText = W32TextToUtf8Str (lpStr, -1);
 	SboJsChatLogAdd (szTime, strText.c_str (), (int)cl);
 }
 
@@ -132,15 +132,15 @@ EM_JS(int, SboJsChatSend, (const char *pszUtf8, int nKeyMod), {
 
 /* ========================================================================= */
 /* 関数名：SboWebSpeechSubmit												 */
-/* 内容：ゲーム内の発言入力欄（Enter で開く欄）から発言する（文字列は SJIS）	 */
+/* 内容：ゲーム内の発言入力欄（Enter で開く欄）から発言する（文字列は内部の UTF-8）	 */
 /*		 長い発言はチャット欄と同じように分けて順に送る						 */
 /* ========================================================================= */
-void SboWebSpeechSubmit(LPCSTR pszSjis, int nKeyMod)
+void SboWebSpeechSubmit(LPCSTR pszText, int nKeyMod)
 {
-	if ((pszSjis == NULL) || (pszSjis[0] == 0)) {
+	if ((pszText == NULL) || (pszText[0] == 0)) {
 		return;
 	}
-	std::string strUtf8 = W32SjisToUtf8Str (pszSjis, -1);
+	std::string strUtf8 = W32TextToUtf8Str (pszText, -1);
 	if (SboJsChatSend (strUtf8.c_str (), nKeyMod)) {
 		return;
 	}
@@ -168,11 +168,11 @@ extern "C" EMSCRIPTEN_KEEPALIVE void SboWebChatSubmit(const char *pszUtf8, int n
 		return;
 	}
 
-	std::string strSjis = W32Utf8ToSjisStr (pszUtf8);
+	std::string strText = W32Utf8ToTextStr (pszUtf8);
 	ZeroMemory (szBuf, sizeof (szBuf));
 	/* 文字の途中で切らないように詰める */
-	nLen = SboTextFitWidth (strSjis.c_str (), MSGLOG_SPEECH_MAX);
-	memcpy (szBuf, strSjis.c_str (), nLen);
+	nLen = SboTextFitWidth (strText.c_str (), MSGLOG_SPEECH_MAX);
+	memcpy (szBuf, strText.c_str (), nLen);
 	if (nLen == 0) {
 		return;
 	}

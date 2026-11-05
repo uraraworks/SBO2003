@@ -1,10 +1,12 @@
 /* ========================================================================= */
 /* ファイル名：	w32_sjis.cpp												 */
-/* 概要：		Win32 互換レイヤ：文字コード（CP932 ⇔ UTF-8）				 */
+/* 概要：		Win32 互換レイヤ：文字コード（UTF-8 と CP932）				 */
 /* ========================================================================= */
 /*
- * ゲーム内部の文字列は Windows 版と同じく SJIS(CP932) のまま扱う。
- * ブラウザに渡す時（HTML の入力欄、メッセージボックス、ログ）だけ UTF-8 に変換する。
+ * ゲーム内部の文字列は UTF-8（2026-11 の段階 3 で Shift_JIS から切り替えた）。
+ * ブラウザや SDL_ttf に渡す時は W32TextToUtf8Str で正しい UTF-8 に整える。
+ * ブラウザから受け取る時は W32Utf8ToTextStr を通す。
+ * CP932 との変換（W32SjisToUtf8Str など）は、古い Shift_JIS のデータを読み替える時に使う。
  */
 #include "w32_internal.h"
 
@@ -24,9 +26,39 @@ static int SjisLeadIndex(BYTE by)
 	return -1;
 }
 
+/* 内部の文字列は UTF-8 なので、「2 バイト目に '\\' などが来る」文字は無い。
+   互換のため関数は残すが、常に FALSE を返す */
 BOOL IsDBCSLeadByte(BYTE byChar)
 {
-	return (SjisLeadIndex(byChar) >= 0) ? TRUE : FALSE;
+	(void)byChar;
+	return FALSE;
+}
+
+/* UTF-8 の 1 文字のバイト数（正しくない並びは 1） */
+static int Utf8CharLen(const BYTE *p)
+{
+	int nLen;
+	if (p[0] < 0x80) {
+		return 1;
+	} else if (p[0] >= 0xC2 && p[0] <= 0xDF) {
+		nLen = 2;
+	} else if (p[0] >= 0xE0 && p[0] <= 0xEF) {
+		nLen = 3;
+	} else if (p[0] >= 0xF0 && p[0] <= 0xF4) {
+		nLen = 4;
+	} else {
+		return 1;
+	}
+	for (int i = 1; i < nLen; i ++) {
+		if ((p[i] & 0xC0) != 0x80) {
+			return 1;
+		}
+	}
+	if ((p[0] == 0xE0 && p[1] < 0xA0) || (p[0] == 0xED && p[1] >= 0xA0) ||
+			(p[0] == 0xF0 && p[1] < 0x90) || (p[0] == 0xF4 && p[1] >= 0x90)) {
+		return 1;
+	}
+	return nLen;
 }
 
 LPSTR CharNext(LPCSTR psz)
@@ -34,10 +66,7 @@ LPSTR CharNext(LPCSTR psz)
 	if (psz == NULL || *psz == 0) {
 		return (LPSTR)psz;
 	}
-	if (IsDBCSLeadByte((BYTE)psz[0]) && psz[1]) {
-		return (LPSTR)(psz + 2);
-	}
-	return (LPSTR)(psz + 1);
+	return (LPSTR)(psz + Utf8CharLen((const BYTE *)psz));
 }
 
 LPSTR CharPrev(LPCSTR pszStart, LPCSTR psz)
@@ -220,7 +249,7 @@ int W32Utf8ToSjis(const char *pszUtf8, char *pszOut, int nOutSize)
 	if (nCopy > 0 && nCopy < (int)str.size()) {
 		int i = 0;
 		while (i < nCopy) {
-			int n = IsDBCSLeadByte((BYTE)str[i]) ? 2 : 1;
+			int n = (SjisLeadIndex((BYTE)str[i]) >= 0) ? 2 : 1;
 			if (i + n > nCopy) {
 				break;
 			}
@@ -231,4 +260,44 @@ int W32Utf8ToSjis(const char *pszUtf8, char *pszOut, int nOutSize)
 	memcpy(pszOut, str.data(), nCopy);
 	pszOut[nCopy] = 0;
 	return nCopy;
+}
+
+/* ------------------------------------------------------------------------- */
+/* 内部の文字列（UTF-8） ⇔ ブラウザ・SDL_ttf の UTF-8							 */
+/* ------------------------------------------------------------------------- */
+/* 内部の文字列を正しい UTF-8 にする（正しくないバイトは '?'。nLen はバイト数、-1 で終端まで） */
+std::string W32TextToUtf8Str(const char *psz, int nLen)
+{
+	std::string str;
+	if (psz == NULL) {
+		return str;
+	}
+	if (nLen < 0) {
+		nLen = (int)strlen(psz);
+	}
+	str.reserve(nLen);
+	const BYTE *p = (const BYTE *)psz;
+	for (int i = 0; i < nLen && p[i]; ) {
+		int n = Utf8CharLen(&p[i]);
+		if (n == 1 && p[i] >= 0x80) {
+			str += '?';
+		} else if (i + n > nLen) {
+			break;		/* 文字の途中で切れている */
+		} else {
+			str.append((const char *)&p[i], n);
+		}
+		i += n;
+	}
+	return str;
+}
+
+/* ブラウザから受け取った UTF-8 を内部の文字列にする。
+   段階 3 では、今までと同じく CP932 にある文字だけを通す（無い文字は '?'）。
+   絵文字などは、フォントを足す段階 4 で通すようにする */
+std::string W32Utf8ToTextStr(const char *pszUtf8)
+{
+	if (pszUtf8 == NULL) {
+		return std::string();
+	}
+	return W32SjisToUtf8Str(W32Utf8ToSjisStr(pszUtf8).c_str());
 }

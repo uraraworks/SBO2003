@@ -187,6 +187,10 @@ void		W32PresentScreen(void);
 void		W32SjisToUcs(const char *pszSjis, int nLen, std::vector<unsigned short> &aOut);
 std::string	W32SjisToUtf8Str(const char *pszSjis, int nLen = -1);
 std::string	W32Utf8ToSjisStr(const char *pszUtf8);
+/* 内部の文字列（UTF-8）を正しい UTF-8 にする（ブラウザ・SDL_ttf に渡す時） */
+std::string	W32TextToUtf8Str(const char *psz, int nLen = -1);
+/* ブラウザから受け取った UTF-8 を内部の文字列にする */
+std::string	W32Utf8ToTextStr(const char *pszUtf8);
 
 /* ------------------------------------------------------------------------- */
 /* HTML 部品（w32_html.cpp）												 */
@@ -198,7 +202,7 @@ void		W32HtmlSetText(W32Wnd *pWnd);			/* strText を部品へ反映 */
 void		W32HtmlGetText(W32Wnd *pWnd);			/* 部品の内容を strText へ取り込む */
 void		W32HtmlFocus(W32Wnd *pWnd);			/* 部品にフォーカスを移す(NULL ならゲーム画面へ) */
 /* コンボボックス・リストボックスの項目 nOp 0:全消し 1:挿入 2:削除 3:選択 */
-void		W32HtmlItems(W32Wnd *pWnd, int nOp, int nIndex, const char *pszSjis);
+void		W32HtmlItems(W32Wnd *pWnd, int nOp, int nIndex, const char *pszText);
 void		W32HtmlScroll(W32Wnd *pWnd);			/* スクロールバーの範囲と位置 */
 /* リストビュー nOp 0:行を全消し 1:列を挿入 2:行を挿入 3:文字を設定 4:行を削除 5:行の状態 6:拡張スタイル 7:見える所まで動かす */
 void		W32HtmlListView(W32Wnd *pWnd, int nOp, int nRow, int nCol);

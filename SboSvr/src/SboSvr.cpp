@@ -24,6 +24,7 @@
 #include "SboSvrSubGameProc.h"
 #include "SboSvrCharInfoTimerProc.h"
 #include "SboSvrSubGameProcSugoroku.h"
+#include "SboSvrDataUtf8.h"
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #endif
@@ -497,6 +498,12 @@ BOOL OnCreate(HWND hWnd)
 
 	LoadEfcInfo ();
 	LoadStTmpInfo ();
+
+	/* 古い Shift_JIS のデータなら、バックアップを取ってから UTF-8 に読み替えて保存し直す
+	   （バックアップが取れない時は、データを書き換えずにサーバーを止める） */
+	if (!DataUtf8Migrate ()) {
+		exit (1);
+	}
 
 	PPARTYINFO pPartyInfo;
 	pPartyInfo = new PARTYINFO;

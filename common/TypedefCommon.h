@@ -20,7 +20,7 @@
 /* ========================================================================= */
 #define WNDTITLE			"スクラップブックオンライン "			/* ウィンドウタイトル */
 #define VERTEXT				"Ver0.116(感謝祭)"						/* バージョン */
-#define VERSIONVAL			43										/* バージョン番号（43: 文字列の欄を広げた） */
+#define VERSIONVAL			44										/* バージョン番号（44: 文字列を UTF-8 にした） */
 #define DLLVER				"34"									/* DLLバージョン */
 #define GRPDATADLLVER		"5"										/* グラフィックデータDLLバージョン */
 #define MAX_ACCNAME			14										/* 最大アカウント名文字数 */

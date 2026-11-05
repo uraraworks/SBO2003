@@ -3444,6 +3444,7 @@ void RecvDataProcSPEECH(PBYTE pData, DWORD dwDataSize)
 	pChar->pszSpeech = (LPSTR)new BYTE[pPara->wSize + 1];
 	ZeroMemory ((PBYTE)pChar->pszSpeech, pPara->wSize + 1);
 	CopyMemory ((PBYTE)pChar->pszSpeech, (PBYTE)pData + sizeof (CMDPARA_SPEECH), pPara->wSize);
+	SboTextSanitize (pChar->pszSpeech);		/* UTF-8 として正しくないバイトは「?」に */
 	pChar->byFlg |= CHARINFOFLG_SPEECH;
 	pChar->bySpeechFlg = pPara->byType;
 
@@ -3453,6 +3454,7 @@ void RecvDataProcSPEECH(PBYTE pData, DWORD dwDataSize)
 		pChar->pszNpcSpeech = (LPSTR)new BYTE[pPara->wSize + 1];
 		ZeroMemory ((PBYTE)pChar->pszNpcSpeech, pPara->wSize + 1);
 		CopyMemory ((PBYTE)pChar->pszNpcSpeech, (PBYTE)pData + sizeof (CMDPARA_SPEECH), pPara->wSize);
+		SboTextSanitize (pChar->pszNpcSpeech);
 	}
 }
 
@@ -4374,6 +4376,7 @@ void RecvDataProcCHGNAMESEX(PBYTE pData, DWORD dwDataSize)
 	/* 名前は表示幅 14（半角 14 文字・全角 7 文字）まで（クライアントと同じ決まり。必ず終端させる） */
 	TermRecvStr (pPara->szName, sizeof (pPara->szName));
 	pPara->szName[SboTextFitWidth (pPara->szName, MAX_CHARNAME_WIDTH)] = 0;
+	SboTextSanitize (pPara->szName);
 
 	pChar = g_aCharInfo[pPara->dwTblID];
 	pChar->bySaveFlg &= ~CHARINFOSAVEFLG_FEMALE;

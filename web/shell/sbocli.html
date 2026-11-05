@@ -1769,18 +1769,18 @@
 	};
 
 	/* ---- 長い発言の自動分割 ----
-	   ゲーム本体の発言は Shift_JIS で 40 バイトまで（元の発言欄の上限）で、
+	   ゲーム本体の発言は表示幅 40（半角 40 文字・全角 20 文字。元の発言欄の上限）までで、
 	   それを超えた分は SboWebChatSubmit で切り捨てられる。
-	   そこで 1 回の入力を 40 バイト以内の発言に分け、間隔を空けて順に送る。
+	   そこで 1 回の入力を表示幅 40 以内の発言に分け、間隔を空けて順に送る。
 	   サーバーは発言を 1 キャラ 1 つだけ預かって次の巡回で配るので、
 	   続けて送ると前の発言が上書きされて消える。そのため間隔を空ける。 */
-	var CHAT_SPEECH_MAX = 40;		/* 1 回の発言の上限（Shift_JIS のバイト数） */
+	var CHAT_SPEECH_MAX = 40;		/* 1 回の発言の上限（表示幅） */
 	var CHAT_SEND_INTERVAL = 1200;	/* 分割した発言を送る間隔（ミリ秒） */
 	var chatQueue = [];
 	var chatTimer = 0;
 
-	/* 1 文字の Shift_JIS でのバイト数（半角英数と半角カナは 1、それ以外は 2 と多めに数える） */
-	function sjisLen(ch) {
+	/* 1 文字の表示幅（半角英数と半角カナは 1、それ以外は 2。ゲーム本体の SboTextCharWidth と同じ） */
+	function charWidth(ch) {
 		var c = ch.codePointAt(0);
 		if (c < 0x80 || (c >= 0xFF61 && c <= 0xFF9F)) {
 			return 1;
@@ -1812,8 +1812,8 @@
 		var start = 0;
 		while (start < chars.length) {
 			var end = start, bytes = 0;
-			while (end < chars.length && bytes + sjisLen(chars[end]) <= limit) {
-				bytes += sjisLen(chars[end]);
+			while (end < chars.length && bytes + charWidth(chars[end]) <= limit) {
+				bytes += charWidth(chars[end]);
 				end ++;
 			}
 			if (end < chars.length) {
