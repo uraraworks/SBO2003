@@ -6788,7 +6788,8 @@ LRESULT CALLBACK SpeechEditWndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp)
 								break;
 							}
 						}
-						if (IsDBCSLeadByte ((BYTE)pszTmp[k])) {
+						/* 2 バイト目以降は文字の一部なのでそのまま写す */
+						for (int n = SboTextCharLen (&pszTmp[k]); n > 1; n --) {
 							j ++;
 							k ++;
 							pszTmp2[j] = pszTmp[k];
@@ -7202,8 +7203,8 @@ void ChatMsgProc(LPCTSTR pszMsg)
 		}
 	}
 
-	/* 全角文字の片方ではない？ */
-	if (IsDBCSLeadByte ((BYTE)pszMsg[0]) == FALSE) {
+	/* 1 文字目が 1 バイト文字？ */
+	if (SboTextCharLen (pszMsg) <= 1) {
 		/* 一文字目のコマンドチェック */
 		switch ((BYTE)pszMsg[0]) {
 		case '#':		/* 吹き出しコマンド */
@@ -7408,32 +7409,32 @@ void ChatMsgProc(LPCTSTR pszMsg)
 	if (pChar->byDrunkLV > CHARSTATEDRUNK_NONE) {
 		char szHenkan1[] = {"たちつてとだぢづでどxさしすせそざじずぜぞ"};
 		char szHenkan2[] = {"らりるれろらりるれろxはひふへほはひふへほ"};
-		int i, j,
-			nLen = strlen (pszMsgTmp),
-			nLenHenkan = strlen (szHenkan1);
+		int i, nChar, nChar1, nChar2;
+		LPCSTR psz1, psz2;
 
-		for (i = 0; i < nLen; i ++) {
-			/* 全角文字の片方ではない？ */
-			if (IsDBCSLeadByte ((BYTE)pszMsgTmp[i]) == FALSE) {
+		for (i = 0; pszMsgTmp[i]; i += nChar) {
+			nChar = SboTextCharLen (&pszMsgTmp[i]);
+			/* 1 バイト文字は変換しない */
+			if (nChar <= 1) {
 				continue;
 			}
 
-			/* 変換用テーブルの長さ分ループ */
-			for (j = 0; j < nLenHenkan; j += 2) {
-				if ((BYTE)szHenkan1[j] == 'x') {
+			/* 変換用テーブルを 1 文字ずつ見る（2 つの表は同じ並び） */
+			for (psz1 = szHenkan1, psz2 = szHenkan2; *psz1 && *psz2; psz1 += nChar1, psz2 += nChar2) {
+				nChar1 = SboTextCharLen (psz1);
+				nChar2 = SboTextCharLen (psz2);
+				if (*psz1 == 'x') {
 					/* 陶酔？ */
 					if (pChar->byDrunkLV == CHARSTATEDRUNK_DRANKARD) {
 						/* これ以上は変換しない */
 						break;
 					}
-					j --;
 					continue;
 				}
-				/* 変換文字？ */
-				if ((pszMsgTmp[i] == szHenkan1[j]) &&
-					(pszMsgTmp[i + 1] == szHenkan1[j + 1])) {
-					pszMsgTmp[i] = szHenkan2[j];
-					pszMsgTmp[i + 1] = szHenkan2[j + 1];
+				/* 変換文字？（置き換えで長さが変わらない時だけ） */
+				if ((nChar1 == nChar) && (nChar2 == nChar) &&
+					(memcmp (&pszMsgTmp[i], psz1, nChar) == 0)) {
+					CopyMemory (&pszMsgTmp[i], psz2, nChar);
 					break;
 				}
 			}
@@ -7442,16 +7443,12 @@ void ChatMsgProc(LPCTSTR pszMsg)
 
 	/* 使用文字チェック */
 	{
-		int i,
-			nLen = strlen (pszMsgTmp);
+		int i, nChar;
 
-		for (i = 0; i < nLen; i ++) {
-			/* 全角文字の片方？ */
-			if (IsDBCSLeadByte ((BYTE)pszMsgTmp[i])) {
-				i ++;
-				continue;
-			}
-			if ((BYTE)pszMsgTmp[i] < ' ') {
+		for (i = 0; pszMsgTmp[i]; i += nChar) {
+			nChar = SboTextCharLen (&pszMsgTmp[i]);
+			/* 1 バイト文字の制御文字は「･」にする */
+			if ((nChar == 1) && ((BYTE)pszMsgTmp[i] < ' ')) {
 				pszMsgTmp[i] = '･';
 			}
 		}

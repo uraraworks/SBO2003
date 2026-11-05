@@ -144,7 +144,7 @@ PWNDINFO MakeWindowMSGVIEW(LPSTR pszMsg)
 	int nCx;
 	LPSTR pszTmp = (LPSTR)new BYTE [strlen (pszMsg) + 1];
 
-	nCx = strlen (pszMsg) * 8 + 48;
+	nCx = SboTextWidth (pszMsg) * 8 + 48;
 	nCx = (nCx % 16) ? nCx + nCx % 16 : nCx;
 	ZeroMemory (pszTmp, strlen (pszMsg) + 1);
 	strcat (pszTmp, pszMsg);
@@ -175,7 +175,7 @@ PWNDINFO MakeWindowMSG3SEC(LPSTR pszMsg)
 	int nCx;
 	LPSTR pszTmp = (LPSTR)new BYTE [strlen (pszMsg) + 1];
 
-	nCx = strlen (pszMsg) * 8 + 48;
+	nCx = SboTextWidth (pszMsg) * 8 + 48;
 	nCx = (nCx % 16) ? nCx + nCx % 16 : nCx;
 	ZeroMemory (pszTmp, strlen (pszMsg) + 1);
 	strcat (pszTmp, pszMsg);
@@ -428,7 +428,7 @@ PWNDINFO MakeWindowCONNECTLOST(LPSTR pszMsg)
 	int nCx;
 	LPSTR pszTmp = (LPSTR)new BYTE [strlen (pszMsg) + 1];
 
-	nCx = strlen (pszMsg) * 8 + 48;
+	nCx = SboTextWidth (pszMsg) * 8 + 48;
 	nCx = (nCx % 16) ? nCx + nCx % 16 : nCx;
 	ZeroMemory (pszTmp, strlen (pszMsg) + 1);
 	strcat (pszTmp, pszMsg);
@@ -546,7 +546,7 @@ PWNDINFO MakeWindowCOMMANDITEM(void)
 	int i, nCount = GetItemCount (g_nMyCharID), nLen = 0, nLenTmp;
 	for (i = 0; i < nCount; i ++) {
 		PITEMINFO pItem = g_aItemInfo[pChar->waItem[i]];
-		nLenTmp = strlen (pItem->szName);
+		nLenTmp = SboTextWidth (pItem->szName);
 		nLen = max (nLen, nLenTmp);
 	}
 	if (nLen % 2) {
@@ -584,7 +584,7 @@ PWNDINFO MakeWindowCOMMANDITEMBATTLE(void)
 	int i, nCount = GetItemCount (g_nMyCharID), nLen = 0, nLenTmp;
 	for (i = 0; i < nCount; i ++) {
 		PITEMINFO pItem = g_aItemInfo[pChar->waItem[i]];
-		nLenTmp = strlen (pItem->szName);
+		nLenTmp = SboTextWidth (pItem->szName);
 		nLen = max (nLen, nLenTmp);
 	}
 	if (nLen % 2) {
@@ -829,7 +829,7 @@ PWNDINFO MakeWindowSHOP_SELL(void)
 	int i, nCount = GetItemCount (g_nMyCharID), nLen = 0, nLenTmp;
 	for (i = 0; i < nCount; i ++) {
 		PITEMINFO pItem = g_aItemInfo[pChar->waItem[i]];
-		nLenTmp = strlen (pItem->szName);
+		nLenTmp = SboTextWidth (pItem->szName);
 		nLen = max (nLen, nLenTmp);
 	}
 	if (nLen % 2) {
@@ -1195,7 +1195,7 @@ PWNDINFO MakeWindowCOMMANDPARTYCHAR(void)
 				ZeroMemory (pInfo, sizeof (USECHARINFO));
 				pInfo->dwTblID = pCharTmp->dwTblID;
 				strcat (pInfo->szName, pCharTmp->szName);
-				nLen = max ((int)strlen (pInfo->szName), nLen);
+				nLen = max (SboTextWidth (pInfo->szName), nLen);
 				g_aUseCharInfo.Add (pInfo);
 				if (g_aUseCharInfo.GetSize () >= 10) {
 					break;
@@ -1344,7 +1344,7 @@ PWNDINFO MakeWindowLEAVE_ITEM(void)
 	int i, nCount = GetItemCount (g_nMyCharID), nLen = 0, nLenTmp;
 	for (i = 0; i < nCount; i ++) {
 		PITEMINFO pItem = g_aItemInfo[pChar->waItem[i]];
-		nLenTmp = strlen (pItem->szName);
+		nLenTmp = SboTextWidth (pItem->szName);
 		nLen = max (nLen, nLenTmp);
 	}
 	if (nLen % 2) {
@@ -1466,7 +1466,7 @@ PWNDINFO MakeWindowCOMMANDITEMCHAR(void)
 	ZeroMemory (pInfo, sizeof (USECHARINFO));
 	pInfo->dwTblID = pChar->dwTblID;
 	strcat (pInfo->szName, pChar->szName);
-	nLen = max ((int)strlen (pInfo->szName), nLen);
+	nLen = max (SboTextWidth (pInfo->szName), nLen);
 	g_aUseCharInfo.Add (pInfo);
 
 	for (i = 0; i < g_aCharInfo.GetSize (); i ++) {
@@ -1481,7 +1481,7 @@ PWNDINFO MakeWindowCOMMANDITEMCHAR(void)
 				ZeroMemory (pInfo, sizeof (USECHARINFO));
 				pInfo->dwTblID = pCharTmp->dwTblID;
 				strcat (pInfo->szName, pCharTmp->szName);
-				nLen = max ((int)strlen (pInfo->szName), nLen);
+				nLen = max (SboTextWidth (pInfo->szName), nLen);
 				g_aUseCharInfo.Add (pInfo);
 				if (g_aUseCharInfo.GetSize () >= 10) {
 					break;
@@ -1534,7 +1534,7 @@ PWNDINFO MakeWindowCOMMANDITEMCHARBATTLE(void)
 	ZeroMemory (pInfo, sizeof (USECHARINFO));
 	pInfo->dwTblID = pChar->dwTblID;
 	strcat (pInfo->szName, pChar->szName);
-	nLen = max ((int)strlen (pInfo->szName), nLen);
+	nLen = max (SboTextWidth (pInfo->szName), nLen);
 	g_aUseCharInfo.Add (pInfo);
 
 	for (i = 0; i < g_aCharInfo.GetSize (); i ++) {
@@ -1549,7 +1549,7 @@ PWNDINFO MakeWindowCOMMANDITEMCHARBATTLE(void)
 				ZeroMemory (pInfo, sizeof (USECHARINFO));
 				pInfo->dwTblID = pCharTmp->dwTblID;
 				strcat (pInfo->szName, pCharTmp->szName);
-				nLen = max ((int)strlen (pInfo->szName), nLen);
+				nLen = max (SboTextWidth (pInfo->szName), nLen);
 				g_aUseCharInfo.Add (pInfo);
 				if (g_aUseCharInfo.GetSize () >= 10) {
 					break;
@@ -1609,7 +1609,7 @@ PWNDINFO MakeWindowCOMMANDTRADE(void)
 				ZeroMemory (pInfo, sizeof (USECHARINFO));
 				pInfo->dwTblID = pCharTmp->dwTblID;
 				strcat (pInfo->szName, pCharTmp->szName);
-				nLen = max ((int)strlen (pInfo->szName), nLen);
+				nLen = max (SboTextWidth (pInfo->szName), nLen);
 				g_aUseCharInfo.Add (pInfo);
 				if (g_aUseCharInfo.GetSize () >= 10) {
 					break;
@@ -1696,7 +1696,7 @@ PWNDINFO MakeWindowTRADEITEM(void)
 	int i, nCount = GetItemCount (g_nMyCharID), nLen = 0, nLenTmp;
 	for (i = 0; i < nCount; i ++) {
 		PITEMINFO pItem = g_aItemInfo[pChar->waItem[i]];
-		nLenTmp = strlen (pItem->szName);
+		nLenTmp = SboTextWidth (pItem->szName);
 		nLen = max (nLen, nLenTmp);
 	}
 	if (nLen % 2) {
@@ -1967,7 +1967,7 @@ PWNDINFO MakeWindowCOMMANDMAGIC(void)
 	int i, nCount = g_aMagicInfoWalk.GetSize (), nLen = 0, nLenTmp;
 	for (i = 0; i < nCount; i ++) {
 		PMAGICINFO pInfo = g_aMagicInfo[g_aMagicInfoWalk[i]];
-		nLenTmp = strlen (pInfo->szName);
+		nLenTmp = SboTextWidth (pInfo->szName);
 		nLen = max (nLen, nLenTmp);
 	}
 	if (nLen % 2) {
@@ -2005,7 +2005,7 @@ PWNDINFO MakeWindowCOMMANDMAGICBATTLE(void)
 	int i, nCount = g_aMagicInfoBattle.GetSize (), nLen = 0, nLenTmp;
 	for (i = 0; i < nCount; i ++) {
 		PMAGICINFO pInfo = g_aMagicInfo[g_aMagicInfoBattle[i]];
-		nLenTmp = strlen (pInfo->szName);
+		nLenTmp = SboTextWidth (pInfo->szName);
 		nLen = max (nLen, nLenTmp);
 	}
 	if (nLen % 2) {
@@ -2540,7 +2540,7 @@ PWNDINFO MakeWindowITEMEQU(void)
 			continue;
 		}
 		PITEMINFO pItem = g_aItemInfo[pChar->waItem[pChar->waEqu[i]]];
-		nLenTmp = strlen (pItem->szName);
+		nLenTmp = SboTextWidth (pItem->szName);
 		nLen = max (nLen, nLenTmp);
 	}
 	if (nLen % 2) {

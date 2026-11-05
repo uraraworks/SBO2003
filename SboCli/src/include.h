@@ -15,6 +15,7 @@
 #include "../../common/CUraraSockTCP.h"
 #include "../../common/myArray.h"
 #include "../../common/myString.h"
+#include "../../common/SboText.h"
 #include "../../common/crc.h"
 #include "../../common/TypedefCommon.h"
 #include "../../common/Info/InfoEfc.h"

@@ -987,13 +987,8 @@ void OnCommand(HWND hWnd, int nID)
 		ZeroMemory (g_szWebToken, sizeof (g_szWebToken));
 		ZeroMemory (g_szAcc, sizeof (g_szAcc));
 		GetWindowText (g_hWndAcc, g_szAcc, MAX_ACCNAME);
-		DWORD i;
-		for (i = 0; i < strlen (g_szAcc); i ++) {
-			if (IsDBCSLeadByte (g_szAcc[i])) {
-				break;
-			}
-		}
-		if (i < strlen (g_szAcc)) {
+		/* アカウント名は 1 バイト文字だけ */
+		if (!SboTextIsSingleByteOnly (g_szAcc)) {
 			break;
 		}
 		EnableWindow (g_hWndCon, FALSE);
@@ -1049,30 +1044,23 @@ void OnCommand(HWND hWnd, int nID)
 		GetWindowText (g_hWndName, pszTmp, MAX_CHARNAME);
 		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
 
-		for (i = 0, j = 0; i < MAX_CHARNAME; i ++, j ++) {
-			pChar->szName[i] = pszTmp[j];
-			if (IsDBCSLeadByte ((BYTE)pChar->szName[i])) {
-				i ++;
-				j ++;
-				pChar->szName[i] = pszTmp[j];
-				if (!strcmp (&pChar->szName[i - 1], "　")) {
-					ZeroMemory (pChar->szName, sizeof (pChar->szName));
-					break;
+		/* 文字の途中で切らずに上限まで写す。空白・制御文字・全角空白が入っていたら名前なし */
+		{
+			int i, nLen = SboTextFitBytes (pszTmp, MAX_CHARNAME - 1), nChar;
+			BOOL bNG = FALSE;
+			for (i = 0; i < nLen; i += nChar) {
+				nChar = SboTextCharLen (&pszTmp[i]);
+				if ((nChar == 1) && ((BYTE)pszTmp[i] <= ' ')) {
+					bNG = TRUE;
 				}
-			} else {
-				if (pChar->szName[i] && (BYTE)pChar->szName[i] <= ' ') {
-					ZeroMemory (pChar->szName, sizeof (pChar->szName));
-					break;
+				if ((nChar == (int)strlen ("　")) && (memcmp (&pszTmp[i], "　", nChar) == 0)) {
+					bNG = TRUE;
 				}
 			}
-		}
-		/* 最後が全角の半分？ */
-		if (strlen (pszTmp) >= MAX_CHARNAME) {
-			if (IsDBCSLeadByte ((BYTE)pszTmp[MAX_CHARNAME - 2])) {
-				pChar->szName[MAX_CHARNAME - 2] = 0;
+			if (!bNG) {
+				CopyMemory (pChar->szName, pszTmp, nLen);
 			}
 		}
-		pChar->szName[MAX_CHARNAME - 1] = 0;
 
 		if (pChar->szName[0]) {
 			pWndNew = MakeWindowMALEFAMALE ();
@@ -1881,10 +1869,7 @@ void TimerProc(void)
 						int nLen = strlen (pWnd->pszMsg);
 						for (j = 0; j < dwTmp; j ++) {
 							if (pWnd->nData1 < nLen) {
-								if (IsDBCSLeadByte (pWnd->pszMsg[pWnd->nData1])) {
-									pWnd->nData1 ++;
-								}
-								pWnd->nData1 ++;
+								pWnd->nData1 += max (SboTextCharLen (&pWnd->pszMsg[pWnd->nData1]), 1);
 								BOOL bRet = MsgProc (pWnd);
 								pWnd->dwTimeDrawStart = 0;
 								g_bDraw = TRUE;
