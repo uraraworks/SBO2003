@@ -243,6 +243,8 @@ enum {
 	CMD_EQUUSERINFOREQ,												/* 装備職業情報要求 */
 /* 以下、ブラウザ版のアカウント関係（管理者用ではないが、番号をずらさないよう最後に足す） */
 	CMD_WEBACCOUNT,													/* ブラウザ版のアカウント関係 */
+/* 以下、管理者用（CMD_WEBACCOUNT より後ろに足す） */
+	CMD_ADMINUNDO,													/* 管理者画面の「元に戻す」 */
 	CMD_MAX
 };
 
@@ -2285,6 +2287,52 @@ typedef struct _CMDPARA_WEBACCOUNT {
 	char		szToken[MAX_WEBTOKEN + 1];							/* 端末トークン */
 	char		szMacAdr[6];										/* MACアドレス */
 } CMDPARA_WEBACCOUNT, *PCMDPARA_WEBACCOUNT;
+
+/* 管理者画面の「元に戻す」（CMD_ADMINUNDO の byCmdSub） */
+enum {
+	ADMINUNDO_SCREEN = 0,										/* いま開いている画面の通知（クライアント→サーバー） */
+	ADMINUNDO_INFOREQ,											/* 戻せる変更の問い合わせ（クライアント→サーバー） */
+	ADMINUNDO_INFO,												/* 戻せる変更の通知（サーバー→クライアント） */
+	ADMINUNDO_EXEC,												/* 元に戻す（クライアント→サーバー） */
+	ADMINUNDO_RESULT,											/* 元に戻した結果（サーバー→クライアント） */
+};
+
+/* 「元に戻す」の単位になる管理者画面（ADMINSCR_*）。変更はその時に開いていた画面で記録する */
+enum {
+	ADMINSCR_NONE = 0,											/* 画面なし・対応していない画面 */
+	ADMINSCR_MAPPARTS,											/* パーツ（マップの塗り替え） */
+	ADMINSCR_MAPINFO,											/* マップ情報 */
+	ADMINSCR_EVENT,												/* イベント情報 */
+	ADMINSCR_MSG,												/* メッセージ */
+	ADMINSCR_SHOP,												/* 店情報 */
+	ADMINSCR_CHARSTATUS,										/* ステータス情報 */
+	ADMINSCR_CHARITEM,											/* 所持アイテム情報 */
+	ADMINSCR_CHARMAGIC,											/* 所持魔法情報 */
+	ADMINSCR_STTMP,												/* ステータステンプレート情報 */
+	ADMINSCR_ITEM,												/* アイテム一覧 */
+	ADMINSCR_CEF,												/* ふきだし */
+	ADMINSCR_EFC,												/* 効果いろいろ */
+	ADMINSCR_JOBINFO,											/* 職業情報（レベルアップ情報も） */
+	ADMINSCR_MAGICINFO,											/* 魔法情報 */
+	ADMINSCR_MAGICUSERINFO,										/* 魔法利用者情報 */
+	ADMINSCR_EQUUSERINFO,										/* 装備職業情報 */
+	ADMINSCR_MAX
+};
+
+#define MAX_ADMINUNDOMSG	400										/* 「元に戻す」の案内文の大きさ（UTF-8） */
+
+#pragma pack(push, 1)
+/* 管理者画面の「元に戻す」 */
+typedef struct _CMDPARA_ADMINUNDO {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byCmdSub;											/* サブコマンド(ADMINUNDO_*) */
+	BYTE		byScreen;											/* 画面(ADMINSCR_*) */
+	BYTE		byResult;											/* 結果（RESULT: 1=戻した 0=戻せなかった） */
+	WORD		wCount;												/* 戻せる回数（INFO・RESULT） */
+	DWORD		dwStepID;											/* 戻す変更の番号（INFO で知らせ、EXEC で指定） */
+	char		szMsg[MAX_ADMINUNDOMSG];							/* 案内文（サーバー→クライアント） */
+} CMDPARA_ADMINUNDO, *PCMDPARA_ADMINUNDO;
+#pragma pack(pop)
 
 /* マップ情報通知 */
 typedef struct _CMDPARA_MAPINFO {
