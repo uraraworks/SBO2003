@@ -54,6 +54,7 @@
  *                               check が true なら確かめるだけ（変えない）
  *   /api/admin/search         {session, q}                 → {results:[...], more}
  *   /api/admin/rename         {session, account, name, check} → {result:"ok", from, to} / {result:<理由>}
+ *   /api/admin/online         {session}                    → {players:[{name, account, level, mapID, mapName, x, y, ...}], online}
  */
 Module['sboAccount'] = (function () {
 	var fs = require('fs');
@@ -732,6 +733,16 @@ Module['sboAccount'] = (function () {
 		reply(res, 200, r);
 	}
 
+	/* ログイン中のプレイヤー（キャラ名と今いるマップ）。中身は C 側の SboWebAdminOnline */
+	function apiAdminOnline(body, req, res) {
+		if (!checkAdmin(body, res)) {
+			return;
+		}
+		var r = JSON.parse(UTF8ToString(_SboWebAdminOnline()));
+		r.at = Date.now();
+		reply(res, 200, r);
+	}
+
 	var API = {
 		'/api/device/me': apiDeviceMe,
 		'/api/device/forget': apiDeviceForget,
@@ -745,7 +756,8 @@ Module['sboAccount'] = (function () {
 		'/api/admin/recover/decide': apiAdminDecide,
 		'/api/device/rename': apiDeviceRename,
 		'/api/admin/search': apiAdminSearch,
-		'/api/admin/rename': apiAdminRename
+		'/api/admin/rename': apiAdminRename,
+		'/api/admin/online': apiAdminOnline
 	};
 
 	/* sbosvr_net.js の HTTP から呼ばれる。/api/ で始まるものだけ受け持つ */
