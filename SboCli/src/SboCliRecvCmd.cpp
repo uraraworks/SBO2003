@@ -1771,7 +1771,7 @@ void RecvDataProcCONNECT(PBYTE pData, DWORD dwDataSize)
 
 	/* バージョンが一致しない？ */
 	if (pPara->byData != VERSIONVAL) {
-		pWnd = MakeWindowMSG3SEC ("バージョンが異なる為接続できません");
+		pWnd = MakeWindowMSG3SEC ("バージョンが違います。再読み込みしてください");
 		pWnd->nData1 = MSG3SEC_ACC;
 		g_WndInfo.Add (pWnd);
 		g_bDraw = TRUE;
