@@ -5167,28 +5167,33 @@ void AdminOnPaint(HWND hWnd)
 {
 	HDC hdc;
 	PAINTSTRUCT ps;
+	void (*pfnPaint)(HDC) = NULL;
 
 	hdc = BeginPaint(hWnd, &ps);
 
 	/* 選択状態別に描画 */
 	switch (g_nAdminWindowType) {
-	case IDM_MAP_PARTS:		AdminOnPaintMapParts (hdc);			break;
-	case IDM_MAP_INFO:		AdminOnPaintMapInfo (hdc);			break;
-	case IDM_MAP_EVENT:		AdminOnPaintMapEvent (hdc);			break;
-	case IDM_MAP_MSG:		AdminOnPaintMsg (hdc);				break;
-	case IDM_CHAR_ADD:		AdminOnPaintAddChar (hdc);			break;
-	case IDM_CHAR_INFO:		AdminOnPaintCharInfo (hdc);			break;
-	case IDM_CHAR_STATUS:	AdminOnPaintCharStatus (hdc);		break;
-	case IDM_ACC_ADD:		AdminOnPaintAccAdd (hdc);			break;
-	case IDM_ACC_INFO:		AdminOnPaintAccInfo (hdc);			break;
-	case IDM_CEF_EDIT:		AdminOnPaintCefEdit (hdc);			break;
-	case IDM_ITEM_LIST:		AdminOnPaintItemList (hdc);			break;
-	case IDM_CHAR_ITEM:		AdminOnPaintCharItem (hdc);			break;
-	case IDM_ETC_SVRINFO:	AdminOnPaintSvrInfo (hdc);			break;
-	case IDM_MAP_SHOP:		AdminOnPaintShopInfo (hdc);			break;
-	case IDM_EFC_EDIT:		AdminOnPaintEfcEdit (hdc);			break;
-	case IDM_ETC_SUBGAME:	AdminOnPaintSubGame (hdc);			break;
-	case IDM_ETC_VERSION:	AdminOnPaintEtcVersion (hdc);		break;
+	case IDM_MAP_PARTS:	pfnPaint = AdminOnPaintMapParts;	break;
+	case IDM_MAP_INFO:	pfnPaint = AdminOnPaintMapInfo;	break;
+	case IDM_MAP_EVENT:	pfnPaint = AdminOnPaintMapEvent;	break;
+	case IDM_MAP_MSG:	pfnPaint = AdminOnPaintMsg;	break;
+	case IDM_CHAR_ADD:	pfnPaint = AdminOnPaintAddChar;	break;
+	case IDM_CHAR_INFO:	pfnPaint = AdminOnPaintCharInfo;	break;
+	case IDM_CHAR_STATUS:	pfnPaint = AdminOnPaintCharStatus;	break;
+	case IDM_ACC_ADD:	pfnPaint = AdminOnPaintAccAdd;	break;
+	case IDM_ACC_INFO:	pfnPaint = AdminOnPaintAccInfo;	break;
+	case IDM_CEF_EDIT:	pfnPaint = AdminOnPaintCefEdit;	break;
+	case IDM_ITEM_LIST:	pfnPaint = AdminOnPaintItemList;	break;
+	case IDM_CHAR_ITEM:	pfnPaint = AdminOnPaintCharItem;	break;
+	case IDM_ETC_SVRINFO:	pfnPaint = AdminOnPaintSvrInfo;	break;
+	case IDM_MAP_SHOP:	pfnPaint = AdminOnPaintShopInfo;	break;
+	case IDM_EFC_EDIT:	pfnPaint = AdminOnPaintEfcEdit;	break;
+	case IDM_ETC_SUBGAME:	pfnPaint = AdminOnPaintSubGame;	break;
+	case IDM_ETC_VERSION:	pfnPaint = AdminOnPaintEtcVersion;	break;
+	}
+	/* ウィンドウを広げた時は、一覧の右横・下に描いた文字も部品と一緒にずらす */
+	if (pfnPaint) {
+		AdminAutoLayoutPaint (hWnd, hdc, pfnPaint);
 	}
 
 	EndPaint(hWnd, &ps);

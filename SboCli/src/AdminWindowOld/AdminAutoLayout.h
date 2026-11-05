@@ -12,7 +12,8 @@
  *   AdminAutoLayout (hWnd, bPainted);	… 今の大きさに合わせて中の部品を並べ直す
  *
  * bPainted = TRUE  : 文字を自分で描いている画面（管理者ウィンドウ本体）。
- *                    描いた文字とずれないよう、右端・下端に接している一覧だけを広げる。
+ *                    一番大きな一覧を広げ、一覧の下の部品は下へ、一覧の右横の部品は右へずらす。
+ *                    描く処理は AdminAutoLayoutPaint を通すと、描いた文字も同じだけずれる。
  * bPainted = FALSE : ダイアログ（文字もスタティック部品）。
  *                    一番大きな一覧を広げ、その右・下にある部品はずらす。
  * どちらも、中にある全面のダイアログ（子ダイアログ）は親いっぱいに広げて、その中も並べ直す。
@@ -20,5 +21,6 @@
 
 void AdminAutoLayoutInit	(HWND hWnd);					/* 元の大きさを覚える */
 void AdminAutoLayout		(HWND hWnd, BOOL bPainted);		/* 並べ直す */
+void AdminAutoLayoutPaint	(HWND hWnd, HDC hDC, void (*pfnPaint)(HDC));	/* ずらして描く */
 
 /* Copyright(C)URARA-works 2026 */
