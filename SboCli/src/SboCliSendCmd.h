@@ -107,6 +107,7 @@ extern void SendCMDMAGICUSERINFOREQ	(BYTE);									/* 魔法利用者情報要�
 extern void SendCMDTARGETCHG		(DWORD);								/* ターゲット変更要求 */
 extern void SendCMDEQUUSERINFO		(BYTE);									/* 装備職業情報 */
 extern void SendCMDEQUUSERINFOREQ	(BYTE);									/* 装備職業情報要求 */
+extern void SendCmdADMINUNDO		(BYTE, BYTE, DWORD);					/* 管理者画面の「元に戻す」 */
 extern void SendCMDSHOPBUY			(DWORD, DWORD);							/* アイテム購入 */
 extern void SendCMDDIFENCE			(void);									/* 防御 */
 extern void SendCMDTHROWSNOW		(void);									/* 雪を投げる */

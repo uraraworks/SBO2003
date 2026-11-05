@@ -1192,11 +1192,22 @@ EM_JS(void, W32JsAlert, (const char *pszCaption, const char *pszText), {
 		alert(cap + '\n\n' + txt);
 	}
 });
+/* はい/いいえ を聞く（ブラウザの confirm はその場で待てる）。はいなら 1 */
+EM_JS(int, W32JsConfirm, (const char *pszCaption, const char *pszText), {
+	var cap = UTF8ToString(pszCaption);
+	var txt = UTF8ToString(pszText);
+	return confirm((cap ? cap + '\n\n' : '') + txt) ? 1 : 0;
+});
 #else
 /* 画面なしではダイアログを出せないのでログに出す */
 static void W32JsAlert(const char *pszCaption, const char *pszText)
 {
 	fprintf(stderr, "[MessageBox] %s: %s\n", pszCaption, pszText);
+}
+static int W32JsConfirm(const char *pszCaption, const char *pszText)
+{
+	W32JsAlert(pszCaption, pszText);
+	return 1;
 }
 #endif
 
@@ -1204,11 +1215,14 @@ int MessageBox(HWND, LPCSTR pszText, LPCSTR pszCaption, UINT uType)
 {
 	std::string strText = W32TextToUtf8Str(pszText ? pszText : "");
 	std::string strCap = W32TextToUtf8Str(pszCaption ? pszCaption : "");
-	W32JsAlert(strCap.c_str(), strText.c_str());
-	/* はい/いいえ を聞かれても待てないので「はい」「OK」扱いにする */
+	/* はい/いいえ・OK/キャンセルは確認のダイアログで聞く（画面なしのサーバーでは「はい」「OK」扱い） */
 	if ((uType & 0x0F) == MB_YESNO) {
-		return IDYES;
+		return W32JsConfirm(strCap.c_str(), strText.c_str()) ? IDYES : IDNO;
 	}
+	if ((uType & 0x0F) == MB_OKCANCEL) {
+		return W32JsConfirm(strCap.c_str(), strText.c_str()) ? IDOK : IDCANCEL;
+	}
+	W32JsAlert(strCap.c_str(), strText.c_str());
 	return IDOK;
 }
 

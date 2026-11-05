@@ -269,6 +269,13 @@ void MakeAdminWndSubGameInfo		(void);								/* サブゲーム情報ウィン�
 void DeleteAdminWndSubGameInfo		(void);								/* サブゲーム情報ウィンドウ消去 */
 void MakeAdminWndSubGameInfoType	(void);								/* 種類別サブゲーム情報ウィンドウ作成 */
 void DeleteAdminWndSubGameInfoType	(void);								/* 種類別サブゲーム情報ウィンドウ消去 */
+static BYTE AdminUndoScreenFromType	(int);								/* 「元に戻す」の画面番号(ADMINSCR_*)を取得 */
+static void AdminUndoNotifyScreen	(void);								/* 開いている画面をサーバーに知らせる */
+static void AdminUndoRequest		(void);								/* 「この画面の変更を元に戻す」 */
+static void AdminUndoRefresh		(BYTE);								/* 元に戻した後に画面を作り直す */
+
+/* サーバーに知らせた画面（0xFF ならまだ知らせていない） */
+static BYTE s_byAdminUndoScreen = 0xFF;
 
 /* ========================================================================= */
 /* 関数名：MyTextOut														 */
@@ -323,6 +330,9 @@ void MakeAdminWindow(void)
 				rect.left, rect.top, rect.right, rect.bottom,
 				g_hWndMain, NULL, g_hInstance, NULL);
 	ShowWindow (g_hWndAdmin, SW_SHOWNOACTIVATE);
+
+	s_byAdminUndoScreen = 0xFF;
+	AdminUndoNotifyScreen ();
 }
 
 /* ========================================================================= */
@@ -1331,6 +1341,12 @@ LRESULT WINAPI WndProcAdminWindow(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPa
 /* ========================================================================= */
 void AdminOnCommand(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 {
+	/* 編集→この画面の変更を元に戻す */
+	if (id == IDM_ADMIN_UNDO) {
+		AdminUndoRequest ();
+		return;
+	}
+
 	switch (id) {
 	case IDM_MAP_PARTS:
 	case IDM_MAP_INFO:
@@ -1412,6 +1428,144 @@ void AdminOnCommand(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 	case IDM_EFC_EDIT:			AdminOnCommandEfcEdit (hWnd, id, hWndCtl, codeNotify);		break;
 	case IDM_ETC_SUBGAME:		AdminOnCommandSubGameInfo (hWnd, id, hWndCtl, codeNotify);	break;
 	}
+
+	/* 画面が変わったらサーバーに知らせる（「元に戻す」は画面ごとに記録するので） */
+	AdminUndoNotifyScreen ();
+}
+
+/* ========================================================================= */
+/* 関数名：AdminUndoScreenFromType											 */
+/* 内容：管理者ウィンドウの画面(IDM_*)から「元に戻す」の画面番号を取得		 */
+/* ========================================================================= */
+static BYTE AdminUndoScreenFromType(int nType)
+{
+	switch (nType) {
+	case IDM_MAP_PARTS:			return ADMINSCR_MAPPARTS;
+	case IDM_MAP_INFO:			return ADMINSCR_MAPINFO;
+	case IDM_MAP_EVENT:			return ADMINSCR_EVENT;
+	case IDM_MAP_MSG:			return ADMINSCR_MSG;
+	case IDM_MAP_SHOP:			return ADMINSCR_SHOP;
+	case IDM_CHAR_STATUS:		return ADMINSCR_CHARSTATUS;
+	case IDM_CHAR_ITEM:			return ADMINSCR_CHARITEM;
+	case IDM_CHAR_MAGIC:		return ADMINSCR_CHARMAGIC;
+	case IDM_ITEM_LIST:			return ADMINSCR_ITEM;
+	case IDM_CEF_EDIT:			return ADMINSCR_CEF;
+	case IDM_EFC_EDIT:			return ADMINSCR_EFC;
+	case IDM_ETC_JOBINFO:		return ADMINSCR_JOBINFO;
+	case IDM_ETC_MAGICINFO:		return ADMINSCR_MAGICINFO;
+	case IDM_ETC_MAGICUSERINFO:	return ADMINSCR_MAGICUSERINFO;
+	case IDM_ETC_EQUUSERINFO:	return ADMINSCR_EQUUSERINFO;
+	}
+	return ADMINSCR_NONE;
+}
+
+/* ========================================================================= */
+/* 関数名：AdminUndoNotifyScreen											 */
+/* 内容：開いている画面をサーバーに知らせる（変わった時だけ）				 */
+/* ========================================================================= */
+static void AdminUndoNotifyScreen(void)
+{
+	BYTE byScreen = AdminUndoScreenFromType (g_nAdminWindowType);
+
+	if (g_hWndAdmin == NULL) {
+		return;
+	}
+	if (byScreen == s_byAdminUndoScreen) {
+		return;
+	}
+	s_byAdminUndoScreen = byScreen;
+	SendCmdADMINUNDO (ADMINUNDO_SCREEN, byScreen, 0);
+}
+
+/* ========================================================================= */
+/* 関数名：AdminUndoRequest													 */
+/* 内容：「この画面の変更を元に戻す」（まずサーバーに戻せる変更を聞く）		 */
+/* ========================================================================= */
+static void AdminUndoRequest(void)
+{
+	BYTE byScreen = AdminUndoScreenFromType (g_nAdminWindowType);
+
+	if (byScreen == ADMINSCR_NONE) {
+		MessageBox (g_hWndAdmin,
+				"この画面は「元に戻す」に対応していません。\n\n"
+				"対応している画面：パーツ（マップの塗り替え）・マップ情報・イベント情報・メッセージ・店情報・"
+				"ステータス情報・所持アイテム情報・所持魔法情報・アイテム一覧・ふきだし・効果いろいろ・"
+				"職業情報（レベルアップ情報も）・魔法情報・魔法利用者情報・装備職業情報",
+				"元に戻す", MB_OK);
+		return;
+	}
+	AdminUndoNotifyScreen ();
+	SendCmdADMINUNDO (ADMINUNDO_INFOREQ, byScreen, 0);
+}
+
+/* ========================================================================= */
+/* 関数名：AdminUndoOnRecv													 */
+/* 内容：「元に戻す」の応答（戻せる変更の案内・戻した結果）					 */
+/* ========================================================================= */
+void AdminUndoOnRecv(const void *pParaIn)
+{
+	const CMDPARA_ADMINUNDO *pPara = (const CMDPARA_ADMINUNDO *)pParaIn;
+	char szTmp[MAX_ADMINUNDOMSG + 256];
+
+	switch (pPara->byCmdSub) {
+	case ADMINUNDO_INFO:		/* 戻せる変更の案内 → 確かめてから戻す */
+		if ((pPara->wCount == 0) || (pPara->dwStepID == 0)) {
+			MessageBox (g_hWndAdmin, pPara->szMsg, "元に戻す", MB_OK);
+			break;
+		}
+		snprintf (szTmp, sizeof (szTmp),
+				"%s\nを元に戻しますか？\n\n（この画面では %d 回分戻せます。戻した後でやり直すことはできません）",
+				pPara->szMsg, (int)pPara->wCount);
+		if (MessageBox (g_hWndAdmin, szTmp, "元に戻す", MB_YESNO | MB_ICONQUESTION) == IDYES) {
+			SendCmdADMINUNDO (ADMINUNDO_EXEC, pPara->byScreen, pPara->dwStepID);
+		}
+		break;
+
+	case ADMINUNDO_RESULT:		/* 戻した結果 */
+		MessageBox (g_hWndAdmin, pPara->szMsg, "元に戻す", MB_OK);
+		if (pPara->byResult) {
+			AdminUndoRefresh (pPara->byScreen);
+		}
+		break;
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：AdminUndoRefresh													 */
+/* 内容：元に戻した後、その画面を開いたままなら作り直して新しい内容を出す	 */
+/* ========================================================================= */
+static void AdminUndoRefresh(BYTE byScreen)
+{
+	int nType = g_nAdminWindowType;
+
+	if (g_hWndAdmin == NULL) {
+		return;
+	}
+	if (AdminUndoScreenFromType (nType) != byScreen) {
+		return;
+	}
+
+	switch (nType) {
+	case IDM_MAP_PARTS:
+		/* マップはそのまま書き換わるので、選んでいるパーツを残すため作り直さない */
+		break;
+
+	/* ダイアログで出す画面はメニューと同じ処理で出し直す */
+	case IDM_ETC_JOBINFO:
+	case IDM_ETC_MAGICINFO:
+	case IDM_ETC_MAGICUSERINFO:
+	case IDM_CHAR_MAGIC:
+	case IDM_ETC_EQUUSERINFO:
+		AdminOnCommand (g_hWndAdmin, nType, NULL, 0);
+		break;
+
+	default:
+		/* 同じ画面だと作り直さないので、いったん画面なしにしてから作る */
+		g_nAdminWindowType = 0;
+		MakeAdminWnd (nType);
+		break;
+	}
+	InvalidateRect (g_hWndAdmin, NULL, TRUE);
 }
 
 /* ========================================================================= */

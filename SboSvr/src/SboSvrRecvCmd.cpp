@@ -19,6 +19,7 @@
 #include "SboSvrBattleProc.h"
 #include "SboSvrCharInfoTimerProc.h"
 #include "SboSvrSubGameProcSugoroku.h"
+#include "SboSvrAdminUndo.h"
 #include <map>
 #include <vector>
 
@@ -183,6 +184,7 @@ void	RecvDataProcSHOPBUY						(PBYTE, DWORD);				/* アイテム購入 */
 void	RecvDataProcEQUUSERINFO					(PBYTE, DWORD);				/* 装備職業情報 */
 void	RecvDataProcEQUUSERINFOREQ				(PBYTE, DWORD);				/* 装備職業情報要求 */
 void	RecvDataProcWEBACCOUNT					(PBYTE, DWORD);				/* ブラウザ版のアカウント関係 */
+void	RecvDataProcADMINUNDO					(PBYTE, DWORD);				/* 管理者画面の「元に戻す」 */
 /* 端末トークン（server/web_account_svr.cpp） */
 BOOL	WebAccTokenToAccount					(LPCSTR, LPSTR, int);		/* 端末トークンからアカウント名を引く */
 BOOL	WebAccIssueToken						(LPCSTR, LPSTR, int);		/* 端末トークンを発行する */
@@ -392,6 +394,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcEQUUSERINFO,			/* CMD_EQUUSERINFO */
 	RecvDataProcEQUUSERINFOREQ,			/* CMD_EQUUSERINFOREQ */
 	RecvDataProcWEBACCOUNT,				/* CMD_WEBACCOUNT */
+	RecvDataProcADMINUNDO,				/* CMD_ADMINUNDO */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -472,6 +475,7 @@ static int		s_nCharNoRecv	= -1;		/* その接続のキャラ番号（未ログ�
 static BOOL		s_bAdminRecv	= FALSE;	/* 管理者からのパケット？ */
 static DWORD	s_dwRecvSize	= 0;		/* 処理中のパケットの大きさ */
 static const BYTE *s_pRecvData	= NULL;		/* 処理中のパケットの先頭 */
+static DWORD	s_dwRecvMapNo	= (DWORD)-1;	/* 「元に戻す」で処理し直す時のマップ番号（メッセージ・店用。-1 なら送ってきたキャラのマップ） */
 
 /* ========================================================================= */
 /* 関数名：	IsRecvChar														 */
@@ -836,6 +840,9 @@ void RecvCmdOnDecPlayer(int nNo)
 		return;
 	}
 	TradeClear ((DWORD)nNo);
+	if (nNo < g_aCharInfo.GetSize ()) {
+		AdminUndoOnDisconnect (g_aCharInfo[nNo]->pID);
+	}
 	s_mapMsgCode.erase ((DWORD)nNo);
 	s_mapPartyInvite.erase ((DWORD)nNo);
 }
@@ -2958,7 +2965,16 @@ void RecvDataProc(PBYTE pData, DWORD dwDataSize)
 		}
 	}
 	if (RecvDataProcTbl[byCmd]) {
+		/* 管理者が変えるデータは、変える前の状態を「元に戻す」用に記録する */
+		BOOL bUndo = FALSE;
+		if (s_bAdminRecv) {
+			bUndo = AdminUndoBefore (byCmd, pData, s_dwRecvSize, s_pIDRecv,
+					g_aCharInfo[nNo]->szName, AdminUndoGetScreen (s_pIDRecv));
+		}
 		RecvDataProcTbl[byCmd](pData, dwDataSize);
+		if (bUndo) {
+			AdminUndoAfter ();
+		}
 	}
 
 	s_pIDRecv		= 0;
@@ -3556,6 +3572,11 @@ void RecvDataProcCHGMAP(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 
+	/* マップの外は書き換えない */
+	if ((pMap->nX < 0) || (pMap->nY < 0) || (pMap->nX >= g_aMapInfo[nNo]->nCX) || (pMap->nY >= g_aMapInfo[nNo]->nCY) ||
+			(g_aMapInfo[nNo]->pwMap == NULL)) {
+		return;
+	}
 	g_aMapInfo[nNo]->pwMap[pMap->nX + pMap->nY * g_aMapInfo[nNo]->nCX] = pMap->wMap;
 	SendCmdCHGMAP (pMap->dwID, pMap->wMap, pMap->nX, pMap->nY);
 }
@@ -4232,7 +4253,20 @@ void RecvDataProcMAPMSGREQ(PBYTE pData, DWORD dwDataSize)
 void RecvDataProcCHGMSG(PBYTE pData, DWORD dwDataSize)
 {
 	PCMDPARA_DATA3 pPara = (PCMDPARA_DATA3)pData;
-	DWORD dwMapID = g_aCharInfo[pPara->dwTblID]->dwMapID;
+	DWORD dwMapID;
+
+	/* 送ってきたキャラのいるマップ（「元に戻す」の時は記録したマップ） */
+	if (s_dwRecvMapNo != (DWORD)-1) {
+		dwMapID = s_dwRecvMapNo;
+	} else {
+		if (pPara->dwTblID >= (DWORD)g_aCharInfo.GetSize ()) {
+			return;
+		}
+		dwMapID = g_aCharInfo[pPara->dwTblID]->dwMapID;
+	}
+	if (dwMapID >= (DWORD)g_aMapInfo.GetSize ()) {
+		return;
+	}
 	PMAPINFO pMap = g_aMapInfo[dwMapID];
 
 	if (pPara->dwData >= (DWORD)pMap->nMsgCount) {
@@ -5103,7 +5137,12 @@ void RecvDataProcCLIVERSION(PBYTE pData, DWORD dwDataSize)
 void RecvDataProcCHGCEF(PBYTE pData, DWORD dwDataSize)
 {
 	PCMDPARA_CHGCEF pRecv = (PCMDPARA_CHGCEF)pData;
-	PCOMEFCINFO pComEfc = &g_pComEfcInfo[pRecv->wCount], pComEfcNew;
+	PCOMEFCINFO pComEfc, pComEfcNew;
+
+	if (pRecv->wCount >= MAX_COMEFC) {
+		return;
+	}
+	pComEfc = &g_pComEfcInfo[pRecv->wCount];
 
 	if (pComEfc->pAnime) {
 		if (pComEfc->byAnimeCount == 1) {
@@ -5113,7 +5152,7 @@ void RecvDataProcCHGCEF(PBYTE pData, DWORD dwDataSize)
 		}
 	}
 
-	pComEfcNew = (PCOMEFCINFO)(pData + sizeof (PCMDPARA_CHGCEF));
+	pComEfcNew = (PCOMEFCINFO)(pData + sizeof (CMDPARA_CHGCEF));
 	pComEfc->byAnimeCount = pComEfcNew->byAnimeCount;
 	pComEfc->pAnime = pComEfcNew->pAnime;
 	pComEfc->bySound = pComEfcNew->bySound;
@@ -5532,12 +5571,26 @@ void RecvDataProcCHGSHOP(PBYTE pData, DWORD dwDataSize)
 	PMAPINFO pMap;
 	PSHOPINFO pShop;
 
-	if (pPara->dwTblID >= (DWORD)g_aCharInfo.GetSize ()) {
+	DWORD dwMapID;
+
+	/* 送ってきたキャラのいるマップ（「元に戻す」の時は記録したマップ） */
+	if (s_dwRecvMapNo != (DWORD)-1) {
+		dwMapID = s_dwRecvMapNo;
+	} else {
+		if (pPara->dwTblID >= (DWORD)g_aCharInfo.GetSize ()) {
+			return;
+		}
+		pChar = g_aCharInfo[pPara->dwTblID];
+		dwMapID = pChar->dwMapID;
+	}
+	if (dwMapID >= (DWORD)g_aMapInfo.GetSize ()) {
 		return;
 	}
-
-	pChar = g_aCharInfo[pPara->dwTblID];
-	pMap = g_aMapInfo[pChar->dwMapID];
+	pMap = g_aMapInfo[dwMapID];
+	/* 無い店は書き換えない */
+	if ((pMap->pShopInfo == NULL) || (pPara->byID >= pMap->byCountShop)) {
+		return;
+	}
 	pShop = &pMap->pShopInfo[pPara->byID];
 
 	pShop->byCountItem = pPara->byCountItem;
@@ -5553,7 +5606,7 @@ void RecvDataProcCHGSHOP(PBYTE pData, DWORD dwDataSize)
 	}
 
 	/* クライアントに更新分を送信 */
-	SendCmdSHOP (pChar->dwTblID, pPara->byID);
+	SendCmdSHOPMap (dwMapID, pPara->byID);
 }
 
 /* ========================================================================= */
@@ -7045,8 +7098,9 @@ void RecvDataProcMAGICUSERINFO(PBYTE pData, DWORD dwDataSize)
 	SAFE_DELETE_ARRAY (pInfo->paJobIDTbl);
 	SboTextCopy (pInfo->szName, sizeof (pInfo->szName), pPara->szName);
 
+	/* 職業が 0 件の時も数を合わせる（表を消したのに数が残ると、送る時に消した表を読んでしまう） */
+	pInfo->byCount = pPara->byCount;
 	if (pPara->byCount) {
-		pInfo->byCount = pPara->byCount;
 		pInfo->paJobIDTbl = new BYTE[pPara->byCount];
 		ZeroMemory (pInfo->paJobIDTbl, pPara->byCount);
 		CopyMemory (pInfo->paJobIDTbl, pDataNext, pPara->byCount);
@@ -7112,8 +7166,9 @@ void RecvDataProcEQUUSERINFO(PBYTE pData, DWORD dwDataSize)
 	SAFE_DELETE_ARRAY (pInfo->paJobIDTbl);
 	SboTextCopy (pInfo->szName, sizeof (pInfo->szName), pPara->szName);
 
+	/* 職業が 0 件の時も数を合わせる（表を消したのに数が残ると、送る時に消した表を読んでしまう） */
+	pInfo->byCount = pPara->byCount;
 	if (pPara->byCount) {
-		pInfo->byCount = pPara->byCount;
 		pInfo->paJobIDTbl = new BYTE[pPara->byCount];
 		ZeroMemory (pInfo->paJobIDTbl, pPara->byCount);
 		CopyMemory (pInfo->paJobIDTbl, pDataNext, pPara->byCount);
@@ -9248,4 +9303,120 @@ void RecvDataProcWEBACCOUNT(PBYTE pData, DWORD dwDataSize)
 		}
 		break;
 	}
+}
+
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINUNDO											 */
+/* 内容：受信データ処理(管理者画面の「元に戻す」)							 */
+/* ========================================================================= */
+void RecvDataProcADMINUNDO(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINUNDO pPara = (PCMDPARA_ADMINUNDO)pData;
+	DWORD pID = s_pIDRecv;
+	DWORD dwStepID;
+	WORD wCount = 0;
+	BOOL bRet;
+	std::string strMsg;
+
+	if (s_dwRecvSize < sizeof (CMDPARA_ADMINUNDO) - sizeof (pPara->szMsg)) {
+		return;
+	}
+	if (pPara->byScreen >= ADMINSCR_MAX) {
+		return;
+	}
+
+	switch (pPara->byCmdSub) {
+	case ADMINUNDO_SCREEN:		/* いま開いている画面 */
+		AdminUndoSetScreen (pID, pPara->byScreen);
+		break;
+
+	case ADMINUNDO_INFOREQ:		/* 戻せる変更の問い合わせ */
+		AdminUndoGetInfo (pPara->byScreen, dwStepID, wCount, strMsg);
+		SendCmdADMINUNDO (pID, ADMINUNDO_INFO, pPara->byScreen, 0, wCount, dwStepID, strMsg.c_str ());
+		break;
+
+	case ADMINUNDO_EXEC:		/* 元に戻す */
+		bRet = AdminUndoExec (pPara->byScreen, pPara->dwStepID, pID, strMsg, wCount);
+		SendCmdADMINUNDO (pID, ADMINUNDO_RESULT, pPara->byScreen, bRet ? 1 : 0, wCount, 0, strMsg.c_str ());
+		break;
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：RecvCmdReplayAdmin												 */
+/* 内容：記録しておいたパケットを、管理者の操作として処理し直す			 */
+/*       （「元に戻す」用。pID は戻す処理を頼んだ接続。API からなら 0）		 */
+/* ========================================================================= */
+void RecvCmdReplayAdmin(const std::vector<BYTE> &aPacket, DWORD pID, DWORD dwMapNo)
+{
+	DWORD dwSize = (DWORD)aPacket.size ();
+
+	if ((dwSize == 0) || (aPacket[0] >= CMD_MAX) || (RecvDataProcTbl[aPacket[0]] == NULL)) {
+		return;
+	}
+
+	/* 処理中の受信の情報を退避（「元に戻す」の受信処理の中から呼ばれるので） */
+	DWORD		pIDBack		= s_pIDRecv;
+	int			nCharNoBack	= s_nCharNoRecv;
+	BOOL		bAdminBack	= s_bAdminRecv;
+	DWORD		dwSizeBack	= s_dwRecvSize;
+	const BYTE	*pDataBack	= s_pRecvData;
+	DWORD		dwMapNoBack	= s_dwRecvMapNo;
+
+	/* 受信データと同じく、後ろに 0 埋めの余白を付ける */
+	PBYTE pData = new BYTE[dwSize + 8192];
+	ZeroMemory (pData, dwSize + 8192);
+	CopyMemory (pData, &aPacket[0], dwSize);
+
+	s_pIDRecv		= pID;
+	s_nCharNoRecv	= pID ? GetCharNo (pID) : -1;
+	s_bAdminRecv	= TRUE;
+	s_dwRecvSize	= dwSize;
+	s_pRecvData		= pData;
+	s_dwRecvMapNo	= dwMapNo;
+
+	RecvDataProcTbl[pData[0]](pData, pID);
+
+	s_pIDRecv		= pIDBack;
+	s_nCharNoRecv	= nCharNoBack;
+	s_bAdminRecv	= bAdminBack;
+	s_dwRecvSize	= dwSizeBack;
+	s_pRecvData		= pDataBack;
+	s_dwRecvMapNo	= dwMapNoBack;
+
+	SAFE_DELETE_ARRAY (pData);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvCmdApplyAdminPacket											 */
+/* 内容：管理者用コマンドを API から処理し、「元に戻す」に記録する			 */
+/*       pData はクライアントが送るのと同じ形のパケット。					 */
+/*       byScreen は記録する画面（ADMINSCR_NONE ならコマンドから選ぶ）		 */
+/*       メッセージ・店は dwTblID のキャラのいるマップが対象になる			 */
+/* ========================================================================= */
+BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, BYTE byScreen)
+{
+	BYTE byCmd;
+	BOOL bUndo;
+
+	if ((pData == NULL) || (dwSize == 0)) {
+		return FALSE;
+	}
+	byCmd = pData[0];
+	/* 管理者用のコマンドだけ（ログインや「元に戻す」自体は通さない） */
+	if ((byCmd >= CMD_MAX) || (RecvDataProcTbl[byCmd] == NULL) ||
+			((byCmd < CMD_MAPPARTSADD) && (byCmd != CMD_CHARITEM)) ||
+			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO)) {
+		return FALSE;
+	}
+
+	std::vector<BYTE> aPacket (pData, pData + dwSize);
+	bUndo = AdminUndoBefore (byCmd, &aPacket[0], dwSize, 0,
+			(pszSource && pszSource[0]) ? pszSource : "API", byScreen);
+	RecvCmdReplayAdmin (aPacket, 0, (DWORD)-1);
+	if (bUndo) {
+		AdminUndoAfter ();
+	}
+	return TRUE;
 }

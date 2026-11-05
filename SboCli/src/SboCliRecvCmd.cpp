@@ -70,6 +70,7 @@ void	RecvDataProc						(PBYTE, DWORD);			/* 受信データ処理 */
 void	RecvDataProcCONNECT					(PBYTE, DWORD);			/* 受信データ処理(接続応答) */
 void	RecvDataProcLOGINRES				(PBYTE, DWORD);			/* 受信データ処理(ログイン応答) */
 void	RecvDataProcWEBACCOUNT				(PBYTE, DWORD);			/* 受信データ処理(ブラウザ版のアカウント関係) */
+void	RecvDataProcADMINUNDO				(PBYTE, DWORD);			/* 受信データ処理(管理者画面の「元に戻す」) */
 /* ブラウザ版のアカウント関係（web/replace/SboCliWebAccount_web.cpp） */
 void	WebAccSaveToken						(LPCSTR);				/* 端末トークンをページへ渡す */
 void	WebAccOnTokenNG						(void);					/* 端末トークンが無効だった */
@@ -299,6 +300,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcEQUUSERINFO,			/* CMD_EQUUSERINFO */
 	NULL,								/* CMD_EQUUSERINFOREQ */
 	RecvDataProcWEBACCOUNT,				/* CMD_WEBACCOUNT */
+	RecvDataProcADMINUNDO,				/* CMD_ADMINUNDO */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -1860,6 +1862,19 @@ void RecvDataProcLOGINRES(PBYTE pData, DWORD dwDataSize)
 	InvalidateRect (g_hWndMain, NULL, FALSE);
 	UpdateWindow (g_hWndMain);
 	cliSock.Destroy ();
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINUNDO											 */
+/* 内容：受信データ処理(管理者画面の「元に戻す」)							 */
+/* ========================================================================= */
+void RecvDataProcADMINUNDO(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINUNDO pPara = (PCMDPARA_ADMINUNDO)pData;
+
+	/* 案内文を必ず終端させる */
+	pPara->szMsg[sizeof (pPara->szMsg) - 1] = 0;
+	AdminUndoOnRecv (pPara);
 }
 
 /* ========================================================================= */
