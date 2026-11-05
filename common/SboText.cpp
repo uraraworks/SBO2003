@@ -5,7 +5,12 @@
 /* ========================================================================= */
 
 #include "StdAfx.h"
+#include <string>
 #include "SboText.h"
+
+/* platform/w32_sjis.cpp（古いデータ用の Shift_JIS 変換） */
+std::string W32SjisToUtf8Str(const char *pszSjis, int nLen);
+std::string W32Utf8ToSjisStr(const char *pszUtf8);
 
 /* ------------------------------------------------------------------------- */
 /* UTF-8 の 1 文字のバイト数を先頭バイトから求める（正しくない並びは 0）		 */
@@ -47,6 +52,20 @@ static int Utf8SeqLen(const BYTE *p)
 	return nLen;
 }
 
+/* ------------------------------------------------------------------------- */
+/* 正しい UTF-8 の 1 文字（nLen バイト）からコードポイントを取り出す			 */
+/* ------------------------------------------------------------------------- */
+static DWORD Utf8Decode(const BYTE *p, int nLen)
+{
+	switch (nLen) {
+	case 1:	return p[0];
+	case 2:	return ((DWORD)(p[0] & 0x1F) << 6) | (p[1] & 0x3F);
+	case 3:	return ((DWORD)(p[0] & 0x0F) << 12) | ((DWORD)(p[1] & 0x3F) << 6) | (p[2] & 0x3F);
+	case 4:	return ((DWORD)(p[0] & 0x07) << 18) | ((DWORD)(p[1] & 0x3F) << 12) | ((DWORD)(p[2] & 0x3F) << 6) | (p[3] & 0x3F);
+	}
+	return 0;
+}
+
 /* ========================================================================= */
 /* 関数名：	SboTextCharLen													 */
 /* 内容：	先頭 1 文字のバイト数（終端なら 0）								 */
@@ -67,11 +86,13 @@ int SboTextCharLen(LPCSTR psz)
 /* 関数名：	SboTextCharWidth												 */
 /* 内容：	先頭 1 文字の表示幅（終端なら 0）								 */
 /*			ASCII と半角カナは半角（1）、それ以外は全角（2）				 */
+/*			絵文字の見た目を変えるだけの文字は 0							 */
 /* ========================================================================= */
 int SboTextCharWidth(LPCSTR psz)
 {
 	const BYTE *p = (const BYTE *)psz;
 	int nLen;
+	DWORD dwCode;
 
 	if ((p == NULL) || (p[0] == 0)) {
 		return 0;
@@ -87,6 +108,14 @@ int SboTextCharWidth(LPCSTR psz)
 	if ((nLen == 3) && (p[0] == 0xEF) &&
 			(((p[1] == 0xBD) && (p[2] >= 0xA1)) || ((p[1] == 0xBE) && (p[2] <= 0x9F)))) {
 		return 1;
+	}
+	dwCode = Utf8Decode (p, nLen);
+	/* ZWJ・異体字セレクタ・肌の色・タグ文字（前の絵文字とくっついて描かれる） */
+	if ((dwCode == 0x200D) ||
+			((dwCode >= 0xFE00) && (dwCode <= 0xFE0F)) ||
+			((dwCode >= 0x1F3FB) && (dwCode <= 0x1F3FF)) ||
+			((dwCode >= 0xE0020) && (dwCode <= 0xE007F))) {
+		return 0;
 	}
 	return 2;
 }
@@ -247,4 +276,22 @@ int SboTextSanitize(LPSTR psz)
 		p += nLen;
 	}
 	return nCount;
+}
+
+/* ========================================================================= */
+/* 関数名：	SboTextIsNameSafe												 */
+/* 内容：	キャラ名に使える文字だけでできているか							 */
+/*			Shift_JIS にある文字だけを使える（絵文字などは使えない）		 */
+/*			見た目が似た文字でのなりすましや、名前の探しにくさを防ぐため	 */
+/* ========================================================================= */
+BOOL SboTextIsNameSafe(LPCSTR psz)
+{
+	if (psz == NULL) {
+		return TRUE;
+	}
+	if (!SboTextIsValid (psz)) {
+		return FALSE;
+	}
+	std::string strSjis = W32Utf8ToSjisStr (psz);
+	return (W32SjisToUtf8Str (strSjis.c_str (), -1) == psz) ? TRUE : FALSE;
 }

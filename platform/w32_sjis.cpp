@@ -292,12 +292,12 @@ std::string W32TextToUtf8Str(const char *psz, int nLen)
 }
 
 /* ブラウザから受け取った UTF-8 を内部の文字列にする。
-   段階 3 では、今までと同じく CP932 にある文字だけを通す（無い文字は '?'）。
-   絵文字などは、フォントを足す段階 4 で通すようにする */
+   内部も UTF-8 なので、正しくないバイトを '?' にするだけ（絵文字もそのまま通す）。
+   キャラ名に使える文字の決まりは SboTextIsNameSafe で別に確かめる */
 std::string W32Utf8ToTextStr(const char *pszUtf8)
 {
 	if (pszUtf8 == NULL) {
 		return std::string();
 	}
-	return W32SjisToUtf8Str(W32Utf8ToSjisStr(pszUtf8).c_str());
+	return W32TextToUtf8Str(pszUtf8, -1);
 }
