@@ -311,8 +311,37 @@ PBYTE CUraraSockTCP::MakeSendData(PBYTE pData, DWORD &dwSize)
 	return pRet;
 }
 
+/* 送信の横取り（管理者画面の「元に戻す」が、送信用に作ったデータを記録に使う。
+   SvrSendCaptureBegin から SvrSendCaptureEnd までの間は誰にも送らず、最初の 1 パケットだけ取っておく） */
+static BOOL s_bSendCapture = FALSE;
+static std::vector<BYTE> s_aSendCapture;
+static BOOL s_bSendCaptured = FALSE;
+
+void SvrSendCaptureBegin(void)
+{
+	s_bSendCapture	= TRUE;
+	s_bSendCaptured	= FALSE;
+	s_aSendCapture.clear();
+}
+
+/* 横取りを終える。取れたら TRUE で、aDst に中身（圧縮前）を入れる */
+BOOL SvrSendCaptureEnd(std::vector<BYTE> &aDst)
+{
+	s_bSendCapture = FALSE;
+	aDst.swap(s_aSendCapture);
+	s_aSendCapture.clear();
+	return s_bSendCaptured;
+}
+
 void CUraraSockTCP::SendTo(DWORD dwID, PBYTE pData, DWORD dwSize, DWORD, BYTE byPriority)
 {
+	if (s_bSendCapture) {
+		if (pData && !s_bSendCaptured) {
+			s_aSendCapture.assign(pData, pData + dwSize);
+			s_bSendCaptured = TRUE;
+		}
+		return;
+	}
 	if (pData == NULL || m_pNative->nListenFd < 0) {
 		return;
 	}
