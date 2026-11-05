@@ -96,6 +96,7 @@
 - **キャラ名を変える** … 探したキャラの名前を変えられます。ログイン中でも変えられ、本人と近くの人にはすぐ新しい名前が届きます
   （遠くにいる人は入り直すまで前の名前のことがあります）。本人の場合の待ち時間・NG ワード・予約は管理者には効きません。
 - **復旧の承認** … 前の承認ページと同じです。承認待ちの数がタブに出ます。
+- **AI連携** … AI（Claude Code など）から設定データを読み書きするキーの発行・取り消しと、変更履歴・元に戻す。詳しくは [ai-data.md](ai-data.md)。
 
 ## キャラ名の変更（/rename、プレイヤー用）
 
@@ -142,7 +143,7 @@
 | `server/web_account_svr.cpp` | キャラ情報を見る部分（照合・パスワード変更・キャラ名の変更と検索・管理者の確認）。パスワードは JS へ出さない |
 | `web/replace/SboCliWebAccount_web.cpp` | クライアント側（トークンでの接続・ページとのやり取り） |
 | `web/shell/sbocli.html` | ログイン画面のボタンと復旧の画面 |
-| `web/account/admin.html` | 管理ページ（`/admin`。キャラ検索・キャラ名の変更・復旧の承認） |
+| `web/account/admin.html` | 管理ページ（`/admin`。キャラ検索・キャラ名の変更・復旧の承認・ご意見箱・AI連携（[ai-data.md](ai-data.md)）） |
 | `web/account/rename.html` | キャラ名の変更ページ（`/rename`。プレイヤー用） |
 | `web/account/feedback.html` | ご意見箱（`/feedback`。プレイヤー用） |
 | `server/node/sbosvr_feedback.js` | ご意見箱の保存・API（`/api/feedback/*`・`/api/admin/feedback/*`） |
