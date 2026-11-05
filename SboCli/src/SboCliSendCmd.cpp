@@ -113,6 +113,7 @@ void SendCMDMAGICUSERINFOREQ(BYTE);									/* 魔法利用者情報要求 */
 void SendCMDTARGETCHG		(DWORD);								/* ターゲット変更要求 */
 void SendCMDEQUUSERINFO		(BYTE);									/* 装備職業情報 */
 void SendCMDEQUUSERINFOREQ	(BYTE);									/* 装備職業情報要求 */
+void SendCmdADMINUNDO		(BYTE, BYTE, DWORD);					/* 管理者画面の「元に戻す」 */
 void SendCMDSHOPBUY			(DWORD, DWORD);							/* アイテム購入 */
 void SendCMDDIFENCE			(void);									/* 防御 */
 void SendCMDTHROWSNOW		(void);									/* 雪を投げる */
@@ -3292,6 +3293,27 @@ void SendCmdCHAR_TAIL(DWORD dwTblIDTarget)
 
 	Packet.Make (pChar->dwTblID, dwTblIDTarget, CHAR_TAIL_REQ);
 	cliSock.Send (Packet.Get (), Packet.GetSize ());
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdADMINUNDO													 */
+/* 内容：コマンド送信(管理者画面の「元に戻す」)								 */
+/*       byCmdSub: ADMINUNDO_SCREEN（開いている画面の通知）・				 */
+/*                 ADMINUNDO_INFOREQ（戻せる変更の問い合わせ）・			 */
+/*                 ADMINUNDO_EXEC（dwStepID の変更を元に戻す）				 */
+/* ========================================================================= */
+void SendCmdADMINUNDO(BYTE byCmdSub, BYTE byScreen, DWORD dwStepID)
+{
+	CMDPARA_ADMINUNDO Para;
+
+	ZeroMemory (&Para, sizeof (Para));
+	Para.byCmd		= CMD_ADMINUNDO;
+	Para.byCmdSub	= byCmdSub;
+	Para.byScreen	= byScreen;
+	Para.dwStepID	= dwStepID;
+
+	/* 案内文の欄はサーバーからの通知だけで使うので送らない */
+	cliSock.Send ((PBYTE)&Para, sizeof (Para) - sizeof (Para.szMsg));
 }
 
 /* Copyright(C)URARA-works 2003-2005 */
