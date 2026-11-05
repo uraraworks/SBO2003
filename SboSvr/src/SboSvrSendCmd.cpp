@@ -67,6 +67,7 @@ void SendCmdSVRINFO				(DWORD);									/* コマンド送信(サーバー情報
 void SendCmdMAPCHARINFO			(DWORD);									/* コマンド送信(マップ内キャラ数通知) */
 void SendCmdNAMECOLOR			(DWORD);									/* コマンド送信(名前の色設定) */
 void SendCmdSHOP				(DWORD, BYTE);								/* コマンド送信(店情報) */
+void SendCmdSHOPMap				(DWORD, BYTE);								/* コマンド送信(店情報・マップ指定) */
 void SendCmdEFC					(BYTE);										/* コマンド送信(エフェクト情報更新) */
 void SendCmdEFCINFO				(DWORD);									/* コマンド送信(エフェクト情報通知) */
 void SendCmdCHARSTATUS			(DWORD, DWORD);								/* コマンド送信(キャラステータス通知) */
@@ -1501,6 +1502,8 @@ void SendCmdCHGCEF(DWORD pIDSend, WORD wNo)
 	dwSendSize += (pComEfc->byAnimeCount * sizeof (COMEFCANIMEINFO));
 
 	pSendData = new BYTE[dwSendSize];
+	/* 構造体のすき間も 0 にしておく（「元に戻す」が送信データで同じ状態かを比べるので） */
+	ZeroMemory (pSendData, dwSendSize);
 	((PCMDPARA_CHGCEF)pSendData)->byCmd = CMD_CHGCEF;
 	((PCMDPARA_CHGCEF)pSendData)->wCount = wNo;
 	pSend = (PCOMEFCINFO)(pSendData + sizeof (CMDPARA_CHGCEF));
@@ -1839,16 +1842,30 @@ void SendCmdNAMECOLOR(DWORD dwID)
 /* ========================================================================= */
 void SendCmdSHOP(DWORD dwID, BYTE byNo)
 {
-	PCHARINFO pChar = g_aCharInfo[dwID];
+	SendCmdSHOPMap (g_aCharInfo[dwID]->dwMapID, byNo);
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdSHOPMap													 */
+/* 内容：コマンド送信(店情報・マップ指定)									 */
+/*       そのマップにいるプレイヤーに送る									 */
+/* ========================================================================= */
+void SendCmdSHOPMap(DWORD dwMapID, BYTE byNo)
+{
 	PCMDPARA_SHOP pSendData;
 	DWORD dwSize = sizeof (CMDPARA_SHOP);
-	PMAPINFO pMap = g_aMapInfo[pChar->dwMapID];
-	PSHOPINFO pShop = &pMap->pShopInfo[byNo];
+	PMAPINFO pMap;
+	PSHOPINFO pShop;
 	int i;
 
-	if (pShop == NULL) {
+	if (dwMapID >= (DWORD)g_aMapInfo.GetSize ()) {
 		return;
 	}
+	pMap = g_aMapInfo[dwMapID];
+	if ((pMap->pShopInfo == NULL) || (byNo >= pMap->byCountShop)) {
+		return;
+	}
+	pShop = &pMap->pShopInfo[byNo];
 
 	/* 送信データサイズ計算 */
 	for (i = 0; i < MAX_SHOPMSG; i ++) {
@@ -1875,7 +1892,7 @@ void SendCmdSHOP(DWORD dwID, BYTE byNo)
 		}
 	}
 
-	SendCmdInsideMap (pChar->dwMapID, pData, dwSize);
+	SendCmdInsideMap (dwMapID, pData, dwSize);
 	delete pSendData;
 }
 
@@ -3106,6 +3123,28 @@ void SendCmdCHAR_STATEINFO(DWORD pIDSend, DWORD dwTblID)
 
 	Packet.Make (pChar);
 	svrSock.SendTo (pIDSend, Packet.Get (), Packet.GetSize (), SENDTIMEOUT);
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdADMINUNDO													 */
+/* 内容：コマンド送信(管理者画面の「元に戻す」)								 */
+/* ========================================================================= */
+void SendCmdADMINUNDO(DWORD pIDSend, BYTE byCmdSub, BYTE byScreen, BYTE byResult, WORD wCount, DWORD dwStepID, LPCSTR pszMsg)
+{
+	CMDPARA_ADMINUNDO Para;
+
+	ZeroMemory (&Para, sizeof (Para));
+	Para.byCmd		= CMD_ADMINUNDO;
+	Para.byCmdSub	= byCmdSub;
+	Para.byScreen	= byScreen;
+	Para.byResult	= byResult;
+	Para.wCount		= wCount;
+	Para.dwStepID	= dwStepID;
+	if (pszMsg) {
+		SboTextCopy (Para.szMsg, sizeof (Para.szMsg), pszMsg);
+	}
+
+	svrSock.SendTo (pIDSend, (PBYTE)&Para, sizeof (Para));
 }
 
 /* Copyright(C)URARA-works 2003-2005 */

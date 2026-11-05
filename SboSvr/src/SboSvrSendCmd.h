@@ -59,6 +59,8 @@ extern void SendCmdSVRINFO				(DWORD);										/* コマンド送信(サーバ�
 extern void SendCmdMAPCHARINFO			(DWORD);										/* コマンド送信(マップ内キャラ数通知) */
 extern void SendCmdNAMECOLOR			(DWORD);										/* コマンド送信(名前の色設定) */
 extern void SendCmdSHOP					(DWORD, BYTE);									/* コマンド送信(店情報) */
+extern void SendCmdSHOPMap				(DWORD, BYTE);									/* コマンド送信(店情報・マップ指定) */
+extern void SendCmdADMINUNDO			(DWORD, BYTE, BYTE, BYTE, WORD, DWORD, LPCSTR);	/* コマンド送信(管理者画面の「元に戻す」) */
 extern void SendCmdEFC					(BYTE);											/* コマンド送信(エフェクト情報通知) */
 extern void SendCmdEFCINFO				(DWORD);										/* コマンド送信(エフェクト情報通知) */
 extern void SendCmdCHARSTATUS			(DWORD, DWORD);									/* コマンド送信(キャラステータス通知) */
