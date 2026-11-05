@@ -319,6 +319,10 @@ Module['sboNet'] = (function () {
 		if (Module['sboFeedback'] && Module['sboFeedback'].handleHttp(req, res, url)) {
 			return;
 		}
+		/* AI 支援用のデータ API と MCP の入口（sbosvr_data.js）。/api/ の受け持ちより先に見る */
+		if (Module['sboData'] && Module['sboData'].handleHttp(req, res, url)) {
+			return;
+		}
 		/* アカウント関係の API（sbosvr_account.js） */
 		if (Module['sboAccount'] && Module['sboAccount'].handleHttp(req, res, url)) {
 			return;

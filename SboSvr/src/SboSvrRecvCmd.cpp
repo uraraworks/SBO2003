@@ -5851,6 +5851,55 @@ void RecvDataProcCHGEQU(PBYTE pData, DWORD dwDataSize)
 }
 
 /* ========================================================================= */
+/* 関数名：ApplyStTmpToChars												 */
+/* 内容：ステータステンプレートを使っているキャラへ反映する					 */
+/*       （管理者ウィンドウと AI 用データ API（server/web_data_svr.cpp）から呼ぶ） */
+/* ========================================================================= */
+void ApplyStTmpToChars(DWORD dwID)
+{
+	if (dwID >= (DWORD)g_aStTmpInfo.GetSize ()) {
+		return;
+	}
+	PSTATUSTEMPLATEINFO pInfo = g_aStTmpInfo[dwID];
+	for (int i = 0; i < g_aCharInfo.GetSize (); i ++) {
+		PCHARINFO pChar = g_aCharInfo[i];
+		/* テンプレートは指定されていない？ */
+		if (pChar->dwStTmplateID == -1) {
+			continue;
+		}
+		/* 別のテンプレートを使っている？（以前は全テンプレートのキャラを上書きしていた） */
+		if (pChar->dwStTmplateID != dwID) {
+			continue;
+		}
+		/* 発生元？ */
+		if (pChar->byNpcType == NPCTYPE_PUT) {
+			continue;
+		}
+		pChar->byLevel		= pInfo->byLevel;
+		pChar->byPW			= pInfo->byPW;
+		pChar->byDEX		= pInfo->byDEX;
+		pChar->byST			= pInfo->byST;
+		pChar->byIT			= pInfo->byIT;
+		pChar->byLK			= pInfo->byLK;
+		pChar->chAttrFire	= pInfo->chAttrFire;
+		pChar->chAttrWater	= pInfo->chAttrWater;
+		pChar->chAttrWind	= pInfo->chAttrWind;
+		pChar->chAttrEarth	= pInfo->chAttrEarth;
+		pChar->chAttrLight	= pInfo->chAttrLight;
+		pChar->chAttrDark	= pInfo->chAttrDark;
+		pChar->byNpcType	= pInfo->byNpcType;
+		pChar->wMaxHP		= pInfo->wMaxHP;
+		pChar->wHP			= pInfo->wMaxHP;
+		pChar->wMaxMana		= pInfo->wMaxMana;
+		pChar->wMana		= pInfo->wMaxMana;
+		pChar->wDFMagic		= pInfo->wDFMagic;
+		pChar->dwGold		= pInfo->dwGold;
+		pChar->dwExp		= pInfo->dwExp;
+		CopyMemory (pChar->waItem, pInfo->waItem, sizeof (pChar->waItem));
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcSTTMPLATE											 */
 /* 内容：受信データ処理(ステータステンプレート情報)							 */
 /* 日付：2003/10/25															 */
@@ -5890,38 +5939,7 @@ void RecvDataProcSTTMPLATE(PBYTE pData, DWORD dwDataSize)
 			SendCmdSTTMPLATE (pPara->dwTblID, CMDSTTMPLATETYPE_CHG);
 
 			/* 更新されたテンプレートを使用しているキャラのデータを更新 */
-			for (int i = 0; i < g_aCharInfo.GetSize (); i ++) {
-				PCHARINFO pChar = g_aCharInfo[i];
-				/* テンプレートは指定されていない？ */
-				if (pChar->dwStTmplateID == -1) {
-					continue;
-				}
-				/* 発生元？ */
-				if (pChar->byNpcType == NPCTYPE_PUT) {
-					continue;
-				}
-				pChar->byLevel		= pInfo->byLevel;
-				pChar->byPW			= pInfo->byPW;
-				pChar->byDEX		= pInfo->byDEX;
-				pChar->byST			= pInfo->byST;
-				pChar->byIT			= pInfo->byIT;
-				pChar->byLK			= pInfo->byLK;
-				pChar->chAttrFire	= pInfo->chAttrFire;
-				pChar->chAttrWater	= pInfo->chAttrWater;
-				pChar->chAttrWind	= pInfo->chAttrWind;
-				pChar->chAttrEarth	= pInfo->chAttrEarth;
-				pChar->chAttrLight	= pInfo->chAttrLight;
-				pChar->chAttrDark	= pInfo->chAttrDark;
-				pChar->byNpcType	= pInfo->byNpcType;
-				pChar->wMaxHP		= pInfo->wMaxHP;
-				pChar->wHP			= pInfo->wMaxHP;
-				pChar->wMaxMana		= pInfo->wMaxMana;
-				pChar->wMana		= pInfo->wMaxMana;
-				pChar->wDFMagic		= pInfo->wDFMagic;
-				pChar->dwGold		= pInfo->dwGold;
-				pChar->dwExp		= pInfo->dwExp;
-				CopyMemory (pChar->waItem, pInfo->waItem, sizeof (pChar->waItem));
-			}
+			ApplyStTmpToChars (pPara->dwTblID);
 		}
 		break;
 	}

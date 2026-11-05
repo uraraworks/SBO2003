@@ -8,6 +8,13 @@
 		reverse_proxy sbo2003-staging:8080
 	}
 
+	# AI 用のデータ API と MCP の入口。AI のツールは Authorization ヘッダーに AI 用キーを
+	# 入れて来るので Basic 認証とぶつかる。ここも Basic 認証の外に置く（AI 用キーで守られる）。
+	@ai path /mcp /api/data/*
+	handle @ai {
+		reverse_proxy sbo2003-staging:8080
+	}
+
 	handle {
 		basic_auth {
 			@@BASIC_USER@@ @@BASIC_HASH@@
