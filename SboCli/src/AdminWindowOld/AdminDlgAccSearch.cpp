@@ -66,7 +66,7 @@ void CloseDlgAccSearch(void)
 void AccSearchSetTblID(DWORD dwTblID)
 {
 	HWND hWndTmp;
-	char szTmp[MAX_CHARNAME * 2];
+	char szTmp[MAX_CHARNAMEBUF];
 
 	wsprintf (szTmp, "%d", dwTblID);
 	hWndTmp = GetDlgItem (s_hWndDlg, IDC_TBLID);
@@ -130,7 +130,7 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 			BYTE byTmp;
 			HWND hWndTmp;
 			DWORD dwTblID;
-			char szTmp[MAX_CHARNAME * 2];
+			char szTmp[MAX_CHARNAMEBUF];
 
 			ZeroMemory (szTmp, sizeof (szTmp));
 			hWndTmp = GetDlgItem (hWnd, IDC_CHARNAME);

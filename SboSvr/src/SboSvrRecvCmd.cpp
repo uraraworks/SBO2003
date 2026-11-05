@@ -5695,7 +5695,7 @@ void RecvDataProcTARGETCHAR(PBYTE pData, DWORD dwDataSize)
 			} else {
 				/* 名前と色のコピー */
 				/* 名前の先頭を表示幅 4（全角 2 文字）まで */
-				char szTmp[MAX_CHARNAME * 2];
+				char szTmp[MAX_CHARNAMEBUF];
 				ZeroMemory (szTmp, sizeof (szTmp));
 				CopyMemory (szTmp, pChar->szName, SboTextFitWidth (pChar->szName, 4));
 				wsprintf (pCharTmp->szName, "[%s]", szTmp);

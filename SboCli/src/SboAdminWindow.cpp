@@ -1102,7 +1102,7 @@ LRESULT WINAPI WndProcAdminWindow(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPa
 				ZeroMemory (&item, sizeof (item));
 				item.mask = LVIF_TEXT;
 				item.iItem = i;
-				char szTmp[MAX_CHARNAME * 2];
+				char szTmp[MAX_CHARNAMEBUF];
 
 				/* 名前 */
 				ZeroMemory (szTmp, sizeof (szTmp));
@@ -2618,7 +2618,7 @@ void AdminOnCommandCharStatus(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 				&m_hWndEdit15,
 				&m_hWndEdit16
 			};
-			char szTmp[MAX_CHARNAME * 2];
+			char szTmp[MAX_CHARNAMEBUF];
 
 			/* 名前 */
 			ZeroMemory (pInfo->szName, sizeof (pInfo->szName));
@@ -7924,7 +7924,7 @@ void MakeAdminWndCharStatus(void)
 		ZeroMemory (&item, sizeof (item));
 		item.mask = LVIF_TEXT;
 		item.iItem = i;
-		char szTmp[MAX_CHARNAME * 2];
+		char szTmp[MAX_CHARNAMEBUF];
 
 		/* 名前 */
 		ZeroMemory (szTmp, sizeof (szTmp));
