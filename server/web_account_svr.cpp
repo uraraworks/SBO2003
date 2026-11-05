@@ -13,6 +13,7 @@
  *            SboWebAccSetPassword 復旧したアカウントのパスワードを変える
  *            SboWebAccRename      キャラ名を変える（確かめるだけもできる）
  *            SboWebAdminSearch    管理ページのキャラ検索（キャラ名・アカウント名の一部）
+ *            SboWebAdminOnline    管理ページのログイン中プレイヤー一覧（キャラ名・今いるマップ）
  *
  * パスワードは C 側の外へ出さない（照合もここで行う）。
  * キャラ名はゲームの中でも UTF-8 で持っている（JS とも UTF-8 でやり取りする）。
@@ -22,8 +23,11 @@
 #include <emscripten.h>
 #include <ctype.h>
 #include <string>
+#include <vector>
+#include <algorithm>
 
 extern BOOL SaveCharInfo(void);
+extern int GetMapNo(DWORD dwID);		/* SboSvrRecvCmd.cpp（見つからなければ -1） */
 
 /* 文字コード（platform/w32_sjis.cpp。ゲーム内の文字列は UTF-8） */
 std::string W32TextToUtf8Str(const char *psz, int nLen = -1);
@@ -399,5 +403,74 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebAdminSearch(const char *pszKey
 		nHit ++;
 	}
 	s_strResult = "{\"results\":[" + strOut + "],\"more\":" + (bMore ? "true" : "false") + "}";
+	return s_strResult.c_str();
+}
+
+/*
+ * 管理ページの「ログイン中のプレイヤー」一覧
+ *   オンライン数（g_dwOnline）と同じ数え方で、ゲームに入っている人だけを出す。
+ *   結果: {"players":[{"account","name","level","admin","mapID","mapName","x","y","playMinutes","loginMs"}],"online":N}
+ *   並びはマップ ID 順、同じマップの中はキャラ名順。
+ */
+extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebAdminOnline(void)
+{
+	struct ONLINEINFO {
+		DWORD		dwMapID;
+		std::string	strName;
+		std::string	strJson;
+	};
+	std::vector<ONLINEINFO> aInfo;
+	int i, nCount = g_aCharInfo.GetSize(), nMap;
+	char sz[256];
+
+	for (i = 0; i < nCount; i ++) {
+		PCHARINFO pChar = g_aCharInfo[i];
+		if (!IsPlayerChar(pChar) || (pChar->pID == 0)) {
+			continue;
+		}
+		/* ログイン画面・キャラ選択中の人は数えない（SboSvr.cpp の g_dwOnline -- と同じ条件） */
+		if ((pChar->byGameState < GAMESTATE_MOVE) || (pChar->byGameState == GAMESTATE_NPC)) {
+			continue;
+		}
+		ONLINEINFO info;
+		DWORD dwPlayMinutes = pChar->dwPlayTime;
+		DWORD dwLoginMs = 0;
+		if (pChar->dwTimeLogin > 0) {
+			dwLoginMs = timeGetTime() - pChar->dwTimeLogin;
+			dwPlayMinutes += dwLoginMs / 60000;
+		}
+		std::string strMapName;
+		nMap = GetMapNo(pChar->dwMapID);
+		if ((nMap >= 0) && g_aMapInfo[nMap]->pszName) {
+			strMapName = W32TextToUtf8Str(g_aMapInfo[nMap]->pszName);
+		}
+		info.dwMapID = pChar->dwMapID;
+		info.strName = W32TextToUtf8Str(pChar->szName);
+		info.strJson = "{\"account\":" + JsonStr(pChar->szAcc) + ",\"name\":" + JsonStr(info.strName);
+		snprintf(sz, sizeof(sz),
+				",\"level\":%d,\"admin\":%s,\"mapID\":%u,\"x\":%u,\"y\":%u,\"playMinutes\":%u,\"loginMs\":%u",
+				pChar->byLevel, (pChar->byAdminLV != ADMINLV_USER) ? "true" : "false",
+				(unsigned)pChar->dwMapID, (unsigned)pChar->dwX, (unsigned)pChar->dwY,
+				(unsigned)dwPlayMinutes, (unsigned)dwLoginMs);
+		info.strJson += sz;
+		info.strJson += ",\"mapName\":" + JsonStr(strMapName) + "}";
+		aInfo.push_back(info);
+	}
+	std::sort(aInfo.begin(), aInfo.end(), [](const ONLINEINFO &a, const ONLINEINFO &b) {
+		if (a.dwMapID != b.dwMapID) {
+			return a.dwMapID < b.dwMapID;
+		}
+		return a.strName < b.strName;
+	});
+
+	s_strResult = "{\"players\":[";
+	for (size_t n = 0; n < aInfo.size(); n ++) {
+		if (n) {
+			s_strResult += ",";
+		}
+		s_strResult += aInfo[n].strJson;
+	}
+	snprintf(sz, sizeof(sz), "],\"online\":%u}", (unsigned)g_dwOnline);
+	s_strResult += sz;
 	return s_strResult.c_str();
 }
