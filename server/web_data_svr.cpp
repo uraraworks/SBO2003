@@ -1462,6 +1462,20 @@ static std::string MapJson(PMAPINFO pMap)
 	return out;
 }
 
+/* マップパーツ 1 件（アニメするパーツはコマごとの画像も。画面に出るのは 1 コマ目から） */
+static std::string MapPartsJson(PMAPPARTSINFO pParts)
+{
+	std::string out = FieldsJson((const BYTE *)pParts, s_aFieldMapParts, COUNTOF(s_aFieldMapParts));
+	out += ",\"anime\":[";
+	for (int i = 0; pParts->pAnimeInfo && i < pParts->byAnimeCount; i ++) {
+		PANIMEINFO pAnime = &pParts->pAnimeInfo[i];
+		if (i) out += ",";
+		out += "{\"byWait\":" + JsonNum(pAnime->byWait) + ",\"byLevel\":" + JsonNum(pAnime->byLevel) +
+				",\"wGrpID\":" + JsonNum(pAnime->wGrpID) + ",\"wBackID\":" + JsonNum(pAnime->wBackID) + "}";
+	}
+	return out + "]";
+}
+
 static const DATAFIELD s_aFieldComEfc[] = {
 	FLD (COMEFCINFO, bySound,			"鳴らす音",				FT_U8, RO, NULL),
 };
@@ -1708,6 +1722,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataSchema(void)
 			break;
 		case KIND_MAPPARTS:
 			out += FieldSchemaJson(s_aFieldMapParts, COUNTOF(s_aFieldMapParts));
+			out.insert(out.size() - 1, ",{\"name\":\"anime\",\"type\":\"object[]\",\"label\":\"アニメのコマ（byWait=待ち時間×10ミリ秒・byLevel=透明度・wGrpID=画像ID・wBackID=背景ID）\"}");
 			break;
 		case KIND_EFC:
 			out += FieldSchemaJson(s_aFieldEfc, COUNTOF(s_aFieldEfc));
@@ -1801,7 +1816,7 @@ static std::string RecordJson(int nKind, int nID)
 		out += MapJson(g_aMapInfo[nID]);
 		break;
 	case KIND_MAPPARTS:
-		out += FieldsJson((const BYTE *)&g_aMapPartsInfo[nID], s_aFieldMapParts, COUNTOF(s_aFieldMapParts));
+		out += MapPartsJson(&g_aMapPartsInfo[nID]);
 		break;
 	case KIND_EFC:
 		{

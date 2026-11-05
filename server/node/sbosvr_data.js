@@ -49,6 +49,8 @@
  *   /api/admin/ai/revoke   {session, id}                      → {ok}
  *   /api/admin/ai/history  {session, kind?, limit?}           → {entries:[...]}
  *   /api/admin/ai/undo     {session, historyId, force?, previewId?} → 上の undo と同じ
+ *   /api/admin/data/list   {session, kind, offset?, limit?}   → 上の list と同じ（マップ資料の書き出し用。読むだけ）
+ *   /api/admin/data/tiles  {session, id, x?, y?, w?, h?}      → 上の tiles と同じ
  */
 Module['sboData'] = (function () {
 	var fs = require('fs');
@@ -1036,7 +1038,10 @@ Module['sboData'] = (function () {
 		'/api/admin/ai/issue': apiAdminIssue,
 		'/api/admin/ai/revoke': apiAdminRevoke,
 		'/api/admin/ai/history': function (body) { adminWho(body); return opHistory(body); },
-		'/api/admin/ai/undo': function (body) { return opUndo(body, adminWho(body)); }
+		'/api/admin/ai/undo': function (body) { return opUndo(body, adminWho(body)); },
+		/* マップ資料の書き出し（管理ページの「マップ資料」）。読むだけ */
+		'/api/admin/data/list': function (body) { adminWho(body); return opList(body); },
+		'/api/admin/data/tiles': function (body) { adminWho(body); return opTiles(body); }
 	};
 
 	function run(fn, body, req, res, who) {
