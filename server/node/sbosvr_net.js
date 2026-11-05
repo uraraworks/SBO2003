@@ -412,6 +412,10 @@ Module['sboNet'] = (function () {
 			nHttpPort = port;
 			strWwwDir = www ? path.resolve(www) : '';
 		},
+		/* 配るフォルダ（sbosvr_mapdesign.js がパーツ図鑑の最初の下書きを読む） */
+		wwwDir: function () {
+			return strWwwDir;
+		},
 		listen: function (port) {
 			var tcp = net.createServer(onTcp);
 			tcp.on('error', function (e) {

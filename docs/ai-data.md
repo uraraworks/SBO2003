@@ -92,8 +92,30 @@
 | `sbo_map_tiles` | マップのマス目 |
 | `sbo_update` / `sbo_add` | 変更・追加（2 段階） |
 | `sbo_history` / `sbo_undo` | 変更履歴・元に戻す（2 段階） |
+| `sbo_parts_dex` / `sbo_parts_samples` | パーツ図鑑・組み合わせの見本（下の「マップづくりの手伝い」） |
+| `sbo_parts_dex_update` | パーツ図鑑の名前・タグ・説明・見本を変える（書き込みもできるキーだけ） |
+| `sbo_plan_save` / `sbo_plan_list` / `sbo_plan_get` / `sbo_plan_delete` | 配置案（ゲームのデータは変えないので、読むだけのキーでも使える） |
 
 読むだけのキーでは、書き込みのツールは出てきません。
+
+## マップづくりの手伝い（パーツ図鑑・配置案）
+
+マップパーツ（マス目に入る番号）には名前も意味も無いので、AI が新しい街やダンジョンを考えられるように、
+**パーツ図鑑** と **配置案** を用意しています（`server/node/sbosvr_mapdesign.js`・管理ページの「パーツ図鑑」「配置案」タブ）。
+どちらもゲームのデータは変えません。
+
+- **パーツ図鑑**（`SBODATA/SboWebPartsDex.json`）… パーツごとの名前・タグ・使い方のメモと、組み合わせの見本（壁で囲った部屋など）。
+  データから自動で分かること（通れるか・上を歩くと消えるか・全マップで使われた回数・よく使われているマップ・よく上下左右に来るパーツ）も一緒に返します。
+  ファイルが無い時は、管理ページと一緒に配る `web/account/parts-dex-seed.json`（よく使われている約 230 個の名前と見本 3 つの下書き）から始めます。
+  管理ページで直すか、書き込みもできるキーの AI が `sbo_parts_dex_update` で直します。
+- **配置案**（`SBODATA/SboWebMapPlans.json`）… AI が `sbo_plan_save` で保存したマス目（最大 128×128・200 件まで）。
+  管理ページの「配置案」で、パーツ番号・マス目の線・書き込み（marks）を重ねた画像で見られ、PNG と番号の表（タブ区切り）で持ち出せます。
+  気に入った案は、それを見ながら管理者ウィンドウで実際に置きます。
+
+AI への頼み方の例:「sbo_parts_dex で水・壁・床のパーツを調べて、見本も参考に、港町の市場の配置案を 40×30 で作って sbo_plan_save で保存して」
+
+HTTP では `/api/data/parts/dex`・`/api/data/parts/samples`・`/api/data/parts/update`・`/api/data/plans/save`・`/api/data/plans/list`・
+`/api/data/plans/get`・`/api/data/plans/delete`（引数は MCP のツールと同じ）。
 
 ## ステージング
 
@@ -106,4 +128,7 @@
 | --- | --- |
 | `server/web_data_svr.cpp` | データそのものの読み書き（項目の表・範囲の確かめ・反映と保存） |
 | `server/node/sbosvr_data.js` | キー・下見・履歴・元に戻す・HTTP の API・MCP |
+| `server/node/sbosvr_mapdesign.js` | パーツ図鑑・配置案（同じキー・同じ MCP にツールを足す） |
+| `web/account/admin-design.js` | 管理ページの「パーツ図鑑」「配置案」タブ |
+| `web/account/parts-dex-seed.json` | パーツ図鑑の最初の下書き |
 | `web/account/admin.html` | 管理ページの「AI連携」タブ |
