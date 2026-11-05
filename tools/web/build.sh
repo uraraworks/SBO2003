@@ -36,7 +36,7 @@ fi
 mkdir -p "$OBJ" "$DIST" "$GEN"
 
 echo "[build] 1/3 前処理"
-python3 "$ROOT/tools/web/sjis_prepass.py" -I SboCli "$ROOT" "$SRC" SboCli common SboSoundData SboGrpData >/dev/null
+python3 "$ROOT/tools/web/src_prepass.py" -I SboCli "$ROOT" "$SRC" SboCli common SboSoundData SboGrpData >/dev/null
 
 echo "[build] 2/3 リソース表"
 python3 "$ROOT/tools/web/gen_resources.py" "$ROOT" "$GEN"

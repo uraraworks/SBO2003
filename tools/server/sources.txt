@@ -34,6 +34,7 @@ SboSvr/src/SaveLoad/SboSvrSaveLoadStTmpInfo.cpp
 SboSvr/src/SaveLoad/SboSvrSaveLoadSubGameInfo.cpp
 SboSvr/src/SaveLoad/SimpleDB.cpp
 SboSvr/src/SboSvr.cpp
+SboSvr/src/SboSvrDataUtf8.cpp
 SboSvr/src/SboSvrBattleProc.cpp
 SboSvr/src/SboSvrCharInfoTimerProc.cpp
 SboSvr/src/SboSvrDrawWindow.cpp

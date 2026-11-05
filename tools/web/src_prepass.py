@@ -1,25 +1,22 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-UTF-8 のソースを、実行時の文字コードが Shift-JIS(CP932) のまま em++(clang) で
-コンパイルできる形に変換して別ディレクトリへ書き出す前処理ツール。
+UTF-8 のソースを em++(clang) でコンパイルできる形に整えて別ディレクトリへ書き出す前処理ツール。
 
-なぜ必要か:
-  - ソースは UTF-8 だが、実行時の文字コードは SJIS のまま保ちたい
-    （.dat データやサーバーとの通信が SJIS のため）。
-  - clang には MSVC の /execution-charset:shift_jis に当たるオプションが無い。
+もとは文字列リテラルを Shift-JIS(CP932) に置き換えるためのツールだったが、
+ゲーム内部の文字コードを UTF-8 にした（UTF-8 対応の段階 3）ので、今は文字列はそのまま通す。
+Windows(VC6) 由来のソースをそのまま通すための手直しだけをする。
 
 変換ルール:
-  - コメント     : そのまま
-  - 文字列/文字リテラル : ASCII 以外の文字は CP932 のバイト列を 8 進エスケープ(\\ooo)で書く
-                    → 実行時のバイト列は VC6 でビルドした時と同じ SJIS になる
-  - #include "..." : '\\' を '/' に直し、大文字小文字の違いを実在するパスに合わせる
+  - コメント・文字列     : そのまま（UTF-8 のまま）
+  - #include "..."       : '\\' を '/' に直し、大文字小文字の違いを実在するパスに合わせる
+  - コード中の全角空白   : タブにする
   - 行数は変えないので、コンパイルエラーの行番号は元ファイルと一致する
     （先頭に #line を入れて、エラー表示のファイル名も元ファイルにする）
 
 使い方:
-  sjis_prepass.py [-I <インクルードディレクトリ>]... <リポジトリルート> <出力先> <ディレクトリ>...
-  例: sjis_prepass.py -I SboCli . out/web/src SboCli common SboSoundData
+  src_prepass.py [-I <インクルードディレクトリ>]... <リポジトリルート> <出力先> <ディレクトリ>...
+  例: src_prepass.py -I SboCli . out/web/src SboCli common SboSoundData
 """
 
 import os
@@ -27,15 +24,6 @@ import re
 import sys
 
 EXTS = ('.cpp', '.c', '.h', '.hpp', '.inl')
-
-
-def octal_escape(ch):
-	"""1 文字を CP932 にエンコードして 8 進エスケープ列にする"""
-	try:
-		raw = ch.encode('cp932')
-	except UnicodeEncodeError:
-		raw = ch.encode('utf-8')
-	return ''.join('\\%03o' % b for b in raw)
 
 
 def resolve_include(base_dir, inc):
@@ -104,7 +92,7 @@ def fix_include_line(line, src_dir):
 
 
 def convert(text, src_dir):
-	"""CP932 デコード済みテキストを変換する"""
+	"""デコード済みテキストを変換する"""
 	out = []
 	i = 0
 	n = len(text)
@@ -144,14 +132,14 @@ def convert(text, src_dir):
 					if d == '\\' and i + 1 < n:
 						out.append(d)
 						e = text[i + 1]
-						out.append(e if ord(e) < 0x80 else octal_escape(e))
+						out.append(e)
 						i += 2
 						continue
 					if d == quote or d == '\n':
 						out.append(d)
 						i += 1
 						break
-					out.append(d if ord(d) < 0x80 else octal_escape(d))
+					out.append(d)
 					i += 1
 				continue
 			if c == '\n':
@@ -192,7 +180,7 @@ def process_file(src, dst, rel):
 	except UnicodeDecodeError:
 		# 古い SJIS のファイルが残っていた場合も読めるようにしておく
 		text = raw.decode('cp932', errors='replace')
-		print('[sjis-prepass] 警告: UTF-8 ではないファイルです(CP932 として読みました): ' + rel, file=sys.stderr)
+		print('[src-prepass] 警告: UTF-8 ではないファイルです(CP932 として読みました): ' + rel, file=sys.stderr)
 	if text.startswith('﻿'):
 		text = text[1:]
 	text = text.replace('\r\n', '\n')
@@ -235,7 +223,7 @@ def main():
 				total += 1
 				if process_file(src, dst, rel):
 					changed += 1
-	print('[sjis-prepass] %d ファイル中 %d ファイルを更新しました' % (total, changed))
+	print('[src-prepass] %d ファイル中 %d ファイルを更新しました' % (total, changed))
 	return 0
 
 

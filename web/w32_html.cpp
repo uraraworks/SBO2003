@@ -10,7 +10,7 @@
  *    ずれない。文字の大きさは --w32-scale（実際の表示幅 ÷ 画面の幅）で合わせる。
  *  - 入力欄でのキー操作は W32JsOnKey に入力欄の番号付きで渡すので、
  *    ゲーム側のサブクラス化したプロシージャで Enter などを受け取れる。
- *  - 文字列は C 側では SJIS、HTML 側では UTF-8。
+ *  - 文字列は C 側も HTML 側も UTF-8（C 側から渡す時は W32TextToUtf8Str で整える）。
  *
  * 小窓（メニュー付きのウィンドウ・ダイアログ）
  *  - ページの上に、タイトル・メニューバー付きの枠（div）を出す。中のウィンドウは
@@ -296,12 +296,12 @@ static void PopupUpdate(W32Wnd *pWnd)
 			pWnd->bVisible, pWnd->bEnabled, pWnd->nCheck, 0);
 }
 
-void W32HtmlItems(W32Wnd *pWnd, int nOp, int nIndex, const char *pszSjis)
+void W32HtmlItems(W32Wnd *pWnd, int nOp, int nIndex, const char *pszText)
 {
 	if (pWnd->nHtmlID == 0) {
 		return;
 	}
-	W32JsPopItems(pWnd->nHtmlID, nOp, nIndex, W32SjisToUtf8Str(pszSjis ? pszSjis : "").c_str());
+	W32JsPopItems(pWnd->nHtmlID, nOp, nIndex, W32TextToUtf8Str(pszText ? pszText : "").c_str());
 }
 
 void W32HtmlScroll(W32Wnd *pWnd)
@@ -322,13 +322,13 @@ void W32HtmlListView(W32Wnd *pWnd, int nOp, int nRow, int nCol)
 	switch (nOp) {
 	case 1:		/* 列 */
 		if (nCol >= 0 && nCol < (int)pWnd->aColText.size()) {
-			strText = W32SjisToUtf8Str(pWnd->aColText[nCol].c_str());
+			strText = W32TextToUtf8Str(pWnd->aColText[nCol].c_str());
 			nValue = pWnd->aColWidth[nCol];
 		}
 		break;
 	case 3:		/* 文字 */
 		if (nRow >= 0 && nRow < (int)pWnd->aRows.size() && nCol < (int)pWnd->aRows[nRow].aText.size()) {
-			strText = W32SjisToUtf8Str(pWnd->aRows[nRow].aText[nCol].c_str());
+			strText = W32TextToUtf8Str(pWnd->aRows[nRow].aText[nCol].c_str());
 		}
 		break;
 	case 5:		/* 状態 */
@@ -404,7 +404,7 @@ static void MenuJson(std::string &out, W32Menu *pMenu)
 				item.uID, (item.uFlags & MF_SEPARATOR) ? 1 : 0, (item.uFlags & MF_CHECKED) ? 1 : 0,
 				(item.uFlags & (MF_GRAYED | MF_DISABLED)) ? 1 : 0);
 		out += sz;
-		JsonString(out, W32SjisToUtf8Str(item.strText.c_str()));
+		JsonString(out, W32TextToUtf8Str(item.strText.c_str()));
 		if (item.pSub) {
 			out += ",\"sub\":";
 			MenuJson(out, item.pSub);
@@ -487,10 +487,10 @@ void W32HtmlSetText(W32Wnd *pWnd)
 		return;
 	}
 	if (IsPopupWnd(pWnd)) {
-		W32JsPopText(pWnd->nHtmlID, W32SjisToUtf8Str(pWnd->strText.c_str()).c_str());
+		W32JsPopText(pWnd->nHtmlID, W32TextToUtf8Str(pWnd->strText.c_str()).c_str());
 		return;
 	}
-	W32JsHtmlSetText(pWnd->nHtmlID, W32SjisToUtf8Str(pWnd->strText.c_str()).c_str());
+	W32JsHtmlSetText(pWnd->nHtmlID, W32TextToUtf8Str(pWnd->strText.c_str()).c_str());
 }
 
 void W32HtmlGetText(W32Wnd *pWnd)
@@ -502,7 +502,7 @@ void W32HtmlGetText(W32Wnd *pWnd)
 	if (pszUtf8 == NULL) {
 		return;
 	}
-	pWnd->strText = W32Utf8ToSjisStr(pszUtf8);
+	pWnd->strText = W32Utf8ToTextStr(pszUtf8);
 	free(pszUtf8);
 }
 

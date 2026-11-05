@@ -101,7 +101,7 @@ Windows 版のメッセージログウィンドウは、ブラウザ版ではペ
 
 ```
 ゲームのソース（UTF-8）
-   │ tools/web/sjis_prepass.py   文字列リテラルを SJIS の 8 進エスケープに直す
+   │ tools/web/src_prepass.py    #include のパスや全角空白など、VC6 由来の書き方を直す
    ▼
 out/web/src
    │
@@ -112,8 +112,10 @@ web/          … ブラウザ専用の部分（HTML 部品・入口）
 web/replace   … Windows 専用クラスの Web 版（Windows 版の実装は削除済み）
 ```
 
-- **文字コード**: ソースは UTF-8 ですが、実行時の文字列は Windows 版と同じ SJIS(CP932) のままです。
-  サーバーとの通信やデータファイルが SJIS のためです。ブラウザに渡す時（入力欄・ダイアログ・ログ）だけ UTF-8 に変換します。
+- **文字コード**: ソースもゲーム内部の文字列も UTF-8 です（サーバーとの通信・データファイルも UTF-8）。
+  文字数の計算は `common/SboText` の関数でまとめて行い、表示幅は ASCII と半角カナを 1、それ以外を 2 と数えます。
+  古い Shift_JIS のデータは、サーバーの初回起動時にバックアップ（`SBODATA_SJIS_日時`）を取ってから UTF-8 に変換します
+  （`SboSvr/src/SboSvrDataUtf8.cpp`、変換済みの目印は `SBODATA/SboDataUtf8.txt`）。
 - **画面**: 最初に作られたトップレベルウィンドウを canvas に対応させます。GDI は 32bit DIB に描き、
   描画が終わったら canvas へ転送します。
 - **文字**: BIZ UDゴシック（`web/font/`、SIL Open Font License）を SDL_ttf で 1bit 描画します。
@@ -130,7 +132,7 @@ web/replace   … Windows 専用クラスの Web 版（Windows 版の実装は�
 | --- | --- |
 | `platform/w32_core.cpp` | ウィンドウ・メッセージキュー・タイマー・キーボード/マウス |
 | `platform/w32_gdi.cpp` | DC・ビットマップ・BitBlt・文字描画（文字と画面転送はブラウザ版のみ） |
-| `platform/w32_sjis.cpp` | SJIS ⇔ UTF-8 |
+| `platform/w32_sjis.cpp` | 文字列の境目の処理（ブラウザに渡す前の UTF-8 チェック、古いデータ用の SJIS ⇔ UTF-8） |
 | `platform/w32_file.cpp` | ファイル・INI・LoadLibrary・リソース |
 | `platform/include/` | windows.h などの代わり（中身は `win32compat.h`） |
 | `web/w32_html.cpp` | EDIT / BUTTON を HTML 部品で代用 |

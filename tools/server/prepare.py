@@ -3,7 +3,7 @@
 """
 サーバー（SboSvr）をネイティブ（Mac/Linux）でビルドするための前処理。
 
-  1. SboSvr と common を sjis_prepass.py で <出力先>/src へ書き出す
+  1. SboSvr と common を src_prepass.py で <出力先>/src へ書き出す
      （文字列リテラルを SJIS の 8 進エスケープにする。中身が同じなら書き直さない）
   2. --sources を付けた時は tools/server/sources.txt に載っているソースの一覧を
      <出力先>/sources.cmake に書き出す
@@ -36,7 +36,7 @@ def main():
 	root, dst = os.path.abspath(args[0]), os.path.abspath(args[1])
 	src = os.path.join(dst, 'src')
 
-	subprocess.check_call([sys.executable, os.path.join(root, 'tools', 'web', 'sjis_prepass.py'),
+	subprocess.check_call([sys.executable, os.path.join(root, 'tools', 'web', 'src_prepass.py'),
 		'-I', 'SboSvr', '-I', 'SboSvr/src', root, src, 'SboSvr', 'common'], stdout=subprocess.DEVNULL)
 
 	if '--sources' in sys.argv:
