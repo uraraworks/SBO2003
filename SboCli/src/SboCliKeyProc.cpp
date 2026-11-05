@@ -1923,6 +1923,8 @@ void KeyProcCOMMANDOPTION(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 					PlayBGM (0);
 					pWndTmp = MakeWindowMSG ("音楽再生再開しました。@2", FALSE);
 				}
+				/* アカウントごとに覚えてもらう（次にこのアカウントで入った時もこの設定） */
+				SendCmdWEBACCOUNT (WEBACC_OPTBGM, g_bBGMONOFF ? OPTBGM_ON : OPTBGM_OFF);
 				g_bDraw = TRUE;
 				g_WndInfo.Add (pWndTmp);
 				g_dwActiveMsgID = pWndTmp->dwID;

@@ -17,7 +17,7 @@
 /* ========================================================================= */
 /* コマンド送信 */
 void SendCmdLOGINREQ		(void);									/* ログイン要求 */
-void SendCmdWEBACCOUNT		(BYTE);									/* ブラウザ版のアカウント関係 */
+void SendCmdWEBACCOUNT		(BYTE, BYTE);								/* ブラウザ版のアカウント関係 */
 void SendCmdCHGSTATE		(BYTE);									/* 状態遷移 */
 void SendCmdCHGDIRECTION	(BYTE);									/* 向き変更要求 */
 void SendCmdCHARPOS			(BYTE, BOOL);							/* 移動要求 */
@@ -170,8 +170,9 @@ void SendCmdLOGINREQ(void)
 /* 内容：コマンド送信(ブラウザ版のアカウント関係)							 */
 /*       WEBACC_TOKENLOGIN … g_szWebToken の端末トークンでログイン要求		 */
 /*       WEBACC_TOKENREQ   … ログインできたので端末トークンを発行してもらう	 */
+/*       WEBACC_OPTBGM     … 音楽ON/OFFをアカウントに覚えてもらう(byData)	 */
 /* ========================================================================= */
-void SendCmdWEBACCOUNT(BYTE byCmdSub)
+void SendCmdWEBACCOUNT(BYTE byCmdSub, BYTE byData)
 {
 	CMDPARA_WEBACCOUNT SendData;
 
@@ -179,6 +180,7 @@ void SendCmdWEBACCOUNT(BYTE byCmdSub)
 	SendData.byCmd = CMD_WEBACCOUNT;
 	SendData.byCmdSub = byCmdSub;
 	SendData.pID = g_pMyID;
+	SendData.byData = byData;
 	if (byCmdSub == WEBACC_TOKENLOGIN) {
 		strncpy (SendData.szToken, g_szWebToken, MAX_WEBTOKEN);
 		CopyMemory (SendData.szMacAdr, g_szMacAdr, 6);
