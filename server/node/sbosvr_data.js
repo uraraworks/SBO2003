@@ -5,6 +5,8 @@
 /*
  * 管理者ウィンドウで編集している設定データ（特技・職業とレベルアップ・特技を使える職業・
  * 装備できる職業・ステータステンプレート・アイテム）を、AI から読み書きできるようにする。
+ * セーブデータの残り（キャラ・マップとマス目・マップパーツ・エフェクト・吹き出し・預かり所・サブゲーム）は
+ * 読むだけ（バランス調整のシミュレーションやシナリオ作りの手伝い用）。アカウント名・パスワード・IP・MAC は出さない。
  * データそのものの読み書きは C 側（server/web_data_svr.cpp）が行い、ここは次を受け持つ。
  *
  * 1. AI 用キー
@@ -34,6 +36,7 @@
  *   /api/data/schema    {}                                   → {kinds:[...]}
  *   /api/data/list      {kind, q?, offset?, limit?, fields?} → {kind, total, offset, records:[...]}
  *   /api/data/get       {kind, id}                           → {record}
+ *   /api/data/tiles     {id, x?, y?, w?, h?}                 → マップのマス目（parts・flags・roof、最大 128×128）
  *   /api/data/update    {kind, updates:[{id, changes}], note?, previewId?}
  *   /api/data/add       {kind, records:[{...}], note?, previewId?}
  *   /api/data/history   {kind?, limit?}                      → {entries:[...]}
@@ -70,6 +73,9 @@ Module['sboData'] = (function () {
 		stTmp: 'SboDataStTmpInfo.dat',
 		item: 'SboDataItemInfo.dat'
 	};
+	/* 読むだけの種類（セーブデータの残り。アカウント名・パスワード・IP などは C 側で出さない） */
+	var READONLY_KINDS = ['char', 'map', 'mapParts', 'efc', 'comEfc', 'leave', 'subGame'];
+	var ALL_KINDS = Object.keys(KIND_FILE).concat(READONLY_KINDS);
 
 	var keyStore = null, strKeyPath = '';
 	var histStore = null, strHistPath = '';
@@ -180,8 +186,9 @@ Module['sboData'] = (function () {
 		return JSON.parse(UTF8ToString(callC(_SboWebDataGet, [kind, id])));
 	}
 
-	function applyC(kind, id, changes, bApply) {
-		return JSON.parse(UTF8ToString(callC(_SboWebDataApply, [kind, id, JSON.stringify(changes), bApply ? 1 : 0])));
+	/* source は管理者ウィンドウの「元に戻す」に出る名前 */
+	function applyC(kind, id, changes, bApply, source) {
+		return JSON.parse(UTF8ToString(callC(_SboWebDataApply, [kind, id, JSON.stringify(changes), bApply ? 1 : 0, source || 'API'])));
 	}
 
 	/* ------------------------------------------------------------------ */
@@ -199,8 +206,17 @@ Module['sboData'] = (function () {
 	}
 
 	function checkKind(kind) {
-		if (typeof kind !== 'string' || !KIND_FILE[kind]) {
-			fail(400, 'kind', '知らない種類です（' + Object.keys(KIND_FILE).join(' / ') + '）');
+		if (typeof kind !== 'string' || ALL_KINDS.indexOf(kind) < 0) {
+			fail(400, 'kind', '知らない種類です（' + ALL_KINDS.join(' / ') + '）');
+		}
+		return kind;
+	}
+
+	/* 書き込める種類か */
+	function checkWritableKind(kind) {
+		checkKind(kind);
+		if (!KIND_FILE[kind]) {
+			fail(400, 'readonly', kind + ' は読むだけです（書き込めるのは ' + Object.keys(KIND_FILE).join(' / ') + '）');
 		}
 		return kind;
 	}
@@ -350,17 +366,17 @@ Module['sboData'] = (function () {
 	}
 
 	/* まとめて反映する。途中で失敗したら、それまでに変えたものを元へ戻す */
-	function applyAll(kind, aOp) {
+	function applyAll(kind, aOp, who) {
 		var aDone = [];
 		backupFile(kind);
 		for (var i = 0; i < aOp.length; i++) {
 			var op = aOp[i];
 			var before = op.added ? null : getRecord(kind, op.id);
-			var r = applyC(kind, op.id, op.changes, true);
+			var r = applyC(kind, op.id, op.changes, true, who.label);
 			if (!r.ok) {
 				for (var j = aDone.length - 1; j >= 0; j--) {
 					if (!aDone[j].added) {
-						applyC(kind, aDone[j].id, restorable(kind, aDone[j].before), true);
+						applyC(kind, aDone[j].id, restorable(kind, aDone[j].before), true, who.label);
 					}
 				}
 				fail(400, 'apply', kind + ' の ' + op.id + ' 番を反映できませんでした: ' + r.error +
@@ -393,6 +409,7 @@ Module['sboData'] = (function () {
 		var limit = Math.min(500, Math.max(1, Math.floor(Number(a.limit) || 100)));
 		var q = a.q != null ? String(a.q).slice(0, 64) : '';
 		var aField = Array.isArray(a.fields) ? a.fields.map(String) : null;
+		var match = (a.match && typeof a.match === 'object' && !Array.isArray(a.match)) ? a.match : null;
 		var aOut = [];
 		var nMatch = 0;
 		for (var i = 0; i < total && aOut.length < limit; i++) {
@@ -401,6 +418,9 @@ Module['sboData'] = (function () {
 				continue;
 			}
 			if (q && String(rec.szName || '').indexOf(q) < 0) {
+				continue;
+			}
+			if (match && !Object.keys(match).every(function (f) { return rec[f] === match[f]; })) {
 				continue;
 			}
 			if (nMatch++ < offset) {
@@ -429,9 +449,21 @@ Module['sboData'] = (function () {
 		return { record: rec };
 	}
 
+	/* マップのマス目（map の id で指定。w・h を省くと右下まで、最大 128×128） */
+	function opTiles(a) {
+		var id = checkId(a.id);
+		var n = function (v) { return (typeof v === 'number' && isFinite(v)) ? Math.floor(v) : 0; };
+		var r = JSON.parse(UTF8ToString(_SboWebDataMapTiles(id, n(a.x), n(a.y), n(a.w), n(a.h))));
+		if (r.error) {
+			fail(404, 'not_found', r.error);
+		}
+		r.note = 'parts[行][列] は mapParts の番号、flags はマスのフラグ、roof は屋根レベル。左上が (x, y)';
+		return r;
+	}
+
 	function opUpdate(a, who) {
 		requireWrite(who);
-		var kind = checkKind(a.kind);
+		var kind = checkWritableKind(a.kind);
 		if (!Array.isArray(a.updates) || a.updates.length === 0 || a.updates.length > MAX_ITEMS) {
 			fail(400, 'updates', 'updates は [{id, changes}] の配列で、1〜' + MAX_ITEMS + ' 件にしてください');
 		}
@@ -465,7 +497,7 @@ Module['sboData'] = (function () {
 		}
 		var p = takePreview(a.previewId, 'update', payload, who);
 		checkUnchanged(kind, p.befores);
-		var aDone = applyAll(kind, aOp);
+		var aDone = applyAll(kind, aOp, who);
 		var e = addHistory({ op: 'update', kind: kind, by: who.label, note: String(a.note || '').slice(0, 500), items: aDone });
 		log(who.label + ' が ' + kind + ' を ' + aDone.length + ' 件変更（履歴 ' + e.historyId + '）');
 		return { ok: true, historyId: e.historyId, items: aDone.map(function (d) { return { id: d.id, diff: diff(d.before, d.after) }; }) };
@@ -473,7 +505,7 @@ Module['sboData'] = (function () {
 
 	function opAdd(a, who) {
 		requireWrite(who);
-		var kind = checkKind(a.kind);
+		var kind = checkWritableKind(a.kind);
 		if (!Array.isArray(a.records) || a.records.length === 0 || a.records.length > MAX_ITEMS) {
 			fail(400, 'records', 'records は追加する内容の配列で、1〜' + MAX_ITEMS + ' 件にしてください');
 		}
@@ -506,7 +538,7 @@ Module['sboData'] = (function () {
 		if (count(kind) !== total) {
 			fail(409, 'changed', '下見の後に ' + kind + ' の件数が変わりました。もう一度下見してください。');
 		}
-		var aDone = applyAll(kind, aOp);
+		var aDone = applyAll(kind, aOp, who);
 		var e = addHistory({ op: 'add', kind: kind, by: who.label, note: String(a.note || '').slice(0, 500), items: aDone });
 		log(who.label + ' が ' + kind + ' を ' + aDone.length + ' 件追加（履歴 ' + e.historyId + '）');
 		return { ok: true, historyId: e.historyId, items: aDone.map(function (d) { return { id: d.id, record: d.after }; }) };
@@ -592,7 +624,7 @@ Module['sboData'] = (function () {
 		}
 		var p = takePreview(a.previewId, 'undo', payload, who);
 		checkUnchanged(kind, p.befores);
-		var aDone = applyAll(kind, aOp);
+		var aDone = applyAll(kind, aOp, who);
 		var e2 = addHistory({ op: 'undo', kind: kind, by: who.label, undoOf: hid, note: String(a.note || '').slice(0, 500), items: aDone });
 		e.undoneBy = e2.historyId;
 		writeJsonFile(strHistPath, h);
@@ -723,12 +755,15 @@ Module['sboData'] = (function () {
 	var MCP_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 	var MCP_INSTRUCTIONS =
 		'SBO2003（オンラインRPG）のサーバーの設定データ（特技・職業とレベルアップ・特技を使える職業・装備できる職業・' +
-		'ステータステンプレート・アイテム）を読み書きできます。まず sbo_schema で種類と項目の意味を確かめてください。' +
+		'ステータステンプレート・アイテム）を読み書きできます。セーブデータの残り（キャラ全員と NPC の台詞・マップのイベント／店／メッセージ・' +
+		'マップパーツ・エフェクト・吹き出し・預かり所・サブゲーム）は読むだけです。マップのマス目は sbo_map_tiles で読みます。' +
+		'まず sbo_schema で種類と項目の意味を確かめてください。' +
 		'書き込みは必ず 2 段階です: previewId 無しで呼ぶと差分が返るので、それを利用者に見せて了解をもらってから、' +
 		'同じ引数に previewId を付けてもう一度呼んでください。反映はログイン中のプレイヤーにもすぐ届きます。' +
 		'間違えた時は sbo_history で履歴を見て sbo_undo で戻せます。';
 
-	var KIND_ENUM = Object.keys(KIND_FILE);
+	var KIND_ENUM = ALL_KINDS;
+	var WRITE_KIND_ENUM = Object.keys(KIND_FILE);
 	var TOOLS = [
 		{
 			name: 'sbo_schema', write: false,
@@ -746,7 +781,8 @@ Module['sboData'] = (function () {
 					q: { type: 'string', description: '名前に含まれる文字' },
 					offset: { type: 'integer', minimum: 0 },
 					limit: { type: 'integer', minimum: 1, maximum: 500, description: '既定 100' },
-					fields: { type: 'array', items: { type: 'string' }, description: '返す項目（id は常に返す）' }
+					fields: { type: 'array', items: { type: 'string' }, description: '返す項目（id は常に返す）' },
+					match: { type: 'object', description: '項目の値がちょうど同じものだけ（例: {"isPlayer": true}・{"dwMapID": 3}）' }
 				}
 			},
 			run: opList
@@ -761,13 +797,27 @@ Module['sboData'] = (function () {
 			run: opGet
 		},
 		{
+			name: 'sbo_map_tiles', write: false,
+			description: 'マップのマス目を 2 次元の配列で返す（parts=mapParts の番号・flags・roof=屋根レベル）。id は map の番号（dwID ではない）。' +
+				'x・y・w・h で範囲を切り出せる（省くと全体、1 回最大 128×128）。',
+			inputSchema: {
+				type: 'object', required: ['id'],
+				properties: {
+					id: { type: 'integer', minimum: 0 },
+					x: { type: 'integer', minimum: 0 }, y: { type: 'integer', minimum: 0 },
+					w: { type: 'integer', minimum: 1, maximum: 128 }, h: { type: 'integer', minimum: 1, maximum: 128 }
+				}
+			},
+			run: opTiles
+		},
+		{
 			name: 'sbo_update', write: true,
 			description: '既存のデータを変える（何件でもまとめて。履歴 1 件になる）。changes には変える項目だけを書く。' +
 				'previewId 無しだと何も変えずに差分と previewId を返す。利用者の了解後、同じ引数に previewId を付けて呼ぶと反映。',
 			inputSchema: {
 				type: 'object', required: ['kind', 'updates'],
 				properties: {
-					kind: { type: 'string', enum: KIND_ENUM },
+					kind: { type: 'string', enum: WRITE_KIND_ENUM },
 					updates: {
 						type: 'array', minItems: 1, maxItems: MAX_ITEMS,
 						items: {
@@ -787,7 +837,7 @@ Module['sboData'] = (function () {
 			inputSchema: {
 				type: 'object', required: ['kind', 'records'],
 				properties: {
-					kind: { type: 'string', enum: KIND_ENUM },
+					kind: { type: 'string', enum: WRITE_KIND_ENUM },
 					records: { type: 'array', minItems: 1, maxItems: MAX_ITEMS, items: { type: 'object' } },
 					note: { type: 'string' },
 					previewId: { type: 'string' }
@@ -800,7 +850,7 @@ Module['sboData'] = (function () {
 			description: '変更履歴（新しい順）。管理ページや AI が API で変えたものが残る。',
 			inputSchema: {
 				type: 'object',
-				properties: { kind: { type: 'string', enum: KIND_ENUM }, limit: { type: 'integer', minimum: 1, maximum: 100 } }
+				properties: { kind: { type: 'string', enum: WRITE_KIND_ENUM }, limit: { type: 'integer', minimum: 1, maximum: 100 } }
 			},
 			run: opHistory
 		},
@@ -975,6 +1025,7 @@ Module['sboData'] = (function () {
 		'/api/data/schema': opSchema,
 		'/api/data/list': opList,
 		'/api/data/get': opGet,
+		'/api/data/tiles': opTiles,
 		'/api/data/update': opUpdate,
 		'/api/data/add': opAdd,
 		'/api/data/history': opHistory,
