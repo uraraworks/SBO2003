@@ -4377,6 +4377,11 @@ void RecvDataProcCHGNAMESEX(PBYTE pData, DWORD dwDataSize)
 	TermRecvStr (pPara->szName, sizeof (pPara->szName));
 	pPara->szName[SboTextFitWidth (pPara->szName, MAX_CHARNAME_WIDTH)] = 0;
 	SboTextSanitize (pPara->szName);
+	/* 名前に使えない文字（絵文字など Shift_JIS に無い文字）が入っていたら、同名と同じく断る */
+	if ((pPara->szName[0] != 0) && !SboTextIsNameSafe (pPara->szName)) {
+		pPara->szName[0] = 0;
+		bName = FALSE;
+	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
 	pChar->bySaveFlg &= ~CHARINFOSAVEFLG_FEMALE;
