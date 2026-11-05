@@ -2640,13 +2640,7 @@ typedef struct _CMDPARA_PARTYCMD {
 typedef struct _CMDPARA_JOBINFO {
 	BYTE		byCmd;												/* コマンドID */
 	BYTE		byID;												/* 職業ID */
-	char		szName[MAX_JOBNAME];								/* 名前 */
-	BYTE		bySkillType;										/* 特技種別 */
-	BYTE		byMagicType;										/* 魔法種別 */
-	BYTE		byEquType;											/* 装備種別 */
-	DWORD		dwFlg;												/* フラグ */
-	DWORD		dwLvUpInfoCount;									/* レベルアップ情報数 */
-/* 以下レベルアップ情報 */
+/* 以下 CInfoJob::GetSendData の形（名前は可変長・レベルアップ情報） */
 } CMDPARA_JOBINFO, *PCMDPARA_JOBINFO;
 
 /* 魔法情報通知 */
