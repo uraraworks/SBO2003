@@ -8,6 +8,7 @@
 <!--
 	管理者用のページ（スマホでも使える）。サーバーの INI にある管理者アカウントでログインする。
 	  ・キャラを探す … キャラ名・アカウント名（一部でよい）や前の名前から探し、キャラ名を変える
+	  ・プレイヤー   … 「取得」を押した時にログイン中のプレイヤーのキャラ名と、今いるマップ（ID：名前）を一覧する
 	  ・復旧の承認   … アカウント復旧の申請を承認・却下する（前の recover-admin.html と同じ）
 	  ・ご意見箱     … /feedback に届いた投稿を全部見て、返事・対応済み・隠す・消すをする
 	  ・AI連携       … AI（Claude Code など）から設定データを読み書きするキーの発行・取り消しと、変更履歴・元に戻す
@@ -277,6 +278,40 @@
 		font-size: 15px;
 		margin: 18px 0 8px;
 	}
+	#devices summary {
+		cursor: pointer;
+		font-weight: bold;
+	}
+	.dev-row {
+		padding: 8px 0;
+		border-top: 1px solid var(--border);
+		font-size: 13px;
+		word-break: break-all;
+	}
+	.dev-row button {
+		margin-top: 6px;
+	}
+	.online-list {
+		padding: 4px 16px;
+	}
+	.online-row {
+		padding: 8px 0;
+		border-top: 1px solid var(--border);
+	}
+	.online-row:first-child {
+		border-top: none;
+	}
+	.online-name {
+		color: var(--fg);
+		font-size: 16px;
+		font-weight: bold;
+		word-break: break-all;
+	}
+	.online-map {
+		color: var(--sub);
+		font-size: 13px;
+		word-break: break-all;
+	}
 	[hidden] { display: none !important; }
 	/* パーツ図鑑・配置案は横に広く使う */
 	body.wide main { max-width: 1240px; }
@@ -323,6 +358,7 @@
 	</h1>
 	<nav id="tabs" hidden>
 		<button type="button" data-tab="search" class="active">キャラを探す</button>
+		<button type="button" data-tab="online">プレイヤー</button>
 		<button type="button" data-tab="recover">復旧の承認<span class="badge" id="pending-count" hidden></span></button>
 		<button type="button" data-tab="feedback">ご意見箱<span class="badge" id="feedback-count" hidden></span></button>
 		<button type="button" data-tab="ai">AI連携</button>
@@ -338,6 +374,7 @@
 		<input id="acc" type="text" autocomplete="username" autocapitalize="off" autocorrect="off">
 		<label for="pas">パスワード</label>
 		<input id="pas" type="password" autocomplete="current-password">
+		<label class="check"><input type="checkbox" id="remember" checked> このブラウザで覚えておく（共用の端末では外してください）</label>
 		<div><button type="button" id="login-btn">ログイン</button></div>
 		<div class="msg" id="login-msg"></div>
 	</div>
@@ -354,6 +391,20 @@
 		</div>
 		<div class="msg" id="search-msg"></div>
 		<div id="results"></div>
+	</section>
+
+	<!-- プレイヤー（ログイン中） -->
+	<section id="tab-online" hidden>
+		<p class="sub-text">
+			「取得」を押した時点で、ゲームに入っているプレイヤーのキャラ名と今いるマップです（自動では更新されません）。
+			キャラ名を押すと「キャラを探す」で詳しく見られます。
+		</p>
+		<div class="row" style="justify-content:space-between">
+			<button type="button" id="online-get">取得</button>
+			<span class="sub-text" id="online-at"></span>
+		</div>
+		<div class="msg" id="online-msg"></div>
+		<div id="online-list"></div>
 	</section>
 
 	<!-- 復旧の承認 -->
@@ -569,12 +620,25 @@
 			</div>
 		</div>
 	</section>
+
+	<!-- ログイン中の端末（どのタブでも下に出す） -->
+	<details class="card" id="devices" hidden>
+		<summary>ログイン中の端末</summary>
+		<p class="sub-text" id="dev-note"></p>
+		<div id="dev-list"></div>
+		<button type="button" class="sub" id="dev-revoke-others">ほかの端末を全部ログアウト</button>
+		<div class="msg" id="dev-msg"></div>
+	</details>
 </main>
 <script src="admin-mapdoc.js"></script>
 <script src="admin-design.js"></script>
 <script>
 (function () {
-	var KEY_SESSION = 'sbo_admin_session';
+	/*
+	 * ログインはサーバーが HttpOnly の Cookie で覚える（ここからは読めない）。
+	 * session は API に渡す形を前と揃えるために残してある（いつも空）。
+	 */
+	var KEY_SESSION = 'sbo_admin_session';	/* 前の版が sessionStorage に入れていたもの（消すだけ） */
 	var session = '';
 	var aRequests = [];
 
@@ -586,21 +650,13 @@
 		min = Math.max(0, Math.floor(min || 0));
 		return Math.floor(min / 60) + ' 時間 ' + (min % 60) + ' 分';
 	}
-	function ssGet() {
-		try { return window.sessionStorage.getItem(KEY_SESSION) || ''; } catch (e) { return ''; }
-	}
-	function ssSet(v) {
-		try {
-			if (v) {
-				window.sessionStorage.setItem(KEY_SESSION, v);
-			} else {
-				window.sessionStorage.removeItem(KEY_SESSION);
-			}
-		} catch (e) { /* 保存できなくても、このページを開いている間は使える */ }
+	function ssClear() {
+		try { window.sessionStorage.removeItem(KEY_SESSION); } catch (e) { /* 消せなくても困らない */ }
 	}
 	function api(url, body) {
 		return fetch(url, {
 			method: 'POST',
+			credentials: 'same-origin',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(body)
 		}).then(function (res) {
@@ -634,11 +690,13 @@
 	/* ---- ログイン ---- */
 	function showLogin(text) {
 		session = '';
-		ssSet('');
 		$('login').hidden = false;
+		$('devices').hidden = true;
+		$('devices').open = false;
 		$('tabs').hidden = true;
 		$('logout').hidden = true;
 		$('tab-search').hidden = true;
+		$('tab-online').hidden = true;
 		$('tab-recover').hidden = true;
 		$('tab-feedback').hidden = true;
 		$('tab-ai').hidden = true;
@@ -651,7 +709,8 @@
 		$('login').hidden = true;
 		$('tabs').hidden = false;
 		$('logout').hidden = false;
-		selectTab(location.hash === '#recover' ? 'recover' : location.hash === '#feedback' ? 'feedback' :
+		$('devices').hidden = false;
+		selectTab(location.hash === '#online' ? 'online' : location.hash === '#recover' ? 'recover' : location.hash === '#feedback' ? 'feedback' :
 			location.hash === '#ai' ? 'ai' : location.hash === '#mapdoc' ? 'mapdoc' :
 			location.hash === '#parts' ? 'parts' : location.hash === '#plans' ? 'plans' : 'search');
 		if (location.hash === '#ai') {
@@ -666,14 +725,12 @@
 	}
 	function login() {
 		setMsg($('login-msg'), '');
-		api('/api/admin/login', { account: $('acc').value, password: $('pas').value }).then(function (data) {
-			if (!data.session) {
+		api('/api/admin/login', { account: $('acc').value, password: $('pas').value, remember: $('remember').checked }).then(function (data) {
+			if (!data.ok) {
 				setMsg($('login-msg'), data.error === 'too_many' ?
 					'何度も間違えたので、しばらく時間をおいてください。' : 'アカウントかパスワードが違います。');
 				return;
 			}
-			session = data.session;
-			ssSet(session);
 			$('pas').value = '';
 			showMain();
 		}).catch(function () {
@@ -682,12 +739,68 @@
 	}
 	$('login-btn').addEventListener('click', login);
 	$('pas').addEventListener('keydown', function (ev) {
-		if (ev.key === 'Enter') {
+		if (ev.key === 'Enter' && !ev.isComposing && ev.keyCode !== 229) {
 			login();
 		}
 	});
 	$('logout').addEventListener('click', function () {
-		showLogin('ログアウトしました。');
+		api('/api/admin/logout', { session: session }).catch(function () { /* つながらなくても画面は戻す */ }).then(function () {
+			showLogin('ログアウトしました。');
+		});
+	});
+
+	/* ---- ログイン中の端末 ---- */
+	function uaText(ua) {
+		/* ざっくり「iPhone の Safari」のように */
+		var os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' :
+			/Mac OS X/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : /Linux/.test(ua) ? 'Linux' : '';
+		var br = /Edg\//.test(ua) ? 'Edge' : /CriOS|Chrome\//.test(ua) ? 'Chrome' : /FxiOS|Firefox\//.test(ua) ? 'Firefox' :
+			/Safari\//.test(ua) ? 'Safari' : '';
+		return (os || br) ? (os + (os && br ? ' の ' : '') + br) : (ua || '不明な端末');
+	}
+	function loadDevices() {
+		setMsg($('dev-msg'), '');
+		api('/api/admin/sessions', { session: session }).then(function (data) {
+			if (!data.sessions) {
+				return;
+			}
+			$('dev-note').textContent = '「覚えておく」でログインした端末は、' + data.rememberDays + ' 日使わないか、ログインから ' +
+				data.maxDays + ' 日たつと、もう一度パスワードを聞きます。サーバーの管理者パスワードを変えると、全部の端末がログアウトします。';
+			var list = $('dev-list');
+			list.textContent = '';
+			var nOthers = 0;
+			data.sessions.forEach(function (d) {
+				var row = el('div', 'dev-row');
+				row.appendChild(el('div', '', (d.current ? '★ この端末：' : '') + uaText(d.ua) + (d.remember ? '（覚えておく）' : '（2 時間）')));
+				row.appendChild(el('div', 'sub-text', '最後に使った時 ' + dateText(d.lastUsed) + ' ／ ログイン ' + dateText(d.created) +
+					(d.ip ? ' ／ ' + d.ip : '')));
+				if (!d.current) {
+					nOthers++;
+					var b = el('button', 'sub', 'この端末をログアウト');
+					b.type = 'button';
+					b.addEventListener('click', function () {
+						api('/api/admin/sessions/revoke', { session: session, id: d.id }).then(loadDevices);
+					});
+					row.appendChild(b);
+				}
+				list.appendChild(row);
+			});
+			$('dev-revoke-others').hidden = nOthers === 0;
+		});
+	}
+	$('devices').addEventListener('toggle', function () {
+		if ($('devices').open) {
+			loadDevices();
+		}
+	});
+	$('dev-revoke-others').addEventListener('click', function () {
+		if (!window.confirm('この端末以外のログインを全部消します。よろしいですか？')) {
+			return;
+		}
+		api('/api/admin/sessions/revoke', { session: session, others: true }).then(function (data) {
+			loadDevices();
+			setMsg($('dev-msg'), (data.removed || 0) + ' 台の端末をログアウトしました。', true);
+		});
 	});
 
 	/* ---- タブ ---- */
@@ -696,6 +809,7 @@
 			b.classList.toggle('active', b.dataset.tab === name);
 		});
 		$('tab-search').hidden = name !== 'search';
+		$('tab-online').hidden = name !== 'online';
 		$('tab-recover').hidden = name !== 'recover';
 		$('tab-feedback').hidden = name !== 'feedback';
 		$('tab-ai').hidden = name !== 'ai';
@@ -726,6 +840,56 @@
 			}
 		});
 	});
+
+	/* ---- プレイヤー（ログイン中） ---- */
+	function loadOnline() {
+		var btn = $('online-get');
+		btn.disabled = true;
+		setMsg($('online-msg'), '取得しています...', true);
+		api('/api/admin/online', { session: session }).then(function (data) {
+			btn.disabled = false;
+			if (!data.players) {
+				if (data.httpStatus !== 401) {
+					setMsg($('online-msg'), '取得できませんでした（' + (data.error || data.httpStatus) + '）');
+				}
+				return;
+			}
+			$('online-at').textContent = dateText(data.at || Date.now()) + ' 時点';
+			setMsg($('online-msg'), data.players.length ? 'ログイン中 ' + data.players.length + ' 人' : '今はだれもログインしていません。', true);
+			var box = $('online-list');
+			box.textContent = '';
+			if (!data.players.length) {
+				return;
+			}
+			var card = el('div', 'card online-list');
+			data.players.forEach(function (p) {
+				var row = el('div', 'online-row');
+				var name = el('a', 'online-name', p.name || '（名前なし）');
+				name.href = '#';
+				name.addEventListener('click', function (ev) {
+					ev.preventDefault();
+					$('q').value = p.name || p.account;
+					selectTab('search');
+					search();
+				});
+				var head = el('div', 'head');
+				head.appendChild(name);
+				head.appendChild(el('span', 'sub-text', 'Lv ' + p.level));
+				if (p.admin) {
+					head.appendChild(el('span', 'tag admin', '管理者'));
+				}
+				row.appendChild(head);
+				row.appendChild(el('div', 'online-map', p.mapID + '：' + (p.mapName || '（名前の無いマップ）') +
+					'　(' + p.x + ', ' + p.y + ')'));
+				card.appendChild(row);
+			});
+			box.appendChild(card);
+		}).catch(function () {
+			btn.disabled = false;
+			setMsg($('online-msg'), 'サーバーにつながりませんでした。');
+		});
+	}
+	$('online-get').addEventListener('click', loadOnline);
 
 	/* ---- キャラを探す ---- */
 	var RENAME_NG = {
@@ -766,8 +930,10 @@
 		});
 	}
 	$('search-btn').addEventListener('click', search);
+	// 日本語入力の確定 Enter（isComposing / keyCode 229）では探さない。
+	// 変換中に blur すると確定した文字がもう一度入って二重になるため。
 	$('q').addEventListener('keydown', function (ev) {
-		if (ev.key === 'Enter') {
+		if (ev.key === 'Enter' && !ev.isComposing && ev.keyCode !== 229) {
 			search();
 		}
 	});
@@ -875,7 +1041,7 @@
 		check.addEventListener('click', function () { run(true); });
 		apply.addEventListener('click', function () { run(false); });
 		input.addEventListener('keydown', function (ev) {
-			if (ev.key === 'Enter') {
+			if (ev.key === 'Enter' && !ev.isComposing && ev.keyCode !== 229) {
 				run(true);
 			}
 		});
@@ -1370,13 +1536,23 @@
 		}
 	}
 
-	/* 開いた時：このタブでログイン済みなら続きから */
-	session = ssGet();
-	if (session) {
-		showMain();
-	} else {
-		showLogin('');
-	}
+	/* 開いた時：このブラウザでログイン済み（Cookie が生きている）なら続きから */
+	ssClear();
+	$('login').hidden = true;
+	fetch('/api/admin/me', {
+		method: 'POST',
+		credentials: 'same-origin',
+		headers: { 'Content-Type': 'application/json' },
+		body: '{}'
+	}).then(function (res) {
+		if (res.ok) {
+			showMain();
+		} else {
+			showLogin('');
+		}
+	}).catch(function () {
+		showLogin('サーバーにつながりませんでした。');
+	});
 })();
 </script>
 </body>

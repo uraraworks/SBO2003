@@ -78,21 +78,59 @@ EM_JS(void, W32JsHtmlCreate, (int nID, int nType, int bPassword, int bLower, int
 		el.spellcheck = false;
 		el.style.cssText = 'position:absolute;box-sizing:border-box;margin:0;padding:0 2px;outline:none;' +
 			'background:#fff;color:#000;border:' + (bBorder ? '1px solid #808080' : 'none') + ';';
-		if (bLower) {
-			el.addEventListener('input', function () {
-				var s = el.selectionStart, e = el.selectionEnd;
-				el.value = el.value.toLowerCase();
-				el.setSelectionRange(s, e);
-			});
-		}
+		/* 打った文字を整える（ES_LOWERCASE は小文字に、日本語入力を使わない欄は半角英数字記号だけに）。
+		   IME で変換中に value を書き換えると変換が壊れるので、確定してから直す */
+		var fix = function () {
+			var v = el.value;
+			if (el.dataset.w32Ascii) {
+				/* 全角英数字は半角にして、それ以外の全角文字（かな・漢字など）は取り除く */
+				/* （EM_JS の中では C++ がユニコードのエスケープを解釈してしまうので、文字コードで調べる） */
+				var t = '';
+				for (var i = 0; i < v.length; i++) {
+					var n = v.charCodeAt(i);
+					if (n >= 0xFF01 && n <= 0xFF5E) {
+						n -= 0xFEE0;
+					} else if (n === 0x3000) {
+						n = 0x20;
+					}
+					if (n >= 0x20 && n <= 0x7E) {
+						t += String.fromCharCode(n);
+					}
+				}
+				v = t;
+			}
+			if (bLower) {
+				v = v.toLowerCase();
+			}
+			if (v === el.value) {
+				return;
+			}
+			var nCut = el.value.length - v.length;
+			var s = Math.max(0, (el.selectionStart || 0) - nCut);
+			el.value = v;
+			if (document.activeElement === el) {
+				el.setSelectionRange(s, s);
+			}
+		};
+		el.w32Fix = fix;
+		el.addEventListener('input', function (ev) {
+			if (!ev.isComposing) {
+				fix();
+			}
+		});
+		el.addEventListener('compositionend', function () {
+			/* compositionend の直後に確定の input が来るブラウザもあるので、少し後でも直す */
+			fix();
+			setTimeout(fix, 0);
+		});
 		el.addEventListener('keydown', function (ev) {
 			var vk = Module['w32KeyToVk'] ? Module['w32KeyToVk'](ev) : ev.keyCode;
-			if (vk === 13 || vk === 9 || vk === 27) {
-				ev.preventDefault();
-			}
-			/* IME で変換中のキーはゲームに渡さない */
+			/* IME で変換中のキー（確定の Enter も含む）はゲームに渡さず、ブラウザ（IME）に任せる */
 			if (ev.isComposing || ev.keyCode === 229) {
 				return;
+			}
+			if (vk === 13 || vk === 9 || vk === 27) {
+				ev.preventDefault();
 			}
 			_W32JsOnKey(vk, 1, nID);
 			ev.stopPropagation();
@@ -180,6 +218,26 @@ EM_JS(void, W32JsHtmlSetText, (int nID, const char *pszUtf8), {
 		el.textContent = text;
 	} else if (el.value !== text) {
 		el.value = text;
+	}
+});
+
+/* 日本語入力（IME）を使わない入力欄にする（ImmAssociateContext(hWnd, NULL) の代わり）。
+   ブラウザでは IME 自体は止められないので、確定した文字から半角英数字記号以外を取り除く */
+EM_JS(void, W32JsHtmlSetNoIme, (int nID, int bNoIme), {
+	var el = Module['w32Html'] && Module['w32Html'][nID];
+	if (!el || el.tagName !== 'INPUT') {
+		return;
+	}
+	if (bNoIme) {
+		el.dataset.w32Ascii = '1';
+		el.setAttribute('lang', 'en');
+		el.setAttribute('autocapitalize', 'off');
+		if (el.w32Fix) {
+			el.w32Fix();
+		}
+	} else {
+		delete el.dataset.w32Ascii;
+		el.removeAttribute('lang');
 	}
 });
 
@@ -504,6 +562,14 @@ void W32HtmlGetText(W32Wnd *pWnd)
 	}
 	pWnd->strText = W32Utf8ToTextStr(pszUtf8);
 	free(pszUtf8);
+}
+
+void W32HtmlSetNoIme(W32Wnd *pWnd, BOOL bNoIme)
+{
+	if (pWnd->nHtmlID == 0 || IsPopupWnd(pWnd)) {
+		return;
+	}
+	W32JsHtmlSetNoIme(pWnd->nHtmlID, bNoIme ? 1 : 0);
 }
 
 void W32HtmlFocus(W32Wnd *pWnd)

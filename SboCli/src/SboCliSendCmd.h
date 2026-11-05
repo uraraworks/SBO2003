@@ -11,7 +11,7 @@
 /* ========================================================================= */
 /* コマンド送信 */
 extern void SendCmdLOGINREQ			(void);									/* ログイン要求 */
-extern void SendCmdWEBACCOUNT		(BYTE);									/* ブラウザ版のアカウント関係 */
+extern void SendCmdWEBACCOUNT		(BYTE, BYTE = 0);								/* ブラウザ版のアカウント関係 */
 extern void SendCmdCHGSTATE			(BYTE);									/* 状態遷移 */
 extern void SendCmdCHGDIRECTION		(BYTE);									/* 向き変更要求 */
 extern void SendCmdCHARPOS			(BYTE, BOOL);							/* 移動要求 */

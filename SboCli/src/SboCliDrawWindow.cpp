@@ -856,6 +856,10 @@ void DrawWindowMSG(PWNDINFO pWnd)
 					i += 10;
 					continue;
 
+				case 'k':		/* 復活位置の「はい・いいえ」待ち（クライアントで差し込む） */
+					i ++;
+					continue;
+
 				case '9':		/* キャラ画像記録 */
 					i += 6;
 					continue;
