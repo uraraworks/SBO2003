@@ -2756,6 +2756,11 @@ void TimerProcCharTurnLV(PCHARINFO pChar)
 	if (pChar->dwTimeTurnLV == 0) {
 		return;
 	}
+	/* 死んでいる？(倒れた後にゲージが溜まっても攻撃しない) */
+	if ((pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0)) {
+		CancelTurnGage (pChar);
+		return;
+	}
 
 	if (!(g_FadeInOutInfo.byFadeIn || g_FadeInOutInfo.byFadeOut)) {
 		dwTmp = 1;
@@ -2817,6 +2822,14 @@ void TimerProcCharMagicLV(PCHARINFO pChar)
 	dwTime = timeGetTime ();
 	/* 魔法ターンゲージ溜まり中 */
 	if ((pChar->dwTimeTurnMagicLV == 0) || (pChar->byTurnMagicLV >= 100)) {
+		return;
+	}
+	/* 死んでいる？(倒れた後に詠唱が終わっても特技は出さない) */
+	if ((pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0)) {
+		pChar->dwTimeTurnMagicLV	= 0;
+		pChar->byTurnMagicLV		= 0;
+		CancelTurnGage (pChar);
+		SAFE_DELETE (g_pTargetSelectInfo);
 		return;
 	}
 
