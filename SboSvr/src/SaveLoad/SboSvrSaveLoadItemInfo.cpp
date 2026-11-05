@@ -41,6 +41,7 @@ static const char *s_aszName[] = {
 	"dwGold",				/* 値段 */
 	"pData",				/* 詳細情報 */
 	"pMsg",					/* 使った時のメッセージ */
+	"szNameV",				/* アイテム名（可変長。szName は古い版のために 31 バイトで残す） */
 	"z"
 };
 
@@ -119,6 +120,7 @@ static const char *s_aszNameMSG[] = {
 	"szCharEfc",		/* 文字エフェクト */
 	"pMsgTo",			/* 他のキャラに使った時のメッセージ */
 	"pMsgMe",			/* 他のキャラに使われた時のメッセージ */
+	"szCharEfcV",		/* 文字エフェクト（可変長。szCharEfc は古い版のために 15 バイトで残す） */
 	"z"
 };
 
@@ -347,7 +349,7 @@ BOOL SaveItemInfo(void)
 
 			pInfo = g_aItemInfo[j];
 			switch (i) {
-			case 0:		dwDataSizeTmp += sizeof (pInfo->szName);	break;	/* アイテム名 */
+			case 0:		dwDataSizeTmp += OLD_MAX_ITEMNAME;			break;	/* アイテム名（古い版の幅） */
 			case 1:		dwDataSizeTmp += sizeof (BYTE);				break;	/* 種別 */
 			case 2:		dwDataSizeTmp += sizeof (BYTE);				break;	/* 付加データ */
 			case 3:		dwDataSizeTmp += sizeof (BYTE);				break;	/* フラグ */
@@ -437,6 +439,7 @@ BOOL SaveItemInfo(void)
 					dwDataSizeTmp ++;
 				}
 				break;
+			case 11:	dwDataSizeTmp += (strlen (pInfo->szName) + 1);	break;	/* アイテム名（可変長） */
 			}
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
@@ -483,9 +486,9 @@ BOOL SaveItemInfo(void)
 
 			pInfo = g_aItemInfo[j];
 			switch (i) {
-			case 0:		/* アイテム名 */
-				CopyMemory (&pData[dwOffset], pInfo->szName, sizeof (pInfo->szName));
-				dwOffset += sizeof (pInfo->szName);
+			case 0:		/* アイテム名（古い版の幅。入らない分は文字の途中で切らずに捨てる） */
+				SboTextCopy ((LPSTR)&pData[dwOffset], OLD_MAX_ITEMNAME, pInfo->szName);
+				dwOffset += OLD_MAX_ITEMNAME;
 				break;
 			case 1:		/* 種別 */
 				CopyMemory (&pData[dwOffset], &pInfo->byType, sizeof (BYTE));
@@ -603,6 +606,10 @@ BOOL SaveItemInfo(void)
 					pData[dwOffset] = 0;
 					dwOffset ++;
 				}
+				break;
+			case 11:	/* アイテム名（可変長） */
+				CopyMemory (&pData[dwOffset], pInfo->szName, strlen (pInfo->szName) + 1);
+				dwOffset += (strlen (pInfo->szName) + 1);
 				break;
 			}
 		}
@@ -752,8 +759,10 @@ BOOL LoadItemInfo(void)
 			switch (i) {
 			case 0:		/* アイテム名 */
 				if (strcmp (aHeaderInfo[i].szName, s_aszName[0]) == 0) {
-					CopyMemory (&pInfo->szName, &pData[dwOffsetTmp], sizeof (pInfo->szName));
-					dwOffsetTmp += sizeof (pInfo->szName);
+					/* 古い版の幅。新しい版のデータは後ろの szNameV で上書きされる */
+					CopyMemory (&pInfo->szName, &pData[dwOffsetTmp], OLD_MAX_ITEMNAME);
+					pInfo->szName[OLD_MAX_ITEMNAME - 1] = 0;
+					dwOffsetTmp += OLD_MAX_ITEMNAME;
 				}
 				break;
 
@@ -907,6 +916,14 @@ BOOL LoadItemInfo(void)
 						strcpy (pInfo->pMsg, (LPCSTR)&pData[dwOffsetTmp]);
 					}
 					dwOffsetTmp += nLen;
+				}
+				break;
+
+			case 11:		/* アイテム名（可変長） */
+				if (strcmp (aHeaderInfo[i].szName, s_aszName[11]) == 0) {
+					LPCSTR pszSrc = (LPCSTR)&pData[dwOffsetTmp];
+					SboTextCopy (pInfo->szName, sizeof (pInfo->szName), pszSrc);
+					dwOffsetTmp += (strlen (pszSrc) + 1);
 				}
 				break;
 			}
@@ -2068,7 +2085,7 @@ static PBYTE GetInfoMSG(PITEMINFO_MSG pInfo, PDWORD pdwSize)
 		switch (i) {
 		case 0:		dwDataSizeTmp = sizeof (BYTE);					break;	/* 表示種別 */
 		case 1:		dwDataSizeTmp = sizeof (BYTE);					break;	/* エフェクト番号 */
-		case 2:		dwDataSizeTmp = sizeof (pInfo->szCharEfc);		break;	/* 文字エフェクト */
+		case 2:		dwDataSizeTmp = OLD_MAX_LENCHAREFC;				break;	/* 文字エフェクト（古い版の幅） */
 		case 3:																/* 他のキャラに使った時のメッセージ */
 			if (pInfo->pMsgTo) {
 				dwDataSizeTmp = strlen (pInfo->pMsgTo) + 1;
@@ -2083,6 +2100,7 @@ static PBYTE GetInfoMSG(PITEMINFO_MSG pInfo, PDWORD pdwSize)
 				dwDataSizeTmp = 1;
 			}
 			break;
+		case 5:		dwDataSizeTmp = strlen (pInfo->szCharEfc) + 1;	break;	/* 文字エフェクト（可変長） */
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
 		dwDataSize += dwDataSizeTmp;
@@ -2128,9 +2146,9 @@ static PBYTE GetInfoMSG(PITEMINFO_MSG pInfo, PDWORD pdwSize)
 			CopyMemory (&pData[dwOffset], &pInfo->byEfectID, sizeof (BYTE));
 			dwOffset += sizeof (BYTE);
 			break;
-		case 2:		/* 文字エフェクト */
-			CopyMemory (&pData[dwOffset], &pInfo->szCharEfc, sizeof (pInfo->szCharEfc));
-			dwOffset += sizeof (pInfo->szCharEfc);
+		case 2:		/* 文字エフェクト（古い版の幅） */
+			SboTextCopy ((LPSTR)&pData[dwOffset], OLD_MAX_LENCHAREFC, pInfo->szCharEfc);
+			dwOffset += OLD_MAX_LENCHAREFC;
 			break;
 		case 3:		/* 他のキャラに使った時のメッセージ */
 			if (pInfo->pMsgTo) {
@@ -2149,6 +2167,10 @@ static PBYTE GetInfoMSG(PITEMINFO_MSG pInfo, PDWORD pdwSize)
 				pData[dwOffset] = 0;
 				dwOffset ++;
 			}
+			break;
+		case 5:		/* 文字エフェクト（可変長） */
+			CopyMemory (&pData[dwOffset], pInfo->szCharEfc, strlen (pInfo->szCharEfc) + 1);
+			dwOffset += (strlen (pInfo->szCharEfc) + 1);
 			break;
 		}
 	}
@@ -4456,8 +4478,10 @@ static PBYTE PutInfoMSG(PBYTE pData, PDWORD pdwSize)
 			break;
 		case 2:		/* 文字エフェクト */
 			if (strcmp (aHeaderInfo[i].szName, "szCharEfc") == 0) {
-				CopyMemory (&pInfo->szCharEfc, &pData[dwOffsetTmp], sizeof (pInfo->szCharEfc));
-				dwOffsetTmp += sizeof (pInfo->szCharEfc);
+				/* 古い版の幅。新しい版のデータは後ろの szCharEfcV で上書きされる */
+				CopyMemory (&pInfo->szCharEfc, &pData[dwOffsetTmp], OLD_MAX_LENCHAREFC);
+				pInfo->szCharEfc[OLD_MAX_LENCHAREFC - 1] = 0;
+				dwOffsetTmp += OLD_MAX_LENCHAREFC;
 			}
 			break;
 		case 3:		/* 他のキャラに使った時のメッセージ */
@@ -4484,6 +4508,13 @@ static PBYTE PutInfoMSG(PBYTE pData, PDWORD pdwSize)
 				pInfo->pMsgMe = new char[nLen];
 				strcpy (pInfo->pMsgMe, (LPCSTR)&pData[dwOffsetTmp]);
 				dwOffsetTmp += nLen;
+			}
+			break;
+		case 5:		/* 文字エフェクト（可変長） */
+			if (strcmp (aHeaderInfo[i].szName, "szCharEfcV") == 0) {
+				LPCSTR pszSrc = (LPCSTR)&pData[dwOffsetTmp];
+				SboTextCopy (pInfo->szCharEfc, sizeof (pInfo->szCharEfc), pszSrc);
+				dwOffsetTmp += (strlen (pszSrc) + 1);
 			}
 			break;
 		}

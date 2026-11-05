@@ -1041,12 +1041,12 @@ void OnCommand(HWND hWnd, int nID)
 		pszTmp = new char [MAX_CHARNAME * 2];
 		ZeroMemory (pszTmp, MAX_CHARNAME * 2);
 		ZeroMemory (pChar->szName, sizeof (pChar->szName));
-		GetWindowText (g_hWndName, pszTmp, MAX_CHARNAME);
+		GetWindowText (g_hWndName, pszTmp, MAX_CHARNAME * 2);
 		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
 
-		/* 文字の途中で切らずに上限まで写す。空白・制御文字・全角空白が入っていたら名前なし */
+		/* 表示幅 14（全角 7 文字）まで、文字の途中で切らずに写す。空白・制御文字・全角空白が入っていたら名前なし */
 		{
-			int i, nLen = SboTextFitBytes (pszTmp, MAX_CHARNAME - 1), nChar;
+			int i, nLen = min (SboTextFitWidth (pszTmp, MAX_CHARNAME_WIDTH), SboTextFitBytes (pszTmp, sizeof (pChar->szName) - 1)), nChar;
 			BOOL bNG = FALSE;
 			for (i = 0; i < nLen; i += nChar) {
 				nChar = SboTextCharLen (&pszTmp[i]);

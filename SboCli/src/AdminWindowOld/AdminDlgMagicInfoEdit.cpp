@@ -198,7 +198,8 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 			}
 			hWndTmp = GetDlgItem (hWnd, IDC_NAME);
 			ZeroMemory (szTmp, sizeof (szTmp));
-			GetWindowText (hWndTmp, szTmp, MAX_MAGICNAME - 1);
+			GetWindowText (hWndTmp, szTmp, sizeof (szTmp) - 1);
+			szTmp[SboTextFitWidth (szTmp, MAX_MAGICNAME_WIDTH)] = 0;		/* 画面に収まる長さまで */
 			strcpy (pInfo->szName, szTmp);
 
 			GetDlgData (hWnd, pInfo);
@@ -454,23 +455,27 @@ static void SetExplainText(HWND hWnd, LPCSTR pszSrc)
 /* ========================================================================= */
 static void GetExplainText(HWND hWnd, LPSTR pszDst)
 {
-	char szTmp[1024];
-	int i, nChar, nPos;
+	char szTmp[2048];
+	int i, nChar, nPos, nWidth;
 
 	ZeroMemory (szTmp, sizeof (szTmp));
 	GetWindowText (GetDlgItem (hWnd, IDC_EXPLAIN), szTmp, sizeof (szTmp) - 1);
 
 	nPos = 0;
+	nWidth = 0;
 	for (i = 0; szTmp[i]; i += nChar) {
 		nChar = SboTextCharLen (&szTmp[i]);
 		if (szTmp[i] == '\r') {
 			continue;
 		}
-		if (nPos + nChar > MAX_MAGICEXPLAIN - 1) {
+		/* 表示幅で上限を決める。欄のバイト数からもはみ出さないように */
+		if ((nWidth + SboTextCharWidth (&szTmp[i]) > MAX_MAGICEXPLAIN_WIDTH) ||
+			(nPos + nChar > MAX_MAGICEXPLAIN - 1)) {
 			break;
 		}
 		CopyMemory (&pszDst[nPos], &szTmp[i], nChar);
 		nPos += nChar;
+		nWidth += SboTextCharWidth (&szTmp[i]);
 	}
 	while ((nPos > 0) && ((pszDst[nPos - 1] == '\n') || (pszDst[nPos - 1] == ' '))) {
 		nPos --;

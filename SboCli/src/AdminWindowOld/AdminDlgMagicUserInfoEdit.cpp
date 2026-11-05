@@ -169,7 +169,8 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 			/* 名前 */
 			hWndTmp = GetDlgItem (hWnd, IDC_NAME);
 			ZeroMemory (szTmp, sizeof (szTmp));
-			GetWindowText (hWndTmp, szTmp, MAX_JOBNAME - 1);
+			GetWindowText (hWndTmp, szTmp, sizeof (szTmp) - 1);
+			szTmp[SboTextFitWidth (szTmp, MAX_MAGICNAME_WIDTH)] = 0;		/* 画面に収まる長さまで */
 			strcpy (pInfo->szName, szTmp);
 
 

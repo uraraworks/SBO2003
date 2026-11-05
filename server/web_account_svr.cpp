@@ -279,7 +279,7 @@ static BOOL IsSjisLead(unsigned char c)
 /*
  * キャラ名として使えるか確かめ、SJIS にしたものを返す
  *   ゲームの作成画面（SboCliMain.cpp の IDC_MAKE）・サーバーの RecvDataProcCHGNAMESEX と同じ決まり
- *     ・SJIS で 1〜(MAX_CHARNAME - 1) バイト（全角 7 文字・半角 14 文字まで）
+ *     ・表示幅 1〜MAX_CHARNAME_WIDTH（全角 7 文字・半角 14 文字まで）
  *     ・空白（半角・全角）や制御文字は使えない
  *     ・SJIS に無い文字（絵文字・一部の旧字など）は使えない
  *   戻り値: NULL = 使える、それ以外 = 使えない理由
@@ -294,23 +294,25 @@ static const char *CheckCharName(const std::string &strUtf8, std::string &strSji
 	if (W32SjisToUtf8Str(strSjis.c_str()) != strUtf8) {
 		return "charset";
 	}
-	if (strSjis.size() > MAX_CHARNAME - 1) {
+	if ((SboTextWidth(strSjis.c_str()) > MAX_CHARNAME_WIDTH) ||
+		(strSjis.size() > sizeof(((PCHARINFO)0)->szName) - 1)) {
 		return "long";
 	}
-	for (size_t i = 0; i < strSjis.size(); i ++) {
+	for (size_t i = 0; i < strSjis.size(); ) {
+		int nChar = SboTextCharLen(&strSjis[i]);
 		unsigned char c = (unsigned char)strSjis[i];
-		if (IsSjisLead(c)) {
-			if (i + 1 >= strSjis.size()) {
-				return "charset";
-			}
-			/* 全角空白 */
+		if (nChar >= 2) {
+			/* 全角空白（SJIS の 0x81 0x40） */
 			if (c == 0x81 && (unsigned char)strSjis[i + 1] == 0x40) {
 				return "char";
 			}
-			i ++;
+		} else if (IsSjisLead(c)) {
+			/* 2 バイト文字の 1 バイト目で終わっている */
+			return "charset";
 		} else if (c <= 0x20 || c == 0x7F || c == 0x80 || c == 0xA0 || c >= 0xFD) {
 			return "char";
 		}
+		i += nChar;
 	}
 	return NULL;
 }
