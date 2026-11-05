@@ -762,7 +762,10 @@ Module['sboData'] = (function () {
 		'まず sbo_schema で種類と項目の意味を確かめてください。' +
 		'書き込みは必ず 2 段階です: previewId 無しで呼ぶと差分が返るので、それを利用者に見せて了解をもらってから、' +
 		'同じ引数に previewId を付けてもう一度呼んでください。反映はログイン中のプレイヤーにもすぐ届きます。' +
-		'間違えた時は sbo_history で履歴を見て sbo_undo で戻せます。';
+		'間違えた時は sbo_history で履歴を見て sbo_undo で戻せます。' +
+		'新しいマップの配置を考える時は、sbo_parts_dex（パーツ図鑑: パーツの名前・タグ・通れるか・よく隣に来るパーツ）と ' +
+		'sbo_parts_samples（組み合わせの見本）を見て、案を sbo_plan_save で保存してください。配置案はゲームのデータを変えず、' +
+		'管理ページの「配置案」で画像として見られます。';
 
 	var KIND_ENUM = ALL_KINDS;
 	var WRITE_KIND_ENUM = Object.keys(KIND_FILE);
@@ -1107,7 +1110,28 @@ Module['sboData'] = (function () {
 		return true;
 	}
 
+	/* 別のファイル（sbosvr_mapdesign.js のパーツ図鑑・配置案）が、同じキー・同じ MCP にツールを足すための入口 */
+	var ext = {
+		fail: fail,
+		ApiError: ApiError,
+		checkId: checkId,
+		requireWrite: requireWrite,
+		adminWho: adminWho,
+		count: count,
+		getRecord: getRecord,
+		opTiles: opTiles,
+		dataDir: dataDir,
+		readJsonFile: readJsonFile,
+		writeJsonFile: writeJsonFile,
+		log: log,
+		/* tool は TOOLS と同じ形（name・write・description・inputSchema・run） */
+		addTool: function (tool) { TOOLS.push(tool); },
+		addApiData: function (url, fn) { API_DATA[url] = fn; },
+		addApiAdmin: function (url, fn) { API_ADMIN[url] = fn; }
+	};
+
 	return {
-		handleHttp: handleHttp
+		handleHttp: handleHttp,
+		ext: ext
 	};
 })();
