@@ -12,6 +12,8 @@
 #include "SboCliKeyProc.h"
 #include "SboCliMagicExplain.h"
 
+extern int GetWindowID(DWORD);										/* ウィンドウ番号を取得 */
+
 /* ========================================================================= */
 /* 定数定義																	 */
 /* ========================================================================= */
@@ -3805,7 +3807,12 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 		return;
 	}
 
-	if (pWnd->nData1 == 0) {
+	if ((pWnd->nData1 <= 0) || (pWnd->nData1 >= g_aItemInfo.GetSize ())) {
+		if (pWnd->nType2 == ITEMINFOPOS_LIST) {
+			/* 一覧の横に出す時：アイテムが無い所ではウィンドウを消しておく */
+			pWnd->pDib->FillRect (0, 0, pWnd->pDib->Width (), pWnd->pDib->Height (), RGB (40, 40, 40));
+			pWnd->dwTimeDrawStart = timeGetTime ();
+		}
 		return;
 	}
 
@@ -3846,6 +3853,36 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 		pWnd->pDib = new CImg32;
 		pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
 		pWnd->pDib->SetColorKey (RGB (40, 40, 40));
+	}
+	if (pWnd->nType2 == ITEMINFOPOS_LIST) {
+		/* 一覧ウィンドウの横（入らなければ下）に置く */
+		int nNo = GetWindowID ((DWORD)pWnd->nData2);
+		if (nNo >= 0) {
+			PWNDINFO pWndList = (PWNDINFO)g_WndInfo[nNo];
+			int nListCx = pWndList->nCx, nListCy = pWndList->nCy;
+			/* 一覧の絵の大きさが描画で変わるウィンドウもあるので、絵の大きさを見る */
+			if (pWndList->pDib) {
+				nListCx = min (nListCx, pWndList->pDib->Width ());
+				nListCy = min (nListCy, pWndList->pDib->Height ());
+			}
+			int nListRight = pWndList->nX + nListCx;
+			int nListBottom = pWndList->nY + nListCy;
+
+			if (nListRight + pWnd->nCx <= SCRSIZEX) {
+				/* 右隣に入る */
+				pWnd->nX = nListRight;
+				pWnd->nY = pWndList->nY;
+			} else {
+				/* 右に入らない時は一覧の下に出す */
+				/* （下のメッセージ欄と重なっても文の書き出しが隠れないよう右に寄せる） */
+				pWnd->nX = max (0, SCRSIZEX - pWnd->nCx);
+				pWnd->nY = nListBottom;
+			}
+			/* 画面の下にはみ出す時は上にずらす */
+			if (pWnd->nY + pWnd->nCy > SCRSIZEY) {
+				pWnd->nY = max (0, SCRSIZEY - pWnd->nCy);
+			}
+		}
 	}
 
 	DrawWindowFrame (pWnd);

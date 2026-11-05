@@ -20,6 +20,7 @@
 #define ITEMINFO_CY					(16 * 2 + 12 * 4)			/* アイテム情報ウィンドウの高さ */
 #define ITEMINFO_MAGIC_CX			(16 * 18)					/* アイテム情報ウィンドウの幅（特技の書の時） */
 #define ITEMINFO_EXPLAIN_MAXLINE	(8)							/* アイテム情報ウィンドウに出す特技説明の最大行数 */
+#define ITEMINFOPOS_LIST			(1)							/* アイテム情報ウィンドウ(nType2)：一覧ウィンドウの横に置く */
 
 #define IDC_CONNECT		100										/* 接続ボタン */
 #define IDC_MAKE		101										/* 作成ボタン */
