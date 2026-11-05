@@ -4623,6 +4623,12 @@ void RecvDataProcREQ_ATTACK(PBYTE pData, DWORD dwDataSize)
 	if (pChar->pID == 0) {
 		return;
 	}
+	/* 死んでいる？(ゲージが溜まる前に倒れた後の攻撃要求は受け付けない) */
+	if ((pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0)) {
+		pChar->dwLastBattle	 = 0;
+		pChar->dwTargetTblID = -1;
+		return;
+	}
 	/* ターゲット指定無し？ */
 //Todo:武器の判定
 	if (pPara->dwData == -1) {
@@ -6930,6 +6936,11 @@ void RecvDataProcUSEMAGIC(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
+	/* 死んでいる？(詠唱中に倒れた後の特技は受け付けない) */
+	if ((pChar->byNpcType == NPCTYPE_INIT) &&
+		((pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0))) {
+		return;
+	}
 	if (pChar->dwTargetTblID != -1) {
 		/* ターゲットは解除する */
 		pChar->dwLastBattle = 0;

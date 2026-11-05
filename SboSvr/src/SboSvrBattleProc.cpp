@@ -61,6 +61,14 @@ void BattleProcCheck(PCHARINFO pChar)
 		return;
 	}
 
+	/* 死んでいる？(倒れたPCは攻撃しない。矢などはwHPを射程に使うのでPCだけ見る) */
+	if ((pChar->byNpcType == NPCTYPE_INIT) &&
+		((pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0))) {
+		pChar->dwLastBattle	 = 0;
+		pChar->dwTargetTblID = -1;
+		return;
+	}
+
 	/* PCの行動？ */
 	if (pChar->byNpcType == NPCTYPE_INIT) {
 		BattleProcCheckPC (pChar);
