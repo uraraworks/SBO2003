@@ -55,6 +55,7 @@ void KeyProcCHGPASSWORD						(PWNDINFO, BYTE, BYTE);		/* パスワードの変�
 void KeyProcCOMMANDPARTY					(PWNDINFO, BYTE, BYTE);		/* 仲間ウィンドウ */
 void KeyProcCOMMANDPARTYCHAR				(PWNDINFO, BYTE, BYTE);		/* 誘う相手選択 */
 void KeyProcCONF							(PWNDINFO, BYTE, BYTE);		/* 確認 */
+void StartPosConfirmEnd					(PWNDINFO, BOOL);			/* 復活位置の確認の後処理 */
 void KeyProcJOB								(PWNDINFO, BYTE, BYTE);		/* 冒険者登録所 */
 void KeyProcCOMMANDMAGIC					(PWNDINFO, BYTE, BYTE);		/* 魔法コマンド */
 void KeyProcCOMMANDMAGICBATTLE				(PWNDINFO, BYTE, BYTE);		/* 魔法コマンド(戦闘マップ) */
@@ -91,6 +92,7 @@ LRESULT CALLBACK SpeechEditWndProc			(HWND, UINT, WPARAM, LPARAM);	/* 自己紹�
 LRESULT CALLBACK ChgPasswordWndProc			(HWND, UINT, WPARAM, LPARAM);	/* パスワード変更用メッセージ処理 */
 
 void CmdProcHanasu		(PWNDINFO);											/* コマンド処理(話す) */
+LPSTR MakeNpcSpeechNextExp	(LPCSTR);											/* 神父さんのセリフに次のレベルまでのお告げを足す */
 BOOL CmdProcSiraberu	(PWNDINFO);											/* コマンド処理(調べる) */
 int GetFrontTalkChar		(void);												/* 話しかけられる目の前のキャラを探す */
 BOOL CmdProcSKey		(void);												/* Sキー(調べる・話す・扉) */
@@ -1923,6 +1925,8 @@ void KeyProcCOMMANDOPTION(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 					PlayBGM (0);
 					pWndTmp = MakeWindowMSG ("音楽再生再開しました。@2", FALSE);
 				}
+				/* アカウントごとに覚えてもらう（次にこのアカウントで入った時もこの設定） */
+				SendCmdWEBACCOUNT (WEBACC_OPTBGM, g_bBGMONOFF ? OPTBGM_ON : OPTBGM_OFF);
 				g_bDraw = TRUE;
 				g_WndInfo.Add (pWndTmp);
 				g_dwActiveMsgID = pWndTmp->dwID;
@@ -2262,6 +2266,10 @@ void KeyProcCOMMANDSTATUS(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 void KeyProcMSG(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 {
 	if (pWnd->nData2 == 0) {
+		return;
+	}
+	/* 復活位置の「はい・いいえ」を選ぶまでは進めない */
+	if (pWnd->nData2 == MSGSTATE_STARTPOSCONF) {
 		return;
 	}
 
@@ -4223,6 +4231,46 @@ void KeyProcCOMMANDPARTYCHAR(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 }
 
 /* ========================================================================= */
+/* 関数名：StartPosConfirmEnd												 */
+/* 内容：復活位置の「はい・いいえ」を選んだ後の処理							 */
+/*		 はい：記録してセリフの続き（「復活位置が記録されました。」など）へ	 */
+/*		 いいえ：記録せず、続きを「記録しませんでした」に差し替える			 */
+/* ========================================================================= */
+void StartPosConfirmEnd(PWNDINFO pWnd, BOOL bYes)
+{
+	PWNDINFO pWndMsg = (PWNDINFO)pWnd->pParent;
+	int nPos = pWnd->nData2;
+
+	if (bYes) {
+		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
+		SendCmdSETSTARTPOS ((BYTE)((nPos >> 16) & 0xFF), (BYTE)((nPos >> 8) & 0xFF), (BYTE)(nPos & 0xFF));
+
+	} else {
+		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
+		if (pWndMsg && pWndMsg->pszMsg) {
+			/* 問いかけ（「@k」まで）は残して、続きだけ差し替える */
+			static const char *pszNo = "@1@1復活位置はそのままにしました。@2";
+			int nLenHead = pWndMsg->nData1 + 1;
+			LPSTR pszNew = new char[nLenHead + strlen (pszNo) + 1];
+			CopyMemory (pszNew, pWndMsg->pszMsg, nLenHead);
+			strcpy (&pszNew[nLenHead], pszNo);
+			SAFE_DELETE_ARRAY (pWndMsg->pszMsg);
+			pWndMsg->pszMsg = pszNew;
+		}
+	}
+
+	/* メッセージの続きを流す */
+	if (pWndMsg) {
+		pWndMsg->nData2 = 0;
+		pWndMsg->dwTime = 0;		/* 1 文字ずつ流し直す */
+		pWndMsg->dwTimeDrawStart = 0;
+	}
+	EraseWindow (pWnd);
+	g_bDraw = TRUE;
+}
+
+
+/* ========================================================================= */
 /* 関数名：KeyProcCONF														 */
 /* 内容：キー入力処理(確認)													 */
 /* 日付：2004/06/20															 */
@@ -4232,6 +4280,19 @@ void KeyProcCONF(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 	DWORD dwTime = 250;
 	if (pWnd->byRepeate > 1) {
 		dwTime = 125;
+	}
+
+	/* 復活位置の確認は専用の処理 */
+	if (pWnd->nType2 == IDCONFIRMTYPE_STARTPOS) {
+		if ((byEvent == KEY_UP) && ((byCode == 'A') || (byCode == 'B'))) {
+			/* セリフを読み進める決定ボタンの連打で選ばれないよう、出た直後は受け付けない */
+			PWNDINFO pWndMsg = (PWNDINFO)pWnd->pParent;
+			if (pWndMsg && (timeGetTime () < pWndMsg->dwTime + 400)) {
+				return;
+			}
+			StartPosConfirmEnd (pWnd, (byCode == 'A') && (pWnd->nData1 == 0));
+			return;
+		}
 	}
 
 	if ((byEvent == KEY_UP) && (byCode == 'B')) {
@@ -6883,6 +6944,78 @@ LRESULT CALLBACK ChgPasswordWndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp)
 }
 
 /* ========================================================================= */
+/* 関数名：MakeNpcSpeechNextExp												 */
+/* 内容：復活地点を記録する神父さん（セリフに「@8」がある人）のセリフの		 */
+/*		 「@8」の直前に、次のレベルまでに必要な経験値のお告げを足す			 */
+/*		 「はい・いいえ」で記録を選ぶ場合も、聞く前に言うのでどちらでも聞ける */
+/*		 戻り値：新しいセリフ（呼んだ側で delete[]）。足さない時は NULL		 */
+/* ========================================================================= */
+LPSTR MakeNpcSpeechNextExp(LPCSTR pszSpeech)
+{
+	char szMsg[256];
+	int i, nPos, nLen;
+	PCHARINFO pChar;
+	PJOBINFO pJobInfo;
+
+	if ((pszSpeech == NULL) || (g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ())) {
+		return NULL;
+	}
+
+	/* 「@8」＋数字 9 桁（マップ・X・Y）を探す */
+	nLen = (int)strlen (pszSpeech);
+	nPos = -1;
+	for (i = 0; i + 11 <= nLen; i ++) {
+		if ((pszSpeech[i] == '@') && (pszSpeech[i + 1] == '8')) {
+			int j;
+			for (j = 0; j < 9; j ++) {
+				if ((pszSpeech[i + 2 + j] < '0') || (pszSpeech[i + 2 + j] > '9')) {
+					break;
+				}
+			}
+			if (j == 9) {
+				nPos = i;
+				break;
+			}
+		}
+	}
+	if (nPos < 0) {
+		return NULL;
+	}
+
+	pChar = g_aCharInfo[g_nMyCharID];
+	if (pChar->byJOB >= g_JobInfo.GetCount ()) {
+		return NULL;
+	}
+	pJobInfo = g_JobInfo.GetPtr (pChar->byJOB);
+	if (pJobInfo == NULL) {
+		return NULL;
+	}
+
+	if (pChar->byLevel >= pJobInfo->aLevelUpInfo.GetSize ()) {
+		/* 最高レベル（これ以上は経験値も増えない） */
+		_snprintf (szMsg, sizeof (szMsg), "@0%sさんは、もうこれ以上ないほど@1修行を積まれましたね。", pChar->szName);
+	} else {
+		/* aLevelUpInfo[今のレベル] が次のレベルに必要な累計経験値（サーバーの AddExp と同じ） */
+		PLVUPINFO pLvUpInfo = pJobInfo->aLevelUpInfo[pChar->byLevel];
+		DWORD dwRest = 0;
+		if (pLvUpInfo && (pLvUpInfo->dwExp > pChar->dwExp)) {
+			dwRest = pLvUpInfo->dwExp - pChar->dwExp;
+		}
+		_snprintf (szMsg, sizeof (szMsg), "@0%sさんが次のレベルになるには、@1あと %u の経験値が必要です。", pChar->szName, (unsigned)dwRest);
+	}
+	szMsg[sizeof (szMsg) - 1] = 0;
+
+	/* 「(ここまでのセリフ)(お告げ)@8...(続き)」に組み替える */
+	int nLenMsg = (int)strlen (szMsg);
+	LPSTR pszNew = new char[nLen + nLenMsg + 1];
+	CopyMemory (pszNew, pszSpeech, nPos);
+	CopyMemory (&pszNew[nPos], szMsg, nLenMsg);
+	CopyMemory (&pszNew[nPos + nLenMsg], &pszSpeech[nPos], nLen - nPos);
+	pszNew[nLen + nLenMsg] = 0;
+	return pszNew;
+}
+
+/* ========================================================================= */
 /* 関数名：CmdProcHanasu													 */
 /* 内容：コマンド処理(話す)													 */
 /* 日付：2003/07/12															 */
@@ -7080,7 +7213,14 @@ void CmdProcHanasu(PWNDINFO pWnd)
 		pChar2->byDirection = abyDirectionTbl[pChar->byDirection];
 
 	} else {
-		pWndTmp = MakeWindowMSG (pChar2->pszNpcSpeech, TRUE);
+		/* 復活地点を記録する神父さんなら、次のレベルまでのお告げを足す */
+		LPSTR pszNextExp = MakeNpcSpeechNextExp (pChar2->pszNpcSpeech);
+		if (pszNextExp) {
+			pWndTmp = MakeWindowMSG (pszNextExp, TRUE);
+			SAFE_DELETE_ARRAY (pszNextExp);
+		} else {
+			pWndTmp = MakeWindowMSG (pChar2->pszNpcSpeech, TRUE);
+		}
 		pChar2->byDirection = abyDirectionTbl[pChar->byDirection];
 
 		if ((pChar2->byNpcType == NPCTYPE_SEARCH) ||

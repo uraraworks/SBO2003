@@ -1892,6 +1892,21 @@ void RecvDataProcWEBACCOUNT(PBYTE pData, DWORD dwDataSize)
 			WebAccSaveToken (pPara->szToken);
 		}
 		break;
+
+	case WEBACC_OPTBGM:			/* 音楽ON/OFFのアカウント設定 */
+		/*
+		 * ログインした直後に届く。ログイン画面の曲は設定に関係なく鳴らしているので、
+		 * ここでは覚えるだけで、マップに入った時の PlayBGM (0) から効く。
+		 * 端末の ini にも書いておき、次のログイン画面までの既定にする。
+		 */
+		if ((pPara->byData == OPTBGM_ON) || (pPara->byData == OPTBGM_OFF)) {
+			g_bBGMONOFF = (pPara->byData == OPTBGM_ON) ? TRUE : FALSE;
+			if (!g_bBGMONOFF && (g_byGameState != GAMESTATE_LOGIN)) {
+				StopBGM ();
+			}
+			SaveIniOption ();
+		}
+		break;
 	}
 }
 
@@ -4124,6 +4139,17 @@ void RecvDataProcCHARSTATUSHP(BYTE *pData, DWORD dwDataSize)
 		}
 		if (g_aCharInfo[g_nMyCharID]->wHP == 0) {
 			AllEraseWindow ();
+		}
+		/* 倒れた？(溜めていたターンゲージ・詠唱は取りやめる) */
+		if ((pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0)) {
+			CancelTurnGage (pChar);
+			if (pChar->dwTimeTurnMagicLV) {
+				/* 詠唱エフェクトを消す */
+				SendCmdEFECTCHG (0, TRUE);
+			}
+			pChar->dwTimeTurnMagicLV	= 0;
+			pChar->byTurnMagicLV		= 0;
+			SAFE_DELETE (g_pTargetSelectInfo);
 		}
 	}
 }

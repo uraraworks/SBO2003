@@ -1101,6 +1101,9 @@ Module['sboData'] = (function () {
 				replyJson(res, 400, { error: 'json' });
 				return;
 			}
+			if (fnAdmin && acc()) {
+				acc().withAdminCookie(body, req);		/* 管理ページのログインは Cookie */
+			}
 			if (fnData) {
 				run(function (b) { return fnData(b, who); }, body, req, res);
 			} else {

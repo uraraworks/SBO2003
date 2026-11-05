@@ -188,6 +188,7 @@ void	RecvDataProcWEBACCOUNT					(PBYTE, DWORD);				/* ブラウザ版のアカ�
 void	RecvDataProcADMINUNDO					(PBYTE, DWORD);				/* 管理者画面の「元に戻す」 */
 /* 端末トークン（server/web_account_svr.cpp） */
 BOOL	WebAccTokenToAccount					(LPCSTR, LPSTR, int);		/* 端末トークンからアカウント名を引く */
+static void	SendWebOptBgm					(PCHARINFO);				/* 音楽ON/OFFのアカウント設定を送る */
 BOOL	WebAccIssueToken						(LPCSTR, LPSTR, int);		/* 端末トークンを発行する */
 void	RecvDataProcDIFENCE						(PBYTE, DWORD);				/* 防御 */
 void	RecvDataProcTHROWSNOW					(PBYTE, DWORD);				/* 雪を投げる */
@@ -2618,7 +2619,11 @@ void SubProcMapMove(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY)
 		return;
 	}
 
+	/* すでに移動先に立っている？ */
 	if ((pChar->dwMapID == dwMapID) && (pChar->dwX == dwX) && (pChar->dwY == dwY)) {
+		/* 呼び出し元がフェードアウトを送っているので、ここで戻さないと
+		   マップ情報が来ないまま画面が真っ暗になる（キラメルの翼・帰還の巻物など） */
+		SendCmdFADEINOUT (pChar->pID, 1);
 		return;
 	}
 
@@ -3096,6 +3101,7 @@ void RecvDataProcLOGINREQ(PBYTE pData, DWORD dwDataSize)
 		CopyMemory (pCharTmp->szMacAdr, pPara->szMacAdr, 6);
 		SendCmdCHARINFO (pPara->pID, pCharTmp->dwTblID);
 		SendCmdLOGINRES (pPara->pID, pCharTmp->dwTblID, 2);
+		SendWebOptBgm (pCharTmp);
 		AddrTmp.S_un.S_addr = pCharTmp->dwLastIPAddress;
 		g_LogLogin.Write ("ログイン\t[%s][%s][%d.%d.%d.%d][%02X-%02X-%02X-%02X-%02X-%02X]",
 				pCharTmp->szName,
@@ -3155,6 +3161,7 @@ void RecvDataProcLOGINREQ(PBYTE pData, DWORD dwDataSize)
 
 	SendCmdCHARINFO (pChar->pID, pChar->dwTblID);
 	SendCmdLOGINRES (pChar->pID, pChar->dwTblID, 2);
+	SendWebOptBgm (pChar);
 }
 
 /* ========================================================================= */
@@ -4614,6 +4621,12 @@ void RecvDataProcREQ_ATTACK(PBYTE pData, DWORD dwDataSize)
 	}
 	pChar = g_aCharInfo[pPara->dwTblID];
 	if (pChar->pID == 0) {
+		return;
+	}
+	/* 死んでいる？(ゲージが溜まる前に倒れた後の攻撃要求は受け付けない) */
+	if ((pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0)) {
+		pChar->dwLastBattle	 = 0;
+		pChar->dwTargetTblID = -1;
 		return;
 	}
 	/* ターゲット指定無し？ */
@@ -6923,6 +6936,11 @@ void RecvDataProcUSEMAGIC(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
+	/* 死んでいる？(詠唱中に倒れた後の特技は受け付けない) */
+	if ((pChar->byNpcType == NPCTYPE_INIT) &&
+		((pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0))) {
+		return;
+	}
 	if (pChar->dwTargetTblID != -1) {
 		/* ターゲットは解除する */
 		pChar->dwLastBattle = 0;
@@ -9327,7 +9345,38 @@ void RecvDataProcWEBACCOUNT(PBYTE pData, DWORD dwDataSize)
 			svrSock.SendTo (pID, (LPBYTE)&SendData, sizeof (SendData), SENDTIMEOUT);
 		}
 		break;
+
+	case WEBACC_OPTBGM:			/* 音楽ON/OFFのアカウント設定を覚える */
+		/* 古いクライアントの短いパケットや、ログイン前の接続は相手にしない */
+		if ((s_dwRecvSize < sizeof (CMDPARA_WEBACCOUNT)) || (s_nCharNoRecv < 0)) {
+			return;
+		}
+		if ((pPara->byData != OPTBGM_ON) && (pPara->byData != OPTBGM_OFF)) {
+			return;
+		}
+		/* 保存は定期保存・終了時の保存に任せる */
+		g_aCharInfo[s_nCharNoRecv]->byOptBgm = pPara->byData;
+		break;
 	}
+}
+
+/* ========================================================================= */
+/* 関数名：SendWebOptBgm													 */
+/* 内容：音楽ON/OFFのアカウント設定をログインしたクライアントへ送る			 */
+/*       まだ決めていないアカウントには送らない（端末の設定のまま）			 */
+/* ========================================================================= */
+static void SendWebOptBgm(PCHARINFO pChar)
+{
+	CMDPARA_WEBACCOUNT SendData;
+
+	if ((pChar == NULL) || (pChar->pID == 0) || (pChar->byOptBgm == OPTBGM_NONE)) {
+		return;
+	}
+	ZeroMemory (&SendData, sizeof (SendData));
+	SendData.byCmd = CMD_WEBACCOUNT;
+	SendData.byCmdSub = WEBACC_OPTBGM;
+	SendData.byData = pChar->byOptBgm;
+	svrSock.SendTo (pChar->pID, (LPBYTE)&SendData, sizeof (SendData), SENDTIMEOUT);
 }
 
 
