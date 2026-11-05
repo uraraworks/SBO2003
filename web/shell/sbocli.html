@@ -2728,11 +2728,40 @@
 			renderList(list);
 		}
 		quick.classList.toggle('sbo-show', bShow);
+		/* ボタンの画面の裏にあるアカウント名の欄にフォーカスが残っていると、
+		   ロゴ・タイトルを飛ばすキー（日本語入力中なら「さ」など）が見えない欄に入ってしまう。
+		   ボタンの画面を出している間はゲーム画面へフォーカスを戻しておく */
+		if (bShow) {
+			blurHiddenLoginInput();
+		}
 		forgot.classList.toggle('sbo-show', state === 1 && !bShow);
 		/* ID・パスワードの入力中は、ボタンの画面へ戻れるようにする */
 		quickReturn.classList.toggle('sbo-show', state === 1 && bDismissed && bHave &&
 			!recover.classList.contains('sbo-show'));
 	}, 250);
+
+	function blurHiddenLoginInput() {
+		var active = document.activeElement;
+		if (!active || !active.dataset || !active.dataset.w32Id || !active.closest('#sbo-overlay')) {
+			return;
+		}
+		active.blur();
+		var cv = document.getElementById('canvas');
+		if (cv) {
+			cv.focus();
+		}
+	}
+
+	/* 「ID・パスワードでログイン」を押したら、アカウント名（入っていればパスワード）の欄へ */
+	function focusLoginInput() {
+		var a = Array.prototype.filter.call(document.querySelectorAll('#sbo-overlay input[data-w32-id]'),
+			function (el) { return el.style.display !== 'none' && !el.disabled; });
+		if (a.length === 0) {
+			return;
+		}
+		var el = (a.length > 1 && a[0].value) ? a[1] : a[0];
+		el.focus();
+	}
 
 	function tokenLogin(token) {
 		var M = window.Module;
@@ -2748,6 +2777,8 @@
 	Array.prototype.forEach.call(document.querySelectorAll('[data-quick-other]'), function (el) {
 		el.addEventListener('click', function () {
 			bDismissed = true;
+			quick.classList.remove('sbo-show');
+			setTimeout(focusLoginInput, 0);
 		});
 	});
 	quickReturn.addEventListener('click', function () {
