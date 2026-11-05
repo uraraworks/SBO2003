@@ -705,6 +705,7 @@ char	*_ultoa(unsigned long value, char *str, int radix);
 #define WM_DESTROY			0x0002
 #define WM_MOVE				0x0003
 #define WM_SIZE				0x0005
+#define SIZE_RESTORED		0
 #define WM_ACTIVATE			0x0006
 #define WM_SETFOCUS			0x0007
 #define WM_KILLFOCUS		0x0008
@@ -1159,6 +1160,9 @@ HWND		GetParent(HWND hWnd);
 HWND		SetParent(HWND hWnd, HWND hWndParent);
 HWND		GetDlgItem(HWND hWnd, int nID);
 int			GetDlgCtrlID(HWND hWnd);
+typedef BOOL (CALLBACK *WNDENUMPROC)(HWND, LPARAM);
+BOOL		EnumChildWindows(HWND hWndParent, WNDENUMPROC pfn, LPARAM lParam);
+int			GetClassName(HWND hWnd, LPSTR pszClass, int nMax);
 LONG		GetWindowLong(HWND hWnd, int nIndex);
 LONG		SetWindowLong(HWND hWnd, int nIndex, LONG lValue);
 #define		GetWindowLongPtr	GetWindowLong
