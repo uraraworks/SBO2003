@@ -92,6 +92,8 @@ LRESULT CALLBACK ChgPasswordWndProc			(HWND, UINT, WPARAM, LPARAM);	/* パスワ
 
 void CmdProcHanasu		(PWNDINFO);											/* コマンド処理(話す) */
 BOOL CmdProcSiraberu	(PWNDINFO);											/* コマンド処理(調べる) */
+int GetFrontTalkChar		(void);												/* 話しかけられる目の前のキャラを探す */
+BOOL CmdProcSKey		(void);												/* Sキー(調べる・話す・扉) */
 void ChatMsgProc		(LPCTSTR);											/* 発言メッセージ処理 */
 #ifdef __EMSCRIPTEN__
 extern void SboWebSpeechSubmit(LPCSTR pszSjis, int nKeyMod);					/* 発言（ブラウザ版の分割送信） */
@@ -775,8 +777,8 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 		} else {
 			BOOL bResult;
 
-			/* 調べる */
-			bResult = CmdProcSiraberu (NULL);
+			/* 調べる・話す・扉 */
+			bResult = CmdProcSKey ();
 			if (bResult) {
 				DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
 			}
@@ -4275,7 +4277,15 @@ void KeyProcCONF(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 
 				case IDCONFIRMTYPE_GRPCHANGE:	/* 着せ替え確認 */
 					SendCmdCHGCHARGRP ((DWORD)pWnd->nData2);
-					EraseWindow ((PWNDINFO)g_WndInfo[GetWindowID (g_dwMsgIDCommand)]);
+					{
+						/* Sキーで話した時はコマンドウィンドウが無いので確認ウィンドウだけ閉じる */
+						int nNoCommand = GetWindowID (g_dwMsgIDCommand);
+						if (nNoCommand >= 0) {
+							EraseWindow ((PWNDINFO)g_WndInfo[nNoCommand]);
+						} else {
+							EraseWindow (pWnd);
+						}
+					}
 					break;
 
 				case IDCONFIRMTYPE_PARTYJOIN:	/* 仲間に入る確認 */
@@ -6882,8 +6892,11 @@ void CmdProcHanasu(PWNDINFO pWnd)
 	dwX = pChar->dwX + anPosAddTblX[pChar->byDirection];
 	dwY = pChar->dwY + anPosAddTblY[pChar->byDirection];
 
-	pWnd->byAnime = 1;
-	pWnd->dwTimeDrawStart = 0;
+	/* Sキーから呼ばれた時はコマンドウィンドウが無いので pWnd は NULL */
+	if (pWnd) {
+		pWnd->byAnime = 1;
+		pWnd->dwTimeDrawStart = 0;
+	}
 
 	int i, nCount = g_aCharInfo.GetSize ();
 	for (i = 0; i < nCount; i ++) {
@@ -6970,14 +6983,20 @@ void CmdProcHanasu(PWNDINFO pWnd)
 			PostMessage (g_hWndMain, WM_CLOSE, 0, 0);
 			return;
 		}
-		pWndParent = (PWNDINFO)g_WndInfo[GetWindowID (g_dwMsgIDCommand)];
+		/* Sキーから呼ばれた時はコマンドウィンドウが無い */
+		int nNoCommand = GetWindowID (g_dwMsgIDCommand);
+		if (nNoCommand >= 0) {
+			pWndParent = (PWNDINFO)g_WndInfo[nNoCommand];
+		}
 
 		/* 確認ウィンドウ作成 */
 		pWndTmp = MakeWindowCONF (16 * 20, 16 * 10, IDCONFIRMTYPE_GRPCHANGE);
 		pWndTmp->nData1 = 1;
 		pWndTmp->nData2 = (int)pChar2->wGrpID;
 		pWndTmp->pParent = pWndParent;
-		pWndParent->pChild = pWndTmp;
+		if (pWndParent) {
+			pWndParent->pChild = pWndTmp;
+		}
 		g_WndInfo.Add (pWndTmp);
 		g_dwActiveMsgID = pWndTmp->dwID;
 
@@ -7072,6 +7091,94 @@ Exit:
 		g_WndInfo.Add (pWndTmp);
 		g_dwActiveMsgID = pWndTmp->dwID;
 	}
+}
+
+/* ========================================================================= */
+/* 関数名：GetFrontTalkChar													 */
+/* 内容：話しかけられる目の前のキャラを探す									 */
+/*		 CmdProcHanasu と同じく、目の前に誰もいなくてカウンターなら			 */
+/*		 その向こうも見る。置物(NPCTYPE_PUT)は話しかけられないので除く		 */
+/*		 戻り値：キャラ番号（見つからない時は -1）							 */
+/* ========================================================================= */
+int GetFrontTalkChar(void)
+{
+	PCHARINFO pChar, pChar2;
+	DWORD dwX, dwY;
+	int i, nCount, nPass;
+
+	if ((g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ())) {
+		return -1;
+	}
+	if ((g_pMapInfo == NULL) || (g_pMapInfo->pwMap == NULL)) {
+		return -1;
+	}
+	pChar = g_aCharInfo[g_nMyCharID];
+	dwX = pChar->dwX + anPosAddTblX[pChar->byDirection];
+	dwY = pChar->dwY + anPosAddTblY[pChar->byDirection];
+	nCount = g_aCharInfo.GetSize ();
+
+	for (nPass = 0; nPass < 2; nPass ++) {
+		/* マップの外は見ない */
+		if ((dwX >= (DWORD)g_pMapInfo->nCX) || (dwY >= (DWORD)g_pMapInfo->nCY)) {
+			return -1;
+		}
+		for (i = 0; i < nCount; i ++) {
+			pChar2 = (PCHARINFO)g_aCharInfo[i];
+			if (i == g_nMyCharID) {
+				continue;
+			}
+			if ((dwX == pChar2->dwX) && (dwY == pChar2->dwY)) {
+				break;
+			}
+		}
+		if (i < nCount) {
+			if (pChar2->byNpcType == NPCTYPE_PUT) {
+				return -1;
+			}
+			return i;
+		}
+		/* 目の前がカウンターならその向こうを見る */
+		if (nPass == 0) {
+			PMAPPARTSINFO pParts = &g_pMapPartsInfo[g_pMapInfo->pwMap[dwX + dwY * g_pMapInfo->nCX]];
+			if (pParts->byHitType != PARTSHIT_COUNTER) {
+				return -1;
+			}
+			dwX += anPosAddTblX[pChar->byDirection];
+			dwY += anPosAddTblY[pChar->byDirection];
+		}
+	}
+	return -1;
+}
+
+/* ========================================================================= */
+/* 関数名：CmdProcSKey														 */
+/* 内容：Sキーの処理（調べる・話す・扉）									 */
+/*		 足元にイベントがある時は今まで通り調べる。							 */
+/*		 目の前に話しかけられるキャラがいれば「話す」。						 */
+/*		 それ以外は「調べる」（目の前の扉はサーバーが開けてくれる）			 */
+/*		 戻り値：決定音を鳴らす時 TRUE										 */
+/* ========================================================================= */
+BOOL CmdProcSKey(void)
+{
+	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
+
+	/* 足元にイベントがある時は調べる */
+	if (g_pMapInfo->pbyFlg[pChar->dwX + g_pMapInfo->nCX * pChar->dwY] & MAPFLG_EVENT) {
+		return CmdProcSiraberu (NULL);
+	}
+
+	/* 戦場ゲーム・すごろくの間は「話す」コマンドが無いので今まで通り調べるだけ */
+	if ((pChar->abySubStatus[0] != SUBGAMEID_WAR) &&
+		(pChar->abySubStatus[0] != SUBGAMEID_SUGOROKU)) {
+		/* 目の前に誰かいれば話す */
+		if (GetFrontTalkChar () >= 0) {
+			CmdProcHanasu (NULL);
+			return TRUE;
+		}
+	}
+
+	/* 調べる（目の前の扉もここで開く） */
+	return CmdProcSiraberu (NULL);
 }
 
 /* ========================================================================= */
@@ -7479,11 +7586,12 @@ ChatMsgProc_END:
 /* 内容：スマホの仮想パッドで今押して効くボタンを返す（ブラウザ版）			 */
 /*		 シェル HTML が効かないボタンを隠すのに使う。KeyProc・KeyProcMove・	 */
 /*		 KeyProcDead・KeyProcMSG が実際にキーを使う条件に合わせている		 */
-/*		 戻り値：1=調べる(S) 2=表示(Tab) 4=戦闘(Ctrl) の組み合わせ			 */
+/*		 戻り値：1=調べる(S) 2=表示(Tab) 4=戦闘(Ctrl) 8=Sが話すになる の組み合わせ */
 /* ========================================================================= */
 #define PADSTATE_SIRABERU	(0x01)
 #define PADSTATE_VIEW		(0x02)
 #define PADSTATE_BATTLE		(0x04)
+#define PADSTATE_HANASU		(0x08)	/* 目の前に話せる相手がいる（「調べる」ボタンを「話す」と表示） */
 
 extern "C" EMSCRIPTEN_KEEPALIVE int SboWebGetPadState(void)
 {
@@ -7530,6 +7638,14 @@ extern "C" EMSCRIPTEN_KEEPALIVE int SboWebGetPadState(void)
 		}
 	} else {
 		nRet |= PADSTATE_SIRABERU;
+		/* Sキーで話す相手がいるか（CmdProcSKey と同じ条件） */
+		if (((g_pMapInfo->pbyFlg == NULL) ||
+			((g_pMapInfo->pbyFlg[pChar->dwX + g_pMapInfo->nCX * pChar->dwY] & MAPFLG_EVENT) == 0)) &&
+			(pChar->abySubStatus[0] != SUBGAMEID_WAR) &&
+			(pChar->abySubStatus[0] != SUBGAMEID_SUGOROKU) &&
+			(GetFrontTalkChar () >= 0)) {
+			nRet |= PADSTATE_HANASU;
+		}
 	}
 	/* 戦闘モードは戦闘できるマップでだけ切り替えられる */
 	if (g_pMapInfo->byFlg & MAPFLG_BATTLE) {
