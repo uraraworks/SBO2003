@@ -544,6 +544,26 @@ extern "C" EMSCRIPTEN_KEEPALIVE void W32JsOnFrameMove(int nHtmlID, int x, int y)
 	PostMessage((HWND)p, WM_MOVE, 0, MAKELPARAM(x, y));
 }
 
+/* 小窓の枠を引っぱって大きさを変えた（cx, cy は枠を含めた大きさ） */
+extern "C" EMSCRIPTEN_KEEPALIVE void W32JsOnFrameSize(int nHtmlID, int cx, int cy)
+{
+	W32Wnd *p = W32FindWndByHtmlID(nHtmlID);
+	if (p == NULL || !p->bPopup) {
+		return;
+	}
+	if (cx == p->rc.right - p->rc.left && cy == p->rc.bottom - p->rc.top) {
+		return;
+	}
+	p->rc.right = p->rc.left + cx;
+	p->rc.bottom = p->rc.top + cy;
+	W32HtmlUpdate(p);
+	RECT rc;
+	GetClientRect((HWND)p, &rc);
+	PostMessage((HWND)p, WM_SIZE, SIZE_RESTORED, MAKELPARAM(rc.right, rc.bottom));
+	/* 自分で描いている内容は、新しい大きさで描き直してもらう */
+	InvalidateRect((HWND)p, NULL, TRUE);
+}
+
 /* 入力欄の中身が変わった */
 extern "C" EMSCRIPTEN_KEEPALIVE void W32JsOnEditChange(int nHtmlID)
 {

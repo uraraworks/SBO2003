@@ -10,6 +10,7 @@ SboCli/src/AdminWindow/DlgAdminLvUpInfoEdit.cpp
 SboCli/src/AdminWindow/DlgAdminStTmpInfo.cpp
 SboCli/src/AdminWindow/DlgAdminStTmpInfoEdit.cpp
 SboCli/src/AdminWindow/DlgAdminSubGame.cpp
+SboCli/src/AdminWindowOld/AdminAutoLayout.cpp
 SboCli/src/AdminWindowOld/AdminDlgAccSearch.cpp
 SboCli/src/AdminWindowOld/AdminDlgCharMagicInfo.cpp
 SboCli/src/AdminWindowOld/AdminDlgEquUserInfo.cpp
