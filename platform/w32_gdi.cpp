@@ -965,9 +965,12 @@ int SetStretchBltMode(HDC, int)
 #ifdef W32_USE_TTF
 #define FONT_PATH_REGULAR	"/font/BIZUDGothic-Regular.ttf"
 #define FONT_PATH_BOLD		"/font/BIZUDGothic-Bold.ttf"
+#define FONT_PATH_EMOJI		"/font/NotoEmoji-Regular.ttf"	/* 白黒の絵文字（文字色・縁取りがそのまま効く） */
 
 /* 大きさ・太さごとに TTF_Font を共有する */
 static std::map<int, TTF_Font *> s_mapTtf;
+static std::map<TTF_Font *, int> s_mapTtfSize;		/* TTF_Font → 大きさ（絵文字フォントを同じ大きさで開くため） */
+static std::map<int, TTF_Font *> s_mapEmoji;		/* 大きさごとの絵文字フォント */
 
 static TTF_Font *GetTtf(int nSize, BOOL bBold)
 {
@@ -986,8 +989,31 @@ static TTF_Font *GetTtf(int nSize, BOOL bBold)
 	} else {
 		/* MS ゴシックのビットマップに近づけるため、ヒンティングを強めにかける */
 		TTF_SetFontHinting(pFont, TTF_HINTING_MONO);
+		s_mapTtfSize[pFont] = nSize;
 	}
 	s_mapTtf[nKey] = pFont;
+	return pFont;
+}
+
+/* 本文のフォントと同じ大きさの絵文字フォント（無ければ NULL） */
+static TTF_Font *GetEmojiTtf(TTF_Font *pMain)
+{
+	std::map<TTF_Font *, int>::iterator itSize = s_mapTtfSize.find(pMain);
+	if (itSize == s_mapTtfSize.end()) {
+		return NULL;
+	}
+	int nSize = itSize->second;
+	std::map<int, TTF_Font *>::iterator it = s_mapEmoji.find(nSize);
+	if (it != s_mapEmoji.end()) {
+		return it->second;
+	}
+	TTF_Font *pFont = TTF_OpenFont(FONT_PATH_EMOJI, nSize);
+	if (pFont == NULL) {
+		printf("[w32] 絵文字フォントを開けません: %s\n", TTF_GetError());
+	} else {
+		TTF_SetFontHinting(pFont, TTF_HINTING_MONO);
+	}
+	s_mapEmoji[nSize] = pFont;
 	return pFont;
 }
 
@@ -1041,6 +1067,81 @@ static TTF_Font *DcTtf(W32Dc *pDc)
 	return pTtf;
 }
 
+/* 同じフォントで続けて描く文字のまとまり */
+struct W32TextRun {
+	TTF_Font		*pTtf;
+	std::string		str;
+};
+
+/* UTF-8 の 1 文字を取り出す（正しい UTF-8 を渡すこと。戻り値はバイト数） */
+static int Utf8Next(const std::string &str, size_t i, Uint32 &dwCode)
+{
+	BYTE c = (BYTE)str[i];
+	int n = (c < 0x80) ? 1 : (c < 0xE0) ? 2 : (c < 0xF0) ? 3 : 4;
+	if (i + n > str.size()) {
+		n = (int)(str.size() - i);
+	}
+	dwCode = (n == 1) ? c : (n == 2) ? (c & 0x1F) : (n == 3) ? (c & 0x0F) : (c & 0x07);
+	for (int k = 1; k < n; k ++) {
+		dwCode = (dwCode << 6) | ((BYTE)str[i + k] & 0x3F);
+	}
+	return std::max(n, 1);
+}
+
+/* 絵文字の見た目を変えるだけの文字（ZWJ・異体字セレクタ・肌の色・タグ文字） */
+static BOOL IsEmojiModifier(Uint32 dwCode)
+{
+	return ((dwCode == 0x200D) ||
+			(dwCode >= 0xFE00 && dwCode <= 0xFE0F) ||
+			(dwCode >= 0x1F3FB && dwCode <= 0x1F3FF) ||
+			(dwCode >= 0xE0020 && dwCode <= 0xE007F)) ? TRUE : FALSE;
+}
+
+/* 文字列を「本文のフォント」と「絵文字フォント」で描く部分に分ける。
+   本文のフォントに無い文字と、絵文字として描く指定（U+FE0F）が付いた文字・U+1F000 以降は絵文字フォントで描く */
+static void SplitTextRuns(TTF_Font *pMain, const std::string &strUtf8, std::vector<W32TextRun> &aRun)
+{
+	TTF_Font *pEmoji = NULL;
+	BOOL bEmojiChecked = FALSE;
+	aRun.clear();
+	for (size_t i = 0; i < strUtf8.size(); ) {
+		Uint32 dwCode;
+		int n = Utf8Next(strUtf8, i, dwCode);
+		TTF_Font *pUse = pMain;
+		if (IsEmojiModifier(dwCode)) {
+			/* 絵文字の続きならくっつける。本文のフォントでは描けないので捨てる */
+			if (!aRun.empty() && aRun.back().pTtf != pMain) {
+				aRun.back().str.append(strUtf8, i, n);
+			}
+			i += n;
+			continue;
+		}
+		if (dwCode >= 0x80) {
+			Uint32 dwNext = 0;
+			if (i + n < strUtf8.size()) {
+				Utf8Next(strUtf8, i + n, dwNext);
+			}
+			BOOL bWantEmoji = (dwCode >= 0x1F000 || dwNext == 0xFE0F) ? TRUE : FALSE;
+			if (bWantEmoji || !TTF_GlyphIsProvided32(pMain, dwCode)) {
+				if (!bEmojiChecked) {
+					pEmoji = GetEmojiTtf(pMain);
+					bEmojiChecked = TRUE;
+				}
+				if (pEmoji && TTF_GlyphIsProvided32(pEmoji, dwCode)) {
+					pUse = pEmoji;
+				}
+			}
+		}
+		if (aRun.empty() || aRun.back().pTtf != pUse) {
+			W32TextRun run;
+			run.pTtf = pUse;
+			aRun.push_back(run);
+		}
+		aRun.back().str.append(strUtf8, i, n);
+		i += n;
+	}
+}
+
 /* 描いた文字の形（1bit マスク）を覚えておく。TextOut2 は同じ文字列を 5 回描くので効く */
 struct W32TextMask {
 	std::string			strKey;
@@ -1064,24 +1165,55 @@ static const W32TextMask *GetTextMask(TTF_Font *pTtf, const std::string &strUtf8
 		}
 	}
 	SDL_Color clWhite = {255, 255, 255, 255};
-	SDL_Surface *pSurf = TTF_RenderUTF8_Solid(pTtf, strUtf8.c_str(), clWhite);
-	if (pSurf == NULL) {
-		return NULL;
-	}
+	std::vector<W32TextRun> aRun;
+	SplitTextRuns(pTtf, strUtf8, aRun);
+
+	/* まとまりごとに描いて横に並べる。絵文字フォントはベースラインを本文に合わせる */
+	std::vector<SDL_Surface *> aSurf(aRun.size(), (SDL_Surface *)NULL);
 	W32TextMask mask;
 	mask.strKey = strKey;
-	mask.cx = pSurf->w;
-	mask.cy = pSurf->h;
-	mask.aMask.resize((size_t)mask.cx * mask.cy);
-	SDL_LockSurface(pSurf);
-	for (int y = 0; y < mask.cy; y ++) {
-		const BYTE *pSrc = (const BYTE *)pSurf->pixels + (size_t)y * pSurf->pitch;
-		for (int x = 0; x < mask.cx; x ++) {
-			mask.aMask[(size_t)y * mask.cx + x] = pSrc[x] ? 1 : 0;
+	mask.cx = 0;
+	mask.cy = TTF_FontHeight(pTtf);
+	for (size_t r = 0; r < aRun.size(); r ++) {
+		aSurf[r] = TTF_RenderUTF8_Solid(aRun[r].pTtf, aRun[r].str.c_str(), clWhite);
+		if (aSurf[r]) {
+			mask.cx += aSurf[r]->w;
 		}
 	}
-	SDL_UnlockSurface(pSurf);
-	SDL_FreeSurface(pSurf);
+	if (mask.cx <= 0) {
+		for (size_t r = 0; r < aSurf.size(); r ++) {
+			if (aSurf[r]) {
+				SDL_FreeSurface(aSurf[r]);
+			}
+		}
+		return NULL;
+	}
+	mask.aMask.assign((size_t)mask.cx * mask.cy, 0);
+	int nX = 0;
+	int nAscent = TTF_FontAscent(pTtf);
+	for (size_t r = 0; r < aRun.size(); r ++) {
+		SDL_Surface *pSurf = aSurf[r];
+		if (pSurf == NULL) {
+			continue;
+		}
+		int nOffY = (aRun[r].pTtf == pTtf) ? 0 : nAscent - TTF_FontAscent(aRun[r].pTtf);
+		SDL_LockSurface(pSurf);
+		for (int y = 0; y < pSurf->h; y ++) {
+			int dy = y + nOffY;
+			if (dy < 0 || dy >= mask.cy) {
+				continue;
+			}
+			const BYTE *pSrc = (const BYTE *)pSurf->pixels + (size_t)y * pSurf->pitch;
+			for (int x = 0; x < pSurf->w; x ++) {
+				if (pSrc[x]) {
+					mask.aMask[(size_t)dy * mask.cx + nX + x] = 1;
+				}
+			}
+		}
+		SDL_UnlockSurface(pSurf);
+		nX += pSurf->w;
+		SDL_FreeSurface(pSurf);
+	}
 	s_listMask.push_front(mask);
 	if (s_listMask.size() > TEXTMASK_CACHE_MAX) {
 		s_listMask.pop_back();
@@ -1145,10 +1277,13 @@ BOOL GetTextExtentPoint32(HDC hDC, LPCSTR pszText, int nLen, LPSIZE pSize)
 		return TRUE;
 	}
 	std::string strUtf8 = W32TextToUtf8Str(pszText, nLen);
-	int w = 0, h = 0;
-	TTF_SizeUTF8(pTtf, strUtf8.c_str(), &w, &h);
-	pSize->cx = w;
-	pSize->cy = h;
+	std::vector<W32TextRun> aRun;
+	SplitTextRuns(pTtf, strUtf8, aRun);
+	for (size_t r = 0; r < aRun.size(); r ++) {
+		int w = 0, h = 0;
+		TTF_SizeUTF8(aRun[r].pTtf, aRun[r].str.c_str(), &w, &h);
+		pSize->cx += w;
+	}
 	return TRUE;
 }
 

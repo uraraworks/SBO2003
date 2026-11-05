@@ -11,6 +11,8 @@
  *
  * 表示幅は「半角 1 文字 = 1、全角 1 文字 = 2」で数える
  * （画面上は半角 1 文字が 6px または 8px、全角はその倍）。
+ * 絵文字は全角（2）。絵文字の見た目を変えるだけの文字（異体字セレクタ・
+ * ZWJ・肌の色）は、前の文字とくっついて描かれるので 0 と数える。
  */
 
 #pragma once
@@ -25,3 +27,4 @@ int		SboTextCopy			(LPSTR pszDst, int nDstSize, LPCSTR pszSrc);	/* 文字の途�
 BOOL	SboTextIsSingleByteOnly	(LPCSTR psz);						/* ASCII（1 バイト文字）だけでできているか */
 BOOL	SboTextIsValid		(LPCSTR psz);							/* UTF-8 として正しい並びだけか */
 int		SboTextSanitize		(LPSTR psz);							/* 正しくないバイトを「?」にする（戻り値は置き換えた数） */
+BOOL	SboTextIsNameSafe	(LPCSTR psz);							/* キャラ名に使える文字だけか（Shift_JIS にある文字だけ。絵文字は不可） */

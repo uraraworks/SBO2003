@@ -116,6 +116,9 @@ web/replace   … Windows 専用クラスの Web 版（Windows 版の実装は�
   文字数の計算は `common/SboText` の関数でまとめて行い、表示幅は ASCII と半角カナを 1、それ以外を 2 と数えます。
   古い Shift_JIS のデータは、サーバーの初回起動時にバックアップ（`SBODATA_SJIS_日時`）を取ってから UTF-8 に変換します
   （`SboSvr/src/SboSvrDataUtf8.cpp`、変換済みの目印は `SBODATA/SboDataUtf8.txt`）。
+- **絵文字**: 発言では絵文字を使えます。本文のフォント（BIZ UDゴシック）に無い文字は、白黒の Noto Emoji
+  （`web/font/NotoEmoji-Regular.ttf`）で描きます（`platform/w32_gdi.cpp` の SplitTextRuns）。
+  白黒なので、文字色や縁取りがほかの文字と同じように効きます。キャラ名には使えません（`SboTextIsNameSafe`）。
 - **画面**: 最初に作られたトップレベルウィンドウを canvas に対応させます。GDI は 32bit DIB に描き、
   描画が終わったら canvas へ転送します。
 - **文字**: BIZ UDゴシック（`web/font/`、SIL Open Font License）を SDL_ttf で 1bit 描画します。
