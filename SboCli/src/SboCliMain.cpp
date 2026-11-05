@@ -1164,6 +1164,9 @@ void ChgState(int nState)
 		PlayBGM (SOUND_MIDI_W0081, TRUE);
 		g_FadeInOutInfo.byFadeIn = 0;
 		g_FadeInOutInfo.byFadeOut = 0;
+		/* タイトルのフェードイン中にキーを押すと、予約したフェードアウトが残ったまま
+		   ログイン画面になり、そのあと暗くなって戻らなくなるので予約を消しておく */
+		g_aFadeInOutTbl.RemoveAll ();
 		g_bDraw = TRUE;
 		g_nLoginAnimeX = -32;
 		InvalidateRect (g_hWndMain, NULL, FALSE);
