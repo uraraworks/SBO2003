@@ -2619,7 +2619,11 @@ void SubProcMapMove(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY)
 		return;
 	}
 
+	/* すでに移動先に立っている？ */
 	if ((pChar->dwMapID == dwMapID) && (pChar->dwX == dwX) && (pChar->dwY == dwY)) {
+		/* 呼び出し元がフェードアウトを送っているので、ここで戻さないと
+		   マップ情報が来ないまま画面が真っ暗になる（キラメルの翼・帰還の巻物など） */
+		SendCmdFADEINOUT (pChar->pID, 1);
 		return;
 	}
 
