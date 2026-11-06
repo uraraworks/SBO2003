@@ -740,13 +740,18 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 				/* 戦闘モード？ */
 				if (g_bBattleMode) {
 					/* ターンゲージ溜まり中？ */
-					if (pChar->byTurnLV > 0) {
-						if (pChar->byTurnLV >= 50) {
-							/* 攻撃要求 */
-							SendCmdREQ_ATTACK (pChar->dwAtackTblID, pChar->byTurnLV);
-							CancelTurnGage (pChar);
+					if (pChar->dwTimeTurnLV && (pChar->byTurnLV >= TURNGAGE_LAP)) {
+						if (IsTurnGageJust (pChar)) {
+							/* ジャスト：満タン直後に押した(会心が出やすく、外れない) */
+							SendCmdREQ_ATTACK (pChar->dwAtackTblID, ATACKRATE_JUST);
+						} else {
+							/* 早撃ち：攻撃要求(威力は溜まりきった周の数×20%) */
+							SendCmdREQ_ATTACK (pChar->dwAtackTblID, (BYTE)(pChar->byTurnLV / TURNGAGE_LAP * TURNGAGE_LAP));
 						}
+						/* 連続攻撃：次のゲージを溜め始める */
+						ContinueTurnGage (pChar);
 					} else {
+						/* ゲージ1周目の途中なら戦闘コマンドを開く(連続攻撃中に特技・道具を選べるように) */
 						pWnd = MakeWindowBATTLE_COMMAND ();
 					}
 				} else {
@@ -804,10 +809,11 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 		/* 戦場ゲームに参加中？ */
 		} else if (pChar->abySubStatus[0] == SUBGAMEID_WAR) {
 
-		/* ターンゲージ溜まり中？ */
-		} else if (pChar->byTurnLV > 0) {
+		/* ターンゲージ溜まり中？(連続攻撃もここで止める) */
+		} else if ((pChar->byTurnLV > 0) || pChar->dwTimeTurnLV) {
 			CancelTurnGage (pChar);
 			SAFE_DELETE (g_pTargetSelectInfo);
+			SendCmdTARGETCHAR ((DWORD)-1);
 
 		/* 詠唱中？ */
 		} else if (pChar->dwTimeTurnMagicLV) {
@@ -6062,8 +6068,7 @@ void KeyProcBATTLE_COMMAND(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		g_bDraw = TRUE;
 		g_dwMsgIDCommand = 0;
 		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
-
-		CancelTurnGage (pChar);
+		/* 連続攻撃中なら、コマンドを閉じてもゲージはそのまま続ける */
 
 	} else if ((byEvent == KEY_UP) && (byCode == 'A') && (g_bEnableMove)) {
 		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);

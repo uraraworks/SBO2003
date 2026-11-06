@@ -2776,15 +2776,16 @@ void TimerProcCharTurnLV(PCHARINFO pChar)
 		CancelTurnGage (pChar);
 		return;
 	}
+	/* 特技の詠唱中・戦闘モードを解除した？(連続攻撃もここで止める) */
+	if (pChar->dwTimeTurnMagicLV || (g_bBattleMode == FALSE) ||
+		(g_pMapInfo == NULL) || ((g_pMapInfo->byFlg & MAPFLG_BATTLE) == 0)) {
+		CancelTurnGage (pChar);
+		return;
+	}
 
 	if (!(g_FadeInOutInfo.byFadeIn || g_FadeInOutInfo.byFadeOut)) {
-		dwTmp = 1;
-		dwTmp = 1000;
 		/* 攻撃タイミングになっているかを計算。最大3秒で255を100%とする。 */
-		dwTmp = pChar->byDEX;
-		dwTmp = dwTmp * 100 / 255;
-		dwTmp = max (dwTmp, 1);
-		dwTmp = 1000 + (2000 - ((2000 * dwTmp) / 100));
+		dwTmp = GetTurnGageTime (pChar);
 
 		if (dwTime >= pChar->dwTimeTurnLV + dwTmp / 100) {
 			pChar->dwLastTurnLV = dwTime;
@@ -2793,23 +2794,56 @@ void TimerProcCharTurnLV(PCHARINFO pChar)
 			g_bDraw = TRUE;
 			/* 満タン？ */
 			if (pChar->byTurnLV == 100) {
+				/* 満タン直後はジャストで押せる時間なので、自動では殴らずに待つ */
+				if (IsTurnGageJust (pChar)) {
+					return;
+				}
 				/* 移動中ではない？ */
 				if (pChar->byDotMove == 0) {
-					nTmp = GetCharNo2 (pChar->dwAtackTblID);
-					if (nTmp != -1) {
-						pCharTarget = g_aCharInfo[nTmp];
-						nTmp = GetCharDistance (pCharTarget, pChar->dwMapID, pChar->dwX, pChar->dwY, pChar->byDirection);
-						if (nTmp == 1) {
-							/* 攻撃要求 */
-							SendCmdREQ_ATTACK (pChar->dwAtackTblID, pChar->byTurnLV);
-							CancelTurnGage (pChar);
-						}
-						//Todo:遠距離攻撃用の処理
-					} else {
+					/* 弓など、相手を決めずに撃つ？ */
+					if (pChar->dwAtackTblID == (DWORD)-1) {
 						/* 攻撃要求 */
 						SendCmdREQ_ATTACK (-1, pChar->byTurnLV);
 						CancelTurnGage (pChar);
+						return;
 					}
+					/* 目の前に敵がいれば、選んだ相手でなくてもそちらを殴る(連続攻撃) */
+					nTmp = FindFrontAttackTarget (pChar);
+					if (nTmp != -1) {
+						if (g_aCharInfo[nTmp]->dwTblID != pChar->dwAtackTblID) {
+							pChar->dwAtackTblID = g_aCharInfo[nTmp]->dwTblID;
+							SendCmdTARGETCHAR (pChar->dwAtackTblID);
+						}
+						nTmp = 1;
+					} else {
+						nTmp = GetCharNo2 (pChar->dwAtackTblID);
+						/* 相手が倒れて消えた？(周りの次の敵に切り替える。向きを変えれば殴れる) */
+						if ((nTmp == -1) || (g_aCharInfo[nTmp]->byCharState == CHARSTATE_DEAD)) {
+							nTmp = FindNextAttackTarget (pChar);
+							if (nTmp == -1) {
+								CancelTurnGage (pChar);
+								return;
+							}
+							pChar->dwAtackTblID = g_aCharInfo[nTmp]->dwTblID;
+							SendCmdTARGETCHAR (pChar->dwAtackTblID);
+						}
+						pCharTarget = g_aCharInfo[nTmp];
+						/* 相手から離れすぎた？(逃げたら連続攻撃をやめる) */
+						if ((pCharTarget->dwMapID != pChar->dwMapID) ||
+							(abs ((int)pCharTarget->dwX - (int)pChar->dwX) + abs ((int)pCharTarget->dwY - (int)pChar->dwY) > 5)) {
+							CancelTurnGage (pChar);
+							SendCmdTARGETCHAR ((DWORD)-1);
+							return;
+						}
+						nTmp = GetCharDistance (pCharTarget, pChar->dwMapID, pChar->dwX, pChar->dwY, pChar->byDirection);
+					}
+					if (nTmp == 1) {
+						/* 攻撃要求 */
+						SendCmdREQ_ATTACK (pChar->dwAtackTblID, pChar->byTurnLV);
+						/* 連続攻撃：同じ相手に向けて次のゲージを溜め始める */
+						ContinueTurnGage (pChar);
+					}
+					//Todo:遠距離攻撃用の処理
 				}
 			}
 		}
