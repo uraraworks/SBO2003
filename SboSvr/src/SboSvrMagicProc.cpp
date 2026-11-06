@@ -23,6 +23,8 @@ typedef BOOL (*MAGICPROC)(PMAGICINFO, PCHARINFO, PCHARINFO);
 /* 関数プロトタイプ宣言														 */
 /* ========================================================================= */
 BOOL MagicProc(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget);			/* 魔法処理 */
+BOOL MagicProcItem(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget);		/* 魔法処理(アイテムから発動) */
+static BOOL MagicProcSub(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget, BOOL bItem);	/* 魔法処理(本体) */
 static BYTE GetTarget						(PCHARINFO, BYTE);			/* キャラ種別の取得 */
 static void MakeCharTblTarget_SELF			(PARRAYDWORD, PCHARINFO, PMAGICINFO);				/* ターゲットキャラの設定(自分) */
 static BOOL MakeCharTblTargetSub_SELF		(PARRAYDWORD, int, PDWORD, PCHARINFO, PMAGICINFO);	/* ターゲットキャラの設定処理(自分) */
@@ -81,6 +83,25 @@ static const MAGICPROC MagicProcTbl[] = {
 /* ========================================================================= */
 BOOL MagicProc(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget)
 {
+	return MagicProcSub (dwTblID, byID, dwTblIDTarget, FALSE);
+}
+
+/* ========================================================================= */
+/* 関数名：MagicProcItem													 */
+/* 内容：魔法処理(アイテムから発動)。覚えていなくても使え、Manaも減らない	 */
+/*		 戻り値：発動した(対象がいた)ら TRUE（アイテムを減らすかの判定用）	 */
+/* ========================================================================= */
+BOOL MagicProcItem(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget)
+{
+	return MagicProcSub (dwTblID, byID, dwTblIDTarget, TRUE);
+}
+
+/* ========================================================================= */
+/* 関数名：MagicProcSub														 */
+/* 内容：魔法処理(本体)。bItem はアイテムから発動した時 TRUE				 */
+/* ========================================================================= */
+static BOOL MagicProcSub(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget, BOOL bItem)
+{
 	PCHARINFO pChar;
 	PMAGICINFO pInfo;
 	PMAPINFO pMap;
@@ -107,7 +128,7 @@ BOOL MagicProc(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget)
 	*******************/
 
 	for (i = 0; i < MAX_USEMAGIC; i ++) {
-		if (pChar->abyMagic[i] == byID) {
+		if (bItem || (pChar->abyMagic[i] == byID)) {
 			break;
 		}
 	}
@@ -127,7 +148,7 @@ BOOL MagicProc(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget)
 		Manaチェック
 	*******************/
 
-	if (pChar->byNpcType == NPCTYPE_INIT) {
+	if ((pChar->byNpcType == NPCTYPE_INIT) && (bItem == FALSE)) {
 		if (pInfo->byType == MAGICTYPE_HPDOWNHPCOST) {
 			if (pChar->wHP <= pInfo->wMana) {
 				goto Exit;
@@ -191,7 +212,7 @@ BOOL MagicProc(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget)
 		使用者側の処理
 	*********************/
 
-	if (pChar->byNpcType == NPCTYPE_INIT) {
+	if ((pChar->byNpcType == NPCTYPE_INIT) && (bItem == FALSE)) {
 		if (pInfo->byType == MAGICTYPE_HPDOWNHPCOST) {
 			pChar->wHP -= pInfo->wMana;
 		} else {
@@ -240,6 +261,10 @@ BOOL MagicProc(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget)
 		if (bResult) {
 			bRet = TRUE;
 		}
+	}
+	/* アイテムは、相手がいて発動できたら使ったことにする(毒・眠りが外れても減る) */
+	if (bItem && (nCount > 0)) {
+		bRet = TRUE;
 	}
 
 Exit:

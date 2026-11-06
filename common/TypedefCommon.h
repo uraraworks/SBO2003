@@ -958,6 +958,7 @@ enum {
 	ITEMTYPE_EQU_ACC2,											/* 装備(指輪1) */
 	ITEMTYPE_EQU_ACC3,											/* 装備(指輪2) */
 	ITEMTYPE_RESURRECTION,										/* 蘇生 */
+	ITEMTYPE_USEMAGIC,											/* 特技発動(詳細は ITEMINFO_MAGIC と同じ形。byID=発動する特技) */
 	ITEMTYPE_MAX
 };
 

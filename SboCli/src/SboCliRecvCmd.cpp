@@ -463,6 +463,7 @@ int GetItemDataSize(BYTE byType)
 	case ITEMTYPE_LIGHT:		nSize = sizeof (ITEMINFO_LIGHT);		break;
 	case ITEMTYPE_HPDOWN:		nSize = sizeof (ITEMINFO_HPDOWN);		break;
 	case ITEMTYPE_MAGIC:		nSize = sizeof (ITEMINFO_MAGIC);		break;
+	case ITEMTYPE_USEMAGIC:		nSize = sizeof (ITEMINFO_MAGIC);		break;
 	case ITEMTYPE_MANAUP:		nSize = sizeof (ITEMINFO_MANAUP);		break;
 	case ITEMTYPE_HPMANAUP:		nSize = sizeof (ITEMINFO_HPMANAUP);		break;
 	case ITEMTYPE_EQU_HAND:		nSize = sizeof (ITEMTYPE_EQU_HAND);		break;

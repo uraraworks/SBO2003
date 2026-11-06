@@ -471,6 +471,7 @@ const char *aItemeTypeNameTbl[] = {
 	"装備(指輪1)",
 	"装備(指輪2)",
 	"蘇生",
+	"特技発動",
 	"z"
 };
 
