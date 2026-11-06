@@ -26,6 +26,7 @@
 #include <map>
 #include <list>
 #include <set>
+#include <unordered_map>
 #include <algorithm>
 
 /* ------------------------------------------------------------------------- */
@@ -137,7 +138,34 @@ HBITMAP W32GetScreenBitmap(void)
 /* 画面への転送																 */
 /* ------------------------------------------------------------------------- */
 #ifdef W32_BROWSER
-EM_JS(void, W32JsPresent, (const unsigned char *pRgba, int cx, int cy), {
+/* 検査モード（URL に ?verify=1）: 差分だけ転送した後の canvas が、全画面を転送した場合と
+   同じ画素になっているかを毎回確かめる（テスト用。通常は何もしない） */
+EM_JS(int, W32JsVerifyEnabled, (void), {
+	try {
+		return new URLSearchParams(location.search).get('verify') === '1' ? 1 : 0;
+	} catch (e) {
+		return 0;
+	}
+});
+
+static BOOL s_bSkipCandidate;		/* 次の転送は前と同じ画素のはず（省いてよいと判断した描画の検査用） */
+
+BOOL W32VerifyMode(void)
+{
+	static int s_nMode = -1;
+	if (s_nMode < 0) {
+		s_nMode = W32JsVerifyEnabled();
+	}
+	return s_nMode == 1;
+}
+
+void W32VerifySkipCandidate(void)
+{
+	s_bSkipCandidate = TRUE;
+}
+
+/* 変わった範囲（dx, dy, dw, dh）だけ canvas へ出す。canvas の大きさが変わった時は全部出す */
+EM_JS(void, W32JsPresent, (const unsigned char *pRgba, int cx, int cy, int dx, int dy, int dw, int dh, int bVerify), {
 	var canvas = Module['canvas'];
 	if (!canvas) {
 		return;
@@ -145,6 +173,7 @@ EM_JS(void, W32JsPresent, (const unsigned char *pRgba, int cx, int cy), {
 	if (canvas.width !== cx || canvas.height !== cy) {
 		canvas.width = cx;
 		canvas.height = cy;
+		dx = 0; dy = 0; dw = cx; dh = cy;
 	}
 	var ctx = Module['w32Ctx'];
 	if (!ctx || Module['w32CtxCanvas'] !== canvas) {
@@ -152,6 +181,7 @@ EM_JS(void, W32JsPresent, (const unsigned char *pRgba, int cx, int cy), {
 		ctx = canvas.getContext('2d', { alpha: false });
 		Module['w32Ctx'] = ctx;
 		Module['w32CtxCanvas'] = canvas;
+		dx = 0; dy = 0; dw = cx; dh = cy;
 	}
 	/* wasm のメモリをそのまま ImageData の中身として使い、毎回のコピーを省く。
 	   メモリが増えると古い buffer は使えなくなるので、その時は作り直す */
@@ -162,54 +192,138 @@ EM_JS(void, W32JsPresent, (const unsigned char *pRgba, int cx, int cy), {
 		Module['w32Img'] = img;
 		Module['w32ImgPtr'] = pRgba;
 		Module['w32ImgBuf'] = HEAPU8.buffer;
+		dx = 0; dy = 0; dw = cx; dh = cy;
 	}
-	ctx.putImageData(img, 0, 0);
+	if (dw > 0 && dh > 0) {
+		ctx.putImageData(img, 0, 0, dx, dy, dw, dh);
+	}
+	if (bVerify) {
+		var got = ctx.getImageData(0, 0, cx, cy).data;
+		var want = HEAPU8.subarray(pRgba, pRgba + cx * cy * 4);
+		var bad = 0;
+		for (var i = 0; i < want.length; i++) {
+			if (got[i] !== want[i]) { bad++; }
+		}
+		if (bad) {
+			Module['sboVerifyFail'] = (Module['sboVerifyFail'] || 0) + 1;
+			console.warn('[verify] canvas が全画面転送と違います: ' + bad + ' バイト');
+		}
+	}
 	/* 表示側（シェル）が拡大表示用の後処理をしたい時のための呼び出し口 */
 	if (Module['w32OnPresent']) {
 		Module['w32OnPresent']();
 	}
 });
 
+EM_JS(void, W32JsVerifyFail, (const char *pszText), {
+	Module['sboVerifyFail'] = (Module['sboVerifyFail'] || 0) + 1;
+	console.warn('[verify] ' + UTF8ToString(pszText));
+});
+
+/* B,G,R,X の並びを R,G,B,A(255) にして、1 行のうち [x0, x1) を変換する */
+static inline void ConvertRow(const DWORD *pSrc, DWORD *pDst, int x0, int x1)
+{
+	for (int x = x0; x < x1; x ++) {
+		DWORD dw = pSrc[x];
+		pDst[x] = 0xFF000000 | ((dw & 0xFF) << 16) | (dw & 0xFF00) | ((dw >> 16) & 0xFF);
+	}
+}
+
 void W32PresentScreen(void)
 {
-	static std::vector<BYTE> s_aRgba;
+	/* s_aRgba … いま canvas にある絵（R,G,B,A）。s_aPrev … 同じ絵の元（B,G,R,X） */
+	static std::vector<BYTE>	s_aRgba;
+	static std::vector<DWORD>	s_aPrev;
+	static int					s_nVerify = -1;
 	W32GdiObj *p = W32GetGdi(s_hBmpScreen);
 	if (p == NULL) {
 		return;
 	}
 	double dStart = W32PerfNow();
-	size_t nSize = (size_t)p->cx * p->cy * 4;
-	if (s_aRgba.size() != nSize) {
-		s_aRgba.resize(nSize);
+	if (s_nVerify < 0) {
+		s_nVerify = W32JsVerifyEnabled();
 	}
-	/* B,G,R,X の並びを R,G,B,A(255) にする。2 画素（64bit）ずつまとめて入れ替える
-	   （wasm はリトルエンディアンなので、1 画素は 0xXXRRGGBB として読める） */
-	const unsigned long long qwMaskRB = 0x000000FF000000FFULL;
-	const unsigned long long qwMaskG  = 0x0000FF000000FF00ULL;
-	const unsigned long long qwAlpha  = 0xFF000000FF000000ULL;
-	DWORD *pDst = (DWORD *)&s_aRgba[0];
+	size_t nPixels = (size_t)p->cx * p->cy;
+	BOOL bFull = FALSE;
+	if (s_aPrev.size() != nPixels || s_aRgba.size() != nPixels * 4) {
+		s_aRgba.assign(nPixels * 4, 0);
+		s_aPrev.assign(nPixels, 0);
+		bFull = TRUE;
+	}
+	/* 前回から変わった範囲を求める（行ごとに比べ、変わった行だけ変換する） */
+	int nMinX = p->cx, nMaxX = -1, nMinY = p->cy, nMaxY = -1;
+	DWORD *pRgba = (DWORD *)&s_aRgba[0];
 	for (int y = 0; y < p->cy; y ++) {
 		const DWORD *pSrc = (const DWORD *)PixelPtr(p, 0, y);
-		int x = 0;
-		for (; x + 1 < p->cx; x += 2) {
-			unsigned long long qw;
-			memcpy(&qw, &pSrc[x], sizeof(qw));
-			qw = qwAlpha | ((qw & qwMaskRB) << 16) | (qw & qwMaskG) | ((qw >> 16) & qwMaskRB);
-			memcpy(&pDst[x], &qw, sizeof(qw));
+		DWORD *pPrev = &s_aPrev[(size_t)y * p->cx];
+		int x0 = 0, x1 = p->cx;
+		if (!bFull) {
+			if (memcmp(pSrc, pPrev, (size_t)p->cx * 4) == 0) {
+				continue;
+			}
+			while (x0 < x1 && pSrc[x0] == pPrev[x0]) {
+				x0 ++;
+			}
+			while (x1 > x0 && pSrc[x1 - 1] == pPrev[x1 - 1]) {
+				x1 --;
+			}
 		}
-		if (x < p->cx) {
-			DWORD dw = pSrc[x];
-			pDst[x] = 0xFF000000 | ((dw & 0xFF) << 16) | (dw & 0xFF00) | ((dw >> 16) & 0xFF);
-		}
-		pDst += p->cx;
+		ConvertRow(pSrc, pRgba + (size_t)y * p->cx, x0, x1);
+		memcpy(pPrev + x0, pSrc + x0, (size_t)(x1 - x0) * 4);
+		nMinX = std::min(nMinX, x0);
+		nMaxX = std::max(nMaxX, x1 - 1);
+		nMinY = std::min(nMinY, y);
+		nMaxY = std::max(nMaxY, y);
 	}
-	W32JsPresent(&s_aRgba[0], p->cx, p->cy);
+	if (s_bSkipCandidate) {
+		s_bSkipCandidate = FALSE;
+		if (nMaxX >= 0 && !bFull) {
+			W32JsVerifyFail("省いてよいと判断した描画で画素が変わりました");
+		}
+	}
+	if (s_nVerify == 1) {
+		/* 全画面を変換し直して、差分で更新した絵と同じか確かめる */
+		int nBad = 0;
+		for (int y = 0; y < p->cy; y ++) {
+			const DWORD *pSrc = (const DWORD *)PixelPtr(p, 0, y);
+			for (int x = 0; x < p->cx; x ++) {
+				DWORD dw = pSrc[x];
+				DWORD dwWant = 0xFF000000 | ((dw & 0xFF) << 16) | (dw & 0xFF00) | ((dw >> 16) & 0xFF);
+				if (pRgba[(size_t)y * p->cx + x] != dwWant) {
+					nBad ++;
+				}
+			}
+		}
+		if (nBad) {
+			char szMsg[64];
+			snprintf(szMsg, sizeof(szMsg), "差分の変換が全画面と違います: %d 画素", nBad);
+			W32JsVerifyFail(szMsg);
+		}
+	}
+	if (nMaxX >= 0 || bFull || s_nVerify == 1) {
+		if (bFull) {
+			nMinX = 0; nMinY = 0; nMaxX = p->cx - 1; nMaxY = p->cy - 1;
+		}
+		int dw = (nMaxX >= 0) ? nMaxX - nMinX + 1 : 0;
+		int dh = (nMaxX >= 0) ? nMaxY - nMinY + 1 : 0;
+		W32JsPresent(&s_aRgba[0], p->cx, p->cy, (nMaxX >= 0) ? nMinX : 0, (nMaxX >= 0) ? nMinY : 0, dw, dh,
+			s_nVerify == 1 ? 1 : 0);
+	}
 	s_bScreenDirty = FALSE;
 	if (dStart) {
 		W32PerfAdd(W32PERF_PRESENT, W32PerfNow() - dStart);
 	}
 }
 #else
+BOOL W32VerifyMode(void)
+{
+	return FALSE;
+}
+
+void W32VerifySkipCandidate(void)
+{
+}
+
 void W32PresentScreen(void)
 {
 	/* 画面なし */
@@ -1212,6 +1326,7 @@ struct W32TextMask {
 	std::vector<BYTE>	aMask;
 };
 static std::list<W32TextMask>	s_listMask;
+static std::unordered_map<std::string, std::list<W32TextMask>::iterator>	s_mapMask;	/* 文字列 → s_listMask の位置 */
 #define TEXTMASK_CACHE_MAX		256
 
 static const W32TextMask *GetTextMask(TTF_Font *pTtf, const std::string &strUtf8)
@@ -1219,13 +1334,13 @@ static const W32TextMask *GetTextMask(TTF_Font *pTtf, const std::string &strUtf8
 	char szKey[32];
 	snprintf(szKey, sizeof(szKey), "%p:", (void *)pTtf);
 	std::string strKey = std::string(szKey) + strUtf8;
-	for (std::list<W32TextMask>::iterator it = s_listMask.begin(); it != s_listMask.end(); ++ it) {
-		if (it->strKey == strKey) {
-			if (it != s_listMask.begin()) {
-				s_listMask.splice(s_listMask.begin(), s_listMask, it);
-			}
-			return &s_listMask.front();
+	std::unordered_map<std::string, std::list<W32TextMask>::iterator>::iterator itFind = s_mapMask.find(strKey);
+	if (itFind != s_mapMask.end()) {
+		std::list<W32TextMask>::iterator it = itFind->second;
+		if (it != s_listMask.begin()) {
+			s_listMask.splice(s_listMask.begin(), s_listMask, it);	/* splice しても iterator は無効にならない */
 		}
+		return &s_listMask.front();
 	}
 	SDL_Color clWhite = {255, 255, 255, 255};
 	std::vector<W32TextCell> aCell;
@@ -1293,36 +1408,22 @@ static const W32TextMask *GetTextMask(TTF_Font *pTtf, const std::string &strUtf8
 		mask.aMask.swap(aBold);
 	}
 	s_listMask.push_front(mask);
+	s_mapMask[strKey] = s_listMask.begin();
 	if (s_listMask.size() > TEXTMASK_CACHE_MAX) {
+		s_mapMask.erase(s_listMask.back().strKey);
 		s_listMask.pop_back();
 	}
 	return &s_listMask.front();
 }
 
-BOOL TextOut(HDC hDC, int x, int y, LPCSTR pszText, int nLen)
+/* 文字の形（マスク）を bitmap へ描く */
+static void DrawTextMask(W32Dc *pDc, W32GdiObj *pBmp, const W32TextMask *pMask, int x, int y, COLORREF clText)
 {
-	W32Dc *pDc = W32GetDc(hDC);
-	W32GdiObj *pBmp = DcBitmap(pDc);
-	if (pBmp == NULL || pszText == NULL || nLen <= 0) {
-		return FALSE;
-	}
-	TTF_Font *pTtf = DcTtf(pDc);
-	if (pTtf == NULL) {
-		return FALSE;
-	}
-	std::string strUtf8 = W32TextToUtf8Str(pszText, nLen);
-	if (strUtf8.empty()) {
-		return TRUE;
-	}
-	const W32TextMask *pMask = GetTextMask(pTtf, strUtf8);
-	if (pMask == NULL) {
-		return FALSE;
-	}
 	MarkDirty(pDc);
 	if (pDc->nBkMode == OPAQUE) {
 		FillBits(pBmp, x, y, pMask->cx, pMask->cy, ColorToPixel(pDc->clBk));
 	}
-	DWORD dwText = ColorToPixel(pDc->clText);
+	DWORD dwText = ColorToPixel(clText);
 	for (int yy = 0; yy < pMask->cy; yy ++) {
 		int dy = y + yy;
 		if (dy < 0 || dy >= pBmp->cy) {
@@ -1336,6 +1437,68 @@ BOOL TextOut(HDC hDC, int x, int y, LPCSTR pszText, int nLen)
 			}
 		}
 	}
+}
+
+/* 文字列の形を取り出す（空文字列の時は *pbEmpty = TRUE で NULL） */
+static const W32TextMask *PrepareTextMask(W32Dc *pDc, LPCSTR pszText, int nLen, BOOL *pbEmpty)
+{
+	*pbEmpty = FALSE;
+	TTF_Font *pTtf = DcTtf(pDc);
+	if (pTtf == NULL) {
+		return NULL;
+	}
+	std::string strUtf8 = W32TextToUtf8Str(pszText, nLen);
+	if (strUtf8.empty()) {
+		*pbEmpty = TRUE;
+		return NULL;
+	}
+	return GetTextMask(pTtf, strUtf8);
+}
+
+BOOL TextOut(HDC hDC, int x, int y, LPCSTR pszText, int nLen)
+{
+	W32Dc *pDc = W32GetDc(hDC);
+	W32GdiObj *pBmp = DcBitmap(pDc);
+	if (pBmp == NULL || pszText == NULL || nLen <= 0) {
+		return FALSE;
+	}
+	BOOL bEmpty;
+	const W32TextMask *pMask = PrepareTextMask(pDc, pszText, nLen, &bEmpty);
+	if (bEmpty) {
+		return TRUE;
+	}
+	if (pMask == NULL) {
+		return FALSE;
+	}
+	DrawTextMask(pDc, pBmp, pMask, x, y, pDc->clText);
+	return TRUE;
+}
+
+/* 黒縁取りの文字（上下左右 1 ドットに縁の色で描いてから、本体の色で重ねる）。
+   TextOut を縁取り色で 4 回・本体色で 1 回呼ぶのと同じ画素になる（文字の形の検索は 1 回で済ます）。
+   終わった時の文字色は本体色 */
+BOOL TextOutOutline(HDC hDC, int x, int y, LPCSTR pszText, int nLen, COLORREF clOutline, COLORREF clText)
+{
+	W32Dc *pDc = W32GetDc(hDC);
+	W32GdiObj *pBmp = DcBitmap(pDc);
+	if (pBmp == NULL || pszText == NULL || nLen <= 0) {
+		return FALSE;
+	}
+	pDc->clText = clOutline;
+	BOOL bEmpty;
+	const W32TextMask *pMask = PrepareTextMask(pDc, pszText, nLen, &bEmpty);
+	pDc->clText = clText;
+	if (bEmpty) {
+		return TRUE;
+	}
+	if (pMask == NULL) {
+		return FALSE;
+	}
+	DrawTextMask(pDc, pBmp, pMask, x - 1, y, clOutline);
+	DrawTextMask(pDc, pBmp, pMask, x + 1, y, clOutline);
+	DrawTextMask(pDc, pBmp, pMask, x, y - 1, clOutline);
+	DrawTextMask(pDc, pBmp, pMask, x, y + 1, clOutline);
+	DrawTextMask(pDc, pBmp, pMask, x, y, clText);
 	return TRUE;
 }
 
@@ -1393,6 +1556,11 @@ static W32GdiObj *DcFont(W32Dc *pDc)
 }
 
 BOOL TextOut(HDC, int, int, LPCSTR, int)
+{
+	return TRUE;
+}
+
+BOOL TextOutOutline(HDC, int, int, LPCSTR, int, COLORREF, COLORREF)
 {
 	return TRUE;
 }

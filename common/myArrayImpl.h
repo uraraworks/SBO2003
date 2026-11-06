@@ -21,6 +21,7 @@ CmyArray<TYPE, ARG_TYPE>::CmyArray()
 {
 	m_pData = NULL;
 	m_nCount = 0;
+	m_nCap = 0;
 }
 
 
@@ -65,6 +66,7 @@ void CmyArray<TYPE, ARG_TYPE>::RemoveAll(void)
 		m_pData = NULL;
 	}
 	m_nCount = 0;
+	m_nCap = 0;
 }
 
 
@@ -127,21 +129,20 @@ template<class TYPE, class ARG_TYPE>
 int CmyArray<TYPE, ARG_TYPE>::Add(
 	ARG_TYPE newElement)		/* [in] 追加するデータ */
 {
-	TYPE *pData;
+	/* 足りなければ倍に広げる（追加のたびに全量を作り直さない） */
+	if (m_nCount >= m_nCap) {
+		TYPE *pData;
+		int nCap = (m_nCap < 4) ? 4 : (m_nCap * 2);
 
-	/* 追加分の要素を確保 */
-	pData = new TYPE[m_nCount + 1];
-
-	/* 追加前のデータをコピー */
-	CopyMemory (pData, m_pData, sizeof (TYPE) * m_nCount);
-	pData[m_nCount] = newElement;
-
-	if (m_pData) {
-		/* 今までのデータを破棄 */
-		delete [] m_pData;
+		pData = new TYPE[nCap];
+		if (m_pData) {
+			CopyMemory (pData, m_pData, sizeof (TYPE) * m_nCount);
+			delete [] m_pData;
+		}
+		m_pData = pData;
+		m_nCap = nCap;
 	}
-
-	m_pData = pData;
+	m_pData[m_nCount] = newElement;
 	m_nCount ++;
 
 	/* 新しいIDを返す */
@@ -160,29 +161,25 @@ void CmyArray<TYPE, ARG_TYPE>::InsertAt(
 	int nIndex,					/* [in] 要素ID */
 	ARG_TYPE newElement)		/* [in] 追加するデータ */
 {
-	int i, nTmp;
-	TYPE *pData;
+	/* 足りなければ倍に広げる */
+	if (m_nCount >= m_nCap) {
+		TYPE *pData;
+		int nCap = (m_nCap < 4) ? 4 : (m_nCap * 2);
 
-	/* 追加分の要素を確保 */
-	pData = new TYPE[m_nCount + 1];
-
-	nTmp = 0;
-	/* 追加前のデータをコピー */
-	for (i = 0; i < m_nCount + 1; i ++) {
-		if (i == nIndex) {
-			continue;
+		pData = new TYPE[nCap];
+		if (m_pData) {
+			CopyMemory (pData, m_pData, sizeof (TYPE) * m_nCount);
+			delete [] m_pData;
 		}
-		CopyMemory (&pData[i], &m_pData[nTmp], sizeof (TYPE));
-		nTmp ++;
-	}
-	pData[nIndex] = newElement;
-
-	if (m_pData) {
-		/* 今までのデータを破棄 */
-		delete [] m_pData;
+		m_pData = pData;
+		m_nCap = nCap;
 	}
 
-	m_pData = pData;
+	/* 挿入位置より後ろを1つずつ後ろへずらす */
+	if (nIndex < m_nCount) {
+		MoveMemory (&m_pData[nIndex + 1], &m_pData[nIndex], sizeof (TYPE) * (m_nCount - nIndex));
+	}
+	m_pData[nIndex] = newElement;
 	m_nCount ++;
 }
 
@@ -198,8 +195,7 @@ void CmyArray<TYPE, ARG_TYPE>::RemoveAt(
 	int nIndex,		/* [in] 要素ID */
 	int nCount)		/* [in] 削除数 */
 {
-	int i, j, nID;
-	TYPE *pData;
+	int i, j;
 
 	/* 指定分だけ要素を削除するループ */
 	for (j = 0; j < nCount; j ++) {
@@ -208,20 +204,10 @@ void CmyArray<TYPE, ARG_TYPE>::RemoveAt(
 			break;
 		}
 
-		/* 削除した分のデータを確保 */
-		pData = new TYPE[m_nCount - 1];
-		/* 指定要素以外をコピーするループ */
-		for (i = 0, nID = 0; i < m_nCount; i ++) {
-			if (nIndex == i) {
-				continue;
-			}
-			pData[nID] = m_pData[i];
-			nID ++;
+		/* 指定要素より後ろを1つ前へつめる */
+		for (i = nIndex; i < m_nCount - 1; i ++) {
+			m_pData[i] = m_pData[i + 1];
 		}
-		if (m_pData) {
-			delete [] m_pData;
-		}
-		m_pData = pData;
 		m_nCount --;
 	}
 }
