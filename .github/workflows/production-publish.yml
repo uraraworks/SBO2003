@@ -10,7 +10,8 @@
 #
 #   3) 手動実行で「VPS へデプロイする」にチェックがある時は、SSH で VPS へ送って入れ替える
 #      （deploy/production/vps-deploy.sh → VPS で remote-deploy.ps1。stop.ps1 で保存して止めてから展開して起動）。
-#      止める前に、ゲームの全員へシステムメッセージで再起動を予告し、遊んでいる人がいれば notice_sec 秒（既定 60）待つ。
+#      「再起動を知らせる」にチェックがあれば、ビルドと同時にゲームの全員へシステムメッセージで予告し（announce）、
+#      差し替えの直前に「まもなく再起動します」を流す。ビルドや確認が失敗して差し替えなかった時は中止を知らせる（cancel-notice）。
 #
 # 手動実行・v* タグ・関係するファイルを変える PR の時だけ動く（VPS へのデプロイは手動実行の時だけ）。
 # BGM の MIDI は Secret SBO2003_PRIVATE_TOKEN（SBO2003-private を読めるトークン）で取ってくる。無ければ BGM 無し。
@@ -33,10 +34,10 @@ on:
         description: VPS へデプロイする（外すと zip を作って確かめるだけ）
         type: boolean
         default: true
-      notice_sec:
-        description: 止める前にゲームの全員へ「まもなく再起動します」と知らせて待つ秒数（0 で知らせない。誰もいなければ待たない）
-        type: number
-        default: 60
+      notice:
+        description: ゲームの全員へ再起動を知らせる（ビルド開始時に予告、差し替え直前に「まもなく再起動します」）
+        type: boolean
+        default: true
   push:
     tags: ['v*']
   pull_request:
@@ -54,6 +55,27 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  announce:
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy && inputs.notice
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: ゲームの全員に再起動を予告する
+        env:
+          VPS_HOST: ${{ vars.SBO2003_VPS_HOST }}
+          VPS_USER: ${{ vars.SBO2003_VPS_USER }}
+          VPS_PORT: ${{ vars.SBO2003_VPS_PORT || '22' }}
+          SSH_KEY: ${{ secrets.SBO2003_VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.SBO2003_VPS_KNOWN_HOSTS }}
+        run: |
+          if [ -z "$VPS_HOST" ]; then echo "::notice::変数 SBO2003_VPS_HOST が未設定なので知らせません"; exit 0; fi
+          deploy/production/ssh-setup.sh
+          # 知らせられなくてもデプロイは止めない
+          SSH_KEY=~/.ssh/id_vps deploy/production/vps-deploy.sh --notice \
+            '【お知らせ】サーバーを更新します。' '早ければ数分で再起動します。' ||
+            echo "::warning::再起動の予告を流せませんでした"
+
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
@@ -226,17 +248,7 @@ jobs:
         env:
           SSH_KEY: ${{ secrets.SBO2003_VPS_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.SBO2003_VPS_KNOWN_HOSTS }}
-        run: |
-          install -m 700 -d ~/.ssh
-          # 秘密鍵はそのままの形でも、base64 で1行にした形でもよい。CR と行末の空白は取り除く。
-          key=$(printf '%s\n' "$SSH_KEY" | tr -d '\r' | sed 's/[[:space:]]*$//')
-          case "$key" in
-            -----BEGIN*) printf '%s\n' "$key" > ~/.ssh/id_vps ;;
-            *) printf '%s' "$key" | tr -d ' \n' | base64 -d > ~/.ssh/id_vps ;;
-          esac
-          chmod 600 ~/.ssh/id_vps
-          ssh-keygen -y -f ~/.ssh/id_vps > /dev/null
-          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+        run: deploy/production/ssh-setup.sh
 
       - name: VPS へ送って入れ替える
         if: steps.check.outputs.skip != '1'
@@ -247,5 +259,31 @@ jobs:
           SSH_KEY: ~/.ssh/id_vps
           HEALTH_URL: ${{ vars.SBO2003_VPS_HEALTH_URL }}  # 外から届くようになってから設定する
           IIS_HOST: ${{ vars.SBO2003_VPS_IIS_HOST || 'sbo2003.urara-works.jp' }}
-          NOTICE_SEC: ${{ inputs.notice_sec }}
+          # 予告はビルドの開始時に済んでいる。差し替えの直前は「まもなく再起動します」だけ流して待たない
+          NOTICE_SEC: ${{ inputs.notice && '60' || '0' }}
+          NOTICE_ANNOUNCED: '1'
         run: deploy/production/vps-deploy.sh "$(ls dl/Sbo2003_Server_*.zip | head -n 1)"
+
+  # 予告したのに差し替えなかった時（ビルドや確認の失敗・取り消し）は、中止を知らせる
+  cancel-notice:
+    needs: [announce, build, smoke, deploy]
+    if: >-
+      always() && needs.announce.result == 'success' &&
+      (needs.build.result == 'failure' || needs.build.result == 'cancelled' ||
+       needs.smoke.result == 'failure' || needs.smoke.result == 'cancelled')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: ゲームの全員に更新の中止を知らせる
+        env:
+          VPS_HOST: ${{ vars.SBO2003_VPS_HOST }}
+          VPS_USER: ${{ vars.SBO2003_VPS_USER }}
+          VPS_PORT: ${{ vars.SBO2003_VPS_PORT || '22' }}
+          SSH_KEY: ${{ secrets.SBO2003_VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.SBO2003_VPS_KNOWN_HOSTS }}
+        run: |
+          if [ -z "$VPS_HOST" ]; then exit 0; fi
+          deploy/production/ssh-setup.sh
+          SSH_KEY=~/.ssh/id_vps deploy/production/vps-deploy.sh --notice \
+            '【お知らせ】サーバーの更新は中止になりました。' 'このまま遊び続けられます。'
