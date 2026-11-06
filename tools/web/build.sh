@@ -74,7 +74,7 @@ WEB_SRCS=(
 	"$GEN/w32_resources.cpp"
 )
 
-PORTS=(-sUSE_SDL=2 -sUSE_SDL_TTF=2 -sUSE_SDL_MIXER=2 -sUSE_LIBPNG=1 -sUSE_ZLIB=1)
+PORTS=(-sUSE_SDL=2 -sUSE_SDL_TTF=2 -sUSE_LIBPNG=1 -sUSE_ZLIB=1)
 if [ "$MODE" = "debug" ]; then
 	OPT=(-O0 -g)
 else

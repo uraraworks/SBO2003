@@ -1,43 +1,293 @@
 /* ========================================================================= */
 /* CDXAudio_web.cpp															 */
-/* DirectX Audio を使うためのクラス（Web版）：SDL_mixer で鳴らす				 */
+/* DirectX Audio を使うためのクラス（Web版）：Web Audio で直接鳴らす		 */
 /* ========================================================================= */
 /*
- * 効果音は WAVE リソースなので、SDL_mixer の Mix_Chunk にして鳴らす。
- * ゲーム側は IDirectMusicSegment8 * として持っているが、中身は Mix_Chunk *。
+ * 効果音は WAVE リソースなので、PCM を取り出して Web Audio の AudioBuffer にしておき、
+ * 鳴らす時は AudioBufferSourceNode をその場で作って鳴らす。
+ *
+ * 以前は SDL_mixer で鳴らしていたが、Emscripten 版の SDL2 は ScriptProcessorNode
+ * （メインスレッドで音を作って渡す古い仕組み）で出力するため、スマホでは
+ * 鳴らしてから聞こえるまでが PC より大きく遅れていた（1 秒近く遅れることがある）。
+ * AudioBufferSourceNode はブラウザの音声スレッドがそのまま鳴らすので、
+ * 遅れは端末の出力の遅れだけになる。
+ *
+ * ゲーム側は IDirectMusicSegment8 * として持っているが、中身は JS 側の効果音の番号（1〜）。
  * 音量は DirectMusic と同じく dB 単位（0 が最大、-100 で無音）で受け取って換算する。
- * プライマリ（BGM 用）はチャンネル 0 を専用に使う。
+ * プライマリは 1 つだけ鳴らす（新しく鳴らすと前のは止める）。
  */
 #include "StdAfx.h"
 
 #include <SDL.h>
-#include <SDL_mixer.h>
+#include <emscripten.h>
 #include <math.h>
 #include <map>
 
-#define PRIMARY_CHANNEL		0			/* プライマリセグメント用のチャンネル */
-#define CHANNEL_COUNT		16
-
-static BOOL						s_bOpen;
-static std::map<Mix_Chunk *, int>	s_mapRepeat;	/* セグメントごとの繰り返し回数 */
-
-static Mix_Chunk *ToChunk(IDirectMusicSegment8 **pSeg)
-{
-	return pSeg ? (Mix_Chunk *)*pSeg : NULL;
-}
-
-/* dB → SDL_mixer の音量(0〜128) */
-static int DbToVolume(long lDb)
-{
-	if (lDb <= -100) {
+/* ページ側に効果音の仕組みを用意する（何度呼んでもよい） */
+EM_JS(int, SboSeInit, (void), {
+	if (Module.SboSe) {
+		return Module.SboSe.ctx ? 1 : 0;
+	}
+	var se = Module.SboSe = {
+		ctx: null,
+		bufs: {},			/* 番号 → AudioBuffer */
+		nodes: {},			/* 番号 → 鳴っている AudioBufferSourceNode の一覧 */
+		primary: null,		/* プライマリで鳴っているもの { id, node } */
+		gainPri: null,
+		gainSec: null
+	};
+	var AC = window.AudioContext || window.webkitAudioContext;
+	if (!AC) {
+		console.log('[se] この環境では AudioContext が使えないので効果音は鳴りません');
 		return 0;
 	}
-	double fGain = pow(10.0, (double)lDb / 20.0);
-	int nVol = (int)(fGain * MIX_MAX_VOLUME + 0.5);
-	if (nVol > MIX_MAX_VOLUME) {
-		nVol = MIX_MAX_VOLUME;
+	try {
+		se.ctx = new AC({ latencyHint: 'interactive' });
+	} catch (e) {
+		try {
+			se.ctx = new AC();
+		} catch (e2) {
+			console.log('[se] AudioContext を作れませんでした: ' + e2);
+			return 0;
+		}
 	}
-	return nVol;
+	var ctx = se.ctx;
+	se.gainPri = ctx.createGain();
+	se.gainPri.connect(ctx.destination);
+	se.gainSec = ctx.createGain();
+	se.gainSec.connect(ctx.destination);
+
+	/* 操作されたら音を出せるようにする（resume はイベントの中ですぐに呼ばないと
+	   Safari などでは断られる） */
+	var silentDone = false;
+	var unlock = function () {
+		if (ctx.state === 'running') {
+			return;
+		}
+		ctx.resume().catch(function () {});
+		/* iPhone などは操作の中で何か鳴らすと動き出すので、無音を一瞬鳴らしておく */
+		if (!silentDone) {
+			silentDone = true;
+			try {
+				var src = ctx.createBufferSource();
+				src.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+				src.connect(ctx.destination);
+				src.start(0);
+			} catch (e) {
+			}
+		}
+	};
+	/* タッチでは touchstart・pointerdown は「操作」と見なされないので、離した時のイベントも見る */
+	['keydown', 'mousedown', 'pointerdown', 'pointerup', 'touchend', 'click'].forEach(function (type) {
+		window.addEventListener(type, unlock, true);
+	});
+	return 1;
+});
+
+/* 効果音を登録する（pData は -1.0〜1.0 の float を チャンネル交互に並べたもの） */
+EM_JS(int, SboSeCreate, (int nId, const float *pData, int nFrames, int nChannels, int nRate), {
+	var se = Module.SboSe;
+	if (!se || !se.ctx || nFrames <= 0) {
+		return 0;
+	}
+	var ctx = se.ctx;
+	var src = HEAPF32.subarray(pData >> 2, (pData >> 2) + nFrames * nChannels);
+	var rate = nRate;
+	var frames = nFrames;
+	var buf = null;
+	try {
+		buf = ctx.createBuffer(nChannels, frames, rate);
+	} catch (e) {
+		buf = null;
+	}
+	var step = 1;
+	if (!buf) {
+		/* 古いブラウザは低いサンプリング周波数の AudioBuffer を作れないので、こちらで引き伸ばす */
+		rate = ctx.sampleRate;
+		frames = Math.max(1, Math.floor(nFrames * rate / nRate));
+		step = nRate / rate;
+		buf = ctx.createBuffer(nChannels, frames, rate);
+	}
+	for (var c = 0; c < nChannels; c++) {
+		var dst = buf.getChannelData(c);
+		if (step === 1) {
+			for (var i = 0; i < frames; i++) {
+				dst[i] = src[i * nChannels + c];
+			}
+		} else {
+			for (var i = 0; i < frames; i++) {
+				var p = i * step;
+				var i0 = Math.floor(p);
+				var i1 = Math.min(i0 + 1, nFrames - 1);
+				var t = p - i0;
+				dst[i] = src[i0 * nChannels + c] * (1 - t) + src[i1 * nChannels + c] * t;
+			}
+		}
+	}
+	se.bufs[nId] = buf;
+	se.nodes[nId] = [];
+	return 1;
+});
+
+EM_JS(void, SboSeStopId, (int nId), {
+	var se = Module.SboSe;
+	if (!se) {
+		return;
+	}
+	var list = se.nodes[nId];
+	if (list) {
+		se.nodes[nId] = [];
+		list.forEach(function (n) {
+			try {
+				n.onended = null;
+				n.stop();
+			} catch (e) {
+			}
+			n.disconnect();
+		});
+	}
+	if (se.primary && se.primary.id === nId) {
+		se.primary = null;
+	}
+});
+
+EM_JS(void, SboSeDelete, (int nId), {
+	var se = Module.SboSe;
+	if (!se) {
+		return;
+	}
+	delete se.bufs[nId];
+	delete se.nodes[nId];
+});
+
+/* 鳴らす（nLoops: 0=1回、n=n回繰り返す、-1=ずっと。bPrimary: プライマリで鳴らす） */
+EM_JS(int, SboSePlay, (int nId, int nLoops, int bPrimary), {
+	var se = Module.SboSe;
+	if (!se || !se.ctx || !se.bufs[nId]) {
+		return 0;
+	}
+	var ctx = se.ctx;
+	/* 音を出せない（操作される前など）間は鳴らさない。止まっている間に鳴らすと、
+	   動き出した時にまとめて遅れて聞こえてしまう */
+	if (ctx.state !== 'running') {
+		return 0;
+	}
+	if (bPrimary && se.primary) {
+		var old = se.primary;
+		se.primary = null;
+		var list = se.nodes[old.id] || [];
+		var idx = list.indexOf(old.node);
+		if (idx >= 0) {
+			list.splice(idx, 1);
+		}
+		try {
+			old.node.onended = null;
+			old.node.stop();
+		} catch (e) {
+		}
+		old.node.disconnect();
+	}
+	var buf = se.bufs[nId];
+	var node = ctx.createBufferSource();
+	node.buffer = buf;
+	node.connect(bPrimary ? se.gainPri : se.gainSec);
+	var now = ctx.currentTime;
+	if (nLoops != 0) {
+		node.loop = true;
+	}
+	node.onended = function () {
+		var list = se.nodes[nId];
+		if (list) {
+			var i = list.indexOf(node);
+			if (i >= 0) {
+				list.splice(i, 1);
+			}
+		}
+		if (se.primary && se.primary.node === node) {
+			se.primary = null;
+		}
+		node.disconnect();
+	};
+	node.start(now);
+	if (nLoops > 0) {
+		node.stop(now + buf.duration * (nLoops + 1));
+	}
+	se.nodes[nId].push(node);
+	if (bPrimary) {
+		se.primary = { id: nId, node: node };
+	}
+	return 1;
+});
+
+EM_JS(void, SboSeStopPrimary, (void), {
+	var se = Module.SboSe;
+	if (se && se.primary) {
+		var old = se.primary;
+		se.primary = null;
+		var list = se.nodes[old.id] || [];
+		var idx = list.indexOf(old.node);
+		if (idx >= 0) {
+			list.splice(idx, 1);
+		}
+		try {
+			old.node.onended = null;
+			old.node.stop();
+		} catch (e) {
+		}
+		old.node.disconnect();
+	}
+});
+
+EM_JS(void, SboSeStopAll, (void), {
+	var se = Module.SboSe;
+	if (!se) {
+		return;
+	}
+	Object.keys(se.nodes).forEach(function (id) {
+		var list = se.nodes[id];
+		se.nodes[id] = [];
+		list.forEach(function (n) {
+			try {
+				n.onended = null;
+				n.stop();
+			} catch (e) {
+			}
+			n.disconnect();
+		});
+	});
+	se.primary = null;
+});
+
+EM_JS(void, SboSeSetVolume, (int bPrimary, double fGain), {
+	var se = Module.SboSe;
+	if (se && se.ctx) {
+		(bPrimary ? se.gainPri : se.gainSec).gain.value = fGain;
+	}
+});
+
+EM_JS(int, SboSeIsPlaying, (int nId), {
+	var se = Module.SboSe;
+	return (se && se.nodes[nId] && se.nodes[nId].length > 0) ? 1 : 0;
+});
+
+static BOOL					s_bOpen;
+static int					s_nNextId = 1;
+static std::map<int, int>	s_mapRepeat;	/* 効果音ごとの繰り返し回数 */
+
+static int ToId(IDirectMusicSegment8 **pSeg)
+{
+	return pSeg ? (int)(intptr_t)*pSeg : 0;
+}
+
+/* dB → 音量の倍率（0.0〜1.0） */
+static double DbToGain(long lDb)
+{
+	if (lDb <= -100) {
+		return 0.0;
+	}
+	double fGain = pow(10.0, (double)lDb / 20.0);
+	/* SDL_mixer で鳴らしていた時と同じく、1.0 を超える分は切る */
+	return (fGain > 1.0) ? 1.0 : fGain;
 }
 
 CDXAudio::CDXAudio(void)
@@ -59,17 +309,10 @@ BOOL CDXAudio::Create(void)
 	if (s_bOpen) {
 		return TRUE;
 	}
-	if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
-		printf("[audio] SDL_INIT_AUDIO に失敗しました: %s\n", SDL_GetError());
+	if (!SboSeInit()) {
 		/* 音が出なくてもゲームは続ける */
 		return TRUE;
 	}
-	if (Mix_OpenAudio(44100, AUDIO_S16SYS, 2, 1024) != 0) {
-		printf("[audio] Mix_OpenAudio に失敗しました: %s\n", Mix_GetError());
-		return TRUE;
-	}
-	Mix_AllocateChannels(CHANNEL_COUNT);
-	Mix_ReserveChannels(1);
 	s_bOpen = TRUE;
 	return TRUE;
 }
@@ -79,8 +322,7 @@ void CDXAudio::Destroy(void)
 	if (!s_bOpen) {
 		return;
 	}
-	Mix_HaltChannel(-1);
-	Mix_CloseAudio();
+	SboSeStopAll();
 	s_bOpen = FALSE;
 }
 
@@ -100,51 +342,84 @@ BOOL CDXAudio::GetSegFromRes(HRSRC hSrc, IDirectMusicSegment8 **pSeg, BOOL bMidi
 	if (pData == NULL || dwSize == 0) {
 		return FALSE;
 	}
-	/* リソースのデータは残り続けるので、コピーせずにそのまま読ませる */
-	Mix_Chunk *pChunk = Mix_LoadWAV_RW(SDL_RWFromConstMem(pData, (int)dwSize), 1);
-	if (pChunk == NULL) {
-		printf("[audio] 効果音を読み込めませんでした: %s\n", Mix_GetError());
+	/* WAVE を PCM に展開する（音声デバイスは開かないので SDL の読み込みだけ使う） */
+	SDL_AudioSpec spec;
+	Uint8 *pBuf = NULL;
+	Uint32 dwLen = 0;
+	if (SDL_LoadWAV_RW(SDL_RWFromConstMem(pData, (int)dwSize), 1, &spec, &pBuf, &dwLen) == NULL) {
+		printf("[audio] 効果音を読み込めませんでした: %s\n", SDL_GetError());
 		return FALSE;
 	}
-	*pSeg = (IDirectMusicSegment8 *)pChunk;
+	int nChannels = (spec.channels > 0) ? spec.channels : 1;
+	int nBytes = SDL_AUDIO_BITSIZE(spec.format) / 8;
+	if (nBytes <= 0) {
+		SDL_FreeWAV(pBuf);
+		return FALSE;
+	}
+	int nSamples = (int)(dwLen / nBytes);
+	int nFrames = nSamples / nChannels;
+	float *pFloat = new float[(nSamples > 0) ? nSamples : 1];
+	for (int i = 0; i < nSamples; i ++) {
+		const Uint8 *p = pBuf + i * nBytes;
+		float f = 0.0f;
+		switch (spec.format) {
+		case AUDIO_U8:		f = ((int)p[0] - 128) / 128.0f;					break;
+		case AUDIO_S8:		f = (Sint8)p[0] / 128.0f;						break;
+		case AUDIO_S16LSB:	f = (Sint16)(p[0] | (p[1] << 8)) / 32768.0f;	break;
+		case AUDIO_S16MSB:	f = (Sint16)(p[1] | (p[0] << 8)) / 32768.0f;	break;
+		case AUDIO_S32LSB:	f = (float)((Sint32)(p[0] | (p[1] << 8) | (p[2] << 16) | ((Uint32)p[3] << 24)) / 2147483648.0);	break;
+		case AUDIO_F32LSB:	SDL_memcpy(&f, p, 4);							break;
+		default:			break;
+		}
+		pFloat[i] = f;
+	}
+	SDL_FreeWAV(pBuf);
+
+	int nId = s_nNextId ++;
+	int nRet = SboSeCreate(nId, pFloat, nFrames, nChannels, spec.freq);
+	delete [] pFloat;
+	if (!nRet) {
+		return FALSE;
+	}
+	*pSeg = (IDirectMusicSegment8 *)(intptr_t)nId;
 	return TRUE;
 }
 
 void CDXAudio::ReleaseSeg(IDirectMusicSegment8 **pSeg)
 {
-	Mix_Chunk *pChunk = ToChunk(pSeg);
-	if (pChunk == NULL) {
+	int nId = ToId(pSeg);
+	if (nId == 0) {
 		return;
 	}
-	Stop(pSeg, 0);
-	s_mapRepeat.erase(pChunk);
-	Mix_FreeChunk(pChunk);
+	SboSeStopId(nId);
+	SboSeDelete(nId);
+	s_mapRepeat.erase(nId);
 	*pSeg = NULL;
 }
 
-static int GetLoops(Mix_Chunk *pChunk)
+static int GetLoops(int nId)
 {
-	std::map<Mix_Chunk *, int>::iterator it = s_mapRepeat.find(pChunk);
+	std::map<int, int>::iterator it = s_mapRepeat.find(nId);
 	return (it == s_mapRepeat.end()) ? 0 : it->second;
 }
 
 BOOL CDXAudio::PlayPrimary(IDirectMusicSegment8 **pSeg)
 {
-	Mix_Chunk *pChunk = ToChunk(pSeg);
-	if (!s_bOpen || pChunk == NULL) {
+	int nId = ToId(pSeg);
+	if (!s_bOpen || nId == 0) {
 		return FALSE;
 	}
-	return (Mix_PlayChannel(PRIMARY_CHANNEL, pChunk, GetLoops(pChunk)) >= 0) ? TRUE : FALSE;
+	return SboSePlay(nId, GetLoops(nId), 1) ? TRUE : FALSE;
 }
 
 BOOL CDXAudio::PlaySecoundary(IDirectMusicSegment8 **pSeg)
 {
-	Mix_Chunk *pChunk = ToChunk(pSeg);
-	if (!s_bOpen || pChunk == NULL) {
+	int nId = ToId(pSeg);
+	if (!s_bOpen || nId == 0) {
 		return FALSE;
 	}
-	/* 空いているチャンネルで鳴らす（同じ音を重ねて鳴らせる） */
-	return (Mix_PlayChannel(-1, pChunk, GetLoops(pChunk)) >= 0) ? TRUE : FALSE;
+	/* 同じ音を重ねて鳴らせる */
+	return SboSePlay(nId, GetLoops(nId), 0) ? TRUE : FALSE;
 }
 
 void CDXAudio::SetVolPrimary(long lVol)
@@ -154,7 +429,7 @@ void CDXAudio::SetVolPrimary(long lVol)
 	}
 	lVol = max(lVol, -96L);
 	lVol = min(lVol, 0L);
-	Mix_Volume(PRIMARY_CHANNEL, DbToVolume(lVol));
+	SboSeSetVolume(1, DbToGain(lVol));
 }
 
 void CDXAudio::SetVolSecoundary(long lVol)
@@ -164,12 +439,7 @@ void CDXAudio::SetVolSecoundary(long lVol)
 	}
 	lVol = max(lVol, -100L);
 	lVol = min(lVol, 10L);
-	int nVol = DbToVolume(lVol);
-	for (int i = 0; i < CHANNEL_COUNT; i ++) {
-		if (i != PRIMARY_CHANNEL) {
-			Mix_Volume(i, nVol);
-		}
-	}
+	SboSeSetVolume(0, DbToGain(lVol));
 }
 
 void CDXAudio::Stop(IDirectMusicSegment8 **pSeg, DWORD dwFlg)
@@ -178,42 +448,33 @@ void CDXAudio::Stop(IDirectMusicSegment8 **pSeg, DWORD dwFlg)
 		return;
 	}
 	if (dwFlg == 1) {
-		Mix_HaltChannel(PRIMARY_CHANNEL);
+		SboSeStopPrimary();
 	}
-	Mix_Chunk *pChunk = ToChunk(pSeg);
-	if (pChunk == NULL) {
+	int nId = ToId(pSeg);
+	if (nId == 0) {
 		if (pSeg == NULL) {
-			Mix_HaltChannel(-1);
+			SboSeStopAll();
 		}
 		return;
 	}
-	for (int i = 0; i < CHANNEL_COUNT; i ++) {
-		if (Mix_Playing(i) && Mix_GetChunk(i) == pChunk) {
-			Mix_HaltChannel(i);
-		}
-	}
+	SboSeStopId(nId);
 }
 
 void CDXAudio::SetLoopPoints(IDirectMusicSegment8 **pSeg, DWORD dwFlg)
 {
-	Mix_Chunk *pChunk = ToChunk(pSeg);
-	if (pChunk == NULL) {
+	int nId = ToId(pSeg);
+	if (nId == 0) {
 		return;
 	}
-	/* DirectMusic の繰り返し回数 → SDL_mixer のループ回数（-1 は無限） */
-	s_mapRepeat[pChunk] = (dwFlg == DMUS_SEG_REPEAT_INFINITE) ? -1 : (int)dwFlg;
+	/* DirectMusic の繰り返し回数 → ループ回数（-1 は無限） */
+	s_mapRepeat[nId] = (dwFlg == DMUS_SEG_REPEAT_INFINITE) ? -1 : (int)dwFlg;
 }
 
 BOOL CDXAudio::IsPlaying(IDirectMusicSegment8 **pSeg)
 {
-	Mix_Chunk *pChunk = ToChunk(pSeg);
-	if (!s_bOpen || pChunk == NULL) {
+	int nId = ToId(pSeg);
+	if (!s_bOpen || nId == 0) {
 		return FALSE;
 	}
-	for (int i = 0; i < CHANNEL_COUNT; i ++) {
-		if (Mix_Playing(i) && Mix_GetChunk(i) == pChunk) {
-			return TRUE;
-		}
-	}
-	return FALSE;
+	return SboSeIsPlaying(nId) ? TRUE : FALSE;
 }
