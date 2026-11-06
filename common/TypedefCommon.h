@@ -27,6 +27,7 @@
 #define TURNGAGE_LAP		20										/* ターンゲージ1周の%（1周溜まると早撃ちでき、威力は周の数×この%） */
 #define TURNGAGE_LAPMAX		(100 / TURNGAGE_LAP)					/* ターンゲージが満タンになる周の数 */
 #define TURNGAGE_JUSTTIME	300										/* ゲージ満タン後、ジャストで押せる時間(ms)。押さなければ自動で殴る */
+#define ATACKRATE_AREA		50										/* なぎ払い・貫通で、狙った相手以外に当たる時の威力(%) */
 #define ATACKRATE_JUST		101										/* 攻撃要求の威力欄でジャストを表す値（威力は100%として扱う） */
 #define MAX_CHARNAME		15										/* 最大キャラ名文字数（表示幅の上限は MAX_CHARNAME_WIDTH） */
 #define MAX_CHARNAMEBUF		64										/* キャラ名の欄のバイト数（終端含む。UTF-8 や絵文字でも入るように広めにとる） */
@@ -1121,6 +1122,8 @@ enum {
 enum {
 	ATACKTYPE_NORMAL = 0,										/* 直接攻撃 */
 	ATACKTYPE_ARROW,											/* 矢 */
+	ATACKTYPE_SWEEP,											/* なぎ払い(目の前と、自分の左右のマスにも当たる。斧など) */
+	ATACKTYPE_PIERCE,											/* 貫通(目の前と、その1マス先にも当たる。槍など) */
 	ATACKTYPE_MAX
 };
 

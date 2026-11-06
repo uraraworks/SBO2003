@@ -523,7 +523,7 @@ const char *aNpcMoveTypeTbl[] = {
 
 /* 攻撃種別名テーブル */
 const char *aAtackTypeTbl[] = {
-	"直接攻撃", "飛び道具", "z"
+	"直接攻撃", "飛び道具", "なぎ払い", "貫通", "z"
 };
 
 /* サブゲーム名テーブル */
