@@ -30,6 +30,9 @@ std::string W32Utf8ToTextStr(const char *pszUtf8);
 
 /* 発言できる長さ（Windows 版の入力欄と同じ。SJIS の 40 バイトと同じ表示幅で数える） */
 #define MSGLOG_SPEECH_MAX	40		/* 1 回の発言の上限（表示幅。半角 40 文字・全角 20 文字） */
+/* URL を含む発言の上限（表示幅）。URL は途中で切ると開けないので、
+   シェル HTML の分割（splitChat の CHAT_URL_SPEECH_MAX）と同じ長さまで 1 つの発言で送る */
+#define MSGLOG_SPEECH_URL_MAX	1000
 
 extern "C" void SboWebChatSubmit(const char *pszUtf8, int nKeyMod);
 
@@ -156,8 +159,7 @@ void SboWebSpeechSubmit(LPCSTR pszText, int nKeyMod)
 /* ========================================================================= */
 extern "C" EMSCRIPTEN_KEEPALIVE void SboWebChatSubmit(const char *pszUtf8, int nKeyMod)
 {
-	char szBuf[MSGLOG_SPEECH_MAX * 4 + 2];		/* UTF-8 でも入る大きさ */
-	int nLen;
+	int nLen, nMax;
 
 	if (pszUtf8 == NULL) {
 		return;
@@ -169,15 +171,19 @@ extern "C" EMSCRIPTEN_KEEPALIVE void SboWebChatSubmit(const char *pszUtf8, int n
 	}
 
 	std::string strText = W32Utf8ToTextStr (pszUtf8);
-	ZeroMemory (szBuf, sizeof (szBuf));
+	/* URL を含む発言は長くてもそのまま（チャット欄で 1 つのリンクとして見られるように） */
+	nMax = MSGLOG_SPEECH_MAX;
+	if ((strText.find ("http://") != std::string::npos) || (strText.find ("https://") != std::string::npos)) {
+		nMax = MSGLOG_SPEECH_URL_MAX;
+	}
 	/* 文字の途中で切らないように詰める */
-	nLen = SboTextFitWidth (strText.c_str (), MSGLOG_SPEECH_MAX);
-	memcpy (szBuf, strText.c_str (), nLen);
+	nLen = SboTextFitWidth (strText.c_str (), nMax);
 	if (nLen == 0) {
 		return;
 	}
+	std::string strBuf (strText.c_str (), nLen);
 	g_nWebSpeechKeyMod = nKeyMod;
-	ChatMsgProc (szBuf);
+	ChatMsgProc ((LPCTSTR)strBuf.c_str ());
 	g_nWebSpeechKeyMod = -1;
 }
 
