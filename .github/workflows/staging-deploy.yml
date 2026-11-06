@@ -1,6 +1,6 @@
-# Sbo2003 ステージングへの自動デプロイ（SBOP2 のステージングのホストに相乗り）
+# Sbo2003 ステージングへのデプロイ（SBOP2 のステージングのホストに相乗り）
 #
-# main への push と手動実行で動く。リポジトリ変数 SBO2003_STAGING_HOST が未設定の間は何もしない。
+# 手動実行（Actions → staging-deploy → Run workflow）のときだけ動く。リポジトリ変数 SBO2003_STAGING_HOST が未設定の間は何もしない。
 # 必要な設定（Settings → Secrets and variables → Actions）:
 #   変数 SBO2003_STAGING_HOST           ステージングのホスト名か IP（SBOP2 と同じホスト）
 #   変数 SBO2003_STAGING_USER           SSH ユーザー（docker を sudo なしで使えること）
@@ -12,8 +12,6 @@
 name: staging-deploy
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 concurrency:
