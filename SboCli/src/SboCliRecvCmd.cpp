@@ -66,6 +66,9 @@ int		GetUseCharInfo						(int nArea, PCHARINFO pMyChar, BOOL bSelf, int nType, A
 int		GetAttackType						(PCHARINFO pChar);										/* 攻撃種別を取得 */
 void	StartTurnGage						(PCHARINFO pChar);										/* ターンゲージ開始 */
 void	CancelTurnGage						(PCHARINFO pChar);										/* ターンゲージをキャンセル */
+int		FindNextAttackTarget				(PCHARINFO pChar);										/* 連続攻撃の次の相手を探す */
+void	ContinueTurnGage					(PCHARINFO pChar);										/* 連続攻撃：次のターンゲージを溜め始める */
+int		FindFrontAttackTarget				(PCHARINFO pChar);										/* 目の前にいる敵を探す */
 void	RecvDataProc						(PBYTE, DWORD);			/* 受信データ処理 */
 void	RecvDataProcCONNECT					(PBYTE, DWORD);			/* 受信データ処理(接続応答) */
 void	RecvDataProcLOGINRES				(PBYTE, DWORD);			/* 受信データ処理(ログイン応答) */
@@ -1646,6 +1649,107 @@ void CancelTurnGage(PCHARINFO pChar)
 	pChar->byTurnLV		= 0;
 	pChar->dwAtackTblID	= 0;
 	pChar->dwTimeTurnLV = 0;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	FindNextAttackTarget											 */
+/* 内容：	連続攻撃の次の相手を探す										 */
+/*			周り2マス以内にいる敵のうち、一番近いもの						 */
+/*			戻り値：キャラ番号（いなければ -1）								 */
+/* ========================================================================= */
+
+int FindNextAttackTarget(PCHARINFO pChar)
+{
+	int i, nCount, nDist, nDistMin, nRet;
+	PCHARINFO pCharTmp;
+
+	nRet		= -1;
+	nDistMin	= 3;
+	nCount		= g_aCharInfo.GetSize ();
+	for (i = 0; i < nCount; i ++) {
+		pCharTmp = g_aCharInfo[i];
+		if (pCharTmp == pChar) {
+			continue;
+		}
+		if (!((pCharTmp->byNpcType == NPCTYPE_BATTLE1) || (pCharTmp->byNpcType == NPCTYPE_BATTLE2))) {
+			continue;
+		}
+		if (pCharTmp->dwMapID != pChar->dwMapID) {
+			continue;
+		}
+		if (pCharTmp->byCharState == CHARSTATE_DEAD) {
+			continue;
+		}
+		nDist = abs ((int)pCharTmp->dwX - (int)pChar->dwX) + abs ((int)pCharTmp->dwY - (int)pChar->dwY);
+		if (nDist < nDistMin) {
+			nDistMin	= nDist;
+			nRet		= i;
+		}
+	}
+
+	return nRet;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	FindFrontAttackTarget											 */
+/* 内容：	目の前（向いている方向の1マス先）にいる敵を探す					 */
+/*			戻り値：キャラ番号（いなければ -1）								 */
+/* ========================================================================= */
+
+int FindFrontAttackTarget(PCHARINFO pChar)
+{
+	int i, nCount;
+	PCHARINFO pCharTmp;
+
+	nCount = g_aCharInfo.GetSize ();
+	for (i = 0; i < nCount; i ++) {
+		pCharTmp = g_aCharInfo[i];
+		if (pCharTmp == pChar) {
+			continue;
+		}
+		if (!((pCharTmp->byNpcType == NPCTYPE_BATTLE1) || (pCharTmp->byNpcType == NPCTYPE_BATTLE2))) {
+			continue;
+		}
+		if (pCharTmp->byCharState == CHARSTATE_DEAD) {
+			continue;
+		}
+		if (GetCharDistance (pCharTmp, pChar->dwMapID, pChar->dwX, pChar->dwY, pChar->byDirection) == 1) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	ContinueTurnGage												 */
+/* 内容：	連続攻撃：殴った後、同じ相手に向けて次のゲージを溜め始める		 */
+/*			（毎回コマンド→攻撃→相手選択をしなくて済むように）			 */
+/*			止める時は B キー（今までどおりゲージのキャンセル）				 */
+/* ========================================================================= */
+
+void ContinueTurnGage(PCHARINFO pChar)
+{
+	DWORD dwAtackTblID;
+
+	dwAtackTblID = pChar->dwAtackTblID;
+	CancelTurnGage (pChar);
+
+	/* 弓（相手を決めずに撃つ）は続けない */
+	if (dwAtackTblID == (DWORD)-1) {
+		return;
+	}
+	/* 戦闘モードではない・戦闘マップではない？ */
+	if ((g_bBattleMode == FALSE) || (g_pMapInfo == NULL) || ((g_pMapInfo->byFlg & MAPFLG_BATTLE) == 0)) {
+		return;
+	}
+	/* 倒れている・特技の詠唱中？ */
+	if ((pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0) || pChar->dwTimeTurnMagicLV) {
+		return;
+	}
+	StartTurnGage (pChar, dwAtackTblID);
 }
 
 
