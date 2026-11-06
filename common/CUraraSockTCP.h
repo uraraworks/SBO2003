@@ -96,6 +96,8 @@ public:
 	void SendTo(DWORD, PBYTE, DWORD, BYTE);
 	void SendTo(DWORD, PBYTE, DWORD, DWORD);
 	void SendTo(DWORD, PBYTE, DWORD, DWORD, BYTE);
+	/* 同じデータを複数の宛先へ送る（宛先を1つずつ SendTo した時と同じ結果。圧縮と CRC は1回だけ。サーバー用） */
+	void SendToMulti(const DWORD *, DWORD, PBYTE, DWORD, DWORD, BYTE);
 	DWORD GetThrowghPutSend(DWORD);							/* リンク・スループット量を取得 */
 	DWORD GetThrowghPutRecv(DWORD);
 	DWORD GetQueCount(DWORD);									/* キュー数を取得 */

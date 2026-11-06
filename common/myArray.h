@@ -33,6 +33,7 @@ public:
 private:
 	TYPE		*m_pData;					/* データ */
 	int			m_nCount;					/* 要素数 */
+	int			m_nCap;						/* 確保済みの要素数（m_nCount 以上） */
 };
 
 typedef CmyArray<DWORD, DWORD>		  ARRAYDWORD;

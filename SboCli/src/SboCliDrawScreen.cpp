@@ -41,14 +41,8 @@ void AddSysMsg			(LPSTR, COLORREF);							/* システムメッセージの追�
 /* ========================================================================= */
 void TextOut2(HDC hdc, int iX, int iY, char *pStr, COLORREF Color)
 {
-	int nLen = strlen (pStr);
-	SetTextColor (hdc, RGB(10, 10, 10));
-	TextOut (hdc, iX - 1, iY, pStr, nLen);
-	TextOut (hdc, iX + 1, iY, pStr, nLen);
-	TextOut (hdc, iX, iY - 1, pStr, nLen);
-	TextOut (hdc, iX, iY + 1, pStr, nLen);
-	SetTextColor (hdc, Color);
-	TextOut (hdc, iX, iY, pStr, nLen);
+	/* 縁取りの 4 回と本体の 1 回を、文字の形を 1 回だけ調べてまとめて描く */
+	TextOutOutline (hdc, iX, iY, pStr, strlen (pStr), RGB(10, 10, 10), Color);
 }
 
 /* ========================================================================= */
