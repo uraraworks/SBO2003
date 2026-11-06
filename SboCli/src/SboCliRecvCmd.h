@@ -41,6 +41,9 @@ extern void	DeleteUseCharInfo		(PARRAYUSECHARINFO pSrc);									/* 誰に使う
 extern int	GetAttackType			(PCHARINFO pChar);											/* 攻撃種別を取得 */
 extern void	StartTurnGage			(PCHARINFO pChar, DWORD dwAtackTblID);						/* ターンゲージ開始 */
 extern void	CancelTurnGage			(PCHARINFO pChar);											/* ターンゲージをキャンセル */
+extern int	FindNextAttackTarget	(PCHARINFO pChar);											/* 連続攻撃の次の相手を探す */
+extern void	ContinueTurnGage		(PCHARINFO pChar);											/* 連続攻撃：次のターンゲージを溜め始める */
+extern int	FindFrontAttackTarget	(PCHARINFO pChar);											/* 目の前にいる敵を探す */
 extern void	RecvDataProc			(PBYTE, DWORD);												/* 受信データ処理 */
 extern void	RecvDataHoldProc		(void);														/* 保留中の受信データを処理 */
 extern void	RecvDataHoldClear		(void);														/* 保留中の受信データを捨てる */
