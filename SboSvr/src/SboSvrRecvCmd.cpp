@@ -118,6 +118,7 @@ void	RecvDataProcGMCALL						(PBYTE, DWORD);				/* 管理人呼び出し */
 void	RecvDataProcEFECTCHG					(PBYTE, DWORD);				/* エフェクト変更 */
 void	RecvDataProcRESURRECTION				(PBYTE, DWORD);				/* 蘇生 */
 void	RecvDataProcREQ_ATTACK					(PBYTE, DWORD);				/* 攻撃要求 */
+void	RecvDataProcREQ_GUARD					(PBYTE, DWORD);				/* 構え(防御)の開始・終了 */
 void	RecvDataProcMAIN_CHAR					(PBYTE, DWORD);				/* キャラ系コマンド */
 void	RecvDataProcMAPMOVE						(PBYTE, DWORD);				/* マップ移動 */
 void	RecvDataProcCHARPUSH					(PBYTE, DWORD);				/* キャラ押して要求 */
@@ -397,6 +398,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcEQUUSERINFOREQ,			/* CMD_EQUUSERINFOREQ */
 	RecvDataProcWEBACCOUNT,				/* CMD_WEBACCOUNT */
 	RecvDataProcADMINUNDO,				/* CMD_ADMINUNDO */
+	RecvDataProcREQ_GUARD,				/* CMD_REQ_GUARD */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -2963,7 +2965,7 @@ void RecvDataProc(PBYTE pData, DWORD dwDataSize)
 	}
 
 	/* 管理者用のコマンド（管理者ウィンドウからしか送らないもの）は管理者だけ */
-	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT)) ||
+	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD)) ||
 			(byCmd == CMD_CHARITEM)) {
 		if (!CheckAdminBan (nNo)) {
 			SAFE_DELETE_ARRAY (pData);
@@ -4654,6 +4656,43 @@ static BYTE GetAtackRateReq(PCHARINFO pChar, BYTE byData)
 	return byRet;
 }
 
+/* ========================================================================= */
+/* 関数名：	RecvDataProcREQ_GUARD											 */
+/* 内容：	受信データ処理(構え(防御)の開始・終了)							 */
+/*			byData 1=構える 0=やめる。戦闘マップで生きている時だけ構えられる	 */
+/* ========================================================================= */
+
+void RecvDataProcREQ_GUARD(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_DATA1 pPara = (PCMDPARA_DATA1)pData;
+	PCHARINFO pChar;
+	PMAPINFO pMap;
+
+	if (!IsRecvChar (pPara->dwTblID)) {
+		return;
+	}
+	pChar = g_aCharInfo[pPara->dwTblID];
+	if ((pChar->pID == 0) || (pChar->byNpcType != NPCTYPE_INIT)) {
+		return;
+	}
+	if (pPara->byData == 0) {
+		SetGuard (pChar, FALSE);
+		return;
+	}
+	if ((pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0)) {
+		return;
+	}
+	if (GetMapNo (pChar->dwMapID) < 0) {
+		return;
+	}
+	pMap = g_aMapInfo[pChar->dwMapID];
+	if ((pMap->byFlg & MAPFLG_BATTLE) == 0) {
+		return;
+	}
+	SetGuard (pChar, TRUE);
+	SendCmdADDCHAREFC (pChar->dwTblID, RGB (120, 200, 255), "構え");
+}
+
 void RecvDataProcREQ_ATTACK(PBYTE pData, DWORD dwDataSize)
 {
 	PCMDPARA_DATA4 pPara = (PCMDPARA_DATA4)pData;
@@ -4673,6 +4712,8 @@ void RecvDataProcREQ_ATTACK(PBYTE pData, DWORD dwDataSize)
 		pChar->dwTargetTblID = -1;
 		return;
 	}
+	/* 殴ったら構えは解ける */
+	SetGuard (pChar, FALSE);
 	/* ターゲット指定無し？ */
 //Todo:武器の判定
 	if (pPara->dwData == -1) {
@@ -9525,7 +9566,7 @@ BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, 
 	/* 管理者用のコマンドだけ（ログインや「元に戻す」自体は通さない） */
 	if ((byCmd >= CMD_MAX) || (RecvDataProcTbl[byCmd] == NULL) ||
 			((byCmd < CMD_MAPPARTSADD) && (byCmd != CMD_CHARITEM)) ||
-			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO)) {
+			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_REQ_GUARD)) {
 		return FALSE;
 	}
 

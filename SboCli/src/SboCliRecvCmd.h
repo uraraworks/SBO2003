@@ -42,6 +42,8 @@ extern int	GetAttackType			(PCHARINFO pChar);											/* 攻撃種別を取得
 extern void	StartTurnGage			(PCHARINFO pChar, DWORD dwAtackTblID);						/* ターンゲージ開始 */
 extern void	CancelTurnGage			(PCHARINFO pChar);											/* ターンゲージをキャンセル */
 extern int	FindNextAttackTarget	(PCHARINFO pChar);											/* 連続攻撃の次の相手を探す */
+extern BOOL	g_bGuard;																			/* Z を押し続けて構えている */
+extern DWORD	g_dwGuardGageElapse;																/* 構えた時に溜まっていたゲージの時間(構えている間は止める) */
 extern DWORD	GetTurnGageTime			(PCHARINFO pChar);											/* ターンゲージが満タンになるまでの時間(ms) */
 extern BOOL	IsTurnGageJust			(PCHARINFO pChar);											/* ゲージ満タン直後(ジャストで押せる時間)か */
 extern void	ContinueTurnGage		(PCHARINFO pChar);											/* 連続攻撃：次のターンゲージを溜め始める */

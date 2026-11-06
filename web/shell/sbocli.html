@@ -261,7 +261,8 @@
 	/* 縦持ちのチャットログ（パッドの下の残り全部） */
 	/* 今押しても効かないボタン（戦闘できないマップの「戦闘」、コマンドを開いている間の
 	   「調べる」など）は隠す。ほかのボタンの位置が変わらないよう場所は空けておく */
-	body.sbo-pad #sbo-pad button.sbo-pad-off {
+	body.sbo-pad #sbo-pad button.sbo-pad-off,
+	body.sbo-pad #sbo-pad button.sbo-pad-battle-off {
 		visibility: hidden;
 	}
 	body.sbo-pad #sbo-chat-area {
@@ -1032,12 +1033,12 @@
 		</div>
 		<button type="button" id="sbo-shot-pad" title="スクリーンショット">📷</button>
 		<div class="sbo-buttons">
-			<button type="button" data-vk="90"><span class="sbo-btn-icon">✕</span><span class="sbo-btn-label" style="font-size:10px">キャンセル</span><span class="sbo-btn-key">Z</span></button>
-			<button type="button" data-vk="88" class="sbo-main"><span class="sbo-btn-icon">○</span>決定<span class="sbo-btn-key">X</span></button>
-			<button type="button" data-vk="83" data-pad-need="1"><span id="sbo-pad-s-label">調べる</span><span class="sbo-btn-key">S</span></button>
-			<button type="button" data-vk="9" data-pad-need="2">表示<span class="sbo-btn-key">Tab</span></button>
+			<button type="button" data-vk="90"><span class="sbo-btn-icon">✕</span><span class="sbo-btn-label" id="sbo-pad-z-label" style="font-size:10px">キャンセル</span><span class="sbo-btn-key">Z</span></button>
+			<button type="button" data-vk="88" class="sbo-main"><span class="sbo-btn-icon">○</span><span id="sbo-pad-x-label">決定</span><span class="sbo-btn-key">X</span></button>
+			<button type="button" data-vk="83" data-pad-need="1" data-pad-hide-battle="1"><span id="sbo-pad-s-label">調べる</span><span class="sbo-btn-key">S</span></button>
+			<button type="button" data-vk="9" data-pad-need="2" data-pad-hide-battle="1">表示<span class="sbo-btn-key">Tab</span></button>
 			<button type="button" data-vk="17" data-pad-need="4">戦闘<span class="sbo-btn-key">Ctrl</span></button>
-			<button type="button" id="sbo-chat-open" disabled><span class="sbo-btn-icon">💬</span>チャット</button>
+			<button type="button" id="sbo-chat-open" data-pad-hide-battle="1" disabled><span class="sbo-btn-icon">💬</span>チャット</button>
 		</div>
 	</div>
 	<div id="sbo-status">読み込み中...</div>
@@ -2369,10 +2370,15 @@
 	/* 仮想パッドの「調べる」「表示」「戦闘」を、今押して効く時だけ出す。
 	   効くかどうかはゲーム側（SboCliKeyProc.cpp の SboWebGetPadState）が
 	   1=調べる 2=表示 4=戦闘 のビットで返す。
-	   8 は目の前に話せる相手がいる時で、S（調べる）ボタンの名前を「話す」にする */
+	   8 は目の前に話せる相手がいる時で、S（調べる）ボタンの名前を「話す」にする。
+	   16 は戦闘モード中で、決定を「攻撃」、キャンセルを「構え」（長押しで構える）と出し、
+	   チャット・表示・調べるは戦闘に集中できるよう隠す（戦闘モードを解除すれば出る） */
 	(function () {
 		var needButtons = document.querySelectorAll('#sbo-pad button[data-pad-need]');
+		var hideButtons = document.querySelectorAll('#sbo-pad button[data-pad-hide-battle]');
 		var sLabel = document.getElementById('sbo-pad-s-label');
+		var xLabel = document.getElementById('sbo-pad-x-label');
+		var zLabel = document.getElementById('sbo-pad-z-label');
 		var lastState = -1;
 		setInterval(function () {
 			if (!document.body.classList.contains('sbo-pad')) {
@@ -2386,12 +2392,22 @@
 				return;
 			}
 			lastState = state;
+			var battle = (state & 16) !== 0;
 			for (var i = 0; i < needButtons.length; i ++) {
 				var need = parseInt(needButtons[i].dataset.padNeed, 10);
 				needButtons[i].classList.toggle('sbo-pad-off', (state & need) === 0);
 			}
+			for (var j = 0; j < hideButtons.length; j ++) {
+				hideButtons[j].classList.toggle('sbo-pad-battle-off', battle);
+			}
 			if (sLabel) {
 				sLabel.textContent = (state & 8) ? '話す' : '調べる';
+			}
+			if (xLabel) {
+				xLabel.textContent = battle ? '攻撃' : '決定';
+			}
+			if (zLabel) {
+				zLabel.textContent = battle ? '構え(長押し)' : 'キャンセル';
 			}
 		}, 100);
 	})();
