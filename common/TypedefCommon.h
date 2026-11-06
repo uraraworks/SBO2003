@@ -254,6 +254,7 @@ enum {
 	CMD_ADMINUNDO,													/* 管理者画面の「元に戻す」 */
 /* 以下、プレイヤー用（番号をずらさないよう最後に足す。管理者用の判定から外すこと） */
 	CMD_REQ_GUARD,													/* 構え(防御)の開始・終了 */
+	CMD_HASTE,														/* 加速の状態通知(サーバー→本人) */
 	CMD_MAX
 };
 
@@ -1076,7 +1077,9 @@ enum {
 	MAGICTYPE_RESURRECTION,										/* 蘇生 */
 	MAGICTYPE_HPDOWNHPCOST,										/* HP減少(HP消費) */
 	MAGICTYPE_HPDOWNRATE,										/* HP減少(率) */
-	
+	MAGICTYPE_HASTE,											/* 加速(付加データ1:速くなる率(%) 2:秒数) */
+	MAGICTYPE_POISON,											/* 毒(付加データ1:2秒ごとのダメージ 2:秒数 3:成功率(%、0なら100)) */
+	MAGICTYPE_SLEEP,											/* 眠り(付加データ1:秒数 2:成功率(%、0なら100)) */
 };
 
 /* 魔法利用情報 */
@@ -1139,6 +1142,9 @@ enum {
 	CHARINFOTIMEREVENT_DEX,										/* 素早さ */
 	CHARINFOTIMEREVENT_HPUPDOWN,								/* HP増減 */
 	CHARINFOTIMEREVENT_DIFENCE,									/* 防御力倍 */
+	CHARINFOTIMEREVENT_HASTE,									/* 加速(byData=速くなる率%) */
+	CHARINFOTIMEREVENT_POISON,									/* 毒(byData=2秒ごとのダメージ) */
+	CHARINFOTIMEREVENT_SLEEP,									/* 眠り(dwTimeLast=眠った時のHP。減ったら起きる) */
 };
 
 

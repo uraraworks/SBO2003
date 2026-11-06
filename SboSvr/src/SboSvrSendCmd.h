@@ -88,6 +88,7 @@ extern void SendCmdMAGICINFO			(DWORD, BYTE);									/* コマンド送信(魔�
 extern void SendCmdMAGICUSERINFO		(DWORD, BYTE);									/* コマンド送信(魔法利用者情報) */
 extern void SendCmdEQUUSERINFO			(DWORD, BYTE);									/* コマンド送信(装備職業情報) */
 extern void SendCmdTARGETCHAR			(DWORD, DWORD);									/* コマンド送信(ターゲット要求) */
+extern void SendCmdHASTE				(DWORD, BYTE, DWORD);							/* コマンド送信(加速の状態を本人へ) */
 extern void SendCmdSubBombTime			(BYTE, PSUBGAME_BOMBINFO);						/* サブゲーム用コマンド送信(爆弾ゲーム：残り時間通知) */
 extern void SendCmdSubBOMBINFO			(DWORD, BYTE, PSUBGAME_BOMBINFO);				/* サブゲーム用コマンド送信(爆弾ゲーム：設定) */
 extern void SendCmdSubBOMBSTOP			(DWORD, BYTE, PSUBGAME_BOMBINFO);				/* サブゲーム用コマンド送信(爆弾ゲーム：試合中止) */

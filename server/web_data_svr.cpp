@@ -293,7 +293,7 @@ typedef struct _DATAFIELD {
 #define FLDA(st, name, label, type, elem, flags, note)	{ #name, label, type, offsetof(st, name), sizeof(((st *)0)->name) / sizeof(elem), flags, note }
 
 static const char *s_pszNoteMagicType =
-	"0=効果無し 1=HP減少 2=HP増加 3=明かり 4=魔法発生 5=帰還 6=HP減少(攻撃力) 7=魔法発生(自分) 8=蘇生 9=HP減少(HP消費) 10=HP減少(率)";
+	"0=効果無し 1=HP減少 2=HP増加 3=明かり 4=魔法発生 5=帰還 6=HP減少(攻撃力) 7=魔法発生(自分) 8=蘇生 9=HP減少(HP消費) 10=HP減少(率) 11=加速(データ1=速くなる率%・2=秒) 12=毒(データ1=2秒ごとのダメージ・2=秒・3=成功率%) 13=眠り(データ1=秒・2=成功率%)";
 static const char *s_pszNoteAttr = "0=無し 1=火 2=水 3=風 4=土 5=光 6=闇";
 
 /* 特技（魔法）情報 */
