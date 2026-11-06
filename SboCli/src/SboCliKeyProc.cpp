@@ -741,8 +741,13 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 				if (g_bBattleMode) {
 					/* ターンゲージ溜まり中？ */
 					if (pChar->dwTimeTurnLV && (pChar->byTurnLV >= TURNGAGE_LAP)) {
-						/* 早撃ち：攻撃要求(威力は溜まりきった周の数×20%) */
-						SendCmdREQ_ATTACK (pChar->dwAtackTblID, (BYTE)(pChar->byTurnLV / TURNGAGE_LAP * TURNGAGE_LAP));
+						if (IsTurnGageJust (pChar)) {
+							/* ジャスト：満タン直後に押した(会心が出やすく、外れない) */
+							SendCmdREQ_ATTACK (pChar->dwAtackTblID, ATACKRATE_JUST);
+						} else {
+							/* 早撃ち：攻撃要求(威力は溜まりきった周の数×20%) */
+							SendCmdREQ_ATTACK (pChar->dwAtackTblID, (BYTE)(pChar->byTurnLV / TURNGAGE_LAP * TURNGAGE_LAP));
+						}
 						/* 連続攻撃：次のゲージを溜め始める */
 						ContinueTurnGage (pChar);
 					} else {
