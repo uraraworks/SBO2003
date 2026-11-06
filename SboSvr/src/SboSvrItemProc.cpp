@@ -11,6 +11,8 @@
 #include "Proc/ProcSubGame.h"
 #include "SboSvrRecvCmd.h"
 #include "SboSvrBattleProc.h"
+#include "SboSvrMagicProc.h"
+#include "SboSvrCharInfoTimerProc.h"
 #include "SboSvrSubGameProcSugoroku.h"
 
 /* ========================================================================= */
@@ -40,6 +42,7 @@ static BOOL	ItemUse_MAGIC				(PCHARINFO, PCHARINFO, PITEMINFO, LPSTR);	/* アイ
 static BOOL	ItemUse_MANAUP				(PCHARINFO, PCHARINFO, PITEMINFO, LPSTR);	/* アイテム処理(Mana回復) */
 static BOOL	ItemUse_HPMANAUP			(PCHARINFO, PCHARINFO, PITEMINFO, LPSTR);	/* アイテム処理(HP・Mana回復) */
 static BOOL	ItemUse_RESURRECTION		(PCHARINFO, PCHARINFO, PITEMINFO, LPSTR);	/* アイテム処理(蘇生) */
+static BOOL	ItemUse_USEMAGIC			(PCHARINFO, PCHARINFO, PITEMINFO, LPSTR);	/* アイテム処理(特技発動) */
 
 extern long genrand();													/* 乱数取得 */
 
@@ -73,6 +76,7 @@ static const ITEMUSE ItemUseTbl[] = {
 	NULL,							/* 装備(指輪1) */
 	NULL,							/* 装備(指輪2) */
 	ItemUse_RESURRECTION,			/* 蘇生 */
+	ItemUse_USEMAGIC,				/* 特技発動 */
 };
 
 /* ========================================================================= */
@@ -242,6 +246,7 @@ static BOOL CheckUseTarget(PITEMINFO pItem, PCHARINFO pCharTarget)
 	case ITEMTYPE_HPMANAUP:		/* HP・Mana回復 */
 	case ITEMTYPE_HPDOWN:		/* HP減少 */
 	case ITEMTYPE_RESURRECTION:	/* 蘇生 */
+	case ITEMTYPE_USEMAGIC:		/* 特技発動 */
 		bRet = TRUE;
 		break;
 	}
@@ -288,7 +293,7 @@ static BOOL ItemUse(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pItem, LPS
 	bRet = FALSE;
 
 	/* 種類別に処理 */
-	if (ItemUseTbl[pItem->byType]) {
+	if ((pItem->byType < sizeof (ItemUseTbl) / sizeof (ItemUseTbl[0])) && ItemUseTbl[pItem->byType]) {
 		bRet = ItemUseTbl[pItem->byType] (pChar, pCharTarget, pItem, pszMsg);
 	}
 
@@ -1695,6 +1700,35 @@ static BOOL ItemUse_RESURRECTION(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMIN
 	bRet = TRUE;
 Exit:
 	return bRet;
+}
+
+/* ========================================================================= */
+/* 関数名：ItemUse_USEMAGIC													 */
+/* 内容：アイテム処理(特技発動)。覚えていない特技でも出せて、Manaは減らない */
+/*		 範囲や相手は特技の設定どおり(「選択」の特技は使った相手に出る)	 */
+/* ========================================================================= */
+static BOOL ItemUse_USEMAGIC(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pItem, LPSTR pszMsg)
+{
+	PITEMINFO_MAGIC pInfo;
+
+	pInfo = (PITEMINFO_MAGIC)pItem->pData;
+	if ((pInfo == NULL) || (pInfo->byID == 0) || (pInfo->byID >= g_aMagicInfo.GetSize ())) {
+		return FALSE;
+	}
+	if ((pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0)) {
+		return FALSE;
+	}
+	if (IsSleep (pChar)) {
+		strcpy (pszMsg, "眠っていて使えません。@2");
+		return FALSE;
+	}
+	if (MagicProcItem (pChar->dwTblID, pInfo->byID, pCharTarget->dwTblID) == FALSE) {
+		strcpy (pszMsg, "効果のある相手がいませんでした。@2");
+		return FALSE;
+	}
+	/* 効果音再生 */
+	PlayItemSound (pItem, pChar);
+	return TRUE;
 }
 
 /* Copyright(C)URARA-works 2003-2006 */

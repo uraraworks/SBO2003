@@ -381,7 +381,7 @@ static const DATAFIELD s_aFieldStTmp[] = {
 static const char *s_pszNoteItemType =
 	"0=効果無し 1=特定位置へ移動 2=HP回復 3=武器 4=鎧 5=盾 6=兜 7=種 8=サブゲーム参加 9=酒 10=メッセージ表示 "
 	"11=キャラ画像変更 12=明かり 13=HP減少 14=魔法習得(特技の書) 15=Mana回復 16=HP・Mana回復 17=小手 18=靴 "
-	"19=首飾り 20=指輪1 21=指輪2 22=蘇生。変えると detail は 0 から作り直す";
+	"19=首飾り 20=指輪1 21=指輪2 22=蘇生 23=特技発動(使うと特技が出る道具)。変えると detail は 0 から作り直す";
 static const DATAFIELD s_aFieldItem[] = {
 	FLDS(ITEMINFO, szName,				"名前",					FT_STR, 0, NULL),
 	FLD (ITEMINFO, byType,				"種別",					FT_U8, 0, s_pszNoteItemType),
@@ -456,6 +456,9 @@ static const DATAFIELD s_aFieldItemHpDown[] = {
 static const DATAFIELD s_aFieldItemMagic[] = {
 	FLD (ITEMINFO_MAGIC, byID,			"覚える特技",			FT_U8, 0, "magic の番号"),
 };
+static const DATAFIELD s_aFieldItemUseMagic[] = {
+	FLD (ITEMINFO_MAGIC, byID,			"発動する特技",			FT_U8, 0, "magic の番号（覚えていなくても使え、Mana は減らない）"),
+};
 static const DATAFIELD s_aFieldItemManaUp[] = {
 	FLD (ITEMINFO_MANAUP, byRate,		"率で回復",				FT_U8, 0, NULL),
 	FLD (ITEMINFO_MANAUP, wMin,			"最低回復値",			FT_U16, 0, NULL),
@@ -501,6 +504,7 @@ static const DATAFIELD *ItemDetailFields(BYTE byType, int &nCount)
 	case ITEMTYPE_MANAUP:		nCount = COUNTOF(s_aFieldItemManaUp);		return s_aFieldItemManaUp;
 	case ITEMTYPE_HPMANAUP:		nCount = COUNTOF(s_aFieldItemHpManaUp);		return s_aFieldItemHpManaUp;
 	case ITEMTYPE_RESURRECTION:	nCount = COUNTOF(s_aFieldItemResurrection);	return s_aFieldItemResurrection;
+	case ITEMTYPE_USEMAGIC:		nCount = COUNTOF(s_aFieldItemUseMagic);		return s_aFieldItemUseMagic;
 	}
 	nCount = 0;
 	return NULL;

@@ -402,6 +402,7 @@ BOOL SaveItemInfo(void)
 					pTmp = GetInfoHPDOWN ((PITEMINFO_HPDOWN)pInfo->pData, &dwTmp);
 					break;
 				case ITEMTYPE_MAGIC:			/* 魔法習得 */
+				case ITEMTYPE_USEMAGIC:			/* 特技発動(魔法習得と同じ形) */
 					pTmp = GetInfoMAGIC ((PITEMINFO_MAGIC)pInfo->pData, &dwTmp);
 					break;
 				case ITEMTYPE_MANAUP:			/* Mana回復 */
@@ -565,6 +566,7 @@ BOOL SaveItemInfo(void)
 					pTmp = GetInfoHPDOWN ((PITEMINFO_HPDOWN)pInfo->pData, &dwTmp);
 					break;
 				case ITEMTYPE_MAGIC:			/* 魔法習得 */
+				case ITEMTYPE_USEMAGIC:			/* 特技発動(魔法習得と同じ形) */
 					pTmp = GetInfoMAGIC ((PITEMINFO_MAGIC)pInfo->pData, &dwTmp);
 					break;
 				case ITEMTYPE_MANAUP:			/* Mana回復 */
@@ -871,6 +873,7 @@ BOOL LoadItemInfo(void)
 						pTmp = PutInfoHPDOWN (&pData[dwOffsetTmp], &dwTmp);
 						break;
 					case ITEMTYPE_MAGIC:			/* 魔法習得 */
+					case ITEMTYPE_USEMAGIC:			/* 特技発動(魔法習得と同じ形) */
 						pTmp = PutInfoMAGIC (&pData[dwOffsetTmp], &dwTmp);
 						break;
 					case ITEMTYPE_MANAUP:			/* Mana回復 */
