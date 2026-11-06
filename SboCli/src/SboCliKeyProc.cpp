@@ -96,6 +96,7 @@ void CmdProcHanasu		(PWNDINFO);											/* コマンド処理(話す) */
 LPSTR MakeNpcSpeechNextExp	(LPCSTR);											/* 神父さんのセリフに次のレベルまでのお告げを足す */
 BOOL CmdProcSiraberu	(PWNDINFO);											/* コマンド処理(調べる) */
 int GetFrontTalkChar		(void);												/* 話しかけられる目の前のキャラを探す */
+int GetSKeyTalkChar		(void);												/* Sキーで話しかける相手を探す */
 BOOL CmdProcSKey		(void);												/* Sキー(調べる・話す・扉) */
 void ChatMsgProc		(LPCTSTR);											/* 発言メッセージ処理 */
 #ifdef __EMSCRIPTEN__
@@ -7486,6 +7487,55 @@ int GetFrontTalkChar(void)
 }
 
 /* ========================================================================= */
+/* 関数名：GetSKeyTalkChar													 */
+/* 内容：Sキーで話しかける相手を探す										 */
+/*		 掲示板（お知らせ掲示板・立て札）は動かない NPC の足元に「調べる」	 */
+/*		 メッセージが置いてあり、話すと「立て札は話せない」などになる。		 */
+/*		 目の前のマスにイベントがあって、そこに動かない NPC が立っている時は	 */
+/*		 話さずに調べる（今まで通り掲示板が読める）							 */
+/*		 投げた雪玉など、話す相手ではない NPC も除く							 */
+/*		 戻り値：キャラ番号（話さない時は -1）								 */
+/* ========================================================================= */
+int GetSKeyTalkChar(void)
+{
+	PCHARINFO pChar, pChar2;
+	DWORD dwX, dwY;
+	int nChar;
+
+	nChar = GetFrontTalkChar ();
+	if (nChar < 0) {
+		return -1;
+	}
+	pChar = g_aCharInfo[g_nMyCharID];
+	pChar2 = g_aCharInfo[nChar];
+	/* 投げた雪玉・魔法の発動役・爆弾ゲームの爆弾などは話し相手にしない */
+	switch (pChar2->byNpcType) {
+	case NPCTYPE_ATACK:				/* 重なったキャラに攻撃（投げた雪玉など） */
+	case NPCTYPE_USEMAGIC:			/* 重なったキャラに魔法発動 */
+	case NPCTYPE_USEMAGICPARENT:	/* 魔法発動し続ける */
+	case NPCTYPE_BOMB:				/* 爆弾 */
+	case NPCTYPE_BOMBBLOCK:			/* 爆弾ゲームの壁 */
+	case NPCTYPE_BOMBITEM:			/* 爆弾ゲームのアイテム */
+		return -1;
+	}
+	if (g_pMapInfo->pbyFlg == NULL) {
+		return nChar;
+	}
+	dwX = pChar->dwX + anPosAddTblX[pChar->byDirection];
+	dwY = pChar->dwY + anPosAddTblY[pChar->byDirection];
+	/* 相手が目の前のマス（カウンター越しではない）にいる？ */
+	if ((pChar2->dwX != dwX) || (pChar2->dwY != dwY)) {
+		return nChar;
+	}
+	/* そのマスにイベントがあって、相手が動かない NPC なら調べる */
+	if ((g_pMapInfo->pbyFlg[dwX + g_pMapInfo->nCX * dwY] & MAPFLG_EVENT) &&
+		((pChar2->byNpcType == NPCTYPE_NOMOVE) || (pChar2->byNpcType == NPCTYPE_NOBLOCK))) {
+		return -1;
+	}
+	return nChar;
+}
+
+/* ========================================================================= */
 /* 関数名：CmdProcSKey														 */
 /* 内容：Sキーの処理（調べる・話す・扉）									 */
 /*		 足元にイベントがある時は今まで通り調べる。							 */
@@ -7505,8 +7555,8 @@ BOOL CmdProcSKey(void)
 	/* 戦場ゲーム・すごろくの間は「話す」コマンドが無いので今まで通り調べるだけ */
 	if ((pChar->abySubStatus[0] != SUBGAMEID_WAR) &&
 		(pChar->abySubStatus[0] != SUBGAMEID_SUGOROKU)) {
-		/* 目の前に誰かいれば話す */
-		if (GetFrontTalkChar () >= 0) {
+		/* 目の前に誰かいれば話す（掲示板などは調べる） */
+		if (GetSKeyTalkChar () >= 0) {
 			CmdProcHanasu (NULL);
 			return TRUE;
 		}
@@ -7985,7 +8035,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE int SboWebGetPadState(void)
 			((g_pMapInfo->pbyFlg[pChar->dwX + g_pMapInfo->nCX * pChar->dwY] & MAPFLG_EVENT) == 0)) &&
 			(pChar->abySubStatus[0] != SUBGAMEID_WAR) &&
 			(pChar->abySubStatus[0] != SUBGAMEID_SUGOROKU) &&
-			(GetFrontTalkChar () >= 0)) {
+			(GetSKeyTalkChar () >= 0)) {
 			nRet |= PADSTATE_HANASU;
 		}
 	}
