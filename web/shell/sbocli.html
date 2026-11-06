@@ -872,8 +872,9 @@
 		color: var(--accent);
 	}
 	/* スマホのカメラボタン（マップにいる間だけ）
-	   あまり使わないので、パッドの間ではなくゲーム画面の右下隅に小さく半透明で重ねる
-	   （移動中に親指が当たらないように） */
+	   あまり使わないので、パッドの間ではなくゲーム画面の右上隅に小さく半透明で重ねる
+	   （移動中に親指が当たらないように。右下は HP・Mana の枠、左下はログ、
+	   左上はマップ名が出るので、いちばん空いている右上にする） */
 	#sbo-shot-pad {
 		display: none;
 	}
@@ -883,7 +884,7 @@
 		justify-content: center;
 		position: absolute;
 		right: 6px;
-		bottom: 6px;
+		top: 6px;
 		z-index: 5;
 		width: 34px;
 		height: 34px;
@@ -908,6 +909,7 @@
 		body.sbo-pad.sbo-on-map #sbo-shot-pad {
 			position: fixed;
 			right: auto;
+			top: auto;
 			left: calc(12px + env(safe-area-inset-left));
 			bottom: calc(10px + env(safe-area-inset-bottom));
 			z-index: 800;
@@ -1014,7 +1016,7 @@
 		<canvas id="sbo-sharp" aria-hidden="true"></canvas>
 		<div id="sbo-overlay" style="position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none;"></div>
 		<div id="sbo-shot-flash"></div>
-		<!-- スマホのカメラボタン（縦持ちはゲーム画面の右下隅に重ねる。横持ちは左下） -->
+		<!-- スマホのカメラボタン（縦持ちはゲーム画面の右上隅に重ねる。横持ちは左下） -->
 		<button type="button" id="sbo-shot-pad" title="スクリーンショット">📷</button>
 		<!-- ログイン画面のボタン。ID・パスワードの入力欄は「ID・パスワードでログイン」を押した時だけ見せる -->
 		<div id="sbo-quick" data-sbo-ui="1">
