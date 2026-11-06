@@ -12,6 +12,7 @@
 #include "ProcFunc/ProcFunc.h"
 #include "SboSvrRecvCmd.h"
 #include "SboSvrMagicProc.h"
+#include "SboSvrCharInfoTimerProc.h"
 #include <map>
 
 /* ========================================================================= */
@@ -72,6 +73,17 @@ void BattleProcCheck(PCHARINFO pChar)
 		return;
 	}
 
+	/* 眠っている？(PCは攻撃要求を取り消し、敵は起きてから1回分待つ) */
+	if (IsSleep (pChar)) {
+		if (pChar->byNpcType == NPCTYPE_INIT) {
+			pChar->dwLastBattle	 = 0;
+			pChar->dwTargetTblID = -1;
+		} else if (pChar->dwLastBattle > 1) {
+			pChar->dwLastBattle = timeGetTime ();
+		}
+		return;
+	}
+
 	/* PCの行動？ */
 	if (pChar->byNpcType == NPCTYPE_INIT) {
 		BattleProcCheckPC (pChar);
@@ -88,6 +100,8 @@ void BattleProcCheck(PCHARINFO pChar)
 	nTmp = nTmp * 100 / 255;
 	nTmp = max (nTmp, 1);
 	nTmp = 1000 + (4000 - ((4000 * nTmp) / 100));
+	/* 加速していれば間隔が短くなる */
+	nTmp = nTmp * 100 / (100 + GetHasteRate (pChar));
 
 	if (pChar->dwLastBattle == 1) {
 		pChar->dwLastBattle = timeGetTime ();

@@ -399,6 +399,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcWEBACCOUNT,				/* CMD_WEBACCOUNT */
 	RecvDataProcADMINUNDO,				/* CMD_ADMINUNDO */
 	RecvDataProcREQ_GUARD,				/* CMD_REQ_GUARD */
+	NULL,								/* CMD_HASTE(サーバー→クライアントのみ) */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -4649,6 +4650,8 @@ static BYTE GetAtackRateReq(PCHARINFO pChar, BYTE byData)
 	nTmp = nTmp * 100 / 255;
 	nTmp = max (nTmp, 1);
 	dwGage = 1000 + (2000 - ((2000 * nTmp) / 100));
+	/* 加速していれば満タンまでの時間も短い */
+	dwGage = dwGage * 100 / (100 + GetHasteRate (pChar));
 	/* 初めての攻撃か、満タンになる時間が経っている（通信のずれは 0.25 秒まで見る） */
 	if ((dwLast == 0) || (dwNow - dwLast + 250 >= dwGage)) {
 		byRet = ATACKRATE_JUST;
@@ -4710,6 +4713,10 @@ void RecvDataProcREQ_ATTACK(PBYTE pData, DWORD dwDataSize)
 	if ((pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0)) {
 		pChar->dwLastBattle	 = 0;
 		pChar->dwTargetTblID = -1;
+		return;
+	}
+	/* 眠っている間は殴れない */
+	if (IsSleep (pChar)) {
 		return;
 	}
 	/* 殴ったら構えは解ける */

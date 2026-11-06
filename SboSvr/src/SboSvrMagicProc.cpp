@@ -50,6 +50,9 @@ static BOOL MagicProcUse_HPDOWNAT			(PMAGICINFO, PCHARINFO, PCHARINFO);					/* �
 static BOOL MagicProcUse_PUTSELF			(PMAGICINFO, PCHARINFO, PCHARINFO);					/* 魔法処理(使用処理:魔法発生(自分)) */
 static BOOL MagicProcUse_RESURRECTION		(PMAGICINFO, PCHARINFO, PCHARINFO);					/* 魔法処理(使用処理:蘇生) */
 static BOOL MagicProcUse_HPDOWNRATE			(PMAGICINFO, PCHARINFO, PCHARINFO);					/* 魔法処理(使用処理:HP減少(率)) */
+static BOOL MagicProcUse_HASTE				(PMAGICINFO, PCHARINFO, PCHARINFO);					/* 魔法処理(使用処理:加速) */
+static BOOL MagicProcUse_POISON				(PMAGICINFO, PCHARINFO, PCHARINFO);					/* 魔法処理(使用処理:毒) */
+static BOOL MagicProcUse_SLEEP				(PMAGICINFO, PCHARINFO, PCHARINFO);					/* 魔法処理(使用処理:眠り) */
 
 extern long genrand();													/* 乱数取得 */
 
@@ -66,6 +69,9 @@ static const MAGICPROC MagicProcTbl[] = {
 	MagicProcUse_RESURRECTION,		/* 蘇生 */
 	MagicProcUse_HPDOWN,			/* HP減少(HP消費) */
 	MagicProcUse_HPDOWNRATE,		/* HP減少(率) */
+	MagicProcUse_HASTE,				/* 加速 */
+	MagicProcUse_POISON,			/* 毒 */
+	MagicProcUse_SLEEP,				/* 眠り */
 };
 
 /* ========================================================================= */
@@ -89,6 +95,11 @@ BOOL MagicProc(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget)
 
 	pChar = g_aCharInfo[dwTblID];
 	pInfo = g_aMagicInfo[byID];
+
+	/* 眠っている間は使えない */
+	if (IsSleep (pChar)) {
+		goto Exit;
+	}
 
 
 	/*******************
@@ -1017,7 +1028,7 @@ BOOL MagicProcUse(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTarget)
 	BOOL bRet;
 
 	bRet = FALSE;
-	if (MagicProcTbl[pInfo->byType] == NULL) {
+	if ((pInfo->byType >= sizeof (MagicProcTbl) / sizeof (MagicProcTbl[0])) || (MagicProcTbl[pInfo->byType] == NULL)) {
 		goto Exit;
 	}
 
@@ -1719,6 +1730,104 @@ BOOL MagicProcUse_HPDOWNRATE(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharT
 	bRet = TRUE;
 Exit:
 	return bRet;
+}
+
+/* ========================================================================= */
+/* 関数名：MagicProcUse_HASTE												 */
+/* 内容：魔法処理(使用処理:加速)											 */
+/*		 付加データ1:速くなる率(%) 2:秒数									 */
+/*		 攻撃ゲージ(PC)・攻撃の間隔(敵)が短くなる							 */
+/* ========================================================================= */
+BOOL MagicProcUse_HASTE(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTarget)
+{
+	int nRate, nSec;
+
+	if (pCharTarget->byCharState == CHARSTATE_DEAD) {
+		return FALSE;
+	}
+	nRate = min (200, max (1, (int)pInfo->wData1));
+	nSec  = max (1, (int)pInfo->wData2);
+
+	SetCharInfoTimerStatus (pCharTarget, CHARINFOTIMEREVENT_HASTE, (BYTE)nRate, (DWORD)nSec * 1000);
+	SendCmdADDCHAREFC (pCharTarget->dwTblID, RGB (255, 230, 80), "ﾍｲｽﾄ");
+	if (pInfo->byTargetEfectID) {
+		pCharTarget->byEfect = pInfo->byTargetEfectID;
+		SendCmdEFECTCHG (pCharTarget->pID, pCharTarget->dwTblID, pCharTarget->byEfect);
+		pCharTarget->byEfect = 0;
+	}
+	/* PCには攻撃ゲージを速くするよう知らせる */
+	if (pCharTarget->byNpcType == NPCTYPE_INIT) {
+		SendCmdHASTE (pCharTarget->dwTblID, (BYTE)nRate, (DWORD)nSec * 1000);
+	}
+	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：MagicProcUseStatusCheck											 */
+/* 内容：毒・眠りをかけられる相手か・成功したか								 */
+/* ========================================================================= */
+static BOOL MagicProcUseStatusCheck(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTarget, int nRate)
+{
+	if (pChar->dwTblID == pCharTarget->dwTblID) {
+		/* 自分にはかけない */
+		return FALSE;
+	}
+	if ((pCharTarget->byCharState == CHARSTATE_DEAD) || (pCharTarget->wHP == 0)) {
+		return FALSE;
+	}
+	if (nRate <= 0) {
+		nRate = 100;
+	}
+	if ((int)(genrand () % 100) >= nRate) {
+		SendCmdADDCHAREFC (pCharTarget->dwTblID, RGB (255, 255, 255), "ﾐｽ");
+		return FALSE;
+	}
+	if (pInfo->byTargetEfectID) {
+		pCharTarget->byEfect = pInfo->byTargetEfectID;
+		SendCmdEFECTCHG (pCharTarget->pID, pCharTarget->dwTblID, pCharTarget->byEfect);
+		pCharTarget->byEfect = 0;
+	}
+	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：MagicProcUse_POISON												 */
+/* 内容：魔法処理(使用処理:毒)												 */
+/*		 付加データ1:2秒ごとのダメージ 2:秒数 3:成功率(%、0なら100)			 */
+/*		 毒では倒れない(HPは1で止まる)										 */
+/* ========================================================================= */
+BOOL MagicProcUse_POISON(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTarget)
+{
+	if (MagicProcUseStatusCheck (pInfo, pChar, pCharTarget, (int)pInfo->wData3) == FALSE) {
+		return FALSE;
+	}
+	SetCharInfoTimerStatus (pCharTarget, CHARINFOTIMEREVENT_POISON,
+			(BYTE)min (255, max (1, (int)pInfo->wData1)), (DWORD)max (1, (int)pInfo->wData2) * 1000);
+	SendCmdADDCHAREFC (pCharTarget->dwTblID, RGB (190, 80, 255), "毒");
+	/* 敵はかけた相手を狙う */
+	if (pCharTarget->byNpcType != NPCTYPE_INIT) {
+		DWORD dwTargetBack = pChar->dwTargetTblID;
+		pChar->dwTargetTblID = pCharTarget->dwTblID;
+		DamageAfterProcNPC (pChar, pCharTarget);
+		pChar->dwTargetTblID = dwTargetBack;
+	}
+	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：MagicProcUse_SLEEP												 */
+/* 内容：魔法処理(使用処理:眠り)											 */
+/*		 付加データ1:秒数 2:成功率(%、0なら100)								 */
+/*		 眠っている間は攻撃も特技もできない。殴られると起きる				 */
+/* ========================================================================= */
+BOOL MagicProcUse_SLEEP(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTarget)
+{
+	if (MagicProcUseStatusCheck (pInfo, pChar, pCharTarget, (int)pInfo->wData2) == FALSE) {
+		return FALSE;
+	}
+	SetCharInfoTimerStatus (pCharTarget, CHARINFOTIMEREVENT_SLEEP, 0, (DWORD)max (1, (int)pInfo->wData1) * 1000);
+	SendCmdADDCHAREFC (pCharTarget->dwTblID, RGB (160, 200, 255), "Zzz");
+	return TRUE;
 }
 
 /* Copyright(C)URARA-works 2003-2005 */

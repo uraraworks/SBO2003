@@ -8,6 +8,7 @@
 #include "include.h"
 #include "Glbldata.h"
 #include "SboSvrRecvCmd.h"
+#include "SboSvrSendCmd.h"
 
 
 /* ========================================================================= */
@@ -19,6 +20,12 @@ void		CharInfoTimerProc			(DWORD dwTblID);								/* キャラ情報タイマー
 BOOL		CheckCharInfoTimer			(DWORD dwTblID, BYTE byType);					/* 指定したイベントを持っているかチェック */
 static BOOL	CharInfoTimerProc_PW		(PCHARINFO pChar, PCHARINFOTIMEREVENT pInfo);	/* キャラ情報タイマーイベント処理(力) */
 static BOOL	CharInfoTimerProc_DIFENCE	(PCHARINFO pChar, PCHARINFOTIMEREVENT pInfo);	/* キャラ情報タイマーイベント処理(防御力倍) */
+static BOOL	CharInfoTimerProc_HASTE		(PCHARINFO pChar, PCHARINFOTIMEREVENT pInfo);	/* キャラ情報タイマーイベント処理(加速) */
+static BOOL	CharInfoTimerProc_POISON	(PCHARINFO pChar, PCHARINFOTIMEREVENT pInfo);	/* キャラ情報タイマーイベント処理(毒) */
+static BOOL	CharInfoTimerProc_SLEEP		(PCHARINFO pChar, PCHARINFOTIMEREVENT pInfo);	/* キャラ情報タイマーイベント処理(眠り) */
+
+#define POISON_INTERVAL		2000		/* 毒のダメージの間隔(ms) */
+#define SLEEP_EFC_INTERVAL	2000		/* 眠っている間に「Zzz」を出す間隔(ms) */
 
 extern long genrand();					/* 乱数取得 */
 
@@ -79,6 +86,15 @@ void CharInfoTimerProc(DWORD dwTblID)
 			break;
 		case CHARINFOTIMEREVENT_DIFENCE:	/* 防御力倍 */
 			bResult = CharInfoTimerProc_DIFENCE (pChar, pInfo);
+			break;
+		case CHARINFOTIMEREVENT_HASTE:		/* 加速 */
+			bResult = CharInfoTimerProc_HASTE (pChar, pInfo);
+			break;
+		case CHARINFOTIMEREVENT_POISON:		/* 毒 */
+			bResult = CharInfoTimerProc_POISON (pChar, pInfo);
+			break;
+		case CHARINFOTIMEREVENT_SLEEP:		/* 眠り */
+			bResult = CharInfoTimerProc_SLEEP (pChar, pInfo);
 			break;
 		}
 		if (bResult) {
@@ -174,6 +190,148 @@ static BOOL CharInfoTimerProc_DIFENCE(PCHARINFO pChar, PCHARINFOTIMEREVENT pInfo
 	bRet = TRUE;
 Exit:
 	return bRet;
+}
+
+/* ========================================================================= */
+/* 関数名：	SetCharInfoTimerStatus											 */
+/* 内容：	状態(加速・毒・眠り)をかける。同じ種類がかかっていればかけ直す	 */
+/* ========================================================================= */
+
+void SetCharInfoTimerStatus(PCHARINFO pChar, BYTE byType, BYTE byData, DWORD dwTimeValid)
+{
+	int i, nCount;
+	PCHARINFOTIMEREVENT pInfo;
+
+	pInfo = NULL;
+	nCount = pChar->aTimerEvent.GetSize ();
+	for (i = 0; i < nCount; i ++) {
+		if (pChar->aTimerEvent[i]->byType == byType) {
+			pInfo = pChar->aTimerEvent[i];
+			break;
+		}
+	}
+	if (pInfo == NULL) {
+		pInfo = new CHARINFOTIMEREVENT;
+		pChar->aTimerEvent.Add (pInfo);
+	}
+	ZeroMemory (pInfo, sizeof (CHARINFOTIMEREVENT));
+	pInfo->byType		= byType;
+	pInfo->byData		= byData;
+	pInfo->dwTimeStart	= timeGetTime ();
+	pInfo->dwTimeValid	= dwTimeValid;
+	pInfo->dwTimeLast	= pInfo->dwTimeStart;
+	if (byType == CHARINFOTIMEREVENT_SLEEP) {
+		/* 眠った時のHP(これより減ったら起きる) */
+		pInfo->dwTimeLast = pChar->wHP;
+		pInfo->dwTimeInterval = pInfo->dwTimeStart;
+	}
+}
+
+
+/* ========================================================================= */
+/* 関数名：	GetHasteRate / IsSleep											 */
+/* 内容：	加速の率(%)・眠っているか										 */
+/* ========================================================================= */
+
+BYTE GetHasteRate(PCHARINFO pChar)
+{
+	int i, nCount;
+
+	nCount = pChar->aTimerEvent.GetSize ();
+	for (i = 0; i < nCount; i ++) {
+		if (pChar->aTimerEvent[i]->byType == CHARINFOTIMEREVENT_HASTE) {
+			return pChar->aTimerEvent[i]->byData;
+		}
+	}
+	return 0;
+}
+
+BOOL IsSleep(PCHARINFO pChar)
+{
+	return CheckCharInfoTimer (pChar->dwTblID, CHARINFOTIMEREVENT_SLEEP);
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CharInfoTimerProc_HASTE											 */
+/* 内容：	キャラ情報タイマーイベント処理(加速)：時間が来たら終わり		 */
+/* ========================================================================= */
+
+static BOOL CharInfoTimerProc_HASTE(PCHARINFO pChar, PCHARINFOTIMEREVENT pInfo)
+{
+	if (timeGetTime () - pInfo->dwTimeStart < pInfo->dwTimeValid) {
+		return FALSE;
+	}
+	/* PCには加速が切れたことを知らせる(ゲージの速さを戻す) */
+	if (pChar->byNpcType == NPCTYPE_INIT) {
+		SendCmdHASTE (pChar->dwTblID, 0, 0);
+	}
+	return TRUE;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CharInfoTimerProc_POISON										 */
+/* 内容：	キャラ情報タイマーイベント処理(毒)：2秒ごとにHPが減る			 */
+/*			毒では倒れない(HPは1で止まる)									 */
+/* ========================================================================= */
+
+static BOOL CharInfoTimerProc_POISON(PCHARINFO pChar, PCHARINFOTIMEREVENT pInfo)
+{
+	char szTmp[16];
+	DWORD dwTime;
+	int nDamage;
+
+	dwTime = timeGetTime ();
+	if ((pChar->wHP == 0) || (pChar->byCharState == CHARSTATE_DEAD)) {
+		return TRUE;
+	}
+	if (dwTime - pInfo->dwTimeLast >= POISON_INTERVAL) {
+		pInfo->dwTimeLast = dwTime;
+		nDamage = min ((int)pInfo->byData, (int)pChar->wHP - 1);
+		if (nDamage > 0) {
+			pChar->wHP -= (WORD)nDamage;
+			wsprintf (szTmp, "%d", nDamage);
+			SendCmdADDCHAREFC (pChar->dwTblID, RGB (190, 80, 255), szTmp);
+			SendCmdCHARSTATUSHPMANA (pChar->dwTblID, pChar->dwTblID);
+		}
+	}
+	if (dwTime - pInfo->dwTimeStart < pInfo->dwTimeValid) {
+		return FALSE;
+	}
+	return TRUE;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CharInfoTimerProc_SLEEP											 */
+/* 内容：	キャラ情報タイマーイベント処理(眠り)：時間が来るか、ダメージを	 */
+/*			受けてHPが減ったら起きる										 */
+/* ========================================================================= */
+
+static BOOL CharInfoTimerProc_SLEEP(PCHARINFO pChar, PCHARINFOTIMEREVENT pInfo)
+{
+	DWORD dwTime;
+
+	dwTime = timeGetTime ();
+	if ((pChar->wHP == 0) || (pChar->byCharState == CHARSTATE_DEAD)) {
+		return TRUE;
+	}
+	/* 回復したらその HP を基準にする(回復の後に殴られたら起きる) */
+	if ((DWORD)pChar->wHP > pInfo->dwTimeLast) {
+		pInfo->dwTimeLast = pChar->wHP;
+	}
+	/* 起きた？(時間切れ・殴られた) */
+	if ((dwTime - pInfo->dwTimeStart >= pInfo->dwTimeValid) || ((DWORD)pChar->wHP < pInfo->dwTimeLast)) {
+		SendCmdADDCHAREFC (pChar->dwTblID, RGB (255, 255, 255), "!?");
+		return TRUE;
+	}
+	/* 眠っている間はときどき「Zzz」 */
+	if (dwTime - pInfo->dwTimeInterval >= SLEEP_EFC_INTERVAL) {
+		pInfo->dwTimeInterval = dwTime;
+		SendCmdADDCHAREFC (pChar->dwTblID, RGB (160, 200, 255), "Zzz");
+	}
+	return FALSE;
 }
 
 /* Copyright(C)URARA-works 2003-2006 */

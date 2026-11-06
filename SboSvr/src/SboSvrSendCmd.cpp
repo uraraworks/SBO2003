@@ -3147,4 +3147,25 @@ void SendCmdADMINUNDO(DWORD pIDSend, BYTE byCmdSub, BYTE byScreen, BYTE byResult
 	svrSock.SendTo (pIDSend, (PBYTE)&Para, sizeof (Para));
 }
 
+/* ========================================================================= */
+/* 関数名：SendCmdHASTE														 */
+/* 内容：コマンド送信(加速の状態を本人へ。byRate=0で終わり)				 */
+/* ========================================================================= */
+void SendCmdHASTE(DWORD dwTblID, BYTE byRate, DWORD dwMs)
+{
+	CMDPARA_DATA4 SendData;
+	PCHARINFO pChar = g_aCharInfo[dwTblID];
+
+	if (pChar->byNpcType != NPCTYPE_INIT) {
+		return;
+	}
+	ZeroMemory (&SendData, sizeof (CMDPARA_DATA4));
+	SendData.byCmd		= CMD_HASTE;
+	SendData.byData		= byRate;
+	SendData.pID		= pChar->pID;
+	SendData.dwTblID	= pChar->dwTblID;
+	SendData.dwData		= dwMs;
+	svrSock.SendTo (pChar->pID, (LPBYTE)&SendData, sizeof (CMDPARA_DATA4), SENDTIMEOUT);
+}
+
 /* Copyright(C)URARA-works 2003-2005 */
