@@ -39,22 +39,29 @@ Actions の中では次を行います。
 
 ### 再起動の予告
 
-いきなり切断されて驚かないよう、`remote-deploy.ps1` はサーバーを止める前に、ゲームの全員へシステムメッセージ
-（時報と同じ水色の文字。メッセージログにも残る）で知らせます。
+いきなり切断されて驚かないよう、ゲームの全員へシステムメッセージ（時報と同じ水色の文字。メッセージログにも残る）で知らせます。
+Actions の手動実行では、入力「再起動を知らせる」（notice、既定オン）で次のように流れます。
 
 ```
+（デプロイを押してすぐ。ビルドと同時に announce ジョブが流す）
 SYSTEM:【お知らせ】サーバーを更新します。
-SYSTEM:数分後に再起動するため、いったん切断されます。
-  …（50 秒後）
-SYSTEM:まもなく再起動します。数分たったら、もう一度ログインしてください。
+SYSTEM:早ければ数分で再起動します。
+（ビルドと確認が終わり、差し替える直前。remote-deploy.ps1 -Announced が流して、待たずに止める）
+SYSTEM:【お知らせ】まもなくサーバーを再起動します。
+SYSTEM:数分たったら、もう一度ログインしてください。
 ```
 
-- 待つ秒数は手動実行の入力「notice_sec」（既定 60、0 で予告しない）。Mac から動かす時は環境変数 `NOTICE_SEC`。
-- ゲームに入っている人がいない時（`/health` の `onlinePlayers` が 0）は、知らせるだけで待たずに止めます。
-- データの入れ替え（`--data`）と戻す（`--rollback`）の時は「サーバーのメンテナンスを行います。」になります。
+ビルドや確認が失敗・取り消しで差し替えなかった時は、cancel-notice ジョブが
+「【お知らせ】サーバーの更新は中止になりました。」「このまま遊び続けられます。」を流します。
+
+Mac から `vps-deploy.sh` を動かす時（予告を先に流していない時）は、`remote-deploy.ps1` が止める前に
+「【お知らせ】サーバーを更新します。」「数分後に再起動するため、いったん切断されます。」を流し、
+ゲームに入っている人がいれば `NOTICE_SEC` 秒（既定 60、0 で予告しない）待って、10 秒前に「まもなく再起動します」を流します。
+データの入れ替え（`--data`）と戻す（`--rollback`）の時は「サーバーのメンテナンスを行います。」になります。
+
+- お知らせだけ流す: `deploy/production/vps-deploy.sh --notice '1行目' '2行目'`
 - 仕組み: `data\notice.request` に UTF-8 で 1 行 1 メッセージを書いて置くと、サーバーが読んで全員に流し、ファイルを消します
   （`start.ps1` が環境変数 `SBO2003_NOTICE_FILE` で場所を渡す。`server/node/sbosvr_net.js`）。
-  手で知らせたい時も、このファイルを置けば流れます。
 
 ### 必要な設定（Settings → Secrets and variables → Actions）
 
@@ -188,7 +195,8 @@ Start-ScheduledTask -TaskName SBO2003_SboSvr
 | `install-task.ps1` | 起動時に自動で立ち上がるタスクを登録する |
 | `setup-iis.ps1` | IIS のサイト（http と、証明書があれば https）を作る |
 | `remote-deploy.ps1` | VPS で、新しい zip・データへの入れ替えと 1 つ前の版への戻しを行う |
-| `vps-deploy.sh` | zip やデータを SSH で VPS に送り、`remote-deploy.ps1` を動かす（Actions からも Mac からも） |
+| `vps-deploy.sh` | zip やデータを SSH で VPS に送り、`remote-deploy.ps1` を動かす（Actions からも Mac からも）。`--notice` でお知らせだけ流す |
+| `ssh-setup.sh` | Actions で VPS へ SSH する鍵と known_hosts を用意する |
 | `move-staging-data.sh` | ステージングのデータを本番へ持っていく（Mac から） |
 | `pull-prod-seed.sh` | 本番のゲームデータから `Release/SBODATA/`（ローカル用の初期データ）を作り直す（Mac から） |
 | `deploy.env.example` | Mac から動かす時の接続設定の雛形（`deploy.local.env` にコピー） |

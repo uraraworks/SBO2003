@@ -4,6 +4,8 @@
 #   powershell ... remote-deploy.ps1 -Data C:\SBO2003\upload\sbo2003-data.zip   # データだけ入れ替える
 #   powershell ... remote-deploy.ps1 -Rollback                                  # 1 つ前の版に戻す
 #   -NoticeSec 60 で、止める前に遊んでいる人へ再起動を予告して待つ秒数を変える（0 で予告しない）
+#   -Announced は予告を先に流してある時（Actions はビルドを始める時に vps-deploy.sh --notice で流す）。
+#   ここでは「まもなく再起動します」だけ流して、待たずに止める
 #
 # 0. サーバーが動いていれば、ゲームの全員にお知らせ（システムメッセージ）で再起動を予告する。
 #    遊んでいる人がいれば NoticeSec 秒待ち、止める 10 秒前に「まもなく再起動します」をもう一度流す
@@ -21,7 +23,9 @@ param(
 	[switch]$Rollback,
 	[string]$Root = 'C:\SBO2003',
 	# 止める前に再起動を予告して待つ秒数（0 で予告しない）
-	[int]$NoticeSec = 60
+	[int]$NoticeSec = 60,
+	# 予告は済んでいる（vps-deploy.sh --notice で先に流した）。「まもなく再起動します」だけ流して待たずに止める
+	[switch]$Announced
 )
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -78,13 +82,20 @@ if ($running -and $NoticeSec -gt 0) {
 		$online = [int]((Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:$port/health" -TimeoutSec 5).Content |
 			ConvertFrom-Json).onlinePlayers
 	} catch { }
-	if ($Zip) { $what = 'サーバーを更新します。' } else { $what = 'サーバーのメンテナンスを行います。' }
-	# 待つ秒数ちょうどとは限らない（順番待ちなどで前後する）ので「数分後」と大まかに書く
-	$sent = Send-Notice @("【お知らせ】$what", '数分後に再起動するため、いったん切断されます。')
+	if ($Announced) {
+		# ビルドを始めた時に予告済み（production-publish の announce）。ここでは最後のお知らせだけ流す
+		$sent = Send-Notice @('【お知らせ】まもなくサーバーを再起動します。', '数分たったら、もう一度ログインしてください。')
+	} else {
+		if ($Zip) { $what = 'サーバーを更新します。' } else { $what = 'サーバーのメンテナンスを行います。' }
+		# 待つ秒数ちょうどとは限らない（順番待ちなどで前後する）ので「数分後」と大まかに書く
+		$sent = Send-Notice @("【お知らせ】$what", '数分後に再起動するため、いったん切断されます。')
+	}
 	if (-not $sent) {
 		Say 'お知らせを流せませんでした（お知らせに対応していない版のサーバー）。待たずに止めます'
 	} elseif ($online -eq 0) {
 		Say 'ゲームに入っている人がいないので、待たずに止めます'
+	} elseif ($Announced) {
+		Say '予告は済んでいるので、待たずに止めます'
 	} else {
 		Say "ゲームに入っている人（$online 人）がいるので、$NoticeSec 秒待ってから止めます"
 		$last = [Math]::Min(10, $NoticeSec)
