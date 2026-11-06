@@ -35,7 +35,13 @@ BOOL CCharProcATACK::Proc(DWORD dwTime)
 	PCHARINFO pCharTarget, pCharParent;
 
 	bRet = FALSE;
-	if (abs (dwTime - m_pChar->dwLastDotMove) < 400) {
+	/* 1 マス進む間隔(ms)。投げた雪玉は、速くなった歩き（1 マス約 280ms）に追いつかれないよう速くする */
+	DWORD dwInterval = 400;
+//Todo:画像ID設定
+	if (m_pChar->wGrpID == 213) {
+		dwInterval = 180;
+	}
+	if (abs (dwTime - m_pChar->dwLastDotMove) < (int)dwInterval) {
 		goto Exit;
 	}
 

@@ -2393,6 +2393,10 @@ void TimerProcCharDotMove(PCHARINFO pChar)
 	nTime1 = 27;
 	/* 1ドット進むのにかける時間(ms)。1マス(31ドット)はおよそ 31 × nTime2 ms で歩く */
 	nTime2 = 9;
+	/* 投げた雪玉は歩くより速く飛ぶ（サーバーは 1 マス 180ms で進める。CharProcATACK.cpp） */
+	if ((pChar->byNpcType == NPCTYPE_ATACK) && (pChar->wGrpID == 213)) {
+		nTime2 = 5;
+	}
 	if (pChar->dwLastDotMove == 0) {
 		if (g_nProcChar == g_nMyCharID) {
 			if (g_bEnableMove) {
