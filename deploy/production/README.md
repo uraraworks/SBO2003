@@ -148,16 +148,19 @@ deploy/production/move-staging-data.sh
 
 ### 本番のゲームデータでローカル用の初期データを更新する時
 
-ローカルでサーバーを試す時（`tools/server/run.sh`・クラウドの各スレッドでの確認）は `Release/SBODATA/` を使います。
+本物のゲームデータ（マップ・NPC・アイテムなど）はネタバレになるので、非公開リポジトリ
+`uraraworks/SBO2003-private` の `Release/SBODATA/` にだけ置きます（公開側の `Release/SBODATA/` は 10×10 の草原だけ）。
+ローカルでサーバーを試す時（`tools/server/run.sh`・クラウドの各スレッドでの確認）は、隣に非公開リポジトリの
+クローンがあればそちらを使います（探し方は `tools/server/find-data.sh`。場所が違う時は環境変数 `SBO2003_PRIVATE_DIR`）。
 これを本番の今のマップ・アイテム・NPC などにそろえる時は、Mac で次を動かします（サーバーが未ビルドなら先にビルドします）。
 
 ```bash
 deploy/production/pull-prod-seed.sh
-git commit -m "初期データを本番の最新に更新"   # git add はスクリプトが行う
+cd ../SBO2003-private && git commit -m "初期データを本番の最新に更新" && git push   # git add はスクリプトが行う
 ```
 
 本番のサーバーは止めずに `C:\SBO2003\data\SBODATA\` の `SboData*.dat` を写して持ってきて（本番は 30 分ごとに保存するので、最大 30 分前の状態）、
-`tools/server/make-seed.sh` でキャラ情報を NPC だけにしてから `Release/SBODATA/` を入れ替えます。
+`tools/server/make-seed.sh` でキャラ情報を NPC だけにしてから、非公開リポジトリの `Release/SBODATA/` を入れ替えます。
 預かり所（`SboDataLeaveInfo.dat`）と Web 用の JSON（アカウント・ご意見・AI の鍵など）は持ってこないので、
 プレイヤーのデータは入りません。手元と VPS の一時ファイルも最後に消します。
 
@@ -198,7 +201,7 @@ Start-ScheduledTask -TaskName SBO2003_SboSvr
 | `vps-deploy.sh` | zip やデータを SSH で VPS に送り、`remote-deploy.ps1` を動かす（Actions からも Mac からも）。`--notice` でお知らせだけ流す |
 | `ssh-setup.sh` | Actions で VPS へ SSH する鍵と known_hosts を用意する |
 | `move-staging-data.sh` | ステージングのデータを本番へ持っていく（Mac から） |
-| `pull-prod-seed.sh` | 本番のゲームデータから `Release/SBODATA/`（ローカル用の初期データ）を作り直す（Mac から） |
+| `pull-prod-seed.sh` | 本番のゲームデータから、非公開リポジトリの `Release/SBODATA/`（ローカル用の初期データ）を作り直す（Mac から） |
 | `deploy.env.example` | Mac から動かす時の接続設定の雛形（`deploy.local.env` にコピー） |
 | `set-admin-password.js` | `SboSvr.ini` の管理者パスワードを書き換える（ステージングの `entrypoint.sh` と同じ処理） |
 | `web.config` | IIS サイトの設定（zip では `iis\web.config`） |
