@@ -1442,10 +1442,36 @@ void DrawETC(void)
 
 		/* フレーム表示 */
 		g_pDibDrawMap->Blt (x, y, 38, 9, g_pDibSystem, 96, 128, TRUE);
-		/* 現在値表示 */
-		int nTmp = pChar->byTurnLV * 32 / 100;
-		nTmp = max (nTmp, 1);
-		g_pDibDrawMap->Blt (x + 3, y + 3, nTmp, 3, g_pDibSystem, 99, 142, TRUE);
+
+		/* 現在値表示：ゲージは5周で満タン。1周(20%)ごとに色が変わり、
+		   1周目が溜まると早撃ちできる。威力は溜まった周の数(1周=20%)で決まる */
+		static const COLORREF aclLap[5] = {
+			RGB (64, 160, 255),		/* 1周目：青 */
+			RGB (64, 224, 64),		/* 2周目：緑 */
+			RGB (255, 230, 0),		/* 3周目：黄 */
+			RGB (255, 140, 0),		/* 4周目：橙 */
+			RGB (255, 40, 40)		/* 5周目：赤 */
+		};
+		int nLap = pChar->byTurnLV / TURNGAGE_LAP;			/* 溜まりきった周の数(0～5) */
+		if (nLap >= TURNGAGE_LAPMAX) {
+			/* 満タン：白と赤で点滅 */
+			g_pDibDrawMap->FillRect (x + 3, y + 3, 32, 3, ((timeGetTime () / 120) % 2) ? RGB (255, 255, 255) : aclLap[4]);
+		} else {
+			int nTmp = (pChar->byTurnLV % TURNGAGE_LAP) * 32 / TURNGAGE_LAP;
+			nTmp = max (nTmp, 1);
+			/* 下地に溜まりきった周の色 */
+			if (nLap > 0) {
+				g_pDibDrawMap->FillRect (x + 3, y + 3, 32, 3, aclLap[nLap - 1]);
+			}
+			/* 溜まり中の周 */
+			g_pDibDrawMap->FillRect (x + 3, y + 3, nTmp, 3, aclLap[nLap]);
+		}
+		/* ゲージの下に、全部で何周あって何周溜まったかを5つの目盛りで出す */
+		g_pDibDrawMap->FillRect (x + 2, y + 8, 34, 4, RGB (0, 0, 0));
+		for (int i = 0; i < TURNGAGE_LAPMAX; i ++) {
+			g_pDibDrawMap->FillRect (x + 3 + i * 7, y + 9, 5, 2, (i < nLap) ? aclLap[i] : RGB (80, 80, 80));
+		}
+		g_bDraw = TRUE;
 	}
 }
 
