@@ -138,6 +138,21 @@ BOOL CCharProcMOVERAND::Proc(DWORD dwTime)
 		goto Exit;
 	}
 
+	/* 移動範囲の外にいる？（開始位置を変えた・押された等）開始位置へ戻して範囲の中だけを歩く。
+	   範囲の外から歩いて戻らせると、戻る途中は範囲の外を歩き回って見えるため */
+	if (m_pChar->byAreaX &&
+		((abs ((int)m_pChar->dwStartX - (int)m_pChar->dwX) > m_pChar->byAreaX) ||
+		 (abs ((int)m_pChar->dwStartY - (int)m_pChar->dwY) > m_pChar->byAreaY))) {
+		m_nWalkLeft = 0;
+		m_pChar->dwX = m_pChar->dwStartX;
+		m_pChar->dwY = m_pChar->dwStartY;
+		m_pChar->dwLastDotMove = dwTime;
+		SendCmdCHARPOS (m_pChar->pID, m_pChar->dwTblID, 1, 2);
+		StartRest (dwTime, FALSE);
+		bRet = TRUE;
+		goto Exit;
+	}
+
 	/* 目の前でプレイヤーと向かい合っている？ */
 	if (CheckTalkPC ()) {
 		m_nWalkLeft = 0;
@@ -243,14 +258,10 @@ BOOL CCharProcMOVERAND::IsMovePos(int x, int y)
 
 	/* 移動範囲が設定されている？（巡回ルートを歩く時は見ない） */
 	if (m_pChar->byAreaX && (IsRoute () == FALSE)) {
+		/* 開始位置から移動範囲の外へは出ない（範囲の外にいる時は Proc で開始位置へ戻す） */
 		if ((abs ((int)m_pChar->dwStartX - x) > m_pChar->byAreaX) ||
 			(abs ((int)m_pChar->dwStartY - y) > m_pChar->byAreaY)) {
-			/* 範囲の外にいる時（押された等）は、開始位置に近づく向きだけ歩ける。
-			   以前は範囲外に出るとどこへも歩けず固まっていた */
-			if ((abs ((int)m_pChar->dwStartX - x) + abs ((int)m_pChar->dwStartY - y)) >=
-				(abs ((int)m_pChar->dwStartX - (int)m_pChar->dwX) + abs ((int)m_pChar->dwStartY - (int)m_pChar->dwY))) {
-				return FALSE;
-			}
+			return FALSE;
 		}
 	}
 
