@@ -102,9 +102,21 @@ void CCharProcBase::SetProc(PCHARINFO pChar)
 	SAFE_DELETE (pProc);
 
 	switch (pChar->byNpcType) {
+	case NPCTYPE_NOMOVE:
+	case NPCTYPE_MOVERAND:
+		/* 巡回ルートがあれば、動かない・ランダム移動の村人もルートを巡回する */
+		if (pChar->byRouteCount >= 2) {
+			pProc = new CCharProcMOVERAND;
+			break;
+		}
+		if (pChar->byNpcType == NPCTYPE_MOVERAND) {
+			pProc = new CCharProcMOVERAND;
+		} else {
+			pProc = new CCharProcNOMOVE;
+		}
+		break;
 	case NPCTYPE_STOPRAND:			pProc = new CCharProcSTOPRAND;			break;	/* 止まるかランダム？ */
 	case NPCTYPE_PUT:				pProc = new CCharProcPUT;				break;	/* NPC発生？ */
-	case NPCTYPE_MOVERAND:
 	case NPCTYPE_BATTLE1:			pProc = new CCharProcMOVERAND;			break;	/* ランダム移動？ */
 	case NPCTYPE_SEARCH:
 	case NPCTYPE_BATTLE2:			pProc = new CCharProcSEARCH;			break;	/* 検索してついていく？ */
@@ -116,7 +128,6 @@ void CCharProcBase::SetProc(PCHARINFO pChar)
 	case NPCTYPE_BLOCK4:															/* 押せる(サイコロ３) */
 	case NPCTYPE_CHGPUSH:			pProc = new CCharProcBLOCK;				break;	/* 押せる(押せて話すと切り替え) */
 	case NPCTYPE_SCORE:				pProc = new CCharProcSCORE;				break;	/* 得点板 */
-	case NPCTYPE_NOMOVE:															/* 移動しない */
 	case NPCTYPE_NOBLOCK:															/* 移動しない(通り抜け可) */
 	case NPCTYPE_BOMBITEM:			pProc = new CCharProcNOMOVE;			break;	/* 爆弾ゲームのアイテム */
 	case NPCTYPE_USEMAGIC:			pProc = new CCharProcUSEMAGIC;			break;	/* 重なったキャラに魔法発動 */
