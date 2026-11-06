@@ -15,6 +15,8 @@
 #   HEALTH_URL 外から確かめる URL（任意。例 https://sbo2003.urara-works.jp/health）
 #   IIS_HOST   IIS のサイトのホスト名（任意。例 sbo2003.urara-works.jp）。指定すると毎回 setup-iis.ps1 で
 #              サイトとバインドを確かめ、足りないものだけ足す（既存のサイトには触らない）
+#   NOTICE_SEC 止める前にゲームの全員へ再起動を予告して待つ秒数（既定 60、0 で予告しない。
+#              ゲームに入っている人がいない時は待たない）
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -71,6 +73,9 @@ elif [ -n "$DATA" ]; then
 else
 	ARGS="-Rollback"
 fi
+NOTICE_SEC="${NOTICE_SEC:-60}"
+case "$NOTICE_SEC" in ''|*[!0-9]*) echo "NOTICE_SEC は 0 以上の整数で指定してください: $NOTICE_SEC" >&2; exit 2 ;; esac
+ARGS="$ARGS -NoticeSec $NOTICE_SEC"
 
 echo "==> 転送（scp）: $(for f in "${FILES[@]}"; do basename "$f"; done | tr '\n' ' ')"
 scp "${SCP_OPTS[@]}" "${FILES[@]}" "$TARGET:$VPS_ROOT/upload/"
