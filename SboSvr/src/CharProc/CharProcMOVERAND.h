@@ -28,6 +28,9 @@ protected:
 	BOOL	CheckTalkPC		(void);									/* 目の前で向かい合っているプレイヤーがいれば振り向く */
 	void	StartRest		(DWORD dwTime, BOOL bShort);			/* 立ち止まって休み始める */
 	BOOL	StepFront		(void);									/* 向いている方向へ1歩進む */
+	BOOL	IsRoute			(void);									/* 巡回ルートを歩くか */
+	BOOL	ProcRoute		(DWORD dwTime);							/* 巡回ルートを歩く */
+	void	NextRoutePoint	(void);									/* 次の道しるべへ */
 
 protected:
 	BOOL	m_bInit;									/* 初回処理済み */
@@ -35,6 +38,10 @@ protected:
 	int		m_nWalkLeft;								/* まとめ歩きの残り歩数 */
 	DWORD	m_dwRestStart;								/* 休み始めた時間 */
 	DWORD	m_dwRestEnd;								/* 休みが終わる時間 */
+	int		m_nRouteNo;									/* 巡回ルートで次に向かう道しるべ */
+	int		m_nRouteDir;								/* 巡回ルートを進む向き(1:先へ -1:戻る) */
+	DWORD	m_dwRouteWaitEnd;							/* 道しるべで止まり終わる時間 */
+	DWORD	m_dwRouteStuck;								/* 巡回ルートで進めなくなった時間 */
 } CCharProcMOVERAND, *PCCharProcMOVERAND;
 
 /* Copyright(C)URARA-works 2006 */
