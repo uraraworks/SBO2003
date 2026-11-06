@@ -259,7 +259,7 @@ jobs:
           SSH_KEY: ~/.ssh/id_vps
           HEALTH_URL: ${{ vars.SBO2003_VPS_HEALTH_URL }}  # 外から届くようになってから設定する
           IIS_HOST: ${{ vars.SBO2003_VPS_IIS_HOST || 'sbo2003.urara-works.jp' }}
-          # 予告はビルドの開始時に済んでいる。差し替えの直前は「まもなく再起動します」だけ流して待たない
+          # 予告はビルドの開始時に済んでいる。差し替えの直前は「まもなく再起動します」だけ流して 5 秒後に止める
           NOTICE_SEC: ${{ inputs.notice && '60' || '0' }}
           NOTICE_ANNOUNCED: '1'
         run: deploy/production/vps-deploy.sh "$(ls dl/Sbo2003_Server_*.zip | head -n 1)"
