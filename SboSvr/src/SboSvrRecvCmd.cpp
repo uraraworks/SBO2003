@@ -4694,7 +4694,10 @@ void RecvDataProcREQ_GUARD(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	SetGuard (pChar, TRUE);
-	SendCmdADDCHAREFC (pChar->dwTblID, RGB (120, 200, 255) | CHAREFC_BIG, "構え");
+	/* 構えたことは盾の吹き出しで知らせる */
+	pChar->byComEfc = COMEFC_GUARD;
+	SendCmdCOMEFC (pChar);
+	pChar->byComEfc = 0;
 }
 
 void RecvDataProcREQ_ATTACK(PBYTE pData, DWORD dwDataSize)
