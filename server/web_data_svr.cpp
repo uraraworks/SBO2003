@@ -375,6 +375,7 @@ static const DATAFIELD s_aFieldStTmp[] = {
 	FLDA(STATUSTEMPLATEINFO, waItem,		"所持アイテム",		FT_U16ARR, WORD, 0, "item の番号の並び（0 は無し）"),
 	FLD (STATUSTEMPLATEINFO, dwGold,		"所持金",			FT_U32, 0, NULL),
 	FLD (STATUSTEMPLATEINFO, dwExp,			"経験値",			FT_U32, 0, NULL),
+	FLD (STATUSTEMPLATEINFO, byStatusResist,	"毒・眠りの効きにくさ",	FT_U8, 0, "%。特技の成功率をこの分下げる。100 で効かない（ボス向け）"),
 };
 
 /* アイテム情報（共通の項目。使った時のメッセージ・種別ごとの詳細は別に扱う） */
