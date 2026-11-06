@@ -120,6 +120,21 @@ deploy/production/move-staging-data.sh
 本番のサーバーを止めて今のデータを `C:\SBO2003\backup\` に zip で控えてから置き換え、起動し直します。
 プレイヤーのデータ（パスワードを含む）は Mac を通るだけで、GitHub には上げません。手元の一時ファイルも最後に消します。
 
+### 本番のゲームデータでローカル用の初期データを更新する時
+
+ローカルでサーバーを試す時（`tools/server/run.sh`・クラウドの各スレッドでの確認）は `Release/SBODATA/` を使います。
+これを本番の今のマップ・アイテム・NPC などにそろえる時は、Mac で次を動かします（先に `tools/server/build.sh`）。
+
+```bash
+deploy/production/pull-prod-seed.sh
+git add Release/SBODATA && git commit -m "初期データを本番の最新に更新"
+```
+
+本番のサーバーは止めずに `C:\SBO2003\data\SBODATA\` の `SboData*.dat` を写して持ってきて（本番は 30 分ごとに保存するので、最大 30 分前の状態）、
+`tools/server/make-seed.sh` でキャラ情報を NPC だけにしてから `Release/SBODATA/` を入れ替えます。
+預かり所（`SboDataLeaveInfo.dat`）と Web 用の JSON（アカウント・ご意見・AI の鍵など）は持ってこないので、
+プレイヤーのデータは入りません。手元と VPS の一時ファイルも最後に消します。
+
 ## 再デプロイ（手で行う時）
 
 ```powershell
@@ -156,6 +171,7 @@ Start-ScheduledTask -TaskName SBO2003_SboSvr
 | `remote-deploy.ps1` | VPS で、新しい zip・データへの入れ替えと 1 つ前の版への戻しを行う |
 | `vps-deploy.sh` | zip やデータを SSH で VPS に送り、`remote-deploy.ps1` を動かす（Actions からも Mac からも） |
 | `move-staging-data.sh` | ステージングのデータを本番へ持っていく（Mac から） |
+| `pull-prod-seed.sh` | 本番のゲームデータから `Release/SBODATA/`（ローカル用の初期データ）を作り直す（Mac から） |
 | `deploy.env.example` | Mac から動かす時の接続設定の雛形（`deploy.local.env` にコピー） |
 | `set-admin-password.js` | `SboSvr.ini` の管理者パスワードを書き換える（ステージングの `entrypoint.sh` と同じ処理） |
 | `web.config` | IIS サイトの設定（zip では `iis\web.config`） |
