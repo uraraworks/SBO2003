@@ -123,11 +123,11 @@ deploy/production/move-staging-data.sh
 ### 本番のゲームデータでローカル用の初期データを更新する時
 
 ローカルでサーバーを試す時（`tools/server/run.sh`・クラウドの各スレッドでの確認）は `Release/SBODATA/` を使います。
-これを本番の今のマップ・アイテム・NPC などにそろえる時は、Mac で次を動かします（先に `tools/server/build.sh`）。
+これを本番の今のマップ・アイテム・NPC などにそろえる時は、Mac で次を動かします（サーバーが未ビルドなら先にビルドします）。
 
 ```bash
 deploy/production/pull-prod-seed.sh
-git add Release/SBODATA && git commit -m "初期データを本番の最新に更新"
+git commit -m "初期データを本番の最新に更新"   # git add はスクリプトが行う
 ```
 
 本番のサーバーは止めずに `C:\SBO2003\data\SBODATA\` の `SboData*.dat` を写して持ってきて（本番は 30 分ごとに保存するので、最大 30 分前の状態）、

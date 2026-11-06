@@ -13,7 +13,8 @@
 # 2. tools/server/make-seed.sh で、キャラ情報を NPC だけにした初期データを作る（プレイヤーは入らない）
 # 3. 出力先の SboData*.dat をそっくり入れ替える。手元と VPS の一時ファイルは消す
 #
-# 先に tools/server/build.sh でサーバーをビルドしておくこと（make-seed.sh が使う）。
+# サーバー（make-seed.sh が使う）がまだビルドされていなければ、先に tools/server/build.sh を動かす。
+# 入れ替えたファイルは git add まで行う（コミットと push は手で）。
 # 接続先は vps-deploy.sh と同じ（deploy/production/deploy.local.env の VPS_HOST・VPS_USER・VPS_PORT・SSH_KEY）。
 set -euo pipefail
 
@@ -38,8 +39,9 @@ SCP_OPTS=(-i "$SSH_KEY" -P "$VPS_PORT" -o BatchMode=yes)
 case "$WIN_ROOT" in *" "*) echo "VPS_ROOT に空白は使えません: $VPS_ROOT" >&2; exit 2 ;; esac
 
 if [ ! -f "$ROOT/out/server/SboSvr.js" ]; then
-	echo "out/server/SboSvr.js がありません。先に tools/server/build.sh でビルドしてください" >&2
-	exit 1
+	echo "==> サーバーがまだビルドされていないので、先にビルドします（tools/server/build.sh）"
+	"$ROOT/tools/server/build.sh"
+	[ -f "$ROOT/out/server/SboSvr.js" ] || { echo "ビルドできませんでした（emsdk は docs/vscode-mac.md の手順で用意）" >&2; exit 1; }
 fi
 
 # vps-deploy.sh と同じ呼び方（UTF-16LE + base64 の -EncodedCommand で、cmd でも PowerShell でも同じに動く）
@@ -100,7 +102,12 @@ find "$OUT" -maxdepth 1 -name 'SboData*.dat' | grep -E '/SboData[A-Za-z]+[0-9]*\
 find "$WORK/seed" -maxdepth 1 -name 'SboData*.dat' | grep -E '/SboData[A-Za-z]+[0-9]*\.dat$' | while IFS= read -r f; do cp "$f" "$OUT/"; done
 echo "   $(find "$OUT" -maxdepth 1 -name 'SboData*.dat' | wc -l | tr -d ' ') ファイル"
 if git -C "$ROOT" rev-parse >/dev/null 2>&1; then
-	git -C "$ROOT" status --short -- "$OUT" | head -20
+	# 入れ替えたファイルだけを git に載せる（git add Release/SBODATA だと、Mac が日本語名の控えを
+	# 別の文字の並び（濁点が分かれた形）で見せるため、同じ控えがもう 1 つ増えてしまう）
+	git -C "$ROOT" add -u -- "$OUT"
+	find "$OUT" -maxdepth 1 -name 'SboData*.dat' | grep -E '/SboData[A-Za-z]+[0-9]*\.dat$' | while IFS= read -r f; do git -C "$ROOT" add -- "$f"; done
+	echo "   git に載せました（あとは git commit と git push だけ）:"
+	git -C "$ROOT" diff --cached --stat -- "$OUT" | tail -5
 fi
 echo "==> 完了（プレイヤーのデータは入っていません。手元・VPS の一時ファイルは消しました）"
 echo "   ローカルで遊んだデータ（out/server-data）は残っているので、新しい初期データで試す時は"
