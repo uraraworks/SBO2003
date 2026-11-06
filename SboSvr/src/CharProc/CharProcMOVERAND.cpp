@@ -18,6 +18,11 @@
 	・ランダム移動の村人は、目の前でプレイヤーと向かい合ったら立ち止まってそちらを向く
 	  （話しかける時は必ず向かい合うので、話している途中に歩き去らない）
 	・サーバー負荷を増やさないよう、1回の順番でやることは1つだけ（1歩・向き変え・休み判定のどれか）。
+	・巡回ルート（2026/11 追加）：「動かない」「ランダム移動」の村人に道しるべが2つ以上あると、
+	  道しるべを順にたどって歩く。最後まで行ったら折り返すか最初に戻る（byRouteMode）。
+	  各道しるべで byRouteWait 秒止まる。道しるべの間は1歩ずつ近い方へ進むだけで、経路探索はしない
+	  （管理ページで、道しるべの間をまっすぐ歩けるように置く）。10秒進めなければ次の道しるべへ。
+	  行動範囲は見ない。向かい合ったプレイヤーの方を向いて止まるのは同じ。
 */
 
 #include "stdafx.h"
@@ -34,6 +39,10 @@
 #define MOVERAND_RESTMAX		(60000)
 /* プレイヤーと向かい合った時に立ち止まる長さ(ms) */
 #define MOVERAND_TALKREST		(3000)
+/* 巡回ルートを歩く時の1歩の間隔(ms) */
+#define MOVERAND_ROUTESTEPTIME	(400)
+/* 巡回ルートで進めない時に次の道しるべへ移るまで(ms) */
+#define MOVERAND_ROUTESTUCK	(10000)
 
 /* ========================================================================= */
 /* 関数名：	CCharProcMOVERAND::CCharProcMOVERAND							 */
@@ -48,6 +57,10 @@ CCharProcMOVERAND::CCharProcMOVERAND()
 	m_nWalkLeft		= 0;
 	m_dwRestStart	= 0;
 	m_dwRestEnd		= 0;
+	m_nRouteNo		= 0;
+	m_nRouteDir		= 1;
+	m_dwRouteWaitEnd	= 0;
+	m_dwRouteStuck	= 0;
 }
 
 
@@ -67,6 +80,9 @@ BOOL CCharProcMOVERAND::Proc(DWORD dwTime)
 
 	/* 歩いている間は1歩の間隔、休んでいる間は休みの判定間隔で処理する */
 	dwInterval = (m_nWalkLeft > 0) ? MOVERAND_STEPTIME : MOVERAND_RESTTIME;
+	if (IsRoute ()) {
+		dwInterval = MOVERAND_ROUTESTEPTIME;
+	}
 	if ((DWORD)(dwTime - m_dwLastTimeProc) < dwInterval) {
 		goto Exit;
 	}
@@ -109,6 +125,12 @@ BOOL CCharProcMOVERAND::Proc(DWORD dwTime)
 			m_nWalkLeft = 0;
 			goto Exit;
 		}
+	}
+
+	/* 巡回ルートを歩く？ */
+	if (IsRoute ()) {
+		bRet = ProcRoute (dwTime);
+		goto Exit;
 	}
 
 	/* 動かない設定？ */
@@ -219,8 +241,8 @@ BOOL CCharProcMOVERAND::IsMovePos(int x, int y)
 		return FALSE;
 	}
 
-	/* 移動範囲が設定されている？ */
-	if (m_pChar->byAreaX) {
+	/* 移動範囲が設定されている？（巡回ルートを歩く時は見ない） */
+	if (m_pChar->byAreaX && (IsRoute () == FALSE)) {
 		if ((abs ((int)m_pChar->dwStartX - x) > m_pChar->byAreaX) ||
 			(abs ((int)m_pChar->dwStartY - y) > m_pChar->byAreaY)) {
 			/* 範囲の外にいる時（押された等）は、開始位置に近づく向きだけ歩ける。
@@ -330,7 +352,7 @@ BOOL CCharProcMOVERAND::CheckTalkPC(void)
 	PCHARINFO pCharTmp;
 
 	/* 村人だけ（戦闘１の敵はこれまでどおり） */
-	if (m_pChar->byNpcType != NPCTYPE_MOVERAND) {
+	if ((m_pChar->byNpcType != NPCTYPE_MOVERAND) && (m_pChar->byNpcType != NPCTYPE_NOMOVE)) {
 		return FALSE;
 	}
 
@@ -414,5 +436,130 @@ BOOL CCharProcMOVERAND::StepFront(void)
 
 	return TRUE;
 }
+
+/* ========================================================================= */
+/* 関数名：	CCharProcMOVERAND::IsRoute										 */
+/* 内容：	巡回ルートを歩くか												 */
+/* 日付：	2026/11/06														 */
+/* ========================================================================= */
+
+BOOL CCharProcMOVERAND::IsRoute(void)
+{
+	if (m_pChar->byRouteCount < 2) {
+		return FALSE;
+	}
+	if ((m_pChar->byNpcType != NPCTYPE_MOVERAND) && (m_pChar->byNpcType != NPCTYPE_NOMOVE)) {
+		return FALSE;
+	}
+	return TRUE;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CCharProcMOVERAND::ProcRoute									 */
+/* 内容：	巡回ルートを歩く(1回の順番で1歩だけ)							 */
+/* 日付：	2026/11/06														 */
+/* ========================================================================= */
+
+BOOL CCharProcMOVERAND::ProcRoute(DWORD dwTime)
+{
+	int nX, nY, nDX, nDY, anDirection[2], i;
+
+	/* 目の前でプレイヤーと向かい合っている間は止まる */
+	if (CheckTalkPC ()) {
+		m_dwRouteStuck = 0;
+		return TRUE;
+	}
+	/* 道しるべで止まっている？ */
+	if ((int)(dwTime - m_dwRouteWaitEnd) < 0) {
+		return FALSE;
+	}
+
+	if ((m_nRouteNo < 0) || (m_nRouteNo >= m_pChar->byRouteCount)) {
+		m_nRouteNo	= 0;
+		m_nRouteDir	= 1;
+	}
+	nX = m_pChar->abyRouteX[m_nRouteNo];
+	nY = m_pChar->abyRouteY[m_nRouteNo];
+	nDX = nX - (int)m_pChar->dwX;
+	nDY = nY - (int)m_pChar->dwY;
+
+	/* 道しるべに着いた？ */
+	if ((nDX == 0) && (nDY == 0)) {
+		NextRoutePoint ();
+		m_dwRouteStuck = 0;
+		if (m_pChar->byRouteWait) {
+			m_dwRouteWaitEnd = dwTime + (DWORD)m_pChar->byRouteWait * 1000;
+		}
+		return FALSE;
+	}
+
+	/* 遠い方の軸を先に、だめならもう一方の軸 */
+	anDirection[0] = -1;
+	anDirection[1] = -1;
+	if (abs (nDX) >= abs (nDY)) {
+		anDirection[0] = (nDX < 0) ? 2 : 3;
+		if (nDY) {
+			anDirection[1] = (nDY < 0) ? 0 : 1;
+		}
+	} else {
+		anDirection[0] = (nDY < 0) ? 0 : 1;
+		if (nDX) {
+			anDirection[1] = (nDX < 0) ? 2 : 3;
+		}
+	}
+	for (i = 0; i < 2; i ++) {
+		if (anDirection[i] < 0) {
+			continue;
+		}
+		if (IsMovePos ((int)m_pChar->dwX + anPosAddTblX[anDirection[i]], (int)m_pChar->dwY + anPosAddTblY[anDirection[i]])) {
+			if (m_pChar->byDirection != (BYTE)anDirection[i]) {
+				m_pChar->byDirection = (BYTE)anDirection[i];
+				m_pChar->byFlg |= CHARINFOFLG_DIRECTION;
+			}
+			StepFront ();
+			m_dwRouteStuck = 0;
+			return TRUE;
+		}
+	}
+
+	/* 進めない（人が立っている等）。しばらく待っても進めなければ次の道しるべへ */
+	if (m_dwRouteStuck == 0) {
+		m_dwRouteStuck = dwTime;
+		if (m_dwRouteStuck == 0) {
+			m_dwRouteStuck = 1;
+		}
+	} else if ((DWORD)(dwTime - m_dwRouteStuck) >= MOVERAND_ROUTESTUCK) {
+		NextRoutePoint ();
+		m_dwRouteStuck = 0;
+	}
+	return FALSE;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CCharProcMOVERAND::NextRoutePoint								 */
+/* 内容：	次の道しるべへ													 */
+/* 日付：	2026/11/06														 */
+/* ========================================================================= */
+
+void CCharProcMOVERAND::NextRoutePoint(void)
+{
+	int nCount = m_pChar->byRouteCount;
+
+	if (m_pChar->byRouteMode == NPCROUTEMODE_LOOP) {
+		/* 最後まで行ったら最初に戻る */
+		m_nRouteNo = (m_nRouteNo + 1) % nCount;
+		m_nRouteDir = 1;
+		return;
+	}
+
+	/* 最後まで行ったら折り返す */
+	if ((m_nRouteNo + m_nRouteDir < 0) || (m_nRouteNo + m_nRouteDir >= nCount)) {
+		m_nRouteDir = -m_nRouteDir;
+	}
+	m_nRouteNo += m_nRouteDir;
+}
+
 
 /* Copyright(C)URARA-works 2006 */

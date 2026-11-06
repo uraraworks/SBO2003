@@ -180,6 +180,7 @@ cp "$ROOT/web/bgm/sbo_bgm.js" \
 cp "$ROOT/web/account/admin.html" \
 	"$ROOT/web/account/admin-mapdoc.js" \
 	"$ROOT/web/account/admin-design.js" \
+	"$ROOT/web/account/admin-npcroute.js" \
 	"$ROOT/web/account/rename.html" \
 	"$ROOT/web/account/feedback.html" \
 	"$ROOT/web/account/recover-admin.html" \

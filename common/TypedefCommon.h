@@ -51,6 +51,7 @@
 #define MAX_EQUTYPE			10										/* 装備可能アイテム数 */
 #define MAX_PARTYMEMBER		6										/* 最大パーティ数 */
 #define MAX_USEMAGIC		16										/* 覚えられる魔法数 */
+#define MAX_NPCROUTE		16										/* NPCの巡回ルートの道しるべの最大数 */
 #define MAX_JOBMAGIC		32										/* 職業別に呪文を覚えておける職業数（職業IDがこれ未満の職業が対象） */
 #define MAX_SUBGAME_WARMEMBER	4									/* 戦場ゲーム最大参加人数 */
 
@@ -925,6 +926,13 @@ enum {
 	NPCTYPE_RESERVE4,
 	NPCTYPE_SEARCH2,											/* 検索してついていく2 */
 	NPCTYPE_MAX
+};
+
+/* NPC巡回ルートの回り方 */
+enum {
+	NPCROUTEMODE_BACK = 0,										/* 最後まで行ったら折り返す */
+	NPCROUTEMODE_LOOP,											/* 最後まで行ったら最初に戻る */
+	NPCROUTEMODE_MAX
 };
 
 /* NPC移動種別 */
@@ -1916,6 +1924,11 @@ typedef struct _CHARINFO {
 	BYTE		abyMagic[MAX_USEMAGIC];								/* 呪文 */
 	BYTE		abyJobMagic[MAX_JOBMAGIC][MAX_USEMAGIC];			/* 転職前の職業で覚えていた呪文（職業ID別） */
 	BYTE		byOptBgm;											/* 音楽ON/OFFのアカウント設定(OPTBGM_*) */
+	BYTE		byRouteCount;										/* 巡回ルートの道しるべ数(2以上で巡回する) */
+	BYTE		byRouteMode;										/* 巡回ルートの回り方(NPCROUTEMODE_*) */
+	BYTE		byRouteWait;										/* 巡回ルートの各道しるべで止まる秒数 */
+	BYTE		abyRouteX[MAX_NPCROUTE];							/* 巡回ルートの道しるべ(横) */
+	BYTE		abyRouteY[MAX_NPCROUTE];							/* 巡回ルートの道しるべ(縦) */
 	char		chAttrFire;											/* 属性(火) */
 	char		chAttrWater;										/* 属性(水) */
 	char		chAttrWind;											/* 属性(風) */

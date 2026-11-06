@@ -13,7 +13,7 @@
 /* ========================================================================= */
 /* 定数定義																	 */
 /* ========================================================================= */
-#define DATACOUNTCOLUMN		(74)									/* 保存データ数 */
+#define DATACOUNTCOLUMN		(75)									/* 保存データ数 */
 
 /* ========================================================================= */
 /* 構造体定義																 */
@@ -107,6 +107,7 @@ static const char *s_aszName[] = {
 	"dwLastIPAddress",			/* 最終IPアドレス */
 	"abyJobMagic",				/* 転職前の職業で覚えていた呪文（職業ID別） */
 	"byOptBgm",					/* 音楽ON/OFFのアカウント設定 */
+	"abyNpcRoute",				/* NPCの巡回ルート */
 	"z"
 };
 
@@ -385,6 +386,12 @@ BOOL SaveCharInfo(void)
 				dwDataSizeTmp += sizeof (BYTE) * 2 + GetJobMagicSaveCount (pInfo) * MAX_USEMAGIC;
 				break;
 			case 73:	dwDataSizeTmp += sizeof (pInfo->byOptBgm);				break;	/* 音楽ON/OFFのアカウント設定 */
+			case 74:	/* NPCの巡回ルート [数(BYTE)] 数が1以上なら続けて [回り方][止まる秒数][(横,縦)×数] */
+				dwDataSizeTmp += 1;
+				if (pInfo->byRouteCount) {
+					dwDataSizeTmp += 2 + pInfo->byRouteCount * 2;
+				}
+				break;
 			}
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
@@ -750,6 +757,17 @@ BOOL SaveCharInfo(void)
 				break;
 			case 73:	/* 音楽ON/OFFのアカウント設定 */
 				pData[dwOffset ++] = pInfo->byOptBgm;
+				break;
+			case 74:	/* NPCの巡回ルート */
+				pData[dwOffset ++] = pInfo->byRouteCount;
+				if (pInfo->byRouteCount) {
+					pData[dwOffset ++] = pInfo->byRouteMode;
+					pData[dwOffset ++] = pInfo->byRouteWait;
+					for (DWORD k = 0; k < pInfo->byRouteCount; k ++) {
+						pData[dwOffset ++] = pInfo->abyRouteX[k];
+						pData[dwOffset ++] = pInfo->abyRouteY[k];
+					}
+				}
 				break;
 			}
 		}
@@ -1358,6 +1376,26 @@ BOOL LoadCharInfo(void)
 				pInfo->byOptBgm = pData[dwOffsetTmp ++];
 				if (pInfo->byOptBgm > OPTBGM_OFF) {
 					pInfo->byOptBgm = OPTBGM_NONE;
+				}
+			}
+
+			/* NPCの巡回ルート（無い古いデータは巡回しない） */
+			if (strcmp (aHeaderInfo[i].szName, s_aszName[74]) == 0) {
+				DWORD dwCount = pData[dwOffsetTmp ++];
+				if (dwCount) {
+					pInfo->byRouteMode = pData[dwOffsetTmp ++];
+					pInfo->byRouteWait = pData[dwOffsetTmp ++];
+					if (pInfo->byRouteMode >= NPCROUTEMODE_MAX) {
+						pInfo->byRouteMode = NPCROUTEMODE_BACK;
+					}
+					for (DWORD k = 0; k < dwCount; k ++) {
+						if (k < MAX_NPCROUTE) {
+							pInfo->abyRouteX[k] = pData[dwOffsetTmp];
+							pInfo->abyRouteY[k] = pData[dwOffsetTmp + 1];
+						}
+						dwOffsetTmp += 2;
+					}
+					pInfo->byRouteCount = (BYTE)min (dwCount, (DWORD)MAX_NPCROUTE);
 				}
 			}
 		}

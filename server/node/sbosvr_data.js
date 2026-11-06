@@ -1044,8 +1044,51 @@ Module['sboData'] = (function () {
 		'/api/admin/ai/undo': function (body) { return opUndo(body, adminWho(body)); },
 		/* マップ資料の書き出し（管理ページの「マップ資料」）。読むだけ */
 		'/api/admin/data/list': function (body) { adminWho(body); return opList(body); },
-		'/api/admin/data/tiles': function (body) { adminWho(body); return opTiles(body); }
+		'/api/admin/data/tiles': function (body) { adminWho(body); return opTiles(body); },
+		/* NPC の巡回ルートを決める（管理ページの「NPCの巡回」） */
+		'/api/admin/npcroute/set': apiAdminNpcRouteSet
 	};
+
+	/* NPC の巡回ルート設定（管理ページの「NPCの巡回」）。C 側の SboWebNpcRouteSet に渡す */
+	function apiAdminNpcRouteSet(body) {
+		adminWho(body);
+		var id = Number(body.id);
+		if (!isFinite(id) || Math.floor(id) !== id || id < 0) {
+			fail(400, 'id', 'キャラの番号が正しくありません');
+		}
+		var mode = Number(body.mode);
+		if (mode !== 0 && mode !== 1) {
+			fail(400, 'mode', '回り方は 0（折り返す）か 1（一周）です');
+		}
+		var wait = Number(body.wait);
+		if (!isFinite(wait) || Math.floor(wait) !== wait || wait < 0 || wait > 60) {
+			fail(400, 'wait', '止まる秒数は 0〜60 です');
+		}
+		var pts = body.points == null ? [] : body.points;
+		if (!Array.isArray(pts)) {
+			fail(400, 'points', '道しるべは [[x,y],...] の形で送ってください');
+		}
+		if (pts.length === 1) {
+			fail(400, 'points', '道しるべは 2 つ以上置いてください（やめる時は 0 個）');
+		}
+		if (pts.length > 16) {
+			fail(400, 'points', '道しるべは 16 個までです');
+		}
+		var aStr = pts.map(function (p) {
+			var x = Array.isArray(p) ? Number(p[0]) : NaN, y = Array.isArray(p) ? Number(p[1]) : NaN;
+			if (!isFinite(x) || !isFinite(y) || Math.floor(x) !== x || Math.floor(y) !== y || x < 0 || y < 0 || x > 255 || y > 255) {
+				fail(400, 'points', '道しるべの場所が正しくありません');
+			}
+			return x + ',' + y;
+		});
+		var str = aStr.join(';');
+		var r = JSON.parse(UTF8ToString(callC(_SboWebNpcRouteSet, [id, mode, wait, str])));
+		if (r.error) {
+			fail(400, 'route', r.error);
+		}
+		log('管理ページが キャラ ' + id + ' の巡回を' + (pts.length ? '設定（' + pts.length + ' 点・' + (mode ? '一周' : '折り返す') + '・' + wait + ' 秒）' : 'やめた'));
+		return r;
+	}
 
 	function run(fn, body, req, res, who) {
 		try {
