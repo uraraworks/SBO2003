@@ -5,6 +5,8 @@
 #   deploy/production/vps-deploy.sh <zip>              # 新しい版を入れる
 #   deploy/production/vps-deploy.sh --data <zip>       # データだけ入れ替える（SBODATA/ と SboSvr.ini の zip）（move-staging-data.sh から）
 #   deploy/production/vps-deploy.sh --rollback         # 1 つ前の版に戻す
+#   deploy/production/vps-deploy.sh --notice <文> [<文>...]  # ゲームの全員にお知らせを流すだけ（1 つが 1 行）
+#                                                      # （Actions がビルドを始める時の再起動予告・中止の知らせに使う）
 #
 # 接続先は環境変数で渡す（Mac では deploy/production/deploy.local.env に書いておくと読み込む）:
 #   VPS_HOST   VPS のホスト名か IP（必須）
@@ -17,6 +19,7 @@
 #              サイトとバインドを確かめ、足りないものだけ足す（既存のサイトには触らない）
 #   NOTICE_SEC 止める前にゲームの全員へ再起動を予告して待つ秒数（既定 60、0 で予告しない。
 #              ゲームに入っている人がいない時は待たない）
+#   NOTICE_ANNOUNCED=1  予告は --notice で済んでいる。止める前は「まもなく再起動します」だけ流して待たない
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -25,11 +28,12 @@ if [ -f "$HERE/deploy.local.env" ]; then
 	. "$HERE/deploy.local.env"
 fi
 
-ZIP="" DATA="" ROLLBACK=0
+ZIP="" DATA="" ROLLBACK=0 NOTICE=0
 case "${1:-}" in
 	--data) DATA="${2:?データの zip を指定してください}" ;;
 	--rollback) ROLLBACK=1 ;;
-	""|-*) echo "使い方: $0 <zip> | --data <zip> | --rollback" >&2; exit 2 ;;
+	--notice) NOTICE=1; shift; [ $# -gt 0 ] || { echo "--notice には流す文を指定してください" >&2; exit 2; } ;;
+	""|-*) echo "使い方: $0 <zip> | --data <zip> | --rollback | --notice <文>..." >&2; exit 2 ;;
 	*) ZIP="$1" ;;
 esac
 
@@ -55,6 +59,25 @@ remote_cmd() {
 }
 case "$WIN_ROOT" in *" "*) echo "VPS_ROOT に空白は使えません: $VPS_ROOT" >&2; exit 2 ;; esac
 
+if [ "$NOTICE" = 1 ]; then
+	# お知らせファイル（data\notice.request）を置くと、サーバーが全員に流して消す（server/node/sbosvr_net.js）。
+	# サーバーが止まっている時は置かない（次の起動で start.ps1 が消す）
+	lines=""
+	for l in "$@"; do lines="$lines,'${l//\'/\'\'}'"; done
+	echo "==> お知らせを流す: $*"
+	remote_cmd "\$ErrorActionPreference = 'Stop'
+\$f = '$WIN_ROOT\\data\\notice.request'
+\$pidFile = '$WIN_ROOT\\data\\sbosvr.pid'
+if (-not (Test-Path \$pidFile) -or -not (Get-Process -Id ([int](Get-Content \$pidFile -Raw)) -ErrorAction SilentlyContinue)) {
+	Write-Output 'サーバーが動いていないので流しません'; exit 0
+}
+[IO.File]::WriteAllText(\"\$f.tmp\", (@(${lines#,}) -join \"\`r\`n\"), (New-Object Text.UTF8Encoding \$false))
+Move-Item -Force \"\$f.tmp\" \$f
+for (\$i = 0; \$i -lt 10 -and (Test-Path \$f); \$i++) { Start-Sleep -Milliseconds 500 }
+if (Test-Path \$f) { Write-Output 'サーバーがお知らせを読みませんでした（古い版？）'; Remove-Item -Force \$f } else { Write-Output '流しました' }"
+	exit 0
+fi
+
 echo "==> 受け取り場所を用意: $VPS_ROOT/upload"
 remote_cmd "New-Item -ItemType Directory -Force -Path '$WIN_ROOT\\upload' | Out-Null"
 
@@ -76,6 +99,7 @@ fi
 NOTICE_SEC="${NOTICE_SEC:-60}"
 case "$NOTICE_SEC" in ''|*[!0-9]*) echo "NOTICE_SEC は 0 以上の整数で指定してください: $NOTICE_SEC" >&2; exit 2 ;; esac
 ARGS="$ARGS -NoticeSec $NOTICE_SEC"
+if [ "${NOTICE_ANNOUNCED:-}" = 1 ]; then ARGS="$ARGS -Announced"; fi
 
 echo "==> 転送（scp）: $(for f in "${FILES[@]}"; do basename "$f"; done | tr '\n' ' ')"
 scp "${SCP_OPTS[@]}" "${FILES[@]}" "$TARGET:$VPS_ROOT/upload/"
