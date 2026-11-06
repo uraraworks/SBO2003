@@ -5944,6 +5944,15 @@ void RecvDataProcTARGETCHAR(PBYTE pData, DWORD dwDataSize)
 				pChar->dwTargetTblID = -1;
 
 			} else {
+				/* もう同じマップの別のパネルに名前を付けている？（雪玉が当たって進むのは最後のパネルだけなので、2 つ目は付けない） */
+				if ((pChar->dwTargetTblID != -1) && (pChar->dwTargetTblID < (DWORD)g_aCharInfo.GetSize ())) {
+					PCHARINFO pCharScore = g_aCharInfo[pChar->dwTargetTblID];
+					if (pCharScore && (pCharScore->byNpcType == NPCTYPE_SCORE) &&
+						(pCharScore->dwMapID == pChar->dwMapID) && strlen (pCharScore->szName)) {
+						SendCmdSYSMSG (pChar->pID, "もう名前を付けたパネルがあります。");
+						return;
+					}
+				}
 				/* 名前と色のコピー */
 				/* 名前の先頭を表示幅 4（全角 2 文字）まで */
 				char szTmp[MAX_CHARNAMEBUF];
@@ -5953,6 +5962,9 @@ void RecvDataProcTARGETCHAR(PBYTE pData, DWORD dwDataSize)
 				pCharTmp->clName = pChar->clName;
 				pCharTmp->clSpeech = pChar->clSpeech;
 				pChar->dwTargetTblID = pCharTmp->dwTblID;
+				/* 名前を付けたら HP を満タン（HP5 の絵）に戻す */
+				pCharTmp->byEfect = 0;
+				SendCmdEFECTCHG (pCharTmp->pID, pCharTmp->dwTblID, pCharTmp->byEfect);
 			}
 			SendCmdCHARINFO3 (pCharTmp->dwTblID);
 			return;
