@@ -4634,7 +4634,8 @@ void RecvDataProcREQ_ATTACK(PBYTE pData, DWORD dwDataSize)
 	if (pPara->dwData == -1) {
 		pChar->dwLastBattle = 1;
 		pChar->byAtackRate	 = pPara->byData;
-		pChar->byAtackRate = max (pChar->byAtackRate, 1);
+		/* 威力の倍率は 1～100%（改造クライアントで 100% を超えて殴れないように） */
+		pChar->byAtackRate = min (max (pChar->byAtackRate, 1), 100);
 		return;
 	}
 
@@ -4666,7 +4667,8 @@ void RecvDataProcREQ_ATTACK(PBYTE pData, DWORD dwDataSize)
 	pChar->byAtackRate	 = pPara->byData;
 	pChar->dwLastBattle	 = 1;
 	pChar->dwTargetTblID = pPara->dwData;
-	pChar->byAtackRate = max (pChar->byAtackRate, 1);
+	/* 威力の倍率は 1～100%（改造クライアントで 100% を超えて殴れないように） */
+	pChar->byAtackRate = min (max (pChar->byAtackRate, 1), 100);
 
 	/* まだ誰もターゲットしてない？ */
 	if (pCharTarget->dwLastBattle == 0) {
