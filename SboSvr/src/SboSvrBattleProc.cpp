@@ -752,6 +752,10 @@ BOOL BattleProcAtack(PCHARINFO pChar, PCHARINFO pCharTarget)
 
 		wsprintf (szTmp2, "%d", nDamage);
 		cl = RGB (250, 60, 4);
+		/* 早撃ち(ゲージ満タン前)のダメージは薄い色で出す */
+		if ((pChar->byAtackRate > 0) && (pChar->byAtackRate < 100)) {
+			cl = RGB (255, 180, 140);
+		}
 
 		if (bSPAtack) {
 			cl = RGB (255, 255, 255);
@@ -968,8 +972,8 @@ static int DamageProc(PCHARINFO pChar, PCHARINFO pCharTarget, BOOL bSPAtack)
 	}
 	nTmp = max (nTmp, 0);
 
-	/* ノーダメージ？ */
-	if (nTmp == 0) {
+	/* ノーダメージ？(おまけの1ダメージはゲージ満タンの攻撃だけ。早撃ちの連打で削れないように) */
+	if ((nTmp == 0) && ((pChar->byAtackRate == 0) || (pChar->byAtackRate >= 100))) {
 		if ((genrand () % 100) > 66) {
 			nTmp = 1;
 		}

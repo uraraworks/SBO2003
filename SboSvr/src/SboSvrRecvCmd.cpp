@@ -4610,6 +4610,16 @@ void RecvDataProcRESURRECTION(PBYTE pData, DWORD dwDataSize)
 /* 日付：	2006/02/26														 */
 /* ========================================================================= */
 
+/* ゲージの%から威力の倍率を求める（溜まりきった周の数×20%、20～100%） */
+static BYTE GetAtackRateLap(BYTE byTurnLV)
+{
+	int nLap = byTurnLV / TURNGAGE_LAP;
+
+	nLap = max (nLap, 1);
+	nLap = min (nLap, TURNGAGE_LAPMAX);
+	return (BYTE)(nLap * TURNGAGE_LAP);
+}
+
 void RecvDataProcREQ_ATTACK(PBYTE pData, DWORD dwDataSize)
 {
 	PCMDPARA_DATA4 pPara = (PCMDPARA_DATA4)pData;
@@ -4633,9 +4643,8 @@ void RecvDataProcREQ_ATTACK(PBYTE pData, DWORD dwDataSize)
 //Todo:武器の判定
 	if (pPara->dwData == -1) {
 		pChar->dwLastBattle = 1;
-		pChar->byAtackRate	 = pPara->byData;
-		/* 威力の倍率は 1～100%（改造クライアントで 100% を超えて殴れないように） */
-		pChar->byAtackRate = min (max (pChar->byAtackRate, 1), 100);
+		/* 威力の倍率（ゲージ1周＝20% 刻みで 20～100%。改造クライアントで 100% を超えて殴れないように） */
+		pChar->byAtackRate = GetAtackRateLap (pPara->byData);
 		return;
 	}
 
@@ -4664,11 +4673,10 @@ void RecvDataProcREQ_ATTACK(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 
-	pChar->byAtackRate	 = pPara->byData;
 	pChar->dwLastBattle	 = 1;
 	pChar->dwTargetTblID = pPara->dwData;
-	/* 威力の倍率は 1～100%（改造クライアントで 100% を超えて殴れないように） */
-	pChar->byAtackRate = min (max (pChar->byAtackRate, 1), 100);
+	/* 威力の倍率（ゲージ1周＝20% 刻みで 20～100%。改造クライアントで 100% を超えて殴れないように） */
+	pChar->byAtackRate = GetAtackRateLap (pPara->byData);
 
 	/* まだ誰もターゲットしてない？ */
 	if (pCharTarget->dwLastBattle == 0) {
