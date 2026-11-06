@@ -304,6 +304,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	NULL,								/* CMD_EQUUSERINFOREQ */
 	RecvDataProcWEBACCOUNT,				/* CMD_WEBACCOUNT */
 	RecvDataProcADMINUNDO,				/* CMD_ADMINUNDO */
+	NULL,								/* CMD_REQ_GUARD */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -1722,6 +1723,9 @@ int FindFrontAttackTarget(PCHARINFO pChar)
 	return -1;
 }
 
+
+BOOL	g_bGuard			= FALSE;		/* Z を押し続けて構えている */
+DWORD	g_dwGuardGageElapse	= 0;			/* 構えた時に溜まっていたゲージの時間(構えている間は止める) */
 
 /* ========================================================================= */
 /* 関数名：	GetTurnGageTime													 */

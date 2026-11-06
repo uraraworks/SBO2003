@@ -2776,6 +2776,11 @@ void TimerProcCharTurnLV(PCHARINFO pChar)
 		CancelTurnGage (pChar);
 		return;
 	}
+	/* 構えている間はゲージを止める(離すと続きから溜まる) */
+	if (g_bGuard && (pChar == g_aCharInfo[g_nMyCharID])) {
+		pChar->dwTimeTurnLV = dwTime - g_dwGuardGageElapse;
+		return;
+	}
 	/* 特技の詠唱中・戦闘モードを解除した？(連続攻撃もここで止める) */
 	if (pChar->dwTimeTurnMagicLV || (g_bBattleMode == FALSE) ||
 		(g_pMapInfo == NULL) || ((g_pMapInfo->byFlg & MAPFLG_BATTLE) == 0)) {

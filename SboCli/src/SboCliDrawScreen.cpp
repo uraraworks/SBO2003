@@ -1295,12 +1295,17 @@ void DrawChar3(void)
 		}
 
 		/* 文字エフェクトを表示 */
+		/* 自分の頭の上にゲージが出ている間は、ゲージに重ならないようにその上から出す */
+		int nEfcOfsY = 0;
+		if ((i == g_nMyCharID) && (pChar->dwTimeTurnLV || pChar->dwTimeTurnMagicLV)) {
+			nEfcOfsY = -14;
+		}
 		for (int j = 0; j < MAX_COUNTCHAREFC; j ++) {
 			PCHAREFCINFO pCharEfc = &pChar->aCharEfcInfo[j];
 			int nLen = SboTextWidth (pCharEfc->szMsg);
 			if (nLen) {
 				TextOut2 (hDC, nameX - nLen * 6 / 2 + GetCharCenterX (pChar),
-						nameY - 8 + pCharEfc->chY,
+						nameY - 8 + nEfcOfsY + pCharEfc->chY,
 						pCharEfc->szMsg, pCharEfc->color);
 			}
 		}
