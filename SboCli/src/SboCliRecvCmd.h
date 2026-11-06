@@ -46,6 +46,7 @@ extern BOOL	g_bGuard;																			/* Z を押し続けて構えている *
 extern DWORD	g_dwGuardGageElapse;																/* 構えた時に溜まっていたゲージの時間(構えている間は止める) */
 extern DWORD	GetTurnGageTime			(PCHARINFO pChar);											/* ターンゲージが満タンになるまでの時間(ms) */
 extern BOOL	IsTurnGageJust			(PCHARINFO pChar);											/* ゲージ満タン直後(ジャストで押せる時間)か */
+extern DWORD	g_dwTurnGageContinue;																/* 殴って次のゲージを溜め始めた時間 */
 extern void	ContinueTurnGage		(PCHARINFO pChar);											/* 連続攻撃：次のターンゲージを溜め始める */
 extern int	FindFrontAttackTarget	(PCHARINFO pChar);											/* 目の前にいる敵を探す */
 extern void	RecvDataProc			(PBYTE, DWORD);												/* 受信データ処理 */
