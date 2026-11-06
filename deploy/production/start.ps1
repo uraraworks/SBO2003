@@ -14,6 +14,7 @@ $Data = Join-Path $Root 'data'
 $LogDir = Join-Path $Root 'log'
 $Node = Join-Path $Root 'node\node.exe'
 $StopFile = Join-Path $Data 'stop.request'
+$NoticeFile = Join-Path $Data 'notice.request'
 $PidFile = Join-Path $Data 'sbosvr.pid'
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 $StartLog = Join-Path $LogDir 'start.log'
@@ -74,6 +75,9 @@ Get-ChildItem -Path $LogDir -Filter 'sbosvr-*.log' |
 Remove-Item -Force -ErrorAction SilentlyContinue $StopFile
 # サーバーはこのファイルが置かれたら保存して終わる（server/node/sbosvr_net.js）
 $env:SBO2003_STOP_FILE = $StopFile
+# このファイルが置かれたら、中身をゲームの全員にお知らせとして流す（remote-deploy.ps1 の再起動予告）
+Remove-Item -Force -ErrorAction SilentlyContinue $NoticeFile
+$env:SBO2003_NOTICE_FILE = $NoticeFile
 
 $NodeArgs = '"{0}" --headless --data "{1}" --http-port {2} --www "{3}"' -f `
 	(Join-Path $Root 'server\SboSvr.js'), $Data, $Conf.SBO2003_HTTP_PORT, (Join-Path $Root 'web')

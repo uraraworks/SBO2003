@@ -498,15 +498,47 @@ Module['sboNet'] = (function () {
 	 * 「止めてほしくて止まった」のか「落ちた」のかを見分けるのに使う）。
 	 */
 	var strStopFile = process.env['SBO2003_STOP_FILE'];
-	if (strStopFile) {
+	/*
+	 * お知らせファイル（環境変数 SBO2003_NOTICE_FILE）が置かれたら、中身（UTF-8、1 行 1 メッセージ）を
+	 * ゲームの全員にシステムメッセージで流して、ファイルを消す。デプロイ前に「まもなく再起動します」と
+	 * 知らせるのに使う（本番 VPS の deploy/production/remote-deploy.ps1 が置く）。
+	 * 停止ファイルと同じ時に置かれても、お知らせを先に流してから止まる。
+	 */
+	var strNoticeFile = process.env['SBO2003_NOTICE_FILE'];
+	if (strStopFile || strNoticeFile) {
 		var fs = require('fs');
 		var timer = setInterval(function () {
-			if (fs.existsSync(strStopFile)) {
+			if (strNoticeFile && fs.existsSync(strNoticeFile)) {
+				sendNotice(fs, strNoticeFile);
+			}
+			if (strStopFile && fs.existsSync(strStopFile)) {
 				clearInterval(timer);
 				onSignal('停止ファイル');
 			}
 		}, 1000);
 		timer.unref();
+	}
+
+	function sendNotice(fs, strFile) {
+		var strText;
+		try {
+			strText = fs.readFileSync(strFile, 'utf8');
+			fs.unlinkSync(strFile);
+		} catch (e) {
+			console.log('[SboSvr] お知らせファイルを読めませんでした: ' + e.message);
+			return;
+		}
+		/* Windows PowerShell 5.1 は BOM を付けることがあるので取り除く */
+		strText.replace(/^\uFEFF/, '').split(/\r?\n/).forEach(function (strLine) {
+			strLine = strLine.trim();
+			if (!strLine) {
+				return;
+			}
+			var p = stringToNewUTF8(strLine);
+			_SboWebAdminNotice(p);
+			_free(p);
+			console.log('[SboSvr] お知らせを流しました: ' + strLine);
+		});
 	}
 })();
 
