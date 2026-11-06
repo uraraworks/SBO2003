@@ -23,6 +23,7 @@
 static	BOOL	BattleProc			(PCHARINFO, PCHARINFO);			/* 戦闘処理 */
 		BOOL	BattleProcWeapon	(PCHARINFO);					/* 武器処理 */
 		BOOL	BattleProcAtack		(PCHARINFO, PCHARINFO);			/* 戦闘処理(直接攻撃) */
+static	void	BattleProcAtackArea	(PCHARINFO, DWORD);				/* なぎ払い・貫通で周りの敵にも当てる */
 		void	ResurrectionBack	(PCHARINFO);					/* 復活位置で蘇生 */
 static	void	BattleProcMagic		(PCHARINFO, PCHARINFO, BYTE);	/* 戦闘処理(魔法) */
 static	int		GetWeponMin			(PCHARINFO);					/* 武器の減少値を取得 */
@@ -229,6 +230,8 @@ void BattleProcCheckPC(PCHARINFO pChar)
 
 		/* 戦闘処理 */
 		bResult = BattleProc (pChar, pCharTmp);
+		/* なぎ払い・貫通の武器なら、周りの敵にも当てる */
+		BattleProcAtackArea (pChar, pCharTmp->dwTblID);
 		break;
 	}
 
@@ -614,6 +617,105 @@ BOOL BattleProcWeapon(PCHARINFO pChar)
 	bRet = TRUE;
 Exit:
 	return bRet;
+}
+
+/* ========================================================================= */
+/* 関数名：	BattleProcAtackArea												 */
+/* 内容：	なぎ払い・貫通：狙った相手のほかに、武器の届くマスの敵にも当てる	 */
+/*			なぎ払い＝自分の左右のマス(目の前と合わせて3方向)				 */
+/*			貫通＝目の前のさらに1マス先										 */
+/*			狙った相手以外には威力 ATACKRATE_AREA(%) で当たる				 */
+/* ========================================================================= */
+static void BattleProcAtackArea(PCHARINFO pChar, DWORD dwMainTblID)
+{
+	int i, j, nCount, nPos;
+	PDWORD pData;
+	PMAPINFO pMap;
+	PITEMINFO pItem;
+	PITEMINFO_WEAPON pWeapon;
+	PCHARINFO pCharTmp;
+	DWORD adwX[2], adwY[2], dwX, dwY, dwTargetBack;
+	BYTE byRateBack;
+	CmyArray<DWORD, DWORD> adwTblID;
+
+	/* 武器を装備していない？ */
+	if (pChar->waEqu[0] == 0xFFFF) {
+		return;
+	}
+	pItem = g_aItemInfo[pChar->waItem[pChar->waEqu[0]]];
+	if (pItem->pData == NULL) {
+		return;
+	}
+	pWeapon = (PITEMINFO_WEAPON)pItem->pData;
+
+	/* 一歩前の座標 */
+	dwX = pChar->dwX + anPosAddTblX[pChar->byDirection];
+	dwY = pChar->dwY + anPosAddTblY[pChar->byDirection];
+
+	/* 当たるマスを決める */
+	switch (pWeapon->byAtackType) {
+	case ATACKTYPE_SWEEP:		/* なぎ払い：自分の左右(向きと直角の方向)。敵は自分の上下左右に寄ってくるので */
+		nPos = 2;
+		adwX[0] = pChar->dwX + anPosAddTblY[pChar->byDirection];
+		adwY[0] = pChar->dwY + anPosAddTblX[pChar->byDirection];
+		adwX[1] = pChar->dwX - anPosAddTblY[pChar->byDirection];
+		adwY[1] = pChar->dwY - anPosAddTblX[pChar->byDirection];
+		break;
+	case ATACKTYPE_PIERCE:		/* 貫通：目の前のさらに1マス先 */
+		nPos = 1;
+		adwX[0] = dwX + anPosAddTblX[pChar->byDirection];
+		adwY[0] = dwY + anPosAddTblY[pChar->byDirection];
+		break;
+	default:
+		return;
+	}
+
+	pMap = g_aMapInfo[pChar->dwMapID];
+	pData = pMap->paTblNoNPC;
+	nCount = (int)pMap->dwCountTblNoNPC;
+
+	/* 先に当たる敵を集める(倒すとマップ内の一覧が変わるため) */
+	for (j = 0; j < nCount; j ++) {
+		if (pData[j] == -1) {
+			break;
+		}
+		pCharTmp = g_aCharInfo[pData[j]];
+		if (pCharTmp->dwTblID == dwMainTblID) {
+			continue;
+		}
+		/* 敵だけ */
+		if ((pCharTmp->byNpcType != NPCTYPE_BATTLE1) && (pCharTmp->byNpcType != NPCTYPE_BATTLE2)) {
+			continue;
+		}
+		if (pCharTmp->wHP == 0) {
+			continue;
+		}
+		for (i = 0; i < nPos; i ++) {
+			if (((CheckCharX (pChar, adwX[i], pCharTmp->dwX) == FALSE) && ((CheckCharX (pCharTmp, pCharTmp->dwX, adwX[i]) == FALSE))) ||
+				(adwY[i] != pCharTmp->dwY)) {
+				continue;
+			}
+			adwTblID.Add (pCharTmp->dwTblID);
+			break;
+		}
+	}
+
+	/* 狙った相手以外には弱めに当てる(薄い色のダメージ表示になる) */
+	byRateBack		= pChar->byAtackRate;
+	dwTargetBack	= pChar->dwTargetTblID;
+	nCount = adwTblID.GetSize ();
+	for (i = 0; i < nCount; i ++) {
+		pCharTmp = g_aCharInfo[adwTblID[i]];
+		/* 途中で消えた？ */
+		if ((pCharTmp->dwTblID != adwTblID[i]) || (pCharTmp->wHP == 0)) {
+			continue;
+		}
+		pChar->byAtackRate		= ATACKRATE_AREA;
+		pChar->dwTargetTblID	= pCharTmp->dwTblID;
+		BattleProcAtack (pChar, pCharTmp);
+	}
+	pChar->byAtackRate		= byRateBack;
+	pChar->dwTargetTblID	= dwTargetBack;
 }
 
 /* ========================================================================= */

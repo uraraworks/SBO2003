@@ -410,7 +410,7 @@ static const DATAFIELD s_aFieldItemHpUp[] = {
 static const DATAFIELD s_aFieldItemWeapon[] = {
 	FLD (ITEMINFO_WEAPON, byEfcID,		"攻撃時のエフェクト",	FT_U8, 0, NULL),
 	FLD (ITEMINFO_WEAPON, byMin,		"攻撃力減少幅",			FT_U8, 0, NULL),
-	FLD (ITEMINFO_WEAPON, byAtackType,	"攻撃種別",				FT_U8, 0, "0=直接攻撃 1=飛び道具"),
+	FLD (ITEMINFO_WEAPON, byAtackType,	"攻撃種別",				FT_U8, 0, "0=直接攻撃 1=飛び道具 2=なぎ払い(自分の左右にも) 3=貫通(1マス先にも)"),
 	FLD (ITEMINFO_WEAPON, byData1,		"付加データ1",			FT_U8, 0, NULL),
 	FLD (ITEMINFO_WEAPON, byData2,		"付加データ2",			FT_U8, 0, NULL),
 	FLD (ITEMINFO_WEAPON, byData3,		"付加データ3",			FT_U8, 0, NULL),
