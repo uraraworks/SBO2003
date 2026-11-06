@@ -73,6 +73,15 @@
 		word-break: break-all;
 		white-space: pre-wrap;
 	}
+	/* 発言の中の URL（押すと別のタブで開く） */
+	.sbo-chat-link {
+		color: #8fd0ff;
+		text-decoration: underline;
+		cursor: pointer;
+	}
+	.sbo-chat-link:visited {
+		color: #c9a8ff;
+	}
 	.sbo-chat-time {
 		color: #8a919c;
 		margin-right: 0.4em;
@@ -1653,6 +1662,75 @@
 	var sheetInput = document.getElementById('sbo-sheet-input');
 	var chatOpenBtn = document.getElementById('sbo-chat-open');
 
+	/* ---- 発言の中の URL ----
+	   http:// か https:// で始まる部分を URL とみなす（javascript: などは最初から当てはまらない）。
+	   URL に使える ASCII の記号だけを続け、全角文字や空白で終わりにする */
+	var URL_RE = /https?:\/\/[A-Za-z0-9\-._~:\/?#\[\]@!$&'()*+,;=%]+/g;
+	/* 文の終わりに付けた句読点やかっこは URL に含めない */
+	function trimUrlTail(url) {
+		for (;;) {
+			var last = url.charAt(url.length - 1);
+			if ('.,;:!?\''.indexOf(last) >= 0) {
+				url = url.slice(0, -1);
+			} else if (last === ')' && url.split('(').length < url.split(')').length) {
+				/* 「(https://…)」の閉じかっこ（URL の中の (…) は残す） */
+				url = url.slice(0, -1);
+			} else {
+				return url;
+			}
+		}
+	}
+	/* 文字列の中の URL を探す。[{start, end, url}] を返す */
+	function findUrls(text) {
+		var list = [], m;
+		URL_RE.lastIndex = 0;
+		while ((m = URL_RE.exec(text)) !== null) {
+			var url = trimUrlTail(m[0]);
+			/* 「https://」だけのように中身が無いものは URL にしない */
+			if (url.replace(/^https?:\/\//, '').length === 0) {
+				continue;
+			}
+			list.push({start: m.index, end: m.index + url.length, url: url});
+		}
+		return list;
+	}
+	/* リンクにしてよい URL か（http と https だけ。おかしな形のものは弾く） */
+	function safeLinkUrl(url) {
+		try {
+			var u = new URL(url);
+			if ((u.protocol === 'http:' || u.protocol === 'https:') && u.hostname) {
+				return u.href;
+			}
+		} catch (e) { /* 読めない URL はリンクにしない */ }
+		return null;
+	}
+	/* 文字を el に足す。URL の部分は別タブで開くリンクにする */
+	function appendLinkedText(el, text) {
+		var urls = findUrls(text), pos = 0;
+		for (var i = 0; i < urls.length; i ++) {
+			var href = safeLinkUrl(urls[i].url);
+			if (!href) {
+				continue;
+			}
+			if (urls[i].start > pos) {
+				el.appendChild(document.createTextNode(text.slice(pos, urls[i].start)));
+			}
+			var a = document.createElement('a');
+			a.className = 'sbo-chat-link';
+			a.href = href;
+			a.target = '_blank';
+			/* 開いた先のページからこのゲームの画面を操作されないようにする */
+			a.rel = 'noopener noreferrer';
+			a.textContent = urls[i].url;
+			el.appendChild(a);
+			pos = urls[i].end;
+		}
+		if (pos < text.length) {
+			el.appendChild(document.createTextNode(text.slice(pos)));
+		}
+	}
+	window.sboChatFindUrls = findUrls;
+
 	function makeLine(entry) {
 		var line = document.createElement('div');
 		if (entry.sep) {
@@ -1665,7 +1743,7 @@
 		t.className = 'sbo-chat-time';
 		t.textContent = entry.time;
 		var m = document.createElement('span');
-		m.textContent = entry.text;
+		appendLinkedText(m, entry.text);
 		m.style.color = entry.color;
 		line.appendChild(t);
 		line.appendChild(m);
@@ -1800,18 +1878,20 @@
 		return '!<#$/'.indexOf(ch) >= 0;
 	}
 
-	function splitChat(text) {
-		var chars = Array.from(text);
-		var prefix = '';
-		/* コマンド（/ # $）は分けずにそのまま送る */
-		if (isCmdChar(chars[0]) && chars[0] !== '!' && chars[0] !== '<') {
-			return [text];
+	/* URL を含む発言の上限（表示幅）。URL は途中で切ると開けないので、
+	   この長さまでは 1 つの発言のまま送る（SboCliMsgLogWindow_web.cpp と同じ値） */
+	var CHAT_URL_SPEECH_MAX = 1000;
+
+	function textWidth(str) {
+		var w = 0, chars = Array.from(str);
+		for (var i = 0; i < chars.length; i ++) {
+			w += charWidth(chars[i]);
 		}
-		/* マップ内放送（!）と画面内放送（<）は、分けた発言すべてに付け直す */
-		if (chars[0] === '!' || chars[0] === '<') {
-			prefix = chars.shift();
-		}
-		var limit = CHAT_SPEECH_MAX - prefix.length;
+		return w;
+	}
+
+	/* URL を含まない文を、表示幅 limit 以内に分ける */
+	function splitPlain(chars, limit) {
 		var parts = [];
 		var start = 0;
 		while (start < chars.length) {
@@ -1835,12 +1915,105 @@
 					end --;
 				}
 			}
-			var part = chars.slice(start, end).join('');
-			if (part.trim()) {
-				parts.push(prefix + part);
-			}
+			parts.push(chars.slice(start, end).join(''));
 			start = end;
 		}
+		return parts;
+	}
+
+	function splitChat(text) {
+		var chars = Array.from(text);
+		var prefix = '';
+		/* コマンド（/ # $）は分けずにそのまま送る */
+		if (isCmdChar(chars[0]) && chars[0] !== '!' && chars[0] !== '<') {
+			return [text];
+		}
+		/* マップ内放送（!）と画面内放送（<）は、分けた発言すべてに付け直す */
+		if (chars[0] === '!' || chars[0] === '<') {
+			prefix = chars.shift();
+		}
+		var limit = CHAT_SPEECH_MAX - prefix.length;
+		var urlLimit = CHAT_URL_SPEECH_MAX - prefix.length;
+		var body = chars.join('');
+		var parts = [];
+		function pushPart(part) {
+			if (!part.trim()) {
+				return;
+			}
+			/* 後ろの発言の先頭がコマンド扱いの文字になる時は、空白を前に置いてただの発言にする */
+			if (parts.length > 0 && !prefix && isCmdChar(part.charAt(0))) {
+				part = ' ' + part;
+			}
+			parts.push(prefix + part);
+		}
+
+		/* URL が無ければこれまでどおり分ける */
+		var urls = findUrls(body);
+		if (urls.length === 0) {
+			var plain = splitPlain(chars, limit);
+			for (var i = 0; i < plain.length; i ++) {
+				pushPart(plain[i]);
+			}
+			return parts;
+		}
+
+		/* URL は途中で切らず、1 つの発言に丸ごと入れる。
+		   前後の文は入る分だけ同じ発言に入れ、残りはこれまでどおり分ける */
+		var cur = '';			/* 作っている途中の発言 */
+		var curUrl = false;		/* cur に URL が入っている（もう分けられない） */
+		function addText(seg) {
+			if (!seg) {
+				return;
+			}
+			if (textWidth(cur + seg) <= (curUrl ? Math.max(limit, textWidth(cur)) : limit)) {
+				cur += seg;
+				return;
+			}
+			if (curUrl) {
+				/* URL の直後の句読点などは URL と同じ発言に付けておく */
+				var segChars = Array.from(seg), n = 0;
+				while (n < segChars.length && isBreakChar(segChars[n]) && segChars[n].trim() &&
+					textWidth(cur + segChars.slice(0, n + 1).join('')) <= urlLimit) {
+					n ++;
+				}
+				cur += segChars.slice(0, n).join('');
+				pushPart(cur);
+				cur = '';
+				curUrl = false;
+				seg = segChars.slice(n).join('').replace(/^\s+/, '');
+				if (!seg) {
+					return;
+				}
+			}
+			var ps = splitPlain(Array.from(cur + seg), limit);
+			for (var i = 0; i < ps.length - 1; i ++) {
+				pushPart(ps[i]);
+			}
+			cur = ps.length ? ps[ps.length - 1] : '';
+		}
+		var pos = 0;
+		for (var k = 0; k < urls.length; k ++) {
+			var url = urls[k].url;
+			addText(body.slice(pos, urls[k].start));
+			pos = urls[k].end;
+			/* あまりに長い URL は送れないので、ふつうの文として分ける */
+			if (textWidth(url) > urlLimit) {
+				addText(url);
+				continue;
+			}
+			var w = textWidth(cur + url);
+			/* 前の文と一緒に入るなら同じ発言にする。上限 40 を超える長い URL も、
+			   「これ見て」のような前の文とは一緒にしておく */
+			if ((w <= limit) || ((curUrl || textWidth(url) > limit) && (w <= urlLimit))) {
+				cur += url;
+			} else {
+				pushPart(cur);
+				cur = url;
+			}
+			curUrl = true;
+		}
+		addText(body.slice(pos));
+		pushPart(cur);
 		return parts;
 	}
 
