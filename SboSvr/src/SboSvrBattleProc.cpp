@@ -30,7 +30,11 @@ static	BOOL	BattleProcTell		(PCHARINFO, PMAPINFO, DWORD, BOOL);	/* 敵の攻撃�
 		void	ResurrectionBack	(PCHARINFO);					/* 復活位置で蘇生 */
 static	void	BattleProcMagic		(PCHARINFO, PCHARINFO, BYTE);	/* 戦闘処理(魔法) */
 static	int		GetWeponMin			(PCHARINFO);					/* 武器の減少値を取得 */
-static	int		DamageProc			(PCHARINFO, PCHARINFO, BOOL, BOOL);	/* ダメージ量計算 */
+static	int		DamageProc			(PCHARINFO, PCHARINFO, BOOL, BOOL, int);	/* ダメージ量計算 */
+		int		RenkeiCheck			(PCHARINFO, PCHARINFO);			/* 連携ボーナスの倍率(%) */
+
+#define RENKEI_TIME		2000		/* 別の人が殴ってからこの時間(ms)以内に殴ると連携 */
+#define RENKEI_RATE		130			/* 連携の時のダメージ(%) */
 static	DWORD	GetAcquisitionGold	(PCHARINFO, PCHARINFO);			/* 獲得金額を計算 */
 static	DWORD	GetAcquisitionExp	(PCHARINFO, PCHARINFO);			/* 獲得経験値を計算 */
 static	void	AddGold				(PCHARINFO, DWORD, BOOL);		/* 所持金を追加 */
@@ -939,7 +943,7 @@ BOOL BattleProcAtack(PCHARINFO pChar, PCHARINFO pCharTarget)
 	/* 命中？ */
 	if (!bMiss) {
 		/* ダメージ量の計算 */
-		nDamage = DamageProc (pChar, pCharTarget, bSPAtack, bGuard);
+		nDamage = DamageProc (pChar, pCharTarget, bSPAtack, bGuard, RenkeiCheck (pChar, pCharTarget));
 		if (bGuard) {
 			SendCmdADDCHAREFC (pCharTarget->dwTblID, RGB (120, 200, 255), "ｶﾞｰﾄﾞ");
 		}
@@ -1163,7 +1167,7 @@ Exit:
 /* 内容：ダメージ量計算														 */
 /* 日付：2003/10/02															 */
 /* ========================================================================= */
-static int DamageProc(PCHARINFO pChar, PCHARINFO pCharTarget, BOOL bSPAtack, BOOL bGuard)
+static int DamageProc(PCHARINFO pChar, PCHARINFO pCharTarget, BOOL bSPAtack, BOOL bGuard, int nRate)
 {
 	int nTmp, nTmp2, nAT, nDF;
 
@@ -1205,6 +1209,8 @@ static int DamageProc(PCHARINFO pChar, PCHARINFO pCharTarget, BOOL bSPAtack, BOO
 	if (bGuard) {
 		nTmp /= 2;
 	}
+	/* 連携ボーナス */
+	nTmp = nTmp * nRate / 100;
 
 	/* ノーダメージ？(おまけの1ダメージはゲージ満タンの攻撃だけ。早撃ちの連打で削れないように) */
 	if ((nTmp == 0) && ((pChar->byAtackRate == 0) || (pChar->byAtackRate >= 100))) {
@@ -1557,6 +1563,40 @@ return;
 
 	/* パラメータを更新 */
 	RenewATDF (pChar->dwTblID);
+}
+
+/* ========================================================================= */
+/* 関数名：	RenkeiCheck														 */
+/* 内容：	連携ボーナス。同じ敵を、別のプレイヤーが殴って(特技を当てて)から	 */
+/*			RENKEI_TIME 以内に殴るとダメージが RENKEI_RATE% になり「連携!」	 */
+/*			戻り値はダメージの倍率(%)。当たった時だけ呼ぶこと				 */
+/* ========================================================================= */
+int RenkeiCheck(PCHARINFO pChar, PCHARINFO pCharTarget)
+{
+	static std::map<DWORD, std::pair<DWORD, DWORD> > s_mapLastHit;	/* 敵ごとの 最後に当てたPC・時間 */
+	std::map<DWORD, std::pair<DWORD, DWORD> >::iterator it;
+	DWORD dwNow;
+	int nRet;
+
+	/* 矢などは撃ったキャラ */
+	if ((pChar->byNpcType == NPCTYPE_ATACK) && (pChar->dwParentTblID != (DWORD)-1) &&
+		(pChar->dwParentTblID < (DWORD)g_aCharInfo.GetSize ())) {
+		pChar = g_aCharInfo[pChar->dwParentTblID];
+	}
+	/* プレイヤーが敵に当てた時だけ */
+	if ((pChar->byNpcType != NPCTYPE_INIT) || (pCharTarget->byNpcType == NPCTYPE_INIT)) {
+		return 100;
+	}
+	nRet	= 100;
+	dwNow	= timeGetTime ();
+	it		= s_mapLastHit.find (pCharTarget->dwTblID);
+	if ((it != s_mapLastHit.end ()) && (it->second.first != pChar->dwTblID) &&
+		(dwNow - it->second.second < RENKEI_TIME)) {
+		nRet = RENKEI_RATE;
+		SendCmdADDCHAREFC (pChar->dwTblID, RGB (255, 160, 40), "連携!");
+	}
+	s_mapLastHit[pCharTarget->dwTblID] = std::make_pair (pChar->dwTblID, dwNow);
+	return nRet;
 }
 
 /* Copyright(C)URARA-works 2003-2005 */
