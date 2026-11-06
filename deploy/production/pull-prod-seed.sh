@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# 本番 VPS のゲームデータから、ローカル用の初期データ（Release/SBODATA）を作り直す（Mac から動かす）。
+# 本番 VPS のゲームデータから、非公開リポジトリ（SBO2003-private）の Release/SBODATA を作り直す（Mac から動かす）。
 #
-#   deploy/production/pull-prod-seed.sh [出力先]     （省略時は Release/SBODATA）
+#   deploy/production/pull-prod-seed.sh [出力先]
+#     省略時は、非公開リポジトリのクローンの Release/SBODATA（探し方は tools/server/find-data.sh：
+#     このリポジトリと同じ階層の SBO2003-private か、環境変数 SBO2003_PRIVATE_DIR）
 #
-# ローカルでサーバーを試す時（tools/server/run.sh・各スレッドの確認）は Release/SBODATA を使う。
-# そこを本番の今のマップ・アイテム・NPC などで更新するためのもの。
+# マップ・NPC・アイテムなどの本物のデータはネタバレになるので、公開リポジトリには置かない
+# （公開側の Release/SBODATA は 10×10 の草原だけ）。ローカルでサーバーを試す時（tools/server/run.sh・
+# 各スレッドの確認）は、非公開リポジトリの Release/SBODATA を使うので、そこを本番の今のデータで更新する。
 #
 # 1. 本番のサーバーは止めずに、C:\SBO2003\data\SBODATA の SboData*.dat（名前が英数字だけのもの）を VPS の一時フォルダへ写して
 #    zip にし、手元へ持ってくる（書き込み中に当たらないよう、写す前後でサイズと時刻が同じか確かめる）。
@@ -14,13 +17,26 @@
 # 3. 出力先の SboData*.dat をそっくり入れ替える。手元と VPS の一時ファイルは消す
 #
 # サーバー（make-seed.sh が使う）がまだビルドされていなければ、先に tools/server/build.sh を動かす。
-# 入れ替えたファイルは git add まで行う（コミットと push は手で）。
+# 入れ替えたファイルは、出力先のリポジトリ（ふつうは SBO2003-private）で git add まで行う（コミットと push は手で）。
 # 接続先は vps-deploy.sh と同じ（deploy/production/deploy.local.env の VPS_HOST・VPS_USER・VPS_PORT・SSH_KEY）。
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
-OUT="${1:-$ROOT/Release/SBODATA}"
+if [ -n "${1:-}" ]; then
+	OUT="$1"
+elif PRIV="$("$ROOT/tools/server/find-data.sh" --repo)"; then
+	OUT="$PRIV/Release/SBODATA"
+else
+	echo "非公開リポジトリ（SBO2003-private）のクローンが見つかりません。" >&2
+	echo "このリポジトリと同じ階層にクローンするか、SBO2003_PRIVATE_DIR を設定してください" >&2
+	exit 1
+fi
+# 公開リポジトリの Release/SBODATA（草原だけ）に本物のデータを入れてしまわないように
+case "$(cd "$(dirname "$OUT")" 2>/dev/null && pwd)/$(basename "$OUT")" in
+	"$ROOT/Release/SBODATA") echo "公開リポジトリの Release/SBODATA には本物のデータを置けません（ネタバレ防止）" >&2; exit 1 ;;
+esac
+echo "==> 出力先: $OUT"
 if [ -f "$HERE/deploy.local.env" ]; then
 	# shellcheck disable=SC1091
 	. "$HERE/deploy.local.env"
@@ -101,13 +117,13 @@ mkdir -p "$OUT"
 find "$OUT" -maxdepth 1 -name 'SboData*.dat' | grep -E '/SboData[A-Za-z]+[0-9]*\.dat$' | while IFS= read -r f; do rm -f "$f"; done
 find "$WORK/seed" -maxdepth 1 -name 'SboData*.dat' | grep -E '/SboData[A-Za-z]+[0-9]*\.dat$' | while IFS= read -r f; do cp "$f" "$OUT/"; done
 echo "   $(find "$OUT" -maxdepth 1 -name 'SboData*.dat' | wc -l | tr -d ' ') ファイル"
-if git -C "$ROOT" rev-parse >/dev/null 2>&1; then
+if REPO="$(git -C "$OUT" rev-parse --show-toplevel 2>/dev/null)"; then
 	# 入れ替えたファイルだけを git に載せる（git add Release/SBODATA だと、Mac が日本語名の控えを
 	# 別の文字の並び（濁点が分かれた形）で見せるため、同じ控えがもう 1 つ増えてしまう）
-	git -C "$ROOT" add -u -- "$OUT"
-	find "$OUT" -maxdepth 1 -name 'SboData*.dat' | grep -E '/SboData[A-Za-z]+[0-9]*\.dat$' | while IFS= read -r f; do git -C "$ROOT" add -- "$f"; done
-	echo "   git に載せました（あとは git commit と git push だけ）:"
-	git -C "$ROOT" diff --cached --stat -- "$OUT" | tail -5
+	git -C "$REPO" add -u -- "$OUT"
+	find "$OUT" -maxdepth 1 -name 'SboData*.dat' | grep -E '/SboData[A-Za-z]+[0-9]*\.dat$' | while IFS= read -r f; do git -C "$REPO" add -- "$f"; done
+	echo "   $REPO の git に載せました（あとは git commit と git push だけ）:"
+	git -C "$REPO" diff --cached --stat -- "$OUT" | tail -5
 fi
 echo "==> 完了（プレイヤーのデータは入っていません。手元・VPS の一時ファイルは消しました）"
 echo "   ローカルで遊んだデータ（out/server-data）は残っているので、新しい初期データで試す時は"
