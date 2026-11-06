@@ -624,7 +624,7 @@ Exit:
 BOOL BattleProcAtack(PCHARINFO pChar, PCHARINFO pCharTarget)
 {
 	PCHARINFO pCharTmp1, pCharTmp2;
-	BOOL bRet, bSPAtack, bMiss, bPC;
+	BOOL bRet, bSPAtack, bMiss, bPC, bJust;
 	int nDamage;
 	DWORD dwSend;
 
@@ -662,9 +662,14 @@ BOOL BattleProcAtack(PCHARINFO pChar, PCHARINFO pCharTarget)
 	bSPAtack	= FALSE;
 	bMiss		= FALSE;
 	nDamage		= 0;
+	/* ジャスト（ゲージ満タンの瞬間に押した）？ 空振りせず、会心が出やすい */
+	bJust		= (pChar->byAtackRate == ATACKRATE_JUST);
+	if (bJust) {
+		SendCmdADDCHAREFC (pChar->dwTblID, RGB (255, 255, 64), "ｼﾞｬｽﾄ!");
+	}
 
 	/* 空振り？ */
-	if ((genrand () % 100) >= 95) {
+	if (!bJust && ((genrand () % 100) >= 95)) {
 		BYTE byNo;
 
 		bMiss		= TRUE;
@@ -680,8 +685,8 @@ BOOL BattleProcAtack(PCHARINFO pChar, PCHARINFO pCharTarget)
 		SendCmdPLAYSOUND (pCharTmp1->pID, byNo);
 		SendCmdSYSMSG2 (pCharTmp1->pID, SYSMSG_ATACK1, pChar->pID, 0);
 
-	/* 会心の一撃？ */
-	} else if ((genrand () % 100) >= 98) {
+	/* 会心の一撃？(普段は 2%、ジャストなら 30%) */
+	} else if ((genrand () % 100) >= (DWORD)(bJust ? 70 : 98)) {
 		BYTE byNo;
 		DWORD dwID;
 
@@ -940,7 +945,8 @@ static int DamageProc(PCHARINFO pChar, PCHARINFO pCharTarget, BOOL bSPAtack)
 
 	/* PCの行動？ */
 	if (pChar->byAtackRate > 0) {
-		nAT = pChar->wAT * pChar->byAtackRate / 100;
+		/* ジャスト(101)も威力は 100% */
+		nAT = pChar->wAT * min (pChar->byAtackRate, 100) / 100;
 	} else {
 		nAT = pChar->wAT;
 	}
