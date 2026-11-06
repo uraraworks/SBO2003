@@ -7530,8 +7530,8 @@ int GetFrontScoreChar(void)
 /* 内容：Sキーで話しかける相手を探す										 */
 /*		 掲示板（お知らせ掲示板・立て札）は動かない NPC の足元に「調べる」	 */
 /*		 メッセージが置いてあり、話すと「立て札は話せない」などになる。		 */
-/*		 目の前のマスにイベントがあって、そこに動かない NPC が立っている時は	 */
-/*		 話さずに調べる（今まで通り掲示板が読める）							 */
+/*		 目の前のマスにイベント（扉・掲示板など）がある時は、誰が立っていても	 */
+/*		 話さずに調べる（掲示板が読める・扉の所に人がいても扉を開けられる）		 */
 /*		 投げた雪玉など、話す相手ではない NPC も除く							 */
 /*		 戻り値：キャラ番号（話さない時は -1）								 */
 /* ========================================================================= */
@@ -7566,9 +7566,9 @@ int GetSKeyTalkChar(void)
 	if ((pChar2->dwX != dwX) || (pChar2->dwY != dwY)) {
 		return nChar;
 	}
-	/* そのマスにイベントがあって、相手が動かない NPC なら調べる */
-	if ((g_pMapInfo->pbyFlg[dwX + g_pMapInfo->nCX * dwY] & MAPFLG_EVENT) &&
-		((pChar2->byNpcType == NPCTYPE_NOMOVE) || (pChar2->byNpcType == NPCTYPE_NOBLOCK))) {
+	/* そのマスにイベント（扉・掲示板など）があれば、誰が立っていても調べるを優先する。
+	   扉の所に他のプレイヤーが立っていると、扉を開けたいのに話しかけてしまっていた */
+	if (g_pMapInfo->pbyFlg[dwX + g_pMapInfo->nCX * dwY] & MAPFLG_EVENT) {
 		return -1;
 	}
 	return nChar;
