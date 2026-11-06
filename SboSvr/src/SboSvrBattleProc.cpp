@@ -734,7 +734,10 @@ static BOOL BattleProcTell(PCHARINFO pChar, PMAPINFO pMap, DWORD dwWait, BOOL bL
 			}
 		}
 		s_mapTell[pChar->dwTblID] = pChar->dwLastBattle;
-		SendCmdADDCHAREFC (pChar->dwTblID, RGB (255, 64, 64), "！");
+		/* ダメージの数字と見分けやすいように、吹き出しの「!」で知らせる */
+		pChar->byComEfc = COMEFC_TELL;
+		SendCmdCOMEFC (pChar);
+		pChar->byComEfc = 0;
 		return TRUE;
 	}
 	return FALSE;
@@ -890,7 +893,7 @@ BOOL BattleProcAtack(PCHARINFO pChar, PCHARINFO pCharTarget)
 	/* 構えているPC？ 受けるダメージが半分になり、会心を受けない */
 	bGuard		= ((pCharTarget->byNpcType == NPCTYPE_INIT) && IsGuard (pCharTarget));
 	if (bJust) {
-		SendCmdADDCHAREFC (pChar->dwTblID, RGB (255, 255, 64), "ｼﾞｬｽﾄ!");
+		SendCmdADDCHAREFC (pChar->dwTblID, RGB (255, 255, 64) | CHAREFC_BIG, "JUST!");
 	}
 
 	/* 空振り？ */
