@@ -79,8 +79,8 @@ if ($running -and $NoticeSec -gt 0) {
 			ConvertFrom-Json).onlinePlayers
 	} catch { }
 	if ($Zip) { $what = 'サーバーを更新します。' } else { $what = 'サーバーのメンテナンスを行います。' }
-	if ($NoticeSec -ge 60 -and $NoticeSec % 60 -eq 0) { $after = "約$($NoticeSec / 60)分後" } else { $after = "約$($NoticeSec)秒後" }
-	$sent = Send-Notice @("【お知らせ】$what", "$($after)に再起動するため、いったん切断されます。")
+	# 待つ秒数ちょうどとは限らない（順番待ちなどで前後する）ので「数分後」と大まかに書く
+	$sent = Send-Notice @("【お知らせ】$what", '数分後に再起動するため、いったん切断されます。')
 	if (-not $sent) {
 		Say 'お知らせを流せませんでした（お知らせに対応していない版のサーバー）。待たずに止めます'
 	} elseif ($online -eq 0) {
