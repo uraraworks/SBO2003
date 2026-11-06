@@ -812,7 +812,6 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 			}
 
 		} else if (pChar->dwTimeTurnMagicLV == 0) {
-			DXAudio.PlaySecoundary (&aSoundTbl[SOUND_CURSOR08]);
 			/* 戦闘マップ？ */
 			if (g_pMapInfo->byFlg & MAPFLG_BATTLE) {
 				/* 戦闘モード？ */
@@ -832,6 +831,10 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 				}
 			} else {
 				pWnd = MakeWindowCOMMAND ();
+			}
+			/* コマンドを開いた時だけ決定音(ゲージで殴った時は攻撃音とかぶるので鳴らさない) */
+			if (pWnd) {
+				DXAudio.PlaySecoundary (&aSoundTbl[SOUND_CURSOR08]);
 			}
 		}
 
@@ -6168,6 +6171,15 @@ void KeyProcBATTLE_COMMAND(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
 		/* 連続攻撃中なら、コマンドを閉じてもゲージはそのまま続ける */
 
+	} else if ((byEvent == KEY_UP) && (byCode == 'A') && (g_bEnableMove) &&
+				(pWnd->nData1 == 0) && ShotTurnGage (pChar)) {
+		/* 「攻撃」：連続攻撃中でゲージが1周以上溜まっていれば、相手を選び直さずにそのまま殴る
+		   (攻撃音とかぶるので決定音は鳴らさない) */
+		int nNo = GetWindowID (g_dwMsgIDCommand);
+		EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
+		g_bDraw = TRUE;
+		g_dwMsgIDCommand = 0;
+
 	} else if ((byEvent == KEY_UP) && (byCode == 'A') && (g_bEnableMove)) {
 		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
 		pWnd->dwTimeDrawStart = 0;
@@ -6181,14 +6193,6 @@ void KeyProcBATTLE_COMMAND(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				ARRAYUSECHARINFO aUseCharInfoTmp;
 //				PUSECHARINFO pUseCharInfo;
 
-				/* 連続攻撃中でゲージが1周以上溜まっていれば、相手を選び直さずにそのまま殴る */
-				if (ShotTurnGage (pChar)) {
-					int nNo = GetWindowID (g_dwMsgIDCommand);
-					EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
-					g_bDraw = TRUE;
-					g_dwMsgIDCommand = 0;
-					break;
-				}
 				nTmp = GetAttackType (pChar);
 				if (nTmp == ATACKTYPE_ARROW) {
 					StartTurnGage (pChar, -1);
