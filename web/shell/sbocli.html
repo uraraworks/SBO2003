@@ -871,7 +871,12 @@
 		border-color: var(--accent);
 		color: var(--accent);
 	}
-	/* スマホのカメラボタン（マップにいる間だけ） */
+	/* スマホのカメラボタン（マップにいる間だけ）
+	   あまり使わないので、パッドの間ではなくゲーム画面の右上隅に小さく半透明で重ねる
+	   （移動中に親指が当たらないように。右下は HP・Mana の枠、左下はログ、
+	   左上はマップ名が出るので、いちばん空いている右上にする）
+	   縦持ちはふだん隠しておき、ゲーム画面をタップすると透けて出る（body.sbo-sys-show）。
+	   もう一度タップするか、しばらく触らないと消える */
 	#sbo-shot-pad {
 		display: none;
 	}
@@ -879,29 +884,50 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		flex: none;
-		width: 44px;
-		height: 44px;
+		position: absolute;
+		right: 6px;
+		top: 6px;
+		z-index: 5;
+		width: 34px;
+		height: 34px;
 		padding: 0;
-		border: 2px solid rgba(255, 255, 255, 0.4);
+		border: 1px solid rgba(255, 255, 255, 0.35);
 		border-radius: 50%;
-		background: rgba(255, 255, 255, 0.12);
+		background: rgba(0, 0, 0, 0.35);
 		color: #fff;
-		font-size: 20px;
+		font-size: 16px;
 		line-height: 1;
+		opacity: 0;
+		pointer-events: none;
+		transition: opacity 0.2s;
+		touch-action: manipulation;
 		-webkit-tap-highlight-color: transparent;
 		cursor: pointer;
 	}
+	body.sbo-pad.sbo-on-map.sbo-sys-show #sbo-shot-pad {
+		opacity: 0.75;
+		pointer-events: auto;
+	}
 	body.sbo-pad #sbo-shot-pad:active {
+		opacity: 1;
 		background: rgba(240, 184, 74, 0.75);
 	}
-	/* 横持ちはスティックの下（左下）に置く */
+	/* 横持ちは画面の左下隅（スティックの下）に置く */
 	@media (orientation: landscape) {
 		body.sbo-pad.sbo-on-map #sbo-shot-pad {
 			position: fixed;
+			right: auto;
+			top: auto;
 			left: calc(12px + env(safe-area-inset-left));
 			bottom: calc(10px + env(safe-area-inset-bottom));
 			z-index: 800;
+			width: 44px;
+			height: 44px;
+			font-size: 20px;
+			opacity: 1;
+			pointer-events: auto;
+			border: 2px solid rgba(255, 255, 255, 0.4);
+			background: rgba(255, 255, 255, 0.12);
 		}
 	}
 	/* 撮った時に画面を一瞬白く光らせる */
@@ -1000,6 +1026,8 @@
 		<canvas id="sbo-sharp" aria-hidden="true"></canvas>
 		<div id="sbo-overlay" style="position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none;"></div>
 		<div id="sbo-shot-flash"></div>
+		<!-- スマホのカメラボタン（縦持ちはゲーム画面の右上隅に重ねる。横持ちは左下） -->
+		<button type="button" id="sbo-shot-pad" title="スクリーンショット">📷</button>
 		<!-- ログイン画面のボタン。ID・パスワードの入力欄は「ID・パスワードでログイン」を押した時だけ見せる -->
 		<div id="sbo-quick" data-sbo-ui="1">
 			<!-- この端末で前にログインしていた -->
@@ -1031,7 +1059,6 @@
 		<div class="sbo-stick" id="sbo-stick">
 			<div class="sbo-stick-knob" id="sbo-stick-knob"></div>
 		</div>
-		<button type="button" id="sbo-shot-pad" title="スクリーンショット">📷</button>
 		<div class="sbo-buttons">
 			<button type="button" data-vk="90"><span class="sbo-btn-icon">✕</span><span class="sbo-btn-label" id="sbo-pad-z-label" style="font-size:10px">キャンセル</span><span class="sbo-btn-key">Z</span></button>
 			<button type="button" data-vk="88" class="sbo-main"><span class="sbo-btn-icon">○</span><span id="sbo-pad-x-label">決定</span><span class="sbo-btn-key">X</span></button>
@@ -2576,7 +2603,31 @@
 		}
 		window.sboTakeScreenshot = takeShot;
 		document.getElementById('sbo-shot-pc').addEventListener('click', takeShot);
-		document.getElementById('sbo-shot-pad').addEventListener('click', takeShot);
+		document.getElementById('sbo-shot-pad').addEventListener('click', function () {
+			hideSysButtons();
+			takeShot();
+		});
+
+		/* スマホ縦持ち：ゲーム画面をタップするとカメラボタンなどを透けて出し、
+		   もう一度タップするか、しばらく触らないと消す（タップはこれまで通りゲームにも届く） */
+		var SYS_HIDE_MS = 4000;
+		var sysTimer = 0;
+		function hideSysButtons() {
+			clearTimeout(sysTimer);
+			document.body.classList.remove('sbo-sys-show');
+		}
+		document.getElementById('sbo-screen').addEventListener('click', function (ev) {
+			if (!usePad || ev.target.closest('#sbo-shot-pad, [data-sbo-ui]')) {
+				return;
+			}
+			if (document.body.classList.contains('sbo-sys-show')) {
+				hideSysButtons();
+				return;
+			}
+			document.body.classList.add('sbo-sys-show');
+			clearTimeout(sysTimer);
+			sysTimer = setTimeout(hideSysButtons, SYS_HIDE_MS);
+		});
 	})();
 
 	/* ---- ログ保存 ----
