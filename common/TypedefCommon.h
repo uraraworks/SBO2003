@@ -24,6 +24,10 @@
 #define DLLVER				"34"									/* DLLバージョン */
 #define GRPDATADLLVER		"5"										/* グラフィックデータDLLバージョン */
 #define MAX_ACCNAME			14										/* 最大アカウント名文字数 */
+#define TURNGAGE_LAP		20										/* ターンゲージ1周の%（1周溜まると早撃ちでき、威力は周の数×この%） */
+#define TURNGAGE_LAPMAX		(100 / TURNGAGE_LAP)					/* ターンゲージが満タンになる周の数 */
+#define TURNGAGE_JUSTTIME	300										/* ゲージ満タン後、ジャストで押せる時間(ms)。押さなければ自動で殴る */
+#define ATACKRATE_JUST		101										/* 攻撃要求の威力欄でジャストを表す値（威力は100%として扱う） */
 #define MAX_CHARNAME		15										/* 最大キャラ名文字数（表示幅の上限は MAX_CHARNAME_WIDTH） */
 #define MAX_CHARNAMEBUF		64										/* キャラ名の欄のバイト数（終端含む。UTF-8 や絵文字でも入るように広めにとる） */
 #define MAX_ITEMNAME		64										/* アイテム名の欄のバイト数（終端含む） */
@@ -1876,7 +1880,7 @@ typedef struct _CHARINFO {
 	BYTE		byDrunkPoint;										/* 酔いポイント */
 	BYTE		byDrunkLV;											/* 酔いレベル */
 	BYTE		byDropProbability;									/* ドロップ率 */
-	BYTE		byTurnLV;											/* ターンゲージ */
+	BYTE		byTurnLV;											/* ターンゲージ(TURNGAGE_LAP ごとに1周) */
 	BYTE		byTurnMagicLV;										/* 魔法ターンゲージ */
 	BYTE		byMoveProbabilityX;									/* 移動確率X(NPC) */
 	BYTE		byMoveProbabilityY;									/* 移動確率Y(NPC) */
