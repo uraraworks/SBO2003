@@ -4694,7 +4694,7 @@ void RecvDataProcREQ_GUARD(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	SetGuard (pChar, TRUE);
-	SendCmdADDCHAREFC (pChar->dwTblID, RGB (120, 200, 255), "構え");
+	SendCmdADDCHAREFC (pChar->dwTblID, RGB (120, 200, 255) | CHAREFC_BIG, "構え");
 }
 
 void RecvDataProcREQ_ATTACK(PBYTE pData, DWORD dwDataSize)

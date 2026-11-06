@@ -2564,6 +2564,17 @@ void TimerProcCharComEfc(PCHARINFO pChar)
 	}
 
 	dwTime	= timeGetTime ();
+	/* 敵の攻撃の予兆の「!」は、攻撃までの間(TELL_VIEWTIME)だけ出して消す */
+	if ((pChar->byComEfc == COMEFC_TELL) &&
+		((pChar->byNpcType == NPCTYPE_BATTLE1) || (pChar->byNpcType == NPCTYPE_BATTLE2))) {
+		if (dwTime - pChar->dwTimeComEfc >= TELL_VIEWTIME) {
+			pChar->byComEfc			= 0;
+			pChar->byComEfcAnime	= 0;
+			pChar->dwTimeComEfc		= 0;
+			g_bDraw = TRUE;
+		}
+		return;
+	}
 	pComEfc	= &g_pComEfcInfo[pChar->byComEfc - 1];
 	pAnime	= &pComEfc->pAnime[pChar->byComEfcAnime];
 

@@ -27,6 +27,9 @@
 #define TURNGAGE_LAP		20										/* ターンゲージ1周の%（1周溜まると早撃ちでき、威力は周の数×この%） */
 #define TURNGAGE_LAPMAX		(100 / TURNGAGE_LAP)					/* ターンゲージが満タンになる周の数 */
 #define TURNGAGE_LATETIME	300										/* 殴った直後、X でコマンドを開かない時間(ms)。ジャストに押し遅れた時のため(1周の半分まで) */
+#define CHAREFC_BIG			(0x01000000)							/* 文字エフェクトの色に足すと大きい文字で出す(ジャスト・構えなど) */
+#define COMEFC_TELL			4										/* 敵の攻撃の予兆に出す吹き出し(白い丸に「!」) */
+#define TELL_VIEWTIME		1000									/* 予兆の「!」を出しておく時間(ms)。敵が殴るまで */
 #define AUTOGAGE_LOSTTIME	500										/* 目の前から敵がいなくなってから自動ゲージを消すまでの時間(ms) */
 #define TURNGAGE_JUSTTIME	300										/* ゲージ満タン後、ジャストで押せる時間(ms)。押さなければ自動で殴る */
 #define GUARD_HOLDTIME		300										/* Z をこれだけ押し続けると構える(ms)。短く押すと今までどおり攻撃をやめる */

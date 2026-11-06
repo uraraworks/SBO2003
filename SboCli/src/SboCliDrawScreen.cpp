@@ -26,6 +26,8 @@ void DrawCharLine		(int);										/* 指定ラインのキャラ描画 */
 void DrawChar2			(void);										/* キャラのエフェクトの描画 */
 void DrawChar3			(void);										/* キャラの名前等の描画 */
 void DrawETC			(void);										/* ゲージ等の描画 */
+static void DrawFrameRect	(int x, int y, int cx, int cy, COLORREF cl);	/* 1ドットの枠を描く */
+static void DrawGuardMark	(int x, int y);								/* 構えの盾マーク */
 void DrawObj			(void);										/* オブジェクトの描画 */
 void DrawEvent			(void);										/* イベント情報の描画 */
 void DrawMapEdit		(void);										/* マップ編集情報の描画 */
@@ -994,6 +996,11 @@ void DrawChar2(void)
 		y -= (anPosAddTblY[pChar->byDirection] * pChar->byDotMove);
 
 		y -= 8;
+		/* 自分のすぐ下の敵の予兆の「!」は、自分に重ならないように敵の体の上に出す */
+		if ((pChar->byComEfc == COMEFC_TELL) && (xTmp == 0) && (yTmp == -1) &&
+			((pChar->byNpcType == NPCTYPE_BATTLE1) || (pChar->byNpcType == NPCTYPE_BATTLE2))) {
+			y += 32;
+		}
 		nGrpSizeY = 32;
 		if (y < 0) {
 			nGrpSizeY += y;
@@ -1303,7 +1310,17 @@ void DrawChar3(void)
 		for (int j = 0; j < MAX_COUNTCHAREFC; j ++) {
 			PCHAREFCINFO pCharEfc = &pChar->aCharEfcInfo[j];
 			int nLen = SboTextWidth (pCharEfc->szMsg);
-			if (nLen) {
+			if (nLen == 0) {
+				continue;
+			}
+			if (pCharEfc->color & CHAREFC_BIG) {
+				/* 大きい文字(ジャスト・構えなど、見落とさないように) */
+				HFONT hFontEfc = (HFONT)SelectObject (hDC, g_hFontBasic);
+				TextOut2 (hDC, nameX - nLen * 8 / 2 + GetCharCenterX (pChar),
+						nameY - 12 + nEfcOfsY + pCharEfc->chY,
+						pCharEfc->szMsg, pCharEfc->color & 0x00FFFFFF);
+				SelectObject (hDC, hFontEfc);
+			} else {
 				TextOut2 (hDC, nameX - nLen * 6 / 2 + GetCharCenterX (pChar),
 						nameY - 8 + nEfcOfsY + pCharEfc->chY,
 						pCharEfc->szMsg, pCharEfc->color);
@@ -1491,6 +1508,10 @@ void DrawETC(void)
 			/* 溜まり中の周 */
 			g_pDibDrawMap->FillRect (x + 3, y + 3, nTmp, 3, aclLap[nLap]);
 		}
+		/* ジャストで押せる間は、ゲージの枠を黄色く光らせる */
+		if (IsTurnGageJust (pChar)) {
+			DrawFrameRect (x - 1, y - 1, 40, 14, RGB (255, 255, 64));
+		}
 		/* 5周目に入ったら、ゲージの右端にジャストの目印(ゴルフのインパクトのような小さな印) */
 		if (nLap >= TURNGAGE_LAPMAX - 1) {
 			g_pDibDrawMap->FillRect (x + 35, y + 1, 2, 7, IsTurnGageJust (pChar) ? RGB (255, 255, 64) : RGB (255, 255, 255));
@@ -1502,6 +1523,57 @@ void DrawETC(void)
 		}
 		g_bDraw = TRUE;
 	}
+
+	/* 構えている間：ゲージの場所に青い枠と、横に盾マーク(構えているのが一目で分かるように) */
+	if (g_bGuard) {
+		x = 256;
+		y = 256;
+		x -= (anPosAddTblX[pChar->byDirection] * pChar->byDotMove);
+		y -= (anPosAddTblY[pChar->byDirection] * pChar->byDotMove);
+		x -= 3;
+		y -= 16;
+		DrawFrameRect (x - 1, y - 1, 40, 14, RGB (90, 180, 255));
+		DrawGuardMark (x + 40, y - 2);
+		g_bDraw = TRUE;
+	}
+}
+
+
+/* ========================================================================= */
+/* 関数名：DrawFrameRect													 */
+/* 内容：1ドットの枠を描く													 */
+/* ========================================================================= */
+static void DrawFrameRect(int x, int y, int cx, int cy, COLORREF cl)
+{
+	g_pDibDrawMap->FillRect (x, y, cx, 1, cl);
+	g_pDibDrawMap->FillRect (x, y + cy - 1, cx, 1, cl);
+	g_pDibDrawMap->FillRect (x, y, 1, cy, cl);
+	g_pDibDrawMap->FillRect (x + cx - 1, y, 1, cy, cl);
+}
+
+
+/* ========================================================================= */
+/* 関数名：DrawGuardMark													 */
+/* 内容：構えの盾マーク(幅9×高さ12。白縁の青い盾に白い線)				 */
+/* ========================================================================= */
+static void DrawGuardMark(int x, int y)
+{
+	/* 1行ごとの左右の幅(下に行くほど細くなる盾の形) */
+	static const int anInset[12] = {0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 3, 4};
+	int i, nL, nW;
+
+	for (i = 0; i < 12; i ++) {
+		nL = anInset[i];
+		nW = 9 - nL * 2;
+		/* 白い縁 */
+		g_pDibDrawMap->FillRect (x + nL, y + i, nW, 1, RGB (255, 255, 255));
+		/* 中の青 */
+		if ((i > 0) && (i < 11) && (nW > 2)) {
+			g_pDibDrawMap->FillRect (x + nL + 1, y + i, nW - 2, 1, RGB (60, 140, 255));
+		}
+	}
+	/* 真ん中の白い線 */
+	g_pDibDrawMap->FillRect (x + 4, y + 2, 1, 7, RGB (255, 255, 255));
 }
 
 
