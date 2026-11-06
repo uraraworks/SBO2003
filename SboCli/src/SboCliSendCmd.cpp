@@ -120,6 +120,7 @@ void SendCMDTHROWSNOW		(void);									/* 雪を投げる */
 void SendCmdEFECTCHG		(BYTE, BOOL);							/* エフェクト変更 */
 void SendCmdRESURRECTION	(void);									/* 蘇生 */
 void SendCmdREQ_ATTACK		(DWORD dwTblID, BYTE byTurnLV);			/* 攻撃要求 */
+void SendCmdREQ_GUARD		(BOOL bGuard);							/* 構え(防御)の開始・終了 */
 
 /* サブゲーム用コマンド送信 */
 void SendCmdSubSETBOMB		(void);									/* 爆弾設置 */
@@ -2885,6 +2886,27 @@ void SendCmdREQ_ATTACK(
 
 	cliSock.Send ((PBYTE)pSendData, sizeof (CMDPARA_DATA4));
 	delete pSendData;
+}
+
+
+
+/* ========================================================================= */
+/* 関数名：	SendCmdREQ_GUARD												 */
+/* 内容：	コマンド送信(構え(防御)の開始・終了)							 */
+/* ========================================================================= */
+
+void SendCmdREQ_GUARD(
+	BOOL bGuard)		/* [in] TRUE:構える FALSE:やめる */
+{
+	CMDPARA_DATA1 SendData;
+
+	ZeroMemory (&SendData, sizeof (SendData));
+	SendData.byCmd		= CMD_REQ_GUARD;
+	SendData.pID		= g_pMyID;
+	SendData.byData		= bGuard ? 1 : 0;
+	SendData.dwTblID	= g_aCharInfo[g_nMyCharID]->dwTblID;
+
+	cliSock.Send ((PBYTE)&SendData, sizeof (SendData));
 }
 
 

@@ -12,6 +12,7 @@
 #include "ProcFunc/ProcFunc.h"
 #include "SboSvrRecvCmd.h"
 #include "SboSvrMagicProc.h"
+#include <map>
 
 /* ========================================================================= */
 /* 関数プロトタイプ宣言														 */
@@ -24,10 +25,11 @@ static	BOOL	BattleProc			(PCHARINFO, PCHARINFO);			/* 戦闘処理 */
 		BOOL	BattleProcWeapon	(PCHARINFO);					/* 武器処理 */
 		BOOL	BattleProcAtack		(PCHARINFO, PCHARINFO);			/* 戦闘処理(直接攻撃) */
 static	void	BattleProcAtackArea	(PCHARINFO, DWORD);				/* なぎ払い・貫通で周りの敵にも当てる */
+static	BOOL	BattleProcTell		(PCHARINFO, PMAPINFO, DWORD, BOOL);	/* 敵の攻撃の予兆「！」 */
 		void	ResurrectionBack	(PCHARINFO);					/* 復活位置で蘇生 */
 static	void	BattleProcMagic		(PCHARINFO, PCHARINFO, BYTE);	/* 戦闘処理(魔法) */
 static	int		GetWeponMin			(PCHARINFO);					/* 武器の減少値を取得 */
-static	int		DamageProc			(PCHARINFO, PCHARINFO, BOOL);	/* ダメージ量計算 */
+static	int		DamageProc			(PCHARINFO, PCHARINFO, BOOL, BOOL);	/* ダメージ量計算 */
 static	DWORD	GetAcquisitionGold	(PCHARINFO, PCHARINFO);			/* 獲得金額を計算 */
 static	DWORD	GetAcquisitionExp	(PCHARINFO, PCHARINFO);			/* 獲得経験値を計算 */
 static	void	AddGold				(PCHARINFO, DWORD, BOOL);		/* 所持金を追加 */
@@ -94,6 +96,12 @@ void BattleProcCheck(PCHARINFO pChar)
 
 	/* 規定時間以上経っている？ */
 	if (abs (timeGetTime () - pChar->dwLastBattle) < nTmp) {
+		/* 攻撃の少し前に、目の前のPCへ予兆「！」を出す */
+		BattleProcTell (pChar, pMap, (DWORD)nTmp, FALSE);
+		return;
+	}
+	/* 攻撃できる時間になってからPCが目の前に来た？ 予兆を出してから少し待って殴る */
+	if (BattleProcTell (pChar, pMap, (DWORD)nTmp, TRUE)) {
 		return;
 	}
 
@@ -620,6 +628,101 @@ Exit:
 }
 
 /* ========================================================================= */
+/* 関数名：	SetGuard / IsGuard												 */
+/* 内容：	構え(防御)の状態。キャラ番号ごとに、構えた時のプレイヤーIDを持つ	 */
+/*			(ログインし直して同じ番号を別の人が使っても引き継がないように)	 */
+/* ========================================================================= */
+static std::map<DWORD, DWORD> s_mapGuard;
+
+void SetGuard(PCHARINFO pChar, BOOL bGuard)
+{
+	if (bGuard) {
+		s_mapGuard[pChar->dwTblID] = pChar->pID;
+	} else {
+		s_mapGuard.erase (pChar->dwTblID);
+	}
+}
+
+BOOL IsGuard(PCHARINFO pChar)
+{
+	std::map<DWORD, DWORD>::iterator it;
+
+	it = s_mapGuard.find (pChar->dwTblID);
+	if (it == s_mapGuard.end ()) {
+		return FALSE;
+	}
+	if ((it->second != pChar->pID) || (pChar->wHP == 0)) {
+		s_mapGuard.erase (it);
+		return FALSE;
+	}
+	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：	BattleProcTell													 */
+/* 内容：	敵の攻撃の予兆：攻撃する ENEMYTELL_TIME 前に、頭の上へ「！」を出す	 */
+/*			目の前にPCがいる時だけ。1回の攻撃につき1回だけ出す				 */
+/* ========================================================================= */
+static BOOL BattleProcTell(PCHARINFO pChar, PMAPINFO pMap, DWORD dwWait, BOOL bLate)
+{
+	static std::map<DWORD, DWORD> s_mapTell;		/* キャラごとに「！」を出した時の dwLastBattle */
+	DWORD dwElapse, dwTell, dwX, dwY;
+	PDWORD pData;
+	int j, nCount;
+	PCHARINFO pCharTmp;
+	std::map<DWORD, DWORD>::iterator it;
+
+	/* 敵だけ */
+	if ((pChar->byNpcType != NPCTYPE_BATTLE1) && (pChar->byNpcType != NPCTYPE_BATTLE2)) {
+		return FALSE;
+	}
+	/* 待ち時間が短い敵は、半分経ったところで出す */
+	dwTell = ENEMYTELL_TIME;
+	if (dwTell > dwWait / 2) {
+		dwTell = dwWait / 2;
+	}
+	dwElapse = timeGetTime () - pChar->dwLastBattle;
+	if (!bLate && (dwElapse + dwTell < dwWait)) {
+		return FALSE;
+	}
+	/* この攻撃ではもう出した？ */
+	it = s_mapTell.find (pChar->dwTblID);
+	if ((it != s_mapTell.end ()) && (it->second == pChar->dwLastBattle)) {
+		return FALSE;
+	}
+
+	/* 目の前にPCがいる？ */
+	dwX = pChar->dwX + anPosAddTblX[pChar->byDirection];
+	dwY = pChar->dwY + anPosAddTblY[pChar->byDirection];
+	pData = pMap->paTblNoPC;
+	nCount = (int)pMap->dwCountTblNoPC;
+	for (j = 0; j < nCount; j ++) {
+		if (pData[j] == -1) {
+			break;
+		}
+		pCharTmp = g_aCharInfo[pData[j]];
+		if (((CheckCharX (pChar, dwX, pCharTmp->dwX) == FALSE) && ((CheckCharX (pCharTmp, pCharTmp->dwX, dwX) == FALSE))) ||
+			(dwY != pCharTmp->dwY)) {
+			continue;
+		}
+		if ((pCharTmp->wHP == 0) || (pCharTmp->byCharState == CHARSTATE_DEAD)) {
+			continue;
+		}
+		/* 攻撃できる時間を過ぎてから出した時は、ここから dwTell 待ってから殴る */
+		if (bLate) {
+			pChar->dwLastBattle = timeGetTime () - dwWait + dwTell;
+			if (pChar->dwLastBattle <= 1) {
+				pChar->dwLastBattle = 2;
+			}
+		}
+		s_mapTell[pChar->dwTblID] = pChar->dwLastBattle;
+		SendCmdADDCHAREFC (pChar->dwTblID, RGB (255, 64, 64), "！");
+		return TRUE;
+	}
+	return FALSE;
+}
+
+/* ========================================================================= */
 /* 関数名：	BattleProcAtackArea												 */
 /* 内容：	なぎ払い・貫通：狙った相手のほかに、武器の届くマスの敵にも当てる	 */
 /*			なぎ払い＝自分の左右のマス(目の前と合わせて3方向)				 */
@@ -726,7 +829,7 @@ static void BattleProcAtackArea(PCHARINFO pChar, DWORD dwMainTblID)
 BOOL BattleProcAtack(PCHARINFO pChar, PCHARINFO pCharTarget)
 {
 	PCHARINFO pCharTmp1, pCharTmp2;
-	BOOL bRet, bSPAtack, bMiss, bPC, bJust;
+	BOOL bRet, bSPAtack, bMiss, bPC, bJust, bGuard;
 	int nDamage;
 	DWORD dwSend;
 
@@ -766,6 +869,8 @@ BOOL BattleProcAtack(PCHARINFO pChar, PCHARINFO pCharTarget)
 	nDamage		= 0;
 	/* ジャスト（ゲージ満タンの瞬間に押した）？ 空振りせず、会心が出やすい */
 	bJust		= (pChar->byAtackRate == ATACKRATE_JUST);
+	/* 構えているPC？ 受けるダメージが半分になり、会心を受けない */
+	bGuard		= ((pCharTarget->byNpcType == NPCTYPE_INIT) && IsGuard (pCharTarget));
 	if (bJust) {
 		SendCmdADDCHAREFC (pChar->dwTblID, RGB (255, 255, 64), "ｼﾞｬｽﾄ!");
 	}
@@ -788,7 +893,7 @@ BOOL BattleProcAtack(PCHARINFO pChar, PCHARINFO pCharTarget)
 		SendCmdSYSMSG2 (pCharTmp1->pID, SYSMSG_ATACK1, pChar->pID, 0);
 
 	/* 会心の一撃？(普段は 2%、ジャストなら 30%) */
-	} else if ((genrand () % 100) >= (DWORD)(bJust ? 70 : 98)) {
+	} else if (!bGuard && ((genrand () % 100) >= (DWORD)(bJust ? 70 : 98))) {
 		BYTE byNo;
 		DWORD dwID;
 
@@ -820,7 +925,10 @@ BOOL BattleProcAtack(PCHARINFO pChar, PCHARINFO pCharTarget)
 	/* 命中？ */
 	if (!bMiss) {
 		/* ダメージ量の計算 */
-		nDamage = DamageProc (pChar, pCharTarget, bSPAtack);
+		nDamage = DamageProc (pChar, pCharTarget, bSPAtack, bGuard);
+		if (bGuard) {
+			SendCmdADDCHAREFC (pCharTarget->dwTblID, RGB (120, 200, 255), "ｶﾞｰﾄﾞ");
+		}
 	}
 
 	/* 攻撃命中でダメージあり？ */
@@ -1041,7 +1149,7 @@ Exit:
 /* 内容：ダメージ量計算														 */
 /* 日付：2003/10/02															 */
 /* ========================================================================= */
-static int DamageProc(PCHARINFO pChar, PCHARINFO pCharTarget, BOOL bSPAtack)
+static int DamageProc(PCHARINFO pChar, PCHARINFO pCharTarget, BOOL bSPAtack, BOOL bGuard)
 {
 	int nTmp, nTmp2, nAT, nDF;
 
@@ -1079,6 +1187,10 @@ static int DamageProc(PCHARINFO pChar, PCHARINFO pCharTarget, BOOL bSPAtack)
 		nTmp -= (nTmp * ((genrand () % 16) + 1) / 100);
 	}
 	nTmp = max (nTmp, 0);
+	/* 構えている相手には半分 */
+	if (bGuard) {
+		nTmp /= 2;
+	}
 
 	/* ノーダメージ？(おまけの1ダメージはゲージ満タンの攻撃だけ。早撃ちの連打で削れないように) */
 	if ((nTmp == 0) && ((pChar->byAtackRate == 0) || (pChar->byAtackRate >= 100))) {

@@ -27,6 +27,8 @@
 #define TURNGAGE_LAP		20										/* ターンゲージ1周の%（1周溜まると早撃ちでき、威力は周の数×この%） */
 #define TURNGAGE_LAPMAX		(100 / TURNGAGE_LAP)					/* ターンゲージが満タンになる周の数 */
 #define TURNGAGE_JUSTTIME	300										/* ゲージ満タン後、ジャストで押せる時間(ms)。押さなければ自動で殴る */
+#define GUARD_HOLDTIME		300										/* Z をこれだけ押し続けると構える(ms)。短く押すと今までどおり攻撃をやめる */
+#define ENEMYTELL_TIME		1000									/* 敵が攻撃する何ms前に予兆「！」を出すか */
 #define ATACKRATE_AREA		50										/* なぎ払い・貫通で、狙った相手以外に当たる時の威力(%) */
 #define ATACKRATE_JUST		101										/* 攻撃要求の威力欄でジャストを表す値（威力は100%として扱う） */
 #define MAX_CHARNAME		15										/* 最大キャラ名文字数（表示幅の上限は MAX_CHARNAME_WIDTH） */
@@ -250,6 +252,8 @@ enum {
 	CMD_WEBACCOUNT,													/* ブラウザ版のアカウント関係 */
 /* 以下、管理者用（CMD_WEBACCOUNT より後ろに足す） */
 	CMD_ADMINUNDO,													/* 管理者画面の「元に戻す」 */
+/* 以下、プレイヤー用（番号をずらさないよう最後に足す。管理者用の判定から外すこと） */
+	CMD_REQ_GUARD,													/* 構え(防御)の開始・終了 */
 	CMD_MAX
 };
 

@@ -216,11 +216,64 @@ const KEYPROC KeyProcTbl[] = {
 /* 内容：キー入力処理														 */
 /* 日付：2003/05/01															 */
 /* ========================================================================= */
+/* ========================================================================= */
+/* 関数名：	GuardStart / GuardEnd / CanGuard								 */
+/* 内容：	構え(防御)：戦闘モードで Z を GUARD_HOLDTIME 押し続けると構える	 */
+/*			構えている間は受けるダメージが半分・会心を受けない。ゲージは止まる	 */
+/* ========================================================================= */
+static DWORD m_dwTimeZDown = 0;		/* Z を押し始めた時間 */
+
+static BOOL CanGuard(void)
+{
+	PCHARINFO pChar;
+
+	if ((g_nMyCharID < 0) || g_dwActiveMsgID || g_bSpeech || (g_bBattleMode == FALSE)) {
+		return FALSE;
+	}
+	if ((g_pMapInfo == NULL) || ((g_pMapInfo->byFlg & MAPFLG_BATTLE) == 0)) {
+		return FALSE;
+	}
+	pChar = g_aCharInfo[g_nMyCharID];
+	if ((pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0) || pChar->dwTimeTurnMagicLV) {
+		return FALSE;
+	}
+	if (pChar->abySubStatus[0] != 0) {
+		return FALSE;
+	}
+	return TRUE;
+}
+
+static void GuardStart(void)
+{
+	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
+
+	g_bGuard = TRUE;
+	g_dwGuardGageElapse = 0;
+	if (pChar->dwTimeTurnLV) {
+		g_dwGuardGageElapse = timeGetTime () - pChar->dwTimeTurnLV;
+	}
+	SendCmdREQ_GUARD (TRUE);
+	g_bDraw = TRUE;
+}
+
+void GuardEnd(void)
+{
+	if (!g_bGuard) {
+		return;
+	}
+	g_bGuard = FALSE;
+	SendCmdREQ_GUARD (FALSE);
+	g_bDraw = TRUE;
+}
+
 void KeyProc(void)
 {
-	BYTE byEvent = 0, byCode;
+	BYTE byEvent = 0, byCode, byKeyOnZBack;
 
 	if (!g_bWindowActive) {
+		/* 画面から離れたら構えもやめる(キーを離したのが分からないため) */
+		GuardEnd ();
+		m_dwTimeZDown = 0;
 		return;
 	}
 
@@ -291,6 +344,7 @@ void KeyProc(void)
 		byCode = 'A';
 	}
 
+	byKeyOnZBack = m_byKeyOnZ;
 	/* Zキー押した */
 	if ((g_abyKeyState['Z'] & 0x80) && (m_byKeyOnZ == 0)) {
 		m_byKeyOnZ = 1;
@@ -406,6 +460,29 @@ void KeyProc(void)
 		m_byKeyOnCtrl = 0;
 		byEvent = KEY_UP;
 		byCode = VK_CONTROL;
+	}
+
+	/* 構え：Z を押し続けたら構え、離したらやめる */
+	if (m_byKeyOnZ && !byKeyOnZBack) {
+		m_dwTimeZDown = timeGetTime ();
+	}
+	if (m_byKeyOnZ) {
+		if (g_bGuard) {
+			if (!CanGuard ()) {
+				GuardEnd ();
+			}
+		} else if (m_dwTimeZDown && (timeGetTime () - m_dwTimeZDown >= GUARD_HOLDTIME) && CanGuard ()) {
+			GuardStart ();
+		}
+	} else if (byKeyOnZBack) {
+		m_dwTimeZDown = 0;
+		if (g_bGuard) {
+			GuardEnd ();
+			/* 構えをやめた時は、Z を離した時の「攻撃をやめる」はしない */
+			if ((byEvent == KEY_UP) && (byCode == 'B')) {
+				byEvent = 0;
+			}
+		}
 	}
 
 	/* キーイベント無し？ */
@@ -7734,17 +7811,18 @@ ChatMsgProc_END:
 /* 内容：スマホの仮想パッドで今押して効くボタンを返す（ブラウザ版）			 */
 /*		 シェル HTML が効かないボタンを隠すのに使う。KeyProc・KeyProcMove・	 */
 /*		 KeyProcDead・KeyProcMSG が実際にキーを使う条件に合わせている		 */
-/*		 戻り値：1=調べる(S) 2=表示(Tab) 4=戦闘(Ctrl) 8=Sが話すになる の組み合わせ */
+/*		 戻り値：1=調べる(S) 2=表示(Tab) 4=戦闘(Ctrl) 8=Sが話すになる 16=戦闘モード中 の組み合わせ */
 /* ========================================================================= */
 #define PADSTATE_SIRABERU	(0x01)
 #define PADSTATE_VIEW		(0x02)
 #define PADSTATE_BATTLE		(0x04)
 #define PADSTATE_HANASU		(0x08)	/* 目の前に話せる相手がいる（「調べる」ボタンを「話す」と表示） */
+#define PADSTATE_BATTLEMODE	(0x10)	/* 戦闘モード中（「決定」を「攻撃」、「キャンセル」を「構え」と表示） */
 
 extern "C" EMSCRIPTEN_KEEPALIVE int SboWebGetPadState(void)
 {
 	PCHARINFO pChar;
-	int nRet;
+	int nRet, nBattle;
 
 	/* マップにいない（ログイン・キャラ選択など）時はどれも効かない */
 	if ((g_byGameState < GAMESTATE_MOVE) || (g_byGameState == GAMESTATE_CONNECTLOST)) {
@@ -7763,15 +7841,21 @@ extern "C" EMSCRIPTEN_KEEPALIVE int SboWebGetPadState(void)
 
 	/* ウィンドウ（コマンド・道具・お店など）を開いている間は、そのウィンドウにキーが渡る。
 	   S はメッセージ（NPC のセリフなど）を読み進める時だけ使える */
+	pChar = g_aCharInfo[g_nMyCharID];
+	/* 戦闘モード中（戦闘コマンドを開いている間も、ボタンの名前と隠すボタンは変えない） */
+	nBattle = 0;
+	if ((g_pMapInfo->byFlg & MAPFLG_BATTLE) && g_bBattleMode && (pChar->abySubStatus[0] == 0) &&
+		(pChar->byCharState != CHARSTATE_DEAD)) {
+		nBattle = PADSTATE_BATTLEMODE;
+	}
 	if (g_dwActiveMsgID) {
 		int nID = GetWindowID (g_dwActiveMsgID);
 		if ((nID >= 0) && (nID < g_WndInfo.GetSize ()) && (g_WndInfo[nID]->nType == WNDTYPE_MSG)) {
-			return PADSTATE_SIRABERU;
+			return PADSTATE_SIRABERU | nBattle;
 		}
-		return 0;
+		return nBattle;
 	}
 
-	pChar = g_aCharInfo[g_nMyCharID];
 	/* 死んでいる間は表示の切り替えだけ */
 	if (pChar->byCharState == CHARSTATE_DEAD) {
 		return PADSTATE_VIEW;
@@ -7799,7 +7883,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE int SboWebGetPadState(void)
 	if (g_pMapInfo->byFlg & MAPFLG_BATTLE) {
 		nRet |= PADSTATE_BATTLE;
 	}
-	return nRet;
+	return nRet | nBattle;
 }
 #endif
 

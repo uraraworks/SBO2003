@@ -10,6 +10,8 @@
 /* 関数プロトタイプ宣言														 */
 /* ========================================================================= */
 extern void BattleProcCheck		(PCHARINFO);								/* 戦闘行動チェック */
+extern void SetGuard			(PCHARINFO, BOOL);							/* 構え(防御)の開始・終了 */
+extern BOOL IsGuard				(PCHARINFO);								/* 構えているか */
 extern BOOL BattleProc			(DWORD, DWORD);								/* 戦闘処理 */
 extern BOOL BattleProcWeapon	(PCHARINFO);								/* 武器処理 */
 extern BOOL DamageAfterProcPC	(PCHARINFO, PCHARINFO);						/* ダメージ受けた後の処理(PC) */
