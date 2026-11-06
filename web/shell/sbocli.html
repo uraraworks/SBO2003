@@ -195,14 +195,16 @@
 
 	/* スマホ用の部品は PC では出さない */
 	#sbo-pad,
-	#sbo-chat-area,
+	#sbo-chat-box,
+	#sbo-chat-open,
 	#sbo-chat-sheet {
 		display: none;
 	}
 
 	/* ===================================================================
 	   スマホ（タッチ操作の端末）：body.sbo-pad
-	   縦持ち … ゲーム画面 → パッド → チャットログを縦に積む
+	   縦持ち … ゲーム画面 → チャットログ → パッドを縦に積む
+	            （親指が届きやすい一番下にパッド。ログはゲーム画面のすぐ下で読みやすく）
 	   横持ち … スティック | ゲーム画面 | ボタン の 3 列
 	   =================================================================== */
 	body.sbo-pad {
@@ -221,7 +223,8 @@
 		flex-direction: column;
 	}
 	body.sbo-pad #sbo-wrap {
-		flex: none;
+		flex: 1 1 auto;
+		min-height: 0;
 		padding: 0;
 		padding-top: env(safe-area-inset-top);
 		gap: 0;
@@ -248,34 +251,98 @@
 	body.sbo-pad #sbo-pad {
 		display: flex;
 		width: 100%;
-		height: var(--pad-h);
+		flex: none;
+		/* iPhone の下のホームバー（スワイプでアプリ切り替え）に指が掛からないよう、その分を足す */
+		height: calc(var(--pad-h) + env(safe-area-inset-bottom));
 		box-sizing: border-box;
 		justify-content: space-between;
 		align-items: center;
-		padding: 8px calc(18px + env(safe-area-inset-right)) 8px calc(18px + env(safe-area-inset-left));
+		padding: 8px calc(18px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left));
 		background: rgba(16, 18, 22, 0.96);
 		border-top: 1px solid var(--border);
 		border-bottom: 1px solid var(--border);
 		touch-action: none;
 	}
-	/* 縦持ちのチャットログ（パッドの下の残り全部） */
 	/* 今押しても効かないボタン（戦闘できないマップの「戦闘」、コマンドを開いている間の
 	   「調べる」など）は隠す。ほかのボタンの位置が変わらないよう場所は空けておく */
 	body.sbo-pad #sbo-pad button.sbo-pad-off,
-	body.sbo-pad #sbo-pad button.sbo-pad-battle-off {
+	body.sbo-pad #sbo-pad button.sbo-pad-battle-off,
+	body.sbo-pad #sbo-chat-open.sbo-pad-battle-off {
 		visibility: hidden;
 	}
-	body.sbo-pad #sbo-chat-area {
+	/* 縦持ちのチャットログ（ゲーム画面とパッドの間の残り全部） */
+	body.sbo-pad #sbo-chat-box {
 		display: block;
+		position: relative;
 		flex: 1 1 auto;
+		align-self: stretch;
 		min-height: 0;
+		background: rgba(10, 12, 16, 0.9);
+	}
+	body.sbo-pad #sbo-chat-area {
+		position: absolute;
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
 		overflow-y: auto;
 		touch-action: pan-y;
 		-webkit-user-select: text;
 		user-select: text;
-		background: rgba(10, 12, 16, 0.9);
-		padding: 8px calc(12px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left));
+		padding: 8px calc(12px + env(safe-area-inset-right)) 6px calc(12px + env(safe-area-inset-left));
+		box-sizing: border-box;
 		font-size: 13px;
+		line-height: normal;
+	}
+	/* ログの下端の「発言する…」。タップでチャットのシートを開く */
+	#sbo-chat-bar {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		width: 100%;
+		height: 36px;
+		margin-top: 6px;
+		padding: 0 12px;
+		box-sizing: border-box;
+		border: 2px solid rgba(255, 255, 255, 0.35);
+		border-radius: 18px;
+		background: rgba(255, 255, 255, 0.08);
+		color: rgba(255, 255, 255, 0.6);
+		font: 13px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		text-align: left;
+		-webkit-tap-highlight-color: transparent;
+		-webkit-user-select: none;
+		user-select: none;
+		cursor: text;
+	}
+	#sbo-chat-bar:active {
+		background: rgba(240, 184, 74, 0.25);
+	}
+	/* マップにいない間（ログイン画面・切断後）は押せないので出さない */
+	#sbo-chat-bar:disabled {
+		display: none;
+	}
+	.sbo-chat-bar-icon {
+		font-size: 15px;
+	}
+	/* 上に遡っている間だけ右下に出す「↓ 最新へ」 */
+	#sbo-chat-latest {
+		display: none;
+		position: absolute;
+		right: calc(10px + env(safe-area-inset-right));
+		bottom: 8px;
+		z-index: 2;
+		padding: 6px 12px;
+		border: 1px solid rgba(255, 255, 255, 0.4);
+		border-radius: 16px;
+		background: rgba(30, 34, 42, 0.95);
+		color: #fff;
+		font: bold 12px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		-webkit-tap-highlight-color: transparent;
+		cursor: pointer;
+	}
+	#sbo-chat-box.sbo-scrolled #sbo-chat-latest {
+		display: block;
 	}
 
 	@media (orientation: landscape) {
@@ -300,11 +367,40 @@
 		body.sbo-pad .sbo-buttons {
 			order: 1;
 			grid-template-columns: repeat(2, 54px);
+			grid-template-areas: "s tab" "ctrl z" "x x";
 			margin: 0 calc(12px + env(safe-area-inset-right)) 0 auto;
 		}
 		/* 横持ちはゲーム画面にログが流れるので、ログ欄は出さずシートで読む */
-		body.sbo-pad #sbo-chat-area {
+		body.sbo-pad #sbo-chat-box {
 			display: none;
+		}
+		/* チャットは右下の隅（ボタンの下。左下の📷と対になる） */
+		body.sbo-pad #sbo-chat-open {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			position: fixed;
+			right: calc(12px + env(safe-area-inset-right));
+			bottom: calc(10px + env(safe-area-inset-bottom));
+			z-index: 800;
+			width: 44px;
+			height: 44px;
+			padding: 0;
+			border: 2px solid rgba(255, 255, 255, 0.4);
+			border-radius: 50%;
+			background: rgba(255, 255, 255, 0.12);
+			color: #fff;
+			font-size: 20px;
+			line-height: 1;
+			touch-action: manipulation;
+			-webkit-tap-highlight-color: transparent;
+			cursor: pointer;
+		}
+		body.sbo-pad #sbo-chat-open:disabled {
+			display: none;
+		}
+		body.sbo-pad #sbo-chat-open:active {
+			background: rgba(240, 184, 74, 0.75);
 		}
 	}
 
@@ -404,15 +500,23 @@
 		background: rgba(240, 192, 64, 0.45);
 	}
 
-	/* ---- ボタン ---- */
+	/* ---- ボタン ----
+	   レトロ・ピクセル風：角の小さい四角に、左上が明るく右下が暗い 2px の段差で立体に見せる。
+	   全部「線画アイコン＋文字＋キー名」にそろえ、よく押す決定は右下に 2 マス分の大きさで金色 */
 	.sbo-buttons {
 		display: grid;
 		grid-template-columns: repeat(3, 54px);
+		grid-template-areas: "s tab ctrl" "z x x";
 		gap: 8px;
 		flex: none;
 	}
+	.sbo-b-s { grid-area: s; }
+	.sbo-b-tab { grid-area: tab; }
+	.sbo-b-ctrl { grid-area: ctrl; }
+	.sbo-b-z { grid-area: z; }
+	.sbo-b-x { grid-area: x; }
 	.sbo-buttons button {
-		width: 54px;
+		width: 100%;
 		height: 50px;
 		display: flex;
 		flex-direction: column;
@@ -420,41 +524,68 @@
 		justify-content: center;
 		gap: 2px;
 		padding: 0;
-		border: 2px solid rgba(255, 255, 255, 0.5);
-		border-radius: 14px;
-		background: rgba(255, 255, 255, 0.22);
+		border: 2px solid #07080b;
+		border-radius: 4px;
+		background: #3b404c;
+		box-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.32), inset -2px -2px 0 rgba(0, 0, 0, 0.45);
 		color: #fff;
 		font: bold 11px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.6);
 		-webkit-tap-highlight-color: transparent;
 		touch-action: none;
 		-webkit-user-select: none;
 		user-select: none;
 		cursor: pointer;
 	}
+	/* 押している間は段差を逆にして、へこんで見せる */
 	.sbo-buttons button.sbo-pressed {
-		background: rgba(240, 184, 74, 0.75);
+		background: #2c3039;
+		box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.5), inset -2px -2px 0 rgba(255, 255, 255, 0.12);
 	}
+	/* 決定は横長なので、アイコンと文字を横に並べる */
 	.sbo-buttons button.sbo-main {
-		background: rgba(240, 184, 74, 0.32);
+		flex-direction: row;
+		gap: 6px;
+		background: #b98a2c;
+		box-shadow: inset 2px 2px 0 rgba(255, 236, 170, 0.6), inset -2px -2px 0 rgba(90, 55, 0, 0.6);
+		font-size: 13px;
 	}
 	.sbo-buttons button.sbo-main.sbo-pressed {
-		background: rgba(240, 184, 74, 0.85);
+		background: #8f6a1f;
+		box-shadow: inset 2px 2px 0 rgba(60, 35, 0, 0.6), inset -2px -2px 0 rgba(255, 236, 170, 0.25);
 	}
 	.sbo-buttons button:disabled {
 		opacity: 0.35;
 	}
-	.sbo-btn-icon {
-		font-size: 16px;
-		line-height: 1;
+	.sbo-btn-svg {
+		width: 16px;
+		height: 16px;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 2.4;
+		stroke-linecap: square;
+		stroke-linejoin: miter;
+		filter: drop-shadow(1px 1px 0 rgba(0, 0, 0, 0.6));
+	}
+	.sbo-main .sbo-btn-svg {
+		width: 18px;
+		height: 18px;
+	}
+	.sbo-main .sbo-btn-key {
+		align-self: flex-end;
+		margin-bottom: 6px;
+	}
+	.sbo-buttons button span {
+		white-space: nowrap;
 	}
 	.sbo-btn-label {
-		white-space: nowrap;
-		letter-spacing: -0.06em;
+		font-size: 10px;
+		letter-spacing: -0.08em;
 	}
 	.sbo-btn-key {
 		font-size: 8px;
 		font-weight: normal;
-		opacity: 0.55;
+		opacity: 0.6;
 	}
 
 	/* ---- チャット入力用のシート（下からせり上がる） ---- */
@@ -1133,15 +1264,17 @@
 			<div class="sbo-dpad-arm sbo-dpad-right" data-dir="3"><span>▶</span></div>
 			<div class="sbo-dpad-center"></div>
 		</div>
+		<!-- ボタンは全部「線画アイコン＋文字＋キー名」にそろえる。決定は右下に大きく -->
 		<div class="sbo-buttons">
-			<button type="button" data-vk="90"><span class="sbo-btn-icon">✕</span><span class="sbo-btn-label" id="sbo-pad-z-label" style="font-size:10px">キャンセル</span><span class="sbo-btn-key">Z</span></button>
-			<button type="button" data-vk="88" class="sbo-main"><span class="sbo-btn-icon">○</span><span id="sbo-pad-x-label">決定</span><span class="sbo-btn-key">X</span></button>
-			<button type="button" data-vk="83" data-pad-need="1" data-pad-hide-battle="1"><span id="sbo-pad-s-label">調べる</span><span class="sbo-btn-key">S</span></button>
-			<button type="button" data-vk="9" data-pad-need="2" data-pad-hide-battle="1">表示<span class="sbo-btn-key">Tab</span></button>
-			<button type="button" data-vk="17" data-pad-need="4">戦闘<span class="sbo-btn-key">Ctrl</span></button>
-			<button type="button" id="sbo-chat-open" data-pad-hide-battle="1" disabled><span class="sbo-btn-icon">💬</span>チャット</button>
+			<button type="button" class="sbo-b-s" data-vk="83" data-pad-need="1" data-pad-hide-battle="1"><svg class="sbo-btn-svg" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="M14.5 14.5L20 20"/></svg><span id="sbo-pad-s-label">調べる</span><span class="sbo-btn-key">S</span></button>
+			<button type="button" class="sbo-b-tab" data-vk="9" data-pad-need="2" data-pad-hide-battle="1"><svg class="sbo-btn-svg" viewBox="0 0 24 24"><path d="M5 6h14M5 12h14M5 18h14"/></svg><span>表示</span><span class="sbo-btn-key">Tab</span></button>
+			<button type="button" class="sbo-b-ctrl" data-vk="17" data-pad-need="4"><svg class="sbo-btn-svg" viewBox="0 0 24 24"><path d="M18 3h3v3L9 18l-3-3zM5 14l5 5M4 20l2-2"/></svg><span>戦闘</span><span class="sbo-btn-key">Ctrl</span></button>
+			<button type="button" class="sbo-b-z" data-vk="90"><svg class="sbo-btn-svg" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg><span class="sbo-btn-label" id="sbo-pad-z-label">キャンセル</span><span class="sbo-btn-key">Z</span></button>
+			<button type="button" class="sbo-b-x sbo-main" data-vk="88"><svg class="sbo-btn-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/></svg><span id="sbo-pad-x-label">決定</span><span class="sbo-btn-key">X</span></button>
 		</div>
 	</div>
+	<!-- 横持ちのチャットボタン（縦持ちはログ欄の下端の「発言する…」） -->
+	<button type="button" id="sbo-chat-open" data-pad-hide-battle="1" disabled title="チャット">💬</button>
 	<div id="sbo-status">読み込み中...</div>
 </div>
 <footer class="site-footer">
@@ -1174,7 +1307,15 @@
 	})();
 </script>
 <!-- スマホ縦持ちのチャットログ -->
-<div id="sbo-chat-area"></div>
+<div id="sbo-chat-box">
+	<div id="sbo-chat-area">
+		<div id="sbo-chat-lines"></div>
+		<!-- ログの最後の行のように置く。一番下まで見ている（＝新しい行に追従している）時だけ見える -->
+		<button type="button" id="sbo-chat-bar" disabled><span class="sbo-chat-bar-icon">💬</span><span class="sbo-chat-bar-text">発言する…</span></button>
+	</div>
+	<!-- 上に遡っている間だけ出す -->
+	<button type="button" id="sbo-chat-latest">↓ 最新へ</button>
+</div>
 
 <!-- PC のチャットパネル -->
 <div id="sbo-chat-panel">
@@ -1826,7 +1967,10 @@
 	var chatPanel = document.getElementById('sbo-chat-panel');
 	var chatLog = document.getElementById('sbo-chat-log');
 	var chatInput = document.getElementById('sbo-chat-input');
-	var chatArea = document.getElementById('sbo-chat-area');
+	var chatArea = document.getElementById('sbo-chat-area');		/* 縦持ちのログ欄（スクロールする枠） */
+	var chatLines = document.getElementById('sbo-chat-lines');	/* その中の行（最後に「発言する…」が続く） */
+	var chatBox = document.getElementById('sbo-chat-box');
+	var chatBar = document.getElementById('sbo-chat-bar');
 	var sheet = document.getElementById('sbo-chat-sheet');
 	var sheetLog = document.getElementById('sbo-sheet-log');
 	var sheetInput = document.getElementById('sbo-sheet-input');
@@ -1923,15 +2067,24 @@
 		line.appendChild(m);
 		return line;
 	}
-	/* 下端を見ている時だけ新しい行に追従する */
+	/* 行を入れる箱と、スクロールする枠（縦持ちのログ欄だけ別。ほかは同じ） */
+	function scrollerOf(box) {
+		return box === chatLines ? chatArea : box;
+	}
+	function atBottom(sc) {
+		return sc.scrollHeight - sc.scrollTop - sc.clientHeight < 8;
+	}
+	/* 下端を見ている時だけ新しい行に追従する。
+	   縦持ちのログ欄は下端に「発言する…」があるので、それが見えている＝追従している */
 	function appendTo(box, entry) {
-		var follow = box.scrollHeight - box.scrollTop - box.clientHeight < 8;
+		var sc = scrollerOf(box);
+		var follow = atBottom(sc);
 		box.appendChild(makeLine(entry));
 		while (box.children.length > CHAT_LOG_MAX) {
 			box.removeChild(box.firstChild);
 		}
 		if (follow) {
-			box.scrollTop = box.scrollHeight;
+			sc.scrollTop = sc.scrollHeight;
 		}
 	}
 	function renderAll(box) {
@@ -1939,8 +2092,30 @@
 		for (var i = 0; i < chatLogs.length; i ++) {
 			box.appendChild(makeLine(chatLogs[i]));
 		}
-		box.scrollTop = box.scrollHeight;
+		var sc = scrollerOf(box);
+		sc.scrollTop = sc.scrollHeight;
 	}
+	/* 縦持ち：ログ欄はゲーム画面とパッドの間に置く（親指が届く一番下をパッドにする） */
+	if (usePad) {
+		var padEl = document.getElementById('sbo-pad');
+		padEl.parentNode.insertBefore(chatBox, padEl);
+	}
+	/* 上に遡っている間は「↓ 最新へ」を出す */
+	function updateChatLatest() {
+		chatBox.classList.toggle('sbo-scrolled', !atBottom(chatArea));
+	}
+	chatArea.addEventListener('scroll', updateChatLatest, {passive: true});
+	window.addEventListener('resize', function () {
+		/* 画面の向きや大きさが変わって枠が縮んでも、追従していたなら下端のままにする */
+		if (!chatBox.classList.contains('sbo-scrolled')) {
+			chatArea.scrollTop = chatArea.scrollHeight;
+		}
+		updateChatLatest();
+	});
+	document.getElementById('sbo-chat-latest').addEventListener('click', function () {
+		chatArea.scrollTop = chatArea.scrollHeight;
+		updateChatLatest();
+	});
 
 	/* ---- ログをブラウザに覚えておく ----
 	   切断されるとページを読み直すまで遊べず、読み直すとログが消えてしまうので、
@@ -2005,7 +2180,7 @@
 		if (chatLogs.length > 0) {
 			chatSepPending = true;
 			renderAll(chatLog);
-			renderAll(chatArea);
+			renderAll(chatLines);
 		}
 	})();
 
@@ -2018,7 +2193,7 @@
 		if (chatSaveLines.length > CHAT_SAVE_MAX) {
 			chatSaveLines.shift();
 		}
-		appendTo(usePad ? chatArea : chatLog, entry);
+		appendTo(usePad ? chatLines : chatLog, entry);
 		if (sheet.classList.contains('sbo-open')) {
 			appendTo(sheetLog, entry);
 		}
@@ -2492,6 +2667,9 @@
 	chatOpenBtn.addEventListener('click', function () {
 		openSheet();
 	});
+	chatBar.addEventListener('click', function () {
+		openSheet();
+	});
 	document.getElementById('sbo-sheet-close').addEventListener('click', closeSheet);
 	/* キーボードに隠れないようにシートを持ち上げる */
 	if (window.visualViewport) {
@@ -2518,9 +2696,13 @@
 		}
 		document.body.classList.toggle('sbo-on-map', onMap);
 		chatOpenBtn.disabled = !onMap;
-		/* 隠れている間に戻した前回のログは下端に合わせられないので、出した時に合わせる */
+		chatBar.disabled = !onMap;
+		/* 隠れている間に戻した前回のログは下端に合わせられないので、出した時に合わせる。
+		   縦持ちは「発言する…」が出て高さが変わるので、こちらも下端に合わせ直す */
 		if (onMap) {
 			chatLog.scrollTop = chatLog.scrollHeight;
+			chatArea.scrollTop = chatArea.scrollHeight;
+			updateChatLatest();
 		}
 		if (!onMap && sheet.classList.contains('sbo-open')) {
 			closeSheet();
@@ -2571,7 +2753,7 @@
 	   チャット・表示・調べるは戦闘に集中できるよう隠す（戦闘モードを解除すれば出る） */
 	(function () {
 		var needButtons = document.querySelectorAll('#sbo-pad button[data-pad-need]');
-		var hideButtons = document.querySelectorAll('#sbo-pad button[data-pad-hide-battle]');
+		var hideButtons = document.querySelectorAll('#sbo-pad button[data-pad-hide-battle], #sbo-chat-open');
 		var sLabel = document.getElementById('sbo-pad-s-label');
 		var xLabel = document.getElementById('sbo-pad-x-label');
 		var zLabel = document.getElementById('sbo-pad-z-label');
