@@ -884,6 +884,8 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 
 		/* ターンゲージ溜まり中？(連続攻撃もここで止める) */
 		} else if ((pChar->byTurnLV > 0) || pChar->dwTimeTurnLV) {
+			/* 目の前の敵で自動で溜め直さないように覚えておく(離れるか別の敵が来るまで) */
+			g_dwAutoGageSuppress = pChar->dwAtackTblID;
 			CancelTurnGage (pChar);
 			SAFE_DELETE (g_pTargetSelectInfo);
 			SendCmdTARGETCHAR ((DWORD)-1);
