@@ -1634,11 +1634,16 @@ Exit:
 /* 日付：	2006/03/12														 */
 /* ========================================================================= */
 
+BOOL	g_bAutoGage				= FALSE;		/* 目の前の敵で自動で溜め始めたゲージ(相手を選んだゲージは FALSE) */
+DWORD	g_dwAutoGageLastFront	= 0;			/* 自動ゲージで最後に目の前に敵がいた時間 */
+DWORD	g_dwAutoGageSuppress	= (DWORD)-1;	/* Z でやめた相手(目の前から離れるまで自動で溜め直さない) */
+
 void StartTurnGage(PCHARINFO pChar, DWORD dwAtackTblID)
 {
 	pChar->byTurnLV		= 0;
 	pChar->dwAtackTblID	= dwAtackTblID;
 	pChar->dwTimeTurnLV = timeGetTime ();
+	g_bAutoGage			= FALSE;
 }
 
 
@@ -1783,12 +1788,17 @@ BOOL IsTurnGageJust(PCHARINFO pChar)
 /*			止める時は B キー（今までどおりゲージのキャンセル）				 */
 /* ========================================================================= */
 
+DWORD	g_dwTurnGageContinue = 0;		/* 殴って次のゲージを溜め始めた時間(押すのが遅れた X でコマンドを開かないように) */
+
 void ContinueTurnGage(PCHARINFO pChar)
 {
 	DWORD dwAtackTblID;
+	BOOL bAutoGage;
 
 	dwAtackTblID = pChar->dwAtackTblID;
+	bAutoGage = g_bAutoGage;
 	CancelTurnGage (pChar);
+	g_dwTurnGageContinue = timeGetTime ();
 
 	/* 弓（相手を決めずに撃つ）は続けない */
 	if (dwAtackTblID == (DWORD)-1) {
@@ -1803,6 +1813,7 @@ void ContinueTurnGage(PCHARINFO pChar)
 		return;
 	}
 	StartTurnGage (pChar, dwAtackTblID);
+	g_bAutoGage = bAutoGage;
 }
 
 

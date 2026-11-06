@@ -75,6 +75,7 @@ void KeyProcSUBWAR_TURN_DIFENCE_WITCH2		(PWNDINFO, BYTE, BYTE);		/* 戦場ゲー
 void KeyProcSUBWAR_TURN_MAGIC_WITCH			(PWNDINFO, BYTE, BYTE);		/* 戦場ゲーム：魔法：魔法使い */
 void KeyProcSUBWAR_TURN_MAGIC_TARGET		(PWNDINFO, BYTE, BYTE);		/* 戦場ゲーム：魔法対象者選択 */
 void KeyProcSUBWAR_TURN_MAGIC_PRIEST		(PWNDINFO, BYTE, BYTE);		/* 戦場ゲーム：魔法：僧侶 */
+static BOOL ShotTurnGage						(PCHARINFO);				/* ゲージが溜まっていれば殴る(ジャスト・早撃ち) */
 void KeyProcBATTLE_COMMAND					(PWNDINFO, BYTE, BYTE);		/* 戦闘：コマンド */
 void KeyProcBATTLE_TARGET					(PWNDINFO, BYTE, BYTE);		/* 戦闘：ターゲット選択 */
 void KeyProcSUBSUGOROKU_JOINMODE			(PWNDINFO, BYTE, BYTE);		/* すごろく：参加モード選択 */
@@ -816,17 +817,12 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 			if (g_pMapInfo->byFlg & MAPFLG_BATTLE) {
 				/* 戦闘モード？ */
 				if (g_bBattleMode) {
-					/* ターンゲージ溜まり中？ */
-					if (pChar->dwTimeTurnLV && (pChar->byTurnLV >= TURNGAGE_LAP)) {
-						if (IsTurnGageJust (pChar)) {
-							/* ジャスト：満タン直後に押した(会心が出やすく、外れない) */
-							SendCmdREQ_ATTACK (pChar->dwAtackTblID, ATACKRATE_JUST);
-						} else {
-							/* 早撃ち：攻撃要求(威力は溜まりきった周の数×20%) */
-							SendCmdREQ_ATTACK (pChar->dwAtackTblID, (BYTE)(pChar->byTurnLV / TURNGAGE_LAP * TURNGAGE_LAP));
-						}
-						/* 連続攻撃：次のゲージを溜め始める */
-						ContinueTurnGage (pChar);
+					/* ターンゲージ溜まり中？(ジャスト・早撃ち) */
+					if (ShotTurnGage (pChar)) {
+					/* 殴った直後？(ジャストに押し遅れた X でコマンドを開かない。
+					   1周目の後半はコマンドを開けるように、待つのは1周の半分まで) */
+					} else if (pChar->dwTimeTurnLV && (timeGetTime () - g_dwTurnGageContinue <
+							min ((DWORD)TURNGAGE_LATETIME, GetTurnGageTime (pChar) / TURNGAGE_LAPMAX / 2))) {
 					} else {
 						/* ゲージ1周目の途中なら戦闘コマンドを開く(連続攻撃中に特技・道具を選べるように) */
 						pWnd = MakeWindowBATTLE_COMMAND ();
@@ -888,6 +884,8 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 
 		/* ターンゲージ溜まり中？(連続攻撃もここで止める) */
 		} else if ((pChar->byTurnLV > 0) || pChar->dwTimeTurnLV) {
+			/* 目の前の敵で自動で溜め直さないように覚えておく(離れるか別の敵が来るまで) */
+			g_dwAutoGageSuppress = pChar->dwAtackTblID;
 			CancelTurnGage (pChar);
 			SAFE_DELETE (g_pTargetSelectInfo);
 			SendCmdTARGETCHAR ((DWORD)-1);
@@ -6124,6 +6122,29 @@ void KeyProcSUBWAR_TURN_MAGIC_PRIEST(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 }
 
 /* ========================================================================= */
+/* 関数名：ShotTurnGage													 */
+/* 内容：ゲージが1周以上溜まっていれば殴る(満タン直後ならジャスト、		 */
+/*		 それより前なら早撃ち)。殴ったら TRUE								 */
+/* ========================================================================= */
+static BOOL ShotTurnGage(PCHARINFO pChar)
+{
+	if ((pChar->dwTimeTurnLV == 0) || (pChar->byTurnLV < TURNGAGE_LAP)) {
+		return FALSE;
+	}
+	if (IsTurnGageJust (pChar)) {
+		/* ジャスト：満タン直後に押した(会心が出やすく、外れない) */
+		SendCmdREQ_ATTACK (pChar->dwAtackTblID, ATACKRATE_JUST);
+	} else {
+		/* 早撃ち：攻撃要求(威力は溜まりきった周の数×20%) */
+		SendCmdREQ_ATTACK (pChar->dwAtackTblID, (BYTE)(pChar->byTurnLV / TURNGAGE_LAP * TURNGAGE_LAP));
+	}
+	/* 連続攻撃：次のゲージを溜め始める */
+	ContinueTurnGage (pChar);
+	return TRUE;
+}
+
+
+/* ========================================================================= */
 /* 関数名：KeyProcBATTLE_COMMAND											 */
 /* 内容：キー入力処理(戦闘：コマンド)										 */
 /* 日付：2004/10/31															 */
@@ -6160,6 +6181,14 @@ void KeyProcBATTLE_COMMAND(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				ARRAYUSECHARINFO aUseCharInfoTmp;
 //				PUSECHARINFO pUseCharInfo;
 
+				/* 連続攻撃中でゲージが1周以上溜まっていれば、相手を選び直さずにそのまま殴る */
+				if (ShotTurnGage (pChar)) {
+					int nNo = GetWindowID (g_dwMsgIDCommand);
+					EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
+					g_bDraw = TRUE;
+					g_dwMsgIDCommand = 0;
+					break;
+				}
 				nTmp = GetAttackType (pChar);
 				if (nTmp == ATACKTYPE_ARROW) {
 					StartTurnGage (pChar, -1);
