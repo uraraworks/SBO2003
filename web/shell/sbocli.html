@@ -1413,7 +1413,27 @@
 				ev.preventDefault();
 			}
 			Module['_W32JsOnMouse'](type, ev.button || 0, p[0], p[1]);
+			if (type === 1 && ev.button === 2) {
+				onRightDown(ev, p);
+			}
 		};
+	}
+	/* ブラウザの dblclick は左ボタンでしか起きないので、右のダブルクリックは
+	   押した間隔と位置から自前で見分ける（Windows の既定に合わせて 500ms・4px 以内） */
+	var RDBL_TIME_MS = 500;
+	var RDBL_DIST_PX = 4;
+	var lastRightDown = null;
+	function onRightDown(ev, p) {
+		var now = ev.timeStamp || Date.now();
+		var last = lastRightDown;
+		if (last && now - last.t <= RDBL_TIME_MS &&
+				Math.abs(ev.clientX - last.x) <= RDBL_DIST_PX &&
+				Math.abs(ev.clientY - last.y) <= RDBL_DIST_PX) {
+			lastRightDown = null;
+			Module['_W32JsOnMouse'](3, 2, p[0], p[1]);
+			return;
+		}
+		lastRightDown = { t: now, x: ev.clientX, y: ev.clientY };
 	}
 	canvas.addEventListener('mousemove', onMouse(0));
 	canvas.addEventListener('mousedown', onMouse(1));
