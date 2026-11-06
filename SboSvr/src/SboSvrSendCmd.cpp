@@ -6,6 +6,7 @@
 /* 作成開始日：		2003/05/02												 */
 /* ========================================================================= */
 
+#include <vector>
 #include "include.h"
 #include "Glbldata.h"
 #include "../Common/Command/Command.h"
@@ -119,6 +120,7 @@ void SendCmdInside2(PCHARINFO pChar, LPBYTE pSendData, DWORD dwSize,
 	PMAPINFO pMap = g_aMapInfo[pChar->dwMapID];
 	PDWORD pData = pMap->paTblNoPC;
 	DWORD dwNumMsgs = 0;
+	std::vector<DWORD> aIDDst;
 
 	if (pData == NULL) {
 		return;
@@ -140,9 +142,13 @@ void SendCmdInside2(PCHARINFO pChar, LPBYTE pSendData, DWORD dwSize,
 		if (x <= DRAW_PARTS_X + 3) {
 			y = abs (pCharDst->dwY - pChar->dwY);
 			if (y <= DRAW_PARTS_Y + 3) {
-				svrSock.SendTo (pCharDst->pID, pSendData, dwSize, dwTimeOut, byPriority);
+				aIDDst.push_back (pCharDst->pID);
 			}
 		}
+	}
+	/* 圧縮とCRCを1回で済ませるため、まとめて送る */
+	if (!aIDDst.empty ()) {
+		svrSock.SendToMulti (&aIDDst[0], (DWORD)aIDDst.size (), pSendData, dwSize, dwTimeOut, byPriority);
 	}
 }
 
@@ -157,6 +163,7 @@ void SendCmdSubGame(BYTE byID, DWORD dwMapID, LPBYTE pSendData, DWORD dwSize)
 	PDWORD pData = pMap->paTblNoPC;
 	PSUBGAMEINFO pInfo = g_aSubaGameInfo[byID];
 	PCHARINFO pChar;
+	std::vector<DWORD> aIDDst;
 
 	if (pData == NULL) {
 		return;
@@ -174,7 +181,10 @@ void SendCmdSubGame(BYTE byID, DWORD dwMapID, LPBYTE pSendData, DWORD dwSize)
 		if (pChar->abySubStatus[1] != byID) {
 			continue;
 		}
-		svrSock.SendTo (pChar->pID, pSendData, dwSize);
+		aIDDst.push_back (pChar->pID);
+	}
+	if (!aIDDst.empty ()) {
+		svrSock.SendToMulti (&aIDDst[0], (DWORD)aIDDst.size (), pSendData, dwSize, 0, URARASOCK_SENDPRIORITY_MIDDLE);
 	}
 }
 
@@ -258,6 +268,7 @@ void SendCmdInsideMap(DWORD dwID, LPBYTE pSendData, DWORD dwSize)
 	PMAPINFO pMap = g_aMapInfo[dwID];
 	PDWORD pData = pMap->paTblNoPC;
 	PCHARINFO pChar;
+	std::vector<DWORD> aIDDst;
 
 	for (i = 0; i < (int)pMap->dwCountTblNoPC; i ++) {
 		if (pData[i] == -1) {
@@ -265,8 +276,11 @@ void SendCmdInsideMap(DWORD dwID, LPBYTE pSendData, DWORD dwSize)
 		}
 		pChar = g_aCharInfo[pData[i]];
 		if (pChar->pID) {
-			svrSock.SendTo (pChar->pID, pSendData, dwSize);
+			aIDDst.push_back (pChar->pID);
 		}
+	}
+	if (!aIDDst.empty ()) {
+		svrSock.SendToMulti (&aIDDst[0], (DWORD)aIDDst.size (), pSendData, dwSize, 0, URARASOCK_SENDPRIORITY_MIDDLE);
 	}
 }
 
@@ -278,6 +292,7 @@ void SendCmdInsideMap(DWORD dwID, LPBYTE pSendData, DWORD dwSize)
 void SendCmdAdmin(PBYTE pData, DWORD dwSize)
 {
 	int i;
+	std::vector<DWORD> aIDDst;
 
 	for (i = 0; i < g_aCharInfo.GetSize (); i ++) {
 		PCHARINFO pChar = g_aCharInfo[i];
@@ -287,7 +302,10 @@ void SendCmdAdmin(PBYTE pData, DWORD dwSize)
 		if (pChar->pID == 0) {
 			continue;
 		}
-		svrSock.SendTo (pChar->pID, pData, dwSize);
+		aIDDst.push_back (pChar->pID);
+	}
+	if (!aIDDst.empty ()) {
+		svrSock.SendToMulti (&aIDDst[0], (DWORD)aIDDst.size (), pData, dwSize, 0, URARASOCK_SENDPRIORITY_MIDDLE);
 	}
 }
 

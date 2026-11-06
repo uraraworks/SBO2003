@@ -1,0 +1,1013 @@
+== A. SendTo ==
+send#0 size=0 id=100000 pri=0 total=8 sha=262701071aee8da1
+send#1 size=0 id=100000 pri=1 total=16 sha=b5355f837af2651c
+send#2 size=0 id=100003 pri=0 total=16 sha=b5355f837af2651c
+send#3 size=0 id=100003 pri=1 total=16 sha=b5355f837af2651c
+send#4 size=0 id=100010 pri=0 total=24 sha=cacb4667ccf8e71f
+send#5 size=0 id=100010 pri=1 total=32 sha=60f175c2757b3df5
+send#6 size=0 id=100011 pri=0 total=40 sha=4bd0e5821e5cee54
+send#7 size=0 id=100011 pri=1 total=48 sha=63137f9065c95a00
+send#8 size=0 id=100012 pri=0 total=48 sha=63137f9065c95a00
+send#9 size=0 id=100012 pri=1 total=48 sha=63137f9065c95a00
+send#10 size=0 id=100999 pri=0 total=48 sha=63137f9065c95a00
+send#11 size=0 id=100999 pri=1 total=48 sha=63137f9065c95a00
+send#12 size=0 id=5 pri=0 total=48 sha=63137f9065c95a00
+send#13 size=0 id=5 pri=1 total=48 sha=63137f9065c95a00
+send#14 size=0 id=0 pri=0 total=48 sha=63137f9065c95a00
+send#15 size=0 id=0 pri=1 total=48 sha=63137f9065c95a00
+send#16 size=0 id=99999 pri=0 total=48 sha=63137f9065c95a00
+send#17 size=0 id=99999 pri=1 total=48 sha=63137f9065c95a00
+send#18 size=0 id=100007 pri=0 total=56 sha=9dabfbf8b2877432
+send#19 size=0 id=100007 pri=1 total=64 sha=ca3a3e9968a0f2c9
+send#20 size=0 id=4294967295 pri=0 total=136 sha=17b872a613c3c939
+send#21 size=0 id=4294967295 pri=1 total=208 sha=021ee1516087117c
+send#22 size=1 id=100000 pri=0 total=217 sha=fe22094a4a3359ea
+send#23 size=1 id=100000 pri=1 total=226 sha=3b6672518dda9dc8
+send#24 size=1 id=100003 pri=0 total=226 sha=3b6672518dda9dc8
+send#25 size=1 id=100003 pri=1 total=226 sha=3b6672518dda9dc8
+send#26 size=1 id=100010 pri=0 total=235 sha=84351c2223cac8bf
+send#27 size=1 id=100010 pri=1 total=244 sha=1dce8f8db7e7d7e2
+send#28 size=1 id=100011 pri=0 total=253 sha=2c181c89e76a964a
+send#29 size=1 id=100011 pri=1 total=262 sha=554dc7251ef0609a
+send#30 size=1 id=100012 pri=0 total=262 sha=554dc7251ef0609a
+send#31 size=1 id=100012 pri=1 total=262 sha=554dc7251ef0609a
+send#32 size=1 id=100999 pri=0 total=262 sha=554dc7251ef0609a
+send#33 size=1 id=100999 pri=1 total=262 sha=554dc7251ef0609a
+send#34 size=1 id=5 pri=0 total=262 sha=554dc7251ef0609a
+send#35 size=1 id=5 pri=1 total=262 sha=554dc7251ef0609a
+send#36 size=1 id=0 pri=0 total=262 sha=554dc7251ef0609a
+send#37 size=1 id=0 pri=1 total=262 sha=554dc7251ef0609a
+send#38 size=1 id=99999 pri=0 total=262 sha=554dc7251ef0609a
+send#39 size=1 id=99999 pri=1 total=262 sha=554dc7251ef0609a
+send#40 size=1 id=100007 pri=0 total=271 sha=e56fb5d2c4d64a46
+send#41 size=1 id=100007 pri=1 total=280 sha=7f4b27767115d2c0
+send#42 size=1 id=4294967295 pri=0 total=361 sha=89d5e78e0ab3cc77
+send#43 size=1 id=4294967295 pri=1 total=442 sha=fd75a56ad1803d19
+send#44 size=7 id=100000 pri=0 total=457 sha=9f9f74c86a3517d5
+send#45 size=7 id=100000 pri=1 total=472 sha=9825df0581e8a463
+send#46 size=7 id=100003 pri=0 total=472 sha=9825df0581e8a463
+send#47 size=7 id=100003 pri=1 total=472 sha=9825df0581e8a463
+send#48 size=7 id=100010 pri=0 total=487 sha=9d87ff2d63f4c25a
+send#49 size=7 id=100010 pri=1 total=502 sha=caeab44a154c8b19
+send#50 size=7 id=100011 pri=0 total=517 sha=4cdadeb60c66abdb
+send#51 size=7 id=100011 pri=1 total=532 sha=2cf2fba908bc801e
+send#52 size=7 id=100012 pri=0 total=532 sha=2cf2fba908bc801e
+send#53 size=7 id=100012 pri=1 total=532 sha=2cf2fba908bc801e
+send#54 size=7 id=100999 pri=0 total=532 sha=2cf2fba908bc801e
+send#55 size=7 id=100999 pri=1 total=532 sha=2cf2fba908bc801e
+send#56 size=7 id=5 pri=0 total=532 sha=2cf2fba908bc801e
+send#57 size=7 id=5 pri=1 total=532 sha=2cf2fba908bc801e
+send#58 size=7 id=0 pri=0 total=532 sha=2cf2fba908bc801e
+send#59 size=7 id=0 pri=1 total=532 sha=2cf2fba908bc801e
+send#60 size=7 id=99999 pri=0 total=532 sha=2cf2fba908bc801e
+send#61 size=7 id=99999 pri=1 total=532 sha=2cf2fba908bc801e
+send#62 size=7 id=100007 pri=0 total=547 sha=4fb2ca54a7ea9337
+send#63 size=7 id=100007 pri=1 total=562 sha=8200c7711d6db632
+send#64 size=7 id=4294967295 pri=0 total=697 sha=fd20487ce8793467
+send#65 size=7 id=4294967295 pri=1 total=832 sha=680fc210d0471c4b
+send#66 size=127 id=100000 pri=0 total=967 sha=582cf8cb1eba2ea1
+send#67 size=127 id=100000 pri=1 total=1102 sha=2b546d54b8a844f8
+send#68 size=127 id=100003 pri=0 total=1102 sha=2b546d54b8a844f8
+send#69 size=127 id=100003 pri=1 total=1102 sha=2b546d54b8a844f8
+send#70 size=127 id=100010 pri=0 total=1237 sha=833b57d8b55e06e1
+send#71 size=127 id=100010 pri=1 total=1372 sha=b40477623c42432d
+send#72 size=127 id=100011 pri=0 total=1507 sha=29c225126199023a
+send#73 size=127 id=100011 pri=1 total=1642 sha=21cfbea0ba175fa2
+send#74 size=127 id=100012 pri=0 total=1642 sha=21cfbea0ba175fa2
+send#75 size=127 id=100012 pri=1 total=1642 sha=21cfbea0ba175fa2
+send#76 size=127 id=100999 pri=0 total=1642 sha=21cfbea0ba175fa2
+send#77 size=127 id=100999 pri=1 total=1642 sha=21cfbea0ba175fa2
+send#78 size=127 id=5 pri=0 total=1642 sha=21cfbea0ba175fa2
+send#79 size=127 id=5 pri=1 total=1642 sha=21cfbea0ba175fa2
+send#80 size=127 id=0 pri=0 total=1642 sha=21cfbea0ba175fa2
+send#81 size=127 id=0 pri=1 total=1642 sha=21cfbea0ba175fa2
+send#82 size=127 id=99999 pri=0 total=1642 sha=21cfbea0ba175fa2
+send#83 size=127 id=99999 pri=1 total=1642 sha=21cfbea0ba175fa2
+send#84 size=127 id=100007 pri=0 total=1777 sha=5786acc8144bcf20
+send#85 size=127 id=100007 pri=1 total=1912 sha=cbcccdbcdd47e338
+send#86 size=127 id=4294967295 pri=0 total=3127 sha=d21c30e7c307b97b
+send#87 size=127 id=4294967295 pri=1 total=4342 sha=0a6cfc86ca5fbabf
+send#88 size=128 id=100000 pri=0 total=4478 sha=45cfd2aa388ca17f
+send#89 size=128 id=100000 pri=1 total=4614 sha=6ce172fbba62d045
+send#90 size=128 id=100003 pri=0 total=4614 sha=6ce172fbba62d045
+send#91 size=128 id=100003 pri=1 total=4614 sha=6ce172fbba62d045
+send#92 size=128 id=100010 pri=0 total=4750 sha=b3c6d725e62f4f7f
+send#93 size=128 id=100010 pri=1 total=4886 sha=8761fe3e02b3c93d
+send#94 size=128 id=100011 pri=0 total=5022 sha=13f0d5a44f088a9c
+send#95 size=128 id=100011 pri=1 total=5158 sha=dfd4c4169ec54bbb
+send#96 size=128 id=100012 pri=0 total=5158 sha=dfd4c4169ec54bbb
+send#97 size=128 id=100012 pri=1 total=5158 sha=dfd4c4169ec54bbb
+send#98 size=128 id=100999 pri=0 total=5158 sha=dfd4c4169ec54bbb
+send#99 size=128 id=100999 pri=1 total=5158 sha=dfd4c4169ec54bbb
+send#100 size=128 id=5 pri=0 total=5158 sha=dfd4c4169ec54bbb
+send#101 size=128 id=5 pri=1 total=5158 sha=dfd4c4169ec54bbb
+send#102 size=128 id=0 pri=0 total=5158 sha=dfd4c4169ec54bbb
+send#103 size=128 id=0 pri=1 total=5158 sha=dfd4c4169ec54bbb
+send#104 size=128 id=99999 pri=0 total=5158 sha=dfd4c4169ec54bbb
+send#105 size=128 id=99999 pri=1 total=5158 sha=dfd4c4169ec54bbb
+send#106 size=128 id=100007 pri=0 total=5294 sha=9f5ac2638474a72f
+send#107 size=128 id=100007 pri=1 total=5430 sha=b3e52a6d2f8cd35f
+send#108 size=128 id=4294967295 pri=0 total=6654 sha=556ba2f4e03d769c
+send#109 size=128 id=4294967295 pri=1 total=7878 sha=3f2598d6a44c9a41
+send#110 size=129 id=100000 pri=0 total=8015 sha=a865d32e5d7262bc
+send#111 size=129 id=100000 pri=1 total=8152 sha=6686330124b46a73
+send#112 size=129 id=100003 pri=0 total=8152 sha=6686330124b46a73
+send#113 size=129 id=100003 pri=1 total=8152 sha=6686330124b46a73
+send#114 size=129 id=100010 pri=0 total=8289 sha=1cdc9e7edbc74075
+send#115 size=129 id=100010 pri=1 total=8426 sha=73385e98b5cbf2b2
+send#116 size=129 id=100011 pri=0 total=8563 sha=c80c710ff0b3dfc7
+send#117 size=129 id=100011 pri=1 total=8700 sha=aa651421c28b888b
+send#118 size=129 id=100012 pri=0 total=8700 sha=aa651421c28b888b
+send#119 size=129 id=100012 pri=1 total=8700 sha=aa651421c28b888b
+send#120 size=129 id=100999 pri=0 total=8700 sha=aa651421c28b888b
+send#121 size=129 id=100999 pri=1 total=8700 sha=aa651421c28b888b
+send#122 size=129 id=5 pri=0 total=8700 sha=aa651421c28b888b
+send#123 size=129 id=5 pri=1 total=8700 sha=aa651421c28b888b
+send#124 size=129 id=0 pri=0 total=8700 sha=aa651421c28b888b
+send#125 size=129 id=0 pri=1 total=8700 sha=aa651421c28b888b
+send#126 size=129 id=99999 pri=0 total=8700 sha=aa651421c28b888b
+send#127 size=129 id=99999 pri=1 total=8700 sha=aa651421c28b888b
+send#128 size=129 id=100007 pri=0 total=8837 sha=98b742ada84b1086
+send#129 size=129 id=100007 pri=1 total=8974 sha=92aa7cc5db23db49
+send#130 size=129 id=4294967295 pri=0 total=10207 sha=d63a4047f8a22b45
+send#131 size=129 id=4294967295 pri=1 total=11440 sha=be5ee31c8b2f829f
+send#132 size=300 id=100000 pri=0 total=11548 sha=3911beff4ae049dd
+send#133 size=300 id=100000 pri=1 total=11656 sha=550c9cddbb01ef95
+send#134 size=300 id=100003 pri=0 total=11656 sha=550c9cddbb01ef95
+send#135 size=300 id=100003 pri=1 total=11656 sha=550c9cddbb01ef95
+send#136 size=300 id=100010 pri=0 total=11764 sha=828f5a27442460d0
+send#137 size=300 id=100010 pri=1 total=11872 sha=0c2baffe43778138
+send#138 size=300 id=100011 pri=0 total=11980 sha=331b0a29ef47277e
+send#139 size=300 id=100011 pri=1 total=12088 sha=13e1c8de1aebcf23
+send#140 size=300 id=100012 pri=0 total=12088 sha=13e1c8de1aebcf23
+send#141 size=300 id=100012 pri=1 total=12088 sha=13e1c8de1aebcf23
+send#142 size=300 id=100999 pri=0 total=12088 sha=13e1c8de1aebcf23
+send#143 size=300 id=100999 pri=1 total=12088 sha=13e1c8de1aebcf23
+send#144 size=300 id=5 pri=0 total=12088 sha=13e1c8de1aebcf23
+send#145 size=300 id=5 pri=1 total=12088 sha=13e1c8de1aebcf23
+send#146 size=300 id=0 pri=0 total=12088 sha=13e1c8de1aebcf23
+send#147 size=300 id=0 pri=1 total=12088 sha=13e1c8de1aebcf23
+send#148 size=300 id=99999 pri=0 total=12088 sha=13e1c8de1aebcf23
+send#149 size=300 id=99999 pri=1 total=12088 sha=13e1c8de1aebcf23
+send#150 size=300 id=100007 pri=0 total=12196 sha=bcc5e72b41305880
+send#151 size=300 id=100007 pri=1 total=12304 sha=816d6570b3fb97d6
+send#152 size=300 id=4294967295 pri=0 total=13276 sha=bd7b5eb4ba387dd4
+send#153 size=300 id=4294967295 pri=1 total=14248 sha=1b7f6ce2a1704d65
+send#154 size=1000 id=100000 pri=0 total=14584 sha=6238581ad6b548bc
+send#155 size=1000 id=100000 pri=1 total=14920 sha=9b2063a386f66bf1
+send#156 size=1000 id=100003 pri=0 total=14920 sha=9b2063a386f66bf1
+send#157 size=1000 id=100003 pri=1 total=14920 sha=9b2063a386f66bf1
+send#158 size=1000 id=100010 pri=0 total=15256 sha=6226731171b22712
+send#159 size=1000 id=100010 pri=1 total=15592 sha=f746b1ef573f396d
+send#160 size=1000 id=100011 pri=0 total=15928 sha=a8002617b66e8972
+send#161 size=1000 id=100011 pri=1 total=16264 sha=a688f19f89fba190
+send#162 size=1000 id=100012 pri=0 total=16264 sha=a688f19f89fba190
+send#163 size=1000 id=100012 pri=1 total=16264 sha=a688f19f89fba190
+send#164 size=1000 id=100999 pri=0 total=16264 sha=a688f19f89fba190
+send#165 size=1000 id=100999 pri=1 total=16264 sha=a688f19f89fba190
+send#166 size=1000 id=5 pri=0 total=16264 sha=a688f19f89fba190
+send#167 size=1000 id=5 pri=1 total=16264 sha=a688f19f89fba190
+send#168 size=1000 id=0 pri=0 total=16264 sha=a688f19f89fba190
+send#169 size=1000 id=0 pri=1 total=16264 sha=a688f19f89fba190
+send#170 size=1000 id=99999 pri=0 total=16264 sha=a688f19f89fba190
+send#171 size=1000 id=99999 pri=1 total=16264 sha=a688f19f89fba190
+send#172 size=1000 id=100007 pri=0 total=16600 sha=ad828a43e710d685
+send#173 size=1000 id=100007 pri=1 total=16936 sha=26e8ba066aed7b29
+send#174 size=1000 id=4294967295 pri=0 total=19960 sha=58a926e80220bbfb
+send#175 size=1000 id=4294967295 pri=1 total=22984 sha=4d359bbdd3f3d925
+send#176 size=1000 id=100000 pri=0 total=23992 sha=a6814190d07bc4a5
+send#177 size=1000 id=100000 pri=1 total=25000 sha=81e64e02d9946f55
+send#178 size=1000 id=100003 pri=0 total=25000 sha=81e64e02d9946f55
+send#179 size=1000 id=100003 pri=1 total=25000 sha=81e64e02d9946f55
+send#180 size=1000 id=100010 pri=0 total=26008 sha=b25eab8ccaa8df36
+send#181 size=1000 id=100010 pri=1 total=27016 sha=d95eac8bc35536f9
+send#182 size=1000 id=100011 pri=0 total=28024 sha=90799cd018339a9d
+send#183 size=1000 id=100011 pri=1 total=29032 sha=0529cce655f3282b
+send#184 size=1000 id=100012 pri=0 total=29032 sha=0529cce655f3282b
+send#185 size=1000 id=100012 pri=1 total=29032 sha=0529cce655f3282b
+send#186 size=1000 id=100999 pri=0 total=29032 sha=0529cce655f3282b
+send#187 size=1000 id=100999 pri=1 total=29032 sha=0529cce655f3282b
+send#188 size=1000 id=5 pri=0 total=29032 sha=0529cce655f3282b
+send#189 size=1000 id=5 pri=1 total=29032 sha=0529cce655f3282b
+send#190 size=1000 id=0 pri=0 total=29032 sha=0529cce655f3282b
+send#191 size=1000 id=0 pri=1 total=29032 sha=0529cce655f3282b
+send#192 size=1000 id=99999 pri=0 total=29032 sha=0529cce655f3282b
+send#193 size=1000 id=99999 pri=1 total=29032 sha=0529cce655f3282b
+send#194 size=1000 id=100007 pri=0 total=30040 sha=2b7fc12fb919795a
+send#195 size=1000 id=100007 pri=1 total=31048 sha=db0bc7ea9ae1a0a3
+send#196 size=1000 id=4294967295 pri=0 total=40120 sha=7a4e14b698fcd612
+send#197 size=1000 id=4294967295 pri=1 total=49192 sha=18ed55c95510c793
+send#198 size=5000 id=100000 pri=0 total=54200 sha=6a24722de9ba2d05
+send#199 size=5000 id=100000 pri=1 total=59208 sha=2f9603a16ef5d006
+send#200 size=5000 id=100003 pri=0 total=59208 sha=2f9603a16ef5d006
+send#201 size=5000 id=100003 pri=1 total=59208 sha=2f9603a16ef5d006
+send#202 size=5000 id=100010 pri=0 total=64216 sha=59de9245e6cf564c
+send#203 size=5000 id=100010 pri=1 total=69224 sha=03907670f26a55ec
+send#204 size=5000 id=100011 pri=0 total=74232 sha=66bef82804a0811b
+send#205 size=5000 id=100011 pri=1 total=79240 sha=a6f8d76a46a6c06d
+send#206 size=5000 id=100012 pri=0 total=79240 sha=a6f8d76a46a6c06d
+send#207 size=5000 id=100012 pri=1 total=79240 sha=a6f8d76a46a6c06d
+send#208 size=5000 id=100999 pri=0 total=79240 sha=a6f8d76a46a6c06d
+send#209 size=5000 id=100999 pri=1 total=79240 sha=a6f8d76a46a6c06d
+send#210 size=5000 id=5 pri=0 total=79240 sha=a6f8d76a46a6c06d
+send#211 size=5000 id=5 pri=1 total=79240 sha=a6f8d76a46a6c06d
+send#212 size=5000 id=0 pri=0 total=79240 sha=a6f8d76a46a6c06d
+send#213 size=5000 id=0 pri=1 total=79240 sha=a6f8d76a46a6c06d
+send#214 size=5000 id=99999 pri=0 total=79240 sha=a6f8d76a46a6c06d
+send#215 size=5000 id=99999 pri=1 total=79240 sha=a6f8d76a46a6c06d
+send#216 size=5000 id=100007 pri=0 total=84248 sha=ef89373c7930d6dc
+send#217 size=5000 id=100007 pri=1 total=89256 sha=a551d1bca9ad2f54
+send#218 size=5000 id=4294967295 pri=0 total=134328 sha=e45da4d0f0901405
+send#219 size=5000 id=4294967295 pri=1 total=179400 sha=679f2e8010b1fa07
+send#220 size=70000 id=100000 pri=0 total=180247 sha=ef6d8a189cea5fca
+send#221 size=70000 id=100000 pri=1 total=181094 sha=85bb6118f8004864
+send#222 size=70000 id=100003 pri=0 total=181094 sha=85bb6118f8004864
+send#223 size=70000 id=100003 pri=1 total=181094 sha=85bb6118f8004864
+send#224 size=70000 id=100010 pri=0 total=181941 sha=4e7b471c535219e7
+send#225 size=70000 id=100010 pri=1 total=182788 sha=c611f5a6dc3aec3c
+send#226 size=70000 id=100011 pri=0 total=183635 sha=5348cd7e750e618f
+send#227 size=70000 id=100011 pri=1 total=184482 sha=539b686c5ad201b4
+send#228 size=70000 id=100012 pri=0 total=184482 sha=539b686c5ad201b4
+send#229 size=70000 id=100012 pri=1 total=184482 sha=539b686c5ad201b4
+send#230 size=70000 id=100999 pri=0 total=184482 sha=539b686c5ad201b4
+send#231 size=70000 id=100999 pri=1 total=184482 sha=539b686c5ad201b4
+send#232 size=70000 id=5 pri=0 total=184482 sha=539b686c5ad201b4
+send#233 size=70000 id=5 pri=1 total=184482 sha=539b686c5ad201b4
+send#234 size=70000 id=0 pri=0 total=184482 sha=539b686c5ad201b4
+send#235 size=70000 id=0 pri=1 total=184482 sha=539b686c5ad201b4
+send#236 size=70000 id=99999 pri=0 total=184482 sha=539b686c5ad201b4
+send#237 size=70000 id=99999 pri=1 total=184482 sha=539b686c5ad201b4
+send#238 size=70000 id=100007 pri=0 total=185329 sha=aa8dffaf610de5a6
+send#239 size=70000 id=100007 pri=1 total=186176 sha=05a0c819701def86
+send#240 size=70000 id=4294967295 pri=0 total=193799 sha=26d1845f0771c201
+send#241 size=70000 id=4294967295 pri=1 total=201422 sha=1c07d75256dc1fbe
+send-overloads total=201680 sha=278eafd6462798a5
+capture ret=1 size=500 same=1
+after-capture total=201680 sha=278eafd6462798a5
+final conn=1 len=30988 calls=44 sha=29a88226ee8d7bc0
+final conn=2 len=15752 calls=25 sha=35a176571d02d525
+final conn=3 len=15494 calls=22 sha=5bf4b6035f783a42
+final conn=4 len=0 calls=0 sha=e3b0c44298fc1c14
+final conn=5 len=15494 calls=22 sha=5bf4b6035f783a42
+final conn=6 len=15494 calls=22 sha=5bf4b6035f783a42
+final conn=7 len=15494 calls=22 sha=5bf4b6035f783a42
+final conn=8 len=30988 calls=44 sha=29a88226ee8d7bc0
+final conn=9 len=15494 calls=22 sha=5bf4b6035f783a42
+final conn=10 len=15494 calls=22 sha=5bf4b6035f783a42
+final conn=11 len=15494 calls=22 sha=5bf4b6035f783a42
+final conn=12 len=15494 calls=22 sha=5bf4b6035f783a42
+== C. myArray ==
+array round=0 size=27 bad=0 hash=f186677c
+array round=1 size=8 bad=0 hash=2e74ba2e
+array round=2 size=27 bad=0 hash=4d6220e3
+array round=3 size=23 bad=0 hash=8e59aa43
+array round=4 size=11 bad=0 hash=5ca2133d
+array round=5 size=9 bad=0 hash=e070e433
+array round=6 size=12 bad=0 hash=64159f1f
+array round=7 size=24 bad=0 hash=a80c38e4
+array round=8 size=13 bad=0 hash=c47618f0
+array round=9 size=25 bad=0 hash=ce118f5f
+array round=10 size=39 bad=0 hash=3afb23e4
+array round=11 size=6 bad=0 hash=38000d21
+array round=12 size=0 bad=0 hash=94a9d459
+array round=13 size=11 bad=0 hash=fe7a425a
+array round=14 size=27 bad=0 hash=2b8283f7
+array round=15 size=10 bad=0 hash=ab990035
+array round=16 size=2 bad=0 hash=37c1a07d
+array round=17 size=25 bad=0 hash=bc0f0af2
+array round=18 size=45 bad=0 hash=5ae22b52
+array round=19 size=10 bad=0 hash=309f76f5
+array bulk size=20000 sum=199990000
+== world chars=875 pc=0 npc=875 maps=116 ==
+npctype 1 count 496
+npctype 2 count 33
+npctype 3 count 21
+npctype 4 count 32
+npctype 5 count 175
+npctype 6 count 58
+npctype 8 count 9
+npctype 12 count 5
+npctype 14 count 23
+npctype 21 count 20
+npctype 23 count 3
+== D. SEARCH2 ==
+search map=0 k=0 (45,22)->(32,32) turns=1 infos=0 dir=2 hash=9033287f
+search map=0 k=1 (19,20)->(58,70) turns=1 infos=0 dir=0 hash=9033287f
+search map=0 k=2 (1,40)->(58,29) turns=1 infos=0 dir=0 hash=9033287f
+search map=0 k=3 (7,44)->(78,49) turns=1 infos=0 dir=3 hash=9033287f
+search map=0 k=4 (43,54)->(77,1) turns=1 infos=0 dir=3 hash=9033287f
+search map=0 k=5 (74,86)->(23,14) turns=1 infos=0 dir=0 hash=9033287f
+search map=1 k=0 (65,18)->(21,39) turns=1 infos=0 dir=0 hash=9a3c8bf7
+search map=1 k=1 (58,16)->(44,12) turns=325 infos=324 dir=2 hash=9d5abbd7
+search map=1 k=2 (24,38)->(50,41) turns=1 infos=0 dir=0 hash=9a3c8bf7
+search map=1 k=3 (10,19)->(7,15) turns=1 infos=0 dir=3 hash=9a3c8bf7
+search map=1 k=4 (47,47)->(68,30) turns=1 infos=0 dir=0 hash=9a3c8bf7
+search map=1 k=5 (52,28)->(19,2) turns=325 infos=324 dir=0 hash=34d84481
+search map=2 k=0 (75,87)->(33,91) turns=1 infos=0 dir=2 hash=4b3ede7f
+search map=2 k=1 (45,99)->(72,79) turns=1 infos=0 dir=1 hash=4b3ede7f
+search map=2 k=2 (53,91)->(3,59) turns=1 infos=0 dir=0 hash=4b3ede7f
+search map=2 k=3 (22,77)->(24,98) turns=1 infos=0 dir=2 hash=4b3ede7f
+search map=2 k=4 (43,3)->(88,97) turns=1 infos=0 dir=2 hash=4b3ede7f
+search map=2 k=5 (95,103)->(49,28) turns=1 infos=0 dir=2 hash=4b3ede7f
+search map=3 k=0 (43,16)->(38,61) turns=622 infos=621 dir=0 hash=055cf2fd
+search map=3 k=1 (17,43)->(48,57) turns=281 infos=280 dir=2 hash=9cf358ff
+search map=3 k=2 (51,38)->(37,6) turns=390 infos=389 dir=1 hash=3cbe4ac7
+search map=3 k=3 (15,81)->(7,31) turns=1 infos=0 dir=3 hash=e9ef5727
+search map=3 k=4 (15,23)->(10,44) turns=670 infos=669 dir=0 hash=53e0ee8d
+search map=3 k=5 (50,73)->(42,54) turns=1 infos=0 dir=3 hash=e9ef5727
+search map=4 k=0 (113,11)->(70,155) turns=1 infos=0 dir=2 hash=52f915a7
+search map=4 k=1 (91,55)->(37,124) turns=671 infos=670 dir=3 hash=4ff86b11
+search map=4 k=2 (62,14)->(108,123) turns=155 infos=154 dir=1 hash=bc1fb4e6
+search map=4 k=3 (13,99)->(78,56) turns=265 infos=264 dir=1 hash=228490f6
+search map=4 k=4 (46,22)->(48,61) turns=1500 infos=1499 dir=2 hash=b4630276
+search map=4 k=5 (72,143)->(111,136) turns=1 infos=0 dir=3 hash=52f915a7
+search map=5 k=0 (58,52)->(65,65) turns=1 infos=0 dir=2 hash=e4f210af
+search map=5 k=1 (11,48)->(34,6) turns=314 infos=313 dir=0 hash=6bb748f7
+search map=5 k=2 (11,24)->(55,38) turns=1 infos=0 dir=3 hash=e4f210af
+search map=5 k=3 (14,48)->(43,7) turns=267 infos=266 dir=1 hash=5768ca96
+search map=5 k=4 (38,57)->(66,6) turns=36 infos=35 dir=3 hash=48f8e188
+search map=5 k=5 (59,55)->(25,25) turns=1 infos=0 dir=1 hash=e4f210af
+search map=6 k=0 (14,89)->(38,17) turns=1 infos=0 dir=3 hash=144dd30f
+search map=6 k=1 (12,84)->(4,14) turns=1 infos=0 dir=3 hash=144dd30f
+search map=6 k=2 (10,62)->(30,62) turns=185 infos=184 dir=1 hash=f18b3400
+search map=6 k=3 (36,69)->(1,132) turns=1 infos=0 dir=3 hash=144dd30f
+search map=6 k=4 (39,80)->(22,111) turns=222 infos=221 dir=1 hash=0c8a3fa1
+search map=6 k=5 (35,82)->(21,52) turns=1 infos=0 dir=0 hash=144dd30f
+search map=7 k=0 (7,19)->(31,31) turns=57 infos=56 dir=3 hash=a4454501
+search map=7 k=1 (38,61)->(48,1) turns=80 infos=79 dir=2 hash=7a9f7359
+search map=7 k=2 (17,23)->(28,26) turns=199 infos=198 dir=2 hash=bc204d99
+search map=7 k=3 (12,18)->(23,20) turns=57 infos=56 dir=0 hash=9ffb860b
+search map=7 k=4 (40,51)->(26,64) turns=243 infos=242 dir=1 hash=3f8dde08
+search map=7 k=5 (34,13)->(22,69) turns=1 infos=0 dir=2 hash=06cd39ff
+search map=8 k=0 (43,48)->(61,63) turns=1 infos=0 dir=0 hash=50d10ac7
+search map=8 k=1 (86,39)->(16,65) turns=1 infos=0 dir=0 hash=50d10ac7
+search map=8 k=2 (78,30)->(18,2) turns=5 infos=4 dir=3 hash=5a6e35fb
+search map=8 k=3 (69,40)->(27,28) turns=1 infos=0 dir=0 hash=50d10ac7
+search map=8 k=4 (74,62)->(52,59) turns=1 infos=0 dir=1 hash=50d10ac7
+search map=8 k=5 (76,70)->(40,41) turns=1 infos=0 dir=3 hash=50d10ac7
+search map=9 k=0 (7,8)->(5,16) turns=261 infos=260 dir=1 hash=b5be9295
+search map=9 k=1 (6,10)->(12,24) turns=47 infos=22 dir=3 hash=4676a82f
+search map=9 k=2 (5,12)->(1,4) turns=249 infos=248 dir=0 hash=aecaa338
+search map=9 k=3 (12,27)->(12,35) turns=339 infos=338 dir=1 hash=62c6766c
+search map=9 k=4 (1,1)->(10,67) turns=1 infos=0 dir=0 hash=4afc2f27
+search map=9 k=5 (6,62)->(7,50) turns=29 infos=15 dir=0 hash=acf44cc6
+search map=10 k=0 (3,48)->(36,3) turns=1 infos=0 dir=2 hash=5a5ec5e7
+search map=10 k=1 (54,52)->(19,68) turns=1 infos=0 dir=2 hash=5a5ec5e7
+search map=10 k=2 (53,58)->(45,10) turns=1 infos=0 dir=3 hash=5a5ec5e7
+search map=10 k=3 (36,48)->(34,6) turns=660 infos=659 dir=1 hash=92be5b10
+search map=10 k=4 (15,14)->(52,30) turns=596 infos=595 dir=1 hash=16ce56cb
+search map=10 k=5 (4,1)->(23,52) turns=1 infos=0 dir=3 hash=5a5ec5e7
+search map=11 k=0 (33,1)->(46,56) turns=1 infos=0 dir=2 hash=f9cb99af
+search map=11 k=1 (18,60)->(43,4) turns=1 infos=0 dir=3 hash=f9cb99af
+search map=11 k=2 (29,22)->(45,5) turns=221 infos=220 dir=3 hash=04defa01
+search map=11 k=3 (31,1)->(26,50) turns=1 infos=0 dir=2 hash=f9cb99af
+search map=11 k=4 (38,39)->(7,59) turns=319 infos=318 dir=2 hash=9b43fa0f
+search map=11 k=5 (39,61)->(49,37) turns=1 infos=0 dir=3 hash=f9cb99af
+search map=12 k=0 (82,67)->(63,35) turns=1 infos=0 dir=3 hash=7212f12f
+search map=12 k=1 (43,61)->(44,42) turns=237 infos=236 dir=1 hash=2896daa8
+search map=12 k=2 (78,5)->(62,20) turns=1 infos=0 dir=1 hash=7212f12f
+search map=12 k=3 (67,61)->(16,10) turns=1 infos=0 dir=0 hash=7212f12f
+search map=12 k=4 (8,69)->(36,32) turns=1 infos=0 dir=2 hash=7212f12f
+search map=12 k=5 (31,23)->(48,5) turns=407 infos=406 dir=0 hash=1777a72f
+search map=13 k=0 (37,17)->(56,79) turns=932 infos=931 dir=1 hash=d4aa45c3
+search map=13 k=1 (93,49)->(6,114) turns=140 infos=139 dir=3 hash=9991f74d
+search map=13 k=2 (97,88)->(54,66) turns=185 infos=184 dir=2 hash=54602075
+search map=13 k=3 (5,35)->(32,72) turns=215 infos=214 dir=1 hash=6fe7b41f
+search map=13 k=4 (35,5)->(100,59) turns=295 infos=294 dir=2 hash=99b9a8e3
+search map=13 k=5 (56,51)->(96,90) turns=510 infos=509 dir=2 hash=a97b0fed
+search map=14 k=0 (56,12)->(55,65) turns=1 infos=0 dir=1 hash=7212f12f
+search map=14 k=1 (43,48)->(74,9) turns=825 infos=824 dir=2 hash=1388d6a2
+search map=14 k=2 (50,28)->(62,19) turns=1 infos=0 dir=2 hash=7212f12f
+search map=14 k=3 (72,9)->(41,68) turns=18 infos=17 dir=3 hash=512829ff
+search map=14 k=4 (45,66)->(41,8) turns=1 infos=0 dir=2 hash=7212f12f
+search map=14 k=5 (13,29)->(69,50) turns=656 infos=655 dir=2 hash=42494fa7
+search map=15 k=0 (45,31)->(34,7) turns=1 infos=0 dir=3 hash=e9d66cb7
+search map=15 k=1 (21,48)->(26,7) turns=1 infos=0 dir=2 hash=e9d66cb7
+search map=15 k=2 (29,37)->(43,35) turns=107 infos=106 dir=2 hash=21366fff
+search map=15 k=3 (13,44)->(22,32) turns=140 infos=139 dir=1 hash=bca0746f
+search map=15 k=4 (28,12)->(25,54) turns=1 infos=0 dir=0 hash=e9d66cb7
+search map=15 k=5 (60,62)->(41,69) turns=1 infos=0 dir=1 hash=e9d66cb7
+search map=16 k=0 (41,3)->(5,33) turns=15 infos=14 dir=3 hash=0d44b61d
+search map=16 k=1 (51,30)->(55,31) turns=1 infos=0 dir=0 hash=e5e73a5f
+search map=16 k=2 (21,44)->(3,37) turns=1 infos=0 dir=1 hash=e5e73a5f
+search map=16 k=3 (56,25)->(40,56) turns=1 infos=0 dir=2 hash=e5e73a5f
+search map=16 k=4 (53,15)->(27,37) turns=1 infos=0 dir=3 hash=e5e73a5f
+search map=16 k=5 (8,11)->(2,41) turns=1 infos=0 dir=2 hash=e5e73a5f
+search map=17 k=0 (34,15)->(50,35) turns=1 infos=0 dir=3 hash=92746fb7
+search map=17 k=1 (19,10)->(43,9) turns=1 infos=0 dir=0 hash=92746fb7
+search map=17 k=2 (35,59)->(47,14) turns=1 infos=0 dir=1 hash=92746fb7
+search map=17 k=3 (55,1)->(40,39) turns=1 infos=0 dir=3 hash=92746fb7
+search map=17 k=4 (49,46)->(11,49) turns=178 infos=177 dir=0 hash=0a34f4e4
+search map=17 k=5 (30,10)->(29,56) turns=1 infos=0 dir=3 hash=92746fb7
+search map=18 k=0 (14,40)->(24,46) turns=29 infos=28 dir=2 hash=7a5ba27d
+search map=18 k=1 (17,36)->(22,37) turns=1 infos=0 dir=3 hash=da61bd2f
+search map=18 k=2 (4,12)->(7,20) turns=1 infos=0 dir=2 hash=da61bd2f
+search map=18 k=3 (5,49)->(10,40) turns=1 infos=0 dir=3 hash=da61bd2f
+search map=18 k=4 (11,6)->(17,20) turns=125 infos=124 dir=0 hash=7ce8a253
+search map=18 k=5 (18,29)->(11,16) turns=1 infos=0 dir=3 hash=da61bd2f
+search map=19 k=0 (20,17)->(47,17) turns=375 infos=374 dir=1 hash=e65d2586
+search map=19 k=1 (14,81)->(62,26) turns=1 infos=0 dir=1 hash=caeec207
+search map=19 k=2 (34,39)->(60,19) turns=470 infos=469 dir=1 hash=749aef94
+search map=19 k=3 (51,20)->(52,71) turns=181 infos=180 dir=1 hash=0571d9db
+search map=19 k=4 (19,27)->(72,51) turns=514 infos=513 dir=3 hash=bf8e0c41
+search map=19 k=5 (32,50)->(41,71) turns=1 infos=0 dir=0 hash=caeec207
+search map=20 k=0 (52,25)->(46,72) turns=188 infos=187 dir=0 hash=738cd396
+search map=20 k=1 (51,29)->(43,8) turns=1 infos=0 dir=3 hash=eba7657f
+search map=20 k=2 (44,30)->(13,1) turns=1 infos=0 dir=2 hash=eba7657f
+search map=20 k=3 (19,81)->(10,5) turns=1 infos=0 dir=0 hash=eba7657f
+search map=20 k=4 (38,30)->(58,83) turns=568 infos=567 dir=1 hash=2f1946f2
+search map=20 k=5 (47,34)->(43,16) turns=139 infos=138 dir=1 hash=1407d214
+search map=21 k=0 (31,13)->(10,66) turns=1 infos=0 dir=1 hash=631c6c77
+search map=21 k=1 (26,18)->(50,60) turns=1 infos=0 dir=1 hash=631c6c77
+search map=21 k=2 (23,32)->(36,1) turns=168 infos=167 dir=1 hash=d0560419
+search map=21 k=3 (52,16)->(38,10) turns=1 infos=0 dir=1 hash=631c6c77
+search map=21 k=4 (24,8)->(57,57) turns=18 infos=17 dir=0 hash=0bd2f0d5
+search map=21 k=5 (40,20)->(51,51) turns=1 infos=0 dir=0 hash=631c6c77
+search map=22 k=0 (1,23)->(8,36) turns=1 infos=0 dir=3 hash=549a88bf
+search map=22 k=1 (26,29)->(39,36) turns=8 infos=7 dir=1 hash=afdf5b62
+search map=22 k=2 (2,26)->(18,11) turns=1 infos=0 dir=3 hash=549a88bf
+search map=22 k=3 (4,19)->(7,17) turns=1 infos=0 dir=0 hash=549a88bf
+search map=22 k=4 (33,20)->(37,2) turns=3 infos=2 dir=3 hash=24c97a30
+search map=22 k=5 (26,25)->(41,8) turns=225 infos=224 dir=0 hash=a9f6e323
+search map=23 k=0 (6,10)->(12,18) turns=46 infos=20 dir=2 hash=0fa07b53
+search map=23 k=1 (6,37)->(5,13) turns=226 infos=225 dir=1 hash=e1d47d30
+search map=23 k=2 (16,37)->(36,24) turns=241 infos=240 dir=1 hash=9f4610f4
+search map=23 k=3 (35,3)->(36,19) turns=1 infos=0 dir=2 hash=57b37dc7
+search map=23 k=4 (38,19)->(3,25) turns=1 infos=0 dir=3 hash=57b37dc7
+search map=23 k=5 (14,32)->(9,40) turns=80 infos=25 dir=1 hash=04b8829b
+search map=24 k=0 (35,17)->(23,25) turns=1 infos=0 dir=2 hash=a43a429f
+search map=24 k=1 (10,10)->(35,11) turns=274 infos=273 dir=0 hash=f327f4f0
+search map=24 k=2 (29,21)->(21,28) turns=1 infos=0 dir=3 hash=a43a429f
+search map=24 k=3 (35,14)->(15,26) turns=1 infos=0 dir=3 hash=a43a429f
+search map=24 k=4 (24,29)->(9,6) turns=1 infos=0 dir=1 hash=a43a429f
+search map=24 k=5 (14,10)->(33,30) turns=274 infos=273 dir=1 hash=1a3c96ea
+search map=25 k=0 (43,29)->(37,50) turns=714 infos=713 dir=0 hash=ff7cc575
+search map=25 k=1 (42,61)->(26,40) turns=24 infos=23 dir=0 hash=ab417f7a
+search map=25 k=2 (45,71)->(32,66) turns=1 infos=0 dir=2 hash=9a3c8bf7
+search map=25 k=3 (44,49)->(24,24) turns=1 infos=0 dir=1 hash=9a3c8bf7
+search map=25 k=4 (38,15)->(19,60) turns=427 infos=426 dir=1 hash=d1ab5f45
+search map=25 k=5 (51,7)->(46,68) turns=1 infos=0 dir=2 hash=9a3c8bf7
+search map=26 k=0 (1,18)->(15,30) turns=249 infos=248 dir=1 hash=82e287c0
+search map=26 k=1 (12,18)->(4,1) turns=87 infos=25 dir=0 hash=4141712d
+search map=26 k=2 (2,13)->(10,32) turns=260 infos=259 dir=2 hash=f0e82d05
+search map=26 k=3 (13,8)->(10,32) turns=338 infos=337 dir=2 hash=3a0352ba
+search map=26 k=4 (17,14)->(9,19) turns=50 infos=13 dir=1 hash=3aa3a816
+search map=26 k=5 (18,19)->(4,31) turns=1 infos=0 dir=3 hash=2038808f
+search map=27 k=0 (39,61)->(49,57) turns=282 infos=281 dir=3 hash=ae94e2c7
+search map=27 k=1 (3,29)->(33,56) turns=829 infos=828 dir=2 hash=a731aaaf
+search map=27 k=2 (45,73)->(27,40) turns=1 infos=0 dir=3 hash=3f2cff3f
+search map=27 k=3 (7,87)->(33,11) turns=503 infos=502 dir=0 hash=d1aab1b0
+search map=27 k=4 (51,39)->(46,58) turns=1 infos=0 dir=0 hash=3f2cff3f
+search map=27 k=5 (2,94)->(53,27) turns=353 infos=352 dir=0 hash=7682bf43
+search map=28 k=0 (40,38)->(10,35) turns=385 infos=384 dir=1 hash=8ee55f3b
+search map=28 k=1 (27,41)->(51,51) turns=503 infos=502 dir=2 hash=d48e0e86
+search map=28 k=2 (37,71)->(38,77) turns=1 infos=0 dir=2 hash=a0fe1887
+search map=28 k=3 (24,1)->(62,59) turns=342 infos=341 dir=0 hash=dd60c4f3
+search map=28 k=4 (56,58)->(25,58) turns=11 infos=10 dir=1 hash=1c360a22
+search map=28 k=5 (41,33)->(60,61) turns=115 infos=114 dir=2 hash=7ab696df
+search map=29 k=0 (15,12)->(3,18) turns=89 infos=18 dir=1 hash=925aeaeb
+search map=29 k=1 (8,35)->(13,3) turns=56 infos=55 dir=0 hash=bb7827c0
+search map=29 k=2 (15,3)->(2,20) turns=290 infos=289 dir=0 hash=591cfdb7
+search map=29 k=3 (2,3)->(1,6) turns=7 infos=4 dir=1 hash=fc6f68fd
+search map=29 k=4 (18,6)->(5,14) turns=1 infos=0 dir=2 hash=f7ad203f
+search map=29 k=5 (11,15)->(10,8) turns=290 infos=289 dir=2 hash=0ede66fe
+search map=30 k=0 (2,66)->(34,45) turns=340 infos=339 dir=1 hash=ecbc83c8
+search map=30 k=1 (32,76)->(39,11) turns=1 infos=0 dir=0 hash=7eb147ff
+search map=30 k=2 (42,18)->(31,62) turns=786 infos=785 dir=1 hash=d2712ffa
+search map=30 k=3 (87,33)->(13,20) turns=286 infos=285 dir=1 hash=db698e1a
+search map=30 k=4 (77,21)->(53,50) turns=52 infos=51 dir=0 hash=f39e588d
+search map=30 k=5 (35,27)->(24,66) turns=937 infos=936 dir=2 hash=f4f4a276
+search map=31 k=0 (23,15)->(42,57) turns=326 infos=325 dir=3 hash=c859fd70
+search map=31 k=1 (7,22)->(48,17) turns=331 infos=330 dir=1 hash=612698c8
+search map=31 k=2 (75,38)->(37,34) turns=97 infos=96 dir=1 hash=38a40d57
+search map=31 k=3 (13,44)->(83,14) turns=1 infos=0 dir=0 hash=bf41bcef
+search map=31 k=4 (13,21)->(38,34) turns=330 infos=329 dir=2 hash=628a3e3d
+search map=31 k=5 (3,19)->(21,52) turns=1 infos=0 dir=2 hash=bf41bcef
+search map=32 k=0 (55,120)->(32,117) turns=1 infos=0 dir=1 hash=93396b6f
+search map=32 k=1 (31,71)->(26,6) turns=1 infos=0 dir=0 hash=93396b6f
+search map=32 k=2 (88,30)->(83,114) turns=1 infos=0 dir=2 hash=93396b6f
+search map=32 k=3 (85,32)->(54,116) turns=232 infos=231 dir=1 hash=2385d57a
+search map=32 k=4 (97,88)->(68,67) turns=1 infos=0 dir=3 hash=93396b6f
+search map=32 k=5 (56,25)->(39,118) turns=381 infos=380 dir=0 hash=bbd4cd2d
+search map=33 k=0 (44,62)->(20,12) turns=416 infos=415 dir=1 hash=aa353efd
+search map=33 k=1 (12,4)->(30,5) turns=1 infos=0 dir=1 hash=5e84bdd7
+search map=33 k=2 (37,3)->(1,64) turns=1 infos=0 dir=3 hash=5e84bdd7
+search map=33 k=3 (13,13)->(44,24) turns=1 infos=0 dir=3 hash=5e84bdd7
+search map=33 k=4 (38,31)->(44,61) turns=1 infos=0 dir=1 hash=5e84bdd7
+search map=33 k=5 (1,26)->(31,43) turns=1 infos=0 dir=2 hash=5e84bdd7
+search map=34 k=0 (16,70)->(16,88) turns=335 infos=334 dir=1 hash=8da079ff
+search map=34 k=1 (48,65)->(97,123) turns=821 infos=820 dir=1 hash=ef85848a
+search map=34 k=2 (116,61)->(127,47) turns=1 infos=0 dir=1 hash=a7202197
+search map=34 k=3 (82,90)->(68,73) turns=632 infos=631 dir=0 hash=b8ed70e8
+search map=34 k=4 (84,2)->(21,48) turns=175 infos=174 dir=2 hash=e0e70866
+search map=34 k=5 (119,27)->(110,139) turns=1 infos=0 dir=3 hash=a7202197
+search map=35 k=0 (32,9)->(9,21) turns=359 infos=358 dir=1 hash=108821f7
+search map=35 k=1 (11,6)->(6,65) turns=369 infos=368 dir=0 hash=c47a383e
+search map=35 k=2 (18,16)->(35,27) turns=676 infos=675 dir=1 hash=14c7aaa7
+search map=35 k=3 (17,3)->(24,54) turns=183 infos=182 dir=0 hash=9114bd70
+search map=35 k=4 (21,56)->(1,8) turns=1 infos=0 dir=2 hash=bfd6e5e7
+search map=35 k=5 (17,26)->(25,37) turns=660 infos=659 dir=1 hash=9ad0442b
+search map=36 k=0 (21,14)->(4,1) turns=1 infos=0 dir=2 hash=e4c7c10f
+search map=36 k=1 (10,9)->(23,9) turns=30 infos=19 dir=1 hash=53e684c3
+search map=36 k=2 (16,16)->(10,3) turns=1 infos=0 dir=2 hash=e4c7c10f
+search map=36 k=3 (3,5)->(11,13) turns=176 infos=175 dir=3 hash=5b2d72d8
+search map=36 k=4 (1,3)->(6,7) turns=177 infos=176 dir=1 hash=a1d3c793
+search map=36 k=5 (3,16)->(27,5) turns=1 infos=0 dir=3 hash=e4c7c10f
+search map=37 k=0 (16,13)->(21,76) turns=1 infos=0 dir=3 hash=b73a3d4f
+search map=37 k=1 (51,14)->(40,81) turns=1 infos=0 dir=3 hash=b73a3d4f
+search map=37 k=2 (57,10)->(78,41) turns=1 infos=0 dir=3 hash=b73a3d4f
+search map=37 k=3 (67,128)->(53,21) turns=1 infos=0 dir=1 hash=b73a3d4f
+search map=37 k=4 (64,137)->(34,14) turns=1 infos=0 dir=1 hash=b73a3d4f
+search map=37 k=5 (62,86)->(5,99) turns=1 infos=0 dir=3 hash=b73a3d4f
+search map=38 k=0 (9,70)->(7,24) turns=1 infos=0 dir=3 hash=5df4e01f
+search map=38 k=1 (30,3)->(30,21) turns=1 infos=0 dir=3 hash=5df4e01f
+search map=38 k=2 (21,42)->(38,4) turns=622 infos=621 dir=2 hash=d82762c8
+search map=38 k=3 (31,72)->(9,34) turns=1 infos=0 dir=1 hash=5df4e01f
+search map=38 k=4 (63,59)->(12,66) turns=858 infos=857 dir=1 hash=ee52fa85
+search map=38 k=5 (68,5)->(12,57) turns=1 infos=0 dir=0 hash=5df4e01f
+search map=39 k=0 (55,22)->(45,62) turns=512 infos=511 dir=0 hash=3015de82
+search map=39 k=1 (1,79)->(9,71) turns=1 infos=0 dir=0 hash=7b28799f
+search map=39 k=2 (53,11)->(17,29) turns=352 infos=351 dir=1 hash=3a9795df
+search map=39 k=3 (1,21)->(25,31) turns=185 infos=184 dir=1 hash=d44c7cd1
+search map=39 k=4 (47,29)->(29,17) turns=6 infos=5 dir=2 hash=04b290ef
+search map=39 k=5 (45,7)->(45,74) turns=875 infos=874 dir=1 hash=0dbe26bb
+search map=40 k=0 (32,52)->(44,3) turns=1 infos=0 dir=0 hash=e5e73a5f
+search map=40 k=1 (32,25)->(10,18) turns=1 infos=0 dir=0 hash=e5e73a5f
+search map=40 k=2 (35,37)->(17,3) turns=1 infos=0 dir=0 hash=e5e73a5f
+search map=40 k=3 (4,39)->(25,16) turns=1 infos=0 dir=2 hash=e5e73a5f
+search map=40 k=4 (1,12)->(51,38) turns=1 infos=0 dir=0 hash=e5e73a5f
+search map=40 k=5 (26,24)->(22,51) turns=1 infos=0 dir=3 hash=e5e73a5f
+search map=41 k=0 (21,1)->(35,7) turns=338 infos=337 dir=2 hash=1f54e317
+search map=41 k=1 (36,27)->(55,25) turns=1057 infos=1056 dir=1 hash=4cb08c82
+search map=41 k=2 (18,24)->(63,13) turns=493 infos=492 dir=0 hash=a0d77070
+search map=41 k=3 (76,11)->(47,40) turns=1 infos=0 dir=1 hash=506bfdf7
+search map=41 k=4 (61,8)->(7,37) turns=139 infos=138 dir=1 hash=72c79e23
+search map=41 k=5 (5,42)->(1,41) turns=1 infos=0 dir=1 hash=506bfdf7
+search map=42 k=0 (54,55)->(31,28) turns=214 infos=213 dir=1 hash=3c7f822d
+search map=42 k=1 (4,28)->(52,16) turns=1 infos=0 dir=2 hash=4fa5477f
+search map=42 k=2 (2,2)->(18,9) turns=1 infos=0 dir=0 hash=4fa5477f
+search map=42 k=3 (68,40)->(28,65) turns=1 infos=0 dir=3 hash=4fa5477f
+search map=42 k=4 (62,5)->(63,67) turns=1 infos=0 dir=1 hash=4fa5477f
+search map=42 k=5 (46,47)->(51,7) turns=1 infos=0 dir=3 hash=4fa5477f
+search map=43 k=0 (20,37)->(1,10) turns=519 infos=518 dir=3 hash=33114394
+search map=43 k=1 (14,29)->(21,32) turns=1 infos=0 dir=2 hash=4fa5477f
+search map=43 k=2 (64,1)->(12,34) turns=1 infos=0 dir=2 hash=4fa5477f
+search map=43 k=3 (31,61)->(32,47) turns=330 infos=329 dir=3 hash=1916d539
+search map=43 k=4 (46,19)->(30,5) turns=945 infos=944 dir=3 hash=299447a0
+search map=43 k=5 (53,23)->(49,12) turns=1 infos=0 dir=1 hash=4fa5477f
+search map=44 k=0 (51,35)->(3,53) turns=1 infos=0 dir=3 hash=e5e73a5f
+search map=44 k=1 (51,31)->(34,40) turns=1 infos=0 dir=2 hash=e5e73a5f
+search map=44 k=2 (8,29)->(55,40) turns=236 infos=235 dir=3 hash=6cbc4dbc
+search map=44 k=3 (23,10)->(34,51) turns=1 infos=0 dir=3 hash=e5e73a5f
+search map=44 k=4 (45,21)->(42,44) turns=1 infos=0 dir=1 hash=e5e73a5f
+search map=44 k=5 (57,19)->(36,26) turns=1 infos=0 dir=0 hash=e5e73a5f
+search map=45 k=0 (14,18)->(25,7) turns=237 infos=236 dir=3 hash=2169e2e3
+search map=45 k=1 (39,2)->(9,52) turns=14 infos=13 dir=1 hash=1522d427
+search map=45 k=2 (52,8)->(47,2) turns=1 infos=0 dir=1 hash=e5e73a5f
+search map=45 k=3 (38,7)->(34,53) turns=15 infos=14 dir=1 hash=55936bcb
+search map=45 k=4 (8,57)->(57,52) turns=1 infos=0 dir=3 hash=e5e73a5f
+search map=45 k=5 (2,38)->(40,42) turns=1 infos=0 dir=1 hash=e5e73a5f
+search map=46 k=0 (33,65)->(62,45) turns=631 infos=630 dir=0 hash=71c3834f
+search map=46 k=1 (40,4)->(6,40) turns=1 infos=0 dir=2 hash=5df4e01f
+search map=46 k=2 (35,34)->(69,77) turns=1858 infos=1857 dir=3 hash=4729faa3
+search map=46 k=3 (38,64)->(22,71) turns=1785 infos=1784 dir=2 hash=665d35eb
+search map=46 k=4 (65,62)->(14,52) turns=1851 infos=1850 dir=1 hash=7476d9d4
+search map=46 k=5 (33,2)->(54,57) turns=1 infos=0 dir=2 hash=5df4e01f
+search map=47 k=0 (26,15)->(17,54) turns=984 infos=983 dir=0 hash=4bcf3076
+search map=47 k=1 (6,70)->(62,69) turns=1 infos=0 dir=0 hash=5df4e01f
+search map=47 k=2 (58,59)->(64,76) turns=682 infos=681 dir=1 hash=16393d9c
+search map=47 k=3 (52,76)->(78,29) turns=1 infos=0 dir=2 hash=5df4e01f
+search map=47 k=4 (35,27)->(64,20) turns=238 infos=36 dir=0 hash=83637903
+search map=47 k=5 (20,41)->(5,7) turns=1264 infos=1263 dir=3 hash=2df9563b
+search map=48 k=0 (62,5)->(12,39) turns=1 infos=0 dir=2 hash=5df4e01f
+search map=48 k=1 (25,61)->(34,24) turns=1060 infos=1059 dir=0 hash=bab0b001
+search map=48 k=2 (49,36)->(43,11) turns=180 infos=31 dir=0 hash=4bb98b33
+search map=48 k=3 (68,52)->(64,24) turns=142 infos=32 dir=0 hash=04c9d9b1
+search map=48 k=4 (76,39)->(51,11) turns=1 infos=0 dir=2 hash=5df4e01f
+search map=48 k=5 (72,35)->(41,76) turns=1 infos=0 dir=2 hash=5df4e01f
+search map=49 k=0 (30,39)->(50,3) turns=3034 infos=3033 dir=0 hash=37fd5a9a
+search map=49 k=1 (77,71)->(74,68) turns=1 infos=0 dir=2 hash=5df4e01f
+search map=49 k=2 (65,24)->(17,31) turns=735 infos=734 dir=0 hash=62a6e450
+search map=49 k=3 (25,52)->(47,1) turns=1531 infos=1530 dir=3 hash=e6731443
+search map=49 k=4 (32,47)->(39,53) turns=51 infos=13 dir=3 hash=f258b9b7
+search map=49 k=5 (20,51)->(6,33) turns=923 infos=922 dir=1 hash=27a9e4fd
+search map=50 k=0 (47,23)->(24,51) turns=611 infos=610 dir=1 hash=5e9c56c3
+search map=50 k=1 (20,5)->(12,9) turns=1 infos=0 dir=3 hash=6743482f
+search map=50 k=2 (25,48)->(31,42) turns=43 infos=12 dir=0 hash=9ce62616
+search map=50 k=3 (9,61)->(34,62) turns=1 infos=0 dir=1 hash=6743482f
+search map=50 k=4 (18,29)->(22,45) turns=81 infos=20 dir=1 hash=61049309
+search map=50 k=5 (19,47)->(51,16) turns=1463 infos=1462 dir=3 hash=e8390e42
+search map=51 k=0 (57,24)->(11,36) turns=979 infos=978 dir=2 hash=a8a7de76
+search map=51 k=1 (30,37)->(64,7) turns=1218 infos=1217 dir=3 hash=bf950329
+search map=51 k=2 (25,35)->(57,27) turns=697 infos=696 dir=0 hash=a281ddbf
+search map=51 k=3 (45,27)->(49,21) turns=1276 infos=1275 dir=2 hash=b4b17987
+search map=51 k=4 (58,5)->(47,21) turns=1 infos=0 dir=0 hash=ff78898f
+search map=51 k=5 (45,37)->(55,21) turns=152 infos=26 dir=0 hash=2c0ad30f
+search map=52 k=0 (5,15)->(11,15) turns=1 infos=0 dir=3 hash=ea9dcfbf
+search map=52 k=1 (18,14)->(46,42) turns=479 infos=478 dir=0 hash=19b9b8d4
+search map=52 k=2 (59,20)->(15,2) turns=1 infos=0 dir=3 hash=ea9dcfbf
+search map=52 k=3 (40,19)->(21,35) turns=260 infos=71 dir=2 hash=21489607
+search map=52 k=4 (22,56)->(3,53) turns=1 infos=0 dir=1 hash=ea9dcfbf
+search map=52 k=5 (21,53)->(10,53) turns=1 infos=0 dir=1 hash=ea9dcfbf
+search map=53 k=0 (54,72)->(42,14) turns=348 infos=347 dir=2 hash=61763892
+search map=53 k=1 (59,34)->(51,29) turns=281 infos=280 dir=0 hash=8b43b4dc
+search map=53 k=2 (66,42)->(21,50) turns=462 infos=461 dir=0 hash=1bb6ec3b
+search map=53 k=3 (25,87)->(4,49) turns=1 infos=0 dir=2 hash=514b566f
+search map=53 k=4 (58,84)->(15,59) turns=1 infos=0 dir=1 hash=514b566f
+search map=53 k=5 (41,19)->(42,35) turns=1 infos=0 dir=2 hash=514b566f
+search map=54 k=0 (8,17)->(6,36) turns=143 infos=142 dir=2 hash=4bb128a0
+search map=54 k=1 (10,48)->(65,25) turns=142 infos=141 dir=1 hash=a62c88c8
+search map=54 k=2 (63,18)->(30,34) turns=1 infos=0 dir=1 hash=4fa5477f
+search map=54 k=3 (2,32)->(16,28) turns=300 infos=299 dir=2 hash=54f6d49e
+search map=54 k=4 (9,10)->(18,50) turns=77 infos=76 dir=2 hash=094f3cd2
+search map=54 k=5 (6,64)->(23,17) turns=239 infos=238 dir=0 hash=0dbe10d4
+search map=55 k=0 (53,76)->(77,79) turns=142 infos=31 dir=1 hash=76c03ee8
+search map=55 k=1 (18,80)->(59,107) turns=1 infos=0 dir=3 hash=d453366f
+search map=55 k=2 (95,18)->(35,93) turns=1 infos=0 dir=1 hash=d453366f
+search map=55 k=3 (66,102)->(43,68) turns=254 infos=253 dir=3 hash=74634155
+search map=55 k=4 (32,107)->(47,32) turns=1 infos=0 dir=0 hash=d453366f
+search map=55 k=5 (16,22)->(81,56) turns=1 infos=0 dir=2 hash=d453366f
+search map=56 k=0 (54,13)->(21,23) turns=1 infos=0 dir=1 hash=e5e73a5f
+search map=56 k=1 (34,33)->(25,21) turns=1 infos=0 dir=0 hash=e5e73a5f
+search map=56 k=2 (10,9)->(41,36) turns=1 infos=0 dir=1 hash=e5e73a5f
+search map=56 k=3 (49,24)->(31,49) turns=1 infos=0 dir=1 hash=e5e73a5f
+search map=56 k=4 (53,37)->(32,2) turns=1 infos=0 dir=0 hash=e5e73a5f
+search map=56 k=5 (24,55)->(41,58) turns=1 infos=0 dir=1 hash=e5e73a5f
+search map=57 k=0 (29,43)->(45,22) turns=1 infos=0 dir=1 hash=e5e73a5f
+search map=57 k=1 (57,34)->(32,11) turns=1 infos=0 dir=2 hash=e5e73a5f
+search map=57 k=2 (48,9)->(8,3) turns=14 infos=13 dir=1 hash=b5e577bf
+search map=57 k=3 (54,46)->(40,27) turns=1 infos=0 dir=1 hash=e5e73a5f
+search map=57 k=4 (56,52)->(43,42) turns=1 infos=0 dir=2 hash=e5e73a5f
+search map=57 k=5 (48,10)->(53,7) turns=14 infos=13 dir=1 hash=6e19d744
+search map=58 k=0 (56,56)->(10,46) turns=1 infos=0 dir=1 hash=e5e73a5f
+search map=58 k=1 (28,57)->(17,14) turns=1 infos=0 dir=0 hash=e5e73a5f
+search map=58 k=2 (23,36)->(10,30) turns=1 infos=0 dir=3 hash=e5e73a5f
+search map=58 k=3 (47,5)->(54,1) turns=14 infos=13 dir=0 hash=32d40974
+search map=58 k=4 (4,18)->(56,48) turns=1 infos=0 dir=2 hash=e5e73a5f
+search map=58 k=5 (10,39)->(16,42) turns=1 infos=0 dir=3 hash=e5e73a5f
+search map=59 k=0 (56,49)->(30,12) turns=1 infos=0 dir=0 hash=e5e73a5f
+search map=59 k=1 (43,2)->(9,43) turns=51 infos=50 dir=1 hash=56a6abef
+search map=59 k=2 (36,28)->(36,20) turns=1 infos=0 dir=2 hash=e5e73a5f
+search map=59 k=3 (5,4)->(13,42) turns=1 infos=0 dir=1 hash=e5e73a5f
+search map=59 k=4 (14,32)->(12,58) turns=236 infos=235 dir=2 hash=327b3b59
+search map=59 k=5 (54,5)->(9,50) turns=1 infos=0 dir=3 hash=e5e73a5f
+search map=60 k=0 (12,4)->(15,27) turns=1 infos=0 dir=0 hash=961e322f
+search map=60 k=1 (1,8)->(49,4) turns=1 infos=0 dir=2 hash=961e322f
+search map=60 k=2 (12,11)->(15,12) turns=1 infos=0 dir=3 hash=961e322f
+search map=60 k=3 (57,47)->(56,43) turns=1 infos=0 dir=2 hash=961e322f
+search map=60 k=4 (21,36)->(48,46) turns=203 infos=202 dir=1 hash=2b532fa4
+search map=60 k=5 (21,44)->(27,11) turns=1 infos=0 dir=2 hash=961e322f
+search map=61 k=0 (26,38)->(25,29) turns=609 infos=608 dir=1 hash=52bd29da
+search map=61 k=1 (22,68)->(3,68) turns=1 infos=0 dir=2 hash=eb859f8f
+search map=61 k=2 (28,25)->(39,58) turns=510 infos=509 dir=3 hash=009caac8
+search map=61 k=3 (40,61)->(10,63) turns=27 infos=26 dir=2 hash=55c20527
+search map=61 k=4 (51,39)->(10,7) turns=1 infos=0 dir=0 hash=eb859f8f
+search map=61 k=5 (19,68)->(43,43) turns=1 infos=0 dir=0 hash=eb859f8f
+search map=62 k=0 (17,6)->(9,14) turns=1 infos=0 dir=0 hash=9cf3f95f
+search map=62 k=1 (76,47)->(87,6) turns=1 infos=0 dir=0 hash=9cf3f95f
+search map=62 k=2 (74,58)->(23,30) turns=1 infos=0 dir=2 hash=9cf3f95f
+search map=62 k=3 (89,19)->(36,47) turns=1 infos=0 dir=3 hash=9cf3f95f
+search map=62 k=4 (48,47)->(69,58) turns=1 infos=0 dir=3 hash=9cf3f95f
+search map=62 k=5 (15,28)->(71,2) turns=1 infos=0 dir=2 hash=9cf3f95f
+search map=63 k=0 (15,51)->(47,5) turns=1 infos=0 dir=1 hash=e5e73a5f
+search map=63 k=1 (39,15)->(12,13) turns=1 infos=0 dir=3 hash=e5e73a5f
+search map=63 k=2 (56,36)->(25,26) turns=1 infos=0 dir=0 hash=e5e73a5f
+search map=63 k=3 (22,53)->(39,53) turns=1 infos=0 dir=0 hash=e5e73a5f
+search map=63 k=4 (34,31)->(1,23) turns=536 infos=535 dir=0 hash=9343d42a
+search map=63 k=5 (5,12)->(3,47) turns=1 infos=0 dir=0 hash=e5e73a5f
+search map=64 k=0 (24,31)->(47,53) turns=605 infos=604 dir=0 hash=a42f835a
+search map=64 k=1 (47,31)->(39,31) turns=11 infos=10 dir=1 hash=b12c1cf2
+search map=64 k=2 (3,74)->(12,40) turns=1 infos=0 dir=3 hash=b9d6b7af
+search map=64 k=3 (29,85)->(18,27) turns=1291 infos=1290 dir=3 hash=464e2160
+search map=64 k=4 (18,26)->(7,127) turns=1 infos=0 dir=2 hash=b9d6b7af
+search map=64 k=5 (27,124)->(32,123) turns=1 infos=0 dir=0 hash=b9d6b7af
+search map=65 k=0 (215,21)->(89,32) turns=1 infos=0 dir=2 hash=1c05001f
+search map=65 k=1 (207,2)->(118,36) turns=1 infos=0 dir=3 hash=1c05001f
+search map=65 k=2 (4,29)->(196,29) turns=1 infos=0 dir=2 hash=1c05001f
+search map=65 k=3 (213,20)->(10,17) turns=1 infos=0 dir=3 hash=1c05001f
+search map=65 k=4 (5,19)->(151,24) turns=1 infos=0 dir=2 hash=1c05001f
+search map=65 k=5 (131,32)->(188,9) turns=1 infos=0 dir=0 hash=1c05001f
+search map=66 k=0 (15,21)->(17,6) turns=1 infos=0 dir=0 hash=5544b7ff
+search map=66 k=1 (12,6)->(27,24) turns=1 infos=0 dir=1 hash=5544b7ff
+search map=66 k=2 (5,24)->(2,23) turns=1 infos=0 dir=2 hash=5544b7ff
+search map=66 k=3 (25,9)->(20,4) turns=1 infos=0 dir=3 hash=5544b7ff
+search map=66 k=4 (16,8)->(26,6) turns=1 infos=0 dir=1 hash=5544b7ff
+search map=66 k=5 (15,27)->(16,12) turns=87 infos=86 dir=3 hash=db424c5c
+search map=67 k=0 (10,52)->(88,87) turns=1 infos=0 dir=2 hash=1f41b3df
+search map=67 k=1 (10,97)->(48,81) turns=1 infos=0 dir=2 hash=1f41b3df
+search map=67 k=2 (15,92)->(92,65) turns=1 infos=0 dir=0 hash=1f41b3df
+search map=67 k=3 (39,89)->(72,7) turns=1 infos=0 dir=0 hash=1f41b3df
+search map=67 k=4 (42,88)->(4,49) turns=1 infos=0 dir=3 hash=1f41b3df
+search map=67 k=5 (86,10)->(65,93) turns=1 infos=0 dir=3 hash=1f41b3df
+search map=68 k=0 (1,9)->(10,3) turns=47 infos=46 dir=1 hash=3d0ac7de
+search map=68 k=1 (1,3)->(5,10) turns=52 infos=51 dir=0 hash=601059dd
+search map=68 k=2 (4,3)->(11,3) turns=51 infos=50 dir=0 hash=71fa6369
+search map=68 k=3 (8,8)->(9,4) turns=51 infos=50 dir=1 hash=8642020a
+search map=68 k=4 (11,9)->(9,1) turns=51 infos=50 dir=0 hash=d10d7c5f
+search map=68 k=5 (7,7)->(4,7) turns=52 infos=51 dir=3 hash=528f05b6
+search map=69 k=0 (37,40)->(35,35) turns=1 infos=0 dir=1 hash=5d00ba27
+search map=69 k=1 (33,7)->(27,43) turns=1 infos=0 dir=1 hash=5d00ba27
+search map=69 k=2 (49,45)->(44,18) turns=1 infos=0 dir=2 hash=5d00ba27
+search map=69 k=3 (45,26)->(59,6) turns=1 infos=0 dir=2 hash=5d00ba27
+search map=69 k=4 (46,10)->(4,14) turns=140 infos=139 dir=2 hash=2d2eb01f
+search map=69 k=5 (53,22)->(43,47) turns=1 infos=0 dir=1 hash=5d00ba27
+search map=70 k=0 (46,66)->(42,35) turns=138 infos=137 dir=2 hash=dc5e1db5
+search map=70 k=1 (88,50)->(32,60) turns=122 infos=121 dir=3 hash=835ae556
+search map=70 k=2 (38,14)->(49,11) turns=636 infos=635 dir=3 hash=6fe3a1dd
+search map=70 k=3 (23,37)->(50,54) turns=98 infos=97 dir=3 hash=a3687029
+search map=70 k=4 (48,45)->(1,42) turns=550 infos=549 dir=0 hash=5f2f29a9
+search map=70 k=5 (32,12)->(46,6) turns=545 infos=544 dir=1 hash=3b146ed0
+search map=71 k=0 (28,2)->(21,16) turns=89 infos=21 dir=1 hash=277cdbb2
+search map=71 k=1 (19,8)->(5,10) turns=151 infos=150 dir=3 hash=e40aeefa
+search map=71 k=2 (9,13)->(22,5) turns=1 infos=0 dir=0 hash=c1d5ff3f
+search map=71 k=3 (42,16)->(12,20) turns=1 infos=0 dir=1 hash=c1d5ff3f
+search map=71 k=4 (48,1)->(16,31) turns=1 infos=0 dir=3 hash=c1d5ff3f
+search map=71 k=5 (11,20)->(38,26) turns=127 infos=126 dir=3 hash=06d9907e
+search map=72 k=0 (8,27)->(27,35) turns=375 infos=374 dir=3 hash=2bc60793
+search map=72 k=1 (13,28)->(26,28) turns=376 infos=375 dir=0 hash=99d88073
+search map=72 k=2 (14,46)->(7,74) turns=515 infos=514 dir=1 hash=ce33cd33
+search map=72 k=3 (12,56)->(22,15) turns=753 infos=752 dir=1 hash=ab0ecc9d
+search map=72 k=4 (18,17)->(36,31) turns=376 infos=375 dir=0 hash=71da1cd5
+search map=72 k=5 (22,36)->(15,24) turns=274 infos=273 dir=3 hash=2ddf4da3
+search map=73 k=0 (21,8)->(2,2) turns=1 infos=0 dir=0 hash=be42fff7
+search map=73 k=1 (14,39)->(22,19) turns=221 infos=220 dir=0 hash=9c552607
+search map=73 k=2 (18,31)->(4,15) turns=221 infos=220 dir=3 hash=04012662
+search map=73 k=3 (10,37)->(13,22) turns=9 infos=8 dir=1 hash=1e171f64
+search map=73 k=4 (10,39)->(21,1) turns=9 infos=8 dir=2 hash=dc8222a8
+search map=73 k=5 (12,12)->(19,34) turns=1 infos=0 dir=0 hash=be42fff7
+search map=74 k=0 (42,61)->(84,61) turns=877 infos=876 dir=0 hash=f45b0c36
+search map=74 k=1 (80,107)->(54,85) turns=1 infos=0 dir=3 hash=9ed8241f
+search map=74 k=2 (4,46)->(5,67) turns=1 infos=0 dir=1 hash=9ed8241f
+search map=74 k=3 (70,98)->(88,77) turns=1 infos=0 dir=1 hash=9ed8241f
+search map=74 k=4 (38,107)->(25,56) turns=1 infos=0 dir=0 hash=9ed8241f
+search map=74 k=5 (74,94)->(53,5) turns=1 infos=0 dir=3 hash=9ed8241f
+search map=75 k=0 (5,57)->(68,1) turns=1 infos=0 dir=1 hash=e4f210af
+search map=75 k=1 (60,19)->(49,13) turns=70 infos=19 dir=2 hash=5546960e
+search map=75 k=2 (52,25)->(25,20) turns=86 infos=32 dir=0 hash=c5ffbd2d
+search map=75 k=3 (63,70)->(30,47) turns=1 infos=0 dir=3 hash=e4f210af
+search map=75 k=4 (35,86)->(57,19) turns=1 infos=0 dir=0 hash=e4f210af
+search map=75 k=5 (43,68)->(41,51) turns=31 infos=21 dir=3 hash=667d8d50
+search map=76 k=0 (28,45)->(22,15) turns=1 infos=0 dir=2 hash=e5e73a5f
+search map=76 k=1 (36,44)->(35,13) turns=1 infos=0 dir=2 hash=e5e73a5f
+search map=76 k=2 (43,41)->(57,23) turns=91 infos=90 dir=0 hash=4363118a
+search map=76 k=3 (30,47)->(54,36) turns=1 infos=0 dir=1 hash=e5e73a5f
+search map=76 k=4 (37,7)->(55,16) turns=1 infos=0 dir=0 hash=e5e73a5f
+search map=76 k=5 (37,30)->(50,9) turns=91 infos=90 dir=0 hash=484a4337
+search map=77 k=0 (43,39)->(36,38) turns=90 infos=89 dir=0 hash=c4f98dcf
+search map=77 k=1 (45,33)->(51,21) turns=91 infos=90 dir=3 hash=65830d90
+search map=77 k=2 (27,15)->(16,58) turns=1 infos=0 dir=1 hash=e5e73a5f
+search map=77 k=3 (24,36)->(31,58) turns=1 infos=0 dir=2 hash=e5e73a5f
+search map=77 k=4 (25,49)->(14,44) turns=1 infos=0 dir=0 hash=e5e73a5f
+search map=77 k=5 (42,15)->(37,25) turns=52 infos=51 dir=3 hash=d6134c79
+search map=78 k=0 (76,172)->(42,5) turns=1 infos=0 dir=0 hash=8838769f
+search map=78 k=1 (56,105)->(59,96) turns=299 infos=298 dir=3 hash=2cbd319f
+search map=78 k=2 (79,130)->(79,115) turns=1 infos=0 dir=1 hash=8838769f
+search map=78 k=3 (5,53)->(55,52) turns=1 infos=0 dir=0 hash=8838769f
+search map=78 k=4 (70,28)->(10,168) turns=334 infos=333 dir=1 hash=58bee470
+search map=78 k=5 (78,177)->(15,147) turns=1 infos=0 dir=3 hash=8838769f
+search map=79 k=0 (15,23)->(1,11) turns=1 infos=0 dir=1 hash=91e96317
+search map=79 k=1 (58,41)->(22,26) turns=1 infos=0 dir=2 hash=91e96317
+search map=79 k=2 (32,44)->(5,66) turns=1 infos=0 dir=0 hash=91e96317
+search map=79 k=3 (26,10)->(2,1) turns=1 infos=0 dir=2 hash=91e96317
+search map=79 k=4 (54,40)->(47,44) turns=331 infos=330 dir=2 hash=37de2fb8
+search map=79 k=5 (17,52)->(26,62) turns=1 infos=0 dir=2 hash=91e96317
+search map=80 k=0 (5,33)->(12,47) turns=1 infos=0 dir=2 hash=0c72ef17
+search map=80 k=1 (22,26)->(8,15) turns=1 infos=0 dir=0 hash=0c72ef17
+search map=80 k=2 (26,20)->(8,58) turns=1 infos=0 dir=0 hash=0c72ef17
+search map=80 k=3 (16,59)->(4,24) turns=92 infos=91 dir=2 hash=0707c1e4
+search map=80 k=4 (2,2)->(14,53) turns=1 infos=0 dir=2 hash=0c72ef17
+search map=80 k=5 (9,45)->(19,22) turns=246 infos=245 dir=2 hash=04a6d1e4
+search map=81 k=0 (56,67)->(45,19) turns=1 infos=0 dir=1 hash=6bee725f
+search map=81 k=1 (34,59)->(52,15) turns=583 infos=582 dir=0 hash=fa285e6b
+search map=81 k=2 (24,18)->(55,67) turns=116 infos=115 dir=0 hash=2b68af0f
+search map=81 k=3 (23,62)->(1,14) turns=1 infos=0 dir=3 hash=6bee725f
+search map=81 k=4 (18,25)->(68,39) turns=116 infos=115 dir=3 hash=b77e41ba
+search map=81 k=5 (62,22)->(38,2) turns=1 infos=0 dir=3 hash=6bee725f
+search map=82 k=0 (96,66)->(24,44) turns=1 infos=0 dir=0 hash=7f82b20f
+search map=82 k=1 (118,24)->(118,34) turns=1 infos=0 dir=0 hash=7f82b20f
+search map=82 k=2 (122,60)->(98,48) turns=1 infos=0 dir=1 hash=7f82b20f
+search map=82 k=3 (104,50)->(32,45) turns=1 infos=0 dir=0 hash=7f82b20f
+search map=82 k=4 (83,27)->(113,58) turns=442 infos=441 dir=3 hash=a9ce3748
+search map=82 k=5 (85,54)->(151,9) turns=1 infos=0 dir=3 hash=7f82b20f
+search map=83 k=0 (22,38)->(10,4) turns=1 infos=0 dir=3 hash=772f02df
+search map=83 k=1 (25,46)->(28,23) turns=1 infos=0 dir=1 hash=772f02df
+search map=83 k=2 (28,29)->(10,31) turns=1 infos=0 dir=3 hash=772f02df
+search map=83 k=3 (1,43)->(23,8) turns=1 infos=0 dir=2 hash=772f02df
+search map=83 k=4 (3,36)->(2,22) turns=1 infos=0 dir=1 hash=772f02df
+search map=83 k=5 (3,2)->(23,34) turns=1 infos=0 dir=0 hash=772f02df
+search map=84 k=0 (36,21)->(14,26) turns=1 infos=0 dir=3 hash=2b0684ef
+search map=84 k=1 (13,18)->(28,19) turns=114 infos=113 dir=0 hash=f4dd3c66
+search map=84 k=2 (12,3)->(12,28) turns=301 infos=300 dir=0 hash=f9ba5468
+search map=84 k=3 (14,5)->(9,26) turns=133 infos=34 dir=1 hash=d551cc4c
+search map=84 k=4 (5,2)->(6,21) turns=278 infos=277 dir=0 hash=b2d47bf0
+search map=84 k=5 (3,5)->(31,29) turns=352 infos=351 dir=1 hash=baacabed
+search map=85 k=0 (7,25)->(21,24) turns=1 infos=0 dir=3 hash=f74fbcaf
+search map=85 k=1 (33,51)->(33,24) turns=153 infos=152 dir=2 hash=1e6ec86a
+search map=85 k=2 (23,12)->(40,26) turns=47 infos=46 dir=0 hash=61b3ae6a
+search map=85 k=3 (41,46)->(12,2) turns=526 infos=525 dir=2 hash=afaa3df7
+search map=85 k=4 (19,48)->(38,5) turns=367 infos=366 dir=2 hash=7b12e447
+search map=85 k=5 (49,48)->(50,11) turns=272 infos=271 dir=1 hash=49f3ee32
+search map=86 k=0 (11,8)->(3,5) turns=41 infos=17 dir=3 hash=460da0c4
+search map=86 k=1 (10,8)->(19,22) turns=426 infos=425 dir=2 hash=a0a50c6c
+search map=86 k=2 (13,22)->(5,12) turns=1 infos=0 dir=2 hash=5544b7ff
+search map=86 k=3 (24,22)->(24,19) turns=1 infos=0 dir=0 hash=5544b7ff
+search map=86 k=4 (20,4)->(4,22) turns=427 infos=426 dir=2 hash=d199c2fa
+search map=86 k=5 (18,28)->(5,3) turns=1 infos=0 dir=1 hash=5544b7ff
+search map=87 k=0 (1,28)->(22,23) turns=1 infos=0 dir=2 hash=767f6ba7
+search map=87 k=1 (16,3)->(17,18) turns=1 infos=0 dir=2 hash=767f6ba7
+search map=87 k=2 (12,2)->(8,3) turns=1 infos=0 dir=0 hash=767f6ba7
+search map=87 k=3 (1,10)->(12,3) turns=311 infos=310 dir=3 hash=737c1f30
+search map=87 k=4 (5,9)->(6,16) turns=158 infos=157 dir=2 hash=4a6951fb
+search map=87 k=5 (16,13)->(19,27) turns=1 infos=0 dir=0 hash=767f6ba7
+search map=88 k=0 (36,45)->(43,55) turns=1 infos=0 dir=0 hash=91e96317
+search map=88 k=1 (57,50)->(63,48) turns=192 infos=191 dir=0 hash=a631dfaa
+search map=88 k=2 (51,38)->(6,59) turns=838 infos=837 dir=2 hash=77b2b832
+search map=88 k=3 (32,63)->(56,51) turns=1 infos=0 dir=0 hash=91e96317
+search map=88 k=4 (31,34)->(44,50) turns=1 infos=0 dir=3 hash=91e96317
+search map=88 k=5 (49,45)->(10,65) turns=444 infos=443 dir=1 hash=d9b7caa8
+search map=89 k=0 (105,32)->(121,48) turns=1 infos=0 dir=2 hash=6d04bdcf
+search map=89 k=1 (10,68)->(49,9) turns=1 infos=0 dir=1 hash=6d04bdcf
+search map=89 k=2 (62,37)->(14,64) turns=1 infos=0 dir=0 hash=6d04bdcf
+search map=89 k=3 (102,10)->(128,67) turns=327 infos=326 dir=1 hash=d61cbffe
+search map=89 k=4 (41,70)->(55,52) turns=1 infos=0 dir=3 hash=6d04bdcf
+search map=89 k=5 (104,39)->(77,7) turns=896 infos=895 dir=3 hash=fa7ef18f
+search map=90 k=0 (7,32)->(43,43) turns=260 infos=49 dir=0 hash=6cbc96d3
+search map=90 k=1 (43,23)->(33,68) turns=931 infos=930 dir=1 hash=c510c4f3
+search map=90 k=2 (38,30)->(11,59) turns=945 infos=944 dir=0 hash=ae3403cb
+search map=90 k=3 (27,18)->(46,60) turns=559 infos=558 dir=2 hash=5042d29b
+search map=90 k=4 (73,6)->(55,52) turns=11 infos=10 dir=1 hash=a3dc40cc
+search map=90 k=5 (54,32)->(73,51) turns=912 infos=911 dir=3 hash=b63e9c98
+search map=91 k=0 (236,45)->(126,70) turns=194 infos=193 dir=1 hash=f2e4890a
+search map=91 k=1 (118,91)->(147,93) turns=1 infos=0 dir=3 hash=7d043747
+search map=91 k=2 (222,106)->(199,104) turns=1 infos=0 dir=1 hash=7d043747
+search map=91 k=3 (238,94)->(162,49) turns=1 infos=0 dir=1 hash=7d043747
+search map=91 k=4 (202,76)->(113,58) turns=357 infos=356 dir=3 hash=f73a6b53
+search map=91 k=5 (187,98)->(229,121) turns=1 infos=0 dir=1 hash=7d043747
+search map=92 k=0 (40,21)->(1,84) turns=1 infos=0 dir=3 hash=0217ec67
+search map=92 k=1 (54,69)->(27,24) turns=340 infos=339 dir=2 hash=102093e8
+search map=92 k=2 (25,86)->(20,48) turns=1 infos=0 dir=1 hash=0217ec67
+search map=92 k=3 (24,94)->(57,54) turns=1 infos=0 dir=0 hash=0217ec67
+search map=92 k=4 (87,64)->(46,60) turns=1 infos=0 dir=0 hash=0217ec67
+search map=92 k=5 (21,22)->(11,16) turns=1 infos=0 dir=2 hash=0217ec67
+search map=93 k=0 (176,31)->(16,157) turns=1 infos=0 dir=3 hash=43f145ff
+search map=93 k=1 (164,100)->(39,141) turns=2075 infos=2074 dir=0 hash=5447039c
+search map=93 k=2 (99,144)->(181,108) turns=848 infos=847 dir=2 hash=cfc7d44b
+search map=93 k=3 (148,54)->(120,179) turns=306 infos=305 dir=2 hash=0164e3b5
+search map=93 k=4 (40,9)->(30,125) turns=1 infos=0 dir=1 hash=43f145ff
+search map=93 k=5 (161,148)->(119,30) turns=1 infos=0 dir=2 hash=43f145ff
+search map=94 k=0 (26,17)->(28,4) turns=69 infos=68 dir=3 hash=d2419c0f
+search map=94 k=1 (26,12)->(8,6) turns=138 infos=137 dir=1 hash=49b61d78
+search map=94 k=2 (13,22)->(22,14) turns=1 infos=0 dir=3 hash=66aedf37
+search map=94 k=3 (12,6)->(4,16) turns=1 infos=0 dir=1 hash=66aedf37
+search map=94 k=4 (14,23)->(10,7) turns=1 infos=0 dir=2 hash=66aedf37
+search map=94 k=5 (7,3)->(33,18) turns=1 infos=0 dir=3 hash=66aedf37
+search map=95 k=0 (92,73)->(56,83) turns=1 infos=0 dir=2 hash=a3cbea87
+search map=95 k=1 (15,56)->(42,114) turns=1 infos=0 dir=1 hash=a3cbea87
+search map=95 k=2 (93,90)->(54,105) turns=1 infos=0 dir=0 hash=a3cbea87
+search map=95 k=3 (22,58)->(11,116) turns=1 infos=0 dir=0 hash=a3cbea87
+search map=95 k=4 (53,28)->(47,83) turns=706 infos=705 dir=1 hash=4c85c3d0
+search map=95 k=5 (26,14)->(60,67) turns=1 infos=0 dir=3 hash=a3cbea87
+search map=96 k=0 (1,61)->(36,57) turns=1 infos=0 dir=3 hash=4fa5477f
+search map=96 k=1 (56,46)->(35,24) turns=1 infos=0 dir=1 hash=4fa5477f
+search map=96 k=2 (33,27)->(36,18) turns=1 infos=0 dir=0 hash=4fa5477f
+search map=96 k=3 (26,38)->(43,58) turns=1 infos=0 dir=1 hash=4fa5477f
+search map=96 k=4 (35,4)->(5,27) turns=1 infos=0 dir=1 hash=4fa5477f
+search map=96 k=5 (41,23)->(60,8) turns=1 infos=0 dir=0 hash=4fa5477f
+search map=97 k=0 (9,61)->(51,1) turns=1 infos=0 dir=0 hash=a67a1ca7
+search map=97 k=1 (54,43)->(21,3) turns=1 infos=0 dir=1 hash=a67a1ca7
+search map=97 k=2 (48,53)->(27,21) turns=1 infos=0 dir=1 hash=a67a1ca7
+search map=97 k=3 (58,7)->(6,32) turns=1 infos=0 dir=3 hash=a67a1ca7
+search map=97 k=4 (27,19)->(45,52) turns=1 infos=0 dir=3 hash=a67a1ca7
+search map=97 k=5 (50,17)->(13,18) turns=1 infos=0 dir=2 hash=a67a1ca7
+search map=98 k=0 (10,34)->(38,53) turns=1 infos=0 dir=0 hash=806d3197
+search map=98 k=1 (57,36)->(6,51) turns=1 infos=0 dir=2 hash=806d3197
+search map=98 k=2 (15,37)->(26,28) turns=1 infos=0 dir=3 hash=806d3197
+search map=98 k=3 (3,81)->(48,39) turns=1 infos=0 dir=1 hash=806d3197
+search map=98 k=4 (23,16)->(52,62) turns=1 infos=0 dir=0 hash=806d3197
+search map=98 k=5 (7,19)->(58,53) turns=202 infos=201 dir=3 hash=d12e84a7
+search map=99 k=0 (27,51)->(38,48) turns=1 infos=0 dir=0 hash=52c73a3f
+search map=99 k=1 (2,10)->(19,55) turns=96 infos=95 dir=0 hash=dc05df27
+search map=99 k=2 (33,27)->(26,39) turns=1 infos=0 dir=3 hash=52c73a3f
+search map=99 k=3 (5,38)->(9,49) turns=1 infos=0 dir=0 hash=52c73a3f
+search map=99 k=4 (39,32)->(37,41) turns=1 infos=0 dir=0 hash=52c73a3f
+search map=99 k=5 (17,54)->(34,43) turns=1 infos=0 dir=1 hash=52c73a3f
+search map=100 k=0 (32,12)->(22,16) turns=1 infos=0 dir=0 hash=5ac97c17
+search map=100 k=1 (17,13)->(4,24) turns=1 infos=0 dir=0 hash=5ac97c17
+search map=100 k=2 (11,19)->(14,11) turns=80 infos=79 dir=1 hash=6cd6c7fe
+search map=100 k=3 (1,25)->(8,16) turns=1 infos=0 dir=0 hash=5ac97c17
+search map=100 k=4 (19,19)->(28,13) turns=1 infos=0 dir=0 hash=5ac97c17
+search map=100 k=5 (5,4)->(9,5) turns=1 infos=0 dir=3 hash=5ac97c17
+search map=101 k=0 (2,9)->(13,37) turns=1 infos=0 dir=2 hash=624b5147
+search map=101 k=1 (36,46)->(27,8) turns=1 infos=0 dir=3 hash=624b5147
+search map=101 k=2 (9,41)->(35,49) turns=1 infos=0 dir=1 hash=624b5147
+search map=101 k=3 (1,16)->(9,14) turns=1 infos=0 dir=2 hash=624b5147
+search map=101 k=4 (35,27)->(3,34) turns=278 infos=277 dir=3 hash=af3006dc
+search map=101 k=5 (26,1)->(40,21) turns=1 infos=0 dir=0 hash=624b5147
+search map=102 k=0 (31,43)->(51,16) turns=544 infos=543 dir=1 hash=ace736bc
+search map=102 k=1 (52,45)->(34,74) turns=900 infos=899 dir=0 hash=429a6e12
+search map=102 k=2 (29,21)->(41,43) turns=1 infos=0 dir=1 hash=3e17fdb7
+search map=102 k=3 (25,58)->(66,36) turns=1764 infos=1763 dir=2 hash=27b4e330
+search map=102 k=4 (11,32)->(10,22) turns=1 infos=0 dir=3 hash=3e17fdb7
+search map=102 k=5 (10,25)->(16,40) turns=1 infos=0 dir=1 hash=3e17fdb7
+search map=103 k=0 (184,42)->(184,40) turns=1 infos=0 dir=2 hash=0821dc7f
+search map=103 k=1 (52,35)->(136,13) turns=1 infos=0 dir=1 hash=0821dc7f
+search map=103 k=2 (158,57)->(183,22) turns=1 infos=0 dir=0 hash=0821dc7f
+search map=103 k=3 (71,67)->(43,50) turns=1 infos=0 dir=1 hash=0821dc7f
+search map=103 k=4 (168,45)->(71,11) turns=1 infos=0 dir=0 hash=0821dc7f
+search map=103 k=5 (46,7)->(175,31) turns=1 infos=0 dir=1 hash=0821dc7f
+search map=104 k=0 (55,72)->(2,55) turns=1 infos=0 dir=2 hash=0946405f
+search map=104 k=1 (51,62)->(37,8) turns=1 infos=0 dir=1 hash=0946405f
+search map=104 k=2 (18,84)->(33,6) turns=1 infos=0 dir=3 hash=0946405f
+search map=104 k=3 (46,57)->(30,14) turns=1 infos=0 dir=3 hash=0946405f
+search map=104 k=4 (32,23)->(34,77) turns=5 infos=4 dir=3 hash=8ce5cf86
+search map=104 k=5 (31,82)->(28,43) turns=1 infos=0 dir=3 hash=0946405f
+search map=105 k=0 (15,5)->(58,15) turns=1 infos=0 dir=1 hash=50d309bf
+search map=105 k=1 (44,2)->(9,22) turns=1 infos=0 dir=2 hash=50d309bf
+search map=105 k=2 (35,2)->(30,1) turns=1 infos=0 dir=2 hash=50d309bf
+search map=105 k=3 (2,9)->(10,3) turns=1 infos=0 dir=1 hash=50d309bf
+search map=105 k=4 (8,26)->(16,22) turns=1 infos=0 dir=0 hash=50d309bf
+search map=105 k=5 (44,22)->(59,12) turns=1 infos=0 dir=2 hash=50d309bf
+search map=106 k=0 (25,7)->(18,1) turns=372 infos=371 dir=3 hash=69adcd2c
+search map=106 k=1 (1,14)->(8,22) turns=288 infos=287 dir=3 hash=d818b9c5
+search map=106 k=2 (17,22)->(12,26) turns=1 infos=0 dir=3 hash=5544b7ff
+search map=106 k=3 (20,3)->(20,16) turns=39 infos=19 dir=1 hash=49cd723f
+search map=106 k=4 (9,18)->(10,4) turns=59 infos=23 dir=0 hash=0634f009
+search map=106 k=5 (18,14)->(4,6) turns=113 infos=24 dir=0 hash=d72484ae
+search map=107 k=0 (34,5)->(15,27) turns=1 infos=0 dir=2 hash=549a88bf
+search map=107 k=1 (2,28)->(33,10) turns=1 infos=0 dir=2 hash=549a88bf
+search map=107 k=2 (15,29)->(38,42) turns=356 infos=355 dir=1 hash=3cdb7e61
+search map=107 k=3 (32,11)->(45,18) turns=498 infos=497 dir=3 hash=e5927b0c
+search map=107 k=4 (32,32)->(16,17) turns=1 infos=0 dir=1 hash=549a88bf
+search map=107 k=5 (10,33)->(45,31) turns=1 infos=0 dir=2 hash=549a88bf
+search map=108 k=0 (83,106)->(39,104) turns=1 infos=0 dir=1 hash=c52035df
+search map=108 k=1 (4,87)->(23,6) turns=1 infos=0 dir=2 hash=c52035df
+search map=108 k=2 (82,10)->(64,25) turns=1 infos=0 dir=1 hash=c52035df
+search map=108 k=3 (34,43)->(41,82) turns=1 infos=0 dir=3 hash=c52035df
+search map=108 k=4 (38,36)->(64,117) turns=1 infos=0 dir=3 hash=c52035df
+search map=108 k=5 (79,93)->(38,31) turns=1 infos=0 dir=0 hash=c52035df
+search map=109 k=0 (40,113)->(61,4) turns=1 infos=0 dir=1 hash=845926d7
+search map=109 k=1 (56,44)->(11,45) turns=399 infos=398 dir=2 hash=c7ef61c7
+search map=109 k=2 (39,22)->(5,109) turns=1 infos=0 dir=0 hash=845926d7
+search map=109 k=3 (2,54)->(19,61) turns=1 infos=0 dir=2 hash=845926d7
+search map=109 k=4 (55,8)->(17,33) turns=1 infos=0 dir=1 hash=845926d7
+search map=109 k=5 (63,11)->(25,10) turns=1 infos=0 dir=1 hash=845926d7
+search map=110 k=0 (46,21)->(19,122) turns=1 infos=0 dir=3 hash=d7c0d9af
+search map=110 k=1 (4,128)->(37,108) turns=1 infos=0 dir=3 hash=d7c0d9af
+search map=110 k=2 (9,101)->(43,120) turns=1 infos=0 dir=2 hash=d7c0d9af
+search map=110 k=3 (3,45)->(30,50) turns=1 infos=0 dir=2 hash=d7c0d9af
+search map=110 k=4 (47,55)->(25,24) turns=305 infos=304 dir=0 hash=d68bcf4c
+search map=110 k=5 (42,39)->(20,108) turns=1 infos=0 dir=3 hash=d7c0d9af
+search map=111 k=0 (4,21)->(20,4) turns=1 infos=0 dir=3 hash=9011b2ff
+search map=111 k=1 (16,47)->(18,44) turns=110 infos=109 dir=0 hash=2d8b7b88
+search map=111 k=2 (7,4)->(27,12) turns=1 infos=0 dir=3 hash=9011b2ff
+search map=111 k=3 (10,20)->(24,55) turns=361 infos=360 dir=2 hash=5a6f314e
+search map=111 k=4 (4,11)->(26,54) turns=314 infos=313 dir=0 hash=85248cf7
+search map=111 k=5 (19,2)->(10,14) turns=1 infos=0 dir=0 hash=9011b2ff
+search map=112 k=0 (5,46)->(5,11) turns=1 infos=0 dir=1 hash=e40c414f
+search map=112 k=1 (42,65)->(14,35) turns=1 infos=0 dir=1 hash=e40c414f
+search map=112 k=2 (7,15)->(7,49) turns=1 infos=0 dir=1 hash=e40c414f
+search map=112 k=3 (47,9)->(13,8) turns=1 infos=0 dir=0 hash=e40c414f
+search map=112 k=4 (33,33)->(19,28) turns=89 infos=19 dir=0 hash=d2734a0c
+search map=112 k=5 (45,43)->(17,65) turns=1 infos=0 dir=2 hash=e40c414f
+search map=113 k=0 (23,25)->(26,26) turns=7 infos=4 dir=1 hash=abce3793
+search map=113 k=1 (32,36)->(19,45) turns=1 infos=0 dir=2 hash=4e780a9f
+search map=113 k=2 (35,16)->(2,53) turns=1 infos=0 dir=3 hash=4e780a9f
+search map=113 k=3 (23,59)->(45,33) turns=1 infos=0 dir=0 hash=4e780a9f
+search map=113 k=4 (19,29)->(20,47) turns=252 infos=251 dir=0 hash=4bb0f509
+search map=113 k=5 (22,35)->(48,29) turns=250 infos=249 dir=2 hash=be12a004
+search map=114 k=0 (44,24)->(93,40) turns=1725 infos=1724 dir=3 hash=b35af9f5
+search map=114 k=1 (67,27)->(5,59) turns=1270 infos=1269 dir=0 hash=3ab2aa90
+search map=114 k=2 (47,40)->(35,42) turns=36 infos=14 dir=1 hash=39fb4951
+search map=114 k=3 (28,19)->(31,45) turns=522 infos=521 dir=2 hash=77346bc3
+search map=114 k=4 (71,41)->(64,22) turns=351 infos=114 dir=0 hash=b25926b2
+search map=114 k=5 (24,45)->(49,34) turns=339 infos=48 dir=0 hash=bfa4c435
+search map=115 k=0 (16,65)->(33,65) turns=140 infos=33 dir=3 hash=a2428fd3
+search map=115 k=1 (15,54)->(20,58) turns=505 infos=504 dir=0 hash=a01dad8d
+search map=115 k=2 (12,2)->(20,44) turns=1 infos=0 dir=3 hash=41405d27
+search map=115 k=3 (14,16)->(25,46) turns=807 infos=806 dir=2 hash=e4dc0459
+search map=115 k=4 (32,69)->(17,39) turns=696 infos=695 dir=3 hash=bf499f7a
+search map=115 k=5 (29,29)->(59,66) turns=4 infos=3 dir=3 hash=fef3f702
+login map=6 npcs=207 size=53x135
+logged in 14
+login-sent total=203948 sha=bc1987a9315599dc
+== B. Inside ==
+inside size=20 total=1372 sha=c036e856a6f8d3de
+inside size=127 total=7987 sha=bd171f073aa59c69
+inside size=128 total=11172 sha=29bd5019d5c9ba68
+inside size=300 total=23464 sha=4e46bd04dad3789b
+inside size=3000 total=44877 sha=38f034f6a7a59985
+inside capture ret=1 size=400
+== E. TimerProc ==
+lap=39 chars=531f3889 total=9925 sha=355ed494344e16c9
+lap=79 chars=8fda519c total=22175 sha=6acbd3f93e2f31bd
+lap=119 chars=5ae8cfa6 total=34750 sha=1982fa891c1ad4b9
+lap=159 chars=10df8d86 total=47450 sha=77d4864563e22df6
+lap=199 chars=9624fb1a total=56950 sha=53828c82c3a73435
+lap=239 chars=0fd6313b total=64950 sha=05fc8e1f7862dfe9
+lap=279 chars=0df4339d total=77050 sha=e17023eaf260c102
+lap=319 chars=820dc4c5 total=87550 sha=2b6173c2ff067279
+lap=359 chars=95857b80 total=97350 sha=cbdc93f500142933
+lap=399 chars=b2cc99f3 total=104525 sha=cff9a7c4cb8e327f
+lap-final total=104525 sha=cff9a7c4cb8e327f
+final chars=b2cc99f3
+== done ==

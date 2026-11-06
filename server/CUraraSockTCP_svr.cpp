@@ -333,8 +333,19 @@ BOOL SvrSendCaptureEnd(std::vector<BYTE> &aDst)
 	return s_bSendCaptured;
 }
 
-void CUraraSockTCP::SendTo(DWORD dwID, PBYTE pData, DWORD dwSize, DWORD, BYTE byPriority)
+void CUraraSockTCP::SendTo(DWORD dwID, PBYTE pData, DWORD dwSize, DWORD dwTimeOut, BYTE byPriority)
 {
+	SendToMulti(&dwID, 1, pData, dwSize, dwTimeOut, byPriority);
+}
+
+/* 宛先を 1 つずつ SendTo した時と同じ結果になる（宛先の順に積み、すぐ渡す）。
+   圧縮・CRC・パケットの組み立ては 1 回だけ行って、全員で使い回す。
+   単一宛先は ID からスロットを直接引き、全員宛て（URARASOCK_SENDALL）だけ全スロットを見る */
+void CUraraSockTCP::SendToMulti(const DWORD *pIDs, DWORD dwCount, PBYTE pData, DWORD dwSize, DWORD, BYTE byPriority)
+{
+	if (dwCount == 0) {
+		return;
+	}
 	if (s_bSendCapture) {
 		if (pData && !s_bSendCaptured) {
 			s_aSendCapture.assign(pData, pData + dwSize);
@@ -345,6 +356,32 @@ void CUraraSockTCP::SendTo(DWORD dwID, PBYTE pData, DWORD dwSize, DWORD, BYTE by
 	if (pData == NULL || m_pNative->nListenFd < 0) {
 		return;
 	}
+
+	/* 送る先のスロット番号を、宛先の順に集める */
+	std::vector<size_t> aDst;
+	const size_t nSlots = m_pNative->aSlot.size();
+	for (DWORD k = 0; k < dwCount; k ++) {
+		DWORD dwID = pIDs[k];
+		if (dwID == URARASOCK_SENDALL) {
+			for (size_t i = 0; i < nSlots; i ++) {
+				CNativeSlot &Slot = m_pNative->aSlot[i];
+				/* 全員宛ては接続前チェックが済んだ相手だけ */
+				if (Slot.nFd >= 0 && !Slot.bClosing && Slot.bPreCheck) {
+					aDst.push_back(i);
+				}
+			}
+		} else if (dwID >= URARASOCK_IDBASE && (dwID - URARASOCK_IDBASE) < nSlots) {
+			size_t i = dwID - URARASOCK_IDBASE;
+			CNativeSlot &Slot = m_pNative->aSlot[i];
+			if (Slot.nFd >= 0 && !Slot.bClosing) {
+				aDst.push_back(i);
+			}
+		}
+	}
+	if (aDst.empty()) {
+		return;
+	}
+
 	DWORD dwSendSize = dwSize;
 	PBYTE pSend = MakeSendData(pData, dwSendSize);
 
@@ -352,23 +389,14 @@ void CUraraSockTCP::SendTo(DWORD dwID, PBYTE pData, DWORD dwSize, DWORD, BYTE by
 	URARASOCK_PACKETINFO Info;
 	Info.dwSize	= dwSendSize;
 	Info.dwCRC	= m_pCrc->GetCRC(pSend, dwSendSize);
+	std::vector<BYTE> aPacket(sizeof(Info) + dwSendSize);
+	CopyMemory(&aPacket[0], &Info, sizeof(Info));
+	CopyMemory(&aPacket[sizeof(Info)], pSend, dwSendSize);
+	SAFE_DELETE_ARRAY(pSend);
 
-	for (size_t i = 0; i < m_pNative->aSlot.size(); i ++) {
+	for (size_t k = 0; k < aDst.size(); k ++) {
+		size_t i = aDst[k];
 		CNativeSlot &Slot = m_pNative->aSlot[i];
-		if (Slot.nFd < 0 || Slot.bClosing) {
-			continue;
-		}
-		if (dwID == URARASOCK_SENDALL) {
-			/* 全員宛ては接続前チェックが済んだ相手だけ */
-			if (!Slot.bPreCheck) {
-				continue;
-			}
-		} else if (dwID != URARASOCK_IDBASE + i) {
-			continue;
-		}
-		std::vector<BYTE> aPacket(sizeof(Info) + dwSendSize);
-		CopyMemory(&aPacket[0], &Info, sizeof(Info));
-		CopyMemory(&aPacket[sizeof(Info)], pSend, dwSendSize);
 		if (byPriority == URARASOCK_SENDPRIORITY_HIGH && Slot.aSend.empty()) {
 			Slot.aSend.insert(Slot.aSend.begin(), aPacket.begin(), aPacket.end());
 		} else {
@@ -377,7 +405,6 @@ void CUraraSockTCP::SendTo(DWORD dwID, PBYTE pData, DWORD dwSize, DWORD, BYTE by
 		/* Node.js が送信を溜めてくれるので、すぐ渡す */
 		FlushSlot((int)i);
 	}
-	SAFE_DELETE_ARRAY(pSend);
 }
 
 DWORD CUraraSockTCP::GetThrowghPutSend(DWORD dwID)
