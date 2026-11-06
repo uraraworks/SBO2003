@@ -29,6 +29,7 @@
 #define TURNGAGE_LATETIME	300										/* 殴った直後、X でコマンドを開かない時間(ms)。ジャストに押し遅れた時のため(1周の半分まで) */
 #define CHAREFC_BIG			(0x01000000)							/* 文字エフェクトの色に足すと大きい文字で出す(ジャスト・構えなど) */
 #define COMEFC_TELL			4										/* 敵の攻撃の予兆に出す吹き出し(白い丸に「!」) */
+#define COMEFC_GUARD		68										/* 構え(防御)を始めた時に出す吹き出し(盾) */
 #define TELL_VIEWTIME		1000									/* 予兆の「!」を出しておく時間(ms)。敵が殴るまで */
 #define AUTOGAGE_LOSTTIME	500										/* 目の前から敵がいなくなってから自動ゲージを消すまでの時間(ms) */
 #define TURNGAGE_JUSTTIME	300										/* ゲージ満タン後、ジャストで押せる時間(ms)。押さなければ自動で殴る */
