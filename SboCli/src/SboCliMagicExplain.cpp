@@ -128,6 +128,32 @@ static void MakeEffectStr(PMAGICINFO pInfo, BOOL bInner, int nDepth, LPSTR pszDs
 		wsprintf (szTmp, "HPを%s回復", szRange);
 		break;
 
+	case MAGICTYPE_HASTE:			/* 加速 */
+		wsprintf (szTmp, "%d秒間、攻撃の間隔が短くなる（%d％速く）", pInfo->wData2, pInfo->wData1);
+		break;
+
+	case MAGICTYPE_POISON:			/* 毒 */
+		if (bInner) {
+			wsprintf (szTmp, "毒にする（%d秒間、2秒ごとに%dのダメージ）", pInfo->wData2, pInfo->wData1);
+		} else {
+			wsprintf (szTmp, "%sを毒にする（%d秒間、2秒ごとに%dのダメージ）", GetTargetStr (pInfo), pInfo->wData2, pInfo->wData1);
+		}
+		if (pInfo->wData3 && (pInfo->wData3 < 100)) {
+			wsprintf (&szTmp[strlen (szTmp)], "。成功率%d％", pInfo->wData3);
+		}
+		break;
+
+	case MAGICTYPE_SLEEP:			/* 眠り */
+		if (bInner) {
+			wsprintf (szTmp, "最大%d秒眠らせる（攻撃を受けると起きる）", pInfo->wData1);
+		} else {
+			wsprintf (szTmp, "%sを最大%d秒眠らせる（攻撃を受けると起きる）", GetTargetStr (pInfo), pInfo->wData1);
+		}
+		if (pInfo->wData2 && (pInfo->wData2 < 100)) {
+			wsprintf (&szTmp[strlen (szTmp)], "。成功率%d％", pInfo->wData2);
+		}
+		break;
+
 	case MAGICTYPE_LIGHT:			/* 明かり */
 		strcpy (szTmp, "暗い場所で周りを明るくする");
 		break;
