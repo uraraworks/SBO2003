@@ -5980,6 +5980,17 @@ void RecvDataProcTARGETCHAR(PBYTE pData, DWORD dwDataSize)
 				wsprintf (pCharTmp->szName, "[%s]", szTmp);
 				pCharTmp->clName = pChar->clName;
 				pCharTmp->clSpeech = pChar->clSpeech;
+				/* 前にこのパネルに名前を付けていた人（ログアウト・マップ移動した人）とのつながりを切る
+				   （戻ってきてから雪玉が当たっても、このパネルが進まないように） */
+				{
+					int i, nCount = g_aCharInfo.GetSize ();
+					for (i = 0; i < nCount; i ++) {
+						PCHARINFO pCharOld = g_aCharInfo[i];
+						if (pCharOld && (pCharOld != pChar) && (pCharOld->dwTargetTblID == pCharTmp->dwTblID)) {
+							pCharOld->dwTargetTblID = -1;
+						}
+					}
+				}
 				pChar->dwTargetTblID = pCharTmp->dwTblID;
 				/* 名前を付けたら HP を満タン（HP5 の絵）に戻す */
 				pCharTmp->byEfect = 0;
