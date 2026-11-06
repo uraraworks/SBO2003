@@ -2784,13 +2784,8 @@ void TimerProcCharTurnLV(PCHARINFO pChar)
 	}
 
 	if (!(g_FadeInOutInfo.byFadeIn || g_FadeInOutInfo.byFadeOut)) {
-		dwTmp = 1;
-		dwTmp = 1000;
 		/* 攻撃タイミングになっているかを計算。最大3秒で255を100%とする。 */
-		dwTmp = pChar->byDEX;
-		dwTmp = dwTmp * 100 / 255;
-		dwTmp = max (dwTmp, 1);
-		dwTmp = 1000 + (2000 - ((2000 * dwTmp) / 100));
+		dwTmp = GetTurnGageTime (pChar);
 
 		if (dwTime >= pChar->dwTimeTurnLV + dwTmp / 100) {
 			pChar->dwLastTurnLV = dwTime;
@@ -2799,6 +2794,10 @@ void TimerProcCharTurnLV(PCHARINFO pChar)
 			g_bDraw = TRUE;
 			/* 満タン？ */
 			if (pChar->byTurnLV == 100) {
+				/* 満タン直後はジャストで押せる時間なので、自動では殴らずに待つ */
+				if (IsTurnGageJust (pChar)) {
+					return;
+				}
 				/* 移動中ではない？ */
 				if (pChar->byDotMove == 0) {
 					/* 弓など、相手を決めずに撃つ？ */

@@ -4620,6 +4620,40 @@ static BYTE GetAtackRateLap(BYTE byTurnLV)
 	return (BYTE)(nLap * TURNGAGE_LAP);
 }
 
+/* 攻撃要求の威力欄から威力の倍率を求める。ジャストは、前の攻撃要求から
+   ゲージが満タンになる時間が経っている時だけ認める（改造クライアントで毎回ジャストにできないように） */
+static BYTE GetAtackRateReq(PCHARINFO pChar, BYTE byData)
+{
+	static std::map<DWORD, DWORD> s_mapLastReq;		/* キャラごとの前の攻撃要求の時間 */
+	DWORD dwNow, dwLast, dwGage;
+	int nTmp;
+	BYTE byRet;
+	std::map<DWORD, DWORD>::iterator it;
+
+	dwNow	= timeGetTime ();
+	dwLast	= 0;
+	it		= s_mapLastReq.find (pChar->dwTblID);
+	if (it != s_mapLastReq.end ()) {
+		dwLast = it->second;
+	}
+	s_mapLastReq[pChar->dwTblID] = dwNow;
+
+	byRet = GetAtackRateLap (byData);
+	if (byData != ATACKRATE_JUST) {
+		return byRet;
+	}
+	/* ゲージが満タンになるまでの時間（クライアントと同じ計算。素早さ 0 で 3 秒～255 で 1 秒） */
+	nTmp = pChar->byDEX;
+	nTmp = nTmp * 100 / 255;
+	nTmp = max (nTmp, 1);
+	dwGage = 1000 + (2000 - ((2000 * nTmp) / 100));
+	/* 初めての攻撃か、満タンになる時間が経っている（通信のずれは 0.25 秒まで見る） */
+	if ((dwLast == 0) || (dwNow - dwLast + 250 >= dwGage)) {
+		byRet = ATACKRATE_JUST;
+	}
+	return byRet;
+}
+
 void RecvDataProcREQ_ATTACK(PBYTE pData, DWORD dwDataSize)
 {
 	PCMDPARA_DATA4 pPara = (PCMDPARA_DATA4)pData;
@@ -4643,8 +4677,8 @@ void RecvDataProcREQ_ATTACK(PBYTE pData, DWORD dwDataSize)
 //Todo:武器の判定
 	if (pPara->dwData == -1) {
 		pChar->dwLastBattle = 1;
-		/* 威力の倍率（ゲージ1周＝20% 刻みで 20～100%。改造クライアントで 100% を超えて殴れないように） */
-		pChar->byAtackRate = GetAtackRateLap (pPara->byData);
+		/* 威力の倍率（ゲージ1周＝20% 刻みで 20～100%、ジャスト。改造クライアントで 100% を超えて殴れないように） */
+		pChar->byAtackRate = GetAtackRateReq (pChar, pPara->byData);
 		return;
 	}
 
@@ -4675,8 +4709,8 @@ void RecvDataProcREQ_ATTACK(PBYTE pData, DWORD dwDataSize)
 
 	pChar->dwLastBattle	 = 1;
 	pChar->dwTargetTblID = pPara->dwData;
-	/* 威力の倍率（ゲージ1周＝20% 刻みで 20～100%。改造クライアントで 100% を超えて殴れないように） */
-	pChar->byAtackRate = GetAtackRateLap (pPara->byData);
+	/* 威力の倍率（ゲージ1周＝20% 刻みで 20～100%、ジャスト。改造クライアントで 100% を超えて殴れないように） */
+	pChar->byAtackRate = GetAtackRateReq (pChar, pPara->byData);
 
 	/* まだ誰もターゲットしてない？ */
 	if (pCharTarget->dwLastBattle == 0) {

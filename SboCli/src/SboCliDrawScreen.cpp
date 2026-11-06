@@ -1454,8 +1454,13 @@ void DrawETC(void)
 		};
 		int nLap = pChar->byTurnLV / TURNGAGE_LAP;			/* 溜まりきった周の数(0～5) */
 		if (nLap >= TURNGAGE_LAPMAX) {
-			/* 満タン：白と赤で点滅 */
-			g_pDibDrawMap->FillRect (x + 3, y + 3, 32, 3, ((timeGetTime () / 120) % 2) ? RGB (255, 255, 255) : aclLap[4]);
+			if (IsTurnGageJust (pChar)) {
+				/* ジャストで押せる時間：白く光らせる */
+				g_pDibDrawMap->FillRect (x + 3, y + 3, 32, 3, RGB (255, 255, 255));
+			} else {
+				/* 満タン：白と赤で点滅 */
+				g_pDibDrawMap->FillRect (x + 3, y + 3, 32, 3, ((timeGetTime () / 120) % 2) ? RGB (255, 255, 255) : aclLap[4]);
+			}
 		} else {
 			int nTmp = (pChar->byTurnLV % TURNGAGE_LAP) * 32 / TURNGAGE_LAP;
 			nTmp = max (nTmp, 1);
@@ -1465,6 +1470,10 @@ void DrawETC(void)
 			}
 			/* 溜まり中の周 */
 			g_pDibDrawMap->FillRect (x + 3, y + 3, nTmp, 3, aclLap[nLap]);
+		}
+		/* 5周目に入ったら、ゲージの右端にジャストの目印(ゴルフのインパクトのような小さな印) */
+		if (nLap >= TURNGAGE_LAPMAX - 1) {
+			g_pDibDrawMap->FillRect (x + 35, y + 1, 2, 7, IsTurnGageJust (pChar) ? RGB (255, 255, 64) : RGB (255, 255, 255));
 		}
 		/* ゲージの下に、全部で何周あって何周溜まったかを5つの目盛りで出す */
 		g_pDibDrawMap->FillRect (x + 2, y + 8, 34, 4, RGB (0, 0, 0));
