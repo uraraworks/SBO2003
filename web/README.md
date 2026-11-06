@@ -10,7 +10,7 @@ Windows 版クライアント（SboCli）を Emscripten でブラウザ向けに
 | ロゴ → タイトル → ログイン画面 | 表示できる |
 | アカウント名・パスワード入力 | HTML の入力欄を canvas の上に重ねて入力できる |
 | サーバーへの接続 | WebSocket で接続し、ログイン・キャラ作成・マップでの移動まで動く（Node.js 版サーバーで確認） |
-| 効果音 | SDL_mixer で鳴らす |
+| 効果音 | Web Audio で直接鳴らす（AudioBufferSourceNode。スマホでの遅れ対策） |
 | BGM（MIDI） | MIDI のまま、ページ側の JS シンセ（spessasynth_lib）とサウンドフォント（GeneralUser GS）で鳴らす |
 | 管理者ウィンドウ | Web 版には入れていない（MFC のダイアログのため） |
 | 保存データ（INI など） | ブラウザの IndexedDB に保存される |
@@ -141,7 +141,7 @@ web/replace   … Windows 専用クラスの Web 版（Windows 版の実装は�
 | `web/w32_html.cpp` | EDIT / BUTTON を HTML 部品で代用 |
 | `web/w32_perf.cpp` | 処理時間の計測（`?perf=1`） |
 | `web/web_main.cpp` | 入口（IndexedDB を読み込んでから `SboCliMain` を呼ぶ） |
-| `web/replace/` | CDXAudio（SDL_mixer）、CUraraSockTCP（WebSocket）、LibMusic・MAC アドレス・管理画面の代わり |
+| `web/replace/` | CDXAudio（Web Audio）、CUraraSockTCP（WebSocket）、LibMusic・MAC アドレス・管理画面の代わり |
 | `web/shell/sbocli.html` | ページの HTML（キー・マウスの受け渡しもここ） |
 | `web/bgm/sbo_bgm.js` | BGM プレイヤー（`LibMusicLoader_web.cpp` から `window.SboBgm` を呼ぶ） |
 | `web/vendor/spessasynth/` | MIDI シンセ spessasynth_lib（Apache-2.0）。更新は `tools/web/update_spessasynth.sh` |

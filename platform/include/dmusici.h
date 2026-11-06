@@ -1,4 +1,4 @@
-/* Web版: DirectMusic の代わり。型名だけ用意する（再生は CDXAudio の Web 実装が SDL_mixer で行う） */
+/* Web版: DirectMusic の代わり。型名だけ用意する（再生は CDXAudio の Web 実装が Web Audio で行う） */
 #pragma once
 #include "win32compat.h"
 struct IDirectMusicSegment8;
