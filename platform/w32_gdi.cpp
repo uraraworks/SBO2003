@@ -969,8 +969,8 @@ int SetStretchBltMode(HDC, int)
 
 /* 大きさ・太さごとに TTF_Font を共有する */
 static std::map<int, TTF_Font *> s_mapTtf;
-static std::map<TTF_Font *, int> s_mapTtfSize;		/* TTF_Font → 大きさ（絵文字フォントを同じ大きさで開くため） */
-static std::map<int, TTF_Font *> s_mapEmoji;		/* 大きさごとの絵文字フォント */
+static std::map<TTF_Font *, int> s_mapTtfSize;		/* TTF_Font → 1 文字のマスの大きさ（CreateFont の高さ） */
+static std::map<int, TTF_Font *> s_mapEmoji;		/* マスの大きさごとの絵文字フォント */
 static std::set<TTF_Font *> s_setTtfBold;			/* 疑似太字で描く TTF_Font */
 
 static TTF_Font *GetTtf(int nSize, BOOL bBold)
@@ -987,7 +987,12 @@ static TTF_Font *GetTtf(int nSize, BOOL bBold)
 	/* 太字も標準の書体で開き、描く時に 1 ドット右へ重ねて太くする。
 	   元の Windows 版は太字の無い「ＭＳ ゴシック」を太字指定で使っていて、
 	   Windows がこの方法で疑似太字を作っていた（画数の多い字でも潰れにくい） */
-	TTF_Font *pFont = TTF_OpenFont(FONT_PATH_REGULAR, nSize);
+	/* 字は 1 ドット小さく開き、マス（nSize）の中に置く。
+	   BIZ UDゴシックは字がマスいっぱいに描かれるので、行を nSize ドットおきに並べると
+	   下の行の黒縁取りが上の行の最下段を塗りつぶしてしまう。ＭＳ ゴシックと同じく
+	   字の右と下に 1 ドットのすき間を空ける */
+	int nGlyph = (nSize >= 10) ? nSize - 1 : nSize;
+	TTF_Font *pFont = TTF_OpenFont(FONT_PATH_REGULAR, nGlyph);
 	if (pFont == NULL) {
 		printf("[w32] フォントを開けません: %s\n", TTF_GetError());
 	} else {
@@ -1014,7 +1019,8 @@ static TTF_Font *GetEmojiTtf(TTF_Font *pMain)
 	if (it != s_mapEmoji.end()) {
 		return it->second;
 	}
-	TTF_Font *pFont = TTF_OpenFont(FONT_PATH_EMOJI, nSize);
+	/* Noto Emoji は同じ大きさだと本文の字より縦横とも大きく、マスからはみ出して切れるので小さめに開く */
+	TTF_Font *pFont = TTF_OpenFont(FONT_PATH_EMOJI, std::max(nSize * 13 / 16, 6));
 	if (pFont == NULL) {
 		printf("[w32] 絵文字フォントを開けません: %s\n", TTF_GetError());
 	} else {
@@ -1149,6 +1155,56 @@ static void SplitTextRuns(TTF_Font *pMain, const std::string &strUtf8, std::vect
 	}
 }
 
+/* マスに置く 1 文字 */
+struct W32TextCell {
+	TTF_Font		*pTtf;
+	std::string		str;
+	int				nX;			/* 置く位置（文字列の左端から） */
+};
+
+/* 文字列を 1 文字ずつマスに並べる。ＭＳ ゴシックと同じく、半角はマスの半分・全角と絵文字はマス 1 つ分ずつ進む。
+   戻り値は全体の送り幅 */
+static int LayoutTextCells(TTF_Font *pMain, const std::string &strUtf8, std::vector<W32TextCell> &aCell)
+{
+	aCell.clear();
+	std::map<TTF_Font *, int>::iterator itSize = s_mapTtfSize.find(pMain);
+	int nCell = (itSize != s_mapTtfSize.end()) ? itSize->second : TTF_FontHeight(pMain);
+	std::vector<W32TextRun> aRun;
+	SplitTextRuns(pMain, strUtf8, aRun);
+	int nX = 0;
+	for (size_t r = 0; r < aRun.size(); r ++) {
+		const std::string &str = aRun[r].str;
+		for (size_t i = 0; i < str.size(); ) {
+			Uint32 dwCode;
+			int n = Utf8Next(str, i, dwCode);
+			if (aRun[r].pTtf != pMain && IsEmojiModifier(dwCode)) {
+				/* 絵文字の見た目を変えるだけの文字は直前の絵文字にくっつける（白黒の絵文字フォントでは描かれない） */
+				if (!aCell.empty()) {
+					aCell.back().str.append(str, i, n);
+				}
+				i += n;
+				continue;
+			}
+			W32TextCell cell;
+			cell.pTtf = aRun[r].pTtf;
+			cell.str.assign(str, i, n);
+			cell.nX = nX;
+			aCell.push_back(cell);
+			int nStep = nCell;
+			if (aRun[r].pTtf == pMain) {
+				int nMinX, nMaxX, nMinY, nMaxY, nAdv = 0;
+				if (TTF_GlyphMetrics32(pMain, dwCode, &nMinX, &nMaxX, &nMinY, &nMaxY, &nAdv) == 0 &&
+						nAdv * 2 <= nCell) {
+					nStep = nCell / 2;	/* 半角 */
+				}
+			}
+			nX += nStep;
+			i += n;
+		}
+	}
+	return nX;
+}
+
 /* 描いた文字の形（1bit マスク）を覚えておく。TextOut2 は同じ文字列を 5 回描くので効く */
 struct W32TextMask {
 	std::string			strKey;
@@ -1172,38 +1228,37 @@ static const W32TextMask *GetTextMask(TTF_Font *pTtf, const std::string &strUtf8
 		}
 	}
 	SDL_Color clWhite = {255, 255, 255, 255};
-	std::vector<W32TextRun> aRun;
-	SplitTextRuns(pTtf, strUtf8, aRun);
+	std::vector<W32TextCell> aCell;
+	int nAdvance = LayoutTextCells(pTtf, strUtf8, aCell);
 
-	/* まとまりごとに描いて横に並べる。絵文字フォントはベースラインを本文に合わせる */
-	std::vector<SDL_Surface *> aSurf(aRun.size(), (SDL_Surface *)NULL);
+	/* 1 文字ずつ描いてマスに置く。絵文字フォントはベースラインを本文に合わせる */
+	std::vector<SDL_Surface *> aSurf(aCell.size(), (SDL_Surface *)NULL);
 	W32TextMask mask;
 	mask.strKey = strKey;
-	mask.cx = 0;
+	mask.cx = nAdvance;
 	mask.cy = TTF_FontHeight(pTtf);
-	for (size_t r = 0; r < aRun.size(); r ++) {
-		aSurf[r] = TTF_RenderUTF8_Solid(aRun[r].pTtf, aRun[r].str.c_str(), clWhite);
-		if (aSurf[r]) {
-			mask.cx += aSurf[r]->w;
+	for (size_t c = 0; c < aCell.size(); c ++) {
+		aSurf[c] = TTF_RenderUTF8_Solid(aCell[c].pTtf, aCell[c].str.c_str(), clWhite);
+		if (aSurf[c]) {
+			mask.cx = std::max(mask.cx, aCell[c].nX + aSurf[c]->w);
 		}
 	}
 	if (mask.cx <= 0) {
-		for (size_t r = 0; r < aSurf.size(); r ++) {
-			if (aSurf[r]) {
-				SDL_FreeSurface(aSurf[r]);
+		for (size_t c = 0; c < aSurf.size(); c ++) {
+			if (aSurf[c]) {
+				SDL_FreeSurface(aSurf[c]);
 			}
 		}
 		return NULL;
 	}
 	mask.aMask.assign((size_t)mask.cx * mask.cy, 0);
-	int nX = 0;
 	int nAscent = TTF_FontAscent(pTtf);
-	for (size_t r = 0; r < aRun.size(); r ++) {
-		SDL_Surface *pSurf = aSurf[r];
+	for (size_t c = 0; c < aCell.size(); c ++) {
+		SDL_Surface *pSurf = aSurf[c];
 		if (pSurf == NULL) {
 			continue;
 		}
-		int nOffY = (aRun[r].pTtf == pTtf) ? 0 : nAscent - TTF_FontAscent(aRun[r].pTtf);
+		int nOffY = (aCell[c].pTtf == pTtf) ? 0 : nAscent - TTF_FontAscent(aCell[c].pTtf);
 		SDL_LockSurface(pSurf);
 		for (int y = 0; y < pSurf->h; y ++) {
 			int dy = y + nOffY;
@@ -1213,12 +1268,11 @@ static const W32TextMask *GetTextMask(TTF_Font *pTtf, const std::string &strUtf8
 			const BYTE *pSrc = (const BYTE *)pSurf->pixels + (size_t)y * pSurf->pitch;
 			for (int x = 0; x < pSurf->w; x ++) {
 				if (pSrc[x]) {
-					mask.aMask[(size_t)dy * mask.cx + nX + x] = 1;
+					mask.aMask[(size_t)dy * mask.cx + aCell[c].nX + x] = 1;
 				}
 			}
 		}
 		SDL_UnlockSurface(pSurf);
-		nX += pSurf->w;
 		SDL_FreeSurface(pSurf);
 	}
 	/* 疑似太字: 1 ドット右へ重ねる（文字の送り幅は変えず、右端だけ 1 ドット広がる） */
@@ -1301,13 +1355,8 @@ BOOL GetTextExtentPoint32(HDC hDC, LPCSTR pszText, int nLen, LPSIZE pSize)
 		return TRUE;
 	}
 	std::string strUtf8 = W32TextToUtf8Str(pszText, nLen);
-	std::vector<W32TextRun> aRun;
-	SplitTextRuns(pTtf, strUtf8, aRun);
-	for (size_t r = 0; r < aRun.size(); r ++) {
-		int w = 0, h = 0;
-		TTF_SizeUTF8(aRun[r].pTtf, aRun[r].str.c_str(), &w, &h);
-		pSize->cx += w;
-	}
+	std::vector<W32TextCell> aCell;
+	pSize->cx = LayoutTextCells(pTtf, strUtf8, aCell);
 	return TRUE;
 }
 
@@ -1324,10 +1373,10 @@ BOOL GetTextMetrics(HDC hDC, LPTEXTMETRIC pTm)
 	pTm->tmHeight = TTF_FontHeight(pTtf);
 	pTm->tmAscent = TTF_FontAscent(pTtf);
 	pTm->tmDescent = -TTF_FontDescent(pTtf);
-	int w = 0, h = 0;
-	TTF_SizeUTF8(pTtf, "0", &w, &h);
-	pTm->tmAveCharWidth = w;
-	pTm->tmMaxCharWidth = w * 2;
+	std::map<TTF_Font *, int>::iterator itSize = s_mapTtfSize.find(pTtf);
+	int nCell = (itSize != s_mapTtfSize.end()) ? itSize->second : TTF_FontHeight(pTtf);
+	pTm->tmAveCharWidth = nCell / 2;
+	pTm->tmMaxCharWidth = nCell;
 	return TRUE;
 }
 
