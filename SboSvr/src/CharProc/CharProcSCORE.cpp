@@ -19,6 +19,7 @@
 
 CCharProcSCORE::CCharProcSCORE()
 {
+	m_dwLastOwnerCheck = 0;
 }
 
 
@@ -38,6 +39,17 @@ BOOL CCharProcSCORE::Proc(DWORD dwTime)
 
 	/* 誰かいる？ */
 	if (pMap->dwCountTblNoPC > 0) {
+		/* 名前を付けた人がログアウト・マップ移動していたら名前を消す（1 秒おきに確かめる） */
+		if (m_pChar->szName[0] && (dwTime - m_dwLastOwnerCheck >= 1000)) {
+			m_dwLastOwnerCheck = dwTime;
+			if (IsOwnerHere () == FALSE) {
+				m_pChar->clName	= RGB (255, 255, 255);
+				m_pChar->clSpeech	= RGB (255, 255, 255);
+				ZeroMemory (m_pChar->szName, sizeof (m_pChar->szName));
+				SendCmdCHARINFO3 (m_pChar->dwTblID);
+				bRet = TRUE;
+			}
+		}
 		goto Exit;
 	}
 
@@ -50,6 +62,31 @@ BOOL CCharProcSCORE::Proc(DWORD dwTime)
 	bRet = TRUE;
 Exit:
 	return bRet;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CCharProcSCORE::IsOwnerHere									 */
+/* 内容：	名前を付けた人（dwTargetTblID がこのパネル）がまだ同じマップに	 */
+/*			いるか														 */
+/* ========================================================================= */
+
+BOOL CCharProcSCORE::IsOwnerHere(void)
+{
+	int i, nCount;
+	PCHARINFO pChar;
+
+	nCount = g_aCharInfo.GetSize ();
+	for (i = 0; i < nCount; i ++) {
+		pChar = g_aCharInfo[i];
+		if (pChar && (pChar->byNpcType == NPCTYPE_INIT) &&
+			(pChar->byGameState != GAMESTATE_LOGOFF) &&
+			(pChar->dwMapID == m_pChar->dwMapID) &&
+			(pChar->dwTargetTblID == m_pChar->dwTblID)) {
+			return TRUE;
+		}
+	}
+	return FALSE;
 }
 
 /* Copyright(C)URARA-works 2006 */
