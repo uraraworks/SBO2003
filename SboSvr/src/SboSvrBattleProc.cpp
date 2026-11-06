@@ -12,6 +12,7 @@
 #include "ProcFunc/ProcFunc.h"
 #include "SboSvrRecvCmd.h"
 #include "SboSvrMagicProc.h"
+#include <map>
 
 /* ========================================================================= */
 /* 関数プロトタイプ宣言														 */
@@ -24,6 +25,7 @@ static	BOOL	BattleProc			(PCHARINFO, PCHARINFO);			/* 戦闘処理 */
 		BOOL	BattleProcWeapon	(PCHARINFO);					/* 武器処理 */
 		BOOL	BattleProcAtack		(PCHARINFO, PCHARINFO);			/* 戦闘処理(直接攻撃) */
 static	void	BattleProcAtackArea	(PCHARINFO, DWORD);				/* なぎ払い・貫通で周りの敵にも当てる */
+static	BOOL	BattleProcTell		(PCHARINFO, PMAPINFO, DWORD, BOOL);	/* 敵の攻撃の予兆「！」 */
 		void	ResurrectionBack	(PCHARINFO);					/* 復活位置で蘇生 */
 static	void	BattleProcMagic		(PCHARINFO, PCHARINFO, BYTE);	/* 戦闘処理(魔法) */
 static	int		GetWeponMin			(PCHARINFO);					/* 武器の減少値を取得 */
@@ -94,6 +96,12 @@ void BattleProcCheck(PCHARINFO pChar)
 
 	/* 規定時間以上経っている？ */
 	if (abs (timeGetTime () - pChar->dwLastBattle) < nTmp) {
+		/* 攻撃の少し前に、目の前のPCへ予兆「！」を出す */
+		BattleProcTell (pChar, pMap, (DWORD)nTmp, FALSE);
+		return;
+	}
+	/* 攻撃できる時間になってからPCが目の前に来た？ 予兆を出してから少し待って殴る */
+	if (BattleProcTell (pChar, pMap, (DWORD)nTmp, TRUE)) {
 		return;
 	}
 
@@ -617,6 +625,70 @@ BOOL BattleProcWeapon(PCHARINFO pChar)
 	bRet = TRUE;
 Exit:
 	return bRet;
+}
+
+/* ========================================================================= */
+/* 関数名：	BattleProcTell													 */
+/* 内容：	敵の攻撃の予兆：攻撃する ENEMYTELL_TIME 前に、頭の上へ「！」を出す	 */
+/*			目の前にPCがいる時だけ。1回の攻撃につき1回だけ出す				 */
+/* ========================================================================= */
+static BOOL BattleProcTell(PCHARINFO pChar, PMAPINFO pMap, DWORD dwWait, BOOL bLate)
+{
+	static std::map<DWORD, DWORD> s_mapTell;		/* キャラごとに「！」を出した時の dwLastBattle */
+	DWORD dwElapse, dwTell, dwX, dwY;
+	PDWORD pData;
+	int j, nCount;
+	PCHARINFO pCharTmp;
+	std::map<DWORD, DWORD>::iterator it;
+
+	/* 敵だけ */
+	if ((pChar->byNpcType != NPCTYPE_BATTLE1) && (pChar->byNpcType != NPCTYPE_BATTLE2)) {
+		return FALSE;
+	}
+	/* 待ち時間が短い敵は、半分経ったところで出す */
+	dwTell = ENEMYTELL_TIME;
+	if (dwTell > dwWait / 2) {
+		dwTell = dwWait / 2;
+	}
+	dwElapse = timeGetTime () - pChar->dwLastBattle;
+	if (!bLate && (dwElapse + dwTell < dwWait)) {
+		return FALSE;
+	}
+	/* この攻撃ではもう出した？ */
+	it = s_mapTell.find (pChar->dwTblID);
+	if ((it != s_mapTell.end ()) && (it->second == pChar->dwLastBattle)) {
+		return FALSE;
+	}
+
+	/* 目の前にPCがいる？ */
+	dwX = pChar->dwX + anPosAddTblX[pChar->byDirection];
+	dwY = pChar->dwY + anPosAddTblY[pChar->byDirection];
+	pData = pMap->paTblNoPC;
+	nCount = (int)pMap->dwCountTblNoPC;
+	for (j = 0; j < nCount; j ++) {
+		if (pData[j] == -1) {
+			break;
+		}
+		pCharTmp = g_aCharInfo[pData[j]];
+		if (((CheckCharX (pChar, dwX, pCharTmp->dwX) == FALSE) && ((CheckCharX (pCharTmp, pCharTmp->dwX, dwX) == FALSE))) ||
+			(dwY != pCharTmp->dwY)) {
+			continue;
+		}
+		if ((pCharTmp->wHP == 0) || (pCharTmp->byCharState == CHARSTATE_DEAD)) {
+			continue;
+		}
+		/* 攻撃できる時間を過ぎてから出した時は、ここから dwTell 待ってから殴る */
+		if (bLate) {
+			pChar->dwLastBattle = timeGetTime () - dwWait + dwTell;
+			if (pChar->dwLastBattle <= 1) {
+				pChar->dwLastBattle = 2;
+			}
+		}
+		s_mapTell[pChar->dwTblID] = pChar->dwLastBattle;
+		SendCmdADDCHAREFC (pChar->dwTblID, RGB (255, 64, 64), "！");
+		return TRUE;
+	}
+	return FALSE;
 }
 
 /* ========================================================================= */
