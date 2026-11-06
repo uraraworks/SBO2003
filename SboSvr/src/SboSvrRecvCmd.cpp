@@ -5936,7 +5936,26 @@ void RecvDataProcTARGETCHAR(PBYTE pData, DWORD dwDataSize)
 
 		/* 得点板属性？ */
 		if (pCharTmp->byNpcType == NPCTYPE_SCORE) {
-			/* 名前付き？ */
+			/* 名前付きで、ほかの人のパネル？（持ち主が同じマップにいる間は外さない） */
+			if (strlen (pCharTmp->szName) && (pChar->dwTargetTblID != pCharTmp->dwTblID)) {
+				int i, nCount = g_aCharInfo.GetSize ();
+				for (i = 0; i < nCount; i ++) {
+					PCHARINFO pCharOwner = g_aCharInfo[i];
+					if (pCharOwner && (pCharOwner != pChar) && (pCharOwner->byNpcType == NPCTYPE_INIT) &&
+						(pCharOwner->byGameState != GAMESTATE_LOGOFF) &&
+						(pCharOwner->dwMapID == pCharTmp->dwMapID) &&
+						(pCharOwner->dwTargetTblID == pCharTmp->dwTblID)) {
+						break;
+					}
+				}
+				if (i < nCount) {
+					SendCmdSYSMSG (pChar->pID, "ほかの人のパネルです。");
+					return;
+				}
+				/* 持ち主がもういない名前は消して、空いたパネルとして扱う */
+				ZeroMemory (pCharTmp->szName, sizeof (pCharTmp->szName));
+			}
+			/* 自分の名前付きパネル？（外す） */
 			if (strlen (pCharTmp->szName)) {
 				pCharTmp->clName = RGB (255, 255, 255);
 				pCharTmp->clSpeech = RGB (255, 255, 255);
