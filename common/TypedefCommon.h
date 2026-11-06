@@ -958,6 +958,7 @@ enum {
 	ITEMTYPE_EQU_ACC2,											/* 装備(指輪1) */
 	ITEMTYPE_EQU_ACC3,											/* 装備(指輪2) */
 	ITEMTYPE_RESURRECTION,										/* 蘇生 */
+	ITEMTYPE_USEMAGIC,											/* 特技発動(詳細は ITEMINFO_MAGIC と同じ形。byID=発動する特技) */
 	ITEMTYPE_MAX
 };
 
@@ -2159,6 +2160,7 @@ typedef struct _STATUSTEMPLATEINFO {
 	WORD		waItem[MAX_MYITEM];									/* 所持アイテム */
 	DWORD		dwGold;												/* 所持金 */
 	DWORD		dwExp;												/* 経験値 */
+	BYTE		byStatusResist;										/* 毒・眠りの効きにくさ(%、100で効かない) */
 } STATUSTEMPLATEINFO, *PSTATUSTEMPLATEINFO;
 
 /* キャラ追加通知 */

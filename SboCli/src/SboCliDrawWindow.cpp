@@ -3822,11 +3822,11 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 
 	pItem = g_aItemInfo[pWnd->nData1];
 
-	/* 特技の書なら、覚える特技の名前と説明を出せるようにウィンドウを広げる */
+	/* 特技の書・特技発動の道具なら、特技の名前と説明を出せるようにウィンドウを広げる */
 	PMAGICINFO pMagic = NULL;
 	char aszExplain[ITEMINFO_EXPLAIN_MAXLINE][128];
 	int nExplainLine = 0, nCxNew = ITEMINFO_CX, nCyNew = ITEMINFO_CY;
-	if ((pItem->byType == ITEMTYPE_MAGIC) && pItem->pData) {
+	if (((pItem->byType == ITEMTYPE_MAGIC) || (pItem->byType == ITEMTYPE_USEMAGIC)) && pItem->pData) {
 		BYTE byMagicID = ((PITEMINFO_MAGIC)pItem->pData)->byID;
 		if (byMagicID < g_aMagicInfo.GetSize ()) {
 			char szExplain[MAX_MAGICEXPLAIN + 64];

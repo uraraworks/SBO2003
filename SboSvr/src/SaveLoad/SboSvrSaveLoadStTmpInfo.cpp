@@ -13,7 +13,7 @@
 /* 定数定義																	 */
 /* ========================================================================= */
 
-#define DATACOUNT		(26)									/* 保存データ数 */
+#define DATACOUNT		(27)									/* 保存データ数 */
 
 /* ========================================================================= */
 /* 構造体定義																 */
@@ -59,6 +59,7 @@ static const char *s_aszName[] = {
 	"waItem",				/* 所持アイテム */
 	"dwGold",				/* 所持金 */
 	"dwExp",				/* 経験値 */
+	"byStatusResist",		/* 毒・眠りの効きにくさ(%) */
 	"z"
 };
 
@@ -175,6 +176,7 @@ BOOL SaveStTmpInfo(void)
 			case 23:	dwDataSizeTmp += sizeof (pInfo->waItem);				break;	/* 所持アイテム */
 			case 24:	dwDataSizeTmp += sizeof (pInfo->dwGold);				break;	/* 所持金 */
 			case 25:	dwDataSizeTmp += sizeof (pInfo->dwExp);					break;	/* 経験値 */
+			case 26:	dwDataSizeTmp += sizeof (pInfo->byStatusResist);		break;	/* 毒・眠りの効きにくさ */
 			}
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
@@ -322,6 +324,10 @@ BOOL SaveStTmpInfo(void)
 			case 25:	/* 経験値 */
 				CopyMemory (&pData[dwOffset], &pInfo->dwExp, sizeof (pInfo->dwExp));
 				dwOffset += sizeof (pInfo->dwExp);
+				break;
+			case 26:	/* 毒・眠りの効きにくさ */
+				CopyMemory (&pData[dwOffset], &pInfo->byStatusResist, sizeof (pInfo->byStatusResist));
+				dwOffset += sizeof (pInfo->byStatusResist);
 				break;
 			}
 		}
@@ -566,6 +572,10 @@ BOOL LoadStTmpInfo(void)
 			} else if (strcmp (aHeaderInfo[i].szName, s_aszName[25]) == 0) {			/* 経験値 */
 				CopyMemory (&pInfo->dwExp, &pData[dwOffsetTmp], sizeof (pInfo->dwExp));
 				dwOffsetTmp += sizeof (pInfo->dwExp);
+
+			} else if (strcmp (aHeaderInfo[i].szName, s_aszName[26]) == 0) {			/* 毒・眠りの効きにくさ(古いデータには無い) */
+				CopyMemory (&pInfo->byStatusResist, &pData[dwOffsetTmp], sizeof (pInfo->byStatusResist));
+				dwOffsetTmp += sizeof (pInfo->byStatusResist);
 			}
 		}
 	}

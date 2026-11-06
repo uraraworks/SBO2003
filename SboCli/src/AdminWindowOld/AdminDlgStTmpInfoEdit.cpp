@@ -137,6 +137,7 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 	SetNum (hWnd, IDC_REGMAGIC,	stInfo.wDFMagic);
 	SetNum (hWnd, IDC_LV,		stInfo.byLevel);
 	SetNum (hWnd, IDC_EXP,		(long)stInfo.dwExp);
+	SetNum (hWnd, IDC_STRESIST,	stInfo.byStatusResist);
 	SetNum (hWnd, IDC_FIRE,		stInfo.chAttrFire);
 	SetNum (hWnd, IDC_WATER,	stInfo.chAttrWater);
 	SetNum (hWnd, IDC_WIND,		stInfo.chAttrWind);
@@ -193,6 +194,7 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 			pInfo->wDFMagic				= (WORD)GetNum (hWnd, IDC_REGMAGIC);
 			pInfo->byLevel				= (BYTE)GetNum (hWnd, IDC_LV);
 			pInfo->dwExp				= (DWORD)GetNum (hWnd, IDC_EXP);
+			pInfo->byStatusResist		= (BYTE)min (100, max (0, (int)GetNum (hWnd, IDC_STRESIST)));
 			pInfo->chAttrFire			= (char)GetNum (hWnd, IDC_FIRE);
 			pInfo->chAttrWater			= (char)GetNum (hWnd, IDC_WATER);
 			pInfo->chAttrWind			= (char)GetNum (hWnd, IDC_WIND);
