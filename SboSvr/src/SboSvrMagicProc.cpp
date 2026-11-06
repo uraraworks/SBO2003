@@ -1125,6 +1125,10 @@ BOOL MagicProcUse_HPDOWN(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTarge
 	}
 
 	nTmp2 = max (0, nTmp2);
+	/* 連携ボーナス(別のプレイヤーが直前に当てていたら増える) */
+	if (nTmp2 > 0) {
+		nTmp2 = nTmp2 * RenkeiCheck (pChar, pCharTarget) / 100;
+	}
 
 	nTmp = pCharTarget->wHP;
 	nTmp -= nTmp2;
@@ -1480,6 +1484,10 @@ BOOL MagicProcUse_HPDOWNAT(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTar
 	}
 
 	nTmp2 = max (0, nTmp2);
+	/* 連携ボーナス(別のプレイヤーが直前に当てていたら増える) */
+	if (nTmp2 > 0) {
+		nTmp2 = nTmp2 * RenkeiCheck (pChar, pCharTarget) / 100;
+	}
 
 	nTmp = pCharTarget->wHP;
 	nTmp -= nTmp2;
@@ -1707,6 +1715,10 @@ BOOL MagicProcUse_HPDOWNRATE(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharT
 	}
 
 	nTmp2 = max (0, nTmp2);
+	/* 連携ボーナス(別のプレイヤーが直前に当てていたら増える) */
+	if (nTmp2 > 0) {
+		nTmp2 = nTmp2 * RenkeiCheck (pChar, pCharTarget) / 100;
+	}
 
 	nTmp = pCharTarget->wHP;
 	nTmp -= nTmp2;
