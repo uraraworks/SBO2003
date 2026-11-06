@@ -12,5 +12,8 @@
 extern void DeleteAllTimerEvent		(PCHARINFO pChar);					/* タイマーイベントを削除 */
 extern void CharInfoTimerProc		(DWORD dwTblID);					/* キャラ情報タイマーイベント処理 */
 extern BOOL CheckCharInfoTimer		(DWORD dwTblID, BYTE byType);		/* 指定したイベントを持っているかチェック */
+extern void SetCharInfoTimerStatus	(PCHARINFO pChar, BYTE byType, BYTE byData, DWORD dwTimeValid);	/* 状態(加速・毒・眠り)をかける(同じ種類はかけ直し) */
+extern BYTE GetHasteRate			(PCHARINFO pChar);					/* 加速の率(%)。かかっていなければ0 */
+extern BOOL IsSleep					(PCHARINFO pChar);					/* 眠っているか */
 
 /* Copyright(C)URARA-works 2003-2006 */

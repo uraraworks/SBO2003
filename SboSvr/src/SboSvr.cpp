@@ -1037,7 +1037,8 @@ BOOL TimerProcChar(PCHARINFO pChar)
 	/* タイマーイベント */
 	CharInfoTimerProc (pChar->dwTblID);
 
-	if (pChar->pProc) {
+	/* 眠っているNPCは動かない */
+	if (pChar->pProc && !((pChar->byNpcType != NPCTYPE_INIT) && IsSleep (pChar))) {
 		PCCharProcBase pProc;
 
 		pProc = (PCCharProcBase)pChar->pProc;

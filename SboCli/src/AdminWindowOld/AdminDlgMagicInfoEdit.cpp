@@ -301,6 +301,26 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 				SetWindowText (GetDlgItem (hWnd, IDC_STATIC_DATA1), "減少率(%)：");
 				ShowWindow (GetDlgItem (hWnd, IDC_DATA1), TRUE);
 				break;
+			case MAGICTYPE_HASTE:			/* 加速 */
+				SetWindowText (GetDlgItem (hWnd, IDC_STATIC_DATA1), "速くなる率(%)：");
+				SetWindowText (GetDlgItem (hWnd, IDC_STATIC_DATA2), "続く秒数：");
+				ShowWindow (GetDlgItem (hWnd, IDC_DATA1), TRUE);
+				ShowWindow (GetDlgItem (hWnd, IDC_DATA2), TRUE);
+				break;
+			case MAGICTYPE_POISON:			/* 毒 */
+				SetWindowText (GetDlgItem (hWnd, IDC_STATIC_DATA1), "2秒ごとのﾀﾞﾒｰｼﾞ：");
+				SetWindowText (GetDlgItem (hWnd, IDC_STATIC_DATA2), "続く秒数：");
+				SetWindowText (GetDlgItem (hWnd, IDC_STATIC_DATA3), "成功率(%)0=100：");
+				ShowWindow (GetDlgItem (hWnd, IDC_DATA1), TRUE);
+				ShowWindow (GetDlgItem (hWnd, IDC_DATA2), TRUE);
+				ShowWindow (GetDlgItem (hWnd, IDC_DATA3), TRUE);
+				break;
+			case MAGICTYPE_SLEEP:			/* 眠り */
+				SetWindowText (GetDlgItem (hWnd, IDC_STATIC_DATA1), "眠る秒数：");
+				SetWindowText (GetDlgItem (hWnd, IDC_STATIC_DATA2), "成功率(%)0=100：");
+				ShowWindow (GetDlgItem (hWnd, IDC_DATA1), TRUE);
+				ShowWindow (GetDlgItem (hWnd, IDC_DATA2), TRUE);
+				break;
 			}
 		}
 		break;

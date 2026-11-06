@@ -74,6 +74,7 @@ void	RecvDataProcCONNECT					(PBYTE, DWORD);			/* 受信データ処理(接続�
 void	RecvDataProcLOGINRES				(PBYTE, DWORD);			/* 受信データ処理(ログイン応答) */
 void	RecvDataProcWEBACCOUNT				(PBYTE, DWORD);			/* 受信データ処理(ブラウザ版のアカウント関係) */
 void	RecvDataProcADMINUNDO				(PBYTE, DWORD);			/* 受信データ処理(管理者画面の「元に戻す」) */
+void	RecvDataProcHASTE					(PBYTE, DWORD);			/* 受信データ処理(加速の状態) */
 /* ブラウザ版のアカウント関係（web/replace/SboCliWebAccount_web.cpp） */
 void	WebAccSaveToken						(LPCSTR);				/* 端末トークンをページへ渡す */
 void	WebAccOnTokenNG						(void);					/* 端末トークンが無効だった */
@@ -305,6 +306,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcWEBACCOUNT,				/* CMD_WEBACCOUNT */
 	RecvDataProcADMINUNDO,				/* CMD_ADMINUNDO */
 	NULL,								/* CMD_REQ_GUARD */
+	RecvDataProcHASTE,					/* CMD_HASTE */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -1726,6 +1728,8 @@ int FindFrontAttackTarget(PCHARINFO pChar)
 
 BOOL	g_bGuard			= FALSE;		/* Z を押し続けて構えている */
 DWORD	g_dwGuardGageElapse	= 0;			/* 構えた時に溜まっていたゲージの時間(構えている間は止める) */
+BYTE	g_byHasteRate		= 0;			/* 加速の率(%)。0なら加速していない */
+DWORD	g_dwHasteEnd		= 0;			/* 加速が切れる時間(サーバーからの通知が届かなくても止まるように) */
 
 /* ========================================================================= */
 /* 関数名：	GetTurnGageTime													 */
@@ -1740,7 +1744,16 @@ DWORD GetTurnGageTime(PCHARINFO pChar)
 	dwTmp = pChar->byDEX;
 	dwTmp = dwTmp * 100 / 255;
 	dwTmp = max (dwTmp, 1);
-	return 1000 + (2000 - ((2000 * dwTmp) / 100));
+	dwTmp = 1000 + (2000 - ((2000 * dwTmp) / 100));
+	/* 自分が加速していれば速く溜まる(サーバーも同じ計算) */
+	if (g_byHasteRate && (g_nMyCharID >= 0) && (pChar == g_aCharInfo[g_nMyCharID])) {
+		if ((int)(timeGetTime () - g_dwHasteEnd) < 0) {
+			dwTmp = dwTmp * 100 / (100 + g_byHasteRate);
+		} else {
+			g_byHasteRate = 0;
+		}
+	}
+	return dwTmp;
 }
 
 
@@ -2006,6 +2019,25 @@ void RecvDataProcLOGINRES(PBYTE pData, DWORD dwDataSize)
 	UpdateWindow (g_hWndMain);
 	cliSock.Destroy ();
 }
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcHASTE												 */
+/* 内容：受信データ処理(加速の状態。byData=率%、dwData=続く時間ms)			 */
+/* ========================================================================= */
+void RecvDataProcHASTE(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_DATA4 pPara = (PCMDPARA_DATA4)pData;
+
+	if (dwDataSize < sizeof (CMDPARA_DATA4)) {
+		return;
+	}
+	g_byHasteRate	= pPara->byData;
+	g_dwHasteEnd	= timeGetTime () + pPara->dwData;
+	if (pPara->dwData == 0) {
+		g_byHasteRate = 0;
+	}
+}
+
 
 /* ========================================================================= */
 /* 関数名：RecvDataProcADMINUNDO											 */
