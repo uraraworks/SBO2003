@@ -1518,7 +1518,8 @@ void DrawETC(void)
 		g_bDraw = TRUE;
 	}
 
-	/* 構えている間：ゲージの場所に青い枠と、横に盾マーク(構えているのが一目で分かるように) */
+	/* 構えている間：ゲージの横に盾マーク(吹き出しが消えた後も構えているのが分かるように)。
+	   ゲージが出ている時は、止まっているのが分かるようにゲージを青い枠で囲む */
 	if (g_bGuard) {
 		x = 256;
 		y = 256;
@@ -1526,7 +1527,9 @@ void DrawETC(void)
 		y -= (anPosAddTblY[pChar->byDirection] * pChar->byDotMove);
 		x -= 3;
 		y -= 16;
-		DrawFrameRect (x - 1, y - 1, 40, 14, RGB (90, 180, 255));
+		if (pChar->dwTimeTurnMagicLV || pChar->dwTimeTurnLV) {
+			DrawFrameRect (x - 1, y - 1, 40, 14, RGB (90, 180, 255));
+		}
 		DrawGuardMark (x + 40, y - 2);
 		g_bDraw = TRUE;
 	}
