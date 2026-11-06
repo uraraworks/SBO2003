@@ -10,6 +10,7 @@
 #
 #   3) 手動実行で「VPS へデプロイする」にチェックがある時は、SSH で VPS へ送って入れ替える
 #      （deploy/production/vps-deploy.sh → VPS で remote-deploy.ps1。stop.ps1 で保存して止めてから展開して起動）。
+#      止める前に、ゲームの全員へシステムメッセージで再起動を予告し、遊んでいる人がいれば notice_sec 秒（既定 60）待つ。
 #
 # 手動実行・v* タグ・関係するファイルを変える PR の時だけ動く（VPS へのデプロイは手動実行の時だけ）。
 # BGM の MIDI は Secret SBO2003_PRIVATE_TOKEN（SBO2003-private を読めるトークン）で取ってくる。無ければ BGM 無し。
@@ -32,6 +33,10 @@ on:
         description: VPS へデプロイする（外すと zip を作って確かめるだけ）
         type: boolean
         default: true
+      notice_sec:
+        description: 止める前にゲームの全員へ「まもなく再起動します」と知らせて待つ秒数（0 で知らせない。誰もいなければ待たない）
+        type: number
+        default: 60
   push:
     tags: ['v*']
   pull_request:
@@ -166,6 +171,9 @@ jobs:
           Copy-Item $zip.FullName "$root\upload\"
           Run @('-Zip', "$root\upload\$($zip.Name)")
           if (-not (Test-Path "$root\prev\server\SboSvr.js")) { throw 'prev\ に前の版がありません' }
+          # 動いているサーバーへ再起動のお知らせを流してから止めたこと（誰もいないので待たない）
+          $out = (Get-ChildItem "$root\log" -Filter 'sbosvr-*.out.log' | Get-Content -Raw -Encoding UTF8) -join "`n"
+          if ($out -notmatch 'お知らせを流しました: 【お知らせ】サーバーを更新します。') { throw '再起動のお知らせが流れていません' }
           Write-Host '----- 1 つ前の版に戻す'
           Run @('-Rollback')
           Write-Host '----- データの入れ替え（前の確認で作ったデータを持ってくる）'
@@ -239,4 +247,5 @@ jobs:
           SSH_KEY: ~/.ssh/id_vps
           HEALTH_URL: ${{ vars.SBO2003_VPS_HEALTH_URL }}  # 外から届くようになってから設定する
           IIS_HOST: ${{ vars.SBO2003_VPS_IIS_HOST || 'sbo2003.urara-works.jp' }}
+          NOTICE_SEC: ${{ inputs.notice_sec }}
         run: deploy/production/vps-deploy.sh "$(ls dl/Sbo2003_Server_*.zip | head -n 1)"

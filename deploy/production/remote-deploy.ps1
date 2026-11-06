@@ -3,7 +3,11 @@
 #   powershell -NoProfile -ExecutionPolicy Bypass -File C:\SBO2003\upload\remote-deploy.ps1 -Zip C:\SBO2003\upload\Sbo2003_Server_xxx.zip
 #   powershell ... remote-deploy.ps1 -Data C:\SBO2003\upload\sbo2003-data.zip   # データだけ入れ替える
 #   powershell ... remote-deploy.ps1 -Rollback                                  # 1 つ前の版に戻す
+#   -NoticeSec 60 で、止める前に遊んでいる人へ再起動を予告して待つ秒数を変える（0 で予告しない）
 #
+# 0. サーバーが動いていれば、ゲームの全員にお知らせ（システムメッセージ）で再起動を予告する。
+#    遊んでいる人がいれば NoticeSec 秒待ち、止める 10 秒前に「まもなく再起動します」をもう一度流す
+#    （誰もいなければ待たない。お知らせを読めない古い版のサーバーの時も待たない）
 # 1. stop.ps1 でデータを保存してからサーバーを止める
 # 2. -Zip: 今の server\ web\ node\ seed\ を prev\ に退避して、新しい zip を展開する
 #    -Data: 今の data\ を backup\ に zip で控えてから、渡されたデータ（SBODATA/ と SboSvr.ini の zip）に置き換える
@@ -15,7 +19,9 @@ param(
 	[string]$Zip = '',
 	[string]$Data = '',
 	[switch]$Rollback,
-	[string]$Root = 'C:\SBO2003'
+	[string]$Root = 'C:\SBO2003',
+	# 止める前に再起動を予告して待つ秒数（0 で予告しない）
+	[int]$NoticeSec = 60
 )
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -34,6 +40,59 @@ if (-not $Zip -and -not $Data -and -not $Rollback) { throw '-Zip・-Data・-Roll
 if ($Zip -and -not (Test-Path $Zip)) { throw "zip がありません: $Zip" }
 if ($Data -and -not (Test-Path $Data)) { throw "データがありません: $Data" }
 New-Item -ItemType Directory -Force -Path $Root | Out-Null
+
+$envFile = Join-Path $Root 'sbo2003.env'
+$port = '18090'
+if (Test-Path $envFile) {
+	foreach ($line in Get-Content -Path $envFile -Encoding UTF8) {
+		if ($line -match '^\s*SBO2003_HTTP_PORT\s*=\s*(\d+)') { $port = $Matches[1] }
+	}
+}
+
+# お知らせファイルを置いて、サーバーが読み取る（消える）のを待つ。読まれなければ $false
+function Send-Notice([string[]]$lines) {
+	$file = Join-Path $Root 'data\notice.request'
+	$tmp = "$file.tmp"
+	# 書きかけを読まれないよう、別名で書いてから置く（BOM なしの UTF-8）
+	[IO.File]::WriteAllText($tmp, ($lines -join "`r`n"), (New-Object Text.UTF8Encoding $false))
+	Move-Item -Force $tmp $file
+	for ($i = 0; $i -lt 10 -and (Test-Path $file); $i++) { Start-Sleep -Milliseconds 500 }
+	if (Test-Path $file) {
+		Remove-Item -Force -ErrorAction SilentlyContinue $file
+		return $false
+	}
+	# Say（Write-Output）だと戻り値に混ざるので、ここは画面へ直接出す
+	foreach ($l in $lines) { Say "お知らせ: $l" | Out-Host }
+	return $true
+}
+
+# 0. 遊んでいる人に再起動を予告する
+$pidFile = Join-Path $Root 'data\sbosvr.pid'
+$running = $false
+if (Test-Path $pidFile) {
+	$running = [bool](Get-Process -Id ([int](Get-Content $pidFile -Raw)) -ErrorAction SilentlyContinue)
+}
+if ($running -and $NoticeSec -gt 0) {
+	$online = -1
+	try {
+		$online = [int]((Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:$port/health" -TimeoutSec 5).Content |
+			ConvertFrom-Json).onlinePlayers
+	} catch { }
+	if ($Zip) { $what = 'サーバーを更新します。' } else { $what = 'サーバーのメンテナンスを行います。' }
+	# 待つ秒数ちょうどとは限らない（順番待ちなどで前後する）ので「数分後」と大まかに書く
+	$sent = Send-Notice @("【お知らせ】$what", '数分後に再起動するため、いったん切断されます。')
+	if (-not $sent) {
+		Say 'お知らせを流せませんでした（お知らせに対応していない版のサーバー）。待たずに止めます'
+	} elseif ($online -eq 0) {
+		Say 'ゲームに入っている人がいないので、待たずに止めます'
+	} else {
+		Say "ゲームに入っている人（$online 人）がいるので、$NoticeSec 秒待ってから止めます"
+		$last = [Math]::Min(10, $NoticeSec)
+		Start-Sleep -Seconds ($NoticeSec - $last)
+		$null = Send-Notice @('まもなく再起動します。数分たったら、もう一度ログインしてください。')
+		Start-Sleep -Seconds $last
+	}
+}
 
 # 1. 止める（保存してから）
 $stop = Join-Path $Root 'stop.ps1'
@@ -101,7 +160,6 @@ if ($Data) {
 }
 
 # 3. 初回だけの準備
-$envFile = Join-Path $Root 'sbo2003.env'
 if (-not (Test-Path $envFile)) {
 	Copy-Item (Join-Path $Root 'sbo2003.env.example') $envFile
 	Write-Warning "sbo2003.env を雛形から作りました。SBO2003_ADMIN_PASSWORD を書いてから stop.ps1 → 起動し直してください（空のままだと管理者ではログインできません）"
@@ -112,8 +170,7 @@ if (-not (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue)) 
 	if ($LASTEXITCODE -ne 0) { throw "install-task.ps1 が失敗しました（$LASTEXITCODE）" }
 }
 
-# 4. 起動して確かめる
-$port = '18090'
+# 4. 起動して確かめる（初回は sbo2003.env をここで作ったので、ポートを読み直す）
 foreach ($line in Get-Content -Path $envFile -Encoding UTF8) {
 	if ($line -match '^\s*SBO2003_HTTP_PORT\s*=\s*(\d+)') { $port = $Matches[1] }
 }

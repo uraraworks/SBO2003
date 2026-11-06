@@ -15,6 +15,7 @@
  *            SboWebAdminSearch    管理ページのキャラ検索（キャラ名・アカウント名の一部）
  *            SboWebAdminOnline    管理ページのログイン中プレイヤー一覧（キャラ名・今いるマップ）
  *            SboWebAccAdminStamp  管理者のアカウント名・パスワードの指紋（覚えたログインの取り消し用）
+ *            SboWebAdminNotice    全員にシステムメッセージ（お知らせ）を流す（デプロイ前の再起動予告など）
  *
  * パスワードは C 側の外へ出さない（照合もここで行う）。
  * キャラ名はゲームの中でも UTF-8 で持っている（JS とも UTF-8 でやり取りする）。
@@ -499,4 +500,23 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebAdminOnline(void)
 	snprintf(sz, sizeof(sz), "],\"online\":%u}", (unsigned)g_dwOnline);
 	s_strResult += sz;
 	return s_strResult.c_str();
+}
+
+/*
+ * 全員にシステムメッセージ（お知らせ）を流す
+ *   ゲームの時報や「サーバー情報を保存します」と同じ水色のシステムメッセージで、メッセージログにも残る。
+ *   本番のデプロイ前に「まもなく再起動します」と知らせるのに使う（server/node/sbosvr_net.js のお知らせファイル）。
+ *   文字は UTF-8 で受け取る。先頭に「SYSTEM:」が無ければ付ける。
+ */
+extern "C" EMSCRIPTEN_KEEPALIVE void SboWebAdminNotice(const char *pszUtf8)
+{
+	if ((pszUtf8 == NULL) || (pszUtf8[0] == 0)) {
+		return;
+	}
+	std::string strUtf8 = pszUtf8;
+	if (strUtf8.compare(0, 7, "SYSTEM:") != 0) {
+		strUtf8 = "SYSTEM:" + strUtf8;
+	}
+	std::string strMsg = W32Utf8ToTextStr(strUtf8.c_str());
+	SendCmdSYSMSG(URARASOCK_SENDALL, strMsg.c_str());
 }
