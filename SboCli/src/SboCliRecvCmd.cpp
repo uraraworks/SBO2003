@@ -1724,6 +1724,41 @@ int FindFrontAttackTarget(PCHARINFO pChar)
 
 
 /* ========================================================================= */
+/* 関数名：	GetTurnGageTime													 */
+/* 内容：	ターンゲージが満タンになるまでの時間(ms)						 */
+/*			素早さ 0 で 3 秒～255 で 1 秒（サーバーも同じ計算）				 */
+/* ========================================================================= */
+
+DWORD GetTurnGageTime(PCHARINFO pChar)
+{
+	DWORD dwTmp;
+
+	dwTmp = pChar->byDEX;
+	dwTmp = dwTmp * 100 / 255;
+	dwTmp = max (dwTmp, 1);
+	return 1000 + (2000 - ((2000 * dwTmp) / 100));
+}
+
+
+/* ========================================================================= */
+/* 関数名：	IsTurnGageJust													 */
+/* 内容：	ゲージが満タンになってすぐ（ジャストで押せる時間）か			 */
+/* ========================================================================= */
+
+BOOL IsTurnGageJust(PCHARINFO pChar)
+{
+	DWORD dwTime, dwFull;
+
+	if ((pChar->dwTimeTurnLV == 0) || (pChar->byTurnLV < 100)) {
+		return FALSE;
+	}
+	dwTime = timeGetTime ();
+	dwFull = pChar->dwTimeTurnLV + GetTurnGageTime (pChar);
+	return (dwTime < dwFull + TURNGAGE_JUSTTIME) ? TRUE : FALSE;
+}
+
+
+/* ========================================================================= */
 /* 関数名：	ContinueTurnGage												 */
 /* 内容：	連続攻撃：殴った後、同じ相手に向けて次のゲージを溜め始める		 */
 /*			（毎回コマンド→攻撃→相手選択をしなくて済むように）			 */
