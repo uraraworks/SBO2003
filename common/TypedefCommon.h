@@ -2160,6 +2160,7 @@ typedef struct _STATUSTEMPLATEINFO {
 	WORD		waItem[MAX_MYITEM];									/* 所持アイテム */
 	DWORD		dwGold;												/* 所持金 */
 	DWORD		dwExp;												/* 経験値 */
+	BYTE		byStatusResist;										/* 毒・眠りの効きにくさ(%、100で効かない) */
 } STATUSTEMPLATEINFO, *PSTATUSTEMPLATEINFO;
 
 /* キャラ追加通知 */

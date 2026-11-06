@@ -1788,6 +1788,29 @@ BOOL MagicProcUse_HASTE(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTarget
 }
 
 /* ========================================================================= */
+/* 関数名：GetStatusResist													 */
+/* 内容：毒・眠りの効きにくさ(%)。ステータステンプレートの値を見る			 */
+/*		 発生元から出た敵はテンプレートを持たないので、発生元のものを見る	 */
+/* ========================================================================= */
+static int GetStatusResist(PCHARINFO pChar)
+{
+	DWORD dwStTmp;
+
+	if (pChar->byNpcType == NPCTYPE_INIT) {
+		return 0;
+	}
+	dwStTmp = pChar->dwStTmplateID;
+	if ((dwStTmp == (DWORD)-1) && (pChar->dwParentTblID != (DWORD)-1) &&
+		(pChar->dwParentTblID < (DWORD)g_aCharInfo.GetSize ())) {
+		dwStTmp = g_aCharInfo[pChar->dwParentTblID]->dwStTmplateID;
+	}
+	if ((dwStTmp == (DWORD)-1) || (dwStTmp >= (DWORD)g_aStTmpInfo.GetSize ())) {
+		return 0;
+	}
+	return min (100, (int)g_aStTmpInfo[dwStTmp]->byStatusResist);
+}
+
+/* ========================================================================= */
 /* 関数名：MagicProcUseStatusCheck											 */
 /* 内容：毒・眠りをかけられる相手か・成功したか								 */
 /* ========================================================================= */
@@ -1803,6 +1826,8 @@ static BOOL MagicProcUseStatusCheck(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO
 	if (nRate <= 0) {
 		nRate = 100;
 	}
+	/* 敵の効きにくさ(ステータステンプレート)の分だけ成功率を下げる。100 なら効かない */
+	nRate = nRate * (100 - GetStatusResist (pCharTarget)) / 100;
 	if ((int)(genrand () % 100) >= nRate) {
 		SendCmdADDCHAREFC (pCharTarget->dwTblID, RGB (255, 255, 255), "ﾐｽ");
 		return FALSE;
