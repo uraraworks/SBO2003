@@ -97,6 +97,7 @@ LPSTR MakeNpcSpeechNextExp	(LPCSTR);											/* 神父さんのセリフに次
 BOOL CmdProcSiraberu	(PWNDINFO);											/* コマンド処理(調べる) */
 int GetFrontTalkChar		(void);												/* 話しかけられる目の前のキャラを探す */
 int GetSKeyTalkChar		(void);												/* Sキーで話しかける相手を探す */
+int GetFrontScoreChar	(void);												/* 目の前の得点板を探す */
 BOOL CmdProcSKey		(void);												/* Sキー(調べる・話す・扉) */
 void ChatMsgProc		(LPCTSTR);											/* 発言メッセージ処理 */
 #ifdef __EMSCRIPTEN__
@@ -978,8 +979,15 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 			DWORD dwTime = timeGetTime ();
 			if (m_dwTimeLastTarget < dwTime - 2000) {
 				m_dwTimeLastTarget = dwTime;
-				/* ターゲット要求 */
-				SendCmdCHAR_TAIL (-1);
+				int nScore = GetFrontScoreChar ();
+				/* 目の前が得点板（雪合戦場の HP パネルなど）？ */
+				if (nScore >= 0) {
+					/* 昔のターゲット要求で、パネルに名前を付ける（付いていれば外す） */
+					SendCmdTARGETCHAR (g_aCharInfo[nScore]->dwTblID);
+				} else {
+					/* ついていく要求 */
+					SendCmdCHAR_TAIL (-1);
+				}
 				CancelTurnGage (pChar);
 				SAFE_DELETE (g_pTargetSelectInfo);
 			}
@@ -7487,6 +7495,37 @@ int GetFrontTalkChar(void)
 }
 
 /* ========================================================================= */
+/* 関数名：GetFrontScoreChar												 */
+/* 内容：目の前のマスにいる得点板（雪合戦場の HP パネルなど）を探す			 */
+/*		 Z キーで名前を付ける（2006 年に Z が「ついていく」になってから	 */
+/*		 付けられなくなっていたのを戻す）									 */
+/*		 戻り値：キャラ番号（いない時は -1）								 */
+/* ========================================================================= */
+int GetFrontScoreChar(void)
+{
+	PCHARINFO pChar, pChar2;
+	DWORD dwX, dwY;
+	int i, nCount;
+
+	if ((g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ())) {
+		return -1;
+	}
+	pChar = g_aCharInfo[g_nMyCharID];
+	dwX = pChar->dwX + anPosAddTblX[pChar->byDirection];
+	dwY = pChar->dwY + anPosAddTblY[pChar->byDirection];
+
+	nCount = g_aCharInfo.GetSize ();
+	for (i = 0; i < nCount; i ++) {
+		pChar2 = g_aCharInfo[i];
+		if ((pChar2->byNpcType == NPCTYPE_SCORE) &&
+			CheckCharX (pChar2, pChar2->dwX, dwX) && (pChar2->dwY == dwY)) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+/* ========================================================================= */
 /* 関数名：GetSKeyTalkChar													 */
 /* 内容：Sキーで話しかける相手を探す										 */
 /*		 掲示板（お知らせ掲示板・立て札）は動かない NPC の足元に「調べる」	 */
@@ -7971,13 +8010,14 @@ ChatMsgProc_END:
 /* 内容：スマホの仮想パッドで今押して効くボタンを返す（ブラウザ版）			 */
 /*		 シェル HTML が効かないボタンを隠すのに使う。KeyProc・KeyProcMove・	 */
 /*		 KeyProcDead・KeyProcMSG が実際にキーを使う条件に合わせている		 */
-/*		 戻り値：1=調べる(S) 2=表示(Tab) 4=戦闘(Ctrl) 8=Sが話すになる 16=戦闘モード中 の組み合わせ */
+/*		 戻り値：1=調べる(S) 2=表示(Tab) 4=戦闘(Ctrl) 8=Sが話すになる 16=戦闘モード中 32=Zで得点板に名前 の組み合わせ */
 /* ========================================================================= */
 #define PADSTATE_SIRABERU	(0x01)
 #define PADSTATE_VIEW		(0x02)
 #define PADSTATE_BATTLE		(0x04)
 #define PADSTATE_HANASU		(0x08)	/* 目の前に話せる相手がいる（「調べる」ボタンを「話す」と表示） */
 #define PADSTATE_BATTLEMODE	(0x10)	/* 戦闘モード中（「決定」を「攻撃」、「キャンセル」を「構え」と表示） */
+#define PADSTATE_SCORE		(0x20)	/* 目の前に得点板がある（「キャンセル」を「名前」と表示。Z で名前を付ける） */
 
 extern "C" EMSCRIPTEN_KEEPALIVE int SboWebGetPadState(void)
 {
@@ -8037,6 +8077,11 @@ extern "C" EMSCRIPTEN_KEEPALIVE int SboWebGetPadState(void)
 			(pChar->abySubStatus[0] != SUBGAMEID_SUGOROKU) &&
 			(GetSKeyTalkChar () >= 0)) {
 			nRet |= PADSTATE_HANASU;
+		}
+		/* Z キーで得点板（雪合戦場の HP パネル）に名前を付けられるか（KeyProcMove と同じ条件） */
+		if ((pChar->abySubStatus[0] == 0) && (pChar->byTurnLV == 0) && (pChar->dwTimeTurnLV == 0) &&
+			(pChar->dwTimeTurnMagicLV == 0) && (GetFrontScoreChar () >= 0)) {
+			nRet |= PADSTATE_SCORE;
 		}
 	}
 	/* 戦闘モードは戦闘できるマップでだけ切り替えられる */
