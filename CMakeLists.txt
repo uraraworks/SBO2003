@@ -56,8 +56,8 @@ add_custom_target(sbosvr_prepare
 # ---------------------------------------------------------------------------
 # 実行ファイル
 # ---------------------------------------------------------------------------
-add_executable(SboSvr
-	${SBOSVR_GAME_SOURCES}
+# サーバー本体とテスト（tests/server）で共有するソース
+set(SBOSVR_PLATFORM_SOURCES
 	platform/w32_core.cpp
 	platform/w32_gdi.cpp
 	platform/w32_ctrl.cpp
@@ -69,7 +69,11 @@ add_executable(SboSvr
 	server/SvrStub.cpp
 	server/web_account_svr.cpp
 	server/web_status_svr.cpp
-	server/web_data_svr.cpp
+	server/web_data_svr.cpp)
+
+add_executable(SboSvr
+	${SBOSVR_GAME_SOURCES}
+	${SBOSVR_PLATFORM_SOURCES}
 	server/server_main.cpp)
 add_dependencies(SboSvr sbosvr_prepare)
 
@@ -114,3 +118,47 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
 	target_link_options(SboSvr PRIVATE -g -sASSERTIONS=1)
 endif()
 set_target_properties(SboSvr PROPERTIES SUFFIX ".js")
+
+# ---------------------------------------------------------------------------
+# 回帰テスト（tests/server）。普段のビルドには含めず、tests/server/run.sh が作る
+#   cmake --build --preset mac-release --target SboSvrTests
+#   出力: SboSvrTests.js（通信は tests/server/mock_net.js で置き換え、時刻は固定にする）
+# ---------------------------------------------------------------------------
+add_executable(SboSvrTests EXCLUDE_FROM_ALL
+	${SBOSVR_GAME_SOURCES}
+	${SBOSVR_PLATFORM_SOURCES}
+	tests/server/test_main.cpp)
+add_dependencies(SboSvrTests sbosvr_prepare)
+target_include_directories(SboSvrTests PRIVATE
+	"${CMAKE_SOURCE_DIR}/platform/include"
+	"${SBO_SRC}"
+	"${SBO_SRC}/SboSvr"
+	"${SBO_SRC}/SboSvr/src"
+	"${SBO_SRC}/SboSvr/src/CharProc"
+	"${SBO_SRC}/common")
+target_compile_options(SboSvrTests PRIVATE
+	-fms-extensions -fno-strict-aliasing -w -sUSE_ZLIB=1)
+target_compile_definitions(SboSvrTests PRIVATE W32_HEADLESS W32_EXE_NAME="SboSvr.exe")
+set(SBO_PREJS_MOCK "${CMAKE_SOURCE_DIR}/tests/server/mock_net.js")
+target_link_options(SboSvrTests PRIVATE
+	-sUSE_ZLIB=1
+	-sENVIRONMENT=node
+	-sNODERAWFS=1
+	-sEXIT_RUNTIME=1
+	-sALLOW_MEMORY_GROWTH=1
+	-sINITIAL_MEMORY=64MB
+	-sSTACK_SIZE=4MB
+	-sGLOBAL_BASE=1048576
+	-sEXPORTED_FUNCTIONS=_main,_malloc,_free
+	"-sDEFAULT_LIBRARY_FUNCS_TO_INCLUDE=$stringToUTF8,$UTF8ToString,$stringToNewUTF8"
+	# 時刻をテストから決められるようにする（timeGetTime / GetTickCount を差し替え）
+	-Wl,--wrap=_Z11timeGetTimev
+	-Wl,--wrap=_Z12GetTickCountv
+	"--pre-js=${SBO_PREJS_MOCK}"
+	"--pre-js=${SBO_PREJS_ACCOUNT}"
+	"--pre-js=${SBO_PREJS_STATUS}"
+	"--pre-js=${SBO_PREJS_FEEDBACK}"
+	"--pre-js=${SBO_PREJS_DATA}"
+	"--pre-js=${SBO_PREJS_MAPDESIGN}")
+set_property(TARGET SboSvrTests APPEND PROPERTY LINK_DEPENDS "${SBO_PREJS_MOCK}")
+set_target_properties(SboSvrTests PROPERTIES SUFFIX ".js")
