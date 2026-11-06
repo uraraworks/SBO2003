@@ -1749,7 +1749,7 @@ BOOL MagicProcUse_HASTE(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTarget
 	nSec  = max (1, (int)pInfo->wData2);
 
 	SetCharInfoTimerStatus (pCharTarget, CHARINFOTIMEREVENT_HASTE, (BYTE)nRate, (DWORD)nSec * 1000);
-	SendCmdADDCHAREFC (pCharTarget->dwTblID, RGB (255, 230, 80), "ﾍｲｽﾄ");
+	SendCmdADDCHAREFC (pCharTarget->dwTblID, RGB (255, 230, 80), "加速");
 	if (pInfo->byTargetEfectID) {
 		pCharTarget->byEfect = pInfo->byTargetEfectID;
 		SendCmdEFECTCHG (pCharTarget->pID, pCharTarget->dwTblID, pCharTarget->byEfect);
