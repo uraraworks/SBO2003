@@ -421,15 +421,17 @@
 		position: absolute;
 		box-sizing: border-box;
 		pointer-events: none;
-		background: rgba(255, 255, 255, 0.16);
-		border: 2px solid rgba(255, 255, 255, 0.45);
+		/* 右のボタンと同じ色・同じ縁取り */
+		background: #3b404c;
+		border: 2px solid #07080b;
 	}
 	.sbo-dpad-arm {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		color: rgba(255, 255, 255, 0.75);
+		color: rgba(255, 255, 255, 0.8);
 		font-size: 14px;
+		text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.6);
 		line-height: 1;
 	}
 	/* 腕は 44px 幅。真ん中の四角（44px）と重ねて継ぎ目を隠す */
@@ -483,10 +485,10 @@
 		border-radius: 50%;
 		background: rgba(0, 0, 0, 0.25);
 	}
-	/* 押している方向を光らせる */
+	/* 押している方向は、ボタンを押した時と同じく暗くへこませ、矢印を金色にする */
 	.sbo-dpad-arm.sbo-dpad-on {
-		background: rgba(255, 255, 255, 0.45);
-		color: #fff;
+		background: #2c3039;
+		color: #f0c040;
 	}
 	/* 向きかえモード中は真ん中を光らせ、腕の色も変えて「歩かない」と分かるようにする */
 	.sbo-dpad-center.sbo-dpad-on::after {
@@ -496,13 +498,10 @@
 	.sbo-stick:has(.sbo-dpad-center.sbo-dpad-on) .sbo-dpad-arm {
 		border-color: rgba(240, 192, 64, 0.8);
 	}
-	.sbo-stick:has(.sbo-dpad-center.sbo-dpad-on) .sbo-dpad-arm.sbo-dpad-on {
-		background: rgba(240, 192, 64, 0.45);
-	}
 
 	/* ---- ボタン ----
 	   レトロ・ピクセル風：角の小さい四角に、左上が明るく右下が暗い 2px の段差で立体に見せる。
-	   全部「線画アイコン＋文字＋キー名」にそろえ、よく押す決定は右下に 2 マス分の大きさで金色 */
+	   全部「線画アイコン＋文字＋キー名」にそろえ、よく押す決定は右下に 2 マス分の大きさ（色はほかと同じ） */
 	.sbo-buttons {
 		display: grid;
 		grid-template-columns: repeat(3, 54px);
@@ -542,17 +541,8 @@
 		background: #2c3039;
 		box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.5), inset -2px -2px 0 rgba(255, 255, 255, 0.12);
 	}
-	/* 決定は横長なので、アイコンと文字を横に並べる */
 	.sbo-buttons button.sbo-main {
-		flex-direction: row;
-		gap: 6px;
-		background: #b98a2c;
-		box-shadow: inset 2px 2px 0 rgba(255, 236, 170, 0.6), inset -2px -2px 0 rgba(90, 55, 0, 0.6);
 		font-size: 13px;
-	}
-	.sbo-buttons button.sbo-main.sbo-pressed {
-		background: #8f6a1f;
-		box-shadow: inset 2px 2px 0 rgba(60, 35, 0, 0.6), inset -2px -2px 0 rgba(255, 236, 170, 0.25);
 	}
 	.sbo-buttons button:disabled {
 		opacity: 0.35;
@@ -570,10 +560,6 @@
 	.sbo-main .sbo-btn-svg {
 		width: 18px;
 		height: 18px;
-	}
-	.sbo-main .sbo-btn-key {
-		align-self: flex-end;
-		margin-bottom: 6px;
 	}
 	.sbo-buttons button span {
 		white-space: nowrap;
