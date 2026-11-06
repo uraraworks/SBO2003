@@ -30,7 +30,7 @@ SBOP2 のステージング用ホスト（Google Cloud の e2-micro）に、Sbo2
 | `sbo2003.caddy.template` | Caddy のサイト定義の雛形（`deploy.sh` が値を埋めて `~/caddy-sites/` に置く） |
 | `staging.env.example` | ドメイン・Basic 認証・管理者パスワードの設定の雛形 |
 | `deploy.sh` | ホストでイメージを入れ替え、サイト定義を置いて Caddy に読み直させる |
-| `../../.github/workflows/staging-deploy.yml` | main への push で自動デプロイ |
+| `../../.github/workflows/staging-deploy.yml` | 手動実行でデプロイ（Actions → staging-deploy → Run workflow） |
 
 ## 初回のセットアップ
 
@@ -75,7 +75,7 @@ SBOP2 と同じホスト・同じユーザーなので、SBOP2 に登録した�
 
 ### 4. 初回デプロイ
 
-Actions の「staging-deploy」を手動実行します（以後は main への push で自動）。
+Actions の「staging-deploy」を手動実行します（以後も反映したい時に手動実行します）。
 イメージ作成（サーバーとブラウザ版のビルド）→ 転送 → `deploy.sh --image`（読み込み・起動・`/health` 確認・サイト定義の反映）の順に進みます。
 ホストには `~/sbo2003-staging/deploy/staging` だけが置かれます。
 

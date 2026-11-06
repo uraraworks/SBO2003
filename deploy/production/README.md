@@ -2,7 +2,7 @@
 
 GitHub Actions の「production-publish」を手動実行すると、配布 zip を作って Windows で動作を確かめたあと、
 **SSH で VPS へ送って入れ替えるところまで** 自動で行います（MangaViewer と同じく、VPS の OpenSSH に鍵でログインします）。
-ステージング（`deploy/staging`、GCP・main への push で自動デプロイ）はそのまま残ります。
+ステージング（`deploy/staging`、GCP・Actions の手動実行でデプロイ）はそのまま残ります。
 公開 URL は `https://sbo2003.urara-works.jp/`（SBOP2 の `sbop2.urara-works.jp` と同じく専用のサブドメイン）の想定です。
 
 ```
