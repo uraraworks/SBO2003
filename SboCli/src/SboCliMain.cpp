@@ -83,6 +83,7 @@ void	TimerProcCharAnimeBOMB		(PCHARINFO pChar);					/* タイマー処理(キャ
 void	TimerProcCharAnimeBOMBBLOCK	(PCHARINFO pChar);					/* タイマー処理(キャラアニメーション処理(爆弾ゲームの壁)) */
 void	TimerProcCharHartBeat		(PCHARINFO pChar);					/* タイマー処理(キャラハートビート処理) */
 void	TimerProcCharTurnLV			(PCHARINFO pChar);					/* タイマー処理(キャラターンゲージ処理) */
+static void	TimerProcAutoTurnGage	(PCHARINFO pChar, DWORD dwTime);	/* 目の前の敵で自動でゲージを溜める */
 void	TimerProcCharMagicLV		(PCHARINFO pChar);					/* タイマー処理(キャラ魔法ターンゲージ処理) */
 BOOL	MsgProc						(PWNDINFO);							/* メッセージ処理 */
 void	StartPosConfirmOpen			(PWNDINFO, int, int, int, int);		/* 復活位置の確認を出す */
@@ -2755,6 +2756,68 @@ void TimerProcCharHartBeat(PCHARINFO pChar)
 
 
 /* ========================================================================= */
+/* 関数名：	TimerProcAutoTurnGage											 */
+/* 内容：	戦闘モードで目の前に敵がいれば、自動でゲージを溜め始める		 */
+/*			（コマンドから攻撃→相手を選ばなくても殴れるように）			 */
+/*			向きを変えて別の敵が目の前に来たら相手だけ切り替え、			 */
+/*			目の前から敵がいなくなって AUTOGAGE_LOSTTIME たったら消す		 */
+/*			弓は離れた敵を狙うので、今までどおりコマンドから相手を選ぶ		 */
+/* ========================================================================= */
+
+static void TimerProcAutoTurnGage(PCHARINFO pChar, DWORD dwTime)
+{
+	int nFront;
+	DWORD dwFront;
+
+	if ((g_bBattleMode == FALSE) || (g_pMapInfo == NULL) || ((g_pMapInfo->byFlg & MAPFLG_BATTLE) == 0)) {
+		return;
+	}
+	if (g_FadeInOutInfo.byFadeIn || g_FadeInOutInfo.byFadeOut) {
+		return;
+	}
+	/* 倒れている・特技の詠唱中・構えている？ */
+	if ((pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0) || pChar->dwTimeTurnMagicLV || g_bGuard) {
+		return;
+	}
+	/* 相手を選んで溜めているゲージ・弓はそのまま */
+	if ((pChar->dwTimeTurnLV && (g_bAutoGage == FALSE)) || (GetAttackType (pChar) == ATACKTYPE_ARROW)) {
+		return;
+	}
+
+	nFront = FindFrontAttackTarget (pChar);
+	if (nFront == -1) {
+		g_dwAutoGageSuppress = (DWORD)-1;
+		/* 目の前から敵がいなくなってしばらくたったらゲージを消す(一瞬ずれただけでは消さない) */
+		if (pChar->dwTimeTurnLV && (dwTime - g_dwAutoGageLastFront > AUTOGAGE_LOSTTIME)) {
+			CancelTurnGage (pChar);
+			g_bAutoGage = FALSE;
+			SendCmdTARGETCHAR ((DWORD)-1);
+		}
+		return;
+	}
+	dwFront = g_aCharInfo[nFront]->dwTblID;
+	g_dwAutoGageLastFront = dwTime;
+
+	if (pChar->dwTimeTurnLV == 0) {
+		/* Z でやめた相手のまま？ */
+		if (dwFront == g_dwAutoGageSuppress) {
+			return;
+		}
+		g_dwAutoGageSuppress = (DWORD)-1;
+		StartTurnGage (pChar, dwFront);
+		g_bAutoGage = TRUE;
+		SendCmdTARGETCHAR (dwFront);
+		g_bDraw = TRUE;
+
+	} else if (pChar->dwAtackTblID != dwFront) {
+		/* 向きを変えて別の敵が目の前に来た：ゲージはそのままで相手だけ切り替え */
+		pChar->dwAtackTblID = dwFront;
+		SendCmdTARGETCHAR (dwFront);
+	}
+}
+
+
+/* ========================================================================= */
 /* 関数名：	TimerProcCharTurnLV												 */
 /* 内容：	タイマー処理(キャラターンゲージ処理)							 */
 /* 日付：	2006/02/14														 */
@@ -2767,6 +2830,10 @@ void TimerProcCharTurnLV(PCHARINFO pChar)
 	PCHARINFO pCharTarget;
 
 	dwTime = timeGetTime ();
+	/* 戦闘モードで目の前に敵がいれば、相手を選ばなくてもゲージを溜める */
+	if ((g_nMyCharID >= 0) && (pChar == g_aCharInfo[g_nMyCharID])) {
+		TimerProcAutoTurnGage (pChar, dwTime);
+	}
 	/* ターンゲージ溜まり中 */
 	if (pChar->dwTimeTurnLV == 0) {
 		return;
