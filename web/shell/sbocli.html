@@ -308,30 +308,89 @@
 		}
 	}
 
-	/* ---- アナログスティック（上下左右の 4 方向） ---- */
+	/* ---- 十字キー（上下左右の 4 方向） ----
+	   見た目は十字だが、判定は四角全体を角度で 4 方向に分ける（角を押しても近い方向に歩く）。
+	   止まるのは真ん中の小さな丸だけ */
 	.sbo-stick {
 		position: relative;
 		flex: none;
-		width: 128px;
-		height: 128px;
-		border-radius: 50%;
-		background: rgba(255, 255, 255, 0.10);
-		border: 2px solid rgba(255, 255, 255, 0.40);
+		width: 132px;
+		height: 132px;
 		touch-action: none;
+		-webkit-user-select: none;
+		user-select: none;
 	}
-	.sbo-stick-knob {
+	.sbo-dpad-arm,
+	.sbo-dpad-center {
+		position: absolute;
+		box-sizing: border-box;
+		pointer-events: none;
+		background: rgba(255, 255, 255, 0.16);
+		border: 2px solid rgba(255, 255, 255, 0.45);
+	}
+	.sbo-dpad-arm {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: rgba(255, 255, 255, 0.75);
+		font-size: 14px;
+		line-height: 1;
+	}
+	/* 腕は 44px 幅。真ん中の四角（44px）と重ねて継ぎ目を隠す */
+	.sbo-dpad-up,
+	.sbo-dpad-down {
+		left: 44px;
+		width: 44px;
+		height: 46px;
+	}
+	.sbo-dpad-up {
+		top: 0;
+		border-bottom: none;
+		border-radius: 8px 8px 0 0;
+	}
+	.sbo-dpad-down {
+		bottom: 0;
+		border-top: none;
+		border-radius: 0 0 8px 8px;
+	}
+	.sbo-dpad-left,
+	.sbo-dpad-right {
+		top: 44px;
+		width: 46px;
+		height: 44px;
+	}
+	.sbo-dpad-left {
+		left: 0;
+		border-right: none;
+		border-radius: 8px 0 0 8px;
+	}
+	.sbo-dpad-right {
+		right: 0;
+		border-left: none;
+		border-radius: 0 8px 8px 0;
+	}
+	.sbo-dpad-center {
+		left: 44px;
+		top: 44px;
+		width: 44px;
+		height: 44px;
+		border: none;
+	}
+	.sbo-dpad-center::after {
+		content: "";
 		position: absolute;
 		left: 50%;
 		top: 50%;
-		width: 58px;
-		height: 58px;
-		margin: -29px 0 0 -29px;
+		width: 20px;
+		height: 20px;
+		margin: -10px 0 0 -10px;
 		border-radius: 50%;
-		background: rgba(255, 255, 255, 0.38);
-		border: 2px solid rgba(255, 255, 255, 0.7);
-		box-sizing: border-box;
-		pointer-events: none;
-		transform: translate(0px, 0px);
+		background: rgba(0, 0, 0, 0.25);
+	}
+	/* 押している方向を光らせる */
+	.sbo-dpad-arm.sbo-dpad-on {
+		background: rgba(255, 255, 255, 0.45);
+		color: #fff;
 	}
 
 	/* ---- ボタン ---- */
@@ -1057,7 +1116,11 @@
 	<!-- 仮想パッド：タッチ操作の端末だけ出す（?pad=1 で PC でも出せる） -->
 	<div id="sbo-pad">
 		<div class="sbo-stick" id="sbo-stick">
-			<div class="sbo-stick-knob" id="sbo-stick-knob"></div>
+			<div class="sbo-dpad-arm sbo-dpad-up" data-dir="0"><span>▲</span></div>
+			<div class="sbo-dpad-arm sbo-dpad-down" data-dir="1"><span>▼</span></div>
+			<div class="sbo-dpad-arm sbo-dpad-left" data-dir="2"><span>◀</span></div>
+			<div class="sbo-dpad-arm sbo-dpad-right" data-dir="3"><span>▶</span></div>
+			<div class="sbo-dpad-center"></div>
 		</div>
 		<div class="sbo-buttons">
 			<button type="button" data-vk="90"><span class="sbo-btn-icon">✕</span><span class="sbo-btn-label" id="sbo-pad-z-label" style="font-size:10px">キャンセル</span><span class="sbo-btn-key">Z</span></button>
@@ -1589,10 +1652,11 @@
 		bindPadButton(padButtons[i], parseInt(padButtons[i].dataset.vk, 10));
 	}
 
-	/* アナログスティック：このゲームは斜めに歩けないので上下左右の 4 方向にする */
+	/* 十字キー：このゲームは斜めに歩けないので上下左右の 4 方向にする。
+	   判定は四角全体を角度で分け、指を離さず滑らせれば向きを変えられる */
 	(function () {
 		var stick = document.getElementById('sbo-stick');
-		var knob = document.getElementById('sbo-stick-knob');
+		var arms = stick.querySelectorAll('.sbo-dpad-arm');
 		var VK_DIR = [38, 40, 37, 39];	/* 上・下・左・右 */
 		var curDir = -1;
 		var touchId = null;
@@ -1606,6 +1670,9 @@
 				padKey(VK_DIR[curDir], false);
 			}
 			curDir = dir;
+			for (var i = 0; i < arms.length; i ++) {
+				arms[i].classList.toggle('sbo-dpad-on', parseInt(arms[i].dataset.dir, 10) === curDir);
+			}
 			if (curDir >= 0) {
 				padKey(VK_DIR[curDir], true);
 			}
@@ -1615,15 +1682,9 @@
 			var r = stick.getBoundingClientRect();
 			var dx = x - (r.left + r.width / 2);
 			var dy = y - (r.top + r.height / 2);
-			var maxR = Math.max(r.width / 2 - knob.offsetWidth / 2, r.width * 0.2);
 			var dist = Math.sqrt(dx * dx + dy * dy);
-			var kx = dx, ky = dy;
-			if (dist > maxR) {
-				kx = dx / dist * maxR;
-				ky = dy / dist * maxR;
-			}
-			knob.style.transform = 'translate(' + kx + 'px, ' + ky + 'px)';
-			if (dist < maxR * 0.35) {
+			/* 真ん中の丸（直径 20px 相当）だけは止まる */
+			if (dist < r.width * 0.08) {
 				setDir(-1);
 			} else if (Math.abs(dx) > Math.abs(dy)) {
 				setDir(dx < 0 ? 2 : 3);
@@ -1635,7 +1696,6 @@
 		function release() {
 			touchId = null;
 			mouseDown = false;
-			knob.style.transform = 'translate(0px, 0px)';
 			setDir(-1);
 		}
 
