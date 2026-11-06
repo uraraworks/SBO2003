@@ -25,6 +25,7 @@
 #endif
 #include <map>
 #include <list>
+#include <set>
 #include <algorithm>
 
 /* ------------------------------------------------------------------------- */
@@ -964,13 +965,13 @@ int SetStretchBltMode(HDC, int)
 /* ------------------------------------------------------------------------- */
 #ifdef W32_USE_TTF
 #define FONT_PATH_REGULAR	"/font/BIZUDGothic-Regular.ttf"
-#define FONT_PATH_BOLD		"/font/BIZUDGothic-Bold.ttf"
 #define FONT_PATH_EMOJI		"/font/NotoEmoji-Regular.ttf"	/* 白黒の絵文字（文字色・縁取りがそのまま効く） */
 
 /* 大きさ・太さごとに TTF_Font を共有する */
 static std::map<int, TTF_Font *> s_mapTtf;
 static std::map<TTF_Font *, int> s_mapTtfSize;		/* TTF_Font → 大きさ（絵文字フォントを同じ大きさで開くため） */
 static std::map<int, TTF_Font *> s_mapEmoji;		/* 大きさごとの絵文字フォント */
+static std::set<TTF_Font *> s_setTtfBold;			/* 疑似太字で描く TTF_Font */
 
 static TTF_Font *GetTtf(int nSize, BOOL bBold)
 {
@@ -983,13 +984,19 @@ static TTF_Font *GetTtf(int nSize, BOOL bBold)
 	if (it != s_mapTtf.end()) {
 		return it->second;
 	}
-	TTF_Font *pFont = TTF_OpenFont(bBold ? FONT_PATH_BOLD : FONT_PATH_REGULAR, nSize);
+	/* 太字も標準の書体で開き、描く時に 1 ドット右へ重ねて太くする。
+	   元の Windows 版は太字の無い「ＭＳ ゴシック」を太字指定で使っていて、
+	   Windows がこの方法で疑似太字を作っていた（画数の多い字でも潰れにくい） */
+	TTF_Font *pFont = TTF_OpenFont(FONT_PATH_REGULAR, nSize);
 	if (pFont == NULL) {
 		printf("[w32] フォントを開けません: %s\n", TTF_GetError());
 	} else {
 		/* MS ゴシックのビットマップに近づけるため、ヒンティングを強めにかける */
 		TTF_SetFontHinting(pFont, TTF_HINTING_MONO);
 		s_mapTtfSize[pFont] = nSize;
+		if (bBold) {
+			s_setTtfBold.insert(pFont);
+		}
 	}
 	s_mapTtf[nKey] = pFont;
 	return pFont;
@@ -1213,6 +1220,23 @@ static const W32TextMask *GetTextMask(TTF_Font *pTtf, const std::string &strUtf8
 		SDL_UnlockSurface(pSurf);
 		nX += pSurf->w;
 		SDL_FreeSurface(pSurf);
+	}
+	/* 疑似太字: 1 ドット右へ重ねる（文字の送り幅は変えず、右端だけ 1 ドット広がる） */
+	if (s_setTtfBold.count(pTtf)) {
+		int cxNew = mask.cx + 1;
+		std::vector<BYTE> aBold((size_t)cxNew * mask.cy, 0);
+		for (int y = 0; y < mask.cy; y ++) {
+			const BYTE *pSrc = &mask.aMask[(size_t)y * mask.cx];
+			BYTE *pDst = &aBold[(size_t)y * cxNew];
+			for (int x = 0; x < mask.cx; x ++) {
+				if (pSrc[x]) {
+					pDst[x] = 1;
+					pDst[x + 1] = 1;
+				}
+			}
+		}
+		mask.cx = cxNew;
+		mask.aMask.swap(aBold);
 	}
 	s_listMask.push_front(mask);
 	if (s_listMask.size() > TEXTMASK_CACHE_MAX) {
