@@ -874,7 +874,9 @@
 	/* スマホのカメラボタン（マップにいる間だけ）
 	   あまり使わないので、パッドの間ではなくゲーム画面の右上隅に小さく半透明で重ねる
 	   （移動中に親指が当たらないように。右下は HP・Mana の枠、左下はログ、
-	   左上はマップ名が出るので、いちばん空いている右上にする） */
+	   左上はマップ名が出るので、いちばん空いている右上にする）
+	   縦持ちはふだん隠しておき、ゲーム画面をタップすると透けて出る（body.sbo-sys-show）。
+	   もう一度タップするか、しばらく触らないと消える */
 	#sbo-shot-pad {
 		display: none;
 	}
@@ -895,10 +897,16 @@
 		color: #fff;
 		font-size: 16px;
 		line-height: 1;
-		opacity: 0.6;
+		opacity: 0;
+		pointer-events: none;
+		transition: opacity 0.2s;
 		touch-action: manipulation;
 		-webkit-tap-highlight-color: transparent;
 		cursor: pointer;
+	}
+	body.sbo-pad.sbo-on-map.sbo-sys-show #sbo-shot-pad {
+		opacity: 0.75;
+		pointer-events: auto;
 	}
 	body.sbo-pad #sbo-shot-pad:active {
 		opacity: 1;
@@ -916,6 +924,8 @@
 			width: 44px;
 			height: 44px;
 			font-size: 20px;
+			opacity: 1;
+			pointer-events: auto;
 			border: 2px solid rgba(255, 255, 255, 0.4);
 			background: rgba(255, 255, 255, 0.12);
 		}
@@ -2593,7 +2603,31 @@
 		}
 		window.sboTakeScreenshot = takeShot;
 		document.getElementById('sbo-shot-pc').addEventListener('click', takeShot);
-		document.getElementById('sbo-shot-pad').addEventListener('click', takeShot);
+		document.getElementById('sbo-shot-pad').addEventListener('click', function () {
+			hideSysButtons();
+			takeShot();
+		});
+
+		/* スマホ縦持ち：ゲーム画面をタップするとカメラボタンなどを透けて出し、
+		   もう一度タップするか、しばらく触らないと消す（タップはこれまで通りゲームにも届く） */
+		var SYS_HIDE_MS = 4000;
+		var sysTimer = 0;
+		function hideSysButtons() {
+			clearTimeout(sysTimer);
+			document.body.classList.remove('sbo-sys-show');
+		}
+		document.getElementById('sbo-screen').addEventListener('click', function (ev) {
+			if (!usePad || ev.target.closest('#sbo-shot-pad, [data-sbo-ui]')) {
+				return;
+			}
+			if (document.body.classList.contains('sbo-sys-show')) {
+				hideSysButtons();
+				return;
+			}
+			document.body.classList.add('sbo-sys-show');
+			clearTimeout(sysTimer);
+			sysTimer = setTimeout(hideSysButtons, SYS_HIDE_MS);
+		});
 	})();
 
 	/* ---- ログ保存 ----
