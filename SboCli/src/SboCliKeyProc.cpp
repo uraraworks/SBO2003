@@ -223,6 +223,7 @@ const KEYPROC KeyProcTbl[] = {
 /*			構えている間は受けるダメージが半分・会心を受けない。ゲージは止まる	 */
 /* ========================================================================= */
 static DWORD m_dwTimeZDown = 0;		/* Z を押し始めた時間 */
+static BOOL m_bGuardThisHold = FALSE;	/* 今の Z の押し続けで一度でも構えたか(構えたまま殴って解けた時も離した時に「攻撃をやめる」をしない) */
 
 static BOOL CanGuard(void)
 {
@@ -249,6 +250,7 @@ static void GuardStart(void)
 	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
 
 	g_bGuard = TRUE;
+	m_bGuardThisHold = TRUE;
 	g_dwGuardGageElapse = 0;
 	if (pChar->dwTimeTurnLV) {
 		g_dwGuardGageElapse = timeGetTime () - pChar->dwTimeTurnLV;
@@ -267,9 +269,54 @@ void GuardEnd(void)
 	g_bDraw = TRUE;
 }
 
+/* ========================================================================= */
+/* 同じキー処理の中で起きたキーの押した・離したを、起きた順に全部処理する		 */
+/* 今までは最後に判定したキーのイベントだけが残るため、X を離した直後に		 */
+/* Z を押すなど、2つのキーが同じキー処理に重なると X の攻撃が消えていた。	 */
+/* (方向キーの押しっぱなしは今までどおり毎回1つだけ)							 */
+/* ========================================================================= */
+#define KEYEV_MAX	32
+static BYTE m_abyKeyEvEvent[KEYEV_MAX];		/* 起きたキーイベント */
+static BYTE m_abyKeyEvCode[KEYEV_MAX];		/* 起きたキー */
+static int  m_nKeyEvCount = 0;				/* 起きたキーイベントの数 */
+
+static void KeyEvPush(BYTE byEvent, BYTE byCode)
+{
+	if (m_nKeyEvCount < KEYEV_MAX) {
+		m_abyKeyEvEvent[m_nKeyEvCount] = byEvent;
+		m_abyKeyEvCode[m_nKeyEvCount] = byCode;
+		m_nKeyEvCount ++;
+	}
+}
+
+/* キーイベントを、開いているウィンドウか歩き中の処理へ渡す */
+static void KeyProcDispatch(BYTE byEvent, BYTE byCode)
+{
+	if (!g_dwActiveMsgID) {
+		if (g_nMyCharID >= 0) {
+			if ((g_FadeInOutInfo.byFadeIn == 0) && (g_FadeInOutInfo.byFadeOut == 0)) {
+				KeyProcMove (byEvent, byCode);
+			}
+		}
+
+	} else {
+		int nNo = GetWindowID (g_dwActiveMsgID);
+		if (nNo < 0) {
+			return;
+		}
+		PWNDINFO pWnd = (PWNDINFO)g_WndInfo[nNo];
+		if (KeyProcTbl[pWnd->nType]) {
+			KeyProcTbl[pWnd->nType] (pWnd, byEvent, byCode);
+		}
+	}
+}
+
 void KeyProc(void)
 {
 	BYTE byEvent = 0, byCode, byKeyOnZBack;
+	int i;
+
+	m_nKeyEvCount = 0;
 
 	if (!g_bWindowActive) {
 		/* 画面から離れたら構えもやめる(キーを離したのが分からないため) */
@@ -337,12 +384,14 @@ void KeyProc(void)
 		m_byKeyOnX = 1;
 		byEvent = KEY_DOWN;
 		byCode = 'A';
+		KeyEvPush (byEvent, byCode);
 
 	/* Xキー離した */
 	} else if (((g_abyKeyState['X'] & 0x80) == 0) && (m_byKeyOnX == 1)) {
 		m_byKeyOnX = 0;
 		byEvent = KEY_UP;
 		byCode = 'A';
+		KeyEvPush (byEvent, byCode);
 	}
 
 	byKeyOnZBack = m_byKeyOnZ;
@@ -351,12 +400,14 @@ void KeyProc(void)
 		m_byKeyOnZ = 1;
 		byEvent = KEY_DOWN;
 		byCode = 'B';
+		KeyEvPush (byEvent, byCode);
 
 	/* Zキー離した */
 	} else if (((g_abyKeyState['Z'] & 0x80) == 0) && (m_byKeyOnZ == 1)) {
 		m_byKeyOnZ = 0;
 		byEvent = KEY_UP;
 		byCode = 'B';
+		KeyEvPush (byEvent, byCode);
 	}
 
 	/* Sキー押した */
@@ -364,12 +415,14 @@ void KeyProc(void)
 		m_byKeyOnS = 1;
 		byEvent = KEY_DOWN;
 		byCode = 'Y';
+		KeyEvPush (byEvent, byCode);
 
 	/* Sキー離した */
 	} else if (((g_abyKeyState['S'] & 0x80) == 0) && (m_byKeyOnS == 1)) {
 		m_byKeyOnS = 0;
 		byEvent = KEY_UP;
 		byCode = 'Y';
+		KeyEvPush (byEvent, byCode);
 	}
 
 	/* Cキー押した */
@@ -377,12 +430,14 @@ void KeyProc(void)
 		m_byKeyOnC = 1;
 		byEvent = KEY_DOWN;
 		byCode = 'C';
+		KeyEvPush (byEvent, byCode);
 
 	/* Cキー離した */
 	} else if (((g_abyKeyState['C'] & 0x80) == 0) && (m_byKeyOnC == 1)) {
 		m_byKeyOnC = 0;
 		byEvent = KEY_UP;
 		byCode = 'C';
+		KeyEvPush (byEvent, byCode);
 	}
 
 	/* 1キー押した */
@@ -390,12 +445,14 @@ void KeyProc(void)
 		m_byKeyOn1 = 1;
 		byEvent = KEY_DOWN;
 		byCode = '1';
+		KeyEvPush (byEvent, byCode);
 
 	/* 1キー離した */
 	} else if (((g_abyKeyState['1'] & 0x80) == 0) && (m_byKeyOn1 == 1)) {
 		m_byKeyOn1 = 0;
 		byEvent = KEY_UP;
 		byCode = '1';
+		KeyEvPush (byEvent, byCode);
 	}
 
 	/* 2キー押した */
@@ -403,12 +460,14 @@ void KeyProc(void)
 		m_byKeyOn2 = 1;
 		byEvent = KEY_DOWN;
 		byCode = '2';
+		KeyEvPush (byEvent, byCode);
 
 	/* 2キー離した */
 	} else if (((g_abyKeyState['2'] & 0x80) == 0) && (m_byKeyOn2 == 1)) {
 		m_byKeyOn2 = 0;
 		byEvent = KEY_UP;
 		byCode = '2';
+		KeyEvPush (byEvent, byCode);
 	}
 
 	/* Enterキー押した */
@@ -416,12 +475,14 @@ void KeyProc(void)
 		m_byKeyOnReturn = 1;
 		byEvent = KEY_DOWN;
 		byCode = VK_RETURN;
+		KeyEvPush (byEvent, byCode);
 
 	/* Enterキー離した */
 	} else if (((g_abyKeyState[VK_RETURN] & 0x80) == 0) && (m_byKeyOnReturn == 1)) {
 		m_byKeyOnReturn = 0;
 		byEvent = KEY_UP;
 		byCode = VK_RETURN;
+		KeyEvPush (byEvent, byCode);
 	}
 
 	/* ESCキー押した */
@@ -429,12 +490,14 @@ void KeyProc(void)
 		m_byKeyOnEsc = 1;
 		byEvent = KEY_DOWN;
 		byCode = VK_ESCAPE;
+		KeyEvPush (byEvent, byCode);
 
 	/* ESCキー離した */
 	} else if (((g_abyKeyState[VK_ESCAPE] & 0x80) == 0) && (m_byKeyOnEsc == 1)) {
 		m_byKeyOnEsc = 0;
 		byEvent = KEY_UP;
 		byCode = VK_ESCAPE;
+		KeyEvPush (byEvent, byCode);
 	}
 
 	/* Tabキー押した */
@@ -442,12 +505,14 @@ void KeyProc(void)
 		m_byKeyOnTab = 1;
 		byEvent = KEY_DOWN;
 		byCode = VK_TAB;
+		KeyEvPush (byEvent, byCode);
 
 	/* Tabキー離した */
 	} else if (((g_abyKeyState[VK_TAB] & 0x80) == 0) && (m_byKeyOnTab == 1)) {
 		m_byKeyOnTab = 0;
 		byEvent = KEY_UP;
 		byCode = VK_TAB;
+		KeyEvPush (byEvent, byCode);
 	}
 
 	/* Ctrlキー押した */
@@ -455,12 +520,14 @@ void KeyProc(void)
 		m_byKeyOnCtrl = 1;
 		byEvent = KEY_DOWN;
 		byCode = VK_CONTROL;
+		KeyEvPush (byEvent, byCode);
 
 	/* Ctrlキー離した */
 	} else if (((g_abyKeyState[VK_CONTROL] & 0x80) == 0) && (m_byKeyOnCtrl == 1)) {
 		m_byKeyOnCtrl = 0;
 		byEvent = KEY_UP;
 		byCode = VK_CONTROL;
+		KeyEvPush (byEvent, byCode);
 	}
 
 	/* 構え：Z を押し続けたら構え、離したらやめる */
@@ -477,33 +544,36 @@ void KeyProc(void)
 		}
 	} else if (byKeyOnZBack) {
 		m_dwTimeZDown = 0;
-		if (g_bGuard) {
+		if (g_bGuard || m_bGuardThisHold) {
+			m_bGuardThisHold = FALSE;
 			GuardEnd ();
 			/* 構えをやめた時は、Z を離した時の「攻撃をやめる」はしない */
 			if ((byEvent == KEY_UP) && (byCode == 'B')) {
 				byEvent = 0;
 			}
+			for (i = 0; i < m_nKeyEvCount; i ++) {
+				if ((m_abyKeyEvEvent[i] == KEY_UP) && (m_abyKeyEvCode[i] == 'B')) {
+					m_abyKeyEvEvent[i] = 0;
+				}
+			}
 		}
+	}
+
+	/* 方向キー以外のキーが押された・離された？(起きた順に全部処理する) */
+	if (m_nKeyEvCount > 0) {
+		for (i = 0; i < m_nKeyEvCount; i ++) {
+			if (m_abyKeyEvEvent[i]) {
+				KeyProcDispatch (m_abyKeyEvEvent[i], m_abyKeyEvCode[i]);
+			}
+		}
+		return;
 	}
 
 	/* キーイベント無し？ */
 	if (!byEvent) {
 		return;
 	}
-
-	if (!g_dwActiveMsgID) {
-		if (g_nMyCharID >= 0) {
-			if ((g_FadeInOutInfo.byFadeIn == 0) && (g_FadeInOutInfo.byFadeOut == 0)) {
-				KeyProcMove (byEvent, byCode);
-			}
-		}
-
-	} else {
-		PWNDINFO pWnd = (PWNDINFO)g_WndInfo[GetWindowID (g_dwActiveMsgID)];
-		if (KeyProcTbl[pWnd->nType]) {
-			KeyProcTbl[pWnd->nType] (pWnd, byEvent, byCode);
-		}
-	}
+	KeyProcDispatch (byEvent, byCode);
 }
 
 /* ========================================================================= */
@@ -6133,6 +6203,13 @@ static BOOL ShotTurnGage(PCHARINFO pChar)
 {
 	if ((pChar->dwTimeTurnLV == 0) || (pChar->byTurnLV < TURNGAGE_LAP)) {
 		return FALSE;
+	}
+	/* 構えたまま殴った：殴ると構えは解ける(サーバーも解く)ので、こちらも解く。
+	   解かないと次のゲージが止まったままになり、Z を離した瞬間に満タンになっていた。
+	   Z を押したままなら、また GUARD_HOLDTIME たってから構え直す */
+	if (g_bGuard) {
+		GuardEnd ();
+		m_dwTimeZDown = timeGetTime ();
 	}
 	if (IsTurnGageJust (pChar)) {
 		/* ジャスト：満タン直後に押した(会心が出やすく、外れない) */
