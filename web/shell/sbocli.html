@@ -181,7 +181,7 @@
 	body.sbo-lost .sbo-chat-send {
 		display: none;
 	}
-	/* 前回（再読み込みの前）のログとの区切り */
+	/* 前回（再読み込みの前）のログとの区切り・日付の区切り */
 	.sbo-chat-sep {
 		margin: 4px 0;
 		text-align: center;
@@ -1760,6 +1760,10 @@
 			return line;
 		}
 		line.className = 'sbo-chat-line';
+		/* 指を置く（マウスを乗せる）と年月日まで出す */
+		if (entry.date) {
+			line.title = entry.date + ' ' + entry.time.replace(/[\[\]]/g, '');
+		}
 		var t = document.createElement('span');
 		t.className = 'sbo-chat-time';
 		t.textContent = entry.time;
@@ -1796,6 +1800,19 @@
 	var CHAT_STORE_KEY = 'sbo_chat_log';
 	var chatStoreTimer = 0;
 	var chatSepPending = false;	/* 前回のログを戻した後、最初の新しい行の前に区切りを入れる */
+	/* ---- 日付の区切り ----
+	   行の頭は時刻だけなので、ページを開いて最初の行の前と、日付が変わった時に
+	   「―― 2026年11月6日(金) ――」の行を入れて、いつのログか分かるようにする */
+	var chatLastDate = '';		/* 最後に日付の区切りを入れた日（YYYY/MM/DD）。開いた直後は空 */
+	var WEEK_JA = ['日', '月', '火', '水', '木', '金', '土'];
+	function chatDateKey(d) {
+		return d.getFullYear() + '/' + (d.getMonth() < 9 ? '0' : '') + (d.getMonth() + 1) + '/' +
+			(d.getDate() < 10 ? '0' : '') + d.getDate();
+	}
+	function chatDateLabel(d) {
+		return '―― ' + d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日(' +
+			WEEK_JA[d.getDay()] + ') ――';
+	}
 	function storeChatLog() {
 		chatStoreTimer = 0;
 		try {
@@ -1830,6 +1847,9 @@
 			}
 			var entry = e.sep ? {sep: true, text: e.text} :
 				{time: String(e.time || ''), text: e.text, color: String(e.color || '#fff')};
+			if (!e.sep && typeof e.date === 'string') {
+				entry.date = e.date;
+			}
 			chatLogs.push(entry);
 			chatSaveLines.push(entry.sep ? entry.text : entry.time + ' ' + entry.text);
 		}
@@ -1860,7 +1880,13 @@
 			chatSepPending = false;
 			pushChatEntry({sep: true, text: '―― ここまで前回のログ ――'});
 		}
-		pushChatEntry({time: time, text: text, color: color || '#fff'});
+		var now = new Date();
+		var date = chatDateKey(now);
+		if (date !== chatLastDate) {
+			chatLastDate = date;
+			pushChatEntry({sep: true, text: chatDateLabel(now)});
+		}
+		pushChatEntry({time: time, text: text, color: color || '#fff', date: date});
 	};
 	/* マップに入った時（Windows 版でメッセージログウィンドウを作るところ） */
 	window.sboChatLogOpen = function () {
