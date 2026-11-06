@@ -23,6 +23,8 @@ typedef BOOL (*MAGICPROC)(PMAGICINFO, PCHARINFO, PCHARINFO);
 /* 関数プロトタイプ宣言														 */
 /* ========================================================================= */
 BOOL MagicProc(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget);			/* 魔法処理 */
+BOOL MagicProcItem(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget);		/* 魔法処理(アイテムから発動) */
+static BOOL MagicProcSub(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget, BOOL bItem);	/* 魔法処理(本体) */
 static BYTE GetTarget						(PCHARINFO, BYTE);			/* キャラ種別の取得 */
 static void MakeCharTblTarget_SELF			(PARRAYDWORD, PCHARINFO, PMAGICINFO);				/* ターゲットキャラの設定(自分) */
 static BOOL MakeCharTblTargetSub_SELF		(PARRAYDWORD, int, PDWORD, PCHARINFO, PMAGICINFO);	/* ターゲットキャラの設定処理(自分) */
@@ -81,6 +83,25 @@ static const MAGICPROC MagicProcTbl[] = {
 /* ========================================================================= */
 BOOL MagicProc(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget)
 {
+	return MagicProcSub (dwTblID, byID, dwTblIDTarget, FALSE);
+}
+
+/* ========================================================================= */
+/* 関数名：MagicProcItem													 */
+/* 内容：魔法処理(アイテムから発動)。覚えていなくても使え、Manaも減らない	 */
+/*		 戻り値：発動した(対象がいた)ら TRUE（アイテムを減らすかの判定用）	 */
+/* ========================================================================= */
+BOOL MagicProcItem(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget)
+{
+	return MagicProcSub (dwTblID, byID, dwTblIDTarget, TRUE);
+}
+
+/* ========================================================================= */
+/* 関数名：MagicProcSub														 */
+/* 内容：魔法処理(本体)。bItem はアイテムから発動した時 TRUE				 */
+/* ========================================================================= */
+static BOOL MagicProcSub(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget, BOOL bItem)
+{
 	PCHARINFO pChar;
 	PMAGICINFO pInfo;
 	PMAPINFO pMap;
@@ -107,7 +128,7 @@ BOOL MagicProc(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget)
 	*******************/
 
 	for (i = 0; i < MAX_USEMAGIC; i ++) {
-		if (pChar->abyMagic[i] == byID) {
+		if (bItem || (pChar->abyMagic[i] == byID)) {
 			break;
 		}
 	}
@@ -127,7 +148,7 @@ BOOL MagicProc(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget)
 		Manaチェック
 	*******************/
 
-	if (pChar->byNpcType == NPCTYPE_INIT) {
+	if ((pChar->byNpcType == NPCTYPE_INIT) && (bItem == FALSE)) {
 		if (pInfo->byType == MAGICTYPE_HPDOWNHPCOST) {
 			if (pChar->wHP <= pInfo->wMana) {
 				goto Exit;
@@ -191,7 +212,7 @@ BOOL MagicProc(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget)
 		使用者側の処理
 	*********************/
 
-	if (pChar->byNpcType == NPCTYPE_INIT) {
+	if ((pChar->byNpcType == NPCTYPE_INIT) && (bItem == FALSE)) {
 		if (pInfo->byType == MAGICTYPE_HPDOWNHPCOST) {
 			pChar->wHP -= pInfo->wMana;
 		} else {
@@ -240,6 +261,10 @@ BOOL MagicProc(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget)
 		if (bResult) {
 			bRet = TRUE;
 		}
+	}
+	/* アイテムは、相手がいて発動できたら使ったことにする(毒・眠りが外れても減る) */
+	if (bItem && (nCount > 0)) {
+		bRet = TRUE;
 	}
 
 Exit:
@@ -1763,6 +1788,29 @@ BOOL MagicProcUse_HASTE(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTarget
 }
 
 /* ========================================================================= */
+/* 関数名：GetStatusResist													 */
+/* 内容：毒・眠りの効きにくさ(%)。ステータステンプレートの値を見る			 */
+/*		 発生元から出た敵はテンプレートを持たないので、発生元のものを見る	 */
+/* ========================================================================= */
+static int GetStatusResist(PCHARINFO pChar)
+{
+	DWORD dwStTmp;
+
+	if (pChar->byNpcType == NPCTYPE_INIT) {
+		return 0;
+	}
+	dwStTmp = pChar->dwStTmplateID;
+	if ((dwStTmp == (DWORD)-1) && (pChar->dwParentTblID != (DWORD)-1) &&
+		(pChar->dwParentTblID < (DWORD)g_aCharInfo.GetSize ())) {
+		dwStTmp = g_aCharInfo[pChar->dwParentTblID]->dwStTmplateID;
+	}
+	if ((dwStTmp == (DWORD)-1) || (dwStTmp >= (DWORD)g_aStTmpInfo.GetSize ())) {
+		return 0;
+	}
+	return min (100, (int)g_aStTmpInfo[dwStTmp]->byStatusResist);
+}
+
+/* ========================================================================= */
 /* 関数名：MagicProcUseStatusCheck											 */
 /* 内容：毒・眠りをかけられる相手か・成功したか								 */
 /* ========================================================================= */
@@ -1778,6 +1826,8 @@ static BOOL MagicProcUseStatusCheck(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO
 	if (nRate <= 0) {
 		nRate = 100;
 	}
+	/* 敵の効きにくさ(ステータステンプレート)の分だけ成功率を下げる。100 なら効かない */
+	nRate = nRate * (100 - GetStatusResist (pCharTarget)) / 100;
 	if ((int)(genrand () % 100) >= nRate) {
 		SendCmdADDCHAREFC (pCharTarget->dwTblID, RGB (255, 255, 255), "ﾐｽ");
 		return FALSE;

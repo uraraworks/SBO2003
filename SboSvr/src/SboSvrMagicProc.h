@@ -10,4 +10,5 @@
 /* 関数プロトタイプ宣言														 */
 /* ========================================================================= */
 extern BOOL MagicProc(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget);		/* 魔法処理 */
+extern BOOL MagicProcItem(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget);	/* 魔法処理(アイテムから発動) */
 /* Copyright(C)URARA-works 2003-2005 */

@@ -3698,6 +3698,7 @@ void AdminOnCommandItemList(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 				break;
 
 			case ITEMTYPE_MAGIC:	/* 魔法習得 */
+			case ITEMTYPE_USEMAGIC:	/* 特技発動 */
 				{
 					if (pItem->pData == NULL) {
 						break;
@@ -4231,6 +4232,7 @@ void AdminOnCommandItemList(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 				break;
 
 			case ITEMTYPE_MAGIC:	/* 魔法習得 */
+			case ITEMTYPE_USEMAGIC:	/* 特技発動 */
 				{
 					pItem->pData = new BYTE[sizeof (ITEMINFO_MAGIC)];
 					ZeroMemory (pItem->pData, sizeof (ITEMINFO_MAGIC));
@@ -6148,6 +6150,10 @@ void AdminOnPaintItemList(HDC hDC)
 
 	case ITEMTYPE_MAGIC:	/* 魔法習得 */
 		MyTextOut (hDC, 12 * 1, 132 + 14 * 5 + 2, "習得する魔法:");
+		break;
+
+	case ITEMTYPE_USEMAGIC:	/* 特技発動 */
+		MyTextOut (hDC, 12 * 1, 132 + 14 * 5 + 2, "発動する特技:");
 		break;
 
 	case ITEMTYPE_MANAUP:	/* Mana回復 */
@@ -9180,8 +9186,9 @@ void MakeItemEditWindow(BYTE byType)
 		break;
 
 	case ITEMTYPE_MAGIC:	/* 魔法習得 */
+	case ITEMTYPE_USEMAGIC:	/* 特技発動(習得と同じく特技を選ぶ) */
 		{
-			SendMessage (m_hWndCombo1, CB_SETCURSEL, ITEMTYPE_MAGIC, 0);
+			SendMessage (m_hWndCombo1, CB_SETCURSEL, byType, 0);
 			/* 習得する魔法 */
 			m_hWndCombo3 = CreateWindow ("COMBOBOX", "", WS_CHILD | WS_VISIBLE | WS_VSCROLL | CBS_DROPDOWNLIST,
 					12 * 8, 132 + 14 * 5, 12 * 15, 12 * 10, g_hWndAdmin, (HMENU)IDC_TMPCOMBO1, g_hInstance, NULL);
