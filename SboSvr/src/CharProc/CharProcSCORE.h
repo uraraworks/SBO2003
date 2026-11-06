@@ -20,6 +20,11 @@ public:
 	CCharProcSCORE();									/* コンストラクタ */
 
 	BOOL Proc		(DWORD dwTime);								/* 処理 */
+
+protected:
+	BOOL IsOwnerHere	(void);										/* 名前を付けた人がまだこのマップにいるか */
+
+	DWORD	m_dwLastOwnerCheck;								/* 持ち主を最後に確かめた時間 */
 } CCharProcSCORE, *PCCharProcSCORE;
 
 /* Copyright(C)URARA-works 2006 */
