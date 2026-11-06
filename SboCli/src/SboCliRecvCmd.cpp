@@ -1783,12 +1783,15 @@ BOOL IsTurnGageJust(PCHARINFO pChar)
 /*			止める時は B キー（今までどおりゲージのキャンセル）				 */
 /* ========================================================================= */
 
+DWORD	g_dwTurnGageContinue = 0;		/* 殴って次のゲージを溜め始めた時間(押すのが遅れた X でコマンドを開かないように) */
+
 void ContinueTurnGage(PCHARINFO pChar)
 {
 	DWORD dwAtackTblID;
 
 	dwAtackTblID = pChar->dwAtackTblID;
 	CancelTurnGage (pChar);
+	g_dwTurnGageContinue = timeGetTime ();
 
 	/* 弓（相手を決めずに撃つ）は続けない */
 	if (dwAtackTblID == (DWORD)-1) {
