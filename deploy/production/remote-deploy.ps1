@@ -5,7 +5,7 @@
 #   powershell ... remote-deploy.ps1 -Rollback                                  # 1 つ前の版に戻す
 #   -NoticeSec 60 で、止める前に遊んでいる人へ再起動を予告して待つ秒数を変える（0 で予告しない）
 #   -Announced は予告を先に流してある時（Actions はビルドを始める時に vps-deploy.sh --notice で流す）。
-#   ここでは「まもなく再起動します」だけ流して、待たずに止める
+#   ここでは「まもなく再起動します」だけ流して、5 秒後に止める
 #
 # 0. サーバーが動いていれば、ゲームの全員にお知らせ（システムメッセージ）で再起動を予告する。
 #    遊んでいる人がいれば NoticeSec 秒待ち、止める 10 秒前に「まもなく再起動します」をもう一度流す
@@ -24,7 +24,7 @@ param(
 	[string]$Root = 'C:\SBO2003',
 	# 止める前に再起動を予告して待つ秒数（0 で予告しない）
 	[int]$NoticeSec = 60,
-	# 予告は済んでいる（vps-deploy.sh --notice で先に流した）。「まもなく再起動します」だけ流して待たずに止める
+	# 予告は済んでいる（vps-deploy.sh --notice で先に流した）。「まもなく再起動します」だけ流して 5 秒後に止める
 	[switch]$Announced
 )
 $ErrorActionPreference = 'Stop'
@@ -95,7 +95,9 @@ if ($running -and $NoticeSec -gt 0) {
 	} elseif ($online -eq 0) {
 		Say 'ゲームに入っている人がいないので、待たずに止めます'
 	} elseif ($Announced) {
-		Say '予告は済んでいるので、待たずに止めます'
+		# 予告は済んでいるので長くは待たない。「まもなく」を読めるよう 5 秒だけおいてから止める
+		Say '予告は済んでいるので、5 秒おいてから止めます'
+		Start-Sleep -Seconds 5
 	} else {
 		Say "ゲームに入っている人（$online 人）がいるので、$NoticeSec 秒待ってから止めます"
 		$last = [Math]::Min(10, $NoticeSec)
