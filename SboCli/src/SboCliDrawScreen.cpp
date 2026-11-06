@@ -1220,7 +1220,22 @@ void DrawChar3(void)
 				TextOut2 (hdcTmp, 1, 1, szTmp, cl);
 				nLenTmp = SboTextWidth (szTmp);
 
-				SboTextCopy (szTmp, sizeof (szTmp), &pChar->pszSpeech[j]);
+				/* 2 行目も表示幅 20 まで。URL を含む長い発言（ブラウザ版のチャット欄で
+				   1 つのリンクにするため分けずに送る）は、入らない分を「..」で省く */
+				{
+					LPCSTR pszLine2 = &pChar->pszSpeech[j];
+					int nCopy = SboTextFitWidth (pszLine2, 20);
+					BOOL bCut = (pszLine2[nCopy] != 0) ? TRUE : FALSE;
+					if (bCut) {
+						nCopy = SboTextFitWidth (pszLine2, 18);
+					}
+					nCopy = min (nCopy, (int)sizeof (szTmp) - 3);
+					ZeroMemory (szTmp, sizeof (szTmp));
+					CopyMemory (szTmp, pszLine2, nCopy);
+					if (bCut) {
+						strcat (szTmp, "..");
+					}
+				}
 				nLenTmp = max (nLenTmp, SboTextWidth (szTmp));
 				TextOut2 (hdcTmp, 1, 12, szTmp, cl);
 
