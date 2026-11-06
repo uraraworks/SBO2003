@@ -23,6 +23,7 @@
 #include "SboSvrRecvCmd.h"
 #include "SboSvrSendCmd.h"
 #include "SboSvrAdminUndo.h"
+#include "CharProc/IncludeCharProc.h"
 
 #include <emscripten.h>
 #include <string>
@@ -34,6 +35,7 @@ extern BOOL SaveJobInfo(void);
 extern BOOL SaveMagicInfo(void);
 extern BOOL SaveMagicUserInfo(void);
 extern BOOL SaveEquUserInfo(void);
+extern BOOL SaveCharInfo(void);
 extern void ApplyStTmpToChars(DWORD dwID);		/* SboSvrRecvCmd.cpp */
 
 /* ------------------------------------------------------------------------- */
@@ -1403,6 +1405,13 @@ static std::string CharJson(PCHARINFO pChar)
 		out += "\"" + JsonNum(j) + "\":[" + strRow + "]";
 	}
 	out += "}";
+	/* 巡回ルート（動かない・ランダム移動の村人に道しるべが2つ以上あると巡回する） */
+	out += ",\"route\":{\"mode\":" + JsonNum(pChar->byRouteMode) + ",\"wait\":" + JsonNum(pChar->byRouteWait) + ",\"points\":[";
+	for (int i = 0; i < pChar->byRouteCount && i < MAX_NPCROUTE; i ++) {
+		if (i) out += ",";
+		out += "[" + JsonNum(pChar->abyRouteX[i]) + "," + JsonNum(pChar->abyRouteY[i]) + "]";
+	}
+	out += "]}";
 	return out;
 }
 
@@ -2125,5 +2134,90 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataMapTiles(int nID, int x, i
 	}
 	out += "}";
 	s_strResult = out;
+	return s_strResult.c_str();
+}
+
+/* ========================================================================= */
+/* NPCの巡回ルートを設定する（管理ページ用）								 */
+/*   nTblID   : char の番号													 */
+/*   nMode    : 0=折り返す 1=最初に戻る										 */
+/*   nWait    : 各道しるべで止まる秒数(0〜60)								 */
+/*   pszPoints: "x,y;x,y;..."（空なら巡回をやめる。1点だけは不可）			 */
+/* 戻り値は {"ok":true,"char":{...}} か {"error":"..."}						 */
+/* ========================================================================= */
+static const char *RouteError(const char *pszMsg)
+{
+	s_strResult = std::string("{\"error\":") + JsonStr(pszMsg) + "}";
+	return s_strResult.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebNpcRouteSet(int nTblID, int nMode, int nWait, const char *pszPoints)
+{
+	if (nTblID < 0 || nTblID >= g_aCharInfo.GetSize()) {
+		return RouteError("キャラの番号が範囲外です");
+	}
+	PCHARINFO pChar = g_aCharInfo[nTblID];
+	if ((pChar->byNpcType != NPCTYPE_NOMOVE) && (pChar->byNpcType != NPCTYPE_MOVERAND)) {
+		return RouteError("巡回できるのは「移動しない」「ランダム移動」のNPCだけです");
+	}
+	if (nMode < 0 || nMode >= NPCROUTEMODE_MAX) {
+		return RouteError("回り方の値が不正です");
+	}
+	if (nWait < 0 || nWait > 60) {
+		return RouteError("止まる秒数は0〜60です");
+	}
+	if (pChar->dwMapID >= (DWORD)g_aMapInfo.GetSize()) {
+		return RouteError("NPCのマップが見つかりません");
+	}
+	PMAPINFO pMap = g_aMapInfo[pChar->dwMapID];
+
+	/* 道しるべを読む */
+	std::vector<int> aX, aY;
+	const char *p = pszPoints ? pszPoints : "";
+	while (*p) {
+		char *pEnd;
+		long x = strtol(p, &pEnd, 10);
+		if (pEnd == p || *pEnd != ',') {
+			return RouteError("道しるべの書き方が不正です");
+		}
+		p = pEnd + 1;
+		long y = strtol(p, &pEnd, 10);
+		if (pEnd == p) {
+			return RouteError("道しるべの書き方が不正です");
+		}
+		p = pEnd;
+		if (x < 0 || x >= pMap->nCX || y < 0 || y >= pMap->nCY || x > 255 || y > 255) {
+			return RouteError("道しるべがマップの外です");
+		}
+		aX.push_back((int)x);
+		aY.push_back((int)y);
+		if (*p == ';') {
+			p ++;
+		} else if (*p) {
+			return RouteError("道しるべの書き方が不正です");
+		}
+	}
+	if (aX.size() == 1) {
+		return RouteError("道しるべは2つ以上置いてください（巡回をやめる時は0個）");
+	}
+	if (aX.size() > MAX_NPCROUTE) {
+		return RouteError("道しるべは16個までです");
+	}
+
+	pChar->byRouteCount	= (BYTE)aX.size();
+	pChar->byRouteMode	= (BYTE)nMode;
+	pChar->byRouteWait	= (BYTE)nWait;
+	ZeroMemory(pChar->abyRouteX, sizeof(pChar->abyRouteX));
+	ZeroMemory(pChar->abyRouteY, sizeof(pChar->abyRouteY));
+	for (size_t i = 0; i < aX.size(); i ++) {
+		pChar->abyRouteX[i] = (BYTE)aX[i];
+		pChar->abyRouteY[i] = (BYTE)aY[i];
+	}
+	/* 動き方を作り直して、すぐ反映する */
+	CCharProcBase CharProcBase;
+	CharProcBase.SetProc(pChar);
+	SaveCharInfo();
+
+	s_strResult = "{\"ok\":true,\"char\":{" + CharJson(pChar) + "}}";
 	return s_strResult.c_str();
 }
