@@ -319,6 +319,13 @@ Module['sboNet'] = (function () {
 		if (Module['sboFeedback'] && Module['sboFeedback'].handleHttp(req, res, url)) {
 			return;
 		}
+		/* 更新履歴のページと API（sbosvr_changes.js） */
+		if (url === '/changes') {
+			url = '/changes.html';
+		}
+		if (Module['sboChanges'] && Module['sboChanges'].handleHttp(req, res, url)) {
+			return;
+		}
 		/* AI 支援用のデータ API と MCP の入口（sbosvr_data.js）。/api/ の受け持ちより先に見る */
 		if (Module['sboData'] && Module['sboData'].handleHttp(req, res, url)) {
 			return;
@@ -412,7 +419,7 @@ Module['sboNet'] = (function () {
 			nHttpPort = port;
 			strWwwDir = www ? path.resolve(www) : '';
 		},
-		/* 配るフォルダ（sbosvr_mapdesign.js がパーツ図鑑の最初の下書きを読む） */
+		/* 配るフォルダ（sbosvr_mapdesign.js がパーツ図鑑の最初の下書きを、sbosvr_changes.js が更新履歴の最初の中身を読む） */
 		wwwDir: function () {
 			return strWwwDir;
 		},

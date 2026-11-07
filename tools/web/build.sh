@@ -195,4 +195,8 @@ cp "$ROOT/web/account/parts-dex-seed.json" "$DIST/admin-grp/"
 # サーバー状況のページ（/status。サーバーの /api/status を読む）。フッターの版も書き込む
 sed "s/@@SBO_BUILD_DATE@@/$BUILD_DATE/g; s/@@SBO_BUILD_COMMIT@@/$BUILD_COMMIT/g" "$ROOT/web/status/status.html" > "$DIST/status.html"
 
+# 更新履歴のページ（/changes。サーバーの /api/changes を読む）と最初の中身（sbosvr_changes.js が取り込む）
+sed "s/@@SBO_BUILD_DATE@@/$BUILD_DATE/g; s/@@SBO_BUILD_COMMIT@@/$BUILD_COMMIT/g" "$ROOT/web/changes/changes.html" > "$DIST/changes.html"
+cp "$ROOT/web/changes/changes.json" "$DIST/changes-seed.json"
+
 echo "[build] 完了: $DIST/sbocli.html"

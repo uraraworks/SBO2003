@@ -11,6 +11,7 @@
 	  ・プレイヤー   … 「取得」を押した時にログイン中のプレイヤーのキャラ名と、今いるマップ（ID：名前）を一覧する
 	  ・復旧の承認   … アカウント復旧の申請を承認・却下する（前の recover-admin.html と同じ）
 	  ・ご意見箱     … /feedback に届いた投稿を全部見て、返事・対応済み・隠す・消すをする
+	  ・更新履歴     … /changes に出す「何が変わったか」を足す・直す・隠す・消す（API は server/node/sbosvr_changes.js）
 	  ・AI連携       … AI（Claude Code など）から設定データを読み書きするキーの発行・取り消しと、変更履歴・元に戻す
 	  ・マップ資料   … マップごとの全体図と NPC・敵・お店・イベントの資料を zip で書き出す（admin-mapdoc.js）
 	  ・パーツ図鑑   … マップパーツに名前・タグ・説明を付ける・組み合わせの見本を作る（admin-design.js）
@@ -113,7 +114,7 @@
 		display: block;
 		margin: 8px 0 4px;
 	}
-	input[type="text"], input[type="password"], input[type="search"] {
+	input[type="text"], input[type="password"], input[type="search"], input[type="date"] {
 		width: 100%;
 		box-sizing: border-box;
 		background: var(--field);
@@ -380,6 +381,7 @@
 		<button type="button" data-tab="online">プレイヤー</button>
 		<button type="button" data-tab="recover">復旧の承認<span class="badge" id="pending-count" hidden></span></button>
 		<button type="button" data-tab="feedback">ご意見箱<span class="badge" id="feedback-count" hidden></span></button>
+		<button type="button" data-tab="changes">更新履歴</button>
 		<button type="button" data-tab="ai">AI連携</button>
 		<button type="button" data-tab="mapdoc">マップ資料</button>
 		<button type="button" data-tab="parts">パーツ図鑑</button>
@@ -459,6 +461,37 @@
 			<span class="sub-text" id="fb-page-text"></span>
 			<button type="button" class="sub" id="fb-next">前の投稿 →</button>
 		</div>
+	</section>
+
+	<!-- 更新履歴 -->
+	<section id="tab-changes" hidden>
+		<p class="sub-text">
+			<a href="/changes" target="_blank" rel="noopener" style="color:inherit">/changes</a> に出す「何が変わったか」です。プレイヤー向けの言葉で書いてください。
+			プルリクエストで web/changes/changes.json に足した項目は、デプロイした後に自動で入ります（ここで直した・消した項目はそのままです）。
+		</p>
+		<div class="card" id="ch-form" style="scroll-margin-top:100px">
+			<div class="name" id="ch-form-title">新しく足す</div>
+			<div class="row" style="flex-wrap:wrap;margin-top:8px">
+				<input type="date" id="ch-date" style="flex:0 0 auto;width:auto">
+				<select id="ch-kind">
+					<option>新機能</option>
+					<option selected>改善</option>
+					<option>修正</option>
+				</select>
+				<input type="text" id="ch-pr" placeholder="PR 番号（例 85, 86。無くてよい）" inputmode="numeric" style="flex:1 1 12em">
+			</div>
+			<label for="ch-text">内容</label>
+			<textarea id="ch-text" placeholder="例：スマホの操作パッドを十字キー型にしました。"></textarea>
+			<label class="check" style="margin-top:6px"><input type="checkbox" id="ch-hidden"> 隠す（/changes に出さない）</label>
+			<div class="msg" id="ch-msg"></div>
+			<button type="button" id="ch-save">足す</button>
+			<button type="button" class="sub" id="ch-cancel" hidden>直すのをやめる</button>
+		</div>
+		<div class="row" style="justify-content:space-between">
+			<button type="button" class="sub" id="ch-reload">読み直す</button>
+			<span class="sub-text" id="ch-count"></span>
+		</div>
+		<div id="ch-list" style="margin-top:8px"></div>
 	</section>
 
 	<!-- AI連携 -->
@@ -765,6 +798,7 @@
 		$('tab-online').hidden = true;
 		$('tab-recover').hidden = true;
 		$('tab-feedback').hidden = true;
+		$('tab-changes').hidden = true;
 		$('tab-ai').hidden = true;
 		$('tab-mapdoc').hidden = true;
 		$('tab-parts').hidden = true;
@@ -778,10 +812,12 @@
 		$('logout').hidden = false;
 		$('devices').hidden = false;
 		selectTab(location.hash === '#online' ? 'online' : location.hash === '#recover' ? 'recover' : location.hash === '#feedback' ? 'feedback' :
-			location.hash === '#ai' ? 'ai' : location.hash === '#mapdoc' ? 'mapdoc' :
+			location.hash === '#changes' ? 'changes' : location.hash === '#ai' ? 'ai' : location.hash === '#mapdoc' ? 'mapdoc' :
 			location.hash === '#parts' ? 'parts' : location.hash === '#plans' ? 'plans' :
 			location.hash === '#npcroute' ? 'npcroute' : 'search');
-		if (location.hash === '#ai') {
+		if (location.hash === '#changes') {
+			loadChanges();
+		} else if (location.hash === '#ai') {
 			loadAi();
 		} else if (location.hash === '#mapdoc') {
 			loadMapDoc();
@@ -882,6 +918,7 @@
 		$('tab-online').hidden = name !== 'online';
 		$('tab-recover').hidden = name !== 'recover';
 		$('tab-feedback').hidden = name !== 'feedback';
+		$('tab-changes').hidden = name !== 'changes';
 		$('tab-ai').hidden = name !== 'ai';
 		$('tab-mapdoc').hidden = name !== 'mapdoc';
 		$('tab-parts').hidden = name !== 'parts';
@@ -902,6 +939,8 @@
 				loadRequests();
 			} else if (b.dataset.tab === 'feedback') {
 				loadFeedback();
+			} else if (b.dataset.tab === 'changes') {
+				loadChanges();
 			} else if (b.dataset.tab === 'ai') {
 				loadAi();
 			} else if (b.dataset.tab === 'mapdoc') {
@@ -1324,6 +1363,132 @@
 		nFbPage++;
 		loadFeedback();
 	});
+
+	/* ---- 更新履歴（/changes） ---- */
+	var strChEditId = '';		/* 直している項目の id（空なら新しく足す） */
+
+	function todayJst() {
+		return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+	}
+	function resetChangeForm() {
+		strChEditId = '';
+		$('ch-form-title').textContent = '新しく足す';
+		$('ch-save').textContent = '足す';
+		$('ch-cancel').hidden = true;
+		$('ch-date').value = todayJst();
+		$('ch-kind').value = '改善';
+		$('ch-pr').value = '';
+		$('ch-text').value = '';
+		$('ch-hidden').checked = false;
+	}
+	function editChange(it) {
+		strChEditId = it.id;
+		$('ch-form-title').textContent = '直す（' + it.date + '）';
+		$('ch-save').textContent = '保存する';
+		$('ch-cancel').hidden = false;
+		$('ch-date').value = it.date;
+		$('ch-kind').value = it.kind;
+		$('ch-pr').value = (it.pr || []).join(', ');
+		$('ch-text').value = it.text;
+		$('ch-hidden').checked = !!it.hidden;
+		setMsg($('ch-msg'), '');
+		$('ch-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+		$('ch-text').focus();
+	}
+	function saveChange(param, done) {
+		param.session = session;
+		return api('/api/admin/changes/save', param).then(function (data) {
+			if (data.ok) {
+				done(data);
+				loadChanges();
+			} else if (data.httpStatus !== 401) {
+				setMsg($('ch-msg'), data.error === 'long' ? '長すぎます（' + data.maxLength + ' 文字まで）。' :
+					data.error === 'invalid' ? '日付と内容を入れてください。' :
+					'できませんでした（' + (data.error || data.httpStatus) + '）');
+			}
+		}).catch(function () {
+			setMsg($('ch-msg'), 'サーバーにつながりませんでした。');
+		});
+	}
+	function loadChanges() {
+		if (!$('ch-date').value) {
+			resetChangeForm();
+		}
+		api('/api/admin/changes/list', { session: session }).then(function (data) {
+			if (!data.items) {
+				return;
+			}
+			var list = $('ch-list');
+			list.textContent = '';
+			$('ch-count').textContent = data.items.length + ' 件';
+			if (!data.items.length) {
+				list.appendChild(el('p', 'sub-text', 'まだありません。'));
+			}
+			data.items.forEach(function (it) {
+				var card = el('div', 'card');
+				var head = el('div', 'head');
+				head.appendChild(el('span', '', it.date));
+				head.appendChild(el('span', 'tag' + (it.kind === '新機能' ? ' approved' : it.kind === '修正' ? ' rejected' : ' old'), it.kind));
+				if (it.pr && it.pr.length) {
+					head.appendChild(el('span', 'sub-text', 'PR ' + it.pr.map(function (n) { return '#' + n; }).join(' ')));
+				}
+				if (it.hidden) {
+					head.appendChild(el('span', 'tag disabled', '隠している'));
+				}
+				card.appendChild(head);
+				card.appendChild(el('div', 'message', it.text));
+				var btnEdit = el('button', 'sub', '直す');
+				btnEdit.type = 'button';
+				btnEdit.addEventListener('click', function () { editChange(it); });
+				card.appendChild(btnEdit);
+				var btnHide = el('button', 'sub', it.hidden ? '出す' : '隠す');
+				btnHide.type = 'button';
+				btnHide.addEventListener('click', function () {
+					var param = JSON.parse(JSON.stringify(it));
+					param.hidden = !it.hidden;
+					saveChange(param, function () { /* 一覧を読み直すだけ */ });
+				});
+				card.appendChild(btnHide);
+				var btnDel = el('button', 'sub', '消す');
+				btnDel.type = 'button';
+				btnDel.addEventListener('click', function () {
+					if (!window.confirm('この項目を消しますか？（元に戻せません。出したくないだけなら「隠す」）')) {
+						return;
+					}
+					api('/api/admin/changes/delete', { session: session, id: it.id }).then(function () {
+						if (strChEditId === it.id) {
+							resetChangeForm();
+						}
+						loadChanges();
+					});
+				});
+				card.appendChild(btnDel);
+				list.appendChild(card);
+			});
+		}).catch(function () {
+			setMsg($('ch-msg'), 'サーバーにつながりませんでした。');
+		});
+	}
+	$('ch-save').addEventListener('click', function () {
+		setMsg($('ch-msg'), '');
+		var bEdit = !!strChEditId;
+		saveChange({
+			id: strChEditId || undefined,
+			date: $('ch-date').value,
+			kind: $('ch-kind').value,
+			pr: $('ch-pr').value,
+			text: $('ch-text').value,
+			hidden: $('ch-hidden').checked
+		}, function () {
+			resetChangeForm();
+			setMsg($('ch-msg'), bEdit ? '保存しました。' : '足しました。', true);
+		});
+	});
+	$('ch-cancel').addEventListener('click', function () {
+		resetChangeForm();
+		setMsg($('ch-msg'), '');
+	});
+	$('ch-reload').addEventListener('click', loadChanges);
 
 	/* ---- AI連携 ---- */
 	var AI_KIND = {

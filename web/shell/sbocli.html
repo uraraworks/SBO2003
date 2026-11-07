@@ -1001,6 +1001,23 @@
 		font-size: 11px;
 		color: #a8a8a8;
 	}
+	/* 「更新履歴」の NEW（新しい項目がある時だけ） */
+	.sbo-new-mark {
+		display: inline-block;
+		margin-left: 4px;
+		padding: 0 4px;
+		border-radius: 3px;
+		font-size: 9px;
+		font-weight: 700;
+		line-height: 14px;
+		vertical-align: 1px;
+		color: #1d1f24;
+		background: #f0b84a;
+		text-decoration: none;
+	}
+	.sbo-new-mark[hidden] {
+		display: none;
+	}
 	.site-footer {
 		flex: 0 0 auto;
 		width: 100%;
@@ -1226,6 +1243,7 @@
 				<button type="button" class="sbo-link" id="sbo-quick-add-code">復旧キーで追加</button>
 				<button type="button" class="sbo-link" id="sbo-quick-settings">アカウント設定</button>
 				<a class="sbo-link" href="/feedback" target="_blank" rel="noopener">ご意見箱（要望・不具合はこちら）</a>
+				<a class="sbo-link" href="/changes" target="_blank" rel="noopener">更新履歴（何が変わったか）<span class="sbo-new-mark" hidden>NEW</span></a>
 				<button type="button" class="sbo-link" id="sbo-quick-forget">この端末の記憶を消す</button>
 			</div>
 			<!-- はじめての端末 -->
@@ -1267,6 +1285,7 @@
 	<a href="https://www.urara-works.jp/" target="_blank" rel="noopener">© URARA-works</a> /
 	<a href="/status" target="_blank" rel="noopener" id="sbo-site-status">サーバー状況</a> /
 	<a href="/feedback" target="_blank" rel="noopener">ご意見箱</a> /
+	<a href="/changes" target="_blank" rel="noopener">更新履歴<span class="sbo-new-mark" hidden>NEW</span></a> /
 	<a href="https://github.com/uraraworks/SBO2003" target="_blank" rel="noopener">GitHubで見る</a> /
 	<!-- 反映した日時とコミット（tools/web/build.sh がビルドの時に書き込む） -->
 	<span class="site-build" title="反映した日時とコミット">@@SBO_BUILD_DATE@@ <a href="https://github.com/uraraworks/SBO2003/commit/@@SBO_BUILD_COMMIT@@" target="_blank" rel="noopener">@@SBO_BUILD_COMMIT@@</a></span>
@@ -1290,6 +1309,36 @@
 		}
 		update();
 		setInterval(update, 60000);
+	})();
+	/* 「更新履歴」に、前に /changes を見た時より新しい項目があれば NEW を付ける
+	   （見た日付は web/changes/changes.html が localStorage の sbo_changes_seen に覚える） */
+	(function () {
+		if (location.protocol.indexOf('http') !== 0) {
+			return;
+		}
+		function seen() {
+			try {
+				return window.localStorage.getItem('sbo_changes_seen') || '';
+			} catch (e) {
+				return '';
+			}
+		}
+		var strLatest = '';
+		function mark() {
+			var bNew = !!strLatest && strLatest > seen();
+			Array.prototype.forEach.call(document.querySelectorAll('.sbo-new-mark'), function (e) {
+				e.hidden = !bNew;
+			});
+		}
+		fetch('/api/changes', { cache: 'no-store' }).then(function (res) {
+			return res.ok ? res.json() : null;
+		}).then(function (data) {
+			strLatest = (data && data.latest) || '';
+			mark();
+		}).catch(function () { /* 出せなくても困らない */ });
+		/* 別のタブで更新履歴を見たら消す */
+		window.addEventListener('storage', mark);
+		window.addEventListener('focus', mark);
 	})();
 </script>
 <!-- スマホ縦持ちのチャットログ -->
