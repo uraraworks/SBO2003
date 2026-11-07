@@ -744,6 +744,7 @@ BOOL OnCreate(HWND hWnd)
 	g_bBGMONOFF				= TRUE;
 	g_bCpuMax				= FALSE;
 	g_bComEfcONOFF			= TRUE;
+	g_bChatSound			= TRUE;
 	g_byAdminCount			= 0;
 	g_dwCountPC				= 0;
 	g_dwCountNPC			= 0;
@@ -815,6 +816,7 @@ BOOL OnCreate(HWND hWnd)
 	GetPrivateProfileString ("Account", "Name", "", g_szAcc, sizeof (g_szAcc), szBuf);
 	g_bCpuMax				= GetPrivateProfileInt ("Option", "CpuMax", 0, szBuf);
 	g_bComEfcONOFF			= GetPrivateProfileInt ("Option", "ComEfc", 1, szBuf);
+	g_bChatSound			= GetPrivateProfileInt ("Option", "ChatSound", 1, szBuf);
 	g_bBGMONOFF				= GetPrivateProfileInt ("Option", "Bgm", 1, szBuf);
 	g_bTitleSkip			= GetPrivateProfileInt ("Option", "SkipTitle", 0, szBuf);
 	g_bTitleSkip = FALSE;
@@ -3288,6 +3290,8 @@ void SaveIniOption(void)
 	ZeroMemory (szBuf, sizeof (szBuf));
 	wsprintf (szBuf, "%d", g_bComEfcONOFF);
 	WritePrivateProfileString ("Option", "ComEfc", szBuf, szName);
+	wsprintf (szBuf, "%d", g_bChatSound);
+	WritePrivateProfileString ("Option", "ChatSound", szBuf, szName);
 	wsprintf (szBuf, "%d", g_bBGMONOFF);
 	WritePrivateProfileString ("Option", "Bgm", szBuf, szName);
 	wsprintf (szBuf, "%d", g_bTitleSkip);

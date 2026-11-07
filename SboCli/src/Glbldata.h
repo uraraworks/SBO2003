@@ -113,6 +113,7 @@ extern BOOL g_bWindowActive,										/* ウィンドウがアクティブ */
 			g_bEnableMove,											/* 歩き許可 */
 			g_bBGMONOFF,											/* 音楽ON/OFF */
 			g_bComEfcONOFF,											/* 吹き出し効果音ON/OFF */
+			g_bChatSound,											/* 発言の音ON/OFF */
 			g_bCpuMax,												/* CPUフル活動 */
 		    g_bBlock,												/* 当たり判定 */
 			g_bProcShopConfirm,										/* 店:確認中 */

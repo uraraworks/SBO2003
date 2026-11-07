@@ -122,6 +122,7 @@ BOOL g_bWindowActive,												/* ウィンドウがアクティブ */
 	 g_bEnableMove,													/* 歩き許可 */
 	 g_bBGMONOFF,													/* 音楽ON/OFF */
 	 g_bComEfcONOFF,												/* 吹き出し効果音ON/OFF */
+	 g_bChatSound,												/* 発言の音ON/OFF */
 	 g_bCpuMax,														/* CPUフル活動 */
 	 g_bBlock,														/* 当たり判定 */
 	 g_bProcShopConfirm,											/* 店:確認中 */
@@ -288,7 +289,7 @@ LPSTR aszSoundName[] = {"音無し", "決定", "ぶつかり音", "移動", "メ
 					"聖なる光のレーザー", "土属性（弱", "土属性（大", "土属性ヒット", "音波攻撃",
 					"$142", "gun24", "lvup_sound", "三連撃", "三連斬", "十字突き", "十字突き２",
 					"召喚", "大爆発", "罠設置", "薔薇の舞", "土大",
-					"z"};
+					"発言", "z"};
 
 /* BGMリソースIDテーブル */
 DWORD adwBgmIDTbl[] = {
@@ -357,7 +358,7 @@ DWORD adwBgmIDTbl[] = {
 	IDR_WAVE_GUN24,		IDR_WAVE_LVUP_SOUND,IDR_WAVE_SANRENGEKI,IDR_WAVE_SANRENZAN,
 	IDR_WAVE_JUJITUKI,	IDR_WAVE_JUJITUKI2,	IDR_WAVE_SYOKAN,	IDR_WAVE_DAIBAKUHATU,
 	IDR_WAVE_TRAP,		IDR_WAVE_BARA,		IDR_WAVE_TUTIDAI,	IDR_MIDI_WO002,
-	IDR_MIDI_WO006,		IDR_MIDI_W0009,		IDR_MIDI_W0100,
+	IDR_MIDI_WO006,		IDR_MIDI_W0009,		IDR_MIDI_W0100,		IDR_WAVE_CHAT,
 };
 
 /* BGM番号をリソース番号に変換するテーブル */
@@ -443,6 +444,7 @@ DWORD adwSoundNoTbl[] = {
 	SOUND_EFFECT142,SOUND_GUN24,	SOUND_LVUP_SOUND,SOUND_SANRENGEKI,
 	SOUND_SANRENZAN,SOUND_JUJITUKI,	SOUND_JUJITUKI2,SOUND_SYOKAN,
 	SOUND_DAIBAKUHATU,SOUND_TRAP,	SOUND_BARA,		SOUND_TUTIDAI,
+	SOUND_CHAT,
 	0xFFFFFFFF
 };
 

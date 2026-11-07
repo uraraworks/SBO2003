@@ -192,6 +192,11 @@
 	#sbo-chat-panel.sbo-collapsed #sbo-chat-row {
 		display: none;
 	}
+	/* メッセージログを別ウィンドウで開いている間は、ゲーム画面に重なるパネルを隠す
+	   （別ウィンドウを閉じると戻る） */
+	body.sbo-log-popped.sbo-on-map:not(.sbo-pad) #sbo-chat-panel {
+		display: none;
+	}
 
 	/* スマホ用の部品は PC では出さない */
 	#sbo-pad,
@@ -1060,20 +1065,26 @@
 	#sbo-chat-tools {
 		display: flex;
 		align-items: center;
-		gap: 8px;
+		gap: 6px;
+	}
+	#sbo-chat-title,
+	#sbo-chat-tools button {
+		white-space: nowrap;
 	}
 	#sbo-shot-pc,
-	#sbo-log-pc {
+	#sbo-log-pc,
+	#sbo-log-pop {
 		background: none;
 		border: 1px solid var(--border);
 		border-radius: 6px;
 		color: var(--fg);
 		font: 12px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
-		padding: 3px 8px;
+		padding: 3px 6px;
 		cursor: pointer;
 	}
 	#sbo-shot-pc:hover,
-	#sbo-log-pc:hover {
+	#sbo-log-pc:hover,
+	#sbo-log-pop:hover {
 		border-color: var(--accent);
 		color: var(--accent);
 	}
@@ -1360,6 +1371,7 @@
 	<div id="sbo-chat-head">
 		<span id="sbo-chat-title">メッセージログ</span>
 		<span id="sbo-chat-tools">
+			<button id="sbo-log-pop" type="button" title="メッセージログを別のウィンドウで開きます（閉じると元に戻ります）">⧉ 別窓</button>
 			<button id="sbo-log-pc" type="button" title="メッセージログをテキストファイルで保存します">💾 ログ保存</button>
 			<button id="sbo-shot-pc" type="button" title="ゲーム画面を画像で保存します">📷 スクショ</button>
 			<button id="sbo-chat-fold" type="button" title="たたむ">▼</button>
@@ -1494,6 +1506,16 @@
 	var status = document.getElementById('sbo-status');
 	var params = new URLSearchParams(location.search);
 	var sboReady = false;
+
+	/* iPhone・iPad の消音スイッチ（マナーモード）を ON にしている間は BGM・効果音を鳴らさない。
+	   ふつうの Web ページの音は消音スイッチを無視して鳴ってしまうので、
+	   Audio Session API（iOS 17 以降の Safari）で「環境音」扱いにする（SBOP2 と同じ）。
+	   ほかのアプリの音楽も止めずに一緒に流れる。対応していないブラウザでは何もしない */
+	try {
+		if (navigator.audioSession) {
+			navigator.audioSession.type = 'ambient';
+		}
+	} catch (e) { /* 設定できなくても遊べる */ }
 
 	/* タッチ操作が主の端末か（?pad=1 / ?pad=0 で決め打ちできる） */
 	var padParam = params.get('pad');
@@ -2056,8 +2078,10 @@
 		} catch (e) { /* 読めない URL はリンクにしない */ }
 		return null;
 	}
-	/* 文字を el に足す。URL の部分は別タブで開くリンクにする */
-	function appendLinkedText(el, text) {
+	/* 文字を el に足す。URL の部分は別タブで開くリンクにする。
+	   doc は部品を作る文書（別ウィンドウのログに出す時はそちらの document） */
+	function appendLinkedText(el, text, doc) {
+		doc = doc || document;
 		var urls = findUrls(text), pos = 0;
 		for (var i = 0; i < urls.length; i ++) {
 			var href = safeLinkUrl(urls[i].url);
@@ -2065,9 +2089,9 @@
 				continue;
 			}
 			if (urls[i].start > pos) {
-				el.appendChild(document.createTextNode(text.slice(pos, urls[i].start)));
+				el.appendChild(doc.createTextNode(text.slice(pos, urls[i].start)));
 			}
-			var a = document.createElement('a');
+			var a = doc.createElement('a');
 			a.className = 'sbo-chat-link';
 			a.href = href;
 			a.target = '_blank';
@@ -2078,13 +2102,14 @@
 			pos = urls[i].end;
 		}
 		if (pos < text.length) {
-			el.appendChild(document.createTextNode(text.slice(pos)));
+			el.appendChild(doc.createTextNode(text.slice(pos)));
 		}
 	}
 	window.sboChatFindUrls = findUrls;
 
-	function makeLine(entry) {
-		var line = document.createElement('div');
+	function makeLine(entry, doc) {
+		doc = doc || document;
+		var line = doc.createElement('div');
 		if (entry.sep) {
 			line.className = 'sbo-chat-sep';
 			line.textContent = entry.text;
@@ -2095,11 +2120,11 @@
 		if (entry.date) {
 			line.title = entry.date + ' ' + entry.time.replace(/[\[\]]/g, '');
 		}
-		var t = document.createElement('span');
+		var t = doc.createElement('span');
 		t.className = 'sbo-chat-time';
 		t.textContent = entry.time;
-		var m = document.createElement('span');
-		appendLinkedText(m, entry.text);
+		var m = doc.createElement('span');
+		appendLinkedText(m, entry.text, doc);
 		m.style.color = entry.color;
 		line.appendChild(t);
 		line.appendChild(m);
@@ -2117,7 +2142,7 @@
 	function appendTo(box, entry) {
 		var sc = scrollerOf(box);
 		var follow = atBottom(sc);
-		box.appendChild(makeLine(entry));
+		box.appendChild(makeLine(entry, box.ownerDocument));
 		while (box.children.length > CHAT_LOG_MAX) {
 			box.removeChild(box.firstChild);
 		}
@@ -2128,7 +2153,7 @@
 	function renderAll(box) {
 		box.textContent = '';
 		for (var i = 0; i < chatLogs.length; i ++) {
-			box.appendChild(makeLine(chatLogs[i]));
+			box.appendChild(makeLine(chatLogs[i], box.ownerDocument));
 		}
 		var sc = scrollerOf(box);
 		sc.scrollTop = sc.scrollHeight;
@@ -2235,6 +2260,9 @@
 		if (sheet.classList.contains('sbo-open')) {
 			appendTo(sheetLog, entry);
 		}
+		if (logPopLog) {
+			appendTo(logPopLog, entry);
+		}
 		storeChatLogLater();
 	}
 	window.sboChatLogAdd = function (time, text, color) {
@@ -2254,6 +2282,134 @@
 	window.sboChatLogOpen = function () {
 		setOnMap(true);
 	};
+
+	/* ---- 新着をタブの題名で知らせる ----
+	   SBOP2 の「発言時にタスクバーチカチカ」のブラウザ版。
+	   別のタブを見ている（このタブが隠れている）間に発言が来たら、
+	   題名を「(3) スクラップブックオンライン」のように新着の数入りにする。
+	   ゲーム側（SboCliRecvCmd.cpp の RecvDataProcSPEECH）が発言の時だけ sboChatNotify を呼ぶ */
+	var baseTitle = document.title;
+	var unreadCount = 0;
+	function updateTitle() {
+		document.title = unreadCount > 0 ? '(' + unreadCount + ') ' + baseTitle : baseTitle;
+	}
+	window.sboChatNotify = function () {
+		/* 別ウィンドウのログを見ている間も、ゲームのタブが隠れていれば数える */
+		if (!document.hidden) {
+			return;
+		}
+		unreadCount ++;
+		updateTitle();
+	};
+	document.addEventListener('visibilitychange', function () {
+		if (!document.hidden && unreadCount > 0) {
+			unreadCount = 0;
+			updateTitle();
+		}
+	});
+
+	/* ---- メッセージログを別ウィンドウで開く（PC） ----
+	   SBOP2 の「チャット別ウィンドウ」と同じ。ログと発言欄だけの小さいウィンドウを開き、
+	   開いている間はゲーム画面に重なるパネルを隠す（body.sbo-log-popped）。
+	   閉じるとパネルが戻る。中身はこのページのスクリプトから組み立てる */
+	var logPop = null;			/* 開いている別ウィンドウ */
+	var logPopLog = null;		/* その中のログの箱（開いていない時は null） */
+	var logPopInput = null;
+	var logPopWatch = 0;
+	var LOG_POP_HTML =
+		'<!doctype html><html lang="ja"><head><meta charset="utf-8">' +
+		'<meta name="viewport" content="width=device-width,initial-scale=1">' +
+		'<title>メッセージログ - スクラップブックオンライン</title>' +
+		'<style>' +
+		'html,body{height:100%;margin:0;}' +
+		'body{display:flex;flex-direction:column;background:#1d1f24;color:#e8e8e8;' +
+		'font:13px/1.45 "BIZ UDGothic","Hiragino Sans","Meiryo",sans-serif;}' +
+		'#log{flex:1 1 auto;overflow-y:auto;padding:6px 8px;background:#0e1014;}' +
+		'.sbo-chat-line{line-height:1.45;word-break:break-all;white-space:pre-wrap;}' +
+		'.sbo-chat-link{color:#8fd0ff;text-decoration:underline;cursor:pointer;}' +
+		'.sbo-chat-link:visited{color:#c9a8ff;}' +
+		'.sbo-chat-time{color:#8a919c;margin-right:0.4em;font-size:0.9em;}' +
+		'.sbo-chat-sep{margin:4px 0;text-align:center;color:#9aa0a6;font-size:11px;}' +
+		'#row{flex:0 0 auto;display:flex;gap:6px;padding:6px 8px;background:#181c24;border-top:1px solid #3a404a;}' +
+		'#input{flex:1;min-width:0;background:#0f1217;border:1px solid #3a404a;border-radius:6px;color:#e8e8e8;' +
+		'font:14px/1.2 "BIZ UDGothic","Hiragino Sans","Meiryo",sans-serif;padding:6px 8px;outline:none;}' +
+		'#input:focus{border-color:#f0b84a;}' +
+		'#input[readonly]{opacity:0.6;}' +
+		'#send{flex:none;background:#f0b84a;border:none;border-radius:6px;color:#1d1f24;' +
+		'font:bold 13px/1 "BIZ UDGothic","Hiragino Sans","Meiryo",sans-serif;padding:6px 12px;cursor:pointer;}' +
+		'</style></head><body>' +
+		'<div id="log"></div>' +
+		'<div id="row"><input id="input" type="text" placeholder="発言を入力して Enter" autocomplete="off" spellcheck="false">' +
+		'<button id="send" type="button">送信</button></div>' +
+		'</body></html>';
+	function isLogPopOpen() {
+		return !!logPop && !logPop.closed;
+	}
+	function closeLogPop() {
+		if (logPopWatch) {
+			clearInterval(logPopWatch);
+			logPopWatch = 0;
+		}
+		var w = logPop;
+		logPop = null;
+		logPopLog = null;
+		logPopInput = null;
+		document.body.classList.remove('sbo-log-popped');
+		if (w && !w.closed) {
+			try { w.close(); } catch (e) { /* もう閉じている */ }
+		}
+		/* 戻したパネルは下端から見せる */
+		chatLog.scrollTop = chatLog.scrollHeight;
+	}
+	function openLogPop() {
+		if (isLogPopOpen()) {
+			logPop.focus();
+			return;
+		}
+		var w = window.open('', 'sbo2003-log', 'popup=yes,width=460,height=560');
+		if (!w) {
+			alert('別のウィンドウを開けませんでした。ブラウザでこのサイトのポップアップを許可してください。');
+			return;
+		}
+		/* 同じ名前のウィンドウが残っていても中身を作り直す */
+		w.document.open();
+		w.document.write(LOG_POP_HTML);
+		w.document.close();
+		logPop = w;
+		logPopLog = w.document.getElementById('log');
+		logPopInput = w.document.getElementById('input');
+		renderAll(logPopLog);
+		/* 切断された後なら読むだけにする */
+		if (document.body.classList.contains('sbo-lost')) {
+			logPopInput.readOnly = true;
+			logPopInput.placeholder = chatInput.placeholder;
+		}
+		/* 発言はパネルと同じ分割送信を通す（Shift で全体発言・Ctrl で内線も同じ） */
+		bindChatInput(logPopInput, w.document.getElementById('send'), null);
+		document.body.classList.add('sbo-log-popped');
+		/* 閉じたらパネルを戻す（pagehide は書き込み直後にも来るので、本当に閉じたかで見る） */
+		w.addEventListener('pagehide', function () {
+			setTimeout(function () {
+				if (!isLogPopOpen()) {
+					closeLogPop();
+				}
+			}, 0);
+		});
+		logPopWatch = setInterval(function () {
+			if (!isLogPopOpen()) {
+				closeLogPop();
+			}
+		}, 500);
+		w.focus();
+		logPopInput.focus();
+	}
+	document.getElementById('sbo-log-pop').addEventListener('click', openLogPop);
+	/* ゲームのページを閉じる・読み直す時は別ウィンドウも閉じる */
+	window.addEventListener('pagehide', function () {
+		if (isLogPopOpen()) {
+			try { logPop.close(); } catch (e) { /* 無視 */ }
+		}
+	});
 
 	/* ---- 長い発言の自動分割 ----
 	   ゲーム本体の発言は表示幅 40（半角 40 文字・全角 20 文字。元の発言欄の上限）までで、
@@ -2757,6 +2913,10 @@
 		/* スマホで触ってもキーボードが出ないよう、読むだけにする */
 		chatInput.readOnly = lost;
 		sheetInput.readOnly = lost;
+		if (logPopInput) {
+			logPopInput.placeholder = chatInput.placeholder;
+			logPopInput.readOnly = lost;
+		}
 		if (lost) {
 			var d = new Date();
 			var p2 = function (n) { return (n < 10 ? '0' : '') + n; };
