@@ -371,7 +371,7 @@ PWNDINFO MakeWindowCOMMANDETC(void)
 	ZeroMemory (pWnd, sizeof (WNDINFO));
 	pWnd->dwID = g_dwNewID;
 	g_dwNewID ++;
-	pWnd->nData2 = 7;
+	pWnd->nData2 = 8;
 	pWnd->nX = 32 + 16 * 3;
 	pWnd->nY = 50 + 16 * 5;
 	pWnd->nCx = 16 * 15;

@@ -1519,8 +1519,14 @@ void KeyProcCOMMANDETC(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			}
 			break;
 
-		/* オプション */
+		/* 人の多い場所（チャットの /where と同じ。返事はメッセージログに出る） */
 		case 6:
+			SendCmdMSGCMD_0 (MSGCMD_WHERE);
+			g_bDraw = TRUE;
+			break;
+
+		/* オプション */
+		case 7:
 			{
 				PWNDINFO pWndNew = MakeWindowCOMMANDOPTION ();
 				pWndNew->pParent = pWnd;
@@ -7920,6 +7926,10 @@ void ChatMsgProc(LPCTSTR pszMsg)
 				} else if (strcmp (pszTmp, aMsgCmdTbl[MSGCMD_1D20]) == 0) {
 					byCmdID = MSGCMD_1D20;
 					SendCmdMSGCMD_0 (byCmdID);
+					bProc = TRUE;
+				/* 最も人が集まっている場所（返事はサーバーから自分にだけ届く） */
+				} else if (strcmp (pszTmp, aMsgCmdTbl[MSGCMD_WHERE]) == 0) {
+					SendCmdMSGCMD_0 (MSGCMD_WHERE);
 					bProc = TRUE;
 				/* 現在時刻 */
 				} else if (strcmp (pszTmp, aMsgCmdTbl[MSGCMD_CLOCK]) == 0) {

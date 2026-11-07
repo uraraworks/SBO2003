@@ -486,6 +486,8 @@ static DWORD	s_dwRecvSize	= 0;		/* 処理中のパケットの大きさ */
 static const BYTE *s_pRecvData	= NULL;		/* 処理中のパケットの先頭 */
 static DWORD	s_dwRecvMapNo	= (DWORD)-1;	/* 「元に戻す」で処理し直す時のマップ番号（メッセージ・店用。-1 なら送ってきたキャラのマップ） */
 
+static void SendMsgMostCrowdedMap (DWORD pIDSend);	/* 最も人が集まっている場所を知らせる */
+
 /* ========================================================================= */
 /* 関数名：	IsRecvChar														 */
 /* 内容：	操作するキャラが、送ってきた本人か（管理者なら誰でもよい）		 */
@@ -3317,7 +3319,20 @@ void RecvDataProcCHGSTATE(PBYTE pData, DWORD dwDataSize)
 		wsprintf (szBuf, "SYSTEM:オンライン数が%d人になりました。", g_dwOnline);
 		SendCmdSYSMSG (URARASOCK_SENDALL, szBuf);
 	}
+	SendMsgMostCrowdedMap (pPara->pID);
+}
+
+/* ========================================================================= */
+/* 関数名：SendMsgMostCrowdedMap											 */
+/* 内容：最も人が集まっている場所を知らせる									 */
+/*       （ログイン時と、メッセージコマンド /where・その他メニューで使う）	 */
+/* ========================================================================= */
+static void SendMsgMostCrowdedMap(DWORD pIDSend)
+{
+	char szBuf[256];
 	DWORD dwMap = 0, dwCount = 0;
+	int i;
+
 	for (i = 0; i < g_aMapInfo.GetSize (); i ++) {
 		PMAPINFO pMap = g_aMapInfo[i];
 		if (pMap->dwCountTblNoPC > dwCount) {
@@ -3325,7 +3340,10 @@ void RecvDataProcCHGSTATE(PBYTE pData, DWORD dwDataSize)
 			dwMap = i;
 		}
 	}
-	SendCmdSYSMSG (pPara->pID, "SYSTEM:現在最も人が集まっている場所は");
+	if (g_aMapInfo.GetSize () <= 0) {
+		return;
+	}
+	SendCmdSYSMSG (pIDSend, "SYSTEM:現在最も人が集まっている場所は");
 
 	PMAPINFO pMap = g_aMapInfo[dwMap];
 	if (pMap->pszName && strlen ((LPSTR)pMap->pszName)) {
@@ -3333,7 +3351,7 @@ void RecvDataProcCHGSTATE(PBYTE pData, DWORD dwDataSize)
 	} else {
 		wsprintf (szBuf, "SYSTEM:マップ番号[%ld]のようです。", dwMap);
 	}
-	SendCmdSYSMSG (pPara->pID, szBuf);
+	SendCmdSYSMSG (pIDSend, szBuf);
 }
 
 /* ========================================================================= */
@@ -6722,6 +6740,10 @@ void RecvDataProcMSGCMD(PBYTE pData, DWORD dwDataSize)
 					pChar->szName, genrand () % 20 + 1);
 			SendCmdSYSMSG (pChar->dwTblID, szTmp, SPEECHCMD_SCREEN);
 		}
+		break;
+
+	case MSGCMD_WHERE:			/* 最も人が集まっている場所（送ってきた本人にだけ返す） */
+		SendMsgMostCrowdedMap (s_pIDRecv);
 		break;
 	}
 }
