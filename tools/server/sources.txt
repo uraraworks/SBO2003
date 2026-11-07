@@ -42,6 +42,7 @@ SboSvr/src/SboSvrDrawWindow.cpp
 SboSvr/src/SboSvrEventProc.cpp
 SboSvr/src/SboSvrItemProc.cpp
 SboSvr/src/SboSvrMagicProc.cpp
+SboSvr/src/SboSvrNpcRoute.cpp
 SboSvr/src/SboSvrRecvCmd.cpp
 SboSvr/src/SboSvrSendCmd.cpp
 SboSvr/src/SboSvrSubGameProc.cpp

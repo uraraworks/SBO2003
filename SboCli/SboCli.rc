@@ -72,6 +72,7 @@ BEGIN
         MENUITEM "ｽﾃｰﾀｽ情報(&S)",               IDM_CHAR_STATUS
         MENUITEM "預かり所情報(&L)",            IDM_CHAR_LEAVE
         MENUITEM "ｽﾃｰﾀｽﾃﾝﾌﾟﾚｰﾄ情報(&T)",        IDM_CHAR_STTMP
+        MENUITEM "NPCの巡回(&R)",               IDM_CHAR_NPCROUTE
     END
     POPUP "ｱｲﾃﾑ(&I)"
     BEGIN
@@ -741,6 +742,39 @@ BEGIN
     EDITTEXT        IDC_DARK,194,119,19,14,ES_AUTOHSCROLL
     DEFPUSHBUTTON   "OK",IDOK,163,142,50,14
     PUSHBUTTON      "ｷｬﾝｾﾙ",IDCANCEL,220,142,50,14
+END
+
+
+IDD_NPCROUTE DIALOGEX 0, 0, 223, 200
+STYLE WS_CHILD
+EXSTYLE WS_EX_STATICEDGE
+FONT 9, "ＭＳ Ｐゴシック", 0, 0, 0x1
+BEGIN
+    LTEXT           "",IDC_NR_COUNT,7,4,209,8
+    CONTROL         "List1",IDC_NR_LIST,"SysListView32",LVS_REPORT | 
+                    LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_BORDER | 
+                    WS_TABSTOP,7,14,209,56
+    LTEXT           "",IDC_NR_SELECT,7,73,209,8
+    GROUPBOX        "回り方",IDC_STATIC,7,82,100,22
+    CONTROL         "折り返す",IDC_NR_MODE_BACK,"Button",
+                    BS_AUTORADIOBUTTON | WS_GROUP,11,91,45,10
+    CONTROL         "一周",IDC_NR_MODE_LOOP,"Button",BS_AUTORADIOBUTTON,60,91,
+                    40,10
+    LTEXT           "止まる秒数：",IDC_STATIC,113,89,38,8
+    EDITTEXT        IDC_NR_WAIT,153,86,24,14,ES_AUTOHSCROLL
+    LTEXT           "秒(0〜60)",IDC_STATIC,180,89,36,8
+    PUSHBUTTON      "1つ戻す",IDC_NR_UNDO,7,107,38,14,WS_GROUP
+    PUSHBUTTON      "全部消す",IDC_NR_CLEAR,48,107,38,14
+    PUSHBUTTON      "保存",IDC_NR_SAVE,89,107,30,14
+    PUSHBUTTON      "巡回をやめる",IDC_NR_STOP,122,107,50,14
+    PUSHBUTTON      "読み直す",IDC_NR_RELOAD,175,107,41,14
+    LTEXT           "道しるべ",IDC_STATIC,7,127,30,8
+    EDITTEXT        IDC_NR_POINTS,39,125,177,20,ES_MULTILINE | 
+                    ES_AUTOVSCROLL | ES_READONLY | WS_VSCROLL
+    LTEXT           "警告",IDC_STATIC,7,150,30,8
+    EDITTEXT        IDC_NR_WARN,39,148,177,38,ES_MULTILINE | ES_AUTOVSCROLL | 
+                    ES_READONLY | WS_VSCROLL
+    LTEXT           "",IDC_NR_MSG,7,189,209,8
 END
 
 

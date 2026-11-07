@@ -15,6 +15,7 @@
 #include "Proc/ProcSubGame.h"
 #include "Proc/SubGame/ProcSubGameBase.h"
 #include "SboSvrRecvCmd.h"
+#include "SboSvrNpcRoute.h"
 
 
 /* ========================================================================= */
@@ -3158,6 +3159,34 @@ void SendCmdADMINUNDO(DWORD pIDSend, BYTE byCmdSub, BYTE byScreen, BYTE byResult
 	Para.byResult	= byResult;
 	Para.wCount		= wCount;
 	Para.dwStepID	= dwStepID;
+	if (pszMsg) {
+		SboTextCopy (Para.szMsg, sizeof (Para.szMsg), pszMsg);
+	}
+
+	svrSock.SendTo (pIDSend, (PBYTE)&Para, sizeof (Para));
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdNPCROUTE													 */
+/* 内容：コマンド送信(NPCの巡回ルート)										 */
+/*       dwTblID のキャラが居れば、そのルートを入れて送る					 */
+/*       pszMsg はエラー文（RESULT 用）。pIDSend が 0 なら送らない			 */
+/* ========================================================================= */
+void SendCmdNPCROUTE(DWORD pIDSend, BYTE byCmdSub, BYTE byResult, DWORD dwMapID, DWORD dwTblID, LPCSTR pszMsg)
+{
+	CMDPARA_NPCROUTE Para;
+	PCHARINFO pChar = NULL;
+
+	if (pIDSend == 0) {
+		return;
+	}
+	if (dwTblID < (DWORD)g_aCharInfo.GetSize ()) {
+		pChar = g_aCharInfo[dwTblID];
+	}
+	NpcRouteMakePara (Para, byCmdSub, pChar);
+	Para.byResult	= byResult;
+	Para.dwMapID	= dwMapID;
+	Para.dwTblID	= dwTblID;
 	if (pszMsg) {
 		SboTextCopy (Para.szMsg, sizeof (Para.szMsg), pszMsg);
 	}

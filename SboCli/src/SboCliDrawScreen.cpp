@@ -10,6 +10,7 @@
 #include "Glbldata.h"
 #include "SboCliDrawWindow.h"
 #include "SboCliRecvCmd.h"
+#include "AdminWindowOld/AdminDlgNpcRoute.h"
 
 /* ========================================================================= */
 /* 関数プロトタイプ宣言														 */
@@ -31,6 +32,9 @@ static void DrawGuardMark	(int x, int y);								/* 構えの盾マーク */
 void DrawObj			(void);										/* オブジェクトの描画 */
 void DrawEvent			(void);										/* イベント情報の描画 */
 void DrawMapEdit		(void);										/* マップ編集情報の描画 */
+void DrawNpcRoute		(void);										/* NPCの巡回情報の描画 */
+static void FillRectClip	(int x, int y, int cx, int cy, COLORREF cl);	/* 画像の外にはみ出さない矩形塗りつぶし */
+static void DrawLineClip	(int x1, int y1, int x2, int y2, int nWidth, COLORREF cl);	/* 線を描く */
 void DrawWeather		(void);										/* 天候の描画 */
 void AddSysMsg			(LPSTR, COLORREF);							/* システムメッセージの追加 */
 
@@ -298,6 +302,7 @@ BOOL DrawScreenMOVE(void)
 	DrawChar2 ();			/* エフェクトを描画 */
 	DrawEvent ();			/* イベント情報を描画 */
 	DrawMapEdit ();			/* マップ編集情報を描画 */
+	DrawNpcRoute ();		/* NPCの巡回情報を描画 */
 	DrawChar3 ();			/* 文字を描画 */
 	DrawETC ();				/* ゲージ等の描画 */
 
@@ -1759,6 +1764,148 @@ void DrawMapEdit(void)
 			}
 		}
 	}
+}
+
+/* ========================================================================= */
+/* 関数名：FillRectClip														 */
+/* 内容：画像の外にはみ出さない矩形塗りつぶし								 */
+/*       （FillRect は左上が負の時に位置がずれるので、先に切り取る）		 */
+/* ========================================================================= */
+static void FillRectClip(int x, int y, int cx, int cy, COLORREF cl)
+{
+	int x2 = x + cx, y2 = y + cy;
+
+	x = max (x, 0);
+	y = max (y, 0);
+	x2 = min (x2, g_pDibDrawMap->Width ());
+	y2 = min (y2, g_pDibDrawMap->Height ());
+	if (x2 <= x || y2 <= y) {
+		return;
+	}
+	g_pDibDrawMap->FillRect (x, y, x2 - x, y2 - y, cl);
+}
+
+/* ========================================================================= */
+/* 関数名：DrawLineClip														 */
+/* 内容：線を描く（nWidth ドットの正方形を並べる。画像の外は描かない）		 */
+/* ========================================================================= */
+static void DrawLineClip(int x1, int y1, int x2, int y2, int nWidth, COLORREF cl)
+{
+	int dx, dy, sx, sy, nErr, nErr2;
+
+	dx = abs (x2 - x1);
+	dy = abs (y2 - y1);
+	sx = (x1 < x2) ? 1 : -1;
+	sy = (y1 < y2) ? 1 : -1;
+	nErr = dx - dy;
+	for (;;) {
+		FillRectClip (x1 - nWidth / 2, y1 - nWidth / 2, nWidth, nWidth, cl);
+		if (x1 == x2 && y1 == y2) {
+			break;
+		}
+		nErr2 = nErr * 2;
+		if (nErr2 > -dy) {
+			nErr -= dy;
+			x1 += sx;
+		}
+		if (nErr2 < dx) {
+			nErr += dx;
+			y1 += sy;
+		}
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：DrawNpcRoute														 */
+/* 内容：NPCの巡回情報の描画												 */
+/*       巡回できるNPCに枠、選んでいるNPCは目立つ色の枠、					 */
+/*       編集中の道しるべに番号（1は色を変える）と点どうしをつなぐ線		 */
+/*       （一周なら最後→最初も）											 */
+/* ========================================================================= */
+void DrawNpcRoute(void)
+{
+	int i, x, y, xTmp, yTmp, nCount, nW, nH, anX[MAX_NPCROUTE], anY[MAX_NPCROUTE];
+	DWORD dwSel;
+	HDC hDC;
+	HFONT hFontOld;
+	PCHARINFO pChar;
+	char szTmp[16];
+	COLORREF clLine = RGB (240, 184, 74);
+
+	if (g_nMyCharID < 0) {
+		return;
+	}
+
+	if (g_hWndAdmin == NULL) {
+		return;
+	}
+
+	if (g_nAdminWindowType != IDM_CHAR_NPCROUTE) {
+		return;
+	}
+
+	/* 自分のマップが変わっていないか確かめる */
+	NpcRouteTick ();
+
+	pChar = g_aCharInfo[g_nMyCharID];
+	xTmp = (int)pChar->dwX;
+	yTmp = (int)pChar->dwY;
+	dwSel = NpcRouteGetSelTblID ();
+	nW = (DRAW_PARTS_X * 2 + 1) * 32;
+	nH = (DRAW_PARTS_Y * 2 + 1) * 32;
+
+	/* 巡回できるNPCの枠（選んでいるのは目立つ色で太く） */
+	for (i = 0; i < g_aCharInfo.GetSize (); i ++) {
+		pChar = g_aCharInfo[i];
+		if (!NpcRouteIsListed (pChar->dwTblID)) {
+			continue;
+		}
+		x = (((int)pChar->dwX - xTmp) + DRAW_PARTS_X + 1) * 32;
+		y = (((int)pChar->dwY - yTmp) + DRAW_PARTS_Y + 1) * 32;
+		if (x < 32 || y < 32 || x >= 32 + nW || y >= 32 + nH) {
+			continue;
+		}
+		if (pChar->dwTblID == dwSel) {
+			DrawFrameRect (x, y, 32, 32, RGB (255, 200, 0));
+			DrawFrameRect (x + 1, y + 1, 30, 30, RGB (255, 200, 0));
+			DrawFrameRect (x + 2, y + 2, 28, 28, RGB (255, 120, 0));
+		} else {
+			DrawFrameRect (x, y, 32, 32, RGB (90, 150, 255));
+			DrawFrameRect (x + 1, y + 1, 30, 30, RGB (90, 150, 255));
+		}
+	}
+
+	/* 編集中の道しるべ */
+	nCount = NpcRouteGetEditCount ();
+	if (nCount <= 0) {
+		return;
+	}
+	for (i = 0; i < nCount && i < MAX_NPCROUTE; i ++) {
+		NpcRouteGetEditPoint (i, x, y);
+		anX[i] = ((x - xTmp) + DRAW_PARTS_X + 1) * 32 + 16;
+		anY[i] = ((y - yTmp) + DRAW_PARTS_Y + 1) * 32 + 16;
+	}
+	/* 線（先に描いて、番号を上に重ねる） */
+	for (i = 1; i < nCount; i ++) {
+		DrawLineClip (anX[i - 1], anY[i - 1], anX[i], anY[i], 3, clLine);
+	}
+	if (NpcRouteGetEditMode () == NPCROUTEMODE_LOOP && nCount >= 3) {
+		DrawLineClip (anX[nCount - 1], anY[nCount - 1], anX[0], anY[0], 1, clLine);
+	}
+	/* 番号の札 */
+	for (i = 0; i < nCount; i ++) {
+		FillRectClip (anX[i] - 9, anY[i] - 8, 18, 16, RGB (255, 255, 255));
+		FillRectClip (anX[i] - 8, anY[i] - 7, 16, 14, (i == 0) ? RGB (46, 158, 91) : RGB (194, 122, 0));
+	}
+	hDC = g_pDibDrawMap->Lock ();
+	hFontOld = (HFONT)SelectObject (hDC, g_hFont12);
+	SetBkMode (hDC, TRANSPARENT);
+	for (i = 0; i < nCount; i ++) {
+		snprintf (szTmp, sizeof (szTmp), "%d", i + 1);
+		TextOut2 (hDC, anX[i] - (int)strlen (szTmp) * 4, anY[i] - 7, szTmp, RGB (255, 255, 255));
+	}
+	SelectObject (hDC, hFontOld);
+	g_pDibDrawMap->Unlock ();
 }
 
 /* ========================================================================= */

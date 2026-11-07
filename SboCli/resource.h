@@ -34,6 +34,7 @@
 #define IDD_ETC_SUBGAME1                229
 #define IDD_STTMPINFO                   229
 #define IDD_STTMPINFO_EDIT              230
+#define IDD_NPCROUTE                    231
 #define IDC_BUTTON1                     1000
 #define IDC_BUTTON2                     1001
 #define IDC_BUTTON3                     1002
@@ -176,6 +177,20 @@
 #define IDC_VIEWITEMINFO                1138
 #define IDC_EXPLAIN                     1139
 #define IDC_EXPLAIN_AUTO                1140
+#define IDC_NR_LIST                     1142
+#define IDC_NR_COUNT                    1143
+#define IDC_NR_SELECT                   1144
+#define IDC_NR_MODE_BACK                1145
+#define IDC_NR_MODE_LOOP                1146
+#define IDC_NR_WAIT                     1147
+#define IDC_NR_UNDO                     1148
+#define IDC_NR_CLEAR                    1149
+#define IDC_NR_SAVE                     1150
+#define IDC_NR_STOP                     1151
+#define IDC_NR_RELOAD                   1152
+#define IDC_NR_POINTS                   1153
+#define IDC_NR_WARN                     1154
+#define IDC_NR_MSG                      1155
 #define IDM_MAP_PARTS                   40001
 #define IDM_MAP_INFO                    40002
 #define IDM_MAP_ADD                     40003
@@ -205,14 +220,15 @@
 #define IDM_CHAR_MAGIC                  40027
 #define IDM_CHAR_STTMP                  40028
 #define IDM_ADMIN_UNDO                  40029
+#define IDM_CHAR_NPCROUTE               40030
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        231
-#define _APS_NEXT_COMMAND_VALUE         40030
-#define _APS_NEXT_CONTROL_VALUE         1142
+#define _APS_NEXT_RESOURCE_VALUE        232
+#define _APS_NEXT_COMMAND_VALUE         40031
+#define _APS_NEXT_CONTROL_VALUE         1156
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
