@@ -630,7 +630,8 @@ void DrawWindowCOMMANDETC(PWNDINFO pWnd)
 	TextOut2 (hDC, 32, 16 * 4, "名前の色設定", RGB (255, 255, 255));
 	TextOut2 (hDC, 32, 16 * 5, "パスワードの変更", RGB (255, 255, 255));
 	TextOut2 (hDC, 32, 16 * 6, "管理人呼び出し", RGB (255, 255, 255));
-	TextOut2 (hDC, 32, 16 * 7, "オプション", RGB (255, 255, 255));
+	TextOut2 (hDC, 32, 16 * 7, "人の多い場所", RGB (255, 255, 255));
+	TextOut2 (hDC, 32, 16 * 8, "オプション", RGB (255, 255, 255));
 
 	SelectObject (hDC, hFontOld);
 	pWnd->pDib->Unlock ();

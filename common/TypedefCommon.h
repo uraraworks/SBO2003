@@ -1053,6 +1053,7 @@ enum {
 	MSGCMD_1D10,												/* サイコロ(1～10) */
 	MSGCMD_1D20,												/* サイコロ(1～20) */
 	MSGCMD_CLOCK,												/* 現在時刻 */
+	MSGCMD_WHERE,												/* 最も人が集まっている場所 */
 	MSGCMD_MAX
 };
 
