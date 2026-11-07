@@ -3949,11 +3949,11 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 			pMagic = g_aMagicInfo[byMagicID];
 			GetMagicExplain (pMagic, szExplain, sizeof (szExplain));
 			nCxNew = ITEMINFO_MAGIC_CX;
-			/* 12ドットの字は半角6ドット・全角12ドット。左右の枠と、「。」をぶら下げる */
+			/* 16ドットの字は半角8ドット・全角16ドット。左右の枠と、「。」をぶら下げる */
 			/* 全角1文字分を引いた幅で折り返す */
-			nExplainLine = SplitMagicExplain (szExplain, (nCxNew - 32 - 12) / 6, aszExplain, ITEMINFO_EXPLAIN_MAXLINE);
+			nExplainLine = SplitMagicExplain (szExplain, (nCxNew - 32 - 16) / 8, aszExplain, ITEMINFO_EXPLAIN_MAXLINE);
 			/* 枠の絵は16ドット単位なので高さも16の倍数にする */
-			nCyNew = 16 * 2 + 12 * (3 + nExplainLine);
+			nCyNew = 16 * 2 + ITEMINFO_LINE * (3 + nExplainLine);
 			nCyNew = (nCyNew + 15) / 16 * 16;
 			nCyNew = max (nCyNew, ITEMINFO_CY);
 		}
@@ -3962,7 +3962,7 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 	int nFooterTop = nCyNew - 16;
 	if (pRecipe) {
 		nCxNew = max (nCxNew, MAKERINFO_CX);
-		nCyNew = nFooterTop + 4 + 12 * nFooterLine + 16;
+		nCyNew = nFooterTop + 4 + ITEMINFO_LINE * nFooterLine + 16;
 		nCyNew = (nCyNew + 15) / 16 * 16;
 	}
 	if ((pWnd->nCx != nCxNew) || (pWnd->nCy != nCyNew)) {
@@ -4013,7 +4013,7 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 
 	DrawWindowFrame (pWnd);
 	HDC hDC = pWnd->pDib->Lock ();
-	HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFont12);
+	HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFontBasic);
 
 	SetBkColor (hDC, RGB (40, 40, 40));
 	wsprintf (szTmp, "%s", pItem->szName);
@@ -4023,11 +4023,11 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 	TextOut2 (hDC, 16, 0, szTmp, RGB (255, 255, 255));
 	TextOut2 (hDC, 16, 16, "種類：", RGB (200, 200, 200));
 	wsprintf (szTmp, "%s", aItemeTypeNameTbl[pItem->byType]);
-	TextOut2 (hDC, 16 + 12 * 3, 16, szTmp, RGB (150, 255, 200));
+	TextOut2 (hDC, 16 + ITEMINFO_LINE * 3, 16, szTmp, RGB (150, 255, 200));
 
-	TextOut2 (hDC, 16, 16 + 12 * 1, "価値：", RGB (200, 200, 200));
+	TextOut2 (hDC, 16, 16 + ITEMINFO_LINE * 1, "価値：", RGB (200, 200, 200));
 	wsprintf (szTmp, "%d", pItem->dwGold);
-	TextOut2 (hDC, 16 + 12 * 3, 16 + 12 * 1, szTmp, RGB (150, 255, 200));
+	TextOut2 (hDC, 16 + ITEMINFO_LINE * 3, 16 + ITEMINFO_LINE * 1, szTmp, RGB (150, 255, 200));
 
 	wEqu = 0xFFFF;
 	switch (pItem->byType) {
@@ -4089,23 +4089,23 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 
 	if (wEqu != 0xFFFF) {
 		nLen = SboTextWidth (szTmp) / 2;
-		TextOut2 (hDC, 16, 16 + 12 * 2, szTmp, RGB (200, 200, 200));
+		TextOut2 (hDC, 16, 16 + ITEMINFO_LINE * 2, szTmp, RGB (200, 200, 200));
 		wsprintf (szTmp, "%d", pItem->byData);
-		TextOut2 (hDC, 16 + 12 * nLen, 16 + 12 * 2, szTmp, RGB (150, 255, 200));
-		TextOut2 (hDC, 16, 16 + 12 * 3, "装備：", RGB (200, 200, 200));
+		TextOut2 (hDC, 16 + ITEMINFO_LINE * nLen, 16 + ITEMINFO_LINE * 2, szTmp, RGB (150, 255, 200));
+		TextOut2 (hDC, 16, 16 + ITEMINFO_LINE * 3, "装備：", RGB (200, 200, 200));
 		wsprintf (szTmp, "%s", g_aEquUserInfo[wEqu]);
-		TextOut2 (hDC, 16 + 12 * 3, 16 + 12 * 3, szTmp, RGB (150, 255, 200));
+		TextOut2 (hDC, 16 + ITEMINFO_LINE * 3, 16 + ITEMINFO_LINE * 3, szTmp, RGB (150, 255, 200));
 	}
 
 	/* 特技の書：覚える特技と説明 */
 	if (pMagic) {
 		int i;
 
-		TextOut2 (hDC, 16, 16 + 12 * 2, "特技：", RGB (200, 200, 200));
+		TextOut2 (hDC, 16, 16 + ITEMINFO_LINE * 2, "特技：", RGB (200, 200, 200));
 		wsprintf (szTmp, "%s", pMagic->szName);
-		TextOut2 (hDC, 16 + 12 * 3, 16 + 12 * 2, szTmp, RGB (150, 255, 200));
+		TextOut2 (hDC, 16 + ITEMINFO_LINE * 3, 16 + ITEMINFO_LINE * 2, szTmp, RGB (150, 255, 200));
 		for (i = 0; i < nExplainLine; i ++) {
-			TextOut2 (hDC, 16, 16 + 12 * (3 + i), aszExplain[i], RGB (255, 255, 255));
+			TextOut2 (hDC, 16, 16 + ITEMINFO_LINE * (3 + i), aszExplain[i], RGB (255, 255, 255));
 		}
 	}
 
@@ -4117,11 +4117,11 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 		if (pRecipe->byCount > 1) {
 			TextOut2 (hDC, 16, nY, "できる数：", RGB (200, 200, 200));
 			wsprintf (szTmp, "%d個", (int)pRecipe->byCount);
-			TextOut2 (hDC, 16 + 12 * 5, nY, szTmp, RGB (150, 255, 200));
-			nY += 12;
+			TextOut2 (hDC, 16 + ITEMINFO_LINE * 5, nY, szTmp, RGB (150, 255, 200));
+			nY += ITEMINFO_LINE;
 		}
 		TextOut2 (hDC, 16, nY, "必要な材料", RGB (200, 200, 200));
-		nY += 12;
+		nY += ITEMINFO_LINE;
 		for (k = 0; k < MAX_RECIPEMAT; k ++) {
 			if ((pRecipe->awMatItem[k] == 0) || (pRecipe->abyMatCount[k] == 0) ||
 				((int)pRecipe->awMatItem[k] >= g_aItemInfo.GetSize ())) {
@@ -4129,16 +4129,16 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 			}
 			int nHave = MakerCountHave (pRecipe->awMatItem[k]);
 			COLORREF clMat = (nHave >= (int)pRecipe->abyMatCount[k]) ? RGB (150, 255, 200) : RGB (255, 130, 130);
-			TextOut2 (hDC, 16 + 6, nY, g_aItemInfo[pRecipe->awMatItem[k]]->szName, RGB (255, 255, 255));
+			TextOut2 (hDC, 16 + 8, nY, g_aItemInfo[pRecipe->awMatItem[k]]->szName, RGB (255, 255, 255));
 			wsprintf (szTmp, "%d/%d", nHave, (int)pRecipe->abyMatCount[k]);
-			TextOut2 (hDC, pWnd->nCx - 16 - 6 * (int)strlen (szTmp), nY, szTmp, clMat);
-			nY += 12;
+			TextOut2 (hDC, pWnd->nCx - 16 - 8 * (int)strlen (szTmp), nY, szTmp, clMat);
+			nY += ITEMINFO_LINE;
 		}
 		TextOut2 (hDC, 16, nY, "手数料：", RGB (200, 200, 200));
 		wsprintf (szTmp, "%dG", (int)pRecipe->dwGold);
-		TextOut2 (hDC, 16 + 12 * 4, nY, szTmp, (pCharMy->dwGold >= pRecipe->dwGold) ? RGB (150, 255, 200) : RGB (255, 130, 130));
+		TextOut2 (hDC, 16 + ITEMINFO_LINE * 4, nY, szTmp, (pCharMy->dwGold >= pRecipe->dwGold) ? RGB (150, 255, 200) : RGB (255, 130, 130));
 		wsprintf (szTmp, "所持 %dG", (int)pCharMy->dwGold);
-		TextOut2 (hDC, pWnd->nCx - 16 - 6 * (int)strlen (szTmp), nY, szTmp, RGB (200, 200, 200));
+		TextOut2 (hDC, pWnd->nCx - 16 - 8 * (int)strlen (szTmp), nY, szTmp, RGB (200, 200, 200));
 	}
 
 	SelectObject (hDC, hFontOld);
@@ -4255,18 +4255,18 @@ void DrawWindowSTATUSMAGIC(PWNDINFO pWnd)
 		nNo ++;
 	}
 
-	/* カーソルのある特技の説明（12ドットの字） */
+	/* カーソルのある特技の説明（16ドットの字） */
 	if (pSelect) {
 		char szExplain[MAX_MAGICEXPLAIN + 64];
 		char aszExplain[STATUSMAGIC_EXPLAIN_LINE][128];
 		int nLine;
 
-		SelectObject (hDC, g_hFont12);
+		SelectObject (hDC, g_hFontBasic);
 		GetMagicExplain (pSelect, szExplain, sizeof (szExplain));
-		/* 12ドットの字は半角6ドット。左右の枠と「。」のぶら下げ分を引いた幅で折り返す */
-		nLine = SplitMagicExplain (szExplain, (pWnd->nCx - 32 - 12) / 6, aszExplain, STATUSMAGIC_EXPLAIN_LINE);
+		/* 16ドットの字は半角8ドット。左右の枠と「。」のぶら下げ分を引いた幅で折り返す */
+		nLine = SplitMagicExplain (szExplain, (pWnd->nCx - 32 - 16) / 8, aszExplain, STATUSMAGIC_EXPLAIN_LINE);
 		for (i = 0; i < nLine; i ++) {
-			TextOut2 (hDC, 16, nListCy + 16 + 12 * i, aszExplain[i], RGB (255, 255, 255));
+			TextOut2 (hDC, 16, nListCy + 16 + 16 * i, aszExplain[i], RGB (255, 255, 255));
 		}
 	}
 
