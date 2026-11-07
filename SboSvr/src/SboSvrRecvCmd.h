@@ -23,6 +23,7 @@ extern int		GetSubGameID				(PSUBGAMEINFO);									/* サブゲームIDを取�
 extern int		SearchEvent					(DWORD, DWORD, DWORD);							/* 座標を元にイベント番号検索 */
 extern void		AddCharItem					(DWORD, DWORD);									/* アイテム追加 */
 extern void		DelCharItem					(DWORD, BYTE);									/* アイテム捨てる */
+extern BOOL		AddLeaveItem				(PCHARINFO, WORD);								/* 預かり所にアイテムを1個入れる */
 extern BOOL		CheckCharItem				(DWORD, DWORD, BYTE);							/* アイテム持ってるかチェック */
 extern void		AddTblNoPC					(int);											/* PC番号テーブルに追加 */
 extern void		DeleteTblNoPC				(int);											/* PC番号テーブルから削除 */

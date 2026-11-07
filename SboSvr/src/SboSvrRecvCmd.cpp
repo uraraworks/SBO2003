@@ -51,6 +51,7 @@ int		GetSubGameID				(PSUBGAMEINFO);									/* サブゲームIDを取得 */
 int		SearchEvent					(DWORD, DWORD, DWORD);							/* 座標を元にイベント番号検索 */
 void	AddCharItem					(DWORD, DWORD);									/* アイテム追加 */
 void	DelCharItem					(DWORD, BYTE);									/* アイテム捨てる */
+BOOL	AddLeaveItem				(PCHARINFO, WORD);								/* 預かり所にアイテムを1個入れる */
 BOOL	CheckCharItem				(DWORD, DWORD, BYTE);							/* アイテム持ってるかチェック */
 void	RenewDataPos				(DWORD, int, int);								/* 各データ位置更新 */
 void	AddTblNoPC					(int);											/* PC番号テーブルに追加 */
@@ -6186,7 +6187,6 @@ void RecvDataProcLEAVEITEM(PBYTE pData, DWORD dwDataSize)
 {
 	PCMDPARA_DATA1 pPara = (PCMDPARA_DATA1)pData;
 	PCHARINFO pChar;
-	PLEAVEINFO pInfo = NULL;
 
 	if (!IsRecvChar (pPara->dwTblID)) {
 		return;
@@ -6196,33 +6196,53 @@ void RecvDataProcLEAVEITEM(PBYTE pData, DWORD dwDataSize)
 	if ((pPara->byData >= MAX_MYITEM) || (pChar->waItem[pPara->byData] == 0)) {
 		return;
 	}
-	if (g_aLeaveInfo.GetSize () == 0) {
-		return;
-	} else if (g_aLeaveInfo.GetSize () == 1) {
-	} else if (pChar->dwLeaveID >= (DWORD)g_aLeaveInfo.GetSize ()) {
-	} else {
-		if (pChar->dwLeaveID) {
-			pInfo = g_aLeaveInfo[pChar->dwLeaveID];
-			/* もう預けられない？ */
-			if (pInfo->byCount >= MAX_LEAVEITEM) {
-				return;
-			}
+
+	int i;
+	/* 装備中？ */
+	for (i = 0; i < 10; i ++) {
+		if (pChar->waEqu[i] == pPara->byData) {
+			return;
 		}
 	}
 
+	/* 預かり所に入れる（いっぱいなら何もしない） */
+	if (!AddLeaveItem (pChar, pChar->waItem[pPara->byData])) {
+		return;
+	}
+	DelCharItem (pPara->dwTblID, pPara->byData);
+	SendCmdCHARITEM (pPara->pID, pPara->dwTblID);
+}
+
+/* ========================================================================= */
+/* 関数名：AddLeaveItem														 */
+/* 内容：預かり所にアイテムを1個入れる（口座が無ければ作る）				 */
+/* 戻り値：入れられたら TRUE、預かり所がいっぱい等で入れられなければ FALSE	 */
+/* 日付：2026/11/07															 */
+/* ========================================================================= */
+BOOL AddLeaveItem(PCHARINFO pChar, WORD wItemID)
+{
+	PLEAVEINFO pInfo = NULL;
 	int i;
+
+	if ((pChar == NULL) || (wItemID == 0)) {
+		return FALSE;
+	}
+	if (g_aLeaveInfo.GetSize () == 0) {
+		return FALSE;
+	}
+	if ((pChar->dwLeaveID != 0) && (pChar->dwLeaveID < (DWORD)g_aLeaveInfo.GetSize ())) {
+		pInfo = g_aLeaveInfo[pChar->dwLeaveID];
+	}
+
 	/* 口座（？）が無い？ */
 	if (pInfo == NULL) {
-		i = -1;
-		if (g_aLeaveInfo.GetSize () >= 2) {
-			for (i = 1; i < g_aLeaveInfo.GetSize (); i ++) {
-				PLEAVEINFO pInfoTmp = g_aLeaveInfo[i];
-				if (pInfoTmp->byUse == 0) {
-					break;
-				}
+		for (i = 1; i < g_aLeaveInfo.GetSize (); i ++) {
+			PLEAVEINFO pInfoTmp = g_aLeaveInfo[i];
+			if (pInfoTmp->byUse == 0) {
+				break;
 			}
 		}
-		if (i >= 1 && i < g_aLeaveInfo.GetSize ()) {
+		if (i < g_aLeaveInfo.GetSize ()) {
 			pInfo = g_aLeaveInfo[i];
 		} else {
 			i = g_aLeaveInfo.GetSize ();
@@ -6234,29 +6254,21 @@ void RecvDataProcLEAVEITEM(PBYTE pData, DWORD dwDataSize)
 		pChar->dwLeaveID = i;
 	}
 
-	/* 装備中？ */
-	for (i = 0; i < 10; i ++) {
-		if (pChar->waEqu[i] == pPara->byData) {
-			return;
-		}
-	}
-
+	/* 同じアイテムがあれば重ねる */
 	for (i = 0; i < pInfo->byCount; i ++) {
-		if (pInfo->waItem[i] == pChar->waItem[pPara->byData]) {
-			if (pInfo->byItemCount[i] < 255) {
-				pInfo->byItemCount[i] ++;
-				break;
-			}
+		if ((pInfo->waItem[i] == wItemID) && (pInfo->byItemCount[i] < 255)) {
+			pInfo->byItemCount[i] ++;
+			return TRUE;
 		}
 	}
-	/* 重ならなかった？ */
-	if (i == pInfo->byCount) {
-		pInfo->waItem[pInfo->byCount] = pChar->waItem[pPara->byData];
-		pInfo->byItemCount[pInfo->byCount] ++;
-		pInfo->byCount ++;
+	/* 重ならなかった：空き枠に入れる */
+	if (pInfo->byCount >= MAX_LEAVEITEM) {
+		return FALSE;
 	}
-	DelCharItem (pPara->dwTblID, pPara->byData);
-	SendCmdCHARITEM (pPara->pID, pPara->dwTblID);
+	pInfo->waItem[pInfo->byCount] = wItemID;
+	pInfo->byItemCount[pInfo->byCount] = 1;
+	pInfo->byCount ++;
+	return TRUE;
 }
 
 /* ========================================================================= */
