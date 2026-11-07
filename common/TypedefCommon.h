@@ -58,6 +58,11 @@
 #define MAX_PARTYMEMBER		6										/* 最大パーティ数 */
 #define MAX_USEMAGIC		16										/* 覚えられる魔法数 */
 #define MAX_NPCROUTE		16										/* NPCの巡回ルートの道しるべの最大数 */
+#define MAX_MAKER			100										/* 最大作り手数（NPCの台詞 "@cNN" の NN が 2 桁なので 100 まで） */
+#define MAX_RECIPE			500										/* 最大レシピ数 */
+#define MAX_RECIPEMAT		4										/* レシピの材料の種類 */
+#define MAX_MAKERNAME		64										/* 作り手の名前の欄のバイト数（終端含む） */
+#define MAX_MAKERMSG		256										/* 作り手の台詞の欄のバイト数（終端含む） */
 #define MAX_JOBMAGIC		32										/* 職業別に呪文を覚えておける職業数（職業IDがこれ未満の職業が対象） */
 #define MAX_SUBGAME_WARMEMBER	4									/* 戦場ゲーム最大参加人数 */
 
@@ -262,7 +267,10 @@ enum {
 /* 以下、プレイヤー用（番号をずらさないよう最後に足す。管理者用の判定から外すこと） */
 	CMD_REQ_GUARD,													/* 構え(防御)の開始・終了 */
 	CMD_HASTE,														/* 加速の状態通知(サーバー→本人) */
-/* 以下、管理者用（CMD_MAPPARTSADD 以上は自動で管理者専用になる。CMD_HASTE より後ろに足す） */
+	CMD_MAKERINFO,													/* 作り手情報(サーバー→クライアント) */
+	CMD_RECIPEINFO,													/* レシピ情報(サーバー→クライアント) */
+	CMD_RECIPEMAKE,													/* レシピで作ってもらう(クライアント→サーバー。結果はサーバー→クライアント) */
+/* 以下、管理者用（CMD_MAPPARTSADD 以上は自動で管理者専用になる。CMD_RECIPEMAKE より後ろに足す） */
 	CMD_NPCROUTE,													/* NPCの巡回ルート */
 	CMD_MAX
 };
@@ -2385,6 +2393,87 @@ typedef struct _CMDPARA_ADMINUNDO {
 	DWORD		dwStepID;											/* 戻す変更の番号（INFO で知らせ、EXEC で指定） */
 	char		szMsg[MAX_ADMINUNDOMSG];							/* 案内文（サーバー→クライアント） */
 } CMDPARA_ADMINUNDO, *PCMDPARA_ADMINUNDO;
+#pragma pack(pop)
+
+/* ========================================================================= */
+/* レシピ（町の作り手NPC（料理人など）に材料を渡して、アイテムを作ってもらう）	 */
+/*   NPC の台詞 "@cNN"（NN=作り手の番号 00〜99）で作り手の画面が開く。		 */
+/*   作り手の表とレシピの表はサーバーが持ち、SBODATA に保存する。			 */
+/*   材料は持ち物（装備中・捨てられない物を除く）を先に、足りない分を			 */
+/*   預かり所から使う。できた物は持ち物へ、いっぱいなら預かり所へ送る。		 */
+/* ========================================================================= */
+
+/* 作り手・レシピの状態 */
+enum {
+	RECIPESTATE_NONE = 0,										/* 削除済み（空き枠。新しく作る時に使い回す） */
+	RECIPESTATE_ON,												/* 有効 */
+	RECIPESTATE_OFF,											/* 停止中（一覧に出ない） */
+};
+
+/* 作り手情報 */
+typedef struct _MAKERINFO {
+	BYTE		byState;											/* 状態(RECIPESTATE_*) */
+	char		szName[MAX_MAKERNAME];								/* 名前（例：料理人） */
+	char		szMsgTalk[MAX_MAKERMSG];							/* 話しかけた時の台詞 */
+	char		szMsgDone[MAX_MAKERMSG];							/* 作った時の台詞 */
+	char		szMsgLack[MAX_MAKERMSG];							/* 材料が足りない時の台詞 */
+} MAKERINFO, *PMAKERINFO;
+
+/* レシピ情報 */
+typedef struct _RECIPEINFO {
+	BYTE		byState;											/* 状態(RECIPESTATE_*) */
+	BYTE		byMaker;											/* 作り手の番号（MAKERINFO の番号） */
+	WORD		wSort;												/* 並び順（小さい順。同じなら番号順） */
+	WORD		wItem;												/* できるアイテムID */
+	BYTE		byCount;											/* できる個数（1〜） */
+	BYTE		byReserved;											/* 予備 */
+	WORD		awMatItem[MAX_RECIPEMAT];							/* 材料のアイテムID（0なら使わない欄） */
+	BYTE		abyMatCount[MAX_RECIPEMAT];							/* 材料の個数 */
+	DWORD		dwGold;												/* 手数料（ゴールド） */
+} RECIPEINFO, *PRECIPEINFO;
+
+/* 作り手の台詞を選ぶ番号 */
+enum {
+	MAKERMSG_TALK = 0,											/* 話しかけた時 */
+	MAKERMSG_DONE,												/* 作った時 */
+	MAKERMSG_LACK,												/* 材料が足りない時 */
+};
+
+/* 作ってもらった結果(CMDPARA_RECIPEMAKE の byResult) */
+enum {
+	RECIPERESULT_OK = 0,										/* 作れた */
+	RECIPERESULT_LACKMAT,										/* 材料が足りない */
+	RECIPERESULT_LACKGOLD,										/* 手数料が足りない */
+	RECIPERESULT_NOROOM,										/* 持ち物も預かり所もいっぱいで渡せない */
+	RECIPERESULT_INVALID,										/* 作れない（無いレシピ・作り手が近くにいない など） */
+};
+
+#pragma pack(push, 1)
+/* 作り手情報通知（サーバー→クライアント。ログイン時と変更時） */
+typedef struct _CMDPARA_MAKERINFO {
+	BYTE		byCmd;												/* コマンドID */
+	WORD		wID;												/* 作り手の番号 */
+	WORD		wCount;												/* 作り手の総数（空き枠を含む） */
+	MAKERINFO	Info;												/* 作り手情報 */
+} CMDPARA_MAKERINFO, *PCMDPARA_MAKERINFO;
+
+/* レシピ情報通知（サーバー→クライアント。ログイン時と変更時） */
+typedef struct _CMDPARA_RECIPEINFO {
+	BYTE		byCmd;												/* コマンドID */
+	WORD		wID;												/* レシピの番号 */
+	WORD		wCount;												/* レシピの総数（空き枠を含む） */
+	RECIPEINFO	Info;												/* レシピ情報 */
+} CMDPARA_RECIPEINFO, *PCMDPARA_RECIPEINFO;
+
+/* 作ってもらう要求（クライアント→サーバー）と結果（サーバー→クライアント） */
+typedef struct _CMDPARA_RECIPEMAKE {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byResult;											/* 結果(RECIPERESULT_*。要求の時は使わない) */
+	BYTE		byMaker;											/* 作り手の番号 */
+	WORD		wRecipeID;											/* レシピの番号 */
+	DWORD		pID;												/* プレイヤーID */
+	DWORD		dwTblID;											/* テーブルID */
+} CMDPARA_RECIPEMAKE, *PCMDPARA_RECIPEMAKE;
 #pragma pack(pop)
 
 /* NPCの巡回ルート(CMD_NPCROUTE)のサブコマンド */

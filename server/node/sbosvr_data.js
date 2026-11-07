@@ -73,7 +73,10 @@ Module['sboData'] = (function () {
 		equUser: 'SboDataEquUserInfo.dat',
 		job: 'SboDataJobInfo.dat',
 		stTmp: 'SboDataStTmpInfo.dat',
-		item: 'SboDataItemInfo.dat'
+		item: 'SboDataItemInfo.dat',
+		/* 作り手とレシピ（ファイルが無い時は 0 件。初めて保存した時に作られる） */
+		maker: 'SboDataMakerInfo.dat',
+		recipe: 'SboDataRecipeInfo.dat'
 	};
 	/* 読むだけの種類（セーブデータの残り。アカウント名・パスワード・IP などは C 側で出さない） */
 	var READONLY_KINDS = ['char', 'map', 'mapParts', 'efc', 'comEfc', 'leave', 'subGame'];
@@ -296,7 +299,8 @@ Module['sboData'] = (function () {
 		var dir = path.join(dataDir(), 'AiBackup', day);
 		var dst = path.join(dir, name);
 		try {
-			if (fs.existsSync(dst)) {
+			/* 元のファイルがまだ無い時（作り手・レシピの初めての保存）は控えが要らない */
+			if (fs.existsSync(dst) || !fs.existsSync(path.join(dataDir(), name))) {
 				return;
 			}
 			fs.mkdirSync(dir, { recursive: true });
@@ -1045,9 +1049,47 @@ Module['sboData'] = (function () {
 		/* マップ資料の書き出し（管理ページの「マップ資料」）。読むだけ */
 		'/api/admin/data/list': function (body) { adminWho(body); return opList(body); },
 		'/api/admin/data/tiles': function (body) { adminWho(body); return opTiles(body); },
+		/* 作り手・レシピの保存（管理ページの「レシピ」）。読む方は /api/admin/data/list */
+		'/api/admin/recipe/save': apiAdminRecipeSave,
 		/* NPC の巡回ルートを決める（管理ページの「NPCの巡回」） */
 		'/api/admin/npcroute/set': apiAdminNpcRouteSet
 	};
+
+	/*
+	 * 作り手（maker）・レシピ（recipe）の保存（管理ページの「レシピ」タブ）。
+	 * {session, kind, id?, changes}。id を省くか件数と同じにすると追加、それ以外は変更。
+	 * 削除は changes に {byState: 0} を入れる（空き枠になる）。
+	 * 管理ページでは下見の画面が別にあるので 2 段階にせず、AI 用の変更履歴（元に戻せる）に残して即反映する。
+	 */
+	function apiAdminRecipeSave(body) {
+		var who = adminWho(body);
+		var kind = body.kind;
+		if (kind !== 'maker' && kind !== 'recipe') {
+			fail(400, 'kind', 'kind は maker か recipe を指定してください');
+		}
+		var total = count(kind);
+		var id = (body.id == null) ? total : checkId(body.id);
+		if (id > total) {
+			fail(400, 'id', kind + ' に ' + id + ' 番はありません（' + total + ' 件。追加は ' + total + ' 番）');
+		}
+		var changes = body.changes;
+		if (!changes || typeof changes !== 'object' || Array.isArray(changes)) {
+			fail(400, 'changes', 'changes は変える項目だけのオブジェクトで指定してください');
+		}
+		var added = (id === total);
+		var info = kindInfo(kind);
+		if (added && info && total >= info.maxCount) {
+			fail(400, 'too_many', kind + ' は ' + info.maxCount + ' 件までです。削除済みの枠（byState=0）があればそこを使い回してください');
+		}
+		var r = applyC(kind, id, changes, false);
+		if (!r.ok) {
+			fail(400, 'invalid', r.error);
+		}
+		var aDone = applyAll(kind, [{ id: id, changes: changes, added: added }], who);
+		var e = addHistory({ op: added ? 'add' : 'update', kind: kind, by: who.label, note: '', items: aDone });
+		log(who.label + ' が ' + kind + ' の ' + id + ' 番を' + (added ? '追加' : '変更') + '（履歴 ' + e.historyId + '）');
+		return { ok: true, id: id, added: added, historyId: e.historyId, record: aDone[0].after };
+	}
 
 	/* NPC の巡回ルート設定（管理ページの「NPCの巡回」）。C 側の SboWebNpcRouteSet に渡す */
 	function apiAdminNpcRouteSet(body) {

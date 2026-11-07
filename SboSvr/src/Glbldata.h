@@ -68,6 +68,8 @@ extern CmyArray<PPARTYINFO, PPARTYINFO> g_aPartyInfo;						/* パーティ情報
 extern CmyArray<PMAGICINFO, PMAGICINFO> g_aMagicInfo;						/* 魔法情報 */
 extern CmyArray<PMAGICUSERINFO, PMAGICUSERINFO> g_aMagicUserInfo;			/* 魔法利用者情報 */
 extern CmyArray<PEQUUSERINFO, PEQUUSERINFO> g_aEquUserInfo;					/* 装備職業情報 */
+extern CmyArray<PMAKERINFO, PMAKERINFO> g_aMakerInfo;							/* 作り手情報 */
+extern CmyArray<PRECIPEINFO, PRECIPEINFO> g_aRecipeInfo;						/* レシピ情報 */
 
 /* 向き別縦横増減テーブル */
 extern  int anPosAddTblX[],

@@ -16,10 +16,11 @@
 #define SYSMSG_SY	(DRAW_PARTS_Y * 2 * 32)						/* システムメッセージ表示開始位置(縦) */
 #define SYSMSG_EY	(DRAW_PARTS_Y * 2 * 32 - 140)				/* システムメッセージ表示終了位置(縦) */
 #define MAX_NUMMSGS		(10)
-#define ITEMINFO_CX					(16 * 10)					/* アイテム情報ウィンドウの幅 */
-#define ITEMINFO_CY					(16 * 2 + 12 * 4)			/* アイテム情報ウィンドウの高さ */
-#define ITEMINFO_MAGIC_CX			(16 * 18)					/* アイテム情報ウィンドウの幅（特技の書の時） */
-#define ITEMINFO_EXPLAIN_MAXLINE	(8)							/* アイテム情報ウィンドウに出す特技説明の最大行数 */
+#define ITEMINFO_LINE				(16)						/* アイテム情報ウィンドウの行送り（字は一覧と同じ16ドット。スマホで縮小されても読めるように） */
+#define ITEMINFO_CX					(16 * 14)					/* アイテム情報ウィンドウの幅（全角12字の名前が入る） */
+#define ITEMINFO_CY					(16 * 2 + ITEMINFO_LINE * 4)	/* アイテム情報ウィンドウの高さ */
+#define ITEMINFO_MAGIC_CX			(16 * 22)					/* アイテム情報ウィンドウの幅（特技の書の時） */
+#define ITEMINFO_EXPLAIN_MAXLINE	(10)							/* アイテム情報ウィンドウに出す特技説明の最大行数 */
 #define ITEMINFOPOS_LIST			(1)							/* アイテム情報ウィンドウ(nType2)：一覧ウィンドウの横に置く */
 
 #define IDC_CONNECT		100										/* 接続ボタン */
@@ -141,11 +142,22 @@ enum {
 	WNDTYPE_ITEMINFO,											/* アイテム情報 */
 	WNDTYPE_DEAD_COMMAND,										/* 死亡中：コマンド */
 	WNDTYPE_STATUSMAGIC,										/* 強さ：覚えている特技 */
+	WNDTYPE_MAKER,												/* 作り手（レシピ）：作れる物の一覧・確認 */
 };
 
+/* 作り手ウィンドウ(WNDTYPE_MAKER)の nType2 */
+enum {
+	MAKERWND_LIST = 0,											/* 作れる物の一覧 */
+	MAKERWND_CONF,												/* 「作ってもらいますか？」のはい/いいえ */
+};
+#define MAKER_LISTCX				(16 * 12)									/* 作れる物の一覧の幅 */
+#define MAKER_LISTROWS				(10)										/* 一覧に一度に出す行数 */
+#define MAKERINFO_CX				(16 * 18)									/* 作り手の画面のアイテム情報ウィンドウの最小の幅（材料の行が入る広さ） */
+#define MAKER_WAITMAX				(5000)										/* 作成要求の返事を待つ最長時間(ms) */
+
 /* 強さ：覚えている特技ウィンドウ(WNDTYPE_STATUSMAGIC)の大きさ */
-#define STATUSMAGIC_EXPLAIN_LINE	(4)											/* 説明欄の行数（12ドットの字） */
-#define STATUSMAGIC_EXPLAIN_CY		(16 * 2 + 12 * STATUSMAGIC_EXPLAIN_LINE)	/* 説明欄の高さ */
+#define STATUSMAGIC_EXPLAIN_LINE	(4)											/* 説明欄の行数（16ドットの字） */
+#define STATUSMAGIC_EXPLAIN_CY		(16 * 2 + 16 * STATUSMAGIC_EXPLAIN_LINE)	/* 説明欄の高さ */
 #define STATUSMAGIC_LIST_CY(n)		(16 * (2 + max (1, (n))))					/* 一覧の高さ（特技が無くても1行分） */
 
 /* はい/いいえ種別 */
@@ -198,6 +210,7 @@ typedef struct _WNDINFO {
 	DWORD			dwTime;										/* 最後に処理した時間 */
 	DWORD			dwTimeDrawStart;							/* 最初に描画した時間 */
 	DWORD			dwTimeKey;									/* 最後にキー処理した時間 */
+	DWORD			dwData;										/* 汎用データ（作り手の画面の再描画判定に使う） */
 } WNDINFO, *PWNDINFO;
 
 /* システムメッセージ情報 */

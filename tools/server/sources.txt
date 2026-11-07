@@ -30,6 +30,7 @@ SboSvr/src/SaveLoad/SboSvrSaveLoadItemInfo.cpp
 SboSvr/src/SaveLoad/SboSvrSaveLoadJobInfo.cpp
 SboSvr/src/SaveLoad/SboSvrSaveLoadMagicInfo.cpp
 SboSvr/src/SaveLoad/SboSvrSaveLoadMagicUserInfo.cpp
+SboSvr/src/SaveLoad/SboSvrSaveLoadRecipeInfo.cpp
 SboSvr/src/SaveLoad/SboSvrSaveLoadStTmpInfo.cpp
 SboSvr/src/SaveLoad/SboSvrSaveLoadSubGameInfo.cpp
 SboSvr/src/SaveLoad/SimpleDB.cpp
