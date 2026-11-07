@@ -506,9 +506,9 @@ BOOL DamageAfterProcNPC(PCHARINFO pChar, PCHARINFO pCharTarget)
 				if (byGetItem == 1) {
 					SendCmdSYSMSG2 (pCharTmp->pID, SYSMSG_GETITEM2, 0, 0);
 				} else if (byGetItem == 3) {
-					/* 預かり所へ送った */
+					/* 預かり所へ送った（預かり所と契約した冒険者には使い魔が付いていて運んでくれる、という設定） */
 					char szTmp[256];
-					snprintf (szTmp, sizeof (szTmp), "しかし持てないので%sの預かり所に送りました", pChar->szName);
+					snprintf (szTmp, sizeof (szTmp), "持ちきれないので、預かり所の使い魔が%sの預かり所へ運んでいきました", pChar->szName);
 					SendCmdSYSMSG (pCharTmp->pID, szTmp, SPEECHCMD_BATTLE1);
 				} else {
 					SendCmdSYSMSG2 (pCharTmp->pID, SYSMSG_GETITEM3, pChar->pID, nGetItemNo);
