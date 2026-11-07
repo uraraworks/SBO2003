@@ -6027,14 +6027,9 @@ void RecvDataProcTARGETCHAR(PBYTE pData, DWORD dwDataSize)
 			}
 			pChar->dwLastBattle	 = timeGetTime ();
 			pChar->dwTargetTblID = pPara->dwData;
-
-			/* まだ誰もターゲットしてない？ */
-			if (pCharTmp->dwLastBattle == 0) {
-				pCharTmp->dwLastBattle = timeGetTime ();
-				pCharTmp->dwTargetTblID = pChar->dwTblID;
-				pCharTmp->byDirection = abyDirectionTbl[pChar->byDirection];
-				pCharTmp->byFlg |= CHARINFOFLG_DIRECTION;
-			}
+			/* 狙いを付けただけでは敵は起こさない（気づかれるのは攻撃が当たった時）。
+			   目の前に来ただけで自動でゲージを溜めて狙うようになったので、
+			   ここで起こすとノンアクティブの敵が近くを通るだけで襲ってきてしまう */
 		}
 
 	/* ターゲット解除 */
