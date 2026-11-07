@@ -915,6 +915,18 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 			g_dwActiveMsgID = pWnd->dwID;
 		}
 
+	/* Cキー：戦闘モード中は、殴らずに戦闘コマンドを「特技」にカーソルを合わせて開く
+	   (目の前に敵がいるとゲージが溜まっていて X は攻撃になるので、特技・道具はこちらから) */
+	} else if ((byEvent == KEY_UP) && (byCode == 'C') && (bCommand == TRUE)) {
+		if ((pChar->abySubStatus[0] == 0) && (pChar->dwTimeTurnMagicLV == 0) &&
+			(g_pMapInfo->byFlg & MAPFLG_BATTLE) && g_bBattleMode) {
+			PWNDINFO pWnd = MakeWindowBATTLE_COMMAND ();
+			pWnd->nData1 = 1;
+			DXAudio.PlaySecoundary (&aSoundTbl[SOUND_CURSOR08]);
+			g_WndInfo.Add (pWnd);
+			g_dwActiveMsgID = pWnd->dwID;
+		}
+
 	} else if ((byEvent == KEY_UP) && (byCode == 'Y') && (bCommand == TRUE)) {
 		PWNDINFO pWnd = NULL;
 		/* 爆弾ゲームに参加中？ */

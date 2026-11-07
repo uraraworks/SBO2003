@@ -510,6 +510,8 @@
 		flex: none;
 	}
 	.sbo-b-s { grid-area: s; }
+	/* 「特技」は戦闘モード中だけ、そのとき隠れる「調べる」の場所に出す */
+	.sbo-b-c { grid-area: s; }
 	.sbo-b-tab { grid-area: tab; }
 	.sbo-b-ctrl { grid-area: ctrl; }
 	.sbo-b-z { grid-area: z; }
@@ -1271,6 +1273,7 @@
 		<!-- ボタンは全部「線画アイコン＋文字＋キー名」にそろえる。決定は右下に大きく -->
 		<div class="sbo-buttons">
 			<button type="button" class="sbo-b-s" data-vk="83" data-pad-need="1" data-pad-hide-battle="1"><svg class="sbo-btn-svg" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="M14.5 14.5L20 20"/></svg><span id="sbo-pad-s-label">調べる</span><span class="sbo-btn-key">S</span></button>
+			<button type="button" class="sbo-b-c sbo-pad-battle-off" data-vk="67" data-pad-show-battle="1"><svg class="sbo-btn-svg" viewBox="0 0 24 24"><path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6-4.5-4.1 6-.7z"/></svg><span>特技</span><span class="sbo-btn-key">C</span></button>
 			<button type="button" class="sbo-b-tab" data-vk="9" data-pad-need="2" data-pad-hide-battle="1"><svg class="sbo-btn-svg" viewBox="0 0 24 24"><path d="M5 6h14M5 12h14M5 18h14"/></svg><span>表示</span><span class="sbo-btn-key">Tab</span></button>
 			<button type="button" class="sbo-b-ctrl" data-vk="17" data-pad-need="4"><svg class="sbo-btn-svg" viewBox="0 0 24 24"><path d="M18 3h3v3L9 18l-3-3zM5 14l5 5M4 20l2-2"/></svg><span>戦闘</span><span class="sbo-btn-key">Ctrl</span></button>
 			<button type="button" class="sbo-b-z" data-vk="90"><svg class="sbo-btn-svg" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg><span class="sbo-btn-label" id="sbo-pad-z-label">キャンセル</span><span class="sbo-btn-key">Z</span></button>
@@ -2785,10 +2788,12 @@
 	   8 は目の前に話せる相手がいる時で、S（調べる）ボタンの名前を「話す」にする。
 	   32 は目の前に得点板（雪合戦場の HP パネル）がある時で、Z（キャンセル）ボタンの名前を「名前」にする。
 	   16 は戦闘モード中で、決定を「攻撃」、キャンセルを「構え」（長押しで構える）と出し、
-	   チャット・表示・調べるは戦闘に集中できるよう隠す（戦闘モードを解除すれば出る） */
+	   チャット・表示・調べるは戦闘に集中できるよう隠す（戦闘モードを解除すれば出る）。
+	   代わりに「特技」（C キー：殴らずに戦闘コマンドを特技に合わせて開く）を出す */
 	(function () {
 		var needButtons = document.querySelectorAll('#sbo-pad button[data-pad-need]');
 		var hideButtons = document.querySelectorAll('#sbo-pad button[data-pad-hide-battle], #sbo-chat-open');
+		var showButtons = document.querySelectorAll('#sbo-pad button[data-pad-show-battle]');
 		var sLabel = document.getElementById('sbo-pad-s-label');
 		var xLabel = document.getElementById('sbo-pad-x-label');
 		var zLabel = document.getElementById('sbo-pad-z-label');
@@ -2812,6 +2817,9 @@
 			}
 			for (var j = 0; j < hideButtons.length; j ++) {
 				hideButtons[j].classList.toggle('sbo-pad-battle-off', battle);
+			}
+			for (var k = 0; k < showButtons.length; k ++) {
+				showButtons[k].classList.toggle('sbo-pad-battle-off', !battle);
 			}
 			if (sLabel) {
 				sLabel.textContent = (state & 8) ? '話す' : '調べる';
