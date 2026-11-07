@@ -870,11 +870,10 @@ static LPCSTR GetBlockReason(int x, int y)
 		  (byHitType == PARTSHIT_MOVEDOWN) ||
 		  (byHitType == PARTSHIT_MOVERIGHT) ||
 		  (byHitType == PARTSHIT_MOVELEFT) ||
-		  (byHitType == PARTSHIT_HIDE1))) {
-		/* 足跡の出る雪・砂は、見た目は平地でもNPCは歩けない */
-		if (byHitType == PARTSHIT_FOOTMARK_SNOW || byHitType == PARTSHIT_FOOTMARK_SAND) {
-			return "雪や砂の床（NPC は歩けません）";
-		}
+		  (byHitType == PARTSHIT_HIDE1) ||
+		  (byHitType == PARTSHIT_FOOTMARK_SNOW) ||
+		  (byHitType == PARTSHIT_FOOTMARK_SAND) ||
+		  (byHitType == PARTSHIT_WATERRIPPLE))) {
 		return "壁などで通れない";
 	}
 	if (g_pMapInfo->pbyFlg && (g_pMapInfo->pbyFlg[x + y * g_pMapInfo->nCX] & MAPFLG_EVENT)) {

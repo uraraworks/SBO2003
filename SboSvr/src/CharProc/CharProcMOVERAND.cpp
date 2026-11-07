@@ -244,7 +244,7 @@ BOOL CCharProcMOVERAND::IsMovePos(int x, int y)
 		return FALSE;
 	}
 
-	/* 障害物チェック（従来と同じく、平地・移動パーツ・隠れる1だけ歩ける） */
+	/* 障害物チェック（平地・移動パーツ・隠れる1・足跡(雪/砂)・水の波紋だけ歩ける。足跡と波紋は以前は抜けていた） */
 	byHitType = (&g_aMapPartsInfo[pMap->pwMap[x + y * pMap->nCX]])->byHitType;
 	if (!((byHitType == PARTSHIT_NONE) ||
 		  (byHitType == PARTSHIT_MOVEFRONT) ||
@@ -252,7 +252,10 @@ BOOL CCharProcMOVERAND::IsMovePos(int x, int y)
 		  (byHitType == PARTSHIT_MOVEDOWN) ||
 		  (byHitType == PARTSHIT_MOVERIGHT) ||
 		  (byHitType == PARTSHIT_MOVELEFT) ||
-		  (byHitType == PARTSHIT_HIDE1))) {
+		  (byHitType == PARTSHIT_HIDE1) ||
+		  (byHitType == PARTSHIT_FOOTMARK_SNOW) ||
+		  (byHitType == PARTSHIT_FOOTMARK_SAND) ||
+		  (byHitType == PARTSHIT_WATERRIPPLE))) {
 		return FALSE;
 	}
 

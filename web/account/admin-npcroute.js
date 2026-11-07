@@ -20,8 +20,8 @@
 	var S = T * SC;
 	var MAX_POINTS = 16;
 	var HIDE_MAIN = { 3: true, 4: true, 8: true, 9: true, 18: true };	/* 屋根として外す当たり判定タイプ（admin-design.js と同じ） */
-	/* 歩ける当たり判定タイプ：PARTSHIT_NONE(0)・HIDE1(3)・MOVEFRONT/UP/DOWN/RIGHT/LEFT(12〜16)。IsMovePos と同じ */
-	var WALK_HIT = { 0: true, 3: true, 12: true, 13: true, 14: true, 15: true, 16: true };
+	/* 歩ける当たり判定タイプ：PARTSHIT_NONE(0)・HIDE1(3)・足跡 雪/砂(6,7)・MOVEFRONT/UP/DOWN/RIGHT/LEFT(12〜16)・水の波紋(17)。IsMovePos と同じ */
+	var WALK_HIT = { 0: true, 3: true, 6: true, 7: true, 12: true, 13: true, 14: true, 15: true, 16: true, 17: true };
 	var NPC_TYPE = { 1: '動かない', 2: 'ランダム移動' };
 
 	var api = null;					/* function (url, body) → Promise（session は呼ぶ側で付ける） */
@@ -177,8 +177,7 @@
 		var no = (cur.tiles[y] || [])[x] || 0;
 		var p = parts[no] || parts[0] || { byHitType: 0 };
 		if (!WALK_HIT[p.byHitType]) {
-			/* 6・7 は足跡の出る雪・砂。見た目は平地でも、NPC は歩けない */
-			return (p.byHitType === 6 || p.byHitType === 7) ? '雪や砂の床（NPC は歩けません）' : '壁などで通れない';
+			return '壁などで通れない';
 		}
 		if (isEventCell(x, y)) return '扉・ワープなどのイベント';
 		return '';
