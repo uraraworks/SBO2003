@@ -79,6 +79,9 @@ void	RecvDataProcLOGINRES				(PBYTE, DWORD);			/* 受信データ処理(ログ�
 void	RecvDataProcWEBACCOUNT				(PBYTE, DWORD);			/* 受信データ処理(ブラウザ版のアカウント関係) */
 void	RecvDataProcADMINUNDO				(PBYTE, DWORD);			/* 受信データ処理(管理者画面の「元に戻す」) */
 void	RecvDataProcHASTE					(PBYTE, DWORD);			/* 受信データ処理(加速の状態) */
+void	RecvDataProcMAKERINFO				(PBYTE, DWORD);			/* 受信データ処理(作り手情報) */
+void	RecvDataProcRECIPEINFO				(PBYTE, DWORD);			/* 受信データ処理(レシピ情報) */
+void	RecvDataProcRECIPEMAKE				(PBYTE, DWORD);			/* 受信データ処理(作ってもらった結果) */
 void	RecvDataProcNPCROUTE				(PBYTE, DWORD);			/* 受信データ処理(NPCの巡回ルート) */
 /* ブラウザ版のアカウント関係（web/replace/SboCliWebAccount_web.cpp） */
 void	WebAccSaveToken						(LPCSTR);				/* 端末トークンをページへ渡す */
@@ -312,6 +315,9 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcADMINUNDO,				/* CMD_ADMINUNDO */
 	NULL,								/* CMD_REQ_GUARD */
 	RecvDataProcHASTE,					/* CMD_HASTE */
+	RecvDataProcMAKERINFO,				/* CMD_MAKERINFO */
+	RecvDataProcRECIPEINFO,				/* CMD_RECIPEINFO */
+	RecvDataProcRECIPEMAKE,				/* CMD_RECIPEMAKE */
 	RecvDataProcNPCROUTE,				/* CMD_NPCROUTE */
 	NULL
 };
@@ -2054,6 +2060,111 @@ void RecvDataProcHASTE(PBYTE pData, DWORD dwDataSize)
 	if (pPara->dwData == 0) {
 		g_byHasteRate = 0;
 	}
+}
+
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcMAKERINFO											 */
+/* 内容：受信データ処理(作り手情報。ログイン時と管理画面での変更時)			 */
+/* ========================================================================= */
+void RecvDataProcMAKERINFO(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_MAKERINFO pPara = (PCMDPARA_MAKERINFO)pData;
+
+	if (dwDataSize < sizeof (CMDPARA_MAKERINFO)) {
+		return;
+	}
+	if ((pPara->wID >= MAX_MAKER) || (pPara->wCount > MAX_MAKER)) {
+		return;
+	}
+	g_aMakerInfo[pPara->wID] = pPara->Info;
+	/* 文字列は必ず終端させる */
+	g_aMakerInfo[pPara->wID].szName[MAX_MAKERNAME - 1] = 0;
+	g_aMakerInfo[pPara->wID].szMsgTalk[MAX_MAKERMSG - 1] = 0;
+	g_aMakerInfo[pPara->wID].szMsgDone[MAX_MAKERMSG - 1] = 0;
+	g_aMakerInfo[pPara->wID].szMsgLack[MAX_MAKERMSG - 1] = 0;
+	g_nMakerCount = pPara->wCount;
+	g_bDraw = TRUE;
+}
+
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcRECIPEINFO											 */
+/* 内容：受信データ処理(レシピ情報。ログイン時と管理画面での変更時)			 */
+/* ========================================================================= */
+void RecvDataProcRECIPEINFO(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_RECIPEINFO pPara = (PCMDPARA_RECIPEINFO)pData;
+
+	if (dwDataSize < sizeof (CMDPARA_RECIPEINFO)) {
+		return;
+	}
+	if ((pPara->wID >= MAX_RECIPE) || (pPara->wCount > MAX_RECIPE)) {
+		return;
+	}
+	g_aRecipeInfo[pPara->wID] = pPara->Info;
+	g_nRecipeCount = pPara->wCount;
+	/* 開いている画面は描画の時に内容の変化を見つけて作り直す */
+	g_bDraw = TRUE;
+}
+
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcRECIPEMAKE											 */
+/* 内容：受信データ処理(作ってもらった結果)									 */
+/*		 作り手の画面を開いていれば、結果に合わせた台詞を出す				 */
+/* ========================================================================= */
+void RecvDataProcRECIPEMAKE(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_RECIPEMAKE pPara = (PCMDPARA_RECIPEMAKE)pData;
+	PWNDINFO pWndList = NULL;
+	LPCSTR pszMsg;
+	int i;
+
+	if (dwDataSize < sizeof (CMDPARA_RECIPEMAKE)) {
+		return;
+	}
+	g_bProcMakerWait = FALSE;
+	if ((g_nProcMakerID < 0) || (g_nProcMakerID >= MAX_MAKER)) {
+		return;
+	}
+	for (i = 0; i < g_WndInfo.GetSize (); i ++) {
+		if ((g_WndInfo[i]->nType == WNDTYPE_MAKER) && (g_WndInfo[i]->nType2 == MAKERWND_LIST)) {
+			pWndList = g_WndInfo[i];
+			break;
+		}
+	}
+	if (pWndList == NULL) {
+		return;
+	}
+
+	switch (pPara->byResult) {
+	case RECIPERESULT_OK:
+		pszMsg = g_aMakerInfo[g_nProcMakerID].szMsgDone;
+		if (pszMsg[0] == 0) {
+			pszMsg = "できました。@2";
+		}
+		break;
+	case RECIPERESULT_LACKMAT:
+		pszMsg = g_aMakerInfo[g_nProcMakerID].szMsgLack;
+		if (pszMsg[0] == 0) {
+			pszMsg = "材料が足りないようです。@2";
+		}
+		break;
+	case RECIPERESULT_LACKGOLD:
+		pszMsg = "手数料が足りないようです。@2";
+		break;
+	case RECIPERESULT_NOROOM:
+		pszMsg = "持ち物も預かり所もいっぱいで、お渡しできません。@2";
+		break;
+	default:
+		pszMsg = "それは作れないようです。@2";
+		break;
+	}
+	MakerSetMsg (pWndList, pszMsg);
+	g_dwActiveMsgID = pWndList->dwID;
+	pWndList->dwTimeDrawStart = 0;
+	g_bDraw = TRUE;
 }
 
 
@@ -4603,6 +4714,13 @@ void RecvDataProcLEAVEITEMGET(BYTE *pData, DWORD dwDataSize)
 	g_pLeaveInfo->byCount = pPara->byCount;
 	CopyMemory (g_pLeaveInfo->waItem, pPara->waItem, sizeof (g_pLeaveInfo->waItem));
 	CopyMemory (g_pLeaveInfo->byItemCount, pPara->byItemCount, sizeof (g_pLeaveInfo->byItemCount));
+
+	/* 作り手の画面を開いている間は、預かり所の画面ではなく材料の数え直しに使う */
+	if (g_nProcMakerID >= 0) {
+		g_bProcMakerLeaveOK = TRUE;
+		g_bDraw = TRUE;
+		return;
+	}
 
 	if (g_nProcShopState == LEAVESTATE_ITEMSELECTGET) {
 

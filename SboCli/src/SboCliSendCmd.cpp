@@ -121,6 +121,7 @@ void SendCmdEFECTCHG		(BYTE, BOOL);							/* エフェクト変更 */
 void SendCmdRESURRECTION	(void);									/* 蘇生 */
 void SendCmdREQ_ATTACK		(DWORD dwTblID, BYTE byTurnLV);			/* 攻撃要求 */
 void SendCmdREQ_GUARD		(BOOL bGuard);							/* 構え(防御)の開始・終了 */
+void SendCmdRECIPEMAKE		(BYTE, WORD);							/* レシピで作ってもらう要求 */
 
 /* サブゲーム用コマンド送信 */
 void SendCmdSubSETBOMB		(void);									/* 爆弾設置 */
@@ -2904,6 +2905,30 @@ void SendCmdREQ_GUARD(
 	SendData.byCmd		= CMD_REQ_GUARD;
 	SendData.pID		= g_pMyID;
 	SendData.byData		= bGuard ? 1 : 0;
+	SendData.dwTblID	= g_aCharInfo[g_nMyCharID]->dwTblID;
+
+	cliSock.Send ((PBYTE)&SendData, sizeof (SendData));
+}
+
+
+
+/* ========================================================================= */
+/* 関数名：	SendCmdRECIPEMAKE												 */
+/* 内容：	コマンド送信(レシピで作ってもらう要求)							 */
+/*			結果は CMD_RECIPEMAKE で返ってくる								 */
+/* ========================================================================= */
+
+void SendCmdRECIPEMAKE(
+	BYTE byMaker,		/* [in] 作り手の番号 */
+	WORD wRecipeID)		/* [in] レシピの番号 */
+{
+	CMDPARA_RECIPEMAKE SendData;
+
+	ZeroMemory (&SendData, sizeof (SendData));
+	SendData.byCmd		= CMD_RECIPEMAKE;
+	SendData.byMaker	= byMaker;
+	SendData.wRecipeID	= wRecipeID;
+	SendData.pID		= g_pMyID;
 	SendData.dwTblID	= g_aCharInfo[g_nMyCharID]->dwTblID;
 
 	cliSock.Send ((PBYTE)&SendData, sizeof (SendData));

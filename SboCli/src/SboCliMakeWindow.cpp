@@ -107,6 +107,16 @@ PWNDINFO MakeWindowSUBSUGOROKU_JOINMODE			(void);				/* すごろく：参加モ
 PWNDINFO MakeWindowSUBSUGOROKU_COMMAND			(void);				/* すごろく：行動状態 */
 PWNDINFO MakeWindowSUBSUGOROKU_IDLE				(void);				/* すごろく：平常状態 */
 
+PWNDINFO MakeWindowMAKER						(int);				/* 作り手：作れる物の一覧 */
+PWNDINFO MakeWindowMAKER_CONF					(int);				/* 作り手：確認 */
+int MakerGetRecipeList							(int, int *, int);	/* 作り手の一覧に出すレシピの番号を並び順で取得 */
+int MakerGetCursorRecipe						(PWNDINFO);			/* 一覧のカーソル位置のレシピの番号 */
+int MakerCountHave								(WORD);				/* 材料として使える数（持ち物+預かり所） */
+BOOL MakerCanMake								(int);				/* 材料と手数料が足りているか */
+DWORD MakerStateHash							(int);				/* 画面に出ている内容が変わったか調べる値 */
+void MakerSetMsg								(PWNDINFO, LPCSTR);	/* 作り手の画面のメッセージを差し替える */
+void MakerSetTalkMsg							(PWNDINFO);			/* 作り手の話しかけた時の台詞を出す */
+void MakerScrollFit								(PWNDINFO, int, int);	/* 一覧のカーソルとスクロールを整える */
 PWNDINFO MakeWindowITEMINFO						(int x, int y);		/* アイテム情報 */
 PWNDINFO MakeWindowITEMINFOList					(PWNDINFO pWndList);	/* アイテム情報(一覧の横) */
 void UpdateWindowITEMINFOList					(PWNDINFO pWndList);	/* アイテム情報(一覧の横)の更新 */
@@ -2805,7 +2815,13 @@ void UpdateWindowITEMINFOList(PWNDINFO pWndList)
 
 	nItemID = 0;
 	nNo = pWndList->nData1;
-	if ((pWndList->nType == WNDTYPE_LEAVE) && (g_nProcShopState == LEAVESTATE_ITEMSELECTGET)) {
+	if (pWndList->nType == WNDTYPE_MAKER) {
+		/* 作り手の一覧はレシピでできる物を出す */
+		int nRecipe = MakerGetCursorRecipe (pWndList);
+		if (nRecipe >= 0) {
+			nItemID = g_aRecipeInfo[nRecipe].wItem;
+		}
+	} else if ((pWndList->nType == WNDTYPE_LEAVE) && (g_nProcShopState == LEAVESTATE_ITEMSELECTGET)) {
 		/* 預かり所の引き取る一覧は byData1 だけスクロールしている */
 		nNo += pWndList->byData1;
 		if (g_pLeaveInfo && (nNo >= 0) && (nNo < g_pLeaveInfo->byCount) && (nNo < MAX_LEAVEITEM)) {
@@ -2900,3 +2916,322 @@ PWNDINFO MakeWindowSTATUSMAGIC(void)
 	return pWnd;
 }
 
+/* ========================================================================= */
+/* 作り手（レシピ）の画面                                                    */
+/* 一覧（MAKERWND_LIST）と、その下の「はい／いいえ」（MAKERWND_CONF）。       */
+/* 一覧の横には MakeWindowITEMINFOList で、できる物の詳細と材料を出す。       */
+/* ========================================================================= */
+
+/* ========================================================================= */
+/* 関数名：MakerGetRecipeList												 */
+/* 内容：作り手の一覧に出すレシピの番号を、並び順（小さい順。同じなら番号順）で取る */
+/*		 有効で、できるアイテムが実在するものだけ。戻り値：件数				 */
+/* ========================================================================= */
+int MakerGetRecipeList(int nMaker, int *pnList, int nMax)
+{
+	int i, j, nCount;
+	PRECIPEINFO pRecipe;
+
+	nCount = 0;
+	for (i = 0; (i < g_nRecipeCount) && (i < MAX_RECIPE); i ++) {
+		pRecipe = &g_aRecipeInfo[i];
+		if ((pRecipe->byState != RECIPESTATE_ON) || ((int)pRecipe->byMaker != nMaker)) {
+			continue;
+		}
+		if ((pRecipe->wItem == 0) || ((int)pRecipe->wItem >= g_aItemInfo.GetSize ())) {
+			continue;
+		}
+		if (nCount >= nMax) {
+			break;
+		}
+		for (j = nCount; j > 0; j --) {
+			if (g_aRecipeInfo[pnList[j - 1]].wSort <= pRecipe->wSort) {
+				break;
+			}
+			pnList[j] = pnList[j - 1];
+		}
+		pnList[j] = i;
+		nCount ++;
+	}
+	return nCount;
+}
+
+/* ========================================================================= */
+/* 関数名：MakerGetCursorRecipe												 */
+/* 内容：一覧のカーソル位置のレシピの番号（無ければ -1）					 */
+/* ========================================================================= */
+int MakerGetCursorRecipe(PWNDINFO pWndList)
+{
+	int anList[MAX_RECIPE], nCount, nIndex;
+
+	if ((pWndList == NULL) || (pWndList->nType != WNDTYPE_MAKER) || (g_nProcMakerID < 0)) {
+		return -1;
+	}
+	nCount = MakerGetRecipeList (g_nProcMakerID, anList, MAX_RECIPE);
+	nIndex = (int)pWndList->byData1 + pWndList->nData1;
+	if ((nIndex < 0) || (nIndex >= nCount)) {
+		return -1;
+	}
+	return anList[nIndex];
+}
+
+/* ========================================================================= */
+/* 関数名：MakerCountHave													 */
+/* 内容：材料として使える数（持ち物のうち装備中・捨てられない物を除いたもの）	 */
+/*		 + 預かり所に預けてある数。サーバーの数え方と同じにしておく			 */
+/* ========================================================================= */
+int MakerCountHave(WORD wItem)
+{
+	PCHARINFO pChar;
+	BOOL bEqu;
+	int i, j, nCount;
+
+	if ((wItem == 0) || ((int)wItem >= g_aItemInfo.GetSize ())) {
+		return 0;
+	}
+	if ((g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ())) {
+		return 0;
+	}
+	nCount = 0;
+	pChar = g_aCharInfo[g_nMyCharID];
+	if (!(g_aItemInfo[wItem]->byFlg & ITEMFLG_DROP)) {
+		for (i = 0; i < MAX_MYITEM; i ++) {
+			if (pChar->waItem[i] != wItem) {
+				continue;
+			}
+			bEqu = FALSE;
+			for (j = 0; j < 10; j ++) {
+				if (pChar->waEqu[j] == i) {
+					bEqu = TRUE;
+				}
+			}
+			if (!bEqu) {
+				nCount ++;
+			}
+		}
+	}
+	if (g_bProcMakerLeaveOK && g_pLeaveInfo) {
+		for (i = 0; (i < (int)g_pLeaveInfo->byCount) && (i < MAX_LEAVEITEM); i ++) {
+			if (g_pLeaveInfo->waItem[i] == wItem) {
+				nCount += g_pLeaveInfo->byItemCount[i];
+			}
+		}
+	}
+	return nCount;
+}
+
+/* ========================================================================= */
+/* 関数名：MakerCanMake														 */
+/* 内容：材料と手数料が足りているか（置き場所はサーバーが決める）			 */
+/* ========================================================================= */
+BOOL MakerCanMake(int nRecipe)
+{
+	PRECIPEINFO pRecipe;
+	int i;
+
+	if ((nRecipe < 0) || (nRecipe >= MAX_RECIPE)) {
+		return FALSE;
+	}
+	if ((g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ())) {
+		return FALSE;
+	}
+	pRecipe = &g_aRecipeInfo[nRecipe];
+	if (g_aCharInfo[g_nMyCharID]->dwGold < pRecipe->dwGold) {
+		return FALSE;
+	}
+	for (i = 0; i < MAX_RECIPEMAT; i ++) {
+		if ((pRecipe->awMatItem[i] == 0) || (pRecipe->abyMatCount[i] == 0)) {
+			continue;
+		}
+		if (MakerCountHave (pRecipe->awMatItem[i]) < (int)pRecipe->abyMatCount[i]) {
+			return FALSE;
+		}
+	}
+	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：MakerStateHash													 */
+/* 内容：画面に出ている内容（一覧・持ち物・預かり所・所持金）が変わったか調べる値 */
+/* ========================================================================= */
+DWORD MakerStateHash(int nMaker)
+{
+	DWORD dw = 2166136261UL;
+	int anList[MAX_RECIPE], nCount, i, j;
+	PRECIPEINFO pRecipe;
+
+#define MAKER_MIX(v)	dw = (dw ^ (DWORD)(v)) * 16777619UL
+	nCount = MakerGetRecipeList (nMaker, anList, MAX_RECIPE);
+	MAKER_MIX (nCount);
+	for (i = 0; i < nCount; i ++) {
+		pRecipe = &g_aRecipeInfo[anList[i]];
+		MAKER_MIX (anList[i]);
+		MAKER_MIX (pRecipe->wItem);
+		MAKER_MIX (pRecipe->byCount);
+		MAKER_MIX (pRecipe->dwGold);
+		for (j = 0; j < MAX_RECIPEMAT; j ++) {
+			MAKER_MIX (pRecipe->awMatItem[j]);
+			MAKER_MIX (pRecipe->abyMatCount[j]);
+		}
+	}
+	if ((g_nMyCharID >= 0) && (g_nMyCharID < g_aCharInfo.GetSize ())) {
+		PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
+		MAKER_MIX (pChar->dwGold);
+		for (i = 0; i < MAX_MYITEM; i ++) {
+			MAKER_MIX (pChar->waItem[i]);
+		}
+		for (i = 0; i < 10; i ++) {
+			MAKER_MIX (pChar->waEqu[i]);
+		}
+	}
+	MAKER_MIX (g_bProcMakerLeaveOK);
+	if (g_bProcMakerLeaveOK && g_pLeaveInfo) {
+		MAKER_MIX (g_pLeaveInfo->byCount);
+		for (i = 0; (i < (int)g_pLeaveInfo->byCount) && (i < MAX_LEAVEITEM); i ++) {
+			MAKER_MIX (g_pLeaveInfo->waItem[i]);
+			MAKER_MIX (g_pLeaveInfo->byItemCount[i]);
+		}
+	}
+#undef MAKER_MIX
+	return dw;
+}
+
+/* ========================================================================= */
+/* 関数名：MakerScrollFit													 */
+/* 内容：一覧の nIndex 番目にカーソルを置き、画面内に収まるようスクロールを整える	 */
+/*		 pWndList->byData1 が先頭の番号、nData1 が画面内のカーソル位置			 */
+/* ========================================================================= */
+void MakerScrollFit(PWNDINFO pWndList, int nIndex, int nCount)
+{
+	int nRows, nTop;
+
+	nRows = max (pWndList->nData2, 1);
+	if (nIndex >= nCount) {
+		nIndex = nCount - 1;
+	}
+	if (nIndex < 0) {
+		nIndex = 0;
+	}
+	nTop = (int)pWndList->byData1;
+	if (nIndex < nTop) {
+		nTop = nIndex;
+	}
+	if (nIndex >= nTop + nRows) {
+		nTop = nIndex - nRows + 1;
+	}
+	if (nTop + nRows > nCount) {
+		nTop = max (nCount - nRows, 0);
+	}
+	pWndList->byData1 = (BYTE)nTop;
+	pWndList->nData1 = nIndex - nTop;
+}
+
+/* ========================================================================= */
+/* 関数名：MakerSetMsg														 */
+/* 内容：作り手の画面のメッセージを差し替える								 */
+/*		 台詞は管理画面で書いた文なので、@0 @1 @2 以外の制御コード（アイテムが	 */
+/*		 もらえる @4 など）は使わせず、ただの文字にする						 */
+/* ========================================================================= */
+void MakerSetMsg(PWNDINFO pWndList, LPCSTR pszMsg)
+{
+	char szTmp[MAX_MAKERMSG + 8];
+	PWNDINFO pWndNew;
+	int i, nLen;
+
+	ZeroMemory (szTmp, sizeof (szTmp));
+	strncpy (szTmp, pszMsg, MAX_MAKERMSG + 3);
+	nLen = strlen (szTmp);
+	for (i = 0; i < nLen; i ++) {
+		if (szTmp[i] == '@') {
+			if ((szTmp[i + 1] == '0') || (szTmp[i + 1] == '1') || (szTmp[i + 1] == '2')) {
+				i ++;
+			} else {
+				szTmp[i] = ' ';
+			}
+		} else if ((BYTE)szTmp[i] >= 0x80) {
+			i += max (SboTextCharLen (&szTmp[i]), 1) - 1;
+		}
+	}
+
+	pWndNew = MakeWindowMSG (szTmp, TRUE);
+	pWndNew->pParent = pWndList;
+	pWndList->pChild = pWndNew;
+	g_WndInfo.Add (pWndNew);
+}
+
+/* ========================================================================= */
+/* 関数名：MakerSetTalkMsg													 */
+/* 内容：作り手の話しかけた時の台詞を出す（台詞が空なら何も出さない）		 */
+/* ========================================================================= */
+void MakerSetTalkMsg(PWNDINFO pWndList)
+{
+	if ((g_nProcMakerID < 0) || (g_nProcMakerID >= MAX_MAKER)) {
+		return;
+	}
+	if (g_aMakerInfo[g_nProcMakerID].szMsgTalk[0] == 0) {
+		MakerSetMsg (pWndList, "何を作りましょうか？@2");
+		return;
+	}
+	MakerSetMsg (pWndList, g_aMakerInfo[g_nProcMakerID].szMsgTalk);
+}
+
+/* ========================================================================= */
+/* 関数名：MakeWindowMAKER													 */
+/* 内容：ウィンドウの作成(作り手：作れる物の一覧)							 */
+/*		 nData1=画面内のカーソル位置 byData1=先頭の番号 nData2=表示行数		 */
+/*		 台詞のメッセージ窓は子、横のアイテム情報は pWndTmp につなぐ			 */
+/* ========================================================================= */
+PWNDINFO MakeWindowMAKER(int nMaker)
+{
+	int anList[MAX_RECIPE], nCount;
+	PWNDINFO pWnd;
+
+	nCount = MakerGetRecipeList (nMaker, anList, MAX_RECIPE);
+
+	pWnd = new WNDINFO;
+	ZeroMemory (pWnd, sizeof (WNDINFO));
+	pWnd->dwID = g_dwNewID;
+	g_dwNewID ++;
+	pWnd->nData2 = min (max (nCount, 1), MAKER_LISTROWS);
+	pWnd->nX = 16;
+	pWnd->nY = 16;
+	pWnd->nCx = MAKER_LISTCX;
+	pWnd->nCy = 16 * (2 + pWnd->nData2);
+	pWnd->nType = WNDTYPE_MAKER;
+	pWnd->nType2 = MAKERWND_LIST;
+	pWnd->pDib = new CImg32;
+	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
+	pWnd->pDib->SetColorKey (RGB (40, 40, 40));
+
+	g_nProcMakerID = nMaker;
+	g_bProcMakerLeaveOK = FALSE;
+	g_bProcMakerWait = FALSE;
+	return pWnd;
+}
+
+/* ========================================================================= */
+/* 関数名：MakeWindowMAKER_CONF												 */
+/* 内容：ウィンドウの作成(作り手：「はい／いいえ」)							 */
+/*		 dwData=作ってもらうレシピの番号 nData1=カーソル(0:はい 1:いいえ)		 */
+/* ========================================================================= */
+PWNDINFO MakeWindowMAKER_CONF(int nRecipe)
+{
+	PWNDINFO pWnd = new WNDINFO;
+
+	ZeroMemory (pWnd, sizeof (WNDINFO));
+	pWnd->dwID = g_dwNewID;
+	g_dwNewID ++;
+	pWnd->nData2 = 2;
+	pWnd->nX = 16;
+	pWnd->nY = 16 * 13;
+	pWnd->nCx = 16 * 6;
+	pWnd->nCy = 16 * (2 + pWnd->nData2);
+	pWnd->nType = WNDTYPE_MAKER;
+	pWnd->nType2 = MAKERWND_CONF;
+	pWnd->dwData = (DWORD)nRecipe;
+	pWnd->pDib = new CImg32;
+	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
+	pWnd->pDib->SetColorKey (RGB (40, 40, 40));
+	DXAudio.PlaySecoundary (&aSoundTbl[SOUND_CONFIRM]);
+	return pWnd;
+}

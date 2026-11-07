@@ -3215,4 +3215,78 @@ void SendCmdHASTE(DWORD dwTblID, BYTE byRate, DWORD dwMs)
 	svrSock.SendTo (pChar->pID, (LPBYTE)&SendData, sizeof (CMDPARA_DATA4), SENDTIMEOUT);
 }
 
+/* ========================================================================= */
+/* 関数名：SendCmdMAKERINFO													 */
+/* 内容：コマンド送信(作り手情報。pIDSend は URARASOCK_SENDALL でも可)		 */
+/* ========================================================================= */
+void SendCmdMAKERINFO(DWORD pIDSend, WORD wID)
+{
+	CMDPARA_MAKERINFO Para;
+
+	if (wID >= (WORD)g_aMakerInfo.GetSize ()) {
+		return;
+	}
+	ZeroMemory (&Para, sizeof (Para));
+	Para.byCmd	= CMD_MAKERINFO;
+	Para.wID	= wID;
+	Para.wCount	= (WORD)g_aMakerInfo.GetSize ();
+	Para.Info	= *g_aMakerInfo[wID];
+
+	svrSock.SendTo (pIDSend, (LPBYTE)&Para, sizeof (Para), SENDTIMEOUT);
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdRECIPEINFO												 */
+/* 内容：コマンド送信(レシピ情報。pIDSend は URARASOCK_SENDALL でも可)		 */
+/* ========================================================================= */
+void SendCmdRECIPEINFO(DWORD pIDSend, WORD wID)
+{
+	CMDPARA_RECIPEINFO Para;
+
+	if (wID >= (WORD)g_aRecipeInfo.GetSize ()) {
+		return;
+	}
+	ZeroMemory (&Para, sizeof (Para));
+	Para.byCmd	= CMD_RECIPEINFO;
+	Para.wID	= wID;
+	Para.wCount	= (WORD)g_aRecipeInfo.GetSize ();
+	Para.Info	= *g_aRecipeInfo[wID];
+
+	svrSock.SendTo (pIDSend, (LPBYTE)&Para, sizeof (Para), SENDTIMEOUT);
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdRECIPEINFOALL												 */
+/* 内容：コマンド送信(作り手とレシピを全部。ログイン時)					 */
+/* ========================================================================= */
+void SendCmdRECIPEINFOALL(DWORD pIDSend)
+{
+	int i;
+
+	for (i = 0; i < g_aMakerInfo.GetSize (); i ++) {
+		SendCmdMAKERINFO (pIDSend, (WORD)i);
+	}
+	for (i = 0; i < g_aRecipeInfo.GetSize (); i ++) {
+		SendCmdRECIPEINFO (pIDSend, (WORD)i);
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdRECIPEMAKE												 */
+/* 内容：コマンド送信(作ってもらった結果を本人へ)							 */
+/* ========================================================================= */
+void SendCmdRECIPEMAKE(DWORD pIDSend, BYTE byResult, BYTE byMaker, WORD wRecipeID)
+{
+	CMDPARA_RECIPEMAKE Para;
+
+	ZeroMemory (&Para, sizeof (Para));
+	Para.byCmd		= CMD_RECIPEMAKE;
+	Para.byResult	= byResult;
+	Para.byMaker	= byMaker;
+	Para.wRecipeID	= wRecipeID;
+	Para.pID		= pIDSend;
+
+	svrSock.SendTo (pIDSend, (LPBYTE)&Para, sizeof (Para), SENDTIMEOUT);
+}
+
 /* Copyright(C)URARA-works 2003-2005 */

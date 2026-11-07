@@ -141,7 +141,18 @@ enum {
 	WNDTYPE_ITEMINFO,											/* アイテム情報 */
 	WNDTYPE_DEAD_COMMAND,										/* 死亡中：コマンド */
 	WNDTYPE_STATUSMAGIC,										/* 強さ：覚えている特技 */
+	WNDTYPE_MAKER,												/* 作り手（レシピ）：作れる物の一覧・確認 */
 };
+
+/* 作り手ウィンドウ(WNDTYPE_MAKER)の nType2 */
+enum {
+	MAKERWND_LIST = 0,											/* 作れる物の一覧 */
+	MAKERWND_CONF,												/* 「作ってもらいますか？」のはい/いいえ */
+};
+#define MAKER_LISTCX				(16 * 12)									/* 作れる物の一覧の幅 */
+#define MAKER_LISTROWS				(10)										/* 一覧に一度に出す行数 */
+#define MAKERINFO_CX				(16 * 14)									/* 作り手の画面のアイテム情報ウィンドウの最小の幅（材料の行が入る広さ） */
+#define MAKER_WAITMAX				(5000)										/* 作成要求の返事を待つ最長時間(ms) */
 
 /* 強さ：覚えている特技ウィンドウ(WNDTYPE_STATUSMAGIC)の大きさ */
 #define STATUSMAGIC_EXPLAIN_LINE	(4)											/* 説明欄の行数（12ドットの字） */
@@ -198,6 +209,7 @@ typedef struct _WNDINFO {
 	DWORD			dwTime;										/* 最後に処理した時間 */
 	DWORD			dwTimeDrawStart;							/* 最初に描画した時間 */
 	DWORD			dwTimeKey;									/* 最後にキー処理した時間 */
+	DWORD			dwData;										/* 汎用データ（作り手の画面の再描画判定に使う） */
 } WNDINFO, *PWNDINFO;
 
 /* システムメッセージ情報 */

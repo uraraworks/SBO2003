@@ -95,5 +95,15 @@ extern PWNDINFO MakeWindowITEMINFOList					(PWNDINFO pWndList);		/* アイテム
 extern void UpdateWindowITEMINFOList						(PWNDINFO pWndList);		/* アイテム情報(一覧の横)の更新 */
 extern PWNDINFO MakeWindowDEAD_COMMAND					(void);						/* 死亡中：コマンド */
 extern PWNDINFO MakeWindowSTATUSMAGIC					(void);						/* 強さ：覚えている特技 */
+extern PWNDINFO MakeWindowMAKER							(int nMaker);				/* 作り手：作れる物の一覧 */
+extern PWNDINFO MakeWindowMAKER_CONF					(int nRecipe);				/* 作り手：確認 */
+extern int MakerGetRecipeList							(int nMaker, int *pnList, int nMax);	/* 作り手の一覧に出すレシピの番号を並び順で取得 */
+extern int MakerGetCursorRecipe							(PWNDINFO pWndList);		/* 一覧のカーソル位置のレシピの番号 */
+extern int MakerCountHave								(WORD wItem);				/* 材料として使える数（持ち物+預かり所） */
+extern BOOL MakerCanMake								(int nRecipe);				/* 材料と手数料が足りているか */
+extern DWORD MakerStateHash								(int nMaker);				/* 画面に出ている内容が変わったか調べる値 */
+extern void MakerSetMsg									(PWNDINFO pWndList, LPCSTR pszMsg);	/* 作り手の画面のメッセージを差し替える */
+extern void MakerSetTalkMsg								(PWNDINFO pWndList);		/* 作り手の話しかけた時の台詞を出す */
+extern void MakerScrollFit								(PWNDINFO pWndList, int nIndex, int nCount);	/* 一覧のカーソルとスクロールを整える */
 
 /* Copyright(C)URARA-works 2003-2005 */

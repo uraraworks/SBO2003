@@ -105,7 +105,7 @@
 			return c.szNpcSpeech || '';
 		}
 		function isFunctionSpeech(sp) {
-			return sp === '@' || /^@[567a]/.test(sp);
+			return sp === '@' || /^@[567ac]/.test(sp);
 		}
 		function npcRole(c) {
 			var sp = speechOf(c);
@@ -113,6 +113,7 @@
 			if (sp.slice(0, 2) === '@7') return '買い取り専門（' + sp.slice(2, 4) + '番）';
 			if (sp.slice(0, 2) === '@6') return '預かり所';
 			if (sp.slice(0, 2) === '@a') return '冒険者登録所（転職）';
+			if (sp.slice(0, 2) === '@c') return '作り手（' + sp.slice(2, 4) + '番。材料から物を作ってくれる）';
 			if (sp === '@') return '着せ替え';
 			var r = [];
 			if (sp.indexOf('@4') >= 0) r.push('アイテムをくれる');

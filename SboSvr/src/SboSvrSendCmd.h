@@ -90,6 +90,10 @@ extern void SendCmdMAGICUSERINFO		(DWORD, BYTE);									/* コマンド送信(�
 extern void SendCmdEQUUSERINFO			(DWORD, BYTE);									/* コマンド送信(装備職業情報) */
 extern void SendCmdTARGETCHAR			(DWORD, DWORD);									/* コマンド送信(ターゲット要求) */
 extern void SendCmdHASTE				(DWORD, BYTE, DWORD);							/* コマンド送信(加速の状態を本人へ) */
+extern void SendCmdMAKERINFO			(DWORD, WORD);									/* コマンド送信(作り手情報) */
+extern void SendCmdRECIPEINFO			(DWORD, WORD);									/* コマンド送信(レシピ情報) */
+extern void SendCmdRECIPEINFOALL		(DWORD);										/* コマンド送信(作り手とレシピを全部) */
+extern void SendCmdRECIPEMAKE			(DWORD, BYTE, BYTE, WORD);						/* コマンド送信(作ってもらった結果) */
 extern void SendCmdSubBombTime			(BYTE, PSUBGAME_BOMBINFO);						/* サブゲーム用コマンド送信(爆弾ゲーム：残り時間通知) */
 extern void SendCmdSubBOMBINFO			(DWORD, BYTE, PSUBGAME_BOMBINFO);				/* サブゲーム用コマンド送信(爆弾ゲーム：設定) */
 extern void SendCmdSubBOMBSTOP			(DWORD, BYTE, PSUBGAME_BOMBINFO);				/* サブゲーム用コマンド送信(爆弾ゲーム：試合中止) */

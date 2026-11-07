@@ -9,6 +9,7 @@
 #include "../../Common/Info/InfoJob.h"
 #include "Glbldata.h"
 #include "SboCliRecvCmd.h"
+#include "SboCliMakeWindow.h"
 #include "SboCliKeyProc.h"
 #include "SboCliMagicExplain.h"
 
@@ -109,6 +110,7 @@ void DrawWindowBATTLE_TARGET					(PWNDINFO);			/* 戦闘：ターゲット選択
 void DrawWindowITEMINFO							(PWNDINFO);			/* アイテム情報 */
 void DrawWindowDEAD_COMMAND						(PWNDINFO);			/* 死亡中：コマンド */
 void DrawWindowSTATUSMAGIC						(PWNDINFO);			/* 強さ：覚えている特技 */
+void DrawWindowMAKER							(PWNDINFO);			/* 作り手（レシピ）：作れる物の一覧・確認 */
 
 void DrawWindowSUBSUGOROKU_JOINMODE				(PWNDINFO);			/* ウィンドウの描画(すごろく：参加モード選択) */
 void DrawWindowSUBSUGOROKU_COMMAND				(PWNDINFO);			/* ウィンドウの描画(すごろく：行動選択) */
@@ -298,6 +300,7 @@ void DrawWindow(CImg32 *pDib, int x, int y)
 		case WNDTYPE_ITEMINFO:				DrawWindowITEMINFO (pWnd);				break;
 		case WNDTYPE_DEAD_COMMAND:			DrawWindowDEAD_COMMAND (pWnd);			break;
 		case WNDTYPE_STATUSMAGIC:			DrawWindowSTATUSMAGIC (pWnd);			break;
+		case WNDTYPE_MAKER:					DrawWindowMAKER (pWnd);					break;
 		}
 		pDib->BltAlpha2 (pWnd->nX + x, pWnd->nY + y, pWnd->nCx, pWnd->nCy, pWnd->pDib, 0, 0, 15, TRUE);
 	}
@@ -3800,6 +3803,88 @@ void DrawWindowSUBSUGOROKU_IDLE(PWNDINFO pWnd)
 }
 
 /* ========================================================================= */
+/* 関数名：DrawWindowMAKER													 */
+/* 内容：ウィンドウの描画(作り手（レシピ）：作れる物の一覧・確認)			 */
+/*		 一覧：できる物の名前（材料と手数料が足りない物は灰色）				 */
+/*		 持ち物・預かり所・所持金・レシピが変わったら、一覧と横の詳細を描き直す */
+/* ========================================================================= */
+void DrawWindowMAKER(PWNDINFO pWnd)
+{
+	int anList[MAX_RECIPE], nCount, i, nIndex;
+	char szTmp[128];
+	COLORREF clText;
+
+	/* 確認（はい／いいえ） */
+	if (pWnd->nType2 == MAKERWND_CONF) {
+		if (pWnd->dwTimeDrawStart) {
+			DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
+			return;
+		}
+		DrawWindowFrame (pWnd);
+		HDC hDC = pWnd->pDib->Lock ();
+		HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFontBasic);
+		SetBkMode (hDC, TRANSPARENT);
+		TextOut2 (hDC, 32, 16, "はい", RGB (255, 255, 255));
+		TextOut2 (hDC, 32, 32, "いいえ", RGB (255, 255, 255));
+		SelectObject (hDC, hFontOld);
+		pWnd->pDib->Unlock ();
+		pWnd->dwTimeDrawStart = timeGetTime ();
+		DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
+		return;
+	}
+
+	if ((g_nProcMakerID < 0) || (g_nProcMakerID >= MAX_MAKER)) {
+		return;
+	}
+	nCount = MakerGetRecipeList (g_nProcMakerID, anList, MAX_RECIPE);
+
+	/* 内容が変わった？ */
+	DWORD dwHash = MakerStateHash (g_nProcMakerID);
+	if (dwHash != pWnd->dwData) {
+		pWnd->dwData = dwHash;
+		pWnd->dwTimeDrawStart = 0;
+		MakerScrollFit (pWnd, (int)pWnd->byData1 + pWnd->nData1, nCount);
+		UpdateWindowITEMINFOList (pWnd);
+		if (pWnd->pWndTmp) {
+			((PWNDINFO)pWnd->pWndTmp)->dwTimeDrawStart = 0;
+		}
+	}
+
+	if (pWnd->dwTimeDrawStart) {
+		DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
+		return;
+	}
+
+	DrawWindowFrame (pWnd);
+	HDC hDC = pWnd->pDib->Lock ();
+	HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFontBasic);
+	SetBkMode (hDC, TRANSPARENT);
+
+	for (i = 0; i < pWnd->nData2; i ++) {
+		nIndex = (int)pWnd->byData1 + i;
+		if (nIndex >= nCount) {
+			break;
+		}
+		PRECIPEINFO pRecipe = &g_aRecipeInfo[anList[nIndex]];
+		PITEMINFO pItem = g_aItemInfo[pRecipe->wItem];
+		if (pRecipe->byCount > 1) {
+			wsprintf (szTmp, "%s x%d", pItem->szName, (int)pRecipe->byCount);
+		} else {
+			wsprintf (szTmp, "%s", pItem->szName);
+		}
+		clText = MakerCanMake (anList[nIndex]) ? RGB (255, 255, 255) : RGB (150, 150, 150);
+		TextOut2 (hDC, 32, 16 + i * 16, szTmp, clText);
+	}
+
+	SelectObject (hDC, hFontOld);
+	pWnd->pDib->Unlock ();
+	pWnd->dwTimeDrawStart = timeGetTime ();
+
+	DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
+}
+
+
+/* ========================================================================= */
 /* 関数名：DrawWindowITEMINFO												 */
 /* 内容：ウィンドウの描画(アイテム情報)										 */
 /* 日付：2005/03/12															 */
@@ -3826,6 +3911,32 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 
 	pItem = g_aItemInfo[pWnd->nData1];
 
+	/* 作り手の一覧の横なら、できる個数・必要な材料（持っている数/必要な数）・手数料を足す */
+	PRECIPEINFO pRecipe = NULL;
+	int nMatLine = 0, nFooterLine = 0;
+	if (pWnd->nType2 == ITEMINFOPOS_LIST) {
+		int nNoList = GetWindowID ((DWORD)pWnd->nData2);
+		if (nNoList >= 0) {
+			PWNDINFO pWndListTmp = (PWNDINFO)g_WndInfo[nNoList];
+			if (pWndListTmp->nType == WNDTYPE_MAKER) {
+				int nRecipe = MakerGetCursorRecipe (pWndListTmp);
+				if (nRecipe >= 0) {
+					pRecipe = &g_aRecipeInfo[nRecipe];
+				}
+			}
+		}
+	}
+	if (pRecipe) {
+		for (int k = 0; k < MAX_RECIPEMAT; k ++) {
+			if ((pRecipe->awMatItem[k] != 0) && (pRecipe->abyMatCount[k] != 0) &&
+				((int)pRecipe->awMatItem[k] < g_aItemInfo.GetSize ())) {
+				nMatLine ++;
+			}
+		}
+		/* （できる個数）（必要な材料の見出し）（材料…）（手数料） */
+		nFooterLine = ((pRecipe->byCount > 1) ? 1 : 0) + 1 + nMatLine + 1;
+	}
+
 	/* 特技の書・特技発動の道具なら、特技の名前と説明を出せるようにウィンドウを広げる */
 	PMAGICINFO pMagic = NULL;
 	char aszExplain[ITEMINFO_EXPLAIN_MAXLINE][128];
@@ -3846,6 +3957,13 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 			nCyNew = (nCyNew + 15) / 16 * 16;
 			nCyNew = max (nCyNew, ITEMINFO_CY);
 		}
+	}
+	/* 作り手の一覧の横：本体の下に足す欄の分だけ広げる */
+	int nFooterTop = nCyNew - 16;
+	if (pRecipe) {
+		nCxNew = max (nCxNew, MAKERINFO_CX);
+		nCyNew = nFooterTop + 4 + 12 * nFooterLine + 16;
+		nCyNew = (nCyNew + 15) / 16 * 16;
 	}
 	if ((pWnd->nCx != nCxNew) || (pWnd->nCy != nCyNew)) {
 		/* 右端の位置はそのままで大きさを変える */
@@ -3989,6 +4107,38 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 		for (i = 0; i < nExplainLine; i ++) {
 			TextOut2 (hDC, 16, 16 + 12 * (3 + i), aszExplain[i], RGB (255, 255, 255));
 		}
+	}
+
+	/* 作り手の一覧の横：できる個数・材料・手数料 */
+	if (pRecipe) {
+		int nY = nFooterTop + 4, k;
+		PCHARINFO pCharMy = g_aCharInfo[g_nMyCharID];
+
+		if (pRecipe->byCount > 1) {
+			TextOut2 (hDC, 16, nY, "できる数：", RGB (200, 200, 200));
+			wsprintf (szTmp, "%d個", (int)pRecipe->byCount);
+			TextOut2 (hDC, 16 + 12 * 5, nY, szTmp, RGB (150, 255, 200));
+			nY += 12;
+		}
+		TextOut2 (hDC, 16, nY, "必要な材料", RGB (200, 200, 200));
+		nY += 12;
+		for (k = 0; k < MAX_RECIPEMAT; k ++) {
+			if ((pRecipe->awMatItem[k] == 0) || (pRecipe->abyMatCount[k] == 0) ||
+				((int)pRecipe->awMatItem[k] >= g_aItemInfo.GetSize ())) {
+				continue;
+			}
+			int nHave = MakerCountHave (pRecipe->awMatItem[k]);
+			COLORREF clMat = (nHave >= (int)pRecipe->abyMatCount[k]) ? RGB (150, 255, 200) : RGB (255, 130, 130);
+			TextOut2 (hDC, 16 + 6, nY, g_aItemInfo[pRecipe->awMatItem[k]]->szName, RGB (255, 255, 255));
+			wsprintf (szTmp, "%d/%d", nHave, (int)pRecipe->abyMatCount[k]);
+			TextOut2 (hDC, pWnd->nCx - 16 - 6 * (int)strlen (szTmp), nY, szTmp, clMat);
+			nY += 12;
+		}
+		TextOut2 (hDC, 16, nY, "手数料：", RGB (200, 200, 200));
+		wsprintf (szTmp, "%dG", (int)pRecipe->dwGold);
+		TextOut2 (hDC, 16 + 12 * 4, nY, szTmp, (pCharMy->dwGold >= pRecipe->dwGold) ? RGB (150, 255, 200) : RGB (255, 130, 130));
+		wsprintf (szTmp, "所持 %dG", (int)pCharMy->dwGold);
+		TextOut2 (hDC, pWnd->nCx - 16 - 6 * (int)strlen (szTmp), nY, szTmp, RGB (200, 200, 200));
 	}
 
 	SelectObject (hDC, hFontOld);
@@ -4226,6 +4376,15 @@ void EraseWindow(PWNDINFO pWnd)
 
 	case WNDTYPE_GOLD:
 		g_dwMsgIDGold = 0;
+		break;
+
+	case WNDTYPE_MAKER:
+		/* 一覧を閉じたら作り手の画面は終わり（確認ウィンドウだけでは終わらない） */
+		if (pWnd->nType2 == MAKERWND_LIST) {
+			g_nProcMakerID = -1;
+			g_bProcMakerLeaveOK = FALSE;
+			g_bProcMakerWait = FALSE;
+		}
 		break;
 	}
 
