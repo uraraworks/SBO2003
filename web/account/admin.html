@@ -17,6 +17,7 @@
 	  ・パーツ図鑑   … マップパーツに名前・タグ・説明を付ける・組み合わせの見本を作る（admin-design.js）
 	  ・配置案       … AI が考えたマップの配置案を画像で見る（ゲームのデータは変えない。admin-design.js）
 	  ・NPCの巡回    … NPC が道しるべを順に歩くルートを決める（admin-npcroute.js。API は sbosvr_data.js の /api/admin/npcroute/set）
+	  ・ドット絵     … ゲームの画像（SboGrpData/grp の PNG）を手元のフォルダで直接描き直すエディタ（/dot。dot.html）を開く
 	API は server/node/sbosvr_account.js の /api/admin/*（ご意見箱は server/node/sbosvr_feedback.js、AI連携は server/node/sbosvr_data.js）。
 -->
 <style>
@@ -124,7 +125,9 @@
 		font: 16px/1.3 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;	/* 16px 未満だと iPhone で拡大される */
 		padding: 10px;
 	}
-	button {
+	button, a.button {
+		display: inline-block;
+		text-decoration: none;
 		background: var(--accent);
 		color: #1d1f24;
 		border: none;
@@ -387,6 +390,7 @@
 		<button type="button" data-tab="parts">パーツ図鑑</button>
 		<button type="button" data-tab="plans">配置案</button>
 		<button type="button" data-tab="npcroute">NPCの巡回</button>
+		<button type="button" data-tab="dot">ドット絵</button>
 	</nav>
 </header>
 <main>
@@ -559,6 +563,23 @@
 			</div>
 			<p class="sub-text" style="margin:6px 0 0">全部のマップだと、zip は 2 倍で 90MB・等倍で 30MB くらいです（PC で数十秒）。</p>
 			<div class="msg" id="md-msg"></div>
+		</div>
+	</section>
+
+	<!-- ドット絵（エディタは別ページ /dot。サーバーには何も送らない） -->
+	<section id="tab-dot" hidden>
+		<p class="sub-text">
+			ゲームの画像（SboGrpData/grp の PNG）を描き直すエディタです。手元のリポジトリの作業フォルダを開いて、
+			その中の PNG を直接上書きします。サーバーのデータは変わらないので、ゲームに出す時はいつもどおりコミットしてデプロイしてください。
+		</p>
+		<div class="card">
+			<div class="row" style="flex-wrap:wrap">
+				<a class="button" id="dot-open" href="/dot" target="_blank" rel="noopener">ドット絵エディタを開く</a>
+			</div>
+			<p class="sub-text" style="margin:6px 0 0">
+				PC の Chrome（または Edge）で使ってください。元のファイルを書き換えない「一時保存」と、
+				自分のブラウザのゲームだけで絵を差し替えて見る「ゲームで試す」もあります。
+			</p>
 		</div>
 	</section>
 
@@ -814,7 +835,7 @@
 		selectTab(location.hash === '#online' ? 'online' : location.hash === '#recover' ? 'recover' : location.hash === '#feedback' ? 'feedback' :
 			location.hash === '#changes' ? 'changes' : location.hash === '#ai' ? 'ai' : location.hash === '#mapdoc' ? 'mapdoc' :
 			location.hash === '#parts' ? 'parts' : location.hash === '#plans' ? 'plans' :
-			location.hash === '#npcroute' ? 'npcroute' : 'search');
+			location.hash === '#npcroute' ? 'npcroute' : location.hash === '#dot' ? 'dot' : 'search');
 		if (location.hash === '#changes') {
 			loadChanges();
 		} else if (location.hash === '#ai') {
@@ -924,6 +945,7 @@
 		$('tab-parts').hidden = name !== 'parts';
 		$('tab-plans').hidden = name !== 'plans';
 		$('tab-npcroute').hidden = name !== 'npcroute';
+		$('tab-dot').hidden = name !== 'dot';
 		document.body.classList.toggle('wide', name === 'parts' || name === 'plans' || name === 'npcroute');
 		if (history.replaceState) {
 			history.replaceState(null, '', name === 'search' ? location.pathname : '#' + name);

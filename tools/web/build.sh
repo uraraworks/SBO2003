@@ -151,7 +151,7 @@ em++ "${OPT[@]}" ${SBO_LDFLAGS:-} "${PORTS[@]}" "${OBJS[@]}" -o "$DIST/sbocli.ht
 	-lidbfs.js -lwebsocket.js \
 	-sGLOBAL_BASE=1048576 \
 	-sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=64MB -sSTACK_SIZE=1MB \
-	-sEXPORTED_RUNTIME_METHODS=FS,UTF8ToString,stringToNewUTF8 \
+	-sEXPORTED_RUNTIME_METHODS=FS,UTF8ToString,stringToNewUTF8,addRunDependency,removeRunDependency \
 	-sDEFAULT_LIBRARY_FUNCS_TO_INCLUDE='$stringToNewUTF8,$UTF8ToString' \
 	-sEXPORTED_FUNCTIONS=_main,_malloc,_free,_W32JsOnKey,_W32JsOnMouse,_W32JsOnActivate,_W32JsOnButton
 
@@ -174,6 +174,7 @@ cp "$ROOT/web/bgm/sbo_bgm.js" \
 	"$DIST/bgm/"
 
 # 管理ページ（/admin。キャラ検索・キャラ名の変更・復旧の承認・マップ資料・パーツ図鑑・配置案。サーバーの /api/admin/* を使う）
+# ドット絵エディタ（/dot。dot.html と dot-*.js。手元のフォルダの PNG を編集する）
 # キャラ名の変更ページ（/rename。プレイヤー用）
 # ご意見箱（/feedback。プレイヤー用。サーバーの /api/feedback/* を使う）
 # recover-admin.html は前の URL を /admin#recover へ送るだけ
@@ -181,6 +182,8 @@ cp "$ROOT/web/account/admin.html" \
 	"$ROOT/web/account/admin-mapdoc.js" \
 	"$ROOT/web/account/admin-design.js" \
 	"$ROOT/web/account/admin-npcroute.js" \
+	"$ROOT"/web/account/dot.html \
+	"$ROOT"/web/account/dot-*.js \
 	"$ROOT/web/account/rename.html" \
 	"$ROOT/web/account/feedback.html" \
 	"$ROOT/web/account/recover-admin.html" \

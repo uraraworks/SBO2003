@@ -309,6 +309,10 @@ Module['sboNet'] = (function () {
 		if (url === '/admin') {
 			url = '/admin.html';
 		}
+		/* ドット絵エディタ（管理者用。手元のフォルダの画像を編集するだけでサーバーには何も送らない） */
+		if (url === '/dot') {
+			url = '/dot.html';
+		}
 		if (url === '/rename') {
 			url = '/rename.html';
 		}
