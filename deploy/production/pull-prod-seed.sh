@@ -9,7 +9,7 @@
 # （公開側の Release/SBODATA は 10×10 の草原だけ）。ローカルでサーバーを試す時（tools/server/run.sh・
 # 各スレッドの確認）は、非公開リポジトリの Release/SBODATA を使うので、そこを本番の今のデータで更新する。
 #
-# 1. 本番のサーバーは止めずに、C:\SBO2003\data\SBODATA の SboData*.dat（名前が英数字だけのもの）を VPS の一時フォルダへ写して
+# 1. 本番のサーバーは止めずに、C:\SBO2003\data\SBODATA の SboData*.dat（名前が英数字だけのもの）と UTF-8 の目印 SboDataUtf8.txt を VPS の一時フォルダへ写して
 #    zip にし、手元へ持ってくる（書き込み中に当たらないよう、写す前後でサイズと時刻が同じか確かめる）。
 #    本番は 30 分ごとに保存するので、最大 30 分前の状態になる。
 #    預かり所（SboDataLeaveInfo.dat）と Web 用の JSON（アカウント・ご意見・AI の鍵など）は持ってこない
@@ -77,7 +77,8 @@ remote_cmd "
 \$ErrorActionPreference = 'Stop'
 \$src = '$WIN_ROOT\\data\\SBODATA'
 \$dst = '$REMOTE_DIR'
-function Files { Get-ChildItem -Path \$src -Filter 'SboData*.dat' | Where-Object { \$_.Name -cmatch '^SboData[A-Za-z]+[0-9]*\.dat\$' -and \$_.Name -ne 'SboDataLeaveInfo.dat' } }
+# SboDataUtf8.txt は「.dat の文字列はもう UTF-8」の目印。無いと make-seed.sh のサーバーがもう一度 UTF-8 に変換して文字化けする
+function Files { Get-ChildItem -Path \$src -Filter 'SboData*' | Where-Object { (\$_.Name -cmatch '^SboData[A-Za-z]+[0-9]*\.dat\$' -and \$_.Name -ne 'SboDataLeaveInfo.dat') -or \$_.Name -ceq 'SboDataUtf8.txt' } }
 function Snap { Files | Sort-Object Name | ForEach-Object { '{0}|{1}|{2}' -f \$_.Name, \$_.Length, \$_.LastWriteTimeUtc.Ticks } }
 \$ok = \$false
 for (\$i = 1; \$i -le 5; \$i++) {
@@ -116,12 +117,15 @@ mkdir -p "$OUT"
 # （「SboDataMapInfo075(広い町バックアップ).dat」のような控えはサーバーが読まないので持ってこず、手元のものを残す）
 find "$OUT" -maxdepth 1 -name 'SboData*.dat' | grep -E '/SboData[A-Za-z]+[0-9]*\.dat$' | while IFS= read -r f; do rm -f "$f"; done
 find "$WORK/seed" -maxdepth 1 -name 'SboData*.dat' | grep -E '/SboData[A-Za-z]+[0-9]*\.dat$' | while IFS= read -r f; do cp "$f" "$OUT/"; done
+# UTF-8 の目印（これが無いと、ローカルのサーバーが起動のたびに UTF-8 をもう一度変換して文字化けする）
+cp "$WORK/seed/SboDataUtf8.txt" "$OUT/"
 echo "   $(find "$OUT" -maxdepth 1 -name 'SboData*.dat' | wc -l | tr -d ' ') ファイル"
 if REPO="$(git -C "$OUT" rev-parse --show-toplevel 2>/dev/null)"; then
 	# 入れ替えたファイルだけを git に載せる（git add Release/SBODATA だと、Mac が日本語名の控えを
 	# 別の文字の並び（濁点が分かれた形）で見せるため、同じ控えがもう 1 つ増えてしまう）
 	git -C "$REPO" add -u -- "$OUT"
 	find "$OUT" -maxdepth 1 -name 'SboData*.dat' | grep -E '/SboData[A-Za-z]+[0-9]*\.dat$' | while IFS= read -r f; do git -C "$REPO" add -- "$f"; done
+	git -C "$REPO" add -- "$OUT/SboDataUtf8.txt"
 	echo "   $REPO の git に載せました（あとは git commit と git push だけ）:"
 	git -C "$REPO" diff --cached --stat -- "$OUT" | tail -5
 fi
