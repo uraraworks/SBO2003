@@ -16,6 +16,8 @@ extern BOOL BattleProc			(DWORD, DWORD);								/* 戦闘処理 */
 extern BOOL BattleProcWeapon	(PCHARINFO);								/* 武器処理 */
 extern BOOL DamageAfterProcPC	(PCHARINFO, PCHARINFO);						/* ダメージ受けた後の処理(PC) */
 extern BOOL DamageAfterProcNPC	(PCHARINFO, PCHARINFO);						/* ダメージ受けた後の処理(NPC) */
+extern void AddBattleDamage		(PCHARINFO, PCHARINFO, int);				/* 敵に与えたダメージを覚える(討伐報酬を分ける用) */
+extern void ClearBattleDamage	(DWORD);									/* 覚えたダメージを消す(キャラ削除時) */
 extern int  RenkeiCheck			(PCHARINFO, PCHARINFO);						/* 連携ボーナスの倍率(%)。当たった時に呼ぶ */
 extern BOOL BattleProcAtack		(PCHARINFO, PCHARINFO);						/* 戦闘処理(直接攻撃) */
 extern void ResurrectionBack	(PCHARINFO);								/* 復活位置で蘇生 */

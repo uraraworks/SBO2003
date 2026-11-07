@@ -976,6 +976,8 @@ void DeleteChar(DWORD dwTblID)
 
 	pChar = g_aCharInfo[dwTblID];
 
+	/* 討伐報酬用に覚えていたダメージを消す */
+	ClearBattleDamage (dwTblID);
 	OnDecPlayer ((int)pChar->dwTblID);
 	pProc = (PCCharProcBase)pChar->pProc;
 	SAFE_DELETE (pProc);
