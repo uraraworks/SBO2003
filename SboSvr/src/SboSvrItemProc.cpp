@@ -1351,6 +1351,7 @@ static BOOL ItemUse_HPDOWN(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pIt
 	}
 	wTmp = max (1, wTmp);
 
+	AddBattleDamage (pChar, pCharTarget, (int)wTmp);
 	nTmp = pCharTarget->wHP;
 	nTmp -= wTmp;
 	pCharTarget->wHP = max (nTmp, 0);

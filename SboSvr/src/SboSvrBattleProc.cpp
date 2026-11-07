@@ -14,6 +14,7 @@
 #include "SboSvrMagicProc.h"
 #include "SboSvrCharInfoTimerProc.h"
 #include <map>
+#include <vector>
 
 /* ========================================================================= */
 /* 関数プロトタイプ宣言														 */
@@ -35,8 +36,9 @@ static	int		DamageProc			(PCHARINFO, PCHARINFO, BOOL, BOOL, int);	/* ダメー�
 
 #define RENKEI_TIME		2000		/* 別の人が殴ってからこの時間(ms)以内に殴ると連携 */
 #define RENKEI_RATE		130			/* 連携の時のダメージ(%) */
-static	DWORD	GetAcquisitionGold	(PCHARINFO, PCHARINFO);			/* 獲得金額を計算 */
-static	DWORD	GetAcquisitionExp	(PCHARINFO, PCHARINFO);			/* 獲得経験値を計算 */
+		void	AddBattleDamage		(PCHARINFO, PCHARINFO, int);	/* 敵に与えたダメージを覚える(報酬を分ける用) */
+		void	ClearBattleDamage	(DWORD);						/* 覚えたダメージを消す(キャラ削除時) */
+static	void	GetRewardMember		(PCHARINFO, PCHARINFO, std::vector<std::pair<PCHARINFO, DWORD> > &);	/* 討伐報酬をもらえるプレイヤー */
 static	void	AddGold				(PCHARINFO, DWORD, BOOL);		/* 所持金を追加 */
 static	void	AddExp				(PCHARINFO, DWORD, BOOL);		/* 経験値を追加 */
 		void	AddStatus			(PCHARINFO pChar, BYTE byType, int nData);	/* パラメータの追加 */
@@ -375,84 +377,34 @@ BOOL DamageAfterProcNPC(PCHARINFO pChar, PCHARINFO pCharTarget)
 
 	SendCmdSYSMSG2 (pChar->pID, SYSMSG_BATTLEEND1, pCharTarget->pID, 0);
 
-	/* 経験値取得？ */
-	dwTmp = GetAcquisitionExp (pChar, pCharTarget);
+	/* 討伐報酬をもらえるプレイヤー(ダメージを与えた人＋「全員で分配」パーティの仲間)。先頭はとどめを刺した人 */
+	std::vector<std::pair<PCHARINFO, DWORD> > aMember;
+	GetRewardMember (pChar, pCharTarget, aMember);
+	int nMember = (int)aMember.size ();
+	int i;
+
+	/* 経験値はみんな満額 */
+	dwTmp = pCharTarget->dwExp;
 	if (dwTmp > 0) {
-		/* パーティに所属している？ */
-		if (pChar->dwPartyID) {
-			PPARTYINFO pPartyInfo = g_aPartyInfo[pChar->dwPartyID];
-
-			/* 全員で分配？ */
-			if (pPartyInfo->byGold == PARTYGOLD_ALL) {
-				int i;
-
-				for (i = 0; i < MAX_PARTYMEMBER; i ++) {
-					PCHARINFO pCharTmp;
-
-					if (pPartyInfo->adwTblID[i] == 0) {
-						break;
-					}
-					pCharTmp = g_aCharInfo[pPartyInfo->adwTblID[i]];
-					if (pCharTmp->byCharState == CHARSTATE_DEAD) {
-						continue;
-					}
-
-					AddExp (pCharTmp, dwTmp, TRUE);
-				}
-
-			} else {
-				AddExp (pChar, dwTmp, TRUE);
-			}
-
-		} else {
-			AddExp (pChar, dwTmp, TRUE);
+		for (i = 0; i < nMember; i ++) {
+			AddExp (aMember[i].first, dwTmp, TRUE);
 		}
 	}
 
-	dwGoldTmp = GetAcquisitionGold (pChar, pCharTarget);
-	/* お金持ってる？ */
+	/* お金は人数で割る(1人1ゴールドは残す) */
+	dwGoldTmp = pCharTarget->dwGold;
 	if (dwGoldTmp > 0) {
-		/* パーティに所属している？ */
-		if (pChar->dwPartyID) {
-			PPARTYINFO pPartyInfo = g_aPartyInfo[pChar->dwPartyID];
-
-			/* 全員で分配？ */
-			if (pPartyInfo->byGold == PARTYGOLD_ALL) {
-				int i;
-				char szTmp[128];
-
-				wsprintf (szTmp, "%sから%ldゴールド分配されました。", pChar->szName, dwGoldTmp);
-				for (i = 0; i < MAX_PARTYMEMBER; i ++) {
-					PCHARINFO pCharTmp;
-
-					if (pPartyInfo->adwTblID[i] == 0) {
-						break;
-					}
-					pCharTmp = g_aCharInfo[pPartyInfo->adwTblID[i]];
-					if (pCharTmp->byCharState == CHARSTATE_DEAD) {
-						continue;
-					}
-
-					AddGold (pCharTmp, dwGoldTmp, TRUE);
-					if (pCharTmp != pChar) {
-						SendCmdSYSMSG (pCharTmp->pID, szTmp, SPEECHCMD_BATTLE1);
-					}
-				}
-				SendCmdSYSMSG2 (pChar->pID, SYSMSG_BATTLEEND3, pChar->pID, dwGoldTmp);
-
-			} else {
-				AddGold (pChar, dwGoldTmp, TRUE);
-				SendCmdSYSMSG2 (pChar->pID, SYSMSG_BATTLEEND3, pChar->pID, dwGoldTmp);
-			}
-
-		} else {
-			AddGold (pChar, dwGoldTmp, TRUE);
-			SendCmdSYSMSG2 (pChar->pID, SYSMSG_BATTLEEND3, pChar->pID, dwGoldTmp);
+		dwGoldTmp = max (dwGoldTmp / (DWORD)nMember, (DWORD)1);
+		for (i = 0; i < nMember; i ++) {
+			PCHARINFO pCharTmp = aMember[i].first;
+			AddGold (pCharTmp, dwGoldTmp, TRUE);
+			SendCmdSYSMSG2 (pCharTmp->pID, SYSMSG_BATTLEEND3, pCharTmp->pID, dwGoldTmp);
 		}
 	}
 
 	BYTE byGetItem = 0;
 	int nGetItemNo = 0;
+	PCHARINFO pCharGet = pChar;
 
 	/* アイテム落とす？ */
 	if (pCharTarget->byDropProbability) {
@@ -460,59 +412,92 @@ BOOL DamageAfterProcNPC(PCHARINFO pChar, PCHARINFO pCharTarget)
 		if (nCount && ((genrand () % 100) + pCharTarget->byDropProbability >= 100)) {
 			nGetItemNo = pCharTarget->waItem[genrand () % nCount];
 
+			/* 誰がもらうかは、与えたダメージが多い人ほど当たりやすいくじ引き */
+			DWORD dwTotal = 0;
+			for (i = 0; i < nMember; i ++) {
+				dwTotal += aMember[i].second;
+			}
+			if (dwTotal > 0) {
+				DWORD dwLot = (DWORD)genrand () % dwTotal;
+				for (i = 0; i < nMember; i ++) {
+					if (dwLot < aMember[i].second) {
+						pCharGet = aMember[i].first;
+						break;
+					}
+					dwLot -= aMember[i].second;
+				}
+			}
+
 			/* もう持てない？ */
-			if (GetItemCount (pChar->dwTblID) >= MAX_MYITEM) {
+			if (GetItemCount (pCharGet->dwTblID) >= MAX_MYITEM) {
 				byGetItem = 1;
 				/* 手持ちがいっぱいなら預かり所へ送る（預かり所もいっぱいならあきらめる） */
-				if (AddLeaveItem (pChar, (WORD)nGetItemNo)) {
+				if (AddLeaveItem (pCharGet, (WORD)nGetItemNo)) {
 					byGetItem = 3;
 				}
 
 			} else {
 				byGetItem = 2;
-				AddCharItem (pChar->dwTblID, nGetItemNo);
-				SendCmdCHARITEM (pChar->pID, pChar->dwTblID);
+				AddCharItem (pCharGet->dwTblID, nGetItemNo);
+				SendCmdCHARITEM (pCharGet->pID, pCharGet->dwTblID);
 			}
 		}
 	}
 
-	/* ターゲットにしていた他のプレイヤーへ通知 */
+	/* 報酬をもらった人と、ターゲットにしていた他のプレイヤーへ通知 */
 	PMAPINFO pMap = g_aMapInfo[pChar->dwMapID];
 	PDWORD pData = pMap->paTblNoPC;
-	int i;
+	std::vector<PCHARINFO> aNotify;
 
+	for (i = 0; i < nMember; i ++) {
+		aNotify.push_back (aMember[i].first);
+	}
 	for (i = 0; i < (int)pMap->dwCountTblNoPC; i ++) {
 		if (pData[i] == -1) {
 			break;
 		}
 		PCHARINFO pCharTmp = g_aCharInfo[pData[i]];
-		if (pCharTmp->dwTargetTblID == pCharTarget->dwTblID) {
-			if (pCharTmp->dwTblID != pChar->dwTblID) {
-				/* ターゲット解除 */
-				pCharTmp->dwLastBattle = 0;
-				pCharTmp->dwTargetTblID = -1;
-				SendCmdTARGETCHAR (pCharTmp->dwTblID, -1);
-				/* 倒したプレイヤー以外にメッセージ通知 */
-				SendCmdSYSMSG2 (pCharTmp->pID, SYSMSG_BATTLEEND2, pCharTarget->pID, pChar->pID);
-				if (dwGoldTmp > 0) {
-					SendCmdSYSMSG2 (pCharTmp->pID, SYSMSG_BATTLEEND3, pChar->pID, dwGoldTmp);
-				}
+		if (pCharTmp->dwTargetTblID != pCharTarget->dwTblID) {
+			continue;
+		}
+		if (pCharTmp->dwTblID != pChar->dwTblID) {
+			/* ターゲット解除 */
+			pCharTmp->dwLastBattle = 0;
+			pCharTmp->dwTargetTblID = -1;
+			SendCmdTARGETCHAR (pCharTmp->dwTblID, -1);
+		}
+		int j;
+		for (j = 0; j < (int)aNotify.size (); j ++) {
+			if (aNotify[j] == pCharTmp) {
+				break;
 			}
+		}
+		if (j >= (int)aNotify.size ()) {
+			aNotify.push_back (pCharTmp);
+		}
+	}
 
-			/* アイテム落とした？ */
-			if (byGetItem) {
-				SendCmdPLAYSOUND (pCharTmp->pID, SOUND_PI52);
-				SendCmdSYSMSG2 (pCharTmp->pID, SYSMSG_GETITEM1, pCharTarget->pID, nGetItemNo);
-				if (byGetItem == 1) {
-					SendCmdSYSMSG2 (pCharTmp->pID, SYSMSG_GETITEM2, 0, 0);
-				} else if (byGetItem == 3) {
-					/* 預かり所へ送った（預かり所と契約した冒険者には使い魔が付いていて運んでくれる、という設定） */
-					char szTmp[256];
-					snprintf (szTmp, sizeof (szTmp), "持ちきれないので、預かり所の使い魔が%sの預かり所へ運んでいきました", pChar->szName);
-					SendCmdSYSMSG (pCharTmp->pID, szTmp, SPEECHCMD_BATTLE1);
-				} else {
-					SendCmdSYSMSG2 (pCharTmp->pID, SYSMSG_GETITEM3, pChar->pID, nGetItemNo);
-				}
+	for (i = 0; i < (int)aNotify.size (); i ++) {
+		PCHARINFO pCharTmp = aNotify[i];
+
+		/* 倒したプレイヤー以外にメッセージ通知 */
+		if (pCharTmp->dwTblID != pChar->dwTblID) {
+			SendCmdSYSMSG2 (pCharTmp->pID, SYSMSG_BATTLEEND2, pCharTarget->pID, pChar->pID);
+		}
+
+		/* アイテム落とした？ */
+		if (byGetItem) {
+			SendCmdPLAYSOUND (pCharTmp->pID, SOUND_PI52);
+			SendCmdSYSMSG2 (pCharTmp->pID, SYSMSG_GETITEM1, pCharTarget->pID, nGetItemNo);
+			if (byGetItem == 1) {
+				SendCmdSYSMSG2 (pCharTmp->pID, SYSMSG_GETITEM2, 0, 0);
+			} else if (byGetItem == 3) {
+				/* 預かり所へ送った（預かり所と契約した冒険者には使い魔が付いていて運んでくれる、という設定） */
+				char szTmp[256];
+				snprintf (szTmp, sizeof (szTmp), "持ちきれないので、預かり所の使い魔が%sの預かり所へ運んでいきました", pCharGet->szName);
+				SendCmdSYSMSG (pCharTmp->pID, szTmp, SPEECHCMD_BATTLE1);
+			} else {
+				SendCmdSYSMSG2 (pCharTmp->pID, SYSMSG_GETITEM3, pCharGet->pID, nGetItemNo);
 			}
 		}
 	}
@@ -1231,6 +1216,7 @@ static int DamageProc(PCHARINFO pChar, PCHARINFO pCharTarget, BOOL bSPAtack, BOO
 		}
 	}
 
+	AddBattleDamage (pChar, pCharTarget, nTmp);
 	nTmp2 = pCharTarget->wHP;
 	nTmp2 -= nTmp;
 	pCharTarget->wHP = (WORD)max (nTmp2, 0);
@@ -1242,89 +1228,145 @@ static int DamageProc(PCHARINFO pChar, PCHARINFO pCharTarget, BOOL bSPAtack, BOO
 }
 
 /* ========================================================================= */
-/* 関数名：GetAcquisitionGold												 */
-/* 内容：獲得金額を計算														 */
-/* 日付：2004/07/20															 */
+/* 討伐報酬を分けるために、敵ごとに「誰がどれだけダメージを与えたか」を覚えておく */
+/* 敵のtblID → (プレイヤーのtblID → (pID, ダメージ合計))					 */
+/* pID も覚えるのは、ログアウトした人の席に別の人が入った時に間違えないため	 */
 /* ========================================================================= */
-static DWORD GetAcquisitionGold(PCHARINFO pChar, PCHARINFO pCharTarget)
+static std::map<DWORD, std::map<DWORD, std::pair<DWORD, DWORD> > > s_mapBattleDamage;
+
+/* ========================================================================= */
+/* 関数名：	AddBattleDamage													 */
+/* 内容：	プレイヤーが敵に与えたダメージを覚える。HPを減らす直前に呼ぶ	 */
+/*			nDamage は実際に減ったHP(残りHPより多い分は数えない)			 */
+/* ========================================================================= */
+void AddBattleDamage(PCHARINFO pChar, PCHARINFO pCharTarget, int nDamage)
 {
-	DWORD dwRet;
-
-	dwRet = pCharTarget->dwGold;
-
-	/* お金持ってる？ */
-	if (dwRet > 0) {
-		/* パーティに所属している？ */
-		if (pChar->dwPartyID) {
-			PPARTYINFO pPartyInfo;
-
-			pPartyInfo = g_aPartyInfo[pChar->dwPartyID];
-			/* 全員で分配？ */
-			if (pPartyInfo->byGold == PARTYGOLD_ALL) {
-				int i;
-
-				/* パーティ人数の計算 */
-				for (i = 0; i < MAX_PARTYMEMBER; i ++) {
-					if (pPartyInfo->adwTblID[i] == 0) {
-						break;
-					}
-				}
-
-				/* 人数分で割る */
-				dwRet /= i;
-
-				/* なくなっちゃう？ */
-				if (dwRet == 0) {
-					dwRet = pCharTarget->dwGold;
-				}
-			}
+	if ((pChar == NULL) || (pCharTarget == NULL) || (nDamage <= 0)) {
+		return;
+	}
+	/* 矢などは撃ったキャラ */
+	if (pChar->byNpcType == NPCTYPE_ATACK) {
+		if ((pChar->dwParentTblID == (DWORD)-1) || (pChar->dwParentTblID >= (DWORD)g_aCharInfo.GetSize ())) {
+			return;
 		}
+		pChar = g_aCharInfo[pChar->dwParentTblID];
+	}
+	/* プレイヤーが敵に与えた時だけ */
+	if ((pChar->byNpcType != NPCTYPE_INIT) || (pCharTarget->byNpcType == NPCTYPE_INIT)) {
+		return;
+	}
+	nDamage = min (nDamage, (int)pCharTarget->wHP);
+	if (nDamage <= 0) {
+		return;
 	}
 
-	return dwRet;
+	std::pair<DWORD, DWORD> &info = s_mapBattleDamage[pCharTarget->dwTblID][pChar->dwTblID];
+	if (info.first != pChar->pID) {
+		/* 同じ席の前の人の分は捨てる */
+		info.first	= pChar->pID;
+		info.second	= 0;
+	}
+	info.second += (DWORD)nDamage;
 }
 
 /* ========================================================================= */
-/* 関数名：GetAcquisitionExp												 */
-/* 内容：獲得経験値を計算													 */
-/* 日付：2007/03/02															 */
+/* 関数名：	ClearBattleDamage												 */
+/* 内容：	覚えたダメージを消す(キャラ削除時に呼ぶ)						 */
 /* ========================================================================= */
-static DWORD GetAcquisitionExp(PCHARINFO pChar, PCHARINFO pCharTarget)
+void ClearBattleDamage(DWORD dwTblID)
 {
-	DWORD dwRet;
+	s_mapBattleDamage.erase (dwTblID);
+}
 
-	dwRet = pCharTarget->dwExp;
+/* ========================================================================= */
+/* 関数名：	GetRewardMember													 */
+/* 内容：	討伐報酬をもらえるプレイヤーと、与えたダメージを集める			 */
+/*			・とどめを刺した人(先頭)										 */
+/*			・ダメージを与えた人											 */
+/*			・上の人が「全員で分配」のパーティなら、その仲間				 */
+/*			どれも敵と同じマップにいて、倒れていない人だけ					 */
+/* ========================================================================= */
+static void GetRewardMember(PCHARINFO pChar, PCHARINFO pCharTarget, std::vector<std::pair<PCHARINFO, DWORD> > &aMember)
+{
+	std::map<DWORD, std::map<DWORD, std::pair<DWORD, DWORD> > >::iterator itTarget;
+	std::map<DWORD, std::pair<DWORD, DWORD> >::iterator it;
+	int i, j, nCount;
 
-	/* 経験値持ってる？ */
-	if (pCharTarget->dwExp > 0) {
-		/* パーティに所属している？ */
-		if (pChar->dwPartyID) {
-			PPARTYINFO pPartyInfo;
+	aMember.clear ();
+	nCount = g_aCharInfo.GetSize ();
 
-			pPartyInfo = g_aPartyInfo[pChar->dwPartyID];
-			/* 全員で分配？ */
-			if (pPartyInfo->byGold == PARTYGOLD_ALL) {
-				int i;
+	/* とどめを刺した人 */
+	aMember.push_back (std::make_pair (pChar, (DWORD)0));
 
-				/* パーティ人数の計算 */
-				for (i = 0; i < MAX_PARTYMEMBER; i ++) {
-					if (pPartyInfo->adwTblID[i] == 0) {
-						break;
-					}
+	/* ダメージを与えた人 */
+	itTarget = s_mapBattleDamage.find (pCharTarget->dwTblID);
+	if (itTarget != s_mapBattleDamage.end ()) {
+		for (it = itTarget->second.begin (); it != itTarget->second.end (); it ++) {
+			if (it->first >= (DWORD)nCount) {
+				continue;
+			}
+			PCHARINFO pCharTmp = g_aCharInfo[it->first];
+			if ((pCharTmp->pID == 0) || (pCharTmp->pID != it->second.first)) {
+				continue;		/* もういない */
+			}
+			if (pCharTmp == pChar) {
+				aMember[0].second = it->second.second;
+				continue;
+			}
+			if ((pCharTmp->byNpcType != NPCTYPE_INIT) || (pCharTmp->dwMapID != pCharTarget->dwMapID) ||
+				(pCharTmp->byCharState == CHARSTATE_DEAD) || (pCharTmp->wHP == 0)) {
+				continue;
+			}
+			aMember.push_back (std::make_pair (pCharTmp, it->second.second));
+		}
+	}
+
+	/* 「全員で分配」のパーティの仲間 */
+	int nDamageMember = (int)aMember.size ();
+	for (j = 0; j < nDamageMember; j ++) {
+		DWORD dwPartyID = aMember[j].first->dwPartyID;
+		if (dwPartyID == 0) {
+			continue;
+		}
+		PPARTYINFO pPartyInfo = g_aPartyInfo[dwPartyID];
+		if ((pPartyInfo == NULL) || (pPartyInfo->byGold != PARTYGOLD_ALL)) {
+			continue;
+		}
+		for (i = 0; i < MAX_PARTYMEMBER; i ++) {
+			if (pPartyInfo->adwTblID[i] == 0) {
+				break;
+			}
+			if (pPartyInfo->adwTblID[i] >= (DWORD)nCount) {
+				continue;
+			}
+			PCHARINFO pCharTmp = g_aCharInfo[pPartyInfo->adwTblID[i]];
+			if ((pCharTmp->pID == 0) || (pCharTmp->byNpcType != NPCTYPE_INIT) ||
+				(pCharTmp->dwMapID != pCharTarget->dwMapID) ||
+				(pCharTmp->byCharState == CHARSTATE_DEAD) || (pCharTmp->wHP == 0)) {
+				continue;
+			}
+			int k;
+			for (k = 0; k < (int)aMember.size (); k ++) {
+				if (aMember[k].first == pCharTmp) {
+					break;
 				}
-
-				/* 人数分で割る */
-				dwRet /= i;
-
-				/* なくなっちゃう？ */
-				if (dwRet == 0) {
-					dwRet = pCharTarget->dwExp;
-				}
+			}
+			if (k >= (int)aMember.size ()) {
+				aMember.push_back (std::make_pair (pCharTmp, (DWORD)0));
 			}
 		}
 	}
 
-	return dwRet;
+	/* 一度も当てずに倒した時(念のため)はとどめの人がドロップをもらえるように */
+	if (aMember[0].second == 0) {
+		DWORD dwTotal = 0;
+		for (i = 0; i < (int)aMember.size (); i ++) {
+			dwTotal += aMember[i].second;
+		}
+		if (dwTotal == 0) {
+			aMember[0].second = 1;
+		}
+	}
 }
 
 /* ========================================================================= */
