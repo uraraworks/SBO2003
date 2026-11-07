@@ -1833,52 +1833,6 @@ void ReleaseData(void)
 }
 
 /* ========================================================================= */
-/* 関数名：IsTickDrawNeeded													 */
-/* 内容：時間経過だけで見た目が変わるもの（定期タイマーでの再描画）が画面にあるか */
-/*       マップ画面でそれが何も無ければ、定期描画は画素を変えないので省く。	 */
-/*       疑わしい時は TRUE（描く）に倒す。1秒に1回は必ず描く。				 */
-/* ========================================================================= */
-static BOOL IsTickDrawNeeded(DWORD dwTime)
-{
-	static DWORD s_dwLastHeartbeat = 0;
-
-	if (g_byGameState != GAMESTATE_MOVE) {
-		return TRUE;
-	}
-	if (dwTime - s_dwLastHeartbeat >= 1000) {
-		s_dwLastHeartbeat = dwTime;
-		return TRUE;
-	}
-	if (g_WndInfo.GetSize () > 0 || g_SysMsgInfo.GetSize () > 0) {
-		return TRUE;
-	}
-	if (g_FadeInOutInfo.byFadeIn || g_FadeInOutInfo.byFadeOut || g_FadeInOutInfo.dwLastTime) {
-		return TRUE;
-	}
-	int nCount = g_aCharInfo.GetSize ();
-	for (int i = 0; i < nCount; i ++) {
-		PCHARINFO pChar = g_aCharInfo[i];
-		if (pChar && pChar->dwLastSpeech) {
-			return TRUE;
-		}
-	}
-	return FALSE;
-}
-
-/* 定期タイマーでの再描画の要求（検査モードでは、省いた分も描いて画素が変わらないことを確かめる） */
-static void TickDraw(DWORD dwTime)
-{
-	if (IsTickDrawNeeded (dwTime)) {
-		g_bDraw = TRUE;
-	} else if (W32VerifyMode ()) {
-		if (!g_bDraw) {
-			W32VerifySkipCandidate ();
-		}
-		g_bDraw = TRUE;
-	}
-}
-
-/* ========================================================================= */
 /* 関数名：TimerProc														 */
 /* 内容：タイマー処理														 */
 /* 日付：2003/05/01															 */
@@ -1904,7 +1858,7 @@ void TimerProc(void)
 	if (dwTime > g_dwTimeLastAnime + 50) {
 		g_dwTimeLastAnime = dwTime;
 		g_byAnimeNo ++;
-		TickDraw (dwTime);
+		g_bDraw = TRUE;
 
 		g_nLoginAnimeX -= 2;
 		if (g_nLoginAnimeX < -32) {
@@ -2110,7 +2064,7 @@ void TimerProc(void)
 	if (abs (timeGetTime () - g_dwTimeLastCursor) > 100) {
 		g_dwTimeLastCursor = timeGetTime ();
 		g_byCursorAnime ++;
-		TickDraw (dwTime);
+		g_bDraw = TRUE;
 		if (g_byCursorAnime >= 4) {
 			g_byCursorAnime = 0;
 		}
