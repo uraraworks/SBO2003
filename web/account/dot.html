@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>ドット絵エディタ - SBO2003</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<style>
+	:root {
+		--bg: #1d1f24;
+		--fg: #e8e8e8;
+		--sub: #9aa0a6;
+		--panel: #262a33;
+		--field: #0f1217;
+		--border: #3a404a;
+		--accent: #f0b84a;
+		--ok: #7fd17f;
+		--ng: #ff9b8a;
+		--info: #6fa8dc;
+		--canvas-bg: #14161a;
+		--font: "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+	}
+	* { box-sizing: border-box; }
+	html, body {
+		margin: 0;
+		height: 100%;
+		background: var(--bg);
+		color: var(--fg);
+		font: 13px/1.5 var(--font);
+		overflow: hidden;		/* 画面いっぱいのアプリなので、ページ自体はスクロールさせない */
+	}
+	body { display: flex; flex-direction: column; }
+
+	/* ---- ボタン・入力欄（管理ページと同じ色づかい。こちらは詰めた大きさ） ---- */
+	button {
+		background: var(--accent);
+		color: #1d1f24;
+		border: 1px solid transparent;
+		border-radius: 6px;
+		font: bold 12px/1 var(--font);
+		padding: 7px 10px;
+		cursor: pointer;
+		white-space: nowrap;
+	}
+	button.sub {
+		background: transparent;
+		color: var(--fg);
+		border-color: var(--border);
+	}
+	button.sub:hover:not(:disabled) { border-color: var(--sub); }
+	button.mini { padding: 4px 7px; font-size: 11px; }
+	button:disabled { opacity: 0.45; cursor: default; }
+	button.danger { background: transparent; color: var(--ng); border-color: var(--ng); }
+	input[type="text"], input[type="number"], select {
+		background: var(--field);
+		border: 1px solid var(--border);
+		border-radius: 5px;
+		color: var(--fg);
+		font: 12px/1.3 var(--font);
+		padding: 4px 6px;
+		min-width: 0;
+	}
+	input[type="number"] { width: 56px; }
+	input[type="color"] { width: 36px; height: 26px; padding: 0; border: 1px solid var(--border); background: var(--field); }
+	label.chk { display: flex; align-items: center; gap: 6px; margin: 2px 0; cursor: pointer; }
+	kbd {
+		display: inline-block;
+		min-width: 18px;
+		padding: 0 4px;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		background: var(--field);
+		color: var(--sub);
+		font: 11px/16px var(--font);
+		text-align: center;
+	}
+	.sub-text { color: var(--sub); font-size: 12px; }
+	.row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+	/* ---- 上のバー ---- */
+	#top {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		flex-wrap: wrap;
+		background: #0c0c0c;
+		padding: 6px 12px;
+		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+		z-index: 3;
+	}
+	#top h1 { margin: 0 12px 0 0; font-size: 15px; color: var(--accent); }
+	#top .gap { flex: 1; }
+	#top a { color: var(--info); font-size: 12px; text-decoration: none; }
+	#restoreBar {
+		background: #3a3220;
+		border-bottom: 1px solid var(--accent);
+		padding: 6px 12px;
+	}
+	#restoreBar .item { display: flex; gap: 8px; align-items: center; margin: 3px 0; }
+	#browserNote { background: #3a2a28; color: var(--ng); padding: 6px 12px; border-bottom: 1px solid var(--ng); }
+
+	/* ---- タブ ---- */
+	#tabs {
+		display: flex;
+		gap: 2px;
+		padding: 6px 12px 0;
+		background: #14161a;
+		overflow-x: auto;
+		min-height: 34px;
+		scrollbar-width: thin;
+	}
+	.tab {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 5px 8px 5px 12px;
+		border-radius: 8px 8px 0 0;
+		background: var(--panel);
+		color: var(--sub);
+		border: 1px solid var(--border);
+		border-bottom: none;
+		cursor: pointer;
+		white-space: nowrap;
+		max-width: 240px;
+	}
+	.tab.active { color: var(--fg); background: #323846; border-color: var(--accent); }
+	.tab .label { overflow: hidden; text-overflow: ellipsis; }
+	.tab .dot { color: var(--accent); }
+	.tab .x { border: none; background: transparent; color: var(--sub); padding: 0 4px; font-size: 14px; }
+	.tab .x:hover { color: var(--ng); }
+	.tab .draft-tag { font-size: 10px; border: 1px solid var(--info); color: var(--info); border-radius: 4px; padding: 0 4px; }
+
+	/* ---- 本体 ---- */
+	#main { flex: 1; display: flex; min-height: 0; }
+	aside {
+		background: var(--panel);
+		overflow-y: auto;
+		scrollbar-width: thin;
+		flex: 0 0 auto;
+	}
+	#left { width: 214px; border-right: 1px solid var(--border); }
+	#right { width: 340px; border-left: 1px solid var(--border); }
+	aside details { border-bottom: 1px solid var(--border); }
+	aside summary {
+		padding: 7px 10px;
+		cursor: pointer;
+		font-weight: bold;
+		color: var(--accent);
+		user-select: none;
+	}
+	aside .body { padding: 2px 10px 10px; }
+
+	#center { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+	#viewport {
+		flex: 1;
+		position: relative;
+		overflow: auto;
+		background: var(--canvas-bg);
+		min-height: 0;
+	}
+	#sizer { position: relative; }
+	/* 幅 0・高さ 0 の「吸いつく」台。キャンバスを常に表示領域に貼りつけておき、スクロールは本物のスクロールバーに任せる */
+	#anchor { position: sticky; left: 0; top: 0; width: 0; height: 0; }
+	#cv { position: absolute; left: 0; top: 0; display: block; outline: none; }
+	#cv.pan { cursor: grab; }
+	#cv.panning { cursor: grabbing; }
+	#cv.pick { cursor: crosshair; }
+	#status {
+		display: flex;
+		gap: 16px;
+		flex-wrap: wrap;
+		padding: 4px 12px;
+		background: #0c0c0c;
+		color: var(--sub);
+		font-size: 12px;
+		min-height: 26px;
+		align-items: center;
+	}
+	#status b { color: var(--fg); font-weight: normal; }
+	#status .sw { display: inline-block; width: 12px; height: 12px; border: 1px solid #888; vertical-align: -2px; margin-right: 4px; }
+	#empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--sub); text-align: center; line-height: 2; pointer-events: none; }
+
+	/* ---- 左: ツール ---- */
+	#tools { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+	#tools button { display: flex; justify-content: space-between; align-items: center; background: var(--field); color: var(--fg); border-color: var(--border); font-weight: normal; }
+	#tools button.active { border-color: var(--accent); color: var(--accent); background: #3a3220; }
+	.opt-group { margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--border); }
+	.opt-group h4 { margin: 0 0 4px; font-size: 12px; color: var(--sub); font-weight: normal; }
+	.btns { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+
+	/* ---- 左: ファイル一覧 ---- */
+	#fileList { max-height: 260px; overflow-y: auto; margin-top: 6px; scrollbar-width: thin; }
+	.file {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 3px 4px;
+		border-radius: 5px;
+		cursor: pointer;
+	}
+	.file:hover { background: #323846; }
+	.file.open { background: #2d3442; }
+	.file.current { outline: 1px solid var(--accent); }
+	.file .th { width: 32px; height: 24px; flex: none; background: #000; display: flex; align-items: center; justify-content: center; }
+	.file .th img { max-width: 32px; max-height: 24px; image-rendering: pixelated; }
+	.file .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+	.file .sz { color: var(--sub); font-size: 10px; }
+	.file .mk { font-size: 10px; border-radius: 4px; padding: 0 3px; border: 1px solid var(--border); }
+	.file .mk.dirty { color: var(--accent); border-color: var(--accent); }
+	.file .mk.draft { color: var(--info); border-color: var(--info); }
+
+	/* ---- 右: 全体図 ---- */
+	#ovBox { max-height: 300px; overflow: auto; background: var(--canvas-bg); border: 1px solid var(--border); position: relative; scrollbar-width: thin; }
+	#ovWrap { position: relative; display: block; }
+	#ov, #tile, #animCv { image-rendering: pixelated; display: block; }
+	.checker { background-color: #ccc; background-image: linear-gradient(45deg, #888 25%, transparent 25%, transparent 75%, #888 75%), linear-gradient(45deg, #888 25%, transparent 25%, transparent 75%, #888 75%); background-size: 10px 10px; background-position: 0 0, 5px 5px; }
+	.checker.black { background: #000; }
+	#ovRect { position: absolute; border: 1px solid #fff; outline: 1px solid #000; pointer-events: none; }
+
+	/* ---- 右: パレット ---- */
+	#pal { display: block; width: 288px; height: 288px; cursor: pointer; margin: 4px 0; }
+	#palInfo { display: flex; align-items: center; gap: 8px; }
+	#palInfo .sw { width: 28px; height: 28px; border: 2px solid #fff; flex: none; }
+	#palEdit { margin: 6px 0; padding: 8px; background: var(--field); border: 1px solid var(--border); border-radius: 6px; }
+	#palEdit .row { margin: 3px 0; }
+
+	/* ---- 右: レイヤー ---- */
+	#layerList { margin: 4px 0; }
+	.layer { display: flex; align-items: center; gap: 6px; padding: 3px 4px; border-radius: 5px; cursor: pointer; border: 1px solid transparent; }
+	.layer.cur { background: #3a3220; border-color: var(--accent); }
+	.layer .eye { width: 22px; padding: 2px 0; text-align: center; font-size: 11px; }
+	.layer .eye.off { opacity: 0.4; }
+	.layer .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.layer input.rename { flex: 1; }
+
+	/* ---- 右: 控え ---- */
+	.draft { display: flex; gap: 6px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+	.draft .th { width: 48px; height: 48px; flex: none; background: #000; display: flex; align-items: center; justify-content: center; }
+	.draft .th img { max-width: 48px; max-height: 48px; image-rendering: pixelated; }
+	.draft .info { flex: 1; min-width: 0; }
+	.draft .nm { word-break: break-all; }
+	.draft .btns { margin: 3px 0 0; }
+	.tag { display: inline-block; border-radius: 4px; padding: 0 5px; font-size: 11px; border: 1px solid var(--border); margin-right: 4px; }
+	.tag.auto { color: var(--info); border-color: var(--info); }
+	.tag.orig { color: var(--ok); border-color: var(--ok); }
+
+	/* ---- トースト・ダイアログ ---- */
+	#toast {
+		position: fixed;
+		left: 50%;
+		bottom: 40px;
+		transform: translateX(-50%);
+		background: #0c0c0c;
+		border: 1px solid var(--accent);
+		color: var(--fg);
+		padding: 9px 18px;
+		border-radius: 8px;
+		box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+		z-index: 10;
+		opacity: 0;
+		pointer-events: none;
+		transition: opacity 0.2s;
+		max-width: 80vw;
+	}
+	#toast.show { opacity: 1; }
+	#toast.ng { border-color: var(--ng); color: var(--ng); }
+	#toast.ok { border-color: var(--ok); }
+	dialog { background: var(--panel); color: var(--fg); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; max-width: 560px; }
+	dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+	dialog h2 { margin: 0 0 8px; font-size: 16px; color: var(--accent); }
+	table.keys { border-collapse: collapse; width: 100%; }
+	table.keys td { padding: 2px 8px 2px 0; vertical-align: top; }
+	table.keys td:first-child { white-space: nowrap; }
+	.note { background: var(--field); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; margin: 6px 0; color: var(--sub); font-size: 12px; }
+	a { color: var(--info); }
+</style>
+</head>
+<body>
+
+<div id="top">
+	<h1>ドット絵エディタ</h1>
+	<button id="btnOpenDir" title="ゲームの絵 (SboGrpData/grp) が入っているフォルダを選びます">作業フォルダを開く</button>
+	<button id="btnReopenDir" class="sub" hidden>前のフォルダを開く</button>
+	<button id="btnOpenFile" class="sub" title="フォルダを使わずに、PNG を 1 枚だけ開きます">ファイルを開く</button>
+	<input type="file" id="fileInput" accept=".png,image/png" multiple hidden>
+	<span style="width:8px"></span>
+	<button id="btnSave" title="Cmd+S（Windows は Ctrl+S）">保存</button>
+	<button id="btnDraft" class="sub" title="元のファイルは上書きせず、ブラウザの中に控えを残します（Cmd+Shift+S）">一時保存</button>
+	<button id="btnTry" class="sub" title="この絵をゲームに読み込ませて試します">ゲームで試す</button>
+	<span class="gap"></span>
+	<button id="btnHelp" class="sub" title="キーボードの一覧（?）">? ショートカット</button>
+	<a href="/admin">管理ページへ</a>
+</div>
+<div id="browserNote" hidden>このブラウザでは「作業フォルダを開く」が使えません。Chrome で開いてください。1 枚ずつ開くことはできて、「保存」はダウンロードになります。</div>
+<div id="restoreBar" hidden></div>
+<div id="tabs"></div>
+
+<div id="main">
+	<aside id="left">
+		<details open>
+			<summary>ファイル</summary>
+			<div class="body">
+				<div id="dirName" class="sub-text">フォルダはまだ開いていません</div>
+				<div id="fileList"></div>
+			</div>
+		</details>
+		<details open>
+			<summary>ツール</summary>
+			<div class="body">
+				<div id="tools"></div>
+				<div id="toolOpts"></div>
+			</div>
+		</details>
+		<details open>
+			<summary>選択範囲</summary>
+			<div class="body">
+				<div class="btns">
+					<button class="sub mini" id="btnCopy">コピー</button>
+					<button class="sub mini" id="btnCut">切り取り</button>
+					<button class="sub mini" id="btnPaste">貼り付け</button>
+					<button class="sub mini" id="btnSelAll">全選択</button>
+					<button class="sub mini" id="btnDeselect">選択解除</button>
+				</div>
+				<div class="btns">
+					<button class="sub mini" id="btnFlipH">左右反転</button>
+					<button class="sub mini" id="btnFlipV">上下反転</button>
+					<button class="sub mini" id="btnRot">右90°回転</button>
+				</div>
+				<button class="sub mini" id="btnSelReplace" title="「色の置き換え」の A → B を、選択範囲の中だけに使います">選択範囲だけ色を置き換え</button>
+				<label class="chk"><input type="checkbox" id="optSnap"> マスの線に合わせて選ぶ</label>
+				<label class="chk"><input type="checkbox" id="optClip" checked> 描くのは選択範囲の中だけ</label>
+				<label class="chk"><input type="checkbox" id="optKeepIdx"> 貼る時は番号のまま</label>
+				<label class="chk"><input type="checkbox" id="optSkipTrans"> 透明（黒）は重ねない</label>
+			</div>
+		</details>
+		<details open>
+			<summary>表示</summary>
+			<div class="body">
+				<label class="chk"><input type="checkbox" id="optPixGrid" checked> 1 ドットの線（拡大4倍以上）</label>
+				<label class="chk"><input type="checkbox" id="optCellGrid" checked> マスの線</label>
+				<label class="chk"><input type="checkbox" id="optCellNo"> マスの番号</label>
+				<label class="chk"><input type="checkbox" id="optChecker" checked> 透明（黒）を市松模様で見せる</label>
+				<div class="opt-group">
+					<h4>マスの大きさ</h4>
+					<div class="row">
+						<select id="cellPreset">
+							<option value="8x8">8×8</option>
+							<option value="16x16">16×16</option>
+							<option value="24x24">24×24</option>
+							<option value="32x32">32×32</option>
+							<option value="48x48">48×48</option>
+							<option value="16x32">16×32</option>
+							<option value="custom">自分で決める</option>
+						</select>
+					</div>
+					<div class="row" style="margin-top:4px">
+						<input type="number" id="cellW" min="1" max="512" value="16"> ×
+						<input type="number" id="cellH" min="1" max="512" value="16">
+					</div>
+				</div>
+			</div>
+		</details>
+	</aside>
+
+	<section id="center">
+		<div id="viewport">
+			<div id="sizer"><div id="anchor"><canvas id="cv" tabindex="0"></canvas></div></div>
+			<div id="empty">左の一覧から絵を選ぶか、<br>「作業フォルダを開く」を押してください。</div>
+		</div>
+		<div id="status"></div>
+	</section>
+
+	<aside id="right">
+		<details open>
+			<summary>全体図</summary>
+			<div class="body">
+				<div id="ovBox"><div id="ovWrap" class="checker"><canvas id="ov"></canvas><div id="ovRect"></div></div></div>
+				<div class="sub-text" id="ovNote"></div>
+			</div>
+		</details>
+		<details open>
+			<summary>パレット</summary>
+			<div class="body">
+				<div id="palInfo"></div>
+				<canvas id="pal" width="288" height="288"></canvas>
+				<div class="sub-text">クリックで色を選ぶ / Shift+クリックで範囲 / ダブルクリックで色を変える / <kbd>[</kbd><kbd>]</kbd>で前後の色へ</div>
+				<div id="palEdit" hidden>
+					<div class="row"><input type="color" id="peColor"> R <input type="number" id="peR" min="0" max="255"> G <input type="number" id="peG" min="0" max="255"> B <input type="number" id="peB" min="0" max="255"></div>
+					<div class="row"><span class="sub-text" id="peLabel"></span><span style="flex:1"></span><button class="sub mini" id="peClose">閉じる</button></div>
+				</div>
+				<div class="btns">
+					<button class="sub mini" id="btnGradient" title="Shift+クリックで選んだ範囲を、両端の色でなめらかにつなぎます">グラデーション</button>
+					<label class="chk"><input type="checkbox" id="optUsed"> 使っている色に印</label>
+				</div>
+				<div class="opt-group">
+					<h4>色の置き換え</h4>
+					<div class="row">
+						<input type="number" id="repFrom" min="0" max="255" value="0"> <button class="sub mini" id="repFromCur" title="今の色を入れる">今の色</button>
+						→
+						<input type="number" id="repTo" min="0" max="255" value="0"> <button class="sub mini" id="repToCur">今の色</button>
+					</div>
+					<div class="row" style="margin-top:4px">
+						<button class="sub mini" id="btnRepLayer">このレイヤー全体</button>
+						<button class="sub mini" id="btnRepSel">選択範囲だけ</button>
+					</div>
+				</div>
+			</div>
+		</details>
+		<details open>
+			<summary>レイヤー</summary>
+			<div class="body">
+				<div class="btns">
+					<button class="sub mini" id="lyAdd">追加</button>
+					<button class="sub mini" id="lyDup">複製</button>
+					<button class="sub mini" id="lyDel">削除</button>
+					<button class="sub mini" id="lyUp">上へ</button>
+					<button class="sub mini" id="lyDown">下へ</button>
+					<button class="sub mini" id="lyMerge">下と結合</button>
+				</div>
+				<div id="layerList"></div>
+				<div class="sub-text">一番下のレイヤーが、ファイルから読んだ絵です。「下絵」は見た目が半透明になるだけで、保存には普通に入ります（保存に入れたくないレイヤーは目のマークで隠してください）。</div>
+			</div>
+		</details>
+		<details>
+			<summary>タイル確認</summary>
+			<div class="body">
+				<div class="sub-text">選択範囲（なければ最後にクリックしたマス）を 3×3 にならべます。マップチップのつなぎ目の確認用です。</div>
+				<div style="margin-top:6px; overflow:auto"><canvas id="tile" class="checker"></canvas></div>
+			</div>
+		</details>
+		<details>
+			<summary>アニメ確認</summary>
+			<div class="body">
+				<div class="row">
+					<input type="text" id="animFrames" value="0,1" placeholder="0,1,0,2" style="flex:1">
+					<button class="sub mini" id="animAdd">選んだマスを追加</button>
+				</div>
+				<div class="row" style="margin:6px 0">
+					<input type="number" id="animMs" min="20" max="5000" value="200" style="width:64px"> ミリ秒
+					<button class="mini" id="animPlay">再生</button>
+					<span class="sub-text" id="animInfo"></span>
+				</div>
+				<div style="overflow:auto"><canvas id="animCv" class="checker"></canvas></div>
+			</div>
+		</details>
+		<details open>
+			<summary>一時保存の控え</summary>
+			<div class="body">
+				<div class="btns">
+					<button class="mini" id="drSave" title="Cmd+Shift+S">上書きで一時保存</button>
+					<button class="sub mini" id="drSaveNew">新しい控えとして保存</button>
+				</div>
+				<label class="chk"><input type="checkbox" id="drAll"> すべての控えを見る</label>
+				<div id="drList"></div>
+			</div>
+		</details>
+		<details>
+			<summary>ゲームで試す</summary>
+			<div class="body">
+				<div class="note">同じブラウザで <a href="/" target="_blank" rel="noopener">/（ゲーム）</a> を開き直すと、この絵で表示されます。サーバーや他の人には影響しません</div>
+				<div class="btns">
+					<button class="mini" id="pvTry">この絵をゲームで試す</button>
+					<button class="danger mini" id="pvClear">全部やめる</button>
+				</div>
+				<div id="pvList" class="sub-text"></div>
+			</div>
+		</details>
+	</aside>
+</div>
+
+<div id="toast"></div>
+
+<dialog id="helpDlg">
+	<h2>キーボードの一覧</h2>
+	<table class="keys" id="helpTable"></table>
+	<form method="dialog" style="margin-top:10px"><button>閉じる</button></form>
+</dialog>
+
+<dialog id="targetDlg">
+	<h2>どのファイルに上書きしますか</h2>
+	<p class="sub-text" id="targetMsg"></p>
+	<div class="row"><select id="targetSel" style="min-width:240px"></select></div>
+	<div class="row" style="margin-top:12px">
+		<button id="targetOk">上書き保存</button>
+		<button id="targetCancel" class="sub">やめる</button>
+	</div>
+</dialog>
+
+<script type="module" src="dot-editor.js"></script>
+</body>
+</html>

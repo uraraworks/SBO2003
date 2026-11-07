@@ -59,6 +59,28 @@
 	#sbo-sharp.sbo-on {
 		display: block;
 	}
+	/* ドット絵エディタの「ゲームで試す」で差し替え中の目印（このブラウザだけ） */
+	#sbo-dot-preview {
+		display: none;
+		position: fixed;
+		left: 8px;
+		top: 8px;
+		z-index: 50;
+		padding: 6px 10px;
+		font-size: 12px;
+		color: #1d1f24;
+		background: #f0b84a;
+		border-radius: 6px;
+		box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+	}
+	#sbo-dot-preview.sbo-on {
+		display: block;
+	}
+	#sbo-dot-preview button {
+		margin-left: 8px;
+		font-size: 12px;
+		cursor: pointer;
+	}
 	#sbo-status {
 		font-size: 13px;
 		color: var(--sub);
@@ -1284,6 +1306,7 @@
 	<button type="button" id="sbo-chat-open" data-pad-hide-battle="1" disabled title="チャット">💬</button>
 	<div id="sbo-status">読み込み中...</div>
 </div>
+<div id="sbo-dot-preview" data-sbo-ui="1"><span id="sbo-dot-preview-text"></span><button type="button" id="sbo-dot-preview-stop">やめて読み直す</button></div>
 <footer class="site-footer">
 	<a href="https://www.urara-works.jp/" target="_blank" rel="noopener">© URARA-works</a> /
 	<a href="/status" target="_blank" rel="noopener" id="sbo-site-status">サーバー状況</a> /
@@ -3097,8 +3120,94 @@
 		});
 	})();
 
+	/* ------------------------------------------------------------------
+	   ドット絵エディタ（/dot）の「ゲームで試す」
+	     エディタが IndexedDB「sbo-dot-preview」の files に { name: 'efc01.png', bytes } を入れておくと、
+	     ゲームが画像を読む前（main の前）に preload した /res/SboGrpData/grp/ のファイルを差し替える。
+	     ゲームは画像を LoadResource の時にファイルから読むので、これだけで描き直した絵で表示される。
+	     このブラウザの中だけの話で、サーバーや他のプレイヤーには関係しない。
+	   ------------------------------------------------------------------ */
+	var aDotPreview = [];
+	function dotPreviewOpen() {
+		return new Promise(function (resolve, reject) {
+			if (!window.indexedDB) {
+				reject(new Error('IndexedDB なし'));
+				return;
+			}
+			var req = indexedDB.open('sbo-dot-preview', 1);
+			req.onupgradeneeded = function () {
+				if (!req.result.objectStoreNames.contains('files')) {
+					req.result.createObjectStore('files');
+				}
+			};
+			req.onsuccess = function () { resolve(req.result); };
+			req.onerror = function () { reject(req.error); };
+		});
+	}
+	function dotPreviewLoad() {
+		return dotPreviewOpen().then(function (db) {
+			return new Promise(function (resolve) {
+				var list = [];
+				var tx = db.transaction('files', 'readonly');
+				var cur = tx.objectStore('files').openCursor();
+				cur.onsuccess = function () {
+					var c = cur.result;
+					if (c) {
+						if (c.value && c.value.bytes) {
+							/* Mac のフォルダから読んだ日本語名は濁点が分かれた形（NFD）のことがある。ゲームの中の名前は NFC */
+							list.push({ name: String(c.key).normalize('NFC'), bytes: new Uint8Array(c.value.bytes) });
+						}
+						c.continue();
+					}
+				};
+				tx.oncomplete = function () { db.close(); resolve(list); };
+				tx.onerror = function () { db.close(); resolve(list); };
+			});
+		});
+	}
+	/* 差し替えたファイルを FS に書く（preload が済んで main が動く前に呼ぶ） */
+	function dotPreviewApply() {
+		var applied = [];
+		aDotPreview.forEach(function (f) {
+			var dst = '/res/SboGrpData/grp/' + f.name;
+			/* 元からあるゲームの画像だけ差し替える（名前の間違いで余計なファイルを作らない） */
+			if (f.name.indexOf('/') >= 0 || !Module.FS || !Module.FS.analyzePath(dst).exists) {
+				return;
+			}
+			try {
+				Module.FS.writeFile(dst, f.bytes);
+				applied.push(f.name);
+			} catch (e) {
+				console.warn('ドット絵の試し表示を書き込めませんでした', f.name, e);
+			}
+		});
+		if (applied.length) {
+			document.getElementById('sbo-dot-preview-text').textContent =
+				'ドット絵の試し表示中: ' + applied.join('、');
+			document.getElementById('sbo-dot-preview').classList.add('sbo-on');
+		}
+	}
+	document.getElementById('sbo-dot-preview-stop').addEventListener('click', function () {
+		dotPreviewOpen().then(function (db) {
+			var tx = db.transaction('files', 'readwrite');
+			tx.objectStore('files').clear();
+			tx.oncomplete = function () { db.close(); location.reload(); };
+		}).catch(function () { location.reload(); });
+	});
+
 	var Module = window.Module = {
 		canvas: canvas,
+		/* 「ゲームで試す」の絵を読み終わるまで main を待たせる（読めなくてもゲームは普通に動かす） */
+		preRun: [function () {
+			Module.addRunDependency('sbo-dot-preview');
+			dotPreviewLoad().then(function (list) {
+				aDotPreview = list;
+			}).catch(function () {
+				/* IndexedDB が使えない時は差し替え無し */
+			}).then(function () {
+				Module.removeRunDependency('sbo-dot-preview');
+			});
+		}],
 		w32KeyToVk: keyToVk,
 		/* ゲーム画面を描くたびに呼ばれる（ドットのにじみ対策） */
 		w32OnPresent: drawSharp,
@@ -3123,6 +3232,7 @@
 			alert(text);
 		},
 		onRuntimeInitialized: function () {
+			dotPreviewApply();
 			sboReady = true;
 			status.textContent = '';
 			canvas.focus();
