@@ -463,6 +463,10 @@ BOOL DamageAfterProcNPC(PCHARINFO pChar, PCHARINFO pCharTarget)
 			/* もう持てない？ */
 			if (GetItemCount (pChar->dwTblID) >= MAX_MYITEM) {
 				byGetItem = 1;
+				/* 手持ちがいっぱいなら預かり所へ送る（預かり所もいっぱいならあきらめる） */
+				if (AddLeaveItem (pChar, (WORD)nGetItemNo)) {
+					byGetItem = 3;
+				}
 
 			} else {
 				byGetItem = 2;
@@ -501,6 +505,11 @@ BOOL DamageAfterProcNPC(PCHARINFO pChar, PCHARINFO pCharTarget)
 				SendCmdSYSMSG2 (pCharTmp->pID, SYSMSG_GETITEM1, pCharTarget->pID, nGetItemNo);
 				if (byGetItem == 1) {
 					SendCmdSYSMSG2 (pCharTmp->pID, SYSMSG_GETITEM2, 0, 0);
+				} else if (byGetItem == 3) {
+					/* 預かり所へ送った */
+					char szTmp[256];
+					snprintf (szTmp, sizeof (szTmp), "しかし持てないので%sの預かり所に送りました", pChar->szName);
+					SendCmdSYSMSG (pCharTmp->pID, szTmp, SPEECHCMD_BATTLE1);
 				} else {
 					SendCmdSYSMSG2 (pCharTmp->pID, SYSMSG_GETITEM3, pChar->pID, nGetItemNo);
 				}
