@@ -7,4 +7,4 @@
 - golden を作り直す（挙動を意図して変えた時だけ）: `tests/server/run.sh /tmp/x.txt && grep -v -e '^BENCH' -e '^\[' /tmp/x.txt > tests/server/golden.txt`
 
 中身（test_main.cpp）: A 送信(SendTo) / B 同画面内配信 / C myArray / D 経路探索(SEARCH2) / E キャラ巡回(TimerProc)。
-時刻と乱数は固定、通信は mock_net.js、実データは Release/SBODATA のコピー（元は書き換えない）。
+時刻と乱数は固定、通信は mock_net.js、実データは非公開リポジトリ SBO2003-private の Release/SBODATA のコピー（元は書き換えない。探し方は tools/server/find-data.sh）。

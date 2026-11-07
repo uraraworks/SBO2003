@@ -83,7 +83,9 @@ tools/server/check_tcp.py     # 接続テスト
 
 ## データフォルダ
 
-最初の起動で `Release/SBODATA` と `Release/sbosvr.ini` を `out/server-data/` にコピーします。
+最初の起動でゲームデータ（`SBODATA`）と `Release/sbosvr.ini` を `out/server-data/` にコピーします。
+ゲームデータは、隣に非公開リポジトリ `SBO2003-private` のクローンがあればその `Release/SBODATA`（本物のマップ・NPC など）、
+無ければ公開リポジトリの `Release/SBODATA`（10×10 の草原だけ）です（`tools/server/find-data.sh`。場所が違う時は環境変数 `SBO2003_PRIVATE_DIR`）。
 遊んだ内容はここに保存されます（Windows 版と同じく、定期保存と終了時の保存）。
 最初からやり直したい時は、サーバーを止めて `out/server-data/` を消してください。
 

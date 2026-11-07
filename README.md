@@ -33,7 +33,7 @@ tools/server/run.sh       # http://localhost:8080/ で遊べます（停止は t
 | `server/` | Node.js 版サーバーの入口と通信（TCP・WebSocket・HTTP） |
 | `web/` | ブラウザ版の画面・BGM・アカウントまわり（[web/README.md](web/README.md)） |
 | `SboGrpData/` `SboSoundData/` | 画像と効果音 |
-| `Release/` | サーバーの初期データ（`SBODATA/`）と設定（`sbosvr.ini`） |
+| `Release/` | サーバーの最小の初期データ（`SBODATA/`、10×10 の草原だけ）と設定（`sbosvr.ini`） |
 | `deploy/` | ステージング（Docker）と本番（Windows VPS）用の一式 |
 | `tools/` | ビルド・実行用のスクリプト |
 
@@ -41,7 +41,10 @@ tools/server/run.sh       # http://localhost:8080/ で遊べます（停止は t
 
 - **BGM の MIDI**：作曲者さんに再配布の許可をいただけていないため入れていません。無くてもビルドでき、BGM が鳴らないだけです。
   手元にある場合は `SboSoundData/MIDI/` に置くとビルドに入ります。
-- **プレイヤーのデータ**：`Release/SBODATA/` は NPC だけの初期データです（マップ・アイテム・NPC などゲームの中身は入っています）。
+- **ゲームの中身のデータ**：マップ・NPC・アイテム・職業などは、解析するとネタバレになってしまうので入れていません。
+  `Release/SBODATA/` は 10×10 の草原が 1 枚あるだけの最小データです（サーバーはマップが無いと自分で草原を作ります。
+  作り方は `tools/public/make-min-seed.sh`）。キャラを作って歩くところまでは試せます。
+- **プレイヤーのデータ**：アカウントや預かり所などは入っていません。
 
 ## ライセンス
 

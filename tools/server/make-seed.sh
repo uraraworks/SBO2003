@@ -1,9 +1,13 @@
 #!/bin/bash
 # ===========================================================================
-# プレイヤーのデータを含まない「初期データ」を作る（公開リポジトリ用）
+# プレイヤーのデータを含まない「初期データ」を作る（非公開リポジトリの Release/SBODATA 用）
 #
 #   使い方: tools/server/make-seed.sh <元の SBODATA フォルダ> [出力先]
-#     出力先の省略時は Release/SBODATA
+#     出力先の省略時は、非公開リポジトリ（SBO2003-private）のクローンの Release/SBODATA
+#     （探し方は tools/server/find-data.sh）
+#
+# マップ・NPC などの本物のデータはネタバレになるので、公開リポジトリの Release/SBODATA
+# （10×10 の草原だけ。tools/public/make-min-seed.sh で作る）には出力しない。
 #
 # 元のデータをいったん作業フォルダへコピーし、サーバーを --save-npc-only で
 # 起動・終了させて NPC だけを保存し直す。そのキャラ情報と、ゲームの中身の
@@ -15,7 +19,17 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SRC="${1:?元の SBODATA フォルダを指定してください}"
-OUT="${2:-$ROOT/Release/SBODATA}"
+if [ -n "${2:-}" ]; then
+	OUT="$2"
+else
+	OUT="$("$ROOT/tools/server/find-data.sh")" || {
+		echo "[seed] 出力先を指定するか、非公開リポジトリ（SBO2003-private）を隣にクローンしてください" >&2
+		exit 1
+	}
+fi
+case "$(mkdir -p "$OUT" && cd "$OUT" && pwd)" in
+	"$ROOT/Release/SBODATA") echo "[seed] 公開リポジトリの Release/SBODATA には本物のデータを置けません（ネタバレ防止）" >&2; exit 1 ;;
+esac
 JS="$ROOT/out/server/SboSvr.js"
 
 if [ ! -f "$JS" ]; then
