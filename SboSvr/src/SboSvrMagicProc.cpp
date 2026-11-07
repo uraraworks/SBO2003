@@ -1130,6 +1130,7 @@ BOOL MagicProcUse_HPDOWN(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTarge
 		nTmp2 = nTmp2 * RenkeiCheck (pChar, pCharTarget) / 100;
 	}
 
+	AddBattleDamage (pChar, pCharTarget, nTmp2);
 	nTmp = pCharTarget->wHP;
 	nTmp -= nTmp2;
 	nTmp = max (nTmp, 0);
@@ -1489,6 +1490,7 @@ BOOL MagicProcUse_HPDOWNAT(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTar
 		nTmp2 = nTmp2 * RenkeiCheck (pChar, pCharTarget) / 100;
 	}
 
+	AddBattleDamage (pChar, pCharTarget, nTmp2);
 	nTmp = pCharTarget->wHP;
 	nTmp -= nTmp2;
 	nTmp = max (nTmp, 0);
@@ -1720,6 +1722,7 @@ BOOL MagicProcUse_HPDOWNRATE(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharT
 		nTmp2 = nTmp2 * RenkeiCheck (pChar, pCharTarget) / 100;
 	}
 
+	AddBattleDamage (pChar, pCharTarget, nTmp2);
 	nTmp = pCharTarget->wHP;
 	nTmp -= nTmp2;
 	nTmp = max (nTmp, 0);
