@@ -3320,6 +3320,32 @@ void SendCmdCHAR_TAIL(DWORD dwTblIDTarget)
 }
 
 /* ========================================================================= */
+/* 関数名：SendCmdNPCROUTE													 */
+/* 内容：コマンド送信(NPCの巡回ルート)										 */
+/*       byCmdSub: NPCROUTE_REQ（dwMapID のマップの一覧を要求）・			 */
+/*                 NPCROUTE_SET（dwTblID のNPCのルートを保存。count 0 で巡回をやめる）	 */
+/* ========================================================================= */
+void SendCmdNPCROUTE(BYTE byCmdSub, DWORD dwMapID, DWORD dwTblID, BYTE byCount, BYTE byMode, BYTE byWait, const BYTE *pbyX, const BYTE *pbyY)
+{
+	CMDPARA_NPCROUTE Para;
+
+	ZeroMemory (&Para, sizeof (Para));
+	Para.byCmd			= CMD_NPCROUTE;
+	Para.byCmdSub		= byCmdSub;
+	Para.dwMapID		= dwMapID;
+	Para.dwTblID		= dwTblID;
+	Para.byRouteCount	= byCount;
+	Para.byRouteMode	= byMode;
+	Para.byRouteWait	= byWait;
+	if (pbyX && pbyY) {
+		CopyMemory (Para.abyRouteX, pbyX, sizeof (Para.abyRouteX));
+		CopyMemory (Para.abyRouteY, pbyY, sizeof (Para.abyRouteY));
+	}
+
+	cliSock.Send ((PBYTE)&Para, sizeof (Para));
+}
+
+/* ========================================================================= */
 /* 関数名：SendCmdADMINUNDO													 */
 /* 内容：コマンド送信(管理者画面の「元に戻す」)								 */
 /*       byCmdSub: ADMINUNDO_SCREEN（開いている画面の通知）・				 */

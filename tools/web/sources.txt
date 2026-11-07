@@ -30,6 +30,7 @@ SboCli/src/AdminWindowOld/AdminDlgMagicInfo.cpp
 SboCli/src/AdminWindowOld/AdminDlgMagicInfoEdit.cpp
 SboCli/src/AdminWindowOld/AdminDlgMagicUserInfo.cpp
 SboCli/src/AdminWindowOld/AdminDlgMagicUserInfoEdit.cpp
+SboCli/src/AdminWindowOld/AdminDlgNpcRoute.cpp
 SboCli/src/AdminWindowOld/AdminDlgStTmpInfo.cpp
 SboCli/src/AdminWindowOld/AdminDlgStTmpInfoEdit.cpp
 SboCli/src/AdminWindowOld/AdminDlgSugorokuEvent.cpp

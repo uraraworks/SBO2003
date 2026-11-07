@@ -262,6 +262,8 @@ enum {
 /* 以下、プレイヤー用（番号をずらさないよう最後に足す。管理者用の判定から外すこと） */
 	CMD_REQ_GUARD,													/* 構え(防御)の開始・終了 */
 	CMD_HASTE,														/* 加速の状態通知(サーバー→本人) */
+/* 以下、管理者用（CMD_MAPPARTSADD 以上は自動で管理者専用になる。CMD_HASTE より後ろに足す） */
+	CMD_NPCROUTE,													/* NPCの巡回ルート */
 	CMD_MAX
 };
 
@@ -2364,6 +2366,7 @@ enum {
 	ADMINSCR_MAGICINFO,											/* 魔法情報 */
 	ADMINSCR_MAGICUSERINFO,										/* 魔法利用者情報 */
 	ADMINSCR_EQUUSERINFO,										/* 装備職業情報 */
+	ADMINSCR_NPCROUTE,											/* NPCの巡回 */
 	ADMINSCR_MAX
 };
 
@@ -2380,6 +2383,34 @@ typedef struct _CMDPARA_ADMINUNDO {
 	DWORD		dwStepID;											/* 戻す変更の番号（INFO で知らせ、EXEC で指定） */
 	char		szMsg[MAX_ADMINUNDOMSG];							/* 案内文（サーバー→クライアント） */
 } CMDPARA_ADMINUNDO, *PCMDPARA_ADMINUNDO;
+#pragma pack(pop)
+
+/* NPCの巡回ルート(CMD_NPCROUTE)のサブコマンド */
+enum {
+	NPCROUTE_REQ = 0,											/* dwMapID のマップの巡回できるNPCのルートを要求（クライアント→サーバー） */
+	NPCROUTE_INFO,												/* 1体ぶんのルート通知（サーバー→クライアント） */
+	NPCROUTE_INFOEND,											/* 一覧の終わり（サーバー→クライアント） */
+	NPCROUTE_SET,												/* 1体ぶんのルートを保存（クライアント→サーバー。道しるべ0個で巡回をやめる） */
+	NPCROUTE_RESULT,											/* 保存結果（サーバー→クライアント。成功なら byResult=1、失敗なら szMsg にエラー文） */
+};
+
+#define MAX_NPCROUTEMSG		200										/* NPCの巡回のエラー文の大きさ（UTF-8） */
+
+#pragma pack(push, 1)
+/* NPCの巡回ルート（送受信とも同じ形。「元に戻す」にもこの形で記録する） */
+typedef struct _CMDPARA_NPCROUTE {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byCmdSub;											/* サブコマンド(NPCROUTE_*) */
+	BYTE		byResult;											/* 結果（RESULT: 1=保存した 0=保存できなかった） */
+	DWORD		dwMapID;											/* マップID */
+	DWORD		dwTblID;											/* テーブルID（サーバーの g_aCharInfo の番号） */
+	BYTE		byRouteCount;										/* 道しるべ数 */
+	BYTE		byRouteMode;										/* 回り方(NPCROUTEMODE_*) */
+	BYTE		byRouteWait;										/* 各道しるべで止まる秒数 */
+	BYTE		abyRouteX[MAX_NPCROUTE];							/* 道しるべ(横) */
+	BYTE		abyRouteY[MAX_NPCROUTE];							/* 道しるべ(縦) */
+	char		szMsg[MAX_NPCROUTEMSG];								/* エラー文（UTF-8。RESULT） */
+} CMDPARA_NPCROUTE, *PCMDPARA_NPCROUTE;
 #pragma pack(pop)
 
 /* マップ情報通知 */

@@ -19,6 +19,7 @@
 #include "SboCliMain.h"
 #include "SboCliDrawScreen.h"
 #include "SboAdminWindow.h"
+#include "AdminWindowOld/AdminDlgNpcRoute.h"
 #include "SboCliDebugWindow.h"
 #include "SboCliMsgLogWindow.h"
 #include "SboCliBalloonWindow.h"
@@ -75,6 +76,7 @@ void	RecvDataProcLOGINRES				(PBYTE, DWORD);			/* 受信データ処理(ログ�
 void	RecvDataProcWEBACCOUNT				(PBYTE, DWORD);			/* 受信データ処理(ブラウザ版のアカウント関係) */
 void	RecvDataProcADMINUNDO				(PBYTE, DWORD);			/* 受信データ処理(管理者画面の「元に戻す」) */
 void	RecvDataProcHASTE					(PBYTE, DWORD);			/* 受信データ処理(加速の状態) */
+void	RecvDataProcNPCROUTE				(PBYTE, DWORD);			/* 受信データ処理(NPCの巡回ルート) */
 /* ブラウザ版のアカウント関係（web/replace/SboCliWebAccount_web.cpp） */
 void	WebAccSaveToken						(LPCSTR);				/* 端末トークンをページへ渡す */
 void	WebAccOnTokenNG						(void);					/* 端末トークンが無効だった */
@@ -307,6 +309,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcADMINUNDO,				/* CMD_ADMINUNDO */
 	NULL,								/* CMD_REQ_GUARD */
 	RecvDataProcHASTE,					/* CMD_HASTE */
+	RecvDataProcNPCROUTE,				/* CMD_NPCROUTE */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -2050,6 +2053,18 @@ void RecvDataProcHASTE(PBYTE pData, DWORD dwDataSize)
 	}
 }
 
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcNPCROUTE												 */
+/* 内容：受信データ処理(NPCの巡回ルート)									 */
+/* ========================================================================= */
+void RecvDataProcNPCROUTE(PBYTE pData, DWORD dwDataSize)
+{
+	if (dwDataSize < sizeof (CMDPARA_NPCROUTE)) {
+		return;
+	}
+	NpcRouteOnRecv (pData);
+}
 
 /* ========================================================================= */
 /* 関数名：RecvDataProcADMINUNDO											 */

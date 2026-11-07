@@ -23,6 +23,7 @@
 #include "SboSvrRecvCmd.h"
 #include "SboSvrSendCmd.h"
 #include "SboSvrAdminUndo.h"
+#include "SboSvrNpcRoute.h"
 #include "CharProc/IncludeCharProc.h"
 
 #include <emscripten.h>
@@ -36,6 +37,7 @@ extern BOOL SaveMagicInfo(void);
 extern BOOL SaveMagicUserInfo(void);
 extern BOOL SaveEquUserInfo(void);
 extern BOOL SaveCharInfo(void);
+extern BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, BYTE byScreen);	/* SboSvrRecvCmd.cpp */
 extern void ApplyStTmpToChars(DWORD dwID);		/* SboSvrRecvCmd.cpp */
 
 /* ------------------------------------------------------------------------- */
@@ -2157,17 +2159,10 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebNpcRouteSet(int nTblID, int nM
 		return RouteError("キャラの番号が範囲外です");
 	}
 	PCHARINFO pChar = g_aCharInfo[nTblID];
-	if ((pChar->byNpcType != NPCTYPE_NOMOVE) && (pChar->byNpcType != NPCTYPE_MOVERAND)) {
-		return RouteError("巡回できるのは「移動しない」「ランダム移動」のNPCだけです");
-	}
-	if (nMode < 0 || nMode >= NPCROUTEMODE_MAX) {
-		return RouteError("回り方の値が不正です");
-	}
-	if (nWait < 0 || nWait > 60) {
-		return RouteError("止まる秒数は0〜60です");
-	}
-	if (pChar->dwMapID >= (DWORD)g_aMapInfo.GetSize()) {
-		return RouteError("NPCのマップが見つかりません");
+	/* まず NPC の種類・回り方・秒数・マップを調べる（道しるべの検査より前のエラーを先に返す） */
+	const char *pszError = NpcRouteCheck(pChar, nMode, nWait, 0, NULL, NULL);
+	if (pszError) {
+		return RouteError(pszError);
 	}
 	PMAPINFO pMap = g_aMapInfo[pChar->dwMapID];
 
@@ -2197,26 +2192,31 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebNpcRouteSet(int nTblID, int nM
 			return RouteError("道しるべの書き方が不正です");
 		}
 	}
-	if (aX.size() == 1) {
-		return RouteError("道しるべは2つ以上置いてください（巡回をやめる時は0個）");
-	}
-	if (aX.size() > MAX_NPCROUTE) {
-		return RouteError("道しるべは16個までです");
+
+	/* 検査（管理者ウィンドウからの保存と同じ決まり） */
+	const int anDummy[1] = { 0 };
+	pszError = NpcRouteCheck(pChar, nMode, nWait, (int)aX.size(),
+			aX.empty() ? anDummy : &aX[0], aY.empty() ? anDummy : &aY[0]);
+	if (pszError) {
+		return RouteError(pszError);
 	}
 
-	pChar->byRouteCount	= (BYTE)aX.size();
-	pChar->byRouteMode	= (BYTE)nMode;
-	pChar->byRouteWait	= (BYTE)nWait;
-	ZeroMemory(pChar->abyRouteX, sizeof(pChar->abyRouteX));
-	ZeroMemory(pChar->abyRouteY, sizeof(pChar->abyRouteY));
+	/* 保存のコマンドにして管理者の操作と同じ流れで処理する（「元に戻す」にも記録される） */
+	CMDPARA_NPCROUTE Para;
+	NpcRouteMakePara(Para, NPCROUTE_SET, pChar);
+	Para.dwTblID		= (DWORD)nTblID;
+	Para.byRouteCount	= (BYTE)aX.size();
+	Para.byRouteMode	= (BYTE)nMode;
+	Para.byRouteWait	= (BYTE)nWait;
+	ZeroMemory(Para.abyRouteX, sizeof(Para.abyRouteX));
+	ZeroMemory(Para.abyRouteY, sizeof(Para.abyRouteY));
 	for (size_t i = 0; i < aX.size(); i ++) {
-		pChar->abyRouteX[i] = (BYTE)aX[i];
-		pChar->abyRouteY[i] = (BYTE)aY[i];
+		Para.abyRouteX[i] = (BYTE)aX[i];
+		Para.abyRouteY[i] = (BYTE)aY[i];
 	}
-	/* 動き方を作り直して、すぐ反映する */
-	CCharProcBase CharProcBase;
-	CharProcBase.SetProc(pChar);
-	SaveCharInfo();
+	if (!RecvCmdApplyAdminPacket((const BYTE *)&Para, sizeof(Para), "管理ページ", ADMINSCR_NPCROUTE)) {
+		return RouteError("巡回ルートを反映できませんでした");
+	}
 
 	s_strResult = "{\"ok\":true,\"char\":{" + CharJson(pChar) + "}}";
 	return s_strResult.c_str();

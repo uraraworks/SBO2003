@@ -8,6 +8,7 @@
 #include "Glbldata.h"
 #include "../Common/Info/InfoJob.h"
 #include "SboSvrAdminUndo.h"
+#include "SboSvrNpcRoute.h"
 #include <map>
 #include <set>
 #include <vector>
@@ -108,6 +109,7 @@ LPCSTR AdminUndoScreenName(BYTE byScreen)
 	case ADMINSCR_MAGICINFO:		return "魔法情報";
 	case ADMINSCR_MAGICUSERINFO:	return "魔法利用者情報";
 	case ADMINSCR_EQUUSERINFO:		return "装備職業情報";
+	case ADMINSCR_NPCROUTE:			return "NPCの巡回";
 	}
 	return "（画面なし）";
 }
@@ -130,6 +132,7 @@ BYTE AdminUndoDefaultScreen(BYTE byCmd)
 	case CMD_MAGICINFO:		return ADMINSCR_MAGICINFO;
 	case CMD_MAGICUSERINFO:	return ADMINSCR_MAGICUSERINFO;
 	case CMD_EQUUSERINFO:	return ADMINSCR_EQUUSERINFO;
+	case CMD_NPCROUTE:		return ADMINSCR_NPCROUTE;
 	}
 	return ADMINSCR_NONE;
 }
@@ -393,6 +396,20 @@ static BOOL BuildState(const ADMINUNDO_KEY &Key, std::vector<BYTE> &aPacket, std
 			return FALSE;
 		}
 		CAPTURE (SendCmdEQUUSERINFO (0, (BYTE)Key.a));
+
+	case CMD_NPCROUTE:			/* NPCの巡回ルート（a=キャラ番号） */
+		{
+			if (Key.a >= (DWORD)g_aCharInfo.GetSize ()) {
+				return FALSE;
+			}
+			PCHARINFO pChar = g_aCharInfo[Key.a];
+			/* キャラの欄は使い回されるので、名前で同じキャラか見分ける */
+			strIdent = pChar->szName;
+			CMDPARA_NPCROUTE Para;
+			NpcRouteMakePara (Para, NPCROUTE_SET, pChar);
+			PutBytes (aPacket, &Para, sizeof (Para));
+		}
+		return TRUE;
 	}
 	return FALSE;
 }
@@ -524,6 +541,18 @@ static BOOL ParseKey(BYTE byCmd, const BYTE *pData, DWORD dwSize, ADMINUNDO_KEY 
 			return FALSE;
 		}
 		Key.a = pData[1];
+		break;
+
+	case CMD_NPCROUTE:
+		{
+			NEED (CMDPARA_NPCROUTE);
+			PCMDPARA_NPCROUTE pPara = (PCMDPARA_NPCROUTE)pData;
+			/* 保存（SET）だけ記録する。要求・通知は記録しない */
+			if ((pPara->byCmdSub != NPCROUTE_SET) || (pPara->dwTblID >= (DWORD)g_aCharInfo.GetSize ())) {
+				return FALSE;
+			}
+			Key.a = pPara->dwTblID;
+		}
 		break;
 
 	default:

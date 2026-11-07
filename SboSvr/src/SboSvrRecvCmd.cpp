@@ -20,6 +20,7 @@
 #include "SboSvrCharInfoTimerProc.h"
 #include "SboSvrSubGameProcSugoroku.h"
 #include "SboSvrAdminUndo.h"
+#include "SboSvrNpcRoute.h"
 #include <map>
 #include <vector>
 
@@ -187,6 +188,7 @@ void	RecvDataProcEQUUSERINFO					(PBYTE, DWORD);				/* 装備職業情報 */
 void	RecvDataProcEQUUSERINFOREQ				(PBYTE, DWORD);				/* 装備職業情報要求 */
 void	RecvDataProcWEBACCOUNT					(PBYTE, DWORD);				/* ブラウザ版のアカウント関係 */
 void	RecvDataProcADMINUNDO					(PBYTE, DWORD);				/* 管理者画面の「元に戻す」 */
+void	RecvDataProcNPCROUTE					(PBYTE, DWORD);				/* NPCの巡回ルート */
 /* 端末トークン（server/web_account_svr.cpp） */
 BOOL	WebAccTokenToAccount					(LPCSTR, LPSTR, int);		/* 端末トークンからアカウント名を引く */
 static void	SendWebOptBgm					(PCHARINFO);				/* 音楽ON/OFFのアカウント設定を送る */
@@ -400,6 +402,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcADMINUNDO,				/* CMD_ADMINUNDO */
 	RecvDataProcREQ_GUARD,				/* CMD_REQ_GUARD */
 	NULL,								/* CMD_HASTE(サーバー→クライアントのみ) */
+	RecvDataProcNPCROUTE,				/* CMD_NPCROUTE */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -9551,6 +9554,65 @@ void RecvDataProcADMINUNDO(PBYTE pData, DWORD dwDataSize)
 	case ADMINUNDO_EXEC:		/* 元に戻す */
 		bRet = AdminUndoExec (pPara->byScreen, pPara->dwStepID, pID, strMsg, wCount);
 		SendCmdADMINUNDO (pID, ADMINUNDO_RESULT, pPara->byScreen, bRet ? 1 : 0, wCount, 0, strMsg.c_str ());
+		break;
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcNPCROUTE												 */
+/* 内容：受信データ処理(NPCの巡回ルート)									 */
+/*       REQ  : そのマップの巡回できるNPC全員のルートを INFO で送り、INFOEND	 */
+/*       SET  : 検査して反映し、RESULT とそのNPCの INFO を返す				 */
+/* ========================================================================= */
+void RecvDataProcNPCROUTE(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_NPCROUTE pPara = (PCMDPARA_NPCROUTE)pData;
+	DWORD pID = s_pIDRecv;
+	int i, anX[MAX_NPCROUTE], anY[MAX_NPCROUTE];
+	LPCSTR pszError;
+	PCHARINFO pChar;
+
+	if (s_dwRecvSize < sizeof (CMDPARA_NPCROUTE)) {
+		return;
+	}
+
+	switch (pPara->byCmdSub) {
+	case NPCROUTE_REQ:			/* マップの巡回できるNPCの一覧を要求 */
+		if (pID == 0) {
+			break;
+		}
+		for (i = 0; i < g_aCharInfo.GetSize (); i ++) {
+			pChar = g_aCharInfo[i];
+			if ((pChar->dwMapID != pPara->dwMapID) || !NpcRouteIsTarget (pChar)) {
+				continue;
+			}
+			SendCmdNPCROUTE (pID, NPCROUTE_INFO, 0, pPara->dwMapID, (DWORD)i, NULL);
+		}
+		SendCmdNPCROUTE (pID, NPCROUTE_INFOEND, 0, pPara->dwMapID, 0, NULL);
+		break;
+
+	case NPCROUTE_SET:			/* ルートを保存 */
+		if (pPara->dwTblID >= (DWORD)g_aCharInfo.GetSize ()) {
+			SendCmdNPCROUTE (pID, NPCROUTE_RESULT, 0, pPara->dwMapID, pPara->dwTblID, "キャラの番号が範囲外です");
+			break;
+		}
+		pChar = g_aCharInfo[pPara->dwTblID];
+		if (pPara->byRouteCount > MAX_NPCROUTE) {
+			SendCmdNPCROUTE (pID, NPCROUTE_RESULT, 0, pChar->dwMapID, pPara->dwTblID, "道しるべは16個までです");
+			break;
+		}
+		for (i = 0; i < MAX_NPCROUTE; i ++) {
+			anX[i] = pPara->abyRouteX[i];
+			anY[i] = pPara->abyRouteY[i];
+		}
+		pszError = NpcRouteCheck (pChar, pPara->byRouteMode, pPara->byRouteWait, pPara->byRouteCount, anX, anY);
+		if (pszError) {
+			SendCmdNPCROUTE (pID, NPCROUTE_RESULT, 0, pChar->dwMapID, pPara->dwTblID, pszError);
+			break;
+		}
+		NpcRouteApply (pChar, pPara->byRouteMode, pPara->byRouteWait, pPara->byRouteCount, pPara->abyRouteX, pPara->abyRouteY);
+		SendCmdNPCROUTE (pID, NPCROUTE_RESULT, 1, pChar->dwMapID, pPara->dwTblID, NULL);
+		SendCmdNPCROUTE (pID, NPCROUTE_INFO, 0, pChar->dwMapID, pPara->dwTblID, NULL);
 		break;
 	}
 }
