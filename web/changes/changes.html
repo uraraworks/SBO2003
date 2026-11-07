@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>更新履歴｜スクラップブックオンライン</title>
+<meta name="description" content="スクラップブックオンラインのブラウザ版で、何が変わったかのお知らせです。">
+<!--
+	更新履歴のページ（/changes）。サーバーの /api/changes（server/node/sbosvr_changes.js）を読んで、日付ごとに並べる。
+	中身は管理ページ（/admin の「更新履歴」）で足す・直す。最初の中身は web/changes/changes.json。
+	前に開いた時より新しい項目には「NEW」を付ける（見た日付はこの端末の localStorage に覚える。
+	ゲームのフッターの「更新履歴」の NEW も同じ値を見る）。
+-->
+<style>
+	:root {
+		--page-bg: #efe6d2;
+		--ink: #2b2620;
+		--sub: #7a6f60;
+		--panel: #1d1f24;
+		--panel-fg: #e8e8e8;
+		--panel-sub: #9aa0a6;
+		--line: rgba(255, 255, 255, 0.1);
+		--accent: #f0b84a;
+		--new: #8fe07a;
+		--fix: #ff9b8a;
+		--info: #6fa8dc;
+	}
+	html, body {
+		margin: 0;
+		padding: 0;
+		background: var(--page-bg);
+		color: var(--ink);
+		font: 14px/1.6 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		-webkit-text-size-adjust: 100%;
+	}
+	body {
+		min-height: 100vh;
+		display: flex;
+		flex-direction: column;
+	}
+	.site-header {
+		text-align: center;
+		background: #0c0c0c;
+		padding: 10px 16px;
+		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+	}
+	.site-header h1 {
+		margin: 0;
+		font-size: 15px;
+		font-weight: 600;
+		color: #f2f2f2;
+		letter-spacing: 0.03em;
+	}
+	.site-header a {
+		color: inherit;
+		text-decoration: none;
+	}
+	.site-header p {
+		margin: 2px 0 0;
+		font-size: 11px;
+		color: #a8a8a8;
+	}
+	main {
+		flex: 1 1 auto;
+		width: 100%;
+		max-width: 760px;
+		margin: 0 auto;
+		padding: 24px 16px 32px;
+		box-sizing: border-box;
+	}
+	h2 {
+		margin: 0 0 4px;
+		font-size: 20px;
+	}
+	.lead {
+		margin: 0 0 14px;
+		color: var(--sub);
+		font-size: 13px;
+	}
+	.lead a {
+		color: inherit;
+	}
+	.filters {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin-bottom: 14px;
+	}
+	.filters button {
+		font: inherit;
+		font-size: 12px;
+		padding: 4px 12px;
+		border-radius: 999px;
+		border: 1px solid #c9bda6;
+		background: transparent;
+		color: var(--ink);
+		cursor: pointer;
+	}
+	.filters button.active {
+		background: var(--panel);
+		border-color: var(--panel);
+		color: var(--panel-fg);
+	}
+	.panel {
+		background: var(--panel);
+		color: var(--panel-fg);
+		border-radius: 12px;
+		box-shadow: 0 2px 6px rgba(60, 45, 20, 0.22), 0 14px 36px rgba(60, 45, 20, 0.22);
+		overflow: hidden;
+		margin-bottom: 14px;
+	}
+	.day-head {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 10px 18px;
+		font-size: 13px;
+		font-weight: 700;
+		border-bottom: 1px solid var(--line);
+	}
+	.day-head .count {
+		margin-left: auto;
+		font-weight: 400;
+		font-size: 11px;
+		color: var(--panel-sub);
+	}
+	ul {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+	li {
+		display: flex;
+		gap: 10px;
+		padding: 10px 18px;
+		border-bottom: 1px solid var(--line);
+	}
+	li:last-child {
+		border-bottom: 0;
+	}
+	.kind {
+		flex: 0 0 auto;
+		align-self: flex-start;
+		min-width: 4em;
+		margin-top: 1px;
+		padding: 0 6px;
+		border-radius: 4px;
+		font-size: 11px;
+		line-height: 20px;
+		text-align: center;
+		color: #1d1f24;
+		background: var(--info);
+	}
+	.kind.k-new {
+		background: var(--new);
+	}
+	.kind.k-fix {
+		background: var(--fix);
+	}
+	.body {
+		flex: 1 1 auto;
+		min-width: 0;
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+	}
+	.body .pr {
+		margin-left: 6px;
+		font-size: 11px;
+		color: var(--panel-sub);
+		white-space: nowrap;
+	}
+	.body .pr a {
+		color: var(--panel-sub);
+	}
+	.badge-new {
+		display: inline-block;
+		margin-right: 6px;
+		padding: 0 5px;
+		border-radius: 4px;
+		font-size: 10px;
+		font-weight: 700;
+		line-height: 16px;
+		vertical-align: 1px;
+		color: #1d1f24;
+		background: var(--accent);
+	}
+	.msg {
+		padding: 18px;
+		color: var(--panel-sub);
+		text-align: center;
+	}
+	.more {
+		display: block;
+		margin: 0 auto;
+		font: inherit;
+		font-size: 13px;
+		padding: 6px 18px;
+		border-radius: 8px;
+		border: 1px solid #c9bda6;
+		background: transparent;
+		color: var(--ink);
+		cursor: pointer;
+	}
+	.site-footer {
+		padding: 8px 16px;
+		font-size: 11px;
+		text-align: center;
+		color: #8c8c8c;
+		background: #1a1a1a;
+	}
+	.site-footer a {
+		color: #8c8c8c;
+	}
+	@media (max-width: 520px) {
+		li {
+			padding: 10px 14px;
+		}
+		.day-head {
+			padding: 10px 14px;
+		}
+	}
+</style>
+</head>
+<body>
+<header class="site-header">
+	<h1><a href="/">スクラップブックオンライン</a></h1>
+	<p>2003年に始まった個人制作MMORPG</p>
+</header>
+<main>
+	<h2>更新履歴</h2>
+	<p class="lead">ブラウザ版で変わったこと・直したことのお知らせです。気になることは<a href="/feedback">ご意見箱</a>へどうぞ。</p>
+	<div class="filters" id="filters">
+		<button type="button" data-kind="" class="active">すべて</button>
+		<button type="button" data-kind="新機能">新機能</button>
+		<button type="button" data-kind="改善">改善</button>
+		<button type="button" data-kind="修正">修正</button>
+	</div>
+	<div id="list">
+		<section class="panel"><div class="msg">読み込んでいます…</div></section>
+	</div>
+	<button type="button" class="more" id="more" hidden>もっと前の更新を見る</button>
+</main>
+<footer class="site-footer">
+	<a href="https://www.urara-works.jp/" target="_blank" rel="noopener">© URARA-works</a> /
+	<a href="/status">サーバー状況</a> /
+	<a href="/feedback">ご意見箱</a> /
+	<a href="https://github.com/uraraworks/SBO2003" target="_blank" rel="noopener">GitHubで見る</a> /
+	<span title="反映した日時とコミット">@@SBO_BUILD_DATE@@ <a href="https://github.com/uraraworks/SBO2003/commit/@@SBO_BUILD_COMMIT@@" target="_blank" rel="noopener">@@SBO_BUILD_COMMIT@@</a></span>
+</footer>
+<script>
+(function () {
+	var KEY_SEEN = 'sbo_changes_seen';		/* 前に見た一番新しい日付（ゲームのフッターと同じ） */
+	var DAYS_FIRST = 14;					/* 最初に出す日数（「もっと前」で全部） */
+	var REPO = 'https://github.com/uraraworks/SBO2003/pull/';
+	var WEEK = ['日', '月', '火', '水', '木', '金', '土'];
+
+	var aItems = [];
+	var strKind = '';
+	var bAll = false;
+	var strSeen = '';
+
+	function $(id) {
+		return document.getElementById(id);
+	}
+	function el(tag, cls, text) {
+		var e = document.createElement(tag);
+		if (cls) {
+			e.className = cls;
+		}
+		if (text != null) {
+			e.textContent = text;
+		}
+		return e;
+	}
+	function lsGet(key) {
+		try {
+			return window.localStorage.getItem(key) || '';
+		} catch (e) {
+			return '';
+		}
+	}
+	function lsSet(key, val) {
+		try {
+			window.localStorage.setItem(key, val);
+		} catch (e) {
+			/* 覚えられなくても困らない */
+		}
+	}
+
+	/* 2026-11-07 → 2026年11月7日（土） */
+	function dateText(s) {
+		var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+		if (!m) {
+			return s;
+		}
+		var d = new Date(+m[1], +m[2] - 1, +m[3]);
+		return +m[1] + '年' + +m[2] + '月' + +m[3] + '日（' + WEEK[d.getDay()] + '）';
+	}
+
+	function render() {
+		var list = $('list');
+		list.textContent = '';
+		var a = aItems.filter(function (it) { return !strKind || it.kind === strKind; });
+		if (!a.length) {
+			var p = el('section', 'panel');
+			p.appendChild(el('div', 'msg', aItems.length ? 'この種類の更新はまだありません。' : 'まだお知らせはありません。'));
+			list.appendChild(p);
+			$('more').hidden = true;
+			return;
+		}
+		/* 日付ごとにまとめる（サーバーが新しい順に並べて返す） */
+		var days = [];
+		a.forEach(function (it) {
+			if (!days.length || days[days.length - 1].date !== it.date) {
+				days.push({ date: it.date, items: [] });
+			}
+			days[days.length - 1].items.push(it);
+		});
+		var nShow = bAll ? days.length : Math.min(days.length, DAYS_FIRST);
+		days.slice(0, nShow).forEach(function (day) {
+			var sec = el('section', 'panel');
+			var head = el('div', 'day-head');
+			if (strSeen && day.date > strSeen) {
+				head.appendChild(el('span', 'badge-new', 'NEW'));
+			}
+			head.appendChild(el('span', '', dateText(day.date)));
+			head.appendChild(el('span', 'count', day.items.length + ' 件'));
+			sec.appendChild(head);
+			var ul = el('ul');
+			day.items.forEach(function (it) {
+				var li = el('li');
+				li.appendChild(el('span', 'kind' + (it.kind === '新機能' ? ' k-new' : it.kind === '修正' ? ' k-fix' : ''), it.kind));
+				var body = el('div', 'body', it.text);
+				if (it.pr && it.pr.length) {
+					var pr = el('span', 'pr');
+					it.pr.forEach(function (n, i) {
+						var link = el('a', '', '#' + n);
+						link.href = REPO + n;
+						link.target = '_blank';
+						link.rel = 'noopener';
+						link.title = 'GitHub で変更の中身を見る';
+						if (i) {
+							pr.appendChild(document.createTextNode(' '));
+						}
+						pr.appendChild(link);
+					});
+					body.appendChild(pr);
+				}
+				li.appendChild(body);
+				ul.appendChild(li);
+			});
+			sec.appendChild(ul);
+			list.appendChild(sec);
+		});
+		$('more').hidden = nShow >= days.length;
+	}
+
+	Array.prototype.forEach.call(document.querySelectorAll('#filters button'), function (b) {
+		b.addEventListener('click', function () {
+			strKind = b.dataset.kind;
+			Array.prototype.forEach.call(document.querySelectorAll('#filters button'), function (x) {
+				x.classList.toggle('active', x === b);
+			});
+			render();
+		});
+	});
+	$('more').addEventListener('click', function () {
+		bAll = true;
+		render();
+	});
+
+	fetch('/api/changes', { cache: 'no-store' }).then(function (res) {
+		return res.ok ? res.json() : null;
+	}).then(function (data) {
+		if (!data || !Array.isArray(data.items)) {
+			throw new Error('no data');
+		}
+		aItems = data.items;
+		/* 前に見た日付より新しいものに NEW を付け、今回見た日付を覚える */
+		strSeen = lsGet(KEY_SEEN);
+		if (data.latest) {
+			lsSet(KEY_SEEN, data.latest);
+		}
+		render();
+	}).catch(function () {
+		var list = $('list');
+		list.textContent = '';
+		var p = el('section', 'panel');
+		p.appendChild(el('div', 'msg', 'サーバーにつながりませんでした。少し待ってから読み込み直してください。'));
+		list.appendChild(p);
+	});
+})();
+</script>
+</body>
+</html>

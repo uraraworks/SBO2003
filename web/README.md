@@ -97,6 +97,18 @@ Windows 版のメッセージログウィンドウは、ブラウザ版ではペ
 （`web/replace/SboCliMsgLogWindow_web.cpp`）。PC は画面右下のパネル、スマホは上のとおりです。
 ログはファイルには保存しません。
 
+## 更新履歴（/changes）
+
+プレイヤー向けの「何が変わったか」のページです（`web/changes/changes.html`、API は `server/node/sbosvr_changes.js`）。
+ゲームのフッターと「おかえりなさい」の画面から開け、前に見た時より新しい更新があると「NEW」が付きます。
+
+- 中身はサーバーの `SBODATA/SboWebChanges.json`。管理ページ（`/admin` の「更新履歴」）で足す・直す・隠す・消すができます。
+- `web/changes/changes.json` が最初の中身です。**プレイヤーに関係する変更のプルリクエストでは、ここの先頭に 1 件足してください。**
+  デプロイ後の最初の読み込みで、まだ取り込んでいない `id` の項目だけが自動で入ります（管理ページで直した・消した項目は上書きしません）。
+  - `id` は「日付-番号」（例 `2026-11-08-1`）で、ほかと重ならないように。`kind` は「新機能」「改善」「修正」のどれか。
+  - `text` はプレイヤーに分かる言葉で（ファイル名や関数名は書かない）。`pr` は公開リポジトリのプルリクエスト番号の配列（無ければ省く）。
+  - 管理者だけ・開発だけの変更（管理ページ、デプロイ、テストなど）は載せません。
+
 ## 仕組み
 
 ```
@@ -143,6 +155,7 @@ web/replace   … Windows 専用クラスの Web 版（Windows 版の実装は�
 | `web/web_main.cpp` | 入口（IndexedDB を読み込んでから `SboCliMain` を呼ぶ） |
 | `web/replace/` | CDXAudio（Web Audio）、CUraraSockTCP（WebSocket）、LibMusic・MAC アドレス・管理画面の代わり |
 | `web/shell/sbocli.html` | ページの HTML（キー・マウスの受け渡しもここ） |
+| `web/changes/` | 更新履歴のページ（`/changes`）と最初の中身 `changes.json` |
 | `web/bgm/sbo_bgm.js` | BGM プレイヤー（`LibMusicLoader_web.cpp` から `window.SboBgm` を呼ぶ） |
 | `web/vendor/spessasynth/` | MIDI シンセ spessasynth_lib（Apache-2.0）。更新は `tools/web/update_spessasynth.sh` |
 | `web/soundfont/` | サウンドフォント GeneralUser GS 2.0.3（SF3、ライセンスは同じ場所の txt） |
