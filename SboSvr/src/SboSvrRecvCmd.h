@@ -31,6 +31,7 @@ extern void		RenewTblNoChar				(void);											/* PC番号テーブルを更�
 extern void		DeleteChildChar				(PCHARINFO);									/* 自分が親のキャラを削除 */
 extern void		SetInitCharData				(PCHARINFO);									/* キャラの初期値を設定 */
 extern void		CharTargetCancelPC			(PCHARINFO);									/* キャラのついていく解除 */
+extern void		TailMoveChain				(PCHARINFO);									/* ついてきているキャラを順に動かす */
 extern void		CharTargetPC				(PCHARINFO, PCHARINFO, DWORD);					/* キャラのついてく設定 */
 extern BOOL		CheckCharX					(PCHARINFO pChar, DWORD dwX, DWORD dwXTarget);	/* キャラサイズに合わせた当たり判定(横) */
 extern int		GetCharX					(PCHARINFO, DWORD, DWORD, BOOL);				/* キャラサイズに合わせた距離を求める(横) */

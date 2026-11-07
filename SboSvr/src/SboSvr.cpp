@@ -899,7 +899,6 @@ void TimerProc(void)
 BOOL TimerProcChar(PCHARINFO pChar)
 {
 	BOOL bRet;
-	PCHARINFO pCharTmp;
 	PMAPINFO pMap;
 
 	bRet = FALSE;
@@ -937,41 +936,12 @@ BOOL TimerProcChar(PCHARINFO pChar)
 		CheckCharPosSend (pChar);
 	}
 
-	/* 前のキャラが動いた？ */
+	/* 前のキャラが動いた？（今は移動を受け取った時に列ごと動かすので、旗が残っていた時だけ） */
 	if (pChar->byFlg & CHARINFOFLG_MOVEPARENT) {
 		pChar->byFlg &= ~CHARINFOFLG_MOVEPARENT;
-		if ((pChar->dwTailTblID != -1) && (pChar->dwTailTblID != pChar->dwTblID)) {
-			pCharTmp = g_aCharInfo[pChar->dwTailTblID];
-			/* 違うマップ？ */
-			if (pCharTmp->dwMapID != pChar->dwMapID) {
-				CharTargetCancelPC (pChar);
-
-			} else {
-				pChar->byDirectionBack2 = pChar->byDirectionBack;
-				pChar->byDirectionBack = pChar->byDirection;
-				pChar->dwXBack = pChar->dwX;
-				pChar->dwYBack = pChar->dwY;
-
-				if (pCharTmp->dwTailTblID == -1) {
-					pChar->byDirection = pCharTmp->byDirectionBack2;
-				} else {
-					pChar->byDirection = pCharTmp->byDirectionBack;
-				}
-				pChar->dwX = pCharTmp->dwXBack;
-				pChar->dwY = pCharTmp->dwYBack;
-
-				SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 1);
-				SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
-				CheckCharPosSend (pChar);
-				pChar->byFlg &= ~CHARINFOFLG_DIRECTION;
-				pChar->byFlg &= ~CHARINFOFLG_MOVE;
-
-				/* 誰かを引っ張っている？ */
-				if (pChar->dwTailBackTblID != -1) {
-					pCharTmp = g_aCharInfo[pChar->dwTailBackTblID];
-					pCharTmp->byFlg |= CHARINFOFLG_MOVEPARENT;
-				}
-			}
+		if ((pChar->dwTailTblID != -1) && (pChar->dwTailTblID != pChar->dwTblID) &&
+			(pChar->dwTailTblID < (DWORD)g_aCharInfo.GetSize ())) {
+			TailMoveChain (g_aCharInfo[pChar->dwTailTblID]);
 		}
 	}
 
