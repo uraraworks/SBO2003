@@ -208,6 +208,10 @@
 		isPlaying: function () {
 			return want.playing && !failed;
 		},
+		/* 動画録画用：BGM の出口（音量を掛けた後）を返す。まだ作っていなければ null */
+		recordTap: function () {
+			return ctx && gain ? { ctx: ctx, node: gain } : null;
+		},
 		/* 確認用（開発者ツールのコンソールから呼ぶ） */
 		status: function () {
 			return {
