@@ -57,11 +57,24 @@ cat "$WORK/log.txt"
 mkdir -p "$OUT"
 # キャラ情報だけ NPC のみで保存し直したものを使い、ほかのゲームの中身は元のファイルをそのまま使う
 # （ファイル名の決め打ち。増えたらここへ足す）
+# UTF-8 の目印（SboDataUtf8.txt）。サーバーは目印が無いと .dat を Shift_JIS とみなして UTF-8 に変換し、目印を作る。
+# 元が UTF-8（目印あり）ならゲームの中身のファイルは元のまま、元が Shift_JIS（目印なし）ならサーバーが変換したものを使う。
+# 目印は必ず出力先へ写す（無いと、ローカルのサーバーが起動のたびにもう一度変換して文字化けする）
+if [ ! -f "$WORK/SBODATA/SboDataUtf8.txt" ]; then
+	echo "[seed] サーバーが UTF-8 の目印（SboDataUtf8.txt）を作っていません。上のログを確かめてください" >&2
+	exit 1
+fi
+if [ -f "$SRC/SboDataUtf8.txt" ]; then
+	FROM="$SRC"
+else
+	FROM="$WORK/SBODATA"
+fi
 cp "$WORK/SBODATA/SboDataCharInfo.dat" "$OUT/"
 for f in ComEfcInfo EfcInfo EquUserInfo ItemInfo ItemInfoTest JobInfo MagicInfo MagicUserInfo MapPartsInfo StTmpInfo SubGameInfo; do
-	if [ -f "$SRC/SboData$f.dat" ]; then
-		cp "$SRC/SboData$f.dat" "$OUT/"
+	if [ -f "$FROM/SboData$f.dat" ]; then
+		cp "$FROM/SboData$f.dat" "$OUT/"
 	fi
 done
-cp "$SRC"/SboDataMapInfo*.dat "$OUT/"
+cp "$FROM"/SboDataMapInfo*.dat "$OUT/"
+cp "$WORK/SBODATA/SboDataUtf8.txt" "$OUT/"
 echo "[seed] 初期データを作りました: $OUT"
