@@ -1100,6 +1100,7 @@
 		white-space: nowrap;
 	}
 	#sbo-shot-pc,
+	#sbo-rec-pc,
 	#sbo-log-pc,
 	#sbo-log-pop {
 		background: none;
@@ -1111,6 +1112,7 @@
 		cursor: pointer;
 	}
 	#sbo-shot-pc:hover,
+	#sbo-rec-pc:hover,
 	#sbo-log-pc:hover,
 	#sbo-log-pop:hover {
 		border-color: var(--accent);
@@ -1174,6 +1176,161 @@
 			border: 2px solid rgba(255, 255, 255, 0.4);
 			background: rgba(255, 255, 255, 0.12);
 		}
+	}
+	/* ---- 動画録画 ----
+	   ボタンはスクショの隣。録画中は赤くし、マップを離れても止められるように出しておく */
+	body.sbo-recording #sbo-rec-pc {
+		border-color: #e0514a;
+		color: #fff;
+		background: #c0392b;
+	}
+	#sbo-rec-pad {
+		display: none;
+	}
+	body.sbo-pad.sbo-on-map #sbo-rec-pad,
+	body.sbo-pad.sbo-recording #sbo-rec-pad {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 4px;
+		position: absolute;
+		right: 46px;
+		top: 6px;
+		z-index: 5;
+		min-width: 34px;
+		height: 34px;
+		box-sizing: border-box;
+		padding: 0 8px;
+		border: 1px solid rgba(255, 255, 255, 0.35);
+		border-radius: 17px;
+		background: rgba(0, 0, 0, 0.35);
+		color: #fff;
+		font: bold 13px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		white-space: nowrap;
+		opacity: 0;
+		pointer-events: none;
+		transition: opacity 0.2s;
+		touch-action: manipulation;
+		-webkit-tap-highlight-color: transparent;
+		cursor: pointer;
+	}
+	body.sbo-pad.sbo-on-map.sbo-sys-show #sbo-rec-pad {
+		opacity: 0.75;
+		pointer-events: auto;
+	}
+	/* 録画中はいつでも止められるよう、はっきり出したままにする */
+	body.sbo-pad.sbo-recording #sbo-rec-pad {
+		opacity: 0.9;
+		pointer-events: auto;
+		background: rgba(192, 57, 43, 0.85);
+		border-color: rgba(255, 255, 255, 0.6);
+	}
+	@media (orientation: landscape) {
+		body.sbo-pad.sbo-on-map #sbo-rec-pad,
+		body.sbo-pad.sbo-recording #sbo-rec-pad {
+			position: fixed;
+			right: auto;
+			top: auto;
+			left: calc(64px + env(safe-area-inset-left));
+			bottom: calc(10px + env(safe-area-inset-bottom));
+			z-index: 800;
+			min-width: 44px;
+			height: 44px;
+			border-radius: 22px;
+			font-size: 15px;
+			opacity: 1;
+			pointer-events: auto;
+			border: 2px solid rgba(255, 255, 255, 0.4);
+			background: rgba(255, 255, 255, 0.12);
+		}
+		body.sbo-pad.sbo-recording #sbo-rec-pad {
+			background: rgba(192, 57, 43, 0.85);
+		}
+	}
+	/* 録画中の目印（ビデオカメラ風に左上へ赤丸と時間）。canvas の外の重ね表示なので動画には映らない */
+	#sbo-rec-badge {
+		display: none;
+		position: absolute;
+		left: 6px;
+		top: 6px;
+		z-index: 6;
+		align-items: center;
+		gap: 5px;
+		padding: 3px 8px;
+		border-radius: 4px;
+		background: rgba(0, 0, 0, 0.5);
+		color: #fff;
+		font: bold 13px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		pointer-events: none;
+	}
+	body.sbo-recording #sbo-rec-badge {
+		display: flex;
+	}
+	#sbo-rec-badge::before {
+		content: "";
+		width: 10px;
+		height: 10px;
+		border-radius: 50%;
+		background: #ff3b30;
+		animation: sbo-rec-blink 1s steps(1) infinite;
+	}
+	@keyframes sbo-rec-blink {
+		50% { opacity: 0; }
+	}
+	/* 録り終わった動画の確認・保存画面 */
+	#sbo-rec-view {
+		display: none;
+		position: fixed;
+		left: 0; top: 0; right: 0; bottom: 0;
+		z-index: 2500;
+		background: rgba(0, 0, 0, 0.88);
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 12px;
+		padding: calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
+		box-sizing: border-box;
+	}
+	#sbo-rec-view.sbo-open {
+		display: flex;
+	}
+	#sbo-rec-video {
+		max-width: 100%;
+		max-height: calc(100% - 140px);
+		background: #000;
+		image-rendering: pixelated;
+	}
+	#sbo-rec-view p {
+		margin: 0;
+		color: var(--fg);
+		font-size: 14px;
+		text-align: center;
+		line-height: 1.5;
+	}
+	#sbo-rec-view .sbo-shot-row {
+		display: flex;
+		gap: 10px;
+	}
+	#sbo-rec-view .sbo-shot-row a,
+	#sbo-rec-view .sbo-shot-row button {
+		border: none;
+		border-radius: 8px;
+		font: bold 14px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		padding: 10px 16px;
+		cursor: pointer;
+		text-decoration: none;
+	}
+	#sbo-rec-view .sbo-shot-row [hidden] {
+		display: none;
+	}
+	#sbo-rec-share,
+	#sbo-rec-dl {
+		background: var(--accent);
+		color: #1d1f24;
+	}
+	#sbo-rec-close {
+		background: #3a404a;
+		color: var(--fg);
 	}
 	/* 撮った時に画面を一瞬白く光らせる */
 	#sbo-shot-flash {
@@ -1273,6 +1430,8 @@
 		<div id="sbo-shot-flash"></div>
 		<!-- スマホのカメラボタン（縦持ちはゲーム画面の右上隅に重ねる。横持ちは左下） -->
 		<button type="button" id="sbo-shot-pad" title="スクリーンショット">📷</button>
+		<button type="button" id="sbo-rec-pad" title="ゲーム画面を動画で録画">🎥</button>
+		<div id="sbo-rec-badge">REC <span id="sbo-rec-time">0:00</span></div>
 		<!-- ログイン画面のボタン。ID・パスワードの入力欄は「ID・パスワードでログイン」を押した時だけ見せる -->
 		<div id="sbo-quick" data-sbo-ui="1">
 			<!-- この端末で前にログインしていた -->
@@ -1403,6 +1562,7 @@
 			<button id="sbo-log-pop" type="button" title="メッセージログを別のウィンドウで開きます（閉じると元に戻ります）">⧉ 別窓</button>
 			<button id="sbo-log-pc" type="button" title="メッセージログをテキストファイルで保存します">💾 ログ保存</button>
 			<button id="sbo-shot-pc" type="button" title="ゲーム画面を画像で保存します">📷 スクショ</button>
+			<button id="sbo-rec-pc" type="button" title="ゲーム画面だけを音つきの動画で録画します（もう一度押すと止めて保存。最長3分）">🎥 録画</button>
 			<button id="sbo-chat-fold" type="button" title="たたむ">▼</button>
 		</span>
 	</div>
@@ -1421,6 +1581,17 @@
 	<div class="sbo-shot-row">
 		<a id="sbo-shot-dl" href="#" download>ダウンロード</a>
 		<button id="sbo-shot-close" type="button">閉じる</button>
+	</div>
+</div>
+
+<!-- 動画録画（録り終わったら確認して保存する） -->
+<div id="sbo-rec-view" data-sbo-ui="1">
+	<video id="sbo-rec-video" controls playsinline></video>
+	<p id="sbo-rec-msg">録画できました。下のボタンから保存してください。</p>
+	<div class="sbo-shot-row">
+		<button id="sbo-rec-share" type="button">保存する</button>
+		<a id="sbo-rec-dl" href="#" download>ダウンロード</a>
+		<button id="sbo-rec-close" type="button">閉じる</button>
 	</div>
 </div>
 
@@ -3158,7 +3329,7 @@
 			document.body.classList.remove('sbo-sys-show');
 		}
 		document.getElementById('sbo-screen').addEventListener('click', function (ev) {
-			if (!usePad || ev.target.closest('#sbo-shot-pad, [data-sbo-ui]')) {
+			if (!usePad || ev.target.closest('#sbo-shot-pad, #sbo-rec-pad, [data-sbo-ui]')) {
 				return;
 			}
 			if (document.body.classList.contains('sbo-sys-show')) {
@@ -3169,6 +3340,322 @@
 			clearTimeout(sysTimer);
 			sysTimer = setTimeout(hideSysButtons, SYS_HIDE_MS);
 		});
+	})();
+
+	/* ---- 動画録画 ----
+	   ゲーム画面の canvas だけを録る（メッセージログやボタンは映らない）。
+	   ドットがぼやけないよう 2 倍（補間なし）の別 canvas に毎フレーム写し、それを captureStream で動画にする。
+	   音は BGM（sbo_bgm.js）と効果音（CDXAudio_web.cpp の Module.SboSe）が別々の AudioContext で
+	   鳴っているので、録画用の出口を足して 1 本に混ぜる（スピーカーへの出方は変えない）。
+	   動画はメモリに溜まるので最長 3 分で自動で止める。
+	   PC は止めたらそのままダウンロード。スマホは止めた後に確認画面を出し、
+	   「保存する」をもう一度押してもらって共有シートを開く（iOS は押した直後でないと開けないため）。 */
+	(function () {
+		var REC_SCALE = 2;
+		var REC_FPS = 30;
+		var REC_MAX_SEC = 180;
+		var pcBtn = document.getElementById('sbo-rec-pc');
+		var padBtn = document.getElementById('sbo-rec-pad');
+		var view = document.getElementById('sbo-rec-view');
+		var video = document.getElementById('sbo-rec-video');
+		var msg = document.getElementById('sbo-rec-msg');
+		var shareBtn = document.getElementById('sbo-rec-share');
+		var dl = document.getElementById('sbo-rec-dl');
+		var timeEl = document.getElementById('sbo-rec-time');
+		var rec = null;			/* 録画中の情報 */
+		var lastUrl = null;
+		var lastFile = null;
+
+		function pad2(n) {
+			return (n < 10 ? '0' : '') + n;
+		}
+		function fileName(ext) {
+			var d = new Date();
+			return 'sbo2003_' + d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) + '_' +
+				pad2(d.getHours()) + pad2(d.getMinutes()) + pad2(d.getSeconds()) + '.' + ext;
+		}
+
+		/* 使える形式を選ぶ（写真アプリや SNS に載せやすい MP4 を優先。Chrome の古い版は WebM） */
+		function pickType() {
+			var list = [
+				'video/mp4;codecs=avc1,mp4a.40.2',
+				'video/mp4',
+				'video/webm;codecs=vp9,opus',
+				'video/webm;codecs=vp8,opus',
+				'video/webm'
+			];
+			for (var i = 0; i < list.length; i ++) {
+				try {
+					if (MediaRecorder.isTypeSupported(list[i])) {
+						return list[i];
+					}
+				} catch (e) {
+				}
+			}
+			return '';
+		}
+
+		/* BGM と効果音を録画用に 1 本に混ぜる。返り値の stop() で元に戻す */
+		function tapAudio() {
+			var se = window.Module && Module.SboSe;
+			var bgm = window.SboBgm && SboBgm.recordTap ? SboBgm.recordTap() : null;
+			var mix = se && se.ctx ? se.ctx : bgm ? bgm.ctx : null;
+			if (!mix || !mix.createMediaStreamDestination) {
+				return null;
+			}
+			var undo = [];
+			var dest;
+			try {
+				dest = mix.createMediaStreamDestination();
+				if (se && se.ctx === mix && se.gainPri && se.gainSec) {
+					se.gainPri.connect(dest);
+					se.gainSec.connect(dest);
+					undo.push(function () {
+						se.gainPri.disconnect(dest);
+						se.gainSec.disconnect(dest);
+					});
+				}
+				if (bgm) {
+					if (bgm.ctx === mix) {
+						bgm.node.connect(dest);
+						undo.push(function () {
+							bgm.node.disconnect(dest);
+						});
+					} else {
+						/* 別の AudioContext の音は、いったん MediaStream にして混ぜる側へ渡す */
+						var bd = bgm.ctx.createMediaStreamDestination();
+						bgm.node.connect(bd);
+						var src = mix.createMediaStreamSource(bd.stream);
+						src.connect(dest);
+						undo.push(function () {
+							src.disconnect();
+							bgm.node.disconnect(bd);
+							bd.stream.getTracks().forEach(function (t) {
+								t.stop();
+							});
+						});
+					}
+				}
+			} catch (e) {
+				console.warn('[rec] 音をつなげませんでした', e);
+			}
+			if (!dest) {
+				return null;
+			}
+			return {
+				track: dest.stream.getAudioTracks()[0],
+				stop: function () {
+					undo.forEach(function (f) {
+						try {
+							f();
+						} catch (e) {
+						}
+					});
+				}
+			};
+		}
+
+		function setLabel(sec) {
+			if (sec < 0) {
+				pcBtn.textContent = '🎥 録画';
+				pcBtn.title = 'ゲーム画面だけを音つきの動画で録画します（もう一度押すと止めて保存。最長3分）';
+				padBtn.textContent = '🎥';
+				return;
+			}
+			var t = Math.floor(sec / 60) + ':' + pad2(Math.floor(sec % 60));
+			timeEl.textContent = t;
+			pcBtn.textContent = '⏹ 停止';
+			pcBtn.title = '録画を止めて保存します';
+			padBtn.textContent = '⏹';
+		}
+
+		function start() {
+			if (rec || !sboReady) {
+				return;
+			}
+			if (!window.MediaRecorder || !canvas.captureStream) {
+				alert('このブラウザでは録画できません。');
+				return;
+			}
+			var c = document.createElement('canvas');
+			c.width = canvas.width * REC_SCALE;
+			c.height = canvas.height * REC_SCALE;
+			var cx = c.getContext('2d', { alpha: false });
+			cx.imageSmoothingEnabled = false;
+			cx.drawImage(canvas, 0, 0, c.width, c.height);
+			var stream = c.captureStream(REC_FPS);
+			var audio = tapAudio();
+			if (audio && audio.track) {
+				stream.addTrack(audio.track);
+			}
+			var type = pickType();
+			var opt = { videoBitsPerSecond: 2500000, audioBitsPerSecond: 128000 };
+			if (type) {
+				opt.mimeType = type;
+			}
+			var mr;
+			try {
+				mr = new MediaRecorder(stream, opt);
+			} catch (e) {
+				try {
+					mr = new MediaRecorder(stream);
+				} catch (e2) {
+					if (audio) {
+						audio.stop();
+					}
+					alert('このブラウザでは録画できません。');
+					return;
+				}
+			}
+			var r = rec = {
+				mr: mr,
+				chunks: [],
+				audio: audio,
+				stream: stream,
+				begin: Date.now(),
+				raf: 0,
+				timer: 0
+			};
+			/* 毎フレーム、ゲーム画面を 2 倍にして写す */
+			var draw = function () {
+				cx.drawImage(canvas, 0, 0, c.width, c.height);
+				r.raf = requestAnimationFrame(draw);
+			};
+			r.raf = requestAnimationFrame(draw);
+			mr.ondataavailable = function (ev) {
+				if (ev.data && ev.data.size) {
+					r.chunks.push(ev.data);
+				}
+			};
+			mr.onstop = function () {
+				finish(r);
+			};
+			mr.onerror = function (ev) {
+				console.warn('[rec] 録画でエラーが起きました', ev && ev.error);
+			};
+			mr.start(1000);
+			r.timer = setInterval(function () {
+				var sec = (Date.now() - r.begin) / 1000;
+				if (sec >= REC_MAX_SEC) {
+					stop();
+					return;
+				}
+				setLabel(sec);
+			}, 250);
+			setLabel(0);
+			document.body.classList.add('sbo-recording');
+			console.log('[rec] 録画開始: ' + (mr.mimeType || type || '既定の形式') + (audio ? '（音あり）' : '（音なし）'));
+		}
+
+		function stop() {
+			if (!rec || rec.stopping) {
+				return;
+			}
+			rec.stopping = true;
+			clearInterval(rec.timer);
+			try {
+				rec.mr.stop();
+			} catch (e) {
+				finish(rec);
+			}
+		}
+
+		function finish(r) {
+			if (r.done) {
+				return;
+			}
+			r.done = true;
+			cancelAnimationFrame(r.raf);
+			clearInterval(r.timer);
+			if (r.audio) {
+				r.audio.stop();
+			}
+			r.stream.getTracks().forEach(function (t) {
+				t.stop();
+			});
+			if (rec === r) {
+				rec = null;
+			}
+			document.body.classList.remove('sbo-recording');
+			setLabel(-1);
+			var type = (r.mr.mimeType || r.chunks[0] && r.chunks[0].type || 'video/webm').split(';')[0];
+			var blob = new Blob(r.chunks, { type: type });
+			if (!blob.size) {
+				alert('録画できませんでした。');
+				return;
+			}
+			var name = fileName(type.indexOf('mp4') >= 0 ? 'mp4' : 'webm');
+			if (lastUrl) {
+				URL.revokeObjectURL(lastUrl);
+			}
+			lastUrl = URL.createObjectURL(blob);
+			if (!usePad) {
+				/* PC：そのままダウンロード */
+				var a = document.createElement('a');
+				a.href = lastUrl;
+				a.download = name;
+				document.body.appendChild(a);
+				a.click();
+				a.remove();
+				canvas.focus();
+				return;
+			}
+			/* スマホ：確認画面を出して、もう一度押してもらってから共有シートを開く */
+			lastFile = null;
+			try {
+				lastFile = new File([blob], name, { type: type });
+			} catch (e) {
+				lastFile = null;
+			}
+			var canShare = !!(lastFile && navigator.canShare && navigator.canShare({ files: [lastFile] }));
+			shareBtn.hidden = !canShare;
+			msg.textContent = canShare ?
+				'録画できました。「保存する」から「ビデオを保存」を選ぶと写真に入ります。' :
+				'録画できました。「ダウンロード」から保存してください。';
+			video.src = lastUrl;
+			dl.href = lastUrl;
+			dl.download = name;
+			view.classList.add('sbo-open');
+		}
+
+		function closeView() {
+			view.classList.remove('sbo-open');
+			try {
+				video.pause();
+			} catch (e) {
+			}
+			canvas.focus();
+		}
+
+		function toggle() {
+			if (rec) {
+				stop();
+			} else {
+				start();
+			}
+		}
+		pcBtn.addEventListener('click', toggle);
+		padBtn.addEventListener('click', function () {
+			document.body.classList.remove('sbo-sys-show');
+			toggle();
+		});
+		shareBtn.addEventListener('click', function () {
+			if (!lastFile) {
+				return;
+			}
+			navigator.share({ files: [lastFile] }).catch(function (e) {
+				if (!e || e.name !== 'AbortError') {
+					msg.textContent = '共有シートを開けませんでした。「ダウンロード」から保存してください。';
+				}
+			});
+		});
+		document.getElementById('sbo-rec-close').addEventListener('click', closeView);
+		view.addEventListener('click', function (ev) {
+			if (ev.target === view) {
+				closeView();
+			}
+		});
+		window.sboRecordToggle = toggle;
 	})();
 
 	/* ---- ログ保存 ----
