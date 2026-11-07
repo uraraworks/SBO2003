@@ -1090,10 +1090,11 @@
 	   PC … チャットパネルの見出しのボタンでダウンロード
 	   スマホ … パッドのカメラボタンで共有シート（「画像を保存」で写真へ）
 	   =================================================================== */
+	/* 見出しは幅 360px に「ログ」とボタン 4 つと ▼ を 1 行で収める（はみ出すと ▼ が隠れる） */
 	#sbo-chat-tools {
 		display: flex;
 		align-items: center;
-		gap: 6px;
+		gap: 4px;
 	}
 	#sbo-chat-title,
 	#sbo-chat-tools button {
@@ -1557,7 +1558,7 @@
 <!-- PC のチャットパネル -->
 <div id="sbo-chat-panel">
 	<div id="sbo-chat-head">
-		<span id="sbo-chat-title">メッセージログ</span>
+		<span id="sbo-chat-title" title="メッセージログ">ログ</span>
 		<span id="sbo-chat-tools">
 			<button id="sbo-log-pop" type="button" title="メッセージログを別のウィンドウで開きます（閉じると元に戻ります）">⧉ 別窓</button>
 			<button id="sbo-log-pc" type="button" title="メッセージログをテキストファイルで保存します">💾 ログ保存</button>
