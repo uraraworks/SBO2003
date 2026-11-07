@@ -94,5 +94,6 @@ extern PWNDINFO MakeWindowITEMINFO						(int x, int y);				/* アイテム情報
 extern PWNDINFO MakeWindowITEMINFOList					(PWNDINFO pWndList);		/* アイテム情報(一覧の横) */
 extern void UpdateWindowITEMINFOList						(PWNDINFO pWndList);		/* アイテム情報(一覧の横)の更新 */
 extern PWNDINFO MakeWindowDEAD_COMMAND					(void);						/* 死亡中：コマンド */
+extern PWNDINFO MakeWindowSTATUSMAGIC					(void);						/* 強さ：覚えている特技 */
 
 /* Copyright(C)URARA-works 2003-2005 */

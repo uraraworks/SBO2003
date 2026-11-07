@@ -82,6 +82,7 @@ void KeyProcSUBSUGOROKU_JOINMODE			(PWNDINFO, BYTE, BYTE);		/* すごろく：�
 void KeyProcSUBSUGOROKU_COMMAND				(PWNDINFO, BYTE, BYTE);		/* すごろく：行動選択 */
 void KeyProcSUBSUGOROKU_IDLE				(PWNDINFO, BYTE, BYTE);		/* すごろく：平常状態 */
 void KeyProcDEAD_COMMAND					(PWNDINFO, BYTE, BYTE);		/* 死亡中：コマンド */
+void KeyProcSTATUSMAGIC					(PWNDINFO, BYTE, BYTE);		/* 強さ：覚えている特技 */
 
 LRESULT CALLBACK AccWndProc					(HWND, UINT, WPARAM, LPARAM);	/* アカウント名入力用メッセージ処理 */
 LRESULT CALLBACK PasWndProc					(HWND, UINT, WPARAM, LPARAM);	/* パスワード入力用メッセージ処理 */
@@ -211,6 +212,7 @@ const KEYPROC KeyProcTbl[] = {
 	KeyProcSUBSUGOROKU_IDLE,			/* WNDTYPE_SUBSUGOROKU_IDLE				すごろく：平常状態 */
 	NULL,								/* WNDTYPE_ITEMINFO						アイテム情報 */
 	KeyProcDEAD_COMMAND,				/* WNDTYPE_DEAD_COMMAND					死亡中：コマンド */
+	KeyProcSTATUSMAGIC,					/* WNDTYPE_STATUSMAGIC					強さ：覚えている特技 */
 };
 
 
@@ -2415,9 +2417,18 @@ void KeyProcCOMMANDSTATUS(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		g_bDraw = TRUE;
 		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
 
-	} else if ((byEvent == KEY_UP) && (byCode == 'A') && (g_bEnableMove)) {
-		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
-		EraseWindow ((PWNDINFO)g_WndInfo[GetWindowID (g_dwMsgIDCommand)]);
+	} else if ((byEvent == KEY_UP) && (byCode == 'A')) {
+		/* ステータスの次は、覚えている特技の一覧を出す */
+		PWNDINFO pWndParent = (PWNDINFO)pWnd->pParent;
+
+		EraseWindow (pWnd);
+		if (pWndParent) {
+			PWNDINFO pWndNew = MakeWindowSTATUSMAGIC ();
+			pWndNew->pParent = pWndParent;
+			pWndParent->pChild = pWndNew;
+			g_WndInfo.Add (pWndNew);
+			g_dwActiveMsgID = pWndNew->dwID;
+		}
 		g_bDraw = TRUE;
 
 	} else if ((byEvent == KEY_DOWN) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
@@ -2446,6 +2457,59 @@ void KeyProcCOMMANDSTATUS(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			pWnd->byRepeate ++;
 			pWnd->dwTimeKey = timeGetTime ();
 			pWnd->dwTimeDrawStart = 0;
+			g_bDraw = TRUE;
+		}
+
+	} else if (byEvent == KEY_UP) {
+		pWnd->dwTimeKey = timeGetTime () - 250;
+		pWnd->byRepeate = 0;
+		g_bDraw = TRUE;
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：	KeyProcSTATUSMAGIC												 */
+/* 内容：	キー入力処理(強さ：覚えている特技)								 */
+/* 			上下で特技を選ぶと下の欄に説明が出る。見るだけで使いはしない	 */
+/* 日付：	2026/11/07														 */
+/* ========================================================================= */
+void KeyProcSTATUSMAGIC(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
+{
+	DWORD dwTime = 250;
+	if (pWnd->byRepeate > 1) {
+		dwTime = 125;
+	}
+
+	if ((byEvent == KEY_UP) && (byCode == 'B')) {
+		/* コマンドメニューに戻る */
+		EraseWindow (pWnd);
+		g_bDraw = TRUE;
+		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
+
+	} else if ((byEvent == KEY_UP) && (byCode == 'A') && (g_bEnableMove)) {
+		/* 全部閉じる（「強さ」で決定を押した時の元の動きと同じ） */
+		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
+		EraseWindow ((PWNDINFO)g_WndInfo[GetWindowID (g_dwMsgIDCommand)]);
+		g_bDraw = TRUE;
+
+	} else if ((byEvent == KEY_DOWN) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
+		BOOL bMove = FALSE;
+
+		if (pWnd->nData2 <= 1) {
+			/* 動かす先が無い */
+		} else if (byCode == VK_UP) {
+			pWnd->nData1 = (pWnd->nData1 > 0) ? pWnd->nData1 - 1 : pWnd->nData2 - 1;
+			bMove = TRUE;
+
+		} else if (byCode == VK_DOWN) {
+			pWnd->nData1 = (pWnd->nData1 < pWnd->nData2 - 1) ? pWnd->nData1 + 1 : 0;
+			bMove = TRUE;
+		}
+
+		if (bMove) {
+			pWnd->byRepeate ++;
+			pWnd->dwTimeKey = timeGetTime ();
+			pWnd->dwTimeDrawStart = 0;		/* 説明欄も描き直す */
 			g_bDraw = TRUE;
 		}
 

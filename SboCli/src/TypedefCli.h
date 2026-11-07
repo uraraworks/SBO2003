@@ -140,7 +140,13 @@ enum {
 	WNDTYPE_SUBSUGOROKU_IDLE,									/* すごろく：平常状態 */
 	WNDTYPE_ITEMINFO,											/* アイテム情報 */
 	WNDTYPE_DEAD_COMMAND,										/* 死亡中：コマンド */
+	WNDTYPE_STATUSMAGIC,										/* 強さ：覚えている特技 */
 };
+
+/* 強さ：覚えている特技ウィンドウ(WNDTYPE_STATUSMAGIC)の大きさ */
+#define STATUSMAGIC_EXPLAIN_LINE	(4)											/* 説明欄の行数（12ドットの字） */
+#define STATUSMAGIC_EXPLAIN_CY		(16 * 2 + 12 * STATUSMAGIC_EXPLAIN_LINE)	/* 説明欄の高さ */
+#define STATUSMAGIC_LIST_CY(n)		(16 * (2 + max (1, (n))))					/* 一覧の高さ（特技が無くても1行分） */
 
 /* はい/いいえ種別 */
 enum {
