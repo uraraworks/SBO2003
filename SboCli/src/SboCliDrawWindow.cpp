@@ -3964,7 +3964,19 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 		nCxNew = max (nCxNew, MAKERINFO_CX);
 		nCyNew = nFooterTop + 4 + ITEMINFO_LINE * nFooterLine + 16;
 		nCyNew = (nCyNew + 15) / 16 * 16;
+		/* 長い材料名でも「持っている数/必要な数」と重ならない幅にする */
+		for (int m = 0; m < MAX_RECIPEMAT; m ++) {
+			WORD wMat = pRecipe->awMatItem[m];
+			if ((wMat == 0) || (wMat >= g_aItemInfo.GetSize ())) {
+				continue;
+			}
+			nCxNew = max (nCxNew, 16 + 8 + SboTextWidth (g_aItemInfo[wMat]->szName) * 8 + 8 * 8 + 16);
+		}
 	}
+	/* 長いアイテム名でも切れない幅にする（画面の幅まで） */
+	nCxNew = max (nCxNew, 16 + SboTextWidth (pItem->szName) * 8 + 16);
+	nCxNew = (nCxNew + 15) / 16 * 16;
+	nCxNew = min (nCxNew, SCRSIZEX);
 	if ((pWnd->nCx != nCxNew) || (pWnd->nCy != nCyNew)) {
 		/* 右端の位置はそのままで大きさを変える */
 		int nRight = pWnd->nX + pWnd->nCx;
@@ -3979,6 +3991,10 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 		pWnd->pDib = new CImg32;
 		pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
 		pWnd->pDib->SetColorKey (RGB (40, 40, 40));
+	}
+	/* 画面の右にはみ出す時は左にずらす（お店の買う画面は置き場所が固定なので、大きさが変わらない時も毎回見る） */
+	if (pWnd->nX + pWnd->nCx > SCRSIZEX) {
+		pWnd->nX = max (0, SCRSIZEX - pWnd->nCx);
 	}
 	if (pWnd->nType2 == ITEMINFOPOS_LIST) {
 		/* 一覧ウィンドウの横（入らなければ下）に置く */
@@ -4003,6 +4019,15 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 				/* （下のメッセージ欄と重なっても文の書き出しが隠れないよう右に寄せる） */
 				pWnd->nX = max (0, SCRSIZEX - pWnd->nCx);
 				pWnd->nY = nListBottom;
+			}
+			/* 右上の所持金の窓と重なる時は、その下に出す */
+			int nNoGold = GetWindowID (g_dwMsgIDGold);
+			if (nNoGold >= 0) {
+				PWNDINFO pWndGold = (PWNDINFO)g_WndInfo[nNoGold];
+				if ((pWnd->nX < pWndGold->nX + pWndGold->nCx) && (pWndGold->nX < pWnd->nX + pWnd->nCx) &&
+					(pWnd->nY < pWndGold->nY + pWndGold->nCy) && (pWndGold->nY < pWnd->nY + pWnd->nCy)) {
+					pWnd->nY = pWndGold->nY + pWndGold->nCy;
+				}
 			}
 			/* 画面の下にはみ出す時は上にずらす */
 			if (pWnd->nY + pWnd->nCy > SCRSIZEY) {
@@ -4137,8 +4162,6 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 		TextOut2 (hDC, 16, nY, "手数料：", RGB (200, 200, 200));
 		wsprintf (szTmp, "%dG", (int)pRecipe->dwGold);
 		TextOut2 (hDC, 16 + ITEMINFO_LINE * 4, nY, szTmp, (pCharMy->dwGold >= pRecipe->dwGold) ? RGB (150, 255, 200) : RGB (255, 130, 130));
-		wsprintf (szTmp, "所持 %dG", (int)pCharMy->dwGold);
-		TextOut2 (hDC, pWnd->nCx - 16 - 8 * (int)strlen (szTmp), nY, szTmp, RGB (200, 200, 200));
 	}
 
 	SelectObject (hDC, hFontOld);
@@ -4384,6 +4407,11 @@ void EraseWindow(PWNDINFO pWnd)
 			g_nProcMakerID = -1;
 			g_bProcMakerLeaveOK = FALSE;
 			g_bProcMakerWait = FALSE;
+			/* 一緒に出していた所持金の窓も消す */
+			int nNoGold = GetWindowID (g_dwMsgIDGold);
+			if (nNoGold >= 0) {
+				EraseWindow ((PWNDINFO)g_WndInfo[nNoGold]);
+			}
 		}
 		break;
 	}

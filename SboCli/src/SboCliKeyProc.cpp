@@ -7698,6 +7698,8 @@ void CmdProcHanasu(PWNDINFO pWnd)
 
 		} else {
 			/* 一覧・台詞・横の詳細を出し、預かり所の中身を取りに行く */
+			/* 所持金はお店と同じく右上の別の窓に出す（一覧を閉じた時に一緒に消す） */
+			g_WndInfo.Add (MakeWindowGOLD ());
 			PWNDINFO pWndList = MakeWindowMAKER (nMaker);
 			g_WndInfo.Add (pWndList);
 			MakerSetTalkMsg (pWndList);

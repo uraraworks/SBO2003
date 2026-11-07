@@ -3195,7 +3195,22 @@ PWNDINFO MakeWindowMAKER(int nMaker)
 	pWnd->nData2 = min (max (nCount, 1), MAKER_LISTROWS);
 	pWnd->nX = 16;
 	pWnd->nY = 16;
-	pWnd->nCx = MAKER_LISTCX;
+	/* 一番長い「名前 xN」が入る幅にする（画面の幅まで） */
+	int nCx = MAKER_LISTCX;
+	for (int i = 0; i < nCount; i ++) {
+		PRECIPEINFO pRecipe = &g_aRecipeInfo[anList[i]];
+		if (pRecipe->wItem >= g_aItemInfo.GetSize ()) {
+			continue;
+		}
+		int nW = SboTextWidth (g_aItemInfo[pRecipe->wItem]->szName);
+		if (pRecipe->byCount > 1) {
+			nW += (pRecipe->byCount >= 10) ? 4 : 3;	/* " x3" の分 */
+		}
+		nCx = max (nCx, 32 + nW * 8 + 16);
+	}
+	nCx = (nCx + 15) / 16 * 16;
+	/* 右上の所持金の窓（x=16*23 から）と重ならない幅まで */
+	pWnd->nCx = min (nCx, 16 * 22);
 	pWnd->nCy = 16 * (2 + pWnd->nData2);
 	pWnd->nType = WNDTYPE_MAKER;
 	pWnd->nType2 = MAKERWND_LIST;
