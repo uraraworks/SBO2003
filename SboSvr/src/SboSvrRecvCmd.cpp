@@ -61,6 +61,7 @@ void	DeleteChildChar				(PCHARINFO);									/* 自分が親のキャラを削�
 void	SetInitCharData				(PCHARINFO);									/* キャラの初期値を設定 */
 void	CharTargetPC				(PCHARINFO, PCHARINFO, DWORD);					/* キャラのついてく設定 */
 void	CharTargetCancelPC			(PCHARINFO);									/* キャラのついていく解除 */
+void	TailMoveChain				(PCHARINFO);									/* ついてきているキャラを順に動かす */
 BOOL	CheckCharX					(PCHARINFO pChar, DWORD dwX, DWORD dwXTarget);	/* キャラサイズに合わせた当たり判定(横) */
 int		GetCharX					(PCHARINFO, DWORD, DWORD, BOOL);				/* キャラサイズに合わせた距離を求める(横) */
 int		GetCharDistanceX			(PCHARINFO, PCHARINFO);							/* キャラサイズに合わせた距離を求める(横) */
@@ -1935,6 +1936,81 @@ void CharTargetCancelPC(PCHARINFO pChar)
 }
 
 /* ========================================================================= */
+/* 関数名：	TailMoveChain													 */
+/* 内容：	ついてきているキャラを前から順に一歩ずつ動かす					 */
+/*			pParent は今動いたキャラ（dwXBack/dwYBack が動く前の位置）		 */
+/*			向きは「どちらへ一歩進んだか」から決める。以前は前のキャラの	 */
+/*			向きの履歴を使っていて、コンベアのように向き変更の通知が無い	 */
+/*			移動では角で向きがずれ、横すべりして見えていた					 */
+/* ========================================================================= */
+void TailMoveChain(PCHARINFO pParent)
+{
+	int i;
+	PCHARINFO pChar;
+
+	/* 列が輪になっていても止まるように回数を区切る */
+	for (i = 0; i < 100; i ++) {
+		if ((pParent->dwTailBackTblID == -1) ||
+			(pParent->dwTailBackTblID >= (DWORD)g_aCharInfo.GetSize ())) {
+			break;
+		}
+		pChar = g_aCharInfo[pParent->dwTailBackTblID];
+		pChar->byFlg &= ~CHARINFOFLG_MOVEPARENT;
+		if ((pChar->dwTailTblID != pParent->dwTblID) || (pChar == pParent)) {
+			break;
+		}
+		/* 違うマップ？ */
+		if (pChar->dwMapID != pParent->dwMapID) {
+			CharTargetCancelPC (pChar);
+			break;
+		}
+		/* 前のキャラが動いていない（向きを変えただけなど）、またはもうその場所にいる */
+		if ((pParent->dwXBack == pParent->dwX) && (pParent->dwYBack == pParent->dwY)) {
+			break;
+		}
+		if ((pChar->dwX == pParent->dwXBack) && (pChar->dwY == pParent->dwYBack)) {
+			break;
+		}
+
+		/* 進む向き（隣のマスなら、その向き。離れていたら前の作りと同じ決め方） */
+		int nAddX = (int)pParent->dwXBack - (int)pChar->dwX;
+		int nAddY = (int)pParent->dwYBack - (int)pChar->dwY;
+		BYTE byDirection;
+		if ((nAddX == 0) && (nAddY == -1)) {
+			byDirection = 0;
+		} else if ((nAddX == 0) && (nAddY == 1)) {
+			byDirection = 1;
+		} else if ((nAddX == -1) && (nAddY == 0)) {
+			byDirection = 2;
+		} else if ((nAddX == 1) && (nAddY == 0)) {
+			byDirection = 3;
+		} else if (pParent->dwTailTblID == -1) {
+			byDirection = pParent->byDirectionBack2;
+		} else {
+			byDirection = pParent->byDirectionBack;
+		}
+
+		pChar->byDirectionBack2 = pChar->byDirectionBack;
+		pChar->byDirectionBack = pChar->byDirection;
+		pChar->dwXBack = pChar->dwX;
+		pChar->dwYBack = pChar->dwY;
+
+		pChar->byDirection = byDirection;
+		pChar->dwX = pParent->dwXBack;
+		pChar->dwY = pParent->dwYBack;
+
+		SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 1);
+		SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
+		CheckCharPosSend (pChar);
+		pChar->byFlg &= ~CHARINFOFLG_DIRECTION;
+		pChar->byFlg &= ~CHARINFOFLG_MOVE;
+
+		/* 次は、このキャラについてきているキャラ */
+		pParent = pChar;
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：CheckCharX														 */
 /* 内容：キャラサイズに合わせた当たり判定(横)								 */
 /* 日付：2004/09/27															 */
@@ -3426,12 +3502,6 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 			return;
 		}
 #endif
-		/* 誰かを引っ張っている？ */
-		if (pChar->dwTailBackTblID != -1) {
-			PCHARINFO pCharTmp1 = g_aCharInfo[pChar->dwTailBackTblID];
-			pCharTmp1->byFlg |= CHARINFOFLG_MOVEPARENT;
-		}
-
 		if ((pChar->dwXBack != pChar->dwX) || (pChar->dwYBack != pChar->dwY)) {
 			pChar->dwLastDotMove = timeGetTime ();
 		}
@@ -3444,6 +3514,11 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 		pChar->byDirection = pPara->byDirection;
 		pChar->dwX = (DWORD)pPara->byX;
 		pChar->dwY = (DWORD)pPara->byY;
+
+		/* 誰かを引っ張っている？
+		   以前は旗を立てて次のキャラ処理で動かしていたが、移動が続けて届くと
+		   ついてくる側が1マス飛ばして斜めに動き、列が崩れていたので、ここで続けて動かす */
+		TailMoveChain (pChar);
 
 		if (pChar->byFlg & CHARINFOFLG_MOVE) {
 			CheckCharPosSend (pChar);
@@ -4051,6 +4126,14 @@ void RecvDataProcEVENTCHECK(PBYTE pData, DWORD dwDataSize)
 		if (OpenDoorFront (pChar)) {
 			return;
 		}
+	}
+	/* マスに乗った時の問い合わせ(0)は、調べたわけではないのでメッセージは出さない。
+	   ついていく時はサーバー側で先に次のマスへ動かしているので、扉などのマスに乗った
+	   問い合わせが届く頃には足元にイベントが無く、ここに来ることがある。
+	   位置を送り直してクライアントの移動待ちを解く */
+	if (pPara->byData == 0) {
+		SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
+		return;
 	}
 	SendCmdMAPMSG (pChar->pID, "何も見つかりませんでした。@2");
 }
