@@ -108,6 +108,7 @@ void DrawWindowBATTLE_COMMAND					(PWNDINFO);			/* 戦闘：コマンド */
 void DrawWindowBATTLE_TARGET					(PWNDINFO);			/* 戦闘：ターゲット選択 */
 void DrawWindowITEMINFO							(PWNDINFO);			/* アイテム情報 */
 void DrawWindowDEAD_COMMAND						(PWNDINFO);			/* 死亡中：コマンド */
+void DrawWindowSTATUSMAGIC						(PWNDINFO);			/* 強さ：覚えている特技 */
 
 void DrawWindowSUBSUGOROKU_JOINMODE				(PWNDINFO);			/* ウィンドウの描画(すごろく：参加モード選択) */
 void DrawWindowSUBSUGOROKU_COMMAND				(PWNDINFO);			/* ウィンドウの描画(すごろく：行動選択) */
@@ -296,6 +297,7 @@ void DrawWindow(CImg32 *pDib, int x, int y)
 		case WNDTYPE_SUBSUGOROKU_IDLE:		DrawWindowSUBSUGOROKU_IDLE (pWnd);		break;
 		case WNDTYPE_ITEMINFO:				DrawWindowITEMINFO (pWnd);				break;
 		case WNDTYPE_DEAD_COMMAND:			DrawWindowDEAD_COMMAND (pWnd);			break;
+		case WNDTYPE_STATUSMAGIC:			DrawWindowSTATUSMAGIC (pWnd);			break;
 		}
 		pDib->BltAlpha2 (pWnd->nX + x, pWnd->nY + y, pWnd->nCx, pWnd->nCy, pWnd->pDib, 0, 0, 15, TRUE);
 	}
@@ -4024,6 +4026,107 @@ void DrawWindowDEAD_COMMAND(PWNDINFO pWnd)
 	pWnd->dwTimeDrawStart = timeGetTime ();
 
 	DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
+}
+
+
+/* ========================================================================= */
+/* 関数名：	DrawWindowSTATUSMAGIC											 */
+/* 内容：	ウィンドウの描画(強さ：覚えている特技)							 */
+/* 			上に特技の一覧、下にカーソルのある特技の説明を出す				 */
+/* 日付：	2026/11/07														 */
+/* ========================================================================= */
+
+void DrawWindowSTATUSMAGIC(PWNDINFO pWnd)
+{
+	if (pWnd->dwTimeDrawStart) {
+		if (pWnd->nData2 > 0) {
+			DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
+		}
+		return;
+	}
+
+	int i, nNo = 0;
+	int nListCy = STATUSMAGIC_LIST_CY (pWnd->nData2);
+	int xUse = pWnd->nCx - 16 - 8 * 8 - 8 - 8 * 8;		/* 使える場面の位置 */
+	int xMana = pWnd->nCx - 16 - 8 * 8;					/* 消費Manaの位置 */
+	char szTmp[128];
+	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
+	PMAGICINFO pSelect = NULL;
+
+	DrawWindowFrame2 (pWnd, 0, 0, pWnd->nCx, nListCy);
+	DrawWindowFrame2 (pWnd, 0, nListCy, pWnd->nCx, STATUSMAGIC_EXPLAIN_CY);
+
+	HDC hDC = pWnd->pDib->Lock ();
+	HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFontBasic);
+
+	/* 枠の上に載る見出しは背景を塗ってから重ねて描く（「強さ」と同じ） */
+	SetBkColor (hDC, RGB (40, 40, 40));
+	TextOut2 (hDC, 32, 0, "特技", RGB (255, 255, 255));
+	TextOut2 (hDC, 32, nListCy, "説明", RGB (255, 255, 255));
+	SetBkMode (hDC, TRANSPARENT);
+	TextOut2 (hDC, 32, 0, "特技", RGB (255, 255, 255));
+	TextOut2 (hDC, 32, nListCy, "説明", RGB (255, 255, 255));
+
+	if (pWnd->nData2 == 0) {
+		TextOut2 (hDC, 32, 16, "覚えている特技はありません", RGB (200, 200, 200));
+	}
+
+	for (i = 0; i < MAX_USEMAGIC; i ++) {
+		BYTE byMagicID = pChar->abyMagic[i];
+		if (byMagicID == 0) {
+			break;
+		}
+		if (byMagicID >= g_aMagicInfo.GetSize ()) {
+			continue;
+		}
+		if (nNo >= pWnd->nData2) {
+			break;
+		}
+		PMAGICINFO pInfo = g_aMagicInfo[byMagicID];
+		int y = 16 + nNo * 16;
+
+		TextOut2 (hDC, 32, y, pInfo->szName, RGB (255, 255, 255));
+
+		/* 使える場面（「特技」コマンドに出るのは「ふだん」と「いつでも」） */
+		LPCSTR pszUse = "ふだん";
+		COLORREF clUse = RGB (150, 220, 255);
+		switch (pInfo->byTypeInfoID) {
+		case MAGICUSETYPE_BATTLE:		pszUse = "戦闘中";		clUse = RGB (255, 180, 150);	break;
+		case MAGICUSETYPE_WALKBATTLE:	pszUse = "いつでも";	clUse = RGB (150, 255, 200);	break;
+		}
+		TextOut2 (hDC, xUse, y, (LPSTR)pszUse, clUse);
+
+		wsprintf (szTmp, "Mana%4d", pInfo->wMana);
+		TextOut2 (hDC, xMana, y, szTmp, RGB (200, 200, 200));
+
+		if (nNo == pWnd->nData1) {
+			pSelect = pInfo;
+		}
+		nNo ++;
+	}
+
+	/* カーソルのある特技の説明（12ドットの字） */
+	if (pSelect) {
+		char szExplain[MAX_MAGICEXPLAIN + 64];
+		char aszExplain[STATUSMAGIC_EXPLAIN_LINE][128];
+		int nLine;
+
+		SelectObject (hDC, g_hFont12);
+		GetMagicExplain (pSelect, szExplain, sizeof (szExplain));
+		/* 12ドットの字は半角6ドット。左右の枠と「。」のぶら下げ分を引いた幅で折り返す */
+		nLine = SplitMagicExplain (szExplain, (pWnd->nCx - 32 - 12) / 6, aszExplain, STATUSMAGIC_EXPLAIN_LINE);
+		for (i = 0; i < nLine; i ++) {
+			TextOut2 (hDC, 16, nListCy + 16 + 12 * i, aszExplain[i], RGB (255, 255, 255));
+		}
+	}
+
+	SelectObject (hDC, hFontOld);
+	pWnd->pDib->Unlock ();
+	pWnd->dwTimeDrawStart = timeGetTime ();
+
+	if (pWnd->nData2 > 0) {
+		DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
+	}
 }
 
 

@@ -2853,3 +2853,50 @@ PWNDINFO MakeWindowDEAD_COMMAND(void)
 }
 
 /* Copyright(C)URARA-works 2003-2005 */
+
+/* ========================================================================= */
+/* 関数名：	MakeWindowSTATUSMAGIC											 */
+/* 内容：	ウィンドウの作成(強さ：覚えている特技)							 */
+/* 			「強さ」で決定を押すと、ステータスの次に出す一覧				 */
+/* 日付：	2026/11/07														 */
+/* ========================================================================= */
+
+PWNDINFO MakeWindowSTATUSMAGIC(void)
+{
+	PWNDINFO pWnd;
+	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
+	int i, nCount = 0, nLen = 0;
+
+	/* 覚えている特技の数と、いちばん長い名前の幅（半角何文字分か） */
+	for (i = 0; i < MAX_USEMAGIC; i ++) {
+		BYTE byMagicID = pChar->abyMagic[i];
+		if (byMagicID == 0) {
+			break;
+		}
+		if (byMagicID >= g_aMagicInfo.GetSize ()) {
+			continue;
+		}
+		nLen = max (nLen, SboTextWidth (g_aMagicInfo[byMagicID]->szName));
+		nCount ++;
+	}
+
+	pWnd = GetNewWindow ();
+	pWnd->nData1	= 0;			/* カーソル位置 */
+	pWnd->nData2	= nCount;		/* 特技の数 */
+	pWnd->nX		= 32;
+	pWnd->nY		= 50 + 16 * 2;
+	/* 左の枠とカーソル + 名前 + 使える場面(半角8) + 消費Mana(半角8) + 右の枠 */
+	pWnd->nCx		= 32 + nLen * 8 + 16 + 8 * 8 + 8 + 8 * 8 + 16;
+	pWnd->nCx		= (pWnd->nCx + 15) / 16 * 16;
+	pWnd->nCx		= max (pWnd->nCx, 16 * 20);
+	pWnd->nCx		= min (pWnd->nCx, SCRSIZEX - pWnd->nX);
+	pWnd->nCy		= STATUSMAGIC_LIST_CY (nCount) + STATUSMAGIC_EXPLAIN_CY;
+	pWnd->nType		= WNDTYPE_STATUSMAGIC;
+	pWnd->pDib		= new CImg32;
+	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
+	pWnd->pDib->SetColorKey (RGB (40, 40, 40));
+
+	DXAudio.PlaySecoundary (&aSoundTbl[SOUND_CONFIRM]);
+	return pWnd;
+}
+
