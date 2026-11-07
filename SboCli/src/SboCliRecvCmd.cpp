@@ -23,6 +23,9 @@
 #include "SboCliDebugWindow.h"
 #include "SboCliMsgLogWindow.h"
 #include "SboCliBalloonWindow.h"
+#ifdef __EMSCRIPTEN__
+extern void SboWebChatNotify(void);								/* 発言が来たことをシェルに知らせる（タブの題名で新着を知らせる） */
+#endif
 
 
 /* ========================================================================= */
@@ -2973,6 +2976,7 @@ void RecvDataProcSPEECH(PBYTE pData, DWORD dwDataSize)
 	PCMDPARA_SPEECH pPara = (PCMDPARA_SPEECH)pData;
 	int nNo = GetCharNo (((PCMDPARA_DATA1)pData)->pID);
 	BOOL bFlg = FALSE;
+	BOOL bSpeech = FALSE;		/* プレイヤーの発言（発言の音を鳴らす） */
 
 	LPSTR pszTmp = (LPSTR)new BYTE[pPara->wSize + 1], pszTmp2;
 	ZeroMemory (pszTmp, pPara->wSize + 1);
@@ -2993,6 +2997,7 @@ void RecvDataProcSPEECH(PBYTE pData, DWORD dwDataSize)
 	if (pPara->byType == SPEECHCMD_ALL) {
 		cl = RGB (0, 200, 255);
 		bFlg = TRUE;
+		bSpeech = TRUE;
 
 	} else if (pPara->byType == SPEECHCMD_GM) {
 		cl = RGB (255, 255, 255);
@@ -3036,6 +3041,7 @@ void RecvDataProcSPEECH(PBYTE pData, DWORD dwDataSize)
 		if (cl == 0) {
 			cl = RGB (255, 255, 255);
 		}
+		bSpeech = TRUE;
 
 	} else {
 		goto Exit;
@@ -3047,6 +3053,16 @@ void RecvDataProcSPEECH(PBYTE pData, DWORD dwDataSize)
 	}
 
 	AddMsgLog (pszTmp, cl);
+
+	/* 発言の音（SBOP2 と同じく、キャラの発言と全体発言で鳴らす。お知らせ類は鳴らさない） */
+	if (bSpeech) {
+		if (g_bChatSound) {
+			DXAudio.PlaySecoundary (&aSoundTbl[SOUND_CHAT]);
+		}
+#ifdef __EMSCRIPTEN__
+		SboWebChatNotify ();
+#endif
+	}
 Exit:
 	SAFE_DELETE_ARRAY (pszTmp);
 }

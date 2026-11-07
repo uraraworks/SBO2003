@@ -65,6 +65,19 @@ EM_JS(void, SboJsChatLogOpen, (void), {
 	}
 });
 
+EM_JS(void, SboJsChatNotify, (void), {
+	if (typeof window !== 'undefined' && typeof window['sboChatNotify'] === 'function') {
+		window['sboChatNotify']();
+	}
+});
+
+/* 発言が来たことをシェルに知らせる（SboCliRecvCmd.cpp の RecvDataProcSPEECH から）。
+   別のタブを見ている間は、タブの題名に新着の数を出す */
+void SboWebChatNotify(void)
+{
+	SboJsChatNotify ();
+}
+
 /* ========================================================================= */
 /* 関数名：MakeMsgLogWindow													 */
 /* 内容：メッセージログウィンドウ作成（チャット欄を出す）					 */

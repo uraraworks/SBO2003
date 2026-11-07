@@ -669,6 +669,7 @@ void DrawWindowCOMMANDOPTION(PWNDINFO pWnd)
 	TextOut2 (hDC, 32, 16 * 7, "音量(効果音)", RGB (255, 255, 255));
 	TextOut2 (hDC, 32, 16 * 8, "天候の描画ON/OFF", RGB (255, 255, 255));
 	TextOut2 (hDC, 32, 16 * 9, "タイトル画面のスキップ", RGB (255, 255, 255));
+	TextOut2 (hDC, 32, 16 * 10, "発言の音ON/OFF", RGB (255, 255, 255));
 
 	SelectObject (hDC, hFontOld);
 	pWnd->pDib->Unlock ();

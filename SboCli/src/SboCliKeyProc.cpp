@@ -2208,6 +2208,23 @@ void KeyProcCOMMANDOPTION(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				g_dwActiveMsgID = pWndTmp->dwID;
 			}
 			break;
+
+		/* 発言の音ON/OFF（SBOP2 のように、誰かが発言したら音を鳴らす） */
+		case 9:
+			{
+				PWNDINFO pWndTmp;
+				if (g_bChatSound) {
+					g_bChatSound = FALSE;
+					pWndTmp = MakeWindowMSG ("発言の音をOFFにしました。@2", FALSE);
+				} else {
+					g_bChatSound = TRUE;
+					pWndTmp = MakeWindowMSG ("発言の音をONにしました。@2", FALSE);
+				}
+				g_bDraw = TRUE;
+				g_WndInfo.Add (pWndTmp);
+				g_dwActiveMsgID = pWndTmp->dwID;
+			}
+			break;
 		}
 		/* 変えた設定をその場で保存する（ブラウザ版は終了時の保存が来ないため） */
 		SaveIniOption ();

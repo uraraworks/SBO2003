@@ -773,6 +773,7 @@ enum {
 	SOUND_MIDI_WO006,
 	SOUND_MIDI_W0009,
 	SOUND_MIDI_W0100,
+	SOUND_CHAT,					/* 発言した時の音（SBOP2 の chat.wav） */
 	SOUND_MAX
 };
 

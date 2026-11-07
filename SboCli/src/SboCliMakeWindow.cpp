@@ -643,9 +643,9 @@ PWNDINFO MakeWindowCOMMANDOPTION(void)
 	ZeroMemory (pWnd, sizeof (WNDINFO));
 	pWnd->dwID = g_dwNewID;
 	g_dwNewID ++;
-	pWnd->nData2 = 9;
+	pWnd->nData2 = 10;
 	pWnd->nX = 32 + 16 * 2;
-	pWnd->nY = 50 + 16 * 12;
+	pWnd->nY = 50 + 16 * 11;
 	pWnd->nCx = 16 * 16;
 	pWnd->nCy = 16 * (2 + pWnd->nData2);
 	pWnd->nType = WNDTYPE_COMMANDOPTION;

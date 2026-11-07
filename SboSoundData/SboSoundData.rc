@@ -309,6 +309,7 @@ IDR_MIDI_WO006          WAVE    DISCARDABLE     "MIDI\\wanna\\wo006.mid"
 IDR_MIDI_W0009          WAVE    DISCARDABLE     "MIDI\\wanna\\w0009.mid"
 IDR_MIDI_W0100          WAVE    DISCARDABLE     "MIDI\\wanna\\w0100.mid"
 IDR_MIDI_W0101          WAVE    DISCARDABLE     "MIDI\\wanna\\w0101.mid"
+IDR_WAVE_CHAT           WAVE    DISCARDABLE     "wave\\chat（発言）.wav"
 
 #ifndef _MAC
 /////////////////////////////////////////////////////////////////////////////
