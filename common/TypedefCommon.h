@@ -58,6 +58,10 @@
 #define MAX_PARTYMEMBER		6										/* 最大パーティ数 */
 #define MAX_USEMAGIC		16										/* 覚えられる魔法数 */
 #define MAX_NPCROUTE		16										/* NPCの巡回ルートの道しるべの最大数 */
+#define MAX_TOWNWARP		4										/* 町転送の行き先帳に覚えておける町の数 */
+#define MAX_TOWNWARPNAME	64										/* 町転送の行き先の名前の大きさ（UTF-8） */
+/* 町転送で選べる行き先の数（復活位置を含む）。Lv1～4:1 Lv5～9:2 Lv10～14:3 Lv15～:4 */
+#define TOWNWARP_SLOT(byLevel)	(1 + (((byLevel) / 5 < 3) ? ((byLevel) / 5) : 3))
 #define MAX_MAKER			100										/* 最大作り手数（NPCの台詞 "@cNN" の NN が 2 桁なので 100 まで） */
 #define MAX_RECIPE			500										/* 最大レシピ数 */
 #define MAX_RECIPEMAT		4										/* レシピの材料の種類 */
@@ -273,6 +277,8 @@ enum {
 	CMD_BATTLEMODE,													/* 戦闘モードの切り替え通知(クライアント→サーバー。傭兵が見る) */
 /* 以下、管理者用（CMD_MAPPARTSADD 以上は自動で管理者専用になる。CMD_RECIPEMAKE より後ろに足す） */
 	CMD_NPCROUTE,													/* NPCの巡回ルート */
+/* 以下、プレイヤー用（サーバー→本人だけ。サーバーは受け取らない） */
+	CMD_TOWNWARP,													/* 町転送の行き先一覧(サーバー→本人) */
 	CMD_MAX
 };
 
@@ -1952,6 +1958,12 @@ typedef struct _CHARINFO {
 	BYTE		abyRouteX[MAX_NPCROUTE];							/* 巡回ルートの道しるべ(横) */
 	BYTE		abyRouteY[MAX_NPCROUTE];							/* 巡回ルートの道しるべ(縦) */
 	DWORD		dwNpcID;											/* NPC番号（保存する NPC ごとに決まった番号。再起動しても変わらない。0 は未設定） */
+	BYTE		byTownWarpCount;									/* 町転送の行き先帳に覚えている町の数 */
+	BYTE		abyTownWarpX[MAX_TOWNWARP];							/* 行き先帳の町の座標(X)（新しく記録した順） */
+	BYTE		abyTownWarpY[MAX_TOWNWARP];							/* 行き先帳の町の座標(Y) */
+	DWORD		adwTownWarpMapID[MAX_TOWNWARP];						/* 行き先帳の町のマップID */
+	BYTE		byTownWarpSel;										/* 町転送で選んだ行き先(0=復活位置。保存しない) */
+	BYTE		byTownWarpDest;										/* 町転送の床：行き先が決まっている(1)（保存しない） */
 	char		chAttrFire;											/* 属性(火) */
 	char		chAttrWater;										/* 属性(水) */
 	char		chAttrWind;											/* 属性(風) */
@@ -2507,6 +2519,18 @@ typedef struct _CMDPARA_NPCROUTE {
 	BYTE		abyRouteY[MAX_NPCROUTE];							/* 道しるべ(縦) */
 	char		szMsg[MAX_NPCROUTEMSG];								/* エラー文（UTF-8。RESULT） */
 } CMDPARA_NPCROUTE, *PCMDPARA_NPCROUTE;
+#pragma pack(pop)
+
+#pragma pack(push, 1)
+/* 町転送の行き先一覧（サーバー→本人。ログイン時と復活位置を記録した時）
+   0 番目は今の復活位置、1 番目からは行き先帳の町（新しく記録した順・復活位置の町は除く）。
+   選べるのは先頭から TOWNWARP_SLOT(レベル) 個まで（クライアントとサーバーで同じ数え方） */
+typedef struct _CMDPARA_TOWNWARP {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byCount;											/* 行き先の数 */
+	DWORD		adwMapID[MAX_TOWNWARP + 1];							/* マップID */
+	char		aszName[MAX_TOWNWARP + 1][MAX_TOWNWARPNAME];		/* 町の名前（UTF-8） */
+} CMDPARA_TOWNWARP, *PCMDPARA_TOWNWARP;
 #pragma pack(pop)
 
 /* マップ情報通知 */

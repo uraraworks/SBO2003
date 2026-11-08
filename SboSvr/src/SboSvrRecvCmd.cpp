@@ -23,6 +23,7 @@
 #include "SboSvrAdminUndo.h"
 #include "SboSvrNpcRoute.h"
 #include "CharProc/CharProcMERCENARY.h"
+#include "SboSvrMagicProc.h"
 #include <map>
 #include <vector>
 
@@ -414,6 +415,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcRECIPEMAKE,				/* CMD_RECIPEMAKE */
 	RecvDataProcBATTLEMODE,				/* CMD_BATTLEMODE */
 	RecvDataProcNPCROUTE,				/* CMD_NPCROUTE */
+	NULL,								/* CMD_TOWNWARP(サーバー→クライアントのみ) */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -3376,6 +3378,8 @@ void RecvDataProcCHGSTATE(PBYTE pData, DWORD dwDataSize)
 	SendCmdITEMINFO (pPara->pID);
 	/* 作り手とレシピを送信 */
 	SendCmdRECIPEINFOALL (pPara->pID);
+	/* 町転送の行き先一覧を送信 */
+	SendCmdTOWNWARP (pChar->dwTblID);
 	/* マップデータを送信 */
 	SendCmdMAPINFO (pPara->pID, GetMapNo (pChar->dwMapID));
 	/* イベント座標を送信 */
@@ -7272,7 +7276,10 @@ void RecvDataProcUSEMAGIC(PBYTE pData, DWORD dwDataSize)
 		pChar->dwTargetTblID = -1;
 	}
 
+	/* 町転送で選んだ行き先（byData。町転送以外は 0、選べない番号は復活位置になる） */
+	pChar->byTownWarpSel = pPara->byData;
 	MagicProc (pPara->dwTblID, (BYTE)pPara->dwData1, pPara->dwData2);
+	pChar->byTownWarpSel = 0;
 }
 
 /* ========================================================================= */
@@ -7999,9 +8006,11 @@ void RecvDataProcSETSTARTPOS(PBYTE pData, DWORD dwDataSize)
 	if (!CheckMsgCode (pChar, '8', (int)pRecv->dwMapID, (int)pRecv->byX, (int)pRecv->byY)) {
 		return;
 	}
-	pChar->dwStartMapID = pRecv->dwMapID;
-	pChar->dwStartX = (DWORD)pRecv->byX;
-	pChar->dwStartY = (DWORD)pRecv->byY;
+	/* 復活位置を記録して町転送の行き先帳にも書き、一覧を送り直す。
+	   行き先がいっぱいの時は、byFlg=1 なら byDirection の町を忘れる（無ければ一番古い町） */
+	TownWarpRecord (pChar, pRecv->dwMapID, (DWORD)pRecv->byX, (DWORD)pRecv->byY,
+		(pRecv->byFlg == 1) ? (int)pRecv->byDirection : -1);
+	SendCmdTOWNWARP (pChar->dwTblID);
 }
 
 /* ========================================================================= */

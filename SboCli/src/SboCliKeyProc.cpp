@@ -56,6 +56,7 @@ void KeyProcCOMMANDPARTY					(PWNDINFO, BYTE, BYTE);		/* 仲間ウィンドウ *
 void KeyProcCOMMANDPARTYCHAR				(PWNDINFO, BYTE, BYTE);		/* 誘う相手選択 */
 void KeyProcCONF							(PWNDINFO, BYTE, BYTE);		/* 確認 */
 void StartPosConfirmEnd					(PWNDINFO, BOOL);			/* 復活位置の確認の後処理 */
+void StartPosFinish						(PWNDINFO, BOOL, int, int);	/* 復活位置を記録する・しないを決めてセリフの続きへ */
 void KeyProcJOB								(PWNDINFO, BYTE, BYTE);		/* 冒険者登録所 */
 void KeyProcCOMMANDMAGIC					(PWNDINFO, BYTE, BYTE);		/* 魔法コマンド */
 void KeyProcCOMMANDMAGICBATTLE				(PWNDINFO, BYTE, BYTE);		/* 魔法コマンド(戦闘マップ) */
@@ -84,6 +85,7 @@ void KeyProcSUBSUGOROKU_IDLE				(PWNDINFO, BYTE, BYTE);		/* すごろく：平�
 void KeyProcDEAD_COMMAND					(PWNDINFO, BYTE, BYTE);		/* 死亡中：コマンド */
 void KeyProcSTATUSMAGIC					(PWNDINFO, BYTE, BYTE);		/* 強さ：覚えている特技 */
 void KeyProcMAKER							(PWNDINFO, BYTE, BYTE);		/* 作り手（レシピ）：作れる物の一覧・確認 */
+void KeyProcTOWNWARP						(PWNDINFO, BYTE, BYTE);		/* 町転送：行き先の選択 */
 
 LRESULT CALLBACK AccWndProc					(HWND, UINT, WPARAM, LPARAM);	/* アカウント名入力用メッセージ処理 */
 LRESULT CALLBACK PasWndProc					(HWND, UINT, WPARAM, LPARAM);	/* パスワード入力用メッセージ処理 */
@@ -216,6 +218,7 @@ const KEYPROC KeyProcTbl[] = {
 	KeyProcDEAD_COMMAND,				/* WNDTYPE_DEAD_COMMAND					死亡中：コマンド */
 	KeyProcSTATUSMAGIC,					/* WNDTYPE_STATUSMAGIC					強さ：覚えている特技 */
 	KeyProcMAKER,						/* WNDTYPE_MAKER						作り手（レシピ）：作れる物の一覧・確認 */
+	KeyProcTOWNWARP,					/* WNDTYPE_TOWNWARP					町転送：行き先の選択 */
 };
 
 
@@ -4681,9 +4684,39 @@ void StartPosConfirmEnd(PWNDINFO pWnd, BOOL bYes)
 	PWNDINFO pWndMsg = (PWNDINFO)pWnd->pParent;
 	int nPos = pWnd->nData2;
 
+	/* 町転送の行き先がいっぱいで、新しい町なら、忘れる町を選んでもらう */
+	if (bYes && pWndMsg && TownWarpNeedForget ((DWORD)((nPos >> 16) & 0xFF))) {
+		PWNDINFO pWndForget;
+
+		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
+		EraseWindow (pWnd);
+		pWndForget = MakeWindowTOWNWARP (TOWNWARPWND_FORGET);
+		pWndForget->dwData = (DWORD)nPos;
+		/* メッセージ欄の左上に出す */
+		pWndForget->nX = pWndMsg->nX + 16;
+		pWndForget->nY = max (0, pWndMsg->nY - pWndForget->nCy - 8);
+		pWndForget->pParent = pWndMsg;
+		pWndMsg->pChild = pWndForget;
+		g_WndInfo.Add (pWndForget);
+		g_dwActiveMsgID = pWndForget->dwID;
+		g_bDraw = TRUE;
+		return;
+	}
+
+	EraseWindow (pWnd);
+	StartPosFinish (pWndMsg, bYes, nPos, -1);
+}
+
+/* ========================================================================= */
+/* 関数名：StartPosFinish													 */
+/* 内容：復活位置を記録する（bYes）・しないを決めて、セリフの続きを流す		 */
+/*		 nForgetMapID：町転送の行き先から忘れる町（-1 なら指定なし）		 */
+/* ========================================================================= */
+void StartPosFinish(PWNDINFO pWndMsg, BOOL bYes, int nPos, int nForgetMapID)
+{
 	if (bYes) {
 		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
-		SendCmdSETSTARTPOS ((BYTE)((nPos >> 16) & 0xFF), (BYTE)((nPos >> 8) & 0xFF), (BYTE)(nPos & 0xFF));
+		SendCmdSETSTARTPOS ((BYTE)((nPos >> 16) & 0xFF), (BYTE)((nPos >> 8) & 0xFF), (BYTE)(nPos & 0xFF), nForgetMapID);
 
 	} else {
 		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
@@ -4705,7 +4738,6 @@ void StartPosConfirmEnd(PWNDINFO pWnd, BOOL bYes)
 		pWndMsg->dwTime = 0;		/* 1 文字ずつ流し直す */
 		pWndMsg->dwTimeDrawStart = 0;
 	}
-	EraseWindow (pWnd);
 	g_bDraw = TRUE;
 }
 
@@ -5051,8 +5083,16 @@ void KeyProcCOMMANDMAGIC(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 					pWndTmp->pParent = pWnd;
 					pWnd->pChild = pWndTmp;
 					bClose = FALSE;
+				/* 町転送で、選べる行き先が2つ以上 */
+				} else if (IsTownWarpMagic ((BYTE)g_aMagicInfoWalk[nData1]) && (GetTownWarpSelectCount () >= 2)) {
+					/* 行き先の選択（決まったら子ウィンドウ側で詠唱開始） */
+					pWndTmp = MakeWindowTOWNWARP (TOWNWARPWND_USE);
+					pWndTmp->pParent = pWnd;
+					pWnd->pChild = pWndTmp;
+					bClose = FALSE;
 				} else {
 					/* 詠唱開始 */
+					g_byTownWarpSel = 0;
 					g_byComSelectMagic = (BYTE)g_aMagicInfoWalk[nData1];
 					pChar->dwTimeTurnMagicLV = timeGetTime ();
 					pChar->byTurnMagicLV = 1;
@@ -5188,9 +5228,22 @@ void KeyProcCOMMANDMAGICBATTLE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 					g_dwActiveMsgID = pWndNew->dwID;
 					bClose = FALSE;
 					CancelTurnGage (pChar);
+				/* 町転送で、選べる行き先が2つ以上 */
+				} else if (IsTownWarpMagic ((BYTE)g_aMagicInfoBattle[nData1]) && (GetTownWarpSelectCount () >= 2)) {
+					if (pWnd->pChild) {
+						/* メッセージウィンドウを削除 */
+						EraseWindow ((PWNDINFO)pWnd->pChild);
+					}
+					CancelTurnGage (pChar);
+					/* 行き先の選択（決まったら子ウィンドウ側で詠唱開始） */
+					pWndTmp = MakeWindowTOWNWARP (TOWNWARPWND_USE);
+					pWndTmp->pParent = pWnd;
+					pWnd->pChild = pWndTmp;
+					bClose = FALSE;
 				/* その他 */
 				} else {
 					/* 詠唱開始 */
+					g_byTownWarpSel = 0;
 					g_byComSelectMagic = (BYTE)g_aMagicInfoBattle[nData1];
 					pChar->dwTimeTurnMagicLV = timeGetTime ();
 					pChar->byTurnMagicLV = 1;
@@ -6722,6 +6775,7 @@ void KeyProcBATTLE_TARGET(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			PMAGICINFO pMagicInfo;
 
 			/* 詠唱開始 */
+			g_byTownWarpSel = 0;
 			switch (pWndTmp->nType) {
 			case WNDTYPE_COMMANDMAGICBATTLE:
 				g_byComSelectMagic = (BYTE)g_aMagicInfoBattle[pWndTmp->nData1];
@@ -6765,6 +6819,110 @@ void KeyProcBATTLE_TARGET(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			pInfo = g_aUseCharInfo[pWnd->nData1];
 			g_pTargetSelectInfo->dwTblID = pInfo->dwTblID;
 
+			pWnd->dwTime = timeGetTime ();
+			pWnd->byAnime = 1;
+			pWnd->byRepeate ++;
+			pWnd->dwTimeKey = timeGetTime ();
+			pWnd->dwTimeDrawStart = 0;
+			g_bDraw = TRUE;
+		}
+
+	} else if (byEvent == KEY_UP) {
+		pWnd->dwTimeKey = timeGetTime () - 250;
+		pWnd->byRepeate = 0;
+		g_bDraw = TRUE;
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：KeyProcTOWNWARP													 */
+/* 内容：キー入力処理(町転送：行き先の選択)									 */
+/* ========================================================================= */
+void KeyProcTOWNWARP(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
+{
+	DWORD dwTime = 250;
+	if (pWnd->byRepeate > 1) {
+		dwTime = 125;
+	}
+
+	/* 教会で記録する時の「どの町を忘れますか？」：決定で記録、キャンセルで記録しない */
+	if ((pWnd->nType2 == TOWNWARPWND_FORGET) && (byEvent == KEY_UP) && ((byCode == 'A') || (byCode == 'B'))) {
+		PWNDINFO pWndMsg = (PWNDINFO)pWnd->pParent;
+		int nPos = (int)pWnd->dwData, nForget = -1;
+
+		if ((byCode == 'A') && (pWnd->nData1 >= 0) && (pWnd->nData1 <= MAX_TOWNWARP)) {
+			nForget = (int)g_TownWarpInfo.adwMapID[pWnd->nData1];
+		}
+		EraseWindow (pWnd);
+		StartPosFinish (pWndMsg, (byCode == 'A'), nPos, nForget);
+		return;
+	}
+
+	if ((byEvent == KEY_UP) && (byCode == 'B')) {
+		/* この窓だけ閉じて、特技の一覧に戻る */
+		EraseWindow (pWnd);
+		g_bDraw = TRUE;
+		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
+
+	} else if ((byEvent == KEY_UP) && (byCode == 'A') && (g_bEnableMove)) {
+		PCHARINFO pChar;
+		PWNDINFO pWndTmp;
+		PMAGICINFO pMagicInfo;
+		int nNo = GetWindowID (g_dwMsgIDCommand);
+		BOOL bStart = FALSE;
+
+		pWndTmp = (PWNDINFO)pWnd->pParent;
+		pChar = g_aCharInfo[g_nMyCharID];
+
+		/* 親ウィンドウは魔法選択？ */
+		if (pWndTmp) {
+			switch (pWndTmp->nType) {
+			case WNDTYPE_COMMANDMAGICBATTLE:
+				if ((pWndTmp->nData1 >= 0) && (pWndTmp->nData1 < g_aMagicInfoBattle.GetSize ())) {
+					g_byComSelectMagic = (BYTE)g_aMagicInfoBattle[pWndTmp->nData1];
+					bStart = TRUE;
+				}
+				break;
+			case WNDTYPE_COMMANDMAGIC:
+				if ((pWndTmp->nData1 >= 0) && (pWndTmp->nData1 < g_aMagicInfoWalk.GetSize ())) {
+					g_byComSelectMagic = (BYTE)g_aMagicInfoWalk[pWndTmp->nData1];
+					bStart = TRUE;
+				}
+				break;
+			}
+		}
+		if (bStart) {
+			/* 選んだ行き先で詠唱開始 */
+			g_byTownWarpSel = (BYTE)pWnd->nData1;
+			pChar->dwTimeTurnMagicLV = timeGetTime ();
+			pChar->byTurnMagicLV = 1;
+			pMagicInfo = g_aMagicInfo[g_byComSelectMagic];
+			SendCmdEFECTCHG (pMagicInfo->byUserEfectID, TRUE);
+		}
+
+		/* コマンドごと閉じる（この窓も親の窓も一緒に消える） */
+		if (nNo >= 0) {
+			EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
+			g_dwMsgIDCommand = 0;
+		} else {
+			EraseWindow (pWnd);
+		}
+		g_bDraw = TRUE;
+		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
+
+	} else if ((byEvent == KEY_DOWN) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
+		BOOL bMove = FALSE;
+
+		if ((byCode == VK_UP) && (pWnd->nData1 > 0)) {
+			pWnd->nData1 --;
+			bMove = TRUE;
+
+		} else if ((byCode == VK_DOWN) && (pWnd->nData1 + 1 < pWnd->nData2)) {
+			pWnd->nData1 ++;
+			bMove = TRUE;
+		}
+
+		if (bMove) {
 			pWnd->dwTime = timeGetTime ();
 			pWnd->byAnime = 1;
 			pWnd->byRepeate ++;
