@@ -476,6 +476,7 @@ void SendCmdMAPPARTSINFO(DWORD pIDSend)
 		pSend->wBackID = pParts->wBackID;
 		pSend->pAnimeInfo = pParts->pAnimeInfo;
 		pSend->byLevel = pParts->byLevel;
+		pSend->byLight = pParts->byLight;
 		pData += sizeof (MAPPARTSINFOSAVE);
 
 		if (pParts->pAnimeInfo) {
@@ -1104,6 +1105,7 @@ void SendCmdMAPPARTS(DWORD pIDSend, int nNo)
 	pSend->wBackID = pParts->wBackID;
 	pSend->pAnimeInfo = pParts->pAnimeInfo;
 	pSend->byLevel = pParts->byLevel;
+	pSend->byLight = pParts->byLight;
 	if (pParts->pAnimeInfo) {
 		CopyMemory (pSendData + sizeof (CMDPARA_MAPPARTSINFO) + sizeof (MAPPARTSINFOSAVE),
 				 pParts->pAnimeInfo, pParts->byAnimeCount * sizeof (ANIMEINFO));
