@@ -1947,6 +1947,7 @@ typedef struct _CHARINFO {
 	BYTE		byRouteWait;										/* 巡回ルートの各道しるべで止まる秒数 */
 	BYTE		abyRouteX[MAX_NPCROUTE];							/* 巡回ルートの道しるべ(横) */
 	BYTE		abyRouteY[MAX_NPCROUTE];							/* 巡回ルートの道しるべ(縦) */
+	DWORD		dwNpcID;											/* NPC番号（保存する NPC ごとに決まった番号。再起動しても変わらない。0 は未設定） */
 	char		chAttrFire;											/* 属性(火) */
 	char		chAttrWater;										/* 属性(水) */
 	char		chAttrWind;											/* 属性(風) */

@@ -515,8 +515,8 @@
 	<!-- AI連携 -->
 	<section id="tab-ai" hidden>
 		<p class="sub-text">
-			AI（Claude Code など）から、特技・職業とレベルアップ・特技を使える職業・装備できる職業・ステータステンプレート・アイテムを
-			読み書きできるようにするキーです。書き込みは必ず「下見（差分を見る）→ 確定」の 2 段階で、確定した変更は下の履歴から元に戻せます。
+			AI（Claude Code など）から、サーバーの設定データ（特技・職業・アイテム・作り手・レシピ・NPC と台詞・マップのイベント／お店／メッセージ・マス目など。
+			プレイヤーのキャラと預かり所は読むだけ）を読み書きできるようにするキーです。書き込みは必ず「下見（差分を見る）→ 確定」の 2 段階で、確定した変更は下の履歴から元に戻せます。
 			キーは発行した時に一度だけ表示されます。人に見せないでください。
 		</p>
 		<div class="card">
@@ -551,7 +551,7 @@
 		<h3>しおり（お試しの区切り）</h3>
 		<p class="sub-text">
 			お試しで作り変える前にしおりを付けておくと、その後の変更（AI・管理ページ「レシピ」から）を「ここまで戻す」でまとめて元に戻せます。
-			戻す前に中身を確かめる画面が出ます。追加した作り手・レシピは削除（空き枠）になります。
+			戻す前に中身を確かめる画面が出ます。追加した NPC は消え、消した NPC は足し直されます。追加した作り手・レシピは削除（空き枠）になります。
 		</p>
 		<div class="row" style="flex-wrap:wrap">
 			<input id="bm-name" type="text" placeholder="例: レジェンタのお試し1" maxlength="60" style="flex:1;min-width:12em">
@@ -1619,9 +1619,30 @@
 	/* ---- AI連携 ---- */
 	var AI_KIND = {
 		magic: '特技', magicUser: '特技を使える職業', equUser: '装備できる職業',
-		job: '職業', stTmp: 'ステータステンプレート', item: 'アイテム', maker: '作り手', recipe: 'レシピ'
+		job: '職業', stTmp: 'ステータステンプレート', item: 'アイテム', maker: '作り手', recipe: 'レシピ',
+		char: 'NPC', map: 'マップ', tiles: 'マス目', mapParts: 'マップパーツ', efc: 'エフェクト', comEfc: '吹き出し', subGame: 'サブゲーム'
 	};
-	var AI_OP = { update: '変更', add: '追加', undo: '元に戻す', rollback: 'しおりまで戻す' };
+	var AI_OP = { update: '変更', add: '追加', undo: '元に戻す', rollback: 'しおりまで戻す', tiles: '書き換え' };
+	/* 追加しても元に戻せる（消せる）種類 */
+	var AI_ERASABLE = { maker: 1, recipe: 1, char: 1 };
+
+	/* 履歴・下見の 1 件の見出し（マス目は範囲、NPC は消した・足し直したも） */
+	function aiItemHead(kind, it) {
+		var s = (it.id != null ? it.id + '番' : '') + (it.name ? '「' + it.name + '」' : '');
+		if (kind === 'tiles' && it.region) {
+			s += ' (' + it.region[0] + ',' + it.region[1] + ') から ' + it.region[2] + '×' + it.region[3] + '（' + it.changed + ' マス）';
+		}
+		if (it.added) {
+			s += '（追加したもの）';
+		}
+		if (it.deleted) {
+			s += '（消した）';
+		}
+		if (it.restored) {
+			s += '（足し直す）';
+		}
+		return s;
+	}
 
 	function loadAi() {
 		loadAiKeys();
@@ -1693,7 +1714,10 @@
 	function rollbackText(items) {
 		var a = [];
 		items.forEach(function (it) {
-			var head = (AI_KIND[it.kind] || it.kind) + ' ' + it.id + '番' + (it.name ? '「' + it.name + '」' : '') + (it.added ? '（追加したもの）' : '');
+			var head = (AI_KIND[it.kind] || it.kind) + ' ' + aiItemHead(it.kind, it);
+			if (it.kind === 'tiles' || !Object.keys(it.diff || {}).length) {
+				a.push(head);
+			}
 			Object.keys(it.diff || {}).forEach(function (k) {
 				a.push(head + ' ' + k + ': ' + valueText(it.diff[k].from) + ' → ' + valueText(it.diff[k].to));
 			});
@@ -1884,13 +1908,16 @@
 			card.appendChild(el('div', 'message', e.note));
 		}
 		e.items.slice(0, 10).forEach(function (it) {
-			card.appendChild(el('div', '', it.id + '番 ' + (it.name || '') + (it.added ? '（追加）' : '')));
-			card.appendChild(diffList(it.diff));
+			card.appendChild(el('div', '', aiItemHead(e.kind, it)));
+			/* NPC を足した・消した時は項目が多すぎるので差分を出さない */
+			if (it.diff && !(e.kind === 'char' && (it.added || it.deleted))) {
+				card.appendChild(diffList(it.diff));
+			}
 		});
 		if (e.items.length > 10) {
 			card.appendChild(el('div', 'sub-text', 'ほか ' + (e.items.length - 10) + ' 件'));
 		}
-		var bOnlyAdd = e.kind !== 'maker' && e.kind !== 'recipe' && e.items.every(function (it) { return it.added; });
+		var bOnlyAdd = !AI_ERASABLE[e.kind] && e.items.every(function (it) { return it.added; });
 		if (!e.undoneBy && !bOnlyAdd) {
 			var btn = el('button', 'sub', '元に戻す');
 			var msg = el('div', 'msg');

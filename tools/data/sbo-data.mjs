@@ -18,11 +18,12 @@
 //   （tools/server/find-data.sh と同じ探し方。SBO2003_PRIVATE_DIR か、このリポジトリと同じ階層の SBO2003-private）
 //
 // 取り込みのきまり:
-//   - 書き換えられる種類（magic・magicUser・equUser・job・stTmp・item・maker・recipe）だけ反映する。
-//     読むだけの種類（map など）は違いを出すだけ。
-//   - 番号（id）で突き合わせ、違う項目だけを update で送る。サーバーより大きい番号は add で足す（番号は続きで）。
-//   - ファイルから消した記録は、サーバーからは消さない（maker・recipe の削除は byState を 0 に）。
-//   - 反映は AI 連携の変更履歴に残り、管理ページ「AI連携」や /api/data/undo から元に戻せる（追加は戻せない）。
+//   - leave（預かり所）以外は全部取り込める。char は保存される NPC だけで、npcId で突き合わせる
+//     （npcId の無い記録は新しい NPC として足す。サーバーに無い npcId はその番号で足し直す）。
+//   - それ以外は番号（id）で突き合わせ、違う項目だけを update で送る。サーバーより大きい番号は add で足す（番号は続きで）。
+//   - ファイルから消した記録は、サーバーからは消さない（maker・recipe の削除は byState を 0 に、NPC は API の deleted で）。
+//   - 反映は AI 連携の変更履歴に残り、管理ページ「AI連携」や /api/data/undo から元に戻せる
+//     （追加は NPC・作り手・レシピだけ戻せる）。マップのマス目はこのツールでは扱わない（API の tiles/set で）。
 // ===========================================================================
 import fs from 'node:fs';
 import path from 'node:path';
@@ -38,9 +39,14 @@ const TARGETS = {
 	staging: { url: 'https://sbo2003.136-109-105-232.sslip.io', keyEnv: 'SBO2003_STAGING_AI_KEY' },
 };
 
-/* 書き出す種類。char（プレイヤーが混ざる・番号が動く）と leave（プレイヤーの預かり所）は出さない */
-const EXPORT_KINDS = ['magic', 'magicUser', 'equUser', 'job', 'stTmp', 'item', 'maker', 'recipe', 'map', 'mapParts', 'efc', 'comEfc', 'subGame'];
-const SKIP_KINDS = { char: 'プレイヤーが混ざり、番号も動くので書き出しません', leave: 'プレイヤーの預かり所なので書き出しません' };
+/*
+ * 書き出す種類。leave（プレイヤーの預かり所）は出さない。
+ * char は保存される NPC だけ（プレイヤー・発生した敵は出さない）。番号（id）は再起動で動くので、npcId で突き合わせる。
+ */
+const EXPORT_KINDS = ['magic', 'magicUser', 'equUser', 'job', 'stTmp', 'item', 'maker', 'recipe', 'char', 'map', 'mapParts', 'efc', 'comEfc', 'subGame'];
+const SKIP_KINDS = { leave: 'プレイヤーの預かり所なので書き出しません' };
+/* NPC で書き出さない項目（遊んでいる間に変わる・読むだけ）。歩き回る NPC は今の位置 dwX・dwY も出さない */
+const NPC_DROP = ['id', 'byDirection', 'isPlayer', 'online', 'jobMagic'];
 
 const MAX_ITEMS = 200;			/* API が 1 回で受け付ける件数 */
 const MAX_BYTES = 200 * 1024;	/* API の上限（256KB）より少し小さく */
@@ -155,7 +161,30 @@ async function api(conn, name, body) {
 	return obj;
 }
 
-async function listAll(conn, kind) {
+/* 歩き回る NPC か（今の位置は書き出さない） */
+function npcMoves(r) {
+	return !!(r.byMoveProbabilityX || r.byMoveProbabilityY || (r.route && r.route.points && r.route.points.length));
+}
+
+/* NPC の記録を書き出す形に（読むだけの項目と動く項目を除く） */
+function npcRecord(info, r) {
+	const aRo = {};
+	for (const f of (info.fields || [])) {
+		if (f.readonly && f.name !== 'npcId') {
+			aRo[f.name] = 1;
+		}
+	}
+	const o = { npcId: r.npcId };
+	for (const k of Object.keys(r)) {
+		if (k === 'npcId' || aRo[k] || NPC_DROP.includes(k) || ((k === 'dwX' || k === 'dwY') && npcMoves(r))) {
+			continue;
+		}
+		o[k] = r[k];
+	}
+	return o;
+}
+
+async function listAll(conn, kind, info) {
 	const aOut = [];
 	let offset = 0;
 	for (;;) {
@@ -165,6 +194,9 @@ async function listAll(conn, kind) {
 			break;
 		}
 		offset += r.records.length;
+	}
+	if (kind === 'char') {
+		return aOut.filter((r) => r.npcId > 0 && !r.isPlayer).map((r) => npcRecord(info, r)).sort((a, b) => a.npcId - b.npcId);
 	}
 	return aOut;
 }
@@ -206,7 +238,9 @@ function formatFile(kind, info, records) {
 	const head = {
 		kind,
 		label: info ? info.label : '',
-		note: (info && info.readonly) ? '読むだけ（参考用）。書き換えても取り込まれません' : '番号（id）で突き合わせて取り込みます。id より後ろの項目を書き換えてください',
+		note: (info && info.readonly) ? '読むだけ（参考用）。書き換えても取り込まれません' :
+			kind === 'char' ? 'NPC だけ。npcId で突き合わせて取り込みます（npcId の無い記録は新しく足す。dwMapID・dwX・dwY が要る）。歩き回る NPC は今の位置を出していません' :
+			'番号（id）で突き合わせて取り込みます。id より後ろの項目を書き換えてください',
 	};
 	let s = '{\n';
 	for (const k of Object.keys(head)) {
@@ -231,6 +265,18 @@ function readKindFile(dir, kind) {
 		die(file + ' に records の配列がありません');
 	}
 	const aSeen = {};
+	if (kind === 'char') {
+		for (const r of obj.records) {
+			if (!r || typeof r !== 'object' || (r.npcId != null && (!Number.isInteger(r.npcId) || r.npcId < 1))) {
+				die(file + ': npcId は 1 以上の整数にしてください（新しく足す NPC は npcId を書かない）');
+			}
+			if (r.npcId && aSeen[r.npcId]) {
+				die(file + ': npcId ' + r.npcId + ' が 2 回あります');
+			}
+			aSeen[r.npcId] = 1;
+		}
+		return obj.records;
+	}
 	for (const r of obj.records) {
 		if (!r || typeof r !== 'object' || !Number.isInteger(r.id) || r.id < 0) {
 			die(file + ': id（0 以上の整数）が無い記録があります');
@@ -300,6 +346,53 @@ function plan(info, fileRecs, srvRecs) {
 	const nMissing = srvRecs.filter((r) => !aInFile.has(r.id)).length;
 	if (nMissing) {
 		notes.push('ファイルに無い記録が ' + nMissing + ' 件あります（サーバーからは消しません）');
+	}
+	return { updates, adds, notes };
+}
+
+/* NPC: npcId で突き合わせる。サーバーに無い npcId はその番号で足し直し、npcId の無い記録は新しく足す */
+async function planChar(conn, info, fileRecs, srvRecs) {
+	const srvByNpc = new Map(srvRecs.map((r) => [r.npcId, r]));
+	const updates = [], adds = [], notes = [];
+	for (const r of fileRecs) {
+		const changes = {};
+		for (const k of Object.keys(r)) {
+			if (k !== 'npcId' && k !== 'id') {
+				changes[k] = r[k];
+			}
+		}
+		const s = r.npcId ? srvByNpc.get(r.npcId) : null;
+		if (s) {
+			const diff = {};
+			for (const k of Object.keys(changes)) {
+				if (!same(changes[k], s[k])) {
+					diff[k] = changes[k];
+				}
+			}
+			if (Object.keys(diff).length) {
+				/* 送る時はサーバーの今の番号（id）で */
+				const cur = await api(conn, 'list', { kind: 'char', match: { npcId: r.npcId }, limit: 1 });
+				if (!cur.records.length) {
+					notes.push('npcId ' + r.npcId + ' がサーバーで見つかりません（飛ばします）');
+					continue;
+				}
+				updates.push({ id: cur.records[0].id, name: 'npcId ' + r.npcId + (s.szName ? ' ' + s.szName : ''), changes: diff, before: s });
+			}
+		} else {
+			if (changes.dwX == null && changes.dwY == null && (changes.dwStartX || changes.dwStartY)) {
+				changes.dwX = changes.dwStartX;
+				changes.dwY = changes.dwStartY;
+			}
+			if (r.npcId) {
+				changes.npcId = r.npcId;
+			}
+			adds.push({ id: r.npcId ? 'npcId ' + r.npcId : '新しい NPC', name: r.szName, record: changes });
+		}
+	}
+	const aInFile = new Set(fileRecs.map((r) => r.npcId).filter(Boolean));
+	const nMissing = srvRecs.filter((r) => !aInFile.has(r.npcId)).length;
+	if (nMissing) {
+		notes.push('ファイルに無い NPC が ' + nMissing + ' 件あります（サーバーからは消しません。消す時は管理ページか API の deleted で）');
 	}
 	return { updates, adds, notes };
 }
@@ -379,7 +472,7 @@ async function cmdExport(flags) {
 	fs.mkdirSync(dir, { recursive: true });
 	for (const kind of kinds) {
 		const info = schema.kinds.find((k) => k.kind === kind);
-		const recs = await listAll(conn, kind);
+		const recs = await listAll(conn, kind, info);
 		fs.writeFileSync(path.join(dir, kind + '.json'), formatFile(kind, info, recs));
 		console.log('  ' + kind + ': ' + recs.length + ' 件');
 	}
@@ -398,8 +491,8 @@ async function compareAll(conn, flags, dir) {
 			console.log('  ' + kind + ': ファイルがありません（飛ばします）');
 			continue;
 		}
-		const srvRecs = await listAll(conn, kind);
-		const p = plan(info, fileRecs, srvRecs);
+		const srvRecs = await listAll(conn, kind, info);
+		const p = (kind === 'char') ? await planChar(conn, info, fileRecs, srvRecs) : plan(info, fileRecs, srvRecs);
 		if (info.readonly) {
 			if (p.updates.length || p.adds.length) {
 				console.log('  ' + kind + ': 読むだけの種類なので取り込みません（違い ' + (p.updates.length + p.adds.length) + ' 件）');
@@ -467,6 +560,9 @@ async function cmdImport(flags) {
 		console.log('  ' + r.body.kind + ' を' + (r.name === 'add' ? '追加' : '変更') + ' ' + done.items.length + ' 件（履歴 ' + done.historyId + '）');
 	}
 	console.log('反映しました。元に戻す時は管理ページ「AI連携」の変更履歴から');
+	if (aReq.some((r) => r.name === 'add' && r.body.kind === 'char')) {
+		console.log('足した NPC には npcId が付きました。続けて直す時は export し直してから（npcId の無いまま取り込むと、もう一度足されます）');
+	}
 }
 
 /* ------------------------------------------------------------------ */

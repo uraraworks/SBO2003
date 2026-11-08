@@ -81,10 +81,18 @@ Module['sboData'] = (function () {
 		item: 'SboDataItemInfo.dat',
 		/* 作り手とレシピ（ファイルが無い時は 0 件。初めて保存した時に作られる） */
 		maker: 'SboDataMakerInfo.dat',
-		recipe: 'SboDataRecipeInfo.dat'
+		recipe: 'SboDataRecipeInfo.dat',
+		/* NPC（プレイヤーは書き換えられない。ファイルはプレイヤーと一緒） */
+		char: 'SboDataCharInfo.dat',
+		/* マップは 1 マップ 1 ファイル（SboDataMapInfo000.dat〜）。マス目（tiles）も同じファイル */
+		map: 'SboDataMapInfo*.dat',
+		mapParts: 'SboDataMapPartsInfo.dat',
+		efc: 'SboDataEfcInfo.dat',
+		comEfc: 'SboDataComEfcInfo.dat',
+		subGame: 'SboDataSubGameInfo.dat'
 	};
-	/* 読むだけの種類（セーブデータの残り。アカウント名・パスワード・IP などは C 側で出さない） */
-	var READONLY_KINDS = ['char', 'map', 'mapParts', 'efc', 'comEfc', 'leave', 'subGame'];
+	/* 読むだけの種類（プレイヤーの預かり所。アカウント名・パスワード・IP などは C 側で出さない） */
+	var READONLY_KINDS = ['leave'];
 	var ALL_KINDS = Object.keys(KIND_FILE).concat(READONLY_KINDS);
 
 	var keyStore = null, strKeyPath = '';
@@ -298,21 +306,32 @@ Module['sboData'] = (function () {
 
 	/* その日初めてそのデータを変える前に、データファイルの控えを取る */
 	function backupFile(kind) {
-		var name = KIND_FILE[kind];
+		var pat = KIND_FILE[kind === 'tiles' ? 'map' : kind];
 		var d = new Date();
 		var day = d.getFullYear() + ('0' + (d.getMonth() + 1)).slice(-2) + ('0' + d.getDate()).slice(-2);
 		var dir = path.join(dataDir(), 'AiBackup', day);
-		var dst = path.join(dir, name);
-		try {
-			/* 元のファイルがまだ無い時（作り手・レシピの初めての保存）は控えが要らない */
-			if (fs.existsSync(dst) || !fs.existsSync(path.join(dataDir(), name))) {
-				return;
+		var aName = [pat];
+		if (pat.indexOf('*') >= 0) {
+			var re = new RegExp('^' + pat.replace('.', '\\.').replace('*', '\\d+') + '$');
+			try {
+				aName = fs.readdirSync(dataDir()).filter(function (f) { return re.test(f); });
+			} catch (e) {
+				aName = [];
 			}
-			fs.mkdirSync(dir, { recursive: true });
-			fs.copyFileSync(path.join(dataDir(), name), dst);
-		} catch (e) {
-			console.error('[data] 控えを取れません: ' + name + ' ' + e.message);
 		}
+		aName.forEach(function (name) {
+			var dst = path.join(dir, name);
+			try {
+				/* 元のファイルがまだ無い時（作り手・レシピの初めての保存）は控えが要らない */
+				if (fs.existsSync(dst) || !fs.existsSync(path.join(dataDir(), name))) {
+					return;
+				}
+				fs.mkdirSync(dir, { recursive: true });
+				fs.copyFileSync(path.join(dataDir(), name), dst);
+			} catch (e) {
+				console.error('[data] 控えを取れません: ' + name + ' ' + e.message);
+			}
+		});
 	}
 
 	/* ------------------------------------------------------------------ */
@@ -356,7 +375,7 @@ Module['sboData'] = (function () {
 	function checkUnchanged(kind, befores) {
 		Object.keys(befores).forEach(function (id) {
 			var now = getRecord(kind, Number(id));
-			if (!same(now, befores[id])) {
+			if (!sameRec(kind, now, befores[id])) {
 				fail(409, 'changed', '下見の後に ' + kind + ' の ' + id + ' 番が変わりました。もう一度下見してください。');
 			}
 		});
@@ -382,18 +401,16 @@ Module['sboData'] = (function () {
 		backupFile(kind);
 		for (var i = 0; i < aOp.length; i++) {
 			var op = aOp[i];
-			var before = op.added ? null : getRecord(kind, op.id);
-			var r = applyC(kind, op.id, op.changes, true, who.label);
+			/* 足す時は今の件数を番号にする（NPC は敵の発生などで件数が動くので、下見の時の番号は使わない） */
+			var id = op.added ? count(kind) : op.id;
+			var before = op.added ? null : getRecord(kind, id);
+			var r = applyC(kind, id, op.changes, true, who.label);
 			if (!r.ok) {
-				for (var j = aDone.length - 1; j >= 0; j--) {
-					if (!aDone[j].added) {
-						applyC(kind, aDone[j].id, restorable(kind, aDone[j].before), true, who.label);
-					}
-				}
-				fail(400, 'apply', kind + ' の ' + op.id + ' 番を反映できませんでした: ' + r.error +
+				revertDone(kind, aDone, who);
+				fail(400, 'apply', kind + ' の ' + id + ' 番を反映できませんでした: ' + r.error +
 						(aDone.length ? '（それまでの変更は元に戻しました）' : ''));
 			}
-			aDone.push({ id: r.id, added: r.added, before: before, after: r.record });
+			aDone.push({ id: r.id, added: r.added || undefined, before: before, after: r.record });
 		}
 		schemaCache = null;
 		return aDone;
@@ -494,6 +511,9 @@ Module['sboData'] = (function () {
 				fail(400, 'changes', 'changes は変える項目だけのオブジェクトで指定してください');
 			}
 			var before = getRecord(kind, id);
+			if (!before) {
+				fail(404, 'not_found', kind + ' の ' + id + ' 番は空き（または消えた NPC）です');
+			}
 			var r = applyC(kind, id, u.changes, false);
 			if (!r.ok) {
 				fail(400, 'invalid', kind + ' の ' + id + ' 番: ' + r.error);
@@ -522,7 +542,7 @@ Module['sboData'] = (function () {
 		}
 		var total = count(kind);
 		var info = kindInfo(kind);
-		if (info && total + a.records.length > info.maxCount) {
+		if (info && info.maxCount > 0 && total + a.records.length > info.maxCount) {
 			fail(400, 'too_many', kind + ' は ' + info.maxCount + ' 件までです');
 		}
 		var items = [], aOp = [];
@@ -542,11 +562,12 @@ Module['sboData'] = (function () {
 		var payload = { kind: kind, records: a.records, note: a.note || '' };
 		if (!a.previewId) {
 			var pv = makePreview('add', payload, who, {}, items);
-			pv.message += '（追加は元に戻せません）';
+			pv.message += eraseChanges(kind) ? '（追加したものは元に戻すと消えます）' : '（追加は元に戻せません）';
 			return pv;
 		}
 		takePreview(a.previewId, 'add', payload, who);
-		if (count(kind) !== total) {
+		/* NPC は敵の発生などで件数が動くので見ない（番号は反映する時に決まる） */
+		if (kind !== 'char' && count(kind) !== total) {
 			fail(409, 'changed', '下見の後に ' + kind + ' の件数が変わりました。もう一度下見してください。');
 		}
 		var aDone = applyAll(kind, aOp, who);
@@ -560,7 +581,13 @@ Module['sboData'] = (function () {
 			historyId: e.historyId, at: new Date(e.at).toISOString(), op: e.op, kind: e.kind, by: e.by, note: e.note,
 			undoOf: e.undoOf || undefined, undoneBy: e.undoneBy || undefined, bookmarkId: e.bookmarkId || undefined,
 			items: e.items.map(function (d) {
-				return { id: d.id, name: (d.after || d.before || {}).szName, added: d.added || undefined, diff: diff(d.before, d.after) };
+				if (e.kind === 'tiles') {
+					/* マス目は範囲と変わったマスの数だけ（中身は sbo_map_tiles で） */
+					return { id: d.id, name: d.name, region: [d.x, d.y, d.w, d.h], changed: d.changed };
+				}
+				var r = d.after || d.before || {};
+				return { id: d.id, npcId: r.npcId || undefined, name: r.szName, added: d.added || undefined,
+					deleted: (d.before && !d.after) || undefined, diff: diff(d.before, d.after) };
 			})
 		};
 	}
@@ -568,7 +595,7 @@ Module['sboData'] = (function () {
 	function opHistory(a) {
 		var h = history();
 		var limit = Math.min(100, Math.max(1, Math.floor(Number(a.limit) || 20)));
-		var kind = a.kind ? checkKind(a.kind) : null;
+		var kind = a.kind ? (a.kind === 'tiles' ? 'tiles' : checkKind(a.kind)) : null;
 		var aOut = [];
 		for (var i = h.entries.length - 1; i >= 0 && aOut.length < limit; i--) {
 			if (!kind || h.entries[i].kind === kind) {
@@ -576,6 +603,279 @@ Module['sboData'] = (function () {
 			}
 		}
 		return { entries: aOut };
+	}
+
+	/* ------------------------------------------------------------------ */
+	/* 元に戻す（1 件ずつ・しおりまでまとめて）で使う下請け						 */
+	/* ------------------------------------------------------------------ */
+	/* 遊んでいる間に勝手に変わる項目（「後から変わったか」の判定では見ない） */
+	var VOLATILE = {
+		char: ['id', 'dwX', 'dwY', 'byDirection', 'wHP', 'wMana', 'online', 'byCharState', 'wAT', 'wDF', 'dwExp', 'dwGold', 'dwPlayTime', 'dwLoginCount'],
+		map: ['items']
+	};
+	function stable(kind, rec) {
+		var v = VOLATILE[kind];
+		if (!rec || !v) {
+			return rec;
+		}
+		var o = {};
+		Object.keys(rec).forEach(function (k) {
+			if (v.indexOf(k) < 0) {
+				o[k] = rec[k];
+			}
+		});
+		return o;
+	}
+	function sameRec(kind, a, b) {
+		return same(stable(kind, a || null), stable(kind, b || null));
+	}
+
+	/* 追加した記録を「消す」変更。消せない種類は null */
+	function eraseChanges(kind) {
+		if (kind === 'maker' || kind === 'recipe') {
+			return { byState: 0 };
+		}
+		if (kind === 'char') {
+			return { deleted: true };
+		}
+		return null;
+	}
+
+	/* 記録の見分け方。NPC は npcId（再起動しても変わらない）、それ以外は番号 */
+	function recKey(kind, d) {
+		var r = d.before || d.after;
+		if (kind === 'char' && r && r.npcId) {
+			return kind + ':n' + r.npcId;
+		}
+		return kind + ':' + d.id;
+	}
+
+	/* その記録の今の番号（NPC は番号が振り直されていても npcId で探す）。いなければ -1 */
+	function currentId(kind, d) {
+		var r = d.after || d.before;
+		if (kind === 'char' && r && r.npcId) {
+			return callC(_SboWebCharFindNpc, [r.npcId]);
+		}
+		return d.id;
+	}
+
+	/*
+	 * 記録を target の姿（null なら「無い」）へ戻す操作を作る。
+	 * 返り値: null（何もしなくてよい）/ {skip: 理由} / {id, changes, added, preview}
+	 */
+	function restoreOp(kind, curId, now, target) {
+		var changes, id = curId, added = false;
+		if (!target) {
+			if (!now) {
+				return null;
+			}
+			changes = eraseChanges(kind);
+			if (!changes) {
+				return { skip: '追加した ' + kind + ' は消せないので残ります' };
+			}
+		} else if (!now) {
+			if (kind !== 'char') {
+				return { skip: kind + ' の ' + curId + ' 番が見つかりません' };
+			}
+			/* 消した NPC を足し直す（同じ NPC番号で） */
+			changes = restorable(kind, target);
+			changes.npcId = target.npcId;
+			id = count(kind);
+			added = true;
+		} else {
+			changes = restorable(kind, target);
+		}
+		var c = applyC(kind, id, changes, false);
+		if (!c.ok) {
+			fail(400, 'invalid', kind + ' の ' + curId + ' 番を戻せません: ' + c.error);
+		}
+		if (now && sameRec(kind, now, c.record)) {
+			return null;		/* もうその姿（消した追加も含む） */
+		}
+		return { id: id, changes: changes, added: added, preview: c.record };
+	}
+
+	/* マップのマス目（範囲）を読む */
+	function readTiles(mapNo, x, y, w, h) {
+		var r = JSON.parse(UTF8ToString(_SboWebDataMapTiles(mapNo, x, y, w, h)));
+		if (r.error) {
+			fail(404, 'not_found', r.error);
+		}
+		return r.parts;
+	}
+	function setTiles(mapNo, x, y, parts, bApply) {
+		var h = parts.length, w = h ? parts[0].length : 0;
+		var csv = parts.map(function (row) { return row.join(','); }).join(',');
+		return JSON.parse(UTF8ToString(callC(_SboWebDataTilesSet, [mapNo, x, y, w, h, csv, bApply ? 1 : 0])));
+	}
+
+	/* 種類ごとの操作をまとめて反映する。途中の種類で失敗したら、それまでの種類も元へ戻す */
+	function applyKinds(aKindOps, who) {
+		var aDoneByKind = [];
+		for (var i = 0; i < aKindOps.length; i++) {
+			try {
+				aDoneByKind.push({ kind: aKindOps[i].kind, done: applyAll(aKindOps[i].kind, aKindOps[i].ops, who) });
+			} catch (e) {
+				for (var j = aDoneByKind.length - 1; j >= 0; j--) {
+					revertDone(aDoneByKind[j].kind, aDoneByKind[j].done, who);
+				}
+				throw e;
+			}
+		}
+		return aDoneByKind;
+	}
+
+	/* 反映したものを元へ戻す（失敗した時の後始末） */
+	function revertDone(kind, aDone, who) {
+		aDone.slice().reverse().forEach(function (d) {
+			if (d.added) {
+				var erase = eraseChanges(kind);
+				if (erase) {
+					applyC(kind, d.id, erase, true, who.label);
+				}
+			} else if (d.before && d.after) {
+				applyC(kind, d.id, restorable(kind, d.before), true, who.label);
+			} else if (d.before && kind === 'char') {
+				var ch = restorable(kind, d.before);
+				ch.npcId = d.before.npcId;
+				applyC(kind, count(kind), ch, true, who.label);
+			}
+		});
+	}
+
+	/* 下見の後に、対象のデータが変わっていないか（befores は {kind: {番号: 姿}}） */
+	function checkUnchangedAll(befores) {
+		Object.keys(befores).forEach(function (kind) {
+			Object.keys(befores[kind]).forEach(function (id) {
+				var now = getRecord(kind, Number(id));
+				if (!sameRec(kind, now, befores[kind][id])) {
+					fail(409, 'changed', '下見の後に ' + kind + ' の ' + id + ' 番が変わりました。もう一度下見してください。');
+				}
+			});
+		});
+	}
+
+	/*
+	 * 履歴（古い順）を「その前の姿」へ戻す計画を立てる。
+	 * 記録ごとに、最初の変更の前の姿へ戻す。マス目は新しい順に 1 つずつ戻す。
+	 */
+	function planRestore(aEntry, force) {
+		var aRec = {}, aOrder = [], aTileEntry = [];
+		aEntry.forEach(function (e) {
+			if (e.kind === 'tiles') {
+				aTileEntry.push(e);
+				return;
+			}
+			e.items.forEach(function (d) {
+				var key = recKey(e.kind, d);
+				if (!aRec[key]) {
+					aRec[key] = { kind: e.kind, d: d, before: d.before };
+					aOrder.push(key);
+				}
+				aRec[key].last = d.after;
+				aRec[key].lastD = d;
+			});
+		});
+		var plan = { befores: {}, items: [], kindOps: {}, kindOrder: [], skip: [], conflicts: [], tiles: [] };
+		aOrder.forEach(function (key) {
+			var r = aRec[key];
+			if (r.before && r.last && sameRec(r.kind, r.before, r.last)) {
+				return;		/* 変えて、もう戻してある */
+			}
+			var curId = currentId(r.kind, r.lastD);
+			var now = curId >= 0 ? getRecord(r.kind, curId) : null;
+			if (!sameRec(r.kind, now, r.last)) {
+				plan.conflicts.push({ kind: r.kind, id: curId >= 0 ? curId : r.d.id });
+				if (!force) {
+					return;
+				}
+			}
+			var op = restoreOp(r.kind, curId, now, r.before);
+			if (!op) {
+				return;
+			}
+			if (op.skip) {
+				plan.skip.push({ kind: r.kind, id: r.d.id, reason: op.skip });
+				return;
+			}
+			if (!op.added) {
+				plan.befores[r.kind] = plan.befores[r.kind] || {};
+				plan.befores[r.kind][op.id] = now;
+			}
+			var name = (now && now.szName) || (r.before && r.before.szName) || undefined;
+			plan.items.push({ kind: r.kind, id: op.added ? null : op.id, name: name, added: !r.before || undefined,
+				restored: op.added || undefined, diff: diff(now, op.preview) });
+			if (!plan.kindOps[r.kind]) {
+				plan.kindOps[r.kind] = [];
+				plan.kindOrder.push(r.kind);
+			}
+			plan.kindOps[r.kind].push({ id: op.id, changes: op.changes, added: op.added });
+		});
+		/* マス目: 新しい順に、今が「変更後」なら「変更前」へ（重なりは手前の結果を使って見る） */
+		var overlay = {};
+		aTileEntry.slice().reverse().forEach(function (e) {
+			e.items.forEach(function (t) {
+				var cur = readTiles(t.id, t.x, t.y, t.w, t.h);
+				var bSame = true;
+				for (var yy = 0; yy < t.h; yy++) {
+					for (var xx = 0; xx < t.w; xx++) {
+						var k = t.id + ':' + (t.x + xx) + ',' + (t.y + yy);
+						var v = (k in overlay) ? overlay[k] : cur[yy][xx];
+						if (v !== t.after[yy][xx]) {
+							bSame = false;
+						}
+					}
+				}
+				if (!bSame) {
+					plan.conflicts.push({ kind: 'tiles', id: t.id, region: [t.x, t.y, t.w, t.h] });
+					if (!force) {
+						return;
+					}
+				}
+				for (var y2 = 0; y2 < t.h; y2++) {
+					for (var x2 = 0; x2 < t.w; x2++) {
+						overlay[t.id + ':' + (t.x + x2) + ',' + (t.y + y2)] = t.before[y2][x2];
+					}
+				}
+				plan.tiles.push(t);
+				plan.items.push({ kind: 'tiles', id: t.id, name: t.name, region: [t.x, t.y, t.w, t.h], changed: t.changed });
+			});
+		});
+		return plan;
+	}
+
+	/* 計画を反映して履歴に残す。返り値は履歴の番号の配列 */
+	function runPlan(plan, who, histBase) {
+		var aDoneByKind = applyKinds(plan.kindOrder.map(function (k) { return { kind: k, ops: plan.kindOps[k] }; }), who);
+		var aHist = aDoneByKind.map(function (dk) {
+			var e = {};
+			Object.keys(histBase).forEach(function (k) { e[k] = histBase[k]; });
+			e.kind = dk.kind;
+			e.items = dk.done;
+			return addHistory(e).historyId;
+		});
+		if (plan.tiles.length) {
+			backupFile('tiles');
+			var aTileDone = [];
+			plan.tiles.forEach(function (t) {
+				var r = setTiles(t.id, t.x, t.y, t.before, true);
+				if (r.ok) {
+					aTileDone.push({ id: t.id, name: t.name, x: t.x, y: t.y, w: t.w, h: t.h, before: r.before, after: r.after, changed: r.changed });
+				}
+			});
+			if (aTileDone.length) {
+				var e2 = {};
+				Object.keys(histBase).forEach(function (k) { e2[k] = histBase[k]; });
+				e2.kind = 'tiles';
+				e2.items = aTileDone;
+				aHist.push(addHistory(e2).historyId);
+			}
+		}
+		return { historyIds: aHist, done: aDoneByKind };
+	}
+
+	function planItemsText(a) {
+		return a.map(function (x) { return x.kind + ' の ' + x.id + ' 番'; }).join('、');
 	}
 
 	function opUndo(a, who) {
@@ -594,60 +894,31 @@ Module['sboData'] = (function () {
 		if (e.undoneBy) {
 			fail(400, 'already', '履歴 ' + hid + ' はもう元に戻してあります（履歴 ' + e.undoneBy + '）');
 		}
-		var kind = e.kind;
-		var befores = {}, items = [], aOp = [], aSkip = [], aConflict = [];
-		e.items.forEach(function (d) {
-			var erase = d.added ? eraseChanges(kind) : null;
-			if (d.added && !erase) {
-				aSkip.push(d.id);
-				return;
-			}
-			var now = getRecord(kind, d.id);
-			if (!same(now, d.after)) {
-				aConflict.push(d.id);
-				if (!a.force) {
-					return;
-				}
-			}
-			var changes = erase || restorable(kind, d.before);
-			var r = applyC(kind, d.id, changes, false);
-			if (!r.ok) {
-				fail(400, 'invalid', kind + ' の ' + d.id + ' 番を戻せません: ' + r.error);
-			}
-			befores[d.id] = now;
-			items.push({ id: d.id, name: now && now.szName, diff: diff(now, r.record) });
-			aOp.push({ id: d.id, changes: changes });
-		});
-		if (aConflict.length && !a.force) {
-			fail(409, 'conflict', 'この後に変更されたデータがあるので戻しません（' + kind + ' の ' + aConflict.join(', ') +
-					' 番）。それでも戻すなら force を付けてください（その後の変更も消えます）。', { conflicts: aConflict });
+		var plan = planRestore([e], !!a.force);
+		if (plan.conflicts.length && !a.force) {
+			fail(409, 'conflict', 'この後に変更されたデータがあるので戻しません（' + planItemsText(plan.conflicts) +
+					'）。それでも戻すなら force を付けてください（その後の変更も消えます）。', { conflicts: plan.conflicts.map(function (x) { return x.id; }) });
 		}
-		if (aOp.length === 0) {
-			fail(400, 'nothing', '戻せるものがありません' + (aSkip.length ? '（追加したデータは元に戻せません）' : ''));
+		if (!plan.items.length) {
+			fail(400, 'nothing', '戻せるものがありません' + (plan.skip.length ? '（' + plan.skip[0].reason + '）' : ''));
 		}
 		var payload = { historyId: hid, force: !!a.force, note: a.note || '' };
 		if (!a.previewId) {
-			var pv = makePreview('undo', payload, who, befores, items);
-			if (aSkip.length) {
-				pv.skipped = aSkip;
-				pv.message += '（追加した ' + aSkip.join(', ') + ' 番は消せないので、そのまま残ります）';
+			var pv = makePreview('undo', payload, who, plan.befores, plan.items);
+			if (plan.skip.length) {
+				pv.skipped = plan.skip.map(function (x) { return x.id; });
+				pv.message += '（' + plan.skip.map(function (x) { return x.reason; }).join('、') + '）';
 			}
 			return pv;
 		}
 		var p = takePreview(a.previewId, 'undo', payload, who);
-		checkUnchanged(kind, p.befores);
-		var aDone = applyAll(kind, aOp, who);
-		var e2 = addHistory({ op: 'undo', kind: kind, by: who.label, undoOf: hid, note: String(a.note || '').slice(0, 500), items: aDone });
-		e.undoneBy = e2.historyId;
+		checkUnchangedAll(p.befores);
+		var r = runPlan(plan, who, { op: 'undo', by: who.label, undoOf: hid, note: String(a.note || '').slice(0, 500) });
+		e.undoneBy = r.historyIds[0];
 		writeJsonFile(strHistPath, h);
-		log(who.label + ' が履歴 ' + hid + ' を元に戻した（履歴 ' + e2.historyId + '）');
-		return { ok: true, historyId: e2.historyId, skipped: aSkip.length ? aSkip : undefined,
-			items: aDone.map(function (d) { return { id: d.id, diff: diff(d.before, d.after) }; }) };
-	}
-
-	/* 追加した記録を「消す」変更。削除の印（byState=0）がある種類だけ。無ければ null（消せない） */
-	function eraseChanges(kind) {
-		return (kind === 'maker' || kind === 'recipe') ? { byState: 0 } : null;
+		log(who.label + ' が履歴 ' + hid + ' を元に戻した（履歴 ' + r.historyIds.join(', ') + '）');
+		return { ok: true, historyId: r.historyIds[0], historyIds: r.historyIds, skipped: plan.skip.length ? plan.skip.map(function (x) { return x.id; }) : undefined,
+			items: plan.items };
 	}
 
 	/*
@@ -730,106 +1001,85 @@ Module['sboData'] = (function () {
 		if (!aEntry) {
 			fail(400, 'lost', 'しおりの後の古い履歴が消えている（' + MAX_HISTORY + ' 件より前）ので、まとめて戻せません');
 		}
-		/* 記録ごとに「しおりの時の姿（最初の変更の前）」と「履歴の最後の姿」を集める */
-		var aRec = {}, aOrder = [];
-		aEntry.forEach(function (e) {
-			e.items.forEach(function (d) {
-				var key = e.kind + ':' + d.id;
-				if (!aRec[key]) {
-					aRec[key] = { kind: e.kind, id: d.id, before: d.before, added: !!d.added };
-					aOrder.push(key);
-				}
-				aRec[key].last = d.after;
-			});
-		});
-		var befores = {}, items = [], aOps = {}, aSkip = [], aConflict = [];
-		aOrder.forEach(function (key) {
-			var r = aRec[key];
-			if (!r.added && same(r.before, r.last)) {
-				return;		/* しおりの後に変えて、もう戻してある */
-			}
-			var erase = r.added ? eraseChanges(r.kind) : null;
-			if (r.added && !erase) {
-				aSkip.push({ kind: r.kind, id: r.id });
-				return;
-			}
-			var now = getRecord(r.kind, r.id);
-			if (!same(now, r.last)) {
-				aConflict.push({ kind: r.kind, id: r.id });
-				if (!a.force) {
-					return;
-				}
-			}
-			var changes = erase || restorable(r.kind, r.before);
-			var c = applyC(r.kind, r.id, changes, false);
-			if (!c.ok) {
-				fail(400, 'invalid', r.kind + ' の ' + r.id + ' 番を戻せません: ' + c.error);
-			}
-			if (same(now, c.record)) {
-				return;		/* もうしおりの時の姿（消した追加も含む） */
-			}
-			befores[r.kind] = befores[r.kind] || {};
-			befores[r.kind][r.id] = now;
-			items.push({ kind: r.kind, id: r.id, name: (now && now.szName) || undefined, added: r.added || undefined, diff: diff(now, c.record) });
-			(aOps[r.kind] = aOps[r.kind] || []).push({ id: r.id, changes: changes });
-		});
-		if (aConflict.length && !a.force) {
+		var plan = planRestore(aEntry, !!a.force);
+		if (plan.conflicts.length && !a.force) {
 			fail(409, 'conflict', 'しおりの後に、AI 以外（管理者ウィンドウなど）からも変わったデータがあるので戻しません（' +
-					aConflict.map(function (x) { return x.kind + ' の ' + x.id + ' 番'; }).join('、') +
-					'）。それでも戻すなら force を付けてください（その変更も消えます）。', { conflicts: aConflict });
+					planItemsText(plan.conflicts) + '）。それでも戻すなら force を付けてください（その変更も消えます）。', { conflicts: plan.conflicts });
 		}
-		if (!items.length) {
-			fail(400, 'nothing', 'しおりの後に戻す変更はありません' + (aSkip.length ? '（追加したデータは消せないので残ります）' : ''));
+		if (!plan.items.length) {
+			fail(400, 'nothing', 'しおりの後に戻す変更はありません' + (plan.skip.length ? '（' + plan.skip[0].reason + '）' : ''));
 		}
 		var payload = { bookmarkId: bm.bookmarkId, force: !!a.force, note: a.note || '' };
 		if (!a.previewId) {
-			var pv = makePreview('rollback', payload, who, befores, items);
+			var pv = makePreview('rollback', payload, who, plan.befores, plan.items);
 			pv.bookmark = bookmarkPublic(bm);
-			if (aSkip.length) {
-				pv.skipped = aSkip;
-				pv.message += '（消せない種類の追加 ' + aSkip.map(function (x) { return x.kind + ' の ' + x.id + ' 番'; }).join('、') + ' はそのまま残ります）';
+			if (plan.skip.length) {
+				pv.skipped = plan.skip;
+				pv.message += '（' + plan.skip.map(function (x) { return x.reason; }).join('、') + '）';
 			}
 			return pv;
 		}
 		var p = takePreview(a.previewId, 'rollback', payload, who);
-		Object.keys(p.befores).forEach(function (kind) {
-			checkUnchanged(kind, p.befores[kind]);
-		});
-		/* 種類ごとに反映して履歴 1 件ずつ。途中の種類で失敗したら、それまでの種類も元へ戻す */
-		var aKind = Object.keys(aOps), aDoneByKind = [];
-		for (var i = 0; i < aKind.length; i++) {
-			try {
-				aDoneByKind.push({ kind: aKind[i], done: applyAll(aKind[i], aOps[aKind[i]], who) });
-			} catch (e) {
-				for (var j = aDoneByKind.length - 1; j >= 0; j--) {
-					var dk = aDoneByKind[j];
-					dk.done.slice().reverse().forEach(function (d) {
-						applyC(dk.kind, d.id, restorable(dk.kind, d.before), true, who.label);
-					});
-				}
-				throw e;
-			}
-		}
+		checkUnchangedAll(p.befores);
 		var note = String(a.note || '').slice(0, 500) || ('しおり「' + bm.name + '」まで戻す');
-		var aHist = aDoneByKind.map(function (dk) {
-			return addHistory({ op: 'rollback', kind: dk.kind, by: who.label, bookmarkId: bm.bookmarkId, note: note, items: dk.done }).historyId;
-		});
+		var r = runPlan(plan, who, { op: 'rollback', by: who.label, bookmarkId: bm.bookmarkId, note: note });
 		var h = history();
 		aEntry.forEach(function (e) {
 			if (!e.undoneBy) {
-				e.undoneBy = aHist[0];
+				e.undoneBy = r.historyIds[0];
 			}
 		});
 		bm.rolledBack = bm.rolledBack || [];
-		bm.rolledBack.push({ at: Date.now(), by: who.label, historyIds: aHist });
+		bm.rolledBack.push({ at: Date.now(), by: who.label, historyIds: r.historyIds });
 		writeJsonFile(strHistPath, h);
-		log(who.label + ' がしおり ' + bm.bookmarkId + '「' + bm.name + '」まで戻した（履歴 ' + aHist.join(', ') + '）');
-		return {
-			ok: true, historyIds: aHist, skipped: aSkip.length ? aSkip : undefined,
-			items: [].concat.apply([], aDoneByKind.map(function (dk) {
-				return dk.done.map(function (d) { return { kind: dk.kind, id: d.id, diff: diff(d.before, d.after) }; });
-			}))
-		};
+		log(who.label + ' がしおり ' + bm.bookmarkId + '「' + bm.name + '」まで戻した（履歴 ' + r.historyIds.join(', ') + '）');
+		return { ok: true, historyIds: r.historyIds, skipped: plan.skip.length ? plan.skip : undefined, items: plan.items };
+	}
+
+	/*
+	 * マップのマス目を書き換える（{id, x, y, parts:[[...]], note?, previewId?}。下見 → 確定）。
+	 * 履歴には範囲の前と後を残し、元に戻す・しおりで戻せる。
+	 */
+	function opTilesSet(a, who) {
+		requireWrite(who);
+		var id = checkId(a.id);
+		var x = Math.floor(Number(a.x) || 0), y = Math.floor(Number(a.y) || 0);
+		if (!Array.isArray(a.parts) || !a.parts.length || !Array.isArray(a.parts[0]) || !a.parts[0].length ||
+				!a.parts.every(function (row) { return Array.isArray(row) && row.length === a.parts[0].length; })) {
+			fail(400, 'parts', 'parts は [[パーツ番号,...],...]（行ごと、どの行も同じ長さ）で指定してください');
+		}
+		var r = setTiles(id, x, y, a.parts, false);
+		if (!r.ok) {
+			fail(400, 'invalid', r.error);
+		}
+		var map = getRecord('map', id);
+		var name = map ? map.szName : '';
+		var w = a.parts[0].length, h = a.parts.length;
+		var befores = { tiles: {} };
+		var item = { kind: 'tiles', id: id, name: name, region: [x, y, w, h], changed: r.changed };
+		var payload = { id: id, x: x, y: y, parts: a.parts, note: a.note || '' };
+		if (!a.previewId) {
+			if (!r.changed) {
+				fail(400, 'nothing', 'マス目は今と同じです（変わるマスがありません）');
+			}
+			var pv = makePreview('tiles', payload, who, {}, [item]);
+			pv.tilesBefore = r.before;
+			aPreview[pv.previewId].tilesBefore = r.before;
+			return pv;
+		}
+		var p = takePreview(a.previewId, 'tiles', payload, who);
+		if (!same(p.tilesBefore, r.before)) {
+			fail(409, 'changed', '下見の後にマス目が変わりました。もう一度下見してください。');
+		}
+		backupFile('tiles');
+		var done = setTiles(id, x, y, a.parts, true);
+		if (!done.ok) {
+			fail(400, 'apply', done.error);
+		}
+		var e = addHistory({ op: 'tiles', kind: 'tiles', by: who.label, note: String(a.note || '').slice(0, 500),
+			items: [{ id: id, name: name, x: x, y: y, w: w, h: h, before: done.before, after: done.after, changed: done.changed }] });
+		log(who.label + ' がマップ ' + id + ' のマス目を ' + done.changed + ' マス変更（履歴 ' + e.historyId + '）');
+		return { ok: true, historyId: e.historyId, changed: done.changed };
 	}
 
 	/* ------------------------------------------------------------------ */
@@ -954,12 +1204,14 @@ Module['sboData'] = (function () {
 	var MCP_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 	var MCP_INSTRUCTIONS =
 		'SBO2003（オンラインRPG）のサーバーの設定データ（特技・職業とレベルアップ・特技を使える職業・装備できる職業・' +
-		'ステータステンプレート・アイテム）を読み書きできます。セーブデータの残り（キャラ全員と NPC の台詞・マップのイベント／店／メッセージ・' +
-		'マップパーツ・エフェクト・吹き出し・預かり所・サブゲーム）は読むだけです。マップのマス目は sbo_map_tiles で読みます。' +
+		'ステータステンプレート・アイテム・作り手・レシピ・NPC と台詞・マップのイベント／店／メッセージ・マップパーツ・エフェクト・吹き出し・サブゲーム）を' +
+		'読み書きできます。プレイヤーのキャラと預かり所は読むだけです。マップのマス目は sbo_map_tiles で読み、sbo_map_tiles_set で書きます。' +
+		'NPC は番号（id）が再起動で変わることがあるので、npcId（変わらない番号）で見分けてください。' +
 		'まず sbo_schema で種類と項目の意味を確かめてください。' +
 		'書き込みは必ず 2 段階です: previewId 無しで呼ぶと差分が返るので、それを利用者に見せて了解をもらってから、' +
 		'同じ引数に previewId を付けてもう一度呼んでください。反映はログイン中のプレイヤーにもすぐ届きます。' +
-		'間違えた時は sbo_history で履歴を見て sbo_undo で戻せます。' +
+		'間違えた時は sbo_history で履歴を見て sbo_undo で戻せます。街をお試しで作り変える時は、先に sbo_bookmark でしおりを付けておくと、' +
+		'sbo_rollback でしおりの後の変更（NPC の追加・削除・マス目も含む）をまとめて戻せます。' +
 		'新しいマップの配置を考える時は、sbo_parts_dex（パーツ図鑑: パーツの名前・タグ・通れるか・よく隣に来るパーツ）と ' +
 		'sbo_parts_samples（組み合わせの見本）を見て、案を sbo_plan_save で保存してください。配置案はゲームのデータを変えず、' +
 		'管理ページの「配置案」で画像として見られます。';
@@ -1013,6 +1265,22 @@ Module['sboData'] = (function () {
 			run: opTiles
 		},
 		{
+			name: 'sbo_map_tiles_set', write: true,
+			description: 'マップのマス目を書き換える。id は map の番号、(x, y) が左上、parts は [[mapParts の番号,...],...]（行ごと、どの行も同じ長さ、最大 128×128）。' +
+				'マップの外にはみ出す所はエラー。履歴に残り sbo_undo・sbo_rollback で戻せる。2 段階は sbo_update と同じ。',
+			inputSchema: {
+				type: 'object', required: ['id', 'x', 'y', 'parts'],
+				properties: {
+					id: { type: 'integer', minimum: 0 },
+					x: { type: 'integer', minimum: 0 }, y: { type: 'integer', minimum: 0 },
+					parts: { type: 'array', minItems: 1, maxItems: 128, items: { type: 'array', minItems: 1, maxItems: 128, items: { type: 'integer', minimum: 0 } } },
+					note: { type: 'string' },
+					previewId: { type: 'string' }
+				}
+			},
+			run: opTilesSet
+		},
+		{
 			name: 'sbo_update', write: true,
 			description: '既存のデータを変える（何件でもまとめて。履歴 1 件になる）。changes には変える項目だけを書く。' +
 				'previewId 無しだと何も変えずに差分と previewId を返す。利用者の了解後、同じ引数に previewId を付けて呼ぶと反映。',
@@ -1035,7 +1303,8 @@ Module['sboData'] = (function () {
 		},
 		{
 			name: 'sbo_add', write: true,
-			description: 'データを末尾に追加する（追加は元に戻せない）。省いた項目は 0 や空になる。2 段階は sbo_update と同じ。',
+			description: 'データを末尾に追加する。省いた項目は 0 や空になる。追加した NPC は元に戻すと消え、作り手・レシピは削除（byState=0）になる。' +
+				'それ以外の種類の追加は元に戻せない。NPC は dwMapID・dwX・dwY が要る。2 段階は sbo_update と同じ。',
 			inputSchema: {
 				type: 'object', required: ['kind', 'records'],
 				properties: {
@@ -1052,7 +1321,7 @@ Module['sboData'] = (function () {
 			description: '変更履歴（新しい順）。管理ページや AI が API で変えたものが残る。',
 			inputSchema: {
 				type: 'object',
-				properties: { kind: { type: 'string', enum: WRITE_KIND_ENUM }, limit: { type: 'integer', minimum: 1, maximum: 100 } }
+				properties: { kind: { type: 'string', enum: WRITE_KIND_ENUM.concat(['tiles']) }, limit: { type: 'integer', minimum: 1, maximum: 100 } }
 			},
 			run: opHistory
 		},
@@ -1088,7 +1357,8 @@ Module['sboData'] = (function () {
 		},
 		{
 			name: 'sbo_rollback', write: true,
-			description: 'しおりの後の変更をまとめて元に戻す（種類をまたいで、新しい順に）。追加した作り手・レシピは削除（byState=0）にする。' +
+			description: 'しおりの後の変更をまとめて元に戻す（種類をまたいで。マス目は新しい順に）。追加した NPC は消し、消した NPC は同じ npcId で足し直す。' +
+				'追加した作り手・レシピは削除（byState=0）にする。' +
 				'AI 以外からも変わったデータがあると force を付けない限り戻さない。2 段階は sbo_update と同じ。',
 			inputSchema: {
 				type: 'object', required: ['bookmarkId'],
@@ -1259,6 +1529,7 @@ Module['sboData'] = (function () {
 		'/api/data/list': opList,
 		'/api/data/get': opGet,
 		'/api/data/tiles': opTiles,
+		'/api/data/tiles/set': opTilesSet,
 		'/api/data/update': opUpdate,
 		'/api/data/add': opAdd,
 		'/api/data/history': opHistory,
@@ -1273,6 +1544,7 @@ Module['sboData'] = (function () {
 		'/api/admin/ai/revoke': apiAdminRevoke,
 		'/api/admin/ai/history': function (body) { adminWho(body); return opHistory(body); },
 		'/api/admin/ai/undo': function (body) { return opUndo(body, adminWho(body)); },
+		'/api/admin/ai/tiles/set': function (body) { return opTilesSet(body, adminWho(body)); },
 		'/api/admin/ai/bookmark': function (body) { return opBookmarkAdd(body, adminWho(body)); },
 		'/api/admin/ai/bookmarks': function (body) { adminWho(body); return opBookmarks(body); },
 		'/api/admin/ai/rollback': function (body) { return opRollback(body, adminWho(body)); },
