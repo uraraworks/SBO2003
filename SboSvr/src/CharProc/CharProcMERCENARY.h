@@ -71,5 +71,6 @@ extern void			MercenaryTalk		(PCHARINFO pChar, PCHARINFO pCharNpc);	/* 傭兵所
 extern BOOL			MercenaryDamaged	(PCHARINFO pChar, PCHARINFO pMerc);		/* 傭兵が攻撃を受けた後の処理(倒れたら TRUE) */
 extern BOOL			MercenaryItemCheck	(PCHARINFO pMerc, BYTE byItemType);		/* その種類の道具を傭兵に使えるか */
 extern void			MercenaryTailOff	(PCHARINFO pMerc);						/* 傭兵を「ついていく」の列から外す */
+extern void			MercenaryTailOffBack(PCHARINFO pChar);						/* すぐ後ろに並んでいる傭兵を列から外す */
 
 /* Copyright(C)URARA-works 2026 */

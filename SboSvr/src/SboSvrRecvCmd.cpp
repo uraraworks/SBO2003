@@ -2713,6 +2713,11 @@ void SubProcMapMove(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY)
 	if ((int)dwMapID >= g_aMapInfo.GetSize ()) {
 		return;
 	}
+	/* 傭兵は別のマップへは行かない（念のため。列から外せば傭兵の処理でお別れ） */
+	if (IsMercenary (pChar)) {
+		MercenaryTailOff (pChar);
+		return;
+	}
 
 	/* すでに移動先に立っている？ */
 	if ((pChar->dwMapID == dwMapID) && (pChar->dwX == dwX) && (pChar->dwY == dwY)) {
@@ -2743,20 +2748,13 @@ void SubProcMapMove(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY)
 		SubSugoroku_RemoveAndMove (pSugoroku, pChar->dwTblID);
 	}
 
+	/* 傭兵は別のマップへは連れて行かない（列から外し、傭兵の処理でお別れ）。
+	   傭兵が続けて並んでいても全部外し、つなぎ直された後ろの人を連れて行く */
+	MercenaryTailOffBack (pChar);
 	if (pChar->dwTailBackTblID != -1) {
+		/* ついてきているキャラを移動させる */
 		pCharTmp = g_aCharInfo[pChar->dwTailBackTblID];
-		/* 傭兵は別のマップへは連れて行かない（列から外し、傭兵の処理でお別れ） */
-		if (IsMercenary (pCharTmp)) {
-			MercenaryTailOff (pCharTmp);
-			/* 傭兵の後ろについていた人は、つなぎ直されているので連れて行く */
-			if (pChar->dwTailBackTblID != -1) {
-				pCharTmp = g_aCharInfo[pChar->dwTailBackTblID];
-				SubProcMapMove (pCharTmp, dwMapID, dwX, dwY);
-			}
-		} else {
-			/* ついてきているキャラを移動させる */
-			SubProcMapMove (pCharTmp, dwMapID, dwX, dwY);
-		}
+		SubProcMapMove (pCharTmp, dwMapID, dwX, dwY);
 	}
 
 	ZeroMemory (pChar->abySubStatus, sizeof (pChar->abySubStatus));
@@ -9553,6 +9551,15 @@ void RecvDataProcMAIN_CHAR_TAIL(PBYTE pData, DWORD dwDataSize)
 		pCharTarget = g_aCharInfo[Packet.m_dwTailTblID];
 		bResult = IsTail (pChar, pCharTarget);
 		if (bResult == FALSE) {
+			Packet.Make (pChar->dwTblID, -1, CHAR_TAIL_NG2);
+			svrSock.SendTo (pChar->pID, Packet.Get (), Packet.GetSize ());
+			goto Exit;
+		}
+		/* 傭兵を連れている人についていく時は、傭兵を先に列から外す
+		   （外さないと傭兵が列から浮いたまま残る。傭兵は列の最後へ入り直す） */
+		MercenaryTailOffBack (pCharTarget);
+		/* 傭兵の後ろにほかの人がいた（その人が先についていっている） */
+		if (pCharTarget->dwTailBackTblID != -1) {
 			Packet.Make (pChar->dwTblID, -1, CHAR_TAIL_NG2);
 			svrSock.SendTo (pChar->pID, Packet.Get (), Packet.GetSize ());
 			goto Exit;

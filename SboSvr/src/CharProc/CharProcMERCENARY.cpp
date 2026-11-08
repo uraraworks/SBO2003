@@ -1005,6 +1005,34 @@ void MercenaryTailOff(PCHARINFO pMerc)
 
 
 /* ========================================================================= */
+/* 関数名：	MercenaryTailOffBack											 */
+/* 内容：	すぐ後ろに並んでいる傭兵を列から外す（続けて並んでいれば全部）	 */
+/*			傭兵の後ろにいた人は、この人に直接つなぎ直される				 */
+/* ========================================================================= */
+
+void MercenaryTailOffBack(PCHARINFO pChar)
+{
+	int i;
+	DWORD dwBack;
+
+	for (i = 0; i < 100; i ++) {
+		dwBack = pChar->dwTailBackTblID;
+		if ((dwBack == (DWORD)-1) || (dwBack >= (DWORD)g_aCharInfo.GetSize ())) {
+			break;
+		}
+		if (!IsMercenary (g_aCharInfo[dwBack])) {
+			break;
+		}
+		MercenaryTailOff (g_aCharInfo[dwBack]);
+		/* つながりが片方だけだった時も、外したことにする */
+		if (pChar->dwTailBackTblID == dwBack) {
+			pChar->dwTailBackTblID = (DWORD)-1;
+		}
+	}
+}
+
+
+/* ========================================================================= */
 /* 関数名：	GetMercenaryOwner												 */
 /* 内容：	傭兵の雇い主(ログアウトした等でいなければ NULL)				 */
 /* ========================================================================= */
