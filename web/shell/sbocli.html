@@ -2893,7 +2893,8 @@
 			box.style.left = st.left;
 			box.style.width = st.width;
 			box.style.height = st.height;
-			box.style.top = 'calc(' + (st.top || '0px') + ' - ' + (st.height || '0px') + ')';
+			/* タイトル行の上の枠にかからないよう、少し（ゲーム画面で 3 ドット）下げる */
+			box.style.top = 'calc(' + (st.top || '0px') + ' - ' + (st.height || '0px') + ' + 3px * var(--w32-scale, 1))';
 		}
 		function update() {
 			var info = (input.style.display === 'none') ? null : chatCountInfo(input.value);
