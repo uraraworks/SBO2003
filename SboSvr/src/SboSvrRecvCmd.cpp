@@ -5291,7 +5291,8 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 	/* 傭兵所のNPC（台詞が「@m」で始まる）？ 雇う・お別れする */
 	if ((pChar->byNpcType != NPCTYPE_INIT) && pChar->pszNpcSpeech &&
 		(pChar->pszNpcSpeech[0] == '@') && (pChar->pszNpcSpeech[1] == 'm')) {
-		if (!s_bAdminRecv && (s_nCharNoRecv >= 0) && IsNearRecvChar (pChar, 2)) {
+		/* 管理者のキャラでも雇える（管理者として話しかけても、ふつうの「話す」と同じ） */
+		if ((s_nCharNoRecv >= 0) && IsNearRecvChar (pChar, 2)) {
 			MercenaryTalk (g_aCharInfo[s_nCharNoRecv], pChar);
 		}
 		return;
