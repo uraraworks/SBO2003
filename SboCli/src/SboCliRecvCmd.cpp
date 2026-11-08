@@ -838,6 +838,20 @@ int GetCharDistance(
 		}
 	}
 
+	/* 向きを指定した時は、サーバー(BattleProcCheckPC)と同じく「向いている方向の1マス先」に
+	   いる時だけ距離1にする。以前は前後・左右の区別をしていなかったので、背中側の敵も
+	   目の前と見なしてしまい、そちらを狙った攻撃要求がサーバーで空振りしていた */
+	if (byDirection < 4) {
+		int nFrontX = x + anPosAddTblX[byDirection];
+		int nFrontY = y + anPosAddTblY[byDirection];
+
+		if ((nFrontX >= 0) && (nFrontY == (int)pCharTarget->dwY) &&
+				CheckCharX (pCharTarget, pCharTarget->dwX, (DWORD)nFrontX)) {
+			nRet = 1;
+			goto Exit;
+		}
+	}
+
 	if (byDirection != -1) {
 		if (byDirection == 2) {
 			bResult = CheckCharX (pCharTarget, pCharTarget->dwX, x - 1);
@@ -857,6 +871,10 @@ int GetCharDistance(
 	}
 
 	nRet = nXtmp + nYtmp;
+	/* 向き指定で隣にいても目の前ではない(背中側など)なら、距離1とは言わない */
+	if ((byDirection < 4) && (nRet == 1)) {
+		nRet = -1;
+	}
 Exit:
 	return nRet;
 }
