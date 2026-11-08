@@ -342,7 +342,7 @@ BOOL DrawScreenMOVE(void)
 /*			暗くする。どのマスが見えるか(扉や壁の向こうは見えない)は今まで	 */
 /*			どおり pMapDark(RenewMapDark で作ったもの)で決める				 */
 /* ========================================================================= */
-#define MAPLIGHT_MAX	8									/* 灯りの最大数 */
+#define MAPLIGHT_MAX	32									/* 灯りの最大数 */
 
 static void DrawMapLight(const char *pMapDark)
 {
@@ -409,6 +409,44 @@ static void DrawMapLight(const char *pMapDark)
 			afR[nLight] = (100.0f / nLevel + 0.2f) * 32.0f * fFlicker;
 		}
 		nLight ++;
+	}
+
+	/* 光るマップパーツ(たいまつ・かがり火など)も灯りにする */
+	if (g_pMapInfo->pwMap && g_pMapPartsInfo) {
+		int mx, my;
+		for (y = -(DRAW_PARTS_Y + 1); y <= DRAW_PARTS_Y + 1; y ++) {
+			my = (int)pMyChar->dwY + y;
+			if ((my < 0) || (my >= g_pMapInfo->nCY)) {
+				continue;
+			}
+			for (x = -(DRAW_PARTS_X + 1); x <= DRAW_PARTS_X + 1; x ++) {
+				WORD wMap;
+				float fFlickerParts;
+				int nRange;
+
+				if (nLight >= MAPLIGHT_MAX) {
+					break;
+				}
+				mx = (int)pMyChar->dwX + x;
+				if ((mx < 0) || (mx >= g_pMapInfo->nCX)) {
+					continue;
+				}
+				wMap = g_pMapInfo->pwMap[mx + my * g_pMapInfo->nCX];
+				if ((wMap >= g_wCountMapParts) || (g_pMapPartsInfo[wMap].byLight == 0)) {
+					continue;
+				}
+				nRange = min (g_pMapPartsInfo[wMap].byLight, DRAW_PARTS_X);
+				/* マップのマスは描画用画像の中で動かない(歩き中は見る場所の方がずれる) */
+				anX[nLight] = (DRAW_PARTS_X + 1 + x) * 32 + 16;
+				anY[nLight] = (DRAW_PARTS_Y + 1 + y) * 32 + 16;
+				/* 炎ごとに少しずつ違うゆらめき */
+				fFlickerParts = 1.0f + 0.045f * sinf (fTime * 0.0093f + (mx * 7 + my * 13)) +
+								0.025f * sinf (fTime * 0.0211f + (mx * 3 + my * 5));
+				/* 範囲のマスまで見えて、その少し先で真っ暗になる(RenewMapDarkParts と同じ) */
+				afR[nLight] = (nRange + 1 + 0.2f) * 32.0f * fFlickerParts;
+				nLight ++;
+			}
+		}
 	}
 
 	/* 画面に見えている範囲だけ処理する */

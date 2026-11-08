@@ -1595,6 +1595,7 @@ typedef struct _MAPPARTSINFO {
 	BYTE		byAnimeNo;											/* アニメーションコマ番号 */
 	BYTE		byAnimeCount;										/* アニメーションコマ数 */
 	BYTE		byLevel;											/* 透明度 */
+	BYTE		byLight;											/* 灯りの範囲(マス。0なら光らない。暗いマップで周りを照らす) */
 	WORD		wGrpID;												/* グラフィックID */
 	WORD		wBackID;											/* 重ね合わせ時の背景ID */
 	DWORD		dwLastAnime;										/* 最後にアニメーションした時間 */
@@ -1608,6 +1609,7 @@ typedef struct _MAPPARTSINFOSAVE {
 	BYTE		byAnimeType;										/* アニメーション種別 */
 	BYTE		byAnimeCount;										/* アニメーションコマ数 */
 	BYTE		byLevel;											/* 透明度 */
+	BYTE		byLight;											/* 灯りの範囲(マス。0なら光らない。暗いマップで周りを照らす) */
 	WORD		wGrpID;												/* グラフィックID */
 	WORD		wBackID;											/* 重ね合わせ時の背景ID */
 	ANIMEINFO	*pAnimeInfo;										/* アニメーション情報 */

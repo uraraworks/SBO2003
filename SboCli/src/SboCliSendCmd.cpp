@@ -582,6 +582,7 @@ void SendCmdMAPPARTS(int nNo)
 	pSend->byAnimeType = pParts->byAnimeType;
 	pSend->byAnimeCount = pParts->byAnimeCount;
 	pSend->byLevel = pParts->byLevel;
+	pSend->byLight = pParts->byLight;
 	pSend->wGrpID = pParts->wGrpID;
 	pSend->wBackID = pParts->wBackID;
 	pSend->pAnimeInfo = pParts->pAnimeInfo;
