@@ -123,6 +123,9 @@ void UpdateWindowITEMINFOList					(PWNDINFO pWndList);	/* アイテム情報(一
 PWNDINFO MakeWindowDEAD_COMAND					(void);				/* 死亡中：コマンド */
 
 extern int GetWindowID(DWORD);										/* ウィンドウ番号を取得 */
+#ifdef __EMSCRIPTEN__
+extern void SboWebSpeechInputMade(HWND hWnd);							/* 発言入力欄に残り文字数の表示を付ける（ブラウザ版） */
+#endif
 
 
 /* ========================================================================= */
@@ -420,6 +423,9 @@ PWNDINFO MakeWindowSPEECH(void)
 	SendMessage (g_hWndSpeech, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 	g_OrgWndProcSpeech = (WNDPROC)GetWindowLong (g_hWndSpeech, GWL_WNDPROC);
 	SetWindowLong (g_hWndSpeech, GWL_WNDPROC, (LONG)SpeechWndProc);
+#ifdef __EMSCRIPTEN__
+	SboWebSpeechInputMade (g_hWndSpeech);
+#endif
 
 	SetFocus (g_hWndSpeech);
 
