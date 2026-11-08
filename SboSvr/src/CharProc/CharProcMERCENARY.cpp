@@ -1136,6 +1136,18 @@ void MercenaryTalk(PCHARINFO pChar, PCHARINFO pCharNpc)
 	if (pCharNew->szName[0] == 0) {
 		strcpy (pCharNew->szName, "傭兵");
 	}
+	/* 誰の傭兵か分かるように、雇い主の名前を付ける（例：傭兵ハーン（春うらら））。
+	   欄に入らない時は「傭兵（雇い主）」、それも入らなければ付けない */
+	{
+		char szTmp2[sizeof (pCharNew->szName) * 2];
+		snprintf (szTmp2, sizeof (szTmp2), "%s（%s）", pCharNew->szName, pChar->szName);
+		if (strlen (szTmp2) >= sizeof (pCharNew->szName)) {
+			snprintf (szTmp2, sizeof (szTmp2), "傭兵（%s）", pChar->szName);
+		}
+		if (strlen (szTmp2) < sizeof (pCharNew->szName)) {
+			strcpy (pCharNew->szName, szTmp2);
+		}
+	}
 
 	if (FindPosNearOwner (pCharNew, pChar, x, y) == FALSE) {
 		delete pCharNew;
