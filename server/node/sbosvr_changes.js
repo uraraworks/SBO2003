@@ -9,7 +9,9 @@
  *   足す・直す・隠す・消すができる。
  * ・リポジトリの web/changes/changes.json（配布フォルダでは changes-seed.json）が「最初の中身」。
  *   起動して最初に使う時に、まだ取り込んでいない id の項目だけを取り込む。
- *   プルリクエストで changes.json に項目を足せば、デプロイ後に自動で載る。
+ *   プルリクエストで changes.json に足した項目は、デプロイ後に「非公開」で入る。
+ *   main には試し中の変更も入るので、見せてよいものだけを管理ページで「公開する」。
+ *   （保存ファイルがまだ無い最初の 1 回だけは、ローカルの試しやすさのため changes.json のまま入れる）
  *   管理ページで直した・消した項目は、取り込み済みの id として覚えているので上書きしない。
  *
  * 項目: {id, date:'YYYY-MM-DD', kind:'新機能'|'改善'|'修正', text, pr:[番号...], hidden?, updatedAt?}
@@ -73,6 +75,7 @@ Module['sboChanges'] = (function () {
 			return store;
 		}
 		strStorePath = path.resolve(FS.cwd(), 'SBODATA', 'SboWebChanges.json');
+		var bFirst = !fs.existsSync(strStorePath);
 		try {
 			store = JSON.parse(fs.readFileSync(strStorePath, 'utf8'));
 		} catch (e) {
@@ -84,12 +87,13 @@ Module['sboChanges'] = (function () {
 		store.version = 1;
 		store.items = Array.isArray(store.items) ? store.items : [];
 		store.seedIds = Array.isArray(store.seedIds) ? store.seedIds : [];
-		importSeed();
+		importSeed(bFirst);
 		return store;
 	}
 
-	/* まだ取り込んでいない「最初の中身」の項目を取り込む */
-	function importSeed() {
+	/* まだ取り込んでいない「最初の中身」の項目を取り込む。
+	 * bFirst（保存ファイルが無かった）でなければ、取り込んだ項目は非公開にしておく */
+	function importSeed(bFirst) {
 		var known = {}, nAdd = 0, prevId = null;
 		store.seedIds.forEach(function (id) { known[id] = true; });
 		readSeed().forEach(function (src) {
@@ -101,6 +105,9 @@ Module['sboChanges'] = (function () {
 			if (!known[it.id]) {
 				known[it.id] = true;
 				store.seedIds.push(it.id);
+				if (!bFirst) {
+					it.hidden = true;
+				}
 				/* 「最初の中身」の並びを保つよう、1 つ前の項目のすぐ後ろに入れる */
 				var at = prevId ? findItem(prevId) + 1 : 0;
 				store.items.splice(Math.max(0, at), 0, it);
@@ -111,7 +118,7 @@ Module['sboChanges'] = (function () {
 		if (nAdd) {
 			sortItems();
 			save();
-			log('最初の中身から ' + nAdd + ' 件を取り込みました');
+			log('最初の中身から ' + nAdd + ' 件を取り込みました' + (bFirst ? '' : '（非公開）'));
 		}
 	}
 

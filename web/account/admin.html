@@ -11,7 +11,7 @@
 	  ・プレイヤー   … 「取得」を押した時にログイン中のプレイヤーのキャラ名と、今いるマップ（ID：名前）を一覧する
 	  ・復旧の承認   … アカウント復旧の申請を承認・却下する（前の recover-admin.html と同じ）
 	  ・ご意見箱     … /feedback に届いた投稿を全部見て、返事・対応済み・隠す・消すをする
-	  ・更新履歴     … /changes に出す「何が変わったか」を足す・直す・隠す・消す（API は server/node/sbosvr_changes.js）
+	  ・更新履歴     … /changes に出す「何が変わったか」を足す・直す・公開/非公開・消す（API は server/node/sbosvr_changes.js）
 	  ・AI連携       … AI（Claude Code など）から設定データを読み書きするキーの発行・取り消しと、変更履歴・元に戻す
 	  ・マップ資料   … マップごとの全体図と NPC・敵・お店・イベントの資料を zip で書き出す（admin-mapdoc.js）
 	  ・パーツ図鑑   … マップパーツに名前・タグ・説明を付ける・組み合わせの見本を作る（admin-design.js）
@@ -485,7 +485,9 @@
 	<section id="tab-changes" hidden>
 		<p class="sub-text">
 			<a href="/changes" target="_blank" rel="noopener" style="color:inherit">/changes</a> に出す「何が変わったか」です。プレイヤー向けの言葉で書いてください。
-			プルリクエストで web/changes/changes.json に足した項目は、デプロイした後に自動で入ります（ここで直した・消した項目はそのままです）。
+			プルリクエストで web/changes/changes.json に足した項目は、デプロイした後に<b>非公開</b>で入ります。
+			見せてよいものだけ「公開する」を押してください（ここで直した・消した項目はそのままです）。
+			前の日付のまま公開すると「NEW」は付かないので、新しく見せたい時は「直す」で日付を今日にしてください。
 		</p>
 		<div class="card" id="ch-form" style="scroll-margin-top:100px">
 			<div class="name" id="ch-form-title">新しく足す</div>
@@ -500,13 +502,14 @@
 			</div>
 			<label for="ch-text">内容</label>
 			<textarea id="ch-text" placeholder="例：スマホの操作パッドを十字キー型にしました。"></textarea>
-			<label class="check" style="margin-top:6px"><input type="checkbox" id="ch-hidden"> 隠す（/changes に出さない）</label>
+			<label class="check" style="margin-top:6px"><input type="checkbox" id="ch-hidden"> 非公開にする（/changes に出さない）</label>
 			<div class="msg" id="ch-msg"></div>
 			<button type="button" id="ch-save">足す</button>
 			<button type="button" class="sub" id="ch-cancel" hidden>直すのをやめる</button>
 		</div>
 		<div class="row" style="justify-content:space-between">
 			<button type="button" class="sub" id="ch-reload">読み直す</button>
+			<label class="check" style="margin:0"><input type="checkbox" id="ch-only-hidden"> 非公開だけ見る</label>
 			<span class="sub-text" id="ch-count"></span>
 		</div>
 		<div id="ch-list" style="margin-top:8px"></div>
@@ -1411,7 +1414,7 @@
 			head.appendChild(el('span', 'tag', '匿名'));
 		}
 		if (p.hidden) {
-			head.appendChild(el('span', 'tag disabled', '隠している'));
+			head.appendChild(el('span', 'tag disabled', '非公開'));
 		}
 		if (p.done) {
 			head.appendChild(el('span', 'tag done', '対応済み'));
@@ -1546,11 +1549,13 @@
 			}
 			var list = $('ch-list');
 			list.textContent = '';
-			$('ch-count').textContent = data.items.length + ' 件';
-			if (!data.items.length) {
-				list.appendChild(el('p', 'sub-text', 'まだありません。'));
+			var nHidden = data.items.filter(function (it) { return it.hidden; }).length;
+			$('ch-count').textContent = data.items.length + ' 件（非公開 ' + nHidden + ' 件）';
+			var items = $('ch-only-hidden').checked ? data.items.filter(function (it) { return it.hidden; }) : data.items;
+			if (!items.length) {
+				list.appendChild(el('p', 'sub-text', data.items.length ? '非公開の項目はありません。' : 'まだありません。'));
 			}
-			data.items.forEach(function (it) {
+			items.forEach(function (it) {
 				var card = el('div', 'card');
 				var head = el('div', 'head');
 				head.appendChild(el('span', '', it.date));
@@ -1559,7 +1564,7 @@
 					head.appendChild(el('span', 'sub-text', 'PR ' + it.pr.map(function (n) { return '#' + n; }).join(' ')));
 				}
 				if (it.hidden) {
-					head.appendChild(el('span', 'tag disabled', '隠している'));
+					head.appendChild(el('span', 'tag disabled', '非公開'));
 				}
 				card.appendChild(head);
 				card.appendChild(el('div', 'message', it.text));
@@ -1567,7 +1572,7 @@
 				btnEdit.type = 'button';
 				btnEdit.addEventListener('click', function () { editChange(it); });
 				card.appendChild(btnEdit);
-				var btnHide = el('button', 'sub', it.hidden ? '出す' : '隠す');
+				var btnHide = el('button', it.hidden ? '' : 'sub', it.hidden ? '公開する' : '非公開にする');
 				btnHide.type = 'button';
 				btnHide.addEventListener('click', function () {
 					var param = JSON.parse(JSON.stringify(it));
@@ -1578,7 +1583,7 @@
 				var btnDel = el('button', 'sub', '消す');
 				btnDel.type = 'button';
 				btnDel.addEventListener('click', function () {
-					if (!window.confirm('この項目を消しますか？（元に戻せません。出したくないだけなら「隠す」）')) {
+					if (!window.confirm('この項目を消しますか？（元に戻せません。出したくないだけなら「非公開にする」）')) {
 						return;
 					}
 					api('/api/admin/changes/delete', { session: session, id: it.id }).then(function () {
@@ -1615,6 +1620,7 @@
 		setMsg($('ch-msg'), '');
 	});
 	$('ch-reload').addEventListener('click', loadChanges);
+	$('ch-only-hidden').addEventListener('change', loadChanges);
 
 	/* ---- AI連携 ---- */
 	var AI_KIND = {
