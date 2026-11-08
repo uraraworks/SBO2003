@@ -318,6 +318,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcMAKERINFO,				/* CMD_MAKERINFO */
 	RecvDataProcRECIPEINFO,				/* CMD_RECIPEINFO */
 	RecvDataProcRECIPEMAKE,				/* CMD_RECIPEMAKE */
+	NULL,								/* CMD_BATTLEMODE */
 	RecvDataProcNPCROUTE,				/* CMD_NPCROUTE */
 	NULL
 };
@@ -2583,6 +2584,11 @@ void RecvDataProcCHARINFO(PBYTE pData, DWORD dwDataSize)
 				g_pMapInfo->pdwMapChar[g_pMapInfo->nCX * pCharDst->dwY + pCharDst->dwX] --;
 			}
 		}
+		/* 削除中、または別のキャラに入れ替わった（倒れて消えかけの敵の番号を、
+		   雇ったばかりの傭兵などがもらった）？ 前のキャラのダメージ表示などは引き継がない */
+		if (pCharDst->dwTimeDelete || (strcmp (pCharDst->szName, pChar->szName) != 0)) {
+			ZeroMemory (pCharDst->aCharEfcInfo, sizeof (pCharDst->aCharEfcInfo));
+		}
 		/* 削除中？ */
 		if (pCharDst->dwTimeDelete) {
 			pCharDst->dwTimeDelete = 0;
@@ -2760,6 +2766,11 @@ void RecvDataProcCHARINFO2(PBYTE pData, DWORD dwDataSize)
 			if ((pCharDst->dwX <= (DWORD)g_pMapInfo->nCX) && (pCharDst->dwY <= (DWORD)g_pMapInfo->nCY)) {
 				g_pMapInfo->pdwMapChar[g_pMapInfo->nCX * pCharDst->dwY + pCharDst->dwX] --;
 			}
+		}
+		/* 削除中、または別のキャラに入れ替わった（倒れて消えかけの敵の番号を、
+		   雇ったばかりの傭兵などがもらった）？ 前のキャラのダメージ表示などは引き継がない */
+		if (pCharDst->dwTimeDelete || (strcmp (pCharDst->szName, pChar->szName) != 0)) {
+			ZeroMemory (pCharDst->aCharEfcInfo, sizeof (pCharDst->aCharEfcInfo));
 		}
 		/* 削除中？ */
 		if (pCharDst->dwTimeDelete) {
@@ -4444,9 +4455,7 @@ void RecvDataProcCHARSTATUSHP(BYTE *pData, DWORD dwDataSize)
 {
 	BYTE byCharStateBack;
 	PCMDPARA_CHARSTATUSHP pPara = (PCMDPARA_CHARSTATUSHP)pData;
-	/* NPC（敵・傭兵）は pID が全員 0 なので、テーブルIDで探す
-	   （pID で探すと別のNPCに届き、傭兵のHP表示が敵のHPとちらついていた） */
-	int nNo = (pPara->pID == 0) ? GetCharNo2 (pPara->dwTblID) : GetCharNo (pPara->pID);
+	int nNo = GetCharNo (pPara->pID);
 	PCHARINFO pChar;
 
 	if (nNo < 0) {
@@ -5310,9 +5319,7 @@ void RecvDataProcCHARSTATUSHPMANA(BYTE *pData, DWORD dwDataSize)
 {
 	PCHARINFO pChar;
 	PCMDPARA_CHARSTATUSHPMANA pPara = (PCMDPARA_CHARSTATUSHPMANA)pData;
-	/* NPC（敵・傭兵）は pID が全員 0 なので、テーブルIDで探す
-	   （pID で探すと別のNPCに届き、傭兵のHP表示が敵のHPとちらついていた） */
-	int nNo = (pPara->pID == 0) ? GetCharNo2 (pPara->dwTblID) : GetCharNo (pPara->pID);
+	int nNo = GetCharNo (pPara->pID);
 
 	if (nNo < 0) {
 		return;

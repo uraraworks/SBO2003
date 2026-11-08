@@ -195,6 +195,7 @@ void	RecvDataProcWEBACCOUNT					(PBYTE, DWORD);				/* ブラウザ版のアカ�
 void	RecvDataProcADMINUNDO					(PBYTE, DWORD);				/* 管理者画面の「元に戻す」 */
 void	RecvDataProcNPCROUTE					(PBYTE, DWORD);				/* NPCの巡回ルート */
 void	RecvDataProcRECIPEMAKE					(PBYTE, DWORD);				/* レシピで作ってもらう */
+void	RecvDataProcBATTLEMODE					(PBYTE, DWORD);				/* 戦闘モードの切り替え通知 */
 /* 端末トークン（server/web_account_svr.cpp） */
 BOOL	WebAccTokenToAccount					(LPCSTR, LPSTR, int);		/* 端末トークンからアカウント名を引く */
 static void	SendWebOptBgm					(PCHARINFO);				/* 音楽ON/OFFのアカウント設定を送る */
@@ -411,6 +412,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	NULL,								/* CMD_MAKERINFO(サーバー→クライアントのみ) */
 	NULL,								/* CMD_RECIPEINFO(サーバー→クライアントのみ) */
 	RecvDataProcRECIPEMAKE,				/* CMD_RECIPEMAKE */
+	RecvDataProcBATTLEMODE,				/* CMD_BATTLEMODE */
 	RecvDataProcNPCROUTE,				/* CMD_NPCROUTE */
 	NULL
 };
@@ -3072,7 +3074,7 @@ void RecvDataProc(PBYTE pData, DWORD dwDataSize)
 	}
 
 	/* 管理者用のコマンド（管理者ウィンドウからしか送らないもの）は管理者だけ */
-	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE)) ||
+	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_BATTLEMODE)) ||
 			(byCmd == CMD_CHARITEM)) {
 		if (!CheckAdminBan (nNo)) {
 			SAFE_DELETE_ARRAY (pData);
@@ -4793,6 +4795,23 @@ static BYTE GetAtackRateReq(PCHARINFO pChar, BYTE byData)
 	}
 	return byRet;
 }
+
+/* ========================================================================= */
+/* 関数名：	RecvDataProcBATTLEMODE											 */
+/* 内容：	受信データ処理(戦闘モードの切り替え通知)						 */
+/*			byData 1=戦闘モード 0=解除。傭兵が自分から戦うかに使う			 */
+/* ========================================================================= */
+
+void RecvDataProcBATTLEMODE(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_DATA1 pPara = (PCMDPARA_DATA1)pData;
+
+	if (!IsRecvChar (pPara->dwTblID)) {
+		return;
+	}
+	MercenarySetBattleMode (g_aCharInfo[pPara->dwTblID], pPara->byData != 0);
+}
+
 
 /* ========================================================================= */
 /* 関数名：	RecvDataProcREQ_GUARD											 */
@@ -9855,7 +9874,7 @@ BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, 
 	/* 管理者用のコマンドだけ（ログインや「元に戻す」自体は通さない） */
 	if ((byCmd >= CMD_MAX) || (RecvDataProcTbl[byCmd] == NULL) ||
 			((byCmd < CMD_MAPPARTSADD) && (byCmd != CMD_CHARITEM)) ||
-			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE)) {
+			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_BATTLEMODE)) {
 		return FALSE;
 	}
 

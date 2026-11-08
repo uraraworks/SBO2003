@@ -72,5 +72,6 @@ extern BOOL			MercenaryDamaged	(PCHARINFO pChar, PCHARINFO pMerc);		/* 傭兵が
 extern BOOL			MercenaryItemCheck	(PCHARINFO pMerc, BYTE byItemType);		/* その種類の道具を傭兵に使えるか */
 extern void			MercenaryTailOff	(PCHARINFO pMerc);						/* 傭兵を「ついていく」の列から外す */
 extern void			MercenaryTailOffBack(PCHARINFO pChar);						/* すぐ後ろに並んでいる傭兵を列から外す */
+extern void			MercenarySetBattleMode(PCHARINFO pChar, BOOL bBattle);		/* 雇い主の戦闘モードを覚える */
 
 /* Copyright(C)URARA-works 2026 */

@@ -2914,6 +2914,31 @@ void SendCmdREQ_GUARD(
 
 
 /* ========================================================================= */
+/* 関数名：	SendCmdBATTLEMODE												 */
+/* 内容：	コマンド送信(戦闘モードの切り替え通知)							 */
+/*			サーバーは傭兵が戦うかどうかに使う								 */
+/* ========================================================================= */
+
+void SendCmdBATTLEMODE(
+	BOOL bBattle)		/* [in] TRUE:戦闘モード FALSE:解除 */
+{
+	CMDPARA_DATA1 SendData;
+
+	if (g_nMyCharID < 0) {
+		return;
+	}
+	ZeroMemory (&SendData, sizeof (SendData));
+	SendData.byCmd		= CMD_BATTLEMODE;
+	SendData.pID		= g_pMyID;
+	SendData.byData		= bBattle ? 1 : 0;
+	SendData.dwTblID	= g_aCharInfo[g_nMyCharID]->dwTblID;
+
+	cliSock.Send ((PBYTE)&SendData, sizeof (SendData));
+}
+
+
+
+/* ========================================================================= */
 /* 関数名：	SendCmdRECIPEMAKE												 */
 /* 内容：	コマンド送信(レシピで作ってもらう要求)							 */
 /*			結果は CMD_RECIPEMAKE で返ってくる								 */
