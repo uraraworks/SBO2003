@@ -11,6 +11,7 @@
 #include "SboCliDrawWindow.h"
 #include "SboCliRecvCmd.h"
 #include "AdminWindowOld/AdminDlgNpcRoute.h"
+#include <math.h>
 
 /* ========================================================================= */
 /* 関数プロトタイプ宣言														 */
@@ -36,6 +37,7 @@ void DrawNpcRoute		(void);										/* NPCの巡回情報の描画 */
 static void FillRectClip	(int x, int y, int cx, int cy, COLORREF cl);	/* 画像の外にはみ出さない矩形塗りつぶし */
 static void DrawLineClip	(int x1, int y1, int x2, int y2, int nWidth, COLORREF cl);	/* 線を描く */
 void DrawWeather		(void);										/* 天候の描画 */
+static void DrawMapLight	(const char *pMapDark);						/* 丸くゆらめく灯りの描画 */
 void AddSysMsg			(LPSTR, COLORREF);							/* システムメッセージの追加 */
 
 /* ========================================================================= */
@@ -278,6 +280,19 @@ BOOL DrawScreenMOVE(void)
 	}
 
 	int i;
+	BOOL bLight;
+	char aMapDark[SCRMARTSSIZE];
+
+	/* 暗いマップは、ひとまず見えるマスを明るいまま描いておき、
+	   最後に DrawMapLight で丸い灯りの形に暗くする */
+	bLight = (g_pMapInfo->byLightLevel != 0);
+	if (bLight) {
+		CopyMemory (aMapDark, g_pMapDarkTmp, SCRMARTSSIZE);
+		for (i = 0; i < SCRMARTSSIZE; i ++) {
+			g_pMapDarkTmp[i] = (aMapDark[i] > 1) ? 100 : 0;
+		}
+	}
+
 	for (i = 0; i < DRAW_PARTS_Y * 2 + 3; i ++) {
 		DrawMapLine (i, -1);
 	}
@@ -299,6 +314,10 @@ BOOL DrawScreenMOVE(void)
 		DrawMapLine (i, PARTSHIT_HIDE5);
 	}
 	DrawWeather ();
+	if (bLight) {
+		DrawMapLight (aMapDark);	/* 丸くゆらめく灯りで暗くする */
+		CopyMemory (g_pMapDarkTmp, aMapDark, SCRMARTSSIZE);
+	}
 	DrawChar2 ();			/* エフェクトを描画 */
 	DrawEvent ();			/* イベント情報を描画 */
 	DrawMapEdit ();			/* マップ編集情報を描画 */
@@ -310,6 +329,167 @@ BOOL DrawScreenMOVE(void)
 		InvalidateRect (g_hWndDebug, NULL, TRUE);
 	}
 	return TRUE;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	DrawMapLight													 */
+/* 内容：	丸くゆらめく灯りの描画											 */
+/*			昔はマスごとに段階で暗くしていたので、灯りが四角くカクカクして	 */
+/*			いた。描き終わった画面を1ドットずつ、灯りからの距離でなめらかに	 */
+/*			暗くする。どのマスが見えるか(扉や壁の向こうは見えない)は今まで	 */
+/*			どおり pMapDark(RenewMapDark で作ったもの)で決める				 */
+/* ========================================================================= */
+#define MAPLIGHT_MAX	8									/* 灯りの最大数 */
+
+static void DrawMapLight(const char *pMapDark)
+{
+	int i, x, y, nCount, nLight, nWidth, nHeight, nCX, nCY, nSX, nSY, nMapW;
+	int anX[MAPLIGHT_MAX], anY[MAPLIGHT_MAX];
+	float afR[MAPLIGHT_MAX], fFlicker, fTime;
+	float afVisX[DRAW_PARTS_X * 2 + 3];
+	PCHARINFO pMyChar, pChar;
+	LPBYTE pBits;
+	DWORD dwTime;
+
+	if (g_nMyCharID < 0) {
+		return;
+	}
+	pBits = g_pDibDrawMap->GetBits ();
+	if (pBits == NULL) {
+		return;
+	}
+	nWidth	= g_pDibDrawMap->Width ();
+	nHeight	= g_pDibDrawMap->Height ();
+	nMapW	= DRAW_PARTS_X * 2 + 3;
+	pMyChar	= g_aCharInfo[g_nMyCharID];
+
+	/* たいまつのようなゆらめき(灯りの半径を少しだけ伸び縮みさせる) */
+	dwTime = timeGetTime ();
+	fTime = (float)(dwTime % 600000);
+	fFlicker = 1.0f + 0.035f * sinf (fTime * 0.0071f) +
+			   0.020f * sinf (fTime * 0.0173f + 1.7f) +
+			   0.012f * sinf (fTime * 0.0311f + 0.4f);
+
+	/* 灯りを集める(自分と、灯りを持っているキャラ) */
+	nLight = 0;
+	nCount = g_aCharInfo.GetSize ();
+	for (i = -1; i < nCount; i ++) {
+		int nLevel, xTmp, yTmp;
+
+		if (nLight >= MAPLIGHT_MAX) {
+			break;
+		}
+		if (i < 0) {
+			pChar = pMyChar;
+		} else {
+			pChar = g_aCharInfo[i];
+			if ((pChar == pMyChar) || (pChar->byLightLevel == 0)) {
+				continue;
+			}
+		}
+		xTmp = (int)pMyChar->dwX - (int)pChar->dwX;
+		yTmp = (int)pMyChar->dwY - (int)pChar->dwY;
+		if ((abs (xTmp) > DRAW_PARTS_X + 1) || (abs (yTmp) > DRAW_PARTS_Y + 1)) {
+			continue;
+		}
+		/* 1マス進むごとに暗くなる量(RenewMapDarkWork と同じ) */
+		nLevel = g_pMapInfo->byLightLevel;
+		if (pChar->byLightLevel) {
+			nLevel = g_pMapInfo->byLightLevel - pChar->byLightLevel;
+		}
+		/* 灯りの中心(歩き中のずれも入れて、なめらかについてくるように) */
+		anX[nLight] = (DRAW_PARTS_X + 1) * 32 + 16 - xTmp * 32 - anPosAddTblX[pChar->byDirection] * pChar->byDotMove;
+		anY[nLight] = (DRAW_PARTS_Y + 1) * 32 + 16 - yTmp * 32 - anPosAddTblY[pChar->byDirection] * pChar->byDotMove;
+		/* 明るさが 0 になる距離(ドット)。灯りが強くて暗くならない時は 0 */
+		afR[nLight] = 0.0f;
+		if (nLevel > 0) {
+			afR[nLight] = (100.0f / nLevel + 0.2f) * 32.0f * fFlicker;
+		}
+		nLight ++;
+	}
+
+	/* 画面に見えている範囲だけ処理する */
+	nSX = 32 - anPosAddTblX[pMyChar->byDirection] * pMyChar->byDotMove;
+	nSY = 32 - anPosAddTblY[pMyChar->byDirection] * pMyChar->byDotMove;
+	nCX = SCRSIZEX;
+	nCY = SCRSIZEY;
+	if (nSX < 0) { nCX += nSX; nSX = 0; }
+	if (nSY < 0) { nCY += nSY; nSY = 0; }
+	nCX = min (nCX, nWidth - nSX);
+	nCY = min (nCY, nHeight - nSY);
+
+	for (y = nSY; y < nSY + nCY; y ++) {
+		PDWORD pDst;
+		float fTy, fVisY0, fVisY1;
+		int nTy;
+
+		/* 見えるマスかどうかをマスの中心どうしでなめらかにつなぐ(縦) */
+		fTy = (y - 16) / 32.0f;
+		nTy = (int)floorf (fTy);
+		fTy -= nTy;
+		for (x = 0; x < nMapW; x ++) {
+			int y0 = max (0, min (nTy, DRAW_PARTS_Y * 2 + 2));
+			int y1 = max (0, min (nTy + 1, DRAW_PARTS_Y * 2 + 2));
+			fVisY0 = (pMapDark[x + nMapW * y0] > 1) ? 1.0f : 0.0f;
+			fVisY1 = (pMapDark[x + nMapW * y1] > 1) ? 1.0f : 0.0f;
+			afVisX[x] = fVisY0 + (fVisY1 - fVisY0) * fTy;
+		}
+
+		pDst = (PDWORD)(pBits + (nWidth * 4) * (nHeight - 1 - y)) + nSX;
+		for (x = nSX; x < nSX + nCX; x ++, pDst ++) {
+			float fTx, fVis, fLight;
+			int nTx, x0, x1, nLevel;
+
+			/* 見えるマスかどうか(横) */
+			fTx = (x - 16) / 32.0f;
+			nTx = (int)floorf (fTx);
+			fTx -= nTx;
+			x0 = max (0, min (nTx, nMapW - 1));
+			x1 = max (0, min (nTx + 1, nMapW - 1));
+			fVis = afVisX[x0] + (afVisX[x1] - afVisX[x0]) * fTx;
+			/* 見えるマスの縁だけ少しぼかす(真ん中は暗くしない) */
+			fVis *= 1.6f;
+			if (fVis <= 0.0f) {
+				*pDst &= 0xFF000000;
+				continue;
+			}
+
+			/* 灯りからの距離でなめらかに暗くする(灯りが重なると明るくなる) */
+			fLight = 0.0f;
+			for (i = 0; i < nLight; i ++) {
+				float fDX, fDY, fD;
+				if (afR[i] <= 0.0f) {
+					fLight = 1.0f;
+					break;
+				}
+				fDX = (float)(x - anX[i]);
+				fDY = (float)(y - anY[i]);
+				fD = sqrtf (fDX * fDX + fDY * fDY);
+				if (fD < afR[i]) {
+					fLight += 1.0f - fD / afR[i];
+				}
+			}
+			if (fLight > 1.0f) {
+				fLight = 1.0f;
+			}
+			if (fVis < 1.0f) {
+				fLight *= fVis;
+			}
+
+			nLevel = (int)(fLight * 256.0f);
+			if (nLevel >= 256) {
+				continue;
+			}
+			{
+				DWORD dw = *pDst;
+				DWORD r = ((dw >> 16) & 0xFF) * nLevel >> 8;
+				DWORD g = ((dw >> 8) & 0xFF) * nLevel >> 8;
+				DWORD b = (dw & 0xFF) * nLevel >> 8;
+				*pDst = (dw & 0xFF000000) | (r << 16) | (g << 8) | b;
+			}
+		}
+	}
 }
 
 
