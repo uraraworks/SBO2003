@@ -489,6 +489,51 @@ void SendCmdMAPPARTSINFO(DWORD pIDSend)
 }
 
 /* ========================================================================= */
+/* 関数名：IsCharInfoFullRecv												 */
+/* 内容：キャラ情報を全部見せてよい相手か（本人か管理者）					 */
+/* ========================================================================= */
+static BOOL IsCharInfoFullRecv(DWORD pIDRecv, PCHARINFO pChar)
+{
+	if (pIDRecv == pChar->pID) {
+		return TRUE;
+	}
+	int nRecv = GetCharNo (pIDRecv);
+	if ((nRecv >= 0) && (g_aCharInfo[nRecv]->byAdminLV != ADMINLV_USER)) {
+		return TRUE;
+	}
+	return FALSE;
+}
+
+/* ========================================================================= */
+/* 関数名：MaskCharInfoForOther												 */
+/* 内容：他人に送るキャラ情報から、画面に要らない項目を消す					 */
+/*       （ログイン回数・プレイ時間・作成日・復活地点、NPC の発生範囲・		 */
+/*         発生数・発生間隔・移動確率・索敵範囲・ドロップ率など）。		 */
+/*       クライアントでこれらを使うのは、本人のログイン情報と管理者画面だけ */
+/* ========================================================================= */
+static void MaskCharInfoForOther(PCMDPARA_CHARINFO pSendData)
+{
+	pSendData->wMakeYear			= 0;
+	pSendData->wMakeMonth			= 0;
+	pSendData->wMakeDay				= 0;
+	pSendData->dwStartMapID			= 0;
+	pSendData->dwStartX				= 0;
+	pSendData->dwStartY				= 0;
+	pSendData->dwLoginCount			= 0;
+	pSendData->dwPlayTime			= 0;
+	pSendData->dwStTmplateID		= (DWORD)-1;
+	pSendData->byAreaX				= 0;
+	pSendData->byAreaY				= 0;
+	pSendData->byPutCount			= 0;
+	pSendData->wTimePutInterval		= 0;
+	pSendData->byDropProbability	= 0;
+	pSendData->byMoveProbabilityX	= 0;
+	pSendData->byMoveProbabilityY	= 0;
+	pSendData->bySearchCx			= 0;
+	pSendData->bySearchCy			= 0;
+}
+
+/* ========================================================================= */
 /* 関数名：SendCmdCHARINFO													 */
 /* 内容：コマンド送信(キャラ情報通知)										 */
 /* 日付：2003/05/12															 */
@@ -598,6 +643,11 @@ void SendCmdCHARINFO(DWORD pIDSend, int nNo)
 					pSendData->clName				= pChar->clName;
 					pSendData->clSpeech				= pChar->clSpeech;
 					CopyMemory (pSendData->szName, pChar->szName, sizeof (pSendData->szName));
+
+					/* 本人と管理者以外には、画面に要らない項目を送らない */
+					if (!IsCharInfoFullRecv (pIDSend, pChar)) {
+						MaskCharInfoForOther (pSendData);
+					}
 
 					/* 名前は可変長に詰めて送る（後ろに NPC 発言） */
 					{
@@ -717,6 +767,49 @@ void SendCmdCHARINFO2(DWORD pIDSend, DWORD dwID, int nNo)
 }
 
 /* ========================================================================= */
+/* 関数名：SendCmdInsideCHARINFO											 */
+/* 内容：同画面内のプレイヤーにキャラ情報を送る							 */
+/*       （本人と管理者には全部入り、他の人には項目を消したもの）			 */
+/*       画面内の判定は SendCmdInside2 (SENDINSIDE_INSIDE) と同じ			 */
+/* ========================================================================= */
+static void SendCmdInsideCHARINFO(PCHARINFO pChar, PBYTE pFull, int nFull, PBYTE pMask, int nMask)
+{
+	PMAPINFO pMap = g_aMapInfo[pChar->dwMapID];
+	PDWORD pData = pMap->paTblNoPC;
+	std::vector<DWORD> aIDFull, aIDMask;
+
+	if (pData == NULL) {
+		return;
+	}
+	for (int i = 0; pData[i] != -1; i ++) {
+		PCHARINFO pCharDst = g_aCharInfo[pData[i]];
+		if (pCharDst->byGameState < GAMESTATE_MOVE) {
+			continue;
+		}
+		int x = abs (pCharDst->dwX - pChar->dwX);
+		int y = abs (pCharDst->dwY - pChar->dwY);
+		if (x > DRAW_PARTS_X + 3) {
+			continue;
+		}
+		if (y > DRAW_PARTS_Y + 3) {
+			continue;
+		}
+		if ((pCharDst->pID == pChar->pID) || (pCharDst->byAdminLV != ADMINLV_USER)) {
+			aIDFull.push_back (pCharDst->pID);
+		} else {
+			aIDMask.push_back (pCharDst->pID);
+		}
+	}
+	/* 圧縮とCRCを1回で済ませるため、まとめて送る */
+	if (!aIDFull.empty ()) {
+		svrSock.SendToMulti (&aIDFull[0], (DWORD)aIDFull.size (), pFull, nFull, SENDTIMEOUT, 0);
+	}
+	if (!aIDMask.empty ()) {
+		svrSock.SendToMulti (&aIDMask[0], (DWORD)aIDMask.size (), pMask, nMask, SENDTIMEOUT, 0);
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：SendCmdCHARINFO3													 */
 /* 内容：コマンド送信(キャラ情報通知)										 */
 /* 日付：2003/10/17															 */
@@ -748,6 +841,7 @@ void SendCmdCHARINFO3(int nNo)
 	pSendData->byNpcType			= pChar->byNpcType;
 	pSendData->byDropProbability	= pChar->byDropProbability;
 	pSendData->byMoveProbabilityX	= pChar->byMoveProbabilityX;
+	pSendData->byMoveProbabilityY	= pChar->byMoveProbabilityY;
 	pSendData->bySearchCx			= pChar->bySearchCx;
 	pSendData->bySearchCy			= pChar->bySearchCy;
 	pSendData->byLightLevel			= pChar->byLightLevel;
@@ -790,7 +884,17 @@ void SendCmdCHARINFO3(int nNo)
 		if (nSpeech) {
 			CopyMemory (pPos, pChar->pszNpcSpeech, nSpeech);
 		}
-		SendCmdInside2 (pChar, (LPBYTE)pSendData2, nSize, SENDTIMEOUT, SENDINSIDE_INSIDE);
+		/* 本人と管理者には全部、それ以外の人には要らない項目を消したものを送る */
+		CMDPARA_CHARINFO ParaMask = *pSendData;
+		MaskCharInfoForOther (&ParaMask);
+		int nSizeMask = (int)SboPackSizeCHARINFO (&ParaMask) + nSpeech;
+		PBYTE pSendMask = new BYTE[nSizeMask];
+		PBYTE pPosMask = SboPackPutCHARINFO (pSendMask, &ParaMask);
+		if (nSpeech) {
+			CopyMemory (pPosMask, pChar->pszNpcSpeech, nSpeech);
+		}
+		SendCmdInsideCHARINFO (pChar, pSendData2, nSize, pSendMask, nSizeMask);
+		SAFE_DELETE_ARRAY (pSendMask);
 		SAFE_DELETE_ARRAY (pSendData2);
 	}
 

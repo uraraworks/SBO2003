@@ -13,6 +13,7 @@
  *   D. 経路探索（SEARCH2）       … 実データのマップで、探索の結果が変わらないこと
  *   B. 同画面内への配信          … SendCmdInside2 / SendCmdInsideMap
  *   E. キャラの巡回（TimerProc） … 実データ＋ログイン中のPCで、状態と送信が変わらないこと
+ *   H. キャラ情報の項目消し     … 他人・NPC の情報から、画面に要らない項目が消えること（本人・管理者は全部）
  */
 #include "stdafx.h"
 #include "SboSvrRecvCmd.h"
@@ -720,6 +721,91 @@ static void TestWorld(void)
 
 	/* F. 飛ぶ特技・魔法（移動確率つきの魔法発生）が、近い敵にも当たること */
 	TestShotMagic(aLogin);
+
+	/* H. 他人に送るキャラ情報は、画面に要らない項目（ログイン回数・NPC の発生範囲など）を消す */
+	{
+		printf("== H. CHARINFO mask ==\n");
+		PCHARINFO pMe = g_aCharInfo[aLogin[0]];
+		PCHARINFO pOther = g_aCharInfo[aLogin[1]];
+		/* 同じマスに集めて、画面内の判定を確実に通す */
+		pOther->dwX = pMe->dwX;
+		pOther->dwY = pMe->dwY;
+		int nNpc = -1;
+		for (int i = 0; i < nChars; i ++) {
+			PCHARINFO p = g_aCharInfo[i];
+			if (p->byNpcType != 0 && p->dwMapID == (DWORD)nMap && p->byGameState >= GAMESTATE_MOVE) {
+				nNpc = i;
+				break;
+			}
+		}
+		PCHARINFO pNpc = g_aCharInfo[nNpc];
+		DWORD dwNpcX = pNpc->dwX, dwNpcY = pNpc->dwY;
+		pNpc->dwX = pMe->dwX;
+		pNpc->dwY = pMe->dwY;
+		/* 確かめやすい値を入れておく */
+		pOther->dwLoginCount = 123;
+		pOther->dwPlayTime = 456;
+		pOther->wMakeYear = 2003;
+		pNpc->byAreaX = 7;
+		pNpc->byPutCount = 5;
+		pNpc->wTimePutInterval = 30;
+		pNpc->byMoveProbabilityX = 40;
+		pNpc->bySearchCx = 3;
+		pNpc->byDropProbability = 9;
+		pMe->dwLoginCount = 77;
+		BYTE byAdminBack = pMe->byAdminLV;
+
+		struct { const char *pszLabel; PCHARINFO pChar; int nNo; BYTE byAdmin; } aCase[] = {
+			{"self",        pMe,    aLogin[0], ADMINLV_USER},
+			{"other",       pOther, aLogin[1], ADMINLV_USER},
+			{"npc",         pNpc,   nNpc,      ADMINLV_USER},
+			{"other-admin", pOther, aLogin[1], ADMINLV_ADMINISTRATOR},
+			{"npc-admin",   pNpc,   nNpc,      ADMINLV_ADMINISTRATOR},
+		};
+		for (size_t c = 0; c < sizeof(aCase) / sizeof(aCase[0]); c ++) {
+			pMe->byAdminLV = aCase[c].byAdmin;
+			SvrSendCaptureBegin();
+			SendCmdCHARINFO(pMe->pID, aCase[c].nNo);
+			std::vector<BYTE> aCap;
+			BOOL bRet = SvrSendCaptureEnd(aCap);
+			CMDPARA_CHARINFO Para;
+			ZeroMemory(&Para, sizeof(Para));
+			if (bRet) {
+				SboPackGetCHARINFO(&Para, &aCap[0], &aCap[0] + aCap.size());
+			}
+			printf("charinfo %s ret=%d tbl=%d same=%d login=%u play=%u make=%u area=%u put=%u interval=%u move=%u search=%u drop=%u sttmp=%d\n",
+				aCase[c].pszLabel, bRet, (int)(Para.dwTblID == aCase[c].pChar->dwTblID), (int)(strcmp(Para.szName, aCase[c].pChar->szName) == 0),
+				Para.dwLoginCount, Para.dwPlayTime, Para.wMakeYear, Para.byAreaX, Para.byPutCount, Para.wTimePutInterval,
+				Para.byMoveProbabilityX, Para.bySearchCx, Para.byDropProbability, (int)Para.dwStTmplateID);
+		}
+		/* 同画面内へ配る版（SendCmdCHARINFO3）。NPC の情報を、自分だけが見ている状態で送る */
+		std::vector<BYTE> aState;
+		for (size_t j = 1; j < aLogin.size(); j ++) {
+			aState.push_back(g_aCharInfo[aLogin[j]]->byGameState);
+			g_aCharInfo[aLogin[j]]->byGameState = GAMESTATE_LOGOFF;
+		}
+		for (int a = 0; a < 2; a ++) {
+			pMe->byAdminLV = a ? ADMINLV_ADMINISTRATOR : ADMINLV_USER;
+			SvrSendCaptureBegin();
+			SendCmdCHARINFO3(nNpc);
+			std::vector<BYTE> aCap;
+			BOOL bRet = SvrSendCaptureEnd(aCap);
+			CMDPARA_CHARINFO Para;
+			ZeroMemory(&Para, sizeof(Para));
+			if (bRet) {
+				SboPackGetCHARINFO(&Para, &aCap[0], &aCap[0] + aCap.size());
+			}
+			printf("charinfo3 %s ret=%d area=%u put=%u interval=%u move=%u search=%u drop=%u\n",
+				a ? "admin" : "user", bRet, Para.byAreaX, Para.byPutCount, Para.wTimePutInterval,
+				Para.byMoveProbabilityX, Para.bySearchCx, Para.byDropProbability);
+		}
+		for (size_t j = 1; j < aLogin.size(); j ++) {
+			g_aCharInfo[aLogin[j]]->byGameState = aState[j - 1];
+		}
+		pMe->byAdminLV = byAdminBack;
+		pNpc->dwX = dwNpcX;
+		pNpc->dwY = dwNpcY;
+	}
 }
 
 int main(int argc, char **argv)
