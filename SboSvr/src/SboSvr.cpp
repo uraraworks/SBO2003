@@ -1440,6 +1440,10 @@ BOOL SaveMapInfo(void)
 							WriteData (hFile, "dwY", sizeof (pInfo->dwY), (PBYTE)&pInfo->dwY);				/* 移動先Y座標 */
 							WriteData (hFile, "dwMapID", sizeof (pInfo->dwMapID), (PBYTE)&pInfo->dwMapID);	/* マップID */
 							WriteData (hFile, "byEfect", sizeof (pInfo->byEfect), (PBYTE)&pInfo->byEfect);	/* エフェクト種類 */
+							if (pInfo->byRandomRange) {
+								/* ばらけない時は書かない（古いサーバーでも読めるように） */
+								WriteData (hFile, "byRandomRange", sizeof (pInfo->byRandomRange), (PBYTE)&pInfo->byRandomRange);	/* ばらける範囲 */
+							}
 							WriteFile (hFile, &byTmp, 1, &dwBytes, NULL);	/* 区切り */
 						}
 						break;
@@ -1716,6 +1720,8 @@ BOOL LoadMapInfo(void)
 													CopyMemory (&pInfo->dwMapID, &pData[dwFilePtr], dwSize);	dwFilePtr += dwSize;	continue;
 												} else if (strcmp (pszTmp, "byEfect") == 0) {				/* エフェクト種類 */
 													CopyMemory (&pInfo->byEfect, &pData[dwFilePtr], dwSize);	dwFilePtr += dwSize;	continue;
+												} else if (strcmp (pszTmp, "byRandomRange") == 0) {		/* ばらける範囲 */
+													CopyMemory (&pInfo->byRandomRange, &pData[dwFilePtr], dwSize);	dwFilePtr += dwSize;	continue;
 												}
 											}
 										}

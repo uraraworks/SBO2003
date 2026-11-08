@@ -25,6 +25,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <string>
+#include <set>
 #include <vector>
 
 /* ------------------------------------------------------------------------- */
@@ -545,6 +546,8 @@ static void PrintTownWarp(const char *pszLabel, PCHARINFO pChar)
 	printf("\n");
 }
 
+static void TestShipBed(const std::vector<int> &aLogin);
+
 static void TestTownWarp(const std::vector<int> &aLogin)
 {
 	printf("== I. Town warp ==\n");
@@ -955,6 +958,94 @@ static void TestWorld(void)
 
 	/* I. 町転送の行き先帳（教会で記録した町を覚える・選んだ町へ飛ぶ） */
 	TestTownWarp(aLogin);
+	/* J. 船で目覚めるベッドがばらける */
+	TestShipBed(aLogin);
+}
+
+/* ------------------------------------------------------------------------- */
+/* J. 船で目覚めるベッドがばらける（マップ間移動のばらける範囲）			 */
+/* ------------------------------------------------------------------------- */
+extern void EventProc(PCHARINFO pChar, PEVENTINFO pEvent, BYTE byData);
+extern int  GetMapNo(DWORD dwID);
+
+static void TestShipBed(const std::vector<int> &aLogin)
+{
+	printf("== J. Ship bed ==\n");
+	if (aLogin.size() < 2) {
+		return;
+	}
+	/* 港町レジェンタ(14)の乗り場 (40,54) → ルシー行きの船(40) */
+	PMAPINFO pPort = g_aMapInfo[GetMapNo(14)];
+	PEVENTINFO pEvent = NULL;
+	for (int i = 0; i < pPort->nEventCount; i ++) {
+		PEVENTINFO p = &pPort->pEvent[i];
+		if (p->byType == EVENTTYPE_MAPCHG && p->pData && p->dwX == 40 && p->dwY == 54) {
+			pEvent = p;
+		}
+	}
+	if (!pEvent) {
+		printf("no event\n");
+		return;
+	}
+	PEVENTINFO_MAPCHG pInfo = (PEVENTINFO_MAPCHG)pEvent->pData;
+	PMAPINFO pShip = g_aMapInfo[GetMapNo(pInfo->dwMapID)];
+	WORD wBed = pShip->pwMap[pInfo->dwX + pInfo->dwY * pShip->nCX];
+	printf("ship map=%u dest=(%u,%u) parts=%u\n", pInfo->dwMapID, pInfo->dwX, pInfo->dwY, wBed);
+
+	PCHARINFO pPC = g_aCharInfo[aLogin[0]];
+	PCHARINFO pFriend = g_aCharInfo[aLogin[1]];
+	DWORD dwMapBack = pPC->dwMapID, dwXBack = pPC->dwX, dwYBack = pPC->dwY;
+	DWORD dwFMapBack = pFriend->dwMapID, dwFXBack = pFriend->dwX, dwFYBack = pFriend->dwY;
+	BYTE byRangeBack = pInfo->byRandomRange;
+
+	/* 乗り場へ戻す */
+	struct Local {
+		static void Put(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY) {
+			DeleteTblNoPC((int)pChar->dwTblID);
+			pChar->dwMapID = dwMapID;
+			pChar->dwX = dwX;
+			pChar->dwY = dwY;
+			AddTblNoPC((int)pChar->dwTblID);
+		}
+	};
+	/* 0=いつも同じ、16=客室のベッド全部、3=移動先の近くだけ、16+仲間が寝ているベッドは避ける */
+	struct { BYTE byRange; BOOL bFriendOnBed; } aCase[] = { {0, FALSE}, {16, FALSE}, {3, FALSE}, {16, TRUE} };
+	for (size_t c = 0; c < sizeof(aCase) / sizeof(aCase[0]); c ++) {
+		pInfo->byRandomRange = aCase[c].byRange;
+		DWORD dwFX = pInfo->dwX, dwFY = pInfo->dwY;
+		if (aCase[c].bFriendOnBed) {
+			Local::Put(pFriend, pShip->dwID, dwFX, dwFY);
+		} else {
+			Local::Put(pFriend, dwFMapBack, dwFXBack, dwFYBack);
+		}
+		std::set<std::pair<DWORD, DWORD> > aSeen;
+		int nBad = 0, nOnFriend = 0, nTry = 200;
+		for (int t = 0; t < nTry; t ++) {
+			Local::Put(pPC, pPort->dwID, pEvent->dwX, pEvent->dwY);
+			EventProc(pPC, pEvent, 0);
+			DWORD x = pPC->dwX, y = pPC->dwY;
+			int dx = (int)x - (int)pInfo->dwX, dy = (int)y - (int)pInfo->dwY;
+			int nRange = aCase[c].byRange;
+			if (pPC->dwMapID != pShip->dwID || pShip->pwMap[x + y * pShip->nCX] != wBed ||
+				dx < -nRange || dx > nRange || dy < -nRange || dy > nRange) {
+				nBad ++;
+			}
+			if (aCase[c].bFriendOnBed && x == dwFX && y == dwFY) {
+				nOnFriend ++;
+			}
+			aSeen.insert(std::make_pair(x, y));
+		}
+		printf("shipbed range=%u friend=%d beds=%d bad=%d onfriend=%d list=", aCase[c].byRange, aCase[c].bFriendOnBed,
+			(int)aSeen.size(), nBad, nOnFriend);
+		int n = 0;
+		for (std::set<std::pair<DWORD, DWORD> >::iterator it = aSeen.begin(); it != aSeen.end(); ++ it) {
+			printf("%s(%u,%u)", n ++ ? "," : "", it->first, it->second);
+		}
+		printf("\n");
+	}
+	pInfo->byRandomRange = byRangeBack;
+	Local::Put(pPC, dwMapBack, dwXBack, dwYBack);
+	Local::Put(pFriend, dwFMapBack, dwFXBack, dwFYBack);
 }
 
 int main(int argc, char **argv)

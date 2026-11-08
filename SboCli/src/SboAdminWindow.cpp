@@ -2101,6 +2101,11 @@ void AdminOnCommandMapEvent(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 					GetWindowText (m_hWndEdit3, szTmp, 5);
 					pMap->dwY = atoi (szTmp);
 					pMap->byEfect = (BYTE)SendMessage (m_hWndCombo2, CB_GETCURSEL, 0, 0);
+
+					ZeroMemory (szTmp, sizeof (szTmp));
+					GetWindowText (m_hWndEdit4, szTmp, 5);
+					int nRange = atoi (szTmp);
+					pMap->byRandomRange = (BYTE)((nRange < 0) ? 0 : (nRange > 255) ? 255 : nRange);
 				}
 				break;
 
@@ -5706,6 +5711,8 @@ void AdminOnPaintMapEvent(HDC hDC)
 					MyTextOut (hDC, 0, 64 + 16 * 1, "移動先X座標:");
 					MyTextOut (hDC, 0, 64 + 16 * 2, "移動先Y座標:");
 					MyTextOut (hDC, 0, 64 + 16 * 3 + 2, "エフェクト:");
+					MyTextOut (hDC, 0, 64 + 16 * 5, "ばらける範囲:");
+					MyTextOut (hDC, 12 * 7 + 36, 64 + 16 * 5, "マス(0=しない)");
 				}
 				break;
 
@@ -7515,6 +7522,13 @@ void MakeAdminWndEventInfoType(void)
 			wsprintf (szTmp, "%d", pMap->dwY);
 			SetWindowText (m_hWndEdit3, szTmp);
 			SendMessage (m_hWndCombo2, CB_SETCURSEL, pMap->byEfect, 0);
+
+			/* ばらける範囲（移動先と同じパーツのマスからくじ） */
+			m_hWndEdit4 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+					12 * 7, 64 + 16 * 5, 32, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
+			SendMessage (m_hWndEdit4, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+			wsprintf (szTmp, "%d", pMap->byRandomRange);
+			SetWindowText (m_hWndEdit4, szTmp);
 		}
 		break;
 
