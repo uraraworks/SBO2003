@@ -2611,6 +2611,8 @@ void SendCMDUSEMAGIC(BYTE byID, DWORD dwTblID)
 	pSendData = (PCMDPARA_DATA5)new CMDPARA_DATA5;
 	ZeroMemory (pSendData, sizeof (CMDPARA_DATA5));
 	pSendData->byCmd = CMD_USEMAGIC;
+	/* 町転送の特技なら、選んだ行き先の番号（0=復活位置）を入れる */
+	pSendData->byData = IsTownWarpMagic (byID) ? g_byTownWarpSel : 0;
 	pSendData->pID = g_pMyID;
 	pSendData->dwTblID = g_aCharInfo[g_nMyCharID]->dwTblID;
 	pSendData->dwData1 = byID;

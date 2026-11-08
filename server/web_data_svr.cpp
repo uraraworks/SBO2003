@@ -1452,6 +1452,13 @@ static std::string CharJson(PCHARINFO pChar)
 		out += "[" + JsonNum(pChar->abyRouteX[i]) + "," + JsonNum(pChar->abyRouteY[i]) + "]";
 	}
 	out += "]}";
+	/* 町転送の行き先帳（新しく記録した順。[マップID, 横, 縦]） */
+	out += ",\"townWarp\":[";
+	for (int i = 0; i < pChar->byTownWarpCount && i < MAX_TOWNWARP; i ++) {
+		if (i) out += ",";
+		out += "[" + JsonNum(pChar->adwTownWarpMapID[i]) + "," + JsonNum(pChar->abyTownWarpX[i]) + "," + JsonNum(pChar->abyTownWarpY[i]) + "]";
+	}
+	out += "]";
 	return out;
 }
 
@@ -1766,6 +1773,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataSchema(void)
 					",{\"name\":\"isPlayer\",\"type\":\"bool\",\"label\":\"プレイヤーか\",\"readonly\":true},{\"name\":\"online\",\"type\":\"bool\",\"label\":\"ログイン中か\",\"readonly\":true}"
 					",{\"name\":\"szNpcSpeech\",\"type\":\"string\",\"label\":\"NPC の台詞\",\"note\":\"@5NN は店（NN はそのマップの店の番号）・@cNN は作り手（NN は maker の番号）\"}"
 					",{\"name\":\"jobMagic\",\"type\":\"object\",\"label\":\"転職前の職業で覚えていた特技\",\"readonly\":true}"
+					",{\"name\":\"townWarp\",\"type\":\"object\",\"label\":\"町転送の行き先帳\",\"readonly\":true,\"note\":\"教会で復活位置を記録した町（新しい順）。[マップID, 横, 縦]\"}"
 					",{\"name\":\"route\",\"type\":\"object\",\"label\":\"巡回ルート\",\"note\":\"{mode: 0=折り返す 1=最初に戻る, wait: 止まる秒数 0〜60, points: [[x,y],...] 2〜16 個（巡回をやめる時は []）}。動かない・ランダム移動の NPC だけ\"}"
 					",{\"name\":\"deleted\",\"type\":\"bool\",\"label\":\"消す\",\"note\":\"変更に {\\\"deleted\\\": true} を入れるとその NPC を消す（記録は残り、元に戻すと足し直す）\"}");
 			break;
@@ -2010,7 +2018,7 @@ static bool CharRouteSame(PCHARINFO p, int nMode, int nWait, const std::vector<i
 /* キャラ（NPC）の変更・追加・削除。bDeleted は消した時 true（record は null） */
 static bool CharApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::string &strErr, std::string &strRecord, int &nIDOut, bool &bDeleted)
 {
-	static const char *apszExtra[] = { "szNpcSpeech", "route", "deleted", "isPlayer", "online", "jobMagic", "npcId", NULL };
+	static const char *apszExtra[] = { "szNpcSpeech", "route", "deleted", "isPlayer", "online", "jobMagic", "townWarp", "npcId", NULL };
 	PCHARINFO pSrc = bAdd ? NULL : g_aCharInfo[nID];
 	DWORD dwNpcIdAdd = 0;
 	bDeleted = false;

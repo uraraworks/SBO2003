@@ -111,6 +111,7 @@ void DrawWindowITEMINFO							(PWNDINFO);			/* アイテム情報 */
 void DrawWindowDEAD_COMMAND						(PWNDINFO);			/* 死亡中：コマンド */
 void DrawWindowSTATUSMAGIC						(PWNDINFO);			/* 強さ：覚えている特技 */
 void DrawWindowMAKER							(PWNDINFO);			/* 作り手（レシピ）：作れる物の一覧・確認 */
+void DrawWindowTOWNWARP						(PWNDINFO);			/* 町転送：行き先の選択 */
 
 void DrawWindowSUBSUGOROKU_JOINMODE				(PWNDINFO);			/* ウィンドウの描画(すごろく：参加モード選択) */
 void DrawWindowSUBSUGOROKU_COMMAND				(PWNDINFO);			/* ウィンドウの描画(すごろく：行動選択) */
@@ -301,6 +302,7 @@ void DrawWindow(CImg32 *pDib, int x, int y)
 		case WNDTYPE_DEAD_COMMAND:			DrawWindowDEAD_COMMAND (pWnd);			break;
 		case WNDTYPE_STATUSMAGIC:			DrawWindowSTATUSMAGIC (pWnd);			break;
 		case WNDTYPE_MAKER:					DrawWindowMAKER (pWnd);					break;
+		case WNDTYPE_TOWNWARP:				DrawWindowTOWNWARP (pWnd);				break;
 		}
 		pDib->BltAlpha2 (pWnd->nX + x, pWnd->nY + y, pWnd->nCx, pWnd->nCy, pWnd->pDib, 0, 0, 15, TRUE);
 	}
@@ -2896,6 +2898,42 @@ void DrawWindowCOMMANDMAGIC(PWNDINFO pWnd)
 	for (i = 0; i < nCount; i ++) {
 		PMAGICINFO pInfo = g_aMagicInfo[g_aMagicInfoWalk[i]];
 		wsprintf (szTmp, "%s", pInfo->szName);
+		TextOut2 (hDC, 32, 16 + i * 16, szTmp, RGB (255, 255, 255));
+	}
+
+	SelectObject (hDC, hFontOld);
+	pWnd->pDib->Unlock ();
+	pWnd->dwTimeDrawStart = timeGetTime ();
+
+	DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
+}
+
+/* ========================================================================= */
+/* 関数名：DrawWindowTOWNWARP												 */
+/* 内容：ウィンドウの描画(町転送：行き先の選択)								 */
+/* ========================================================================= */
+void DrawWindowTOWNWARP(PWNDINFO pWnd)
+{
+	if (pWnd->dwTimeDrawStart) {
+		DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
+		return;
+	}
+
+	DrawWindowFrame (pWnd);
+
+	HDC hDC = pWnd->pDib->Lock ();
+	HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFontBasic);
+
+	SetBkColor (hDC, RGB (40, 40, 40));
+	TextOut2 (hDC, 48, 0, "行き先", RGB (255, 255, 255));
+	SetBkMode (hDC, TRANSPARENT);
+	TextOut2 (hDC, 48, 0, "行き先", RGB (255, 255, 255));
+
+	char szTmp[MAX_TOWNWARPNAME + 32];
+	int i;
+
+	for (i = 0; i < pWnd->nData2; i ++) {
+		GetTownWarpLabel (i, szTmp, sizeof (szTmp));
 		TextOut2 (hDC, 32, 16 + i * 16, szTmp, RGB (255, 255, 255));
 	}
 

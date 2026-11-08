@@ -94,6 +94,7 @@ extern void SendCmdMAKERINFO			(DWORD, WORD);									/* コマンド送信(作�
 extern void SendCmdRECIPEINFO			(DWORD, WORD);									/* コマンド送信(レシピ情報) */
 extern void SendCmdRECIPEINFOALL		(DWORD);										/* コマンド送信(作り手とレシピを全部) */
 extern void SendCmdRECIPEMAKE			(DWORD, BYTE, BYTE, WORD);						/* コマンド送信(作ってもらった結果) */
+extern void SendCmdTOWNWARP			(DWORD);										/* コマンド送信(町転送の行き先一覧を本人へ) */
 extern void SendCmdSubBombTime			(BYTE, PSUBGAME_BOMBINFO);						/* サブゲーム用コマンド送信(爆弾ゲーム：残り時間通知) */
 extern void SendCmdSubBOMBINFO			(DWORD, BYTE, PSUBGAME_BOMBINFO);				/* サブゲーム用コマンド送信(爆弾ゲーム：設定) */
 extern void SendCmdSubBOMBSTOP			(DWORD, BYTE, PSUBGAME_BOMBINFO);				/* サブゲーム用コマンド送信(爆弾ゲーム：試合中止) */

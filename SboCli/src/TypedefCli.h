@@ -143,6 +143,7 @@ enum {
 	WNDTYPE_DEAD_COMMAND,										/* 死亡中：コマンド */
 	WNDTYPE_STATUSMAGIC,										/* 強さ：覚えている特技 */
 	WNDTYPE_MAKER,												/* 作り手（レシピ）：作れる物の一覧・確認 */
+	WNDTYPE_TOWNWARP,											/* 町転送：行き先の選択 */
 };
 
 /* 作り手ウィンドウ(WNDTYPE_MAKER)の nType2 */

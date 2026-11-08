@@ -1029,4 +1029,22 @@ charinfo other-admin ret=1 tbl=1 same=1 login=123 play=456 make=2003 area=0 put=
 charinfo npc-admin ret=1 tbl=1 same=1 login=0 play=0 make=0 area=7 put=5 interval=30 move=40 search=3 drop=9 sttmp=-1
 charinfo3 user ret=1 area=0 put=0 interval=0 move=0 search=0 drop=0
 charinfo3 admin ret=1 area=7 put=5 interval=30 move=40 search=3 drop=9
+== I. Town warp ==
+townwarp magic24=1 magic25=0 magic5=0 slot lv1=1 lv4=1 lv5=2 lv10=3 lv15=4 lv99=4
+townwarp rec0 book=1 list=0(26,50)
+townwarp rec1 book=2 list=14(9,12),0(26,50)
+townwarp rec2 book=3 list=35(13,30),14(9,12),0(26,50)
+townwarp rec3 book=4 list=39(51,40),35(13,30),14(9,12),0(26,50)
+townwarp rec4 book=4 list=14(9,12),39(51,40),35(13,30),0(26,50)
+townwarp rec5 book=4 list=43(32,50),14(9,12),39(51,40),35(13,30)
+townwarp rec6 book=4 list=51(35,6),43(32,50),14(9,12),39(51,40)
+townwarp start0 book=4 list=0(26,50),51(35,6),43(32,50),14(9,12),39(51,40)
+townwarp map0 flg=00 cast=(20,8)
+townwarp cast lv=15 sel=0 floor dest=1:0 -> friend map=0 x=26 y=53
+townwarp cast lv=15 sel=1 floor dest=1:51 -> friend map=51 x=35 y=8
+townwarp cast lv=15 sel=3 floor dest=1:14 -> friend map=14 x=9 y=14
+townwarp cast lv=15 sel=4 floor dest=1:0 -> friend map=0 x=26 y=53
+townwarp cast lv=10 sel=3 floor dest=1:0 -> friend map=0 x=26 y=53
+townwarp cast lv=1 sel=1 floor dest=1:0 -> friend map=0 x=26 y=53
+townwarp cast lv=5 sel=1 floor dest=1:51 -> friend map=51 x=35 y=8
 == done ==
