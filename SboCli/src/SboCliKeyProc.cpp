@@ -1027,6 +1027,8 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 				g_bBattleMode = TRUE;
 				AddSysMsg ("戦闘モードに切り替えました。", RGB (255, 255, 255));
 			}
+			/* 傭兵は戦闘モードの時だけ自分から戦うので、サーバーへ知らせる */
+			SendCmdBATTLEMODE (g_bBattleMode);
 		}
 	}
 }

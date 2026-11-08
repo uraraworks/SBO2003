@@ -69,6 +69,8 @@ typedef struct _MERCINFO {
 	DWORD	dwOwnerPID;									/* 雇い主のプレイヤーID(ログインし直した別の人と間違えないため) */
 } MERCINFO;
 static std::map<DWORD, MERCINFO> s_mapMerc;
+/* 戦闘モード中の雇い主(テーブルID→pID。pID が違えば別の人なので戦闘モードではない) */
+static std::map<DWORD, DWORD> s_mapBattleMode;
 
 static void	MercenaryRemove		(PCHARINFO pMerc, PCHARINFO pOwner, LPCSTR pszFmt);	/* 傭兵を消す */
 static int	GetMercRecipient	(PCHARINFO pOwner, PCHARINFO *apChar, int nMax);	/* 傭兵のことを知らせる相手 */
@@ -77,6 +79,7 @@ static BOOL	CanPutChar			(PCHARINFO pChar, DWORD dwMapID, int x, int y);		/* そ
 static BOOL	FindPosNearOwner	(PCHARINFO pChar, PCHARINFO pOwner, int &x, int &y);	/* 雇い主のとなりの空いたマス */
 static DWORD GetMercAtackWait	(PCHARINFO pChar);									/* 攻撃の間隔(ms) */
 static void	SendTailResult		(PCHARINFO pChar, DWORD dwTailTblID, DWORD dwResult);	/* 「ついていく」の結果を本人に知らせる */
+static BOOL	IsOwnerBattleMode	(PCHARINFO pOwner);									/* 雇い主が戦闘モードか */
 
 
 /* ========================================================================= */
@@ -359,6 +362,10 @@ BOOL CCharProcMERCENARY::ProcBattle(PCHARINFO pOwner, DWORD dwTime)
 		BOOL bDrop = (IsEnemyValid (m_dwEnemy) == FALSE);
 		if (!bDrop) {
 			pEnemy = g_aCharInfo[m_dwEnemy];
+			/* 雇い主が戦闘モードを解除したら、戦いをやめる */
+			if (IsOwnerBattleMode (pOwner) == FALSE) {
+				bDrop = TRUE;
+			}
 			if ((abs ((int)pEnemy->dwX - (int)pOwner->dwX) + abs ((int)pEnemy->dwY - (int)pOwner->dwY) > MERC_LEASH) ||
 				(abs ((int)m_pChar->dwX - (int)pOwner->dwX) + abs ((int)m_pChar->dwY - (int)pOwner->dwY) > MERC_LEASHSELF)) {
 				bDrop = TRUE;
@@ -478,6 +485,10 @@ DWORD CCharProcMERCENARY::FindEnemy(PCHARINFO pOwner)
 
 	dwRet = (DWORD)-1;
 	nDistMin = 0;
+	/* 雇い主が戦闘モードでなければ戦わない(殴られても、ついていくだけ) */
+	if (IsOwnerBattleMode (pOwner) == FALSE) {
+		return dwRet;
+	}
 	pMap = g_aMapInfo[m_pChar->dwMapID];
 	pData = pMap->paTblNoNPC;
 	for (j = 0; j < (int)pMap->dwCountTblNoNPC; j ++) {
@@ -1498,4 +1509,39 @@ static void SendTailResult(PCHARINFO pChar, DWORD dwTailTblID, DWORD dwResult)
 	}
 	Packet.Make (pChar->dwTblID, dwTailTblID, dwResult);
 	svrSock.SendTo (pChar->pID, Packet.Get (), Packet.GetSize ());
+}
+
+
+/* ========================================================================= */
+/* 関数名：	MercenarySetBattleMode											 */
+/* 内容：	雇い主の戦闘モードを覚える（クライアントからの知らせ）			 */
+/*			戦闘モードは画面の中だけの切り替えなので、知らせてもらって使う	 */
+/* ========================================================================= */
+
+void MercenarySetBattleMode(PCHARINFO pChar, BOOL bBattle)
+{
+	if ((pChar == NULL) || (pChar->pID == 0) || (pChar->byNpcType != NPCTYPE_INIT)) {
+		return;
+	}
+	if (bBattle) {
+		s_mapBattleMode[pChar->dwTblID] = pChar->pID;
+	} else {
+		s_mapBattleMode.erase (pChar->dwTblID);
+	}
+}
+
+
+/* ========================================================================= */
+/* 関数名：	IsOwnerBattleMode												 */
+/* 内容：	雇い主が戦闘モードか(つなぎ直した等で pID が変わっていれば違う)	 */
+/* ========================================================================= */
+
+static BOOL IsOwnerBattleMode(PCHARINFO pOwner)
+{
+	std::map<DWORD, DWORD>::iterator it = s_mapBattleMode.find (pOwner->dwTblID);
+
+	if (it == s_mapBattleMode.end ()) {
+		return FALSE;
+	}
+	return (it->second == pOwner->pID);
 }

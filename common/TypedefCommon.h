@@ -270,6 +270,7 @@ enum {
 	CMD_MAKERINFO,													/* 作り手情報(サーバー→クライアント) */
 	CMD_RECIPEINFO,													/* レシピ情報(サーバー→クライアント) */
 	CMD_RECIPEMAKE,													/* レシピで作ってもらう(クライアント→サーバー。結果はサーバー→クライアント) */
+	CMD_BATTLEMODE,													/* 戦闘モードの切り替え通知(クライアント→サーバー。傭兵が見る) */
 /* 以下、管理者用（CMD_MAPPARTSADD 以上は自動で管理者専用になる。CMD_RECIPEMAKE より後ろに足す） */
 	CMD_NPCROUTE,													/* NPCの巡回ルート */
 	CMD_MAX
