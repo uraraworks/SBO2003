@@ -740,4 +740,42 @@ void GetTownWarpLabel(int nNo, LPSTR pszDst, int nSize)
 	pszDst[nSize - 1] = 0;
 }
 
+/* ========================================================================= */
+/* 関数名：GetTownWarpTitle													 */
+/* 内容：町転送の一覧ウィンドウの見出し										 */
+/* ========================================================================= */
+LPCSTR GetTownWarpTitle(int nMode)
+{
+	if (nMode == TOWNWARPWND_FORGET) {
+		return "どの町を忘れますか？";
+	}
+	return "行き先";
+}
+
+/* ========================================================================= */
+/* 関数名：TownWarpNeedForget												 */
+/* 内容：教会で dwMapID の町を記録する時に、忘れる町を選ぶ必要があるか		 */
+/*		 （選べる行き先がもういっぱいで、その町がまだ入っていない時）		 */
+/*		 選べる行き先が1つ（Lv1～4）の時は、入れ替わるだけなので聞かない	 */
+/* ========================================================================= */
+BOOL TownWarpNeedForget(DWORD dwMapID)
+{
+	int i, nCount, nSlot;
+
+	if ((g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ())) {
+		return FALSE;
+	}
+	nSlot = TOWNWARP_SLOT (g_aCharInfo[g_nMyCharID]->byLevel);
+	nCount = GetTownWarpSelectCount ();
+	if ((nSlot < 2) || (nCount < nSlot)) {
+		return FALSE;
+	}
+	for (i = 0; i < nCount; i ++) {
+		if (g_TownWarpInfo.adwMapID[i] == dwMapID) {
+			return FALSE;
+		}
+	}
+	return TRUE;
+}
+
 /* Copyright(C)URARA-works 2003-2005 */

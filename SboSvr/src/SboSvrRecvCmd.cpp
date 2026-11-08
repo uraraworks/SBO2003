@@ -8006,12 +8006,10 @@ void RecvDataProcSETSTARTPOS(PBYTE pData, DWORD dwDataSize)
 	if (!CheckMsgCode (pChar, '8', (int)pRecv->dwMapID, (int)pRecv->byX, (int)pRecv->byY)) {
 		return;
 	}
-	pChar->dwStartMapID = pRecv->dwMapID;
-	pChar->dwStartX = (DWORD)pRecv->byX;
-	pChar->dwStartY = (DWORD)pRecv->byY;
-
-	/* 町転送の行き先帳にも書いて、一覧を送り直す */
-	TownWarpRecord (pChar);
+	/* 復活位置を記録して町転送の行き先帳にも書き、一覧を送り直す。
+	   行き先がいっぱいの時は、byFlg=1 なら byDirection の町を忘れる（無ければ一番古い町） */
+	TownWarpRecord (pChar, pRecv->dwMapID, (DWORD)pRecv->byX, (DWORD)pRecv->byY,
+		(pRecv->byFlg == 1) ? (int)pRecv->byDirection : -1);
 	SendCmdTOWNWARP (pChar->dwTblID);
 }
 

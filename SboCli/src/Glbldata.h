@@ -243,6 +243,8 @@ extern CAdminWindow *g_pAdminWindow;									/* 管理者ウィンドウ */
 extern BOOL IsTownWarpMagic		(BYTE byID);						/* 町転送の特技か判定 */
 extern int GetTownWarpSelectCount	(void);							/* 町転送で選べる行き先の数 */
 extern void GetTownWarpLabel	(int nNo, LPSTR pszDst, int nSize);	/* 行き先の表示名を取得 */
+extern LPCSTR GetTownWarpTitle	(int nMode);						/* 町転送の一覧ウィンドウの見出し */
+extern BOOL TownWarpNeedForget	(DWORD dwMapID);					/* 教会で記録する時に忘れる町を選ぶ必要があるか */
 
 /* 向き別縦横増減テーブル */
 extern  int anPosAddTblX[],

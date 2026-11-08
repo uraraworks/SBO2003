@@ -161,6 +161,12 @@ enum {
 #define STATUSMAGIC_EXPLAIN_CY		(16 * 2 + 16 * STATUSMAGIC_EXPLAIN_LINE)	/* 説明欄の高さ */
 #define STATUSMAGIC_LIST_CY(n)		(16 * (2 + max (1, (n))))					/* 一覧の高さ（特技が無くても1行分） */
 
+/* 町転送の一覧ウィンドウ(WNDTYPE_TOWNWARP)の nType2 */
+enum {
+	TOWNWARPWND_USE = 0,										/* 町転送を使う時の行き先選び */
+	TOWNWARPWND_FORGET,											/* 教会で記録する時、いっぱいなので忘れる町を選ぶ（dwData に記録する位置） */
+};
+
 /* はい/いいえ種別 */
 enum {
 	IDCONFIRMTYPE_DROP = 1,										/* 捨てる */

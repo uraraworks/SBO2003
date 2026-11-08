@@ -532,7 +532,7 @@ static void TestSugorokuViewer(void)
 /* ------------------------------------------------------------------------- */
 extern BOOL IsTownWarpMagic(BYTE byID);
 extern int  TownWarpMakeList(PCHARINFO pChar, PDWORD padwMapID, PDWORD padwX, PDWORD padwY);
-extern void TownWarpRecord(PCHARINFO pChar);
+extern void TownWarpRecord(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY, int nForgetMapID);
 
 static void PrintTownWarp(const char *pszLabel, PCHARINFO pChar)
 {
@@ -557,20 +557,34 @@ static void TestTownWarp(const std::vector<int> &aLogin)
 
 	PCHARINFO pPC = g_aCharInfo[aLogin[0]];
 	PCHARINFO pFriend = g_aCharInfo[aLogin[1]];
-	pPC->byTownWarpCount = 0;
-	/* 教会で記録する順：始まりの町→港町→マイス→ルシー→港町（上に戻る）→サニアス→バオ（一番古いのが押し出される） */
-	static const struct { DWORD dwMap; BYTE x, y; } aRec[] = {
-		{0, 26, 50}, {14, 9, 12}, {35, 13, 30}, {39, 51, 40}, {14, 9, 12}, {43, 32, 50}, {51, 35, 6},
+	BYTE byLevelRec = pPC->byLevel;
+	/* 教会で記録する順（Lv15＝4つまで）：始まりの町→港町→マイス→ルシー→港町（上に戻る）→
+	   サニアス（忘れる町の指定なし＝一番古い町）→バオ（マイスを忘れる）→ゼニー（一覧に無い町を指定＝一番古い町）
+	   続けて Lv5（2つまで）でブルアイ、Lv1（1つだけ）でリルシェ */
+	static const struct { BYTE byLevel; DWORD dwMap; BYTE x, y; int nForget; } aRec[] = {
+		{15, 0, 26, 50, -1}, {15, 14, 9, 12, -1}, {15, 35, 13, 30, -1}, {15, 39, 51, 40, -1}, {15, 14, 9, 12, -1},
+		{15, 43, 32, 50, -1}, {15, 51, 35, 6, 35}, {15, 55, 60, 100, 99}, {5, 52, 29, 50, 14}, {1, 63, 10, 20, -1},
 	};
+	pPC->byTownWarpCount = 0;
+	pPC->dwStartMapID = 0;
+	pPC->dwStartX = 26;
+	pPC->dwStartY = 50;
 	for (size_t i = 0; i < sizeof(aRec) / sizeof(aRec[0]); i ++) {
-		pPC->dwStartMapID = aRec[i].dwMap;
-		pPC->dwStartX = aRec[i].x;
-		pPC->dwStartY = aRec[i].y;
-		TownWarpRecord(pPC);
+		pPC->byLevel = aRec[i].byLevel;
+		TownWarpRecord(pPC, aRec[i].dwMap, aRec[i].x, aRec[i].y, aRec[i].nForget);
 		char sz[32];
 		sprintf(sz, "rec%d", (int)i);
 		PrintTownWarp(sz, pPC);
 	}
+	/* キャスト用に Lv15 の行き先帳を作り直す（始まりの町→港町→マイス→ルシー→バオ→始まりの町） */
+	pPC->byLevel = 15;
+	pPC->byTownWarpCount = 0;
+	TownWarpRecord(pPC, 14, 9, 12, -1);
+	TownWarpRecord(pPC, 39, 51, 40, -1);
+	TownWarpRecord(pPC, 43, 32, 50, -1);
+	TownWarpRecord(pPC, 51, 35, 6, -1);
+	PrintTownWarp("cast", pPC);
+	pPC->byLevel = byLevelRec;
 	/* 復活位置が行き先帳に無い町（管理者が動かした等）でも、0 番目は復活位置 */
 	pPC->dwStartMapID = 0;
 	pPC->dwStartX = 26;

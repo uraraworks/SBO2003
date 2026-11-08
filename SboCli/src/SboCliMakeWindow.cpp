@@ -109,7 +109,7 @@ PWNDINFO MakeWindowSUBSUGOROKU_IDLE				(void);				/* すごろく：平常状態
 
 PWNDINFO MakeWindowMAKER						(int);				/* 作り手：作れる物の一覧 */
 PWNDINFO MakeWindowMAKER_CONF					(int);				/* 作り手：確認 */
-PWNDINFO MakeWindowTOWNWARP					(void);				/* 町転送：行き先の選択 */
+PWNDINFO MakeWindowTOWNWARP					(int nMode);				/* 町転送：行き先の選択 */
 int MakerGetRecipeList							(int, int *, int);	/* 作り手の一覧に出すレシピの番号を並び順で取得 */
 int MakerGetCursorRecipe						(PWNDINFO);			/* 一覧のカーソル位置のレシピの番号 */
 int MakerCountHave								(WORD);				/* 材料として使える数（持ち物+預かり所） */
@@ -2014,7 +2014,7 @@ PWNDINFO MakeWindowCOMMANDMAGIC(void)
 /* 関数名：MakeWindowTOWNWARP												 */
 /* 内容：ウィンドウの作成(町転送：行き先の選択)								 */
 /* ========================================================================= */
-PWNDINFO MakeWindowTOWNWARP(void)
+PWNDINFO MakeWindowTOWNWARP(int nMode)
 {
 	PWNDINFO pWnd = new WNDINFO;
 	ZeroMemory (pWnd, sizeof (WNDINFO));
@@ -2022,7 +2022,7 @@ PWNDINFO MakeWindowTOWNWARP(void)
 	g_dwNewID ++;
 
 	char szTmp[MAX_TOWNWARPNAME + 32];
-	int i, nCount = GetTownWarpSelectCount (), nLen = SboTextWidth ("行き先"), nLenTmp;
+	int i, nCount = GetTownWarpSelectCount (), nLen = SboTextWidth (GetTownWarpTitle (nMode)), nLenTmp;
 	for (i = 0; i < nCount; i ++) {
 		GetTownWarpLabel (i, szTmp, sizeof (szTmp));
 		nLenTmp = SboTextWidth (szTmp);
@@ -2042,6 +2042,7 @@ PWNDINFO MakeWindowTOWNWARP(void)
 	pWnd->nCx = min (pWnd->nCx, SCRSIZEX - pWnd->nX);
 	pWnd->nCy = 16 * (2 + max (1, pWnd->nData2));
 	pWnd->nType = WNDTYPE_TOWNWARP;
+	pWnd->nType2 = nMode;
 	pWnd->pDib = new CImg32;
 	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
 	pWnd->pDib->SetColorKey (RGB (40, 40, 40));

@@ -94,7 +94,7 @@ void SendCmdTRADEINFO		(void);									/* 取り引き情報 */
 void SendCmdTRADEPROC		(void);									/* 取り引き決定 */
 void SendCmdLEAVEGOLD		(DWORD);								/* お金預ける */
 void SendCmdLEAVEGOLDGET	(DWORD);								/* 預けてるお金取得 */
-void SendCmdSETSTARTPOS		(BYTE, BYTE, BYTE);						/* 復活座標設定 */
+void SendCmdSETSTARTPOS		(BYTE, BYTE, BYTE, int nForgetMapID);	/* 復活座標設定 */
 void SendCmdCHGPASSWORD		(DWORD, LPSTR);							/* パスワード更新 */
 void SendCmdLEAVEINFOGET	(DWORD);								/* 預かり所情報取得 */
 void SendCmdLEAVEINFO		(DWORD);								/* 預かり所情報 */
@@ -2285,7 +2285,7 @@ void SendCmdLEAVEGOLDGET(DWORD dwGold)
 /* 内容：コマンド送信(復活座標設定)											 */
 /* 日付：2004/01/23															 */
 /* ========================================================================= */
-void SendCmdSETSTARTPOS(BYTE byMapID, BYTE byX, BYTE byY)
+void SendCmdSETSTARTPOS(BYTE byMapID, BYTE byX, BYTE byY, int nForgetMapID)
 {
 	PCMDPARA_CHARPOS pSendData;
 
@@ -2297,6 +2297,11 @@ void SendCmdSETSTARTPOS(BYTE byMapID, BYTE byX, BYTE byY)
 	pSendData->dwMapID = (DWORD)byMapID;
 	pSendData->byX = byX;
 	pSendData->byY = byY;
+	/* 町転送の行き先から忘れる町（byFlg=1 の時だけ。マップIDは byDirection に入れる） */
+	if ((nForgetMapID >= 0) && (nForgetMapID <= 0xFF)) {
+		pSendData->byFlg = 1;
+		pSendData->byDirection = (BYTE)nForgetMapID;
+	}
 
 	cliSock.Send ((PBYTE)pSendData, sizeof (CMDPARA_CHARPOS));
 	delete pSendData;

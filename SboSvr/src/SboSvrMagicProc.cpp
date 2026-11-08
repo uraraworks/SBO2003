@@ -32,7 +32,7 @@ BOOL IsTownWarpMagic(BYTE byID);										/* 町転送の特技か */
 static BOOL IsTownWarpMagicInfo(PMAGICINFO pInfo);						/* 町転送の特技か(魔法情報) */
 static void TownWarpGetDest(PCHARINFO pChar, BYTE bySel, PDWORD pdwMapID, PDWORD pdwX, PDWORD pdwY);	/* 選んだ行き先を取り出す */
 int  TownWarpMakeList(PCHARINFO pChar, PDWORD padwMapID, PDWORD padwX, PDWORD padwY);	/* 町転送の行き先一覧を作る */
-void TownWarpRecord(PCHARINFO pChar);									/* 今の復活位置を行き先帳に書く */
+void TownWarpRecord(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY, int nForgetMapID);	/* 教会で復活位置を記録し、行き先帳に書く */
 static BOOL MagicProcSub(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget, BOOL bItem);	/* 魔法処理(本体) */
 static BYTE GetTarget						(PCHARINFO, BYTE);			/* キャラ種別の取得 */
 static void MakeCharTblTarget_SELF			(PARRAYDWORD, PCHARINFO, PMAGICINFO);				/* ターゲットキャラの設定(自分) */
@@ -2012,36 +2012,62 @@ static void TownWarpGetDest(PCHARINFO pChar, BYTE bySel, PDWORD pdwMapID, PDWORD
 
 /* ========================================================================= */
 /* 関数名：TownWarpRecord													 */
-/* 内容：今の復活位置を行き先帳のいちばん上に書く（同じ町は書き直し、		 */
-/*		 いっぱいなら一番古い町を消す）。職業に関係なくキャラに 1 冊		 */
+/* 内容：教会で復活位置を記録する。行き先帳のいちばん上にその町を書き、		 */
+/*		 選べる数（TOWNWARP_SLOT）がいっぱいなら nForgetMapID の町を忘れる	 */
+/*		 （-1 や一覧に無い町なら一番古い町）。すでに入っている町なら上へ移す	 */
+/*		 職業に関係なくキャラに 1 冊												 */
 /* ========================================================================= */
-void TownWarpRecord(PCHARINFO pChar)
+void TownWarpRecord(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY, int nForgetMapID)
 {
-	int i, nFound;
+	DWORD adwMapID[MAX_TOWNWARP + 1], adwX[MAX_TOWNWARP + 1], adwY[MAX_TOWNWARP + 1];
+	int i, nCount, nSlot, nNew;
+	BOOL bFound;
 
-	nFound = -1;
-	for (i = 0; (i < pChar->byTownWarpCount) && (i < MAX_TOWNWARP); i ++) {
-		if (pChar->adwTownWarpMapID[i] == pChar->dwStartMapID) {
-			nFound = i;
-			break;
+	/* 記録する前の一覧（選べる分だけ） */
+	nCount = TownWarpMakeList (pChar, adwMapID, adwX, adwY);
+	nSlot = TOWNWARP_SLOT (pChar->byLevel);
+	if (nCount > nSlot) {
+		nCount = nSlot;
+	}
+	bFound = FALSE;
+	for (i = 0; i < nCount; i ++) {
+		if (adwMapID[i] == dwMapID) {
+			bFound = TRUE;
 		}
 	}
-	if (nFound < 0) {
-		/* 新しい町：いっぱいなら一番下（一番古い町）を押し出す */
-		if (pChar->byTownWarpCount < MAX_TOWNWARP) {
-			pChar->byTownWarpCount ++;
+	/* 新しい町でいっぱいなら、忘れる町を決める */
+	if (!bFound && (nCount >= nSlot)) {
+		BOOL bOK = FALSE;
+		for (i = 0; i < nCount; i ++) {
+			if ((nForgetMapID >= 0) && (adwMapID[i] == (DWORD)nForgetMapID)) {
+				bOK = TRUE;
+			}
 		}
-		nFound = pChar->byTownWarpCount - 1;
+		if (!bOK) {
+			nForgetMapID = (int)adwMapID[nCount - 1];
+		}
+	} else {
+		nForgetMapID = -1;
 	}
-	/* 上から nFound 番目までを 1 つずつ下げて、いちばん上に書く */
-	for (i = nFound; i > 0; i --) {
-		pChar->adwTownWarpMapID[i]	= pChar->adwTownWarpMapID[i - 1];
-		pChar->abyTownWarpX[i]		= pChar->abyTownWarpX[i - 1];
-		pChar->abyTownWarpY[i]		= pChar->abyTownWarpY[i - 1];
+
+	/* いちばん上に記録する町、続けて残す町 */
+	pChar->dwStartMapID = dwMapID;
+	pChar->dwStartX = dwX;
+	pChar->dwStartY = dwY;
+	pChar->adwTownWarpMapID[0]	= dwMapID;
+	pChar->abyTownWarpX[0]		= (BYTE)dwX;
+	pChar->abyTownWarpY[0]		= (BYTE)dwY;
+	nNew = 1;
+	for (i = 0; (i < nCount) && (nNew < MAX_TOWNWARP); i ++) {
+		if ((adwMapID[i] == dwMapID) || ((nForgetMapID >= 0) && (adwMapID[i] == (DWORD)nForgetMapID))) {
+			continue;
+		}
+		pChar->adwTownWarpMapID[nNew]	= adwMapID[i];
+		pChar->abyTownWarpX[nNew]		= (BYTE)adwX[i];
+		pChar->abyTownWarpY[nNew]		= (BYTE)adwY[i];
+		nNew ++;
 	}
-	pChar->adwTownWarpMapID[0]	= pChar->dwStartMapID;
-	pChar->abyTownWarpX[0]		= (BYTE)pChar->dwStartX;
-	pChar->abyTownWarpY[0]		= (BYTE)pChar->dwStartY;
+	pChar->byTownWarpCount = (BYTE)nNew;
 }
 
 /* Copyright(C)URARA-works 2003-2005 */

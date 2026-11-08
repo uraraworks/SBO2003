@@ -97,7 +97,7 @@ extern PWNDINFO MakeWindowDEAD_COMMAND					(void);						/* 死亡中：コマン
 extern PWNDINFO MakeWindowSTATUSMAGIC					(void);						/* 強さ：覚えている特技 */
 extern PWNDINFO MakeWindowMAKER							(int nMaker);				/* 作り手：作れる物の一覧 */
 extern PWNDINFO MakeWindowMAKER_CONF					(int nRecipe);				/* 作り手：確認 */
-extern PWNDINFO MakeWindowTOWNWARP					(void);						/* 町転送：行き先の選択 */
+extern PWNDINFO MakeWindowTOWNWARP					(int nMode);						/* 町転送：行き先の選択 */
 extern int MakerGetRecipeList							(int nMaker, int *pnList, int nMax);	/* 作り手の一覧に出すレシピの番号を並び順で取得 */
 extern int MakerGetCursorRecipe							(PWNDINFO pWndList);		/* 一覧のカーソル位置のレシピの番号 */
 extern int MakerCountHave								(WORD wItem);				/* 材料として使える数（持ち物+預かり所） */

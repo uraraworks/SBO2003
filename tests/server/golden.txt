@@ -1038,11 +1038,15 @@ townwarp rec3 book=4 list=39(51,40),35(13,30),14(9,12),0(26,50)
 townwarp rec4 book=4 list=14(9,12),39(51,40),35(13,30),0(26,50)
 townwarp rec5 book=4 list=43(32,50),14(9,12),39(51,40),35(13,30)
 townwarp rec6 book=4 list=51(35,6),43(32,50),14(9,12),39(51,40)
-townwarp start0 book=4 list=0(26,50),51(35,6),43(32,50),14(9,12),39(51,40)
+townwarp rec7 book=4 list=55(60,100),51(35,6),43(32,50),14(9,12)
+townwarp rec8 book=2 list=52(29,50),55(60,100)
+townwarp rec9 book=1 list=63(10,20)
+townwarp cast book=4 list=51(35,6),43(32,50),39(51,40),14(9,12)
+townwarp start0 book=4 list=0(26,50),51(35,6),43(32,50),39(51,40),14(9,12)
 townwarp map0 flg=00 cast=(20,8)
 townwarp cast lv=15 sel=0 floor dest=1:0 -> friend map=0 x=26 y=53
 townwarp cast lv=15 sel=1 floor dest=1:51 -> friend map=51 x=35 y=8
-townwarp cast lv=15 sel=3 floor dest=1:14 -> friend map=14 x=9 y=14
+townwarp cast lv=15 sel=3 floor dest=1:39 -> friend map=39 x=51 y=43
 townwarp cast lv=15 sel=4 floor dest=1:0 -> friend map=0 x=26 y=53
 townwarp cast lv=10 sel=3 floor dest=1:0 -> friend map=0 x=26 y=53
 townwarp cast lv=1 sel=1 floor dest=1:0 -> friend map=0 x=26 y=53

@@ -3068,9 +3068,9 @@ void DrawWindowTOWNWARP(PWNDINFO pWnd)
 	HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFontBasic);
 
 	SetBkColor (hDC, RGB (40, 40, 40));
-	TextOut2 (hDC, 48, 0, "行き先", RGB (255, 255, 255));
+	TextOut2 (hDC, 48, 0, (LPSTR)GetTownWarpTitle (pWnd->nType2), RGB (255, 255, 255));
 	SetBkMode (hDC, TRANSPARENT);
-	TextOut2 (hDC, 48, 0, "行き先", RGB (255, 255, 255));
+	TextOut2 (hDC, 48, 0, (LPSTR)GetTownWarpTitle (pWnd->nType2), RGB (255, 255, 255));
 
 	char szTmp[MAX_TOWNWARPNAME + 32];
 	int i;
