@@ -505,6 +505,14 @@ void W32HtmlCreate(W32Wnd *pWnd)
 	W32HtmlSetText(pWnd);
 }
 
+/* HWND に対応する HTML 部品の番号を返す（無ければ 0）。
+   ゲーム側から部品に飾りを付ける時に使う（Module.w32Html[番号] が要素） */
+int W32HtmlGetID(HWND hWnd)
+{
+	W32Wnd *pWnd = W32GetWnd(hWnd);
+	return pWnd ? pWnd->nHtmlID : 0;
+}
+
 void W32HtmlDestroy(W32Wnd *pWnd)
 {
 	if (pWnd->nHtmlID) {

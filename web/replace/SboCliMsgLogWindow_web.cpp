@@ -146,6 +146,29 @@ EM_JS(int, SboJsChatSend, (const char *pszUtf8, int nKeyMod), {
 	return 1;
 });
 
+/* ゲーム内の発言入力欄（HTML の入力欄）に、シェルの残り文字数の表示を付ける */
+EM_JS(void, SboJsSpeechCountAttach, (int nHtmlID), {
+	var el = Module['w32Html'] && Module['w32Html'][nHtmlID];
+	if (el && typeof window !== 'undefined' && typeof window['sboChatCountAttach'] === 'function') {
+		window['sboChatCountAttach'](el);
+	}
+});
+
+extern int W32HtmlGetID(HWND hWnd);
+
+/* ========================================================================= */
+/* 関数名：SboWebSpeechInputMade											 */
+/* 内容：Enter で開く発言入力欄を作った時に呼ぶ。全角 20 文字（1 回の発言）を	 */
+/*		 超えるか送る前に分かるよう、残り文字数の表示を付ける				 */
+/* ========================================================================= */
+void SboWebSpeechInputMade(HWND hWnd)
+{
+	int nHtmlID = W32HtmlGetID (hWnd);
+	if (nHtmlID) {
+		SboJsSpeechCountAttach (nHtmlID);
+	}
+}
+
 /* ========================================================================= */
 /* 関数名：SboWebSpeechSubmit												 */
 /* 内容：ゲーム内の発言入力欄（Enter で開く欄）から発言する（文字列は内部の UTF-8）	 */
