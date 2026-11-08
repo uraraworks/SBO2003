@@ -33,6 +33,7 @@
 #include "SboSvrCharInfoTimerProc.h"
 #include "CharProcMERCENARY.h"
 #include <map>
+#include <vector>
 
 /* 戦闘中に1歩動いてから次に動けるまでの時間(ms)。敵と同じ */
 #define MERC_STEPTIME			(320)
@@ -46,6 +47,10 @@
 #define MERC_LEASHSELF			(8)
 /* 雇い主からこれより離れたら、となりへ移る(マス) */
 #define MERC_WARPDIST			(10)
+/* 道を探す広さ(歩数) */
+#define MERC_PATHDIST			(12)
+/* 雇い主のとなりへ移る時、消えてから出てくるまで(ms) */
+#define MERC_FADETIME			(900)
 /* 雇い主に近づけないまま、この時間たったら、となりへ移る(ms) */
 #define MERC_STUCKTIME			(4000)
 /* 倒れてから帰るまでの時間(ms) */
@@ -62,6 +67,7 @@ static std::map<DWORD, MERCINFO> s_mapMerc;
 
 static void	MercenaryRemove		(PCHARINFO pMerc, PCHARINFO pOwner, LPCSTR pszFmt);	/* 傭兵を消す */
 static int	GetMercRecipient	(PCHARINFO pOwner, PCHARINFO *apChar, int nMax);	/* 傭兵のことを知らせる相手 */
+static PEVENTINFO_DOOR GetDoor	(DWORD dwMapID, int x, int y);						/* そのマスの扉 */
 static BOOL	CanPutChar			(PCHARINFO pChar, DWORD dwMapID, int x, int y);		/* そのマスに立てるか */
 static BOOL	FindPosNearOwner	(PCHARINFO pChar, PCHARINFO pOwner, int &x, int &y);	/* 雇い主のとなりの空いたマス */
 static DWORD GetMercAtackWait	(PCHARINFO pChar);									/* 攻撃の間隔(ms) */
@@ -83,6 +89,8 @@ CCharProcMERCENARY::CCharProcMERCENARY()
 	m_dwLastAtack	= 0;
 	m_dwStuckTime	= 0;
 	m_dwDeadTime	= 0;
+	m_dwWarpTime	= 0;
+	m_dwLastOwnerPath = 0;
 	m_dwLastSync	= 0;
 	m_wSyncHP		= 0;
 	m_wSyncMana		= 0;
@@ -147,6 +155,14 @@ BOOL CCharProcMERCENARY::Proc(DWORD dwTime)
 
 	SyncParty (pOwner, dwTime);
 
+	/* 雇い主のとなりへ移っている途中(消えている間は何もしない) */
+	if (m_dwWarpTime) {
+		if ((DWORD)(dwTime - m_dwWarpTime) >= MERC_FADETIME) {
+			FinishWarp (pOwner, dwTime);
+		}
+		return FALSE;
+	}
+
 	BOOL bTail = IsInTail (pOwner);
 
 	/* 戦う相手がいれば、列を外れて戦う */
@@ -156,6 +172,8 @@ BOOL CCharProcMERCENARY::Proc(DWORD dwTime)
 		}
 		m_dwOwnerX = pOwner->dwX;
 		m_dwOwnerY = pOwner->dwY;
+		/* 戦っている間は「近づけない時間」を数えない(戦い終わってすぐ移らないように) */
+		m_dwStuckTime = dwTime;
 		return TRUE;
 	}
 
@@ -337,6 +355,13 @@ BOOL CCharProcMERCENARY::ProcBattle(PCHARINFO pOwner, DWORD dwTime)
 				bDrop = TRUE;
 			}
 		}
+		/* 雇い主まで歩いて行けなくなった(扉も開けられない所へ行った等)なら、戦いをやめて追いかける */
+		if (!bDrop && ((DWORD)(dwTime - m_dwLastOwnerPath) >= MERC_SEARCHTIME)) {
+			m_dwLastOwnerPath = dwTime;
+			if (PathDir ((int)pOwner->dwX, (int)pOwner->dwY, MERC_PATHDIST) == -1) {
+				bDrop = TRUE;
+			}
+		}
 		if (bDrop) {
 			m_dwEnemy = (DWORD)-1;
 		}
@@ -396,6 +421,11 @@ BOOL CCharProcMERCENARY::ProcBattle(PCHARINFO pOwner, DWORD dwTime)
 
 	/* 近づく */
 	if ((DWORD)(dwTime - m_pChar->dwLastDotMove) >= MERC_STEPTIME) {
+		/* 扉が閉まった等で行けなくなったら、あきらめて列に戻る */
+		if (PathDir ((int)pEnemy->dwX, (int)pEnemy->dwY, MERC_PATHDIST) == -1) {
+			m_dwEnemy = (DWORD)-1;
+			return FALSE;
+		}
 		StepToward ((int)pEnemy->dwX, (int)pEnemy->dwY);
 	}
 	return TRUE;
@@ -443,6 +473,13 @@ DWORD CCharProcMERCENARY::FindEnemy(PCHARINFO pOwner)
 			  (pOwner->dwTargetTblID == pCharTmp->dwTblID) ||
 			  (nDistOwner <= 2) || (nDist <= 1))) {
 			continue;
+		}
+		/* 歩いて行けない(壁の向こう・閉まった扉の奥)敵は相手にしない。近さは歩く道のりで比べる */
+		if (nDist > 1) {
+			if (PathDir ((int)pCharTmp->dwX, (int)pCharTmp->dwY, MERC_PATHDIST, &nDist) == -1) {
+				continue;
+			}
+			nDist ++;
 		}
 		if ((dwRet == (DWORD)-1) || (nDist < nDistMin)) {
 			dwRet = pCharTmp->dwTblID;
@@ -500,6 +537,160 @@ BOOL CCharProcMERCENARY::IsFront(PCHARINFO pCharTmp)
 
 
 /* ========================================================================= */
+/* 関数名：	CCharProcMERCENARY::CanWalk										 */
+/* 内容：	地形として歩けるマスか(人は見ない)								 */
+/* 日付：	2026/11/08														 */
+/* ========================================================================= */
+
+BOOL CCharProcMERCENARY::CanWalk(int x, int y, BOOL bDoor)
+{
+	PMAPINFO pMap;
+
+	pMap = g_aMapInfo[m_pChar->dwMapID];
+	if ((x < 0) || (x >= pMap->nCX) || (y < 0) || (y >= pMap->nCY)) {
+		return FALSE;
+	}
+	/* 障害物？（閉まっている扉もここで止まる。道さがしでは開けて通れる扱い） */
+	if (CheckCharBlock (m_pChar, m_pChar->dwMapID, (DWORD)x, (DWORD)y) == FALSE) {
+		/* 扉のマス？（サーバーのマップは扉の絵のままなので、開いているかは扉の情報で見る） */
+		PEVENTINFO_DOOR pDoor = GetDoor (m_pChar->dwMapID, x, y);
+		if ((pDoor == NULL) || ((pDoor->dwTimeOpen == 0) && (bDoor == FALSE))) {
+			return FALSE;
+		}
+	}
+	/* ワープなどのイベント？（開いている扉は通れる） */
+	if (CheckEventBlock (m_pChar->dwMapID, (DWORD)x, (DWORD)y, EVENTTYPE_DOOR)) {
+		return FALSE;
+	}
+	return TRUE;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CCharProcMERCENARY::PathDir										 */
+/* 内容：	目標(nX,nY)のとなりのマスへ行く一番近い道の、最初の向き		 */
+/*			地形だけを見て、自分のまわり nMaxDist 歩の中を探す				 */
+/*			(行けなければ -1、もうとなりなら -2)							 */
+/* 日付：	2026/11/08														 */
+/* ========================================================================= */
+
+int CCharProcMERCENARY::PathDir(int nX, int nY, int nMaxDist, int *pnDist)
+{
+	int nSX, nSY, nW, nOX, nOY, nHead, nTail, nPos, nDir, x, y;
+	static std::vector<short> s_anFirst;	/* そのマスへ来た最初の向き(-1=まだ) */
+	static std::vector<short> s_anDist;
+	static std::vector<int>   s_anQueue;
+
+	nSX = (int)m_pChar->dwX;
+	nSY = (int)m_pChar->dwY;
+	if (abs (nX - nSX) + abs (nY - nSY) <= 1) {
+		if (pnDist) {
+			*pnDist = 0;
+		}
+		return -2;
+	}
+	if (abs (nX - nSX) + abs (nY - nSY) > nMaxDist + 1) {
+		return -1;
+	}
+
+	/* 自分を真ん中にした (2*nMaxDist+1) 四方だけを調べる */
+	nW  = nMaxDist * 2 + 1;
+	nOX = nSX - nMaxDist;
+	nOY = nSY - nMaxDist;
+	s_anFirst.assign (nW * nW, -1);
+	s_anDist.assign (nW * nW, 0);
+	s_anQueue.resize (nW * nW);
+
+	nHead = nTail = 0;
+	nPos = (nSY - nOY) * nW + (nSX - nOX);
+	s_anFirst[nPos] = 4;
+	s_anQueue[nTail ++] = nPos;
+	while (nHead < nTail) {
+		nPos = s_anQueue[nHead ++];
+		if (s_anDist[nPos] >= nMaxDist) {
+			continue;
+		}
+		for (nDir = 0; nDir < 4; nDir ++) {
+			x = nOX + (nPos % nW) + anPosAddTblX[nDir];
+			y = nOY + (nPos / nW) + anPosAddTblY[nDir];
+			if ((x < nOX) || (x >= nOX + nW) || (y < nOY) || (y >= nOY + nW)) {
+				continue;
+			}
+			int nNext = (y - nOY) * nW + (x - nOX);
+			if (s_anFirst[nNext] != -1) {
+				continue;
+			}
+			if (CanWalk (x, y, TRUE) == FALSE) {
+				continue;
+			}
+			s_anFirst[nNext] = (s_anFirst[nPos] == 4) ? nDir : s_anFirst[nPos];
+			s_anDist[nNext]  = s_anDist[nPos] + 1;
+			/* 目標のとなりに着いた？ */
+			if (abs (nX - x) + abs (nY - y) == 1) {
+				if (pnDist) {
+					*pnDist = s_anDist[nNext];
+				}
+				return s_anFirst[nNext];
+			}
+			s_anQueue[nTail ++] = nNext;
+		}
+	}
+	return -1;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CCharProcMERCENARY::OpenDoor									 */
+/* 内容：	そのマスの閉まった扉を開ける(プレイヤーの扉コマンドと同じ)		 */
+/* 日付：	2026/11/08														 */
+/* ========================================================================= */
+
+BOOL CCharProcMERCENARY::OpenDoor(int x, int y)
+{
+	PEVENTINFO_DOOR pDoor;
+	PCHARINFO pOwner;
+
+	pDoor = GetDoor (m_pChar->dwMapID, x, y);
+	/* 扉が無い・すでに開いてる？ */
+	if ((pDoor == NULL) || pDoor->dwTimeOpen) {
+		return FALSE;
+	}
+	pDoor->dwTimeOpen = timeGetTime ();
+	SendCmdCHGMAP (m_pChar->dwMapID, pDoor->wBackGrpID, x, y);
+	pOwner = GetMercenaryOwner (m_pChar);
+	if (pOwner) {
+		SendCmdPLAYSOUND (pOwner->pID, SOUND_DOOR);
+	}
+	return TRUE;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	GetDoor															 */
+/* 内容：	そのマスの扉の情報(扉が無ければ NULL)							 */
+/* ========================================================================= */
+
+static PEVENTINFO_DOOR GetDoor(DWORD dwMapID, int x, int y)
+{
+	int i;
+	PMAPINFO pMap;
+	PEVENTINFO pEvent;
+
+	if (dwMapID >= (DWORD)g_aMapInfo.GetSize ()) {
+		return NULL;
+	}
+	pMap = g_aMapInfo[dwMapID];
+	for (i = 0; i < pMap->nEventCount; i ++) {
+		pEvent = &pMap->pEvent[i];
+		if ((pEvent->dwX == (DWORD)x) && (pEvent->dwY == (DWORD)y) && (pEvent->byType == EVENTTYPE_DOOR)) {
+			return (PEVENTINFO_DOOR)pEvent->pData;
+		}
+	}
+	return NULL;
+}
+
+
+/* ========================================================================= */
 /* 関数名：	CCharProcMERCENARY::CanStep										 */
 /* 内容：	そのマスへ1歩進めるか											 */
 /* 日付：	2026/11/08														 */
@@ -507,7 +698,11 @@ BOOL CCharProcMERCENARY::IsFront(PCHARINFO pCharTmp)
 
 BOOL CCharProcMERCENARY::CanStep(int x, int y)
 {
-	if (CanPutChar (m_pChar, m_pChar->dwMapID, x, y) == FALSE) {
+	if (CanWalk (x, y) == FALSE) {
+		return FALSE;
+	}
+	/* プレイヤーと重なる？ */
+	if (CheckCharBlockPC (m_pChar->dwMapID, (DWORD)x, (DWORD)y) != -1) {
 		return FALSE;
 	}
 	/* ほかのNPCと重なる？ */
@@ -532,6 +727,25 @@ BOOL CCharProcMERCENARY::StepToward(int nX, int nY)
 	nDY = nY - (int)m_pChar->dwY;
 	if ((nDX == 0) && (nDY == 0)) {
 		return FALSE;
+	}
+
+	/* 壁を回りこむ道があればそのとおりに歩く */
+	{
+		int nPathDir = PathDir (nX, nY, MERC_PATHDIST);
+		if (nPathDir >= 0) {
+			if (StepDirection (nPathDir)) {
+				return TRUE;
+			}
+			/* 道の先が閉まった扉なら、そちらを向いて開ける(次の歩みで通る) */
+			if (OpenDoor ((int)m_pChar->dwX + anPosAddTblX[nPathDir], (int)m_pChar->dwY + anPosAddTblY[nPathDir])) {
+				if (m_pChar->byDirection != (BYTE)nPathDir) {
+					m_pChar->byDirection = (BYTE)nPathDir;
+					m_pChar->byFlg |= CHARINFOFLG_DIRECTION;
+				}
+				m_pChar->dwLastDotMove = g_dwTime;
+				return TRUE;
+			}
+		}
 	}
 
 	/* 遠い方の軸を先に、だめならもう一方の軸 */
@@ -610,18 +824,47 @@ BOOL CCharProcMERCENARY::StepDirection(int nDirection)
 BOOL CCharProcMERCENARY::WarpNearOwner(PCHARINFO pOwner)
 {
 	int x, y;
+	BYTE byDirection;
 
 	if (FindPosNearOwner (m_pChar, pOwner, x, y) == FALSE) {
 		return FALSE;
 	}
-	m_pChar->dwXBack		= m_pChar->dwX = (DWORD)x;
-	m_pChar->dwYBack		= m_pChar->dwY = (DWORD)y;
-	m_pChar->byDirection	= pOwner->byDirection;
-	m_pChar->dwLastDotMove	= g_dwTime;
-	m_dwOwnerX				= pOwner->dwX;
-	m_dwOwnerY				= pOwner->dwY;
-	SendCmdCHARPOS (m_pChar->pID, m_pChar->dwTblID, 1, 2);
+	/* 列から外し、戦いもやめて、いったん消える(画面ではフェードアウト) */
+	MercenaryTailOff (m_pChar);
+	m_dwEnemy		= (DWORD)-1;
+	m_dwWarpTime	= g_dwTime ? g_dwTime : 1;
+	byDirection = m_pChar->byDirection;
+	m_pChar->byDirection = 99;
+	SendCmdCHARPOS (0, m_pChar->dwTblID, 0, 1);
+	m_pChar->byDirection = byDirection;
 	return TRUE;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CCharProcMERCENARY::FinishWarp									 */
+/* 内容：	消えていた傭兵を雇い主(列の最後)のとなりに出す(フェードイン)	 */
+/* 日付：	2026/11/08														 */
+/* ========================================================================= */
+
+void CCharProcMERCENARY::FinishWarp(PCHARINFO pOwner, DWORD dwTime)
+{
+	int x, y;
+	PCHARINFO pEnd;
+
+	m_dwWarpTime	= 0;
+	m_dwStuckTime	= dwTime;
+	pEnd = GetTailEnd (pOwner);
+	if (FindPosNearOwner (m_pChar, pEnd, x, y) || FindPosNearOwner (m_pChar, pOwner, x, y)) {
+		m_pChar->dwXBack		= m_pChar->dwX = (DWORD)x;
+		m_pChar->dwYBack		= m_pChar->dwY = (DWORD)y;
+		m_pChar->byDirection	= pOwner->byDirection;
+	}
+	m_pChar->dwLastDotMove	= dwTime;
+	m_dwOwnerX				= pEnd->dwX;
+	m_dwOwnerY				= pEnd->dwY;
+	/* 消えかけている所へ位置を送ると、画面ではフェードインして出てくる */
+	SendCmdCHARPOS (m_pChar->pID, m_pChar->dwTblID, 1, 2);
 }
 
 
@@ -682,6 +925,18 @@ void MercenaryTailOff(PCHARINFO pMerc)
 {
 	DWORD dwCount = (DWORD)g_aCharInfo.GetSize ();
 
+	/* 前と後ろの両方とつながっていれば、後ろの人を前の人に直接つなぐ */
+	if ((pMerc->dwTailTblID < dwCount) && (pMerc->dwTailBackTblID < dwCount)) {
+		PCHARINFO pPrev = g_aCharInfo[pMerc->dwTailTblID];
+		PCHARINFO pNext = g_aCharInfo[pMerc->dwTailBackTblID];
+		if ((pPrev->dwTailBackTblID == pMerc->dwTblID) && (pNext->dwTailTblID == pMerc->dwTblID)) {
+			pPrev->dwTailBackTblID	= pNext->dwTblID;
+			pNext->dwTailTblID		= pPrev->dwTblID;
+			pMerc->dwTailTblID		= (DWORD)-1;
+			pMerc->dwTailBackTblID	= (DWORD)-1;
+			return;
+		}
+	}
 	if (pMerc->dwTailTblID < dwCount) {
 		PCHARINFO pPrev = g_aCharInfo[pMerc->dwTailTblID];
 		if (pPrev->dwTailBackTblID == pMerc->dwTblID) {

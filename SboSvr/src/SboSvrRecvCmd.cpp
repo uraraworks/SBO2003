@@ -2747,6 +2747,11 @@ void SubProcMapMove(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY)
 		/* 傭兵は別のマップへは連れて行かない（列から外し、傭兵の処理でお別れ） */
 		if (IsMercenary (pCharTmp)) {
 			MercenaryTailOff (pCharTmp);
+			/* 傭兵の後ろについていた人は、つなぎ直されているので連れて行く */
+			if (pChar->dwTailBackTblID != -1) {
+				pCharTmp = g_aCharInfo[pChar->dwTailBackTblID];
+				SubProcMapMove (pCharTmp, dwMapID, dwX, dwY);
+			}
 		} else {
 			/* ついてきているキャラを移動させる */
 			SubProcMapMove (pCharTmp, dwMapID, dwX, dwY);
@@ -3003,6 +3008,10 @@ BOOL IsTail(PCHARINFO pChar, PCHARINFO pCharTarget)
 	case NPCTYPE_INIT:			/* 未設定 */
 		break;
 	default:
+		/* 雇い主の列に入っている傭兵にはついていける（雇い主→傭兵→自分の順に並ぶ） */
+		if (IsMercenary (pCharTarget) && (pCharTarget->dwTailTblID != -1)) {
+			break;
+		}
 		goto Exit;
 	}
 

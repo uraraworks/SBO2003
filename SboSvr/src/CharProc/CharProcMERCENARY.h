@@ -27,7 +27,11 @@ protected:
 	DWORD	FindEnemy		(PCHARINFO pOwner);						/* 戦う相手を探す */
 	BOOL	IsEnemyValid	(DWORD dwTblID);						/* 戦える敵か */
 	BOOL	IsFront			(PCHARINFO pCharTmp);					/* 目の前にいるか */
+	BOOL	CanWalk			(int x, int y, BOOL bDoor = FALSE);	/* 地形として歩けるマスか(人は見ない。bDoor=閉まった扉も通れる扱い) */
+	BOOL	OpenDoor		(int x, int y);							/* そのマスの閉まった扉を開ける */
+	void	FinishWarp		(PCHARINFO pOwner, DWORD dwTime);		/* 消えてから雇い主のとなりに出る */
 	BOOL	CanStep			(int x, int y);							/* そのマスへ1歩進めるか */
+	int		PathDir			(int nX, int nY, int nMaxDist, int *pnDist = NULL);	/* 目標のとなりへ行く道の最初の向き */
 	BOOL	StepToward		(int nX, int nY);						/* 目標のマスへ1歩近づく */
 	BOOL	StepDirection	(int nDirection);						/* 指定の向きへ1歩進む */
 	BOOL	WarpNearOwner	(PCHARINFO pOwner);						/* 雇い主のとなりへ移る */
@@ -43,6 +47,8 @@ protected:
 	DWORD	m_dwNoEnemyTime;							/* 敵が見つからなくなった時間 */
 	DWORD	m_dwLastAtack;								/* 最後に攻撃した時間 */
 	DWORD	m_dwStuckTime;								/* 雇い主に近づけなくなった時間 */
+	DWORD	m_dwWarpTime;								/* 雇い主のとなりへ移るため消え始めた時間(0=移動中でない) */
+	DWORD	m_dwLastOwnerPath;							/* 戦闘中に雇い主まで行けるか最後に調べた時間 */
 	DWORD	m_dwDeadTime;								/* 倒れた時間 */
 	DWORD	m_dwLastSync;								/* 最後に仲間へ知らせた時間 */
 	WORD	m_wSyncHP;									/* 最後に知らせたHP */
