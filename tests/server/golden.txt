@@ -1021,4 +1021,12 @@ shot magic=39 dist=3 hit=100/100
 shot magic=74 dist=1 hit=100/100
 shot magic=74 dist=2 hit=100/100
 shot magic=74 dist=3 hit=100/100
+== H. CHARINFO mask ==
+charinfo self ret=1 tbl=1 same=1 login=77 play=0 make=0 area=0 put=0 interval=0 move=0 search=0 drop=0 sttmp=-1
+charinfo other ret=1 tbl=1 same=1 login=0 play=0 make=0 area=0 put=0 interval=0 move=0 search=0 drop=0 sttmp=-1
+charinfo npc ret=1 tbl=1 same=1 login=0 play=0 make=0 area=0 put=0 interval=0 move=0 search=0 drop=0 sttmp=-1
+charinfo other-admin ret=1 tbl=1 same=1 login=123 play=456 make=2003 area=0 put=0 interval=0 move=0 search=0 drop=0 sttmp=-1
+charinfo npc-admin ret=1 tbl=1 same=1 login=0 play=0 make=0 area=7 put=5 interval=30 move=40 search=3 drop=9 sttmp=-1
+charinfo3 user ret=1 area=0 put=0 interval=0 move=0 search=0 drop=0
+charinfo3 admin ret=1 area=7 put=5 interval=30 move=40 search=3 drop=9
 == done ==
