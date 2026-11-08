@@ -51,6 +51,10 @@
 #define MERC_PATHDIST			(12)
 /* 雇い主のとなりへ移る時、消えてから出てくるまで(ms) */
 #define MERC_FADETIME			(900)
+/* 戦いで殴れず近づけもしないまま、この時間たったらその敵をあきらめる(ms) */
+#define MERC_BATTLESTUCK		(3000)
+/* あきらめた敵をしばらく相手にしない時間(ms) */
+#define MERC_IGNORETIME			(6000)
 /* 雇い主に近づけないまま、この時間たったら、となりへ移る(ms) */
 #define MERC_STUCKTIME			(4000)
 /* 倒れてから帰るまでの時間(ms) */
@@ -91,6 +95,9 @@ CCharProcMERCENARY::CCharProcMERCENARY()
 	m_dwDeadTime	= 0;
 	m_dwWarpTime	= 0;
 	m_dwLastOwnerPath = 0;
+	m_dwBattleProgress = 0;
+	m_dwIgnoreEnemy = (DWORD)-1;
+	m_dwIgnoreUntil = 0;
 	m_dwLastSync	= 0;
 	m_wSyncHP		= 0;
 	m_wSyncMana		= 0;
@@ -358,7 +365,8 @@ BOOL CCharProcMERCENARY::ProcBattle(PCHARINFO pOwner, DWORD dwTime)
 		/* 雇い主まで歩いて行けなくなった(扉も開けられない所へ行った等)なら、戦いをやめて追いかける */
 		if (!bDrop && ((DWORD)(dwTime - m_dwLastOwnerPath) >= MERC_SEARCHTIME)) {
 			m_dwLastOwnerPath = dwTime;
-			if (PathDir ((int)pOwner->dwX, (int)pOwner->dwY, MERC_PATHDIST) == -1) {
+			/* 人は見ない(敵に囲まれた雇い主を助けている時にやめないように) */
+			if (PathDir ((int)pOwner->dwX, (int)pOwner->dwY, MERC_PATHDIST, NULL, FALSE) == -1) {
 				bDrop = TRUE;
 			}
 		}
@@ -379,8 +387,17 @@ BOOL CCharProcMERCENARY::ProcBattle(PCHARINFO pOwner, DWORD dwTime)
 		}
 		/* 見つけてすぐには殴らず、少し間をおく */
 		m_dwLastAtack = dwTime - GetMercAtackWait (m_pChar) / 2;
+		m_dwBattleProgress = dwTime;
 	}
 	pEnemy = g_aCharInfo[m_dwEnemy];
+
+	/* 殴れず近づけもしないまま時間がたった(人がふさいでいる等)？ その敵はしばらくあきらめる */
+	if ((DWORD)(dwTime - m_dwBattleProgress) >= MERC_BATTLESTUCK) {
+		m_dwIgnoreEnemy	= m_dwEnemy;
+		m_dwIgnoreUntil	= dwTime + MERC_IGNORETIME;
+		m_dwEnemy		= (DWORD)-1;
+		return FALSE;
+	}
 
 	/* 目の前にいる？ 間隔がたったら殴る */
 	if (IsFront (pEnemy)) {
@@ -390,6 +407,7 @@ BOOL CCharProcMERCENARY::ProcBattle(PCHARINFO pOwner, DWORD dwTime)
 			m_pChar->byAtackRate	= 0;
 			BattleProcAtack (m_pChar, pEnemy);
 			m_pChar->dwTargetTblID	= (DWORD)-1;
+			m_dwBattleProgress		= dwTime;
 			/* 倒した？ */
 			if (IsEnemyValid (m_dwEnemy) == FALSE) {
 				m_dwEnemy = (DWORD)-1;
@@ -426,7 +444,9 @@ BOOL CCharProcMERCENARY::ProcBattle(PCHARINFO pOwner, DWORD dwTime)
 			m_dwEnemy = (DWORD)-1;
 			return FALSE;
 		}
-		StepToward ((int)pEnemy->dwX, (int)pEnemy->dwY);
+		if (StepToward ((int)pEnemy->dwX, (int)pEnemy->dwY)) {
+			m_dwBattleProgress = dwTime;
+		}
 	}
 	return TRUE;
 }
@@ -461,6 +481,10 @@ DWORD CCharProcMERCENARY::FindEnemy(PCHARINFO pOwner)
 			continue;
 		}
 		if ((pCharTmp->wHP == 0) || (pCharTmp->byCharState == CHARSTATE_DEAD)) {
+			continue;
+		}
+		/* 近づけなくてあきらめた敵は、しばらく相手にしない */
+		if ((pCharTmp->dwTblID == m_dwIgnoreEnemy) && ((int)(m_dwIgnoreUntil - g_dwTime) > 0)) {
 			continue;
 		}
 		nDistOwner = abs ((int)pCharTmp->dwX - (int)pOwner->dwX) + abs ((int)pCharTmp->dwY - (int)pOwner->dwY);
@@ -574,7 +598,7 @@ BOOL CCharProcMERCENARY::CanWalk(int x, int y, BOOL bDoor)
 /* 日付：	2026/11/08														 */
 /* ========================================================================= */
 
-int CCharProcMERCENARY::PathDir(int nX, int nY, int nMaxDist, int *pnDist)
+int CCharProcMERCENARY::PathDir(int nX, int nY, int nMaxDist, int *pnDist, BOOL bChars)
 {
 	int nSX, nSY, nW, nOX, nOY, nHead, nTail, nPos, nDir, x, y;
 	static std::vector<short> s_anFirst;	/* そのマスへ来た最初の向き(-1=まだ) */
@@ -600,6 +624,32 @@ int CCharProcMERCENARY::PathDir(int nX, int nY, int nMaxDist, int *pnDist)
 	s_anFirst.assign (nW * nW, -1);
 	s_anDist.assign (nW * nW, 0);
 	s_anQueue.resize (nW * nW);
+
+	/* ほかのキャラが立っているマスは通れない(雇い主が細い道をふさいでいる時など) */
+	if (bChars) {
+		PMAPINFO pMap = g_aMapInfo[m_pChar->dwMapID];
+		PDWORD apTbl[2]		= {pMap->paTblNoPC, pMap->paTblNoNPC};
+		DWORD adwCount[2]	= {pMap->dwCountTblNoPC, pMap->dwCountTblNoNPC};
+		for (int t = 0; t < 2; t ++) {
+			if (apTbl[t] == NULL) {
+				continue;
+			}
+			for (DWORD j = 0; j < adwCount[t]; j ++) {
+				if (apTbl[t][j] == (DWORD)-1) {
+					break;
+				}
+				PCHARINFO pCharTmp = g_aCharInfo[apTbl[t][j]];
+				if ((pCharTmp == m_pChar) || (pCharTmp->byNpcType == NPCTYPE_NOBLOCK)) {
+					continue;
+				}
+				x = (int)pCharTmp->dwX - nOX;
+				y = (int)pCharTmp->dwY - nOY;
+				if ((x >= 0) && (x < nW) && (y >= 0) && (y < nW)) {
+					s_anFirst[y * nW + x] = -3;
+				}
+			}
+		}
+	}
 
 	nHead = nTail = 0;
 	nPos = (nSY - nOY) * nW + (nSX - nOX);

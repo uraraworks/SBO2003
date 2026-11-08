@@ -31,7 +31,7 @@ protected:
 	BOOL	OpenDoor		(int x, int y);							/* そのマスの閉まった扉を開ける */
 	void	FinishWarp		(PCHARINFO pOwner, DWORD dwTime);		/* 消えてから雇い主のとなりに出る */
 	BOOL	CanStep			(int x, int y);							/* そのマスへ1歩進めるか */
-	int		PathDir			(int nX, int nY, int nMaxDist, int *pnDist = NULL);	/* 目標のとなりへ行く道の最初の向き */
+	int		PathDir			(int nX, int nY, int nMaxDist, int *pnDist = NULL, BOOL bChars = TRUE);	/* 目標のとなりへ行く道の最初の向き */
 	BOOL	StepToward		(int nX, int nY);						/* 目標のマスへ1歩近づく */
 	BOOL	StepDirection	(int nDirection);						/* 指定の向きへ1歩進む */
 	BOOL	WarpNearOwner	(PCHARINFO pOwner);						/* 雇い主のとなりへ移る */
@@ -49,6 +49,9 @@ protected:
 	DWORD	m_dwStuckTime;								/* 雇い主に近づけなくなった時間 */
 	DWORD	m_dwWarpTime;								/* 雇い主のとなりへ移るため消え始めた時間(0=移動中でない) */
 	DWORD	m_dwLastOwnerPath;							/* 戦闘中に雇い主まで行けるか最後に調べた時間 */
+	DWORD	m_dwBattleProgress;							/* 戦いで最後に殴った・近づけた時間 */
+	DWORD	m_dwIgnoreEnemy;							/* しばらく相手にしない敵(近づけなかった) */
+	DWORD	m_dwIgnoreUntil;							/* その敵を相手にしない時間の終わり */
 	DWORD	m_dwDeadTime;								/* 倒れた時間 */
 	DWORD	m_dwLastSync;								/* 最後に仲間へ知らせた時間 */
 	WORD	m_wSyncHP;									/* 最後に知らせたHP */
