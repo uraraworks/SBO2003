@@ -56,6 +56,8 @@ void	RenewCharPosInfo					(void);													/* キャラ座標情報更新 */
 void	RenewUseMagicInfo					(void);													/* 使用できる魔法一覧更新 */
 void	RenewMapDark						(PCHARINFO pChar);										/* 暗闇描画情報を更新 */
 void	RenewMapDarkWork					(PCHARINFO, int x, int y, int nCount);					/* 暗闇描画情報を更新処理 */
+int		GetMapDarkLevel						(PCHARINFO pChar, int x, int y);						/* 灯りの明るさを取得 */
+void	RenewMapDarkCorner					(PCHARINFO pChar);										/* 灯りの角の壁を照らす */
 BOOL	CheckEquUserInfo					(WORD, BYTE);											/* 装備職業情報にあるか判定 */
 BOOL	CheckItemSexDistinction				(PITEMINFO, PCHARINFO);									/* 性別による使えるかチェック */
 BOOL	CheckCharBlock						(DWORD, DWORD);											/* キャラのぶつかり判定 */
@@ -1088,6 +1090,101 @@ void RenewMapDark(PCHARINFO pChar)
 	ZeroMemory (g_pMapDarkTmpPos, SCRMARTSSIZE);
 
 	RenewMapDarkWork (pChar, pChar->dwX, pChar->dwY, DRAW_PARTS_X);
+	RenewMapDarkCorner (pChar);
+}
+
+/* ========================================================================= */
+/* 関数名：GetMapDarkLevel													 */
+/* 内容：灯り(pChar)から見たマス(x,y)の明るさを取得							 */
+/*       1 以下なら暗くて見えない											 */
+/* ========================================================================= */
+int GetMapDarkLevel(PCHARINFO pChar, int x, int y)
+{
+	int nTmp, nLevel;
+	PCHARINFO pMyChar = g_aCharInfo[g_nMyCharID];
+
+	nTmp = 100;
+	if (g_pMapInfo->byLightLevel) {
+		nLevel = max (abs (x - (int)pChar->dwX), abs (y - (int)pChar->dwY));
+		if (pChar != pMyChar) {
+			nTmp = 0;
+		} else {
+			nTmp = 100 - g_pMapInfo->byLightLevel * nLevel;
+		}
+		if (pChar->byLightLevel) {
+			nTmp = 100 - (g_pMapInfo->byLightLevel - pChar->byLightLevel) * nLevel;
+		}
+		nTmp = max (1, nTmp);
+		nTmp = min (100, nTmp);
+	}
+	return nTmp;
+}
+
+/* ========================================================================= */
+/* 関数名：RenewMapDarkCorner												 */
+/* 内容：灯りの角の壁を照らす												 */
+/*       灯りは通れるマスを伝って広がるので、斜めにある壁の角や				 */
+/*       灯りの四隅の壁が真っ黒になり、壁の続きが見えなかった。				 */
+/*       灯りが通ったマスの斜め隣までは照らして、壁の形が分かるようにする	 */
+/* ========================================================================= */
+void RenewMapDarkCorner(PCHARINFO pChar)
+{
+	int x, y, dx, dy, mx, my, nPos, nTmp, nWidth;
+	PCHARINFO pMyChar;
+	BOOL bLight;
+	char abyAdd[SCRMARTSSIZE];
+
+	/* 壁で灯りが止まるのは暗闇マップだけ */
+	if (!(g_pMapInfo->byFlg & MAPFLG_DARK)) {
+		return;
+	}
+
+	pMyChar = g_aCharInfo[g_nMyCharID];
+	nWidth = DRAW_PARTS_X * 2 + 3;
+	ZeroMemory (abyAdd, sizeof (abyAdd));
+
+	for (y = 1; y < DRAW_PARTS_Y * 2 + 2; y ++) {
+		for (x = 1; x < DRAW_PARTS_X * 2 + 2; x ++) {
+			nPos = x + nWidth * y;
+			/* もう照らしたマス？ */
+			if (g_pMapDarkTmpPos[nPos]) {
+				continue;
+			}
+			/* 灯りが通ったマス(2)の斜め隣か調べる */
+			bLight = FALSE;
+			for (dy = -1; (dy <= 1) && (bLight == FALSE); dy ++) {
+				for (dx = -1; dx <= 1; dx ++) {
+					if (g_pMapDarkTmpPos[(x + dx) + nWidth * (y + dy)] == 2) {
+						bLight = TRUE;
+						break;
+					}
+				}
+			}
+			if (bLight == FALSE) {
+				continue;
+			}
+			mx = (int)pMyChar->dwX + x - (1 + DRAW_PARTS_X);
+			my = (int)pMyChar->dwY + y - (1 + DRAW_PARTS_Y);
+			nTmp = GetMapDarkLevel (pChar, mx, my);
+			if (g_pMapInfo->byLightLevel && (nTmp <= 1)) {
+				continue;
+			}
+			abyAdd[nPos] = (char)nTmp;
+		}
+	}
+
+	/* 照らした結果を足す(足しながらだと照らした範囲が広がってしまうので後で) */
+	for (nPos = 0; nPos < SCRMARTSSIZE; nPos ++) {
+		if (abyAdd[nPos] == 0) {
+			continue;
+		}
+		nTmp = abyAdd[nPos];
+		if (g_pMapDarkTmp[nPos] + nTmp > 100) {
+			nTmp = 100 - g_pMapDarkTmp[nPos];
+		}
+		g_pMapDarkTmp[nPos] += (char)nTmp;
+		g_pMapDarkTmpPos[nPos] = 1;
+	}
 }
 
 /* ========================================================================= */
@@ -1158,7 +1255,8 @@ void RenewMapDarkWork(PCHARINFO pChar, int x, int y, int nCount)
 		g_pMapDarkTmp[nPos] += (char)nTmp;
 	}
 
-	g_pMapDarkTmpPos[nPos] = 1;
+	/* 灯りが通ったマスは 2 (斜め隣の壁を照らす目印) */
+	g_pMapDarkTmpPos[nPos] = 2;
 
 	RenewMapDarkWork (pChar, x, y - 1, nCount - 1);
 	RenewMapDarkWork (pChar, x, y + 1, nCount - 1);

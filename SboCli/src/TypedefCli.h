@@ -227,8 +227,16 @@ typedef struct _ADMINRURAINFO {
 	DWORD			dwMapID;									/* マップID */
 	DWORD			dwX;										/* X座標 */
 	DWORD			dwY;										/* Y座標 */
-	char			szComment[21];								/* コメント */
+	char			szComment[64];								/* コメント（UTF-8・全角20字ほど入る） */
 } ADMINRURAINFO, *PADMINRURAINFO;
+
+/* 管理人ルーラ（コメント欄が 21 バイトだった頃の保存形式。SboCliPosInfo.dat の読み込み用） */
+typedef struct _ADMINRURAINFO_OLD {
+	DWORD			dwMapID;									/* マップID */
+	DWORD			dwX;										/* X座標 */
+	DWORD			dwY;										/* Y座標 */
+	char			szComment[21];								/* コメント */
+} ADMINRURAINFO_OLD, *PADMINRURAINFO_OLD;
 
 /* フェードイン・フェードアウト情報 */
 typedef struct _FADEINOUTINFO {
