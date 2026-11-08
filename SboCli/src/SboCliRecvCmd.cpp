@@ -58,6 +58,12 @@ void	RenewMapDark						(PCHARINFO pChar);										/* 暗闇描画情報を更�
 void	RenewMapDarkWork					(PCHARINFO, int x, int y, int nCount);					/* 暗闇描画情報を更新処理 */
 int		GetMapDarkLevel						(PCHARINFO pChar, int x, int y);						/* 灯りの明るさを取得 */
 void	RenewMapDarkCorner					(PCHARINFO pChar);										/* 灯りの角の壁を照らす */
+void	RenewMapDarkParts					(void);													/* 光るマップパーツで照らす */
+
+/* 光るマップパーツの灯り(GetMapDarkLevel に pChar=NULL で渡した時に使う) */
+static int s_nPartsLightX = 0;			/* 灯りのマップ座標(X) */
+static int s_nPartsLightY = 0;			/* 灯りのマップ座標(Y) */
+static int s_nPartsLightRange = 0;		/* 灯りの範囲(マス) */
 BOOL	CheckEquUserInfo					(WORD, BYTE);											/* 装備職業情報にあるか判定 */
 BOOL	CheckItemSexDistinction				(PITEMINFO, PCHARINFO);									/* 性別による使えるかチェック */
 BOOL	CheckCharBlock						(DWORD, DWORD);											/* キャラのぶつかり判定 */
@@ -1006,6 +1012,7 @@ void RenewCharPosInfo(void)
 		}
 	}
 	RenewMapDark (NULL);
+	RenewMapDarkParts ();
 }
 
 
@@ -1094,6 +1101,58 @@ void RenewMapDark(PCHARINFO pChar)
 }
 
 /* ========================================================================= */
+/* 関数名：RenewMapDarkParts												 */
+/* 内容：光るマップパーツ(たいまつ・かがり火など)で照らす					 */
+/*       パーツの「灯りの範囲」が 1 以上なら、そのマスから範囲のマスまで	 */
+/*       キャラの灯りと同じように照らす(壁や閉まった扉の向こうは暗いまま)	 */
+/* ========================================================================= */
+void RenewMapDarkParts(void)
+{
+	int x, y, mx, my;
+	PCHARINFO pMyChar;
+
+	if (g_nMyCharID < 0) {
+		return;
+	}
+	/* 明るさレベルのある暗いマップだけ */
+	if (g_pMapInfo->byLightLevel == 0) {
+		return;
+	}
+	if ((g_pMapInfo->pwMap == NULL) || (g_pMapPartsInfo == NULL)) {
+		return;
+	}
+	pMyChar = g_aCharInfo[g_nMyCharID];
+
+	for (y = -DRAW_PARTS_Y; y <= DRAW_PARTS_Y; y ++) {
+		my = (int)pMyChar->dwY + y;
+		if ((my < 0) || (my >= g_pMapInfo->nCY)) {
+			continue;
+		}
+		for (x = -DRAW_PARTS_X; x <= DRAW_PARTS_X; x ++) {
+			WORD wMap;
+
+			mx = (int)pMyChar->dwX + x;
+			if ((mx < 0) || (mx >= g_pMapInfo->nCX)) {
+				continue;
+			}
+			wMap = g_pMapInfo->pwMap[mx + my * g_pMapInfo->nCX];
+			if (wMap >= g_wCountMapParts) {
+				continue;
+			}
+			if (g_pMapPartsInfo[wMap].byLight == 0) {
+				continue;
+			}
+			s_nPartsLightX = mx;
+			s_nPartsLightY = my;
+			s_nPartsLightRange = min (g_pMapPartsInfo[wMap].byLight, DRAW_PARTS_X);
+			ZeroMemory (g_pMapDarkTmpPos, SCRMARTSSIZE);
+			RenewMapDarkWork (NULL, mx, my, DRAW_PARTS_X);
+			RenewMapDarkCorner (NULL);
+		}
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：GetMapDarkLevel													 */
 /* 内容：灯り(pChar)から見たマス(x,y)の明るさを取得							 */
 /*       1 以下なら暗くて見えない											 */
@@ -1104,6 +1163,14 @@ int GetMapDarkLevel(PCHARINFO pChar, int x, int y)
 	PCHARINFO pMyChar = g_aCharInfo[g_nMyCharID];
 
 	nTmp = 100;
+	/* 光るマップパーツ？(範囲のマスまで見え、その先は暗い) */
+	if (pChar == NULL) {
+		nLevel = max (abs (x - s_nPartsLightX), abs (y - s_nPartsLightY));
+		nTmp = 100 - 100 * nLevel / (s_nPartsLightRange + 1);
+		nTmp = max (1, nTmp);
+		nTmp = min (100, nTmp);
+		return nTmp;
+	}
 	if (g_pMapInfo->byLightLevel) {
 		nLevel = max (abs (x - (int)pChar->dwX), abs (y - (int)pChar->dwY));
 		if (pChar != pMyChar) {
@@ -1238,7 +1305,7 @@ void RenewMapDarkWork(PCHARINFO pChar, int x, int y, int nCount)
 {
 	BOOL bResult;
 	PCHARINFO pMyChar;
-	int nTmp, nPos, nLevel, nMapDarkTmpPos;
+	int nTmp, nPos, nMapDarkTmpPos;
 
 	if (nCount <= 0) {
 		return;
@@ -1250,22 +1317,9 @@ void RenewMapDarkWork(PCHARINFO pChar, int x, int y, int nCount)
 		return;
 	}
 
-	nLevel = max (abs (x - pChar->dwX), abs (y - pChar->dwY));
-	nTmp = 100;
-	if (g_pMapInfo->byLightLevel) {
-		if (pChar != pMyChar) {
-			nTmp = 0;
-		} else {
-			nTmp = 100 - g_pMapInfo->byLightLevel * nLevel;
-		}
-		if (pChar->byLightLevel) {
-			nTmp = 100 - (g_pMapInfo->byLightLevel - pChar->byLightLevel) * nLevel;
-		}
-		nTmp = max (1, nTmp);
-		nTmp = min (100, nTmp);
-		if (nTmp == 1) {
-			return;
-		}
+	nTmp = GetMapDarkLevel (pChar, x, y);
+	if (g_pMapInfo->byLightLevel && (nTmp == 1)) {
+		return;
 	}
 
 	nPos = (1 + DRAW_PARTS_X + (x - pMyChar->dwX)) +
@@ -2686,6 +2740,7 @@ void RecvDataProcMAPPARTSINFO(PBYTE pData, DWORD dwDataSize)
 		pParts->wBackID = pRecv->wBackID;
 		pParts->pAnimeInfo = pRecv->pAnimeInfo;
 		pParts->byLevel = pRecv->byLevel;
+		pParts->byLight = pRecv->byLight;
 		pRead += sizeof (MAPPARTSINFOSAVE);
 
 		if (pRecv->pAnimeInfo) {
@@ -3414,6 +3469,7 @@ void RecvDataProcMAPPARTS(PBYTE pData, DWORD dwDataSize)
 		pPartsTmp->wBackID = pRecv->wBackID;
 		pPartsTmp->pAnimeInfo = pRecv->pAnimeInfo;
 		pPartsTmp->byLevel = pRecv->byLevel;
+		pPartsTmp->byLight = pRecv->byLight;
 		pRecv += sizeof (MAPPARTSINFOSAVE);
 		if (pPartsTmp->pAnimeInfo) {
 			pPartsTmp->pAnimeInfo = new ANIMEINFO[pPartsTmp->byAnimeCount];
@@ -3439,6 +3495,7 @@ void RecvDataProcMAPPARTS(PBYTE pData, DWORD dwDataSize)
 		pPartsTmp->wBackID = pRecv->wBackID;
 		pPartsTmp->pAnimeInfo = pRecv->pAnimeInfo;
 		pPartsTmp->byLevel = pRecv->byLevel;
+		pPartsTmp->byLight = pRecv->byLight;
 		pRecv ++;
 		if (pPartsTmp->pAnimeInfo) {
 			pPartsTmp->pAnimeInfo = new ANIMEINFO[pPartsTmp->byAnimeCount];

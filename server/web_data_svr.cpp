@@ -1353,6 +1353,7 @@ static const DATAFIELD s_aFieldMapParts[] = {
 	FLD (MAPPARTSINFO, byAnimeType,		"アニメ種別",			FT_U8, 0, NULL),
 	FLD (MAPPARTSINFO, byAnimeCount,	"アニメのコマ数",		FT_U8, RO, "anime の数（anime を変えると変わる）"),
 	FLD (MAPPARTSINFO, byLevel,			"透明度",				FT_U8, 0, NULL),
+	FLD (MAPPARTSINFO, byLight,			"灯りの範囲",			FT_U8, 0, "暗いマップでこのパーツが周りを照らす範囲（マス）。0 なら光らない。1〜7"),
 	FLD (MAPPARTSINFO, wGrpID,			"画像ID",				FT_U16, 0, NULL),
 	FLD (MAPPARTSINFO, wBackID,			"重ねる時の背景ID",		FT_U16, 0, NULL),
 };
