@@ -1690,6 +1690,10 @@ void AdminOnCommandMapParts(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 				GetWindowText (m_hWndEdit2, szTmp, sizeof (szTmp));
 				pParts->byLevel = (BYTE)atoi (szTmp);
 			}
+			/* 灯りの範囲(0〜7マス) */
+			ZeroMemory (szTmp, sizeof (szTmp));
+			GetWindowText (m_hWndEdit3, szTmp, sizeof (szTmp));
+			pParts->byLight = (BYTE)max (0, min (atoi (szTmp), 7));
 
 			SendCmdMAPPARTS (g_nSelectPartsID);
 		}
@@ -1714,6 +1718,7 @@ void AdminOnCommandMapParts(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 			SendMessage (m_hWndCombo1, CB_SETCURSEL, pParts->byHitType, 0);
 			SetWindowText (m_hWndEdit1, szTmp);
 			SetWindowText (m_hWndEdit2, "");
+			SetWindowText (m_hWndEdit3, "");
 			InvalidateRect (g_hWndAdmin, NULL, TRUE);
 		}
 		break;
@@ -6733,6 +6738,9 @@ void AdminOnLButtonDownMapParts(BOOL fDoubleClick, int x, int y, UINT keyFlags)
 				wsprintf (szTmp, "%d", pParts->byLevel);
 				SetWindowText (m_hWndEdit2, szTmp);
 			}
+			/* 灯りの範囲 */
+			wsprintf (szTmp, "%d", pParts->byLight);
+			SetWindowText (m_hWndEdit3, szTmp);
 
 			InvalidateRect (g_hWndAdmin, NULL, TRUE);
 		}
@@ -7099,6 +7107,7 @@ void MakeAdminWndMapParts(void)
 	m_hWndCombo1 = GetDlgItem (m_hWndDialog, IDC_COMBO1);
 	m_hWndEdit1 = GetDlgItem (m_hWndDialog, IDC_EDIT1);
 	m_hWndEdit2 = GetDlgItem (m_hWndDialog, IDC_EDIT2);
+	m_hWndEdit3 = GetDlgItem (m_hWndDialog, IDC_EDIT3);		/* 灯りの範囲 */
 	m_hWndButton1 = GetDlgItem (m_hWndDialog, IDC_BUTTON6);
 	m_hWndButton2 = GetDlgItem (m_hWndDialog, IDC_BUTTON7);
 	m_hWndButton3 = GetDlgItem (m_hWndDialog, IDC_BUTTON5);
