@@ -14,6 +14,7 @@
 #include "SboSvrMagicProc.h"
 #include "SboSvrCharInfoTimerProc.h"
 #include "SboSvrSubGameProcSugoroku.h"
+#include "CharProc/CharProcMERCENARY.h"
 
 /* ========================================================================= */
 /* 関数プロトタイプ宣言														 */
@@ -129,6 +130,11 @@ void ItemProc(DWORD dwTblID, BYTE byNo, DWORD dwUseTblID)
 		bResult = CheckUseTarget (pItem, pCharUse);
 		if (bResult == FALSE) {
 			strcpy (szMsg, "自分以外には使えません。@2");
+			goto Exit;
+		}
+		/* 傭兵に使えるのは回復・蘇生の道具だけ */
+		if (MercenaryItemCheck (pCharUse, pItem->byType) == FALSE) {
+			wsprintf (szMsg, "%sには使えません。@2", pCharUse->szName);
 			goto Exit;
 		}
 	}

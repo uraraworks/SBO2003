@@ -256,8 +256,9 @@ BOOL CheckSaveChar(PCHARINFO pChar)
 		(pChar->byNpcType == NPCTYPE_USEMAGICPARENT) ||
 		(pChar->byNpcType == NPCTYPE_BOMB) ||
 		(pChar->byNpcType == NPCTYPE_BOMBBLOCK) ||
-		(pChar->byNpcType == NPCTYPE_BOMBITEM)) {
-		/* 保存しない */
+		(pChar->byNpcType == NPCTYPE_BOMBITEM) ||
+		(pChar->byNpcType == NPCTYPE_MERCENARY)) {
+		/* 保存しない（傭兵は雇っている間だけ） */
 		bRet = FALSE;
 
 	} else if ((pChar->byNpcType == 0) || (pChar->byNpcType >= NPCTYPE_MAX)) {

@@ -8,6 +8,7 @@ SboSvr/src/CharProc/CharProcBLOCK.cpp
 SboSvr/src/CharProc/CharProcBOMB.cpp
 SboSvr/src/CharProc/CharProcBOMBBLOCK.cpp
 SboSvr/src/CharProc/CharProcBase.cpp
+SboSvr/src/CharProc/CharProcMERCENARY.cpp
 SboSvr/src/CharProc/CharProcMOVERAND.cpp
 SboSvr/src/CharProc/CharProcNOMOVE.cpp
 SboSvr/src/CharProc/CharProcPUT.cpp

@@ -21,6 +21,7 @@
 #include "SboSvrSubGameProcSugoroku.h"
 #include "SboSvrAdminUndo.h"
 #include "SboSvrNpcRoute.h"
+#include "CharProc/CharProcMERCENARY.h"
 #include <map>
 #include <vector>
 
@@ -5287,6 +5288,14 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
+	/* 傭兵所のNPC（台詞が「@m」で始まる）？ 雇う・お別れする */
+	if ((pChar->byNpcType != NPCTYPE_INIT) && pChar->pszNpcSpeech &&
+		(pChar->pszNpcSpeech[0] == '@') && (pChar->pszNpcSpeech[1] == 'm')) {
+		if (!s_bAdminRecv && (s_nCharNoRecv >= 0) && IsNearRecvChar (pChar, 2)) {
+			MercenaryTalk (g_aCharInfo[s_nCharNoRecv], pChar);
+		}
+		return;
+	}
 	/* 話しかけた相手（目の前の NPC）だけ。種類が違うキャラや離れたキャラは変えない */
 	if ((pChar->byNpcType != NPCTYPE_TALKRAND) || !IsNearRecvChar (pChar, 2)) {
 		return;
