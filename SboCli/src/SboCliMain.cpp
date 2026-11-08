@@ -3315,6 +3315,25 @@ void SaveIniOption(void)
 }
 
 /* ========================================================================= */
+/* 関数名：GetAdminRuraFileName												 */
+/* 内容：管理人ルーラ情報のファイル名（実行ファイルと同じ場所）を作る		 */
+/* ========================================================================= */
+static void GetAdminRuraFileName(char *pszName, LPCSTR pszFile)
+{
+	int i;
+
+	ZeroMemory (pszName, MAX_PATH + 1);
+	GetModuleFileName (NULL, pszName, MAX_PATH);
+	for (i = strlen (pszName) - 1; i > 0; i --) {
+		if (pszName[i] == '\\') {
+			pszName[i + 1] = 0;
+			break;
+		}
+	}
+	strcat (pszName, pszFile);
+}
+
+/* ========================================================================= */
 /* 関数名：SaveAdminRura													 */
 /* 内容：管理人ルーラ情報保存												 */
 /* 日付：2003/08/16															 */
@@ -3325,17 +3344,10 @@ BOOL SaveAdminRura(void)
 	HANDLE hFile;
 	DWORD dwBytes;
 	char szName[MAX_PATH + 1];
-	ZeroMemory (szName, sizeof (szName));
 
-	/* ファイル名の作成 */
-	GetModuleFileName (NULL, szName, MAX_PATH);
-	for (i = strlen (szName) - 1; i > 0; i --) {
-		if (szName[i] == '\\') {
-			szName[i + 1] = 0;
-			break;
-		}
-	}
-	strcat (szName, "SboCliPosInfo.dat");
+	/* コメント欄を広げた形式は別のファイル名で保存する
+	   （古い SboCliPosInfo.dat は、新しいファイルが無い時の読み込みにだけ使う） */
+	GetAdminRuraFileName (szName, "SboCliPosInfo2.dat");
 
 	hFile = CreateFile (szName, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
 	if (hFile == INVALID_HANDLE_VALUE) {
@@ -3360,42 +3372,69 @@ BOOL SaveAdminRura(void)
 BOOL LoadAdminRura(void)
 {
 	int i;
+	BOOL bOld;
 	HANDLE hFile;
 	DWORD dwBytes;
 	char szName[MAX_PATH + 1];
-	ZeroMemory (szName, sizeof (szName));
 
-	/* ファイル名の作成 */
-	GetModuleFileName (NULL, szName, MAX_PATH);
-	for (i = strlen (szName) - 1; i > 0; i --) {
-		if (szName[i] == '\\') {
-			szName[i + 1] = 0;
-			break;
-		}
-	}
-	strcat (szName, "SboCliPosInfo.dat");
-
+	/* まず新しい形式、無ければコメント欄が 21 バイトだった頃のファイルを読む */
+	GetAdminRuraFileName (szName, "SboCliPosInfo2.dat");
 	hFile = CreateFile (szName, GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
 	if (hFile == INVALID_HANDLE_VALUE) {
-		return FALSE;
+		bOld = TRUE;
+		GetAdminRuraFileName (szName, "SboCliPosInfo.dat");
+		hFile = CreateFile (szName, GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+		if (hFile == INVALID_HANDLE_VALUE) {
+			return FALSE;
+		}
 	}
 	SetFilePointer (hFile, 0, 0, FILE_BEGIN);
-	
+
 	PADMINRURAINFO pInfoNew;
 	for (i = 0; ; i ++) {
 		pInfoNew = new ADMINRURAINFO;
 		ZeroMemory (pInfoNew, sizeof (ADMINRURAINFO));
-		ReadFile (hFile, pInfoNew, sizeof (ADMINRURAINFO), &dwBytes, NULL);
-		if (dwBytes == 0) {
-			SAFE_DELETE (pInfoNew);
-			break;
-		}
-		/* 文字コードを UTF-8 にする前（Shift_JIS）に保存したコメントは読み替える */
-		pInfoNew->szComment[sizeof (pInfoNew->szComment) - 1] = 0;
-		if (!SboTextIsValid (pInfoNew->szComment)) {
-			char szTmp[sizeof (pInfoNew->szComment) * 2];
-			W32SjisToUtf8 (pInfoNew->szComment, -1, szTmp, sizeof (szTmp));
-			SboTextCopy (pInfoNew->szComment, sizeof (pInfoNew->szComment), szTmp);
+		if (bOld) {
+			ADMINRURAINFO_OLD InfoOld;
+			ZeroMemory (&InfoOld, sizeof (InfoOld));
+			ReadFile (hFile, &InfoOld, sizeof (InfoOld), &dwBytes, NULL);
+			if (dwBytes == 0) {
+				SAFE_DELETE (pInfoNew);
+				break;
+			}
+			pInfoNew->dwMapID	= InfoOld.dwMapID;
+			pInfoNew->dwX		= InfoOld.dwX;
+			pInfoNew->dwY		= InfoOld.dwY;
+			InfoOld.szComment[sizeof (InfoOld.szComment) - 1] = 0;
+			/* 21 バイトの欄で全角の途中が切れた UTF-8 は、末尾の欠けた 1 文字だけ落とす */
+			{
+				int nLen = strlen (InfoOld.szComment), nCut;
+				for (nCut = 1; nCut <= 3 && nCut <= nLen; nCut ++) {
+					if (SboTextIsValid (InfoOld.szComment)) {
+						break;
+					}
+					char szTmp[sizeof (InfoOld.szComment)];
+					memcpy (szTmp, InfoOld.szComment, nLen - nCut);
+					szTmp[nLen - nCut] = 0;
+					if ((BYTE)InfoOld.szComment[nLen - nCut] >= 0xC0 && SboTextIsValid (szTmp)) {
+						InfoOld.szComment[nLen - nCut] = 0;
+						break;
+					}
+				}
+			}
+			if (SboTextIsValid (InfoOld.szComment)) {
+				SboTextCopy (pInfoNew->szComment, sizeof (pInfoNew->szComment), InfoOld.szComment);
+			} else {
+				/* 文字コードを UTF-8 にする前（Shift_JIS）に保存したコメントは読み替える */
+				W32SjisToUtf8 (InfoOld.szComment, -1, pInfoNew->szComment, sizeof (pInfoNew->szComment));
+			}
+		} else {
+			ReadFile (hFile, pInfoNew, sizeof (ADMINRURAINFO), &dwBytes, NULL);
+			if (dwBytes == 0) {
+				SAFE_DELETE (pInfoNew);
+				break;
+			}
+			pInfoNew->szComment[sizeof (pInfoNew->szComment) - 1] = 0;
 		}
 		g_AdminRuraInfo.Add (pInfoNew);
 	}

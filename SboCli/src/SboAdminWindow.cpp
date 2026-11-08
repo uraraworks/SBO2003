@@ -2489,10 +2489,14 @@ void AdminOnCommandCharInfo(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 				pInfo->dwY = atoi (szTmp);
 			}
 
-			ZeroMemory (szTmp, sizeof (szTmp));
-			GetWindowText (m_hWndEdit9, szTmp, sizeof (szTmp));
-			if (pInfo) {
-				wsprintf (pInfo->szComment, "%s", szTmp);
+			/* コメントは全角を含むので、広い欄で受けてから文字の途中で切らずに記録する */
+			{
+				char szComment[256];
+				ZeroMemory (szComment, sizeof (szComment));
+				GetWindowText (m_hWndEdit9, szComment, sizeof (szComment));
+				if (pInfo) {
+					SboTextCopy (pInfo->szComment, sizeof (pInfo->szComment), szComment);
+				}
 			}
 
 			SaveAdminRura ();
@@ -2596,7 +2600,7 @@ void AdminOnCommandCharInfo(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 /* ========================================================================= */
 static void RecordAdminRuraEdit(HWND hWndCtl)
 {
-	char szTmp[sizeof (((PADMINRURAINFO)0)->szComment)];
+	char szTmp[256];
 	PADMINRURAINFO pInfo;
 
 	if (g_dwSelctRura >= (DWORD)g_AdminRuraInfo.GetSize ()) {
@@ -2615,7 +2619,8 @@ static void RecordAdminRuraEdit(HWND hWndCtl)
 	} else if (hWndCtl == m_hWndEdit8) {
 		pInfo->dwY = atoi (szTmp);
 	} else {
-		lstrcpyn (pInfo->szComment, szTmp, sizeof (pInfo->szComment));
+		/* 欄より長い時も、文字の途中で切って「?」にならないようにする */
+		SboTextCopy (pInfo->szComment, sizeof (pInfo->szComment), szTmp);
 	}
 	SaveAdminRura ();
 }
