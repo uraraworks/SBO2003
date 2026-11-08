@@ -9,6 +9,7 @@
 #include "include.h"
 #include "Glbldata.h"
 #include "CharProc/CharProcBase.h"
+#include "CharProc/CharProcPUT.h"
 #include "../Common/Info/InfoJob.h"
 #include "../Common/Info/SubGame/InfoSubGameWAR.h"
 #include "../Common/Command/Command.h"
@@ -4297,6 +4298,9 @@ void RecvDataProcCHARINFO(PBYTE pData, DWORD dwDataSize)
 	SendCmdCHARINFO3 (pChar->dwTblID);
 	SendCmdCHARINFO (pChar->pID, -1);
 	SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 1);
+
+	/* NPC発生（発生元）なら、もう出ているキャラにも名前・見た目・テンプレートを反映 */
+	RenewPutChildChar (pCharDst);
 }
 
 /* ========================================================================= */
@@ -4328,7 +4332,7 @@ void RecvDataProcADDMAP(PBYTE pData, DWORD dwDataSize)
 
 	char szTmp[128];
 	wsprintf (szTmp, "SYSTEM:マップID%dを追加しました。", pMap->dwID);
-	SendCmdSYSMSG (pPara->pID, szTmp, SPEECHCMD_BATTLE1);
+	SendCmdSYSMSG (s_pIDRecv, szTmp, SPEECHCMD_BATTLE1);
 }
 
 /* ========================================================================= */
@@ -6021,6 +6025,20 @@ void RecvDataProcCHARSTATUS(PBYTE pData, DWORD dwDataSize)
 	CopyMemory (pChar->waEqu, pPara->waEqu, sizeof (pChar->waEqu));
 	CopyMemory (pChar->abyMagic, pPara->abyMagic, sizeof (pChar->abyMagic));
 	SendCmdCHARSTATUS (pChar->pID, pChar->dwTblID);
+
+	/* NPC発生（発生元）？ */
+	if ((pChar->byGameState == GAMESTATE_NPC) && (pChar->byNpcType == NPCTYPE_PUT)) {
+		/* もう出ているキャラにも反映（以前は倒されて出直すまで古いままだった） */
+		RenewPutChildChar (pChar);
+
+		/* テンプレート指定中は、出てくるキャラはテンプレートの能力になる */
+		if (s_pIDRecv && (pChar->dwStTmplateID != -1) && (pChar->dwStTmplateID < (DWORD)g_aStTmpInfo.GetSize ())) {
+			char szTmp[256];
+			wsprintf (szTmp, "テンプレート「%s」を使う設定なので、出てくるキャラはテンプレートの能力になります。",
+				g_aStTmpInfo[pChar->dwStTmplateID]->szName);
+			SendCmdSYSMSG (s_pIDRecv, szTmp, SPEECHCMD_BATTLE1);
+		}
+	}
 }
 
 /* ========================================================================= */
@@ -6210,8 +6228,9 @@ void ApplyStTmpToChars(DWORD dwID)
 		if (pChar->dwStTmplateID != dwID) {
 			continue;
 		}
-		/* 発生元？ */
+		/* 発生元？（発生元そのものは変えず、出ているキャラへ反映） */
 		if (pChar->byNpcType == NPCTYPE_PUT) {
+			RenewPutChildChar (pChar);
 			continue;
 		}
 		pChar->byLevel		= pInfo->byLevel;

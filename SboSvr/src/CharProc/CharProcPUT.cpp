@@ -22,6 +22,135 @@ CCharProcPUT::CCharProcPUT()
 
 
 /* ========================================================================= */
+/* 関数名：	PutCharSetStatus												 */
+/* 内容：	発生元の能力（テンプレート指定中はテンプレート）を出てくるキャラへ写す	 */
+/*			位置・向き・処理クラスはさわらない（呼ぶ側で）					 */
+/* 日付：	2026/11/08（発生時の処理から切り出し）							 */
+/* ========================================================================= */
+
+void PutCharSetStatus(PCHARINFO pParent, PCHARINFO pChar)
+{
+	pChar->wGrpID			= pParent->wGrpID;
+	pChar->wGrpMain			= pParent->wGrpMain;
+	pChar->wGrpSub			= pParent->wGrpSub;
+	pChar->byAreaX			= pParent->byAreaX;
+	pChar->byAreaY			= pParent->byAreaY;
+	pChar->byNpcType		= NPCTYPE_BATTLE1;
+	pChar->byLevel			= pParent->byLevel;
+	pChar->byPW				= pParent->byPW;
+	pChar->byDEX			= pParent->byDEX;
+	pChar->byST				= pParent->byST;
+	pChar->byIT				= pParent->byIT;
+	pChar->byLK				= pParent->byLK;
+	pChar->byJOB			= pParent->byJOB;
+	pChar->byDropProbability	= pParent->byDropProbability;
+	pChar->wAT				= pParent->wAT;
+	pChar->wDF				= pParent->wDF;
+	pChar->wMaxHP			= pParent->wMaxHP;
+	pChar->wHP				= pParent->wHP;
+	pChar->wMaxMana			= pParent->wMaxMana;
+	pChar->wMana			= pParent->wMana;
+	pChar->wDFMagic			= pParent->wDFMagic;
+	pChar->dwGold			= pParent->dwGold;
+	pChar->dwExp			= pParent->dwExp;
+	pChar->clName			= pParent->clName;
+	pChar->clSpeech			= pParent->clSpeech;
+	CopyMemory (pChar->waItem,		pParent->waItem,	sizeof (pChar->waItem));
+	CopyMemory (pChar->abyMagic,	pParent->abyMagic,	sizeof (pChar->abyMagic));
+	CopyMemory (pChar->szName,		pParent->szName,	sizeof (pChar->szName));
+	pChar->szName[sizeof (pChar->szName) - 1] = 0;
+
+	/* テンプレートが指定されている？ */
+	if ((pParent->dwStTmplateID != -1) && (pParent->dwStTmplateID < (DWORD)g_aStTmpInfo.GetSize ())) {
+		PSTATUSTEMPLATEINFO pTmp;
+
+		pTmp = g_aStTmpInfo[pParent->dwStTmplateID];
+		pChar->byLevel				= pTmp->byLevel;
+		pChar->byPW					= pTmp->byPW;
+		pChar->byDEX				= pTmp->byDEX;
+		pChar->byST					= pTmp->byST;
+		pChar->byIT					= pTmp->byIT;
+		pChar->byLK					= pTmp->byLK;
+		pChar->byNpcType			= pTmp->byNpcType;
+		pChar->wMaxHP				= pTmp->wMaxHP;
+		pChar->wHP					= pTmp->wMaxHP;
+		pChar->wMaxMana				= pTmp->wMaxMana;
+		pChar->wMana				= pTmp->wMaxMana;
+		pChar->wDFMagic				= pTmp->wDFMagic;
+		pChar->chAttrFire			= pTmp->chAttrFire;
+		pChar->chAttrWater			= pTmp->chAttrWater;
+		pChar->chAttrWind			= pTmp->chAttrWind;
+		pChar->chAttrEarth			= pTmp->chAttrEarth;
+		pChar->chAttrLight			= pTmp->chAttrLight;
+		pChar->chAttrDark			= pTmp->chAttrDark;
+		pChar->dwGold				= pTmp->dwGold;
+		pChar->dwExp				= pTmp->dwExp;
+		pChar->byDropProbability	= pTmp->byDropProbability;
+		pChar->byMoveProbabilityX	= pTmp->byMoveProbabilityX;
+		pChar->byMoveProbabilityY	= pTmp->byMoveProbabilityY;
+		pChar->bySearchCx			= pTmp->bySearchCx;
+		pChar->bySearchCy			= pTmp->bySearchCy;
+		CopyMemory (pChar->waItem,		pTmp->waItem,	sizeof (pChar->waItem));
+		CopyMemory (pChar->abyMagic,	pTmp->abyMagic,	sizeof (pChar->abyMagic));
+	}
+}
+
+
+/* ========================================================================= */
+/* 関数名：	RenewPutChildChar												 */
+/* 内容：	発生元から出ているキャラへ、今の発生元（テンプレート）の能力を反映	 */
+/*			管理者ウィンドウ・データ API で発生元やテンプレートを変えた時に呼ぶ。 */
+/*			（以前は出ているキャラが倒されて出直すまで古い能力のままだった）	 */
+/* 日付：	2026/11/08														 */
+/* ========================================================================= */
+
+void RenewPutChildChar(PCHARINFO pParent)
+{
+	int i, nCount;
+	WORD wHP;
+	BYTE byNpcType;
+
+	if ((pParent == NULL) || (pParent->byNpcType != NPCTYPE_PUT)) {
+		return;
+	}
+
+	nCount = g_aCharInfo.GetSize ();
+	for (i = 0; i < nCount; i ++) {
+		PCHARINFO pChar = g_aCharInfo[i];
+
+		if ((pChar == NULL) || (pChar == pParent)) {
+			continue;
+		}
+		if (pChar->dwParentTblID != pParent->dwTblID) {
+			continue;
+		}
+		if (pChar->byGameState != pParent->byGameState) {
+			continue;
+		}
+
+		wHP			= pChar->wHP;
+		byNpcType	= pChar->byNpcType;
+		PutCharSetStatus (pParent, pChar);
+
+		/* 倒れている途中のキャラは生き返らせない。ほかは満タンで出直したことにする */
+		if (wHP == 0) {
+			pChar->wHP = 0;
+		}
+
+		/* 種別（戦闘1・戦闘2など）が変わったら処理クラスを作り直す */
+		if (pChar->byNpcType != byNpcType) {
+			CCharProcBase CharProcBase;
+
+			CharProcBase.SetProc (pChar);
+		}
+
+		RenewATDF (pChar->dwTblID);
+		SendCmdCHARINFO3 (pChar->dwTblID);
+	}
+}
+
+
+/* ========================================================================= */
 /* 関数名：	CCharProcPUT::Proc												 */
 /* 内容：	処理															 */
 /* 日付：	2006/01/17														 */
@@ -94,68 +223,11 @@ BOOL CCharProcPUT::Proc(DWORD dwTime)
 	pCharNew->dwStartMapID		= m_pChar->dwStartMapID;
 	pCharNew->dwStartX			= dwX;
 	pCharNew->dwStartY			= dwY;
-	pCharNew->wGrpID			= m_pChar->wGrpID;
-	pCharNew->wGrpMain			= m_pChar->wGrpMain;
-	pCharNew->wGrpSub			= m_pChar->wGrpSub;
 	pCharNew->byDirection		= m_pChar->byDirection;
 	pCharNew->dwParentTblID		= m_pChar->dwTblID;
-	pCharNew->byAreaX			= m_pChar->byAreaX;
-	pCharNew->byAreaY			= m_pChar->byAreaY;
-	pCharNew->byLevel			= m_pChar->byLevel;
-	pCharNew->byPW				= m_pChar->byPW;
-	pCharNew->byDEX				= m_pChar->byDEX;
-	pCharNew->byST				= m_pChar->byST;
-	pCharNew->byIT				= m_pChar->byIT;
-	pCharNew->byLK				= m_pChar->byLK;
-	pCharNew->byJOB				= m_pChar->byJOB;
-	pCharNew->byDropProbability	= m_pChar->byDropProbability;
-	pCharNew->wAT				= m_pChar->wAT;
-	pCharNew->wDF				= m_pChar->wDF;
-	pCharNew->wMaxHP			= m_pChar->wMaxHP;
-	pCharNew->wHP				= m_pChar->wHP;
-	pCharNew->wMaxMana			= m_pChar->wMaxMana;
-	pCharNew->wMana				= m_pChar->wMana;
-	pCharNew->wDFMagic			= m_pChar->wDFMagic;
-	pCharNew->dwGold			= m_pChar->dwGold;
-	pCharNew->dwExp				= m_pChar->dwExp;
-	pCharNew->clName			= m_pChar->clName;
-	pCharNew->clSpeech			= m_pChar->clSpeech;
-	CopyMemory (pCharNew->waItem,	m_pChar->waItem,	sizeof (m_pChar->waItem));
-	CopyMemory (pCharNew->abyMagic,	m_pChar->abyMagic,	sizeof (m_pChar->abyMagic));
-	strcat (pCharNew->szName, m_pChar->szName);
-
-	/* テンプレートが指定されている？ */
+	PutCharSetStatus (m_pChar, pCharNew);
+	/* テンプレートが指定されている？（種別がテンプレートのものになる） */
 	if (m_pChar->dwStTmplateID != -1) {
-		PSTATUSTEMPLATEINFO pTmp;
-
-		pTmp = g_aStTmpInfo[m_pChar->dwStTmplateID];
-		pCharNew->byLevel				= pTmp->byLevel;
-		pCharNew->byPW					= pTmp->byPW;
-		pCharNew->byDEX					= pTmp->byDEX;
-		pCharNew->byST					= pTmp->byST;
-		pCharNew->byIT					= pTmp->byIT;
-		pCharNew->byLK					= pTmp->byLK;
-		pCharNew->byNpcType				= pTmp->byNpcType;
-		pCharNew->wMaxHP				= pTmp->wMaxHP;
-		pCharNew->wHP					= pTmp->wMaxHP;
-		pCharNew->wMaxMana				= pTmp->wMaxMana;
-		pCharNew->wMana					= pTmp->wMaxMana;
-		pCharNew->wDFMagic				= pTmp->wDFMagic;
-		pCharNew->chAttrFire			= pTmp->chAttrFire;
-		pCharNew->chAttrWater			= pTmp->chAttrWater;
-		pCharNew->chAttrWind			= pTmp->chAttrWind;
-		pCharNew->chAttrEarth			= pTmp->chAttrEarth;
-		pCharNew->chAttrLight			= pTmp->chAttrLight;
-		pCharNew->chAttrDark			= pTmp->chAttrDark;
-		pCharNew->dwGold				= pTmp->dwGold;
-		pCharNew->dwExp					= pTmp->dwExp;
-		pCharNew->byDropProbability		= pTmp->byDropProbability;
-		pCharNew->byMoveProbabilityX	= pTmp->byMoveProbabilityX;
-		pCharNew->byMoveProbabilityY	= pTmp->byMoveProbabilityY;
-		pCharNew->bySearchCx			= pTmp->bySearchCx;
-		pCharNew->bySearchCy			= pTmp->bySearchCy;
-		CopyMemory (pCharNew->waItem,	pTmp->waItem,	sizeof (pCharNew->waItem));
-		CopyMemory (pCharNew->abyMagic,	pTmp->abyMagic,	sizeof (pCharNew->abyMagic));
 		SetProc (pCharNew);
 	}
 

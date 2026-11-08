@@ -2235,6 +2235,8 @@ static bool CharApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::str
 		ApplyStTmpToChars(pDst->dwStTmplateID);
 	}
 	RenewATDF(pDst->dwTblID);
+	/* NPC発生（発生元）なら、もう出ているキャラにも反映 */
+	RenewPutChildChar(pDst);
 	if (bRoute) {
 		std::vector<BYTE> bx(aX.begin(), aX.end()), by(aY.begin(), aY.end());
 		const BYTE byDummy[1] = { 0 };
