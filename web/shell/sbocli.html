@@ -2813,6 +2813,142 @@
 		sendChat(String(text), keyMod | 0);
 	};
 
+	/* ---- 発言の残り文字数 ----
+	   1 回の発言は全角 20 文字（表示幅 40）まで。超えた分は分けて送られるので、
+	   送る前に分かるよう入力欄の横に残りの文字数（全角換算）と円グラフを出す。
+	   数え方は splitChat と同じ（半角は 0.5 文字、! < の放送は記号の分だけ減る、
+	   / # $ のコマンドは分けないので出さない、URL 入りの発言は URL を切らない）。 */
+	function chatCountInfo(text) {
+		if (!text || !text.trim()) {
+			return null;
+		}
+		var first = Array.from(text)[0];
+		if (isCmdChar(first) && first !== '!' && first !== '<') {
+			return null;
+		}
+		var prefix = (first === '!' || first === '<') ? 1 : 0;
+		var limit = CHAT_SPEECH_MAX - prefix;
+		var parts = splitChat(text).length;
+		var used = textWidth(text) - prefix;
+		return {
+			parts: parts,
+			/* URL 入りで 1 つのまま送る時は、表示幅を超えていても 1 回で送れる */
+			ratio: parts > 1 ? 1 : Math.min(1, used / limit),
+			rest: parts > 1 ? 0 : Math.max(0, limit - used)
+		};
+	}
+	window.sboChatCountInfo = chatCountInfo;	/* テスト用 */
+
+	var COUNT_WARN = 6;		/* 残りがこの表示幅（全角 3 文字）以下になったら黄色にする */
+	var COUNT_FONT = '"BIZ UDGothic","Hiragino Sans","Meiryo",sans-serif';
+	/* 入力欄に残り文字数の表示を付ける。overlay が true ならゲーム画面に重ねた
+	   発言欄（Enter で開く欄）で、欄の右上（ウィンドウのタイトルの行）に小さく出す。
+	   別ウィンドウのログでも使うので、見た目は CSS のクラスではなく直接指定する */
+	function attachChatCount(input, overlay) {
+		if (!input || input.sboCountUpdate) {
+			return;
+		}
+		var doc = input.ownerDocument;
+		var box = doc.createElement('span');
+		box.className = 'sbo-chat-count';
+		box.setAttribute('aria-live', 'polite');
+		var NS = 'http://www.w3.org/2000/svg';
+		var svg = doc.createElementNS(NS, 'svg');
+		svg.setAttribute('viewBox', '0 0 20 20');
+		var bg = doc.createElementNS(NS, 'circle');
+		var fg = doc.createElementNS(NS, 'circle');
+		var R = 8, LEN = 2 * Math.PI * R;
+		[bg, fg].forEach(function (c) {
+			c.setAttribute('cx', '10');
+			c.setAttribute('cy', '10');
+			c.setAttribute('r', String(R));
+			c.setAttribute('fill', 'none');
+			c.setAttribute('stroke-width', '3');
+			svg.appendChild(c);
+		});
+		bg.setAttribute('stroke', '#3a404a');
+		fg.setAttribute('stroke-linecap', 'round');
+		fg.setAttribute('stroke-dasharray', String(LEN));
+		fg.setAttribute('transform', 'rotate(-90 10 10)');
+		var num = doc.createElement('span');
+		box.appendChild(svg);
+		box.appendChild(num);
+		if (overlay) {
+			/* ゲーム画面の倍率に合わせて大きさを変える */
+			box.style.cssText = 'position:absolute;display:none;box-sizing:border-box;align-items:center;' +
+				'justify-content:flex-end;gap:2px;pointer-events:none;white-space:nowrap;' +
+				'font:bold calc(10px * var(--w32-scale, 1))/1 ' + COUNT_FONT + ';text-shadow:0 0 2px #000,0 0 2px #000;';
+			svg.style.cssText = 'width:calc(11px * var(--w32-scale, 1));height:calc(11px * var(--w32-scale, 1));flex:none;';
+			input.parentNode.appendChild(box);
+		} else {
+			box.style.cssText = 'flex:none;display:none;align-items:center;gap:3px;min-width:3.2em;' +
+				'justify-content:flex-end;font:bold 12px/1 ' + COUNT_FONT + ';user-select:none;';
+			svg.style.cssText = 'width:18px;height:18px;flex:none;';
+			input.parentNode.insertBefore(box, input.nextSibling);
+		}
+
+		/* ゲーム画面の欄は位置と表示が後から変わるので、欄に合わせて動かす */
+		function place() {
+			var st = input.style;
+			box.style.left = st.left;
+			box.style.width = st.width;
+			box.style.height = st.height;
+			box.style.top = 'calc(' + (st.top || '0px') + ' - ' + (st.height || '0px') + ')';
+		}
+		function update() {
+			var info = (input.style.display === 'none') ? null : chatCountInfo(input.value);
+			if (!info) {
+				box.style.display = 'none';
+				return;
+			}
+			var color, label, tip;
+			if (info.parts > 1) {
+				color = '#ff8a3d';
+				label = info.parts + '回';
+				tip = '全角 20 文字を超えたので、' + info.parts + ' 回に分けて送ります';
+			} else {
+				color = (info.rest <= COUNT_WARN) ? '#f0c040' : '#8fd0ff';
+				/* 全角で数える（半角 1 文字ぶんの余りは切り捨て） */
+				label = String(Math.floor(info.rest / 2));
+				tip = 'あと全角 ' + Math.floor(info.rest / 2) + ' 文字（半角なら ' + info.rest + ' 文字）で 1 回の発言に入ります';
+			}
+			fg.setAttribute('stroke', color);
+			fg.setAttribute('stroke-dashoffset', String(LEN * (1 - info.ratio)));
+			num.textContent = label;
+			num.style.color = color;
+			box.title = tip;
+			if (overlay) {
+				place();
+			}
+			box.style.display = 'flex';
+		}
+		input.sboCountUpdate = update;
+		input.addEventListener('input', update);
+		/* 変換中の文字も数える（確定前に分かるように） */
+		input.addEventListener('compositionupdate', function () {
+			setTimeout(update, 0);
+		});
+		input.addEventListener('compositionend', function () {
+			setTimeout(update, 0);
+		});
+		if (overlay && window.MutationObserver) {
+			/* 欄が動いた・隠れた時は合わせ、消えたら表示も消す */
+			new MutationObserver(update).observe(input, { attributes: true, attributeFilter: ['style'] });
+			var parentObs = new MutationObserver(function () {
+				if (!input.isConnected) {
+					box.remove();
+					parentObs.disconnect();
+				}
+			});
+			parentObs.observe(input.parentNode, { childList: true });
+		}
+		update();
+	}
+	/* Enter で開くゲーム内の発言欄ができた時に呼ばれる（SboCliMsgLogWindow_web.cpp から） */
+	window.sboChatCountAttach = function (input) {
+		attachChatCount(input, true);
+	};
+
 	/* 押されていたキー（Shift が優先、無ければ Ctrl） */
 	function chatKeyMod(ev) {
 		if (ev && ev.shiftKey) {
@@ -2830,6 +2966,10 @@
 		}
 		var text = input.value;
 		input.value = '';
+		/* value を書き換えても input イベントは来ないので、残り文字数の表示も直す */
+		if (input.sboCountUpdate) {
+			input.sboCountUpdate();
+		}
 		sendChat(text, keyMod);
 	}
 	/* 発言を分けて送信待ちに積む。Enter で開くゲーム内の発言欄も
@@ -2849,6 +2989,7 @@
 		}
 	}
 	function bindChatInput(input, sendBtn, afterSend) {
+		attachChatCount(input, false);
 		input.addEventListener('keydown', function (ev) {
 			/* IME の変換を確定する Enter では送らない */
 			if (ev.key === 'Enter' && !ev.isComposing && ev.keyCode !== 229) {
