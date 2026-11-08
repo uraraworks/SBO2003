@@ -1570,20 +1570,12 @@ BOOL LoadCharInfo(void)
 			pJobInfo = g_JobInfo.GetPtr ((int)pInfo->byJOB);
 			if (pJobInfo) {
 				int nMaxLevel;
-				PLVUPINFO pLvUpInfo;
 
+				/* 能力値は「次のレベルの上限」で切り詰めない。
+				   （元は起動のたびに切り詰めていて、種や管理者で上げた分が
+				     再起動で消えていた。HP・Mana が最大を超えない補正は上で済み） */
 				nMaxLevel = pJobInfo->aLevelUpInfo.GetSize ();
-				if (nMaxLevel > 1 && pInfo->byLevel < nMaxLevel) {
-					pLvUpInfo = pJobInfo->aLevelUpInfo[pInfo->byLevel];
-					pInfo->byPW		= min (pInfo->byPW, pLvUpInfo->byPW);
-					pInfo->byDEX	= min (pInfo->byDEX, pLvUpInfo->byDEX);
-					pInfo->byST		= min (pInfo->byST, pLvUpInfo->byST);
-					pInfo->byIT		= min (pInfo->byIT, pLvUpInfo->byIT);
-					pInfo->wMaxHP	= min (pInfo->wMaxHP, pLvUpInfo->wMAXHP);
-					pInfo->wHP		= min (pInfo->wMaxHP, pLvUpInfo->wMAXHP);
-					pInfo->wMaxMana	= min (pInfo->wMaxMana, pLvUpInfo->wMAXMANA);
-					pInfo->wMana	= min (pInfo->wMaxMana, pLvUpInfo->wMAXMANA);
-				} else {
+				if (!(nMaxLevel > 1 && pInfo->byLevel < nMaxLevel)) {
 					pInfo->byLevel = nMaxLevel;
 				}
 			}
