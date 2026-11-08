@@ -278,13 +278,13 @@ array round=17 size=25 bad=0 hash=bc0f0af2
 array round=18 size=45 bad=0 hash=5ae22b52
 array round=19 size=10 bad=0 hash=309f76f5
 array bulk size=20000 sum=199990000
-== world chars=875 pc=0 npc=875 maps=116 ==
-npctype 1 count 496
-npctype 2 count 33
+== world chars=884 pc=0 npc=884 maps=116 ==
+npctype 1 count 501
+npctype 2 count 35
 npctype 3 count 21
 npctype 4 count 32
 npctype 5 count 175
-npctype 6 count 58
+npctype 6 count 60
 npctype 8 count 9
 npctype 12 count 5
 npctype 14 count 23
@@ -369,12 +369,12 @@ search map=12 k=2 (78,5)->(62,20) turns=1 infos=0 dir=1 hash=7212f12f
 search map=12 k=3 (67,61)->(16,10) turns=1 infos=0 dir=0 hash=7212f12f
 search map=12 k=4 (8,69)->(36,32) turns=1 infos=0 dir=2 hash=7212f12f
 search map=12 k=5 (31,23)->(48,5) turns=407 infos=406 dir=0 hash=1777a72f
-search map=13 k=0 (37,17)->(56,79) turns=932 infos=931 dir=1 hash=d4aa45c3
-search map=13 k=1 (93,49)->(6,114) turns=140 infos=139 dir=3 hash=9991f74d
+search map=13 k=0 (37,17)->(56,79) turns=608 infos=607 dir=1 hash=f80576f0
+search map=13 k=1 (93,49)->(6,114) turns=278 infos=277 dir=3 hash=c8075d20
 search map=13 k=2 (97,88)->(54,66) turns=185 infos=184 dir=2 hash=54602075
 search map=13 k=3 (5,35)->(32,72) turns=215 infos=214 dir=1 hash=6fe7b41f
 search map=13 k=4 (35,5)->(100,59) turns=295 infos=294 dir=2 hash=99b9a8e3
-search map=13 k=5 (56,51)->(96,90) turns=510 infos=509 dir=2 hash=a97b0fed
+search map=13 k=5 (56,51)->(96,90) turns=335 infos=334 dir=2 hash=347751f1
 search map=14 k=0 (56,12)->(55,65) turns=1 infos=0 dir=1 hash=7212f12f
 search map=14 k=1 (43,48)->(74,9) turns=825 infos=824 dir=2 hash=1388d6a2
 search map=14 k=2 (50,28)->(62,19) turns=1 infos=0 dir=2 hash=7212f12f
@@ -998,16 +998,24 @@ inside size=300 total=23464 sha=4e46bd04dad3789b
 inside size=3000 total=44877 sha=38f034f6a7a59985
 inside capture ret=1 size=400
 == E. TimerProc ==
-lap=39 chars=531f3889 total=9925 sha=355ed494344e16c9
-lap=79 chars=8fda519c total=22175 sha=6acbd3f93e2f31bd
-lap=119 chars=5ae8cfa6 total=34750 sha=1982fa891c1ad4b9
-lap=159 chars=10df8d86 total=47450 sha=77d4864563e22df6
-lap=199 chars=9624fb1a total=56950 sha=53828c82c3a73435
-lap=239 chars=0fd6313b total=64950 sha=05fc8e1f7862dfe9
-lap=279 chars=0df4339d total=77050 sha=e17023eaf260c102
-lap=319 chars=820dc4c5 total=87550 sha=2b6173c2ff067279
-lap=359 chars=95857b80 total=97350 sha=cbdc93f500142933
-lap=399 chars=b2cc99f3 total=104525 sha=cff9a7c4cb8e327f
-lap-final total=104525 sha=cff9a7c4cb8e327f
-final chars=b2cc99f3
+lap=39 chars=b65f4539 total=9925 sha=9c99d8ddcebe6839
+lap=79 chars=26a67717 total=22175 sha=73ce390d2d27de85
+lap=119 chars=d2aadb95 total=34750 sha=08f0da6548e7aa7f
+lap=159 chars=799ac36e total=47450 sha=5c49a415b229da65
+lap=199 chars=fa61117e total=56950 sha=81332c3390cddf87
+lap=239 chars=f34d73a7 total=64950 sha=47bea3b9fba0b701
+lap=279 chars=349bbaeb total=77050 sha=e19aae396bb4c123
+lap=319 chars=2e6b2ac8 total=87550 sha=24cc80d54b79840d
+lap=359 chars=03e47891 total=97350 sha=dbebaefbfeb7572c
+lap=399 chars=1418e2fe total=104525 sha=db9bed79fb718b33
+lap-final total=104525 sha=db9bed79fb718b33
+final chars=1418e2fe
+== F. ShotMagic ==
+enemy map=2 x=62 y=85 type=13
+shot magic=39 dist=1 hit=100/100
+shot magic=39 dist=2 hit=100/100
+shot magic=39 dist=3 hit=100/100
+shot magic=74 dist=1 hit=100/100
+shot magic=74 dist=2 hit=100/100
+shot magic=74 dist=3 hit=100/100
 == done ==

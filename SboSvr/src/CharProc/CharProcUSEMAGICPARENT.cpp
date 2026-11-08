@@ -67,6 +67,19 @@ BOOL CCharProcUSEMAGICPARENT::Proc(DWORD dwTime)
 		goto Exit;
 	}
 
+	/* 一人に当たれば消える飛ぶ魔法は、動く前に今いるマスで当たるか確かめる。
+	   (出た所が目の前の敵のマスだと、先に動いてすり抜けてしまい当たらなかった) */
+	if (m_pChar->wMaxHP && (m_pChar->byMoveProbabilityX || m_pChar->byMoveProbabilityY)) {
+		if (MagicProc (m_pChar->dwTblID, m_pChar->abyMagic[byNo], m_pChar->dwParentTblID)) {
+			/* 次で消滅 */
+			m_pChar->dwTimeDelete = 0;
+			m_pChar->dwTimeLogin = 0;
+			m_pChar->dwLastDotMove = 0;
+			bRet = TRUE;
+			goto Exit;
+		}
+	}
+
 	/* 移動確率が設定されている？ */
 	if (m_pChar->byMoveProbabilityX || m_pChar->byMoveProbabilityY) {
 		int nTmp = genrand () % 100, nTmpCheck;

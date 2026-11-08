@@ -395,6 +395,117 @@ static DWORD HashChars(void)
 	return dwHash;
 }
 
+/* ------------------------------------------------------------------------- */
+/* F. 飛ぶ特技・魔法が近い敵にも当たるか									 */
+/*    目の前の敵のマスに出た弾が、当たり判定の前に1マス進んですり抜けていた	 */
+/* ------------------------------------------------------------------------- */
+extern BOOL MagicProc(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget);
+extern BOOL CheckCharBlock(DWORD dwMapID, DWORD dwX, DWORD dwY);
+extern void AddTblNoPC(int nNo);
+extern void DeleteTblNoPC(int nNo);
+
+static void TestShotMagic(const std::vector<int> &aLogin)
+{
+	printf("== F. ShotMagic ==\n");
+	if (aLogin.empty()) {
+		return;
+	}
+	PCHARINFO pPC = g_aCharInfo[aLogin[0]];
+	/* 右向きに撃つので、左に3マス空いている戦闘用の敵を探す */
+	PCHARINFO pEnemy = NULL;
+	for (int i = 0; i < g_aCharInfo.GetSize() && !pEnemy; i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+		if (p->wGrpMain != CHARGRP_MAIN_NORMAL || (g_aMapInfo[p->dwMapID]->byFlg & MAPFLG_MAGIC)) {
+			continue;
+		}
+		if (p->byNpcType != NPCTYPE_BATTLE1 && p->byNpcType != NPCTYPE_BATTLE2) {
+			continue;
+		}
+		if (p->dwX < 4) {
+			continue;
+		}
+		BOOL bOK = TRUE;
+		for (int d = 1; d <= 3; d ++) {
+			if (!CheckCharBlock(p->dwMapID, p->dwX - d, p->dwY)) {
+				bOK = FALSE;
+			}
+		}
+		if (bOK) {
+			pEnemy = p;
+		}
+	}
+	if (!pEnemy) {
+		printf("no enemy\n");
+		return;
+	}
+	/* 敵のいるマップへ移す */
+	DWORD dwPCMap = pPC->dwMapID;
+	DeleteTblNoPC((int)pPC->dwTblID);
+	pPC->dwMapID = pEnemy->dwMapID;
+	AddTblNoPC((int)pPC->dwTblID);
+	printf("enemy map=%u x=%u y=%u type=%d\n", pEnemy->dwMapID, pEnemy->dwX, pEnemy->dwY, pEnemy->byNpcType);
+	DWORD dwEnemyX = pEnemy->dwX, dwEnemyY = pEnemy->dwY;
+	WORD wHPBack = pEnemy->wHP, wMaxHPBack = pEnemy->wMaxHP;
+	DWORD dwPCX = pPC->dwX, dwPCY = pPC->dwY;
+	BYTE byDirBack = pPC->byDirection, abyMagicBack[MAX_USEMAGIC];
+	memcpy(abyMagicBack, pPC->abyMagic, sizeof(abyMagicBack));
+
+	static const BYTE abyMagic[] = {39, 74};		/* 風塵剣（戦士）・ヘタな歌（詩人） */
+	for (size_t m = 0; m < sizeof(abyMagic) / sizeof(abyMagic[0]); m ++) {
+		BYTE byID = abyMagic[m];
+		if (byID >= g_aMagicInfo.GetSize()) {
+			continue;
+		}
+		for (int nDist = 1; nDist <= 3; nDist ++) {
+			int nHit = 0, nTry = 100;
+			for (int t = 0; t < nTry; t ++) {
+				pPC->dwX = dwEnemyX - nDist;
+				pPC->dwY = dwEnemyY;
+				pPC->byDirection = 3;
+				pPC->abyMagic[0] = byID;
+				pPC->wMana = 9999;
+				pEnemy->dwX = dwEnemyX;
+				pEnemy->dwY = dwEnemyY;
+				pEnemy->wMaxHP = pEnemy->wHP = 30000;
+				MagicProc(pPC->dwTblID, byID, (DWORD)-1);
+				/* 出た弾を動かし切る */
+				for (int k = 0; k < 60; k ++) {
+					s_dwFakeNow += 260;
+					g_dwTime = s_dwFakeNow;
+					BOOL bAny = FALSE;
+					for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+						PCHARINFO p = g_aCharInfo[i];
+						if ((p->byNpcType != NPCTYPE_USEMAGIC && p->byNpcType != NPCTYPE_USEMAGICPARENT) ||
+							p->dwParentTblID != pPC->dwTblID || p->pProc == NULL) {
+							continue;
+						}
+						bAny = TRUE;
+						((PCCharProcBase)p->pProc)->Proc(s_dwFakeNow);
+					}
+					if (!bAny) {
+						break;
+					}
+				}
+				if (pEnemy->wHP < 30000) {
+					nHit ++;
+				}
+			}
+			printf("shot magic=%d dist=%d hit=%d/%d\n", byID, nDist, nHit, nTry);
+		}
+	}
+	DeleteTblNoPC((int)pPC->dwTblID);
+	pPC->dwMapID = dwPCMap;
+	AddTblNoPC((int)pPC->dwTblID);
+	pPC->dwX = dwPCX;
+	pPC->dwY = dwPCY;
+	pPC->byDirection = byDirBack;
+	memcpy(pPC->abyMagic, abyMagicBack, sizeof(abyMagicBack));
+	pEnemy->dwX = dwEnemyX;
+	pEnemy->dwY = dwEnemyY;
+	pEnemy->wHP = wHPBack;
+	pEnemy->wMaxHP = wMaxHPBack;
+}
+
 #define NLOGIN	14			/* ログイン中にするPCの数 */
 
 static void TestWorld(void)
@@ -586,6 +697,9 @@ static void TestWorld(void)
 		PrintAll("lap-final");
 		printf("final chars=%08x\n", HashChars());
 	}
+
+	/* F. 飛ぶ特技・魔法（移動確率つきの魔法発生）が、近い敵にも当たること */
+	TestShotMagic(aLogin);
 }
 
 int main(int argc, char **argv)
