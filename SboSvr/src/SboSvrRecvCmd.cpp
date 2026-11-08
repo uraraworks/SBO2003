@@ -2744,8 +2744,13 @@ void SubProcMapMove(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY)
 
 	if (pChar->dwTailBackTblID != -1) {
 		pCharTmp = g_aCharInfo[pChar->dwTailBackTblID];
-		/* ついてきているキャラを移動させる */
-		SubProcMapMove (pCharTmp, dwMapID, dwX, dwY);
+		/* 傭兵は別のマップへは連れて行かない（列から外し、傭兵の処理でお別れ） */
+		if (IsMercenary (pCharTmp)) {
+			MercenaryTailOff (pCharTmp);
+		} else {
+			/* ついてきているキャラを移動させる */
+			SubProcMapMove (pCharTmp, dwMapID, dwX, dwY);
+		}
 	}
 
 	ZeroMemory (pChar->abySubStatus, sizeof (pChar->abySubStatus));
@@ -2987,8 +2992,10 @@ BOOL IsTail(PCHARINFO pChar, PCHARINFO pCharTarget)
 		goto Exit;
 	}
 
-	/* 誰かを引っ張っている？ */
-	if (pCharTarget->dwTailBackTblID != -1) {
+	/* 誰かを引っ張っている？（傭兵なら、傭兵がこの人の後ろへ回るのでついていける） */
+	if ((pCharTarget->dwTailBackTblID != -1) &&
+		!((pCharTarget->dwTailBackTblID < (DWORD)g_aCharInfo.GetSize ()) &&
+		  IsMercenary (g_aCharInfo[pCharTarget->dwTailBackTblID]))) {
 		goto Exit;
 	}
 

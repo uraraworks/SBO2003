@@ -32,6 +32,8 @@ protected:
 	BOOL	StepDirection	(int nDirection);						/* 指定の向きへ1歩進む */
 	BOOL	WarpNearOwner	(PCHARINFO pOwner);						/* 雇い主のとなりへ移る */
 	void	SyncParty		(PCHARINFO pOwner, DWORD dwTime);		/* 仲間の一覧とHP・Manaを知らせる */
+	BOOL	IsInTail		(PCHARINFO pOwner);						/* 雇い主の「ついていく」の列に入っているか */
+	PCHARINFO GetTailEnd	(PCHARINFO pOwner);						/* 雇い主の列のいちばん後ろ */
 
 protected:
 	DWORD	m_dwOwnerX;									/* 前に見た雇い主の位置(横) */
@@ -59,5 +61,6 @@ extern PCHARINFO	GetMercenaryFront	(PCHARINFO pChar);						/* 目の前にいる
 extern void			MercenaryTalk		(PCHARINFO pChar, PCHARINFO pCharNpc);	/* 傭兵所のNPCに話しかけた(雇う・別れる) */
 extern BOOL			MercenaryDamaged	(PCHARINFO pChar, PCHARINFO pMerc);		/* 傭兵が攻撃を受けた後の処理(倒れたら TRUE) */
 extern BOOL			MercenaryItemCheck	(PCHARINFO pMerc, BYTE byItemType);		/* その種類の道具を傭兵に使えるか */
+extern void			MercenaryTailOff	(PCHARINFO pMerc);						/* 傭兵を「ついていく」の列から外す */
 
 /* Copyright(C)URARA-works 2026 */

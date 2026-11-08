@@ -126,6 +126,8 @@ BOOL CCharProcMERCENARY::Proc(DWORD dwTime)
 
 	/* 倒れている？ 時間内に蘇生の道具を使ってもらえなければ帰る */
 	if ((m_pChar->wHP == 0) || (m_pChar->byCharState == CHARSTATE_DEAD)) {
+		/* 倒れたら列から外れる（引きずられないように） */
+		MercenaryTailOff (m_pChar);
 		if (m_dwDeadTime == 0) {
 			m_dwDeadTime = dwTime;
 		} else if ((DWORD)(dwTime - m_dwDeadTime) >= MERC_DEADTIME) {
@@ -145,14 +147,98 @@ BOOL CCharProcMERCENARY::Proc(DWORD dwTime)
 
 	SyncParty (pOwner, dwTime);
 
-	/* 戦う相手がいれば戦う */
+	BOOL bTail = IsInTail (pOwner);
+
+	/* 戦う相手がいれば、列を外れて戦う */
 	if (ProcBattle (pOwner, dwTime)) {
+		if (bTail) {
+			MercenaryTailOff (m_pChar);
+		}
 		m_dwOwnerX = pOwner->dwX;
 		m_dwOwnerY = pOwner->dwY;
 		return TRUE;
 	}
 
-	return ProcFollow (pOwner, dwTime);
+	/* 列に入っていれば、雇い主が動いた時に列ごと動く（「ついていく」と同じ） */
+	if (bTail) {
+		m_dwStuckTime	= dwTime;
+		m_dwOwnerX		= pOwner->dwX;
+		m_dwOwnerY		= pOwner->dwY;
+		return FALSE;
+	}
+
+	/* 列から外れている（戦い終わった・ほかの人が割り込んだ等）。
+	   列のいちばん後ろのとなりまで来たら、列に入り直す */
+	MercenaryTailOff (m_pChar);
+	PCHARINFO pEnd = GetTailEnd (pOwner);
+	if ((pEnd->dwTailBackTblID == (DWORD)-1) &&
+		(abs ((int)pEnd->dwX - (int)m_pChar->dwX) + abs ((int)pEnd->dwY - (int)m_pChar->dwY) == 1)) {
+		m_pChar->dwTailTblID	= pEnd->dwTblID;
+		m_pChar->dwTailBackTblID = (DWORD)-1;
+		pEnd->dwTailBackTblID	= m_pChar->dwTblID;
+		m_dwStuckTime			= dwTime;
+		return FALSE;
+	}
+
+	return ProcFollow (pEnd, dwTime);
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CCharProcMERCENARY::IsInTail									 */
+/* 内容：	雇い主の「ついていく」の列に入っているか						 */
+/*			（前のキャラをたどって雇い主に着き、つながりが両向きで合っている）	 */
+/* 日付：	2026/11/08														 */
+/* ========================================================================= */
+
+BOOL CCharProcMERCENARY::IsInTail(PCHARINFO pOwner)
+{
+	int i;
+	PCHARINFO pCur, pPrev;
+
+	pCur = m_pChar;
+	for (i = 0; i < 100; i ++) {
+		if ((pCur->dwTailTblID == (DWORD)-1) || (pCur->dwTailTblID >= (DWORD)g_aCharInfo.GetSize ())) {
+			return FALSE;
+		}
+		pPrev = g_aCharInfo[pCur->dwTailTblID];
+		if ((pPrev->dwTailBackTblID != pCur->dwTblID) || (pPrev->dwMapID != m_pChar->dwMapID)) {
+			return FALSE;
+		}
+		if (pPrev == pOwner) {
+			return TRUE;
+		}
+		pCur = pPrev;
+	}
+	return FALSE;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CCharProcMERCENARY::GetTailEnd									 */
+/* 内容：	雇い主の列のいちばん後ろのキャラ（傭兵自身は除く）				 */
+/*			雇い主に「ついていく」している人がいれば、その人の後ろにつく	 */
+/* 日付：	2026/11/08														 */
+/* ========================================================================= */
+
+PCHARINFO CCharProcMERCENARY::GetTailEnd(PCHARINFO pOwner)
+{
+	int i;
+	PCHARINFO pCur, pNext;
+
+	pCur = pOwner;
+	for (i = 0; i < 100; i ++) {
+		if ((pCur->dwTailBackTblID == (DWORD)-1) || (pCur->dwTailBackTblID >= (DWORD)g_aCharInfo.GetSize ())) {
+			break;
+		}
+		pNext = g_aCharInfo[pCur->dwTailBackTblID];
+		if ((pNext == m_pChar) || (pNext->dwTailTblID != pCur->dwTblID) ||
+			(pNext->dwMapID != pOwner->dwMapID)) {
+			break;
+		}
+		pCur = pNext;
+	}
+	return pCur;
 }
 
 
@@ -587,6 +673,33 @@ BOOL IsMercenary(PCHARINFO pChar)
 
 
 /* ========================================================================= */
+/* 関数名：	MercenaryTailOff												 */
+/* 内容：	傭兵を「ついていく」の列から外す（相手には何も送らない）		 */
+/*			マップ移動で列ごと動かす処理に傭兵を乗せないためにも使う		 */
+/* ========================================================================= */
+
+void MercenaryTailOff(PCHARINFO pMerc)
+{
+	DWORD dwCount = (DWORD)g_aCharInfo.GetSize ();
+
+	if (pMerc->dwTailTblID < dwCount) {
+		PCHARINFO pPrev = g_aCharInfo[pMerc->dwTailTblID];
+		if (pPrev->dwTailBackTblID == pMerc->dwTblID) {
+			pPrev->dwTailBackTblID = (DWORD)-1;
+		}
+	}
+	if (pMerc->dwTailBackTblID < dwCount) {
+		PCHARINFO pNext = g_aCharInfo[pMerc->dwTailBackTblID];
+		if (pNext->dwTailTblID == pMerc->dwTblID) {
+			pNext->dwTailTblID = (DWORD)-1;
+		}
+	}
+	pMerc->dwTailTblID		= (DWORD)-1;
+	pMerc->dwTailBackTblID	= (DWORD)-1;
+}
+
+
+/* ========================================================================= */
 /* 関数名：	GetMercenaryOwner												 */
 /* 内容：	傭兵の雇い主(ログアウトした等でいなければ NULL)				 */
 /* ========================================================================= */
@@ -881,6 +994,9 @@ static void MercenaryRemove(PCHARINFO pMerc, PCHARINFO pOwner, LPCSTR pszFmt)
 			pCharTmp->dwLastBattle	= 0;
 		}
 	}
+
+	/* 「ついていく」の列から外す（番号が別のキャラに使い回されるため） */
+	MercenaryTailOff (pMerc);
 
 	s_mapMerc.erase (dwTblID);
 	DeleteChar (dwTblID);

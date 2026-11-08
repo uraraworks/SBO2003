@@ -9,6 +9,7 @@
 #include "../../Common/Info/InfoJob.h"
 #include "Glbldata.h"
 #include "SboSvrRecvCmd.h"
+#include "CharProc/CharProcMERCENARY.h"
 
 /* ========================================================================= */
 /* 関数プロトタイプ宣言														 */
@@ -130,8 +131,13 @@ void EventProc_MAPCHG(PCHARINFO pChar, PEVENTINFO pEvent, BYTE byData)
 	/* 誰かついてきている？ */
 	if (pChar->dwTailBackTblID != -1) {
 		pCharTmp = g_aCharInfo[pChar->dwTailBackTblID];
-		/* ついてきているキャラを移動させる */
-		EventProc_MAPCHG (pCharTmp, pEvent, byData);
+		/* 傭兵は別のマップへは連れて行かない（列から外し、傭兵の処理でお別れ） */
+		if (IsMercenary (pCharTmp)) {
+			MercenaryTailOff (pCharTmp);
+		} else {
+			/* ついてきているキャラを移動させる */
+			EventProc_MAPCHG (pCharTmp, pEvent, byData);
+		}
 	}
 
 	SendCmdCHGBGM (pChar->pID, pChar->dwMapID, 0);
