@@ -2545,9 +2545,12 @@ void KeyProcMAKER(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			PITEMINFO pItem = g_aItemInfo[pRecipe->wItem];
 			char szTmp[256];
 
-			/* 預かり所の中身が届いているのに足りない時は、確認せずに断る */
-			if (g_bProcMakerLeaveOK && !MakerCanMake (nRecipe)) {
-				if (g_aCharInfo[g_nMyCharID]->dwGold < pRecipe->dwGold) {
+			/* 足りない時は、確認せずに断る。持ち物だけで足りず預かり所の中身がまだ届いていない時は、
+			   届くまで確認を出さない（通信が遅い時に決定キーを連打すると、材料が無いのに確認が出ていた） */
+			if (!MakerCanMake (nRecipe)) {
+				if (!g_bProcMakerLeaveOK && (g_aCharInfo[g_nMyCharID]->dwGold >= pRecipe->dwGold)) {
+					MakerSetMsg (pWnd, "預かり所を確かめています。@1少々お待ちください。@2");
+				} else if (g_aCharInfo[g_nMyCharID]->dwGold < pRecipe->dwGold) {
 					MakerSetMsg (pWnd, "手数料が足りないようです。@2");
 				} else if (g_aMakerInfo[g_nProcMakerID].szMsgLack[0]) {
 					MakerSetMsg (pWnd, g_aMakerInfo[g_nProcMakerID].szMsgLack);
