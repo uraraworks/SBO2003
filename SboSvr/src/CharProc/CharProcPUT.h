@@ -22,4 +22,9 @@ public:
 	BOOL Proc		(DWORD dwTime);								/* 処理 */
 } CCharProcPUT, *PCCharProcPUT;
 
+/* 発生元の能力（テンプレート指定中はテンプレート）を出てくるキャラへ写す */
+void PutCharSetStatus	(PCHARINFO pParent, PCHARINFO pChar);
+/* 発生元から出ているキャラへ、今の発生元の能力を反映する（管理者ウィンドウ・データ API で変えた時） */
+void RenewPutChildChar	(PCHARINFO pParent);
+
 /* Copyright(C)URARA-works 2006 */
