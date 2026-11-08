@@ -15,6 +15,7 @@
 #include "Glbldata.h"
 #include "SboSvrRecvCmd.h"
 #include "SboSvrDrawWindow.h"
+#include <vector>
 #include "SboSvrDlgLeaveInfo.h"
 #include "SaveLoad/SaveLoad.h"
 #include "SboSvrBattleProc.h"
@@ -805,6 +806,107 @@ void OnDecPlayer(int nNo)
 
 
 /* ========================================================================= */
+/* 人のいないマップ・動かないNPCの処理を減らす（2026/11/08）				 */
+/*	キャラは1回に1体ずつ順に処理し、全員回ると1周（人がいる時は1秒に約100周）。	 */
+/*	・人のいないマップのNPCは、0.1秒に1周だけ処理する							 */
+/*	・その場から動かない村人などは、何も起きていない間は処理しない				 */
+/* ========================================================================= */
+
+#define IDLEMAP_INTERVAL	(100)		/* 人のいないマップのNPCを処理する間隔(ミリ秒) */
+
+static std::vector<BYTE>	s_abyMapRun;	/* この周でそのマップのNPCを処理するか */
+static std::vector<DWORD>	s_adwMapRunTime;	/* 人のいないマップのNPCを最後に処理した時間 */
+
+/* 周の始めに、マップごとにNPCを処理するか決める */
+static void RenewMapRun(void)
+{
+	int i, j, nCount;
+
+	nCount = g_aMapInfo.GetSize ();
+	if ((int)s_abyMapRun.size () != nCount) {
+		s_abyMapRun.assign (nCount, 1);
+		s_adwMapRunTime.assign (nCount, 0);
+	}
+	for (i = 0; i < nCount; i ++) {
+		PMAPINFO pMap = g_aMapInfo[i];
+		BOOL bPC = FALSE;
+
+		if (pMap && pMap->paTblNoPC) {
+			for (j = 0; j < (int)pMap->dwCountTblNoPC; j ++) {
+				if (pMap->paTblNoPC[j] == -1) {
+					break;
+				}
+				if (g_aCharInfo[pMap->paTblNoPC[j]]->byGameState >= GAMESTATE_MOVE) {
+					bPC = TRUE;
+					break;
+				}
+			}
+		}
+		if (bPC || ((DWORD)(g_dwTime - s_adwMapRunTime[i]) >= IDLEMAP_INTERVAL)) {
+			s_abyMapRun[i] = 1;
+			s_adwMapRunTime[i] = g_dwTime;
+		} else {
+			s_abyMapRun[i] = 0;
+		}
+	}
+}
+
+/* 何も起きていない、動かないNPCか */
+static BOOL IsIdleStaticNPC(PCHARINFO pChar)
+{
+	PMAPINFO pMap;
+	BYTE byHitType;
+
+	if ((pChar->byNpcType != NPCTYPE_NOMOVE) && (pChar->byNpcType != NPCTYPE_NOBLOCK)) {
+		return FALSE;
+	}
+	/* 巡回ルートのある村人は歩く */
+	if (pChar->byRouteCount >= 2) {
+		return FALSE;
+	}
+	/* 送ることが残っている・戦闘中・酒・明かり・効果の時間切れ待ち */
+	if (pChar->byFlg || pChar->dwLastBattle || pChar->dwLastSake || pChar->dwTimeLight ||
+		(pChar->aTimerEvent.GetSize () > 0)) {
+		return FALSE;
+	}
+	/* コンベアなど、勝手に動くマスの上にいる */
+	if (pChar->dwMapID >= (DWORD)g_aMapInfo.GetSize ()) {
+		return FALSE;
+	}
+	pMap = g_aMapInfo[pChar->dwMapID];
+	if ((pChar->dwX >= (DWORD)pMap->nCX) || (pChar->dwY >= (DWORD)pMap->nCY)) {
+		return FALSE;
+	}
+	WORD wParts = pMap->pwMap[pChar->dwX + pChar->dwY * pMap->nCX];
+	if (wParts >= g_wCountMapParts) {
+		return FALSE;
+	}
+	byHitType = g_aMapPartsInfo[wParts].byHitType;
+	switch (byHitType) {
+	case PARTSHIT_MOVEFRONT:
+	case PARTSHIT_MOVEUP:
+	case PARTSHIT_MOVEDOWN:
+	case PARTSHIT_MOVERIGHT:
+	case PARTSHIT_MOVELEFT:
+		return FALSE;
+	}
+	return TRUE;
+}
+
+/* この周は処理しなくてよいキャラか */
+static BOOL IsSkipChar(PCHARINFO pChar)
+{
+	if (pChar->byNpcType == NPCTYPE_INIT) {
+		return FALSE;
+	}
+	if ((pChar->dwMapID < (DWORD)s_abyMapRun.size ()) && (s_abyMapRun[pChar->dwMapID] == 0)) {
+		return TRUE;
+	}
+	return IsIdleStaticNPC (pChar);
+}
+
+
+/* ========================================================================= */
 /* 関数名：TimerProc														 */
 /* 内容：タイマー処理														 */
 /* 日付：2003/05/02															 */
@@ -820,8 +922,14 @@ void TimerProc(void)
 
 	nCount = g_aCharInfo.GetSize ();
 	if (nCount > 0) {
+		if (g_nProcChar == 0) {
+			RenewMapRun ();
+		}
 		pChar	= g_aCharInfo[g_nProcChar];
-		bResult = TimerProcChar (pChar);
+		bResult = FALSE;
+		if (IsSkipChar (pChar) == FALSE) {
+			bResult = TimerProcChar (pChar);
+		}
 		nCount	= g_aCharInfo.GetSize ();
 		g_nProcChar ++;
 		g_nProcChar = (g_nProcChar >= nCount) ? 0 : g_nProcChar;

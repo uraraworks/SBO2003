@@ -1487,7 +1487,8 @@ PWNDINFO MakeWindowCOMMANDITEMCHAR(void)
 		if (CheckCharX (pCharTmp, pCharTmp->dwX, dwX) && (dwY == pCharTmp->dwY)) {
 			if ((pCharTmp->byNpcType == 0) ||
 				(pCharTmp->byNpcType == NPCTYPE_BATTLE1) ||
-				(pCharTmp->byNpcType == NPCTYPE_BATTLE2)
+				(pCharTmp->byNpcType == NPCTYPE_BATTLE2) ||
+				(pCharTmp->byNpcType == NPCTYPE_MERCENARY)
 				) {
 				pInfo = new USECHARINFO;
 				ZeroMemory (pInfo, sizeof (USECHARINFO));
@@ -1555,7 +1556,8 @@ PWNDINFO MakeWindowCOMMANDITEMCHARBATTLE(void)
 		if (CheckCharX (pCharTmp, pCharTmp->dwX, dwX) && (dwY == pCharTmp->dwY)) {
 			if ((pCharTmp->byNpcType == 0) ||
 				(pCharTmp->byNpcType == NPCTYPE_BATTLE1) ||
-				(pCharTmp->byNpcType == NPCTYPE_BATTLE2)
+				(pCharTmp->byNpcType == NPCTYPE_BATTLE2) ||
+				(pCharTmp->byNpcType == NPCTYPE_MERCENARY)
 				) {
 				pInfo = new USECHARINFO;
 				ZeroMemory (pInfo, sizeof (USECHARINFO));

@@ -392,7 +392,8 @@ void SendCmdCHARPOS(BYTE byDirection, BOOL bMovingFlg)
 					 (pCharTmp->byNpcType != NPCTYPE_ATACK) &&
 					 (pCharTmp->byNpcType != NPCTYPE_NOBLOCK))) {
 					if ((pCharTmp->byNpcType != NPCTYPE_SEARCH) &&
-						(pCharTmp->byNpcType != NPCTYPE_SEARCH2)) {
+						(pCharTmp->byNpcType != NPCTYPE_SEARCH2) &&
+						(pCharTmp->byNpcType != NPCTYPE_MERCENARY)) {
 						/* NPCとはぶつかる */
 						delete [] pSendData;
 						if ((pCharTmp->byNpcType == NPCTYPE_BLOCK) ||

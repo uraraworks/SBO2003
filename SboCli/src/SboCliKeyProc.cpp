@@ -1754,7 +1754,8 @@ void KeyProcCOMMANDITEMBATTLE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			if (CheckCharX (pCharTmp, pCharTmp->dwX, dwX) && (dwY == pCharTmp->dwY)) {
 				if ((pCharTmp->byNpcType == 0) ||
 					(pCharTmp->byNpcType == NPCTYPE_BATTLE1) ||
-					(pCharTmp->byNpcType == NPCTYPE_BATTLE2)
+					(pCharTmp->byNpcType == NPCTYPE_BATTLE2) ||
+					(pCharTmp->byNpcType == NPCTYPE_MERCENARY)
 					) {
 					if (pCharTmp != pChar) {
 						break;
@@ -1860,7 +1861,8 @@ void KeyProcCOMMANDITEMPROC(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 					if (CheckCharX (pCharTmp, pCharTmp->dwX, dwX) && (dwY == pCharTmp->dwY)) {
 						if ((pCharTmp->byNpcType == 0) ||
 							(pCharTmp->byNpcType == NPCTYPE_BATTLE1) ||
-							(pCharTmp->byNpcType == NPCTYPE_BATTLE2)
+							(pCharTmp->byNpcType == NPCTYPE_BATTLE2) ||
+							(pCharTmp->byNpcType == NPCTYPE_MERCENARY)
 							) {
 							if (pCharTmp != pChar) {
 								break;
@@ -7712,6 +7714,18 @@ void CmdProcHanasu(PWNDINFO pWnd)
 			SendCmdLEAVEITEMGET ((DWORD)-1);
 			pWndTmp = NULL;
 		}
+
+	/* 傭兵所？ 雇う・お別れするのはサーバーが決めて、お知らせが来る */
+	} else if (pChar2->pszNpcSpeech[0] == '@' && pChar2->pszNpcSpeech[1] == 'm') {
+		SendCmdTALKRAND (pChar2->dwTblID);
+		pChar2->byDirection = abyDirectionTbl[pChar->byDirection];
+		int nNo = GetWindowID (g_dwMsgIDCommand);
+		if (nNo >= 0) {
+			EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
+			g_dwMsgIDCommand = 0;
+			g_bDraw = TRUE;
+		}
+		return;
 
 	/* 冒険者登録所？ */
 	} else if (pChar2->pszNpcSpeech[0] == '@' && pChar2->pszNpcSpeech[1] == 'a') {

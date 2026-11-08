@@ -21,6 +21,7 @@
 #include "SboSvrSubGameProcSugoroku.h"
 #include "SboSvrAdminUndo.h"
 #include "SboSvrNpcRoute.h"
+#include "CharProc/CharProcMERCENARY.h"
 #include <map>
 #include <vector>
 
@@ -2743,8 +2744,18 @@ void SubProcMapMove(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY)
 
 	if (pChar->dwTailBackTblID != -1) {
 		pCharTmp = g_aCharInfo[pChar->dwTailBackTblID];
-		/* ついてきているキャラを移動させる */
-		SubProcMapMove (pCharTmp, dwMapID, dwX, dwY);
+		/* 傭兵は別のマップへは連れて行かない（列から外し、傭兵の処理でお別れ） */
+		if (IsMercenary (pCharTmp)) {
+			MercenaryTailOff (pCharTmp);
+			/* 傭兵の後ろについていた人は、つなぎ直されているので連れて行く */
+			if (pChar->dwTailBackTblID != -1) {
+				pCharTmp = g_aCharInfo[pChar->dwTailBackTblID];
+				SubProcMapMove (pCharTmp, dwMapID, dwX, dwY);
+			}
+		} else {
+			/* ついてきているキャラを移動させる */
+			SubProcMapMove (pCharTmp, dwMapID, dwX, dwY);
+		}
 	}
 
 	ZeroMemory (pChar->abySubStatus, sizeof (pChar->abySubStatus));
@@ -2986,8 +2997,10 @@ BOOL IsTail(PCHARINFO pChar, PCHARINFO pCharTarget)
 		goto Exit;
 	}
 
-	/* 誰かを引っ張っている？ */
-	if (pCharTarget->dwTailBackTblID != -1) {
+	/* 誰かを引っ張っている？（傭兵なら、傭兵がこの人の後ろへ回るのでついていける） */
+	if ((pCharTarget->dwTailBackTblID != -1) &&
+		!((pCharTarget->dwTailBackTblID < (DWORD)g_aCharInfo.GetSize ()) &&
+		  IsMercenary (g_aCharInfo[pCharTarget->dwTailBackTblID]))) {
 		goto Exit;
 	}
 
@@ -2995,6 +3008,10 @@ BOOL IsTail(PCHARINFO pChar, PCHARINFO pCharTarget)
 	case NPCTYPE_INIT:			/* 未設定 */
 		break;
 	default:
+		/* 雇い主の列に入っている傭兵にはついていける（雇い主→傭兵→自分の順に並ぶ） */
+		if (IsMercenary (pCharTarget) && (pCharTarget->dwTailTblID != -1)) {
+			break;
+		}
 		goto Exit;
 	}
 
@@ -5287,6 +5304,15 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
+	/* 傭兵所のNPC（台詞が「@m」で始まる）？ 雇う・お別れする */
+	if ((pChar->byNpcType != NPCTYPE_INIT) && pChar->pszNpcSpeech &&
+		(pChar->pszNpcSpeech[0] == '@') && (pChar->pszNpcSpeech[1] == 'm')) {
+		/* 管理者のキャラでも雇える（管理者として話しかけても、ふつうの「話す」と同じ） */
+		if ((s_nCharNoRecv >= 0) && IsNearRecvChar (pChar, 2)) {
+			MercenaryTalk (g_aCharInfo[s_nCharNoRecv], pChar);
+		}
+		return;
+	}
 	/* 話しかけた相手（目の前の NPC）だけ。種類が違うキャラや離れたキャラは変えない */
 	if ((pChar->byNpcType != NPCTYPE_TALKRAND) || !IsNearRecvChar (pChar, 2)) {
 		return;
