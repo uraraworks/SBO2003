@@ -1589,14 +1589,20 @@ static const DATAFIELD s_aFieldSgMaze[] = {
 	FLD (SUBGAME_MAZEINFO, byCharY,		"管理人Y",				FT_U8, 0, NULL),
 	FLD (SUBGAME_MAZEINFO, byStartX,	"スタートX",			FT_U8, 0, NULL),
 	FLD (SUBGAME_MAZEINFO, byStartY,	"スタートY",			FT_U8, 0, NULL),
-	FLD (SUBGAME_MAZEINFO, byGoalFromX,	"ゴール(移動元)X",		FT_U8, 0, NULL),
-	FLD (SUBGAME_MAZEINFO, byGoalFromY,	"ゴール(移動元)Y",		FT_U8, 0, NULL),
+	FLD (SUBGAME_MAZEINFO, byGoalFromX,	"ゴール(移動元)X",		FT_U8, FF_READONLY, "迷路を作るたびに変わるゴールの位置（読むだけ）"),
+	FLD (SUBGAME_MAZEINFO, byGoalFromY,	"ゴール(移動元)Y",		FT_U8, FF_READONLY, "迷路を作るたびに変わるゴールの位置（読むだけ）"),
 	FLD (SUBGAME_MAZEINFO, byGoalToX,	"ゴール(移動先)X",		FT_U8, 0, NULL),
 	FLD (SUBGAME_MAZEINFO, byGoalToY,	"ゴール(移動先)Y",		FT_U8, 0, NULL),
 	FLD (SUBGAME_MAZEINFO, wChipIDStart,"開始地点へのパーツ",	FT_U16, 0, "mapParts の番号"),
 	FLD (SUBGAME_MAZEINFO, wChipIDGoal,	"ゴールのパーツ",		FT_U16, 0, "mapParts の番号"),
 	FLD (SUBGAME_MAZEINFO, wChipIDRoad,	"道のパーツ",			FT_U16, 0, "mapParts の番号"),
 	FLD (SUBGAME_MAZEINFO, wChipIDBlock,"壁のパーツ",			FT_U16, 0, "mapParts の番号"),
+	FLD (SUBGAME_MAZEINFO, wChipIDRoad2,"道に混ぜるパーツ",		FT_U16, 0, "mapParts の番号。0=混ぜない。道のマスを割合（byRoad2Rate）でこのパーツにする（落ち葉・ひび等）"),
+	FLD (SUBGAME_MAZEINFO, byRoad2Rate,	"道に混ぜる割合(%)",	FT_U8, 0, "0〜100"),
+	FLD (SUBGAME_MAZEINFO, wChipIDBlock2,"壁に混ぜるパーツ",	FT_U16, 0, "mapParts の番号。0=混ぜない。壁のマスを割合（byBlock2Rate）でこのパーツにする（コケ・ひび等）"),
+	FLD (SUBGAME_MAZEINFO, byBlock2Rate,"壁に混ぜる割合(%)",	FT_U8, 0, "0〜100"),
+	FLD (SUBGAME_MAZEINFO, wChipIDBlockFace,"壁の手前の面のパーツ",FT_U16, 0, "mapParts の番号。0=使わない。すぐ下が道の壁の下の段をこのパーツにして立体に見せる"),
+	FLD (SUBGAME_MAZEINFO, byPathWidth,	"通路の太さ",			FT_U8, 0, "1〜3マス。0=2マス（昔から）。迷路の1区画を何マス四方にするか。作り直した時から効く"),
 };
 static const DATAFIELD s_aFieldSgDungeon[] = {
 	FLD (SUBGAME_DUNGEONINFO, dwMapID,	"マップID",				FT_U32, 0, "map の dwID"),
@@ -1816,7 +1822,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataSchema(void)
 			out += "[{\"name\":\"byUse\",\"type\":\"u8\",\"label\":\"使用中なら1\"},{\"name\":\"dwGold\",\"type\":\"u32\",\"label\":\"預けたお金\"},{\"name\":\"items\",\"type\":\"object[]\",\"label\":\"預けたアイテム（item=item の番号・count=個数）\"}]";
 			break;
 		case KIND_SUBGAME:
-			out += "[{\"name\":\"byType\",\"type\":\"u8\",\"label\":\"種別\",\"readonly\":true,\"note\":\"1=爆弾ゲーム 2=迷路 3=ダンジョン 4=戦場ゲーム 5=すごろく\"},{\"name\":\"typeName\",\"type\":\"string\",\"label\":\"種別の名前\",\"readonly\":true},{\"name\":\"detail\",\"type\":\"object\",\"label\":\"種別ごとの設定（detailByType）。すごろくは events・parts も\"}]";
+			out += "[{\"name\":\"byType\",\"type\":\"u8\",\"label\":\"種別\",\"note\":\"0=無し 1=爆弾ゲーム 2=迷路 3=ダンジョン 4=戦場ゲーム 5=すごろく。足せるのは迷路(2)だけ（byType と detail を指定）。変えられるのは 迷路⇔無し(0) だけで、0 にすると迷路が止まる\"},{\"name\":\"typeName\",\"type\":\"string\",\"label\":\"種別の名前\",\"readonly\":true},{\"name\":\"detail\",\"type\":\"object\",\"label\":\"種別ごとの設定（detailByType）。すごろくは events・parts も\"}]";
 			out += ",\"detailByType\":{";
 			for (int t = SUBGAMEID_BOMB; t < SUBGAMEID_MAX; t ++) {
 				int nCount = 0;
@@ -2983,38 +2989,155 @@ static bool ComEfcApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::s
 	return true;
 }
 
+extern void MakeMazeProc(BYTE);			/* SboSvrSubGameProc.cpp */
+extern void StopMaze(BYTE);				/* SboSvrSubGameProc.cpp */
+
+/*
+ * 迷路の設定を変えたら、中に誰もいなければすぐ作り直す（新しい見た目・太さで）
+ *   遊んでいる人がいる時は作り直さない（いつも通り、みんな出て 5 秒たったら作り直す）
+ */
+static void SubGameRenewIfEmpty(int nID)
+{
+	PSUBGAMEINFO pInfo = g_aSubaGameInfo[nID];
+	if (pInfo == NULL || pInfo->pInfo == NULL || nID > 255 || pInfo->byType != SUBGAMEID_MAZE) {
+		return;
+	}
+	PSUBGAME_MAZEINFO p = (PSUBGAME_MAZEINFO)pInfo->pInfo;
+	if (p->pMapTmp || p->dwMapID >= (DWORD)g_aMapInfo.GetSize() || g_aMapInfo[p->dwMapID] == NULL) {
+		return;
+	}
+	int nCount = g_aCharInfo.GetSize();
+	for (int i = 0; i < nCount; i ++) {
+		PCHARINFO pChar = g_aCharInfo[i];
+		if (pChar == NULL || pChar->byGameState == GAMESTATE_NPC || pChar->byGameState < GAMESTATE_MOVE) {
+			continue;
+		}
+		if ((pChar->dwMapID == p->dwMapID) &&
+			(pChar->dwX >= (DWORD)p->byX1) && (pChar->dwX <= (DWORD)p->byX2) &&
+			(pChar->dwY >= (DWORD)p->byY1) && (pChar->dwY <= (DWORD)p->byY2)) {
+			return;
+		}
+	}
+	MakeMazeProc((BYTE)nID);
+}
+
+/* 迷路の設定がマップに収まっているか確かめる */
+static bool CheckMazeDetail(const SUBGAME_MAZEINFO *p, std::string &strErr)
+{
+	if (p->dwMapID >= (DWORD)g_aMapInfo.GetSize() || g_aMapInfo[p->dwMapID] == NULL) {
+		strErr = "detail.dwMapID のマップがありません";
+		return false;
+	}
+	PMAPINFO pMap = g_aMapInfo[p->dwMapID];
+	if (p->byX1 >= p->byX2 || p->byY1 >= p->byY2) {
+		strErr = "迷路の範囲は byX1 < byX2・byY1 < byY2 にしてください";
+		return false;
+	}
+	if ((int)p->byX2 >= pMap->nCX || (int)p->byY2 >= pMap->nCY) {
+		strErr = "迷路の範囲（byX2・byY2）がマップの外に出ています（マップは " + JsonNum(pMap->nCX) + "×" + JsonNum(pMap->nCY) + "）";
+		return false;
+	}
+	int nWidth = (p->byPathWidth >= 1 && p->byPathWidth <= 3) ? p->byPathWidth : 2;
+	if ((p->byX2 - p->byX1) / nWidth + 1 < 3 || (p->byY2 - p->byY1) / nWidth + 1 < 3) {
+		strErr = "迷路の範囲が狭すぎます（通路の太さの 3 倍以上にしてください）";
+		return false;
+	}
+	if (p->byPathWidth > 3) {
+		strErr = "通路の太さ（byPathWidth）は 0〜3 にしてください（0 は 2 マス）";
+		return false;
+	}
+	if (p->byRoad2Rate > 100 || p->byBlock2Rate > 100) {
+		strErr = "混ぜる割合は 0〜100 にしてください";
+		return false;
+	}
+	int nParts = (int)g_wCountMapParts;
+	const WORD awParts[] = { p->wChipIDStart, p->wChipIDGoal, p->wChipIDRoad, p->wChipIDBlock, p->wChipIDRoad2, p->wChipIDBlock2, p->wChipIDBlockFace };
+	for (size_t i = 0; i < COUNTOF(awParts); i ++) {
+		if ((int)awParts[i] >= nParts) {
+			strErr = "パーツ番号 " + JsonNum(awParts[i]) + " がありません（mapParts は " + JsonNum(nParts) + " 個）";
+			return false;
+		}
+	}
+	if ((int)p->byStartX >= pMap->nCX || (int)p->byStartY >= pMap->nCY ||
+		(int)p->byGoalToX >= pMap->nCX || (int)p->byGoalToY >= pMap->nCY) {
+		strErr = "入口（byStartX/Y）かゴールの出口（byGoalToX/Y）がマップの外です";
+		return false;
+	}
+	return true;
+}
+
+/*
+ * サブゲームを変える・足す
+ *   足せるのは迷路（byType 2）だけ。迷路を byType 0 にすると止まる（元に戻す時の「消す」）。
+ *   種類が 0 の枠は迷路にして使い回せる。
+ */
 static bool SubGameApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::string &strErr, std::string &strRecord)
 {
 	static const char *apszKnown[] = { "byType", "typeName", "detail", NULL };
-	if (bAdd) {
-		strErr = "サブゲームは足せません（管理者ウィンドウで足してください）";
-		return false;
-	}
-	PSUBGAMEINFO pInfo = g_aSubaGameInfo[nID];
-	if (pInfo == NULL) {
-		strErr = "サブゲームが見つかりません";
-		return false;
-	}
 	if (!CheckKnownKeys(chg, NULL, 0, apszKnown, strErr)) {
 		return false;
 	}
+	PSUBGAMEINFO pInfo = bAdd ? NULL : g_aSubaGameInfo[nID];
+	if (!bAdd && pInfo == NULL) {
+		strErr = "サブゲームが見つかりません";
+		return false;
+	}
+	int nTypeNow = bAdd ? SUBGAMEID_NONE : pInfo->byType;
+	int nTypeNew = nTypeNow;
 	const JVal *pType = chg.Get("byType");
-	if (pType && !(pType->t == JVal::NUM && pType->n == pInfo->byType)) {
-		strErr = "種別（byType）は変えられません（管理者ウィンドウで変えてください）";
+	if (pType) {
+		if (pType->t != JVal::NUM) {
+			strErr = "byType は数で指定してください";
+			return false;
+		}
+		nTypeNew = (int)pType->n;
+	}
+	if (nTypeNew != nTypeNow) {
+		bool bOk = (nTypeNow == SUBGAMEID_NONE && nTypeNew == SUBGAMEID_MAZE) ||
+				   (nTypeNow == SUBGAMEID_MAZE && nTypeNew == SUBGAMEID_NONE);
+		if (!bOk) {
+			strErr = bAdd ? "足せるのは迷路（byType 2）だけです" :
+					"種類（byType）は 迷路(2)⇔無し(0) だけ変えられます（ほかは管理者ウィンドウで）";
+			return false;
+		}
+	}
+	if (bAdd && nTypeNew != SUBGAMEID_MAZE) {
+		strErr = "足せるのは迷路（byType 2）だけです。byType: 2 と detail を指定してください";
 		return false;
 	}
 	const JVal *pName = chg.Get("typeName");
-	if (pName && !(pName->t == JVal::STR && pName->s == ((pInfo->byType < SUBGAMEID_MAX) ? s_apszSubGameName[pInfo->byType] : "?"))) {
+	if (pName && !(pName->t == JVal::STR && pName->s == ((nTypeNew < SUBGAMEID_MAX) ? s_apszSubGameName[nTypeNew] : "?"))) {
 		strErr = "typeName は変えられません";
 		return false;
 	}
-	int nCount = 0;
-	const DATAFIELD *paField = SubGameFields(pInfo->byType, &nCount);
-	int nSize = GetSubGameDataSize(pInfo->byType);
 	const JVal *pDetail = chg.Get("detail");
-	std::vector<BYTE> aWork;
+
+	/* 迷路を止める（種類を 0 に） */
+	if (nTypeNew == SUBGAMEID_NONE && nTypeNow == SUBGAMEID_MAZE) {
+		SUBGAMEINFO Tmp;
+		ZeroMemory(&Tmp, sizeof(Tmp));
+		strRecord = SubGameJson(&Tmp);
+		if (!bApply) {
+			return true;
+		}
+		StopMaze((BYTE)nID);
+		PSUBGAME_MAZEINFO pOld = (PSUBGAME_MAZEINFO)pInfo->pInfo;
+		pInfo->byType = SUBGAMEID_NONE;
+		pInfo->pInfo = NULL;
+		if (pOld) {
+			SAFE_DELETE_ARRAY(pOld->pMapTmp);
+			delete [] (BYTE *)pOld;
+		}
+		SaveSubGameInfo();
+		return true;
+	}
+
+	int nCount = 0;
+	const DATAFIELD *paField = SubGameFields(nTypeNew, &nCount);
+	int nSize = GetSubGameDataSize(nTypeNew);
+	bool bNew = (nTypeNew != nTypeNow);		/* 足す・空き枠を迷路にする */
 	if (pDetail) {
-		if (paField == NULL || pInfo->pInfo == NULL || nSize <= 0) {
+		if (paField == NULL || nSize <= 0 || (!bNew && pInfo->pInfo == NULL)) {
 			strErr = "このサブゲームには設定がありません";
 			return false;
 		}
@@ -3023,42 +3146,88 @@ static bool SubGameApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::
 			return false;
 		}
 		static const char *apszSgExtra[] = { "events", "parts", NULL };
-		if (!CheckKnownKeys(*pDetail, paField, nCount, (pInfo->byType == SUBGAMEID_SUGOROKU) ? apszSgExtra : NULL, strErr)) {
+		if (!CheckKnownKeys(*pDetail, paField, nCount, (nTypeNew == SUBGAMEID_SUGOROKU) ? apszSgExtra : NULL, strErr)) {
 			return false;
 		}
 		if (pDetail->Get("events") || pDetail->Get("parts")) {
 			strErr = "すごろくのマス（events・parts）は管理者ウィンドウで変えてください";
 			return false;
 		}
-		/* 項目表にある所（先頭の保存される項目）だけを作業用に写して確かめる */
-		size_t nEnd = 0;
-		for (int i = 0; i < nCount; i ++) {
-			size_t n = paField[i].nOffset + ((paField[i].nType == FT_U32) ? 4 : (paField[i].nType == FT_U16) ? 2 : 1);
-			if (n > nEnd) {
-				nEnd = n;
+	} else if (bNew) {
+		strErr = "迷路の設定（detail）を指定してください";
+		return false;
+	}
+
+	/* 作業用に丸ごと写して当てる（ポインタは作業用では使わない） */
+	std::vector<BYTE> aWork(nSize > 0 ? nSize : 0, 0);
+	if (!bNew && pInfo->pInfo && nSize > 0) {
+		CopyMemory(&aWork[0], pInfo->pInfo, nSize);
+	}
+	if (pDetail && !ApplyFields(&aWork[0], paField, nCount, *pDetail, strErr, "detail.")) {
+		return false;
+	}
+	if (nTypeNew == SUBGAMEID_MAZE && pDetail && !CheckMazeDetail((const SUBGAME_MAZEINFO *)&aWork[0], strErr)) {
+		return false;
+	}
+
+	/* 結果の JSON（作業用の値で作る） */
+	{
+		SUBGAMEINFO Tmp;
+		ZeroMemory(&Tmp, sizeof(Tmp));
+		Tmp.byType = (BYTE)nTypeNew;
+		Tmp.pInfo = aWork.empty() ? NULL : &aWork[0];
+		if (nTypeNew == SUBGAMEID_SUGOROKU && pInfo) {
+			Tmp.pInfo = pInfo->pInfo;		/* すごろくは events などがあるのでそのまま（detail は上で変えられない項目だけ） */
+			if (pDetail) {
+				std::vector<BYTE> aBack((BYTE *)pInfo->pInfo, (BYTE *)pInfo->pInfo + nSize);
+				CopyMemory(pInfo->pInfo, &aWork[0], nSize);
+				strRecord = SubGameJson(&Tmp);
+				CopyMemory(pInfo->pInfo, &aBack[0], nSize);
+			} else {
+				strRecord = SubGameJson(&Tmp);
 			}
-		}
-		aWork.assign((BYTE *)pInfo->pInfo, (BYTE *)pInfo->pInfo + nEnd);
-		if (!ApplyFields(&aWork[0], paField, nCount, *pDetail, strErr, "detail.")) {
-			return false;
+		} else {
+			strRecord = SubGameJson(&Tmp);
 		}
 	}
-	/* 結果の JSON は、作業用の値を一時的に当てて作る（すごろくの events などはそのまま） */
-	if (!aWork.empty()) {
-		std::vector<BYTE> aBack((BYTE *)pInfo->pInfo, (BYTE *)pInfo->pInfo + aWork.size());
-		CopyMemory(pInfo->pInfo, &aWork[0], aWork.size());
-		strRecord = SubGameJson(pInfo);
-		if (!bApply) {
-			CopyMemory(pInfo->pInfo, &aBack[0], aBack.size());
-			return true;
+	if (!bApply) {
+		return true;
+	}
+
+	if (bNew) {
+		/* 新しい迷路の枠を作る */
+		BYTE *pNew = new BYTE[nSize];
+		CopyMemory(pNew, &aWork[0], nSize);
+		PSUBGAME_MAZEINFO pMaze = (PSUBGAME_MAZEINFO)pNew;
+		pMaze->pMapTmp = NULL;
+		pMaze->dwTblID = (DWORD)-1;
+		pMaze->dwCountTmp = 0;
+		pMaze->dwTimeCheck = 0;
+		pMaze->dwTblIDCheck = 0;
+		pMaze->byTmpX = pMaze->byTmpY = 0;
+		if (bAdd) {
+			pInfo = new SUBGAMEINFO;
+			ZeroMemory(pInfo, sizeof(SUBGAMEINFO));
+			pInfo->byType = (BYTE)nTypeNew;
+			pInfo->pInfo = pNew;
+			g_aSubaGameInfo.Add(pInfo);
+			nID = g_aSubaGameInfo.GetSize() - 1;
+		} else {
+			pInfo->byType = (BYTE)nTypeNew;
+			pInfo->pInfo = pNew;
 		}
-	} else {
-		strRecord = SubGameJson(pInfo);
-		if (!bApply) {
-			return true;
+	} else if (pDetail && nSize > 0) {
+		/* 項目表にある所だけを書き戻す（作成中の設計図などのポインタは触らない） */
+		BYTE *pDst = (BYTE *)pInfo->pInfo;
+		for (int i = 0; i < nCount; i ++) {
+			size_t n = (paField[i].nType == FT_U32) ? 4 : (paField[i].nType == FT_U16) ? 2 : 1;
+			CopyMemory(pDst + paField[i].nOffset, &aWork[paField[i].nOffset], n);
 		}
 	}
 	SaveSubGameInfo();
+	if (pDetail || bNew) {
+		SubGameRenewIfEmpty(nID);
+	}
 	return true;
 }
 

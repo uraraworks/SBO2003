@@ -6547,6 +6547,7 @@ void RecvDataProcSUBGAMEINFO(PBYTE pData, DWORD dwDataSize)
 {
 	PCMDPARA_DATA1 pRecv = (PCMDPARA_DATA1)pData;
 	PVOID pInfoBack;
+	BYTE byTypeBack;
 
 	if (pRecv->dwTblID >= (DWORD)g_aSubaGameInfo.GetSize ()) {
 		return;
@@ -6554,6 +6555,7 @@ void RecvDataProcSUBGAMEINFO(PBYTE pData, DWORD dwDataSize)
 
 	PSUBGAMEINFO pInfo = g_aSubaGameInfo[pRecv->dwTblID];
 	pInfoBack = pInfo->pInfo;
+	byTypeBack = pInfo->byType;
 	int nSize = GetSubGameDataSize (pRecv->byData);
 	if (nSize == 0) {
 		ZeroMemory (pInfo, sizeof (SUBGAMEINFO));
@@ -6599,6 +6601,16 @@ void RecvDataProcSUBGAMEINFO(PBYTE pData, DWORD dwDataSize)
 			pMazeInfo->wChipIDGoal = pMaze->wChipIDGoal;
 			pMazeInfo->wChipIDRoad = pMaze->wChipIDRoad;
 			pMazeInfo->wChipIDBlock = pMaze->wChipIDBlock;
+			/* 管理者ウィンドウに無い項目（混ぜるパーツ・通路の太さ等）は前の値を引き継ぐ */
+			if (pInfoBack && (byTypeBack == SUBGAMEID_MAZE)) {
+				PSUBGAME_MAZEINFO pBack = (PSUBGAME_MAZEINFO)pInfoBack;
+				pMazeInfo->wChipIDRoad2		= pBack->wChipIDRoad2;
+				pMazeInfo->byRoad2Rate		= pBack->byRoad2Rate;
+				pMazeInfo->wChipIDBlock2	= pBack->wChipIDBlock2;
+				pMazeInfo->byBlock2Rate		= pBack->byBlock2Rate;
+				pMazeInfo->wChipIDBlockFace	= pBack->wChipIDBlockFace;
+				pMazeInfo->byPathWidth		= pBack->byPathWidth;
+			}
 		}		
 		break;
 

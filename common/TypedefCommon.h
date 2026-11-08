@@ -1279,6 +1279,15 @@ typedef struct _SUBGAME_MAZEINFO {
 	WORD		wChipIDGoal;										/* ゴール地点のマップチップID */
 	WORD		wChipIDRoad;										/* 道のマップチップID */
 	WORD		wChipIDBlock;										/* 壁のマップチップID */
+	WORD		wChipIDRoad2;										/* 道に混ぜるマップチップID(0=混ぜない) */
+	BYTE		byRoad2Rate;										/* 道に混ぜる割合(%) */
+	WORD		wChipIDBlock2;										/* 壁に混ぜるマップチップID(0=混ぜない) */
+	BYTE		byBlock2Rate;										/* 壁に混ぜる割合(%) */
+	WORD		wChipIDBlockFace;									/* 壁の手前の面のマップチップID(0=使わない) */
+	BYTE		byPathWidth;										/* 通路の太さ(1～3マス、0=2マス) */
+	BYTE		byWorkWidth;										/* 作成中の通路の太さ */
+	WORD		wWorkCX;											/* 作成中の設計図の横マス数 */
+	WORD		wWorkCY;											/* 作成中の設計図の縦マス数 */
 	BYTE		*pMapTmp;											/* 作成するマップ */
 	DWORD		dwTblID;											/* 管理人キャラのテーブルID */
 	DWORD		dwCountTmp;											/* 参加人数カウント用 */
