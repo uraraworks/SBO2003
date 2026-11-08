@@ -88,7 +88,7 @@ extern void SendCmdTRADEINFO		(void);									/* 取り引き情報 */
 extern void SendCmdTRADEPROC		(void);									/* 取り引き決定 */
 extern void SendCmdLEAVEGOLD		(DWORD);								/* お金預ける */
 extern void SendCmdLEAVEGOLDGET		(DWORD);								/* 預けてるお金取得 */
-extern void SendCmdSETSTARTPOS		(BYTE, BYTE, BYTE);						/* 復活座標設定 */
+extern void SendCmdSETSTARTPOS		(BYTE, BYTE, BYTE, int nForgetMapID = -1);						/* 復活座標設定 */
 extern void SendCmdCHGPASSWORD		(DWORD, LPSTR);							/* パスワード更新 */
 extern void SendCmdLEAVEINFOGET		(DWORD);								/* 預かり所情報取得 */
 extern void SendCmdLEAVEINFO		(DWORD);								/* 預かり所情報 */

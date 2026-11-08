@@ -182,6 +182,11 @@ static void MakeEffectStr(PMAGICINFO pInfo, BOOL bInner, int nDepth, LPSTR pszDs
 			MakeEffectStr (pInfoChild, TRUE, nDepth + 1, &szTmp[strlen (szTmp)], sizeof (szTmp) - (int)strlen (szTmp));
 			break;
 		}
+		/* 町転送（置いて、触れると帰還）は行き先が増えることを添える */
+		if ((pInfo->byType == MAGICTYPE_PUT) && (pInfoChild->byType == MAGICTYPE_RETURN) && (bInner == FALSE)) {
+			strcpy (szTmp, "選んだ町へ送る床。教会で記録した町を覚え、Lv5・10・15で行き先が増加");
+			break;
+		}
 		if (pInfo->wData4) {
 			strcpy (szTmp, "前へ飛ぶ魔法を放ち、当たると");
 		} else if (pInfo->wData2 >= 2) {

@@ -218,6 +218,8 @@ MAKERINFO g_aMakerInfo[MAX_MAKER];									/* 作り手情報（番号がその�
 RECIPEINFO g_aRecipeInfo[MAX_RECIPE];								/* レシピ情報（番号がそのまま添字） */
 int g_nMakerCount = 0;												/* 作り手の総数（空き枠を含む） */
 int g_nRecipeCount = 0;												/* レシピの総数（空き枠を含む） */
+CMDPARA_TOWNWARP g_TownWarpInfo = {0};								/* 町転送の行き先一覧（サーバーから届いたもの。byCount=0 なら無し） */
+BYTE g_byTownWarpSel = 0;											/* 町転送で選んだ行き先の番号（0=復活位置） */
 int g_nProcMakerID = -1;											/* 開いている作り手の番号（開いていなければ -1） */
 BOOL g_bProcMakerLeaveOK = FALSE;									/* 預かり所の中身（g_pLeaveInfo）を作り手の画面を開いてから受け取ったか */
 BOOL g_bProcMakerWait = FALSE;										/* 作成要求を出して、サーバーの返事待ちか */
@@ -675,5 +677,105 @@ const char *aSugorokuEventTbl[] = {
 	"スタートに戻る",
 	"休み"
 };
+
+/* ========================================================================= */
+/* 関数名：IsTownWarpMagic													 */
+/* 内容：町転送の特技か判定（魔法発生で、中身が帰還のもの）					 */
+/* ========================================================================= */
+BOOL IsTownWarpMagic(BYTE byID)
+{
+	PMAGICINFO pInfo, pInfoChild;
+
+	if (byID >= g_aMagicInfo.GetSize ()) {
+		return FALSE;
+	}
+	pInfo = g_aMagicInfo[byID];
+	if ((pInfo == NULL) || (pInfo->byType != MAGICTYPE_PUT)) {
+		return FALSE;
+	}
+	if (pInfo->wData1 >= g_aMagicInfo.GetSize ()) {
+		return FALSE;
+	}
+	pInfoChild = g_aMagicInfo[pInfo->wData1];
+	if ((pInfoChild == NULL) || (pInfoChild->byType != MAGICTYPE_RETURN)) {
+		return FALSE;
+	}
+	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：GetTownWarpSelectCount											 */
+/* 内容：町転送で選べる行き先の数（届いた数と、レベルで選べる数の少ない方）	 */
+/* ========================================================================= */
+int GetTownWarpSelectCount(void)
+{
+	int nCount, nSlot;
+
+	if ((g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ())) {
+		return 0;
+	}
+	nCount = g_TownWarpInfo.byCount;
+	if (nCount > MAX_TOWNWARP + 1) {
+		nCount = MAX_TOWNWARP + 1;
+	}
+	nSlot = TOWNWARP_SLOT (g_aCharInfo[g_nMyCharID]->byLevel);
+	return (nCount < nSlot) ? nCount : nSlot;
+}
+
+/* ========================================================================= */
+/* 関数名：GetTownWarpLabel													 */
+/* 内容：行き先の表示名を取得（0番目は「名前（復活位置）」）				 */
+/* ========================================================================= */
+void GetTownWarpLabel(int nNo, LPSTR pszDst, int nSize)
+{
+	pszDst[0] = 0;
+	if ((nNo < 0) || (nNo > MAX_TOWNWARP)) {
+		return;
+	}
+	if (nNo == 0) {
+		_snprintf (pszDst, nSize, "%s（復活位置）", g_TownWarpInfo.aszName[0]);
+	} else {
+		_snprintf (pszDst, nSize, "%s", g_TownWarpInfo.aszName[nNo]);
+	}
+	pszDst[nSize - 1] = 0;
+}
+
+/* ========================================================================= */
+/* 関数名：GetTownWarpTitle													 */
+/* 内容：町転送の一覧ウィンドウの見出し										 */
+/* ========================================================================= */
+LPCSTR GetTownWarpTitle(int nMode)
+{
+	if (nMode == TOWNWARPWND_FORGET) {
+		return "どの町を忘れますか？";
+	}
+	return "行き先";
+}
+
+/* ========================================================================= */
+/* 関数名：TownWarpNeedForget												 */
+/* 内容：教会で dwMapID の町を記録する時に、忘れる町を選ぶ必要があるか		 */
+/*		 （選べる行き先がもういっぱいで、その町がまだ入っていない時）		 */
+/*		 選べる行き先が1つ（Lv1～4）の時は、入れ替わるだけなので聞かない	 */
+/* ========================================================================= */
+BOOL TownWarpNeedForget(DWORD dwMapID)
+{
+	int i, nCount, nSlot;
+
+	if ((g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ())) {
+		return FALSE;
+	}
+	nSlot = TOWNWARP_SLOT (g_aCharInfo[g_nMyCharID]->byLevel);
+	nCount = GetTownWarpSelectCount ();
+	if ((nSlot < 2) || (nCount < nSlot)) {
+		return FALSE;
+	}
+	for (i = 0; i < nCount; i ++) {
+		if (g_TownWarpInfo.adwMapID[i] == dwMapID) {
+			return FALSE;
+		}
+	}
+	return TRUE;
+}
 
 /* Copyright(C)URARA-works 2003-2005 */

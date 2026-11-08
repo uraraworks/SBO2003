@@ -209,6 +209,8 @@ extern MAKERINFO g_aMakerInfo[MAX_MAKER];								/* 作り手情報（番号が�
 extern RECIPEINFO g_aRecipeInfo[MAX_RECIPE];							/* レシピ情報（番号がそのまま添字） */
 extern int g_nMakerCount;												/* 作り手の総数（空き枠を含む） */
 extern int g_nRecipeCount;												/* レシピの総数（空き枠を含む） */
+extern CMDPARA_TOWNWARP g_TownWarpInfo;								/* 町転送の行き先一覧（サーバーから届いたもの。byCount=0 なら無し） */
+extern BYTE g_byTownWarpSel;										/* 町転送で選んだ行き先の番号（0=復活位置。特技を使う時に送る） */
 extern int g_nProcMakerID;												/* 開いている作り手の番号（開いていなければ -1） */
 extern BOOL g_bProcMakerLeaveOK;										/* 預かり所の中身（g_pLeaveInfo）を作り手の画面を開いてから受け取ったか */
 extern BOOL g_bProcMakerWait;											/* 作成要求を出して、サーバーの返事待ちか */
@@ -236,6 +238,13 @@ extern CmyArray<BYTE, BYTE> g_aMagicInfoBattle;							/* 戦闘状態で使え�
 extern CmyArray<PMAGICUSERINFO, PMAGICUSERINFO> g_aMagicUserInfo;		/* 魔法利用者情報 */
 extern CmyArray<PEQUUSERINFO, PEQUUSERINFO> g_aEquUserInfo;				/* 装備職業情報 */
 extern CAdminWindow *g_pAdminWindow;									/* 管理者ウィンドウ */
+
+/* 町転送 */
+extern BOOL IsTownWarpMagic		(BYTE byID);						/* 町転送の特技か判定 */
+extern int GetTownWarpSelectCount	(void);							/* 町転送で選べる行き先の数 */
+extern void GetTownWarpLabel	(int nNo, LPSTR pszDst, int nSize);	/* 行き先の表示名を取得 */
+extern LPCSTR GetTownWarpTitle	(int nMode);						/* 町転送の一覧ウィンドウの見出し */
+extern BOOL TownWarpNeedForget	(DWORD dwMapID);					/* 教会で記録する時に忘れる町を選ぶ必要があるか */
 
 /* 向き別縦横増減テーブル */
 extern  int anPosAddTblX[],

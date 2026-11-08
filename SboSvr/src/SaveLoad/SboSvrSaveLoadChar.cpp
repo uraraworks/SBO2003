@@ -14,7 +14,7 @@
 /* ========================================================================= */
 /* 定数定義																	 */
 /* ========================================================================= */
-#define DATACOUNTCOLUMN		(76)									/* 保存データ数 */
+#define DATACOUNTCOLUMN		(77)									/* 保存データ数 */
 
 /* ========================================================================= */
 /* 構造体定義																 */
@@ -110,6 +110,7 @@ static const char *s_aszName[] = {
 	"byOptBgm",					/* 音楽ON/OFFのアカウント設定 */
 	"abyNpcRoute",				/* NPCの巡回ルート */
 	"dwNpcID",					/* NPC番号 */
+	"abyTownWarp",				/* 町転送の行き先帳 */
 	"z"
 };
 
@@ -484,6 +485,9 @@ BOOL SaveCharInfo(void)
 				}
 				break;
 			case 75:	dwDataSizeTmp += sizeof (pInfo->dwNpcID);				break;	/* NPC番号 */
+			case 76:	/* 町転送の行き先帳 [数(BYTE)] 続けて [マップID(DWORD)][横(BYTE)][縦(BYTE)]×数 */
+				dwDataSizeTmp += 1 + min ((DWORD)pInfo->byTownWarpCount, (DWORD)MAX_TOWNWARP) * (sizeof (DWORD) + 2);
+				break;
 			}
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
@@ -864,6 +868,19 @@ BOOL SaveCharInfo(void)
 			case 75:	/* NPC番号 */
 				CopyMemory (&pData[dwOffset], &pInfo->dwNpcID, sizeof (pInfo->dwNpcID));
 				dwOffset += sizeof (pInfo->dwNpcID);
+				break;
+			case 76:	/* 町転送の行き先帳 */
+				{
+					DWORD k, dwCount = min ((DWORD)pInfo->byTownWarpCount, (DWORD)MAX_TOWNWARP);
+
+					pData[dwOffset ++] = (BYTE)dwCount;
+					for (k = 0; k < dwCount; k ++) {
+						CopyMemory (&pData[dwOffset], &pInfo->adwTownWarpMapID[k], sizeof (DWORD));
+						dwOffset += sizeof (DWORD);
+						pData[dwOffset ++] = pInfo->abyTownWarpX[k];
+						pData[dwOffset ++] = pInfo->abyTownWarpY[k];
+					}
+				}
 				break;
 			}
 		}
@@ -1499,6 +1516,22 @@ BOOL LoadCharInfo(void)
 			if (strcmp (aHeaderInfo[i].szName, s_aszName[75]) == 0) {
 				CopyMemory (&pInfo->dwNpcID, &pData[dwOffsetTmp], sizeof (pInfo->dwNpcID));
 				dwOffsetTmp += sizeof (pInfo->dwNpcID);
+			}
+
+			/* 町転送の行き先帳（無い古いデータは空のまま。定数が減っても読めるよう収まる分だけ） */
+			if (strcmp (aHeaderInfo[i].szName, s_aszName[76]) == 0) {
+				DWORD k, dwCount = pData[dwOffsetTmp ++];
+
+				pInfo->byTownWarpCount = 0;
+				for (k = 0; k < dwCount; k ++) {
+					if (k < MAX_TOWNWARP) {
+						CopyMemory (&pInfo->adwTownWarpMapID[k], &pData[dwOffsetTmp], sizeof (DWORD));
+						pInfo->abyTownWarpX[k] = pData[dwOffsetTmp + sizeof (DWORD)];
+						pInfo->abyTownWarpY[k] = pData[dwOffsetTmp + sizeof (DWORD) + 1];
+						pInfo->byTownWarpCount ++;
+					}
+					dwOffsetTmp += sizeof (DWORD) + 2;
+				}
 			}
 		}
 	}

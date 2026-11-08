@@ -16,6 +16,7 @@
 #include "Proc/SubGame/ProcSubGameBase.h"
 #include "SboSvrRecvCmd.h"
 #include "SboSvrNpcRoute.h"
+#include "SboSvrMagicProc.h"
 
 
 /* ========================================================================= */
@@ -3391,6 +3392,44 @@ void SendCmdRECIPEMAKE(DWORD pIDSend, BYTE byResult, BYTE byMaker, WORD wRecipeI
 	Para.pID		= pIDSend;
 
 	svrSock.SendTo (pIDSend, (LPBYTE)&Para, sizeof (Para), SENDTIMEOUT);
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdTOWNWARP													 */
+/* 内容：コマンド送信(町転送の行き先一覧を本人へ。ログイン時と復活位置を	 */
+/*		 記録した時)。並びは TownWarpMakeList と同じ						 */
+/* ========================================================================= */
+void SendCmdTOWNWARP(DWORD dwTblID)
+{
+	CMDPARA_TOWNWARP Para;
+	PCHARINFO pChar;
+	PMAPINFO pMap;
+	DWORD adwMapID[MAX_TOWNWARP + 1], adwX[MAX_TOWNWARP + 1], adwY[MAX_TOWNWARP + 1];
+	int i, nCount;
+
+	if (dwTblID >= (DWORD)g_aCharInfo.GetSize ()) {
+		return;
+	}
+	pChar = g_aCharInfo[dwTblID];
+	if ((pChar == NULL) || (pChar->pID == 0)) {
+		return;
+	}
+
+	ZeroMemory (&Para, sizeof (Para));
+	Para.byCmd = CMD_TOWNWARP;
+	nCount = TownWarpMakeList (pChar, adwMapID, adwX, adwY);
+	for (i = 0; i < nCount; i ++) {
+		Para.adwMapID[i] = adwMapID[i];
+		if (adwMapID[i] < (DWORD)g_aMapInfo.GetSize ()) {
+			pMap = g_aMapInfo[adwMapID[i]];
+			if (pMap && pMap->pszName) {
+				SboTextCopy (Para.aszName[i], sizeof (Para.aszName[i]), pMap->pszName);
+			}
+		}
+	}
+	Para.byCount = (BYTE)nCount;
+
+	svrSock.SendTo (pChar->pID, (LPBYTE)&Para, sizeof (Para), SENDTIMEOUT);
 }
 
 /* Copyright(C)URARA-works 2003-2005 */

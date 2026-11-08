@@ -1989,6 +1989,7 @@ void TimerProc(void)
 		case WNDTYPE_SUBSUGOROKU_IDLE:
 		case WNDTYPE_DEAD_COMMAND:
 		case WNDTYPE_MAKER:
+		case WNDTYPE_TOWNWARP:
 			if (dwTime > pWnd->dwTime + 250) {
 				pWnd->dwTime = dwTime;
 				if (g_dwActiveMsgID == pWnd->dwID) {

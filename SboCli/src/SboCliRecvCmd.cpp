@@ -85,6 +85,7 @@ void	RecvDataProcMAKERINFO				(PBYTE, DWORD);			/* 受信データ処理(作り�
 void	RecvDataProcRECIPEINFO				(PBYTE, DWORD);			/* 受信データ処理(レシピ情報) */
 void	RecvDataProcRECIPEMAKE				(PBYTE, DWORD);			/* 受信データ処理(作ってもらった結果) */
 void	RecvDataProcNPCROUTE				(PBYTE, DWORD);			/* 受信データ処理(NPCの巡回ルート) */
+void	RecvDataProcTOWNWARP				(PBYTE, DWORD);			/* 受信データ処理(町転送の行き先一覧) */
 /* ブラウザ版のアカウント関係（web/replace/SboCliWebAccount_web.cpp） */
 void	WebAccSaveToken						(LPCSTR);				/* 端末トークンをページへ渡す */
 void	WebAccOnTokenNG						(void);					/* 端末トークンが無効だった */
@@ -322,6 +323,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcRECIPEMAKE,				/* CMD_RECIPEMAKE */
 	NULL,								/* CMD_BATTLEMODE */
 	RecvDataProcNPCROUTE,				/* CMD_NPCROUTE */
+	RecvDataProcTOWNWARP,				/* CMD_TOWNWARP */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -2295,6 +2297,28 @@ void RecvDataProcNPCROUTE(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	NpcRouteOnRecv (pData);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcTOWNWARP												 */
+/* 内容：受信データ処理(町転送の行き先一覧)									 */
+/* ========================================================================= */
+void RecvDataProcTOWNWARP(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_TOWNWARP pPara = (PCMDPARA_TOWNWARP)pData;
+	int i;
+
+	if (dwDataSize < sizeof (CMDPARA_TOWNWARP)) {
+		return;
+	}
+	CopyMemory (&g_TownWarpInfo, pPara, sizeof (CMDPARA_TOWNWARP));
+	if (g_TownWarpInfo.byCount > MAX_TOWNWARP + 1) {
+		g_TownWarpInfo.byCount = MAX_TOWNWARP + 1;
+	}
+	/* 名前は必ず終端させる */
+	for (i = 0; i <= MAX_TOWNWARP; i ++) {
+		g_TownWarpInfo.aszName[i][MAX_TOWNWARPNAME - 1] = 0;
+	}
 }
 
 /* ========================================================================= */

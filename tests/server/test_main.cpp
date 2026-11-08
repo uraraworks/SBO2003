@@ -527,6 +527,152 @@ static void TestSugorokuViewer(void)
 	delete pSugoroku;
 }
 
+/* ------------------------------------------------------------------------- */
+/* I. 町転送の行き先帳														 */
+/* ------------------------------------------------------------------------- */
+extern BOOL IsTownWarpMagic(BYTE byID);
+extern int  TownWarpMakeList(PCHARINFO pChar, PDWORD padwMapID, PDWORD padwX, PDWORD padwY);
+extern void TownWarpRecord(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY, int nForgetMapID);
+
+static void PrintTownWarp(const char *pszLabel, PCHARINFO pChar)
+{
+	DWORD adwMapID[MAX_TOWNWARP + 1], adwX[MAX_TOWNWARP + 1], adwY[MAX_TOWNWARP + 1];
+	int nCount = TownWarpMakeList(pChar, adwMapID, adwX, adwY);
+	printf("townwarp %s book=%d list=", pszLabel, pChar->byTownWarpCount);
+	for (int i = 0; i < nCount; i ++) {
+		printf("%s%u(%u,%u)", i ? "," : "", adwMapID[i], adwX[i], adwY[i]);
+	}
+	printf("\n");
+}
+
+static void TestTownWarp(const std::vector<int> &aLogin)
+{
+	printf("== I. Town warp ==\n");
+	if (aLogin.size() < 2) {
+		return;
+	}
+	printf("townwarp magic24=%d magic25=%d magic5=%d slot lv1=%d lv4=%d lv5=%d lv10=%d lv15=%d lv99=%d\n",
+		IsTownWarpMagic(24), IsTownWarpMagic(25), IsTownWarpMagic(5),
+		TOWNWARP_SLOT(1), TOWNWARP_SLOT(4), TOWNWARP_SLOT(5), TOWNWARP_SLOT(10), TOWNWARP_SLOT(15), TOWNWARP_SLOT(99));
+
+	PCHARINFO pPC = g_aCharInfo[aLogin[0]];
+	PCHARINFO pFriend = g_aCharInfo[aLogin[1]];
+	BYTE byLevelRec = pPC->byLevel;
+	/* 教会で記録する順（Lv15＝4つまで）：始まりの町→港町→マイス→ルシー→港町（上に戻る）→
+	   サニアス（忘れる町の指定なし＝一番古い町）→バオ（マイスを忘れる）→ゼニー（一覧に無い町を指定＝一番古い町）
+	   続けて Lv5（2つまで）でブルアイ、Lv1（1つだけ）でリルシェ */
+	static const struct { BYTE byLevel; DWORD dwMap; BYTE x, y; int nForget; } aRec[] = {
+		{15, 0, 26, 50, -1}, {15, 14, 9, 12, -1}, {15, 35, 13, 30, -1}, {15, 39, 51, 40, -1}, {15, 14, 9, 12, -1},
+		{15, 43, 32, 50, -1}, {15, 51, 35, 6, 35}, {15, 55, 60, 100, 99}, {5, 52, 29, 50, 14}, {1, 63, 10, 20, -1},
+	};
+	pPC->byTownWarpCount = 0;
+	pPC->dwStartMapID = 0;
+	pPC->dwStartX = 26;
+	pPC->dwStartY = 50;
+	for (size_t i = 0; i < sizeof(aRec) / sizeof(aRec[0]); i ++) {
+		pPC->byLevel = aRec[i].byLevel;
+		TownWarpRecord(pPC, aRec[i].dwMap, aRec[i].x, aRec[i].y, aRec[i].nForget);
+		char sz[32];
+		sprintf(sz, "rec%d", (int)i);
+		PrintTownWarp(sz, pPC);
+	}
+	/* キャスト用に Lv15 の行き先帳を作り直す（始まりの町→港町→マイス→ルシー→バオ→始まりの町） */
+	pPC->byLevel = 15;
+	pPC->byTownWarpCount = 0;
+	TownWarpRecord(pPC, 14, 9, 12, -1);
+	TownWarpRecord(pPC, 39, 51, 40, -1);
+	TownWarpRecord(pPC, 43, 32, 50, -1);
+	TownWarpRecord(pPC, 51, 35, 6, -1);
+	PrintTownWarp("cast", pPC);
+	pPC->byLevel = byLevelRec;
+	/* 復活位置が行き先帳に無い町（管理者が動かした等）でも、0 番目は復活位置 */
+	pPC->dwStartMapID = 0;
+	pPC->dwStartX = 26;
+	pPC->dwStartY = 50;
+	PrintTownWarp("start0", pPC);
+
+	/* 町転送を使って床を出し、仲間を乗せる。選んだ番号・レベルごとの行き先 */
+	DWORD dwMapBack = pPC->dwMapID, dwXBack = pPC->dwX, dwYBack = pPC->dwY;
+	BYTE byLevelBack = pPC->byLevel, byDirBack = pPC->byDirection, abyMagicBack[MAX_USEMAGIC];
+	memcpy(abyMagicBack, pPC->abyMagic, sizeof(abyMagicBack));
+	struct { BYTE byLevel; BYTE bySel; } aCase[] = { {15, 0}, {15, 1}, {15, 3}, {15, 4}, {10, 3}, {1, 1}, {5, 1} };
+	/* 始まりの町で、右に2マス・下に1マス空いている所を探す */
+	DWORD dwCastX = 0, dwCastY = 0;
+	for (DWORD y = 1; y + 2 < (DWORD)g_aMapInfo[0]->nCY && !dwCastX; y ++) {
+		for (DWORD x = 1; x + 3 < (DWORD)g_aMapInfo[0]->nCX && !dwCastX; x ++) {
+			if (CheckCharBlock(0, x, y) && CheckCharBlock(0, x + 1, y) && CheckCharBlock(0, x + 2, y) && CheckCharBlock(0, x, y + 1)) {
+				dwCastX = x;
+				dwCastY = y;
+			}
+		}
+	}
+	printf("townwarp map0 flg=%02x cast=(%u,%u)\n", g_aMapInfo[0]->byFlg, dwCastX, dwCastY);
+	for (size_t c = 0; c < sizeof(aCase) / sizeof(aCase[0]); c ++) {
+		/* 始まりの町 (26,53) 付近で、右向きに使う */
+		DeleteTblNoPC((int)pPC->dwTblID);
+		DeleteTblNoPC((int)pFriend->dwTblID);
+		pPC->dwMapID = pFriend->dwMapID = 0;
+		pPC->dwX = dwCastX;
+		pPC->dwY = dwCastY;
+		pPC->byDirection = 3;
+		AddTblNoPC((int)pPC->dwTblID);
+		pFriend->dwX = dwCastX;
+		pFriend->dwY = dwCastY + 1;
+		AddTblNoPC((int)pFriend->dwTblID);
+		pPC->byLevel = aCase[c].byLevel;
+		pPC->abyMagic[0] = 24;
+		pPC->wMana = 9999;
+		pPC->byCharState = CHARSTATE_MOVE;
+		pFriend->byCharState = CHARSTATE_MOVE;
+		pPC->byTownWarpSel = aCase[c].bySel;
+		s_dwFakeNow += 5000;
+		g_dwTime = s_dwFakeNow;
+		MagicProc(pPC->dwTblID, 24, (DWORD)-1);
+		pPC->byTownWarpSel = 0;
+		/* 出た床を探す */
+		PCHARINFO pFloor = NULL;
+		for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+			PCHARINFO p = g_aCharInfo[i];
+			if (p->byNpcType == NPCTYPE_USEMAGIC && p->dwParentTblID == pPC->dwTblID && p->pProc && p->dwTimeDelete) {
+				pFloor = p;
+			}
+		}
+		if (pFloor == NULL) {
+			printf("townwarp cast lv=%d sel=%d no floor map=%u\n", aCase[c].byLevel, aCase[c].bySel, pPC->dwMapID);
+			continue;
+		}
+		/* 仲間が床へ歩いて乗る */
+		DeleteTblNoPC((int)pFriend->dwTblID);
+		pFriend->dwX = pFloor->dwX;
+		pFriend->dwY = pFloor->dwY;
+		AddTblNoPC((int)pFriend->dwTblID);
+		pFriend->dwLastDotMove = s_dwFakeNow;
+		for (int k = 0; k < 8 && pFriend->dwMapID == 0; k ++) {
+			s_dwFakeNow += 300;
+			g_dwTime = s_dwFakeNow;
+			pFriend->dwLastDotMove = s_dwFakeNow;
+			((PCCharProcBase)pFloor->pProc)->Proc(s_dwFakeNow);
+		}
+		printf("townwarp cast lv=%d sel=%d floor dest=%d:%u -> friend map=%u x=%u y=%u\n",
+			aCase[c].byLevel, aCase[c].bySel, pFloor->byTownWarpDest, pFloor->dwStartMapID,
+			pFriend->dwMapID, pFriend->dwX, pFriend->dwY);
+		/* 床を片付ける */
+		pFloor->dwTimeDelete = 0;
+		pFloor->dwTimeLogin = 0;
+		pFloor->dwLastDotMove = 0;
+		s_dwFakeNow += 300;
+		((PCCharProcBase)pFloor->pProc)->Proc(s_dwFakeNow);
+	}
+	DeleteTblNoPC((int)pPC->dwTblID);
+	pPC->dwMapID = dwMapBack;
+	pPC->dwX = dwXBack;
+	pPC->dwY = dwYBack;
+	AddTblNoPC((int)pPC->dwTblID);
+	pPC->byLevel = byLevelBack;
+	pPC->byDirection = byDirBack;
+	memcpy(pPC->abyMagic, abyMagicBack, sizeof(abyMagicBack));
+}
+
 #define NLOGIN	14			/* ログイン中にするPCの数 */
 
 static void TestWorld(void)
@@ -806,6 +952,9 @@ static void TestWorld(void)
 		pNpc->dwX = dwNpcX;
 		pNpc->dwY = dwNpcY;
 	}
+
+	/* I. 町転送の行き先帳（教会で記録した町を覚える・選んだ町へ飛ぶ） */
+	TestTownWarp(aLogin);
 }
 
 int main(int argc, char **argv)
