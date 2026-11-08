@@ -27,6 +27,25 @@ extern int GetWindowID(DWORD);										/* ウィンドウ番号を取得 */
 /* グローバル変数定義														 */
 /* ========================================================================= */
 
+/* HPが減った時にウィンドウ枠と文字の色を変える（0=いつもどおり 1=少ない 2=瀕死） */
+#define HPWARN_NONE		(0)
+#define HPWARN_LOW		(1)
+#define HPWARN_DANGER	(2)
+#define HPWARN_LOW_PERCENT		(30)		/* 最大HPのこの%以下で「少ない」（オレンジ） */
+#define HPWARN_DANGER_PERCENT	(10)		/* 最大HPのこの%以下で「瀕死」（赤） */
+static BYTE	s_byHpWarn			= HPWARN_NONE;	/* 今の段階 */
+static BOOL	s_bDrawingWindow	= FALSE;		/* ウィンドウの中身を描いている途中？ */
+
+/* 段階ごとの色（枠は灰色の濃さをこの色に掛ける・白い文字はこの色にする） */
+static const COLORREF s_aclHpWarn[] = {
+	RGB (255, 255, 255),		/* いつもどおり */
+	RGB (255, 176,  64),		/* 少ない：オレンジ */
+	RGB (255,  88,  80),		/* 瀕死：赤 */
+};
+
+static BYTE	GetHpWarnLevel		(void);											/* 自分のHPから段階を求める */
+static void	TintWindowFrame		(CImg32 *pDib, int x, int y, int cx, int cy);	/* 枠の灰色を段階の色に染める */
+
 /* ========================================================================= */
 /* 関数プロトタイプ宣言														 */
 /* ========================================================================= */
@@ -219,11 +238,33 @@ void DrawWindow(CImg32 *pDib, int x, int y)
 		return;
 	}
 
+	/* HPの段階が変わったら、開いているウィンドウを描き直して色を変える */
+	{
+		BYTE byHpWarn = GetHpWarnLevel ();
+		if (byHpWarn != s_byHpWarn) {
+			s_byHpWarn = byHpWarn;
+			for (i = 0; i < nCount; i ++) {
+				pWnd = (PWNDINFO)g_WndInfo[i];
+				switch (pWnd->nType) {
+				case WNDTYPE_MSGVIEW:
+				case WNDTYPE_MSG3SEC:
+				case WNDTYPE_CONNECTLOST:
+					/* 描いた時刻で3秒後に閉じるので触らない */
+					break;
+				default:
+					pWnd->dwTimeDrawStart = 0;
+					break;
+				}
+			}
+		}
+	}
+
 	for (i = 0; i < nCount; i ++) {
 		pWnd = (PWNDINFO)g_WndInfo[i];
 		if (pWnd->pDib == NULL) {
 			continue;
 		}
+		s_bDrawingWindow = TRUE;
 		switch (pWnd->nType) {
 		case WNDTYPE_MSGVIEW:
 		case WNDTYPE_MSG3SEC:				DrawWindowMSG3SEC (pWnd);				break;
@@ -302,6 +343,7 @@ void DrawWindow(CImg32 *pDib, int x, int y)
 		case WNDTYPE_STATUSMAGIC:			DrawWindowSTATUSMAGIC (pWnd);			break;
 		case WNDTYPE_MAKER:					DrawWindowMAKER (pWnd);					break;
 		}
+		s_bDrawingWindow = FALSE;
 		pDib->BltAlpha2 (pWnd->nX + x, pWnd->nY + y, pWnd->nCx, pWnd->nCy, pWnd->pDib, 0, 0, 15, TRUE);
 	}
 }
@@ -339,6 +381,12 @@ void DrawWindowFrame(PWNDINFO pWnd)
 		pDib->Blt (0, (i + 1) * 16, 16, 16, g_pDibSystem, 0, 16);
 		pDib->Blt (pWnd->nCx - 16, (i + 1) * 16, 16, 16, g_pDibSystem, 32, 16);
 	}
+
+	/* HPが減っていたら枠を染める（上下左右の16ドット幅） */
+	TintWindowFrame (pDib, 0, 0, pWnd->nCx, 16);
+	TintWindowFrame (pDib, 0, pWnd->nCy - 16, pWnd->nCx, 16);
+	TintWindowFrame (pDib, 0, 16, 16, pWnd->nCy - 32);
+	TintWindowFrame (pDib, pWnd->nCx - 16, 16, 16, pWnd->nCy - 32);
 }
 
 /* ========================================================================= */
@@ -374,6 +422,101 @@ void DrawWindowFrame2(PWNDINFO pWnd, int nX, int nY, int nCx, int nCy)
 		pDib->Blt (nX, nY + (i + 1) * 16, 16, 16, g_pDibSystem, 0, 16);
 		pDib->Blt (nX + nCx - 16, nY + (i + 1) * 16, 16, 16, g_pDibSystem, 32, 16);
 	}
+
+	/* HPが減っていたら枠を染める（上下左右の16ドット幅） */
+	TintWindowFrame (pDib, nX, nY, nCx, 16);
+	TintWindowFrame (pDib, nX, nY + nCy - 16, nCx, 16);
+	TintWindowFrame (pDib, nX, nY + 16, 16, nCy - 32);
+	TintWindowFrame (pDib, nX + nCx - 16, nY + 16, 16, nCy - 32);
+}
+
+/* ========================================================================= */
+/* 関数名：GetHpWarnLevel													 */
+/* 内容：自分のHPから色を変える段階を求める									 */
+/* 日付：2026/11/08															 */
+/* ========================================================================= */
+static BYTE GetHpWarnLevel(void)
+{
+	PCHARINFO pChar;
+
+	if ((g_byGameState != GAMESTATE_MOVE) || (g_nMyCharID < 0)) {
+		return HPWARN_NONE;
+	}
+	pChar = g_aCharInfo[g_nMyCharID];
+	if ((pChar == NULL) || (pChar->wMaxHP == 0)) {
+		return HPWARN_NONE;
+	}
+	if ((DWORD)pChar->wHP * 100 <= (DWORD)pChar->wMaxHP * HPWARN_DANGER_PERCENT) {
+		return HPWARN_DANGER;
+	}
+	if ((DWORD)pChar->wHP * 100 <= (DWORD)pChar->wMaxHP * HPWARN_LOW_PERCENT) {
+		return HPWARN_LOW;
+	}
+	return HPWARN_NONE;
+}
+
+/* ========================================================================= */
+/* 関数名：TintWindowFrame													 */
+/* 内容：枠の灰色を段階の色に染める（背景色と抜き色はそのまま）				 */
+/* 日付：2026/11/08															 */
+/* ========================================================================= */
+static void TintWindowFrame(CImg32 *pDib, int x, int y, int cx, int cy)
+{
+	int i, j, nW, nH;
+	DWORD dwTint, dwSrc, dwGray;
+	PDWORD pdwLine;
+	LPBYTE pBits;
+
+	if (s_byHpWarn == HPWARN_NONE) {
+		return;
+	}
+	pBits = pDib->GetBits ();
+	if (pBits == NULL) {
+		return;
+	}
+	nW = pDib->Width ();
+	nH = pDib->Height ();
+	dwTint = s_aclHpWarn[s_byHpWarn];
+
+	for (j = max (y, 0); j < min (y + cy, nH); j ++) {
+		/* 画像は下から上へ並んでいる */
+		pdwLine = (PDWORD)(pBits + (nH - 1 - j) * nW * 4);
+		for (i = max (x, 0); i < min (x + cx, nW); i ++) {
+			dwSrc = pdwLine[i] & 0x00FFFFFF;
+			/* 抜き色(黒)とウィンドウの背景(40,40,40)は染めない */
+			if ((dwSrc == 0) || (dwSrc == 0x00282828)) {
+				continue;
+			}
+			/* 枠は灰色なので緑の濃さを明るさとして使う */
+			dwGray = (dwSrc >> 8) & 0xFF;
+			pdwLine[i] = (pdwLine[i] & 0xFF000000)
+					| ((dwGray * GetRValue (dwTint) / 255) << 16)
+					| ((dwGray * GetGValue (dwTint) / 255) << 8)
+					| ((dwGray * GetBValue (dwTint) / 255));
+		}
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：HpWarnTextColor													 */
+/* 内容：HPが減った時、ウィンドウの白・灰色の文字を段階の色に変える			 */
+/* 日付：2026/11/08															 */
+/* ========================================================================= */
+COLORREF HpWarnTextColor(COLORREF cl)
+{
+	COLORREF clTint;
+	BYTE byGray;
+
+	if ((s_bDrawingWindow == FALSE) || (s_byHpWarn == HPWARN_NONE)) {
+		return cl;
+	}
+	/* 白や灰色（R=G=B）だけ。見出しなどの色付き文字はそのまま */
+	byGray = GetRValue (cl);
+	if ((GetGValue (cl) != byGray) || (GetBValue (cl) != byGray) || (byGray < 128)) {
+		return cl;
+	}
+	clTint = s_aclHpWarn[s_byHpWarn];
+	return RGB (GetRValue (clTint) * byGray / 255, GetGValue (clTint) * byGray / 255, GetBValue (clTint) * byGray / 255);
 }
 
 /* ========================================================================= */

@@ -48,6 +48,8 @@ void AddSysMsg			(LPSTR, COLORREF);							/* システムメッセージの追�
 void TextOut2(HDC hdc, int iX, int iY, char *pStr, COLORREF Color)
 {
 	/* 縁取りの 4 回と本体の 1 回を、文字の形を 1 回だけ調べてまとめて描く */
+	/* ウィンドウの中ならHPの減り具合で白い文字の色を変える */
+	Color = HpWarnTextColor (Color);
 	TextOutOutline (hdc, iX, iY, pStr, strlen (pStr), RGB(10, 10, 10), Color);
 }
 
