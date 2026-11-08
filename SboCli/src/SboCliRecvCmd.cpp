@@ -4444,7 +4444,9 @@ void RecvDataProcCHARSTATUSHP(BYTE *pData, DWORD dwDataSize)
 {
 	BYTE byCharStateBack;
 	PCMDPARA_CHARSTATUSHP pPara = (PCMDPARA_CHARSTATUSHP)pData;
-	int nNo = GetCharNo (pPara->pID);
+	/* NPC（敵・傭兵）は pID が全員 0 なので、テーブルIDで探す
+	   （pID で探すと別のNPCに届き、傭兵のHP表示が敵のHPとちらついていた） */
+	int nNo = (pPara->pID == 0) ? GetCharNo2 (pPara->dwTblID) : GetCharNo (pPara->pID);
 	PCHARINFO pChar;
 
 	if (nNo < 0) {
@@ -5308,7 +5310,9 @@ void RecvDataProcCHARSTATUSHPMANA(BYTE *pData, DWORD dwDataSize)
 {
 	PCHARINFO pChar;
 	PCMDPARA_CHARSTATUSHPMANA pPara = (PCMDPARA_CHARSTATUSHPMANA)pData;
-	int nNo = GetCharNo (pPara->pID);
+	/* NPC（敵・傭兵）は pID が全員 0 なので、テーブルIDで探す
+	   （pID で探すと別のNPCに届き、傭兵のHP表示が敵のHPとちらついていた） */
+	int nNo = (pPara->pID == 0) ? GetCharNo2 (pPara->dwTblID) : GetCharNo (pPara->pID);
 
 	if (nNo < 0) {
 		return;
@@ -5860,15 +5864,21 @@ void RecvDataProcMAIN_CHAR_TAIL(PBYTE pData, DWORD dwDataSize)
 		if (pCharTarget == NULL) {
 			break;
 		}
+		/* つなぎ直し（傭兵が列を抜けた等）の時はメッセージを出さない */
+		if (pChar->dwTailBackTblID == -1) {
+			wsprintf (szTmp, "%sがついてきます。", pCharTarget->szName);
+		}
 		pChar->dwTailBackTblID = pCharTarget->dwTblID;
-		wsprintf (szTmp, "%sがついてきます。", pCharTarget->szName);
 		break;
 	case CHAR_TAIL_ON:			/* ○○についていきます */
 		if (pCharTarget == NULL) {
 			break;
 		}
+		/* つなぎ直し（前の傭兵が列を抜けた等）の時はメッセージを出さない */
+		if (pChar->dwTailTblID == -1) {
+			wsprintf (szTmp, "%sについていきます。", pCharTarget->szName);
+		}
 		pChar->dwTailTblID = pCharTarget->dwTblID;
-		wsprintf (szTmp, "%sについていきます。", pCharTarget->szName);
 		break;
 	case CHAR_TAIL_OFF:			/* ついていくのを解除しました */
 		pChar->dwTailTblID = -1;

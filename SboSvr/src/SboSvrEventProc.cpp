@@ -129,20 +129,13 @@ void EventProc_MAPCHG(PCHARINFO pChar, PEVENTINFO pEvent, BYTE byData)
 	svrSock.SendCancel (pChar->pID);
 
 	/* 誰かついてきている？ */
+	/* 傭兵は別のマップへは連れて行かない（列から外し、傭兵の処理でお別れ）。
+	   傭兵が続けて並んでいても全部外し、つなぎ直された後ろの人を連れて行く */
+	MercenaryTailOffBack (pChar);
 	if (pChar->dwTailBackTblID != -1) {
+		/* ついてきているキャラを移動させる */
 		pCharTmp = g_aCharInfo[pChar->dwTailBackTblID];
-		/* 傭兵は別のマップへは連れて行かない（列から外し、傭兵の処理でお別れ） */
-		if (IsMercenary (pCharTmp)) {
-			MercenaryTailOff (pCharTmp);
-			/* 傭兵の後ろについていた人は、つなぎ直されているので連れて行く */
-			if (pChar->dwTailBackTblID != -1) {
-				pCharTmp = g_aCharInfo[pChar->dwTailBackTblID];
-				EventProc_MAPCHG (pCharTmp, pEvent, byData);
-			}
-		} else {
-			/* ついてきているキャラを移動させる */
-			EventProc_MAPCHG (pCharTmp, pEvent, byData);
-		}
+		EventProc_MAPCHG (pCharTmp, pEvent, byData);
 	}
 
 	SendCmdCHGBGM (pChar->pID, pChar->dwMapID, 0);
