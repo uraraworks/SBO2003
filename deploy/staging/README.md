@@ -98,6 +98,31 @@ docker run --rm -v sbo2003-staging_data:/d -v "$PWD":/o ubuntu tar czf /o/sbo200
 docker compose down && docker volume rm sbo2003-staging_data && docker compose up -d
 ```
 
+### 本番の今のデータをステージングに写す
+
+Mac から `deploy/staging/pull-prod-data.sh` を動かします（設定は `deploy/production/deploy.local.env` の
+`STAGING_TARGET`・`STAGING_SSH_KEY`・`VPS_HOST` など。`move-staging-data.sh` と同じ）。
+
+```bash
+deploy/staging/pull-prod-data.sh             # 丸ごと（プレイヤー・アカウント・預かり所も本番と同じに）
+deploy/staging/pull-prod-data.sh --npc-only  # ゲームの中身だけ（キャラは NPC だけ。ステージングのプレイヤーは消える）
+```
+
+- 本番のサーバーは止めません（最大 30 分前の保存の状態になります）。
+- 入れ替える前に、ステージングのデータをホストの `~/sbo2003-staging/backup/data-before-prod-日時.tgz` に控えます。
+- ステージングの `SboSvr.ini`（管理者パスワード）と AI 用キー（`SboWebAiKeys.json`）はそのまま残ります。
+- 丸ごとの時は、変更履歴・しおりも本番のものになります。`--npc-only` の時はステージングの変更履歴を空にします（控えには残ります）。
+- 手元と VPS の一時ファイルは消します（プレイヤーのデータが入るので残さない）。
+
+控えに戻す時:
+
+```bash
+cd ~/sbo2003-staging/deploy/staging
+docker compose stop sbosvr
+docker run --rm -v sbo2003-staging_data:/d -v ~/sbo2003-staging/backup:/b ubuntu sh -c 'rm -rf /d/* && tar xzf /b/data-before-prod-日時.tgz -C /d'
+docker compose start sbosvr
+```
+
 ## 注意
 
 - SBOP2 の Caddy を作り直した時（SBOP2 の `docker compose up -d --force-recreate` など）も、`~/caddy-sites/sbo2003.caddy` はホストに残るので
