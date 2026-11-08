@@ -173,6 +173,12 @@ int SubSugoroku_AddMember(PSUBGAME_SUGOROKUINFO pSugoroku, BYTE byMode, DWORD dw
 	SUGOROKUPLAYERINFO Info;
 	int nNo, nTmp;
 
+	/* 観戦者の時は参加者の番号が無いので -1 を返す。
+	   以前は初期化しないまま返しており、最適化ビルド（wasm）では
+	   「通らない道」とみなされて unreachable になり、観戦で参加した瞬間に
+	   サーバーが止まっていた */
+	nNo = -1;
+
 	/* 参加？ */
 	if (byMode == 0) {
 		pSugoroku->adwPlayerTblID.Add (dwTblID);
