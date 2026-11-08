@@ -12,6 +12,31 @@
 #include "CharProcUSEMAGIC.h"
 
 /* ========================================================================= */
+/* 関数名：	UseMagicHere													 */
+/* 内容：	今いるマスに重なったキャラへ魔法を使う(使えたら TRUE)			 */
+/* ========================================================================= */
+
+static BOOL UseMagicHere(PCHARINFO pChar, BYTE byMagicID)
+{
+	DWORD dwTblID;
+
+	dwTblID = CheckCharBlockPC (pChar->dwMapID, pChar->dwX, pChar->dwY);
+	/* プレイヤーと重なってない？ */
+	if (dwTblID == -1) {
+		dwTblID = CheckCharBlockNPC2 (pChar->dwTblID, pChar->dwMapID, pChar->dwX, pChar->dwY);
+		if (dwTblID == -1) {
+			return FALSE;
+		}
+	}
+	if (pChar->dwTblID == dwTblID) {
+		return FALSE;
+	}
+
+	/* 魔法発動 */
+	return MagicProc (pChar->dwTblID, byMagicID, dwTblID);
+}
+
+/* ========================================================================= */
 /* 関数名：	CCharProcUSEMAGIC::CCharProcUSEMAGIC							 */
 /* 内容：	コンストラクタ													 */
 /* 日付：	2006/01/17														 */
@@ -31,7 +56,6 @@ CCharProcUSEMAGIC::CCharProcUSEMAGIC()
 BOOL CCharProcUSEMAGIC::Proc(DWORD dwTime)
 {
 	BYTE byNo;
-	DWORD dwTblID;
 	BOOL bRet, bResult;
 	PMAGICINFO pInfo;
 
@@ -77,6 +101,19 @@ BOOL CCharProcUSEMAGIC::Proc(DWORD dwTime)
 		goto Exit;
 	}
 
+	/* 一人に当たれば消える飛ぶ魔法は、動く前に今いるマスで当たるか確かめる。
+	   (出た所が目の前の敵のマスだと、先に動いてすり抜けてしまい当たらなかった) */
+	if (m_pChar->wMaxHP && (m_pChar->byMoveProbabilityX || m_pChar->byMoveProbabilityY)) {
+		if (UseMagicHere (m_pChar, m_pChar->abyMagic[byNo])) {
+			/* 次で消滅 */
+			m_pChar->dwTimeDelete = 0;
+			m_pChar->dwTimeLogin = 0;
+			m_pChar->dwLastDotMove = 0;
+			bRet = TRUE;
+			goto Exit;
+		}
+	}
+
 	/* 移動確率が設定されている？ */
 	if (m_pChar->byMoveProbabilityX || m_pChar->byMoveProbabilityY) {
 		int nTmp = genrand () % 100, nTmpCheck;
@@ -115,21 +152,8 @@ BOOL CCharProcUSEMAGIC::Proc(DWORD dwTime)
 		}
 	}
 
-	dwTblID = CheckCharBlockPC (m_pChar->dwMapID, m_pChar->dwX, m_pChar->dwY);
-	/* プレイヤーと重なってない？ */
-	if (dwTblID == -1) {
-		dwTblID = CheckCharBlockNPC2 (m_pChar->dwTblID, m_pChar->dwMapID, m_pChar->dwX, m_pChar->dwY);
-		if (dwTblID == -1) {
-			goto Exit;
-		}
-	}
-
-	if (m_pChar->dwTblID == dwTblID) {
-		goto Exit;
-	}
-
-	/* 魔法発動 */
-	bResult = MagicProc (m_pChar->dwTblID, m_pChar->abyMagic[byNo], dwTblID);
+	/* 重なったキャラに魔法発動 */
+	bResult = UseMagicHere (m_pChar, m_pChar->abyMagic[byNo]);
 
 	/* 対象は一人？ */
 	if (bResult && m_pChar->wMaxHP) {
