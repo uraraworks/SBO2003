@@ -32,6 +32,7 @@
 #include "SboSvrBattleProc.h"
 #include "SboSvrCharInfoTimerProc.h"
 #include "CharProcMERCENARY.h"
+#include "../../Common/Command/Command.h"
 #include <map>
 #include <vector>
 
@@ -75,6 +76,7 @@ static PEVENTINFO_DOOR GetDoor	(DWORD dwMapID, int x, int y);						/* そのマ�
 static BOOL	CanPutChar			(PCHARINFO pChar, DWORD dwMapID, int x, int y);		/* そのマスに立てるか */
 static BOOL	FindPosNearOwner	(PCHARINFO pChar, PCHARINFO pOwner, int &x, int &y);	/* 雇い主のとなりの空いたマス */
 static DWORD GetMercAtackWait	(PCHARINFO pChar);									/* 攻撃の間隔(ms) */
+static void	SendTailResult		(PCHARINFO pChar, DWORD dwTailTblID, DWORD dwResult);	/* 「ついていく」の結果を本人に知らせる */
 
 
 /* ========================================================================= */
@@ -990,6 +992,10 @@ void MercenaryTailOff(PCHARINFO pMerc)
 			pNext->dwTailTblID		= pPrev->dwTblID;
 			pMerc->dwTailTblID		= (DWORD)-1;
 			pMerc->dwTailBackTblID	= (DWORD)-1;
+			/* つなぎ直したことを画面にも知らせる（画面が傭兵についていくつもりのままだと、
+			   傭兵が帰った時に動けなくなる。つなぎ直しの時は画面にメッセージは出ない） */
+			SendTailResult (pNext, pPrev->dwTblID, CHAR_TAIL_ON);
+			SendTailResult (pPrev, pNext->dwTblID, CHAR_TAIL_BACK);
 			return;
 		}
 	}
@@ -1003,6 +1009,8 @@ void MercenaryTailOff(PCHARINFO pMerc)
 		PCHARINFO pNext = g_aCharInfo[pMerc->dwTailBackTblID];
 		if (pNext->dwTailTblID == pMerc->dwTblID) {
 			pNext->dwTailTblID = (DWORD)-1;
+			/* 画面の方も「ついていく」を解除しないと、動けないままになる */
+			SendTailResult (pNext, (DWORD)-1, CHAR_TAIL_OFF2);
 		}
 	}
 	pMerc->dwTailTblID		= (DWORD)-1;
@@ -1474,3 +1482,20 @@ static DWORD GetMercAtackWait(PCHARINFO pChar)
 }
 
 /* Copyright(C)URARA-works 2026 */
+
+
+/* ========================================================================= */
+/* 関数名：	SendTailResult													 */
+/* 内容：	「ついていく」の結果を本人(プレイヤー)の画面に知らせる			 */
+/* ========================================================================= */
+
+static void SendTailResult(PCHARINFO pChar, DWORD dwTailTblID, DWORD dwResult)
+{
+	CCHAR_TAIL Packet;
+
+	if ((pChar == NULL) || (pChar->pID == 0) || (pChar->byNpcType != NPCTYPE_INIT)) {
+		return;
+	}
+	Packet.Make (pChar->dwTblID, dwTailTblID, dwResult);
+	svrSock.SendTo (pChar->pID, Packet.Get (), Packet.GetSize ());
+}

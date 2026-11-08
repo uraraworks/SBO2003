@@ -5864,15 +5864,21 @@ void RecvDataProcMAIN_CHAR_TAIL(PBYTE pData, DWORD dwDataSize)
 		if (pCharTarget == NULL) {
 			break;
 		}
+		/* つなぎ直し（傭兵が列を抜けた等）の時はメッセージを出さない */
+		if (pChar->dwTailBackTblID == -1) {
+			wsprintf (szTmp, "%sがついてきます。", pCharTarget->szName);
+		}
 		pChar->dwTailBackTblID = pCharTarget->dwTblID;
-		wsprintf (szTmp, "%sがついてきます。", pCharTarget->szName);
 		break;
 	case CHAR_TAIL_ON:			/* ○○についていきます */
 		if (pCharTarget == NULL) {
 			break;
 		}
+		/* つなぎ直し（前の傭兵が列を抜けた等）の時はメッセージを出さない */
+		if (pChar->dwTailTblID == -1) {
+			wsprintf (szTmp, "%sについていきます。", pCharTarget->szName);
+		}
 		pChar->dwTailTblID = pCharTarget->dwTblID;
-		wsprintf (szTmp, "%sについていきます。", pCharTarget->szName);
 		break;
 	case CHAR_TAIL_OFF:			/* ついていくのを解除しました */
 		pChar->dwTailTblID = -1;
