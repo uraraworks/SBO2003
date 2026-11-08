@@ -99,6 +99,7 @@ LPSTR MakeNpcSpeechNextExp	(LPCSTR);											/* 神父さんのセリフに次
 BOOL CmdProcSiraberu	(PWNDINFO);											/* コマンド処理(調べる) */
 int GetFrontTalkChar		(void);												/* 話しかけられる目の前のキャラを探す */
 int GetSKeyTalkChar		(void);												/* Sキーで話しかける相手を探す */
+BOOL IsSKeyCounterTalk	(void);												/* Sキーでカウンター越しに話す相手がいるか */
 int GetFrontScoreChar	(void);												/* 目の前の得点板を探す */
 BOOL CmdProcSKey		(void);												/* Sキー(調べる・話す・扉) */
 void ChatMsgProc		(LPCTSTR);											/* 発言メッセージ処理 */
@@ -7902,6 +7903,41 @@ int GetSKeyTalkChar(void)
 }
 
 /* ========================================================================= */
+/* 関数名：IsSKeyCounterTalk												 */
+/* 内容：Sキーでカウンター越しに話しかける相手がいるか						 */
+/*		 目の前がカウンターで、その向こうに話せる相手がいる時 TRUE			 */
+/*		 足元にイベントがあっても、この時は話すを優先する					 */
+/*		 （戦場ゲーム・すごろくの間は話さない）								 */
+/* ========================================================================= */
+BOOL IsSKeyCounterTalk(void)
+{
+	PCHARINFO pChar, pChar2;
+	DWORD dwX, dwY;
+	int nChar;
+
+	if ((g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ())) {
+		return FALSE;
+	}
+	pChar = g_aCharInfo[g_nMyCharID];
+	if ((pChar->abySubStatus[0] == SUBGAMEID_WAR) ||
+		(pChar->abySubStatus[0] == SUBGAMEID_SUGOROKU)) {
+		return FALSE;
+	}
+	nChar = GetSKeyTalkChar ();
+	if (nChar < 0) {
+		return FALSE;
+	}
+	pChar2 = g_aCharInfo[nChar];
+	dwX = pChar->dwX + anPosAddTblX[pChar->byDirection];
+	dwY = pChar->dwY + anPosAddTblY[pChar->byDirection];
+	/* 相手が目の前のマスにいる時はカウンター越しではない */
+	if ((pChar2->dwX == dwX) && (pChar2->dwY == dwY)) {
+		return FALSE;
+	}
+	return TRUE;
+}
+
+/* ========================================================================= */
 /* 関数名：CmdProcSKey														 */
 /* 内容：Sキーの処理（調べる・話す・扉）									 */
 /*		 足元にイベントがある時は今まで通り調べる。							 */
@@ -7913,8 +7949,14 @@ BOOL CmdProcSKey(void)
 {
 	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
 
-	/* 足元にイベントがある時は調べる */
+	/* 足元にイベントがある時は調べる。
+	   ただしカウンター越しに話せる相手がいる時は話す（爆弾亭のカウンター前の椅子のように、
+	   乗っている間だけ机にグラスが出るイベントがあると、話しかけられなかった） */
 	if (g_pMapInfo->pbyFlg[pChar->dwX + g_pMapInfo->nCX * pChar->dwY] & MAPFLG_EVENT) {
+		if (IsSKeyCounterTalk ()) {
+			CmdProcHanasu (NULL);
+			return TRUE;
+		}
 		return CmdProcSiraberu (NULL);
 	}
 
@@ -8407,6 +8449,9 @@ extern "C" EMSCRIPTEN_KEEPALIVE int SboWebGetPadState(void)
 			(pChar->abySubStatus[0] != SUBGAMEID_WAR) &&
 			(pChar->abySubStatus[0] != SUBGAMEID_SUGOROKU) &&
 			(GetSKeyTalkChar () >= 0)) {
+			nRet |= PADSTATE_HANASU;
+		/* 足元にイベントがあっても、カウンター越しに話せる相手がいれば話す */
+		} else if (IsSKeyCounterTalk ()) {
 			nRet |= PADSTATE_HANASU;
 		}
 		/* Z キーで得点板（雪合戦場の HP パネル）に名前を付けられるか（KeyProcMove と同じ条件） */
