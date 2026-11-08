@@ -416,6 +416,12 @@ BOOL CCharProcMERCENARY::ProcBattle(PCHARINFO pOwner, DWORD dwTime)
 		return TRUE;
 	}
 
+	/* 1歩動いている途中は向きを変えない（クライアントは「向き×残りの歩き」で描くので、
+	   歩き終わる前に向きを変えると横へすべってワープしたように見える） */
+	if ((DWORD)(dwTime - m_pChar->dwLastDotMove) < MERC_STEPTIME) {
+		return TRUE;
+	}
+
 	/* となりにいるならそちらを向く */
 	nDX = (int)pEnemy->dwX - (int)m_pChar->dwX;
 	nDY = (int)pEnemy->dwY - (int)m_pChar->dwY;
