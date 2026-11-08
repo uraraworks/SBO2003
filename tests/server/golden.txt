@@ -278,6 +278,9 @@ array round=17 size=25 bad=0 hash=bc0f0af2
 array round=18 size=45 bad=0 hash=5ae22b52
 array round=19 size=10 bad=0 hash=309f76f5
 array bulk size=20000 sum=199990000
+== G. Sugoroku viewer ==
+viewer no=-1,-1 join=1,1,-1 players=0 viewers=2
+after remove join=-1 viewers=1
 == world chars=884 pc=0 npc=884 maps=116 ==
 npctype 1 count 501
 npctype 2 count 35

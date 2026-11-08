@@ -17,6 +17,7 @@
 #include "stdafx.h"
 #include "SboSvrRecvCmd.h"
 #include "CharProcSEARCH2.h"
+#include "SboSvrSubGameProcSugoroku.h"
 #include "common/crc.h"
 #include <emscripten.h>
 #include <stdio.h>
@@ -506,6 +507,25 @@ static void TestShotMagic(const std::vector<int> &aLogin)
 	pEnemy->wMaxHP = wMaxHPBack;
 }
 
+/* ------------------------------------------------------------------------- */
+/* G. すごろくの観戦参加													 */
+/* ------------------------------------------------------------------------- */
+/* 観戦で参加すると、以前は最適化ビルドで unreachable になりサーバーが止まった */
+static void TestSugorokuViewer(void)
+{
+	printf("== G. Sugoroku viewer ==\n");
+	PSUBGAME_SUGOROKUINFO pSugoroku = new SUBGAME_SUGOROKUINFO;
+	int nNo1 = SubSugoroku_AddMember(pSugoroku, 1, 12);
+	int nNo2 = SubSugoroku_AddMember(pSugoroku, 1, 34);
+	printf("viewer no=%d,%d join=%d,%d,%d players=%d viewers=%d\n",
+		nNo1, nNo2,
+		SubSugoroku_CheckJoin(pSugoroku, 12), SubSugoroku_CheckJoin(pSugoroku, 34), SubSugoroku_CheckJoin(pSugoroku, 56),
+		pSugoroku->adwPlayerTblID.GetSize(), pSugoroku->adwViewerTblID.GetSize());
+	SubSugoroku_Remove(pSugoroku, 12);
+	printf("after remove join=%d viewers=%d\n", SubSugoroku_CheckJoin(pSugoroku, 12), pSugoroku->adwViewerTblID.GetSize());
+	delete pSugoroku;
+}
+
 #define NLOGIN	14			/* ログイン中にするPCの数 */
 
 static void TestWorld(void)
@@ -712,6 +732,7 @@ int main(int argc, char **argv)
 	}
 	TestSend();
 	TestMyArray();
+	TestSugorokuViewer();
 	TestWorld();
 	printf("== done ==\n");
 	fflush(stdout);
