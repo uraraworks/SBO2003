@@ -9,11 +9,12 @@
 #include "../../Common/Info/InfoJob.h"
 #include "../CharProc/IncludeCharProc.h"
 #include "SboSvrRecvCmd.h"
+#include <set>
 
 /* ========================================================================= */
 /* 定数定義																	 */
 /* ========================================================================= */
-#define DATACOUNTCOLUMN		(75)									/* 保存データ数 */
+#define DATACOUNTCOLUMN		(76)									/* 保存データ数 */
 
 /* ========================================================================= */
 /* 構造体定義																 */
@@ -108,6 +109,7 @@ static const char *s_aszName[] = {
 	"abyJobMagic",				/* 転職前の職業で覚えていた呪文（職業ID別） */
 	"byOptBgm",					/* 音楽ON/OFFのアカウント設定 */
 	"abyNpcRoute",				/* NPCの巡回ルート */
+	"dwNpcID",					/* NPC番号 */
 	"z"
 };
 
@@ -120,6 +122,92 @@ static DWORD GetJobMagicSaveCount(PCHARINFO);						/* 職業別の呪文を何�
 BOOL SaveCharInfo(void);											/* キャラ情報保存 */
 BOOL LoadCharInfo(void);											/* キャラ情報読み込み */
 void UpdatePlayTime(PCHARINFO pChar);								/* ログイン中のプレイ時間を加算 */
+
+static DWORD s_dwNpcIDMax = 0;									/* これまでに振った一番大きい NPC番号 */
+
+/* ========================================================================= */
+/* 関数名：CharIsSaveNpc													 */
+/* 内容：NPC番号を持つ NPC か（保存される NPC。プレイヤー・発生した敵は除く）	 */
+/* ========================================================================= */
+static BOOL CharIsSaveNpc(PCHARINFO pChar)
+{
+	if ((pChar == NULL) || (pChar->byNpcType == NPCTYPE_INIT) || pChar->szAcc[0]) {
+		return FALSE;
+	}
+	return (pChar->dwParentTblID == (DWORD)-1);
+}
+
+/* ========================================================================= */
+/* 関数名：CharNpcIdEnsure													 */
+/* 内容：NPC番号がまだ無ければ新しく振る										 */
+/* ========================================================================= */
+void CharNpcIdEnsure(PCHARINFO pChar)
+{
+	if (!CharIsSaveNpc (pChar)) {
+		return;
+	}
+	/* 番号を指定して足し直した時（元に戻す）は、次に振る番号をその先へ */
+	if (pChar->dwNpcID) {
+		if (pChar->dwNpcID > s_dwNpcIDMax) {
+			s_dwNpcIDMax = pChar->dwNpcID;
+		}
+		return;
+	}
+	pChar->dwNpcID = ++ s_dwNpcIDMax;
+}
+
+/* ========================================================================= */
+/* 関数名：CharNpcIdRenumberAll												 */
+/* 内容：読み込んだ後に、無い・重なった NPC番号を振り直す						 */
+/* ========================================================================= */
+void CharNpcIdRenumberAll(void)
+{
+	int i, nCount = g_aCharInfo.GetSize ();
+	std::set<DWORD> aUsed;
+
+	s_dwNpcIDMax = 0;
+	for (i = 0; i < nCount; i ++) {
+		PCHARINFO pChar = g_aCharInfo[i];
+		if (CharIsSaveNpc (pChar) && pChar->dwNpcID > s_dwNpcIDMax) {
+			s_dwNpcIDMax = pChar->dwNpcID;
+		}
+	}
+	for (i = 0; i < nCount; i ++) {
+		PCHARINFO pChar = g_aCharInfo[i];
+		if (!CharIsSaveNpc (pChar)) {
+			if (pChar) {
+				pChar->dwNpcID = 0;
+			}
+			continue;
+		}
+		if (pChar->dwNpcID && (aUsed.find (pChar->dwNpcID) == aUsed.end ())) {
+			aUsed.insert (pChar->dwNpcID);
+			continue;
+		}
+		pChar->dwNpcID = ++ s_dwNpcIDMax;
+		aUsed.insert (pChar->dwNpcID);
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：CharFindByNpcId													 */
+/* 内容：NPC番号からキャラのテーブル番号を探す（無ければ -1）				 */
+/* ========================================================================= */
+int CharFindByNpcId(DWORD dwNpcID)
+{
+	int i, nCount = g_aCharInfo.GetSize ();
+
+	if (dwNpcID == 0) {
+		return -1;
+	}
+	for (i = 0; i < nCount; i ++) {
+		PCHARINFO pChar = g_aCharInfo[i];
+		if (pChar && (pChar->dwNpcID == dwNpcID) && CharIsSaveNpc (pChar)) {
+			return i;
+		}
+	}
+	return -1;
+}
 
 /* ========================================================================= */
 /* 関数名：UpdatePlayTime													 */
@@ -250,6 +338,8 @@ BOOL SaveCharInfo(void)
 		if (bResult == FALSE) {
 			continue;
 		}
+		/* 管理者ウィンドウなどで足した NPC にも番号を付けてから保存する */
+		CharNpcIdEnsure (pInfo);
 		/* ログイン中のプレイヤーは、ここまでのプレイ時間を加算してから保存する */
 		if ((pInfo->byNpcType == 0) && pInfo->pID) {
 			UpdatePlayTime (pInfo);
@@ -392,6 +482,7 @@ BOOL SaveCharInfo(void)
 					dwDataSizeTmp += 2 + pInfo->byRouteCount * 2;
 				}
 				break;
+			case 75:	dwDataSizeTmp += sizeof (pInfo->dwNpcID);				break;	/* NPC番号 */
 			}
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
@@ -768,6 +859,10 @@ BOOL SaveCharInfo(void)
 						pData[dwOffset ++] = pInfo->abyRouteY[k];
 					}
 				}
+				break;
+			case 75:	/* NPC番号 */
+				CopyMemory (&pData[dwOffset], &pInfo->dwNpcID, sizeof (pInfo->dwNpcID));
+				dwOffset += sizeof (pInfo->dwNpcID);
 				break;
 			}
 		}
@@ -1398,8 +1493,17 @@ BOOL LoadCharInfo(void)
 					pInfo->byRouteCount = (BYTE)min (dwCount, (DWORD)MAX_NPCROUTE);
 				}
 			}
+
+			/* NPC番号（無い古いデータは 0 のまま。下の補正で振る） */
+			if (strcmp (aHeaderInfo[i].szName, s_aszName[75]) == 0) {
+				CopyMemory (&pInfo->dwNpcID, &pData[dwOffsetTmp], sizeof (pInfo->dwNpcID));
+				dwOffsetTmp += sizeof (pInfo->dwNpcID);
+			}
 		}
 	}
+
+	/* NPC番号を振る（古いデータで 0 の NPC や、重なった番号を直す） */
+	CharNpcIdRenumberAll ();
 
 	/* 各情報の補正 */
 	nCountJob = g_JobInfo.GetCount ();

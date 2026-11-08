@@ -40,6 +40,7 @@ typedef void (*RECVDATAPROC)(PBYTE, DWORD);
 void	MyOutputDebugString			(LPCTSTR lpszFormat, ...);						/* デバッグメッセージ出力 */
 BOOL	CheckAdminBan				(DWORD);										/* 管理者権限かチェックして、違ってたらＢＡＮ */
 PCHARINFO AddChar					(PCHARINFO, BOOL bCheck=TRUE);					/* キャラ追加 */
+void	CharNpcIdEnsure				(PCHARINFO);									/* NPC番号がまだ無ければ振る(SboSvrSaveLoadChar.cpp) */
 void	DeleteChar					(DWORD);										/* キャラ削除 */
 int		GetCharNo					(DWORD);										/* キャラ番号取得 */
 int		GetMapNo					(DWORD);										/* マップ番号取得 */
@@ -4184,6 +4185,7 @@ void RecvDataProcADDCHAR(PBYTE pData, DWORD dwDataSize)
 
 	pCharTmp = AddChar (pCharTmp);
 	pCharTmp->pID = pCharTmp->dwTblID + 1;
+	CharNpcIdEnsure (pCharTmp);
 	RenewATDF (pCharTmp->dwTblID);
 	SendCmdCHARINFO3 (pCharTmp->dwTblID);
 }

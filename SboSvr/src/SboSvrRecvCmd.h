@@ -30,6 +30,9 @@ extern void		DeleteTblNoPC				(int);											/* PC番号テーブルから削�
 extern void		RenewTblNoChar				(void);											/* PC番号テーブルを更新 */
 extern void		DeleteChildChar				(PCHARINFO);									/* 自分が親のキャラを削除 */
 extern void		SetInitCharData				(PCHARINFO);									/* キャラの初期値を設定 */
+extern void		CharNpcIdEnsure				(PCHARINFO);									/* NPC番号がまだ無ければ振る(SboSvrSaveLoadChar.cpp) */
+extern void		CharNpcIdRenumberAll		(void);											/* 読み込み後に NPC番号を振り直す */
+extern int		CharFindByNpcId				(DWORD);										/* NPC番号からテーブル番号を探す */
 extern void		CharTargetCancelPC			(PCHARINFO);									/* キャラのついていく解除 */
 extern void		TailMoveChain				(PCHARINFO);									/* ついてきているキャラを順に動かす */
 extern void		CharTargetPC				(PCHARINFO, PCHARINFO, DWORD);					/* キャラのついてく設定 */
