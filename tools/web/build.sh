@@ -182,6 +182,7 @@ cp "$ROOT/web/account/admin.html" \
 	"$ROOT/web/account/admin-mapdoc.js" \
 	"$ROOT/web/account/admin-design.js" \
 	"$ROOT/web/account/admin-npcroute.js" \
+	"$ROOT/web/account/admin-recipe.js" \
 	"$ROOT"/web/account/dot.html \
 	"$ROOT"/web/account/dot-*.js \
 	"$ROOT/web/account/rename.html" \

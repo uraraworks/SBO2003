@@ -17,5 +17,6 @@
 #include "SboSvrSaveLoadSubGameInfo.h"
 #include "SboSvrSaveLoadStTmpInfo.h"
 #include "SboSvrSaveLoadItemInfo.h"
+#include "SboSvrSaveLoadRecipeInfo.h"
 
 /* Copyright(C)URARA-works 2003-2005 */

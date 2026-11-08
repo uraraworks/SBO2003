@@ -205,6 +205,14 @@ extern CInfoJob g_JobInfo;												/* 職業情報 */
 extern CProcSubGame g_ProcSubGame;										/* サブゲーム処理 */
 extern FADEINOUTINFO g_FadeInOutInfo;									/* フェードインアウト情報 */
 extern PLEAVEINFO g_pLeaveInfo;											/* 預かり所情報 */
+extern MAKERINFO g_aMakerInfo[MAX_MAKER];								/* 作り手情報（番号がそのまま添字。状態が RECIPESTATE_ON のものが有効） */
+extern RECIPEINFO g_aRecipeInfo[MAX_RECIPE];							/* レシピ情報（番号がそのまま添字） */
+extern int g_nMakerCount;												/* 作り手の総数（空き枠を含む） */
+extern int g_nRecipeCount;												/* レシピの総数（空き枠を含む） */
+extern int g_nProcMakerID;												/* 開いている作り手の番号（開いていなければ -1） */
+extern BOOL g_bProcMakerLeaveOK;										/* 預かり所の中身（g_pLeaveInfo）を作り手の画面を開いてから受け取ったか */
+extern BOOL g_bProcMakerWait;											/* 作成要求を出して、サーバーの返事待ちか */
+extern DWORD g_dwProcMakerWaitTime;										/* 返事待ちを始めた時間 */
 extern PTRADEINFO g_pTradeInfo;											/* 取り引き情報 */
 extern PCMDPARA_WARSELECTTURN g_pWarSelectTurn;							/* 戦場ゲーム行動順序 */
 extern PSUBGAMECLIENT_WARINFO g_pWarInfo;								/* 戦場ゲーム情報 */

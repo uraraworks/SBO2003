@@ -83,6 +83,7 @@ void KeyProcSUBSUGOROKU_COMMAND				(PWNDINFO, BYTE, BYTE);		/* すごろく：�
 void KeyProcSUBSUGOROKU_IDLE				(PWNDINFO, BYTE, BYTE);		/* すごろく：平常状態 */
 void KeyProcDEAD_COMMAND					(PWNDINFO, BYTE, BYTE);		/* 死亡中：コマンド */
 void KeyProcSTATUSMAGIC					(PWNDINFO, BYTE, BYTE);		/* 強さ：覚えている特技 */
+void KeyProcMAKER							(PWNDINFO, BYTE, BYTE);		/* 作り手（レシピ）：作れる物の一覧・確認 */
 
 LRESULT CALLBACK AccWndProc					(HWND, UINT, WPARAM, LPARAM);	/* アカウント名入力用メッセージ処理 */
 LRESULT CALLBACK PasWndProc					(HWND, UINT, WPARAM, LPARAM);	/* パスワード入力用メッセージ処理 */
@@ -213,6 +214,7 @@ const KEYPROC KeyProcTbl[] = {
 	NULL,								/* WNDTYPE_ITEMINFO						アイテム情報 */
 	KeyProcDEAD_COMMAND,				/* WNDTYPE_DEAD_COMMAND					死亡中：コマンド */
 	KeyProcSTATUSMAGIC,					/* WNDTYPE_STATUSMAGIC					強さ：覚えている特技 */
+	KeyProcMAKER,						/* WNDTYPE_MAKER						作り手（レシピ）：作れる物の一覧・確認 */
 };
 
 
@@ -2449,6 +2451,174 @@ void KeyProcCOMMANDSTATUS(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		} else if (byCode == VK_RIGHT) {
 			pWnd->nData1 = pWnd->nData2 - 1;
 			bMove = TRUE;
+		}
+
+		if (bMove) {
+			pWnd->dwTime = timeGetTime ();
+			pWnd->byAnime = 1;
+			pWnd->byRepeate ++;
+			pWnd->dwTimeKey = timeGetTime ();
+			pWnd->dwTimeDrawStart = 0;
+			g_bDraw = TRUE;
+		}
+
+	} else if (byEvent == KEY_UP) {
+		pWnd->dwTimeKey = timeGetTime () - 250;
+		pWnd->byRepeate = 0;
+		g_bDraw = TRUE;
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：	KeyProcMAKER													 */
+/* 内容：	キー入力処理(作り手（レシピ）：作れる物の一覧・確認)			 */
+/*			一覧：上下で選び、決定で確認へ、取消で閉じる					 */
+/*			確認：はい→作成要求を出す、いいえ・取消→一覧へ戻る				 */
+/* ========================================================================= */
+void KeyProcMAKER(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
+{
+	DWORD dwTime = 250;
+	PWNDINFO pWndList = NULL;
+	int i, nNo;
+
+	if (pWnd->byRepeate > 1) {
+		dwTime = 125;
+	}
+	if ((g_nProcMakerID < 0) || (g_nProcMakerID >= MAX_MAKER)) {
+		/* 作り手がいない（画面の外から閉じられた） */
+		EraseWindow (pWnd);
+		g_bDraw = TRUE;
+		return;
+	}
+
+	/* 一覧のウィンドウ */
+	for (i = 0; i < g_WndInfo.GetSize (); i ++) {
+		if ((g_WndInfo[i]->nType == WNDTYPE_MAKER) && (g_WndInfo[i]->nType2 == MAKERWND_LIST)) {
+			pWndList = g_WndInfo[i];
+			break;
+		}
+	}
+	if (pWndList == NULL) {
+		EraseWindow (pWnd);
+		g_bDraw = TRUE;
+		return;
+	}
+
+	/* 作成要求の返事待ち（一定時間たったらあきらめる） */
+	if (g_bProcMakerWait) {
+		if (timeGetTime () > g_dwProcMakerWaitTime + MAKER_WAITMAX) {
+			g_bProcMakerWait = FALSE;
+			MakerSetMsg (pWndList, "うまく伝わらなかったようです。もう一度お願いします。@2");
+			g_dwActiveMsgID = pWndList->dwID;
+			g_bDraw = TRUE;
+		}
+		return;
+	}
+
+	if ((byEvent == KEY_UP) && (byCode == 'B')) {
+		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
+		if (pWnd->nType2 == MAKERWND_CONF) {
+			/* 確認をやめて一覧へ戻る */
+			EraseWindow (pWnd);
+			MakerSetTalkMsg (pWndList);
+			g_dwActiveMsgID = pWndList->dwID;
+			pWndList->dwTimeDrawStart = 0;
+		} else {
+			/* 閉じる（台詞と横の詳細も一緒に消える） */
+			EraseWindow (pWnd);
+		}
+		g_bDraw = TRUE;
+
+	} else if ((byEvent == KEY_UP) && (byCode == 'A') && (g_bEnableMove)) {
+		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
+		pWnd->dwTimeDrawStart = 0;
+		pWnd->byAnime = 1;
+
+		if (pWnd->nType2 == MAKERWND_LIST) {
+			int nRecipe = MakerGetCursorRecipe (pWnd);
+			if (nRecipe < 0) {
+				return;
+			}
+			PRECIPEINFO pRecipe = &g_aRecipeInfo[nRecipe];
+			PITEMINFO pItem = g_aItemInfo[pRecipe->wItem];
+			char szTmp[256];
+
+			/* 預かり所の中身が届いているのに足りない時は、確認せずに断る */
+			if (g_bProcMakerLeaveOK && !MakerCanMake (nRecipe)) {
+				if (g_aCharInfo[g_nMyCharID]->dwGold < pRecipe->dwGold) {
+					MakerSetMsg (pWnd, "手数料が足りないようです。@2");
+				} else if (g_aMakerInfo[g_nProcMakerID].szMsgLack[0]) {
+					MakerSetMsg (pWnd, g_aMakerInfo[g_nProcMakerID].szMsgLack);
+				} else {
+					MakerSetMsg (pWnd, "材料が足りないようです。@2");
+				}
+				g_dwActiveMsgID = pWnd->dwID;
+				g_bDraw = TRUE;
+				return;
+			}
+
+			if (pRecipe->byCount > 1) {
+				wsprintf (szTmp, "%sを%d個、作ってもらいますか？@1手数料は%dGです。@2", pItem->szName, (int)pRecipe->byCount, (int)pRecipe->dwGold);
+			} else {
+				wsprintf (szTmp, "%sを作ってもらいますか？@1手数料は%dGです。@2", pItem->szName, (int)pRecipe->dwGold);
+			}
+			MakerSetMsg (pWnd, szTmp);
+
+			PWNDINFO pWndConf = MakeWindowMAKER_CONF (nRecipe);
+			g_WndInfo.Add (pWndConf);
+			g_dwActiveMsgID = pWndConf->dwID;
+
+		} else {
+			/* 確認：はい／いいえ */
+			int nRecipe = (int)pWnd->dwData;
+			BOOL bYes = (pWnd->nData1 == 0);
+
+			EraseWindow (pWnd);
+			g_dwActiveMsgID = pWndList->dwID;
+			if (bYes && (nRecipe >= 0) && (nRecipe < MAX_RECIPE) && (g_aRecipeInfo[nRecipe].byState == RECIPESTATE_ON)) {
+				SendCmdRECIPEMAKE ((BYTE)g_nProcMakerID, (WORD)nRecipe);
+				g_bProcMakerWait = TRUE;
+				g_dwProcMakerWaitTime = timeGetTime ();
+				MakerSetMsg (pWndList, "少々お待ちください。@2");
+			} else {
+				MakerSetTalkMsg (pWndList);
+			}
+			pWndList->dwTimeDrawStart = 0;
+		}
+		g_bDraw = TRUE;
+
+	} else if ((byEvent == KEY_DOWN) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
+		BOOL bMove = FALSE;
+
+		if (pWnd->nType2 == MAKERWND_CONF) {
+			if ((byCode == VK_UP) && (pWnd->nData1 > 0)) {
+				pWnd->nData1 --;
+				bMove = TRUE;
+			} else if ((byCode == VK_DOWN) && (pWnd->nData1 < pWnd->nData2 - 1)) {
+				pWnd->nData1 ++;
+				bMove = TRUE;
+			}
+
+		} else {
+			int anList[MAX_RECIPE];
+			int nCount = MakerGetRecipeList (g_nProcMakerID, anList, MAX_RECIPE);
+			int nIndex = (int)pWnd->byData1 + pWnd->nData1;
+			int nIndexNew = nIndex;
+
+			if ((byCode == VK_UP) && (nIndex > 0)) {
+				nIndexNew = nIndex - 1;
+			} else if ((byCode == VK_DOWN) && (nIndex < nCount - 1)) {
+				nIndexNew = nIndex + 1;
+			} else if (byCode == VK_LEFT) {
+				nIndexNew = 0;
+			} else if (byCode == VK_RIGHT) {
+				nIndexNew = max (nCount - 1, 0);
+			}
+			if (nIndexNew != nIndex) {
+				MakerScrollFit (pWnd, nIndexNew, nCount);
+				UpdateWindowITEMINFOList (pWnd);
+				bMove = TRUE;
+			}
 		}
 
 		if (bMove) {
@@ -7500,6 +7670,45 @@ void CmdProcHanasu(PWNDINFO pWnd)
 			g_WndInfo.Add (pWndItemInfo);
 		}
 		pWndTmp = NULL;
+
+	/* 作り手(レシピ)？ @cNN の NN が作り手の番号 */
+	} else if (pChar2->pszNpcSpeech[0] == '@' && pChar2->pszNpcSpeech[1] == 'c') {
+		/* コマンドウィンドウを閉じる */
+		int nNo = GetWindowID (g_dwMsgIDCommand);
+		if (nNo >= 0) {
+			EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
+			g_bDraw = TRUE;
+		}
+		pChar2->byDirection = abyDirectionTbl[pChar->byDirection];
+
+		int nMaker = -1;
+		LPCSTR pszSp = pChar2->pszNpcSpeech;
+		if ((strlen (pszSp) >= 4) && (pszSp[2] >= '0') && (pszSp[2] <= '9') && (pszSp[3] >= '0') && (pszSp[3] <= '9')) {
+			nMaker = (pszSp[2] - '0') * 10 + (pszSp[3] - '0');
+		}
+		int anList[MAX_RECIPE];
+		if ((nMaker < 0) || (nMaker >= MAX_MAKER) || (nMaker >= g_nMakerCount) ||
+			(g_aMakerInfo[nMaker].byState != RECIPESTATE_ON)) {
+			/* 作り手が登録されていない */
+			pWndTmp = MakeWindowMSG ("返事がないようです。@2", FALSE);
+
+		} else if (MakerGetRecipeList (nMaker, anList, MAX_RECIPE) == 0) {
+			/* 作れる物が無い */
+			pWndTmp = MakeWindowMSG ("今は作れる物がないようです。@2", TRUE);
+
+		} else {
+			/* 一覧・台詞・横の詳細を出し、預かり所の中身を取りに行く */
+			/* 所持金はお店と同じく右上の別の窓に出す（一覧を閉じた時に一緒に消す） */
+			g_WndInfo.Add (MakeWindowGOLD ());
+			PWNDINFO pWndList = MakeWindowMAKER (nMaker);
+			g_WndInfo.Add (pWndList);
+			MakerSetTalkMsg (pWndList);
+			MakeWindowITEMINFOList (pWndList);
+			g_dwActiveMsgID = pWndList->dwID;
+			g_bDraw = TRUE;
+			SendCmdLEAVEITEMGET ((DWORD)-1);
+			pWndTmp = NULL;
+		}
 
 	/* 冒険者登録所？ */
 	} else if (pChar2->pszNpcSpeech[0] == '@' && pChar2->pszNpcSpeech[1] == 'a') {

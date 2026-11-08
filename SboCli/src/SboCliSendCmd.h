@@ -117,6 +117,7 @@ extern void SendCmdEFECTCHG			(BYTE, BOOL);							/* エフェクト変更 */
 extern void SendCmdRESURRECTION		(void);									/* 蘇生 */
 extern void SendCmdREQ_ATTACK		(DWORD dwTblID, BYTE byTurnLV);			/* 攻撃要求 */
 extern void SendCmdREQ_GUARD		(BOOL bGuard);							/* 構え(防御)の開始・終了 */
+extern void SendCmdRECIPEMAKE		(BYTE, WORD);							/* レシピで作ってもらう要求 */
 
 /* サブゲーム用コマンド送信 */
 extern void SendCmdSubSETBOMB		(void);									/* 爆弾設置 */

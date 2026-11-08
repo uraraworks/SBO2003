@@ -191,6 +191,7 @@ void	RecvDataProcEQUUSERINFOREQ				(PBYTE, DWORD);				/* 装備職業情報要�
 void	RecvDataProcWEBACCOUNT					(PBYTE, DWORD);				/* ブラウザ版のアカウント関係 */
 void	RecvDataProcADMINUNDO					(PBYTE, DWORD);				/* 管理者画面の「元に戻す」 */
 void	RecvDataProcNPCROUTE					(PBYTE, DWORD);				/* NPCの巡回ルート */
+void	RecvDataProcRECIPEMAKE					(PBYTE, DWORD);				/* レシピで作ってもらう */
 /* 端末トークン（server/web_account_svr.cpp） */
 BOOL	WebAccTokenToAccount					(LPCSTR, LPSTR, int);		/* 端末トークンからアカウント名を引く */
 static void	SendWebOptBgm					(PCHARINFO);				/* 音楽ON/OFFのアカウント設定を送る */
@@ -404,6 +405,9 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcADMINUNDO,				/* CMD_ADMINUNDO */
 	RecvDataProcREQ_GUARD,				/* CMD_REQ_GUARD */
 	NULL,								/* CMD_HASTE(サーバー→クライアントのみ) */
+	NULL,								/* CMD_MAKERINFO(サーバー→クライアントのみ) */
+	NULL,								/* CMD_RECIPEINFO(サーバー→クライアントのみ) */
+	RecvDataProcRECIPEMAKE,				/* CMD_RECIPEMAKE */
 	RecvDataProcNPCROUTE,				/* CMD_NPCROUTE */
 	NULL
 };
@@ -3051,7 +3055,7 @@ void RecvDataProc(PBYTE pData, DWORD dwDataSize)
 	}
 
 	/* 管理者用のコマンド（管理者ウィンドウからしか送らないもの）は管理者だけ */
-	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD)) ||
+	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE)) ||
 			(byCmd == CMD_CHARITEM)) {
 		if (!CheckAdminBan (nNo)) {
 			SAFE_DELETE_ARRAY (pData);
@@ -3351,6 +3355,8 @@ void RecvDataProcCHGSTATE(PBYTE pData, DWORD dwDataSize)
 	}
 	/* アイテム情報を送信 */
 	SendCmdITEMINFO (pPara->pID);
+	/* 作り手とレシピを送信 */
+	SendCmdRECIPEINFOALL (pPara->pID);
 	/* マップデータを送信 */
 	SendCmdMAPINFO (pPara->pID, GetMapNo (pChar->dwMapID));
 	/* イベント座標を送信 */
@@ -9795,7 +9801,7 @@ BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, 
 	/* 管理者用のコマンドだけ（ログインや「元に戻す」自体は通さない） */
 	if ((byCmd >= CMD_MAX) || (RecvDataProcTbl[byCmd] == NULL) ||
 			((byCmd < CMD_MAPPARTSADD) && (byCmd != CMD_CHARITEM)) ||
-			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_REQ_GUARD)) {
+			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE)) {
 		return FALSE;
 	}
 
@@ -9807,4 +9813,255 @@ BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, 
 		AdminUndoAfter ();
 	}
 	return TRUE;
+}
+
+/* ========================================================================= */
+/* レシピ（作り手に頼んでアイテムを作ってもらう）							 */
+/* ========================================================================= */
+
+#define RECIPE_TALKRANGE	(3)		/* 作り手のNPCがこのマス数以内にいれば頼める（カウンター越しでもよいよう余裕を持たせる） */
+
+/* ========================================================================= */
+/* 関数名：RecipeCheckMakerNear												 */
+/* 内容：近くに、台詞が "@cNN"（NN=byMaker）の作り手NPCがいるか				 */
+/* ========================================================================= */
+static BOOL RecipeCheckMakerNear(PCHARINFO pChar, BYTE byMaker)
+{
+	char szCode[8];
+	int i, nCount = g_aCharInfo.GetSize ();
+
+	snprintf (szCode, sizeof (szCode), "@c%02d", (int)byMaker);
+	for (i = 0; i < nCount; i ++) {
+		PCHARINFO pNpc = g_aCharInfo[i];
+
+		if ((pNpc == NULL) || (pNpc == pChar) || (pNpc->byNpcType == NPCTYPE_INIT)) {
+			continue;
+		}
+		if ((pNpc->dwMapID != pChar->dwMapID) || (pNpc->pszNpcSpeech == NULL)) {
+			continue;
+		}
+		if (strncmp (pNpc->pszNpcSpeech, szCode, 4) != 0) {
+			continue;
+		}
+		if ((abs ((int)pNpc->dwX - (int)pChar->dwX) <= RECIPE_TALKRANGE) &&
+			(abs ((int)pNpc->dwY - (int)pChar->dwY) <= RECIPE_TALKRANGE)) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* ========================================================================= */
+/* 関数名：RecipeIsUsableItem												 */
+/* 内容：持ち物の nNo 番目を材料に使えるか（装備中・捨てられない物は使えない）	 */
+/* ========================================================================= */
+static BOOL RecipeIsUsableItem(PCHARINFO pChar, int nNo)
+{
+	int i;
+	WORD wItem = pChar->waItem[nNo];
+
+	if ((wItem == 0) || (wItem >= (WORD)g_aItemInfo.GetSize ())) {
+		return FALSE;
+	}
+	for (i = 0; i < 10; i ++) {
+		if (pChar->waEqu[i] == nNo) {
+			return FALSE;
+		}
+	}
+	if (g_aItemInfo[wItem]->byFlg & ITEMFLG_DROP) {
+		return FALSE;
+	}
+	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：RecipeMake														 */
+/* 内容：材料・手数料・置き場所を確かめ、消費して、できた物を渡す				 */
+/*       材料は持ち物を先に、足りない分を預かり所から使う。					 */
+/*       できた物は持ち物へ、いっぱいなら預かり所へ。預かり所も満杯なら		 */
+/*       何も変えずに RECIPERESULT_NOROOM を返す。							 */
+/*       成功したら *pnToInv・*pnToLeave に持ち物・預かり所へ渡した個数を入れる */
+/* ========================================================================= */
+static BYTE RecipeMake(PCHARINFO pChar, PRECIPEINFO pRecipe, int *pnToInv, int *pnToLeave)
+{
+	PLEAVEINFO pLeave = NULL;
+	BOOL abyInvUsed[MAX_MYITEM];
+	int anLeaveTake[MAX_LEAVEITEM];
+	WORD awItemBak[MAX_MYITEM], awEquBak[10];
+	DWORD dwLeaveIDBak;
+	LEAVEINFO LeaveBak;
+	int i, k, n, nFree, nNeed, nToInv = 0, nToLeave = 0;
+
+	*pnToInv = 0;
+	*pnToLeave = 0;
+
+	if (pChar->dwGold < pRecipe->dwGold) {
+		return RECIPERESULT_LACKGOLD;
+	}
+	if ((pChar->dwLeaveID != 0) && (pChar->dwLeaveID < (DWORD)g_aLeaveInfo.GetSize ())) {
+		pLeave = g_aLeaveInfo[pChar->dwLeaveID];
+		if (pLeave->byCount > MAX_LEAVEITEM) {
+			pLeave = NULL;
+		}
+	}
+
+	/* 材料が揃っているか（持ち物を先に使い、足りない分を預かり所から使う計画を立てる） */
+	ZeroMemory (abyInvUsed, sizeof (abyInvUsed));
+	ZeroMemory (anLeaveTake, sizeof (anLeaveTake));
+	for (k = 0; k < MAX_RECIPEMAT; k ++) {
+		WORD wMat = pRecipe->awMatItem[k];
+
+		nNeed = pRecipe->abyMatCount[k];
+		if ((wMat == 0) || (nNeed == 0)) {
+			continue;
+		}
+		for (i = 0; (i < MAX_MYITEM) && (nNeed > 0); i ++) {
+			if (!abyInvUsed[i] && (pChar->waItem[i] == wMat) && RecipeIsUsableItem (pChar, i)) {
+				abyInvUsed[i] = TRUE;
+				nNeed --;
+			}
+		}
+		for (i = 0; pLeave && (i < pLeave->byCount) && (nNeed > 0); i ++) {
+			if (pLeave->waItem[i] == wMat) {
+				int nAvail = (int)pLeave->byItemCount[i] - anLeaveTake[i];
+				int nTake = min (nAvail, nNeed);
+				if (nTake > 0) {
+					anLeaveTake[i] += nTake;
+					nNeed -= nTake;
+				}
+			}
+		}
+		if (nNeed > 0) {
+			return RECIPERESULT_LACKMAT;
+		}
+	}
+
+	/* ここから先は途中で失敗したら元に戻せるよう、今の状態を控えておく */
+	memcpy (awItemBak, pChar->waItem, sizeof (awItemBak));
+	memcpy (awEquBak, pChar->waEqu, sizeof (awEquBak));
+	dwLeaveIDBak = pChar->dwLeaveID;
+	ZeroMemory (&LeaveBak, sizeof (LeaveBak));
+	if (pLeave) {
+		LeaveBak = *pLeave;
+	}
+
+	/* 材料を使う：持ち物（後ろから消して詰める） */
+	for (i = MAX_MYITEM - 1; i >= 0; i --) {
+		if (abyInvUsed[i]) {
+			DelCharItem (pChar->dwTblID, (BYTE)i);
+		}
+	}
+	/* 材料を使う：預かり所（0 個になった枠は詰める） */
+	if (pLeave) {
+		n = 0;
+		for (i = 0; i < pLeave->byCount; i ++) {
+			pLeave->byItemCount[i] = (BYTE)(pLeave->byItemCount[i] - anLeaveTake[i]);
+			if (pLeave->byItemCount[i] == 0) {
+				continue;
+			}
+			pLeave->waItem[n] = pLeave->waItem[i];
+			pLeave->byItemCount[n] = pLeave->byItemCount[i];
+			n ++;
+		}
+		for (i = n; i < pLeave->byCount; i ++) {
+			pLeave->waItem[i] = 0;
+			pLeave->byItemCount[i] = 0;
+		}
+		pLeave->byCount = (BYTE)n;
+	}
+
+	/* できた物を渡す：持ち物へ、いっぱいなら預かり所へ */
+	nFree = MAX_MYITEM - GetItemCount (pChar->dwTblID);
+	for (i = 0; i < pRecipe->byCount; i ++) {
+		if (nFree > 0) {
+			AddCharItem (pChar->dwTblID, pRecipe->wItem);
+			nFree --;
+			nToInv ++;
+			continue;
+		}
+		if (!AddLeaveItem (pChar, pRecipe->wItem)) {
+			/* 預かり所もいっぱい：何も変えなかったことにする */
+			memcpy (pChar->waItem, awItemBak, sizeof (awItemBak));
+			memcpy (pChar->waEqu, awEquBak, sizeof (awEquBak));
+			if ((dwLeaveIDBak == 0) && (pChar->dwLeaveID != 0) && (pChar->dwLeaveID < (DWORD)g_aLeaveInfo.GetSize ())) {
+				ZeroMemory (g_aLeaveInfo[pChar->dwLeaveID], sizeof (LEAVEINFO));
+				pChar->dwLeaveID = 0;
+			} else if (pLeave) {
+				*pLeave = LeaveBak;
+			}
+			return RECIPERESULT_NOROOM;
+		}
+		nToLeave ++;
+	}
+
+	pChar->dwGold -= pRecipe->dwGold;
+	*pnToInv = nToInv;
+	*pnToLeave = nToLeave;
+	return RECIPERESULT_OK;
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcRECIPEMAKE											 */
+/* 内容：受信データ処理(レシピで作ってもらう)								 */
+/*       存在しないレシピ・停止中のレシピ・作り手の番号が違う・近くに作り手が	 */
+/*       いない要求は RECIPERESULT_INVALID で断る。							 */
+/* ========================================================================= */
+void RecvDataProcRECIPEMAKE(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_RECIPEMAKE pPara = (PCMDPARA_RECIPEMAKE)pData;
+	PCHARINFO pChar;
+	PRECIPEINFO pRecipe;
+	BYTE byResult = RECIPERESULT_INVALID;
+	int nToInv = 0, nToLeave = 0;
+
+	if (s_dwRecvSize < sizeof (CMDPARA_RECIPEMAKE)) {
+		return;
+	}
+	if (!IsRecvChar (pPara->dwTblID)) {
+		return;
+	}
+	pChar = g_aCharInfo[pPara->dwTblID];
+	if ((pChar == NULL) || (pChar->pID == 0) || (pChar->byNpcType != NPCTYPE_INIT)) {
+		return;
+	}
+
+	/* 要求が正しいか */
+	if ((pPara->wRecipeID >= (WORD)g_aRecipeInfo.GetSize ()) || (pPara->byMaker >= (BYTE)g_aMakerInfo.GetSize ())) {
+		goto Exit;
+	}
+	pRecipe = g_aRecipeInfo[pPara->wRecipeID];
+	if ((pRecipe->byState != RECIPESTATE_ON) || (g_aMakerInfo[pPara->byMaker]->byState != RECIPESTATE_ON) ||
+			(pRecipe->byMaker != pPara->byMaker)) {
+		goto Exit;
+	}
+	if ((pRecipe->wItem == 0) || (pRecipe->wItem >= (WORD)g_aItemInfo.GetSize ()) || (pRecipe->byCount == 0)) {
+		goto Exit;
+	}
+	if ((pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0)) {
+		goto Exit;
+	}
+	if (!RecipeCheckMakerNear (pChar, pPara->byMaker)) {
+		goto Exit;
+	}
+
+	byResult = RecipeMake (pChar, pRecipe, &nToInv, &nToLeave);
+	if (byResult == RECIPERESULT_OK) {
+		/* 持ち物・お金・預かり所の変化を本人へ送る */
+		SendCmdCHARITEM (pChar->pID, pChar->dwTblID);
+		SendCmdCHARSTATUSGOLDEXP (pChar->pID, pChar->dwTblID);
+		if ((pChar->dwLeaveID != 0) && (pChar->dwLeaveID < (DWORD)g_aLeaveInfo.GetSize ())) {
+			SendCmdLEAVEITEMGET (pChar->dwTblID);
+		}
+		SendCmdPLAYSOUND (pChar->pID, SOUND_PI52);
+		SendCmdSYSMSG2 (pChar->pID, SYSMSG_GETITEM3, pChar->pID, pRecipe->wItem);
+		if (nToLeave > 0) {
+			/* 預かり所へ送った（敵のドロップと同じ設定：預かり所の使い魔が運んでくれる） */
+			char szTmp[256];
+			snprintf (szTmp, sizeof (szTmp), "持ちきれないので、預かり所の使い魔が%sの預かり所へ運んでいきました", pChar->szName);
+			SendCmdSYSMSG (pChar->pID, szTmp, SPEECHCMD_BATTLE1);
+		}
+	}
+
+Exit:
+	SendCmdRECIPEMAKE (pChar->pID, byResult, pPara->byMaker, pPara->wRecipeID);
 }

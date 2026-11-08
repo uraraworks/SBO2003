@@ -17,6 +17,7 @@
 	  ・パーツ図鑑   … マップパーツに名前・タグ・説明を付ける・組み合わせの見本を作る（admin-design.js）
 	  ・配置案       … AI が考えたマップの配置案を画像で見る（ゲームのデータは変えない。admin-design.js）
 	  ・NPCの巡回    … NPC が道しるべを順に歩くルートを決める（admin-npcroute.js。API は sbosvr_data.js の /api/admin/npcroute/set）
+	  ・レシピ       … 町の作り手（料理人など）と、作ってもらえるレシピ（できる物・材料・手数料）を決める（admin-recipe.js。API は sbosvr_data.js の /api/admin/recipe/save）
 	  ・ドット絵     … ゲームの画像（SboGrpData/grp の PNG）を手元のフォルダで直接描き直すエディタ（/dot。dot.html）を開く
 	API は server/node/sbosvr_account.js の /api/admin/*（ご意見箱は server/node/sbosvr_feedback.js、AI連携は server/node/sbosvr_data.js）。
 -->
@@ -369,6 +370,18 @@
 	.nr-opts { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-top: 8px; }
 	.nr-opts label { display: flex; align-items: center; gap: 6px; margin: 0; }
 	.nr-opts input[type="text"] { width: 4em; padding: 6px; }
+	.rc-layout { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+	.rc-left { flex: 0 0 260px; max-width: 100%; }
+	.rc-right { flex: 1 1 360px; min-width: 0; }
+	.rc-list { max-height: 360px; overflow: auto; margin-bottom: 8px; }
+	.rc-item { display: block; width: 100%; text-align: left; margin: 0 0 6px; background: var(--field); color: var(--fg);
+		border: 1px solid var(--border); font-weight: normal; line-height: 1.5; }
+	.rc-item.sel { border-color: var(--accent); }
+	.rc-item .sub-text { display: block; margin: 0; }
+	.rc-grid { display: grid; grid-template-columns: minmax(0, 1fr) 5.5em; gap: 6px 8px; align-items: center; }
+	.rc-grid label { margin: 0; }
+	.rc-card textarea { width: 100%; box-sizing: border-box; }
+	.rc-card select, .rc-card input[type="text"] { max-width: 100%; }
 	.nr-warn { margin: 8px 0 0; padding: 8px 12px 8px 28px; background: rgba(240,184,74,0.12); border: 1px solid var(--accent);
 		border-radius: 8px; color: var(--accent); font-size: 13px; line-height: 1.5; }
 </style>
@@ -390,6 +403,7 @@
 		<button type="button" data-tab="parts">パーツ図鑑</button>
 		<button type="button" data-tab="plans">配置案</button>
 		<button type="button" data-tab="npcroute">NPCの巡回</button>
+		<button type="button" data-tab="recipe">レシピ</button>
 		<button type="button" data-tab="dot">ドット絵</button>
 	</nav>
 </header>
@@ -740,6 +754,78 @@
 		<div class="nr-scroll" id="nr-scroll" hidden><div class="nr-stack" id="nr-stack"></div></div>
 	</section>
 
+	<!-- レシピ（町の作り手と、作ってもらえる物） -->
+	<section id="tab-recipe" hidden>
+		<p class="sub-text">
+			町の作り手（料理人・鍛冶屋など）に頼んで、材料から物を作ってもらう仕組みを決めます。
+			NPC の台詞を「@c」と作り手の番号 2 桁（例：<code>@c00</code>）にすると、その NPC に話しかけた時（S キーでも）に作り手の画面が開きます。
+			材料は持ち物のあと預かり所から使われ、できた物は持ち物へ（いっぱいなら預かり所へ）届きます。
+			保存するとログイン中のプレイヤー全員にすぐ反映されます（変更は「AI連携」の履歴から元に戻せます）。
+		</p>
+		<datalist id="rc-items"></datalist>
+		<div class="msg" id="rc-msg"></div>
+		<div class="rc-layout">
+			<div class="rc-left">
+				<div class="rc-list" id="rc-makers"></div>
+				<button type="button" id="rc-mk-add">作り手を足す</button>
+				<button type="button" class="sub" id="rc-reload">読み直す</button>
+			</div>
+			<div class="rc-right">
+				<div class="card rc-card" id="rc-mk-card" hidden>
+					<div class="name" id="rc-mk-title"></div>
+					<div class="sub-text" id="rc-mk-call"></div>
+					<label for="rc-mk-name">名前（例：料理人）</label>
+					<input type="text" id="rc-mk-name" maxlength="30">
+					<label for="rc-mk-talk">話しかけた時の台詞（@1 で改行、@2 で文の終わり）</label>
+					<textarea id="rc-mk-talk" rows="2"></textarea>
+					<label for="rc-mk-done">作ってあげた時の台詞</label>
+					<textarea id="rc-mk-done" rows="2"></textarea>
+					<label for="rc-mk-lack">材料が足りない時の台詞</label>
+					<textarea id="rc-mk-lack" rows="2"></textarea>
+					<label for="rc-mk-state">状態</label>
+					<select id="rc-mk-state"><option value="1">有効</option><option value="2">停止中（画面が開かない）</option></select>
+					<div>
+						<button type="button" id="rc-mk-save">保存</button>
+						<button type="button" class="sub" id="rc-mk-del">この作り手を消す</button>
+					</div>
+				</div>
+				<div class="card" id="rc-recipes-card" hidden>
+					<div class="name">この作り手のレシピ</div>
+					<div class="rc-list" id="rc-recipes"></div>
+					<button type="button" id="rc-rc-add">レシピを足す</button>
+				</div>
+				<div class="card rc-card" id="rc-rc-card" hidden>
+					<div class="name" id="rc-rc-title"></div>
+					<div class="rc-grid">
+						<label for="rc-rc-item">できるアイテム（名前で探せます）</label>
+						<label for="rc-rc-count">できる個数</label>
+						<input type="text" id="rc-rc-item" list="rc-items" autocomplete="off">
+						<input type="text" id="rc-rc-count" inputmode="numeric" value="1">
+					</div>
+					<div class="sub-text" style="margin-top:10px">材料（4 種類まで。使わない欄は空に）</div>
+					<div class="rc-grid">
+						<input type="text" id="rc-mat0" list="rc-items" autocomplete="off" placeholder="材料1"><input type="text" id="rc-mc0" inputmode="numeric" value="1">
+						<input type="text" id="rc-mat1" list="rc-items" autocomplete="off" placeholder="材料2"><input type="text" id="rc-mc1" inputmode="numeric" value="1">
+						<input type="text" id="rc-mat2" list="rc-items" autocomplete="off" placeholder="材料3"><input type="text" id="rc-mc2" inputmode="numeric" value="1">
+						<input type="text" id="rc-mat3" list="rc-items" autocomplete="off" placeholder="材料4"><input type="text" id="rc-mc3" inputmode="numeric" value="1">
+					</div>
+					<div class="rc-grid" style="margin-top:10px">
+						<label for="rc-rc-gold">手数料（ゴールド）</label>
+						<label for="rc-rc-sort">並び順</label>
+						<input type="text" id="rc-rc-gold" inputmode="numeric" value="0">
+						<input type="text" id="rc-rc-sort" inputmode="numeric" value="10">
+					</div>
+					<label for="rc-rc-state">状態</label>
+					<select id="rc-rc-state"><option value="1">有効</option><option value="2">停止中（一覧に出ない）</option></select>
+					<div>
+						<button type="button" id="rc-rc-save">保存</button>
+						<button type="button" class="sub" id="rc-rc-del">このレシピを消す</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	</section>
+
 	<!-- ログイン中の端末（どのタブでも下に出す） -->
 	<details class="card" id="devices" hidden>
 		<summary>ログイン中の端末</summary>
@@ -752,6 +838,7 @@
 <script src="admin-mapdoc.js"></script>
 <script src="admin-design.js"></script>
 <script src="admin-npcroute.js"></script>
+<script src="admin-recipe.js"></script>
 <script>
 (function () {
 	/*
@@ -825,6 +912,7 @@
 		$('tab-parts').hidden = true;
 		$('tab-plans').hidden = true;
 		$('tab-npcroute').hidden = true;
+		$('tab-recipe').hidden = true;
 		setMsg($('login-msg'), text || '');
 	}
 	function showMain() {
@@ -835,7 +923,7 @@
 		selectTab(location.hash === '#online' ? 'online' : location.hash === '#recover' ? 'recover' : location.hash === '#feedback' ? 'feedback' :
 			location.hash === '#changes' ? 'changes' : location.hash === '#ai' ? 'ai' : location.hash === '#mapdoc' ? 'mapdoc' :
 			location.hash === '#parts' ? 'parts' : location.hash === '#plans' ? 'plans' :
-			location.hash === '#npcroute' ? 'npcroute' : location.hash === '#dot' ? 'dot' : 'search');
+			location.hash === '#npcroute' ? 'npcroute' : location.hash === '#recipe' ? 'recipe' : location.hash === '#dot' ? 'dot' : 'search');
 		if (location.hash === '#changes') {
 			loadChanges();
 		} else if (location.hash === '#ai') {
@@ -846,6 +934,8 @@
 			openDesign(location.hash.slice(1));
 		} else if (location.hash === '#npcroute') {
 			openNpcRoute();
+		} else if (location.hash === '#recipe') {
+			openRecipe();
 		}
 		loadRequests();
 		loadFeedback();
@@ -945,6 +1035,7 @@
 		$('tab-parts').hidden = name !== 'parts';
 		$('tab-plans').hidden = name !== 'plans';
 		$('tab-npcroute').hidden = name !== 'npcroute';
+		$('tab-recipe').hidden = name !== 'recipe';
 		$('tab-dot').hidden = name !== 'dot';
 		document.body.classList.toggle('wide', name === 'parts' || name === 'plans' || name === 'npcroute');
 		if (history.replaceState) {
@@ -971,6 +1062,8 @@
 				openDesign(b.dataset.tab);
 			} else if (b.dataset.tab === 'npcroute') {
 				openNpcRoute();
+			} else if (b.dataset.tab === 'recipe') {
+				openRecipe();
 			}
 		});
 	});
@@ -1803,6 +1896,18 @@
 			return;
 		}
 		window.SboNpcRoute.open(function (url, body) {
+			body.session = session;
+			return api(url, body);
+		});
+	}
+
+	/* ---- レシピ（admin-recipe.js が作る） ---- */
+	function openRecipe() {
+		if (!window.SboRecipe) {
+			setMsg($('rc-msg'), 'レシピのファイル（admin-recipe.js）が読めませんでした。');
+			return;
+		}
+		window.SboRecipe.open(function (url, body) {
 			body.session = session;
 			return api(url, body);
 		});

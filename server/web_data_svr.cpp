@@ -36,6 +36,8 @@ extern BOOL SaveJobInfo(void);
 extern BOOL SaveMagicInfo(void);
 extern BOOL SaveMagicUserInfo(void);
 extern BOOL SaveEquUserInfo(void);
+extern BOOL SaveMakerInfo(void);
+extern BOOL SaveRecipeInfo(void);
 extern BOOL SaveCharInfo(void);
 extern BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, BYTE byScreen);	/* SboSvrRecvCmd.cpp */
 extern void ApplyStTmpToChars(DWORD dwID);		/* SboSvrRecvCmd.cpp */
@@ -397,6 +399,28 @@ static const DATAFIELD s_aFieldItem[] = {
 	FLD (ITEMINFO, byEraseProbability,	"無くなる確率",			FT_U8, 0, NULL),
 	FLD (ITEMINFO, wGrpID,				"画像ID",				FT_U16, 0, NULL),
 	FLD (ITEMINFO, dwGold,				"値段",					FT_U32, 0, NULL),
+};
+
+/* 作り手情報（町の作り手NPC（料理人など）。NPC の台詞 "@cNN" の NN がこの番号） */
+static const char *s_pszNoteRecipeState = "0=削除済み（空き枠。新しく足す時はここを使い回す） 1=有効 2=停止中（一覧に出ない）";
+static const DATAFIELD s_aFieldMaker[] = {
+	FLD (MAKERINFO, byState,			"状態",					FT_U8, 0, s_pszNoteRecipeState),
+	FLDS(MAKERINFO, szName,				"名前",					FT_STR, 0, "例: 料理人"),
+	FLDS(MAKERINFO, szMsgTalk,			"話しかけた時の台詞",	FT_STR, FF_MULTILINE, "NPC の台詞と同じ制御コード（@0 入力待ち・@1 改行・@2 点滅無しで入力待ち）が使える"),
+	FLDS(MAKERINFO, szMsgDone,			"作った時の台詞",		FT_STR, FF_MULTILINE, NULL),
+	FLDS(MAKERINFO, szMsgLack,			"材料が足りない時の台詞",	FT_STR, FF_MULTILINE, NULL),
+};
+
+/* レシピ情報（作り手に頼んで、材料からアイテムを作ってもらう） */
+static const DATAFIELD s_aFieldRecipe[] = {
+	FLD (RECIPEINFO, byState,			"状態",					FT_U8, 0, s_pszNoteRecipeState),
+	FLD (RECIPEINFO, byMaker,			"作り手",				FT_U8, 0, "maker の番号"),
+	FLD (RECIPEINFO, wSort,				"並び順",				FT_U16, 0, "作り手の画面の一覧で小さい順に並ぶ（同じなら番号順）"),
+	FLD (RECIPEINFO, wItem,				"できるアイテム",		FT_U16, 0, "item の番号"),
+	FLD (RECIPEINFO, byCount,			"できる個数",			FT_U8, 0, "1 以上。持ち物に入りきらない分は預かり所へ送る"),
+	FLDA(RECIPEINFO, awMatItem,			"材料のアイテム",		FT_U16ARR, WORD, 0, "item の番号を最大 4 種（0 は使わない欄）。1 種以上必要。持ち物（装備中・捨てられない物を除く）を先に、足りない分を預かり所から使う"),
+	FLDA(RECIPEINFO, abyMatCount,		"材料の個数",			FT_U8ARR, BYTE, 0, "awMatItem と同じ並びの個数（アイテムが 0 の欄は 0 にする）"),
+	FLD (RECIPEINFO, dwGold,			"手数料",				FT_U32, 0, "作ってもらう時に払うゴールド"),
 };
 
 /* アイテムの種別ごとの詳細 */
@@ -811,6 +835,8 @@ enum {
 	KIND_JOB,
 	KIND_STTMP,
 	KIND_ITEM,
+	KIND_MAKER,
+	KIND_RECIPE,
 	/* ここから下は読むだけ */
 	KIND_CHAR,
 	KIND_MAP,
@@ -823,9 +849,9 @@ enum {
 };
 #define KIND_FIRST_READONLY	KIND_CHAR
 
-static const char *s_apszKindName[] = { "magic", "magicUser", "equUser", "job", "stTmp", "item", "char", "map", "mapParts", "efc", "comEfc", "leave", "subGame" };
+static const char *s_apszKindName[] = { "magic", "magicUser", "equUser", "job", "stTmp", "item", "maker", "recipe", "char", "map", "mapParts", "efc", "comEfc", "leave", "subGame" };
 static const char *s_apszKindLabel[] = {
-	"特技（魔法）情報", "特技を使える職業", "装備できる職業", "職業情報とレベルアップ情報", "ステータステンプレート（NPC・敵のひな形）", "アイテム情報",
+	"特技（魔法）情報", "特技を使える職業", "装備できる職業", "職業情報とレベルアップ情報", "ステータステンプレート（NPC・敵のひな形）", "アイテム情報", "作り手（料理人など）", "レシピ（作り手に頼んで作ってもらう物）",
 	"キャラ情報（プレイヤー・NPC）", "マップ情報", "マップパーツ", "エフェクト情報", "吹き出し情報", "預かり所", "サブゲーム情報"
 };
 static const char *s_apszKindNote[] = {
@@ -835,6 +861,8 @@ static const char *s_apszKindNote[] = {
 	"szName は職業名。levelUp の 1 件目が Lv1 の初期値、n 件目はレベル n になるのに必要な経験値（dwExp）と各能力の上限",
 	"変えると、このテンプレートを使っている NPC（発生元を除く）の能力もすぐ置き換わる",
 	"番号 0 は「なし」として使われる。detail は byType ごとに項目が違う（スキーマの detailByType を参照）。szMsg は使った時のメッセージ",
+	"町の作り手NPC（料理人など）。NPC の台詞を \"@cNN\"（NN は作り手の番号 2 桁、例 @c00）にすると、その NPC に話しかけた時に作り手の画面が開く。削除は byState=0（空き枠になり、次に足す時に使い回す）。ファイルが無い時は 0 件",
+	"作り手に頼んで材料からアイテムを作ってもらうレシピ。byMaker は maker の番号、wItem・awMatItem は item の番号。材料は持ち物と預かり所の両方から使い、できた物は持ち物へ（いっぱいなら預かり所へ）。削除は byState=0",
 	"読むだけ。プレイヤーと NPC（敵・町の人・発生元など）の全キャラ。番号はキャラのテーブル番号。isPlayer でプレイヤーか分かる。アカウント名・パスワード・IP は出さない",
 	"読むだけ。マップの情報・イベント・店・メッセージ・アイテム配置。番号は配列の番号（dwID はマップID で、キャラの dwMapID はこちら）。マス目のパーツは sbo_map_tiles で読む",
 	"読むだけ。マップパーツ（マス目の pwMap に入る番号）の表示・当たり判定",
@@ -843,7 +871,7 @@ static const char *s_apszKindNote[] = {
 	"読むだけ。プレイヤーごとの預かり所（キャラの dwLeaveID がこの番号）。items は item の番号と個数",
 	"読むだけ。爆弾ゲーム・迷路・ダンジョン・戦場ゲーム・すごろくの設定。detail は byType ごとに項目が違う"
 };
-static const int s_anKindMax[] = { 256, 256, 256, 256, 65535, 65535, 0, 0, 0, 0, 0, 0, 0 };
+static const int s_anKindMax[] = { 256, 256, 256, 256, 65535, 65535, MAX_MAKER, MAX_RECIPE, 0, 0, 0, 0, 0, 0, 0 };
 
 static int KindFromName(const char *pszKind)
 {
@@ -864,6 +892,8 @@ static int KindCount(int nKind)
 	case KIND_JOB:			return g_JobInfo.GetCount();
 	case KIND_STTMP:		return g_aStTmpInfo.GetSize();
 	case KIND_ITEM:			return g_aItemInfo.GetSize();
+	case KIND_MAKER:		return g_aMakerInfo.GetSize();
+	case KIND_RECIPE:		return g_aRecipeInfo.GetSize();
 	case KIND_CHAR:			return g_aCharInfo.GetSize();
 	case KIND_MAP:			return g_aMapInfo.GetSize();
 	case KIND_MAPPARTS:		return g_wCountMapParts;
@@ -1710,10 +1740,16 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataSchema(void)
 			}
 			out += "}";
 			break;
+		case KIND_MAKER:
+			out += FieldSchemaJson(s_aFieldMaker, COUNTOF(s_aFieldMaker));
+			break;
+		case KIND_RECIPE:
+			out += FieldSchemaJson(s_aFieldRecipe, COUNTOF(s_aFieldRecipe));
+			break;
 		case KIND_CHAR:
 			out += FieldSchemaJson(s_aFieldChar, COUNTOF(s_aFieldChar));
 			out.insert(out.size() - 1, ",{\"name\":\"isPlayer\",\"type\":\"bool\",\"label\":\"プレイヤーか\"},{\"name\":\"online\",\"type\":\"bool\",\"label\":\"ログイン中か\"}"
-					",{\"name\":\"szNpcSpeech\",\"type\":\"string\",\"label\":\"NPC の台詞\",\"note\":\"@5NN は店（NN はそのマップの店の番号）\"}");
+					",{\"name\":\"szNpcSpeech\",\"type\":\"string\",\"label\":\"NPC の台詞\",\"note\":\"@5NN は店（NN はそのマップの店の番号）・@cNN は作り手（NN は maker の番号）\"}");
 			break;
 		case KIND_MAP:
 			out += FieldSchemaJson(s_aFieldMap, COUNTOF(s_aFieldMap));
@@ -1822,6 +1858,12 @@ static std::string RecordJson(int nKind, int nID)
 			out += ItemWorkJson(w);
 		}
 		break;
+	case KIND_MAKER:
+		out += FieldsJson((const BYTE *)g_aMakerInfo[nID], s_aFieldMaker, COUNTOF(s_aFieldMaker));
+		break;
+	case KIND_RECIPE:
+		out += FieldsJson((const BYTE *)g_aRecipeInfo[nID], s_aFieldRecipe, COUNTOF(s_aFieldRecipe));
+		break;
 	case KIND_CHAR:
 		if (g_aCharInfo[nID] == NULL) {
 			return "null";
@@ -1921,7 +1963,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 	 * 管理者ウィンドウの「元に戻す」（SboSvrAdminUndo.cpp）にも記録する（既存のデータを変える時だけ）。
 	 * 確かめの途中で失敗した時は AdminUndoAfter を呼ばないので記録されない（次の AdminUndoBefore* で捨てられる）。
 	 */
-	if (bApply && !bAdd) {
+	/* 作り手・レシピは管理者ウィンドウの画面が無いので、AI 用の変更履歴（SboWebDataHistory.json）で元に戻す */
+	if (bApply && !bAdd && nKind <= KIND_ITEM) {
 		bUndo = AdminUndoBeforeTarget(abyUndoCmd[nKind], (DWORD)nID, pszSource ? pszSource : "API", 0);
 	}
 
@@ -2073,6 +2116,109 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 					SendCmdCHARSTATUS(pChar->pID, pChar->dwTblID);
 				}
 				SaveItemInfo();
+			}
+		}
+		break;
+
+	case KIND_MAKER:
+		{
+			MAKERINFO Info;
+			memset(&Info, 0, sizeof(Info));
+			if (!bAdd) {
+				Info = *g_aMakerInfo[nID];
+			} else {
+				Info.byState = RECIPESTATE_ON;		/* 足す時に状態を省いたら有効にする */
+			}
+			if (!CheckKnownKeys(chg, s_aFieldMaker, COUNTOF(s_aFieldMaker), NULL, strErr) ||
+					!ApplyFields((BYTE *)&Info, s_aFieldMaker, COUNTOF(s_aFieldMaker), chg, strErr, "")) {
+				goto Exit;
+			}
+			if (Info.byState > RECIPESTATE_OFF) {
+				strErr = "byState は 0（削除済み）・1（有効）・2（停止中）のどれかで指定してください";
+				goto Exit;
+			}
+			if (Info.byState != RECIPESTATE_NONE && Info.szName[0] == 0) {
+				strErr = "szName（名前）は空にできません";
+				goto Exit;
+			}
+			strRecord = FieldsJson((const BYTE *)&Info, s_aFieldMaker, COUNTOF(s_aFieldMaker));
+			if (bApply) {
+				if (bAdd) {
+					PMAKERINFO pNew = new MAKERINFO;
+					*pNew = Info;
+					g_aMakerInfo.Add(pNew);
+				} else {
+					*g_aMakerInfo[nID] = Info;
+				}
+				SendCmdMAKERINFO(URARASOCK_SENDALL, (WORD)nID);
+				SaveMakerInfo();
+			}
+		}
+		break;
+
+	case KIND_RECIPE:
+		{
+			RECIPEINFO Info;
+			memset(&Info, 0, sizeof(Info));
+			if (!bAdd) {
+				Info = *g_aRecipeInfo[nID];
+			} else {
+				Info.byState = RECIPESTATE_ON;
+				Info.byCount = 1;
+			}
+			if (!CheckKnownKeys(chg, s_aFieldRecipe, COUNTOF(s_aFieldRecipe), NULL, strErr) ||
+					!ApplyFields((BYTE *)&Info, s_aFieldRecipe, COUNTOF(s_aFieldRecipe), chg, strErr, "")) {
+				goto Exit;
+			}
+			if (Info.byState > RECIPESTATE_OFF) {
+				strErr = "byState は 0（削除済み）・1（有効）・2（停止中）のどれかで指定してください";
+				goto Exit;
+			}
+			if (Info.byState != RECIPESTATE_NONE) {
+				int nMat = 0;
+				if (Info.byMaker >= g_aMakerInfo.GetSize()) {
+					strErr = "byMaker は maker の番号（0〜" + JsonNum(g_aMakerInfo.GetSize() - 1) + "）で指定してください。先に maker を足してください";
+					goto Exit;
+				}
+				if (Info.wItem == 0 || Info.wItem >= g_aItemInfo.GetSize()) {
+					strErr = "wItem は item の番号（1〜" + JsonNum(g_aItemInfo.GetSize() - 1) + "）で指定してください";
+					goto Exit;
+				}
+				if (Info.byCount < 1) {
+					strErr = "byCount（できる個数）は 1 以上にしてください";
+					goto Exit;
+				}
+				for (int k = 0; k < MAX_RECIPEMAT; k ++) {
+					if (Info.awMatItem[k] == 0) {
+						Info.abyMatCount[k] = 0;
+						continue;
+					}
+					if (Info.awMatItem[k] >= g_aItemInfo.GetSize()) {
+						strErr = "awMatItem[" + JsonNum(k) + "] は item の番号で指定してください";
+						goto Exit;
+					}
+					if (Info.abyMatCount[k] < 1) {
+						strErr = "abyMatCount[" + JsonNum(k) + "]（材料の個数）は 1 以上にしてください";
+						goto Exit;
+					}
+					nMat ++;
+				}
+				if (nMat == 0) {
+					strErr = "材料を 1 種以上指定してください（awMatItem・abyMatCount）";
+					goto Exit;
+				}
+			}
+			strRecord = FieldsJson((const BYTE *)&Info, s_aFieldRecipe, COUNTOF(s_aFieldRecipe));
+			if (bApply) {
+				if (bAdd) {
+					PRECIPEINFO pNew = new RECIPEINFO;
+					*pNew = Info;
+					g_aRecipeInfo.Add(pNew);
+				} else {
+					*g_aRecipeInfo[nID] = Info;
+				}
+				SendCmdRECIPEINFO(URARASOCK_SENDALL, (WORD)nID);
+				SaveRecipeInfo();
 			}
 		}
 		break;

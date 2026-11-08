@@ -303,6 +303,8 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			SaveMagicUserInfo ();
 			SaveMagicInfo ();
 			SaveEquUserInfo ();
+			SaveMakerInfo ();
+			SaveRecipeInfo ();
 			SendCmdSYSMSG (URARASOCK_SENDALL, "SYSTEM:サーバー情報を保存しました。");
 		}
 		break;
@@ -475,6 +477,8 @@ BOOL OnCreate(HWND hWnd)
 	LoadItemInfo ();
 	LoadCharInfo ();
 	LoadSubGameInfo ();
+	LoadMakerInfo ();
+	LoadRecipeInfo ();
 
 	g_pComEfcInfo = new COMEFCINFO[99];
 	ZeroMemory (g_pComEfcInfo, sizeof (COMEFCINFO) * 99);
@@ -579,6 +583,8 @@ void OnDestroy(HWND hWnd)
 	SaveMagicUserInfo ();		/* 魔法利用者情報の保存 */
 	SaveMagicInfo ();			/* 魔法情報の保存 */
 	SaveEquUserInfo ();			/* 装備職業情報の保存 */
+	SaveMakerInfo ();			/* 作り手情報の保存 */
+	SaveRecipeInfo ();			/* レシピ情報の保存 */
 
 	for (i = 0; i < g_aCharInfo.GetSize (); i ++) {
 		SAFE_DELETE_ARRAY (g_aCharInfo[i]->pszSpeech);
@@ -668,6 +674,16 @@ void OnDestroy(HWND hWnd)
 		}
 	}
 	g_aEquUserInfo.RemoveAll ();
+
+	for (i = 0; i < g_aMakerInfo.GetSize (); i ++) {
+		SAFE_DELETE (g_aMakerInfo[i]);
+	}
+	g_aMakerInfo.RemoveAll ();
+
+	for (i = 0; i < g_aRecipeInfo.GetSize (); i ++) {
+		SAFE_DELETE (g_aRecipeInfo[i]);
+	}
+	g_aRecipeInfo.RemoveAll ();
 
 	SAFE_DELETE (g_pServerInfoUploadInfo);
 

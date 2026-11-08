@@ -749,6 +749,7 @@ BOOL OnCreate(HWND hWnd)
 	g_dwCountPC				= 0;
 	g_dwCountNPC			= 0;
 	g_nProcShopID			= -1;
+	g_nProcMakerID			= -1;
 	g_nProcShopState		= 0;
 	g_bProcShopConfirm		= FALSE;
 	g_nProcShopSelect		= 0;
@@ -1897,7 +1898,7 @@ void TimerProc(void)
 								}
 
 							/* 最後まで処理した */
-							} else if (g_nProcShopID < 0) {
+							} else if ((g_nProcShopID < 0) && (g_nProcMakerID < 0)) {
 								EraseWindow (pWnd);
 
 								/* コマンドウィンドウを閉じる */
@@ -1987,6 +1988,7 @@ void TimerProc(void)
 		case WNDTYPE_SUBSUGOROKU_COMMAND:
 		case WNDTYPE_SUBSUGOROKU_IDLE:
 		case WNDTYPE_DEAD_COMMAND:
+		case WNDTYPE_MAKER:
 			if (dwTime > pWnd->dwTime + 250) {
 				pWnd->dwTime = dwTime;
 				if (g_dwActiveMsgID == pWnd->dwID) {

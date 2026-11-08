@@ -13,6 +13,8 @@
 | `job` | 職業情報とレベルアップ情報（`levelUp`） |
 | `stTmp` | ステータステンプレート（NPC・敵の能力のひな形） |
 | `item` | アイテム情報（種別ごとの詳細は `detail`） |
+| `maker` | 作り手（料理人・鍛冶屋など）。名前と台詞 3 つ（`szMsgTalk`・`szMsgDone`・`szMsgLack`）。NPC の台詞を `@c` + 番号 2 桁にすると開く |
+| `recipe` | レシピ。作り手（`byMaker`）・できる物（`wItem`）と個数（`byCount`）・材料 4 種まで（`awMatItem`・`abyMatCount`）・手数料（`dwGold`）・並び順（`wSort`） |
 
 セーブデータの残りは **読むだけ** です（バランス調整のシミュレーションやシナリオ作りの手伝い用）。
 
@@ -32,6 +34,27 @@
 
 項目名はソースの変数名と同じです（`szName`・`wMana` など）。意味・範囲・他のデータの番号の参照は
 `sbo_schema`（`/api/data/schema`）で見られます。
+
+## 作り手とレシピ（`maker`・`recipe`）
+
+町の作り手に頼んで、材料から物を作ってもらう仕組みのデータです。**サーバーのデータなので公開リポジトリには入れません。**
+`SBODATA/SboDataMakerInfo.dat`・`SboDataRecipeInfo.dat` が無い時は「作り手 0 件・レシピ 0 件」で起動し、
+管理ページの「レシピ」タブか API で初めて保存した時に作られます。
+
+- 作り手を足すと番号（0 から）が決まります。NPC（`char` の `szNpcSpeech`）の台詞を `@c00` のように **`@c` + 作り手の番号 2 桁** にすると、
+  その NPC に話しかけた時（S キーでも）に作り手の画面が開きます。`@0`〜`@9`・`@a`・`@k` とはぶつかりません。
+- `maker`：`byState`（1 有効・2 停止中・0 削除済み）・`szName`・`szMsgTalk`・`szMsgDone`・`szMsgLack`。台詞は `@1`（改行）・`@2`（文の終わり）などが使えます。
+- `recipe`：`byState`・`byMaker`・`wSort`（小さい順に並ぶ）・`wItem`・`byCount`（1 以上）・`awMatItem`（4 つ。使わない欄は 0）・`abyMatCount`・`dwGold`（手数料）。材料は 1 種類以上必要です。
+- 材料は持ち物（装備中・捨てられない物を除く）のあと預かり所から使われます。できた物は持ち物へ、いっぱいなら預かり所へ届き、両方いっぱいなら断られます。
+- 消す時は `byState` を 0 にします（空き枠になり、次に足す時に使い回されます）。
+- 変更はログイン中のプレイヤー全員にすぐ届きます。下見 → 反映・変更履歴・元に戻すは他の種類と同じです。
+
+例（始まりの町の料理人）：
+
+```json
+{"kind": "maker", "records": [{"szName": "料理人", "szMsgTalk": "いらっしゃい。@1何を作りましょうか？", "szMsgDone": "はい、できました。@2", "szMsgLack": "材料が足りないようです。@2"}]}
+{"kind": "recipe", "records": [{"byMaker": 0, "wSort": 10, "wItem": 215, "byCount": 1, "awMatItem": [228, 148, 0, 0], "abyMatCount": [2, 1, 0, 0], "dwGold": 10}]}
+```
 
 ## つなぎ方（Claude Code）
 
@@ -130,6 +153,7 @@ HTTP では `/api/data/parts/dex`・`/api/data/parts/samples`・`/api/data/parts
 | `server/node/sbosvr_data.js` | キー・下見・履歴・元に戻す・HTTP の API・MCP |
 | `server/node/sbosvr_mapdesign.js` | パーツ図鑑・配置案（同じキー・同じ MCP にツールを足す） |
 | `web/account/admin-design.js` | 管理ページの「パーツ図鑑」「配置案」タブ |
+| `web/account/admin-recipe.js` | 管理ページの「レシピ」タブ（作り手とレシピを決める。保存は `/api/admin/recipe/save`） |
 | `web/account/admin-npcroute.js` | 管理ページの「NPCの巡回」タブ（NPC の道しるべを置く。保存は `/api/admin/npcroute/set`） |
 | `web/account/parts-dex-seed.json` | パーツ図鑑の最初の下書き |
 | `web/account/admin.html` | 管理ページの「AI連携」タブ |
