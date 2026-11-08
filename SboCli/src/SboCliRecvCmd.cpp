@@ -1185,6 +1185,48 @@ void RenewMapDarkCorner(PCHARINFO pChar)
 		g_pMapDarkTmp[nPos] += (char)nTmp;
 		g_pMapDarkTmpPos[nPos] = 1;
 	}
+
+	/* 壁は「上のマス=天井・下のマス=側面」の縦2マスで描かれていることが多い。
+	   灯りは側面(下)で止まるので天井(上)が真っ黒になり不自然だった。
+	   灯りが当たった壁(斜めの角として照らした壁も)のすぐ上も壁なら、その1マスだけ照らす */
+	ZeroMemory (abyAdd, sizeof (abyAdd));
+	for (y = 1; y < DRAW_PARTS_Y * 2 + 2; y ++) {
+		for (x = 1; x < DRAW_PARTS_X * 2 + 2; x ++) {
+			int nPosUp;
+
+			nPos = x + nWidth * y;
+			/* 照らしていないマス・灯りが通った(壁ではない)マス？ */
+			if ((g_pMapDarkTmpPos[nPos] == 0) || (g_pMapDarkTmpPos[nPos] == 2)) {
+				continue;
+			}
+			nPosUp = nPos - nWidth;
+			if (g_pMapDarkTmpPos[nPosUp]) {
+				continue;
+			}
+			mx = (int)pMyChar->dwX + x - (1 + DRAW_PARTS_X);
+			my = (int)pMyChar->dwY + y - (1 + DRAW_PARTS_Y);
+			/* 自分が壁で、上も壁の時だけ */
+			if (CheckCharBlock (mx, my) || CheckCharBlock (mx, my - 1)) {
+				continue;
+			}
+			nTmp = GetMapDarkLevel (pChar, mx, my - 1);
+			if (g_pMapInfo->byLightLevel && (nTmp <= 1)) {
+				continue;
+			}
+			abyAdd[nPosUp] = (char)nTmp;
+		}
+	}
+	for (nPos = 0; nPos < SCRMARTSSIZE; nPos ++) {
+		if (abyAdd[nPos] == 0) {
+			continue;
+		}
+		nTmp = abyAdd[nPos];
+		if (g_pMapDarkTmp[nPos] + nTmp > 100) {
+			nTmp = 100 - g_pMapDarkTmp[nPos];
+		}
+		g_pMapDarkTmp[nPos] += (char)nTmp;
+		g_pMapDarkTmpPos[nPos] = 1;
+	}
 }
 
 /* ========================================================================= */
