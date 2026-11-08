@@ -12,6 +12,7 @@
 #include "CharProcBLOCK.h"
 #include "CharProcBOMB.h"
 #include "CharProcBOMBBLOCK.h"
+#include "CharProcMERCENARY.h"
 #include "CharProcMOVERAND.h"
 #include "CharProcNOMOVE.h"
 #include "CharProcPUT.h"

@@ -945,6 +945,9 @@ enum {
 	NPCTYPE_MAX
 };
 
+/* 傭兵（プレイヤーが雇うと出てくる。保存せず、管理画面では選べないように NPCTYPE_MAX より後ろの番号） */
+#define NPCTYPE_MERCENARY	(100)
+
 /* NPC巡回ルートの回り方 */
 enum {
 	NPCROUTEMODE_BACK = 0,										/* 最後まで行ったら折り返す */

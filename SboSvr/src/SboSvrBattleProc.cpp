@@ -13,6 +13,7 @@
 #include "SboSvrRecvCmd.h"
 #include "SboSvrMagicProc.h"
 #include "SboSvrCharInfoTimerProc.h"
+#include "CharProc/CharProcMERCENARY.h"
 #include <map>
 #include <vector>
 
@@ -63,6 +64,11 @@ void BattleProcCheck(PCHARINFO pChar)
 
 	/* 戦闘許可マップではない？ */
 	if ((pMap->byFlg & MAPFLG_BATTLE) == 0) {
+		return;
+	}
+
+	/* 傭兵は自分の処理(CharProcMERCENARY)で殴る */
+	if (IsMercenary (pChar)) {
 		return;
 	}
 
@@ -145,6 +151,7 @@ void BattleProcCheck(PCHARINFO pChar)
 	dwX = pChar->dwX + anPosAddTblX[pChar->byDirection];
 	dwY = pChar->dwY + anPosAddTblY[pChar->byDirection];
 
+	BOOL bAtack = FALSE;
 	/* マップ内のキャラを処理 */
 	for (j = 0; j < nCount; j ++) {
 		if (pData[j] == -1) {
@@ -162,6 +169,7 @@ void BattleProcCheck(PCHARINFO pChar)
 			(dwY != pCharTmp->dwY)) {
 			continue;
 		}
+		bAtack = TRUE;
 
 		/* PCの行動？ */
 		if (pChar->byNpcType == NPCTYPE_INIT) {
@@ -194,6 +202,15 @@ void BattleProcCheck(PCHARINFO pChar)
 			if (bResult == FALSE) {
 				break;
 			}
+		}
+	}
+
+	/* 敵の目の前にプレイヤーがいなくて、傭兵がいる？ 傭兵を殴る */
+	if (!bAtack && (pChar->byNpcType != NPCTYPE_INIT)) {
+		PCHARINFO pMerc = GetMercenaryFront (pChar);
+		if (pMerc) {
+			BattleProc (pChar, pMerc);
+			pChar->dwLastBattle = timeGetTime ();
 		}
 	}
 }
@@ -375,6 +392,16 @@ BOOL DamageAfterProcNPC(PCHARINFO pChar, PCHARINFO pCharTarget)
 		return FALSE;
 	}
 
+	/* 傭兵が倒した？ 討伐報酬は雇い主がもらう */
+	if (IsMercenary (pChar)) {
+		PCHARINFO pOwner = GetMercenaryOwner (pChar);
+		if (pOwner == NULL) {
+			DeleteChar (pCharTarget->dwTblID);
+			return TRUE;
+		}
+		pChar = pOwner;
+	}
+
 	SendCmdSYSMSG2 (pChar->pID, SYSMSG_BATTLEEND1, pCharTarget->pID, 0);
 
 	/* 討伐報酬をもらえるプレイヤー(ダメージを与えた人＋「全員で分配」パーティの仲間)。先頭はとどめを刺した人 */
@@ -529,7 +556,8 @@ static BOOL BattleProc(PCHARINFO pChar, PCHARINFO pCharTarget)
 
 	bRet = TRUE;
 
-	if (pChar->byNpcType) {
+	/* 傭兵には特技を使わない(特技の相手はプレイヤーと敵だけの作りのため) */
+	if (pChar->byNpcType && !IsMercenary (pCharTarget)) {
 		byNo = (BYTE)(genrand () % MAX_USEMAGIC);
 		if (pChar->abyMagic[byNo]) {
 			nType = 1;
@@ -836,6 +864,18 @@ static void BattleProcAtackArea(PCHARINFO pChar, DWORD dwMainTblID)
 	pChar->dwTargetTblID	= dwTargetBack;
 }
 
+/* 攻撃のメッセージを送る相手（傭兵の攻撃は雇い主に、ほかは攻撃された側に） */
+static DWORD AtackMsgPID(PCHARINFO pChar, PCHARINFO pCharTarget)
+{
+	if (IsMercenary (pChar)) {
+		PCHARINFO pOwner = GetMercenaryOwner (pChar);
+		if (pOwner) {
+			return pOwner->pID;
+		}
+	}
+	return pCharTarget->pID;
+}
+
 /* ========================================================================= */
 /* 関数名：BattleProcAtack													 */
 /* 内容：戦闘処理(直接攻撃)													 */
@@ -873,6 +913,7 @@ BOOL BattleProcAtack(PCHARINFO pChar, PCHARINFO pCharTarget)
 	case NPCTYPE_INIT:
 	case NPCTYPE_BATTLE1:	/* ランダム移動、最初に攻撃してきたキャラをターゲットに。追いかけない。 */
 	case NPCTYPE_BATTLE2:	/* 周り２キャラの範囲で検索してついていって攻撃 */
+	case NPCTYPE_MERCENARY:	/* 傭兵 */
 		break;
 	default:
 		goto Exit;
@@ -905,7 +946,7 @@ BOOL BattleProcAtack(PCHARINFO pChar, PCHARINFO pCharTarget)
 		}
 
 		SendCmdPLAYSOUND (pCharTmp1->pID, byNo);
-		SendCmdSYSMSG2 (pCharTmp1->pID, SYSMSG_ATACK1, pChar->pID, 0);
+		SendCmdSYSMSG2 ((pChar->byNpcType == 0) ? pCharTmp1->pID : AtackMsgPID (pChar, pCharTarget), SYSMSG_ATACK1, pChar->pID, 0);
 
 	/* 会心の一撃？(普段は 2%、ジャストなら 30%) */
 	} else if (!bGuard && ((genrand () % 100) >= (DWORD)(bJust ? 70 : 98))) {
@@ -924,7 +965,7 @@ BOOL BattleProcAtack(PCHARINFO pChar, PCHARINFO pCharTarget)
 			pCharTmp2 = pChar;
 		}
 
-		SendCmdSYSMSG2 (pCharTmp1->pID, dwID, pCharTmp2->pID, 0);
+		SendCmdSYSMSG2 ((pChar->byNpcType == 0) ? pCharTmp1->pID : AtackMsgPID (pChar, pCharTarget), dwID, pCharTmp2->pID, 0);
 		SendCmdPLAYSOUNDinside (pCharTmp1->dwTblID, byNo);
 
 	/* 通常の攻撃 */
@@ -933,7 +974,7 @@ BOOL BattleProcAtack(PCHARINFO pChar, PCHARINFO pCharTarget)
 			SendCmdSYSMSG2 (pChar->pID, SYSMSG_ATACK1, pChar->pID, 0);
 
 		} else {
-			SendCmdSYSMSG2 (pCharTarget->pID, SYSMSG_ATACK1, pChar->pID, 0);
+			SendCmdSYSMSG2 (AtackMsgPID (pChar, pCharTarget), SYSMSG_ATACK1, pChar->pID, 0);
 		}
 	}
 
@@ -972,7 +1013,7 @@ BOOL BattleProcAtack(PCHARINFO pChar, PCHARINFO pCharTarget)
 				dwSend = pCharParent->pID;
 
 			} else {
-				dwSend = pCharTarget->pID;
+				dwSend = AtackMsgPID (pChar, pCharTarget);
 			}
 		} 
 
@@ -1010,7 +1051,7 @@ BOOL BattleProcAtack(PCHARINFO pChar, PCHARINFO pCharTarget)
 				dwSend = pCharParent->pID;
 
 			} else {
-				dwSend = pCharTarget->pID;
+				dwSend = AtackMsgPID (pChar, pCharTarget);
 			}
 		} 
 
@@ -1033,7 +1074,7 @@ BOOL BattleProcAtack(PCHARINFO pChar, PCHARINFO pCharTarget)
 				dwSend = pCharParent->pID;
 
 			} else {
-				dwSend = pCharTarget->pID;
+				dwSend = AtackMsgPID (pChar, pCharTarget);
 			}
 		}
 
@@ -1048,6 +1089,10 @@ BOOL BattleProcAtack(PCHARINFO pChar, PCHARINFO pCharTarget)
 	if (pChar->byNpcType == 0) {
 		bPC = TRUE;
 
+	/* 傭兵の攻撃はプレイヤーの攻撃と同じ扱い */
+	} else if (IsMercenary (pChar)) {
+		bPC = TRUE;
+
 	} else if (pChar->byNpcType == NPCTYPE_ATACK) {
 		PCHARINFO pCharParent;
 
@@ -1059,12 +1104,17 @@ BOOL BattleProcAtack(PCHARINFO pChar, PCHARINFO pCharTarget)
 
 	/* プレイヤーの攻撃？ */
 	if (bPC) {
+		BOOL bMerc = IsMercenary (pChar);
 		bRet = DamageAfterProcNPC (pChar, pCharTarget);
-		/* 攻撃命中でダメージあり？ */
-		if (!bMiss && (nDamage > 0)) {
+		/* 攻撃命中でダメージあり？(傭兵は能力値が上がらない) */
+		if (!bMiss && (nDamage > 0) && !bMerc) {
 			AddStatus (pChar, STATUSTYPE_PW, 0);
 			AddStatus (pChar, STATUSTYPE_DEX, 0);
 		}
+
+	/* 傭兵が攻撃を受けた */
+	} else if (IsMercenary (pCharTarget)) {
+		bRet = MercenaryDamaged (pChar, pCharTarget);
 
 	/* NPCの攻撃 */
 	} else {
@@ -1251,8 +1301,15 @@ void AddBattleDamage(PCHARINFO pChar, PCHARINFO pCharTarget, int nDamage)
 		}
 		pChar = g_aCharInfo[pChar->dwParentTblID];
 	}
+	/* 傭兵が与えたダメージは雇い主の分 */
+	if (IsMercenary (pChar)) {
+		pChar = GetMercenaryOwner (pChar);
+		if (pChar == NULL) {
+			return;
+		}
+	}
 	/* プレイヤーが敵に与えた時だけ */
-	if ((pChar->byNpcType != NPCTYPE_INIT) || (pCharTarget->byNpcType == NPCTYPE_INIT)) {
+	if ((pChar->byNpcType != NPCTYPE_INIT) || (pCharTarget->byNpcType == NPCTYPE_INIT) || IsMercenary (pCharTarget)) {
 		return;
 	}
 	nDamage = min (nDamage, (int)pCharTarget->wHP);
@@ -1637,8 +1694,9 @@ int RenkeiCheck(PCHARINFO pChar, PCHARINFO pCharTarget)
 		(pChar->dwParentTblID < (DWORD)g_aCharInfo.GetSize ())) {
 		pChar = g_aCharInfo[pChar->dwParentTblID];
 	}
-	/* プレイヤーが敵に当てた時だけ */
-	if ((pChar->byNpcType != NPCTYPE_INIT) || (pCharTarget->byNpcType == NPCTYPE_INIT)) {
+	/* プレイヤー(と傭兵)が敵に当てた時だけ */
+	if (((pChar->byNpcType != NPCTYPE_INIT) && !IsMercenary (pChar)) ||
+		(pCharTarget->byNpcType == NPCTYPE_INIT) || IsMercenary (pCharTarget)) {
 		return 100;
 	}
 	nRet	= 100;

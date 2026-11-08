@@ -134,6 +134,7 @@ void CCharProcBase::SetProc(PCHARINFO pChar)
 	case NPCTYPE_ATACK:				pProc = new CCharProcATACK;				break;	/* 重なったキャラに攻撃 */
 	case NPCTYPE_USEMAGICPARENT:	pProc = new CCharProcUSEMAGICPARENT;	break;	/* 魔法発動し続ける */
 	case NPCTYPE_SEARCH2:			pProc = new CCharProcSEARCH2;			break;	/* 検索してついていく2 */
+	case NPCTYPE_MERCENARY:			pProc = new CCharProcMERCENARY;			break;	/* 傭兵 */
 	}
 
 	if (pProc) {
