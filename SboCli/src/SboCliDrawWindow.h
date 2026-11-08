@@ -15,5 +15,6 @@ extern void GetSystemGrpRect	(BYTE, PRECT);									/* システムグラフィ�
 extern void DrawWindow			(CImg32 *pDib = NULL, int x = 0, int y = 0);	/* ウィンドウの描画 */
 extern void EraseWindow			(PWNDINFO);										/* ウィンドウの消去 */
 extern void AllEraseWindow		(void);											/* 全てのウィンドウ消去 */
+extern COLORREF HpWarnTextColor	(COLORREF cl);									/* HPが減った時のウィンドウ文字色に変える */
 
 /* Copyright(C)URARA-works 2003-2005 */
