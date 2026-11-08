@@ -41,6 +41,9 @@
  *   /api/data/add       {kind, records:[{...}], note?, previewId?}
  *   /api/data/history   {kind?, limit?}                      → {entries:[...]}
  *   /api/data/undo      {historyId, note?, force?, previewId?}
+ *   /api/data/bookmark  {name, note?}                        → しおりを付ける（お試しの区切り）
+ *   /api/data/bookmarks {limit?}                             → {bookmarks:[...]}
+ *   /api/data/rollback  {bookmarkId, note?, force?, previewId?} → しおりの後の変更をまとめて元に戻す
  *     書き込みは previewId 無し → {preview:true, previewId, items:[{id, before, after, diff}]}
  *                previewId 有り → {ok:true, historyId, items:[...]}
  * 管理ページ用（{session} は /api/admin/login で得たもの）
@@ -49,6 +52,7 @@
  *   /api/admin/ai/revoke   {session, id}                      → {ok}
  *   /api/admin/ai/history  {session, kind?, limit?}           → {entries:[...]}
  *   /api/admin/ai/undo     {session, historyId, force?, previewId?} → 上の undo と同じ
+ *   /api/admin/ai/bookmark・bookmarks・rollback {session, ...} → 上のしおりと同じ
  *   /api/admin/data/list   {session, kind, offset?, limit?}   → 上の list と同じ（マップ資料の書き出し用。読むだけ）
  *   /api/admin/data/tiles  {session, id, x?, y?, w?, h?}      → 上の tiles と同じ
  */
@@ -62,6 +66,7 @@ Module['sboData'] = (function () {
 	var MAX_HISTORY = 500;			/* 残す変更履歴の数 */
 	var MAX_KEYS = 50;				/* 発行できるキーの数（取り消したものを含めない） */
 	var MAX_ITEMS = 200;			/* 1 回で変えられる件数 */
+	var MAX_BOOKMARKS = 100;		/* 覚えておくしおりの数 */
 	var PREVIEW_TTL = 10 * 60 * 1000;
 	var MINUTE = 60 * 1000, DAY = 24 * 60 * MINUTE;
 	var KEY_PREFIX = 'sboai_';
@@ -553,7 +558,7 @@ Module['sboData'] = (function () {
 	function historySummary(e) {
 		return {
 			historyId: e.historyId, at: new Date(e.at).toISOString(), op: e.op, kind: e.kind, by: e.by, note: e.note,
-			undoOf: e.undoOf || undefined, undoneBy: e.undoneBy || undefined,
+			undoOf: e.undoOf || undefined, undoneBy: e.undoneBy || undefined, bookmarkId: e.bookmarkId || undefined,
 			items: e.items.map(function (d) {
 				return { id: d.id, name: (d.after || d.before || {}).szName, added: d.added || undefined, diff: diff(d.before, d.after) };
 			})
@@ -592,7 +597,8 @@ Module['sboData'] = (function () {
 		var kind = e.kind;
 		var befores = {}, items = [], aOp = [], aSkip = [], aConflict = [];
 		e.items.forEach(function (d) {
-			if (d.added) {
+			var erase = d.added ? eraseChanges(kind) : null;
+			if (d.added && !erase) {
 				aSkip.push(d.id);
 				return;
 			}
@@ -603,7 +609,7 @@ Module['sboData'] = (function () {
 					return;
 				}
 			}
-			var changes = restorable(kind, d.before);
+			var changes = erase || restorable(kind, d.before);
 			var r = applyC(kind, d.id, changes, false);
 			if (!r.ok) {
 				fail(400, 'invalid', kind + ' の ' + d.id + ' 番を戻せません: ' + r.error);
@@ -637,6 +643,193 @@ Module['sboData'] = (function () {
 		log(who.label + ' が履歴 ' + hid + ' を元に戻した（履歴 ' + e2.historyId + '）');
 		return { ok: true, historyId: e2.historyId, skipped: aSkip.length ? aSkip : undefined,
 			items: aDone.map(function (d) { return { id: d.id, diff: diff(d.before, d.after) }; }) };
+	}
+
+	/* 追加した記録を「消す」変更。削除の印（byState=0）がある種類だけ。無ければ null（消せない） */
+	function eraseChanges(kind) {
+		return (kind === 'maker' || kind === 'recipe') ? { byState: 0 } : null;
+	}
+
+	/*
+	 * しおり（お試しの区切り）。付けた時の履歴の番号を覚えておき、
+	 * 「このしおりまで戻す」でそれより後の変更をまとめて元に戻す（下見 → 確定）。
+	 */
+	function bookmarks() {
+		var h = history();
+		h.bmSeq = h.bmSeq || 0;
+		h.bookmarks = h.bookmarks || [];
+		return h;
+	}
+
+	function findBookmark(id) {
+		var h = bookmarks();
+		var bid = Number(id);
+		for (var i = 0; i < h.bookmarks.length; i++) {
+			if (h.bookmarks[i].bookmarkId === bid) {
+				return h.bookmarks[i];
+			}
+		}
+		fail(404, 'not_found', 'しおり ' + id + ' が見つかりません');
+	}
+
+	/* しおりの後の履歴（古い順）。古い履歴が消えていて戻せない時は null */
+	function entriesAfter(bm) {
+		var h = history();
+		var a = h.entries.filter(function (e) { return e.historyId > bm.afterHistoryId; });
+		var bLost = (bm.afterHistoryId < h.seq) && (!a.length || a[0].historyId > bm.afterHistoryId + 1);
+		return bLost ? null : a;
+	}
+
+	/* しおりの後の変更のうち、まだ戻していないものの数（戻した操作そのものは数えない） */
+	function countLive(a, bm) {
+		return a.filter(function (e) {
+			if (e.undoneBy || e.op === 'rollback') {
+				return false;
+			}
+			return !(e.op === 'undo' && e.undoOf > bm.afterHistoryId);
+		}).length;
+	}
+
+	function bookmarkPublic(bm) {
+		var a = entriesAfter(bm);
+		return {
+			bookmarkId: bm.bookmarkId, name: bm.name, note: bm.note || undefined, at: new Date(bm.at).toISOString(), by: bm.by,
+			afterHistoryId: bm.afterHistoryId, changes: a ? countLive(a, bm) : undefined, lost: a ? undefined : true,
+			rolledBack: bm.rolledBack ? bm.rolledBack.map(function (r) { return { at: new Date(r.at).toISOString(), by: r.by, historyIds: r.historyIds }; }) : undefined
+		};
+	}
+
+	function opBookmarkAdd(a, who) {
+		requireWrite(who);
+		var name = String(a.name || '').trim().slice(0, 60);
+		if (!name) {
+			fail(400, 'name', 'しおりの名前（name）を付けてください。例: 「レジェンタのお試し1」');
+		}
+		var h = bookmarks();
+		h.bmSeq++;
+		var bm = { bookmarkId: h.bmSeq, name: name, note: String(a.note || '').slice(0, 500), at: Date.now(), by: who.label, afterHistoryId: h.seq };
+		h.bookmarks.push(bm);
+		if (h.bookmarks.length > MAX_BOOKMARKS) {
+			h.bookmarks.splice(0, h.bookmarks.length - MAX_BOOKMARKS);
+		}
+		writeJsonFile(strHistPath, h);
+		log(who.label + ' がしおり ' + bm.bookmarkId + '「' + name + '」を付けた（履歴 ' + bm.afterHistoryId + ' の後）');
+		return { ok: true, bookmark: bookmarkPublic(bm) };
+	}
+
+	function opBookmarks(a) {
+		var h = bookmarks();
+		var limit = Math.min(100, Math.max(1, Math.floor(Number(a.limit) || 20)));
+		return { bookmarks: h.bookmarks.slice().reverse().slice(0, limit).map(bookmarkPublic) };
+	}
+
+	function opRollback(a, who) {
+		requireWrite(who);
+		var bm = findBookmark(a.bookmarkId);
+		var aEntry = entriesAfter(bm);
+		if (!aEntry) {
+			fail(400, 'lost', 'しおりの後の古い履歴が消えている（' + MAX_HISTORY + ' 件より前）ので、まとめて戻せません');
+		}
+		/* 記録ごとに「しおりの時の姿（最初の変更の前）」と「履歴の最後の姿」を集める */
+		var aRec = {}, aOrder = [];
+		aEntry.forEach(function (e) {
+			e.items.forEach(function (d) {
+				var key = e.kind + ':' + d.id;
+				if (!aRec[key]) {
+					aRec[key] = { kind: e.kind, id: d.id, before: d.before, added: !!d.added };
+					aOrder.push(key);
+				}
+				aRec[key].last = d.after;
+			});
+		});
+		var befores = {}, items = [], aOps = {}, aSkip = [], aConflict = [];
+		aOrder.forEach(function (key) {
+			var r = aRec[key];
+			if (!r.added && same(r.before, r.last)) {
+				return;		/* しおりの後に変えて、もう戻してある */
+			}
+			var erase = r.added ? eraseChanges(r.kind) : null;
+			if (r.added && !erase) {
+				aSkip.push({ kind: r.kind, id: r.id });
+				return;
+			}
+			var now = getRecord(r.kind, r.id);
+			if (!same(now, r.last)) {
+				aConflict.push({ kind: r.kind, id: r.id });
+				if (!a.force) {
+					return;
+				}
+			}
+			var changes = erase || restorable(r.kind, r.before);
+			var c = applyC(r.kind, r.id, changes, false);
+			if (!c.ok) {
+				fail(400, 'invalid', r.kind + ' の ' + r.id + ' 番を戻せません: ' + c.error);
+			}
+			if (same(now, c.record)) {
+				return;		/* もうしおりの時の姿（消した追加も含む） */
+			}
+			befores[r.kind] = befores[r.kind] || {};
+			befores[r.kind][r.id] = now;
+			items.push({ kind: r.kind, id: r.id, name: (now && now.szName) || undefined, added: r.added || undefined, diff: diff(now, c.record) });
+			(aOps[r.kind] = aOps[r.kind] || []).push({ id: r.id, changes: changes });
+		});
+		if (aConflict.length && !a.force) {
+			fail(409, 'conflict', 'しおりの後に、AI 以外（管理者ウィンドウなど）からも変わったデータがあるので戻しません（' +
+					aConflict.map(function (x) { return x.kind + ' の ' + x.id + ' 番'; }).join('、') +
+					'）。それでも戻すなら force を付けてください（その変更も消えます）。', { conflicts: aConflict });
+		}
+		if (!items.length) {
+			fail(400, 'nothing', 'しおりの後に戻す変更はありません' + (aSkip.length ? '（追加したデータは消せないので残ります）' : ''));
+		}
+		var payload = { bookmarkId: bm.bookmarkId, force: !!a.force, note: a.note || '' };
+		if (!a.previewId) {
+			var pv = makePreview('rollback', payload, who, befores, items);
+			pv.bookmark = bookmarkPublic(bm);
+			if (aSkip.length) {
+				pv.skipped = aSkip;
+				pv.message += '（消せない種類の追加 ' + aSkip.map(function (x) { return x.kind + ' の ' + x.id + ' 番'; }).join('、') + ' はそのまま残ります）';
+			}
+			return pv;
+		}
+		var p = takePreview(a.previewId, 'rollback', payload, who);
+		Object.keys(p.befores).forEach(function (kind) {
+			checkUnchanged(kind, p.befores[kind]);
+		});
+		/* 種類ごとに反映して履歴 1 件ずつ。途中の種類で失敗したら、それまでの種類も元へ戻す */
+		var aKind = Object.keys(aOps), aDoneByKind = [];
+		for (var i = 0; i < aKind.length; i++) {
+			try {
+				aDoneByKind.push({ kind: aKind[i], done: applyAll(aKind[i], aOps[aKind[i]], who) });
+			} catch (e) {
+				for (var j = aDoneByKind.length - 1; j >= 0; j--) {
+					var dk = aDoneByKind[j];
+					dk.done.slice().reverse().forEach(function (d) {
+						applyC(dk.kind, d.id, restorable(dk.kind, d.before), true, who.label);
+					});
+				}
+				throw e;
+			}
+		}
+		var note = String(a.note || '').slice(0, 500) || ('しおり「' + bm.name + '」まで戻す');
+		var aHist = aDoneByKind.map(function (dk) {
+			return addHistory({ op: 'rollback', kind: dk.kind, by: who.label, bookmarkId: bm.bookmarkId, note: note, items: dk.done }).historyId;
+		});
+		var h = history();
+		aEntry.forEach(function (e) {
+			if (!e.undoneBy) {
+				e.undoneBy = aHist[0];
+			}
+		});
+		bm.rolledBack = bm.rolledBack || [];
+		bm.rolledBack.push({ at: Date.now(), by: who.label, historyIds: aHist });
+		writeJsonFile(strHistPath, h);
+		log(who.label + ' がしおり ' + bm.bookmarkId + '「' + bm.name + '」まで戻した（履歴 ' + aHist.join(', ') + '）');
+		return {
+			ok: true, historyIds: aHist, skipped: aSkip.length ? aSkip : undefined,
+			items: [].concat.apply([], aDoneByKind.map(function (dk) {
+				return dk.done.map(function (d) { return { kind: dk.kind, id: d.id, diff: diff(d.before, d.after) }; });
+			}))
+		};
 	}
 
 	/* ------------------------------------------------------------------ */
@@ -876,6 +1069,37 @@ Module['sboData'] = (function () {
 				}
 			},
 			run: opUndo
+		},
+		{
+			name: 'sbo_bookmark', write: true,
+			description: 'しおりを付ける（お試しの区切り）。この後の変更は sbo_rollback でまとめて元に戻せる。' +
+				'街をお試しで作り変える前などに、利用者が分かる名前を付けて呼ぶ。データは何も変わらない。',
+			inputSchema: {
+				type: 'object', required: ['name'],
+				properties: { name: { type: 'string', description: '例: 「レジェンタのお試し1」' }, note: { type: 'string' } }
+			},
+			run: opBookmarkAdd
+		},
+		{
+			name: 'sbo_bookmarks', write: false,
+			description: 'しおりの一覧（新しい順）。changes はしおりの後の変更履歴の数、lost は古い履歴が消えて戻せないもの。',
+			inputSchema: { type: 'object', properties: { limit: { type: 'integer', minimum: 1, maximum: 100 } } },
+			run: opBookmarks
+		},
+		{
+			name: 'sbo_rollback', write: true,
+			description: 'しおりの後の変更をまとめて元に戻す（種類をまたいで、新しい順に）。追加した作り手・レシピは削除（byState=0）にする。' +
+				'AI 以外からも変わったデータがあると force を付けない限り戻さない。2 段階は sbo_update と同じ。',
+			inputSchema: {
+				type: 'object', required: ['bookmarkId'],
+				properties: {
+					bookmarkId: { type: 'integer' },
+					force: { type: 'boolean' },
+					note: { type: 'string' },
+					previewId: { type: 'string' }
+				}
+			},
+			run: opRollback
 		}
 	];
 
@@ -1038,7 +1262,10 @@ Module['sboData'] = (function () {
 		'/api/data/update': opUpdate,
 		'/api/data/add': opAdd,
 		'/api/data/history': opHistory,
-		'/api/data/undo': opUndo
+		'/api/data/undo': opUndo,
+		'/api/data/bookmark': opBookmarkAdd,
+		'/api/data/bookmarks': opBookmarks,
+		'/api/data/rollback': opRollback
 	};
 	var API_ADMIN = {
 		'/api/admin/ai/keys': apiAdminKeys,
@@ -1046,6 +1273,9 @@ Module['sboData'] = (function () {
 		'/api/admin/ai/revoke': apiAdminRevoke,
 		'/api/admin/ai/history': function (body) { adminWho(body); return opHistory(body); },
 		'/api/admin/ai/undo': function (body) { return opUndo(body, adminWho(body)); },
+		'/api/admin/ai/bookmark': function (body) { return opBookmarkAdd(body, adminWho(body)); },
+		'/api/admin/ai/bookmarks': function (body) { adminWho(body); return opBookmarks(body); },
+		'/api/admin/ai/rollback': function (body) { return opRollback(body, adminWho(body)); },
 		/* マップ資料の書き出し（管理ページの「マップ資料」）。読むだけ */
 		'/api/admin/data/list': function (body) { adminWho(body); return opList(body); },
 		'/api/admin/data/tiles': function (body) { adminWho(body); return opTiles(body); },

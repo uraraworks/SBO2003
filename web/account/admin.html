@@ -548,6 +548,17 @@
 		<h3>発行したキー</h3>
 		<div class="msg" id="ai-keys-msg"></div>
 		<div id="ai-keys"></div>
+		<h3>しおり（お試しの区切り）</h3>
+		<p class="sub-text">
+			お試しで作り変える前にしおりを付けておくと、その後の変更（AI・管理ページ「レシピ」から）を「ここまで戻す」でまとめて元に戻せます。
+			戻す前に中身を確かめる画面が出ます。追加した作り手・レシピは削除（空き枠）になります。
+		</p>
+		<div class="row" style="flex-wrap:wrap">
+			<input id="bm-name" type="text" placeholder="例: レジェンタのお試し1" maxlength="60" style="flex:1;min-width:12em">
+			<button type="button" id="bm-add">しおりを付ける</button>
+		</div>
+		<div class="msg" id="bm-msg"></div>
+		<div id="bm-list"></div>
 		<h3>変更履歴</h3>
 		<div class="row" style="justify-content:space-between">
 			<button type="button" class="sub" id="ai-reload">読み直す</button>
@@ -1608,13 +1619,117 @@
 	/* ---- AI連携 ---- */
 	var AI_KIND = {
 		magic: '特技', magicUser: '特技を使える職業', equUser: '装備できる職業',
-		job: '職業', stTmp: 'ステータステンプレート', item: 'アイテム'
+		job: '職業', stTmp: 'ステータステンプレート', item: 'アイテム', maker: '作り手', recipe: 'レシピ'
 	};
-	var AI_OP = { update: '変更', add: '追加', undo: '元に戻す' };
+	var AI_OP = { update: '変更', add: '追加', undo: '元に戻す', rollback: 'しおりまで戻す' };
 
 	function loadAi() {
 		loadAiKeys();
+		loadBookmarks();
 		loadAiHistory();
+	}
+
+	/* しおり */
+	function loadBookmarks() {
+		api('/api/admin/ai/bookmarks', { session: session, limit: 20 }).then(function (data) {
+			if (!data.bookmarks) {
+				return;
+			}
+			var list = $('bm-list');
+			list.textContent = '';
+			if (!data.bookmarks.length) {
+				list.appendChild(el('p', 'sub-text', 'まだしおりはありません。'));
+			}
+			data.bookmarks.forEach(function (bm) {
+				list.appendChild(bookmarkCard(bm));
+			});
+		}).catch(function () {
+			setMsg($('bm-msg'), 'サーバーにつながりませんでした。');
+		});
+	}
+
+	function bookmarkCard(bm) {
+		var card = el('div', 'card');
+		var head = el('div', 'head');
+		head.appendChild(el('span', 'name', bm.name));
+		if (bm.lost) {
+			head.appendChild(el('span', 'tag rejected', '古いので戻せません'));
+		} else {
+			head.appendChild(el('span', 'tag ' + (bm.changes ? 'pending' : 'old'), bm.changes ? 'この後の変更 ' + bm.changes + ' 件' : 'この後の変更なし'));
+		}
+		if (bm.rolledBack) {
+			head.appendChild(el('span', 'tag done', '戻したことあり'));
+		}
+		card.appendChild(head);
+		card.appendChild(el('div', 'sub-text', dateText(Date.parse(bm.at)) + ' ／ ' + bm.by + ' ／ 履歴 #' + bm.afterHistoryId + ' の後'));
+		if (bm.note) {
+			card.appendChild(el('div', 'message', bm.note));
+		}
+		if (!bm.lost && bm.changes) {
+			var btn = el('button', 'sub', 'ここまで戻す');
+			var msg = el('div', 'msg');
+			btn.addEventListener('click', function () { rollback(bm, false, msg); });
+			card.appendChild(btn);
+			card.appendChild(msg);
+		}
+		return card;
+	}
+
+	$('bm-add').addEventListener('click', function () {
+		setMsg($('bm-msg'), '');
+		api('/api/admin/ai/bookmark', { session: session, name: $('bm-name').value }).then(function (data) {
+			if (!data.ok) {
+				setMsg($('bm-msg'), data.message || '付けられませんでした（' + (data.error || data.httpStatus) + '）');
+				return;
+			}
+			$('bm-name').value = '';
+			setMsg($('bm-msg'), 'しおり「' + data.bookmark.name + '」を付けました。', true);
+			loadBookmarks();
+		}).catch(function () {
+			setMsg($('bm-msg'), 'サーバーにつながりませんでした。');
+		});
+	});
+
+	function rollbackText(items) {
+		var a = [];
+		items.forEach(function (it) {
+			var head = (AI_KIND[it.kind] || it.kind) + ' ' + it.id + '番' + (it.name ? '「' + it.name + '」' : '') + (it.added ? '（追加したもの）' : '');
+			Object.keys(it.diff || {}).forEach(function (k) {
+				a.push(head + ' ' + k + ': ' + valueText(it.diff[k].from) + ' → ' + valueText(it.diff[k].to));
+			});
+		});
+		return a.length > 15 ? a.slice(0, 15).join('\n') + '\nほか ' + (a.length - 15) + ' 項目' : a.join('\n');
+	}
+
+	/* しおりまで戻す（下見 → 確かめてもらう → 確定） */
+	function rollback(bm, bForce, msg) {
+		setMsg(msg, '');
+		api('/api/admin/ai/rollback', { session: session, bookmarkId: bm.bookmarkId, force: bForce }).then(function (pv) {
+			if (pv.error === 'conflict') {
+				if (window.confirm(pv.message + '\n\nそれでも戻しますか？')) {
+					rollback(bm, true, msg);
+				}
+				return;
+			}
+			if (!pv.previewId) {
+				setMsg(msg, pv.message || '戻せませんでした（' + (pv.error || pv.httpStatus) + '）');
+				return;
+			}
+			var skip = pv.skipped ? '\n\n（消せない種類の追加 ' + pv.skipped.map(function (x) { return (AI_KIND[x.kind] || x.kind) + ' ' + x.id + '番'; }).join('、') + ' は残ります）' : '';
+			if (!window.confirm('しおり「' + bm.name + '」の時に戻します。よろしいですか？\n\n' + rollbackText(pv.items) + skip)) {
+				return;
+			}
+			api('/api/admin/ai/rollback', { session: session, bookmarkId: bm.bookmarkId, force: bForce, previewId: pv.previewId }).then(function (data) {
+				if (!data.ok) {
+					setMsg(msg, data.message || '戻せませんでした（' + (data.error || data.httpStatus) + '）');
+					return;
+				}
+				loadBookmarks();
+				loadAiHistory();
+			});
+		}).catch(function () {
+			setMsg(msg, 'サーバーにつながりませんでした。');
+		});
 	}
 
 	function loadAiKeys() {
@@ -1757,6 +1872,9 @@
 		if (e.undoOf) {
 			head.appendChild(el('span', 'tag old', '#' + e.undoOf + ' を戻した'));
 		}
+		if (e.bookmarkId) {
+			head.appendChild(el('span', 'tag old', 'しおり ' + e.bookmarkId));
+		}
 		if (e.undoneBy) {
 			head.appendChild(el('span', 'tag done', '#' + e.undoneBy + ' で戻し済み'));
 		}
@@ -1772,7 +1890,7 @@
 		if (e.items.length > 10) {
 			card.appendChild(el('div', 'sub-text', 'ほか ' + (e.items.length - 10) + ' 件'));
 		}
-		var bOnlyAdd = e.items.every(function (it) { return it.added; });
+		var bOnlyAdd = e.kind !== 'maker' && e.kind !== 'recipe' && e.items.every(function (it) { return it.added; });
 		if (!e.undoneBy && !bOnlyAdd) {
 			var btn = el('button', 'sub', '元に戻す');
 			var msg = el('div', 'msg');
@@ -1812,7 +1930,7 @@
 			setMsg(msg, 'サーバーにつながりませんでした。');
 		});
 	}
-	$('ai-reload').addEventListener('click', loadAiHistory);
+	$('ai-reload').addEventListener('click', function () { loadBookmarks(); loadAiHistory(); });
 
 	/* ---- マップ資料（admin-mapdoc.js が作る） ---- */
 	var bMapDocLoaded = false, bMapDocBusy = false;
