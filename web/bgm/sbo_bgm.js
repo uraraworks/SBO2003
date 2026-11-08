@@ -54,6 +54,166 @@
 		console.log('[bgm] ' + msg);
 	}
 
+	/*
+	 * ループを「曲の頭 → 曲の終わり」にそろえた MIDI を作る
+	 *
+	 * ゲームの MIDI の多くには RPG ツクール式のループの印（CC#111）が入っている。
+	 * spessasynth はこれを見つけると 2 周目からは印の位置に戻るので、前奏（曲の頭の
+	 * 数小節）が 1 周目にしか鳴らなかった。Windows 版（AflMusic）のように、毎回曲の
+	 * 頭から鳴らし直したいので、
+	 *   1. ループの印に使われるコントロールチェンジ（CC#111・116〜119、spessasynth は
+	 *      CC#2 の 0 と CC#4 も印と見る）を、何も起きない番号（CC#102）に書き換えて、
+	 *      印として見られないようにする（CC#2・#4 はサウンドフォントでは音に効かない）
+	 *   2. 最初のトラックの頭に「loopStart」、全トラックで一番遅い終わり（End of Track）
+	 *      の位置に「loopEnd」のマーカーを足す
+	 * spessasynth は、何も無いと最後の音（ノートオフ）でループするので、曲の終わりの
+	 * 休みが切れて 2 周目が少し早く入ってしまう。2. でその休みも残す。
+	 * ただし最後の音から End of Track まで 4 拍より長く空いている曲（短いジングルの
+	 * 後ろに長い無音が付いているものなど）は、いままで通り最後の音でループする。
+	 * 読めない形のデータだった時は、そのまま返す（いままで通り spessasynth にまかせる）。
+	 */
+	var LOOP_CC = { 111: 1, 116: 1, 117: 1, 118: 1, 119: 1 };
+	var DUMMY_CC = 102;
+	function prepareLoop(src) {
+		try {
+			return rewriteLoop(new Uint8Array(src));
+		} catch (e) {
+			log('ループの準備ができなかったので、そのまま鳴らします: ' + (e && e.message ? e.message : e));
+			return src;
+		}
+	}
+	function rewriteLoop(d) {
+		function u32(p) {
+			if (p + 4 > d.length) {
+				throw new Error('データが途中で切れています');
+			}
+			return ((d[p] << 24) | (d[p + 1] << 16) | (d[p + 2] << 8) | d[p + 3]) >>> 0;
+		}
+		function tag(p) {
+			return String.fromCharCode(d[p], d[p + 1], d[p + 2], d[p + 3]);
+		}
+		function vlq(p) {
+			var v = 0, b;
+			do {
+				if (p >= d.length) {
+					throw new Error('データが途中で切れています');
+				}
+				b = d[p++];
+				v = (v * 128) + (b & 0x7f);
+			} while (b & 0x80);
+			return { v: v, p: p };
+		}
+		if (tag(0) !== 'MThd') {
+			throw new Error('MIDI ではありません');
+		}
+		var out = d.slice();		/* CC の書き換えはこの写しに入れる */
+		var division = (d[12] << 8) | d[13];	/* 4 分音符の長さ（tick）。最上位ビットが立っていたら SMPTE 形式 */
+		var lastVoice = 0;		/* 最後のチャンネルイベント（音・CC など）の時刻 */
+		var pos = 8 + u32(4);
+		var tracks = [];		/* { start, end, eotPos（EOT の delta の位置）, lastTick（EOT の前のイベントの時刻）, eotTick } */
+		while (pos + 8 <= d.length) {
+			var len = u32(pos + 4);
+			var start = pos + 8, end = start + len;
+			if (end > d.length) {
+				throw new Error('トラックの長さがおかしい');
+			}
+			if (tag(pos) === 'MTrk') {
+				var p = start, tick = 0, run = 0, lastTick = 0, eotPos = -1, eotTick = 0;
+				while (p < end) {
+					var evPos = p;
+					var r = vlq(p);
+					p = r.p;
+					tick += r.v;
+					var st = d[p];
+					if (st >= 0x80) {
+						p++;
+					} else {
+						st = run;
+						if (!st) {
+							throw new Error('ランニングステータスの前に状態がありません');
+						}
+					}
+					if (st === 0xff) {
+						var type = d[p++];
+						r = vlq(p);
+						p = r.p + r.v;
+						if (type === 0x2f) {
+							eotPos = evPos;
+							eotTick = tick;
+							break;
+						}
+					} else if (st === 0xf0 || st === 0xf7) {
+						r = vlq(p);
+						p = r.p + r.v;
+					} else {
+						run = st;
+						lastVoice = Math.max(lastVoice, tick);
+						var hi = st & 0xf0;
+						if (hi === 0xb0 && (LOOP_CC[d[p]] || d[p] === 4 || (d[p] === 2 && d[p + 1] === 0))) {
+							out[p] = DUMMY_CC;
+						}
+						p += (hi === 0xc0 || hi === 0xd0) ? 1 : 2;
+					}
+					lastTick = tick;
+				}
+				tracks.push({ start: start, end: end, eotPos: eotPos, lastTick: lastTick, eotTick: eotPos >= 0 ? eotTick : tick });
+			}
+			pos = end;
+		}
+		if (tracks.length === 0) {
+			throw new Error('トラックがありません');
+		}
+		var endTick = 0;
+		tracks.forEach(function (t) {
+			endTick = Math.max(endTick, t.eotTick);
+		});
+		/* 終わりの休みが長すぎる曲は loopEnd を足さない（spessasynth が最後の音でループする） */
+		var addEnd = !(division & 0x8000) && endTick - lastVoice <= division * 4;
+
+		/* 最初のトラックを作り直す：頭に loopStart、終わりに loopEnd と EOT */
+		var t0 = tracks[0];
+		function vlqBytes(v) {
+			var a = [v & 0x7f];
+			while ((v = Math.floor(v / 128)) > 0) {
+				a.unshift((v & 0x7f) | 0x80);
+			}
+			return a;
+		}
+		function marker(delta, text) {
+			var a = vlqBytes(delta).concat([0xff, 0x06]).concat(vlqBytes(text.length));
+			for (var i = 0; i < text.length; i++) {
+				a.push(text.charCodeAt(i));
+			}
+			return a;
+		}
+		var head = marker(0, 'loopStart');
+		var bodyEnd = t0.end;
+		var tail = [];
+		if (addEnd) {
+			bodyEnd = t0.eotPos >= 0 ? t0.eotPos : t0.end;
+			tail = marker(endTick - t0.lastTick, 'loopEnd').concat([0x00, 0xff, 0x2f, 0x00]);
+		}
+		var body = out.subarray(t0.start, bodyEnd);
+		var newLen = head.length + body.length + tail.length;
+
+		var result = new Uint8Array(out.length - (t0.end - t0.start) + newLen);
+		var w = 0;
+		result.set(out.subarray(0, t0.start - 4), 0);
+		w = t0.start - 4;
+		result[w++] = (newLen >>> 24) & 0xff;
+		result[w++] = (newLen >>> 16) & 0xff;
+		result[w++] = (newLen >>> 8) & 0xff;
+		result[w++] = newLen & 0xff;
+		result.set(head, w);
+		w += head.length;
+		result.set(body, w);
+		w += body.length;
+		result.set(tail, w);
+		w += tail.length;
+		result.set(out.subarray(t0.end), w);
+		return result.buffer;
+	}
+
 	/* シンセとサウンドフォントを読み込む（1 回だけ） */
 	function start() {
 		if (starting) {
@@ -170,7 +330,7 @@
 	window.SboBgm = {
 		/* MIDI データを開く（Uint8Array。中身は写して持つ） */
 		open: function (bytes) {
-			want.data = bytes.slice().buffer;
+			want.data = prepareLoop(bytes.slice().buffer);
 			want.serial++;
 			want.playing = false;
 			start();
