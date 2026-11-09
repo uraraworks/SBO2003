@@ -1262,7 +1262,9 @@ static int GetMapViewRange(void)
 /* 壁で視界(灯り)が止まるか */
 static BOOL IsSightBlock(void)
 {
-	return (IsMapDarkFlg () || IsMapViewMode ());
+	/* 「明るく壁で隠す」範囲があるマップ(建物の中)も、暗闇OFFのまま壁で灯りを止める
+	   (止めないと壁の外の何もない所を通って、別の部屋の壁まで回り込んでいた) */
+	return (IsMapDarkFlg () || IsMapViewMode () || IsMapHasHideArea ());
 }
 
 static BOOL s_bLightIgnoreViewRange = FALSE;							/* マップの光源で照らし中(見える範囲の外でも照らす) */
@@ -1795,8 +1797,9 @@ void RenewMapDarkCorner(PCHARINFO pChar)
 	BOOL bLight;
 	char abyAdd[SCRMARTSSIZE];
 
-	/* 壁で灯りが止まるのは暗闇マップ・見える範囲(視界)のマップだけ */
-	if (!(IsSightBlock ())) {
+	/* 壁で灯りが止まるのは暗闇マップ・見える範囲(視界)のマップだけ。
+	   「明るく壁で隠す」範囲があるマップは、範囲の境目で灯りが止まるので角も照らす */
+	if (!(IsSightBlock ()) && !IsMapHasHideArea ()) {
 		return;
 	}
 
