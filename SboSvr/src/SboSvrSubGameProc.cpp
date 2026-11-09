@@ -9,6 +9,8 @@
 #include "Glbldata.h"
 #include "SboSvrRecvCmd.h"
 #include "SboSvrSubGameProcSugoroku.h"
+#include <vector>
+#include <algorithm>
 
 /* ========================================================================= */
 /* 関数プロトタイプ宣言														 */
@@ -28,6 +30,7 @@ void SubGameProcBombDeleteBlock(BYTE);									/* 爆弾ゲーム壁消去処理
 void MakeMazeProc(BYTE);												/* 迷路作成処理 */
 static int GetMazePathWidth(PSUBGAME_MAZEINFO);							/* 迷路の通路の太さ */
 static WORD GetMazeTileParts(int, BOOL, WORD, WORD, BYTE, WORD, WORD, BYTE, WORD);	/* 迷路のマスのパーツ */
+static void MakeMazeWeave(PBYTE, int, int, PSUBGAME_MAZEINFO);			/* 立体交差のある迷路の設計図 */
 void MakeDungeonProc(BYTE);												/* ダンジョン作成処理 */
 static BOOL MakeDungeonProcTmp(PBYTE, int, int, int, int, int);			/* ダンジョン作成処理(メイン) */
 static BOOL CheckMakeDungeon(PBYTE, int, int, int, int, int, int);		/* 進行方向のチェック */
@@ -146,12 +149,13 @@ static void SubGameProc_MAZE(PSUBGAMEINFO pInfo)
 		cx = (int)pMaze->wWorkCX;
 		cy = (int)pMaze->wWorkCY;
 
-		/* 0=道 1=壁 → 1=道 2=壁 にそろえる */
-		int nCell = (pMaze->pMapTmp[cx * pMaze->byTmpY + pMaze->byTmpX] == 0) ? 1 : 2;
-		/* 下のマスが道なら、壁の下の段は手前の面にする */
+		/* 0=道 1=壁 → 1=道 2=壁 にそろえる(2=縦に渡る橋 3=横に渡る橋はそのパーツ) */
+		BYTE byTmpCell = pMaze->pMapTmp[cx * pMaze->byTmpY + pMaze->byTmpX];
+		int nCell = (byTmpCell == 0) ? 1 : 2;
+		/* 下のマスが道(橋)なら、壁の下の段は手前の面にする */
 		BOOL bBelowRoad = FALSE;
 		if (pMaze->byTmpY + 1 < cy) {
-			bBelowRoad = (pMaze->pMapTmp[cx * (pMaze->byTmpY + 1) + pMaze->byTmpX] == 0);
+			bBelowRoad = (pMaze->pMapTmp[cx * (pMaze->byTmpY + 1) + pMaze->byTmpX] != 1);
 		}
 		int x, y, xx, yy;
 		x = (int)(pMaze->byTmpX * nWidth) + (int)pMaze->byX1;
@@ -162,9 +166,16 @@ static void SubGameProc_MAZE(PSUBGAMEINFO pInfo)
 				if ((x + xx >= pMap->nCX) || (y + yy >= pMap->nCY)) {
 					continue;
 				}
-				WORD wParts = GetMazeTileParts (nCell, (bBelowRoad && (yy == nWidth - 1)),
+				WORD wParts;
+				if (byTmpCell == 2) {
+					wParts = pMaze->wChipIDBridgeV;
+				} else if (byTmpCell == 3) {
+					wParts = pMaze->wChipIDBridgeH;
+				} else {
+					wParts = GetMazeTileParts (nCell, (bBelowRoad && (yy == nWidth - 1)),
 						pMaze->wChipIDRoad, pMaze->wChipIDRoad2, pMaze->byRoad2Rate,
 						pMaze->wChipIDBlock, pMaze->wChipIDBlock2, pMaze->byBlock2Rate, pMaze->wChipIDBlockFace);
+				}
 				pMap->pwMap[pMap->nCX * (y + yy) + (x + xx)] = wParts;
 			}
 		}
@@ -1148,6 +1159,143 @@ static WORD GetMazeTileParts(int nCell, BOOL bFace,
 }
 
 /* ========================================================================= */
+/* 関数名：MakeMazeWeave													 */
+/* 内容：立体交差のある迷路の設計図(0=道 1=壁 2=縦に渡る橋 3=横に渡る橋)	 */
+/*       奇数の座標が部屋、その間が通路。先に橋の交差を決めて、橋の上の	 */
+/*       道(上下か左右)と下の道をそれぞれつなぎ、残りはクラスカル法で		 */
+/*       全部の部屋が1本道でつながるように壁を壊す(行き止まりも残る)		 */
+/* ========================================================================= */
+static int MazeFindRoot(std::vector<int> &aParent, int n)
+{
+	while (aParent[n] != n) {
+		aParent[n] = aParent[aParent[n]];
+		n = aParent[n];
+	}
+	return n;
+}
+
+static void MakeMazeWeave(PBYTE pMap, int cx, int cy, PSUBGAME_MAZEINFO pMaze)
+{
+	int i, j, nRX, nRY, nRoom;
+
+	/* 部屋の数(部屋 i,j はマス 2i+1,2j+1。右と下の端は壁) */
+	nRX = (cx - 1) / 2;
+	nRY = (cy - 1) / 2;
+	nRoom = nRX * nRY;
+
+	FillMemory (pMap, cx * cy, 1);
+	for (j = 0; j < nRY; j ++) {
+		for (i = 0; i < nRX; i ++) {
+			pMap[(j * 2 + 1) * cx + (i * 2 + 1)] = 0;
+		}
+	}
+
+	std::vector<int> aParent (nRoom);
+	std::vector<BYTE> abyCross (nRoom, 0);
+	for (i = 0; i < nRoom; i ++) {
+		aParent[i] = i;
+	}
+
+	/* 交差する部屋を決める(端の部屋と、交差の隣は使わない) */
+	std::vector<int> aOrder;
+	for (j = 1; j < nRY - 1; j ++) {
+		for (i = 1; i < nRX - 1; i ++) {
+			aOrder.push_back (j * nRX + i);
+		}
+	}
+	for (i = (int)aOrder.size () - 1; i > 0; i --) {
+		int k = (int)((unsigned long)genrand () % (unsigned long)(i + 1));
+		std::swap (aOrder[i], aOrder[k]);
+	}
+	for (size_t n = 0; n < aOrder.size (); n ++) {
+		int r = aOrder[n];
+		int ri = r % nRX, rj = r / nRX;
+		int rN = r - nRX, rS = r + nRX, rW = r - 1, rE = r + 1;
+
+		if ((int)((unsigned long)genrand () % 100) >= (int)pMaze->byCrossRate) {
+			continue;
+		}
+		if (abyCross[r] || abyCross[rN] || abyCross[rS] || abyCross[rW] || abyCross[rE]) {
+			continue;
+		}
+		if (MazeFindRoot (aParent, rN) == MazeFindRoot (aParent, rS)) {
+			continue;
+		}
+		if (MazeFindRoot (aParent, rW) == MazeFindRoot (aParent, rE)) {
+			continue;
+		}
+		/* 上下と左右をつなぐ(輪ができないよう、つなぐ前に別々か確かめる) */
+		{
+			int a = MazeFindRoot (aParent, rN), b = MazeFindRoot (aParent, rS);
+			int c = MazeFindRoot (aParent, rW), d = MazeFindRoot (aParent, rE);
+			/* 上下と左右が同じ組み合わせになると輪ができる */
+			if (((a == c) && (b == d)) || ((a == d) && (b == c))) {
+				continue;
+			}
+			aParent[a] = b;
+			c = MazeFindRoot (aParent, rW);
+			d = MazeFindRoot (aParent, rE);
+			if (c == d) {
+				/* 左右がつながってしまった(上下をつないだ時に一緒になった)。元に戻す */
+				aParent[a] = a;
+				continue;
+			}
+			aParent[c] = d;
+		}
+		/* どちらを橋(上)にするか。橋のパーツがある向きだけ */
+		BYTE byBridge;
+		if (pMaze->wChipIDBridgeV && pMaze->wChipIDBridgeH) {
+			byBridge = (genrand () % 2) ? 2 : 3;
+		} else {
+			byBridge = pMaze->wChipIDBridgeV ? 2 : 3;
+		}
+		abyCross[r] = byBridge;
+		int x = ri * 2 + 1, y = rj * 2 + 1;
+		pMap[y * cx + x] = byBridge;
+		pMap[(y - 1) * cx + x] = 0;
+		pMap[(y + 1) * cx + x] = 0;
+		pMap[y * cx + x - 1] = 0;
+		pMap[y * cx + x + 1] = 0;
+	}
+
+	/* 残りの壁をクラスカル法で壊す(交差の部屋に面した壁はもう壊してある) */
+	std::vector<int> aWall;		/* 部屋番号*2 + (0=右の壁 1=下の壁) */
+	for (j = 0; j < nRY; j ++) {
+		for (i = 0; i < nRX; i ++) {
+			int r = j * nRX + i;
+			if (abyCross[r]) {
+				continue;
+			}
+			if ((i + 1 < nRX) && (abyCross[r + 1] == 0)) {
+				aWall.push_back (r * 2);
+			}
+			if ((j + 1 < nRY) && (abyCross[r + nRX] == 0)) {
+				aWall.push_back (r * 2 + 1);
+			}
+		}
+	}
+	for (i = (int)aWall.size () - 1; i > 0; i --) {
+		int k = (int)((unsigned long)genrand () % (unsigned long)(i + 1));
+		std::swap (aWall[i], aWall[k]);
+	}
+	for (size_t n = 0; n < aWall.size (); n ++) {
+		int r = aWall[n] / 2;
+		int r2 = (aWall[n] % 2) ? r + nRX : r + 1;
+		int a = MazeFindRoot (aParent, r), b = MazeFindRoot (aParent, r2);
+		if (a == b) {
+			continue;
+		}
+		aParent[a] = b;
+		int x = (r % nRX) * 2 + 1, y = (r / nRX) * 2 + 1;
+		if (aWall[n] % 2) {
+			pMap[(y + 1) * cx + x] = 0;
+		} else {
+			pMap[y * cx + x + 1] = 0;
+		}
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：MakeMazeProc														 */
 /* 内容：迷路作成処理														 */
 /* 日付：2004/02/28															 */
@@ -1243,6 +1391,12 @@ void MakeMazeProc(BYTE byID)
 	ZeroMemory (pMaze->pMapTmp, cx * cy);
 	PBYTE ptr = pMaze->pMapTmp;
 
+	/* 立体交差あり？ */
+	if (pMaze->byCrossRate && (pMaze->wChipIDBridgeV || pMaze->wChipIDBridgeH) && (cx >= 7) && (cy >= 7)) {
+		MakeMazeWeave (pMaze->pMapTmp, cx, cy, pMaze);
+		cy = 0;		/* 下の棒倒しはしない */
+	}
+
 	for (int y = 0; y < cy; y ++) {
 		for (int x = 0; x < cx; x ++) {
 			/* 外壁？ */
@@ -1290,6 +1444,8 @@ void MakeMazeProc(BYTE byID)
 	}
 
 	/* その他準備 */
+	cy = (pMaze->byY2 - pMaze->byY1) / nWidth + 1;
+	cy = (cy > 255) ? 255 : cy;
 	pMaze->byWorkWidth = (BYTE)nWidth;
 	pMaze->wWorkCX = (WORD)cx;
 	pMaze->wWorkCY = (WORD)cy;

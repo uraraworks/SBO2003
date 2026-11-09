@@ -2242,6 +2242,20 @@ BOOL CheckCharBlock(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY)
 
 	bRet = FALSE;
 
+	/* 橋の上では横へは進めない(上を渡るか下をくぐるかは向きで決まるので、まっすぐ抜けるだけ) */
+	if ((pChar->dwMapID == dwMapID) && (dwMapID < (DWORD)g_aMapInfo.GetSize ()) && (pChar->byDirection < 4)) {
+		PMAPINFO pMap = g_aMapInfo[dwMapID];
+		int dx = (int)dwX - (int)pChar->dwX, dy = (int)dwY - (int)pChar->dwY;
+		if ((abs (dx) + abs (dy) == 1) &&
+			(pChar->dwX < (DWORD)pMap->nCX) && (pChar->dwY < (DWORD)pMap->nCY)) {
+			WORD wParts = pMap->pwMap[pChar->dwX + pChar->dwY * pMap->nCX];
+			if ((wParts < g_wCountMapParts) && GetBridgeAxis (g_aMapPartsInfo[wParts].byHitType) &&
+				(GetDirectionAxis (pChar->byDirection) != ((dy != 0) ? 1 : 2))) {
+				return FALSE;
+			}
+		}
+	}
+
 	switch (pChar->wGrpMain) {
 	case CHARGRP_MAIN_NORMAL:
 	case CHARGRP_MAIN_SUBWAR:
@@ -4084,6 +4098,7 @@ void RecvDataProcMAPINFOCHG(PBYTE pData, DWORD dwDataSize)
 	pMap->byWeather	= pPara->byWeather;
 	pMap->clChg = pPara->clChg;
 	pMap->byDarkAreaCount = min (pPara->byDarkAreaCount, MAX_MAPDARKAREA);
+	pMap->byViewRange = min (pPara->byViewRange, (BYTE)10);
 	CopyMemory (pMap->aDarkArea, pPara->aDarkArea, sizeof (pMap->aDarkArea));
 
 	/* BGMが変更された？ */
@@ -6612,6 +6627,9 @@ void RecvDataProcSUBGAMEINFO(PBYTE pData, DWORD dwDataSize)
 				pMazeInfo->byBlock2Rate		= pBack->byBlock2Rate;
 				pMazeInfo->wChipIDBlockFace	= pBack->wChipIDBlockFace;
 				pMazeInfo->byPathWidth		= pBack->byPathWidth;
+				pMazeInfo->wChipIDBridgeV	= pBack->wChipIDBridgeV;
+				pMazeInfo->wChipIDBridgeH	= pBack->wChipIDBridgeH;
+				pMazeInfo->byCrossRate		= pBack->byCrossRate;
 			}
 		}		
 		break;

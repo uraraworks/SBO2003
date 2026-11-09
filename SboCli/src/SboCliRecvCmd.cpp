@@ -1129,6 +1129,201 @@ BOOL IsMapDarkFlg(void)
 
 
 /* ========================================================================= */
+/* 見える範囲(視界)のマップ													 */
+/*   暗くはならないが、自分から見える範囲の外と壁の向こうは見えない。		 */
+/*   一度見たマスは覚えておき、見えていない間は薄暗く描く					 */
+/*   (そこにいるキャラは見えない)											 */
+/* ========================================================================= */
+#define VIEW_SEEN_LEVEL		40											/* 一度見た所の明るさ */
+#define VIEW_RANGE_MAX		DRAW_PARTS_X								/* 見える範囲の上限(画面の端まで) */
+
+static PBYTE	s_pbyViewSeen = NULL;									/* 一度見たマス(1マス1バイト) */
+static DWORD	s_dwViewSeenMapID = (DWORD)-1;							/* 記録しているマップ */
+static int		s_nViewSeenCX = 0;										/* 記録しているマップの大きさ */
+static int		s_nViewSeenCY = 0;
+
+/* 今の場所で見える範囲(視界)が効くか(暗いマップでは灯りのほうを使う) */
+BOOL IsMapViewMode(void)
+{
+	if ((g_pMapInfo == NULL) || (g_pMapInfo->byViewRange == 0)) {
+		return FALSE;
+	}
+	if (GetMapLightLevel ()) {
+		return FALSE;
+	}
+	return IsMyPosDarkArea ();
+}
+
+/* 見える範囲(マス) */
+static int GetMapViewRange(void)
+{
+	return min ((int)g_pMapInfo->byViewRange, VIEW_RANGE_MAX);
+}
+
+/* 壁で視界(灯り)が止まるか */
+static BOOL IsSightBlock(void)
+{
+	return (IsMapDarkFlg () || IsMapViewMode ());
+}
+
+/* 自分から (x,y) が見える範囲の中か(丸く見えるように半マス足す) */
+static BOOL IsInViewRange(int x, int y)
+{
+	PCHARINFO pMyChar;
+	int dx, dy, nRange;
+
+	if (!IsMapViewMode ()) {
+		return TRUE;
+	}
+	pMyChar = g_aCharInfo[g_nMyCharID];
+	dx = x - (int)pMyChar->dwX;
+	dy = y - (int)pMyChar->dwY;
+	nRange = GetMapViewRange ();
+	return ((dx * dx + dy * dy) <= (nRange * nRange + nRange));
+}
+
+/* 自分からずれたマス(xTmp=自分のX-そのX)が暗くて(見えなくて)隠すか */
+BOOL IsMapDarkHidePos(int xTmp, int yTmp)
+{
+	int nPos;
+	char nDark;
+
+	if (!GetMapLightLevel () && !IsMapViewMode ()) {
+		return FALSE;
+	}
+	if ((abs (xTmp) > DRAW_PARTS_X + 1) || (abs (yTmp) > DRAW_PARTS_Y + 1)) {
+		return TRUE;
+	}
+	nPos = (DRAW_PARTS_X + 1 - xTmp) + (DRAW_PARTS_X * 2 + 3) * (DRAW_PARTS_Y + 1 - yTmp);
+	nDark = g_pMapDarkTmp[nPos];
+	if (IsMapViewMode ()) {
+		/* 一度見ただけの所(薄暗い)にいるキャラも見えない */
+		return (nDark < 100);
+	}
+	return (nDark <= 1);
+}
+
+/* ========================================================================= */
+/* 橋(立体交差)																 */
+/*   橋のマスは、橋の向きに進む人は橋の上、横切る人は橋の下を通る。			 */
+/*   上か下かは向きで決まるので、橋の上では横を向けない(まっすぐ抜けるだけ)	 */
+/* ========================================================================= */
+
+/* マス(x,y)の橋の向き(1=縦に渡る 2=横に渡る 0=橋ではない) */
+static int GetMapBridgeAxis(int x, int y)
+{
+	WORD wParts;
+
+	if ((g_pMapInfo == NULL) || (g_pMapInfo->pwMap == NULL) || (g_pMapPartsInfo == NULL)) {
+		return 0;
+	}
+	if ((x < 0) || (x >= g_pMapInfo->nCX) || (y < 0) || (y >= g_pMapInfo->nCY)) {
+		return 0;
+	}
+	wParts = g_pMapInfo->pwMap[x + y * g_pMapInfo->nCX];
+	if (wParts >= g_wCountMapParts) {
+		return 0;
+	}
+	return GetBridgeAxis (g_pMapPartsInfo[wParts].byHitType);
+}
+
+/* マス(x,y)に向き byDirection で立つと橋の上(1)か下(2)か(0=橋ではない) */
+int GetBridgeLayerPos(int x, int y, BYTE byDirection)
+{
+	int nBridge;
+
+	nBridge = GetMapBridgeAxis (x, y);
+	if (nBridge == 0) {
+		return 0;
+	}
+	return (nBridge == GetDirectionAxis (byDirection)) ? 1 : 2;
+}
+
+/* キャラが橋の上(1)か下(2)か(0=橋とは関係ない)
+   橋のマスにいる時と、橋のマスから出ていく途中(歩いている間)は橋の扱い */
+int GetCharBridgeLayer(PCHARINFO pChar)
+{
+	int nAxis, nBridge;
+
+	if (pChar == NULL) {
+		return 0;
+	}
+	nAxis = GetDirectionAxis (pChar->byDirection);
+	nBridge = GetMapBridgeAxis ((int)pChar->dwX, (int)pChar->dwY);
+	if ((nBridge == 0) && pChar->byDotMove && (pChar->byDirection < 4)) {
+		nBridge = GetMapBridgeAxis ((int)pChar->dwX - anPosAddTblX[pChar->byDirection],
+									(int)pChar->dwY - anPosAddTblY[pChar->byDirection]);
+	}
+	if (nBridge == 0) {
+		return 0;
+	}
+	return (nBridge == nAxis) ? 1 : 2;
+}
+
+/* 橋のマスの上で横を向こうとしているか(向けない) */
+BOOL IsBridgeTurnBlock(PCHARINFO pChar, BYTE byDirection)
+{
+	if ((pChar == NULL) || (byDirection >= 4)) {
+		return FALSE;
+	}
+	if (GetMapBridgeAxis ((int)pChar->dwX, (int)pChar->dwY) == 0) {
+		return FALSE;
+	}
+	return (GetDirectionAxis (byDirection) != GetDirectionAxis (pChar->byDirection));
+}
+
+/* 一度見た所の記録を消す(マップを受け取った時。迷路の作り直しで形が変わるので) */
+void ResetMapViewSeen(void)
+{
+	SAFE_DELETE_ARRAY (s_pbyViewSeen);
+	s_dwViewSeenMapID = (DWORD)-1;
+	s_nViewSeenCX = s_nViewSeenCY = 0;
+}
+
+/* 見えているマスを覚え、見えていないが一度見たマスを薄暗くする */
+static void RenewMapViewSeen(void)
+{
+	int x, y, mx, my, nPos, nWidth;
+	PCHARINFO pMyChar;
+
+	pMyChar = g_aCharInfo[g_nMyCharID];
+	if ((s_pbyViewSeen == NULL) || (s_dwViewSeenMapID != g_pMapInfo->dwID) ||
+		(s_nViewSeenCX != g_pMapInfo->nCX) || (s_nViewSeenCY != g_pMapInfo->nCY)) {
+		ResetMapViewSeen ();
+		if ((g_pMapInfo->nCX <= 0) || (g_pMapInfo->nCY <= 0)) {
+			return;
+		}
+		s_pbyViewSeen = new BYTE[g_pMapInfo->nCX * g_pMapInfo->nCY];
+		ZeroMemory (s_pbyViewSeen, g_pMapInfo->nCX * g_pMapInfo->nCY);
+		s_dwViewSeenMapID = g_pMapInfo->dwID;
+		s_nViewSeenCX = g_pMapInfo->nCX;
+		s_nViewSeenCY = g_pMapInfo->nCY;
+	}
+
+	nWidth = DRAW_PARTS_X * 2 + 3;
+	for (y = 0; y < DRAW_PARTS_Y * 2 + 3; y ++) {
+		my = (int)pMyChar->dwY + y - (1 + DRAW_PARTS_Y);
+		if ((my < 0) || (my >= g_pMapInfo->nCY)) {
+			continue;
+		}
+		for (x = 0; x < nWidth; x ++) {
+			mx = (int)pMyChar->dwX + x - (1 + DRAW_PARTS_X);
+			if ((mx < 0) || (mx >= g_pMapInfo->nCX)) {
+				continue;
+			}
+			nPos = x + nWidth * y;
+			if (g_pMapDarkTmp[nPos] > 1) {
+				g_pMapDarkTmp[nPos] = 100;
+				s_pbyViewSeen[mx + my * g_pMapInfo->nCX] = 1;
+			} else if (s_pbyViewSeen[mx + my * g_pMapInfo->nCX]) {
+				g_pMapDarkTmp[nPos] = VIEW_SEEN_LEVEL;
+			}
+		}
+	}
+}
+
+
+/* ========================================================================= */
 void RenewMapDark(PCHARINFO pChar)
 {
 	if (g_nMyCharID < 0) {
@@ -1137,6 +1332,18 @@ void RenewMapDark(PCHARINFO pChar)
 
 	if (pChar == NULL) {
 		pChar = g_aCharInfo[g_nMyCharID];
+	}
+
+	/* 見える範囲(視界)のマップは自分から見える所だけ(ほかの人の視界は使わない) */
+	if (IsMapViewMode ()) {
+		if (pChar != g_aCharInfo[g_nMyCharID]) {
+			return;
+		}
+		ZeroMemory (g_pMapDarkTmpPos, SCRMARTSSIZE);
+		RenewMapDarkWork (pChar, pChar->dwX, pChar->dwY, DRAW_PARTS_X);
+		RenewMapDarkCorner (pChar);
+		RenewMapViewSeen ();
+		return;
 	}
 
 	/* 暗闇表示ではない？ */
@@ -1250,8 +1457,8 @@ void RenewMapDarkCorner(PCHARINFO pChar)
 	BOOL bLight;
 	char abyAdd[SCRMARTSSIZE];
 
-	/* 壁で灯りが止まるのは暗闇マップだけ */
-	if (!(IsMapDarkFlg ())) {
+	/* 壁で灯りが止まるのは暗闇マップ・見える範囲(視界)のマップだけ */
+	if (!(IsSightBlock ())) {
 		return;
 	}
 
@@ -1281,6 +1488,9 @@ void RenewMapDarkCorner(PCHARINFO pChar)
 			}
 			mx = (int)pMyChar->dwX + x - (1 + DRAW_PARTS_X);
 			my = (int)pMyChar->dwY + y - (1 + DRAW_PARTS_Y);
+			if (!IsInViewRange (mx, my)) {
+				continue;
+			}
 			nTmp = GetMapDarkLevel (pChar, mx, my);
 			if (GetMapLightLevel () && (nTmp <= 1)) {
 				continue;
@@ -1325,6 +1535,9 @@ void RenewMapDarkCorner(PCHARINFO pChar)
 			if (CheckCharBlock (mx, my) || CheckCharBlock (mx, my - 1)) {
 				continue;
 			}
+			if (!IsInViewRange (mx, my - 1)) {
+				continue;
+			}
 			nTmp = GetMapDarkLevel (pChar, mx, my - 1);
 			if (GetMapLightLevel () && (nTmp <= 1)) {
 				continue;
@@ -1366,6 +1579,10 @@ void RenewMapDarkWork(PCHARINFO pChar, int x, int y, int nCount)
 		return;
 	}
 
+	/* 見える範囲(視界)の外？ */
+	if (!IsInViewRange (x, y)) {
+		return;
+	}
 	nTmp = GetMapDarkLevel (pChar, x, y);
 	if (GetMapLightLevel () && (nTmp == 1)) {
 		return;
@@ -1380,7 +1597,7 @@ void RenewMapDarkWork(PCHARINFO pChar, int x, int y, int nCount)
 	}
 
 	bResult = TRUE;
-	if ((nCount < DRAW_PARTS_X) && (IsMapDarkFlg ())) {
+	if ((nCount < DRAW_PARTS_X) && (IsSightBlock ())) {
 		bResult = CheckCharBlock (x, y);
 	}
 	if (bResult == FALSE) {
@@ -2615,6 +2832,9 @@ void RecvDataProcMAPINFO(PBYTE pData, DWORD dwDataSize)
 		SAFE_DELETE_ARRAY (g_pMapInfo->pbyFlg);
 		SAFE_DELETE_ARRAY (g_pMapInfo->pdwMapChar);
 	}
+
+	/* 一度見た所の記録を消す(迷路の作り直しなどで形が変わるので) */
+	ResetMapViewSeen ();
 
 	PMAPINFO pMap = &((PCMDPARA_MAPINFO)pData)->MapInfo;
 	CopyMemory (g_pMapInfo, pMap, sizeof (MAPINFO));

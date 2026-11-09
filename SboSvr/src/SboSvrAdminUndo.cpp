@@ -230,6 +230,7 @@ static BOOL BuildState(const ADMINUNDO_KEY &Key, std::vector<BYTE> &aPacket, std
 			Para.nEntranceY		= pMap->nEntranceY;
 			Para.clChg			= pMap->clChg;
 			Para.byDarkAreaCount	= pMap->byDarkAreaCount;
+			Para.byViewRange		= pMap->byViewRange;
 			CopyMemory (Para.aDarkArea, pMap->aDarkArea, sizeof (Para.aDarkArea));
 			PutBytes (aPacket, &Para, sizeof (Para));
 			PutStr (aPacket, pMap->pszName);

@@ -5789,6 +5789,10 @@ void KeyProcSUBWAR_TURN_MOVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 
 		/* 移動先にイベントがあるかチェック */
 		bResult = CheckBlockEventFront (pChar, pChar->dwX, pChar->dwY, pWnd->nData1);
+		/* 橋の上では横へは進めない */
+		if (IsBridgeTurnBlock (pChar, (BYTE)pWnd->nData1)) {
+			bResult = TRUE;
+		}
 		if (bResult == FALSE) {
 			/* イベントが無い時だけ移動させる */
 			pChar->byDirection = (BYTE)pWnd->nData1;

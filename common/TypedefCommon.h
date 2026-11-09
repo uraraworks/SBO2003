@@ -920,6 +920,8 @@ enum {
 	PARTSHIT_MOVELEFT,											/* 一歩右へ進む */
 	PARTSHIT_WATERRIPPLE,										/* 水の波紋 */
 	PARTSHIT_HIDE7,												/* 隠れる7(隠れる3で背景ごと隠れる) */
+	PARTSHIT_BRIDGEV,											/* 橋(縦に渡る。上下に進む人は上、左右に進む人は下を通る) */
+	PARTSHIT_BRIDGEH,											/* 橋(横に渡る。左右に進む人は上、上下に進む人は下を通る) */
 	PARTSHIT_MAX
 };
 
@@ -1285,6 +1287,9 @@ typedef struct _SUBGAME_MAZEINFO {
 	BYTE		byBlock2Rate;										/* 壁に混ぜる割合(%) */
 	WORD		wChipIDBlockFace;									/* 壁の手前の面のマップチップID(0=使わない) */
 	BYTE		byPathWidth;										/* 通路の太さ(1～3マス、0=2マス) */
+	WORD		wChipIDBridgeV;										/* 立体交差の橋(縦に渡る)のマップチップID(0=使わない) */
+	WORD		wChipIDBridgeH;										/* 立体交差の橋(横に渡る)のマップチップID(0=使わない) */
+	BYTE		byCrossRate;										/* 立体交差の多さ(%。0=作らない) */
 	BYTE		byWorkWidth;										/* 作成中の通路の太さ */
 	WORD		wWorkCX;											/* 作成中の設計図の横マス数 */
 	WORD		wWorkCY;											/* 作成中の設計図の縦マス数 */
@@ -1904,7 +1909,26 @@ typedef struct _MAPINFO {
 	COLORREF		clChg;											/* 色変換 */
 	BYTE			byDarkAreaCount;								/* 暗くする範囲の数（0ならマップ全体が明るさの設定どおり） */
 	MAPDARKAREA		aDarkArea[MAX_MAPDARKAREA];						/* 暗くする・暗くしない範囲 */
+	BYTE			byViewRange;									/* 見える範囲(マス。0=制限なし。壁の向こうと範囲の外は見えない) */
 } MAPINFO, *PMAPINFO;
+
+/* 橋のパーツか（1=縦に渡る橋 2=横に渡る橋 0=橋ではない） */
+static inline int GetBridgeAxis(BYTE byHitType)
+{
+	if (byHitType == PARTSHIT_BRIDGEV) {
+		return 1;
+	}
+	if (byHitType == PARTSHIT_BRIDGEH) {
+		return 2;
+	}
+	return 0;
+}
+
+/* 向き(0上 1下 2左 3右)の軸（1=縦 2=横） */
+static inline int GetDirectionAxis(BYTE byDirection)
+{
+	return (byDirection <= 1) ? 1 : 2;
+}
 
 /* (x,y) がマップの暗い場所か
    範囲が無ければマップ全体が暗い（今までどおり）。「暗くする」範囲が1つでもあれば、
@@ -2689,6 +2713,7 @@ typedef struct _CMDPARA_CHGMAPINFO {
 	COLORREF	clChg;												/* 色変換 */
 	BYTE		byDarkAreaCount;									/* 暗くする範囲の数 */
 	MAPDARKAREA	aDarkArea[MAX_MAPDARKAREA];							/* 暗くする・暗くしない範囲 */
+	BYTE		byViewRange;										/* 見える範囲(マス。0=制限なし) */
 } CMDPARA_CHGMAPINFO, *PCMDPARA_CHGMAPINFO;
 
 /* イベント座標通知 */

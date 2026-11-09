@@ -15,7 +15,7 @@
 /* ========================================================================= */
 #define DATACOUNT			(1)										/* 保存データ数 */
 #define DATACOUNT_DUNGEON	(15)									/* 保存データ数(ダンジョン) */
-#define DATACOUNT_MAZE		(23)									/* 保存データ数(迷路) */
+#define DATACOUNT_MAZE		(26)									/* 保存データ数(迷路) */
 #define DATACOUNT_BOMB		(9)										/* 保存データ数(爆弾ゲーム) */
 #define DATACOUNT_WAR		(22)									/* 保存データ数(戦場ゲーム) */
 
@@ -84,6 +84,9 @@ static const char *s_aszNameMAZE[] = {
 	"byBlock2Rate",		/* 壁に混ぜる割合(%) */
 	"wChipIDBlockFace",		/* 壁の手前の面のマップチップID */
 	"byPathWidth",		/* 通路の太さ */
+	"wChipIDBridgeV",	/* 立体交差の橋(縦に渡る)のマップチップID */
+	"wChipIDBridgeH",	/* 立体交差の橋(横に渡る)のマップチップID */
+	"byCrossRate",		/* 立体交差の多さ(%) */
 	"z"
 };
 
@@ -755,7 +758,8 @@ static PBYTE GetInfoMaze(PSUBGAME_MAZEINFO pInfo, PDWORD pdwSize)
 			break;
 		}
 		/* 足した項目（17番目から）は使っている時だけ書く（前の版のサーバーでも読めるように） */
-		if ((i >= 17) && !(pInfo->wChipIDRoad2 || pInfo->byRoad2Rate || pInfo->wChipIDBlock2 || pInfo->byBlock2Rate || pInfo->wChipIDBlockFace || pInfo->byPathWidth)) {
+		if ((i >= 17) && !(pInfo->wChipIDRoad2 || pInfo->byRoad2Rate || pInfo->wChipIDBlock2 || pInfo->byBlock2Rate || pInfo->wChipIDBlockFace || pInfo->byPathWidth ||
+							pInfo->wChipIDBridgeV || pInfo->wChipIDBridgeH || pInfo->byCrossRate)) {
 			break;
 		}
 		strcpy (Info.szName, s_aszNameMAZE[i]);
@@ -809,6 +813,9 @@ static PBYTE GetInfoMaze(PSUBGAME_MAZEINFO pInfo, PDWORD pdwSize)
 		case 20:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 壁に混ぜる割合(%) */
 		case 21:	dwDataSizeTmp = sizeof (WORD);			break;	/* 壁の手前の面のマップチップID */
 		case 22:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 通路の太さ */
+		case 23:	dwDataSizeTmp = sizeof (WORD);			break;	/* 立体交差の橋(縦に渡る) */
+		case 24:	dwDataSizeTmp = sizeof (WORD);			break;	/* 立体交差の橋(横に渡る) */
+		case 25:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 立体交差の多さ */
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
 		dwDataSize += dwDataSizeTmp;
@@ -936,6 +943,18 @@ static PBYTE GetInfoMaze(PSUBGAME_MAZEINFO pInfo, PDWORD pdwSize)
 			break;
 		case 22:	/* 通路の太さ */
 			CopyMemory (&pData[dwOffset], &pInfo->byPathWidth, sizeof (BYTE));
+			dwOffset += sizeof (BYTE);
+			break;
+		case 23:	/* 立体交差の橋(縦に渡る) */
+			CopyMemory (&pData[dwOffset], &pInfo->wChipIDBridgeV, sizeof (WORD));
+			dwOffset += sizeof (WORD);
+			break;
+		case 24:	/* 立体交差の橋(横に渡る) */
+			CopyMemory (&pData[dwOffset], &pInfo->wChipIDBridgeH, sizeof (WORD));
+			dwOffset += sizeof (WORD);
+			break;
+		case 25:	/* 立体交差の多さ */
+			CopyMemory (&pData[dwOffset], &pInfo->byCrossRate, sizeof (BYTE));
 			dwOffset += sizeof (BYTE);
 			break;
 		}
@@ -1745,6 +1764,15 @@ static PBYTE PetInfoMaze(PBYTE pData, PDWORD pdwSize)
 			dwOffsetTmp += sizeof (WORD);
 		} else if (strcmp (aHeaderInfo[i].szName, "byPathWidth") == 0) {		/* 通路の太さ */
 			CopyMemory (&pInfo->byPathWidth, &pData[dwOffsetTmp], sizeof (BYTE));
+			dwOffsetTmp += sizeof (BYTE);
+		} else if (strcmp (aHeaderInfo[i].szName, "wChipIDBridgeV") == 0) {		/* 立体交差の橋(縦に渡る) */
+			CopyMemory (&pInfo->wChipIDBridgeV, &pData[dwOffsetTmp], sizeof (WORD));
+			dwOffsetTmp += sizeof (WORD);
+		} else if (strcmp (aHeaderInfo[i].szName, "wChipIDBridgeH") == 0) {		/* 立体交差の橋(横に渡る) */
+			CopyMemory (&pInfo->wChipIDBridgeH, &pData[dwOffsetTmp], sizeof (WORD));
+			dwOffsetTmp += sizeof (WORD);
+		} else if (strcmp (aHeaderInfo[i].szName, "byCrossRate") == 0) {		/* 立体交差の多さ */
+			CopyMemory (&pInfo->byCrossRate, &pData[dwOffsetTmp], sizeof (BYTE));
 			dwOffsetTmp += sizeof (BYTE);
 		}
 		dwOffset = dwOffsetTmp;

@@ -1345,11 +1345,12 @@ static const DATAFIELD s_aFieldMap[] = {
 	FLD (MAPINFO, byFlg,				"フラグ",				FT_U8, 0, "ビット: 1=エフェクト可 2=戦闘可 4=サブゲーム 8=暗闇 16=マップ内放送 32=移動系効果禁止 64=魔法禁止"),
 	FLD (MAPINFO, byLightLevel,			"明るさ",				FT_U8, 0, NULL),
 	FLD (MAPINFO, byWeather,			"天候",					FT_U8, 0, NULL),
+	FLD (MAPINFO, byViewRange,			"見える範囲",			FT_U8, 0, "0 なら制限なし。1〜10 にすると、暗くはならないが自分から見える範囲（マス）の外と壁の向こうが見えなくなる（一度見た所は薄暗く残る）。暗くしない範囲（darkAreas）では効かない"),
 };
 
 static const DATAFIELD s_aFieldMapParts[] = {
 	FLD (MAPPARTSINFO, byViewType,		"表示種別",				FT_U8, 0, NULL),
-	FLD (MAPPARTSINFO, byHitType,		"当たり判定種別",		FT_U8, 0, "0 なら通れる"),
+	FLD (MAPPARTSINFO, byHitType,		"当たり判定種別",		FT_U8, 0, "0 なら通れる。19=橋(縦に渡る。上下に進む人は橋の上、左右に進む人は橋の下) 20=橋(横に渡る)。橋の上では横を向けない"),
 	FLD (MAPPARTSINFO, byAnimeType,		"アニメ種別",			FT_U8, 0, NULL),
 	FLD (MAPPARTSINFO, byAnimeCount,	"アニメのコマ数",		FT_U8, RO, "anime の数（anime を変えると変わる）"),
 	FLD (MAPPARTSINFO, byLevel,			"透明度",				FT_U8, 0, NULL),
@@ -1615,6 +1616,9 @@ static const DATAFIELD s_aFieldSgMaze[] = {
 	FLD (SUBGAME_MAZEINFO, byBlock2Rate,"壁に混ぜる割合(%)",	FT_U8, 0, "0〜100"),
 	FLD (SUBGAME_MAZEINFO, wChipIDBlockFace,"壁の手前の面のパーツ",FT_U16, 0, "mapParts の番号。0=使わない。すぐ下が道の壁の下の段をこのパーツにして立体に見せる"),
 	FLD (SUBGAME_MAZEINFO, byPathWidth,	"通路の太さ",			FT_U8, 0, "1〜3マス。0=2マス（昔から）。迷路の1区画を何マス四方にするか。作り直した時から効く"),
+	FLD (SUBGAME_MAZEINFO, wChipIDBridgeV,"立体交差の橋(縦)",	FT_U16, 0, "mapParts の番号。0=使わない。当たり判定が 19（橋・縦に渡る）のパーツ。上下に進む人は橋の上、左右に進む人は橋の下を通る"),
+	FLD (SUBGAME_MAZEINFO, wChipIDBridgeH,"立体交差の橋(横)",	FT_U16, 0, "mapParts の番号。0=使わない。当たり判定が 20（橋・横に渡る）のパーツ"),
+	FLD (SUBGAME_MAZEINFO, byCrossRate,	"立体交差の多さ",		FT_U8, 0, "0〜100（%）。0=作らない。交差できる場所のうち、橋にする割合。橋のパーツ（縦・横のどちらか）が要る。作り直した時から効く"),
 };
 static const DATAFIELD s_aFieldSgDungeon[] = {
 	FLD (SUBGAME_DUNGEONINFO, dwMapID,	"マップID",				FT_U32, 0, "map の dwID"),
@@ -2373,6 +2377,10 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 		strErr = "初期位置・入り口がマップの外です（" + JsonNum(w.nCX) + "×" + JsonNum(w.nCY) + "）";
 		return false;
 	}
+	if (w.byViewRange > 10) {
+		strErr = "byViewRange は 0〜10 で指定してください";
+		return false;
+	}
 	if (w.byBGM >= SOUND_MAX) {
 		strErr = "byBGM は 0〜" + JsonNum(SOUND_MAX - 1) + " で指定してください";
 		return false;
@@ -2607,6 +2615,7 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 	pMap->byFlg			= w.byFlg;
 	pMap->byLightLevel	= w.byLightLevel;
 	pMap->byWeather		= w.byWeather;
+	pMap->byViewRange	= w.byViewRange;
 	pMap->byDarkAreaCount	= w.byDarkAreaCount;
 	CopyMemory(pMap->aDarkArea, w.aDarkArea, sizeof(pMap->aDarkArea));
 	SAFE_DELETE_ARRAY(pMap->pszName);
@@ -3113,17 +3122,31 @@ static bool CheckMazeDetail(const SUBGAME_MAZEINFO *p, std::string &strErr)
 		strErr = "通路の太さ（byPathWidth）は 0〜3 にしてください（0 は 2 マス）";
 		return false;
 	}
-	if (p->byRoad2Rate > 100 || p->byBlock2Rate > 100) {
-		strErr = "混ぜる割合は 0〜100 にしてください";
+	if (p->byRoad2Rate > 100 || p->byBlock2Rate > 100 || p->byCrossRate > 100) {
+		strErr = "混ぜる割合・立体交差の多さは 0〜100 にしてください";
 		return false;
 	}
 	int nParts = (int)g_wCountMapParts;
-	const WORD awParts[] = { p->wChipIDStart, p->wChipIDGoal, p->wChipIDRoad, p->wChipIDBlock, p->wChipIDRoad2, p->wChipIDBlock2, p->wChipIDBlockFace };
+	const WORD awParts[] = { p->wChipIDStart, p->wChipIDGoal, p->wChipIDRoad, p->wChipIDBlock, p->wChipIDRoad2, p->wChipIDBlock2, p->wChipIDBlockFace,
+							 p->wChipIDBridgeV, p->wChipIDBridgeH };
 	for (size_t i = 0; i < COUNTOF(awParts); i ++) {
 		if ((int)awParts[i] >= nParts) {
 			strErr = "パーツ番号 " + JsonNum(awParts[i]) + " がありません（mapParts は " + JsonNum(nParts) + " 個）";
 			return false;
 		}
+	}
+	/* 立体交差の橋は、当たり判定が橋のパーツでないと上と下に分かれない */
+	if (p->wChipIDBridgeV && g_aMapPartsInfo[p->wChipIDBridgeV].byHitType != PARTSHIT_BRIDGEV) {
+		strErr = "wChipIDBridgeV のパーツ " + JsonNum(p->wChipIDBridgeV) + " は当たり判定（byHitType）が 19（橋・縦に渡る）ではありません";
+		return false;
+	}
+	if (p->wChipIDBridgeH && g_aMapPartsInfo[p->wChipIDBridgeH].byHitType != PARTSHIT_BRIDGEH) {
+		strErr = "wChipIDBridgeH のパーツ " + JsonNum(p->wChipIDBridgeH) + " は当たり判定（byHitType）が 20（橋・横に渡る）ではありません";
+		return false;
+	}
+	if (p->byCrossRate && !p->wChipIDBridgeV && !p->wChipIDBridgeH) {
+		strErr = "立体交差（byCrossRate）を使う時は、橋のパーツ（wChipIDBridgeV か wChipIDBridgeH）も指定してください";
+		return false;
 	}
 	if ((int)p->byStartX >= pMap->nCX || (int)p->byStartY >= pMap->nCY ||
 		(int)p->byGoalToX >= pMap->nCX || (int)p->byGoalToY >= pMap->nCY) {

@@ -1928,6 +1928,12 @@ void AdminOnCommandMapInfo(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 				SetWindowText (m_hWndEdit9, szArea);
 			}
 
+			/* 見える範囲(0=制限なし、10マスまで) */
+			ZeroMemory (szTmp, sizeof (szTmp));
+			GetWindowText (m_hWndEdit10, szTmp, 4);
+			szTmp[3] = 0;
+			g_pMapInfo->byViewRange = (BYTE)min (atoi (szTmp), 10);
+
 			SendCmdCHGMAPINFO ();
 		}
 		break;
@@ -5690,6 +5696,10 @@ void AdminOnPaintMapInfo(HDC hDC)
 	MyTextOut (hDC, 0, 12 * 22, "どちらも空ならマップ全体が明るさの設定どおり。");
 	MyTextOut (hDC, 0, 12 * 23, "暗くする範囲があれば、その外は明るい。");
 	MyTextOut (hDC, 0, 12 * 24, "暗くしない範囲は、暗くする範囲より優先。");
+	MyTextOut (hDC, 0, 12 * 26 + 1, "見える範囲:");
+	MyTextOut (hDC, 12 * 11, 12 * 26 + 1, "マス(0=制限なし 1～10)");
+	MyTextOut (hDC, 0, 12 * 27 + 2, "暗くならないが、範囲の外と壁の向こうが見えない。");
+	MyTextOut (hDC, 0, 12 * 28 + 2, "一度見た所は薄暗く残る。暗くしない範囲では効かない。");
 
 	MyTextOut (hDC, 12 * 23, 0, "赤:");
 	MyTextOut (hDC, 12 * 23, 16, "緑:");
@@ -7130,7 +7140,8 @@ void MakeAdminWndMapParts(void)
 	LPCTSTR liststr[] = {"無し", "ぶつかる(音付き)", "ぶつかる(音無し)", "隠れる1",
 			"隠れる2(ぶつかる)", "カウンター", "足跡(雪)", "足跡(砂)", "隠れる3", "隠れる4(ぶつかる)",
 			"隠れる5(背景ごと隠れる)", "隠れる6(ぶつかる/音無し)", "一歩前へ進む", "一歩上へ進む",
-			"一歩下へ進む", "一歩左へ進む", "一歩右へ進む", "水の波紋", "隠れる7(隠れる3で背景ごと隠れる)"};
+			"一歩下へ進む", "一歩左へ進む", "一歩右へ進む", "水の波紋", "隠れる7(隠れる3で背景ごと隠れる)",
+			"橋(縦に渡る。横切る人は下)", "橋(横に渡る。縦に通る人は下)"};
 
 	m_hWndDialog = CreateDialog (g_hInstance, (LPCSTR)IDD_MAP_PARTS, g_hWndAdmin, (DLGPROC)WndProcDialog);
 	m_hWndMapPartsAddParts = GetDlgItem (m_hWndDialog, IDC_BUTTON1);
@@ -7278,6 +7289,11 @@ void MakeAdminWndMapInfo(void)
 			12 * 8, 12 * 18, 12 * 22, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
 	SendMessage (m_hWndEdit9, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
+	/* 見える範囲 */
+	m_hWndEdit10 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+			12 * 8, 12 * 26, 32, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
+	SendMessage (m_hWndEdit10, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+
 	char szTmp[10];
 	wsprintf (szTmp, "%ld", g_pMapInfo->byBGM);
 	SetWindowText (m_hWndEdit1, szTmp);
@@ -7375,6 +7391,8 @@ void MakeAdminWndMapInfo(void)
 		MapDarkAreaToText (0, szArea, sizeof (szArea));
 		SetWindowText (m_hWndEdit9, szArea);
 	}
+	wsprintf (szTmp, "%d", g_pMapInfo->byViewRange);
+	SetWindowText (m_hWndEdit10, szTmp);
 
 	InvalidateRect (g_hWndAdmin, NULL, TRUE);
 }
@@ -7410,6 +7428,7 @@ void DeleteAdminWndMapInfo(void)
 	SAFE_DESTROYWND (m_hWndEdit7);
 	SAFE_DESTROYWND (m_hWndEdit8);
 	SAFE_DESTROYWND (m_hWndEdit9);
+	SAFE_DESTROYWND (m_hWndEdit10);
 
 	InvalidateRect (g_hWndAdmin, NULL, TRUE);
 }
