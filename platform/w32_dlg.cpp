@@ -511,6 +511,17 @@ extern "C" EMSCRIPTEN_KEEPALIVE void W32JsOnWndMouse(int nHtmlID, int nType, int
 	PostMessage((HWND)p, uMsg, wKey, MAKELPARAM(x, y));
 }
 
+/* ホイールが回された（nDelta は上へ回すと +120。ページはスクロールさせない） */
+extern "C" EMSCRIPTEN_KEEPALIVE int W32JsOnWndWheel(int nHtmlID, int nDelta, int x, int y)
+{
+	W32Wnd *p = W32FindWndByHtmlID(nHtmlID);
+	if (p == NULL || !p->bEnabled) {
+		return 0;
+	}
+	PostMessage((HWND)p, WM_MOUSEWHEEL, MAKEWPARAM(0, (WORD)(short)nDelta), MAKELPARAM(x, y));
+	return 1;
+}
+
 /* メニューの項目が選ばれた */
 extern "C" EMSCRIPTEN_KEEPALIVE void W32JsOnMenu(int nHtmlID, int nCmd)
 {

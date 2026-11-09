@@ -20,12 +20,16 @@
 #include "AdminWindowOld/AdminDlgEtcSubGame.h"
 #include "AdminWindowOld/SelectCharGrpWindow.h"
 #include "AdminWindowOld/AdminAutoLayout.h"
+#include "AdminWindowOld/AdminDlgMapLight.h"
 #include "AdminWindowOld/AdminDlgStTmpInfo.h"
 #include "AdminWindowOld/AdminDlgNpcRoute.h"
 
 /* ========================================================================= */
 /* 定数定義																	 */
 /* ========================================================================= */
+#define MAPINFO_LIGHTBTN_Y		190									/* マップ情報:「明るさ・灯り・見え方の設定」ボタンの位置 */
+#define MAPINFO_SUMMARY_Y		216									/* マップ情報: 明るさ・灯り・見え方の一覧の位置 */
+#define MAPINFO_SUMMARY_GAP		16									/* マップ情報: 一覧の段の間 */
 #define CLNAME "SboAdminWindow"									/* 登録クラス名 */
 
 /* ボタンID */
@@ -233,10 +237,8 @@ void MakeAdminWndMapParts			(void);								/* マップパーツ編集ウィン�
 void DeleteAdminWndMapParts			(void);								/* マップパーツ編集ウィンドウ消去 */
 void MakeAdminWndMapInfo			(void);								/* マップ情報ウィンドウ作成 */
 void DeleteAdminWndMapInfo			(void);								/* マップ情報ウィンドウ消去 */
-static void MapDarkAreaToText		(BYTE byDark, LPSTR pszText, int nSize);	/* 暗くする範囲を文字にする */
-static void MapDarkAreaFromText		(BYTE byDark, LPCSTR pszText);		/* 文字から暗くする範囲を足す */
-static void MapLightToText			(LPSTR pszText, int nSize);			/* 光源を文字にする */
-static void MapLightFromText		(LPCSTR pszText);					/* 文字から光源を読む */
+void AdminMapInfoRefresh			(void);								/* マップ情報画面の表示を直す */
+static int  AdminMapInfoContentHeight	(void);							/* マップ情報画面の中身の高さ */
 void MakeAdminWndEventInfo			(void);								/* イベント情報ウィンドウ作成 */
 void DeleteAdminWndEventInfo		(void);								/* イベント情報ウィンドウ消去 */
 void MakeAdminWndEventInfoType		(void);								/* 種類別イベント情報ウィンドウ作成 */
@@ -360,6 +362,18 @@ void MakeAdminWindow(void)
 /* ========================================================================= */
 LRESULT WINAPI WndProcAdminWindow(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+	/* 画面が高くて入りきらない時の縦スクロール（ホイール・右端のスクロールバー） */
+	if ((msg == WM_MOUSEWHEEL || msg == WM_VSCROLL) && AdminAutoLayoutOnScrollMsg (hWnd, msg, wParam, lParam)) {
+		return 0;
+	}
+	/* スクロールしている時は、クリック位置を描いた中身の座標に直す */
+	if (msg == WM_LBUTTONDOWN || msg == WM_RBUTTONDOWN) {
+		int nScroll = AdminAutoLayoutGetScrollY (hWnd);
+		if (nScroll) {
+			lParam = MAKELPARAM (GET_X_LPARAM (lParam), GET_Y_LPARAM (lParam) + nScroll);
+		}
+	}
+
 	LRESULT lResult = WndProcAdminWindowSub (hWnd, msg, wParam, lParam);
 
 	/* 大きさが変わった時と、画面の部品が作り直されたかもしれない時に並べ直す */
@@ -422,6 +436,10 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 			break;
 
 		case IDM_MAP_INFO:
+			/* 明るさ・灯り・見え方の設定を開いている時は、そちらで座標を使う */
+			if (MapLightDlgOnPos ((int)wParam, (int)lParam)) {
+				break;
+			}
 			g_pMapInfo->nStartX = (DWORD)wParam;
 			g_pMapInfo->nStartY = (DWORD)lParam;
 			break;
@@ -1813,6 +1831,21 @@ void AdminOnCommandMapInfo(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 		} else {
 			g_bAdminPos = FALSE;
 		}
+		/* 明るさ・灯り・見え方の設定を開いている間は座標を拾い続ける */
+		if (IsDlgMapLightOpen ()) {
+			g_bAdminPos = TRUE;
+		}
+		break;
+
+	/* 明るさ・灯り・見え方の設定 */
+	case IDC_BUTTON2:
+		ShowDlgMapLight (g_hWndAdmin);
+		break;
+
+	/* 明るさ・灯り・見え方の設定を閉じた */
+	case IDOK:
+	case IDCANCEL:
+		AdminMapInfoRefresh ();
 		break;
 
 	/* ｴﾌｪｸﾄ許可 */
@@ -1913,51 +1946,9 @@ void AdminOnCommandMapInfo(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 			ZeroMemory (g_pMapInfo->pszName, strlen (szTmp) + 1);
 			strcat ((LPSTR)g_pMapInfo->pszName, szTmp);
 
-			/* 暗くする範囲(先)と暗くしない範囲(後ろ=優先) */
-			{
-				char szArea[256];
-				g_pMapInfo->byDarkAreaCount = 0;
-				ZeroMemory (g_pMapInfo->aDarkArea, sizeof (g_pMapInfo->aDarkArea));
-				ZeroMemory (szArea, sizeof (szArea));
-				GetWindowText (m_hWndEdit8, szArea, sizeof (szArea) - 1);
-				MapDarkAreaFromText (1, szArea);
-				ZeroMemory (szArea, sizeof (szArea));
-				GetWindowText (m_hWndEdit9, szArea, sizeof (szArea) - 1);
-				MapDarkAreaFromText (0, szArea);
-				ZeroMemory (szArea, sizeof (szArea));
-				GetWindowText (m_hWndEdit12, szArea, sizeof (szArea) - 1);
-				MapDarkAreaFromText (MAPDARK_HIDE, szArea);
-				MapDarkAreaToText (1, szArea, sizeof (szArea));
-				SetWindowText (m_hWndEdit8, szArea);
-				MapDarkAreaToText (0, szArea, sizeof (szArea));
-				SetWindowText (m_hWndEdit9, szArea);
-				MapDarkAreaToText (MAPDARK_HIDE, szArea, sizeof (szArea));
-				SetWindowText (m_hWndEdit12, szArea);
-
-				/* 光源 */
-				ZeroMemory (szArea, sizeof (szArea));
-				GetWindowText (m_hWndEdit13, szArea, sizeof (szArea) - 1);
-				MapLightFromText (szArea);
-				MapLightToText (szArea, sizeof (szArea));
-				SetWindowText (m_hWndEdit13, szArea);
-			}
-
-			/* 見える範囲(0=制限なし、10マスまで) */
-			ZeroMemory (szTmp, sizeof (szTmp));
-			GetWindowText (m_hWndEdit10, szTmp, 4);
-			szTmp[3] = 0;
-			g_pMapInfo->byViewRange = (BYTE)min (atoi (szTmp), 10);
-
-			/* 見えない所のパーツ(0=黒) */
-			ZeroMemory (szTmp, sizeof (szTmp));
-			GetWindowText (m_hWndEdit11, szTmp, 6);
-			szTmp[5] = 0;
-			g_pMapInfo->wViewHideParts = (WORD)atoi (szTmp);
-			if (g_pMapInfo->wViewHideParts >= g_wCountMapParts) {
-				g_pMapInfo->wViewHideParts = 0;
-			}
-
+			/* 明るさの範囲・光源・見え方は「明るさ・灯り・見え方の設定」で決めたものをそのまま送る */
 			SendCmdCHGMAPINFO ();
+			MapLightDlgOnSent ();
 		}
 		break;
 
@@ -5712,20 +5703,53 @@ void AdminOnPaintMapInfo(HDC hDC)
 	MyTextOut (hDC, 0 * 5, 12 * 11 + 6, szBuf);
 	wsprintf (szBuf, "天候:");
 	MyTextOut (hDC, 0, 12 * 13 + 3, szBuf);
-	MyTextOut (hDC, 0, 190 + 1, "暗くする範囲:");
-	MyTextOut (hDC, 0, 206 + 1, "暗くしない範囲:");
-	MyTextOut (hDC, 0, 222 + 1, "明るく壁で隠す:");
-	MyTextOut (hDC, 0, 238 + 1, "光源:");
-	MyTextOut (hDC, 0, 256, "範囲は 左上X,Y-右下X,Y を空白区切りで合わせて8つ。");
-	MyTextOut (hDC, 0, 268, "暗くする範囲があればその外は明るい。下の欄ほど優先。");
-	MyTextOut (hDC, 0, 280, "光源は X,Y,範囲(1-7)[,強さ%[,種類]] を空白区切りで16個");
-	MyTextOut (hDC, 0, 292, "種類 1=ゆらめかない 2=暖色 3=両方 例:10,5,3 20,5,4,60,2");
-	MyTextOut (hDC, 0, 12 * 26 + 1, "見える範囲:");
-	MyTextOut (hDC, 12 * 11, 12 * 26 + 1, "マス(0=制限なし 1～10)");
-	MyTextOut (hDC, 0, 12 * 27 + 2, "暗くならないが、範囲の外と壁の向こうが見えない。");
-	MyTextOut (hDC, 0, 12 * 28 + 2, "一度見た所は薄暗く残る。暗くしない範囲では効かない。");
-	MyTextOut (hDC, 0, 12 * 30 + 1, "見えない所:");
-	MyTextOut (hDC, 12 * 12, 12 * 30 + 1, "パーツ番号(0=黒。草原などにすると森のよう)");
+
+	/* 明るさ・灯り・見え方（変えるのは上のボタンから開く小窓で。ここは今の内容の一覧） */
+	{
+		int i, y = MAPINFO_SUMMARY_Y;
+		char szTmp[128];
+		COLORREF clHead = RGB (255, 220, 120), clNone = RGB (160, 160, 160);
+
+		if (g_pMapInfo->byViewRange) {
+			wsprintf (szTmp, "見える範囲: %dマス", g_pMapInfo->byViewRange);
+		} else {
+			wsprintf (szTmp, "見える範囲: 制限なし");
+		}
+		MyTextOut (hDC, 0, y, szTmp, clHead);
+		if (g_pMapInfo->wViewHideParts) {
+			wsprintf (szTmp, "見えない所: パーツ%d", g_pMapInfo->wViewHideParts);
+		} else {
+			wsprintf (szTmp, "見えない所: 黒");
+		}
+		MyTextOut (hDC, 12 * 12, y, szTmp, clHead);
+		y += MAPINFO_SUMMARY_GAP;
+
+		wsprintf (szTmp, "明るさの範囲 %d/%d（下ほど優先）", g_pMapInfo->byDarkAreaCount, MAX_MAPDARKAREA);
+		MyTextOut (hDC, 0, y, szTmp, clHead);
+		y += 12;
+		for (i = 0; i < g_pMapInfo->byDarkAreaCount && i < MAX_MAPDARKAREA; i ++) {
+			MapDarkAreaLabel (i, szTmp, sizeof (szTmp));
+			MyTextOut (hDC, 12, y, szTmp);
+			y += 12;
+		}
+		if (g_pMapInfo->byDarkAreaCount == 0) {
+			MyTextOut (hDC, 12, y, "なし（暗闇・明るさの設定どおりマップ全体）", clNone);
+			y += 12;
+		}
+		y += MAPINFO_SUMMARY_GAP - 12;
+
+		wsprintf (szTmp, "光源 %d/%d", g_pMapInfo->byLightCount, MAX_MAPLIGHT);
+		MyTextOut (hDC, 0, y, szTmp, clHead);
+		y += 12;
+		for (i = 0; i < g_pMapInfo->byLightCount && i < MAX_MAPLIGHT; i ++) {
+			MapLightLabel (i, szTmp, sizeof (szTmp));
+			MyTextOut (hDC, 12, y, szTmp);
+			y += 12;
+		}
+		if (g_pMapInfo->byLightCount == 0) {
+			MyTextOut (hDC, 12, y, "なし", clNone);
+		}
+	}
 
 	MyTextOut (hDC, 12 * 23, 0, "赤:");
 	MyTextOut (hDC, 12 * 23, 16, "緑:");
@@ -6986,6 +7010,7 @@ void MakeAdminWnd(int nType)
 
 	g_bAdminPos = FALSE;
 	DeleteAdminWnd ();
+	AdminAutoLayoutResetScroll (g_hWndAdmin);
 
 	switch (nType) {
 	/* パーツ */
@@ -7307,31 +7332,10 @@ void MakeAdminWndMapInfo(void)
 			12 * 3, 12 * 13, 12 * 12, 12 * 10, g_hWndAdmin, (HMENU)IDC_TMPCOMBO2, g_hInstance, NULL);
 	SendMessage (m_hWndCombo2, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
-	/* 暗くする範囲・暗くしない範囲 */
-	m_hWndEdit8 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-			12 * 8, 190, 12 * 22, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
-	SendMessage (m_hWndEdit8, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
-	m_hWndEdit9 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-			12 * 8, 206, 12 * 22, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
-	SendMessage (m_hWndEdit9, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
-	/* 明るいが壁の向こうは見えない範囲 */
-	m_hWndEdit12 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-			12 * 8, 222, 12 * 22, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
-	SendMessage (m_hWndEdit12, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
-	/* 光源 */
-	m_hWndEdit13 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-			12 * 8, 238, 12 * 22, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
-	SendMessage (m_hWndEdit13, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
-
-	/* 見える範囲 */
-	m_hWndEdit10 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_NUMBER,
-			12 * 8, 12 * 26, 32, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
-	SendMessage (m_hWndEdit10, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
-
-	/* 見えない所のパーツ */
-	m_hWndEdit11 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_NUMBER,
-			12 * 8, 12 * 30, 40, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
-	SendMessage (m_hWndEdit11, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+	/* 明るさの範囲・光源・見え方は小窓で設定する（項目が多いので） */
+	m_hWndButton2 = CreateWindow ("BUTTON", "明るさ・灯り・見え方の設定...", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+			0, MAPINFO_LIGHTBTN_Y, 12 * 16, 20, g_hWndAdmin, (HMENU)IDC_BUTTON2, g_hInstance, NULL);
+	SendMessage (m_hWndButton2, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
 	char szTmp[10];
 	wsprintf (szTmp, "%ld", g_pMapInfo->byBGM);
@@ -7423,22 +7427,37 @@ void MakeAdminWndMapInfo(void)
 	if (g_pMapInfo->pszName) {
 		SetWindowText (m_hWndEdit4, (LPSTR)g_pMapInfo->pszName);
 	}
-	{
-		char szArea[256];
-		MapDarkAreaToText (1, szArea, sizeof (szArea));
-		SetWindowText (m_hWndEdit8, szArea);
-		MapDarkAreaToText (0, szArea, sizeof (szArea));
-		SetWindowText (m_hWndEdit9, szArea);
-		MapDarkAreaToText (MAPDARK_HIDE, szArea, sizeof (szArea));
-		SetWindowText (m_hWndEdit12, szArea);
-		MapLightToText (szArea, sizeof (szArea));
-		SetWindowText (m_hWndEdit13, szArea);
-	}
-	wsprintf (szTmp, "%d", g_pMapInfo->byViewRange);
-	SetWindowText (m_hWndEdit10, szTmp);
-	wsprintf (szTmp, "%d", g_pMapInfo->wViewHideParts);
-	SetWindowText (m_hWndEdit11, szTmp);
 
+	AdminMapInfoRefresh ();
+	InvalidateRect (g_hWndAdmin, NULL, TRUE);
+}
+
+/* ========================================================================= */
+/* 関数名：AdminMapInfoContentHeight										 */
+/* 内容：マップ情報画面の中身の高さ（一覧が長いとスクロールできるように）	 */
+/* ========================================================================= */
+static int AdminMapInfoContentHeight(void)
+{
+	int nArea, nLight;
+
+	if (g_pMapInfo == NULL) {
+		return 0;
+	}
+	nArea	= max (1, min ((int)g_pMapInfo->byDarkAreaCount, MAX_MAPDARKAREA));
+	nLight	= max (1, min ((int)g_pMapInfo->byLightCount, MAX_MAPLIGHT));
+	return MAPINFO_SUMMARY_Y + MAPINFO_SUMMARY_GAP + 12 + nArea * 12 + MAPINFO_SUMMARY_GAP + nLight * 12 + 8;
+}
+
+/* ========================================================================= */
+/* 関数名：AdminMapInfoRefresh												 */
+/* 内容：マップ情報画面の表示を直す（明るさ・灯り・見え方を変えた時など）	 */
+/* ========================================================================= */
+void AdminMapInfoRefresh(void)
+{
+	if ((g_hWndAdmin == NULL) || (g_nAdminWindowType != IDM_MAP_INFO)) {
+		return;
+	}
+	AdminAutoLayoutSetContentHeight (g_hWndAdmin, AdminMapInfoContentHeight ());
 	InvalidateRect (g_hWndAdmin, NULL, TRUE);
 }
 
@@ -7449,6 +7468,9 @@ void MakeAdminWndMapInfo(void)
 /* ========================================================================= */
 void DeleteAdminWndMapInfo(void)
 {
+	/* 明るさ・灯り・見え方の設定を開いていたら閉じる（送っていない変更は送るか聞く） */
+	CloseDlgMapLight ();
+	SAFE_DESTROYWND (m_hWndButton2);
 	SAFE_DESTROYWND (m_hWndMapAddUp);
 	SAFE_DESTROYWND (m_hWndMapAddDown);
 	SAFE_DESTROYWND (m_hWndMapAddLeft);
@@ -7481,150 +7503,6 @@ void DeleteAdminWndMapInfo(void)
 	InvalidateRect (g_hWndAdmin, NULL, TRUE);
 }
 
-
-/* ========================================================================= */
-/* 関数名：MapDarkAreaToText												 */
-/* 内容：種類 byDark(MAPDARK_*) の範囲を「x1,y1-x2,y2 ...」に				 */
-/* ========================================================================= */
-static void MapDarkAreaToText(BYTE byDark, LPSTR pszText, int nSize)
-{
-	int i;
-	char szTmp[32];
-
-	pszText[0] = 0;
-	for (i = 0; (i < g_pMapInfo->byDarkAreaCount) && (i < MAX_MAPDARKAREA); i ++) {
-		PMAPDARKAREA pArea = &g_pMapInfo->aDarkArea[i];
-		if (pArea->byDark != byDark) {
-			continue;
-		}
-		wsprintf (szTmp, "%s%d,%d-%d,%d", pszText[0] ? " " : "", pArea->wX1, pArea->wY1, pArea->wX2, pArea->wY2);
-		if ((int)(strlen (pszText) + strlen (szTmp)) >= nSize) {
-			break;
-		}
-		strcat (pszText, szTmp);
-	}
-}
-
-
-/* ========================================================================= */
-/* 関数名：MapDarkAreaFromText												 */
-/* 内容：「x1,y1-x2,y2 ...」を読んで範囲を後ろに足す(読めない所は飛ばす)	 */
-/* ========================================================================= */
-static void MapDarkAreaFromText(BYTE byDark, LPCSTR pszText)
-{
-	int an[4], nNo, nVal;
-	BOOL bNum;
-	LPCSTR p;
-
-	nNo = 0;
-	nVal = 0;
-	bNum = FALSE;
-	for (p = pszText; ; p ++) {
-		if ((*p >= '0') && (*p <= '9')) {
-			nVal = nVal * 10 + (*p - '0');
-			bNum = TRUE;
-			continue;
-		}
-		if (bNum) {
-			an[nNo ++] = nVal;
-			nVal = 0;
-			bNum = FALSE;
-		}
-		/* 数字が4つそろったら1つの範囲 */
-		if (nNo == 4) {
-			if (g_pMapInfo->byDarkAreaCount < MAX_MAPDARKAREA) {
-				PMAPDARKAREA pArea = &g_pMapInfo->aDarkArea[g_pMapInfo->byDarkAreaCount ++];
-				int nMaxX = max (0, g_pMapInfo->nCX - 1);
-				int nMaxY = max (0, g_pMapInfo->nCY - 1);
-				pArea->wX1		= (WORD)min (min (an[0], an[2]), nMaxX);
-				pArea->wY1		= (WORD)min (min (an[1], an[3]), nMaxY);
-				pArea->wX2		= (WORD)min (max (an[0], an[2]), nMaxX);
-				pArea->wY2		= (WORD)min (max (an[1], an[3]), nMaxY);
-				pArea->byDark	= byDark;
-				pArea->byReserve = 0;
-			}
-			nNo = 0;
-		}
-		if (*p == 0) {
-			break;
-		}
-	}
-}
-
-
-/* ========================================================================= */
-/* 関数名：MapLightToText													 */
-/* 内容：光源を「x,y,範囲 ...」に											 */
-/* ========================================================================= */
-static void MapLightToText(LPSTR pszText, int nSize)
-{
-	int i;
-	char szTmp[32];
-
-	pszText[0] = 0;
-	for (i = 0; (i < g_pMapInfo->byLightCount) && (i < MAX_MAPLIGHT); i ++) {
-		PMAPLIGHT pLight = &g_pMapInfo->aLight[i];
-		if (((pLight->byPower == 0) || (pLight->byPower == 100)) && (pLight->byFlg == 0)) {
-			wsprintf (szTmp, "%s%d,%d,%d", pszText[0] ? " " : "", pLight->wX, pLight->wY, pLight->byRange);
-		} else {
-			wsprintf (szTmp, "%s%d,%d,%d,%d,%d", pszText[0] ? " " : "", pLight->wX, pLight->wY, pLight->byRange,
-					pLight->byPower ? pLight->byPower : 100, pLight->byFlg);
-		}
-		if ((int)(strlen (pszText) + strlen (szTmp)) >= nSize) {
-			break;
-		}
-		strcat (pszText, szTmp);
-	}
-}
-
-
-/* ========================================================================= */
-/* 関数名：MapLightFromText													 */
-/* 内容：「x,y,範囲[,強さ[,種類]] ...」を読んで光源にする(空白で区切る)		 */
-/*       強さは 1〜100(省くと 100)、種類は 1=ゆらめかない 2=暖色 3=両方		 */
-/* ========================================================================= */
-static void MapLightFromText(LPCSTR pszText)
-{
-	int an[5], nNo, nVal;
-	BOOL bNum;
-	LPCSTR p;
-
-	g_pMapInfo->byLightCount = 0;
-	ZeroMemory (g_pMapInfo->aLight, sizeof (g_pMapInfo->aLight));
-	nNo = 0;
-	nVal = 0;
-	bNum = FALSE;
-	for (p = pszText; ; p ++) {
-		if ((*p >= '0') && (*p <= '9')) {
-			nVal = nVal * 10 + (*p - '0');
-			bNum = TRUE;
-			continue;
-		}
-		if (bNum) {
-			if (nNo < 5) {
-				an[nNo ++] = nVal;
-			}
-			nVal = 0;
-			bNum = FALSE;
-		}
-		/* 空白か終わりで1つの光源(数字が3つ以上・範囲が 1 以上の時だけ) */
-		if ((*p == ' ') || (*p == '\t') || (*p == 0)) {
-			if ((nNo >= 3) && (an[2] > 0) && (g_pMapInfo->byLightCount < MAX_MAPLIGHT)) {
-				PMAPLIGHT pLight = &g_pMapInfo->aLight[g_pMapInfo->byLightCount ++];
-				pLight->wX		= (WORD)min (an[0], max (0, g_pMapInfo->nCX - 1));
-				pLight->wY		= (WORD)min (an[1], max (0, g_pMapInfo->nCY - 1));
-				pLight->byRange	= (BYTE)min (an[2], 7);
-				pLight->byPower	= (BYTE)((nNo >= 4) ? max (1, min (an[3], 100)) : 100);
-				pLight->byFlg	= (BYTE)((nNo >= 5) ? (an[4] & (MAPLIGHTFLG_NOFLICKER | MAPLIGHTFLG_WARM)) : 0);
-				pLight->byReserve = 0;
-			}
-			nNo = 0;
-		}
-		if (*p == 0) {
-			break;
-		}
-	}
-}
 
 /* ========================================================================= */
 /* 関数名：MakeAdminWndEventInfo											 */

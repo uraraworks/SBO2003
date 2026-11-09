@@ -905,6 +905,12 @@ LRESULT DefWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	case WM_CLOSE:
 		DestroyWindow(hWnd);
 		return 0;
+	case WM_MOUSEWHEEL:
+		/* 子ウィンドウで使わなかったホイールは親へ回す（Windows と同じ） */
+		if (p && (p->dwStyle & WS_CHILD) && p->hWndParent) {
+			return SendMessage(p->hWndParent, uMsg, wParam, lParam);
+		}
+		return 0;
 	case WM_PAINT:
 		if (p && W32GetPopupRoot(p)) {
 			/* 小窓の中は背景を HTML 側で塗っているので描かなくてよい */

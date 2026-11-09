@@ -11,6 +11,7 @@
 #include "SboCliDrawWindow.h"
 #include "SboCliRecvCmd.h"
 #include "AdminWindowOld/AdminDlgNpcRoute.h"
+#include "AdminWindowOld/AdminDlgMapLight.h"
 #include <math.h>
 
 /* ========================================================================= */
@@ -34,6 +35,7 @@ void DrawObj			(void);										/* オブジェクトの描画 */
 void DrawEvent			(void);										/* イベント情報の描画 */
 void DrawMapEdit		(void);										/* マップ編集情報の描画 */
 void DrawNpcRoute		(void);										/* NPCの巡回情報の描画 */
+void DrawMapLightEdit	(void);										/* 明るさの範囲・光源の編集中の印 */
 static void FillRectClip	(int x, int y, int cx, int cy, COLORREF cl);	/* 画像の外にはみ出さない矩形塗りつぶし */
 static void DrawLineClip	(int x1, int y1, int x2, int y2, int nWidth, COLORREF cl);	/* 線を描く */
 void DrawWeather		(void);										/* 天候の描画 */
@@ -374,6 +376,7 @@ BOOL DrawScreenMOVE(void)
 	DrawEvent ();			/* イベント情報を描画 */
 	DrawMapEdit ();			/* マップ編集情報を描画 */
 	DrawNpcRoute ();		/* NPCの巡回情報を描画 */
+	DrawMapLightEdit ();	/* 明るさの範囲・光源の編集中の印を描画 */
 	DrawChar3 ();			/* 文字を描画 */
 	DrawETC ();				/* ゲージ等の描画 */
 
@@ -2262,6 +2265,115 @@ void DrawNpcRoute(void)
 	for (i = 0; i < nCount; i ++) {
 		snprintf (szTmp, sizeof (szTmp), "%d", i + 1);
 		TextOut2 (hDC, anX[i] - (int)strlen (szTmp) * 4, anY[i] - 7, szTmp, RGB (255, 255, 255));
+	}
+	SelectObject (hDC, hFontOld);
+	g_pDibDrawMap->Unlock ();
+}
+
+/* ========================================================================= */
+/* 関数名：DrawMapLightEdit													 */
+/* 内容：明るさ・灯り・見え方の設定を開いている間、範囲の枠と光源の印を描く	 */
+/*       範囲の枠の色は 暗くする=青 暗くしない=黄 明るく壁で隠す=緑。		 */
+/*       選んでいる範囲は太く、選んでいる光源は照らす範囲も枠で出す			 */
+/* ========================================================================= */
+void DrawMapLightEdit(void)
+{
+	static const COLORREF aclArea[] = {RGB (255, 220, 60), RGB (80, 140, 255), RGB (70, 220, 120)};	/* MAPDARK_* の順 */
+	int i, nSel, nW, x1, y1, x2, y2, xTmp, yTmp, anTagX[MAX_MAPDARKAREA + MAX_MAPLIGHT], anTagY[MAX_MAPDARKAREA + MAX_MAPLIGHT];
+	char szTmp[16];
+	HDC hDC;
+	HFONT hFontOld;
+	PCHARINFO pChar;
+	COLORREF cl;
+
+	if ((g_nMyCharID < 0) || (g_hWndAdmin == NULL) || (g_nAdminWindowType != IDM_MAP_INFO)) {
+		return;
+	}
+	/* 自分のマップが変わったら閉じる */
+	MapLightDlgTick ();
+	if (!IsDlgMapLightOpen () || (g_pMapInfo == NULL)) {
+		return;
+	}
+
+	pChar = g_aCharInfo[g_nMyCharID];
+	xTmp = ((int)pChar->dwX - DRAW_PARTS_X - 1) * 32;		/* マップのドット座標から画像の座標へ */
+	yTmp = ((int)pChar->dwY - DRAW_PARTS_Y - 1) * 32;
+
+	/* 範囲の枠（選んでいるのは最後に太く） */
+	nSel = MapLightDlgGetSelArea ();
+	for (i = 0; i < g_pMapInfo->byDarkAreaCount && i < MAX_MAPDARKAREA; i ++) {
+		PMAPDARKAREA pArea = &g_pMapInfo->aDarkArea[i];
+		cl = aclArea[(pArea->byDark <= MAPDARK_HIDE) ? pArea->byDark : MAPDARK_DARK];
+		nW = (i == nSel) ? 4 : 2;
+		x1 = pArea->wX1 * 32 - xTmp;
+		y1 = pArea->wY1 * 32 - yTmp;
+		x2 = (pArea->wX2 + 1) * 32 - xTmp;
+		y2 = (pArea->wY2 + 1) * 32 - yTmp;
+		FillRectClip (x1, y1, x2 - x1, nW, cl);
+		FillRectClip (x1, y2 - nW, x2 - x1, nW, cl);
+		FillRectClip (x1, y1, nW, y2 - y1, cl);
+		FillRectClip (x2 - nW, y1, nW, y2 - y1, cl);
+		/* 番号の札は左上（画面の外なら画面の端に寄せる） */
+		anTagX[i] = max (x1 + nW, 32 + 2);
+		anTagY[i] = max (y1 + nW, 32 + 2);
+		if ((x2 <= 32) || (y2 <= 32)) {
+			anTagX[i] = anTagY[i] = -1000;		/* 範囲が画面の左・上の外 */
+			continue;
+		}
+		FillRectClip (anTagX[i], anTagY[i], 16, 14, cl);
+	}
+
+	/* 右下のクリック待ちなら、左上のマスに印 */
+	if (MapLightDlgGetCorner (x1, y1)) {
+		x1 = x1 * 32 - xTmp;
+		y1 = y1 * 32 - yTmp;
+		FillRectClip (x1, y1, 32, 3, RGB (255, 255, 255));
+		FillRectClip (x1, y1, 3, 32, RGB (255, 255, 255));
+	}
+
+	/* 光源（選んでいるのは照らす範囲も枠で出す） */
+	nSel = MapLightDlgGetSelLight ();
+	for (i = 0; i < g_pMapInfo->byLightCount && i < MAX_MAPLIGHT; i ++) {
+		PMAPLIGHT pLight = &g_pMapInfo->aLight[i];
+		int nNo = MAX_MAPDARKAREA + i;
+		cl = (pLight->byFlg & MAPLIGHTFLG_WARM) ? RGB (255, 150, 40) : RGB (255, 245, 170);
+		x1 = pLight->wX * 32 - xTmp;
+		y1 = pLight->wY * 32 - yTmp;
+		if (i == nSel) {
+			int r = pLight->byRange;
+			x2 = (pLight->wX - r) * 32 - xTmp;
+			y2 = (pLight->wY - r) * 32 - yTmp;
+			nW = (r * 2 + 1) * 32;
+			FillRectClip (x2, y2, nW, 1, cl);
+			FillRectClip (x2, y2 + nW - 1, nW, 1, cl);
+			FillRectClip (x2, y2, 1, nW, cl);
+			FillRectClip (x2 + nW - 1, y2, 1, nW, cl);
+			FillRectClip (x1 + 3, y1 + 3, 26, 26, RGB (255, 255, 255));
+		}
+		FillRectClip (x1 + 7, y1 + 8, 18, 16, RGB (40, 40, 40));
+		FillRectClip (x1 + 8, y1 + 9, 16, 14, cl);
+		anTagX[nNo] = x1 + 8;
+		anTagY[nNo] = y1 + 9;
+	}
+
+	/* 番号 */
+	hDC = g_pDibDrawMap->Lock ();
+	hFontOld = (HFONT)SelectObject (hDC, g_hFont12);
+	SetBkMode (hDC, TRANSPARENT);
+	for (i = 0; i < g_pMapInfo->byDarkAreaCount && i < MAX_MAPDARKAREA; i ++) {
+		if (anTagX[i] < 0) {
+			continue;
+		}
+		snprintf (szTmp, sizeof (szTmp), "%d", i + 1);
+		TextOut2 (hDC, anTagX[i] + 8 - (int)strlen (szTmp) * 3, anTagY[i] + 1, szTmp, RGB (255, 255, 255));
+	}
+	for (i = 0; i < g_pMapInfo->byLightCount && i < MAX_MAPLIGHT; i ++) {
+		int nNo = MAX_MAPDARKAREA + i;
+		if (anTagX[nNo] < 0 || anTagY[nNo] < 0) {
+			continue;
+		}
+		snprintf (szTmp, sizeof (szTmp), "%d", i + 1);
+		TextOut2 (hDC, anTagX[nNo] + 8 - (int)strlen (szTmp) * 3, anTagY[nNo] + 1, szTmp, RGB (255, 255, 255));
 	}
 	SelectObject (hDC, hFontOld);
 	g_pDibDrawMap->Unlock ();

@@ -36,7 +36,23 @@ struct AAL_SHIFT {
 	RECT	rcMain;				/* 広げる一覧の元の位置（帯の境目） */
 	int		dx;					/* 右横の帯をずらす幅 */
 	int		dy;					/* 下の帯をずらす高さ */
+	int		nScrollY;			/* 縦スクロールの位置（上へずらすドット数） */
+	int		nContentCY;			/* 描く中身の高さ（元の大きさ基準） */
 };
+
+/* 縦スクロールの状態（文字を描く画面ごと） */
+struct AAL_SCROLL {
+	int		nPos;				/* 今の位置 */
+	int		nMax;				/* 一番下までの位置（0 ならスクロールしない） */
+	int		nContentCY;			/* 画面が申告した中身の高さ（0=申告なし） */
+	int		nPage;				/* 見えている高さ */
+	HWND	hWndBar;			/* 右端のスクロールバー */
+};
+
+#define	AAL_SCROLLBAR_ID	0x7FF0		/* スクロールバーの ID（並べ直しの対象から外す） */
+#define	AAL_SCROLLBAR_CX	16			/* スクロールバーの幅 */
+#define	AAL_WHEEL_STEP		36			/* ホイール 1 目盛りで動かすドット数 */
+#define	AAL_GRIP_CY			14			/* 右下の大きさ変更のつまみと重ならないよう、スクロールバーの下を空ける高さ */
 
 /* 並べ直す時の作業用 */
 struct AAL_WORK {
@@ -55,6 +71,7 @@ struct AAL_WORK {
 static std::map<HWND, AAL_ITEM>	s_mapItem;		/* 部品ごとの元の位置 */
 static std::map<HWND, SIZE>		s_mapBase;		/* 文字を描く画面の元の大きさ */
 static std::map<HWND, AAL_SHIFT>	s_mapShift;		/* 文字を描く画面のずらし方 */
+static std::map<HWND, AAL_SCROLL>	s_mapScroll;	/* 文字を描く画面の縦スクロール */
 
 /* ========================================================================= */
 /* 内部関数																	 */
@@ -97,6 +114,9 @@ struct AAL_ENUM {
 static BOOL CALLBACK EnumChildProc(HWND hWnd, LPARAM lParam)
 {
 	AAL_ENUM *pEnum = (AAL_ENUM *)lParam;
+	if (GetDlgCtrlID (hWnd) == AAL_SCROLLBAR_ID) {
+		return TRUE;	/* ここで作ったスクロールバーは並べ直さない */
+	}
 	if (GetParent (hWnd) == pEnum->hParent) {
 		pEnum->paChild->push_back (hWnd);
 	}
@@ -128,6 +148,14 @@ static void CleanUp(void)
 			++ itBase;
 		} else {
 			itBase = s_mapBase.erase (itBase);
+		}
+	}
+	std::map<HWND, AAL_SCROLL>::iterator itScroll = s_mapScroll.begin ();
+	while (itScroll != s_mapScroll.end ()) {
+		if (IsWindow (itScroll->first)) {
+			++ itScroll;
+		} else {
+			itScroll = s_mapScroll.erase (itScroll);
 		}
 	}
 }
@@ -239,6 +267,57 @@ static void LayoutPainted(HWND hParent, std::vector<AAL_WORK> &aWork, int cx, in
 			} else if (rc.left >= rcMain.right && rc.top >= rcMain.top) {
 				OffsetRect (&stWork.rcNew, stShift.dx, 0);			/* 一覧の右横 */
 			}
+		}
+	}
+
+	/* 中身が見えている高さより高ければ縦にスクロールする
+	   （中身の高さ＝元の大きさ・画面が申告した高さ・一番下の部品の下端の大きい方） */
+	{
+		AAL_SCROLL &stScroll = s_mapScroll[hParent];
+		int nContent = (int)sizeBase.cy;
+		if (stScroll.nContentCY > 0) {
+			nContent = AalMax (nContent, stScroll.nContentCY);
+		}
+		nContent += stShift.dy;
+		for (size_t i = 0; i < aWork.size (); i ++) {
+			/* 隠してある部品は数えない */
+			if (!aWork[i].bFill && IsWindowVisible (aWork[i].hWnd)) {
+				nContent = AalMax (nContent, (int)aWork[i].rcNew.bottom + 4);
+			}
+		}
+		stScroll.nPage	= cy;
+		stScroll.nMax	= AalMax (0, nContent - cy);
+		stScroll.nPos	= AalMax (0, AalMin (stScroll.nPos, stScroll.nMax));
+		stShift.nScrollY	= stScroll.nPos;
+		stShift.nContentCY	= nContent - stShift.dy;
+		for (size_t i = 0; i < aWork.size (); i ++) {
+			if (!aWork[i].bFill) {
+				OffsetRect (&aWork[i].rcNew, 0, -stScroll.nPos);
+			}
+		}
+
+		/* 右端のスクロールバー（要らない時は隠す） */
+		if (stScroll.nMax > 0) {
+			if (stScroll.hWndBar == NULL || !IsWindow (stScroll.hWndBar)) {
+				stScroll.hWndBar = CreateWindow ("SCROLLBAR", "", WS_CHILD | SBS_VERT,
+						cx - AAL_SCROLLBAR_CX, 0, AAL_SCROLLBAR_CX, AalMax (32, cy - AAL_GRIP_CY), hParent,
+						(HMENU)(INT_PTR)AAL_SCROLLBAR_ID, NULL, NULL);
+			}
+			if (stScroll.hWndBar) {
+				SCROLLINFO si;
+				ZeroMemory (&si, sizeof (si));
+				si.cbSize	= sizeof (si);
+				si.fMask	= SIF_RANGE | SIF_PAGE | SIF_POS;
+				si.nMin		= 0;
+				si.nMax		= nContent - 1;
+				si.nPage	= (UINT)cy;
+				si.nPos		= stScroll.nPos;
+				SetScrollInfo (stScroll.hWndBar, SB_CTL, &si, TRUE);
+				SetWindowPos (stScroll.hWndBar, HWND_TOP, cx - AAL_SCROLLBAR_CX, 0, AAL_SCROLLBAR_CX, AalMax (32, cy - AAL_GRIP_CY), SWP_NOACTIVATE);
+				ShowWindow (stScroll.hWndBar, SW_SHOWNA);
+			}
+		} else if (stScroll.hWndBar && IsWindow (stScroll.hWndBar)) {
+			ShowWindow (stScroll.hWndBar, SW_HIDE);
 		}
 	}
 
@@ -396,19 +475,41 @@ void AdminAutoLayout(HWND hWnd, BOOL bPainted)
 /* 内容：	文字を描く画面を、部品と同じずらし方で描く						 */
 /* ========================================================================= */
 
+/* 写し先の上がはみ出す分（スクロールで上へずらした分）を切って写す */
+static void BltClip(HDC hDC, int x, int y, int cx, int cy, HDC hDCSrc, int xSrc, int ySrc)
+{
+	if (y < 0) {
+		cy += y;
+		ySrc -= y;
+		y = 0;
+	}
+	if (cx <= 0 || cy <= 0) {
+		return;
+	}
+	BitBlt (hDC, x, y, cx, cy, hDCSrc, xSrc, ySrc, SRCCOPY);
+}
+
 void AdminAutoLayoutPaint(HWND hWnd, HDC hDC, void (*pfnPaint)(HDC))
 {
 	std::map<HWND, AAL_SHIFT>::iterator it = s_mapShift.find (hWnd);
-	if (it == s_mapShift.end () || !it->second.bValid || (it->second.dx == 0 && it->second.dy == 0)) {
+	if (it == s_mapShift.end () ||
+		((!it->second.bValid || (it->second.dx == 0 && it->second.dy == 0)) && it->second.nScrollY == 0)) {
 		/* ずらさない時は、そのまま描く */
 		pfnPaint (hDC);
 		return;
 	}
 	const AAL_SHIFT &stShift = it->second;
-	int cx = stShift.sizeBase.cx, cy = stShift.sizeBase.cy;
-	const RECT &rcMain = stShift.rcMain;
+	int cx = stShift.sizeBase.cx, cy = AalMax ((int)stShift.sizeBase.cy, stShift.nContentCY);
+	int nScroll = stShift.nScrollY;
+	RECT rcMain = stShift.rcMain;
+	int dx = stShift.dx, dy = stShift.dy;
+	if (!stShift.bValid) {
+		/* 一覧が無い画面は、帯に分けずに縦にずらすだけ */
+		SetRect (&rcMain, cx, cy, cx, cy);
+		dx = dy = 0;
+	}
 
-	/* 元の大きさの裏画面に元の位置で描いてから、帯ごとにずらして写す */
+	/* 中身の大きさの裏画面に元の位置で描いてから、帯ごとにずらして写す */
 	HDC hDCMem = CreateCompatibleDC (hDC);
 	HBITMAP hBmp = CreateCompatibleBitmap (hDC, cx, cy);
 	HGDIOBJ hBmpOld = SelectObject (hDCMem, hBmp);
@@ -420,17 +521,114 @@ void AdminAutoLayoutPaint(HWND hWnd, HDC hDC, void (*pfnPaint)(HDC))
 	int nBottom = AalMax (nTop, AalMin (cy, (int)rcMain.bottom));
 	int nRight = AalMax (0, AalMin (cx, (int)rcMain.right));
 	/* 一覧より上 */
-	BitBlt (hDC, 0, 0, cx, nTop, hDCMem, 0, 0, SRCCOPY);
+	BltClip (hDC, 0, -nScroll, cx, nTop, hDCMem, 0, 0);
 	/* 一覧の段の左側（一覧そのものの場所を含む） */
-	BitBlt (hDC, 0, nTop, nRight, nBottom - nTop, hDCMem, 0, nTop, SRCCOPY);
+	BltClip (hDC, 0, nTop - nScroll, nRight, nBottom - nTop, hDCMem, 0, nTop);
 	/* 一覧の段の右横 → 右へ */
-	BitBlt (hDC, nRight + stShift.dx, nTop, cx - nRight, nBottom - nTop, hDCMem, nRight, nTop, SRCCOPY);
+	BltClip (hDC, nRight + dx, nTop - nScroll, cx - nRight, nBottom - nTop, hDCMem, nRight, nTop);
 	/* 一覧より下 → 下へ */
-	BitBlt (hDC, 0, nBottom + stShift.dy, cx, cy - nBottom, hDCMem, 0, nBottom, SRCCOPY);
+	BltClip (hDC, 0, nBottom + dy - nScroll, cx, cy - nBottom, hDCMem, 0, nBottom);
 
 	SelectObject (hDCMem, hBmpOld);
 	DeleteObject (hBmp);
 	DeleteDC (hDCMem);
+}
+
+/* ========================================================================= */
+/* 関数名：	AdminAutoLayoutSetContentHeight									 */
+/* 内容：	画面の中身の高さを申告する（元の大きさより高ければスクロールできる）	 */
+/* ========================================================================= */
+
+void AdminAutoLayoutSetContentHeight(HWND hWnd, int nHeight)
+{
+	AAL_SCROLL &stScroll = s_mapScroll[hWnd];
+	if (stScroll.nContentCY == nHeight) {
+		return;
+	}
+	stScroll.nContentCY = nHeight;
+	AdminAutoLayout (hWnd, TRUE);
+	InvalidateRect (hWnd, NULL, TRUE);
+}
+
+/* ========================================================================= */
+/* 関数名：	AdminAutoLayoutResetScroll										 */
+/* 内容：	画面を切り替えた時に、スクロール位置と申告した高さを戻す		 */
+/* ========================================================================= */
+
+void AdminAutoLayoutResetScroll(HWND hWnd)
+{
+	std::map<HWND, AAL_SCROLL>::iterator it = s_mapScroll.find (hWnd);
+	if (it == s_mapScroll.end ()) {
+		return;
+	}
+	it->second.nPos = 0;
+	it->second.nContentCY = 0;
+}
+
+/* ========================================================================= */
+/* 関数名：	AdminAutoLayoutGetScrollY										 */
+/* 内容：	今の縦スクロール位置（クリック位置を中身の座標に直す時に足す）	 */
+/* ========================================================================= */
+
+int AdminAutoLayoutGetScrollY(HWND hWnd)
+{
+	std::map<HWND, AAL_SCROLL>::iterator it = s_mapScroll.find (hWnd);
+	return (it == s_mapScroll.end ()) ? 0 : it->second.nPos;
+}
+
+/* ========================================================================= */
+/* 関数名：	AdminAutoLayoutOnScrollMsg										 */
+/* 内容：	ホイールと右端のスクロールバーを処理する（処理したら TRUE）		 */
+/* ========================================================================= */
+
+BOOL AdminAutoLayoutOnScrollMsg(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+	std::map<HWND, AAL_SCROLL>::iterator it = s_mapScroll.find (hWnd);
+	if (it == s_mapScroll.end ()) {
+		return FALSE;
+	}
+	AAL_SCROLL &stScroll = it->second;
+	int nPos = stScroll.nPos;
+
+	if (msg == WM_MOUSEWHEEL) {
+		if (stScroll.nMax <= 0) {
+			return FALSE;
+		}
+		/* 120 で 1 目盛り（トラックパッドなどの細かい量でも少しは動かす） */
+		short nDelta = (short)HIWORD (wParam);
+		int nMove = nDelta * AAL_WHEEL_STEP / 120;
+		if (nMove == 0 && nDelta != 0) {
+			nMove = (nDelta > 0) ? 1 : -1;
+		}
+		nPos -= nMove;
+
+	} else if (msg == WM_VSCROLL) {
+		if (stScroll.hWndBar == NULL || (HWND)lParam != stScroll.hWndBar) {
+			return FALSE;
+		}
+		int nPage = AalMax (12, stScroll.nPage - 24);
+		switch (LOWORD (wParam)) {
+		case SB_LINEUP:			nPos -= 12;						break;
+		case SB_LINEDOWN:		nPos += 12;						break;
+		case SB_PAGEUP:			nPos -= nPage;					break;
+		case SB_PAGEDOWN:		nPos += nPage;					break;
+		case SB_THUMBTRACK:
+		case SB_THUMBPOSITION:	nPos = (int)HIWORD (wParam);	break;
+		case SB_TOP:			nPos = 0;						break;
+		case SB_BOTTOM:			nPos = stScroll.nMax;			break;
+		default:				return TRUE;
+		}
+
+	} else {
+		return FALSE;
+	}
+
+	nPos = AalMax (0, AalMin (nPos, stScroll.nMax));
+	if (nPos != stScroll.nPos) {
+		stScroll.nPos = nPos;
+		AdminAutoLayout (hWnd, TRUE);
+	}
+	return TRUE;
 }
 
 /* Copyright(C)URARA-works 2026 */
