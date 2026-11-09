@@ -2372,6 +2372,31 @@ static std::string MapWorkJson(PMAPINFO pBase, const std::string &strName, const
 	return MapJson(&m);
 }
 
+/*
+ * マップにいるプレイヤーへ、マップに入った時と同じ順で情報を送り直す
+ * （SubProcMapMove と同じ: マップ情報→イベント→キャラ→自分の位置・ステータス・持ち物）。
+ * クライアントはマップ情報を受け取るとキャラ情報を全部消すので、キャラも必ず送る。
+ */
+static void ResendMapToPlayers(PMAPINFO pMap, int nID)
+{
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		PCHARINFO pChar = g_aCharInfo[i];
+		if (pChar && pChar->pID && pChar->szAcc[0] && pChar->dwMapID == pMap->dwID && pChar->byNpcType == NPCTYPE_INIT) {
+			SendCmdMAPINFO(pChar->pID, pMap->dwID);
+			SendCmdEVENTCOUNT(pChar->pID, (DWORD)nID);
+			for (int j = 0; j < pMap->nEventCount; j ++) {
+				SendCmdEVENTINFO(pChar->pID, nID, j);
+			}
+			SendCmdEVENTPOS(pChar->pID, (DWORD)nID);
+			SendCmdCHARINFO(pChar->pID, -1);
+			SendCmdCHARPOS(pChar->pID, pChar->dwTblID, 0, 2);
+			SendCmdCHARSTATUS(pChar->pID, pChar->dwTblID);
+			SendCmdCHARITEM(pChar->pID, pChar->dwTblID);
+			SendCmdSYSMSG(pChar->pID, "SYSTEM:マップの情報が更新されたので読み込み直しました。");
+		}
+	}
+}
+
 /* マップの変更（設定・イベント・店・メッセージ。配列は丸ごと置き換え） */
 static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr, std::string &strRecord)
 {
@@ -2683,6 +2708,23 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 
 	/* 反映 */
 	BYTE byBGMOld = pMap->byBGM;
+	/* マップ全体の情報（マップ情報の送り直しが要るもの）が変わるか。
+	 * 店・イベント・メッセージだけなら、マップに入り直させずに差分だけ送る */
+	bool bMapWide =
+		pMap->nStartX != w.nStartX || pMap->nStartY != w.nStartY ||
+		pMap->nEntranceX != w.nEntranceX || pMap->nEntranceY != w.nEntranceY ||
+		pMap->byBGM != w.byBGM || pMap->byFlg != w.byFlg ||
+		pMap->byLightLevel != w.byLightLevel || pMap->byWeather != w.byWeather ||
+		pMap->byViewRange != w.byViewRange || pMap->wViewHideParts != w.wViewHideParts ||
+		pMap->byDarkAreaCount != w.byDarkAreaCount ||
+		memcmp(pMap->aDarkArea, w.aDarkArea, sizeof(pMap->aDarkArea)) != 0 ||
+		pMap->byLightCount != w.byLightCount ||
+		memcmp(pMap->aLight, w.aLight, sizeof(pMap->aLight)) != 0 ||
+		strName != std::string(pMap->pszName ? (const char *)pMap->pszName : "");
+	/* 店が減る時はクライアントの店の数を減らす手段が無いので、マップ情報ごと送り直す */
+	if (pShops && aShop.size() < (size_t)pMap->byCountShop) {
+		bMapWide = true;
+	}
 	pMap->nStartX		= w.nStartX;
 	pMap->nStartY		= w.nStartY;
 	pMap->nEntranceX	= w.nEntranceX;
@@ -2771,15 +2813,27 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 	if (byBGMOld != pMap->byBGM) {
 		SendCmdCHGBGM(URARASOCK_SENDALL, pMap->dwID, pMap->byBGM);
 	}
-	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
-		PCHARINFO pChar = g_aCharInfo[i];
-		if (pChar && pChar->pID && pChar->szAcc[0] && pChar->dwMapID == pMap->dwID && pChar->byNpcType == NPCTYPE_INIT) {
-			SendCmdMAPINFO(pChar->pID, pMap->dwID);
-			SendCmdEVENTCOUNT(pChar->pID, (DWORD)nID);
-			for (int j = 0; j < pMap->nEventCount; j ++) {
-				SendCmdEVENTINFO(pChar->pID, nID, j);
+	if (bMapWide) {
+		/* クライアントはマップ情報を受け取るとキャラを全部消すので、
+		 * マップに入った時と同じくキャラも送り直す（送らないと自分のキャラが消えて操作できなくなる） */
+		ResendMapToPlayers(pMap, nID);
+	} else {
+		if (pShops) {
+			for (int i = 0; i < pMap->byCountShop; i ++) {
+				SendCmdSHOPMap((DWORD)nID, (BYTE)i);
 			}
-			SendCmdEVENTPOS(pChar->pID, (DWORD)nID);
+		}
+		if (pEvs) {
+			for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+				PCHARINFO pChar = g_aCharInfo[i];
+				if (pChar && pChar->pID && pChar->szAcc[0] && pChar->dwMapID == pMap->dwID && pChar->byNpcType == NPCTYPE_INIT) {
+					SendCmdEVENTCOUNT(pChar->pID, (DWORD)nID);
+					for (int j = 0; j < pMap->nEventCount; j ++) {
+						SendCmdEVENTINFO(pChar->pID, nID, j);
+					}
+					SendCmdEVENTPOS(pChar->pID, (DWORD)nID);
+				}
+			}
 		}
 	}
 	SaveMapInfo();
@@ -2866,12 +2920,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataTilesSet(int nID, int x, i
 			}
 		}
 		if (nChanged > 400) {
-			for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
-				PCHARINFO pChar = g_aCharInfo[i];
-				if (pChar && pChar->pID && pChar->szAcc[0] && pChar->dwMapID == pMap->dwID && pChar->byNpcType == NPCTYPE_INIT) {
-					SendCmdMAPINFO(pChar->pID, pMap->dwID);
-				}
-			}
+			ResendMapToPlayers(pMap, nID);
 		}
 		SaveMapInfo();
 	}
