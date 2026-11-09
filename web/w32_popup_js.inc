@@ -255,6 +255,27 @@ EM_JS(void, W32JsPopInit, (void), {
 		el.addEventListener('contextmenu', function (ev) {
 			ev.preventDefault();
 		});
+		/* ホイール：中の一覧など自分でスクロールする部品の上では送らない */
+		el.addEventListener('wheel', function (ev) {
+			if (ev.defaultPrevented || !ev.deltaY) {
+				return;
+			}
+			for (var t = ev.target; t && t !== el; t = t.parentNode) {
+				if (t.scrollHeight > t.clientHeight + 1 || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA') {
+					return;
+				}
+			}
+			var r = el.getBoundingClientRect();
+			/* マウスのホイール 1 目盛り（約 100px）を Windows の 120 にする。行単位・ページ単位の時はピクセルに直す */
+			var dy = ev.deltaY * (ev.deltaMode === 1 ? 33 : (ev.deltaMode === 2 ? 300 : 1));
+			var delta = Math.max(-1200, Math.min(1200, Math.round(-dy * 1.2)));
+			if (delta === 0) {
+				delta = (dy < 0) ? 1 : -1;
+			}
+			if (_W32JsOnWndWheel(el.w32Id, delta, Math.floor(ev.clientX - r.left), Math.floor(ev.clientY - r.top))) {
+				ev.preventDefault();
+			}
+		}, {passive: false});
 	};
 
 	/* ---- 入力欄のキー（ゲームには渡さない） ---- */

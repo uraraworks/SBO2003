@@ -35,6 +35,7 @@
 #define IDD_STTMPINFO                   229
 #define IDD_STTMPINFO_EDIT              230
 #define IDD_NPCROUTE                    231
+#define IDD_MAP_LIGHT                   232
 #define IDC_BUTTON1                     1000
 #define IDC_BUTTON2                     1001
 #define IDC_BUTTON3                     1002
@@ -191,6 +192,30 @@
 #define IDC_NR_POINTS                   1153
 #define IDC_NR_WARN                     1154
 #define IDC_NR_MSG                      1155
+#define IDC_ML_AREALIST                 1156
+#define IDC_ML_AREAADD                  1157
+#define IDC_ML_AREADEL                  1158
+#define IDC_ML_AREAUP                   1159
+#define IDC_ML_AREADOWN                 1160
+#define IDC_ML_AREATYPE                 1161
+#define IDC_ML_AREAX1                   1162
+#define IDC_ML_AREAY1                   1163
+#define IDC_ML_AREAX2                   1164
+#define IDC_ML_AREAY2                   1165
+#define IDC_ML_LIGHTLIST                1166
+#define IDC_ML_LIGHTADD                 1167
+#define IDC_ML_LIGHTDEL                 1168
+#define IDC_ML_LIGHTX                   1169
+#define IDC_ML_LIGHTY                   1170
+#define IDC_ML_LIGHTRANGE               1171
+#define IDC_ML_LIGHTPOWER               1172
+#define IDC_ML_NOFLICKER                1173
+#define IDC_ML_WARM                     1174
+#define IDC_ML_VIEWRANGE                1175
+#define IDC_ML_HIDEPARTS                1176
+#define IDC_ML_CLICK                    1177
+#define IDC_ML_AREAINFO                 1178
+#define IDC_ML_LIGHTINFO                1179
 #define IDM_MAP_PARTS                   40001
 #define IDM_MAP_INFO                    40002
 #define IDM_MAP_ADD                     40003
@@ -226,9 +251,9 @@
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        232
+#define _APS_NEXT_RESOURCE_VALUE        233
 #define _APS_NEXT_COMMAND_VALUE         40031
-#define _APS_NEXT_CONTROL_VALUE         1156
+#define _APS_NEXT_CONTROL_VALUE         1180
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

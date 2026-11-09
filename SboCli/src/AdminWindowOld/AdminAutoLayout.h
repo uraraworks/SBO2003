@@ -23,4 +23,14 @@ void AdminAutoLayoutInit	(HWND hWnd);					/* 元の大きさを覚える */
 void AdminAutoLayout		(HWND hWnd, BOOL bPainted);		/* 並べ直す */
 void AdminAutoLayoutPaint	(HWND hWnd, HDC hDC, void (*pfnPaint)(HDC));	/* ずらして描く */
 
+/*
+ * 縦スクロール（bPainted = TRUE の画面だけ）
+ *   中身（部品の下端・申告した高さ）が見えている高さより高いと、右端にスクロールバーが出て、
+ *   ホイールでも動かせる。部品も描いた文字も同じだけ上へずれる。
+ */
+void AdminAutoLayoutSetContentHeight	(HWND hWnd, int nHeight);	/* 中身の高さを申告する(0=申告なし) */
+void AdminAutoLayoutResetScroll			(HWND hWnd);				/* 画面を切り替えた時に戻す */
+int  AdminAutoLayoutGetScrollY			(HWND hWnd);				/* 今のスクロール位置 */
+BOOL AdminAutoLayoutOnScrollMsg			(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);	/* ホイール・スクロールバー */
+
 /* Copyright(C)URARA-works 2026 */
