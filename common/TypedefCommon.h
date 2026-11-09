@@ -2247,6 +2247,7 @@ typedef struct _CMDPARA_CHARINFO {
 	DWORD		dwLastIPAddress;									/* 最終IPアドレス */
 	DWORD		dwTailTblID;										/* ついていっているキャラのテーブルID */
 	DWORD		dwTailBackTblID;									/* ついてきているキャラのテーブルID */
+	DWORD		dwNpcID;											/* NPC番号（保存する NPC ごとに決まった番号。管理者画面に出す） */
 	char		szName[MAX_CHARNAMEBUF];							/* キャラ名 */
 	char		szAcc[MAX_ACCNAME];									/* アカウント名 */
 	char		szPas[MAX_ACCNAME];									/* パスワード */
