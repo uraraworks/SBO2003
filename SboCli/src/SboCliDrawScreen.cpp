@@ -434,6 +434,8 @@ static void DrawMapLight(const char *pMapDark)
 	int anX[MAPLIGHT_MAX], anY[MAPLIGHT_MAX];
 	float afR[MAPLIGHT_MAX], afPower[MAPLIGHT_MAX], afWarm[MAPLIGHT_MAX], fFlicker, fTime;
 	float afVisX[DRAW_PARTS_X * 2 + 3];
+	BYTE abyHide[SCRMARTSSIZE];
+	BOOL bHide;
 	PCHARINFO pMyChar, pChar;
 	LPBYTE pBits;
 	DWORD dwTime;
@@ -484,10 +486,6 @@ static void DrawMapLight(const char *pMapDark)
 		if (pChar->byLightLevel) {
 			nLevel = GetMapLightLevel () - pChar->byLightLevel;
 		}
-		/* 明るい(壁の向こうは見えない)所では、見えるマスは全部明るい */
-		if ((pChar == pMyChar) && IsMapHideArea ()) {
-			nLevel = 0;
-		}
 		/* 灯りの中心(歩き中のずれも入れて、なめらかについてくるように) */
 		anX[nLight] = (DRAW_PARTS_X + 1) * 32 + 16 - xTmp * 32 - anPosAddTblX[pChar->byDirection] * pChar->byDotMove;
 		anY[nLight] = (DRAW_PARTS_Y + 1) * 32 + 16 - yTmp * 32 - anPosAddTblY[pChar->byDirection] * pChar->byDotMove;
@@ -498,18 +496,24 @@ static void DrawMapLight(const char *pMapDark)
 		if (nLevel > 0) {
 			afR[nLight] = (100.0f / nLevel + 0.2f) * 32.0f * fFlicker;
 		}
+		/* キャラの灯り無しのマップでは、明かりの道具を持っていない自分は足元がうっすら見えるだけ */
+		if ((pChar == pMyChar) && (g_pMapInfo->byFlg & MAPFLG_NOCHARLIGHT) && (pChar->byLightLevel == 0)) {
+			afR[nLight] = 1.2f * 32.0f;
+			afPower[nLight] = 0.6f;
+		}
 		nLight ++;
 	}
 
 	/* 光るマップパーツ(たいまつ・かがり火など)も灯りにする */
 	{
 		int mx, my;
-		for (y = -(DRAW_PARTS_Y + 1); y <= DRAW_PARTS_Y + 1; y ++) {
+		/* 画面の外にある灯りでも、照らす範囲が画面に入っていれば使う */
+		for (y = -(DRAW_PARTS_Y + 1 + MAPLIGHT_RANGE_MAX); y <= DRAW_PARTS_Y + 1 + MAPLIGHT_RANGE_MAX; y ++) {
 			my = (int)pMyChar->dwY + y;
 			if ((my < 0) || (my >= g_pMapInfo->nCY)) {
 				continue;
 			}
-			for (x = -(DRAW_PARTS_X + 1); x <= DRAW_PARTS_X + 1; x ++) {
+			for (x = -(DRAW_PARTS_X + 1 + MAPLIGHT_RANGE_MAX); x <= DRAW_PARTS_X + 1 + MAPLIGHT_RANGE_MAX; x ++) {
 				float fFlickerParts;
 				int nRange;
 				BYTE byPower, byFlg;
@@ -526,6 +530,10 @@ static void DrawMapLight(const char *pMapDark)
 				if (nRange == 0) {
 					continue;
 				}
+				/* 灯りが画面に届かない？ */
+				if ((abs (x) > DRAW_PARTS_X + 1 + nRange) || (abs (y) > DRAW_PARTS_Y + 1 + nRange)) {
+					continue;
+				}
 				/* マップのマスは描画用画像の中で動かない(歩き中は見る場所の方がずれる) */
 				anX[nLight] = (DRAW_PARTS_X + 1 + x) * 32 + 16;
 				anY[nLight] = (DRAW_PARTS_Y + 1 + y) * 32 + 16;
@@ -540,6 +548,22 @@ static void DrawMapLight(const char *pMapDark)
 				/* 範囲のマスまで見えて、その少し先で真っ暗になる(RenewMapDarkParts と同じ) */
 				afR[nLight] = (nRange + 1 + 0.2f) * 32.0f * fFlickerParts;
 				nLight ++;
+			}
+		}
+	}
+
+	/* 「明るく壁で隠す」範囲にいる時は、範囲の中のマスに印を付ける */
+	bHide = IsMapHideArea ();
+	if (bHide) {
+		ZeroMemory (abyHide, sizeof (abyHide));
+		for (y = 0; y < DRAW_PARTS_Y * 2 + 3; y ++) {
+			for (x = 0; x < nMapW; x ++) {
+				int mx = (int)pMyChar->dwX + x - (DRAW_PARTS_X + 1);
+				int my = (int)pMyChar->dwY + y - (DRAW_PARTS_Y + 1);
+				if ((mx < 0) || (my < 0) || (mx >= g_pMapInfo->nCX) || (my >= g_pMapInfo->nCY)) {
+					continue;
+				}
+				abyHide[x + nMapW * y] = (GetMapDarkType (g_pMapInfo, mx, my) == MAPDARK_HIDE) ? 1 : 0;
 			}
 		}
 	}
@@ -593,7 +617,14 @@ static void DrawMapLight(const char *pMapDark)
 			/* 灯りからの距離でなめらかに暗くする(灯りが重なると明るくなる) */
 			fLight = 0.0f;
 			fWarm = 0.0f;
-			for (i = 0; i < nLight; i ++) {
+			/* 「明るく壁で隠す」範囲の中のマスは全部明るい */
+			if (bHide && abyHide[(x / 32) + nMapW * (y / 32)]) {
+				fLight = 1.0f;
+				i = nLight;
+			} else {
+				i = 0;
+			}
+			for (; i < nLight; i ++) {
 				float fDX, fDY, fD;
 				if (afR[i] <= 0.0f) {
 					fLight = 1.0f;

@@ -1342,7 +1342,7 @@ static const DATAFIELD s_aFieldMap[] = {
 	FLD (MAPINFO, nEntranceX,			"入り口X",				FT_U32, 0, NULL),
 	FLD (MAPINFO, nEntranceY,			"入り口Y",				FT_U32, 0, NULL),
 	FLD (MAPINFO, byBGM,				"BGM",					FT_U8, 0, NULL),
-	FLD (MAPINFO, byFlg,				"フラグ",				FT_U8, 0, "ビット: 1=エフェクト可 2=戦闘可 4=サブゲーム 8=暗闇 16=マップ内放送 32=移動系効果禁止 64=魔法禁止"),
+	FLD (MAPINFO, byFlg,				"フラグ",				FT_U8, 0, "ビット: 1=エフェクト可 2=戦闘可 4=サブゲーム 8=暗闇 16=マップ内放送 32=移動系効果禁止 64=魔法禁止 128=キャラの灯り無し(暗いマップでマップの光源だけで見える)"),
 	FLD (MAPINFO, byLightLevel,			"明るさ",				FT_U8, 0, NULL),
 	FLD (MAPINFO, byWeather,			"天候",					FT_U8, 0, NULL),
 	FLD (MAPINFO, wViewHideParts,		"見えない所のパーツ",	FT_U16, 0, "見える範囲（byViewRange）の外に描く mapParts の番号。0 なら黒。森なら草原・木のパーツにすると、暗い洞窟ではなく見通しの悪い森のようになる（一度見た所は本当の地形を少し暗く描く）"),

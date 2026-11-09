@@ -77,6 +77,7 @@ enum {
 	IDC_SCRBAR1,												/* スクロールバー１ */
 	IDC_LIST2,													/* リストコントロール２ */
 	IDC_RENEW,
+	IDC_TMPCHECK8,												/* チェック８ */
 };
 
 /* ========================================================================= */
@@ -135,6 +136,7 @@ static HWND
 	m_hWndCheck5,												/* チェック５ */
 	m_hWndCheck6,												/* チェック６ */
 	m_hWndCheck7,												/* チェック７ */
+	m_hWndCheck8,												/* チェック８ */
 	m_hWndButton1,												/* ボタン１ */
 	m_hWndButton2,												/* ボタン２ */
 	m_hWndButton3,												/* ボタン３ */
@@ -1899,6 +1901,16 @@ void AdminOnCommandMapInfo(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 		break;
 
 	/* 魔法禁止 */
+	/* キャラの灯り無し */
+	case IDC_TMPCHECK8:
+		if (SendMessage (m_hWndCheck8, BM_GETCHECK, 0, 0) & BST_CHECKED) {
+			g_pMapInfo->byFlg |= MAPFLG_NOCHARLIGHT;
+
+		} else {
+			g_pMapInfo->byFlg &= ~MAPFLG_NOCHARLIGHT;
+		}
+		break;
+
 	case IDC_TMPCHECK7:
 		if (SendMessage (m_hWndCheck7, BM_GETCHECK, 0, 0) & BST_CHECKED) {
 			g_pMapInfo->byFlg |= MAPFLG_MAGIC;
@@ -7296,6 +7308,10 @@ void MakeAdminWndMapInfo(void)
 			12 * 20, 16 * 11, 72, 16, g_hWndAdmin, (HMENU)IDC_TMPCHECK7, g_hInstance, NULL);
 	SendMessage (m_hWndCheck7, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
+	m_hWndCheck8 = CreateWindow ("BUTTON", "ｷｬﾗ灯り無し", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+			12 * 20, 16 * 12, 72, 16, g_hWndAdmin, (HMENU)IDC_TMPCHECK8, g_hInstance, NULL);
+	SendMessage (m_hWndCheck8, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+
 	/* 色変換指定 */
 	m_hWndEdit1 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_NUMBER,
 			12 * 25, 0, 32, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
@@ -7410,6 +7426,7 @@ void MakeAdminWndMapInfo(void)
 	SendMessage (m_hWndCheck5, BM_SETCHECK, g_pMapInfo->byFlg & MAPFLG_SPEECH, 0);
 	SendMessage (m_hWndCheck6, BM_SETCHECK, g_pMapInfo->byFlg & MAPFLG_MOVE, 0);
 	SendMessage (m_hWndCheck7, BM_SETCHECK, g_pMapInfo->byFlg & MAPFLG_MAGIC, 0);
+	SendMessage (m_hWndCheck8, BM_SETCHECK, (g_pMapInfo->byFlg & MAPFLG_NOCHARLIGHT) ? BST_CHECKED : 0, 0);
 
 	wsprintf (szTmp, "%d", GetRValue (g_pMapInfo->clChg));
 	SetWindowText (m_hWndEdit1, szTmp);
@@ -7483,6 +7500,7 @@ void DeleteAdminWndMapInfo(void)
 	SAFE_DESTROYWND (m_hWndCheck5);
 	SAFE_DESTROYWND (m_hWndCheck6);
 	SAFE_DESTROYWND (m_hWndCheck7);
+	SAFE_DESTROYWND (m_hWndCheck8);
 	SAFE_DESTROYWND (m_hWndButton1);
 	SAFE_DESTROYWND (m_hWndCombo1);
 	SAFE_DESTROYWND (m_hWndCombo2);

@@ -118,6 +118,7 @@
 #define MAPFLG_SPEECH			(0x10)								/* マップ内放送 */
 #define MAPFLG_MOVE				(0x20)								/* 移動系効果禁止 */
 #define MAPFLG_MAGIC			(0x40)								/* 魔法禁止 */
+#define MAPFLG_NOCHARLIGHT		(0x80)								/* キャラの灯り無し(マップの光源と明かりの道具だけで見える) */
 
 /* アカウント状態 */
 #define ACCSTATE_NORMAL			(0x00)								/* 通常状態 */
@@ -1880,6 +1881,7 @@ typedef struct _MAPDARKAREA {
 
 /* マップの光源（天井の灯りなど、パーツが無くても照らす所） */
 #define MAX_MAPLIGHT		16										/* 1マップに置ける光源の数 */
+#define MAPLIGHT_RANGE_MAX	7										/* 灯りの範囲の上限(マス。パーツの灯りも同じ) */
 typedef struct _MAPLIGHT {
 	WORD			wX;												/* X */
 	WORD			wY;												/* Y */
