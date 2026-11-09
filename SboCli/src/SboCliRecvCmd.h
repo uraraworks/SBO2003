@@ -33,6 +33,7 @@ extern BOOL	IsMapDarkFlg			(void);														/* 今の場所で暗闇が効�
 extern BOOL	IsMapHideArea			(void);														/* 明るいが壁の向こうは見えない所か */
 extern void	RenewMapDarkHideArea	(void);														/* 明るく壁で隠す範囲の中を全部見せる */
 extern BOOL	IsMapHideShowTile		(int nPos);												/* 隠す範囲の中で全部見せるマスか */
+extern BOOL	IsLightOtherRoom		(int x, int y);											/* 自分と違う部屋(隠す範囲)にある灯りか */
 extern int	GetMapPosLight			(int mx, int my, BYTE *pbyPower, BYTE *pbyFlg);											/* マスの灯りの範囲(パーツ・光源) */														/* 今の場所で暗闇が効くか */
 extern BOOL	IsMapViewMode			(void);														/* 今の場所で見える範囲(視界)が効くか */
 extern BOOL	IsMapDarkHidePos		(int xTmp, int yTmp);										/* 自分からずれたマスが暗くて(見えなくて)隠すか */
