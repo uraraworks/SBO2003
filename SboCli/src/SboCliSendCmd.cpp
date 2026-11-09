@@ -232,11 +232,6 @@ void SendCmdCHGDIRECTION(BYTE byDirection)
 	if (pChar->dwTailTblID != -1) {
 		return;
 	}
-	/* 橋の上では横を向けない(上を渡るか下をくぐるかは向きで決まるので) */
-	if (IsBridgeTurnBlock (pChar, byDirection)) {
-		return;
-	}
-
 	/* 送信キューの数を取得 */
 //	IDirectPlay8Client *pCli = cli.GetPtr ();
 //	DWORD dwNumMsgs;
@@ -311,6 +306,11 @@ void SendCmdCHARPOS(BYTE byDirection, BOOL bMovingFlg)
 
 	dwX = pChar->dwX + anPosAddTblX[pChar->byDirection];
 	dwY = pChar->dwY + anPosAddTblY[pChar->byDirection];
+	/* 橋の上から横へ落ちる・橋の下から橋の端へ出る？ */
+	if (IsBridgeMoveBlock (pChar, pChar->byDirection)) {
+		g_dwTimeMoveDisable = timeGetTime () + 250;
+		return;
+	}
 	if (g_bBlock) {
 		byHitType = (&g_pMapPartsInfo[g_pMapInfo->pwMap[dwX + dwY * g_pMapInfo->nCX]])->byHitType;
 		switch (byHitType) {
@@ -353,7 +353,7 @@ void SendCmdCHARPOS(BYTE byDirection, BOOL bMovingFlg)
 	if (g_bBlock) {// && g_pMapInfo->pdwMapChar[g_pMapInfo->nCX * pSendData->byY + pSendData->byX]) {
 		int i, nBridgeLayer;
 		/* 行き先が橋なら、自分が橋の上を渡るか(1)下をくぐるか(2) */
-		nBridgeLayer = GetBridgeLayerPos (pSendData->byX, pSendData->byY, pChar->byDirection);
+		nBridgeLayer = GetBridgeLayerPos (pChar, pSendData->byX, pSendData->byY);
 		for (i = 0; i < g_aCharInfo.GetSize (); i ++) {
 			PCHARINFO pCharTmp = g_aCharInfo[i];
 			if ((CheckCharX (pCharTmp, pCharTmp->dwX, pSendData->byX)) && (pCharTmp->dwY == pSendData->byY)) {

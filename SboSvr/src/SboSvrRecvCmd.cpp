@@ -2194,6 +2194,101 @@ DWORD GetCharXPos(PCHARINFO pChar, DWORD dwX, BYTE byDirection)
 }
 
 /* ========================================================================= */
+/* 立体交差の橋																 */
+/*   地面から橋の向きに乗った人は上、横切って入った人は下を通る。			 */
+/*   上か下かは橋から降りるまで覚えておく(プレイヤーは移動を受け取った時に)	 */
+/* ========================================================================= */
+
+/* マップ dwMapID の (x,y) の橋の向き(1=縦に渡る 2=横に渡る 0=橋ではない) */
+static int GetSvrMapBridgeAxis(DWORD dwMapID, int x, int y)
+{
+	int nMapNo = GetMapNo (dwMapID);
+	if (nMapNo < 0) {
+		return 0;
+	}
+	PMAPINFO pMap = g_aMapInfo[nMapNo];
+	if ((pMap->pwMap == NULL) || (x < 0) || (y < 0) || (x >= pMap->nCX) || (y >= pMap->nCY)) {
+		return 0;
+	}
+	WORD wParts = pMap->pwMap[x + y * pMap->nCX];
+	if (wParts >= g_wCountMapParts) {
+		return 0;
+	}
+	return GetBridgeAxis (g_aMapPartsInfo[wParts].byHitType);
+}
+
+/* 今いるマスで橋の上(1)か下(2)か(0=橋ではない)
+   覚えていない時(NPC・ログイン直後)は向きで決め、pbKnown に FALSE を返す */
+int GetCharBridgeLayerSvr(PCHARINFO pChar, BOOL *pbKnown)
+{
+	int nAxis;
+
+	if (pbKnown) {
+		*pbKnown = FALSE;
+	}
+	nAxis = GetSvrMapBridgeAxis (pChar->dwMapID, (int)pChar->dwX, (int)pChar->dwY);
+	if (nAxis == 0) {
+		return 0;
+	}
+	if (pChar->byBridgeLayer && (pChar->dwMapID == pChar->dwBridgeMapID) &&
+		(pChar->dwX == pChar->dwBridgeX) && (pChar->dwY == pChar->dwBridgeY)) {
+		if (pbKnown) {
+			*pbKnown = TRUE;
+		}
+		return pChar->byBridgeLayer;
+	}
+	return GetBridgeLayerByDirection (nAxis, pChar->byDirection);
+}
+
+/* キャラが (x,y) へ動く時に、橋の上か下かを覚え直す(位置を変える前に呼ぶ) */
+static void RenewCharBridgeLayerSvr(PCHARINFO pChar, int x, int y, BYTE byDirectionNew)
+{
+	int nAxisFrom, nAxisTo, dx, dy, nLayer;
+
+	nAxisTo = GetSvrMapBridgeAxis (pChar->dwMapID, x, y);
+	dx = x - (int)pChar->dwX;
+	dy = y - (int)pChar->dwY;
+	if (nAxisTo == 0) {
+		nLayer = 0;
+	} else if (abs (dx) + abs (dy) != 1) {
+		nLayer = GetBridgeLayerByDirection (nAxisTo, byDirectionNew);
+	} else {
+		nAxisFrom = GetSvrMapBridgeAxis (pChar->dwMapID, (int)pChar->dwX, (int)pChar->dwY);
+		nLayer = GetBridgeLayerNext (GetCharBridgeLayerSvr (pChar, NULL), nAxisFrom, nAxisTo, (dy != 0) ? 1 : 2);
+	}
+	pChar->byBridgeLayer	= (BYTE)nLayer;
+	pChar->dwBridgeMapID	= pChar->dwMapID;
+	pChar->dwBridgeX		= (DWORD)x;
+	pChar->dwBridgeY		= (DWORD)y;
+}
+
+/* ログアウトする時の向きを、橋の上か下かに合わせる
+   (ログインした時は向きで上か下かを決めるので、広い橋の上で横を向いていても上のまま再開できるように) */
+void FitCharDirectionBridgeLayer(PCHARINFO pChar)
+{
+	int nAxis, nLayer;
+	BOOL bKnown;
+
+	if (pChar->byDirection >= 4) {
+		return;
+	}
+	nAxis = GetSvrMapBridgeAxis (pChar->dwMapID, (int)pChar->dwX, (int)pChar->dwY);
+	nLayer = GetCharBridgeLayerSvr (pChar, &bKnown);
+	if ((nAxis == 0) || (bKnown == FALSE)) {
+		return;
+	}
+	if (GetBridgeLayerByDirection (nAxis, pChar->byDirection) == nLayer) {
+		return;
+	}
+	/* 上なら橋の向き、下なら橋を横切る向きにする */
+	if ((nLayer == 1) == (nAxis == 1)) {
+		pChar->byDirection = 1;		/* 下向き */
+	} else {
+		pChar->byDirection = 3;		/* 右向き */
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：CheckCharBlock													 */
 /* 内容：キャラのぶつかり判定												 */
 /* 日付：2003/10/11															 */
@@ -2242,15 +2337,20 @@ BOOL CheckCharBlock(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY)
 
 	bRet = FALSE;
 
-	/* 橋の上では横へは進めない(上を渡るか下をくぐるかは向きで決まるので、まっすぐ抜けるだけ) */
-	if ((pChar->dwMapID == dwMapID) && (dwMapID < (DWORD)g_aMapInfo.GetSize ()) && (pChar->byDirection < 4)) {
-		PMAPINFO pMap = g_aMapInfo[dwMapID];
+	/* 橋の上から横へ落ちる・橋の下から橋の端へ出る？ */
+	if ((pChar->dwMapID == dwMapID) && (pChar->byDirection < 4)) {
 		int dx = (int)dwX - (int)pChar->dwX, dy = (int)dwY - (int)pChar->dwY;
-		if ((abs (dx) + abs (dy) == 1) &&
-			(pChar->dwX < (DWORD)pMap->nCX) && (pChar->dwY < (DWORD)pMap->nCY)) {
-			WORD wParts = pMap->pwMap[pChar->dwX + pChar->dwY * pMap->nCX];
-			if ((wParts < g_wCountMapParts) && GetBridgeAxis (g_aMapPartsInfo[wParts].byHitType) &&
-				(GetDirectionAxis (pChar->byDirection) != ((dy != 0) ? 1 : 2))) {
+		int nAxisFrom = GetSvrMapBridgeAxis (dwMapID, (int)pChar->dwX, (int)pChar->dwY);
+		if ((abs (dx) + abs (dy) == 1) && nAxisFrom) {
+			BOOL bKnown;
+			int nMoveAxis = (dy != 0) ? 1 : 2;
+			int nLayer = GetCharBridgeLayerSvr (pChar, &bKnown);
+			if (bKnown) {
+				if (IsBridgeMoveBlock (nLayer, nAxisFrom, GetSvrMapBridgeAxis (dwMapID, (int)dwX, (int)dwY), nMoveAxis)) {
+					return FALSE;
+				}
+			} else if (GetDirectionAxis (pChar->byDirection) != nMoveAxis) {
+				/* 上か下か覚えていない(NPC)時は、向いている方へまっすぐ抜けるだけ */
 				return FALSE;
 			}
 		}
@@ -3222,7 +3322,10 @@ void RecvDataProcLOGINREQ(PBYTE pData, DWORD dwDataSize)
 		}
 		pCharTmp->pID = pPara->pID;
 		pCharTmp->dwLastIPAddress = svrSock.GetIPAddress (pPara->pID);
-		pCharTmp->byDirection = 1;
+		/* 向きはログアウトした時のまま(立体交差の橋の上か下かは向きで決まる) */
+		if (pCharTmp->byDirection >= 4) {
+			pCharTmp->byDirection = 1;
+		}
 		pCharTmp->dwLoginCount ++;
 		pCharTmp->dwTblID = i;
 		CopyMemory (pCharTmp->szMacAdr, pPara->szMacAdr, 6);
@@ -3554,6 +3657,10 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 		pChar->dwXBack = pChar->dwX;
 		pChar->dwYBack = pChar->dwY;
 
+		/* 立体交差の橋の上か下かを覚え直す */
+		if ((pChar->dwX != (DWORD)pPara->byX) || (pChar->dwY != (DWORD)pPara->byY)) {
+			RenewCharBridgeLayerSvr (pChar, (int)pPara->byX, (int)pPara->byY, pPara->byDirection);
+		}
 		pChar->byDirection = pPara->byDirection;
 		pChar->dwX = (DWORD)pPara->byX;
 		pChar->dwY = (DWORD)pPara->byY;

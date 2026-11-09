@@ -1206,8 +1206,8 @@ BOOL IsMapDarkHidePos(int xTmp, int yTmp)
 
 /* ========================================================================= */
 /* 橋(立体交差)																 */
-/*   橋のマスは、橋の向きに進む人は橋の上、横切る人は橋の下を通る。			 */
-/*   上か下かは向きで決まるので、橋の上では横を向けない(まっすぐ抜けるだけ)	 */
+/*   地面から橋の向きに乗った人は橋の上、横切って入った人は橋の下を通る。	 */
+/*   上か下かは橋から降りるまで覚えておく(広い橋の上で横にずれられる)		 */
 /* ========================================================================= */
 
 /* マス(x,y)の橋の向き(1=縦に渡る 2=横に渡る 0=橋ではない) */
@@ -1228,49 +1228,94 @@ static int GetMapBridgeAxis(int x, int y)
 	return GetBridgeAxis (g_pMapPartsInfo[wParts].byHitType);
 }
 
-/* マス(x,y)に向き byDirection で立つと橋の上(1)か下(2)か(0=橋ではない) */
-int GetBridgeLayerPos(int x, int y, BYTE byDirection)
+/* 今いるマスで橋の上(1)か下(2)か(0=橋ではない)
+   覚えている時はそれを、覚えていない時(画面に入ってきた・ログインした)は向きで決める */
+static int GetCharBridgeLayerNow(PCHARINFO pChar)
 {
-	int nBridge;
+	int nAxis;
 
-	nBridge = GetMapBridgeAxis (x, y);
-	if (nBridge == 0) {
+	nAxis = GetMapBridgeAxis ((int)pChar->dwX, (int)pChar->dwY);
+	if (nAxis == 0) {
 		return 0;
 	}
-	return (nBridge == GetDirectionAxis (byDirection)) ? 1 : 2;
+	if (pChar->byBridgeLayer && (g_pMapInfo->dwID == pChar->dwBridgeMapID) &&
+		(pChar->dwX == pChar->dwBridgeX) && (pChar->dwY == pChar->dwBridgeY)) {
+		return pChar->byBridgeLayer;
+	}
+	return GetBridgeLayerByDirection (nAxis, pChar->byDirection);
+}
+
+/* キャラが (x,y) へ動いた後に橋の上(1)か下(2)か */
+int GetBridgeLayerPos(PCHARINFO pChar, int x, int y)
+{
+	int nAxisFrom, nAxisTo, nMoveAxis, dx, dy;
+
+	if (pChar == NULL) {
+		return 0;
+	}
+	nAxisTo = GetMapBridgeAxis (x, y);
+	if (nAxisTo == 0) {
+		return 0;
+	}
+	dx = x - (int)pChar->dwX;
+	dy = y - (int)pChar->dwY;
+	if (abs (dx) + abs (dy) != 1) {
+		/* となりではない(ワープ・初めて見た)時は向きで決める */
+		return GetBridgeLayerByDirection (nAxisTo, pChar->byDirection);
+	}
+	nAxisFrom = GetMapBridgeAxis ((int)pChar->dwX, (int)pChar->dwY);
+	nMoveAxis = (dy != 0) ? 1 : 2;
+	return GetBridgeLayerNext (GetCharBridgeLayerNow (pChar), nAxisFrom, nAxisTo, nMoveAxis);
+}
+
+/* キャラが (x,y) へ動く時に、橋の上か下かを覚え直す(位置を変える前に呼ぶ) */
+void RenewCharBridgeLayer(PCHARINFO pChar, int x, int y)
+{
+	if ((pChar == NULL) || (g_pMapInfo == NULL)) {
+		return;
+	}
+	pChar->byBridgeLayerBack = (BYTE)GetCharBridgeLayerNow (pChar);
+	pChar->byBridgeLayer	= (BYTE)GetBridgeLayerPos (pChar, x, y);
+	pChar->dwBridgeMapID	= g_pMapInfo->dwID;
+	pChar->dwBridgeX		= (DWORD)x;
+	pChar->dwBridgeY		= (DWORD)y;
 }
 
 /* キャラが橋の上(1)か下(2)か(0=橋とは関係ない)
    橋のマスにいる時と、橋のマスから出ていく途中(歩いている間)は橋の扱い */
 int GetCharBridgeLayer(PCHARINFO pChar)
 {
-	int nAxis, nBridge;
+	int nLayer;
 
-	if (pChar == NULL) {
+	if ((pChar == NULL) || (g_pMapInfo == NULL)) {
 		return 0;
 	}
-	nAxis = GetDirectionAxis (pChar->byDirection);
-	nBridge = GetMapBridgeAxis ((int)pChar->dwX, (int)pChar->dwY);
-	if ((nBridge == 0) && pChar->byDotMove && (pChar->byDirection < 4)) {
-		nBridge = GetMapBridgeAxis ((int)pChar->dwX - anPosAddTblX[pChar->byDirection],
-									(int)pChar->dwY - anPosAddTblY[pChar->byDirection]);
+	nLayer = GetCharBridgeLayerNow (pChar);
+	if ((nLayer == 0) && pChar->byDotMove && pChar->byBridgeLayerBack &&
+		(g_pMapInfo->dwID == pChar->dwBridgeMapID) &&
+		(pChar->dwX == pChar->dwBridgeX) && (pChar->dwY == pChar->dwBridgeY)) {
+		nLayer = pChar->byBridgeLayerBack;
 	}
-	if (nBridge == 0) {
-		return 0;
-	}
-	return (nBridge == nAxis) ? 1 : 2;
+	return nLayer;
 }
 
-/* 橋のマスの上で横を向こうとしているか(向けない) */
-BOOL IsBridgeTurnBlock(PCHARINFO pChar, BYTE byDirection)
+/* 橋のマスからその向きへ進めないか
+   (上を渡っている人は橋から横へ落ちない・下をくぐっている人は橋の端から上へ出ない) */
+BOOL IsBridgeMoveBlock(PCHARINFO pChar, BYTE byDirection)
 {
-	if ((pChar == NULL) || (byDirection >= 4)) {
+	int x, y, nAxisFrom;
+
+	if ((pChar == NULL) || (byDirection >= 4) || (g_pMapInfo == NULL)) {
 		return FALSE;
 	}
-	if (GetMapBridgeAxis ((int)pChar->dwX, (int)pChar->dwY) == 0) {
+	nAxisFrom = GetMapBridgeAxis ((int)pChar->dwX, (int)pChar->dwY);
+	if (nAxisFrom == 0) {
 		return FALSE;
 	}
-	return (GetDirectionAxis (byDirection) != GetDirectionAxis (pChar->byDirection));
+	x = (int)pChar->dwX + anPosAddTblX[byDirection];
+	y = (int)pChar->dwY + anPosAddTblY[byDirection];
+	return IsBridgeMoveBlock (GetCharBridgeLayerNow (pChar), nAxisFrom,
+			GetMapBridgeAxis (x, y), GetDirectionAxis (byDirection));
 }
 
 /* 一度見た所の記録を消す(マップを受け取った時。迷路の作り直しで形が変わるので) */
@@ -3578,6 +3623,10 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 	}
 
 	g_pMapInfo->pdwMapChar[g_pMapInfo->nCX * pCharDst->dwY + pCharDst->dwX] --;
+	/* 立体交差の橋の上か下かを覚え直す(動く前の位置と向きから) */
+	if ((pCharDst->dwX != (DWORD)pChar->byX) || (pCharDst->dwY != (DWORD)pChar->byY)) {
+		RenewCharBridgeLayer (pCharDst, (int)pChar->byX, (int)pChar->byY);
+	}
 	pCharDst->byDirection = pChar->byDirection;
 	if (pCharDst->dwXBack == -1) {
 		pCharDst->dwXBack = (DWORD)pChar->byX;

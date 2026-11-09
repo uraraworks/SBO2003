@@ -783,6 +783,13 @@ void OnDecPlayer(int nNo)
 	ZeroMemory (pChar->abySubStatus, sizeof (pChar->abySubStatus));
 
 	/* ログオフ処理 */
+	/* 向きは残す(ログインした時は立体交差の橋の上か下かを向きで決めるので、
+	   橋の上か下かに合う向きにしておき、再開しても同じ側にいるように) */
+	FitCharDirectionBridgeLayer (pChar);
+	BYTE byDirectionLogoff = pChar->byDirection;
+	if (byDirectionLogoff >= 4) {
+		byDirectionLogoff = 1;
+	}
 	pChar->byDirection = 99;
 	if (pChar->byGameState != GAMESTATE_LOGOFF) {
 		SendCmdCHARPOS (0, nNo, 0, 1);
@@ -791,7 +798,7 @@ void OnDecPlayer(int nNo)
 	pChar->pID				= 0;
 	pChar->byGameState		= GAMESTATE_LOGOFF;
 	pChar->byCharState		= CHARSTATE_LOGOFF;
-	pChar->byDirection		= 1;
+	pChar->byDirection		= byDirectionLogoff;
 	pChar->byDrunkLV		= CHARSTATEDRUNK_NONE;
 	pChar->byDrunkPoint		= 0;
 	pChar->dwLastSake		= 0;
