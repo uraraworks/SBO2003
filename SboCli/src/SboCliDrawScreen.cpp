@@ -41,6 +41,44 @@ static void DrawMapLight	(const char *pMapDark);						/* 丸くゆらめく灯�
 static void DrawMapViewFog	(void);										/* 見える範囲の外に白い霧をかける */
 
 static BOOL s_bDrawCharBridgeUpper = FALSE;							/* TRUE なら橋の上を渡っている人だけ描く */
+static BYTE s_abyBridgeCol[DRAW_PARTS_X * 2 + 3];						/* 橋を重ねる列(NULL でない時だけ見る) */
+static BYTE *s_pbyBridgeCol = NULL;										/* 橋を重ねる列を絞る時は s_abyBridgeCol */
+
+/* 行 nLine で橋の下をくぐっている人の頭が上の行にはみ出すので、
+   その人の列(歩いている途中は左右の列も)だけ、上の行の橋を重ねる */
+static void DrawBridgeOverHead(int nLine)
+{
+	int i, x, nCount, nXMax;
+	BOOL bAny = FALSE;
+	PCHARINFO pChar, pMyChar;
+
+	if ((nLine <= 0) || (g_nMyCharID < 0)) {
+		return;
+	}
+	pMyChar = g_aCharInfo[g_nMyCharID];
+	nXMax = DRAW_PARTS_X * 2 + 3;
+	ZeroMemory (s_abyBridgeCol, sizeof (s_abyBridgeCol));
+	nCount = g_aCharPos[nLine].GetSize ();
+	for (i = 0; i < nCount; i ++) {
+		pChar = g_aCharInfo[g_aCharPos[nLine][i]];
+		if (GetCharBridgeLayer (pChar) != 2) {
+			continue;
+		}
+		x = (int)pChar->dwX - (int)pMyChar->dwX + (DRAW_PARTS_X + 1);
+		for (int k = x - 1; k <= x + 1; k ++) {
+			if ((k >= 0) && (k < nXMax)) {
+				s_abyBridgeCol[k] = 1;
+				bAny = TRUE;
+			}
+		}
+	}
+	if (bAny == FALSE) {
+		return;
+	}
+	s_pbyBridgeCol = s_abyBridgeCol;
+	DrawMapLine (nLine - 1, PARTSHIT_BRIDGEV);
+	s_pbyBridgeCol = NULL;
+}
 void AddSysMsg			(LPSTR, COLORREF);							/* システムメッセージの追加 */
 
 /* ========================================================================= */
@@ -306,6 +344,7 @@ BOOL DrawScreenMOVE(void)
 	for (i = 0; i < DRAW_PARTS_Y * 2 + 3; i ++) {
 		DrawCharLine (i);
 		DrawMapLine (i, PARTSHIT_BRIDGEV);	/* 橋の下をくぐる人に橋を重ねる */
+		DrawBridgeOverHead (i);				/* 上の行にはみ出した頭にも */
 		DrawMapLine (i, PARTSHIT_HIDE3);
 		if (i > 0) {
 			DrawMapLine (i - 1, PARTSHIT_HIDE1);
@@ -681,6 +720,9 @@ void DrawMapLine(int nLine, int nType)
 
 			case PARTSHIT_BRIDGEV:		/* 橋(縦・横とも)を重ねる */
 				if (GetBridgeAxis (pParts->byHitType) == 0) {
+					continue;
+				}
+				if (s_pbyBridgeCol && (s_pbyBridgeCol[x] == 0)) {
 					continue;
 				}
 				break;

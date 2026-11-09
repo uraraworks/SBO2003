@@ -2240,6 +2240,20 @@ int GetCharBridgeLayerSvr(PCHARINFO pChar, BOOL *pbKnown)
 	return GetBridgeLayerByDirection (nAxis, pChar->byDirection);
 }
 
+/* 覚えていなければ、今の向きで決めた橋の上か下かを覚える(プレイヤーが向きを変える前に) */
+static void PinCharBridgeLayerSvr(PCHARINFO pChar)
+{
+	BOOL bKnown;
+	int nLayer = GetCharBridgeLayerSvr (pChar, &bKnown);
+	if ((nLayer == 0) || bKnown) {
+		return;
+	}
+	pChar->byBridgeLayer	= (BYTE)nLayer;
+	pChar->dwBridgeMapID	= pChar->dwMapID;
+	pChar->dwBridgeX		= pChar->dwX;
+	pChar->dwBridgeY		= pChar->dwY;
+}
+
 /* キャラが (x,y) へ動く時に、橋の上か下かを覚え直す(位置を変える前に呼ぶ) */
 static void RenewCharBridgeLayerSvr(PCHARINFO pChar, int x, int y, BYTE byDirectionNew)
 {
@@ -3598,6 +3612,9 @@ void RecvDataProcCHGDIRECTION(PBYTE pData, DWORD dwDataSize)
 	if (pPara->byData >= 4) {
 		return;
 	}
+	/* 橋のマスで向きを変える前に、今の向きで橋の上か下かを覚えておく
+	   (ログイン直後はまだ覚えていないので、向きを変えると上下が入れ替わらないように) */
+	PinCharBridgeLayerSvr (pChar);
 	pChar->byDirection = pPara->byData;
 	pChar->byFlg |= CHARINFOFLG_DIRECTION;
 }

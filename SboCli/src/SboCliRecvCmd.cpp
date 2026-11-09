@@ -1242,7 +1242,14 @@ static int GetCharBridgeLayerNow(PCHARINFO pChar)
 		(pChar->dwX == pChar->dwBridgeX) && (pChar->dwY == pChar->dwBridgeY)) {
 		return pChar->byBridgeLayer;
 	}
-	return GetBridgeLayerByDirection (nAxis, pChar->byDirection);
+	/* 向きで決めたらすぐ覚える(自分のキャラはキーを押すと先に向きが変わるので、
+	   そのまま向きで決め直すと、橋の下でログインして縦に歩くと上に変わってしまう) */
+	pChar->byBridgeLayer	= (BYTE)GetBridgeLayerByDirection (nAxis, pChar->byDirection);
+	pChar->byBridgeLayerBack = 0;
+	pChar->dwBridgeMapID	= g_pMapInfo->dwID;
+	pChar->dwBridgeX		= pChar->dwX;
+	pChar->dwBridgeY		= pChar->dwY;
+	return pChar->byBridgeLayer;
 }
 
 /* キャラが (x,y) へ動いた後に橋の上(1)か下(2)か */
