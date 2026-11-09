@@ -27,6 +27,7 @@ public:
 	void	FillRect			(int x, int y, int cx, int cy, COLORREF clFill);		/* 矩形塗りつぶし */
 	void	ChgLevel			(int x, int y, int cx, int cy, BYTE byLevel);			/* 明度を変更 */
 	void	ChgColor			(int x, int y, int cx, int cy, COLORREF clChg);			/* 色素を変更 */
+	void	ChgWhite			(int x, int y, int cx, int cy, BYTE byPercent);			/* 白っぽくする(霧) */
 
 	void	Blt					(int dx, int dy, int cx, int cy, CImg32 *pSrc, int sx, int sy, BOOL bColorKey = FALSE);						/* 矩形転送 */
 	void	BltLevel			(int dx, int dy, int cx, int cy, CImg32 *pSrc, int sx, int sy, BYTE byLevel, BOOL bColorKey = FALSE);		/* 明度を変えながら矩形転送 */

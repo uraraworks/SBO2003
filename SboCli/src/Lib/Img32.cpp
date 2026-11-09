@@ -290,6 +290,64 @@ void CImg32::ChgLevel(
 
 
 /* ========================================================================= */
+/* 関数名：	CImg32::ChgWhite												 */
+/* 内容：	白っぽくする(霧のように白を混ぜる。byPercent=白の割合%)		 */
+/* 日付：	2026/11/09														 */
+/* ========================================================================= */
+void CImg32::ChgWhite(
+	int x,				/* [in] 始点(X) */
+	int y,				/* [in] 始点(Y) */
+	int cx,				/* [in] 幅 */
+	int cy,				/* [in] 高さ */
+	BYTE byPercent)		/* [in] 白の割合(%) */
+{
+	int i, j, nRate;
+	PDWORD dst;
+	DWORD dwLineDst;
+
+	if ((m_pBits == NULL) || (byPercent == 0)) {
+		return;
+	}
+	if (x < 0) {
+		cx += x;
+		x = 0;
+	}
+	if (y < 0) {
+		cy += y;
+		y = 0;
+	}
+	if (x + cx > Width ()) {
+		cx = Width () - x;
+	}
+	if (y + cy > Height ()) {
+		cy = Height () - y;
+	}
+	if ((cx <= 0) || (cy <= 0)) {
+		return;
+	}
+
+	dwLineDst	= BYTES_PER_LINE(Width ());
+	nRate		= min ((int)byPercent, 100) * 256 / 100;
+	x *= BYTES_PER_PIXEL;
+	y = Height () - 1 - y;
+
+	for (j = 0; j < cy; j ++) {
+		dst = (PDWORD)(m_pBits + dwLineDst * (y - j) + x);
+		for (i = 0; i < cx; i ++) {
+			TARGB tTmp;
+
+			tTmp.ARGB = *dst;
+			tTmp.R = tTmp.R + (((255 - tTmp.R) * nRate) >> 8);
+			tTmp.G = tTmp.G + (((255 - tTmp.G) * nRate) >> 8);
+			tTmp.B = tTmp.B + (((255 - tTmp.B) * nRate) >> 8);
+			*dst = tTmp.ARGB;
+			dst ++;
+		}
+	}
+}
+
+
+/* ========================================================================= */
 /* 関数名：	CImg32::ChgColor												 */
 /* 内容：	色素を変更														 */
 /* 日付：	2005/01/26														 */
