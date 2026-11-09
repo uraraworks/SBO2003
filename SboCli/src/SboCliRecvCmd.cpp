@@ -6679,8 +6679,10 @@ void RecvDataProcMAIN_CHAR_TAIL(PBYTE pData, DWORD dwDataSize)
 		if (pCharTarget == NULL) {
 			break;
 		}
-		/* つなぎ直し（前の傭兵が列を抜けた等）の時はメッセージを出さない */
-		if (pChar->dwTailTblID == -1) {
+		/* つなぎ直し（前の傭兵が列を抜けた等）の時はメッセージを出さない。
+		   自分から Z でついていった時は、送る時に「とりあえずついていっている」
+		   ことにして相手の番号を入れているので、同じ番号ならメッセージを出す */
+		if ((pChar->dwTailTblID == -1) || (pChar->dwTailTblID == pCharTarget->dwTblID)) {
 			wsprintf (szTmp, "%sについていきます。", pCharTarget->szName);
 		}
 		pChar->dwTailTblID = pCharTarget->dwTblID;
