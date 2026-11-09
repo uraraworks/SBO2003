@@ -555,18 +555,8 @@ static void DrawMapLight(const char *pMapDark)
 	/* 「明るく壁で隠す」範囲にいる時は、範囲の中のマスに印を付ける */
 	bHide = IsMapHideArea ();
 	if (bHide) {
-		int nMyHideNo = GetMapHideAreaNo (g_pMapInfo, pMyChar->dwX, pMyChar->dwY);
-
-		ZeroMemory (abyHide, sizeof (abyHide));
-		for (y = 0; y < DRAW_PARTS_Y * 2 + 3; y ++) {
-			for (x = 0; x < nMapW; x ++) {
-				int mx = (int)pMyChar->dwX + x - (DRAW_PARTS_X + 1);
-				int my = (int)pMyChar->dwY + y - (DRAW_PARTS_Y + 1);
-				if ((mx < 0) || (my < 0) || (mx >= g_pMapInfo->nCX) || (my >= g_pMapInfo->nCY)) {
-					continue;
-				}
-				abyHide[x + nMapW * y] = (GetMapHideAreaNo (g_pMapInfo, mx, my) == nMyHideNo) ? 1 : 0;
-			}
+		for (i = 0; i < SCRMARTSSIZE; i ++) {
+			abyHide[i] = IsMapHideShowTile (i) ? 1 : 0;
 		}
 	}
 

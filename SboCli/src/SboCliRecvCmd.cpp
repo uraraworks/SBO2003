@@ -61,6 +61,7 @@ void	RenewMapDarkCorner					(PCHARINFO pChar);										/* 灯りの角の壁を
 void	RenewMapDarkParts					(void);													/* 光るマップパーツで照らす */
 void	RenewMapDarkHideArea				(void);													/* 明るく壁で隠す範囲の中を全部見せる */
 BOOL	IsMapHideArea						(void);													/* 明るいが壁の向こうは見えない所か */
+static BOOL IsHideAreaCross				(int nFromX, int nFromY, int x, int y);		/* 灯りが隠す範囲の境目を越えたか */
 static BOOL IsMapHasHideArea				(void);												/* 明るく壁で隠す範囲があるか */
 static void RenewMapViewLights			(void);												/* 見える範囲のマップで光源の所も見せる */
 static void RenewMapDarkLightFlood		(int mx, int my, int nRange);							/* 灯りの位置から照らす */
@@ -1026,30 +1027,72 @@ void RenewCharPosInfo(void)
 /* 関数名：RenewMapDarkHideArea												 */
 /* 内容：「明るく壁で隠す」範囲にいる時は、範囲の中を壁や家具まで全部見せる	 */
 /* ========================================================================= */
+static BYTE s_abyHideShow[SCRMARTSSIZE];								/* 隠す範囲の中で全部見せるマス(画面のマス) */
+
+/* 隠す範囲の中で全部見せるマス(DrawMapLight で全部明るく描く)。範囲の外にいる時は使わない */
+BOOL IsMapHideShowTile(int nPos)
+{
+	if ((nPos < 0) || (nPos >= SCRMARTSSIZE)) {
+		return FALSE;
+	}
+	return s_abyHideShow[nPos] ? TRUE : FALSE;
+}
+
 void RenewMapDarkHideArea(void)
 {
-	int x, y, mx, my, nPos, nMyNo;
+	int x, y, dx, dy, mx, my, nPos, nMyNo, nWidth;
 	PCHARINFO pMyChar;
 
+	ZeroMemory (s_abyHideShow, sizeof (s_abyHideShow));
 	if ((g_nMyCharID < 0) || !IsMapHideArea ()) {
 		return;
 	}
 	pMyChar = g_aCharInfo[g_nMyCharID];
 	nMyNo = GetMapHideAreaNo (g_pMapInfo, pMyChar->dwX, pMyChar->dwY);
-	for (y = -(DRAW_PARTS_Y + 1); y <= DRAW_PARTS_Y + 1; y ++) {
-		my = (int)pMyChar->dwY + y;
-		if ((my < 0) || (my >= g_pMapInfo->nCY)) {
-			continue;
+	nWidth = DRAW_PARTS_X * 2 + 3;
+	/* 自分のいる範囲のマス */
+	for (y = 0; y < DRAW_PARTS_Y * 2 + 3; y ++) {
+		my = (int)pMyChar->dwY + y - (1 + DRAW_PARTS_Y);
+		for (x = 0; x < nWidth; x ++) {
+			mx = (int)pMyChar->dwX + x - (1 + DRAW_PARTS_X);
+			if ((mx < 0) || (my < 0) || (mx >= g_pMapInfo->nCX) || (my >= g_pMapInfo->nCY)) {
+				continue;
+			}
+			if (GetMapHideAreaNo (g_pMapInfo, mx, my) == nMyNo) {
+				s_abyHideShow[x + nWidth * y] = 1;
+			}
 		}
-		for (x = -(DRAW_PARTS_X + 1); x <= DRAW_PARTS_X + 1; x ++) {
-			mx = (int)pMyChar->dwX + x;
-			if ((mx < 0) || (mx >= g_pMapInfo->nCX)) {
+	}
+	/* 範囲のすぐ外の壁(隣の範囲との境目の壁など)も見せる。通れるマス(床・カーテン・扉)は見せない */
+	for (y = 1; y < DRAW_PARTS_Y * 2 + 2; y ++) {
+		my = (int)pMyChar->dwY + y - (1 + DRAW_PARTS_Y);
+		for (x = 1; x < nWidth - 1; x ++) {
+			BOOL bNear;
+
+			mx = (int)pMyChar->dwX + x - (1 + DRAW_PARTS_X);
+			if ((mx < 0) || (my < 0) || (mx >= g_pMapInfo->nCX) || (my >= g_pMapInfo->nCY)) {
 				continue;
 			}
-			if (GetMapHideAreaNo (g_pMapInfo, mx, my) != nMyNo) {
+			if ((s_abyHideShow[x + nWidth * y] == 1) || CheckCharBlock (mx, my)) {
 				continue;
 			}
-			nPos = (1 + DRAW_PARTS_X + x) + ((DRAW_PARTS_X * 2 + 3) * (1 + DRAW_PARTS_Y + y));
+			bNear = FALSE;
+			for (dy = -1; (dy <= 1) && !bNear; dy ++) {
+				for (dx = -1; dx <= 1; dx ++) {
+					if (s_abyHideShow[(x + dx) + nWidth * (y + dy)] == 1) {
+						bNear = TRUE;
+						break;
+					}
+				}
+			}
+			if (!bNear) {
+				continue;
+			}
+			s_abyHideShow[x + nWidth * y] = 2;
+		}
+	}
+	for (nPos = 0; nPos < SCRMARTSSIZE; nPos ++) {
+		if (s_abyHideShow[nPos]) {
 			g_pMapDarkTmp[nPos] = 100;
 			g_pMapDarkTmpPos[nPos] = 1;
 		}
@@ -1139,6 +1182,16 @@ static BYTE GetMyPosDarkType(void)
 	return GetMapDarkType (g_pMapInfo, pChar->dwX, pChar->dwY);
 }
 
+
+/* 灯りの元(nFromX,nFromY)から見て (x,y) が別の「明るく壁で隠す」範囲(または範囲の外)か
+   灯りは境目を越えた1マス目(境目の壁・カーテン・扉)までは照らし、その先へは広がらない */
+static BOOL IsHideAreaCross(int nFromX, int nFromY, int x, int y)
+{
+	if (!IsMapHasHideArea ()) {
+		return FALSE;
+	}
+	return (GetMapHideAreaNo (g_pMapInfo, nFromX, nFromY) != GetMapHideAreaNo (g_pMapInfo, x, y)) ? TRUE : FALSE;
+}
 
 /* マップに「明るく壁で隠す」範囲があるか */
 static BOOL IsMapHasHideArea(void)
@@ -1623,6 +1676,10 @@ static void RenewMapDarkLightFlood(int mx, int my, int nRange)
 		if (((x != mx) || (y != my)) && IsSightBlock ()) {
 			bWall = !CheckCharBlock (x, y);
 		}
+		/* 隠す範囲の境目を越えたマスは照らすが、その先へは広げない */
+		if (!bWall && IsHideAreaCross (mx, my, x, y)) {
+			bWall = TRUE;
+		}
 
 		/* 画面の中なら明るさを足す */
 		dx = x - (int)pMyChar->dwX;
@@ -1713,21 +1770,13 @@ int GetMapDarkLevel(PCHARINFO pChar, int x, int y)
 	PCHARINFO pMyChar = g_aCharInfo[g_nMyCharID];
 
 	nTmp = 100;
-	/* 「明るく壁で隠す」範囲の境目は灯りが越えない(カーテンなど通れる所でも)。
-	   範囲の中にいる時は範囲の外は見えない(外の光源で照らされていても) */
+	/* 「明るく壁で隠す」範囲の中にいる時は範囲の外は見えない(外の光源で照らされていても)。
+	   境目を越えた灯りは IsHideAreaCross で1マス目(境目の壁・カーテン・扉)で止める */
 	if (IsMapHasHideArea ()) {
-		int nHere, nFrom;
+		int nHere;
 
 		nHere = GetMapHideAreaNo (g_pMapInfo, x, y);
 		if (IsMapHideArea () && (nHere != GetMapHideAreaNo (g_pMapInfo, pMyChar->dwX, pMyChar->dwY))) {
-			return 1;
-		}
-		if (pChar == NULL) {
-			nFrom = GetMapHideAreaNo (g_pMapInfo, s_nPartsLightX, s_nPartsLightY);
-		} else {
-			nFrom = GetMapHideAreaNo (g_pMapInfo, pChar->dwX, pChar->dwY);
-		}
-		if (nHere != nFrom) {
 			return 1;
 		}
 	}
@@ -1913,6 +1962,10 @@ void RenewMapDarkWork(PCHARINFO pChar, int x, int y, int nCount)
 	bResult = TRUE;
 	if ((nCount < DRAW_PARTS_X) && (IsSightBlock ())) {
 		bResult = CheckCharBlock (x, y);
+	}
+	/* 隠す範囲の境目を越えたマスは照らすが、その先へは広げない */
+	if (bResult && IsHideAreaCross ((int)pChar->dwX, (int)pChar->dwY, x, y)) {
+		bResult = FALSE;
 	}
 	if (bResult == FALSE) {
 		if (nMapDarkTmpPos == 0) {
