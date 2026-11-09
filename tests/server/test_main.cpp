@@ -922,10 +922,12 @@ static void TestWorld(void)
 			if (bRet) {
 				SboPackGetCHARINFO(&Para, &aCap[0], &aCap[0] + aCap.size());
 			}
-			printf("charinfo %s ret=%d tbl=%d same=%d login=%u play=%u make=%u area=%u put=%u interval=%u move=%u search=%u drop=%u sttmp=%d\n",
+			printf("charinfo %s ret=%d tbl=%d same=%d login=%u play=%u make=%u area=%u put=%u interval=%u move=%u search=%u drop=%u sttmp=%d npcid=%d\n",
 				aCase[c].pszLabel, bRet, (int)(Para.dwTblID == aCase[c].pChar->dwTblID), (int)(strcmp(Para.szName, aCase[c].pChar->szName) == 0),
 				Para.dwLoginCount, Para.dwPlayTime, Para.wMakeYear, Para.byAreaX, Para.byPutCount, Para.wTimePutInterval,
-				Para.byMoveProbabilityX, Para.bySearchCx, Para.byDropProbability, (int)Para.dwStTmplateID);
+				Para.byMoveProbabilityX, Para.bySearchCx, Para.byDropProbability, (int)Para.dwStTmplateID,
+				/* NPC番号: 0=送っていない 1=正しい値 -1=違う値 */
+				Para.dwNpcID ? ((Para.dwNpcID == aCase[c].pChar->dwNpcID) ? 1 : -1) : 0);
 		}
 		/* 同画面内へ配る版（SendCmdCHARINFO3）。NPC の情報を、自分だけが見ている状態で送る */
 		std::vector<BYTE> aState;
@@ -944,9 +946,10 @@ static void TestWorld(void)
 			if (bRet) {
 				SboPackGetCHARINFO(&Para, &aCap[0], &aCap[0] + aCap.size());
 			}
-			printf("charinfo3 %s ret=%d area=%u put=%u interval=%u move=%u search=%u drop=%u\n",
+			printf("charinfo3 %s ret=%d area=%u put=%u interval=%u move=%u search=%u drop=%u npcid=%d\n",
 				a ? "admin" : "user", bRet, Para.byAreaX, Para.byPutCount, Para.wTimePutInterval,
-				Para.byMoveProbabilityX, Para.bySearchCx, Para.byDropProbability);
+				Para.byMoveProbabilityX, Para.bySearchCx, Para.byDropProbability,
+				Para.dwNpcID ? ((Para.dwNpcID == pNpc->dwNpcID) ? 1 : -1) : 0);
 		}
 		for (size_t j = 1; j < aLogin.size(); j ++) {
 			g_aCharInfo[aLogin[j]]->byGameState = aState[j - 1];

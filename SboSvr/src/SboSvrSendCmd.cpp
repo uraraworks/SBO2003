@@ -533,6 +533,7 @@ static void MaskCharInfoForOther(PCMDPARA_CHARINFO pSendData)
 	pSendData->byMoveProbabilityY	= 0;
 	pSendData->bySearchCx			= 0;
 	pSendData->bySearchCy			= 0;
+	pSendData->dwNpcID				= 0;
 }
 
 /* ========================================================================= */
@@ -637,6 +638,7 @@ void SendCmdCHARINFO(DWORD pIDSend, int nNo)
 					pSendData->dwStTmplateID		= pChar->dwStTmplateID;
 					pSendData->dwTailTblID			= pChar->dwTailTblID;
 					pSendData->dwTailBackTblID		= pChar->dwTailBackTblID;
+					pSendData->dwNpcID				= pChar->dwNpcID;
 					pSendData->byAreaX				= pChar->byAreaX;
 					pSendData->byAreaY				= pChar->byAreaY;
 					pSendData->byPutCount			= pChar->byPutCount;
@@ -868,6 +870,7 @@ void SendCmdCHARINFO3(int nNo)
 	pSendData->dwStTmplateID		= pChar->dwStTmplateID;
 	pSendData->dwTailTblID			= pChar->dwTailTblID;
 	pSendData->dwTailBackTblID		= pChar->dwTailBackTblID;
+	pSendData->dwNpcID				= pChar->dwNpcID;
 	pSendData->byAreaX				= pChar->byAreaX;
 	pSendData->byAreaY				= pChar->byAreaY;
 	pSendData->byPutCount			= pChar->byPutCount;
@@ -1595,6 +1598,7 @@ void SendCmdGETACCINFO(DWORD pIDSend, DWORD dwTblID)
 	pSendData->dwPlayTime			= pChar->dwPlayTime;
 	pSendData->dwStTmplateID		= pChar->dwStTmplateID;
 	pSendData->dwLastIPAddress		= pChar->dwLastIPAddress;
+	pSendData->dwNpcID				= pChar->dwNpcID;
 	pSendData->clName				= pChar->clName;
 	pSendData->clSpeech				= pChar->clSpeech;
 

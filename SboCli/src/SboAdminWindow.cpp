@@ -590,6 +590,7 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 						m_pParaCharInfo->bySearchCy = pChar->bySearchCy;
 						m_pParaCharInfo->wTimePutInterval = pChar->wTimePutInterval;
 						m_pParaCharInfo->dwStTmplateID = pChar->dwStTmplateID;
+						m_pParaCharInfo->dwNpcID = pChar->dwNpcID;
 						m_pParaCharInfo->clName = pChar->clName;
 						m_pParaCharInfo->clSpeech = pChar->clSpeech;
 						wsprintf (m_pParaCharInfo->szName, "%s", pChar->szName);
@@ -850,6 +851,7 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 			m_pParaCharInfo->dwLoginCount = pPara->dwLoginCount;
 			m_pParaCharInfo->dwPlayTime = pPara->dwPlayTime;
 			m_pParaCharInfo->dwStTmplateID = pPara->dwStTmplateID;
+			m_pParaCharInfo->dwNpcID = pPara->dwNpcID;
 			m_pParaCharInfo->dwLastIPAddress = pPara->dwLastIPAddress;
 			m_pParaCharInfo->clName = pPara->clName;
 			m_pParaCharInfo->clSpeech = pPara->clSpeech;
@@ -5923,6 +5925,13 @@ void AdminOnPaintCharInfo(HDC hDC)
 	MyTextOut (hDC, 0, 12 * 4, szBuf);
 	wsprintf (szBuf, "エフェクト:%d", m_pParaCharInfo->byEfect);
 	MyTextOut (hDC, 0, 12 * 5, szBuf);
+	/* NPC番号（保存する NPC ごとの消えない番号。プレイヤー・発生した敵は無し） */
+	if (m_pParaCharInfo->dwNpcID) {
+		wsprintf (szBuf, "NPC番号:%lu", m_pParaCharInfo->dwNpcID);
+	} else {
+		wsprintf (szBuf, "NPC番号:なし");
+	}
+	MyTextOut (hDC, 12 * 8, 12 * 5, szBuf);
 	wsprintf (szBuf, "座標:(%ld,%ld,%ld)", m_pParaCharInfo->dwMapID, m_pParaCharInfo->dwX, m_pParaCharInfo->dwY);
 	MyTextOut (hDC, 0, 12 * 6, szBuf);
 	MyTextOut (hDC, 0, 12 * 7, "開始マップID:");
