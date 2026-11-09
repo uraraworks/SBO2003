@@ -3347,8 +3347,10 @@ BOOL SaveAdminRura(void)
 	char szName[MAX_PATH + 1];
 
 	/* コメント欄を広げた形式は別のファイル名で保存する
-	   （古い SboCliPosInfo.dat は、新しいファイルが無い時の読み込みにだけ使う） */
-	GetAdminRuraFileName (szName, "SboCliPosInfo2.dat");
+	   （古い SboCliPosInfo.dat は、新しいファイルが無い時の読み込みにだけ使う）
+	   ※ SboCliPosInfo2.dat は読み込みの不具合（bOld 未初期化）で壊れた内容が
+	      書き戻されていたので使わない。3 から使い直し、古い .dat から取り込み直す */
+	GetAdminRuraFileName (szName, "SboCliPosInfo3.dat");
 
 	hFile = CreateFile (szName, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
 	if (hFile == INVALID_HANDLE_VALUE) {
@@ -3378,8 +3380,12 @@ BOOL LoadAdminRura(void)
 	DWORD dwBytes;
 	char szName[MAX_PATH + 1];
 
+	/* 必ず FALSE から始める（未初期化だと新しい形式のファイルを古い形式の
+	   大きさで読んでしまい、件数・座標・コメントがログインのたびに崩れていた） */
+	bOld = FALSE;
+
 	/* まず新しい形式、無ければコメント欄が 21 バイトだった頃のファイルを読む */
-	GetAdminRuraFileName (szName, "SboCliPosInfo2.dat");
+	GetAdminRuraFileName (szName, "SboCliPosInfo3.dat");
 	hFile = CreateFile (szName, GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
 	if (hFile == INVALID_HANDLE_VALUE) {
 		bOld = TRUE;
