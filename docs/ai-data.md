@@ -191,6 +191,6 @@ HTTP では `/api/data/parts/dex`・`/api/data/parts/samples`・`/api/data/parts
 | `server/node/sbosvr_mapdesign.js` | パーツ図鑑・配置案（同じキー・同じ MCP にツールを足す） |
 | `web/account/admin-design.js` | 管理ページの「パーツ図鑑」「配置案」タブ |
 | `web/account/admin-recipe.js` | 管理ページの「レシピ」タブ（作り手とレシピを決める。保存は `/api/admin/recipe/save`） |
-| `web/account/admin-npcroute.js` | 管理ページの「NPCの巡回」タブ（NPC の道しるべを置く。保存は `/api/admin/npcroute/set`） |
+| `web/account/admin-npcroute.js` | 前の「NPCの巡回」タブ（今は管理ページから外している。保存 API `/api/admin/npcroute/set` は残してある） |
 | `web/account/parts-dex-seed.json` | パーツ図鑑の最初の下書き |
 | `web/account/admin.html` | 管理ページの「AI連携」タブ |

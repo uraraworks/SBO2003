@@ -16,7 +16,10 @@
 	  ・マップ資料   … マップごとの全体図と NPC・敵・お店・イベントの資料を zip で書き出す（admin-mapdoc.js）
 	  ・パーツ図鑑   … マップパーツに名前・タグ・説明を付ける・組み合わせの見本を作る（admin-design.js）
 	  ・配置案       … AI が考えたマップの配置案を画像で見る（ゲームのデータは変えない。admin-design.js）
-	  ・NPCの巡回    … NPC が道しるべを順に歩くルートを決める（admin-npcroute.js。API は sbosvr_data.js の /api/admin/npcroute/set）
+	  ・マップ確認   … マップ全体の絵を出し、マウスを乗せたマスの座標・パーツ・イベントを見る（admin-mapview.js。読むだけ）
+	                   前の「NPCの巡回」（admin-npcroute.js）はゲーム内の管理者ウィンドウに移ったので外した。
+	                   戻す時は、このタブを入れたコミットの前の admin.html から tab-npcroute の部分を持ってきて、admin-npcroute.js を読み込む
+	                   （API /api/admin/npcroute/set はサーバーに残してある）。
 	  ・レシピ       … 町の作り手（料理人など）と、作ってもらえるレシピ（できる物・材料・手数料）を決める（admin-recipe.js。API は sbosvr_data.js の /api/admin/recipe/save）
 	  ・ドット絵     … ゲームの画像（SboGrpData/grp の PNG）を手元のフォルダで直接描き直すエディタ（/dot。dot.html）を開く
 	API は server/node/sbosvr_account.js の /api/admin/*（ご意見箱は server/node/sbosvr_feedback.js、AI連携は server/node/sbosvr_data.js）。
@@ -354,22 +357,24 @@
 	.pl-opts label { display: inline-flex; align-items: center; gap: 4px; margin: 6px 12px 0 0; }
 	.pl-scroll { overflow: auto; max-height: 75vh; }
 	.pl-scroll .pd-map { max-width: none; }
-	/* NPCの巡回 */
-	.nr-layout { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
-	.nr-left { flex: 0 0 300px; max-width: 100%; }
-	.nr-right { flex: 1 1 360px; min-width: 0; }
-	.nr-list { max-height: 360px; overflow: auto; }
-	.nr-item { display: block; width: 100%; text-align: left; margin: 0 0 6px; background: var(--field); color: var(--fg);
-		border: 1px solid var(--border); font: 13px/1.4 sans-serif; padding: 8px 10px; }
-	.nr-item.sel { border-color: var(--accent); }
-	.nr-item .sub-text { display: block; margin: 0; }
-	.nr-scroll { position: relative; overflow: auto; max-height: 70vh; border: 1px solid var(--border); touch-action: pan-x pan-y; }
-	.nr-stack { position: relative; display: block; }
-	.nr-stack canvas { display: block; image-rendering: pixelated; }
-	.nr-stack canvas.nr-over { position: absolute; left: 0; top: 0; cursor: crosshair; }
-	.nr-opts { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-top: 8px; }
-	.nr-opts label { display: flex; align-items: center; gap: 6px; margin: 0; }
-	.nr-opts input[type="text"] { width: 4em; padding: 6px; }
+	/* マップ確認 */
+	.mv-opts { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-top: 8px; }
+	.mv-opts label { display: flex; align-items: center; gap: 6px; margin: 0; }
+	.mv-info { margin: 10px 0 8px; min-height: 3em; font-size: 14px; line-height: 1.6; }
+	.mv-line { font-variant-numeric: tabular-nums; }
+	.mv-line-pin { color: var(--accent); }
+	.mv-scroll { position: relative; overflow: auto; max-height: 75vh; border: 1px solid var(--border); touch-action: pan-x pan-y; }
+	.mv-stack { position: relative; display: block; }
+	.mv-stack canvas { display: block; image-rendering: pixelated; }
+	.mv-stack canvas.mv-over { position: absolute; left: 0; top: 0; pointer-events: none; }
+	.mv-touch { position: absolute; left: 0; top: 0; right: 0; bottom: 0; cursor: crosshair; }
+	.mv-cursor { position: absolute; box-sizing: border-box; border: 2px solid #fff; outline: 2px solid #000; pointer-events: none; }
+	.mv-cursor.mv-pin { border-color: #f0b84a; }
+	.mv-label { position: absolute; left: 100%; bottom: 100%; margin: 0 0 2px 2px; padding: 1px 5px; white-space: nowrap;
+		background: rgba(0,0,0,0.8); color: #fff; font: bold 12px/1.4 sans-serif; border-radius: 4px; }
+	.mv-pin .mv-label { color: #f0b84a; }
+	.mv-label.left { left: auto; right: 100%; margin: 0 2px 2px 0; }
+	.mv-label.below { bottom: auto; top: 100%; margin-top: 2px; }
 	.rc-layout { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
 	.rc-left { flex: 0 0 260px; max-width: 100%; }
 	.rc-right { flex: 1 1 360px; min-width: 0; }
@@ -402,7 +407,7 @@
 		<button type="button" data-tab="mapdoc">マップ資料</button>
 		<button type="button" data-tab="parts">パーツ図鑑</button>
 		<button type="button" data-tab="plans">配置案</button>
-		<button type="button" data-tab="npcroute">NPCの巡回</button>
+		<button type="button" data-tab="mapview">マップ確認</button>
 		<button type="button" data-tab="recipe">レシピ</button>
 		<button type="button" data-tab="dot">ドット絵</button>
 	</nav>
@@ -723,49 +728,28 @@
 		</div>
 	</section>
 
-	<!-- NPCの巡回 -->
-	<section id="tab-npcroute" hidden>
+	<!-- マップ確認（前の「NPCの巡回」はゲーム内の管理者ウィンドウに移したので外した。戻し方は上のコメント） -->
+	<section id="tab-mapview" hidden>
 		<p class="sub-text">
-			NPC が道しるべを順に歩く「巡回」を決めます。道しるべは同じ行か同じ列にまっすぐ置いてください（途中に壁や扉があると進めません）。
-			巡回中の NPC は、話しかけると止まって振り向きます。動かない・ランダム移動の NPC だけ設定できます。
-			保存するとすぐ動き出します。
+			マップ全体の絵を見て、マスの座標を確かめる画面です。マウスを乗せたマスに枠が出て、座標・パーツ番号・当たり判定・イベントが出ます。
+			クリック（スマホはタップ）するとそのマスを止めておけます。データは何も変わりません。
+			水色の枠は扉・入口などのイベントのマスです。
 		</p>
-		<div class="msg" id="nr-msg"></div>
+		<div class="msg" id="mv-msg"></div>
 		<div class="row" style="flex-wrap:wrap">
-			<label for="nr-map" style="margin:0">マップ</label>
-			<select id="nr-map"></select>
-			<button type="button" class="sub" id="nr-reload">読み直す</button>
+			<label for="mv-map" style="margin:0">マップ</label>
+			<select id="mv-map"></select>
+			<button type="button" class="sub" id="mv-reload">読み直す</button>
 		</div>
-		<div class="nr-layout" style="margin-top:10px">
-			<div class="nr-left">
-				<div class="sub-text" id="nr-count"></div>
-				<div class="nr-list" id="nr-list"></div>
-			</div>
-			<div class="nr-right">
-				<div class="card" id="nr-edit" hidden>
-					<div class="name" id="nr-title"></div>
-					<div class="sub-text">下の絵のマスをタップすると、道しるべが増えます（16 個まで）。</div>
-					<div class="nr-opts">
-						<label><input type="radio" name="nr-mode" id="nr-mode0" value="0" checked>折り返す</label>
-						<label><input type="radio" name="nr-mode" id="nr-mode1" value="1">一周</label>
-						<label>止まる秒数<input type="text" id="nr-wait" inputmode="numeric" value="3">秒（0〜60）</label>
-					</div>
-					<div class="nr-opts">
-						<label><input type="checkbox" id="nr-block">通れないマスを赤くする</label>
-						<label><input type="checkbox" id="nr-lines">マス目の線</label>
-					</div>
-					<div>
-						<button type="button" class="sub" id="nr-undo">1つ戻す</button>
-						<button type="button" class="sub" id="nr-clear">全部消す</button>
-						<button type="button" id="nr-save">保存</button>
-						<button type="button" class="sub" id="nr-del">巡回をやめる（消す）</button>
-					</div>
-					<ul class="nr-warn" id="nr-warn" hidden></ul>
-					<div class="sub-text" id="nr-points"></div>
-				</div>
-			</div>
+		<div class="mv-opts">
+			<label>拡大<select id="mv-scale"><option value="1">1 倍</option><option value="2" selected>2 倍</option><option value="3">3 倍</option></select></label>
+			<label><input type="checkbox" id="mv-lines">マス目の線（10 マスごとに濃く）</label>
+			<label><input type="checkbox" id="mv-roof" checked>屋根を外す</label>
+			<label><input type="checkbox" id="mv-block">通れないマスを赤くする</label>
 		</div>
-		<div class="nr-scroll" id="nr-scroll" hidden><div class="nr-stack" id="nr-stack"></div></div>
+		<div class="sub-text" id="mv-size" style="margin-top:8px"></div>
+		<div class="mv-info" id="mv-info"></div>
+		<div class="mv-scroll" id="mv-scroll" hidden><div class="mv-stack" id="mv-stack"></div></div>
 	</section>
 
 	<!-- レシピ（町の作り手と、作ってもらえる物） -->
@@ -851,7 +835,7 @@
 </main>
 <script src="admin-mapdoc.js"></script>
 <script src="admin-design.js"></script>
-<script src="admin-npcroute.js"></script>
+<script src="admin-mapview.js"></script>
 <script src="admin-recipe.js"></script>
 <script>
 (function () {
@@ -925,7 +909,7 @@
 		$('tab-mapdoc').hidden = true;
 		$('tab-parts').hidden = true;
 		$('tab-plans').hidden = true;
-		$('tab-npcroute').hidden = true;
+		$('tab-mapview').hidden = true;
 		$('tab-recipe').hidden = true;
 		setMsg($('login-msg'), text || '');
 	}
@@ -937,7 +921,7 @@
 		selectTab(location.hash === '#online' ? 'online' : location.hash === '#recover' ? 'recover' : location.hash === '#feedback' ? 'feedback' :
 			location.hash === '#changes' ? 'changes' : location.hash === '#ai' ? 'ai' : location.hash === '#mapdoc' ? 'mapdoc' :
 			location.hash === '#parts' ? 'parts' : location.hash === '#plans' ? 'plans' :
-			location.hash === '#npcroute' ? 'npcroute' : location.hash === '#recipe' ? 'recipe' : location.hash === '#dot' ? 'dot' : 'search');
+			(location.hash === '#mapview' || location.hash === '#npcroute') ? 'mapview' : location.hash === '#recipe' ? 'recipe' : location.hash === '#dot' ? 'dot' : 'search');
 		if (location.hash === '#changes') {
 			loadChanges();
 		} else if (location.hash === '#ai') {
@@ -946,8 +930,8 @@
 			loadMapDoc();
 		} else if (location.hash === '#parts' || location.hash === '#plans') {
 			openDesign(location.hash.slice(1));
-		} else if (location.hash === '#npcroute') {
-			openNpcRoute();
+		} else if (location.hash === '#mapview' || location.hash === '#npcroute') {
+			openMapView();
 		} else if (location.hash === '#recipe') {
 			openRecipe();
 		}
@@ -1048,10 +1032,10 @@
 		$('tab-mapdoc').hidden = name !== 'mapdoc';
 		$('tab-parts').hidden = name !== 'parts';
 		$('tab-plans').hidden = name !== 'plans';
-		$('tab-npcroute').hidden = name !== 'npcroute';
+		$('tab-mapview').hidden = name !== 'mapview';
 		$('tab-recipe').hidden = name !== 'recipe';
 		$('tab-dot').hidden = name !== 'dot';
-		document.body.classList.toggle('wide', name === 'parts' || name === 'plans' || name === 'npcroute');
+		document.body.classList.toggle('wide', name === 'parts' || name === 'plans' || name === 'mapview');
 		if (history.replaceState) {
 			history.replaceState(null, '', name === 'search' ? location.pathname : '#' + name);
 		}
@@ -1074,8 +1058,8 @@
 				loadMapDoc();
 			} else if (b.dataset.tab === 'parts' || b.dataset.tab === 'plans') {
 				openDesign(b.dataset.tab);
-			} else if (b.dataset.tab === 'npcroute') {
-				openNpcRoute();
+			} else if (b.dataset.tab === 'mapview') {
+				openMapView();
 			} else if (b.dataset.tab === 'recipe') {
 				openRecipe();
 			}
@@ -2040,13 +2024,13 @@
 		}
 	}
 
-	/* ---- NPCの巡回（admin-npcroute.js が作る） ---- */
-	function openNpcRoute() {
-		if (!window.SboNpcRoute) {
-			setMsg($('nr-msg'), '巡回のファイル（admin-npcroute.js）が読めませんでした。');
+	/* ---- マップ確認（admin-mapview.js が作る） ---- */
+	function openMapView() {
+		if (!window.SboMapView) {
+			setMsg($('mv-msg'), 'マップ確認のファイル（admin-mapview.js）が読めませんでした。');
 			return;
 		}
-		window.SboNpcRoute.open(function (url, body) {
+		window.SboMapView.open(function (url, body) {
 			body.session = session;
 			return api(url, body);
 		});

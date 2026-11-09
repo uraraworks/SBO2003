@@ -150,7 +150,8 @@
 | `web/account/admin.html` | 管理ページ（`/admin`。キャラ検索・キャラ名の変更・復旧の承認・ご意見箱・AI連携（[ai-data.md](ai-data.md)）・マップ資料） |
 | `web/account/admin-mapdoc.js` | 管理ページの「マップ資料」（資料の Markdown・全体図・zip を作る） |
 | `web/account/admin-recipe.js` | 管理ページの「レシピ」（町の作り手と、作ってもらえるレシピを決める。`docs/recipe.md`） |
-| `web/account/admin-npcroute.js` | 管理ページの「NPCの巡回」（マップの絵に道しるべを置いて NPC の巡回ルートを決める） |
+| `web/account/admin-mapview.js` | 管理ページの「マップ確認」（マップ全体の絵で、マウスを乗せたマスの座標・パーツ・イベントを見る。読むだけ） |
+| `web/account/admin-npcroute.js` | 前の「NPCの巡回」タブ（今は管理ページから外して読み込んでいない。巡回はゲーム内の管理者ウィンドウで設定する。API `/api/admin/npcroute/set` は残してある） |
 | `web/account/rename.html` | キャラ名の変更ページ（`/rename`。プレイヤー用） |
 | `web/account/feedback.html` | ご意見箱（`/feedback`。プレイヤー用） |
 | `server/node/sbosvr_feedback.js` | ご意見箱の保存・API（`/api/feedback/*`・`/api/admin/feedback/*`） |
