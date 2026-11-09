@@ -4430,9 +4430,17 @@ void RecvDataProcCHARINFO(PBYTE pData, DWORD dwDataSize)
 	pCharDst->dwMapID = pChar->dwMapID;
 	/* (0,0)は禁止。 */
 	if (!((pChar->dwStartX == 0) && (pChar->dwStartY == 0))) {
+		BOOL bStartChg = (pCharDst->dwStartMapID != pChar->dwStartMapID);
+
 		pCharDst->dwStartMapID = pChar->dwStartMapID;
 		pCharDst->dwStartX = pChar->dwStartX;
 		pCharDst->dwStartY = pChar->dwStartY;
+		/* プレイヤーの復活位置の町が変わったら、町転送の行き先一覧も送り直す
+		   （一覧の0番は復活位置。送り直さないと本人の画面の並びとサーバーの並びがずれて、
+		     選んだ町と違う町へ飛んでしまう） */
+		if (bStartChg && (pCharDst->byNpcType == NPCTYPE_INIT) && (pCharDst->byGameState != GAMESTATE_NPC)) {
+			SendCmdTOWNWARP (pCharDst->dwTblID);
+		}
 	}
 	pCharDst->dwX = pChar->dwX;
 	pCharDst->dwY = pChar->dwY;

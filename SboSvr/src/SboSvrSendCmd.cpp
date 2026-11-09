@@ -3403,7 +3403,7 @@ void SendCmdRECIPEMAKE(DWORD pIDSend, BYTE byResult, BYTE byMaker, WORD wRecipeI
 /* ========================================================================= */
 /* 関数名：SendCmdTOWNWARP													 */
 /* 内容：コマンド送信(町転送の行き先一覧を本人へ。ログイン時と復活位置を	 */
-/*		 記録した時)。並びは TownWarpMakeList と同じ						 */
+/*		 記録した時・管理者が復活位置を変えた時)。並びは TownWarpMakeList と同じ */
 /* ========================================================================= */
 void SendCmdTOWNWARP(DWORD dwTblID)
 {
