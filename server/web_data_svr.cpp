@@ -1471,7 +1471,7 @@ static std::string MapJson(PMAPINFO pMap)
 	int i, j;
 	out += ",\"szName\":" + TextJson(pMap->pszName);
 
-	/* 暗くする範囲（dark 1=暗くする 0=暗くしない。無ければマップ全体が明るさの設定どおり） */
+	/* 暗くする範囲（dark 1=暗くする 0=暗くしない 2=明るいが壁の向こうは見えない。無ければマップ全体が明るさの設定どおり） */
 	out += ",\"darkAreas\":[";
 	for (i = 0; i < pMap->byDarkAreaCount && i < MAX_MAPDARKAREA; i ++) {
 		const MAPDARKAREA *pArea = &pMap->aDarkArea[i];
@@ -1479,6 +1479,19 @@ static std::string MapJson(PMAPINFO pMap)
 		out += "{\"x1\":" + JsonNum(pArea->wX1) + ",\"y1\":" + JsonNum(pArea->wY1) +
 				",\"x2\":" + JsonNum(pArea->wX2) + ",\"y2\":" + JsonNum(pArea->wY2) +
 				",\"dark\":" + JsonNum(pArea->byDark) + "}";
+	}
+	out += "]";
+
+	/* 光源（暗いマップで、その位置から range マスまで照らす。パーツの灯りと同じ） */
+	out += ",\"lights\":[";
+	for (i = 0; i < pMap->byLightCount && i < MAX_MAPLIGHT; i ++) {
+		const MAPLIGHT *pLight = &pMap->aLight[i];
+		if (i) out += ",";
+		out += "{\"x\":" + JsonNum(pLight->wX) + ",\"y\":" + JsonNum(pLight->wY) +
+				",\"range\":" + JsonNum(pLight->byRange) +
+				",\"power\":" + JsonNum(pLight->byPower ? pLight->byPower : 100) +
+				",\"flicker\":" + JsonNum((pLight->byFlg & MAPLIGHTFLG_NOFLICKER) ? 0 : 1) +
+				",\"warm\":" + JsonNum((pLight->byFlg & MAPLIGHTFLG_WARM) ? 1 : 0) + "}";
 	}
 	out += "]";
 
@@ -2351,7 +2364,7 @@ static std::string MapWorkJson(PMAPINFO pBase, const std::string &strName, const
 /* マップの変更（設定・イベント・店・メッセージ。配列は丸ごと置き換え） */
 static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr, std::string &strRecord)
 {
-	static const char *apszExtra[] = { "szName", "darkAreas", "events", "shops", "messages", "items", NULL };
+	static const char *apszExtra[] = { "szName", "darkAreas", "lights", "events", "shops", "messages", "items", NULL };
 	PMAPINFO pMap = g_aMapInfo[nID];
 	long long n;
 
@@ -2427,8 +2440,66 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 			pArea->wY2 = (WORD)max(y1, y2);
 			pArea->byDark = 1;
 			if (pd) {
-				if (!GetInt(*pd, 0, 1, n, strErr, strP + ".dark")) return false;
+				if (!GetInt(*pd, 0, 2, n, strErr, strP + ".dark")) return false;
 				pArea->byDark = (BYTE)n;
+			}
+		}
+	}
+
+	/* 光源（丸ごと置き換え） */
+	const JVal *pLights = chg.Get("lights");
+	if (pLights) {
+		static const char *apszLightKey[] = { "x", "y", "range", "power", "flicker", "warm", NULL };
+		if (pLights->t != JVal::ARR) {
+			strErr = "lights は配列で指定してください";
+			return false;
+		}
+		if (pLights->a.size() > MAX_MAPLIGHT) {
+			strErr = "lights は " + JsonNum(MAX_MAPLIGHT) + " 個までです";
+			return false;
+		}
+		ZeroMemory(w.aLight, sizeof(w.aLight));
+		w.byLightCount = (BYTE)pLights->a.size();
+		for (size_t i = 0; i < pLights->a.size(); i ++) {
+			const JVal &e = pLights->a[i];
+			std::string strP = "lights[" + JsonNum((long long)i) + "]";
+			if (e.t != JVal::OBJ) {
+				strErr = strP + " はオブジェクトで指定してください";
+				return false;
+			}
+			for (size_t k = 0; k < e.o.size(); k ++) {
+				bool bOk = false;
+				for (int m = 0; apszLightKey[m]; m ++) if (e.o[k].first == apszLightKey[m]) bOk = true;
+				if (!bOk) {
+					strErr = strP + ": 知らない項目です: " + e.o[k].first;
+					return false;
+				}
+			}
+			const JVal *px = e.Get("x"), *py = e.Get("y"), *pr = e.Get("range");
+			if (!px || !py || !pr) {
+				strErr = strP + " には x・y・range が要ります";
+				return false;
+			}
+			PMAPLIGHT pLight = &w.aLight[i];
+			if (!GetInt(*px, 0, w.nCX - 1, n, strErr, strP + ".x")) return false;
+			pLight->wX = (WORD)n;
+			if (!GetInt(*py, 0, w.nCY - 1, n, strErr, strP + ".y")) return false;
+			pLight->wY = (WORD)n;
+			if (!GetInt(*pr, 1, 7, n, strErr, strP + ".range")) return false;
+			pLight->byRange = (BYTE)n;
+			const JVal *pp = e.Get("power"), *pf = e.Get("flicker"), *pw = e.Get("warm");
+			pLight->byPower = 100;
+			if (pp) {
+				if (!GetInt(*pp, 1, 100, n, strErr, strP + ".power")) return false;
+				pLight->byPower = (BYTE)n;
+			}
+			if (pf) {
+				if (!GetInt(*pf, 0, 1, n, strErr, strP + ".flicker")) return false;
+				if (n == 0) pLight->byFlg |= MAPLIGHTFLG_NOFLICKER;
+			}
+			if (pw) {
+				if (!GetInt(*pw, 0, 1, n, strErr, strP + ".warm")) return false;
+				if (n) pLight->byFlg |= MAPLIGHTFLG_WARM;
 			}
 		}
 	}
@@ -2603,6 +2674,8 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 	pMap->byWeather		= w.byWeather;
 	pMap->byDarkAreaCount	= w.byDarkAreaCount;
 	CopyMemory(pMap->aDarkArea, w.aDarkArea, sizeof(pMap->aDarkArea));
+	pMap->byLightCount		= w.byLightCount;
+	CopyMemory(pMap->aLight, w.aLight, sizeof(pMap->aLight));
 	SAFE_DELETE_ARRAY(pMap->pszName);
 	if (!strName.empty()) {
 		pMap->pszName = new char[strName.size() + 1];

@@ -30,6 +30,8 @@ extern void	RenewUseMagicInfo		(void);														/* 使用できる魔法一�
 extern void	RenewMapDark			(PCHARINFO pChar);											/* 暗闇描画情報を更新 */
 extern BYTE	GetMapLightLevel		(void);														/* 今の場所で使うマップの明るさレベル */
 extern BOOL	IsMapDarkFlg			(void);														/* 今の場所で暗闇が効くか */
+extern BOOL	IsMapHideArea			(void);														/* 明るいが壁の向こうは見えない所か */
+extern int	GetMapPosLight			(int mx, int my, BYTE *pbyPower, BYTE *pbyFlg);											/* マスの灯りの範囲(パーツ・光源) */														/* 今の場所で暗闇が効くか */
 extern BOOL	CheckEquUserInfo		(WORD, BYTE);												/* 装備職業情報にあるか判定 */
 extern BOOL	CheckItemSexDistinction	(PITEMINFO, PCHARINFO);										/* 性別による使えるかチェック */
 extern int	CheckCharBlockPC		(DWORD, DWORD);												/* キャラのキャラとのぶつかり判定 */
