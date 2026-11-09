@@ -38,6 +38,7 @@ static void FillRectClip	(int x, int y, int cx, int cy, COLORREF cl);	/* 画像�
 static void DrawLineClip	(int x1, int y1, int x2, int y2, int nWidth, COLORREF cl);	/* 線を描く */
 void DrawWeather		(void);										/* 天候の描画 */
 static void DrawMapLight	(const char *pMapDark);						/* 丸くゆらめく灯りの描画 */
+static void DrawMapViewFog	(void);										/* 見える範囲の外に白い霧をかける */
 
 static BOOL s_bDrawCharBridgeUpper = FALSE;							/* TRUE なら橋の上を渡っている人だけ描く */
 void AddSysMsg			(LPSTR, COLORREF);							/* システムメッセージの追加 */
@@ -325,6 +326,7 @@ BOOL DrawScreenMOVE(void)
 	}
 	s_bDrawCharBridgeUpper = FALSE;
 	DrawWeather ();
+	DrawMapViewFog ();		/* 見えない所のパーツを使うマップは、見えない所を白くかすませる */
 	if (bLight) {
 		DrawMapLight (aMapDark);	/* 丸くゆらめく灯りで暗くする */
 		CopyMemory (g_pMapDarkTmp, aMapDark, SCRMARTSSIZE);
@@ -340,6 +342,37 @@ BOOL DrawScreenMOVE(void)
 		InvalidateRect (g_hWndDebug, NULL, TRUE);
 	}
 	return TRUE;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	DrawMapViewFog													 */
+/* 内容：	見える範囲の外に白い霧をかける									 */
+/* 			見えない所のパーツ(草原など)が見えている地面と同じでも、		 */
+/* 			どこまで見えているか分かるようにする							 */
+/* 日付：	2026/11/09														 */
+/* ========================================================================= */
+#define VIEW_FOG_HIDE		55		/* まだ見ていない所の白さ(%) */
+#define VIEW_FOG_SEEN		35		/* 一度見た所の白さ(%) */
+static void DrawMapViewFog(void)
+{
+	int x, y, nCX, nCY;
+	char cLevel;
+
+	if (!IsMapViewMode () || (g_pMapInfo == NULL) || (g_pMapInfo->wViewHideParts == 0)) {
+		return;
+	}
+	nCX = DRAW_PARTS_X * 2 + 3;
+	nCY = DRAW_PARTS_Y * 2 + 3;
+	for (y = 0; y < nCY; y ++) {
+		for (x = 0; x < nCX; x ++) {
+			cLevel = g_pMapDarkTmp[x + nCX * y];
+			if (cLevel >= 100) {
+				continue;
+			}
+			g_pDibDrawMap->ChgWhite (x * 32, y * 32, 32, 32, (cLevel <= 0) ? VIEW_FOG_HIDE : VIEW_FOG_SEEN);
+		}
+	}
 }
 
 
@@ -589,9 +622,10 @@ void DrawMapLine(int nLine, int nType)
 		if (GetMapLightLevel () || IsMapViewMode ()) {
 			byLevel = g_pMapDarkTmp[x + (DRAW_PARTS_X * 2 + 3) * nLine];
 		}
-		/* 見えない所はそのパーツを明るいまま描く(本当の地形は描かない) */
+		/* 見えない所はそのパーツを明るいまま描く(本当の地形は描かない)。
+		   暗くはせず、あとで DrawMapViewFog が白い霧をかける */
 		bViewHide = (wViewHide && (byLevel == 0));
-		if (bViewHide) {
+		if (wViewHide) {
 			byLevel = 100;
 		}
 
