@@ -59,6 +59,10 @@ void	RenewMapDarkWork					(PCHARINFO, int x, int y, int nCount);					/* 暗闇�
 int		GetMapDarkLevel						(PCHARINFO pChar, int x, int y);						/* 灯りの明るさを取得 */
 void	RenewMapDarkCorner					(PCHARINFO pChar);										/* 灯りの角の壁を照らす */
 void	RenewMapDarkParts					(void);													/* 光るマップパーツで照らす */
+void	RenewMapDarkHideArea				(void);													/* 明るく壁で隠す範囲の中を全部見せる */
+BOOL	IsMapHideArea						(void);													/* 明るいが壁の向こうは見えない所か */
+static void RenewMapViewLights			(void);												/* 見える範囲のマップで光源の所も見せる */
+static void RenewMapDarkLightFlood		(int mx, int my, int nRange);							/* 灯りの位置から照らす */
 int	GetMapPosLight						(int mx, int my, BYTE *pbyPower, BYTE *pbyFlg);										/* マスの灯りの範囲(パーツ・光源) */
 
 /* 光るマップパーツの灯り(GetMapDarkLevel に pChar=NULL で渡した時に使う) */
@@ -1014,6 +1018,40 @@ void RenewCharPosInfo(void)
 	}
 	RenewMapDark (NULL);
 	RenewMapDarkParts ();
+	RenewMapDarkHideArea ();
+}
+
+/* ========================================================================= */
+/* 関数名：RenewMapDarkHideArea												 */
+/* 内容：「明るく壁で隠す」範囲にいる時は、範囲の中を壁や家具まで全部見せる	 */
+/* ========================================================================= */
+void RenewMapDarkHideArea(void)
+{
+	int x, y, mx, my, nPos;
+	PCHARINFO pMyChar;
+
+	if ((g_nMyCharID < 0) || !IsMapHideArea ()) {
+		return;
+	}
+	pMyChar = g_aCharInfo[g_nMyCharID];
+	for (y = -(DRAW_PARTS_Y + 1); y <= DRAW_PARTS_Y + 1; y ++) {
+		my = (int)pMyChar->dwY + y;
+		if ((my < 0) || (my >= g_pMapInfo->nCY)) {
+			continue;
+		}
+		for (x = -(DRAW_PARTS_X + 1); x <= DRAW_PARTS_X + 1; x ++) {
+			mx = (int)pMyChar->dwX + x;
+			if ((mx < 0) || (mx >= g_pMapInfo->nCX)) {
+				continue;
+			}
+			if (GetMapDarkType (g_pMapInfo, mx, my) != MAPDARK_HIDE) {
+				continue;
+			}
+			nPos = (1 + DRAW_PARTS_X + x) + ((DRAW_PARTS_X * 2 + 3) * (1 + DRAW_PARTS_Y + y));
+			g_pMapDarkTmp[nPos] = 100;
+			g_pMapDarkTmpPos[nPos] = 1;
+		}
+	}
 }
 
 
@@ -1120,9 +1158,9 @@ BYTE GetMapLightLevel(void)
 	case MAPDARK_BRIGHT:
 		return 0;
 	case MAPDARK_HIDE:
-		/* 見えるマスを調べるために暗いマップと同じ処理を通す(一番弱い暗さ。
-		   見えるマスは DrawMapLight で明るいまま描く) */
-		return 1;
+		/* 範囲の中は RenewMapDarkHideArea・DrawMapLight で全部明るくする。
+		   範囲の外はマップの暗さどおり(明るいマップなら見えない) */
+		return g_pMapInfo->byLightLevel ? g_pMapInfo->byLightLevel : 100;
 	}
 	return g_pMapInfo->byLightLevel;
 }
@@ -1183,13 +1221,15 @@ static BOOL IsSightBlock(void)
 	return (IsMapDarkFlg () || IsMapViewMode ());
 }
 
+static BOOL s_bLightIgnoreViewRange = FALSE;							/* マップの光源で照らし中(見える範囲の外でも照らす) */
+
 /* 自分から (x,y) が見える範囲の中か(丸く見えるように半マス足す) */
 static BOOL IsInViewRange(int x, int y)
 {
 	PCHARINFO pMyChar;
 	int dx, dy, nRange;
 
-	if (!IsMapViewMode ()) {
+	if (!IsMapViewMode () || s_bLightIgnoreViewRange) {
 		return TRUE;
 	}
 	pMyChar = g_aCharInfo[g_nMyCharID];
@@ -1394,6 +1434,45 @@ static void RenewMapViewSeen(void)
 
 
 /* ========================================================================= */
+/* 関数名：RenewMapViewLights												 */
+/* 内容：見える範囲(視界)のマップで、マップの光源が照らす所も見えるようにする */
+/*       (カウンターの中など、壁や家具の向こうでも灯りがあれば見える)		 */
+/* ========================================================================= */
+static void RenewMapViewLights(void)
+{
+	int i, x, y, nRange;
+	PCHARINFO pMyChar;
+
+	pMyChar = g_aCharInfo[g_nMyCharID];
+	for (i = 0; (i < g_pMapInfo->byLightCount) && (i < MAX_MAPLIGHT); i ++) {
+		PMAPLIGHT pLight = &g_pMapInfo->aLight[i];
+
+		nRange = min ((int)pLight->byRange, MAPLIGHT_RANGE_MAX);
+		if (nRange <= 0) {
+			continue;
+		}
+		if ((pLight->wX >= g_pMapInfo->nCX) || (pLight->wY >= g_pMapInfo->nCY)) {
+			continue;
+		}
+		x = (int)pLight->wX - (int)pMyChar->dwX;
+		y = (int)pLight->wY - (int)pMyChar->dwY;
+		/* 灯りが画面に届かない？ */
+		if ((abs (x) > DRAW_PARTS_X + 1 + nRange) || (abs (y) > DRAW_PARTS_Y + 1 + nRange)) {
+			continue;
+		}
+		s_nPartsLightX = pLight->wX;
+		s_nPartsLightY = pLight->wY;
+		s_nPartsLightRange = nRange;
+		s_bLightIgnoreViewRange = TRUE;
+		ZeroMemory (g_pMapDarkTmpPos, SCRMARTSSIZE);
+		RenewMapDarkLightFlood (pLight->wX, pLight->wY, nRange);
+		RenewMapDarkCorner (NULL);
+		s_bLightIgnoreViewRange = FALSE;
+	}
+}
+
+
+/* ========================================================================= */
 void RenewMapDark(PCHARINFO pChar)
 {
 	if (g_nMyCharID < 0) {
@@ -1412,6 +1491,7 @@ void RenewMapDark(PCHARINFO pChar)
 		ZeroMemory (g_pMapDarkTmpPos, SCRMARTSSIZE);
 		RenewMapDarkWork (pChar, pChar->dwX, pChar->dwY, DRAW_PARTS_X);
 		RenewMapDarkCorner (pChar);
+		RenewMapViewLights ();
 		RenewMapViewSeen ();
 		return;
 	}
@@ -1449,12 +1529,13 @@ void RenewMapDarkParts(void)
 	}
 	pMyChar = g_aCharInfo[g_nMyCharID];
 
-	for (y = -DRAW_PARTS_Y; y <= DRAW_PARTS_Y; y ++) {
+	/* 画面の外にある灯りでも、照らす範囲が画面に入っていれば使う */
+	for (y = -(DRAW_PARTS_Y + 1 + MAPLIGHT_RANGE_MAX); y <= DRAW_PARTS_Y + 1 + MAPLIGHT_RANGE_MAX; y ++) {
 		my = (int)pMyChar->dwY + y;
 		if ((my < 0) || (my >= g_pMapInfo->nCY)) {
 			continue;
 		}
-		for (x = -DRAW_PARTS_X; x <= DRAW_PARTS_X; x ++) {
+		for (x = -(DRAW_PARTS_X + 1 + MAPLIGHT_RANGE_MAX); x <= DRAW_PARTS_X + 1 + MAPLIGHT_RANGE_MAX; x ++) {
 			int nRange;
 
 			mx = (int)pMyChar->dwX + x;
@@ -1468,9 +1549,99 @@ void RenewMapDarkParts(void)
 			s_nPartsLightX = mx;
 			s_nPartsLightY = my;
 			s_nPartsLightRange = nRange;
+			/* 灯りが画面に届かない？ */
+			if ((abs (x) > DRAW_PARTS_X + 1 + nRange) || (abs (y) > DRAW_PARTS_Y + 1 + nRange)) {
+				continue;
+			}
 			ZeroMemory (g_pMapDarkTmpPos, SCRMARTSSIZE);
-			RenewMapDarkWork (NULL, mx, my, DRAW_PARTS_X);
+			RenewMapDarkLightFlood (mx, my, nRange);
 			RenewMapDarkCorner (NULL);
+		}
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：RenewMapDarkLightFlood											 */
+/* 内容：灯り(パーツ・光源)の位置から、通れるマスを伝って照らす			 */
+/*       灯りが画面の外にあっても、画面の外のマスを通って画面の中まで届く	 */
+/*       (壁で止まる・範囲のマスまで、は RenewMapDarkWork と同じ)			 */
+/* ========================================================================= */
+static void RenewMapDarkLightFlood(int mx, int my, int nRange)
+{
+	enum { W = MAPLIGHT_RANGE_MAX * 2 + 1 };
+	BYTE abyDone[W * W];
+	int anQX[W * W], anQY[W * W];
+	int nHead, nTail, i, nSize;
+	PCHARINFO pMyChar;
+	static const int anDX[4] = { 0, 0, -1, 1 }, anDY[4] = { -1, 1, 0, 0 };
+
+	nRange = min (nRange, MAPLIGHT_RANGE_MAX);
+	nSize = nRange * 2 + 1;
+	ZeroMemory (abyDone, sizeof (abyDone));
+	pMyChar = g_aCharInfo[g_nMyCharID];
+
+	nHead = nTail = 0;
+	anQX[nTail] = mx;
+	anQY[nTail] = my;
+	nTail ++;
+	abyDone[nRange + nRange * nSize] = 1;
+
+	while (nHead < nTail) {
+		int x, y, dx, dy, nTmp, nPos;
+		BOOL bWall;
+
+		x = anQX[nHead];
+		y = anQY[nHead];
+		nHead ++;
+
+		/* 見える範囲(視界)の外？ */
+		if (!IsInViewRange (x, y)) {
+			continue;
+		}
+		nTmp = GetMapDarkLevel (NULL, x, y);
+		if (nTmp <= 1) {
+			continue;
+		}
+		/* 壁(灯りのマス自身は壁に付いたたいまつでも照らす) */
+		bWall = FALSE;
+		if (((x != mx) || (y != my)) && IsSightBlock ()) {
+			bWall = !CheckCharBlock (x, y);
+		}
+
+		/* 画面の中なら明るさを足す */
+		dx = x - (int)pMyChar->dwX;
+		dy = y - (int)pMyChar->dwY;
+		if ((abs (dx) <= DRAW_PARTS_X + 1) && (abs (dy) <= DRAW_PARTS_Y + 1)) {
+			nPos = (1 + DRAW_PARTS_X + dx) + ((DRAW_PARTS_X * 2 + 3) * (1 + DRAW_PARTS_Y + dy));
+			if (g_pMapDarkTmpPos[nPos] == 0) {
+				if (g_pMapDarkTmp[nPos] + nTmp > 100) {
+					nTmp = 100 - g_pMapDarkTmp[nPos];
+				}
+				g_pMapDarkTmp[nPos] += (char)nTmp;
+			}
+			/* 灯りが通ったマスは 2 (斜め隣の壁を照らす目印) */
+			g_pMapDarkTmpPos[nPos] = bWall ? 1 : 2;
+		}
+		if (bWall) {
+			continue;
+		}
+
+		for (i = 0; i < 4; i ++) {
+			int nx = x + anDX[i], ny = y + anDY[i];
+			int bx = nx - mx + nRange, by = ny - my + nRange;
+			if ((bx < 0) || (by < 0) || (bx >= nSize) || (by >= nSize)) {
+				continue;
+			}
+			if ((nx < 0) || (ny < 0) || (nx >= g_pMapInfo->nCX) || (ny >= g_pMapInfo->nCY)) {
+				continue;
+			}
+			if (abyDone[bx + by * nSize]) {
+				continue;
+			}
+			abyDone[bx + by * nSize] = 1;
+			anQX[nTail] = nx;
+			anQY[nTail] = ny;
+			nTail ++;
 		}
 	}
 }
@@ -1534,10 +1705,17 @@ int GetMapDarkLevel(PCHARINFO pChar, int x, int y)
 		nTmp = min (100, nTmp);
 		return nTmp;
 	}
+	/* 「明るく壁で隠す」範囲にいる時、キャラの灯りは範囲の外へ漏らさない
+	   (カーテンなど通れるパーツの向こうも暗いまま。マップの光源だけで見える) */
+	if (IsMapHideArea () && (GetMapDarkType (g_pMapInfo, x, y) != MAPDARK_HIDE)) {
+		return 1;
+	}
 	if (GetMapLightLevel ()) {
 		nLevel = max (abs (x - (int)pChar->dwX), abs (y - (int)pChar->dwY));
 		if (pChar != pMyChar) {
 			nTmp = 0;
+		} else if (g_pMapInfo->byFlg & MAPFLG_NOCHARLIGHT) {
+			nTmp = (nLevel == 0) ? 60 : 0;	/* キャラの灯り無しのマップでは自分の足元だけ見える */
 		} else {
 			nTmp = 100 - GetMapLightLevel () * nLevel;
 		}
