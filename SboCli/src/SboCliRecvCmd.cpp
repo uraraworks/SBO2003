@@ -1063,7 +1063,8 @@ void RenewMapDarkHideArea(void)
 			}
 		}
 	}
-	/* 範囲のすぐ外の壁(隣の範囲との境目の壁など)も見せる。通れるマス(床・カーテン・扉)は見せない */
+	/* 隣の範囲との境目の壁も見せる(範囲のすぐ外で、隣の範囲に入っている通れないマス)。
+	   範囲の外の床・家具や、カーテン・扉など通れるマスは見せない */
 	for (y = 1; y < DRAW_PARTS_Y * 2 + 2; y ++) {
 		my = (int)pMyChar->dwY + y - (1 + DRAW_PARTS_Y);
 		for (x = 1; x < nWidth - 1; x ++) {
@@ -1076,12 +1077,19 @@ void RenewMapDarkHideArea(void)
 			if ((s_abyHideShow[x + nWidth * y] == 1) || CheckCharBlock (mx, my)) {
 				continue;
 			}
+			/* 隣の「明るく壁で隠す」範囲のマスだけ(範囲の外の家具などは見せない) */
+			if (GetMapHideAreaNo (g_pMapInfo, mx, my) == 0) {
+				continue;
+			}
+			/* 上下左右で自分の範囲に接しているマスだけ(斜めの角の先は見せない) */
 			bNear = FALSE;
-			for (dy = -1; (dy <= 1) && !bNear; dy ++) {
+			for (dy = -1; dy <= 1; dy ++) {
 				for (dx = -1; dx <= 1; dx ++) {
+					if ((dx != 0) && (dy != 0)) {
+						continue;
+					}
 					if (s_abyHideShow[(x + dx) + nWidth * (y + dy)] == 1) {
 						bNear = TRUE;
-						break;
 					}
 				}
 			}
