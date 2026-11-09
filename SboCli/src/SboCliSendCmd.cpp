@@ -753,6 +753,8 @@ void SendCmdCHGMAPINFO(void)
 	pSendData->byLightLevel = g_pMapInfo->byLightLevel;
 	pSendData->byWeather	= g_pMapInfo->byWeather;
 	pSendData->clChg = g_pMapInfo->clChg;
+	pSendData->byDarkAreaCount = g_pMapInfo->byDarkAreaCount;
+	CopyMemory (pSendData->aDarkArea, g_pMapInfo->aDarkArea, sizeof (pSendData->aDarkArea));
 
 	pSendData ++;
 	strcat ((LPSTR)pSendData, (LPSTR)g_pMapInfo->pszName);

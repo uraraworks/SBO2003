@@ -4083,6 +4083,8 @@ void RecvDataProcMAPINFOCHG(PBYTE pData, DWORD dwDataSize)
 	pMap->byLightLevel = pPara->byLightLevel;
 	pMap->byWeather	= pPara->byWeather;
 	pMap->clChg = pPara->clChg;
+	pMap->byDarkAreaCount = min (pPara->byDarkAreaCount, MAX_MAPDARKAREA);
+	CopyMemory (pMap->aDarkArea, pPara->aDarkArea, sizeof (pMap->aDarkArea));
 
 	/* BGMが変更された？ */
 	if (byData != pPara->byBGM) {
