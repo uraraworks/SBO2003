@@ -979,6 +979,101 @@ void SendCmdCHARPOS(DWORD pIDSend, int nNo, BYTE byFlg, BYTE byInside)
 }
 
 /* ========================================================================= */
+/* 関数名：	SendCmdSPEECHParty												 */
+/* 内容：	パーティ発言を送る												 */
+/*			・仲間（自分も）には、どこにいても「[PT]名前：発言」で届ける	 */
+/*			  （近くにいれば吹き出しも出る。クライアントの RecvDataProcSPEECH）*/
+/*			・画面内にいる仲間でない人には、普通の発言として届ける			 */
+/*			  （こっそり話す機能にはしない）								 */
+/* 日付：	2026/11/09														 */
+/* ========================================================================= */
+static void SendCmdSPEECHParty(PCHARINFO pChar, PBYTE pAround, int nAround)
+{
+	PPARTYINFO pPartyInfo = NULL;
+	std::vector<DWORD> aIDParty, aIDAround;
+	int i, j, nCount;
+	PMAPINFO pMap = g_aMapInfo[pChar->dwMapID];
+	PDWORD pData = pMap->paTblNoPC;
+
+	if ((pChar->dwPartyID != 0) && (pChar->dwPartyID < (DWORD)g_aPartyInfo.GetSize ())) {
+		pPartyInfo = g_aPartyInfo[pChar->dwPartyID];
+	}
+
+	/* 仲間（自分も） */
+	nCount = g_aCharInfo.GetSize ();
+	if (pPartyInfo) {
+		for (i = 0; i < MAX_PARTYMEMBER; i ++) {
+			DWORD dwTblID = pPartyInfo->adwTblID[i];
+			if (dwTblID == 0) {
+				break;
+			}
+			if (dwTblID >= (DWORD)nCount) {
+				continue;
+			}
+			PCHARINFO pCharDst = g_aCharInfo[dwTblID];
+			if ((pCharDst->pID == 0) || (pCharDst->byGameState < GAMESTATE_MOVE) ||
+				(pCharDst->dwPartyID != pChar->dwPartyID)) {
+				continue;
+			}
+			aIDParty.push_back (pCharDst->pID);
+		}
+	}
+
+	/* 画面内にいる、仲間でない人（SendCmdInside2 と同じ範囲） */
+	if (pData) {
+		for (i = 0; pData[i] != -1; i ++) {
+			PCHARINFO pCharDst = g_aCharInfo[pData[i]];
+			if (pCharDst->byGameState < GAMESTATE_MOVE) {
+				continue;
+			}
+			if ((abs ((int)pCharDst->dwX - (int)pChar->dwX) > DRAW_PARTS_X + 3) ||
+				(abs ((int)pCharDst->dwY - (int)pChar->dwY) > DRAW_PARTS_Y + 3)) {
+				continue;
+			}
+			for (j = 0; j < (int)aIDParty.size (); j ++) {
+				if (aIDParty[j] == pCharDst->pID) {
+					break;
+				}
+			}
+			if (j < (int)aIDParty.size ()) {
+				continue;
+			}
+			aIDAround.push_back (pCharDst->pID);
+		}
+	}
+	if (!aIDAround.empty ()) {
+		((PCMDPARA_SPEECH)pAround)->byType = SPEECHCMD_AROUND;
+		svrSock.SendToMulti (&aIDAround[0], (DWORD)aIDAround.size (), pAround, nAround, SENDTIMEOUT, URARASOCK_SENDPRIORITY_HIGH);
+	}
+	if (aIDParty.empty ()) {
+		return;
+	}
+
+	/* 「[PT]名前：発言」 */
+	int nLen = 4 + strlen (pChar->szName) + 3 + strlen (pChar->pszSpeech) + 1;
+	LPSTR pszText = new char[nLen];
+	wsprintf (pszText, "[PT]%s：%s", pChar->szName, pChar->pszSpeech);
+	nLen = strlen (pszText) + 1;
+
+	int nSize = sizeof (CMDPARA_SPEECH) + nLen;
+	BYTE *pSend = new BYTE[nSize];
+	ZeroMemory (pSend, nSize);
+	PCMDPARA_SPEECH pSendData = (PCMDPARA_SPEECH)pSend;
+	pSendData->byCmd	= CMD_SPEECH;
+	pSendData->pID		= pChar->pID;
+	pSendData->dwTblID	= pChar->dwTblID;
+	pSendData->byType	= SPEECHCMD_PARTY;
+	pSendData->wSize	= (WORD)nLen;
+	pSendData->color	= RGB (128, 255, 128);
+	memcpy (pSend + sizeof (CMDPARA_SPEECH), pszText, nLen);
+
+	svrSock.SendToMulti (&aIDParty[0], (DWORD)aIDParty.size (), pSend, nSize, SENDTIMEOUT, URARASOCK_SENDPRIORITY_HIGH);
+
+	delete [] pSend;
+	delete [] pszText;
+}
+
+/* ========================================================================= */
 /* 関数名：SendCmdSPEECH													 */
 /* 内容：コマンド送信(発言通知)												 */
 /* 日付：2003/05/24															 */
@@ -1047,6 +1142,12 @@ void SendCmdSPEECH(DWORD pIDSend, int nNo, BYTE byType)
 		if (pMap->byFlg & MAPFLG_SPEECH) {
 			pSendData->color = g_aCharInfo[nNo]->clSpeech;
 		}
+
+	/* パーティ発言？ 仲間にはどこにいても届け、画面内の仲間でない人にも普通の発言として見せる */
+	} else if (byType == SPEECHCMD_PARTY) {
+		SendCmdSPEECHParty (g_aCharInfo[nNo], pData, nSize);
+		delete [] pData;
+		return;
 
 	/* 画面内のプレイヤーにだけ配信 */
 	} else {

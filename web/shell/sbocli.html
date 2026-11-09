@@ -123,6 +123,39 @@
 	.sbo-chat-input:focus {
 		border-color: var(--accent);
 	}
+	/* 発言の送り先（周り／PT）。パーティに入っている間だけ出す */
+	.sbo-chat-target {
+		flex: none;
+		min-width: 3.2em;
+		background: #2a2f38;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		color: var(--fg);
+		font: bold 13px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		padding: 6px 8px;
+		cursor: pointer;
+	}
+	.sbo-chat-target[hidden] {
+		display: none;
+	}
+	.sbo-chat-target[data-target="party"] {
+		background: #1f4d2a;
+		border-color: #80ff80;
+		color: #80ff80;
+	}
+	.sbo-chat-target[data-target="map"] {
+		background: #4d3a1a;
+		border-color: #ffc66b;
+		color: #ffc66b;
+	}
+	.sbo-chat-input[data-target="party"] {
+		border-color: #80ff80;
+		background: #10200f;
+	}
+	.sbo-chat-input[data-target="map"] {
+		border-color: #ffc66b;
+		background: #221a0c;
+	}
 	.sbo-chat-send {
 		flex: none;
 		background: var(--accent);
@@ -1573,6 +1606,7 @@
 	</div>
 	<div id="sbo-chat-log"></div>
 	<div id="sbo-chat-row">
+		<button type="button" class="sbo-chat-target" id="sbo-chat-target" hidden>周り</button>
 		<input id="sbo-chat-input" class="sbo-chat-input" type="text" data-sbo-chat="1" placeholder="発言を入力して Enter"
 			autocomplete="off" spellcheck="false">
 		<button id="sbo-chat-send" class="sbo-chat-send" type="button">送信</button>
@@ -1632,6 +1666,7 @@
 		<div id="sbo-bl-none" hidden>吹き出しを読み込み中です。少し待ってからもう一度開いてください。</div>
 	</div>
 	<div id="sbo-sheet-row">
+		<button type="button" class="sbo-chat-target" id="sbo-sheet-target" hidden>周り</button>
 		<input id="sbo-sheet-input" class="sbo-chat-input" type="text" data-sbo-chat="1" placeholder="発言を入力"
 			enterkeyhint="send" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
 		<button id="sbo-sheet-send" class="sbo-chat-send" type="button">送信</button>
@@ -2655,7 +2690,12 @@
 	}
 	/* 先頭にあるとゲームがコマンドとして扱う文字 */
 	function isCmdChar(ch) {
-		return '!<#$/'.indexOf(ch) >= 0;
+		return '!<%#$/'.indexOf(ch) >= 0;
+	}
+	/* 発言の種類を選ぶ記号（! マップ内放送・< 画面内放送・% パーティ発言）。
+	   分けた発言すべてに付け直す */
+	function isKindChar(ch) {
+		return ch === '!' || ch === '<' || ch === '%';
 	}
 
 	/* URL を含む発言の上限（表示幅）。URL は途中で切ると開けないので、
@@ -2705,11 +2745,11 @@
 		var chars = Array.from(text);
 		var prefix = '';
 		/* コマンド（/ # $）は分けずにそのまま送る */
-		if (isCmdChar(chars[0]) && chars[0] !== '!' && chars[0] !== '<') {
+		if (isCmdChar(chars[0]) && !isKindChar(chars[0])) {
 			return [text];
 		}
-		/* マップ内放送（!）と画面内放送（<）は、分けた発言すべてに付け直す */
-		if (chars[0] === '!' || chars[0] === '<') {
+		/* マップ内放送（!）・画面内放送（<）・パーティ発言（%）は、分けた発言すべてに付け直す */
+		if (isKindChar(chars[0])) {
 			prefix = chars.shift();
 		}
 		var limit = CHAT_SPEECH_MAX - prefix.length;
@@ -2833,10 +2873,10 @@
 			return null;
 		}
 		var first = Array.from(text)[0];
-		if (isCmdChar(first) && first !== '!' && first !== '<') {
+		if (isCmdChar(first) && !isKindChar(first)) {
 			return null;
 		}
-		var prefix = (first === '!' || first === '<') ? 1 : 0;
+		var prefix = isKindChar(first) ? 1 : 0;
 		var limit = CHAT_SPEECH_MAX - prefix;
 		var parts = splitChat(text).length;
 		var used = textWidth(text) - prefix;
@@ -2970,6 +3010,7 @@
 		}
 		return 0;
 	}
+	var chatTarget = 'around';	/* 発言の送り先（around:周り party:PT map:マップ内放送） */
 	function submitChat(input, keyMod) {
 		/* 切断された後は送れない（入力した文字は消さずに残す） */
 		if (document.body.classList.contains('sbo-lost')) {
@@ -2977,6 +3018,12 @@
 		}
 		var text = input.value;
 		input.value = '';
+		/* 「PT」「マップ」を選んでいる時は、パーティ発言（%）・マップ内放送（!）の記号を付ける。
+		   使えない時（パーティを抜けた直後など）や、コマンド・記号から始まる時はそのまま */
+		var mark = CHAT_TARGETS[chatTarget].mark;
+		if (mark && chatTargetEnable(chatTarget) && text.trim() && !isCmdChar(Array.from(text)[0])) {
+			text = mark + text;
+		}
 		/* value を書き換えても input イベントは来ないので、残り文字数の表示も直す */
 		if (input.sboCountUpdate) {
 			input.sboCountUpdate();
@@ -3018,6 +3065,94 @@
 	}
 	bindChatInput(chatInput, document.getElementById('sbo-chat-send'), null);
 	bindChatInput(sheetInput, document.getElementById('sbo-sheet-send'), null);
+
+	/* ---- 発言の送り先（周り／PT／マップ） ----
+	   パーティに入っている時や、マップ内放送ができるマップ（イベントマップなど）にいる時だけ、
+	   入力欄の左に切り替えボタンを出す。押すたびに 周り → PT → マップ → 周り と変わる。
+	   PT（パーティ発言）は、画面内の人（仲間でない人も）には普通の発言として見え、
+	   それに加えて画面の外や別のマップにいる仲間にもメッセージログで届く（% を付けて送る）。
+	   マップはマップ内放送（! を付けて送る）。
+	   選んだ送り先は覚えておき、パーティを抜けたり放送できないマップへ移ったりしたら「周り」に戻す */
+	var CHAT_TARGET_KEY = 'sbo2003.chatTarget';
+	var CHAT_TARGETS = {
+		around: { label: '周り', mark: '', kind: 0,
+			tip: '周りに発言します（押すと送り先を切り替えます）',
+			pc: '発言を入力して Enter', sp: '発言を入力', bar: '発言する…' },
+		party: { label: 'PT', mark: '%', kind: 1,
+			tip: 'パーティに発言します。遠くの仲間にも届き、近くの人にも見えます（押すと送り先を切り替えます）',
+			pc: 'パーティに発言（遠くの仲間にも届きます）', sp: 'パーティに発言（遠くの仲間にも届きます）', bar: 'PTに発言…' },
+		map: { label: 'マップ', mark: '!', kind: 2,
+			tip: 'マップ内放送をします。このマップにいる全員に届きます（押すと送り先を切り替えます）',
+			pc: 'マップ内放送（このマップの全員に届きます）', sp: 'マップ内放送（マップの全員に届きます）', bar: 'マップ内放送…' }
+	};
+	var CHAT_TARGET_ORDER = ['around', 'party', 'map'];
+	var chatTargetBtns = document.querySelectorAll('.sbo-chat-target');
+	var chatBarText = document.querySelector('#sbo-chat-bar .sbo-chat-bar-text');
+	var chatKinds = 0;		/* 1=パーティに入っている 2=マップ内放送ができる（SboWebChatKinds） */
+	function chatTargetEnable(name) {
+		var k = CHAT_TARGETS[name].kind;
+		return k === 0 || (chatKinds & k) !== 0;
+	}
+	function setChatTarget(name) {
+		chatTarget = name;
+		try { window.localStorage.setItem(CHAT_TARGET_KEY, name); } catch (e) {}
+	}
+	function applyChatTarget() {
+		/* 使えない間（ログイン前など）は「周り」として見せる */
+		var eff = chatTargetEnable(chatTarget) ? chatTarget : 'around';
+		var t = CHAT_TARGETS[eff];
+		for (var i = 0; i < chatTargetBtns.length; i ++) {
+			chatTargetBtns[i].hidden = chatKinds === 0;
+			chatTargetBtns[i].textContent = t.label;
+			chatTargetBtns[i].dataset.target = eff;
+			chatTargetBtns[i].title = t.tip;
+		}
+		chatInput.dataset.target = eff;
+		sheetInput.dataset.target = eff;
+		chatInput.placeholder = t.pc;
+		sheetInput.placeholder = t.sp;
+		if (chatBarText) {
+			chatBarText.textContent = t.bar;
+		}
+	}
+	try {
+		var savedTarget = window.localStorage.getItem(CHAT_TARGET_KEY);
+		if (CHAT_TARGETS[savedTarget]) {
+			chatTarget = savedTarget;
+		}
+	} catch (e) {}
+	for (var ct = 0; ct < chatTargetBtns.length; ct ++) {
+		chatTargetBtns[ct].addEventListener('click', function (ev) {
+			/* 次の選べる送り先へ */
+			var n = CHAT_TARGET_ORDER.indexOf(chatTarget);
+			for (var i = 1; i <= CHAT_TARGET_ORDER.length; i ++) {
+				var next = CHAT_TARGET_ORDER[(n + i) % CHAT_TARGET_ORDER.length];
+				if (chatTargetEnable(next)) {
+					setChatTarget(next);
+					break;
+				}
+			}
+			applyChatTarget();
+			var row = ev.currentTarget.parentNode;
+			var inp = row && row.querySelector('input');
+			if (inp) {
+				inp.focus();
+			}
+		});
+	}
+	setInterval(function () {
+		var kinds = (sboReady && Module['_SboWebChatKinds']) ? (Module['_SboWebChatKinds']() | 0) : 0;
+		if (kinds === chatKinds) {
+			return;
+		}
+		chatKinds = kinds;
+		/* 選んでいた送り先が使えなくなったら「周り」に戻す */
+		if (!chatTargetEnable(chatTarget)) {
+			setChatTarget('around');
+		}
+		applyChatTarget();
+	}, 500);
+	applyChatTarget();
 
 	var chatFold = document.getElementById('sbo-chat-fold');
 	chatFold.addEventListener('click', function () {

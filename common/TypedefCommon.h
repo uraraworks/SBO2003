@@ -822,6 +822,7 @@ enum {
 	SPEECHCMD_MAP,												/* マップ内放送 */
 	SPEECHCMD_SCREEN,											/* 画面内放送 */
 	SPEECHCMD_SCREENCHAR,										/* 画面内放送(キャラの色) */
+	SPEECHCMD_PARTY,											/* パーティ発言(画面内の人＋画面外の仲間に届く) */
 };
 
 /* イベント種別 */

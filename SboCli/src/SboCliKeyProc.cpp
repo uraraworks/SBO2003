@@ -93,6 +93,8 @@ LRESULT CALLBACK ConWndProc					(HWND, UINT, WPARAM, LPARAM);	/* 接続ボタン
 LRESULT CALLBACK NameWndProc				(HWND, UINT, WPARAM, LPARAM);	/* キャラ名入力用メッセージ処理 */
 LRESULT CALLBACK MakeWndProc				(HWND, UINT, WPARAM, LPARAM);	/* 作成ボタン用メッセージ処理 */
 LRESULT CALLBACK SpeechWndProc				(HWND, UINT, WPARAM, LPARAM);	/* 発言入力欄用メッセージ処理 */
+static BOOL IsSpeechModeEnable				(BYTE);							/* 発言の種類が今選べるか */
+#define SPEECHMODE_MAX	(4)															/* 発言の種類の数(g_bySpeechMode) */
 LRESULT CALLBACK SpeechEditWndProc			(HWND, UINT, WPARAM, LPARAM);	/* 自己紹介設定欄用メッセージ処理 */
 LRESULT CALLBACK ChgPasswordWndProc			(HWND, UINT, WPARAM, LPARAM);	/* パスワード変更用メッセージ処理 */
 
@@ -7367,6 +7369,26 @@ LRESULT CALLBACK MakeWndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp)
 }
 
 /* ========================================================================= */
+/* 関数名：	IsSpeechModeEnable												 */
+/* 内容：	発言の種類(g_bySpeechMode)が今選べるか							 */
+/*			0:普通 1:画面内放送 2:マップ内放送 3:パーティ					 */
+/* 日付：	2026/11/09														 */
+/* ========================================================================= */
+static BOOL IsSpeechModeEnable(BYTE byMode)
+{
+	switch (byMode) {
+	case 1:
+	case 2:
+		/* 放送できるマップだけ */
+		return ((g_pMapInfo != NULL) && (g_pMapInfo->byFlg & MAPFLG_SPEECH)) ? TRUE : FALSE;
+	case 3:
+		/* パーティに入っている時だけ */
+		return (g_aPartyInfo.GetSize () > 0) ? TRUE : FALSE;
+	}
+	return TRUE;
+}
+
+/* ========================================================================= */
 /* 関数名：SpeechWndProc													 */
 /* 内容：発言入力欄用メッセージ処理											 */
 /* 日付：2003/05/24															 */
@@ -7430,26 +7452,29 @@ LRESULT CALLBACK SpeechWndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp)
 			}
 			break;
 
-		} else if (g_pMapInfo->byFlg & MAPFLG_SPEECH) {
-			if ((wp == VK_UP) || (wp == VK_DOWN)) {
-				if (wp == VK_UP) {
-					if (g_bySpeechMode == 0) {
-						g_bySpeechMode = 2;
+		} else if ((wp == VK_UP) || (wp == VK_DOWN)) {
+			/* 発言の種類を切り替える。0:普通 1:画面内放送 2:マップ内放送 3:パーティ
+			   放送は放送できるマップだけ、パーティはパーティに入っている時だけ選べる */
+			{
+				int nMode = g_bySpeechMode, nTry;
+				for (nTry = 0; nTry < SPEECHMODE_MAX; nTry ++) {
+					if (wp == VK_UP) {
+						nMode = (nMode + SPEECHMODE_MAX - 1) % SPEECHMODE_MAX;
 					} else {
-						g_bySpeechMode --;
+						nMode = (nMode + 1) % SPEECHMODE_MAX;
 					}
-				} else {
-					if (g_bySpeechMode == 2) {
-						g_bySpeechMode = 0;
-					} else {
-						g_bySpeechMode ++;
+					if (IsSpeechModeEnable ((BYTE)nMode)) {
+						break;
 					}
 				}
-				int i;
-				for (i = 0; i < g_WndInfo.GetSize (); i ++) {
-					/* 発言ウィンドウ検索 */
-					if (g_WndInfo[i]->nType == WNDTYPE_SPEECH) {
-						g_WndInfo[i]->dwTimeDrawStart = 0;
+				if (nMode != g_bySpeechMode) {
+					g_bySpeechMode = (BYTE)nMode;
+					int i;
+					for (i = 0; i < g_WndInfo.GetSize (); i ++) {
+						/* 発言ウィンドウ検索 */
+						if (g_WndInfo[i]->nType == WNDTYPE_SPEECH) {
+							g_WndInfo[i]->dwTimeDrawStart = 0;
+						}
 					}
 				}
 			}
@@ -8336,6 +8361,16 @@ void ChatMsgProc(LPCTSTR pszMsg)
 			}
 			break;
 
+		case '%':		/* パーティ発言（画面内の人＋画面外の仲間に届く） */
+			if (g_aPartyInfo.GetSize () > 0) {
+				byType = SPEECHCMD_PARTY;
+				pszMsg ++;
+			} else {
+				AddSysMsg ("パーティに入っていません。", RGB (255, 255, 255));
+				bProc = TRUE;
+			}
+			break;
+
 		case '<':		/* 画面内放送 */
 			/* マップ内放送が許可されてる？ */
 			if (g_pMapInfo->byFlg & MAPFLG_SPEECH) {
@@ -8455,6 +8490,17 @@ void ChatMsgProc(LPCTSTR pszMsg)
 			byType = SPEECHCMD_MAP;
 		}
 		break;
+	case 3:
+		/* パーティ発言（パーティに入っている時だけ。ほかの記号で種類を選んだ時はそちら） */
+		if ((byType == SPEECHCMD_AROUND) && (g_aPartyInfo.GetSize () > 0)) {
+			byType = SPEECHCMD_PARTY;
+		}
+		break;
+	}
+
+	/* 記号だけで中身が無い発言は送らない */
+	if (pszMsg[0] == 0) {
+		bProc = TRUE;
 	}
 
 	/* 処理された？ */
@@ -8520,8 +8566,8 @@ void ChatMsgProc(LPCTSTR pszMsg)
 		}
 	}
 
-	/* 流れるメッセージ？ */
-	if (byType != SPEECHCMD_AROUND) {
+	/* 流れるメッセージ？（パーティ発言は普通の発言として吹き出しにも出すので名前を付けない） */
+	if ((byType != SPEECHCMD_AROUND) && (byType != SPEECHCMD_PARTY)) {
 		LPSTR pszTmp;
 		pszTmp = new char[strlen (pChar->szName) + strlen (pszMsgTmp) + 1 + 1];
 		wsprintf (pszTmp, "%s:%s", pChar->szName, pszMsgTmp);
@@ -8627,6 +8673,29 @@ extern "C" EMSCRIPTEN_KEEPALIVE int SboWebGetPadState(void)
 		nRet |= PADSTATE_BATTLE;
 	}
 	return nRet | nBattle;
+}
+
+/* ========================================================================= */
+/* 関数名：	SboWebChatKinds													 */
+/* 内容：	今選べる発言の種類（ブラウザ版）								 */
+/*			シェル HTML がチャット欄の送り先切り替え（周り/PT/マップ）に使う	 */
+/*			戻り値：1=パーティに入っている 2=マップ内放送ができるマップ	 */
+/*			の組み合わせ（マップにいない時は 0）							 */
+/* ========================================================================= */
+extern "C" EMSCRIPTEN_KEEPALIVE int SboWebChatKinds(void)
+{
+	int nRet = 0;
+
+	if ((g_byGameState < GAMESTATE_MOVE) || (g_byGameState == GAMESTATE_CONNECTLOST)) {
+		return 0;
+	}
+	if (IsSpeechModeEnable (3)) {
+		nRet |= 1;
+	}
+	if (IsSpeechModeEnable (2)) {
+		nRet |= 2;
+	}
+	return nRet;
 }
 #endif
 
