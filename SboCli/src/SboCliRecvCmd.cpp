@@ -1808,8 +1808,9 @@ void RenewMapDarkCorner(PCHARINFO pChar)
 	nWidth = DRAW_PARTS_X * 2 + 3;
 	ZeroMemory (abyAdd, sizeof (abyAdd));
 
-	for (y = 1; y < DRAW_PARTS_Y * 2 + 2; y ++) {
-		for (x = 1; x < DRAW_PARTS_X * 2 + 2; x ++) {
+	/* 画面の端の1マス(歩いてずれる時に見える所)も照らす */
+	for (y = 0; y < DRAW_PARTS_Y * 2 + 3; y ++) {
+		for (x = 0; x < nWidth; x ++) {
 			nPos = x + nWidth * y;
 			/* もう照らしたマス？ */
 			if (g_pMapDarkTmpPos[nPos]) {
@@ -1819,6 +1820,9 @@ void RenewMapDarkCorner(PCHARINFO pChar)
 			bLight = FALSE;
 			for (dy = -1; (dy <= 1) && (bLight == FALSE); dy ++) {
 				for (dx = -1; dx <= 1; dx ++) {
+					if ((x + dx < 0) || (x + dx >= nWidth) || (y + dy < 0) || (y + dy >= DRAW_PARTS_Y * 2 + 3)) {
+						continue;
+					}
 					if (g_pMapDarkTmpPos[(x + dx) + nWidth * (y + dy)] == 2) {
 						bLight = TRUE;
 						break;
@@ -1858,8 +1862,8 @@ void RenewMapDarkCorner(PCHARINFO pChar)
 	   灯りは側面(下)で止まるので天井(上)が真っ黒になり不自然だった。
 	   灯りが当たった壁(斜めの角として照らした壁も)のすぐ上も壁なら、その1マスだけ照らす */
 	ZeroMemory (abyAdd, sizeof (abyAdd));
-	for (y = 1; y < DRAW_PARTS_Y * 2 + 2; y ++) {
-		for (x = 1; x < DRAW_PARTS_X * 2 + 2; x ++) {
+	for (y = 1; y < DRAW_PARTS_Y * 2 + 3; y ++) {
+		for (x = 0; x < nWidth; x ++) {
 			int nPosUp;
 
 			nPos = x + nWidth * y;
@@ -1916,8 +1920,9 @@ void RenewMapDarkWork(PCHARINFO pChar, int x, int y, int nCount)
 	}
 
 	pMyChar = g_aCharInfo[g_nMyCharID];
-	if ((abs (pMyChar->dwX - (x)) > DRAW_PARTS_X) ||
-		(abs (pMyChar->dwY - (y)) > DRAW_PARTS_Y)) {
+	/* 画面の端の1マス(歩いてずれる時に見える所)まで */
+	if ((abs ((int)pMyChar->dwX - (x)) > DRAW_PARTS_X + 1) ||
+		(abs ((int)pMyChar->dwY - (y)) > DRAW_PARTS_Y + 1)) {
 		return;
 	}
 
