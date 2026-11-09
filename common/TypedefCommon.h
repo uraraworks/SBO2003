@@ -2018,6 +2018,23 @@ static inline BYTE GetMapDarkType(const MAPINFO *pMap, DWORD x, DWORD y)
 	return byType;
 }
 
+/* (x,y) が入っている「明るく壁で隠す」範囲の番号(1から。入っていない・優先される範囲が別の種類なら 0)
+   範囲ごとに別の部屋として扱う(灯りは部屋の境目を越えない・中からは自分の部屋だけ見える) */
+static inline int GetMapHideAreaNo(const MAPINFO *pMap, DWORD x, DWORD y)
+{
+	int i, nCount, nNo;
+
+	nCount = (pMap->byDarkAreaCount < MAX_MAPDARKAREA) ? pMap->byDarkAreaCount : MAX_MAPDARKAREA;
+	nNo = 0;
+	for (i = 0; i < nCount; i ++) {
+		const MAPDARKAREA *pArea = &pMap->aDarkArea[i];
+		if ((x >= pArea->wX1) && (x <= pArea->wX2) && (y >= pArea->wY1) && (y <= pArea->wY2)) {
+			nNo = (pArea->byDark == MAPDARK_HIDE) ? (i + 1) : 0;
+		}
+	}
+	return nNo;
+}
+
 /* (x,y) がマップの暗い場所か */
 static inline BOOL IsMapDarkPos(const MAPINFO *pMap, DWORD x, DWORD y)
 {
