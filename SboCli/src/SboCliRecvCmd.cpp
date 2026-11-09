@@ -4063,6 +4063,31 @@ void RecvDataProcSPEECH(PBYTE pData, DWORD dwDataSize)
 		bFlg = TRUE;
 		cl = pPara->color;
 
+	/* 仲間のパーティ発言？（文字は「[PT]名前：発言」で届く。仲間にはどこにいても届く） */
+	} else if (pPara->byType == SPEECHCMD_PARTY) {
+		bFlg = TRUE;
+		bSpeech = TRUE;
+		cl = pPara->color;
+		/* 見えている仲間なら、普通の発言と同じく吹き出しも出す（画面に文字は流さない） */
+		if ((nNo >= 0) && (g_nMyCharID >= 0)) {
+			PCHARINFO pCharSpeech = g_aCharInfo[nNo];
+			int nName = strlen (pCharSpeech->szName);
+			int nHead = 4 + nName;
+			int nSep = strlen ("：");
+			if ((strncmp (pszTmp, "[PT]", 4) == 0) &&
+				(strncmp (&pszTmp[4], pCharSpeech->szName, nName) == 0) &&
+				(strncmp (&pszTmp[nHead], "：", nSep) == 0) &&
+				(abs ((int)g_aCharInfo[g_nMyCharID]->dwX - (int)pCharSpeech->dwX) <= DRAW_PARTS_X) &&
+				(abs ((int)g_aCharInfo[g_nMyCharID]->dwY - (int)pCharSpeech->dwY) <= DRAW_PARTS_Y)) {
+				LPCSTR pszBody = &pszTmp[nHead + nSep];
+				SAFE_DELETE_ARRAY (pCharSpeech->pszSpeech);
+				pCharSpeech->pszSpeech = new char[strlen (pszBody) + 1];
+				strcpy (pCharSpeech->pszSpeech, pszBody);
+				pCharSpeech->dwLastSpeech = timeGetTime ();
+				bFlg = FALSE;
+			}
+		}
+
 	} else if (nNo >= 0) {
 
 		int x, y;

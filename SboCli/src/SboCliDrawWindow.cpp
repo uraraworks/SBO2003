@@ -930,6 +930,12 @@ void DrawWindowSPEECH(PWNDINFO pWnd)
 	case 2:
 		strcat (szTmp, "(マップ内放送)");
 		break;
+	case 3:
+		/* パーティを抜けた後は普通の発言になる（ChatMsgProc） */
+		if (g_aPartyInfo.GetSize () > 0) {
+			strcat (szTmp, "(パーティ)");
+		}
+		break;
 	}
 	TextOut2 (hDC, 16, 0, szTmp, RGB (255, 255, 255));
 	SetBkMode (hDC, TRANSPARENT);
