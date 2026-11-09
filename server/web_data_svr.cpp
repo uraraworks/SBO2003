@@ -1471,6 +1471,17 @@ static std::string MapJson(PMAPINFO pMap)
 	int i, j;
 	out += ",\"szName\":" + TextJson(pMap->pszName);
 
+	/* 暗くする範囲（dark 1=暗くする 0=暗くしない。無ければマップ全体が明るさの設定どおり） */
+	out += ",\"darkAreas\":[";
+	for (i = 0; i < pMap->byDarkAreaCount && i < MAX_MAPDARKAREA; i ++) {
+		const MAPDARKAREA *pArea = &pMap->aDarkArea[i];
+		if (i) out += ",";
+		out += "{\"x1\":" + JsonNum(pArea->wX1) + ",\"y1\":" + JsonNum(pArea->wY1) +
+				",\"x2\":" + JsonNum(pArea->wX2) + ",\"y2\":" + JsonNum(pArea->wY2) +
+				",\"dark\":" + JsonNum(pArea->byDark) + "}";
+	}
+	out += "]";
+
 	/* イベント */
 	out += ",\"events\":[";
 	for (i = 0; i < pMap->nEventCount && pMap->pEvent; i ++) {
@@ -2340,7 +2351,7 @@ static std::string MapWorkJson(PMAPINFO pBase, const std::string &strName, const
 /* マップの変更（設定・イベント・店・メッセージ。配列は丸ごと置き換え） */
 static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr, std::string &strRecord)
 {
-	static const char *apszExtra[] = { "szName", "events", "shops", "messages", "items", NULL };
+	static const char *apszExtra[] = { "szName", "darkAreas", "events", "shops", "messages", "items", NULL };
 	PMAPINFO pMap = g_aMapInfo[nID];
 	long long n;
 
@@ -2369,6 +2380,59 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 		}
 		strName = pName->s;
 	}
+
+	/* 暗くする範囲（丸ごと置き換え） */
+	const JVal *pAreas = chg.Get("darkAreas");
+	if (pAreas) {
+		static const char *apszAreaKey[] = { "x1", "y1", "x2", "y2", "dark", NULL };
+		if (pAreas->t != JVal::ARR) {
+			strErr = "darkAreas は配列で指定してください";
+			return false;
+		}
+		if (pAreas->a.size() > MAX_MAPDARKAREA) {
+			strErr = "darkAreas は " + JsonNum(MAX_MAPDARKAREA) + " 個までです";
+			return false;
+		}
+		ZeroMemory(w.aDarkArea, sizeof(w.aDarkArea));
+		w.byDarkAreaCount = (BYTE)pAreas->a.size();
+		for (size_t i = 0; i < pAreas->a.size(); i ++) {
+			const JVal &e = pAreas->a[i];
+			std::string strP = "darkAreas[" + JsonNum((long long)i) + "]";
+			if (e.t != JVal::OBJ) {
+				strErr = strP + " はオブジェクトで指定してください";
+				return false;
+			}
+			for (size_t k = 0; k < e.o.size(); k ++) {
+				bool bOk = false;
+				for (int m = 0; apszAreaKey[m]; m ++) if (e.o[k].first == apszAreaKey[m]) bOk = true;
+				if (!bOk) {
+					strErr = strP + ": 知らない項目です: " + e.o[k].first;
+					return false;
+				}
+			}
+			const JVal *px1 = e.Get("x1"), *py1 = e.Get("y1"), *px2 = e.Get("x2"), *py2 = e.Get("y2"), *pd = e.Get("dark");
+			if (!px1 || !py1 || !px2 || !py2) {
+				strErr = strP + " には x1・y1・x2・y2 が要ります";
+				return false;
+			}
+			PMAPDARKAREA pArea = &w.aDarkArea[i];
+			long long x1, y1, x2, y2;
+			if (!GetInt(*px1, 0, w.nCX - 1, x1, strErr, strP + ".x1")) return false;
+			if (!GetInt(*py1, 0, w.nCY - 1, y1, strErr, strP + ".y1")) return false;
+			if (!GetInt(*px2, 0, w.nCX - 1, x2, strErr, strP + ".x2")) return false;
+			if (!GetInt(*py2, 0, w.nCY - 1, y2, strErr, strP + ".y2")) return false;
+			pArea->wX1 = (WORD)min(x1, x2);
+			pArea->wY1 = (WORD)min(y1, y2);
+			pArea->wX2 = (WORD)max(x1, x2);
+			pArea->wY2 = (WORD)max(y1, y2);
+			pArea->byDark = 1;
+			if (pd) {
+				if (!GetInt(*pd, 0, 1, n, strErr, strP + ".dark")) return false;
+				pArea->byDark = (BYTE)n;
+			}
+		}
+	}
+
 	std::vector<MAPEVWORK> aEvOld, aEv;
 	std::vector<MAPSHOPWORK> aShopOld, aShop;
 	std::vector<std::string> aMsgOld, aMsg;
@@ -2537,6 +2601,8 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 	pMap->byFlg			= w.byFlg;
 	pMap->byLightLevel	= w.byLightLevel;
 	pMap->byWeather		= w.byWeather;
+	pMap->byDarkAreaCount	= w.byDarkAreaCount;
+	CopyMemory(pMap->aDarkArea, w.aDarkArea, sizeof(pMap->aDarkArea));
 	SAFE_DELETE_ARRAY(pMap->pszName);
 	if (!strName.empty()) {
 		pMap->pszName = new char[strName.size() + 1];

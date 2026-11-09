@@ -1850,6 +1850,17 @@ typedef struct _OBJINFO {
 	ANIMEINFO	*pAnimeInfo;										/* アニメーション情報 */
 } OBJINFO, *POBJINFO;
 
+/* 暗くする範囲（マップの一部だけ暗くする。地上から階段で洞窟へ降りるマップなど） */
+#define MAX_MAPDARKAREA		8										/* 1マップに置ける範囲の数 */
+typedef struct _MAPDARKAREA {
+	WORD			wX1;											/* 左上X */
+	WORD			wY1;											/* 左上Y */
+	WORD			wX2;											/* 右下X（この列も含む） */
+	WORD			wY2;											/* 右下Y（この行も含む） */
+	BYTE			byDark;											/* 1=暗くする 0=暗くしない */
+	BYTE			byReserve;										/* 予備 */
+} MAPDARKAREA, *PMAPDARKAREA;
+
 /* マップ情報 */
 typedef struct _MAPINFO {
 	DWORD			dwID;											/* マップID */
@@ -1882,7 +1893,35 @@ typedef struct _MAPINFO {
 	DWORD			dwCountTblNoNPC;								/* NPC番号テーブル数 */
 	PSHOPINFO		pShopInfo;										/* 店情報 */
 	COLORREF		clChg;											/* 色変換 */
+	BYTE			byDarkAreaCount;								/* 暗くする範囲の数（0ならマップ全体が明るさの設定どおり） */
+	MAPDARKAREA		aDarkArea[MAX_MAPDARKAREA];						/* 暗くする・暗くしない範囲 */
 } MAPINFO, *PMAPINFO;
+
+/* (x,y) がマップの暗い場所か
+   範囲が無ければマップ全体が暗い（今までどおり）。「暗くする」範囲が1つでもあれば、
+   どの範囲にも入らない所は明るい。「暗くしない」範囲だけなら、入らない所は暗い。
+   範囲が重なった所は後ろの範囲を優先する */
+static inline BOOL IsMapDarkPos(const MAPINFO *pMap, DWORD x, DWORD y)
+{
+	int i, nCount;
+	BOOL bDark;
+
+	nCount = (pMap->byDarkAreaCount < MAX_MAPDARKAREA) ? pMap->byDarkAreaCount : MAX_MAPDARKAREA;
+	bDark = TRUE;
+	for (i = 0; i < nCount; i ++) {
+		if (pMap->aDarkArea[i].byDark) {
+			bDark = FALSE;
+			break;
+		}
+	}
+	for (i = 0; i < nCount; i ++) {
+		const MAPDARKAREA *pArea = &pMap->aDarkArea[i];
+		if ((x >= pArea->wX1) && (x <= pArea->wX2) && (y >= pArea->wY1) && (y <= pArea->wY2)) {
+			bDark = pArea->byDark ? TRUE : FALSE;
+		}
+	}
+	return bDark;
+}
 
 /* マップ情報保存用 */
 typedef struct _MAPINFOSAVE {
@@ -2639,6 +2678,8 @@ typedef struct _CMDPARA_CHGMAPINFO {
 	int			nEntranceX;											/* 入り口(X) */
 	int			nEntranceY;											/* 入り口(Y) */
 	COLORREF	clChg;												/* 色変換 */
+	BYTE		byDarkAreaCount;									/* 暗くする範囲の数 */
+	MAPDARKAREA	aDarkArea[MAX_MAPDARKAREA];							/* 暗くする・暗くしない範囲 */
 } CMDPARA_CHGMAPINFO, *PCMDPARA_CHGMAPINFO;
 
 /* イベント座標通知 */

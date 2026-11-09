@@ -1406,6 +1406,10 @@ BOOL SaveMapInfo(void)
 		WriteData (hFile, "byFlg", sizeof (pMap->byFlg), (PBYTE)&pMap->byFlg);						/* 各フラグ */
 		WriteData (hFile, "byLightLevel", sizeof (pMap->byLightLevel), (PBYTE)&pMap->byLightLevel);						/* 各フラグ */
 		WriteData (hFile, "byWeather", sizeof (pMap->byWeather), (PBYTE)&pMap->byWeather);						/* 天候 */
+		/* 暗くする範囲（無いマップは書かない。古いサーバーでも読めるように） */
+		if (pMap->byDarkAreaCount) {
+			WriteData (hFile, "aDarkArea", sizeof (MAPDARKAREA) * pMap->byDarkAreaCount, (PBYTE)pMap->aDarkArea);
+		}
 		if (pMap->pszName) {
 			WriteData (hFile, "pszName", strlen ((LPSTR)pMap->pszName) + 1, (PBYTE)pMap->pszName);	/* マップ名 */
 		}
@@ -1619,6 +1623,10 @@ BOOL LoadMapInfo(void)
 					CopyMemory (&pMap->byLightLevel, &pData[dwFilePtr], dwSize);	dwFilePtr += dwSize;	continue;
 				} else if (strcmp (pszTmp, "byWeather") == 0) {				/* 天候 */
 					CopyMemory (&pMap->byWeather, &pData[dwFilePtr], dwSize);	dwFilePtr += dwSize;	continue;
+				} else if (strcmp (pszTmp, "aDarkArea") == 0) {				/* 暗くする範囲 */
+					pMap->byDarkAreaCount = (BYTE)min (dwSize / sizeof (MAPDARKAREA), (DWORD)MAX_MAPDARKAREA);
+					CopyMemory (pMap->aDarkArea, &pData[dwFilePtr], sizeof (MAPDARKAREA) * pMap->byDarkAreaCount);
+					dwFilePtr += dwSize;	continue;
 				} else if (strcmp (pszTmp, "pszName") == 0) {				/* マップ名 */
 					pszTmp = (LPCTSTR)&pData[dwFilePtr];
 					pMap->pszName = new char[strlen (pszTmp) + 1];
