@@ -783,6 +783,13 @@ void OnDecPlayer(int nNo)
 	ZeroMemory (pChar->abySubStatus, sizeof (pChar->abySubStatus));
 
 	/* ログオフ処理 */
+	/* 向きは残す(ログインした時は立体交差の橋の上か下かを向きで決めるので、
+	   橋の上か下かに合う向きにしておき、再開しても同じ側にいるように) */
+	FitCharDirectionBridgeLayer (pChar);
+	BYTE byDirectionLogoff = pChar->byDirection;
+	if (byDirectionLogoff >= 4) {
+		byDirectionLogoff = 1;
+	}
 	pChar->byDirection = 99;
 	if (pChar->byGameState != GAMESTATE_LOGOFF) {
 		SendCmdCHARPOS (0, nNo, 0, 1);
@@ -791,7 +798,7 @@ void OnDecPlayer(int nNo)
 	pChar->pID				= 0;
 	pChar->byGameState		= GAMESTATE_LOGOFF;
 	pChar->byCharState		= CHARSTATE_LOGOFF;
-	pChar->byDirection		= 1;
+	pChar->byDirection		= byDirectionLogoff;
 	pChar->byDrunkLV		= CHARSTATEDRUNK_NONE;
 	pChar->byDrunkPoint		= 0;
 	pChar->dwLastSake		= 0;
@@ -1414,6 +1421,13 @@ BOOL SaveMapInfo(void)
 		if (pMap->byLightCount) {
 			WriteData (hFile, "aLight", sizeof (MAPLIGHT) * pMap->byLightCount, (PBYTE)pMap->aLight);
 		}
+		/* 見える範囲（無いマップは書かない。古いサーバーでも読めるように） */
+		if (pMap->byViewRange) {
+			WriteData (hFile, "byViewRange", sizeof (pMap->byViewRange), (PBYTE)&pMap->byViewRange);
+		}
+		if (pMap->wViewHideParts) {
+			WriteData (hFile, "wViewHideParts", sizeof (pMap->wViewHideParts), (PBYTE)&pMap->wViewHideParts);
+		}
 		if (pMap->pszName) {
 			WriteData (hFile, "pszName", strlen ((LPSTR)pMap->pszName) + 1, (PBYTE)pMap->pszName);	/* マップ名 */
 		}
@@ -1627,6 +1641,12 @@ BOOL LoadMapInfo(void)
 					CopyMemory (&pMap->byLightLevel, &pData[dwFilePtr], dwSize);	dwFilePtr += dwSize;	continue;
 				} else if (strcmp (pszTmp, "byWeather") == 0) {				/* 天候 */
 					CopyMemory (&pMap->byWeather, &pData[dwFilePtr], dwSize);	dwFilePtr += dwSize;	continue;
+				} else if (strcmp (pszTmp, "wViewHideParts") == 0) {		/* 見えない所に描くパーツ */
+					CopyMemory (&pMap->wViewHideParts, &pData[dwFilePtr], min (dwSize, (DWORD)sizeof (pMap->wViewHideParts)));
+					dwFilePtr += dwSize;	continue;
+				} else if (strcmp (pszTmp, "byViewRange") == 0) {			/* 見える範囲 */
+					CopyMemory (&pMap->byViewRange, &pData[dwFilePtr], min (dwSize, (DWORD)sizeof (pMap->byViewRange)));
+					dwFilePtr += dwSize;	continue;
 				} else if (strcmp (pszTmp, "aDarkArea") == 0) {				/* 暗くする範囲 */
 					pMap->byDarkAreaCount = (BYTE)min (dwSize / sizeof (MAPDARKAREA), (DWORD)MAX_MAPDARKAREA);
 					CopyMemory (pMap->aDarkArea, &pData[dwFilePtr], sizeof (MAPDARKAREA) * pMap->byDarkAreaCount);

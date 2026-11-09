@@ -32,6 +32,13 @@ extern BYTE	GetMapLightLevel		(void);														/* 今の場所で使うマ�
 extern BOOL	IsMapDarkFlg			(void);														/* 今の場所で暗闇が効くか */
 extern BOOL	IsMapHideArea			(void);														/* 明るいが壁の向こうは見えない所か */
 extern int	GetMapPosLight			(int mx, int my, BYTE *pbyPower, BYTE *pbyFlg);											/* マスの灯りの範囲(パーツ・光源) */														/* 今の場所で暗闇が効くか */
+extern BOOL	IsMapViewMode			(void);														/* 今の場所で見える範囲(視界)が効くか */
+extern BOOL	IsMapDarkHidePos		(int xTmp, int yTmp);										/* 自分からずれたマスが暗くて(見えなくて)隠すか */
+extern void	ResetMapViewSeen		(void);														/* 一度見た所の記録を消す */
+extern int	GetBridgeLayerPos		(PCHARINFO pChar, int x, int y);							/* キャラが (x,y) へ動いた後に橋の上(1)か下(2)か */
+extern void	RenewCharBridgeLayer	(PCHARINFO pChar, int x, int y);							/* 動く時に橋の上か下かを覚え直す */
+extern int	GetCharBridgeLayer		(PCHARINFO pChar);											/* 橋の上(1)か下(2)か(0=橋とは関係ない) */
+extern BOOL	IsBridgeMoveBlock		(PCHARINFO pChar, BYTE byDirection);						/* 橋のマスからその向きへ進めないか */
 extern BOOL	CheckEquUserInfo		(WORD, BYTE);												/* 装備職業情報にあるか判定 */
 extern BOOL	CheckItemSexDistinction	(PITEMINFO, PCHARINFO);										/* 性別による使えるかチェック */
 extern int	CheckCharBlockPC		(DWORD, DWORD);												/* キャラのキャラとのぶつかり判定 */

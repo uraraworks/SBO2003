@@ -15,7 +15,7 @@
 /* ========================================================================= */
 #define DATACOUNT			(1)										/* 保存データ数 */
 #define DATACOUNT_DUNGEON	(15)									/* 保存データ数(ダンジョン) */
-#define DATACOUNT_MAZE		(17)									/* 保存データ数(迷路) */
+#define DATACOUNT_MAZE		(26)									/* 保存データ数(迷路) */
 #define DATACOUNT_BOMB		(9)										/* 保存データ数(爆弾ゲーム) */
 #define DATACOUNT_WAR		(22)									/* 保存データ数(戦場ゲーム) */
 
@@ -78,6 +78,15 @@ static const char *s_aszNameMAZE[] = {
 	"wChipIDGoal",		/* ゴール地点のマップチップID */
 	"wChipIDRoad",		/* 道のマップチップID */
 	"wChipIDBlock",		/* 壁のマップチップID */
+	"wChipIDRoad2",		/* 道に混ぜるマップチップID */
+	"byRoad2Rate",		/* 道に混ぜる割合(%) */
+	"wChipIDBlock2",		/* 壁に混ぜるマップチップID */
+	"byBlock2Rate",		/* 壁に混ぜる割合(%) */
+	"wChipIDBlockFace",		/* 壁の手前の面のマップチップID */
+	"byPathWidth",		/* 通路の太さ */
+	"wChipIDBridgeV",	/* 立体交差の橋(縦に渡る)のマップチップID */
+	"wChipIDBridgeH",	/* 立体交差の橋(横に渡る)のマップチップID */
+	"byCrossRate",		/* 立体交差の多さ(%) */
 	"z"
 };
 
@@ -312,8 +321,13 @@ BOOL SaveSubGameInfo(void)
 			pInfo = g_aSubaGameInfo[j];
 			switch (i) {
 			case 0:		/* 種別 */
-				CopyMemory (&pData[dwOffset], &pInfo->byType, sizeof (BYTE));
-				dwOffset += sizeof (BYTE);
+				{
+					/* 詳細が無い枠は「無し(0)」で書く（詳細 0 バイトのまま種別だけ残すと、	*/
+					/* 読み込みで次の枠の詳細を読んでしまいずれる）							*/
+					BYTE byType = (pInfo->pInfo == NULL) ? (BYTE)SUBGAMEID_NONE : pInfo->byType;
+					CopyMemory (&pData[dwOffset], &byType, sizeof (BYTE));
+					dwOffset += sizeof (BYTE);
+				}
 				break;
 			case 1:		/* 詳細情報 */
 				pTmp = NULL;
@@ -491,7 +505,7 @@ BOOL LoadSubGameInfo(void)
 				PBYTE pTmp;
 				DWORD dwTmp;
 
-				dwTmp = dwOffsetTmp;
+				dwTmp = 0;		/* 種別が「無し」なら詳細は 0 バイト */
 				pTmp = NULL;
 				switch (pInfo->byType) {
 				case SUBGAMEID_BOMB:			/* 爆弾ゲーム */
@@ -743,6 +757,11 @@ static PBYTE GetInfoMaze(PSUBGAME_MAZEINFO pInfo, PDWORD pdwSize)
 		if (s_aszNameMAZE[i][0] == 'z') {
 			break;
 		}
+		/* 足した項目（17番目から）は使っている時だけ書く（前の版のサーバーでも読めるように） */
+		if ((i >= 17) && !(pInfo->wChipIDRoad2 || pInfo->byRoad2Rate || pInfo->wChipIDBlock2 || pInfo->byBlock2Rate || pInfo->wChipIDBlockFace || pInfo->byPathWidth ||
+							pInfo->wChipIDBridgeV || pInfo->wChipIDBridgeH || pInfo->byCrossRate)) {
+			break;
+		}
 		strcpy (Info.szName, s_aszNameMAZE[i]);
 
 		dwHeaderSize += (strlen (Info.szName) + 1);
@@ -788,6 +807,15 @@ static PBYTE GetInfoMaze(PSUBGAME_MAZEINFO pInfo, PDWORD pdwSize)
 		case 14:	dwDataSizeTmp = sizeof (WORD);			break;	/* ゴール地点のマップチップID */
 		case 15:	dwDataSizeTmp = sizeof (WORD);			break;	/* 道のマップチップID */
 		case 16:	dwDataSizeTmp = sizeof (WORD);			break;	/* 壁のマップチップID */
+		case 17:	dwDataSizeTmp = sizeof (WORD);			break;	/* 道に混ぜるマップチップID */
+		case 18:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 道に混ぜる割合(%) */
+		case 19:	dwDataSizeTmp = sizeof (WORD);			break;	/* 壁に混ぜるマップチップID */
+		case 20:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 壁に混ぜる割合(%) */
+		case 21:	dwDataSizeTmp = sizeof (WORD);			break;	/* 壁の手前の面のマップチップID */
+		case 22:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 通路の太さ */
+		case 23:	dwDataSizeTmp = sizeof (WORD);			break;	/* 立体交差の橋(縦に渡る) */
+		case 24:	dwDataSizeTmp = sizeof (WORD);			break;	/* 立体交差の橋(横に渡る) */
+		case 25:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 立体交差の多さ */
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
 		dwDataSize += dwDataSizeTmp;
@@ -892,6 +920,42 @@ static PBYTE GetInfoMaze(PSUBGAME_MAZEINFO pInfo, PDWORD pdwSize)
 		case 16:	/* 壁のマップチップID */
 			CopyMemory (&pData[dwOffset], &pInfo->wChipIDBlock, sizeof (WORD));
 			dwOffset += sizeof (WORD);
+			break;
+		case 17:	/* 道に混ぜるマップチップID */
+			CopyMemory (&pData[dwOffset], &pInfo->wChipIDRoad2, sizeof (WORD));
+			dwOffset += sizeof (WORD);
+			break;
+		case 18:	/* 道に混ぜる割合(%) */
+			CopyMemory (&pData[dwOffset], &pInfo->byRoad2Rate, sizeof (BYTE));
+			dwOffset += sizeof (BYTE);
+			break;
+		case 19:	/* 壁に混ぜるマップチップID */
+			CopyMemory (&pData[dwOffset], &pInfo->wChipIDBlock2, sizeof (WORD));
+			dwOffset += sizeof (WORD);
+			break;
+		case 20:	/* 壁に混ぜる割合(%) */
+			CopyMemory (&pData[dwOffset], &pInfo->byBlock2Rate, sizeof (BYTE));
+			dwOffset += sizeof (BYTE);
+			break;
+		case 21:	/* 壁の手前の面のマップチップID */
+			CopyMemory (&pData[dwOffset], &pInfo->wChipIDBlockFace, sizeof (WORD));
+			dwOffset += sizeof (WORD);
+			break;
+		case 22:	/* 通路の太さ */
+			CopyMemory (&pData[dwOffset], &pInfo->byPathWidth, sizeof (BYTE));
+			dwOffset += sizeof (BYTE);
+			break;
+		case 23:	/* 立体交差の橋(縦に渡る) */
+			CopyMemory (&pData[dwOffset], &pInfo->wChipIDBridgeV, sizeof (WORD));
+			dwOffset += sizeof (WORD);
+			break;
+		case 24:	/* 立体交差の橋(横に渡る) */
+			CopyMemory (&pData[dwOffset], &pInfo->wChipIDBridgeH, sizeof (WORD));
+			dwOffset += sizeof (WORD);
+			break;
+		case 25:	/* 立体交差の多さ */
+			CopyMemory (&pData[dwOffset], &pInfo->byCrossRate, sizeof (BYTE));
+			dwOffset += sizeof (BYTE);
 			break;
 		}
 	}
@@ -1683,6 +1747,33 @@ static PBYTE PetInfoMaze(PBYTE pData, PDWORD pdwSize)
 		} else if (strcmp (aHeaderInfo[i].szName, "wChipIDBlock") == 0) {			/* 壁のマップチップID */
 			CopyMemory (&pInfo->wChipIDBlock, &pData[dwOffsetTmp], sizeof (WORD));
 			dwOffsetTmp += sizeof (WORD);
+		} else if (strcmp (aHeaderInfo[i].szName, "wChipIDRoad2") == 0) {		/* 道に混ぜるマップチップID */
+			CopyMemory (&pInfo->wChipIDRoad2, &pData[dwOffsetTmp], sizeof (WORD));
+			dwOffsetTmp += sizeof (WORD);
+		} else if (strcmp (aHeaderInfo[i].szName, "byRoad2Rate") == 0) {		/* 道に混ぜる割合(%) */
+			CopyMemory (&pInfo->byRoad2Rate, &pData[dwOffsetTmp], sizeof (BYTE));
+			dwOffsetTmp += sizeof (BYTE);
+		} else if (strcmp (aHeaderInfo[i].szName, "wChipIDBlock2") == 0) {		/* 壁に混ぜるマップチップID */
+			CopyMemory (&pInfo->wChipIDBlock2, &pData[dwOffsetTmp], sizeof (WORD));
+			dwOffsetTmp += sizeof (WORD);
+		} else if (strcmp (aHeaderInfo[i].szName, "byBlock2Rate") == 0) {		/* 壁に混ぜる割合(%) */
+			CopyMemory (&pInfo->byBlock2Rate, &pData[dwOffsetTmp], sizeof (BYTE));
+			dwOffsetTmp += sizeof (BYTE);
+		} else if (strcmp (aHeaderInfo[i].szName, "wChipIDBlockFace") == 0) {		/* 壁の手前の面のマップチップID */
+			CopyMemory (&pInfo->wChipIDBlockFace, &pData[dwOffsetTmp], sizeof (WORD));
+			dwOffsetTmp += sizeof (WORD);
+		} else if (strcmp (aHeaderInfo[i].szName, "byPathWidth") == 0) {		/* 通路の太さ */
+			CopyMemory (&pInfo->byPathWidth, &pData[dwOffsetTmp], sizeof (BYTE));
+			dwOffsetTmp += sizeof (BYTE);
+		} else if (strcmp (aHeaderInfo[i].szName, "wChipIDBridgeV") == 0) {		/* 立体交差の橋(縦に渡る) */
+			CopyMemory (&pInfo->wChipIDBridgeV, &pData[dwOffsetTmp], sizeof (WORD));
+			dwOffsetTmp += sizeof (WORD);
+		} else if (strcmp (aHeaderInfo[i].szName, "wChipIDBridgeH") == 0) {		/* 立体交差の橋(横に渡る) */
+			CopyMemory (&pInfo->wChipIDBridgeH, &pData[dwOffsetTmp], sizeof (WORD));
+			dwOffsetTmp += sizeof (WORD);
+		} else if (strcmp (aHeaderInfo[i].szName, "byCrossRate") == 0) {		/* 立体交差の多さ */
+			CopyMemory (&pInfo->byCrossRate, &pData[dwOffsetTmp], sizeof (BYTE));
+			dwOffsetTmp += sizeof (BYTE);
 		}
 		dwOffset = dwOffsetTmp;
 	}

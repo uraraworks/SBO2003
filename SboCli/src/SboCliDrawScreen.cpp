@@ -38,6 +38,47 @@ static void FillRectClip	(int x, int y, int cx, int cy, COLORREF cl);	/* 画像�
 static void DrawLineClip	(int x1, int y1, int x2, int y2, int nWidth, COLORREF cl);	/* 線を描く */
 void DrawWeather		(void);										/* 天候の描画 */
 static void DrawMapLight	(const char *pMapDark);						/* 丸くゆらめく灯りの描画 */
+static void DrawMapViewFog	(void);										/* 見える範囲の外に白い霧をかける */
+
+static BOOL s_bDrawCharBridgeUpper = FALSE;							/* TRUE なら橋の上を渡っている人だけ描く */
+static BYTE s_abyBridgeCol[DRAW_PARTS_X * 2 + 3];						/* 橋を重ねる列(NULL でない時だけ見る) */
+static BYTE *s_pbyBridgeCol = NULL;										/* 橋を重ねる列を絞る時は s_abyBridgeCol */
+
+/* 行 nLine で橋の下をくぐっている人の頭が上の行にはみ出すので、
+   その人の列(歩いている途中は左右の列も)だけ、上の行の橋を重ねる */
+static void DrawBridgeOverHead(int nLine)
+{
+	int i, x, nCount, nXMax;
+	BOOL bAny = FALSE;
+	PCHARINFO pChar, pMyChar;
+
+	if ((nLine <= 0) || (g_nMyCharID < 0)) {
+		return;
+	}
+	pMyChar = g_aCharInfo[g_nMyCharID];
+	nXMax = DRAW_PARTS_X * 2 + 3;
+	ZeroMemory (s_abyBridgeCol, sizeof (s_abyBridgeCol));
+	nCount = g_aCharPos[nLine].GetSize ();
+	for (i = 0; i < nCount; i ++) {
+		pChar = g_aCharInfo[g_aCharPos[nLine][i]];
+		if (GetCharBridgeLayer (pChar) != 2) {
+			continue;
+		}
+		x = (int)pChar->dwX - (int)pMyChar->dwX + (DRAW_PARTS_X + 1);
+		for (int k = x - 1; k <= x + 1; k ++) {
+			if ((k >= 0) && (k < nXMax)) {
+				s_abyBridgeCol[k] = 1;
+				bAny = TRUE;
+			}
+		}
+	}
+	if (bAny == FALSE) {
+		return;
+	}
+	s_pbyBridgeCol = s_abyBridgeCol;
+	DrawMapLine (nLine - 1, PARTSHIT_BRIDGEV);
+	s_pbyBridgeCol = NULL;
+}
 void AddSysMsg			(LPSTR, COLORREF);							/* システムメッセージの追加 */
 
 /* ========================================================================= */
@@ -302,6 +343,8 @@ BOOL DrawScreenMOVE(void)
 	DrawObj ();				/* オブジェクトを描画 */
 	for (i = 0; i < DRAW_PARTS_Y * 2 + 3; i ++) {
 		DrawCharLine (i);
+		DrawMapLine (i, PARTSHIT_BRIDGEV);	/* 橋の下をくぐる人に橋を重ねる */
+		DrawBridgeOverHead (i);				/* 上の行にはみ出した頭にも */
 		DrawMapLine (i, PARTSHIT_HIDE3);
 		if (i > 0) {
 			DrawMapLine (i - 1, PARTSHIT_HIDE1);
@@ -315,7 +358,14 @@ BOOL DrawScreenMOVE(void)
 	for (i = 0; i < DRAW_PARTS_Y * 2 + 3; i ++) {
 		DrawMapLine (i, PARTSHIT_HIDE5);
 	}
+	/* 橋の上を渡っている人は橋より手前に描き直す */
+	s_bDrawCharBridgeUpper = TRUE;
+	for (i = 0; i < DRAW_PARTS_Y * 2 + 3; i ++) {
+		DrawCharLine (i);
+	}
+	s_bDrawCharBridgeUpper = FALSE;
 	DrawWeather ();
+	DrawMapViewFog ();		/* 見えない所のパーツを使うマップは、見えない所を白くかすませる */
 	if (bLight) {
 		DrawMapLight (aMapDark);	/* 丸くゆらめく灯りで暗くする */
 		CopyMemory (g_pMapDarkTmp, aMapDark, SCRMARTSSIZE);
@@ -331,6 +381,37 @@ BOOL DrawScreenMOVE(void)
 		InvalidateRect (g_hWndDebug, NULL, TRUE);
 	}
 	return TRUE;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	DrawMapViewFog													 */
+/* 内容：	見える範囲の外に白い霧をかける									 */
+/* 			見えない所のパーツ(草原など)が見えている地面と同じでも、		 */
+/* 			どこまで見えているか分かるようにする							 */
+/* 日付：	2026/11/09														 */
+/* ========================================================================= */
+#define VIEW_FOG_HIDE		55		/* まだ見ていない所の白さ(%) */
+#define VIEW_FOG_SEEN		35		/* 一度見た所の白さ(%) */
+static void DrawMapViewFog(void)
+{
+	int x, y, nCX, nCY;
+	char cLevel;
+
+	if (!IsMapViewMode () || (g_pMapInfo == NULL) || (g_pMapInfo->wViewHideParts == 0)) {
+		return;
+	}
+	nCX = DRAW_PARTS_X * 2 + 3;
+	nCY = DRAW_PARTS_Y * 2 + 3;
+	for (y = 0; y < nCY; y ++) {
+		for (x = 0; x < nCX; x ++) {
+			cLevel = g_pMapDarkTmp[x + nCX * y];
+			if (cLevel >= 100) {
+				continue;
+			}
+			g_pDibDrawMap->ChgWhite (x * 32, y * 32, 32, 32, (cLevel <= 0) ? VIEW_FOG_HIDE : VIEW_FOG_SEEN);
+		}
+	}
 }
 
 
@@ -590,28 +671,45 @@ void DrawMapLine(int nLine, int nType)
 	nTmp = min (nTmp, 100);
 	byLight = (BYTE)nTmp;
 
+	/* 見える範囲(視界)の外に描くパーツ(0 なら黒) */
+	WORD wViewHide = 0;
+	if (IsMapViewMode () && (g_pMapInfo->wViewHideParts < g_wCountMapParts)) {
+		wViewHide = g_pMapInfo->wViewHideParts;
+	}
+
 	mx = pMyChar->dwX;
 	my = pMyChar->dwY;
 	j = my - (DRAW_PARTS_Y + 1) + y;
 	xMax = DRAW_PARTS_X * 2 + 3;
 	for (x = 0; x < xMax; x ++) {
 		WORD wMap;
+		BOOL bViewHide;
 		i = mx - (DRAW_PARTS_X + 1) + x;
 
 		byLevel = 100;
-		if (GetMapLightLevel ()) {
+		if (GetMapLightLevel () || IsMapViewMode ()) {
 			byLevel = g_pMapDarkTmp[x + (DRAW_PARTS_X * 2 + 3) * nLine];
+		}
+		/* 見えない所はそのパーツを明るいまま描く(本当の地形は描かない)。
+		   暗くはせず、あとで DrawMapViewFog が白い霧をかける */
+		bViewHide = (wViewHide && (byLevel == 0));
+		if (wViewHide) {
+			byLevel = 100;
 		}
 
 		/* 範囲外？ */
-		if ((i < 0) || (i >= g_pMapInfo->nCX) || (j < 0) || (j >= g_pMapInfo->nCY)) {
+		if (!bViewHide && ((i < 0) || (i >= g_pMapInfo->nCX) || (j < 0) || (j >= g_pMapInfo->nCY))) {
 			if (nType < 0) {
 				g_pDibDrawMap->BltLevel (x * 32, y * 32, 32, 32, g_pDibMapParts, 0, 0, byLevel, FALSE);
 			}
 			continue;
 		}
 
-		wMap = g_pMapInfo->pwMap[i + j * g_pMapInfo->nCX];
+		if (bViewHide) {
+			wMap = wViewHide;
+		} else {
+			wMap = g_pMapInfo->pwMap[i + j * g_pMapInfo->nCX];
+		}
 		if (wMap >= g_wCountMapParts) {
 			wMap = 0;
 		}
@@ -645,6 +743,15 @@ void DrawMapLine(int nLine, int nType)
 			case PARTSHIT_HIDE5:
 				if (!((pParts->byHitType == PARTSHIT_HIDE5) ||
 					  (pParts->byHitType == PARTSHIT_HIDE6))) {
+					continue;
+				}
+				break;
+
+			case PARTSHIT_BRIDGEV:		/* 橋(縦・横とも)を重ねる */
+				if (GetBridgeAxis (pParts->byHitType) == 0) {
+					continue;
+				}
+				if (s_pbyBridgeCol && (s_pbyBridgeCol[x] == 0)) {
 					continue;
 				}
 				break;
@@ -763,6 +870,11 @@ void DrawCharLine(int nLine)
 		char nMapDark;
 		pChar = g_aCharInfo[g_aCharPos[nLine][i]];
 
+		/* 橋の上を渡っている人だけ描き直す時？ */
+		if (s_bDrawCharBridgeUpper && (GetCharBridgeLayer (pChar) != 1)) {
+			continue;
+		}
+
 		if (pCharMyChar->byAdminLV == ADMINLV_USER) {
 			if (pChar->byNpcType == NPCTYPE_PUT) {
 				continue;
@@ -780,6 +892,10 @@ void DrawCharLine(int nLine)
 			if (nMapDark <= 1) {
 				continue;
 			}
+		}
+		/* 見える範囲(視界)の外？ */
+		if (IsMapViewMode () && IsMapDarkHidePos (xTmp, yTmp)) {
+			continue;
 		}
 		
 		xx = pChar->byDirection * 64;
@@ -1223,11 +1339,8 @@ void DrawChar2(void)
 		yTmp = dwMyY - pChar->dwY;
 
 		/* 暗闇表示？ */
-		if (GetMapLightLevel ()) {
-			if (g_pMapDarkTmp[(DRAW_PARTS_X + 1 - xTmp) +
-						(DRAW_PARTS_X * 2 + 3) * (DRAW_PARTS_Y + 1 - yTmp)] <= 1) {
-				continue;
-			}
+		if (IsMapDarkHidePos (xTmp, yTmp)) {
+			continue;
 		}
 
 		xx = 32 * (pAnime->byGrpID % 8);
@@ -1300,11 +1413,8 @@ void DrawChar2(void)
 		yTmp = dwMyY - pChar->dwY;
 
 		/* 暗闇表示？ */
-		if (GetMapLightLevel ()) {
-			if (g_pMapDarkTmp[(DRAW_PARTS_X + 1 - xTmp) +
-						(DRAW_PARTS_X * 2 + 3) * (DRAW_PARTS_Y + 1 - yTmp)] <= 1) {
-				continue;
-			}
+		if (IsMapDarkHidePos (xTmp, yTmp)) {
+			continue;
 		}
 
 		xx = (pAnime->wGrpID % 8) * 32;
@@ -1418,11 +1528,8 @@ void DrawChar3(void)
 		yTmp = dwMyY - pChar->dwY;
 
 		/* 暗闇表示？ */
-		if (GetMapLightLevel ()) {
-			if (g_pMapDarkTmp[(DRAW_PARTS_X + 1 - xTmp) +
-						(DRAW_PARTS_X * 2 + 3) * (DRAW_PARTS_Y + 1 - yTmp)] <= 1) {
-				continue;
-			}
+		if (IsMapDarkHidePos (xTmp, yTmp)) {
+			continue;
 		}
 
 		if (g_aCharInfo[g_nMyCharID]->byAdminLV == ADMINLV_USER) {
@@ -2197,7 +2304,7 @@ void DrawWeather(void)
 			i = mx - (DRAW_PARTS_X + 1) + x;
 
 			byLevel = 100;
-			if (GetMapLightLevel ()) {
+			if (GetMapLightLevel () || IsMapViewMode ()) {
 				byLevel = g_pMapDarkTmp[x + (DRAW_PARTS_X * 2 + 3) * y];
 			}
 

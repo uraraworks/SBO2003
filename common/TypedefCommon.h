@@ -920,6 +920,8 @@ enum {
 	PARTSHIT_MOVELEFT,											/* 一歩右へ進む */
 	PARTSHIT_WATERRIPPLE,										/* 水の波紋 */
 	PARTSHIT_HIDE7,												/* 隠れる7(隠れる3で背景ごと隠れる) */
+	PARTSHIT_BRIDGEV,											/* 橋(縦に渡る。上下から乗った人は上、左右から入った人は下を通る) */
+	PARTSHIT_BRIDGEH,											/* 橋(横に渡る。左右から乗った人は上、上下から入った人は下を通る) */
 	PARTSHIT_MAX
 };
 
@@ -1279,6 +1281,18 @@ typedef struct _SUBGAME_MAZEINFO {
 	WORD		wChipIDGoal;										/* ゴール地点のマップチップID */
 	WORD		wChipIDRoad;										/* 道のマップチップID */
 	WORD		wChipIDBlock;										/* 壁のマップチップID */
+	WORD		wChipIDRoad2;										/* 道に混ぜるマップチップID(0=混ぜない) */
+	BYTE		byRoad2Rate;										/* 道に混ぜる割合(%) */
+	WORD		wChipIDBlock2;										/* 壁に混ぜるマップチップID(0=混ぜない) */
+	BYTE		byBlock2Rate;										/* 壁に混ぜる割合(%) */
+	WORD		wChipIDBlockFace;									/* 壁の手前の面のマップチップID(0=使わない) */
+	BYTE		byPathWidth;										/* 通路の太さ(1～3マス、0=2マス) */
+	WORD		wChipIDBridgeV;										/* 立体交差の橋(縦に渡る)のマップチップID(0=使わない) */
+	WORD		wChipIDBridgeH;										/* 立体交差の橋(横に渡る)のマップチップID(0=使わない) */
+	BYTE		byCrossRate;										/* 立体交差の多さ(%。0=作らない) */
+	BYTE		byWorkWidth;										/* 作成中の通路の太さ */
+	WORD		wWorkCX;											/* 作成中の設計図の横マス数 */
+	WORD		wWorkCY;											/* 作成中の設計図の縦マス数 */
 	BYTE		*pMapTmp;											/* 作成するマップ */
 	DWORD		dwTblID;											/* 管理人キャラのテーブルID */
 	DWORD		dwCountTmp;											/* 参加人数カウント用 */
@@ -1913,7 +1927,68 @@ typedef struct _MAPINFO {
 	MAPDARKAREA		aDarkArea[MAX_MAPDARKAREA];						/* 暗くする・暗くしない範囲 */
 	BYTE			byLightCount;									/* 光源の数 */
 	MAPLIGHT		aLight[MAX_MAPLIGHT];							/* 光源 */
+	BYTE			byViewRange;									/* 見える範囲(マス。0=制限なし。壁の向こうと範囲の外は見えない) */
+	WORD			wViewHideParts;									/* 見えない所に描くパーツ(0=黒) */
 } MAPINFO, *PMAPINFO;
+
+/* 橋のパーツか（1=縦に渡る橋 2=横に渡る橋 0=橋ではない） */
+static inline int GetBridgeAxis(BYTE byHitType)
+{
+	if (byHitType == PARTSHIT_BRIDGEV) {
+		return 1;
+	}
+	if (byHitType == PARTSHIT_BRIDGEH) {
+		return 2;
+	}
+	return 0;
+}
+
+/* 向き(0上 1下 2左 3右)の軸（1=縦 2=横） */
+static inline int GetDirectionAxis(BYTE byDirection)
+{
+	return (byDirection <= 1) ? 1 : 2;
+}
+
+/* 立体交差の橋の上(1)か下(2)か
+   高速道路に乗ったかどうかのように、地面から橋のマスに入った時に進む向きで決め
+   (橋の向きに進めば上、横切れば下)、橋のマスから橋のマスへ動く間はそのまま覚えておく。
+   nAxisFrom/nAxisTo は動く前・後のマスの橋の向き(GetBridgeAxis)、nMoveAxis は進む向きの軸 */
+static inline int GetBridgeLayerNext(int nLayerNow, int nAxisFrom, int nAxisTo, int nMoveAxis)
+{
+	if (nAxisTo == 0) {
+		return 0;
+	}
+	if (nAxisFrom && nLayerNow) {
+		return nLayerNow;
+	}
+	return (nAxisTo == nMoveAxis) ? 1 : 2;
+}
+
+/* 何も覚えていない時(ログインした・画面に入ってきた)は、立っている向きで決める */
+static inline int GetBridgeLayerByDirection(int nAxis, BYTE byDirection)
+{
+	if (nAxis == 0) {
+		return 0;
+	}
+	return (nAxis == GetDirectionAxis (byDirection)) ? 1 : 2;
+}
+
+/* 橋のマスからその向きへ進めないか
+   上を渡っている人は、橋の向きにはどこへでも進めるが、横へは橋のマスにしか移れない(広い橋の上で横にずれる)。
+   下をくぐっている人は、横切る向きにはどこへでも進めるが、橋の向きへは橋のマスにしか移れない(広い橋の下) */
+static inline BOOL IsBridgeMoveBlock(int nLayerNow, int nAxisFrom, int nAxisTo, int nMoveAxis)
+{
+	if ((nAxisFrom == 0) || (nLayerNow == 0)) {
+		return FALSE;
+	}
+	if (nAxisTo) {
+		return FALSE;
+	}
+	if (nLayerNow == 1) {
+		return (nMoveAxis != nAxisFrom);
+	}
+	return (nMoveAxis == nAxisFrom);
+}
 
 /* (x,y) の範囲の種類(MAPDARK_*)
    範囲が無ければマップ全体が暗い（今までどおり）。「暗くする」範囲が1つでもあれば、
@@ -2117,6 +2192,11 @@ typedef struct _CHARINFO {
 	CHAREFCINFO	aCharEfcInfo[MAX_COUNTCHAREFC];						/* 文字エフェクト */
 	CmyArray<PCHARINFOTIMEREVENT, PCHARINFOTIMEREVENT> aTimerEvent;	/* タイマーイベント */
 	PVOID		pProc;												/* 処理 */
+	BYTE		byBridgeLayer;										/* 立体交差の橋の上(1)か下(2)か(0=わからない。保存・送信しない) */
+	BYTE		byBridgeLayerBack;									/* 1つ前のマスでの橋の上か下か(橋から出ていく途中の描画用) */
+	DWORD		dwBridgeMapID;										/* byBridgeLayer を決めた時のマップID */
+	DWORD		dwBridgeX;											/* byBridgeLayer を決めた時の座標(X) */
+	DWORD		dwBridgeY;											/* byBridgeLayer を決めた時の座標(Y) */
 } CHARINFO, *PCHARINFO;
 
 /* キャラ情報通知 */
@@ -2706,6 +2786,8 @@ typedef struct _CMDPARA_CHGMAPINFO {
 	MAPDARKAREA	aDarkArea[MAX_MAPDARKAREA];							/* 暗くする・暗くしない範囲 */
 	BYTE		byLightCount;										/* 光源の数 */
 	MAPLIGHT	aLight[MAX_MAPLIGHT];								/* 光源 */
+	BYTE		byViewRange;										/* 見える範囲(マス。0=制限なし) */
+	WORD		wViewHideParts;										/* 見えない所に描くパーツ(0=黒) */
 } CMDPARA_CHGMAPINFO, *PCMDPARA_CHGMAPINFO;
 
 /* イベント座標通知 */

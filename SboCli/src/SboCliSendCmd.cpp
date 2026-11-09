@@ -232,7 +232,6 @@ void SendCmdCHGDIRECTION(BYTE byDirection)
 	if (pChar->dwTailTblID != -1) {
 		return;
 	}
-
 	/* 送信キューの数を取得 */
 //	IDirectPlay8Client *pCli = cli.GetPtr ();
 //	DWORD dwNumMsgs;
@@ -307,6 +306,11 @@ void SendCmdCHARPOS(BYTE byDirection, BOOL bMovingFlg)
 
 	dwX = pChar->dwX + anPosAddTblX[pChar->byDirection];
 	dwY = pChar->dwY + anPosAddTblY[pChar->byDirection];
+	/* 橋の上から横へ落ちる・橋の下から橋の端へ出る？ */
+	if (IsBridgeMoveBlock (pChar, pChar->byDirection)) {
+		g_dwTimeMoveDisable = timeGetTime () + 250;
+		return;
+	}
 	if (g_bBlock) {
 		byHitType = (&g_pMapPartsInfo[g_pMapInfo->pwMap[dwX + dwY * g_pMapInfo->nCX]])->byHitType;
 		switch (byHitType) {
@@ -347,10 +351,16 @@ void SendCmdCHARPOS(BYTE byDirection, BOOL bMovingFlg)
 
 	DWORD dwItemGet = -1;
 	if (g_bBlock) {// && g_pMapInfo->pdwMapChar[g_pMapInfo->nCX * pSendData->byY + pSendData->byX]) {
-		int i;
+		int i, nBridgeLayer;
+		/* 行き先が橋なら、自分が橋の上を渡るか(1)下をくぐるか(2) */
+		nBridgeLayer = GetBridgeLayerPos (pChar, pSendData->byX, pSendData->byY);
 		for (i = 0; i < g_aCharInfo.GetSize (); i ++) {
 			PCHARINFO pCharTmp = g_aCharInfo[i];
 			if ((CheckCharX (pCharTmp, pCharTmp->dwX, pSendData->byX)) && (pCharTmp->dwY == pSendData->byY)) {
+				/* 橋の上と下ですれちがう人とはぶつからない */
+				if (nBridgeLayer && (GetCharBridgeLayer (pCharTmp) != nBridgeLayer)) {
+					continue;
+				}
 				/* 戦場ゲームに参加中？ */
 				if (pChar->abySubStatus[0] == SUBGAMEID_WAR) {
 					return;
@@ -754,6 +764,8 @@ void SendCmdCHGMAPINFO(void)
 	pSendData->byWeather	= g_pMapInfo->byWeather;
 	pSendData->clChg = g_pMapInfo->clChg;
 	pSendData->byDarkAreaCount = g_pMapInfo->byDarkAreaCount;
+	pSendData->byViewRange = g_pMapInfo->byViewRange;
+	pSendData->wViewHideParts = g_pMapInfo->wViewHideParts;
 	CopyMemory (pSendData->aDarkArea, g_pMapInfo->aDarkArea, sizeof (pSendData->aDarkArea));
 	pSendData->byLightCount = g_pMapInfo->byLightCount;
 	CopyMemory (pSendData->aLight, g_pMapInfo->aLight, sizeof (pSendData->aLight));
