@@ -74,6 +74,7 @@ static int s_nPartsLightRange = 0;		/* 灯りの範囲(マス) */
 BOOL	CheckEquUserInfo					(WORD, BYTE);											/* 装備職業情報にあるか判定 */
 BOOL	CheckItemSexDistinction				(PITEMINFO, PCHARINFO);									/* 性別による使えるかチェック */
 BOOL	CheckCharBlock						(DWORD, DWORD);											/* キャラのぶつかり判定 */
+BOOL	IsSightWall							(int, int);												/* 灯りを止めるマス？ */
 int		CheckCharBlockPC					(DWORD, DWORD);											/* キャラのキャラとのぶつかり判定 */
 BOOL	CheckBlockEventFront				(PCHARINFO pChar, int x, int y, BYTE byDirection);		/* 1歩前にイベントがあるか判定 */
 BOOL	IsBlock								(int x, int y, BOOL bHide);								/* ぶつかり判定 */
@@ -1651,7 +1652,7 @@ static void RenewMapDarkLightFlood(int mx, int my, int nRange)
 		/* 壁(灯りのマス自身は壁に付いたたいまつでも照らす) */
 		bWall = FALSE;
 		if (((x != mx) || (y != my)) && IsSightBlock ()) {
-			bWall = !CheckCharBlock (x, y);
+			bWall = IsSightWall (x, y);
 		}
 		/* 隠す範囲の境目を越えたマスは照らすが、その先へは広げない */
 		if (!bWall && IsHideAreaCross (mx, my, x, y)) {
@@ -1873,7 +1874,7 @@ void RenewMapDarkCorner(PCHARINFO pChar)
 			mx = (int)pMyChar->dwX + x - (1 + DRAW_PARTS_X);
 			my = (int)pMyChar->dwY + y - (1 + DRAW_PARTS_Y);
 			/* 自分が壁で、上も壁の時だけ */
-			if (CheckCharBlock (mx, my) || CheckCharBlock (mx, my - 1)) {
+			if (!IsSightWall (mx, my) || !IsSightWall (mx, my - 1)) {
 				continue;
 			}
 			if (!IsInViewRange (mx, my - 1)) {
@@ -1939,7 +1940,7 @@ void RenewMapDarkWork(PCHARINFO pChar, int x, int y, int nCount)
 
 	bResult = TRUE;
 	if ((nCount < DRAW_PARTS_X) && (IsSightBlock ())) {
-		bResult = CheckCharBlock (x, y);
+		bResult = !IsSightWall (x, y);
 	}
 	/* 隠す範囲の境目を越えたマスは照らすが、その先へは広げない */
 	if (bResult && IsHideAreaCross ((int)pChar->dwX, (int)pChar->dwY, x, y)) {
@@ -2070,6 +2071,34 @@ BOOL CheckCharBlock(DWORD dwX, DWORD dwY)
 	case PARTSHIT_HIDE6:
 	case PARTSHIT_COUNTER:
 	case PARTSHIT_BLOCK2:
+		return FALSE;
+	}
+	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：IsSightWall														 */
+/* 内容：灯りを止めるマス？(ぶつかるマスのうちカウンターは灯りを通す)		 */
+/* 日付：2026/11/09															 */
+/* ========================================================================= */
+BOOL IsSightWall(int x, int y)
+{
+	int nPartsID;
+	PMAPINFO pMap;
+
+	if (CheckCharBlock ((DWORD)x, (DWORD)y)) {
+		return FALSE;
+	}
+	pMap = g_pMapInfo;
+	if ((x < 0) || (x >= pMap->nCX) || (y < 0) || (y >= pMap->nCY)) {
+		return TRUE;
+	}
+	nPartsID = pMap->pwMap[x + y * pMap->nCX];
+	if (nPartsID >= g_wCountMapParts) {
+		return TRUE;
+	}
+	/* カウンターは低い家具なので灯りが越えていく */
+	if (g_pMapPartsInfo[nPartsID].byHitType == PARTSHIT_COUNTER) {
 		return FALSE;
 	}
 	return TRUE;
