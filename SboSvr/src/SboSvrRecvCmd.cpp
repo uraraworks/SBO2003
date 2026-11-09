@@ -4225,6 +4225,8 @@ void RecvDataProcMAPINFOCHG(PBYTE pData, DWORD dwDataSize)
 	pMap->byViewRange = min (pPara->byViewRange, (BYTE)10);
 	pMap->wViewHideParts = (pPara->wViewHideParts < g_wCountMapParts) ? pPara->wViewHideParts : 0;
 	CopyMemory (pMap->aDarkArea, pPara->aDarkArea, sizeof (pMap->aDarkArea));
+	pMap->byLightCount = min (pPara->byLightCount, MAX_MAPLIGHT);
+	CopyMemory (pMap->aLight, pPara->aLight, sizeof (pMap->aLight));
 
 	/* BGMが変更された？ */
 	if (byData != pPara->byBGM) {

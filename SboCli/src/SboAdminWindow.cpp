@@ -235,6 +235,8 @@ void MakeAdminWndMapInfo			(void);								/* マップ情報ウィンドウ作�
 void DeleteAdminWndMapInfo			(void);								/* マップ情報ウィンドウ消去 */
 static void MapDarkAreaToText		(BYTE byDark, LPSTR pszText, int nSize);	/* 暗くする範囲を文字にする */
 static void MapDarkAreaFromText		(BYTE byDark, LPCSTR pszText);		/* 文字から暗くする範囲を足す */
+static void MapLightToText			(LPSTR pszText, int nSize);			/* 光源を文字にする */
+static void MapLightFromText		(LPCSTR pszText);					/* 文字から光源を読む */
 void MakeAdminWndEventInfo			(void);								/* イベント情報ウィンドウ作成 */
 void DeleteAdminWndEventInfo		(void);								/* イベント情報ウィンドウ消去 */
 void MakeAdminWndEventInfoType		(void);								/* 種類別イベント情報ウィンドウ作成 */
@@ -1922,10 +1924,22 @@ void AdminOnCommandMapInfo(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 				ZeroMemory (szArea, sizeof (szArea));
 				GetWindowText (m_hWndEdit9, szArea, sizeof (szArea) - 1);
 				MapDarkAreaFromText (0, szArea);
+				ZeroMemory (szArea, sizeof (szArea));
+				GetWindowText (m_hWndEdit12, szArea, sizeof (szArea) - 1);
+				MapDarkAreaFromText (MAPDARK_HIDE, szArea);
 				MapDarkAreaToText (1, szArea, sizeof (szArea));
 				SetWindowText (m_hWndEdit8, szArea);
 				MapDarkAreaToText (0, szArea, sizeof (szArea));
 				SetWindowText (m_hWndEdit9, szArea);
+				MapDarkAreaToText (MAPDARK_HIDE, szArea, sizeof (szArea));
+				SetWindowText (m_hWndEdit12, szArea);
+
+				/* 光源 */
+				ZeroMemory (szArea, sizeof (szArea));
+				GetWindowText (m_hWndEdit13, szArea, sizeof (szArea) - 1);
+				MapLightFromText (szArea);
+				MapLightToText (szArea, sizeof (szArea));
+				SetWindowText (m_hWndEdit13, szArea);
 			}
 
 			/* 見える範囲(0=制限なし、10マスまで) */
@@ -5698,13 +5712,14 @@ void AdminOnPaintMapInfo(HDC hDC)
 	MyTextOut (hDC, 0 * 5, 12 * 11 + 6, szBuf);
 	wsprintf (szBuf, "天候:");
 	MyTextOut (hDC, 0, 12 * 13 + 3, szBuf);
-	MyTextOut (hDC, 0, 12 * 16 + 1, "暗くする範囲:");
-	MyTextOut (hDC, 0, 12 * 18 + 1, "暗くしない範囲:");
-	MyTextOut (hDC, 0, 12 * 20, "左上X,Y-右下X,Y を空白で区切って8つまで");
-	MyTextOut (hDC, 0, 12 * 21, "例: 0,40-75,89 10,0-30,20");
-	MyTextOut (hDC, 0, 12 * 22, "どちらも空ならマップ全体が明るさの設定どおり。");
-	MyTextOut (hDC, 0, 12 * 23, "暗くする範囲があれば、その外は明るい。");
-	MyTextOut (hDC, 0, 12 * 24, "暗くしない範囲は、暗くする範囲より優先。");
+	MyTextOut (hDC, 0, 190 + 1, "暗くする範囲:");
+	MyTextOut (hDC, 0, 206 + 1, "暗くしない範囲:");
+	MyTextOut (hDC, 0, 222 + 1, "明るく壁で隠す:");
+	MyTextOut (hDC, 0, 238 + 1, "光源:");
+	MyTextOut (hDC, 0, 256, "範囲は 左上X,Y-右下X,Y を空白区切りで合わせて8つ。");
+	MyTextOut (hDC, 0, 268, "暗くする範囲があればその外は明るい。下の欄ほど優先。");
+	MyTextOut (hDC, 0, 280, "光源は X,Y,範囲(1-7)[,強さ%[,種類]] を空白区切りで16個");
+	MyTextOut (hDC, 0, 292, "種類 1=ゆらめかない 2=暖色 3=両方 例:10,5,3 20,5,4,60,2");
 	MyTextOut (hDC, 0, 12 * 26 + 1, "見える範囲:");
 	MyTextOut (hDC, 12 * 11, 12 * 26 + 1, "マス(0=制限なし 1～10)");
 	MyTextOut (hDC, 0, 12 * 27 + 2, "暗くならないが、範囲の外と壁の向こうが見えない。");
@@ -7294,11 +7309,19 @@ void MakeAdminWndMapInfo(void)
 
 	/* 暗くする範囲・暗くしない範囲 */
 	m_hWndEdit8 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-			12 * 8, 12 * 16, 12 * 22, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
+			12 * 8, 190, 12 * 22, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
 	SendMessage (m_hWndEdit8, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 	m_hWndEdit9 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-			12 * 8, 12 * 18, 12 * 22, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
+			12 * 8, 206, 12 * 22, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
 	SendMessage (m_hWndEdit9, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+	/* 明るいが壁の向こうは見えない範囲 */
+	m_hWndEdit12 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+			12 * 8, 222, 12 * 22, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
+	SendMessage (m_hWndEdit12, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+	/* 光源 */
+	m_hWndEdit13 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+			12 * 8, 238, 12 * 22, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
+	SendMessage (m_hWndEdit13, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
 	/* 見える範囲 */
 	m_hWndEdit10 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_NUMBER,
@@ -7406,6 +7429,10 @@ void MakeAdminWndMapInfo(void)
 		SetWindowText (m_hWndEdit8, szArea);
 		MapDarkAreaToText (0, szArea, sizeof (szArea));
 		SetWindowText (m_hWndEdit9, szArea);
+		MapDarkAreaToText (MAPDARK_HIDE, szArea, sizeof (szArea));
+		SetWindowText (m_hWndEdit12, szArea);
+		MapLightToText (szArea, sizeof (szArea));
+		SetWindowText (m_hWndEdit13, szArea);
 	}
 	wsprintf (szTmp, "%d", g_pMapInfo->byViewRange);
 	SetWindowText (m_hWndEdit10, szTmp);
@@ -7448,6 +7475,8 @@ void DeleteAdminWndMapInfo(void)
 	SAFE_DESTROYWND (m_hWndEdit9);
 	SAFE_DESTROYWND (m_hWndEdit10);
 	SAFE_DESTROYWND (m_hWndEdit11);
+	SAFE_DESTROYWND (m_hWndEdit12);
+	SAFE_DESTROYWND (m_hWndEdit13);
 
 	InvalidateRect (g_hWndAdmin, NULL, TRUE);
 }
@@ -7455,7 +7484,7 @@ void DeleteAdminWndMapInfo(void)
 
 /* ========================================================================= */
 /* 関数名：MapDarkAreaToText												 */
-/* 内容：暗くする範囲(byDark=1)か暗くしない範囲(0)を「x1,y1-x2,y2 ...」に	 */
+/* 内容：種類 byDark(MAPDARK_*) の範囲を「x1,y1-x2,y2 ...」に				 */
 /* ========================================================================= */
 static void MapDarkAreaToText(BYTE byDark, LPSTR pszText, int nSize)
 {
@@ -7465,7 +7494,7 @@ static void MapDarkAreaToText(BYTE byDark, LPSTR pszText, int nSize)
 	pszText[0] = 0;
 	for (i = 0; (i < g_pMapInfo->byDarkAreaCount) && (i < MAX_MAPDARKAREA); i ++) {
 		PMAPDARKAREA pArea = &g_pMapInfo->aDarkArea[i];
-		if ((pArea->byDark ? 1 : 0) != byDark) {
+		if (pArea->byDark != byDark) {
 			continue;
 		}
 		wsprintf (szTmp, "%s%d,%d-%d,%d", pszText[0] ? " " : "", pArea->wX1, pArea->wY1, pArea->wX2, pArea->wY2);
@@ -7513,6 +7542,81 @@ static void MapDarkAreaFromText(BYTE byDark, LPCSTR pszText)
 				pArea->wY2		= (WORD)min (max (an[1], an[3]), nMaxY);
 				pArea->byDark	= byDark;
 				pArea->byReserve = 0;
+			}
+			nNo = 0;
+		}
+		if (*p == 0) {
+			break;
+		}
+	}
+}
+
+
+/* ========================================================================= */
+/* 関数名：MapLightToText													 */
+/* 内容：光源を「x,y,範囲 ...」に											 */
+/* ========================================================================= */
+static void MapLightToText(LPSTR pszText, int nSize)
+{
+	int i;
+	char szTmp[32];
+
+	pszText[0] = 0;
+	for (i = 0; (i < g_pMapInfo->byLightCount) && (i < MAX_MAPLIGHT); i ++) {
+		PMAPLIGHT pLight = &g_pMapInfo->aLight[i];
+		if (((pLight->byPower == 0) || (pLight->byPower == 100)) && (pLight->byFlg == 0)) {
+			wsprintf (szTmp, "%s%d,%d,%d", pszText[0] ? " " : "", pLight->wX, pLight->wY, pLight->byRange);
+		} else {
+			wsprintf (szTmp, "%s%d,%d,%d,%d,%d", pszText[0] ? " " : "", pLight->wX, pLight->wY, pLight->byRange,
+					pLight->byPower ? pLight->byPower : 100, pLight->byFlg);
+		}
+		if ((int)(strlen (pszText) + strlen (szTmp)) >= nSize) {
+			break;
+		}
+		strcat (pszText, szTmp);
+	}
+}
+
+
+/* ========================================================================= */
+/* 関数名：MapLightFromText													 */
+/* 内容：「x,y,範囲[,強さ[,種類]] ...」を読んで光源にする(空白で区切る)		 */
+/*       強さは 1〜100(省くと 100)、種類は 1=ゆらめかない 2=暖色 3=両方		 */
+/* ========================================================================= */
+static void MapLightFromText(LPCSTR pszText)
+{
+	int an[5], nNo, nVal;
+	BOOL bNum;
+	LPCSTR p;
+
+	g_pMapInfo->byLightCount = 0;
+	ZeroMemory (g_pMapInfo->aLight, sizeof (g_pMapInfo->aLight));
+	nNo = 0;
+	nVal = 0;
+	bNum = FALSE;
+	for (p = pszText; ; p ++) {
+		if ((*p >= '0') && (*p <= '9')) {
+			nVal = nVal * 10 + (*p - '0');
+			bNum = TRUE;
+			continue;
+		}
+		if (bNum) {
+			if (nNo < 5) {
+				an[nNo ++] = nVal;
+			}
+			nVal = 0;
+			bNum = FALSE;
+		}
+		/* 空白か終わりで1つの光源(数字が3つ以上・範囲が 1 以上の時だけ) */
+		if ((*p == ' ') || (*p == '\t') || (*p == 0)) {
+			if ((nNo >= 3) && (an[2] > 0) && (g_pMapInfo->byLightCount < MAX_MAPLIGHT)) {
+				PMAPLIGHT pLight = &g_pMapInfo->aLight[g_pMapInfo->byLightCount ++];
+				pLight->wX		= (WORD)min (an[0], max (0, g_pMapInfo->nCX - 1));
+				pLight->wY		= (WORD)min (an[1], max (0, g_pMapInfo->nCY - 1));
+				pLight->byRange	= (BYTE)min (an[2], 7);
+				pLight->byPower	= (BYTE)((nNo >= 4) ? max (1, min (an[3], 100)) : 100);
+				pLight->byFlg	= (BYTE)((nNo >= 5) ? (an[4] & (MAPLIGHTFLG_NOFLICKER | MAPLIGHTFLG_WARM)) : 0);
+				pLight->byReserve = 0;
 			}
 			nNo = 0;
 		}

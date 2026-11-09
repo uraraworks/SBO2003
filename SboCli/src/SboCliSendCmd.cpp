@@ -767,6 +767,8 @@ void SendCmdCHGMAPINFO(void)
 	pSendData->byViewRange = g_pMapInfo->byViewRange;
 	pSendData->wViewHideParts = g_pMapInfo->wViewHideParts;
 	CopyMemory (pSendData->aDarkArea, g_pMapInfo->aDarkArea, sizeof (pSendData->aDarkArea));
+	pSendData->byLightCount = g_pMapInfo->byLightCount;
+	CopyMemory (pSendData->aLight, g_pMapInfo->aLight, sizeof (pSendData->aLight));
 
 	pSendData ++;
 	strcat ((LPSTR)pSendData, (LPSTR)g_pMapInfo->pszName);

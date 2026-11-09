@@ -429,7 +429,7 @@ static void DrawMapLight(const char *pMapDark)
 {
 	int i, x, y, nCount, nLight, nWidth, nHeight, nCX, nCY, nSX, nSY, nMapW;
 	int anX[MAPLIGHT_MAX], anY[MAPLIGHT_MAX];
-	float afR[MAPLIGHT_MAX], fFlicker, fTime;
+	float afR[MAPLIGHT_MAX], afPower[MAPLIGHT_MAX], afWarm[MAPLIGHT_MAX], fFlicker, fTime;
 	float afVisX[DRAW_PARTS_X * 2 + 3];
 	PCHARINFO pMyChar, pChar;
 	LPBYTE pBits;
@@ -481,11 +481,17 @@ static void DrawMapLight(const char *pMapDark)
 		if (pChar->byLightLevel) {
 			nLevel = GetMapLightLevel () - pChar->byLightLevel;
 		}
+		/* 明るい(壁の向こうは見えない)所では、見えるマスは全部明るい */
+		if ((pChar == pMyChar) && IsMapHideArea ()) {
+			nLevel = 0;
+		}
 		/* 灯りの中心(歩き中のずれも入れて、なめらかについてくるように) */
 		anX[nLight] = (DRAW_PARTS_X + 1) * 32 + 16 - xTmp * 32 - anPosAddTblX[pChar->byDirection] * pChar->byDotMove;
 		anY[nLight] = (DRAW_PARTS_Y + 1) * 32 + 16 - yTmp * 32 - anPosAddTblY[pChar->byDirection] * pChar->byDotMove;
 		/* 明るさが 0 になる距離(ドット)。灯りが強くて暗くならない時は 0 */
 		afR[nLight] = 0.0f;
+		afPower[nLight] = 1.0f;
+		afWarm[nLight] = 0.0f;
 		if (nLevel > 0) {
 			afR[nLight] = (100.0f / nLevel + 0.2f) * 32.0f * fFlicker;
 		}
@@ -493,7 +499,7 @@ static void DrawMapLight(const char *pMapDark)
 	}
 
 	/* 光るマップパーツ(たいまつ・かがり火など)も灯りにする */
-	if (g_pMapInfo->pwMap && g_pMapPartsInfo) {
+	{
 		int mx, my;
 		for (y = -(DRAW_PARTS_Y + 1); y <= DRAW_PARTS_Y + 1; y ++) {
 			my = (int)pMyChar->dwY + y;
@@ -501,9 +507,9 @@ static void DrawMapLight(const char *pMapDark)
 				continue;
 			}
 			for (x = -(DRAW_PARTS_X + 1); x <= DRAW_PARTS_X + 1; x ++) {
-				WORD wMap;
 				float fFlickerParts;
 				int nRange;
+				BYTE byPower, byFlg;
 
 				if (nLight >= MAPLIGHT_MAX) {
 					break;
@@ -512,17 +518,22 @@ static void DrawMapLight(const char *pMapDark)
 				if ((mx < 0) || (mx >= g_pMapInfo->nCX)) {
 					continue;
 				}
-				wMap = g_pMapInfo->pwMap[mx + my * g_pMapInfo->nCX];
-				if ((wMap >= g_wCountMapParts) || (g_pMapPartsInfo[wMap].byLight == 0)) {
+				/* 光るパーツか、マップの光源 */
+				nRange = GetMapPosLight (mx, my, &byPower, &byFlg);
+				if (nRange == 0) {
 					continue;
 				}
-				nRange = min (g_pMapPartsInfo[wMap].byLight, DRAW_PARTS_X);
 				/* マップのマスは描画用画像の中で動かない(歩き中は見る場所の方がずれる) */
 				anX[nLight] = (DRAW_PARTS_X + 1 + x) * 32 + 16;
 				anY[nLight] = (DRAW_PARTS_Y + 1 + y) * 32 + 16;
 				/* 炎ごとに少しずつ違うゆらめき */
 				fFlickerParts = 1.0f + 0.045f * sinf (fTime * 0.0093f + (mx * 7 + my * 13)) +
 								0.025f * sinf (fTime * 0.0211f + (mx * 3 + my * 5));
+				if (byFlg & MAPLIGHTFLG_NOFLICKER) {
+					fFlickerParts = 1.0f;		/* ゆらめかない光源 */
+				}
+				afPower[nLight] = byPower / 100.0f;
+				afWarm[nLight] = (byFlg & MAPLIGHTFLG_WARM) ? 1.0f : 0.0f;
 				/* 範囲のマスまで見えて、その少し先で真っ暗になる(RenewMapDarkParts と同じ) */
 				afR[nLight] = (nRange + 1 + 0.2f) * 32.0f * fFlickerParts;
 				nLight ++;
@@ -559,8 +570,8 @@ static void DrawMapLight(const char *pMapDark)
 
 		pDst = (PDWORD)(pBits + (nWidth * 4) * (nHeight - 1 - y)) + nSX;
 		for (x = nSX; x < nSX + nCX; x ++, pDst ++) {
-			float fTx, fVis, fLight;
-			int nTx, x0, x1, nLevel;
+			float fTx, fVis, fLight, fWarm;
+			int nTx, x0, x1, nLevel, nWarm;
 
 			/* 見えるマスかどうか(横) */
 			fTx = (x - 16) / 32.0f;
@@ -578,6 +589,7 @@ static void DrawMapLight(const char *pMapDark)
 
 			/* 灯りからの距離でなめらかに暗くする(灯りが重なると明るくなる) */
 			fLight = 0.0f;
+			fWarm = 0.0f;
 			for (i = 0; i < nLight; i ++) {
 				float fDX, fDY, fD;
 				if (afR[i] <= 0.0f) {
@@ -586,9 +598,15 @@ static void DrawMapLight(const char *pMapDark)
 				}
 				fDX = (float)(x - anX[i]);
 				fDY = (float)(y - anY[i]);
-				fD = sqrtf (fDX * fDX + fDY * fDY);
+				fD = fDX * fDX + fDY * fDY;
+				if (fD >= afR[i] * afR[i]) {
+					continue;		/* 届かない灯りは平方根を取らない */
+				}
+				fD = sqrtf (fD);
 				if (fD < afR[i]) {
-					fLight += 1.0f - fD / afR[i];
+					float fAdd = (1.0f - fD / afR[i]) * afPower[i];
+					fLight += fAdd;
+					fWarm += fAdd * afWarm[i];
 				}
 			}
 			if (fLight > 1.0f) {
@@ -599,14 +617,25 @@ static void DrawMapLight(const char *pMapDark)
 			}
 
 			nLevel = (int)(fLight * 256.0f);
-			if (nLevel >= 256) {
+			/* 暖色の光源の光が届いている所は橙色に寄せる */
+			nWarm = (int)(min (fWarm, 1.0f) * 256.0f);
+			if (fVis < 1.0f) {
+				nWarm = (int)(nWarm * fVis);
+			}
+			if ((nLevel >= 256) && (nWarm <= 0)) {
 				continue;
 			}
+			nLevel = min (nLevel, 256);
 			{
 				DWORD dw = *pDst;
 				DWORD r = ((dw >> 16) & 0xFF) * nLevel >> 8;
 				DWORD g = ((dw >> 8) & 0xFF) * nLevel >> 8;
 				DWORD b = (dw & 0xFF) * nLevel >> 8;
+				if (nWarm > 0) {
+					r = min ((DWORD)255, r * (256 + nWarm * 12 / 100) >> 8);
+					g = g * (256 - nWarm * 14 / 100) >> 8;
+					b = b * (256 - nWarm * 42 / 100) >> 8;
+				}
 				*pDst = (dw & 0xFF000000) | (r << 16) | (g << 8) | b;
 			}
 		}

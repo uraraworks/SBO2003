@@ -1866,14 +1866,30 @@ typedef struct _OBJINFO {
 
 /* 暗くする範囲（マップの一部だけ暗くする。地上から階段で洞窟へ降りるマップなど） */
 #define MAX_MAPDARKAREA		8										/* 1マップに置ける範囲の数 */
+#define MAPDARK_BRIGHT		0										/* 暗くしない */
+#define MAPDARK_DARK		1										/* 暗くする */
+#define MAPDARK_HIDE		2										/* 明るい。ただし壁や扉の向こうは見えない */
 typedef struct _MAPDARKAREA {
 	WORD			wX1;											/* 左上X */
 	WORD			wY1;											/* 左上Y */
 	WORD			wX2;											/* 右下X（この列も含む） */
 	WORD			wY2;											/* 右下Y（この行も含む） */
-	BYTE			byDark;											/* 1=暗くする 0=暗くしない */
+	BYTE			byDark;											/* 範囲の種類(MAPDARK_*) */
 	BYTE			byReserve;										/* 予備 */
 } MAPDARKAREA, *PMAPDARKAREA;
+
+/* マップの光源（天井の灯りなど、パーツが無くても照らす所） */
+#define MAX_MAPLIGHT		16										/* 1マップに置ける光源の数 */
+typedef struct _MAPLIGHT {
+	WORD			wX;												/* X */
+	WORD			wY;												/* Y */
+	BYTE			byRange;										/* 灯りの範囲(マス。1〜7) */
+	BYTE			byPower;										/* 強さ(%。1〜100、0 は 100 と同じ) */
+	BYTE			byFlg;											/* MAPLIGHTFLG_* */
+	BYTE			byReserve;										/* 予備 */
+} MAPLIGHT, *PMAPLIGHT;
+#define MAPLIGHTFLG_NOFLICKER	(0x01)								/* ゆらめかない */
+#define MAPLIGHTFLG_WARM		(0x02)								/* 暖色(炎のような橙色) */
 
 /* マップ情報 */
 typedef struct _MAPINFO {
@@ -1909,6 +1925,8 @@ typedef struct _MAPINFO {
 	COLORREF		clChg;											/* 色変換 */
 	BYTE			byDarkAreaCount;								/* 暗くする範囲の数（0ならマップ全体が明るさの設定どおり） */
 	MAPDARKAREA		aDarkArea[MAX_MAPDARKAREA];						/* 暗くする・暗くしない範囲 */
+	BYTE			byLightCount;									/* 光源の数 */
+	MAPLIGHT		aLight[MAX_MAPLIGHT];							/* 光源 */
 	BYTE			byViewRange;									/* 見える範囲(マス。0=制限なし。壁の向こうと範囲の外は見えない) */
 	WORD			wViewHideParts;									/* 見えない所に描くパーツ(0=黒) */
 } MAPINFO, *PMAPINFO;
@@ -1972,30 +1990,36 @@ static inline BOOL IsBridgeMoveBlock(int nLayerNow, int nAxisFrom, int nAxisTo, 
 	return (nMoveAxis == nAxisFrom);
 }
 
-/* (x,y) がマップの暗い場所か
+/* (x,y) の範囲の種類(MAPDARK_*)
    範囲が無ければマップ全体が暗い（今までどおり）。「暗くする」範囲が1つでもあれば、
-   どの範囲にも入らない所は明るい。「暗くしない」範囲だけなら、入らない所は暗い。
-   範囲が重なった所は後ろの範囲を優先する */
-static inline BOOL IsMapDarkPos(const MAPINFO *pMap, DWORD x, DWORD y)
+   どの範囲にも入らない所は明るい。それ以外（「暗くしない」「壁の向こうは見えない」だけ）なら、
+   入らない所は暗い。範囲が重なった所は後ろの範囲を優先する */
+static inline BYTE GetMapDarkType(const MAPINFO *pMap, DWORD x, DWORD y)
 {
 	int i, nCount;
-	BOOL bDark;
+	BYTE byType;
 
 	nCount = (pMap->byDarkAreaCount < MAX_MAPDARKAREA) ? pMap->byDarkAreaCount : MAX_MAPDARKAREA;
-	bDark = TRUE;
+	byType = MAPDARK_DARK;
 	for (i = 0; i < nCount; i ++) {
-		if (pMap->aDarkArea[i].byDark) {
-			bDark = FALSE;
+		if (pMap->aDarkArea[i].byDark == MAPDARK_DARK) {
+			byType = MAPDARK_BRIGHT;
 			break;
 		}
 	}
 	for (i = 0; i < nCount; i ++) {
 		const MAPDARKAREA *pArea = &pMap->aDarkArea[i];
 		if ((x >= pArea->wX1) && (x <= pArea->wX2) && (y >= pArea->wY1) && (y <= pArea->wY2)) {
-			bDark = pArea->byDark ? TRUE : FALSE;
+			byType = pArea->byDark;
 		}
 	}
-	return bDark;
+	return byType;
+}
+
+/* (x,y) がマップの暗い場所か */
+static inline BOOL IsMapDarkPos(const MAPINFO *pMap, DWORD x, DWORD y)
+{
+	return (GetMapDarkType (pMap, x, y) == MAPDARK_DARK) ? TRUE : FALSE;
 }
 
 /* マップ情報保存用 */
@@ -2760,6 +2784,8 @@ typedef struct _CMDPARA_CHGMAPINFO {
 	COLORREF	clChg;												/* 色変換 */
 	BYTE		byDarkAreaCount;									/* 暗くする範囲の数 */
 	MAPDARKAREA	aDarkArea[MAX_MAPDARKAREA];							/* 暗くする・暗くしない範囲 */
+	BYTE		byLightCount;										/* 光源の数 */
+	MAPLIGHT	aLight[MAX_MAPLIGHT];								/* 光源 */
 	BYTE		byViewRange;										/* 見える範囲(マス。0=制限なし) */
 	WORD		wViewHideParts;										/* 見えない所に描くパーツ(0=黒) */
 } CMDPARA_CHGMAPINFO, *PCMDPARA_CHGMAPINFO;

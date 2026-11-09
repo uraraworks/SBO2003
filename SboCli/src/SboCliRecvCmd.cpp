@@ -59,6 +59,7 @@ void	RenewMapDarkWork					(PCHARINFO, int x, int y, int nCount);					/* 暗闇�
 int		GetMapDarkLevel						(PCHARINFO pChar, int x, int y);						/* 灯りの明るさを取得 */
 void	RenewMapDarkCorner					(PCHARINFO pChar);										/* 灯りの角の壁を照らす */
 void	RenewMapDarkParts					(void);													/* 光るマップパーツで照らす */
+int	GetMapPosLight						(int mx, int my, BYTE *pbyPower, BYTE *pbyFlg);										/* マスの灯りの範囲(パーツ・光源) */
 
 /* 光るマップパーツの灯り(GetMapDarkLevel に pChar=NULL で渡した時に使う) */
 static int s_nPartsLightX = 0;			/* 灯りのマップ座標(X) */
@@ -1080,22 +1081,32 @@ void RenewUseMagicInfo(void)
 /* 内容：暗闇描画情報を更新													 */
 /* 日付：2004/10/08															 */
 /* ========================================================================= */
-/* 関数名：IsMyPosDarkArea													 */
-/* 内容：自分のいる所がマップの「暗くする範囲」か							 */
-/*       範囲の無いマップはどこでも TRUE(マップ全体が明るさの設定どおり)	 */
+/* 関数名：GetMyPosDarkType													 */
+/* 内容：自分のいる所の範囲の種類(MAPDARK_*)								 */
+/*       範囲の無いマップはどこでも暗い(マップ全体が明るさの設定どおり)		 */
 /* ========================================================================= */
-static BOOL IsMyPosDarkArea(void)
+static BYTE GetMyPosDarkType(void)
 {
 	PCHARINFO pChar;
 
 	if (g_pMapInfo->byDarkAreaCount == 0) {
-		return TRUE;
+		return MAPDARK_DARK;
 	}
 	if ((g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ())) {
-		return TRUE;
+		return MAPDARK_DARK;
 	}
 	pChar = g_aCharInfo[g_nMyCharID];
-	return IsMapDarkPos (g_pMapInfo, pChar->dwX, pChar->dwY);
+	return GetMapDarkType (g_pMapInfo, pChar->dwX, pChar->dwY);
+}
+
+
+/* ========================================================================= */
+/* 関数名：IsMapHideArea													 */
+/* 内容：自分のいる所が「明るい。ただし壁の向こうは見えない」範囲か			 */
+/* ========================================================================= */
+BOOL IsMapHideArea(void)
+{
+	return (GetMyPosDarkType () == MAPDARK_HIDE) ? TRUE : FALSE;
 }
 
 
@@ -1105,11 +1116,13 @@ static BOOL IsMyPosDarkArea(void)
 /* ========================================================================= */
 BYTE GetMapLightLevel(void)
 {
-	if (g_pMapInfo->byLightLevel == 0) {
+	switch (GetMyPosDarkType ()) {
+	case MAPDARK_BRIGHT:
 		return 0;
-	}
-	if (!IsMyPosDarkArea ()) {
-		return 0;
+	case MAPDARK_HIDE:
+		/* 見えるマスを調べるために暗いマップと同じ処理を通す(一番弱い暗さ。
+		   見えるマスは DrawMapLight で明るいまま描く) */
+		return 1;
 	}
 	return g_pMapInfo->byLightLevel;
 }
@@ -1121,10 +1134,13 @@ BYTE GetMapLightLevel(void)
 /* ========================================================================= */
 BOOL IsMapDarkFlg(void)
 {
-	if (!(g_pMapInfo->byFlg & MAPFLG_DARK)) {
+	switch (GetMyPosDarkType ()) {
+	case MAPDARK_BRIGHT:
 		return FALSE;
+	case MAPDARK_HIDE:
+		return TRUE;		/* 壁や扉の向こうは見えない */
 	}
-	return IsMyPosDarkArea ();
+	return (g_pMapInfo->byFlg & MAPFLG_DARK) ? TRUE : FALSE;
 }
 
 
@@ -1152,7 +1168,7 @@ BOOL IsMapViewMode(void)
 	if (GetMapLightLevel ()) {
 		return FALSE;
 	}
-	return IsMyPosDarkArea ();
+	return (GetMyPosDarkType () != MAPDARK_BRIGHT) ? TRUE : FALSE;
 }
 
 /* 見える範囲(マス) */
@@ -1428,7 +1444,7 @@ void RenewMapDarkParts(void)
 	if (GetMapLightLevel () == 0) {
 		return;
 	}
-	if ((g_pMapInfo->pwMap == NULL) || (g_pMapPartsInfo == NULL)) {
+	if ((g_pMapInfo->pwMap == NULL) && (g_pMapInfo->byLightCount == 0)) {
 		return;
 	}
 	pMyChar = g_aCharInfo[g_nMyCharID];
@@ -1439,27 +1455,64 @@ void RenewMapDarkParts(void)
 			continue;
 		}
 		for (x = -DRAW_PARTS_X; x <= DRAW_PARTS_X; x ++) {
-			WORD wMap;
+			int nRange;
 
 			mx = (int)pMyChar->dwX + x;
 			if ((mx < 0) || (mx >= g_pMapInfo->nCX)) {
 				continue;
 			}
-			wMap = g_pMapInfo->pwMap[mx + my * g_pMapInfo->nCX];
-			if (wMap >= g_wCountMapParts) {
-				continue;
-			}
-			if (g_pMapPartsInfo[wMap].byLight == 0) {
+			nRange = GetMapPosLight (mx, my, NULL, NULL);
+			if (nRange == 0) {
 				continue;
 			}
 			s_nPartsLightX = mx;
 			s_nPartsLightY = my;
-			s_nPartsLightRange = min (g_pMapPartsInfo[wMap].byLight, DRAW_PARTS_X);
+			s_nPartsLightRange = nRange;
 			ZeroMemory (g_pMapDarkTmpPos, SCRMARTSSIZE);
 			RenewMapDarkWork (NULL, mx, my, DRAW_PARTS_X);
 			RenewMapDarkCorner (NULL);
 		}
 	}
+}
+
+/* ========================================================================= */
+/* 関数名：GetMapPosLight													 */
+/* 内容：マス(mx,my)の灯りの範囲(光るパーツとマップの光源の大きい方。0=無し) */
+/*       pbyPower・pbyFlg に強さ(%)とフラグ(マップの光源のもの)を返す		 */
+/* ========================================================================= */
+int GetMapPosLight(int mx, int my, BYTE *pbyPower, BYTE *pbyFlg)
+{
+	int i, nRange;
+
+	nRange = 0;
+	if (pbyPower) {
+		*pbyPower = 100;
+	}
+	if (pbyFlg) {
+		*pbyFlg = 0;
+	}
+	if ((mx < 0) || (my < 0) || (mx >= g_pMapInfo->nCX) || (my >= g_pMapInfo->nCY)) {
+		return 0;
+	}
+	if (g_pMapInfo->pwMap && g_pMapPartsInfo) {
+		WORD wMap = g_pMapInfo->pwMap[mx + my * g_pMapInfo->nCX];
+		if (wMap < g_wCountMapParts) {
+			nRange = g_pMapPartsInfo[wMap].byLight;
+		}
+	}
+	for (i = 0; (i < g_pMapInfo->byLightCount) && (i < MAX_MAPLIGHT); i ++) {
+		PMAPLIGHT pLight = &g_pMapInfo->aLight[i];
+		if ((pLight->wX == mx) && (pLight->wY == my)) {
+			nRange = max (nRange, (int)pLight->byRange);
+			if (pbyPower && pLight->byPower) {
+				*pbyPower = min (pLight->byPower, 100);
+			}
+			if (pbyFlg) {
+				*pbyFlg = pLight->byFlg;
+			}
+		}
+	}
+	return min (nRange, DRAW_PARTS_X);
 }
 
 /* ========================================================================= */

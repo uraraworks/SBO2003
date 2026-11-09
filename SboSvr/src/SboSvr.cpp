@@ -1417,6 +1417,10 @@ BOOL SaveMapInfo(void)
 		if (pMap->byDarkAreaCount) {
 			WriteData (hFile, "aDarkArea", sizeof (MAPDARKAREA) * pMap->byDarkAreaCount, (PBYTE)pMap->aDarkArea);
 		}
+		/* 光源（無いマップは書かない） */
+		if (pMap->byLightCount) {
+			WriteData (hFile, "aLight", sizeof (MAPLIGHT) * pMap->byLightCount, (PBYTE)pMap->aLight);
+		}
 		/* 見える範囲（無いマップは書かない。古いサーバーでも読めるように） */
 		if (pMap->byViewRange) {
 			WriteData (hFile, "byViewRange", sizeof (pMap->byViewRange), (PBYTE)&pMap->byViewRange);
@@ -1646,6 +1650,10 @@ BOOL LoadMapInfo(void)
 				} else if (strcmp (pszTmp, "aDarkArea") == 0) {				/* 暗くする範囲 */
 					pMap->byDarkAreaCount = (BYTE)min (dwSize / sizeof (MAPDARKAREA), (DWORD)MAX_MAPDARKAREA);
 					CopyMemory (pMap->aDarkArea, &pData[dwFilePtr], sizeof (MAPDARKAREA) * pMap->byDarkAreaCount);
+					dwFilePtr += dwSize;	continue;
+				} else if (strcmp (pszTmp, "aLight") == 0) {					/* 光源 */
+					pMap->byLightCount = (BYTE)min (dwSize / sizeof (MAPLIGHT), (DWORD)MAX_MAPLIGHT);
+					CopyMemory (pMap->aLight, &pData[dwFilePtr], sizeof (MAPLIGHT) * pMap->byLightCount);
 					dwFilePtr += dwSize;	continue;
 				} else if (strcmp (pszTmp, "pszName") == 0) {				/* マップ名 */
 					pszTmp = (LPCTSTR)&pData[dwFilePtr];
