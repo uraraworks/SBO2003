@@ -475,6 +475,10 @@ static void DrawMapLight(const char *pMapDark)
 			if ((pChar == pMyChar) || (pChar->byLightLevel == 0)) {
 				continue;
 			}
+			/* 自分と違う部屋(隠す範囲)にいる人の灯りは見えない */
+			if (IsLightOtherRoom ((int)pChar->dwX, (int)pChar->dwY)) {
+				continue;
+			}
 		}
 		xTmp = (int)pMyChar->dwX - (int)pChar->dwX;
 		yTmp = (int)pMyChar->dwY - (int)pChar->dwY;
@@ -528,6 +532,9 @@ static void DrawMapLight(const char *pMapDark)
 				/* 光るパーツか、マップの光源 */
 				nRange = GetMapPosLight (mx, my, &byPower, &byFlg);
 				if (nRange == 0) {
+					continue;
+				}
+				if (IsLightOtherRoom (mx, my)) {
 					continue;
 				}
 				/* 灯りが画面に届かない？ */

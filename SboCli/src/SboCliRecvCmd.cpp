@@ -63,6 +63,7 @@ void	RenewMapDarkHideArea				(void);													/* 明るく壁で隠す範囲�
 BOOL	IsMapHideArea						(void);													/* 明るいが壁の向こうは見えない所か */
 static BOOL IsHideAreaCross				(int nFromX, int nFromY, int x, int y);		/* 灯りが隠す範囲の境目を越えたか */
 static BOOL IsMapHasHideArea				(void);												/* 明るく壁で隠す範囲があるか */
+BOOL	IsLightOtherRoom					(int x, int y);										/* 自分と違う部屋(隠す範囲)にある灯りか */
 static void RenewMapViewLights			(void);												/* 見える範囲のマップで光源の所も見せる */
 static void RenewMapDarkLightFlood		(int mx, int my, int nRange);							/* 灯りの位置から照らす */
 int	GetMapPosLight						(int mx, int my, BYTE *pbyPower, BYTE *pbyFlg);										/* マスの灯りの範囲(パーツ・光源) */
@@ -1501,6 +1502,9 @@ static void RenewMapViewLights(void)
 		if ((pLight->wX >= g_pMapInfo->nCX) || (pLight->wY >= g_pMapInfo->nCY)) {
 			continue;
 		}
+		if (IsLightOtherRoom (pLight->wX, pLight->wY)) {
+			continue;
+		}
 		x = (int)pLight->wX - (int)pMyChar->dwX;
 		y = (int)pLight->wY - (int)pMyChar->dwY;
 		/* 灯りが画面に届かない？ */
@@ -1528,6 +1532,10 @@ void RenewMapDark(PCHARINFO pChar)
 
 	if (pChar == NULL) {
 		pChar = g_aCharInfo[g_nMyCharID];
+	}
+	/* 自分と違う部屋(隠す範囲)にいる人の灯りは見えない */
+	if ((pChar != g_aCharInfo[g_nMyCharID]) && IsLightOtherRoom ((int)pChar->dwX, (int)pChar->dwY)) {
+		return;
 	}
 
 	/* 見える範囲(視界)のマップは自分から見える所だけ(ほかの人の視界は使わない) */
@@ -1593,6 +1601,9 @@ void RenewMapDarkParts(void)
 			if (nRange == 0) {
 				continue;
 			}
+			if (IsLightOtherRoom (mx, my)) {
+				continue;
+			}
 			s_nPartsLightX = mx;
 			s_nPartsLightY = my;
 			s_nPartsLightRange = nRange;
@@ -1605,6 +1616,23 @@ void RenewMapDarkParts(void)
 			RenewMapDarkCorner (NULL);
 		}
 	}
+}
+
+/* ========================================================================= */
+/* 関数名：IsLightOtherRoom													 */
+/* 内容：マス(x,y)の灯りが自分と違う部屋(「明るく壁で隠す」範囲)にあるか	 */
+/*       部屋の中の灯りは外から見えない・外の灯りは部屋の中から見えない		 */
+/*       (範囲の外どうしは同じ部屋あつかい)									 */
+/* ========================================================================= */
+BOOL IsLightOtherRoom(int x, int y)
+{
+	PCHARINFO pMyChar;
+
+	if ((g_nMyCharID < 0) || !IsMapHasHideArea ()) {
+		return FALSE;
+	}
+	pMyChar = g_aCharInfo[g_nMyCharID];
+	return (GetMapHideAreaNo (g_pMapInfo, x, y) != GetMapHideAreaNo (g_pMapInfo, pMyChar->dwX, pMyChar->dwY));
 }
 
 /* ========================================================================= */
