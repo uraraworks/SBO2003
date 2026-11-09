@@ -1341,6 +1341,7 @@ void ClearBattleDamage(DWORD dwTblID)
 /*			・とどめを刺した人(先頭)										 */
 /*			・ダメージを与えた人											 */
 /*			・上の人が「全員で分配」のパーティなら、その仲間				 */
+/*			  (敵から画面内の範囲＝縦横10マス以内にいる仲間だけ)			 */
 /*			どれも敵と同じマップにいて、倒れていない人だけ					 */
 /* ========================================================================= */
 static void GetRewardMember(PCHARINFO pChar, PCHARINFO pCharTarget, std::vector<std::pair<PCHARINFO, DWORD> > &aMember)
@@ -1400,6 +1401,12 @@ static void GetRewardMember(PCHARINFO pChar, PCHARINFO pCharTarget, std::vector<
 			if ((pCharTmp->pID == 0) || (pCharTmp->byNpcType != NPCTYPE_INIT) ||
 				(pCharTmp->dwMapID != pCharTarget->dwMapID) ||
 				(pCharTmp->byCharState == CHARSTATE_DEAD) || (pCharTmp->wHP == 0)) {
+				continue;
+			}
+			/* 敵が画面内に見えない(HPバーも見えない)ほど離れた仲間はもらえない。
+			   範囲は周りへキャラ情報を送る範囲(SENDINSIDE_INSIDE)と同じ */
+			if ((abs ((int)pCharTmp->dwX - (int)pCharTarget->dwX) > DRAW_PARTS_X + 3) ||
+				(abs ((int)pCharTmp->dwY - (int)pCharTarget->dwY) > DRAW_PARTS_Y + 3)) {
 				continue;
 			}
 			int k;
