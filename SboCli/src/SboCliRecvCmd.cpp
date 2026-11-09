@@ -1040,7 +1040,8 @@ BOOL IsMapHideShowTile(int nPos)
 
 void RenewMapDarkHideArea(void)
 {
-	int x, y, dx, dy, mx, my, nPos, nMyNo, nWidth;
+	int x, y, mx, my, nPos, nMyNo, nWidth;
+	const MAPDARKAREA *pArea;
 	PCHARINFO pMyChar;
 
 	ZeroMemory (s_abyHideShow, sizeof (s_abyHideShow));
@@ -1050,7 +1051,9 @@ void RenewMapDarkHideArea(void)
 	pMyChar = g_aCharInfo[g_nMyCharID];
 	nMyNo = GetMapHideAreaNo (g_pMapInfo, pMyChar->dwX, pMyChar->dwY);
 	nWidth = DRAW_PARTS_X * 2 + 3;
-	/* 自分のいる範囲のマス */
+	/* 自分のいる範囲の四角の中のマス(重なっている所は優先されない範囲でも見せる。
+	   隣の部屋との間の壁を両方の範囲に入れておけば、どちらの部屋からも見える) */
+	pArea = &g_pMapInfo->aDarkArea[nMyNo - 1];
 	for (y = 0; y < DRAW_PARTS_Y * 2 + 3; y ++) {
 		my = (int)pMyChar->dwY + y - (1 + DRAW_PARTS_Y);
 		for (x = 0; x < nWidth; x ++) {
@@ -1058,45 +1061,9 @@ void RenewMapDarkHideArea(void)
 			if ((mx < 0) || (my < 0) || (mx >= g_pMapInfo->nCX) || (my >= g_pMapInfo->nCY)) {
 				continue;
 			}
-			if (GetMapHideAreaNo (g_pMapInfo, mx, my) == nMyNo) {
+			if ((mx >= pArea->wX1) && (mx <= pArea->wX2) && (my >= pArea->wY1) && (my <= pArea->wY2)) {
 				s_abyHideShow[x + nWidth * y] = 1;
 			}
-		}
-	}
-	/* 隣の範囲との境目の壁も見せる(範囲のすぐ外で、隣の範囲に入っている通れないマス)。
-	   範囲の外の床・家具や、カーテン・扉など通れるマスは見せない */
-	for (y = 1; y < DRAW_PARTS_Y * 2 + 2; y ++) {
-		my = (int)pMyChar->dwY + y - (1 + DRAW_PARTS_Y);
-		for (x = 1; x < nWidth - 1; x ++) {
-			BOOL bNear;
-
-			mx = (int)pMyChar->dwX + x - (1 + DRAW_PARTS_X);
-			if ((mx < 0) || (my < 0) || (mx >= g_pMapInfo->nCX) || (my >= g_pMapInfo->nCY)) {
-				continue;
-			}
-			if ((s_abyHideShow[x + nWidth * y] == 1) || CheckCharBlock (mx, my)) {
-				continue;
-			}
-			/* 隣の「明るく壁で隠す」範囲のマスだけ(範囲の外の家具などは見せない) */
-			if (GetMapHideAreaNo (g_pMapInfo, mx, my) == 0) {
-				continue;
-			}
-			/* 上下左右で自分の範囲に接しているマスだけ(斜めの角の先は見せない) */
-			bNear = FALSE;
-			for (dy = -1; dy <= 1; dy ++) {
-				for (dx = -1; dx <= 1; dx ++) {
-					if ((dx != 0) && (dy != 0)) {
-						continue;
-					}
-					if (s_abyHideShow[(x + dx) + nWidth * (y + dy)] == 1) {
-						bNear = TRUE;
-					}
-				}
-			}
-			if (!bNear) {
-				continue;
-			}
-			s_abyHideShow[x + nWidth * y] = 2;
 		}
 	}
 	for (nPos = 0; nPos < SCRMARTSSIZE; nPos ++) {
