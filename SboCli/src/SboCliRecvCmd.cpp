@@ -1795,8 +1795,9 @@ void RenewMapDarkCorner(PCHARINFO pChar)
 	BOOL bLight;
 	char abyAdd[SCRMARTSSIZE];
 
-	/* 壁で灯りが止まるのは暗闇マップ・見える範囲(視界)のマップだけ */
-	if (!(IsSightBlock ())) {
+	/* 壁で灯りが止まるのは暗闇マップ・見える範囲(視界)のマップだけ。
+	   「明るく壁で隠す」範囲があるマップは、範囲の境目で灯りが止まるので角も照らす */
+	if (!(IsSightBlock ()) && !IsMapHasHideArea ()) {
 		return;
 	}
 
