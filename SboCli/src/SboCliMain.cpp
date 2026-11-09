@@ -2171,17 +2171,33 @@ void TimerProc(void)
 		DWORD dwTimeTmp = timeGetTime ();
 		if (dwTimeTmp >= g_dwTimeLastMapParts + 10) {
 			int j;
-			dwTimeTmp = g_dwTimeLastMapParts + 10;
+			/* 10ms 単位で今の時刻まで進める。
+			   元は呼ばれるたびに 10ms だけ進めていたので、ブラウザ版のように
+			   TimerProc が描画フレームごと（60Hz なら約16.7ms ごと）にしか
+			   呼ばれないと、時計が実時間の約6割しか進まずアニメが遅くなっていた */
+			dwTimeTmp = g_dwTimeLastMapParts + (dwTimeTmp - g_dwTimeLastMapParts) / 10 * 10;
 
 			for (j = 0; j < g_wCountMapParts; j ++) {
 				PMAPPARTSINFO pParts = (PMAPPARTSINFO)&g_pMapPartsInfo[j];
 
 				if (pParts->byAnimeCount) {
 					PANIMEINFO pAnime = &pParts->pAnimeInfo[pParts->byAnimeNo];
-					if (pAnime && dwTimeTmp >= pParts->dwLastAnime + ((DWORD)pAnime->byWait * 10)) {
+					DWORD dwWait;
+					if (pAnime == NULL) {
+						continue;
+					}
+					dwWait = (DWORD)pAnime->byWait * 10;
+					if (dwTimeTmp >= pParts->dwLastAnime + dwWait) {
 						pParts->byAnimeNo ++;
 						pParts->byAnimeNo = (pParts->byAnimeNo >= pParts->byAnimeCount) ? 0 : pParts->byAnimeNo;
-						pParts->dwLastAnime = dwTimeTmp;
+						/* 切り替えるはずだった時刻を基準にして、呼ばれる間隔の
+						   ずれで周期が延びないようにする。大きく遅れた時
+						  （タブを裏にしていた等）は今の時刻から数え直す */
+						if (dwTimeTmp - pParts->dwLastAnime < dwWait * 2) {
+							pParts->dwLastAnime += dwWait;
+						} else {
+							pParts->dwLastAnime = dwTimeTmp;
+						}
 						g_bDraw = TRUE;
 					}
 				}
