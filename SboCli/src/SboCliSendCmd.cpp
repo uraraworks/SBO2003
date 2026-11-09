@@ -765,6 +765,7 @@ void SendCmdCHGMAPINFO(void)
 	pSendData->clChg = g_pMapInfo->clChg;
 	pSendData->byDarkAreaCount = g_pMapInfo->byDarkAreaCount;
 	pSendData->byViewRange = g_pMapInfo->byViewRange;
+	pSendData->wViewHideParts = g_pMapInfo->wViewHideParts;
 	CopyMemory (pSendData->aDarkArea, g_pMapInfo->aDarkArea, sizeof (pSendData->aDarkArea));
 
 	pSendData ++;

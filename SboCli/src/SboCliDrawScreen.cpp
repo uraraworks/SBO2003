@@ -570,28 +570,44 @@ void DrawMapLine(int nLine, int nType)
 	nTmp = min (nTmp, 100);
 	byLight = (BYTE)nTmp;
 
+	/* 見える範囲(視界)の外に描くパーツ(0 なら黒) */
+	WORD wViewHide = 0;
+	if (IsMapViewMode () && (g_pMapInfo->wViewHideParts < g_wCountMapParts)) {
+		wViewHide = g_pMapInfo->wViewHideParts;
+	}
+
 	mx = pMyChar->dwX;
 	my = pMyChar->dwY;
 	j = my - (DRAW_PARTS_Y + 1) + y;
 	xMax = DRAW_PARTS_X * 2 + 3;
 	for (x = 0; x < xMax; x ++) {
 		WORD wMap;
+		BOOL bViewHide;
 		i = mx - (DRAW_PARTS_X + 1) + x;
 
 		byLevel = 100;
 		if (GetMapLightLevel () || IsMapViewMode ()) {
 			byLevel = g_pMapDarkTmp[x + (DRAW_PARTS_X * 2 + 3) * nLine];
 		}
+		/* 見えない所はそのパーツを明るいまま描く(本当の地形は描かない) */
+		bViewHide = (wViewHide && (byLevel == 0));
+		if (bViewHide) {
+			byLevel = 100;
+		}
 
 		/* 範囲外？ */
-		if ((i < 0) || (i >= g_pMapInfo->nCX) || (j < 0) || (j >= g_pMapInfo->nCY)) {
+		if (!bViewHide && ((i < 0) || (i >= g_pMapInfo->nCX) || (j < 0) || (j >= g_pMapInfo->nCY))) {
 			if (nType < 0) {
 				g_pDibDrawMap->BltLevel (x * 32, y * 32, 32, 32, g_pDibMapParts, 0, 0, byLevel, FALSE);
 			}
 			continue;
 		}
 
-		wMap = g_pMapInfo->pwMap[i + j * g_pMapInfo->nCX];
+		if (bViewHide) {
+			wMap = wViewHide;
+		} else {
+			wMap = g_pMapInfo->pwMap[i + j * g_pMapInfo->nCX];
+		}
 		if (wMap >= g_wCountMapParts) {
 			wMap = 0;
 		}

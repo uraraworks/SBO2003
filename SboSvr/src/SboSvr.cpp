@@ -1414,6 +1414,9 @@ BOOL SaveMapInfo(void)
 		if (pMap->byViewRange) {
 			WriteData (hFile, "byViewRange", sizeof (pMap->byViewRange), (PBYTE)&pMap->byViewRange);
 		}
+		if (pMap->wViewHideParts) {
+			WriteData (hFile, "wViewHideParts", sizeof (pMap->wViewHideParts), (PBYTE)&pMap->wViewHideParts);
+		}
 		if (pMap->pszName) {
 			WriteData (hFile, "pszName", strlen ((LPSTR)pMap->pszName) + 1, (PBYTE)pMap->pszName);	/* マップ名 */
 		}
@@ -1627,6 +1630,9 @@ BOOL LoadMapInfo(void)
 					CopyMemory (&pMap->byLightLevel, &pData[dwFilePtr], dwSize);	dwFilePtr += dwSize;	continue;
 				} else if (strcmp (pszTmp, "byWeather") == 0) {				/* 天候 */
 					CopyMemory (&pMap->byWeather, &pData[dwFilePtr], dwSize);	dwFilePtr += dwSize;	continue;
+				} else if (strcmp (pszTmp, "wViewHideParts") == 0) {		/* 見えない所に描くパーツ */
+					CopyMemory (&pMap->wViewHideParts, &pData[dwFilePtr], min (dwSize, (DWORD)sizeof (pMap->wViewHideParts)));
+					dwFilePtr += dwSize;	continue;
 				} else if (strcmp (pszTmp, "byViewRange") == 0) {			/* 見える範囲 */
 					CopyMemory (&pMap->byViewRange, &pData[dwFilePtr], min (dwSize, (DWORD)sizeof (pMap->byViewRange)));
 					dwFilePtr += dwSize;	continue;

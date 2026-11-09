@@ -1934,6 +1934,15 @@ void AdminOnCommandMapInfo(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 			szTmp[3] = 0;
 			g_pMapInfo->byViewRange = (BYTE)min (atoi (szTmp), 10);
 
+			/* 見えない所のパーツ(0=黒) */
+			ZeroMemory (szTmp, sizeof (szTmp));
+			GetWindowText (m_hWndEdit11, szTmp, 6);
+			szTmp[5] = 0;
+			g_pMapInfo->wViewHideParts = (WORD)atoi (szTmp);
+			if (g_pMapInfo->wViewHideParts >= g_wCountMapParts) {
+				g_pMapInfo->wViewHideParts = 0;
+			}
+
 			SendCmdCHGMAPINFO ();
 		}
 		break;
@@ -5700,6 +5709,8 @@ void AdminOnPaintMapInfo(HDC hDC)
 	MyTextOut (hDC, 12 * 11, 12 * 26 + 1, "マス(0=制限なし 1～10)");
 	MyTextOut (hDC, 0, 12 * 27 + 2, "暗くならないが、範囲の外と壁の向こうが見えない。");
 	MyTextOut (hDC, 0, 12 * 28 + 2, "一度見た所は薄暗く残る。暗くしない範囲では効かない。");
+	MyTextOut (hDC, 0, 12 * 30 + 1, "見えない所:");
+	MyTextOut (hDC, 12 * 12, 12 * 30 + 1, "パーツ番号(0=黒。草原などにすると森のよう)");
 
 	MyTextOut (hDC, 12 * 23, 0, "赤:");
 	MyTextOut (hDC, 12 * 23, 16, "緑:");
@@ -7294,6 +7305,11 @@ void MakeAdminWndMapInfo(void)
 			12 * 8, 12 * 26, 32, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
 	SendMessage (m_hWndEdit10, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
+	/* 見えない所のパーツ */
+	m_hWndEdit11 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+			12 * 8, 12 * 30, 40, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
+	SendMessage (m_hWndEdit11, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+
 	char szTmp[10];
 	wsprintf (szTmp, "%ld", g_pMapInfo->byBGM);
 	SetWindowText (m_hWndEdit1, szTmp);
@@ -7393,6 +7409,8 @@ void MakeAdminWndMapInfo(void)
 	}
 	wsprintf (szTmp, "%d", g_pMapInfo->byViewRange);
 	SetWindowText (m_hWndEdit10, szTmp);
+	wsprintf (szTmp, "%d", g_pMapInfo->wViewHideParts);
+	SetWindowText (m_hWndEdit11, szTmp);
 
 	InvalidateRect (g_hWndAdmin, NULL, TRUE);
 }
@@ -7429,6 +7447,7 @@ void DeleteAdminWndMapInfo(void)
 	SAFE_DESTROYWND (m_hWndEdit8);
 	SAFE_DESTROYWND (m_hWndEdit9);
 	SAFE_DESTROYWND (m_hWndEdit10);
+	SAFE_DESTROYWND (m_hWndEdit11);
 
 	InvalidateRect (g_hWndAdmin, NULL, TRUE);
 }

@@ -1135,6 +1135,7 @@ BOOL IsMapDarkFlg(void)
 /*   (そこにいるキャラは見えない)											 */
 /* ========================================================================= */
 #define VIEW_SEEN_LEVEL		40											/* 一度見た所の明るさ */
+#define VIEW_SEEN_LEVEL_PARTS	70										/* 一度見た所の明るさ(見えない所をパーツで描くマップ) */
 #define VIEW_RANGE_MAX		DRAW_PARTS_X								/* 見える範囲の上限(画面の端まで) */
 
 static PBYTE	s_pbyViewSeen = NULL;									/* 一度見たマス(1マス1バイト) */
@@ -1316,7 +1317,8 @@ static void RenewMapViewSeen(void)
 				g_pMapDarkTmp[nPos] = 100;
 				s_pbyViewSeen[mx + my * g_pMapInfo->nCX] = 1;
 			} else if (s_pbyViewSeen[mx + my * g_pMapInfo->nCX]) {
-				g_pMapDarkTmp[nPos] = VIEW_SEEN_LEVEL;
+				/* 見えない所をパーツで描くマップは、一度見た所を少しだけ暗く(暗くしすぎると穴のように見える) */
+				g_pMapDarkTmp[nPos] = g_pMapInfo->wViewHideParts ? VIEW_SEEN_LEVEL_PARTS : VIEW_SEEN_LEVEL;
 			}
 		}
 	}

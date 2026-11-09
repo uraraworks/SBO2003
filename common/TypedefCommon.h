@@ -1910,6 +1910,7 @@ typedef struct _MAPINFO {
 	BYTE			byDarkAreaCount;								/* 暗くする範囲の数（0ならマップ全体が明るさの設定どおり） */
 	MAPDARKAREA		aDarkArea[MAX_MAPDARKAREA];						/* 暗くする・暗くしない範囲 */
 	BYTE			byViewRange;									/* 見える範囲(マス。0=制限なし。壁の向こうと範囲の外は見えない) */
+	WORD			wViewHideParts;									/* 見えない所に描くパーツ(0=黒) */
 } MAPINFO, *PMAPINFO;
 
 /* 橋のパーツか（1=縦に渡る橋 2=横に渡る橋 0=橋ではない） */
@@ -2714,6 +2715,7 @@ typedef struct _CMDPARA_CHGMAPINFO {
 	BYTE		byDarkAreaCount;									/* 暗くする範囲の数 */
 	MAPDARKAREA	aDarkArea[MAX_MAPDARKAREA];							/* 暗くする・暗くしない範囲 */
 	BYTE		byViewRange;										/* 見える範囲(マス。0=制限なし) */
+	WORD		wViewHideParts;										/* 見えない所に描くパーツ(0=黒) */
 } CMDPARA_CHGMAPINFO, *PCMDPARA_CHGMAPINFO;
 
 /* イベント座標通知 */

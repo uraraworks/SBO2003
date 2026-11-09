@@ -4099,6 +4099,7 @@ void RecvDataProcMAPINFOCHG(PBYTE pData, DWORD dwDataSize)
 	pMap->clChg = pPara->clChg;
 	pMap->byDarkAreaCount = min (pPara->byDarkAreaCount, MAX_MAPDARKAREA);
 	pMap->byViewRange = min (pPara->byViewRange, (BYTE)10);
+	pMap->wViewHideParts = (pPara->wViewHideParts < g_wCountMapParts) ? pPara->wViewHideParts : 0;
 	CopyMemory (pMap->aDarkArea, pPara->aDarkArea, sizeof (pMap->aDarkArea));
 
 	/* BGMが変更された？ */

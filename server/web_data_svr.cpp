@@ -1345,6 +1345,7 @@ static const DATAFIELD s_aFieldMap[] = {
 	FLD (MAPINFO, byFlg,				"フラグ",				FT_U8, 0, "ビット: 1=エフェクト可 2=戦闘可 4=サブゲーム 8=暗闇 16=マップ内放送 32=移動系効果禁止 64=魔法禁止"),
 	FLD (MAPINFO, byLightLevel,			"明るさ",				FT_U8, 0, NULL),
 	FLD (MAPINFO, byWeather,			"天候",					FT_U8, 0, NULL),
+	FLD (MAPINFO, wViewHideParts,		"見えない所のパーツ",	FT_U16, 0, "見える範囲（byViewRange）の外に描く mapParts の番号。0 なら黒。森なら草原・木のパーツにすると、暗い洞窟ではなく見通しの悪い森のようになる（一度見た所は本当の地形を少し暗く描く）"),
 	FLD (MAPINFO, byViewRange,			"見える範囲",			FT_U8, 0, "0 なら制限なし。1〜10 にすると、暗くはならないが自分から見える範囲（マス）の外と壁の向こうが見えなくなる（一度見た所は薄暗く残る）。暗くしない範囲（darkAreas）では効かない"),
 };
 
@@ -2377,6 +2378,10 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 		strErr = "初期位置・入り口がマップの外です（" + JsonNum(w.nCX) + "×" + JsonNum(w.nCY) + "）";
 		return false;
 	}
+	if ((int)w.wViewHideParts >= (int)g_wCountMapParts) {
+		strErr = "wViewHideParts のパーツ " + JsonNum(w.wViewHideParts) + " がありません（mapParts は " + JsonNum(g_wCountMapParts) + " 個）";
+		return false;
+	}
 	if (w.byViewRange > 10) {
 		strErr = "byViewRange は 0〜10 で指定してください";
 		return false;
@@ -2616,6 +2621,7 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 	pMap->byLightLevel	= w.byLightLevel;
 	pMap->byWeather		= w.byWeather;
 	pMap->byViewRange	= w.byViewRange;
+	pMap->wViewHideParts	= w.wViewHideParts;
 	pMap->byDarkAreaCount	= w.byDarkAreaCount;
 	CopyMemory(pMap->aDarkArea, w.aDarkArea, sizeof(pMap->aDarkArea));
 	SAFE_DELETE_ARRAY(pMap->pszName);
