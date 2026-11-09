@@ -2278,6 +2278,7 @@ typedef struct _EVENTINFO_MAPCHG {
 	DWORD		dwY;												/* 移動先Y座標 */
 	DWORD		dwMapID;											/* マップID */
 	BYTE		byEfect;											/* エフェクト種類 */
+	BYTE		byRandomRange;										/* ばらける範囲（0:しない 1〜:移動先から何マス以内にある同じパーツのマスからくじ） */
 } EVENTINFO_MAPCHG, *PEVENTINFO_MAPCHG;
 
 /* イベントデータ(メッセージ) */

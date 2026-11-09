@@ -1374,6 +1374,7 @@ static const DATAFIELD s_aFieldEvMapChg[] = {
 	FLD (EVENTINFO_MAPCHG, dwX,			"移動先X",				FT_U32, 0, NULL),
 	FLD (EVENTINFO_MAPCHG, dwY,			"移動先Y",				FT_U32, 0, NULL),
 	FLD (EVENTINFO_MAPCHG, byEfect,		"エフェクト",			FT_U8, 0, NULL),
+	FLD (EVENTINFO_MAPCHG, byRandomRange,	"ばらける範囲",			FT_U8, 0, "0=移動先ちょうど。1以上=移動先から何マス以内にある、移動先と同じパーツのマスから空き優先でくじ（船のベッドなど）"),
 };
 static const DATAFIELD s_aFieldEvMsg[] = {
 	FLD (EVENTINFO_MSG, dwNo,			"メッセージ番号",		FT_U32, 0, "このマップの messages の番号"),
