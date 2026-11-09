@@ -21,6 +21,7 @@
 #include <emscripten/websocket.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 /* 接続先の URL を作る（呼んだ側で free する） */
 EM_JS(char *, W32JsMakeWsUrl, (const char *pszAddr, int nPort), {
@@ -30,6 +31,20 @@ EM_JS(char *, W32JsMakeWsUrl, (const char *pszAddr, int nPort), {
 		url = proto + '://' + UTF8ToString(pszAddr) + ':' + nPort;
 	}
 	return stringToNewUTF8(url);
+});
+
+/* サーバーから「このページは古い版」と言われた時（デプロイ前から開いたままのタブ）。
+   古いクライアントのまま新しいサーバーにつなぐと、マップなどのデータの読み方がずれるので読み込み直す */
+EM_JS(void, W32JsReloadForNewVersion, (void), {
+	if (Module['sboReloading']) {
+		return;
+	}
+	Module['sboReloading'] = true;
+	if (Module['sboOnNewVersion']) {
+		Module['sboOnNewVersion']();
+	} else {
+		location.reload();
+	}
 });
 
 static EM_BOOL OnOpen(int, const EmscriptenWebSocketOpenEvent *, void *pUser)
@@ -42,6 +57,8 @@ static EM_BOOL OnMessage(int, const EmscriptenWebSocketMessageEvent *pEvent, voi
 {
 	if (!pEvent->isText) {
 		((CUraraSockTCP *)pUser)->OnWsMessage(pEvent->data, pEvent->numBytes);
+	} else if (pEvent->data && strcmp((const char *)pEvent->data, "SBO_RELOAD") == 0) {
+		W32JsReloadForNewVersion();
 	}
 	return EM_TRUE;
 }

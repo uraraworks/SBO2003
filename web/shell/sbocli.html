@@ -1710,6 +1710,12 @@
 	var canvas = document.getElementById('canvas');
 	var status = document.getElementById('sbo-status');
 	var params = new URLSearchParams(location.search);
+	/* 古い版から読み込み直した時に付けた印（sboOnNewVersion）はアドレス欄から消しておく */
+	if (params.has('sbo_reload') && window.history && history.replaceState) {
+		var urlClean = new URL(location.href);
+		urlClean.searchParams.delete('sbo_reload');
+		history.replaceState(null, '', urlClean.pathname + urlClean.search + urlClean.hash);
+	}
 	var sboReady = false;
 
 	/* iPhone・iPad の消音スイッチ（マナーモード）を ON にしている間は BGM・効果音を鳴らさない。
@@ -4016,7 +4022,12 @@
 		/* ゲーム画面を描くたびに呼ばれる（ドットのにじみ対策） */
 		w32OnPresent: drawSharp,
 		/* 接続先: ?ws= → サーバー（Node.js 版）が配ったページなら同じ場所の /ws → INI の設定 */
-		sboWsUrl: params.get('ws') || window.SBO_DEFAULT_WS || '',
+		/* 接続先にはこのページの版（sbocli.wasm のハッシュ）を付ける。サーバーの版と違えば
+		   （デプロイ前から開いたままのタブ）、サーバーが読み込み直しの合図を返す */
+		sboWsUrl: (function (url) {
+			var ver = window.SBO_ASSET_VER && window.SBO_ASSET_VER['sbocli.wasm'];
+			return (url && ver) ? url + (url.indexOf('?') >= 0 ? '&' : '?') + 'cv=' + ver : url;
+		})(params.get('ws') || window.SBO_DEFAULT_WS || ''),
 		/* .wasm / .data に版（中身のハッシュ）を付けて読む。版の一覧はサーバー（Node.js 版）が
 		   ページに書き込む。版付きの URL はブラウザが長く覚えるので、リロードで読み直さない */
 		locateFile: function (name, prefix) {
@@ -4031,6 +4042,15 @@
 		},
 		setStatus: function (text) {
 			status.textContent = text || '';
+		},
+		/* サーバーから「このページは古い版」と言われた（デプロイ前から開いたままのタブ。CUraraSockTCP_web.cpp） */
+		sboOnNewVersion: function () {
+			alert('新しい版が公開されています。ページを読み込み直します。');
+			/* ふつうの reload だと、スマホのブラウザが覚えていた古いページをそのまま出すことがあるので、
+			   アドレスに印を付けて必ずサーバーから取り直す */
+			var urlNew = new URL(location.href);
+			urlNew.searchParams.set('sbo_reload', String(Date.now()));
+			location.replace(urlNew.toString());
 		},
 		onMessageBox: function (caption, text) {
 			alert(text);

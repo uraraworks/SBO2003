@@ -160,6 +160,27 @@ Module['sboNet'] = (function () {
 		sock.setNoDelay(true);
 
 		var addr = req.headers['x-forwarded-for'] ? String(req.headers['x-forwarded-for']).split(',')[0].trim() : sock.remoteAddress;
+
+		/* 古い版のブラウザ版は入れない。デプロイ前から開いたままのタブでログインし直すと、
+		   古いクライアントが新しいサーバーのデータを読むことになり、マップ情報などの
+		   構造の大きさが違うと地図が別の場所にずれて見える（そこに無い扉が見えるなど）。
+		   ページが接続先に付けてくる版（?cv=sbocli.wasm のハッシュ）が今のファイルと違えば、
+		   読み込み直しの合図（テキスト "SBO_RELOAD"）を送って閉じる。版を付けてこない古いページも同じ */
+		var strCliVer = assetVersions()['sbocli.wasm'];
+		if (strCliVer) {
+			var strReqVer = new URLSearchParams(String(req.url || '').split('?').slice(1).join('?')).get('cv') || '';
+			if (strReqVer !== strCliVer) {
+				log('古い版のブラウザ版なので読み込み直してもらう: ' + addr + ' (' + (strReqVer || '版なし') + ')');
+				try {
+					sock.write(wsFrame(1, Buffer.from('SBO_RELOAD')));
+					sock.write(wsFrame(8, Buffer.from([0x0F, 0xA0])));	/* 4000 */
+				} catch (e) {}
+				sock.on('error', function () {});
+				sock.end();
+				return;
+			}
+		}
+
 		var conn = {
 			kind: 'WebSocket', addr: addr, slot: -1, closing: false,
 			send: function (u8) { sock.write(wsFrame(2, u8)); },
