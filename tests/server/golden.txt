@@ -1051,4 +1051,10 @@ townwarp cast lv=15 sel=4 floor dest=1:0 -> friend map=0 x=26 y=53
 townwarp cast lv=10 sel=3 floor dest=1:0 -> friend map=0 x=26 y=53
 townwarp cast lv=1 sel=1 floor dest=1:0 -> friend map=0 x=26 y=53
 townwarp cast lv=5 sel=1 floor dest=1:51 -> friend map=51 x=35 y=8
+== J. Ship bed ==
+ship map=40 dest=(40,9) parts=473
+shipbed range=0 friend=0 beds=1 bad=0 onfriend=0 list=(40,9)
+shipbed range=16 friend=0 beds=24 bad=0 onfriend=0 list=(40,1),(40,2),(40,3),(40,4),(40,7),(40,8),(40,9),(40,10),(40,13),(40,14),(40,15),(40,16),(49,1),(49,2),(49,3),(49,4),(49,7),(49,8),(49,9),(49,10),(49,13),(49,14),(49,15),(49,16)
+shipbed range=3 friend=0 beds=4 bad=0 onfriend=0 list=(40,7),(40,8),(40,9),(40,10)
+shipbed range=16 friend=1 beds=23 bad=0 onfriend=0 list=(40,1),(40,2),(40,3),(40,4),(40,7),(40,8),(40,10),(40,13),(40,14),(40,15),(40,16),(49,1),(49,2),(49,3),(49,4),(49,7),(49,8),(49,9),(49,10),(49,13),(49,14),(49,15),(49,16)
 == done ==

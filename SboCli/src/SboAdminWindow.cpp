@@ -233,6 +233,8 @@ void MakeAdminWndMapParts			(void);								/* マップパーツ編集ウィン�
 void DeleteAdminWndMapParts			(void);								/* マップパーツ編集ウィンドウ消去 */
 void MakeAdminWndMapInfo			(void);								/* マップ情報ウィンドウ作成 */
 void DeleteAdminWndMapInfo			(void);								/* マップ情報ウィンドウ消去 */
+static void MapDarkAreaToText		(BYTE byDark, LPSTR pszText, int nSize);	/* 暗くする範囲を文字にする */
+static void MapDarkAreaFromText		(BYTE byDark, LPCSTR pszText);		/* 文字から暗くする範囲を足す */
 void MakeAdminWndEventInfo			(void);								/* イベント情報ウィンドウ作成 */
 void DeleteAdminWndEventInfo		(void);								/* イベント情報ウィンドウ消去 */
 void MakeAdminWndEventInfoType		(void);								/* 種類別イベント情報ウィンドウ作成 */
@@ -1690,6 +1692,10 @@ void AdminOnCommandMapParts(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 				GetWindowText (m_hWndEdit2, szTmp, sizeof (szTmp));
 				pParts->byLevel = (BYTE)atoi (szTmp);
 			}
+			/* 灯りの範囲(0〜7マス) */
+			ZeroMemory (szTmp, sizeof (szTmp));
+			GetWindowText (m_hWndEdit3, szTmp, sizeof (szTmp));
+			pParts->byLight = (BYTE)max (0, min (atoi (szTmp), 7));
 
 			SendCmdMAPPARTS (g_nSelectPartsID);
 		}
@@ -1714,6 +1720,7 @@ void AdminOnCommandMapParts(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 			SendMessage (m_hWndCombo1, CB_SETCURSEL, pParts->byHitType, 0);
 			SetWindowText (m_hWndEdit1, szTmp);
 			SetWindowText (m_hWndEdit2, "");
+			SetWindowText (m_hWndEdit3, "");
 			InvalidateRect (g_hWndAdmin, NULL, TRUE);
 		}
 		break;
@@ -1903,6 +1910,23 @@ void AdminOnCommandMapInfo(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 			g_pMapInfo->pszName = new char[strlen (szTmp) + 1];
 			ZeroMemory (g_pMapInfo->pszName, strlen (szTmp) + 1);
 			strcat ((LPSTR)g_pMapInfo->pszName, szTmp);
+
+			/* 暗くする範囲(先)と暗くしない範囲(後ろ=優先) */
+			{
+				char szArea[256];
+				g_pMapInfo->byDarkAreaCount = 0;
+				ZeroMemory (g_pMapInfo->aDarkArea, sizeof (g_pMapInfo->aDarkArea));
+				ZeroMemory (szArea, sizeof (szArea));
+				GetWindowText (m_hWndEdit8, szArea, sizeof (szArea) - 1);
+				MapDarkAreaFromText (1, szArea);
+				ZeroMemory (szArea, sizeof (szArea));
+				GetWindowText (m_hWndEdit9, szArea, sizeof (szArea) - 1);
+				MapDarkAreaFromText (0, szArea);
+				MapDarkAreaToText (1, szArea, sizeof (szArea));
+				SetWindowText (m_hWndEdit8, szArea);
+				MapDarkAreaToText (0, szArea, sizeof (szArea));
+				SetWindowText (m_hWndEdit9, szArea);
+			}
 
 			SendCmdCHGMAPINFO ();
 		}
@@ -2101,6 +2125,11 @@ void AdminOnCommandMapEvent(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 					GetWindowText (m_hWndEdit3, szTmp, 5);
 					pMap->dwY = atoi (szTmp);
 					pMap->byEfect = (BYTE)SendMessage (m_hWndCombo2, CB_GETCURSEL, 0, 0);
+
+					ZeroMemory (szTmp, sizeof (szTmp));
+					GetWindowText (m_hWndEdit4, szTmp, 5);
+					int nRange = atoi (szTmp);
+					pMap->byRandomRange = (BYTE)((nRange < 0) ? 0 : (nRange > 255) ? 255 : nRange);
 				}
 				break;
 
@@ -5654,6 +5683,13 @@ void AdminOnPaintMapInfo(HDC hDC)
 	MyTextOut (hDC, 0 * 5, 12 * 11 + 6, szBuf);
 	wsprintf (szBuf, "天候:");
 	MyTextOut (hDC, 0, 12 * 13 + 3, szBuf);
+	MyTextOut (hDC, 0, 12 * 16 + 1, "暗くする範囲:");
+	MyTextOut (hDC, 0, 12 * 18 + 1, "暗くしない範囲:");
+	MyTextOut (hDC, 0, 12 * 20, "左上X,Y-右下X,Y を空白で区切って8つまで");
+	MyTextOut (hDC, 0, 12 * 21, "例: 0,40-75,89 10,0-30,20");
+	MyTextOut (hDC, 0, 12 * 22, "どちらも空ならマップ全体が明るさの設定どおり。");
+	MyTextOut (hDC, 0, 12 * 23, "暗くする範囲があれば、その外は明るい。");
+	MyTextOut (hDC, 0, 12 * 24, "暗くしない範囲は、暗くする範囲より優先。");
 
 	MyTextOut (hDC, 12 * 23, 0, "赤:");
 	MyTextOut (hDC, 12 * 23, 16, "緑:");
@@ -5706,6 +5742,8 @@ void AdminOnPaintMapEvent(HDC hDC)
 					MyTextOut (hDC, 0, 64 + 16 * 1, "移動先X座標:");
 					MyTextOut (hDC, 0, 64 + 16 * 2, "移動先Y座標:");
 					MyTextOut (hDC, 0, 64 + 16 * 3 + 2, "エフェクト:");
+					MyTextOut (hDC, 0, 64 + 16 * 5, "ばらける範囲:");
+					MyTextOut (hDC, 12 * 7 + 36, 64 + 16 * 5, "マス(0=しない)");
 				}
 				break;
 
@@ -6733,6 +6771,9 @@ void AdminOnLButtonDownMapParts(BOOL fDoubleClick, int x, int y, UINT keyFlags)
 				wsprintf (szTmp, "%d", pParts->byLevel);
 				SetWindowText (m_hWndEdit2, szTmp);
 			}
+			/* 灯りの範囲 */
+			wsprintf (szTmp, "%d", pParts->byLight);
+			SetWindowText (m_hWndEdit3, szTmp);
 
 			InvalidateRect (g_hWndAdmin, NULL, TRUE);
 		}
@@ -7099,6 +7140,7 @@ void MakeAdminWndMapParts(void)
 	m_hWndCombo1 = GetDlgItem (m_hWndDialog, IDC_COMBO1);
 	m_hWndEdit1 = GetDlgItem (m_hWndDialog, IDC_EDIT1);
 	m_hWndEdit2 = GetDlgItem (m_hWndDialog, IDC_EDIT2);
+	m_hWndEdit3 = GetDlgItem (m_hWndDialog, IDC_EDIT3);		/* 灯りの範囲 */
 	m_hWndButton1 = GetDlgItem (m_hWndDialog, IDC_BUTTON6);
 	m_hWndButton2 = GetDlgItem (m_hWndDialog, IDC_BUTTON7);
 	m_hWndButton3 = GetDlgItem (m_hWndDialog, IDC_BUTTON5);
@@ -7228,6 +7270,14 @@ void MakeAdminWndMapInfo(void)
 			12 * 3, 12 * 13, 12 * 12, 12 * 10, g_hWndAdmin, (HMENU)IDC_TMPCOMBO2, g_hInstance, NULL);
 	SendMessage (m_hWndCombo2, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
+	/* 暗くする範囲・暗くしない範囲 */
+	m_hWndEdit8 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+			12 * 8, 12 * 16, 12 * 22, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
+	SendMessage (m_hWndEdit8, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+	m_hWndEdit9 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+			12 * 8, 12 * 18, 12 * 22, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
+	SendMessage (m_hWndEdit9, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+
 	char szTmp[10];
 	wsprintf (szTmp, "%ld", g_pMapInfo->byBGM);
 	SetWindowText (m_hWndEdit1, szTmp);
@@ -7318,6 +7368,13 @@ void MakeAdminWndMapInfo(void)
 	if (g_pMapInfo->pszName) {
 		SetWindowText (m_hWndEdit4, (LPSTR)g_pMapInfo->pszName);
 	}
+	{
+		char szArea[256];
+		MapDarkAreaToText (1, szArea, sizeof (szArea));
+		SetWindowText (m_hWndEdit8, szArea);
+		MapDarkAreaToText (0, szArea, sizeof (szArea));
+		SetWindowText (m_hWndEdit9, szArea);
+	}
 
 	InvalidateRect (g_hWndAdmin, NULL, TRUE);
 }
@@ -7351,8 +7408,80 @@ void DeleteAdminWndMapInfo(void)
 	SAFE_DESTROYWND (m_hWndEdit5);
 	SAFE_DESTROYWND (m_hWndEdit6);
 	SAFE_DESTROYWND (m_hWndEdit7);
+	SAFE_DESTROYWND (m_hWndEdit8);
+	SAFE_DESTROYWND (m_hWndEdit9);
 
 	InvalidateRect (g_hWndAdmin, NULL, TRUE);
+}
+
+
+/* ========================================================================= */
+/* 関数名：MapDarkAreaToText												 */
+/* 内容：暗くする範囲(byDark=1)か暗くしない範囲(0)を「x1,y1-x2,y2 ...」に	 */
+/* ========================================================================= */
+static void MapDarkAreaToText(BYTE byDark, LPSTR pszText, int nSize)
+{
+	int i;
+	char szTmp[32];
+
+	pszText[0] = 0;
+	for (i = 0; (i < g_pMapInfo->byDarkAreaCount) && (i < MAX_MAPDARKAREA); i ++) {
+		PMAPDARKAREA pArea = &g_pMapInfo->aDarkArea[i];
+		if ((pArea->byDark ? 1 : 0) != byDark) {
+			continue;
+		}
+		wsprintf (szTmp, "%s%d,%d-%d,%d", pszText[0] ? " " : "", pArea->wX1, pArea->wY1, pArea->wX2, pArea->wY2);
+		if ((int)(strlen (pszText) + strlen (szTmp)) >= nSize) {
+			break;
+		}
+		strcat (pszText, szTmp);
+	}
+}
+
+
+/* ========================================================================= */
+/* 関数名：MapDarkAreaFromText												 */
+/* 内容：「x1,y1-x2,y2 ...」を読んで範囲を後ろに足す(読めない所は飛ばす)	 */
+/* ========================================================================= */
+static void MapDarkAreaFromText(BYTE byDark, LPCSTR pszText)
+{
+	int an[4], nNo, nVal;
+	BOOL bNum;
+	LPCSTR p;
+
+	nNo = 0;
+	nVal = 0;
+	bNum = FALSE;
+	for (p = pszText; ; p ++) {
+		if ((*p >= '0') && (*p <= '9')) {
+			nVal = nVal * 10 + (*p - '0');
+			bNum = TRUE;
+			continue;
+		}
+		if (bNum) {
+			an[nNo ++] = nVal;
+			nVal = 0;
+			bNum = FALSE;
+		}
+		/* 数字が4つそろったら1つの範囲 */
+		if (nNo == 4) {
+			if (g_pMapInfo->byDarkAreaCount < MAX_MAPDARKAREA) {
+				PMAPDARKAREA pArea = &g_pMapInfo->aDarkArea[g_pMapInfo->byDarkAreaCount ++];
+				int nMaxX = max (0, g_pMapInfo->nCX - 1);
+				int nMaxY = max (0, g_pMapInfo->nCY - 1);
+				pArea->wX1		= (WORD)min (min (an[0], an[2]), nMaxX);
+				pArea->wY1		= (WORD)min (min (an[1], an[3]), nMaxY);
+				pArea->wX2		= (WORD)min (max (an[0], an[2]), nMaxX);
+				pArea->wY2		= (WORD)min (max (an[1], an[3]), nMaxY);
+				pArea->byDark	= byDark;
+				pArea->byReserve = 0;
+			}
+			nNo = 0;
+		}
+		if (*p == 0) {
+			break;
+		}
+	}
 }
 
 /* ========================================================================= */
@@ -7515,6 +7644,13 @@ void MakeAdminWndEventInfoType(void)
 			wsprintf (szTmp, "%d", pMap->dwY);
 			SetWindowText (m_hWndEdit3, szTmp);
 			SendMessage (m_hWndCombo2, CB_SETCURSEL, pMap->byEfect, 0);
+
+			/* ばらける範囲（移動先と同じパーツのマスからくじ） */
+			m_hWndEdit4 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+					12 * 7, 64 + 16 * 5, 32, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
+			SendMessage (m_hWndEdit4, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+			wsprintf (szTmp, "%d", pMap->byRandomRange);
+			SetWindowText (m_hWndEdit4, szTmp);
 		}
 		break;
 

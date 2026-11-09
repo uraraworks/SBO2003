@@ -112,19 +112,85 @@ void EventProc_MOVE(PCHARINFO pChar, PEVENTINFO pEvent, BYTE byData)
 }
 
 /* ========================================================================= */
-/* 関数名：EventProc_MAPCHG													 */
-/* 内容：イベント処理(マップ間移動)											 */
-/* 日付：2004/07/20															 */
+/* 関数名：EventProc_MAPCHG_GetDest											 */
+/* 内容：マップ間移動の移動先を決める										 */
+/*       ばらける範囲があれば、移動先から範囲内にある移動先と同じパーツの	 */
+/*       マス（船のベッドなど）から、空いているマスを優先してくじで選ぶ		 */
 /* ========================================================================= */
-void EventProc_MAPCHG(PCHARINFO pChar, PEVENTINFO pEvent, BYTE byData)
+static void EventProc_MAPCHG_GetDest(PEVENTINFO_MAPCHG pMap, DWORD &dwX, DWORD &dwY)
 {
-	PEVENTINFO_MAPCHG pMap = (PEVENTINFO_MAPCHG)pEvent->pData;
-	PCHARINFO pCharTmp;
-
-	if (!pMap) {
-		SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
+	dwX = pMap->dwX;
+	dwY = pMap->dwY;
+	if (pMap->byRandomRange == 0) {
 		return;
 	}
+	int nMapNo = GetMapNo (pMap->dwMapID);
+	if (nMapNo < 0) {
+		return;
+	}
+	PMAPINFO pMapInfo = g_aMapInfo[nMapNo];
+	if ((pMapInfo->pwMap == NULL) || ((int)pMap->dwX >= pMapInfo->nCX) || ((int)pMap->dwY >= pMapInfo->nCY)) {
+		return;
+	}
+	WORD wParts = pMapInfo->pwMap[pMap->dwX + pMap->dwY * pMapInfo->nCX];
+	int nRange = pMap->byRandomRange;
+	int x1 = (int)pMap->dwX - nRange;
+	int y1 = (int)pMap->dwY - nRange;
+	int x2 = (int)pMap->dwX + nRange;
+	int y2 = (int)pMap->dwY + nRange;
+	x1 = (x1 < 0) ? 0 : x1;
+	y1 = (y1 < 0) ? 0 : y1;
+	x2 = (x2 >= pMapInfo->nCX) ? pMapInfo->nCX - 1 : x2;
+	y2 = (y2 >= pMapInfo->nCY) ? pMapInfo->nCY - 1 : y2;
+
+	/* 同じパーツのマスを数える（誰もいないマスと全部） */
+	int nCountAll = 0, nCountFree = 0;
+	for (int nPass = 0; nPass < 2; nPass ++) {
+		/* 1回目は数えるだけ、2回目でくじに当たったマスを選ぶ */
+		int nHit = -1, nNo = 0;
+		BOOL bFree = (nCountFree > 0);
+		if (nPass == 1) {
+			int nCount = bFree ? nCountFree : nCountAll;
+			if (nCount <= 0) {
+				return;
+			}
+			nHit = (int)((DWORD)genrand () % (DWORD)nCount);
+		}
+		for (int y = y1; y <= y2; y ++) {
+			for (int x = x1; x <= x2; x ++) {
+				if (pMapInfo->pwMap[x + y * pMapInfo->nCX] != wParts) {
+					continue;
+				}
+				BOOL bEmpty = ((CheckCharBlockPC (nMapNo, x, y) == -1) && (CheckCharBlockNPC (nMapNo, x, y) == -1));
+				if (nPass == 0) {
+					nCountAll ++;
+					if (bEmpty) {
+						nCountFree ++;
+					}
+					continue;
+				}
+				/* 空きがあれば空いているマスだけからくじ */
+				if (bFree && !bEmpty) {
+					continue;
+				}
+				if (nNo == nHit) {
+					dwX = (DWORD)x;
+					dwY = (DWORD)y;
+					return;
+				}
+				nNo ++;
+			}
+		}
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：EventProc_MAPCHG_Move											 */
+/* 内容：マップ間移動の本体（ついてきているキャラも同じ移動先へ）			 */
+/* ========================================================================= */
+static void EventProc_MAPCHG_Move(PCHARINFO pChar, PEVENTINFO_MAPCHG pMap, DWORD dwX, DWORD dwY)
+{
+	PCHARINFO pCharTmp;
 
 	svrSock.SendCancel (pChar->pID);
 
@@ -135,7 +201,7 @@ void EventProc_MAPCHG(PCHARINFO pChar, PEVENTINFO pEvent, BYTE byData)
 	if (pChar->dwTailBackTblID != -1) {
 		/* ついてきているキャラを移動させる */
 		pCharTmp = g_aCharInfo[pChar->dwTailBackTblID];
-		EventProc_MAPCHG (pCharTmp, pEvent, byData);
+		EventProc_MAPCHG_Move (pCharTmp, pMap, dwX, dwY);
 	}
 
 	SendCmdCHGBGM (pChar->pID, pChar->dwMapID, 0);
@@ -153,7 +219,27 @@ void EventProc_MAPCHG(PCHARINFO pChar, PEVENTINFO pEvent, BYTE byData)
 	}
 
 	SendCmdFADEINOUT (pChar->pID, 0);
-	SubProcMapMove (pChar, pMap->dwMapID, pMap->dwX, pMap->dwY);
+	SubProcMapMove (pChar, pMap->dwMapID, dwX, dwY);
+}
+
+/* ========================================================================= */
+/* 関数名：EventProc_MAPCHG													 */
+/* 内容：イベント処理(マップ間移動)											 */
+/* 日付：2004/07/20															 */
+/* ========================================================================= */
+void EventProc_MAPCHG(PCHARINFO pChar, PEVENTINFO pEvent, BYTE byData)
+{
+	PEVENTINFO_MAPCHG pMap = (PEVENTINFO_MAPCHG)pEvent->pData;
+	DWORD dwX, dwY;
+
+	if (!pMap) {
+		SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
+		return;
+	}
+
+	/* 移動先は先頭のキャラで1回だけ決め、ついてきているキャラも同じ場所へ */
+	EventProc_MAPCHG_GetDest (pMap, dwX, dwY);
+	EventProc_MAPCHG_Move (pChar, pMap, dwX, dwY);
 }
 
 /* ========================================================================= */

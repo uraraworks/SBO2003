@@ -1279,7 +1279,7 @@ BOOL MagicProcUse_LIGHT(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTarget
 	}
 	pMap = g_aMapInfo[pChar->dwMapID];
 
-	if (pMap->byLightLevel == 0) {
+	if ((pMap->byLightLevel == 0) || !IsMapDarkPos (pMap, pCharTarget->dwX, pCharTarget->dwY)) {
 		SendCmdSYSMSG2 (pChar->pID, SYSMSG_NOPROC2, 0, 0);
 		goto Exit;
 	}
