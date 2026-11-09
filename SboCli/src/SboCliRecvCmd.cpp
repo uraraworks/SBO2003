@@ -1080,6 +1080,55 @@ void RenewUseMagicInfo(void)
 /* 内容：暗闇描画情報を更新													 */
 /* 日付：2004/10/08															 */
 /* ========================================================================= */
+/* 関数名：IsMyPosDarkArea													 */
+/* 内容：自分のいる所がマップの「暗くする範囲」か							 */
+/*       範囲の無いマップはどこでも TRUE(マップ全体が明るさの設定どおり)	 */
+/* ========================================================================= */
+static BOOL IsMyPosDarkArea(void)
+{
+	PCHARINFO pChar;
+
+	if (g_pMapInfo->byDarkAreaCount == 0) {
+		return TRUE;
+	}
+	if ((g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ())) {
+		return TRUE;
+	}
+	pChar = g_aCharInfo[g_nMyCharID];
+	return IsMapDarkPos (g_pMapInfo, pChar->dwX, pChar->dwY);
+}
+
+
+/* ========================================================================= */
+/* 関数名：GetMapLightLevel													 */
+/* 内容：今の場所で使うマップの明るさレベル(暗くしない場所なら 0)			 */
+/* ========================================================================= */
+BYTE GetMapLightLevel(void)
+{
+	if (g_pMapInfo->byLightLevel == 0) {
+		return 0;
+	}
+	if (!IsMyPosDarkArea ()) {
+		return 0;
+	}
+	return g_pMapInfo->byLightLevel;
+}
+
+
+/* ========================================================================= */
+/* 関数名：IsMapDarkFlg														 */
+/* 内容：今の場所で「暗闇」(壁の向こうが見えない)が効くか					 */
+/* ========================================================================= */
+BOOL IsMapDarkFlg(void)
+{
+	if (!(g_pMapInfo->byFlg & MAPFLG_DARK)) {
+		return FALSE;
+	}
+	return IsMyPosDarkArea ();
+}
+
+
+/* ========================================================================= */
 void RenewMapDark(PCHARINFO pChar)
 {
 	if (g_nMyCharID < 0) {
@@ -1091,7 +1140,7 @@ void RenewMapDark(PCHARINFO pChar)
 	}
 
 	/* 暗闇表示ではない？ */
-	if ((!(g_pMapInfo->byFlg & MAPFLG_DARK)) && (g_pMapInfo->byLightLevel == 0)) {
+	if ((!(IsMapDarkFlg ())) && (GetMapLightLevel () == 0)) {
 		return;
 	}
 	ZeroMemory (g_pMapDarkTmpPos, SCRMARTSSIZE);
@@ -1115,7 +1164,7 @@ void RenewMapDarkParts(void)
 		return;
 	}
 	/* 明るさレベルのある暗いマップだけ */
-	if (g_pMapInfo->byLightLevel == 0) {
+	if (GetMapLightLevel () == 0) {
 		return;
 	}
 	if ((g_pMapInfo->pwMap == NULL) || (g_pMapPartsInfo == NULL)) {
@@ -1171,15 +1220,15 @@ int GetMapDarkLevel(PCHARINFO pChar, int x, int y)
 		nTmp = min (100, nTmp);
 		return nTmp;
 	}
-	if (g_pMapInfo->byLightLevel) {
+	if (GetMapLightLevel ()) {
 		nLevel = max (abs (x - (int)pChar->dwX), abs (y - (int)pChar->dwY));
 		if (pChar != pMyChar) {
 			nTmp = 0;
 		} else {
-			nTmp = 100 - g_pMapInfo->byLightLevel * nLevel;
+			nTmp = 100 - GetMapLightLevel () * nLevel;
 		}
 		if (pChar->byLightLevel) {
-			nTmp = 100 - (g_pMapInfo->byLightLevel - pChar->byLightLevel) * nLevel;
+			nTmp = 100 - (GetMapLightLevel () - pChar->byLightLevel) * nLevel;
 		}
 		nTmp = max (1, nTmp);
 		nTmp = min (100, nTmp);
@@ -1202,7 +1251,7 @@ void RenewMapDarkCorner(PCHARINFO pChar)
 	char abyAdd[SCRMARTSSIZE];
 
 	/* 壁で灯りが止まるのは暗闇マップだけ */
-	if (!(g_pMapInfo->byFlg & MAPFLG_DARK)) {
+	if (!(IsMapDarkFlg ())) {
 		return;
 	}
 
@@ -1233,7 +1282,7 @@ void RenewMapDarkCorner(PCHARINFO pChar)
 			mx = (int)pMyChar->dwX + x - (1 + DRAW_PARTS_X);
 			my = (int)pMyChar->dwY + y - (1 + DRAW_PARTS_Y);
 			nTmp = GetMapDarkLevel (pChar, mx, my);
-			if (g_pMapInfo->byLightLevel && (nTmp <= 1)) {
+			if (GetMapLightLevel () && (nTmp <= 1)) {
 				continue;
 			}
 			abyAdd[nPos] = (char)nTmp;
@@ -1277,7 +1326,7 @@ void RenewMapDarkCorner(PCHARINFO pChar)
 				continue;
 			}
 			nTmp = GetMapDarkLevel (pChar, mx, my - 1);
-			if (g_pMapInfo->byLightLevel && (nTmp <= 1)) {
+			if (GetMapLightLevel () && (nTmp <= 1)) {
 				continue;
 			}
 			abyAdd[nPosUp] = (char)nTmp;
@@ -1318,7 +1367,7 @@ void RenewMapDarkWork(PCHARINFO pChar, int x, int y, int nCount)
 	}
 
 	nTmp = GetMapDarkLevel (pChar, x, y);
-	if (g_pMapInfo->byLightLevel && (nTmp == 1)) {
+	if (GetMapLightLevel () && (nTmp == 1)) {
 		return;
 	}
 
@@ -1331,7 +1380,7 @@ void RenewMapDarkWork(PCHARINFO pChar, int x, int y, int nCount)
 	}
 
 	bResult = TRUE;
-	if ((nCount < DRAW_PARTS_X) && (g_pMapInfo->byFlg & MAPFLG_DARK)) {
+	if ((nCount < DRAW_PARTS_X) && (IsMapDarkFlg ())) {
 		bResult = CheckCharBlock (x, y);
 	}
 	if (bResult == FALSE) {

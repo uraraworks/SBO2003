@@ -287,7 +287,7 @@ BOOL DrawScreenMOVE(void)
 
 	/* 暗いマップは、ひとまず見えるマスを明るいまま描いておき、
 	   最後に DrawMapLight で丸い灯りの形に暗くする */
-	bLight = (g_pMapInfo->byLightLevel != 0);
+	bLight = (GetMapLightLevel () != 0);
 	if (bLight) {
 		CopyMemory (aMapDark, g_pMapDarkTmp, SCRMARTSSIZE);
 		for (i = 0; i < SCRMARTSSIZE; i ++) {
@@ -396,9 +396,9 @@ static void DrawMapLight(const char *pMapDark)
 			continue;
 		}
 		/* 1マス進むごとに暗くなる量(RenewMapDarkWork と同じ) */
-		nLevel = g_pMapInfo->byLightLevel;
+		nLevel = GetMapLightLevel ();
 		if (pChar->byLightLevel) {
-			nLevel = g_pMapInfo->byLightLevel - pChar->byLightLevel;
+			nLevel = GetMapLightLevel () - pChar->byLightLevel;
 		}
 		/* 灯りの中心(歩き中のずれも入れて、なめらかについてくるように) */
 		anX[nLight] = (DRAW_PARTS_X + 1) * 32 + 16 - xTmp * 32 - anPosAddTblX[pChar->byDirection] * pChar->byDotMove;
@@ -556,7 +556,7 @@ void DrawMapLine(int nLine, int nType)
 	y = nLine;
 	pMyChar = g_aCharInfo[g_nMyCharID];
 	byLight = pMyChar->byLightLevel;
-	nTmp = g_pMapInfo->byLightLevel - byLight;
+	nTmp = GetMapLightLevel () - byLight;
 	nTmp = max (nTmp, 0);
 	nTmp = min (nTmp, 100);
 	byLight = (BYTE)nTmp;
@@ -570,7 +570,7 @@ void DrawMapLine(int nLine, int nType)
 		i = mx - (DRAW_PARTS_X + 1) + x;
 
 		byLevel = 100;
-		if (g_pMapInfo->byLightLevel) {
+		if (GetMapLightLevel ()) {
 			byLevel = g_pMapDarkTmp[x + (DRAW_PARTS_X * 2 + 3) * nLine];
 		}
 
@@ -745,7 +745,7 @@ void DrawCharLine(int nLine)
 		yTmp = dwMyY - pChar->dwY;
 
 		/* 暗闇表示？ */
-		if (g_pMapInfo->byLightLevel) {
+		if (GetMapLightLevel ()) {
 			nMapDark = g_pMapDarkTmp[(DRAW_PARTS_X + 1 - xTmp) +
 						(DRAW_PARTS_X * 2 + 3) * (DRAW_PARTS_Y + 1 - yTmp)];
 			if (nMapDark <= 1) {
@@ -1132,7 +1132,7 @@ void DrawCharLine(int nLine)
 		} else {
 			int nTmp = 0;
 			/* 暗闇表示？ */
-			if (g_pMapInfo->byLightLevel) {
+			if (GetMapLightLevel ()) {
 				nTmp = 100 - (nMapDark + pChar->byLightLevel);
 				nTmp = max (nTmp, 0);
 				nTmp = min (nTmp, 100);
@@ -1194,7 +1194,7 @@ void DrawChar2(void)
 		yTmp = dwMyY - pChar->dwY;
 
 		/* 暗闇表示？ */
-		if (g_pMapInfo->byLightLevel) {
+		if (GetMapLightLevel ()) {
 			if (g_pMapDarkTmp[(DRAW_PARTS_X + 1 - xTmp) +
 						(DRAW_PARTS_X * 2 + 3) * (DRAW_PARTS_Y + 1 - yTmp)] <= 1) {
 				continue;
@@ -1271,7 +1271,7 @@ void DrawChar2(void)
 		yTmp = dwMyY - pChar->dwY;
 
 		/* 暗闇表示？ */
-		if (g_pMapInfo->byLightLevel) {
+		if (GetMapLightLevel ()) {
 			if (g_pMapDarkTmp[(DRAW_PARTS_X + 1 - xTmp) +
 						(DRAW_PARTS_X * 2 + 3) * (DRAW_PARTS_Y + 1 - yTmp)] <= 1) {
 				continue;
@@ -1389,7 +1389,7 @@ void DrawChar3(void)
 		yTmp = dwMyY - pChar->dwY;
 
 		/* 暗闇表示？ */
-		if (g_pMapInfo->byLightLevel) {
+		if (GetMapLightLevel ()) {
 			if (g_pMapDarkTmp[(DRAW_PARTS_X + 1 - xTmp) +
 						(DRAW_PARTS_X * 2 + 3) * (DRAW_PARTS_Y + 1 - yTmp)] <= 1) {
 				continue;
@@ -2153,7 +2153,7 @@ void DrawWeather(void)
 	BYTE byLevel, byLight = pMyChar->byLightLevel;
 	int i, j, x, y, mx, my, xMax;
 
-	int nTmp = g_pMapInfo->byLightLevel - byLight;
+	int nTmp = GetMapLightLevel () - byLight;
 	nTmp = max (nTmp, 0);
 	nTmp = min (nTmp, 100);
 	byLight = (BYTE)nTmp;
@@ -2168,7 +2168,7 @@ void DrawWeather(void)
 			i = mx - (DRAW_PARTS_X + 1) + x;
 
 			byLevel = 100;
-			if (g_pMapInfo->byLightLevel) {
+			if (GetMapLightLevel ()) {
 				byLevel = g_pMapDarkTmp[x + (DRAW_PARTS_X * 2 + 3) * y];
 			}
 

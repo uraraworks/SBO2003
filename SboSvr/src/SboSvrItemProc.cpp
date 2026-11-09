@@ -1285,7 +1285,7 @@ static BOOL ItemUse_LIGHT(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pIte
 
 	pMap = g_aMapInfo[pChar->dwMapID];
 
-	if (pMap->byLightLevel == 0) {
+	if ((pMap->byLightLevel == 0) || !IsMapDarkPos (pMap, pCharTarget->dwX, pCharTarget->dwY)) {
 		strcpy (pszMsg, "ここで使う必要はありません。@2");
 		goto Exit;
 	}
