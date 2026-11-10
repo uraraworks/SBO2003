@@ -2437,8 +2437,6 @@ typedef struct _SNOWFLAKE {
 
 static SNOWFLAKE s_aSnow[SNOW_COUNT];
 static BOOL s_bSnowInit = FALSE;
-/* 雪の描き方(試作の見比べ用) 0=昔のパーツだけ 1=雪粒だけ 2=両方 3=描かない 4=雪粒＋曇り空 */
-static int s_nSnowStyle = 4;
 
 /* 決まった並びの乱数(起動ごとに同じ降り方) */
 static float SnowRand(DWORD &dwSeed)
@@ -2518,6 +2516,24 @@ static inline void SnowShade(LPBYTE pBits, int nWidth, int nHeight, int x, int y
 	*pDst = (dw & 0xFF000000) | (max (r, 0) << 16) | (max (g, 0) << 8) | max (b, 0);
 }
 
+/* 画面の見えている所を、天気の空の色へ少しだけ寄せる(nAlpha は 0〜256) */
+static void WeatherTint(LPBYTE pBits, int nWidth, int nHeight, int nSX, int nSY, int nR, int nG, int nB, int nAlpha)
+{
+	int x, y;
+
+	for (y = max (nSY, 0); y < min (nSY + SCRSIZEY, nHeight); y ++) {
+		PDWORD pDst = (PDWORD)(pBits + (nWidth * 4) * (nHeight - 1 - y)) + max (nSX, 0);
+		for (x = max (nSX, 0); x < min (nSX + SCRSIZEX, nWidth); x ++, pDst ++) {
+			DWORD dw = *pDst;
+			int r = (dw >> 16) & 0xFF, g = (dw >> 8) & 0xFF, b = dw & 0xFF;
+			r += ((nR - r) * nAlpha) >> 8;
+			g += ((nG - g) * nAlpha) >> 8;
+			b += ((nB - b) * nAlpha) >> 8;
+			*pDst = (dw & 0xFF000000) | (r << 16) | (g << 8) | b;
+		}
+	}
+}
+
 /* 雪粒の形(中心ほど白い丸) */
 static const BYTE s_abySnowShape3[3][3] = {
 	{  0, 200,   0},
@@ -2589,21 +2605,8 @@ static void DrawSnowFall(void)
 	fW = (float)(SCRSIZEX + 32);
 	fH = (float)(SCRSIZEY + 32);
 
-	/* 雪の日の曇り空: 画面を少しだけ青灰色に沈めて、白い雪粒が浮くように(見比べ用) */
-	if (s_nSnowStyle == 4) {
-		int x, y;
-		for (y = max (nSY, 0); y < min (nSY + SCRSIZEY, nHeight); y ++) {
-			PDWORD pDst = (PDWORD)(pBits + (nWidth * 4) * (nHeight - 1 - y)) + max (nSX, 0);
-			for (x = max (nSX, 0); x < min (nSX + SCRSIZEX, nWidth); x ++, pDst ++) {
-				DWORD dw = *pDst;
-				int r = (dw >> 16) & 0xFF, g = (dw >> 8) & 0xFF, b = dw & 0xFF;
-				r += ((150 - r) * 42) >> 8;
-				g += ((165 - g) * 42) >> 8;
-				b += ((195 - b) * 42) >> 8;
-				*pDst = (dw & 0xFF000000) | (r << 16) | (g << 8) | b;
-			}
-		}
-	}
+	/* 雪の日の曇り空: 画面を少しだけ青灰色に沈めて、白い雪粒が浮くように */
+	WeatherTint (pBits, nWidth, nHeight, nSX, nSY, 150, 165, 195, 42);
 
 	for (i = 0; i < SNOW_COUNT; i ++) {
 		SNOWFLAKE *p = &s_aSnow[i];
@@ -2641,14 +2644,166 @@ static void DrawSnowFall(void)
 	}
 }
 
-#ifdef __EMSCRIPTEN__
-#include <emscripten.h>
-/* 試作の見比べ用: 雪の描き方を切り替える(0=昔のパーツ 1=雪粒 2=両方) */
-extern "C" EMSCRIPTEN_KEEPALIVE void SboWebSetSnowStyle(int nStyle)
+/* ========================================================================= */
+/* 関数名：	DrawRainFall													 */
+/* 内容：	雨の描画														 */
+/*			雪と同じく、昔の雨パーツを敷き詰める代わりに雨粒を1本ずつ		 */
+/*			斜めの線で降らせる。奥の雨ほど細く短く遅い。地面には時々		 */
+/*			小さな波紋(はね)を出す。画面は少し暗い灰色に沈める				 */
+/* 日付：	2026/11/10														 */
+/* ========================================================================= */
+#define RAIN_COUNT_FAR		90		/* 奥の雨粒の数 */
+#define RAIN_COUNT_MID		60		/* 中の雨粒の数 */
+#define RAIN_COUNT_NEAR		24		/* 手前の雨粒の数 */
+#define RAIN_COUNT			(RAIN_COUNT_FAR + RAIN_COUNT_MID + RAIN_COUNT_NEAR)
+#define RAIN_SPLASH_COUNT	14		/* 同時に出る波紋の数 */
+#define RAIN_SPLASH_TIME	0.35f	/* 波紋1つが広がって消えるまで(秒) */
+#define RAIN_WIND			0.22f	/* 雨の傾き(下へ1ドットで右へ何ドット) */
+
+typedef struct _RAINDROP {
+	float	fX, fY;			/* 時刻0の場所 */
+	float	fSpeed;			/* 落ちる速さ(ドット/秒) */
+	float	fParallax;		/* 歩いた時の流れ方(手前ほど大きい) */
+	BYTE	byLen;			/* 線の長さ(ドット) */
+	BYTE	byAlpha;		/* 濃さ(0〜256) */
+} RAINDROP;
+
+static RAINDROP s_aRain[RAIN_COUNT];
+static BOOL s_bRainInit = FALSE;
+
+static void InitRainFall(void)
 {
-	s_nSnowStyle = nStyle;
+	int i;
+	DWORD dwSeed = 20261111;
+	float fW = (float)(SCRSIZEX + 64), fH = (float)(SCRSIZEY + 64);
+
+	for (i = 0; i < RAIN_COUNT; i ++) {
+		RAINDROP *p = &s_aRain[i];
+		p->fX = SnowRand (dwSeed) * fW;
+		p->fY = SnowRand (dwSeed) * fH;
+		if (i < RAIN_COUNT_FAR) {
+			p->fSpeed	= 300.0f + SnowRand (dwSeed) * 60.0f;
+			p->byLen	= 6 + (BYTE)(SnowRand (dwSeed) * 3);
+			p->byAlpha	= 110;
+			p->fParallax = 0.8f;
+		} else if (i < RAIN_COUNT_FAR + RAIN_COUNT_MID) {
+			p->fSpeed	= 390.0f + SnowRand (dwSeed) * 70.0f;
+			p->byLen	= 10 + (BYTE)(SnowRand (dwSeed) * 4);
+			p->byAlpha	= 170;
+			p->fParallax = 0.95f;
+		} else {
+			p->fSpeed	= 500.0f + SnowRand (dwSeed) * 90.0f;
+			p->byLen	= 15 + (BYTE)(SnowRand (dwSeed) * 5);
+			p->byAlpha	= 220;
+			p->fParallax = 1.15f;
+		}
+	}
+	s_bRainInit = TRUE;
 }
-#endif
+
+/* 1ドットを雨の色へ寄せる(nAlpha は 0〜256) */
+static inline void RainPlot(LPBYTE pBits, int nWidth, int nHeight, int x, int y, int nAlpha)
+{
+	if ((x < 0) || (y < 0) || (x >= nWidth) || (y >= nHeight) || (nAlpha <= 0)) {
+		return;
+	}
+	PDWORD pDst = (PDWORD)(pBits + (nWidth * 4) * (nHeight - 1 - y)) + x;
+	DWORD dw = *pDst;
+	int r = (dw >> 16) & 0xFF, g = (dw >> 8) & 0xFF, b = dw & 0xFF;
+	r += ((225 - r) * nAlpha) >> 8;
+	g += ((235 - g) * nAlpha) >> 8;
+	b += ((250 - b) * nAlpha) >> 8;
+	*pDst = (dw & 0xFF000000) | (r << 16) | (g << 8) | b;
+}
+
+static void DrawRainFall(void)
+{
+	int i, j, nWidth, nHeight, nSX, nSY, nCamX, nCamY;
+	float fTime, fW, fH;
+	LPBYTE pBits;
+	PCHARINFO pMyChar;
+
+	if (g_nMyCharID < 0) {
+		return;
+	}
+	pBits = g_pDibDrawMap->GetBits ();
+	if (pBits == NULL) {
+		return;
+	}
+	if (s_bRainInit == FALSE) {
+		InitRainFall ();
+	}
+	pMyChar	= g_aCharInfo[g_nMyCharID];
+	nWidth	= g_pDibDrawMap->Width ();
+	nHeight	= g_pDibDrawMap->Height ();
+	nSX = 32 - anPosAddTblX[pMyChar->byDirection] * pMyChar->byDotMove;
+	nSY = 32 - anPosAddTblY[pMyChar->byDirection] * pMyChar->byDotMove;
+	nCamX = (int)pMyChar->dwX * 32 - anPosAddTblX[pMyChar->byDirection] * pMyChar->byDotMove;
+	nCamY = (int)pMyChar->dwY * 32 - anPosAddTblY[pMyChar->byDirection] * pMyChar->byDotMove;
+
+	fTime = (float)(timeGetTime () % 3600000) / 1000.0f;
+	fW = (float)(SCRSIZEX + 64);
+	fH = (float)(SCRSIZEY + 64);
+
+	/* 雨の日の暗い空: 画面を少し灰色に沈める */
+	WeatherTint (pBits, nWidth, nHeight, nSX, nSY, 60, 70, 90, 70);
+
+	/* 地面のはね(小さな波紋)。時刻を区切って、区切りごとに場所を決め直す */
+	for (i = 0; i < RAIN_SPLASH_COUNT; i ++) {
+		float fSlot, fAge;
+		DWORD dwSeed;
+		int x, y, nR, nAlpha;
+
+		fSlot = fTime / RAIN_SPLASH_TIME + (float)i / RAIN_SPLASH_COUNT;
+		fAge = fSlot - floorf (fSlot);
+		dwSeed = (DWORD)floorf (fSlot) * 7919 + i * 104729;
+		/* 描画用画像の中ではマップのマスは動かないので、画像の中の場所で決めると
+		   歩いても波紋が地面と一緒に動く */
+		x = (int)(SnowRand (dwSeed) * nWidth);
+		y = (int)(SnowRand (dwSeed) * nHeight);
+		nR = 1 + (int)(fAge * 4.0f);
+		nAlpha = (int)((1.0f - fAge) * 150.0f);
+		/* 横長の楕円(上から斜めに見た水たまりの輪) */
+		for (j = -nR * 2; j <= nR * 2; j ++) {
+			int dy = (int)(sqrtf ((float)max (0, nR * nR * 4 - j * j)) / 4.0f + 0.5f);
+			RainPlot (pBits, nWidth, nHeight, x + j, y - dy, nAlpha);
+			if (dy) {
+				RainPlot (pBits, nWidth, nHeight, x + j, y + dy, nAlpha);
+			}
+		}
+	}
+
+	/* 雨粒(斜めの線) */
+	for (i = 0; i < RAIN_COUNT; i ++) {
+		RAINDROP *p = &s_aRain[i];
+		float fX, fY, fFall;
+		int x, y;
+
+		fFall = fTime * p->fSpeed;
+		fX = p->fX + fFall * RAIN_WIND - nCamX * p->fParallax;
+		fY = p->fY + fFall - nCamY * p->fParallax;
+		fX = fmodf (fX, fW);
+		if (fX < 0.0f) {
+			fX += fW;
+		}
+		fY = fmodf (fY, fH);
+		if (fY < 0.0f) {
+			fY += fH;
+		}
+		x = nSX + (int)fX - 32;
+		y = nSY + (int)fY - 32;
+		/* 先(下)ほど濃く、尾は薄く */
+		for (j = 0; j < p->byLen; j ++) {
+			int nAlpha = p->byAlpha * (j + 1) / p->byLen;
+			RainPlot (pBits, nWidth, nHeight, x - (int)((p->byLen - j) * RAIN_WIND), y - (p->byLen - j), nAlpha);
+			/* 手前の雨は少し太く */
+			if (p->fParallax > 1.0f) {
+				RainPlot (pBits, nWidth, nHeight, x + 1 - (int)((p->byLen - j) * RAIN_WIND), y - (p->byLen - j), nAlpha / 2);
+			}
+		}
+	}
+}
+
 
 /* ========================================================================= */
 /* 関数名：DrawWeather														 */
@@ -2666,11 +2821,13 @@ void DrawWeather(void)
 	if (g_bWeatherDraw == FALSE) {
 		return;
 	}
-	/* 雪は雪粒を降らせる */
-	if ((g_pMapInfo->byWeather == 1) && (s_nSnowStyle != 0) && (s_nSnowStyle != 2)) {
-		if (s_nSnowStyle != 3) {
-			DrawSnowFall ();
-		}
+	/* 雪と雨は、パーツを敷き詰めずに粒を降らせる */
+	switch (g_pMapInfo->byWeather) {
+	case 1:
+		DrawSnowFall ();
+		return;
+	case 2:
+		DrawRainFall ();
 		return;
 	}
 
@@ -2766,10 +2923,6 @@ void DrawWeather(void)
 				g_pDibDrawMap->BltLevel (x * 32, y * 32, 32, 32, g_apDibMap[no], xx, yy, byLevel, TRUE);
 			}
 		}
-	}
-	/* 雪粒をパーツに重ねる(見比べ用) */
-	if ((g_pMapInfo->byWeather == 1) && (s_nSnowStyle == 2)) {
-		DrawSnowFall ();
 	}
 }
 
