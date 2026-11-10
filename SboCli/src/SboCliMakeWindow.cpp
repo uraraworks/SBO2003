@@ -1189,7 +1189,8 @@ PWNDINFO MakeWindowCOMMANDPARTY(void)
 	pWnd->nData2 = bMerc ? 5 : 4;
 	pWnd->nX = 32;
 	pWnd->nY = 16 * 7 + 2;
-	pWnd->nCx = 16 * 8;
+	/* 「傭兵と別れる」が出る時は、右に余裕ができるよう 1 文字ぶん広げる */
+	pWnd->nCx = 16 * (bMerc ? 9 : 8);
 	pWnd->nCy = 16 * (2 + pWnd->nData2);
 	pWnd->nType = WNDTYPE_COMMANDPARTY;
 	pWnd->pDib = new CImg32;

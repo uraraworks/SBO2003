@@ -4563,7 +4563,7 @@ void KeyProcCOMMANDPARTY(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				g_WndInfo.Add (pWndTmp);
 				g_dwActiveMsgID = pWndTmp->dwID;
 
-				pWndTmp2 = MakeWindowMSG ("傭兵と別れますか？（持たせた道具は返してもらえます）@2", FALSE);
+				pWndTmp2 = MakeWindowMSG ("傭兵と別れますか？@1（持たせた道具は返してもらえます）@2", FALSE);
 				pWndTmp2->pParent = pWndTmp;
 				pWndTmp->pChild = pWndTmp2;
 				g_WndInfo.Add (pWndTmp2);
