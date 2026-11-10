@@ -703,7 +703,14 @@ void QuestNpcTalk(PCHARINFO pChar, PCHARINFO pNpc)
 		SendCmdSYSMSG (pChar->pID, szTmp, SPEECHCMD_BATTLE1);
 	}
 
-	/* その依頼を受けている人だけが、進める・受け取る・移れる（見ているだけの仲間・管理者は台詞だけ） */
+	/* ポータルは、見えている人（受けた人・仲間）なら誰でも通れる。段を進めるのは受けた人だけ */
+	if ((pDef->byKind == QUESTNPCKIND_PORTAL) && (pChar->wQuestID != it->second.wQuestID)) {
+		DoPortal (pChar, pDef);
+		QuestSyncAll ();
+		return;
+	}
+
+	/* その依頼を受けている人だけが、進める・受け取る（見ているだけの仲間・管理者は台詞だけ） */
 	if (pChar->wQuestID != it->second.wQuestID) {
 		if (pDef->szSpeech[0] == 0) {
 			SendCmdSYSMSG (pChar->pID, "これは、依頼を受けた人のためのものです。", SPEECHCMD_BATTLE1);
@@ -750,6 +757,44 @@ void QuestNpcTalk(PCHARINFO pChar, PCHARINFO pNpc)
 	if (bChg) {
 		QuestSendState (pChar);
 		QuestSyncAll ();
+	}
+}
+
+/* 歩いて見えるポータルに重なったら、話しかけた時と同じく移す
+   （同じマスに乗った時だけ。となりを通っただけでは移らない） */
+void QuestOnStep(PCHARINFO pChar)
+{
+	std::map<DWORD, QNPCENTRY>::iterator it;
+	PCHARINFO pNpc = NULL;
+
+	if ((pChar == NULL) || (pChar->byNpcType != NPCTYPE_INIT)) {
+		return;
+	}
+	for (it = s_mapNpc.begin (); it != s_mapNpc.end (); it ++) {
+		if (it->first >= (DWORD)g_aCharInfo.GetSize ()) {
+			continue;
+		}
+		PCHARINFO pTmp = g_aCharInfo[it->first];
+		if ((pTmp == NULL) || (pTmp->dwMapID != pChar->dwMapID)) {
+			continue;
+		}
+		if ((pTmp->dwX != pChar->dwX) || (pTmp->dwY != pChar->dwY)) {
+			continue;
+		}
+		PQUESTINFO pQuest = FindQuest (it->second.wQuestID);
+		if ((pQuest == NULL) || (it->second.nIdx >= MAX_QUESTNPC) ||
+			(pQuest->aNpc[it->second.nIdx].byKind != QUESTNPCKIND_PORTAL)) {
+			continue;
+		}
+		if (!IsCharVisibleTo (pTmp, pChar)) {
+			continue;
+		}
+		pNpc = pTmp;
+		break;
+	}
+	/* 移すと見えるNPC の一覧が変わるので、探し終えてから呼ぶ */
+	if (pNpc) {
+		QuestNpcTalk (pChar, pNpc);
 	}
 }
 

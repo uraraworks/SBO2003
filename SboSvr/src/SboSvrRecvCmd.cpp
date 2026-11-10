@@ -3822,6 +3822,9 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 			/* 移動しなおしたのでカウンタ初期化 */
 			pChar->dwLastBattle = timeGetTime ();
 		}
+
+		/* 依頼の見えるポータルに乗った？ */
+		QuestOnStep (pChar);
 	}
 }
 

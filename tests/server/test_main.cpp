@@ -1798,6 +1798,22 @@ static void TestQuest(const std::vector<int> &aLogin)
 		QuestMovePC(pOwner, nMap, (int)pPortal->dwX, (int)pPortal->dwY + 1);
 		QuestSendTalk(pOwner, pPortal->dwTblID);
 		printf("quest portal to dest=%d\n", (int)(pOwner->dwX == (DWORD)aCell[3].first && pOwner->dwY == (DWORD)aCell[3].second));
+
+		/* 歩いてポータルに乗っても移る（話さなくてよい） */
+		pPortal = QuestFindCopy(pOwner, 1);
+		if (pPortal) {
+			QuestMovePC(pOwner, nMap, (int)pPortal->dwX, (int)pPortal->dwY + 1);
+			CMDPARA_CHARPOS PosPara;
+			ZeroMemory(&PosPara, sizeof(PosPara));
+			PosPara.byCmd = CMD_CHARPOS;
+			PosPara.dwTblID = pOwner->dwTblID;
+			PosPara.dwMapID = pOwner->dwMapID;
+			PosPara.byDirection = 1;
+			PosPara.byX = (BYTE)pPortal->dwX;
+			PosPara.byY = (BYTE)pPortal->dwY;
+			TestRecv(pOwner, &PosPara, sizeof(PosPara));
+			printf("quest portal step to dest=%d\n", (int)(pOwner->dwX == (DWORD)aCell[3].first && pOwner->dwY == (DWORD)aCell[3].second));
+		}
 	}
 
 	/* ギルドで渡す：品物を回収して報酬（お金・経験値・アイテム）。一度きりなので済みの印が付く */
