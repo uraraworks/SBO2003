@@ -118,6 +118,7 @@ void	RecvDataProcMAPMSGREQ					(PBYTE, DWORD);				/* メッセージ要求 */
 void	RecvDataProcCHGMSG						(PBYTE, DWORD);				/* メッセージ更新 */
 void	RecvDataProcOPENDOOR					(PBYTE, DWORD);				/* 扉開け要求 */
 static BOOL OpenDoorFront						(PCHARINFO);				/* 目の前の扉を開ける */
+static BOOL IsEventExamine						(PEVENTINFO, BYTE);			/* 調べた時に何か起きるイベントか */
 void	RecvDataProcCHGCHARGRP					(PBYTE, DWORD);				/* 着せ替え要求 */
 void	RecvDataProcCHGCHARGRPBACK				(PBYTE, DWORD);				/* キャラ画像記録 */
 void	RecvDataProcCHGNAMESEX					(PBYTE, DWORD);				/* 名前と性別更新 */
@@ -4420,6 +4421,13 @@ void RecvDataProcEVENTCHECK(PBYTE pData, DWORD dwDataSize)
 		}
 		/* イベント発見？ */
 		if ((pEvent->dwX == dwX) && (pEvent->dwY == dwY)) {
+			/* 足元を調べた時(Sキー)、足元のイベントが調べても何も起きない物なら
+			   目の前の扉を開ける（扉の前のマスに乗った時のメッセージなどがあると開けられなかった） */
+			if ((pPara->byData == 1) && !IsEventExamine (pEvent, pPara->byData)) {
+				if (OpenDoorFront (pChar)) {
+					return;
+				}
+			}
 			EventProc (pChar, pEvent, pPara->byData);
 			return;
 		}
@@ -4440,6 +4448,26 @@ void RecvDataProcEVENTCHECK(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	SendCmdMAPMSG (pChar->pID, "何も見つかりませんでした。@2");
+}
+
+/* ========================================================================= */
+/* 関数名：IsEventExamine													 */
+/* 内容：調べた時(byData)に何か起きるイベントか								 */
+/*		 調べて反応するのはメッセージの「調べた時」の種類だけ				 */
+/*		 （それ以外は EventProc が「何も見つかりませんでした」を返す）		 */
+/* ========================================================================= */
+static BOOL IsEventExamine(PEVENTINFO pEvent, BYTE byData)
+{
+	PEVENTINFO_MSG pMsg;
+
+	if (pEvent->byType != EVENTTYPE_MSG) {
+		return FALSE;
+	}
+	pMsg = (PEVENTINFO_MSG)pEvent->pData;
+	if (pMsg == NULL) {
+		return FALSE;
+	}
+	return (pMsg->byType == byData);
 }
 
 /* ========================================================================= */
