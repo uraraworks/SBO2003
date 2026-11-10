@@ -218,6 +218,9 @@ typedef struct _WNDINFO {
 	DWORD			dwTimeDrawStart;							/* 最初に描画した時間 */
 	DWORD			dwTimeKey;									/* 最後にキー処理した時間 */
 	DWORD			dwData;										/* 汎用データ（作り手の画面の再描画判定に使う） */
+	int				nMsgDrawLen;								/* メッセージ：描いてある所まで（pszMsg のバイト数、0 なら描き直し） */
+	int				nMsgDrawScroll;								/* メッセージ：描いた時にずれていた行数 */
+	DWORD			dwMsgDrawHash;								/* メッセージ：描いてある所までの中身の目印 */
 } WNDINFO, *PWNDINFO;
 
 /* システムメッセージ情報 */
