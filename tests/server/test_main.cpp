@@ -16,6 +16,7 @@
  *   H. キャラ情報の項目消し     … 他人・NPC の情報から、画面に要らない項目が消えること（本人・管理者は全部）
  *   K. 傭兵                      … 道さがしの表が前の方法と同じ結果か・敵探しの速さ・道具を持たせる取り引き
  *   M. ギルドの依頼              … 受ける・見えるNPCが持ち主と仲間にだけ届く・宝箱・ポータル・渡して報酬・保存して読み直し
+ *   N. 並べ替え                  … 道具欄・預かり所の入れ替え・種類順・50音順（装備の付け替え・取り引き中は動かない・50音キー）
  */
 #include "stdafx.h"
 #include "SboSvrRecvCmd.h"
@@ -33,6 +34,7 @@
 #include <string>
 #include <set>
 #include <vector>
+#include <algorithm>
 
 /* ------------------------------------------------------------------------- */
 /* 固定の時刻																 */
@@ -563,6 +565,7 @@ static void TestShipBed(const std::vector<int> &aLogin);
 static void TestMercenary(const std::vector<int> &aLogin);
 static void TestTailMapChg(const std::vector<int> &aLogin);
 static void TestQuest(const std::vector<int> &aLogin);
+static void TestSortItem(const std::vector<int> &aLogin);
 
 static void TestTownWarp(const std::vector<int> &aLogin)
 {
@@ -985,6 +988,8 @@ static void TestWorld(void)
 	TestTailMapChg(aLogin);
 	/* M. ギルドの依頼 */
 	TestQuest(aLogin);
+	/* N. 道具欄・預かり所の並べ替え */
+	TestSortItem(aLogin);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -2013,6 +2018,242 @@ static void TestQuest(const std::vector<int> &aLogin)
 	}
 	QuestSyncAll();
 	printf("quest end copies=%d\n", QuestCountCopies());
+}
+
+/* ------------------------------------------------------------------------- */
+/* N. 道具欄・預かり所の並べ替え											 */
+/* ------------------------------------------------------------------------- */
+extern void ItemNameSortKey(LPCSTR pszName, std::vector<unsigned> &aKey);
+
+static void SortSend(PCHARINFO p, BYTE byTarget, BYTE byMode, BYTE byNo1, BYTE byNo2)
+{
+	CMDPARA_SORTITEM Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_SORTITEM;
+	Para.byTarget = byTarget;
+	Para.byMode = byMode;
+	Para.byNo1 = byNo1;
+	Para.byNo2 = byNo2;
+	Para.dwTblID = p->dwTblID;
+	TestRecv(p, &Para, sizeof(Para));
+}
+
+static void SortPrintMy(const char *pszLabel, PCHARINFO p)
+{
+	printf("%s items:", pszLabel);
+	for (int i = 0; i < MAX_MYITEM; i ++) printf(" %u", p->waItem[i]);
+	printf(" equ:");
+	for (int i = 0; i < 10; i ++) printf(" %u", p->waEqu[i]);
+	/* 装備しているアイテムのID（付け替えが正しければ並べ替えても変わらない） */
+	printf(" equid:");
+	for (int i = 0; i < 10; i ++) {
+		if (p->waEqu[i] < MAX_MYITEM) printf(" %u", p->waItem[p->waEqu[i]]); else printf(" -");
+	}
+	printf("\n");
+}
+
+static void SortPrintLeave(const char *pszLabel, PCHARINFO p)
+{
+	printf("%s leave:", pszLabel);
+	if (p->dwLeaveID && p->dwLeaveID < (DWORD)g_aLeaveInfo.GetSize()) {
+		PLEAVEINFO pL = g_aLeaveInfo[p->dwLeaveID];
+		printf(" n=%u", pL->byCount);
+		for (int i = 0; i < pL->byCount; i ++) printf(" %u*%u", pL->waItem[i], pL->byItemCount[i]);
+	} else {
+		printf(" none");
+	}
+	printf("\n");
+}
+
+static void TestSortItem(const std::vector<int> &aLogin)
+{
+	printf("== N. SortItem ==\n");
+
+	/* 50音キー：全角カナ・ひらがな・半角カナが同じキーになる等 */
+	{
+		static const char *s_apszA[][2] = {
+			{ "アイテム", "あいてむ" }, { "アイテム", "ｱｲﾃﾑ" }, { "ガード", "が\xe3\x83\xbc\xe3\x81\xa9" },
+			{ "ｶﾞ", "が" }, { "ｶﾞ", "ガ" }, { "ﾊﾟ", "ぱ" }, { "ﾊﾞ", "ば" }, { "ｳﾞ", "ゔ" }, { "ｳﾞ", "ヴ" },
+			{ "ＡＢＣ１", "abc1" }, { "Potion", "potion" }, { "ｱ", "あ" }, { "ｶ", "か" }, { "ｶﾞ", "か" },
+			{ "ﾂ", "つ" }, { "ｯ", "っ" }, { "ﾁﾞ", "ぢ" },
+		};
+		for (size_t i = 0; i < sizeof(s_apszA) / sizeof(s_apszA[0]); i ++) {
+			std::vector<unsigned> a, b;
+			ItemNameSortKey(s_apszA[i][0], a);
+			ItemNameSortKey(s_apszA[i][1], b);
+			printf("sortkey [%s] [%s] same=%d len=%d,%d\n", s_apszA[i][0], s_apszA[i][1], (int)(a == b), (int)a.size(), (int)b.size());
+		}
+		std::vector<unsigned> a;
+		ItemNameSortKey("あいう", a);
+		printf("sortkey codes:");
+		for (size_t i = 0; i < a.size(); i ++) printf(" %X", a[i]);
+		printf("\n");
+		/* 漢字は読みの頭のかなで並ぶ（JIS 第一水準の順）。濁点は清音の後ろ */
+		{
+			static const char *s_apszN[] = { "力の種", "布の服", "明かりの旅術書", "樫の剣", "皮の盾", "パン", "ばくだん", "はしご", "かがみ", "ガラス", "薬草", "ひのきの棒" };
+			std::vector<std::pair<std::vector<unsigned>, const char *> > aN;
+			for (size_t i = 0; i < sizeof(s_apszN) / sizeof(s_apszN[0]); i ++) {
+				std::vector<unsigned> k;
+				ItemNameSortKey(s_apszN[i], k);
+				aN.push_back(std::make_pair(k, s_apszN[i]));
+			}
+			std::sort(aN.begin(), aN.end());
+			printf("sortkey order:");
+			for (size_t i = 0; i < aN.size(); i ++) printf(" %s", aN[i].second);
+			printf("\n");
+		}
+		ItemNameSortKey(NULL, a);
+		printf("sortkey null len=%d\n", (int)a.size());
+	}
+	if (aLogin.size() < 2) {
+		return;
+	}
+
+	/* 種類の違うアイテムを集める（名前のあるものだけ。ID の小さい順に、種類ごとに 1 つ） */
+	static const BYTE s_abyType[] = { ITEMTYPE_WEAPON, ITEMTYPE_HPUP, ITEMTYPE_ARMOR, ITEMTYPE_SEED, ITEMTYPE_EQU_ACC2, ITEMTYPE_SHILD, ITEMTYPE_MAGIC };
+	std::vector<WORD> aPick;
+	for (size_t t = 0; t < sizeof(s_abyType); t ++) {
+		for (int i = 1; i < g_aItemInfo.GetSize(); i ++) {
+			if (g_aItemInfo[i]->szName[0] == 0 || g_aItemInfo[i]->byType != s_abyType[t]) continue;
+			aPick.push_back((WORD)i);
+			break;
+		}
+	}
+	printf("sort picked:");
+	for (size_t i = 0; i < aPick.size(); i ++) printf(" %u(type%u)", aPick[i], g_aItemInfo[aPick[i]]->byType);
+	printf("\n");
+	if (aPick.size() < 5) {
+		return;
+	}
+
+	PCHARINFO p = g_aCharInfo[aLogin[0]];
+	PCHARINFO pL = g_aCharInfo[aLogin[1]];
+	BYTE byAdminBack = p->byAdminLV, byAdminBackL = pL->byAdminLV;
+	WORD awItemBack[MAX_MYITEM], awEquBack[10];
+	memcpy(awItemBack, p->waItem, sizeof(awItemBack));
+	memcpy(awEquBack, p->waEqu, sizeof(awEquBack));
+	p->byAdminLV = ADMINLV_USER;
+	pL->byAdminLV = ADMINLV_USER;
+
+	/* 手持ち：6 つ（同じものが 2 つ）。1 番目と 4 番目を装備 */
+	ZeroMemory(p->waItem, sizeof(p->waItem));
+	for (int i = 0; i < 10; i ++) p->waEqu[i] = 0xFFFF;
+	p->waItem[0] = aPick[0];
+	p->waItem[1] = aPick[1];
+	p->waItem[2] = aPick[2];
+	p->waItem[3] = aPick[3];
+	p->waItem[4] = aPick[4];
+	p->waItem[5] = aPick[1];
+	p->waEqu[0] = 0;
+	p->waEqu[3] = 4;
+	SortPrintMy("sort my init", p);
+
+	/* 入れ替え：装備も一緒に動く */
+	SortSend(p, SORTITEMTARGET_MYITEM, SORTITEMMODE_SWAP, 0, 4);
+	SortPrintMy("sort my swap 0,4", p);
+	/* 入れ替え：同じ番号・範囲外（アイテム数 6 以上）・別の対象は動かない */
+	SortSend(p, SORTITEMTARGET_MYITEM, SORTITEMMODE_SWAP, 2, 2);
+	SortSend(p, SORTITEMTARGET_MYITEM, SORTITEMMODE_SWAP, 1, 6);
+	SortSend(p, SORTITEMTARGET_MYITEM, SORTITEMMODE_SWAP, 9, 0);
+	SortSend(p, 9, SORTITEMMODE_SWAP, 0, 1);
+	SortSend(p, SORTITEMTARGET_MYITEM, 0, 0, 1);
+	SortPrintMy("sort my swap invalid", p);
+	/* 種類順 */
+	SortSend(p, SORTITEMTARGET_MYITEM, SORTITEMMODE_TYPE, 0, 0);
+	SortPrintMy("sort my type", p);
+	/* 50音順 */
+	SortSend(p, SORTITEMTARGET_MYITEM, SORTITEMMODE_NAME, 0, 0);
+	SortPrintMy("sort my name", p);
+	/* 他人のキャラは操作できない */
+	{
+		CMDPARA_SORTITEM Para;
+		ZeroMemory(&Para, sizeof(Para));
+		Para.byCmd = CMD_SORTITEM;
+		Para.byTarget = SORTITEMTARGET_MYITEM;
+		Para.byMode = SORTITEMMODE_SWAP;
+		Para.byNo1 = 0;
+		Para.byNo2 = 1;
+		Para.dwTblID = p->dwTblID;
+		TestRecv(pL, &Para, sizeof(Para));
+		SortPrintMy("sort my other-char", p);
+		/* 短いパケットは弾く */
+		TestRecv(p, &Para, 3);
+		SortPrintMy("sort my short", p);
+	}
+
+	/* 取り引き中は変わらない */
+	{
+		CMDPARA_DATA3 Trade;
+		ZeroMemory(&Trade, sizeof(Trade));
+		Trade.byCmd = CMD_TRADE;
+		Trade.pID = p->pID;
+		Trade.dwTblID = p->dwTblID;
+		Trade.dwData = pL->dwTblID;
+		DWORD dwMapBack = pL->dwMapID, dwXBack = pL->dwX, dwYBack = pL->dwY;
+		char szAccBack[sizeof(pL->szAcc)];
+		memcpy(szAccBack, pL->szAcc, sizeof(szAccBack));
+		pL->dwMapID = p->dwMapID; pL->dwX = p->dwX; pL->dwY = p->dwY;
+		if (pL->szAcc[0] == 0) strcpy(pL->szAcc, "sorttest");
+		TestRecv(p, &Trade, sizeof(Trade));
+		printf("sort trading=%d\n", (int)RecvCmdIsTrading(p->dwTblID));
+		SortSend(p, SORTITEMTARGET_MYITEM, SORTITEMMODE_SWAP, 2, 3);
+		SortSend(p, SORTITEMTARGET_MYITEM, SORTITEMMODE_TYPE, 0, 0);
+		SortPrintMy("sort my trading", p);
+		RecvCmdTradeClear(p->dwTblID);
+		RecvCmdTradeClear(pL->dwTblID);
+		pL->dwMapID = dwMapBack; pL->dwX = dwXBack; pL->dwY = dwYBack;
+		memcpy(pL->szAcc, szAccBack, sizeof(szAccBack));
+		printf("sort trading cleared=%d\n", (int)RecvCmdIsTrading(p->dwTblID));
+		SortSend(p, SORTITEMTARGET_MYITEM, SORTITEMMODE_SWAP, 2, 3);
+		SortPrintMy("sort my after trade", p);
+	}
+
+	/* 預かり所：口座が無い人は何も起きない・あれば 個数ごと動く */
+	{
+		DWORD dwLeaveBack = pL->dwLeaveID;
+		LEAVEINFO LeaveBack;
+		ZeroMemory(&LeaveBack, sizeof(LeaveBack));
+		if (dwLeaveBack && dwLeaveBack < (DWORD)g_aLeaveInfo.GetSize()) LeaveBack = *g_aLeaveInfo[dwLeaveBack];
+		if (dwLeaveBack) {
+			ZeroMemory(g_aLeaveInfo[dwLeaveBack], sizeof(LEAVEINFO));
+			g_aLeaveInfo[dwLeaveBack]->byUse = 1;
+		}
+		/* 口座がまだ無い時（dwLeaveID==0）の振る舞いを先に見る */
+		if (dwLeaveBack == 0) {
+			SortSend(pL, SORTITEMTARGET_LEAVE, SORTITEMMODE_NAME, 0, 0);
+			SortPrintLeave("sort leave noaccount", pL);
+		}
+		AddLeaveItem(pL, aPick[4]);
+		AddLeaveItem(pL, aPick[1]);
+		AddLeaveItem(pL, aPick[0]);
+		AddLeaveItem(pL, aPick[1]);
+		AddLeaveItem(pL, aPick[2]);
+		SortPrintLeave("sort leave init", pL);
+		SortSend(pL, SORTITEMTARGET_LEAVE, SORTITEMMODE_SWAP, 0, 3);
+		SortPrintLeave("sort leave swap 0,3", pL);
+		SortSend(pL, SORTITEMTARGET_LEAVE, SORTITEMMODE_SWAP, 1, 1);
+		SortSend(pL, SORTITEMTARGET_LEAVE, SORTITEMMODE_SWAP, 0, 5);
+		SortSend(pL, SORTITEMTARGET_LEAVE, SORTITEMMODE_SWAP, 4, 99);
+		SortPrintLeave("sort leave swap invalid", pL);
+		SortSend(pL, SORTITEMTARGET_LEAVE, SORTITEMMODE_NAME, 0, 0);
+		SortPrintLeave("sort leave name", pL);
+		SortSend(pL, SORTITEMTARGET_LEAVE, SORTITEMMODE_TYPE, 0, 0);
+		SortPrintLeave("sort leave type", pL);
+
+		/* 片付け */
+		if (dwLeaveBack) {
+			*g_aLeaveInfo[dwLeaveBack] = LeaveBack;
+		} else if (pL->dwLeaveID && pL->dwLeaveID < (DWORD)g_aLeaveInfo.GetSize()) {
+			ZeroMemory(g_aLeaveInfo[pL->dwLeaveID], sizeof(LEAVEINFO));
+			pL->dwLeaveID = 0;
+		}
+	}
+
+	/* 片付け */
+	memcpy(p->waItem, awItemBack, sizeof(awItemBack));
+	memcpy(p->waEqu, awEquBack, sizeof(awEquBack));
+	p->byAdminLV = byAdminBack;
+	pL->byAdminLV = byAdminBackL;
 }
 
 int main(int argc, char **argv)

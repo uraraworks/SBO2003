@@ -2987,6 +2987,30 @@ void SendCmdQUEST(BYTE byType, WORD wQuestID, DWORD dwNpcTblID)
 }
 
 /* ========================================================================= */
+/* 関数名：	SendCmdSORTITEM													 */
+/* 内容：	コマンド送信(道具欄・預かり所の並べ替え)						 */
+/*			結果は CMD_CHARITEM（手持ち）・CMD_LEAVEITEMGET（預かり所）で返る */
+/* 日付：	2026/11/11														 */
+/* ========================================================================= */
+void SendCmdSORTITEM(BYTE byTarget, BYTE byMode, BYTE byNo1, BYTE byNo2)
+{
+	CMDPARA_SORTITEM SendData;
+
+	if (g_nMyCharID < 0) {
+		return;
+	}
+	ZeroMemory (&SendData, sizeof (SendData));
+	SendData.byCmd		= CMD_SORTITEM;
+	SendData.byTarget	= byTarget;
+	SendData.byMode		= byMode;
+	SendData.byNo1		= byNo1;
+	SendData.byNo2		= byNo2;
+	SendData.dwTblID	= g_aCharInfo[g_nMyCharID]->dwTblID;
+
+	cliSock.Send ((PBYTE)&SendData, sizeof (SendData));
+}
+
+/* ========================================================================= */
 /* 関数名：	SendCmdRECIPEMAKE												 */
 /* 内容：	コマンド送信(レシピで作ってもらう要求)							 */
 /*			結果は CMD_RECIPEMAKE で返ってくる								 */

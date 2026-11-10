@@ -26,6 +26,7 @@
 #include "SboSvrMagicProc.h"
 #include <map>
 #include <vector>
+#include <algorithm>
 
 /* ========================================================================= */
 /* 定数定義																	 */
@@ -198,6 +199,7 @@ void	RecvDataProcADMINUNDO					(PBYTE, DWORD);				/* 管理者画面の「元に
 void	RecvDataProcNPCROUTE					(PBYTE, DWORD);				/* NPCの巡回ルート */
 void	RecvDataProcRECIPEMAKE					(PBYTE, DWORD);				/* レシピで作ってもらう */
 void	RecvDataProcQUEST						(PBYTE, DWORD);				/* ギルドの仕事依頼（一覧・受ける・取り消す・渡す） */
+void	RecvDataProcSORTITEM					(PBYTE, DWORD);				/* 道具欄・預かり所の並べ替え */
 void	RecvDataProcBATTLEMODE					(PBYTE, DWORD);				/* 戦闘モードの切り替え通知 */
 /* 端末トークン（server/web_account_svr.cpp） */
 BOOL	WebAccTokenToAccount					(LPCSTR, LPSTR, int);		/* 端末トークンからアカウント名を引く */
@@ -420,6 +422,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	NULL,								/* CMD_TOWNWARP(サーバー→クライアントのみ) */
 	RecvDataProcQUEST,					/* CMD_QUEST */
 	NULL,								/* CMD_QUESTSTATE(サーバー→クライアントのみ) */
+	RecvDataProcSORTITEM,				/* CMD_SORTITEM */
 
 	NULL
 };
@@ -3336,7 +3339,7 @@ void RecvDataProc(PBYTE pData, DWORD dwDataSize)
 	}
 
 	/* 管理者用のコマンド（管理者ウィンドウからしか送らないもの）は管理者だけ */
-	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST)) ||
+	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_SORTITEM)) ||
 			(byCmd == CMD_CHARITEM)) {
 		if (!CheckAdminBan (nNo)) {
 			SAFE_DELETE_ARRAY (pData);
@@ -10310,7 +10313,7 @@ BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, 
 	/* 管理者用のコマンドだけ（ログインや「元に戻す」自体は通さない） */
 	if ((byCmd >= CMD_MAX) || (RecvDataProcTbl[byCmd] == NULL) ||
 			((byCmd < CMD_MAPPARTSADD) && (byCmd != CMD_CHARITEM)) ||
-			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST)) {
+			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_SORTITEM)) {
 		return FALSE;
 	}
 
@@ -10529,6 +10532,461 @@ void RecvDataProcQUEST(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	QuestRecv (pChar, pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：ItemSortKanjiKana												 */
+/* 内容：漢字1文字の読みの頭のかな（清音のひらがな）を返す					 */
+/*       JIS 第一水準漢字は読み（音読み）の順に並んでいるので、Shift_JIS の	 */
+/*       番号から行の頭を引く。第二水準など分からない時は 0					 */
+/* 日付：2026/11/11															 */
+/* ========================================================================= */
+static unsigned ItemSortKanjiKana(unsigned c, unsigned *pnSjis)
+{
+	/* 第一水準の、読みの頭のかなが変わる所（表は pykakasi の読みから作った） */
+	static const struct { unsigned short wSjis; unsigned short wKana; } s_aTbl[] = {
+		{ 0x889f, 0x3042 },		/* あ 亜 */
+		{ 0x88c8, 0x3044 },		/* い 以 */
+		{ 0x8946, 0x3046 },		/* う 宇 */
+		{ 0x8960, 0x3048 },		/* え 荏 */
+		{ 0x8997, 0x304A },		/* お 於 */
+		{ 0x89bb, 0x304B },		/* か 化 */
+		{ 0x8ae9, 0x304D },		/* き 企 */
+		{ 0x8be4, 0x304F },		/* く 倶 */
+		{ 0x8c54, 0x3051 },		/* け 卦 */
+		{ 0x8cc1, 0x3053 },		/* こ 乎 */
+		{ 0x8db1, 0x3055 },		/* さ 些 */
+		{ 0x8e64, 0x3057 },		/* し 仕 */
+		{ 0x9079, 0x3059 },		/* す 笥 */
+		{ 0x90a3, 0x305B },		/* せ 瀬 */
+		{ 0x9158, 0x305D },		/* そ 噌 */
+		{ 0x91bd, 0x305F },		/* た 多 */
+		{ 0x926d, 0x3061 },		/* ち 知 */
+		{ 0x92c3, 0x3064 },		/* つ 津 */
+		{ 0x92e0, 0x3066 },		/* て 亭 */
+		{ 0x9366, 0x3068 },		/* と 吐 */
+		{ 0x93de, 0x306A },		/* な 奈 */
+		{ 0x93f1, 0x306B },		/* に 二 */
+		{ 0x9448, 0x306D },		/* ね 禰 */
+		{ 0x9454, 0x306E },		/* の 乃 */
+		{ 0x9463, 0x306F },		/* は 把 */
+		{ 0x94d9, 0x3072 },		/* ひ 匪 */
+		{ 0x9573, 0x3075 },		/* ふ 不 */
+		{ 0x95b9, 0x3078 },		/* へ 併 */
+		{ 0x95db, 0x307B },		/* ほ 保 */
+		{ 0x9680, 0x307E },		/* ま 摩 */
+		{ 0x96a3, 0x307F },		/* み 魅 */
+		{ 0x96b3, 0x3080 },		/* む 無 */
+		{ 0x96bb, 0x3081 },		/* め 冥 */
+		{ 0x96cc, 0x3082 },		/* も 摸 */
+		{ 0x96e7, 0x3084 },		/* や 也 */
+		{ 0x96f9, 0x3086 },		/* ゆ 愉 */
+		{ 0x975d, 0x3088 },		/* よ 余 */
+		{ 0x9785, 0x3089 },		/* ら 羅 */
+		{ 0x9798, 0x308A },		/* り 利 */
+		{ 0x97da, 0x308B },		/* る 瑠 */
+		{ 0x97df, 0x308C },		/* れ 令 */
+		{ 0x9843, 0x308D },		/* ろ 呂 */
+		{ 0x9860, 0x308F },		/* わ 倭 */
+	};
+	char szUtf8[8], szSjis[8];
+	unsigned nSjis, wKana;
+	int i;
+
+	*pnSjis = 0;
+	if ((c < 0x80) || (c > 0xFFFF)) {
+		return 0;
+	}
+	/* 1文字だけ UTF-8 にして Shift_JIS へ */
+	if (c < 0x800) {
+		szUtf8[0] = (char)(0xC0 | (c >> 6));
+		szUtf8[1] = (char)(0x80 | (c & 0x3F));
+		szUtf8[2] = 0;
+	} else {
+		szUtf8[0] = (char)(0xE0 | (c >> 12));
+		szUtf8[1] = (char)(0x80 | ((c >> 6) & 0x3F));
+		szUtf8[2] = (char)(0x80 | (c & 0x3F));
+		szUtf8[3] = 0;
+	}
+	ZeroMemory (szSjis, sizeof (szSjis));
+	W32Utf8ToSjis (szUtf8, szSjis, sizeof (szSjis));
+	if ((szSjis[0] == 0) || (szSjis[1] == 0) || (szSjis[2] != 0)) {
+		return 0;
+	}
+	nSjis = ((unsigned)(BYTE)szSjis[0] << 8) | (BYTE)szSjis[1];
+	*pnSjis = nSjis;
+	if ((nSjis < s_aTbl[0].wSjis) || (nSjis > 0x9872)) {
+		return 0;
+	}
+	wKana = s_aTbl[0].wKana;
+	for (i = 0; i < (int)(sizeof (s_aTbl) / sizeof (s_aTbl[0])); i ++) {
+		if (nSjis < s_aTbl[i].wSjis) {
+			break;
+		}
+		wKana = s_aTbl[i].wKana;
+	}
+	return wKana;
+}
+
+/* ========================================================================= */
+/* 関数名：ItemSortPlainKana												 */
+/* 内容：ひらがなの濁点・半濁点・小さい字を外した字を返す（50音の1段目の比較用） */
+/* 日付：2026/11/11															 */
+/* ========================================================================= */
+static unsigned ItemSortPlainKana(unsigned c)
+{
+	/* ぁ(3041)〜ゖ(3096) の清音・大きい字 */
+	static const unsigned short s_aPlain[] = {
+		0x3042, 0x3042, 0x3044, 0x3044, 0x3046, 0x3046, 0x3048, 0x3048, 0x304A, 0x304A,	/* ぁあぃいぅうぇえぉお */
+		0x304B, 0x304B, 0x304D, 0x304D, 0x304F, 0x304F, 0x3051, 0x3051, 0x3053, 0x3053,	/* かがきぎくぐけげこご */
+		0x3055, 0x3055, 0x3057, 0x3057, 0x3059, 0x3059, 0x305B, 0x305B, 0x305D, 0x305D,	/* さざしじすずせぜそぞ */
+		0x305F, 0x305F, 0x3061, 0x3061, 0x3064, 0x3064, 0x3064, 0x3066, 0x3066, 0x3068, 0x3068,	/* ただちぢっつづてでとど */
+		0x306A, 0x306B, 0x306C, 0x306D, 0x306E,											/* なにぬねの */
+		0x306F, 0x306F, 0x306F, 0x3072, 0x3072, 0x3072, 0x3075, 0x3075, 0x3075,			/* はばぱひびぴふぶぷ */
+		0x3078, 0x3078, 0x3078, 0x307B, 0x307B, 0x307B,									/* へべぺほぼぽ */
+		0x307E, 0x307F, 0x3080, 0x3081, 0x3082,											/* まみむめも */
+		0x3084, 0x3084, 0x3086, 0x3086, 0x3088, 0x3088,									/* ゃやゅゆょよ */
+		0x3089, 0x308A, 0x308B, 0x308C, 0x308D,											/* らりるれろ */
+		0x308F, 0x308F, 0x3090, 0x3091, 0x3092, 0x3093, 0x3046, 0x304B, 0x3051,			/* ゎわゐゑをんゔゕゖ */
+	};
+	if ((c >= 0x3041) && (c <= 0x3096)) {
+		return s_aPlain[c - 0x3041];
+	}
+	return c;
+}
+
+/* ========================================================================= */
+/* 関数名：ItemNameSortKey													 */
+/* 内容：アイテム名から50音順の並べ替えキーを作る							 */
+/*       UTF-8 を符号点の列にして、カタカナ・半角カナはひらがなへ、		 */
+/*       全角英数記号は半角へ、英字は小文字へそろえる						 */
+/*       キーは「1段目（清音のかな。漢字は読みの頭のかな）」0「2段目（濁点	 */
+/*       などを含む字。漢字は Shift_JIS の番号＝読みの順）」の並び。		 */
+/*       1段目で比べて同じなら2段目で比べることになる						 */
+/* 日付：2026/11/11															 */
+/* ========================================================================= */
+void ItemNameSortKey(LPCSTR pszName, std::vector<unsigned> &aKey)
+{
+	/* 半角カナ(U+FF66〜U+FF9D)→ひらがな */
+	static const unsigned s_awHalfKana[0x9D - 0x66 + 1] = {
+		0x3092,														/* ヲ */
+		0x3041, 0x3043, 0x3045, 0x3047, 0x3049,						/* ｧｨｩｪｫ */
+		0x3083, 0x3085, 0x3087, 0x3063,								/* ｬｭｮｯ */
+		0x30FC,														/* ｰ */
+		0x3042, 0x3044, 0x3046, 0x3048, 0x304A,						/* ｱｲｳｴｵ */
+		0x304B, 0x304D, 0x304F, 0x3051, 0x3053,						/* ｶｷｸｹｺ */
+		0x3055, 0x3057, 0x3059, 0x305B, 0x305D,						/* ｻｼｽｾｿ */
+		0x305F, 0x3061, 0x3064, 0x3066, 0x3068,						/* ﾀﾁﾂﾃﾄ */
+		0x306A, 0x306B, 0x306C, 0x306D, 0x306E,						/* ﾅﾆﾇﾈﾉ */
+		0x306F, 0x3072, 0x3075, 0x3078, 0x307B,						/* ﾊﾋﾌﾍﾎ */
+		0x307E, 0x307F, 0x3080, 0x3081, 0x3082,						/* ﾏﾐﾑﾒﾓ */
+		0x3084, 0x3086, 0x3088,										/* ﾔﾕﾖ */
+		0x3089, 0x308A, 0x308B, 0x308C, 0x308D,						/* ﾗﾘﾙﾚﾛ */
+		0x308F,														/* ﾜ */
+		0x3093,														/* ﾝ */
+	};
+	const unsigned char *p = (const unsigned char *)pszName;
+	std::vector<unsigned> aCode, aNorm;
+	size_t i;
+
+	aKey.clear ();
+	if (pszName == NULL) {
+		return;
+	}
+
+	/* UTF-8 を符号点に直す（壊れた並びは1バイトずつそのまま） */
+	while (*p) {
+		unsigned c = *p;
+		int nLen = 1;
+		if ((c >= 0xC2) && (c <= 0xDF)) {
+			nLen = 2;
+			c &= 0x1F;
+		} else if ((c >= 0xE0) && (c <= 0xEF)) {
+			nLen = 3;
+			c &= 0x0F;
+		} else if ((c >= 0xF0) && (c <= 0xF4)) {
+			nLen = 4;
+			c &= 0x07;
+		}
+		for (int k = 1; k < nLen; k ++) {
+			if ((p[k] & 0xC0) != 0x80) {
+				nLen = 1;
+				c = *p;
+				break;
+			}
+			c = (c << 6) | (p[k] & 0x3F);
+		}
+		aCode.push_back (c);
+		p += nLen;
+	}
+
+	for (i = 0; i < aCode.size (); i ++) {
+		unsigned c = aCode[i];
+		if ((c >= 0x30A1) && (c <= 0x30F6)) {
+			/* カタカナ→ひらがな */
+			c -= 0x60;
+		} else if ((c >= 0xFF66) && (c <= 0xFF9D)) {
+			/* 半角カナ→ひらがな（後ろの濁点・半濁点もまとめる） */
+			unsigned cNext = (i + 1 < aCode.size ()) ? aCode[i + 1] : 0;
+			c = s_awHalfKana[c - 0xFF66];
+			if (cNext == 0xFF9E) {
+				if (c == 0x3046) {
+					c = 0x3094;
+					i ++;
+				} else if (((c >= 0x304B) && (c <= 0x3053)) || ((c >= 0x3055) && (c <= 0x305D)) ||
+						(c == 0x305F) || (c == 0x3061) || (c == 0x3064) || (c == 0x3066) || (c == 0x3068) ||
+						(c == 0x306F) || (c == 0x3072) || (c == 0x3075) || (c == 0x3078) || (c == 0x307B)) {
+					c ++;
+					i ++;
+				}
+			} else if (cNext == 0xFF9F) {
+				if ((c == 0x306F) || (c == 0x3072) || (c == 0x3075) || (c == 0x3078) || (c == 0x307B)) {
+					c += 2;
+					i ++;
+				}
+			}
+		} else if ((c >= 0xFF01) && (c <= 0xFF5E)) {
+			/* 全角英数記号→ASCII */
+			c -= 0xFEE0;
+		}
+		if ((c >= 'A') && (c <= 'Z')) {
+			c += 'a' - 'A';
+		}
+		aNorm.push_back (c);
+	}
+
+	/* 1段目：清音のかな（漢字は読みの頭のかな、分からない漢字はかなの後ろ） */
+	for (i = 0; i < aNorm.size (); i ++) {
+		unsigned c = aNorm[i], nSjis;
+		if ((c >= 0x3041) && (c <= 0x3096)) {
+			aKey.push_back (ItemSortPlainKana (c));
+		} else if ((c >= 0x3400) && (c <= 0x9FFF)) {
+			unsigned wKana = ItemSortKanjiKana (c, &nSjis);
+			aKey.push_back (wKana ? wKana : (0x10000 + c));
+		} else {
+			aKey.push_back (c);
+		}
+	}
+	/* 区切り（どの字より小さい） */
+	aKey.push_back (0);
+	/* 2段目：濁点なども含めた字（漢字は Shift_JIS の番号で読みの順に） */
+	for (i = 0; i < aNorm.size (); i ++) {
+		unsigned c = aNorm[i], nSjis;
+		if ((c >= 0x3400) && (c <= 0x9FFF)) {
+			ItemSortKanjiKana (c, &nSjis);
+			aKey.push_back (nSjis ? (0x20000 + nSjis) : (0x30000 + c));
+		} else {
+			aKey.push_back (c);
+		}
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：ItemSortGroup													 */
+/* 内容：種類順の並べ替えで使う、種類のグループ番号							 */
+/* 日付：2026/11/11															 */
+/* ========================================================================= */
+static int ItemSortGroup(PITEMINFO pItem)
+{
+	switch (pItem->byType) {
+	case ITEMTYPE_HPUP:
+	case ITEMTYPE_MANAUP:
+	case ITEMTYPE_HPMANAUP:
+	case ITEMTYPE_RESURRECTION:	return 0;		/* 回復 */
+	case ITEMTYPE_RURA:			return 1;		/* 移動 */
+	case ITEMTYPE_USEMAGIC:		return 2;		/* 特技発動 */
+	case ITEMTYPE_SEED:			return 3;		/* 種 */
+	case ITEMTYPE_SAKE:
+	case ITEMTYPE_LIGHT:		return 4;		/* 酒・明かり */
+	case ITEMTYPE_MAGIC:		return 5;		/* 特技の書 */
+	case ITEMTYPE_WEAPON:		return 6;		/* 武器 */
+	case ITEMTYPE_SHILD:		return 7;		/* 盾 */
+	case ITEMTYPE_ARMOR:		return 8;		/* 鎧 */
+	case ITEMTYPE_HELMET:		return 9;		/* 兜 */
+	case ITEMTYPE_EQU_HAND:		return 10;		/* 小手 */
+	case ITEMTYPE_EQU_LEG:		return 11;		/* 靴 */
+	case ITEMTYPE_EQU_ACC1:		return 12;		/* 首飾り */
+	case ITEMTYPE_EQU_ACC2:
+	case ITEMTYPE_EQU_ACC3:		return 13;		/* 指輪 */
+	}
+	return 14;								/* その他 */
+}
+
+/* 並べ替えの1件分 */
+typedef struct _SORTITEMENTRY {
+	int					nOld;										/* 並べ替える前の番号 */
+	WORD				wItemID;									/* アイテムID */
+	int					nGroup;										/* 種類のグループ番号 */
+	std::vector<unsigned>	aKey;									/* 50音キー */
+} SORTITEMENTRY;
+
+/* 種類順の比較（グループ→50音キー→アイテムID） */
+static bool SortItemLessType(const SORTITEMENTRY &a, const SORTITEMENTRY &b)
+{
+	if (a.nGroup != b.nGroup) {
+		return a.nGroup < b.nGroup;
+	}
+	if (a.aKey != b.aKey) {
+		return a.aKey < b.aKey;
+	}
+	return a.wItemID < b.wItemID;
+}
+
+/* 50音順の比較（50音キー→アイテムID） */
+static bool SortItemLessName(const SORTITEMENTRY &a, const SORTITEMENTRY &b)
+{
+	if (a.aKey != b.aKey) {
+		return a.aKey < b.aKey;
+	}
+	return a.wItemID < b.wItemID;
+}
+
+/* ========================================================================= */
+/* 関数名：SortItemList														 */
+/* 内容：アイテムの並びを種類順・50音順に並べ替える（安定ソート）			 */
+/*       pwaItem の先頭 nCount 個を並べ替え、pbyCount（NULL可。預かり所の	 */
+/*       個数）も同じように動かす。pnNewToOld（NULL可）には、新しい番号→	 */
+/*       古い番号の対応を nCount 個返す										 */
+/* 日付：2026/11/11															 */
+/* ========================================================================= */
+void SortItemList(WORD *pwaItem, BYTE *pbyCount, int nCount, BYTE byMode, int *pnNewToOld)
+{
+	std::vector<SORTITEMENTRY> aEntry;
+	std::vector<WORD> aItem;
+	std::vector<BYTE> aCount;
+	int i;
+
+	if ((pwaItem == NULL) || (nCount <= 0)) {
+		return;
+	}
+	if ((byMode != SORTITEMMODE_TYPE) && (byMode != SORTITEMMODE_NAME)) {
+		return;
+	}
+
+	aEntry.resize (nCount);
+	for (i = 0; i < nCount; i ++) {
+		PITEMINFO pItem = NULL;
+		aEntry[i].nOld		= i;
+		aEntry[i].wItemID	= pwaItem[i];
+		aEntry[i].nGroup	= 14;
+		if (pwaItem[i] < (WORD)g_aItemInfo.GetSize ()) {
+			pItem = g_aItemInfo[pwaItem[i]];
+		}
+		if (pItem) {
+			aEntry[i].nGroup = ItemSortGroup (pItem);
+			ItemNameSortKey (pItem->szName, aEntry[i].aKey);
+		}
+	}
+	std::stable_sort (aEntry.begin (), aEntry.end (),
+			(byMode == SORTITEMMODE_TYPE) ? SortItemLessType : SortItemLessName);
+
+	aItem.assign (pwaItem, pwaItem + nCount);
+	if (pbyCount) {
+		aCount.assign (pbyCount, pbyCount + nCount);
+	}
+	for (i = 0; i < nCount; i ++) {
+		pwaItem[i] = aItem[aEntry[i].nOld];
+		if (pbyCount) {
+			pbyCount[i] = aCount[aEntry[i].nOld];
+		}
+		if (pnNewToOld) {
+			pnNewToOld[i] = aEntry[i].nOld;
+		}
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcSORTITEM												 */
+/* 内容：受信データ処理(道具欄・預かり所の並べ替え)							 */
+/* 日付：2026/11/11															 */
+/* ========================================================================= */
+void RecvDataProcSORTITEM(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_SORTITEM pPara = (PCMDPARA_SORTITEM)pData;
+	PCHARINFO pChar;
+	int i, j, nCount, anNewToOld[MAX_LEAVEITEM];
+
+	if (s_dwRecvSize < sizeof (CMDPARA_SORTITEM)) {
+		return;
+	}
+	if (!IsRecvChar (pPara->dwTblID)) {
+		return;
+	}
+	pChar = g_aCharInfo[pPara->dwTblID];
+	if ((pChar == NULL) || (pChar->pID == 0) || (pChar->byNpcType != NPCTYPE_INIT)) {
+		return;
+	}
+	if ((pPara->byMode != SORTITEMMODE_SWAP) && (pPara->byMode != SORTITEMMODE_TYPE) &&
+			(pPara->byMode != SORTITEMMODE_NAME)) {
+		return;
+	}
+
+	if (pPara->byTarget == SORTITEMTARGET_MYITEM) {
+		/* 取り引き中は取り引きの欄が手持ちの番号で動くので、並べ替えない */
+		if (s_mapTrade.find (pChar->dwTblID) != s_mapTrade.end ()) {
+			return;
+		}
+		nCount = GetItemCount (pChar->dwTblID);
+		for (i = 0; i < nCount; i ++) {
+			anNewToOld[i] = i;
+		}
+		if (pPara->byMode == SORTITEMMODE_SWAP) {
+			if ((pPara->byNo1 >= nCount) || (pPara->byNo2 >= nCount) || (pPara->byNo1 == pPara->byNo2)) {
+				return;
+			}
+			WORD wTmp = pChar->waItem[pPara->byNo1];
+			pChar->waItem[pPara->byNo1] = pChar->waItem[pPara->byNo2];
+			pChar->waItem[pPara->byNo2] = wTmp;
+			anNewToOld[pPara->byNo1] = pPara->byNo2;
+			anNewToOld[pPara->byNo2] = pPara->byNo1;
+		} else {
+			SortItemList (pChar->waItem, NULL, nCount, pPara->byMode, anNewToOld);
+		}
+		/* 装備は「何番目か」で覚えているので、旧番号→新番号で付け替える */
+		for (j = 0; j < 10; j ++) {
+			if (pChar->waEqu[j] >= nCount) {
+				continue;
+			}
+			for (i = 0; i < nCount; i ++) {
+				if (anNewToOld[i] == pChar->waEqu[j]) {
+					pChar->waEqu[j] = (WORD)i;
+					break;
+				}
+			}
+		}
+		SendCmdCHARITEM (pChar->pID, pChar->dwTblID);
+
+	} else if (pPara->byTarget == SORTITEMTARGET_LEAVE) {
+		PLEAVEINFO pInfo = NULL;
+
+		if (g_aLeaveInfo.GetSize () == 0) {
+		} else if (g_aLeaveInfo.GetSize () == 1) {
+		} else if (pChar->dwLeaveID >= (DWORD)g_aLeaveInfo.GetSize ()) {
+		} else if (pChar->dwLeaveID) {
+			pInfo = g_aLeaveInfo[pChar->dwLeaveID];
+		}
+		if (pInfo == NULL) {
+			return;
+		}
+		nCount = pInfo->byCount;
+		if (nCount > MAX_LEAVEITEM) {
+			nCount = MAX_LEAVEITEM;
+		}
+		if (pPara->byMode == SORTITEMMODE_SWAP) {
+			if ((pPara->byNo1 >= nCount) || (pPara->byNo2 >= nCount) || (pPara->byNo1 == pPara->byNo2)) {
+				return;
+			}
+			WORD wTmp = pInfo->waItem[pPara->byNo1];
+			BYTE byTmp = pInfo->byItemCount[pPara->byNo1];
+			pInfo->waItem[pPara->byNo1] = pInfo->waItem[pPara->byNo2];
+			pInfo->byItemCount[pPara->byNo1] = pInfo->byItemCount[pPara->byNo2];
+			pInfo->waItem[pPara->byNo2] = wTmp;
+			pInfo->byItemCount[pPara->byNo2] = byTmp;
+		} else {
+			SortItemList (pInfo->waItem, pInfo->byItemCount, nCount, pPara->byMode, NULL);
+		}
+		SendCmdLEAVEITEMGET (pChar->dwTblID);
+	}
 }
 
 /* ========================================================================= */

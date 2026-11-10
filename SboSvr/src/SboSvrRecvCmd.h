@@ -24,6 +24,7 @@ extern int		SearchEvent					(DWORD, DWORD, DWORD);							/* 座標を元にイ�
 extern void		AddCharItem					(DWORD, DWORD);									/* アイテム追加 */
 extern void		DelCharItem					(DWORD, BYTE);									/* アイテム捨てる */
 extern BOOL		AddLeaveItem				(PCHARINFO, WORD);								/* 預かり所にアイテムを1個入れる */
+extern void		SortItemList				(WORD *, BYTE *, int, BYTE, int *);				/* アイテムの並びを種類順・50音順に並べ替える */
 extern BOOL		RecvCmdIsTrading			(DWORD);										/* そのキャラが取り引き中か */
 extern BOOL		RecvCmdTradeClear			(DWORD);										/* そのキャラの取り引きの状態を消す（傭兵が帰る時など。取り引き中だったら TRUE） */
 extern BOOL		CheckCharItem				(DWORD, DWORD, BYTE);							/* アイテム持ってるかチェック */

@@ -145,6 +145,7 @@ enum {
 	WNDTYPE_MAKER,												/* 作り手（レシピ）：作れる物の一覧・確認 */
 	WNDTYPE_TOWNWARP,											/* 町転送：行き先の選択 */
 	WNDTYPE_QUEST,												/* ギルドの依頼：一覧・進み具合 */
+	WNDTYPE_SORTMENU,											/* 並べ替え：入れ替え・種類順・50音順（byData1=対象 SORTITEMTARGET_*） */
 };
 
 /* 依頼ウィンドウ(WNDTYPE_QUEST)の nType2 */
