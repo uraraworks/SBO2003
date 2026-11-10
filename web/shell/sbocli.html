@@ -1835,6 +1835,10 @@
 	var sharp = document.getElementById('sbo-sharp');
 	var sharpCtx = null;
 	var sharpN = 0;	/* 0: 使わない。2 以上: この倍率で拡大して描く */
+	var sharpW = 0, sharpH = 0;	/* 表示する大きさ（画面の画素） */
+	/* 整数倍に拡大した絵を置く、見せない canvas */
+	var sharpBig = document.createElement('canvas');
+	var sharpBigCtx = null;
 
 	function updateSharp() {
 		var w = canvas.width || 480;
@@ -1846,6 +1850,11 @@
 			n = Math.max(2, Math.ceil(d));
 		}
 		sharpN = n;
+		if (n > 0) {
+			var rc = canvas.getBoundingClientRect();
+			sharpW = Math.max(1, Math.round(rc.width * dpr));
+			sharpH = Math.max(1, Math.round(rc.height * dpr));
+		}
 		sharp.classList.toggle('sbo-on', n > 0);
 		if (n > 0) {
 			drawSharp();
@@ -1860,14 +1869,25 @@
 		if (!w || !h) {
 			return;
 		}
-		if (sharp.width !== w * sharpN || sharp.height !== h * sharpN || !sharpCtx) {
-			sharp.width = w * sharpN;
-			sharp.height = h * sharpN;
+		if (sharpBig.width !== w * sharpN || sharpBig.height !== h * sharpN || !sharpBigCtx) {
+			sharpBig.width = w * sharpN;
+			sharpBig.height = h * sharpN;
 			/* 大きさを変えると設定が初期化されるので、ここで毎回取り直す */
+			sharpBigCtx = sharpBig.getContext('2d', { alpha: false });
+		}
+		sharpBigCtx.imageSmoothingEnabled = false;
+		sharpBigCtx.drawImage(canvas, 0, 0, sharpBig.width, sharpBig.height);
+		/* 縮めるのもここで画面の画素ぴったりの大きさへ描いて、ブラウザには縮めさせない。
+		   iPhone（Safari・Chrome）は大きい canvas を縮めて見せる時に滑らかにしないことがあり、
+		   線の太さが 2 画素と 3 画素でばらついて、文字が一部伸びたように見えていた */
+		if (sharp.width !== sharpW || sharp.height !== sharpH || !sharpCtx) {
+			sharp.width = sharpW;
+			sharp.height = sharpH;
 			sharpCtx = sharp.getContext('2d', { alpha: false });
 		}
-		sharpCtx.imageSmoothingEnabled = false;
-		sharpCtx.drawImage(canvas, 0, 0, sharp.width, sharp.height);
+		sharpCtx.imageSmoothingEnabled = true;
+		sharpCtx.imageSmoothingQuality = 'high';
+		sharpCtx.drawImage(sharpBig, 0, 0, sharp.width, sharp.height);
 	}
 	/* ブラウザの拡大縮小や、表示倍率の違う画面へウィンドウを移した時 */
 	(function watchDpr() {
