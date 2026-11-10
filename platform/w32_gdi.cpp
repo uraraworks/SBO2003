@@ -1080,11 +1080,44 @@ int SetStretchBltMode(HDC, int)
 #ifdef W32_USE_TTF
 #define FONT_PATH_REGULAR	"/font/BIZUDGothic-Regular.ttf"
 #define FONT_PATH_EMOJI		"/font/NotoEmoji-Regular.ttf"	/* 白黒の絵文字（文字色・縁取りがそのまま効く） */
+#define FONT_PATH_DOT16		"/font/DotGothic16-Regular.ttf"	/* 16 ドットのマス用のドット絵フォント */
 
 /* 大きさごとに TTF_Font を共有する */
 static std::map<int, TTF_Font *> s_mapTtf;
 static std::map<TTF_Font *, int> s_mapTtfSize;		/* TTF_Font → 1 文字のマスの大きさ（CreateFont の高さ） */
 static std::map<int, TTF_Font *> s_mapEmoji;		/* マスの大きさごとの絵文字フォント */
+static std::map<TTF_Font *, TTF_Font *> s_mapTtfFallback;	/* ドット絵フォント → 無い字を描く BIZ UDゴシック */
+static std::map<TTF_Font *, int> s_mapTtfAscent;	/* 行の中の字の位置をそろえるための高さ（BIZ UDゴシックの値） */
+static std::map<TTF_Font *, int> s_mapTtfHeight;
+
+static TTF_Font *OpenBizTtf(int nSize)
+{
+	/* 字は 1 ドット小さく開き、マス（nSize）の中に置く。
+	   BIZ UDゴシックは字がマスいっぱいに描かれるので、行を nSize ドットおきに並べると
+	   下の行の黒縁取りが上の行の最下段を塗りつぶしてしまう。ＭＳ ゴシックと同じく
+	   字の右と下に 1 ドットのすき間を空ける */
+	int nGlyph = (nSize >= 10) ? nSize - 1 : nSize;
+	TTF_Font *pFont = TTF_OpenFont(FONT_PATH_REGULAR, nGlyph);
+	if (pFont == NULL) {
+		printf("[w32] フォントを開けません: %s\n", TTF_GetError());
+	} else {
+		/* MS ゴシックのビットマップに近づけるため、ヒンティングを強めにかける */
+		TTF_SetFontHinting(pFont, TTF_HINTING_MONO);
+	}
+	return pFont;
+}
+
+/* 字の位置（ベースライン）と行の高さ。ドット絵フォントも BIZ UDゴシックと同じ所に字が来るようにする */
+static int FontAscentOf(TTF_Font *pTtf)
+{
+	std::map<TTF_Font *, int>::iterator it = s_mapTtfAscent.find(pTtf);
+	return (it != s_mapTtfAscent.end()) ? it->second : TTF_FontAscent(pTtf);
+}
+static int FontHeightOf(TTF_Font *pTtf)
+{
+	std::map<TTF_Font *, int>::iterator it = s_mapTtfHeight.find(pTtf);
+	return (it != s_mapTtfHeight.end()) ? it->second : TTF_FontHeight(pTtf);
+}
 
 static TTF_Font *GetTtf(int nSize)
 {
@@ -1100,17 +1133,27 @@ static TTF_Font *GetTtf(int nSize)
 	   元の Windows 版は太字の無い「ＭＳ ゴシック」を太字指定で使っていて、Windows が 1 ドット右へ
 	   重ねる疑似太字を作っていた。同じように重ねると字がマス（nSize）の横幅いっぱいになり、
 	   黒縁取りで隣の字とくっついて読みにくい（特にスマホで縮めて表示した時）ので、重ねない */
-	/* 字は 1 ドット小さく開き、マス（nSize）の中に置く。
-	   BIZ UDゴシックは字がマスいっぱいに描かれるので、行を nSize ドットおきに並べると
-	   下の行の黒縁取りが上の行の最下段を塗りつぶしてしまう。ＭＳ ゴシックと同じく
-	   字の右と下に 1 ドットのすき間を空ける */
-	int nGlyph = (nSize >= 10) ? nSize - 1 : nSize;
-	TTF_Font *pFont = TTF_OpenFont(FONT_PATH_REGULAR, nGlyph);
-	if (pFont == NULL) {
-		printf("[w32] フォントを開けません: %s\n", TTF_GetError());
-	} else {
-		/* MS ゴシックのビットマップに近づけるため、ヒンティングを強めにかける */
-		TTF_SetFontHinting(pFont, TTF_HINTING_MONO);
+	TTF_Font *pBiz = OpenBizTtf(nSize);
+	TTF_Font *pFont = pBiz;
+	if (nSize == 16 && pBiz) {
+		/* 16 ドットのマス（ウィンドウ・メッセージなど、ほとんどの字）はドット絵フォントで描く。
+		   BIZ UDゴシックを 15 ドットに縮めると、線が 1 ドットの所と 2 ドットの所が混ざって
+		   字の一部が太く・伸びたように見える。DotGothic16 は 16 ドットのマスに 15 ドットの字が
+		   ドットで描いてあるので、線がどこも 1 ドットでそろう（元の ＭＳ ゴシックの見た目にも近い）。
+		   ドット絵フォントに無い字は BIZ UDゴシックで描く */
+		TTF_Font *pDot = TTF_OpenFont(FONT_PATH_DOT16, nSize);
+		if (pDot == NULL) {
+			printf("[w32] フォントを開けません: %s\n", TTF_GetError());
+		} else {
+			TTF_SetFontHinting(pDot, TTF_HINTING_MONO);
+			s_mapTtfFallback[pDot] = pBiz;
+			s_mapTtfSize[pBiz] = nSize;
+			s_mapTtfAscent[pDot] = TTF_FontAscent(pBiz);
+			s_mapTtfHeight[pDot] = TTF_FontHeight(pBiz);
+			pFont = pDot;
+		}
+	}
+	if (pFont) {
 		s_mapTtfSize[pFont] = nSize;
 	}
 	s_mapTtf[nSize] = pFont;
@@ -1245,7 +1288,14 @@ static void SplitTextRuns(TTF_Font *pMain, const std::string &strUtf8, std::vect
 				Utf8Next(strUtf8, i + n, dwNext);
 			}
 			BOOL bWantEmoji = (dwCode >= 0x1F000 || dwNext == 0xFE0F) ? TRUE : FALSE;
-			if (bWantEmoji || !TTF_GlyphIsProvided32(pMain, dwCode)) {
+			if (!bWantEmoji && !TTF_GlyphIsProvided32(pMain, dwCode)) {
+				/* ドット絵フォントに無い字は BIZ UDゴシックで */
+				std::map<TTF_Font *, TTF_Font *>::iterator itFb = s_mapTtfFallback.find(pMain);
+				if (itFb != s_mapTtfFallback.end() && TTF_GlyphIsProvided32(itFb->second, dwCode)) {
+					pUse = itFb->second;
+				}
+			}
+			if (pUse == pMain && (bWantEmoji || !TTF_GlyphIsProvided32(pMain, dwCode))) {
 				if (!bEmojiChecked) {
 					pEmoji = GetEmojiTtf(pMain);
 					bEmojiChecked = TRUE;
@@ -1279,6 +1329,8 @@ static int LayoutTextCells(TTF_Font *pMain, const std::string &strUtf8, std::vec
 	aCell.clear();
 	std::map<TTF_Font *, int>::iterator itSize = s_mapTtfSize.find(pMain);
 	int nCell = (itSize != s_mapTtfSize.end()) ? itSize->second : TTF_FontHeight(pMain);
+	std::map<TTF_Font *, TTF_Font *>::iterator itFb = s_mapTtfFallback.find(pMain);
+	TTF_Font *pFallback = (itFb != s_mapTtfFallback.end()) ? itFb->second : NULL;
 	std::vector<W32TextRun> aRun;
 	SplitTextRuns(pMain, strUtf8, aRun);
 	int nX = 0;
@@ -1301,9 +1353,11 @@ static int LayoutTextCells(TTF_Font *pMain, const std::string &strUtf8, std::vec
 			cell.nX = nX;
 			aCell.push_back(cell);
 			int nStep = nCell;
-			if (aRun[r].pTtf == pMain) {
+			if (aRun[r].pTtf == pMain || aRun[r].pTtf == pFallback) {
 				int nMinX, nMaxX, nMinY, nMaxY, nAdv = 0;
-				if (TTF_GlyphMetrics32(pMain, dwCode, &nMinX, &nMaxX, &nMinY, &nMaxY, &nAdv) == 0 &&
+				if (dwCode < 0x80 || (dwCode >= 0xFF61 && dwCode <= 0xFF9F)) {
+					nStep = nCell / 2;	/* 半角（英数字・半角カナ） */
+				} else if (TTF_GlyphMetrics32(aRun[r].pTtf, dwCode, &nMinX, &nMaxX, &nMinY, &nMaxY, &nAdv) == 0 &&
 						nAdv * 2 <= nCell) {
 					nStep = nCell / 2;	/* 半角 */
 				}
@@ -1347,7 +1401,7 @@ static const W32TextMask *GetTextMask(TTF_Font *pTtf, const std::string &strUtf8
 	W32TextMask mask;
 	mask.strKey = strKey;
 	mask.cx = nAdvance;
-	mask.cy = TTF_FontHeight(pTtf);
+	mask.cy = FontHeightOf(pTtf);
 	for (size_t c = 0; c < aCell.size(); c ++) {
 		aSurf[c] = TTF_RenderUTF8_Solid(aCell[c].pTtf, aCell[c].str.c_str(), clWhite);
 		if (aSurf[c]) {
@@ -1363,13 +1417,13 @@ static const W32TextMask *GetTextMask(TTF_Font *pTtf, const std::string &strUtf8
 		return NULL;
 	}
 	mask.aMask.assign((size_t)mask.cx * mask.cy, 0);
-	int nAscent = TTF_FontAscent(pTtf);
+	int nAscent = FontAscentOf(pTtf);
 	for (size_t c = 0; c < aCell.size(); c ++) {
 		SDL_Surface *pSurf = aSurf[c];
 		if (pSurf == NULL) {
 			continue;
 		}
-		int nOffY = (aCell[c].pTtf == pTtf) ? 0 : nAscent - TTF_FontAscent(aCell[c].pTtf);
+		int nOffY = nAscent - TTF_FontAscent(aCell[c].pTtf);
 		SDL_LockSurface(pSurf);
 		for (int y = 0; y < pSurf->h; y ++) {
 			int dy = y + nOffY;
@@ -1492,7 +1546,7 @@ BOOL GetTextExtentPoint32(HDC hDC, LPCSTR pszText, int nLen, LPSIZE pSize)
 	if (pTtf == NULL) {
 		return FALSE;
 	}
-	pSize->cy = TTF_FontHeight(pTtf);
+	pSize->cy = FontHeightOf(pTtf);
 	if (pszText == NULL || nLen <= 0) {
 		return TRUE;
 	}
@@ -1512,9 +1566,9 @@ BOOL GetTextMetrics(HDC hDC, LPTEXTMETRIC pTm)
 	if (pTtf == NULL) {
 		return FALSE;
 	}
-	pTm->tmHeight = TTF_FontHeight(pTtf);
-	pTm->tmAscent = TTF_FontAscent(pTtf);
-	pTm->tmDescent = -TTF_FontDescent(pTtf);
+	pTm->tmHeight = FontHeightOf(pTtf);
+	pTm->tmAscent = FontAscentOf(pTtf);
+	pTm->tmDescent = pTm->tmHeight - pTm->tmAscent;
 	std::map<TTF_Font *, int>::iterator itSize = s_mapTtfSize.find(pTtf);
 	int nCell = (itSize != s_mapTtfSize.end()) ? itSize->second : TTF_FontHeight(pTtf);
 	pTm->tmAveCharWidth = nCell / 2;

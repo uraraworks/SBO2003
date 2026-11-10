@@ -58,6 +58,7 @@ tools/server/run.sh       # http://localhost:8080/ で遊べます（停止は t
 | spessasynth_lib（`web/vendor/spessasynth/`、BGM の MIDI シンセ） | [Apache License 2.0](web/vendor/spessasynth/LICENSE) |
 | GeneralUser GS（`web/soundfont/`、サウンドフォント） | [GeneralUser GS License](web/soundfont/GeneralUserGS-LICENSE.txt) |
 | BIZ UDGothic（`web/font/`） | [SIL Open Font License 1.1](web/font/OFL.txt) |
+| DotGothic16（`web/font/DotGothic16-Regular.ttf`、16 ドットの字） | [SIL Open Font License 1.1](web/font/OFL-DotGothic16.txt) |
 | Noto Emoji（`web/font/NotoEmoji-Regular.ttf`、白黒の絵文字） | [SIL Open Font License 1.1](web/font/OFL-NotoEmoji.txt) |
 
 ---

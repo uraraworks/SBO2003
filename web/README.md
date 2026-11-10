@@ -149,7 +149,10 @@ web/replace   … Windows 専用クラスの Web 版（Windows 版の実装は�
   白黒なので、文字色や縁取りがほかの文字と同じように効きます。キャラ名には使えません（`SboTextIsNameSafe`）。
 - **画面**: 最初に作られたトップレベルウィンドウを canvas に対応させます。GDI は 32bit DIB に描き、
   描画が終わったら canvas へ転送します。
-- **文字**: BIZ UDゴシック（`web/font/`、SIL Open Font License）を SDL_ttf で 1bit 描画します。
+- **文字**: SDL_ttf で 1bit 描画します。16 ドットのマスの字（ウィンドウ・メッセージなど、ほとんどの字）は
+  16 ドット用のドット絵フォント DotGothic16（`web/font/DotGothic16-Regular.ttf`）で、それ以外の大きさと
+  DotGothic16 に無い字は BIZ UDゴシック（`web/font/`）で描きます（どちらも SIL Open Font License）。
+  BIZ UDゴシックを 15 ドットに縮めると線が 1 ドットと 2 ドットの所が混ざるため、16 ドットはドット絵フォントにしています。
 - **入力欄・ボタン**: EDIT / BUTTON コントロールは HTML の `<input>` / `<button>` を重ねて代用します。
 - **リソース DLL**: `tools/web/gen_resources.py` が `.rc` からリソース表を作り、
   `FindResource` / `LoadResource` / `LoadString` はその表と preload したファイルを使います。
