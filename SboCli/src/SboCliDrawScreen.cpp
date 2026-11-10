@@ -2410,6 +2410,247 @@ void DrawMapLightEdit(void)
 }
 
 /* ========================================================================= */
+/* 関数名：	DrawSnowFall													 */
+/* 内容：	しとしと降る雪の描画											 */
+/*			昔は32ドットの雪パーツを全部のマスに敷いていたので、同じ並びの	 */
+/*			点が格子になって見えていた。雪粒を1つずつ、奥・中・手前の3段で	 */
+/*			大きさと速さを変えて、ゆらゆら揺れながら落ちるように描く。		 */
+/*			雪粒の場所は時刻だけから決める(毎フレームの更新は要らない)。	 */
+/*			歩くと手前の雪ほど大きく流れて、奥行きが出る					 */
+/* 日付：	2026/11/10														 */
+/* ========================================================================= */
+#define SNOW_COUNT_DOT		70		/* いちばん奥の雪粒(1ドット)の数 */
+#define SNOW_COUNT_FAR		45		/* 奥の雪粒(3ドット)の数 */
+#define SNOW_COUNT_MID		22		/* 中の雪粒(5ドット)の数 */
+#define SNOW_COUNT_NEAR		7		/* 手前の雪粒(7ドット)の数 */
+#define SNOW_COUNT			(SNOW_COUNT_DOT + SNOW_COUNT_FAR + SNOW_COUNT_MID + SNOW_COUNT_NEAR)
+
+typedef struct _SNOWFLAKE {
+	float	fX, fY;			/* 時刻0の場所 */
+	float	fSpeed;			/* 落ちる速さ(ドット/秒) */
+	float	fSwayAmp;		/* 横に揺れる幅(ドット) */
+	float	fSwayFreq;		/* 揺れの速さ */
+	float	fPhase;			/* 揺れのずれ */
+	float	fParallax;		/* 歩いた時の流れ方(手前ほど大きい) */
+	BYTE	byLayer;		/* 0=いちばん奥 1=奥 2=中 3=手前 */
+} SNOWFLAKE;
+
+static SNOWFLAKE s_aSnow[SNOW_COUNT];
+static BOOL s_bSnowInit = FALSE;
+/* 雪の描き方(試作の見比べ用) 0=昔のパーツだけ 1=雪粒だけ 2=両方 3=描かない 4=雪粒＋曇り空 */
+static int s_nSnowStyle = 4;
+
+/* 決まった並びの乱数(起動ごとに同じ降り方) */
+static float SnowRand(DWORD &dwSeed)
+{
+	dwSeed = dwSeed * 1103515245 + 12345;
+	return (float)((dwSeed >> 8) & 0xFFFF) / 65535.0f;
+}
+
+static void InitSnowFall(void)
+{
+	int i;
+	DWORD dwSeed = 20261110;
+	float fW = (float)(SCRSIZEX + 32), fH = (float)(SCRSIZEY + 32);
+
+	for (i = 0; i < SNOW_COUNT; i ++) {
+		SNOWFLAKE *p = &s_aSnow[i];
+		p->byLayer = (i < SNOW_COUNT_DOT) ? 0 : (i < SNOW_COUNT_DOT + SNOW_COUNT_FAR) ? 1 :
+					  (i < SNOW_COUNT_DOT + SNOW_COUNT_FAR + SNOW_COUNT_MID) ? 2 : 3;
+		p->fX = SnowRand (dwSeed) * fW;
+		p->fY = SnowRand (dwSeed) * fH;
+		p->fPhase = SnowRand (dwSeed) * 6.2832f;
+		p->fSwayFreq = 0.5f + SnowRand (dwSeed) * 0.9f;
+		switch (p->byLayer) {
+		case 0:
+			p->fSpeed	= 12.0f + SnowRand (dwSeed) * 6.0f;
+			p->fSwayAmp	= 1.5f + SnowRand (dwSeed) * 2.0f;
+			p->fParallax = 0.7f;
+			break;
+		case 1:
+			p->fSpeed	= 17.0f + SnowRand (dwSeed) * 8.0f;
+			p->fSwayAmp	= 2.0f + SnowRand (dwSeed) * 3.0f;
+			p->fParallax = 0.8f;
+			break;
+		case 2:
+			p->fSpeed	= 26.0f + SnowRand (dwSeed) * 10.0f;
+			p->fSwayAmp	= 4.0f + SnowRand (dwSeed) * 5.0f;
+			p->fParallax = 0.95f;
+			break;
+		default:
+			p->fSpeed	= 38.0f + SnowRand (dwSeed) * 14.0f;
+			p->fSwayAmp	= 7.0f + SnowRand (dwSeed) * 7.0f;
+			p->fParallax = 1.15f;
+			break;
+		}
+	}
+	s_bSnowInit = TRUE;
+}
+
+/* 1ドットを白へ寄せる(nAlpha は 0〜256) */
+static inline void SnowPlot(LPBYTE pBits, int nWidth, int nHeight, int x, int y, int nAlpha)
+{
+	if ((x < 0) || (y < 0) || (x >= nWidth) || (y >= nHeight) || (nAlpha <= 0)) {
+		return;
+	}
+	PDWORD pDst = (PDWORD)(pBits + (nWidth * 4) * (nHeight - 1 - y)) + x;
+	DWORD dw = *pDst;
+	int r = (dw >> 16) & 0xFF, g = (dw >> 8) & 0xFF, b = dw & 0xFF;
+	/* ほんの少し青みのある白 */
+	r += ((246 - r) * nAlpha) >> 8;
+	g += ((250 - g) * nAlpha) >> 8;
+	b += ((255 - b) * nAlpha) >> 8;
+	*pDst = (dw & 0xFF000000) | (r << 16) | (g << 8) | b;
+}
+
+/* 1ドットを少し暗くする(雪の地面の上でも手前の雪粒が見えるように) */
+static inline void SnowShade(LPBYTE pBits, int nWidth, int nHeight, int x, int y, int nAlpha)
+{
+	if ((x < 0) || (y < 0) || (x >= nWidth) || (y >= nHeight) || (nAlpha <= 0)) {
+		return;
+	}
+	PDWORD pDst = (PDWORD)(pBits + (nWidth * 4) * (nHeight - 1 - y)) + x;
+	DWORD dw = *pDst;
+	int r = (dw >> 16) & 0xFF, g = (dw >> 8) & 0xFF, b = dw & 0xFF;
+	r -= ((r - 110) * nAlpha) >> 8;
+	g -= ((g - 125) * nAlpha) >> 8;
+	b -= ((b - 160) * nAlpha) >> 8;
+	*pDst = (dw & 0xFF000000) | (max (r, 0) << 16) | (max (g, 0) << 8) | max (b, 0);
+}
+
+/* 雪粒の形(中心ほど白い丸) */
+static const BYTE s_abySnowShape3[3][3] = {
+	{  0, 200,   0},
+	{200, 255, 200},
+	{  0, 200,   0},
+};
+static const BYTE s_abySnowShape5[5][5] = {
+	{  0, 150, 200, 150,   0},
+	{150, 255, 255, 255, 150},
+	{200, 255, 255, 255, 200},
+	{150, 255, 255, 255, 150},
+	{  0, 150, 200, 150,   0},
+};
+static const BYTE s_abySnowShape7[7][7] = {
+	{  0,   0, 120, 170, 120,   0,   0},
+	{  0, 170, 255, 255, 255, 170,   0},
+	{120, 255, 255, 255, 255, 255, 120},
+	{170, 255, 255, 255, 255, 255, 170},
+	{120, 255, 255, 255, 255, 255, 120},
+	{  0, 170, 255, 255, 255, 170,   0},
+	{  0,   0, 120, 170, 120,   0,   0},
+};
+
+/* 雪粒を1つ描く。右下へ1ドットずらした淡い影を先に描いて、白い地面でも見えるように */
+static void SnowStamp(LPBYTE pBits, int nWidth, int nHeight, int x, int y, const BYTE *pShape, int nSize, int nShade)
+{
+	int xx, yy, nHalf = nSize / 2;
+
+	for (yy = 0; yy < nSize; yy ++) {
+		for (xx = 0; xx < nSize; xx ++) {
+			SnowShade (pBits, nWidth, nHeight, x - nHalf + xx + 1, y - nHalf + yy + 1, pShape[yy * nSize + xx] * nShade / 255);
+		}
+	}
+	for (yy = 0; yy < nSize; yy ++) {
+		for (xx = 0; xx < nSize; xx ++) {
+			SnowPlot (pBits, nWidth, nHeight, x - nHalf + xx, y - nHalf + yy, pShape[yy * nSize + xx]);
+		}
+	}
+}
+
+static void DrawSnowFall(void)
+{
+	int i, nWidth, nHeight, nSX, nSY, nCamX, nCamY;
+	float fTime, fW, fH;
+	LPBYTE pBits;
+	PCHARINFO pMyChar;
+
+	if (g_nMyCharID < 0) {
+		return;
+	}
+	pBits = g_pDibDrawMap->GetBits ();
+	if (pBits == NULL) {
+		return;
+	}
+	if (s_bSnowInit == FALSE) {
+		InitSnowFall ();
+	}
+	pMyChar	= g_aCharInfo[g_nMyCharID];
+	nWidth	= g_pDibDrawMap->Width ();
+	nHeight	= g_pDibDrawMap->Height ();
+	/* 画面に見えている所の左上(歩き中はずれる) */
+	nSX = 32 - anPosAddTblX[pMyChar->byDirection] * pMyChar->byDotMove;
+	nSY = 32 - anPosAddTblY[pMyChar->byDirection] * pMyChar->byDotMove;
+	/* 見ている場所(ドット)。歩くと雪が後ろへ流れる */
+	nCamX = (int)pMyChar->dwX * 32 - anPosAddTblX[pMyChar->byDirection] * pMyChar->byDotMove;
+	nCamY = (int)pMyChar->dwY * 32 - anPosAddTblY[pMyChar->byDirection] * pMyChar->byDotMove;
+
+	fTime = (float)(timeGetTime () % 3600000) / 1000.0f;
+	fW = (float)(SCRSIZEX + 32);
+	fH = (float)(SCRSIZEY + 32);
+
+	/* 雪の日の曇り空: 画面を少しだけ青灰色に沈めて、白い雪粒が浮くように(見比べ用) */
+	if (s_nSnowStyle == 4) {
+		int x, y;
+		for (y = max (nSY, 0); y < min (nSY + SCRSIZEY, nHeight); y ++) {
+			PDWORD pDst = (PDWORD)(pBits + (nWidth * 4) * (nHeight - 1 - y)) + max (nSX, 0);
+			for (x = max (nSX, 0); x < min (nSX + SCRSIZEX, nWidth); x ++, pDst ++) {
+				DWORD dw = *pDst;
+				int r = (dw >> 16) & 0xFF, g = (dw >> 8) & 0xFF, b = dw & 0xFF;
+				r += ((150 - r) * 42) >> 8;
+				g += ((165 - g) * 42) >> 8;
+				b += ((195 - b) * 42) >> 8;
+				*pDst = (dw & 0xFF000000) | (r << 16) | (g << 8) | b;
+			}
+		}
+	}
+
+	for (i = 0; i < SNOW_COUNT; i ++) {
+		SNOWFLAKE *p = &s_aSnow[i];
+		float fX, fY;
+		int x, y;
+
+		/* ゆるい風で少しだけ右へ流れる */
+		fX = p->fX + fTime * 3.0f * p->fParallax + p->fSwayAmp * sinf (fTime * p->fSwayFreq + p->fPhase) - nCamX * p->fParallax;
+		fY = p->fY + fTime * p->fSpeed - nCamY * p->fParallax;
+		fX = fmodf (fX, fW);
+		if (fX < 0.0f) {
+			fX += fW;
+		}
+		fY = fmodf (fY, fH);
+		if (fY < 0.0f) {
+			fY += fH;
+		}
+		x = nSX + (int)fX - 16;
+		y = nSY + (int)fY - 16;
+
+		switch (p->byLayer) {
+		case 0:		/* いちばん奥: 1ドット、うっすら */
+			SnowPlot (pBits, nWidth, nHeight, x, y, 160);
+			break;
+		case 1:
+			SnowStamp (pBits, nWidth, nHeight, x, y, &s_abySnowShape3[0][0], 3, 60);
+			break;
+		case 2:
+			SnowStamp (pBits, nWidth, nHeight, x, y, &s_abySnowShape5[0][0], 5, 80);
+			break;
+		default:
+			SnowStamp (pBits, nWidth, nHeight, x, y, &s_abySnowShape7[0][0], 7, 90);
+			break;
+		}
+	}
+}
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+/* 試作の見比べ用: 雪の描き方を切り替える(0=昔のパーツ 1=雪粒 2=両方) */
+extern "C" EMSCRIPTEN_KEEPALIVE void SboWebSetSnowStyle(int nStyle)
+{
+	s_nSnowStyle = nStyle;
+}
+#endif
+
+/* ========================================================================= */
 /* 関数名：DrawWeather														 */
 /* 内容：天候の描画															 */
 /* 日付：2004/07/19															 */
@@ -2423,6 +2664,13 @@ void DrawWeather(void)
 		return;
 	}
 	if (g_bWeatherDraw == FALSE) {
+		return;
+	}
+	/* 雪は雪粒を降らせる */
+	if ((g_pMapInfo->byWeather == 1) && (s_nSnowStyle != 0) && (s_nSnowStyle != 2)) {
+		if (s_nSnowStyle != 3) {
+			DrawSnowFall ();
+		}
 		return;
 	}
 
@@ -2518,6 +2766,10 @@ void DrawWeather(void)
 				g_pDibDrawMap->BltLevel (x * 32, y * 32, 32, 32, g_apDibMap[no], xx, yy, byLevel, TRUE);
 			}
 		}
+	}
+	/* 雪粒をパーツに重ねる(見比べ用) */
+	if ((g_pMapInfo->byWeather == 1) && (s_nSnowStyle == 2)) {
+		DrawSnowFall ();
 	}
 }
 
