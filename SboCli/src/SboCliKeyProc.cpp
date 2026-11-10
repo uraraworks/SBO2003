@@ -8080,7 +8080,11 @@ void CmdProcHanasu(PWNDINFO pWnd)
 			}
 		}
 		SendCmdTALKRAND (pChar2->dwTblID);
-		pChar2->byDirection = abyDirectionTbl[pChar->byDirection];
+		/* ギルドの人はこちらを向く。依頼の見える物(@q)は宝箱や光もあるので向きを変えない
+		   （宝箱の絵は向きによって別の絵（化け箱）になっている） */
+		if (pChar2->pszNpcSpeech[1] == 'g') {
+			pChar2->byDirection = abyDirectionTbl[pChar->byDirection];
+		}
 		int nNo = GetWindowID (g_dwMsgIDCommand);
 		if (nNo >= 0) {
 			EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
@@ -8347,6 +8351,33 @@ BOOL CmdProcSKey(void)
 }
 
 /* ========================================================================= */
+/* 関数名：SiraberuQuestNpc													 */
+/* 内容：足元に依頼の見える物(@q)があれば話しかけたことにする				 */
+/*		 （見える宝箱は上に乗れるので、乗って調べても開けられるように）		 */
+/*		 戻り値：見つけて知らせた時 TRUE									 */
+/* ========================================================================= */
+static BOOL SiraberuQuestNpc(PCHARINFO pChar)
+{
+	int i, nCount = g_aCharInfo.GetSize ();
+
+	for (i = 0; i < nCount; i ++) {
+		PCHARINFO pTmp = (PCHARINFO)g_aCharInfo[i];
+		if ((pTmp == pChar) || (pTmp->byNpcType != NPCTYPE_QUESTNPC)) {
+			continue;
+		}
+		if ((pTmp->dwX != pChar->dwX) || (pTmp->dwY != pChar->dwY)) {
+			continue;
+		}
+		if ((pTmp->pszNpcSpeech == NULL) || (pTmp->pszNpcSpeech[0] != '@') || (pTmp->pszNpcSpeech[1] != 'q')) {
+			continue;
+		}
+		SendCmdTALKRAND (pTmp->dwTblID);
+		return TRUE;
+	}
+	return FALSE;
+}
+
+/* ========================================================================= */
 /* 関数名：CmdProcSiraberu													 */
 /* 内容：コマンド処理(調べる)												 */
 /* 日付：2003/07/12															 */
@@ -8424,6 +8455,9 @@ BOOL CmdProcSiraberu(PWNDINFO pWnd)
 				}
 			}
 			bResult = FALSE;
+
+		} else if (SiraberuQuestNpc (pChar)) {
+			/* 足元の依頼の宝箱などを調べた（返事はサーバーから届く） */
 
 		} else {
 			PWNDINFO pWndTmp;
