@@ -1019,7 +1019,12 @@ void RenewCharPosInfo(void)
 			continue;
 		}
 
-		g_aCharPos[nNo].Add (i);
+		/* 依頼の見える物（宝箱・光）は同じ行の中で先に描く（上に乗った人が宝箱に隠れていた） */
+		if (pChar->byNpcType == NPCTYPE_QUESTNPC) {
+			g_aCharPos[nNo].InsertAt (0, i);
+		} else {
+			g_aCharPos[nNo].Add (i);
+		}
 		if (pMyChar != pChar) {
 			RenewMapDark (pChar);
 		}
