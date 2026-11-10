@@ -9,6 +9,7 @@
 #pragma once
 
 #include "CharProcBase.h"
+#include <vector>
 
 /* ========================================================================= */
 /* クラス宣言																 */
@@ -38,6 +39,8 @@ protected:
 	void	SyncParty		(PCHARINFO pOwner, DWORD dwTime);		/* 仲間の一覧とHP・Manaを知らせる */
 	BOOL	IsInTail		(PCHARINFO pOwner);						/* 雇い主の「ついていく」の列に入っているか */
 	PCHARINFO GetTailEnd	(PCHARINFO pOwner);						/* 雇い主の列のいちばん後ろ */
+	void	BuildPathField	(int nMaxDist, BOOL bChars);			/* 自分のまわりの道のりの表を作る */
+	BOOL	ProcUseItem		(PCHARINFO pOwner, DWORD dwTime);		/* 持たせてもらった回復の道具を使う */
 
 protected:
 	DWORD	m_dwOwnerX;									/* 前に見た雇い主の位置(横) */
@@ -57,6 +60,19 @@ protected:
 	WORD	m_wSyncHP;									/* 最後に知らせたHP */
 	WORD	m_wSyncMana;								/* 最後に知らせたMana */
 	BYTE	m_bySyncState;								/* 最後に知らせた状態 */
+	DWORD	m_dwLastItemCheck;							/* 最後に道具を使うか考えた時間 */
+
+	/* 道のりの表（道さがしの結果を少しの間使い回す。敵の候補ごとに道さがしをし直さないため） */
+	struct PATHFIELD {
+		BOOL	bValid;									/* 作ってあるか */
+		DWORD	dwMapID;								/* 作った時のマップ */
+		int		nSX, nSY;								/* 作った時の自分の位置 */
+		int		nMaxDist;								/* 調べた広さ(歩数) */
+		DWORD	dwTime;									/* 作った時間 */
+		int		nOX, nOY, nW;							/* 表の左上と幅 */
+		std::vector<short> anFirst;						/* そのマスへ行く最初の向き(-1=行けない) */
+		std::vector<short> anDist;						/* そのマスまでの歩数 */
+	} m_aPathField[2];									/* [0]=人を見ない [1]=人のマスは通れない */
 } CCharProcMERCENARY, *PCCharProcMERCENARY;
 
 
@@ -73,5 +89,13 @@ extern BOOL			MercenaryItemCheck	(PCHARINFO pMerc, BYTE byItemType);		/* その�
 extern void			MercenaryTailOff	(PCHARINFO pMerc);						/* 傭兵を「ついていく」の列から外す */
 extern void			MercenaryTailOffBack(PCHARINFO pChar);						/* すぐ後ろに並んでいる傭兵を列から外す */
 extern void			MercenarySetBattleMode(PCHARINFO pChar, BOOL bBattle);		/* 雇い主の戦闘モードを覚える */
+
+/* 道具を持たせる（取り引き画面で渡す。傭兵は持っている道具を全部返そうとする） */
+#define MERC_MAXITEM		(5)													/* 傭兵が持てる道具の数 */
+extern BOOL			MercenaryCanHold	(PITEMINFO pItem);						/* 傭兵に持たせられる道具か(HP回復だけ) */
+extern BOOL			MercenaryTradeCheck	(PCHARINFO pOwner, PCHARINFO pMerc, const WORD *pwaItem, DWORD dwGold, LPSTR pszMsg, int nMsgSize);	/* 取り引きで渡すものを傭兵が受け取れるか */
+extern void			MercenaryTellItems	(PCHARINFO pOwner, PCHARINFO pMerc);	/* 傭兵の持ち物を雇い主に知らせる */
+extern void			MercenaryOwnerLogout(PCHARINFO pOwner);						/* 雇い主がログアウトする(道具を返してから帰る) */
+extern void			MercenaryRemoveAll	(void);									/* 全部の傭兵を帰す(サーバーを止める前。道具は雇い主へ) */
 
 /* Copyright(C)URARA-works 2026 */

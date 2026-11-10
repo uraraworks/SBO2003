@@ -571,6 +571,7 @@ void OnDestroy(HWND hWnd)
 		WritePrivateProfileString ("OnlineCount", szTmp, szTmp2, szName);
 	}
 
+	MercenaryRemoveAll ();		/* 傭兵を帰す(持たせた道具を雇い主へ戻してから保存する) */
 	SaveCharInfo ();			/* キャラ情報の保存 */
 	SaveMapPartsInfo ();		/* パーツ情報の保存 */
 	SaveMapInfo ();				/* マップ情報の保存 */
@@ -710,6 +711,7 @@ void OnDecPlayer(int nNo)
 	pChar = g_aCharInfo[nNo];
 
 	RecvCmdOnDecPlayer (nNo);		/* 取り引きなど受信処理で覚えている状態を消す */
+	MercenaryOwnerLogout (pChar);	/* 傭兵に持たせた道具を返してもらい、傭兵は帰る */
 
 	pChar->dwLastBattle		= 0;
 	pChar->dwTargetTblID	= -1;

@@ -11,4 +11,5 @@
 /* ========================================================================= */
 extern void ItemProc(DWORD, BYTE, DWORD);								/* アイテム処理 */
 extern BOOL CheckItemSexDistinction(PITEMINFO, PCHARINFO);				/* 性別による使えるかチェック */
+extern BOOL ItemUseMercenary(PCHARINFO, BYTE, PCHARINFO);				/* 傭兵が持っている道具を使う */
 /* Copyright(C)URARA-works 2003-2006 */

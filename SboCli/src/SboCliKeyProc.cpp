@@ -1334,7 +1334,8 @@ void KeyProcCOMMAND(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 					PCHARINFO pCharTmp = g_aCharInfo[i];
 					/* 目の前にいる？ */
 					if ((dwX == pCharTmp->dwX) && (dwY == pCharTmp->dwY)) {
-						if (pCharTmp->byNpcType == 0) {
+						/* プレイヤーか、傭兵(道具を持たせる) */
+						if ((pCharTmp->byNpcType == 0) || (pCharTmp->byNpcType == NPCTYPE_MERCENARY)) {
 							nCount ++;
 						}
 					}

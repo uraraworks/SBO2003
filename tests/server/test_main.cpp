@@ -14,10 +14,15 @@
  *   B. 同画面内への配信          … SendCmdInside2 / SendCmdInsideMap
  *   E. キャラの巡回（TimerProc） … 実データ＋ログイン中のPCで、状態と送信が変わらないこと
  *   H. キャラ情報の項目消し     … 他人・NPC の情報から、画面に要らない項目が消えること（本人・管理者は全部）
+ *   K. 傭兵                      … 道さがしの表が前の方法と同じ結果か・敵探しの速さ・道具を持たせる取り引き
  */
 #include "stdafx.h"
 #include "SboSvrRecvCmd.h"
 #include "CharProcSEARCH2.h"
+/* 傭兵の道さがしを中から確かめるため、protected も見えるようにして読み込む */
+#define protected public
+#include "CharProcMERCENARY.h"
+#undef protected
 #include "SboSvrSubGameProcSugoroku.h"
 #include "common/crc.h"
 #include <emscripten.h>
@@ -547,6 +552,7 @@ static void PrintTownWarp(const char *pszLabel, PCHARINFO pChar)
 }
 
 static void TestShipBed(const std::vector<int> &aLogin);
+static void TestMercenary(const std::vector<int> &aLogin);
 
 static void TestTownWarp(const std::vector<int> &aLogin)
 {
@@ -963,6 +969,8 @@ static void TestWorld(void)
 	TestTownWarp(aLogin);
 	/* J. 船で目覚めるベッドがばらける */
 	TestShipBed(aLogin);
+	/* K. 傭兵 */
+	TestMercenary(aLogin);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1049,6 +1057,458 @@ static void TestShipBed(const std::vector<int> &aLogin)
 	pInfo->byRandomRange = byRangeBack;
 	Local::Put(pPC, dwMapBack, dwXBack, dwYBack);
 	Local::Put(pFriend, dwFMapBack, dwFXBack, dwFYBack);
+}
+
+/* ------------------------------------------------------------------------- */
+/* K. 傭兵：道さがしの表（前の1回ずつの道さがしと同じ結果か・速さ）と、	 */
+/*    道具を持たせる取り引き・自分で回復・帰る時に返す						 */
+/* ------------------------------------------------------------------------- */
+extern void RecvDataProc(PBYTE pData, DWORD dwDataSize);
+
+/* 前の道さがし（目標のとなりに着くまで毎回幅優先）。比べるための写し */
+static int RefPathDir(CCharProcMERCENARY *pProc, PCHARINFO pChar, int nX, int nY, int nMaxDist, int *pnDist)
+{
+	int nSX = (int)pChar->dwX, nSY = (int)pChar->dwY;
+	if (abs(nX - nSX) + abs(nY - nSY) <= 1) {
+		if (pnDist) *pnDist = 0;
+		return -2;
+	}
+	if (abs(nX - nSX) + abs(nY - nSY) > nMaxDist + 1) {
+		return -1;
+	}
+	int nW = nMaxDist * 2 + 1, nOX = nSX - nMaxDist, nOY = nSY - nMaxDist;
+	std::vector<short> anFirst(nW * nW, -1), anDist(nW * nW, 0);
+	std::vector<int> anQueue(nW * nW);
+	PMAPINFO pMap = g_aMapInfo[pChar->dwMapID];
+	PDWORD apTbl[2] = {pMap->paTblNoPC, pMap->paTblNoNPC};
+	DWORD adwCount[2] = {pMap->dwCountTblNoPC, pMap->dwCountTblNoNPC};
+	for (int t = 0; t < 2; t ++) {
+		if (apTbl[t] == NULL) continue;
+		for (DWORD j = 0; j < adwCount[t]; j ++) {
+			if (apTbl[t][j] == (DWORD)-1) break;
+			PCHARINFO p = g_aCharInfo[apTbl[t][j]];
+			if (p == pChar || p->byNpcType == NPCTYPE_NOBLOCK) continue;
+			int x = (int)p->dwX - nOX, y = (int)p->dwY - nOY;
+			if (x >= 0 && x < nW && y >= 0 && y < nW) anFirst[y * nW + x] = -3;
+		}
+	}
+	int nHead = 0, nTail = 0, nPos = (nSY - nOY) * nW + (nSX - nOX);
+	anFirst[nPos] = 4;
+	anQueue[nTail ++] = nPos;
+	while (nHead < nTail) {
+		nPos = anQueue[nHead ++];
+		if (anDist[nPos] >= nMaxDist) continue;
+		for (int nDir = 0; nDir < 4; nDir ++) {
+			int x = nOX + (nPos % nW) + anPosAddTblX[nDir];
+			int y = nOY + (nPos / nW) + anPosAddTblY[nDir];
+			if (x < nOX || x >= nOX + nW || y < nOY || y >= nOY + nW) continue;
+			int nNext = (y - nOY) * nW + (x - nOX);
+			if (anFirst[nNext] != -1) continue;
+			if (pProc->CanWalk(x, y, TRUE) == FALSE) continue;
+			anFirst[nNext] = (anFirst[nPos] == 4) ? nDir : anFirst[nPos];
+			anDist[nNext] = anDist[nPos] + 1;
+			if (abs(nX - x) + abs(nY - y) == 1) {
+				if (pnDist) *pnDist = anDist[nNext];
+				return anFirst[nNext];
+			}
+			anQueue[nTail ++] = nNext;
+		}
+	}
+	return -1;
+}
+
+/* 受信したことにして処理する（送ってきた接続のキャラとして） */
+static void TestRecv(PCHARINFO pChar, const void *pData, DWORD dwSize)
+{
+	CCRC Crc;
+	URARASOCK_PACKETINFO Info;
+	Info.dwSize = dwSize;
+	Info.dwCRC = Crc.GetCRC((PBYTE)pData, dwSize);
+	std::vector<BYTE> a(sizeof(Info) + dwSize);
+	memcpy(&a[0], &Info, sizeof(Info));
+	memcpy(&a[sizeof(Info)], pData, dwSize);
+	SboSockOnData((int)(pChar->pID - URARASOCK_IDBASE), &a[0], (int)a.size());
+	MSG msg;
+	while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+		DispatchMessage(&msg);
+	}
+}
+
+static BYTE ItemSum(PCHARINFO p)
+{
+	BYTE by = (BYTE)p->dwGold;
+	for (int i = 0; i < MAX_MYITEM; i ++) by += (BYTE)p->waItem[i];
+	return by;
+}
+
+/* 取り引きを最後まで進める（傭兵に waGive を渡す・お金 dwGold） */
+static void TestTradeWithMerc(PCHARINFO pOwner, PCHARINFO pMerc, const std::vector<WORD> &aGive, DWORD dwGold)
+{
+	CMDPARA_DATA3 Trade;
+	ZeroMemory(&Trade, sizeof(Trade));
+	Trade.byCmd = CMD_TRADE;
+	Trade.pID = pOwner->pID;
+	Trade.dwTblID = pOwner->dwTblID;
+	Trade.dwData = pMerc->dwTblID;
+	TestRecv(pOwner, &Trade, sizeof(Trade));
+
+	CMDPARA_TRADEINFO Info;
+	ZeroMemory(&Info, sizeof(Info));
+	Info.byCmd = CMD_TRADEINFO;
+	Info.byMode = 1;
+	Info.dwTblID = pMerc->dwTblID;
+	Info.dwGold = dwGold;
+	for (int i = 0; i < MAX_MYITEM; i ++) Info.waItem[i] = 0xFFFF;
+	for (size_t i = 0; i < aGive.size(); i ++) Info.waItem[i] = aGive[i];
+	Info.bySum = ItemSum(pOwner);
+	TestRecv(pOwner, &Info, sizeof(Info));
+
+	/* 傭兵は持ち物を全部返そうとする */
+	CMDPARA_TRADEPROC Proc;
+	ZeroMemory(&Proc, sizeof(Proc));
+	Proc.byCmd = CMD_TRADEPROC;
+	Proc.bySum1 = ItemSum(pOwner);
+	Proc.bySum2 = ItemSum(pMerc);
+	Proc.dwTblID1 = pOwner->dwTblID;
+	Proc.dwTblID2 = pMerc->dwTblID;
+	Proc.dwGold1 = dwGold;
+	for (int i = 0; i < MAX_MYITEM; i ++) {
+		Proc.waItem1[i] = Info.waItem[i];
+		Proc.waItem2[i] = 0xFFFF;
+	}
+	for (int i = 0, n = 0; i < MAX_MYITEM; i ++) {
+		if (pMerc->waItem[i]) Proc.waItem2[n ++] = (WORD)i;
+	}
+	TestRecv(pOwner, &Proc, sizeof(Proc));
+}
+
+static void PrintItems(const char *pszLabel, PCHARINFO p)
+{
+	printf("%s", pszLabel);
+	for (int i = 0; i < MAX_MYITEM; i ++) printf(" %u", p->waItem[i]);
+	printf("\n");
+}
+
+static void TestMercenary(const std::vector<int> &aLogin)
+{
+	printf("== K. Mercenary ==\n");
+	if (aLogin.empty()) {
+		return;
+	}
+	/* 敵がいちばん多い戦闘マップ */
+	std::vector<int> aEnemy(g_aMapInfo.GetSize(), 0);
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+		if ((p->byNpcType == NPCTYPE_BATTLE1 || p->byNpcType == NPCTYPE_BATTLE2) && p->dwMapID < aEnemy.size() &&
+			(g_aMapInfo[p->dwMapID]->byFlg & MAPFLG_BATTLE)) {
+			aEnemy[p->dwMapID] ++;
+		}
+	}
+	int nMap = 0;
+	for (size_t i = 0; i < aEnemy.size(); i ++) {
+		if (aEnemy[i] > aEnemy[nMap]) nMap = (int)i;
+	}
+	PMAPINFO pMap = g_aMapInfo[nMap];
+	std::vector<int> aEnemyNo;
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+		if ((p->byNpcType == NPCTYPE_BATTLE1 || p->byNpcType == NPCTYPE_BATTLE2) && p->dwMapID == (DWORD)nMap) {
+			aEnemyNo.push_back(i);
+		}
+	}
+	printf("merc map=%d enemies=%d size=%dx%d\n", nMap, (int)aEnemyNo.size(), pMap->nCX, pMap->nCY);
+
+	PCHARINFO pOwner = g_aCharInfo[aLogin[0]];
+	DWORD dwMapBack = pOwner->dwMapID, dwXBack = pOwner->dwX, dwYBack = pOwner->dwY;
+	WORD waItemBack[MAX_MYITEM];
+	memcpy(waItemBack, pOwner->waItem, sizeof(waItemBack));
+	WORD waEquBack[10];
+	memcpy(waEquBack, pOwner->waEqu, sizeof(waEquBack));
+	WORD wHPBack = pOwner->wHP, wMaxHPBack = pOwner->wMaxHP;
+	DWORD dwGoldBack = pOwner->dwGold;
+
+	/* 敵のそばの歩けるマスに雇い主を置く */
+	PCHARINFO pBase = g_aCharInfo[aEnemyNo[0]];
+	DeleteTblNoPC((int)pOwner->dwTblID);
+	pOwner->dwMapID = nMap;
+	pOwner->dwX = pBase->dwX;
+	pOwner->dwY = pBase->dwY + 1;
+	for (int r = 1; r < 6; r ++) {
+		BOOL bFound = FALSE;
+		for (int dy = -r; dy <= r && !bFound; dy ++) {
+			for (int dx = -r; dx <= r && !bFound; dx ++) {
+				int x = (int)pBase->dwX + dx, y = (int)pBase->dwY + dy;
+				if (x < 2 || y < 2 || x >= pMap->nCX - 2 || y >= pMap->nCY - 2) continue;
+				if (CheckCharBlock((DWORD)nMap, x, y) && CheckCharBlock((DWORD)nMap, x + 1, y) &&
+					CheckCharBlockNPC((DWORD)nMap, x, y) == (DWORD)-1 && CheckCharBlockNPC((DWORD)nMap, x + 1, y) == (DWORD)-1) {
+					pOwner->dwX = x;
+					pOwner->dwY = y;
+					bFound = TRUE;
+				}
+			}
+		}
+		if (bFound) break;
+	}
+	pOwner->byDirection = 3;
+	pOwner->wHP = pOwner->wMaxHP = 200;
+	pOwner->byCharState = CHARSTATE_MOVE;
+	AddTblNoPC((int)pOwner->dwTblID);
+	MercenarySetBattleMode(pOwner, TRUE);
+
+	/* 傭兵所の人に話しかけて雇う */
+	CHARINFO Npc;
+	memcpy(&Npc, pBase, sizeof(Npc));
+	strcpy(Npc.szName, "ハーン");
+	static char szSpeech[] = "@m";
+	Npc.pszNpcSpeech = szSpeech;
+	MercenaryTalk(pOwner, &Npc);
+	PCHARINFO pMerc = NULL;
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		if (GetMercenaryOwner(g_aCharInfo[i]) == pOwner) pMerc = g_aCharInfo[i];
+	}
+	if (!pMerc) {
+		printf("merc hire failed\n");
+		return;
+	}
+	CCharProcMERCENARY *pProc = (CCharProcMERCENARY *)pMerc->pProc;
+	printf("merc hired dist=%d\n", abs((int)pMerc->dwX - (int)pOwner->dwX) + abs((int)pMerc->dwY - (int)pOwner->dwY));
+
+	/* 1) 道さがし：傭兵をいろいろなマスに置き、マップの敵へ行く道を前の方法と比べる */
+	{
+		DWORD dwMX = pMerc->dwX, dwMY = pMerc->dwY;
+		int nCase = 0, nReach = 0, nDiffReach = 0, nDiffDist = 0, nBadDir = 0;
+		s_dwSeed = 777;
+		for (int t = 0; t < 300; t ++) {
+			PCHARINFO pE = g_aCharInfo[aEnemyNo[Rnd() % aEnemyNo.size()]];
+			int x = (int)pE->dwX + (int)(Rnd() % 17) - 8;
+			int y = (int)pE->dwY + (int)(Rnd() % 17) - 8;
+			if (x < 0 || y < 0 || x >= pMap->nCX || y >= pMap->nCY || !pProc->CanWalk(x, y)) continue;
+			pMerc->dwX = x;
+			pMerc->dwY = y;
+			for (size_t e = 0; e < aEnemyNo.size(); e ++) {
+				PCHARINFO pT = g_aCharInfo[aEnemyNo[e]];
+				int nD1 = -9, nD2 = -9;
+				int nR1 = RefPathDir(pProc, pMerc, (int)pT->dwX, (int)pT->dwY, 12, &nD1);
+				/* 表は傭兵の位置が変われば作り直すので、ここでは消さない（同じ位置なら使い回し） */
+				int nR2 = pProc->PathDir((int)pT->dwX, (int)pT->dwY, 12, &nD2, TRUE);
+				nCase ++;
+				if (nR1 >= 0) nReach ++;
+				if ((nR1 >= 0) != (nR2 >= 0) || (nR1 == -2) != (nR2 == -2)) {
+					nDiffReach ++;
+				} else if (nR1 >= 0 && nD1 != nD2) {
+					nDiffDist ++;
+				} else if (nR2 >= 0) {
+					/* 返した向きに1歩進んだマスから、残りの歩数で着けること */
+					pMerc->dwX = x + anPosAddTblX[nR2];
+					pMerc->dwY = y + anPosAddTblY[nR2];
+					int nD3 = -9;
+					int nR3 = RefPathDir(pProc, pMerc, (int)pT->dwX, (int)pT->dwY, 12, &nD3);
+					if (!(nR3 == -2 ? nD2 == 1 : (nR3 >= 0 && nD3 == nD2 - 1))) {
+						nBadDir ++;
+					}
+					pMerc->dwX = x;
+					pMerc->dwY = y;
+				}
+			}
+		}
+		printf("merc path cases=%d reach=%d diffreach=%d diffdist=%d baddir=%d\n", nCase, nReach, nDiffReach, nDiffDist, nBadDir);
+		pMerc->dwX = dwMX;
+		pMerc->dwY = dwMY;
+	}
+
+	/* 2) 敵探し：雇い主を狙っている敵をまわりに集めて、前の方法（候補ごとに道さがし）と比べる */
+	{
+		std::vector<DWORD> aBack;
+		int nNear = 0;
+		for (size_t e = 0; e < aEnemyNo.size() && nNear < 12; e ++) {
+			PCHARINFO pE = g_aCharInfo[aEnemyNo[e]];
+			aBack.push_back(pE->dwX);
+			aBack.push_back(pE->dwY);
+			aBack.push_back(pE->dwTargetTblID);
+			for (int k = 0; k < 40; k ++) {
+				int x = (int)pOwner->dwX + (int)(Rnd() % 11) - 5;
+				int y = (int)pOwner->dwY + (int)(Rnd() % 11) - 5;
+				if (abs(x - (int)pOwner->dwX) + abs(y - (int)pOwner->dwY) > 6) continue;
+				if (x < 0 || y < 0 || x >= pMap->nCX || y >= pMap->nCY || !pProc->CanWalk(x, y)) continue;
+				if (CheckCharBlockNPC((DWORD)nMap, x, y) != (DWORD)-1 || CheckCharBlockPC((DWORD)nMap, x, y) != (DWORD)-1) continue;
+				pE->dwX = x;
+				pE->dwY = y;
+				break;
+			}
+			pE->dwTargetTblID = pOwner->dwTblID;
+			nNear ++;
+		}
+		/* 前の方法で選ぶ敵 */
+		DWORD dwRef = (DWORD)-1;
+		int nRefMin = 0;
+		for (size_t e = 0; e < aEnemyNo.size(); e ++) {
+			PCHARINFO pE = g_aCharInfo[aEnemyNo[e]];
+			if (pE->wHP == 0 || pE->byCharState == CHARSTATE_DEAD) continue;
+			int nDistOwner = abs((int)pE->dwX - (int)pOwner->dwX) + abs((int)pE->dwY - (int)pOwner->dwY);
+			if (nDistOwner > 6) continue;
+			int nDist = abs((int)pE->dwX - (int)pMerc->dwX) + abs((int)pE->dwY - (int)pMerc->dwY);
+			if (!(pE->dwTargetTblID == pOwner->dwTblID || nDistOwner <= 2 || nDist <= 1)) continue;
+			if (nDist > 1) {
+				if (RefPathDir(pProc, pMerc, (int)pE->dwX, (int)pE->dwY, 12, &nDist) == -1) continue;
+				nDist ++;
+			}
+			if (dwRef == (DWORD)-1 || nDist < nRefMin) {
+				dwRef = pE->dwTblID;
+				nRefMin = nDist;
+			}
+		}
+		pProc->m_aPathField[0].bValid = pProc->m_aPathField[1].bValid = FALSE;
+		DWORD dwNew = pProc->FindEnemy(pOwner);
+		printf("merc findenemy near=%d found=%d same=%d\n", nNear, (int)(dwNew != (DWORD)-1), (int)(dwNew == dwRef));
+
+		/* 速さ：0.5秒ごとの敵探しを 2000 回ぶん */
+		const int NRUN = 2000;
+		double d0 = NowMs();
+		for (int r = 0; r < NRUN; r ++) {
+			for (size_t e = 0; e < aEnemyNo.size(); e ++) {
+				PCHARINFO pE = g_aCharInfo[aEnemyNo[e]];
+				int nDistOwner = abs((int)pE->dwX - (int)pOwner->dwX) + abs((int)pE->dwY - (int)pOwner->dwY);
+				if (nDistOwner > 6 || pE->dwTargetTblID != pOwner->dwTblID) continue;
+				int nDist;
+				RefPathDir(pProc, pMerc, (int)pE->dwX, (int)pE->dwY, 12, &nDist);
+			}
+		}
+		double d1 = NowMs();
+		for (int r = 0; r < NRUN; r ++) {
+			pProc->m_aPathField[0].bValid = pProc->m_aPathField[1].bValid = FALSE;
+			pProc->FindEnemy(pOwner);
+		}
+		double d2 = NowMs();
+		printf("BENCH merc findenemy runs=%d near=%d old_ms=%.1f new_ms=%.1f\n", NRUN, nNear, d1 - d0, d2 - d1);
+
+		for (size_t e = 0, k = 0; e < aEnemyNo.size() && k < aBack.size(); e ++, k += 3) {
+			PCHARINFO pE = g_aCharInfo[aEnemyNo[e]];
+			pE->dwX = aBack[k];
+			pE->dwY = aBack[k + 1];
+			pE->dwTargetTblID = aBack[k + 2];
+		}
+	}
+
+	/* 3) 道具を持たせる取り引き */
+	WORD wHeal = 0, wOther = 0;
+	for (int i = 1; i < g_aItemInfo.GetSize(); i ++) {
+		PITEMINFO pItem = g_aItemInfo[i];
+		if (pItem == NULL) continue;
+		if (!wHeal && pItem->byType == ITEMTYPE_HPUP && pItem->pData && (pItem->byFlg & ITEMFLG_LOST) &&
+			pItem->byEraseProbability == 0 && !(pItem->byFlg & ITEMFLG_TRADE)) {
+			wHeal = (WORD)i;
+		}
+		if (!wOther && pItem->byType == ITEMTYPE_WEAPON && !(pItem->byFlg & ITEMFLG_TRADE)) {
+			wOther = (WORD)i;
+		}
+	}
+	printf("merc items heal=%d other=%d\n", (int)(wHeal != 0), (int)(wOther != 0));
+	ZeroMemory(pOwner->waItem, sizeof(pOwner->waItem));
+	for (int i = 0; i < 10; i ++) pOwner->waEqu[i] = 0xFFFF;
+	pOwner->dwGold = 100;
+	pOwner->waItem[0] = wHeal;
+	pOwner->waItem[1] = wHeal;
+	pOwner->waItem[2] = wOther;
+	pOwner->waItem[3] = wHeal;
+
+	{
+		std::vector<WORD> a;
+		a.push_back(2);			/* 武器は持てない */
+		TestTradeWithMerc(pOwner, pMerc, a, 0);
+		PrintItems("merc trade weapon owner", pOwner);
+		PrintItems("merc trade weapon merc ", pMerc);
+		a.clear();
+		a.push_back(0);
+		TestTradeWithMerc(pOwner, pMerc, a, 50);	/* お金は渡せない */
+		PrintItems("merc trade gold owner", pOwner);
+		printf("merc trade gold owner_gold=%u merc_gold=%u\n", pOwner->dwGold, pMerc->dwGold);
+		a.clear();
+		a.push_back(0);
+		a.push_back(1);
+		TestTradeWithMerc(pOwner, pMerc, a, 0);		/* 回復の道具2個を持たせる */
+		PrintItems("merc trade heal owner", pOwner);
+		PrintItems("merc trade heal merc ", pMerc);
+		a.clear();
+		TestTradeWithMerc(pOwner, pMerc, a, 0);		/* 何も渡さない＝全部返してもらう */
+		PrintItems("merc trade back owner", pOwner);
+		PrintItems("merc trade back merc ", pMerc);
+		/* もう一度2個持たせる（持ち物は 回復×3・武器 → 回復×1・武器） */
+		a.clear();
+		for (int i = 0, n = 0; i < MAX_MYITEM && n < 2; i ++) {
+			if (pOwner->waItem[i] == wHeal) { a.push_back((WORD)i); n ++; }
+		}
+		TestTradeWithMerc(pOwner, pMerc, a, 0);
+		PrintItems("merc trade again merc ", pMerc);
+	}
+
+	/* 4) HPが減ったら自分に使う・となりの雇い主のHPが減ったら雇い主に使う */
+	{
+		MercenarySetBattleMode(pOwner, FALSE);	/* 戦わせない */
+		s_dwFakeNow += 10000;
+		g_dwTime = s_dwFakeNow;
+		pMerc->wHP = pMerc->wMaxHP / 4;
+		if (pMerc->wHP == 0) pMerc->wHP = 1;
+		WORD wBefore = pMerc->wHP;
+		pProc->Proc(g_dwTime);
+		printf("merc selfheal up=%d items=%d\n", (int)(pMerc->wHP > wBefore), GetItemCount(pMerc->dwTblID));
+		/* すぐには続けて使わない */
+		pMerc->wHP = 1;
+		s_dwFakeNow += 600;
+		g_dwTime = s_dwFakeNow;
+		pProc->Proc(g_dwTime);
+		printf("merc selfheal wait items=%d\n", GetItemCount(pMerc->dwTblID));
+		pMerc->wHP = pMerc->wMaxHP;
+		/* 雇い主はとなりにいる？ いなければとなりへ */
+		pMerc->dwX = pOwner->dwX + 1;
+		pMerc->dwY = pOwner->dwY;
+		pOwner->wHP = pOwner->wMaxHP / 5;
+		wBefore = pOwner->wHP;
+		s_dwFakeNow += 3000;
+		g_dwTime = s_dwFakeNow;
+		pProc->Proc(g_dwTime);
+		printf("merc ownerheal up=%d items=%d\n", (int)(pOwner->wHP > wBefore), GetItemCount(pMerc->dwTblID));
+	}
+
+	/* 5) 帰る時は残りを返す（持ち物がいっぱいなら預かり所へ） */
+	{
+		pMerc->waItem[0] = wHeal;
+		pMerc->waItem[1] = wHeal;
+		pMerc->waItem[2] = 0;
+		for (int i = 0; i < MAX_MYITEM; i ++) {
+			if (pOwner->waItem[i] == 0) pOwner->waItem[i] = wOther;
+		}
+		pOwner->waItem[MAX_MYITEM - 1] = 0;		/* 空きは1つだけ */
+		DWORD dwLeaveBack = pOwner->dwLeaveID;
+		int nLeaveBefore = 0;
+		if (pOwner->dwLeaveID && pOwner->dwLeaveID < (DWORD)g_aLeaveInfo.GetSize()) {
+			PLEAVEINFO pInfo = g_aLeaveInfo[pOwner->dwLeaveID];
+			for (int i = 0; i < pInfo->byCount; i ++) if (pInfo->waItem[i] == wHeal) nLeaveBefore += pInfo->byItemCount[i];
+		}
+		DWORD dwMercTbl = pMerc->dwTblID;
+		MercenaryOwnerLogout(pOwner);
+		int nLeaveAfter = 0;
+		if (pOwner->dwLeaveID && pOwner->dwLeaveID < (DWORD)g_aLeaveInfo.GetSize()) {
+			PLEAVEINFO pInfo = g_aLeaveInfo[pOwner->dwLeaveID];
+			for (int i = 0; i < pInfo->byCount; i ++) if (pInfo->waItem[i] == wHeal) nLeaveAfter += pInfo->byItemCount[i];
+		}
+		int nHealBag = 0;
+		for (int i = 0; i < MAX_MYITEM; i ++) if (pOwner->waItem[i] == wHeal) nHealBag ++;
+		printf("merc return gone=%d bag_heal=%d leave_added=%d\n",
+			(int)(GetMercenaryOwner(g_aCharInfo[dwMercTbl]) == NULL), nHealBag, nLeaveAfter - nLeaveBefore);
+		(void)dwLeaveBack;
+	}
+
+	/* 元に戻す */
+	DeleteTblNoPC((int)pOwner->dwTblID);
+	pOwner->dwMapID = dwMapBack;
+	pOwner->dwX = dwXBack;
+	pOwner->dwY = dwYBack;
+	memcpy(pOwner->waItem, waItemBack, sizeof(waItemBack));
+	memcpy(pOwner->waEqu, waEquBack, sizeof(waEquBack));
+	pOwner->wHP = wHPBack;
+	pOwner->wMaxHP = wMaxHPBack;
+	pOwner->dwGold = dwGoldBack;
+	AddTblNoPC((int)pOwner->dwTblID);
 }
 
 int main(int argc, char **argv)

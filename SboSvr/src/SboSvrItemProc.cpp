@@ -208,6 +208,45 @@ Exit:
 }
 
 /* ========================================================================= */
+/* 関数名：ItemUseMercenary													 */
+/* 内容：傭兵が持たせてもらった道具を使う（自分か、となりの雇い主に）		 */
+/*		 使えたら TRUE。使うと無くなる道具は持ち物から消す					 */
+/*		 傭兵には画面が無いので、お知らせは呼ぶ側で雇い主へ送る				 */
+/* 日付：2026/11/10															 */
+/* ========================================================================= */
+BOOL ItemUseMercenary(PCHARINFO pChar, BYTE byNo, PCHARINFO pCharUse)
+{
+	BOOL bResult;
+	char szMsg[1024];
+	PITEMINFO pItem;
+
+	if ((byNo >= MAX_MYITEM) || (pChar->waItem[byNo] == 0) ||
+		(pChar->waItem[byNo] >= (WORD)g_aItemInfo.GetSize ())) {
+		return FALSE;
+	}
+	pItem = g_aItemInfo[pChar->waItem[byNo]];
+	if (MercenaryCanHold (pItem) == FALSE) {
+		return FALSE;
+	}
+	if (CheckItemSexDistinction (pItem, pCharUse) == FALSE) {
+		return FALSE;
+	}
+
+	ZeroMemory (szMsg, sizeof (szMsg));
+	bResult = ItemUse (pChar, pCharUse, pItem, szMsg);
+	if (bResult == FALSE) {
+		return FALSE;
+	}
+	/* 使うと無くなる？（確率で残る道具もプレイヤーと同じ） */
+	if (pItem->byFlg & ITEMFLG_LOST) {
+		if ((pItem->byEraseProbability == 0) || (genrand () % 100 < pItem->byEraseProbability)) {
+			DelCharItem (pChar->dwTblID, byNo);
+		}
+	}
+	return TRUE;
+}
+
+/* ========================================================================= */
 /* 関数名：CheckItemSexDistinction											 */
 /* 内容：性別による使えるかチェック											 */
 /* 日付：2004/07/18															 */

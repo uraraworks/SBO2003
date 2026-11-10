@@ -1057,4 +1057,23 @@ shipbed range=0 friend=0 beds=1 bad=0 onfriend=0 list=(40,9)
 shipbed range=16 friend=0 beds=24 bad=0 onfriend=0 list=(40,1),(40,2),(40,3),(40,4),(40,7),(40,8),(40,9),(40,10),(40,13),(40,14),(40,15),(40,16),(49,1),(49,2),(49,3),(49,4),(49,7),(49,8),(49,9),(49,10),(49,13),(49,14),(49,15),(49,16)
 shipbed range=3 friend=0 beds=4 bad=0 onfriend=0 list=(40,7),(40,8),(40,9),(40,10)
 shipbed range=16 friend=1 beds=23 bad=0 onfriend=0 list=(40,1),(40,2),(40,3),(40,4),(40,7),(40,8),(40,10),(40,13),(40,14),(40,15),(40,16),(49,1),(49,2),(49,3),(49,4),(49,7),(49,8),(49,9),(49,10),(49,13),(49,14),(49,15),(49,16)
+== K. Mercenary ==
+merc map=91 enemies=17 size=255x160
+merc hired dist=1
+merc path cases=1836 reach=160 diffreach=0 diffdist=0 baddir=0
+merc findenemy near=12 found=1 same=1
+merc items heal=1 other=1
+merc trade weapon owner 7 7 8 7 0 0 0 0 0 0
+merc trade weapon merc  0 0 0 0 0 0 0 0 0 0
+merc trade gold owner 7 7 8 7 0 0 0 0 0 0
+merc trade gold owner_gold=100 merc_gold=0
+merc trade heal owner 8 7 0 0 0 0 0 0 0 0
+merc trade heal merc  7 7 0 0 0 0 0 0 0 0
+merc trade back owner 8 7 7 7 0 0 0 0 0 0
+merc trade back merc  0 0 0 0 0 0 0 0 0 0
+merc trade again merc  7 7 0 0 0 0 0 0 0 0
+merc selfheal up=1 items=1
+merc selfheal wait items=1
+merc ownerheal up=1 items=0
+merc return gone=1 bag_heal=2 leave_added=1
 == done ==
