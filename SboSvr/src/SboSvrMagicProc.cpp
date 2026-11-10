@@ -1309,6 +1309,26 @@ Exit:
 }
 
 /* ========================================================================= */
+/* 関数名：PlayPutEfcSound													 */
+/* 内容：置いた魔法キャラのエフェクトの効果音を周りに鳴らす					 */
+/*       (置いたキャラはキャラ情報としてエフェクト付きで届くので、			 */
+/*        エフェクト変更の時のようにはクライアントで音が鳴らない)			 */
+/* ========================================================================= */
+static void PlayPutEfcSound(PCHARINFO pCharNew)
+{
+	PEFCINFO pEfc;
+
+	if ((pCharNew == NULL) || (pCharNew->byEfect == 0)) {
+		return;
+	}
+	pEfc = g_EfcInfo.GetPtr (pCharNew->byEfect - 1);
+	if ((pEfc == NULL) || (pEfc->bySound == 0)) {
+		return;
+	}
+	SendCmdPLAYSOUNDinside (pCharNew->dwTblID, pEfc->bySound);
+}
+
+/* ========================================================================= */
 /* 関数名：MagicProcUse_PUT													 */
 /* 内容：魔法処理(使用処理:魔法発生)										 */
 /* 日付：2004/08/01															 */
@@ -1372,6 +1392,11 @@ BOOL MagicProcUse_PUT(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTarget)
 		pCharNew->pID = pCharNew->dwTblID + 1;
 		RenewATDF (pCharNew->dwTblID);
 		SendCmdCHARINFO3 (pCharNew->dwTblID);
+		/* 置いた時にエフェクトの効果音を鳴らす(何マスにも置く時は最初の1回だけ。
+		   置いた魔法がさらに置く(広がる炎など)時は、鳴りっぱなしにならないよう鳴らさない) */
+		if ((i == 0) && (s_pCharMagicSrc == NULL)) {
+			PlayPutEfcSound (pCharNew);
+		}
 	}
 	bRet = TRUE;
 
@@ -1627,6 +1652,11 @@ BOOL MagicProcUse_PUTSELF(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTarg
 		pCharNew->pID = pCharNew->dwTblID + 1;
 		RenewATDF (pCharNew->dwTblID);
 		SendCmdCHARINFO3 (pCharNew->dwTblID);
+		/* 置いた時にエフェクトの効果音を鳴らす(何マスにも置く時は最初の1回だけ。
+		   置いた魔法がさらに置く(広がる炎など)時は、鳴りっぱなしにならないよう鳴らさない) */
+		if ((i == 0) && (s_pCharMagicSrc == NULL)) {
+			PlayPutEfcSound (pCharNew);
+		}
 	}
 	bRet = TRUE;
 

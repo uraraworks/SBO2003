@@ -1415,11 +1415,21 @@ void DrawChar2(void)
 		}
 	}
 
-	/* エフェクト表示 */
+	/* エフェクト表示
+	   (置いた魔法(爆弾など)のエフェクトを先に描き、当たった相手の爆発などをその上に描く。
+	    同じマスに置くと、後から出た魔法の絵で相手のエフェクトが隠れて見えなかった) */
+	for (int nPass = 0; nPass < 2; nPass ++) {
 	for (i = 0; i < nCount; i ++) {
 		BYTE byEfect;
+		BOOL bPutMagic;
 		pChar = g_aCharInfo[i];
 		if (pChar->dwTimeEfc == 0) {
+			continue;
+		}
+		bPutMagic = ((pChar->byNpcType == NPCTYPE_USEMAGIC) ||
+					 (pChar->byNpcType == NPCTYPE_USEMAGICPARENT) ||
+					 (pChar->byNpcType == NPCTYPE_ATACK));
+		if (bPutMagic != (nPass == 0)) {
 			continue;
 		}
 
@@ -1498,6 +1508,7 @@ void DrawChar2(void)
 				}
 			}
 		}
+	}
 	}
 	pChar = g_aCharInfo[g_nMyCharID];
 	if (pChar->dwTimeEfc) {
