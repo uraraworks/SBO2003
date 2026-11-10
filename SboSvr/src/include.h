@@ -28,6 +28,7 @@
 #include "SboSvrSendCmd.h"
 #include "Glbldata.h"
 #include "TypedefSvr.h"
+#include "SboSvrQuest.h"
 
 extern long genrand();				/* 乱数取得 */
 

@@ -405,6 +405,10 @@ static BOOL MakeCharTblTargetSub_SELF(PARRAYDWORD aTarget,
 		PCHARINFO pCharTmp;
 
 		pCharTmp = g_aCharInfo[pData[i]];
+		/* 依頼の見えるNPCは魔法の対象にしない */
+		if (IsQuestNpc (pCharTmp)) {
+			continue;
+		}
 		x = GetCharDistanceX (pChar, pCharTmp);
 		y = abs (pChar->dwY - pCharTmp->dwY);
 
@@ -489,6 +493,10 @@ static BOOL MakeCharTblTargetSub_FRONT(PARRAYDWORD aTarget,
 		PCHARINFO pCharTmp;
 
 		pCharTmp = g_aCharInfo[pData[i]];
+		/* 依頼の見えるNPCは魔法の対象にしない */
+		if (IsQuestNpc (pCharTmp)) {
+			continue;
+		}
 		x = GetCharDistanceX (pChar, pCharTmp);
 		y = (int)pCharTmp->dwY - (int)pChar->dwY;
 
@@ -609,6 +617,10 @@ static BOOL MakeCharTblTargetSub_CIRCLE(PARRAYDWORD aTarget,
 		PCHARINFO pCharTmp;
 
 		pCharTmp = g_aCharInfo[pData[i]];
+		/* 依頼の見えるNPCは魔法の対象にしない */
+		if (IsQuestNpc (pCharTmp)) {
+			continue;
+		}
 		x = abs (GetCharDistanceX (pChar, pCharTmp));
 		y = abs (pChar->dwY - pCharTmp->dwY);
 
@@ -696,6 +708,10 @@ static BOOL MakeCharTblTargetSub_SCREEN(PARRAYDWORD aTarget,
 		PCHARINFO pCharTmp;
 
 		pCharTmp = g_aCharInfo[pData[i]];
+		/* 依頼の見えるNPCは魔法の対象にしない */
+		if (IsQuestNpc (pCharTmp)) {
+			continue;
+		}
 		x = abs (GetCharDistanceX (pChar, pCharTmp));
 		y = abs (pChar->dwY - pCharTmp->dwY);
 
@@ -783,6 +799,10 @@ static BOOL MakeCharTblTargetSub_FRONTSIDE(PARRAYDWORD aTarget,
 		PCHARINFO pCharTmp;
 
 		pCharTmp = g_aCharInfo[pData[i]];
+		/* 依頼の見えるNPCは魔法の対象にしない */
+		if (IsQuestNpc (pCharTmp)) {
+			continue;
+		}
 		x = GetCharDistanceX (pChar, pCharTmp);
 		y = (int)pCharTmp->dwY - (int)pChar->dwY;
 

@@ -82,6 +82,8 @@ Module['sboData'] = (function () {
 		/* 作り手とレシピ（ファイルが無い時は 0 件。初めて保存した時に作られる） */
 		maker: 'SboDataMakerInfo.dat',
 		recipe: 'SboDataRecipeInfo.dat',
+		/* ギルドの仕事依頼（ファイルが無い時は 0 件。初めて保存した時に作られる） */
+		quest: 'SboDataQuestInfo.dat',
 		/* NPC（プレイヤーは書き換えられない。ファイルはプレイヤーと一緒） */
 		char: 'SboDataCharInfo.dat',
 		/* マップは 1 マップ 1 ファイル（SboDataMapInfo000.dat〜）。マス目（tiles）も同じファイル */
@@ -653,9 +655,10 @@ Module['sboData'] = (function () {
 
 	/* 追加した記録を「消す」変更。消せない種類は null */
 	function eraseChanges(kind) {
-		if (kind === 'maker' || kind === 'recipe') {
-			return { byState: 0 };
+		if (kind === 'maker' || kind === 'recipe' || kind === 'quest') {
+			return { byState: 0 };		/* 依頼は削除が無いので、追加した依頼は「止める」（0）にする */
 		}
+
 		if (kind === 'char') {
 			return { deleted: true };
 		}

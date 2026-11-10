@@ -1609,12 +1609,13 @@
 	/* ---- AI連携 ---- */
 	var AI_KIND = {
 		magic: '特技', magicUser: '特技を使える職業', equUser: '装備できる職業',
-		job: '職業', stTmp: 'ステータステンプレート', item: 'アイテム', maker: '作り手', recipe: 'レシピ',
+		job: '職業', stTmp: 'ステータステンプレート', item: 'アイテム', maker: '作り手', recipe: 'レシピ', quest: 'ギルドの依頼',
+
 		char: 'NPC', map: 'マップ', tiles: 'マス目', mapParts: 'マップパーツ', efc: 'エフェクト', comEfc: '吹き出し', subGame: 'サブゲーム'
 	};
 	var AI_OP = { update: '変更', add: '追加', undo: '元に戻す', rollback: 'しおりまで戻す', tiles: '書き換え' };
 	/* 追加しても元に戻せる（消せる）種類 */
-	var AI_ERASABLE = { maker: 1, recipe: 1, char: 1 };
+	var AI_ERASABLE = { maker: 1, recipe: 1, quest: 1, char: 1 };
 
 	/* 履歴・下見の 1 件の見出し（マス目は範囲、NPC は消した・足し直したも） */
 	function aiItemHead(kind, it) {

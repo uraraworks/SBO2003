@@ -144,7 +144,33 @@ enum {
 	WNDTYPE_STATUSMAGIC,										/* 強さ：覚えている特技 */
 	WNDTYPE_MAKER,												/* 作り手（レシピ）：作れる物の一覧・確認 */
 	WNDTYPE_TOWNWARP,											/* 町転送：行き先の選択 */
+	WNDTYPE_QUEST,												/* ギルドの依頼：一覧・進み具合 */
 };
+
+/* 依頼ウィンドウ(WNDTYPE_QUEST)の nType2 */
+enum {
+	QUESTWND_LIST = 0,											/* ギルドの人に話した時の依頼一覧 */
+	QUESTWND_STATE,												/* コマンドの「依頼」：自分と仲間の進み具合 */
+};
+#define QUEST_WINCX					(16 * 21)									/* 窓の幅（右上の所持金の窓に重ならない広さ） */
+#define QUEST_LISTROWS				(5)											/* 一覧に一度に出す行数 */
+#define QUEST_DETAILROWS			(6)											/* 詳細欄の行数（16ドットの字） */
+#define QUEST_DETAILY				(16 * (1 + QUEST_LISTROWS) + 8)				/* 詳細欄の上端 */
+#define QUEST_WINCY					(QUEST_DETAILY + 16 * QUEST_DETAILROWS + 16)	/* 窓の高さ */
+#define QUEST_WAITMAX				(5000)										/* 返事を待つ最長時間(ms) */
+#define QUESTWRAP_LINEBYTES			(128)										/* 折り返した文の 1 行のバイト数 */
+
+
+
+/* 依頼一覧の1件（サーバーから届いたもの） */
+typedef struct _QUESTLISTITEM {
+	BYTE		byMark;												/* 印(QUESTMARK_*) */
+	WORD		wQuestID;											/* 依頼番号 */
+	char		szName[MAX_QUESTNAME];								/* 名前 */
+	char		szExplain[MAX_QUESTMSG];							/* 説明 */
+	char		szGoal[MAX_QUESTGOAL];								/* いまの目的 */
+	char		szReward[MAX_QUESTGOAL];							/* 報酬 */
+} QUESTLISTITEM, *PQUESTLISTITEM;
 
 /* 作り手ウィンドウ(WNDTYPE_MAKER)の nType2 */
 enum {
@@ -176,7 +202,11 @@ enum {
 	IDCONFIRMTYPE_BREAKSUGOROKU,								/* すごろくを抜ける */
 	IDCONFIRMTYPE_STARTPOS,										/* 復活位置を記録する確認 */
 	IDCONFIRMTYPE_MERCOUT,										/* 傭兵と別れる */
+	IDCONFIRMTYPE_QUESTACCEPT,									/* 依頼を受ける確認 */
+	IDCONFIRMTYPE_QUESTCANCEL,									/* 依頼を取り消す確認 */
+	IDCONFIRMTYPE_QUESTHANDIN,									/* 依頼を達成して報酬をもらう確認 */
 };
+
 
 /* メッセージウィンドウ(WNDTYPE_MSG)の nData2 の状態 */
 #define MSGSTATE_STARTPOSCONF	(3)								/* 復活位置の「はい・いいえ」待ち */

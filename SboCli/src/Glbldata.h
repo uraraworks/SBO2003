@@ -211,6 +211,13 @@ extern int g_nMakerCount;												/* 作り手の総数（空き枠を含む�
 extern int g_nRecipeCount;												/* レシピの総数（空き枠を含む） */
 extern CMDPARA_TOWNWARP g_TownWarpInfo;								/* 町転送の行き先一覧（サーバーから届いたもの。byCount=0 なら無し） */
 extern BYTE g_byTownWarpSel;										/* 町転送で選んだ行き先の番号（0=復活位置。特技を使う時に送る） */
+extern QUESTLISTITEM g_aQuestList[MAX_QUESTLIST];						/* 依頼一覧（ギルドの人に話した時にサーバーから届いたもの） */
+extern int g_nQuestListCount;											/* 依頼一覧の件数 */
+extern DWORD g_dwQuestGuildTblID;										/* 一覧を出したギルドの人のテーブルID */
+extern DWORD g_dwQuestWaitTime;											/* 一覧の返事待ちを始めた時間（0=待っていない） */
+extern CMDPARA_QUESTSTATE g_QuestState;									/* 自分と仲間の依頼の進み具合（byCount=0 なら無し） */
+extern char g_szQuestMsg[MAX_QUESTMSG];									/* 依頼の窓の詳細欄に出す「お知らせ」「確認の文」（空なら選んだ依頼の説明） */
+
 extern int g_nProcMakerID;												/* 開いている作り手の番号（開いていなければ -1） */
 extern BOOL g_bProcMakerLeaveOK;										/* 預かり所の中身（g_pLeaveInfo）を作り手の画面を開いてから受け取ったか */
 extern BOOL g_bProcMakerWait;											/* 作成要求を出して、サーバーの返事待ちか */
@@ -245,6 +252,11 @@ extern int GetTownWarpSelectCount	(void);							/* 町転送で選べる行き�
 extern void GetTownWarpLabel	(int nNo, LPSTR pszDst, int nSize);	/* 行き先の表示名を取得 */
 extern LPCSTR GetTownWarpTitle	(int nMode);						/* 町転送の一覧ウィンドウの見出し */
 extern BOOL TownWarpNeedForget	(DWORD dwMapID);					/* 教会で記録する時に忘れる町を選ぶ必要があるか */
+
+extern int QuestWrapText		(LPCSTR pszSrc, int nMaxWidth, char (*pszOut)[QUESTWRAP_LINEBYTES], int nMaxLines);	/* 依頼の文を表示幅で折り返す（戻り値は行数） */
+extern int QuestMakeDetailLines	(PWNDINFO pWnd, char (*pszOut)[QUESTWRAP_LINEBYTES], int nMaxLines);	/* 依頼の窓の詳細欄（一覧）／進み具合（状態）の行を作る */
+extern PWNDINFO QuestFindWindow	(int nType2);								/* 開いている依頼の窓を探す（無ければ NULL） */
+
 
 /* 向き別縦横増減テーブル */
 extern  int anPosAddTblX[],

@@ -43,7 +43,8 @@ const TARGETS = {
  * 書き出す種類。leave（プレイヤーの預かり所）は出さない。
  * char は保存される NPC だけ（プレイヤー・発生した敵は出さない）。番号（id）は再起動で動くので、npcId で突き合わせる。
  */
-const EXPORT_KINDS = ['magic', 'magicUser', 'equUser', 'job', 'stTmp', 'item', 'maker', 'recipe', 'char', 'map', 'mapParts', 'efc', 'comEfc', 'subGame'];
+const EXPORT_KINDS = ['magic', 'magicUser', 'equUser', 'job', 'stTmp', 'item', 'maker', 'recipe', 'quest', 'char', 'map',
+ 'mapParts', 'efc', 'comEfc', 'subGame'];
 const SKIP_KINDS = { leave: 'プレイヤーの預かり所なので書き出しません' };
 /* NPC で書き出さない項目（遊んでいる間に変わる・読むだけ）。歩き回る NPC は今の位置 dwX・dwY も出さない */
 const NPC_DROP = ['id', 'byDirection', 'isPlayer', 'online', 'jobMagic'];

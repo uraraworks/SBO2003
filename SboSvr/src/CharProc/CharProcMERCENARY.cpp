@@ -846,7 +846,7 @@ void CCharProcMERCENARY::BuildPathField(int nMaxDist, BOOL bChars)
 					break;
 				}
 				PCHARINFO pCharTmp = g_aCharInfo[apTbl[t][j]];
-				if ((pCharTmp == m_pChar) || (pCharTmp->byNpcType == NPCTYPE_NOBLOCK)) {
+				if ((pCharTmp == m_pChar) || (pCharTmp->byNpcType == NPCTYPE_NOBLOCK) || IsQuestNpc (pCharTmp)) {
 					continue;
 				}
 				x = (int)pCharTmp->dwX - nOX;

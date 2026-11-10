@@ -30,7 +30,8 @@ node tools/data/sbo-data.mjs import --target staging --note "料理のレシピ�
 
 | 種類 | 取り込み |
 |---|---|
-| magic・magicUser・equUser・job・stTmp・item・maker・recipe | できる |
+| magic・magicUser・equUser・job・stTmp・item・maker・recipe・quest | できる |
+
 | char（保存される NPC だけ） | できる（`npcId` で突き合わせ。下の「NPC」） |
 | map（マス目は除く）・mapParts・efc・comEfc・subGame | できる（subGame は `detail` の項目だけ） |
 | leave | 書き出さない（プレイヤーの預かり所） |

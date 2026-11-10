@@ -86,6 +86,7 @@ void KeyProcDEAD_COMMAND					(PWNDINFO, BYTE, BYTE);		/* 死亡中：コマン�
 void KeyProcSTATUSMAGIC					(PWNDINFO, BYTE, BYTE);		/* 強さ：覚えている特技 */
 void KeyProcMAKER							(PWNDINFO, BYTE, BYTE);		/* 作り手（レシピ）：作れる物の一覧・確認 */
 void KeyProcTOWNWARP						(PWNDINFO, BYTE, BYTE);		/* 町転送：行き先の選択 */
+void KeyProcQUEST							(PWNDINFO, BYTE, BYTE);		/* ギルドの依頼：一覧・進み具合 */
 
 LRESULT CALLBACK AccWndProc					(HWND, UINT, WPARAM, LPARAM);	/* アカウント名入力用メッセージ処理 */
 LRESULT CALLBACK PasWndProc					(HWND, UINT, WPARAM, LPARAM);	/* パスワード入力用メッセージ処理 */
@@ -221,6 +222,7 @@ const KEYPROC KeyProcTbl[] = {
 	KeyProcSTATUSMAGIC,					/* WNDTYPE_STATUSMAGIC					強さ：覚えている特技 */
 	KeyProcMAKER,						/* WNDTYPE_MAKER						作り手（レシピ）：作れる物の一覧・確認 */
 	KeyProcTOWNWARP,					/* WNDTYPE_TOWNWARP					町転送：行き先の選択 */
+	KeyProcQUEST,						/* WNDTYPE_QUEST					ギルドの依頼：一覧・進み具合 */
 };
 
 
@@ -1365,6 +1367,17 @@ void KeyProcCOMMAND(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				g_dwActiveMsgID = pWndNew->dwID;
 			}
 			break;
+
+		/* 依頼（自分と仲間の依頼の進み具合） */
+		case 10:
+			{
+				PWNDINFO pWndNew = MakeWindowQUEST (QUESTWND_STATE);
+				pWndNew->pParent = pWnd;
+				pWnd->pChild = pWndNew;
+				g_WndInfo.Add (pWndNew);
+				g_dwActiveMsgID = pWndNew->dwID;
+			}
+			break;
 		}
 
 	} else if ((byEvent == KEY_DOWN) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
@@ -1374,7 +1387,7 @@ void KeyProcCOMMAND(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			pWnd->nData1 -= 2;
 			bMove = TRUE;
 
-		} else if ((byCode == VK_DOWN) && (pWnd->nData1 + 1 < 9)) {
+		} else if ((byCode == VK_DOWN) && (pWnd->nData1 + 2 <= 10)) {
 			pWnd->nData1 += 2;
 			bMove = TRUE;
 
@@ -1382,7 +1395,8 @@ void KeyProcCOMMAND(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			pWnd->nData1 --;
 			bMove = TRUE;
 
-		} else if ((byCode == VK_RIGHT) && (pWnd->nData1 % 2 == 0)) {
+		} else if ((byCode == VK_RIGHT) && (pWnd->nData1 % 2 == 0) && (pWnd->nData1 < 10)) {
+
 			pWnd->nData1 ++;
 			bMove = TRUE;
 		}
@@ -4772,9 +4786,38 @@ void KeyProcCONF(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		}
 	}
 
+	/* ギルドの依頼の確認：はいならサーバーに頼む。質問の文は依頼の窓の詳細欄に出している */
+	if ((pWnd->nType2 >= IDCONFIRMTYPE_QUESTACCEPT) && (pWnd->nType2 <= IDCONFIRMTYPE_QUESTHANDIN)) {
+		if ((byEvent == KEY_UP) && ((byCode == 'A') || (byCode == 'B'))) {
+			PWNDINFO pWndList = (PWNDINFO)pWnd->pParent;
+			BOOL bYes = (byCode == 'A') && (pWnd->nData1 == 0);
+
+			if (bYes) {
+				BYTE byType = QUESTCMD_ACCEPT;
+				if (pWnd->nType2 == IDCONFIRMTYPE_QUESTCANCEL) {
+					byType = QUESTCMD_CANCEL;
+				} else if (pWnd->nType2 == IDCONFIRMTYPE_QUESTHANDIN) {
+					byType = QUESTCMD_HANDIN;
+				}
+				SendCmdQUEST (byType, (WORD)pWnd->dwData, g_dwQuestGuildTblID);
+				DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
+			} else {
+				DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
+			}
+			g_szQuestMsg[0] = 0;
+			EraseWindow (pWnd);
+			if (pWndList) {
+				pWndList->dwTimeDrawStart = 0;
+			}
+			g_bDraw = TRUE;
+			return;
+		}
+	}
+
 	if ((byEvent == KEY_UP) && (byCode == 'B')) {
 		switch (pWnd->nType2) {
 		case IDCONFIRMTYPE_PARTYJOIN:	/* 仲間に入る確認 */
+
 			SendCMDPARTY (CMDPARTY_JOINNO, (DWORD)pWnd->nData2, 0);
 			EraseWindow (pWnd);
 			break;
@@ -6849,7 +6892,120 @@ void KeyProcBATTLE_TARGET(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 }
 
 /* ========================================================================= */
+/* 関数名：KeyProcQUEST														 */
+/* 内容：キー入力処理(ギルドの依頼：一覧・進み具合)							 */
+/*		 一覧：決定で、印に合わせて「受ける」「取り消す」「渡す」の確認		 */
+/*		 状態：上下で文を送る												 */
+/* ========================================================================= */
+void KeyProcQUEST(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
+{
+	DWORD dwTime = 250;
+	if (pWnd->byRepeate > 1) {
+		dwTime = 125;
+	}
+
+	if ((byEvent == KEY_UP) && (byCode == 'B')) {
+		EraseWindow (pWnd);
+		g_bDraw = TRUE;
+		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
+
+	} else if ((byEvent == KEY_UP) && (byCode == 'A') && (pWnd->nType2 == QUESTWND_LIST)) {
+		PQUESTLISTITEM pItem;
+		PWNDINFO pWndConf;
+		int nType = 0;
+		char szTmp[MAX_QUESTNAME + 64];
+
+		if ((pWnd->nData1 < 0) || (pWnd->nData1 >= g_nQuestListCount)) {
+			return;
+		}
+		pItem = &g_aQuestList[pWnd->nData1];
+		switch (pItem->byMark) {
+		case QUESTMARK_FREE:
+			nType = IDCONFIRMTYPE_QUESTACCEPT;
+			_snprintf (szTmp, sizeof (szTmp) - 1, "「%s」を受けますか？", pItem->szName);
+			break;
+		case QUESTMARK_MINE:
+			nType = IDCONFIRMTYPE_QUESTCANCEL;
+			_snprintf (szTmp, sizeof (szTmp) - 1, "「%s」を取り消しますか？（ばつはありません）", pItem->szName);
+			break;
+		case QUESTMARK_READY:
+			nType = IDCONFIRMTYPE_QUESTHANDIN;
+			_snprintf (szTmp, sizeof (szTmp) - 1, "「%s」が終わりました。ほうしゅうを受け取りますか？", pItem->szName);
+			break;
+		default:
+			/* 受けられない */
+			_snprintf (g_szQuestMsg, sizeof (g_szQuestMsg) - 1, "この依頼は、いまは受けられません。");
+			pWnd->dwTimeDrawStart = 0;
+			g_bDraw = TRUE;
+			DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
+			return;
+		}
+		szTmp[sizeof (szTmp) - 1] = 0;
+		_snprintf (g_szQuestMsg, sizeof (g_szQuestMsg) - 1, "%s", szTmp);
+
+		/* 確認（いいえを先に選んでおく） */
+		pWndConf = MakeWindowCONF (pWnd->nX + pWnd->nCx - 16 * 7, pWnd->nY + 16, nType);
+		pWndConf->nData1 = 1;
+		pWndConf->dwData = pItem->wQuestID;
+		pWndConf->pParent = pWnd;
+		pWnd->pChild = pWndConf;
+		g_WndInfo.Add (pWndConf);
+		g_dwActiveMsgID = pWndConf->dwID;
+		pWnd->dwTimeDrawStart = 0;
+		g_bDraw = TRUE;
+
+	} else if ((byEvent == KEY_DOWN) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
+		BOOL bMove = FALSE;
+
+		if (pWnd->nType2 == QUESTWND_LIST) {
+			if ((byCode == VK_UP) && (pWnd->nData1 > 0)) {
+				pWnd->nData1 --;
+				if (pWnd->nData1 < pWnd->nData2) {
+					pWnd->nData2 = pWnd->nData1;
+				}
+				bMove = TRUE;
+
+			} else if ((byCode == VK_DOWN) && (pWnd->nData1 + 1 < g_nQuestListCount)) {
+				pWnd->nData1 ++;
+				if (pWnd->nData1 >= pWnd->nData2 + QUEST_LISTROWS) {
+					pWnd->nData2 = pWnd->nData1 - QUEST_LISTROWS + 1;
+				}
+				bMove = TRUE;
+			}
+			if (bMove) {
+				/* 選び直したら、お知らせは消して説明に戻す */
+				g_szQuestMsg[0] = 0;
+			}
+		} else {
+			/* 状態：1行ずつ送る（行数を超える分は描画側で止める） */
+			if ((byCode == VK_UP) && (pWnd->nData2 > 0)) {
+				pWnd->nData2 --;
+				bMove = TRUE;
+			} else if (byCode == VK_DOWN) {
+				pWnd->nData2 ++;
+				bMove = TRUE;
+			}
+		}
+
+		if (bMove) {
+			pWnd->dwTime = timeGetTime ();
+			pWnd->byAnime = 1;
+			pWnd->byRepeate ++;
+			pWnd->dwTimeKey = timeGetTime ();
+			pWnd->dwTimeDrawStart = 0;
+			g_bDraw = TRUE;
+		}
+
+	} else if (byEvent == KEY_UP) {
+		pWnd->dwTimeKey = timeGetTime () - 250;
+		pWnd->byRepeate = 0;
+		g_bDraw = TRUE;
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：KeyProcTOWNWARP													 */
+
 /* 内容：キー入力処理(町転送：行き先の選択)									 */
 /* ========================================================================= */
 void KeyProcTOWNWARP(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
@@ -7913,8 +8069,29 @@ void CmdProcHanasu(PWNDINFO pWnd)
 			pWndTmp = NULL;
 		}
 
+	/* ギルドの依頼の受付(@g)・依頼の見える人(@q)？ 返事（一覧・お知らせ）はサーバーから届く */
+	} else if (pChar2->pszNpcSpeech[0] == '@' &&
+		((pChar2->pszNpcSpeech[1] == 'g') || (pChar2->pszNpcSpeech[1] == 'q'))) {
+		if (pChar2->pszNpcSpeech[1] == 'g') {
+			/* 一覧を開くのは、返事が届いてから */
+			g_dwQuestWaitTime = timeGetTime ();
+			if (g_dwQuestWaitTime == 0) {
+				g_dwQuestWaitTime = 1;
+			}
+		}
+		SendCmdTALKRAND (pChar2->dwTblID);
+		pChar2->byDirection = abyDirectionTbl[pChar->byDirection];
+		int nNo = GetWindowID (g_dwMsgIDCommand);
+		if (nNo >= 0) {
+			EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
+			g_dwMsgIDCommand = 0;
+			g_bDraw = TRUE;
+		}
+		return;
+
 	/* 傭兵所？ 雇う・お別れするのはサーバーが決めて、お知らせが来る */
 	} else if (pChar2->pszNpcSpeech[0] == '@' && pChar2->pszNpcSpeech[1] == 'm') {
+
 		SendCmdTALKRAND (pChar2->dwTblID);
 		pChar2->byDirection = abyDirectionTbl[pChar->byDirection];
 		int nNo = GetWindowID (g_dwMsgIDCommand);

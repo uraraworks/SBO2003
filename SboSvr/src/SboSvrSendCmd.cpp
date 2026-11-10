@@ -138,6 +138,10 @@ void SendCmdInside2(PCHARINFO pChar, LPBYTE pSendData, DWORD dwSize,
 		if (pCharDst->byGameState < GAMESTATE_MOVE) {
 			continue;
 		}
+		/* 依頼の見えるNPCの話は、見える人にだけ送る */
+		if (!IsCharVisibleTo (pChar, pCharDst)) {
+			continue;
+		}
 
 		/* 画面内にいるかチェック */
 		x = abs (pCharDst->dwX - pChar->dwX);
@@ -252,6 +256,10 @@ void CheckCharPosSend(PCHARINFO pChar)
 				}
 			}
 			break;
+		}
+		/* 依頼の見えるNPCは、見える人にだけ知らせる */
+		if (bSend && !IsCharVisibleTo (pCharDst, pChar)) {
+			bSend = FALSE;
 		}
 		if (bSend) {
 			SendCmdCHARPOS (pChar->pID, pCharDst->dwTblID, 0, 0);
@@ -598,6 +606,10 @@ void SendCmdCHARINFO(DWORD pIDSend, int nNo)
 						/* ログオフ中のキャラ情報は送らない */
 						continue;
 					}
+					/* 依頼の見えるNPCは、見える人（持ち主・仲間・管理者）にだけ送る */
+					if (!IsCharVisibleToPID (pChar, pIDSend)) {
+						continue;
+					}
 
 					pSendData->pID					= pChar->pID;
 					pSendData->dwTblID				= pChar->dwTblID;
@@ -721,6 +733,10 @@ void SendCmdCHARINFO2(DWORD pIDSend, DWORD dwID, int nNo)
 						/* ログオフ中のキャラ情報は送らない */
 						continue;
 					}
+					/* 依頼の見えるNPCは、見える人（持ち主・仲間・管理者）にだけ送る */
+					if (!IsCharVisibleToPID (pChar, pIDSend)) {
+						continue;
+					}
 
 					pSendData->pID				= pChar->pID;
 					pSendData->dwTblID			= pChar->dwTblID;
@@ -788,6 +804,10 @@ static void SendCmdInsideCHARINFO(PCHARINFO pChar, PBYTE pFull, int nFull, PBYTE
 	for (int i = 0; pData[i] != -1; i ++) {
 		PCHARINFO pCharDst = g_aCharInfo[pData[i]];
 		if (pCharDst->byGameState < GAMESTATE_MOVE) {
+			continue;
+		}
+		/* 依頼の見えるNPCは、見える人（持ち主・仲間・管理者）にだけ送る */
+		if (!IsCharVisibleTo (pChar, pCharDst)) {
 			continue;
 		}
 		int x = abs (pCharDst->dwX - pChar->dwX);
@@ -954,6 +974,19 @@ void SendCmdCHARPOS(DWORD pIDSend, int nNo, BYTE byFlg, BYTE byInside)
 //	char szTmp[128];
 //	wsprintf (szTmp, "→CHARPOS送信 ID:%d\r\n", pSendData->dwTblID);
 //	OutputDebugString (szTmp);
+
+	/* 依頼の見えるNPCの座標は、見える人にだけ送る（範囲送信は SendCmdInside2 が絞る） */
+	if (IsQuestNpc (g_aCharInfo[nNo])) {
+		if (byInside == 2) {
+			byInside = 1;		/* マップ全体への送信は絞り込めないので、範囲送信（絞り込みあり）にする */
+		}
+		if ((byInside == 3) || (pIDSend == URARASOCK_SENDALL) || !byInside) {
+			if (!IsCharVisibleToPID (g_aCharInfo[nNo], pIDSend)) {
+				delete pSendData;
+				return;
+			}
+		}
+	}
 
 	if (byInside == 3) {
 //		DWORD dwNumMsgs;

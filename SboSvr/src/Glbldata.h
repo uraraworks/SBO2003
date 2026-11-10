@@ -70,6 +70,8 @@ extern CmyArray<PMAGICUSERINFO, PMAGICUSERINFO> g_aMagicUserInfo;			/* 魔法利
 extern CmyArray<PEQUUSERINFO, PEQUUSERINFO> g_aEquUserInfo;					/* 装備職業情報 */
 extern CmyArray<PMAKERINFO, PMAKERINFO> g_aMakerInfo;							/* 作り手情報 */
 extern CmyArray<PRECIPEINFO, PRECIPEINFO> g_aRecipeInfo;						/* レシピ情報 */
+extern CmyArray<PQUESTINFO, PQUESTINFO> g_aQuestInfo;							/* 依頼情報 */
+
 
 /* 向き別縦横増減テーブル */
 extern  int anPosAddTblX[],

@@ -110,6 +110,7 @@ PWNDINFO MakeWindowSUBSUGOROKU_IDLE				(void);				/* すごろく：平常状態
 PWNDINFO MakeWindowMAKER						(int);				/* 作り手：作れる物の一覧 */
 PWNDINFO MakeWindowMAKER_CONF					(int);				/* 作り手：確認 */
 PWNDINFO MakeWindowTOWNWARP					(int nMode);				/* 町転送：行き先の選択 */
+PWNDINFO MakeWindowQUEST					(int nMode);				/* ギルドの依頼：一覧・進み具合 */
 int MakerGetRecipeList							(int, int *, int);	/* 作り手の一覧に出すレシピの番号を並び順で取得 */
 int MakerGetCursorRecipe						(PWNDINFO);			/* 一覧のカーソル位置のレシピの番号 */
 int MakerCountHave								(WORD);				/* 材料として使える数（持ち物+預かり所） */
@@ -360,8 +361,9 @@ PWNDINFO MakeWindowCOMMAND(void)
 	pWnd->nX = 32;
 	pWnd->nY = 50;
 	pWnd->nCx = 16 * 10;
-	pWnd->nCy = 16 * 7;
+	pWnd->nCy = 16 * 8;												/* 「依頼」の段を足したので 1 行ぶん高い */
 	pWnd->nType = WNDTYPE_COMMAND;
+
 	g_dwMsgIDCommand = pWnd->dwID;
 	pWnd->pDib = new CImg32;
 	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
@@ -2115,8 +2117,36 @@ PWNDINFO MakeWindowTOWNWARP(int nMode)
 }
 
 /* ========================================================================= */
+/* 関数名：MakeWindowQUEST													 */
+/* 内容：ウィンドウの作成(ギルドの依頼：一覧・進み具合)						 */
+/*		 nData1=選んでいる依頼 nData2=一覧の先頭（状態の窓は先頭の行）		 */
+/* ========================================================================= */
+PWNDINFO MakeWindowQUEST(int nMode)
+{
+	PWNDINFO pWnd = new WNDINFO;
+	ZeroMemory (pWnd, sizeof (WNDINFO));
+	pWnd->dwID = g_dwNewID;
+	g_dwNewID ++;
+
+	pWnd->nData1 = 0;
+	pWnd->nData2 = 0;
+	pWnd->nX = 32;
+	pWnd->nY = 50;
+	pWnd->nCx = QUEST_WINCX;
+	pWnd->nCy = QUEST_WINCY;
+	pWnd->nType = WNDTYPE_QUEST;
+	pWnd->nType2 = nMode;
+	pWnd->pDib = new CImg32;
+	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
+	pWnd->pDib->SetColorKey (RGB (40, 40, 40));
+
+	return pWnd;
+}
+
+/* ========================================================================= */
 /* 関数名：MakeWindowCOMMANDMAGICBATTLE										 */
 /* 内容：ウィンドウの作成(魔法(戦闘マップ))									 */
+
 /* 日付：2004/09/25															 */
 /* ========================================================================= */
 PWNDINFO MakeWindowCOMMANDMAGICBATTLE(void)

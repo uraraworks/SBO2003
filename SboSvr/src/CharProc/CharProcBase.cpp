@@ -135,6 +135,8 @@ void CCharProcBase::SetProc(PCHARINFO pChar)
 	case NPCTYPE_USEMAGICPARENT:	pProc = new CCharProcUSEMAGICPARENT;	break;	/* 魔法発動し続ける */
 	case NPCTYPE_SEARCH2:			pProc = new CCharProcSEARCH2;			break;	/* 検索してついていく2 */
 	case NPCTYPE_MERCENARY:			pProc = new CCharProcMERCENARY;			break;	/* 傭兵 */
+	case NPCTYPE_QUESTNPC:			pProc = new CCharProcNOMOVE;			break;	/* 依頼の見えるNPC（動かない） */
+
 	}
 
 	if (pProc) {
