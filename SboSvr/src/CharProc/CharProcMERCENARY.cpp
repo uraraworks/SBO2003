@@ -191,6 +191,17 @@ BOOL CCharProcMERCENARY::Proc(DWORD dwTime)
 
 	SyncParty (pOwner, dwTime);
 
+	/* 雇い主と取り引き中は、その場で待つ(雇い主も動けない。戦いもやめる) */
+	if (RecvCmdIsTrading (m_pChar->dwTblID)) {
+		std::map<DWORD, MERCINFO>::iterator itMerc = s_mapMerc.find (m_pChar->dwTblID);
+		if (itMerc != s_mapMerc.end ()) {
+			itMerc->second.bFighting = FALSE;
+		}
+		m_dwEnemy		= (DWORD)-1;
+		m_dwStuckTime	= dwTime;
+		return FALSE;
+	}
+
 	/* 雇い主のとなりへ移っている途中(消えている間は何もしない) */
 	if (m_dwWarpTime) {
 		if ((DWORD)(dwTime - m_dwWarpTime) >= MERC_FADETIME) {
