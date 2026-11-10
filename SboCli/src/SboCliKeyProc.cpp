@@ -8418,6 +8418,18 @@ BOOL CmdProcSiraberu(PWNDINFO pWnd)
 
 	}
 
+	/* 足元に依頼の宝箱などがあれば、マップの仕掛けより先にそちらを調べる（返事はサーバーから届く） */
+	if (SiraberuQuestNpc (pChar)) {
+		/* 話した時と同じくコマンドウィンドウを閉じる */
+		int nNo = GetWindowID (g_dwMsgIDCommand);
+		if (nNo >= 0) {
+			EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
+			g_dwMsgIDCommand = 0;
+			g_bDraw = TRUE;
+		}
+		goto Exit;
+	}
+
 	dwX = pChar->dwX;
 	dwY = pChar->dwY;
 	if (g_pMapInfo->pbyFlg[dwX + g_pMapInfo->nCX * dwY] & MAPFLG_EVENT) {
@@ -8462,9 +8474,6 @@ BOOL CmdProcSiraberu(PWNDINFO pWnd)
 				}
 			}
 			bResult = FALSE;
-
-		} else if (SiraberuQuestNpc (pChar)) {
-			/* 足元の依頼の宝箱などを調べた（返事はサーバーから届く） */
 
 		} else {
 			PWNDINFO pWndTmp;
