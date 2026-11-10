@@ -3213,7 +3213,7 @@ void DrawWindowQUEST(PWNDINFO pWnd)
 		/* 詳細欄 */
 		nLines = QuestMakeDetailLines (pWnd, aszLine, QUEST_DETAILROWS);
 		for (i = 0; i < nLines; i ++) {
-			TextOut2 (hDC, 16, QUEST_DETAILY + i * 16, aszLine[i], RGB (255, 255, 255));
+			TextOut2 (hDC, QUEST_TEXTX, QUEST_DETAILY + i * 16, aszLine[i], RGB (255, 255, 255));
 		}
 
 	} else {
@@ -3228,7 +3228,7 @@ void DrawWindowQUEST(PWNDINFO pWnd)
 			if (nNo >= nLines) {
 				break;
 			}
-			TextOut2 (hDC, 16, 16 + i * 16, aszLine[nNo], RGB (255, 255, 255));
+			TextOut2 (hDC, QUEST_TEXTX, 16 + i * 16, aszLine[nNo], RGB (255, 255, 255));
 		}
 		if (pWnd->nData2 > 0) {
 			TextOut2 (hDC, pWnd->nCx - 32, 16, "▲", RGB (255, 255, 255));

@@ -158,6 +158,7 @@ enum {
 #define QUEST_DETAILY				(16 * (1 + QUEST_LISTROWS) + 8)				/* 詳細欄の上端 */
 #define QUEST_WINCY					(QUEST_DETAILY + 16 * QUEST_DETAILROWS + 16)	/* 窓の高さ */
 #define QUEST_WAITMAX				(5000)										/* 返事を待つ最長時間(ms) */
+#define QUEST_TEXTX					(24)										/* 説明の文の左端（右も同じだけ空ける） */
 #define QUESTWRAP_LINEBYTES			(128)										/* 折り返した文の 1 行のバイト数 */
 
 

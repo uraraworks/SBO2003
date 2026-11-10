@@ -789,6 +789,21 @@ BOOL TownWarpNeedForget(DWORD dwMapID)
 /* 関数名：QuestWrapText													 */
 /* 内容：依頼の文を表示幅（半角=1,全角=2）で折り返す						 */
 /* ========================================================================= */
+/* 行の頭に来てはいけない文字（句読点・閉じかっこなど）か */
+static BOOL QuestIsNoStartChar(LPCSTR psz)
+{
+	static const char *apszNoStart[] = {"、", "。", "，", "．", "」", "』", "）", "！", "？", "ー", "…", "っ", "ゃ", "ゅ", "ょ", "ッ", "ャ", "ュ", "ョ", ",", ".", ")", "!", "?", NULL};
+	int i;
+
+	for (i = 0; apszNoStart[i]; i ++) {
+		int nLen = strlen (apszNoStart[i]);
+		if (strncmp (psz, apszNoStart[i], nLen) == 0) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
 int QuestWrapText(LPCSTR pszSrc, int nMaxWidth, char (*pszOut)[QUESTWRAP_LINEBYTES], int nMaxLines)
 {
 	int nLines = 0;
@@ -807,6 +822,17 @@ int QuestWrapText(LPCSTR pszSrc, int nMaxWidth, char (*pszOut)[QUESTWRAP_LINEBYT
 			continue;
 		}
 		nLen = SboTextFitWidth (pszSrc, nMaxWidth);
+		/* 行の頭に「。」「、」などが来る時は、前の 1 文字も次の行へ送る（禁則） */
+		if ((pszSrc[nLen] != 0) && (pszSrc[nLen] != '\n') && QuestIsNoStartChar (&pszSrc[nLen])) {
+			int nPrev = 0, nPos = 0;
+			while (nPos < nLen) {
+				nPrev = nPos;
+				nPos += max (SboTextCharLen (&pszSrc[nPos]), 1);
+			}
+			if (nPrev > 0) {
+				nLen = nPrev;
+			}
+		}
 		/* 改行までで区切る */
 		for (int i = 0; i < nLen; i ++) {
 			if (pszSrc[i] == '\n') {
@@ -858,7 +884,7 @@ PWNDINFO QuestFindWindow(int nType2)
 int QuestMakeDetailLines(PWNDINFO pWnd, char (*pszOut)[QUESTWRAP_LINEBYTES], int nMaxLines)
 {
 	static char szText[MAX_QUESTMSG + MAX_QUESTGOAL * 2 + MAX_QUESTNAME + 256];
-	int i, nWidth = (QUEST_WINCX - 32) / 8;
+	int i, nWidth = (QUEST_WINCX - QUEST_TEXTX * 2) / 8;
 
 	szText[0] = 0;
 	if (pWnd->nType2 == QUESTWND_LIST) {
@@ -868,7 +894,7 @@ int QuestMakeDetailLines(PWNDINFO pWnd, char (*pszOut)[QUESTWRAP_LINEBYTES], int
 			PQUESTLISTITEM pItem = &g_aQuestList[pWnd->nData1];
 			_snprintf (szText, sizeof (szText) - 1, "%s\n報酬：%s%s%s",
 				pItem->szExplain, pItem->szReward,
-				pItem->szGoal[0] ? "\nいまの目的：" : "", pItem->szGoal);
+				pItem->szGoal[0] ? "\n目的：" : "", pItem->szGoal);
 		}
 		szText[sizeof (szText) - 1] = 0;
 		return QuestWrapText (szText, nWidth, pszOut, nMaxLines);
