@@ -4804,7 +4804,14 @@ void KeyProcCONF(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			} else {
 				DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
 			}
-			g_szQuestMsg[0] = 0;
+			if (bYes) {
+				/* 返事（ありがとう！など）が届くまで、依頼の説明を出さずに待つ
+				   （一瞬だけ説明が見えてから返事に変わっていた） */
+				_snprintf (g_szQuestMsg, sizeof (g_szQuestMsg) - 1, "……");
+				g_szQuestMsg[sizeof (g_szQuestMsg) - 1] = 0;
+			} else {
+				g_szQuestMsg[0] = 0;
+			}
 			EraseWindow (pWnd);
 			if (pWndList) {
 				pWndList->dwTimeDrawStart = 0;
