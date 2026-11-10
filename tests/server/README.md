@@ -6,5 +6,5 @@
 - 出力だけ見る: `tests/server/run.sh [出力ファイル]`
 - golden を作り直す（挙動を意図して変えた時だけ）: `tests/server/run.sh /tmp/x.txt && grep -v -e '^BENCH' -e '^\[' /tmp/x.txt > tests/server/golden.txt`
 
-中身（test_main.cpp）: A 送信(SendTo) / B 同画面内配信 / C myArray / D 経路探索(SEARCH2) / E キャラ巡回(TimerProc) / F 飛ぶ特技 / G すごろくの観戦参加 / H 他人に送るキャラ情報の項目消し（NPC番号 npcid も。0=送らない 1=正しい値） / I 町転送の行き先帳 / J 船で目覚めるベッドがばらける（マップ間移動のばらける範囲）。
+中身（test_main.cpp）: A 送信(SendTo) / B 同画面内配信 / C myArray / D 経路探索(SEARCH2) / E キャラ巡回(TimerProc) / F 飛ぶ特技 / G すごろくの観戦参加 / H 他人に送るキャラ情報の項目消し（NPC番号 npcid も。0=送らない 1=正しい値） / I 町転送の行き先帳 / J 船で目覚めるベッドがばらける（マップ間移動のばらける範囲） / K 傭兵（道さがしの表が前の方法と同じか・敵探しの速さ・道具を持たせる取り引き・自分で回復・帰る時に返す）。
 時刻と乱数は固定、通信は mock_net.js、実データは非公開リポジトリ SBO2003-private の Release/SBODATA のコピー（元は書き換えない。探し方は tools/server/find-data.sh）。

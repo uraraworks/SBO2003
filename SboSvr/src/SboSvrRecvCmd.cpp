@@ -820,6 +820,56 @@ static BOOL TradeCheckItem(PCHARINFO pChar, const WORD *pwaItem)
 	return TRUE;
 }
 
+/* 傭兵との取り引き：傭兵の側の返事を、雇い主の画面へ送る。
+   傭兵は持っている道具を全部返そうとし、雇い主が「決定」して渡すものが受け取れる内容なら
+   傭兵も「決定」する（雇い主の画面は両方決定で取り引きを成立させに来る） */
+static void TradeMercenaryReply(DWORD dwOwner, DWORD dwMerc)
+{
+	int i, n;
+	char szMsg[256];
+	BYTE bySum;
+	TRADESTATE *pStateOwner, *pStateMerc;
+	PCHARINFO pOwner, pMerc;
+	CMDPARA_TRADEINFO SendData;
+
+	if (!TradeGetPair (dwOwner, dwMerc, &pStateOwner, &pStateMerc)) {
+		return;
+	}
+	pOwner	= g_aCharInfo[dwOwner];
+	pMerc	= g_aCharInfo[dwMerc];
+
+	FillMemory (pStateMerc->waItem, sizeof (pStateMerc->waItem), 0xFF);
+	for (i = 0, n = 0; i < MAX_MYITEM; i ++) {
+		if (pMerc->waItem[i] && (pMerc->waItem[i] < g_aItemInfo.GetSize ())) {
+			pStateMerc->waItem[n ++] = (WORD)i;
+		}
+	}
+	pStateMerc->dwGold	= 0;
+	pStateMerc->byMode	= 0;
+	if (pStateOwner->byMode == 1) {
+		if (MercenaryTradeCheck (pOwner, pMerc, pStateOwner->waItem, pStateOwner->dwGold, szMsg, sizeof (szMsg))) {
+			pStateMerc->byMode = 1;
+		} else if (szMsg[0]) {
+			SendCmdSYSMSG (pOwner->pID, szMsg, SPEECHCMD_BATTLE1);
+		}
+	}
+
+	/* 取り引きを成立させる時の確かめ用(クライアントと同じ計算) */
+	bySum = (BYTE)pMerc->dwGold;
+	for (i = 0; i < MAX_MYITEM; i ++) {
+		bySum += (BYTE)pMerc->waItem[i];
+	}
+
+	ZeroMemory (&SendData, sizeof (SendData));
+	SendData.byCmd		= CMD_TRADEINFO;
+	SendData.byMode		= pStateMerc->byMode;
+	SendData.dwTblID	= dwOwner;
+	SendData.bySum		= bySum;
+	SendData.dwGold		= 0;
+	CopyMemory (SendData.waItem, pStateMerc->waItem, sizeof (SendData.waItem));
+	svrSock.SendTo (pOwner->pID, (PBYTE)&SendData, sizeof (SendData));
+}
+
 /* ------------------------------------------------------------------------- */
 /* 仲間の誘い（誘われていない人がパーティに入れないように覚えておく）		 */
 /* ------------------------------------------------------------------------- */
@@ -851,6 +901,31 @@ static BOOL IsRecvBombMaster(BYTE byID)
 	pSubStatus = (PSUBSTATUS_BOMB)g_aCharInfo[s_nCharNoRecv]->abySubStatus;
 	return ((pSubStatus->byType == SUBGAMEID_BOMB) && (pSubStatus->byID == byID) && pSubStatus->byFlgGameMaster);
 }
+
+/* ========================================================================= */
+/* 関数名：	RecvCmdIsTrading												 */
+/* 内容：	そのキャラが取り引き中か（傭兵は取り引き中その場で待つ）		 */
+/* ========================================================================= */
+
+BOOL RecvCmdIsTrading(DWORD dwTblID)
+{
+	return (s_mapTrade.find (dwTblID) != s_mapTrade.end ());
+}
+
+
+/* ========================================================================= */
+/* 関数名：	RecvCmdTradeClear												 */
+/* 内容：	そのキャラの取り引きの状態を消す（傭兵が帰る時など。番号が別の	 */
+/*			キャラに使い回されても、古い取り引きが成立しないように）		 */
+/* ========================================================================= */
+
+BOOL RecvCmdTradeClear(DWORD dwTblID)
+{
+	BOOL bRet = (s_mapTrade.find (dwTblID) != s_mapTrade.end ());
+	TradeClear (dwTblID);
+	return bRet;
+}
+
 
 /* ========================================================================= */
 /* 関数名：	RecvCmdOnDecPlayer												 */
@@ -7769,6 +7844,36 @@ void RecvDataProcTRADE(PBYTE pData, DWORD dwDataSize)
 		SendCmdTRADE (g_aCharInfo[pRecv->dwData]->pID, pRecv->dwTblID, CMDTRADE_OUT);
 		return;
 	}
+	/* 自分の傭兵？ 道具を持たせる・返してもらう取り引き（傭兵の返事はサーバーがする） */
+	if (IsMercenary (g_aCharInfo[pRecv->dwData])) {
+		PCHARINFO pOwner = g_aCharInfo[pRecv->dwTblID];
+		PCHARINFO pMerc = g_aCharInfo[pRecv->dwData];
+		if (GetMercenaryOwner (pMerc) != pOwner) {
+			SendCmdSYSMSG (pOwner->pID, "ほかの人の傭兵とは取り引きできません。", SPEECHCMD_BATTLE1);
+			SendCmdTRADE (pOwner->pID, pOwner->dwTblID, CMDTRADE_OUT);
+			return;
+		}
+		/* 仲間なので、HPが見えている範囲なら向き合っていなくてもよい */
+		if ((pMerc->wHP == 0) || (pMerc->byCharState == CHARSTATE_DEAD) || (pMerc->dwMapID != pOwner->dwMapID) ||
+			(abs ((int)pMerc->dwX - (int)pOwner->dwX) > MERC_TRADERANGE) ||
+			(abs ((int)pMerc->dwY - (int)pOwner->dwY) > MERC_TRADERANGE)) {
+			SendCmdTRADE (pOwner->pID, pOwner->dwTblID, CMDTRADE_OUT);
+			return;
+		}
+		/* 戦っている最中は取り引きできない(戦いながら補充し放題にしない) */
+		if (MercenaryIsFighting (pMerc)) {
+			char szTmp[256];
+			snprintf (szTmp, sizeof (szTmp), "%sは戦っている最中なので、いまは取り引きできません。", pMerc->szName);
+			SendCmdSYSMSG (pOwner->pID, szTmp, SPEECHCMD_BATTLE1);
+			SendCmdTRADE (pOwner->pID, pOwner->dwTblID, CMDTRADE_OUT);
+			return;
+		}
+		TradeStart (pOwner->dwTblID, pMerc->dwTblID);
+		SendCmdCHARITEM (pOwner->pID, pMerc->dwTblID);
+		SendCmdTRADE (pOwner->pID, pMerc->dwTblID, CMDTRADE_IN);
+		TradeMercenaryReply (pOwner->dwTblID, pMerc->dwTblID);
+		return;
+	}
 	/* 相手は近くにいる、ログイン中の自分以外のプレイヤーだけ */
 	if ((pRecv->dwData == pRecv->dwTblID) ||
 			(g_aCharInfo[pRecv->dwData]->szAcc[0] == 0) ||
@@ -7818,6 +7923,12 @@ void RecvDataProcTRADEINFO(PBYTE pData, DWORD dwDataSize)
 	pState->byMode	= pRecv->byMode;
 	pState->dwGold	= pRecv->dwGold;
 	CopyMemory (pState->waItem, pRecv->waItem, sizeof (pState->waItem));
+
+	/* 相手が傭兵なら、傭兵の返事をサーバーが送る */
+	if (IsMercenary (g_aCharInfo[pRecv->dwTblID])) {
+		TradeMercenaryReply ((DWORD)s_nCharNoRecv, pRecv->dwTblID);
+		return;
+	}
 
 	pSendData = new CMDPARA_TRADEINFO;
 	ZeroMemory (pSendData, sizeof (CMDPARA_TRADEINFO));
@@ -8029,6 +8140,16 @@ void RecvDataProcTRADEPROC(PBYTE pData, DWORD dwDataSize)
 
 	/* 取り引き終了通知を送信 */
 	SendCmdTRADE (pChar1->pID, pChar1->dwTblID, CMDTRADE_OUT);
+	if (IsMercenary (pChar2)) {
+		/* 傭兵には画面が無いので、持ち物を雇い主に知らせて終わり */
+		SendCmdCHARITEM (pChar1->pID, pChar1->dwTblID);
+		SendCmdCHARSTATUS (pChar1->pID, pChar1->dwTblID);
+		if (bMax) {
+			SendCmdSYSMSG (pChar1->pID, "持ち物がいっぱいで、返してもらえなかった道具があります。", SPEECHCMD_BATTLE1);
+		}
+		MercenaryTellItems (pChar1, pChar2);
+		return;
+	}
 	SendCmdTRADE (pChar2->pID, pChar2->dwTblID, CMDTRADE_OUT);
 	SendCmdCHARITEM (pChar1->pID, pChar1->dwTblID);
 	SendCmdCHARITEM (pChar2->pID, pChar2->dwTblID);

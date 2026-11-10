@@ -5910,6 +5910,11 @@ void RecvDataProcTRADE(BYTE *pData, DWORD dwDataSize)
 	int nNo = GetCharNo (pRecv->pID);
 	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
 
+	/* 傭兵など、番号でしか分からない相手 */
+	if (nNo < 0) {
+		nNo = GetCharNo2 (pRecv->dwTblID);
+	}
+
 	switch (pRecv->byData) {
 	case CMDTRADE_IN:	/* 取り引き開始 */
 		{

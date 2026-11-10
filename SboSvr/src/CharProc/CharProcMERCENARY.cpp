@@ -22,14 +22,23 @@
 	・倒した敵の経験値・お金・道具は雇い主がもらう（傭兵の取り分は無し）。
 	・雇い主（と、雇い主のパーティの仲間）の画面右下のHP・Mana一覧に並ぶ。
 	  パーティの情報そのものには入れず、3秒ごとと、HP・Manaが変わった時に知らせ直す。
+	・道具を持たせる（2026/11/10）：傭兵に向かって「取り引き」すると、傭兵は持っている道具を
+	  全部返そうとする。雇い主が渡す道具を選んで「決定」すると入れ替わる（持たせたいものは
+	  毎回選び直す）。持たせられるのはHP回復の道具だけ、5個まで。お金は渡せない。
+	  傭兵は自分のHPが4割以下で自分に、となりの雇い主のHPが3割以下で雇い主に使う。
+	  傭兵がいなくなる時（お別れ・力つきた・マップ移動・ログアウト・サーバー停止）は、
+	  残りを雇い主の持ち物へ、いっぱいなら預かり所へ返す。
 	・サーバー負荷：ついていく時は雇い主が動いた時だけ1歩、敵を探すのは0.5秒に1回
 	  マップのNPC一覧を1回なめるだけなので、敵1匹ぶんとほぼ同じ。
+	  道さがし（幅優先）の結果は表にして0.2秒の間使い回し、敵の候補が何匹いても
+	  道さがしは1回で済ませる。イベントの場所も表を作る時に1回だけ調べる。
 */
 
 #include "stdafx.h"
 #include "SboSvrRecvCmd.h"
 #include "SboSvrSendCmd.h"
 #include "SboSvrBattleProc.h"
+#include "SboSvrItemProc.h"
 #include "SboSvrCharInfoTimerProc.h"
 #include "CharProcMERCENARY.h"
 #include "../../Common/Command/Command.h"
@@ -62,11 +71,22 @@
 #define MERC_DEADTIME			(10000)
 /* 仲間の一覧を知らせ直す間隔(ms) */
 #define MERC_SYNCTIME			(3000)
+/* 持たせてもらった道具を使うか考える間隔(ms) */
+#define MERC_ITEMTIME			(500)
+/* 道具を使った後、次に使えるまでの時間(ms) */
+#define MERC_ITEMWAIT			(2500)
+/* 自分のHPがこの割合(%)以下なら回復の道具を使う */
+#define MERC_ITEMHPSELF			(40)
+/* となりの雇い主のHPがこの割合(%)以下なら回復の道具を使ってあげる */
+#define MERC_ITEMHPOWNER		(30)
+/* 道のりの表を使い回す時間(ms)。この間に自分が動いたら作り直す */
+#define MERC_PATHFIELDTIME		(200)
 
 /* 傭兵の tblID → 雇い主 */
 typedef struct _MERCINFO {
 	DWORD	dwOwnerTblID;								/* 雇い主のテーブルID */
 	DWORD	dwOwnerPID;									/* 雇い主のプレイヤーID(ログインし直した別の人と間違えないため) */
+	BOOL	bFighting;									/* 敵と戦っている最中か(離れた所から道具を渡せない) */
 } MERCINFO;
 static std::map<DWORD, MERCINFO> s_mapMerc;
 /* 戦闘モード中の雇い主(テーブルID→pID。pID が違えば別の人なので戦闘モードではない) */
@@ -80,6 +100,7 @@ static BOOL	FindPosNearOwner	(PCHARINFO pChar, PCHARINFO pOwner, int &x, int &y)
 static DWORD GetMercAtackWait	(PCHARINFO pChar);									/* 攻撃の間隔(ms) */
 static void	SendTailResult		(PCHARINFO pChar, DWORD dwTailTblID, DWORD dwResult);	/* 「ついていく」の結果を本人に知らせる */
 static BOOL	IsOwnerBattleMode	(PCHARINFO pOwner);									/* 雇い主が戦闘モードか */
+static void	MercenaryReturnItems(PCHARINFO pMerc, PCHARINFO pOwner, BOOL bOnline);	/* 持たせた道具を雇い主へ返す */
 
 
 /* ========================================================================= */
@@ -107,6 +128,9 @@ CCharProcMERCENARY::CCharProcMERCENARY()
 	m_wSyncHP		= 0;
 	m_wSyncMana		= 0;
 	m_bySyncState	= 0;
+	m_dwLastItemCheck = 0;
+	m_aPathField[0].bValid = FALSE;
+	m_aPathField[1].bValid = FALSE;
 }
 
 
@@ -167,6 +191,17 @@ BOOL CCharProcMERCENARY::Proc(DWORD dwTime)
 
 	SyncParty (pOwner, dwTime);
 
+	/* 雇い主と取り引き中は、その場で待つ(雇い主も動けない。戦いもやめる) */
+	if (RecvCmdIsTrading (m_pChar->dwTblID)) {
+		std::map<DWORD, MERCINFO>::iterator itMerc = s_mapMerc.find (m_pChar->dwTblID);
+		if (itMerc != s_mapMerc.end ()) {
+			itMerc->second.bFighting = FALSE;
+		}
+		m_dwEnemy		= (DWORD)-1;
+		m_dwStuckTime	= dwTime;
+		return FALSE;
+	}
+
 	/* 雇い主のとなりへ移っている途中(消えている間は何もしない) */
 	if (m_dwWarpTime) {
 		if ((DWORD)(dwTime - m_dwWarpTime) >= MERC_FADETIME) {
@@ -175,10 +210,20 @@ BOOL CCharProcMERCENARY::Proc(DWORD dwTime)
 		return FALSE;
 	}
 
+	/* HPが減ったら、持たせてもらった回復の道具を使う(自分か、となりの雇い主に) */
+	if (ProcUseItem (pOwner, dwTime)) {
+		return TRUE;
+	}
+
 	BOOL bTail = IsInTail (pOwner);
 
 	/* 戦う相手がいれば、列を外れて戦う */
-	if (ProcBattle (pOwner, dwTime)) {
+	BOOL bFighting = ProcBattle (pOwner, dwTime);
+	std::map<DWORD, MERCINFO>::iterator itMerc = s_mapMerc.find (m_pChar->dwTblID);
+	if (itMerc != s_mapMerc.end ()) {
+		itMerc->second.bFighting = bFighting;
+	}
+	if (bFighting) {
 		if (bTail) {
 			MercenaryTailOff (m_pChar);
 		}
@@ -211,6 +256,67 @@ BOOL CCharProcMERCENARY::Proc(DWORD dwTime)
 	}
 
 	return ProcFollow (pEnd, dwTime);
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CCharProcMERCENARY::ProcUseItem									 */
+/* 内容：	持たせてもらった回復の道具を使う(使ったら TRUE)					 */
+/*			自分のHPが4割以下なら自分に、となりにいる雇い主のHPが3割以下	 */
+/*			なら雇い主に使う。使った後は少し間をあける						 */
+/* 日付：	2026/11/10														 */
+/* ========================================================================= */
+
+BOOL CCharProcMERCENARY::ProcUseItem(PCHARINFO pOwner, DWORD dwTime)
+{
+	int i;
+	char szTmp[256];
+	PCHARINFO pTarget;
+
+	if ((int)(dwTime - m_dwLastItemCheck) < 0) {
+		return FALSE;
+	}
+	m_dwLastItemCheck = dwTime + MERC_ITEMTIME;
+	if (GetItemCount (m_pChar->dwTblID) == 0) {
+		return FALSE;
+	}
+
+	pTarget = NULL;
+	if ((DWORD)m_pChar->wHP * 100 <= (DWORD)m_pChar->wMaxHP * MERC_ITEMHPSELF) {
+		pTarget = m_pChar;
+	} else if ((pOwner->wHP > 0) && (pOwner->byCharState != CHARSTATE_DEAD) &&
+			   ((DWORD)pOwner->wHP * 100 <= (DWORD)pOwner->wMaxHP * MERC_ITEMHPOWNER) &&
+			   (abs ((int)pOwner->dwX - (int)m_pChar->dwX) + abs ((int)pOwner->dwY - (int)m_pChar->dwY) <= 1)) {
+		pTarget = pOwner;
+	}
+	if (pTarget == NULL) {
+		return FALSE;
+	}
+
+	for (i = 0; i < MAX_MYITEM; i ++) {
+		WORD wItemID = m_pChar->waItem[i];
+		if ((wItemID == 0) || (wItemID >= (WORD)g_aItemInfo.GetSize ())) {
+			continue;
+		}
+		PITEMINFO pItem = g_aItemInfo[wItemID];
+		if (MercenaryCanHold (pItem) == FALSE) {
+			continue;
+		}
+		if (ItemUseMercenary (m_pChar, (BYTE)i, pTarget) == FALSE) {
+			continue;
+		}
+		/* 雇い主に使った時は、回復のお知らせが雇い主に届く。自分に使った時はここで知らせる */
+		if (pTarget == m_pChar) {
+			snprintf (szTmp, sizeof (szTmp), "%sは %s を使って、HPを回復しました。", m_pChar->szName, pItem->szName);
+		} else {
+			snprintf (szTmp, sizeof (szTmp), "%sが %s を使ってくれました。", m_pChar->szName, pItem->szName);
+		}
+		SendCmdSYSMSG (pOwner->pID, szTmp, SPEECHCMD_BATTLE1);
+		/* 続けて使わないよう、少し間をあける */
+		m_dwLastItemCheck = dwTime + MERC_ITEMWAIT;
+		return TRUE;
+	}
+	return FALSE;
 }
 
 
@@ -614,15 +720,15 @@ BOOL CCharProcMERCENARY::CanWalk(int x, int y, BOOL bDoor)
 /* 内容：	目標(nX,nY)のとなりのマスへ行く一番近い道の、最初の向き		 */
 /*			地形だけを見て、自分のまわり nMaxDist 歩の中を探す				 */
 /*			(行けなければ -1、もうとなりなら -2)							 */
+/*			道のりの表は少しの間使い回すので、敵の候補がたくさんいても		 */
+/*			道さがしは1回で済む												 */
 /* 日付：	2026/11/08														 */
 /* ========================================================================= */
 
 int CCharProcMERCENARY::PathDir(int nX, int nY, int nMaxDist, int *pnDist, BOOL bChars)
 {
-	int nSX, nSY, nW, nOX, nOY, nHead, nTail, nPos, nDir, x, y;
-	static std::vector<short> s_anFirst;	/* そのマスへ来た最初の向き(-1=まだ) */
-	static std::vector<short> s_anDist;
-	static std::vector<int>   s_anQueue;
+	int i, nSX, nSY, x, y, nPos, nBest, nBestDist;
+	PATHFIELD *pField;
 
 	nSX = (int)m_pChar->dwX;
 	nSY = (int)m_pChar->dwY;
@@ -636,17 +742,99 @@ int CCharProcMERCENARY::PathDir(int nX, int nY, int nMaxDist, int *pnDist, BOOL 
 		return -1;
 	}
 
-	/* 自分を真ん中にした (2*nMaxDist+1) 四方だけを調べる */
-	nW  = nMaxDist * 2 + 1;
-	nOX = nSX - nMaxDist;
-	nOY = nSY - nMaxDist;
-	s_anFirst.assign (nW * nW, -1);
-	s_anDist.assign (nW * nW, 0);
+	pField = &m_aPathField[bChars ? 1 : 0];
+	if ((pField->bValid == FALSE) || (pField->dwMapID != m_pChar->dwMapID) ||
+		(pField->nSX != nSX) || (pField->nSY != nSY) || (pField->nMaxDist != nMaxDist) ||
+		((DWORD)(g_dwTime - pField->dwTime) >= MERC_PATHFIELDTIME)) {
+		BuildPathField (nMaxDist, bChars);
+	}
+
+	/* 目標のとなりのマスのうち、一番近く行けるマス */
+	nBest = -1;
+	nBestDist = 0;
+	for (i = 0; i < 4; i ++) {
+		x = nX + anPosAddTblX[i] - pField->nOX;
+		y = nY + anPosAddTblY[i] - pField->nOY;
+		if ((x < 0) || (x >= pField->nW) || (y < 0) || (y >= pField->nW)) {
+			continue;
+		}
+		nPos = y * pField->nW + x;
+		/* 0〜3 が「そこへ行く最初の向き」。4 は自分のマス、負の数は行けない */
+		if ((pField->anFirst[nPos] < 0) || (pField->anFirst[nPos] > 3)) {
+			continue;
+		}
+		if ((nBest < 0) || (pField->anDist[nPos] < nBestDist)) {
+			nBest		= pField->anFirst[nPos];
+			nBestDist	= pField->anDist[nPos];
+		}
+	}
+	if ((nBest >= 0) && pnDist) {
+		*pnDist = nBestDist;
+	}
+	return nBest;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CCharProcMERCENARY::BuildPathField								 */
+/* 内容：	自分を真ん中にした (2*nMaxDist+1) 四方の、各マスへの歩数と		 */
+/*			最初の向きの表を作る(幅優先)									 */
+/*			地形は CanWalk(閉まった扉は開けて通れる扱い)と同じ決まり。		 */
+/*			イベントの場所は最初に1回だけ表に写し、マスごとにイベント一覧を	 */
+/*			なめ直さない													 */
+/* 日付：	2026/11/10														 */
+/* ========================================================================= */
+
+void CCharProcMERCENARY::BuildPathField(int nMaxDist, BOOL bChars)
+{
+	int i, nSX, nSY, nW, nOX, nOY, nHead, nTail, nPos, nDir, x, y;
+	PMAPINFO pMap;
+	PATHFIELD *pField;
+	static std::vector<int>  s_anQueue;
+	/* マスごとのイベント：0=無し 1=扉だけ 2=扉以外のイベントがある(通れない) */
+	static std::vector<BYTE> s_abyEvent;
+
+	pField	= &m_aPathField[bChars ? 1 : 0];
+	pMap	= g_aMapInfo[m_pChar->dwMapID];
+	nSX		= (int)m_pChar->dwX;
+	nSY		= (int)m_pChar->dwY;
+	nW		= nMaxDist * 2 + 1;
+	nOX		= nSX - nMaxDist;
+	nOY		= nSY - nMaxDist;
+
+	pField->bValid		= TRUE;
+	pField->dwMapID		= m_pChar->dwMapID;
+	pField->nSX			= nSX;
+	pField->nSY			= nSY;
+	pField->nMaxDist	= nMaxDist;
+	pField->dwTime		= g_dwTime;
+	pField->nOX			= nOX;
+	pField->nOY			= nOY;
+	pField->nW			= nW;
+	pField->anFirst.assign (nW * nW, -1);
+	pField->anDist.assign (nW * nW, 0);
 	s_anQueue.resize (nW * nW);
+	s_abyEvent.assign (nW * nW, 0);
+
+	/* イベントの場所を表に写す */
+	for (i = 0; i < pMap->nEventCount; i ++) {
+		PEVENTINFO pEvent = &pMap->pEvent[i];
+		x = (int)pEvent->dwX - nOX;
+		y = (int)pEvent->dwY - nOY;
+		if ((x < 0) || (x >= nW) || (y < 0) || (y >= nW)) {
+			continue;
+		}
+		if (pEvent->byType == EVENTTYPE_DOOR) {
+			if (s_abyEvent[y * nW + x] == 0) {
+				s_abyEvent[y * nW + x] = 1;
+			}
+		} else {
+			s_abyEvent[y * nW + x] = 2;
+		}
+	}
 
 	/* ほかのキャラが立っているマスは通れない(雇い主が細い道をふさいでいる時など) */
 	if (bChars) {
-		PMAPINFO pMap = g_aMapInfo[m_pChar->dwMapID];
 		PDWORD apTbl[2]		= {pMap->paTblNoPC, pMap->paTblNoNPC};
 		DWORD adwCount[2]	= {pMap->dwCountTblNoPC, pMap->dwCountTblNoNPC};
 		for (int t = 0; t < 2; t ++) {
@@ -664,7 +852,7 @@ int CCharProcMERCENARY::PathDir(int nX, int nY, int nMaxDist, int *pnDist, BOOL 
 				x = (int)pCharTmp->dwX - nOX;
 				y = (int)pCharTmp->dwY - nOY;
 				if ((x >= 0) && (x < nW) && (y >= 0) && (y < nW)) {
-					s_anFirst[y * nW + x] = -3;
+					pField->anFirst[y * nW + x] = -3;
 				}
 			}
 		}
@@ -672,11 +860,11 @@ int CCharProcMERCENARY::PathDir(int nX, int nY, int nMaxDist, int *pnDist, BOOL 
 
 	nHead = nTail = 0;
 	nPos = (nSY - nOY) * nW + (nSX - nOX);
-	s_anFirst[nPos] = 4;
+	pField->anFirst[nPos] = 4;
 	s_anQueue[nTail ++] = nPos;
 	while (nHead < nTail) {
 		nPos = s_anQueue[nHead ++];
-		if (s_anDist[nPos] >= nMaxDist) {
+		if (pField->anDist[nPos] >= nMaxDist) {
 			continue;
 		}
 		for (nDir = 0; nDir < 4; nDir ++) {
@@ -686,25 +874,33 @@ int CCharProcMERCENARY::PathDir(int nX, int nY, int nMaxDist, int *pnDist, BOOL 
 				continue;
 			}
 			int nNext = (y - nOY) * nW + (x - nOX);
-			if (s_anFirst[nNext] != -1) {
+			if (pField->anFirst[nNext] != -1) {
 				continue;
 			}
-			if (CanWalk (x, y, TRUE) == FALSE) {
-				continue;
-			}
-			s_anFirst[nNext] = (s_anFirst[nPos] == 4) ? nDir : s_anFirst[nPos];
-			s_anDist[nNext]  = s_anDist[nPos] + 1;
-			/* 目標のとなりに着いた？ */
-			if (abs (nX - x) + abs (nY - y) == 1) {
-				if (pnDist) {
-					*pnDist = s_anDist[nNext];
+			/* 歩けるか(CanWalk と同じ決まり。閉まった扉は開けて通れる扱い) */
+			{
+				BOOL bWalk = TRUE;
+				BYTE byEvent = s_abyEvent[nNext];
+				if ((x < 0) || (x >= pMap->nCX) || (y < 0) || (y >= pMap->nCY)) {
+					bWalk = FALSE;
+				} else if (byEvent == 2) {
+					/* ワープなどのイベント */
+					bWalk = FALSE;
+				} else if ((byEvent == 0) && (CheckCharBlock (m_pChar, m_pChar->dwMapID, (DWORD)x, (DWORD)y) == FALSE)) {
+					/* 障害物(扉のマスなら、閉まっていても開けて通れる) */
+					bWalk = FALSE;
 				}
-				return s_anFirst[nNext];
+				if (bWalk == FALSE) {
+					/* 何度も調べ直さないよう、行けないマスとして覚える */
+					pField->anFirst[nNext] = -4;
+					continue;
+				}
 			}
+			pField->anFirst[nNext] = (pField->anFirst[nPos] == 4) ? nDir : pField->anFirst[nPos];
+			pField->anDist[nNext]  = pField->anDist[nPos] + 1;
 			s_anQueue[nTail ++] = nNext;
 		}
 	}
-	return -1;
 }
 
 
@@ -1261,6 +1457,7 @@ void MercenaryTalk(PCHARINFO pChar, PCHARINFO pCharNpc)
 	MERCINFO info;
 	info.dwOwnerTblID	= pChar->dwTblID;
 	info.dwOwnerPID		= pChar->pID;
+	info.bFighting		= FALSE;
 	s_mapMerc[pCharNew->dwTblID] = info;
 
 	SendCmdCHARINFO3 (pCharNew->dwTblID);
@@ -1339,6 +1536,20 @@ static void MercenaryRemove(PCHARINFO pMerc, PCHARINFO pOwner, LPCSTR pszFmt)
 
 	dwTblID = pMerc->dwTblID;
 
+	/* 持たせた道具を返す（雇い主がもういない時も、そのキャラの持ち物か預かり所へ） */
+	{
+		PCHARINFO pReceiver = pOwner;
+		std::map<DWORD, MERCINFO>::iterator itMerc = s_mapMerc.find (dwTblID);
+		if ((pReceiver == NULL) && (itMerc != s_mapMerc.end ()) &&
+			(itMerc->second.dwOwnerTblID < (DWORD)g_aCharInfo.GetSize ())) {
+			pReceiver = g_aCharInfo[itMerc->second.dwOwnerTblID];
+			if (pReceiver->byNpcType != NPCTYPE_INIT) {
+				pReceiver = NULL;
+			}
+		}
+		MercenaryReturnItems (pMerc, pReceiver, (pOwner != NULL));
+	}
+
 	if (pOwner) {
 		/* 画面右下のHP・Mana一覧から外す */
 		nCount = GetMercRecipient (pOwner, apChar, MAX_PARTYMEMBER + 1);
@@ -1367,6 +1578,10 @@ static void MercenaryRemove(PCHARINFO pMerc, PCHARINFO pOwner, LPCSTR pszFmt)
 
 	/* 「ついていく」の列から外す（番号が別のキャラに使い回されるため） */
 	MercenaryTailOff (pMerc);
+	/* 取り引きの途中なら取り消す（雇い主の画面の取り引き画面も閉じる） */
+	if (RecvCmdTradeClear (dwTblID) && pOwner && (pOwner->pID != 0)) {
+		SendCmdTRADE (pOwner->pID, pOwner->dwTblID, CMDTRADE_OUT);
+	}
 
 	s_mapMerc.erase (dwTblID);
 	DeleteChar (dwTblID);
@@ -1544,4 +1759,221 @@ static BOOL IsOwnerBattleMode(PCHARINFO pOwner)
 		return FALSE;
 	}
 	return (it->second == pOwner->pID);
+}
+
+
+/* ========================================================================= */
+/* 関数名：	MercenaryCanHold												 */
+/* 内容：	傭兵に持たせられる道具か(自分で使えるHP回復の道具だけ)			 */
+/* ========================================================================= */
+
+BOOL MercenaryCanHold(PITEMINFO pItem)
+{
+	if ((pItem == NULL) || (pItem->pData == NULL)) {
+		return FALSE;
+	}
+	switch (pItem->byType) {
+	case ITEMTYPE_HPUP:			/* HP回復 */
+	case ITEMTYPE_HPMANAUP:		/* HP・Mana回復 */
+		return TRUE;
+	}
+	return FALSE;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	MercenaryIsFighting												 */
+/* 内容：	傭兵が敵と戦っている最中か										 */
+/* ========================================================================= */
+
+BOOL MercenaryIsFighting(PCHARINFO pMerc)
+{
+	std::map<DWORD, MERCINFO>::iterator it;
+
+	if (pMerc == NULL) {
+		return FALSE;
+	}
+	it = s_mapMerc.find (pMerc->dwTblID);
+	if (it == s_mapMerc.end ()) {
+		return FALSE;
+	}
+	return it->second.bFighting;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	MercenaryTradeCheck												 */
+/* 内容：	取り引きで雇い主が渡そうとしているものを、傭兵が受け取れるか	 */
+/*			受け取れなければ FALSE で、理由を pszMsg に入れる(空のこともある)	 */
+/* ========================================================================= */
+
+BOOL MercenaryTradeCheck(PCHARINFO pOwner, PCHARINFO pMerc, const WORD *pwaItem, DWORD dwGold, LPSTR pszMsg, int nMsgSize)
+{
+	int i, nCount;
+
+	pszMsg[0] = 0;
+	if (GetMercenaryOwner (pMerc) != pOwner) {
+		snprintf (pszMsg, nMsgSize, "ほかの人の傭兵とは取り引きできません。");
+		return FALSE;
+	}
+	if (dwGold > 0) {
+		snprintf (pszMsg, nMsgSize, "%sにお金は渡せません。（持たせられるのはHP回復の道具だけです）", pMerc->szName);
+		return FALSE;
+	}
+	nCount = 0;
+	for (i = 0; i < MAX_MYITEM; i ++) {
+		WORD wNo = pwaItem[i];
+		if (wNo == 0xFFFF) {
+			continue;
+		}
+		if ((wNo >= MAX_MYITEM) || (pOwner->waItem[wNo] == 0) || (pOwner->waItem[wNo] >= (WORD)g_aItemInfo.GetSize ())) {
+			return FALSE;
+		}
+		PITEMINFO pItem = g_aItemInfo[pOwner->waItem[wNo]];
+		if (MercenaryCanHold (pItem) == FALSE) {
+			snprintf (pszMsg, nMsgSize, "%sに持たせられるのはHP回復の道具だけです。（%s は持てません）", pMerc->szName, pItem->szName);
+			return FALSE;
+		}
+		nCount ++;
+	}
+	if (nCount > MERC_MAXITEM) {
+		snprintf (pszMsg, nMsgSize, "%sに持たせられる道具は%d個までです。", pMerc->szName, MERC_MAXITEM);
+		return FALSE;
+	}
+	return TRUE;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	MercenaryReturnItems											 */
+/* 内容：	傭兵が持っている道具を雇い主へ返す								 */
+/*			持ち物がいっぱいなら預かり所へ。bOnline なら雇い主へ知らせる	 */
+/* ========================================================================= */
+
+static void MercenaryReturnItems(PCHARINFO pMerc, PCHARINFO pOwner, BOOL bOnline)
+{
+	int i, nBag, nLeave, nLost;
+	char szTmp[256];
+
+	nBag = nLeave = nLost = 0;
+	for (i = 0; i < MAX_MYITEM; i ++) {
+		WORD wItemID = pMerc->waItem[i];
+		if (wItemID == 0) {
+			continue;
+		}
+		if ((pOwner == NULL) || (wItemID >= (WORD)g_aItemInfo.GetSize ())) {
+			nLost ++;
+		} else if (GetItemCount (pOwner->dwTblID) < MAX_MYITEM) {
+			AddCharItem (pOwner->dwTblID, wItemID);
+			nBag ++;
+		} else if (AddLeaveItem (pOwner, wItemID)) {
+			nLeave ++;
+		} else {
+			nLost ++;
+		}
+	}
+	ZeroMemory (pMerc->waItem, sizeof (pMerc->waItem));
+	if (nBag + nLeave + nLost == 0) {
+		return;
+	}
+	if (nLost) {
+		printf ("[傭兵] %s の道具 %d 個を返せませんでした\n", pMerc->szName, nLost);
+	}
+	if ((pOwner == NULL) || (bOnline == FALSE) || (pOwner->pID == 0)) {
+		return;
+	}
+	if (nBag) {
+		SendCmdCHARITEM (pOwner->pID, pOwner->dwTblID);
+	}
+	if (nLeave) {
+		snprintf (szTmp, sizeof (szTmp), "%sから道具を返してもらいました。（持ち物がいっぱいなので%d個は預かり所へ送りました）", pMerc->szName, nLeave);
+	} else {
+		snprintf (szTmp, sizeof (szTmp), "%sから道具を返してもらいました。", pMerc->szName);
+	}
+	SendCmdSYSMSG (pOwner->pID, szTmp, SPEECHCMD_BATTLE1);
+	if (nLost) {
+		snprintf (szTmp, sizeof (szTmp), "預かり所もいっぱいで、%d個の道具は返せませんでした。", nLost);
+		SendCmdSYSMSG (pOwner->pID, szTmp, SPEECHCMD_BATTLE1);
+	}
+}
+
+
+/* ========================================================================= */
+/* 関数名：	MercenaryTellItems												 */
+/* 内容：	傭兵がいま持っている道具を雇い主に知らせる(取り引きの後)		 */
+/* ========================================================================= */
+
+void MercenaryTellItems(PCHARINFO pOwner, PCHARINFO pMerc)
+{
+	int i, nCount;
+	char szTmp[512];
+
+	if ((pOwner == NULL) || (pOwner->pID == 0)) {
+		return;
+	}
+	nCount = 0;
+	snprintf (szTmp, sizeof (szTmp), "%sの持ち物：", pMerc->szName);
+	for (i = 0; i < MAX_MYITEM; i ++) {
+		WORD wItemID = pMerc->waItem[i];
+		if ((wItemID == 0) || (wItemID >= (WORD)g_aItemInfo.GetSize ())) {
+			continue;
+		}
+		if (nCount) {
+			strncat (szTmp, "、", sizeof (szTmp) - strlen (szTmp) - 1);
+		}
+		strncat (szTmp, g_aItemInfo[wItemID]->szName, sizeof (szTmp) - strlen (szTmp) - 1);
+		nCount ++;
+	}
+	if (nCount == 0) {
+		strncat (szTmp, "なし", sizeof (szTmp) - strlen (szTmp) - 1);
+	}
+	SendCmdSYSMSG (pOwner->pID, szTmp, SPEECHCMD_BATTLE1);
+}
+
+
+/* ========================================================================= */
+/* 関数名：	MercenaryOwnerLogout											 */
+/* 内容：	雇い主がログアウトする時、傭兵に持たせた道具を返して帰す		 */
+/*			（ログアウトの処理で雇い主の情報が消える前に呼ぶ）				 */
+/* ========================================================================= */
+
+void MercenaryOwnerLogout(PCHARINFO pOwner)
+{
+	std::map<DWORD, MERCINFO>::iterator it;
+
+	if (pOwner == NULL) {
+		return;
+	}
+	for (it = s_mapMerc.begin (); it != s_mapMerc.end (); it ++) {
+		if (it->first >= (DWORD)g_aCharInfo.GetSize ()) {
+			continue;
+		}
+		PCHARINFO pMerc = g_aCharInfo[it->first];
+		if (GetMercenaryOwner (pMerc) == pOwner) {
+			MercenaryRemove (pMerc, pOwner, NULL);
+			return;
+		}
+	}
+}
+
+
+/* ========================================================================= */
+/* 関数名：	MercenaryRemoveAll												 */
+/* 内容：	全部の傭兵を帰す(サーバーを止めて保存する前に呼ぶ)				 */
+/*			持たせた道具は雇い主の持ち物か預かり所に戻るので、保存される	 */
+/* ========================================================================= */
+
+void MercenaryRemoveAll(void)
+{
+	while (s_mapMerc.empty () == FALSE) {
+		DWORD dwTblID = s_mapMerc.begin ()->first;
+		if (dwTblID >= (DWORD)g_aCharInfo.GetSize ()) {
+			s_mapMerc.erase (s_mapMerc.begin ());
+			continue;
+		}
+		PCHARINFO pMerc = g_aCharInfo[dwTblID];
+		MercenaryRemove (pMerc, GetMercenaryOwner (pMerc), NULL);
+		/* 念のため(消せなかった時に止まらないように) */
+		s_mapMerc.erase (dwTblID);
+	}
 }
