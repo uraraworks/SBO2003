@@ -2981,7 +2981,14 @@ void SubProcMapMove(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY)
 	if (pChar->dwTailBackTblID != -1) {
 		/* ついてきているキャラを移動させる */
 		pCharTmp = g_aCharInfo[pChar->dwTailBackTblID];
-		SubProcMapMove (pCharTmp, dwMapID, dwX, dwY);
+		/* マップ間移動のイベントは、ついてきているキャラを先に移動先へ移している。
+		   ここでもう一度呼ぶと「すでに移動先」のフェードインが重なって届き、
+		   ついていく側の画面が2回暗転するので、移動済みなら呼ばない */
+		if (!((pCharTmp->dwMapID == dwMapID) &&
+			  (pCharTmp->dwX == min (dwX, (DWORD)pMap->nCX - 1)) &&
+			  (pCharTmp->dwY == min (dwY, (DWORD)pMap->nCY - 1)))) {
+			SubProcMapMove (pCharTmp, dwMapID, dwX, dwY);
+		}
 	}
 
 	ZeroMemory (pChar->abySubStatus, sizeof (pChar->abySubStatus));
