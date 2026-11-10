@@ -6578,6 +6578,11 @@ void RecvDataProcSubGameBOMB_INFO(BYTE *pData, DWORD dwDataSize)
 	pBomb->byFlgUseItem = pRecv->byFlgUseItem;
 	pBomb->byFlgProgress = pRecv->byFlgProgress;
 	pBomb->dwTblIDGameMaster = pRecv->dwTblIDGameMaster;
+	/* マスターの名前（古いサーバーからは届かないので大きさを見る） */
+	ZeroMemory (pBomb->szGameMasterName, sizeof (pBomb->szGameMasterName));
+	if ((pRecv->dwTblIDGameMaster != (DWORD)-1) && (dwDataSize >= sizeof (SUBCMDPARA_BOMBINFO))) {
+		strncpy (pBomb->szGameMasterName, pRecv->szGameMasterName, MAX_CHARNAMEBUF - 1);
+	}
 	int i = GetWindowID (g_dwMsgIDSubGame);
 	if (i >= 0) {
 		g_WndInfo[i]->dwTimeDrawStart = 0;
