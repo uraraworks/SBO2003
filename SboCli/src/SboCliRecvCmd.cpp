@@ -3218,7 +3218,10 @@ void RecvDataProcMAPINFO(PBYTE pData, DWORD dwDataSize)
 	}
 	g_aObjInfo.RemoveAll ();
 	g_nProcObj = 0;
-	g_bySpeechMode = 0;
+	/* 放送はマップごとに許可が違うので普通に戻す。パーティ発言はマップを移っても続ける */
+	if (g_bySpeechMode != 3) {
+		g_bySpeechMode = 0;
+	}
 	g_bMoving = FALSE;
 
 	StopBGM ();
