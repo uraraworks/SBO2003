@@ -1078,4 +1078,8 @@ merc selfheal up=1 items=1
 merc selfheal wait items=1
 merc ownerheal up=1 items=0
 merc return gone=1 bag_heal=2 leave_added=1
+== L. Tail mapchg ==
+tailmapchg 0 map=40 pos=(40,9) fade=0
+tailmapchg 1 map=40 pos=(40,9) fade=0
+tailmapchg 2 map=40 pos=(40,9) fade=0
 == done ==

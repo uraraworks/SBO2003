@@ -56,6 +56,13 @@ EM_JS(int, MockFirstWord, (int nConn), {
 EM_JS(void, MockReset, (void), {
 	Module['sboNet'].reset();
 });
+/* 送ったパケットを覚えるか（L で使う）。覚えた中から指定コマンドの byData を並べて返す */
+EM_JS(void, MockTrace, (int bOn), {
+	Module['sboNet'].trace(!!bOn);
+});
+EM_JS(char *, MockCmdData, (int nConn, int nCmd), {
+	return stringToNewUTF8(Module['sboNet'].cmdData(nConn, nCmd));
+});
 EM_JS(double, NowMs, (void), {
 	return performance.now();
 });
@@ -553,6 +560,7 @@ static void PrintTownWarp(const char *pszLabel, PCHARINFO pChar)
 
 static void TestShipBed(const std::vector<int> &aLogin);
 static void TestMercenary(const std::vector<int> &aLogin);
+static void TestTailMapChg(const std::vector<int> &aLogin);
 
 static void TestTownWarp(const std::vector<int> &aLogin)
 {
@@ -971,6 +979,8 @@ static void TestWorld(void)
 	TestShipBed(aLogin);
 	/* K. 傭兵 */
 	TestMercenary(aLogin);
+	/* L. ついていく列のマップ間移動で暗転が1回だけ */
+	TestTailMapChg(aLogin);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1528,6 +1538,74 @@ static void TestMercenary(const std::vector<int> &aLogin)
 	pOwner->wMaxHP = wMaxHPBack;
 	pOwner->dwGold = dwGoldBack;
 	AddTblNoPC((int)pOwner->dwTblID);
+}
+
+/* ------------------------------------------------------------------------- */
+/* L. ついていく列のマップ間移動：ついていく側にもフェードの指示は			 */
+/*    アウト1回だけ（フェードインはクライアントがマップ情報で始める）		 */
+/* ------------------------------------------------------------------------- */
+static void TestTailMapChg(const std::vector<int> &aLogin)
+{
+	printf("== L. Tail mapchg ==\n");
+	if (aLogin.size() < 3) {
+		return;
+	}
+	/* 港町レジェンタ(14)の乗り場 (40,54) → 船(40) */
+	PMAPINFO pPort = g_aMapInfo[GetMapNo(14)];
+	PEVENTINFO pEvent = NULL;
+	for (int i = 0; i < pPort->nEventCount; i ++) {
+		PEVENTINFO p = &pPort->pEvent[i];
+		if (p->byType == EVENTTYPE_MAPCHG && p->pData && p->dwX == 40 && p->dwY == 54) {
+			pEvent = p;
+		}
+	}
+	if (!pEvent) {
+		printf("no event\n");
+		return;
+	}
+	PEVENTINFO_MAPCHG pInfo = (PEVENTINFO_MAPCHG)pEvent->pData;
+	BYTE byRangeBack = pInfo->byRandomRange;
+	pInfo->byRandomRange = 0;
+
+	/* 先頭・2人目・3人目を縦に並べて列にする */
+	PCHARINFO apChar[3];
+	DWORD adwBack[3][5];
+	for (int i = 0; i < 3; i ++) {
+		PCHARINFO p = apChar[i] = g_aCharInfo[aLogin[i]];
+		adwBack[i][0] = p->dwMapID; adwBack[i][1] = p->dwX; adwBack[i][2] = p->dwY;
+		adwBack[i][3] = p->dwTailTblID; adwBack[i][4] = p->dwTailBackTblID;
+		DeleteTblNoPC((int)p->dwTblID);
+		p->dwMapID = pPort->dwID;
+		p->dwX = p->dwXBack = pEvent->dwX;
+		p->dwY = p->dwYBack = pEvent->dwY + i;
+		AddTblNoPC((int)p->dwTblID);
+	}
+	for (int i = 0; i < 3; i ++) {
+		apChar[i]->dwTailTblID = (i > 0) ? apChar[i - 1]->dwTblID : (DWORD)-1;
+		apChar[i]->dwTailBackTblID = (i < 2) ? apChar[i + 1]->dwTblID : (DWORD)-1;
+	}
+
+	MockTrace(1);
+	EventProc(apChar[0], pEvent, 0);
+	MockTrace(0);
+	for (int i = 0; i < 3; i ++) {
+		PCHARINFO p = apChar[i];
+		char *psz = MockCmdData(1000 + i, CMD_FADEINOUT);		/* aLogin[i] は接続 1000+i */
+		printf("tailmapchg %d map=%u pos=(%u,%u) fade=%s\n", i, p->dwMapID, p->dwX, p->dwY, psz);
+		free(psz);
+	}
+
+	pInfo->byRandomRange = byRangeBack;
+	for (int i = 0; i < 3; i ++) {
+		PCHARINFO p = apChar[i];
+		DeleteTblNoPC((int)p->dwTblID);
+		p->dwMapID = adwBack[i][0];
+		p->dwX = p->dwXBack = adwBack[i][1];
+		p->dwY = p->dwYBack = adwBack[i][2];
+		p->dwTailTblID = adwBack[i][3];
+		p->dwTailBackTblID = adwBack[i][4];
+		AddTblNoPC((int)p->dwTblID);
+	}
 }
 
 int main(int argc, char **argv)
