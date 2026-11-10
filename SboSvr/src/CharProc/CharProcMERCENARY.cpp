@@ -1320,6 +1320,35 @@ PCHARINFO GetMercenaryFront(PCHARINFO pChar)
 
 
 /* ========================================================================= */
+/* 関数名：	MercenaryDismiss												 */
+/* 内容：	雇っている傭兵と別れる(仲間コマンドの「傭兵と別れる」)			 */
+/*			持たせた道具は返す。どこにいても別れられる						 */
+/* ========================================================================= */
+
+void MercenaryDismiss(PCHARINFO pChar)
+{
+	std::map<DWORD, MERCINFO>::iterator it;
+
+	if ((pChar == NULL) || (pChar->byNpcType != NPCTYPE_INIT)) {
+		return;
+	}
+	for (it = s_mapMerc.begin (); it != s_mapMerc.end (); it ++) {
+		if (it->first >= (DWORD)g_aCharInfo.GetSize ()) {
+			continue;
+		}
+		PCHARINFO pMerc = g_aCharInfo[it->first];
+		if (GetMercenaryOwner (pMerc) == pChar) {
+			MercenaryRemove (pMerc, pChar, "%sとお別れしました。");
+			return;
+		}
+	}
+	if (pChar->pID) {
+		SendCmdSYSMSG (pChar->pID, "雇っている傭兵はいません。", SPEECHCMD_BATTLE1);
+	}
+}
+
+
+/* ========================================================================= */
 /* 関数名：	MercenaryTalk													 */
 /* 内容：	傭兵所のNPC(台詞が「@m」で始まる)に話しかけた					 */
 /*			雇っていなければ雇う、雇っていればお別れする					 */

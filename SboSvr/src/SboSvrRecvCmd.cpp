@@ -7326,6 +7326,10 @@ void RecvDataProcPARTY(PBYTE pData, DWORD dwDataSize)
 		ProcBreakParty (pCharFrom);
 		break;
 
+	case CMDPARTY_MERCOUT:	/* 雇っている傭兵と別れる */
+		MercenaryDismiss (pCharFrom);
+		break;
+
 	case CMDPARTY_GOLD:		/* 分配方法 */
 		if (pCharFrom->dwPartyID == 0) {
 			return;

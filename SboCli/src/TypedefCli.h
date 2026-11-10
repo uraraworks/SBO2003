@@ -175,6 +175,7 @@ enum {
 	IDCONFIRMTYPE_BREAKUP,										/* パーティ解散 */
 	IDCONFIRMTYPE_BREAKSUGOROKU,								/* すごろくを抜ける */
 	IDCONFIRMTYPE_STARTPOS,										/* 復活位置を記録する確認 */
+	IDCONFIRMTYPE_MERCOUT,										/* 傭兵と別れる */
 };
 
 /* メッセージウィンドウ(WNDTYPE_MSG)の nData2 の状態 */

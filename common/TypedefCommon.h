@@ -459,6 +459,7 @@ enum {
 	CMDPARTY_JOINCANCEL,											/* 応答拒否 */
 	CMDPARTY_NOTIFY,												/* 通知 */
 	CMDPARTY_GOLD,													/* 分配方法 */
+	CMDPARTY_MERCOUT,												/* 雇っている傭兵と別れる */
 };
 
 /* お金分配方法 */
