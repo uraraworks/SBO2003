@@ -2274,6 +2274,9 @@ void DrawWindowCOMMANDPARTY(PWNDINFO pWnd)
 	TextOut2 (hDC, 32, 16 * 2, "抜ける", RGB (255, 255, 255));
 	TextOut2 (hDC, 32, 16 * 3, "分配方法", RGB (255, 255, 255));
 	TextOut2 (hDC, 32, 16 * 4, "解散", RGB (255, 255, 255));
+	if (pWnd->nData2 >= 5) {
+		TextOut2 (hDC, 32, 16 * 5, "傭兵と別れる", RGB (255, 255, 255));
+	}
 
 	SelectObject (hDC, hFontOld);
 	pWnd->pDib->Unlock ();

@@ -84,6 +84,7 @@ extern BOOL			IsMercenary			(PCHARINFO pChar);						/* 傭兵か */
 extern PCHARINFO	GetMercenaryOwner	(PCHARINFO pMerc);						/* 傭兵の雇い主(いなければ NULL) */
 extern PCHARINFO	GetMercenaryFront	(PCHARINFO pChar);						/* 目の前にいる生きた傭兵(いなければ NULL) */
 extern void			MercenaryTalk		(PCHARINFO pChar, PCHARINFO pCharNpc);	/* 傭兵所のNPCに話しかけた(雇う・別れる) */
+extern void			MercenaryDismiss	(PCHARINFO pChar);						/* 雇っている傭兵と別れる(仲間コマンドから) */
 extern BOOL			MercenaryDamaged	(PCHARINFO pChar, PCHARINFO pMerc);		/* 傭兵が攻撃を受けた後の処理(倒れたら TRUE) */
 extern BOOL			MercenaryItemCheck	(PCHARINFO pMerc, BYTE byItemType);		/* その種類の道具を傭兵に使えるか */
 extern void			MercenaryTailOff	(PCHARINFO pMerc);						/* 傭兵を「ついていく」の列から外す */

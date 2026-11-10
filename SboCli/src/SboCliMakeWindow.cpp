@@ -1170,15 +1170,28 @@ PWNDINFO MakeWindowCOMMANDEQUSelect(BYTE byType)
 /* ========================================================================= */
 PWNDINFO MakeWindowCOMMANDPARTY(void)
 {
+	int i;
+	BOOL bMerc = FALSE;
+
+	/* 仲間の一覧に傭兵がいれば「傭兵と別れる」も出す(誰の傭兵かはサーバーが見る) */
+	for (i = 0; i < g_aPartyInfo.GetSize (); i ++) {
+		int nNo = GetCharNo2 (g_aPartyInfo[i]);
+		if ((nNo >= 0) && (g_aCharInfo[nNo]->byNpcType == NPCTYPE_MERCENARY)) {
+			bMerc = TRUE;
+			break;
+		}
+	}
+
 	PWNDINFO pWnd = new WNDINFO;
 	ZeroMemory (pWnd, sizeof (WNDINFO));
 	pWnd->dwID = g_dwNewID;
 	g_dwNewID ++;
-	pWnd->nData2 = 4;
+	pWnd->nData2 = bMerc ? 5 : 4;
 	pWnd->nX = 32;
 	pWnd->nY = 16 * 7 + 2;
-	pWnd->nCx = 16 * 8;
-	pWnd->nCy = 16 * 6;
+	/* 「傭兵と別れる」が出る時は、右に余裕ができるよう 1 文字ぶん広げる */
+	pWnd->nCx = 16 * (bMerc ? 9 : 8);
+	pWnd->nCy = 16 * (2 + pWnd->nData2);
 	pWnd->nType = WNDTYPE_COMMANDPARTY;
 	pWnd->pDib = new CImg32;
 	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);

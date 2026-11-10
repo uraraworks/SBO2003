@@ -4551,6 +4551,24 @@ void KeyProcCOMMANDPARTY(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				g_WndInfo.Add (pWndTmp2);
 			}
 			break;
+
+		/* 傭兵と別れる(傭兵がいる時だけ出る) */
+		case 4:
+			{
+				PWNDINFO pWndTmp = NULL, pWndTmp2 = NULL;
+				pWndTmp = MakeWindowCONF (16 * 20, 16 * 10, IDCONFIRMTYPE_MERCOUT);
+				pWndTmp->nData1 = 1;
+				pWndTmp->pParent = pWnd;
+				pWnd->pChild = pWndTmp;
+				g_WndInfo.Add (pWndTmp);
+				g_dwActiveMsgID = pWndTmp->dwID;
+
+				pWndTmp2 = MakeWindowMSG ("傭兵と別れますか？@1（持たせた道具は返してもらえます）@2", FALSE);
+				pWndTmp2->pParent = pWndTmp;
+				pWndTmp->pChild = pWndTmp2;
+				g_WndInfo.Add (pWndTmp2);
+			}
+			break;
 		}
 
 	} else if ((byEvent == KEY_DOWN) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
@@ -4818,6 +4836,11 @@ void KeyProcCONF(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 
 				case IDCONFIRMTYPE_BREAKUP:		/* パーティ解散 */
 					SendCMDPARTY (CMDPARTY_BREAKUP, pChar->dwTblID, 0);
+					EraseWindow ((PWNDINFO)g_WndInfo[GetWindowID (g_dwMsgIDCommand)]);
+					break;
+
+				case IDCONFIRMTYPE_MERCOUT:		/* 傭兵と別れる */
+					SendCMDPARTY (CMDPARTY_MERCOUT, pChar->dwTblID, 0);
 					EraseWindow ((PWNDINFO)g_WndInfo[GetWindowID (g_dwMsgIDCommand)]);
 					break;
 
