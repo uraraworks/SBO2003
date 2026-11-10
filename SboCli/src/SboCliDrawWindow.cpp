@@ -386,6 +386,11 @@ void DrawWindowFrame(PWNDINFO pWnd)
 		pDib->Blt (0, (i + 1) * 16, 16, 16, g_pDibSystem, 0, 16);
 		pDib->Blt (pWnd->nCx - 16, (i + 1) * 16, 16, 16, g_pDibSystem, 32, 16);
 	}
+	/* 高さが16の倍数でない時は、下の角の上に残るすき間も埋める */
+	if ((pWnd->nCy % 16) && (pWnd->nCy >= 48)) {
+		pDib->Blt (0, pWnd->nCy - 32, 16, 16, g_pDibSystem, 0, 16);
+		pDib->Blt (pWnd->nCx - 16, pWnd->nCy - 32, 16, 16, g_pDibSystem, 32, 16);
+	}
 
 	/* HPが減っていたら枠を染める（上下左右の16ドット幅） */
 	TintWindowFrame (pDib, 0, 0, pWnd->nCx, 16);
