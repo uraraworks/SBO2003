@@ -7849,11 +7849,10 @@ void RecvDataProcTRADE(PBYTE pData, DWORD dwDataSize)
 			SendCmdTRADE (pOwner->pID, pOwner->dwTblID, CMDTRADE_OUT);
 			return;
 		}
-		/* 戦っている最中は、となり(カウンター越し)まで行かないと渡せない(離れた所から補充し放題にしない) */
-		if (MercenaryIsFighting (pMerc) &&
-			(abs ((int)pMerc->dwX - (int)pOwner->dwX) + abs ((int)pMerc->dwY - (int)pOwner->dwY) > 2)) {
+		/* 戦っている最中は取り引きできない(戦いながら補充し放題にしない) */
+		if (MercenaryIsFighting (pMerc)) {
 			char szTmp[256];
-			snprintf (szTmp, sizeof (szTmp), "%sは戦っている最中なので、離れたところからは渡せません。（となりに行けば渡せます）", pMerc->szName);
+			snprintf (szTmp, sizeof (szTmp), "%sは戦っている最中なので、いまは取り引きできません。", pMerc->szName);
 			SendCmdSYSMSG (pOwner->pID, szTmp, SPEECHCMD_BATTLE1);
 			SendCmdTRADE (pOwner->pID, pOwner->dwTblID, CMDTRADE_OUT);
 			return;
