@@ -154,7 +154,7 @@ enum {
 };
 #define QUEST_WINCX					(16 * 21)									/* 窓の幅（右上の所持金の窓に重ならない広さ） */
 #define QUEST_LISTROWS				(5)											/* 一覧に一度に出す行数 */
-#define QUEST_DETAILROWS			(6)											/* 詳細欄の行数（16ドットの字） */
+#define QUEST_DETAILROWS			(8)											/* 詳細欄の行数（16ドットの字） */
 #define QUEST_DETAILY				(16 * (1 + QUEST_LISTROWS) + 8)				/* 詳細欄の上端 */
 #define QUEST_WINCY					(QUEST_DETAILY + 16 * QUEST_DETAILROWS + 16)	/* 窓の高さ */
 #define QUEST_WAITMAX				(5000)										/* 返事を待つ最長時間(ms) */
