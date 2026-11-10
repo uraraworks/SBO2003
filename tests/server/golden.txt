@@ -1111,4 +1111,43 @@ quest char save=1 load=1
 quest char reload id=2 step=1 flg=4660 counts=1,22,333,4444 time=1700000000 done=06,80
 quest npc loaded=0
 quest end copies=0
+== N. SortItem ==
+sortkey [アイテム] [あいてむ] same=1 len=9,9
+sortkey [アイテム] [ｱｲﾃﾑ] same=1 len=9,9
+sortkey [ガード] [がーど] same=1 len=7,7
+sortkey [ｶﾞ] [が] same=1 len=3,3
+sortkey [ｶﾞ] [ガ] same=1 len=3,3
+sortkey [ﾊﾟ] [ぱ] same=1 len=3,3
+sortkey [ﾊﾞ] [ば] same=1 len=3,3
+sortkey [ｳﾞ] [ゔ] same=1 len=3,3
+sortkey [ｳﾞ] [ヴ] same=1 len=3,3
+sortkey [ＡＢＣ１] [abc1] same=1 len=9,9
+sortkey [Potion] [potion] same=1 len=13,13
+sortkey [ｱ] [あ] same=1 len=3,3
+sortkey [ｶ] [か] same=1 len=3,3
+sortkey [ｶﾞ] [か] same=0 len=3,3
+sortkey [ﾂ] [つ] same=1 len=3,3
+sortkey [ｯ] [っ] same=1 len=3,3
+sortkey [ﾁﾞ] [ぢ] same=1 len=3,3
+sortkey codes: 3042 3044 3046 0 3042 3044 3046
+sortkey order: かがみ 樫の剣 ガラス ばくだん はしご パン ひのきの棒 皮の盾 布の服 明かりの旅術書 薬草 力の種
+sortkey null len=0
+sort picked: 8(type3) 7(type2) 9(type4) 12(type7) 10(type5) 151(type14)
+sort my init items: 8 7 9 12 10 7 0 0 0 0 equ: 0 65535 65535 4 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
+sort my swap 0,4 items: 10 7 9 12 8 7 0 0 0 0 equ: 4 65535 65535 0 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
+sort my swap invalid items: 10 7 9 12 8 7 0 0 0 0 equ: 4 65535 65535 0 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
+sort my type items: 7 7 12 8 10 9 0 0 0 0 equ: 3 65535 65535 4 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
+sort my name items: 8 7 7 10 9 12 0 0 0 0 equ: 0 65535 65535 3 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
+sort my other-char items: 8 7 7 10 9 12 0 0 0 0 equ: 0 65535 65535 3 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
+sort my short items: 8 7 7 10 9 12 0 0 0 0 equ: 0 65535 65535 3 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
+sort trading=1
+sort my trading items: 8 7 7 10 9 12 0 0 0 0 equ: 0 65535 65535 3 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
+sort trading cleared=0
+sort my after trade items: 8 7 10 7 9 12 0 0 0 0 equ: 0 65535 65535 2 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
+sort leave noaccount leave: none
+sort leave init leave: n=4 10*1 7*2 8*1 9*1
+sort leave swap 0,3 leave: n=4 9*1 7*2 8*1 10*1
+sort leave swap invalid leave: n=4 9*1 7*2 8*1 10*1
+sort leave name leave: n=4 8*1 7*2 10*1 9*1
+sort leave type leave: n=4 7*2 8*1 10*1 9*1
 == done ==

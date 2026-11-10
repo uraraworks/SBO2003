@@ -23,6 +23,7 @@ extern PWNDINFO MakeWindowCOMMANDETC					(void);						/* その他コマンド *
 extern PWNDINFO MakeWindowCOMMANDITEM					(void);						/* 道具コマンド */
 extern PWNDINFO MakeWindowCOMMANDITEMBATTLE				(void);						/* 道具コマンド(戦闘マップ) */
 extern PWNDINFO MakeWindowCOMMANDITEMPROC				(void);						/* 道具処理選択 */
+extern PWNDINFO MakeWindowSORTMENU						(BYTE);						/* 並べ替え：入れ替え・種類順・50音順 */
 extern PWNDINFO MakeWindowCOMMANDOPTION					(void);						/* オプション */
 extern PWNDINFO MakeWindowCOMMANDOPTIONVOLSOUND			(void);						/* 効果音音量設定 */
 extern PWNDINFO MakeWindowCOMMANDOPTIONVOLMUSIC			(void);						/* 曲音量設定 */

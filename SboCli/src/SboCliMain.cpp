@@ -1995,6 +1995,7 @@ void TimerProc(void)
 		case WNDTYPE_MAKER:
 		case WNDTYPE_TOWNWARP:
 		case WNDTYPE_QUEST:
+		case WNDTYPE_SORTMENU:
 			if (dwTime > pWnd->dwTime + 250) {
 				pWnd->dwTime = dwTime;
 				if (g_dwActiveMsgID == pWnd->dwID) {

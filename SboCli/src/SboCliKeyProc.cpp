@@ -31,6 +31,7 @@ void KeyProcCOMMANDETC_CONF					(PWNDINFO, BYTE, BYTE);		/* 管理人呼び出�
 void KeyProcCOMMANDITEM						(PWNDINFO, BYTE, BYTE);		/* 道具コマンド */
 void KeyProcCOMMANDITEMBATTLE				(PWNDINFO, BYTE, BYTE);		/* 道具コマンド(戦闘マップ) */
 void KeyProcCOMMANDITEMPROC					(PWNDINFO, BYTE, BYTE);		/* 道具処理選択 */
+void KeyProcSORTMENU						(PWNDINFO, BYTE, BYTE);		/* 並べ替え：入れ替え・種類順・50音順 */
 void KeyProcCOMMANDITEMCHAR					(PWNDINFO, BYTE, BYTE);		/* 道具使う相手選択 */
 void KeyProcCOMMANDOPTION					(PWNDINFO, BYTE, BYTE);		/* オプションコマンド */
 void KeyProcCOMMANDOPTIONVOLSOUND			(PWNDINFO, BYTE, BYTE);		/* 効果音音量設定 */
@@ -223,6 +224,7 @@ const KEYPROC KeyProcTbl[] = {
 	KeyProcMAKER,						/* WNDTYPE_MAKER						作り手（レシピ）：作れる物の一覧・確認 */
 	KeyProcTOWNWARP,					/* WNDTYPE_TOWNWARP					町転送：行き先の選択 */
 	KeyProcQUEST,						/* WNDTYPE_QUEST					ギルドの依頼：一覧・進み具合 */
+	KeyProcSORTMENU,					/* WNDTYPE_SORTMENU					並べ替え：入れ替え・種類順・50音順 */
 };
 
 
@@ -1671,16 +1673,33 @@ void KeyProcCOMMANDITEM(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 	}
 
 	if ((byEvent == KEY_UP) && (byCode == 'B')) {
+		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
+		/* 入れ替え中は、選んだのをやめるだけ（窓は閉じない） */
+		if (pWnd->dwData) {
+			pWnd->dwData = 0;
+			pWnd->dwTimeDrawStart = 0;
+			g_bDraw = TRUE;
+			return;
+		}
 		int nNo = GetWindowID (pWnd->dwID);
 		EraseWindow (pWnd);
 		g_bDraw = TRUE;
-		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
 
 	} else if ((byEvent == KEY_UP) && (byCode == 'A') && (g_bEnableMove)) {
 		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
 		pWnd->byAnime = 1;
 		pWnd->dwTimeDrawStart = 0;
 		g_bDraw = TRUE;
+
+		/* 入れ替え中：2つ目を決めたら入れ替える（同じ行なら何もしない） */
+		if (pWnd->dwData) {
+			int nNo1 = (int)pWnd->dwData - 1;
+			pWnd->dwData = 0;
+			if (nNo1 != pWnd->nData1) {
+				SendCmdSORTITEM (SORTITEMTARGET_MYITEM, SORTITEMMODE_SWAP, (BYTE)nNo1, (BYTE)pWnd->nData1);
+			}
+			return;
+		}
 
 		PWNDINFO pWndNew = MakeWindowCOMMANDITEMPROC ();
 		pWndNew->pParent = pWnd;
@@ -1947,6 +1966,13 @@ void KeyProcCOMMANDITEMPROC(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			}
 			break;
 
+		/* 並べ替え */
+		case 2:
+			pWndTmp = MakeWindowSORTMENU (SORTITEMTARGET_MYITEM);
+			pWndTmp->pParent = pWnd;
+			pWnd->pChild = pWndTmp;
+			break;
+
 		default:
 			pWndTmp = MakeWindowMSG ("未実装。@2", FALSE);
 			break;
@@ -1956,6 +1982,105 @@ void KeyProcCOMMANDITEMPROC(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			g_bDraw = TRUE;
 			g_WndInfo.Add (pWndTmp);
 			g_dwActiveMsgID = pWndTmp->dwID;
+		}
+
+	} else if ((byEvent == KEY_DOWN) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
+		BOOL bMove = FALSE;
+
+		if ((byCode == VK_UP) && (pWnd->nData1 > 0)) {
+			pWnd->nData1 --;
+			bMove = TRUE;
+
+		} else if ((byCode == VK_DOWN) && (pWnd->nData1 < pWnd->nData2 - 1)) {
+			pWnd->nData1 ++;
+			bMove = TRUE;
+		}
+
+		if (bMove) {
+			pWnd->dwTime = timeGetTime ();
+			pWnd->byAnime = 1;
+			pWnd->byRepeate ++;
+			pWnd->dwTimeKey = timeGetTime ();
+			pWnd->dwTimeDrawStart = 0;
+			g_bDraw = TRUE;
+		}
+
+	} else if (byEvent == KEY_UP) {
+		pWnd->dwTimeKey = timeGetTime () - 250;
+		pWnd->byRepeate = 0;
+		g_bDraw = TRUE;
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：KeyProcSORTMENU													 */
+/* 内容：キー入力処理(並べ替え：入れ替え・種類順・50音順)					 */
+/*       手持ちの道具・預かり所で共用（byData1=対象）						 */
+/* 日付：2026/11/11															 */
+/* ========================================================================= */
+void KeyProcSORTMENU(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
+{
+	DWORD dwTime = 250;
+	if (pWnd->byRepeate > 1) {
+		dwTime = 125;
+	}
+
+	if ((byEvent == KEY_UP) && (byCode == 'B')) {
+		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
+		if (pWnd->byData1 == SORTITEMTARGET_LEAVE) {
+			/* 預かり所：最初のメニューへ */
+			EraseWindow (pWnd);
+			PWNDINFO pWndTmp = MakeWindowLEAVE (1);
+			g_WndInfo.Add (pWndTmp);
+			g_dwActiveMsgID = pWndTmp->dwID;
+		} else {
+			/* 手持ち：親の「使う/捨てる/並べ替え」へ戻る */
+			EraseWindow (pWnd);
+		}
+		g_bDraw = TRUE;
+
+	} else if ((byEvent == KEY_UP) && (byCode == 'A') && (g_bEnableMove)) {
+		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
+		pWnd->dwTimeDrawStart = 0;
+		pWnd->byAnime = 1;
+		g_bDraw = TRUE;
+
+		BYTE byMode = (BYTE)(SORTITEMMODE_SWAP + pWnd->nData1);
+
+		if (pWnd->byData1 == SORTITEMTARGET_LEAVE) {
+			/* 預かり所 */
+			EraseWindow (pWnd);
+			if (byMode == SORTITEMMODE_SWAP) {
+				/* 引き取る時と同じ一覧を頼む。返ってきたら RecvDataProcLEAVEITEMGET が窓を作る */
+				g_nProcShopState = LEAVESTATE_ITEMSORTSWAP;
+				SAFE_DELETE (g_pLeaveInfo);
+				SendCmdLEAVEITEMGET (-1);
+				g_bEnableMove = FALSE;
+			} else {
+				SendCmdSORTITEM (SORTITEMTARGET_LEAVE, byMode, 0, 0);
+				PWNDINFO pWndTmp = MakeWindowLEAVE (10);
+				g_WndInfo.Add (pWndTmp);
+				g_dwActiveMsgID = pWndTmp->dwID;
+			}
+
+		} else {
+			/* 手持ちの道具：親の「使う/捨てる/並べ替え」と一覧の関係（一覧 → 処理選択 → この窓） */
+			PWNDINFO pWndProc = (PWNDINFO)pWnd->pParent;
+			PWNDINFO pWndList = pWndProc ? (PWNDINFO)pWndProc->pParent : NULL;
+			if (byMode == SORTITEMMODE_SWAP) {
+				/* 一覧を入れ替えモードにする（1+選んだ番号） */
+				if (pWndList) {
+					pWndList->dwData = 1 + pWndList->nData1;
+				}
+			} else {
+				SendCmdSORTITEM (SORTITEMTARGET_MYITEM, byMode, 0, 0);
+			}
+			/* この窓と処理選択を閉じて、一覧に戻る（閉じると一覧がアクティブになる） */
+			EraseWindow (pWndProc ? pWndProc : pWnd);
+			if (pWndList) {
+				pWndList->dwTimeDrawStart = 0;
+				g_dwActiveMsgID = pWndList->dwID;
+			}
 		}
 
 	} else if ((byEvent == KEY_DOWN) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
@@ -3616,6 +3741,15 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 	if ((byEvent == KEY_UP) && (byCode == 'B')) {
 		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
 		PWNDINFO pWndTmp = NULL, pWndNew = NULL;
+
+		/* 並べ替え中に1つ選んでいたら、選んだのをやめるだけ */
+		if ((g_nProcShopState == LEAVESTATE_ITEMSORTSWAP) && pWnd->dwData) {
+			pWnd->dwData = 0;
+			pWnd->dwTimeDrawStart = 0;
+			g_bDraw = TRUE;
+			return;
+		}
+
 		switch (g_nProcShopState) {
 		case LEAVESTATE_OPEN:
 			EraseWindow (pWnd);
@@ -3638,6 +3772,7 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		case LEAVESTATE_SELECTGET:
 		case LEAVESTATE_ITEM:
 		case LEAVESTATE_ITEMSELECTGET:
+		case LEAVESTATE_ITEMSORTSWAP:
 			EraseWindow (pWnd);
 
 			pWndTmp = MakeWindowLEAVE (1);
@@ -3670,6 +3805,11 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				EraseWindow (pWnd);
 				pWndTmp = MakeWindowLEAVE_SELECT (1);
 				g_nProcShopState = LEAVESTATE_SELECTGET;
+				break;
+
+			case 2:		/* 並べ替え */
+				EraseWindow (pWnd);
+				pWndTmp = MakeWindowSORTMENU (SORTITEMTARGET_LEAVE);
 				break;
 
 			default:	/* やめる */
@@ -3756,6 +3896,28 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				pWndTmp = MakeWindowLEAVE (1);
 			}
 			EraseWindow (pWnd);
+			break;
+
+		/* 並べ替え：1回目で選び、2回目で入れ替える（窓は閉じない） */
+		case LEAVESTATE_ITEMSORTSWAP:
+			if (g_pLeaveInfo == NULL) {
+				break;
+			}
+			{
+				int nNo = pWnd->nData1 + pWnd->byData1;
+				if (nNo >= g_pLeaveInfo->byCount) {
+					break;
+				}
+				if (pWnd->dwData == 0) {
+					pWnd->dwData = 1 + nNo;
+				} else {
+					int nNo1 = (int)pWnd->dwData - 1;
+					pWnd->dwData = 0;
+					if (nNo1 != nNo) {
+						SendCmdSORTITEM (SORTITEMTARGET_LEAVE, SORTITEMMODE_SWAP, (BYTE)nNo1, (BYTE)nNo);
+					}
+				}
+			}
 			break;
 
 		case LEAVESTATE_ITEMSELECTGET:
@@ -3895,7 +4057,7 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				pWnd->nData1 ++;
 				bMove = TRUE;
 				pWnd->byAnime = 1;
-				if (g_nProcShopState == LEAVESTATE_ITEMSELECTGET) {
+				if ((g_nProcShopState == LEAVESTATE_ITEMSELECTGET) || (g_nProcShopState == LEAVESTATE_ITEMSORTSWAP)) {
 					if (pWnd->nData1 == pWnd->nData2 - 1) {
 						if (g_pLeaveInfo && (g_pLeaveInfo->byCount > 10)) {
 							if (pWnd->nData1 + pWnd->byData1 < g_pLeaveInfo->byCount - 1) {
@@ -3914,7 +4076,7 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 
 			} else if ((byCode == VK_RIGHT) && (pWnd->nData1 < pWnd->nData2 - 1)) {
 				pWnd->nData1 = pWnd->nData2 - 1;
-				if (g_nProcShopState == LEAVESTATE_ITEMSELECTGET) {
+				if ((g_nProcShopState == LEAVESTATE_ITEMSELECTGET) || (g_nProcShopState == LEAVESTATE_ITEMSORTSWAP)) {
 					if (g_pLeaveInfo && (g_pLeaveInfo->byCount > 10)) {
 						pWnd->byData1 = g_pLeaveInfo->byCount - 10;
 					}

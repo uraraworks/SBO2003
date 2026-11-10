@@ -66,6 +66,7 @@ void DrawWindowCOMMANDETC						(PWNDINFO);			/* その他コマンド */
 void DrawWindowCOMMANDITEM						(PWNDINFO);			/* 道具 */
 void DrawWindowCOMMANDITEMBATTLE				(PWNDINFO);			/* 道具(戦闘マップ) */
 void DrawWindowCOMMANDITEMPROC					(PWNDINFO);			/* 道具処理選択 */
+void DrawWindowSORTMENU							(PWNDINFO);			/* 並べ替え：入れ替え・種類順・50音順 */
 void DrawWindowCOMMANDITEMCHAR					(PWNDINFO);			/* 道具使う相手選択 */
 void DrawWindowCOMMANDITEMCHARBATTLE			(PWNDINFO);			/* 道具使う相手選択(戦闘マップ) */
 void DrawWindowCOMMANDOPTION					(PWNDINFO);			/* オプション */
@@ -347,6 +348,7 @@ void DrawWindow(CImg32 *pDib, int x, int y)
 		case WNDTYPE_MAKER:					DrawWindowMAKER (pWnd);					break;
 		case WNDTYPE_TOWNWARP:				DrawWindowTOWNWARP (pWnd);				break;
 		case WNDTYPE_QUEST:					DrawWindowQUEST (pWnd);					break;
+		case WNDTYPE_SORTMENU:				DrawWindowSORTMENU (pWnd);				break;
 		}
 		s_bDrawingWindow = FALSE;
 		pDib->BltAlpha2 (pWnd->nX + x, pWnd->nY + y, pWnd->nCx, pWnd->nCy, pWnd->pDib, 0, 0, 15, TRUE);
@@ -1217,10 +1219,13 @@ void DrawWindowCOMMANDITEM(PWNDINFO pWnd)
 	HDC hDC = pWnd->pDib->Lock ();
 	HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFontBasic);
 
+	/* 入れ替え中(dwData=1+選んだ番号)は題字を「入れ替え」にして、選んだ行を黄色で描く */
+	char szTitle[16];
+	wsprintf (szTitle, "%s", pWnd->dwData ? "入れ替え" : "道具");
 	SetBkColor (hDC, RGB (40, 40, 40));
-	TextOut2 (hDC, 48, 0, "道具", RGB (255, 255, 255));
+	TextOut2 (hDC, pWnd->dwData ? 32 : 48, 0, szTitle, RGB (255, 255, 255));
 	SetBkMode (hDC, TRANSPARENT);
-	TextOut2 (hDC, 48, 0, "道具", RGB (255, 255, 255));
+	TextOut2 (hDC, pWnd->dwData ? 32 : 48, 0, szTitle, RGB (255, 255, 255));
 
 	char szTmp[128];
 	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
@@ -1228,7 +1233,8 @@ void DrawWindowCOMMANDITEM(PWNDINFO pWnd)
 	for (i = 0; i < nCount; i ++) {
 		PITEMINFO pItem = g_aItemInfo[pChar->waItem[i]];
 		wsprintf (szTmp, "%s", pItem->szName);
-		TextOut2 (hDC, 32, 16 + i * 16, szTmp, RGB (255, 255, 255));
+		TextOut2 (hDC, 32, 16 + i * 16, szTmp,
+				((pWnd->dwData != 0) && ((int)pWnd->dwData - 1 == i)) ? RGB (255, 255, 0) : RGB (255, 255, 255));
 
 		for (int j = 0; j < 10; j ++) {
 			if (pChar->waEqu[j] == i) {
@@ -1267,6 +1273,38 @@ void DrawWindowCOMMANDITEMPROC(PWNDINFO pWnd)
 
 	TextOut2 (hDC, 32, 16, "使う", RGB (255, 255, 255));
 	TextOut2 (hDC, 32, 32, "捨てる", RGB (255, 255, 255));
+	TextOut2 (hDC, 32, 48, "並べ替え", RGB (255, 255, 255));
+
+	SelectObject (hDC, hFontOld);
+	pWnd->pDib->Unlock ();
+	pWnd->dwTimeDrawStart = timeGetTime ();
+
+	DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
+}
+
+/* ========================================================================= */
+/* 関数名：DrawWindowSORTMENU												 */
+/* 内容：ウィンドウの描画(並べ替え：入れ替え・種類順・50音順)				 */
+/* 日付：2026/11/11															 */
+/* ========================================================================= */
+void DrawWindowSORTMENU(PWNDINFO pWnd)
+{
+	if (pWnd->dwTimeDrawStart) {
+		DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
+		return;
+	}
+
+	DrawWindowFrame (pWnd);
+
+	HDC hDC = pWnd->pDib->Lock ();
+	HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFontBasic);
+
+	SetBkColor (hDC, RGB (40, 40, 40));
+	SetBkMode (hDC, TRANSPARENT);
+
+	TextOut2 (hDC, 32, 16, "入れ替え", RGB (255, 255, 255));
+	TextOut2 (hDC, 32, 32, "種類順", RGB (255, 255, 255));
+	TextOut2 (hDC, 32, 48, "50音順", RGB (255, 255, 255));
 
 	SelectObject (hDC, hFontOld);
 	pWnd->pDib->Unlock ();
@@ -2342,7 +2380,8 @@ void DrawWindowLEAVE(PWNDINFO pWnd)
 		case LEAVESTATE_SELECT:
 		case LEAVESTATE_SELECTGET:		DrawWindowLEAVE_SELECT (pWnd);		return;
 		case LEAVESTATE_ITEM:			DrawWindowLEAVE_ITEM (pWnd);		return;
-		case LEAVESTATE_ITEMSELECTGET:	DrawWindowLEAVE_ITEMGET (pWnd);		return;
+		case LEAVESTATE_ITEMSELECTGET:
+		case LEAVESTATE_ITEMSORTSWAP:	DrawWindowLEAVE_ITEMGET (pWnd);		return;
 		case LEAVESTATE_GOLD:
 		case LEAVESTATE_GOLDGET:		DrawWindowLEAVE_GOLD (pWnd);		return;
 		}
@@ -2361,7 +2400,8 @@ void DrawWindowLEAVE(PWNDINFO pWnd)
 
 	TextOut2 (hDC, 32, 16, "預ける", clText);
 	TextOut2 (hDC, 32, 32, "引き取る", clText);
-	TextOut2 (hDC, 32, 48, "やめる", clText);
+	TextOut2 (hDC, 32, 48, "並べ替え", clText);
+	TextOut2 (hDC, 32, 64, "やめる", clText);
 
 	SelectObject (hDC, hFontOld);
 	pWnd->pDib->Unlock ();
@@ -2475,6 +2515,9 @@ void DrawWindowLEAVE_ITEMGET(PWNDINFO pWnd)
 	if (nLen % 2) {
 		nLen ++;
 	}
+	if ((g_nProcShopState == LEAVESTATE_ITEMSORTSWAP) && (nLen < 8)) {
+		nLen = 8;													/* 題字「入れ替え」が入る幅 */
+	}
 	SAFE_DELETE (pWnd->pDib);
 	pWnd->pDib = new CImg32;
 	pWnd->pDib->Create (nLen * 8 + 48, 16 * i + 32);
@@ -2486,6 +2529,10 @@ void DrawWindowLEAVE_ITEMGET(PWNDINFO pWnd)
 	HDC hDC = pWnd->pDib->Lock ();
 	HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFontBasic);
 	SetBkMode (hDC, TRANSPARENT);
+	/* 並べ替え中は題字を「入れ替え」にして、選んだ行(dwData=1+絶対番号)を黄色で描く */
+	if (g_nProcShopState == LEAVESTATE_ITEMSORTSWAP) {
+		TextOut2 (hDC, 32, 0, "入れ替え", clText);
+	}
 	for (i = 0; i < 10; i ++) {
 		if (i + nNo >= g_pLeaveInfo->byCount) {
 			break;
@@ -2499,7 +2546,9 @@ void DrawWindowLEAVE_ITEMGET(PWNDINFO pWnd)
 		if (SboTextWidth (szTmp) > nLen) {
 			nLen = SboTextWidth (szTmp);
 		}
-		TextOut2 (hDC, 32, 16 + i * 16, szTmp, RGB (255, 255, 255));
+		TextOut2 (hDC, 32, 16 + i * 16, szTmp,
+				((g_nProcShopState == LEAVESTATE_ITEMSORTSWAP) && (pWnd->dwData != 0) && ((int)pWnd->dwData - 1 == i + nNo)) ?
+				RGB (255, 255, 0) : RGB (255, 255, 255));
 	}
 
 	SelectObject (hDC, hFontOld);

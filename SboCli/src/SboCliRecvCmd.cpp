@@ -343,6 +343,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcTOWNWARP,				/* CMD_TOWNWARP */
 	RecvDataProcQUEST,					/* CMD_QUEST */
 	RecvDataProcQUESTSTATE,				/* CMD_QUESTSTATE */
+	NULL,								/* CMD_SORTITEM(クライアント→サーバーのみ) */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -5250,6 +5251,23 @@ void RecvDataProcCHARITEM(PBYTE pData, DWORD dwDataSize)
 	CopyMemory (pChar->waEqu, pPara->waEqu, sizeof (pChar->waEqu));
 	RenewATDF (nNo);
 
+	/* 自分の手持ちが変わったら（並べ替えなど）、開いている道具の一覧を描き直す */
+	if (nNo == g_nMyCharID) {
+		int i, nCount = GetItemCount (nNo);
+		for (i = 0; i < g_WndInfo.GetSize (); i ++) {
+			PWNDINFO pWnd = g_WndInfo[i];
+			if (pWnd->nType != WNDTYPE_COMMANDITEM) {
+				continue;
+			}
+			if (pWnd->nData1 >= nCount) {
+				pWnd->nData1 = max (0, nCount - 1);
+			}
+			pWnd->dwTimeDrawStart = 0;
+			g_bDraw = TRUE;
+			UpdateWindowITEMINFOList (pWnd);
+		}
+	}
+
 	if (g_hWndAdmin) {
 		PostMessage (g_hWndAdmin, WM_ADMINCHARITEM, nNo, 0);
 	}
@@ -5811,7 +5829,23 @@ void RecvDataProcLEAVEITEMGET(BYTE *pData, DWORD dwDataSize)
 		return;
 	}
 
-	if (g_nProcShopState == LEAVESTATE_ITEMSELECTGET) {
+	/* 並べ替え中に一覧が返ってきた：開いている窓をそのまま描き直す（カーソル・スクロール位置を保つ） */
+	if (g_nProcShopState == LEAVESTATE_ITEMSORTSWAP) {
+		int i;
+		for (i = 0; i < g_WndInfo.GetSize (); i ++) {
+			PWNDINFO pWndList = g_WndInfo[i];
+			if (pWndList->nType != WNDTYPE_LEAVE) {
+				continue;
+			}
+			pWndList->dwTimeDrawStart = 0;
+			g_bDraw = TRUE;
+			g_bEnableMove = TRUE;
+			UpdateWindowITEMINFOList (pWndList);
+			return;
+		}
+	}
+
+	if ((g_nProcShopState == LEAVESTATE_ITEMSELECTGET) || (g_nProcShopState == LEAVESTATE_ITEMSORTSWAP)) {
 
 		PWNDINFO pWndTmp;
 		if (g_pLeaveInfo->byCount == 0) {

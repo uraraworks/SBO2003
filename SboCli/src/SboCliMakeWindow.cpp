@@ -40,6 +40,7 @@ PWNDINFO MakeWindowCOMMANDETC					(void);				/* その他コマンド */
 PWNDINFO MakeWindowCOMMANDITEM					(void);				/* 道具 */
 PWNDINFO MakeWindowCOMMANDITEMBATTLE			(void);				/* 道具(戦闘マップ) */
 PWNDINFO MakeWindowCOMMANDITEMPROC				(void);				/* 道具処理選択 */
+PWNDINFO MakeWindowSORTMENU						(BYTE);				/* 並べ替え：入れ替え・種類順・50音順 */
 PWNDINFO MakeWindowCOMMANDOPTION				(void);				/* オプション */
 PWNDINFO MakeWindowCOMMANDOPTIONVOLSOUND		(void);				/* 効果音音量設定 */
 PWNDINFO MakeWindowCOMMANDOPTIONVOLMUSIC		(void);				/* 曲音量設定 */
@@ -580,6 +581,7 @@ PWNDINFO MakeWindowCOMMANDITEM(void)
 	pWnd->nX = 32 + 16 * 3;
 	pWnd->nY = 50 + 16 * 2;
 	pWnd->nCx = (16 * 4) + (nLen * 8);
+	pWnd->nCx = max (pWnd->nCx, 16 * 7);						/* 入れ替え中の題字「入れ替え」が入る幅 */
 	pWnd->nCy = 16 * (2 + pWnd->nData2);
 	pWnd->nType = WNDTYPE_COMMANDITEM;
 	pWnd->pDib = new CImg32;
@@ -638,16 +640,54 @@ PWNDINFO MakeWindowCOMMANDITEMPROC(void)
 	ZeroMemory (pWnd, sizeof (WNDINFO));
 	pWnd->dwID = g_dwNewID;
 	g_dwNewID ++;
-	pWnd->nData2 = 2;
+	pWnd->nData2 = 3;
 	pWnd->nX = 32 + 16 * 8;
 	pWnd->nY = 50 + 16 * 5;
-	pWnd->nCx = 16 * 6;
+	pWnd->nCx = 16 * 7;
 	pWnd->nCy = 16 * (2 + pWnd->nData2);
 	pWnd->nType = WNDTYPE_COMMANDITEMPROC;
 	pWnd->pDib = new CImg32;
 	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
 	pWnd->pDib->SetColorKey (RGB (40, 40, 40));
 
+	return pWnd;
+}
+
+/* ========================================================================= */
+/* 関数名：MakeWindowSORTMENU												 */
+/* 内容：ウィンドウの作成(並べ替え：入れ替え・種類順・50音順)				 */
+/*       byTarget=対象(SORTITEMTARGET_*。手持ちの道具・預かり所で共用)		 */
+/* 日付：2026/11/11															 */
+/* ========================================================================= */
+PWNDINFO MakeWindowSORTMENU(BYTE byTarget)
+{
+	PWNDINFO pWnd = new WNDINFO;
+	ZeroMemory (pWnd, sizeof (WNDINFO));
+	pWnd->dwID = g_dwNewID;
+	g_dwNewID ++;
+	pWnd->nData2 = 3;
+	pWnd->byData1 = byTarget;
+	if (byTarget == SORTITEMTARGET_LEAVE) {
+		pWnd->nX = 16 * 21;
+		pWnd->nY = 16 * 8;
+	} else {
+		pWnd->nX = 32 + 16 * 9;
+		pWnd->nY = 50 + 16 * 6;
+	}
+	pWnd->nCx = 16 * 7;
+	pWnd->nCy = 16 * (2 + pWnd->nData2);
+	pWnd->nType = WNDTYPE_SORTMENU;
+	pWnd->pDib = new CImg32;
+	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
+	pWnd->pDib->SetColorKey (RGB (40, 40, 40));
+
+	/* 預かり所では、預かり所の人のセリフを出す */
+	if (byTarget == SORTITEMTARGET_LEAVE) {
+		PWNDINFO pWndNew = MakeWindowMSG ("＊｢どのように並べ替えましょう？@2", TRUE);
+		pWndNew->pParent = pWnd;
+		pWnd->pChild = pWndNew;
+		g_WndInfo.Add (pWndNew);
+	}
 	return pWnd;
 }
 
@@ -1271,7 +1311,7 @@ PWNDINFO MakeWindowLEAVE(BYTE bySelect)
 	ZeroMemory (pWnd, sizeof (WNDINFO));
 	pWnd->dwID = g_dwNewID;
 	g_dwNewID ++;
-	pWnd->nData2 = 3;
+	pWnd->nData2 = 4;
 	pWnd->nX = 16 * 21;
 	pWnd->nY = 16 * 8;
 	pWnd->nCx = 16 * 7;
@@ -1314,6 +1354,9 @@ PWNDINFO MakeWindowLEAVE(BYTE bySelect)
 
 	} else if (bySelect == 9) {
 		pWndNew = MakeWindowMSG ("これ以上持てません。@1@1＊｢他に御用は？@2", TRUE);
+
+	} else if (bySelect == 10) {
+		pWndNew = MakeWindowMSG ("＊｢きれいに並べ替えておきましたよ。@1　 他に御用は？@2", TRUE);
 
 	} else {
 		pWndNew = MakeWindowMSG ("＊｢他に御用は？@2", TRUE);
@@ -1424,11 +1467,18 @@ PWNDINFO MakeWindowLEAVE_ITEMGET(void)
 	pWnd->nCx = (16 * 4) + (33 * 8);
 	pWnd->nCy = 16 * (2 + pWnd->nData2);
 
-	g_nProcShopState = LEAVESTATE_ITEMSELECTGET;
+	/* 並べ替え中は状態を変えない（引き取る時と同じ一覧を使う） */
+	if (g_nProcShopState != LEAVESTATE_ITEMSORTSWAP) {
+		g_nProcShopState = LEAVESTATE_ITEMSELECTGET;
+	}
 	g_bProcShopConfirm = FALSE;
 
 	char szTmp[256];
-	wsprintf (szTmp, "＊｢現在%d品お預かりしています。@1　 どれをお引取りなさいますか？@2", g_pLeaveInfo->byCount);
+	if (g_nProcShopState == LEAVESTATE_ITEMSORTSWAP) {
+		wsprintf (szTmp, "＊｢現在%d品お預かりしています。@1　 入れ替える２つを順にお選びください。@2", g_pLeaveInfo->byCount);
+	} else {
+		wsprintf (szTmp, "＊｢現在%d品お預かりしています。@1　 どれをお引取りなさいますか？@2", g_pLeaveInfo->byCount);
+	}
 	PWNDINFO pWndNew = MakeWindowMSG (szTmp, TRUE);
 	pWndNew->pParent = pWnd;
 	pWnd->pChild = pWndNew;
@@ -2964,7 +3014,7 @@ void UpdateWindowITEMINFOList(PWNDINFO pWndList)
 		if (nRecipe >= 0) {
 			nItemID = g_aRecipeInfo[nRecipe].wItem;
 		}
-	} else if ((pWndList->nType == WNDTYPE_LEAVE) && (g_nProcShopState == LEAVESTATE_ITEMSELECTGET)) {
+	} else if ((pWndList->nType == WNDTYPE_LEAVE) && ((g_nProcShopState == LEAVESTATE_ITEMSELECTGET) || (g_nProcShopState == LEAVESTATE_ITEMSORTSWAP))) {
 		/* 預かり所の引き取る一覧は byData1 だけスクロールしている */
 		nNo += pWndList->byData1;
 		if (g_pLeaveInfo && (nNo >= 0) && (nNo < g_pLeaveInfo->byCount) && (nNo < MAX_LEAVEITEM)) {

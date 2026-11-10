@@ -293,6 +293,7 @@ enum {
 /* 以下、プレイヤー用（ギルドの仕事依頼。CMD_QUEST はクライアント→サーバーも受ける。管理者用の判定から外すこと） */
 	CMD_QUEST,														/* ギルドの仕事依頼（一覧・受ける・取り消す・渡す。結果はサーバー→クライアント） */
 	CMD_QUESTSTATE,													/* 依頼の進み具合(サーバー→本人。自分と仲間の分) */
+	CMD_SORTITEM,													/* 道具欄・預かり所の並べ替え（クライアント→サーバー。結果は CMD_CHARITEM・CMD_LEAVEITEMGET で返る） */
 	CMD_MAX
 };
 
@@ -907,6 +908,7 @@ enum {
 	LEAVESTATE_ITEMSELECTGET,									/* 引き取るアイテム選択 */
 	LEAVESTATE_GOLD,											/* 預ける金額設定 */
 	LEAVESTATE_GOLDGET,											/* 引き取る金額設定 */
+	LEAVESTATE_ITEMSORTSWAP,									/* 並べ替え：入れ替える2つを選ぶ（引き取る時と同じ一覧） */
 };
 
 /* 冒険者登録所状態 */
@@ -2813,6 +2815,31 @@ typedef struct _CMDPARA_QUESTSTATE {
 	BYTE		byCount;											/* 人数 */
 	QUESTSTATEENTRY	aEntry[MAX_PARTYMEMBER];						/* 本人と仲間 */
 } CMDPARA_QUESTSTATE, *PCMDPARA_QUESTSTATE;
+#pragma pack(pop)
+
+/* 並べ替えの対象(CMDPARA_SORTITEM の byTarget) */
+enum {
+	SORTITEMTARGET_MYITEM = 0,									/* 手持ちの道具 */
+	SORTITEMTARGET_LEAVE,										/* 預かり所 */
+};
+
+/* 並べ替えの方法(CMDPARA_SORTITEM の byMode) */
+enum {
+	SORTITEMMODE_SWAP = 1,										/* byNo1 番目と byNo2 番目を入れ替える */
+	SORTITEMMODE_TYPE,											/* 種類順 */
+	SORTITEMMODE_NAME,											/* 50音順 */
+};
+
+#pragma pack(push, 1)
+/* 道具欄・預かり所の並べ替え（クライアント→サーバー） */
+typedef struct _CMDPARA_SORTITEM {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byTarget;											/* 対象(SORTITEMTARGET_*) */
+	BYTE		byMode;												/* 方法(SORTITEMMODE_*) */
+	BYTE		byNo1;												/* 入れ替える1つ目の番号（SWAP） */
+	BYTE		byNo2;												/* 入れ替える2つ目の番号（SWAP） */
+	DWORD		dwTblID;											/* 本人のテーブルID */
+} CMDPARA_SORTITEM, *PCMDPARA_SORTITEM;
 #pragma pack(pop)
 
 /* NPCの巡回ルート(CMD_NPCROUTE)のサブコマンド */
