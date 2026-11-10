@@ -1211,6 +1211,62 @@
 			background: rgba(255, 255, 255, 0.12);
 		}
 	}
+	/* ---- くっきり表示の切り替え（スマホ）----
+	   スマホはゲームの 1 ドットが画面の 2.4 画素のような半端な倍率になり、細い線の太さがばらつく。
+	   このボタンで「画面いっぱい」と「画面の画素でちょうど整数倍（少し小さい）」を切り替える。
+	   置き場所はカメラボタンの下（横持ちはカメラボタンの上） */
+	#sbo-fit-pad {
+		display: none;
+	}
+	body.sbo-pad.sbo-on-map #sbo-fit-pad {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		position: absolute;
+		right: 6px;
+		top: 46px;
+		z-index: 5;
+		height: 34px;
+		box-sizing: border-box;
+		padding: 0 10px;
+		border: 1px solid rgba(255, 255, 255, 0.35);
+		border-radius: 17px;
+		background: rgba(0, 0, 0, 0.35);
+		color: #fff;
+		font: bold 13px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		white-space: nowrap;
+		opacity: 0;
+		pointer-events: none;
+		transition: opacity 0.2s;
+		touch-action: manipulation;
+		-webkit-tap-highlight-color: transparent;
+		cursor: pointer;
+	}
+	body.sbo-pad.sbo-on-map.sbo-sys-show #sbo-fit-pad {
+		opacity: 0.75;
+		pointer-events: auto;
+	}
+	body.sbo-pad #sbo-fit-pad:active {
+		opacity: 1;
+		background: rgba(240, 184, 74, 0.75);
+	}
+	@media (orientation: landscape) {
+		body.sbo-pad.sbo-on-map #sbo-fit-pad {
+			position: fixed;
+			right: auto;
+			top: auto;
+			left: calc(12px + env(safe-area-inset-left));
+			bottom: calc(62px + env(safe-area-inset-bottom));
+			z-index: 800;
+			height: 44px;
+			border-radius: 22px;
+			font-size: 15px;
+			opacity: 1;
+			pointer-events: auto;
+			border: 2px solid rgba(255, 255, 255, 0.4);
+			background: rgba(255, 255, 255, 0.12);
+		}
+	}
 	/* ---- 動画録画 ----
 	   ボタンはスクショの隣。録画中は赤くし、マップを離れても止められるように出しておく */
 	body.sbo-recording #sbo-rec-pc {
@@ -1449,9 +1505,59 @@
 		background: #3a404a;
 		color: var(--fg);
 	}
+	/* ===================================================================
+	   ボタンのアイコン（絵文字は端末ごとに絵が違って浮くので、線だけの絵にそろえる）
+	   絵は <body> の先頭の #sbo-icons にまとめ、<use> で呼ぶ。色は文字色（currentColor）に合わせる
+	   =================================================================== */
+	.sbo-ic {
+		flex: none;
+		width: 1.25em;
+		height: 1.25em;
+		vertical-align: -0.25em;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 2;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+	#sbo-shot-pc,
+	#sbo-rec-pc,
+	#sbo-log-pc,
+	#sbo-log-pop,
+	#sbo-sheet-save,
+	#sbo-sheet-tabs button {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+	}
+	.sbo-chat-bar-icon {
+		display: inline-flex;
+		opacity: 0.8;
+	}
+	/* 丸いボタン（スマホのカメラ・録画・チャット）は絵を少し大きめに */
+	#sbo-shot-pad .sbo-ic,
+	#sbo-rec-pad .sbo-ic,
+	#sbo-chat-open .sbo-ic {
+		width: 20px;
+		height: 20px;
+	}
+	/* 録画中の「止める」は塗りつぶしの四角 */
+	#sbo-ic-stop rect {
+		fill: currentColor;
+	}
 </style>
 </head>
 <body>
+<!-- ボタンのアイコン（24×24 の線画。使う所は <svg class="sbo-ic"><use href="#sbo-ic-…"/></svg>） -->
+<svg id="sbo-icons" width="0" height="0" style="position:absolute" aria-hidden="true">
+	<symbol id="sbo-ic-camera" viewBox="0 0 24 24"><path d="M4 8h3l1.5-2.5h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></symbol>
+	<symbol id="sbo-ic-video" viewBox="0 0 24 24"><rect x="2.5" y="6.5" width="13" height="11" rx="2"/><path d="M15.5 10.5l6-3.5v10l-6-3.5"/></symbol>
+	<symbol id="sbo-ic-stop" viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/></symbol>
+	<symbol id="sbo-ic-save" viewBox="0 0 24 24"><path d="M12 4v10.5M7.5 10l4.5 4.5 4.5-4.5M4 16.5V19a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2.5"/></symbol>
+	<symbol id="sbo-ic-popout" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-8.5 8.5M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+	<symbol id="sbo-ic-chat" viewBox="0 0 24 24"><path d="M5 4.5h14a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2h-8l-4.5 3.5V17H5a2 2 0 0 1-2-2V6.5a2 2 0 0 1 2-2z"/></symbol>
+	<symbol id="sbo-ic-smile" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 14a4.2 4.2 0 0 0 7 0M9.3 9.5v.5M14.7 9.5v.5"/></symbol>
+</svg>
 <header class="site-header">
 	<h1>スクラップブックオンライン</h1>
 	<p class="site-tagline">2003年に始まった個人制作MMORPG</p>
@@ -1463,8 +1569,9 @@
 		<div id="sbo-overlay" style="position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none;"></div>
 		<div id="sbo-shot-flash"></div>
 		<!-- スマホのカメラボタン（縦持ちはゲーム画面の右上隅に重ねる。横持ちは左下） -->
-		<button type="button" id="sbo-shot-pad" title="スクリーンショット">📷</button>
-		<button type="button" id="sbo-rec-pad" title="ゲーム画面を動画で録画">🎥</button>
+		<button type="button" id="sbo-shot-pad" title="スクリーンショット"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-camera"/></svg></button>
+		<button type="button" id="sbo-rec-pad" title="ゲーム画面を動画で録画"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-video"/></svg></button>
+		<button type="button" id="sbo-fit-pad" title="画面いっぱいの表示と、ドットの太さがそろうくっきり表示を切り替えます">くっきり</button>
 		<div id="sbo-rec-badge">REC <span id="sbo-rec-time">0:00</span></div>
 		<!-- ログイン画面のボタン。ID・パスワードの入力欄は「ID・パスワードでログイン」を押した時だけ見せる -->
 		<div id="sbo-quick" data-sbo-ui="1">
@@ -1515,7 +1622,7 @@
 		</div>
 	</div>
 	<!-- 横持ちのチャットボタン（縦持ちはログ欄の下端の「発言する…」） -->
-	<button type="button" id="sbo-chat-open" data-pad-hide-battle="1" disabled title="チャット">💬</button>
+	<button type="button" id="sbo-chat-open" data-pad-hide-battle="1" disabled title="チャット"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-chat"/></svg></button>
 	<div id="sbo-status">読み込み中...</div>
 </div>
 <div id="sbo-dot-preview" data-sbo-ui="1"><span id="sbo-dot-preview-text"></span><button type="button" id="sbo-dot-preview-stop">やめて読み直す</button></div>
@@ -1586,7 +1693,7 @@
 	<div id="sbo-chat-area">
 		<div id="sbo-chat-lines"></div>
 		<!-- ログの最後の行のように置く。一番下まで見ている（＝新しい行に追従している）時だけ見える -->
-		<button type="button" id="sbo-chat-bar" disabled><span class="sbo-chat-bar-icon">💬</span><span class="sbo-chat-bar-text">発言する…</span></button>
+		<button type="button" id="sbo-chat-bar" disabled><span class="sbo-chat-bar-icon"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-chat"/></svg></span><span class="sbo-chat-bar-text">発言する…</span></button>
 	</div>
 	<!-- 上に遡っている間だけ出す -->
 	<button type="button" id="sbo-chat-latest">↓ 最新へ</button>
@@ -1597,10 +1704,10 @@
 	<div id="sbo-chat-head">
 		<span id="sbo-chat-title" title="メッセージログ">ログ</span>
 		<span id="sbo-chat-tools">
-			<button id="sbo-log-pop" type="button" title="メッセージログを別のウィンドウで開きます（閉じると元に戻ります）">⧉ 別窓</button>
-			<button id="sbo-log-pc" type="button" title="メッセージログをテキストファイルで保存します">💾 ログ保存</button>
-			<button id="sbo-shot-pc" type="button" title="ゲーム画面を画像で保存します">📷 スクショ</button>
-			<button id="sbo-rec-pc" type="button" title="ゲーム画面だけを音つきの動画で録画します（もう一度押すと止めて保存。最長3分）">🎥 録画</button>
+			<button id="sbo-log-pop" type="button" title="メッセージログを別のウィンドウで開きます（閉じると元に戻ります）"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-popout"/></svg>別窓</button>
+			<button id="sbo-log-pc" type="button" title="メッセージログをテキストファイルで保存します"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-save"/></svg>ログ保存</button>
+			<button id="sbo-shot-pc" type="button" title="ゲーム画面を画像で保存します"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-camera"/></svg>スクショ</button>
+			<button id="sbo-rec-pc" type="button" title="ゲーム画面だけを音つきの動画で録画します（もう一度押すと止めて保存。最長3分）"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-video"/></svg>録画</button>
 			<button id="sbo-chat-fold" type="button" title="たたむ">▼</button>
 		</span>
 	</div>
@@ -1648,11 +1755,11 @@
 <div id="sbo-chat-sheet">
 	<div id="sbo-sheet-head">
 		<span id="sbo-sheet-tabs">
-			<button type="button" data-sheet-tab="chat" class="sbo-on">💬 チャット</button>
-			<button type="button" data-sheet-tab="balloon">😊 吹き出し</button>
+			<button type="button" data-sheet-tab="chat" class="sbo-on"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-chat"/></svg>チャット</button>
+			<button type="button" data-sheet-tab="balloon"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-smile"/></svg>吹き出し</button>
 		</span>
 		<span id="sbo-sheet-tools">
-			<button id="sbo-sheet-save" type="button" title="メッセージログをテキストファイルで保存します">💾 ログ保存</button>
+			<button id="sbo-sheet-save" type="button" title="メッセージログをテキストファイルで保存します"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-save"/></svg>ログ保存</button>
 			<button id="sbo-sheet-close" type="button" title="閉じる">✕</button>
 		</span>
 	</div>
@@ -1781,6 +1888,34 @@
 		return !!(a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA'));
 	}
 
+	/* くっきり表示（スマホで画面の画素ちょうど整数倍にする）。このブラウザに覚えておく */
+	var useCrisp = false;
+	try {
+		useCrisp = window.localStorage.getItem('sbo_crisp') === '1';
+	} catch (e) { /* 覚えられなくても遊べる */ }
+
+	/* くっきり表示の時は、ゲーム画面の左上を画面の画素の境目にそろえる。
+	   真ん中に寄せると 36.5px のような半端な位置になり、ドットの太さがまたばらつくため。
+	   （#sbo-screen の中の横持ち用ボタンは position: fixed なので、transform ではなく left/top でずらす） */
+	function alignScreenToPixels() {
+		var screen = document.getElementById('sbo-screen');
+		screen.style.left = '';
+		screen.style.top = '';
+		if (!(usePad && useCrisp)) {
+			return;
+		}
+		var dpr = window.devicePixelRatio || 1;
+		var rc = canvas.getBoundingClientRect();
+		var dx = Math.round(rc.left * dpr) / dpr - rc.left;
+		var dy = Math.round(rc.top * dpr) / dpr - rc.top;
+		if (dx) {
+			screen.style.left = dx + 'px';
+		}
+		if (dy) {
+			screen.style.top = dy + 'px';
+		}
+	}
+
 	/* 拡大率（?scale=2 など。指定が無ければ画面に収まる整数倍） */
 	function fitScale() {
 		var w = canvas.width || 480, h = canvas.height || 480;
@@ -1801,6 +1936,12 @@
 				cssW = Math.min(vw, (vh - padH - logH) * w / h);
 			}
 			cssW = Math.max(160, Math.floor(cssW));
+			/* くっきり表示：画面の画素でちょうど整数倍になる、いちばん大きい大きさにする */
+			if (useCrisp) {
+				var dprFit = window.devicePixelRatio || 1;
+				var nFit = Math.max(1, Math.floor(cssW * dprFit / w));
+				cssW = nFit * w / dprFit;
+			}
 		} else {
 			/* ヘッダー・フッターの分を除いた高さに収める */
 			var header = document.querySelector('.site-header');
@@ -1816,6 +1957,7 @@
 			cssW = w * s;
 		}
 		canvas.style.width = cssW + 'px';
+		alignScreenToPixels();
 		if (Module['w32UpdateScale']) {
 			Module['w32UpdateScale']();
 		}
@@ -3628,6 +3770,24 @@
 			takeShot();
 		});
 
+		/* くっきり表示の切り替え。ボタンには押すと切り替わる先を書く */
+		var fitBtn = document.getElementById('sbo-fit-pad');
+		function updateFitLabel() {
+			fitBtn.textContent = useCrisp ? '大きく' : 'くっきり';
+		}
+		updateFitLabel();
+		fitBtn.addEventListener('click', function () {
+			useCrisp = !useCrisp;
+			try {
+				window.localStorage.setItem('sbo_crisp', useCrisp ? '1' : '0');
+			} catch (e) { /* 覚えられなくても今は切り替わる */ }
+			updateFitLabel();
+			fitScale();
+			/* 押した後もしばらく出しておき、続けて押して見比べられるようにする */
+			clearTimeout(sysTimer);
+			sysTimer = setTimeout(hideSysButtons, SYS_HIDE_MS);
+		});
+
 		/* スマホ縦持ち：ゲーム画面をタップするとカメラボタンなどを透けて出し、
 		   もう一度タップするか、しばらく触らないと消す（タップはこれまで通りゲームにも届く） */
 		var SYS_HIDE_MS = 4000;
@@ -3637,7 +3797,7 @@
 			document.body.classList.remove('sbo-sys-show');
 		}
 		document.getElementById('sbo-screen').addEventListener('click', function (ev) {
-			if (!usePad || ev.target.closest('#sbo-shot-pad, #sbo-rec-pad, [data-sbo-ui]')) {
+			if (!usePad || ev.target.closest('#sbo-shot-pad, #sbo-rec-pad, #sbo-fit-pad, [data-sbo-ui]')) {
 				return;
 			}
 			if (document.body.classList.contains('sbo-sys-show')) {
@@ -3670,6 +3830,8 @@
 		var shareBtn = document.getElementById('sbo-rec-share');
 		var dl = document.getElementById('sbo-rec-dl');
 		var timeEl = document.getElementById('sbo-rec-time');
+		var ICON_VIDEO = '<svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-video"/></svg>';
+		var ICON_STOP = '<svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-stop"/></svg>';
 		var rec = null;			/* 録画中の情報 */
 		var lastUrl = null;
 		var lastFile = null;
@@ -3765,16 +3927,16 @@
 
 		function setLabel(sec) {
 			if (sec < 0) {
-				pcBtn.textContent = '🎥 録画';
+				pcBtn.innerHTML = ICON_VIDEO + '録画';
 				pcBtn.title = 'ゲーム画面だけを音つきの動画で録画します（もう一度押すと止めて保存。最長3分）';
-				padBtn.textContent = '🎥';
+				padBtn.innerHTML = ICON_VIDEO;
 				return;
 			}
 			var t = Math.floor(sec / 60) + ':' + pad2(Math.floor(sec % 60));
 			timeEl.textContent = t;
-			pcBtn.textContent = '⏹ 停止';
+			pcBtn.innerHTML = ICON_STOP + '停止';
 			pcBtn.title = '録画を止めて保存します';
-			padBtn.textContent = '⏹';
+			padBtn.innerHTML = ICON_STOP;
 		}
 
 		function start() {
