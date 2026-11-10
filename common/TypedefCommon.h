@@ -1372,6 +1372,7 @@ typedef struct _SUBGAMECLIENT_BOMBINFO {
 	BYTE		byFlgProgress	: 1;								/* 途中参加あり？ */
 	BYTE		byReserve		: 4;								/* 予約 */
 	DWORD		dwTblIDGameMaster;									/* ゲームマスターのテーブルID */
+	char		szGameMasterName[MAX_CHARNAMEBUF];					/* ゲームマスターの名前（画面の外にいても出せるように） */
 } SUBGAMECLIENT_BOMBINFO, *PSUBGAMECLIENT_BOMBINFO;
 
 /* サブステータス情報(爆弾ゲーム) */
@@ -3164,6 +3165,7 @@ typedef struct _SUBCMDPARA_BOMBINFO {
 	BYTE		byFlgProgress	: 1;								/* 途中参加あり？ */
 	BYTE		byReserve		: 4;								/* 予約 */
 	DWORD		dwTblIDGameMaster;									/* ゲームマスターのテーブルID */
+	char		szGameMasterName[MAX_CHARNAMEBUF];					/* ゲームマスターの名前（サーバー→クライアントだけ使う。古い版でも読めるよう末尾に足した） */
 } SUBCMDPARA_BOMBINFO, *PSUBCMDPARA_BOMBINFO;
 
 /* 爆弾設置 */

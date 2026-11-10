@@ -3018,6 +3018,7 @@ void SendCmdSubBOMBINFO(void)
 
 	PSUBCMDPARA_BOMBINFO pSendData;
 	pSendData = new SUBCMDPARA_BOMBINFO;
+	ZeroMemory (pSendData, sizeof (SUBCMDPARA_BOMBINFO));
 	pSendData->byCmd = CMD_SUBGAME;
 	pSendData->bySubGameID = SUBGAMEID_BOMB;
 	pSendData->byCmdSub = CMDSUBBOMB_INFO;

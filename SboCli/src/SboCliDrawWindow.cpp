@@ -2814,6 +2814,9 @@ void DrawWindowSUBGAME_BOMBINFO(PWNDINFO pWnd)
 	}
 	if (pChar) {
 		TextOut2 (hDC, 16 + 16 * 5, 16, pChar->szName, RGB (255, 255, 255));
+	} else if ((pInfo->dwTblIDGameMaster != -1) && pInfo->szGameMasterName[0]) {
+		/* マスターが画面の外にいてキャラ情報が無い時は、サーバーから届いた名前を出す */
+		TextOut2 (hDC, 16 + 16 * 5, 16, pInfo->szGameMasterName, RGB (255, 255, 255));
 	}
 
 	if (pInfo->byGameTime == 0) {

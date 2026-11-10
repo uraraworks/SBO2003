@@ -3161,6 +3161,7 @@ void SendCmdSubBOMBINFO(DWORD pIDSend, BYTE byID, PSUBGAME_BOMBINFO pInfo)
 {
 	PSUBCMDPARA_BOMBINFO pSendData;
 	pSendData = new SUBCMDPARA_BOMBINFO;
+	ZeroMemory (pSendData, sizeof (SUBCMDPARA_BOMBINFO));
 	pSendData->byCmd = CMD_SUBGAME;
 	pSendData->bySubGameID = SUBGAMEID_BOMB;
 	pSendData->byCmdSub = CMDSUBBOMB_INFO;
@@ -3173,6 +3174,13 @@ void SendCmdSubBOMBINFO(DWORD pIDSend, BYTE byID, PSUBGAME_BOMBINFO pInfo)
 	pSendData->byFlgUseItem = pInfo->byFlgUseItem;
 	pSendData->byFlgProgress = pInfo->byFlgProgress;
 	pSendData->dwTblIDGameMaster = pInfo->dwTblIDGameMaster;
+	/* マスターの名前も送る（クライアントはマスターが画面の外だとキャラ情報を持っておらず、名前が空になっていた） */
+	if ((pInfo->dwTblIDGameMaster != (DWORD)-1) && ((int)pInfo->dwTblIDGameMaster < g_aCharInfo.GetSize ())) {
+		PCHARINFO pMaster = g_aCharInfo[pInfo->dwTblIDGameMaster];
+		if (pMaster) {
+			strncpy (pSendData->szGameMasterName, pMaster->szName, MAX_CHARNAMEBUF - 1);
+		}
+	}
 
 	svrSock.SendTo (pIDSend, (LPBYTE)pSendData, sizeof (SUBCMDPARA_BOMBINFO));
 	delete pSendData;
@@ -3197,7 +3205,7 @@ void SendCmdSubBOMBSTOP(DWORD pIDSend, BYTE byID, PSUBGAME_BOMBINFO pInfo)
 	if (pIDSend == URARASOCK_SENDALL) {
 		SendCmdSubGame (byID, pInfo->dwMapID, (LPBYTE)pSendData, sizeof (SUBCMDPARA_DATA1));
 	} else {
-		svrSock.SendTo (pIDSend, (LPBYTE)pSendData, sizeof (SUBCMDPARA_BOMBINFO));
+		svrSock.SendTo (pIDSend, (LPBYTE)pSendData, sizeof (SUBCMDPARA_DATA1));
 	}
 	delete pSendData;
 }
