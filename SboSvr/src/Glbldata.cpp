@@ -76,6 +76,8 @@ CmyArray<PMAGICUSERINFO, PMAGICUSERINFO> g_aMagicUserInfo;			/* 魔法利用者�
 CmyArray<PEQUUSERINFO, PEQUUSERINFO> g_aEquUserInfo;				/* 装備職業情報 */
 CmyArray<PMAKERINFO, PMAKERINFO> g_aMakerInfo;						/* 作り手情報 */
 CmyArray<PRECIPEINFO, PRECIPEINFO> g_aRecipeInfo;					/* レシピ情報 */
+CmyArray<PQUESTINFO, PQUESTINFO> g_aQuestInfo;						/* 依頼情報 */
+
 
 /* 向き別縦横増減テーブル */
 int anPosAddTblX[] = {0, 0, -1, 1},

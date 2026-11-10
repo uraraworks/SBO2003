@@ -220,6 +220,13 @@ int g_nMakerCount = 0;												/* 作り手の総数（空き枠を含む） 
 int g_nRecipeCount = 0;												/* レシピの総数（空き枠を含む） */
 CMDPARA_TOWNWARP g_TownWarpInfo = {0};								/* 町転送の行き先一覧（サーバーから届いたもの。byCount=0 なら無し） */
 BYTE g_byTownWarpSel = 0;											/* 町転送で選んだ行き先の番号（0=復活位置） */
+QUESTLISTITEM g_aQuestList[MAX_QUESTLIST];							/* 依頼一覧（ギルドの人に話した時にサーバーから届いたもの） */
+int g_nQuestListCount = 0;											/* 依頼一覧の件数 */
+DWORD g_dwQuestGuildTblID = 0;										/* 一覧を出したギルドの人のテーブルID */
+DWORD g_dwQuestWaitTime = 0;										/* 一覧の返事待ちを始めた時間（0=待っていない） */
+CMDPARA_QUESTSTATE g_QuestState = {0};								/* 自分と仲間の依頼の進み具合（byCount=0 なら無し） */
+char g_szQuestMsg[MAX_QUESTMSG] = {0};								/* 依頼の窓の詳細欄に出す「お知らせ」「確認の文」（空なら選んだ依頼の説明） */
+
 int g_nProcMakerID = -1;											/* 開いている作り手の番号（開いていなければ -1） */
 BOOL g_bProcMakerLeaveOK = FALSE;									/* 預かり所の中身（g_pLeaveInfo）を作り手の画面を開いてから受け取ったか */
 BOOL g_bProcMakerWait = FALSE;										/* 作成要求を出して、サーバーの返事待ちか */
@@ -776,6 +783,148 @@ BOOL TownWarpNeedForget(DWORD dwMapID)
 		}
 	}
 	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：QuestWrapText													 */
+/* 内容：依頼の文を表示幅（半角=1,全角=2）で折り返す						 */
+/* ========================================================================= */
+/* 行の頭に来てはいけない文字（句読点・閉じかっこなど）か */
+static BOOL QuestIsNoStartChar(LPCSTR psz)
+{
+	static const char *apszNoStart[] = {"、", "。", "，", "．", "」", "』", "）", "！", "？", "ー", "…", "っ", "ゃ", "ゅ", "ょ", "ッ", "ャ", "ュ", "ョ", ",", ".", ")", "!", "?", NULL};
+	int i;
+
+	for (i = 0; apszNoStart[i]; i ++) {
+		int nLen = strlen (apszNoStart[i]);
+		if (strncmp (psz, apszNoStart[i], nLen) == 0) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+int QuestWrapText(LPCSTR pszSrc, int nMaxWidth, char (*pszOut)[QUESTWRAP_LINEBYTES], int nMaxLines)
+{
+	int nLines = 0;
+
+	if ((pszSrc == NULL) || (nMaxLines <= 0)) {
+		return 0;
+	}
+	while ((*pszSrc != 0) && (nLines < nMaxLines)) {
+		int nLen;
+
+		/* 改行 */
+		if (*pszSrc == '\n') {
+			pszOut[nLines][0] = 0;
+			nLines ++;
+			pszSrc ++;
+			continue;
+		}
+		nLen = SboTextFitWidth (pszSrc, nMaxWidth);
+		/* 行の頭に「。」「、」などが来る時は、前の 1 文字も次の行へ送る（禁則） */
+		if ((pszSrc[nLen] != 0) && (pszSrc[nLen] != '\n') && QuestIsNoStartChar (&pszSrc[nLen])) {
+			int nPrev = 0, nPos = 0;
+			while (nPos < nLen) {
+				nPrev = nPos;
+				nPos += max (SboTextCharLen (&pszSrc[nPos]), 1);
+			}
+			if (nPrev > 0) {
+				nLen = nPrev;
+			}
+		}
+		/* 改行までで区切る */
+		for (int i = 0; i < nLen; i ++) {
+			if (pszSrc[i] == '\n') {
+				nLen = i;
+				break;
+			}
+		}
+		if (nLen <= 0) {
+			nLen = max (SboTextCharLen (pszSrc), 1);
+		}
+		nLen = min (nLen, QUESTWRAP_LINEBYTES - 1);
+		nLen = SboTextFitBytes (pszSrc, nLen);
+		if (nLen <= 0) {
+			break;
+		}
+		CopyMemory (pszOut[nLines], pszSrc, nLen);
+		pszOut[nLines][nLen] = 0;
+		nLines ++;
+		pszSrc += nLen;
+		if (*pszSrc == '\n') {
+			pszSrc ++;
+		}
+	}
+	return nLines;
+}
+
+/* ========================================================================= */
+/* 関数名：QuestFindWindow													 */
+/* 内容：開いている依頼の窓を探す											 */
+/* ========================================================================= */
+PWNDINFO QuestFindWindow(int nType2)
+{
+	int i;
+
+	for (i = 0; i < g_WndInfo.GetSize (); i ++) {
+		if ((g_WndInfo[i]->nType == WNDTYPE_QUEST) && (g_WndInfo[i]->nType2 == nType2)) {
+			return g_WndInfo[i];
+		}
+	}
+	return NULL;
+}
+
+/* ========================================================================= */
+/* 関数名：QuestMakeDetailLines												 */
+/* 内容：依頼の窓の文の行を作る												 */
+/*		 一覧：選んでいる依頼の説明（お知らせ・確認の文があればそちら）		 */
+/*		 状態：自分と仲間の進み具合											 */
+/* ========================================================================= */
+int QuestMakeDetailLines(PWNDINFO pWnd, char (*pszOut)[QUESTWRAP_LINEBYTES], int nMaxLines)
+{
+	static char szText[MAX_QUESTMSG + MAX_QUESTGOAL * 2 + MAX_QUESTNAME + 256];
+	int i, nWidth = (QUEST_WINCX - QUEST_TEXTX * 2) / 8;
+
+	szText[0] = 0;
+	if (pWnd->nType2 == QUESTWND_LIST) {
+		if (g_szQuestMsg[0]) {
+			_snprintf (szText, sizeof (szText) - 1, "%s", g_szQuestMsg);
+		} else if ((pWnd->nData1 >= 0) && (pWnd->nData1 < g_nQuestListCount)) {
+			PQUESTLISTITEM pItem = &g_aQuestList[pWnd->nData1];
+			_snprintf (szText, sizeof (szText) - 1, "%s\n報酬：%s%s%s",
+				pItem->szExplain, pItem->szReward,
+				pItem->szGoal[0] ? "\n目的：" : "", pItem->szGoal);
+		}
+		szText[sizeof (szText) - 1] = 0;
+		return QuestWrapText (szText, nWidth, pszOut, nMaxLines);
+	}
+
+	/* 状態 */
+	int nLines = 0, nAdd;
+	BOOL bAny = FALSE;
+	for (i = 0; (i < (int)g_QuestState.byCount) && (i < MAX_PARTYMEMBER); i ++) {
+		PQUESTSTATEENTRY pEntry = &g_QuestState.aEntry[i];
+		char szTmp[MAX_QUESTNAME + MAX_CHARNAMEBUF + 32];
+		if (pEntry->wQuestID == 0) {
+			continue;
+		}
+		bAny = TRUE;
+		_snprintf (szTmp, sizeof (szTmp) - 1, "%s：%s", (i == 0) ? "あなた" : pEntry->szCharName, pEntry->szQuestName);
+		szTmp[sizeof (szTmp) - 1] = 0;
+		nAdd = QuestWrapText (szTmp, nWidth, &pszOut[nLines], nMaxLines - nLines);
+		nLines += nAdd;
+		if (pEntry->szGoal[0] && (nLines < nMaxLines)) {
+			_snprintf (szTmp, sizeof (szTmp) - 1, "　目的：%s", pEntry->szGoal);
+			szTmp[sizeof (szTmp) - 1] = 0;
+			nAdd = QuestWrapText (szTmp, nWidth, &pszOut[nLines], nMaxLines - nLines);
+			nLines += nAdd;
+		}
+	}
+	if (!bAny) {
+		nLines = QuestWrapText ("受けている依頼はありません。", nWidth, pszOut, nMaxLines);
+	}
+	return nLines;
 }
 
 /* Copyright(C)URARA-works 2003-2005 */

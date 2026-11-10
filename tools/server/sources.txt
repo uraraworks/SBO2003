@@ -32,6 +32,7 @@ SboSvr/src/SaveLoad/SboSvrSaveLoadJobInfo.cpp
 SboSvr/src/SaveLoad/SboSvrSaveLoadMagicInfo.cpp
 SboSvr/src/SaveLoad/SboSvrSaveLoadMagicUserInfo.cpp
 SboSvr/src/SaveLoad/SboSvrSaveLoadRecipeInfo.cpp
+SboSvr/src/SaveLoad/SboSvrSaveLoadQuestInfo.cpp
 SboSvr/src/SaveLoad/SboSvrSaveLoadStTmpInfo.cpp
 SboSvr/src/SaveLoad/SboSvrSaveLoadSubGameInfo.cpp
 SboSvr/src/SaveLoad/SimpleDB.cpp
@@ -45,6 +46,7 @@ SboSvr/src/SboSvrEventProc.cpp
 SboSvr/src/SboSvrItemProc.cpp
 SboSvr/src/SboSvrMagicProc.cpp
 SboSvr/src/SboSvrNpcRoute.cpp
+SboSvr/src/SboSvrQuest.cpp
 SboSvr/src/SboSvrRecvCmd.cpp
 SboSvr/src/SboSvrSendCmd.cpp
 SboSvr/src/SboSvrSubGameProc.cpp

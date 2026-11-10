@@ -22,5 +22,7 @@ extern int  RenkeiCheck			(PCHARINFO, PCHARINFO);						/* 連携ボーナスの�
 extern BOOL BattleProcAtack		(PCHARINFO, PCHARINFO);						/* 戦闘処理(直接攻撃) */
 extern void ResurrectionBack	(PCHARINFO);								/* 復活位置で蘇生 */
 extern void	AddStatus			(PCHARINFO pChar, BYTE byType, int nData);	/* パラメータの追加 */
+extern void AddExp				(PCHARINFO, DWORD, BOOL);					/* 経験値を追加 */
+
 
 /* Copyright(C)URARA-works 2003-2005 */

@@ -38,6 +38,8 @@ extern BOOL SaveMagicUserInfo(void);
 extern BOOL SaveEquUserInfo(void);
 extern BOOL SaveMakerInfo(void);
 extern BOOL SaveRecipeInfo(void);
+extern BOOL SaveQuestInfo(void);
+extern int GetMapNo(DWORD);
 extern BOOL SaveCharInfo(void);
 extern BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, BYTE byScreen);	/* SboSvrRecvCmd.cpp */
 extern void ApplyStTmpToChars(DWORD dwID);		/* SboSvrRecvCmd.cpp */
@@ -421,6 +423,46 @@ static const DATAFIELD s_aFieldRecipe[] = {
 	FLDA(RECIPEINFO, awMatItem,			"材料のアイテム",		FT_U16ARR, WORD, 0, "item の番号を最大 4 種（0 は使わない欄）。1 種以上必要。持ち物（装備中・捨てられない物を除く）を先に、足りない分を預かり所から使う"),
 	FLDA(RECIPEINFO, abyMatCount,		"材料の個数",			FT_U8ARR, BYTE, 0, "awMatItem と同じ並びの個数（アイテムが 0 の欄は 0 にする）"),
 	FLD (RECIPEINFO, dwGold,			"手数料",				FT_U32, 0, "作ってもらう時に払うゴールド"),
+};
+
+/* 依頼情報（ギルドの仕事依頼。npcs・goals は項目表の外で扱う） */
+static const DATAFIELD s_aFieldQuest[] = {
+	FLD (QUESTINFO, wID,				"依頼番号",				FT_U16, FF_READONLY, "足す時に自動で振られる（1〜511。ほかの依頼と重ならない）。プレイヤーの受注・クリア済みの印はこの番号で覚えているので変わらない。id（配列の番号）とは別"),
+	FLD (QUESTINFO, byState,			"状態",					FT_U8, 0, "0=止める（一覧に出ない。受けている人は続けられる） 1=出す。足す時に省くと 1"),
+	FLD (QUESTINFO, byGuild,			"ギルド番号",			FT_U8, 0, "NPC の台詞を \"@gNN\"（NN はこの番号）にしたギルドの人に話すと、この番号の依頼が一覧に出る"),
+	FLD (QUESTINFO, wSort,				"並び順",				FT_U16, 0, "一覧で小さい順に並ぶ（同じなら依頼番号順）"),
+	FLD (QUESTINFO, byOnce,				"一度きり",				FT_U8, 0, "1=クリアしたら二度と受けられない（クリア済みの印が残り、一覧からも消える） 0=何度でも"),
+	FLDS(QUESTINFO, szName,				"名前",					FT_STR, 0, "一覧に出る依頼の名前"),
+	FLDS(QUESTINFO, szExplain,			"説明",					FT_STR, FF_MULTILINE, "一覧で選んだ時に出る説明（報酬は自動で出る）"),
+	FLDS(QUESTINFO, szMsgAccept,		"受けた時の台詞",		FT_STR, FF_MULTILINE, "省くと「依頼を受けました。」"),
+	FLDS(QUESTINFO, szMsgDone,			"達成した時の台詞",		FT_STR, FF_MULTILINE, "省くと「ありがとう！ 依頼は完了です。」"),
+	FLD (QUESTINFO, dwGold,				"報酬のお金",			FT_U32, 0, "ゴールド（持てる上限 999999 まで）"),
+	FLD (QUESTINFO, dwExp,				"報酬の経験値",			FT_U32, 0, NULL),
+	FLD (QUESTINFO, wRewardItem,		"報酬のアイテム",		FT_U16, 0, "item の番号（0=なし）。持ち物がいっぱいなら預かり所へ。どちらもいっぱいだと渡せずやり直し"),
+	FLD (QUESTINFO, wQuestItem,			"依頼の品",				FT_U16, 0, "item の番号（0=回収しない）。見えるNPC（宝箱）で渡し、ギルドで回収する。取り消した時は持ち物と預かり所から全部消す"),
+	FLD (QUESTINFO, byStepCount,		"段の数",				FT_U8, 0, "1〜4。受けた時は 0 段目。最後の段（段の数-1）に進み、依頼の品を持っていればギルドで渡せる。足す時に省くと 1"),
+};
+
+/* 依頼の見えるNPC（受けた人とそのパーティにだけ見える。話すと台詞が出る。台詞の中身はサーバーが送り、見えるNPC自体の台詞は "@q" 固定） */
+static const DATAFIELD s_aFieldQuestNpc[] = {
+	FLD (QUESTNPCINFO, dwMapID,			"出るマップID",			FT_U32, 0, "マップ情報の dwID（配列の番号ではなくマップID）"),
+	FLD (QUESTNPCINFO, byX,				"X座標",				FT_U8, 0, NULL),
+	FLD (QUESTNPCINFO, byY,				"Y座標",				FT_U8, 0, NULL),
+	FLD (QUESTNPCINFO, byDir,			"向き",					FT_U8, 0, "0=上 1=下 2=左 3=右"),
+	FLD (QUESTNPCINFO, byKind,			"種類",					FT_U8, 0, "1=ワープポータル（話すと行き先へ移る） 2=宝箱（話すと wItem をもらう） 3=人（台詞だけ）。0 は使わない欄（足す時は 1〜3 を指定）"),
+	FLD (QUESTNPCINFO, wGrpID,			"見た目の画像ID",		FT_U16, 0, "キャラ画像ID（宝箱・ポータルも画像の番号で指定）"),
+	FLDS(QUESTNPCINFO, szName,			"名前",					FT_STR, 0, NULL),
+	FLDS(QUESTNPCINFO, szSpeech,		"話した時の台詞",		FT_STR, FF_MULTILINE, "話した人にだけ出る"),
+	FLD (QUESTNPCINFO, byStepMin,		"この段から出る",		FT_U8, 0, "0〜3"),
+	FLD (QUESTNPCINFO, byStepMax,		"この段まで出る",		FT_U8, 0, "0〜3。255=どの段でも"),
+	FLD (QUESTNPCINFO, byFlgNeed,		"出る条件の旗",			FT_U8, 0, "0=条件なし 1〜16=この旗が立っていたら出る"),
+	FLD (QUESTNPCINFO, byFlgHide,		"消える条件の旗",		FT_U8, 0, "0=条件なし 1〜16=この旗が立っていたら消える"),
+	FLD (QUESTNPCINFO, dwDestMapID,		"ポータルの行き先マップID",	FT_U32, 0, "ポータルの時。マップ情報の dwID。同じマップならそのマップ内の移動"),
+	FLD (QUESTNPCINFO, byDestX,			"ポータルの行き先X",	FT_U8, 0, NULL),
+	FLD (QUESTNPCINFO, byDestY,			"ポータルの行き先Y",	FT_U8, 0, NULL),
+	FLD (QUESTNPCINFO, wItem,			"宝箱で渡すアイテム",	FT_U16, 0, "item の番号（0=なし）。持ち物がいっぱいなら預かり所へ"),
+	FLD (QUESTNPCINFO, bySetFlg,		"話したら立てる旗",		FT_U8, 0, "0=なし 1〜16。宝箱は、この旗が立っていると 2 度目はもらえない"),
+	FLD (QUESTNPCINFO, byNextStep,		"話したら進む段",		FT_U8, 0, "0〜3。255=変えない"),
 };
 
 /* アイテムの種別ごとの詳細 */
@@ -837,6 +879,7 @@ enum {
 	KIND_ITEM,
 	KIND_MAKER,
 	KIND_RECIPE,
+	KIND_QUEST,
 	/* ここから下は読むだけ */
 	KIND_CHAR,
 	KIND_MAP,
@@ -856,9 +899,9 @@ static bool KindWritable(int nKind)
 	return (nKind < KIND_MAX) && (nKind != KIND_LEAVE);
 }
 
-static const char *s_apszKindName[] = { "magic", "magicUser", "equUser", "job", "stTmp", "item", "maker", "recipe", "char", "map", "mapParts", "efc", "comEfc", "leave", "subGame" };
+static const char *s_apszKindName[] = { "magic", "magicUser", "equUser", "job", "stTmp", "item", "maker", "recipe", "quest", "char", "map", "mapParts", "efc", "comEfc", "leave", "subGame" };
 static const char *s_apszKindLabel[] = {
-	"特技（魔法）情報", "特技を使える職業", "装備できる職業", "職業情報とレベルアップ情報", "ステータステンプレート（NPC・敵のひな形）", "アイテム情報", "作り手（料理人など）", "レシピ（作り手に頼んで作ってもらう物）",
+	"特技（魔法）情報", "特技を使える職業", "装備できる職業", "職業情報とレベルアップ情報", "ステータステンプレート（NPC・敵のひな形）", "アイテム情報", "作り手（料理人など）", "レシピ（作り手に頼んで作ってもらう物）", "ギルドの仕事依頼",
 	"キャラ情報（プレイヤー・NPC）", "マップ情報", "マップパーツ", "エフェクト情報", "吹き出し情報", "預かり所", "サブゲーム情報"
 };
 static const char *s_apszKindNote[] = {
@@ -870,6 +913,7 @@ static const char *s_apszKindNote[] = {
 	"番号 0 は「なし」として使われる。detail は byType ごとに項目が違う（スキーマの detailByType を参照）。szMsg は使った時のメッセージ",
 	"町の作り手NPC（料理人など）。NPC の台詞を \"@cNN\"（NN は作り手の番号 2 桁、例 @c00）にすると、その NPC に話しかけた時に作り手の画面が開く。削除は byState=0（空き枠になり、次に足す時に使い回す）。ファイルが無い時は 0 件",
 	"作り手に頼んで材料からアイテムを作ってもらうレシピ。byMaker は maker の番号、wItem・awMatItem は item の番号。材料は持ち物と預かり所の両方から使い、できた物は持ち物へ（いっぱいなら預かり所へ）。削除は byState=0",
+	"ギルドの仕事依頼（読み書き。削除なし。止めるのは byState=0）。NPC の台詞を \"@gNN\"（NN=byGuild）にするとギルドの人になり、話すと一覧が開く。受けた人とそのパーティにだけ「見えるNPC」（npcs。ポータル・宝箱・人）が出て、段（0 から）と旗（1〜16）で出し分ける。goals は段ごとの「いまの目的」（文字列の配列）、npcs は配列で丸ごと置き換え。出口は既存のマップのイベントで作る（データだけ）。足す時の依頼番号（wID）は自動",
 	"プレイヤーと NPC（敵・町の人・発生元など）の全キャラ。番号（id）はキャラのテーブル番号で再起動で変わることがある。NPC は npcId（変わらない番号）で指す。isPlayer でプレイヤーか分かる。書き換えられるのは保存される NPC だけ（プレイヤー・発生した敵は不可）。足す時は dwMapID・dwX・dwY が要る。消す時は変更に {\"deleted\": true}。アカウント名・パスワード・IP は出さない",
 	"マップの情報・イベント・店・メッセージ・アイテム配置。番号は配列の番号（dwID はマップID で、キャラの dwMapID はこちら）。events・shops・messages は配列で丸ごと置き換え。マス目のパーツは sbo_map_tiles で読み、sbo_map_tiles_set で書く。大きさの変更・マップの追加はできない",
 	"マップパーツ（マス目の parts に入る番号）の表示・当たり判定。byHitType 0 なら通れる。anime は配列で丸ごと置き換え（コマ数 byAnimeCount も変わる）。追加できる（消せない）",
@@ -878,7 +922,7 @@ static const char *s_apszKindNote[] = {
 	"読むだけ。プレイヤーごとの預かり所（キャラの dwLeaveID がこの番号）。items は item の番号と個数",
 	"爆弾ゲーム・迷路・ダンジョン・戦場ゲーム・すごろくの設定。detail は byType ごとに項目が違う（省いた項目は前の値のまま）。種別（byType）の変更・追加・すごろくのマス（events・parts）は管理者ウィンドウで"
 };
-static const int s_anKindMax[] = { 256, 256, 256, 256, 65535, 65535, MAX_MAKER, MAX_RECIPE, 0, 0, 65535, 255, MAX_COMEFC, 0, 0 };
+static const int s_anKindMax[] = { 256, 256, 256, 256, 65535, 65535, MAX_MAKER, MAX_RECIPE, MAX_QUEST - 1, 0, 0, 65535, 255, MAX_COMEFC, 0, 0 };
 
 static int KindFromName(const char *pszKind)
 {
@@ -901,6 +945,7 @@ static int KindCount(int nKind)
 	case KIND_ITEM:			return g_aItemInfo.GetSize();
 	case KIND_MAKER:		return g_aMakerInfo.GetSize();
 	case KIND_RECIPE:		return g_aRecipeInfo.GetSize();
+	case KIND_QUEST:		return g_aQuestInfo.GetSize();
 	case KIND_CHAR:			return g_aCharInfo.GetSize();
 	case KIND_MAP:			return g_aMapInfo.GetSize();
 	case KIND_MAPPARTS:		return g_wCountMapParts;
@@ -1463,6 +1508,41 @@ static std::string CharJson(PCHARINFO pChar)
 		out += "[" + JsonNum(pChar->adwTownWarpMapID[i]) + "," + JsonNum(pChar->abyTownWarpX[i]) + "," + JsonNum(pChar->abyTownWarpY[i]) + "]";
 	}
 	out += "]";
+	/* ギルドの依頼（読むだけ。受けている依頼の番号・段・旗・数） */
+	out += ",\"quest\":{\"questId\":" + JsonNum(pChar->wQuestID) + ",\"step\":" + JsonNum(pChar->byQuestStep) +
+			",\"flags\":" + JsonNum(pChar->wQuestFlg) + ",\"counts\":[";
+	for (int i = 0; i < MAX_QUESTCOUNT; i ++) {
+		if (i) out += ",";
+		out += JsonNum(pChar->awQuestCount[i]);
+	}
+	out += "]}";
+	return out;
+}
+
+/* 依頼 1 件（goals は段の数ぶん、npcs は使っている欄だけ） */
+static std::string QuestJson(const QUESTINFO *pQuest)
+{
+	std::string out = FieldsJson((const BYTE *)pQuest, s_aFieldQuest, COUNTOF(s_aFieldQuest));
+	bool bFirst = true;
+
+	out += ",\"goals\":[";
+	for (int i = 0; i < MAX_QUESTSTEP; i ++) {
+		if (i >= max((int)pQuest->byStepCount, 1) && pQuest->aszGoal[i][0] == 0) {
+			break;
+		}
+		if (i) out += ",";
+		out += JsonStr(pQuest->aszGoal[i]);
+	}
+	out += "],\"npcs\":[";
+	for (int i = 0; i < MAX_QUESTNPC; i ++) {
+		if (pQuest->aNpc[i].byKind == QUESTNPCKIND_NONE) {
+			continue;
+		}
+		if (!bFirst) out += ",";
+		bFirst = false;
+		out += "{" + FieldsJson((const BYTE *)&pQuest->aNpc[i], s_aFieldQuestNpc, COUNTOF(s_aFieldQuestNpc)) + "}";
+	}
+	out += "]";
 	return out;
 }
 
@@ -1804,6 +1884,11 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataSchema(void)
 		case KIND_RECIPE:
 			out += FieldSchemaJson(s_aFieldRecipe, COUNTOF(s_aFieldRecipe));
 			break;
+		case KIND_QUEST:
+			out += FieldSchemaJson(s_aFieldQuest, COUNTOF(s_aFieldQuest));
+			out.insert(out.size() - 1, ",{\"name\":\"goals\",\"type\":\"string[]\",\"label\":\"段ごとのいまの目的\",\"maxCount\":" + JsonNum(MAX_QUESTSTEP) + ",\"maxBytes\":" + JsonNum(MAX_QUESTGOAL - 1) + ",\"note\":\"0 段目から順に。最後の段の目的は「ギルドへ持ち帰る」などにする。配列で丸ごと置き換え\"}"
+					",{\"name\":\"npcs\",\"type\":\"object[]\",\"label\":\"見えるNPC\",\"maxCount\":" + JsonNum(MAX_QUESTNPC) + ",\"fields\":" + FieldSchemaJson(s_aFieldQuestNpc, COUNTOF(s_aFieldQuestNpc)) + ",\"note\":\"配列で丸ごと置き換え。省いた項目は 0（byStepMax は省くと 255=どの段でも、byNextStep は省くと 255=変えない）\"}");
+			break;
 		case KIND_CHAR:
 			out += FieldSchemaJson(s_aFieldChar, COUNTOF(s_aFieldChar));
 			out.insert(out.size() - 1, ",{\"name\":\"npcId\",\"type\":\"u32\",\"label\":\"NPC番号\",\"readonly\":true,\"note\":\"保存される NPC ごとに決まった番号（再起動しても変わらない）。id（テーブル番号）は再起動で変わることがあるので、NPC を指す時はこちら。プレイヤー・発生した敵は 0\"}"
@@ -1811,6 +1896,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataSchema(void)
 					",{\"name\":\"szNpcSpeech\",\"type\":\"string\",\"label\":\"NPC の台詞\",\"note\":\"@5NN は店（NN はそのマップの店の番号）・@cNN は作り手（NN は maker の番号）\"}"
 					",{\"name\":\"jobMagic\",\"type\":\"object\",\"label\":\"転職前の職業で覚えていた特技\",\"readonly\":true}"
 					",{\"name\":\"townWarp\",\"type\":\"object\",\"label\":\"町転送の行き先帳\",\"readonly\":true,\"note\":\"教会で復活位置を記録した町（新しい順）。[マップID, 横, 縦]\"}"
+					",{\"name\":\"quest\",\"type\":\"object\",\"label\":\"受けているギルドの依頼\",\"readonly\":true,\"note\":\"{questId: 依頼番号（0=受けていない）, step: 段, flags: 旗（ビット 0=旗1 …）, counts: 数 4 つ}。プレイヤーだけ\"}"
 					",{\"name\":\"route\",\"type\":\"object\",\"label\":\"巡回ルート\",\"note\":\"{mode: 0=折り返す 1=最初に戻る, wait: 止まる秒数 0〜60, points: [[x,y],...] 2〜16 個（巡回をやめる時は []）}。動かない・ランダム移動の NPC だけ\"}"
 					",{\"name\":\"deleted\",\"type\":\"bool\",\"label\":\"消す\",\"note\":\"変更に {\\\"deleted\\\": true} を入れるとその NPC を消す（記録は残り、元に戻すと足し直す）\"}");
 			break;
@@ -1928,6 +2014,9 @@ static std::string RecordJson(int nKind, int nID)
 		break;
 	case KIND_RECIPE:
 		out += FieldsJson((const BYTE *)g_aRecipeInfo[nID], s_aFieldRecipe, COUNTOF(s_aFieldRecipe));
+		break;
+	case KIND_QUEST:
+		out += QuestJson(g_aQuestInfo[nID]);
 		break;
 	case KIND_CHAR:
 		if (CharIsEmpty(g_aCharInfo[nID])) {
@@ -2055,7 +2144,7 @@ static bool CharRouteSame(PCHARINFO p, int nMode, int nWait, const std::vector<i
 /* キャラ（NPC）の変更・追加・削除。bDeleted は消した時 true（record は null） */
 static bool CharApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::string &strErr, std::string &strRecord, int &nIDOut, bool &bDeleted)
 {
-	static const char *apszExtra[] = { "szNpcSpeech", "route", "deleted", "isPlayer", "online", "jobMagic", "townWarp", "npcId", NULL };
+	static const char *apszExtra[] = { "szNpcSpeech", "route", "deleted", "isPlayer", "online", "jobMagic", "townWarp", "quest", "npcId", NULL };
 	PCHARINFO pSrc = bAdd ? NULL : g_aCharInfo[nID];
 	DWORD dwNpcIdAdd = 0;
 	bDeleted = false;
@@ -3796,6 +3885,179 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 			}
 		}
 		break;
+
+	case KIND_QUEST:
+		{
+			static const char *apszQuestExtra[] = { "goals", "npcs", NULL };
+			QUESTINFO Info;
+			memset(&Info, 0, sizeof(Info));
+			if (!bAdd) {
+				Info = *g_aQuestInfo[nID];
+			} else {
+				Info.byState = QUESTSTATE_ON;
+				Info.byStepCount = 1;
+				for (int k = 0; k < MAX_QUESTNPC; k ++) {
+					Info.aNpc[k].byStepMax = QUESTNPC_NOSTEP;
+					Info.aNpc[k].byNextStep = QUESTNPC_NOSTEP;
+				}
+			}
+			if (!CheckKnownKeys(chg, s_aFieldQuest, COUNTOF(s_aFieldQuest), apszQuestExtra, strErr)) {
+				goto Exit;
+			}
+			/* wID は読むだけ（自動で振る）。同じ値を書き戻すのは許す（取得した記録をそのまま渡せるように） */
+			{
+				JVal chg2 = chg;
+				for (size_t k = 0; k < chg2.o.size(); k ++) {
+					if (chg2.o[k].first == "wID") {
+						if (!(chg2.o[k].second.t == JVal::NUM && !bAdd && chg2.o[k].second.n == Info.wID)) {
+							strErr = "wID は変えられません（足す時に自動で振られます）";
+							goto Exit;
+						}
+						chg2.o.erase(chg2.o.begin() + k);
+						break;
+					}
+				}
+				if (!ApplyFields((BYTE *)&Info, s_aFieldQuest, COUNTOF(s_aFieldQuest), chg2, strErr, "")) {
+					goto Exit;
+				}
+			}
+			/* 段ごとの目的 */
+			if (const JVal *pGoals = chg.Get("goals")) {
+				if (pGoals->t != JVal::ARR || pGoals->a.size() > (size_t)MAX_QUESTSTEP) {
+					strErr = "goals は文字列の配列で、" + JsonNum(MAX_QUESTSTEP) + " 個までです";
+					goto Exit;
+				}
+				memset(Info.aszGoal, 0, sizeof(Info.aszGoal));
+				for (size_t k = 0; k < pGoals->a.size(); k ++) {
+					const JVal &g = pGoals->a[k];
+					if (g.t != JVal::STR || !CheckText(g.s, MAX_QUESTGOAL, false, strErr, "goals[" + JsonNum((long long)k) + "]")) {
+						if (strErr.empty()) strErr = "goals[" + JsonNum((long long)k) + "] は文字列で指定してください";
+						goto Exit;
+					}
+					memcpy(Info.aszGoal[k], g.s.data(), g.s.size());
+				}
+			}
+			/* 見えるNPC（丸ごと置き換え） */
+			if (const JVal *pNpcs = chg.Get("npcs")) {
+				if (pNpcs->t != JVal::ARR || pNpcs->a.size() > (size_t)MAX_QUESTNPC) {
+					strErr = "npcs はオブジェクトの配列で、" + JsonNum(MAX_QUESTNPC) + " 個までです";
+					goto Exit;
+				}
+				for (int k = 0; k < MAX_QUESTNPC; k ++) {
+					memset(&Info.aNpc[k], 0, sizeof(Info.aNpc[k]));
+					Info.aNpc[k].byStepMax = QUESTNPC_NOSTEP;
+					Info.aNpc[k].byNextStep = QUESTNPC_NOSTEP;
+				}
+				for (size_t k = 0; k < pNpcs->a.size(); k ++) {
+					const JVal &n = pNpcs->a[k];
+					std::string strName = "npcs[" + JsonNum((long long)k) + "].";
+					if (n.t != JVal::OBJ) {
+						strErr = "npcs の要素はオブジェクトで指定してください";
+						goto Exit;
+					}
+					if (!CheckKnownKeys(n, s_aFieldQuestNpc, COUNTOF(s_aFieldQuestNpc), NULL, strErr) ||
+							!ApplyFields((BYTE *)&Info.aNpc[k], s_aFieldQuestNpc, COUNTOF(s_aFieldQuestNpc), n, strErr, strName)) {
+						goto Exit;
+					}
+				}
+			}
+			/* 内容の確認 */
+			if (Info.byState > QUESTSTATE_ON) {
+				strErr = "byState は 0（止める）か 1（出す）で指定してください";
+				goto Exit;
+			}
+			if (Info.szName[0] == 0) {
+				strErr = "szName（名前）は空にできません";
+				goto Exit;
+			}
+			if (Info.byStepCount < 1 || Info.byStepCount > MAX_QUESTSTEP) {
+				strErr = "byStepCount（段の数）は 1〜" + JsonNum(MAX_QUESTSTEP) + " で指定してください";
+				goto Exit;
+			}
+			if ((Info.wRewardItem != 0 && Info.wRewardItem >= g_aItemInfo.GetSize()) ||
+					(Info.wQuestItem != 0 && Info.wQuestItem >= g_aItemInfo.GetSize())) {
+				strErr = "wRewardItem・wQuestItem は item の番号（0 はなし）で指定してください";
+				goto Exit;
+			}
+			for (int k = 0; k < MAX_QUESTNPC; k ++) {
+				PQUESTNPCINFO pN = &Info.aNpc[k];
+				std::string strName = "npcs[" + JsonNum(k) + "].";
+				if (pN->byKind == QUESTNPCKIND_NONE) {
+					continue;
+				}
+				if (pN->byKind >= QUESTNPCKIND_MAX) {
+					strErr = strName + "byKind は 1（ポータル）・2（宝箱）・3（人）で指定してください";
+					goto Exit;
+				}
+				int nMapNo = GetMapNo(pN->dwMapID);
+				if (nMapNo < 0) {
+					strErr = strName + "dwMapID はマップ情報の dwID（マップID）で指定してください";
+					goto Exit;
+				}
+				if ((int)pN->byX >= g_aMapInfo[nMapNo]->nCX || (int)pN->byY >= g_aMapInfo[nMapNo]->nCY) {
+					strErr = strName + "byX・byY がマップの外です";
+					goto Exit;
+				}
+				if (pN->byDir > 3) {
+					strErr = strName + "byDir は 0〜3（上・下・左・右）で指定してください";
+					goto Exit;
+				}
+				if (pN->byStepMin >= MAX_QUESTSTEP || (pN->byStepMax != QUESTNPC_NOSTEP && pN->byStepMax >= MAX_QUESTSTEP) ||
+						(pN->byNextStep != QUESTNPC_NOSTEP && pN->byNextStep >= MAX_QUESTSTEP)) {
+					strErr = strName + "byStepMin・byStepMax・byNextStep の段は 0〜" + JsonNum(MAX_QUESTSTEP - 1) + "（byStepMax・byNextStep は 255 も可）で指定してください";
+					goto Exit;
+				}
+				if (pN->byFlgNeed > 16 || pN->byFlgHide > 16 || pN->bySetFlg > 16) {
+					strErr = strName + "byFlgNeed・byFlgHide・bySetFlg は 0〜16 で指定してください";
+					goto Exit;
+				}
+				if (pN->byKind == QUESTNPCKIND_PORTAL) {
+					int nDest = GetMapNo(pN->dwDestMapID);
+					if (nDest < 0 || (int)pN->byDestX >= g_aMapInfo[nDest]->nCX || (int)pN->byDestY >= g_aMapInfo[nDest]->nCY) {
+						strErr = strName + "ポータルの dwDestMapID（マップID）・byDestX・byDestY が正しくありません";
+						goto Exit;
+					}
+				}
+				if (pN->wItem != 0 && pN->wItem >= g_aItemInfo.GetSize()) {
+					strErr = strName + "wItem は item の番号（0 はなし）で指定してください";
+					goto Exit;
+				}
+			}
+			/* 依頼番号を振る（1〜MAX_QUEST-1 で使われていない一番小さい番号） */
+			if (bAdd) {
+				WORD wNew = 0;
+				for (WORD w = 1; w < MAX_QUEST && wNew == 0; w ++) {
+					bool bUsed = false;
+					for (int k = 0; k < g_aQuestInfo.GetSize(); k ++) {
+						if (g_aQuestInfo[k]->wID == w) {
+							bUsed = true;
+							break;
+						}
+					}
+					if (!bUsed) {
+						wNew = w;
+					}
+				}
+				if (wNew == 0) {
+					strErr = "依頼がいっぱいで足せません";
+					goto Exit;
+				}
+				Info.wID = wNew;
+			}
+			strRecord = QuestJson(&Info);
+			if (bApply) {
+				if (bAdd) {
+					PQUESTINFO pNew = new QUESTINFO;
+					*pNew = Info;
+					g_aQuestInfo.Add(pNew);
+				} else {
+					*g_aQuestInfo[nID] = Info;
+				}
+				SaveQuestInfo();
+			}
+		}
+		break;
+
 	}
 
 Exit:

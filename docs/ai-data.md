@@ -16,6 +16,7 @@
 | `item` | アイテム情報（種別ごとの詳細は `detail`） |
 | `maker` | 作り手（料理人・鍛冶屋など）。名前と台詞 3 つ（`szMsgTalk`・`szMsgDone`・`szMsgLack`）。NPC の台詞を `@c` + 番号 2 桁にすると開く |
 | `recipe` | レシピ。作り手（`byMaker`）・できる物（`wItem`）と個数（`byCount`）・材料 4 種まで（`awMatItem`・`abyMatCount`）・手数料（`dwGold`）・並び順（`wSort`） |
+| `quest` | ギルドの仕事依頼。名前・説明・報酬・段の数（`byStepCount`）・段ごとの目的（`goals`）・依頼を受けた人とパーティにだけ見えるNPC（`npcs`）。NPC の台詞を `@g` + ギルド番号 2 桁にすると、その人に話すと一覧が開く |
 
 セーブデータの残りも読み書きできます。**プレイヤーのキャラと預かり所（`leave`）だけは読むだけ** です。
 
@@ -128,6 +129,47 @@ BGM・暗さはマップの設定（`map` の `byBGM`・`byLightLevel`）なの�
 ```json
 {"kind": "maker", "records": [{"szName": "料理人", "szMsgTalk": "いらっしゃい。@1何を作りましょうか？", "szMsgDone": "はい、できました。@2", "szMsgLack": "材料が足りないようです。@2"}]}
 {"kind": "recipe", "records": [{"byMaker": 0, "wSort": 10, "wItem": 215, "byCount": 1, "awMatItem": [228, 148, 0, 0], "abyMatCount": [2, 1, 0, 0], "dwGold": 10}]}
+```
+
+## ギルドの仕事依頼（`quest`）
+
+ギルドの人に話して依頼を受け、受けた人（とそのパーティ）にだけ見えるNPC（ワープポータル・宝箱・人）をたどって進める仕組みのデータです。
+**サーバーのデータなので公開リポジトリには入れません。** `SBODATA/SboDataQuestInfo.dat` が無い時は「依頼 0 件」で起動し、API（`add`）で初めて保存した時に作られます（管理ページの編集タブは次の段階）。
+今は「ポータルで移る・宝箱で依頼の品をもらう・ギルドで渡して報酬をもらう」までです（敵を倒した数を数える依頼は次の段階）。
+
+- ギルドの人は `char` の NPC です。台詞（`szNpcSpeech`）を `@g00` のように **`@g` + ギルド番号 2 桁** にすると、話した時に `byGuild` が同じ依頼の一覧が開きます（受ける・取り消す・渡すはここだけ）。
+- 依頼を足すと `wID`（依頼番号 1〜511）が自動で振られます。プレイヤーの「受けている依頼」「クリア済み」はこの番号で覚えるので、変えられません（`id` は配列の番号で別物）。
+- 決まり：1 人 1 つまで。パーティの誰かが受けている依頼があると、仲間は同じ依頼しか受けられません（違う依頼の人は仲間になれません）。
+  取り消しはギルドの人の近くでだけでき、ばつはありません（依頼の品・旗・段は消えます）。
+- 進み具合は保存されます（`char` の読み出しの `quest`：`questId`・`step`・`flags`・`counts`）。見えるNPC は保存せず、約 1 秒ごとに作る・消すを合わせます。
+  見えるNPC は当たり判定が無く、攻撃・ターゲット・ついていく・取引の相手にはできません。
+- `goals`：段ごとの「いまの目的」の文（`byStepCount` 個まで。4 つまで）。コマンドの「依頼」と一覧に出ます。
+- `npcs`（8 つまで。配列で丸ごと置き換え）：`dwMapID`（マップの `dwID`）・`byX`・`byY`・`byDir`・`byKind`（1 ポータル・2 宝箱・3 人）・`wGrpID`（キャラ画像）・`szName`・`szSpeech`、
+  出る条件（`byStepMin`〜`byStepMax`・`byFlgNeed`・`byFlgHide`）、話した時のはたらき（`dwDestMapID`・`byDestX`・`byDestY`＝ポータルの行き先、`wItem`＝宝箱で渡す物、`bySetFlg`＝立てる旗 1〜16、`byNextStep`＝進む段・255 は変えない）。
+- 出口は見えるNPC ではなく、**今あるマップのイベント**（`map` の `events`）で作ります（データだけで足りる）。
+- 最後の段で、`wQuestItem`（依頼の品）を持っているとギルドで渡せます。渡すと `dwGold`・`dwExp`・`wRewardItem` がもらえ、`byOnce` が 1 ならクリア済みになって一覧から消えます。
+- 止める時は `byState` を 0 にします（一覧に出なくなる。受けている人は続けられる）。変更はすぐ反映されます。
+
+例（マップ 37 の実験場：左の広場のギルドの人 → ポータルで奥へ → 宝箱 → 戻ると人が現れる → ギルドへ）。
+アイテム番号・画像 ID・マップの ID は仮です。`item`・`map` を見て本物に置き換えてください。出口は既にあるイベント（18,106）→（9,91）をそのまま使います。
+
+```json
+{"kind": "quest", "records": [{
+  "byGuild": 0, "wSort": 10, "byOnce": 0,
+  "szName": "森の宝箱をさがして", "szExplain": "森の奥にある宝箱から、古い箱を持ち帰ってください。",
+  "szMsgAccept": "森の入口にある光る場所から奥へ行けます。気をつけて。",
+  "szMsgDone": "ありがとう！ これはお礼です。",
+  "dwGold": 100, "dwExp": 50, "wRewardItem": 1, "wQuestItem": 2, "byStepCount": 2,
+  "goals": ["森の奥の宝箱をさがす", "ギルドへ宝箱の中身を届ける"],
+  "npcs": [
+    {"dwMapID": 37, "byX": 10, "byY": 95, "byKind": 1, "wGrpID": 1, "szName": "光る場所", "szSpeech": "光に包まれた！",
+     "byStepMin": 0, "byStepMax": 0, "dwDestMapID": 37, "byDestX": 14, "byDestY": 90},
+    {"dwMapID": 37, "byX": 37, "byY": 90, "byKind": 2, "wGrpID": 2, "szName": "宝箱", "szSpeech": "古い箱を手に入れた！",
+     "byStepMin": 0, "byStepMax": 0, "byFlgHide": 1, "wItem": 2, "bySetFlg": 1, "byNextStep": 1},
+    {"dwMapID": 37, "byX": 9, "byY": 92, "byKind": 3, "wGrpID": 3, "szName": "森の案内人", "szSpeech": "見つけましたね。ギルドへ届けてあげてください。",
+     "byStepMin": 1, "byStepMax": 1}
+  ]
+}]}
 ```
 
 ## つなぎ方（Claude Code）

@@ -14,7 +14,7 @@
 /* ========================================================================= */
 /* 定数定義																	 */
 /* ========================================================================= */
-#define DATACOUNTCOLUMN		(77)									/* 保存データ数 */
+#define DATACOUNTCOLUMN		(78)									/* 保存データ数 */
 
 /* ========================================================================= */
 /* 構造体定義																 */
@@ -111,6 +111,7 @@ static const char *s_aszName[] = {
 	"abyNpcRoute",				/* NPCの巡回ルート */
 	"dwNpcID",					/* NPC番号 */
 	"abyTownWarp",				/* 町転送の行き先帳 */
+	"abyQuest",					/* ギルドの依頼（受けている依頼・段・旗・数・受けた時刻・クリア済みの印） */
 	"z"
 };
 
@@ -258,8 +259,10 @@ BOOL CheckSaveChar(PCHARINFO pChar)
 		(pChar->byNpcType == NPCTYPE_BOMB) ||
 		(pChar->byNpcType == NPCTYPE_BOMBBLOCK) ||
 		(pChar->byNpcType == NPCTYPE_BOMBITEM) ||
-		(pChar->byNpcType == NPCTYPE_MERCENARY)) {
-		/* 保存しない（傭兵は雇っている間だけ） */
+		(pChar->byNpcType == NPCTYPE_MERCENARY) ||
+		(pChar->byNpcType == NPCTYPE_QUESTNPC)) {
+		/* 保存しない（傭兵は雇っている間だけ。依頼の見えるNPCは同期で作り直す） */
+
 		bRet = FALSE;
 
 	} else if ((pChar->byNpcType == 0) || (pChar->byNpcType >= NPCTYPE_MAX)) {
@@ -487,6 +490,9 @@ BOOL SaveCharInfo(void)
 			case 75:	dwDataSizeTmp += sizeof (pInfo->dwNpcID);				break;	/* NPC番号 */
 			case 76:	/* 町転送の行き先帳 [数(BYTE)] 続けて [マップID(DWORD)][横(BYTE)][縦(BYTE)]×数 */
 				dwDataSizeTmp += 1 + min ((DWORD)pInfo->byTownWarpCount, (DWORD)MAX_TOWNWARP) * (sizeof (DWORD) + 2);
+				break;
+			case 77:	/* ギルドの依頼 [依頼番号(WORD)][段(BYTE)][旗(WORD)][数(WORD)×4][受けた時刻(DWORD)][クリア済みの印(BYTE)×MAX_QUESTDONEBYTE] */
+				dwDataSizeTmp += 2 + 1 + 2 + 2 * MAX_QUESTCOUNT + 4 + MAX_QUESTDONEBYTE;
 				break;
 			}
 		}
@@ -880,6 +886,25 @@ BOOL SaveCharInfo(void)
 						pData[dwOffset ++] = pInfo->abyTownWarpX[k];
 						pData[dwOffset ++] = pInfo->abyTownWarpY[k];
 					}
+				}
+				break;
+			case 77:	/* ギルドの依頼 */
+				{
+					int k;
+
+					CopyMemory (&pData[dwOffset], &pInfo->wQuestID, 2);
+					dwOffset += 2;
+					pData[dwOffset ++] = pInfo->byQuestStep;
+					CopyMemory (&pData[dwOffset], &pInfo->wQuestFlg, 2);
+					dwOffset += 2;
+					for (k = 0; k < MAX_QUESTCOUNT; k ++) {
+						CopyMemory (&pData[dwOffset], &pInfo->awQuestCount[k], 2);
+						dwOffset += 2;
+					}
+					CopyMemory (&pData[dwOffset], &pInfo->dwQuestAcceptTime, 4);
+					dwOffset += 4;
+					CopyMemory (&pData[dwOffset], pInfo->abyQuestDone, MAX_QUESTDONEBYTE);
+					dwOffset += MAX_QUESTDONEBYTE;
 				}
 				break;
 			}
@@ -1532,6 +1557,25 @@ BOOL LoadCharInfo(void)
 					}
 					dwOffsetTmp += sizeof (DWORD) + 2;
 				}
+			}
+
+			/* ギルドの依頼（無い古いデータは「受けていない・クリア済みなし」のまま） */
+			if (strcmp (aHeaderInfo[i].szName, s_aszName[77]) == 0) {
+				int k;
+
+				CopyMemory (&pInfo->wQuestID, &pData[dwOffsetTmp], 2);
+				dwOffsetTmp += 2;
+				pInfo->byQuestStep = pData[dwOffsetTmp ++];
+				CopyMemory (&pInfo->wQuestFlg, &pData[dwOffsetTmp], 2);
+				dwOffsetTmp += 2;
+				for (k = 0; k < MAX_QUESTCOUNT; k ++) {
+					CopyMemory (&pInfo->awQuestCount[k], &pData[dwOffsetTmp], 2);
+					dwOffsetTmp += 2;
+				}
+				CopyMemory (&pInfo->dwQuestAcceptTime, &pData[dwOffsetTmp], 4);
+				dwOffsetTmp += 4;
+				CopyMemory (pInfo->abyQuestDone, &pData[dwOffsetTmp], MAX_QUESTDONEBYTE);
+				dwOffsetTmp += MAX_QUESTDONEBYTE;
 			}
 		}
 	}

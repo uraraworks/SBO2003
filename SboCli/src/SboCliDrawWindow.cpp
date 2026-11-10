@@ -131,6 +131,7 @@ void DrawWindowDEAD_COMMAND						(PWNDINFO);			/* 死亡中：コマンド */
 void DrawWindowSTATUSMAGIC						(PWNDINFO);			/* 強さ：覚えている特技 */
 void DrawWindowMAKER							(PWNDINFO);			/* 作り手（レシピ）：作れる物の一覧・確認 */
 void DrawWindowTOWNWARP						(PWNDINFO);			/* 町転送：行き先の選択 */
+void DrawWindowQUEST						(PWNDINFO);			/* ギルドの依頼：一覧・進み具合 */
 
 void DrawWindowSUBSUGOROKU_JOINMODE				(PWNDINFO);			/* ウィンドウの描画(すごろく：参加モード選択) */
 void DrawWindowSUBSUGOROKU_COMMAND				(PWNDINFO);			/* ウィンドウの描画(すごろく：行動選択) */
@@ -345,6 +346,7 @@ void DrawWindow(CImg32 *pDib, int x, int y)
 		case WNDTYPE_STATUSMAGIC:			DrawWindowSTATUSMAGIC (pWnd);			break;
 		case WNDTYPE_MAKER:					DrawWindowMAKER (pWnd);					break;
 		case WNDTYPE_TOWNWARP:				DrawWindowTOWNWARP (pWnd);				break;
+		case WNDTYPE_QUEST:					DrawWindowQUEST (pWnd);					break;
 		}
 		s_bDrawingWindow = FALSE;
 		pDib->BltAlpha2 (pWnd->nX + x, pWnd->nY + y, pWnd->nCx, pWnd->nCy, pWnd->pDib, 0, 0, 15, TRUE);
@@ -383,6 +385,11 @@ void DrawWindowFrame(PWNDINFO pWnd)
 	for (i = 0; i < pWnd->nCy / 16 - 2; i ++) {
 		pDib->Blt (0, (i + 1) * 16, 16, 16, g_pDibSystem, 0, 16);
 		pDib->Blt (pWnd->nCx - 16, (i + 1) * 16, 16, 16, g_pDibSystem, 32, 16);
+	}
+	/* 高さが16の倍数でない時は、下の角の上に残るすき間も埋める */
+	if ((pWnd->nCy % 16) && (pWnd->nCy >= 48)) {
+		pDib->Blt (0, pWnd->nCy - 32, 16, 16, g_pDibSystem, 0, 16);
+		pDib->Blt (pWnd->nCx - 16, pWnd->nCy - 32, 16, 16, g_pDibSystem, 32, 16);
 	}
 
 	/* HPが減っていたら枠を染める（上下左右の16ドット幅） */
@@ -746,8 +753,10 @@ void DrawWindowCOMMAND(PWNDINFO pWnd)
 	TextOut2 (hDC, 16 * 6, 64, "取引",		RGB (255, 255, 255));
 	TextOut2 (hDC, 16 * 2, 80, "扉",		RGB (255, 255, 255));
 	TextOut2 (hDC, 16 * 6, 80, "その他",	RGB (255, 255, 255));
+	TextOut2 (hDC, 16 * 2, 96, "依頼",		RGB (255, 255, 255));
 
 	SelectObject (hDC, hFontOld);
+
 	pWnd->pDib->Unlock ();
 	pWnd->dwTimeDrawStart = timeGetTime ();
 
@@ -3134,6 +3143,111 @@ void DrawWindowTOWNWARP(PWNDINFO pWnd)
 }
 
 /* ========================================================================= */
+/* 関数名：DrawWindowQUEST													 */
+/* 内容：ウィンドウの描画(ギルドの依頼：一覧・進み具合)						 */
+/* ========================================================================= */
+void DrawWindowQUEST(PWNDINFO pWnd)
+{
+	BOOL bList = (pWnd->nType2 == QUESTWND_LIST);
+
+	if (pWnd->dwTimeDrawStart) {
+		if (bList && (g_nQuestListCount > 0)) {
+			DrawCursor (pWnd, 16, 16 + (pWnd->nData1 - pWnd->nData2) * 16);
+		}
+		return;
+	}
+
+	DrawWindowFrame (pWnd);
+	if (bList) {
+		/* 一覧と詳細欄の仕切り */
+		pWnd->pDib->FillRect (16, QUEST_DETAILY - 4, pWnd->nCx - 32, 1, RGB (160, 160, 160));
+	}
+
+	HDC hDC = pWnd->pDib->Lock ();
+	HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFontBasic);
+	static char aszLine[32][QUESTWRAP_LINEBYTES];
+	int i, nLines;
+	LPCSTR pszTitle = bList ? "ギルドの依頼" : "依頼";
+
+	SetBkColor (hDC, RGB (40, 40, 40));
+	TextOut2 (hDC, 48, 0, (LPSTR)pszTitle, RGB (255, 255, 255));
+	SetBkMode (hDC, TRANSPARENT);
+	TextOut2 (hDC, 48, 0, (LPSTR)pszTitle, RGB (255, 255, 255));
+
+	if (bList) {
+		static const char *apszMark[] = {"・", "◎", "×", "★"};
+		int nWidth = (pWnd->nCx - 48 - 16) / 8;
+
+		if (g_nQuestListCount <= 0) {
+			TextOut2 (hDC, 32, 16, "いま出せる依頼はありません。", RGB (255, 255, 255));
+		}
+		for (i = 0; i < QUEST_LISTROWS; i ++) {
+			int nNo = pWnd->nData2 + i;
+			char szTmp[MAX_QUESTNAME + 8];
+			COLORREF cl = RGB (255, 255, 255);
+			PQUESTLISTITEM pItem;
+
+			if (nNo >= g_nQuestListCount) {
+				break;
+			}
+			pItem = &g_aQuestList[nNo];
+			if (pItem->byMark == QUESTMARK_MINE) {
+				cl = RGB (255, 255, 128);
+			} else if (pItem->byMark == QUESTMARK_READY) {
+				cl = RGB (128, 255, 128);
+			} else if (pItem->byMark == QUESTMARK_LOCKED) {
+				cl = RGB (128, 128, 128);
+			}
+			_snprintf (szTmp, sizeof (szTmp) - 1, "%s%s", apszMark[pItem->byMark & 3], pItem->szName);
+			szTmp[sizeof (szTmp) - 1] = 0;
+			szTmp[SboTextFitWidth (szTmp, nWidth)] = 0;
+			TextOut2 (hDC, 32, 16 + i * 16, szTmp, cl);
+		}
+		/* 続きがあるしるし */
+		if (pWnd->nData2 > 0) {
+			TextOut2 (hDC, pWnd->nCx - 32, 16, "▲", RGB (255, 255, 255));
+		}
+		if (pWnd->nData2 + QUEST_LISTROWS < g_nQuestListCount) {
+			TextOut2 (hDC, pWnd->nCx - 32, 16 + (QUEST_LISTROWS - 1) * 16, "▼", RGB (255, 255, 255));
+		}
+		/* 詳細欄 */
+		nLines = QuestMakeDetailLines (pWnd, aszLine, QUEST_DETAILROWS);
+		for (i = 0; i < nLines; i ++) {
+			TextOut2 (hDC, QUEST_TEXTX, QUEST_DETAILY + i * 16, aszLine[i], RGB (255, 255, 255));
+		}
+
+	} else {
+		int nRows = QUEST_LISTROWS + QUEST_DETAILROWS;
+
+		nLines = QuestMakeDetailLines (pWnd, aszLine, 32);
+		if (pWnd->nData2 > max (nLines - nRows, 0)) {
+			pWnd->nData2 = max (nLines - nRows, 0);
+		}
+		for (i = 0; i < nRows; i ++) {
+			int nNo = pWnd->nData2 + i;
+			if (nNo >= nLines) {
+				break;
+			}
+			TextOut2 (hDC, QUEST_TEXTX, 16 + i * 16, aszLine[nNo], RGB (255, 255, 255));
+		}
+		if (pWnd->nData2 > 0) {
+			TextOut2 (hDC, pWnd->nCx - 32, 16, "▲", RGB (255, 255, 255));
+		}
+		if (pWnd->nData2 + nRows < nLines) {
+			TextOut2 (hDC, pWnd->nCx - 32, 16 + (nRows - 1) * 16, "▼", RGB (255, 255, 255));
+		}
+	}
+
+	SelectObject (hDC, hFontOld);
+	pWnd->pDib->Unlock ();
+	pWnd->dwTimeDrawStart = timeGetTime ();
+
+	if (bList && (g_nQuestListCount > 0)) {
+		DrawCursor (pWnd, 16, 16 + (pWnd->nData1 - pWnd->nData2) * 16);
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：DrawWindowCOMMANDMAGICBATTLE										 */
 /* 内容：ウィンドウの描画(魔法(戦闘マップ))									 */
 /* 日付：2004/09/25															 */
@@ -4628,8 +4742,15 @@ void EraseWindow(PWNDINFO pWnd)
 		g_dwMsgIDGold = 0;
 		break;
 
+	case WNDTYPE_QUEST:
+		/* 閉じたら、お知らせ・返事待ちは捨てる */
+		g_szQuestMsg[0] = 0;
+		g_dwQuestWaitTime = 0;
+		break;
+
 	case WNDTYPE_MAKER:
 		/* 一覧を閉じたら作り手の画面は終わり（確認ウィンドウだけでは終わらない） */
+
 		if (pWnd->nType2 == MAKERWND_LIST) {
 			g_nProcMakerID = -1;
 			g_bProcMakerLeaveOK = FALSE;

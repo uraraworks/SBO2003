@@ -101,6 +101,8 @@ void	RecvDataProcRECIPEINFO				(PBYTE, DWORD);			/* 受信データ処理(レシ
 void	RecvDataProcRECIPEMAKE				(PBYTE, DWORD);			/* 受信データ処理(作ってもらった結果) */
 void	RecvDataProcNPCROUTE				(PBYTE, DWORD);			/* 受信データ処理(NPCの巡回ルート) */
 void	RecvDataProcTOWNWARP				(PBYTE, DWORD);			/* 受信データ処理(町転送の行き先一覧) */
+void	RecvDataProcQUEST					(PBYTE, DWORD);			/* 受信データ処理(ギルドの仕事依頼：一覧・結果) */
+void	RecvDataProcQUESTSTATE				(PBYTE, DWORD);			/* 受信データ処理(依頼の進み具合) */
 /* ブラウザ版のアカウント関係（web/replace/SboCliWebAccount_web.cpp） */
 void	WebAccSaveToken						(LPCSTR);				/* 端末トークンをページへ渡す */
 void	WebAccOnTokenNG						(void);					/* 端末トークンが無効だった */
@@ -339,6 +341,8 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	NULL,								/* CMD_BATTLEMODE */
 	RecvDataProcNPCROUTE,				/* CMD_NPCROUTE */
 	RecvDataProcTOWNWARP,				/* CMD_TOWNWARP */
+	RecvDataProcQUEST,					/* CMD_QUEST */
+	RecvDataProcQUESTSTATE,				/* CMD_QUESTSTATE */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -1015,7 +1019,12 @@ void RenewCharPosInfo(void)
 			continue;
 		}
 
-		g_aCharPos[nNo].Add (i);
+		/* 依頼の見える物（宝箱・光）は同じ行の中で先に描く（上に乗った人が宝箱に隠れていた） */
+		if (pChar->byNpcType == NPCTYPE_QUESTNPC) {
+			g_aCharPos[nNo].InsertAt (0, i);
+		} else {
+			g_aCharPos[nNo].Add (i);
+		}
 		if (pMyChar != pChar) {
 			RenewMapDark (pChar);
 		}
@@ -3091,7 +3100,128 @@ void RecvDataProcTOWNWARP(PBYTE pData, DWORD dwDataSize)
 }
 
 /* ========================================================================= */
+/* 関数名：RecvDataProcQUEST												 */
+/* 内容：受信データ処理(ギルドの仕事依頼：一覧・結果)						 */
+/* ========================================================================= */
+void RecvDataProcQUEST(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_QUEST pPara = (PCMDPARA_QUEST)pData;
+	PWNDINFO pWndList;
+
+	if (dwDataSize < sizeof (CMDPARA_QUEST)) {
+		return;
+	}
+	/* 文字列は必ず終端させる */
+	pPara->szName[MAX_QUESTNAME - 1] = 0;
+	pPara->szExplain[MAX_QUESTMSG - 1] = 0;
+	pPara->szGoal[MAX_QUESTGOAL - 1] = 0;
+	pPara->szReward[MAX_QUESTGOAL - 1] = 0;
+	pPara->szMsg[MAX_QUESTMSG - 1] = 0;
+
+	pWndList = QuestFindWindow (QUESTWND_LIST);
+
+	switch (pPara->byType) {
+	case QUESTCMD_LISTITEM:
+		/* 頼んでいない（開いていない・返事待ちでもない）のに届いた一覧は捨てる */
+		if ((pWndList == NULL) &&
+			((g_dwQuestWaitTime == 0) || (timeGetTime () - g_dwQuestWaitTime > QUEST_WAITMAX))) {
+			g_dwQuestWaitTime = 0;
+			return;
+		}
+		g_dwQuestGuildTblID = pPara->dwNpcTblID;
+		if (pPara->byCount == 0) {
+			g_nQuestListCount = 0;
+		} else {
+			if ((pPara->byIndex >= MAX_QUESTLIST) || (pPara->byIndex >= pPara->byCount)) {
+				return;
+			}
+			/* 一覧の先頭が来たら作り直し */
+			if (pPara->byIndex == 0) {
+				g_nQuestListCount = 0;
+			}
+			PQUESTLISTITEM pItem = &g_aQuestList[pPara->byIndex];
+			pItem->byMark = pPara->byMark;
+			pItem->wQuestID = pPara->wQuestID;
+			strcpy (pItem->szName, pPara->szName);
+			strcpy (pItem->szExplain, pPara->szExplain);
+			strcpy (pItem->szGoal, pPara->szGoal);
+			strcpy (pItem->szReward, pPara->szReward);
+			if ((int)pPara->byIndex + 1 > g_nQuestListCount) {
+				g_nQuestListCount = (int)pPara->byIndex + 1;
+			}
+		}
+		if (pWndList == NULL) {
+			/* ギルドの人に話した返事：一覧の窓を開く */
+			g_dwQuestWaitTime = 0;
+			g_szQuestMsg[0] = 0;
+			pWndList = MakeWindowQUEST (QUESTWND_LIST);
+			g_WndInfo.Add (pWndList);
+			g_dwActiveMsgID = pWndList->dwID;
+		}
+		/* カーソルと表示位置を一覧の中に収める */
+		if (pWndList->nData1 >= g_nQuestListCount) {
+			pWndList->nData1 = max (g_nQuestListCount - 1, 0);
+		}
+		if (pWndList->nData2 > pWndList->nData1) {
+			pWndList->nData2 = pWndList->nData1;
+		}
+		if (pWndList->nData1 >= pWndList->nData2 + QUEST_LISTROWS) {
+			pWndList->nData2 = pWndList->nData1 - QUEST_LISTROWS + 1;
+		}
+		pWndList->dwTimeDrawStart = 0;
+		g_bDraw = TRUE;
+		break;
+
+	case QUESTCMD_RESULT:
+		/* 結果はシステムメッセージにも出す */
+		if (pPara->szMsg[0]) {
+			AddSysMsg (pPara->szMsg, (pPara->byResult == QUESTRESULT_NG) ? RGB (255, 200, 200) : RGB (255, 255, 255));
+		}
+		if (pWndList) {
+			/* 窓の詳細欄にも出して、一覧を取り直す（印が変わるため） */
+			_snprintf (g_szQuestMsg, sizeof (g_szQuestMsg) - 1, "%s", pPara->szMsg);
+			g_szQuestMsg[sizeof (g_szQuestMsg) - 1] = 0;
+			pWndList->dwTimeDrawStart = 0;
+			SendCmdQUEST (QUESTCMD_LISTREQ, 0, g_dwQuestGuildTblID);
+		}
+		g_bDraw = TRUE;
+		break;
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcQUESTSTATE											 */
+/* 内容：受信データ処理(依頼の進み具合。自分と仲間の分)						 */
+/* ========================================================================= */
+void RecvDataProcQUESTSTATE(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_QUESTSTATE pPara = (PCMDPARA_QUESTSTATE)pData;
+	PWNDINFO pWnd;
+	int i;
+
+	if (dwDataSize < sizeof (CMDPARA_QUESTSTATE)) {
+		return;
+	}
+	CopyMemory (&g_QuestState, pPara, sizeof (CMDPARA_QUESTSTATE));
+	if (g_QuestState.byCount > MAX_PARTYMEMBER) {
+		g_QuestState.byCount = MAX_PARTYMEMBER;
+	}
+	/* 文字列は必ず終端させる */
+	for (i = 0; i < MAX_PARTYMEMBER; i ++) {
+		g_QuestState.aEntry[i].szCharName[MAX_CHARNAMEBUF - 1] = 0;
+		g_QuestState.aEntry[i].szQuestName[MAX_QUESTNAME - 1] = 0;
+		g_QuestState.aEntry[i].szGoal[MAX_QUESTGOAL - 1] = 0;
+	}
+	pWnd = QuestFindWindow (QUESTWND_STATE);
+	if (pWnd) {
+		pWnd->dwTimeDrawStart = 0;
+		g_bDraw = TRUE;
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcADMINUNDO											 */
+
 /* 内容：受信データ処理(管理者画面の「元に戻す」)							 */
 /* ========================================================================= */
 void RecvDataProcADMINUNDO(PBYTE pData, DWORD dwDataSize)

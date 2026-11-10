@@ -1082,4 +1082,33 @@ merc return gone=1 bag_heal=2 leave_added=1
 tailmapchg 0 map=40 pos=(40,9) fade=0
 tailmapchg 1 map=40 pos=(40,9) fade=0
 tailmapchg 2 map=40 pos=(40,9) fade=0
+== M. Quest ==
+quest map=6 cells=8
+quest party same=1 nonzero=1
+quest list packets=3
+quest accept id=1 step=0 copies=2
+quest sent charinfo owner=2 member=2 other=0 p4=0 other_calls=0 queststate owner>0=1 member>0=1
+quest member accept id=1 copies=4
+quest copy grp=1 vis owner=1 member=0 other=0 admin=1 block=-1
+quest copy grp=2 vis owner=1 member=0 other=0 admin=1 block=-1
+quest copy grp=1 vis owner=0 member=1 other=0 admin=1 block=-1
+quest copy grp=2 vis owner=0 member=1 other=0 admin=1 block=-1
+quest chest item=1 flag1=1 step=1 person=1 chest=0
+quest member item=0 step=0
+quest portal to dest=1
+quest portal step to dest=1
+quest handin quest=0 gold+=100 exp>0=1 item_q=0 item_r=1 done=1 copies=2
+quest reaccept id=0
+quest cancel member q=0 item=0 flag1=0 copies=0
+quest party-rule member=2 owner_q3=0 owner_q2=2
+quest break owner_party=0 member_party=0
+quest other=2 p4=3 conflict=1
+quest join refused other_party=0 p4_party=0
+quest cancel other q=0 flg=0 count1=0 item=0 leave=0 done=0
+quest far cancel q=2
+quest info reload count=3 same=1
+quest char save=1 load=1
+quest char reload id=2 step=1 flg=4660 counts=1,22,333,4444 time=1700000000 done=06,80
+quest npc loaded=0
+quest end copies=0
 == done ==

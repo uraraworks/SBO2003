@@ -118,6 +118,7 @@ void	RecvDataProcMAPMSGREQ					(PBYTE, DWORD);				/* メッセージ要求 */
 void	RecvDataProcCHGMSG						(PBYTE, DWORD);				/* メッセージ更新 */
 void	RecvDataProcOPENDOOR					(PBYTE, DWORD);				/* 扉開け要求 */
 static BOOL OpenDoorFront						(PCHARINFO);				/* 目の前の扉を開ける */
+static BOOL IsEventExamine						(PEVENTINFO, BYTE);			/* 調べた時に何か起きるイベントか */
 void	RecvDataProcCHGCHARGRP					(PBYTE, DWORD);				/* 着せ替え要求 */
 void	RecvDataProcCHGCHARGRPBACK				(PBYTE, DWORD);				/* キャラ画像記録 */
 void	RecvDataProcCHGNAMESEX					(PBYTE, DWORD);				/* 名前と性別更新 */
@@ -196,6 +197,7 @@ void	RecvDataProcWEBACCOUNT					(PBYTE, DWORD);				/* ブラウザ版のアカ�
 void	RecvDataProcADMINUNDO					(PBYTE, DWORD);				/* 管理者画面の「元に戻す」 */
 void	RecvDataProcNPCROUTE					(PBYTE, DWORD);				/* NPCの巡回ルート */
 void	RecvDataProcRECIPEMAKE					(PBYTE, DWORD);				/* レシピで作ってもらう */
+void	RecvDataProcQUEST						(PBYTE, DWORD);				/* ギルドの仕事依頼（一覧・受ける・取り消す・渡す） */
 void	RecvDataProcBATTLEMODE					(PBYTE, DWORD);				/* 戦闘モードの切り替え通知 */
 /* 端末トークン（server/web_account_svr.cpp） */
 BOOL	WebAccTokenToAccount					(LPCSTR, LPSTR, int);		/* 端末トークンからアカウント名を引く */
@@ -416,6 +418,9 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcBATTLEMODE,				/* CMD_BATTLEMODE */
 	RecvDataProcNPCROUTE,				/* CMD_NPCROUTE */
 	NULL,								/* CMD_TOWNWARP(サーバー→クライアントのみ) */
+	RecvDataProcQUEST,					/* CMD_QUEST */
+	NULL,								/* CMD_QUESTSTATE(サーバー→クライアントのみ) */
+
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -1643,7 +1648,10 @@ void AddTblNoPC(int nNo)
 	pDataNew[nCount] = nNo;
 	pDataNew[nCount + 1] = -1;
 	*ppData = pDataNew;
-	SendCmdMAPCHARINFO (pChar->dwTblID);
+	/* 依頼の見えるNPCの出入りは、見えない人に知らせない */
+	if (!IsQuestNpc (pChar)) {
+		SendCmdMAPCHARINFO (pChar->dwTblID);
+	}
 }
 
 /* ========================================================================= */
@@ -1822,7 +1830,10 @@ void DeleteTblNoPC(int nNo)
 	if (nNoTmp > 0) {
 		*pCount = nNoTmp - 1;
 	}
-	SendCmdMAPCHARINFO (pChar->dwTblID);
+	/* 依頼の見えるNPCの出入りは、見えない人に知らせない */
+	if (!IsQuestNpc (pChar)) {
+		SendCmdMAPCHARINFO (pChar->dwTblID);
+	}
 }
 
 /* ========================================================================= */
@@ -2519,6 +2530,10 @@ DWORD CheckCharBlockNPC(DWORD dwMapID, DWORD dwX, DWORD dwY)
 			break;
 		}
 		PCHARINFO pCharTmp = g_aCharInfo[pData[i]];
+		/* 依頼の見えるNPCは、ぶつからない（すり抜けられる） */
+		if (IsQuestNpc (pCharTmp)) {
+			continue;
+		}
 		/* キャラと重なる？ */
 		if (CheckCharX (pCharTmp, pCharTmp->dwX, dwX) && (pCharTmp->dwY == dwY)) {
 			if ((pCharTmp->byNpcType == NPCTYPE_PUT) ||
@@ -2551,9 +2566,14 @@ DWORD CheckCharBlockNPC2(DWORD dwTblID, DWORD dwMapID, DWORD dwX, DWORD dwY)
 		if (dwTblID == pCharTmp->dwTblID) {
 			continue;
 		}
+		/* 依頼の見えるNPCは、ぶつからない（すり抜けられる） */
+		if (IsQuestNpc (pCharTmp)) {
+			continue;
+		}
 		/* キャラと重なる？ */
 		if (CheckCharX (pCharTmp, pCharTmp->dwX, dwX) && (pCharTmp->dwY == dwY)) {
 			if (pCharTmp->byNpcType == NPCTYPE_PUT) {
+
 				continue;
 			}
 			return pCharTmp->dwTblID;
@@ -3011,6 +3031,8 @@ void SubProcMapMove(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY)
 	SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 2);
 	SendCmdCHARSTATUS (pChar->pID, pChar->dwTblID);
 	SendCmdCHARITEM (pChar->pID, pChar->dwTblID);
+	/* 行き先のマップに、依頼の見えるNPCを出す・前のマップの分を片付ける */
+	QuestSyncAll ();
 }
 
 /* ========================================================================= */
@@ -3146,7 +3168,13 @@ void ProcBreakParty(PCHARINFO pChar)
 	}
 
 	pPartyInfo->adwTblID[j] = 0;
-	pChar->dwPartyID = 0;
+	{
+		/* 抜けた人と残った仲間の依頼の進み具合・見えるNPCを更新する */
+		DWORD dwPartyIDOld = pChar->dwPartyID;
+		pChar->dwPartyID = 0;
+		QuestSendStateParty (dwPartyIDOld, pChar);
+		QuestSyncAll ();
+	}
 	SendCmdSYSMSG (pChar->pID, szTmp, SPEECHCMD_BATTLE1);
 	SendCmdPARTY (pChar->dwTblID, pChar->dwTblID, CMDPARTY_BREAKUP, 0);
 
@@ -3176,6 +3204,7 @@ void ProcBreakUpParty(PCHARINFO pChar)
 	}
 
 	wsprintf (szTmp, "パーティは解散しました。");
+	DWORD dwPartyIDOld = pChar->dwPartyID;
 	pPartyInfo = g_aPartyInfo[pChar->dwPartyID];
 	/* 各メンバーに解散を通知 */
 	for (i = 0; i < MAX_PARTYMEMBER; i ++) {
@@ -3188,12 +3217,28 @@ void ProcBreakUpParty(PCHARINFO pChar)
 		pCharTmp->dwPartyID = 0;
 		SendCmdSYSMSG (pCharTmp->pID, szTmp, SPEECHCMD_BATTLE1);
 	}
-	ZeroMemory (pPartyInfo, sizeof (PARTYINFO));
+	{
+		/* 解散した全員に、依頼の進み具合を送り直す（自分だけの分になる）。見えるNPCも更新する */
+		std::vector<DWORD> aMember;
+		for (i = 0; i < MAX_PARTYMEMBER; i ++) {
+			if (pPartyInfo->adwTblID[i] == 0) {
+				break;
+			}
+			aMember.push_back (pPartyInfo->adwTblID[i]);
+		}
+		ZeroMemory (pPartyInfo, sizeof (PARTYINFO));
+		for (i = 0; i < (int)aMember.size (); i ++) {
+			QuestSendStateParty (0, g_aCharInfo[aMember[i]]);
+		}
+		QuestSyncAll ();
+	}
+	(void)dwPartyIDOld;
 }
 
 
 /* ========================================================================= */
-/* 関数名：	IsTail															 */
+/* 関数名：	IsTail	
+														 */
 /* 内容：	ついていけるかチェック											 */
 /* 日付：	2006/08/05														 */
 /* ========================================================================= */
@@ -3204,6 +3249,11 @@ BOOL IsTail(PCHARINFO pChar, PCHARINFO pCharTarget)
 	DWORD dwX, dwY;
 
 	bRet = FALSE;
+
+	/* 依頼の見えるNPCにはついていけない */
+	if (IsQuestNpc (pCharTarget)) {
+		goto Exit;
+	}
 
 	/* 誰かについていっている？ */
 	if (pChar->dwTailTblID != -1) {
@@ -3286,7 +3336,7 @@ void RecvDataProc(PBYTE pData, DWORD dwDataSize)
 	}
 
 	/* 管理者用のコマンド（管理者ウィンドウからしか送らないもの）は管理者だけ */
-	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_BATTLEMODE)) ||
+	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST)) ||
 			(byCmd == CMD_CHARITEM)) {
 		if (!CheckAdminBan (nNo)) {
 			SAFE_DELETE_ARRAY (pData);
@@ -3593,6 +3643,8 @@ void RecvDataProcCHGSTATE(PBYTE pData, DWORD dwDataSize)
 	SendCmdRECIPEINFOALL (pPara->pID);
 	/* 町転送の行き先一覧を送信 */
 	SendCmdTOWNWARP (pChar->dwTblID);
+	/* 受けている依頼の確認と、本人・仲間の進み具合を送信 */
+	QuestOnLogin (pChar);
 	/* マップデータを送信 */
 	SendCmdMAPINFO (pPara->pID, GetMapNo (pChar->dwMapID));
 	/* イベント座標を送信 */
@@ -3778,6 +3830,9 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 			/* 移動しなおしたのでカウンタ初期化 */
 			pChar->dwLastBattle = timeGetTime ();
 		}
+
+		/* 依頼の見えるポータルに乗った？ */
+		QuestOnStep (pChar);
 	}
 }
 
@@ -4355,6 +4410,13 @@ void RecvDataProcEVENTCHECK(PBYTE pData, DWORD dwDataSize)
 	if (nNo < 0) {
 		return;
 	}
+	/* 足元を調べた時(Sキー)、同じマスに依頼の見える宝箱などがあればそちらを先に */
+	if ((pPara->byData == 1) && QuestExamineHere (pChar)) {
+		/* クライアントは返事が来るまで歩けないので、位置を送って待ちを解く */
+		SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
+		return;
+	}
+
 	pMap = g_aMapInfo[nNo];
 	pEvent = pMap->pEvent;
 	if (!pEvent) {
@@ -4373,6 +4435,13 @@ void RecvDataProcEVENTCHECK(PBYTE pData, DWORD dwDataSize)
 		}
 		/* イベント発見？ */
 		if ((pEvent->dwX == dwX) && (pEvent->dwY == dwY)) {
+			/* 足元を調べた時(Sキー)、足元のイベントが調べても何も起きない物なら
+			   目の前の扉を開ける（扉の前のマスに乗った時のメッセージなどがあると開けられなかった） */
+			if ((pPara->byData == 1) && !IsEventExamine (pEvent, pPara->byData)) {
+				if (OpenDoorFront (pChar)) {
+					return;
+				}
+			}
 			EventProc (pChar, pEvent, pPara->byData);
 			return;
 		}
@@ -4393,6 +4462,26 @@ void RecvDataProcEVENTCHECK(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	SendCmdMAPMSG (pChar->pID, "何も見つかりませんでした。@2");
+}
+
+/* ========================================================================= */
+/* 関数名：IsEventExamine													 */
+/* 内容：調べた時(byData)に何か起きるイベントか								 */
+/*		 調べて反応するのはメッセージの「調べた時」の種類だけ				 */
+/*		 （それ以外は EventProc が「何も見つかりませんでした」を返す）		 */
+/* ========================================================================= */
+static BOOL IsEventExamine(PEVENTINFO pEvent, BYTE byData)
+{
+	PEVENTINFO_MSG pMsg;
+
+	if (pEvent->byType != EVENTTYPE_MSG) {
+		return FALSE;
+	}
+	pMsg = (PEVENTINFO_MSG)pEvent->pData;
+	if (pMsg == NULL) {
+		return FALSE;
+	}
+	return (pMsg->byType == byData);
 }
 
 /* ========================================================================= */
@@ -5565,6 +5654,20 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
+	/* 依頼の見えるNPC（台詞が「@q」。受けた人・仲間だけに見える）？ 話すとポータル・宝箱など */
+	if (IsQuestNpc (pChar)) {
+		if ((s_nCharNoRecv >= 0) && IsNearRecvChar (pChar, 2)) {
+			QuestNpcTalk (g_aCharInfo[s_nCharNoRecv], pChar);
+		}
+		return;
+	}
+	/* ギルドのNPC（台詞が「@gNN」）？ 依頼の一覧を送る */
+	if (QuestIsGuildNpc (pChar)) {
+		if ((s_nCharNoRecv >= 0) && IsNearRecvChar (pChar, 2)) {
+			QuestGuildTalk (g_aCharInfo[s_nCharNoRecv], pChar);
+		}
+		return;
+	}
 	/* 傭兵所のNPC（台詞が「@m」で始まる）？ 雇う・お別れする */
 	if ((pChar->byNpcType != NPCTYPE_INIT) && pChar->pszNpcSpeech &&
 		(pChar->pszNpcSpeech[0] == '@') && (pChar->pszNpcSpeech[1] == 'm')) {
@@ -6352,6 +6455,10 @@ void RecvDataProcTARGETCHAR(PBYTE pData, DWORD dwDataSize)
 			return;
 		}
 		pCharTmp = g_aCharInfo[pPara->dwData];
+		/* 依頼の見えるNPCはターゲットにできない */
+		if (IsQuestNpc (pCharTmp)) {
+			return;
+		}
 
 		/* 得点板属性？ */
 		if (pCharTmp->byNpcType == NPCTYPE_SCORE) {
@@ -7210,6 +7317,12 @@ void RecvDataProcPARTY(PBYTE pData, DWORD dwDataSize)
 			SendCmdSYSMSG (pCharFrom->pID, szTmp, SPEECHCMD_BATTLE1);
 			break;
 		}
+		/* 受けている依頼が違う人とは仲間になれない */
+		if (QuestPartyConflict (pCharFrom, pCharTo)) {
+			SendCmdSYSMSG (pCharFrom->pID, "受けている依頼が違うので仲間になれません", SPEECHCMD_BATTLE1);
+			SendCmdSYSMSG (pCharTo->pID, "受けている依頼が違うので仲間になれません", SPEECHCMD_BATTLE1);
+			break;
+		}
 
 		pPartyInfo = g_aPartyInfo[pCharFrom->dwPartyID];
 		if (pPartyInfo->adwTblID[MAX_PARTYMEMBER - 1]) {
@@ -7233,6 +7346,12 @@ void RecvDataProcPARTY(PBYTE pData, DWORD dwDataSize)
 			s_mapPartyInvite.erase (it);
 		}
 		if (pCharFrom->dwPartyID) {
+			break;
+		}
+		/* 誘われてから依頼を受けた場合もあるので、ここでも確かめる */
+		if (QuestPartyConflict (pCharFrom, pCharTo)) {
+			SendCmdSYSMSG (pCharFrom->pID, "受けている依頼が違うので仲間になれません", SPEECHCMD_BATTLE1);
+			SendCmdSYSMSG (pCharTo->pID, "受けている依頼が違うので仲間になれません", SPEECHCMD_BATTLE1);
 			break;
 		}
 		if (pCharTo->dwPartyID == 0) {
@@ -7311,6 +7430,9 @@ void RecvDataProcPARTY(PBYTE pData, DWORD dwDataSize)
 		}
 		wsprintf (szTmp, "パーティに参加しました。");
 		SendCmdSYSMSG (pCharFrom->pID, szTmp, SPEECHCMD_BATTLE1);
+		/* 依頼の進み具合を仲間へ送り、見えるNPCを更新する */
+		QuestSendStateParty (pCharFrom->dwPartyID, NULL);
+		QuestSyncAll ();
 		break;
 
 	case CMDPARTY_JOINNO:		/* 参加しない */
@@ -7840,6 +7962,10 @@ void RecvDataProcTRADE(PBYTE pData, DWORD dwDataSize)
 	}
 
 	if (pRecv->dwData >= (DWORD)g_aCharInfo.GetSize ()) {
+		return;
+	}
+	/* 依頼の見えるNPCとは取り引きできない */
+	if (IsQuestNpc (g_aCharInfo[pRecv->dwData])) {
 		return;
 	}
 
@@ -10184,7 +10310,7 @@ BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, 
 	/* 管理者用のコマンドだけ（ログインや「元に戻す」自体は通さない） */
 	if ((byCmd >= CMD_MAX) || (RecvDataProcTbl[byCmd] == NULL) ||
 			((byCmd < CMD_MAPPARTSADD) && (byCmd != CMD_CHARITEM)) ||
-			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_BATTLEMODE)) {
+			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST)) {
 		return FALSE;
 	}
 
@@ -10384,7 +10510,30 @@ static BYTE RecipeMake(PCHARINFO pChar, PRECIPEINFO pRecipe, int *pnToInv, int *
 }
 
 /* ========================================================================= */
+/* 関数名：RecvDataProcQUEST												 */
+/* 内容：受信データ処理(ギルドの仕事依頼：一覧・受ける・取り消す・渡す)		 */
+/* ========================================================================= */
+void RecvDataProcQUEST(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_QUEST pPara = (PCMDPARA_QUEST)pData;
+	PCHARINFO pChar;
+
+	if (s_dwRecvSize < sizeof (CMDPARA_QUEST)) {
+		return;
+	}
+	if (!IsRecvChar (pPara->dwTblID)) {
+		return;
+	}
+	pChar = g_aCharInfo[pPara->dwTblID];
+	if ((pChar == NULL) || (pChar->pID == 0) || (pChar->byNpcType != NPCTYPE_INIT)) {
+		return;
+	}
+	QuestRecv (pChar, pPara);
+}
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcRECIPEMAKE											 */
+
 /* 内容：受信データ処理(レシピで作ってもらう)								 */
 /*       存在しないレシピ・停止中のレシピ・作り手の番号が違う・近くに作り手が	 */
 /*       いない要求は RECIPERESULT_INVALID で断る。							 */

@@ -122,6 +122,8 @@ void SendCmdRESURRECTION	(void);									/* 蘇生 */
 void SendCmdREQ_ATTACK		(DWORD dwTblID, BYTE byTurnLV);			/* 攻撃要求 */
 void SendCmdREQ_GUARD		(BOOL bGuard);							/* 構え(防御)の開始・終了 */
 void SendCmdRECIPEMAKE		(BYTE, WORD);							/* レシピで作ってもらう要求 */
+void SendCmdQUEST			(BYTE, WORD, DWORD);					/* ギルドの仕事依頼 */
+
 
 /* サブゲーム用コマンド送信 */
 void SendCmdSubSETBOMB		(void);									/* 爆弾設置 */
@@ -403,7 +405,8 @@ void SendCmdCHARPOS(BYTE byDirection, BOOL bMovingFlg)
 					 (pCharTmp->byNpcType != NPCTYPE_NOBLOCK))) {
 					if ((pCharTmp->byNpcType != NPCTYPE_SEARCH) &&
 						(pCharTmp->byNpcType != NPCTYPE_SEARCH2) &&
-						(pCharTmp->byNpcType != NPCTYPE_MERCENARY)) {
+						(pCharTmp->byNpcType != NPCTYPE_MERCENARY) &&
+						(pCharTmp->byNpcType != NPCTYPE_QUESTNPC)) {
 						/* NPCとはぶつかる */
 						delete [] pSendData;
 						if ((pCharTmp->byNpcType == NPCTYPE_BLOCK) ||
@@ -1879,7 +1882,7 @@ void SendCmdTARGETCHAR(int nMode)
 	for (i = 0; i < nCount; i ++) {
 		pCharTmp = g_aCharInfo[i];
 		if (CheckCharX (pCharTmp, pCharTmp->dwX, dwX) && (pCharTmp->dwY == dwY)) {
-			if (pCharTmp->byNpcType != NPCTYPE_PUT) {
+			if ((pCharTmp->byNpcType != NPCTYPE_PUT) && (pCharTmp->byNpcType != NPCTYPE_QUESTNPC)) {
 				pSendData->dwData = pCharTmp->dwTblID;
 				break;
 			}
@@ -2963,6 +2966,27 @@ void SendCmdBATTLEMODE(
 
 
 /* ========================================================================= */
+/* 関数名：SendCmdQUEST														 */
+/* 内容：コマンド送信(ギルドの仕事依頼：一覧・受ける・取り消す・渡す)		 */
+/* ========================================================================= */
+void SendCmdQUEST(BYTE byType, WORD wQuestID, DWORD dwNpcTblID)
+{
+	CMDPARA_QUEST SendData;
+
+	if (g_nMyCharID < 0) {
+		return;
+	}
+	ZeroMemory (&SendData, sizeof (SendData));
+	SendData.byCmd		= CMD_QUEST;
+	SendData.byType		= byType;
+	SendData.wQuestID	= wQuestID;
+	SendData.dwTblID	= g_aCharInfo[g_nMyCharID]->dwTblID;
+	SendData.dwNpcTblID	= dwNpcTblID;
+
+	cliSock.Send ((PBYTE)&SendData, sizeof (SendData));
+}
+
+/* ========================================================================= */
 /* 関数名：	SendCmdRECIPEMAKE												 */
 /* 内容：	コマンド送信(レシピで作ってもらう要求)							 */
 /*			結果は CMD_RECIPEMAKE で返ってくる								 */
@@ -3380,7 +3404,7 @@ void SendCmdCHAR_TAIL(DWORD dwTblIDTarget)
 		for (i = 0; i < nCount; i ++) {
 			pCharTmp = g_aCharInfo[i];
 			if (CheckCharX (pCharTmp, pCharTmp->dwX, dwX) && (pCharTmp->dwY == dwY)) {
-				if (pCharTmp->byNpcType != NPCTYPE_PUT) {
+				if ((pCharTmp->byNpcType != NPCTYPE_PUT) && (pCharTmp->byNpcType != NPCTYPE_QUESTNPC)) {
 					dwTblIDTarget = pCharTmp->dwTblID;
 					break;
 				}

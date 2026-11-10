@@ -1994,6 +1994,7 @@ void TimerProc(void)
 		case WNDTYPE_DEAD_COMMAND:
 		case WNDTYPE_MAKER:
 		case WNDTYPE_TOWNWARP:
+		case WNDTYPE_QUEST:
 			if (dwTime > pWnd->dwTime + 250) {
 				pWnd->dwTime = dwTime;
 				if (g_dwActiveMsgID == pWnd->dwID) {
@@ -2355,6 +2356,7 @@ void TimerProcChar(PCHARINFO pChar)
 		case NPCTYPE_BATTLE2:		/* 周り２キャラの範囲で検索してついていって攻撃 */
 		case NPCTYPE_NOBLOCK:		/* 移動しない(通り抜け可) */
 		case NPCTYPE_MERCENARY:		/* 傭兵 */
+		case NPCTYPE_QUESTNPC:		/* ギルドの依頼の見える人 */
 			break;
 		default:
 			pChar->dwTimeDelete = 0;
@@ -2381,6 +2383,7 @@ void TimerProcChar(PCHARINFO pChar)
 		case NPCTYPE_BATTLE2:		/* 周り２キャラの範囲で検索してついていって攻撃 */
 		case NPCTYPE_NOBLOCK:		/* 移動しない(通り抜け可) */
 		case NPCTYPE_MERCENARY:		/* 傭兵 */
+		case NPCTYPE_QUESTNPC:		/* ギルドの依頼の見える人 */
 			break;
 		default:
 			pChar->dwTimeAdd = 0;

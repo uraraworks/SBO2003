@@ -41,7 +41,8 @@ static	int		DamageProc			(PCHARINFO, PCHARINFO, BOOL, BOOL, int);	/* ダメー�
 		void	ClearBattleDamage	(DWORD);						/* 覚えたダメージを消す(キャラ削除時) */
 static	void	GetRewardMember		(PCHARINFO, PCHARINFO, std::vector<std::pair<PCHARINFO, DWORD> > &);	/* 討伐報酬をもらえるプレイヤー */
 static	void	AddGold				(PCHARINFO, DWORD, BOOL);		/* 所持金を追加 */
-static	void	AddExp				(PCHARINFO, DWORD, BOOL);		/* 経験値を追加 */
+void	AddExp						(PCHARINFO, DWORD, BOOL);		/* 経験値を追加 */
+
 		void	AddStatus			(PCHARINFO pChar, BYTE byType, int nData);	/* パラメータの追加 */
 
 extern long genrand();												/* 乱数取得 */
@@ -163,6 +164,10 @@ void BattleProcCheck(PCHARINFO pChar)
 
 		bResult = TRUE;
 		pCharTmp = g_aCharInfo[pData[j]];
+		/* 依頼の見えるNPCは攻撃の相手にしない */
+		if (IsQuestNpc (pCharTmp)) {
+			continue;
+		}
 
 		/* 目の前にはいない？ */
 		if (((CheckCharX (pChar, dwX, pCharTmp->dwX) == FALSE) && ((CheckCharX (pCharTmp, pCharTmp->dwX, dwX) == FALSE))) ||
@@ -260,6 +265,10 @@ void BattleProcCheckPC(PCHARINFO pChar)
 
 		bResult = TRUE;
 		pCharTmp = g_aCharInfo[pData[j]];
+		/* 依頼の見えるNPCは攻撃の相手にしない */
+		if (IsQuestNpc (pCharTmp)) {
+			continue;
+		}
 
 		/* 目の前にはいない？ */
 		if (((CheckCharX (pChar, dwX, pCharTmp->dwX) == FALSE) && ((CheckCharX (pCharTmp, pCharTmp->dwX, dwX) == FALSE))) ||

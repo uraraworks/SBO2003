@@ -306,6 +306,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			SaveEquUserInfo ();
 			SaveMakerInfo ();
 			SaveRecipeInfo ();
+			SaveQuestInfo ();
 			SendCmdSYSMSG (URARASOCK_SENDALL, "SYSTEM:サーバー情報を保存しました。");
 		}
 		break;
@@ -480,6 +481,7 @@ BOOL OnCreate(HWND hWnd)
 	LoadSubGameInfo ();
 	LoadMakerInfo ();
 	LoadRecipeInfo ();
+	LoadQuestInfo ();
 
 	g_pComEfcInfo = new COMEFCINFO[99];
 	ZeroMemory (g_pComEfcInfo, sizeof (COMEFCINFO) * 99);
@@ -587,6 +589,7 @@ void OnDestroy(HWND hWnd)
 	SaveEquUserInfo ();			/* 装備職業情報の保存 */
 	SaveMakerInfo ();			/* 作り手情報の保存 */
 	SaveRecipeInfo ();			/* レシピ情報の保存 */
+	SaveQuestInfo ();			/* 依頼情報の保存 */
 
 	for (i = 0; i < g_aCharInfo.GetSize (); i ++) {
 		SAFE_DELETE_ARRAY (g_aCharInfo[i]->pszSpeech);
@@ -687,6 +690,12 @@ void OnDestroy(HWND hWnd)
 	}
 	g_aRecipeInfo.RemoveAll ();
 
+	for (i = 0; i < g_aQuestInfo.GetSize (); i ++) {
+		SAFE_DELETE (g_aQuestInfo[i]);
+	}
+	g_aQuestInfo.RemoveAll ();
+
+
 	SAFE_DELETE (g_pServerInfoUploadInfo);
 
 	CoUninitialize ();
@@ -712,6 +721,8 @@ void OnDecPlayer(int nNo)
 
 	RecvCmdOnDecPlayer (nNo);		/* 取り引きなど受信処理で覚えている状態を消す */
 	MercenaryOwnerLogout (pChar);	/* 傭兵に持たせた道具を返してもらい、傭兵は帰る */
+	QuestOnDecPlayer (pChar);		/* 依頼の見えるNPCを消す（持ち主がいなくなる時） */
+
 
 	pChar->dwLastBattle		= 0;
 	pChar->dwTargetTblID	= -1;
@@ -933,6 +944,7 @@ void TimerProc(void)
 	if (nCount > 0) {
 		if (g_nProcChar == 0) {
 			RenewMapRun ();
+			QuestSyncProc ();		/* 依頼の見えるNPCを作る・消す（約1秒ごと） */
 		}
 		pChar	= g_aCharInfo[g_nProcChar];
 		bResult = FALSE;

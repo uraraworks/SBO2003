@@ -2942,7 +2942,32 @@ void DrawWeather(void)
 /* 内容：システムメッセージの追加											 */
 /* 日付：2003/05/25															 */
 /* ========================================================================= */
+static void AddSysMsgLine(LPCSTR pszStr, int nLen, COLORREF cl);
+
 void AddSysMsg(LPSTR pszStr, COLORREF cl)
+{
+	/* 画面の幅に収まらない長い文は、何行かに分けて流す（はみ出した分が見切れていた） */
+	const int nMaxWidth = SCRSIZEX / 8 - 2;
+	LPCSTR pszSrc = pszStr;
+	int nRest = strlen (pszStr);
+
+	do {
+		int nLen = nRest;
+		if (SboTextWidth ((LPSTR)pszSrc) > nMaxWidth) {
+			nLen = SboTextFitWidth (pszSrc, nMaxWidth);
+			if (nLen <= 0) {
+				nLen = max (SboTextCharLen (pszSrc), 1);
+			}
+			nLen = min (nLen, nRest);
+		}
+		AddSysMsgLine (pszSrc, nLen, cl);
+		pszSrc += nLen;
+		nRest -= nLen;
+	} while (nRest > 0);
+}
+
+/* 1 行ぶんを流す */
+static void AddSysMsgLine(LPCSTR pszStr, int nLen, COLORREF cl)
 {
 	int i, y = 0, tmp, nCount = g_SysMsgInfo.GetSize ();
 
@@ -2957,7 +2982,7 @@ void AddSysMsg(LPSTR pszStr, COLORREF cl)
 		}
 	}
 
-	int nSize = strlen (pszStr) + 1;
+	int nSize = nLen + 1;
 	LPSTR pszTmp = new char[nSize];
 	ZeroMemory (pszTmp, nSize);
 	CopyMemory (pszTmp, pszStr, nSize - 1);

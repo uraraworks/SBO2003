@@ -3,6 +3,7 @@ out/
 # 作り手・レシピのデータはサーバーデータ。公開リポジトリには入れない（管理ページ・APIで初めて保存した時に SBODATA に作られる）
 /Release/SBODATA/SboDataMakerInfo.dat
 /Release/SBODATA/SboDataRecipeInfo.dat
+/Release/SBODATA/SboDataQuestInfo.dat
 
 # 本番用の配布 zip（deploy/production/make-zip.sh の出力）
 publish/

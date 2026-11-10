@@ -68,6 +68,16 @@
 #define MAX_MAKERNAME		64										/* 作り手の名前の欄のバイト数（終端含む） */
 #define MAX_MAKERMSG		256										/* 作り手の台詞の欄のバイト数（終端含む） */
 #define MAX_JOBMAGIC		32										/* 職業別に呪文を覚えておける職業数（職業IDがこれ未満の職業が対象） */
+#define MAX_QUEST			512										/* 最大依頼数（依頼番号 wID は 1〜511。一度きり依頼のクリア済みの印が 512 ビットなのでこれ未満） */
+#define MAX_QUESTNPC		8										/* 1つの依頼に付けられる「見えるNPC」の数 */
+#define MAX_QUESTSTEP		4										/* 1つの依頼の段の数（段ごとに「いまの目的」を書く） */
+#define MAX_QUESTCOUNT		4										/* 依頼の数の欄（倒した数など。ステップ2で使う） */
+#define MAX_QUESTNAME		64										/* 依頼の名前の欄のバイト数（終端含む） */
+#define MAX_QUESTMSG		256										/* 依頼の説明・台詞の欄のバイト数（終端含む） */
+#define MAX_QUESTGOAL		128										/* 依頼の「いまの目的」の欄のバイト数（終端含む） */
+#define MAX_QUESTLIST		16										/* ギルドの一覧に出す依頼の最大数 */
+#define MAX_QUESTDONEBYTE	(MAX_QUEST / 8)							/* 一度きり依頼のクリア済みの印の大きさ（バイト） */
+#define QUESTNPC_NOSTEP		(0xFF)									/* 見えるNPCで「段を変えない」を表す値（byNextStep）、「どの段でも」を表す値（byStepMax） */
 #define MAX_SUBGAME_WARMEMBER	4									/* 戦場ゲーム最大参加人数 */
 
 /* 入力できる長さ（表示幅。半角1文字=1、全角1文字=2）
@@ -280,6 +290,9 @@ enum {
 	CMD_NPCROUTE,													/* NPCの巡回ルート */
 /* 以下、プレイヤー用（サーバー→本人だけ。サーバーは受け取らない） */
 	CMD_TOWNWARP,													/* 町転送の行き先一覧(サーバー→本人) */
+/* 以下、プレイヤー用（ギルドの仕事依頼。CMD_QUEST はクライアント→サーバーも受ける。管理者用の判定から外すこと） */
+	CMD_QUEST,														/* ギルドの仕事依頼（一覧・受ける・取り消す・渡す。結果はサーバー→クライアント） */
+	CMD_QUESTSTATE,													/* 依頼の進み具合(サーバー→本人。自分と仲間の分) */
 	CMD_MAX
 };
 
@@ -959,6 +972,8 @@ enum {
 
 /* 傭兵（プレイヤーが雇うと出てくる。保存せず、管理画面では選べないように NPCTYPE_MAX より後ろの番号） */
 #define NPCTYPE_MERCENARY	(100)
+/* ギルドの依頼の「見えるNPC」（ワープポータル・宝箱など。依頼を受けた人と仲間にだけ見える。保存せず、動かず、誰ともぶつからない） */
+#define NPCTYPE_QUESTNPC	(101)
 
 /* NPC巡回ルートの回り方 */
 enum {
@@ -2121,6 +2136,12 @@ typedef struct _CHARINFO {
 	BYTE		abyRouteY[MAX_NPCROUTE];							/* 巡回ルートの道しるべ(縦) */
 	DWORD		dwNpcID;											/* NPC番号（保存する NPC ごとに決まった番号。再起動しても変わらない。0 は未設定） */
 	BYTE		byTownWarpCount;									/* 町転送の行き先帳に覚えている町の数 */
+	WORD		wQuestID;											/* 受けているギルドの依頼の番号（QUESTINFO の wID。0=受けていない。保存する） */
+	BYTE		byQuestStep;										/* 依頼の段（0〜。保存する） */
+	WORD		wQuestFlg;											/* 依頼中のフラグ（ビット0=フラグ1〜ビット15=フラグ16。保存する） */
+	WORD		awQuestCount[MAX_QUESTCOUNT];						/* 依頼の数（倒した数など。ステップ2で使う。保存する） */
+	DWORD		dwQuestAcceptTime;									/* 依頼を受けた時刻（time_t の秒。保存する） */
+	BYTE		abyQuestDone[MAX_QUESTDONEBYTE];					/* 一度きりの依頼のクリア済みの印（依頼番号のビット。保存する） */
 	BYTE		abyTownWarpX[MAX_TOWNWARP];							/* 行き先帳の町の座標(X)（新しく記録した順） */
 	BYTE		abyTownWarpY[MAX_TOWNWARP];							/* 行き先帳の町の座標(Y) */
 	DWORD		adwTownWarpMapID[MAX_TOWNWARP];						/* 行き先帳の町のマップID */
@@ -2660,6 +2681,138 @@ typedef struct _CMDPARA_RECIPEMAKE {
 	DWORD		pID;												/* プレイヤーID */
 	DWORD		dwTblID;											/* テーブルID */
 } CMDPARA_RECIPEMAKE, *PCMDPARA_RECIPEMAKE;
+#pragma pack(pop)
+
+/* ========================================================================= */
+/* ギルドの仕事依頼（ステップ1：実験場で流れを試す）							 */
+/*   NPC の台詞 "@gNN"（NN=ギルド番号 00〜99）に話すと、そのギルドの依頼の	 */
+/*   一覧が開く。受けた人（とそのパーティの仲間）にだけ、依頼データに書いた	 */
+/*   「見えるNPC」（ワープポータル・宝箱など。台詞は "@q"）が出る。			 */
+/*   依頼のデータはサーバーだけが持ち（SBODATA/SboDataQuestInfo.dat）、		 */
+/*   クライアントへは一覧を開いた時に必要な分だけ送る。						 */
+/*   進み具合（どの依頼・どの段・フラグ）はキャラごとに保存する。			 */
+/* ========================================================================= */
+
+/* 依頼の状態(QUESTINFO の byState) */
+enum {
+	QUESTSTATE_OFF = 0,											/* 止める（一覧に出ない。受けている人はそのまま続けられる） */
+	QUESTSTATE_ON,												/* 出す */
+};
+
+/* 見えるNPCの種類(QUESTNPCINFO の byKind) */
+enum {
+	QUESTNPCKIND_NONE = 0,										/* なし（出さない） */
+	QUESTNPCKIND_PORTAL,										/* ワープポータル（話すと行き先へ移る） */
+	QUESTNPCKIND_CHEST,											/* 宝箱（話すとアイテムが手に入る） */
+	QUESTNPCKIND_PERSON,										/* 人（台詞だけ） */
+	QUESTNPCKIND_MAX
+};
+
+/* 依頼の見えるNPC */
+typedef struct _QUESTNPCINFO {
+	DWORD		dwMapID;											/* 出るマップID */
+	BYTE		byX;												/* 出る座標(X) */
+	BYTE		byY;												/* 出る座標(Y) */
+	BYTE		byDir;												/* 向き（0=上 1=下 2=左 3=右） */
+	BYTE		byKind;												/* 種類(QUESTNPCKIND_*。0=なし) */
+	WORD		wGrpID;												/* 見た目（キャラ画像ID） */
+	char		szName[MAX_CHARNAMEBUF];							/* 名前 */
+	char		szSpeech[MAX_QUESTMSG];								/* 話した時の台詞（話した人にだけ出る） */
+	BYTE		byStepMin;											/* この段から出る */
+	BYTE		byStepMax;											/* この段まで出る（255=どの段でも） */
+	BYTE		byFlgNeed;											/* このフラグが立っていたら出る（0=条件なし 1〜16） */
+	BYTE		byFlgHide;											/* このフラグが立っていたら消える（0=条件なし 1〜16） */
+	DWORD		dwDestMapID;										/* ポータルの行き先のマップID（今の所、同じマップの別の座標か別のマップ） */
+	BYTE		byDestX;											/* ポータルの行き先(X) */
+	BYTE		byDestY;											/* ポータルの行き先(Y) */
+	WORD		wItem;												/* 宝箱で渡すアイテム（0=なし） */
+	BYTE		bySetFlg;											/* 話したら立てるフラグ（0=なし 1〜16） */
+	BYTE		byNextStep;											/* 話したら段をこれにする（255=変えない） */
+} QUESTNPCINFO, *PQUESTNPCINFO;
+
+/* 依頼情報（サーバーだけが持つ） */
+typedef struct _QUESTINFO {
+	WORD		wID;												/* 依頼番号（1〜511。ほかの依頼と重ならない。クリア済みの印のビット番号にもなる） */
+	BYTE		byState;											/* 状態(QUESTSTATE_*) */
+	BYTE		byGuild;											/* ギルド番号（NPC の台詞 "@gNN" の NN） */
+	WORD		wSort;												/* 一覧の並び順（小さい順。同じなら番号順） */
+	BYTE		byOnce;												/* 1=一度きり（クリアしたら二度と受けられない） */
+	char		szName[MAX_QUESTNAME];								/* 依頼の名前 */
+	char		szExplain[MAX_QUESTMSG];							/* 説明 */
+	char		szMsgAccept[MAX_QUESTMSG];							/* 受けた時の台詞 */
+	char		szMsgDone[MAX_QUESTMSG];							/* 達成した時の台詞 */
+	DWORD		dwGold;												/* 報酬のお金 */
+	DWORD		dwExp;												/* 報酬の経験値 */
+	WORD		wRewardItem;										/* 報酬のアイテム（0=なし） */
+	WORD		wQuestItem;											/* 依頼の品（ギルドで回収する・取り消した時に消す。0=回収しない） */
+	BYTE		byStepCount;										/* 段の数（1〜4）。最後の段に達していて依頼の品を持っていれば、ギルドで渡せる */
+	char		aszGoal[MAX_QUESTSTEP][MAX_QUESTGOAL];				/* 段ごとの「いまの目的」 */
+	QUESTNPCINFO	aNpc[MAX_QUESTNPC];								/* 見えるNPC */
+} QUESTINFO, *PQUESTINFO;
+
+/* CMD_QUEST のサブコマンド(byType) */
+enum {
+	QUESTCMD_LISTREQ = 0,										/* 一覧の要求（クライアント→サーバー。dwNpcTblID=話したギルドの人） */
+	QUESTCMD_LISTITEM,											/* 一覧の1件（サーバー→クライアント。byIndex 番目・全部で byCount 件。0 件なら byCount=0 だけ届く） */
+	QUESTCMD_ACCEPT,											/* 受ける（クライアント→サーバー。wQuestID） */
+	QUESTCMD_CANCEL,											/* 取り消す（クライアント→サーバー） */
+	QUESTCMD_HANDIN,											/* 渡す（クライアント→サーバー） */
+	QUESTCMD_RESULT,											/* 結果（サーバー→クライアント。byResult と szMsg） */
+};
+
+/* 一覧の印(CMDPARA_QUEST の byMark) */
+enum {
+	QUESTMARK_FREE = 0,											/* 受けられる */
+	QUESTMARK_MINE,												/* 受けている */
+	QUESTMARK_LOCKED,											/* 今は受けられない（別の依頼を受けている・仲間が別の依頼を受けている） */
+	QUESTMARK_READY,											/* 受けていて、渡せる（最後の段で、依頼の品を持っている） */
+};
+
+/* 結果(CMDPARA_QUEST の byResult) */
+enum {
+	QUESTRESULT_NG = 0,											/* できなかった */
+	QUESTRESULT_ACCEPT,											/* 受けた */
+	QUESTRESULT_CANCEL,											/* 取り消した */
+	QUESTRESULT_DONE,											/* 達成した（報酬を渡した） */
+};
+
+#pragma pack(push, 1)
+/* ギルドの仕事依頼（送受信とも同じ形） */
+typedef struct _CMDPARA_QUEST {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byType;												/* サブコマンド(QUESTCMD_*) */
+	BYTE		byResult;											/* 結果(QUESTRESULT_*。RESULT) */
+	BYTE		byMark;												/* 一覧の印(QUESTMARK_*。LISTITEM) */
+	BYTE		byIndex;											/* 一覧の何番目か（LISTITEM） */
+	BYTE		byCount;											/* 一覧の全部の件数（LISTITEM） */
+	WORD		wQuestID;											/* 依頼番号 */
+	DWORD		dwTblID;											/* 本人のテーブルID */
+	DWORD		dwNpcTblID;											/* ギルドの人のテーブルID */
+	char		szName[MAX_QUESTNAME];								/* 依頼の名前（LISTITEM） */
+	char		szExplain[MAX_QUESTMSG];							/* 説明（LISTITEM） */
+	char		szGoal[MAX_QUESTGOAL];								/* いまの目的（LISTITEM。受けている依頼だけ） */
+	char		szReward[MAX_QUESTGOAL];							/* 報酬の文（LISTITEM） */
+	char		szMsg[MAX_QUESTMSG];								/* 台詞・お知らせ（RESULT） */
+} CMDPARA_QUEST, *PCMDPARA_QUEST;
+
+/* 依頼の進み具合の1人分 */
+typedef struct _QUESTSTATEENTRY {
+	DWORD		dwTblID;											/* その人のテーブルID */
+	char		szCharName[MAX_CHARNAMEBUF];						/* その人の名前 */
+	WORD		wQuestID;											/* 受けている依頼の番号（0=受けていない） */
+	BYTE		byStep;												/* 段 */
+	char		szQuestName[MAX_QUESTNAME];							/* 依頼の名前 */
+	char		szGoal[MAX_QUESTGOAL];								/* いまの目的 */
+	WORD		awCount[MAX_QUESTCOUNT];							/* 数 */
+} QUESTSTATEENTRY, *PQUESTSTATEENTRY;
+
+/* 依頼の進み具合（サーバー→本人。ログイン時・変わった時・パーティが変わった時）
+   0 番目は本人。続けて、同じパーティの仲間（オンラインの人。依頼を受けている人だけ） */
+typedef struct _CMDPARA_QUESTSTATE {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byCount;											/* 人数 */
+	QUESTSTATEENTRY	aEntry[MAX_PARTYMEMBER];						/* 本人と仲間 */
+} CMDPARA_QUESTSTATE, *PCMDPARA_QUESTSTATE;
 #pragma pack(pop)
 
 /* NPCの巡回ルート(CMD_NPCROUTE)のサブコマンド */

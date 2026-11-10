@@ -15,6 +15,7 @@
  *   E. キャラの巡回（TimerProc） … 実データ＋ログイン中のPCで、状態と送信が変わらないこと
  *   H. キャラ情報の項目消し     … 他人・NPC の情報から、画面に要らない項目が消えること（本人・管理者は全部）
  *   K. 傭兵                      … 道さがしの表が前の方法と同じ結果か・敵探しの速さ・道具を持たせる取り引き
+ *   M. ギルドの依頼              … 受ける・見えるNPCが持ち主と仲間にだけ届く・宝箱・ポータル・渡して報酬・保存して読み直し
  */
 #include "stdafx.h"
 #include "SboSvrRecvCmd.h"
@@ -561,6 +562,7 @@ static void PrintTownWarp(const char *pszLabel, PCHARINFO pChar)
 static void TestShipBed(const std::vector<int> &aLogin);
 static void TestMercenary(const std::vector<int> &aLogin);
 static void TestTailMapChg(const std::vector<int> &aLogin);
+static void TestQuest(const std::vector<int> &aLogin);
 
 static void TestTownWarp(const std::vector<int> &aLogin)
 {
@@ -981,6 +983,8 @@ static void TestWorld(void)
 	TestMercenary(aLogin);
 	/* L. ついていく列のマップ間移動で暗転が1回だけ */
 	TestTailMapChg(aLogin);
+	/* M. ギルドの依頼 */
+	TestQuest(aLogin);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1606,6 +1610,409 @@ static void TestTailMapChg(const std::vector<int> &aLogin)
 		p->dwTailBackTblID = adwBack[i][4];
 		AddTblNoPC((int)p->dwTblID);
 	}
+}
+
+/* ------------------------------------------------------------------------- */
+/* M. ギルドの依頼															 */
+/*    受ける → 見えるNPCが持ち主と仲間にだけ届く・ぶつからない・宝箱・ポータル・	 */
+/*    渡して報酬・別の依頼の人は仲間になれない・取り消し・保存して読み直し	 */
+/* ------------------------------------------------------------------------- */
+EM_JS(int, MockCalls, (int nConn), {
+	return Module['sboNet'].calls(nConn);
+});
+EM_JS(int, MockCmdCount, (int nConn, int nCmd), {
+	return Module['sboNet'].cmdCount(nConn, nCmd);
+});
+extern BOOL SaveCharInfo(void);
+extern BOOL LoadCharInfo(void);
+extern BOOL SaveQuestInfo(void);
+extern BOOL LoadQuestInfo(void);
+
+static void QuestMovePC(PCHARINFO p, int nMap, int x, int y)
+{
+	DeleteTblNoPC((int)p->dwTblID);
+	p->dwMapID = (DWORD)nMap;
+	p->dwX = p->dwXBack = (DWORD)x;
+	p->dwY = p->dwYBack = (DWORD)y;
+	p->byCharState = CHARSTATE_MOVE;
+	if (p->wHP == 0) p->wHP = 10;
+	AddTblNoPC((int)p->dwTblID);
+}
+
+static void QuestSendCmd(PCHARINFO p, BYTE byType, WORD wID, DWORD dwNpc)
+{
+	CMDPARA_QUEST Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_QUEST;
+	Para.byType = byType;
+	Para.wQuestID = wID;
+	Para.dwTblID = p->dwTblID;
+	Para.dwNpcTblID = dwNpc;
+	TestRecv(p, &Para, sizeof(Para));
+}
+
+static void QuestSendTalk(PCHARINFO p, DWORD dwNpcTbl)
+{
+	CMDPARA_DATA1 Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_TALKRAND;
+	Para.pID = p->pID;
+	Para.dwTblID = dwNpcTbl;
+	TestRecv(p, &Para, sizeof(Para));
+}
+
+static void QuestSendParty(PCHARINFO pFrom, PCHARINFO pTo, BYTE bySub)
+{
+	CMDPARA_PARTYCMD Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_PARTY;
+	Para.byCmdSub = bySub;
+	Para.dwTblIDFrom = pFrom->dwTblID;
+	Para.dwTblIDTo = pTo->dwTblID;
+	TestRecv(pFrom, &Para, sizeof(Para));
+}
+
+static int QuestCountItem(PCHARINFO p, WORD wItem)
+{
+	int n = 0;
+	for (int i = 0; i < MAX_MYITEM; i ++) if (p->waItem[i] == wItem) n ++;
+	return n;
+}
+
+/* 持ち主が見える見えるNPC（種類 byKind。持ち主に見える分だけ）を探す */
+static PCHARINFO QuestFindCopy(PCHARINFO pViewer, BYTE byKindWanted)
+{
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+		if (p->byNpcType == NPCTYPE_QUESTNPC && p->wGrpID == (WORD)byKindWanted && IsCharVisibleTo(p, pViewer)) {
+			return p;
+		}
+	}
+	return NULL;
+}
+
+static int QuestCountCopies(void)
+{
+	int n = 0;
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		if (g_aCharInfo[i]->byNpcType == NPCTYPE_QUESTNPC) n ++;
+	}
+	return n;
+}
+
+static void TestQuest(const std::vector<int> &aLogin)
+{
+	printf("== M. Quest ==\n");
+	if (aLogin.size() < 4) {
+		return;
+	}
+	PCHARINFO pOwner = g_aCharInfo[aLogin[0]], pMember = g_aCharInfo[aLogin[1]];
+	PCHARINFO pOther = g_aCharInfo[aLogin[2]], pP4 = g_aCharInfo[aLogin[3]];
+	PCHARINFO apPC[4] = { pOwner, pMember, pOther, pP4 };
+	int nMap = (int)pOwner->dwMapID;
+	PMAPINFO pMap = g_aMapInfo[nMap];
+	DWORD dwMapBack[4], dwXBack[4], dwYBack[4];
+	WORD awItemBack[4][MAX_MYITEM];
+	DWORD dwGoldBack[4];
+	for (int i = 0; i < 4; i ++) {
+		dwMapBack[i] = apPC[i]->dwMapID; dwXBack[i] = apPC[i]->dwX; dwYBack[i] = apPC[i]->dwY;
+		memcpy(awItemBack[i], apPC[i]->waItem, sizeof(awItemBack[i]));
+		dwGoldBack[i] = apPC[i]->dwGold;
+		ZeroMemory(apPC[i]->waItem, sizeof(apPC[i]->waItem));
+		apPC[i]->byAdminLV = ADMINLV_USER;
+		apPC[i]->dwPartyID = 0;
+		apPC[i]->wQuestID = 0;
+		apPC[i]->byQuestStep = 0;
+		apPC[i]->wQuestFlg = 0;
+	}
+
+	/* 空いているマスを 8 つ（持ち主の近く） */
+	std::vector<std::pair<int, int> > aCell;
+	for (int r = 1; r < 12 && aCell.size() < 8; r ++) {
+		for (int dy = -r; dy <= r && aCell.size() < 8; dy ++) {
+			for (int dx = -r; dx <= r && aCell.size() < 8; dx ++) {
+				if (abs(dx) != r && abs(dy) != r) continue;
+				int x = (int)pOwner->dwX + dx, y = (int)pOwner->dwY + dy;
+				if (x < 3 || y < 3 || x >= pMap->nCX - 3 || y >= pMap->nCY - 3) continue;
+				if (!CheckCharBlock((DWORD)nMap, x, y) || CheckCharBlockNPC((DWORD)nMap, x, y) != (DWORD)-1 ||
+					CheckCharBlockPC((DWORD)nMap, x, y) != (DWORD)-1) continue;
+				if (dx == 0 && dy == 0) continue;
+				aCell.push_back(std::make_pair(x, y));
+			}
+		}
+	}
+	printf("quest map=%d cells=%d\n", nMap, (int)aCell.size());
+	if (aCell.size() < 8) {
+		return;
+	}
+
+	/* 使うアイテム（0 以外で名前があるもの 2 つ） */
+	WORD wItemQ = 0, wItemR = 0;
+	for (int i = 1; i < g_aItemInfo.GetSize(); i ++) {
+		if (g_aItemInfo[i]->szName[0] == 0) continue;
+		if (!wItemQ) wItemQ = (WORD)i; else if (!wItemR) { wItemR = (WORD)i; break; }
+	}
+
+	/* 依頼 1（一度きり・2 段・見えるNPC 3 つ）・依頼 2・3（見えるNPC なし） */
+	g_aQuestInfo.RemoveAll();
+	{
+		PQUESTINFO p = new QUESTINFO;
+		ZeroMemory(p, sizeof(*p));
+		p->wID = 1; p->byState = QUESTSTATE_ON; p->byGuild = 0; p->wSort = 1; p->byOnce = 1;
+		strcpy(p->szName, "テスト依頼1");
+		strcpy(p->szExplain, "宝箱の品を持ち帰る");
+		strcpy(p->szMsgAccept, "お願いします");
+		strcpy(p->szMsgDone, "ありがとう");
+		p->dwGold = 100; p->dwExp = 10; p->wRewardItem = wItemR; p->wQuestItem = wItemQ; p->byStepCount = 2;
+		strcpy(p->aszGoal[0], "宝箱を探す");
+		strcpy(p->aszGoal[1], "ギルドへ持ち帰る");
+		for (int k = 0; k < MAX_QUESTNPC; k ++) { p->aNpc[k].byStepMax = QUESTNPC_NOSTEP; p->aNpc[k].byNextStep = QUESTNPC_NOSTEP; }
+		/* 0: ポータル（どの段でも） grp=1 */
+		p->aNpc[0].dwMapID = pMap->dwID; p->aNpc[0].byX = (BYTE)aCell[0].first; p->aNpc[0].byY = (BYTE)aCell[0].second;
+		p->aNpc[0].byKind = QUESTNPCKIND_PORTAL; p->aNpc[0].wGrpID = 1; strcpy(p->aNpc[0].szName, "ポータル");
+		p->aNpc[0].dwDestMapID = pMap->dwID; p->aNpc[0].byDestX = (BYTE)aCell[3].first; p->aNpc[0].byDestY = (BYTE)aCell[3].second;
+		/* 1: 宝箱（0 段目だけ。話すと旗1・次の段へ） grp=2 */
+		p->aNpc[1].dwMapID = pMap->dwID; p->aNpc[1].byX = (BYTE)aCell[1].first; p->aNpc[1].byY = (BYTE)aCell[1].second;
+		p->aNpc[1].byKind = QUESTNPCKIND_CHEST; p->aNpc[1].wGrpID = 2; strcpy(p->aNpc[1].szName, "宝箱");
+		strcpy(p->aNpc[1].szSpeech, "箱をあけた");
+		p->aNpc[1].byStepMin = 0; p->aNpc[1].byStepMax = 0; p->aNpc[1].wItem = wItemQ; p->aNpc[1].bySetFlg = 1; p->aNpc[1].byNextStep = 1;
+		/* 2: 人（旗1が立ってから） grp=3 */
+		p->aNpc[2].dwMapID = pMap->dwID; p->aNpc[2].byX = (BYTE)aCell[2].first; p->aNpc[2].byY = (BYTE)aCell[2].second;
+		p->aNpc[2].byKind = QUESTNPCKIND_PERSON; p->aNpc[2].wGrpID = 3; strcpy(p->aNpc[2].szName, "旅人");
+		strcpy(p->aNpc[2].szSpeech, "よくやった"); p->aNpc[2].byStepMin = 1; p->aNpc[2].byFlgNeed = 1;
+		g_aQuestInfo.Add(p);
+		for (int q = 2; q <= 3; q ++) {
+			p = new QUESTINFO;
+			ZeroMemory(p, sizeof(*p));
+			p->wID = (WORD)q; p->byState = QUESTSTATE_ON; p->byGuild = 0; p->wSort = (WORD)q; p->byStepCount = 1;
+			sprintf(p->szName, "テスト依頼%d", q);
+			g_aQuestInfo.Add(p);
+		}
+	}
+
+	/* ギルドの人を持ち主の近くに置く */
+	PCHARINFO pGuild = new CHARINFO;
+	ZeroMemory((PBYTE)pGuild, sizeof(CHARINFO));
+	pGuild->byNpcType = NPCTYPE_NOMOVE;
+	SetInitCharData(pGuild);
+	pGuild->byGameState = GAMESTATE_NPC;
+	pGuild->byCharState = CHARSTATE_MOVE;
+	pGuild->dwMapID = nMap;
+	pGuild->dwX = pGuild->dwXBack = pGuild->dwStartX = (DWORD)aCell[4].first;
+	pGuild->dwY = pGuild->dwYBack = pGuild->dwStartY = (DWORD)aCell[4].second;
+	strcpy(pGuild->szName, "ギルド受付");
+	pGuild->pszNpcSpeech = new char[8];
+	strcpy(pGuild->pszNpcSpeech, "@g0");
+	pGuild = AddChar(pGuild);
+	pGuild->pID = pGuild->dwTblID + 1;
+	{
+		CCharProcBase CharProcBase;
+		CharProcBase.SetProc(pGuild);
+	}
+	DWORD dwGuild = pGuild->dwTblID;
+
+	/* みんなを画面内に集める */
+	QuestMovePC(pOwner, nMap, aCell[5].first, aCell[5].second);
+	QuestMovePC(pMember, nMap, aCell[6].first, aCell[6].second);
+	QuestMovePC(pOther, nMap, aCell[7].first, aCell[7].second);
+	QuestMovePC(pP4, nMap, aCell[7].first, aCell[7].second);
+	int anConn[4];
+	for (int i = 0; i < 4; i ++) anConn[i] = 1000 + i;		/* ログインさせた順に 1000 番から（TestWorld） */
+
+	/* 持ち主と仲間がパーティを組む */
+	QuestSendParty(pOwner, pMember, CMDPARTY_JOIN);
+	QuestSendParty(pMember, pOwner, CMDPARTY_JOINOK);
+	printf("quest party same=%d nonzero=%d\n", (int)(pOwner->dwPartyID == pMember->dwPartyID), (int)(pOwner->dwPartyID != 0));
+
+	/* ギルドの人に話すと一覧が届く（依頼 1・2・3） */
+	QuestMovePC(pOwner, nMap, aCell[4].first, aCell[4].second + 1);
+	int nList0 = MockCmdCount(anConn[0], CMD_QUEST);
+	QuestSendTalk(pOwner, dwGuild);
+	printf("quest list packets=%d\n", MockCmdCount(anConn[0], CMD_QUEST) - nList0);
+
+	/* 受ける：見えるNPCは持ち主と仲間にだけ届く（関係ない人には 1 つも届かない） */
+	int nInfo0[4], nCalls0[4];
+	for (int i = 0; i < 4; i ++) { nInfo0[i] = MockCmdCount(anConn[i], CMD_CHARINFO); nCalls0[i] = MockCalls(anConn[i]); }
+	QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 1, dwGuild);
+	printf("quest accept id=%u step=%u copies=%d\n", pOwner->wQuestID, pOwner->byQuestStep, QuestCountCopies());
+	printf("quest sent charinfo owner=%d member=%d other=%d p4=%d other_calls=%d queststate owner>0=%d member>0=%d\n",
+		MockCmdCount(anConn[0], CMD_CHARINFO) - nInfo0[0], MockCmdCount(anConn[1], CMD_CHARINFO) - nInfo0[1],
+		MockCmdCount(anConn[2], CMD_CHARINFO) - nInfo0[2], MockCmdCount(anConn[3], CMD_CHARINFO) - nInfo0[3],
+		MockCalls(anConn[2]) - nCalls0[2],
+		(int)(MockCmdCount(anConn[0], CMD_QUESTSTATE) > 0), (int)(MockCmdCount(anConn[1], CMD_QUESTSTATE) > 0));
+
+	/* 仲間も同じ依頼を受ける：自分の分だけ見える。管理者には全部見える */
+	QuestMovePC(pMember, nMap, aCell[4].first + 1, aCell[4].second);
+	QuestSendCmd(pMember, QUESTCMD_ACCEPT, 1, dwGuild);
+	QuestMovePC(pMember, nMap, aCell[6].first, aCell[6].second);
+	printf("quest member accept id=%u copies=%d\n", pMember->wQuestID, QuestCountCopies());
+	{
+		CHARINFO Admin = *pOther;
+		Admin.byAdminLV = ADMINLV_ADMINISTRATOR;
+		for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+			PCHARINFO p = g_aCharInfo[i];
+			if (p->byNpcType != NPCTYPE_QUESTNPC) continue;
+			printf("quest copy grp=%u vis owner=%d member=%d other=%d admin=%d block=%d\n", p->wGrpID,
+				IsCharVisibleTo(p, pOwner), IsCharVisibleTo(p, pMember), IsCharVisibleTo(p, pOther), IsCharVisibleTo(p, &Admin),
+				(int)CheckCharBlockNPC((DWORD)nMap, p->dwX, p->dwY));
+		}
+	}
+
+	/* 宝箱：持ち主が話す → 品物・旗1・次の段。仲間（別の人の宝箱）は見えないので何も起きない */
+	PCHARINFO pChest = QuestFindCopy(pOwner, 2);
+	if (pChest) {
+		QuestMovePC(pOwner, nMap, (int)pChest->dwX, (int)pChest->dwY + 1);
+		QuestSendTalk(pOwner, pChest->dwTblID);
+		printf("quest chest item=%d flag1=%d step=%u person=%d chest=%d\n", QuestCountItem(pOwner, wItemQ), QuestFlagCheck(pOwner, 1),
+			pOwner->byQuestStep, (QuestFindCopy(pOwner, 3) != NULL), (QuestFindCopy(pOwner, 2) != NULL));
+	} else {
+		printf("quest chest not found\n");
+	}
+	printf("quest member item=%d step=%u\n", QuestCountItem(pMember, wItemQ), pMember->byQuestStep);
+
+	/* ポータル：話すと行き先へ移る */
+	PCHARINFO pPortal = QuestFindCopy(pOwner, 1);
+	if (pPortal) {
+		QuestMovePC(pOwner, nMap, (int)pPortal->dwX, (int)pPortal->dwY + 1);
+		QuestSendTalk(pOwner, pPortal->dwTblID);
+		printf("quest portal to dest=%d\n", (int)(pOwner->dwX == (DWORD)aCell[3].first && pOwner->dwY == (DWORD)aCell[3].second));
+
+		/* 歩いてポータルに乗っても移る（話さなくてよい） */
+		pPortal = QuestFindCopy(pOwner, 1);
+		if (pPortal) {
+			QuestMovePC(pOwner, nMap, (int)pPortal->dwX, (int)pPortal->dwY + 1);
+			CMDPARA_CHARPOS PosPara;
+			ZeroMemory(&PosPara, sizeof(PosPara));
+			PosPara.byCmd = CMD_CHARPOS;
+			PosPara.dwTblID = pOwner->dwTblID;
+			PosPara.dwMapID = pOwner->dwMapID;
+			PosPara.byDirection = 1;
+			PosPara.byX = (BYTE)pPortal->dwX;
+			PosPara.byY = (BYTE)pPortal->dwY;
+			TestRecv(pOwner, &PosPara, sizeof(PosPara));
+			printf("quest portal step to dest=%d\n", (int)(pOwner->dwX == (DWORD)aCell[3].first && pOwner->dwY == (DWORD)aCell[3].second));
+		}
+	}
+
+	/* ギルドで渡す：品物を回収して報酬（お金・経験値・アイテム）。一度きりなので済みの印が付く */
+	QuestMovePC(pOwner, nMap, aCell[4].first, aCell[4].second + 1);
+	DWORD dwGold0 = pOwner->dwGold, dwExp0 = pOwner->dwExp;
+	QuestSendCmd(pOwner, QUESTCMD_HANDIN, 0, dwGuild);
+	printf("quest handin quest=%u gold+=%d exp>0=%d item_q=%d item_r=%d done=%d copies=%d\n", pOwner->wQuestID, (int)(pOwner->dwGold - dwGold0),
+		(int)(pOwner->dwExp != dwExp0), QuestCountItem(pOwner, wItemQ), QuestCountItem(pOwner, wItemR), (int)QuestIsDone(pOwner, 1), QuestCountCopies());
+	QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 1, dwGuild);
+	printf("quest reaccept id=%u\n", pOwner->wQuestID);
+
+	/* 仲間が別の依頼を受けているなら、同じ依頼しか受けられない */
+	QuestMovePC(pMember, nMap, aCell[4].first + 1, aCell[4].second);
+	QuestSendCmd(pMember, QUESTCMD_CANCEL, 0, dwGuild);
+	printf("quest cancel member q=%u item=%d flag1=%d copies=%d\n", pMember->wQuestID, QuestCountItem(pMember, wItemQ), QuestFlagCheck(pMember, 1), QuestCountCopies());
+	QuestSendCmd(pMember, QUESTCMD_ACCEPT, 2, dwGuild);
+	QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 3, dwGuild);
+	printf("quest party-rule member=%u owner_q3=%u", pMember->wQuestID, pOwner->wQuestID);
+	QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 2, dwGuild);
+	printf(" owner_q2=%u\n", pOwner->wQuestID);
+	QuestSendCmd(pOwner, QUESTCMD_CANCEL, 0, dwGuild);
+	QuestSendCmd(pMember, QUESTCMD_CANCEL, 0, dwGuild);
+
+	/* 別の依頼を受けている人同士は仲間になれない */
+	QuestSendParty(pOwner, pOwner, CMDPARTY_BREAKUP);
+	printf("quest break owner_party=%u member_party=%u\n", pOwner->dwPartyID, pMember->dwPartyID);
+	QuestMovePC(pOther, nMap, aCell[4].first + 1, aCell[4].second);
+	QuestMovePC(pP4, nMap, aCell[4].first - 1, aCell[4].second);
+	QuestSendCmd(pOther, QUESTCMD_ACCEPT, 2, dwGuild);
+	QuestSendCmd(pP4, QUESTCMD_ACCEPT, 3, dwGuild);
+	printf("quest other=%u p4=%u conflict=%d\n", pOther->wQuestID, pP4->wQuestID, (int)QuestPartyConflict(pOther, pP4));
+	QuestSendParty(pOther, pP4, CMDPARTY_JOIN);
+	QuestSendParty(pP4, pOther, CMDPARTY_JOINOK);
+	printf("quest join refused other_party=%u p4_party=%u\n", pOther->dwPartyID, pP4->dwPartyID);
+
+	/* 取り消し：依頼の品・旗・数が消え、罰は無い（依頼 1 は依頼の品がある） */
+	QuestSendCmd(pOther, QUESTCMD_CANCEL, 0, dwGuild);
+	QuestSendCmd(pP4, QUESTCMD_CANCEL, 0, dwGuild);
+	QuestSendCmd(pOther, QUESTCMD_ACCEPT, 1, dwGuild);
+	AddCharItem(pOther->dwTblID, wItemQ);
+	AddLeaveItem(pOther, wItemQ);
+	pOther->wQuestFlg = 5;
+	pOther->awQuestCount[1] = 3;
+	QuestSendCmd(pOther, QUESTCMD_CANCEL, 0, dwGuild);
+	{
+		int nLeave = 0;
+		if (pOther->dwLeaveID && pOther->dwLeaveID < (DWORD)g_aLeaveInfo.GetSize()) {
+			PLEAVEINFO pL = g_aLeaveInfo[pOther->dwLeaveID];
+			for (int i = 0; i < pL->byCount; i ++) if (pL->waItem[i] == wItemQ) nLeave += pL->byItemCount[i];
+		}
+		printf("quest cancel other q=%u flg=%u count1=%u item=%d leave=%d done=%d\n", pOther->wQuestID, pOther->wQuestFlg, pOther->awQuestCount[1],
+			QuestCountItem(pOther, wItemQ), nLeave, (int)QuestIsDone(pOther, 1));
+	}
+	/* ギルドから離れていたら取り消せない */
+	QuestSendCmd(pOther, QUESTCMD_ACCEPT, 2, dwGuild);
+	QuestMovePC(pOther, nMap, aCell[7].first, aCell[7].second);
+	QuestSendCmd(pOther, QUESTCMD_CANCEL, 0, dwGuild);
+	printf("quest far cancel q=%u\n", pOther->wQuestID);
+
+	/* 保存して読み直す：依頼情報（見えるNPC もそのまま） */
+	{
+		std::vector<QUESTINFO> aBak;
+		for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) aBak.push_back(*g_aQuestInfo[i]);
+		SaveQuestInfo();
+		for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) delete g_aQuestInfo[i];
+		g_aQuestInfo.RemoveAll();
+		LoadQuestInfo();
+		int nSame = (g_aQuestInfo.GetSize() == (int)aBak.size());
+		for (int i = 0; nSame && i < g_aQuestInfo.GetSize(); i ++) {
+			if (memcmp(g_aQuestInfo[i], &aBak[i], sizeof(QUESTINFO)) != 0) nSame = 0;
+		}
+		printf("quest info reload count=%d same=%d\n", g_aQuestInfo.GetSize(), nSame);
+	}
+
+	/* 保存して読み直す：キャラの進み具合（段・旗・数・済みの印） */
+	pOther->wQuestID = 2; pOther->byQuestStep = 1; pOther->wQuestFlg = 0x1234;
+	pOther->awQuestCount[0] = 1; pOther->awQuestCount[1] = 22; pOther->awQuestCount[2] = 333; pOther->awQuestCount[3] = 4444;
+	pOther->dwQuestAcceptTime = 1700000000;
+	ZeroMemory(pOther->abyQuestDone, sizeof(pOther->abyQuestDone));
+	pOther->abyQuestDone[0] = 0x06; pOther->abyQuestDone[63] = 0x80;
+	strcpy(pOther->szAcc, "questtest");
+	strcpy(pOther->szName, "依頼テスト");
+	BOOL bSaved = SaveCharInfo();
+	BOOL bLoaded = LoadCharInfo();
+	printf("quest char save=%d load=%d\n", (int)bSaved, (int)bLoaded);
+	PCHARINFO pLoaded = NULL;
+	/* 読み込んだキャラは空き枠に入ることもあるので、元の持ち主以外で探す */
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		if (g_aCharInfo[i] != pOther && strcmp(g_aCharInfo[i]->szAcc, "questtest") == 0) pLoaded = g_aCharInfo[i];
+	}
+	if (pLoaded) {
+		printf("quest char reload id=%u step=%u flg=%u counts=%u,%u,%u,%u time=%u done=%02x,%02x\n", pLoaded->wQuestID, pLoaded->byQuestStep,
+			pLoaded->wQuestFlg, pLoaded->awQuestCount[0], pLoaded->awQuestCount[1], pLoaded->awQuestCount[2], pLoaded->awQuestCount[3],
+			pLoaded->dwQuestAcceptTime, pLoaded->abyQuestDone[0], pLoaded->abyQuestDone[63]);
+	} else {
+		printf("quest char reload not found\n");
+	}
+	/* 見えるNPC（保存しない）は保存データに入らない */
+	{
+		int nQuestNpcLoaded = 0;
+		for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+			PCHARINFO p = g_aCharInfo[i];
+			/* ここまでに作ったもの（持ち主が見える分）を除き、読み込みで増えた見えるNPC が無いこと */
+			if (p->byNpcType == NPCTYPE_QUESTNPC && p->pProc == NULL) nQuestNpcLoaded ++;
+		}
+		printf("quest npc loaded=%d\n", nQuestNpcLoaded);
+	}
+
+	/* 片付け */
+	pOther->szAcc[0] = 0;
+	for (int i = 0; i < 4; i ++) {
+		apPC[i]->wQuestID = 0; apPC[i]->byQuestStep = 0; apPC[i]->wQuestFlg = 0;
+		ZeroMemory(apPC[i]->awQuestCount, sizeof(apPC[i]->awQuestCount));
+		ZeroMemory(apPC[i]->abyQuestDone, sizeof(apPC[i]->abyQuestDone));
+		apPC[i]->dwPartyID = 0;
+		memcpy(apPC[i]->waItem, awItemBack[i], sizeof(awItemBack[i]));
+		apPC[i]->dwGold = dwGoldBack[i];
+		QuestMovePC(apPC[i], (int)dwMapBack[i], (int)dwXBack[i], (int)dwYBack[i]);
+	}
+	QuestSyncAll();
+	printf("quest end copies=%d\n", QuestCountCopies());
 }
 
 int main(int argc, char **argv)
