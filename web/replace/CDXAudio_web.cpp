@@ -160,8 +160,8 @@ EM_JS(void, SboSeDelete, (int nId), {
 	delete se.nodes[nId];
 });
 
-/* 鳴らす（nLoops: 0=1回、n=n回繰り返す、-1=ずっと。bPrimary: プライマリで鳴らす） */
-EM_JS(int, SboSePlay, (int nId, int nLoops, int bPrimary), {
+/* 鳴らす（nLoops: 0=1回、n=n回繰り返す、-1=ずっと。bPrimary: プライマリで鳴らす。nDelayMs: この時間だけ後に鳴らす） */
+EM_JS(int, SboSePlay, (int nId, int nLoops, int bPrimary, int nDelayMs), {
 	var se = Module.SboSe;
 	if (!se || !se.ctx || !se.bufs[nId]) {
 		return 0;
@@ -191,7 +191,7 @@ EM_JS(int, SboSePlay, (int nId, int nLoops, int bPrimary), {
 	var node = ctx.createBufferSource();
 	node.buffer = buf;
 	node.connect(bPrimary ? se.gainPri : se.gainSec);
-	var now = ctx.currentTime;
+	var now = ctx.currentTime + Math.max(nDelayMs, 0) / 1000;
 	if (nLoops != 0) {
 		node.loop = true;
 	}
@@ -409,17 +409,17 @@ BOOL CDXAudio::PlayPrimary(IDirectMusicSegment8 **pSeg)
 	if (!s_bOpen || nId == 0) {
 		return FALSE;
 	}
-	return SboSePlay(nId, GetLoops(nId), 1) ? TRUE : FALSE;
+	return SboSePlay(nId, GetLoops(nId), 1, 0) ? TRUE : FALSE;
 }
 
-BOOL CDXAudio::PlaySecoundary(IDirectMusicSegment8 **pSeg)
+BOOL CDXAudio::PlaySecoundary(IDirectMusicSegment8 **pSeg, DWORD dwDelayMs)
 {
 	int nId = ToId(pSeg);
 	if (!s_bOpen || nId == 0) {
 		return FALSE;
 	}
 	/* 同じ音を重ねて鳴らせる */
-	return SboSePlay(nId, GetLoops(nId), 0) ? TRUE : FALSE;
+	return SboSePlay(nId, GetLoops(nId), 0, (int)dwDelayMs) ? TRUE : FALSE;
 }
 
 void CDXAudio::SetVolPrimary(long lVol)

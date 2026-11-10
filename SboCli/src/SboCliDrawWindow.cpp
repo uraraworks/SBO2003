@@ -254,6 +254,7 @@ void DrawWindow(CImg32 *pDib, int x, int y)
 					break;
 				default:
 					pWnd->dwTimeDrawStart = 0;
+					pWnd->nMsgDrawLen = 0;		/* メッセージは文字の色が変わるので全部描き直す */
 					break;
 				}
 			}
@@ -951,13 +952,22 @@ void DrawWindowSPEECH(PWNDINFO pWnd)
 /* 内容：ウィンドウの描画(メッセージ)										 */
 /* 日付：2003/06/11															 */
 /* ========================================================================= */
+/* メッセージの先頭 nLen バイトの目印（描き足してよいか確かめる用） */
+static DWORD MsgDrawHash(LPCSTR pszMsg, int nLen)
+{
+	DWORD dwHash = 2166136261u;
+	for (int i = 0; i < nLen; i ++) {
+		dwHash = (dwHash ^ (BYTE)pszMsg[i]) * 16777619u;
+	}
+	return dwHash;
+}
+
 void DrawWindowMSG(PWNDINFO pWnd)
 {
 	if (pWnd->dwTimeDrawStart) {
 		return;
 	}
 
-	DrawWindowFrame (pWnd);
 	char szTmp[8];			/* 1 文字ぶん（UTF-8 でも入る大きさ） */
 	int nChar;
 	HDC hDC = pWnd->pDib->Lock ();
@@ -970,6 +980,7 @@ void DrawWindowMSG(PWNDINFO pWnd)
 	 * そこで1回目は描かずに何行ずれるかだけ数え、2回目にずれた後の位置へ直接描く */
 	int i, x, y, nCount, nPass;
 	int nScrollTotal = 0;		/* 全部描き終わった時点でずれた行数 */
+	int nDrawFrom = 0;			/* ここ（pszMsg のバイト位置）より前の文字は描いてあるので描かない */
 	for (nPass = 0; nPass < 2; nPass ++) {
 		BOOL bDraw = (nPass == 1);
 		int nScroll = 0;		/* その文字を描く時点でずれた行数 */
@@ -1038,7 +1049,7 @@ void DrawWindowMSG(PWNDINFO pWnd)
 				y = pWnd->nCy - 32;
 				nCount = pWnd->nCy / 16 - 3;
 			}
-			if (bDraw) {
+			if (bDraw && (i - (nChar - 1) >= nDrawFrom)) {
 				/* この後にずれる行数だけ上に描く。上へはみ出す行は描かない */
 				int yDraw = y - (nScrollTotal - nScroll) * 16;
 				if (yDraw >= 16) {
@@ -1049,6 +1060,29 @@ void DrawWindowMSG(PWNDINFO pWnd)
 			x += 8 * SboTextCharWidth (szTmp);
 		}
 		nScrollTotal = nScroll;
+
+		if (nPass == 0) {
+			/* 1 文字ずつ流している途中で、前に描いた後ろへ文字が増えただけなら、増えた文字だけ描き足す。
+			   これまでは 1 文字増えるたびに枠から全部の文字を描き直していて、
+			   長いメッセージほど重く、スマホでは文字の流れや効果音が遅れていた */
+			nDrawFrom = 0;
+			if ((pWnd->nMsgDrawLen > 0) && (pWnd->nMsgDrawLen <= pWnd->nData1) &&
+					(pWnd->nData2 == 0) && (pWnd->nMsgDrawScroll == nScrollTotal) &&
+					(pWnd->dwMsgDrawHash == MsgDrawHash (pWnd->pszMsg, pWnd->nMsgDrawLen))) {
+				nDrawFrom = pWnd->nMsgDrawLen;
+			} else {
+				DrawWindowFrame (pWnd);
+			}
+		}
+	}
+
+	/* 入力待ちの印は点滅で消すので、待っている間は毎回全部描き直す */
+	if ((pWnd->nData2 == 0) && (pWnd->nData1 > 0)) {
+		pWnd->nMsgDrawLen		= pWnd->nData1;
+		pWnd->nMsgDrawScroll	= nScrollTotal;
+		pWnd->dwMsgDrawHash		= MsgDrawHash (pWnd->pszMsg, pWnd->nData1);
+	} else {
+		pWnd->nMsgDrawLen = 0;
 	}
 
 	SelectObject (hDC, hFontOld);

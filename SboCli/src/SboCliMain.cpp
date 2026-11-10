@@ -1878,13 +1878,17 @@ void TimerProc(void)
 			if (pWnd && pWnd->nData2 == 0) {
 				if (dwTime > pWnd->dwTime + 25) {
 					DWORD j, dwTmp;
+					/* 25ms に 1 文字ずつ進める。描画が遅くて 1 回の間が空いた時は、空いた分の文字をまとめて進める。
+					   以前は余りの時間を捨てていたので、1 回の間が 25〜50ms の時（スマホなど）は
+					   1 回に 1 文字しか進まず、文字の流れが遅くなっていた。余りは次へ持ち越す */
 					if (pWnd->dwTime == 0) {
 						dwTmp = 1;
+						pWnd->dwTime = dwTime;
 					} else {
 						dwTmp = (dwTime - pWnd->dwTime) / 25;
 						dwTmp = max (dwTmp, 1);
+						pWnd->dwTime += dwTmp * 25;
 					}
-					pWnd->dwTime = timeGetTime ();
 					if (pWnd->pszMsg) {
 						int nLen = strlen (pWnd->pszMsg);
 						for (j = 0; j < dwTmp; j ++) {
@@ -3095,7 +3099,19 @@ BOOL MsgProc(PWNDINFO pWnd)
 	if (pWnd->pszMsg[pWnd->nData1] != '@') {
 		/* 音出す指定？ */
 		if (pWnd->byData1 && pWnd->pszMsg[pWnd->nData1] != ' ') {
-			DXAudio.PlaySecoundary (&aSoundTbl[SOUND_MSG]);
+			/* 1 文字の音は前の音から 25ms 以上空けて鳴らす。描画が遅い時は 1 回に何文字か進むので、
+			   そのまま鳴らすと重なって 1 回にしか聞こえず、音が途切れて聞こえていた。
+			   遅れが大きい時は鳴らさない（文字より音が遅れすぎないように） */
+			static DWORD s_dwMsgSeNext = 0;		/* 次の文字の音を鳴らしてよい時刻 */
+			DWORD dwNow = timeGetTime ();
+			DWORD dwDelay = 0;
+			if (s_dwMsgSeNext > dwNow) {
+				dwDelay = s_dwMsgSeNext - dwNow;
+			}
+			if (dwDelay <= 100) {
+				DXAudio.PlaySecoundary (&aSoundTbl[SOUND_MSG], dwDelay);
+				s_dwMsgSeNext = dwNow + dwDelay + 25;
+			}
 		}
 		return TRUE;
 	}

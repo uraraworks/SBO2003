@@ -24,7 +24,7 @@ public:
 	void ReleaseSeg(IDirectMusicSegment8 **);			/* セグメントの開放 */
 
 	BOOL PlayPrimary(IDirectMusicSegment8 **);			/* プライマリセグメントとして再生 */
-	BOOL PlaySecoundary(IDirectMusicSegment8 **);		/* セカンダリセグメントとして再生 */
+	BOOL PlaySecoundary(IDirectMusicSegment8 **, DWORD dwDelayMs = 0);	/* セカンダリセグメントとして再生（dwDelayMs 後に鳴らす） */
 	void SetVolPrimary(long);							/* プライマリセグメントの音量設定 */
 	void SetVolSecoundary(long);						/* セカンダリセグメントの音量設定 */
 	void Stop(IDirectMusicSegment8 **, DWORD);			/* 再生停止 */

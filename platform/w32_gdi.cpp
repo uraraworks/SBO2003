@@ -1081,26 +1081,25 @@ int SetStretchBltMode(HDC, int)
 #define FONT_PATH_REGULAR	"/font/BIZUDGothic-Regular.ttf"
 #define FONT_PATH_EMOJI		"/font/NotoEmoji-Regular.ttf"	/* 白黒の絵文字（文字色・縁取りがそのまま効く） */
 
-/* 大きさ・太さごとに TTF_Font を共有する */
+/* 大きさごとに TTF_Font を共有する */
 static std::map<int, TTF_Font *> s_mapTtf;
 static std::map<TTF_Font *, int> s_mapTtfSize;		/* TTF_Font → 1 文字のマスの大きさ（CreateFont の高さ） */
 static std::map<int, TTF_Font *> s_mapEmoji;		/* マスの大きさごとの絵文字フォント */
-static std::set<TTF_Font *> s_setTtfBold;			/* 疑似太字で描く TTF_Font */
 
-static TTF_Font *GetTtf(int nSize, BOOL bBold)
+static TTF_Font *GetTtf(int nSize)
 {
 	if (!TTF_WasInit() && TTF_Init() != 0) {
 		return NULL;
 	}
 	nSize = std::max(nSize, 6);
-	int nKey = nSize * 2 + (bBold ? 1 : 0);
-	std::map<int, TTF_Font *>::iterator it = s_mapTtf.find(nKey);
+	std::map<int, TTF_Font *>::iterator it = s_mapTtf.find(nSize);
 	if (it != s_mapTtf.end()) {
 		return it->second;
 	}
-	/* 太字も標準の書体で開き、描く時に 1 ドット右へ重ねて太くする。
-	   元の Windows 版は太字の無い「ＭＳ ゴシック」を太字指定で使っていて、
-	   Windows がこの方法で疑似太字を作っていた（画数の多い字でも潰れにくい） */
+	/* 太字の指定があっても標準の太さで描く。
+	   元の Windows 版は太字の無い「ＭＳ ゴシック」を太字指定で使っていて、Windows が 1 ドット右へ
+	   重ねる疑似太字を作っていた。同じように重ねると字がマス（nSize）の横幅いっぱいになり、
+	   黒縁取りで隣の字とくっついて読みにくい（特にスマホで縮めて表示した時）ので、重ねない */
 	/* 字は 1 ドット小さく開き、マス（nSize）の中に置く。
 	   BIZ UDゴシックは字がマスいっぱいに描かれるので、行を nSize ドットおきに並べると
 	   下の行の黒縁取りが上の行の最下段を塗りつぶしてしまう。ＭＳ ゴシックと同じく
@@ -1113,11 +1112,8 @@ static TTF_Font *GetTtf(int nSize, BOOL bBold)
 		/* MS ゴシックのビットマップに近づけるため、ヒンティングを強めにかける */
 		TTF_SetFontHinting(pFont, TTF_HINTING_MONO);
 		s_mapTtfSize[pFont] = nSize;
-		if (bBold) {
-			s_setTtfBold.insert(pFont);
-		}
 	}
-	s_mapTtf[nKey] = pFont;
+	s_mapTtf[nSize] = pFont;
 	return pFont;
 }
 
@@ -1187,7 +1183,7 @@ static TTF_Font *DcTtf(W32Dc *pDc)
 	if (pFont == NULL || pFont->nType != W32GDI_FONT) {
 		pFont = W32GetGdi(GetDefaultFont());
 	}
-	TTF_Font *pTtf = GetTtf(pFont->nHeight, pFont->nWeight >= FW_SEMIBOLD);
+	TTF_Font *pTtf = GetTtf(pFont->nHeight);
 	if (pTtf) {
 		TTF_SetFontStyle(pTtf, pFont->bItalic ? TTF_STYLE_ITALIC : TTF_STYLE_NORMAL);
 	}
@@ -1389,23 +1385,6 @@ static const W32TextMask *GetTextMask(TTF_Font *pTtf, const std::string &strUtf8
 		}
 		SDL_UnlockSurface(pSurf);
 		SDL_FreeSurface(pSurf);
-	}
-	/* 疑似太字: 1 ドット右へ重ねる（文字の送り幅は変えず、右端だけ 1 ドット広がる） */
-	if (s_setTtfBold.count(pTtf)) {
-		int cxNew = mask.cx + 1;
-		std::vector<BYTE> aBold((size_t)cxNew * mask.cy, 0);
-		for (int y = 0; y < mask.cy; y ++) {
-			const BYTE *pSrc = &mask.aMask[(size_t)y * mask.cx];
-			BYTE *pDst = &aBold[(size_t)y * cxNew];
-			for (int x = 0; x < mask.cx; x ++) {
-				if (pSrc[x]) {
-					pDst[x] = 1;
-					pDst[x + 1] = 1;
-				}
-			}
-		}
-		mask.cx = cxNew;
-		mask.aMask.swap(aBold);
 	}
 	s_listMask.push_front(mask);
 	s_mapMask[strKey] = s_listMask.begin();
