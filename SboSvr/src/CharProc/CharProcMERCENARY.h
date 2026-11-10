@@ -92,7 +92,9 @@ extern void			MercenarySetBattleMode(PCHARINFO pChar, BOOL bBattle);		/* 雇い�
 
 /* 道具を持たせる（取り引き画面で渡す。傭兵は持っている道具を全部返そうとする） */
 #define MERC_MAXITEM		(5)													/* 傭兵が持てる道具の数 */
+#define MERC_TRADERANGE		(10)												/* 向き合わなくても道具を渡せる範囲(仲間のHPが見える範囲) */
 extern BOOL			MercenaryCanHold	(PITEMINFO pItem);						/* 傭兵に持たせられる道具か(HP回復だけ) */
+extern BOOL			MercenaryIsFighting	(PCHARINFO pMerc);						/* 傭兵が敵と戦っている最中か */
 extern BOOL			MercenaryTradeCheck	(PCHARINFO pOwner, PCHARINFO pMerc, const WORD *pwaItem, DWORD dwGold, LPSTR pszMsg, int nMsgSize);	/* 取り引きで渡すものを傭兵が受け取れるか */
 extern void			MercenaryTellItems	(PCHARINFO pOwner, PCHARINFO pMerc);	/* 傭兵の持ち物を雇い主に知らせる */
 extern void			MercenaryOwnerLogout(PCHARINFO pOwner);						/* 雇い主がログアウトする(道具を返してから帰る) */

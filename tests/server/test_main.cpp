@@ -1432,6 +1432,25 @@ static void TestMercenary(const std::vector<int> &aLogin)
 		TestTradeWithMerc(pOwner, pMerc, a, 0);		/* 何も渡さない＝全部返してもらう */
 		PrintItems("merc trade back owner", pOwner);
 		PrintItems("merc trade back merc ", pMerc);
+		/* 向き合っていなくても、仲間のHPが見える範囲(10マス)なら渡せる。それより遠いと渡せない */
+		{
+			DWORD dwMX = pMerc->dwX, dwMY = pMerc->dwY;
+			pMerc->dwX = pOwner->dwX + 10;
+			pMerc->dwY = pOwner->dwY;
+			a.clear();
+			a.push_back(1);		/* 回復の道具 */
+			TestTradeWithMerc(pOwner, pMerc, a, 0);
+			PrintItems("merc trade far10 merc ", pMerc);
+			a.clear();
+			TestTradeWithMerc(pOwner, pMerc, a, 0);		/* 返してもらう */
+			pMerc->dwX = pOwner->dwX + 11;
+			a.clear();
+			a.push_back(1);
+			TestTradeWithMerc(pOwner, pMerc, a, 0);
+			PrintItems("merc trade far11 merc ", pMerc);
+			pMerc->dwX = dwMX;
+			pMerc->dwY = dwMY;
+		}
 		/* もう一度2個持たせる（持ち物は 回復×3・武器 → 回復×1・武器） */
 		a.clear();
 		for (int i = 0, n = 0; i < MAX_MYITEM && n < 2; i ++) {

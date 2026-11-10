@@ -53,6 +53,7 @@ extern PWNDINFO MakeWindowLEAVE_GOLD					(BYTE);						/* 預かり所：預け�
 extern PWNDINFO MakeWindowCOMMANDITEMCHAR				(void);						/* 道具使う相手選択 */
 extern PWNDINFO MakeWindowCOMMANDITEMCHARBATTLE			(void);						/* 道具使う相手選択(戦闘マップ) */
 extern PWNDINFO MakeWindowCOMMANDTRADE					(void);						/* 取り引きコマンド */
+extern int GetTradeTargets								(DWORD *padwTblID, int nMax);	/* 取り引きできる相手の一覧 */
 extern PWNDINFO MakeWindowTRADE							(DWORD);					/* コマンド */
 extern PWNDINFO MakeWindowTRADEITEM						(void);						/* 取り引き：アイテム選択 */
 extern PWNDINFO MakeWindowTRADEGOLD						(void);						/* 取り引き：金額設定 */

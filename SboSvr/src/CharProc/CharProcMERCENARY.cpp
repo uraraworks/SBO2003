@@ -86,6 +86,7 @@
 typedef struct _MERCINFO {
 	DWORD	dwOwnerTblID;								/* 雇い主のテーブルID */
 	DWORD	dwOwnerPID;									/* 雇い主のプレイヤーID(ログインし直した別の人と間違えないため) */
+	BOOL	bFighting;									/* 敵と戦っている最中か(離れた所から道具を渡せない) */
 } MERCINFO;
 static std::map<DWORD, MERCINFO> s_mapMerc;
 /* 戦闘モード中の雇い主(テーブルID→pID。pID が違えば別の人なので戦闘モードではない) */
@@ -206,7 +207,12 @@ BOOL CCharProcMERCENARY::Proc(DWORD dwTime)
 	BOOL bTail = IsInTail (pOwner);
 
 	/* 戦う相手がいれば、列を外れて戦う */
-	if (ProcBattle (pOwner, dwTime)) {
+	BOOL bFighting = ProcBattle (pOwner, dwTime);
+	std::map<DWORD, MERCINFO>::iterator itMerc = s_mapMerc.find (m_pChar->dwTblID);
+	if (itMerc != s_mapMerc.end ()) {
+		itMerc->second.bFighting = bFighting;
+	}
+	if (bFighting) {
 		if (bTail) {
 			MercenaryTailOff (m_pChar);
 		}
@@ -1440,6 +1446,7 @@ void MercenaryTalk(PCHARINFO pChar, PCHARINFO pCharNpc)
 	MERCINFO info;
 	info.dwOwnerTblID	= pChar->dwTblID;
 	info.dwOwnerPID		= pChar->pID;
+	info.bFighting		= FALSE;
 	s_mapMerc[pCharNew->dwTblID] = info;
 
 	SendCmdCHARINFO3 (pCharNew->dwTblID);
@@ -1760,6 +1767,26 @@ BOOL MercenaryCanHold(PITEMINFO pItem)
 		return TRUE;
 	}
 	return FALSE;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	MercenaryIsFighting												 */
+/* 内容：	傭兵が敵と戦っている最中か										 */
+/* ========================================================================= */
+
+BOOL MercenaryIsFighting(PCHARINFO pMerc)
+{
+	std::map<DWORD, MERCINFO>::iterator it;
+
+	if (pMerc == NULL) {
+		return FALSE;
+	}
+	it = s_mapMerc.find (pMerc->dwTblID);
+	if (it == s_mapMerc.end ()) {
+		return FALSE;
+	}
+	return it->second.bFighting;
 }
 
 

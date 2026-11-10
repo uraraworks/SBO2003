@@ -1071,6 +1071,8 @@ merc trade heal owner 8 7 0 0 0 0 0 0 0 0
 merc trade heal merc  7 7 0 0 0 0 0 0 0 0
 merc trade back owner 8 7 7 7 0 0 0 0 0 0
 merc trade back merc  0 0 0 0 0 0 0 0 0 0
+merc trade far10 merc  7 0 0 0 0 0 0 0 0 0
+merc trade far11 merc  0 0 0 0 0 0 0 0 0 0
 merc trade again merc  7 7 0 0 0 0 0 0 0 0
 merc selfheal up=1 items=1
 merc selfheal wait items=1

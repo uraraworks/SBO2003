@@ -1602,13 +1602,14 @@ PWNDINFO MakeWindowCOMMANDITEMCHARBATTLE(void)
 }
 
 /* ========================================================================= */
-/* 関数名：MakeWindowCOMMANDTRADE											 */
-/* 内容：ウィンドウの作成(取り引きコマンド)									 */
-/* 日付：2003/11/16															 */
+/* 関数名：GetTradeTargets													 */
+/* 内容：取り引きできる相手の一覧(テーブルID)を集めて数を返す				 */
+/*		 目の前の人が先、その後に仲間のHPが見えている範囲の仲間・傭兵		 */
 /* ========================================================================= */
-PWNDINFO MakeWindowCOMMANDTRADE(void)
+#define TRADE_PARTYRANGE	(10)		/* 仲間となら、向き合わなくても取り引きできる範囲(仲間のHPが見える範囲) */
+int GetTradeTargets(DWORD *padwTblID, int nMax)
 {
-	int i;
+	int i, j, nCount;
 	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
 	DWORD dwX = pChar->dwX + anPosAddTblX[pChar->byDirection],
 		  dwY = pChar->dwY + anPosAddTblY[pChar->byDirection];
@@ -1618,26 +1619,75 @@ PWNDINFO MakeWindowCOMMANDTRADE(void)
 		dwY += anPosAddTblY[pChar->byDirection];
 	}
 
-	DeleteUseCharInfo (&g_aUseCharInfo);
-
-	int nLen = 0;
-	for (i = 0; i < g_aCharInfo.GetSize (); i ++) {
+	nCount = 0;
+	for (i = 0; (i < g_aCharInfo.GetSize ()) && (nCount < nMax); i ++) {
 		PCHARINFO pCharTmp = g_aCharInfo[i];
 		/* 目の前にいる？ */
 		if ((dwX == pCharTmp->dwX) && (dwY == pCharTmp->dwY)) {
 			/* プレイヤーか、傭兵(道具を持たせる) */
 			if ((pCharTmp->byNpcType == 0) || (pCharTmp->byNpcType == NPCTYPE_MERCENARY)) {
-				PUSECHARINFO pInfo = new USECHARINFO;
-				ZeroMemory (pInfo, sizeof (USECHARINFO));
-				pInfo->dwTblID = pCharTmp->dwTblID;
-				strcat (pInfo->szName, pCharTmp->szName);
-				nLen = max (SboTextWidth (pInfo->szName), nLen);
-				g_aUseCharInfo.Add (pInfo);
-				if (g_aUseCharInfo.GetSize () >= 10) {
-					break;
-				}
+				padwTblID[nCount ++] = pCharTmp->dwTblID;
 			}
 		}
+	}
+
+	/* 仲間(傭兵も)は、HPが見えている範囲にいれば向き合っていなくても取り引きできる */
+	for (i = 0; (i < g_aPartyInfo.GetSize ()) && (nCount < nMax); i ++) {
+		int nNo = GetCharNo2 (g_aPartyInfo[i]);
+		if ((nNo < 0) || (nNo == g_nMyCharID)) {
+			continue;
+		}
+		PCHARINFO pCharTmp = g_aCharInfo[nNo];
+		if ((pCharTmp->byNpcType != 0) && (pCharTmp->byNpcType != NPCTYPE_MERCENARY)) {
+			continue;
+		}
+		if ((pCharTmp->wMaxHP == 0) || (pCharTmp->wHP == 0) || (pCharTmp->byCharState == CHARSTATE_DEAD)) {
+			continue;
+		}
+		if ((abs ((int)pCharTmp->dwX - (int)pChar->dwX) > TRADE_PARTYRANGE) ||
+			(abs ((int)pCharTmp->dwY - (int)pChar->dwY) > TRADE_PARTYRANGE)) {
+			continue;
+		}
+		/* 目の前の人として、もう入っている？ */
+		for (j = 0; j < nCount; j ++) {
+			if (padwTblID[j] == pCharTmp->dwTblID) {
+				break;
+			}
+		}
+		if (j < nCount) {
+			continue;
+		}
+		padwTblID[nCount ++] = pCharTmp->dwTblID;
+	}
+	return nCount;
+}
+
+/* ========================================================================= */
+/* 関数名：MakeWindowCOMMANDTRADE											 */
+/* 内容：ウィンドウの作成(取り引きコマンド)									 */
+/* 日付：2003/11/16															 */
+/* ========================================================================= */
+PWNDINFO MakeWindowCOMMANDTRADE(void)
+{
+	int i, nCount;
+	DWORD adwTblID[10];
+
+	DeleteUseCharInfo (&g_aUseCharInfo);
+
+	int nLen = 0;
+	nCount = GetTradeTargets (adwTblID, 10);
+	for (i = 0; i < nCount; i ++) {
+		int nNo = GetCharNo2 (adwTblID[i]);
+		if (nNo < 0) {
+			continue;
+		}
+		PCHARINFO pCharTmp = g_aCharInfo[nNo];
+		PUSECHARINFO pInfo = new USECHARINFO;
+		ZeroMemory (pInfo, sizeof (USECHARINFO));
+		pInfo->dwTblID = pCharTmp->dwTblID;
+		strcat (pInfo->szName, pCharTmp->szName);
+		nLen = max (SboTextWidth (pInfo->szName), nLen);
+		g_aUseCharInfo.Add (pInfo);
 	}
 	if (nLen % 2) {
 		nLen ++;

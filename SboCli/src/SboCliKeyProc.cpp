@@ -1321,25 +1321,9 @@ void KeyProcCOMMAND(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		/* 取り引き */
 		case 7:
 			{
-				int i, nCount = 0;
-				PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
-				DWORD dwX = pChar->dwX + anPosAddTblX[pChar->byDirection],
-					  dwY = pChar->dwY + anPosAddTblY[pChar->byDirection];
-				PMAPPARTSINFO pParts = &g_pMapPartsInfo[g_pMapInfo->pwMap[dwX + dwY * g_pMapInfo->nCX]];
-				if (pParts->byHitType == PARTSHIT_COUNTER) {
-					dwX += anPosAddTblX[pChar->byDirection];
-					dwY += anPosAddTblY[pChar->byDirection];
-				}
-				for (i = 0; i < g_aCharInfo.GetSize (); i ++) {
-					PCHARINFO pCharTmp = g_aCharInfo[i];
-					/* 目の前にいる？ */
-					if ((dwX == pCharTmp->dwX) && (dwY == pCharTmp->dwY)) {
-						/* プレイヤーか、傭兵(道具を持たせる) */
-						if ((pCharTmp->byNpcType == 0) || (pCharTmp->byNpcType == NPCTYPE_MERCENARY)) {
-							nCount ++;
-						}
-					}
-				}
+				/* 目の前の人か、HPが見えている範囲の仲間(傭兵も) */
+				DWORD adwTblID[10];
+				int nCount = GetTradeTargets (adwTblID, 10);
 				if (nCount == 0) {
 					PWNDINFO pWndTmp;
 					pWndTmp = MakeWindowMSG ("取り引きする相手がいません。@2", FALSE);

@@ -7842,8 +7842,19 @@ void RecvDataProcTRADE(PBYTE pData, DWORD dwDataSize)
 			SendCmdTRADE (pOwner->pID, pOwner->dwTblID, CMDTRADE_OUT);
 			return;
 		}
+		/* 仲間なので、HPが見えている範囲なら向き合っていなくてもよい */
 		if ((pMerc->wHP == 0) || (pMerc->byCharState == CHARSTATE_DEAD) || (pMerc->dwMapID != pOwner->dwMapID) ||
+			(abs ((int)pMerc->dwX - (int)pOwner->dwX) > MERC_TRADERANGE) ||
+			(abs ((int)pMerc->dwY - (int)pOwner->dwY) > MERC_TRADERANGE)) {
+			SendCmdTRADE (pOwner->pID, pOwner->dwTblID, CMDTRADE_OUT);
+			return;
+		}
+		/* 戦っている最中は、となり(カウンター越し)まで行かないと渡せない(離れた所から補充し放題にしない) */
+		if (MercenaryIsFighting (pMerc) &&
 			(abs ((int)pMerc->dwX - (int)pOwner->dwX) + abs ((int)pMerc->dwY - (int)pOwner->dwY) > 2)) {
+			char szTmp[256];
+			snprintf (szTmp, sizeof (szTmp), "%sは戦っている最中なので、離れたところからは渡せません。（となりに行けば渡せます）", pMerc->szName);
+			SendCmdSYSMSG (pOwner->pID, szTmp, SPEECHCMD_BATTLE1);
 			SendCmdTRADE (pOwner->pID, pOwner->dwTblID, CMDTRADE_OUT);
 			return;
 		}
