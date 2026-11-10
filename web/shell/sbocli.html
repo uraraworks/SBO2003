@@ -1211,6 +1211,62 @@
 			background: rgba(255, 255, 255, 0.12);
 		}
 	}
+	/* ---- くっきり表示の切り替え（スマホ）----
+	   スマホはゲームの 1 ドットが画面の 2.4 画素のような半端な倍率になり、細い線の太さがばらつく。
+	   このボタンで「画面いっぱい」と「画面の画素でちょうど整数倍（少し小さい）」を切り替える。
+	   置き場所はカメラボタンの下（横持ちはカメラボタンの上） */
+	#sbo-fit-pad {
+		display: none;
+	}
+	body.sbo-pad.sbo-on-map #sbo-fit-pad {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		position: absolute;
+		right: 6px;
+		top: 46px;
+		z-index: 5;
+		height: 34px;
+		box-sizing: border-box;
+		padding: 0 10px;
+		border: 1px solid rgba(255, 255, 255, 0.35);
+		border-radius: 17px;
+		background: rgba(0, 0, 0, 0.35);
+		color: #fff;
+		font: bold 13px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		white-space: nowrap;
+		opacity: 0;
+		pointer-events: none;
+		transition: opacity 0.2s;
+		touch-action: manipulation;
+		-webkit-tap-highlight-color: transparent;
+		cursor: pointer;
+	}
+	body.sbo-pad.sbo-on-map.sbo-sys-show #sbo-fit-pad {
+		opacity: 0.75;
+		pointer-events: auto;
+	}
+	body.sbo-pad #sbo-fit-pad:active {
+		opacity: 1;
+		background: rgba(240, 184, 74, 0.75);
+	}
+	@media (orientation: landscape) {
+		body.sbo-pad.sbo-on-map #sbo-fit-pad {
+			position: fixed;
+			right: auto;
+			top: auto;
+			left: calc(12px + env(safe-area-inset-left));
+			bottom: calc(62px + env(safe-area-inset-bottom));
+			z-index: 800;
+			height: 44px;
+			border-radius: 22px;
+			font-size: 15px;
+			opacity: 1;
+			pointer-events: auto;
+			border: 2px solid rgba(255, 255, 255, 0.4);
+			background: rgba(255, 255, 255, 0.12);
+		}
+	}
 	/* ---- 動画録画 ----
 	   ボタンはスクショの隣。録画中は赤くし、マップを離れても止められるように出しておく */
 	body.sbo-recording #sbo-rec-pc {
@@ -1465,6 +1521,7 @@
 		<!-- スマホのカメラボタン（縦持ちはゲーム画面の右上隅に重ねる。横持ちは左下） -->
 		<button type="button" id="sbo-shot-pad" title="スクリーンショット">📷</button>
 		<button type="button" id="sbo-rec-pad" title="ゲーム画面を動画で録画">🎥</button>
+		<button type="button" id="sbo-fit-pad" title="画面いっぱいの表示と、ドットの太さがそろうくっきり表示を切り替えます">くっきり</button>
 		<div id="sbo-rec-badge">REC <span id="sbo-rec-time">0:00</span></div>
 		<!-- ログイン画面のボタン。ID・パスワードの入力欄は「ID・パスワードでログイン」を押した時だけ見せる -->
 		<div id="sbo-quick" data-sbo-ui="1">
@@ -1781,6 +1838,34 @@
 		return !!(a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA'));
 	}
 
+	/* くっきり表示（スマホで画面の画素ちょうど整数倍にする）。このブラウザに覚えておく */
+	var useCrisp = false;
+	try {
+		useCrisp = window.localStorage.getItem('sbo_crisp') === '1';
+	} catch (e) { /* 覚えられなくても遊べる */ }
+
+	/* くっきり表示の時は、ゲーム画面の左上を画面の画素の境目にそろえる。
+	   真ん中に寄せると 36.5px のような半端な位置になり、ドットの太さがまたばらつくため。
+	   （#sbo-screen の中の横持ち用ボタンは position: fixed なので、transform ではなく left/top でずらす） */
+	function alignScreenToPixels() {
+		var screen = document.getElementById('sbo-screen');
+		screen.style.left = '';
+		screen.style.top = '';
+		if (!(usePad && useCrisp)) {
+			return;
+		}
+		var dpr = window.devicePixelRatio || 1;
+		var rc = canvas.getBoundingClientRect();
+		var dx = Math.round(rc.left * dpr) / dpr - rc.left;
+		var dy = Math.round(rc.top * dpr) / dpr - rc.top;
+		if (dx) {
+			screen.style.left = dx + 'px';
+		}
+		if (dy) {
+			screen.style.top = dy + 'px';
+		}
+	}
+
 	/* 拡大率（?scale=2 など。指定が無ければ画面に収まる整数倍） */
 	function fitScale() {
 		var w = canvas.width || 480, h = canvas.height || 480;
@@ -1801,6 +1886,12 @@
 				cssW = Math.min(vw, (vh - padH - logH) * w / h);
 			}
 			cssW = Math.max(160, Math.floor(cssW));
+			/* くっきり表示：画面の画素でちょうど整数倍になる、いちばん大きい大きさにする */
+			if (useCrisp) {
+				var dprFit = window.devicePixelRatio || 1;
+				var nFit = Math.max(1, Math.floor(cssW * dprFit / w));
+				cssW = nFit * w / dprFit;
+			}
 		} else {
 			/* ヘッダー・フッターの分を除いた高さに収める */
 			var header = document.querySelector('.site-header');
@@ -1816,6 +1907,7 @@
 			cssW = w * s;
 		}
 		canvas.style.width = cssW + 'px';
+		alignScreenToPixels();
 		if (Module['w32UpdateScale']) {
 			Module['w32UpdateScale']();
 		}
@@ -3628,6 +3720,24 @@
 			takeShot();
 		});
 
+		/* くっきり表示の切り替え。ボタンには押すと切り替わる先を書く */
+		var fitBtn = document.getElementById('sbo-fit-pad');
+		function updateFitLabel() {
+			fitBtn.textContent = useCrisp ? '大きく' : 'くっきり';
+		}
+		updateFitLabel();
+		fitBtn.addEventListener('click', function () {
+			useCrisp = !useCrisp;
+			try {
+				window.localStorage.setItem('sbo_crisp', useCrisp ? '1' : '0');
+			} catch (e) { /* 覚えられなくても今は切り替わる */ }
+			updateFitLabel();
+			fitScale();
+			/* 押した後もしばらく出しておき、続けて押して見比べられるようにする */
+			clearTimeout(sysTimer);
+			sysTimer = setTimeout(hideSysButtons, SYS_HIDE_MS);
+		});
+
 		/* スマホ縦持ち：ゲーム画面をタップするとカメラボタンなどを透けて出し、
 		   もう一度タップするか、しばらく触らないと消す（タップはこれまで通りゲームにも届く） */
 		var SYS_HIDE_MS = 4000;
@@ -3637,7 +3747,7 @@
 			document.body.classList.remove('sbo-sys-show');
 		}
 		document.getElementById('sbo-screen').addEventListener('click', function (ev) {
-			if (!usePad || ev.target.closest('#sbo-shot-pad, #sbo-rec-pad, [data-sbo-ui]')) {
+			if (!usePad || ev.target.closest('#sbo-shot-pad, #sbo-rec-pad, #sbo-fit-pad, [data-sbo-ui]')) {
 				return;
 			}
 			if (document.body.classList.contains('sbo-sys-show')) {
