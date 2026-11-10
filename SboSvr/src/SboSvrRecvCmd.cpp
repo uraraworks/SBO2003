@@ -4403,6 +4403,13 @@ void RecvDataProcEVENTCHECK(PBYTE pData, DWORD dwDataSize)
 	if (nNo < 0) {
 		return;
 	}
+	/* 足元を調べた時(Sキー)、同じマスに依頼の見える宝箱などがあればそちらを先に */
+	if ((pPara->byData == 1) && QuestExamineHere (pChar)) {
+		/* クライアントは返事が来るまで歩けないので、位置を送って待ちを解く */
+		SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
+		return;
+	}
+
 	pMap = g_aMapInfo[nNo];
 	pEvent = pMap->pEvent;
 	if (!pEvent) {

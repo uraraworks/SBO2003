@@ -798,6 +798,41 @@ void QuestOnStep(PCHARINFO pChar)
 	}
 }
 
+/* 足元を調べた時、同じマスに見える宝箱などがあれば話しかけたことにする
+   （マップの調べるイベントと重なっていると、そちらが先になって開けられなかった）
+   戻り値：見つけて処理した時 TRUE */
+BOOL QuestExamineHere(PCHARINFO pChar)
+{
+	std::map<DWORD, QNPCENTRY>::iterator it;
+	PCHARINFO pNpc = NULL;
+
+	if ((pChar == NULL) || (pChar->byNpcType != NPCTYPE_INIT)) {
+		return FALSE;
+	}
+	for (it = s_mapNpc.begin (); it != s_mapNpc.end (); it ++) {
+		if (it->first >= (DWORD)g_aCharInfo.GetSize ()) {
+			continue;
+		}
+		PCHARINFO pTmp = g_aCharInfo[it->first];
+		if ((pTmp == NULL) || (pTmp->dwMapID != pChar->dwMapID)) {
+			continue;
+		}
+		if ((pTmp->dwX != pChar->dwX) || (pTmp->dwY != pChar->dwY)) {
+			continue;
+		}
+		if (!IsCharVisibleTo (pTmp, pChar)) {
+			continue;
+		}
+		pNpc = pTmp;
+		break;
+	}
+	if (pNpc == NULL) {
+		return FALSE;
+	}
+	QuestNpcTalk (pChar, pNpc);
+	return TRUE;
+}
+
 /* ========================================================================= */
 /* ギルド																	 */
 /* ========================================================================= */
