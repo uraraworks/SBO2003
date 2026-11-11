@@ -5095,6 +5095,14 @@ void RecvDataProcRESURRECTION(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 
+	/* 倒れていない人は復活しない（討伐チャレンジで倒れて元に戻った後に、開いたままの窓から押された時など） */
+	if ((pChar->byCharState != CHARSTATE_DEAD) && (pChar->wHP > 0)) {
+		return;
+	}
+	/* 討伐チャレンジ中なら中断して入る前の場所へ（お金は減らさない） */
+	if (QuestChallengeResurrection (pChar)) {
+		return;
+	}
 	/* 復活位置で蘇生 */
 	ResurrectionBack (pChar);
 }
@@ -6746,6 +6754,20 @@ void RecvDataProcSTTMPLATE(PBYTE pData, DWORD dwDataSize)
 }
 
 /* ========================================================================= */
+/* 関数名：QuestChallengeBlock												 */
+/* 内容：討伐チャレンジ中ならお知らせして TRUE（預かり所・取り引きなどを止める）	 */
+/* 日付：2026/11/12															 */
+/* ========================================================================= */
+static BOOL QuestChallengeBlock(PCHARINFO pChar)
+{
+	if (!QuestInChallenge (pChar)) {
+		return FALSE;
+	}
+	SendCmdSYSMSG (pChar->pID, "討伐チャレンジ中はできません。", SPEECHCMD_BATTLE1);
+	return TRUE;
+}
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcLEAVEITEM											 */
 /* 内容：受信データ処理(アイテム預ける)										 */
 /* 日付：2003/11/07															 */
@@ -6760,6 +6782,10 @@ void RecvDataProcLEAVEITEM(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
+	/* 討伐チャレンジ中は預かり所・取り引き・作ってもらうを使わない（貸し出しの品が出入りしないように） */
+	if (QuestChallengeBlock (pChar)) {
+		return;
+	}
 	if ((pPara->byData >= MAX_MYITEM) || (pChar->waItem[pPara->byData] == 0)) {
 		return;
 	}
@@ -6854,6 +6880,10 @@ void RecvDataProcLEAVEITEMGET(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
+	/* 討伐チャレンジ中は預かり所・取り引き・作ってもらうを使わない（貸し出しの品が出入りしないように） */
+	if (QuestChallengeBlock (pChar)) {
+		return;
+	}
 	if (g_aLeaveInfo.GetSize () == 0) {
 		return;
 	} else if (g_aLeaveInfo.GetSize () == 1) {
@@ -8020,6 +8050,10 @@ void RecvDataProcTRADE(PBYTE pData, DWORD dwDataSize)
 	if (IsQuestNpc (g_aCharInfo[pRecv->dwData])) {
 		return;
 	}
+	/* 討伐チャレンジ中の人とは取り引きしない */
+	if (QuestChallengeBlock (g_aCharInfo[pRecv->dwTblID]) || QuestInChallenge (g_aCharInfo[pRecv->dwData])) {
+		return;
+	}
 
 	if (pRecv->pID == 0) {
 		std::map<DWORD, TRADESTATE>::iterator it = s_mapTrade.find (pRecv->dwTblID);
@@ -8162,6 +8196,13 @@ void RecvDataProcTRADEPROC(PBYTE pData, DWORD dwDataSize)
 
 	pChar1 = g_aCharInfo[pRecv->dwTblID1];
 	pChar2 = g_aCharInfo[pRecv->dwTblID2];
+	/* 討伐チャレンジ中は預かり所・取り引き・作ってもらうを使わない（貸し出しの品が出入りしないように） */
+	if (QuestChallengeBlock (pChar1)) {
+		return;
+	}
+	if (QuestChallengeBlock (pChar2)) {
+		return;
+	}
 
 	/* サーバーが覚えている取り引きで、両方が「決定」している時だけ成立させる。
 	   渡すアイテムと金額も、パケットの申告ではなく覚えている内容を使う */
@@ -8374,6 +8415,10 @@ void RecvDataProcLEAVEGOLD(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pRecv->dwTblID];
+	/* 討伐チャレンジ中は預かり所・取り引き・作ってもらうを使わない（貸し出しの品が出入りしないように） */
+	if (QuestChallengeBlock (pChar)) {
+		return;
+	}
 	if (pRecv->dwData > pChar->dwGold) {
 		return;
 	}
@@ -8438,6 +8483,10 @@ void RecvDataProcLEAVEGOLDGET(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pRecv->dwTblID];
+	/* 討伐チャレンジ中は預かり所・取り引き・作ってもらうを使わない（貸し出しの品が出入りしないように） */
+	if (QuestChallengeBlock (pChar)) {
+		return;
+	}
 	if (g_aLeaveInfo.GetSize () == 0) {
 		return;
 	} else if (g_aLeaveInfo.GetSize () == 1) {
@@ -11073,6 +11122,10 @@ void RecvDataProcRECIPEMAKE(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	pChar = g_aCharInfo[pPara->dwTblID];
+	/* 討伐チャレンジ中は預かり所・取り引き・作ってもらうを使わない（貸し出しの品が出入りしないように） */
+	if (QuestChallengeBlock (pChar)) {
+		return;
+	}
 	if ((pChar == NULL) || (pChar->pID == 0) || (pChar->byNpcType != NPCTYPE_INIT)) {
 		return;
 	}
