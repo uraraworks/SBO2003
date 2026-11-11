@@ -10847,6 +10847,7 @@ static bool SortItemLessName(const SORTITEMENTRY &a, const SORTITEMENTRY &b)
 /*       pwaItem の先頭 nCount 個を並べ替え、pbyCount（NULL可。預かり所の	 */
 /*       個数）も同じように動かす。pnNewToOld（NULL可）には、新しい番号→	 */
 /*       古い番号の対応を nCount 個返す										 */
+/*       もうその順に並んでいたら逆の順（降順）にする（続けて選ぶと切り替わる） */
 /* 日付：2026/11/11															 */
 /* ========================================================================= */
 void SortItemList(WORD *pwaItem, BYTE *pbyCount, int nCount, BYTE byMode, int *pnNewToOld)
@@ -10877,8 +10878,20 @@ void SortItemList(WORD *pwaItem, BYTE *pbyCount, int nCount, BYTE byMode, int *p
 			ItemNameSortKey (pItem->szName, aEntry[i].aKey);
 		}
 	}
-	std::stable_sort (aEntry.begin (), aEntry.end (),
-			(byMode == SORTITEMMODE_TYPE) ? SortItemLessType : SortItemLessName);
+	bool (*pfnLess)(const SORTITEMENTRY &, const SORTITEMENTRY &) =
+			(byMode == SORTITEMMODE_TYPE) ? SortItemLessType : SortItemLessName;
+	std::stable_sort (aEntry.begin (), aEntry.end (), pfnLess);
+
+	/* もうこの順に並んでいた（続けて同じ並べ替えを選んだ）なら、逆の順にする */
+	for (i = 0; i < nCount; i ++) {
+		if (aEntry[i].nOld != i) {
+			break;
+		}
+	}
+	if (i == nCount) {
+		std::stable_sort (aEntry.begin (), aEntry.end (),
+				[pfnLess](const SORTITEMENTRY &a, const SORTITEMENTRY &b) { return pfnLess (b, a); });
+	}
 
 	aItem.assign (pwaItem, pwaItem + nCount);
 	if (pbyCount) {
