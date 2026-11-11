@@ -40,8 +40,11 @@ Module['sboNet'] = (function () {
 		'.css': 'text/css; charset=utf-8',
 		'.png': 'image/png',
 		'.ico': 'image/x-icon',
-		'.json': 'application/json'
+		'.json': 'application/json',
+		'.m4a': 'audio/mp4'		/* 音声 BGM（bgm/audio/） */
 	};
+	/* Range リクエストに答えるファイル（Safari の audio 要素は Range が無いと鳴らせない） */
+	var RANGE_EXT = { '.m4a': 1 };
 
 	function log(msg) {
 		console.log('[net] ' + msg);
@@ -260,7 +263,7 @@ Module['sboNet'] = (function () {
 	 *   ビルドし直して中身が変わったら版も変わるので、新しい URL として読み直される。
 	 */
 	var aHashCache = {};		/* フルパス → { mtime, size, hash } */
-	var VER_EXT = { '.js': 1, '.wasm': 1, '.data': 1, '.sf3': 1, '.css': 1, '.png': 1, '.ico': 1 };
+	var VER_EXT = { '.js': 1, '.wasm': 1, '.data': 1, '.sf3': 1, '.css': 1, '.png': 1, '.ico': 1, '.m4a': 1 };
 
 	/* ファイルの中身のハッシュ（更新日時と大きさが同じ間は覚えておく） */
 	function fileHash(file, st, data) {
@@ -273,7 +276,7 @@ Module['sboNet'] = (function () {
 		return hash;
 	}
 
-	/* 配るフォルダの直下と 1 段下（bgm/ など）のファイルの版の一覧 { "sbocli.wasm": "…", "bgm/GeneralUserGS.sf3": "…" } */
+	/* 配るフォルダの直下と 2 段下まで（bgm/・bgm/audio/ など）のファイルの版の一覧 { "sbocli.wasm": "…", "bgm/GeneralUserGS.sf3": "…", "bgm/audio/x.m4a": "…" } */
 	function assetVersions() {
 		var ver = {};
 		function scan(dir, prefix, depth) {
@@ -300,7 +303,7 @@ Module['sboNet'] = (function () {
 				}
 			});
 		}
-		scan(strWwwDir, '', 1);
+		scan(strWwwDir, '', 2);
 		return ver;
 	}
 
@@ -431,6 +434,33 @@ Module['sboNet'] = (function () {
 				}
 				headers['Cache-Control'] = cc;
 				headers['ETag'] = etag;
+				/* 音声は Range（一部だけ）の要求に 206 で答える。範囲がおかしければ 416 */
+				var range = RANGE_EXT[ext] ? /^bytes=(\d*)-(\d*)$/.exec(String(req.headers['range'] || '').trim()) : null;
+				var ifRange = String(req.headers['if-range'] || '');
+				if (RANGE_EXT[ext]) {
+					headers['Accept-Ranges'] = 'bytes';
+				}
+				if (range && (!ifRange || ifRange === etag) && (range[1] !== '' || range[2] !== '')) {
+					var start, end;
+					if (range[1] === '') {			/* bytes=-N（終わりから N バイト） */
+						start = Math.max(0, data.length - parseInt(range[2], 10));
+						end = data.length - 1;
+					} else {
+						start = parseInt(range[1], 10);
+						end = range[2] === '' ? data.length - 1 : Math.min(parseInt(range[2], 10), data.length - 1);
+					}
+					if (start >= data.length || start > end) {
+						headers['Content-Range'] = 'bytes */' + data.length;
+						res.writeHead(416, headers);
+						res.end();
+						return;
+					}
+					headers['Content-Range'] = 'bytes ' + start + '-' + end + '/' + data.length;
+					headers['Content-Length'] = end - start + 1;
+					res.writeHead(206, headers);
+					res.end(req.method === 'HEAD' ? undefined : data.slice(start, end + 1));
+					return;
+				}
 				headers['Content-Length'] = data.length;
 				res.writeHead(200, headers);
 				res.end(req.method === 'HEAD' ? undefined : data);

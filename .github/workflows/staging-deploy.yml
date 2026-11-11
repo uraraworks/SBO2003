@@ -6,7 +6,7 @@
 #   変数 SBO2003_STAGING_USER           SSH ユーザー（docker を sudo なしで使えること）
 #   Secret SBO2003_STAGING_SSH_KEY      上のユーザーでログインできる SSH 秘密鍵（そのままか base64 -w0 の1行）
 #   Secret SBO2003_STAGING_KNOWN_HOSTS  ssh-keyscan <ホスト> の出力（なりすまし防止）
-#   Secret SBO2003_PRIVATE_TOKEN        SBO2003-private を読めるトークン（BGM の MIDI を取るため。無ければ BGM 無し）
+#   Secret SBO2003_PRIVATE_TOKEN        SBO2003-private を読めるトークン（BGM の MIDI・音声ファイルを取るため。無ければ BGM 無し）
 #
 # ホスト側は ~/sbo2003-staging/deploy/staging/staging.env を用意しておく（初回のみ。手順は deploy/staging/README.md）。
 name: staging-deploy
@@ -28,7 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: 非公開の素材（MIDI）を取ってくる
+      - name: 非公開の素材（BGM の MIDI・音声）を取ってくる
         env:
           SBO2003_PRIVATE_TOKEN: ${{ secrets.SBO2003_PRIVATE_TOKEN }}
         run: tools/public/fetch-private-assets.sh

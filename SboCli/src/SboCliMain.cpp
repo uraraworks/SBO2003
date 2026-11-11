@@ -3362,7 +3362,7 @@ void PlayBGM(DWORD dwNo, BOOL bPlay)
 		dwBGM = dwNo;
 
 	} else {
-		dwBGM = g_pMapInfo->byBGM;
+		dwBGM = g_pMapInfo->wBGM;
 	}
 
 	g_dwPlayBgmNo = dwBGM;
@@ -3371,7 +3371,26 @@ void PlayBGM(DWORD dwNo, BOOL bPlay)
 	if (bPlay) {
 		bFlg = TRUE;
 	}
-	if (adwBgmIDTbl[dwBGM] == 0) {
+
+	/* 音声ファイル(.m4a)の BGM（番号は BGM_AUDIO_FIRST 以降。MIDI のリソースは引かない） */
+	const BGMAUDIOINFO *pAudio = FindBgmAudio (dwBGM);
+	if (pAudio) {
+#ifdef __EMSCRIPTEN__
+		if (bFlg) {
+			g_LibMusic.SetRelativeVolume (anVolTblMIDI[g_byVolMusic]);
+			g_LibMusic.SetLoop (TRUE);
+			if (g_LibMusic.OpenAudio (pAudio->pszFile)) {
+				g_LibMusic.Play ();
+			}
+			g_LibMusic.SetRelativeVolume (anVolTblMIDI[g_byVolMusic]);
+		}
+#endif
+		/* Windows版は音声ファイルを鳴らさない */
+		return;
+	}
+
+	/* 範囲外の番号は鳴らさない（表を外れて読まないように） */
+	if (dwBGM >= SOUND_MAX || adwBgmIDTbl[dwBGM] == 0) {
 		bFlg = FALSE;
 	}
 

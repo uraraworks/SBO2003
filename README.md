@@ -41,6 +41,8 @@ tools/server/run.sh       # http://localhost:8080/ で遊べます（停止は t
 
 - **BGM の MIDI**：作曲者さんに再配布の許可をいただけていないため入れていません。無くてもビルドでき、BGM が鳴らないだけです。
   手元にある場合は `SboSoundData/MIDI/` に置くとビルドに入ります。
+- **BGM の音声ファイル（.m4a）**：新しく入れ替えた曲です。非公開側（SBO2003-private）の `SboSoundData/Audio/` に置き、
+  ビルドで `bgm/audio/` へコピーします（`tools/public/fetch-private-assets.sh` が MIDI と一緒に取ってきます）。無くてもビルドでき、その曲のマップの BGM が鳴らないだけです。
 - **ゲームの中身のデータ**：マップ・NPC・アイテム・職業などは、解析するとネタバレになってしまうので入れていません。
   `Release/SBODATA/` は 10×10 の草原が 1 枚あるだけの最小データです（サーバーはマップが無いと自分で草原を作ります。
   作り方は `tools/public/make-min-seed.sh`）。キャラを作って歩くところまでは試せます。

@@ -14,7 +14,7 @@
 #      差し替えの直前に「まもなく再起動します」を流す。ビルドや確認が失敗して差し替えなかった時は中止を知らせる（cancel-notice）。
 #
 # 手動実行・v* タグ・関係するファイルを変える PR の時だけ動く（VPS へのデプロイは手動実行の時だけ）。
-# BGM の MIDI は Secret SBO2003_PRIVATE_TOKEN（SBO2003-private を読めるトークン）で取ってくる。無ければ BGM 無し。
+# BGM の MIDI・音声ファイルは Secret SBO2003_PRIVATE_TOKEN（SBO2003-private を読めるトークン）で取ってくる。無ければ BGM 無し。
 #
 # VPS へのデプロイに必要な設定（Settings → Secrets and variables → Actions）:
 #   変数 SBO2003_VPS_HOST          VPS のホスト名か IP（未設定の間はデプロイしない）
@@ -84,7 +84,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: 非公開の素材（MIDI）を取ってくる
+      - name: 非公開の素材（BGM の MIDI・音声）を取ってくる
         env:
           SBO2003_PRIVATE_TOKEN: ${{ secrets.SBO2003_PRIVATE_TOKEN }}
         run: tools/public/fetch-private-assets.sh

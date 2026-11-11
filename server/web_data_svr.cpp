@@ -300,6 +300,9 @@ typedef struct _DATAFIELD {
 #define FLDS(st, name, label, type, flags, note)	{ #name, label, type, offsetof(st, name), sizeof(((st *)0)->name), flags, note }
 #define FLDA(st, name, label, type, elem, flags, note)	{ #name, label, type, offsetof(st, name), sizeof(((st *)0)->name) / sizeof(elem), flags, note }
 
+/* JSON のキーをメンバー名と別にしたい時（メンバー名を変えても、保存済みの JSON や既存のページのキーを変えないため） */
+#define FLDK(st, name, key, label, type, flags, note)	{ key, label, type, offsetof(st, name), 0, flags, note }
+
 static const char *s_pszNoteMagicType =
 	"0=効果無し 1=HP減少 2=HP増加 3=明かり 4=魔法発生 5=帰還 6=HP減少(攻撃力) 7=魔法発生(自分) 8=蘇生 9=HP減少(HP消費) 10=HP減少(率) 11=加速(データ1=速くなる率%・2=秒) 12=毒(データ1=2秒ごとのダメージ・2=秒・3=成功率%) 13=眠り(データ1=秒・2=成功率%)";
 static const char *s_pszNoteAttr = "0=無し 1=火 2=水 3=風 4=土 5=光 6=闇";
@@ -1386,7 +1389,7 @@ static const DATAFIELD s_aFieldMap[] = {
 	FLD (MAPINFO, nStartY,				"初期位置Y",			FT_U32, 0, NULL),
 	FLD (MAPINFO, nEntranceX,			"入り口X",				FT_U32, 0, NULL),
 	FLD (MAPINFO, nEntranceY,			"入り口Y",				FT_U32, 0, NULL),
-	FLD (MAPINFO, byBGM,				"BGM",					FT_U8, 0, NULL),
+	FLDK(MAPINFO, wBGM, "byBGM",		"BGM",					FT_U16, 0, "曲の番号。0=無し、1〜は MIDI の曲（管理者ウィンドウの BGM 一覧の順ではなく SOUND_ の番号）、1000〜は音声ファイル(.m4a)の曲（1000=始まりの町（新） 1001=爆弾ゲーム場（新））。キーは byBGM のまま（メンバー名は wBGM）"),
 	FLD (MAPINFO, byFlg,				"フラグ",				FT_U8, 0, "ビット: 1=エフェクト可 2=戦闘可 4=サブゲーム 8=暗闇 16=マップ内放送 32=移動系効果禁止 64=魔法禁止 128=キャラの灯り無し(暗いマップでマップの光源だけで見える)"),
 	FLD (MAPINFO, byLightLevel,			"明るさ",				FT_U8, 0, NULL),
 	FLD (MAPINFO, byWeather,			"天候",					FT_U8, 0, NULL),
@@ -2513,8 +2516,8 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 		strErr = "byViewRange は 0〜10 で指定してください";
 		return false;
 	}
-	if (w.byBGM >= SOUND_MAX) {
-		strErr = "byBGM は 0〜" + JsonNum(SOUND_MAX - 1) + " で指定してください";
+	if (!IsValidBgmNo(w.wBGM)) {
+		strErr = "byBGM は 0〜" + JsonNum(BGM_MIDI_MAX - 1) + " または音声BGMの番号（" + JsonNum(BGM_AUDIO_FIRST) + "〜）で指定してください";
 		return false;
 	}
 	std::string strName = pMap->pszName ? pMap->pszName : "";
@@ -2796,13 +2799,13 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 	}
 
 	/* 反映 */
-	BYTE byBGMOld = pMap->byBGM;
+	WORD wBGMOld = pMap->wBGM;
 	/* マップ全体の情報（マップ情報の送り直しが要るもの）が変わるか。
 	 * 店・イベント・メッセージだけなら、マップに入り直させずに差分だけ送る */
 	bool bMapWide =
 		pMap->nStartX != w.nStartX || pMap->nStartY != w.nStartY ||
 		pMap->nEntranceX != w.nEntranceX || pMap->nEntranceY != w.nEntranceY ||
-		pMap->byBGM != w.byBGM || pMap->byFlg != w.byFlg ||
+		pMap->wBGM != w.wBGM || pMap->byFlg != w.byFlg ||
 		pMap->byLightLevel != w.byLightLevel || pMap->byWeather != w.byWeather ||
 		pMap->byViewRange != w.byViewRange || pMap->wViewHideParts != w.wViewHideParts ||
 		pMap->byDarkAreaCount != w.byDarkAreaCount ||
@@ -2818,7 +2821,7 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 	pMap->nStartY		= w.nStartY;
 	pMap->nEntranceX	= w.nEntranceX;
 	pMap->nEntranceY	= w.nEntranceY;
-	pMap->byBGM			= w.byBGM;
+	pMap->wBGM			= w.wBGM;
 	pMap->byFlg			= w.byFlg;
 	pMap->byLightLevel	= w.byLightLevel;
 	pMap->byWeather		= w.byWeather;
@@ -2899,8 +2902,8 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 		}
 	}
 	/* そのマップにいるプレイヤーへ、マップに入った時と同じ情報を送り直す */
-	if (byBGMOld != pMap->byBGM) {
-		SendCmdCHGBGM(URARASOCK_SENDALL, pMap->dwID, pMap->byBGM);
+	if (wBGMOld != pMap->wBGM) {
+		SendCmdCHGBGM(URARASOCK_SENDALL, pMap->dwID, pMap->wBGM);
 	}
 	if (bMapWide) {
 		/* クライアントはマップ情報を受け取るとキャラを全部消すので、

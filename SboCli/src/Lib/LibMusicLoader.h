@@ -45,6 +45,9 @@ public:
 
 	BOOL		Open				(LPCSTR pFileName, LPCSTR pType = NULL);				/* ファイルからMIDIデータを読み込む */
 	BOOL		Open				(HMODULE hResource, HRSRC hSrc, LPCSTR pType = NULL);	/* リソースからMIDIデータを読み込む */
+#ifdef __EMSCRIPTEN__
+	BOOL		OpenAudio			(LPCSTR pszFile);										/* 音声ファイル(.m4a。ページ側の bgm/audio/)を開く（Web版のみ） */
+#endif
 	BOOL		Close				(void);													/* データをメモリから開放 */
 	BOOL		FadeIn				(INT nTime, INT nVolume = -70);							/* フェードインを行う */
 	BOOL		FadeOut				(INT nTime);											/* フェードアウトを行う */

@@ -1423,7 +1423,14 @@ BOOL SaveMapInfo(void)
 		WriteData (hFile, "nStartY", sizeof (pMap->nStartY), (PBYTE)&pMap->nStartY);				/* 初期位置(Y) */
 		WriteData (hFile, "nEntranceX", sizeof (pMap->nEntranceX), (PBYTE)&pMap->nEntranceX);				/* 初期位置(X) */
 		WriteData (hFile, "nEntranceY", sizeof (pMap->nEntranceY), (PBYTE)&pMap->nEntranceY);				/* 初期位置(Y) */
-		WriteData (hFile, "byBGM", sizeof (pMap->byBGM), (PBYTE)&pMap->byBGM);						/* 音楽ID */
+		/* 音楽ID。byBGM は古いサーバーでも読めるように書き続ける（255 を超える番号は 0 にする）。
+		 * wBGM は音声BGMなど 256 以上の番号がある時だけ書く（古いサーバーは知らないラベルを読み飛ばせないので、
+		 * 今までの MIDI のマップは今まで通りの形のままにしておく） */
+		BYTE byBGMOld = (pMap->wBGM < 256) ? (BYTE)pMap->wBGM : 0;
+		WriteData (hFile, "byBGM", sizeof (byBGMOld), &byBGMOld);									/* 音楽ID(1バイト) */
+		if (pMap->wBGM >= 256) {
+			WriteData (hFile, "wBGM", sizeof (pMap->wBGM), (PBYTE)&pMap->wBGM);						/* 音楽ID(2バイト) */
+		}
 		WriteData (hFile, "byFlg", sizeof (pMap->byFlg), (PBYTE)&pMap->byFlg);						/* 各フラグ */
 		WriteData (hFile, "byLightLevel", sizeof (pMap->byLightLevel), (PBYTE)&pMap->byLightLevel);						/* 各フラグ */
 		WriteData (hFile, "byWeather", sizeof (pMap->byWeather), (PBYTE)&pMap->byWeather);						/* 天候 */
@@ -1647,8 +1654,18 @@ BOOL LoadMapInfo(void)
 					CopyMemory (&pMap->nEntranceX, &pData[dwFilePtr], dwSize);	dwFilePtr += dwSize;	continue;
 				} else if (strcmp (pszTmp, "nEntranceY") == 0) {			/* 入り口(Y) */
 					CopyMemory (&pMap->nEntranceY, &pData[dwFilePtr], dwSize);	dwFilePtr += dwSize;	continue;
-				} else if (strcmp (pszTmp, "byBGM") == 0) {					/* 音楽ID */
-					CopyMemory (&pMap->byBGM, &pData[dwFilePtr], dwSize);	dwFilePtr += dwSize;	continue;
+				} else if (strcmp (pszTmp, "byBGM") == 0) {					/* 音楽ID(1バイト。wBGM があれば後で上書きされる) */
+					BYTE byBGMTmp = 0;
+					CopyMemory (&byBGMTmp, &pData[dwFilePtr], min (dwSize, (DWORD)sizeof (byBGMTmp)));
+					pMap->wBGM = byBGMTmp;
+					dwFilePtr += dwSize;	continue;
+				} else if (strcmp (pszTmp, "wBGM") == 0) {					/* 音楽ID(2バイト) */
+					WORD wBGMTmp = 0;
+					CopyMemory (&wBGMTmp, &pData[dwFilePtr], min (dwSize, (DWORD)sizeof (wBGMTmp)));
+					if (IsValidBgmNo (wBGMTmp)) {
+						pMap->wBGM = wBGMTmp;
+					}
+					dwFilePtr += dwSize;	continue;
 				} else if (strcmp (pszTmp, "byFlg") == 0) {					/* 各フラグ */
 					CopyMemory (&pMap->byFlg, &pData[dwFilePtr], dwSize);	dwFilePtr += dwSize;	continue;
 				} else if (strcmp (pszTmp, "byLightLevel") == 0) {			/* 明るさレベル */

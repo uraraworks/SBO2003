@@ -46,7 +46,7 @@ void SendCmdEVENTINFO			(DWORD, int, int);							/* コマンド送信(イベン
 void SendCmdEVENTCOUNT			(DWORD, DWORD);								/* コマンド送信(イベント数通知) */
 void SendCmdEVENTPOS			(DWORD, DWORD);								/* コマンド送信(イベント座標通知) */
 void SendCmdHARTBEAT			(DWORD);									/* コマンド送信(生存確認応答) */
-void SendCmdCHGBGM				(DWORD, DWORD, BYTE);						/* コマンド送信(BGM変更) */
+void SendCmdCHGBGM				(DWORD, DWORD, WORD);						/* コマンド送信(BGM変更) */
 void SendCmdMSG					(DWORD, DWORD);								/* コマンド送信(メッセージ更新) */
 void SendCmdVIEWMSG				(DWORD, DWORD);								/* コマンド送信(メッセージ表示) */
 void SendCmdPLAYSOUND			(DWORD, BYTE, BYTE);						/* コマンド送信(効果音再生) */
@@ -1424,21 +1424,21 @@ void SendCmdHARTBEAT(DWORD pIDSend)
 /* 内容：コマンド送信(BGM変更)												 */
 /* 日付：2003/07/13															 */
 /* ========================================================================= */
-void SendCmdCHGBGM(DWORD pIDSend, DWORD dwMapID, BYTE byNo)
+void SendCmdCHGBGM(DWORD pIDSend, DWORD dwMapID, WORD wNo)
 {
-	PCMDPARA_DATA1 pSendData;
+	PCMDPARA_CHGBGM pSendData;
 
-	pSendData = (PCMDPARA_DATA1)new CMDPARA_DATA1;
-	ZeroMemory (pSendData, sizeof (CMDPARA_DATA1));
+	pSendData = (PCMDPARA_CHGBGM)new CMDPARA_CHGBGM;
+	ZeroMemory (pSendData, sizeof (CMDPARA_CHGBGM));
 	pSendData->byCmd = CMD_CHGBGM;
-	pSendData->byData = byNo;
+	pSendData->wBGM = wNo;
 
 	if (pIDSend == URARASOCK_SENDALL) {
-		SendCmdInsideMap (dwMapID, (LPBYTE)pSendData, sizeof (CMDPARA_DATA1));
+		SendCmdInsideMap (dwMapID, (LPBYTE)pSendData, sizeof (CMDPARA_CHGBGM));
 
 	} else {
 //		svr.SetPriority (1);
-		svrSock.SendTo (pIDSend, (LPBYTE)pSendData, sizeof (CMDPARA_DATA1), SENDTIMEOUT);
+		svrSock.SendTo (pIDSend, (LPBYTE)pSendData, sizeof (CMDPARA_CHGBGM), SENDTIMEOUT);
 	}
 	delete pSendData;
 }

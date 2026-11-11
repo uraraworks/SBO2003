@@ -1922,7 +1922,7 @@ typedef struct _MAPINFO {
 	int				nStartY;										/* 初期位置(Y) */
 	int				nEntranceX;										/* 入り口(X) */
 	int				nEntranceY;										/* 入り口(Y) */
-	BYTE			byBGM;											/* 音楽ID */
+	WORD			wBGM;											/* 音楽ID(SOUND_ の番号 または BGM_AUDIO_FIRST 以降の音声BGM) */
 	BYTE			byCountShop;									/* 店の数 */
 	BYTE			byFlg;											/* 各フラグ */
 	BYTE			byLightLevel;									/* 明るさレベル */
@@ -2068,7 +2068,7 @@ typedef struct _MAPINFOSAVE {
 	int				nCY;											/* 縦サイズ */
 	int				nStartX;										/* 初期位置(X) */
 	int				nStartY;										/* 初期位置(Y) */
-	BYTE			byBGM;											/* 音楽ID */
+	WORD			wBGM;											/* 音楽ID(SOUND_ の番号 または BGM_AUDIO_FIRST 以降の音声BGM) */
 	BYTE			byCountShop;									/* 店の数 */
 	BYTE			byFlg;											/* 各フラグ */
 	char			*pszName;										/* マップ名 */
@@ -2972,10 +2972,16 @@ typedef struct _CMDPARA_CHGEVENT {
 	PVOID		pData;												/* データ */
 } CMDPARA_CHGEVENT, *PCMDPARA_CHGEVENT;
 
+/* BGM変更（番号が 1 バイトに収まらないので WORD で送る） */
+typedef struct _CMDPARA_CHGBGM {
+	BYTE		byCmd;												/* コマンドID */
+	WORD		wBGM;												/* 音楽ID(0=止める) */
+} CMDPARA_CHGBGM, *PCMDPARA_CHGBGM;
+
 /* マップ情報更新 */
 typedef struct _CMDPARA_CHGMAPINFO {
 	BYTE		byCmd;												/* コマンドID */
-	BYTE		byBGM;												/* 音楽ID */
+	WORD		wBGM;												/* 音楽ID */
 	BYTE		byFlg;												/* 各フラグ */
 	BYTE		byLightLevel;										/* 明るさレベル */
 	BYTE		byWeather;											/* 天候 */
@@ -3382,3 +3388,6 @@ typedef struct _CMDPARA_WARSELECTMAGICTARGET {
 } CMDPARA_WARSELECTMAGICTARGET, *PCMDPARA_WARSELECTMAGICTARGET;
 
 /* Copyright(C)URARA-works 2003-2006 */
+
+/* 音声ファイルで鳴る BGM の番号表（WORD・BOOL などの型が決まった後に読み込む） */
+#include "BgmAudio.h"
