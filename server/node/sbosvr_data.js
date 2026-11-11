@@ -55,6 +55,8 @@
  *   /api/admin/ai/bookmark・bookmarks・rollback {session, ...} → 上のしおりと同じ
  *   /api/admin/data/list   {session, kind, offset?, limit?}   → 上の list と同じ（マップ資料の書き出し用。読むだけ）
  *   /api/admin/data/tiles  {session, id, x?, y?, w?, h?}      → 上の tiles と同じ
+ *   /api/admin/mapedit/apply {session, id, cells:[[x, y, 前, 後]], note?, force?} → マップ確認の編集を反映（履歴 1 件）
+ *   /api/admin/mapedit/draft/get・list・save {session, id?, cells?} → 編集の下書き（SboWebMapDrafts.json）
  */
 Module['sboData'] = (function () {
 	var fs = require('fs');
@@ -1110,6 +1112,171 @@ Module['sboData'] = (function () {
 	}
 
 	/* ------------------------------------------------------------------ */
+	/* 管理ページの「マップ確認」の編集モード										 */
+	/* ------------------------------------------------------------------ */
+	var MAPEDIT_BLOCK = 32;			/* 変わったマスを、この大きさの四角ごとにまとめて書き換える */
+	var MAPEDIT_MAX_CELLS = 10000;	/* 1 回で送れるマスの数（JSON の大きさの上限 256KB に収まるよう） */
+	var draftStore = null, strDraftPath = '';
+
+	/* cells: [[x, y, 前のパーツ, 新しいパーツ], ...] を確かめて返す */
+	function checkEditCells(id, cells) {
+		if (!Array.isArray(cells) || !cells.length || cells.length > MAPEDIT_MAX_CELLS) {
+			fail(400, 'cells', 'cells は [[x, y, 前, 後], ...] の配列で、1〜' + MAPEDIT_MAX_CELLS + ' 個にしてください');
+		}
+		var size = JSON.parse(UTF8ToString(_SboWebDataMapTiles(id, 0, 0, 1, 1)));
+		if (size.error) {
+			fail(404, 'not_found', size.error);
+		}
+		var nParts = count('mapParts');
+		var seen = {};
+		cells.forEach(function (c) {
+			if (!Array.isArray(c) || c.length !== 4 || !c.every(function (v) { return typeof v === 'number' && Math.floor(v) === v; })) {
+				fail(400, 'cells', 'cells の 1 個は [x, y, 前のパーツ, 新しいパーツ]（整数）です');
+			}
+			if (c[0] < 0 || c[1] < 0 || c[0] >= size.cx || c[1] >= size.cy) {
+				fail(400, 'cells', '(' + c[0] + ', ' + c[1] + ') はマップの外です（' + size.cx + '×' + size.cy + '）');
+			}
+			if (c[3] < 0 || c[3] >= nParts) {
+				fail(400, 'cells', 'パーツ番号 ' + c[3] + ' はありません（0〜' + (nParts - 1) + '）');
+			}
+			var k = c[0] + ',' + c[1];
+			if (seen[k]) {
+				fail(400, 'cells', '(' + k + ') が 2 回あります');
+			}
+			seen[k] = true;
+		});
+		return size;
+	}
+
+	/*
+	 * 編集したマスをまとめて反映する（{session, id, cells:[[x, y, 前, 後], ...], note?, force?}）。
+	 * 管理ページで確かめてから押すので下見は無し。「前」が今のサーバーと違うマス（ほかで変わった）があれば
+	 * 何も変えずに conflicts を返す（force:true なら構わず書く）。
+	 * 変わったマスを 32×32 の四角ごとに書き換え、履歴は 1 件（AI連携の履歴から元に戻せる）。
+	 */
+	function apiAdminMapEditApply(body) {
+		var who = adminWho(body);
+		var id = checkId(body.id);
+		if (id >= count('map')) {
+			fail(400, 'id', 'マップ ' + id + ' 番はありません');
+		}
+		var cells = body.cells;
+		checkEditCells(id, cells);
+		/* 四角ごとに分ける */
+		var blocks = {}, order = [];
+		cells.forEach(function (c) {
+			var bx = Math.floor(c[0] / MAPEDIT_BLOCK), by = Math.floor(c[1] / MAPEDIT_BLOCK);
+			var k = bx + ',' + by;
+			if (!blocks[k]) {
+				blocks[k] = { cells: [], x0: c[0], y0: c[1], x1: c[0], y1: c[1] };
+				order.push(k);
+			}
+			var b = blocks[k];
+			b.cells.push(c);
+			b.x0 = Math.min(b.x0, c[0]);
+			b.y0 = Math.min(b.y0, c[1]);
+			b.x1 = Math.max(b.x1, c[0]);
+			b.y1 = Math.max(b.y1, c[1]);
+		});
+		/* 今のマス目を読んで、ほかで変わったマスが無いか見る */
+		var conflicts = [];
+		order.forEach(function (k) {
+			var b = blocks[k];
+			b.w = b.x1 - b.x0 + 1;
+			b.h = b.y1 - b.y0 + 1;
+			b.now = readTiles(id, b.x0, b.y0, b.w, b.h);
+			b.cells.forEach(function (c) {
+				var v = b.now[c[1] - b.y0][c[0] - b.x0];
+				if (v !== c[2] && v !== c[3]) {
+					conflicts.push([c[0], c[1], c[2], v, c[3]]);
+				}
+			});
+		});
+		if (conflicts.length && !body.force) {
+			return {
+				ok: false, error: 'conflict', conflicts: conflicts.slice(0, 500), conflictCount: conflicts.length,
+				message: '読み込んだ後に、ほかで変わったマスが ' + conflicts.length + ' 個あります（何も変えていません）'
+			};
+		}
+		var map = getRecord('map', id);
+		var name = map ? map.szName : '';
+		backupFile('tiles');
+		var items = [], nChanged = 0;
+		order.forEach(function (k) {
+			var b = blocks[k];
+			var parts = b.now.map(function (row) { return row.slice(); });
+			b.cells.forEach(function (c) {
+				parts[c[1] - b.y0][c[0] - b.x0] = c[3];
+			});
+			var r = setTiles(id, b.x0, b.y0, parts, true);
+			if (!r.ok) {
+				fail(400, 'apply', r.error);
+			}
+			if (r.changed) {
+				nChanged += r.changed;
+				items.push({ id: id, name: name, x: b.x0, y: b.y0, w: b.w, h: b.h, before: r.before, after: r.after, changed: r.changed });
+			}
+		});
+		if (!items.length) {
+			return { ok: true, changed: 0, message: 'サーバーのマス目はもう同じでした' };
+		}
+		var e = addHistory({ op: 'tiles', kind: 'tiles', by: who.label,
+			note: String(body.note || '管理ページのマップ編集').slice(0, 500), items: items });
+		log(who.label + ' がマップ ' + id + ' のマス目を ' + nChanged + ' マス変更（マップ編集・履歴 ' + e.historyId + '）');
+		return { ok: true, historyId: e.historyId, changed: nChanged };
+	}
+
+	/* 下書き（SBODATA/SboWebMapDrafts.json。マップ 1 つに 1 つ。サーバーのデータは変えない） */
+	function drafts() {
+		if (!draftStore) {
+			strDraftPath = path.join(dataDir(), 'SboWebMapDrafts.json');
+			draftStore = readJsonFile(strDraftPath, {});
+			draftStore.version = 1;
+			draftStore.maps = draftStore.maps || {};
+		}
+		return draftStore;
+	}
+	function draftPublic(d) {
+		return d ? { id: d.id, mapId: d.mapId, cx: d.cx, cy: d.cy, cells: d.cells, savedAt: d.savedAt, by: d.by } : null;
+	}
+	/* {session, id} → {draft:{id, mapId, cx, cy, cells, savedAt} | null} */
+	function apiAdminMapEditDraftGet(body) {
+		adminWho(body);
+		var id = checkId(body.id);
+		return { draft: draftPublic(drafts().maps[id]) };
+	}
+	/* {session} → {drafts:[{id, cells の数, savedAt}]}（下書きのあるマップの一覧） */
+	function apiAdminMapEditDraftList(body) {
+		adminWho(body);
+		var ds = drafts();
+		return {
+			drafts: Object.keys(ds.maps).map(function (k) {
+				var d = ds.maps[k];
+				return { id: d.id, mapId: d.mapId, count: d.cells.length, savedAt: d.savedAt };
+			})
+		};
+	}
+	/* {session, id, cells:[[x, y, 前, 後], ...], mapId?, cx?, cy?}。cells が空なら消す */
+	function apiAdminMapEditDraftSave(body) {
+		var who = adminWho(body);
+		var id = checkId(body.id);
+		if (id >= count('map')) {
+			fail(400, 'id', 'マップ ' + id + ' 番はありません');
+		}
+		var ds = drafts();
+		if (!Array.isArray(body.cells) || !body.cells.length) {
+			delete ds.maps[id];
+			writeJsonFile(strDraftPath, ds);
+			return { ok: true, deleted: true };
+		}
+		var size = checkEditCells(id, body.cells);
+		var now = Date.now();
+		ds.maps[id] = { id: id, mapId: size.mapId, cx: size.cx, cy: size.cy, cells: body.cells, savedAt: now, by: who.label };
+		writeJsonFile(strDraftPath, ds);
+		return { ok: true, savedAt: now, count: body.cells.length };
+	}
+
+	/* ------------------------------------------------------------------ */
 	/* AI 用キー																	 */
 	/* ------------------------------------------------------------------ */
 	function requireWrite(who) {
@@ -1581,7 +1748,12 @@ Module['sboData'] = (function () {
 		/* 作り手・レシピの保存（管理ページの「レシピ」）。読む方は /api/admin/data/list */
 		'/api/admin/recipe/save': apiAdminRecipeSave,
 		/* NPC の巡回ルートを決める（管理ページの「NPCの巡回」） */
-		'/api/admin/npcroute/set': apiAdminNpcRouteSet
+		'/api/admin/npcroute/set': apiAdminNpcRouteSet,
+		/* マップ確認の編集モード（反映・下書き） */
+		'/api/admin/mapedit/apply': apiAdminMapEditApply,
+		'/api/admin/mapedit/draft/get': apiAdminMapEditDraftGet,
+		'/api/admin/mapedit/draft/list': apiAdminMapEditDraftList,
+		'/api/admin/mapedit/draft/save': apiAdminMapEditDraftSave
 	};
 
 	/*
