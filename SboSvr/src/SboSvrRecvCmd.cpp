@@ -1117,13 +1117,19 @@ int GetCharNo(DWORD pID)
 
 int GetMapNo(DWORD dwID)
 {
+	static int nLastMapNo = -1;
 	int i, nCount;
 	PMAPINFO pMapInfo;
 
 	nCount = g_aMapInfo.GetSize ();
+	/* 配列変更後も使えるよう、前回の番号の範囲と現在のIDを毎回確認 */
+	if ((nLastMapNo >= 0) && (nLastMapNo < nCount) && (g_aMapInfo[nLastMapNo]->dwID == dwID)) {
+		return nLastMapNo;
+	}
 	for (i = 0; i < nCount; i ++) {
 		pMapInfo = g_aMapInfo[i];
 		if (pMapInfo->dwID == dwID) {
+			nLastMapNo = i;
 			return i;
 		}
 	}

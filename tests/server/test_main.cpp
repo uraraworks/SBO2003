@@ -2265,6 +2265,71 @@ static void TestSortItem(const std::vector<int> &aLogin)
 	pL->byAdminLV = byAdminBackL;
 }
 
+/* ========================================================================= */
+/* 関数名：	CheckMapNo													 */
+/* 内容：	マップ番号の検索結果を確認									 */
+/* ========================================================================= */
+static void CheckMapNo(DWORD dwID, int nExpected)
+{
+	int nNo = GetMapNo(dwID);
+	if (nNo != nExpected) {
+		fprintf(stderr, "GetMapNo(%u): %d != %d\n", dwID, nNo, nExpected);
+		abort();
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：	TestMapNo													 */
+/* 内容：	マップ配列変更後の検索と、同じIDの繰り返し検索を確認		 */
+/* ========================================================================= */
+static void TestMapNo(void)
+{
+	/* ゲームデータの読込前に、独立した配列で確かめる（乱数は使わない） */
+	MAPINFO *aMap = new MAPINFO[256];
+	ZeroMemory(aMap, sizeof(MAPINFO) * 256);
+	CheckMapNo(0, -1);
+	for (int i = 0; i < 256; i ++) {
+		aMap[i].dwID = 1000 + i;
+		g_aMapInfo.Add(&aMap[i]);
+	}
+	CheckMapNo(1255, 255);
+	CheckMapNo(1255, 255);
+	CheckMapNo(999, -1);
+	CheckMapNo(1255, 255);
+
+	const int NRUN = 1000000;
+	int nSum = 0;
+	double dStart = NowMs();
+	for (int i = 0; i < NRUN; i ++) nSum += GetMapNo(1255);
+	printf("BENCH getmapno maps=256 runs=%d sum=%d ms=%.1f\n", NRUN, nSum, NowMs() - dStart);
+
+	/* 同じ要素数での並べ替えとID変更 */
+	g_aMapInfo[0] = &aMap[255];
+	g_aMapInfo[255] = &aMap[0];
+	CheckMapNo(1255, 0);
+	aMap[255].dwID = 2000;
+	CheckMapNo(1255, -1);
+	CheckMapNo(2000, 0);
+	/* 先頭への挿入・削除で番号がずれる */
+	g_aMapInfo.RemoveAt(0);
+	CheckMapNo(1000, 254);
+	g_aMapInfo.InsertAt(0, &aMap[255]);
+	CheckMapNo(1000, 255);
+	g_aMapInfo.RemoveAt(255);
+	CheckMapNo(1000, -1);
+	/* 同じ番号を別のマップが使う場合と、全削除・再読込 */
+	CheckMapNo(1001, 1);
+	g_aMapInfo[1] = &aMap[0];
+	CheckMapNo(1001, -1);
+	CheckMapNo(1000, 1);
+	g_aMapInfo.RemoveAll();
+	CheckMapNo(1000, -1);
+	g_aMapInfo.Add(&aMap[0]);
+	CheckMapNo(1000, 0);
+	g_aMapInfo.RemoveAll();
+	delete [] aMap;
+}
+
 int main(int argc, char **argv)
 {
 	setvbuf(stdout, NULL, _IOLBF, 0);
@@ -2273,6 +2338,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "chdir failed\n");
 		return 1;
 	}
+	TestMapNo();
 	TestSend();
 	TestMyArray();
 	TestSugorokuViewer();
