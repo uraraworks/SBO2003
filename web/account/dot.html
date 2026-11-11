@@ -177,8 +177,22 @@
 		align-items: center;
 	}
 	#status b { color: var(--fg); font-weight: normal; }
+	#stInfo { display: contents; }
+	#zoomBox { display: flex; align-items: center; gap: 4px; }
+	#zoomSel { font-size: 12px; padding: 1px 4px; }
 	#status .sw { display: inline-block; width: 12px; height: 12px; border: 1px solid #888; vertical-align: -2px; margin-right: 4px; }
-	#empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--sub); text-align: center; line-height: 2; pointer-events: none; }
+	#empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; color: var(--sub); text-align: center; line-height: 2; pointer-events: none; overflow-y: auto; padding: 16px; }
+	/* リロードした直後など、絵を開いていない時に出す控えの一覧 */
+	#startDrafts { pointer-events: auto; width: min(720px, 100%); text-align: left; line-height: 1.5; }
+	#startDrafts h3 { margin: 0 0 8px; font-size: 14px; color: var(--fg); }
+	#startDraftList { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+	.sd { display: flex; gap: 8px; align-items: center; padding: 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--field); cursor: pointer; color: var(--fg); }
+	.sd:hover { border-color: var(--accent); }
+	.sd .th { width: 48px; height: 48px; flex: none; background: #000; display: flex; align-items: center; justify-content: center; }
+	.sd .th img { max-width: 48px; max-height: 48px; image-rendering: pixelated; }
+	.sd .info { flex: 1; min-width: 0; font-size: 12px; }
+	.sd .nm { word-break: break-all; }
+	#startDrafts .more { margin-top: 6px; font-size: 12px; }
 
 	/* ---- 左: ツール ---- */
 	#tools { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
@@ -343,7 +357,7 @@
 				<div class="opt-group">
 					<h4>ホイールの拡大の速さ</h4>
 					<div class="row">
-						<select id="wheelZoomSpeed" title="Cmd（Ctrl）＋ホイールやピンチで拡大縮小する時の速さ。Magic Mouse やトラックパッドで速すぎる時は「ゆっくり」に">
+						<select id="wheelZoomSpeed" title="Cmd（Ctrl）＋ホイールやピンチで拡大縮小する時の速さ。Shift なしは細かく、Cmd＋Shift＋ホイールは 1・2・3・4・6・8… の段階で変わります">
 							<option value="slow">ゆっくり</option>
 							<option value="normal">ふつう</option>
 							<option value="fast">はやい</option>
@@ -375,9 +389,15 @@
 	<section id="center">
 		<div id="viewport">
 			<div id="sizer"><div id="anchor"><canvas id="cv" tabindex="0"></canvas></div></div>
-			<div id="empty">左の一覧から絵を選ぶか、<br>「作業フォルダを開く」を押してください。</div>
+			<div id="empty">
+				<div>左の一覧から絵を選ぶか、<br>「作業フォルダを開く」を押してください。</div>
+				<div id="startDrafts" hidden>
+					<h3>一時保存の控えから続ける</h3>
+					<div id="startDraftList"></div>
+				</div>
+			</div>
 		</div>
-		<div id="status"></div>
+		<div id="status"><label id="zoomBox" title="拡大率。Cmd（Ctrl）＋ホイールで細かく、Cmd＋Shift＋ホイールや + / − キーで 1・2・3・4・6・8… の段階で変わります">拡大 <select id="zoomSel" disabled></select></label><span id="stInfo"></span></div>
 	</section>
 
 	<aside id="right">
