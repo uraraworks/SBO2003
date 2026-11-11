@@ -158,12 +158,14 @@ static int MainLoopStep(void)
 	/* 時間的に描画するだろうフレーム番号を求める */
 	byNowFrame = (BYTE)((dwTimeTmp - s_dwTimeStart) / dwTmp);
 	if ((s_byFps == 0) || s_byFrameBack != byNowFrame) {
+#ifndef __EMSCRIPTEN__
 		if (s_byFps && (abs (s_byFrameBack - byNowFrame) != 1)) {
 			g_bDraw = FALSE;
 		}
 		if (s_byFps >= 30) {
 			g_bDraw = FALSE;
 		}
+#endif
 
 		s_byFrameBack = byNowFrame;
 		if (g_bWindowActive && byNowFrame % 2) {
@@ -173,12 +175,27 @@ static int MainLoopStep(void)
 			}
 		}
 
+#ifndef __EMSCRIPTEN__
 		if (g_bDraw) {
 			InvalidateRect (g_hWndMain, NULL, FALSE);
 //			UpdateWindow (g_hWndMain);
 			s_byFps ++;
 		}
+#endif
 	}
+
+#ifdef __EMSCRIPTEN__
+	/* ブラウザ版は、画面の書き換えごと（requestAnimationFrame、普通は 1 秒に 60 回）に
+	   ここへ来るので、変化があればそのまま描く。
+	   以前は Windows 版と同じく 33ms の枠で 1 秒 30 回までに絞っていたが、
+	   画面の書き換え（16.7ms ごと）と枠の境目がずれて、枠が 1 つ飛んだ時と
+	   1 秒ごとの数え直しの時に描画を 1 回捨てていた。歩いている時に
+	   1 秒に 1 回ほど絵が 1 コマ止まり、「ひっかかる」ように見えていた */
+	if (g_bDraw) {
+		InvalidateRect (g_hWndMain, NULL, FALSE);
+		s_byFps ++;
+	}
+#endif
 
 	if (timeGetTime () > s_dwTimeStart + 1000) {
 		/* FPSの更新 */
