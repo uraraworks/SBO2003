@@ -225,6 +225,8 @@ BGM・暗さはマップの設定（`map` の `byBGM`・`byLightLevel`）なの�
 | `/api/data/get` | `{kind, id}` | 1 件 |
 | `/api/data/tiles` | `{id, x?, y?, w?, h?}` | マップのマス目（`id` は `map` の番号） |
 | `/api/data/tiles/set` | `{id, x, y, parts:[[...]], note?, previewId?}` | マス目を書き換える（下見 / 反映の結果） |
+| `/api/data/map/resize` | `{id, top?, bottom?, left?, right?, fill?, check?}` | マップを広げる（縮められない。上・左に広げると座標を持つもの全部をずらす。`check:true` で確かめるだけ。履歴に残らず元に戻せない） |
+| `/api/data/map/add` | `{cx, cy, fill?, szName?}` | マップを足す（番号はいちばん後ろ。履歴に残らず消せない） |
 | `/api/data/update` | `{kind, updates:[{id, changes}], note?, previewId?}` | 下見 / 反映の結果 |
 | `/api/data/add` | `{kind, records:[{...}], note?, previewId?}` | 下見 / 反映の結果 |
 | `/api/data/history` | `{kind?, limit?}` | 変更履歴（新しい順。マス目は `kind: "tiles"`） |

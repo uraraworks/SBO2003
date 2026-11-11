@@ -4212,3 +4212,326 @@ extern "C" EMSCRIPTEN_KEEPALIVE int SboWebCharFindNpc(int nNpcID)
 {
 	return (nNpcID <= 0) ? -1 : CharFindByNpcId((DWORD)nNpcID);
 }
+
+/* ------------------------------------------------------------------------- */
+/* マップの追加・大きさの拡張（管理ページの「マップ確認」）					 */
+/* ------------------------------------------------------------------------- */
+
+/* 古い w×h の配列を、新しい nw×nh の (dx, dy) の位置へ写す（空いた所は fill） */
+template <class T> static T *ResizeGrid(const T *pOld, int w, int h, int nw, int nh, int dx, int dy, T fill)
+{
+	T *pNew = new T[nw * nh];
+	for (int i = 0; i < nw * nh; i ++) {
+		pNew[i] = fill;
+	}
+	if (pOld) {
+		for (int y = 0; y < h; y ++) {
+			for (int x = 0; x < w; x ++) {
+				pNew[(x + dx) + (y + dy) * nw] = pOld[x + y * w];
+			}
+		}
+	}
+	return pNew;
+}
+
+/*
+ * マップの左上に dx 列・dy 行足した時に、そのマップの座標を持っているものを全部ずらす。
+ * （昔の RenewDataPos は暗い範囲・光源・巡回ルート・町転送・依頼のNPC・すごろくに対応していなかったので、別に作った）
+ *   abyChgMap … イベント（行き先）が変わったマップの番号に 1 を入れる
+ */
+static void ShiftMapPos(PMAPINFO pMap, int dx, int dy, std::vector<char> &abyChgMap)
+{
+	DWORD dwID = pMap->dwID;
+	int i, j;
+
+	/* このマップの設定 */
+	pMap->nStartX += dx;
+	pMap->nStartY += dy;
+	pMap->nEntranceX += dx;
+	pMap->nEntranceY += dy;
+	for (i = 0; i < pMap->byDarkAreaCount && i < MAX_MAPDARKAREA; i ++) {
+		pMap->aDarkArea[i].wX1 += dx;
+		pMap->aDarkArea[i].wY1 += dy;
+		pMap->aDarkArea[i].wX2 += dx;
+		pMap->aDarkArea[i].wY2 += dy;
+	}
+	for (i = 0; i < pMap->byLightCount && i < MAX_MAPLIGHT; i ++) {
+		pMap->aLight[i].wX += dx;
+		pMap->aLight[i].wY += dy;
+	}
+	for (i = 0; i < pMap->nItemCount && pMap->pItem; i ++) {
+		pMap->pItem[i].dwX += dx;
+		pMap->pItem[i].dwY += dy;
+	}
+
+	/* イベント（このマップのイベントの場所と行き先・ほかのマップからこのマップへの行き先） */
+	for (j = 0; j < g_aMapInfo.GetSize(); j ++) {
+		PMAPINFO pMapTmp = g_aMapInfo[j];
+		for (i = 0; i < pMapTmp->nEventCount && pMapTmp->pEvent; i ++) {
+			PEVENTINFO pEv = &pMapTmp->pEvent[i];
+			if (pMapTmp == pMap) {
+				pEv->dwX += dx;
+				pEv->dwY += dy;
+				abyChgMap[j] = 1;
+				if (pEv->pData && pEv->byType == EVENTTYPE_MOVE) {
+					((PEVENTINFO_MOVE)pEv->pData)->dwX += dx;
+					((PEVENTINFO_MOVE)pEv->pData)->dwY += dy;
+				}
+				if (pEv->pData && pEv->byType == EVENTTYPE_ONCHARMAP) {
+					((PEVENTINFO_ONCHARMAP)pEv->pData)->dwX += dx;
+					((PEVENTINFO_ONCHARMAP)pEv->pData)->dwY += dy;
+				}
+			}
+			if (pEv->pData && pEv->byType == EVENTTYPE_MAPCHG) {
+				PEVENTINFO_MAPCHG pChg = (PEVENTINFO_MAPCHG)pEv->pData;
+				if (pChg->dwMapID == dwID) {
+					pChg->dwX += dx;
+					pChg->dwY += dy;
+					abyChgMap[j] = 1;
+				}
+			}
+		}
+	}
+
+	/* キャラ（今いる場所・復活地点・巡回ルート・町転送の行き先帳・橋の上下を決めた場所） */
+	for (i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		PCHARINFO pChar = g_aCharInfo[i];
+		if (pChar == NULL) {
+			continue;
+		}
+		if (pChar->dwMapID == dwID) {
+			pChar->dwX += dx;
+			pChar->dwY += dy;
+			pChar->dwXBack += dx;
+			pChar->dwYBack += dy;
+			for (j = 0; j < pChar->byRouteCount && j < MAX_NPCROUTE; j ++) {
+				pChar->abyRouteX[j] += dx;
+				pChar->abyRouteY[j] += dy;
+			}
+		}
+		if (pChar->dwStartMapID == dwID) {
+			pChar->dwStartX += dx;
+			pChar->dwStartY += dy;
+		}
+		if (pChar->dwBridgeMapID == dwID) {
+			pChar->dwBridgeX += dx;
+			pChar->dwBridgeY += dy;
+		}
+		for (j = 0; j < pChar->byTownWarpCount && j < MAX_TOWNWARP; j ++) {
+			if (pChar->adwTownWarpMapID[j] == dwID) {
+				pChar->abyTownWarpX[j] += dx;
+				pChar->abyTownWarpY[j] += dy;
+			}
+		}
+	}
+
+	/* 移動アイテム（キラメルの翼など）の行き先 */
+	for (i = 0; i < g_aItemInfo.GetSize(); i ++) {
+		PITEMINFO pItem = g_aItemInfo[i];
+		if (pItem && pItem->byType == ITEMTYPE_RURA && pItem->pData) {
+			PITEMINFO_RURA pRura = (PITEMINFO_RURA)pItem->pData;
+			if (pRura->dwMapID == dwID) {
+				pRura->dwX += dx;
+				pRura->dwY += dy;
+				SendCmdCHGITEM(URARASOCK_SENDALL, i);
+			}
+		}
+	}
+
+	/* 依頼の見えるNPC（出る場所・ポータルの行き先） */
+	for (i = 0; i < g_aQuestInfo.GetSize(); i ++) {
+		PQUESTINFO pQuest = g_aQuestInfo[i];
+		if (pQuest == NULL) {
+			continue;
+		}
+		for (j = 0; j < MAX_QUESTNPC; j ++) {
+			PQUESTNPCINFO pNpc = &pQuest->aNpc[j];
+			if (pNpc->byKind && pNpc->dwMapID == dwID) {
+				pNpc->byX += dx;
+				pNpc->byY += dy;
+			}
+			if (pNpc->byKind && pNpc->dwDestMapID == dwID) {
+				pNpc->byDestX += dx;
+				pNpc->byDestY += dy;
+			}
+		}
+	}
+
+	/* サブゲーム */
+	for (i = 0; i < g_aSubaGameInfo.GetSize(); i ++) {
+		PSUBGAMEINFO pInfo = g_aSubaGameInfo[i];
+		if (pInfo == NULL || pInfo->pInfo == NULL) {
+			continue;
+		}
+		switch (pInfo->byType) {
+		case SUBGAMEID_BOMB:
+			{
+				PSUBGAME_BOMBINFO p = (PSUBGAME_BOMBINFO)pInfo->pInfo;
+				if (p->dwMapID == dwID) {
+					p->byX1 += dx; p->byY1 += dy; p->byX2 += dx; p->byY2 += dy;
+					p->dwStartX += dx; p->dwStartY += dy; p->dwX += dx; p->dwY += dy;
+				}
+			}
+			break;
+		case SUBGAMEID_MAZE:
+			{
+				PSUBGAME_MAZEINFO p = (PSUBGAME_MAZEINFO)pInfo->pInfo;
+				if (p->dwMapID == dwID) {
+					p->byX1 += dx; p->byY1 += dy; p->byX2 += dx; p->byY2 += dy;
+				}
+			}
+			break;
+		case SUBGAMEID_DUNGEON:
+			{
+				PSUBGAME_DUNGEONINFO p = (PSUBGAME_DUNGEONINFO)pInfo->pInfo;
+				if (p->dwMapID == dwID) {
+					p->byX1 += dx; p->byY1 += dy; p->byX2 += dx; p->byY2 += dy;
+				}
+			}
+			break;
+		case SUBGAMEID_WAR:
+			{
+				PSUBGAME_WARINFO p = (PSUBGAME_WARINFO)pInfo->pInfo;
+				if (p->dwMapID == dwID) {
+					p->byX += dx; p->byY += dy;
+					p->byX1 += dx; p->byY1 += dy; p->byX2 += dx; p->byY2 += dy;
+					p->byHP1X += dx; p->byHP2X += dx; p->byHPY += dy;
+					p->byJudgeX += dx; p->byJudgeY += dy;
+					p->byRes1X += dx; p->byRes2X += dx; p->byResY += dy;
+					p->byStart1X += dx; p->byStart2X += dx; p->byStartY += dy;
+					p->byCastle1X += dx; p->byCastle2X += dx; p->byCastleY += dy;
+				}
+			}
+			break;
+		case SUBGAMEID_SUGOROKU:
+			{
+				PSUBGAME_SUGOROKUINFO p = (PSUBGAME_SUGOROKUINFO)pInfo->pInfo;
+				if (p->dwMapID == dwID) {
+					p->byX += dx; p->byY += dy;
+					p->dwStartX += dx; p->dwStartY += dy;
+					p->dwGoalX += dx; p->dwGoalY += dy;
+					for (j = 0; j < p->aEventInfo.GetSize(); j ++) {
+						p->aEventInfo[j].byX += dx;
+						p->aEventInfo[j].byY += dy;
+					}
+					for (j = 0; j < p->aPlayerInfo.GetSize(); j ++) {
+						p->aPlayerInfo[j].dwX += dx;
+						p->aPlayerInfo[j].dwY += dy;
+					}
+				}
+			}
+			break;
+		}
+	}
+}
+
+/*
+ * マップの大きさを広げる（上・下・左・右に足す行・列の数。縮めることはできない）。
+ *   足したマスは wFill のパーツで埋める。上・左に足した時は、マップの座標を持っているものを全部ずらす。
+ *   結果: {"ok":true,"cx":..,"cy":..,"shiftX":..,"shiftY":..} / {"ok":false,"error":"理由"}
+ */
+extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataMapResize(int nID, int nTop, int nBottom, int nLeft, int nRight, int nFill, int bApply)
+{
+	std::string strErr;
+	if (nID < 0 || nID >= g_aMapInfo.GetSize()) {
+		strErr = "マップの番号が範囲外です";
+	} else if (nTop < 0 || nBottom < 0 || nLeft < 0 || nRight < 0) {
+		strErr = "足す数は 0 以上で指定してください（縮めることはできません）";
+	} else if (nTop + nBottom + nLeft + nRight == 0) {
+		strErr = "足す行・列がありません";
+	} else if (nFill < 0 || nFill >= g_wCountMapParts) {
+		strErr = "埋めるパーツ番号 " + JsonNum(nFill) + " はありません（0〜" + JsonNum(g_wCountMapParts - 1) + "）";
+	} else {
+		PMAPINFO pMap = g_aMapInfo[nID];
+		if (pMap->nCX + nLeft + nRight > 255 || pMap->nCY + nTop + nBottom > 255) {
+			strErr = "広げた後の大きさが 255 マスを超えます（今は " + JsonNum(pMap->nCX) + "×" + JsonNum(pMap->nCY) + "）";
+		}
+	}
+	if (!strErr.empty()) {
+		s_strResult = "{\"ok\":false,\"error\":" + JsonStr(strErr.c_str()) + "}";
+		return s_strResult.c_str();
+	}
+	PMAPINFO pMap = g_aMapInfo[nID];
+	int nCX = pMap->nCX, nCY = pMap->nCY;
+	int nNewCX = nCX + nLeft + nRight, nNewCY = nCY + nTop + nBottom;
+	if (bApply) {
+		WORD *pwNew = ResizeGrid<WORD>(pMap->pwMap, nCX, nCY, nNewCX, nNewCY, nLeft, nTop, (WORD)nFill);
+		DWORD *pdwNew = ResizeGrid<DWORD>(pMap->pdwMapChar, nCX, nCY, nNewCX, nNewCY, nLeft, nTop, 0);
+		SAFE_DELETE_ARRAY(pMap->pwMap);
+		SAFE_DELETE_ARRAY(pMap->pdwMapChar);
+		pMap->pwMap = pwNew;
+		pMap->pdwMapChar = pdwNew;
+		if (pMap->pbyRoofLV) {
+			PBYTE p = ResizeGrid<BYTE>(pMap->pbyRoofLV, nCX, nCY, nNewCX, nNewCY, nLeft, nTop, 0);
+			SAFE_DELETE_ARRAY(pMap->pbyRoofLV);
+			pMap->pbyRoofLV = p;
+		}
+		if (pMap->pbyFlg) {
+			PBYTE p = ResizeGrid<BYTE>(pMap->pbyFlg, nCX, nCY, nNewCX, nNewCY, nLeft, nTop, 0);
+			SAFE_DELETE_ARRAY(pMap->pbyFlg);
+			pMap->pbyFlg = p;
+		}
+		pMap->nCX = nNewCX;
+		pMap->nCY = nNewCY;
+		std::vector<char> abyChgMap(g_aMapInfo.GetSize(), 0);
+		if (nLeft || nTop) {
+			ShiftMapPos(pMap, nLeft, nTop, abyChgMap);
+		}
+		/* 保存して、ログイン中の人へ知らせる */
+		SaveMapInfo();
+		SaveCharInfo();
+		SaveItemInfo();
+		SaveSubGameInfo();
+		SaveQuestInfo();
+		ResendMapToPlayers(pMap, nID);
+		for (int j = 0; j < (int)abyChgMap.size(); j ++) {
+			if (abyChgMap[j] && j != nID) {
+				SendCmdEVENTPOS(URARASOCK_SENDALL, j);
+			}
+		}
+	}
+	s_strResult = "{\"ok\":true,\"mapId\":" + JsonNum(pMap->dwID) + ",\"cx\":" + JsonNum(nNewCX) + ",\"cy\":" + JsonNum(nNewCY) +
+			",\"oldCx\":" + JsonNum(nCX) + ",\"oldCy\":" + JsonNum(nCY) +
+			",\"shiftX\":" + JsonNum(nLeft) + ",\"shiftY\":" + JsonNum(nTop) + "}";
+	return s_strResult.c_str();
+}
+
+/*
+ * マップを足す（大きさ cx×cy・wFill のパーツで埋める・名前）。番号はいちばん後ろ。
+ *   結果: {"ok":true,"id":..,"mapId":..} / {"ok":false,"error":"理由"}
+ */
+extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataMapAdd(int nCX, int nCY, int nFill, const char *pszName)
+{
+	std::string strErr;
+	std::string strName = pszName ? pszName : "";
+	if (nCX < 1 || nCY < 1 || nCX > 255 || nCY > 255) {
+		strErr = "大きさは 1〜255 マスで指定してください";
+	} else if (nFill < 0 || nFill >= g_wCountMapParts) {
+		strErr = "埋めるパーツ番号 " + JsonNum(nFill) + " はありません（0〜" + JsonNum(g_wCountMapParts - 1) + "）";
+	} else {
+		CheckText(strName, 256, false, strErr, "szName");
+	}
+	if (!strErr.empty()) {
+		s_strResult = "{\"ok\":false,\"error\":" + JsonStr(strErr.c_str()) + "}";
+		return s_strResult.c_str();
+	}
+	PMAPINFO pMap = new MAPINFO;
+	ZeroMemory(pMap, sizeof(MAPINFO));
+	/* マップID は番号と同じにそろえる（キャラの dwMapID・GetMapNo はこれで探す） */
+	pMap->dwID = (DWORD)g_aMapInfo.GetSize();
+	if (g_dwNewMapID <= pMap->dwID) {
+		g_dwNewMapID = pMap->dwID + 1;
+	}
+	pMap->nCX = nCX;
+	pMap->nCY = nCY;
+	pMap->pwMap = ResizeGrid<WORD>(NULL, 0, 0, nCX, nCY, 0, 0, (WORD)nFill);
+	pMap->pdwMapChar = ResizeGrid<DWORD>(NULL, 0, 0, nCX, nCY, 0, 0, 0);
+	if (!strName.empty()) {
+		pMap->pszName = new char[strName.size() + 1];
+		CopyMemory(pMap->pszName, strName.c_str(), strName.size() + 1);
+	}
+	int nID = g_aMapInfo.Add(pMap);
+	SaveMapInfo();
+	s_strResult = "{\"ok\":true,\"id\":" + JsonNum(nID) + ",\"mapId\":" + JsonNum(pMap->dwID) + "}";
+	return s_strResult.c_str();
+}

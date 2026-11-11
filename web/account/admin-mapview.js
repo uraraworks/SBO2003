@@ -10,6 +10,7 @@
  *   - 「サーバーへ反映」で /api/admin/mapedit/apply に変わったマスだけ送る（AI連携の履歴に 1 件残り、元に戻せる）。
  *   - 元に戻す・やり直すはこの画面の中だけ（読み直すと消える）。
  *   - パーツ一覧は出したまま作業できる小窓（名前・タグは /api/admin/parts/dex のパーツ図鑑から）。
+ *   - 「マップを広げる・新しいマップを足す」は /api/admin/mapedit/resize・add（すぐ反映。履歴からは戻せない）。
  *   - 絵は admin-mapdoc.js の loadSheets（/admin-grp/ の map01〜05.png）で読む。
  *   - マス目は /api/admin/data/tiles、パーツ・マップ名・イベントは /api/admin/data/list（サーバーは server/node/sbosvr_data.js）。
  * 前の「NPCの巡回」（admin-npcroute.js）から絵の描き方・通れるかの判定を引き継いでいる。
@@ -987,6 +988,7 @@
 		bEdit = !!b;
 		$('mv-edit').checked = bEdit;
 		$('mv-tools').hidden = !bEdit;
+		$('mv-sizebox').hidden = !bEdit;
 		document.body.classList.toggle('mv-editing', bEdit);
 		if (bEdit) {
 			pin = null;
@@ -1057,6 +1059,9 @@
 		});
 		$('mv-discard').addEventListener('click', discardAll);
 		$('mv-apply').addEventListener('click', applyToServer);
+		$('mv-rs-sel').addEventListener('click', function () { $('mv-rs-fill').value = String(selPart); });
+		$('mv-resize').addEventListener('click', resizeMap);
+		$('mv-add').addEventListener('click', addMap);
 		document.addEventListener('keydown', onKey);
 		window.addEventListener('pointerup', endStroke);
 		/* 下書きの保存待ちがある時は、閉じる前に知らせる */
@@ -1069,6 +1074,94 @@
 		bindPaletteDrag();
 	}
 
+	function fillMapSelect() {
+		var s = $('mv-map');
+		var v = s.value;
+		s.textContent = '';
+		var o0 = el('option', null, 'マップを選んでください');
+		o0.value = '';
+		s.appendChild(o0);
+		maps.forEach(function (m) {
+			var o = el('option', null, pad3(m.id) + ' ' + (m.szName || '（名前なし）'));
+			o.value = String(m.id);
+			s.appendChild(o);
+		});
+		s.value = v;
+	}
+
+	/* ---------------------------------------------------------------- */
+	/* マップを広げる・足す（すぐゲームに反映。履歴からは戻せない）		 */
+	/* ---------------------------------------------------------------- */
+	function numVal(id) {
+		var v = Math.floor(Number($(id).value));
+		return isFinite(v) && v > 0 ? v : 0;
+	}
+	function resizeMap() {
+		if (!cur) {
+			setMsg('先にマップを選んでください。');
+			return;
+		}
+		if (nDirty || stroke || bApplying) {
+			alert('反映していない変更があります。先に「サーバーへ反映」するか「変更を全部やめる」を押してください。');
+			return;
+		}
+		var my = cur;
+		var body = { id: my.id, top: numVal('mv-rs-top'), bottom: numVal('mv-rs-bottom'), left: numVal('mv-rs-left'),
+			right: numVal('mv-rs-right'), fill: numVal('mv-rs-fill') };
+		var check = {};
+		Object.keys(body).forEach(function (k) { check[k] = body[k]; });
+		check.check = true;
+		api('/api/admin/mapedit/resize', check).then(function (r) {
+			if (!r.ok) throw new Error(errText(r));
+			var msg = 'マップ「' + pad3(my.id) + ' ' + (mapName[my.id] || '') + '」を ' + r.oldCx + '×' + r.oldCy + ' から ' + r.cx + '×' + r.cy + ' に広げます。\n' +
+				'広げた所はパーツ ' + body.fill + ' で埋めます。';
+			if (r.shiftX || r.shiftY) {
+				msg += '\n上・左に広げるので、このマップの座標は全部 右へ ' + r.shiftX + '・下へ ' + r.shiftY + ' ずれます（イベント・NPC なども一緒にずらします）。';
+			}
+			msg += '\nログイン中の人にもすぐ反映され、履歴からは元に戻せません。よろしいですか？';
+			if (!confirm(msg)) throw 'cancel';
+			setMsg('広げています…', true);
+			return api('/api/admin/mapedit/resize', body);
+		}).then(function (r) {
+			if (!r.ok) throw new Error(errText(r));
+			['mv-rs-top', 'mv-rs-bottom', 'mv-rs-left', 'mv-rs-right'].forEach(function (id) { $(id).value = '0'; });
+			return loadMap(my.id).then(function () {
+				setMsg('広げました（' + r.oldCx + '×' + r.oldCy + ' → ' + r.cx + '×' + r.cy + '）。', true);
+			});
+		}).then(null, function (err) {
+			if (err === 'cancel') return;
+			setMsg('広げられませんでした: ' + (err && err.message || err));
+		});
+	}
+	function addMap() {
+		var name = $('mv-add-name').value.trim();
+		var body = { cx: numVal('mv-add-cx'), cy: numVal('mv-add-cy'), fill: numVal('mv-add-fill'), szName: name };
+		if (!name) {
+			alert('新しいマップの名前を入れてください。');
+			return;
+		}
+		if (!confirm('新しいマップ「' + name + '」（' + body.cx + '×' + body.cy + '・パーツ ' + body.fill + ' で埋める）を足します。\n' +
+				'番号はいちばん後ろになります。履歴からは消せません。よろしいですか？')) return;
+		flushDraft().then(function () {
+			return api('/api/admin/mapedit/add', body);
+		}).then(function (r) {
+			if (!r.ok) throw new Error(errText(r));
+			$('mv-add-name').value = '';
+			return listAll('map', { fields: ['szName'] }).then(function (a) {
+				maps = a;
+				mapName = {};
+				a.forEach(function (m) { mapName[m.id] = m.szName || ''; });
+				fillMapSelect();
+				$('mv-map').value = String(r.id);
+				return loadMap(r.id);
+			}).then(function () {
+				setMsg('マップ ' + pad3(r.id) + '「' + name + '」を足しました。入口はほかのマップのイベント（ほかのマップへの入口）で作ってください。', true);
+			});
+		}).then(null, function (err) {
+			setMsg('足せませんでした: ' + (err && err.message || err));
+		});
+	}
+
 	/* fnApi(url, body) → Promise<data>（管理ページの api 関数。session は呼ぶ側で入れる） */
 	function open(fnApi) {
 		api = fnApi;
@@ -1076,16 +1169,8 @@
 		if (bReady) return;
 		setMsg('読み込んでいます…', true);
 		ensureBase().then(function () {
-			var s = $('mv-map');
-			s.textContent = '';
-			var o0 = el('option', null, 'マップを選んでください');
-			o0.value = '';
-			s.appendChild(o0);
-			maps.forEach(function (m) {
-				var o = el('option', null, pad3(m.id) + ' ' + (m.szName || '（名前なし）'));
-				o.value = String(m.id);
-				s.appendChild(o);
-			});
+			fillMapSelect();
+			$('mv-editbar').hidden = false;
 			copyTile($('mv-sel-cv'), selPart);
 			$('mv-sel-no').textContent = 'パーツ ' + selPart;
 			setMsg('');
