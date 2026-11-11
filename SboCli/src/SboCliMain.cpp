@@ -98,6 +98,7 @@ static void	MainLoopInit			(void);								/* メインループの初期化 */
 static int	MainLoopStep			(void);								/* メインループ１回分の処理 */
 #ifdef __EMSCRIPTEN__
 static void	MainLoopWeb				(void);								/* ブラウザ版のメインループ */
+static BOOL	IsDrawEveryFrame		(void);								/* 毎フレーム描いたほうがよいか */
 #endif
 
 /* MainLoopStep の戻り値 */
@@ -190,10 +191,16 @@ static int MainLoopStep(void)
 	   以前は Windows 版と同じく 33ms の枠で 1 秒 30 回までに絞っていたが、
 	   画面の書き換え（16.7ms ごと）と枠の境目がずれて、枠が 1 つ飛んだ時と
 	   1 秒ごとの数え直しの時に描画を 1 回捨てていた。歩いている時に
-	   1 秒に 1 回ほど絵が 1 コマ止まり、「ひっかかる」ように見えていた */
+	   1 秒に 1 回ほど絵が 1 コマ止まり、「ひっかかる」ように見えていた。
+	   ただし誰も歩いていない時は、変わるのは水などのアニメやカーソルくらいなので、
+	   前の描画から 30ms 経つまで待って（捨てずに次の回へ持ち越す）1 秒 30 回までにする */
 	if (g_bDraw) {
-		InvalidateRect (g_hWndMain, NULL, FALSE);
-		s_byFps ++;
+		static DWORD s_dwTimeLastDraw = 0;
+		if (IsDrawEveryFrame () || (dwTimeTmp - s_dwTimeLastDraw >= 30)) {
+			InvalidateRect (g_hWndMain, NULL, FALSE);
+			s_dwTimeLastDraw = dwTimeTmp;
+			s_byFps ++;
+		}
 	}
 #endif
 
@@ -211,6 +218,37 @@ static int MainLoopStep(void)
 
 
 #ifdef __EMSCRIPTEN__
+/* ========================================================================= */
+/* 関数名：	IsDrawEveryFrame												 */
+/* 内容：	毎フレーム描いたほうがよいか（ブラウザ版）						 */
+/*			誰かが歩いている（画面がスクロールする・キャラが動く）時と、	 */
+/*			フェードイン・アウト中は、なめらかに見えるよう毎フレーム描く	 */
+/*			一歩歩き終わってから次の一歩が届くまでの間（1〜2フレーム）も	 */
+/*			歩いている扱いにしないと、マスの区切りで1コマ止まって見える	 */
+/*			ので、最後に動いていた時から 200ms は続けて毎フレーム描く		 */
+/* ========================================================================= */
+
+static BOOL IsDrawEveryFrame(void)
+{
+	static DWORD s_dwTimeLastMove = 0;
+	int i, nCount;
+	DWORD dwTime = timeGetTime ();
+
+	if ((g_aFadeInOutTbl.GetSize () != 0) || (g_FadeInOutInfo.dwLastTime != 0)) {
+		s_dwTimeLastMove = dwTime;
+		return TRUE;
+	}
+	nCount = g_aCharInfo.GetSize ();
+	for (i = 0; i < nCount; i ++) {
+		if (g_aCharInfo[i]->byDotMove != 0) {
+			s_dwTimeLastMove = dwTime;
+			return TRUE;
+		}
+	}
+	return (dwTime - s_dwTimeLastMove < 200) ? TRUE : FALSE;
+}
+
+
 /* ========================================================================= */
 /* 関数名：	MainLoopWeb														 */
 /* 内容：	ブラウザ版のメインループ（描画フレームごとに呼ばれる）			 */
