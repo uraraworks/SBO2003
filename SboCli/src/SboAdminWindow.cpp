@@ -7968,15 +7968,15 @@ void MakeAdminWndCharInfo(void)
 			12 * 0, 12 * 15, 128, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
 	SendMessage (m_hWndEdit1, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
-	m_hWndEdit2 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | WS_TABSTOP,
+	m_hWndEdit2 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | WS_TABSTOP | ES_NUMBER,
 			12 * 13, 12 * 11, 60, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
 	SendMessage (m_hWndEdit2, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
-	m_hWndEdit3 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | WS_TABSTOP,
+	m_hWndEdit3 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | WS_TABSTOP | ES_NUMBER,
 			12 * 13, 12 * 11 + 16, 60, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
 	SendMessage (m_hWndEdit3, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
-	m_hWndEdit4 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | WS_TABSTOP,
+	m_hWndEdit4 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | WS_TABSTOP | ES_NUMBER,
 			12 * 13, 12 * 11 + 32, 60, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
 	SendMessage (m_hWndEdit4, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
@@ -8044,15 +8044,15 @@ void MakeAdminWndCharInfo(void)
 			12 * 28, 12 * 8 + 16, 32, 16, g_hWndAdmin, (HMENU)IDC_BUTTON8, g_hInstance, NULL);
 	SendMessage (m_hWndButton8, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
-	m_hWndEdit6 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+	m_hWndEdit6 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_NUMBER,
 			12 * 22, 12 * 11, 24, 12, g_hWndAdmin, NULL, g_hInstance, NULL);
 	SendMessage (m_hWndEdit6, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
-	m_hWndEdit7 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+	m_hWndEdit7 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_NUMBER,
 			12 * 24 + 2, 12 * 11, 24, 12, g_hWndAdmin, NULL, g_hInstance, NULL);
 	SendMessage (m_hWndEdit7, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
-	m_hWndEdit8 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+	m_hWndEdit8 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_NUMBER,
 			12 * 26 + 4, 12 * 11, 24, 12, g_hWndAdmin, NULL, g_hInstance, NULL);
 	SendMessage (m_hWndEdit8, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
