@@ -362,7 +362,12 @@ PWNDINFO MakeWindowCOMMAND(void)
 	pWnd->nX = 32;
 	pWnd->nY = 50;
 	pWnd->nCx = 16 * 10;
-	pWnd->nCy = 16 * 8;												/* 「依頼」の段を足したので 1 行ぶん高い */
+	pWnd->nCy = 16 * 7;
+	/* 自分か仲間が依頼を受けている時だけ「依頼」の段を出す（nData2=1）。1 行ぶん高くする */
+	if (QuestHasAny ()) {
+		pWnd->nData2 = 1;
+		pWnd->nCy = 16 * 8;
+	}
 	pWnd->nType = WNDTYPE_COMMAND;
 
 	g_dwMsgIDCommand = pWnd->dwID;

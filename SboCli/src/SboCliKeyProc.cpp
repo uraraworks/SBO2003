@@ -1372,7 +1372,7 @@ void KeyProcCOMMAND(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 
 		/* 依頼（自分と仲間の依頼の進み具合） */
 		case 10:
-			{
+			if (pWnd->nData2) {
 				PWNDINFO pWndNew = MakeWindowQUEST (QUESTWND_STATE);
 				pWndNew->pParent = pWnd;
 				pWnd->pChild = pWndNew;
@@ -1389,7 +1389,7 @@ void KeyProcCOMMAND(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			pWnd->nData1 -= 2;
 			bMove = TRUE;
 
-		} else if ((byCode == VK_DOWN) && (pWnd->nData1 + 2 <= 10)) {
+		} else if ((byCode == VK_DOWN) && (pWnd->nData1 + 2 <= (pWnd->nData2 ? 10 : 9))) {
 			pWnd->nData1 += 2;
 			bMove = TRUE;
 
