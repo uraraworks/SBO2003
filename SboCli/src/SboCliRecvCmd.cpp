@@ -1653,14 +1653,15 @@ BOOL IsLightOtherRoom(int x, int y)
 /* ========================================================================= */
 static void RenewMapDarkLightFlood(int mx, int my, int nRange)
 {
-	enum { W = MAPLIGHT_RANGE_MAX * 2 + 1 };
+	/* 丸い灯りが少しでもかかるマス(範囲+2マス)まで照らす(IsInLightCircle) */
+	enum { W = (MAPLIGHT_RANGE_MAX + 2) * 2 + 1 };
 	BYTE abyDone[W * W];
 	int anQX[W * W], anQY[W * W];
 	int nHead, nTail, i, nSize;
 	PCHARINFO pMyChar;
 	static const int anDX[4] = { 0, 0, -1, 1 }, anDY[4] = { -1, 1, 0, 0 };
 
-	nRange = min (nRange, MAPLIGHT_RANGE_MAX);
+	nRange = min (nRange, MAPLIGHT_RANGE_MAX) + 2;
 	nSize = nRange * 2 + 1;
 	ZeroMemory (abyDone, sizeof (abyDone));
 	pMyChar = g_aCharInfo[g_nMyCharID];
@@ -1776,6 +1777,48 @@ int GetMapPosLight(int mx, int my, BYTE *pbyPower, BYTE *pbyFlg)
 }
 
 /* ========================================================================= */
+/* 丸い灯りと見えるマス														 */
+/*   見えるマスは灯りから縦横斜め同じ距離(四角)で決めていたので、			 */
+/*   DrawMapLight の丸い灯りが四角の辺で平らに切れてカクカクに見えた。		 */
+/*   丸い灯りが少しでもかかるマスも見えるマスにして、丸を最後まで描く		 */
+/* ========================================================================= */
+#define LIGHTCIRCLE_FLICKER_CHAR	1.07f		/* キャラの灯りのゆらめきで一番大きくなる時(DrawMapLight) */
+#define LIGHTCIRCLE_FLICKER_PARTS	1.07f		/* パーツ・光源の灯りのゆらめきで一番大きくなる時(DrawMapLight) */
+
+/* 灯りの中心からずれたマス(dx,dy)に半径 fR マスの丸い灯りが少しでもかかるか
+   (マスの中で灯りに一番近い所までの距離で比べる) */
+static BOOL IsInLightCircle(int dx, int dy, float fR)
+{
+	float fX, fY;
+
+	fX = max (0.0f, (float)abs (dx) - 0.5f);
+	fY = max (0.0f, (float)abs (dy) - 0.5f);
+	return ((fX * fX + fY * fY) < fR * fR) ? TRUE : FALSE;
+}
+
+/* キャラの丸い灯りの半径(マス。DrawMapLight と同じ計算。0=照らさない) */
+static float GetCharLightRadius(PCHARINFO pChar)
+{
+	int nLevel;
+
+	if (pChar == g_aCharInfo[g_nMyCharID]) {
+		if ((g_pMapInfo->byFlg & MAPFLG_NOCHARLIGHT) && (pChar->byLightLevel == 0)) {
+			return 1.2f;		/* 足元がうっすら見えるだけ(ゆらめかない) */
+		}
+	} else if (pChar->byLightLevel == 0) {
+		return 0.0f;			/* ほかの人は灯りを持っている時だけ */
+	}
+	nLevel = GetMapLightLevel ();
+	if (pChar->byLightLevel) {
+		nLevel = GetMapLightLevel () - pChar->byLightLevel;
+	}
+	if (nLevel <= 0) {
+		return 0.0f;			/* 暗くならない(もともと全部見える) */
+	}
+	return (100.0f / nLevel + 0.2f) * LIGHTCIRCLE_FLICKER_CHAR;
+}
+
+/* ========================================================================= */
 /* 関数名：GetMapDarkLevel													 */
 /* 内容：灯り(pChar)から見たマス(x,y)の明るさを取得							 */
 /*       1 以下なら暗くて見えない											 */
@@ -1802,6 +1845,11 @@ int GetMapDarkLevel(PCHARINFO pChar, int x, int y)
 		nTmp = 100 - 100 * nLevel / (s_nPartsLightRange + 1);
 		nTmp = max (1, nTmp);
 		nTmp = min (100, nTmp);
+		/* 丸い灯りが少しでもかかるマスは見えるようにする(DrawMapLight と同じ半径) */
+		if ((nTmp <= 1) && GetMapLightLevel () &&
+			IsInLightCircle (x - s_nPartsLightX, y - s_nPartsLightY, (s_nPartsLightRange + 1 + 0.2f) * LIGHTCIRCLE_FLICKER_PARTS)) {
+			nTmp = 2;
+		}
 		return nTmp;
 	}
 	if (GetMapLightLevel ()) {
@@ -1818,6 +1866,13 @@ int GetMapDarkLevel(PCHARINFO pChar, int x, int y)
 		}
 		nTmp = max (1, nTmp);
 		nTmp = min (100, nTmp);
+		/* 丸い灯りが少しでもかかるマスは見えるようにする(DrawMapLight と同じ半径) */
+		if (nTmp <= 1) {
+			float fR = GetCharLightRadius (pChar);
+			if ((fR > 0.0f) && IsInLightCircle (x - (int)pChar->dwX, y - (int)pChar->dwY, fR)) {
+				nTmp = 2;
+			}
+		}
 	}
 	return nTmp;
 }
