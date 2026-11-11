@@ -5357,6 +5357,31 @@ void RecvDataProcCHARPUSH(PBYTE pData, DWORD dwDataSize)
 	BYTE byHitType;
 	DWORD dwX, dwY;
 	PMAPINFO pMap = g_aMapInfo[GetMapNo (pCharPush->dwMapID)];
+	/* 押す向きは、押した人と押されるキャラの位置関係で決める。
+	   歩きながら曲がってそのまま押した時は、向きの変更がサーバーに届く前に
+	   押して要求が来るので、サーバーの向きが前の向きのまま残っている。
+	   (下から上へ押して壁に当てた後、横から押すと前の「上」で押して
+	    壁で跳ね返り、下へ動いていた)
+	   大きいキャラは左端の座標で、右へ 1～2 マス広がっている */
+	{
+		int nDX = (int)pCharPush->dwX - (int)pChar->dwX;
+		int nDY = (int)pCharPush->dwY - (int)pChar->dwY;
+		BYTE byDirection = pChar->byDirection;
+		if ((nDY == 0) && (nDX != 0)) {
+			byDirection = (nDX < 0) ? 2 : 3;
+		} else if ((nDX <= 0) && (nDX >= -2) && (nDY != 0)) {
+			byDirection = (nDY < 0) ? 0 : 1;
+		}
+		if (byDirection >= 4) {
+			return;
+		}
+		/* 押した人もその向きを向かせる(画面上も押した方を向く) */
+		if (pChar->byDirection != byDirection) {
+			PinCharBridgeLayerSvr (pChar);
+			pChar->byDirection = byDirection;
+			pChar->byFlg |= CHARINFOFLG_DIRECTION;
+		}
+	}
 	pCharPush->byDirection = pChar->byDirection;
 	dwX = pCharPush->dwX;
 	dwY = pCharPush->dwY;

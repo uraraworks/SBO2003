@@ -1154,4 +1154,10 @@ sort leave name leave: n=4 8*1 7*2 10*1 9*1
 sort leave type leave: n=4 7*2 8*1 10*1 9*1
 sort leave type again(desc) leave: n=4 9*1 10*1 8*1 7*2
 sort leave type again(asc) leave: n=4 7*2 8*1 10*1 9*1
+== O. CharPush ==
+charpush want=3 old=0 -> move=(1,0) pcdir=3 blockdir=3
+charpush want=2 old=0 -> move=(-1,0) pcdir=2 blockdir=2
+charpush want=0 old=2 -> move=(0,-1) pcdir=0 blockdir=0
+charpush want=1 old=3 -> move=(0,1) pcdir=1 blockdir=1
+charpush want=3 old=3 -> move=(1,0) pcdir=3 blockdir=3
 == done ==
