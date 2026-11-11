@@ -69,6 +69,8 @@ PWNDINFO MakeWindowLEAVE_SELECT					(BYTE);				/* 預かり所：どちらか選
 PWNDINFO MakeWindowLEAVE_ITEM					(void);				/* 預かり所：アイテム選択 */
 PWNDINFO MakeWindowLEAVE_ITEMGET				(void);				/* 預かり所：引き取るアイテム選択 */
 PWNDINFO MakeWindowLEAVE_GOLD					(BYTE);				/* 預かり所：預ける金額設定 */
+PWNDINFO MakeWindowLEAVE_DISPOSEMENU			(void);				/* 預かり所：手放す品を売る・捨てる */
+PWNDINFO MakeWindowLEAVE_DISPOSECOUNT			(BYTE);				/* 預かり所：手放す個数 */
 PWNDINFO MakeWindowCOMMANDITEMCHAR				(void);				/* 道具使う相手選択 */
 PWNDINFO MakeWindowCOMMANDTRADE					(void);				/* 取り引きコマンド */
 PWNDINFO MakeWindowTRADE						(DWORD);			/* 取り引き */
@@ -1316,7 +1318,7 @@ PWNDINFO MakeWindowLEAVE(BYTE bySelect)
 	ZeroMemory (pWnd, sizeof (WNDINFO));
 	pWnd->dwID = g_dwNewID;
 	g_dwNewID ++;
-	pWnd->nData2 = 4;
+	pWnd->nData2 = 5;
 	pWnd->nX = 16 * 21;
 	pWnd->nY = 16 * 8;
 	pWnd->nCx = 16 * 7;
@@ -1364,6 +1366,16 @@ PWNDINFO MakeWindowLEAVE(BYTE bySelect)
 		pWndNew = MakeWindowMSG ("＊｢きれいに並べ替えておきましたよ。@1　 他に御用は？@2", TRUE);
 
 	} else if (bySelect == 11) {
+		/* 手放して預かり品が無くなった */
+		char szTmp[512];
+		wsprintf (szTmp, "%s@1＊｢これでお預かりの品は無くなりました。@1　 他に御用は？@2", g_szLeaveResult);
+		g_szLeaveResult[0] = 0;
+		pWndNew = MakeWindowMSG (szTmp, TRUE);
+
+	} else if (bySelect == 12) {
+		pWndNew = MakeWindowMSG ("＊｢そのお品は手放せません。@1　 他に御用は？@2", TRUE);
+
+	} else if (bySelect == 13) {
 		pWndNew = MakeWindowMSG ("＊｢依頼の品はお預かりできません。@1　 他に御用は？@2", TRUE);
 
 	} else {
@@ -1475,15 +1487,35 @@ PWNDINFO MakeWindowLEAVE_ITEMGET(void)
 	pWnd->nCx = (16 * 4) + (33 * 8);
 	pWnd->nCy = 16 * (2 + pWnd->nData2);
 
-	/* 並べ替え中は状態を変えない（引き取る時と同じ一覧を使う） */
-	if (g_nProcShopState != LEAVESTATE_ITEMSORTSWAP) {
+	/* 並べ替え・手放す時は状態を変えない（引き取る時と同じ一覧を使う） */
+	if ((g_nProcShopState != LEAVESTATE_ITEMSORTSWAP) && (g_nProcShopState != LEAVESTATE_ITEMSELECTDISPOSE)) {
 		g_nProcShopState = LEAVESTATE_ITEMSELECTGET;
 	}
 	g_bProcShopConfirm = FALSE;
 
-	char szTmp[256];
+	/* 手放した後などで作り直す時は、前に選んでいた辺りにカーソルを合わせる */
+	if ((g_nLeaveListPos >= 0) && (g_pLeaveInfo->byCount > 0)) {
+		int nPos = min (g_nLeaveListPos, (int)g_pLeaveInfo->byCount - 1);
+		int nTop = 0;
+		if (g_pLeaveInfo->byCount > 10) {
+			nTop = max (0, min (nPos - 5, (int)g_pLeaveInfo->byCount - 10));
+		}
+		pWnd->byData1 = (BYTE)nTop;
+		pWnd->nData1 = nPos - nTop;
+	}
+	g_nLeaveListPos = -1;
+
+	char szTmp[512];
 	if (g_nProcShopState == LEAVESTATE_ITEMSORTSWAP) {
 		wsprintf (szTmp, "＊｢現在%d品お預かりしています。@1　 入れ替える２つを順にお選びください。@2", g_pLeaveInfo->byCount);
+	} else if (g_nProcShopState == LEAVESTATE_ITEMSELECTDISPOSE) {
+		if (g_szLeaveResult[0]) {
+			/* 手放した直後：結果を頭に付ける */
+			wsprintf (szTmp, "%s@1＊｢他に手放すお品はありますか？@2", g_szLeaveResult);
+			g_szLeaveResult[0] = 0;
+		} else {
+			wsprintf (szTmp, "＊｢現在%d品お預かりしています。@1　 どれを手放しますか？@1　 （売るか捨てるかは次に選べます）@2", g_pLeaveInfo->byCount);
+		}
 	} else {
 		wsprintf (szTmp, "＊｢現在%d品お預かりしています。@1　 どれをお引取りなさいますか？@2", g_pLeaveInfo->byCount);
 	}
@@ -1530,6 +1562,95 @@ PWNDINFO MakeWindowLEAVE_GOLD(BYTE bySelect)
 		pWndNew = MakeWindowMSG (szTmp, TRUE);
 	}
 
+	pWndNew->pParent = pWnd;
+	pWnd->pChild = pWndNew;
+	g_WndInfo.Add (pWndNew);
+	return pWnd;
+}
+
+/* ========================================================================= */
+/* 関数名：MakeWindowLEAVE_DISPOSEMENU										 */
+/* 内容：ウィンドウの作成(預かり所：手放す品を売る・捨てる)					 */
+/*       選んだ品は g_nProcShopSelect（預かり所の何番目か）					 */
+/* 日付：2026/11/11															 */
+/* ========================================================================= */
+PWNDINFO MakeWindowLEAVE_DISPOSEMENU(void)
+{
+	PWNDINFO pWnd = new WNDINFO;
+	ZeroMemory (pWnd, sizeof (WNDINFO));
+	pWnd->dwID = g_dwNewID;
+	g_dwNewID ++;
+	pWnd->nData2 = 3;
+	pWnd->nX = 16 * 22;
+	pWnd->nY = 16 * 8;
+	pWnd->nCx = 16 * 6;
+	pWnd->nCy = 16 * (2 + pWnd->nData2);
+	pWnd->nType = WNDTYPE_LEAVE;
+	pWnd->pDib = new CImg32;
+	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
+	pWnd->pDib->SetColorKey (RGB (40, 40, 40));
+
+	g_nProcShopState = LEAVESTATE_DISPOSEMENU;
+	g_bProcShopConfirm = FALSE;
+
+	char szTmp[512];
+	PITEMINFO pItem = g_aItemInfo[g_pLeaveInfo->waItem[g_nProcShopSelect]];
+	int nCount = g_pLeaveInfo->byItemCount[g_nProcShopSelect];
+	if (pItem->dwGold == 0) {
+		wsprintf (szTmp, "＊｢%s（%d個）ですね。@1　 値打ちが無いので買い取れませんが、@1　 捨てることはできますよ。@2", pItem->szName, nCount);
+	} else {
+		wsprintf (szTmp, "＊｢%s（%d個）ですね。@1　 売るなら1個%dゴールドで@1　 買い取りますよ。@2", pItem->szName, nCount, max (pItem->dwGold / 4, (DWORD)1));
+	}
+	PWNDINFO pWndNew = MakeWindowMSG (szTmp, TRUE);
+	pWndNew->pParent = pWnd;
+	pWnd->pChild = pWndNew;
+	g_WndInfo.Add (pWndNew);
+	return pWnd;
+}
+
+/* ========================================================================= */
+/* 関数名：MakeWindowLEAVE_DISPOSECOUNT										 */
+/* 内容：ウィンドウの作成(預かり所：手放す個数)								 */
+/*       byMode=LEAVEDISPOSE_*。nData1=個数、nData2=最大、byData1=方法		 */
+/*       ↑↓で1個ずつ（1と最大でひと回り）、←→で10個ずつ					 */
+/* 日付：2026/11/11															 */
+/* ========================================================================= */
+PWNDINFO MakeWindowLEAVE_DISPOSECOUNT(BYTE byMode)
+{
+	PWNDINFO pWnd = new WNDINFO;
+	ZeroMemory (pWnd, sizeof (WNDINFO));
+	pWnd->dwID = g_dwNewID;
+	g_dwNewID ++;
+	pWnd->nType = WNDTYPE_LEAVE;
+	pWnd->pDib = new CImg32;
+
+	PITEMINFO pItem = g_aItemInfo[g_pLeaveInfo->waItem[g_nProcShopSelect]];
+	int nMax = g_pLeaveInfo->byItemCount[g_nProcShopSelect];
+	if (byMode == LEAVEDISPOSE_SELL) {
+		/* 所持金が 999999 を超えない分まで */
+		PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
+		DWORD dwSell = max (pItem->dwGold / 4, (DWORD)1);
+		DWORD dwRoom = (pChar->dwGold >= 999999) ? 0 : (999999 - pChar->dwGold);
+		nMax = min (nMax, (int)(dwRoom / dwSell));
+	}
+	pWnd->nData1 = 1;
+	pWnd->nData2 = nMax;
+	pWnd->byData1 = byMode;
+
+	pWnd->nX = 32 + 16 * 15;
+	pWnd->nY = 50 + 16 * 10;
+	pWnd->nCx = 16 * 2 + 8 * 13;
+	pWnd->nCy = 16 * ((byMode == LEAVEDISPOSE_SELL) ? 4 : 3);
+	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
+	pWnd->pDib->SetColorKey (RGB (40, 40, 40));
+
+	g_nProcShopState = LEAVESTATE_DISPOSECOUNT;
+	g_bProcShopConfirm = FALSE;
+
+	char szTmp[512];
+	wsprintf (szTmp, "＊｢%sをいくつ%s？@1　 ↑↓で1個ずつ、←→で10個ずつ@1　 変えられます。@2", pItem->szName,
+			(byMode == LEAVEDISPOSE_SELL) ? "売りますか" : "捨てますか");
+	PWNDINFO pWndNew = MakeWindowMSG (szTmp, TRUE);
 	pWndNew->pParent = pWnd;
 	pWnd->pChild = pWndNew;
 	g_WndInfo.Add (pWndNew);
@@ -3022,7 +3143,7 @@ void UpdateWindowITEMINFOList(PWNDINFO pWndList)
 		if (nRecipe >= 0) {
 			nItemID = g_aRecipeInfo[nRecipe].wItem;
 		}
-	} else if ((pWndList->nType == WNDTYPE_LEAVE) && ((g_nProcShopState == LEAVESTATE_ITEMSELECTGET) || (g_nProcShopState == LEAVESTATE_ITEMSORTSWAP))) {
+	} else if ((pWndList->nType == WNDTYPE_LEAVE) && ((g_nProcShopState == LEAVESTATE_ITEMSELECTGET) || (g_nProcShopState == LEAVESTATE_ITEMSORTSWAP) || (g_nProcShopState == LEAVESTATE_ITEMSELECTDISPOSE))) {
 		/* 預かり所の引き取る一覧は byData1 だけスクロールしている */
 		nNo += pWndList->byData1;
 		if (g_pLeaveInfo && (nNo >= 0) && (nNo < g_pLeaveInfo->byCount) && (nNo < MAX_LEAVEITEM)) {

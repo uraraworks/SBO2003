@@ -3757,6 +3757,31 @@ void KeyProcCOMMANDEQUSUB(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 }
 
 /* ========================================================================= */
+/* 関数名：KeyProcLEAVE_DisposeList											 */
+/* 内容：預かり所の「手放す」の品の一覧を、手元の一覧から作り直す			 */
+/*       （売る・捨てるの選択から戻る時。カーソルは選んでいた品に合わせる）	 */
+/* 日付：2026/11/11															 */
+/* ========================================================================= */
+static void KeyProcLEAVE_DisposeList(void)
+{
+	PWNDINFO pWndTmp;
+
+	g_nProcShopState = LEAVESTATE_ITEMSELECTDISPOSE;
+	g_szLeaveResult[0] = 0;
+	if ((g_pLeaveInfo == NULL) || (g_pLeaveInfo->byCount == 0)) {
+		pWndTmp = MakeWindowLEAVE (4);
+		g_WndInfo.Add (pWndTmp);
+	} else {
+		g_nLeaveListPos = g_nProcShopSelect;
+		pWndTmp = MakeWindowLEAVE_ITEMGET ();
+		g_WndInfo.Add (pWndTmp);
+		MakeWindowITEMINFOList (pWndTmp);
+	}
+	g_dwActiveMsgID = pWndTmp->dwID;
+	g_bDraw = TRUE;
+}
+
+/* ========================================================================= */
 /* 関数名：KeyProcLEAVE														 */
 /* 内容：キー入力処理(預かり所)												 */
 /* 日付：2003/11/06															 */
@@ -3805,12 +3830,32 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		case LEAVESTATE_ITEM:
 		case LEAVESTATE_ITEMSELECTGET:
 		case LEAVESTATE_ITEMSORTSWAP:
+		case LEAVESTATE_ITEMSELECTDISPOSE:
 			EraseWindow (pWnd);
 
 			pWndTmp = MakeWindowLEAVE (1);
 			g_WndInfo.Add (pWndTmp);
 			g_dwActiveMsgID = pWndTmp->dwID;
 			g_bDraw = TRUE;
+			break;
+
+		/* 手放す：売る・捨てるの選択 → 品の一覧へ戻る */
+		case LEAVESTATE_DISPOSEMENU:
+			EraseWindow (pWnd);
+			KeyProcLEAVE_DisposeList ();
+			break;
+
+		/* 手放す：個数 → 売る・捨てるの選択へ戻る */
+		case LEAVESTATE_DISPOSECOUNT:
+			{
+				BYTE byMode = pWnd->byData1;
+				EraseWindow (pWnd);
+				pWndTmp = MakeWindowLEAVE_DISPOSEMENU ();
+				pWndTmp->nData1 = (byMode == LEAVEDISPOSE_SELL) ? 0 : 1;
+				g_WndInfo.Add (pWndTmp);
+				g_dwActiveMsgID = pWndTmp->dwID;
+				g_bDraw = TRUE;
+			}
 			break;
 		}
 
@@ -3839,7 +3884,19 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				g_nProcShopState = LEAVESTATE_SELECTGET;
 				break;
 
-			case 2:		/* 並べ替え */
+			case 2:		/* 手放す（引き取らずに売る・捨てる） */
+				EraseWindow (pWnd);
+				/* 引き取る時と同じ一覧を頼む。返ってきたら RecvDataProcLEAVEITEMGET が窓を作る */
+				g_nProcShopState = LEAVESTATE_ITEMSELECTDISPOSE;
+				g_szLeaveResult[0] = 0;
+				g_wLeaveDisposeItem = 0;
+				g_nLeaveListPos = -1;
+				SAFE_DELETE (g_pLeaveInfo);
+				SendCmdLEAVEITEMGET (-1);
+				g_bEnableMove = FALSE;
+				break;
+
+			case 3:		/* 並べ替え */
 				EraseWindow (pWnd);
 				pWndTmp = MakeWindowSORTMENU (SORTITEMTARGET_LEAVE);
 				break;
@@ -3954,6 +4011,89 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			}
 			break;
 
+		/* 手放す：品を選んだ → 売る・捨てるの選択へ */
+		case LEAVESTATE_ITEMSELECTDISPOSE:
+			if (g_pLeaveInfo == NULL) {
+				break;
+			}
+			{
+				int nNo = pWnd->nData1 + pWnd->byData1;
+				if ((nNo >= g_pLeaveInfo->byCount) || (nNo >= MAX_LEAVEITEM) ||
+						(g_pLeaveInfo->waItem[nNo] >= g_aItemInfo.GetSize ())) {
+					break;
+				}
+				EraseWindow (pWnd);
+				/* 捨てられない品は売るのも捨てるのもだめ */
+				if (g_aItemInfo[g_pLeaveInfo->waItem[nNo]]->byFlg & ITEMFLG_DROP) {
+					pWndTmp = MakeWindowLEAVE (12);
+					break;
+				}
+				g_nProcShopSelect = nNo;
+				pWndTmp = MakeWindowLEAVE_DISPOSEMENU ();
+			}
+			break;
+
+		/* 手放す：売る・捨てるを選んだ → 個数へ */
+		case LEAVESTATE_DISPOSEMENU:
+			if (g_pLeaveInfo == NULL) {
+				break;
+			}
+			{
+				PITEMINFO pItem = g_aItemInfo[g_pLeaveInfo->waItem[g_nProcShopSelect]];
+				switch (pWnd->nData1) {
+				case 0:		/* 売る */
+					/* 値打ちの無い品は売れない（灰色の時は何もしない） */
+					if (pItem->dwGold == 0) {
+						break;
+					}
+					EraseWindow (pWnd);
+					/* もうお金を持てない？ */
+					if (pChar->dwGold + max (pItem->dwGold / 4, (DWORD)1) > 999999) {
+						pWndTmp = MakeWindowLEAVE (9);
+						break;
+					}
+					pWndTmp = MakeWindowLEAVE_DISPOSECOUNT (LEAVEDISPOSE_SELL);
+					break;
+
+				case 1:		/* 捨てる */
+					EraseWindow (pWnd);
+					pWndTmp = MakeWindowLEAVE_DISPOSECOUNT (LEAVEDISPOSE_DROP);
+					break;
+
+				default:	/* やめる：品の一覧へ戻る */
+					EraseWindow (pWnd);
+					KeyProcLEAVE_DisposeList ();
+					break;
+				}
+			}
+			break;
+
+		/* 手放す：個数を決めた → サーバーへ頼む。結果は預かり所の一覧で返ってくる */
+		case LEAVESTATE_DISPOSECOUNT:
+			if ((g_pLeaveInfo == NULL) || (pWnd->nData1 <= 0)) {
+				break;
+			}
+			{
+				WORD wItem = g_pLeaveInfo->waItem[g_nProcShopSelect];
+				int nBefore = 0;
+				for (i = 0; (i < g_pLeaveInfo->byCount) && (i < MAX_LEAVEITEM); i ++) {
+					if (g_pLeaveInfo->waItem[i] == wItem) {
+						nBefore += g_pLeaveInfo->byItemCount[i];
+					}
+				}
+				g_wLeaveDisposeItem = wItem;
+				g_nLeaveDisposeBefore = nBefore;
+				g_byLeaveDisposeMode = pWnd->byData1;
+				g_nLeaveListPos = g_nProcShopSelect;
+				SendCmdLEAVEITEMDISPOSE (pWnd->byData1, (BYTE)g_nProcShopSelect, (BYTE)pWnd->nData1, wItem);
+
+				EraseWindow (pWnd);
+				g_nProcShopState = LEAVESTATE_ITEMSELECTDISPOSE;
+				SAFE_DELETE (g_pLeaveInfo);
+				g_bEnableMove = FALSE;
+			}
+			break;
+
 		case LEAVESTATE_ITEMSELECTGET:
 			if (g_pLeaveInfo == NULL) {
 				break;
@@ -4003,8 +4143,25 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 	} else if ((byEvent == KEY_DOWN) && (g_bEnableMove) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
 		BOOL bMove = FALSE;
 
+		/* 手放す個数？（↑↓で1個ずつ・1と最大でひと回り、←→で10個ずつ） */
+		if (g_nProcShopState == LEAVESTATE_DISPOSECOUNT) {
+			int nMax = max (pWnd->nData2, 1);
+			if (byCode == VK_UP) {
+				pWnd->nData1 = (pWnd->nData1 >= nMax) ? 1 : pWnd->nData1 + 1;
+				bMove = TRUE;
+			} else if (byCode == VK_DOWN) {
+				pWnd->nData1 = (pWnd->nData1 <= 1) ? nMax : pWnd->nData1 - 1;
+				bMove = TRUE;
+			} else if (byCode == VK_RIGHT) {
+				pWnd->nData1 = min (pWnd->nData1 + 10, nMax);
+				bMove = TRUE;
+			} else if (byCode == VK_LEFT) {
+				pWnd->nData1 = max (pWnd->nData1 - 10, 1);
+				bMove = TRUE;
+			}
+
 		/* 預ける金額設定？ */
-		if ((g_nProcShopState == LEAVESTATE_GOLD) ||
+		} else if ((g_nProcShopState == LEAVESTATE_GOLD) ||
 			(g_nProcShopState == LEAVESTATE_GOLDGET)) {
 			if (byCode == VK_UP) {
 				int nTmp = 1, nTmpGold;
@@ -4091,7 +4248,7 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				pWnd->nData1 ++;
 				bMove = TRUE;
 				pWnd->byAnime = 1;
-				if ((g_nProcShopState == LEAVESTATE_ITEMSELECTGET) || (g_nProcShopState == LEAVESTATE_ITEMSORTSWAP)) {
+				if ((g_nProcShopState == LEAVESTATE_ITEMSELECTGET) || (g_nProcShopState == LEAVESTATE_ITEMSORTSWAP) || (g_nProcShopState == LEAVESTATE_ITEMSELECTDISPOSE)) {
 					if (pWnd->nData1 == pWnd->nData2 - 1) {
 						if (g_pLeaveInfo && (g_pLeaveInfo->byCount > 10)) {
 							if (pWnd->nData1 + pWnd->byData1 < g_pLeaveInfo->byCount - 1) {
@@ -4110,7 +4267,7 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 
 			} else if ((byCode == VK_RIGHT) && (pWnd->nData1 < pWnd->nData2 - 1)) {
 				pWnd->nData1 = pWnd->nData2 - 1;
-				if ((g_nProcShopState == LEAVESTATE_ITEMSELECTGET) || (g_nProcShopState == LEAVESTATE_ITEMSORTSWAP)) {
+				if ((g_nProcShopState == LEAVESTATE_ITEMSELECTGET) || (g_nProcShopState == LEAVESTATE_ITEMSORTSWAP) || (g_nProcShopState == LEAVESTATE_ITEMSELECTDISPOSE)) {
 					if (g_pLeaveInfo && (g_pLeaveInfo->byCount > 10)) {
 						pWnd->byData1 = g_pLeaveInfo->byCount - 10;
 					}

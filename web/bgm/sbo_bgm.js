@@ -26,6 +26,14 @@
  * ループは「曲の最後まで鳴ったら 2.5 秒の間を空けて頭から」。
  * MIDI と音声は同時には鳴らさず、切り替える時にもう片方を必ず止める。
  * シンセの読み込みが終わっていなくても音声は鳴らせる。
+ *
+ * audio 要素は 1 つだけ作って使い回す（曲を替える時は src を替える）
+ * Safari は「ユーザー操作の中で一度も再生されていない media 要素」の play() を断る。
+ * 曲ごとに new Audio() すると、操作の外（マップ移動でサーバーの返事を受けた後）で
+ * 曲が変わるたびに未許可の要素になって鳴らなかった。WebKit では一度操作の中で
+ * play() した要素は、src を替えても操作の外から play() できるので、
+ * 要素と MediaElementAudioSourceNode（要素ごとに 1 回しか作れない）は最初に 1 回だけ作って
+ * gain につなぎっぱなしにし、最初の操作の中で無音を一度 play() して許可をもらう。
  */
 (function () {
 	'use strict';
@@ -64,9 +72,13 @@
 	var starting = null;
 
 	/* 音声ファイル側の状態 */
-	var audio = null;			/* 開いている音声の audio 要素 */
-	var audioSrc = null;		/* その MediaElementAudioSourceNode */
-	var audioName = null;
+	var audio = null;			/* 使い回す audio 要素（最初に 1 回だけ作る） */
+	var audioSrc = null;		/* その MediaElementAudioSourceNode（gain につなぎっぱなし） */
+	var audioName = null;		/* 今開いている音声の名前（開いていなければ null） */
+	var audioGen = 0;			/* 開く・閉じるたびに増やす。古い曲のイベントや遅れて来た返事を見分ける */
+	var audioUnlocked = false;	/* 要素がユーザー操作の中で一度 play() できた（許可をもらった） */
+	var silentBusy = false;		/* 許可をもらうための無音を鳴らしている最中 */
+	var silentSeq = 0;			/* その無音の番号 */
 	var audioFailed = false;	/* 読み込み・再生できなかった */
 	var audioSerial = -1;		/* audio 要素を頭から鳴らし始めた時の want.serial */
 	var loopTimer = 0;			/* 次のループまでの間のタイマー */
@@ -254,6 +266,14 @@
 		gain.gain.value = 0;
 		gain.connect(ctx.destination);
 
+		/* AudioWorklet が無い環境（Safari 14.0 以前など）では MIDI だけ諦める（音声 BGM は鳴らせる） */
+		if (!ctx.audioWorklet || typeof ctx.audioWorklet.addModule !== 'function') {
+			failed = true;
+			log('この環境では AudioWorklet が使えないので MIDI は鳴りません（音声 BGM は鳴ります）');
+			starting = Promise.resolve();
+			return starting;
+		}
+
 		starting = Promise.all([
 			import(url('spessasynth.js')),
 			fetch(url('GeneralUserGS.sf3')).then(function (res) {
@@ -262,7 +282,9 @@
 				}
 				return res.arrayBuffer();
 			}),
-			ctx.audioWorklet.addModule(url('spessasynth_processor.min.js'))
+			new Promise(function (resolve) {
+				resolve(ctx.audioWorklet.addModule(url('spessasynth_processor.min.js')));		/* 同期で例外が出ても Promise の失敗にする */
+			})
 		]).then(function (r) {
 			var lib = r[0];
 			synth = new lib.WorkletSynthesizer(ctx);
@@ -282,68 +304,178 @@
 		return starting;
 	}
 
-	/* 音声ファイルを閉じる（再生を止めて、要素とつなぎを捨てる） */
+	/* 音声ファイルを閉じる（再生を止めて src を外す。要素とつなぎは捨てない） */
 	function clearLoopTimer() {
 		if (loopTimer) {
 			clearTimeout(loopTimer);
 			loopTimer = 0;
 		}
 	}
-	function disposeAudio() {
-		clearLoopTimer();
-		var a = audio;
-		audio = null;
-		if (audioSrc) {
-			try {
-				audioSrc.disconnect();
-			} catch (e) {
-			}
-			audioSrc = null;
+	function resetAudioSrc(a) {
+		try {
+			a.pause();
+			a.removeAttribute('src');
+			a.load();		/* 読み込み中の通信もやめる */
+		} catch (e) {
 		}
-		if (a) {
-			try {
-				a.pause();
-				a.removeAttribute('src');
-				a.load();		/* 読み込み中の通信もやめる */
-			} catch (e) {
-			}
+	}
+	function disposeAudio() {
+		/* 何も開いていなければ何もしない（許可をもらう無音の再生を邪魔しない） */
+		if (audioName === null) {
+			return;
+		}
+		clearLoopTimer();
+		audioGen++;
+		if (audio) {
+			resetAudioSrc(audio);
 		}
 		audioName = null;
 		audioFailed = false;
 		audioSerial = -1;
 	}
 
-	/* 音声ファイルを開く（読み込みはここで始めておく。鳴らすのは play() から） */
-	function openAudioFile(name) {
-		disposeAudio();
+	/* audio 要素と MediaElementAudioSourceNode を作る（1 回だけ。作れなければ false） */
+	function ensureAudio() {
+		if (audio) {
+			return true;
+		}
 		if (!ctx || !gain) {
-			audioFailed = true;
-			log('AudioContext が無いので音声 BGM は鳴りません: ' + name);
-			return;
+			return false;
 		}
 		var a = new Audio();
 		a.preload = 'auto';
 		a.loop = false;		/* ループは ended から間を空けて自分でやる */
+		/* リスナーは 1 回だけ付ける。曲を替えた後に遅れて来た古い曲のイベントは、状態を見て無視する */
 		a.addEventListener('ended', function () {
-			if (audio !== a) {
+			if (audioName === null || !a.ended) {
 				return;
 			}
 			log('音声が最後まで鳴りました: ' + audioName);
 			syncAudio();
 		});
 		a.addEventListener('error', function () {
-			if (audio !== a) {
+			if (audioName === null || !a.error) {
 				return;
 			}
 			audioFailed = true;
-			log('音声を読み込めませんでした: ' + audioName + '（' + (a.error ? a.error.code + ' ' + a.error.message : '') + '）');
+			log('音声を読み込めませんでした: ' + audioName + '（' + a.error.code + ' ' + a.error.message + '）');
 		});
+		try {
+			audioSrc = ctx.createMediaElementSource(a);
+			audioSrc.connect(gain);
+		} catch (e) {
+			log('音声の出口を作れませんでした: ' + (e && e.message ? e.message : e));
+			audioSrc = null;
+			return false;
+		}
 		audio = a;
+		return true;
+	}
+
+	/* 音声ファイルを開く（読み込みはここで始めておく。鳴らすのは play() から） */
+	function openAudioFile(name) {
+		disposeAudio();
+		/* 許可をもらう無音の再生の最中でも、本物の曲を優先する（無音側の後始末は番号が合わないので何もしない） */
+		silentBusy = false;
+		silentSeq++;
+		audioGen++;
+		if (!ensureAudio()) {
+			audioFailed = true;
+			log('AudioContext が無いので音声 BGM は鳴りません: ' + name);
+			return;
+		}
 		audioName = name;
-		audioSrc = ctx.createMediaElementSource(a);
-		audioSrc.connect(gain);
-		a.src = url('audio/' + name);
-		log('音声を開きます: ' + a.src);
+		audioFailed = false;
+		audioSerial = -1;
+		audio.src = url('audio/' + name);
+		log('音声を開きます: ' + audio.src);
+	}
+
+	/* 許可をもらうための無音の WAV（8kHz・モノラル・16bit・0.1 秒）を data: URI で作る */
+	var silentUri = null;
+	function makeSilentUri() {
+		if (silentUri) {
+			return silentUri;
+		}
+		var samples = 800;
+		var bytes = new Uint8Array(44 + samples * 2);		/* 音のデータは 0 のまま（無音） */
+		function str(p, t) {
+			for (var i = 0; i < t.length; i++) {
+				bytes[p + i] = t.charCodeAt(i);
+			}
+		}
+		function u32(p, v) {
+			bytes[p] = v & 0xff;
+			bytes[p + 1] = (v >>> 8) & 0xff;
+			bytes[p + 2] = (v >>> 16) & 0xff;
+			bytes[p + 3] = (v >>> 24) & 0xff;
+		}
+		function u16(p, v) {
+			bytes[p] = v & 0xff;
+			bytes[p + 1] = (v >>> 8) & 0xff;
+		}
+		str(0, 'RIFF');
+		u32(4, 36 + samples * 2);
+		str(8, 'WAVE');
+		str(12, 'fmt ');
+		u32(16, 16);
+		u16(20, 1);			/* PCM */
+		u16(22, 1);			/* モノラル */
+		u32(24, 8000);		/* 8kHz */
+		u32(28, 16000);		/* 1 秒あたりのバイト数 */
+		u16(32, 2);
+		u16(34, 16);
+		str(36, 'data');
+		u32(40, samples * 2);
+		var bin = '';
+		for (var i = 0; i < bytes.length; i++) {
+			bin += String.fromCharCode(bytes[i]);
+		}
+		silentUri = 'data:audio/wav;base64,' + btoa(bin);
+		return silentUri;
+	}
+
+	/*
+	 * 操作の中で、audio 要素に無音を一度 play() させて許可をもらう（イベントの中ですぐに呼ぶこと）
+	 * 音声 BGM を開いている時は、その曲の play() のやり直しが許可も兼ねるので何もしない。
+	 * 要素は gain につながっているので、無音を鳴らしても音は出ない。
+	 */
+	function unlockAudioElement() {
+		if (audioUnlocked || silentBusy || audioName !== null || !ensureAudio()) {
+			return;
+		}
+		var a = audio;
+		var id = ++silentSeq;
+		silentBusy = true;
+		function finish(ok) {
+			if (ok) {
+				audioUnlocked = true;
+			}
+			/* 無音の最中に本物の曲が開かれた（番号が変わった）なら、要素は本物のものなので触らない */
+			if (!silentBusy || id !== silentSeq) {
+				return;
+			}
+			silentBusy = false;
+			resetAudioSrc(a);
+			log(ok ? '音声の再生を許可されました' : '音声の許可をもらえませんでした（次の操作でやり直します）');
+		}
+		var p;
+		try {
+			a.src = makeSilentUri();
+			p = a.play();
+		} catch (e) {
+			finish(false);
+			return;
+		}
+		if (p && p.then) {
+			p.then(function () {
+				finish(true);
+			}, function () {
+				finish(false);
+			});
+		} else {
+			finish(true);
+		}
 	}
 
 	/* play() が断られたら（操作の前など）何もしない。次の操作（unlock）か sync で、止まっていたらやり直す */
@@ -354,8 +486,13 @@
 		} catch (e) {
 			return;
 		}
-		if (p && p.catch) {
-			p.catch(function (e) {
+		if (p && p.then) {
+			var gen = audioGen;
+			p.then(function () {
+				if (gen === audioGen) {
+					audioUnlocked = true;		/* 本物の曲が鳴った＝許可をもらえた */
+				}
+			}, function (e) {
 				if (e && e.name !== 'AbortError') {
 					log('音声の再生が断られました（次の操作でやり直します）: ' + (e.name || e));
 				}
@@ -366,7 +503,7 @@
 	/* ゲーム側の指示（want）に音声ファイルを合わせる */
 	function syncAudio() {
 		var a = audio;
-		if (!a) {
+		if (!a || audioName === null) {
 			return;
 		}
 		if (!(want.kind === 'audio' && want.playing)) {
@@ -393,9 +530,10 @@
 		/* 最後まで鳴った：ループなら間を空けて頭から */
 		if (a.ended) {
 			if (want.loop && !loopTimer) {
+				var gen = audioGen;
 				loopTimer = setTimeout(function () {
 					loopTimer = 0;
-					if (audio !== a || !(want.kind === 'audio' && want.playing && want.loop)) {
+					if (audioGen !== gen || !(want.kind === 'audio' && want.playing && want.loop)) {
 						return;
 					}
 					try {
@@ -445,7 +583,7 @@
 
 	/* 今鳴らすものがあるか */
 	function wantSound() {
-		return want.playing && (want.kind === 'audio' ? !!audio : !!want.data);
+		return want.playing && (want.kind === 'audio' ? audioName !== null : !!want.data);
 	}
 
 	/* ゲーム側の指示（want）にシンセ・音声ファイルを合わせる */
@@ -503,10 +641,12 @@
 	var silentDone = false;
 	function unlock() {
 		start();
-		/* 音声ファイルの play() が断られて止まっていたら、この操作の中でやり直す */
-		if (want.kind === 'audio' && want.playing && audio && audio.paused && !loopTimer && !audio.ended && !audioFailed) {
+		/* 音声ファイルの play() が断られて止まっていたら、この操作の中でやり直す（これで許可も付く） */
+		if (want.kind === 'audio' && want.playing && audioName !== null && audio.paused && !loopTimer && !audio.ended && !audioFailed) {
 			tryPlay(audio);
 		}
+		/* まだ許可をもらっていなければ、無音を一度鳴らして audio 要素の許可をもらう */
+		unlockAudioElement();
 		if (!ctx || ctx.state === 'running') {
 			return;
 		}
@@ -556,7 +696,7 @@
 			stopMidi();
 			openAudioFile(String(name));
 			sync();
-			return !!audio;
+			return audioName !== null;
 		},
 		close: function () {
 			want.data = null;
@@ -565,7 +705,7 @@
 			sync();
 		},
 		play: function () {
-			if (want.kind === 'audio' ? !audio : !want.data) {
+			if (want.kind === 'audio' ? audioName === null : !want.data) {
 				return false;
 			}
 			want.playing = true;
@@ -589,7 +729,7 @@
 		},
 		isPlaying: function () {
 			if (want.kind === 'audio') {
-				return want.playing && !!audio && !audioFailed;
+				return want.playing && audioName !== null && !audioFailed;
 			}
 			return want.playing && !failed;
 		},
@@ -610,7 +750,8 @@
 				duration: seq ? seq.duration : 0,
 				kind: want.kind,
 				midiPaused: seq ? seq.paused : null,
-				audio: audio ? {
+				audioUnlocked: audioUnlocked,
+				audio: (audio && audioName !== null) ? {
 					name: audioName,
 					failed: audioFailed,
 					paused: audio.paused,

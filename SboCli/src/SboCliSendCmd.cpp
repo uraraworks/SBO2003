@@ -3014,6 +3014,30 @@ void SendCmdSORTITEM(BYTE byTarget, BYTE byMode, BYTE byNo1, BYTE byNo2)
 }
 
 /* ========================================================================= */
+/* 関数名：	SendCmdLEAVEITEMDISPOSE											 */
+/* 内容：	コマンド送信(預かり所の品を引き取らずに売る・捨てる)			 */
+/*			結果は CMD_LEAVEITEMGET（預かり所の一覧）で返る					 */
+/* 日付：	2026/11/11														 */
+/* ========================================================================= */
+void SendCmdLEAVEITEMDISPOSE(BYTE byMode, BYTE byNo, BYTE byCount, WORD wItemID)
+{
+	CMDPARA_LEAVEITEMDISPOSE SendData;
+
+	if (g_nMyCharID < 0) {
+		return;
+	}
+	ZeroMemory (&SendData, sizeof (SendData));
+	SendData.byCmd		= CMD_LEAVEITEMDISPOSE;
+	SendData.byMode		= byMode;
+	SendData.byNo		= byNo;
+	SendData.byCount	= byCount;
+	SendData.wItemID	= wItemID;
+	SendData.dwTblID	= g_aCharInfo[g_nMyCharID]->dwTblID;
+
+	cliSock.Send ((PBYTE)&SendData, sizeof (SendData));
+}
+
+/* ========================================================================= */
 /* 関数名：	SendCmdRECIPEMAKE												 */
 /* 内容：	コマンド送信(レシピで作ってもらう要求)							 */
 /*			結果は CMD_RECIPEMAKE で返ってくる								 */
