@@ -759,6 +759,37 @@ EM_JS(void, W32JsPopCreate, (int nID, int nParentID, int nType, int nStyle, int 
 			fixLater();
 			setTimeout(fixLater, 0);
 		});
+		/* 数値の欄で数字を変換中にしておくと、Mac の Chrome では変換候補が出て、
+		   次の欄をクリックしても 1 回目は確定に使われてしまう。
+		   変換中の文字が数字と - だけなら、その場で確定させて（いったんフォーカスを外して戻す）半角に直す */
+		var isNumText = function (s) {
+			if (!s) {
+				return false;
+			}
+			for (var i = 0; i < s.length; i++) {
+				var n = s.charCodeAt(i);
+				if (!((n >= 0x30 && n <= 0x39) || (n >= 0xFF10 && n <= 0xFF19) ||
+						n === 0x2D || n === 0xFF0D || n === 0x30FC || n === 0x2212)) {
+					return false;
+				}
+			}
+			return true;
+		};
+		var commitTimer = 0;
+		el.addEventListener('compositionupdate', function (ev) {
+			if (!el.w32Num || !isNumText(ev.data) || commitTimer) {
+				return;
+			}
+			commitTimer = setTimeout(function () {
+				commitTimer = 0;
+				if (document.activeElement !== el) {
+					return;
+				}
+				el.blur();
+				el.focus();
+				fixLater();
+			}, 0);
+		});
 		P.attachKeys(el, nID);
 	} else if (nType === 2) {
 		el = document.createElement('button');
