@@ -704,11 +704,45 @@ EM_JS(void, W32JsPopCreate, (int nID, int nParentID, int nType, int nStyle, int 
 		var number = (nStyle & 0x2000) !== 0;		/* ES_NUMBER */
 		var lower = (nStyle & 0x0010) !== 0;
 		var upper = (nStyle & 0x0008) !== 0;
+		/* 数値の欄（ES_NUMBER か、プログラムが数字だけを入れた欄）は日本語入力を使わない欄にする。
+		   ブラウザから IME を直接オフにはできないので、inputmode="numeric" で伝える
+		   （Windows の Chrome/Edge は MS-IME・Google 日本語入力が半角になり、スマホは数字のキーボードになる。
+		   Mac は効かない）。全角で打たれた数字は確定してから半角に直す */
+		el.w32SetNum = function (on) {
+			if (el.w32Num === on) {
+				return;
+			}
+			el.w32Num = on;
+			if (on) {
+				el.inputMode = 'numeric';
+				el.setAttribute('lang', 'en');
+			} else {
+				el.removeAttribute('inputmode');
+				el.removeAttribute('lang');
+			}
+		};
+		el.w32AutoNum = !number && !multi && el.type === 'text' && !el.readOnly;
 		if (number) {
-			el.inputMode = 'numeric';
+			el.w32SetNum(true);
 		}
-		el.addEventListener('input', function () {
+		var fix = function () {
 			var v = el.value;
+			if (el.w32Num) {
+				/* 全角英数字記号は半角に（EM_JS の中ではユニコードのエスケープが使えないので文字コードで） */
+				var t = '';
+				for (var i = 0; i < v.length; i++) {
+					var n = v.charCodeAt(i);
+					if (n >= 0xFF01 && n <= 0xFF5E) {
+						n -= 0xFEE0;
+					} else if (n === 0x3000) {
+						n = 0x20;
+					} else if (n === 0x30FC || n === 0x2212) {	/* ー − は - に */
+						n = 0x2D;
+					}
+					t += String.fromCharCode(n);
+				}
+				v = t;
+			}
 			if (number) {
 				v = v.replace(/[^0-9]/g, '');
 			}
@@ -718,10 +752,64 @@ EM_JS(void, W32JsPopCreate, (int nID, int nParentID, int nType, int nStyle, int 
 			if (upper) {
 				v = v.toUpperCase();
 			}
-			if (v !== el.value) {
-				el.value = v;
+			if (v === el.value) {
+				return false;
+			}
+			var nCut = el.value.length - v.length;
+			var s = Math.max(0, (el.selectionStart || 0) - nCut);
+			el.value = v;
+			if (document.activeElement === el) {
+				el.setSelectionRange(s, s);
+			}
+			return true;
+		};
+		el.addEventListener('input', function (ev) {
+			/* 日本語入力で変換中に書き換えると変換が壊れるので、確定してから直す */
+			if (!ev.isComposing) {
+				fix();
 			}
 			_W32JsOnEditChange(nID);
+		});
+		var fixLater = function () {
+			if (fix()) {
+				_W32JsOnEditChange(nID);
+			}
+		};
+		el.addEventListener('compositionend', function () {
+			/* compositionend の直後に確定の input が来るブラウザもあるので、少し後でも直す */
+			fixLater();
+			setTimeout(fixLater, 0);
+		});
+		/* 数値の欄で数字を変換中にしておくと、Mac の Chrome では変換候補が出て、
+		   次の欄をクリックしても 1 回目は確定に使われてしまう。
+		   変換中の文字が数字と - だけなら、その場で確定させて（いったんフォーカスを外して戻す）半角に直す */
+		var isNumText = function (s) {
+			if (!s) {
+				return false;
+			}
+			for (var i = 0; i < s.length; i++) {
+				var n = s.charCodeAt(i);
+				if (!((n >= 0x30 && n <= 0x39) || (n >= 0xFF10 && n <= 0xFF19) ||
+						n === 0x2D || n === 0xFF0D || n === 0x30FC || n === 0x2212)) {
+					return false;
+				}
+			}
+			return true;
+		};
+		var commitTimer = 0;
+		el.addEventListener('compositionupdate', function (ev) {
+			if (!el.w32Num || !isNumText(ev.data) || commitTimer) {
+				return;
+			}
+			commitTimer = setTimeout(function () {
+				commitTimer = 0;
+				if (document.activeElement !== el) {
+					return;
+				}
+				el.blur();
+				el.focus();
+				fixLater();
+			}, 0);
 		});
 		P.attachKeys(el, nID);
 	} else if (nType === 2) {
@@ -913,6 +1001,11 @@ EM_JS(void, W32JsPopText, (int nID, const char *pszUtf8), {
 		el.textContent = P.strip(text);
 	} else if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
 		var v = text.split('\r\n').join('\n');
+		/* 管理者ウィンドウの数値の欄は ES_NUMBER が付いていないものが多いので、
+		   プログラムが入れた中身が数字だけなら数値の欄とみなす（空なら決めない） */
+		if (el.w32AutoNum && v !== '') {
+			el.w32SetNum(/^-?[0-9]+$/.test(v));
+		}
 		if (el.value !== v) {
 			el.value = v;
 		}
