@@ -41,17 +41,23 @@ AUTH="Authorization: Basic $(printf 'x-access-token:%s' "$SBO2003_PRIVATE_TOKEN"
 # SBO2003_PRIVATE_REF で明示もできる。Actions では GITHUB_REF_NAME が実行したブランチ名。
 REF="${SBO2003_PRIVATE_REF:-}"
 if [ -z "$REF" ] && [ -n "${GITHUB_REF_NAME:-}" ] && [ "$GITHUB_REF_NAME" != "main" ]; then
-	if git -c http.extraHeader="$AUTH" ls-remote --exit-code --heads "https://github.com/$REPO.git" "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-		REF="$GITHUB_REF_NAME"
+	REF="$GITHUB_REF_NAME"
+fi
+CLONED=0
+if [ -n "$REF" ]; then
+	if git -c http.extraHeader="$AUTH" clone --quiet --depth 1 --filter=blob:none --sparse --branch "$REF" \
+		"https://github.com/$REPO.git" "$WORK/repo" 2>/dev/null; then
+		echo "[private] 非公開リポジトリのブランチ $REF から取ります"
+		CLONED=1
+	else
+		echo "[private] 非公開リポジトリにブランチ $REF が無いので、既定のブランチから取ります"
+		rm -rf "$WORK/repo"
 	fi
 fi
-BRANCH_OPT=()
-if [ -n "$REF" ]; then
-	echo "[private] 非公開リポジトリのブランチ $REF から取ります"
-	BRANCH_OPT=(--branch "$REF")
+if [ "$CLONED" = 0 ]; then
+	git -c http.extraHeader="$AUTH" clone --quiet --depth 1 --filter=blob:none --sparse \
+		"https://github.com/$REPO.git" "$WORK/repo"
 fi
-git -c http.extraHeader="$AUTH" clone --quiet --depth 1 --filter=blob:none --sparse "${BRANCH_OPT[@]}" \
-	"https://github.com/$REPO.git" "$WORK/repo"
 git -C "$WORK/repo" -c http.extraHeader="$AUTH" sparse-checkout set "${NEED[@]}"
 for d in "${NEED[@]}"; do
 	# 非公開側にまだ無いフォルダ（音声をまだ置いていない時など）は飛ばす
