@@ -755,7 +755,9 @@ void DrawWindowCOMMAND(PWNDINFO pWnd)
 	TextOut2 (hDC, 16 * 6, 64, "取引",		RGB (255, 255, 255));
 	TextOut2 (hDC, 16 * 2, 80, "扉",		RGB (255, 255, 255));
 	TextOut2 (hDC, 16 * 6, 80, "その他",	RGB (255, 255, 255));
-	TextOut2 (hDC, 16 * 2, 96, "依頼",		RGB (255, 255, 255));
+	if (pWnd->nData2) {
+		TextOut2 (hDC, 16 * 2, 96, "依頼",		RGB (255, 255, 255));
+	}
 
 	SelectObject (hDC, hFontOld);
 

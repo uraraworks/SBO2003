@@ -860,6 +860,22 @@ int QuestWrapText(LPCSTR pszSrc, int nMaxWidth, char (*pszOut)[QUESTWRAP_LINEBYT
 }
 
 /* ========================================================================= */
+/* 関数名：QuestHasAny														 */
+/* 内容：自分か仲間が依頼を受けているか（コマンドに「依頼」を出すか）		 */
+/* ========================================================================= */
+BOOL QuestHasAny(void)
+{
+	int i;
+
+	for (i = 0; (i < (int)g_QuestState.byCount) && (i < MAX_PARTYMEMBER); i ++) {
+		if (g_QuestState.aEntry[i].wQuestID != 0) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* ========================================================================= */
 /* 関数名：QuestFindWindow													 */
 /* 内容：開いている依頼の窓を探す											 */
 /* ========================================================================= */

@@ -215,6 +215,7 @@ extern QUESTLISTITEM g_aQuestList[MAX_QUESTLIST];						/* 依頼一覧（ギル�
 extern int g_nQuestListCount;											/* 依頼一覧の件数 */
 extern DWORD g_dwQuestGuildTblID;										/* 一覧を出したギルドの人のテーブルID */
 extern DWORD g_dwQuestWaitTime;											/* 一覧の返事待ちを始めた時間（0=待っていない） */
+extern BOOL QuestHasAny			(void);				/* 自分か仲間が依頼を受けているか（コマンドに「依頼」を出すか） */
 extern CMDPARA_QUESTSTATE g_QuestState;									/* 自分と仲間の依頼の進み具合（byCount=0 なら無し） */
 extern char g_szQuestMsg[MAX_QUESTMSG];									/* 依頼の窓の詳細欄に出す「お知らせ」「確認の文」（空なら選んだ依頼の説明） */
 
