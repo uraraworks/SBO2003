@@ -80,6 +80,8 @@ struct CNativeSlot {
 struct CNativeState {
 	int							nListenFd;		/* 待ち受けソケット（Node.js 版は待ち受け中なら 1） */
 	std::vector<CNativeSlot>	aSlot;
+	CmyZlib					ZlibInflate;	/* 展開用（送信用の m_Zlib と分けて保持） */
+	BOOL						bDeflateInit, bInflateInit;
 };
 
 /* 見回り先（サーバーは 1 つしか作らない） */
@@ -159,6 +161,8 @@ CUraraSockTCP::CUraraSockTCP(void)
 	m_pCrc				= new CCRC;
 	m_pNative			= new CNativeState;
 	m_pNative->nListenFd = -1;
+	m_pNative->bDeflateInit = FALSE;
+	m_pNative->bInflateInit = FALSE;
 	m_nSocket			= 0;
 	m_hWndParent		= NULL;
 	m_bOpen				= FALSE;
@@ -189,6 +193,10 @@ void CUraraSockTCP::Destroy(void)
 		ResetSlot(m_pNative->aSlot[i]);
 	}
 	m_pNative->nListenFd = -1;
+	m_Zlib.DeflateEnd();
+	m_pNative->ZlibInflate.InflateEnd();
+	m_pNative->bDeflateInit = FALSE;
+	m_pNative->bInflateInit = FALSE;
 	if (s_pPollTarget == this) {
 		s_pPollTarget = NULL;
 	}
@@ -295,9 +303,16 @@ PBYTE CUraraSockTCP::MakeSendData(PBYTE pData, DWORD &dwSize)
 	if (dwSize >= URARASOCK_USEZLIBSIZE) {
 		LPBYTE pTmp = new BYTE[dwSize + 5];
 		ZeroMemory(pTmp, dwSize + 5);
-		m_Zlib.DeflateInit();
-		DWORD dwRet = m_Zlib.Deflate(pData, dwSize, &pTmp[5], dwSize);
-		m_Zlib.DeflateEnd();
+		/* Deflate 内の Reset で、前のパケットの辞書を引き継がず再利用する */
+		if (!m_pNative->bDeflateInit) {
+			m_pNative->bDeflateInit = m_Zlib.DeflateInit();
+		}
+		DWORD dwRet = m_pNative->bDeflateInit ? m_Zlib.Deflate(pData, dwSize, &pTmp[5], dwSize) : 0;
+		if (!dwRet) {
+			/* 圧縮失敗時は破棄し、次のパケットで作り直す */
+			m_Zlib.DeflateEnd();
+			m_pNative->bDeflateInit = FALSE;
+		}
 		if (dwRet) {
 			pTmp[0] = 0xFF;
 			CopyMemory(&pTmp[1], &dwSize, 4);
@@ -584,10 +599,14 @@ void CUraraSockTCP::ParseRecv(int nNo)
 				return;
 			}
 			pRecv = NewRecvData(dwSourceSize);
-			m_Zlib.InflateInit();
-			DWORD dwRet = m_Zlib.Inflate((PBYTE)&pBody[5], Info.dwSize - 5, pRecv, dwSourceSize);
-			m_Zlib.InflateEnd();
+			/* Inflate 内の Reset で、パケットごとに展開状態を初期化する */
+			if (!m_pNative->bInflateInit) {
+				m_pNative->bInflateInit = m_pNative->ZlibInflate.InflateInit();
+			}
+			DWORD dwRet = m_pNative->bInflateInit ? m_pNative->ZlibInflate.Inflate((PBYTE)&pBody[5], Info.dwSize - 5, pRecv, dwSourceSize) : 0;
 			if (dwRet == 0) {
+				m_pNative->ZlibInflate.InflateEnd();
+				m_pNative->bInflateInit = FALSE;
 				SvrTakeRecvSize(pRecv);
 				SAFE_DELETE_ARRAY(pRecv);
 				continue;

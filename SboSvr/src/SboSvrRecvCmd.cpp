@@ -25,6 +25,7 @@
 #include "CharProc/CharProcMERCENARY.h"
 #include "SboSvrMagicProc.h"
 #include <map>
+#include <unordered_map>
 #include <vector>
 #include <algorithm>
 
@@ -1090,22 +1091,39 @@ void DeleteChar(DWORD dwTblID)
 
 int GetCharNo(DWORD pID)
 {
-	int i, nRetCode, nCount;
-
-	nRetCode = -1;
-	nCount = g_aCharInfo.GetSize ();
+	static std::unordered_map<DWORD, int> aCharNo;
+	int i, nCount;
 
 	if (pID == 0) {
-		return nRetCode;
+		return -1;
+	}
+	nCount = g_aCharInfo.GetSize ();
+	/* NPCのpIDはキャラ番号＋1なので、件数以下ではPCと重複し得る。
+	   件数を超えるIDだけ使う。PCはLOGINREQで同じIDが無いことを確認して
+	   から割り当て、OnDecPlayerで0に戻すため、この範囲では一意になる。
+	   件数が増えてNPCと重なった場合も、必ず従来の先頭からの検索に戻る。 */
+	if (pID > (DWORD)nCount) {
+		std::unordered_map<DWORD, int>::iterator it = aCharNo.find (pID);
+		if (it != aCharNo.end ()) {
+			int nNo = it->second;
+			/* 配列の削除・入れ替え・再読込や接続IDの変更後も、現在の値で検証 */
+			if ((nNo >= 0) && (nNo < nCount) && (g_aCharInfo[nNo]->pID == pID)) {
+				return nNo;
+			}
+			aCharNo.erase (it);
+		}
 	}
 	for (i = 0; i < nCount; i ++) {
 		if (pID == g_aCharInfo[i]->pID) {
-			nRetCode = i;
-			break;
+			if (pID > (DWORD)nCount) {
+				aCharNo[pID] = i;
+			}
+			return i;
 		}
 	}
 
-	return nRetCode;
+	/* 未ログインの接続は後でログインするので、未発見は記録しない */
+	return -1;
 }
 
 
@@ -1117,13 +1135,19 @@ int GetCharNo(DWORD pID)
 
 int GetMapNo(DWORD dwID)
 {
+	static int nLastMapNo = -1;
 	int i, nCount;
 	PMAPINFO pMapInfo;
 
 	nCount = g_aMapInfo.GetSize ();
+	/* 配列変更後も使えるよう、前回の番号の範囲と現在のIDを毎回確認 */
+	if ((nLastMapNo >= 0) && (nLastMapNo < nCount) && (g_aMapInfo[nLastMapNo]->dwID == dwID)) {
+		return nLastMapNo;
+	}
 	for (i = 0; i < nCount; i ++) {
 		pMapInfo = g_aMapInfo[i];
 		if (pMapInfo->dwID == dwID) {
+			nLastMapNo = i;
 			return i;
 		}
 	}

@@ -1036,9 +1036,13 @@ void RenewATDF(DWORD dwID)
 /* 内容：キャラ座標情報更新													 */
 /* 日付：2004/07/03															 */
 /* ========================================================================= */
+static BOOL s_bCharPosInfoDirty = FALSE;							/* 受信中にキャラ座標情報が変わった */
+
 void RenewCharPosInfo(void)
 {
 	int i, nNo, nCount;
+
+	s_bCharPosInfoDirty = FALSE;
 
 	/* まずは消去 */
 	for (i = 0; i < DRAW_PARTS_Y * 2 + 3; i ++) {
@@ -1310,6 +1314,36 @@ BOOL IsMapViewMode(void)
 		return FALSE;
 	}
 	return (GetMyPosDarkType () != MAPDARK_BRIGHT) ? TRUE : FALSE;
+}
+
+/* キャラ通知が続く間は、一覧と灯りの作り直しをまとめる(ブラウザ版)。
+   視界モードは途中の位置で見たマスも記録するので、その場で更新する */
+static void RequestCharPosInfo(void)
+{
+#ifdef __EMSCRIPTEN__
+	if ((g_nMyCharID >= 0) && !IsMapViewMode ()) {
+		s_bCharPosInfoDirty = TRUE;
+		return;
+	}
+#endif
+	RenewCharPosInfo ();
+}
+
+/* 描画・別の受信処理・タイマー処理の前に、保留していた分を反映する */
+void FlushCharPosInfo(void)
+{
+	if (s_bCharPosInfoDirty) {
+		RenewCharPosInfo ();
+	}
+}
+
+/* 別の通知で入力が変わる前にも確定する(扉・マップ切り替えなど)。
+   キャラ通知の中で使う衝突判定・橋判定は一覧や灯りを参照しない */
+static void PrepareRecvCharPosInfo(BYTE byCmd)
+{
+	if ((byCmd != CMD_CHARINFO) && (byCmd != CMD_CHARINFO2) && (byCmd != CMD_CHARPOS)) {
+		FlushCharPosInfo ();
+	}
 }
 
 /* 見える範囲(マス) */
@@ -3028,6 +3062,7 @@ void RecvDataProc(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 
+	PrepareRecvCharPosInfo (*pData);
 	RecvDataProcTbl[*pData](pData, dwDataSize);
 	SAFE_DELETE_ARRAY (pData);
 }
@@ -3970,7 +4005,7 @@ void RecvDataProcCHARINFO(PBYTE pData, DWORD dwDataSize)
 	}
 
 	/* キャラ座標情報更新 */
-	RenewCharPosInfo ();
+	RequestCharPosInfo ();
 }
 
 /* ========================================================================= */
@@ -4124,7 +4159,7 @@ void RecvDataProcCHARINFO2(PBYTE pData, DWORD dwDataSize)
 	}
 
 	/* キャラ座標情報更新 */
-	RenewCharPosInfo ();
+	RequestCharPosInfo ();
 }
 
 /* ========================================================================= */
@@ -4340,7 +4375,7 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 	g_bDraw = TRUE;
 
 	/* キャラ座標情報更新 */
-	RenewCharPosInfo ();
+	RequestCharPosInfo ();
 }
 
 /* ========================================================================= */

@@ -570,6 +570,14 @@ static void DrawMapLight(const char *pMapDark)
 		}
 	}
 
+	float afR2[MAPLIGHT_MAX], afDY2[MAPLIGHT_MAX], afTx[SCRSIZEX];
+	int anRowLight[MAPLIGHT_MAX], anX0[SCRSIZEX], anX1[SCRSIZEX];
+
+	/* ゆらぎを反映済みの半径を、そのまま二乗して使う */
+	for (i = 0; i < nLight; i ++) {
+		afR2[i] = afR[i] * afR[i];
+	}
+
 	/* 画面に見えている範囲だけ処理する */
 	nSX = 32 - anPosAddTblX[pMyChar->byDirection] * pMyChar->byDotMove;
 	nSY = 32 - anPosAddTblY[pMyChar->byDirection] * pMyChar->byDotMove;
@@ -580,10 +588,30 @@ static void DrawMapLight(const char *pMapDark)
 	nCX = min (nCX, nWidth - nSX);
 	nCY = min (nCY, nHeight - nSY);
 
+	/* 横の補間係数は、どの行でも同じ */
+	for (x = nSX; x < nSX + nCX; x ++) {
+		float fTx = (x - 16) / 32.0f;
+		int nTx = (int)floorf (fTx);
+		fTx -= nTx;
+		afTx[x - nSX] = fTx;
+		anX0[x - nSX] = max (0, min (nTx, nMapW - 1));
+		anX1[x - nSX] = max (0, min (nTx + 1, nMapW - 1));
+	}
+
 	for (y = nSY; y < nSY + nCY; y ++) {
 		PDWORD pDst;
 		float fTy, fVisY0, fVisY1;
-		int nTy, nMY0, nMY1;
+		int nTy, nMY0, nMY1, nRowLight, j;
+
+		/* この行に届く灯りだけを元の順番で並べる。半径 0 は全体を照らす */
+		nRowLight = 0;
+		for (i = 0; i < nLight; i ++) {
+			float fDY = (float)(y - anY[i]);
+			afDY2[i] = fDY * fDY;
+			if ((afR[i] <= 0.0f) || (afDY2[i] < afR2[i])) {
+				anRowLight[nRowLight ++] = i;
+			}
+		}
 
 		/* 見えるマスかどうかをマスの中心どうしでなめらかにつなぐ(縦) */
 		fTy = (y - 16) / 32.0f;
@@ -602,14 +630,12 @@ static void DrawMapLight(const char *pMapDark)
 		pDst = (PDWORD)(pBits + (nWidth * 4) * (nHeight - 1 - y)) + nSX;
 		for (x = nSX; x < nSX + nCX; x ++, pDst ++) {
 			float fTx, fVis, fLight, fWarm;
-			int nTx, x0, x1, nLevel, nWarm;
+			int x0, x1, nLevel, nWarm;
 
 			/* 見えるマスかどうか(横) */
-			fTx = (x - 16) / 32.0f;
-			nTx = (int)floorf (fTx);
-			fTx -= nTx;
-			x0 = max (0, min (nTx, nMapW - 1));
-			x1 = max (0, min (nTx + 1, nMapW - 1));
+			fTx = afTx[x - nSX];
+			x0 = anX0[x - nSX];
+			x1 = anX1[x - nSX];
 			fVis = afVisX[x0] + (afVisX[x1] - afVisX[x0]) * fTx;
 			/* 見えるマスの縁だけ少しぼかす(真ん中は暗くしない) */
 			fVis *= 1.6f;
@@ -624,21 +650,21 @@ static void DrawMapLight(const char *pMapDark)
 			/* 「明るく壁で隠す」範囲の中のマスは全部明るい */
 			if (bHide && abyHide[(x / 32) + nMapW * (y / 32)]) {
 				fLight = min (fVis, 1.0f);
-				i = nLight;
+				j = nRowLight;
 			} else {
-				i = 0;
+				j = 0;
 			}
-			for (; i < nLight; i ++) {
-				float fDX, fDY, fD, fVisLight;
+			for (; j < nRowLight; j ++) {
+				float fDX, fD, fVisLight;
+				i = anRowLight[j];
 				if (afR[i] <= 0.0f) {
 					fLight = min (fVis, 1.0f);
 					fWarm = 0.0f;
 					break;
 				}
 				fDX = (float)(x - anX[i]);
-				fDY = (float)(y - anY[i]);
-				fD = fDX * fDX + fDY * fDY;
-				if (fD >= afR[i] * afR[i]) {
+				fD = fDX * fDX + afDY2[i];
+				if (fD >= afR2[i]) {
 					continue;		/* 届かない灯りは平方根を取らない */
 				}
 				/* この灯りが照らせたマスだけ明るくする(マスの境目はなめらかに) */

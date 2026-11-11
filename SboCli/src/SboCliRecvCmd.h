@@ -26,6 +26,7 @@ extern int	GetItemCountTypeNoEqu	(DWORD, BYTE, BYTE);										/* 種類指定�
 extern int	GetCharDistance			(PCHARINFO pCharTarget, DWORD dwMapID, int x, int y, BYTE byDirection);		/* 指定キャラとの距離を求める */
 extern void	RenewATDF				(DWORD);													/* 攻撃力・守備力の更新 */
 extern void	RenewCharPosInfo		(void);														/* キャラ座標情報更新 */
+extern void	FlushCharPosInfo		(void);														/* 保留中のキャラ座標情報を反映 */
 extern void	RenewUseMagicInfo		(void);														/* 使用できる魔法一覧更新 */
 extern void	RenewMapDark			(PCHARINFO pChar);											/* 暗闇描画情報を更新 */
 extern BYTE	GetMapLightLevel		(void);														/* 今の場所で使うマップの明るさレベル */
