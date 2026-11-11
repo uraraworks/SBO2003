@@ -434,6 +434,7 @@ static void DrawMapLight(const char *pMapDark)
 	int anX[MAPLIGHT_MAX], anY[MAPLIGHT_MAX];
 	float afR[MAPLIGHT_MAX], afPower[MAPLIGHT_MAX], afWarm[MAPLIGHT_MAX], fFlicker, fTime;
 	float afVisX[DRAW_PARTS_X * 2 + 3];
+	const BYTE *apMask[MAPLIGHT_MAX];		/* 灯りごとに照らせたマス(無ければ見えるマス全体を使う) */
 	BYTE abyHide[SCRMARTSSIZE];
 	BOOL bHide;
 	PCHARINFO pMyChar, pChar;
@@ -497,6 +498,7 @@ static void DrawMapLight(const char *pMapDark)
 		afR[nLight] = 0.0f;
 		afPower[nLight] = 1.0f;
 		afWarm[nLight] = 0.0f;
+		apMask[nLight] = GetLightMask (pChar, 0, 0);
 		if (nLevel > 0) {
 			afR[nLight] = (100.0f / nLevel + 0.2f) * 32.0f * fFlicker;
 		}
@@ -551,6 +553,7 @@ static void DrawMapLight(const char *pMapDark)
 					fFlickerParts = 1.0f;		/* ゆらめかない光源 */
 				}
 				afPower[nLight] = byPower / 100.0f;
+				apMask[nLight] = GetLightMask (NULL, mx, my);
 				afWarm[nLight] = (byFlg & MAPLIGHTFLG_WARM) ? 1.0f : 0.0f;
 				/* 範囲のマスまで見えて、その少し先で真っ暗になる(RenewMapDarkParts と同じ) */
 				afR[nLight] = (nRange + 1 + 0.2f) * 32.0f * fFlickerParts;
@@ -580,12 +583,14 @@ static void DrawMapLight(const char *pMapDark)
 	for (y = nSY; y < nSY + nCY; y ++) {
 		PDWORD pDst;
 		float fTy, fVisY0, fVisY1;
-		int nTy;
+		int nTy, nMY0, nMY1;
 
 		/* 見えるマスかどうかをマスの中心どうしでなめらかにつなぐ(縦) */
 		fTy = (y - 16) / 32.0f;
 		nTy = (int)floorf (fTy);
 		fTy -= nTy;
+		nMY0 = nMapW * max (0, min (nTy, DRAW_PARTS_Y * 2 + 2));
+		nMY1 = nMapW * max (0, min (nTy + 1, DRAW_PARTS_Y * 2 + 2));
 		for (x = 0; x < nMapW; x ++) {
 			int y0 = max (0, min (nTy, DRAW_PARTS_Y * 2 + 2));
 			int y1 = max (0, min (nTy + 1, DRAW_PARTS_Y * 2 + 2));
@@ -618,15 +623,16 @@ static void DrawMapLight(const char *pMapDark)
 			fWarm = 0.0f;
 			/* 「明るく壁で隠す」範囲の中のマスは全部明るい */
 			if (bHide && abyHide[(x / 32) + nMapW * (y / 32)]) {
-				fLight = 1.0f;
+				fLight = min (fVis, 1.0f);
 				i = nLight;
 			} else {
 				i = 0;
 			}
 			for (; i < nLight; i ++) {
-				float fDX, fDY, fD;
+				float fDX, fDY, fD, fVisLight;
 				if (afR[i] <= 0.0f) {
-					fLight = 1.0f;
+					fLight = min (fVis, 1.0f);
+					fWarm = 0.0f;
 					break;
 				}
 				fDX = (float)(x - anX[i]);
@@ -635,9 +641,22 @@ static void DrawMapLight(const char *pMapDark)
 				if (fD >= afR[i] * afR[i]) {
 					continue;		/* 届かない灯りは平方根を取らない */
 				}
+				/* この灯りが照らせたマスだけ明るくする(マスの境目はなめらかに) */
+				if (apMask[i]) {
+					const BYTE *pMask = apMask[i];
+					float fA = pMask[x0 + nMY0] + (pMask[x1 + nMY0] - pMask[x0 + nMY0]) * fTx;
+					float fB = pMask[x0 + nMY1] + (pMask[x1 + nMY1] - pMask[x0 + nMY1]) * fTx;
+					fVisLight = (fA + (fB - fA) * fTy) * 1.6f;
+					if (fVisLight <= 0.0f) {
+						continue;
+					}
+					fVisLight = min (fVisLight, 1.0f);
+				} else {
+					fVisLight = min (fVis, 1.0f);
+				}
 				fD = sqrtf (fD);
 				if (fD < afR[i]) {
-					float fAdd = (1.0f - fD / afR[i]) * afPower[i];
+					float fAdd = (1.0f - fD / afR[i]) * afPower[i] * fVisLight;
 					fLight += fAdd;
 					fWarm += fAdd * afWarm[i];
 				}
@@ -645,16 +664,10 @@ static void DrawMapLight(const char *pMapDark)
 			if (fLight > 1.0f) {
 				fLight = 1.0f;
 			}
-			if (fVis < 1.0f) {
-				fLight *= fVis;
-			}
 
 			nLevel = (int)(fLight * 256.0f);
 			/* 暖色の光源の光が届いている所は橙色に寄せる */
 			nWarm = (int)(min (fWarm, 1.0f) * 256.0f);
-			if (fVis < 1.0f) {
-				nWarm = (int)(nWarm * fVis);
-			}
 			if ((nLevel >= 256) && (nWarm <= 0)) {
 				continue;
 			}
