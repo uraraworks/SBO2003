@@ -390,6 +390,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcQUEST,					/* CMD_QUEST */
 	RecvDataProcQUESTSTATE,				/* CMD_QUESTSTATE */
 	NULL,								/* CMD_SORTITEM(クライアント→サーバーのみ) */
+	NULL,								/* CMD_LEAVEITEMDISPOSE(クライアント→サーバーのみ) */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -6086,10 +6087,42 @@ void RecvDataProcLEAVEITEMGET(BYTE *pData, DWORD dwDataSize)
 		}
 	}
 
-	if ((g_nProcShopState == LEAVESTATE_ITEMSELECTGET) || (g_nProcShopState == LEAVESTATE_ITEMSORTSWAP)) {
+	/* 手放すよう頼んだ結果：その品の預かり数がいくつ減ったかで、セリフを決める */
+	if ((g_nProcShopState == LEAVESTATE_ITEMSELECTDISPOSE) && g_wLeaveDisposeItem) {
+		int i, nAfter = 0, nDone;
+		for (i = 0; (i < g_pLeaveInfo->byCount) && (i < MAX_LEAVEITEM); i ++) {
+			if (g_pLeaveInfo->waItem[i] == g_wLeaveDisposeItem) {
+				nAfter += g_pLeaveInfo->byItemCount[i];
+			}
+		}
+		nDone = g_nLeaveDisposeBefore - nAfter;
+		LPCSTR pszName = (g_wLeaveDisposeItem < g_aItemInfo.GetSize ()) ? g_aItemInfo[g_wLeaveDisposeItem]->szName : "";
+		if (nDone <= 0) {
+			if (g_byLeaveDisposeMode == LEAVEDISPOSE_SELL) {
+				wsprintf (g_szLeaveResult, "＊｢申し訳ありませんが、%sは@1　 お引き取りできないお品です。", pszName);
+			} else {
+				wsprintf (g_szLeaveResult, "＊｢申し訳ありませんが、%sは@1　 手放せないお品です。", pszName);
+			}
+		} else if (g_byLeaveDisposeMode == LEAVEDISPOSE_SELL) {
+			DWORD dwSell = 1;
+			if (g_wLeaveDisposeItem < g_aItemInfo.GetSize ()) {
+				dwSell = max (g_aItemInfo[g_wLeaveDisposeItem]->dwGold / 4, (DWORD)1);
+			}
+			wsprintf (g_szLeaveResult, "＊｢%sを%d個、%uゴールドで@1　 買い取りました。", pszName, nDone, dwSell * nDone);
+		} else {
+			wsprintf (g_szLeaveResult, "＊｢%sを%d個、処分しておきました。", pszName, nDone);
+		}
+		g_wLeaveDisposeItem = 0;
+	}
+
+	if ((g_nProcShopState == LEAVESTATE_ITEMSELECTGET) || (g_nProcShopState == LEAVESTATE_ITEMSORTSWAP) || (g_nProcShopState == LEAVESTATE_ITEMSELECTDISPOSE)) {
 
 		PWNDINFO pWndTmp;
-		if (g_pLeaveInfo->byCount == 0) {
+		if ((g_pLeaveInfo->byCount == 0) && (g_nProcShopState == LEAVESTATE_ITEMSELECTDISPOSE) && g_szLeaveResult[0]) {
+			pWndTmp = MakeWindowLEAVE (11);
+			g_WndInfo.Add (pWndTmp);
+		} else if (g_pLeaveInfo->byCount == 0) {
+			g_szLeaveResult[0] = 0;
 			pWndTmp = MakeWindowLEAVE (4);
 			g_WndInfo.Add (pWndTmp);
 		} else {

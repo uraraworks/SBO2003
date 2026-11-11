@@ -775,6 +775,7 @@ static void TestTailMapChg(const std::vector<int> &aLogin);
 static void TestQuest(const std::vector<int> &aLogin);
 static void TestSortItem(const std::vector<int> &aLogin);
 static void TestCharPush(const std::vector<int> &aLogin);
+static void TestLeaveDispose(const std::vector<int> &aLogin);
 
 static void TestTownWarp(const std::vector<int> &aLogin)
 {
@@ -1202,6 +1203,8 @@ static void TestWorld(void)
 	TestSortItem(aLogin);
 	/* O. 押せるNPCを押す向き */
 	TestCharPush(aLogin);
+	/* P. 預かり所の品を引き取らずに売る・捨てる */
+	TestLeaveDispose(aLogin);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -2475,6 +2478,143 @@ static void TestSortItem(const std::vector<int> &aLogin)
 	memcpy(p->waEqu, awEquBack, sizeof(awEquBack));
 	p->byAdminLV = byAdminBack;
 	pL->byAdminLV = byAdminBackL;
+}
+
+/* ------------------------------------------------------------------------- */
+/* P. 預かり所の品を引き取らずに売る・捨てる（CMD_LEAVEITEMDISPOSE）			 */
+/*    売値は店と同じ 価値/4（最低1）。値打ちの無い品は売れない・捨てられない	 */
+/*    品はどちらもだめ・所持金 999999 を超える分は売らない・番号や品の違い、	 */
+/*    個数の多すぎ・他人・短いパケットは弾く									 */
+/* ------------------------------------------------------------------------- */
+static void DisposeSend(PCHARINFO pFrom, PCHARINFO p, BYTE byMode, BYTE byNo, BYTE byCount, WORD wItem, DWORD dwSize = sizeof(CMDPARA_LEAVEITEMDISPOSE))
+{
+	CMDPARA_LEAVEITEMDISPOSE Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_LEAVEITEMDISPOSE;
+	Para.byMode = byMode;
+	Para.byNo = byNo;
+	Para.byCount = byCount;
+	Para.wItemID = wItem;
+	Para.dwTblID = p->dwTblID;
+	TestRecv(pFrom, &Para, dwSize);
+}
+
+static void TestLeaveDispose(const std::vector<int> &aLogin)
+{
+	printf("== P. LeaveDispose ==\n");
+	if (aLogin.empty()) {
+		return;
+	}
+	/* 値打ちのある品 2 つ・値打ちの無い品・捨てられない品を探す */
+	WORD wSell1 = 0, wSell2 = 0, wNoGold = 0, wNoDrop = 0;
+	for (int i = 1; i < g_aItemInfo.GetSize(); i ++) {
+		PITEMINFO pItem = g_aItemInfo[i];
+		if (pItem->szName[0] == 0) continue;
+		if (pItem->byFlg & ITEMFLG_DROP) {
+			if (wNoDrop == 0) wNoDrop = (WORD)i;
+			continue;
+		}
+		if (pItem->dwGold == 0) {
+			if (wNoGold == 0) wNoGold = (WORD)i;
+		} else if (wSell1 == 0) {
+			wSell1 = (WORD)i;
+		} else if ((wSell2 == 0) && (pItem->dwGold >= 8)) {
+			wSell2 = (WORD)i;
+		}
+	}
+	printf("dispose picked sell1=%u(%u) sell2=%u(%u) nogold=%u nodrop=%u\n", wSell1, wSell1 ? g_aItemInfo[wSell1]->dwGold : 0,
+			wSell2, wSell2 ? g_aItemInfo[wSell2]->dwGold : 0, wNoGold, wNoDrop);
+	if ((wSell1 == 0) || (wSell2 == 0)) {
+		return;
+	}
+
+	PCHARINFO p = g_aCharInfo[aLogin[0]];
+	PCHARINFO pOther = (aLogin.size() >= 2) ? g_aCharInfo[aLogin[1]] : NULL;
+	BYTE byAdminBack = p->byAdminLV;
+	DWORD dwGoldBack = p->dwGold;
+	DWORD dwLeaveBack = p->dwLeaveID;
+	LEAVEINFO LeaveBack;
+	ZeroMemory(&LeaveBack, sizeof(LeaveBack));
+	if (dwLeaveBack && dwLeaveBack < (DWORD)g_aLeaveInfo.GetSize()) LeaveBack = *g_aLeaveInfo[dwLeaveBack];
+	if (dwLeaveBack) {
+		ZeroMemory(g_aLeaveInfo[dwLeaveBack], sizeof(LEAVEINFO));
+		g_aLeaveInfo[dwLeaveBack]->byUse = 1;
+	}
+	p->byAdminLV = ADMINLV_USER;
+	p->dwGold = 100;
+
+	/* 口座が無い時は何も起きない */
+	if (dwLeaveBack == 0) {
+		DisposeSend(p, p, LEAVEDISPOSE_SELL, 0, 1, wSell1);
+		SortPrintLeave("dispose noaccount", p);
+	}
+	for (int i = 0; i < 5; i ++) AddLeaveItem(p, wSell2);
+	AddLeaveItem(p, wSell1);
+	if (wNoGold) AddLeaveItem(p, wNoGold);
+	if (wNoDrop) AddLeaveItem(p, wNoDrop);
+	SortPrintLeave("dispose init", p);
+	printf("dispose init gold=%u\n", p->dwGold);
+
+	/* 2 個売る：価値/4 × 2 */
+	DisposeSend(p, p, LEAVEDISPOSE_SELL, 0, 2, wSell2);
+	SortPrintLeave("dispose sell 2", p);
+	printf("dispose sell 2 gold=%u\n", p->dwGold);
+	/* 弾くもの：品が違う・個数が多すぎ・0個・番号が範囲外・方法が違う・他人・短いパケット */
+	DisposeSend(p, p, LEAVEDISPOSE_SELL, 0, 1, wSell1);
+	DisposeSend(p, p, LEAVEDISPOSE_SELL, 0, 4, wSell2);
+	DisposeSend(p, p, LEAVEDISPOSE_DROP, 0, 0, wSell2);
+	DisposeSend(p, p, LEAVEDISPOSE_DROP, 50, 1, wSell2);
+	DisposeSend(p, p, 7, 0, 1, wSell2);
+	if (pOther) {
+		BYTE byAdminBackO = pOther->byAdminLV;
+		pOther->byAdminLV = ADMINLV_USER;
+		DisposeSend(pOther, p, LEAVEDISPOSE_DROP, 0, 1, wSell2);
+		pOther->byAdminLV = byAdminBackO;
+	}
+	DisposeSend(p, p, LEAVEDISPOSE_DROP, 0, 1, wSell2, 5);
+	SortPrintLeave("dispose invalid", p);
+	printf("dispose invalid gold=%u\n", p->dwGold);
+
+	/* 値打ちの無い品は売れないが捨てられる。捨てられない品はどちらもだめ */
+	if (wNoGold) {
+		DisposeSend(p, p, LEAVEDISPOSE_SELL, 2, 1, wNoGold);
+		SortPrintLeave("dispose nogold sell", p);
+		DisposeSend(p, p, LEAVEDISPOSE_DROP, 2, 1, wNoGold);
+		SortPrintLeave("dispose nogold drop", p);
+	}
+	if (wNoDrop) {
+		int nNo = p->dwLeaveID ? g_aLeaveInfo[p->dwLeaveID]->byCount - 1 : 0;
+		DisposeSend(p, p, LEAVEDISPOSE_SELL, (BYTE)nNo, 1, wNoDrop);
+		DisposeSend(p, p, LEAVEDISPOSE_DROP, (BYTE)nNo, 1, wNoDrop);
+		SortPrintLeave("dispose nodrop", p);
+	}
+
+	/* 所持金の上限：1 個分しか入らない時は 1 個だけ売る */
+	DWORD dwSell2 = g_aItemInfo[wSell2]->dwGold / 4;
+	if (dwSell2 == 0) dwSell2 = 1;
+	p->dwGold = 999999 - dwSell2 - 1;
+	DisposeSend(p, p, LEAVEDISPOSE_SELL, 0, 3, wSell2);
+	SortPrintLeave("dispose sell cap", p);
+	printf("dispose sell cap gold=%u\n", p->dwGold);
+	/* もう 1 個も入らない時は売らない */
+	DisposeSend(p, p, LEAVEDISPOSE_SELL, 0, 1, wSell2);
+	SortPrintLeave("dispose sell full", p);
+	printf("dispose sell full gold=%u\n", p->dwGold);
+
+	/* 残りを全部捨てる：枠が詰まる */
+	DisposeSend(p, p, LEAVEDISPOSE_DROP, 0, 2, wSell2);
+	SortPrintLeave("dispose drop all", p);
+	printf("dispose drop all gold=%u\n", p->dwGold);
+
+	/* 片付け */
+	if (dwLeaveBack) {
+		*g_aLeaveInfo[dwLeaveBack] = LeaveBack;
+	} else if (p->dwLeaveID && p->dwLeaveID < (DWORD)g_aLeaveInfo.GetSize()) {
+		ZeroMemory(g_aLeaveInfo[p->dwLeaveID], sizeof(LEAVEINFO));
+		p->dwLeaveID = 0;
+	}
+	p->dwGold = dwGoldBack;
+	p->byAdminLV = byAdminBack;
 }
 
 /* ------------------------------------------------------------------------- */
