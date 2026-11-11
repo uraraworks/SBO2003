@@ -4060,7 +4060,9 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 	if (pCharDst->dwX != pChar->byX || pCharDst->dwY != pChar->byY) {
 		pCharDst->byDotMove = 0;
 		if (pChar->byFlg != 1) {
-			pCharDst->byDotMove = 31;
+			/* 1マスは32ドット。以前は31にしていたので、歩き出しの1コマ目で
+			   1ドット飛んで、マスの区切りでひっかかって見えていた */
+			pCharDst->byDotMove = 32;
 		}
 	}
 	/* 座標が変わった？ */

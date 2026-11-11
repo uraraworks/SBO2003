@@ -2469,7 +2469,9 @@ void TimerProcChar(PCHARINFO pChar)
 
 void TimerProcCharDotMove(PCHARINFO pChar)
 {
-	int nTime1, nTime2, nTmp;
+	/* 自分が一歩歩き終わった（はずの）時刻。続けて歩く時は次の一歩をここから数える */
+	static DWORD s_dwTimeMyDotEnd = 0;
+	int nTime1, nTime2Q, nTmp;
 
 	if (pChar->byDotMove == 0) {
 		return;
@@ -2477,31 +2479,50 @@ void TimerProcCharDotMove(PCHARINFO pChar)
 
 	/* 歩き始めに先に進めておく時間(ms)。一歩目を受け付けてから動き出すまでの遅れを埋める */
 	nTime1 = 27;
-	/* 1ドット進むのにかける時間(ms)。1マス(31ドット)はおよそ 31 × nTime2 ms で歩く */
-	nTime2 = 9;
+	/* 1ドット進むのにかける時間（1/4ms 単位）。1マス(32ドット)は 32 × 8.75ms = 280ms で歩く
+	  （以前は 31ドット × 9ms で、歩く速さはほぼ同じ） */
+	nTime2Q = 35;
 	/* 投げた雪玉は歩くより速く飛ぶ（サーバーは 1 マス 180ms で進める。CharProcATACK.cpp） */
 	if ((pChar->byNpcType == NPCTYPE_ATACK) && (pChar->wGrpID == 213)) {
-		nTime2 = 5;
+		nTime2Q = 20;
 	}
 	if (pChar->dwLastDotMove == 0) {
 		if (g_nProcChar == g_nMyCharID) {
 			if (g_bEnableMove) {
-				pChar->dwLastDotMove = timeGetTime () - nTime1;
+				DWORD dwNow = timeGetTime ();
+				/* 続けて歩いている（前の一歩が少し前に終わった）時は、前の一歩が
+				   終わった時刻から数える。以前は歩き終わったフレームで余った時間を
+				   捨て、次の一歩を「今 - 27ms」から始めていたので、マスの区切りで
+				   1フレームだけ進みが遅れて次のフレームで飛び、1マスごとに
+				   一瞬ひっかかって見えていた */
+				if (s_dwTimeMyDotEnd && (dwNow - s_dwTimeMyDotEnd < 100)) {
+					pChar->dwLastDotMove = s_dwTimeMyDotEnd;
+				} else {
+					pChar->dwLastDotMove = dwNow - nTime1;
+				}
+				s_dwTimeMyDotEnd = 0;
 			}
 		} else {
 			pChar->dwLastDotMove = timeGetTime () - nTime1;
 		}
 	}
 
-	/* 以前は nTime1(27ms) ごとにまとめて進めていたが、描画のタイミングとずれて
-	   ガクガクして見えるため、1ドット分の時間が過ぎていれば毎回進める */
-	if (timeGetTime () >= pChar->dwLastDotMove + nTime2) {
-		/* 前回移動時から過ぎた分を一気に移動させる */
-		nTmp = (timeGetTime () - pChar->dwLastDotMove) / nTime2;
-		pChar->byDotMove		= (BYTE)max ((int)pChar->byDotMove - nTmp, 0);
-		/* 端数の時間は次回に持ち越す（切り捨てると画面の更新間隔で速さが変わってしまうため） */
-		pChar->dwLastDotMove	+= nTmp * nTime2;
-		g_bDraw = TRUE;
+	/* dwLastDotMove は一歩の歩き始めの時刻。そこから過ぎた時間で残りのドット数を決める
+	  （画面の更新間隔によらず同じ速さになり、端数の時間も失われない） */
+	if (pChar->dwLastDotMove != 0) {
+		DWORD dwElapsed = timeGetTime () - pChar->dwLastDotMove;
+		if ((int)dwElapsed < 0) {
+			dwElapsed = 0;
+		}
+		nTmp = max (32 - (int)(dwElapsed * 4 / nTime2Q), 0);
+		if (nTmp < (int)pChar->byDotMove) {
+			/* 自分がこの回で歩き終わるなら、最後の1ドットに着いた時刻を覚えておく */
+			if ((g_nProcChar == g_nMyCharID) && (nTmp == 0)) {
+				s_dwTimeMyDotEnd = pChar->dwLastDotMove + (DWORD)(32 * nTime2Q / 4);
+			}
+			pChar->byDotMove = (BYTE)nTmp;
+			g_bDraw = TRUE;
+		}
 	}
 
 	/* 歩ききった？ */
