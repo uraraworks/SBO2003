@@ -360,10 +360,17 @@
 	/* マップ確認 */
 	.mv-opts { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-top: 8px; }
 	.mv-opts label { display: flex; align-items: center; gap: 6px; margin: 0; }
-	.mv-info { margin: 10px 0 8px; min-height: 3em; font-size: 14px; line-height: 1.6; }
+	.mv-opts select { padding: 6px 8px; font-size: 16px; }
+	.mv-opts #mv-map { max-width: 14em; }
+	#tab-mapview #mv-msg:empty { display: none; }
+	.mv-opts button { margin: 0; padding: 7px 12px; }
+	.mv-help { margin-bottom: 4px; }
+	.mv-help summary { cursor: pointer; color: var(--sub); font-size: 13px; }
+	.mv-help .sub-text { margin: 6px 0; }
+	.mv-info { margin: 4px 0 6px; height: 3.2em; overflow: hidden; font-size: 13px; line-height: 1.6; }
 	.mv-line { font-variant-numeric: tabular-nums; }
 	.mv-line-pin { color: var(--accent); }
-	.mv-scroll { position: relative; overflow: auto; max-height: 75vh; border: 1px solid var(--border); touch-action: pan-x pan-y; }
+	.mv-scroll { position: relative; overflow: auto; max-height: 75vh; overscroll-behavior: contain; border: 1px solid var(--border); touch-action: pan-x pan-y; }
 	.mv-stack { position: relative; display: block; }
 	.mv-stack canvas { display: block; image-rendering: pixelated; }
 	.mv-stack canvas.mv-over { position: absolute; left: 0; top: 0; pointer-events: none; }
@@ -376,6 +383,7 @@
 	.mv-label.left { left: auto; right: 100%; margin: 0 2px 2px 0; }
 	.mv-label.below { bottom: auto; top: 100%; margin-top: 2px; }
 	.mv-stack { overflow: hidden; }
+	body.mv-fit #devices { display: none; }
 	.mv-view { position: absolute; box-sizing: border-box; border: 2px dashed #fff; outline: 1px solid rgba(0,0,0,0.7); pointer-events: none;
 		box-shadow: 0 0 0 9999px rgba(0,0,0,0.35); }
 	.mv-ghost { position: absolute; left: 0; top: 0; width: 100%; height: 100%; opacity: 0.65; image-rendering: pixelated; }
@@ -393,6 +401,11 @@
 	.mv-sizebox { flex: 1 1 100%; margin-top: 4px; }
 	.mv-sizebox[hidden] { display: none; }
 	.mv-sizebox summary { cursor: pointer; color: var(--accent); }
+	.mv-snaplist { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+	.mv-snap { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; }
+	.mv-snap b { min-width: 8em; }
+	.mv-snap .sub-text { flex: 1 1 auto; margin: 0; }
+	.mv-snap button { margin: 0; padding: 6px 10px; }
 	.mv-sizerow { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-top: 8px; }
 	.mv-sizerow label { display: flex; align-items: center; gap: 4px; margin: 0; font-weight: normal; }
 	.mv-sizerow input[type=number] { width: 4.5em; padding: 6px; }
@@ -773,28 +786,28 @@
 
 	<!-- マップ確認（前の「NPCの巡回」はゲーム内の管理者ウィンドウに移したので外した。戻し方は上のコメント） -->
 	<section id="tab-mapview" hidden>
-		<p class="sub-text">
-			マップ全体の絵を見て、マスの座標を確かめる画面です。マウスを乗せたマスに枠が出て、座標・パーツ番号・当たり判定・イベントが出ます。
-			クリック（スマホはタップ）するとそのマスを止めておけます。見ているだけならデータは何も変わりません。
-			水色の枠は扉・入口などのイベントのマスです。
-		</p>
-		<p class="sub-text">
-			「編集モード」にすると、左クリックで選んだパーツを置き（押したまま動かすと続けて置けます）、右クリックでそのマスのパーツを拾います。
-			編集はまず下書き（サーバーに自動で保存。ゲームには出ません）になり、「サーバーへ反映」を押した時にゲームへ反映されます。
-			反映した変更は「AI連携」の履歴に残り、そこから元に戻せます。元に戻す・やり直すは Ctrl+Z・Ctrl+Y（Mac は ⌘）でも。
-		</p>
+		<details class="mv-help">
+			<summary>使い方</summary>
+			<p class="sub-text">
+				マップ全体の絵を見て、マスの座標を確かめる画面です。マウスを乗せたマスに枠が出て、座標・パーツ番号・当たり判定・イベントが出ます。
+				クリック（スマホはタップ）するとそのマスを止めておけます。見ているだけならデータは何も変わりません。
+				水色の枠は扉・入口などのイベントのマスです。
+			</p>
+			<p class="sub-text">
+				「編集モード」にすると、左クリックで選んだパーツを置き（押したまま動かすと続けて置けます）、右クリックでそのマスのパーツを拾います。
+				編集はまず下書き（サーバーに自動で保存。ゲームには出ません）になり、「サーバーへ反映」を押した時にゲームへ反映されます。
+				反映した変更は「AI連携」の履歴に残り、そこから元に戻せます。元に戻す・やり直すは Ctrl+Z・Ctrl+Y（Mac は ⌘）でも。
+			</p>
+		</details>
 		<div class="msg" id="mv-msg"></div>
-		<div class="row" style="flex-wrap:wrap">
-			<label for="mv-map" style="margin:0">マップ</label>
-			<select id="mv-map"></select>
-			<button type="button" class="sub" id="mv-reload">読み直す</button>
-		</div>
 		<div class="mv-opts">
+			<label for="mv-map">マップ<select id="mv-map"></select></label>
+			<button type="button" class="sub" id="mv-reload">読み直す</button>
 			<label>拡大<select id="mv-scale"><option value="1">1 倍</option><option value="2" selected>2 倍</option><option value="3">3 倍</option></select></label>
-			<label><input type="checkbox" id="mv-lines">マス目の線（10 マスごとに濃く）</label>
+			<label><input type="checkbox" id="mv-lines">マス目の線</label>
 			<label><input type="checkbox" id="mv-roof" checked>屋根を外す</label>
-			<label><input type="checkbox" id="mv-block">通れないマスを赤くする</label>
-			<label>カーソル<select id="mv-cursor"><option value="1">1 マス</option><option value="view">ゲーム画面の広さ（15×15 マス）</option></select></label>
+			<label><input type="checkbox" id="mv-block">通れないマスを赤く</label>
+			<label>カーソル<select id="mv-cursor"><option value="1">1 マス</option><option value="view">画面の広さ 15×15</option></select></label>
 		</div>
 		<div class="mv-editbar" id="mv-editbar" hidden>
 			<label><input type="checkbox" id="mv-edit">編集モード</label>
@@ -808,6 +821,18 @@
 				<button type="button" id="mv-apply">サーバーへ反映</button>
 				<span class="mv-state" id="mv-state"></span>
 			</div>
+			<details class="mv-sizebox" id="mv-snapbox" hidden>
+				<summary>スナップショット（名前を付けて保存・好きな時に読み込む）</summary>
+				<div class="mv-sizerow">
+					<label>名前<input type="text" id="mv-snap-name" maxlength="60" placeholder="例：修正前" style="width:14em"></label>
+					<button type="button" id="mv-snap-save">今の姿を保存</button>
+				</div>
+				<div class="mv-snaplist" id="mv-snap-list"></div>
+				<p class="sub-text">
+					今見えている姿（反映していない変更も含む）を名前付きでサーバーに残します（ゲームは変わりません）。
+					「読み込む」とその姿に戻り、「サーバーへ反映」でゲームに出ます。1 マップ 30 個まで（古いものから消えます）。
+				</p>
+			</details>
 			<details class="mv-sizebox" id="mv-sizebox" hidden>
 				<summary>マップを広げる・新しいマップを足す</summary>
 				<div class="mv-sizerow">
@@ -837,7 +862,7 @@
 				</p>
 			</details>
 		</div>
-		<div class="sub-text" id="mv-size" style="margin-top:8px"></div>
+		<div class="sub-text" id="mv-size" style="margin-top:4px"></div>
 		<div class="mv-info" id="mv-info"></div>
 		<div class="mv-scroll" id="mv-scroll" hidden><div class="mv-stack" id="mv-stack"></div></div>
 		<div class="mv-pal" id="mv-pal" hidden>
@@ -1141,6 +1166,8 @@
 		$('tab-recipe').hidden = name !== 'recipe';
 		$('tab-dot').hidden = name !== 'dot';
 		document.body.classList.toggle('wide', name === 'parts' || name === 'plans' || name === 'mapview');
+		/* マップ確認はページを動かさず、マップの欄が残りの高さを使う（admin-mapview.js の fitScroll） */
+		document.body.classList.toggle('mv-fit', name === 'mapview');
 		if (history.replaceState) {
 			history.replaceState(null, '', name === 'search' ? location.pathname : '#' + name);
 		}

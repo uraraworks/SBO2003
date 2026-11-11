@@ -10,6 +10,7 @@
  *   - 「サーバーへ反映」で /api/admin/mapedit/apply に変わったマスだけ送る（AI連携の履歴に 1 件残り、元に戻せる）。
  *   - 元に戻す・やり直すはこの画面の中だけ（読み直すと消える）。
  *   - パーツ一覧は出したまま作業できる小窓（名前・タグは /api/admin/parts/dex のパーツ図鑑から）。
+ *   - スナップショット（名前を付けて今の姿を残し、あとで読み込む）は /api/admin/mapedit/snap/*。
  *   - 「マップを広げる・新しいマップを足す」は /api/admin/mapedit/resize・add（すぐ反映。履歴からは戻せない）。
  *   - 絵は admin-mapdoc.js の loadSheets（/admin-grp/ の map01〜05.png）で読む。
  *   - マス目は /api/admin/data/tiles、パーツ・マップ名・イベントは /api/admin/data/list（サーバーは server/node/sbosvr_data.js）。
@@ -229,10 +230,12 @@
 		}).then(function (rd) {
 			if (my !== seq) throw 'stale';
 			cur = work;
+			loadSnapList();
 			var msg = restoreDraft(rd && rd.draft);
 			drawAll();
 			$('mv-scroll').hidden = false;
 			$('mv-editbar').hidden = false;
+			fitScroll();
 			$('mv-size').textContent = 'マップID ' + cur.mapId + '・大きさ ' + cur.W + ' × ' + cur.H + ' マス（座標は 0〜' + (cur.W - 1) + ', 0〜' + (cur.H - 1) + '）';
 			showInfo();
 			updateEditUi();
@@ -989,6 +992,7 @@
 		$('mv-edit').checked = bEdit;
 		$('mv-tools').hidden = !bEdit;
 		$('mv-sizebox').hidden = !bEdit;
+		$('mv-snapbox').hidden = !bEdit;
 		document.body.classList.toggle('mv-editing', bEdit);
 		if (bEdit) {
 			pin = null;
@@ -1017,9 +1021,38 @@
 		}
 	}
 
+	/*
+	 * マップの欄の高さを「画面の残り」にする（ページとマップの欄でスクロールが二重にならないように）。
+	 * 上の欄（編集のボタン・マスの情報など）の高さが変わった時・画面の大きさが変わった時に合わせ直す。
+	 * 上の欄が高すぎる時（スマホなど）は 240px は残し、その分だけページが動く。
+	 */
+	function fitScroll() {
+		var sc = $('mv-scroll');
+		if (!sc || sc.hidden || $('tab-mapview').hidden) return;
+		var top = sc.getBoundingClientRect().top + window.pageYOffset;
+		var h = Math.max(240, Math.floor(window.innerHeight - top - 12));
+		sc.style.maxHeight = h + 'px';
+		/* 下の余白の分だけまだページがはみ出していたら、その分縮める */
+		var over = document.documentElement.scrollHeight - window.innerHeight;
+		if (over > 0 && h > 240) {
+			sc.style.maxHeight = Math.max(240, h - over) + 'px';
+		}
+	}
+	function bindFit() {
+		window.addEventListener('resize', fitScroll);
+		if (root.ResizeObserver) {
+			var ro = new ResizeObserver(function () { fitScroll(); });
+			Array.prototype.forEach.call($('tab-mapview').children, function (c) {
+				if (c.id !== 'mv-scroll' && c.id !== 'mv-pal') ro.observe(c);
+			});
+			ro.observe(document.querySelector('header') || document.body.firstElementChild);
+		}
+	}
+
 	function bind() {
 		if (bBound) return;
 		bBound = true;
+		bindFit();
 		try {
 			var a = JSON.parse(localStorage.getItem(LS_RECENT) || '[]');
 			if (Array.isArray(a)) recent = a.filter(function (n) { return typeof n === 'number'; }).slice(0, 20);
@@ -1061,6 +1094,10 @@
 		$('mv-apply').addEventListener('click', applyToServer);
 		$('mv-rs-sel').addEventListener('click', function () { $('mv-rs-fill').value = String(selPart); });
 		$('mv-resize').addEventListener('click', resizeMap);
+		$('mv-snap-save').addEventListener('click', saveSnap);
+		$('mv-snap-name').addEventListener('keydown', function (ev) {
+			if (ev.key === 'Enter' && !ev.isComposing) saveSnap();
+		});
 		$('mv-add').addEventListener('click', addMap);
 		document.addEventListener('keydown', onKey);
 		window.addEventListener('pointerup', endStroke);
@@ -1087,6 +1124,100 @@
 			s.appendChild(o);
 		});
 		s.value = v;
+	}
+
+	/* ---------------------------------------------------------------- */
+	/* スナップショット（名前を付けて残すマップの姿。ゲームは変わらない）	 */
+	/* ---------------------------------------------------------------- */
+	function loadSnapList() {
+		var box = $('mv-snap-list');
+		if (!cur) {
+			box.textContent = '';
+			return Promise.resolve();
+		}
+		var my = cur;
+		return api('/api/admin/mapedit/snap/list', { id: my.id }).then(function (r) {
+			if (cur !== my) return;
+			box.textContent = '';
+			if (!r.snapshots) {
+				box.appendChild(el('div', 'sub-text', '一覧を読めませんでした: ' + errText(r)));
+				return;
+			}
+			if (!r.snapshots.length) {
+				box.appendChild(el('div', 'sub-text', 'このマップのスナップショットはまだありません。'));
+				return;
+			}
+			r.snapshots.forEach(function (s) {
+				var row = el('div', 'mv-snap');
+				row.appendChild(el('b', null, s.name));
+				row.appendChild(el('span', 'sub-text', new Date(s.at).toLocaleString() + '・' + s.cx + '×' + s.cy +
+					(s.cx !== my.W || s.cy !== my.H ? '（大きさが今と違うので読み込めません）' : '')));
+				var bLoad = el('button', 'sub', '読み込む');
+				bLoad.type = 'button';
+				bLoad.disabled = s.cx !== my.W || s.cy !== my.H;
+				bLoad.addEventListener('click', function () { loadSnap(s); });
+				var bDel = el('button', 'sub', '消す');
+				bDel.type = 'button';
+				bDel.addEventListener('click', function () { deleteSnap(s); });
+				row.appendChild(bLoad);
+				row.appendChild(bDel);
+				box.appendChild(row);
+			});
+		});
+	}
+	function saveSnap() {
+		if (!cur) return;
+		var name = $('mv-snap-name').value.trim();
+		if (!name) {
+			alert('スナップショットの名前を入れてください（例：修正前）。');
+			return;
+		}
+		var my = cur;
+		api('/api/admin/mapedit/snap/save', { id: my.id, name: name, cells: dirtyCells() }).then(function (r) {
+			if (!r.ok) throw new Error(errText(r));
+			$('mv-snap-name').value = '';
+			setMsg('スナップショット「' + name + '」を残しました。' + (r.dropped ? '（いっぱいなので古いものを ' + r.dropped + ' 個消しました）' : ''), true);
+			return loadSnapList();
+		}).then(null, function (err) {
+			setMsg('スナップショットを残せませんでした: ' + (err && err.message || err));
+		});
+	}
+	function loadSnap(s) {
+		if (!cur || stroke || bApplying) return;
+		var my = cur;
+		api('/api/admin/mapedit/snap/get', { id: my.id, snapId: s.snapId }).then(function (r) {
+			if (cur !== my) return;
+			if (!r.snapshot) throw new Error(errText(r));
+			var p = r.snapshot.parts;
+			if (r.snapshot.cx !== my.W || r.snapshot.cy !== my.H) throw new Error('マップの大きさが今と違います');
+			var cells = [];
+			for (var y = 0; y < my.H; y++) {
+				for (var x = 0; x < my.W; x++) {
+					if (my.tiles[y][x] !== p[y][x]) cells.push([x, y, my.tiles[y][x], p[y][x]]);
+				}
+			}
+			if (!cells.length) {
+				setMsg('今の姿はスナップショット「' + s.name + '」と同じです。', true);
+				return;
+			}
+			if (!confirm('編集画面をスナップショット「' + s.name + '」の姿にします（' + cells.length + ' マスが変わります）。\n' +
+					'「元に戻す」で取り消せます。ゲームに出すには、そのあと「サーバーへ反映」を押してください。')) return;
+			cells.forEach(function (c) { setCell(c[0], c[1], c[3]); });
+			pushAction(cells);
+			setMsg('スナップショット「' + s.name + '」を読み込みました（' + cells.length + ' マス。まだゲームには出ていません）。', true);
+		}).then(null, function (err) {
+			setMsg('読み込めませんでした: ' + (err && err.message || err));
+		});
+	}
+	function deleteSnap(s) {
+		if (!cur) return;
+		if (!confirm('スナップショット「' + s.name + '」を消します。よろしいですか？')) return;
+		api('/api/admin/mapedit/snap/delete', { id: cur.id, snapId: s.snapId }).then(function (r) {
+			if (!r.ok) throw new Error(errText(r));
+			return loadSnapList();
+		}).then(null, function (err) {
+			setMsg('消せませんでした: ' + (err && err.message || err));
+		});
 	}
 
 	/* ---------------------------------------------------------------- */
@@ -1166,6 +1297,7 @@
 	function open(fnApi) {
 		api = fnApi;
 		bind();
+		setTimeout(fitScroll, 0);
 		if (bReady) return;
 		setMsg('読み込んでいます…', true);
 		ensureBase().then(function () {
