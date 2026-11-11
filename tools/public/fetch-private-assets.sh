@@ -36,7 +36,21 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 # 必要なフォルダだけを取る（トークンは URL ではなくヘッダーで渡し、ログや .git に残さない）
 AUTH="Authorization: Basic $(printf 'x-access-token:%s' "$SBO2003_PRIVATE_TOKEN" | base64 -w0)"
-git -c http.extraHeader="$AUTH" clone --quiet --depth 1 --filter=blob:none --sparse \
+# 公開側と同じ名前のブランチが非公開側にもあればそれを取る（素材の追加と仕組みを組で試す時、
+# 非公開側をマージする前にステージングへ出せるように）。無ければ既定のブランチ。
+# SBO2003_PRIVATE_REF で明示もできる。Actions では GITHUB_REF_NAME が実行したブランチ名。
+REF="${SBO2003_PRIVATE_REF:-}"
+if [ -z "$REF" ] && [ -n "${GITHUB_REF_NAME:-}" ] && [ "$GITHUB_REF_NAME" != "main" ]; then
+	if git -c http.extraHeader="$AUTH" ls-remote --exit-code --heads "https://github.com/$REPO.git" "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+		REF="$GITHUB_REF_NAME"
+	fi
+fi
+BRANCH_OPT=()
+if [ -n "$REF" ]; then
+	echo "[private] 非公開リポジトリのブランチ $REF から取ります"
+	BRANCH_OPT=(--branch "$REF")
+fi
+git -c http.extraHeader="$AUTH" clone --quiet --depth 1 --filter=blob:none --sparse "${BRANCH_OPT[@]}" \
 	"https://github.com/$REPO.git" "$WORK/repo"
 git -C "$WORK/repo" -c http.extraHeader="$AUTH" sparse-checkout set "${NEED[@]}"
 for d in "${NEED[@]}"; do
