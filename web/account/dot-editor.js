@@ -23,6 +23,22 @@ const $ = (id) => document.getElementById(id);
 const PAD = 32; // 絵のまわりの余白(px)。端まで画面の中央に持ってこられるように
 const ZOOMS = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32];
 const HISTORY_LIMIT = 100;
+// ホイールで拡大縮小する時の「1段階に必要な回転量」(px 換算、「ふつう」の時)。
+// Magic Mouse やトラックパッドは細かい量のイベントが大量に来るので、量をためて
+// これを超えるごとに1段階だけ変える。大きくするほどゆっくりになる。
+// （Windows のふつうのマウスは 1 目盛りでだいたい 100）
+const WHEEL_ZOOM_STEP = 100;
+// トラックパッドのピンチ（Mac の Chrome では Ctrl 付きのホイールとして来る）用。
+// ピンチは1回の量がとても小さいので別の値にする。
+const PINCH_ZOOM_STEP = 30;
+// 画面の「ホイールの拡大の速さ」で選ぶ倍率（上の量にかける。大きいほどゆっくり）
+const WHEEL_ZOOM_SPEEDS = { slow: 2.5, normal: 1, fast: 0.4 };
+const WHEEL_ZOOM_SPEED_KEY = 'sbo-dot-wheel-zoom-speed';
+// 1段階変えたあと、次の段階まで最低これだけ間を空ける(ms)。慣性スクロールの勢いで
+// 一気に何段も進まないようにするため。
+const WHEEL_ZOOM_COOLDOWN = 180;
+// これだけホイールが止まったら、ためた量を捨てる(ms)。
+const WHEEL_ZOOM_IDLE = 500;
 const IS_TEST = new URLSearchParams(location.search).get('test') === '1';
 
 // ----------------------------------------------------------------
@@ -1105,9 +1121,44 @@ vp.addEventListener('wheel', (e) => {
   const tab = S.active;
   if (!tab || !(e.metaKey || e.ctrlKey)) return;
   e.preventDefault();
+  const dir = wheelZoomDir(e);
+  if (!dir) return;
   const p = toImgF(e);
-  setZoom(tab, stepZoom(tab, e.deltaY < 0 ? 1 : -1), p.fx, p.fy, p.sx, p.sy);
+  setZoom(tab, stepZoom(tab, dir), p.fx, p.fy, p.sx, p.sy);
 }, { passive: false });
+
+// ホイールの回転量をためて、一定量を超えたら拡大(1)・縮小(-1)を返す。まだなら 0
+const wheelAcc = { sum: 0, last: 0, stepAt: 0 };
+let wheelZoomSpeed = 'normal';
+try { wheelZoomSpeed = localStorage.getItem(WHEEL_ZOOM_SPEED_KEY) || 'normal'; } catch (_) { /* 保存できない時は「ふつう」 */ }
+{
+  const sel = $('wheelZoomSpeed');
+  if (sel) {
+    if (!(wheelZoomSpeed in WHEEL_ZOOM_SPEEDS)) wheelZoomSpeed = 'normal';
+    sel.value = wheelZoomSpeed;
+    sel.addEventListener('change', () => {
+      wheelZoomSpeed = sel.value;
+      try { localStorage.setItem(WHEEL_ZOOM_SPEED_KEY, wheelZoomSpeed); } catch (_) { /* 無視 */ }
+    });
+  }
+}
+function wheelZoomDir(e) {
+  const now = performance.now();
+  // 行・ページ単位で来るマウスもあるので px にそろえる
+  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? vp.clientHeight : 1;
+  const dy = e.deltaY * unit;
+  if (now - wheelAcc.last > WHEEL_ZOOM_IDLE || Math.sign(dy) !== Math.sign(wheelAcc.sum)) wheelAcc.sum = 0;
+  wheelAcc.last = now;
+  wheelAcc.sum += dy;
+  if (now - wheelAcc.stepAt < WHEEL_ZOOM_COOLDOWN) return 0;
+  const base = (e.ctrlKey && !e.metaKey) ? PINCH_ZOOM_STEP : WHEEL_ZOOM_STEP;
+  const step = base * (WHEEL_ZOOM_SPEEDS[wheelZoomSpeed] ?? 1);
+  if (Math.abs(wheelAcc.sum) < step) return 0;
+  const dir = wheelAcc.sum < 0 ? 1 : -1;
+  wheelAcc.sum = 0;
+  wheelAcc.stepAt = now;
+  return dir;
+}
 
 vp.addEventListener('scroll', () => requestDraw());
 new ResizeObserver(() => { resizeCanvas(); }).observe(vp);
