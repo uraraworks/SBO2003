@@ -17,6 +17,7 @@
  *   K. 傭兵                      … 道さがしの表が前の方法と同じ結果か・敵探しの速さ・道具を持たせる取り引き
  *   M. ギルドの依頼              … 受ける・見えるNPCが持ち主と仲間にだけ届く・宝箱・ポータル・渡して報酬・保存して読み直し
  *   N. 並べ替え                  … 道具欄・預かり所の入れ替え・種類順・50音順（装備の付け替え・取り引き中は動かない・50音キー）
+ *   O. 接続ID検索                … 配列・ID変更後も先頭の一致を返すことと、多数キャラでの速さ
  */
 #include "stdafx.h"
 #include "SboSvrRecvCmd.h"
@@ -2331,6 +2332,109 @@ static void TestMapNo(void)
 	delete [] aMap;
 }
 
+/* ========================================================================= */
+/* 関数名：	CheckCharNo													 */
+/* 内容：	従来の先頭からの検索と結果を比較							 */
+/* ========================================================================= */
+static void CheckCharNo(DWORD pID)
+{
+	int nExpected = -1;
+	if (pID) {
+		for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+			if (g_aCharInfo[i]->pID == pID) {
+				nExpected = i;
+				break;
+			}
+		}
+	}
+	int nNo = GetCharNo(pID);
+	if (nNo != nExpected) {
+		fprintf(stderr, "GetCharNo(%u): %d != %d\n", pID, nNo, nExpected);
+		abort();
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：	TestCharNo													 */
+/* 内容：	キャラ配列・接続ID変更後の検索と、多数キャラでの計測		 */
+/* ========================================================================= */
+static void TestCharNo(void)
+{
+	/* 実データ読込前に確認する。ゲームの乱数・通信は使わない */
+	const int NCHAR = 4096, NRUN = 200000;
+	CHARINFO *aChar = new CHARINFO[NCHAR];
+	ZeroMemory(aChar, sizeof(CHARINFO) * NCHAR);
+	CheckCharNo(0);
+	CheckCharNo(URARASOCK_IDBASE);
+	for (int i = 0; i < NCHAR; i ++) {
+		/* NPC・オフラインと、末尾のログイン中PC */
+		aChar[i].pID = (i % 2) ? i + 1 : 0;
+		g_aCharInfo.Add(&aChar[i]);
+	}
+	for (int i = NCHAR - 32; i < NCHAR; i ++) {
+		aChar[i].pID = URARASOCK_IDBASE + i;
+		CheckCharNo(aChar[i].pID);
+		CheckCharNo(aChar[i].pID);
+	}
+	/* 複数接続を交互に調べる。合計も固定出力にして呼び出しを確認 */
+	int nSum = 0;
+	double dStart = NowMs();
+	for (int i = 0; i < NRUN; i ++) nSum += GetCharNo(URARASOCK_IDBASE + NCHAR - 32 + i % 32);
+	printf("BENCH getcharno chars=%d runs=%d sum=%d ms=%.1f\n", NCHAR, NRUN, nSum, NowMs() - dStart);
+
+	DWORD pID = aChar[NCHAR - 1].pID;
+	/* キャッシュ先が配列の範囲外になってから、同じIDを追加し直す */
+	g_aCharInfo.RemoveAt(NCHAR - 1);
+	CheckCharNo(pID);
+	g_aCharInfo.Add(&aChar[NCHAR - 1]);
+	CheckCharNo(pID);
+	/* 同じ件数での入れ替え・接続ID変更・切断後のID再利用 */
+	std::swap(g_aCharInfo[0], g_aCharInfo[NCHAR - 1]);
+	CheckCharNo(pID);
+	aChar[NCHAR - 1].pID = 0;
+	CheckCharNo(pID);
+	aChar[100].pID = pID;
+	CheckCharNo(pID);
+	g_aCharInfo.RemoveAt(0);
+	CheckCharNo(pID);
+	g_aCharInfo.InsertAt(0, &aChar[NCHAR - 1]);
+	CheckCharNo(pID);
+	g_aCharInfo.SetAt(100, &aChar[101]);
+	CheckCharNo(pID);
+	g_aCharInfo.SetAt(100, &aChar[100]);
+	CheckCharNo(pID);
+	/* 未ログインの検索後に同じ接続がログインしても見つかる */
+	CheckCharNo(pID + 1);
+	aChar[100].pID = pID + 1;
+	CheckCharNo(pID + 1);
+	CheckCharNo(pID);
+	/* NPCと重複し得るIDは常に先頭を返す（前方に後から重複を作る） */
+	aChar[100].pID = 42;
+	CheckCharNo(42);
+	aChar[10].pID = 42;
+	CheckCharNo(42);
+	std::swap(g_aCharInfo[10], g_aCharInfo[100]);
+	CheckCharNo(42);
+	g_aCharInfo.RemoveAt(10);
+	CheckCharNo(42);
+	g_aCharInfo.RemoveAll();
+	CheckCharNo(pID + 1);
+	/* 件数増加でキャッシュ済みIDがNPCの範囲に入っても先頭を返す */
+	aChar[0].pID = 2;
+	g_aCharInfo.Add(&aChar[0]);
+	CheckCharNo(2);
+	aChar[1].pID = 2;
+	g_aCharInfo.InsertAt(0, &aChar[1]);
+	CheckCharNo(2);
+	g_aCharInfo.RemoveAll();
+	CheckCharNo(2);
+	g_aCharInfo.Add(&aChar[1]);
+	CheckCharNo(2);
+	g_aCharInfo.RemoveAll();
+	delete [] aChar;
+	printf("getcharno mutations=ok\n");
+}
+
 int main(int argc, char **argv)
 {
 	setvbuf(stdout, NULL, _IOLBF, 0);
@@ -2340,6 +2444,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	TestMapNo();
+	TestCharNo();
 	TestSend();
 	TestMyArray();
 	TestSugorokuViewer();
