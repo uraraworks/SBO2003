@@ -15,6 +15,7 @@ extern void SendCmdWEBACCOUNT		(BYTE, BYTE = 0);								/* ブラウザ版のア
 extern void SendCmdCHGSTATE			(BYTE);									/* 状態遷移 */
 extern void SendCmdCHGDIRECTION		(BYTE);									/* 向き変更要求 */
 extern void SendCmdCHARPOS			(BYTE, BOOL);							/* 移動要求 */
+extern BOOL g_bSendCharPosDone;													/* SendCmdCHARPOS で移動を送ったら TRUE（呼ぶ側が FALSE にしておく） */
 extern void SendCmdCHARINFOREQ		(DWORD);								/* キャラ情報要求 */
 extern void SendCmdSPEECH			(LPSTR, BYTE);							/* 発言通知 */
 extern void SendCmdHARTBEAT			(void);									/* 生存確認通知 */
