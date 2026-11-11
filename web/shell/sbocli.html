@@ -86,6 +86,22 @@
 		color: var(--sub);
 		min-height: 1.4em;
 	}
+	/* 読み込みの進み具合（ゲームデータのダウンロード中だけ出す） */
+	.sbo-load-bar {
+		width: min(320px, 80%);
+		height: 8px;
+		margin: 6px auto 0;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		background: rgba(0, 0, 0, 0.35);
+		overflow: hidden;
+	}
+	.sbo-load-bar > div {
+		height: 100%;
+		width: 0;
+		background: var(--accent);
+		transition: width 0.2s linear;
+	}
 
 	/* ===================================================================
 	   チャット欄（共通）
@@ -1794,6 +1810,37 @@
 (function () {
 	var canvas = document.getElementById('canvas');
 	var status = document.getElementById('sbo-status');
+	/*
+	 * 読み込み中の表示。Emscripten の setStatus は英語で "Downloading data... (読んだバイト数/全体)" などを
+	 * 渡してくるので、ダウンロード中はプログレスバーと割合に、ほかは日本語にして出す。
+	 * 2 回目からはゲームデータをブラウザに保存してあるので、ダウンロードの表示は出ない。
+	 */
+	var loadBar = null;
+	var loadText = null;
+	function setLoadStatus(text) {
+		text = text || '';
+		var m = /^Downloading data\.\.\. \((\d+)\/(\d+)\)/.exec(text);
+		if (!m) {
+			loadBar = loadText = null;
+			status.textContent = !text ? '' : (/^(Downloading|Preparing|Running)/.test(text) ? '準備中...' : text);
+			return;
+		}
+		var done = Number(m[1]);
+		var total = Math.max(Number(m[2]), done, 1);
+		if (!loadBar || !status.contains(loadBar)) {
+			status.textContent = '';
+			loadText = document.createElement('div');
+			var bar = document.createElement('div');
+			bar.className = 'sbo-load-bar';
+			loadBar = document.createElement('div');
+			bar.appendChild(loadBar);
+			status.appendChild(loadText);
+			status.appendChild(bar);
+		}
+		/* バイト数は展開後の大きさ（実際に届くのは圧縮した約半分）なので、割合だけ出す */
+		loadText.textContent = 'ゲームデータを読み込み中... ' + Math.floor(done * 100 / total) + '%';
+		loadBar.style.width = (done * 100 / total) + '%';
+	}
 	var params = new URLSearchParams(location.search);
 	/* 古い版から読み込み直した時に付けた印（sboOnNewVersion）はアドレス欄から消しておく */
 	if (params.has('sbo_reload') && window.history && history.replaceState) {
@@ -4248,7 +4295,7 @@
 			console.warn(text);
 		},
 		setStatus: function (text) {
-			status.textContent = text || '';
+			setLoadStatus(text);
 		},
 		/* サーバーから「このページは古い版」と言われた（デプロイ前から開いたままのタブ。CUraraSockTCP_web.cpp） */
 		sboOnNewVersion: function () {

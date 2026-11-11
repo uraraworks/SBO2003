@@ -19,8 +19,9 @@
 		basic_auth {
 			@@BASIC_USER@@ @@BASIC_HASH@@
 		}
-		# サーバーは圧縮しないのでここで圧縮する。ブラウザ版の .data（application/octet-stream）は
-		# Caddy の既定では圧縮されないので、対象に含める（9.4MB → 約 6.4MB）
+		# ブラウザ版のファイル（.wasm・.data・.js・ページ）はサーバー自身が brotli/gzip で圧縮して返す
+		# （本番の IIS が圧縮しないため。server/node/sbosvr_net.js）。圧縮済みの返事は Caddy がそのまま通すので、
+		# ここで圧縮するのはそれ以外（API の JSON など）
 		encode {
 			zstd
 			gzip
