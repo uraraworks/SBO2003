@@ -1995,6 +1995,66 @@ void RenewMapDarkCorner(PCHARINFO pChar)
 		g_pMapDarkTmp[nPos] += (char)nTmp;
 		g_pMapDarkTmpPos[nPos] = 1;
 	}
+
+	/* 照らした壁につながっている壁(縦横)も、丸い灯りの中なら照らす。
+	   灯りは壁で止まるので、壁の続き(壁の1マス下・柵の先など)が黒く途切れて見えていた。
+	   壁の中だけをたどるので、壁の向こうの床は見えないまま */
+	if (GetMapLightLevel ()) {
+		int anQ[SCRMARTSSIZE], nHead, nTail, i, nFromX, nFromY;
+		static const int anDX[4] = { 0, 0, -1, 1 }, anDY[4] = { -1, 1, 0, 0 };
+
+		if (pChar) {
+			nFromX = (int)pChar->dwX;
+			nFromY = (int)pChar->dwY;
+		} else {
+			nFromX = s_nPartsLightX;
+			nFromY = s_nPartsLightY;
+		}
+		nHead = nTail = 0;
+		for (nPos = 0; nPos < SCRMARTSSIZE; nPos ++) {
+			if (g_pMapDarkTmpPos[nPos] == 1) {
+				anQ[nTail ++] = nPos;
+			}
+		}
+		while (nHead < nTail) {
+			nPos = anQ[nHead ++];
+			x = nPos % nWidth;
+			y = nPos / nWidth;
+			mx = (int)pMyChar->dwX + x - (1 + DRAW_PARTS_X);
+			my = (int)pMyChar->dwY + y - (1 + DRAW_PARTS_Y);
+			/* たどるのは壁からだけ(カーテンや扉の向こうへは行かない) */
+			if (!IsSightWall (mx, my)) {
+				continue;
+			}
+			for (i = 0; i < 4; i ++) {
+				int nx = x + anDX[i], ny = y + anDY[i], nPosNext;
+
+				if ((nx < 0) || (nx >= nWidth) || (ny < 0) || (ny >= DRAW_PARTS_Y * 2 + 3)) {
+					continue;
+				}
+				nPosNext = nx + nWidth * ny;
+				if (g_pMapDarkTmpPos[nPosNext]) {
+					continue;
+				}
+				if (!IsSightWall (mx + anDX[i], my + anDY[i])) {
+					continue;
+				}
+				if (IsHideAreaCross (nFromX, nFromY, mx + anDX[i], my + anDY[i])) {
+					continue;
+				}
+				nTmp = GetMapDarkLevel (pChar, mx + anDX[i], my + anDY[i]);
+				if (nTmp <= 1) {
+					continue;
+				}
+				if (g_pMapDarkTmp[nPosNext] + nTmp > 100) {
+					nTmp = 100 - g_pMapDarkTmp[nPosNext];
+				}
+				g_pMapDarkTmp[nPosNext] += (char)nTmp;
+				g_pMapDarkTmpPos[nPosNext] = 1;
+				anQ[nTail ++] = nPosNext;
+			}
+		}
+	}
 }
 
 /* ========================================================================= */
