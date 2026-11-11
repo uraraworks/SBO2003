@@ -1653,14 +1653,15 @@ BOOL IsLightOtherRoom(int x, int y)
 /* ========================================================================= */
 static void RenewMapDarkLightFlood(int mx, int my, int nRange)
 {
-	enum { W = MAPLIGHT_RANGE_MAX * 2 + 1 };
+	/* 丸い灯りが少しでもかかるマス(範囲+2マス)まで照らす(IsInLightCircle) */
+	enum { W = (MAPLIGHT_RANGE_MAX + 2) * 2 + 1 };
 	BYTE abyDone[W * W];
 	int anQX[W * W], anQY[W * W];
 	int nHead, nTail, i, nSize;
 	PCHARINFO pMyChar;
 	static const int anDX[4] = { 0, 0, -1, 1 }, anDY[4] = { -1, 1, 0, 0 };
 
-	nRange = min (nRange, MAPLIGHT_RANGE_MAX);
+	nRange = min (nRange, MAPLIGHT_RANGE_MAX) + 2;
 	nSize = nRange * 2 + 1;
 	ZeroMemory (abyDone, sizeof (abyDone));
 	pMyChar = g_aCharInfo[g_nMyCharID];
@@ -1776,6 +1777,48 @@ int GetMapPosLight(int mx, int my, BYTE *pbyPower, BYTE *pbyFlg)
 }
 
 /* ========================================================================= */
+/* 丸い灯りと見えるマス														 */
+/*   見えるマスは灯りから縦横斜め同じ距離(四角)で決めていたので、			 */
+/*   DrawMapLight の丸い灯りが四角の辺で平らに切れてカクカクに見えた。		 */
+/*   丸い灯りが少しでもかかるマスも見えるマスにして、丸を最後まで描く		 */
+/* ========================================================================= */
+#define LIGHTCIRCLE_FLICKER_CHAR	1.07f		/* キャラの灯りのゆらめきで一番大きくなる時(DrawMapLight) */
+#define LIGHTCIRCLE_FLICKER_PARTS	1.07f		/* パーツ・光源の灯りのゆらめきで一番大きくなる時(DrawMapLight) */
+
+/* 灯りの中心からずれたマス(dx,dy)に半径 fR マスの丸い灯りが少しでもかかるか
+   (マスの中で灯りに一番近い所までの距離で比べる) */
+static BOOL IsInLightCircle(int dx, int dy, float fR)
+{
+	float fX, fY;
+
+	fX = max (0.0f, (float)abs (dx) - 0.5f);
+	fY = max (0.0f, (float)abs (dy) - 0.5f);
+	return ((fX * fX + fY * fY) < fR * fR) ? TRUE : FALSE;
+}
+
+/* キャラの丸い灯りの半径(マス。DrawMapLight と同じ計算。0=照らさない) */
+static float GetCharLightRadius(PCHARINFO pChar)
+{
+	int nLevel;
+
+	if (pChar == g_aCharInfo[g_nMyCharID]) {
+		if ((g_pMapInfo->byFlg & MAPFLG_NOCHARLIGHT) && (pChar->byLightLevel == 0)) {
+			return 1.2f;		/* 足元がうっすら見えるだけ(ゆらめかない) */
+		}
+	} else if (pChar->byLightLevel == 0) {
+		return 0.0f;			/* ほかの人は灯りを持っている時だけ */
+	}
+	nLevel = GetMapLightLevel ();
+	if (pChar->byLightLevel) {
+		nLevel = GetMapLightLevel () - pChar->byLightLevel;
+	}
+	if (nLevel <= 0) {
+		return 0.0f;			/* 暗くならない(もともと全部見える) */
+	}
+	return (100.0f / nLevel + 0.2f) * LIGHTCIRCLE_FLICKER_CHAR;
+}
+
+/* ========================================================================= */
 /* 関数名：GetMapDarkLevel													 */
 /* 内容：灯り(pChar)から見たマス(x,y)の明るさを取得							 */
 /*       1 以下なら暗くて見えない											 */
@@ -1802,6 +1845,11 @@ int GetMapDarkLevel(PCHARINFO pChar, int x, int y)
 		nTmp = 100 - 100 * nLevel / (s_nPartsLightRange + 1);
 		nTmp = max (1, nTmp);
 		nTmp = min (100, nTmp);
+		/* 丸い灯りが少しでもかかるマスは見えるようにする(DrawMapLight と同じ半径) */
+		if ((nTmp <= 1) && GetMapLightLevel () &&
+			IsInLightCircle (x - s_nPartsLightX, y - s_nPartsLightY, (s_nPartsLightRange + 1 + 0.2f) * LIGHTCIRCLE_FLICKER_PARTS)) {
+			nTmp = 2;
+		}
 		return nTmp;
 	}
 	if (GetMapLightLevel ()) {
@@ -1818,6 +1866,13 @@ int GetMapDarkLevel(PCHARINFO pChar, int x, int y)
 		}
 		nTmp = max (1, nTmp);
 		nTmp = min (100, nTmp);
+		/* 丸い灯りが少しでもかかるマスは見えるようにする(DrawMapLight と同じ半径) */
+		if (nTmp <= 1) {
+			float fR = GetCharLightRadius (pChar);
+			if ((fR > 0.0f) && IsInLightCircle (x - (int)pChar->dwX, y - (int)pChar->dwY, fR)) {
+				nTmp = 2;
+			}
+		}
 	}
 	return nTmp;
 }
@@ -1940,6 +1995,66 @@ void RenewMapDarkCorner(PCHARINFO pChar)
 		g_pMapDarkTmp[nPos] += (char)nTmp;
 		g_pMapDarkTmpPos[nPos] = 1;
 	}
+
+	/* 照らした壁につながっている壁(縦横)も、丸い灯りの中なら照らす。
+	   灯りは壁で止まるので、壁の続き(壁の1マス下・柵の先など)が黒く途切れて見えていた。
+	   壁の中だけをたどるので、壁の向こうの床は見えないまま */
+	if (GetMapLightLevel ()) {
+		int anQ[SCRMARTSSIZE], nHead, nTail, i, nFromX, nFromY;
+		static const int anDX[4] = { 0, 0, -1, 1 }, anDY[4] = { -1, 1, 0, 0 };
+
+		if (pChar) {
+			nFromX = (int)pChar->dwX;
+			nFromY = (int)pChar->dwY;
+		} else {
+			nFromX = s_nPartsLightX;
+			nFromY = s_nPartsLightY;
+		}
+		nHead = nTail = 0;
+		for (nPos = 0; nPos < SCRMARTSSIZE; nPos ++) {
+			if (g_pMapDarkTmpPos[nPos] == 1) {
+				anQ[nTail ++] = nPos;
+			}
+		}
+		while (nHead < nTail) {
+			nPos = anQ[nHead ++];
+			x = nPos % nWidth;
+			y = nPos / nWidth;
+			mx = (int)pMyChar->dwX + x - (1 + DRAW_PARTS_X);
+			my = (int)pMyChar->dwY + y - (1 + DRAW_PARTS_Y);
+			/* たどるのは壁からだけ(カーテンや扉の向こうへは行かない) */
+			if (!IsSightWall (mx, my)) {
+				continue;
+			}
+			for (i = 0; i < 4; i ++) {
+				int nx = x + anDX[i], ny = y + anDY[i], nPosNext;
+
+				if ((nx < 0) || (nx >= nWidth) || (ny < 0) || (ny >= DRAW_PARTS_Y * 2 + 3)) {
+					continue;
+				}
+				nPosNext = nx + nWidth * ny;
+				if (g_pMapDarkTmpPos[nPosNext]) {
+					continue;
+				}
+				if (!IsSightWall (mx + anDX[i], my + anDY[i])) {
+					continue;
+				}
+				if (IsHideAreaCross (nFromX, nFromY, mx + anDX[i], my + anDY[i])) {
+					continue;
+				}
+				nTmp = GetMapDarkLevel (pChar, mx + anDX[i], my + anDY[i]);
+				if (nTmp <= 1) {
+					continue;
+				}
+				if (g_pMapDarkTmp[nPosNext] + nTmp > 100) {
+					nTmp = 100 - g_pMapDarkTmp[nPosNext];
+				}
+				g_pMapDarkTmp[nPosNext] += (char)nTmp;
+				g_pMapDarkTmpPos[nPosNext] = 1;
+				anQ[nTail ++] = nPosNext;
+			}
+		}
+	}
 }
 
 /* ========================================================================= */
@@ -1949,70 +2064,105 @@ void RenewMapDarkCorner(PCHARINFO pChar)
 /* ========================================================================= */
 void RenewMapDarkWork(PCHARINFO pChar, int x, int y, int nCount)
 {
-	BOOL bResult;
+	/* 通れるマスを伝って広がる灯り。
+	   昔は伝う歩数を nCount(7歩)までにしていたので、杭や柵をぐるっと回りこむ道の先は
+	   丸い灯りの中でも届かず、その先の壁が黒いままだった。
+	   歩数では止めず、灯りが届かなくなる所(明るさ 1)・壁・画面の外で止める */
+	enum { W = DRAW_PARTS_X * 2 + 3 };
+	BYTE abyDone[SCRMARTSSIZE];
+	int anQX[SCRMARTSSIZE], anQY[SCRMARTSSIZE];
+	int nHead, nTail, i;
 	PCHARINFO pMyChar;
-	int nTmp, nPos, nMapDarkTmpPos;
+	static const int anDX[4] = { 0, 0, -1, 1 }, anDY[4] = { -1, 1, 0, 0 };
 
 	if (nCount <= 0) {
 		return;
 	}
-
 	pMyChar = g_aCharInfo[g_nMyCharID];
+	ZeroMemory (abyDone, sizeof (abyDone));
+
+	nHead = nTail = 0;
 	/* 画面の端の1マス(歩いてずれる時に見える所)まで */
-	if ((abs ((int)pMyChar->dwX - (x)) > DRAW_PARTS_X + 1) ||
-		(abs ((int)pMyChar->dwY - (y)) > DRAW_PARTS_Y + 1)) {
+	if ((abs ((int)pMyChar->dwX - x) > DRAW_PARTS_X + 1) ||
+		(abs ((int)pMyChar->dwY - y) > DRAW_PARTS_Y + 1)) {
 		return;
 	}
+	anQX[nTail] = x;
+	anQY[nTail] = y;
+	nTail ++;
+	abyDone[(1 + DRAW_PARTS_X + (x - (int)pMyChar->dwX)) + W * (1 + DRAW_PARTS_Y + (y - (int)pMyChar->dwY))] = 1;
 
-	/* 見える範囲(視界)の外？ */
-	if (!IsInViewRange (x, y)) {
-		return;
-	}
-	nTmp = GetMapDarkLevel (pChar, x, y);
-	if (GetMapLightLevel () && (nTmp == 1)) {
-		return;
-	}
+	while (nHead < nTail) {
+		BOOL bResult, bStart;
+		int nTmp, nPos, nMapDarkTmpPos, cx, cy;
 
-	nPos = (1 + DRAW_PARTS_X + (x - pMyChar->dwX)) +
-		   ((DRAW_PARTS_X * 2 + 3) * (1 + DRAW_PARTS_Y + (y - pMyChar->dwY)));
-	nMapDarkTmpPos = g_pMapDarkTmpPos[nPos];
+		cx = anQX[nHead];
+		cy = anQY[nHead];
+		bStart = (nHead == 0);
+		nHead ++;
 
-	if (g_pMapDarkTmp[nPos] + (char)nTmp > 100) {
-		nTmp = 100 - g_pMapDarkTmp[nPos];
-	}
-
-	bResult = TRUE;
-	if ((nCount < DRAW_PARTS_X) && (IsSightBlock ())) {
-		bResult = !IsSightWall (x, y);
-	}
-	/* 隠す範囲の境目を越えたマスは照らすが、その先へは広げない */
-	if (bResult && IsHideAreaCross ((int)pChar->dwX, (int)pChar->dwY, x, y)) {
-		bResult = FALSE;
-	}
-	if (bResult == FALSE) {
-		if (nMapDarkTmpPos == 0) {
-			g_pMapDarkTmp[nPos] += nTmp;
+		/* 見える範囲(視界)の外？ */
+		if (!IsInViewRange (cx, cy)) {
+			continue;
 		}
-		g_pMapDarkTmpPos[nPos] = 1;
-		return;
+		nTmp = GetMapDarkLevel (pChar, cx, cy);
+		if (GetMapLightLevel () && (nTmp == 1)) {
+			continue;
+		}
+
+		nPos = (1 + DRAW_PARTS_X + (cx - (int)pMyChar->dwX)) + (W * (1 + DRAW_PARTS_Y + (cy - (int)pMyChar->dwY)));
+		nMapDarkTmpPos = g_pMapDarkTmpPos[nPos];
+
+		if (g_pMapDarkTmp[nPos] + (char)nTmp > 100) {
+			nTmp = 100 - g_pMapDarkTmp[nPos];
+		}
+
+		bResult = TRUE;
+		/* 灯りの元のマスは壁でも照らして広げる */
+		if (!bStart && (IsSightBlock ())) {
+			bResult = !IsSightWall (cx, cy);
+		}
+		/* 隠す範囲の境目を越えたマスは照らすが、その先へは広げない */
+		if (bResult && IsHideAreaCross ((int)pChar->dwX, (int)pChar->dwY, cx, cy)) {
+			bResult = FALSE;
+		}
+		if (bResult == FALSE) {
+			if (nMapDarkTmpPos == 0) {
+				g_pMapDarkTmp[nPos] += nTmp;
+			}
+			g_pMapDarkTmpPos[nPos] = 1;
+			continue;
+		}
+
+		if (g_pMapDarkTmp[nPos] < 0) {
+			g_pMapDarkTmp[nPos] = 1;
+			continue;
+		}
+
+		if (nMapDarkTmpPos == 0) {
+			g_pMapDarkTmp[nPos] += (char)nTmp;
+		}
+
+		/* 灯りが通ったマスは 2 (斜め隣の壁を照らす目印) */
+		g_pMapDarkTmpPos[nPos] = 2;
+
+		for (i = 0; i < 4; i ++) {
+			int nx = cx + anDX[i], ny = cy + anDY[i], bx, by;
+
+			bx = 1 + DRAW_PARTS_X + (nx - (int)pMyChar->dwX);
+			by = 1 + DRAW_PARTS_Y + (ny - (int)pMyChar->dwY);
+			if ((bx < 0) || (by < 0) || (bx >= W) || (by >= DRAW_PARTS_Y * 2 + 3)) {
+				continue;
+			}
+			if (abyDone[bx + W * by]) {
+				continue;
+			}
+			abyDone[bx + W * by] = 1;
+			anQX[nTail] = nx;
+			anQY[nTail] = ny;
+			nTail ++;
+		}
 	}
-
-	if (g_pMapDarkTmp[nPos] < 0) {
-		g_pMapDarkTmp[nPos] = 1;
-		return;
-	}
-
-	if (nMapDarkTmpPos == 0) {
-		g_pMapDarkTmp[nPos] += (char)nTmp;
-	}
-
-	/* 灯りが通ったマスは 2 (斜め隣の壁を照らす目印) */
-	g_pMapDarkTmpPos[nPos] = 2;
-
-	RenewMapDarkWork (pChar, x, y - 1, nCount - 1);
-	RenewMapDarkWork (pChar, x, y + 1, nCount - 1);
-	RenewMapDarkWork (pChar, x - 1, y, nCount - 1);
-	RenewMapDarkWork (pChar, x + 1, y, nCount - 1);
 }
 
 /* ========================================================================= */
