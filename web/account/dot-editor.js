@@ -28,10 +28,19 @@ const HISTORY_LIMIT = 100;
 // これを超えるごとに1段階だけ変える。大きくするほどゆっくりになる。
 // （Windows のふつうのマウスは 1 目盛りでだいたい 100）
 const WHEEL_ZOOM_STEP = 100;
+// Cmd+ホイール（Shift なし）はスクロールと同じように細かく拡大縮小する。
+// 回転量 1px あたり、倍率に exp(量 × これ) をかける（100px で約 1.2 倍）。
+// Magic Mouse は速く動かすほど量が増えるので、スクロールと同じように加速する。
+const WHEEL_ZOOM_RATE = 0.002;
+// ピンチ（Mac の Chrome では Ctrl 付きのホイールとして来る）は1回の量が小さいので強めに
+const PINCH_ZOOM_RATE = 0.01;
+// 細かく拡大縮小した時、整数倍にこれより近ければ整数倍に吸い付ける（ドットの幅がそろう）
+const ZOOM_SNAP = 0.04;
 // トラックパッドのピンチ（Mac の Chrome では Ctrl 付きのホイールとして来る）用。
 // ピンチは1回の量がとても小さいので別の値にする。
 const PINCH_ZOOM_STEP = 30;
-// 画面の「ホイールの拡大の速さ」で選ぶ倍率（上の量にかける。大きいほどゆっくり）
+// 画面の「ホイールの拡大の速さ」で選ぶ倍率（1段階に要る量にかける。大きいほどゆっくり。
+// 細かく拡大縮小する時は、この値で割る）
 const WHEEL_ZOOM_SPEEDS = { slow: 2.5, normal: 1, fast: 0.4 };
 const WHEEL_ZOOM_SPEED_KEY = 'sbo-dot-wheel-zoom-speed';
 // 1段階変えたあと、次の段階まで最低これだけ間を空ける(ms)。慣性スクロールの勢いで
@@ -468,6 +477,7 @@ function toImg(e) {
 /** 絵の座標 (ix, iy) が画面の (sx, sy) に来るように拡大率を変える */
 function setZoom(tab, z, ix, iy, sx, sy) {
   z = clamp(z, ZOOMS[0], ZOOMS[ZOOMS.length - 1]);
+  z = Math.round(z * 100) / 100;
   if (z === tab.zoom) return;
   tab.zoom = z;
   layoutSizer();
@@ -489,6 +499,16 @@ function zoomAtCenter(dir) {
   const cx = vp.clientWidth / 2;
   const cy = vp.clientHeight / 2;
   setZoom(tab, stepZoom(tab, dir), (cx - ox) / tab.zoom, (cy - oy) / tab.zoom, cx, cy);
+}
+
+/** 画面の中央を中心に、決めた倍率にする（ステータスバーの倍率一覧から） */
+function zoomCenterTo(z) {
+  const tab = S.active;
+  if (!tab) return;
+  const { ox, oy } = origin(tab);
+  const cx = vp.clientWidth / 2;
+  const cy = vp.clientHeight / 2;
+  setZoom(tab, z, (cx - ox) / tab.zoom, (cy - oy) / tab.zoom, cx, cy);
 }
 
 let drawQueued = false;
@@ -747,7 +767,8 @@ function setAnimPlaying(on) {
 // ---- ステータスバー ----
 function syncStatus() {
   const tab = S.active;
-  const st = $('status');
+  const st = $('stInfo');
+  syncZoomSel(tab);
   if (!tab) { st.textContent = ''; return; }
   const h = S.hover;
   const parts = [];
@@ -761,7 +782,6 @@ function syncStatus() {
   } else {
     parts.push('座標 <b>-</b>');
   }
-  parts.push(`拡大 <b>${tab.zoom}倍</b>`);
   parts.push(`${tab.w}×${tab.h}`);
   parts.push(`レイヤー <b>${esc(curLayer(tab).name)}</b>`);
   if (tab.sel) parts.push(`選択 <b>${tab.sel.x},${tab.sel.y} ${tab.sel.w}×${tab.sel.h}</b>${S.opts.clip && S.tool !== 'select' ? '（描くのはこの中だけ）' : ''}`);
@@ -1116,16 +1136,59 @@ function endPointer(e) {
 cv.addEventListener('pointerup', endPointer);
 cv.addEventListener('pointercancel', endPointer);
 
-// Cmd+ホイールでカーソルの位置を中心に拡大縮小
+// ---- ステータスバーの倍率一覧 ----
+// 一覧にない倍率（細かく拡大縮小した時）は、その倍率の項目を並びの中に一時的に足して見せる
+function zoomLabel(z) { return (Number.isInteger(z) ? String(z) : z.toFixed(2).replace(/0$/, '')) + '倍'; }
+function syncZoomSel(tab) {
+  const sel = $('zoomSel');
+  if (!sel) return;
+  sel.disabled = !tab;
+  if (!tab) return;
+  const z = tab.zoom;
+  const key = String(z);
+  if (sel.dataset.cur === key) return;
+  sel.dataset.cur = key;
+  const list = ZOOMS.includes(z) ? ZOOMS : [...ZOOMS, z].sort((a, b) => a - b);
+  sel.innerHTML = list.map((v) => `<option value="${v}">${zoomLabel(v)}</option>`).join('');
+  sel.value = key;
+}
+$('zoomSel')?.addEventListener('change', (e) => {
+  zoomCenterTo(Number(e.target.value));
+  cv.focus();
+});
+
+// Cmd+ホイールでカーソルの位置を中心に拡大縮小。
+//   Shift なし: スクロールと同じように細かく（回転量に合わせてなめらかに）
+//   Shift あり: 1, 2, 3, 4, 6, 8 … の決まった段階で1つずつ
 vp.addEventListener('wheel', (e) => {
   const tab = S.active;
   if (!tab || !(e.metaKey || e.ctrlKey)) return;
   e.preventDefault();
-  const dir = wheelZoomDir(e);
-  if (!dir) return;
   const p = toImgF(e);
-  setZoom(tab, stepZoom(tab, dir), p.fx, p.fy, p.sx, p.sy);
+  if (e.shiftKey) {
+    const dir = wheelZoomDir(e);
+    if (dir) setZoom(tab, stepZoom(tab, dir), p.fx, p.fy, p.sx, p.sy);
+    return;
+  }
+  const dy = wheelDeltaPx(e);
+  const pinch = e.ctrlKey && !e.metaKey;
+  const rate = (pinch ? PINCH_ZOOM_RATE : WHEEL_ZOOM_RATE) / (WHEEL_ZOOM_SPEEDS[wheelZoomSpeed] ?? 1);
+  let z = tab.zoom * Math.exp(-dy * rate);
+  const near = Math.round(z);
+  if (near >= 1 && Math.abs(z - near) < ZOOM_SNAP * near && Math.abs(tab.zoom - near) >= 0.005) {
+    // 整数倍をまたいだ・近づいた時は、いったん整数倍で止める
+    const crossed = (tab.zoom - near) * (z - near) <= 0;
+    if (crossed || Math.abs(z - near) < Math.abs(tab.zoom - near)) z = near;
+  }
+  setZoom(tab, z, p.fx, p.fy, p.sx, p.sy);
 }, { passive: false });
+
+// ホイールの回転量を px にそろえる。Shift を押すと縦のホイールが横（deltaX）で来る環境があるので両方見る
+function wheelDeltaPx(e) {
+  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? vp.clientHeight : 1;
+  const d = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+  return d * unit;
+}
 
 // ホイールの回転量をためて、一定量を超えたら拡大(1)・縮小(-1)を返す。まだなら 0
 const wheelAcc = { sum: 0, last: 0, stepAt: 0 };
@@ -1144,9 +1207,7 @@ try { wheelZoomSpeed = localStorage.getItem(WHEEL_ZOOM_SPEED_KEY) || 'normal'; }
 }
 function wheelZoomDir(e) {
   const now = performance.now();
-  // 行・ページ単位で来るマウスもあるので px にそろえる
-  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? vp.clientHeight : 1;
-  const dy = e.deltaY * unit;
+  const dy = wheelDeltaPx(e);
   if (now - wheelAcc.last > WHEEL_ZOOM_IDLE || Math.sign(dy) !== Math.sign(wheelAcc.sum)) wheelAcc.sum = 0;
   wheelAcc.last = now;
   wheelAcc.sum += dy;
@@ -1629,7 +1690,9 @@ async function renderDrafts() {
   let all = [];
   try { all = await store.listDrafts(); } catch (err) { box.textContent = '控えを読めませんでした: ' + err.message; return; }
   const tab = S.active;
-  const list = all.filter((d) => S.showAllDrafts || (tab && d.file === tab.fileName));
+  renderStartDrafts(all);
+  // 絵を何も開いていない時（リロード直後など）は、全部の控えを見せる
+  const list = all.filter((d) => S.showAllDrafts || !tab || d.file === tab.fileName);
   box.textContent = '';
   if (!list.length) {
     box.append(el('div', { class: 'sub-text' }, S.showAllDrafts ? '控えはまだありません' : 'このファイルの控えはまだありません'));
@@ -1654,6 +1717,34 @@ async function renderDrafts() {
             return b;
           })())));
     box.append(row);
+  }
+}
+
+// 絵を開いていない時に真ん中に出す「控えから続ける」一覧（新しい順）
+const START_DRAFTS_MAX = 12;
+let startDraftsAll = false;
+function renderStartDrafts(all) {
+  const wrap = $('startDrafts');
+  const box = $('startDraftList');
+  if (!wrap || !box) return;
+  box.textContent = '';
+  wrap.querySelector('.more')?.remove();
+  wrap.hidden = !all.length;
+  if (!all.length) return;
+  const shown = startDraftsAll ? all : all.slice(0, START_DRAFTS_MAX);
+  for (const d of shown) {
+    box.append(el('div', { class: 'sd', title: 'クリックで開く', onclick: () => openDraftRecord(d) },
+      el('div', { class: 'th' }, d.thumbnail ? el('img', { src: d.thumbnail }) : null),
+      el('div', { class: 'info' },
+        el('div', { class: 'nm' },
+          d.auto ? el('span', { class: 'tag auto' }, '自動') : null,
+          d.kind === 'orig' ? el('span', { class: 'tag orig' }, '元の絵') : null,
+          d.name),
+        el('div', { class: 'sub-text' }, stamp(new Date(d.savedAt))))));
+  }
+  if (all.length > shown.length) {
+    wrap.append(el('div', { class: 'more' },
+      el('button', { class: 'sub mini', onclick: () => { startDraftsAll = true; renderStartDrafts(all); } }, `ほかの控えも見る（あと ${all.length - shown.length} 件）`)));
   }
 }
 
@@ -1996,7 +2087,8 @@ const HELP = [
   ['右クリック', 'どのツールでもスポイト'],
   ['Cmd+クリック（Ctrl も可）', 'クリックした所を真ん中にして拡大'],
   ['Cmd+右クリック', '縮小'],
-  ['Cmd+ホイール', 'カーソルの位置を中心に拡大縮小'],
+  ['Cmd+ホイール', 'カーソルの位置を中心に、なめらかに拡大縮小（整数倍の所で一度止まる）'],
+  ['Cmd+Shift+ホイール', '1・2・3・4・6・8… の決まった段階で1つずつ拡大縮小'],
   ['+ / -', '拡大 / 縮小'],
   ['スペース+ドラッグ / 中ボタンドラッグ', '画面を動かす'],
   ['[ / ]', '前の色 / 次の色'],
