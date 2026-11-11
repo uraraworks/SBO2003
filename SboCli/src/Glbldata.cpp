@@ -228,6 +228,11 @@ CMDPARA_QUESTSTATE g_QuestState = {0};								/* 自分と仲間の依頼の進�
 char g_szQuestMsg[MAX_QUESTMSG] = {0};								/* 依頼の窓の詳細欄に出す「お知らせ」「確認の文」（空なら選んだ依頼の説明） */
 
 int g_nProcMakerID = -1;											/* 開いている作り手の番号（開いていなければ -1） */
+int g_nLeaveListPos = -1;											/* 預かり所の一覧を作り直す時に合わせる番号（-1=先頭） */
+char g_szLeaveResult[256] = "";										/* 預かり所で手放した結果（次の一覧のセリフの頭に付ける） */
+WORD g_wLeaveDisposeItem = 0;										/* 預かり所で手放すよう頼んだ品（0=頼んでいない。結果は一覧の数の差で見る） */
+int g_nLeaveDisposeBefore = 0;										/* 頼んだ時のその品の預かり数（全部の枠の合計） */
+BYTE g_byLeaveDisposeMode = 0;										/* 頼んだ方法(LEAVEDISPOSE_*) */
 BOOL g_bProcMakerLeaveOK = FALSE;									/* 預かり所の中身（g_pLeaveInfo）を作り手の画面を開いてから受け取ったか */
 BOOL g_bProcMakerWait = FALSE;										/* 作成要求を出して、サーバーの返事待ちか */
 DWORD g_dwProcMakerWaitTime = 0;									/* 返事待ちを始めた時間 */
