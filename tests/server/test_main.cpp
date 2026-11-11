@@ -2164,6 +2164,11 @@ static void TestSortItem(const std::vector<int> &aLogin)
 	/* 50音順 */
 	SortSend(p, SORTITEMTARGET_MYITEM, SORTITEMMODE_NAME, 0, 0);
 	SortPrintMy("sort my name", p);
+	/* 続けて同じ並べ替え：逆の順（降順）→もう一度で元の順（昇順） */
+	SortSend(p, SORTITEMTARGET_MYITEM, SORTITEMMODE_NAME, 0, 0);
+	SortPrintMy("sort my name again(desc)", p);
+	SortSend(p, SORTITEMTARGET_MYITEM, SORTITEMMODE_NAME, 0, 0);
+	SortPrintMy("sort my name again(asc)", p);
 	/* 他人のキャラは操作できない */
 	{
 		CMDPARA_SORTITEM Para;
@@ -2239,6 +2244,10 @@ static void TestSortItem(const std::vector<int> &aLogin)
 		SortPrintLeave("sort leave name", pL);
 		SortSend(pL, SORTITEMTARGET_LEAVE, SORTITEMMODE_TYPE, 0, 0);
 		SortPrintLeave("sort leave type", pL);
+		SortSend(pL, SORTITEMTARGET_LEAVE, SORTITEMMODE_TYPE, 0, 0);
+		SortPrintLeave("sort leave type again(desc)", pL);
+		SortSend(pL, SORTITEMTARGET_LEAVE, SORTITEMMODE_TYPE, 0, 0);
+		SortPrintLeave("sort leave type again(asc)", pL);
 
 		/* 片付け */
 		if (dwLeaveBack) {

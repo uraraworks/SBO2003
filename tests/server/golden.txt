@@ -1138,6 +1138,8 @@ sort my swap 0,4 items: 10 7 9 12 8 7 0 0 0 0 equ: 4 65535 65535 0 65535 65535 6
 sort my swap invalid items: 10 7 9 12 8 7 0 0 0 0 equ: 4 65535 65535 0 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
 sort my type items: 7 7 12 8 10 9 0 0 0 0 equ: 3 65535 65535 4 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
 sort my name items: 8 7 7 10 9 12 0 0 0 0 equ: 0 65535 65535 3 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
+sort my name again(desc) items: 12 9 10 7 7 8 0 0 0 0 equ: 5 65535 65535 2 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
+sort my name again(asc) items: 8 7 7 10 9 12 0 0 0 0 equ: 0 65535 65535 3 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
 sort my other-char items: 8 7 7 10 9 12 0 0 0 0 equ: 0 65535 65535 3 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
 sort my short items: 8 7 7 10 9 12 0 0 0 0 equ: 0 65535 65535 3 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
 sort trading=1
@@ -1150,4 +1152,6 @@ sort leave swap 0,3 leave: n=4 9*1 7*2 8*1 10*1
 sort leave swap invalid leave: n=4 9*1 7*2 8*1 10*1
 sort leave name leave: n=4 8*1 7*2 10*1 9*1
 sort leave type leave: n=4 7*2 8*1 10*1 9*1
+sort leave type again(desc) leave: n=4 9*1 10*1 8*1 7*2
+sort leave type again(asc) leave: n=4 7*2 8*1 10*1 9*1
 == done ==
