@@ -26,7 +26,7 @@ public:
 
 
 protected:
-	BOOL NpcProcSEARCH_Check(PCHARINFO pChar, PCHARINFO pCharTmp, int nX, int nY);	/* 検索処理チェック */
+	BOOL NpcProcSEARCH_Check(PCHARINFO pChar, PCHARINFO pCharTmp, int nX, int nY, PDWORD pdwBlockPC = NULL);	/* 検索処理チェック（PC判定結果も返せる） */
 	BOOL PartsMoveProc		(PCHARINFO pChar);										/* 移動パーツにのっていれば移動させる */
 	void MoveStartPosProc	(PCHARINFO pChar);										/* 開始位置に移動 */
 

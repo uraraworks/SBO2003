@@ -165,7 +165,7 @@ void CCharProcBase::ChgTarget(DWORD dwTblID, BYTE byDirection)
 /* 内容：	検索処理チェック												 */
 /* 日付：	2003/10/12														 */
 /* ========================================================================= */
-BOOL CCharProcBase::NpcProcSEARCH_Check(PCHARINFO pChar, PCHARINFO pCharTmp, int nX, int nY)
+BOOL CCharProcBase::NpcProcSEARCH_Check(PCHARINFO pChar, PCHARINFO pCharTmp, int nX, int nY, PDWORD pdwBlockPC)
 {
 	BOOL bRet;
 	DWORD dwTblID;
@@ -177,6 +177,9 @@ BOOL CCharProcBase::NpcProcSEARCH_Check(PCHARINFO pChar, PCHARINFO pCharTmp, int
 	}
 
 	dwTblID = CheckCharBlockPC (pChar->dwMapID, nX, nY);
+	if (pdwBlockPC) {
+		*pdwBlockPC = dwTblID;
+	}
 	/* プレイヤーにぶつかる？ */
 	if (dwTblID != -1) {
 		if (pChar->byNpcType == NPCTYPE_BATTLE2) {
