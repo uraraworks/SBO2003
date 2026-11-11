@@ -57,6 +57,9 @@
  *   /api/admin/data/tiles  {session, id, x?, y?, w?, h?}      → 上の tiles と同じ
  *   /api/admin/mapedit/apply {session, id, cells:[[x, y, 前, 後]], note?, force?} → マップ確認の編集を反映（履歴 1 件）
  *   /api/admin/mapedit/draft/get・list・save {session, id?, cells?} → 編集の下書き（SboWebMapDrafts.json）
+ *   /api/admin/mapedit/resize {session, id, top?, bottom?, left?, right?, fill?, check?} → マップを広げる（履歴に残らない）
+ *   /api/admin/mapedit/add    {session, cx, cy, fill?, szName?} → マップを足す
+ *   （AI 用キーでも /api/data/map/resize・/api/data/map/add で同じことができる。書き込みもできるキーだけ）
  */
 Module['sboData'] = (function () {
 	var fs = require('fs');
@@ -1226,6 +1229,49 @@ Module['sboData'] = (function () {
 		return { ok: true, historyId: e.historyId, changed: nChanged };
 	}
 
+	/*
+	 * マップの大きさを広げる（{id, top?, bottom?, left?, right?, fill?, check?}。縮めることはできない）。
+	 * 上・左に広げると、そのマップの座標を持つもの（イベント・キャラ・復活地点・暗い範囲・光源・
+	 * 巡回ルート・ほかのマップからの入口の行き先・依頼のNPC・サブゲームなど）を全部ずらす。
+	 * AI連携の履歴には残さない（元に戻せない）ので、前の日ごとの控え（AiBackup）を取ってから変える。
+	 * check:true なら確かめるだけ。
+	 */
+	function opMapResize(a, who) {
+		requireWrite(who);
+		var id = checkId(a.id);
+		if (id >= count('map')) {
+			fail(400, 'id', 'マップ ' + id + ' 番はありません');
+		}
+		var n = function (v) { return (typeof v === 'number' && isFinite(v)) ? Math.floor(v) : 0; };
+		var args = [id, n(a.top), n(a.bottom), n(a.left), n(a.right), n(a.fill)];
+		var r = JSON.parse(UTF8ToString(callC(_SboWebDataMapResize, args.concat([0]))));
+		if (!r.ok || a.check) {
+			if (!r.ok) fail(400, 'invalid', r.error);
+			return r;
+		}
+		backupFile('tiles');
+		r = JSON.parse(UTF8ToString(callC(_SboWebDataMapResize, args.concat([1]))));
+		if (!r.ok) {
+			fail(400, 'invalid', r.error);
+		}
+		schemaCache = null;
+		log(who.label + ' がマップ ' + id + ' の大きさを ' + r.oldCx + '×' + r.oldCy + ' → ' + r.cx + '×' + r.cy + ' に広げた（左 ' + r.shiftX + '・上 ' + r.shiftY + ' ずらし）');
+		return r;
+	}
+
+	/* マップを足す（{cx, cy, fill?, szName?}）。番号はいちばん後ろ */
+	function opMapAdd(a, who) {
+		requireWrite(who);
+		var n = function (v) { return (typeof v === 'number' && isFinite(v)) ? Math.floor(v) : 0; };
+		var r = JSON.parse(UTF8ToString(callC(_SboWebDataMapAdd, [n(a.cx), n(a.cy), n(a.fill), String(a.szName || '')])));
+		if (!r.ok) {
+			fail(400, 'invalid', r.error);
+		}
+		schemaCache = null;
+		log(who.label + ' がマップ ' + r.id + '「' + String(a.szName || '') + '」（' + n(a.cx) + '×' + n(a.cy) + '）を足した');
+		return r;
+	}
+
 	/* 下書き（SBODATA/SboWebMapDrafts.json。マップ 1 つに 1 つ。サーバーのデータは変えない） */
 	function drafts() {
 		if (!draftStore) {
@@ -1730,7 +1776,9 @@ Module['sboData'] = (function () {
 		'/api/data/undo': opUndo,
 		'/api/data/bookmark': opBookmarkAdd,
 		'/api/data/bookmarks': opBookmarks,
-		'/api/data/rollback': opRollback
+		'/api/data/rollback': opRollback,
+		'/api/data/map/resize': opMapResize,
+		'/api/data/map/add': opMapAdd
 	};
 	var API_ADMIN = {
 		'/api/admin/ai/keys': apiAdminKeys,
@@ -1753,7 +1801,9 @@ Module['sboData'] = (function () {
 		'/api/admin/mapedit/apply': apiAdminMapEditApply,
 		'/api/admin/mapedit/draft/get': apiAdminMapEditDraftGet,
 		'/api/admin/mapedit/draft/list': apiAdminMapEditDraftList,
-		'/api/admin/mapedit/draft/save': apiAdminMapEditDraftSave
+		'/api/admin/mapedit/draft/save': apiAdminMapEditDraftSave,
+		'/api/admin/mapedit/resize': function (body) { return opMapResize(body, adminWho(body)); },
+		'/api/admin/mapedit/add': function (body) { return opMapAdd(body, adminWho(body)); }
 	};
 
 	/*

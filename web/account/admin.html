@@ -390,6 +390,13 @@
 	.mv-state { font-size: 13px; color: var(--sub); }
 	.mv-state.dirty { color: var(--accent); }
 	body.mv-editing .mv-touch { cursor: cell; }
+	.mv-sizebox { flex: 1 1 100%; margin-top: 4px; }
+	.mv-sizebox[hidden] { display: none; }
+	.mv-sizebox summary { cursor: pointer; color: var(--accent); }
+	.mv-sizerow { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-top: 8px; }
+	.mv-sizerow label { display: flex; align-items: center; gap: 4px; margin: 0; font-weight: normal; }
+	.mv-sizerow input[type=number] { width: 4.5em; padding: 6px; }
+	.mv-sizerow input[type=text] { padding: 6px; }
 	/* パーツ一覧（出したまま作業できる小窓） */
 	.mv-pal { position: fixed; z-index: 50; right: 16px; top: 160px; width: 360px; height: 460px; min-width: 220px; min-height: 200px;
 		max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); display: flex; flex-direction: column;
@@ -801,6 +808,34 @@
 				<button type="button" id="mv-apply">サーバーへ反映</button>
 				<span class="mv-state" id="mv-state"></span>
 			</div>
+			<details class="mv-sizebox" id="mv-sizebox" hidden>
+				<summary>マップを広げる・新しいマップを足す</summary>
+				<div class="mv-sizerow">
+					<b>今のマップを広げる</b>
+					<label>上<input type="number" id="mv-rs-top" min="0" max="200" value="0"></label>
+					<label>下<input type="number" id="mv-rs-bottom" min="0" max="200" value="0"></label>
+					<label>左<input type="number" id="mv-rs-left" min="0" max="200" value="0"></label>
+					<label>右<input type="number" id="mv-rs-right" min="0" max="200" value="0"></label>
+					<label>埋めるパーツ<input type="number" id="mv-rs-fill" min="0" value="0"></label>
+					<button type="button" class="sub" id="mv-rs-sel">選んでいるパーツにする</button>
+					<button type="button" id="mv-resize">広げる</button>
+				</div>
+				<div class="mv-sizerow">
+					<b>新しいマップを足す</b>
+					<label>名前<input type="text" id="mv-add-name" maxlength="60" style="width:12em"></label>
+					<label>横<input type="number" id="mv-add-cx" min="1" max="255" value="30"></label>
+					<label>縦<input type="number" id="mv-add-cy" min="1" max="255" value="30"></label>
+					<label>埋めるパーツ<input type="number" id="mv-add-fill" min="0" value="0"></label>
+					<button type="button" id="mv-add">足す</button>
+				</div>
+				<p class="sub-text">
+					広げた所は「埋めるパーツ」で埋まります。上・左に広げると、そのマップの座標が全部ずれます（イベント・NPC と巡回ルート・復活地点・
+					暗い範囲・光源・ほかのマップからの入口の行き先・町転送の行き先帳・依頼のNPC・サブゲームも一緒にずらします）。
+					プレイヤーが端末に残しているルーラの記録だけはずれません。縮めることはできません。
+					大きさの変更とマップの追加は「AI連携」の履歴から元に戻せません（その日の最初の変更の前のデータは SBODATA/AiBackup に残ります）。
+					広げる前に、反映していない変更は反映するかやめてください。大きさは 255 マスまでです。
+				</p>
+			</details>
 		</div>
 		<div class="sub-text" id="mv-size" style="margin-top:8px"></div>
 		<div class="mv-info" id="mv-info"></div>
