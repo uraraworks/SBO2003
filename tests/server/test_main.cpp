@@ -774,6 +774,7 @@ static void TestMercenary(const std::vector<int> &aLogin);
 static void TestTailMapChg(const std::vector<int> &aLogin);
 static void TestQuest(const std::vector<int> &aLogin);
 static void TestSortItem(const std::vector<int> &aLogin);
+static void TestCharPush(const std::vector<int> &aLogin);
 
 static void TestTownWarp(const std::vector<int> &aLogin)
 {
@@ -1199,6 +1200,8 @@ static void TestWorld(void)
 	TestQuest(aLogin);
 	/* N. 道具欄・預かり所の並べ替え */
 	TestSortItem(aLogin);
+	/* O. 押せるNPCを押す向き */
+	TestCharPush(aLogin);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -2472,6 +2475,112 @@ static void TestSortItem(const std::vector<int> &aLogin)
 	memcpy(p->waEqu, awEquBack, sizeof(awEquBack));
 	p->byAdminLV = byAdminBack;
 	pL->byAdminLV = byAdminBackL;
+}
+
+/* ------------------------------------------------------------------------- */
+/* O. 押せるNPCを押す向き													 */
+/*    サーバーに前の向きが残っていても、押した人のいる側から押した方へ動く	 */
+/*    (歩きながら曲がってそのまま押すと、向きの通知より先に押して要求が届く)	 */
+/* ------------------------------------------------------------------------- */
+static BOOL PushIsFree(PMAPINFO pMap, int x, int y)
+{
+	if (x < 0 || y < 0 || x >= pMap->nCX || y >= pMap->nCY) {
+		return FALSE;
+	}
+	if ((&g_aMapPartsInfo[pMap->pwMap[x + y * pMap->nCX]])->byHitType != PARTSHIT_NONE) {
+		return FALSE;
+	}
+	return (CheckCharBlockNPC(pMap->dwID, x, y) == (DWORD)-1);
+}
+
+static void TestCharPush(const std::vector<int> &aLogin)
+{
+	printf("== O. CharPush ==\n");
+	if (aLogin.size() < 1) {
+		return;
+	}
+	/* 上下左右 2 マスずつ空いている、普通の大きさの押せるNPCを探す */
+	PCHARINFO pBlock = NULL;
+	PMAPINFO pMap = NULL;
+	for (int i = 0; i < g_aCharInfo.GetSize() && !pBlock; i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+		if (p->byNpcType != NPCTYPE_BLOCK || p->wGrpMain != CHARGRP_MAIN_NORMAL || GetMapNo(p->dwMapID) < 0) {
+			continue;
+		}
+		PMAPINFO pM = g_aMapInfo[GetMapNo(p->dwMapID)];
+		BOOL bOK = TRUE;
+		for (int d = 0; d < 4 && bOK; d ++) {
+			for (int n = 1; n <= 2 && bOK; n ++) {
+				bOK = PushIsFree(pM, (int)p->dwX + anPosAddTblX[d] * n, (int)p->dwY + anPosAddTblY[d] * n);
+			}
+		}
+		if (bOK) {
+			pBlock = p;
+			pMap = pM;
+		}
+	}
+	if (!pBlock) {
+		printf("no block\n");
+		return;
+	}
+	PCHARINFO pPC = g_aCharInfo[aLogin[0]];
+	DWORD dwMapBack = pPC->dwMapID, dwXBack = pPC->dwX, dwYBack = pPC->dwY;
+	BYTE byDirBack = pPC->byDirection;
+	DWORD dwBX = pBlock->dwX, dwBY = pBlock->dwY;
+	BYTE byBDirBack = pBlock->byDirection;
+	BYTE byFlgBack = pPC->byFlg, byBFlgBack = pBlock->byFlg;
+	DWORD dwBDotBack = pBlock->dwLastDotMove;
+
+	/* 押す人の立つ側(押す向きの反対側)と、サーバーに残っている前の向き */
+	static const BYTE s_abyCase[][2] = {
+		{ 3, 0 },	/* 左から右へ押す・前の向きは上 */
+		{ 2, 0 },	/* 右から左へ押す・前の向きは上 */
+		{ 0, 2 },	/* 下から上へ押す・前の向きは左 */
+		{ 1, 3 },	/* 上から下へ押す・前の向きは右 */
+		{ 3, 3 },	/* 向きが合っている時は今までどおり */
+	};
+	for (size_t c = 0; c < sizeof(s_abyCase) / sizeof(s_abyCase[0]); c ++) {
+		BYTE byPush = s_abyCase[c][0];
+		DeleteTblNoPC((int)pBlock->dwTblID);
+		pBlock->dwX = pBlock->dwXBack = dwBX;
+		pBlock->dwY = pBlock->dwYBack = dwBY;
+		pBlock->dwLastDotMove = 0;
+		AddTblNoPC((int)pBlock->dwTblID);
+		DeleteTblNoPC((int)pPC->dwTblID);
+		pPC->dwMapID = pBlock->dwMapID;
+		pPC->dwX = pPC->dwXBack = dwBX - anPosAddTblX[byPush];
+		pPC->dwY = pPC->dwYBack = dwBY - anPosAddTblY[byPush];
+		pPC->byDirection = s_abyCase[c][1];
+		AddTblNoPC((int)pPC->dwTblID);
+
+		CMDPARA_CHARPUSH Para;
+		ZeroMemory(&Para, sizeof(Para));
+		Para.byCmd = CMD_CHARPUSH;
+		Para.pID = pPC->pID;
+		Para.dwTblID = pPC->dwTblID;
+		Para.dwTblIDPush = pBlock->dwTblID;
+		TestRecv(pPC, &Para, sizeof(Para));
+		printf("charpush want=%d old=%d -> move=(%d,%d) pcdir=%d blockdir=%d\n",
+			byPush, s_abyCase[c][1],
+			(int)pBlock->dwX - (int)dwBX, (int)pBlock->dwY - (int)dwBY,
+			pPC->byDirection, pBlock->byDirection);
+	}
+
+	/* 片付け */
+	DeleteTblNoPC((int)pBlock->dwTblID);
+	pBlock->dwX = pBlock->dwXBack = dwBX;
+	pBlock->dwY = pBlock->dwYBack = dwBY;
+	pBlock->byDirection = byBDirBack;
+	pBlock->dwLastDotMove = dwBDotBack;
+	pBlock->byFlg = byBFlgBack;
+	AddTblNoPC((int)pBlock->dwTblID);
+	DeleteTblNoPC((int)pPC->dwTblID);
+	pPC->dwMapID = dwMapBack;
+	pPC->dwX = pPC->dwXBack = dwXBack;
+	pPC->dwY = pPC->dwYBack = dwYBack;
+	pPC->byDirection = byDirBack;
+	pPC->byFlg = byFlgBack;
+	AddTblNoPC((int)pPC->dwTblID);
 }
 
 /* ========================================================================= */
