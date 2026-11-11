@@ -173,6 +173,15 @@ cp "$ROOT/web/bgm/sbo_bgm.js" \
 	"$ROOT/web/soundfont/GeneralUserGS.sf3" \
 	"$DIST/bgm/"
 
+# 音声ファイル(.m4a)の BGM（非公開側の SboSoundData/Audio/。無ければ何もしない）
+if compgen -G "$ROOT/SboSoundData/Audio/*.m4a" >/dev/null; then
+	mkdir -p "$DIST/bgm/audio"
+	cp "$ROOT"/SboSoundData/Audio/*.m4a "$DIST/bgm/audio/"
+	echo "[build] 音声 BGM: $(ls "$DIST"/bgm/audio/*.m4a | wc -l) 曲"
+else
+	echo "[build] SboSoundData/Audio に .m4a が無いので、音声 BGM は入りません"
+fi
+
 # 管理ページ（/admin。キャラ検索・キャラ名の変更・復旧の承認・マップ資料・パーツ図鑑・配置案。サーバーの /api/admin/* を使う）
 # ドット絵エディタ（/dot。dot.html と dot-*.js。手元のフォルダの PNG を編集する）
 # キャラ名の変更ページ（/rename。プレイヤー用）

@@ -3642,7 +3642,7 @@ void RecvDataProcMAPINFO(PBYTE pData, DWORD dwDataSize)
 		}
 	}
 
-	if (g_pMapInfo->byBGM && g_pMapInfo->byBGM < SOUND_MAX) {
+	if (g_pMapInfo->wBGM && IsValidBgmNo (g_pMapInfo->wBGM)) {
 		PlayBGM (0);
 	}
 
@@ -4816,12 +4816,15 @@ void RecvDataProcHARTBEAT(PBYTE pData, DWORD dwDataSize)
 /* ========================================================================= */
 void RecvDataProcCHGBGM(PBYTE pData, DWORD dwDataSize)
 {
-	PCMDPARA_DATA1 pPara = (PCMDPARA_DATA1)pData;
+	PCMDPARA_CHGBGM pPara = (PCMDPARA_CHGBGM)pData;
 
+	if (dwDataSize < sizeof (CMDPARA_CHGBGM)) {
+		return;
+	}
 	StopBGM ();
-	g_pMapInfo->byBGM = pPara->byData;
+	g_pMapInfo->wBGM = pPara->wBGM;
 
-	if (pPara->byData && pPara->byData < SOUND_MAX) {
+	if (pPara->wBGM && IsValidBgmNo (pPara->wBGM)) {
 		PlayBGM (0);
 	}
 }

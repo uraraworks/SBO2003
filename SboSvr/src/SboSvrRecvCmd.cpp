@@ -4345,10 +4345,10 @@ void RecvDataProcMAPINFOCHG(PBYTE pData, DWORD dwDataSize)
 	}
 
 	PMAPINFO pMap = g_aMapInfo[nNo];
-	BYTE byData = pMap->byBGM;
+	WORD wBGMOld = pMap->wBGM;
 	BOOL bChgColor = FALSE;
-	if (pPara->byBGM < SOUND_MAX) {
-		pMap->byBGM = pPara->byBGM;
+	if (IsValidBgmNo (pPara->wBGM)) {
+		pMap->wBGM = pPara->wBGM;
 	}
 	if (pMap->clChg != pPara->clChg) {
 		bChgColor = TRUE;
@@ -4369,8 +4369,8 @@ void RecvDataProcMAPINFOCHG(PBYTE pData, DWORD dwDataSize)
 	CopyMemory (pMap->aLight, pPara->aLight, sizeof (pMap->aLight));
 
 	/* BGMが変更された？ */
-	if (byData != pPara->byBGM) {
-		SendCmdCHGBGM (URARASOCK_SENDALL, pPara->dwID, pPara->byBGM);
+	if (wBGMOld != pPara->wBGM) {
+		SendCmdCHGBGM (URARASOCK_SENDALL, pPara->dwID, pPara->wBGM);
 	}
 	/* 色変更あり？ */
 	if (bChgColor) {

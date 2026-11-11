@@ -219,7 +219,7 @@ static BOOL BuildState(const ADMINUNDO_KEY &Key, std::vector<BYTE> &aPacket, std
 			CMDPARA_CHGMAPINFO Para;
 			ZeroMemory (&Para, sizeof (Para));
 			Para.byCmd			= CMD_CHGMAPINFO;
-			Para.byBGM			= pMap->byBGM;
+			Para.wBGM			= pMap->wBGM;
 			Para.byFlg			= pMap->byFlg;
 			Para.byLightLevel	= pMap->byLightLevel;
 			Para.byWeather		= pMap->byWeather;

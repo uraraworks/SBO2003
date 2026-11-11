@@ -18,6 +18,13 @@ EM_JS(int, SboBgmOpen, (const void *pData, int nSize), {
 	}
 	return window.SboBgm.open(HEAPU8.subarray(pData, pData + nSize)) ? 1 : 0;
 });
+/* 音声ファイル(.m4a)の BGM を開く（名前は bgm/audio/ の中のファイル名） */
+EM_JS(int, SboBgmOpenAudio, (const char *pszName), {
+	if (!window.SboBgm || !window.SboBgm.openAudio) {
+		return 0;
+	}
+	return window.SboBgm.openAudio(UTF8ToString(pszName)) ? 1 : 0;
+});
 EM_JS(void, SboBgmClose, (void), {
 	window.SboBgm && window.SboBgm.close();
 });
@@ -89,6 +96,14 @@ BOOL CLibMusicLoader::Open(HMODULE hResource, HRSRC hSrc, LPCSTR)
 		return FALSE;
 	}
 	return SboBgmOpen(pData, (int)dwSize) ? TRUE : FALSE;
+}
+
+BOOL CLibMusicLoader::OpenAudio(LPCSTR pszFile)
+{
+	if (pszFile == NULL || pszFile[0] == 0) {
+		return FALSE;
+	}
+	return SboBgmOpenAudio(pszFile) ? TRUE : FALSE;
 }
 
 BOOL CLibMusicLoader::Close(void)

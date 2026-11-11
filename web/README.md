@@ -11,7 +11,7 @@ Windows 版クライアント（SboCli）を Emscripten でブラウザ向けに
 | アカウント名・パスワード入力 | HTML の入力欄を canvas の上に重ねて入力できる |
 | サーバーへの接続 | WebSocket で接続し、ログイン・キャラ作成・マップでの移動まで動く（Node.js 版サーバーで確認） |
 | 効果音 | Web Audio で直接鳴らす（AudioBufferSourceNode。スマホでの遅れ対策） |
-| BGM（MIDI） | MIDI のまま、ページ側の JS シンセ（spessasynth_lib）とサウンドフォント（GeneralUser GS）で鳴らす |
+| BGM（MIDI） | MIDI のまま、ページ側の JS シンセ（spessasynth_lib）とサウンドフォント（GeneralUser GS）で鳴らす。入れ替えた曲は音声ファイル（.m4a）で鳴らす（[下](#音声ファイルm4aの-bgm)） |
 | 管理者ウィンドウ | Web 版には入れていない（MFC のダイアログのため） |
 | 保存データ（INI など） | ブラウザの IndexedDB に保存される |
 
@@ -50,6 +50,21 @@ BGM の全体の音量は `sbo_bgm.js` の `MASTER_GAIN` で調整できます�
 入っていて、spessasynth はそのままだと 2 周目から印の位置へ戻る（前奏が飛ぶ）ので、`sbo_bgm.js` の `prepareLoop` が
 読み込む時に印を消し、`loopStart`・`loopEnd` のマーカーを足しています（最後の音から 4 拍より長く空く曲は最後の音でループ）。
 開発者ツールのコンソールで `SboBgm.status()` を呼ぶと、再生位置などを確認できます。
+
+### 音声ファイル（.m4a）の BGM
+
+MIDI の曲を音声ファイルの新しい曲に入れ替えていくため、MIDI と音声が混在できます（元の MIDI は残します）。
+
+- 音声ファイルは**非公開側**（SBO2003-private）の `SboSoundData/Audio/` に置きます（MIDI と同じ扱いで、公開リポジトリには入れません。`.gitignore` 済み）。
+  `tools/web/build.sh` が `SboSoundData/Audio/*.m4a` を `dist/bgm/audio/` にコピーし（無ければ何もしません）、
+  Actions では `tools/public/fetch-private-assets.sh` が MIDI と一緒に取ってきます。
+- 番号と曲の対応は `common/BgmAudio.h` の表 `g_aBgmAudio`（番号は 1000 から。1000=`town_morning.m4a` 始まりの町（新）、1001=`pixel_duel.m4a` 爆弾ゲーム場（新））。
+  曲を足す時はこの表の末尾に 1 行足します（管理者ウィンドウの BGM 一覧の末尾・サーバーの検証・データ API はこの表を見ます。
+  Web の管理ページの曲名表 `web/account/admin-mapdoc.js` の `BGM` にも足してください）。
+- マップの BGM 番号（`MAPINFO.wBGM`、データ API のキーは今までどおり `byBGM`）は WORD です。SOUND_ の番号（〜256）なら MIDI、表にある番号なら音声ファイルで鳴ります。
+- 再生は `sbo_bgm.js` の音声の道（`openAudio`）。audio 要素を MIDI と同じゲインにつなぎ（iPhone は `audio.volume` が効かないため）、
+  ループは曲の最後まで鳴ってから 2.5 秒の間を空けて頭から。音量のつり合いは `AUDIO_GAIN`（MIDI の `MASTER_GAIN` とは別）で調整します。
+- 配信（`server/node/sbosvr_net.js`）は `.m4a` を `audio/mp4` で、Range リクエスト（Safari の audio 要素に必要）に答えて配ります。版付き URL なので一度落とした曲はブラウザが長く覚えます。
 
 ## サーバーにつなぐ
 

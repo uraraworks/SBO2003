@@ -17,6 +17,15 @@
  * 読み込みも進まず、なかなか鳴らなかった）。
  *
  * 読み込みはページを開いたらすぐに始めて、ログイン画面までに間に合うようにする。
+ *
+ * 音声ファイル(.m4a)の BGM
+ * MIDI のほかに、音声ファイル（bgm/audio/ の .m4a）で鳴る曲もある（openAudio）。
+ * HTMLAudioElement を MediaElementAudioSourceNode で MIDI と同じゲイン（音量）につなぐ
+ * （iPhone は audio.volume が効かないので、音量はゲインで掛ける）。落としながら鳴らせるよう
+ * preload で読み込み、一度落とした曲はブラウザの HTTP キャッシュ（版付き URL）にまかせる。
+ * ループは「曲の最後まで鳴ったら 2.5 秒の間を空けて頭から」。
+ * MIDI と音声は同時には鳴らさず、切り替える時にもう片方を必ず止める。
+ * シンセの読み込みが終わっていなくても音声は鳴らせる。
  */
 (function () {
 	'use strict';
@@ -29,10 +38,13 @@
 		return new URL(name, BASE).href + (ver ? '?v=' + ver : '');
 	}
 
-	var MASTER_GAIN = 3.0;		/* 全体の音量（GeneralUser GS は小さめなので、効果音とつり合うように持ち上げる） */
+	var MASTER_GAIN = 3.0;		/* MIDI の音量（GeneralUser GS は小さめなので、効果音とつり合うように持ち上げる） */
+	var AUDIO_GAIN = 1.5;		/* 音声ファイルの音量（MIDI とつり合うように調整する。Suno の曲は山が -3.4dB 前後なので、上げすぎると最大音量で割れる） */
+	var AUDIO_LOOP_GAP = 2500;	/* 音声 BGM をループする時、曲の最後から頭に戻るまでの間(ms) */
 
 	/* ゲーム側から見た状態 */
 	var want = {
+		kind: 'midi',		/* 今の曲の種類（'midi' か 'audio'） */
 		data: null,			/* 開いている MIDI（ArrayBuffer） */
 		serial: 0,			/* 開き直すたびに増やす */
 		playing: false,
@@ -46,9 +58,18 @@
 	var synth = null;
 	var seq = null;
 	var loadedSerial = -1;
+	var midiActive = false;		/* seq.play() を呼んで、まだ止めていない（seq.paused はあてにならないので自分で覚える） */
 	var ready = false;
 	var failed = false;
 	var starting = null;
+
+	/* 音声ファイル側の状態 */
+	var audio = null;			/* 開いている音声の audio 要素 */
+	var audioSrc = null;		/* その MediaElementAudioSourceNode */
+	var audioName = null;
+	var audioFailed = false;	/* 読み込み・再生できなかった */
+	var audioSerial = -1;		/* audio 要素を頭から鳴らし始めた時の want.serial */
+	var loopTimer = 0;			/* 次のループまでの間のタイマー */
 
 	function log(msg) {
 		console.log('[bgm] ' + msg);
@@ -261,19 +282,198 @@
 		return starting;
 	}
 
-	/* ゲーム側の指示（want）にシンセを合わせる */
-	function sync() {
+	/* 音声ファイルを閉じる（再生を止めて、要素とつなぎを捨てる） */
+	function clearLoopTimer() {
+		if (loopTimer) {
+			clearTimeout(loopTimer);
+			loopTimer = 0;
+		}
+	}
+	function disposeAudio() {
+		clearLoopTimer();
+		var a = audio;
+		audio = null;
+		if (audioSrc) {
+			try {
+				audioSrc.disconnect();
+			} catch (e) {
+			}
+			audioSrc = null;
+		}
+		if (a) {
+			try {
+				a.pause();
+				a.removeAttribute('src');
+				a.load();		/* 読み込み中の通信もやめる */
+			} catch (e) {
+			}
+		}
+		audioName = null;
+		audioFailed = false;
+		audioSerial = -1;
+	}
+
+	/* 音声ファイルを開く（読み込みはここで始めておく。鳴らすのは play() から） */
+	function openAudioFile(name) {
+		disposeAudio();
+		if (!ctx || !gain) {
+			audioFailed = true;
+			log('AudioContext が無いので音声 BGM は鳴りません: ' + name);
+			return;
+		}
+		var a = new Audio();
+		a.preload = 'auto';
+		a.loop = false;		/* ループは ended から間を空けて自分でやる */
+		a.addEventListener('ended', function () {
+			if (audio !== a) {
+				return;
+			}
+			log('音声が最後まで鳴りました: ' + audioName);
+			syncAudio();
+		});
+		a.addEventListener('error', function () {
+			if (audio !== a) {
+				return;
+			}
+			audioFailed = true;
+			log('音声を読み込めませんでした: ' + audioName + '（' + (a.error ? a.error.code + ' ' + a.error.message : '') + '）');
+		});
+		audio = a;
+		audioName = name;
+		audioSrc = ctx.createMediaElementSource(a);
+		audioSrc.connect(gain);
+		a.src = url('audio/' + name);
+		log('音声を開きます: ' + a.src);
+	}
+
+	/* play() が断られたら（操作の前など）何もしない。次の操作（unlock）か sync で、止まっていたらやり直す */
+	function tryPlay(a) {
+		var p;
+		try {
+			p = a.play();
+		} catch (e) {
+			return;
+		}
+		if (p && p.catch) {
+			p.catch(function (e) {
+				if (e && e.name !== 'AbortError') {
+					log('音声の再生が断られました（次の操作でやり直します）: ' + (e.name || e));
+				}
+			});
+		}
+	}
+
+	/* ゲーム側の指示（want）に音声ファイルを合わせる */
+	function syncAudio() {
+		var a = audio;
+		if (!a) {
+			return;
+		}
+		if (!(want.kind === 'audio' && want.playing)) {
+			clearLoopTimer();
+			if (!a.paused) {
+				a.pause();
+			}
+			return;
+		}
+		if (audioFailed) {
+			return;
+		}
+		/* 鳴らし直す指示（play()）なら頭から */
+		if (audioSerial !== want.serial) {
+			audioSerial = want.serial;
+			clearLoopTimer();
+			try {
+				a.currentTime = 0;
+			} catch (e) {
+			}
+			tryPlay(a);
+			return;
+		}
+		/* 最後まで鳴った：ループなら間を空けて頭から */
+		if (a.ended) {
+			if (want.loop && !loopTimer) {
+				loopTimer = setTimeout(function () {
+					loopTimer = 0;
+					if (audio !== a || !(want.kind === 'audio' && want.playing && want.loop)) {
+						return;
+					}
+					try {
+						a.currentTime = 0;
+					} catch (e) {
+					}
+					tryPlay(a);
+					sync();
+				}, AUDIO_LOOP_GAP);
+			} else if (!want.loop) {
+				clearLoopTimer();
+			}
+			return;
+		}
+		/* 止まっていたら（断られていた・間の最中でなければ）鳴らす */
+		if (a.paused && !loopTimer) {
+			tryPlay(a);
+		}
+	}
+
+	/*
+	 * MIDI を止める（シンセの準備ができていなければ何もしなくてよい）
+	 *
+	 * spessasynth の seq.paused は、止める指示（pause）への返事が遅れて届くと、鳴っているのに true に
+	 * なることがある（pause() は paused が true だと何もしないので、止めそこなう）。MIDI だけの時は
+	 * AudioContext ごと止めるので目立たなかったが、音声ファイルに切り替える時は止めそこなうと
+	 * 両方鳴ってしまうので、自分で覚えた midiActive を見て、paused を空にしてから確実に止める。
+	 */
+	function pauseMidi() {
+		if (!ready || !midiActive) {
+			return;
+		}
+		midiActive = false;
+		try {
+			seq.pausedTime = undefined;
+		} catch (e) {
+		}
+		seq.pause();
+	}
+	function stopMidi() {
 		if (!ready) {
 			return;
 		}
-		gain.gain.setTargetAtTime(want.volume * MASTER_GAIN, ctx.currentTime, 0.02);
-		if (!want.playing || !want.data) {
-			if (!seq.paused) {
-				seq.pause();
+		pauseMidi();
+		synth.stopAll(true);
+	}
+
+	/* 今鳴らすものがあるか */
+	function wantSound() {
+		return want.playing && (want.kind === 'audio' ? !!audio : !!want.data);
+	}
+
+	/* ゲーム側の指示（want）にシンセ・音声ファイルを合わせる */
+	function sync() {
+		if (!ctx || !gain) {
+			return;
+		}
+		var isAudio = (want.kind === 'audio');
+		/* もう片方は必ず止める */
+		if (isAudio) {
+			stopMidi();
+			loadedSerial = -1;
+		} else {
+			disposeAudio();
+		}
+		/* 音声の準備ができていれば、シンセの準備を待たずに音量を合わせる */
+		if (isAudio || ready) {
+			gain.gain.setTargetAtTime(want.volume * (isAudio ? AUDIO_GAIN : MASTER_GAIN), ctx.currentTime, 0.02);
+		}
+		if (isAudio) {
+			syncAudio();
+		}
+		if (!wantSound()) {
+			if (!isAudio && ready) {
+				stopMidi();
 			}
-			synth.stopAll(true);
 			/* 鳴らしていない間もシンセは無音を作り続けて CPU を使うので、AudioContext ごと止めておく */
-			if (ctx.state === 'running') {
+			if ((ready || failed) && ctx.state === 'running') {
 				ctx.suspend().catch(function () {});
 			}
 			return;
@@ -281,6 +481,9 @@
 		/* 止めていたら動かし直す（操作の外では断られることがあるが、その時は次の操作で unlock() が動かす） */
 		if (ctx.state !== 'running') {
 			ctx.resume().catch(function () {});
+		}
+		if (isAudio || !ready) {
+			return;
 		}
 		if (loadedSerial !== want.serial) {
 			loadedSerial = want.serial;
@@ -290,20 +493,25 @@
 		}
 		/* Infinity でずっと繰り返す（-1 は効かない） */
 		seq.loopCount = want.loop ? Infinity : 0;
-		if (seq.paused) {
+		if (seq.paused || !midiActive) {
 			seq.play();
 		}
+		midiActive = true;
 	}
 
 	/* 操作されたら音を出せるようにする（イベントの中ですぐに呼ぶこと） */
 	var silentDone = false;
 	function unlock() {
 		start();
+		/* 音声ファイルの play() が断られて止まっていたら、この操作の中でやり直す */
+		if (want.kind === 'audio' && want.playing && audio && audio.paused && !loopTimer && !audio.ended && !audioFailed) {
+			tryPlay(audio);
+		}
 		if (!ctx || ctx.state === 'running') {
 			return;
 		}
 		/* BGM を鳴らしていないので止めている時は、そのままにしておく */
-		if (silentDone && ready && !(want.playing && want.data)) {
+		if (silentDone && (ready || failed) && !wantSound()) {
 			return;
 		}
 		ctx.resume().catch(function () {});
@@ -330,20 +538,34 @@
 	window.SboBgm = {
 		/* MIDI データを開く（Uint8Array。中身は写して持つ） */
 		open: function (bytes) {
+			want.kind = 'midi';
 			want.data = prepareLoop(bytes.slice().buffer);
 			want.serial++;
 			want.playing = false;
 			start();
-			sync();
+			sync();		/* 音声ファイルを開いていたら、ここで閉じる */
 			return true;
+		},
+		/* 音声ファイル（bgm/audio/ の名前）を開く。読み込みはここで始める */
+		openAudio: function (name) {
+			want.kind = 'audio';
+			want.data = null;
+			want.serial++;
+			want.playing = false;
+			start();
+			stopMidi();
+			openAudioFile(String(name));
+			sync();
+			return !!audio;
 		},
 		close: function () {
 			want.data = null;
 			want.playing = false;
+			disposeAudio();
 			sync();
 		},
 		play: function () {
-			if (!want.data) {
+			if (want.kind === 'audio' ? !audio : !want.data) {
 				return false;
 			}
 			want.playing = true;
@@ -366,6 +588,9 @@
 			sync();
 		},
 		isPlaying: function () {
+			if (want.kind === 'audio') {
+				return want.playing && !!audio && !audioFailed;
+			}
 			return want.playing && !failed;
 		},
 		/* 動画録画用：BGM の出口（音量を掛けた後）を返す。まだ作っていなければ null */
@@ -382,7 +607,19 @@
 				loop: want.loop,
 				volume: want.volume,
 				time: seq ? seq.currentTime : 0,
-				duration: seq ? seq.duration : 0
+				duration: seq ? seq.duration : 0,
+				kind: want.kind,
+				midiPaused: seq ? seq.paused : null,
+				audio: audio ? {
+					name: audioName,
+					failed: audioFailed,
+					paused: audio.paused,
+					ended: audio.ended,
+					time: audio.currentTime,
+					duration: audio.duration,
+					readyState: audio.readyState,
+					waitingLoop: !!loopTimer
+				} : null
 			};
 		}
 	};

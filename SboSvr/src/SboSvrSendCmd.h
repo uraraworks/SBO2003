@@ -36,7 +36,7 @@ extern void SendCmdEVENTINFO			(DWORD, int, int);								/* コマンド送信(�
 extern void SendCmdEVENTCOUNT			(DWORD, DWORD);									/* コマンド送信(イベント数通知) */
 extern void SendCmdEVENTPOS				(DWORD, DWORD);									/* コマンド送信(イベント座標通知) */
 extern void SendCmdHARTBEAT				(DWORD);										/* コマンド送信(生存確認応答) */
-extern void SendCmdCHGBGM				(DWORD, DWORD, BYTE);							/* コマンド送信(BGM変更) */
+extern void SendCmdCHGBGM				(DWORD, DWORD, WORD);							/* コマンド送信(BGM変更) */
 extern void SendCmdMSG					(DWORD, DWORD);									/* コマンド送信(メッセージ更新) */
 extern void SendCmdVIEWMSG				(DWORD, DWORD);									/* コマンド送信(メッセージ表示) */
 extern void SendCmdPLAYSOUND			(DWORD, BYTE);									/* コマンド送信(効果音再生) */

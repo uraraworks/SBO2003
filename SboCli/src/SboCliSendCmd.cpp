@@ -765,7 +765,7 @@ void SendCmdCHGMAPINFO(void)
 	pSendData->nEntranceX = g_pMapInfo->nEntranceX;
 	pSendData->nEntranceY = g_pMapInfo->nEntranceY;
 	pSendData->byFlg = g_pMapInfo->byFlg;
-	pSendData->byBGM = g_pMapInfo->byBGM;
+	pSendData->wBGM = g_pMapInfo->wBGM;
 	pSendData->byLightLevel = g_pMapInfo->byLightLevel;
 	pSendData->byWeather	= g_pMapInfo->byWeather;
 	pSendData->clChg = g_pMapInfo->clChg;

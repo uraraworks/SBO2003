@@ -175,6 +175,8 @@ void MyTextOut(HDC, int, int, char *, COLORREF Color = RGB (255, 255, 255));	/* 
 void MakeAdminWindow				(void);								/* 管理者ウィンドウ作成 */
 LRESULT WINAPI WndProcAdminWindow	(HWND, UINT, WPARAM, LPARAM);		/* メッセージの処理 */
 static LRESULT WndProcAdminWindowSub	(HWND, UINT, WPARAM, LPARAM);	/* メッセージの処理（本体） */
+static int   GetAdminBgmCount		(void);								/* BGM一覧の数（MIDIの曲＋音声ファイルの曲） */
+static DWORD GetAdminBgmNo			(int);								/* BGM一覧の何番目かからBGM番号を求める */
 LRESULT CALLBACK WndProcDialog		(HWND, UINT, WPARAM, LPARAM);		/* ダイアログのメッセージ処理 */
 void AdminOnCommand					(HWND, int, HWND, UINT);			/* メッセージハンドラ(WM_COMMAND) */
 void AdminOnCommandMapParts			(HWND, int, HWND, UINT);			/* メッセージハンドラ(WM_COMMAND)パーツ情報) */
@@ -288,6 +290,38 @@ static void AdminUndoRefresh		(BYTE);								/* 元に戻した後に画面を�
 
 /* サーバーに知らせた画面（0xFF ならまだ知らせていない） */
 static BYTE s_byAdminUndoScreen = 0xFF;
+
+/* ========================================================================= */
+/* 関数名：GetAdminBgmCount													 */
+/* 内容：BGM一覧の数（MIDIの曲＋音声ファイルの曲）							 */
+/* ========================================================================= */
+static int GetAdminBgmCount(void)
+{
+	int nCount = 0;
+
+	for (int i = 0; adwBgmNoTbl[i] != 0xFFFFFFFF; i ++) {
+		nCount ++;
+	}
+	return nCount + BGM_AUDIO_COUNT;
+}
+
+/* ========================================================================= */
+/* 関数名：GetAdminBgmNo													 */
+/* 内容：BGM一覧の何番目かからBGM番号を求める（末尾は音声ファイルの曲）		 */
+/* ========================================================================= */
+static DWORD GetAdminBgmNo(int nIndex)
+{
+	int nMidi = GetAdminBgmCount () - BGM_AUDIO_COUNT;
+
+	if (nIndex < 0) {
+		return 0;
+	}
+	if (nIndex >= nMidi) {
+		nIndex -= nMidi;
+		return (nIndex < BGM_AUDIO_COUNT) ? g_aBgmAudio[nIndex].wNo : 0;
+	}
+	return adwBgmNoTbl[nIndex];
+}
 
 /* ========================================================================= */
 /* 関数名：MyTextOut														 */
@@ -1968,10 +2002,10 @@ void AdminOnCommandMapInfo(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 
 	/* BGM選択 */
 	case IDC_TMPCOMBO1:
-		if (aSoundTbl[g_pMapInfo->byBGM]) {
-			DXAudio.SetLoopPoints (&aSoundTbl[g_pMapInfo->byBGM], 0);
+		if (g_pMapInfo->wBGM < SOUND_MAX && aSoundTbl[g_pMapInfo->wBGM]) {
+			DXAudio.SetLoopPoints (&aSoundTbl[g_pMapInfo->wBGM], 0);
 		}
-		g_pMapInfo->byBGM = (BYTE)adwBgmNoTbl[SendMessage (m_hWndCombo1, CB_GETCURSEL, 0, 0)];
+		g_pMapInfo->wBGM = (WORD)GetAdminBgmNo ((int)SendMessage (m_hWndCombo1, CB_GETCURSEL, 0, 0));
 		break;
 
 	/* 天候 */
@@ -7363,7 +7397,7 @@ void MakeAdminWndMapInfo(void)
 	SendMessage (m_hWndButton2, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
 	char szTmp[10];
-	wsprintf (szTmp, "%ld", g_pMapInfo->byBGM);
+	wsprintf (szTmp, "%ld", g_pMapInfo->wBGM);
 	SetWindowText (m_hWndEdit1, szTmp);
 
 	LPCTSTR liststr1[] = {"無し", "戦闘１", "ボス１", "ボス２", "城１", "城２", "城３",
@@ -7392,20 +7426,21 @@ void MakeAdminWndMapInfo(void)
 		"ジャングル", "OMOIDE", "戦闘", "恐怖、昼時のバーゲンセール", "緑溢れる広場", "暖かな北の大地での暮らし",
 		"気付かないうちに過ぎ行くもの", "協会の見える丘", "旅路に思う、置き去りにした日常と、これからのこと",
 		"激しいオープニング？"
+		/* 音声ファイル(.m4a)の曲は、common/BgmAudio.h の表の順に末尾へ並べる（番号は GetAdminBgmNo が表から引く） */
 	}, liststr2[] = {"無し", "雪", "雨", "昼夜", "空き1", "z"};
-	int i, nCount = 0, nTmp;
+	int i, nCount, nTmp;
 
-	/* テーブル数を計算 */
-	for (i = 0; ; i ++) {
-		if (adwBgmNoTbl[i] == -1) {
-			break;
-		}
-		nCount ++;
-	}
+	/* テーブル数を計算（MIDIの曲＋末尾に音声ファイルの曲） */
+	nCount = GetAdminBgmCount ();
 
 	/* 文字列の登録 */
+	/* 末尾の BGM_AUDIO_COUNT 個は音声ファイルの曲（名前は common/BgmAudio.h の表から） */
 	for (i = 0; i < nCount; i ++) {
-		SendMessage (m_hWndCombo1, CB_ADDSTRING, (WPARAM)0, (LPARAM)liststr1[i]);
+		if (i < nCount - BGM_AUDIO_COUNT) {
+			SendMessage (m_hWndCombo1, CB_ADDSTRING, (WPARAM)0, (LPARAM)liststr1[i]);
+		} else {
+			SendMessage (m_hWndCombo1, CB_ADDSTRING, (WPARAM)0, (LPARAM)g_aBgmAudio[i - (nCount - BGM_AUDIO_COUNT)].pszName);
+		}
 	}
 	for (i = 0; ; i ++) {
 		if (liststr2[i][0] == 'z') {
@@ -7416,8 +7451,8 @@ void MakeAdminWndMapInfo(void)
 
 	/* BGM番号をテーブル番号に変換 */
 	for (i = 0; i < nCount; i ++) {
-		nTmp = adwBgmNoTbl[i];
-		if (nTmp == g_pMapInfo->byBGM) {
+		nTmp = (int)GetAdminBgmNo (i);
+		if (nTmp == g_pMapInfo->wBGM) {
 			nTmp = i;
 			break;
 		}
