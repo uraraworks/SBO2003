@@ -4277,6 +4277,41 @@ void DrawWindowMAKER(PWNDINFO pWnd)
 
 
 /* ========================================================================= */
+/* 関数名：IsWindowOverlapRect												 */
+/* 内容：四角とウィンドウが重なるか											 */
+/* ========================================================================= */
+static BOOL IsWindowOverlapRect(int x, int y, int cx, int cy, PWNDINFO pWndHit)
+{
+	if (pWndHit == NULL) {
+		return FALSE;
+	}
+	return ((x < pWndHit->nX + pWndHit->nCx) && (pWndHit->nX < x + cx) &&
+			(y < pWndHit->nY + pWndHit->nCy) && (pWndHit->nY < y + cy)) ? TRUE : FALSE;
+}
+
+/* 指定の種類のウィンドウのどれかと重なるか */
+static BOOL IsWindowOverlapType(int x, int y, int cx, int cy, int nType)
+{
+	for (int i = 0; i < g_WndInfo.GetSize (); i ++) {
+		PWNDINFO pWndHit = (PWNDINFO)g_WndInfo[i];
+		if ((pWndHit->nType == nType) && IsWindowOverlapRect (x, y, cx, cy, pWndHit)) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* 指定のIDのウィンドウと重なるか（無ければ重ならない） */
+static BOOL IsWindowOverlapID(int x, int y, int cx, int cy, DWORD dwID)
+{
+	int nNo = GetWindowID (dwID);
+	if (nNo < 0) {
+		return FALSE;
+	}
+	return IsWindowOverlapRect (x, y, cx, cy, (PWNDINFO)g_WndInfo[nNo]);
+}
+
+/* ========================================================================= */
 /* 関数名：DrawWindowITEMINFO												 */
 /* 内容：ウィンドウの描画(アイテム情報)										 */
 /* 日付：2005/03/12															 */
@@ -4402,15 +4437,33 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 			int nListRight = pWndList->nX + nListCx;
 			int nListBottom = pWndList->nY + nListCy;
 
-			if (nListRight + pWnd->nCx <= SCRSIZEX) {
+			if ((pWndList->nType == WNDTYPE_LEAVE) && (nListCx + pWnd->nCx <= SCRSIZEX)) {
+				/* 預かり所：一覧と詳細を横に並べて、2つまとめて画面の真ん中に寄せる */
+				/* （詳細は一覧の右下＝下端をそろえる。一覧より背が高い時は上端をそろえる） */
+				/* 一覧の位置は詳細のふつうの幅で決める（特技の書などで詳細が広がって画面からはみ出す時だけ左へずらす） */
+				pWndList->nX = max (0, (SCRSIZEX - (nListCx + ITEMINFO_CX)) / 2);
+				pWndList->nX = min (pWndList->nX, SCRSIZEX - (nListCx + pWnd->nCx));
+				pWnd->nX = pWndList->nX + nListCx;
+				pWnd->nY = max (pWndList->nY, nListBottom - pWnd->nCy);
+			} else if (nListRight + pWnd->nCx <= SCRSIZEX) {
 				/* 右隣に入る */
 				pWnd->nX = nListRight;
 				pWnd->nY = pWndList->nY;
 			} else {
-				/* 右に入らない時は一覧の下に出す */
-				/* （下のメッセージ欄と重なっても文の書き出しが隠れないよう右に寄せる） */
+				/* 右に入らない時は一覧の下に出す（右に寄せる） */
 				pWnd->nX = max (0, SCRSIZEX - pWnd->nCx);
 				pWnd->nY = nListBottom;
+
+				/* 下だとセリフ（メッセージ欄）に重なる時は、一覧の上に入れば上に出す */
+				/* （一覧の右端にそろえる。右上の所持金の窓と重なる時は下のまま） */
+				int nAboveY = pWndList->nY - pWnd->nCy;
+				int nAboveX = max (0, min (nListRight, SCRSIZEX) - pWnd->nCx);
+				if ((nAboveY >= 0) &&
+					IsWindowOverlapType (pWnd->nX, pWnd->nY, pWnd->nCx, pWnd->nCy, WNDTYPE_MSG) &&
+					!IsWindowOverlapID (nAboveX, nAboveY, pWnd->nCx, pWnd->nCy, g_dwMsgIDGold)) {
+					pWnd->nX = nAboveX;
+					pWnd->nY = nAboveY;
+				}
 			}
 			/* 右上の所持金の窓と重なる時は、その下に出す */
 			int nNoGold = GetWindowID (g_dwMsgIDGold);
