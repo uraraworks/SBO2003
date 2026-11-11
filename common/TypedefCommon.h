@@ -294,6 +294,7 @@ enum {
 	CMD_QUEST,														/* ギルドの仕事依頼（一覧・受ける・取り消す・渡す。結果はサーバー→クライアント） */
 	CMD_QUESTSTATE,													/* 依頼の進み具合(サーバー→本人。自分と仲間の分) */
 	CMD_SORTITEM,													/* 道具欄・預かり所の並べ替え（クライアント→サーバー。結果は CMD_CHARITEM・CMD_LEAVEITEMGET で返る） */
+	CMD_LEAVEITEMDISPOSE,											/* 預かり所の品を引き取らずに売る・捨てる（クライアント→サーバー。結果は CMD_LEAVEITEMGET で返る） */
 	CMD_MAX
 };
 
@@ -909,6 +910,9 @@ enum {
 	LEAVESTATE_GOLD,											/* 預ける金額設定 */
 	LEAVESTATE_GOLDGET,											/* 引き取る金額設定 */
 	LEAVESTATE_ITEMSORTSWAP,									/* 並べ替え：入れ替える2つを選ぶ（引き取る時と同じ一覧） */
+	LEAVESTATE_ITEMSELECTDISPOSE,								/* 手放す：品を選ぶ（引き取る時と同じ一覧） */
+	LEAVESTATE_DISPOSEMENU,										/* 手放す：売る・捨てるを選ぶ */
+	LEAVESTATE_DISPOSECOUNT,									/* 手放す：個数を決める */
 };
 
 /* 冒険者登録所状態 */
@@ -2840,6 +2844,24 @@ typedef struct _CMDPARA_SORTITEM {
 	BYTE		byNo2;												/* 入れ替える2つ目の番号（SWAP） */
 	DWORD		dwTblID;											/* 本人のテーブルID */
 } CMDPARA_SORTITEM, *PCMDPARA_SORTITEM;
+#pragma pack(pop)
+
+/* 預かり所の品を手放す方法(CMDPARA_LEAVEITEMDISPOSE の byMode) */
+enum {
+	LEAVEDISPOSE_SELL = 0,										/* 売る（店の買い取りと同じ 価値の1/4、最低1） */
+	LEAVEDISPOSE_DROP,											/* 捨てる */
+};
+
+#pragma pack(push, 1)
+/* 預かり所の品を引き取らずに売る・捨てる（クライアント→サーバー） */
+typedef struct _CMDPARA_LEAVEITEMDISPOSE {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byMode;												/* 方法(LEAVEDISPOSE_*) */
+	BYTE		byNo;												/* 預かり所の何番目か */
+	BYTE		byCount;											/* 個数 */
+	WORD		wItemID;											/* 品のID（番号がずれていないかの確かめ用） */
+	DWORD		dwTblID;											/* 本人のテーブルID */
+} CMDPARA_LEAVEITEMDISPOSE, *PCMDPARA_LEAVEITEMDISPOSE;
 #pragma pack(pop)
 
 /* NPCの巡回ルート(CMD_NPCROUTE)のサブコマンド */

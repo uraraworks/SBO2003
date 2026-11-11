@@ -94,6 +94,8 @@ void DrawWindowLEAVE_SELECT						(PWNDINFO);			/* 預かり所：選択 */
 void DrawWindowLEAVE_ITEM						(PWNDINFO);			/* 預かり所：アイテム選択 */
 void DrawWindowLEAVE_ITEMGET					(PWNDINFO);			/* 預かり所：引き取るアイテム選択 */
 void DrawWindowLEAVE_GOLD						(PWNDINFO);			/* 預かり所：預ける金額設定 */
+void DrawWindowLEAVE_DISPOSEMENU				(PWNDINFO);			/* 預かり所：売る・捨てる */
+void DrawWindowLEAVE_DISPOSECOUNT				(PWNDINFO);			/* 預かり所：手放す個数 */
 void DrawWindowCOMMANDTRADE						(PWNDINFO);			/* 取り引きコマンド */
 void DrawWindowTRADE							(PWNDINFO);			/* 取り引き */
 void DrawWindowTRADEITEM						(PWNDINFO);			/* 取り引き：アイテム選択 */
@@ -2383,9 +2385,12 @@ void DrawWindowLEAVE(PWNDINFO pWnd)
 		case LEAVESTATE_SELECTGET:		DrawWindowLEAVE_SELECT (pWnd);		return;
 		case LEAVESTATE_ITEM:			DrawWindowLEAVE_ITEM (pWnd);		return;
 		case LEAVESTATE_ITEMSELECTGET:
-		case LEAVESTATE_ITEMSORTSWAP:	DrawWindowLEAVE_ITEMGET (pWnd);		return;
+		case LEAVESTATE_ITEMSORTSWAP:
+		case LEAVESTATE_ITEMSELECTDISPOSE:	DrawWindowLEAVE_ITEMGET (pWnd);	return;
 		case LEAVESTATE_GOLD:
 		case LEAVESTATE_GOLDGET:		DrawWindowLEAVE_GOLD (pWnd);		return;
+		case LEAVESTATE_DISPOSEMENU:	DrawWindowLEAVE_DISPOSEMENU (pWnd);	return;
+		case LEAVESTATE_DISPOSECOUNT:	DrawWindowLEAVE_DISPOSECOUNT (pWnd);	return;
 		}
 	}
 
@@ -2402,8 +2407,9 @@ void DrawWindowLEAVE(PWNDINFO pWnd)
 
 	TextOut2 (hDC, 32, 16, "預ける", clText);
 	TextOut2 (hDC, 32, 32, "引き取る", clText);
-	TextOut2 (hDC, 32, 48, "並べ替え", clText);
-	TextOut2 (hDC, 32, 64, "やめる", clText);
+	TextOut2 (hDC, 32, 48, "手放す", clText);
+	TextOut2 (hDC, 32, 64, "並べ替え", clText);
+	TextOut2 (hDC, 32, 80, "やめる", clText);
 
 	SelectObject (hDC, hFontOld);
 	pWnd->pDib->Unlock ();
@@ -2517,8 +2523,8 @@ void DrawWindowLEAVE_ITEMGET(PWNDINFO pWnd)
 	if (nLen % 2) {
 		nLen ++;
 	}
-	if ((g_nProcShopState == LEAVESTATE_ITEMSORTSWAP) && (nLen < 8)) {
-		nLen = 8;													/* 題字「入れ替え」が入る幅 */
+	if (((g_nProcShopState == LEAVESTATE_ITEMSORTSWAP) || (g_nProcShopState == LEAVESTATE_ITEMSELECTDISPOSE)) && (nLen < 8)) {
+		nLen = 8;													/* 題字「入れ替え」「手放す」が入る幅 */
 	}
 	SAFE_DELETE (pWnd->pDib);
 	pWnd->pDib = new CImg32;
@@ -2534,6 +2540,8 @@ void DrawWindowLEAVE_ITEMGET(PWNDINFO pWnd)
 	/* 並べ替え中は題字を「入れ替え」にして、選んだ行(dwData=1+絶対番号)を黄色で描く */
 	if (g_nProcShopState == LEAVESTATE_ITEMSORTSWAP) {
 		TextOut2 (hDC, 32, 0, "入れ替え", clText);
+	} else if (g_nProcShopState == LEAVESTATE_ITEMSELECTDISPOSE) {
+		TextOut2 (hDC, 32, 0, "手放す", clText);
 	}
 	for (i = 0; i < 10; i ++) {
 		if (i + nNo >= g_pLeaveInfo->byCount) {
@@ -2589,6 +2597,79 @@ void DrawWindowLEAVE_GOLD(PWNDINFO pWnd)
 		szTmp[pWnd->byData1] = '*';
 	}
 	TextOut2 (hDC, 16, 16, szTmp, RGB (255, 255, 255));
+
+	SelectObject (hDC, hFontOld);
+	pWnd->pDib->Unlock ();
+	pWnd->dwTimeDrawStart = timeGetTime ();
+}
+
+/* ========================================================================= */
+/* 関数名：DrawWindowLEAVE_DISPOSEMENU										 */
+/* 内容：ウィンドウの描画(預かり所：手放す品を売る・捨てる)					 */
+/* 日付：2026/11/11															 */
+/* ========================================================================= */
+void DrawWindowLEAVE_DISPOSEMENU(PWNDINFO pWnd)
+{
+	if (pWnd->dwTimeDrawStart) {
+		DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
+		return;
+	}
+
+	DrawWindowFrame (pWnd);
+	HDC hDC = pWnd->pDib->Lock ();
+	HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFontBasic);
+	SetBkMode (hDC, TRANSPARENT);
+
+	/* 値打ちの無い品は「売る」を灰色に */
+	BOOL bSell = TRUE;
+	if (g_pLeaveInfo && (g_nProcShopSelect >= 0) && (g_nProcShopSelect < g_pLeaveInfo->byCount)) {
+		WORD wItem = g_pLeaveInfo->waItem[g_nProcShopSelect];
+		if ((wItem < g_aItemInfo.GetSize ()) && (g_aItemInfo[wItem]->dwGold == 0)) {
+			bSell = FALSE;
+		}
+	}
+	TextOut2 (hDC, 32, 16, "売る", bSell ? RGB (255, 255, 255) : RGB (128, 128, 128));
+	TextOut2 (hDC, 32, 32, "捨てる", RGB (255, 255, 255));
+	TextOut2 (hDC, 32, 48, "やめる", RGB (255, 255, 255));
+
+	SelectObject (hDC, hFontOld);
+	pWnd->pDib->Unlock ();
+	pWnd->dwTimeDrawStart = timeGetTime ();
+
+	DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
+}
+
+/* ========================================================================= */
+/* 関数名：DrawWindowLEAVE_DISPOSECOUNT										 */
+/* 内容：ウィンドウの描画(預かり所：手放す個数)								 */
+/*       nData1=個数、nData2=最大、byData1=方法(LEAVEDISPOSE_*)				 */
+/* 日付：2026/11/11															 */
+/* ========================================================================= */
+void DrawWindowLEAVE_DISPOSECOUNT(PWNDINFO pWnd)
+{
+	if (pWnd->dwTimeDrawStart) {
+		return;
+	}
+
+	DrawWindowFrame (pWnd);
+	char szTmp[128];
+	HDC hDC = pWnd->pDib->Lock ();
+	HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFontBasic);
+	SetBkMode (hDC, TRANSPARENT);
+
+	wsprintf (szTmp, "%3d/%d個", pWnd->nData1, pWnd->nData2);
+	TextOut2 (hDC, 16, 16, szTmp, RGB (255, 255, 255));
+	if (pWnd->byData1 == LEAVEDISPOSE_SELL) {
+		DWORD dwSell = 1;
+		if (g_pLeaveInfo && (g_nProcShopSelect >= 0) && (g_nProcShopSelect < g_pLeaveInfo->byCount)) {
+			WORD wItem = g_pLeaveInfo->waItem[g_nProcShopSelect];
+			if (wItem < g_aItemInfo.GetSize ()) {
+				dwSell = max (g_aItemInfo[wItem]->dwGold / 4, (DWORD)1);
+			}
+		}
+		wsprintf (szTmp, "%7uG", dwSell * pWnd->nData1);
+		TextOut2 (hDC, 16, 32, szTmp, RGB (255, 255, 0));
+	}
 
 	SelectObject (hDC, hFontOld);
 	pWnd->pDib->Unlock ();
