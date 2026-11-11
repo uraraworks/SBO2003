@@ -264,6 +264,8 @@ void SendCmdCHGDIRECTION(BYTE byDirection)
 /* 内容：コマンド送信(移動要求)												 */
 /* 日付：2003/05/17															 */
 /* ========================================================================= */
+BOOL g_bSendCharPosDone = FALSE;
+
 void SendCmdCHARPOS(BYTE byDirection, BOOL bMovingFlg)
 {
 	PCMDPARA_CHARPOS pSendData;
@@ -426,6 +428,7 @@ void SendCmdCHARPOS(BYTE byDirection, BOOL bMovingFlg)
 	}
 
 SendCmdCHARPOSEND:
+	g_bSendCharPosDone = TRUE;
 	PostMessage (g_hWndMain, WM_RCVDATA, (WPARAM)pSendData, (LPARAM)sizeof (CMDPARA_CHARPOS));
 	g_bReqestPos = TRUE;
 	cliSock.Send ((PBYTE)pSendData, sizeof (CMDPARA_CHARPOS));

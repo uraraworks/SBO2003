@@ -636,6 +636,38 @@ void KeyProcMoveNext(void)
 		return;
 	}
 
+	/* 歩きながら別の方向キーに変えた（曲がる）時は、向きを変えてそのまま次の一歩を出す。
+	   以前は向きを変えるだけで止まり、次のキー処理（最大 66ms 後）でやっと歩き出したので、
+	   曲がり角で一瞬ひっかかって見えていた。向きは移動の通知(CHARPOS)でサーバーにも届く。
+	   止まっている時に向きだけ変えられるのは今までどおり（ここは歩き終わった時だけ来る）。
+	   酔っている・戦場ゲームやすごろくの最中など、方向キーの扱いが変わる時は今までどおり */
+	if (g_aCharInfo.GetSize () > g_nMyCharID) {
+		PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
+		BYTE byDirection = 0xFF;
+		switch (byCode) {
+		case VK_UP:		byDirection = 0;	break;
+		case VK_DOWN:	byDirection = 1;	break;
+		case VK_LEFT:	byDirection = 2;	break;
+		case VK_RIGHT:	byDirection = 3;	break;
+		}
+		if ((byDirection != 0xFF) && (pChar->byDirection != byDirection) &&
+			(pChar->byDrunkLV < CHARSTATEDRUNK_COMA) &&
+			(pChar->abySubStatus[0] != SUBGAMEID_WAR) &&
+			(pChar->abySubStatus[0] != SUBGAMEID_SUGOROKU) &&
+			!g_bSpeech && (g_dwMsgIDCommand == 0)) {
+			BYTE byDirectionBack = pChar->byDirection;
+			pChar->byDirection = byDirection;
+			g_bSendCharPosDone = FALSE;
+			SendCmdCHARPOS (byDirection, FALSE);
+			if (g_bSendCharPosDone) {
+				g_bDraw = TRUE;
+				return;
+			}
+			/* 壁などで進めなかった時は元に戻し、今までどおり向きだけ変える */
+			pChar->byDirection = byDirectionBack;
+		}
+	}
+
 	KeyProcMove (KEY_DOWN, byCode);
 }
 
