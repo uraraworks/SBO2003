@@ -2004,70 +2004,105 @@ void RenewMapDarkCorner(PCHARINFO pChar)
 /* ========================================================================= */
 void RenewMapDarkWork(PCHARINFO pChar, int x, int y, int nCount)
 {
-	BOOL bResult;
+	/* 通れるマスを伝って広がる灯り。
+	   昔は伝う歩数を nCount(7歩)までにしていたので、杭や柵をぐるっと回りこむ道の先は
+	   丸い灯りの中でも届かず、その先の壁が黒いままだった。
+	   歩数では止めず、灯りが届かなくなる所(明るさ 1)・壁・画面の外で止める */
+	enum { W = DRAW_PARTS_X * 2 + 3 };
+	BYTE abyDone[SCRMARTSSIZE];
+	int anQX[SCRMARTSSIZE], anQY[SCRMARTSSIZE];
+	int nHead, nTail, i;
 	PCHARINFO pMyChar;
-	int nTmp, nPos, nMapDarkTmpPos;
+	static const int anDX[4] = { 0, 0, -1, 1 }, anDY[4] = { -1, 1, 0, 0 };
 
 	if (nCount <= 0) {
 		return;
 	}
-
 	pMyChar = g_aCharInfo[g_nMyCharID];
+	ZeroMemory (abyDone, sizeof (abyDone));
+
+	nHead = nTail = 0;
 	/* 画面の端の1マス(歩いてずれる時に見える所)まで */
-	if ((abs ((int)pMyChar->dwX - (x)) > DRAW_PARTS_X + 1) ||
-		(abs ((int)pMyChar->dwY - (y)) > DRAW_PARTS_Y + 1)) {
+	if ((abs ((int)pMyChar->dwX - x) > DRAW_PARTS_X + 1) ||
+		(abs ((int)pMyChar->dwY - y) > DRAW_PARTS_Y + 1)) {
 		return;
 	}
+	anQX[nTail] = x;
+	anQY[nTail] = y;
+	nTail ++;
+	abyDone[(1 + DRAW_PARTS_X + (x - (int)pMyChar->dwX)) + W * (1 + DRAW_PARTS_Y + (y - (int)pMyChar->dwY))] = 1;
 
-	/* 見える範囲(視界)の外？ */
-	if (!IsInViewRange (x, y)) {
-		return;
-	}
-	nTmp = GetMapDarkLevel (pChar, x, y);
-	if (GetMapLightLevel () && (nTmp == 1)) {
-		return;
-	}
+	while (nHead < nTail) {
+		BOOL bResult, bStart;
+		int nTmp, nPos, nMapDarkTmpPos, cx, cy;
 
-	nPos = (1 + DRAW_PARTS_X + (x - pMyChar->dwX)) +
-		   ((DRAW_PARTS_X * 2 + 3) * (1 + DRAW_PARTS_Y + (y - pMyChar->dwY)));
-	nMapDarkTmpPos = g_pMapDarkTmpPos[nPos];
+		cx = anQX[nHead];
+		cy = anQY[nHead];
+		bStart = (nHead == 0);
+		nHead ++;
 
-	if (g_pMapDarkTmp[nPos] + (char)nTmp > 100) {
-		nTmp = 100 - g_pMapDarkTmp[nPos];
-	}
-
-	bResult = TRUE;
-	if ((nCount < DRAW_PARTS_X) && (IsSightBlock ())) {
-		bResult = !IsSightWall (x, y);
-	}
-	/* 隠す範囲の境目を越えたマスは照らすが、その先へは広げない */
-	if (bResult && IsHideAreaCross ((int)pChar->dwX, (int)pChar->dwY, x, y)) {
-		bResult = FALSE;
-	}
-	if (bResult == FALSE) {
-		if (nMapDarkTmpPos == 0) {
-			g_pMapDarkTmp[nPos] += nTmp;
+		/* 見える範囲(視界)の外？ */
+		if (!IsInViewRange (cx, cy)) {
+			continue;
 		}
-		g_pMapDarkTmpPos[nPos] = 1;
-		return;
+		nTmp = GetMapDarkLevel (pChar, cx, cy);
+		if (GetMapLightLevel () && (nTmp == 1)) {
+			continue;
+		}
+
+		nPos = (1 + DRAW_PARTS_X + (cx - (int)pMyChar->dwX)) + (W * (1 + DRAW_PARTS_Y + (cy - (int)pMyChar->dwY)));
+		nMapDarkTmpPos = g_pMapDarkTmpPos[nPos];
+
+		if (g_pMapDarkTmp[nPos] + (char)nTmp > 100) {
+			nTmp = 100 - g_pMapDarkTmp[nPos];
+		}
+
+		bResult = TRUE;
+		/* 灯りの元のマスは壁でも照らして広げる */
+		if (!bStart && (IsSightBlock ())) {
+			bResult = !IsSightWall (cx, cy);
+		}
+		/* 隠す範囲の境目を越えたマスは照らすが、その先へは広げない */
+		if (bResult && IsHideAreaCross ((int)pChar->dwX, (int)pChar->dwY, cx, cy)) {
+			bResult = FALSE;
+		}
+		if (bResult == FALSE) {
+			if (nMapDarkTmpPos == 0) {
+				g_pMapDarkTmp[nPos] += nTmp;
+			}
+			g_pMapDarkTmpPos[nPos] = 1;
+			continue;
+		}
+
+		if (g_pMapDarkTmp[nPos] < 0) {
+			g_pMapDarkTmp[nPos] = 1;
+			continue;
+		}
+
+		if (nMapDarkTmpPos == 0) {
+			g_pMapDarkTmp[nPos] += (char)nTmp;
+		}
+
+		/* 灯りが通ったマスは 2 (斜め隣の壁を照らす目印) */
+		g_pMapDarkTmpPos[nPos] = 2;
+
+		for (i = 0; i < 4; i ++) {
+			int nx = cx + anDX[i], ny = cy + anDY[i], bx, by;
+
+			bx = 1 + DRAW_PARTS_X + (nx - (int)pMyChar->dwX);
+			by = 1 + DRAW_PARTS_Y + (ny - (int)pMyChar->dwY);
+			if ((bx < 0) || (by < 0) || (bx >= W) || (by >= DRAW_PARTS_Y * 2 + 3)) {
+				continue;
+			}
+			if (abyDone[bx + W * by]) {
+				continue;
+			}
+			abyDone[bx + W * by] = 1;
+			anQX[nTail] = nx;
+			anQY[nTail] = ny;
+			nTail ++;
+		}
 	}
-
-	if (g_pMapDarkTmp[nPos] < 0) {
-		g_pMapDarkTmp[nPos] = 1;
-		return;
-	}
-
-	if (nMapDarkTmpPos == 0) {
-		g_pMapDarkTmp[nPos] += (char)nTmp;
-	}
-
-	/* 灯りが通ったマスは 2 (斜め隣の壁を照らす目印) */
-	g_pMapDarkTmpPos[nPos] = 2;
-
-	RenewMapDarkWork (pChar, x, y - 1, nCount - 1);
-	RenewMapDarkWork (pChar, x, y + 1, nCount - 1);
-	RenewMapDarkWork (pChar, x - 1, y, nCount - 1);
-	RenewMapDarkWork (pChar, x + 1, y, nCount - 1);
 }
 
 /* ========================================================================= */
