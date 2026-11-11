@@ -909,6 +909,7 @@ enum {
 	LEAVESTATE_GOLD,											/* 預ける金額設定 */
 	LEAVESTATE_GOLDGET,											/* 引き取る金額設定 */
 	LEAVESTATE_ITEMSORTSWAP,									/* 並べ替え：入れ替える2つを選ぶ（引き取る時と同じ一覧） */
+	LEAVESTATE_ITEMPUTWAIT,										/* 預けた結果をサーバーから待っている */
 };
 
 /* 冒険者登録所状態 */
@@ -2476,6 +2477,11 @@ typedef struct _CMDPARA_DATA1 {
 	DWORD		pID;												/* プレイヤーID */
 	DWORD		dwTblID;											/* テーブルID */
 } CMDPARA_DATA1, *PCMDPARA_DATA1;
+
+/* 預けた結果（サーバー→クライアントの CMD_LEAVEITEM の byData） */
+#define LEAVEITEMRES_OK			(0)									/* 預けた */
+#define LEAVEITEMRES_FULL		(1)									/* 預かり所がいっぱい（100種類まで） */
+#define LEAVEITEMRES_QUEST		(2)									/* 依頼の品は預けられない */
 
 /* 汎用データ２ */
 typedef struct _CMDPARA_DATA2 {

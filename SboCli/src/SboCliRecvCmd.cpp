@@ -201,6 +201,7 @@ void	RecvDataProcTARGETCHARPC			(PBYTE, DWORD);			/* 受信データ処理(つ�
 void	RecvDataProcADDCHAREFC				(PBYTE, DWORD);			/* 受信データ処理(文字エフェクト追加) */
 void	RecvDataProcCHGMAPCOLOR				(PBYTE, DWORD);			/* 受信データ処理(マップ色変換) */
 void	RecvDataProcSTTMPLATE				(PBYTE, DWORD);			/* 受信データ処理(ステータステンプレート情報) */
+void	RecvDataProcLEAVEITEM				(PBYTE, DWORD);			/* 受信データ処理(預けた結果) */
 void	RecvDataProcLEAVEITEMGET			(PBYTE, DWORD);			/* 受信データ処理(預けてるアイテム一覧) */
 void	RecvDataProcCOUNTSUBGAME			(PBYTE, DWORD);			/* 受信データ処理(サブゲーム数通知) */
 void	RecvDataProcSUBGAMEINFO				(PBYTE, DWORD);			/* 受信データ処理(サブゲーム情報更新) */
@@ -292,7 +293,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcADDCHAREFC,				/* CMD_ADDCHAREFC */
 	NULL,								/* CMD_CHGEQU */
 	RecvDataProcCHGMAPCOLOR,			/* CMD_CHGMAPCOLOR */
-	NULL,								/* CMD_LEAVEITEM */
+	RecvDataProcLEAVEITEM,				/* CMD_LEAVEITEM */
 	RecvDataProcLEAVEITEMGET,			/* CMD_LEAVEITEMGET */
 	RecvDataProcCOUNTSUBGAME,			/* CMD_COUNTSUBGAME */
 	RecvDataProcSUBSTATUS,				/* CMD_SUBSTATUS */
@@ -6101,6 +6102,32 @@ void RecvDataProcLEAVEITEMGET(BYTE *pData, DWORD dwDataSize)
 		g_dwActiveMsgID = pWndTmp->dwID;
 		g_bEnableMove = TRUE;
 	}
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcLEAVEITEM											 */
+/* 内容：受信データ処理(預けた結果)											 */
+/*       いっぱい・依頼の品の時は預かり所の人が断る							 */
+/* ========================================================================= */
+void RecvDataProcLEAVEITEM(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_DATA1 pRecv = (PCMDPARA_DATA1)pData;
+	PWNDINFO pWndTmp;
+	BYTE bySelect = 1;
+
+	if (g_nProcShopState != LEAVESTATE_ITEMPUTWAIT) {
+		return;
+	}
+	if (pRecv->byData == LEAVEITEMRES_FULL) {
+		bySelect = 3;
+	} else if (pRecv->byData == LEAVEITEMRES_QUEST) {
+		bySelect = 11;
+	}
+	pWndTmp = MakeWindowLEAVE (bySelect);
+	g_WndInfo.Add (pWndTmp);
+	g_dwActiveMsgID = pWndTmp->dwID;
+	g_bEnableMove = TRUE;
+	g_bDraw = TRUE;
 }
 
 /* ========================================================================= */

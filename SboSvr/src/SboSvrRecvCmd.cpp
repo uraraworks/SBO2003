@@ -6062,6 +6062,12 @@ void RecvDataProcDROPITEM(PBYTE pData, DWORD dwDataSize)
 #endif
 			return;
 		}
+		/* 依頼の品は売れない・捨てられない（持ち物を送り直して元に戻す） */
+		if (QuestIsQuestItem ((WORD)pPara->dwData2)) {
+			SendCmdSYSMSG (pChar->pID, "依頼の品は、売ったり捨てたりできません。", SPEECHCMD_BATTLE1);
+			SendCmdCHARITEM (pChar->pID, pPara->dwTblID);
+			return;
+		}
 
 		/* 売った？（売値はクライアントの申告ではなく、クライアントと同じ式でサーバーが決める） */
 		if (pPara->dwData1 > 0) {
@@ -6750,6 +6756,7 @@ void RecvDataProcSTTMPLATE(PBYTE pData, DWORD dwDataSize)
 /* 内容：受信データ処理(アイテム預ける)										 */
 /* 日付：2003/11/07															 */
 /* ========================================================================= */
+static void SendLeaveItemResult(PCHARINFO pChar, BYTE byResult);
 void RecvDataProcLEAVEITEM(PBYTE pData, DWORD dwDataSize)
 {
 	PCMDPARA_DATA1 pPara = (PCMDPARA_DATA1)pData;
@@ -6772,12 +6779,32 @@ void RecvDataProcLEAVEITEM(PBYTE pData, DWORD dwDataSize)
 		}
 	}
 
-	/* 預かり所に入れる（いっぱいなら何もしない） */
+	/* 依頼の品は預けられない */
+	if (QuestIsQuestItem (pChar->waItem[pPara->byData])) {
+		SendLeaveItemResult (pChar, LEAVEITEMRES_QUEST);
+		return;
+	}
+	/* 預かり所に入れる（いっぱいなら断る） */
 	if (!AddLeaveItem (pChar, pChar->waItem[pPara->byData])) {
+		SendLeaveItemResult (pChar, LEAVEITEMRES_FULL);
 		return;
 	}
 	DelCharItem (pPara->dwTblID, pPara->byData);
 	SendCmdCHARITEM (pPara->pID, pPara->dwTblID);
+	SendLeaveItemResult (pChar, LEAVEITEMRES_OK);
+}
+
+/* 預けた結果をクライアントに返す（クライアントは結果を待ってから預かり所の人の返事を出す） */
+static void SendLeaveItemResult(PCHARINFO pChar, BYTE byResult)
+{
+	CMDPARA_DATA1 Para;
+
+	ZeroMemory (&Para, sizeof (Para));
+	Para.byCmd		= CMD_LEAVEITEM;
+	Para.byData		= byResult;
+	Para.pID		= pChar->pID;
+	Para.dwTblID	= pChar->dwTblID;
+	svrSock.SendTo (pChar->pID, (LPBYTE)&Para, sizeof (Para), SENDTIMEOUT);
 }
 
 /* ========================================================================= */

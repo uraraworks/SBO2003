@@ -2075,10 +2075,37 @@ static void TestQuest(const std::vector<int> &aLogin)
 		}
 	}
 
-	/* 宝箱：持ち主が話す → 品物・旗1・次の段。仲間（別の人の宝箱）は見えないので何も起きない */
+	/* 管理者は見えるだけ：光に話しても移らない */
+	{
+		PCHARINFO pPortalA = QuestFindCopy(pOwner, 1);
+		if (pPortalA) {
+			pOther->byAdminLV = ADMINLV_ADMINISTRATOR;
+			QuestMovePC(pOther, nMap, (int)pPortalA->dwX, (int)pPortalA->dwY + 1);
+			DWORD dwX0 = pOther->dwX, dwY0 = pOther->dwY;
+			QuestSendTalk(pOther, pPortalA->dwTblID);
+			printf("quest admin portal moved=%d\n", (int)(pOther->dwX != dwX0 || pOther->dwY != dwY0));
+			pOther->byAdminLV = ADMINLV_USER;
+			QuestMovePC(pOther, nMap, aCell[7].first, aCell[7].second);
+		}
+	}
+
+	/* 宝箱：持ち物がいっぱいなら受け取れない（預かり所にも入らず、旗も立たない） */
 	PCHARINFO pChest = QuestFindCopy(pOwner, 2);
 	if (pChest) {
 		QuestMovePC(pOwner, nMap, (int)pChest->dwX, (int)pChest->dwY + 1);
+		for (int i = 0; i < MAX_MYITEM; i ++) pOwner->waItem[i] = wItemR;
+		QuestSendTalk(pOwner, pChest->dwTblID);
+		int nLeaveQ = 0;
+		if (pOwner->dwLeaveID && pOwner->dwLeaveID < (DWORD)g_aLeaveInfo.GetSize()) {
+			PLEAVEINFO pL = g_aLeaveInfo[pOwner->dwLeaveID];
+			for (int i = 0; i < pL->byCount; i ++) if (pL->waItem[i] == wItemQ) nLeaveQ += pL->byItemCount[i];
+		}
+		printf("quest chest full item=%d leave=%d flag1=%d step=%u\n", QuestCountItem(pOwner, wItemQ), nLeaveQ, QuestFlagCheck(pOwner, 1), pOwner->byQuestStep);
+		ZeroMemory(pOwner->waItem, sizeof(pOwner->waItem));
+	}
+
+	/* 宝箱：持ち主が話す → 品物・旗1・次の段。仲間（別の人の宝箱）は見えないので何も起きない */
+	if (pChest) {
 		QuestSendTalk(pOwner, pChest->dwTblID);
 		printf("quest chest item=%d flag1=%d step=%u person=%d chest=%d\n", QuestCountItem(pOwner, wItemQ), QuestFlagCheck(pOwner, 1),
 			pOwner->byQuestStep, (QuestFindCopy(pOwner, 3) != NULL), (QuestFindCopy(pOwner, 2) != NULL));
@@ -2215,6 +2242,49 @@ static void TestQuest(const std::vector<int> &aLogin)
 			if (p->byNpcType == NPCTYPE_QUESTNPC && p->pProc == NULL) nQuestNpcLoaded ++;
 		}
 		printf("quest npc loaded=%d\n", nQuestNpcLoaded);
+	}
+
+	/* 依頼の品は預けられない・売れない。預かり所が100種類なら断られる（どちらも結果が返る） */
+	{
+		ZeroMemory(pOther->waItem, sizeof(pOther->waItem));
+		pOther->waItem[0] = wItemQ;
+		pOther->waItem[1] = wItemR;
+		CMDPARA_DATA1 Leave;
+		ZeroMemory(&Leave, sizeof(Leave));
+		Leave.byCmd = CMD_LEAVEITEM;
+		Leave.pID = pOther->pID;
+		Leave.dwTblID = pOther->dwTblID;
+		MockTrace(1);
+		Leave.byData = 0;
+		TestRecv(pOther, &Leave, sizeof(Leave));
+		int nQ = QuestCountItem(pOther, wItemQ);
+		CMDPARA_DATA5 Sell;
+		ZeroMemory(&Sell, sizeof(Sell));
+		Sell.byCmd = CMD_DROPITEM;
+		Sell.byData = 0;
+		Sell.pID = pOther->pID;
+		Sell.dwTblID = pOther->dwTblID;
+		Sell.dwData1 = 1;
+		Sell.dwData2 = wItemQ;
+		DWORD dwGold0 = pOther->dwGold;
+		TestRecv(pOther, &Sell, sizeof(Sell));
+		int nQSell = QuestCountItem(pOther, wItemQ);
+		/* 預かり所を100種類で埋める */
+		AddLeaveItem(pOther, wItemR);
+		PLEAVEINFO pL = g_aLeaveInfo[pOther->dwLeaveID];
+		LEAVEINFO LeaveBack = *pL;
+		for (int i = 0; i < MAX_LEAVEITEM; i ++) { pL->waItem[i] = (WORD)(60000 + i); pL->byItemCount[i] = 1; }
+		pL->byCount = MAX_LEAVEITEM;
+		Leave.byData = 1;
+		TestRecv(pOther, &Leave, sizeof(Leave));
+		int nR = QuestCountItem(pOther, wItemR);
+		*pL = LeaveBack;
+		Leave.byData = 1;
+		TestRecv(pOther, &Leave, sizeof(Leave));
+		MockTrace(0);
+		char *psz = MockCmdData(anConn[2], CMD_LEAVEITEM);
+		printf("quest leave questitem=%d sell=%d gold+=%d full=%d res=%s after=%d\n", nQ, nQSell, (int)(pOther->dwGold - dwGold0), nR, psz, QuestCountItem(pOther, wItemR));
+		free(psz);
 	}
 
 	/* 片付け */
