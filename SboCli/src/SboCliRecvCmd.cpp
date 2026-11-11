@@ -72,6 +72,52 @@ int	GetMapPosLight						(int mx, int my, BYTE *pbyPower, BYTE *pbyFlg);									
 static int s_nPartsLightX = 0;			/* 灯りのマップ座標(X) */
 static int s_nPartsLightY = 0;			/* 灯りのマップ座標(Y) */
 static int s_nPartsLightRange = 0;		/* 灯りの範囲(マス) */
+
+/* 灯りごとに照らせたマス(DrawMapLight で、その灯りが届いたマスだけを明るくする)。
+   見えるマス全体だけで決めていると、壁や棚にさえぎられて照らせていないマスにも
+   ほかの灯りの丸が描かれ、そこだけ黒い四角になっていた */
+#define LIGHTMASK_MAX	48
+typedef struct _LIGHTMASK {
+	const void	*pKey;						/* キャラの灯り(キャラ情報) */
+	int			nX, nY;						/* マップの灯り(パーツ・光源)の位置 */
+	BYTE		abyMask[SCRMARTSSIZE];		/* 1=照らせたマス */
+} LIGHTMASK, *PLIGHTMASK;
+static LIGHTMASK	s_aLightMask[LIGHTMASK_MAX];
+static int			s_nLightMaskCount = 0;
+
+static void SaveLightMask(const void *pKey, int x, int y)
+{
+	int i;
+	PLIGHTMASK pMask;
+
+	if (s_nLightMaskCount >= LIGHTMASK_MAX) {
+		return;
+	}
+	pMask = &s_aLightMask[s_nLightMaskCount ++];
+	pMask->pKey = pKey;
+	pMask->nX = x;
+	pMask->nY = y;
+	for (i = 0; i < SCRMARTSSIZE; i ++) {
+		pMask->abyMask[i] = g_pMapDarkTmpPos[i] ? 1 : 0;
+	}
+}
+
+/* 灯りが照らせたマスを取得(キャラの灯りは pKey、マップの灯りは pKey=NULL と位置。無ければ NULL) */
+const BYTE *GetLightMask(const void *pKey, int x, int y)
+{
+	int i;
+
+	for (i = 0; i < s_nLightMaskCount; i ++) {
+		if (s_aLightMask[i].pKey != pKey) {
+			continue;
+		}
+		if ((pKey == NULL) && ((s_aLightMask[i].nX != x) || (s_aLightMask[i].nY != y))) {
+			continue;
+		}
+		return s_aLightMask[i].abyMask;
+	}
+	return NULL;
+}
 BOOL	CheckEquUserInfo					(WORD, BYTE);											/* 装備職業情報にあるか判定 */
 BOOL	CheckItemSexDistinction				(PITEMINFO, PCHARINFO);									/* 性別による使えるかチェック */
 BOOL	CheckCharBlock						(DWORD, DWORD);											/* キャラのぶつかり判定 */
@@ -1008,6 +1054,7 @@ void RenewCharPosInfo(void)
 	nCount = g_aCharInfo.GetSize ();
 
 	ZeroMemory (g_pMapDarkTmp, SCRMARTSSIZE);
+	s_nLightMaskCount = 0;
 
 	for (i = 0; i < nCount; i ++) {
 		PCHARINFO pChar;
@@ -1569,6 +1616,7 @@ void RenewMapDark(PCHARINFO pChar)
 
 	RenewMapDarkWork (pChar, pChar->dwX, pChar->dwY, DRAW_PARTS_X);
 	RenewMapDarkCorner (pChar);
+	SaveLightMask (pChar, 0, 0);
 }
 
 /* ========================================================================= */
@@ -1624,6 +1672,7 @@ void RenewMapDarkParts(void)
 			ZeroMemory (g_pMapDarkTmpPos, SCRMARTSSIZE);
 			RenewMapDarkLightFlood (mx, my, nRange);
 			RenewMapDarkCorner (NULL);
+			SaveLightMask (NULL, mx, my);
 		}
 	}
 }
@@ -1690,7 +1739,9 @@ static void RenewMapDarkLightFlood(int mx, int my, int nRange)
 		}
 		/* 壁(灯りのマス自身は壁に付いたたいまつでも照らす) */
 		bWall = FALSE;
-		if (((x != mx) || (y != my)) && IsSightBlock ()) {
+		/* 灯りのすぐ下のマスも、ふさがっていても越えて照らす
+		   (壁のたいまつの前に棚などが置いてあると、部屋が照らされなかった) */
+		if (((x != mx) || (y != my)) && ((x != mx) || (y != my + 1)) && IsSightBlock ()) {
 			bWall = IsSightWall (x, y);
 		}
 		/* 隠す範囲の境目を越えたマスは照らすが、その先へは広げない */
