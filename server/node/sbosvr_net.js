@@ -23,6 +23,7 @@ Module['sboNet'] = (function () {
 	var fs = require('fs');
 	var path = require('path');
 	var crypto = require('crypto');
+	var zlib = require('zlib');
 
 	var aConn = {};			/* 接続番号 → { sock, ws, slot, closing } */
 	var nNextConn = 1;
@@ -265,6 +266,121 @@ Module['sboNet'] = (function () {
 	var aHashCache = {};		/* フルパス → { mtime, size, hash } */
 	var VER_EXT = { '.js': 1, '.wasm': 1, '.data': 1, '.sf3': 1, '.css': 1, '.png': 1, '.ico': 1, '.m4a': 1 };
 
+	/*
+	 * 圧縮して配る
+	 *   本番（IIS）はサーバーの返事をそのまま流すので、ここで圧縮する（.wasm・.data 約 14MB → 約 7MB）。
+	 *   brotli（br）が使えるブラウザには br、ほかは gzip。同じ中身は 1 回だけ圧縮して覚えておく。
+	 *   br の最高圧縮は .data で数十秒かかるので、大きいファイルは裏で作り、できるまでは gzip で返す。
+	 *   起動直後に配るファイルの br を前もって作っておく（warmCompress）。
+	 *   ステージングの Caddy は、すでに圧縮済みの返事を圧縮し直さない。
+	 *   .png・.m4a・.sf3 は中身がもう圧縮されているので対象外（.m4a は Range にも答えるため）。
+	 */
+	var ZIP_EXT = { '.html': 1, '.js': 1, '.wasm': 1, '.data': 1, '.css': 1, '.json': 1, '.ico': 1 };
+	var ZIP_MIN = 1024;					/* これより小さいファイルは圧縮しない */
+	var ZIP_WAIT_BR = 512 * 1024;		/* これ以下なら br ができるのを待って返す */
+	var aZipCache = {};					/* フルパス → { hash, br, gz, wait: { br, gz } } */
+
+	/* ブラウザが受け取れる圧縮の種類（'br'・'gzip'・null） */
+	function pickEncoding(req) {
+		var ok = {};
+		String(req.headers['accept-encoding'] || '').split(',').forEach(function (s) {
+			var a = s.trim().toLowerCase().split(';');
+			var q = /^\s*q=([\d.]+)/.exec(a[1] || '');
+			if (a[0] && !(q && parseFloat(q[1]) === 0)) {
+				ok[a[0].trim()] = true;
+			}
+		});
+		return ok.br ? 'br' : (ok.gzip ? 'gzip' : null);
+	}
+
+	/* 圧縮したものを作る（同じ物を同時に頼まれたら 1 回で済ませる）。cb(Buffer か null) */
+	function zipMake(file, hash, data, kind, cb) {
+		var c = aZipCache[file];
+		if (!c || c.hash !== hash) {
+			c = aZipCache[file] = { hash: hash, br: null, gz: null, wait: { br: null, gz: null } };
+		}
+		if (c[kind]) {
+			cb(c[kind]);
+			return;
+		}
+		if (c.wait[kind]) {
+			c.wait[kind].push(cb);
+			return;
+		}
+		c.wait[kind] = [cb];
+		function done(err, out) {
+			var a = c.wait[kind];
+			c.wait[kind] = null;
+			if (err) {
+				log('圧縮に失敗しました: ' + file + ' ' + err.message);
+			} else {
+				c[kind] = out;
+			}
+			a.forEach(function (f) {
+				f(err ? null : out);
+			});
+		}
+		if (kind === 'br') {
+			var params = {};
+			params[zlib.constants.BROTLI_PARAM_QUALITY] = zlib.constants.BROTLI_MAX_QUALITY;
+			params[zlib.constants.BROTLI_PARAM_SIZE_HINT] = data.length;
+			zlib.brotliCompress(data, { params: params }, done);
+		} else {
+			zlib.gzip(data, { level: 9 }, done);
+		}
+	}
+
+	/* 送る中身を決める。cb(中身, 'br'・'gzip'・null)。br がまだ無い大きいファイルは gzip で返し、br は裏で作る */
+	function zipBody(file, hash, data, enc, cb) {
+		if (!enc || data.length < ZIP_MIN || !ZIP_EXT[path.extname(file).toLowerCase()]) {
+			cb(data, null);
+			return;
+		}
+		var c = aZipCache[file];
+		if (enc === 'br' && c && c.hash === hash && c.br) {
+			cb(c.br, 'br');
+			return;
+		}
+		if (enc === 'br' && data.length <= ZIP_WAIT_BR) {
+			zipMake(file, hash, data, 'br', function (out) {
+				cb(out || data, out ? 'br' : null);
+			});
+			return;
+		}
+		if (enc === 'br') {
+			zipMake(file, hash, data, 'br', function () {});
+		}
+		zipMake(file, hash, data, 'gz', function (out) {
+			cb(out || data, out ? 'gzip' : null);
+		});
+	}
+
+	/* 起動直後に、配るファイルの br を 1 つずつ前もって作っておく（最初のお客さんを待たせない） */
+	function warmCompress() {
+		var ver = assetVersions();
+		var aName = Object.keys(ver).filter(function (name) {
+			return ZIP_EXT[path.extname(name).toLowerCase()];
+		});
+		var t0 = Date.now();
+		(function next() {
+			var name = aName.shift();
+			if (!name) {
+				log('配るファイルの圧縮を作り終えました（' + Math.round((Date.now() - t0) / 1000) + ' 秒）');
+				return;
+			}
+			var file = path.join(strWwwDir, name);
+			fs.readFile(file, function (err, data) {
+				if (err || data.length < ZIP_MIN) {
+					next();
+					return;
+				}
+				zipMake(file, ver[name], data, 'br', function () {
+					next();
+				});
+			});
+		})();
+	}
+
 	/* ファイルの中身のハッシュ（更新日時と大きさが同じ間は覚えておく） */
 	function fileHash(file, st, data) {
 		var c = aHashCache[file];
@@ -379,7 +495,14 @@ Module['sboNet'] = (function () {
 			}
 			var ext = path.extname(file).toLowerCase();
 			var headers = { 'Content-Type': MIME[ext] || 'application/octet-stream' };
-			var ifNoneMatch = String(req.headers['if-none-match'] || '').split(/\s*,\s*/);
+			var ifNoneMatch = String(req.headers['if-none-match'] || '').split(/\s*,\s*/).map(function (s) {
+				return s.replace(/^W\//, '');
+			});
+			var enc = ZIP_EXT[ext] ? pickEncoding(req) : null;
+			if (ZIP_EXT[ext]) {
+				/* 圧縮するかどうかがブラウザで変わるので、間の中継（IIS・Caddy）にも知らせる */
+				headers['Vary'] = 'Accept-Encoding';
+			}
 
 			if (ext === '.html') {
 				fs.readFile(file, function (err, data) {
@@ -389,8 +512,7 @@ Module['sboNet'] = (function () {
 						return;
 					}
 					data = Buffer.from(rewriteHtml(String(data), assetVersions()));
-					var etag = '"' + crypto.createHash('sha1').update(data).digest('hex').slice(0, 16) + '"';
-					send(data, etag, 'no-cache');
+					send(data, crypto.createHash('sha1').update(data).digest('hex').slice(0, 16), 'no-cache');
 				});
 				return;
 			}
@@ -398,7 +520,7 @@ Module['sboNet'] = (function () {
 			/* 中身のハッシュは覚えておくので、304 を返すだけならファイルを読まずに済む */
 			var cached = aHashCache[file];
 			if (cached && cached.mtime === st.mtimeMs && cached.size === st.size) {
-				if (reply304('"' + cached.hash + '"', cached.hash)) {
+				if (reply304(cached.hash, cacheControl(cached.hash))) {
 					return;
 				}
 			}
@@ -409,29 +531,38 @@ Module['sboNet'] = (function () {
 					return;
 				}
 				var hash = fileHash(file, st, data);
-				if (reply304('"' + hash + '"', hash)) {
-					return;
-				}
-				send(data, '"' + hash + '"', cacheControl(hash));
+				send(data, hash, cacheControl(hash));
 			});
 
 			/* ?v= が今の中身の版と同じなら長く覚えさせる。違う・無い時は毎回確かめさせる */
 			function cacheControl(hash) {
 				return query.get('v') === hash ? 'public, max-age=31536000, immutable' : 'no-cache';
 			}
-			/* 中身が変わっていなければ 304 を返す */
-			function reply304(etag, hash) {
-				if (ifNoneMatch.indexOf(etag) < 0) {
+			/* ETag。圧縮した時は中身のバイト列が違うので後ろに -br・-gz を付ける */
+			function etagOf(hash, used) {
+				return '"' + hash + (used === 'br' ? '-br' : used === 'gzip' ? '-gz' : '') + '"';
+			}
+			/* 中身が変わっていなければ 304 を返す（-br・-gz の付いた ETag でもよい） */
+			function reply304(hash, cc) {
+				var ok = [null, 'br', 'gzip'].some(function (used) {
+					return ifNoneMatch.indexOf(etagOf(hash, used)) >= 0;
+				});
+				if (!ok) {
 					return false;
 				}
-				res.writeHead(304, { 'ETag': etag, 'Cache-Control': hash ? cacheControl(hash) : 'no-cache' });
+				var h = { 'ETag': etagOf(hash, enc), 'Cache-Control': cc };
+				if (headers['Vary']) {
+					h['Vary'] = headers['Vary'];
+				}
+				res.writeHead(304, h);
 				res.end();
 				return true;
 			}
-			function send(data, etag, cc) {
-				if (reply304(etag, null)) {
+			function send(data, hash, cc) {
+				if (reply304(hash, cc)) {
 					return;
 				}
+				var etag = etagOf(hash, null);
 				headers['Cache-Control'] = cc;
 				headers['ETag'] = etag;
 				/* 音声は Range（一部だけ）の要求に 206 で答える。範囲がおかしければ 416 */
@@ -461,9 +592,19 @@ Module['sboNet'] = (function () {
 					res.end(req.method === 'HEAD' ? undefined : data.slice(start, end + 1));
 					return;
 				}
-				headers['Content-Length'] = data.length;
-				res.writeHead(200, headers);
-				res.end(req.method === 'HEAD' ? undefined : data);
+				zipBody(file, hash, data, enc, function (body, used) {
+					if (used) {
+						/* 圧縮した時は Content-Length を付けない。ブラウザ版の .data の読み込み表示（Emscripten）は
+						   Content-Length を全体の大きさとして展開後のバイト数と比べるので、付けると 100% を超えてしまう。
+						   付けなければ .data の本当の大きさを使ってくれる */
+						headers['Content-Encoding'] = used;
+						headers['ETag'] = etagOf(hash, used);
+					} else {
+						headers['Content-Length'] = body.length;
+					}
+					res.writeHead(200, headers);
+					res.end(req.method === 'HEAD' ? undefined : body);
+				});
 			}
 		});
 	}
@@ -497,6 +638,7 @@ Module['sboNet'] = (function () {
 				});
 				web.listen(nHttpPort, function () {
 					log('HTTP ポート ' + nHttpPort + ' で待ち受けを開始しました');
+					setTimeout(warmCompress, 2000);
 					if (Module['sboStatus']) {
 						Module['sboStatus'].start();
 					}
