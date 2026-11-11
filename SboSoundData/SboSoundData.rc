@@ -339,7 +339,7 @@ BEGIN
             VALUE "FileDescription", "SboSoundData\0"
             VALUE "FileVersion", "0, 0, 3, 4\0"
             VALUE "InternalName", "SboSoundData\0"
-            VALUE "LegalCopyright", "Copyright(C)URARA-works 2003-2007\0"
+            VALUE "LegalCopyright", "Copyright(C)URARA-works 2003-2007,2026-\0"
             VALUE "LegalTrademarks", "\0"
             VALUE "OriginalFilename", "SboSoundData.dll\0"
             VALUE "PrivateBuild", "\0"

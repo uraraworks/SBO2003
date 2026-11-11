@@ -261,7 +261,7 @@ void DrawScreenTITLE(void)
 
 	wsprintf (szBuf, "スクラップブックオンライン");
 	TextOut2 (hDC, SCRSIZEX / 2 - (SboTextWidth (szBuf) * 8) / 2 - 8, SCRSIZEY / 2 + 52, szBuf, RGB (255, 255, 255));
-	wsprintf (szBuf, "Presented By URARA-works 2003-2007");
+	wsprintf (szBuf, "Presented By URARA-works 2003-2007,2026-");
 	TextOut2 (hDC, SCRSIZEX / 2 - (SboTextWidth (szBuf) * 8) / 2 - 8, SCRSIZEY / 2 - 85 + 82 + 218, szBuf, RGB (255, 255, 255));
 
 	SelectObject (hDC, hFontOld);
@@ -302,7 +302,7 @@ void DrawScreenLOGIN(void)
 
 	wsprintf (szBuf, "スクラップブックオンライン");
 	TextOut2 (hDC, nX1, SCRSIZEY - 24 - 8, szBuf, RGB (255, 255, 255));
-	wsprintf (szBuf, "Presented By URARA-works 2003-2007");
+	wsprintf (szBuf, "Presented By URARA-works 2003-2007,2026-");
 	TextOut2 (hDC, nX2, SCRSIZEY - 12 - 8, szBuf, RGB (255, 255, 255));
 
 	SelectObject (hDC, hFontOld);
