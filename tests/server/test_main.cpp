@@ -17,10 +17,12 @@
  *   K. 傭兵                      … 道さがしの表が前の方法と同じ結果か・敵探しの速さ・道具を持たせる取り引き
  *   M. ギルドの依頼              … 受ける・見えるNPCが持ち主と仲間にだけ届く・宝箱・ポータル・渡して報酬・保存して読み直し
  *   N. 並べ替え                  … 道具欄・預かり所の入れ替え・種類順・50音順（装備の付け替え・取り引き中は動かない・50音キー）
+ *   O. 接続ID検索                … 配列・ID変更後も先頭の一致を返すことと、多数キャラでの速さ
  */
 #include "stdafx.h"
 #include "SboSvrRecvCmd.h"
 #include "CharProcSEARCH2.h"
+#include "CharProcSEARCH.h"
 /* 傭兵の道さがしを中から確かめるため、protected も見えるようにして読み込む */
 #define protected public
 #include "CharProcMERCENARY.h"
@@ -134,6 +136,211 @@ static int Connect(int nConn, BOOL bPreCheck)
 	memcpy(abyBuf + sizeof(Info), &dwReply, sizeof(DWORD));
 	SboSockOnData(nNo, abyBuf, sizeof(abyBuf));
 	return nNo;
+}
+
+/* ========================================================================= */
+/* 関数名：	TestZlib													 */
+/* 内容：	パケットごとの初期化と再利用のバイト列・展開結果・時間を比較	 */
+/* ========================================================================= */
+static void TestZlib(void)
+{
+	const DWORD aSize[] = {256, 4096, 32768};
+	const int NRUN = 1000;
+	for (int k = 0; k < 3; k ++) {
+		DWORD dwSize = aSize[k];
+		std::vector<BYTE> aSrc(dwSize), aOld(dwSize), aNew(dwSize), aOut(dwSize);
+		/* ゲーム側・既存テストの乱数を消費しない */
+		for (DWORD i = 0; i < dwSize; i ++) aSrc[i] = (BYTE)(i / 7 + i / 251);
+		CmyZlib Fresh, Reuse, Inflate;
+		DWORD dwOld = 0, dwNew = 0;
+		double d0 = NowMs();
+		for (int i = 0; i < NRUN; i ++) {
+			if (!Fresh.DeflateInit()) abort();
+			dwOld = Fresh.Deflate(&aSrc[0], dwSize, &aOld[0], dwSize);
+			Fresh.DeflateEnd();
+		}
+		double d1 = NowMs();
+		if (!Reuse.DeflateInit() || !Inflate.InflateInit()) abort();
+		for (int i = 0; i < NRUN; i ++) {
+			dwNew = Reuse.Deflate(&aSrc[0], dwSize, &aNew[0], dwSize);
+		}
+		double d2 = NowMs();
+		if (!dwNew || dwNew != dwOld || memcmp(&aOld[0], &aNew[0], dwOld)) {
+			fprintf(stderr, "zlib 圧縮結果が不一致\n"); abort();
+		}
+		/* 連続展開・破損データ・出力不足の後も独立したパケットとして扱う */
+		for (int i = 0; i < 6; i ++) {
+			if (Inflate.Inflate(&aNew[0], dwNew, &aOut[0], dwSize) != dwSize || memcmp(&aSrc[0], &aOut[0], dwSize)) abort();
+			if (Inflate.Inflate(&aNew[0], dwNew, &aOut[0], 1) != 0) abort();
+			aNew[0] ^= 0xFF;
+			if (Inflate.Inflate(&aNew[0], dwNew, &aOut[0], dwSize) != 0) abort();
+			aNew[0] ^= 0xFF;
+		}
+		Reuse.DeflateEnd();
+		Inflate.InflateEnd();
+		printf("BENCH zlib bytes=%u runs=%d old_ms=%.1f reuse_ms=%.1f same=1\n", dwSize, NRUN, d1 - d0, d2 - d1);
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：	TestZlibPackets												 */
+/* 内容：	送受信の交互実行・展開失敗後の復旧・Destroy後の再開を確認	 */
+/* ========================================================================= */
+static void TestZlibPackets(void)
+{
+	extern DWORD SvrTakeRecvSize(const BYTE *pData);
+	WNDCLASS wc = {};
+	wc.lpszClassName = "SBOZLIBTEST";
+	wc.lpfnWndProc = (WNDPROC)DefWindowProc;
+	RegisterClass(&wc);
+	HWND hWnd = CreateWindow(wc.lpszClassName, "t", 0, 0, 0, 1, 1, NULL, NULL, NULL, NULL);
+	if (!hWnd) abort();
+	CUraraSockTCP Sock;
+	CCRC Crc;
+	for (int round = 0; round < 2; round ++) {
+		if (!Sock.Host(hWnd, 2004, 2)) abort();
+		MockReset();
+		int anSlot[] = {Connect(1, TRUE), Connect(2, TRUE)};
+		for (int k = 0; k < 8; k ++) {
+			DWORD dwSize = k % 2 ? 32768 : 256;
+			std::vector<BYTE> aSrc(dwSize), aBody(dwSize + 5);
+			for (DWORD i = 0; i < dwSize; i ++) aSrc[i] = (BYTE)(i / 5 + k);
+			CmyZlib Zlib;
+			if (!Zlib.DeflateInit()) abort();
+			DWORD dwZipped = Zlib.Deflate(&aSrc[0], dwSize, &aBody[5], dwSize);
+			Zlib.DeflateEnd();
+			if (!dwZipped) abort();
+			aBody.resize(dwZipped + 5);
+			aBody[0] = 0xFF;
+			DWORD dwOut = k == 4 ? 1 : dwSize;
+			memcpy(&aBody[1], &dwOut, 4);
+			if (k == 2) aBody[5] ^= 0xFF;
+			URARASOCK_PACKETINFO Info;
+			Info.dwSize = (DWORD)aBody.size();
+			Info.dwCRC = Crc.GetCRC(&aBody[0], Info.dwSize);
+			std::vector<BYTE> aPacket(sizeof(Info) + Info.dwSize);
+			memcpy(&aPacket[0], &Info, sizeof(Info));
+			memcpy(&aPacket[sizeof(Info)], &aBody[0], Info.dwSize);
+			Sock.SendTo(URARASOCK_IDBASE + anSlot[k % 2], &aSrc[0], dwSize);
+			SboSockOnData(anSlot[k % 2], &aPacket[0], (int)aPacket.size());
+			MSG Msg;
+			int nRecv = 0;
+			while (PeekMessage(&Msg, NULL, 0, 0, PM_REMOVE)) {
+				if (Msg.message != WM_URARASOCK_RECV) continue;
+				PBYTE pData = (PBYTE)Msg.wParam;
+				DWORD dwRecv = SvrTakeRecvSize(pData);
+				if (dwRecv != dwSize || memcmp(pData, &aSrc[0], dwSize)) abort();
+				delete [] pData;
+				nRecv ++;
+			}
+			if (nRecv != ((k == 2 || k == 4) ? 0 : 1)) {
+				fprintf(stderr, "zlib パケットの展開結果が不一致 round=%d k=%d\n", round, k); abort();
+			}
+		}
+		Sock.Destroy();
+	}
+	DestroyWindow(hWnd);
+	printf("BENCH zlib packets rounds=2 checks=16 same=1\n");
+}
+
+/* 変更前の CanStep を残して、返り値と BATTLE2 の副作用を照合する */
+class CTestSearch : public CCharProcSEARCH
+{
+public:
+	using CCharProcSEARCH::CanStep;
+	BOOL OldCanStep(PCHARINFO pCharTmp, int x, int y)
+	{
+		PMAPINFO pMap = g_aMapInfo[m_pChar->dwMapID];
+		if ((x < 0) || (x >= pMap->nCX) || (y < 0) || (y >= pMap->nCY)) return FALSE;
+		if (!NpcProcSEARCH_Check(m_pChar, pCharTmp, x, y)) return FALSE;
+		if (CheckCharBlockPC(m_pChar->dwMapID, (DWORD)x, (DWORD)y) != -1) return FALSE;
+		if (CheckCharBlockNPC2(m_pChar->dwTblID, m_pChar->dwMapID, (DWORD)x, (DWORD)y) != -1) return FALSE;
+		return TRUE;
+	}
+};
+
+/* ========================================================================= */
+/* 関数名：	TestSearchStep												 */
+/* 内容：	独立したマップで旧判定と比較（壁・イベント・PC・NPC・範囲外） */
+/* ========================================================================= */
+static void TestSearchStep(void)
+{
+	const int NPC = 128, NRUN = 100000;
+	MAPINFO Map = {};
+	WORD awMap[16 * 16];
+	DWORD adwPC[NPC], adwNPC[2];
+	CHARINFO *aChar = new CHARINFO[NPC + 2]();
+	EVENTINFO Event = {};
+	int nMap = g_aMapInfo.GetSize(), nChar = g_aCharInfo.GetSize();
+	WORD wFloor = 0, wWall = 0;
+	for (int i = 0; i < g_wCountMapParts; i ++) {
+		if (g_aMapPartsInfo[i].byHitType == PARTSHIT_NONE) wFloor = (WORD)i;
+		if (g_aMapPartsInfo[i].byHitType == PARTSHIT_BLOCK1) wWall = (WORD)i;
+	}
+	std::fill(awMap, awMap + 16 * 16, wFloor);
+	awMap[4 + 5 * 16] = wWall;
+	Map.dwID = nMap;
+	Map.nCX = Map.nCY = 16;
+	Map.pwMap = awMap;
+	Map.paTblNoPC = adwPC;
+	Map.dwCountTblNoPC = NPC;
+	Map.paTblNoNPC = adwNPC;
+	Map.dwCountTblNoNPC = 2;
+	Event.dwX = 6; Event.dwY = 4;
+	Map.pEvent = &Event; Map.nEventCount = 1;
+	g_aMapInfo.Add(&Map);
+	for (int i = 0; i < NPC + 2; i ++) {
+		PCHARINFO p = &aChar[i];
+		p->dwTblID = nChar + i; p->dwMapID = nMap;
+		p->dwX = 10 + i % 6; p->dwY = 10 + i / 6 % 6;
+		p->wHP = 10; p->byGameState = GAMESTATE_MOVE;
+		p->wGrpMain = CHARGRP_MAIN_NORMAL;
+		g_aCharInfo.Add(p);
+		if (i < NPC) adwPC[i] = p->dwTblID;
+		else adwNPC[i - NPC] = p->dwTblID;
+	}
+	PCHARINFO pNpc = &aChar[NPC];
+	pNpc->dwX = 4; pNpc->dwY = 4;
+	aChar[NPC + 1].dwX = 7; aChar[NPC + 1].dwY = 4;
+	aChar[NPC + 1].byNpcType = NPCTYPE_SEARCH;
+	CTestSearch Proc;
+	Proc.Create(pNpc);
+	int nCases = 0;
+	for (int mode = 0; mode < 5; mode ++) {
+		aChar[0].dwX = 5; aChar[0].dwY = 4;
+		aChar[0].wHP = mode == 1 ? 0 : 10;
+		aChar[0].byGameState = mode == 2 ? GAMESTATE_LOGOFF : GAMESTATE_MOVE;
+		aChar[0].wGrpMain = mode == 3 ? CHARGRP_MAIN_4848 : CHARGRP_MAIN_NORMAL;
+		/* PCとイベントが重なる場合も、ターゲット変更を先に行う */
+		if (mode == 4) aChar[0].dwX = 6;
+		for (int type = 0; type < 2; type ++) {
+			pNpc->byNpcType = type ? NPCTYPE_BATTLE2 : NPCTYPE_SEARCH;
+			for (int y = -1; y <= 16; y ++) for (int x = -1; x <= 16; x ++) {
+				pNpc->dwTargetTblID = (DWORD)-1;
+				BOOL bOld = Proc.OldCanStep(&aChar[0], x, y);
+				CHARINFO Old = *pNpc;
+				pNpc->dwTargetTblID = (DWORD)-1;
+				BOOL bNew = Proc.CanStep(&aChar[0], x, y);
+				if (bOld != bNew || memcmp(&Old, pNpc, sizeof(Old))) {
+					fprintf(stderr, "SEARCH 判定が不一致 mode=%d type=%d (%d,%d)\n", mode, type, x, y); abort();
+				}
+				nCases ++;
+			}
+		}
+	}
+	/* PCに当たらないマスでは全PCを二度走査していた */
+	aChar[0].dwX = 10; aChar[0].dwY = 10;
+	int nOld = 0, nNew = 0;
+	double d0 = NowMs();
+	for (int i = 0; i < NRUN; i ++) nOld += Proc.OldCanStep(&aChar[0], 5, 4);
+	double d1 = NowMs();
+	for (int i = 0; i < NRUN; i ++) nNew += Proc.CanStep(&aChar[0], 5, 4);
+	double d2 = NowMs();
+	if (nOld != NRUN || nNew != nOld) abort();
+	printf("BENCH search step pcs=%d runs=%d old_ms=%.1f new_ms=%.1f cases=%d same=1\n", NPC, NRUN, d1 - d0, d2 - d1, nCases);
+	g_aCharInfo.RemoveAt(nChar, NPC + 2);
+	g_aMapInfo.RemoveAt(nMap);
+	delete [] aChar;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -367,6 +574,8 @@ static void TestSearch2(void)
 	int nMaps = g_aMapInfo.GetSize();
 	double dStart = NowMs();
 	int nRuns = 0;
+	/* 同じ作業領域で探索を繰り返し、マップ変更時の初期化も確認 */
+	CTestSearch2 Proc;
 	for (int m = 0; m < nMaps; m ++) {
 		PMAPINFO pMap = g_aMapInfo[m];
 		if (pMap->nCX < 4 || pMap->nCY < 4) {
@@ -385,7 +594,6 @@ static void TestSearch2(void)
 			Char.byDirection = (BYTE)(Rnd() % 4);
 			Char.bySearchCx = (BYTE)(10 + Rnd() % 30);
 			Char.bySearchCy = (BYTE)(10 + Rnd() % 30);
-			CTestSearch2 Proc;
 			std::string str;
 			Proc.Run(&Char, nEx, nEy, str);
 			nRuns ++;
@@ -732,6 +940,7 @@ static void TestWorld(void)
 			printf("npctype %d count %d\n", i, anType[i]);
 		}
 	}
+	TestSearchStep();
 	TestSearch2();
 
 	/* データには PC がいないので、NPC を複製して PC を作る（ログアウト中 3000 人、うち NLOGIN 人をログイン中にする） */
@@ -2265,6 +2474,174 @@ static void TestSortItem(const std::vector<int> &aLogin)
 	pL->byAdminLV = byAdminBackL;
 }
 
+/* ========================================================================= */
+/* 関数名：	CheckMapNo													 */
+/* 内容：	マップ番号の検索結果を確認									 */
+/* ========================================================================= */
+static void CheckMapNo(DWORD dwID, int nExpected)
+{
+	int nNo = GetMapNo(dwID);
+	if (nNo != nExpected) {
+		fprintf(stderr, "GetMapNo(%u): %d != %d\n", dwID, nNo, nExpected);
+		abort();
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：	TestMapNo													 */
+/* 内容：	マップ配列変更後の検索と、同じIDの繰り返し検索を確認		 */
+/* ========================================================================= */
+static void TestMapNo(void)
+{
+	/* ゲームデータの読込前に、独立した配列で確かめる（乱数は使わない） */
+	MAPINFO *aMap = new MAPINFO[256];
+	ZeroMemory(aMap, sizeof(MAPINFO) * 256);
+	CheckMapNo(0, -1);
+	for (int i = 0; i < 256; i ++) {
+		aMap[i].dwID = 1000 + i;
+		g_aMapInfo.Add(&aMap[i]);
+	}
+	CheckMapNo(1255, 255);
+	CheckMapNo(1255, 255);
+	CheckMapNo(999, -1);
+	CheckMapNo(1255, 255);
+
+	const int NRUN = 1000000;
+	int nSum = 0;
+	double dStart = NowMs();
+	for (int i = 0; i < NRUN; i ++) nSum += GetMapNo(1255);
+	printf("BENCH getmapno maps=256 runs=%d sum=%d ms=%.1f\n", NRUN, nSum, NowMs() - dStart);
+
+	/* 同じ要素数での並べ替えとID変更 */
+	g_aMapInfo[0] = &aMap[255];
+	g_aMapInfo[255] = &aMap[0];
+	CheckMapNo(1255, 0);
+	aMap[255].dwID = 2000;
+	CheckMapNo(1255, -1);
+	CheckMapNo(2000, 0);
+	/* 先頭への挿入・削除で番号がずれる */
+	g_aMapInfo.RemoveAt(0);
+	CheckMapNo(1000, 254);
+	g_aMapInfo.InsertAt(0, &aMap[255]);
+	CheckMapNo(1000, 255);
+	g_aMapInfo.RemoveAt(255);
+	CheckMapNo(1000, -1);
+	/* 同じ番号を別のマップが使う場合と、全削除・再読込 */
+	CheckMapNo(1001, 1);
+	g_aMapInfo[1] = &aMap[0];
+	CheckMapNo(1001, -1);
+	CheckMapNo(1000, 1);
+	g_aMapInfo.RemoveAll();
+	CheckMapNo(1000, -1);
+	g_aMapInfo.Add(&aMap[0]);
+	CheckMapNo(1000, 0);
+	g_aMapInfo.RemoveAll();
+	delete [] aMap;
+}
+
+/* ========================================================================= */
+/* 関数名：	CheckCharNo													 */
+/* 内容：	従来の先頭からの検索と結果を比較							 */
+/* ========================================================================= */
+static void CheckCharNo(DWORD pID)
+{
+	int nExpected = -1;
+	if (pID) {
+		for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+			if (g_aCharInfo[i]->pID == pID) {
+				nExpected = i;
+				break;
+			}
+		}
+	}
+	int nNo = GetCharNo(pID);
+	if (nNo != nExpected) {
+		fprintf(stderr, "GetCharNo(%u): %d != %d\n", pID, nNo, nExpected);
+		abort();
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：	TestCharNo													 */
+/* 内容：	キャラ配列・接続ID変更後の検索と、多数キャラでの計測		 */
+/* ========================================================================= */
+static void TestCharNo(void)
+{
+	/* 実データ読込前に確認する。ゲームの乱数・通信は使わない */
+	const int NCHAR = 4096, NRUN = 200000;
+	CHARINFO *aChar = new CHARINFO[NCHAR];
+	ZeroMemory(aChar, sizeof(CHARINFO) * NCHAR);
+	CheckCharNo(0);
+	CheckCharNo(URARASOCK_IDBASE);
+	for (int i = 0; i < NCHAR; i ++) {
+		/* NPC・オフラインと、末尾のログイン中PC */
+		aChar[i].pID = (i % 2) ? i + 1 : 0;
+		g_aCharInfo.Add(&aChar[i]);
+	}
+	for (int i = NCHAR - 32; i < NCHAR; i ++) {
+		aChar[i].pID = URARASOCK_IDBASE + i;
+		CheckCharNo(aChar[i].pID);
+		CheckCharNo(aChar[i].pID);
+	}
+	/* 複数接続を交互に調べる。合計も固定出力にして呼び出しを確認 */
+	int nSum = 0;
+	double dStart = NowMs();
+	for (int i = 0; i < NRUN; i ++) nSum += GetCharNo(URARASOCK_IDBASE + NCHAR - 32 + i % 32);
+	printf("BENCH getcharno chars=%d runs=%d sum=%d ms=%.1f\n", NCHAR, NRUN, nSum, NowMs() - dStart);
+
+	DWORD pID = aChar[NCHAR - 1].pID;
+	/* キャッシュ先が配列の範囲外になってから、同じIDを追加し直す */
+	g_aCharInfo.RemoveAt(NCHAR - 1);
+	CheckCharNo(pID);
+	g_aCharInfo.Add(&aChar[NCHAR - 1]);
+	CheckCharNo(pID);
+	/* 同じ件数での入れ替え・接続ID変更・切断後のID再利用 */
+	std::swap(g_aCharInfo[0], g_aCharInfo[NCHAR - 1]);
+	CheckCharNo(pID);
+	aChar[NCHAR - 1].pID = 0;
+	CheckCharNo(pID);
+	aChar[100].pID = pID;
+	CheckCharNo(pID);
+	g_aCharInfo.RemoveAt(0);
+	CheckCharNo(pID);
+	g_aCharInfo.InsertAt(0, &aChar[NCHAR - 1]);
+	CheckCharNo(pID);
+	g_aCharInfo.SetAt(100, &aChar[101]);
+	CheckCharNo(pID);
+	g_aCharInfo.SetAt(100, &aChar[100]);
+	CheckCharNo(pID);
+	/* 未ログインの検索後に同じ接続がログインしても見つかる */
+	CheckCharNo(pID + 1);
+	aChar[100].pID = pID + 1;
+	CheckCharNo(pID + 1);
+	CheckCharNo(pID);
+	/* NPCと重複し得るIDは常に先頭を返す（前方に後から重複を作る） */
+	aChar[100].pID = 42;
+	CheckCharNo(42);
+	aChar[10].pID = 42;
+	CheckCharNo(42);
+	std::swap(g_aCharInfo[10], g_aCharInfo[100]);
+	CheckCharNo(42);
+	g_aCharInfo.RemoveAt(10);
+	CheckCharNo(42);
+	g_aCharInfo.RemoveAll();
+	CheckCharNo(pID + 1);
+	/* 件数増加でキャッシュ済みIDがNPCの範囲に入っても先頭を返す */
+	aChar[0].pID = 2;
+	g_aCharInfo.Add(&aChar[0]);
+	CheckCharNo(2);
+	aChar[1].pID = 2;
+	g_aCharInfo.InsertAt(0, &aChar[1]);
+	CheckCharNo(2);
+	g_aCharInfo.RemoveAll();
+	CheckCharNo(2);
+	g_aCharInfo.Add(&aChar[1]);
+	CheckCharNo(2);
+	g_aCharInfo.RemoveAll();
+	delete [] aChar;
+	printf("getcharno mutations=ok\n");
+}
+
 int main(int argc, char **argv)
 {
 	setvbuf(stdout, NULL, _IOLBF, 0);
@@ -2273,6 +2650,10 @@ int main(int argc, char **argv)
 		fprintf(stderr, "chdir failed\n");
 		return 1;
 	}
+	TestMapNo();
+	TestCharNo();
+	TestZlib();
+	TestZlibPackets();
 	TestSend();
 	TestMyArray();
 	TestSugorokuViewer();

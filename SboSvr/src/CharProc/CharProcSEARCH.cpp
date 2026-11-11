@@ -441,17 +441,18 @@ BOOL CCharProcSEARCH::IsTargetValid(PCHARINFO pCharTmp)
 BOOL CCharProcSEARCH::CanStep(PCHARINFO pCharTmp, int x, int y)
 {
 	PMAPINFO pMap;
+	DWORD dwBlockPC;
 
 	pMap = g_aMapInfo[m_pChar->dwMapID];
 	if ((x < 0) || (x >= pMap->nCX) || (y < 0) || (y >= pMap->nCY)) {
 		return FALSE;
 	}
 	/* 障害物・イベント（戦闘２はぶつかったプレイヤーにターゲットを変える） */
-	if (NpcProcSEARCH_Check (m_pChar, pCharTmp, x, y) == FALSE) {
+	if (NpcProcSEARCH_Check (m_pChar, pCharTmp, x, y, &dwBlockPC) == FALSE) {
 		return FALSE;
 	}
-	/* プレイヤーと重なる？ */
-	if (CheckCharBlockPC (m_pChar->dwMapID, (DWORD)x, (DWORD)y) != -1) {
+	/* PCの配置・状態は変わっていないので、直前の判定を使う */
+	if (dwBlockPC != -1) {
 		return FALSE;
 	}
 	/* ほかのNPCと重なる？ */

@@ -1,3 +1,4 @@
+getcharno mutations=ok
 == A. SendTo ==
 send#0 size=0 id=100000 pri=0 total=8 sha=262701071aee8da1
 send#1 size=0 id=100000 pri=1 total=16 sha=b5355f837af2651c

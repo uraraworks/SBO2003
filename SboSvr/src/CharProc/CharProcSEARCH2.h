@@ -9,6 +9,8 @@
 #pragma once
 
 #include "CharProcBase.h"
+#include <vector>
+#include <utility>
 
 /* ========================================================================= */
 /* 構造体宣言																 */
@@ -45,6 +47,7 @@ protected:
 	BOOL	IsMove					(int nDirection);		/* 移動するか判定 */
 	BOOL	IsTargetReady			(void);					/* ターゲットが有効か判定 */
 	void	Init					(void);					/* 初期化 */
+	void	ClearSearchMap			(void);					/* 検索用マップを消去 */
 	DWORD	Search					(BOOL bPCCheck);		/* 検索 */
 	int		SearchMove				(void);					/* 検索移動 */
 	void	InfoCleanup				(int x, int y);			/* 情報最適化 */
@@ -73,6 +76,9 @@ protected:
 	DWORD				m_dwSearchLastTime;		/* 前回の処理時間 */
 	PWORD				m_pwSearchMap;			/* 検索用マップ */
 	ARRAYSEARCH2INFO	m_aSearchInfo;			/* 検索情報 */
+	DWORD				m_dwSearchMapCapacity;	/* 検索用マップの容量 */
+	std::vector<int>	m_anSearchMapUsed;		/* 書き込んだマップの添字 */
+	std::vector<std::pair<WORD, int> > m_aSearchOpen;	/* 未処理候補（スコア、追加順） */
 } CCharProcSEARCH2, *PCCharProcSEARCH2;
 
 /* Copyright(C)URARA-works 2006 */

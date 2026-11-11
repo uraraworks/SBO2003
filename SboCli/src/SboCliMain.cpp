@@ -278,6 +278,7 @@ static void MainLoopWeb(void)
 	   ここで描かずに次のフレームへ持ち越すと、先に届いた受信データ
 	   （マップ切り替えなど）を処理した直後、フェードアウト開始前に
 	   次のマップが一度描かれてしまう */
+	FlushCharPosInfo ();
 	UpdateWindow (g_hWndMain);
 
 	W32PerfEndFrame ();
@@ -379,6 +380,11 @@ void SboCliMain(LPSTR lpszArgs)
 /* ========================================================================= */
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+	/* 受信以外の処理(描画・キー入力・切断など)に古い一覧や灯りを渡さない */
+	if ((msg != WM_URARASOCK_RECV) && (msg != WM_RCVDATA)) {
+		FlushCharPosInfo ();
+	}
+
 	switch (msg) {
 	case WM_CREATE:			return OnCreate (hWnd);
 	case WM_INITEND:		OnInitEnd		(hWnd);			break;
@@ -1898,8 +1904,10 @@ void ReleaseData(void)
 void TimerProc(void)
 {
 	int i, nCount;
-	DWORD dwTime = timeGetTime ();
+	DWORD dwTime;
 
+	FlushCharPosInfo ();
+	dwTime = timeGetTime ();
 	if (g_bDrawStop) {
 		return;
 	}
@@ -2125,6 +2133,7 @@ void TimerProc(void)
 
 	/* フェードアウトが終わったら、取っておいた受信データ(次のマップ情報など)を処理する */
 	RecvDataHoldProc ();
+	FlushCharPosInfo ();
 
 	/* カーソル */
 	if (abs (timeGetTime () - g_dwTimeLastCursor) > 100) {
