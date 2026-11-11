@@ -22,6 +22,7 @@
 #include "stdafx.h"
 #include "SboSvrRecvCmd.h"
 #include "CharProcSEARCH2.h"
+#include "CharProcSEARCH.h"
 /* 傭兵の道さがしを中から確かめるため、protected も見えるようにして読み込む */
 #define protected public
 #include "CharProcMERCENARY.h"
@@ -135,6 +136,211 @@ static int Connect(int nConn, BOOL bPreCheck)
 	memcpy(abyBuf + sizeof(Info), &dwReply, sizeof(DWORD));
 	SboSockOnData(nNo, abyBuf, sizeof(abyBuf));
 	return nNo;
+}
+
+/* ========================================================================= */
+/* 関数名：	TestZlib													 */
+/* 内容：	パケットごとの初期化と再利用のバイト列・展開結果・時間を比較	 */
+/* ========================================================================= */
+static void TestZlib(void)
+{
+	const DWORD aSize[] = {256, 4096, 32768};
+	const int NRUN = 1000;
+	for (int k = 0; k < 3; k ++) {
+		DWORD dwSize = aSize[k];
+		std::vector<BYTE> aSrc(dwSize), aOld(dwSize), aNew(dwSize), aOut(dwSize);
+		/* ゲーム側・既存テストの乱数を消費しない */
+		for (DWORD i = 0; i < dwSize; i ++) aSrc[i] = (BYTE)(i / 7 + i / 251);
+		CmyZlib Fresh, Reuse, Inflate;
+		DWORD dwOld = 0, dwNew = 0;
+		double d0 = NowMs();
+		for (int i = 0; i < NRUN; i ++) {
+			if (!Fresh.DeflateInit()) abort();
+			dwOld = Fresh.Deflate(&aSrc[0], dwSize, &aOld[0], dwSize);
+			Fresh.DeflateEnd();
+		}
+		double d1 = NowMs();
+		if (!Reuse.DeflateInit() || !Inflate.InflateInit()) abort();
+		for (int i = 0; i < NRUN; i ++) {
+			dwNew = Reuse.Deflate(&aSrc[0], dwSize, &aNew[0], dwSize);
+		}
+		double d2 = NowMs();
+		if (!dwNew || dwNew != dwOld || memcmp(&aOld[0], &aNew[0], dwOld)) {
+			fprintf(stderr, "zlib 圧縮結果が不一致\n"); abort();
+		}
+		/* 連続展開・破損データ・出力不足の後も独立したパケットとして扱う */
+		for (int i = 0; i < 6; i ++) {
+			if (Inflate.Inflate(&aNew[0], dwNew, &aOut[0], dwSize) != dwSize || memcmp(&aSrc[0], &aOut[0], dwSize)) abort();
+			if (Inflate.Inflate(&aNew[0], dwNew, &aOut[0], 1) != 0) abort();
+			aNew[0] ^= 0xFF;
+			if (Inflate.Inflate(&aNew[0], dwNew, &aOut[0], dwSize) != 0) abort();
+			aNew[0] ^= 0xFF;
+		}
+		Reuse.DeflateEnd();
+		Inflate.InflateEnd();
+		printf("BENCH zlib bytes=%u runs=%d old_ms=%.1f reuse_ms=%.1f same=1\n", dwSize, NRUN, d1 - d0, d2 - d1);
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：	TestZlibPackets												 */
+/* 内容：	送受信の交互実行・展開失敗後の復旧・Destroy後の再開を確認	 */
+/* ========================================================================= */
+static void TestZlibPackets(void)
+{
+	extern DWORD SvrTakeRecvSize(const BYTE *pData);
+	WNDCLASS wc = {};
+	wc.lpszClassName = "SBOZLIBTEST";
+	wc.lpfnWndProc = (WNDPROC)DefWindowProc;
+	RegisterClass(&wc);
+	HWND hWnd = CreateWindow(wc.lpszClassName, "t", 0, 0, 0, 1, 1, NULL, NULL, NULL, NULL);
+	if (!hWnd) abort();
+	CUraraSockTCP Sock;
+	CCRC Crc;
+	for (int round = 0; round < 2; round ++) {
+		if (!Sock.Host(hWnd, 2004, 2)) abort();
+		MockReset();
+		int anSlot[] = {Connect(1, TRUE), Connect(2, TRUE)};
+		for (int k = 0; k < 8; k ++) {
+			DWORD dwSize = k % 2 ? 32768 : 256;
+			std::vector<BYTE> aSrc(dwSize), aBody(dwSize + 5);
+			for (DWORD i = 0; i < dwSize; i ++) aSrc[i] = (BYTE)(i / 5 + k);
+			CmyZlib Zlib;
+			if (!Zlib.DeflateInit()) abort();
+			DWORD dwZipped = Zlib.Deflate(&aSrc[0], dwSize, &aBody[5], dwSize);
+			Zlib.DeflateEnd();
+			if (!dwZipped) abort();
+			aBody.resize(dwZipped + 5);
+			aBody[0] = 0xFF;
+			DWORD dwOut = k == 4 ? 1 : dwSize;
+			memcpy(&aBody[1], &dwOut, 4);
+			if (k == 2) aBody[5] ^= 0xFF;
+			URARASOCK_PACKETINFO Info;
+			Info.dwSize = (DWORD)aBody.size();
+			Info.dwCRC = Crc.GetCRC(&aBody[0], Info.dwSize);
+			std::vector<BYTE> aPacket(sizeof(Info) + Info.dwSize);
+			memcpy(&aPacket[0], &Info, sizeof(Info));
+			memcpy(&aPacket[sizeof(Info)], &aBody[0], Info.dwSize);
+			Sock.SendTo(URARASOCK_IDBASE + anSlot[k % 2], &aSrc[0], dwSize);
+			SboSockOnData(anSlot[k % 2], &aPacket[0], (int)aPacket.size());
+			MSG Msg;
+			int nRecv = 0;
+			while (PeekMessage(&Msg, NULL, 0, 0, PM_REMOVE)) {
+				if (Msg.message != WM_URARASOCK_RECV) continue;
+				PBYTE pData = (PBYTE)Msg.wParam;
+				DWORD dwRecv = SvrTakeRecvSize(pData);
+				if (dwRecv != dwSize || memcmp(pData, &aSrc[0], dwSize)) abort();
+				delete [] pData;
+				nRecv ++;
+			}
+			if (nRecv != ((k == 2 || k == 4) ? 0 : 1)) {
+				fprintf(stderr, "zlib パケットの展開結果が不一致 round=%d k=%d\n", round, k); abort();
+			}
+		}
+		Sock.Destroy();
+	}
+	DestroyWindow(hWnd);
+	printf("BENCH zlib packets rounds=2 checks=16 same=1\n");
+}
+
+/* 変更前の CanStep を残して、返り値と BATTLE2 の副作用を照合する */
+class CTestSearch : public CCharProcSEARCH
+{
+public:
+	using CCharProcSEARCH::CanStep;
+	BOOL OldCanStep(PCHARINFO pCharTmp, int x, int y)
+	{
+		PMAPINFO pMap = g_aMapInfo[m_pChar->dwMapID];
+		if ((x < 0) || (x >= pMap->nCX) || (y < 0) || (y >= pMap->nCY)) return FALSE;
+		if (!NpcProcSEARCH_Check(m_pChar, pCharTmp, x, y)) return FALSE;
+		if (CheckCharBlockPC(m_pChar->dwMapID, (DWORD)x, (DWORD)y) != -1) return FALSE;
+		if (CheckCharBlockNPC2(m_pChar->dwTblID, m_pChar->dwMapID, (DWORD)x, (DWORD)y) != -1) return FALSE;
+		return TRUE;
+	}
+};
+
+/* ========================================================================= */
+/* 関数名：	TestSearchStep												 */
+/* 内容：	独立したマップで旧判定と比較（壁・イベント・PC・NPC・範囲外） */
+/* ========================================================================= */
+static void TestSearchStep(void)
+{
+	const int NPC = 128, NRUN = 100000;
+	MAPINFO Map = {};
+	WORD awMap[16 * 16];
+	DWORD adwPC[NPC], adwNPC[2];
+	CHARINFO *aChar = new CHARINFO[NPC + 2]();
+	EVENTINFO Event = {};
+	int nMap = g_aMapInfo.GetSize(), nChar = g_aCharInfo.GetSize();
+	WORD wFloor = 0, wWall = 0;
+	for (int i = 0; i < g_wCountMapParts; i ++) {
+		if (g_aMapPartsInfo[i].byHitType == PARTSHIT_NONE) wFloor = (WORD)i;
+		if (g_aMapPartsInfo[i].byHitType == PARTSHIT_BLOCK1) wWall = (WORD)i;
+	}
+	std::fill(awMap, awMap + 16 * 16, wFloor);
+	awMap[4 + 5 * 16] = wWall;
+	Map.dwID = nMap;
+	Map.nCX = Map.nCY = 16;
+	Map.pwMap = awMap;
+	Map.paTblNoPC = adwPC;
+	Map.dwCountTblNoPC = NPC;
+	Map.paTblNoNPC = adwNPC;
+	Map.dwCountTblNoNPC = 2;
+	Event.dwX = 6; Event.dwY = 4;
+	Map.pEvent = &Event; Map.nEventCount = 1;
+	g_aMapInfo.Add(&Map);
+	for (int i = 0; i < NPC + 2; i ++) {
+		PCHARINFO p = &aChar[i];
+		p->dwTblID = nChar + i; p->dwMapID = nMap;
+		p->dwX = 10 + i % 6; p->dwY = 10 + i / 6 % 6;
+		p->wHP = 10; p->byGameState = GAMESTATE_MOVE;
+		p->wGrpMain = CHARGRP_MAIN_NORMAL;
+		g_aCharInfo.Add(p);
+		if (i < NPC) adwPC[i] = p->dwTblID;
+		else adwNPC[i - NPC] = p->dwTblID;
+	}
+	PCHARINFO pNpc = &aChar[NPC];
+	pNpc->dwX = 4; pNpc->dwY = 4;
+	aChar[NPC + 1].dwX = 7; aChar[NPC + 1].dwY = 4;
+	aChar[NPC + 1].byNpcType = NPCTYPE_SEARCH;
+	CTestSearch Proc;
+	Proc.Create(pNpc);
+	int nCases = 0;
+	for (int mode = 0; mode < 5; mode ++) {
+		aChar[0].dwX = 5; aChar[0].dwY = 4;
+		aChar[0].wHP = mode == 1 ? 0 : 10;
+		aChar[0].byGameState = mode == 2 ? GAMESTATE_LOGOFF : GAMESTATE_MOVE;
+		aChar[0].wGrpMain = mode == 3 ? CHARGRP_MAIN_4848 : CHARGRP_MAIN_NORMAL;
+		/* PCとイベントが重なる場合も、ターゲット変更を先に行う */
+		if (mode == 4) aChar[0].dwX = 6;
+		for (int type = 0; type < 2; type ++) {
+			pNpc->byNpcType = type ? NPCTYPE_BATTLE2 : NPCTYPE_SEARCH;
+			for (int y = -1; y <= 16; y ++) for (int x = -1; x <= 16; x ++) {
+				pNpc->dwTargetTblID = (DWORD)-1;
+				BOOL bOld = Proc.OldCanStep(&aChar[0], x, y);
+				CHARINFO Old = *pNpc;
+				pNpc->dwTargetTblID = (DWORD)-1;
+				BOOL bNew = Proc.CanStep(&aChar[0], x, y);
+				if (bOld != bNew || memcmp(&Old, pNpc, sizeof(Old))) {
+					fprintf(stderr, "SEARCH 判定が不一致 mode=%d type=%d (%d,%d)\n", mode, type, x, y); abort();
+				}
+				nCases ++;
+			}
+		}
+	}
+	/* PCに当たらないマスでは全PCを二度走査していた */
+	aChar[0].dwX = 10; aChar[0].dwY = 10;
+	int nOld = 0, nNew = 0;
+	double d0 = NowMs();
+	for (int i = 0; i < NRUN; i ++) nOld += Proc.OldCanStep(&aChar[0], 5, 4);
+	double d1 = NowMs();
+	for (int i = 0; i < NRUN; i ++) nNew += Proc.CanStep(&aChar[0], 5, 4);
+	double d2 = NowMs();
+	if (nOld != NRUN || nNew != nOld) abort();
+	printf("BENCH search step pcs=%d runs=%d old_ms=%.1f new_ms=%.1f cases=%d same=1\n", NPC, NRUN, d1 - d0, d2 - d1, nCases);
+	g_aCharInfo.RemoveAt(nChar, NPC + 2);
+	g_aMapInfo.RemoveAt(nMap);
+	delete [] aChar;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -734,6 +940,7 @@ static void TestWorld(void)
 			printf("npctype %d count %d\n", i, anType[i]);
 		}
 	}
+	TestSearchStep();
 	TestSearch2();
 
 	/* データには PC がいないので、NPC を複製して PC を作る（ログアウト中 3000 人、うち NLOGIN 人をログイン中にする） */
@@ -2445,6 +2652,8 @@ int main(int argc, char **argv)
 	}
 	TestMapNo();
 	TestCharNo();
+	TestZlib();
+	TestZlibPackets();
 	TestSend();
 	TestMyArray();
 	TestSugorokuViewer();
