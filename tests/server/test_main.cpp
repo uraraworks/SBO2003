@@ -367,6 +367,8 @@ static void TestSearch2(void)
 	int nMaps = g_aMapInfo.GetSize();
 	double dStart = NowMs();
 	int nRuns = 0;
+	/* 同じ作業領域で探索を繰り返し、マップ変更時の初期化も確認 */
+	CTestSearch2 Proc;
 	for (int m = 0; m < nMaps; m ++) {
 		PMAPINFO pMap = g_aMapInfo[m];
 		if (pMap->nCX < 4 || pMap->nCY < 4) {
@@ -385,7 +387,6 @@ static void TestSearch2(void)
 			Char.byDirection = (BYTE)(Rnd() % 4);
 			Char.bySearchCx = (BYTE)(10 + Rnd() % 30);
 			Char.bySearchCy = (BYTE)(10 + Rnd() % 30);
-			CTestSearch2 Proc;
 			std::string str;
 			Proc.Run(&Char, nEx, nEy, str);
 			nRuns ++;

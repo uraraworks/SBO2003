@@ -11,6 +11,8 @@
 #include "stdafx.h"
 #include "SboSvrRecvCmd.h"
 #include "CharProcSEARCH2.h"
+#include <algorithm>
+#include <functional>
 
 /* ========================================================================= */
 /* 定数定義																	 */
@@ -51,6 +53,7 @@ CCharProcSEARCH2::CCharProcSEARCH2()
 	m_nSearchTurn		= 0;
 	m_dwSearchLastTime	= 0;
 	m_pwSearchMap		= NULL;
+	m_dwSearchMapCapacity = 0;
 }
 
 
@@ -239,12 +242,37 @@ void CCharProcSEARCH2::Init(void)
 	m_nSearchTurn		= 0;
 	m_dwSearchLastTime	= timeGetTime ();
 
-	SAFE_DELETE_ARRAY (m_pwSearchMap);
 	dwSize = (m_sizeArea.cx * 2 + 1) * (m_sizeArea.cy * 2 + 1);
-	m_pwSearchMap = new WORD[dwSize];
-	ZeroMemory (m_pwSearchMap, dwSize * sizeof (WORD));
+	if (dwSize > m_dwSearchMapCapacity) {
+		SAFE_DELETE_ARRAY (m_pwSearchMap);
+		m_pwSearchMap = new WORD[dwSize];
+		m_dwSearchMapCapacity = dwSize;
+		ZeroMemory (m_pwSearchMap, dwSize * sizeof (WORD));
+		m_anSearchMapUsed.clear ();
+	} else {
+		ClearSearchMap ();
+	}
 
+	m_aSearchOpen.clear ();
 	m_aSearchInfo.RemoveAll ();
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CCharProcSEARCH2::ClearSearchMap								 */
+/* 内容：	検索用マップの書き込んだ所だけ消去							 */
+/* 日付：	2026/11/11														 */
+/* ========================================================================= */
+
+void CCharProcSEARCH2::ClearSearchMap(void)
+{
+	int i, nCount;
+
+	nCount = (int)m_anSearchMapUsed.size ();
+	for (i = 0; i < nCount; i ++) {
+		m_pwSearchMap[m_anSearchMapUsed[i]] = 0;
+	}
+	m_anSearchMapUsed.clear ();
 }
 
 
@@ -305,6 +333,12 @@ DWORD CCharProcSEARCH2::Search(
 		SearchInfo.wTurn		= (WORD)m_nSearchTurn;
 		nNo = m_aSearchInfo.Add (SearchInfo);
 		m_pwSearchMap[y * m_sizeArea.cx + x] = (WORD)(nNo + 1);
+		m_anSearchMapUsed.push_back (y * m_sizeArea.cx + x);
+		/* 元の走査と同じく、同点は追加順、0xFFFFは選択しない */
+		if (SearchInfo.wScore < 0xFFFF) {
+			m_aSearchOpen.push_back (std::make_pair (SearchInfo.wScore, nNo));
+			std::push_heap (m_aSearchOpen.begin (), m_aSearchOpen.end (), std::greater<std::pair<WORD, int> > ());
+		}
 	}
 
 	return dwRet;
@@ -319,27 +353,18 @@ DWORD CCharProcSEARCH2::Search(
 
 int CCharProcSEARCH2::SearchMove(void)
 {
-	WORD wScore;
-	int i, nNo, nCount, nProcCount, nRet,
-		anDirection[] = {1, 0, 3, 2}, anPosX[] = {0, 0, -1, 1}, anPosY[] = {-1, 1, 0, 0};
+	int nNo, nProcCount, nRet;
 	PSEARCH2INFO pInfo;
 
 	nRet		= 0;
 	nNo			= -1;
-	wScore		= 0xFFFF;
 	nProcCount	= 0;
-	nCount		= m_aSearchInfo.GetSize ();
 
-	/* スコアが最小のルートを検索 */
-	for (i = 0; i < nCount; i ++) {
-		pInfo = &m_aSearchInfo[i];
-		if (pInfo->byState > 0) {
-			continue;
-		}
-		if (pInfo->wScore < wScore) {
-			wScore = pInfo->wScore;
-			nNo = i;
-		}
+	/* スコア、追加順が最小の未処理候補を取り出す */
+	if (!m_aSearchOpen.empty ()) {
+		nNo = m_aSearchOpen.front ().second;
+		std::pop_heap (m_aSearchOpen.begin (), m_aSearchOpen.end (), std::greater<std::pair<WORD, int> > ());
+		m_aSearchOpen.pop_back ();
 	}
 	/* 見つかった？ */
 	if (nNo >= 0) {
@@ -373,7 +398,6 @@ void CCharProcSEARCH2::InfoCleanup(
 	int x,		/* [in] 最終位置(横) */
 	int y)		/* [in] 最終位置(縦) */
 {
-	DWORD dwSize;
 	int i, nNo, nCount,
 		anDirection[] = {1, 0, 3, 2}, anPosX[] = {0, 0, -1, 1}, anPosY[] = {-1, 1, 0, 0};
 	PSEARCH2INFO pInfo;
@@ -396,8 +420,8 @@ void CCharProcSEARCH2::InfoCleanup(
 	}
 
 	/* 本データを更新 */
-	dwSize = (m_sizeArea.cx * 2 + 1) * (m_sizeArea.cy * 2 + 1);
-	ZeroMemory (m_pwSearchMap, dwSize * sizeof (WORD));
+	ClearSearchMap ();
+	m_aSearchOpen.clear ();
 	m_aSearchInfo.RemoveAll ();
 	m_aSearchInfo.Copy (&aSearchInfoTmp);
 
@@ -405,6 +429,7 @@ void CCharProcSEARCH2::InfoCleanup(
 	for (i = nCount - 1; i >= 0; i --) {
 		pInfo = &m_aSearchInfo[i];
 		m_pwSearchMap[m_sizeArea.cx * pInfo->y + pInfo->x] = (WORD)(i + 1);
+		m_anSearchMapUsed.push_back (m_sizeArea.cx * pInfo->y + pInfo->x);
 
 		if (i > 0) {
 			/* 次の位置への向きを設定 */
