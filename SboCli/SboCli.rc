@@ -1158,7 +1158,7 @@ BEGIN
             VALUE "FileDescription", "SboCli\0"
             VALUE "FileVersion", "0.116\0"
             VALUE "InternalName", "SboCli\0"
-            VALUE "LegalCopyright", "Copyright(C)URARA-works 2003-2007\0"
+            VALUE "LegalCopyright", "Copyright(C)URARA-works 2003-2007,2026-\0"
             VALUE "LegalTrademarks", "\0"
             VALUE "OriginalFilename", "SboCli.exe\0"
             VALUE "PrivateBuild", "\0"

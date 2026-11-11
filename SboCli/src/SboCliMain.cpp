@@ -1920,7 +1920,7 @@ void TimerProc(void)
 
 		g_nLoginAnimeX -= 2;
 		if (g_nLoginAnimeX < -32) {
-			g_nLoginAnimeX = SCRSIZEX + strlen ("Presented By URARA-works 2003-2007") * 6;
+			g_nLoginAnimeX = SCRSIZEX + strlen ("Presented By URARA-works 2003-2007,2026-") * 6;
 		}
 	}
 
