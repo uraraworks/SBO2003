@@ -57,6 +57,7 @@
  *   /api/admin/data/tiles  {session, id, x?, y?, w?, h?}      → 上の tiles と同じ
  *   /api/admin/mapedit/apply {session, id, cells:[[x, y, 前, 後]], note?, force?} → マップ確認の編集を反映（履歴 1 件）
  *   /api/admin/mapedit/draft/get・list・save {session, id?, cells?} → 編集の下書き（SboWebMapDrafts.json）
+ *   /api/admin/mapedit/snap/list・save・get・delete {session, id, name?, cells?, snapId?} → 名前を付けたスナップショット（SboWebMapSnapshots.json）
  *   /api/admin/mapedit/resize {session, id, top?, bottom?, left?, right?, fill?, check?} → マップを広げる（履歴に残らない）
  *   /api/admin/mapedit/add    {session, cx, cy, fill?, szName?} → マップを足す
  *   （AI 用キーでも /api/data/map/resize・/api/data/map/add で同じことができる。書き込みもできるキーだけ）
@@ -1322,6 +1323,126 @@ Module['sboData'] = (function () {
 		return { ok: true, savedAt: now, count: body.cells.length };
 	}
 
+	/*
+	 * スナップショット（名前を付けたマップの姿。SBODATA/SboWebMapSnapshots.json。ゲームのデータは変えない）
+	 * 編集画面の今の姿（サーバーのマス目に、まだ反映していない cells を重ねたもの）を丸ごと残し、
+	 * あとで編集画面に読み込める（読み込んでも「サーバーへ反映」するまでゲームは変わらない）。
+	 * マス目は「パーツ番号*続く数」をカンマでつないだ文字列（同じパーツが続く所が多いので短くなる）。
+	 */
+	var MAX_SNAPSHOTS = 30;			/* 1 マップに残せる数 */
+	var snapStore = null, strSnapPath = '';
+	function snaps() {
+		if (!snapStore) {
+			strSnapPath = path.join(dataDir(), 'SboWebMapSnapshots.json');
+			snapStore = readJsonFile(strSnapPath, {});
+			snapStore.version = 1;
+			snapStore.seq = snapStore.seq || 0;
+			snapStore.maps = snapStore.maps || {};
+		}
+		return snapStore;
+	}
+	/* マップのマス目を全部読む（[行][列]） */
+	function readAllTiles(id) {
+		var size = JSON.parse(UTF8ToString(_SboWebDataMapTiles(id, 0, 0, 1, 1)));
+		if (size.error) {
+			fail(404, 'not_found', size.error);
+		}
+		var rows = [];
+		for (var y = 0; y < size.cy; y += 128) {
+			for (var x = 0; x < size.cx; x += 128) {
+				var part = readTiles(id, x, y, Math.min(128, size.cx - x), Math.min(128, size.cy - y));
+				part.forEach(function (row, dy) {
+					var r = rows[y + dy] = rows[y + dy] || [];
+					row.forEach(function (v, dx) { r[x + dx] = v; });
+				});
+			}
+		}
+		return { cx: size.cx, cy: size.cy, mapId: size.mapId, rows: rows };
+	}
+	function packTiles(rows) {
+		var out = [], prev = -1, n = 0;
+		rows.forEach(function (row) {
+			row.forEach(function (v) {
+				if (v === prev) {
+					n++;
+					return;
+				}
+				if (n) out.push(n > 1 ? prev + '*' + n : String(prev));
+				prev = v;
+				n = 1;
+			});
+		});
+		if (n) out.push(n > 1 ? prev + '*' + n : String(prev));
+		return out.join(',');
+	}
+	function snapPublic(s) {
+		return { snapId: s.snapId, name: s.name, at: s.at, by: s.by, cx: s.cx, cy: s.cy };
+	}
+	/* {session, id} → {snapshots:[{snapId, name, at, by, cx, cy}]}（新しい順） */
+	function apiAdminMapSnapList(body) {
+		adminWho(body);
+		var id = checkId(body.id);
+		return { snapshots: (snaps().maps[id] || []).slice().reverse().map(snapPublic) };
+	}
+	/* {session, id, name, cells?:[[x, y, 前, 後], ...]} → 今のマス目に cells を重ねた姿を残す */
+	function apiAdminMapSnapSave(body) {
+		var who = adminWho(body);
+		var id = checkId(body.id);
+		if (id >= count('map')) {
+			fail(400, 'id', 'マップ ' + id + ' 番はありません');
+		}
+		var name = String(body.name || '').trim().slice(0, 60);
+		if (!name) {
+			fail(400, 'name', 'スナップショットの名前を入れてください');
+		}
+		var all = readAllTiles(id);
+		if (Array.isArray(body.cells) && body.cells.length) {
+			checkEditCells(id, body.cells);
+			body.cells.forEach(function (c) { all.rows[c[1]][c[0]] = c[3]; });
+		}
+		var ss = snaps();
+		var list = ss.maps[id] = ss.maps[id] || [];
+		var s = { snapId: ++ss.seq, name: name, at: Date.now(), by: who.label, mapId: all.mapId, cx: all.cx, cy: all.cy, tiles: packTiles(all.rows) };
+		list.push(s);
+		var nDrop = Math.max(0, list.length - MAX_SNAPSHOTS);
+		if (nDrop) list.splice(0, nDrop);
+		writeJsonFile(strSnapPath, ss);
+		return { ok: true, snapshot: snapPublic(s), dropped: nDrop || undefined };
+	}
+	/* {session, id, snapId} → {snapshot:{..., parts:[行][列]}} */
+	function apiAdminMapSnapGet(body) {
+		adminWho(body);
+		var id = checkId(body.id);
+		var s = (snaps().maps[id] || []).filter(function (x) { return x.snapId === body.snapId; })[0];
+		if (!s) {
+			fail(404, 'not_found', 'そのスナップショットはありません');
+		}
+		var flat = [];
+		s.tiles.split(',').forEach(function (tok) {
+			var a = tok.split('*'), v = Number(a[0]), n = a.length > 1 ? Number(a[1]) : 1;
+			for (var i = 0; i < n; i++) flat.push(v);
+		});
+		var rows = [];
+		for (var y = 0; y < s.cy; y++) rows.push(flat.slice(y * s.cx, (y + 1) * s.cx));
+		var r = snapPublic(s);
+		r.parts = rows;
+		return { snapshot: r };
+	}
+	/* {session, id, snapId} → 消す */
+	function apiAdminMapSnapDelete(body) {
+		adminWho(body);
+		var id = checkId(body.id);
+		var ss = snaps();
+		var list = ss.maps[id] || [];
+		var n = list.length;
+		ss.maps[id] = list.filter(function (x) { return x.snapId !== body.snapId; });
+		if (ss.maps[id].length === n) {
+			fail(404, 'not_found', 'そのスナップショットはありません');
+		}
+		writeJsonFile(strSnapPath, ss);
+		return { ok: true };
+	}
+
 	/* ------------------------------------------------------------------ */
 	/* AI 用キー																	 */
 	/* ------------------------------------------------------------------ */
@@ -1802,6 +1923,10 @@ Module['sboData'] = (function () {
 		'/api/admin/mapedit/draft/get': apiAdminMapEditDraftGet,
 		'/api/admin/mapedit/draft/list': apiAdminMapEditDraftList,
 		'/api/admin/mapedit/draft/save': apiAdminMapEditDraftSave,
+		'/api/admin/mapedit/snap/list': apiAdminMapSnapList,
+		'/api/admin/mapedit/snap/save': apiAdminMapSnapSave,
+		'/api/admin/mapedit/snap/get': apiAdminMapSnapGet,
+		'/api/admin/mapedit/snap/delete': apiAdminMapSnapDelete,
 		'/api/admin/mapedit/resize': function (body) { return opMapResize(body, adminWho(body)); },
 		'/api/admin/mapedit/add': function (body) { return opMapAdd(body, adminWho(body)); }
 	};
