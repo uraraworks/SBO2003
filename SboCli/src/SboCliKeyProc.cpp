@@ -3981,8 +3981,10 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				pWndTmp = MakeWindowLEAVE (2);
 
 			} else {
+				/* 預かり所がいっぱい・依頼の品は断られるので、サーバーの返事を待ってから返事を出す */
 				SendCmdLEAVEITEM (pWnd->nData1);
-				pWndTmp = MakeWindowLEAVE (1);
+				g_nProcShopState = LEAVESTATE_ITEMPUTWAIT;
+				g_bEnableMove = FALSE;
 			}
 			EraseWindow (pWnd);
 			break;

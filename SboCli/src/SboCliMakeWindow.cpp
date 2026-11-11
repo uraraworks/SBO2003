@@ -1342,7 +1342,7 @@ PWNDINFO MakeWindowLEAVE(BYTE bySelect)
 		pWndNew = MakeWindowMSG ("＊｢装備中のものはお預かりできません。@1　 他に御用は？@2", TRUE);
 
 	} else if (bySelect == 3) {
-		pWndNew = MakeWindowMSG ("＊｢これ以上お預かりできません。@1　 他に御用は？@2", TRUE);
+		pWndNew = MakeWindowMSG ("＊｢これ以上お預かりできません。@1　 （100種類までです）@1　 他に御用は？@2", TRUE);
 
 	} else if (bySelect == 4) {
 		pWndNew = MakeWindowMSG ("＊｢何もお預かりしていません。@1　 他に御用は？@2", TRUE);
@@ -1374,6 +1374,9 @@ PWNDINFO MakeWindowLEAVE(BYTE bySelect)
 
 	} else if (bySelect == 12) {
 		pWndNew = MakeWindowMSG ("＊｢そのお品は手放せません。@1　 他に御用は？@2", TRUE);
+
+	} else if (bySelect == 13) {
+		pWndNew = MakeWindowMSG ("＊｢依頼の品はお預かりできません。@1　 他に御用は？@2", TRUE);
 
 	} else {
 		pWndNew = MakeWindowMSG ("＊｢他に御用は？@2", TRUE);
