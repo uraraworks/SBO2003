@@ -63,6 +63,7 @@
 	var stroke = null;				/* 描いている途中の 1 回分 {cells:[[x, y, 前, 後]], at:{"x,y": 番号}, last:[x, y]} */
 	var touchTap = null;			/* スマホのタップ（動かさずに離したら 1 マス置く） */
 	var wheelBlockUntil = 0;		/* この時刻（ms）まではマップ欄のホイールでのスクロールを止める（描いた直後の誤スクロール防ぎ） */
+	var keepScroll = null;			/* 止めている間に戻すマップ欄のスクロール位置 [左, 上] */
 	var draftTimer = 0;
 	var draftSaving = null;			/* 保存中の Promise */
 	var draftState = '';			/* 下書きの状態の文 */
@@ -200,6 +201,7 @@
 		/* 前のマップの下書きは先に保存しておく */
 		var pre = flushDraft();
 		cur = null;
+		unblockScroll();
 		pin = null;
 		hover = null;
 		resetEdit();
@@ -487,6 +489,8 @@
 		if (ev.button !== 0) return;
 		ev.preventDefault();
 		try { cvTouch.setPointerCapture(ev.pointerId); } catch (e) { /* 無くても描ける */ }
+		var sc = $('mv-scroll');
+		keepScroll = [sc.scrollLeft, sc.scrollTop];
 		stroke = { cells: [], at: {}, last: p };
 		paintCell(p[0], p[1]);
 	}
@@ -612,15 +616,36 @@
 		useRecent(selPart);
 	}
 
-	/* マップ欄のホイール（Magic Mouse・トラックパッドのなで）。描いている間と、離してから少しの間は止める */
+	/*
+	 * マップ欄のホイール（Magic Mouse・トラックパッドのなで）。描いている間と、離してから少しの間は止める。
+	 * Magic Mouse はクリックする前から表面に指が触れていて、なでの始まりがボタンを押す前になることがある。
+	 * ブラウザは始まりの 1 回目を止めなかったなでを最後まで止められない（preventDefault が効かない）ので、
+	 * スクロールしてしまったら押した時の位置へ戻す（onScroll）。
+	 */
 	var WHEEL_BLOCK_MS = 1000;
 	var WHEEL_GAP_MS = 200;			/* 止めている間に続いたなで（慣性も）は、途切れるまでまとめて止める */
+	function scrollBlocked() {
+		return !!stroke || Date.now() < wheelBlockUntil;
+	}
 	function onWheel(ev) {
 		if (ev.ctrlKey) return;			/* ピンチ・Ctrl+ホイールはブラウザの拡大のまま */
-		var now = Date.now();
-		if (!stroke && now >= wheelBlockUntil) return;
-		ev.preventDefault();
-		wheelBlockUntil = Math.max(wheelBlockUntil, now + WHEEL_GAP_MS);
+		if (!scrollBlocked()) return;
+		if (ev.cancelable) ev.preventDefault();
+		wheelBlockUntil = Math.max(wheelBlockUntil, Date.now() + WHEEL_GAP_MS);
+	}
+	function onScroll() {
+		var sc = $('mv-scroll');
+		if (scrollBlocked() && keepScroll) {
+			if (sc.scrollLeft !== keepScroll[0]) sc.scrollLeft = keepScroll[0];
+			if (sc.scrollTop !== keepScroll[1]) sc.scrollTop = keepScroll[1];
+			return;
+		}
+		keepScroll = [sc.scrollLeft, sc.scrollTop];
+	}
+	/* プログラムで動かす時（拡大の切り替えなど）は止めない */
+	function unblockScroll() {
+		wheelBlockUntil = 0;
+		keepScroll = null;
 	}
 
 	function pushAction(cells) {
@@ -1084,6 +1109,7 @@
 			var sc = $('mv-scroll');
 			var old = sc.dataset.scale ? Number(sc.dataset.scale) : 2;
 			var fx = sc.scrollLeft / old, fy = sc.scrollTop / old;
+			unblockScroll();
 			drawAll();
 			sc.scrollLeft = fx * scale();
 			sc.scrollTop = fy * scale();
@@ -1116,6 +1142,7 @@
 		document.addEventListener('keydown', onKey);
 		window.addEventListener('pointerup', endStroke);
 		$('mv-scroll').addEventListener('wheel', onWheel, { passive: false });
+		$('mv-scroll').addEventListener('scroll', onScroll, { passive: true });
 		/* 下書きの保存待ちがある時は、閉じる前に知らせる */
 		window.addEventListener('beforeunload', function (ev) {
 			if (draftTimer || draftSaving || bApplying) {
