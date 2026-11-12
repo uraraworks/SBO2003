@@ -86,14 +86,15 @@
 	#cur { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--sub); }
 	#cur-sw { width: 28px; height: 28px; border-radius: 4px; border: 2px solid var(--fg); }
 	/* 管理者用エディタと同じ 16×16 の並び */
-	#palette { display: grid; grid-template-columns: repeat(16, 1fr); gap: 0; border: 1px solid #000; width: 288px; max-width: 100%; }
+	#palette { width: 288px; max-width: 100%; }
+	.palgrid { display: grid; grid-template-columns: repeat(16, 1fr); gap: 0; border: 1px solid #000; }
+	.palhead { font-size: 11px; color: var(--sub); margin: 6px 0 3px; }
 	.sw { width: auto; height: auto; aspect-ratio: 1; padding: 0; border: 0; border-right: 1px solid rgba(0,0,0,0.5); border-bottom: 1px solid rgba(0,0,0,0.5); border-radius: 0; min-width: 0; min-height: 0; }
 	/* エディタと同じ見せ方: 色はそのまま、黒（透明）は小さな市松の印、使えない色は ✗ */
 	.sw { position: relative; }
 	/* 使える色だけの時は 8 列で大きめに */
-	#palette.only { grid-template-columns: repeat(8, 1fr); }
-	.palall { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--sub); cursor: pointer; }
-	.palall input { margin: 0; }
+	/* 見本の色は 8 列で大きめに */
+	.palgrid.sample { grid-template-columns: repeat(8, 1fr); }
 	.sw.off { cursor: not-allowed; opacity: 1; }
 	.sw.black::before { content: ''; position: absolute; left: 11%; top: 11%; width: 44%; height: 44%;
 		background: linear-gradient(#555, #555) 0 0 / 50% 50% no-repeat, linear-gradient(#555, #555) 100% 100% / 50% 50% no-repeat; }
@@ -284,7 +285,6 @@
 				<button type="button" id="fit" title="全体を表示">全体表示</button>
 			</div>
 			<div id="cur"><span id="cur-sw"></span><span id="cur-text"></span></div>
-			<label class="palall"><input type="checkbox" id="pal-all">パレット全体（16×16）を見る</label>
 			<div id="palette"></div>
 		</aside>
 		<div id="stage">

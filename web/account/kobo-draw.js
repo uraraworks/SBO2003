@@ -18,7 +18,6 @@ const $ = function (id) { return document.getElementById(id); };
 const UNDO_MAX = 50;
 const KEY_PV_PLAY = 'sbo_kobo_pv_play';		// プレビューを再生するか（'1' = 再生）
 const KEY_SMP_ZOOM = 'sbo_kobo_smp_zoom';	// 見本の倍率
-const KEY_PAL_ALL = 'sbo_kobo_pal_all';		// パレット全体を見るか（'1' = 見る）
 const KEY_REF_ZOOM = 'sbo_kobo_ref_zoom';	// 元イラストの倍率（0 = 欄の幅に合わせる）
 const LOCAL_SAVE_MS = 3000;		// 端末への自動保存
 const SERVER_SAVE_MS = 60000;	// サーバーへの作業中保存（「みんなに見せる」がオンの時だけ）
@@ -452,36 +451,44 @@ function setColor(i) {
 }
 
 /*
- * パレット：管理者用エディタと同じく 256 色を 16×16 に番号順で並べ、色もそのまま見せる。
- * このお題で使えない色（見本などで使っていない番号）は ✗ を付けて押せない。
+ * パレット
+ *   見本の色 … 見本（描き直しなら今の絵も）で使っている色を先に 8 列で（絵柄合わせの目安）
+ *   パレット … 管理者用エディタと同じく 256 色を 16×16 に番号順で。色はそのまま見せ、
+ *              使えない色（透明以外の真っ黒。ゲームではどれも透明になる）は ✗ を付けて押せない
  */
+function paletteButton(i, usable) {
+	const c = S.task.palette[i] || [0, 0, 0];
+	const ok = usable.has(i);
+	const black = !c[0] && !c[1] && !c[2];
+	const b = el('button', 'sw' + (black ? ' black' : '') + (ok ? ' use' : ' off'));
+	b.type = 'button';
+	b.dataset.i = i;
+	b.title = '番号 ' + i + (i === S.task.transparent ? '（透明）' : '  (' + c[0] + ', ' + c[1] + ', ' + c[2] + ')') + (ok ? '' : '　使えません（ゲームでは透明になる黒など）');
+	b.style.background = 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
+	if (ok) {
+		b.addEventListener('click', function () { setColor(i); });
+	} else {
+		b.disabled = true;
+	}
+	return b;
+}
 function buildPalette() {
 	const box = $('palette');
 	box.textContent = '';
 	const usable = new Set(S.task.colors);
-	/* ふだんは使える色だけを番号順に。「パレット全体」にすると 256 色の 16×16（エディタと同じ並び） */
-	const all = lsGet(KEY_PAL_ALL) === '1';
-	$('pal-all').checked = all;
-	box.classList.toggle('only', !all);
-	for (let i = 0; i < 256; i++) {
-		const c = S.task.palette[i] || [0, 0, 0];
-		const ok = usable.has(i);
-		if (!all && !ok) {
-			continue;
-		}
-		const black = !c[0] && !c[1] && !c[2];
-		const b = el('button', 'sw' + (black ? ' black' : '') + (ok ? ' use' : ' off'));
-		b.type = 'button';
-		b.dataset.i = i;
-		b.title = '番号 ' + i + (i === S.task.transparent ? '（透明）' : '  (' + c[0] + ', ' + c[1] + ', ' + c[2] + ')') + (ok ? '' : '　このお題では使えません');
-		b.style.background = 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
-		if (ok) {
-			b.addEventListener('click', function () { setColor(i); });
-		} else {
-			b.disabled = true;
-		}
-		box.appendChild(b);
+	const smp = (S.task.sampleColors || []).filter(function (i) { return usable.has(i); });
+	if (smp.length) {
+		box.appendChild(el('div', 'palhead', '見本の色'));
+		const g1 = el('div', 'palgrid sample');
+		smp.forEach(function (i) { g1.appendChild(paletteButton(i, usable)); });
+		box.appendChild(g1);
+		box.appendChild(el('div', 'palhead', 'パレット'));
 	}
+	const g2 = el('div', 'palgrid');
+	for (let i = 0; i < 256; i++) {
+		g2.appendChild(paletteButton(i, usable));
+	}
+	box.appendChild(g2);
 }
 
 function pickAt(x, y) {
@@ -1323,7 +1330,29 @@ function setupUi() {
 	(task.samples || []).concat(task.base ? [task.base] : []).forEach(function (id, n, arr) {
 		const wrap = el('div', 'checker');
 		const cv = thumbCanvas(task, id, smpZ);
-		cv.title = (task.base && n === arr.length - 1) ? '今の絵' : '見本';
+		cv.title = ((task.base && n === arr.length - 1) ? '今の絵' : '見本') + '（クリックで色を拾う）';
+		/* 見本の上をクリック（右クリック・タップでも）すると、その色を描く色にする */
+		cv.style.cursor = 'crosshair';
+		cv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+		cv.addEventListener('pointerdown', function (e) {
+			e.preventDefault();
+			const r = cv.getBoundingClientRect();
+			const x = Math.floor((e.clientX - r.left) / r.width * cv.width);
+			const y = Math.floor((e.clientY - r.top) / r.height * cv.height);
+			loadIndexed(id).then(function (img) {
+				if (x < 0 || y < 0 || x >= img.width || y >= img.height) {
+					return;
+				}
+				const i = img.indices[y * img.width + x];
+				if (task.colors.indexOf(i) >= 0) {
+					setColor(i);
+					toast(i === task.transparent ? '透明を拾いました' : '番号 ' + i + ' の色を拾いました');
+				} else {
+					setColor(task.transparent);
+					toast('黒（ゲームでは透明）なので、透明にしました');
+				}
+			}).catch(function () { /* 読めなければ何もしない */ });
+		});
 		wrap.appendChild(cv);
 		smp.appendChild(wrap);
 		smpCanvases.push(cv);
@@ -1382,7 +1411,7 @@ function setupUi() {
 	});
 
 	buildPalette();
-	const first = task.colors.find(function (i) { return i !== task.transparent; });
+	const first = (task.sampleColors || []).concat(task.colors).find(function (i) { return i !== task.transparent && task.colors.indexOf(i) >= 0; });
 	setColor(first != null ? first : task.colors[0]);
 	setTool('pen');
 	$('grid').classList.toggle('active', S.grid);
@@ -1403,11 +1432,6 @@ $('grid').addEventListener('click', toggleGrid);
 $('fit').addEventListener('click', fit);
 $('zin').addEventListener('click', function () { stepZoom(1); });
 $('zout').addEventListener('click', function () { stepZoom(-1); });
-$('pal-all').addEventListener('change', function (e) {
-	lsSet(KEY_PAL_ALL, e.target.checked ? '1' : '0');
-	buildPalette();
-	setColor(S.color);
-});
 $('zoomSel').addEventListener('change', function (e) {
 	zoomAt(vw / 2, vh / 2, Number(e.target.value));
 	view.focus && view.focus();

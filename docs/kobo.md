@@ -22,7 +22,7 @@
 - 絵はすべて **8bit パレット PNG**（colortype 3）。パレットはお題の元のゲーム画像のパレット（256 色）そのまま。
   **透明はパレットの黒 (0,0,0)**（番号 0 ではない。dot-core.js の findTransparentIndex）。
 - 案の PNG は「お題の描く範囲」と同じ幅・高さで、PLTE がお題のパレットとバイト単位で同じでないと受け付けない。
-- プレイヤーが選べる色は、お題の `colors`（元のゲーム画像で使われている番号。透明の番号を含む）だけ。
+- プレイヤーが選べる色は、お題の `colors`（パレットの全色から、透明の番号以外の真っ黒を除いたもの。真っ黒はゲームではどれも透明になるため）だけ。見本で使っている色は `sampleColors` で、描く画面の先頭に「見本の色」として並ぶ。
 
 ## 保存
 
@@ -51,7 +51,8 @@
       // anim … 範囲のコマを左上から右へ、上から下へ順に再生（エフェクト）
   frameMs: 200,                    // アニメ 1 コマの時間
   palette: [[r,g,b], ...256],      // 元画像のパレット
-  colors: [番号, ...],             // 選べる色（元画像で使われている番号）
+  colors: [番号, ...],             // 選べる色（透明以外の真っ黒を除いた全色）
+  sampleColors: [番号, ...],       // 見本（描き直しなら今の絵も）で使っている色。描く画面で先頭に並べる目安
   transparent: 番号,               // 透明の番号（パレットの黒）
   base: 画像id,                    // 描く範囲の今の絵（お題を作った時に切り出したもの）。「今の絵から描く」の元
   bg: 画像id | '',                 // 等倍で並べて見る時の背景（16×16 程度のマップパーツ 1 マス。敷き詰めて使う）
@@ -141,7 +142,7 @@ save の決まり:
 | --- | --- | --- |
 | `/api/admin/kobo/tasks` | `{session}` | `{tasks:[adminTaskView]}`（hidden も含む）＋ `counts:{proposals:新着数, hiddenComments:本人が隠した数}` |
 | `/api/admin/kobo/task` | `{session, id}` | `{task, works, comments}`（全部・account 付き） |
-| `/api/admin/kobo/task-save` | `{session, id?, title, desc, kind, state, sheet, x,y,w,h, cw,ch, preview, frameMs, palette, colors, transparent, fresh?, baseData, bgData?, refData?, refType('png'|'jpg'), samplesData?[], proposalId?}` | `{ok, task}`（`fresh` の時は `baseData` 不要で、前の今の絵は外れる。`*Data` は base64。編集時に省いたものは元のまま。`samplesData` を送ると丸ごと入れ替え。提案から作ると提案は `tasked` に） |
+| `/api/admin/kobo/task-save` | `{session, id?, title, desc, kind, state, sheet, x,y,w,h, cw,ch, preview, frameMs, palette, colors, sampleColors?, transparent, fresh?, baseData, bgData?, refData?, refType('png'|'jpg'), samplesData?[], proposalId?}` | `{ok, task}`（`fresh` の時は `baseData` 不要で、前の今の絵は外れる。`*Data` は base64。編集時に省いたものは元のまま。`samplesData` を送ると丸ごと入れ替え。提案から作ると提案は `tasked` に） |
 | `/api/admin/kobo/task-delete` | `{session, id}` | `{ok}`（案・コメントも消える） |
 | `/api/admin/kobo/work` | `{session, id, hidden?, deleted?}` | `{ok}` |
 | `/api/admin/kobo/comment` | `{session, workId, body, replyTo?}` | `{ok, comment}`（admin:true、名前は「管理人」） |

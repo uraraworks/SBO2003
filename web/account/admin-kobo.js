@@ -839,7 +839,16 @@ async function renderForm(body, seq, v) {
 			saveBtn.disabled = true;
 			setMsg(msg, '保存しています…');
 			const palette256 = normalizePalette(S.img.palette);
-			/* 使える色：見本があれば見本（と描き直しなら今の絵）で使っている色だけ、無ければ画像全体の色 */
+			/*
+			 * 使える色：パレットの全色。ただし真っ黒はゲームではどれも透明になるので、透明の番号以外の真っ黒は外す。
+			 * 見本の色（sampleColors）：見本（と描き直しなら今の絵）で使っている色。描く画面で先頭に並べる目安
+			 */
+			const transparent = findTransparentIndex(palette256);
+			const colors = [];
+			for (let i = 0; i < 256; i++) {
+				const c = palette256[i];
+				if (i === transparent || c.r || c.g || c.b) colors.push(i);
+			}
 			const used = new Uint8Array(256);
 			const mark = (idx) => { for (let i = 0; i < idx.length; i++) used[idx[i]] = 1; };
 			let nSample = 0;
@@ -853,20 +862,14 @@ async function renderForm(body, seq, v) {
 					nSample++;
 				}
 			}
-			if (nSample) {
-				if (!S.fresh) mark(cutOut(S.img, S.sel.x, S.sel.y, S.sel.w, S.sel.h));
-			} else {
-				mark(S.img.indices);
-			}
-			const transparent = findTransparentIndex(palette256);
-			used[transparent] = 1;
-			const colors = [];
-			for (let i = 0; i < 256; i++) if (used[i]) colors.push(i);
+			if (nSample && !S.fresh) mark(cutOut(S.img, S.sel.x, S.sel.y, S.sel.w, S.sel.h));
+			const sampleColors = [];
+			for (let i = 0; i < 256; i++) if (used[i] && i !== transparent && colors.indexOf(i) >= 0) sampleColors.push(i);
 			const body = {
 				title: f.title.value.trim(), desc: f.desc.value, kind: f.kind.value, state: f.state.value,
 				sheet: S.sheet, x: S.sel.x, y: S.sel.y, w: S.sel.w, h: S.sel.h, cw, ch,
 				preview: f.preview.value, frameMs: Math.max(50, Math.floor(Number(f.frameMs.value) || 200)),
-				palette: palette256.map((c) => [c.r, c.g, c.b]), colors, transparent
+				palette: palette256.map((c) => [c.r, c.g, c.b]), colors, sampleColors, transparent
 			};
 			if (S.fresh) body.fresh = true;
 			if (editing) body.id = task.id;
@@ -914,7 +917,7 @@ async function renderForm(body, seq, v) {
 		modeBox,
 		h('div', { class: 'kb-scroll' }, canvas), selInfo, existing,
 		rebaseRow,
-		h('div', { class: 'sub-text', text: '見本（同じ画像の中の、描く範囲と同じ大きさの場所を 0〜4 個）：上の「見本を選ぶ」でクリック。見本があると、描く人が使える色は見本（描き直しなら今の絵も）で使っている色だけになります。無ければ画像全体の色です。' }), sampleThumbs));
+		h('div', { class: 'sub-text', text: '見本（同じ画像の中の、描く範囲と同じ大きさの場所を 0〜4 個）：上の「見本を選ぶ」でクリック。見本で使っている色（描き直しなら今の絵の色も）は、描く画面で「見本の色」として先頭に並びます。色はパレットの全色を使えます（透明になる余分な真っ黒は除く）。' }), sampleThumbs));
 	body.appendChild(sec('3. 背景（等倍で並べて見る時の 16×16 の 1 マス）',
 		h('div', { class: 'kb-row' }, h('label', null, '画像 ', bgSelect), h('label', { class: 'check' }, bgOff, '背景を使わない')),
 		h('div', { class: 'kb-scroll' }, bgCanvas), bgPrev));

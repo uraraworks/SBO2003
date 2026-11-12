@@ -1157,6 +1157,15 @@ Module['sboKobo'] = (function () {
 			colors.push(nTrans);
 		}
 		colors.sort(function (a, b) { return a - b; });
+		/* 見本の色（描く画面で先頭に並べる目安。使える色の中だけ） */
+		var sampleColors = [];
+		(Array.isArray(body.sampleColors) ? body.sampleColors : []).forEach(function (n) {
+			n = Math.floor(Number(n));
+			if (colors.indexOf(n) >= 0 && sampleColors.indexOf(n) < 0) {
+				sampleColors.push(n);
+			}
+		});
+		sampleColors.sort(function (a, b) { return a - b; });
 		/* 画像（先に全部確かめてから書く） */
 		var baseBuf = null, bgBuf = null, ref = null, aSamples = null;
 		/* fresh = 新しい絵として描く（ゲーム画像のどこに置くかは採用後に管理者が決める）。sheet はパレットと見本を借りるだけ */
@@ -1212,6 +1221,7 @@ Module['sboKobo'] = (function () {
 		t.frameMs = int(body.frameMs, 30, 10000, 200);
 		t.palette = palette;
 		t.colors = colors;
+		t.sampleColors = sampleColors;
 		t.transparent = nTrans;
 		t.fresh = bFresh;
 		if (bFresh) {
