@@ -2741,10 +2741,24 @@ static void TestChallenge(const std::vector<int> &aLogin)
 	printf("challenge again a=%u b=%u\n", pA->wQuestID, pB->wQuestID);
 	QuestSyncAll();
 	pGate = QuestFindCopy(pA, 4);
+	/* 2 回目は闘技場にする（ふつうの世界の C から見えるが、手は出せない） */
+	PQUESTINFO pQ20 = NULL;
+	for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) if (g_aQuestInfo[i]->wID == 20) pQ20 = g_aQuestInfo[i];
+	BYTE byChallengeBak = pQ20 ? pQ20->byChallenge : 0;
+	if (pQ20) pQ20->byChallenge = QUESTCHALLENGE_ARENA;
+	int nInfoC0 = MockCmdCount(1002, CMD_CHARINFO) + MockCmdCount(1002, CMD_CHARINFO2), nPosC0 = MockCmdCount(1002, CMD_CHARPOS);
 	if (pGate) {
 		QuestSendTalk(pA, pGate->dwTblID);
 	}
+	printf("challenge arena c_got info=%d pos=%d\n", MockCmdCount(1002, CMD_CHARINFO) + MockCmdCount(1002, CMD_CHARINFO2) - nInfoC0, MockCmdCount(1002, CMD_CHARPOS) - nPosC0);
 	printf("challenge again in a=%d b=%d enemies=%d\n", (int)QuestInChallenge(pA), (int)QuestInChallenge(pB), ChallengeCountEnemy());
+	{
+		PCHARINFO pEn = ChallengeFindEnemy();
+		printf("challenge arena space_a=%d enemy_vis_c=%d a_vis_c=%d c_vis_a=%d c_hit_enemy=%d\n",
+			(int)(pA->dwSpaceID != 0), pEn ? IsCharVisibleTo(pEn, pC) : -1, IsCharVisibleTo(pA, pC), IsCharVisibleTo(pC, pA),
+			pEn ? IsInteractable(pC, pEn) : -1);
+	}
+	if (pQ20) pQ20->byChallenge = byChallengeBak;
 	/* 二組目は入れない（同じ依頼は一度に 1 組） */
 	pC->wQuestID = 20;
 	QuestMovePC(pC, nMap, aCell[0].first, aCell[0].second + 1);

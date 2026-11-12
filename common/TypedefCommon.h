@@ -2810,7 +2810,8 @@ typedef struct _QUESTINFO {
 /* 討伐チャレンジの種類(QUESTINFO の byChallenge) */
 enum {
 	QUESTCHALLENGE_NONE = 0,									/* ふつうの依頼 */
-	QUESTCHALLENGE_OTHERWORLD,									/* 異空間（挑戦中の組にだけ。同じ依頼は一度に 1 組） */
+	QUESTCHALLENGE_OTHERWORLD,									/* 異空間（挑戦中の組にだけ見える。組ごとに別の空間で、何組でも同時に） */
+	QUESTCHALLENGE_ARENA,										/* 闘技場（ふつうの世界の人も観戦できる。手は出せない。同じ依頼は一度に 1 組） */
 	QUESTCHALLENGE_MAX
 };
 

@@ -32,6 +32,7 @@ inline BOOL IsInteractable(PCHARINFO pChar, PCHARINFO pTarget)
 /* ========================================================================= */
 extern BOOL IsCharVisibleTo(PCHARINFO pSrc, PCHARINFO pDst);	/* pSrc の情報を pDst に送ってよいか（見えるNPC以外は常に TRUE） */
 extern BOOL IsCharVisibleToPID(PCHARINFO pSrc, DWORD pIDDst);	/* 同上（受け取る人をプレイヤーIDで指定。SENDALL など該当者なしは見えるNPCだけ FALSE） */
+extern BOOL SpaceIsArena(DWORD dwSpaceID);						/* 闘技場の空間か（ふつうの世界から観戦できる） */
 extern void QuestRemovingBegin(void);							/* 見えるNPCを消す間、送る相手の絞り込みを止める */
 extern void QuestRemovingEnd(void);
 extern BOOL QuestIsRemoving(void);

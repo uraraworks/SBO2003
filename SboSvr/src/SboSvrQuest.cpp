@@ -82,6 +82,7 @@ typedef struct _CHALLENGE {
 	WORD		wQuestID;											/* 依頼番号 */
 	DWORD		dwMapNo;											/* 戦う場所のマップ番号 */
 	DWORD		dwSpaceID;											/* この挑戦の空間番号（挑戦の番号と同じ。0 にはならない。組ごとに別の空間で戦う） */
+	BOOL		bArena;												/* 闘技場（ふつうの世界の人から見える＝観戦できる） */
 	DWORD		dwPartyID;											/* 入った時のパーティ（変わった人は中断） */
 	DWORD		dwStart;											/* 始めた時刻 */
 	BOOL		bCleared;											/* 敵を全部倒した */
@@ -236,13 +237,18 @@ static BOOL IsQuestNpcFor(PCHARINFO pSrc, PCHARINFO pDst)
 /* pSrc の情報を pDst に送ってよいか */
 BOOL IsCharVisibleTo(PCHARINFO pSrc, PCHARINFO pDst)
 {
-	/* 空間が違えば見えない（管理者も、いま居る空間のものしか見えない） */
+	/* 空間が違えば見えない（管理者も、いま居る空間のものしか見えない）。
+	   ただし闘技場の空間は、ふつうの世界の人から見える（観戦。見えるだけで手は出せない） */
 	if (pDst != NULL) {
 		if (pSrc->dwSpaceID != pDst->dwSpaceID) {
-			return FALSE;
+			if ((pDst->dwSpaceID != SPACE_NORMAL) || !SpaceIsArena (pSrc->dwSpaceID)) {
+				return FALSE;
+			}
 		}
 	} else if (pSrc->dwSpaceID != 0) {
-		return FALSE;
+		if (!SpaceIsArena (pSrc->dwSpaceID)) {
+			return FALSE;
+		}
 	}
 	if (!IsQuestNpc (pSrc)) {
 		return TRUE;
@@ -300,6 +306,18 @@ BOOL IsCharVisibleToPID(PCHARINFO pSrc, DWORD pIDDst)
 		return FALSE;
 	}
 	return IsCharVisibleTo (pSrc, g_aCharInfo[nNo]);
+}
+
+/* 闘技場の空間か（ふつうの世界から観戦できる） */
+BOOL SpaceIsArena(DWORD dwSpaceID)
+{
+	std::map<DWORD, CHALLENGE>::iterator itC;
+
+	if (dwSpaceID == SPACE_NORMAL) {
+		return FALSE;
+	}
+	itC = s_mapChallenge.find (dwSpaceID);			/* 空間番号は挑戦の番号と同じ */
+	return (itC != s_mapChallenge.end ()) && itC->second.bArena && (itC->second.dwSpaceID == dwSpaceID);
 }
 
 void QuestRemovingBegin(void)	{ s_nRemoving ++; }
@@ -1899,6 +1917,16 @@ static void ChallengeStart(PCHARINFO pChar, PQUESTINFO pQuest, PQUESTNPCINFO pDe
 		SendCmdSYSMSG (pChar->pID, "討伐はもう済んでいます。ギルドに報告しましょう。", SPEECHCMD_BATTLE1);
 		return;
 	}
+	/* 闘技場は観客から見えるので、同じ依頼は一度に 1 組だけ（重なって見えないように） */
+	if (pQuest->byChallenge == QUESTCHALLENGE_ARENA) {
+		std::map<DWORD, CHALLENGE>::iterator itA;
+		for (itA = s_mapChallenge.begin (); itA != s_mapChallenge.end (); itA ++) {
+			if (itA->second.wQuestID == pQuest->wID) {
+				SendCmdSYSMSG (pChar->pID, "いま別の組が闘技場で戦っています。終わるまで観戦して待ちましょう。", SPEECHCMD_BATTLE1);
+				return;
+			}
+		}
+	}
 	/* 組ごとに別の空間で戦うので、同じ依頼を何組でも同時に遊べる。
 	   ただし同じパーティの仲間がまだ中で戦っている間は、倒れて出てきた人は入り直せない */
 	{
@@ -1930,6 +1958,7 @@ static void ChallengeStart(PCHARINFO pChar, PQUESTINFO pQuest, PQUESTNPCINFO pDe
 	dwSession = ++ s_dwChallengeSeq;
 	Ch.wQuestID = pQuest->wID;
 	Ch.dwSpaceID = dwSession;						/* 挑戦の番号（1 から増える）をそのまま空間番号にする */
+	Ch.bArena = (pQuest->byChallenge == QUESTCHALLENGE_ARENA);
 	Ch.dwMapNo = (DWORD)nDestMapNo;
 	Ch.dwPartyID = pChar->dwPartyID;
 	Ch.dwStart = timeGetTime ();
