@@ -206,7 +206,7 @@ function setCounts(c) {
 
 /* ---------- お題の一覧 ---------- */
 async function renderList(body, seq) {
-	body.appendChild(h('p', { class: 'sub-text', text: '管理者がお題（どのゲーム画像のどこを描くか）を出し、プレイヤーが案を描いて出します。案は描き足し合い、コメントで直し、管理者が 1 つ採用します。今の絵柄を変えず、そろえて仕上げるのが大事です。' }));
+	body.appendChild(h('p', { class: 'sub-text', text: '管理者がお題（新しく描く絵か、ゲーム画像のどこを描き直すか）を出し、プレイヤーが案を描いて出します。案は描き足し合い、コメントで直し、管理者が 1 つ採用します。今の絵柄を変えず、そろえて仕上げるのが大事です。' }));
 	const r = await api('/api/admin/kobo/tasks', {});
 	if (seq !== renderSeq) return;
 	if (!r.tasks) { body.appendChild(h('div', { class: 'msg', text: errText(r) })); return; }
@@ -256,7 +256,7 @@ async function renderDetail(body, seq, id) {
 			h('span', { class: 'name', text: task.title }),
 			tag(STATES[task.state] || task.state, task.state === 'done' ? 'done' : task.state === 'hidden' ? 'rejected' : 'approved'),
 			tag(KINDS[task.kind] || task.kind)),
-		h('div', { class: 'sub-text', text: task.sheet + '（' + task.x + ',' + task.y + '）' + task.w + '×' + task.h + ' ／ コマ ' + task.cw + '×' + task.ch + ' ／ ' + (PREVIEWS[task.preview] || task.preview) + ' ／ ' + task.frameMs + 'ms' }),
+		h('div', { class: 'sub-text', text: (task.fresh ? '新しく描く ' + task.w + '×' + task.h + '（パレットは ' + task.sheet + '）' : task.sheet + '（' + task.x + ',' + task.y + '）' + task.w + '×' + task.h) + ' ／ コマ ' + task.cw + '×' + task.ch + ' ／ ' + (PREVIEWS[task.preview] || task.preview) + ' ／ ' + task.frameMs + 'ms' }),
 		task.desc ? h('div', { class: 'message', text: task.desc }) : null,
 		h('div', { class: 'kb-refs' },
 			refBlock('今の絵', task.base ? pic(task.base, 200) : null),
@@ -410,7 +410,7 @@ function adoptedCard(task, works, reload, msg) {
 	card.appendChild(ul);
 	const m = msgBox();
 	card.appendChild(h('div', null,
-		h('button', { type: 'button', on: { click: async (ev) => {
+		task.fresh ? null : h('button', { type: 'button', on: { click: async (ev) => {
 			ev.target.disabled = true;
 			try {
 				setMsg(m, '作っています…');
@@ -429,12 +429,12 @@ function adoptedCard(task, works, reload, msg) {
 				setMsg(m, 'この案の PNG を保存しました。', true);
 			} catch (e) { setMsg(m, '保存できませんでした：' + (e && e.message || e)); }
 			ev.target.disabled = false;
-		} } }, 'この案の PNG だけ保存'),
+		} } }, task.fresh ? 'この案の PNG を保存' : 'この案の PNG だけ保存'),
 		h('button', { type: 'button', class: 'sub', on: { click: () => {
 			if (!confirm('採用を取り消します（お題は「選考中」などに戻ります）。よろしいですか？')) return;
 			api('/api/admin/kobo/adopt', { taskId: task.id, workId: '' }).then((d) => { if (d.ok) reload(); else setMsg(msg, errText(d)); });
 		} } }, '採用を取り消す')));
-	card.appendChild(h('p', { class: 'sub-text', text: 'ダウンロードした ' + task.sheet + ' を、Mac のクローンの SboGrpData/grp に置き換えてコミットすると、ゲームの絵が変わります（パレットは元のまま・指定の位置だけが変わります）。' }));
+	card.appendChild(h('p', { class: 'sub-text', text: task.fresh ? '新しく描くお題なので、保存した PNG（' + task.sheet + ' と同じパレット）を、置きたいゲーム画像の空いている場所に合成してください。色番号はそのまま使えます。' : 'ダウンロードした ' + task.sheet + ' を、Mac のクローンの SboGrpData/grp に置き換えてコミットすると、ゲームの絵が変わります（パレットは元のまま・指定の位置だけが変わります）。' }));
 	card.appendChild(m);
 	return card;
 }
@@ -524,9 +524,14 @@ async function renderForm(body, seq, v) {
 		scale: 3,
 		bgFile: '', bgImg: null, bgCell: null, bgDirty: false, bgOff: false,
 		refData: null, refType: 'png', refUrl: '', refInfo: '',
-		rebase: false
+		rebase: false,
+		/* 新しく描く（白紙から。置き場所は採用後に決める）か、ゲーム画像の一部を描き直すか */
+		fresh: task ? !!task.fresh : true,
+		cols: task && task.fresh ? Math.max(1, Math.round(task.w / task.cw)) : 0,
+		rows: task && task.fresh ? Math.max(1, Math.round(task.h / task.ch)) : 0
 	};
 	const kindOf = task ? task.kind : (prop && KINDS[prop.kind] ? prop.kind : 'char');
+	if (!S.cols) { S.cols = kindOf === 'char' ? 8 : 1; S.rows = 1; }
 
 	const msg = msgBox();
 	const f = {};
@@ -539,6 +544,8 @@ async function renderForm(body, seq, v) {
 	f.sheet = h('select', null, h('option', { value: '', text: '（選んでください）' }), ...files.map((n) => h('option', { value: n, text: n, selected: n === S.sheet })));
 	f.cw = h('input', { type: 'number', min: 1, max: 128, value: S.cw, style: 'width:5em' });
 	f.ch = h('input', { type: 'number', min: 1, max: 128, value: S.ch, style: 'width:5em' });
+	f.cols = h('input', { type: 'number', min: 1, max: 16, value: S.cols, style: 'width:4em' });
+	f.rows = h('input', { type: 'number', min: 1, max: 16, value: S.rows, style: 'width:4em' });
 	f.scale = h('select', null, ...[1, 2, 3, 4, 5, 6, 8].map((n) => h('option', { value: n, text: n + ' 倍', selected: n === S.scale })));
 
 	const canvas = h('canvas', { class: 'kb-canvas' });
@@ -560,10 +567,40 @@ async function renderForm(body, seq, v) {
 
 	function setKindDefaults() {
 		f.preview.value = PREVIEW_OF_KIND[f.kind.value] || 'tile';
+		if (S.fresh) {
+			/* NPC・敵は 4 方向×2 コマの 1 行、ほかは 1 コマから */
+			f.cols.value = f.kind.value === 'char' ? 8 : 1;
+			f.rows.value = 1;
+			S.sel = defaultSel(); S.samples = []; renderSampleThumbs();
+		}
 		if (f.kind.value === 'char') S.mode = 'row'; else if (S.mode === 'row') S.mode = 'drag';
-		for (const r of modeBox.querySelectorAll('input')) r.checked = r.value === S.mode;
+		applyFresh();
+	}
+	/* 新規か描き直しかで、出す欄と選び方を切り替える */
+	const freshNew = h('input', { type: 'radio', name: 'kb-fresh', checked: S.fresh });
+	const freshOld = h('input', { type: 'radio', name: 'kb-fresh', checked: !S.fresh });
+	const freshSize = h('label', null, 'コマ数 ', f.cols, ' × ', f.rows);
+	const rebaseRow = h('label', { class: 'check' });
+	function applyFresh() {
+		freshSize.style.display = S.fresh ? '' : 'none';
+		rebaseRow.style.display = S.fresh || !editing ? 'none' : '';
+		if (S.fresh) S.mode = 'sample';
+		else if (S.mode === 'sample' && !S.sel) S.mode = f.kind.value === 'char' ? 'row' : 'drag';
+		for (const lb of modeBox.children) {
+			const r = lb.querySelector('input');
+			lb.style.display = S.fresh && r.value !== 'sample' ? 'none' : '';
+			r.checked = r.value === S.mode;
+		}
 		draw();
 	}
+	function setFresh(b) {
+		S.fresh = b;
+		S.sel = defaultSel(); S.samples = []; S.samplesDirty = S.samplesDirty || !editing;
+		renderSampleThumbs();
+		applyFresh();
+	}
+	freshNew.addEventListener('change', () => setFresh(true));
+	freshOld.addEventListener('change', () => setFresh(false));
 	f.kind.addEventListener('change', setKindDefaults);
 
 	/* 元の画像と、コマのグリッド・範囲・見本 */
@@ -594,11 +631,15 @@ async function renderForm(body, seq, v) {
 			g.fillStyle = '#6fa8dc'; g.font = 'bold 13px sans-serif';
 			g.fillText('見本' + (i + 1), s.x * sc + 4, s.y * sc + 15);
 		});
-		if (S.sel) {
+		if (S.sel && !S.fresh) {
 			g.fillStyle = 'rgba(240,184,74,0.22)';
 			g.fillRect(S.sel.x * sc, S.sel.y * sc, S.sel.w * sc, S.sel.h * sc);
 			g.strokeStyle = '#f0b84a'; g.lineWidth = 2;
 			g.strokeRect(S.sel.x * sc + 1, S.sel.y * sc + 1, S.sel.w * sc - 2, S.sel.h * sc - 2);
+		}
+		if (S.fresh && S.sel) {
+			selInfo.textContent = '新しく描く絵：' + S.sel.w + '×' + S.sel.h + '（コマ ' + cw + '×' + ch + ' が ' + Math.round(S.sel.w / cw) + '×' + Math.round(S.sel.h / ch) + '）。この画像はパレット（使える色）と見本に使います。見本 ' + S.samples.length + ' 個';
+			return;
 		}
 		selInfo.textContent = S.sel ? '描く範囲：(' + S.sel.x + ', ' + S.sel.y + ') ' + S.sel.w + '×' + S.sel.h + '（コマ ' + Math.round(S.sel.w / cw * 10) / 10 + '×' + Math.round(S.sel.h / ch * 10) / 10 + '）　見本 ' + S.samples.length + ' 個' : '画像の上で、描く範囲を選んでください。';
 	}
@@ -622,6 +663,11 @@ async function renderForm(body, seq, v) {
 	}
 	function defaultSel() {
 		const [cw, ch] = cwch();
+		if (S.fresh) {
+			const cols = Math.max(1, Math.min(16, Math.floor(Number(f.cols.value) || 1)));
+			const rows = Math.max(1, Math.min(16, Math.floor(Number(f.rows.value) || 1)));
+			return { x: 0, y: 0, w: cw * cols, h: ch * rows };
+		}
 		if (!S.img) return null;
 		if (f.kind.value === 'char') return { x: 0, y: 0, w: Math.floor(S.img.width / cw) * cw, h: ch };
 		return { x: 0, y: 0, w: cw, h: ch };
@@ -630,6 +676,8 @@ async function renderForm(body, seq, v) {
 	f.scale.addEventListener('change', draw);
 	f.cw.addEventListener('change', () => { S.sel = defaultSel(); S.samples = []; draw(); renderSampleThumbs(); });
 	f.ch.addEventListener('change', () => { S.sel = defaultSel(); S.samples = []; draw(); renderSampleThumbs(); });
+	f.cols.addEventListener('change', () => { S.sel = defaultSel(); S.samples = []; draw(); renderSampleThumbs(); });
+	f.rows.addEventListener('change', () => { S.sel = defaultSel(); S.samples = []; draw(); renderSampleThumbs(); });
 
 	let dragFrom = null;
 	function cellAt(ev) {
@@ -784,7 +832,8 @@ async function renderForm(body, seq, v) {
 	async function save() {
 		try {
 			if (!f.title.value.trim()) throw new Error('題を書いてください。');
-			if (!S.img || !S.sel) throw new Error('元のゲーム画像と、描く範囲を選んでください。');
+			if (S.fresh) S.sel = defaultSel();
+			if (!S.img || !S.sel) throw new Error(S.fresh ? 'パレットを借りるゲーム画像を選んでください。' : '元のゲーム画像と、描く範囲を選んでください。');
 			const [cw, ch] = cwch();
 			if (S.sel.w % cw || S.sel.h % ch) throw new Error('範囲がコマ（' + cw + '×' + ch + '）の整数倍になっていません。');
 			saveBtn.disabled = true;
@@ -802,10 +851,11 @@ async function renderForm(body, seq, v) {
 				preview: f.preview.value, frameMs: Math.max(50, Math.floor(Number(f.frameMs.value) || 200)),
 				palette: palette256.map((c) => [c.r, c.g, c.b]), colors, transparent
 			};
+			if (S.fresh) body.fresh = true;
 			if (editing) body.id = task.id;
 			if (prop) body.proposalId = prop.id; else if (editing && task.proposalId) body.proposalId = task.proposalId;
 			const rangeChanged = editing && (task.sheet !== S.sheet || task.x !== S.sel.x || task.y !== S.sel.y || task.w !== S.sel.w || task.h !== S.sel.h);
-			if (!editing || rangeChanged || S.rebase) body.baseData = toB64(await cutPng(S.img, palette256, S.sel.x, S.sel.y, S.sel.w, S.sel.h));
+			if (!S.fresh && (!editing || rangeChanged || S.rebase || task.fresh)) body.baseData = toB64(await cutPng(S.img, palette256, S.sel.x, S.sel.y, S.sel.w, S.sel.h));
 			if (S.bgDirty && !S.bgOff && S.bgCell && S.bgImg) body.bgData = toB64(await cutPng(S.bgImg, normalizePalette(S.bgImg.palette), S.bgCell.x, S.bgCell.y, BG_CELL, BG_CELL));
 			if (S.samplesDirty) {
 				body.samplesData = [];
@@ -837,11 +887,16 @@ async function renderForm(body, seq, v) {
 		h('div', { class: 'kb-row' },
 			h('label', null, '種類 ', f.kind), h('label', null, '状態 ', f.state),
 			h('label', null, '見え方 ', f.preview), h('label', null, '1 コマ ', f.frameMs, ' ms'))));
-	body.appendChild(sec('2. 元のゲーム画像と、描く範囲',
-		h('div', { class: 'kb-row' }, h('label', null, '画像 ', f.sheet), h('label', null, 'コマ ', f.cw, ' × ', f.ch), h('label', null, '拡大 ', f.scale)),
+	rebaseRow.appendChild(rebase);
+	rebaseRow.appendChild(document.createTextNode('今の絵（お題の「今の絵から描く」の元）を、ゲーム画像から取り直す（範囲を変えた時は自動で取り直します）'));
+	body.appendChild(sec('2. 新しく描くか、ゲーム画像の一部を描き直すか',
+		h('div', { class: 'kb-row' },
+			h('label', { class: 'check' }, freshNew, '新しく描く（白紙から。どこに置くかは採用後にこちらで合成）'),
+			h('label', { class: 'check' }, freshOld, 'ゲーム画像の一部を描き直す')),
+		h('div', { class: 'kb-row' }, h('label', null, '画像 ', f.sheet), h('label', null, 'コマ ', f.cw, ' × ', f.ch), freshSize, h('label', null, '拡大 ', f.scale)),
 		modeBox,
 		h('div', { class: 'kb-scroll' }, canvas), selInfo, existing,
-		editing ? h('label', { class: 'check' }, rebase, '今の絵（お題の「今の絵から描く」の元）を、ゲーム画像から取り直す（範囲を変えた時は自動で取り直します）') : null,
+		rebaseRow,
 		h('div', { class: 'sub-text', text: '見本（同じ画像の中の、描く範囲と同じ大きさの場所を 0〜4 個）：上の「見本を選ぶ」でクリック。' }), sampleThumbs));
 	body.appendChild(sec('3. 背景（等倍で並べて見る時の 16×16 の 1 マス）',
 		h('div', { class: 'kb-row' }, h('label', null, '画像 ', bgSelect), h('label', { class: 'check' }, bgOff, '背景を使わない')),
@@ -850,8 +905,9 @@ async function renderForm(body, seq, v) {
 	body.appendChild(h('div', null, saveBtn,
 		h('button', { type: 'button', class: 'sub', on: { click: () => show(editing ? { name: 'detail', id: task.id } : { name: 'list' }) } }, 'やめる'), msg));
 
+	if (S.fresh) S.sel = defaultSel();
 	if (S.sheet) await chooseSheet(S.sheet, true);
-	else draw();
+	applyFresh();
 	renderSampleThumbs();
 }
 

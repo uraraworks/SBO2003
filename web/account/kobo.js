@@ -7,6 +7,7 @@ import {
 	KEY_TOKEN, lsGet, api, el, dateText, displayName, imgUrl, refImgEl, fitScale,
 	loadIndexed, displayPalette, indicesToCanvas, loadBgCanvas, composeOnBg, makePreview, thumbCanvas
 } from '/dot-kobo.js';
+import { decodeIndexedPng, encodeIndexedPng } from '/dot-png.js';
 
 const KIND_TEXT = { char: 'NPC・敵', part: '背景パーツ', effect: 'エフェクト' };
 const STATE_TEXT = { open: '募集中', judging: '選考中', done: 'できあがり' };
@@ -247,7 +248,7 @@ function renderTask() {
 		a.appendChild(im);
 		refBox.appendChild(a);
 	} else {
-		refBox.appendChild(el('p', 'now', '元イラストはありません。今の絵や説明を見て描いてね。'));
+		refBox.appendChild(el('p', 'now', task.base ? '元イラストはありません。今の絵や説明を見て描いてね。' : '元イラストはありません。見本や説明を見て描いてね。'));
 		refBox.lastChild.style.color = 'var(--sub)';
 	}
 	refs.appendChild(refBox);
@@ -280,11 +281,13 @@ function renderTask() {
 	if (open) {
 		draw.appendChild(el('p', '', 'この絵を描いてみよう'));
 		const b = el('div', 'buttons');
-		const a1 = el('a', 'btn', '今の絵から描く');
-		a1.href = drawUrl(task, { from: 'base' });
-		const a2 = el('a', 'btn sub', 'まっさらから描く');
+		const a2 = el('a', 'btn' + (task.base ? ' sub' : ''), 'まっさらから描く');
 		a2.href = drawUrl(task, { from: 'blank' });
-		b.appendChild(a1);
+		if (task.base) {
+			const a1 = el('a', 'btn', '今の絵から描く');
+			a1.href = drawUrl(task, { from: 'base' });
+			b.appendChild(a1);
+		}
 		b.appendChild(a2);
 		draw.appendChild(b);
 		draw.appendChild(el('p', 'note', 'だれかの案を元に描き足すには、下の案を選んで「この案を元に描く」を押してね。'));
@@ -770,8 +773,58 @@ function openReply(commentBox, c, w) {
 
 /* ============ 提案（こういうのどう？） ============ */
 
-const PAD = 32, PAD_ZOOM = 8;
-const PAD_COLORS = ['#000000', '#ffffff', '#c0392b', '#e67e22', '#f1c40f', '#27ae60', '#2980b9', '#8e44ad', '#a0522d', '#7f8c8d'];
+/* 小さなお絵かきの色は、種類ごとのゲーム画像のパレット（そこで使われている色だけ）。透明はパレットの黒 */
+const PAD_SHEET = { char: 'char01.png', part: 'map01.png', effect: 'efc01.png' };
+/* 描ける大きさ（ゲームのコマに合わせる） */
+const PAD_SIZES = {
+	char: [[16, 16], [16, 32], [32, 32], [48, 48]],
+	part: [[16, 16], [32, 32]],
+	effect: [[16, 16], [32, 32]]
+};
+const padSheetCache = new Map();
+function loadPadSheet(kind) {
+	const name = PAD_SHEET[kind] || PAD_SHEET.char;
+	if (!padSheetCache.has(name)) {
+		const pr = fetch('/admin-grp/' + encodeURIComponent(name)).then(function (res) {
+			if (!res.ok) {
+				throw new Error('sheet ' + res.status);
+			}
+			return res.arrayBuffer();
+		}).then(function (buf) {
+			return decodeIndexedPng(buf);
+		}).then(function (img) {
+			const palette = [];
+			for (let i = 0; i < 256; i++) {
+				const c = img.palette[i];
+				palette.push(c ? { r: c.r, g: c.g, b: c.b, a: 255 } : { r: 0, g: 0, b: 0, a: 255 });
+			}
+			let transparent = 0;
+			for (let i = 0; i < palette.length; i++) {
+				if (!palette[i].r && !palette[i].g && !palette[i].b) {
+					transparent = i;
+					break;
+				}
+			}
+			const used = new Set([transparent]);
+			for (let i = 0; i < img.indices.length; i++) {
+				used.add(img.indices[i]);
+			}
+			const colors = Array.from(used).sort(function (a, b) { return a - b; });
+			return { palette: palette, transparent: transparent, colors: colors };
+		});
+		pr.catch(function () { padSheetCache.delete(name); });
+		padSheetCache.set(name, pr);
+	}
+	return padSheetCache.get(name);
+}
+
+function bytesToBase64(bytes) {
+	let bin = '';
+	for (let i = 0; i < bytes.length; i += 0x8000) {
+		bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+	}
+	return btoa(bin);
+}
 
 function renderPropose() {
 	const box = $('propose');
@@ -818,28 +871,255 @@ function renderPropose() {
 	});
 	p.appendChild(cnt);
 
-	/* ラフ絵（任意） */
+	/* ラフ絵（任意）。お絵かきで描いたものか、選んだ画像のどちらか（最後に使った方）を送る */
 	p.appendChild(el('span', 'field-label', 'ラフ絵（なくても大丈夫）'));
-	let roughData = '';	// PNG の base64
+	p.appendChild(el('p', 'note', '下のお絵かきで描くと、その絵がそのまま一緒に送られます。色はゲームのパレット、大きさはゲームのコマと同じです（右クリックで色を拾えます）。'));
+	let roughSrc = '';		// '' | 'pad' | 'file'
+	let fileData = '';		// 選んだ画像の PNG（base64）
+
+	/* 小さなお絵かき */
+	const padBar = el('div', 'buttons');
+	padBar.style.alignItems = 'center';
+	padBar.appendChild(el('span', '', '大きさ'));
+	const sizeSel = el('select');
+	padBar.appendChild(sizeSel);
+	const pad = el('div', 'draw-pad');
+	pad.style.marginTop = '8px';
+	const cv = el('canvas');
+	cv.style.cursor = 'crosshair';
+	const tools = el('div', 'pad-tools');
+	const er = el('button', 'sub small', '消しゴム');
+	er.type = 'button';
+	const clr = el('button', 'sub small', '全部消す');
+	clr.type = 'button';
+	const padNote = el('div', 'note');
+	const side = el('div');
+	side.appendChild(tools);
+	const sb = el('div', 'buttons');
+	sb.appendChild(er);
+	sb.appendChild(clr);
+	side.appendChild(sb);
+	side.appendChild(padNote);
+	pad.appendChild(cv);
+	pad.appendChild(side);
+	p.appendChild(padBar);
+	p.appendChild(pad);
+
+	let sheet = null;		// {palette, transparent, colors}
+	let W = 16, H = 16, Z = 16;
+	let px = new Uint8Array(W * H);
+	let cur = 0;			// 今の色（パレット番号）
+	let drawn = false;
+	const ctx = cv.getContext('2d');
+
+	function kindNow() {
+		return (document.querySelector('input[name="pk"]:checked') || {}).value || 'char';
+	}
+	function css(i) {
+		const c = sheet.palette[i];
+		return 'rgb(' + c.r + ',' + c.g + ',' + c.b + ')';
+	}
+	function redraw() {
+		if (!sheet) {
+			return;
+		}
+		for (let y = 0; y < H; y++) {
+			for (let x = 0; x < W; x++) {
+				const v = px[y * W + x];
+				if (v === sheet.transparent) {
+					/* 透明は市松模様（1 ドットを 4 つに割る） */
+					const h2 = Z / 2;
+					ctx.fillStyle = '#ffffff';
+					ctx.fillRect(x * Z, y * Z, Z, Z);
+					ctx.fillStyle = '#d6d6d6';
+					ctx.fillRect(x * Z, y * Z, h2, h2);
+					ctx.fillRect(x * Z + h2, y * Z + h2, Z - h2, Z - h2);
+				} else {
+					ctx.fillStyle = css(v);
+					ctx.fillRect(x * Z, y * Z, Z, Z);
+				}
+			}
+		}
+		/* マス目（8 ドットごとに濃く） */
+		ctx.lineWidth = 1;
+		for (let x = 0; x <= W; x++) {
+			ctx.strokeStyle = x % 8 === 0 ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.1)';
+			ctx.beginPath();
+			ctx.moveTo(x * Z + 0.5, 0);
+			ctx.lineTo(x * Z + 0.5, H * Z);
+			ctx.stroke();
+		}
+		for (let y = 0; y <= H; y++) {
+			ctx.strokeStyle = y % 8 === 0 ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.1)';
+			ctx.beginPath();
+			ctx.moveTo(0, y * Z + 0.5);
+			ctx.lineTo(W * Z, y * Z + 0.5);
+			ctx.stroke();
+		}
+	}
+	function selectColor(i) {
+		cur = i;
+		Array.prototype.forEach.call(tools.querySelectorAll('.sw'), function (b) {
+			b.classList.toggle('sel', Number(b.dataset.idx) === i);
+		});
+		er.classList.toggle('sel', i === sheet.transparent);
+	}
+	function buildTools() {
+		tools.textContent = '';
+		sheet.colors.forEach(function (i) {
+			if (i === sheet.transparent) {
+				return;
+			}
+			const b = el('button', 'sw');
+			b.type = 'button';
+			b.dataset.idx = String(i);
+			b.style.background = css(i);
+			b.setAttribute('aria-label', '色 ' + i);
+			b.addEventListener('click', function () { selectColor(i); });
+			tools.appendChild(b);
+		});
+	}
+	function resetPad() {
+		const sz = (sizeSel.value || '16x16').split('x');
+		W = Number(sz[0]);
+		H = Number(sz[1]);
+		Z = Math.max(4, Math.floor(256 / Math.max(W, H)));
+		cv.width = W * Z + 1;
+		cv.height = H * Z + 1;
+		px = new Uint8Array(W * H).fill(sheet ? sheet.transparent : 0);
+		drawn = false;
+		if (roughSrc === 'pad') {
+			roughSrc = '';
+		}
+		padNote.textContent = W + '×' + H + ' ドット';
+		redraw();
+	}
+	function loadKind(kind) {
+		sizeSel.textContent = '';
+		(PAD_SIZES[kind] || PAD_SIZES.char).forEach(function (s) {
+			const o = el('option', '', s[0] + '×' + s[1]);
+			o.value = s[0] + 'x' + s[1];
+			sizeSel.appendChild(o);
+		});
+		padNote.textContent = '色を読み込んでいます…';
+		return loadPadSheet(kind).then(function (sh) {
+			sheet = sh;
+			buildTools();
+			resetPad();
+			const first = sheet.colors.find(function (i) { return i !== sheet.transparent; });
+			selectColor(first == null ? sheet.transparent : first);
+		}).catch(function () {
+			padNote.textContent = '色を読み込めませんでした。画像を選んで送ってください。';
+		});
+	}
+	function confirmClear() {
+		return !drawn || window.confirm('描いた絵を消して変えますか？');
+	}
+	let prevKind = 'char';
+	Array.prototype.forEach.call(kinds.querySelectorAll('input'), function (inp) {
+		inp.addEventListener('change', function () {
+			if (!confirmClear()) {
+				kinds.querySelector('input[value="' + prevKind + '"]').checked = true;
+				return;
+			}
+			prevKind = kindNow();
+			loadKind(prevKind);
+		});
+	});
+	let prevSize = '16x16';
+	sizeSel.addEventListener('change', function () {
+		if (!confirmClear()) {
+			sizeSel.value = prevSize;
+			return;
+		}
+		prevSize = sizeSel.value;
+		resetPad();
+	});
+	er.addEventListener('click', function () { selectColor(sheet.transparent); });
+	clr.addEventListener('click', function () {
+		if (!confirmClear()) {
+			return;
+		}
+		resetPad();
+	});
+
+	let last = null;
+	function padPoint(e) {
+		const r = cv.getBoundingClientRect();
+		return [Math.floor((e.clientX - r.left) / r.width * (cv.width / Z)), Math.floor((e.clientY - r.top) / r.height * (cv.height / Z))];
+	}
+	function plot(x, y) {
+		if (x < 0 || y < 0 || x >= W || y >= H) {
+			return;
+		}
+		px[y * W + x] = cur;
+		drawn = true;
+		roughSrc = 'pad';
+		file.value = '';
+		fileData = '';
+		prev.textContent = '';
+	}
+	function line(a, b) {
+		let [x0, y0] = a;
+		const [x1, y1] = b;
+		const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0);
+		const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+		let err = dx + dy;
+		for (;;) {
+			plot(x0, y0);
+			if (x0 === x1 && y0 === y1) { break; }
+			const e2 = 2 * err;
+			if (e2 >= dy) { err += dy; x0 += sx; }
+			if (e2 <= dx) { err += dx; y0 += sy; }
+		}
+	}
+	cv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+	cv.addEventListener('pointerdown', function (e) {
+		if (!sheet) {
+			return;
+		}
+		e.preventDefault();
+		const pt = padPoint(e);
+		/* 右クリック＝スポイト（その色を拾う） */
+		if (e.button === 2) {
+			if (pt[0] >= 0 && pt[1] >= 0 && pt[0] < W && pt[1] < H) {
+				selectColor(px[pt[1] * W + pt[0]]);
+			}
+			return;
+		}
+		if (e.button !== 0) {
+			return;
+		}
+		cv.setPointerCapture(e.pointerId);
+		last = pt;
+		plot(last[0], last[1]);
+		redraw();
+	});
+	cv.addEventListener('pointermove', function (e) {
+		if (!last) {
+			return;
+		}
+		const pt = padPoint(e);
+		line(last, pt);
+		last = pt;
+		redraw();
+	});
+	function up() { last = null; }
+	cv.addEventListener('pointerup', up);
+	cv.addEventListener('pointercancel', up);
+
+	/* 画像を選んで送る（選ぶとお絵かきの代わりにこちらを送る） */
 	const prev = el('div', 'rough-preview');
+	const fileRow = el('div');
+	fileRow.style.marginTop = '10px';
+	fileRow.appendChild(el('span', 'note', '手元の画像を送る場合はこちら：'));
 	const file = el('input');
 	file.type = 'file';
 	file.accept = 'image/png,image/jpeg,image/gif,image/webp';
 	file.style.color = 'var(--panel-fg)';
-	p.appendChild(file);
-	p.appendChild(el('p', 'note', '画像を選ぶか、下の小さなお絵かきで描けます。'));
-	function setRough(canvas) {
-		roughData = canvas.toDataURL('image/png').split(',')[1];
-		prev.textContent = '';
-		const im = el('img');
-		im.src = 'data:image/png;base64,' + roughData;
-		prev.appendChild(im);
-		const rm = el('button', 'sub small', 'ラフ絵を外す');
-		rm.type = 'button';
-		rm.style.marginLeft = '8px';
-		rm.addEventListener('click', function () { roughData = ''; prev.textContent = ''; file.value = ''; });
-		prev.appendChild(rm);
-	}
+	fileRow.appendChild(file);
+	p.appendChild(fileRow);
+	p.appendChild(prev);
 	file.addEventListener('change', function () {
 		const f = file.files && file.files[0];
 		if (!f) {
@@ -857,7 +1137,23 @@ function renderPropose() {
 			cx.imageSmoothingEnabled = k >= 1 ? false : true;
 			cx.drawImage(im, 0, 0, c.width, c.height);
 			URL.revokeObjectURL(url);
-			setRough(c);
+			fileData = c.toDataURL('image/png').split(',')[1];
+			roughSrc = 'file';
+			prev.textContent = '';
+			const img = el('img');
+			img.src = 'data:image/png;base64,' + fileData;
+			prev.appendChild(img);
+			prev.appendChild(el('span', 'note', ' この画像を送ります（お絵かきの絵は送りません）'));
+			const rm = el('button', 'sub small', '画像をやめる');
+			rm.type = 'button';
+			rm.style.marginLeft = '8px';
+			rm.addEventListener('click', function () {
+				fileData = '';
+				file.value = '';
+				prev.textContent = '';
+				roughSrc = drawn ? 'pad' : '';
+			});
+			prev.appendChild(rm);
 		};
 		im.onerror = function () {
 			URL.revokeObjectURL(url);
@@ -865,110 +1161,17 @@ function renderPropose() {
 		};
 		im.src = url;
 	});
-
-	/* 小さなお絵かき */
-	const pad = el('div', 'draw-pad');
-	pad.style.marginTop = '10px';
-	const cv = el('canvas');
-	cv.width = PAD;
-	cv.height = PAD;
-	cv.style.width = (PAD * PAD_ZOOM) + 'px';
-	cv.style.height = (PAD * PAD_ZOOM) + 'px';
-	const cx = cv.getContext('2d');
-	cx.fillStyle = '#ffffff';
-	cx.fillRect(0, 0, PAD, PAD);
-	let padColor = PAD_COLORS[0];
-	let padErase = false;
-	let drawn = false;
-	const tools = el('div', 'pad-tools');
-	PAD_COLORS.forEach(function (col) {
-		const b = el('button', 'sw' + (col === padColor ? ' sel' : ''));
-		b.type = 'button';
-		b.style.background = col;
-		b.setAttribute('aria-label', '色 ' + col);
-		b.addEventListener('click', function () {
-			padColor = col;
-			padErase = false;
-			Array.prototype.forEach.call(tools.querySelectorAll('.sw'), function (x) { x.classList.toggle('sel', x === b); });
-		});
-		tools.appendChild(b);
-	});
-	const er = el('button', 'sub small', '消しゴム');
-	er.type = 'button';
-	er.addEventListener('click', function () { padErase = true; });
-	const clr = el('button', 'sub small', '全部消す');
-	clr.type = 'button';
-	clr.addEventListener('click', function () {
-		cx.fillStyle = '#ffffff';
-		cx.fillRect(0, 0, PAD, PAD);
-		drawn = false;
-		roughData = '';
-		prev.textContent = '';
-	});
-	const use = el('button', 'sub small', 'この絵を使う');
-	use.type = 'button';
-	use.addEventListener('click', function () {
-		if (!drawn) {
-			msg.textContent = 'まだ何も描いていません。';
-			return;
+	/* 送る時のラフ絵（base64 PNG。無ければ ''） */
+	function roughData() {
+		if (roughSrc === 'file' && fileData) {
+			return Promise.resolve(fileData);
 		}
-		msg.textContent = '';
-		setRough(cv);
-	});
-	const side = el('div');
-	side.appendChild(tools);
-	const sb = el('div', 'buttons');
-	sb.appendChild(er);
-	sb.appendChild(clr);
-	sb.appendChild(use);
-	side.appendChild(sb);
-	pad.appendChild(cv);
-	pad.appendChild(side);
-	p.appendChild(pad);
-	let last = null;
-	function padPoint(e) {
-		const r = cv.getBoundingClientRect();
-		return [Math.floor((e.clientX - r.left) / r.width * PAD), Math.floor((e.clientY - r.top) / r.height * PAD)];
+		if (roughSrc === 'pad' && drawn && sheet) {
+			return encodeIndexedPng({ width: W, height: H, indices: px, palette: sheet.palette }).then(bytesToBase64);
+		}
+		return Promise.resolve('');
 	}
-	function plot(x, y) {
-		if (x < 0 || y < 0 || x >= PAD || y >= PAD) {
-			return;
-		}
-		cx.fillStyle = padErase ? '#ffffff' : padColor;
-		cx.fillRect(x, y, 1, 1);
-		drawn = true;
-	}
-	function line(a, b) {
-		let [x0, y0] = a;
-		const [x1, y1] = b;
-		const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0);
-		const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
-		let err = dx + dy;
-		for (;;) {
-			plot(x0, y0);
-			if (x0 === x1 && y0 === y1) { break; }
-			const e2 = 2 * err;
-			if (e2 >= dy) { err += dy; x0 += sx; }
-			if (e2 <= dx) { err += dx; y0 += sy; }
-		}
-	}
-	cv.addEventListener('pointerdown', function (e) {
-		cv.setPointerCapture(e.pointerId);
-		last = padPoint(e);
-		plot(last[0], last[1]);
-	});
-	cv.addEventListener('pointermove', function (e) {
-		if (!last) {
-			return;
-		}
-		const pt = padPoint(e);
-		line(last, pt);
-		last = pt;
-	});
-	function up() { last = null; }
-	cv.addEventListener('pointerup', up);
-	cv.addEventListener('pointercancel', up);
-	p.appendChild(prev);
+	loadKind('char');
 
 	/* 名前 */
 	p.appendChild(el('span', 'field-label', '名前は？'));
@@ -1034,10 +1237,12 @@ function renderPropose() {
 		send.disabled = true;
 		msg.textContent = '';
 		const body = { token: token, kind: kind, body: ta.value, anonymous: anon, agree: true };
-		if (roughData) {
-			body.data = roughData;
-		}
-		api('/api/kobo/propose', body).then(function (data) {
+		roughData().then(function (data64) {
+			if (data64) {
+				body.data = data64;
+			}
+			return api('/api/kobo/propose', body);
+		}).then(function (data) {
 			send.disabled = false;
 			if (data.ok) {
 				renderPropose();

@@ -2,7 +2,7 @@
 
 プレイヤーみんなでゲームのドット絵を描き合う仕組み。GitHub のドット絵版。
 
-- 管理者が **お題**（どのゲーム画像のどこを描くか・元イラスト・見本）を出す
+- 管理者が **お題**（新しく描くか・ゲーム画像のどこを描き直すか・元イラスト・見本）を出す
 - プレイヤーは **案** を描いて出す。一から描くか、誰かの「出した」案を元に描き足す
   （案は上書きせず、親つきで足していくので **系譜**（木）になる）
 - 案には **作業中**（本人が保存のたびに上書き。見せるかは本人が選ぶ）と **出した**（固定。描き足しの元にできる）がある
@@ -37,8 +37,11 @@
   id, title, desc,                 // desc は 2000 字まで
   kind: 'char' | 'part' | 'effect',// NPC・敵 ／ 背景パーツ ／ エフェクト
   state: 'open' | 'judging' | 'done' | 'hidden',  // 募集中 ／ 選考中 ／ 採用済み ／ 隠す（管理者だけ見える）
+  fresh: true | false,             // true = 新しく描く（白紙から。今の絵 base は無し・x,y は 0）。
+                                   //   ゲーム画像のどこに置くかは採用後に管理者が合成する。sheet はパレットと見本を借りるだけ
+                                   // false = ゲーム画像の一部を描き直す（採用案を sheet の x,y に貼れる）
   sheet: 'char05.png',             // 元のゲーム画像（SboGrpData/grp）
-  x, y, w, h,                      // 描く範囲（元画像の中の位置。ピクセル）
+  x, y, w, h,                      // 描く範囲（元画像の中の位置。ピクセル。fresh の時は大きさだけ = コマ × コマ数）
   cw, ch,                          // 1 コマの大きさ（16 など）
   preview: 'walk' | 'tile' | 'anim',
       // walk … 1 行に「向き 4 つ × 2 コマ」が並ぶキャラ（char01〜16 の 1 行 = 128×16）。
@@ -138,7 +141,7 @@ save の決まり:
 | --- | --- | --- |
 | `/api/admin/kobo/tasks` | `{session}` | `{tasks:[adminTaskView]}`（hidden も含む）＋ `counts:{proposals:新着数, hiddenComments:本人が隠した数}` |
 | `/api/admin/kobo/task` | `{session, id}` | `{task, works, comments}`（全部・account 付き） |
-| `/api/admin/kobo/task-save` | `{session, id?, title, desc, kind, state, sheet, x,y,w,h, cw,ch, preview, frameMs, palette, colors, transparent, baseData, bgData?, refData?, refType('png'|'jpg'), samplesData?[], proposalId?}` | `{ok, task}`（`*Data` は base64。編集時に省いたものは元のまま。`samplesData` を送ると丸ごと入れ替え。提案から作ると提案は `tasked` に） |
+| `/api/admin/kobo/task-save` | `{session, id?, title, desc, kind, state, sheet, x,y,w,h, cw,ch, preview, frameMs, palette, colors, transparent, fresh?, baseData, bgData?, refData?, refType('png'|'jpg'), samplesData?[], proposalId?}` | `{ok, task}`（`fresh` の時は `baseData` 不要で、前の今の絵は外れる。`*Data` は base64。編集時に省いたものは元のまま。`samplesData` を送ると丸ごと入れ替え。提案から作ると提案は `tasked` に） |
 | `/api/admin/kobo/task-delete` | `{session, id}` | `{ok}`（案・コメントも消える） |
 | `/api/admin/kobo/work` | `{session, id, hidden?, deleted?}` | `{ok}` |
 | `/api/admin/kobo/comment` | `{session, workId, body, replyTo?}` | `{ok, comment}`（admin:true、名前は「管理人」） |

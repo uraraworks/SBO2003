@@ -1142,12 +1142,16 @@ Module['sboKobo'] = (function () {
 		colors.sort(function (a, b) { return a - b; });
 		/* 画像（先に全部確かめてから書く） */
 		var baseBuf = null, bgBuf = null, ref = null, aSamples = null;
+		/* fresh = 新しい絵として描く（ゲーム画像のどこに置くかは採用後に管理者が決める）。sheet はパレットと見本を借りるだけ */
+		var bFresh = !!body.fresh;
 		var bBg = body.bgData !== undefined && body.bgData !== null;
 		var bRef = body.refData !== undefined && body.refData !== null;
 		try {
-			if (body.baseData) {
+			if (bFresh) {
+				/* 新しく描くお題（白紙から）。「今の絵」は持たない */
+			} else if (body.baseData) {
 				baseBuf = checkPlainPng(body.baseData);
-			} else if (!t) {
+			} else if (!t || !t.base) {
 				throw bad('bad_png');
 			}
 			if (bBg && body.bgData) {
@@ -1192,7 +1196,12 @@ Module['sboKobo'] = (function () {
 		t.palette = palette;
 		t.colors = colors;
 		t.transparent = nTrans;
-		if (baseBuf) {
+		t.fresh = bFresh;
+		if (bFresh) {
+			if (t.base) {
+				setImg(t, 'base', '');
+			}
+		} else if (baseBuf) {
 			setImg(t, 'base', putImage(baseBuf, 'png'));
 		}
 		if (bBg) {

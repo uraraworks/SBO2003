@@ -418,6 +418,26 @@ async function main() {
 		ok(r.ok && r.task.bg === '' && r.task.samples.length === 0, '背景を外す・見本を入れ替え');
 		eq((await api.get('/kobo-img/' + task.bg + '.png')).status, 404, '外した画像は消える');
 
+		section('新しく描くお題（白紙から・今の絵なし）');
+		var freshBody = Object.assign({}, taskBody, { title: '新しい敵', fresh: true, baseData: undefined, bgData: undefined, refData: undefined, samplesData: undefined, proposalId: undefined });
+		r = await api.admin('task-save', freshBody);
+		ok(r.ok && r.task.fresh === true && !r.task.base, '今の絵なしで作れる');
+		var tFresh = r.task;
+		r = await api.post('/api/kobo/task', { id: tFresh.id, token: 'tokA' });
+		ok(r.task && r.task.fresh && !r.task.base, 'プレイヤーにも新規と分かる');
+		r = await api.p('tokA', 'save', { taskId: tFresh.id, data: draw(3), post: true, note: '', anonymous: false });
+		ok(r.ok, '新規のお題にも出せる');
+		r = await api.admin('task-save', Object.assign({ id: tFresh.id }, freshBody, { fresh: false }));
+		eq(r.error, 'bad_png', '描き直しに切り替える時は今の絵が要る');
+		r = await api.admin('task-save', Object.assign({ id: tFresh.id }, freshBody, { fresh: false, baseData: baseData }));
+		ok(r.ok && !r.task.fresh && r.task.base, '描き直しに切り替え');
+		var oldBase = r.task.base;
+		r = await api.admin('task-save', Object.assign({ id: tFresh.id }, freshBody));
+		ok(r.ok && r.task.fresh && !r.task.base, '新規に戻すと今の絵は外れる');
+		eq((await api.get('/kobo-img/' + oldBase + '.png')).status, 404, '外した今の絵は消える');
+		r = await api.admin('task-delete', { id: tFresh.id });
+		ok(r.ok, '新規のお題を消す');
+
 		section('消した案（子がいる時は印だけ）');
 		r = await api.admin('work', { id: wA.id, deleted: true });
 		ok(r.ok, '子のいる案を消す');

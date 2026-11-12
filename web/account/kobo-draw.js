@@ -1023,7 +1023,8 @@ async function boot() {
 			note = w.note || '';
 			share = !!w.share;
 			anon = !!w.anonymous;
-		} else if (S.from === 'blank') {
+		} else if (S.from === 'blank' || (S.from === 'base' && !task.base)) {
+			/* 新しく描くお題には「今の絵」が無いので、まっさらから */
 			initial = new Uint8Array(S.w * S.h).fill(task.transparent);
 		} else if (S.from === 'base') {
 			initial = fromImage(await loadIndexed(task.base));
