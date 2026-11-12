@@ -1547,6 +1547,17 @@ function renderPropose() {
 		saveDraftNow(true);
 	});
 	bw.appendChild(keep);
+	/* 閉じる（書きかけは下書きに残してから閉じる） */
+	const close = el('button', 'sub', '閉じる');
+	close.type = 'button';
+	close.title = '書きかけはこの端末の下書きに残ります';
+	close.addEventListener('click', function () {
+		saveDraftNow(false);
+		proposeEdit = null;
+		proposeOpen = false;
+		renderPropose();
+	});
+	bw.appendChild(close);
 	p.appendChild(bw);
 
 	/* 下書き（この端末の localStorage）。書いている間は少し待ってから自動で残す */
