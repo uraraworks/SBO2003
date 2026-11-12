@@ -2608,7 +2608,12 @@ static void TestChallenge(const std::vector<int> &aLogin)
 	if (pGate == NULL) {
 		return;
 	}
+	/* 入る前にかけた攻撃アップは持ち込まない（効果も HP 枠のアイコンも消える） */
+	SetCharInfoTimerStatus(pA, CHARINFOTIMEREVENT_ATUP, 50, 60000);
+	RenewATDF(pA->dwTblID);
+	int nBuff0 = MockCmdCount(1000, CMD_CHARBUFF);
 	QuestSendTalk(pA, pGate->dwTblID);
+	printf("challenge buff timers=%d charbuff_sent=%d\n", pA->aTimerEvent.GetSize(), (int)(MockCmdCount(1000, CMD_CHARBUFF) > nBuff0));
 	ChallengePrint("start a", pA, wWeapon);
 	ChallengePrint("start b", pB, wWeapon);
 	printf("challenge start a_dest=%d b_dest=%d armor_equ=%d enemies=%d\n",
@@ -2636,6 +2641,19 @@ static void TestChallenge(const std::vector<int> &aLogin)
 		Para.byData = 0;
 		TestRecv(pA, &Para, sizeof(Para));
 		printf("challenge leave blocked item0=%d\n", (int)(pA->waItem[0] == wPotion));
+	}
+
+	/* 取り引きの申し込みは断られ、申し込んだ側に「取り引き終了」が返る（返らないと操作が効かないまま） */
+	{
+		CMDPARA_DATA3 Para;
+		ZeroMemory(&Para, sizeof(Para));
+		Para.byCmd = CMD_TRADE;
+		Para.pID = pA->pID;
+		Para.dwTblID = pA->dwTblID;
+		Para.dwData = pB->dwTblID;
+		int nTrade0 = MockCmdCount(1000, CMD_TRADE), nTradeB0 = MockCmdCount(1001, CMD_TRADE);
+		TestRecv(pA, &Para, sizeof(Para));
+		printf("challenge trade refused a_out=%d b=%d\n", MockCmdCount(1000, CMD_TRADE) - nTrade0, MockCmdCount(1001, CMD_TRADE) - nTradeB0);
 	}
 
 	/* 周期処理：まだ何も起きない */

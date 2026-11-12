@@ -1611,6 +1611,8 @@ static void LoanSendAll(PCHARINFO p)
 		SendCmdCHARSTATUS (p->pID, p->dwTblID);
 		SendCmdCHARSTATUSHP (URARASOCK_SENDALL, p->dwTblID);
 	}
+	/* 攻撃アップ・守りアップの表示も消す（入る前にかけた効果を持ち込まない・持ち出さない） */
+	BuffSendState (p);
 }
 
 /* 経過時間の文（m 分 ss 秒） */

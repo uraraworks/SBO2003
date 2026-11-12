@@ -1194,6 +1194,7 @@ challenge solo accept=0
 challenge party accept a=20 b=20 c=0
 challenge other accept c=0
 challenge gate found=1
+challenge buff timers=0 charbuff_sent=1
 challenge start a in=1 lv=7 pw=11 hp=60/60 mana=20 gold=3 item0=0 weapon_equ=1
 challenge start b in=1 lv=7 pw=11 hp=60/60 mana=20 gold=3 item0=0 weapon_equ=1
 challenge start a_dest=1 b_dest=1 armor_equ=1 enemies=1
@@ -1201,6 +1202,7 @@ challenge enemy type=13 hp=30 exp=0 gold=0 drop=0
 challenge saving lv=30 gold=5000 at_start=1
 challenge saved lv=7 gold=3 at_dest=1
 challenge leave blocked item0=1
+challenge trade refused a_out=1 b=0
 challenge proc a=1 b=1
 challenge dead b in=0 lv=30 pw=99 hp=480/500 mana=90 gold=5000 item0=0 weapon_equ=0
 challenge dead b state=1 at_start=1 quest=20 a_in=1

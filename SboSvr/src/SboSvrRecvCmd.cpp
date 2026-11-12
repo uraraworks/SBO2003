@@ -8084,6 +8084,15 @@ void RecvDataProcEQUUSERINFOREQ(PBYTE pData, DWORD dwDataSize)
 	SendCmdEQUUSERINFO (pPara->pID, pPara->byData);
 }
 
+/* 取り引きを断る・やめる：本人に「取り引き終了」を返して動けるようにする */
+static void TradeRefuse(PCHARINFO pChar)
+{
+	if ((pChar == NULL) || (pChar->pID == 0)) {
+		return;
+	}
+	SendCmdTRADE (pChar->pID, pChar->dwTblID, CMDTRADE_OUT);
+}
+
 /* ========================================================================= */
 /* 関数名：RecvDataProcTRADE												 */
 /* 内容：受信データ処理(取り引きコマンド)									 */
@@ -8100,15 +8109,6 @@ void RecvDataProcTRADE(PBYTE pData, DWORD dwDataSize)
 	if (pRecv->dwData >= (DWORD)g_aCharInfo.GetSize ()) {
 		return;
 	}
-	/* 依頼の見えるNPC・別の空間にいるキャラとは取り引きできない */
-	if (!IsInteractable (g_aCharInfo[pRecv->dwTblID], g_aCharInfo[pRecv->dwData])) {
-		return;
-	}
-	/* 討伐チャレンジ中の人とは取り引きしない */
-	if (QuestChallengeBlock (g_aCharInfo[pRecv->dwTblID]) || QuestInChallenge (g_aCharInfo[pRecv->dwData])) {
-		return;
-	}
-
 	if (pRecv->pID == 0) {
 		std::map<DWORD, TRADESTATE>::iterator it = s_mapTrade.find (pRecv->dwTblID);
 		/* 知らせる先は自分か、いま取り引きしている相手だけ */
@@ -8119,6 +8119,23 @@ void RecvDataProcTRADE(PBYTE pData, DWORD dwDataSize)
 		TradeClear (pRecv->dwTblID);
 		/* 取り引き終了通知を送信 */
 		SendCmdTRADE (g_aCharInfo[pRecv->dwData]->pID, pRecv->dwTblID, CMDTRADE_OUT);
+		return;
+	}
+	/* ここから先は取り引きの申し込み。申し込んだ側のクライアントは返事が来るまで動けないので、
+	   断る時は必ず「取り引き終了」を返す（返さないと操作が効かないままになる） */
+	/* 依頼の見えるNPC・別の空間にいるキャラとは取り引きできない */
+	if (!IsInteractable (g_aCharInfo[pRecv->dwTblID], g_aCharInfo[pRecv->dwData])) {
+		TradeRefuse (g_aCharInfo[pRecv->dwTblID]);
+		return;
+	}
+	/* 討伐チャレンジ中の人とは取り引きしない */
+	if (QuestChallengeBlock (g_aCharInfo[pRecv->dwTblID])) {
+		TradeRefuse (g_aCharInfo[pRecv->dwTblID]);
+		return;
+	}
+	if (QuestInChallenge (g_aCharInfo[pRecv->dwData])) {
+		SendCmdSYSMSG (g_aCharInfo[pRecv->dwTblID]->pID, "相手は討伐チャレンジ中なので取り引きできません。", SPEECHCMD_BATTLE1);
+		TradeRefuse (g_aCharInfo[pRecv->dwTblID]);
 		return;
 	}
 	/* 自分の傭兵？ 道具を持たせる・返してもらう取り引き（傭兵の返事はサーバーがする） */
@@ -8156,6 +8173,7 @@ void RecvDataProcTRADE(PBYTE pData, DWORD dwDataSize)
 			(g_aCharInfo[pRecv->dwData]->szAcc[0] == 0) ||
 			(g_aCharInfo[pRecv->dwData]->pID == 0) ||
 			!IsNearRecvChar (g_aCharInfo[pRecv->dwData], 20)) {
+		TradeRefuse (g_aCharInfo[pRecv->dwTblID]);
 		return;
 	}
 	if (g_aCharInfo[pRecv->dwData]->byCharState == CHARSTATE_DEAD) {
@@ -8251,10 +8269,11 @@ void RecvDataProcTRADEPROC(PBYTE pData, DWORD dwDataSize)
 	pChar1 = g_aCharInfo[pRecv->dwTblID1];
 	pChar2 = g_aCharInfo[pRecv->dwTblID2];
 	/* 討伐チャレンジ中は預かり所・取り引き・作ってもらうを使わない（貸し出しの品が出入りしないように） */
-	if (QuestChallengeBlock (pChar1)) {
-		return;
-	}
-	if (QuestChallengeBlock (pChar2)) {
+	if (QuestChallengeBlock (pChar1) || QuestChallengeBlock (pChar2)) {
+		/* 取り引き画面を開いたまま待たせない */
+		TradeClear (pRecv->dwTblID1);
+		TradeRefuse (pChar1);
+		TradeRefuse (pChar2);
 		return;
 	}
 
