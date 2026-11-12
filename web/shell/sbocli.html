@@ -2330,6 +2330,12 @@
 	var PAD_INPUT_KEY = {90: 27, 88: 13};
 	function padTarget(vk) {
 		var input = PAD_INPUT_KEY[vk] ? gameInputShown() : null;
+		/* ゲームがゲーム画面にフォーカスを戻した後（キャラ作成の名前欄を残したまま性別選択を
+		   出した時など）は、入力欄が見えていてもゲームに送る。入力欄に Enter を送ると
+		   性別選択で決定が効かず先へ進めなかった */
+		if (input && document.activeElement === canvas) {
+			input = null;
+		}
 		if (input) {
 			return {vk: PAD_INPUT_KEY[vk], id: parseInt(input.dataset.w32Id, 10) || 0};
 		}
