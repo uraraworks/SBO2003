@@ -86,6 +86,12 @@ function toast(text) {
 function setMsg(text, bOk) {
 	$('msg').textContent = text || '';
 	$('msg').classList.toggle('ok', !!bOk);
+	/* 「出す」の確認を開いている時はそちらにも */
+	$('dlg-msg').textContent = text || '';
+	$('dlg-msg').style.color = bOk ? 'var(--ok)' : '';
+	if (text && !bOk && $('submit-dlg').hidden) {
+		toast(text);
+	}
 }
 function fatal(text) {
 	const l = $('loading');
@@ -900,6 +906,13 @@ function inField(e) {
 	return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
 }
 window.addEventListener('keydown', function (e) {
+	if (!$('submit-dlg').hidden) {
+		/* 確認の窓を開いている間は、描く画面のキー操作は効かせない */
+		if (e.key === 'Escape') {
+			closeSubmit();
+		}
+		return;
+	}
 	if (inField(e)) {
 		return;
 	}
@@ -1064,19 +1077,14 @@ async function save(bSubmit, bAuto) {
 		setMsg(NG_TEXT.long);
 		return false;
 	}
-	if (bSubmit) {
-		if (!$('agree').checked) {
-			setMsg(NG_TEXT.agree);
-			$('agree').scrollIntoView({ block: 'center' });
-			return false;
-		}
-		if (!window.confirm('この絵を「出す」と、案として固定されて、あとから変えられません。\nみんなが見て、描き足しの元にできます。\n\n出しますか？')) {
-			return false;
-		}
+	if (bSubmit && !$('agree').checked) {
+		setMsg(NG_TEXT.agree);
+		return false;
 	}
 	S.busy = true;
 	$('save-wip').disabled = true;
 	$('submit').disabled = true;
+	$('dlg-submit').disabled = true;
 	if (!bAuto) {
 		setMsg(bSubmit ? '出しています...' : '保存しています...', true);
 	}
@@ -1132,6 +1140,7 @@ async function save(bSubmit, bAuto) {
 			$('autosave').textContent = t;
 		} else {
 			setMsg(t, true);
+			toast('作業中として保存しました');
 		}
 		return true;
 	} catch (e) {
@@ -1145,6 +1154,7 @@ async function save(bSubmit, bAuto) {
 		S.busy = false;
 		$('save-wip').disabled = !S.canSave;
 		$('submit').disabled = !S.canSave;
+		$('dlg-submit').disabled = !$('agree').checked;
 	}
 }
 
@@ -1451,7 +1461,38 @@ $('zoomSel').addEventListener('change', function (e) {
 	view.focus && view.focus();
 });
 $('save-wip').addEventListener('click', function () { save(false, false); });
-$('submit').addEventListener('click', function () { save(true, false); });
+/* 「出す」は確認の窓を開く（ひとこと・名前の出し方・同意を確かめてから出す） */
+function openSubmit() {
+	if (!S.canSave) {
+		setMsg('保存して出すには、ゲームにログインしてキャラを作ってね。（絵はこの端末に自動で残ります）');
+		return;
+	}
+	commitFloat();
+	const comp = composite();
+	const cv = $('dlg-canvas');
+	cv.width = S.w;
+	cv.height = S.h;
+	cv.getContext('2d').putImageData(indicesToImageData(comp, S.w, S.h, pal), 0, 0);
+	const sc = Math.max(1, Math.min(8, Math.floor(400 / S.w), Math.floor(160 / S.h)));
+	cv.style.width = (S.w * sc) + 'px';
+	$('dlg-msg').textContent = '';
+	$('dlg-submit').disabled = !$('agree').checked;
+	$('submit-dlg').hidden = false;
+	$('note').focus();
+}
+function closeSubmit() {
+	$('submit-dlg').hidden = true;
+	saveLocal();
+}
+$('submit').addEventListener('click', openSubmit);
+$('dlg-cancel').addEventListener('click', closeSubmit);
+$('submit-dlg').addEventListener('click', function (e) {
+	if (e.target === $('submit-dlg')) {
+		closeSubmit();
+	}
+});
+$('agree').addEventListener('change', function () { $('dlg-submit').disabled = !$('agree').checked || S.busy; });
+$('dlg-submit').addEventListener('click', function () { save(true, false); });
 $('back').addEventListener('click', function () {
 	if (!S.task) {
 		location.href = '/kobo';
@@ -1472,7 +1513,6 @@ function openSide(secId) {
 	}
 }
 $('open-ref').addEventListener('click', function () { openSide('sec-refs'); });
-$('open-save').addEventListener('click', function () { openSide('sec-save'); });
 $('close-side').addEventListener('click', function () { $('side').classList.remove('open'); });
 $('mini').addEventListener('click', function () { openSide('sec-preview'); });
 

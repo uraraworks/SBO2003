@@ -157,6 +157,16 @@
 		text-align: center;
 	}
 	#toast.show { opacity: 1; }
+	/* 「出す」の確認 */
+	.dlg-back { position: fixed; inset: 0; z-index: 40; background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; padding: 12px; }
+	.dlg { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; width: 440px; max-width: 100%; max-height: 100%; overflow-y: auto; -webkit-user-select: text; user-select: text; }
+	.dlg h3 { margin: 0 0 10px; font-size: 16px; }
+	.dlg-pic { display: inline-block; padding: 4px; border-radius: 4px; max-width: 100%; overflow: auto; }
+	.dlg-pic canvas { display: block; image-rendering: pixelated; }
+	#dlg-msg { min-height: 1.4em; margin: 8px 0 4px; color: var(--ng); font-size: 13px; }
+	.dlg-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+	.dlg-btns button { padding: 10px 18px; font-size: 14px; }
+	#top #submit { min-width: 4.5em; }
 	#side {
 		flex: none;
 		width: 330px;
@@ -217,6 +227,9 @@
 	/* スマホ・狭い画面: 下に道具と色、横の欄は全画面で開く */
 	@media (max-width: 860px) {
 		#top .phone-only { display: inline-block; }
+		#top { gap: 4px; }
+		#top button { padding: 6px 7px; font-size: 13px; }
+		#top #submit { min-width: 0; }
 		#top .title small { display: none; }
 		#body { flex-direction: column; }
 		#stage { order: 1; }
@@ -258,7 +271,8 @@
 		<button type="button" id="undo" title="元に戻す（Ctrl+Z）">戻す</button>
 		<button type="button" id="redo" title="やり直す（Ctrl+Shift+Z）">進む</button>
 		<button type="button" id="open-ref" class="phone-only">見本</button>
-		<button type="button" id="open-save" class="phone-only primary">保存</button>
+		<button type="button" id="save-wip" title="作業中として保存（あとから続きを描けます）">途中保存</button>
+		<button type="button" id="submit" class="primary" title="案として出す">出す</button>
 	</div>
 	<div id="banner" hidden></div>
 	<div id="body">
@@ -312,27 +326,36 @@
 				<div id="preview"></div>
 			</div>
 			<div class="sec" id="sec-save">
-				<h4>保存</h4>
-				<label class="row" for="note">ひとこと（200字まで）</label>
-				<input type="text" id="note" maxlength="200" placeholder="例）髪の色を見本に近づけました" autocomplete="off">
-				<label class="row">名前の出し方</label>
-				<div class="radios">
-					<label><input type="radio" name="anon" value="0" checked><span>キャラ名<small id="my-name"></small></span></label>
-					<label><input type="radio" name="anon" value="1"><span>匿名<small>「匿名さん」</small></span></label>
-				</div>
-				<p class="note">匿名でも、管理人にはだれの案か分かります。</p>
+				<h4>作業中の保存<small>あとから続きを描けます</small></h4>
 				<label class="check"><input type="checkbox" id="share"><span>みんなに見せる（作業中でも、ほかの人が見られます）</span></label>
-				<label class="check"><input type="checkbox" id="agree"><span>出すときの同意
-					<ul><li>自分で描きました</li><li>ゲームの一部として GPLv3 で配布されることがあります</li><li>ほかの人が描き足してよいです</li><li>採用されないこともあると分かっています</li></ul></span></label>
 				<div id="msg"></div>
 				<div id="autosave"></div>
-				<div class="savebtns">
-					<button type="button" id="save-wip">作業中として保存</button>
-					<button type="button" id="submit" class="primary">出す</button>
-				</div>
-				<p class="note">「出す」と、案が固定されて、みんなが描き足しの元にできます。作業中の保存は、あとから続きを描けます。</p>
+				<p class="note">上の「途中保存」で作業中として保存、「出す」で案として出します。</p>
 			</div>
 		</aside>
+	</div>
+</div>
+<!-- 「出す」の確認 -->
+<div id="submit-dlg" class="dlg-back" hidden>
+	<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-title">
+		<h3 id="dlg-title">この絵を出す</h3>
+		<div class="checker dlg-pic"><canvas id="dlg-canvas"></canvas></div>
+		<label class="row" for="note">ひとこと（200字まで）</label>
+		<input type="text" id="note" maxlength="200" placeholder="例）髪の色を見本に近づけました" autocomplete="off">
+		<label class="row">名前の出し方</label>
+		<div class="radios">
+			<label><input type="radio" name="anon" value="0" checked><span>キャラ名<small id="my-name"></small></span></label>
+			<label><input type="radio" name="anon" value="1"><span>匿名<small>「匿名さん」</small></span></label>
+		</div>
+		<p class="note">匿名でも、管理人にはだれの案か分かります。</p>
+		<label class="check"><input type="checkbox" id="agree"><span>出すときの同意
+			<ul><li>自分で描きました</li><li>ゲームの一部として GPLv3 で配布されることがあります</li><li>ほかの人が描き足してよいです</li><li>採用されないこともあると分かっています</li></ul></span></label>
+		<p class="note">出すと案として固定され、あとから変えられません。みんなが見て、描き足しの元にできます。</p>
+		<div id="dlg-msg"></div>
+		<div class="dlg-btns">
+			<button type="button" id="dlg-cancel">やめる</button>
+			<button type="button" id="dlg-submit" class="primary" disabled>出す</button>
+		</div>
 	</div>
 </div>
 <div id="loading">読み込み中です...</div>
