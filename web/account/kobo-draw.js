@@ -12,7 +12,7 @@ import {
 	loadIndexed, makePreview, thumbCanvas
 } from '/dot-kobo.js';
 import { floodFill, bresenham, getRegion, putRegion, fillRect } from '/dot-core.js';
-import { encodeIndexedPng, indicesToImageData } from '/dot-png.js';
+import { encodeIndexedPng, decodeIndexedPng, indicesToImageData } from '/dot-png.js';
 import { installTouch } from '/kobo-touch.js';
 
 const $ = function (id) { return document.getElementById(id); };
@@ -1068,6 +1068,10 @@ function toggleGrid() {
 /* ============ 端末への自動保存 ============ */
 
 function draftKey() {
+	if (S.admin) {
+		/* 管理人の直しはプレイヤーの「続きを描く」に出さない */
+		return 'kobo_admin_draft:' + S.admin + ':' + S.task.id + ':' + (S.adminTarget || '');
+	}
 	return 'kobo_draft:' + S.task.id + ':' + (S.workId || ('new-' + S.from));
 }
 function saveLocal() {
@@ -1138,6 +1142,9 @@ function errText(data) {
 }
 
 async function save(bSubmit, bAuto) {
+	if (S.admin) {
+		return bSubmit && !bAuto ? adminSave() : false;
+	}
 	if (!S.canSave) {
 		if (!bAuto) {
 			setMsg('保存して出すには、ゲームにログインしてキャラを作ってね。（絵はこの端末に自動で残ります）');
@@ -1247,8 +1254,299 @@ function fromImage(img) {
 	return Uint8Array.from(img.indices);
 }
 
+/*
+ * 管理人が直す時（?admin=…。管理画面のログインのまま開く）
+ *   admin=fix&task=ID&from=案id   … 案に描き足して「管理人」の案として出す（作監修正）
+ *   admin=base&task=ID             … お題の今の絵を直す
+ *   admin=sample&task=ID&n=番号    … お題の見本を直す
+ *   admin=proposal&id=提案id        … 提案のラフ絵に描き足して返事に付ける
+ */
+const ADMIN_TEXT = {
+	fix: { btn: '修正を出す', title: '管理人の修正として出す', note: '直したところ（200字まで）', dlg: '元の案の下に「管理人」の案として並びます。元の案はそのまま残ります。' },
+	base: { btn: '保存', title: 'お題の今の絵を保存', note: 'メモ（保存されません）', dlg: 'お題の「今の絵」を入れ替えます。見本の色も作り直します。' },
+	sample: { btn: '保存', title: 'お題の見本を保存', note: 'メモ（保存されません）', dlg: 'お題の見本を入れ替えます。見本の色も作り直します。' },
+	proposal: { btn: '返事を送る', title: '絵を付けて返事', note: '', dlg: '提案した人の「自分の提案」に、返事と一緒にこの絵が出ます。' }
+};
+const PAD_SHEET = { char: 'char01.png', part: 'map01.png', effect: 'efc01.png' };	// kobo.js の提案のお絵かきと同じ
+
+/* 色そのままの PNG を、パレットの近い色の番号にする（kobo.js と同じ） */
+function rgbaToIndexed(buf, palette, transparent) {
+	return new Promise(function (resolve, reject) {
+		const url = URL.createObjectURL(new Blob([buf], { type: 'image/png' }));
+		const im = new Image();
+		im.onload = function () {
+			URL.revokeObjectURL(url);
+			const c = document.createElement('canvas');
+			c.width = im.width;
+			c.height = im.height;
+			const cx = c.getContext('2d');
+			cx.drawImage(im, 0, 0);
+			const d = cx.getImageData(0, 0, c.width, c.height).data;
+			const usable = [];
+			palette.forEach(function (pc, i) {
+				if (i !== transparent && (pc[0] || pc[1] || pc[2])) {
+					usable.push(i);
+				}
+			});
+			const memo = new Map();
+			const out = new Uint8Array(c.width * c.height);
+			for (let k = 0; k < out.length; k++) {
+				const r = d[k * 4], g = d[k * 4 + 1], b = d[k * 4 + 2];
+				if (d[k * 4 + 3] < 128) {
+					out[k] = transparent;
+					continue;
+				}
+				const key = (r << 16) | (g << 8) | b;
+				let best = memo.get(key);
+				if (best === undefined) {
+					let bd = Infinity;
+					usable.forEach(function (i) {
+						const pc = palette[i];
+						const dd = (pc[0] - r) * (pc[0] - r) + (pc[1] - g) * (pc[1] - g) + (pc[2] - b) * (pc[2] - b);
+						if (dd < bd) {
+							bd = dd;
+							best = i;
+						}
+					});
+					memo.set(key, best);
+				}
+				out[k] = best;
+			}
+			resolve({ width: c.width, height: c.height, indices: out });
+		};
+		im.onerror = function () {
+			URL.revokeObjectURL(url);
+			reject(new Error('img'));
+		};
+		im.src = url;
+	});
+}
+
+async function fetchBuf(url) {
+	const res = await fetch(url);
+	if (!res.ok) {
+		throw new Error('http');
+	}
+	return res.arrayBuffer();
+}
+
+/* 提案から、描く画面で使うお題の形を作る（パレットは種類ごとのゲーム画像、大きさはラフ絵） */
+async function proposalTask(id) {
+	const r = await api('/api/admin/kobo/proposals', {});
+	if (!r.proposals) {
+		throw new Error(r.httpStatus === 401 ? 'login' : 'load');
+	}
+	const prop = r.proposals.find(function (x) { return x.id === id; });
+	if (!prop) {
+		throw new Error('notfound');
+	}
+	const sheet = await decodeIndexedPng(await fetchBuf('/admin-grp/' + encodeURIComponent(PAD_SHEET[prop.kind] || PAD_SHEET.char)));
+	const palette = [];
+	for (let i = 0; i < 256; i++) {
+		const c = sheet.palette[i];
+		palette.push(c ? [c.r, c.g, c.b] : [0, 0, 0]);
+	}
+	let transparent = palette.findIndex(function (c) { return !c[0] && !c[1] && !c[2]; });
+	if (transparent < 0) {
+		transparent = 0;
+	}
+	/* 使える色は透明以外の真っ黒を除く全部（提案のお絵かきと同じ） */
+	const colors = [];
+	palette.forEach(function (c, i) {
+		if (i === transparent || c[0] || c[1] || c[2]) {
+			colors.push(i);
+		}
+	});
+	/* 返事の絵があればそれ、無ければラフ絵から。64 マスより大きい絵は元イラストとして横に出し、白紙から */
+	let img = null, ref = '';
+	const src = prop.replyImg || prop.img;
+	if (src) {
+		try {
+			const buf = await fetchBuf(imgUrl(src));
+			img = await decodeIndexedPng(buf).then(function (o) {
+				return { width: o.width, height: o.height, indices: Uint8Array.from(o.indices) };
+			}).catch(function () { return rgbaToIndexed(buf, palette, transparent); });
+		} catch (e) {
+			img = null;
+		}
+		if (img && (img.width > 64 || img.height > 64)) {
+			img = null;
+		}
+		if (!img) {
+			ref = src;
+		}
+	}
+	const w = img ? img.width : 16, h = img ? img.height : 16;
+	S.proposal = prop;
+	return {
+		task: {
+			id: 'proposal-' + prop.id, title: '提案への返事：' + Array.from(prop.body || '').slice(0, 20).join(''),
+			state: 'open', w: w, h: h, cw: w, ch: h, preview: 'tile', frameMs: 200,
+			palette: palette, colors: colors, transparent: transparent, sampleColors: [], samples: [],
+			base: '', bg: '', ref: ref
+		},
+		initial: img ? img.indices : new Uint8Array(w * h).fill(transparent)
+	};
+}
+
+async function adminBoot(q) {
+	S.admin = q.get('admin');
+	if (!ADMIN_TEXT[S.admin]) {
+		fatal('開き方が正しくありません。');
+		return;
+	}
+	document.body.classList.add('admin-mode');
+	let task, initial;
+	try {
+		if (S.admin === 'proposal') {
+			S.adminTarget = q.get('id') || '';
+			const o = await proposalTask(S.adminTarget);
+			task = o.task;
+			initial = o.initial;
+		} else {
+			const td = await api('/api/admin/kobo/task', { id: q.get('task') || '' });
+			if (!td.task) {
+				fatal(td.httpStatus === 401 ? '管理ページでログインしてから開いてね。' : 'このお題は見つかりませんでした。');
+				return;
+			}
+			task = td.task;
+			S.w = task.w;
+			S.h = task.h;
+			if (S.admin === 'fix') {
+				const w = (td.works || []).find(function (x) { return x.id === q.get('from') && !x.deleted; });
+				if (!w) {
+					fatal('元にする案が見つかりませんでした。');
+					return;
+				}
+				S.adminTarget = w.id;
+				S.parent = w.id;
+				initial = fromImage(await loadIndexed(w.img));
+			} else if (S.admin === 'base') {
+				if (!task.base) {
+					fatal('このお題には今の絵がありません。');
+					return;
+				}
+				S.adminTarget = 'base';
+				initial = fromImage(await loadIndexed(task.base));
+			} else {
+				const n = Number(q.get('n')) || 0;
+				if (!task.samples || !task.samples[n]) {
+					fatal('その見本は見つかりませんでした。');
+					return;
+				}
+				S.adminTarget = String(n);
+				S.sampleIndex = n;
+				initial = fromImage(await loadIndexed(task.samples[n]));
+			}
+		}
+	} catch (e) {
+		fatal(e.message === 'login' ? '管理ページでログインしてから開いてね。' : e.message === 'size' ? '絵の大きさがお題と合いません。' : '読み込めませんでした。');
+		return;
+	}
+	S.task = task;
+	S.w = task.w;
+	S.h = task.h;
+	S.me = { name: '管理人', canPost: true };
+	pal = task.palette.map(function (c, i) { return { r: c[0], g: c[1], b: c[2], a: i === task.transparent ? 0 : 255 }; });
+	imgCanvas.width = S.w;
+	imgCanvas.height = S.h;
+	S.data = initial;
+	const draft = readLocal();
+	if (draft && draft.u8.length === initial.length && draft.u8.some(function (v, i) { return v !== initial[i]; }) &&
+		window.confirm('この端末に、前に直していた途中の絵が残っています（' + new Date(draft.at).toLocaleString('ja-JP') + '）。\n続きから開きますか？')) {
+		S.data = draft.u8;
+		$('note').value = draft.note || '';
+	}
+	setupUi();
+	/* 管理人用の見た目 */
+	const tx = ADMIN_TEXT[S.admin];
+	S.canSave = true;
+	$('submit').disabled = false;
+	$('submit').textContent = tx.btn;
+	$('dlg-title').textContent = tx.title;
+	$('dlg-submit').textContent = tx.btn;
+	$('dlg-note').textContent = tx.dlg;
+	const banner = $('banner');
+	banner.hidden = false;
+	banner.textContent = '管理人として直しています。' + tx.dlg;
+	if (S.admin === 'proposal') {
+		$('note-label').textContent = '返事（1000字まで。なくても大丈夫）';
+		$('note').hidden = true;
+		const ta = el('textarea');
+		ta.id = 'reply';
+		ta.maxLength = 1000;
+		ta.value = S.proposal.reply || '';
+		ta.placeholder = '例）こんな感じでどうでしょう？色はゲームのパレットに合わせました';
+		$('note').insertAdjacentElement('afterend', ta);
+		/* 元の提案のことばも見えるように */
+		const pv = el('p', 'note', '提案：' + (S.proposal.body || ''));
+		$('note-label').insertAdjacentElement('beforebegin', pv);
+	} else {
+		$('note-label').textContent = tx.note;
+	}
+	$('loading').hidden = true;
+	resize();
+	fit();
+	S.rev = 1;
+	S.serverRev = 1;
+	S.localRev = 1;
+	onChange();
+	S.serverRev = S.rev;
+	S.localRev = S.rev;
+}
+
+/* 管理人の保存（出す窓の「修正を出す」「保存」「返事を送る」） */
+async function adminSave() {
+	if (S.busy) {
+		return false;
+	}
+	commitFloat();
+	S.busy = true;
+	$('dlg-submit').disabled = true;
+	setMsg('送っています...', true);
+	try {
+		const bytes = await encodeIndexedPng({
+			width: S.w, height: S.h, indices: composite(),
+			palette: S.task.palette.map(function (c) { return { r: c[0], g: c[1], b: c[2] }; })
+		});
+		const data64 = u8ToB64(bytes);
+		let r;
+		if (S.admin === 'fix') {
+			r = await api('/api/admin/kobo/fix', { taskId: S.task.id, parent: S.parent, data: data64, note: $('note').value });
+		} else if (S.admin === 'proposal') {
+			r = await api('/api/admin/kobo/proposal-update', { id: S.proposal.id, reply: $('reply').value, replyData: data64 });
+		} else {
+			r = await api('/api/admin/kobo/task-image', { taskId: S.task.id, slot: S.admin, index: S.sampleIndex || 0, data: data64 });
+		}
+		if (!r.ok) {
+			setMsg(r.httpStatus === 401 ? '管理ページのログインが切れています。管理ページでログインし直してね。（絵はこの端末に残っています）' : errText(r));
+			return false;
+		}
+		clearLocal();
+		S.closed = true;
+		closeSubmit();
+		const banner = $('banner');
+		banner.hidden = false;
+		banner.textContent = '送りました！このタブは閉じて大丈夫です。管理ページを読み込み直すと出ます。';
+		toast('送りました');
+		S.canSave = false;
+		$('submit').disabled = true;
+		return true;
+	} catch (e) {
+		setMsg('サーバーにつながりませんでした。（絵はこの端末に残っています）');
+		return false;
+	} finally {
+		S.busy = false;
+		$('dlg-submit').disabled = false;
+	}
+}
+
 async function boot() {
 	const q = new URLSearchParams(location.search);
+	if (q.get('admin')) {
+		await adminBoot(q);
+		return;
+	}
 	const taskId = q.get('task');
 	S.from = q.get('from') || 'base';
 	const workParam = q.get('work') || '';
@@ -1556,7 +1854,7 @@ function openSubmit() {
 	const sc = Math.max(1, Math.min(8, Math.floor(400 / S.w), Math.floor(160 / S.h)));
 	cv.style.width = (S.w * sc) + 'px';
 	$('dlg-msg').textContent = '';
-	$('dlg-submit').disabled = !$('agree').checked;
+	$('dlg-submit').disabled = S.admin ? false : !$('agree').checked;
 	$('submit-dlg').hidden = false;
 	$('note').focus();
 }
@@ -1571,9 +1869,17 @@ $('submit-dlg').addEventListener('click', function (e) {
 		closeSubmit();
 	}
 });
-$('agree').addEventListener('change', function () { $('dlg-submit').disabled = !$('agree').checked || S.busy; });
+$('agree').addEventListener('change', function () { $('dlg-submit').disabled = (!S.admin && !$('agree').checked) || S.busy; });
 $('dlg-submit').addEventListener('click', function () { save(true, false); });
 $('back').addEventListener('click', function () {
+	if (S.admin) {
+		/* 管理画面から別のタブで開いているので、閉じる（閉じられなければ管理ページへ） */
+		saveLocal();
+		S.closed = true;
+		window.close();
+		location.href = '/admin';
+		return;
+	}
 	if (!S.task) {
 		location.href = '/kobo';
 		return;

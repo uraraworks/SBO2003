@@ -259,10 +259,11 @@ async function renderDetail(body, seq, id) {
 		h('div', { class: 'sub-text', text: (task.fresh ? '新しく描く ' + task.w + '×' + task.h + '（パレットは ' + task.sheet + '）' : task.sheet + '（' + task.x + ',' + task.y + '）' + task.w + '×' + task.h) + ' ／ コマ ' + task.cw + '×' + task.ch + ' ／ ' + (PREVIEWS[task.preview] || task.preview) + ' ／ ' + task.frameMs + 'ms' }),
 		task.desc ? h('div', { class: 'message', text: task.desc }) : null,
 		h('div', { class: 'kb-refs' },
-			refBlock('今の絵', task.base ? pic(task.base, 200) : null),
+			refBlock('今の絵', task.base ? pic(task.base, 200) : null, task.fresh ? '' : '/kobo-draw?admin=base&task=' + encodeURIComponent(id)),
 			refBlock('背景', task.bg ? pic(task.bg, 64) : null),
 			refBlock('元イラスト', task.ref ? pic(task.ref, 240, 'kb-refpic') : null),
-			...(task.samples || []).map((s, i) => refBlock('見本 ' + (i + 1), pic(s, 200)))),
+			...(task.samples || []).map((s, i) => refBlock('見本 ' + (i + 1), pic(s, 200), '/kobo-draw?admin=sample&task=' + encodeURIComponent(id) + '&n=' + i))),
+		h('div', { class: 'sub-text', text: '「編集」は描く画面を別のタブで開きます。保存したら、この画面を読み込み直してください。' }),
 		h('div', null,
 			h('button', { type: 'button', on: { click: () => show({ name: 'form', id }) } }, '直す'),
 			h('button', { type: 'button', class: 'sub', on: { click: () => {
@@ -308,6 +309,8 @@ async function renderDetail(body, seq, id) {
 		if (!w.deleted) {
 			const bar = h('div', { class: 'kb-bar' });
 			bar.appendChild(h('button', { type: 'button', class: 'sub', on: { click: () => { selWork = w.id; markSel(); drawComments(); } } }, 'コメント' + (nHid ? ' ●' : '')));
+			/* 作監修正：この案に描き足して、子に「管理人」の案として出す */
+			bar.appendChild(h('button', { type: 'button', class: 'sub', on: { click: () => openDraw('/kobo-draw?admin=fix&task=' + encodeURIComponent(id) + '&from=' + encodeURIComponent(w.id)) } }, '描き足して返す'));
 			if (w.status === 'posted' && !w.hidden && !(task.adopted && task.adopted.workId === w.id)) {
 				bar.appendChild(h('button', { type: 'button', on: { click: () => {
 					if (!confirm('この案を採用します（お題は「採用済み」になります）。よろしいですか？')) return;
@@ -390,9 +393,15 @@ async function renderDetail(body, seq, id) {
 	}
 	drawComments();
 }
-function refBlock(label, content) {
+function refBlock(label, content, editUrl) {
 	if (!content) return null;
-	return h('div', { class: 'kb-ref' }, h('div', { class: 'sub-text', text: label }), content);
+	return h('div', { class: 'kb-ref' }, h('div', { class: 'sub-text', text: label }), content,
+		editUrl ? h('div', null, h('button', { type: 'button', class: 'sub', on: { click: () => openDraw(editUrl) } }, '編集')) : null);
+}
+
+/* 描く画面を管理人として別のタブで開く（保存したらこの画面を読み込み直す） */
+function openDraw(url) {
+	window.open(url, '_blank');
 }
 
 /* 採用した案・協力者・ゲーム画像に貼る */
@@ -491,7 +500,13 @@ async function renderProposals(body, seq, status) {
 		if (p.status === 'tasked' && p.taskId) bar.appendChild(h('button', { type: 'button', on: { click: () => show({ name: 'detail', id: p.taskId }) } }, 'お題を開く'));
 		else bar.appendChild(h('button', { type: 'button', on: { click: () => show({ name: 'form', proposal: p }) } }, 'お題にする'));
 		card.appendChild(ta);
-		card.appendChild(h('div', null, h('button', { type: 'button', class: 'sub', on: { click: () => upd({ reply: ta.value }) } }, '返事を保存'), p.replyAt ? h('span', { class: 'sub-text', text: dateText(p.replyAt) + ' に返事済み' }) : null));
+		if (p.replyImg) {
+			card.appendChild(h('div', { class: 'kb-ref' }, h('div', { class: 'sub-text', text: '返事の絵' }), pic(p.replyImg, 256),
+				h('div', null, h('button', { type: 'button', class: 'sub', on: { click: () => { if (confirm('返事の絵を外しますか？')) upd({ replyImg: '' }); } } }, '絵を外す'))));
+		}
+		card.appendChild(h('div', null, h('button', { type: 'button', class: 'sub', on: { click: () => upd({ reply: ta.value }) } }, '返事を保存'),
+			h('button', { type: 'button', class: 'sub', on: { click: () => openDraw('/kobo-draw?admin=proposal&id=' + encodeURIComponent(p.id)) } }, p.replyImg ? '返事の絵を描き直す' : '描き足して返事'),
+			p.replyAt ? h('span', { class: 'sub-text', text: dateText(p.replyAt) + ' に返事済み' }) : null));
 		card.appendChild(bar);
 		card.appendChild(m);
 		body.appendChild(card);

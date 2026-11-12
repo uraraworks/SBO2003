@@ -271,6 +271,9 @@
 		#zoombtns { bottom: 8px; }
 		.hide-phone { display: none !important; }
 	}
+	/* 管理人が直す時（?admin=…）は、プレイヤー向けの欄を出さない */
+	.admin-mode .player-only { display: none !important; }
+	#reply { width: 100%; box-sizing: border-box; min-height: 5em; font: inherit; }
 </style>
 </head>
 <body>
@@ -328,7 +331,7 @@
 		</aside>
 		<div id="stage">
 			<canvas id="view"></canvas>
-			<div id="stagebar"><button type="button" id="undo" title="元に戻す（Ctrl+Z）"><svg class="ic" aria-hidden="true"><use href="#ic-undo"/></svg><span class="lbl">戻す</span></button><button type="button" id="redo" title="やり直す（Ctrl+Shift+Z）"><svg class="ic" aria-hidden="true"><use href="#ic-redo"/></svg><span class="lbl">進む</span></button><button type="button" id="save-wip" title="作業中として保存（あとから続きを描けます）"><svg class="ic" aria-hidden="true"><use href="#ic-save"/></svg><span class="lbl">途中保存</span></button></div>
+			<div id="stagebar"><button type="button" id="undo" title="元に戻す（Ctrl+Z）"><svg class="ic" aria-hidden="true"><use href="#ic-undo"/></svg><span class="lbl">戻す</span></button><button type="button" id="redo" title="やり直す（Ctrl+Shift+Z）"><svg class="ic" aria-hidden="true"><use href="#ic-redo"/></svg><span class="lbl">進む</span></button><button type="button" id="save-wip" class="player-only" title="作業中として保存（あとから続きを描けます）"><svg class="ic" aria-hidden="true"><use href="#ic-save"/></svg><span class="lbl">途中保存</span></button></div>
 			<div id="info"></div>
 			<div id="zoombtns"><button type="button" id="zout" title="縮小（Cmd+右クリック・Cmd+ホイールでも）">−</button><select id="zoomSel" title="倍率"></select><button type="button" id="zin" title="拡大（Cmd+左クリック・Cmd+ホイールでも）">＋</button></div>
 			<div id="mini"></div>
@@ -352,11 +355,11 @@
 				<div id="preview"></div>
 			</div>
 			<div class="sec" id="sec-save">
-				<h4>作業中の保存<small>あとから続きを描けます</small></h4>
-				<label class="check"><input type="checkbox" id="share"><span>みんなに見せる（作業中でも、ほかの人が見られます）</span></label>
+				<h4 class="player-only">作業中の保存<small>あとから続きを描けます</small></h4>
+				<label class="check player-only"><input type="checkbox" id="share"><span>みんなに見せる（作業中でも、ほかの人が見られます）</span></label>
 				<div id="msg"></div>
 				<div id="autosave"></div>
-				<p class="note">上の「途中保存」で作業中として保存、「出す」で案として出します。</p>
+				<p class="note player-only">上の「途中保存」で作業中として保存、「出す」で案として出します。</p>
 			</div>
 		</aside>
 	</div>
@@ -366,17 +369,17 @@
 	<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-title">
 		<h3 id="dlg-title">この絵を出す</h3>
 		<div class="checker dlg-pic"><canvas id="dlg-canvas"></canvas></div>
-		<label class="row" for="note">ひとこと（200字まで）</label>
+		<label class="row" for="note" id="note-label">ひとこと（200字まで）</label>
 		<input type="text" id="note" maxlength="200" placeholder="例）髪の色を見本に近づけました" autocomplete="off">
-		<label class="row">名前の出し方</label>
-		<div class="radios">
+		<label class="row player-only">名前の出し方</label>
+		<div class="radios player-only">
 			<label><input type="radio" name="anon" value="0" checked><span>キャラ名<small id="my-name"></small></span></label>
 			<label><input type="radio" name="anon" value="1"><span>匿名<small>「匿名さん」</small></span></label>
 		</div>
-		<p class="note">匿名でも、管理人にはだれの案か分かります。</p>
-		<label class="check"><input type="checkbox" id="agree"><span>出すときの同意
+		<p class="note player-only">匿名でも、管理人にはだれの案か分かります。</p>
+		<label class="check player-only"><input type="checkbox" id="agree"><span>出すときの同意
 			<ul><li>自分で描きました</li><li>ゲームの一部として GPLv3 で配布されることがあります</li><li>ほかの人が描き足してよいです</li><li>採用されないこともあると分かっています</li></ul></span></label>
-		<p class="note">出すと案として固定され、あとから変えられません。みんなが見て、描き足しの元にできます。</p>
+		<p class="note" id="dlg-note">出すと案として固定され、あとから変えられません。みんなが見て、描き足しの元にできます。</p>
 		<div id="dlg-msg"></div>
 		<div class="dlg-btns">
 			<button type="button" id="dlg-cancel">やめる</button>

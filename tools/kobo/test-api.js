@@ -481,6 +481,46 @@ async function main() {
 		r = await api.admin('task-delete', { id: tFresh.id });
 		ok(r.ok, '新規のお題を消す');
 
+		section('管理人の修正・お題の絵を直す・返事の絵');
+		r = await api.post('/api/admin/kobo/fix', { taskId: task.id, parent: wA.id, data: draw(11) });
+		eq(r._status, 401, '修正は管理者だけ');
+		r = await api.admin('fix', { taskId: task.id, parent: wA.id, data: draw(11), note: '目を直しました' });
+		ok(r.ok && r.work.admin && r.work.name === '管理人' && r.work.parent === wA.id && r.work.status === 'posted', '管理人の修正を子として出せる');
+		var wFix = r.work;
+		var bad = Uint8Array.from(base);
+		bad[0] = unusable;
+		r = await api.admin('fix', { taskId: task.id, parent: wA.id, data: b64(indexedPng(W, H, bad, palette)) });
+		eq(r.error, 'bad_palette', '修正も使える色だけ');
+		r = await api.post('/api/kobo/task', { id: task.id, token: 'tokA' });
+		var seen = r.works.filter(function (w) { return w.id === wFix.id; })[0];
+		ok(seen && seen.admin && seen.name === '管理人' && !seen.mine, 'プレイヤーにも管理人の修正と分かる');
+		r = await api.admin('adopt', { taskId: task.id, workId: wFix.id });
+		ok(r.ok && r.task.adopted.credits.length && r.task.adopted.credits[0].role === 'draw' &&
+			!r.task.adopted.credits.some(function (c) { return c.name === '管理人'; }), '管理人の修正を採用しても協力者に管理人は入らない');
+		r = await api.admin('adopt', { taskId: task.id, workId: '' });
+		r = await api.admin('task-image', { taskId: task.id, slot: 'base', data: draw(12) });
+		ok(r.ok && r.task.base && r.task.base !== task.base, 'お題の今の絵を直せる');
+		eq((await api.get('/kobo-img/' + task.base + '.png')).status, 404, '前の今の絵は消える');
+		task.base = r.task.base;
+		r = await api.admin('task-image', { taskId: task.id, slot: 'base', data: b64(indexedPng(8, 8, new Uint8Array(64), palette)) });
+		eq(r.error, 'bad_size', 'お題と違う大きさは断る');
+		r = await api.admin('task-image', { taskId: task.id, slot: 'sample', index: 0, data: draw(13) });
+		eq(r._status, 404, '無い見本は直せない');
+		r = await api.admin('task-save', Object.assign({ id: task.id }, taskBody, { state: 'open', baseData: undefined, bgData: undefined, refData: undefined, samplesData: [baseData], proposalId: undefined }));
+		var oldSample = r.task.samples[0];
+		r = await api.admin('task-image', { taskId: task.id, slot: 'sample', index: 0, data: draw(14) });
+		ok(r.ok && r.task.samples.length === 1 && r.task.samples[0] !== oldSample && Array.isArray(r.task.sampleColors) && r.task.sampleColors.length > 0, '見本を直せる・見本の色を作り直す');
+		r = await api.admin('proposal-update', { id: propId, reply: '描き足してみました', replyData: rough });
+		ok(r.ok && r.proposal.replyImg, '提案の返事に絵を付けられる');
+		var replyImg = r.proposal.replyImg;
+		r = await api.p('tokA', 'my-proposals');
+		eq(r.proposals.filter(function (x) { return x.id === propId; })[0].replyImg, replyImg, '返事の絵が本人に見える');
+		r = await api.admin('proposal-update', { id: propId, replyImg: '' });
+		ok(r.ok && !r.proposal.replyImg, '返事の絵を外せる');
+		eq((await api.get('/kobo-img/' + replyImg + '.png')).status, 404, '外した返事の絵は消える');
+		r = await api.admin('work', { id: wFix.id, deleted: true });
+		ok(r.ok, '管理人の修正も消せる');
+
 		section('消した案（子がいる時は印だけ）');
 		r = await api.admin('work', { id: wA.id, deleted: true });
 		ok(r.ok, '子のいる案を消す');

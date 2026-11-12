@@ -155,7 +155,11 @@ save の決まり:
 | `/api/admin/kobo/comment-update` | `{session, id, hidden?, delete?}` | `{ok}` |
 | `/api/admin/kobo/adopt` | `{session, taskId, workId|''}` | `{ok, task}`（'' で採用を取り消し。採用すると state=done・credits を作る） |
 | `/api/admin/kobo/proposals` | `{session, status?}` | `{proposals:[...account 付き]}` |
-| `/api/admin/kobo/proposal-update` | `{session, id, status?, reply?}` | `{ok, proposal}` |
+| `/api/admin/kobo/proposal-update` | `{session, id, status?, reply?, replyData?(PNG base64), replyImg?('' で外す)}` | `{ok, proposal}`（`replyData` は管理人が描き足した返事の絵 → `replyImg`） |
+| `/api/admin/kobo/task-image` | `{session, taskId, slot:'base'|'sample', index?, data}` | `{ok, task}`（お題の今の絵・見本を直す。大きさ・パレットはお題と同じ。見本の色 sampleColors は作り直す） |
+| `/api/admin/kobo/fix` | `{session, taskId, parent, data, note}` | `{ok, work}`（作監修正：元の案の子に `admin:true`・名前「管理人」の出した案を作る。協力者には入らない） |
+
+管理人が描く時は、描く画面を `/kobo-draw?admin=fix&task=&from=案id` ／ `admin=base&task=` ／ `admin=sample&task=&n=` ／ `admin=proposal&id=提案id` で開く（管理画面のログイン Cookie で API を呼ぶ）。
 
 credits の作り方: 採用した案から parent をたどった全部の案の人（同じ人は 1 回。役は採用した案の人が `draw`、ほかは `base`）＋提案の人（`proposal`）。名前はそれぞれの案・提案で選んだ表示（匿名なら `anonymous:true`, name は ''）。
 

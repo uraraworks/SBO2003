@@ -501,6 +501,9 @@ function nodeEl(w) {
 	if (w.mine) {
 		line.appendChild(el('span', 'tag mine', '自分'));
 	}
+	if (w.admin) {
+		line.appendChild(el('span', 'tag admin', '管理人の修正'));
+	}
 	if (w.status === 'wip') {
 		line.appendChild(el('span', 'tag wip', '作業中'));
 	}
@@ -1893,6 +1896,32 @@ function renderPropose() {
 	loadMyProposals();
 }
 
+/* ゲームの絵は真っ黒が透明。ラフ絵・返事の絵の真っ黒を透かして見せる（読み込んだ後に 1 回だけ置きかえる） */
+function clearBlack(img) {
+	img.addEventListener('load', function onLoad() {
+		img.removeEventListener('load', onLoad);
+		if (img.naturalWidth > 512 || img.naturalHeight > 512) {
+			return;
+		}
+		try {
+			const c = document.createElement('canvas');
+			c.width = img.naturalWidth;
+			c.height = img.naturalHeight;
+			const cx = c.getContext('2d');
+			cx.drawImage(img, 0, 0);
+			const d = cx.getImageData(0, 0, c.width, c.height);
+			for (let i = 0; i < d.data.length; i += 4) {
+				if (!d.data[i] && !d.data[i + 1] && !d.data[i + 2]) {
+					d.data[i + 3] = 0;
+				}
+			}
+			cx.putImageData(d, 0, 0);
+			img.src = c.toDataURL('image/png');
+		} catch (e) { /* そのまま見せる */ }
+	});
+	return img;
+}
+
 function loadMyProposals() {
 	const box = $('my-proposals');
 	if (!box) {
@@ -1917,7 +1946,7 @@ function loadMyProposals() {
 			d.appendChild(h);
 			d.appendChild(el('div', 'prop-body', pr.body));
 			if (pr.img) {
-				const im = el('img');
+				const im = clearBlack(el('img'));
 				im.src = imgUrl(pr.img);
 				im.alt = 'ラフ絵';
 				d.appendChild(im);
@@ -1928,6 +1957,17 @@ function loadMyProposals() {
 				r.firstChild.style.fontWeight = 'bold';
 				r.appendChild(el('div', 'prop-body', pr.reply));
 				d.appendChild(r);
+			}
+			if (pr.replyImg) {
+				/* 管理人が描き足した絵 */
+				const r2 = el('div', 'reply');
+				r2.appendChild(el('div', 'comment-head', '管理人が描き足した絵'));
+				r2.firstChild.style.fontWeight = 'bold';
+				const ri = clearBlack(el('img'));
+				ri.src = imgUrl(pr.replyImg);
+				ri.alt = '管理人が描き足した絵';
+				r2.appendChild(ri);
+				d.appendChild(r2);
 			}
 			if (pr.status === 'tasked' && pr.taskId) {
 				const a = el('a', '', 'お題を見る');

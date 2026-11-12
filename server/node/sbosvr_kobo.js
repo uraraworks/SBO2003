@@ -440,7 +440,8 @@ Module['sboKobo'] = (function () {
 	function workView(w, strMyAcc, cache) {
 		return {
 			id: w.id, parent: w.parent || '',
-			name: w.anonymous ? '' : nameOf(w.account, w.name, cache),
+			name: w.admin ? '管理人' : (w.anonymous ? '' : nameOf(w.account, w.name, cache)),
+			admin: !!w.admin,
 			anonymous: !!w.anonymous, note: w.note || '', status: w.status, share: !!w.share,
 			img: w.img, cheers: cheerCount(w.id), comments: commentCount(w.id, false),
 			at: w.at, updatedAt: w.updatedAt, postedAt: w.postedAt || 0,
@@ -450,7 +451,7 @@ Module['sboKobo'] = (function () {
 
 	function adminWorkView(w, cache) {
 		var o = workView(w, '', cache);
-		o.name = nameOf(w.account, w.name, cache);
+		o.name = w.admin ? '管理人' : nameOf(w.account, w.name, cache);
 		o.account = w.account;
 		o.postedName = w.name;
 		o.hidden = !!w.hidden;
@@ -488,7 +489,7 @@ Module['sboKobo'] = (function () {
 		var o = {
 			id: p.id, kind: p.kind, body: p.body, img: p.img || '',
 			name: (bAdmin || !p.anonymous) ? nameOf(p.account, p.name, cache) : '',
-			anonymous: !!p.anonymous, status: p.status, reply: p.reply || '', replyAt: p.replyAt || 0,
+			anonymous: !!p.anonymous, status: p.status, reply: p.reply || '', replyImg: p.replyImg || '', replyAt: p.replyAt || 0,
 			taskId: p.taskId || '', at: p.at, editedAt: p.editedAt || 0
 		};
 		if (bAdmin) {
@@ -1118,7 +1119,9 @@ Module['sboKobo'] = (function () {
 			return;
 		}
 		delImage(p.img);
+		delImage(p.replyImg);
 		p.img = '';
+		p.replyImg = '';
 		p.body = '';
 		p.reply = '';
 		p.status = 'withdrawn';
@@ -1499,12 +1502,13 @@ Module['sboKobo'] = (function () {
 	function makeCredits(w, t) {
 		var cache = {}, credits = [], mapSeen = {}, nGuard = 0;
 		for (var cur = w; cur && nGuard < 1000; cur = cur.parent ? findIn(store.works, cur.parent) : null, nGuard++) {
-			if (mapSeen[cur.account]) {
+			/* 管理人が直した版（作監修正）は協力者に入れない */
+			if (cur.admin || mapSeen[cur.account]) {
 				continue;
 			}
 			mapSeen[cur.account] = true;
 			credits.push({
-				role: cur === w ? 'draw' : 'base',
+				role: credits.length ? 'base' : 'draw',
 				name: cur.anonymous ? '' : nameOf(cur.account, cur.name, cache),
 				anonymous: !!cur.anonymous
 			});
@@ -1514,6 +1518,127 @@ Module['sboKobo'] = (function () {
 			credits.push({ role: 'proposal', name: p.anonymous ? '' : nameOf(p.account, p.name, cache), anonymous: !!p.anonymous });
 		}
 		return credits;
+	}
+
+	/* お題の見本の色（見本と、描き直しなら今の絵で使っている色。使える色の中だけ）を作り直す */
+	function rebuildSampleColors(t) {
+		var used = {};
+		var ids = (t.samples || []).slice();
+		if (!t.fresh && t.base) {
+			ids.push(t.base);
+		}
+		ids.forEach(function (id) {
+			try {
+				var o = readIndexed(fs.readFileSync(path.join(strImgDir, id + '.png')));
+				for (var i = 0; i < o.indices.length; i++) {
+					used[o.indices[i]] = true;
+				}
+			} catch (e) { /* 読めない絵は飛ばす */ }
+		});
+		t.sampleColors = t.colors.filter(function (n) { return used[n] && n !== t.transparent; });
+	}
+
+	/* お題の絵を管理画面で直す（slot: 'base' 今の絵 / 'sample' 見本 index 番目）。大きさ・パレットはお題と同じ */
+	function apiAdminTaskImage(body, req, res) {
+		if (!checkAdmin(body, res)) {
+			return;
+		}
+		load();
+		var t = findIn(store.tasks, str(body.taskId, 32));
+		if (!t) {
+			reply(res, 404, { error: 'not_found' });
+			return;
+		}
+		var nIndex = Number(body.index) || 0;
+		if (body.slot === 'base') {
+			if (t.fresh) {
+				reply(res, 200, { error: 'not_allowed' });
+				return;
+			}
+		} else if (body.slot === 'sample') {
+			if (!t.samples || nIndex < 0 || nIndex >= t.samples.length) {
+				reply(res, 404, { error: 'not_found' });
+				return;
+			}
+		} else {
+			reply(res, 200, { error: 'not_allowed' });
+			return;
+		}
+		var buf, o;
+		try {
+			buf = decodeB64(body.data, MAX_PNG);
+			o = readIndexed(buf);
+		} catch (err) {
+			fail(res, err);
+			return;
+		}
+		if (o.w !== t.w || o.h !== t.h) {
+			reply(res, 200, { error: 'bad_size' });
+			return;
+		}
+		if (!samePalette(o.plte, t.palette)) {
+			reply(res, 200, { error: 'bad_palette' });
+			return;
+		}
+		var strImg = putImage(buf, 'png');
+		if (body.slot === 'base') {
+			setImg(t, 'base', strImg);
+		} else {
+			delImage(t.samples[nIndex]);
+			t.samples[nIndex] = strImg;
+		}
+		rebuildSampleColors(t);
+		t.updatedAt = Date.now();
+		save();
+		log('管理者がお題の絵を直した: ' + t.id + ' ' + body.slot + (body.slot === 'sample' ? ' ' + nIndex : ''));
+		reply(res, 200, { ok: true, task: taskView(t) });
+	}
+
+	/* 管理人が案に描き足す（作監修正）。元の案の子として「管理人」の案を出す。ひとことは直したところ */
+	function apiAdminFix(body, req, res) {
+		if (!checkAdmin(body, res)) {
+			return;
+		}
+		load();
+		var t = findIn(store.tasks, str(body.taskId, 32));
+		if (!t) {
+			reply(res, 404, { error: 'not_found' });
+			return;
+		}
+		var parent = null;
+		if (body.parent) {
+			parent = findIn(store.works, str(body.parent, 32));
+			if (!parent || parent.taskId !== t.id || parent.deleted) {
+				reply(res, 404, { error: 'not_found' });
+				return;
+			}
+		}
+		var note = cleanText(body.note, MAX_NOTE);
+		if (note === null) {
+			reply(res, 200, { error: 'long', maxLength: MAX_NOTE });
+			return;
+		}
+		if (store.works.length >= MAX_WORKS) {
+			reply(res, 200, { error: 'too_many' });
+			return;
+		}
+		var buf;
+		try {
+			buf = checkWorkPng(body.data, t);
+		} catch (err) {
+			fail(res, err);
+			return;
+		}
+		var now = Date.now();
+		var w = {
+			id: newId(), taskId: t.id, parent: parent ? parent.id : '', account: '', name: '管理人', admin: true,
+			anonymous: false, note: note, status: 'posted', share: true, img: putImage(buf, 'png'),
+			hidden: false, deleted: false, at: now, updatedAt: now, postedAt: now, ip: acc().clientIp(req)
+		};
+		store.works.push(w);
+		save();
+		log('管理人の修正: ' + w.id + ' → ' + (parent ? parent.id : '(根)'));
+		reply(res, 200, { ok: true, work: adminWorkView(w, {}) });
 	}
 
 	function apiAdminAdopt(body, req, res) {
@@ -1588,6 +1713,22 @@ Module['sboKobo'] = (function () {
 			p.reply = text;
 			p.replyAt = text ? Date.now() : 0;
 		}
+		/* 返事に付ける絵（管理人が描き足したもの）。replyData で入れ替え、replyImg: '' で外す */
+		if (body.replyData) {
+			var strReplyImg;
+			try {
+				strReplyImg = putImage(checkRoughPng(body.replyData), 'png');
+			} catch (err) {
+				fail(res, err);
+				return;
+			}
+			delImage(p.replyImg);
+			p.replyImg = strReplyImg;
+			p.replyAt = Date.now();
+		} else if (body.replyImg === '') {
+			delImage(p.replyImg);
+			p.replyImg = '';
+		}
 		save();
 		log('管理者が提案を更新: ' + p.id + ' ' + p.status);
 		reply(res, 200, { ok: true, proposal: proposalView(p, {}, true) });
@@ -1615,7 +1756,9 @@ Module['sboKobo'] = (function () {
 		'/api/admin/kobo/comment-update': apiAdminCommentUpdate,
 		'/api/admin/kobo/adopt': apiAdminAdopt,
 		'/api/admin/kobo/proposals': apiAdminProposals,
-		'/api/admin/kobo/proposal-update': apiAdminProposalUpdate
+		'/api/admin/kobo/proposal-update': apiAdminProposalUpdate,
+		'/api/admin/kobo/task-image': apiAdminTaskImage,
+		'/api/admin/kobo/fix': apiAdminFix
 	};
 
 	/* GET /kobo-img/<id>.png|.jpg */
