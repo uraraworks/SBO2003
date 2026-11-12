@@ -18,6 +18,7 @@ const $ = function (id) { return document.getElementById(id); };
 const UNDO_MAX = 50;
 const KEY_PV_PLAY = 'sbo_kobo_pv_play';		// プレビューを再生するか（'1' = 再生）
 const KEY_SMP_ZOOM = 'sbo_kobo_smp_zoom';	// 見本の倍率
+const KEY_PAL_ALL = 'sbo_kobo_pal_all';		// パレット全体を見るか（'1' = 見る）
 const KEY_REF_ZOOM = 'sbo_kobo_ref_zoom';	// 元イラストの倍率（0 = 欄の幅に合わせる）
 const LOCAL_SAVE_MS = 3000;		// 端末への自動保存
 const SERVER_SAVE_MS = 60000;	// サーバーへの作業中保存（「みんなに見せる」がオンの時だけ）
@@ -458,9 +459,16 @@ function buildPalette() {
 	const box = $('palette');
 	box.textContent = '';
 	const usable = new Set(S.task.colors);
+	/* ふだんは使える色だけを番号順に。「パレット全体」にすると 256 色の 16×16（エディタと同じ並び） */
+	const all = lsGet(KEY_PAL_ALL) === '1';
+	$('pal-all').checked = all;
+	box.classList.toggle('only', !all);
 	for (let i = 0; i < 256; i++) {
 		const c = S.task.palette[i] || [0, 0, 0];
 		const ok = usable.has(i);
+		if (!all && !ok) {
+			continue;
+		}
 		const black = !c[0] && !c[1] && !c[2];
 		const b = el('button', 'sw' + (black ? ' black' : '') + (ok ? ' use' : ' off'));
 		b.type = 'button';
@@ -1395,6 +1403,11 @@ $('grid').addEventListener('click', toggleGrid);
 $('fit').addEventListener('click', fit);
 $('zin').addEventListener('click', function () { stepZoom(1); });
 $('zout').addEventListener('click', function () { stepZoom(-1); });
+$('pal-all').addEventListener('change', function (e) {
+	lsSet(KEY_PAL_ALL, e.target.checked ? '1' : '0');
+	buildPalette();
+	setColor(S.color);
+});
 $('zoomSel').addEventListener('change', function (e) {
 	zoomAt(vw / 2, vh / 2, Number(e.target.value));
 	view.focus && view.focus();
