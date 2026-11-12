@@ -344,6 +344,10 @@
 			linear-gradient(to bottom right, transparent calc(50% - 1.5px), #000 calc(50% - 1.5px), #000 calc(50% - 0.5px), #fff calc(50% - 0.5px), #fff calc(50% + 0.5px), #000 calc(50% + 0.5px), #000 calc(50% + 1.5px), transparent calc(50% + 1.5px)); }
 	.pad-tools .sw.sel { outline: 2px solid #fff; box-shadow: 0 0 0 4px #000; position: relative; z-index: 1; }
 	.rough-preview { margin-top: 8px; }
+	/* 提案のラフ絵：小さな見本と「お絵かきで描く」 */
+	.rough-row { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; margin-top: 8px; }
+	.rough-thumb { padding: 4px; border-radius: 6px; line-height: 0; }
+	.rough-thumb canvas { display: block; image-rendering: pixelated; }
 	.rough-preview img { max-width: 160px; max-height: 160px; image-rendering: pixelated; background: #fff; border-radius: 4px; }
 	.prop { background: var(--card); border: 1px solid var(--card-border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
 	.prop-body { white-space: pre-wrap; word-break: break-word; margin-top: 4px; }

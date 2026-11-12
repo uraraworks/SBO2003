@@ -8,7 +8,6 @@ import {
 	loadIndexed, displayPalette, indicesToCanvas, loadBgCanvas, composeOnBg, makePreview, thumbCanvas
 } from '/dot-kobo.js';
 import { decodeIndexedPng, encodeIndexedPng } from '/dot-png.js';
-import { installTouch } from '/kobo-touch.js';
 
 const KIND_TEXT = { char: 'NPC・敵', part: '背景パーツ', effect: 'エフェクト' };
 const STATE_TEXT = { open: '募集中', judging: '選考中', done: 'できあがり' };
@@ -1038,237 +1037,83 @@ function renderPropose() {
 
 	/* ラフ絵（任意）。お絵かきで描いたものか、選んだ画像のどちらか（最後に使った方）を送る */
 	p.appendChild(el('span', 'field-label', 'ラフ絵（なくても大丈夫）'));
-	p.appendChild(el('p', 'note', '下のお絵かきで描くと、その絵がそのまま一緒に送られます。色はゲームのパレット、大きさはゲームのコマと同じです（右クリックで色を拾えます）。'));
+	p.appendChild(el('p', 'note', '「お絵かきで描く」で、お題に挑戦する時と同じ描く画面が開きます。描いた絵がそのまま一緒に送られます。色はゲームのパレット、大きさはゲームのコマと同じです。'));
 	let roughSrc = '';		// '' | 'pad' | 'file' | 'keep'（直す時の今のラフ絵のまま）
 	let fileData = '';		// 選んだ画像の PNG（base64）
 
-	/* 小さなお絵かき */
+	/*
+	 * ラフ絵は、お題に挑戦する時と同じ描く画面（/kobo-draw?propose=…）で描く。
+	 * ここには大きさと小さな見本だけを置き、受け渡しは提案の下書き（localStorage）でする。
+	 */
 	const padBar = el('div', 'buttons');
 	padBar.style.alignItems = 'center';
 	padBar.appendChild(el('span', '', '大きさ'));
 	const sizeSel = el('select');
 	padBar.appendChild(sizeSel);
-	/* 拡大（自動＝ 256px ほどに収まる倍率）。⌘/Ctrl＋ホイールでも変えられる */
-	const ZOOMS = [4, 6, 8, 10, 12, 16, 20, 24, 32];
-	padBar.appendChild(el('span', '', '拡大'));
-	const zoomOut = el('button', 'sub small', '－');
-	zoomOut.type = 'button';
-	zoomOut.title = '小さく';
-	const zoomSel = el('select');
-	const zAuto = el('option', '', '自動');
-	zAuto.value = 'auto';
-	zoomSel.appendChild(zAuto);
-	ZOOMS.forEach(function (z) {
-		const o = el('option', '', z + '倍');
-		o.value = String(z);
-		zoomSel.appendChild(o);
-	});
-	const zCustom = el('option', '', '');		// ⌘＋ホイール・ピンチで半端な倍率の時
-	zCustom.value = 'custom';
-	zCustom.hidden = true;
-	zoomSel.appendChild(zCustom);
-	const zoomIn = el('button', 'sub small', '＋');
-	zoomIn.type = 'button';
-	zoomIn.title = '大きく';
-	padBar.appendChild(zoomOut);
-	padBar.appendChild(zoomSel);
-	padBar.appendChild(zoomIn);
-	const pad = el('div', 'draw-pad');
-	pad.style.marginTop = '8px';
-	const cv = el('canvas');
-	cv.style.cursor = 'crosshair';
-	const padView = el('div', 'pad-view');		// はみ出す分はスクロール
-	padView.appendChild(cv);
-	const tools = el('div', 'pad-tools');
-	const er = el('button', 'sub small', '消しゴム');
-	er.type = 'button';
-	const clr = el('button', 'sub small', '全部消す');
+	const thumbBoxEl = el('div', 'checker rough-thumb');
+	const thumb = el('canvas');
+	thumb.className = 'px';
+	thumbBoxEl.appendChild(thumb);
+	const drawBtn = el('button', '', 'お絵かきで描く');
+	drawBtn.type = 'button';
+	const clr = el('button', 'sub small', '絵を消す');
 	clr.type = 'button';
 	const padNote = el('div', 'note');
-	const side = el('div');
-	side.appendChild(tools);
-	const sb = el('div', 'buttons');
-	sb.appendChild(er);
-	sb.appendChild(clr);
-	side.appendChild(sb);
-	side.appendChild(padNote);
-	pad.appendChild(padView);
-	pad.appendChild(side);
+	const padRow = el('div', 'rough-row');
+	padRow.appendChild(thumbBoxEl);
+	const padSide = el('div');
+	const pb = el('div', 'buttons');
+	pb.appendChild(drawBtn);
+	pb.appendChild(clr);
+	padSide.appendChild(pb);
+	padSide.appendChild(padNote);
+	padRow.appendChild(padSide);
 	p.appendChild(padBar);
-	p.appendChild(pad);
+	p.appendChild(padRow);
 
 	let sheet = null;		// {palette, transparent, colors}
-	let W = 16, H = 16, Z = 16;
+	let W = 16, H = 16;
 	let px = new Uint8Array(W * H);
-	let cur = 0;			// 今の色（パレット番号）
 	let drawn = false;
-	const ctx = cv.getContext('2d');
 
 	function kindNow() {
 		return (document.querySelector('input[name="pk"]:checked') || {}).value || 'char';
 	}
-	function css(i) {
-		const c = sheet.palette[i];
-		return 'rgb(' + c.r + ',' + c.g + ',' + c.b + ')';
-	}
+	/* 小さな見本（真っ黒＝透明は市松模様が透けて見える） */
 	function redraw() {
 		if (!sheet) {
 			return;
 		}
-		for (let y = 0; y < H; y++) {
-			for (let x = 0; x < W; x++) {
-				const v = px[y * W + x];
-				if (v === sheet.transparent) {
-					/* 透明は市松模様（1 ドットを 4 つに割る） */
-					const h2 = Z / 2;
-					ctx.fillStyle = '#ffffff';
-					ctx.fillRect(x * Z, y * Z, Z, Z);
-					ctx.fillStyle = '#d6d6d6';
-					ctx.fillRect(x * Z, y * Z, h2, h2);
-					ctx.fillRect(x * Z + h2, y * Z + h2, Z - h2, Z - h2);
-				} else {
-					ctx.fillStyle = css(v);
-					ctx.fillRect(x * Z, y * Z, Z, Z);
-				}
-			}
+		thumb.width = W;
+		thumb.height = H;
+		const tc = thumb.getContext('2d');
+		const id = tc.createImageData(W, H);
+		for (let i = 0; i < px.length; i++) {
+			const v = px[i];
+			const c = sheet.palette[v];
+			const clear = v === sheet.transparent || (!c.r && !c.g && !c.b);
+			id.data[i * 4] = c.r;
+			id.data[i * 4 + 1] = c.g;
+			id.data[i * 4 + 2] = c.b;
+			id.data[i * 4 + 3] = clear ? 0 : 255;
 		}
-		/* マス目（8 ドットごとに濃く） */
-		ctx.lineWidth = 1;
-		for (let x = 0; x <= W; x++) {
-			ctx.strokeStyle = x % 8 === 0 ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.1)';
-			ctx.beginPath();
-			ctx.moveTo(x * Z + 0.5, 0);
-			ctx.lineTo(x * Z + 0.5, H * Z);
-			ctx.stroke();
-		}
-		for (let y = 0; y <= H; y++) {
-			ctx.strokeStyle = y % 8 === 0 ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.1)';
-			ctx.beginPath();
-			ctx.moveTo(0, y * Z + 0.5);
-			ctx.lineTo(W * Z, y * Z + 0.5);
-			ctx.stroke();
-		}
-	}
-	function selectColor(i) {
-		cur = i;
-		Array.prototype.forEach.call(tools.querySelectorAll('.sw'), function (b) {
-			b.classList.toggle('sel', Number(b.dataset.idx) === i);
-		});
-		er.classList.toggle('sel', i === sheet.transparent);
-	}
-	/* 管理者用エディタと同じく 256 色を 16×16 に番号順で並べ、色もそのまま見せる。
-	   全色使える。ただし透明以外の真っ黒はゲームでは透明になるので ✗ で押せない（描く画面と同じ） */
-	function buildTools() {
-		tools.textContent = '';
-		for (let i = 0; i < 256; i++) {
-			const c = sheet.palette[i];
-			const isBlack = !c.r && !c.g && !c.b;
-			const off = isBlack && i !== sheet.transparent;
-			const b = el('button', 'sw' + (isBlack ? ' black' : '') + (off ? ' off' : ''));
-			b.type = 'button';
-			b.dataset.idx = String(i);
-			b.style.background = css(i);
-			b.title = '番号 ' + i + (i === sheet.transparent ? '（透明）' : off ? '（真っ黒はゲームでは透明になるので使えません）' : '  (' + c.r + ', ' + c.g + ', ' + c.b + ')');
-			if (off) {
-				b.disabled = true;
-			} else {
-				b.addEventListener('click', function () { selectColor(i); });
-			}
-			tools.appendChild(b);
-		}
-	}
-	/*
-	 * 倍率。zf が見た目の倍率（小数もある）、Z は canvas に描く時の整数の倍率（zf 以上）。
-	 * ⌘/Ctrl＋ホイールとピンチはなめらかに（整数倍で一度止まる）、－＋と ⌘＋Shift＋ホイールは段階で。
-	 */
-	let zf = 0;			// 0 = 自動
-	function autoZoom() {
-		return Math.max(4, Math.floor(256 / Math.max(W, H)));
-	}
-	function curZoom() {
-		return zf || autoZoom();
-	}
-	function sizeCanvas() {
-		const z = curZoom();
-		Z = Math.max(2, Math.ceil(z - 0.001));
-		cv.width = W * Z + 1;
-		cv.height = H * Z + 1;
-		cv.style.width = (W * z + 1) + 'px';
-		cv.style.height = (H * z + 1) + 'px';
-		if (!zf) {
-			zoomSel.value = 'auto';
-		} else if (ZOOMS.indexOf(zf) >= 0) {
-			zoomSel.value = String(zf);
-		} else {
-			zCustom.textContent = (Math.round(zf * 10) / 10) + '倍';
-			zoomSel.value = 'custom';
-		}
-	}
-	/* 倍率を変える。fx, fy（client 座標）の点が動かないようにスクロールも合わせる */
-	function setZoom(nz, fx, fy) {
-		nz = Math.max(ZOOMS[0] / 2, Math.min(ZOOMS[ZOOMS.length - 1], nz));
-		const old = curZoom();
-		const r = padView.getBoundingClientRect();
-		const ax = (fx == null ? r.left + r.width / 2 : fx) - r.left;
-		const ay = (fy == null ? r.top + r.height / 2 : fy) - r.top;
-		const ix = (padView.scrollLeft + ax) / old;
-		const iy = (padView.scrollTop + ay) / old;
-		zf = nz;
-		sizeCanvas();
-		redraw();
-		padView.scrollLeft = ix * nz - ax;
-		padView.scrollTop = iy * nz - ay;
-		saveZoom();
-	}
-	function saveZoom() {
-		try {
-			window.localStorage.setItem('sbo_kobo_pad_zoom', zf ? String(zf) : 'auto');
-		} catch (e) { /* 覚えられなくてもよい */ }
-	}
-	/* 段階で（d=+1 大きく / -1 小さく） */
-	function stepZoom(d, fx, fy) {
-		const z = curZoom();
-		let n;
-		if (d > 0) {
-			n = ZOOMS.find(function (q) { return q > z + 0.001; });
-		} else {
-			n = ZOOMS.slice().reverse().find(function (q) { return q < z - 0.001; });
-		}
-		if (n) {
-			setZoom(n, fx, fy);
-		}
-	}
-	/* ⌘/Ctrl＋ホイール（ドット絵エディタと同じ動き。整数倍をまたぐ・近づいた時は一度止める） */
-	function wheelZoom(e) {
-		let speed = 1;
-		try {
-			speed = { slow: 2.5, normal: 1, fast: 0.4 }[window.localStorage.getItem('sbo-dot-wheel-zoom-speed') || 'normal'] || 1;
-		} catch (err) { /* ふつう */ }
-		const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
-		const dy = (Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX) * unit;
-		const pinch = e.ctrlKey && !e.metaKey;		// Mac のトラックパッドのピンチは Ctrl 付きのホイール
-		const cur = curZoom();
-		let z = cur * Math.exp(-dy * (pinch ? 0.01 : 0.002) / speed);
-		const near = Math.round(z);
-		if (near >= 1 && Math.abs(z - near) < 0.04 * near && Math.abs(cur - near) >= 0.005) {
-			const crossed = (cur - near) * (z - near) <= 0;
-			if (crossed || Math.abs(z - near) < Math.abs(cur - near)) {
-				z = near;
-			}
-		}
-		setZoom(z, e.clientX, e.clientY);
+		tc.putImageData(id, 0, 0);
+		const sc = Math.max(1, Math.floor(128 / Math.max(W, H)));
+		thumb.style.width = (W * sc) + 'px';
+		thumb.style.height = (H * sc) + 'px';
+		drawBtn.textContent = drawn ? '続きを描く' : 'お絵かきで描く';
+		clr.hidden = !drawn;
 	}
 	function resetPad() {
 		const sz = (sizeSel.value || '16x16').split('x');
 		W = Number(sz[0]);
 		H = Number(sz[1]);
-		sizeCanvas();
 		px = new Uint8Array(W * H).fill(sheet ? sheet.transparent : 0);
 		drawn = false;
 		if (roughSrc === 'pad') {
 			roughSrc = '';
 		}
-		padNote.textContent = W + '×' + H + ' ドット';
+		padNote.textContent = W + '×' + H + ' ドット。描く画面で描いて「完了」を押すと、ここに戻ります。';
 		redraw();
 	}
 	function loadKind(kind) {
@@ -1281,10 +1126,7 @@ function renderPropose() {
 		padNote.textContent = '色を読み込んでいます…';
 		return loadPadSheet(kind).then(function (sh) {
 			sheet = sh;
-			buildTools();
 			resetPad();
-			const first = sheet.colors.find(function (i) { return i !== sheet.transparent; });
-			selectColor(first == null ? sheet.transparent : first);
 		}).catch(function () {
 			padNote.textContent = '色を読み込めませんでした。画像を選んで送ってください。';
 		});
@@ -1313,7 +1155,6 @@ function renderPropose() {
 		resetPad();
 		draftLater();
 	});
-	er.addEventListener('click', function () { selectColor(sheet.transparent); });
 	clr.addEventListener('click', function () {
 		if (!confirmClear()) {
 			return;
@@ -1325,206 +1166,17 @@ function renderPropose() {
 		resetPad();
 		draftLater();
 	});
-
-	let last = null;
-	function padPoint(e) {
-		const r = cv.getBoundingClientRect();
-		return [Math.floor((e.clientX - r.left) / r.width * (cv.width / Z)), Math.floor((e.clientY - r.top) / r.height * (cv.height / Z))];
-	}
-	function plot(x, y) {
-		if (x < 0 || y < 0 || x >= W || y >= H) {
+	/* 描く画面へ。今の入力（ことば・絵）を下書きに残してから移る。戻ると下書きから続きが出る */
+	drawBtn.addEventListener('click', function () {
+		if (!sheet) {
 			return;
 		}
-		px[y * W + x] = cur;
-		drawn = true;
-		roughSrc = 'pad';
-		file.value = '';
-		fileData = '';
-		prev.textContent = '';
-	}
-	function line(a, b) {
-		let [x0, y0] = a;
-		const [x1, y1] = b;
-		const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0);
-		const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
-		let err = dx + dy;
-		for (;;) {
-			plot(x0, y0);
-			if (x0 === x1 && y0 === y1) { break; }
-			const e2 = 2 * err;
-			if (e2 >= dy) { err += dy; x0 += sx; }
-			if (e2 <= dx) { err += dx; y0 += sy; }
+		if (!saveDraftNow(false, true)) {
+			msg.textContent = '下書きを残せなかったので、描く画面へ移れませんでした（ブラウザの保存領域がいっぱいかもしれません）。';
+			return;
 		}
-	}
-	try {
-		const zv = Number(window.localStorage.getItem('sbo_kobo_pad_zoom'));
-		if (zv >= 1 && zv <= 64) {
-			zf = zv;
-		}
-	} catch (e) { /* 読めなければ自動 */ }
-	zoomSel.addEventListener('change', function () {
-		if (zoomSel.value === 'auto') {
-			zf = 0;
-			sizeCanvas();
-			redraw();
-			saveZoom();
-		} else if (zoomSel.value !== 'custom') {
-			setZoom(Number(zoomSel.value));
-		}
+		location.href = '/kobo-draw?propose=' + encodeURIComponent(draftKey || 'new');
 	});
-	zoomIn.addEventListener('click', function () { stepZoom(1); });
-	zoomOut.addEventListener('click', function () { stepZoom(-1); });
-	let wheelStepAt = 0, wheelSum = 0;
-	padView.addEventListener('wheel', function (e) {
-		if (!e.metaKey && !e.ctrlKey) {
-			return;		/* ふつうのホイールはスクロール */
-		}
-		e.preventDefault();
-		if (e.shiftKey) {
-			/* ⌘＋Shift＋ホイール: 回転量をためて 100px ごとに 1 段 */
-			const t = performance.now();
-			if (t - wheelStepAt > 500) {
-				wheelSum = 0;
-			}
-			wheelStepAt = t;
-			wheelSum += Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
-			if (Math.abs(wheelSum) >= 100) {
-				stepZoom(wheelSum < 0 ? 1 : -1, e.clientX, e.clientY);
-				wheelSum = 0;
-			}
-			return;
-		}
-		wheelZoom(e);
-	}, { passive: false });
-
-	/* スマホ: 1 本指で描く・2 本指でスクロールと拡大縮小・長押しで色を拾う（kobo-touch.js） */
-	let snapPx = null;		// 描き始めの絵（2 本指になったら戻す）
-	let pinch = null;
-	function touchPt(q) {
-		return padPoint({ clientX: q.x, clientY: q.y });
-	}
-	installTouch(cv, {
-		dragStart: function (pts) {
-			if (!sheet) {
-				return;
-			}
-			snapPx = { px: px.slice(), drawn: drawn, roughSrc: roughSrc };
-			last = touchPt(pts[0]);
-			plot(last[0], last[1]);
-			pts.slice(1).forEach(function (q) {
-				const pt = touchPt(q);
-				line(last, pt);
-				last = pt;
-			});
-			redraw();
-		},
-		dragMove: function (q) {
-			if (!last) {
-				return;
-			}
-			const pt = touchPt(q);
-			line(last, pt);
-			last = pt;
-			redraw();
-		},
-		dragEnd: function () {
-			snapPx = null;
-			up();
-		},
-		dragCancel: function () {
-			if (snapPx) {
-				px = snapPx.px;
-				drawn = snapPx.drawn;
-				roughSrc = snapPx.roughSrc;
-				snapPx = null;
-				redraw();
-			}
-			last = null;
-		},
-		tap: function (q) {
-			if (!sheet) {
-				return;
-			}
-			const pt = touchPt(q);
-			plot(pt[0], pt[1]);
-			redraw();
-			draftLater();
-		},
-		longPress: function (q) {
-			const pt = touchPt(q);
-			if (sheet && pt[0] >= 0 && pt[1] >= 0 && pt[0] < W && pt[1] < H) {
-				selectColor(px[pt[1] * W + pt[0]]);
-			}
-		},
-		multiStart: function (pts) {
-			pinch = {
-				d: Math.max(10, Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)),
-				cx: (pts[0].x + pts[1].x) / 2, cy: (pts[0].y + pts[1].y) / 2,
-				z: curZoom(), sl: padView.scrollLeft, st: padView.scrollTop
-			};
-		},
-		multiMove: function (pts) {
-			if (!pinch) {
-				return;
-			}
-			const cx = (pts[0].x + pts[1].x) / 2, cy = (pts[0].y + pts[1].y) / 2;
-			const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-			const nz = pinch.z * d / pinch.d;
-			if (Math.abs(nz - curZoom()) > 0.01) {
-				setZoom(nz, pinch.cx, pinch.cy);
-				pinch.sl = padView.scrollLeft + (cx - pinch.cx);
-				pinch.st = padView.scrollTop + (cy - pinch.cy);
-			}
-			padView.scrollLeft = pinch.sl - (cx - pinch.cx);
-			padView.scrollTop = pinch.st - (cy - pinch.cy);
-		},
-		multiEnd: function () {
-			/* 倍率は整数に寄せる（ドットがそろって見える） */
-			if (pinch && zf && Math.round(zf) !== zf) {
-				setZoom(Math.max(2, Math.round(zf)), pinch.cx, pinch.cy);
-			}
-			pinch = null;
-		}
-	});
-	cv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
-	cv.addEventListener('pointerdown', function (e) {
-		if (!sheet || e.pointerType === 'touch') {
-			return;		/* 指は installTouch で */
-		}
-		e.preventDefault();
-		const pt = padPoint(e);
-		/* 右クリック＝スポイト（その色を拾う） */
-		if (e.button === 2) {
-			if (pt[0] >= 0 && pt[1] >= 0 && pt[0] < W && pt[1] < H) {
-				selectColor(px[pt[1] * W + pt[0]]);
-			}
-			return;
-		}
-		if (e.button !== 0) {
-			return;
-		}
-		cv.setPointerCapture(e.pointerId);
-		last = pt;
-		plot(last[0], last[1]);
-		redraw();
-	});
-	cv.addEventListener('pointermove', function (e) {
-		if (!last || e.pointerType === 'touch') {
-			return;
-		}
-		const pt = padPoint(e);
-		line(last, pt);
-		last = pt;
-		redraw();
-	});
-	function up() {
-		if (last) {
-			draftLater();
-		}
-		last = null;
-	}
-	cv.addEventListener('pointerup', up);
-	cv.addEventListener('pointercancel', up);
 
 	/* 画像を選んで送る（選ぶとお絵かきの代わりにこちらを送る） */
 	const prev = el('div', 'rough-preview');
@@ -1721,7 +1373,7 @@ function renderPropose() {
 			showFile(draft.fileData);
 		} else if (init.roughSrc === 'keep' && edit && edit.img) {
 			showKeep();
-			return loadKeepToPad();
+			return loadKeepToPad().then(function () { padReady = true; });
 		} else if (init.roughSrc === 'pad' && drawn) {
 			roughSrc = 'pad';
 		}
@@ -1798,10 +1450,11 @@ function renderPropose() {
 		clearTimeout(draftTimer);
 		draftTimer = setTimeout(function () { saveDraftNow(false); }, 800);
 	}
-	function saveDraftNow(bTell) {
+	/* 下書きを残す。bForce は何も書いていなくても残す（描く画面へ移る時）。残せたら true */
+	function saveDraftNow(bTell, bForce) {
 		clearTimeout(draftTimer);
 		if (!padReady) {
-			return;
+			return false;
 		}
 		const d = {
 			at: Date.now(), kind: kindNow(), body: ta.value,
@@ -1809,22 +1462,24 @@ function renderPropose() {
 			size: sizeSel.value, drawn: drawn, px: drawn ? bytesToBase64(px) : '',
 			roughSrc: roughSrc, fileData: roughSrc === 'file' ? fileData : ''
 		};
-		if (!edit && !d.body.trim() && !d.drawn && !d.fileData) {
+		if (!bForce && !edit && !d.body.trim() && !d.drawn && !d.fileData) {
 			removeProposeDraft(draftKey);
 			if (bTell) {
 				msg.textContent = 'まだ何も書いていないので、下書きは残しませんでした。';
 			}
-			return;
+			return false;
 		}
 		try {
 			window.localStorage.setItem(proposeDraftKey(draftKey), JSON.stringify(d));
 			if (bTell) {
 				msg.textContent = '下書きをこの端末に保存しました（' + dateText(d.at) + '）。';
 			}
+			return true;
 		} catch (e) {
 			if (bTell) {
 				msg.textContent = '下書きを保存できませんでした（ブラウザの保存領域がいっぱいかもしれません）。';
 			}
+			return false;
 		}
 	}
 	send.addEventListener('click', function () {
@@ -2029,6 +1684,30 @@ function loadMyProposals() {
 	});
 }
 
+/* 描く画面から戻ってきた時に提案の入力欄を開き直す（key は提案 id か new） */
+function reopenPropose(key) {
+	proposeOpen = true;
+	const show = function () {
+		renderPropose();
+		const f = document.querySelector('#propose .panel:not([hidden])');
+		($('propose')).scrollIntoView({ block: 'start' });
+		if (f) {
+			f.scrollIntoView({ block: 'start' });
+		}
+	};
+	if (!key || key === 'new' || !token) {
+		proposeEdit = null;
+		show();
+		return;
+	}
+	api('/api/kobo/my-proposals', { token: token }).then(function (data) {
+		const pr = (data.proposals || []).find(function (x) { return x.id === key; });
+		proposeEdit = pr && pr.status !== 'tasked' ? pr : null;
+	}).catch(function () {
+		proposeEdit = null;
+	}).then(show);
+}
+
 /* ============ 道案内 ============ */
 
 function showPosted(taskId, workId) {
@@ -2057,6 +1736,12 @@ function route() {
 		/* 描く画面で出した後。トップに「出しました」を出し、URL はトップに戻しておく */
 		history.replaceState(null, '', location.pathname);
 		showPosted(posted, q.get('work') || '');
+	}
+	const back = q.get('propose');
+	if (back !== null) {
+		/* 描く画面でラフ絵を描いて戻ってきた。下書きから入力欄を開き直す */
+		history.replaceState(null, '', location.pathname);
+		reopenPropose(back);
 	}
 	if (!id) {
 		selWorkId = '';
