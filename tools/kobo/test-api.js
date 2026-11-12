@@ -222,6 +222,41 @@ async function main() {
 		r = await api.p('tokA', 'my-proposals');
 		eq(r.proposals[0].reply, 'いいね', '返事が本人に見える');
 
+		/* 自分の提案を直す・取り下げる（ボブで） */
+		r = await api.p('tokB', 'propose', { kind: 'char', body: 'はじめ', data: rough, agree: true });
+		ok(r.ok && r.proposal.img, 'ボブも提案できる');
+		var prop2 = r.proposal;
+		r = await api.p('tokA', 'proposal-edit', { id: prop2.id, kind: 'part', body: 'のっとり', agree: true });
+		eq(r.error, 'not_found', '他人の提案は直せない');
+		r = await api.p('tokB', 'proposal-edit', { id: prop2.id, kind: 'part', body: '直した', agree: false });
+		eq(r.error, 'agree', '直す時も同意が要る');
+		r = await api.p('tokB', 'proposal-edit', { id: prop2.id, kind: 'part', body: '', agree: true });
+		eq(r.error, 'empty', '直す時も中身が要る');
+		r = await api.p('tokB', 'proposal-edit', { id: prop2.id, kind: 'part', body: '直した', anonymous: true, agree: true });
+		ok(r.ok && r.proposal.body === '直した' && r.proposal.kind === 'part' && r.proposal.anonymous && r.proposal.img === prop2.img && r.proposal.editedAt > 0, '提案を直せる（ラフ絵はそのまま）');
+		r = await api.p('tokB', 'proposal-edit', { id: prop2.id, kind: 'part', body: '直した', removeImg: true, agree: true });
+		eq(r.proposal.img, '', 'ラフ絵を外せる');
+		r = await api.get('/kobo-img/' + prop2.img + '.png');
+		eq(r.status, 404, '外したラフ絵は消える');
+		r = await api.admin('proposal-update', { id: prop2.id, status: 'declined' });
+		r = await api.p('tokB', 'proposal-edit', { id: prop2.id, kind: 'part', body: 'もう一度', data: rough, agree: true });
+		ok(r.ok && r.proposal.status === 'new' && r.proposal.img, '見送りの提案を直すと新着に戻る・ラフ絵を差し替え');
+		var img2 = r.proposal.img;
+		r = await api.p('tokA', 'proposal-withdraw', { id: prop2.id });
+		eq(r.error, 'not_found', '他人の提案は取り下げられない');
+		r = await api.p('tokB', 'proposal-withdraw', { id: prop2.id });
+		ok(r.ok, '提案を取り下げられる');
+		r = await api.p('tokB', 'my-proposals');
+		eq(r.proposals.length, 0, '取り下げた提案は自分の一覧に出ない');
+		r = await api.admin('proposals');
+		ok(!r.proposals.some(function (x) { return x.id === prop2.id; }), '取り下げた提案は管理者の一覧に出ない');
+		r = await api.admin('proposal-update', { id: prop2.id, status: 'later' });
+		eq(r._status, 404, '取り下げた提案は管理者も変えられない');
+		r = await api.p('tokB', 'proposal-edit', { id: prop2.id, kind: 'part', body: 'x', agree: true });
+		eq(r.error, 'not_found', '取り下げた提案は直せない');
+		r = await api.get('/kobo-img/' + img2 + '.png');
+		eq(r.status, 404, '取り下げた提案のラフ絵は消える');
+
 		var taskBody = {
 			title: '歩く女の子', desc: '説明', kind: 'char', state: 'open', sheet: 'char05.png',
 			x: 0, y: 0, w: W, h: H, cw: 16, ch: 16, preview: 'walk', frameMs: 200,
@@ -237,6 +272,10 @@ async function main() {
 		ok(r.ok && r.task.id && r.task.base && r.task.bg && r.task.ref && r.task.samples.length === 2, 'お題を作れる');
 		var task = r.task;
 		eq(task.proposalId, propId, '提案から作ったお題');
+		r = await api.p('tokA', 'proposal-edit', { id: propId, kind: 'char', body: 'x', agree: true });
+		eq(r.error, 'tasked', 'お題になった提案は直せない');
+		r = await api.p('tokA', 'proposal-withdraw', { id: propId });
+		eq(r.error, 'tasked', 'お題になった提案は取り下げられない');
 		r = await api.admin('proposals', { status: 'tasked' });
 		eq(r.proposals.length, 1, '提案が tasked に');
 		ok(r.proposals[0].taskId === task.id, '提案の taskId');

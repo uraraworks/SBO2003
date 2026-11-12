@@ -489,7 +489,7 @@ Module['sboKobo'] = (function () {
 			id: p.id, kind: p.kind, body: p.body, img: p.img || '',
 			name: (bAdmin || !p.anonymous) ? nameOf(p.account, p.name, cache) : '',
 			anonymous: !!p.anonymous, status: p.status, reply: p.reply || '', replyAt: p.replyAt || 0,
-			taskId: p.taskId || '', at: p.at
+			taskId: p.taskId || '', at: p.at, editedAt: p.editedAt || 0
 		};
 		if (bAdmin) {
 			o.account = p.account;
@@ -999,6 +999,8 @@ Module['sboKobo'] = (function () {
 			reply(res, 200, { error: 'agree' });
 			return;
 		}
+		pruneWithdrawn();
+		/* 取り下げた提案も 1 日の回数には数える（出しては取り下げるのくり返しを防ぐ） */
 		var e = limitError(atsOf(store.proposals, info.account), 0, LIM.proposalPerDay, 0);
 		if (!e && store.proposals.length >= MAX_PROPOSALS) {
 			e = { error: 'too_many' };
@@ -1027,6 +1029,105 @@ Module['sboKobo'] = (function () {
 		reply(res, 200, { ok: true, proposal: proposalView(p, {}, false) });
 	}
 
+	/* 取り下げた提案は 1 日たったら消す（それまでは 1 日の回数に数えるため残す） */
+	function pruneWithdrawn() {
+		var now = Date.now();
+		store.proposals = store.proposals.filter(function (p) {
+			return p.status !== 'withdrawn' || now - (p.withdrawnAt || p.at) < DAY;
+		});
+	}
+
+	/* 本人の提案を探す。お題になった・取り下げた提案は変えられない */
+	function myProposal(body, res, info) {
+		var p = findIn(store.proposals, str(body.id, 32));
+		if (!p || p.account !== info.account || p.status === 'withdrawn') {
+			reply(res, 404, { error: 'not_found' });
+			return null;
+		}
+		if (p.status === 'tasked') {
+			reply(res, 200, { error: 'tasked' });
+			return null;
+		}
+		return p;
+	}
+
+	/* 自分の提案を直す。data でラフ絵を差し替え、removeImg で外す（どちらも無ければそのまま）。
+	   見送りになった提案を直すと、もう一度見てもらえるよう「新着」に戻す */
+	function apiProposalEdit(body, req, res) {
+		var info = player(body, res, true);
+		if (!info) {
+			return;
+		}
+		load();
+		var p = myProposal(body, res, info);
+		if (!p) {
+			return;
+		}
+		var text = cleanText(body.body, MAX_PROPOSAL);
+		if (text === null) {
+			reply(res, 200, { error: 'long', maxLength: MAX_PROPOSAL });
+			return;
+		}
+		if (!text) {
+			reply(res, 200, { error: 'empty' });
+			return;
+		}
+		if (body.agree !== true) {
+			reply(res, 200, { error: 'agree' });
+			return;
+		}
+		var strImg = p.img || '';
+		if (body.data) {
+			try {
+				strImg = putImage(checkRoughPng(body.data), 'png');
+			} catch (err) {
+				fail(res, err);
+				return;
+			}
+		} else if (body.removeImg) {
+			strImg = '';
+		}
+		if (strImg !== p.img) {
+			delImage(p.img);
+		}
+		p.img = strImg;
+		p.body = text;
+		if (KINDS.indexOf(body.kind) >= 0) {
+			p.kind = body.kind;
+		}
+		p.anonymous = !!body.anonymous;
+		p.name = info.name;
+		p.editedAt = Date.now();
+		if (p.status === 'declined') {
+			p.status = 'new';
+		}
+		save();
+		log('提案を直した: ' + p.id + ' ' + info.account);
+		reply(res, 200, { ok: true, proposal: proposalView(p, {}, false) });
+	}
+
+	/* 自分の提案を取り下げる。中身とラフ絵は消し、1 日の回数のための印だけ残す */
+	function apiProposalWithdraw(body, req, res) {
+		var info = player(body, res, false);
+		if (!info) {
+			return;
+		}
+		load();
+		var p = myProposal(body, res, info);
+		if (!p) {
+			return;
+		}
+		delImage(p.img);
+		p.img = '';
+		p.body = '';
+		p.reply = '';
+		p.status = 'withdrawn';
+		p.withdrawnAt = Date.now();
+		save();
+		log('提案を取り下げた: ' + p.id + ' ' + info.account);
+		reply(res, 200, { ok: true });
+	}
+
 	function apiMyProposals(body, req, res) {
 		var info = player(body, res, false);
 		if (!info) {
@@ -1034,7 +1135,7 @@ Module['sboKobo'] = (function () {
 		}
 		load();
 		var cache = {};
-		var a = store.proposals.filter(function (p) { return p.account === info.account; }).reverse();
+		var a = store.proposals.filter(function (p) { return p.account === info.account && p.status !== 'withdrawn'; }).reverse();
 		reply(res, 200, {
 			proposals: a.map(function (p) {
 				var o = proposalView(p, cache, true);		/* 本人には匿名でも自分の名前が見える */
@@ -1199,7 +1300,7 @@ Module['sboKobo'] = (function () {
 		var prop = null;
 		if (body.proposalId) {
 			prop = findIn(store.proposals, str(body.proposalId, 32));
-			if (!prop) {
+			if (!prop || prop.status === 'withdrawn') {
 				reply(res, 404, { error: 'not_found' });
 				return;
 			}
@@ -1455,7 +1556,9 @@ Module['sboKobo'] = (function () {
 		}
 		load();
 		var cache = {};
-		var a = store.proposals.filter(function (p) { return !body.status || p.status === body.status; }).reverse();
+		var a = store.proposals.filter(function (p) {
+			return p.status !== 'withdrawn' && (!body.status || p.status === body.status);
+		}).reverse();
 		reply(res, 200, { proposals: a.map(function (p) { return proposalView(p, cache, true); }) });
 	}
 
@@ -1465,7 +1568,7 @@ Module['sboKobo'] = (function () {
 		}
 		load();
 		var p = findIn(store.proposals, str(body.id, 32));
-		if (!p) {
+		if (!p || p.status === 'withdrawn') {
 			reply(res, 404, { error: 'not_found' });
 			return;
 		}
@@ -1501,6 +1604,8 @@ Module['sboKobo'] = (function () {
 		'/api/kobo/cheer': apiCheer,
 		'/api/kobo/propose': apiPropose,
 		'/api/kobo/my-proposals': apiMyProposals,
+		'/api/kobo/proposal-edit': apiProposalEdit,
+		'/api/kobo/proposal-withdraw': apiProposalWithdraw,
 		'/api/admin/kobo/tasks': apiAdminTasks,
 		'/api/admin/kobo/task': apiAdminTask,
 		'/api/admin/kobo/task-save': apiAdminTaskSave,

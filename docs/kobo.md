@@ -99,8 +99,12 @@
 
 ```
 { id, account, name, anonymous, kind, body, img: '' | 画像id,
-  status: 'new' | 'later' | 'declined' | 'tasked', reply: '', replyAt, taskId: '', at, ip }
+  status: 'new' | 'later' | 'declined' | 'tasked' | 'withdrawn', reply: '', replyAt, taskId: '', at, editedAt, withdrawnAt, ip }
 ```
+
+- 本人はお題になる前（`tasked` 以外）なら直せる・取り下げられる。見送り（`declined`）を直すと `new` に戻る。
+- 取り下げると中身とラフ絵を消して `withdrawn` の印だけ残す（1 日の回数に数えるため。1 日たったら次の提案の時に消える）。本人・管理者の一覧には出ない。
+- 下書きはこの端末だけ（localStorage `kobo_propose_draft:<提案id か new>`。書いている間も自動で残し、送ったら消す）。
 
 ## API（すべて POST・JSON。/api/kobo/* と /api/admin/kobo/*。sbosvr_net.js が sbosvr_kobo.js へ回す）
 
@@ -123,6 +127,8 @@
 | `/api/kobo/cheer` | `{token, workId, on}` | `{ok, cheers}` |
 | `/api/kobo/propose` | `{token, kind, body, data?(PNG base64), anonymous, agree}` | `{ok, proposal}` |
 | `/api/kobo/my-proposals` | `{token}` | `{proposals:[...]}`（返事も見える） |
+| `/api/kobo/proposal-edit` | `{token, id, kind, body, anonymous, agree, data?(PNG base64), removeImg?}` | `{ok, proposal}`（自分の・お題になる前だけ。`data` で差し替え、`removeImg` で外す、どちらも無ければラフ絵はそのまま。お題になった後は `tasked`） |
+| `/api/kobo/proposal-withdraw` | `{token, id}` | `{ok}`（自分の・お題になる前だけ） |
 
 save の決まり:
 - `workId` なし → 新しい案を作る（`parent` は同じお題の posted で消されていない案だけ）。`workId` あり → 自分の wip を上書き（posted は上書きできない）。

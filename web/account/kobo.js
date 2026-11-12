@@ -93,7 +93,8 @@ function errText(data, fallback) {
 		bad_png: '画像を読めませんでした。',
 		bad_size: '画像が大きすぎます。',
 		closed: 'このお題は今は募集していません。',
-		not_allowed: 'それはできません。'
+		not_allowed: 'それはできません。',
+		tasked: 'お題になった提案は、直したり取り下げたりできません。'
 	};
 	if (data && data.httpStatus === 401) {
 		return M.invalid_token;
@@ -936,6 +937,24 @@ function bytesToBase64(bytes) {
 }
 
 let proposeOpen = false;	// 提案の入力欄を開いているか
+let proposeEdit = null;		// 直している自分の提案（null なら新しい提案）
+const PROPOSE_DRAFT_PREFIX = 'kobo_propose_draft:';	// 提案の下書き（この端末だけ）。後ろは提案 id か new
+
+function proposeDraftKey(id) {
+	return PROPOSE_DRAFT_PREFIX + (id || 'new');
+}
+function readProposeDraft(id) {
+	try {
+		return JSON.parse(window.localStorage.getItem(proposeDraftKey(id)) || 'null');
+	} catch (e) {
+		return null;
+	}
+}
+function removeProposeDraft(id) {
+	try {
+		window.localStorage.removeItem(proposeDraftKey(id));
+	} catch (e) { /* 消せなくてもよい */ }
+}
 
 function renderPropose() {
 	const box = $('propose');
@@ -951,8 +970,42 @@ function renderPropose() {
 		box.appendChild(p);
 		return;
 	}
+	const edit = proposeEdit;
 	const p = el('section', 'panel');
-	p.appendChild(el('p', 'now', '「こんなものを描いてみたい」「ここのパーツがほしい」など、お題の案を管理人に送れます。見えるのは管理人だけです。'));
+	if (edit) {
+		const eh = el('div', 'buttons');
+		eh.style.alignItems = 'center';
+		eh.appendChild(el('b', '', '自分の提案を直しています（' + dateText(edit.at) + ' に送ったもの）'));
+		const quit = el('button', 'sub small', '直すのをやめる');
+		quit.type = 'button';
+		quit.addEventListener('click', function () {
+			proposeEdit = null;
+			renderPropose();
+		});
+		eh.appendChild(quit);
+		p.appendChild(eh);
+	} else {
+		p.appendChild(el('p', 'now', '「こんなものを描いてみたい」「ここのパーツがほしい」など、お題の案を管理人に送れます。見えるのは管理人だけです。'));
+	}
+	const draftKey = edit ? edit.id : '';
+	const draft = readProposeDraft(draftKey);
+	if (draft) {
+		const dn = el('div', 'buttons');
+		dn.style.alignItems = 'center';
+		dn.appendChild(el('span', 'note', 'この端末の下書きから続きを出しました（' + dateText(draft.at || 0) + '）'));
+		const drop = el('button', 'sub small', '下書きを捨てる');
+		drop.type = 'button';
+		drop.addEventListener('click', function () {
+			if (!window.confirm('下書きを捨てますか？')) {
+				return;
+			}
+			removeProposeDraft(draftKey);
+			renderPropose();
+		});
+		dn.appendChild(drop);
+		p.appendChild(dn);
+	}
+	const init = draft || (edit ? { kind: edit.kind, body: edit.body, anon: edit.anonymous, roughSrc: edit.img ? 'keep' : '' } : {});
 
 	const l1 = el('span', 'field-label', 'どんなお題？');
 	p.appendChild(l1);
@@ -963,7 +1016,7 @@ function renderPropose() {
 		inp.type = 'radio';
 		inp.name = 'pk';
 		inp.value = k[0];
-		inp.checked = i === 0;
+		inp.checked = k[0] === (init.kind || 'char');
 		lb.appendChild(inp);
 		lb.appendChild(el('span', '', k[1]));
 		kinds.appendChild(lb);
@@ -973,19 +1026,25 @@ function renderPropose() {
 	p.appendChild(el('span', 'field-label', 'ひとこと（どんなものを描きたい？）'));
 	const ta = el('textarea');
 	ta.placeholder = '例）海辺のマップに、ヤドカリのようなモンスターがほしいです';
+	ta.value = init.body || '';
 	p.appendChild(ta);
 	const cnt = el('div', 'count', '0 / 1000');
-	ta.addEventListener('input', function () {
+	function countText() {
 		const n = Array.from(ta.value.trim()).length;
 		cnt.textContent = n + ' / 1000';
 		cnt.classList.toggle('over', n > 1000);
+	}
+	countText();
+	ta.addEventListener('input', function () {
+		countText();
+		draftLater();
 	});
 	p.appendChild(cnt);
 
 	/* ラフ絵（任意）。お絵かきで描いたものか、選んだ画像のどちらか（最後に使った方）を送る */
 	p.appendChild(el('span', 'field-label', 'ラフ絵（なくても大丈夫）'));
 	p.appendChild(el('p', 'note', '下のお絵かきで描くと、その絵がそのまま一緒に送られます。色はゲームのパレット、大きさはゲームのコマと同じです（右クリックで色を拾えます）。'));
-	let roughSrc = '';		// '' | 'pad' | 'file'
+	let roughSrc = '';		// '' | 'pad' | 'file' | 'keep'（直す時の今のラフ絵のまま）
 	let fileData = '';		// 選んだ画像の PNG（base64）
 
 	/* 小さなお絵かき */
@@ -1140,7 +1199,7 @@ function renderPropose() {
 				return;
 			}
 			prevKind = kindNow();
-			loadKind(prevKind);
+			loadKind(prevKind).then(draftLater);
 		});
 	});
 	let prevSize = '16x16';
@@ -1151,13 +1210,19 @@ function renderPropose() {
 		}
 		prevSize = sizeSel.value;
 		resetPad();
+		draftLater();
 	});
 	er.addEventListener('click', function () { selectColor(sheet.transparent); });
 	clr.addEventListener('click', function () {
 		if (!confirmClear()) {
 			return;
 		}
+		if (roughSrc === 'keep') {
+			roughSrc = '';		/* 直す時に今のラフ絵を消したら、送る時に外す */
+			prev.textContent = '';
+		}
 		resetPad();
+		draftLater();
 	});
 
 	let last = null;
@@ -1221,7 +1286,12 @@ function renderPropose() {
 		last = pt;
 		redraw();
 	});
-	function up() { last = null; }
+	function up() {
+		if (last) {
+			draftLater();
+		}
+		last = null;
+	}
 	cv.addEventListener('pointerup', up);
 	cv.addEventListener('pointercancel', up);
 
@@ -1254,23 +1324,8 @@ function renderPropose() {
 			cx.imageSmoothingEnabled = k >= 1 ? false : true;
 			cx.drawImage(im, 0, 0, c.width, c.height);
 			URL.revokeObjectURL(url);
-			fileData = c.toDataURL('image/png').split(',')[1];
-			roughSrc = 'file';
-			prev.textContent = '';
-			const img = el('img');
-			img.src = 'data:image/png;base64,' + fileData;
-			prev.appendChild(img);
-			prev.appendChild(el('span', 'note', ' この画像を送ります（お絵かきの絵は送りません）'));
-			const rm = el('button', 'sub small', '画像をやめる');
-			rm.type = 'button';
-			rm.style.marginLeft = '8px';
-			rm.addEventListener('click', function () {
-				fileData = '';
-				file.value = '';
-				prev.textContent = '';
-				roughSrc = drawn ? 'pad' : '';
-			});
-			prev.appendChild(rm);
+			showFile(c.toDataURL('image/png').split(',')[1]);
+			draftLater();
 		};
 		im.onerror = function () {
 			URL.revokeObjectURL(url);
@@ -1278,6 +1333,70 @@ function renderPropose() {
 		};
 		im.src = url;
 	});
+	/* 選んだ画像をラフ絵にする */
+	function showFile(data64) {
+		fileData = data64;
+		roughSrc = 'file';
+		prev.textContent = '';
+		const img = el('img');
+		img.src = 'data:image/png;base64,' + fileData;
+		prev.appendChild(img);
+		prev.appendChild(el('span', 'note', ' この画像を送ります（お絵かきの絵は送りません）'));
+		const rm = el('button', 'sub small', '画像をやめる');
+		rm.type = 'button';
+		rm.style.marginLeft = '8px';
+		rm.addEventListener('click', function () {
+			fileData = '';
+			file.value = '';
+			prev.textContent = '';
+			roughSrc = drawn ? 'pad' : '';
+			draftLater();
+		});
+		prev.appendChild(rm);
+	}
+	/* 直す時: 今のラフ絵がお絵かきで描いたもの（パレットの絵で大きさが選べるもの）なら、お絵かきに戻して続きを描けるようにする */
+	function loadKeepToPad() {
+		return fetch(imgUrl(edit.img)).then(function (res) {
+			if (!res.ok) {
+				throw new Error('http');
+			}
+			return res.arrayBuffer();
+		}).then(function (buf) {
+			return decodeIndexedPng(buf);
+		}).then(function (img) {
+			const size = img.width + 'x' + img.height;
+			if (roughSrc !== 'keep' || !Array.prototype.some.call(sizeSel.options, function (o) { return o.value === size; })) {
+				return;
+			}
+			sizeSel.value = size;
+			prevSize = size;
+			resetPad();
+			px = Uint8Array.from(img.indices);
+			drawn = true;
+			redraw();
+			/* 送らなければ今のラフ絵のまま（描き足すとお絵かきの絵で差し替え） */
+			prev.textContent = '';
+			prev.appendChild(el('span', 'note', '今のラフ絵をお絵かきに出しました。描き足さなければ、そのままです。'));
+		}).catch(function () { /* お絵かきでない絵は、そのまま見せるだけ */ });
+	}
+	/* 直す時: 今のラフ絵をそのまま使う（お絵かきするか画像を選ぶと差し替え） */
+	function showKeep() {
+		roughSrc = 'keep';
+		prev.textContent = '';
+		const img = el('img');
+		img.src = imgUrl(edit.img);
+		prev.appendChild(img);
+		prev.appendChild(el('span', 'note', ' 今のラフ絵のままにします（お絵かきするか画像を選ぶと差し替えます）'));
+		const rm = el('button', 'sub small', 'ラフ絵を外す');
+		rm.type = 'button';
+		rm.style.marginLeft = '8px';
+		rm.addEventListener('click', function () {
+			prev.textContent = '';
+			roughSrc = drawn ? 'pad' : '';
+			draftLater();
+		});
+		prev.appendChild(rm);
+	}
 	/* 送る時のラフ絵（base64 PNG。無ければ ''） */
 	function roughData() {
 		if (roughSrc === 'file' && fileData) {
@@ -1288,27 +1407,54 @@ function renderPropose() {
 		}
 		return Promise.resolve('');
 	}
-	loadKind('char');
+	prevKind = init.kind || 'char';
+	loadKind(prevKind).then(function () {
+		/* 下書きのお絵かきを戻す */
+		if (draft && draft.size && draft.px && Array.prototype.some.call(sizeSel.options, function (o) { return o.value === draft.size; })) {
+			sizeSel.value = draft.size;
+			prevSize = draft.size;
+			resetPad();
+			try {
+				const a = b64ToU8(draft.px);
+				if (a.length === px.length) {
+					px = a;
+					drawn = !!draft.drawn;
+				}
+			} catch (e) { /* 読めなければ白紙 */ }
+			redraw();
+		}
+		if (init.roughSrc === 'file' && draft && draft.fileData) {
+			showFile(draft.fileData);
+		} else if (init.roughSrc === 'keep' && edit && edit.img) {
+			showKeep();
+			return loadKeepToPad();
+		} else if (init.roughSrc === 'pad' && drawn) {
+			roughSrc = 'pad';
+		}
+		padReady = true;
+	});
 
 	/* 名前 */
 	p.appendChild(el('span', 'field-label', '名前は？'));
 	const nm = el('div', 'choices');
 	const l0 = el('label');
 	const r0 = el('input');
-	r0.type = 'radio'; r0.name = 'pa'; r0.value = '0'; r0.checked = true;
+	r0.type = 'radio'; r0.name = 'pa'; r0.value = '0'; r0.checked = !init.anon;
 	l0.appendChild(r0);
 	const s0 = el('span', '', 'キャラ名を出す');
 	s0.appendChild(el('small', '', '「' + (me.name || '') + '」と出ます'));
 	l0.appendChild(s0);
 	const l1b = el('label');
 	const r1 = el('input');
-	r1.type = 'radio'; r1.name = 'pa'; r1.value = '1';
+	r1.type = 'radio'; r1.name = 'pa'; r1.value = '1'; r1.checked = !!init.anon;
 	l1b.appendChild(r1);
 	const s1 = el('span', '', '匿名にする');
 	s1.appendChild(el('small', '', '「匿名さん」と出ます'));
 	l1b.appendChild(s1);
 	nm.appendChild(l0);
 	nm.appendChild(l1b);
+	r0.addEventListener('change', draftLater);
+	r1.addEventListener('change', draftLater);
 	p.appendChild(nm);
 	p.appendChild(el('p', 'note', '匿名にしても、管理人にはだれの提案か分かります。匿名で出した提案は、お題になっても匿名のままです。'));
 
@@ -1328,10 +1474,54 @@ function renderPropose() {
 	const msg = el('div', 'msg');
 	p.appendChild(msg);
 	const bw = el('div', 'buttons');
-	const send = el('button', '', '提案する');
+	const send = el('button', '', edit ? '直して送る' : '提案する');
 	send.type = 'button';
 	bw.appendChild(send);
+	const keep = el('button', 'sub', '下書き保存');
+	keep.type = 'button';
+	keep.title = 'この端末に残します（書いている間も自動で残します）';
+	keep.addEventListener('click', function () {
+		saveDraftNow(true);
+	});
+	bw.appendChild(keep);
 	p.appendChild(bw);
+
+	/* 下書き（この端末の localStorage）。書いている間は少し待ってから自動で残す */
+	let padReady = false;
+	let draftTimer = 0;
+	function draftLater() {
+		clearTimeout(draftTimer);
+		draftTimer = setTimeout(function () { saveDraftNow(false); }, 800);
+	}
+	function saveDraftNow(bTell) {
+		clearTimeout(draftTimer);
+		if (!padReady) {
+			return;
+		}
+		const d = {
+			at: Date.now(), kind: kindNow(), body: ta.value,
+			anon: (document.querySelector('input[name="pa"]:checked') || {}).value === '1',
+			size: sizeSel.value, drawn: drawn, px: drawn ? bytesToBase64(px) : '',
+			roughSrc: roughSrc, fileData: roughSrc === 'file' ? fileData : ''
+		};
+		if (!edit && !d.body.trim() && !d.drawn && !d.fileData) {
+			removeProposeDraft(draftKey);
+			if (bTell) {
+				msg.textContent = 'まだ何も書いていないので、下書きは残しませんでした。';
+			}
+			return;
+		}
+		try {
+			window.localStorage.setItem(proposeDraftKey(draftKey), JSON.stringify(d));
+			if (bTell) {
+				msg.textContent = '下書きをこの端末に保存しました（' + dateText(d.at) + '）。';
+			}
+		} catch (e) {
+			if (bTell) {
+				msg.textContent = '下書きを保存できませんでした（ブラウザの保存領域がいっぱいかもしれません）。';
+			}
+		}
+	}
 	send.addEventListener('click', function () {
 		const n = Array.from(ta.value.trim()).length;
 		if (!n) {
@@ -1348,22 +1538,29 @@ function renderPropose() {
 		}
 		const kind = (document.querySelector('input[name="pk"]:checked') || {}).value;
 		const anon = (document.querySelector('input[name="pa"]:checked') || {}).value === '1';
-		if (!window.confirm('管理人に' + (anon ? '匿名で' : 'キャラ名つきで') + '提案を送ります。よろしいですか？')) {
+		if (!window.confirm(edit ? '提案を直して送ります。よろしいですか？' : '管理人に' + (anon ? '匿名で' : 'キャラ名つきで') + '提案を送ります。よろしいですか？')) {
 			return;
 		}
 		send.disabled = true;
 		msg.textContent = '';
 		const body = { token: token, kind: kind, body: ta.value, anonymous: anon, agree: true };
+		if (edit) {
+			body.id = edit.id;
+		}
 		roughData().then(function (data64) {
 			if (data64) {
 				body.data = data64;
+			} else if (edit && edit.img && roughSrc !== 'keep') {
+				body.removeImg = true;
 			}
-			return api('/api/kobo/propose', body);
+			return api(edit ? '/api/kobo/proposal-edit' : '/api/kobo/propose', body);
 		}).then(function (data) {
 			send.disabled = false;
 			if (data.ok) {
+				removeProposeDraft(draftKey);
+				proposeEdit = null;
 				renderPropose();
-				const ok = el('div', 'msg ok', '送りました！ありがとう。管理人の返事は下の「自分の提案」で見られます。');
+				const ok = el('div', 'msg ok', edit ? '直しました！' : '送りました！ありがとう。管理人の返事は下の「自分の提案」で見られます。');
 				$('propose').insertBefore(ok, $('propose').firstChild);
 				loadMyProposals();
 			} else {
@@ -1374,7 +1571,7 @@ function renderPropose() {
 	/* 入力欄とお絵かきはふだん閉じておき、「お題を提案する」で開く（送った後は開いたまま） */
 	p.hidden = !proposeOpen;
 	const openWrap = el('div', 'buttons');
-	const openBtn = el('button', '', 'お題を提案する');
+	const openBtn = el('button', '', readProposeDraft('') ? 'お題を提案する（下書きの続き）' : 'お題を提案する');
 	openBtn.type = 'button';
 	openBtn.addEventListener('click', function () {
 		proposeOpen = true;
@@ -1434,6 +1631,49 @@ function loadMyProposals() {
 				const a = el('a', '', 'お題を見る');
 				a.href = '#task=' + encodeURIComponent(pr.taskId);
 				d.appendChild(a);
+			}
+			if (pr.editedAt) {
+				d.appendChild(el('div', 'comment-date', dateText(pr.editedAt) + ' に直しました'));
+			}
+			/* お題になる前なら、直す・取り下げるができる */
+			if (pr.status !== 'tasked') {
+				const bb = el('div', 'buttons');
+				const ed = el('button', 'sub small light', readProposeDraft(pr.id) ? '直す（下書きの続き）' : '直す');
+				ed.type = 'button';
+				ed.addEventListener('click', function () {
+					proposeEdit = pr;
+					proposeOpen = true;
+					renderPropose();
+					$('propose').scrollIntoView({ behavior: 'smooth', block: 'start' });
+				});
+				bb.appendChild(ed);
+				const wd = el('button', 'sub small light', '取り下げる');
+				wd.type = 'button';
+				wd.addEventListener('click', function () {
+					if (!window.confirm('この提案を取り下げますか？管理人からも見えなくなり、元に戻せません。')) {
+						return;
+					}
+					wd.disabled = true;
+					api('/api/kobo/proposal-withdraw', { token: token, id: pr.id }).then(function (data) {
+						if (data.ok) {
+							removeProposeDraft(pr.id);
+							if (proposeEdit && proposeEdit.id === pr.id) {
+								proposeEdit = null;
+								renderPropose();
+							} else {
+								loadMyProposals();
+							}
+						} else {
+							wd.disabled = false;
+							window.alert(errText(data));
+						}
+					}).catch(function () {
+						wd.disabled = false;
+						window.alert('サーバーにつながりませんでした。');
+					});
+				});
+				bb.appendChild(wd);
+				d.appendChild(bb);
 			}
 			box.appendChild(d);
 		});

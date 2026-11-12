@@ -476,7 +476,7 @@ async function renderProposals(body, seq, status) {
 	for (const p of r.proposals) {
 		const card = h('div', { class: 'card kb-prop' });
 		card.appendChild(h('div', { class: 'head' }, who(p), tag(KINDS[p.kind] || p.kind || '種類なし'), tag(PSTATES[p.status] || p.status, p.status === 'new' ? 'pending' : ''),
-			h('span', { class: 'sub-text', text: dateText(p.at) })));
+			h('span', { class: 'sub-text', text: dateText(p.at) + (p.editedAt ? '（' + dateText(p.editedAt) + ' に本人が直した）' : '') })));
 		card.appendChild(h('div', { class: 'message', text: p.body }));
 		if (p.img) card.appendChild(h('div', { class: 'kb-art' }, pic(p.img, 256)));
 		const m = msgBox();
