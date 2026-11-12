@@ -91,6 +91,8 @@ void EventProc_MOVE(PCHARINFO pChar, PEVENTINFO pEvent, BYTE byData)
 	pChar->dwY = pMove->dwY;
 	pChar->dwXBack = pChar->dwX;
 	pChar->dwYBack = pChar->dwY;
+	/* 討伐チャレンジの部屋から出るワープか */
+	QuestChallengeOnWarp (pChar);
 
 	switch (pMove->byEfect) {
 	case EVENTMOVEEFECT_MOVE:
@@ -117,7 +119,7 @@ void EventProc_MOVE(PCHARINFO pChar, PEVENTINFO pEvent, BYTE byData)
 /*       ばらける範囲があれば、移動先から範囲内にある移動先と同じパーツの	 */
 /*       マス（船のベッドなど）から、空いているマスを優先してくじで選ぶ		 */
 /* ========================================================================= */
-static void EventProc_MAPCHG_GetDest(PEVENTINFO_MAPCHG pMap, DWORD &dwX, DWORD &dwY)
+static void EventProc_MAPCHG_GetDest(PEVENTINFO_MAPCHG pMap, DWORD &dwX, DWORD &dwY, DWORD dwSpaceID)
 {
 	dwX = pMap->dwX;
 	dwY = pMap->dwY;
@@ -161,7 +163,7 @@ static void EventProc_MAPCHG_GetDest(PEVENTINFO_MAPCHG pMap, DWORD &dwX, DWORD &
 				if (pMapInfo->pwMap[x + y * pMapInfo->nCX] != wParts) {
 					continue;
 				}
-				BOOL bEmpty = ((CheckCharBlockPC (nMapNo, x, y) == -1) && (CheckCharBlockNPC (nMapNo, x, y) == -1));
+				BOOL bEmpty = ((CheckCharBlockPC (nMapNo, x, y, dwSpaceID) == -1) && (CheckCharBlockNPC (nMapNo, x, y, dwSpaceID) == -1));
 				if (nPass == 0) {
 					nCountAll ++;
 					if (bEmpty) {
@@ -238,7 +240,7 @@ void EventProc_MAPCHG(PCHARINFO pChar, PEVENTINFO pEvent, BYTE byData)
 	}
 
 	/* 移動先は先頭のキャラで1回だけ決め、ついてきているキャラも同じ場所へ */
-	EventProc_MAPCHG_GetDest (pMap, dwX, dwY);
+	EventProc_MAPCHG_GetDest (pMap, dwX, dwY, pChar->dwSpaceID);
 	EventProc_MAPCHG_Move (pChar, pMap, dwX, dwY);
 }
 

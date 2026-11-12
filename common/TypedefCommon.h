@@ -295,6 +295,10 @@ enum {
 	CMD_QUESTSTATE,													/* 依頼の進み具合(サーバー→本人。自分と仲間の分) */
 	CMD_SORTITEM,													/* 道具欄・預かり所の並べ替え（クライアント→サーバー。結果は CMD_CHARITEM・CMD_LEAVEITEMGET で返る） */
 	CMD_LEAVEITEMDISPOSE,											/* 預かり所の品を引き取らずに売る・捨てる（クライアント→サーバー。結果は CMD_LEAVEITEMGET で返る） */
+	CMD_CHARBUFF,													/* 攻撃力・守備力アップの残り時間(サーバー→本人とパーティの仲間。サーバーは受け取らない) */
+/* 以下、管理者用（CMD_MAPPARTSADD 以上は自動で管理者専用になる。CMD_CHARBUFF より後ろに足す） */
+	CMD_ADMINSPACE,													/* 管理者の空間の切り替え（空間の一覧・切り替え。結果はサーバー→クライアント） */
+	CMD_ADMINQUEST,													/* 管理者ウィンドウのギルドの依頼の編集（一覧・書き込み。結果はサーバー→クライアント） */
 	CMD_MAX
 };
 
@@ -1144,6 +1148,8 @@ enum {
 	MAGICTYPE_HASTE,											/* 加速(付加データ1:速くなる率(%) 2:秒数) */
 	MAGICTYPE_POISON,											/* 毒(付加データ1:2秒ごとのダメージ 2:秒数 3:成功率(%、0なら100)) */
 	MAGICTYPE_SLEEP,											/* 眠り(付加データ1:秒数 2:成功率(%、0なら100)) */
+	MAGICTYPE_ATUP,												/* 攻撃力アップ(付加データ1:上がる率(%) 2:秒数 3:最低でも上がる量) */
+	MAGICTYPE_DFUP,												/* 守備力アップ(付加データ1:上がる率(%) 2:秒数 3:最低でも上がる量) */
 };
 
 /* 魔法利用情報 */
@@ -1209,6 +1215,8 @@ enum {
 	CHARINFOTIMEREVENT_HASTE,									/* 加速(byData=速くなる率%) */
 	CHARINFOTIMEREVENT_POISON,									/* 毒(byData=2秒ごとのダメージ) */
 	CHARINFOTIMEREVENT_SLEEP,									/* 眠り(dwTimeLast=眠った時のHP。減ったら起きる) */
+	CHARINFOTIMEREVENT_ATUP,									/* 攻撃力アップ(byData=上がる率%、dwTimeInterval=最低でも上がる量) */
+	CHARINFOTIMEREVENT_DFUP,									/* 守備力アップ(byData=上がる率%、dwTimeInterval=最低でも上がる量) */
 };
 
 
@@ -2247,6 +2255,7 @@ typedef struct _CHARINFO {
 	DWORD		dwBridgeMapID;										/* byBridgeLayer を決めた時のマップID */
 	DWORD		dwBridgeX;											/* byBridgeLayer を決めた時の座標(X) */
 	DWORD		dwBridgeY;											/* byBridgeLayer を決めた時の座標(Y) */
+	DWORD		dwSpaceID;											/* 空間番号(0=ふつうの世界。保存しない。同じマップの同じ場所でも、空間が違えば見えない・ぶつからない・攻撃できない) */
 } CHARINFO, *PCHARINFO;
 
 /* キャラ情報通知 */
@@ -2601,6 +2610,17 @@ enum {
 
 #define MAX_ADMINUNDOMSG	400										/* 「元に戻す」の案内文の大きさ（UTF-8） */
 
+/* 管理者の空間の切り替え（CMD_ADMINSPACE の byCmdSub） */
+enum {
+	ADMINSPACE_LISTREQ = 0,										/* 空間の一覧の問い合わせ（クライアント→サーバー） */
+	ADMINSPACE_LIST,											/* 空間の一覧の通知（サーバー→クライアント。いま居る空間も入る） */
+	ADMINSPACE_SET,												/* その空間へ切り替える（クライアント→サーバー。0=ふつうの世界。結果は LIST で返る） */
+};
+
+#define SPACE_NORMAL		(0)										/* ふつうの世界の空間番号 */
+#define MAX_ADMINSPACE		(24)									/* 一覧に載せる空間の数の上限 */
+#define MAX_ADMINSPACENAME	(64)									/* 空間の名前（依頼名・マップ名）の大きさ（UTF-8） */
+
 #pragma pack(push, 1)
 /* 管理者画面の「元に戻す」 */
 typedef struct _CMDPARA_ADMINUNDO {
@@ -2612,6 +2632,26 @@ typedef struct _CMDPARA_ADMINUNDO {
 	DWORD		dwStepID;											/* 戻す変更の番号（INFO で知らせ、EXEC で指定） */
 	char		szMsg[MAX_ADMINUNDOMSG];							/* 案内文（サーバー→クライアント） */
 } CMDPARA_ADMINUNDO, *PCMDPARA_ADMINUNDO;
+
+/* 一覧の 1 件（空間 1 つ） */
+typedef struct _ADMINSPACEENTRY {
+	DWORD		dwSpaceID;											/* 空間番号（0 以外） */
+	WORD		wQuestID;											/* 討伐チャレンジの依頼番号 */
+	WORD		wMember;											/* いまその空間にいる人数（管理者も数える） */
+	DWORD		dwMapID;											/* 戦う場所のマップID */
+	char		szQuest[MAX_ADMINSPACENAME];						/* 依頼の名前（UTF-8） */
+	char		szMap[MAX_ADMINSPACENAME];							/* マップの名前（UTF-8） */
+} ADMINSPACEENTRY, *PADMINSPACEENTRY;
+
+/* 管理者の空間の切り替え */
+typedef struct _CMDPARA_ADMINSPACE {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byCmdSub;											/* サブコマンド(ADMINSPACE_*) */
+	BYTE		byResult;											/* 結果（LIST: 1=SET を受け付けた 0=受け付けなかった／ただの一覧） */
+	BYTE		byCount;											/* 一覧の件数（LIST） */
+	DWORD		dwSpaceID;											/* SET: 切り替え先の空間番号 / LIST: 本人がいま居る空間番号 */
+	ADMINSPACEENTRY	aEntry[MAX_ADMINSPACE];							/* 一覧（LIST。ふつうの世界(0)は入らない） */
+} CMDPARA_ADMINSPACE, *PCMDPARA_ADMINSPACE;
 #pragma pack(pop)
 
 /* ========================================================================= */
@@ -2717,6 +2757,8 @@ enum {
 	QUESTNPCKIND_PORTAL,										/* ワープポータル（話すと行き先へ移る） */
 	QUESTNPCKIND_CHEST,											/* 宝箱（話すとアイテムが手に入る） */
 	QUESTNPCKIND_PERSON,										/* 人（台詞だけ） */
+	QUESTNPCKIND_GATE,											/* 討伐チャレンジの入口（乗ると近くの仲間と一緒に行き先へ移り、貸し出しの状態になる） */
+	QUESTNPCKIND_ENEMY,											/* 討伐チャレンジの敵（挑戦が始まった時に出る。強さは wStTmp のステータステンプレート） */
 	QUESTNPCKIND_MAX
 };
 
@@ -2740,6 +2782,7 @@ typedef struct _QUESTNPCINFO {
 	WORD		wItem;												/* 宝箱で渡すアイテム（0=なし） */
 	BYTE		bySetFlg;											/* 話したら立てるフラグ（0=なし 1〜16） */
 	BYTE		byNextStep;											/* 話したら段をこれにする（255=変えない） */
+	WORD		wStTmp;												/* 敵の強さ（ステータステンプレートの番号。種類が敵の時） */
 } QUESTNPCINFO, *PQUESTNPCINFO;
 
 /* 依頼情報（サーバーだけが持つ） */
@@ -2760,7 +2803,18 @@ typedef struct _QUESTINFO {
 	BYTE		byStepCount;										/* 段の数（1〜4）。最後の段に達していて依頼の品を持っていれば、ギルドで渡せる */
 	char		aszGoal[MAX_QUESTSTEP][MAX_QUESTGOAL];				/* 段ごとの「いまの目的」 */
 	QUESTNPCINFO	aNpc[MAX_QUESTNPC];								/* 見えるNPC */
+	BYTE		byChallenge;										/* 討伐チャレンジの種類(QUESTCHALLENGE_*。0=ふつうの依頼) */
+	WORD		wLoanStTmp;											/* 討伐チャレンジの貸し出しセット（ステータステンプレートの番号） */
+	BYTE		byMemberMin;										/* 討伐チャレンジに必要な人数（0・1=一人でもよい、2 以上はパーティを組んでいないと受けられない） */
 } QUESTINFO, *PQUESTINFO;
+
+/* 討伐チャレンジの種類(QUESTINFO の byChallenge) */
+enum {
+	QUESTCHALLENGE_NONE = 0,									/* ふつうの依頼 */
+	QUESTCHALLENGE_OTHERWORLD,									/* 異空間（挑戦中の組にだけ見える。組ごとに別の空間で、何組でも同時に） */
+	QUESTCHALLENGE_ARENA,										/* 闘技場（ふつうの世界の人も観戦できる。手は出せない。同じ依頼は一度に 1 組） */
+	QUESTCHALLENGE_MAX
+};
 
 /* CMD_QUEST のサブコマンド(byType) */
 enum {
@@ -2825,6 +2879,39 @@ typedef struct _CMDPARA_QUESTSTATE {
 	BYTE		byCount;											/* 人数 */
 	QUESTSTATEENTRY	aEntry[MAX_PARTYMEMBER];						/* 本人と仲間 */
 } CMDPARA_QUESTSTATE, *PCMDPARA_QUESTSTATE;
+
+/* 攻撃力・守備力アップの残り時間（サーバー→本人とパーティの仲間。かかった時・切れた時・パーティに入った時）
+   残りが 0 ならかかっていない。HP の枠にアイコンを出すのに使う */
+typedef struct _CMDPARA_CHARBUFF {
+	BYTE		byCmd;												/* コマンドID */
+	DWORD		dwTblID;											/* 誰の分か */
+	DWORD		dwATUP;												/* 攻撃力アップの残り(ms) */
+	DWORD		dwDFUP;												/* 守備力アップの残り(ms) */
+} CMDPARA_CHARBUFF, *PCMDPARA_CHARBUFF;
+#pragma pack(pop)
+
+/* 管理者ウィンドウのギルドの依頼の編集（CMD_ADMINQUEST の byCmdSub） */
+enum {
+	ADMINQUEST_LISTREQ = 0,										/* 一覧の問い合わせ（クライアント→サーバー） */
+	ADMINQUEST_ITEM,											/* 一覧の 1 件（サーバー→クライアント。nNo 番目・全部で wCount 件。0 件なら wCount=0 だけ届く） */
+	ADMINQUEST_SET,												/* 書き込み（クライアント→サーバー。nNo=-1 なら足す。データAPIと同じ確認を通す） */
+	ADMINQUEST_RESULT,											/* 書き込みの結果（サーバー→クライアント。byResult・szMsg。うまくいった時は続けて ITEM も届く） */
+};
+
+#define MAX_ADMINQUESTMSG	256										/* 書き込みの結果の文（UTF-8） */
+
+#pragma pack(push, 1)
+/* 管理者ウィンドウのギルドの依頼の編集（送受信とも同じ形） */
+typedef struct _CMDPARA_ADMINQUEST {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byCmdSub;											/* サブコマンド(ADMINQUEST_*) */
+	BYTE		byResult;											/* 結果（RESULT: 1=書き込んだ 0=書き込めなかった） */
+	BYTE		byReserve;											/* 予備 */
+	WORD		wCount;												/* 依頼の全部の件数（ITEM） */
+	int			nNo;												/* 依頼の配列の番号（ITEM・SET・RESULT。SET の -1 は足す） */
+	QUESTINFO	Info;												/* 依頼（ITEM・SET） */
+	char		szMsg[MAX_ADMINQUESTMSG];							/* 結果の文（RESULT。うまくいかなかった理由） */
+} CMDPARA_ADMINQUEST, *PCMDPARA_ADMINQUEST;
 #pragma pack(pop)
 
 /* 並べ替えの対象(CMDPARA_SORTITEM の byTarget) */

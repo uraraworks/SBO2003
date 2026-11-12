@@ -44,6 +44,7 @@ typedef void (*RECVDATAPROC)(PBYTE, DWORD);
 
 void	MyOutputDebugString			(LPCTSTR lpszFormat, ...);						/* デバッグメッセージ出力 */
 BOOL	CheckAdminBan				(DWORD);										/* 管理者権限かチェックして、違ってたらＢＡＮ */
+extern void SboDataQuestApplyInfo	(int, const QUESTINFO *, int &, std::string &);	/* 管理者ウィンドウから依頼を書き込む(server/web_data_svr.cpp) */
 PCHARINFO AddChar					(PCHARINFO, BOOL bCheck=TRUE);					/* キャラ追加 */
 void	CharNpcIdEnsure				(PCHARINFO);									/* NPC番号がまだ無ければ振る(SboSvrSaveLoadChar.cpp) */
 void	DeleteChar					(DWORD);										/* キャラ削除 */
@@ -74,9 +75,9 @@ int		GetCharDistanceX			(PCHARINFO, PCHARINFO);							/* キャラサイズに�
 DWORD	GetCharXPos					(PCHARINFO, DWORD, BYTE);						/* キャラサイズに合わせた座標を補正(横) */
 BOOL	CheckCharBlock				(DWORD, DWORD, DWORD);							/* キャラのぶつかり判定 */
 BOOL	CheckCharBlock				(PCHARINFO pChar, DWORD, DWORD, DWORD);			/* キャラのぶつかり判定 */
-DWORD	CheckCharBlockPC			(DWORD, DWORD, DWORD);							/* キャラのキャラとのぶつかり判定 */
-DWORD	CheckCharBlockNPC			(DWORD, DWORD, DWORD);							/* キャラのキャラとのぶつかり判定(NPC) */
-DWORD	CheckCharBlockNPC2			(DWORD, DWORD, DWORD, DWORD);					/* キャラのキャラとのぶつかり判定2(NPC) */
+DWORD	CheckCharBlockPC			(DWORD, DWORD, DWORD, DWORD);					/* キャラのキャラとのぶつかり判定 */
+DWORD	CheckCharBlockNPC			(DWORD, DWORD, DWORD, DWORD);					/* キャラのキャラとのぶつかり判定(NPC) */
+DWORD	CheckCharBlockNPC2			(DWORD, DWORD, DWORD, DWORD, DWORD);			/* キャラのキャラとのぶつかり判定2(NPC) */
 BOOL	CheckEventBlock				(DWORD, DWORD, DWORD, BYTE);					/* 指定座標にイベントがあるか判定 */
 BOOL	CheckMagicUserInfo			(BYTE, BYTE);									/* 魔法利用者情報にあるか判定 */
 BOOL	CheckEquUserInfo			(WORD, BYTE);									/* 装備職業情報にあるか判定 */
@@ -197,9 +198,11 @@ void	RecvDataProcEQUUSERINFO					(PBYTE, DWORD);				/* 装備職業情報 */
 void	RecvDataProcEQUUSERINFOREQ				(PBYTE, DWORD);				/* 装備職業情報要求 */
 void	RecvDataProcWEBACCOUNT					(PBYTE, DWORD);				/* ブラウザ版のアカウント関係 */
 void	RecvDataProcADMINUNDO					(PBYTE, DWORD);				/* 管理者画面の「元に戻す」 */
+void	RecvDataProcADMINSPACE					(PBYTE, DWORD);				/* 管理者の空間の切り替え */
 void	RecvDataProcNPCROUTE					(PBYTE, DWORD);				/* NPCの巡回ルート */
 void	RecvDataProcRECIPEMAKE					(PBYTE, DWORD);				/* レシピで作ってもらう */
 void	RecvDataProcQUEST						(PBYTE, DWORD);				/* ギルドの仕事依頼（一覧・受ける・取り消す・渡す） */
+void	RecvDataProcADMINQUEST					(PBYTE, DWORD);				/* 管理者ウィンドウのギルドの依頼の編集 */
 void	RecvDataProcSORTITEM					(PBYTE, DWORD);				/* 道具欄・預かり所の並べ替え */
 void	RecvDataProcLEAVEITEMDISPOSE			(PBYTE, DWORD);				/* 預かり所の品を売る・捨てる */
 void	RecvDataProcBATTLEMODE					(PBYTE, DWORD);				/* 戦闘モードの切り替え通知 */
@@ -426,6 +429,9 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	NULL,								/* CMD_QUESTSTATE(サーバー→クライアントのみ) */
 	RecvDataProcSORTITEM,				/* CMD_SORTITEM */
 	RecvDataProcLEAVEITEMDISPOSE,		/* CMD_LEAVEITEMDISPOSE */
+	NULL,								/* CMD_CHARBUFF(サーバー→クライアントのみ) */
+	RecvDataProcADMINSPACE,				/* CMD_ADMINSPACE */
+	RecvDataProcADMINQUEST,				/* CMD_ADMINQUEST */
 
 	NULL
 };
@@ -536,6 +542,10 @@ static BOOL IsNearRecvChar(PCHARINFO pCharTarget, int nRange)
 {
 	PCHARINFO pChar;
 
+	/* 別の空間にいるキャラには届かない（管理者も、いま居る空間のキャラだけ） */
+	if ((s_nCharNoRecv >= 0) && !IsSameSpace (g_aCharInfo[s_nCharNoRecv], pCharTarget)) {
+		return FALSE;
+	}
 	if (s_bAdminRecv) {
 		return TRUE;
 	}
@@ -2008,7 +2018,7 @@ void CharTargetPC(PCHARINFO pCharParent, PCHARINFO pCharChild, DWORD dwData)
 			}
 			pCharTmp = g_aCharInfo[pCharTmp->dwTargetTblID3];
 		}
-		if (!((pCharParent->dwMapID == pCharChild->dwMapID) &&
+		if (!((pCharParent->dwMapID == pCharChild->dwMapID) && IsSameSpace (pCharParent, pCharChild) &&
 			(abs (pCharParent->dwX - pCharChild->dwX) < 2) &&
 			(abs (pCharParent->dwY - pCharChild->dwY) < 2))) {
 			/* 離れすぎているので処理しない */
@@ -2085,8 +2095,8 @@ void TailMoveChain(PCHARINFO pParent)
 		if ((pChar->dwTailTblID != pParent->dwTblID) || (pChar == pParent)) {
 			break;
 		}
-		/* 違うマップ？ */
-		if (pChar->dwMapID != pParent->dwMapID) {
+		/* 違うマップ・違う空間？ */
+		if ((pChar->dwMapID != pParent->dwMapID) || !IsSameSpace (pChar, pParent)) {
 			CharTargetCancelPC (pChar);
 			break;
 		}
@@ -2519,9 +2529,10 @@ BOOL CheckCharBlock(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY)
 /* ========================================================================= */
 /* 関数名：CheckCharBlockPC													 */
 /* 内容：キャラのキャラとのぶつかり判定										 */
+/*       dwSpaceID と同じ空間にいるキャラとだけぶつかる						 */
 /* 日付：2003/10/11															 */
 /* ========================================================================= */
-DWORD CheckCharBlockPC(DWORD dwMapID, DWORD dwX, DWORD dwY)
+DWORD CheckCharBlockPC(DWORD dwMapID, DWORD dwX, DWORD dwY, DWORD dwSpaceID)
 {
 	PMAPINFO pMap = g_aMapInfo[dwMapID];
 	PDWORD pData = pMap->paTblNoPC;
@@ -2531,6 +2542,10 @@ DWORD CheckCharBlockPC(DWORD dwMapID, DWORD dwX, DWORD dwY)
 		}
 		PCHARINFO pCharTmp = g_aCharInfo[pData[i]];
 		if (pCharTmp->wHP == 0) {
+			continue;
+		}
+		/* 別の空間にいる人とはぶつからない */
+		if (pCharTmp->dwSpaceID != dwSpaceID) {
 			continue;
 		}
 		/* ログイン中ではない？ */
@@ -2548,9 +2563,10 @@ DWORD CheckCharBlockPC(DWORD dwMapID, DWORD dwX, DWORD dwY)
 /* ========================================================================= */
 /* 関数名：CheckCharBlockNPC												 */
 /* 内容：キャラのキャラとのぶつかり判定(NPC)								 */
+/*       dwSpaceID と同じ空間にいるキャラとだけぶつかる						 */
 /* 日付：2004/03/14															 */
 /* ========================================================================= */
-DWORD CheckCharBlockNPC(DWORD dwMapID, DWORD dwX, DWORD dwY)
+DWORD CheckCharBlockNPC(DWORD dwMapID, DWORD dwX, DWORD dwY, DWORD dwSpaceID)
 {
 	PMAPINFO pMap = g_aMapInfo[dwMapID];
 	PDWORD pData = pMap->paTblNoNPC;
@@ -2559,8 +2575,8 @@ DWORD CheckCharBlockNPC(DWORD dwMapID, DWORD dwX, DWORD dwY)
 			break;
 		}
 		PCHARINFO pCharTmp = g_aCharInfo[pData[i]];
-		/* 依頼の見えるNPCは、ぶつからない（すり抜けられる） */
-		if (IsQuestNpc (pCharTmp)) {
+		/* 依頼の見えるNPC・別の空間にいるキャラは、ぶつからない（すり抜けられる） */
+		if (IsQuestNpc (pCharTmp) || (pCharTmp->dwSpaceID != dwSpaceID)) {
 			continue;
 		}
 		/* キャラと重なる？ */
@@ -2581,9 +2597,10 @@ DWORD CheckCharBlockNPC(DWORD dwMapID, DWORD dwX, DWORD dwY)
 /* ========================================================================= */
 /* 関数名：CheckCharBlockNPC2												 */
 /* 内容：キャラのキャラとのぶつかり判定(NPC)								 */
+/*       dwSpaceID と同じ空間にいるキャラとだけぶつかる						 */
 /* 日付：2004/08/01															 */
 /* ========================================================================= */
-DWORD CheckCharBlockNPC2(DWORD dwTblID, DWORD dwMapID, DWORD dwX, DWORD dwY)
+DWORD CheckCharBlockNPC2(DWORD dwTblID, DWORD dwMapID, DWORD dwX, DWORD dwY, DWORD dwSpaceID)
 {
 	PMAPINFO pMap = g_aMapInfo[dwMapID];
 	PDWORD pData = pMap->paTblNoNPC;
@@ -2595,8 +2612,8 @@ DWORD CheckCharBlockNPC2(DWORD dwTblID, DWORD dwMapID, DWORD dwX, DWORD dwY)
 		if (dwTblID == pCharTmp->dwTblID) {
 			continue;
 		}
-		/* 依頼の見えるNPCは、ぶつからない（すり抜けられる） */
-		if (IsQuestNpc (pCharTmp)) {
+		/* 依頼の見えるNPC・別の空間にいるキャラは、ぶつからない（すり抜けられる） */
+		if (IsQuestNpc (pCharTmp) || (pCharTmp->dwSpaceID != dwSpaceID)) {
 			continue;
 		}
 		/* キャラと重なる？ */
@@ -2945,6 +2962,12 @@ void RenewATDF(DWORD dwTblID)
 		}
 	}
 
+	/* 攻撃力・守備力アップ(僧侶の補助特技など) */
+	if (pChar->byNpcType == NPCTYPE_INIT) {
+		pChar->wAT = (WORD)min (65535, (int)pChar->wAT + GetStatusUpBonus (pChar, CHARINFOTIMEREVENT_ATUP, (int)pChar->wAT));
+		pChar->wDF = (WORD)min (65535, (int)pChar->wDF + GetStatusUpBonus (pChar, CHARINFOTIMEREVENT_DFUP, (int)pChar->wDF));
+	}
+
 	/* 防御力倍？ */
 	bResult = CheckCharInfoTimer (dwTblID, CHARINFOTIMEREVENT_DIFENCE);
 	if (bResult) {
@@ -3201,6 +3224,7 @@ void ProcBreakParty(PCHARINFO pChar)
 		/* 抜けた人と残った仲間の依頼の進み具合・見えるNPCを更新する */
 		DWORD dwPartyIDOld = pChar->dwPartyID;
 		pChar->dwPartyID = 0;
+		QuestOnPartyLeave (pChar);
 		QuestSendStateParty (dwPartyIDOld, pChar);
 		QuestSyncAll ();
 	}
@@ -3257,6 +3281,7 @@ void ProcBreakUpParty(PCHARINFO pChar)
 		}
 		ZeroMemory (pPartyInfo, sizeof (PARTYINFO));
 		for (i = 0; i < (int)aMember.size (); i ++) {
+			QuestOnPartyLeave (g_aCharInfo[aMember[i]]);
 			QuestSendStateParty (0, g_aCharInfo[aMember[i]]);
 		}
 		QuestSyncAll ();
@@ -3279,8 +3304,8 @@ BOOL IsTail(PCHARINFO pChar, PCHARINFO pCharTarget)
 
 	bRet = FALSE;
 
-	/* 依頼の見えるNPCにはついていけない */
-	if (IsQuestNpc (pCharTarget)) {
+	/* 依頼の見えるNPC・別の空間にいるキャラにはついていけない */
+	if (!IsInteractable (pChar, pCharTarget)) {
 		goto Exit;
 	}
 
@@ -4538,6 +4563,8 @@ void RecvDataProcADDCHAR(PBYTE pData, DWORD dwDataSize)
 	ZeroMemory ((PBYTE)pCharTmp, sizeof (CHARINFO));
 	pCharTmp->byNpcType = pChar->byNpcType;
 	SetInitCharData (pCharTmp);
+	/* 追加した管理者のいる空間に出す（API から来た時は、ふつうの世界） */
+	pCharTmp->dwSpaceID = (s_nCharNoRecv >= 0) ? g_aCharInfo[s_nCharNoRecv]->dwSpaceID : SPACE_NORMAL;
 	pCharTmp->wGrpID = pChar->wGrpID;
 	pCharTmp->dwMapID = pChar->dwMapID;
 	pCharTmp->dwX = pChar->dwX;
@@ -4849,13 +4876,10 @@ static BOOL OpenDoorFront(PCHARINFO pChar)
 			}
 /* とりあえず鍵は無しで。 */
 			PEVENTINFO_DOOR pDoor = (PEVENTINFO_DOOR)pEvent->pData;
-			/* すでに開いてる？ */
-			if (pDoor->dwTimeOpen) {
+			/* すでに開いてる？（扉は空間ごとに開け閉めする。開けたことはその空間の人にだけ知らせる） */
+			if (!SpaceDoorOpen (pChar->dwMapID, pEvent, pDoor, pChar->dwSpaceID)) {
 				return FALSE;
 			}
-
-			pDoor->dwTimeOpen = timeGetTime ();
-			SendCmdCHGMAP (pChar->dwMapID, pDoor->wBackGrpID, dwX, dwY);
 			SendCmdPLAYSOUND (pChar->pID, SOUND_DOOR);
 			SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
 			return TRUE;
@@ -5097,6 +5121,14 @@ void RecvDataProcRESURRECTION(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 
+	/* 倒れていない人は復活しない（討伐チャレンジで倒れて元に戻った後に、開いたままの窓から押された時など） */
+	if ((pChar->byCharState != CHARSTATE_DEAD) && (pChar->wHP > 0)) {
+		return;
+	}
+	/* 討伐チャレンジ中なら中断して入る前の場所へ（お金は減らさない） */
+	if (QuestChallengeResurrection (pChar)) {
+		return;
+	}
 	/* 復活位置で蘇生 */
 	ResurrectionBack (pChar);
 }
@@ -5462,7 +5494,7 @@ void RecvDataProcCHARPUSH(PBYTE pData, DWORD dwDataSize)
 		}
 
 		if (bUpdate) {
-			DWORD dwTmp = CheckCharBlockNPC (pCharPush->dwMapID, dwX, dwY);
+			DWORD dwTmp = CheckCharBlockNPC (pCharPush->dwMapID, dwX, dwY, pCharPush->dwSpaceID);
 			if (dwTmp != -1) {
 				PCHARINFO pCharCheck = g_aCharInfo[dwTmp];
 				if (pCharPush->dwTblID != pCharCheck->dwTblID) {
@@ -5708,6 +5740,10 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
+	/* 別の空間にいるキャラとは話せない */
+	if ((s_nCharNoRecv >= 0) && !IsSameSpace (g_aCharInfo[s_nCharNoRecv], pChar)) {
+		return;
+	}
 	/* 依頼の見えるNPC（台詞が「@q」。受けた人・仲間だけに見える）？ 話すとポータル・宝箱など */
 	if (IsQuestNpc (pChar)) {
 		if ((s_nCharNoRecv >= 0) && IsNearRecvChar (pChar, 2)) {
@@ -6515,8 +6551,8 @@ void RecvDataProcTARGETCHAR(PBYTE pData, DWORD dwDataSize)
 			return;
 		}
 		pCharTmp = g_aCharInfo[pPara->dwData];
-		/* 依頼の見えるNPCはターゲットにできない */
-		if (IsQuestNpc (pCharTmp)) {
+		/* 依頼の見えるNPC・別の空間にいるキャラはターゲットにできない */
+		if (!IsInteractable (pChar, pCharTmp)) {
 			return;
 		}
 
@@ -6754,6 +6790,20 @@ void RecvDataProcSTTMPLATE(PBYTE pData, DWORD dwDataSize)
 }
 
 /* ========================================================================= */
+/* 関数名：QuestChallengeBlock												 */
+/* 内容：討伐チャレンジ中ならお知らせして TRUE（預かり所・取り引きなどを止める）	 */
+/* 日付：2026/11/12															 */
+/* ========================================================================= */
+static BOOL QuestChallengeBlock(PCHARINFO pChar)
+{
+	if (!QuestInChallenge (pChar)) {
+		return FALSE;
+	}
+	SendCmdSYSMSG (pChar->pID, "討伐チャレンジ中はできません。", SPEECHCMD_BATTLE1);
+	return TRUE;
+}
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcLEAVEITEM											 */
 /* 内容：受信データ処理(アイテム預ける)										 */
 /* 日付：2003/11/07															 */
@@ -6769,6 +6819,10 @@ void RecvDataProcLEAVEITEM(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
+	/* 討伐チャレンジ中は預かり所・取り引き・作ってもらうを使わない（貸し出しの品が出入りしないように） */
+	if (QuestChallengeBlock (pChar)) {
+		return;
+	}
 	if ((pPara->byData >= MAX_MYITEM) || (pChar->waItem[pPara->byData] == 0)) {
 		return;
 	}
@@ -6883,6 +6937,10 @@ void RecvDataProcLEAVEITEMGET(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
+	/* 討伐チャレンジ中は預かり所・取り引き・作ってもらうを使わない（貸し出しの品が出入りしないように） */
+	if (QuestChallengeBlock (pChar)) {
+		return;
+	}
 	if (g_aLeaveInfo.GetSize () == 0) {
 		return;
 	} else if (g_aLeaveInfo.GetSize () == 1) {
@@ -7376,7 +7434,7 @@ void RecvDataProcPARTY(PBYTE pData, DWORD dwDataSize)
 	/* 各コマンド処理 */
 	switch (pPara->byCmdSub) {
 	case CMDPARTY_JOIN:			/* 誘う */
-		if (pCharFrom->dwMapID != pCharTo->dwMapID) {
+		if ((pCharFrom->dwMapID != pCharTo->dwMapID) || !IsSameSpace (pCharFrom, pCharTo)) {
 			wsprintf (szTmp, "%sは近くにいないので誘えません。", pCharTo->szName);
 			SendCmdSYSMSG (pCharFrom->pID, szTmp, SPEECHCMD_BATTLE1);
 			break;
@@ -7400,8 +7458,8 @@ void RecvDataProcPARTY(PBYTE pData, DWORD dwDataSize)
 		}
 		/* 受けている依頼が違う人とは仲間になれない */
 		if (QuestPartyConflict (pCharFrom, pCharTo)) {
-			SendCmdSYSMSG (pCharFrom->pID, "受けている依頼が違うので仲間になれません", SPEECHCMD_BATTLE1);
-			SendCmdSYSMSG (pCharTo->pID, "受けている依頼が違うので仲間になれません", SPEECHCMD_BATTLE1);
+			SendCmdSYSMSG (pCharFrom->pID, QuestPartyConflictMsg (pCharFrom, pCharTo), SPEECHCMD_BATTLE1);
+			SendCmdSYSMSG (pCharTo->pID, QuestPartyConflictMsg (pCharFrom, pCharTo), SPEECHCMD_BATTLE1);
 			break;
 		}
 
@@ -7431,8 +7489,8 @@ void RecvDataProcPARTY(PBYTE pData, DWORD dwDataSize)
 		}
 		/* 誘われてから依頼を受けた場合もあるので、ここでも確かめる */
 		if (QuestPartyConflict (pCharFrom, pCharTo)) {
-			SendCmdSYSMSG (pCharFrom->pID, "受けている依頼が違うので仲間になれません", SPEECHCMD_BATTLE1);
-			SendCmdSYSMSG (pCharTo->pID, "受けている依頼が違うので仲間になれません", SPEECHCMD_BATTLE1);
+			SendCmdSYSMSG (pCharFrom->pID, QuestPartyConflictMsg (pCharFrom, pCharTo), SPEECHCMD_BATTLE1);
+			SendCmdSYSMSG (pCharTo->pID, QuestPartyConflictMsg (pCharFrom, pCharTo), SPEECHCMD_BATTLE1);
 			break;
 		}
 		if (pCharTo->dwPartyID == 0) {
@@ -7514,6 +7572,8 @@ void RecvDataProcPARTY(PBYTE pData, DWORD dwDataSize)
 		/* 依頼の進み具合を仲間へ送り、見えるNPCを更新する */
 		QuestSendStateParty (pCharFrom->dwPartyID, NULL);
 		QuestSyncAll ();
+		/* 攻撃力・守備力アップのアイコンを、入った人と仲間で見せ合う */
+		BuffSendPartyAll (pCharFrom);
 		break;
 
 	case CMDPARTY_JOINNO:		/* 参加しない */
@@ -8029,6 +8089,15 @@ void RecvDataProcEQUUSERINFOREQ(PBYTE pData, DWORD dwDataSize)
 	SendCmdEQUUSERINFO (pPara->pID, pPara->byData);
 }
 
+/* 取り引きを断る・やめる：本人に「取り引き終了」を返して動けるようにする */
+static void TradeRefuse(PCHARINFO pChar)
+{
+	if ((pChar == NULL) || (pChar->pID == 0)) {
+		return;
+	}
+	SendCmdTRADE (pChar->pID, pChar->dwTblID, CMDTRADE_OUT);
+}
+
 /* ========================================================================= */
 /* 関数名：RecvDataProcTRADE												 */
 /* 内容：受信データ処理(取り引きコマンド)									 */
@@ -8045,11 +8114,6 @@ void RecvDataProcTRADE(PBYTE pData, DWORD dwDataSize)
 	if (pRecv->dwData >= (DWORD)g_aCharInfo.GetSize ()) {
 		return;
 	}
-	/* 依頼の見えるNPCとは取り引きできない */
-	if (IsQuestNpc (g_aCharInfo[pRecv->dwData])) {
-		return;
-	}
-
 	if (pRecv->pID == 0) {
 		std::map<DWORD, TRADESTATE>::iterator it = s_mapTrade.find (pRecv->dwTblID);
 		/* 知らせる先は自分か、いま取り引きしている相手だけ */
@@ -8060,6 +8124,23 @@ void RecvDataProcTRADE(PBYTE pData, DWORD dwDataSize)
 		TradeClear (pRecv->dwTblID);
 		/* 取り引き終了通知を送信 */
 		SendCmdTRADE (g_aCharInfo[pRecv->dwData]->pID, pRecv->dwTblID, CMDTRADE_OUT);
+		return;
+	}
+	/* ここから先は取り引きの申し込み。申し込んだ側のクライアントは返事が来るまで動けないので、
+	   断る時は必ず「取り引き終了」を返す（返さないと操作が効かないままになる） */
+	/* 依頼の見えるNPC・別の空間にいるキャラとは取り引きできない */
+	if (!IsInteractable (g_aCharInfo[pRecv->dwTblID], g_aCharInfo[pRecv->dwData])) {
+		TradeRefuse (g_aCharInfo[pRecv->dwTblID]);
+		return;
+	}
+	/* 討伐チャレンジ中の人とは取り引きしない */
+	if (QuestChallengeBlock (g_aCharInfo[pRecv->dwTblID])) {
+		TradeRefuse (g_aCharInfo[pRecv->dwTblID]);
+		return;
+	}
+	if (QuestInChallenge (g_aCharInfo[pRecv->dwData])) {
+		SendCmdSYSMSG (g_aCharInfo[pRecv->dwTblID]->pID, "相手は討伐チャレンジ中なので取り引きできません。", SPEECHCMD_BATTLE1);
+		TradeRefuse (g_aCharInfo[pRecv->dwTblID]);
 		return;
 	}
 	/* 自分の傭兵？ 道具を持たせる・返してもらう取り引き（傭兵の返事はサーバーがする） */
@@ -8097,6 +8178,7 @@ void RecvDataProcTRADE(PBYTE pData, DWORD dwDataSize)
 			(g_aCharInfo[pRecv->dwData]->szAcc[0] == 0) ||
 			(g_aCharInfo[pRecv->dwData]->pID == 0) ||
 			!IsNearRecvChar (g_aCharInfo[pRecv->dwData], 20)) {
+		TradeRefuse (g_aCharInfo[pRecv->dwTblID]);
 		return;
 	}
 	if (g_aCharInfo[pRecv->dwData]->byCharState == CHARSTATE_DEAD) {
@@ -8191,6 +8273,14 @@ void RecvDataProcTRADEPROC(PBYTE pData, DWORD dwDataSize)
 
 	pChar1 = g_aCharInfo[pRecv->dwTblID1];
 	pChar2 = g_aCharInfo[pRecv->dwTblID2];
+	/* 討伐チャレンジ中は預かり所・取り引き・作ってもらうを使わない（貸し出しの品が出入りしないように） */
+	if (QuestChallengeBlock (pChar1) || QuestChallengeBlock (pChar2)) {
+		/* 取り引き画面を開いたまま待たせない */
+		TradeClear (pRecv->dwTblID1);
+		TradeRefuse (pChar1);
+		TradeRefuse (pChar2);
+		return;
+	}
 
 	/* サーバーが覚えている取り引きで、両方が「決定」している時だけ成立させる。
 	   渡すアイテムと金額も、パケットの申告ではなく覚えている内容を使う */
@@ -8403,6 +8493,10 @@ void RecvDataProcLEAVEGOLD(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pRecv->dwTblID];
+	/* 討伐チャレンジ中は預かり所・取り引き・作ってもらうを使わない（貸し出しの品が出入りしないように） */
+	if (QuestChallengeBlock (pChar)) {
+		return;
+	}
 	if (pRecv->dwData > pChar->dwGold) {
 		return;
 	}
@@ -8467,6 +8561,10 @@ void RecvDataProcLEAVEGOLDGET(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pRecv->dwTblID];
+	/* 討伐チャレンジ中は預かり所・取り引き・作ってもらうを使わない（貸し出しの品が出入りしないように） */
+	if (QuestChallengeBlock (pChar)) {
+		return;
+	}
 	if (g_aLeaveInfo.GetSize () == 0) {
 		return;
 	} else if (g_aLeaveInfo.GetSize () == 1) {
@@ -8609,6 +8707,7 @@ void RecvDataProcTHROWSNOW(PBYTE pData, DWORD dwDataSize)
 
 	pCharNew->byNpcType = NPCTYPE_ATACK;
 	SetInitCharData (pCharNew);
+	pCharNew->dwSpaceID = pChar->dwSpaceID;		/* 撃った人と同じ空間 */
 	pCharNew->byGameState = GAMESTATE_NPC;
 	pCharNew->dwXBack = pCharNew->dwX = pChar->dwX;
 	pCharNew->dwYBack = pCharNew->dwY = pChar->dwY;
@@ -8742,6 +8841,7 @@ void RecvDataProcSubGameBOMB_SETBOMB(PBYTE pData, DWORD dwDataSize)
 	ZeroMemory ((PBYTE)pCharTmp, sizeof (CHARINFO));
 	pCharTmp->byNpcType = NPCTYPE_BOMB;
 	SetInitCharData (pCharTmp);
+	pCharTmp->dwSpaceID = pChar->dwSpaceID;		/* 置いた人と同じ空間 */
 	pCharTmp->dwMapID = pChar->dwMapID;
 	pCharTmp->dwX = pChar->dwX;
 	pCharTmp->dwY = pChar->dwY;
@@ -9587,7 +9687,7 @@ void RecvDataProcSubGameWAR_ATACK(PBYTE pData, DWORD dwDataSize)
 	bCheck = TRUE;
 	dwTblID = CheckCharBlockPC (pChar->dwMapID,
 					pChar->dwX + anPosAddTblX[pRecv->byData],
-					pChar->dwY + anPosAddTblY[pRecv->byData]);
+					pChar->dwY + anPosAddTblY[pRecv->byData], pChar->dwSpaceID);
 	if (dwTblID == -1) {
 		bCheck = FALSE;
 
@@ -10269,6 +10369,119 @@ void RecvDataProcADMINUNDO(PBYTE pData, DWORD dwDataSize)
 }
 
 /* ========================================================================= */
+/* 関数名：RecvDataProcADMINSPACE											 */
+/* 内容：受信データ処理(管理者の空間の切り替え)								 */
+/*       LISTREQ: いま在る空間の一覧と、いま居る空間を LIST で返す			 */
+/*       SET    : 一覧にある空間（か 0）へ自分を移し、結果を LIST で返す		 */
+/*                管理者も、移った空間では普通のキャラと同じ（見える・ぶつかる・	 */
+/*                攻撃できる。ほかの人からも見える）						 */
+/* ========================================================================= */
+void RecvDataProcADMINSPACE(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINSPACE pPara = (PCMDPARA_ADMINSPACE)pData;
+	PCHARINFO pChar;
+	BYTE byResult = 0;
+
+	if (s_dwRecvSize < sizeof (CMDPARA_ADMINSPACE)) {
+		return;
+	}
+	if (s_nCharNoRecv < 0) {
+		return;
+	}
+	pChar = g_aCharInfo[s_nCharNoRecv];
+
+	switch (pPara->byCmdSub) {
+	case ADMINSPACE_LISTREQ:	/* 一覧の問い合わせ */
+		break;
+
+	case ADMINSPACE_SET:		/* 切り替え */
+		/* 遊んでいて、倒れていない時だけ。討伐チャレンジ中の人は別の空間にいるので動かさない */
+		if (!SpaceExists (pPara->dwSpaceID) || QuestInChallenge (pChar) ||
+				(pChar->byGameState != GAMESTATE_MOVE) || (GetMapNo (pChar->dwMapID) < 0)) {
+			break;
+		}
+		SpaceSet (pChar, pPara->dwSpaceID);
+		byResult = 1;
+		break;
+
+	default:
+		return;
+	}
+	SendCmdADMINSPACE (pChar->pID, byResult, pChar->dwSpaceID);
+}
+
+/* ========================================================================= */
+/* 関数名：SendAdminQuestItem												 */
+/* 内容：管理者ウィンドウへ依頼 1 件を送る（nNo が範囲外なら件数だけ）		 */
+/* ========================================================================= */
+static void SendAdminQuestItem(DWORD pID, int nNo)
+{
+	PCMDPARA_ADMINQUEST pPara = new CMDPARA_ADMINQUEST;
+
+	ZeroMemory (pPara, sizeof (CMDPARA_ADMINQUEST));
+	pPara->byCmd	= CMD_ADMINQUEST;
+	pPara->byCmdSub	= ADMINQUEST_ITEM;
+	pPara->wCount	= (WORD)g_aQuestInfo.GetSize ();
+	pPara->nNo		= nNo;
+	if ((nNo >= 0) && (nNo < g_aQuestInfo.GetSize ()) && g_aQuestInfo[nNo]) {
+		pPara->Info = *g_aQuestInfo[nNo];
+	} else {
+		pPara->nNo = -1;
+	}
+	svrSock.SendTo (pID, (PBYTE)pPara, sizeof (CMDPARA_ADMINQUEST));
+	SAFE_DELETE (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINQUEST											 */
+/* 内容：受信データ処理(管理者ウィンドウのギルドの依頼の編集)				 */
+/*       LISTREQ : 依頼を 1 件ずつ ITEM で送る（0 件なら件数 0 の ITEM だけ）	 */
+/*       SET     : データAPI（SboWebDataApply）と同じ確認を通して書き込み、	 */
+/*                 RESULT と、うまくいけばその依頼の ITEM を返す				 */
+/* ========================================================================= */
+void RecvDataProcADMINQUEST(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINQUEST pPara = (PCMDPARA_ADMINQUEST)pData;
+	PCMDPARA_ADMINQUEST pRes;
+	DWORD pID = s_pIDRecv;
+	int i, nNoOut = -1;
+	std::string strErr;
+
+	if (s_dwRecvSize < sizeof (CMDPARA_ADMINQUEST)) {
+		return;
+	}
+
+	switch (pPara->byCmdSub) {
+	case ADMINQUEST_LISTREQ:	/* 一覧の問い合わせ */
+		if (g_aQuestInfo.GetSize () == 0) {
+			SendAdminQuestItem (pID, -1);
+			break;
+		}
+		for (i = 0; i < g_aQuestInfo.GetSize (); i ++) {
+			SendAdminQuestItem (pID, i);
+		}
+		break;
+
+	case ADMINQUEST_SET:		/* 書き込み */
+		SboDataQuestApplyInfo (pPara->nNo, &pPara->Info, nNoOut, strErr);
+		pRes = new CMDPARA_ADMINQUEST;
+		ZeroMemory (pRes, sizeof (CMDPARA_ADMINQUEST));
+		pRes->byCmd		= CMD_ADMINQUEST;
+		pRes->byCmdSub	= ADMINQUEST_RESULT;
+		pRes->byResult	= strErr.empty () ? 1 : 0;
+		pRes->wCount	= (WORD)g_aQuestInfo.GetSize ();
+		pRes->nNo		= strErr.empty () ? nNoOut : pPara->nNo;
+		SboTextCopy (pRes->szMsg, sizeof (pRes->szMsg), strErr.c_str ());
+		svrSock.SendTo (pID, (PBYTE)pRes, sizeof (CMDPARA_ADMINQUEST));
+		SAFE_DELETE (pRes);
+		if (strErr.empty ()) {
+			SendAdminQuestItem (pID, nNoOut);
+		}
+		break;
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcNPCROUTE												 */
 /* 内容：受信データ処理(NPCの巡回ルート)									 */
 /*       REQ  : そのマップの巡回できるNPC全員のルートを INFO で送り、INFOEND	 */
@@ -10391,7 +10604,7 @@ BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, 
 	/* 管理者用のコマンドだけ（ログインや「元に戻す」自体は通さない） */
 	if ((byCmd >= CMD_MAX) || (RecvDataProcTbl[byCmd] == NULL) ||
 			((byCmd < CMD_MAPPARTSADD) && (byCmd != CMD_CHARITEM)) ||
-			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE)) {
+			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE)) {
 		return FALSE;
 	}
 
@@ -11194,6 +11407,10 @@ void RecvDataProcRECIPEMAKE(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	pChar = g_aCharInfo[pPara->dwTblID];
+	/* 討伐チャレンジ中は預かり所・取り引き・作ってもらうを使わない（貸し出しの品が出入りしないように） */
+	if (QuestChallengeBlock (pChar)) {
+		return;
+	}
 	if ((pChar == NULL) || (pChar->pID == 0) || (pChar->byNpcType != NPCTYPE_INIT)) {
 		return;
 	}

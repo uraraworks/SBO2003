@@ -41,6 +41,10 @@ void SendCmdSPEECH				(DWORD, int, BYTE);							/* コマンド送信(発言通�
 void SendCmdONLINE				(DWORD);									/* コマンド送信(オンライン数通知) */
 void SendCmdMAPPARTS			(DWORD, int);								/* コマンド送信(マップパーツ更新) */
 void SendCmdCHGMAP				(DWORD, WORD, int, int);					/* コマンド送信(マップ書き換え) */
+void SendCmdCHGMAPSpace			(DWORD, DWORD, WORD, int, int);				/* コマンド送信(マップ書き換え。その空間の人だけ) */
+void SendCmdCHGMAPTo			(DWORD, DWORD, WORD, int, int);				/* コマンド送信(マップ書き換え。1 人だけ) */
+void SendCmdADMINSPACE			(DWORD, BYTE, DWORD);						/* コマンド送信(管理者の空間の一覧) */
+void SendCmdInsideMapSpace		(DWORD, DWORD, LPBYTE, DWORD);				/* 指定マップ内の、その空間のプレイヤーにコマンド送信 */
 void SendCmdADDDELMAP			(DWORD, BYTE, BYTE);						/* コマンド送信(マップ幅増減) */
 void SendCmdEVENTINFO			(DWORD, int, int);							/* コマンド送信(イベント情報更新) */
 void SendCmdEVENTCOUNT			(DWORD, DWORD);								/* コマンド送信(イベント数通知) */
@@ -286,6 +290,36 @@ void SendCmdInsideMap(DWORD dwID, LPBYTE pSendData, DWORD dwSize)
 		}
 		pChar = g_aCharInfo[pData[i]];
 		if (pChar->pID) {
+			aIDDst.push_back (pChar->pID);
+		}
+	}
+	if (!aIDDst.empty ()) {
+		svrSock.SendToMulti (&aIDDst[0], (DWORD)aIDDst.size (), pSendData, dwSize, 0, URARASOCK_SENDPRIORITY_MIDDLE);
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdInsideMapSpace											 */
+/* 内容：指定マップ内の、指定した空間にいるプレイヤーにコマンド送信			 */
+/*       （マップ全体への放送・お知らせは SendCmdInsideMap で全部の空間へ）	 */
+/* ========================================================================= */
+void SendCmdInsideMapSpace(DWORD dwID, DWORD dwSpaceID, LPBYTE pSendData, DWORD dwSize)
+{
+	int i;
+	PMAPINFO pMap = g_aMapInfo[dwID];
+	PDWORD pData = pMap->paTblNoPC;
+	PCHARINFO pChar;
+	std::vector<DWORD> aIDDst;
+
+	if (pData == NULL) {
+		return;
+	}
+	for (i = 0; i < (int)pMap->dwCountTblNoPC; i ++) {
+		if (pData[i] == -1) {
+			break;
+		}
+		pChar = g_aCharInfo[pData[i]];
+		if (pChar->pID && (pChar->dwSpaceID == dwSpaceID)) {
 			aIDDst.push_back (pChar->pID);
 		}
 	}
@@ -975,9 +1009,9 @@ void SendCmdCHARPOS(DWORD pIDSend, int nNo, BYTE byFlg, BYTE byInside)
 //	wsprintf (szTmp, "→CHARPOS送信 ID:%d\r\n", pSendData->dwTblID);
 //	OutputDebugString (szTmp);
 
-	/* 依頼の見えるNPCの座標は、見える人にだけ送る（範囲送信は SendCmdInside2 が絞る） */
-	if (IsQuestNpc (g_aCharInfo[nNo])) {
-		if (byInside == 2) {
+	/* 依頼の見えるNPC・別の空間にいるキャラの座標は、見える人にだけ送る（範囲送信は SendCmdInside2 が絞る） */
+	if (IsQuestNpc (g_aCharInfo[nNo]) || (g_aCharInfo[nNo]->dwSpaceID != 0)) {
+		if (IsQuestNpc (g_aCharInfo[nNo]) && (byInside == 2)) {
 			byInside = 1;		/* マップ全体への送信は絞り込めないので、範囲送信（絞り込みあり）にする */
 		}
 		if ((byInside == 3) || (pIDSend == URARASOCK_SENDALL) || !byInside) {
@@ -1000,7 +1034,8 @@ void SendCmdCHARPOS(DWORD pIDSend, int nNo, BYTE byFlg, BYTE byInside)
 		svrSock.SendTo (pIDSend, (LPBYTE)pSendData, sizeof (CMDPARA_CHARPOS), SENDTIMEOUT);
 
 	} else if (byInside == 2) {
-		SendCmdInsideMap (g_aCharInfo[nNo]->dwMapID, (LPBYTE)pSendData, sizeof (CMDPARA_CHARPOS));
+		/* マップ全体へ。ただし同じ空間の人にだけ */
+		SendCmdInsideMapSpace (g_aCharInfo[nNo]->dwMapID, g_aCharInfo[nNo]->dwSpaceID, (LPBYTE)pSendData, sizeof (CMDPARA_CHARPOS));
 
 	} else if (byInside == 4) {
 		SendCmdInside2 (g_aCharInfo[nNo], (LPBYTE)pSendData, sizeof (CMDPARA_CHARPOS), 0, SENDINSIDE_INSIDENOME, TRUE, TRUE, 2);
@@ -1269,6 +1304,40 @@ void SendCmdCHGMAP(DWORD dwID, WORD wMap, int nX, int nY)
 	pSendData->nY = nY;
 	SendCmdInsideMap (dwID, (LPBYTE)pSendData, sizeof (CMDPARA_CHGMAP));
 	delete pSendData;
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdCHGMAPSpace												 */
+/* 内容：コマンド送信(マップ書き換え。その空間の人だけ)						 */
+/*       扉・「乗っている間変わるマス」など、空間ごとに状態が違うもの用	 */
+/* ========================================================================= */
+void SendCmdCHGMAPSpace(DWORD dwID, DWORD dwSpaceID, WORD wMap, int nX, int nY)
+{
+	CMDPARA_CHGMAP SendData;
+
+	SendData.byCmd = CMD_CHGMAP;
+	SendData.dwID = dwID;
+	SendData.wMap = wMap;
+	SendData.nX = nX;
+	SendData.nY = nY;
+	SendCmdInsideMapSpace (dwID, dwSpaceID, (LPBYTE)&SendData, sizeof (CMDPARA_CHGMAP));
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdCHGMAPTo													 */
+/* 内容：コマンド送信(マップ書き換え。pIDSend の 1 人だけ)					 */
+/*       空間を移った人に、その空間の扉などの状態を知らせる用				 */
+/* ========================================================================= */
+void SendCmdCHGMAPTo(DWORD pIDSend, DWORD dwID, WORD wMap, int nX, int nY)
+{
+	CMDPARA_CHGMAP SendData;
+
+	SendData.byCmd = CMD_CHGMAP;
+	SendData.dwID = dwID;
+	SendData.wMap = wMap;
+	SendData.nX = nX;
+	SendData.nY = nY;
+	svrSock.SendTo (pIDSend, (LPBYTE)&SendData, sizeof (CMDPARA_CHGMAP), SENDTIMEOUT);
 }
 
 /* ========================================================================= */
@@ -2095,7 +2164,7 @@ void SendCmdNAMECOLOR(DWORD dwID)
 	pSendData->clName = pChar->clName;
 	pSendData->clSpeech = pChar->clSpeech;
 
-	SendCmdInsideMap (pChar->dwMapID, (PBYTE)pSendData, sizeof (CMDPARA_NAMECOLOR));
+	SendCmdInsideMapSpace (pChar->dwMapID, pChar->dwSpaceID, (PBYTE)pSendData, sizeof (CMDPARA_NAMECOLOR));
 	delete pSendData;
 }
 
@@ -3417,6 +3486,26 @@ void SendCmdADMINUNDO(DWORD pIDSend, BYTE byCmdSub, BYTE byScreen, BYTE byResult
 	}
 
 	svrSock.SendTo (pIDSend, (PBYTE)&Para, sizeof (Para));
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdADMINSPACE												 */
+/* 内容：コマンド送信(管理者の空間の一覧)									 */
+/*       いま在る空間の一覧と、本人がいま居る空間番号(dwSpaceID)を送る		 */
+/*       byResult: 1=切り替えを受け付けた 0=一覧だけ・受け付けなかった		 */
+/* ========================================================================= */
+void SendCmdADMINSPACE(DWORD pIDSend, BYTE byResult, DWORD dwSpaceID)
+{
+	CMDPARA_ADMINSPACE Para;
+
+	ZeroMemory (&Para, sizeof (Para));
+	Para.byCmd		= CMD_ADMINSPACE;
+	Para.byCmdSub	= ADMINSPACE_LIST;
+	Para.byResult	= byResult;
+	Para.dwSpaceID	= dwSpaceID;
+	Para.byCount	= (BYTE)SpaceGetList (Para.aEntry, MAX_ADMINSPACE);
+
+	svrSock.SendTo (pIDSend, (PBYTE)&Para, sizeof (Para), SENDTIMEOUT);
 }
 
 /* ========================================================================= */

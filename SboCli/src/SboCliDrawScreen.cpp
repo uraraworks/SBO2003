@@ -31,6 +31,7 @@ void DrawChar3			(void);										/* キャラの名前等の描画 */
 void DrawETC			(void);										/* ゲージ等の描画 */
 static void DrawFrameRect	(int x, int y, int cx, int cy, COLORREF cl);	/* 1ドットの枠を描く */
 static void DrawGuardMark	(int x, int y);								/* 構えの盾マーク */
+static void DrawBuffIcons	(int x, int y, DWORD dwTblID);				/* 攻撃力・守備力アップのアイコン(system.png) */
 void DrawObj			(void);										/* オブジェクトの描画 */
 void DrawEvent			(void);										/* イベント情報の描画 */
 void DrawMapEdit		(void);										/* マップ編集情報の描画 */
@@ -97,6 +98,49 @@ void TextOut2(HDC hdc, int iX, int iY, char *pStr, COLORREF Color)
 }
 
 /* ========================================================================= */
+/* 関数名：DrawSysMsgBand													 */
+/* 内容：戦闘ログ（システムメッセージ）の後ろに半透明の暗い帯を敷く			 */
+/*		 草原など明るい背景でも細い文字が読めるように。右端は 1 文字ぶんぼかす */
+/*		 行が重なっても濃くならないよう、1 ドット行ごとに 1 回だけ塗る		 */
+/* ========================================================================= */
+static void DrawSysMsgBand(HDC hDC, int nX, int nY)
+{
+	const int nFade = 14;		/* 右端をぼかす幅（1 文字ぶん） */
+	const int nAlpha = 120;		/* 帯の濃さ（0〜255） */
+	int i, yy, nCount = g_SysMsgInfo.GetSize ();
+	int anRight[SCRSIZEY + 2];
+	TEXTMETRIC tm;
+	SIZE size;
+
+	if (nCount <= 0) {
+		return;
+	}
+	GetTextMetrics (hDC, &tm);
+	for (yy = 0; yy < SCRSIZEY + 2; yy ++) {
+		anRight[yy] = 0;
+	}
+	for (i = 0; i < nCount; i ++) {
+		PSYSMSGINFO pSysMsgInfo = g_SysMsgInfo[i];
+		if (pSysMsgInfo->nY < SYSMSG_EY) {
+			continue;
+		}
+		GetTextExtentPoint32 (hDC, pSysMsgInfo->pszMsg, strlen (pSysMsgInfo->pszMsg), &size);
+		/* 縁取りの 1 ドットと上下 1 ドットの余白も含めて帯にする（行の間にすき間が出ないように） */
+		for (yy = pSysMsgInfo->nY - 2; yy <= pSysMsgInfo->nY + tm.tmHeight + 1; yy ++) {
+			if (yy < 0 || yy >= SCRSIZEY + 2) {
+				continue;
+			}
+			anRight[yy] = max (anRight[yy], size.cx + 2);
+		}
+	}
+	for (yy = 0; yy < SCRSIZEY + 2; yy ++) {
+		if (anRight[yy] > 0) {
+			W32ShadeSpan (hDC, nX, nY + yy, anRight[yy], nFade, RGB (0, 0, 0), nAlpha);
+		}
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：DrawScreen														 */
 /* 内容：画面の描画															 */
 /* 日付：2003/04/29															 */
@@ -146,6 +190,7 @@ void DrawScreen(HWND hWnd, HDC hDC)
 				hDCPrimary = g_pDibDrawMap->Lock ();
 				HFONT hFontOld = (HFONT)SelectObject (hDCPrimary, g_hFont14);
 				SetBkMode (hDCPrimary, TRANSPARENT);
+				DrawSysMsgBand (hDCPrimary, 32 - x, 32 - y);
 				for (i = 0; i < nCount; i ++) {
 					PSYSMSGINFO pSysMsgInfo = g_SysMsgInfo[i];
 					if (pSysMsgInfo->nY >= SYSMSG_EY) {
@@ -464,7 +509,7 @@ static void DrawMapLight(const char *pMapDark)
 	nLight = 0;
 	nCount = g_aCharInfo.GetSize ();
 	for (i = -1; i < nCount; i ++) {
-		int nLevel, xTmp, yTmp;
+		int xTmp, yTmp;
 
 		if (nLight >= MAPLIGHT_MAX) {
 			break;
@@ -486,11 +531,6 @@ static void DrawMapLight(const char *pMapDark)
 		if ((abs (xTmp) > DRAW_PARTS_X + 1) || (abs (yTmp) > DRAW_PARTS_Y + 1)) {
 			continue;
 		}
-		/* 1マス進むごとに暗くなる量(RenewMapDarkWork と同じ) */
-		nLevel = GetMapLightLevel ();
-		if (pChar->byLightLevel) {
-			nLevel = GetMapLightLevel () - pChar->byLightLevel;
-		}
 		/* 灯りの中心(歩き中のずれも入れて、なめらかについてくるように) */
 		anX[nLight] = (DRAW_PARTS_X + 1) * 32 + 16 - xTmp * 32 - anPosAddTblX[pChar->byDirection] * pChar->byDotMove;
 		anY[nLight] = (DRAW_PARTS_Y + 1) * 32 + 16 - yTmp * 32 - anPosAddTblY[pChar->byDirection] * pChar->byDotMove;
@@ -499,9 +539,8 @@ static void DrawMapLight(const char *pMapDark)
 		afPower[nLight] = 1.0f;
 		afWarm[nLight] = 0.0f;
 		apMask[nLight] = GetLightMask (pChar, 0, 0);
-		if (nLevel > 0) {
-			afR[nLight] = (100.0f / nLevel + 0.2f) * 32.0f * fFlicker;
-		}
+		/* 明かりの道具を持っていれば広くなる(GetCharLightTiles。0 は全部見える) */
+		afR[nLight] = GetCharLightTiles (pChar) * 32.0f * fFlicker;
 		/* キャラの灯り無しのマップでは、明かりの道具を持っていない自分は足元がうっすら見えるだけ */
 		if ((pChar == pMyChar) && (g_pMapInfo->byFlg & MAPFLG_NOCHARLIGHT) && (pChar->byLightLevel == 0)) {
 			afR[nLight] = 1.2f * 32.0f;
@@ -1885,6 +1924,8 @@ void DrawETC(void)
 			if (pChar->byDrunkLV > CHARSTATEDRUNK_NONE) {
 				g_pDibDrawMap->Blt (x + 3, y + 29, 16, 16, g_pDibSystem, pChar->byDrunkLV * 16, 112, TRUE);
 			}
+			/* 攻撃力・守備力アップのアイコン(HP 欄の左。仲間の分も) */
+			DrawBuffIcons (x + 3, y + 13, pChar->dwTblID);
 			y -= 48;
 		}
 	}
@@ -2015,6 +2056,38 @@ static void DrawGuardMark(int x, int y)
 	}
 	/* 真ん中の白い線 */
 	g_pDibDrawMap->FillRect (x + 4, y + 2, 1, 7, RGB (255, 255, 255));
+}
+
+
+/* ========================================================================= */
+/* 関数名：DrawBuffIcons													 */
+/* 内容：攻撃力アップ(剣)・守備力アップ(盾)のアイコン(16×16 を横に並べる)	 */
+/*		 絵は system.png の y=96 の行。x=144 構え、160 攻撃アップ、176 守りアップ */
+/*		 切れる15秒前から点滅する											 */
+/* ========================================================================= */
+#define BUFFICON_GRPX	160		/* system.png の攻撃アップの絵の左(守りアップはその右) */
+#define BUFFICON_GRPY	96
+static void DrawBuffIcons(int x, int y, DWORD dwTblID)
+{
+	int i;
+	DWORD dwRest;
+
+	for (i = 0; i < 2; i ++) {
+		dwRest = GetCharBuffRest (dwTblID, i);
+		if (dwRest == 0) {
+			continue;
+		}
+		/* 切れそうな時は点滅(点滅の間は描き直し続ける) */
+		if (dwRest < 15000) {
+			g_bDraw = TRUE;
+			if ((timeGetTime () / 250) % 2) {
+				x += 16;
+				continue;
+			}
+		}
+		g_pDibDrawMap->Blt (x, y, 16, 16, g_pDibSystem, BUFFICON_GRPX + i * 16, BUFFICON_GRPY, TRUE);
+		x += 16;
+	}
 }
 
 

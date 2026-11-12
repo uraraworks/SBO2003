@@ -319,6 +319,10 @@ typedef struct _QUESTFILE {
 	WORD		awNpcItem[MAX_QUESTNPC];
 	BYTE		abyNpcSetFlg[MAX_QUESTNPC];
 	BYTE		abyNpcNextStep[MAX_QUESTNPC];
+	WORD		awNpcStTmp[MAX_QUESTNPC];
+	BYTE		byChallenge;
+	WORD		wLoanStTmp;
+	BYTE		byMemberMin;
 } QUESTFILE;
 
 /* 依頼情報のカラム */
@@ -356,6 +360,10 @@ static const COLINFO s_aQuestCol[] = {
 	COLS(QUESTFILE, awNpcItem,		COL_U16ARR, MAX_QUESTNPC),
 	COLS(QUESTFILE, abyNpcSetFlg,	COL_U8ARR, MAX_QUESTNPC),
 	COLS(QUESTFILE, abyNpcNextStep,	COL_U8ARR, MAX_QUESTNPC),
+	COLS(QUESTFILE, awNpcStTmp,		COL_U16ARR, MAX_QUESTNPC),
+	COL (QUESTFILE, byChallenge,	COL_U8),
+	COL (QUESTFILE, wLoanStTmp,		COL_U16),
+	COL (QUESTFILE, byMemberMin,	COL_U8),
 };
 
 BOOL SaveQuestInfo(void);										/* 依頼情報保存 */
@@ -376,6 +384,7 @@ static void ToFile(QUESTFILE *p, const QUESTINFO *q)
 	p->wRewardItem = q->wRewardItem;	p->wQuestItem = q->wQuestItem;
 	p->byStepCount = q->byStepCount;
 	memcpy (p->aszGoal, q->aszGoal, sizeof (p->aszGoal));
+	p->byChallenge = q->byChallenge;	p->wLoanStTmp = q->wLoanStTmp;	p->byMemberMin = q->byMemberMin;
 	for (i = 0; i < MAX_QUESTNPC; i ++) {
 		const QUESTNPCINFO *n = &q->aNpc[i];
 		p->adwNpcMapID[i] = n->dwMapID;	p->abyNpcX[i] = n->byX;	p->abyNpcY[i] = n->byY;
@@ -386,6 +395,7 @@ static void ToFile(QUESTFILE *p, const QUESTINFO *q)
 		p->abyNpcFlgNeed[i] = n->byFlgNeed;	p->abyNpcFlgHide[i] = n->byFlgHide;
 		p->adwNpcDestMapID[i] = n->dwDestMapID;	p->abyNpcDestX[i] = n->byDestX;	p->abyNpcDestY[i] = n->byDestY;
 		p->awNpcItem[i] = n->wItem;	p->abyNpcSetFlg[i] = n->bySetFlg;	p->abyNpcNextStep[i] = n->byNextStep;
+		p->awNpcStTmp[i] = n->wStTmp;
 	}
 }
 
@@ -404,6 +414,7 @@ static void FromFile(QUESTINFO *q, const QUESTFILE *p)
 	q->wRewardItem = p->wRewardItem;	q->wQuestItem = p->wQuestItem;
 	q->byStepCount = p->byStepCount;
 	memcpy (q->aszGoal, p->aszGoal, sizeof (q->aszGoal));
+	q->byChallenge = p->byChallenge;	q->wLoanStTmp = p->wLoanStTmp;	q->byMemberMin = p->byMemberMin;
 	q->szName[MAX_QUESTNAME - 1] = 0;
 	q->szExplain[MAX_QUESTMSG - 1] = 0;
 	q->szMsgAccept[MAX_QUESTMSG - 1] = 0;
@@ -423,6 +434,7 @@ static void FromFile(QUESTINFO *q, const QUESTFILE *p)
 		n->byFlgNeed = p->abyNpcFlgNeed[i];	n->byFlgHide = p->abyNpcFlgHide[i];
 		n->dwDestMapID = p->adwNpcDestMapID[i];	n->byDestX = p->abyNpcDestX[i];	n->byDestY = p->abyNpcDestY[i];
 		n->wItem = p->awNpcItem[i];	n->bySetFlg = p->abyNpcSetFlg[i];	n->byNextStep = p->abyNpcNextStep[i];
+		n->wStTmp = p->awNpcStTmp[i];
 	}
 }
 

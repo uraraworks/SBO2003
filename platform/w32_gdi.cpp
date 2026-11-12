@@ -789,6 +789,31 @@ static void FillBits(W32GdiObj *pBmp, int x, int y, int cx, int cy, DWORD dwPixe
 	}
 }
 
+/* 横 1 行を半透明の色で塗る（文字の後ろの帯用）。
+   x から cx ドットは nAlpha（0〜255）で塗り、その右の nFade ドットはだんだん薄くして 0 にする */
+void W32ShadeSpan(HDC hDC, int x, int y, int cx, int nFade, COLORREF cl, int nAlpha)
+{
+	W32Dc *pDc = W32GetDc(hDC);
+	W32GdiObj *pBmp = DcBitmap(pDc);
+	if (pBmp == NULL || y < 0 || y >= pBmp->cy || nAlpha <= 0) {
+		return;
+	}
+	MarkDirty(pDc);
+	int nR = GetRValue(cl), nG = GetGValue(cl), nB = GetBValue(cl);
+	int x2 = std::min(x + cx + nFade, pBmp->cx);
+	for (int xx = std::max(x, 0); xx < x2; xx ++) {
+		int a = nAlpha;
+		if (xx >= x + cx) {
+			/* ぼかし：右へ行くほど薄く */
+			a = nAlpha * (x + cx + nFade - xx) / (nFade + 1);
+		}
+		BYTE *p = PixelPtr(pBmp, xx, y);	/* B,G,R,X */
+		p[0] = (BYTE)((p[0] * (255 - a) + nB * a) / 255);
+		p[1] = (BYTE)((p[1] * (255 - a) + nG * a) / 255);
+		p[2] = (BYTE)((p[2] * (255 - a) + nR * a) / 255);
+	}
+}
+
 BOOL BitBlt(HDC hDest, int x, int y, int cx, int cy, HDC hSrc, int sx, int sy, DWORD dwRop)
 {
 	W32Dc *pDcDst = W32GetDc(hDest);

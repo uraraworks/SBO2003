@@ -299,7 +299,20 @@ static DWORD GetJobMagicSaveCount(PCHARINFO pChar)
 /* 内容：キャラ情報保存														 */
 /* 日付：2003/06/12															 */
 /* ========================================================================= */
+static BOOL SaveCharInfoMain(void);
 BOOL SaveCharInfo(void)
+{
+	BOOL bRet;
+
+	/* 討伐チャレンジ中の人は、貸し出しの状態ではなく本物の状態と入る前の場所を保存する
+	   （サーバーが落ちても、次は元のキャラで始まるように） */
+	QuestChallengeSaveSwap (TRUE);
+	bRet = SaveCharInfoMain ();
+	QuestChallengeSaveSwap (FALSE);
+	return bRet;
+}
+
+static BOOL SaveCharInfoMain(void)
 {
 	BOOL bRet;
 	PBYTE pData;

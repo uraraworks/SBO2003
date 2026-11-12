@@ -20,6 +20,7 @@
 #include "SboCliDrawScreen.h"
 #include "SboAdminWindow.h"
 #include "AdminWindowOld/AdminDlgNpcRoute.h"
+#include "AdminWindowOld/AdminDlgQuestInfo.h"
 #include "SboCliDebugWindow.h"
 #include "SboCliMsgLogWindow.h"
 #include "SboCliBalloonWindow.h"
@@ -141,7 +142,10 @@ void	RecvDataProcCONNECT					(PBYTE, DWORD);			/* 受信データ処理(接続�
 void	RecvDataProcLOGINRES				(PBYTE, DWORD);			/* 受信データ処理(ログイン応答) */
 void	RecvDataProcWEBACCOUNT				(PBYTE, DWORD);			/* 受信データ処理(ブラウザ版のアカウント関係) */
 void	RecvDataProcADMINUNDO				(PBYTE, DWORD);			/* 受信データ処理(管理者画面の「元に戻す」) */
+void	RecvDataProcADMINSPACE				(PBYTE, DWORD);			/* 受信データ処理(管理者の空間の切り替え) */
+void	RecvDataProcADMINQUEST				(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのギルドの依頼の編集) */
 void	RecvDataProcHASTE					(PBYTE, DWORD);			/* 受信データ処理(加速の状態) */
+void	RecvDataProcCHARBUFF				(PBYTE, DWORD);			/* 受信データ処理(攻撃力・守備力アップの残り) */
 void	RecvDataProcMAKERINFO				(PBYTE, DWORD);			/* 受信データ処理(作り手情報) */
 void	RecvDataProcRECIPEINFO				(PBYTE, DWORD);			/* 受信データ処理(レシピ情報) */
 void	RecvDataProcRECIPEMAKE				(PBYTE, DWORD);			/* 受信データ処理(作ってもらった結果) */
@@ -392,6 +396,9 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcQUESTSTATE,				/* CMD_QUESTSTATE */
 	NULL,								/* CMD_SORTITEM(クライアント→サーバーのみ) */
 	NULL,								/* CMD_LEAVEITEMDISPOSE(クライアント→サーバーのみ) */
+	RecvDataProcCHARBUFF,				/* CMD_CHARBUFF */
+	RecvDataProcADMINSPACE,				/* CMD_ADMINSPACE */
+	RecvDataProcADMINQUEST,				/* CMD_ADMINQUEST */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -1883,11 +1890,37 @@ static BOOL IsInLightCircle(int dx, int dy, float fR)
 	return ((fX * fX + fY * fY) < fR * fR) ? TRUE : FALSE;
 }
 
+/* ========================================================================= */
+/* 関数名：GetCharLightTiles												 */
+/* 内容：キャラの丸い灯りの半径(マス。ゆらめき無し)							 */
+/*       0 なら暗くならない(灯りが強くて全部見える)							 */
+/*       灯りの半径は 100 / (マップの暗さ - 明かりの強さ) なので、暗いマップ	 */
+/*       ほど明かりの道具の差が小さかった(暗黒の道は暗さ 50 でランタン 11 だと	 */
+/*       2.2 マス → 2.8 マス)。明かりを持っている時は、持っていない時より		 */
+/*       最低でも LIGHTITEM_ADD_MIN マス広く照らす								 */
+/* ========================================================================= */
+#define LIGHTITEM_ADD_MIN	1.5f		/* 明かりの道具・特技で最低これだけ灯りを広げる(マス) */
+
+float GetCharLightTiles(PCHARINFO pChar)
+{
+	int nMap, nLevel;
+	float fR;
+
+	nMap = GetMapLightLevel ();
+	nLevel = nMap - pChar->byLightLevel;
+	if (nLevel <= 0) {
+		return 0.0f;			/* 暗くならない(もともと全部見える) */
+	}
+	fR = 100.0f / nLevel + 0.2f;
+	if (pChar->byLightLevel) {
+		fR = max (fR, 100.0f / nMap + 0.2f + LIGHTITEM_ADD_MIN);
+	}
+	return fR;
+}
+
 /* キャラの丸い灯りの半径(マス。DrawMapLight と同じ計算。0=照らさない) */
 static float GetCharLightRadius(PCHARINFO pChar)
 {
-	int nLevel;
-
 	if (pChar == g_aCharInfo[g_nMyCharID]) {
 		if ((g_pMapInfo->byFlg & MAPFLG_NOCHARLIGHT) && (pChar->byLightLevel == 0)) {
 			return 1.2f;		/* 足元がうっすら見えるだけ(ゆらめかない) */
@@ -1895,14 +1928,7 @@ static float GetCharLightRadius(PCHARINFO pChar)
 	} else if (pChar->byLightLevel == 0) {
 		return 0.0f;			/* ほかの人は灯りを持っている時だけ */
 	}
-	nLevel = GetMapLightLevel ();
-	if (pChar->byLightLevel) {
-		nLevel = GetMapLightLevel () - pChar->byLightLevel;
-	}
-	if (nLevel <= 0) {
-		return 0.0f;			/* 暗くならない(もともと全部見える) */
-	}
-	return (100.0f / nLevel + 0.2f) * LIGHTCIRCLE_FLICKER_CHAR;
+	return GetCharLightTiles (pChar) * LIGHTCIRCLE_FLICKER_CHAR;
 }
 
 /* ========================================================================= */
@@ -3200,6 +3226,67 @@ void RecvDataProcHASTE(PBYTE pData, DWORD dwDataSize)
 
 
 /* ========================================================================= */
+/* 関数名：RecvDataProcCHARBUFF / GetCharBuffEnd							 */
+/* 内容：攻撃力・守備力アップの残り(本人とパーティの仲間の分)				 */
+/*		 届いた時刻＋残りを、切れる時刻として覚えておく(HP の枠のアイコン用) */
+/* ========================================================================= */
+#define MAX_CHARBUFF	16
+static struct {
+	DWORD	dwTblID;
+	DWORD	adwEnd[2];		/* 0=攻撃力アップ 1=守備力アップ が切れる時刻(0=かかっていない) */
+} s_aCharBuff[MAX_CHARBUFF];
+
+void RecvDataProcCHARBUFF(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_CHARBUFF pPara = (PCMDPARA_CHARBUFF)pData;
+	DWORD dwNow;
+	int i, nNo;
+
+	if (dwDataSize < sizeof (CMDPARA_CHARBUFF)) {
+		return;
+	}
+	dwNow = timeGetTime ();
+	/* 同じ人の分か、空いている(切れている)所を使う */
+	nNo = -1;
+	for (i = 0; i < MAX_CHARBUFF; i ++) {
+		if (s_aCharBuff[i].dwTblID == pPara->dwTblID) {
+			nNo = i;
+			break;
+		}
+	}
+	if (nNo < 0) {
+		for (i = 0; i < MAX_CHARBUFF; i ++) {
+			if (((int)(s_aCharBuff[i].adwEnd[0] - dwNow) <= 0) && ((int)(s_aCharBuff[i].adwEnd[1] - dwNow) <= 0)) {
+				nNo = i;
+				break;
+			}
+		}
+	}
+	if (nNo < 0) {
+		return;
+	}
+	s_aCharBuff[nNo].dwTblID	= pPara->dwTblID;
+	s_aCharBuff[nNo].adwEnd[0]	= pPara->dwATUP ? (dwNow + pPara->dwATUP) : 0;
+	s_aCharBuff[nNo].adwEnd[1]	= pPara->dwDFUP ? (dwNow + pPara->dwDFUP) : 0;
+	g_bDraw = TRUE;
+}
+
+/* 残り(ms)。かかっていなければ 0。nType 0=攻撃力アップ 1=守備力アップ */
+DWORD GetCharBuffRest(DWORD dwTblID, int nType)
+{
+	int i, nRest;
+
+	for (i = 0; i < MAX_CHARBUFF; i ++) {
+		if ((s_aCharBuff[i].dwTblID == dwTblID) && s_aCharBuff[i].adwEnd[nType]) {
+			nRest = (int)(s_aCharBuff[i].adwEnd[nType] - timeGetTime ());
+			return (nRest > 0) ? (DWORD)nRest : 0;
+		}
+	}
+	return 0;
+}
+
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcMAKERINFO											 */
 /* 内容：受信データ処理(作り手情報。ログイン時と管理画面での変更時)			 */
 /* ========================================================================= */
@@ -3391,6 +3478,15 @@ void RecvDataProcQUEST(PBYTE pData, DWORD dwDataSize)
 		}
 		if (pWndList == NULL) {
 			/* ギルドの人に話した返事：一覧の窓を開く */
+			/* 返事を待つ間に開いたコマンドが残っていたら閉じる（一覧の下に隠れて閉じられなくなる） */
+			for (int nNo = g_WndInfo.GetSize () - 1; nNo >= 0; nNo --) {
+				PWNDINFO pWndCmd = (PWNDINFO)g_WndInfo[nNo];
+				if ((pWndCmd->nType == WNDTYPE_COMMAND) && (pWndCmd->pParent == NULL)) {
+					EraseWindow (pWndCmd);
+					nNo = min (nNo, g_WndInfo.GetSize ());
+				}
+			}
+			g_dwMsgIDCommand = 0;
 			g_dwQuestWaitTime = 0;
 			g_szQuestMsg[0] = 0;
 			pWndList = MakeWindowQUEST (QUESTWND_LIST);
@@ -3459,6 +3555,22 @@ void RecvDataProcQUESTSTATE(PBYTE pData, DWORD dwDataSize)
 }
 
 /* ========================================================================= */
+/* 関数名：RecvDataProcADMINQUEST											 */
+/* 内容：受信データ処理(管理者ウィンドウのギルドの依頼の編集)				 */
+/*       一覧の 1 件・書き込みの結果が届く									 */
+/* ========================================================================= */
+void RecvDataProcADMINQUEST(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINQUEST pPara = (PCMDPARA_ADMINQUEST)pData;
+
+	if (dwDataSize < sizeof (CMDPARA_ADMINQUEST)) {
+		return;
+	}
+	pPara->szMsg[sizeof (pPara->szMsg) - 1] = 0;
+	AdminQuestOnRecv (pPara);
+}
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcADMINUNDO											 */
 
 /* 内容：受信データ処理(管理者画面の「元に戻す」)							 */
@@ -3470,6 +3582,30 @@ void RecvDataProcADMINUNDO(PBYTE pData, DWORD dwDataSize)
 	/* 案内文を必ず終端させる */
 	pPara->szMsg[sizeof (pPara->szMsg) - 1] = 0;
 	AdminUndoOnRecv (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINSPACE											 */
+/* 内容：受信データ処理(管理者の空間の切り替え)								 */
+/*       空間の一覧と、いま居る空間・切り替えの結果が届く					 */
+/* ========================================================================= */
+void RecvDataProcADMINSPACE(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINSPACE pPara = (PCMDPARA_ADMINSPACE)pData;
+	int i;
+
+	if (dwDataSize < sizeof (CMDPARA_ADMINSPACE)) {
+		return;
+	}
+	/* 一覧の数と文字列を必ず範囲内・終端させる */
+	if (pPara->byCount > MAX_ADMINSPACE) {
+		pPara->byCount = MAX_ADMINSPACE;
+	}
+	for (i = 0; i < MAX_ADMINSPACE; i ++) {
+		pPara->aEntry[i].szQuest[sizeof (pPara->aEntry[i].szQuest) - 1] = 0;
+		pPara->aEntry[i].szMap[sizeof (pPara->aEntry[i].szMap) - 1] = 0;
+	}
+	AdminSpaceOnRecv (pPara);
 }
 
 /* ========================================================================= */

@@ -19,11 +19,26 @@
 	  探索範囲(+2マス)から3秒外れる、または10秒進めなければあきらめる。
 	・あきらめたら：以前は開始位置へ瞬間移動していたが、歩いて戻る。
 	  戻る途中で10秒進めなかった時だけ、最後の手段として瞬間移動する。
+
+	2026/11/12 敵のアルゴリズム改善
+	・見つける時は、間に通れないマス（壁など）が無いかを見る。壁の向こうの人には気づかない
+	  （以前は壁越しに気づいて、壁に張り付いたまま「あきらめる→すぐ見つけ直す」をくり返していた）
+	・あきらめたら、家に着くまで（最大10秒）は新しく探さない。家に着いたらHPを満タンに戻す
+	・開始位置から離れすぎたら（探索範囲の2倍＋4マス）あきらめる（どこまでも引っぱって行けないように）
+	・まっすぐ進めない時は、近くの範囲で道をさがして回り込む（横へよけるくじ引きはやめた）。
+	  行き先は「相手のとなりの空いているマス」なので、何匹かいると囲むように動く
+	・進めるかを調べるだけでは狙う相手を変えない（以前はよける候補のマスにいた人へ変わっていた）。
+	  まっすぐ進む先を別の人がふさいでいる時だけ、その人に狙いを変える
+	・マップから人がいなくなったら、開始位置に戻ってHPを満タンにする
 */
 
 #include "stdafx.h"
 #include "SboSvrRecvCmd.h"
+#include "SboSvrSendCmd.h"
+#include "SboSvrBattleProc.h"
+#include "SboSvrQuest.h"
 #include "CharProcSEARCH.h"
+#include <vector>
 
 /* 判定の間隔(ms)。従来と同じ */
 #define SEARCH_PROCTIME			(500)
@@ -39,6 +54,14 @@
 #define SEARCH_STUCKTIME		(10000)
 /* 探索範囲から外れたとみなす余裕(マス) */
 #define SEARCH_LOSTMARGIN		(2)
+/* あきらめた後、新しく探さずに帰る長さ(ms) */
+#define SEARCH_GIVEUPTIME		(10000)
+/* 開始位置から離れてよい距離：探索範囲 × 2 ＋ これ(マス) */
+#define SEARCH_LEASHMARGIN		(4)
+/* 道さがしで見る範囲：自分と目標を囲む四角の外側にこれだけ広げる(マス) */
+#define SEARCH_PATHMARGIN		(4)
+/* 道さがしで見る範囲の一辺の最大(マス) */
+#define SEARCH_PATHMAX			(32)
 
 /* ========================================================================= */
 /* 関数名：	CCharProcSEARCH::CCharProcSEARCH								 */
@@ -54,6 +77,8 @@ CCharProcSEARCH::CCharProcSEARCH()
 	m_dwLostTime	= 0;
 	m_dwStuckTime	= 0;
 	m_dwTargetLast	= (DWORD)-1;
+	m_bGiveUp		= FALSE;
+	m_dwGiveUpEnd	= 0;
 }
 
 
@@ -96,6 +121,21 @@ BOOL CCharProcSEARCH::Proc(DWORD dwTime)
 	pMap = g_aMapInfo[m_pChar->dwMapID];
 	/* 誰もいない？ */
 	if (pMap->dwCountTblNoPC == 0) {
+		/* 戦っていた・帰る途中なら、開始位置に戻ってHPを満タンにしておく */
+		if ((m_pChar->dwTargetTblID != -1) || m_bGoHome) {
+			m_pChar->dwTargetTblID	= -1;
+			m_pChar->dwLastBattle	= 0;
+			m_dwTargetLast	= (DWORD)-1;
+			m_bGoHome		= FALSE;
+			m_bGiveUp		= TRUE;
+			if ((m_pChar->dwX != m_pChar->dwStartX) || (m_pChar->dwY != m_pChar->dwStartY)) {
+				m_pChar->dwX = m_pChar->dwStartX;
+				m_pChar->dwY = m_pChar->dwStartY;
+				m_pChar->dwLastDotMove = dwTime;
+				SendCmdCHARPOS (m_pChar->pID, m_pChar->dwTblID, 1, 2);
+			}
+			ResetAtHome (dwTime);
+		}
 		goto Exit;
 	}
 
@@ -106,11 +146,19 @@ BOOL CCharProcSEARCH::Proc(DWORD dwTime)
 	}
 	m_dwTargetLast = (DWORD)-1;
 
+	/* あきらめて帰る途中は、しばらく新しく探さない */
+	if (m_bGoHome && m_bGiveUp && ((int)(dwTime - m_dwGiveUpEnd) < 0)) {
+		bRet = ProcGoHome (dwTime);
+		goto Exit;
+	}
+
 	/* 探索範囲で一番近いプレイヤーを探す */
 	dwTblID = FindTarget ();
 	if ((dwTblID != -1) && (genrand () % 100 >= SEARCH_MISSRATE)) {
 		pCharTmp = g_aCharInfo[dwTblID];
 		m_pChar->dwTargetTblID = dwTblID;
+		m_bGoHome	= FALSE;
+		m_bGiveUp	= FALSE;
 		if (m_pChar->byNpcType == NPCTYPE_BATTLE2) {
 			if (m_pChar->dwLastBattle == 0) {
 				/* 初回は即攻撃させる */
@@ -168,6 +216,7 @@ BOOL CCharProcSEARCH::ProcTarget(DWORD dwTime)
 		m_dwStuckTime	= dwTime;
 		m_dwLostTime	= 0;
 		m_bGoHome		= FALSE;
+		m_bGiveUp		= FALSE;
 	}
 	if ((m_pChar->byNpcType == NPCTYPE_BATTLE2) && (m_pChar->dwLastBattle == 0)) {
 		m_pChar->dwLastBattle = 1;
@@ -228,11 +277,17 @@ BOOL CCharProcSEARCH::ProcTarget(DWORD dwTime)
 			m_dwLostTime = dwTime;
 		} else if ((DWORD)(dwTime - m_dwLostTime) >= SEARCH_LOSTTIME) {
 			/* 見失ったのであきらめる */
-			DropTarget ();
+			DropTarget (TRUE);
 			return FALSE;
 		}
 	} else {
 		m_dwLostTime = 0;
+	}
+
+	/* 開始位置から離れすぎた？ */
+	if (IsOverLeash ()) {
+		DropTarget (TRUE);
+		return FALSE;
 	}
 
 	/* 動かない設定？ */
@@ -241,8 +296,14 @@ BOOL CCharProcSEARCH::ProcTarget(DWORD dwTime)
 		return FALSE;
 	}
 
-	/* 近い方へ1歩（遠い方の軸の移動確率で歩くかを決める） */
-	if (abs (nDX) > abs (nDY)) {
+	/* しばらく進めない？（くじに外れて止まっている間も数える） */
+	if ((DWORD)(dwTime - m_dwStuckTime) >= SEARCH_STUCKTIME) {
+		DropTarget (TRUE);
+		return FALSE;
+	}
+
+	/* 近い方へ1歩（進む軸の移動確率で歩くかを決める。StepToward と同じく同じ距離なら横） */
+	if (abs (nDX) >= abs (nDY)) {
 		nRate = m_pChar->byMoveProbabilityX;
 	} else {
 		nRate = m_pChar->byMoveProbabilityY;
@@ -258,10 +319,9 @@ BOOL CCharProcSEARCH::ProcTarget(DWORD dwTime)
 		m_dwStuckTime = dwTime;
 		return TRUE;
 	}
-
-	/* しばらく進めない？ */
-	if ((DWORD)(dwTime - m_dwStuckTime) >= SEARCH_STUCKTIME) {
-		DropTarget ();
+	/* 相手のすぐ近く（2マス以内）で詰まっているのは、仲間の後ろで順番待ちなので数えない */
+	if (abs (nDX) + abs (nDY) <= 2) {
+		m_dwStuckTime = dwTime;
 	}
 	return FALSE;
 }
@@ -320,6 +380,7 @@ BOOL CCharProcSEARCH::ProcGoHome(DWORD dwTime)
 		(abs ((int)m_pChar->dwY - (int)m_pChar->dwStartY) <= GetWanderArea (FALSE))) {
 		m_bGoHome	= FALSE;
 		m_dwRestEnd	= dwTime + 1000 + (DWORD)(genrand () % 2000);
+		ResetAtHome (dwTime);
 		return FALSE;
 	}
 
@@ -341,6 +402,7 @@ BOOL CCharProcSEARCH::ProcGoHome(DWORD dwTime)
 		m_pChar->dwY = m_pChar->dwStartY;
 		m_pChar->dwLastDotMove = dwTime;
 		SendCmdCHARPOS (m_pChar->pID, m_pChar->dwTblID, 1, 2);
+		ResetAtHome (dwTime);
 		return TRUE;
 	}
 	return FALSE;
@@ -374,16 +436,25 @@ DWORD CCharProcSEARCH::FindTarget(void)
 		if ((pCharTmp->wHP == 0) || (pCharTmp->byGameState < GAMESTATE_MOVE)) {
 			continue;
 		}
+		/* 別の空間にいる人には気づかない */
+		if (!IsSameSpace (m_pChar, pCharTmp)) {
+			continue;
+		}
 		nDX = abs ((int)pCharTmp->dwX - (int)m_pChar->dwX);
 		nDY = abs ((int)pCharTmp->dwY - (int)m_pChar->dwY);
 		if ((nDX > m_pChar->bySearchCx) || (nDY > m_pChar->bySearchCy)) {
 			continue;
 		}
 		nDistance = nDX + nDY;
-		if ((dwRet == -1) || (nDistance < nDistanceMin)) {
-			dwRet = pCharTmp->dwTblID;
-			nDistanceMin = nDistance;
+		if ((dwRet != -1) && (nDistance >= nDistanceMin)) {
+			continue;
 		}
+		/* 壁の向こうの人には気づかない（見通せるかは近い人だけ調べる） */
+		if (IsInSight (pCharTmp) == FALSE) {
+			continue;
+		}
+		dwRet = pCharTmp->dwTblID;
+		nDistanceMin = nDistance;
 	}
 
 	return dwRet;
@@ -396,7 +467,7 @@ DWORD CCharProcSEARCH::FindTarget(void)
 /* 日付：	2026/11/06														 */
 /* ========================================================================= */
 
-void CCharProcSEARCH::DropTarget(void)
+void CCharProcSEARCH::DropTarget(BOOL bGiveUp)
 {
 	m_pChar->dwTargetTblID	= -1;
 	m_pChar->dwLastBattle	= 0;
@@ -404,6 +475,10 @@ void CCharProcSEARCH::DropTarget(void)
 	m_dwLostTime	= 0;
 	m_dwStuckTime	= m_dwLastTimeProc;
 	m_bGoHome		= TRUE;
+	/* 追うのをあきらめた時は、しばらく新しく探さずに帰り、着いたらHPを戻す。
+	   相手が倒れた・いなくなった時は、帰りながら近くの人を探す */
+	m_bGiveUp		= bGiveUp;
+	m_dwGiveUpEnd	= m_dwLastTimeProc + SEARCH_GIVEUPTIME;
 }
 
 
@@ -421,7 +496,7 @@ BOOL CCharProcSEARCH::IsTargetValid(PCHARINFO pCharTmp)
 	if (pCharTmp->byGameState == GAMESTATE_LOGOFF) {
 		return FALSE;
 	}
-	if (pCharTmp->dwMapID != m_pChar->dwMapID) {
+	if ((pCharTmp->dwMapID != m_pChar->dwMapID) || !IsSameSpace (m_pChar, pCharTmp)) {
 		return FALSE;
 	}
 	/* 倒れたプレイヤーは追いかけない */
@@ -438,17 +513,29 @@ BOOL CCharProcSEARCH::IsTargetValid(PCHARINFO pCharTmp)
 /* 日付：	2026/11/06														 */
 /* ========================================================================= */
 
-BOOL CCharProcSEARCH::CanStep(PCHARINFO pCharTmp, int x, int y)
+BOOL CCharProcSEARCH::CanStep(PCHARINFO pCharTmp, int x, int y, PDWORD pdwBlockPC)
 {
 	PMAPINFO pMap;
-	DWORD dwBlockPC;
+	DWORD dwBlockPC, dwTargetBack;
+	BOOL bResult;
 
+	if (pdwBlockPC) {
+		*pdwBlockPC = (DWORD)-1;
+	}
 	pMap = g_aMapInfo[m_pChar->dwMapID];
 	if ((x < 0) || (x >= pMap->nCX) || (y < 0) || (y >= pMap->nCY)) {
 		return FALSE;
 	}
-	/* 障害物・イベント（戦闘２はぶつかったプレイヤーにターゲットを変える） */
-	if (NpcProcSEARCH_Check (m_pChar, pCharTmp, x, y, &dwBlockPC) == FALSE) {
+	/* 障害物・イベント。NpcProcSEARCH_Check は戦闘２だとふさいでいるプレイヤーへ
+	   狙いを変えるが、ここでは調べるだけなので狙いは戻す（変えるかは ProcTarget が決める） */
+	dwBlockPC		= (DWORD)-1;
+	dwTargetBack	= m_pChar->dwTargetTblID;
+	bResult = NpcProcSEARCH_Check (m_pChar, pCharTmp, x, y, &dwBlockPC);
+	m_pChar->dwTargetTblID = dwTargetBack;
+	if (pdwBlockPC) {
+		*pdwBlockPC = dwBlockPC;
+	}
+	if (bResult == FALSE) {
 		return FALSE;
 	}
 	/* PCの配置・状態は変わっていないので、直前の判定を使う */
@@ -456,7 +543,7 @@ BOOL CCharProcSEARCH::CanStep(PCHARINFO pCharTmp, int x, int y)
 		return FALSE;
 	}
 	/* ほかのNPCと重なる？ */
-	if (CheckCharBlockNPC2 (m_pChar->dwTblID, m_pChar->dwMapID, (DWORD)x, (DWORD)y) != -1) {
+	if (CheckCharBlockNPC2 (m_pChar->dwTblID, m_pChar->dwMapID, (DWORD)x, (DWORD)y, m_pChar->dwSpaceID) != -1) {
 		return FALSE;
 	}
 	return TRUE;
@@ -471,7 +558,8 @@ BOOL CCharProcSEARCH::CanStep(PCHARINFO pCharTmp, int x, int y)
 
 BOOL CCharProcSEARCH::StepToward(PCHARINFO pCharTmp, int nX, int nY)
 {
-	int nDX, nDY, nDirMain, nDirSub, nSide;
+	int nDX, nDY, nDirMain, nDirSub, nDir;
+	DWORD dwBlockPC;
 
 	nDX = nX - (int)m_pChar->dwX;
 	nDY = nY - (int)m_pChar->dwY;
@@ -496,24 +584,249 @@ BOOL CCharProcSEARCH::StepToward(PCHARINFO pCharTmp, int nX, int nY)
 	if (StepDirection (pCharTmp, nDirMain)) {
 		return TRUE;
 	}
+	/* 追いかけている（戦闘２）時に、まっすぐ進む先を別のプレイヤーがふさいでいる？
+	   目の前のその人に狙いを変える（従来の「ぶつかったキャラにタゲ変更」） */
+	if (pCharTmp && (m_pChar->byNpcType == NPCTYPE_BATTLE2)) {
+		CanStep (pCharTmp, (int)m_pChar->dwX + anPosAddTblX[nDirMain], (int)m_pChar->dwY + anPosAddTblY[nDirMain], &dwBlockPC);
+		if ((dwBlockPC != -1) && (dwBlockPC != pCharTmp->dwTblID) && (g_aCharInfo[dwBlockPC]->wHP > 0)) {
+			m_pChar->dwTargetTblID = dwBlockPC;
+			if (m_pChar->byDirection != (BYTE)nDirMain) {
+				m_pChar->byDirection = (BYTE)nDirMain;
+				m_pChar->byFlg |= CHARINFOFLG_DIRECTION;
+			}
+			return TRUE;
+		}
+	}
 	if ((nDirSub >= 0) && StepDirection (pCharTmp, nDirSub)) {
 		return TRUE;
 	}
 
-	/* まっすぐ前がふさがっている時は横へよける */
-	if (nDirSub < 0) {
-		nSide = (nDirMain >= 2) ? 0 : 2;
-		if (genrand () % 2) {
-			nSide ++;
-		}
-		if (StepDirection (pCharTmp, nSide)) {
-			return TRUE;
-		}
-		if (StepDirection (pCharTmp, abyDirectionTbl[nSide])) {
-			return TRUE;
-		}
+	/* まっすぐ近づけない時は、近くの範囲で道をさがして回り込む */
+	nDir = FindPathStep (pCharTmp, nX, nY);
+	if ((nDir >= 0) && StepDirection (pCharTmp, nDir)) {
+		return TRUE;
 	}
 	return FALSE;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CCharProcSEARCH::FindPathStep									 */
+/* 内容：	近くの範囲で道をさがして、最初の1歩の向きを返す(無ければ -1)	 */
+/*			追いかける時の行き先は「相手のとなりの空いているマス」、		 */
+/*			帰る時は開始位置。自分と行き先を囲む四角を少し広げた範囲だけを	 */
+/*			幅優先でさがす（まっすぐ進めない時だけ呼ばれる）				 */
+/* 日付：	2026/11/12														 */
+/* ========================================================================= */
+
+int CCharProcSEARCH::FindPathStep(PCHARINFO pCharTmp, int nX, int nY)
+{
+	int i, j, x, y, nX1, nY1, nX2, nY2, nW, nH, nPos, nStart, nHead, nTail, nFound, nRet;
+	PMAPINFO pMap;
+	PDWORD pData;
+	PCHARINFO pCharBlock;
+	std::vector<BYTE> abyBlock, abyGoal;
+	std::vector<short> anPrev;
+	std::vector<int> anQueue;
+
+	nRet = -1;
+	pMap = g_aMapInfo[m_pChar->dwMapID];
+
+	/* さがす範囲 */
+	nX1 = max (min ((int)m_pChar->dwX, nX) - SEARCH_PATHMARGIN, 0);
+	nY1 = max (min ((int)m_pChar->dwY, nY) - SEARCH_PATHMARGIN, 0);
+	nX2 = min (max ((int)m_pChar->dwX, nX) + SEARCH_PATHMARGIN, pMap->nCX - 1);
+	nY2 = min (max ((int)m_pChar->dwY, nY) + SEARCH_PATHMARGIN, pMap->nCY - 1);
+	nW = nX2 - nX1 + 1;
+	nH = nY2 - nY1 + 1;
+	if ((nW <= 0) || (nH <= 0) || (nW > SEARCH_PATHMAX) || (nH > SEARCH_PATHMAX)) {
+		return -1;
+	}
+
+	/* 通れないマス（地形・イベント・ほかのキャラ） */
+	abyBlock.assign (nW * nH, 0);
+	for (y = 0; y < nH; y ++) {
+		for (x = 0; x < nW; x ++) {
+			if ((CheckCharBlock (pMap->dwID, (DWORD)(nX1 + x), (DWORD)(nY1 + y)) == FALSE) ||
+				CheckEventBlock (pMap->dwID, (DWORD)(nX1 + x), (DWORD)(nY1 + y))) {
+				abyBlock[x + y * nW] = 1;
+			}
+		}
+	}
+	for (j = 0; j < 2; j ++) {
+		int nCount = (j == 0) ? (int)pMap->dwCountTblNoPC : (int)pMap->dwCountTblNoNPC;
+		pData = (j == 0) ? pMap->paTblNoPC : pMap->paTblNoNPC;
+		for (i = 0; i < nCount; i ++) {
+			if (pData[i] == -1) {
+				break;
+			}
+			pCharBlock = g_aCharInfo[pData[i]];
+			if ((pCharBlock == m_pChar) || (pCharBlock->byNpcType == NPCTYPE_PUT) || !IsInteractable (m_pChar, pCharBlock)) {
+				continue;
+			}
+			x = (int)pCharBlock->dwX - nX1;
+			y = (int)pCharBlock->dwY - nY1;
+			if ((x >= 0) && (x < nW) && (y >= 0) && (y < nH)) {
+				abyBlock[x + y * nW] = 1;
+			}
+		}
+	}
+
+	/* 行き先 */
+	abyGoal.assign (nW * nH, 0);
+	nFound = 0;
+	if (pCharTmp) {
+		for (i = 0; i < 4; i ++) {
+			x = nX + anPosAddTblX[i] - nX1;
+			y = nY + anPosAddTblY[i] - nY1;
+			if ((x >= 0) && (x < nW) && (y >= 0) && (y < nH) && (abyBlock[x + y * nW] == 0)) {
+				abyGoal[x + y * nW] = 1;
+				nFound ++;
+			}
+		}
+	} else {
+		x = nX - nX1;
+		y = nY - nY1;
+		if ((x >= 0) && (x < nW) && (y >= 0) && (y < nH)) {
+			abyGoal[x + y * nW] = 1;
+			abyBlock[x + y * nW] = 0;
+			nFound ++;
+		}
+	}
+	if (nFound == 0) {
+		return -1;
+	}
+
+	/* 自分の場所から幅優先でさがす */
+	nStart = ((int)m_pChar->dwX - nX1) + ((int)m_pChar->dwY - nY1) * nW;
+	anPrev.assign (nW * nH, -1);
+	anQueue.assign (nW * nH, 0);
+	anPrev[nStart] = (short)nStart;
+	nHead = nTail = 0;
+	anQueue[nTail ++] = nStart;
+	nFound = -1;
+	while (nHead < nTail) {
+		nPos = anQueue[nHead ++];
+		if (abyGoal[nPos]) {
+			nFound = nPos;
+			break;
+		}
+		for (i = 0; i < 4; i ++) {
+			x = nPos % nW + anPosAddTblX[i];
+			y = nPos / nW + anPosAddTblY[i];
+			if ((x < 0) || (x >= nW) || (y < 0) || (y >= nH)) {
+				continue;
+			}
+			j = x + y * nW;
+			if (abyBlock[j] || (anPrev[j] != -1)) {
+				continue;
+			}
+			anPrev[j] = (short)nPos;
+			anQueue[nTail ++] = j;
+		}
+	}
+	if ((nFound < 0) || (nFound == nStart)) {
+		return -1;
+	}
+
+	/* 最初の1歩までたどって戻る */
+	nPos = nFound;
+	while (anPrev[nPos] != nStart) {
+		nPos = anPrev[nPos];
+	}
+	x = nPos % nW - nStart % nW;
+	y = nPos / nW - nStart / nW;
+	for (i = 0; i < 4; i ++) {
+		if ((anPosAddTblX[i] == x) && (anPosAddTblY[i] == y)) {
+			nRet = i;
+			break;
+		}
+	}
+	return nRet;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CCharProcSEARCH::IsInSight										 */
+/* 内容：	間に通れないマスが無く見通せるか（となりなら見える）			 */
+/* 日付：	2026/11/12														 */
+/* ========================================================================= */
+
+BOOL CCharProcSEARCH::IsInSight(PCHARINFO pCharTmp)
+{
+	int x0, y0, x1, y1, nDX, nDY, nSX, nSY, nErr, nErr2;
+
+	x0 = (int)m_pChar->dwX;
+	y0 = (int)m_pChar->dwY;
+	x1 = (int)pCharTmp->dwX;
+	y1 = (int)pCharTmp->dwY;
+	nDX = abs (x1 - x0);
+	nDY = -abs (y1 - y0);
+	nSX = (x0 < x1) ? 1 : -1;
+	nSY = (y0 < y1) ? 1 : -1;
+	nErr = nDX + nDY;
+	/* ブレゼンハムの線で、両端を除いたマスを調べる */
+	for (;;) {
+		nErr2 = nErr * 2;
+		if (nErr2 >= nDY) {
+			nErr += nDY;
+			x0 += nSX;
+		}
+		if (nErr2 <= nDX) {
+			nErr += nDX;
+			y0 += nSY;
+		}
+		if ((x0 == x1) && (y0 == y1)) {
+			break;
+		}
+		if (CheckCharBlock (m_pChar->dwMapID, (DWORD)x0, (DWORD)y0) == FALSE) {
+			return FALSE;
+		}
+	}
+	return TRUE;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CCharProcSEARCH::IsOverLeash									 */
+/* 内容：	開始位置から離れすぎたか(探索範囲 × 2 ＋ 4 マス)				 */
+/* 日付：	2026/11/12														 */
+/* ========================================================================= */
+
+BOOL CCharProcSEARCH::IsOverLeash(void)
+{
+	int nLeashX, nLeashY;
+
+	nLeashX = max ((int)m_pChar->bySearchCx, GetWanderArea (TRUE)) * 2 + SEARCH_LEASHMARGIN;
+	nLeashY = max ((int)m_pChar->bySearchCy, GetWanderArea (FALSE)) * 2 + SEARCH_LEASHMARGIN;
+	if ((abs ((int)m_pChar->dwX - (int)m_pChar->dwStartX) > nLeashX) ||
+		(abs ((int)m_pChar->dwY - (int)m_pChar->dwStartY) > nLeashY)) {
+		return TRUE;
+	}
+	return FALSE;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CCharProcSEARCH::ResetAtHome									 */
+/* 内容：	あきらめて家に着いた：HPを満タンに戻し、受けたダメージの記録を消す	 */
+/* 日付：	2026/11/12														 */
+/* ========================================================================= */
+
+void CCharProcSEARCH::ResetAtHome(DWORD dwTime)
+{
+	if (m_bGiveUp == FALSE) {
+		return;
+	}
+	m_bGiveUp = FALSE;
+	if (m_pChar->wHP == 0) {
+		return;
+	}
+	ClearBattleDamage (m_pChar->dwTblID);
+	if (m_pChar->wHP < m_pChar->wMaxHP) {
+		m_pChar->wHP = m_pChar->wMaxHP;
+		SendCmdCHARSTATUSHPMANA (m_pChar->dwTblID, m_pChar->dwTblID);
+	}
 }
 
 

@@ -23,6 +23,10 @@
 	  各道しるべで byRouteWait 秒止まる。道しるべの間は1歩ずつ近い方へ進むだけで、経路探索はしない
 	  （管理ページで、道しるべの間をまっすぐ歩けるように置く）。10秒進めなければ次の道しるべへ。
 	  行動範囲は見ない。向かい合ったプレイヤーの方を向いて止まるのは同じ。
+	・戦闘１の敵（2026/11/12 見直し）：攻撃されるとその場で止まって戦う（追いかけないのは従来どおり）。
+	  相手がとなりにいればそちらを向く（横や後ろに回られても殴り返す）。
+	  相手が近く（探索範囲＋2マス）から15秒離れていたら戦いをやめる。相手が倒れた・いなくなったらすぐやめる。
+	  以前は「最後に歩いてから15秒」でやめていたため、戦闘中は歩かないので15秒を超える戦いで必ず離れていた。
 */
 
 #include "stdafx.h"
@@ -43,6 +47,10 @@
 #define MOVERAND_ROUTESTEPTIME	(400)
 /* 巡回ルートで進めない時に次の道しるべへ移るまで(ms) */
 #define MOVERAND_ROUTESTUCK	(10000)
+/* 戦闘１：相手が近くにいなくなってから戦いをやめるまで(ms) */
+#define MOVERAND_BATTLELOST		(15000)
+/* 戦闘１：相手が近くにいるとみなす余裕(探索範囲＋これ。マス) */
+#define MOVERAND_BATTLEMARGIN	(2)
 
 /* ========================================================================= */
 /* 関数名：	CCharProcMOVERAND::CCharProcMOVERAND							 */
@@ -61,6 +69,8 @@ CCharProcMOVERAND::CCharProcMOVERAND()
 	m_nRouteDir		= 1;
 	m_dwRouteWaitEnd	= 0;
 	m_dwRouteStuck	= 0;
+	m_dwBattleTarget	= (DWORD)-1;
+	m_dwBattleTime		= 0;
 }
 
 
@@ -114,18 +124,12 @@ BOOL CCharProcMOVERAND::Proc(DWORD dwTime)
 	}
 
 	if ((m_pChar->byNpcType == NPCTYPE_BATTLE1) && (m_pChar->dwLastBattle)) {
-		/* 15秒以上移動してない？ */
-		if (dwTime >= m_pChar->dwLastDotMove + 15000) {
-			if ((m_pChar->dwX != m_pChar->dwStartX) || (m_pChar->dwY != m_pChar->dwStartY)) {
-				/* ターゲット解除 */
-				m_pChar->dwLastBattle = 0;
-				m_pChar->dwTargetTblID = -1;
-			}
-		} else {
-			m_nWalkLeft = 0;
-			goto Exit;
-		}
+		/* 戦っている間はその場で止まる */
+		m_nWalkLeft = 0;
+		bRet = ProcBattle (dwTime);
+		goto Exit;
 	}
+	m_dwBattleTarget = (DWORD)-1;
 
 	/* 巡回ルートを歩く？ */
 	if (IsRoute ()) {
@@ -280,13 +284,17 @@ BOOL CCharProcMOVERAND::IsMovePos(int x, int y)
 			break;
 		}
 		pCharTmp = g_aCharInfo[pData[j]];
+		/* 別の空間にいる人とは重ならない */
+		if (!IsSameSpace (m_pChar, pCharTmp)) {
+			continue;
+		}
 		if ((pCharTmp->dwX == (DWORD)x) && (pCharTmp->dwY == (DWORD)y)) {
 			return FALSE;
 		}
 	}
 
 	/* ほかのNPCと重なる？（以前はNPC同士は重なれた） */
-	if (CheckCharBlockNPC2 (m_pChar->dwTblID, m_pChar->dwMapID, (DWORD)x, (DWORD)y) != -1) {
+	if (CheckCharBlockNPC2 (m_pChar->dwTblID, m_pChar->dwMapID, (DWORD)x, (DWORD)y, m_pChar->dwSpaceID) != -1) {
 		return FALSE;
 	}
 
@@ -378,6 +386,10 @@ BOOL CCharProcMOVERAND::CheckTalkPC(void)
 		}
 		pCharTmp = g_aCharInfo[pData[j]];
 		if (pCharTmp->byDirection >= 4) {
+			continue;
+		}
+		/* 別の空間にいる人には気づかない */
+		if (!IsSameSpace (m_pChar, pCharTmp)) {
 			continue;
 		}
 		/* プレイヤーの目の前が自分？ */
@@ -575,5 +587,72 @@ void CCharProcMOVERAND::NextRoutePoint(void)
 	m_nRouteNo += m_nRouteDir;
 }
 
+
+/* ========================================================================= */
+/* 関数名：	CCharProcMOVERAND::ProcBattle									 */
+/* 内容：	戦闘１の敵が戦っている間（その場で止まって相手の方を向く）		 */
+/* 日付：	2026/11/12														 */
+/* ========================================================================= */
+
+BOOL CCharProcMOVERAND::ProcBattle(DWORD dwTime)
+{
+	int nDX, nDY, nRange;
+	BYTE byDirection;
+	BOOL bEnd;
+	PCHARINFO pCharTmp;
+
+	bEnd = FALSE;
+	pCharTmp = NULL;
+	if (m_pChar->dwTargetTblID == -1) {
+		bEnd = TRUE;
+	} else {
+		pCharTmp = g_aCharInfo[m_pChar->dwTargetTblID];
+		/* 相手が倒れた・いなくなった？ */
+		if ((pCharTmp == NULL) || (pCharTmp->byGameState == GAMESTATE_LOGOFF) ||
+			(pCharTmp->dwMapID != m_pChar->dwMapID) || !IsSameSpace (m_pChar, pCharTmp) || (pCharTmp->wHP == 0)) {
+			bEnd = TRUE;
+		}
+	}
+
+	if (bEnd == FALSE) {
+		/* 新しい相手？ */
+		if (m_dwBattleTarget != m_pChar->dwTargetTblID) {
+			m_dwBattleTarget	= m_pChar->dwTargetTblID;
+			m_dwBattleTime		= dwTime;
+		}
+		nDX = GetCharDistanceX (m_pChar, pCharTmp);
+		nDY = (int)pCharTmp->dwY - (int)m_pChar->dwY;
+		nRange = max ((int)max (m_pChar->bySearchCx, m_pChar->bySearchCy), 1) + MOVERAND_BATTLEMARGIN;
+		if ((abs (nDX) <= nRange) && (abs (nDY) <= nRange)) {
+			m_dwBattleTime = dwTime;
+		} else if ((DWORD)(dwTime - m_dwBattleTime) >= MOVERAND_BATTLELOST) {
+			bEnd = TRUE;
+		}
+	}
+
+	if (bEnd) {
+		/* 戦いをやめて、少し休んでから歩き出す */
+		m_pChar->dwLastBattle	= 0;
+		m_pChar->dwTargetTblID	= -1;
+		m_dwBattleTarget		= (DWORD)-1;
+		StartRest (dwTime, FALSE);
+		return FALSE;
+	}
+
+	/* となりにいればそちらを向く（横や後ろに回られても殴り返す） */
+	if (abs (nDX) + abs (nDY) == 1) {
+		if (nDX) {
+			byDirection = (nDX < 0) ? 2 : 3;
+		} else {
+			byDirection = (nDY < 0) ? 0 : 1;
+		}
+		if (m_pChar->byDirection != byDirection) {
+			m_pChar->byDirection = byDirection;
+			m_pChar->byFlg |= CHARINFOFLG_DIRECTION;
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
 
 /* Copyright(C)URARA-works 2006 */

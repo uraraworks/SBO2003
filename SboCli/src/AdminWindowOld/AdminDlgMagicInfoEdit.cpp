@@ -321,6 +321,15 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 				ShowWindow (GetDlgItem (hWnd, IDC_DATA1), TRUE);
 				ShowWindow (GetDlgItem (hWnd, IDC_DATA2), TRUE);
 				break;
+			case MAGICTYPE_ATUP:			/* 攻撃力アップ */
+			case MAGICTYPE_DFUP:			/* 守備力アップ */
+				SetWindowText (GetDlgItem (hWnd, IDC_STATIC_DATA1), "上がる率(%)：");
+				SetWindowText (GetDlgItem (hWnd, IDC_STATIC_DATA2), "続く秒数：");
+				SetWindowText (GetDlgItem (hWnd, IDC_STATIC_DATA3), "最低でも上がる量：");
+				ShowWindow (GetDlgItem (hWnd, IDC_DATA1), TRUE);
+				ShowWindow (GetDlgItem (hWnd, IDC_DATA2), TRUE);
+				ShowWindow (GetDlgItem (hWnd, IDC_DATA3), TRUE);
+				break;
 			}
 		}
 		break;

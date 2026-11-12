@@ -13,6 +13,7 @@
 /* ========================================================================= */
 extern int	GetCharNo				(DWORD);													/* キャラ番号取得 */
 extern int	GetCharNo2				(DWORD);													/* キャラ番号取得2 */
+extern DWORD	GetCharBuffRest			(DWORD dwTblID, int nType);									/* 攻撃力(0)・守備力(1)アップの残り(ms)。0=かかっていない */
 extern int	GetEventDataSize		(BYTE);														/* イベント種別毎のデータサイズを取得 */
 extern int	GetSubGameDataSize		(BYTE);														/* サブゲーム種別毎のデータサイズを取得 */
 extern int	GetItemDataSize			(BYTE);														/* アイテム種別毎のデータサイズを取得 */
@@ -30,6 +31,7 @@ extern void	FlushCharPosInfo		(void);														/* 保留中のキャラ座�
 extern void	RenewUseMagicInfo		(void);														/* 使用できる魔法一覧更新 */
 extern void	RenewMapDark			(PCHARINFO pChar);											/* 暗闇描画情報を更新 */
 extern BYTE	GetMapLightLevel		(void);														/* 今の場所で使うマップの明るさレベル */
+extern float	GetCharLightTiles		(PCHARINFO pChar);											/* キャラの丸い灯りの半径(マス。0=全部見える) */
 extern BOOL	IsMapDarkFlg			(void);														/* 今の場所で暗闇が効くか */
 extern BOOL	IsMapHideArea			(void);														/* 明るいが壁の向こうは見えない所か */
 extern void	RenewMapDarkHideArea	(void);														/* 明るく壁で隠す範囲の中を全部見せる */

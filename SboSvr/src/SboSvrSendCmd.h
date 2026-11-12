@@ -31,6 +31,9 @@ extern void SendCmdSPEECH				(DWORD, int, BYTE);								/* コマンド送信(�
 extern void SendCmdONLINE				(DWORD);										/* コマンド送信(オンライン数通知) */
 extern void SendCmdMAPPARTS				(DWORD, int);									/* コマンド送信(マップパーツ更新) */
 extern void SendCmdCHGMAP				(DWORD, WORD, int, int);						/* コマンド送信(マップ書き換え) */
+extern void SendCmdCHGMAPSpace			(DWORD, DWORD, WORD, int, int);					/* コマンド送信(マップ書き換え。その空間の人だけ) */
+extern void SendCmdInsideMapSpace		(DWORD, DWORD, LPBYTE, DWORD);					/* 指定マップ内の、その空間のプレイヤーにコマンド送信 */
+extern void SendCmdCHGMAPTo				(DWORD, DWORD, WORD, int, int);					/* コマンド送信(マップ書き換え。1 人だけ) */
 extern void SendCmdADDDELMAP			(DWORD, BYTE, BYTE);							/* コマンド送信(マップ幅増減) */
 extern void SendCmdEVENTINFO			(DWORD, int, int);								/* コマンド送信(イベント情報更新) */
 extern void SendCmdEVENTCOUNT			(DWORD, DWORD);									/* コマンド送信(イベント数通知) */
@@ -61,6 +64,7 @@ extern void SendCmdNAMECOLOR			(DWORD);										/* コマンド送信(名前の
 extern void SendCmdSHOP					(DWORD, BYTE);									/* コマンド送信(店情報) */
 extern void SendCmdSHOPMap				(DWORD, BYTE);									/* コマンド送信(店情報・マップ指定) */
 extern void SendCmdADMINUNDO			(DWORD, BYTE, BYTE, BYTE, WORD, DWORD, LPCSTR);	/* コマンド送信(管理者画面の「元に戻す」) */
+extern void SendCmdADMINSPACE			(DWORD, BYTE, DWORD);							/* コマンド送信(管理者の空間の一覧。切り替え結果・いま居る空間も) */
 extern void SendCmdNPCROUTE			(DWORD, BYTE, BYTE, DWORD, DWORD, LPCSTR);		/* コマンド送信(NPCの巡回ルート) */
 extern void SendCmdEFC					(BYTE);											/* コマンド送信(エフェクト情報通知) */
 extern void SendCmdEFCINFO				(DWORD);										/* コマンド送信(エフェクト情報通知) */

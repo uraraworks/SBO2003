@@ -1,4 +1,12 @@
 getcharno mutations=ok
+S itemmsg 0 @2
+S itemmsg 1 same
+S itemmsg 2 @2
+S itemmsg 3 same
+S itemmsg 4 same
+S itemmsg 5 @2
+S itemmsg 6 @2
+S itemmsg full abc
 == A. SendTo ==
 send#0 size=0 id=100000 pri=0 total=8 sha=262701071aee8da1
 send#1 size=0 id=100000 pri=1 total=16 sha=b5355f837af2651c
@@ -991,6 +999,12 @@ search map=115 k=2 (12,2)->(20,44) turns=1 infos=0 dir=3 hash=41405d27
 search map=115 k=3 (14,16)->(25,46) turns=807 infos=806 dir=2 hash=e4dc0459
 search map=115 k=4 (32,69)->(17,39) turns=696 infos=695 dir=3 hash=bf499f7a
 search map=115 k=5 (29,29)->(59,66) turns=4 infos=3 dir=3 hash=fef3f702
+== Q. EnemyAI ==
+sight wall=0 open=1
+path steps=11 at=7,6
+leash near=0 far=1
+battle1 keep=1 dir=3 pos=10,12
+battle1 release=1 target=1
 login map=6 npcs=207 size=53x135
 logged in 14
 login-sent total=203948 sha=bc1987a9315599dc
@@ -1002,20 +1016,20 @@ inside size=300 total=23464 sha=4e46bd04dad3789b
 inside size=3000 total=44877 sha=38f034f6a7a59985
 inside capture ret=1 size=400
 == E. TimerProc ==
-lap=39 chars=eb54b0c1 total=9925 sha=9c99d8ddcebe6839
-lap=79 chars=8d9e6d7b total=22175 sha=73ce390d2d27de85
-lap=119 chars=a5dcf76c total=34750 sha=08f0da6548e7aa7f
-lap=159 chars=2d0b6703 total=47450 sha=5c49a415b229da65
-lap=199 chars=5705132c total=56950 sha=81332c3390cddf87
-lap=239 chars=1199ce37 total=64950 sha=47bea3b9fba0b701
-lap=279 chars=49da5280 total=77050 sha=e19aae396bb4c123
-lap=319 chars=5f9462ee total=87550 sha=24cc80d54b79840d
-lap=359 chars=e145a4f8 total=97350 sha=dbebaefbfeb7572c
-lap=399 chars=5b1bafc8 total=104525 sha=db9bed79fb718b33
+lap=39 chars=b3b5accf total=9925 sha=9c99d8ddcebe6839
+lap=79 chars=226c4988 total=22175 sha=73ce390d2d27de85
+lap=119 chars=951e764d total=34750 sha=08f0da6548e7aa7f
+lap=159 chars=4af105ce total=47450 sha=5c49a415b229da65
+lap=199 chars=11ff1c1c total=56950 sha=81332c3390cddf87
+lap=239 chars=c71c1957 total=64950 sha=47bea3b9fba0b701
+lap=279 chars=0ee57f96 total=77050 sha=e19aae396bb4c123
+lap=319 chars=ce415fee total=87550 sha=24cc80d54b79840d
+lap=359 chars=48f72298 total=97350 sha=dbebaefbfeb7572c
+lap=399 chars=d3967780 total=104525 sha=db9bed79fb718b33
 lap-final total=104525 sha=db9bed79fb718b33
-final chars=5b1bafc8
+final chars=d3967780
 == F. ShotMagic ==
-enemy map=2 x=62 y=85 type=13
+enemy map=2 x=59 y=81 type=13
 shot magic=39 dist=1 hit=100/100
 shot magic=39 dist=2 hit=100/100
 shot magic=39 dist=3 hit=100/100
@@ -1055,13 +1069,13 @@ townwarp cast lv=5 sel=1 floor dest=1:51 -> friend map=51 x=35 y=8
 == J. Ship bed ==
 ship map=40 dest=(40,9) parts=473
 shipbed range=0 friend=0 beds=1 bad=0 onfriend=0 list=(40,9)
-shipbed range=16 friend=0 beds=24 bad=0 onfriend=0 list=(40,1),(40,2),(40,3),(40,4),(40,7),(40,8),(40,9),(40,10),(40,13),(40,14),(40,15),(40,16),(49,1),(49,2),(49,3),(49,4),(49,7),(49,8),(49,9),(49,10),(49,13),(49,14),(49,15),(49,16)
+shipbed range=16 friend=0 beds=23 bad=0 onfriend=0 list=(40,1),(40,2),(40,3),(40,4),(40,7),(40,9),(40,10),(40,13),(40,14),(40,15),(40,16),(49,1),(49,2),(49,3),(49,4),(49,7),(49,8),(49,9),(49,10),(49,13),(49,14),(49,15),(49,16)
 shipbed range=3 friend=0 beds=4 bad=0 onfriend=0 list=(40,7),(40,8),(40,9),(40,10)
 shipbed range=16 friend=1 beds=23 bad=0 onfriend=0 list=(40,1),(40,2),(40,3),(40,4),(40,7),(40,8),(40,10),(40,13),(40,14),(40,15),(40,16),(49,1),(49,2),(49,3),(49,4),(49,7),(49,8),(49,9),(49,10),(49,13),(49,14),(49,15),(49,16)
 == K. Mercenary ==
 merc map=91 enemies=17 size=255x160
 merc hired dist=1
-merc path cases=1836 reach=160 diffreach=0 diffdist=0 baddir=0
+merc path cases=1955 reach=162 diffreach=0 diffdist=0 baddir=0
 merc findenemy near=12 found=1 same=1
 merc items heal=1 other=1
 merc trade weapon owner 7 7 8 7 0 0 0 0 0 0
@@ -1095,10 +1109,12 @@ quest copy grp=2 vis owner=1 member=0 other=0 admin=1 block=-1
 quest copy grp=1 vis owner=0 member=1 other=0 admin=1 block=-1
 quest copy grp=2 vis owner=0 member=1 other=0 admin=1 block=-1
 quest admin portal moved=0
+quest admin own portal moved=1
 quest chest full item=0 leave=0 flag1=0 step=0
 quest chest item=1 flag1=1 step=1 person=1 chest=0
 quest member item=0 step=0
 quest portal to dest=1
+quest portal step wait moved=0
 quest portal step to dest=1
 quest handin quest=0 gold+=100 exp>0=1 item_q=0 item_r=1 done=1 copies=2
 quest reaccept id=0
@@ -1181,4 +1197,110 @@ dispose sell full leave: n=3 7*2 1*1 2*1
 dispose sell full gold=999998
 dispose drop all leave: n=2 1*1 2*1
 dispose drop all gold=999998
+== Q. Challenge ==
+challenge cells=8
+challenge solo accept=0
+challenge party accept a=20 b=20 c=0
+challenge other accept c=0
+challenge gate found=1
+challenge buff timers=0 charbuff_sent=1
+challenge child removed=1
+challenge start a in=1 lv=7 pw=11 hp=60/60 mana=20 gold=3 item0=0 weapon_equ=1
+challenge start b in=1 lv=7 pw=11 hp=60/60 mana=20 gold=3 item0=0 weapon_equ=1
+challenge start a_dest=1 b_dest=1 armor_equ=1 enemies=1
+challenge enemy type=13 hp=30 exp=0 gold=0 drop=0
+challenge saving lv=30 gold=5000 at_start=1
+challenge saved lv=7 gold=3 at_dest=1
+challenge leave blocked item0=1
+challenge trade refused a_out=1 b=0
+challenge proc a=1 b=1
+challenge dead b in=0 lv=30 pw=99 hp=480/500 mana=90 gold=5000 item0=0 weapon_equ=0
+challenge dead b state=1 at_start=1 quest=20 a_in=1
+challenge reenter gate=1 b_in=0 challenges_enemy=1
+challenge separate conflict=1
+challenge helper conflict=0
+challenge clear wait in=1
+challenge clear wait2 in=1
+challenge clear a in=0 lv=30 pw=99 hp=480/500 mana=90 gold=5000 item0=0 weapon_equ=0
+challenge clear step=1 flag16=1 at_start=1 exp_same=1 enemies=0
+challenge handin1 quest=0 gold+=100 done=1
+challenge handin b quest=20
+challenge again a=20 b=20
+challenge arena c_got info=1 pos=4
+challenge again in a=1 b=1 enemies=1
+challenge arena space_a=1 enemy_vis_c=1 a_vis_c=1 c_vis_a=1 c_hit_enemy=0 a_hit_c=0
+challenge busy c_in=0 gate=1
+challenge logout a in=0 lv=30
+challenge relogin a at_start=1
+challenge warp b still_in=1
+challenge warp b in=0 lv=30 pw=99 hp=480/500 mana=90 gold=5000 item0=0 weapon_equ=0
+challenge warp b in=0 at_exit=1 quest=20 enemies=0
+challenge handin2 quest=0 gold+=0 exp_same=1
+challenge info reload same=1
+challenge before breakup b_quest=20 party=1
+challenge after breakup b_quest=0 b_gate=0
+challenge end enemies=0 copies=0
+== R. StatusUp ==
+statusup use=1,1 at+3 df+4 events=2 buffpkt=2
+statusup strong at=250 df=150
+statusup recast at=250 events=2
+statusup 181s at=250 df=100 events=1
+statusup 281s at=200 df=100 events=0 buffpkt=5
+statusup enemy use=1 at_same=1 events=0
+== S. MagicWall ==
+magic=55 wall=0 hit=20/20 put-on-enemy=0
+magic=55 wall=1 hit=0/20 put-on-enemy=0
+magic=50 wall=0 hit=20/20 put-on-enemy=0
+magic=50 wall=1 hit=0/20 put-on-enemy=0
+magic=35 wall=0 hit=0/20 put-on-enemy=20
+magic=35 wall=1 hit=0/20 put-on-enemy=0
+heal wall=0 healed=1
+heal wall=1 healed=1
+== T. Space ==
+space cells=8
+space set b=1 a=0
+space charinfo diff a_got_b=0 b_got_a=0
+space visible a_sees_b=0 b_sees_a=0 same=0 null=0
+space charinfo same a_got_b=1 visible=1
+space block s0_is_a=1 s1_is_b=1 s2_none=1
+space follow other=0
+space follow same=1
+space door open1=1 again=0 a_chgmap=0 b_chgmap=1 is_open s0=0 s1=1
+space door open0=1 a_chgmap=1 b_chgmap=0 dwTimeOpen_set=1
+space door close1 a_chgmap=0 b_chgmap=1 is_open s0=1 s1=0
+space door close0 a_chgmap=1 b_chgmap=0 is_open s0=0 s1=0
+space onchar b_on a_chgmap=0 b_chgmap=1 map_on=0
+space onchar b_off a_chgmap=0 b_chgmap=1
+space onchar a_on a_chgmap=1 b_chgmap=0 map_on=1
+space reset b=0
+space accept a=20 b=20 c=20 d=20
+space gate a=1 c=1
+space group1 in a=1 b=1 enemies=1
+space group2 in c=1 d=1 enemies=2
+space ids a_nonzero=1 b_same_a=1 d_same_c=1 groups_differ=1
+space enemies g1=1 g2=1
+space enemy visible a_own=1 a_other=0 c_own=1 c_other=0
+space attack other_enemy hp_same=1
+space attack own_enemy hp_down=1
+space dest same_tile=1
+space admin list reply=1 space=0
+space list count=2 first_member=2 quest=20
+space admin set invalid space=0
+space admin set g1 ok=1 mapinfo_resent=1 a_saw_e=1 e_sees_a=1 e_sees_c=0 e_sees_enemy1=1 e_sees_enemy2=0
+space admin set g2 ok=1 c_saw_e=1 e_sees_a=0 e_sees_c=1
+space admin back space=0 sees_a=0
+space clear g1 in a=0 b=0 c=1 d=1 a_space=0 enemies g2=1 total=1
+space clear g1 step=1 flag16=1 c_step=0
+space clear g2 in c=0 d=0 c_space=0 enemies=0
+space clear g2 step=1 flag16=1
+space end enemies=0 copies=0
+== U. AdminQuest ==
+adminquest list got=1 sub=1 count=1 no=0 id=1 name=AdminQuest1 npc0=2,3
+adminquest edit got=1 sub=3 result=1 no=0 msg=0 | id=1 name=AdminQuest1b gold=123 npc0x=4 goals=goal0,goal1 count=1
+adminquest outside got=1 result=0 msg_byX=1 | gold=123 npc0x=4
+adminquest gate-in-normal got=1 result=0 | kind=3
+adminquest add got=1 result=1 no=1 count=2 | id=2 name=AdminQuest2
+adminquest badno got=1 result=0 count=2
+adminquest noname got=1 result=0 name=AdminQuest2
+adminquest short got=0
 == done ==

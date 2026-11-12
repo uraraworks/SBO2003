@@ -20,6 +20,7 @@
 /* 関数プロトタイプ宣言														 */
 /* ========================================================================= */
 void ItemProc							(DWORD, BYTE, DWORD);						/* アイテム処理 */
+void ItemMsgAddWait						(LPSTR, int);								/* 最後に入力待ちを足す */
 BOOL CheckItemSexDistinction			(PITEMINFO, PCHARINFO);						/* 性別による使えるかチェック */
 static BOOL	CheckUseTarget				(PITEMINFO, PCHARINFO);						/* 他のキャラに使えるかチェック */
 static void	PlayItemSound				(PITEMINFO, PCHARINFO);						/* 効果音の再生 */
@@ -112,8 +113,8 @@ void ItemProc(DWORD dwTblID, BYTE byNo, DWORD dwUseTblID)
 
 		/* オンライン中？ */
 		if (pCharUse->byGameState >= GAMESTATE_MOVE) {
-			/* 同じマップ？ */
-			if (pChar->dwMapID == pCharUse->dwMapID) {
+			/* 同じマップ・同じ空間？ */
+			if ((pChar->dwMapID == pCharUse->dwMapID) && IsSameSpace (pChar, pCharUse)) {
 				/* 目の前にいる？ */
 				if (CheckCharX (pCharUse, pCharUse->dwX, dwX) && (dwY == pCharUse->dwY)) {
 					bCheck = TRUE;
@@ -202,9 +203,63 @@ void ItemProc(DWORD dwTblID, BYTE byNo, DWORD dwUseTblID)
 Exit:
 	/* 結果メッセージを表示 */
 	if (strlen (szMsg) > 0) {
+		/* 管理者が入れたメッセージに入力待ち（@2）が無いと、出てすぐ消えてしまうので足す */
+		ItemMsgAddWait (szMsg, sizeof (szMsg));
 		SendCmdMAPMSG (pChar->pID, szMsg);
 	}
 	return;
+}
+
+/* ========================================================================= */
+/* 関数名：ItemMsgAddWait													 */
+/* 内容：メッセージの最後が入力待ち（@0・@2）で終わっていなければ @2 を足す	 */
+/*		 クライアントは入力待ちが無いまま最後まで流すとすぐ窓を閉じるため、	 */
+/*		 アイテムの説明文に @2 を付け忘れると読めずに消えていた				 */
+/*		 制御コードの長さはクライアントの DrawWindowMSG と同じ				 */
+/* 日付：2026/11/12															 */
+/* ========================================================================= */
+void ItemMsgAddWait(LPSTR pszMsg, int nSize)
+{
+	int i, nLen;
+	BOOL bWait;		/* 最後の文字より後に入力待ちがある */
+
+	nLen = (int)strlen (pszMsg);
+	if (nLen == 0) {
+		return;
+	}
+	bWait = FALSE;
+	for (i = 0; i < nLen; i ++) {
+		if ((pszMsg[i] == '@') && (i + 1 < nLen)) {
+			switch (pszMsg[i + 1]) {
+			case '0':		/* 入力待ち */
+			case '2':		/* 点滅無しで入力待ち */
+				bWait = TRUE;
+				i ++;
+				continue;
+			case '3':		/* 効果音 */
+				i += 3;
+				continue;
+			case '4':		/* アイテム取得 */
+			case '9':		/* キャラ画像記録 */
+				i += 6;
+				continue;
+			case '8':		/* 復活座標指定 */
+				i += 10;
+				continue;
+			default:		/* 改行など */
+				i ++;
+				continue;
+			}
+		}
+		/* 入力待ちの後にまだ文字がある */
+		bWait = FALSE;
+	}
+	if (bWait) {
+		return;
+	}
+	if (nLen + 2 < nSize) {
+		strcat (pszMsg, "@2");
+	}
 }
 
 /* ========================================================================= */
