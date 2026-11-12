@@ -4830,6 +4830,29 @@
 			moveFocus(card, nStep, key !== 'Tab');
 		}
 	});
+	/* ボタンの画面が出ている間にゲーム画面やページの余白をクリックしてフォーカスが外れても、
+	   見回りを待たずにすぐボタンへ戻す。キーを押した時に外れていたら、そのキーでボタンを選び直す
+	   （Enter はそのまま押さず、選ぶだけ） */
+	document.addEventListener('click', function () {
+		if (quick.classList.contains('sbo-show')) {
+			setTimeout(focusQuickIfLost, 0);
+		}
+	});
+	document.addEventListener('keydown', function (ev) {
+		var card = quick.classList.contains('sbo-show') ? shownQuickCard() : null;
+		if (!card || card.contains(document.activeElement) || ev.isComposing) {
+			return;
+		}
+		if (!/^(Enter| |Tab|ArrowUp|ArrowDown|ArrowLeft|ArrowRight)$/.test(ev.key)) {
+			return;
+		}
+		var before = document.activeElement;
+		focusQuickIfLost();
+		if (document.activeElement !== before) {
+			ev.preventDefault();
+			ev.stopPropagation();
+		}
+	}, true);
 	/* ID・パスワードの入力中に Esc を押したら、ボタンの画面へ戻る
 	   （入力欄のキーはゲームに渡すので、先回りして受け取る） */
 	document.addEventListener('keydown', function (ev) {
