@@ -1362,11 +1362,17 @@ function renderPropose() {
 			}
 			return res.arrayBuffer();
 		}).then(function (buf) {
-			return decodeIndexedPng(buf);
+			/* お絵かきの絵（パレット PNG）はそのまま。前の版のお絵かき（色そのままの PNG）は近いパレットの色に置きかえる */
+			return decodeIndexedPng(buf).catch(function () { return rgbaToIndexed(buf); });
 		}).then(function (img) {
-			const size = img.width + 'x' + img.height;
-			if (roughSrc !== 'keep' || !Array.prototype.some.call(sizeSel.options, function (o) { return o.value === size; })) {
+			if (!img || roughSrc !== 'keep' || img.width > 64 || img.height > 64) {
 				return;
+			}
+			const size = img.width + 'x' + img.height;
+			if (!Array.prototype.some.call(sizeSel.options, function (o) { return o.value === size; })) {
+				const o = el('option', '', img.width + '×' + img.height);
+				o.value = size;
+				sizeSel.appendChild(o);
 			}
 			sizeSel.value = size;
 			prevSize = size;
@@ -1377,7 +1383,64 @@ function renderPropose() {
 			/* 送らなければ今のラフ絵のまま（描き足すとお絵かきの絵で差し替え） */
 			prev.textContent = '';
 			prev.appendChild(el('span', 'note', '今のラフ絵をお絵かきに出しました。描き足さなければ、そのままです。'));
-		}).catch(function () { /* お絵かきでない絵は、そのまま見せるだけ */ });
+		}).catch(function () { /* 読めない絵は、そのまま見せるだけ */ });
+	}
+	/* 色そのままの PNG を、今のパレットの近い色の番号にする（透けているところは透明、真っ黒は使えないので近い別の色） */
+	function rgbaToIndexed(buf) {
+		return new Promise(function (resolve, reject) {
+			const url = URL.createObjectURL(new Blob([buf], { type: 'image/png' }));
+			const im = new Image();
+			im.onload = function () {
+				URL.revokeObjectURL(url);
+				if (im.width > 64 || im.height > 64) {
+					resolve(null);
+					return;
+				}
+				const c = document.createElement('canvas');
+				c.width = im.width;
+				c.height = im.height;
+				const cx = c.getContext('2d');
+				cx.drawImage(im, 0, 0);
+				const d = cx.getImageData(0, 0, c.width, c.height).data;
+				const usable = [];
+				for (let i = 0; i < 256; i++) {
+					const pc = sheet.palette[i];
+					if (i !== sheet.transparent && (pc.r || pc.g || pc.b)) {
+						usable.push(i);
+					}
+				}
+				const memo = new Map();
+				const out = new Uint8Array(c.width * c.height);
+				for (let k = 0; k < out.length; k++) {
+					const r = d[k * 4], g = d[k * 4 + 1], b = d[k * 4 + 2], a = d[k * 4 + 3];
+					if (a < 128) {
+						out[k] = sheet.transparent;
+						continue;
+					}
+					const key = (r << 16) | (g << 8) | b;
+					let best = memo.get(key);
+					if (best === undefined) {
+						let bd = Infinity;
+						usable.forEach(function (i) {
+							const pc = sheet.palette[i];
+							const dd = (pc.r - r) * (pc.r - r) + (pc.g - g) * (pc.g - g) + (pc.b - b) * (pc.b - b);
+							if (dd < bd) {
+								bd = dd;
+								best = i;
+							}
+						});
+						memo.set(key, best);
+					}
+					out[k] = best;
+				}
+				resolve({ width: c.width, height: c.height, indices: out });
+			};
+			im.onerror = function () {
+				URL.revokeObjectURL(url);
+				reject(new Error('img'));
+			};
+			im.src = url;
+		});
 	}
 	/* 直す時: 今のラフ絵をそのまま使う（お絵かきするか画像を選ぶと差し替え） */
 	function showKeep() {
