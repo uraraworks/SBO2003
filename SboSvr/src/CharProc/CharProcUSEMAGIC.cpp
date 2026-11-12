@@ -20,10 +20,10 @@ static BOOL UseMagicHere(PCHARINFO pChar, BYTE byMagicID)
 {
 	DWORD dwTblID;
 
-	dwTblID = CheckCharBlockPC (pChar->dwMapID, pChar->dwX, pChar->dwY);
+	dwTblID = CheckCharBlockPC (pChar->dwMapID, pChar->dwX, pChar->dwY, pChar->dwSpaceID);
 	/* プレイヤーと重なってない？ */
 	if (dwTblID == -1) {
-		dwTblID = CheckCharBlockNPC2 (pChar->dwTblID, pChar->dwMapID, pChar->dwX, pChar->dwY);
+		dwTblID = CheckCharBlockNPC2 (pChar->dwTblID, pChar->dwMapID, pChar->dwX, pChar->dwY, pChar->dwSpaceID);
 		if (dwTblID == -1) {
 			return FALSE;
 		}
@@ -88,8 +88,8 @@ BOOL CCharProcUSEMAGIC::Proc(DWORD dwTime)
 		PCHARINFO pCharParent;
 
 		pCharParent = g_aCharInfo[m_pChar->dwParentTblID];
-		/* 発動者と別マップ？ */
-		if (m_pChar->dwMapID != pCharParent->dwMapID) {
+		/* 発動者と別マップ・別の空間？ */
+		if ((m_pChar->dwMapID != pCharParent->dwMapID) || !IsSameSpace (m_pChar, pCharParent)) {
 			/* 消滅 */
 			m_pChar->dwTimeDelete = 1;
 		}

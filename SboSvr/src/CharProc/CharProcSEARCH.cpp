@@ -436,6 +436,10 @@ DWORD CCharProcSEARCH::FindTarget(void)
 		if ((pCharTmp->wHP == 0) || (pCharTmp->byGameState < GAMESTATE_MOVE)) {
 			continue;
 		}
+		/* 別の空間にいる人には気づかない */
+		if (!IsSameSpace (m_pChar, pCharTmp)) {
+			continue;
+		}
 		nDX = abs ((int)pCharTmp->dwX - (int)m_pChar->dwX);
 		nDY = abs ((int)pCharTmp->dwY - (int)m_pChar->dwY);
 		if ((nDX > m_pChar->bySearchCx) || (nDY > m_pChar->bySearchCy)) {
@@ -492,7 +496,7 @@ BOOL CCharProcSEARCH::IsTargetValid(PCHARINFO pCharTmp)
 	if (pCharTmp->byGameState == GAMESTATE_LOGOFF) {
 		return FALSE;
 	}
-	if (pCharTmp->dwMapID != m_pChar->dwMapID) {
+	if ((pCharTmp->dwMapID != m_pChar->dwMapID) || !IsSameSpace (m_pChar, pCharTmp)) {
 		return FALSE;
 	}
 	/* 倒れたプレイヤーは追いかけない */
@@ -539,7 +543,7 @@ BOOL CCharProcSEARCH::CanStep(PCHARINFO pCharTmp, int x, int y, PDWORD pdwBlockP
 		return FALSE;
 	}
 	/* ほかのNPCと重なる？ */
-	if (CheckCharBlockNPC2 (m_pChar->dwTblID, m_pChar->dwMapID, (DWORD)x, (DWORD)y) != -1) {
+	if (CheckCharBlockNPC2 (m_pChar->dwTblID, m_pChar->dwMapID, (DWORD)x, (DWORD)y, m_pChar->dwSpaceID) != -1) {
 		return FALSE;
 	}
 	return TRUE;
@@ -657,7 +661,7 @@ int CCharProcSEARCH::FindPathStep(PCHARINFO pCharTmp, int nX, int nY)
 				break;
 			}
 			pCharBlock = g_aCharInfo[pData[i]];
-			if ((pCharBlock == m_pChar) || (pCharBlock->byNpcType == NPCTYPE_PUT) || IsQuestNpc (pCharBlock)) {
+			if ((pCharBlock == m_pChar) || (pCharBlock->byNpcType == NPCTYPE_PUT) || !IsInteractable (m_pChar, pCharBlock)) {
 				continue;
 			}
 			x = (int)pCharBlock->dwX - nX1;

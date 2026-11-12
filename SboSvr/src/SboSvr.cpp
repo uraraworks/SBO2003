@@ -817,6 +817,7 @@ void OnDecPlayer(int nNo)
 	pChar->dwLastSake		= 0;
 	pChar->dwLastSakeHikku	= 0;
 	pChar->byEfect			= EFECTTYPE_NONE;
+	pChar->dwSpaceID		= SPACE_NORMAL;		/* 空間はログインのたびにふつうの世界から（上の「いなくなった」を送った後に戻す） */
 
 	/* プレイ時間の更新 */
 	UpdatePlayTime (pChar);
@@ -975,14 +976,8 @@ void TimerProc(void)
 			case EVENTTYPE_DOOR:
 				{
 					PEVENTINFO_DOOR pDoor = (PEVENTINFO_DOOR)pEvent->pData;
-					/* 開いてる？ */
-					if (pDoor && pDoor->dwTimeOpen) {
-						/* 閉める時間が過ぎた？ */
-						if (g_dwTime > pDoor->dwTimeOpen + (pDoor->byTimeClose * 100)) {
-							pDoor->dwTimeOpen = 0;
-							SendCmdCHGMAP (pMap->dwID, pDoor->wGrpID, pEvent->dwX, pEvent->dwY);
-						}
-					}
+					/* 開いてる？（閉める時間が過ぎたら、その空間の人にだけ知らせて閉める。空間ごとに開け閉めする） */
+					SpaceDoorProc (pMap->dwID, pEvent, pDoor);
 				}
 				break;
 
@@ -995,21 +990,8 @@ void TimerProc(void)
 					/* 前回のチェックから500ミリ秒以上経過している？ */
 					if (g_dwTime > pInfo->dwCheckTime + 500) {
 						pInfo->dwCheckTime = g_dwTime;
-						WORD wMap = pMap->pwMap[pInfo->dwX + pInfo->dwY * pMap->nCX];
-						/* 誰も乗ってない？ */
-						if ((CheckCharBlockPC (pMap->dwID, pEvent->dwX, pEvent->dwY) == -1) &&
-							(CheckCharBlockNPC (pMap->dwID, pEvent->dwX, pEvent->dwY) == -1)) {
-							if (wMap != pInfo->wGrpIDOff) {
-								pMap->pwMap[pInfo->dwX + pInfo->dwY * pMap->nCX] = pInfo->wGrpIDOff;
-								SendCmdCHGMAP (pMap->dwID, pInfo->wGrpIDOff, pInfo->dwX, pInfo->dwY);
-							}
-						/* 誰か乗っている */
-						} else {
-							if (wMap != pInfo->wGrpIDOn) {
-								pMap->pwMap[pInfo->dwX + pInfo->dwY * pMap->nCX] = pInfo->wGrpIDOn;
-								SendCmdCHGMAP (pMap->dwID, pInfo->wGrpIDOn, pInfo->dwX, pInfo->dwY);
-							}
-						}
+						/* 乗っているかは空間ごとに見る（ふつうの世界はマップの中身を書き換え、ほかの空間は表で持つ） */
+						SpaceOnCharMapProc (pMap, pEvent, pInfo);
 					}
 				}
 				break;

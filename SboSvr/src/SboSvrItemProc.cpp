@@ -112,8 +112,8 @@ void ItemProc(DWORD dwTblID, BYTE byNo, DWORD dwUseTblID)
 
 		/* オンライン中？ */
 		if (pCharUse->byGameState >= GAMESTATE_MOVE) {
-			/* 同じマップ？ */
-			if (pChar->dwMapID == pCharUse->dwMapID) {
+			/* 同じマップ・同じ空間？ */
+			if ((pChar->dwMapID == pCharUse->dwMapID) && IsSameSpace (pChar, pCharUse)) {
 				/* 目の前にいる？ */
 				if (CheckCharX (pCharUse, pCharUse->dwX, dwX) && (dwY == pCharUse->dwY)) {
 					bCheck = TRUE;

@@ -30,6 +30,7 @@
 #include <map>
 #include <vector>
 #include <algorithm>
+#include <tuple>
 
 extern void SendCmdMAPCHARINFO(DWORD);
 
@@ -80,6 +81,7 @@ typedef struct _LOANBAK {
 typedef struct _CHALLENGE {
 	WORD		wQuestID;											/* 依頼番号 */
 	DWORD		dwMapNo;											/* 戦う場所のマップ番号 */
+	DWORD		dwSpaceID;											/* この挑戦の空間番号（挑戦の番号と同じ。0 にはならない。組ごとに別の空間で戦う） */
 	DWORD		dwPartyID;											/* 入った時のパーティ（変わった人は中断） */
 	DWORD		dwStart;											/* 始めた時刻 */
 	BOOL		bCleared;											/* 敵を全部倒した */
@@ -234,6 +236,14 @@ static BOOL IsQuestNpcFor(PCHARINFO pSrc, PCHARINFO pDst)
 /* pSrc の情報を pDst に送ってよいか */
 BOOL IsCharVisibleTo(PCHARINFO pSrc, PCHARINFO pDst)
 {
+	/* 空間が違えば見えない（管理者も、いま居る空間のものしか見えない） */
+	if (pDst != NULL) {
+		if (pSrc->dwSpaceID != pDst->dwSpaceID) {
+			return FALSE;
+		}
+	} else if (pSrc->dwSpaceID != 0) {
+		return FALSE;
+	}
 	if (!IsQuestNpc (pSrc)) {
 		return TRUE;
 	}
@@ -243,7 +253,7 @@ BOOL IsCharVisibleTo(PCHARINFO pSrc, PCHARINFO pDst)
 	if (pDst == NULL) {
 		return FALSE;
 	}
-	/* 管理者には全部見える（見えるだけ。光で移る・宝箱を開けるのは受けた人と仲間だけ） */
+	/* 管理者には、同じ空間の分が全部見える（見えるだけ。光で移る・宝箱を開けるのは受けた人と仲間だけ） */
 	if (pDst->byAdminLV != ADMINLV_USER) {
 		return TRUE;
 	}
@@ -278,7 +288,11 @@ BOOL IsCharVisibleToPID(PCHARINFO pSrc, DWORD pIDDst)
 {
 	int nNo;
 
-	if (!IsQuestNpc (pSrc) || s_nRemoving) {
+	/* ふつうの世界にいる、見えるNPC以外は誰にでも送ってよい（人の多い所で毎回通るので先に返す） */
+	if (!IsQuestNpc (pSrc) && (pSrc->dwSpaceID == 0)) {
+		return TRUE;
+	}
+	if (IsQuestNpc (pSrc) && s_nRemoving) {
 		return TRUE;
 	}
 	nNo = GetCharNo (pIDDst);
@@ -383,6 +397,8 @@ static DWORD MakeKey(PCHARINFO pOwner)
 	size_t i;
 	DWORD dwKey = pOwner->dwPartyID * 7919 + 1;
 
+	/* 持ち主がいる空間が変わったら作り直す（見えるNPC は持ち主の空間に出る） */
+	dwKey = dwKey * 31 + pOwner->dwSpaceID;
 	GetPartyMembers (pOwner, aMember);
 	for (i = 0; i < aMember.size (); i ++) {
 		dwKey = dwKey * 31 + aMember[i]->dwTblID + 1;
@@ -468,6 +484,7 @@ static void CreateNpc(PCHARINFO pOwner, PQUESTINFO pQuest, int nIdx, DWORD dwKey
 	ZeroMemory ((PBYTE)pNew, sizeof (CHARINFO));
 	pNew->byNpcType = NPCTYPE_QUESTNPC;
 	SetInitCharData (pNew);
+	pNew->dwSpaceID		= pOwner->dwSpaceID;				/* 持ち主と同じ空間に出す */
 	pNew->byGameState	= GAMESTATE_NPC;
 	pNew->byCharState	= CHARSTATE_MOVE;
 	pNew->dwMapID		= (DWORD)nMapNo;
@@ -615,6 +632,8 @@ void QuestOnLogin(PCHARINFO pChar)
 	if (pChar->byNpcType != NPCTYPE_INIT) {
 		return;
 	}
+	/* 空間はログインのたびにふつうの世界から（切断した時に残っていても戻す） */
+	pChar->dwSpaceID = SPACE_NORMAL;
 	/* 討伐チャレンジ中に切断した人は、入る前の場所へ（まだマップの表に入る前なので直接書き換える） */
 	{
 		std::map<DWORD, LOANPOS>::iterator itPos = s_mapPendingPos.find (pChar->dwTblID);
@@ -1203,7 +1222,7 @@ static PCHARINFO FindNearGuild(PCHARINFO pChar, int nGuild, DWORD dwNpcTblID)
 		return NULL;
 	}
 	pNpc = g_aCharInfo[dwNpcTblID];
-	if (!QuestIsGuildNpc (pNpc) || (pNpc->dwMapID != pChar->dwMapID)) {
+	if (!QuestIsGuildNpc (pNpc) || (pNpc->dwMapID != pChar->dwMapID) || !IsSameSpace (pChar, pNpc)) {
 		return NULL;
 	}
 	if ((abs ((int)pChar->dwX - (int)pNpc->dwX) > 2) || (abs ((int)pChar->dwY - (int)pNpc->dwY) > 2)) {
@@ -1468,7 +1487,7 @@ static void GetChallengeMembers(PCHARINFO pChar, WORD wQuestID, std::vector<PCHA
 	for (i = 0; i < aParty.size (); i ++) {
 		PCHARINFO pTmp = aParty[i];
 		if (pTmp != pChar) {
-			if (pTmp->dwMapID != pChar->dwMapID) {
+			if ((pTmp->dwMapID != pChar->dwMapID) || !IsSameSpace (pTmp, pChar)) {
 				continue;
 			}
 			if ((abs ((int)pTmp->dwX - (int)pChar->dwX) > CHALLENGE_NEAR) || (abs ((int)pTmp->dwY - (int)pChar->dwY) > CHALLENGE_NEAR)) {
@@ -1670,10 +1689,15 @@ static void ChallengeLeave(PCHARINFO p, int nReason)
 
 	/* 戦う場所から出た人はその場で、ほかは入る前の場所へ戻す */
 	bMove = (nReason != CHALLENGELEAVE_OUT) && (Bak.dwMapID < (DWORD)g_aMapInfo.GetSize ());
+	/* ふつうの世界へ戻る。移る時は、移った先で見え方が作り直されるので、ここでは作り直さない */
+	/* （すでにその場所に立っている時は移動で何も届かないので、ここで作り直す） */
+	SpaceSet (p, SPACE_NORMAL, !bMove || ((p->dwMapID == Bak.dwMapID) && (p->dwX == Bak.dwX) && (p->dwY == Bak.dwY)));
 	if (bMove) {
 		SendCmdFADEINOUT (p->pID, 0);
 		SendCmdCHGBGM (p->pID, p->dwMapID, 0);
 		SubProcMapMove (p, Bak.dwMapID, Bak.dwX, Bak.dwY);
+		/* 移動で届くマップ情報は扉が閉じたままなので、ふつうの世界の扉などの状態を送る */
+		SpaceSendMapState (p);
 	}
 }
 
@@ -1730,6 +1754,7 @@ static void ChallengeCreateEnemy(DWORD dwSession, CHALLENGE *pCh, PQUESTNPCINFO 
 	ZeroMemory ((PBYTE)pNew, sizeof (CHARINFO));
 	pNew->byNpcType = NPCTYPE_BATTLE2;
 	SetInitCharData (pNew);
+	pNew->dwSpaceID = pCh->dwSpaceID;						/* 敵は、その組の空間に出す */
 	/* 倒した時の処理が戦闘 1・2 だけなので、それ以外の動き方は戦闘 2（探して攻撃）にする */
 	pNew->byNpcType = ((t->byNpcType == NPCTYPE_BATTLE1) || (t->byNpcType == NPCTYPE_BATTLE2)) ? t->byNpcType : NPCTYPE_BATTLE2;
 	pNew->byGameState	= GAMESTATE_NPC;
@@ -1782,7 +1807,6 @@ static void ChallengeCreateEnemy(DWORD dwSession, CHALLENGE *pCh, PQUESTNPCINFO 
 /* 入口に乗った：近くで同じ依頼を受けた仲間と一緒に入る */
 static void ChallengeStart(PCHARINFO pChar, PQUESTINFO pQuest, PQUESTNPCINFO pDef)
 {
-	std::map<DWORD, CHALLENGE>::iterator itC;
 	std::vector<PCHARINFO> aMember;
 	PSTATUSTEMPLATEINFO t;
 	CHALLENGE Ch;
@@ -1802,13 +1826,7 @@ static void ChallengeStart(PCHARINFO pChar, PQUESTINFO pQuest, PQUESTNPCINFO pDe
 		SendCmdSYSMSG (pChar->pID, "討伐はもう済んでいます。ギルドに報告しましょう。", SPEECHCMD_BATTLE1);
 		return;
 	}
-	/* 同じ依頼は一度に 1 組だけ */
-	for (itC = s_mapChallenge.begin (); itC != s_mapChallenge.end (); itC ++) {
-		if (itC->second.wQuestID == pQuest->wID) {
-			SendCmdSYSMSG (pChar->pID, "いま別の組が挑戦しています。終わるまで少し待ってください。", SPEECHCMD_BATTLE1);
-			return;
-		}
-	}
+	/* 組ごとに別の空間で戦うので、同じ依頼を何組でも同時に遊べる */
 	nNeed = max ((int)pQuest->byMemberMin, 1);
 	GetChallengeMembers (pChar, pQuest->wID, aMember);
 	if ((int)aMember.size () < nNeed) {
@@ -1827,6 +1845,7 @@ static void ChallengeStart(PCHARINFO pChar, PQUESTINFO pQuest, PQUESTNPCINFO pDe
 	t = g_aStTmpInfo[pQuest->wLoanStTmp];
 	dwSession = ++ s_dwChallengeSeq;
 	Ch.wQuestID = pQuest->wID;
+	Ch.dwSpaceID = dwSession;						/* 挑戦の番号（1 から増える）をそのまま空間番号にする */
 	Ch.dwMapNo = (DWORD)nDestMapNo;
 	Ch.dwPartyID = pChar->dwPartyID;
 	Ch.dwStart = timeGetTime ();
@@ -1860,6 +1879,9 @@ static void ChallengeStart(PCHARINFO pChar, PQUESTINFO pQuest, PQUESTNPCINFO pDe
 		LOANBAK Bak;
 
 		CharTargetCancelPC (pTmp);
+		/* この組の空間へ（先に移る。マップを移る時に、ふつうの世界の人へ「いなくなった」が届くように。
+		   見え方の作り直しは移動のほうでされるので、ここでは送らない） */
+		SpaceSet (pTmp, Ch.dwSpaceID, FALSE);
 		ZeroMemory (&Bak, sizeof (Bak));
 		LoanXfer (pTmp, &Bak, FALSE);
 		Bak.dwSession = dwSession;
@@ -1875,6 +1897,8 @@ static void ChallengeStart(PCHARINFO pChar, PQUESTINFO pQuest, PQUESTNPCINFO pDe
 		LoanSendAll (pTmp);
 		AdvanceQuest (pTmp, pDef);
 		DoPortal (pTmp, pDef);
+		/* 移動で届くマップ情報は扉が閉じたままなので、この空間の扉などの状態を送る */
+		SpaceSendMapState (pTmp);
 	}
 
 	/* 敵を出す */
@@ -2074,6 +2098,338 @@ void QuestChallengeSaveSwap(BOOL bBegin)
 			s_mapPendingPos.erase (itPos ++);
 		}
 	}
+}
+
+/* ========================================================================= */
+/* 空間																		 */
+/* ========================================================================= */
+/*
+ * 空間番号(CHARINFO::dwSpaceID)が違うキャラ同士は、同じマップの同じ場所にいても出会わない
+ * （見えない・ぶつからない・攻撃や会話ができない）。0 がふつうの世界。
+ * 討伐チャレンジの組ごとに 1 つ作る（番号は挑戦の番号）。管理者は一覧から選んで入れる。
+ *
+ * 扉・「乗っている間変わるマス」はサーバーのマップの中身を書き換えずに、
+ * ふつうの世界は今までどおり（扉は dwTimeOpen・マスは pwMap）、ほかの空間は下の表で持つ。
+ * クライアントへは、その空間にいる人にだけ CMD_CHGMAP を送る。
+ */
+
+/* 空間ごとの扉・マスの持ち主を決める鍵（マップ・イベントの座標・空間） */
+typedef std::tuple<DWORD, DWORD, DWORD, DWORD> SPACEKEY;
+
+static std::map<SPACEKEY, DWORD> s_mapSpaceDoor;				/* ふつうの世界以外で開いている扉 → 開けた時刻 */
+static std::map<SPACEKEY, BOOL> s_mapSpaceOnChar;				/* ふつうの世界以外で、誰かが乗っているマス */
+
+/* 空間番号だけ書き換える */
+void SpaceSetQuiet(PCHARINFO pChar, DWORD dwSpaceID)
+{
+	pChar->dwSpaceID = dwSpaceID;
+}
+
+/* 切り替えられる空間か */
+BOOL SpaceExists(DWORD dwSpaceID)
+{
+	std::map<DWORD, CHALLENGE>::iterator itC;
+
+	if (dwSpaceID == SPACE_NORMAL) {
+		return TRUE;
+	}
+	for (itC = s_mapChallenge.begin (); itC != s_mapChallenge.end (); itC ++) {
+		if (itC->second.dwSpaceID == dwSpaceID) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* いま在る空間の一覧 */
+int SpaceGetList(PADMINSPACEENTRY pEntry, int nMax)
+{
+	std::map<DWORD, CHALLENGE>::iterator itC;
+	int i, nCount = 0, nChars = g_aCharInfo.GetSize ();
+
+	for (itC = s_mapChallenge.begin (); (itC != s_mapChallenge.end ()) && (nCount < nMax); itC ++) {
+		PADMINSPACEENTRY p = &pEntry[nCount];
+		PQUESTINFO pQuest = FindQuest (itC->second.wQuestID);
+
+		ZeroMemory (p, sizeof (ADMINSPACEENTRY));
+		p->dwSpaceID = itC->second.dwSpaceID;
+		p->wQuestID = itC->second.wQuestID;
+		p->dwMapID = itC->second.dwMapNo;
+		for (i = 0; i < nChars; i ++) {
+			if (IsPlayerOnline (g_aCharInfo[i]) && (g_aCharInfo[i]->dwSpaceID == p->dwSpaceID)) {
+				p->wMember ++;
+			}
+		}
+		if (pQuest) {
+			SboTextCopy (p->szQuest, sizeof (p->szQuest), pQuest->szName);
+		}
+		if ((itC->second.dwMapNo < (DWORD)g_aMapInfo.GetSize ()) && g_aMapInfo[itC->second.dwMapNo]->pszName) {
+			SboTextCopy (p->szMap, sizeof (p->szMap), g_aMapInfo[itC->second.dwMapNo]->pszName);
+		}
+		nCount ++;
+	}
+	return nCount;
+}
+
+/* 扉がその空間で開いた時刻（0=閉まっている） */
+static DWORD SpaceDoorTime(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID)
+{
+	std::map<SPACEKEY, DWORD>::iterator it;
+
+	if (dwSpaceID == SPACE_NORMAL) {
+		return pDoor->dwTimeOpen;
+	}
+	it = s_mapSpaceDoor.find (SPACEKEY (dwMapID, pEvent->dwX, pEvent->dwY, dwSpaceID));
+	return (it == s_mapSpaceDoor.end ()) ? 0 : it->second;
+}
+
+/* 扉がその空間で開いているか */
+BOOL SpaceDoorIsOpen(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID)
+{
+	return (pDoor != NULL) && (SpaceDoorTime (dwMapID, pEvent, pDoor, dwSpaceID) != 0);
+}
+
+/* 扉をその空間で開ける */
+BOOL SpaceDoorOpen(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID)
+{
+	if ((pDoor == NULL) || SpaceDoorIsOpen (dwMapID, pEvent, pDoor, dwSpaceID)) {
+		return FALSE;
+	}
+	if (dwSpaceID == SPACE_NORMAL) {
+		pDoor->dwTimeOpen = timeGetTime ();
+	} else {
+		DWORD dwTime = timeGetTime ();
+		s_mapSpaceDoor[SPACEKEY (dwMapID, pEvent->dwX, pEvent->dwY, dwSpaceID)] = dwTime ? dwTime : 1;
+	}
+	SendCmdCHGMAPSpace (dwMapID, dwSpaceID, pDoor->wBackGrpID, (int)pEvent->dwX, (int)pEvent->dwY);
+	return TRUE;
+}
+
+/* 扉が閉まる時間を見る */
+void SpaceDoorProc(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor)
+{
+	if (pDoor == NULL) {
+		return;
+	}
+	/* ふつうの世界 */
+	if (pDoor->dwTimeOpen) {
+		/* 閉める時間が過ぎた？ */
+		if (g_dwTime > pDoor->dwTimeOpen + (pDoor->byTimeClose * 100)) {
+			pDoor->dwTimeOpen = 0;
+			SendCmdCHGMAPSpace (dwMapID, SPACE_NORMAL, pDoor->wGrpID, (int)pEvent->dwX, (int)pEvent->dwY);
+		}
+	}
+	/* ほかの空間（開けた扉がある時だけ見る） */
+	if (!s_mapSpaceDoor.empty ()) {
+		std::map<SPACEKEY, DWORD>::iterator it = s_mapSpaceDoor.lower_bound (SPACEKEY (dwMapID, pEvent->dwX, pEvent->dwY, 0));
+		while ((it != s_mapSpaceDoor.end ()) &&
+				(std::get<0> (it->first) == dwMapID) && (std::get<1> (it->first) == pEvent->dwX) && (std::get<2> (it->first) == pEvent->dwY)) {
+			if (g_dwTime > it->second + (pDoor->byTimeClose * 100)) {
+				DWORD dwSpaceID = std::get<3> (it->first);
+				s_mapSpaceDoor.erase (it ++);
+				SendCmdCHGMAPSpace (dwMapID, dwSpaceID, pDoor->wGrpID, (int)pEvent->dwX, (int)pEvent->dwY);
+			} else {
+				it ++;
+			}
+		}
+	}
+}
+
+/* マスの上に、ふつうの世界以外のキャラが誰か乗っているか調べて、乗っている空間を集める */
+static void SpaceCollectOnTile(DWORD dwMapID, DWORD dwX, DWORD dwY, std::vector<DWORD> &aSpace)
+{
+	PMAPINFO pMap = g_aMapInfo[dwMapID];
+	int t, i;
+
+	aSpace.clear ();
+	for (t = 0; t < 2; t ++) {
+		PDWORD pData = (t == 0) ? pMap->paTblNoPC : pMap->paTblNoNPC;
+		int nCount = (int)((t == 0) ? pMap->dwCountTblNoPC : pMap->dwCountTblNoNPC);
+		if (pData == NULL) {
+			continue;
+		}
+		for (i = 0; i < nCount; i ++) {
+			PCHARINFO pCharTmp;
+			if (pData[i] == -1) {
+				break;
+			}
+			pCharTmp = g_aCharInfo[pData[i]];
+			if (pCharTmp->dwSpaceID == SPACE_NORMAL) {
+				continue;
+			}
+			if (t == 0) {
+				/* PC（倒れている人・ログイン中でない人は乗っていない） */
+				if ((pCharTmp->wHP == 0) || (pCharTmp->byGameState < GAMESTATE_MOVE)) {
+					continue;
+				}
+			} else {
+				/* NPC（見えるNPC・置かれた魔法などは乗っていないことにする。CheckCharBlockNPC と同じ） */
+				if (IsQuestNpc (pCharTmp) ||
+					(pCharTmp->byNpcType == NPCTYPE_PUT) || (pCharTmp->byNpcType == NPCTYPE_USEMAGIC) ||
+					(pCharTmp->byNpcType == NPCTYPE_ATACK) || (pCharTmp->byNpcType == NPCTYPE_USEMAGICPARENT)) {
+					continue;
+				}
+			}
+			if (CheckCharX (pCharTmp, pCharTmp->dwX, dwX) && (pCharTmp->dwY == dwY)) {
+				if (std::find (aSpace.begin (), aSpace.end (), pCharTmp->dwSpaceID) == aSpace.end ()) {
+					aSpace.push_back (pCharTmp->dwSpaceID);
+				}
+			}
+		}
+	}
+}
+
+/* 「乗っている間変わるマス」の処理 */
+void SpaceOnCharMapProc(PMAPINFO pMap, PEVENTINFO pEvent, PEVENTINFO_ONCHARMAP pInfo)
+{
+	WORD wMap = pMap->pwMap[pInfo->dwX + pInfo->dwY * pMap->nCX];
+
+	/* ふつうの世界（マップの中身を書き換える） */
+	/* 誰も乗ってない？ */
+	if ((CheckCharBlockPC (pMap->dwID, pEvent->dwX, pEvent->dwY, SPACE_NORMAL) == -1) &&
+		(CheckCharBlockNPC (pMap->dwID, pEvent->dwX, pEvent->dwY, SPACE_NORMAL) == -1)) {
+		if (wMap != pInfo->wGrpIDOff) {
+			pMap->pwMap[pInfo->dwX + pInfo->dwY * pMap->nCX] = pInfo->wGrpIDOff;
+			SendCmdCHGMAPSpace (pMap->dwID, SPACE_NORMAL, pInfo->wGrpIDOff, pInfo->dwX, pInfo->dwY);
+		}
+	/* 誰か乗っている */
+	} else {
+		if (wMap != pInfo->wGrpIDOn) {
+			pMap->pwMap[pInfo->dwX + pInfo->dwY * pMap->nCX] = pInfo->wGrpIDOn;
+			SendCmdCHGMAPSpace (pMap->dwID, SPACE_NORMAL, pInfo->wGrpIDOn, pInfo->dwX, pInfo->dwY);
+		}
+	}
+
+	/* ほかの空間（人がいる空間か、乗っている印が残っている空間だけ見る） */
+	if (!s_mapSpaceOnChar.empty () || (pMap->dwCountTblNoPC + pMap->dwCountTblNoNPC > 0)) {
+		std::vector<DWORD> aOn;
+		size_t i;
+
+		SpaceCollectOnTile (pMap->dwID, pEvent->dwX, pEvent->dwY, aOn);
+		/* 新しく乗った空間 */
+		for (i = 0; i < aOn.size (); i ++) {
+			SPACEKEY Key (pMap->dwID, pEvent->dwX, pEvent->dwY, aOn[i]);
+			if (s_mapSpaceOnChar.find (Key) == s_mapSpaceOnChar.end ()) {
+				s_mapSpaceOnChar[Key] = TRUE;
+				SendCmdCHGMAPSpace (pMap->dwID, aOn[i], pInfo->wGrpIDOn, pInfo->dwX, pInfo->dwY);
+			}
+		}
+		/* 降りた空間 */
+		if (!s_mapSpaceOnChar.empty ()) {
+			std::map<SPACEKEY, BOOL>::iterator it = s_mapSpaceOnChar.lower_bound (SPACEKEY (pMap->dwID, pEvent->dwX, pEvent->dwY, 0));
+			while ((it != s_mapSpaceOnChar.end ()) &&
+					(std::get<0> (it->first) == pMap->dwID) && (std::get<1> (it->first) == pEvent->dwX) && (std::get<2> (it->first) == pEvent->dwY)) {
+				DWORD dwSpaceID = std::get<3> (it->first);
+				if (std::find (aOn.begin (), aOn.end (), dwSpaceID) == aOn.end ()) {
+					s_mapSpaceOnChar.erase (it ++);
+					SendCmdCHGMAPSpace (pMap->dwID, dwSpaceID, pInfo->wGrpIDOff, pInfo->dwX, pInfo->dwY);
+				} else {
+					it ++;
+				}
+			}
+		}
+	}
+}
+
+/* その人がいる空間の、扉・「乗っている間変わるマス」の状態を本人に送る。
+   マップ情報(CMD_MAPINFO)にはサーバーのマップの中身（扉は閉じたまま）が入っているので、
+   空間を移った人には、扉と乗っている間変わるマスの全部について、いまの状態を送り直す */
+void SpaceSendMapState(PCHARINFO pChar)
+{
+	PMAPINFO pMap;
+	int i;
+
+	if ((pChar->pID == 0) || (pChar->dwMapID >= (DWORD)g_aMapInfo.GetSize ())) {
+		return;
+	}
+	pMap = g_aMapInfo[pChar->dwMapID];
+	for (i = 0; i < pMap->nEventCount; i ++) {
+		PEVENTINFO pEvent = &pMap->pEvent[i];
+
+		if (pEvent->pData == NULL) {
+			continue;
+		}
+		switch (pEvent->byType) {
+		case EVENTTYPE_DOOR:
+			{
+				PEVENTINFO_DOOR pDoor = (PEVENTINFO_DOOR)pEvent->pData;
+				BOOL bOpen = SpaceDoorIsOpen (pMap->dwID, pEvent, pDoor, pChar->dwSpaceID);
+				SendCmdCHGMAPTo (pChar->pID, pMap->dwID, bOpen ? pDoor->wBackGrpID : pDoor->wGrpID, (int)pEvent->dwX, (int)pEvent->dwY);
+			}
+			break;
+
+		case EVENTTYPE_ONCHARMAP:
+			{
+				PEVENTINFO_ONCHARMAP pInfo = (PEVENTINFO_ONCHARMAP)pEvent->pData;
+				BOOL bOn;
+				if (pChar->dwSpaceID == SPACE_NORMAL) {
+					bOn = (pMap->pwMap[pInfo->dwX + pInfo->dwY * pMap->nCX] == pInfo->wGrpIDOn);
+				} else {
+					bOn = (s_mapSpaceOnChar.find (SPACEKEY (pMap->dwID, pEvent->dwX, pEvent->dwY, pChar->dwSpaceID)) != s_mapSpaceOnChar.end ());
+				}
+				SendCmdCHGMAPTo (pChar->pID, pMap->dwID, bOn ? pInfo->wGrpIDOn : pInfo->wGrpIDOff, (int)pInfo->dwX, (int)pInfo->dwY);
+			}
+			break;
+		}
+	}
+}
+
+/* 空間を移す（傭兵も一緒に） */
+void SpaceSet(PCHARINFO pChar, DWORD dwSpaceID, BOOL bRefresh)
+{
+	int i, nCount;
+
+	if (pChar->dwSpaceID == dwSpaceID) {
+		return;
+	}
+	/* まだ遊んでいない・NPC・マップの表に入っていない時は、番号だけ */
+	if (!IsPlayerOnline (pChar) || (GetMapNo (pChar->dwMapID) < 0)) {
+		pChar->dwSpaceID = dwSpaceID;
+		return;
+	}
+
+	/* ついていく・ターゲットは切る（空間をまたいでは続けられない） */
+	CharTargetCancelPC (pChar);
+	pChar->dwTargetTblID = -1;
+
+	/* 前の空間の人から消える（向きを 99 にして座標を送るのが「いなくなった」の合図） */
+	{
+		BYTE byDirection = pChar->byDirection;
+		pChar->byDirection = 99;
+		SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 4);
+		pChar->byDirection = byDirection;
+	}
+	/* 傭兵は一緒に移る */
+	nCount = g_aCharInfo.GetSize ();
+	for (i = 0; i < nCount; i ++) {
+		PCHARINFO pMerc = g_aCharInfo[i];
+		if (!IsMercenary (pMerc) || (GetMercenaryOwner (pMerc) != pChar) || (pMerc->dwSpaceID == dwSpaceID)) {
+			continue;
+		}
+		BYTE byDirection = pMerc->byDirection;
+		pMerc->byDirection = 99;
+		SendCmdCHARPOS (pMerc->pID, pMerc->dwTblID, 0, 4);
+		pMerc->byDirection = byDirection;
+		pMerc->dwSpaceID = dwSpaceID;
+		SendCmdCHARINFO3 (pMerc->dwTblID);
+	}
+
+	pChar->dwSpaceID = dwSpaceID;
+
+	if (bRefresh) {
+		/* 見え方を作り直す（マップを移った時と同じ。クライアントはマップ情報を受け取ると、知っているキャラを全部忘れる） */
+		SendCmdMAPINFO (pChar->pID, pChar->dwMapID);
+		SendCmdEVENTPOS (pChar->pID, pChar->dwMapID);
+		SpaceSendMapState (pChar);
+		SendCmdCHARINFO (pChar->pID, -1);
+		SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 2);
+		SendCmdCHARSTATUS (pChar->pID, pChar->dwTblID);
+		SendCmdCHARITEM (pChar->pID, pChar->dwTblID);
+		/* 新しい空間の近くの人に自分を知らせる */
+		SendCmdCHARINFO3 (pChar->dwTblID);
+	}
+	/* 依頼の見えるNPCは持ち主の空間に出すので、作り直す */
+	QuestSyncAll ();
 }
 
 /* Copyright(C)URARA-works 2003-2005 */

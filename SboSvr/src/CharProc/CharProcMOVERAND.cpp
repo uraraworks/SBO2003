@@ -284,13 +284,17 @@ BOOL CCharProcMOVERAND::IsMovePos(int x, int y)
 			break;
 		}
 		pCharTmp = g_aCharInfo[pData[j]];
+		/* 別の空間にいる人とは重ならない */
+		if (!IsSameSpace (m_pChar, pCharTmp)) {
+			continue;
+		}
 		if ((pCharTmp->dwX == (DWORD)x) && (pCharTmp->dwY == (DWORD)y)) {
 			return FALSE;
 		}
 	}
 
 	/* ほかのNPCと重なる？（以前はNPC同士は重なれた） */
-	if (CheckCharBlockNPC2 (m_pChar->dwTblID, m_pChar->dwMapID, (DWORD)x, (DWORD)y) != -1) {
+	if (CheckCharBlockNPC2 (m_pChar->dwTblID, m_pChar->dwMapID, (DWORD)x, (DWORD)y, m_pChar->dwSpaceID) != -1) {
 		return FALSE;
 	}
 
@@ -382,6 +386,10 @@ BOOL CCharProcMOVERAND::CheckTalkPC(void)
 		}
 		pCharTmp = g_aCharInfo[pData[j]];
 		if (pCharTmp->byDirection >= 4) {
+			continue;
+		}
+		/* 別の空間にいる人には気づかない */
+		if (!IsSameSpace (m_pChar, pCharTmp)) {
 			continue;
 		}
 		/* プレイヤーの目の前が自分？ */
@@ -601,7 +609,7 @@ BOOL CCharProcMOVERAND::ProcBattle(DWORD dwTime)
 		pCharTmp = g_aCharInfo[m_pChar->dwTargetTblID];
 		/* 相手が倒れた・いなくなった？ */
 		if ((pCharTmp == NULL) || (pCharTmp->byGameState == GAMESTATE_LOGOFF) ||
-			(pCharTmp->dwMapID != m_pChar->dwMapID) || (pCharTmp->wHP == 0)) {
+			(pCharTmp->dwMapID != m_pChar->dwMapID) || !IsSameSpace (m_pChar, pCharTmp) || (pCharTmp->wHP == 0)) {
 			bEnd = TRUE;
 		}
 	}

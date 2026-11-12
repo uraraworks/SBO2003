@@ -130,6 +130,11 @@ static BOOL MagicProcSub(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget, BOOL bIt
 	pChar = g_aCharInfo[dwTblID];
 	pInfo = g_aMagicInfo[byID];
 
+	/* 別の空間にいる相手には使えない */
+	if ((dwTblIDTarget < (DWORD)g_aCharInfo.GetSize ()) && !IsSameSpace (pChar, g_aCharInfo[dwTblIDTarget])) {
+		goto Exit;
+	}
+
 	/* 眠っている間は使えない */
 	if (IsSleep (pChar)) {
 		goto Exit;
@@ -409,8 +414,8 @@ static BOOL MakeCharTblTargetSub_SELF(PARRAYDWORD aTarget,
 		PCHARINFO pCharTmp;
 
 		pCharTmp = g_aCharInfo[pData[i]];
-		/* 依頼の見えるNPCは魔法の対象にしない */
-		if (IsQuestNpc (pCharTmp)) {
+		/* 依頼の見えるNPC・別の空間のキャラは魔法の対象にしない */
+		if (!IsInteractable (pChar, pCharTmp)) {
 			continue;
 		}
 		x = GetCharDistanceX (pChar, pCharTmp);
@@ -497,8 +502,8 @@ static BOOL MakeCharTblTargetSub_FRONT(PARRAYDWORD aTarget,
 		PCHARINFO pCharTmp;
 
 		pCharTmp = g_aCharInfo[pData[i]];
-		/* 依頼の見えるNPCは魔法の対象にしない */
-		if (IsQuestNpc (pCharTmp)) {
+		/* 依頼の見えるNPC・別の空間のキャラは魔法の対象にしない */
+		if (!IsInteractable (pChar, pCharTmp)) {
 			continue;
 		}
 		x = GetCharDistanceX (pChar, pCharTmp);
@@ -621,8 +626,8 @@ static BOOL MakeCharTblTargetSub_CIRCLE(PARRAYDWORD aTarget,
 		PCHARINFO pCharTmp;
 
 		pCharTmp = g_aCharInfo[pData[i]];
-		/* 依頼の見えるNPCは魔法の対象にしない */
-		if (IsQuestNpc (pCharTmp)) {
+		/* 依頼の見えるNPC・別の空間のキャラは魔法の対象にしない */
+		if (!IsInteractable (pChar, pCharTmp)) {
 			continue;
 		}
 		x = abs (GetCharDistanceX (pChar, pCharTmp));
@@ -712,8 +717,8 @@ static BOOL MakeCharTblTargetSub_SCREEN(PARRAYDWORD aTarget,
 		PCHARINFO pCharTmp;
 
 		pCharTmp = g_aCharInfo[pData[i]];
-		/* 依頼の見えるNPCは魔法の対象にしない */
-		if (IsQuestNpc (pCharTmp)) {
+		/* 依頼の見えるNPC・別の空間のキャラは魔法の対象にしない */
+		if (!IsInteractable (pChar, pCharTmp)) {
 			continue;
 		}
 		x = abs (GetCharDistanceX (pChar, pCharTmp));
@@ -803,8 +808,8 @@ static BOOL MakeCharTblTargetSub_FRONTSIDE(PARRAYDWORD aTarget,
 		PCHARINFO pCharTmp;
 
 		pCharTmp = g_aCharInfo[pData[i]];
-		/* 依頼の見えるNPCは魔法の対象にしない */
-		if (IsQuestNpc (pCharTmp)) {
+		/* 依頼の見えるNPC・別の空間のキャラは魔法の対象にしない */
+		if (!IsInteractable (pChar, pCharTmp)) {
 			continue;
 		}
 		x = GetCharDistanceX (pChar, pCharTmp);
@@ -1377,6 +1382,7 @@ BOOL MagicProcUse_PUT(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTarget)
 		ZeroMemory ((PBYTE)pCharNew, sizeof (CHARINFO));
 		pCharNew->byNpcType		= NPCTYPE_USEMAGIC;
 		SetInitCharData (pCharNew);
+		pCharNew->dwSpaceID		= pChar->dwSpaceID;		/* 置いた人と同じ空間に置く */
 
 		pCharNew->byGameState	= GAMESTATE_NPC;
 		pCharNew->dwXBack		= pCharNew->dwX = Pos.dwX;
@@ -1642,6 +1648,7 @@ BOOL MagicProcUse_PUTSELF(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTarg
 		ZeroMemory ((PBYTE)pCharNew, sizeof (CHARINFO));
 		pCharNew->byNpcType		= NPCTYPE_USEMAGICPARENT;
 		SetInitCharData (pCharNew);
+		pCharNew->dwSpaceID		= pChar->dwSpaceID;		/* 置いた人と同じ空間に置く */
 
 		pCharNew->byGameState	= GAMESTATE_NPC;
 		pCharNew->dwXBack		= pCharNew->dwX = Pos.dwX;
