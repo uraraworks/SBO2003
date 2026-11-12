@@ -1412,6 +1412,38 @@ function finishPropose() {
 	S.closed = true;
 	location.href = '/kobo#propose=' + encodeURIComponent(S.propose);
 }
+/* 右の欄の「見本」を「管理人の返事の絵」にして、返事のことばと「この絵から描き始める」を添える */
+function showProposeReply(pr) {
+	const h4 = $('samples').previousElementSibling.previousElementSibling;
+	if (h4 && h4.tagName === 'H4') {
+		h4.textContent = '管理人の返事の絵';
+		h4.appendChild(el('small', '', '見ながら描けます（クリックで色を拾う）'));
+	}
+	const box = el('div');
+	if (pr.reply) {
+		box.appendChild(el('p', 'note', '管理人より：' + pr.reply));
+	}
+	const b = el('button', '', 'この絵から描き始める');
+	b.type = 'button';
+	b.title = '今の絵を返事の絵に置きかえます（戻すで元に戻せます）';
+	b.style.marginTop = '6px';
+	b.addEventListener('click', function () {
+		loadIndexed(pr.replyImg).then(function (img) {
+			if (img.width !== S.w || img.height !== S.h) {
+				toast('大きさが違うので置きかえられませんでした（' + img.width + '×' + img.height + '）');
+				return;
+			}
+			commitFloat();
+			pushHistory();
+			S.data = Uint8Array.from(img.indices);
+			onChange();
+			toast('返事の絵から描き始めます');
+		}).catch(function () { toast('返事の絵を読み込めませんでした'); });
+	});
+	box.appendChild(b);
+	$('samples').after(box);
+}
+
 async function proposeBoot(q) {
 	S.propose = q.get('propose');
 	document.body.classList.add('admin-mode');		/* プレイヤーの保存・出すの欄は使わない */
@@ -1436,6 +1468,20 @@ async function proposeBoot(q) {
 			}
 		} catch (e) { /* 白紙から */ }
 	}
+	/* 自分の提案を直す時、管理人の返事の絵があれば見本の欄に出して、見ながら描けるようにする */
+	let reply = null;
+	const token = lsGet(KEY_TOKEN) || '';
+	if (S.propose !== 'new' && token) {
+		try {
+			const r = await api('/api/kobo/my-proposals', { token: token });
+			reply = (r.proposals || []).find(function (x) { return x.id === S.propose; }) || null;
+		} catch (e) { /* 読めなければ出さない */ }
+		if (reply && reply.replyImg) {
+			task.samples = [reply.replyImg];
+		} else {
+			reply = null;
+		}
+	}
 	S.task = task;
 	S.w = w;
 	S.h = h;
@@ -1454,6 +1500,15 @@ async function proposeBoot(q) {
 	const banner = $('banner');
 	banner.hidden = false;
 	banner.textContent = '提案のラフ絵を描いています。描き終わったら「完了」で提案の画面に戻ります（描いている間もこの端末に残ります）。';
+	/* 提案のラフ絵には元イラスト・見本が無いので、その欄は出さない（返事の絵だけ出す） */
+	if (reply) {
+		$('refs').hidden = true;
+		$('refs').previousElementSibling.previousElementSibling.hidden = true;
+		$('samples').nextElementSibling.hidden = true;
+		showProposeReply(reply);
+	} else {
+		$('sec-refs').hidden = true;
+	}
 	$('loading').hidden = true;
 	resize();
 	fit();
