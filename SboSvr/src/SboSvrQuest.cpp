@@ -1092,13 +1092,29 @@ static WORD GetPartyQuest(PCHARINFO pChar, PCHARINFO pExclude)
 /* 別の依頼を受けていて、同じパーティになれないか（A 側・B 側それぞれのパーティ全員を見る） */
 BOOL QuestPartyConflict(PCHARINFO pA, PCHARINFO pB)
 {
+	return (QuestPartyConflictMsg (pA, pB) != NULL) ? TRUE : FALSE;
+}
+
+/* 仲間になれない理由（なれるなら NULL）
+   討伐チャレンジは「パーティで受けた組」で挑むので、別々に受けた人同士は同じ依頼でも仲間になれない
+   （1 つのパーティに別々に受けた人がいると、入る組と残る組に分かれてしまう） */
+const char *QuestPartyConflictMsg(PCHARINFO pA, PCHARINFO pB)
+{
 	WORD wA = GetPartyQuest (pA, NULL);
 	WORD wB = GetPartyQuest (pB, NULL);
+	PQUESTINFO pQuest;
 
 	if ((wA == 0) || (wB == 0)) {
-		return FALSE;
+		return NULL;
 	}
-	return (wA != wB) ? TRUE : FALSE;
+	if (wA != wB) {
+		return "受けている依頼が違うので仲間になれません";
+	}
+	pQuest = FindQuest (wA);
+	if (pQuest && (pQuest->byChallenge != QUESTCHALLENGE_NONE)) {
+		return "討伐チャレンジを別々に受けているので仲間になれません（どちらかが取り消すか、パーティを組んでから受けてください）";
+	}
+	return NULL;
 }
 
 /* 一覧の並べ替え */
@@ -1599,6 +1615,21 @@ static void LoanApply(PCHARINFO p, PSTATUSTEMPLATEINFO t)
 /* 状態を変えた後：タイマーの効果（加速・毒など）を消し、攻撃力・守備力を計算し直して知らせる */
 static void LoanSendAll(PCHARINFO p)
 {
+	/* 入る前（出る前）に出した、ダメージを出し続ける魔法などのキャラを消す（行き先まで持ち込まない）。
+	   DeleteChildChar はプレイヤーの子を探す表が違うので、ここで全部のキャラから探す */
+	{
+		int i, nCount = g_aCharInfo.GetSize ();
+		for (i = 0; i < nCount; i ++) {
+			PCHARINFO pTmp = g_aCharInfo[i];
+			if ((pTmp->dwParentTblID != p->dwTblID) || (pTmp == p)) {
+				continue;
+			}
+			if ((pTmp->byNpcType == NPCTYPE_USEMAGIC) || (pTmp->byNpcType == NPCTYPE_ATACK) ||
+				(pTmp->byNpcType == NPCTYPE_USEMAGICPARENT)) {
+				DeleteChar (pTmp->dwTblID);
+			}
+		}
+	}
 	DeleteAllTimerEvent (p);
 	p->chTimerPW = 0;
 	p->chTimerST = 0;
@@ -1828,7 +1859,18 @@ static void ChallengeStart(PCHARINFO pChar, PQUESTINFO pQuest, PQUESTNPCINFO pDe
 		SendCmdSYSMSG (pChar->pID, "討伐はもう済んでいます。ギルドに報告しましょう。", SPEECHCMD_BATTLE1);
 		return;
 	}
-	/* 組ごとに別の空間で戦うので、同じ依頼を何組でも同時に遊べる */
+	/* 組ごとに別の空間で戦うので、同じ依頼を何組でも同時に遊べる。
+	   ただし同じパーティの仲間がまだ中で戦っている間は、倒れて出てきた人は入り直せない */
+	{
+		std::vector<PCHARINFO> aParty;
+		GetPartyMembers (pChar, aParty);
+		for (i = 0; i < (int)aParty.size (); i ++) {
+			if ((aParty[i] != pChar) && QuestInChallenge (aParty[i]) && (aParty[i]->wQuestID == pQuest->wID)) {
+				SendCmdSYSMSG (pChar->pID, "仲間がまだ討伐チャレンジ中です。終わるまで待ってから、もう一度挑んでください。", SPEECHCMD_BATTLE1);
+				return;
+			}
+		}
+	}
 	nNeed = max ((int)pQuest->byMemberMin, 1);
 	GetChallengeMembers (pChar, pQuest->wID, aMember);
 	if ((int)aMember.size () < nNeed) {

@@ -1195,6 +1195,7 @@ challenge party accept a=20 b=20 c=0
 challenge other accept c=0
 challenge gate found=1
 challenge buff timers=0 charbuff_sent=1
+challenge child removed=1
 challenge start a in=1 lv=7 pw=11 hp=60/60 mana=20 gold=3 item0=0 weapon_equ=1
 challenge start b in=1 lv=7 pw=11 hp=60/60 mana=20 gold=3 item0=0 weapon_equ=1
 challenge start a_dest=1 b_dest=1 armor_equ=1 enemies=1
@@ -1206,6 +1207,9 @@ challenge trade refused a_out=1 b=0
 challenge proc a=1 b=1
 challenge dead b in=0 lv=30 pw=99 hp=480/500 mana=90 gold=5000 item0=0 weapon_equ=0
 challenge dead b state=1 at_start=1 quest=20 a_in=1
+challenge reenter gate=1 b_in=0 challenges_enemy=1
+challenge separate conflict=1
+challenge helper conflict=0
 challenge clear wait in=1
 challenge clear wait2 in=1
 challenge clear a in=0 lv=30 pw=99 hp=480/500 mana=90 gold=5000 item0=0 weapon_equ=0

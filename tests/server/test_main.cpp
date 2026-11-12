@@ -2612,8 +2612,25 @@ static void TestChallenge(const std::vector<int> &aLogin)
 	SetCharInfoTimerStatus(pA, CHARINFOTIMEREVENT_ATUP, 50, 60000);
 	RenewATDF(pA->dwTblID);
 	int nBuff0 = MockCmdCount(1000, CMD_CHARBUFF);
+	/* 入る前に出した「魔法を出し続けるキャラ」も消える */
+	DWORD dwChildTbl;
+	{
+		PCHARINFO pChild = new CHARINFO;
+		ZeroMemory((PBYTE)pChild, sizeof(CHARINFO));
+		pChild->byNpcType = NPCTYPE_USEMAGICPARENT;
+		SetInitCharData(pChild);
+		pChild->byGameState = GAMESTATE_NPC;
+		pChild->dwMapID = pA->dwMapID;
+		pChild->dwXBack = pChild->dwX = pA->dwX;
+		pChild->dwYBack = pChild->dwY = pA->dwY;
+		pChild->dwParentTblID = pA->dwTblID;
+		pChild = AddChar(pChild);
+		pChild->pID = pChild->dwTblID + 1;
+		dwChildTbl = pChild->dwTblID;
+	}
 	QuestSendTalk(pA, pGate->dwTblID);
 	printf("challenge buff timers=%d charbuff_sent=%d\n", pA->aTimerEvent.GetSize(), (int)(MockCmdCount(1000, CMD_CHARBUFF) > nBuff0));
+	printf("challenge child removed=%d\n", (int)(g_aCharInfo[dwChildTbl]->byNpcType != NPCTYPE_USEMAGICPARENT));
 	ChallengePrint("start a", pA, wWeapon);
 	ChallengePrint("start b", pB, wWeapon);
 	printf("challenge start a_dest=%d b_dest=%d armor_equ=%d enemies=%d\n",
@@ -2666,6 +2683,27 @@ static void TestChallenge(const std::vector<int> &aLogin)
 	QuestChallengeProcNow();
 	ChallengePrint("dead b", pB, wWeapon);
 	printf("challenge dead b state=%u at_start=%d quest=%u a_in=%d\n", pB->byCharState, (int)(pB->dwX == dwBX && pB->dwY == dwBY), pB->wQuestID, (int)QuestInChallenge(pA));
+
+	/* 倒れて出た B は、A がまだ中にいる間は入り直せない（一人で別の組を始めない） */
+	{
+		QuestSyncAll();
+		PCHARINFO pGateB = QuestFindCopy(pB, 4);
+		if (pGateB) {
+			QuestSendTalk(pB, pGateB->dwTblID);
+		}
+		printf("challenge reenter gate=%d b_in=%d challenges_enemy=%d\n", (int)(pGateB != NULL), (int)QuestInChallenge(pB), ChallengeCountEnemy());
+	}
+	/* 討伐チャレンジを別々に受けた人同士は、同じ依頼でも仲間になれない */
+	{
+		WORD wQB = pB->wQuestID, wQC = pC->wQuestID;
+		DWORD dwPB = pB->dwPartyID;
+		pB->dwPartyID = 0;
+		pB->wQuestID = 20; pC->wQuestID = 20;
+		printf("challenge separate conflict=%d\n", (int)QuestPartyConflict(pB, pC));
+		pC->wQuestID = 0;
+		printf("challenge helper conflict=%d\n", (int)QuestPartyConflict(pB, pC));
+		pB->wQuestID = wQB; pC->wQuestID = wQC; pB->dwPartyID = dwPB;
+	}
 
 	/* 敵を倒す：A が元に戻り、最後の段・成功の印・入る前の場所へ */
 	if (pEnemy) {

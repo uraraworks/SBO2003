@@ -7453,8 +7453,8 @@ void RecvDataProcPARTY(PBYTE pData, DWORD dwDataSize)
 		}
 		/* 受けている依頼が違う人とは仲間になれない */
 		if (QuestPartyConflict (pCharFrom, pCharTo)) {
-			SendCmdSYSMSG (pCharFrom->pID, "受けている依頼が違うので仲間になれません", SPEECHCMD_BATTLE1);
-			SendCmdSYSMSG (pCharTo->pID, "受けている依頼が違うので仲間になれません", SPEECHCMD_BATTLE1);
+			SendCmdSYSMSG (pCharFrom->pID, QuestPartyConflictMsg (pCharFrom, pCharTo), SPEECHCMD_BATTLE1);
+			SendCmdSYSMSG (pCharTo->pID, QuestPartyConflictMsg (pCharFrom, pCharTo), SPEECHCMD_BATTLE1);
 			break;
 		}
 
@@ -7484,8 +7484,8 @@ void RecvDataProcPARTY(PBYTE pData, DWORD dwDataSize)
 		}
 		/* 誘われてから依頼を受けた場合もあるので、ここでも確かめる */
 		if (QuestPartyConflict (pCharFrom, pCharTo)) {
-			SendCmdSYSMSG (pCharFrom->pID, "受けている依頼が違うので仲間になれません", SPEECHCMD_BATTLE1);
-			SendCmdSYSMSG (pCharTo->pID, "受けている依頼が違うので仲間になれません", SPEECHCMD_BATTLE1);
+			SendCmdSYSMSG (pCharFrom->pID, QuestPartyConflictMsg (pCharFrom, pCharTo), SPEECHCMD_BATTLE1);
+			SendCmdSYSMSG (pCharTo->pID, QuestPartyConflictMsg (pCharFrom, pCharTo), SPEECHCMD_BATTLE1);
 			break;
 		}
 		if (pCharTo->dwPartyID == 0) {
