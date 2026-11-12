@@ -80,10 +80,12 @@
 		gap: 10px;
 	}
 	.group { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-	.group button { padding: 8px 4px; font-size: 12px; }
-	.group button small { display: block; font-weight: normal; color: var(--sub); font-size: 10px; margin-top: 2px; }
+	/* 道具などのボタンは「アイコン 名前 (キー)」の 1 行 */
+	.group button { display: flex; align-items: center; gap: 5px; padding: 5px 6px; font-size: 12px; white-space: nowrap; text-align: left; }
+	.group button small { font-weight: normal; color: var(--sub); font-size: 10px; }
 	/* アイコン（線画。色は文字と同じ） */
 	.ic { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; display: block; margin: 0 auto 3px; }
+	.group .ic { width: 16px; height: 16px; margin: 0; flex: none; }
 	/* 描くところの上の帯（戻す・進む・途中保存） */
 	#stagebar { position: absolute; left: 8px; top: 8px; display: flex; gap: 4px; z-index: 2; }
 	#stagebar button { padding: 6px 10px; background: rgba(0, 0, 0, 0.6); white-space: nowrap; }
@@ -251,9 +253,11 @@
 		}
 		.group { display: flex; overflow-x: auto; gap: 4px; padding-bottom: 2px; flex: none; }
 		.group button { font-size: 11px; }
-		.group .ic { width: 18px; height: 18px; margin-bottom: 1px; }
+		.group .ic { width: 18px; height: 18px; }
 		.group h5 { display: none; }
-		.group button { flex: none; min-width: 54px; min-height: 42px; padding: 6px 8px; }
+		/* スマホはキーが無いので (B) などは出さない */
+		.group button small { display: none; }
+		.group button { flex: none; min-height: 38px; padding: 6px 9px; }
 		#palette { max-height: 120px; overflow-y: auto; width: 100%; }
 		#cur { display: none; }
 		#side {
@@ -307,12 +311,12 @@
 		<aside id="left">
 			<div class="group" id="tools">
 				<h5>道具</h5>
-				<button type="button" data-tool="pen" title="ペン（B）"><svg class="ic" aria-hidden="true"><use href="#ic-pen"/></svg>ペン<small>B</small></button>
-				<button type="button" data-tool="eraser" title="消しゴム（E）"><svg class="ic" aria-hidden="true"><use href="#ic-eraser"/></svg>消しゴム<small>E</small></button>
-				<button type="button" data-tool="picker" title="スポイト（I。右クリックでも）"><svg class="ic" aria-hidden="true"><use href="#ic-picker"/></svg>スポイト<small>I</small></button>
-				<button type="button" data-tool="fill" title="塗りつぶし（F）"><svg class="ic" aria-hidden="true"><use href="#ic-fill"/></svg>塗りつぶし<small>F</small></button>
-				<button type="button" data-tool="select" title="範囲を選んで動かす（M）"><svg class="ic" aria-hidden="true"><use href="#ic-select"/></svg>範囲選択<small>M</small></button>
-				<button type="button" data-tool="hand" title="移動（H。スペース+ドラッグでも）"><svg class="ic" aria-hidden="true"><use href="#ic-hand"/></svg>移動<small>H</small></button>
+				<button type="button" data-tool="pen" title="ペン（B）"><svg class="ic" aria-hidden="true"><use href="#ic-pen"/></svg>ペン<small>(B)</small></button>
+				<button type="button" data-tool="eraser" title="消しゴム（E）"><svg class="ic" aria-hidden="true"><use href="#ic-eraser"/></svg>消しゴム<small>(E)</small></button>
+				<button type="button" data-tool="picker" title="スポイト（I。右クリックでも）"><svg class="ic" aria-hidden="true"><use href="#ic-picker"/></svg>スポイト<small>(I)</small></button>
+				<button type="button" data-tool="fill" title="塗りつぶし（F）"><svg class="ic" aria-hidden="true"><use href="#ic-fill"/></svg>塗りつぶし<small>(F)</small></button>
+				<button type="button" data-tool="select" title="範囲を選んで動かす（M）"><svg class="ic" aria-hidden="true"><use href="#ic-select"/></svg>範囲選択<small>(M)</small></button>
+				<button type="button" data-tool="hand" title="移動（H。スペース+ドラッグでも）"><svg class="ic" aria-hidden="true"><use href="#ic-hand"/></svg>移動<small>(H)</small></button>
 			</div>
 			<div class="group" id="edit">
 				<h5>選んだ範囲</h5>
@@ -323,7 +327,7 @@
 			</div>
 			<div class="group" id="viewops">
 				<h5>表示</h5>
-				<button type="button" id="grid" title="グリッド（G）"><svg class="ic" aria-hidden="true"><use href="#ic-grid"/></svg>グリッド</button>
+				<button type="button" id="grid" title="グリッド（G）"><svg class="ic" aria-hidden="true"><use href="#ic-grid"/></svg>グリッド<small>(G)</small></button>
 				<button type="button" id="fit" title="全体を表示"><svg class="ic" aria-hidden="true"><use href="#ic-fit"/></svg>全体表示</button>
 			</div>
 			<div id="cur"><span id="cur-sw"></span><span id="cur-text"></span></div>
