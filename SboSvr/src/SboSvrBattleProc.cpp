@@ -1867,7 +1867,8 @@ static BOOL IsNeedHeal(PCHARINFO pChar, PMAGICINFO pInfo)
 /* 内容：	目の前にいない相手に届く攻撃の特技か。届くなら使う時の向きを返す	 */
 /*			・前方の特技／前へ飛ぶ魔法：まっすぐ並んでいて、届く距離で、	 */
 /*			  間に通れないマスが無い										 */
-/*			・周囲の特技：範囲の中にいる	・画面内の特技：画面の中にいる	 */
+/*			・周囲の特技：範囲の中にいて、間に壁が無い						 */
+/*			・画面内の特技：画面の中にいる									 */
 /* ========================================================================= */
 static BOOL CanReachMagic(PCHARINFO pChar, PCHARINFO pCharTarget, PMAGICINFO pInfo, BYTE *pbyDirection)
 {
@@ -1893,8 +1894,8 @@ static BOOL CanReachMagic(PCHARINFO pChar, PCHARINFO pCharTarget, PMAGICINFO pIn
 			bLine = TRUE;
 		}
 		break;
-	case MAGICTARGETTYPE_CIRCLE:		/* 周囲 */
-		return (abs (nDX) <= nArea) && (abs (nDY) <= nArea);
+	case MAGICTARGETTYPE_CIRCLE:		/* 周囲(壁越しには届かない) */
+		return (abs (nDX) <= nArea) && (abs (nDY) <= nArea) && IsMagicReachChar (pChar, pCharTarget);
 	case MAGICTARGETTYPE_SCREEN:		/* 画面内 */
 		return (abs (nDX) <= DRAW_PARTS_X) && (abs (nDY) <= DRAW_PARTS_Y);
 	}

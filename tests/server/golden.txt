@@ -1,4 +1,12 @@
 getcharno mutations=ok
+S itemmsg 0 @2
+S itemmsg 1 same
+S itemmsg 2 @2
+S itemmsg 3 same
+S itemmsg 4 same
+S itemmsg 5 @2
+S itemmsg 6 @2
+S itemmsg full abc
 == A. SendTo ==
 send#0 size=0 id=100000 pri=0 total=8 sha=262701071aee8da1
 send#1 size=0 id=100000 pri=1 total=16 sha=b5355f837af2651c
@@ -1101,6 +1109,7 @@ quest copy grp=2 vis owner=1 member=0 other=0 admin=1 block=-1
 quest copy grp=1 vis owner=0 member=1 other=0 admin=1 block=-1
 quest copy grp=2 vis owner=0 member=1 other=0 admin=1 block=-1
 quest admin portal moved=0
+quest admin own portal moved=1
 quest chest full item=0 leave=0 flag1=0 step=0
 quest chest item=1 flag1=1 step=1 person=1 chest=0
 quest member item=0 step=0
@@ -1238,7 +1247,16 @@ statusup recast at=250 events=2
 statusup 181s at=250 df=100 events=1
 statusup 281s at=200 df=100 events=0 buffpkt=5
 statusup enemy use=1 at_same=1 events=0
-== S. Space ==
+== S. MagicWall ==
+magic=55 wall=0 hit=20/20 put-on-enemy=0
+magic=55 wall=1 hit=0/20 put-on-enemy=0
+magic=50 wall=0 hit=20/20 put-on-enemy=0
+magic=50 wall=1 hit=0/20 put-on-enemy=0
+magic=35 wall=0 hit=0/20 put-on-enemy=20
+magic=35 wall=1 hit=0/20 put-on-enemy=0
+heal wall=0 healed=1
+heal wall=1 healed=1
+== T. Space ==
 space cells=8
 space set b=1 a=0
 space charinfo diff a_got_b=0 b_got_a=0

@@ -31,6 +31,7 @@
 #include "SboSvrSubGameProcSugoroku.h"
 #include "SboSvrMagicProc.h"
 #include "SboSvrCharInfoTimerProc.h"
+#include "SboSvrItemProc.h"
 #include "common/crc.h"
 #include <emscripten.h>
 #include <stdio.h>
@@ -904,6 +905,7 @@ static void TestCharPush(const std::vector<int> &aLogin);
 static void TestLeaveDispose(const std::vector<int> &aLogin);
 static void TestChallenge(const std::vector<int> &aLogin);
 static void TestStatusUp(const std::vector<int> &aLogin);
+static void TestMagicWall(const std::vector<int> &aLogin);
 static void TestSpace(const std::vector<int> &aLogin);
 extern void BattleProcCheck(PCHARINFO);
 
@@ -1340,7 +1342,149 @@ static void TestWorld(void)
 	TestChallenge(aLogin);
 	/* R. 攻撃力・守備力アップ */
 	TestStatusUp(aLogin);
+	/* S. 前方・周囲の特技が壁越しに届かない */
+	TestMagicWall(aLogin);
+	/* T. 空間（同じ場所を組ごとに分ける） */
 	TestSpace(aLogin);
+}
+
+/* ------------------------------------------------------------------------- */
+/* S. 前方・周囲の特技が壁越しに届かない									 */
+/*    敵の1マス手前を壁にして、2マス先から前方・周囲の特技を使う。			 */
+/*    壁が無ければ当たり、壁があれば当たらないこと。置く魔法も壁の向こうに出ないこと */
+/*    回復は壁越しでも効くこと											 */
+/* ------------------------------------------------------------------------- */
+extern void DeleteChar(DWORD dwTblID);
+static void TestMagicWall(const std::vector<int> &aLogin)
+{
+	printf("== S. MagicWall ==\n");
+	if (aLogin.empty()) {
+		return;
+	}
+	PCHARINFO pPC = g_aCharInfo[aLogin[0]];
+	/* 壁にするパーツ */
+	int nWall = -1;
+	for (int i = 0; i < g_wCountMapParts; i ++) {
+		if (g_aMapPartsInfo[i].byHitType == PARTSHIT_BLOCK1) {
+			nWall = i;
+			break;
+		}
+	}
+	/* 左に2マス空いている戦闘用の敵を探す */
+	PCHARINFO pEnemy = NULL;
+	for (int i = 0; i < g_aCharInfo.GetSize() && !pEnemy; i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+		if (p->wGrpMain != CHARGRP_MAIN_NORMAL || (g_aMapInfo[p->dwMapID]->byFlg & MAPFLG_MAGIC)) {
+			continue;
+		}
+		if (p->byNpcType != NPCTYPE_BATTLE1 && p->byNpcType != NPCTYPE_BATTLE2) {
+			continue;
+		}
+		if (p->dwX < 3 || p->dwY < 1) {
+			continue;
+		}
+		if (CheckCharBlock(p->dwMapID, p->dwX - 1, p->dwY) && CheckCharBlock(p->dwMapID, p->dwX - 2, p->dwY)) {
+			pEnemy = p;
+		}
+	}
+	if (!pEnemy || nWall < 0) {
+		printf("no enemy\n");
+		return;
+	}
+	PMAPINFO pMap = g_aMapInfo[pEnemy->dwMapID];
+	DWORD dwPCMap = pPC->dwMapID;
+	DeleteTblNoPC((int)pPC->dwTblID);
+	pPC->dwMapID = pEnemy->dwMapID;
+	AddTblNoPC((int)pPC->dwTblID);
+	DWORD dwEnemyX = pEnemy->dwX, dwEnemyY = pEnemy->dwY;
+	WORD wHPBack = pEnemy->wHP, wMaxHPBack = pEnemy->wMaxHP;
+	DWORD dwPCX = pPC->dwX, dwPCY = pPC->dwY;
+	BYTE byDirBack = pPC->byDirection, abyMagicBack[MAX_USEMAGIC];
+	memcpy(abyMagicBack, pPC->abyMagic, sizeof(abyMagicBack));
+	int nWallPos = (int)(dwEnemyX - 1) + (int)dwEnemyY * pMap->nCX;
+	WORD wPartsBack = pMap->pwMap[nWallPos];
+
+	/* 十字突（前方2マス）・ブレイズフィールド（周囲2マス）・広がる火炎（周囲3マスに置く） */
+	static const BYTE abyMagic[] = {55, 50, 35};
+	for (size_t m = 0; m < sizeof(abyMagic) / sizeof(abyMagic[0]); m ++) {
+		BYTE byID = abyMagic[m];
+		if (byID >= g_aMagicInfo.GetSize()) {
+			continue;
+		}
+		for (int nWallOn = 0; nWallOn < 2; nWallOn ++) {
+			pMap->pwMap[nWallPos] = nWallOn ? (WORD)nWall : wPartsBack;
+			int nHit = 0, nTry = 20, nBeyond = 0;
+			for (int t = 0; t < nTry; t ++) {
+				pPC->dwX = dwEnemyX - 2;
+				pPC->dwY = dwEnemyY;
+				pPC->byDirection = 3;
+				pPC->abyMagic[0] = byID;
+				pPC->wMana = 9999;
+				pEnemy->dwX = dwEnemyX;
+				pEnemy->dwY = dwEnemyY;
+				pEnemy->wMaxHP = pEnemy->wHP = 30000;
+				MagicProc(pPC->dwTblID, byID, (DWORD)-1);
+				if (pEnemy->wHP < 30000) {
+					nHit ++;
+				}
+				/* 置いた魔法が敵のマスにあるか数えてから消す */
+				for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+					PCHARINFO p = g_aCharInfo[i];
+					if ((p->byNpcType != NPCTYPE_USEMAGIC && p->byNpcType != NPCTYPE_USEMAGICPARENT) ||
+						p->dwParentTblID != pPC->dwTblID || p->pProc == NULL) {
+						continue;
+					}
+					if (p->dwX == dwEnemyX && p->dwY == dwEnemyY) {
+						nBeyond ++;
+					}
+					DeleteChar(p->dwTblID);
+				}
+			}
+			printf("magic=%d wall=%d hit=%d/%d put-on-enemy=%d\n", byID, nWallOn, nHit, nTry, nBeyond);
+		}
+	}
+	/* 回復（周囲2マス）は壁越しでも仲間に効く */
+	if (aLogin.size() > 1 && 12 < g_aMagicInfo.GetSize()) {
+		PCHARINFO pPC2 = g_aCharInfo[aLogin[1]];
+		DWORD dwPC2Map = pPC2->dwMapID, dwPC2X = pPC2->dwX, dwPC2Y = pPC2->dwY;
+		WORD wPC2HP = pPC2->wHP, wPC2MaxHP = pPC2->wMaxHP;
+		DeleteTblNoPC((int)pPC2->dwTblID);
+		pPC2->dwMapID = pEnemy->dwMapID;
+		AddTblNoPC((int)pPC2->dwTblID);
+		for (int nWallOn = 0; nWallOn < 2; nWallOn ++) {
+			pMap->pwMap[nWallPos] = nWallOn ? (WORD)nWall : wPartsBack;
+			pPC->dwX = dwEnemyX - 2;
+			pPC->dwY = dwEnemyY;
+			pPC->byDirection = 3;
+			pPC->abyMagic[0] = 12;
+			pPC->wMana = 9999;
+			pPC2->dwX = dwEnemyX;
+			pPC2->dwY = dwEnemyY;
+			pPC2->wMaxHP = 30000;
+			pPC2->wHP = 1;
+			MagicProc(pPC->dwTblID, 12, (DWORD)-1);
+			printf("heal wall=%d healed=%d\n", nWallOn, pPC2->wHP > 1 ? 1 : 0);
+		}
+		DeleteTblNoPC((int)pPC2->dwTblID);
+		pPC2->dwMapID = dwPC2Map;
+		AddTblNoPC((int)pPC2->dwTblID);
+		pPC2->dwX = dwPC2X;
+		pPC2->dwY = dwPC2Y;
+		pPC2->wHP = wPC2HP;
+		pPC2->wMaxHP = wPC2MaxHP;
+	}
+	pMap->pwMap[nWallPos] = wPartsBack;
+	DeleteTblNoPC((int)pPC->dwTblID);
+	pPC->dwMapID = dwPCMap;
+	AddTblNoPC((int)pPC->dwTblID);
+	pPC->dwX = dwPCX;
+	pPC->dwY = dwPCY;
+	pPC->byDirection = byDirBack;
+	memcpy(pPC->abyMagic, abyMagicBack, sizeof(abyMagicBack));
+	pEnemy->dwX = dwEnemyX;
+	pEnemy->dwY = dwEnemyY;
+	pEnemy->wHP = wHPBack;
+	pEnemy->wMaxHP = wMaxHPBack;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -2225,6 +2369,14 @@ static void TestQuest(const std::vector<int> &aLogin)
 			printf("quest admin portal moved=%d\n", (int)(pOther->dwX != dwX0 || pOther->dwY != dwY0));
 			pOther->byAdminLV = ADMINLV_USER;
 			QuestMovePC(pOther, nMap, aCell[7].first, aCell[7].second);
+
+			/* 依頼を受けた管理者：同じマスに重なったほかの人の光に話しても、自分の分の光で移る */
+			pMember->byAdminLV = ADMINLV_ADMINISTRATOR;
+			QuestMovePC(pMember, nMap, (int)pPortalA->dwX, (int)pPortalA->dwY + 1);
+			QuestSendTalk(pMember, pPortalA->dwTblID);
+			printf("quest admin own portal moved=%d\n", (int)(pMember->dwX == (DWORD)aCell[3].first && pMember->dwY == (DWORD)aCell[3].second));
+			pMember->byAdminLV = ADMINLV_USER;
+			QuestMovePC(pMember, nMap, aCell[6].first, aCell[6].second);
 		}
 	}
 
@@ -3477,7 +3629,7 @@ static void SpTarget(PCHARINFO p, DWORD dwTarget, DWORD dwPID)
 
 static void TestSpace(const std::vector<int> &aLogin)
 {
-	printf("== S. Space ==\n");
+	printf("== T. Space ==\n");
 	if (aLogin.size() < 5) {
 		return;
 	}
@@ -3977,6 +4129,30 @@ static void TestCharNo(void)
 	printf("getcharno mutations=ok\n");
 }
 
+/* S: アイテムを使った時のメッセージに入力待ち（@2）を足すか（無いと出てすぐ消える） */
+static void TestItemMsgWait(void)
+{
+	static const char *aMsg[] = {
+		"ギルドで探していた指輪。",		/* 無い → 足す */
+		"何も起こりませんでした。@2",	/* ある → そのまま */
+		"一行目@0二行目",				/* 待ちの後に文字 → 足す */
+		"読んだ。@0",					/* 点滅の待ちで終わる → そのまま */
+		"音@2@310",						/* 待ちの後は効果音だけ → そのまま */
+		"改行だけ@1",					/* 改行は待ちではない → 足す */
+		"@412345",						/* アイテム取得の印だけ → 足す */
+	};
+	for (size_t n = 0; n < sizeof(aMsg) / sizeof(aMsg[0]); n ++) {
+		char szMsg[64];
+		strcpy(szMsg, aMsg[n]);
+		ItemMsgAddWait(szMsg, sizeof(szMsg));
+		printf("S itemmsg %d %s\n", (int)n, (strcmp(szMsg, aMsg[n]) == 0) ? "same" : szMsg + strlen(aMsg[n]));
+	}
+	/* 入りきらない時は足さない */
+	char szFull[4] = "abc";
+	ItemMsgAddWait(szFull, sizeof(szFull));
+	printf("S itemmsg full %s\n", szFull);
+}
+
 int main(int argc, char **argv)
 {
 	setvbuf(stdout, NULL, _IOLBF, 0);
@@ -3987,6 +4163,7 @@ int main(int argc, char **argv)
 	}
 	TestMapNo();
 	TestCharNo();
+	TestItemMsgWait();
 	TestZlib();
 	TestZlibPackets();
 	TestSend();
