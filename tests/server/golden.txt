@@ -991,6 +991,12 @@ search map=115 k=2 (12,2)->(20,44) turns=1 infos=0 dir=3 hash=41405d27
 search map=115 k=3 (14,16)->(25,46) turns=807 infos=806 dir=2 hash=e4dc0459
 search map=115 k=4 (32,69)->(17,39) turns=696 infos=695 dir=3 hash=bf499f7a
 search map=115 k=5 (29,29)->(59,66) turns=4 infos=3 dir=3 hash=fef3f702
+== Q. EnemyAI ==
+sight wall=0 open=1
+path steps=11 at=7,6
+leash near=0 far=1
+battle1 keep=1 dir=3 pos=10,12
+battle1 release=1 target=1
 login map=6 npcs=207 size=53x135
 logged in 14
 login-sent total=203948 sha=bc1987a9315599dc
@@ -1002,20 +1008,20 @@ inside size=300 total=23464 sha=4e46bd04dad3789b
 inside size=3000 total=44877 sha=38f034f6a7a59985
 inside capture ret=1 size=400
 == E. TimerProc ==
-lap=39 chars=eb54b0c1 total=9925 sha=9c99d8ddcebe6839
-lap=79 chars=8d9e6d7b total=22175 sha=73ce390d2d27de85
-lap=119 chars=a5dcf76c total=34750 sha=08f0da6548e7aa7f
-lap=159 chars=2d0b6703 total=47450 sha=5c49a415b229da65
-lap=199 chars=5705132c total=56950 sha=81332c3390cddf87
-lap=239 chars=1199ce37 total=64950 sha=47bea3b9fba0b701
-lap=279 chars=49da5280 total=77050 sha=e19aae396bb4c123
-lap=319 chars=5f9462ee total=87550 sha=24cc80d54b79840d
-lap=359 chars=e145a4f8 total=97350 sha=dbebaefbfeb7572c
-lap=399 chars=5b1bafc8 total=104525 sha=db9bed79fb718b33
+lap=39 chars=b3b5accf total=9925 sha=9c99d8ddcebe6839
+lap=79 chars=226c4988 total=22175 sha=73ce390d2d27de85
+lap=119 chars=951e764d total=34750 sha=08f0da6548e7aa7f
+lap=159 chars=4af105ce total=47450 sha=5c49a415b229da65
+lap=199 chars=11ff1c1c total=56950 sha=81332c3390cddf87
+lap=239 chars=c71c1957 total=64950 sha=47bea3b9fba0b701
+lap=279 chars=0ee57f96 total=77050 sha=e19aae396bb4c123
+lap=319 chars=ce415fee total=87550 sha=24cc80d54b79840d
+lap=359 chars=48f72298 total=97350 sha=dbebaefbfeb7572c
+lap=399 chars=d3967780 total=104525 sha=db9bed79fb718b33
 lap-final total=104525 sha=db9bed79fb718b33
-final chars=5b1bafc8
+final chars=d3967780
 == F. ShotMagic ==
-enemy map=2 x=62 y=85 type=13
+enemy map=2 x=59 y=81 type=13
 shot magic=39 dist=1 hit=100/100
 shot magic=39 dist=2 hit=100/100
 shot magic=39 dist=3 hit=100/100
@@ -1055,13 +1061,13 @@ townwarp cast lv=5 sel=1 floor dest=1:51 -> friend map=51 x=35 y=8
 == J. Ship bed ==
 ship map=40 dest=(40,9) parts=473
 shipbed range=0 friend=0 beds=1 bad=0 onfriend=0 list=(40,9)
-shipbed range=16 friend=0 beds=24 bad=0 onfriend=0 list=(40,1),(40,2),(40,3),(40,4),(40,7),(40,8),(40,9),(40,10),(40,13),(40,14),(40,15),(40,16),(49,1),(49,2),(49,3),(49,4),(49,7),(49,8),(49,9),(49,10),(49,13),(49,14),(49,15),(49,16)
+shipbed range=16 friend=0 beds=23 bad=0 onfriend=0 list=(40,1),(40,2),(40,3),(40,4),(40,7),(40,9),(40,10),(40,13),(40,14),(40,15),(40,16),(49,1),(49,2),(49,3),(49,4),(49,7),(49,8),(49,9),(49,10),(49,13),(49,14),(49,15),(49,16)
 shipbed range=3 friend=0 beds=4 bad=0 onfriend=0 list=(40,7),(40,8),(40,9),(40,10)
 shipbed range=16 friend=1 beds=23 bad=0 onfriend=0 list=(40,1),(40,2),(40,3),(40,4),(40,7),(40,8),(40,10),(40,13),(40,14),(40,15),(40,16),(49,1),(49,2),(49,3),(49,4),(49,7),(49,8),(49,9),(49,10),(49,13),(49,14),(49,15),(49,16)
 == K. Mercenary ==
 merc map=91 enemies=17 size=255x160
 merc hired dist=1
-merc path cases=1836 reach=160 diffreach=0 diffdist=0 baddir=0
+merc path cases=1955 reach=162 diffreach=0 diffdist=0 baddir=0
 merc findenemy near=12 found=1 same=1
 merc items heal=1 other=1
 merc trade weapon owner 7 7 8 7 0 0 0 0 0 0

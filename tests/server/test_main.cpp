@@ -23,6 +23,7 @@
 #include "SboSvrRecvCmd.h"
 #include "CharProcSEARCH2.h"
 #include "CharProcSEARCH.h"
+#include "CharProcMOVERAND.h"
 /* 傭兵の道さがしを中から確かめるため、protected も見えるようにして読み込む */
 #define protected public
 #include "CharProcMERCENARY.h"
@@ -243,7 +244,7 @@ static void TestZlibPackets(void)
 	printf("BENCH zlib packets rounds=2 checks=16 same=1\n");
 }
 
-/* 変更前の CanStep を残して、返り値と BATTLE2 の副作用を照合する */
+/* 変更前の CanStep を残して、返り値を照合する（狙いを変えないことも確かめる） */
 class CTestSearch : public CCharProcSEARCH
 {
 public:
@@ -319,6 +320,8 @@ static void TestSearchStep(void)
 				pNpc->dwTargetTblID = (DWORD)-1;
 				BOOL bOld = Proc.OldCanStep(&aChar[0], x, y);
 				CHARINFO Old = *pNpc;
+				/* 2026/11/12 から CanStep は調べるだけで狙いを変えない（変えるのは追いかけている時の StepToward） */
+				Old.dwTargetTblID = (DWORD)-1;
 				pNpc->dwTargetTblID = (DWORD)-1;
 				BOOL bNew = Proc.CanStep(&aChar[0], x, y);
 				if (bOld != bNew || memcmp(&Old, pNpc, sizeof(Old))) {
@@ -339,6 +342,127 @@ static void TestSearchStep(void)
 	if (nOld != NRUN || nNew != nOld) abort();
 	printf("BENCH search step pcs=%d runs=%d old_ms=%.1f new_ms=%.1f cases=%d same=1\n", NPC, NRUN, d1 - d0, d2 - d1, nCases);
 	g_aCharInfo.RemoveAt(nChar, NPC + 2);
+	g_aMapInfo.RemoveAt(nMap);
+	delete [] aChar;
+}
+
+/* 敵の動き（2026/11/12 改善）の中身を外から呼べるようにする */
+class CTestSearchAI : public CCharProcSEARCH
+{
+public:
+	using CCharProcSEARCH::FindPathStep;
+	using CCharProcSEARCH::IsInSight;
+	using CCharProcSEARCH::IsOverLeash;
+};
+
+/* ========================================================================= */
+/* 関数名：	TestEnemyAI													 */
+/* 内容：	Q. 敵の動き：壁越しに見えない・回り込む・離れすぎ・戦闘１が戦い続ける */
+/* ========================================================================= */
+static void TestEnemyAI(void)
+{
+	printf("== Q. EnemyAI ==\n");
+	MAPINFO Map = {};
+	WORD awMap[16 * 16];
+	DWORD adwPC[1], adwNPC[2];
+	CHARINFO *aChar = new CHARINFO[3]();
+	int nMap = g_aMapInfo.GetSize(), nChar = g_aCharInfo.GetSize();
+	WORD wFloor = 0, wWall = 0;
+	for (int i = 0; i < g_wCountMapParts; i ++) {
+		if (g_aMapPartsInfo[i].byHitType == PARTSHIT_NONE) wFloor = (WORD)i;
+		if (g_aMapPartsInfo[i].byHitType == PARTSHIT_BLOCK1) wWall = (WORD)i;
+	}
+	std::fill(awMap, awMap + 16 * 16, wFloor);
+	/* x=6 の y=3〜9 が壁 */
+	for (int y = 3; y <= 9; y ++) awMap[6 + y * 16] = wWall;
+	Map.dwID = nMap;
+	Map.nCX = Map.nCY = 16;
+	Map.pwMap = awMap;
+	Map.paTblNoPC = adwPC;
+	Map.dwCountTblNoPC = 1;
+	Map.paTblNoNPC = adwNPC;
+	Map.dwCountTblNoNPC = 2;
+	g_aMapInfo.Add(&Map);
+	for (int i = 0; i < 3; i ++) {
+		PCHARINFO p = &aChar[i];
+		p->dwTblID = nChar + i; p->dwMapID = nMap;
+		p->wHP = p->wMaxHP = 10; p->byGameState = GAMESTATE_MOVE;
+		p->wGrpMain = CHARGRP_MAIN_NORMAL;
+		p->dwTargetTblID = (DWORD)-1;
+		g_aCharInfo.Add(p);
+	}
+	adwPC[0] = aChar[0].dwTblID;
+	adwNPC[0] = aChar[1].dwTblID;
+	adwNPC[1] = aChar[2].dwTblID;
+	PCHARINFO pPC = &aChar[0], pEnemy = &aChar[1], pOther = &aChar[2];
+	pOther->dwX = 15; pOther->dwY = 15;
+
+	pEnemy->byNpcType = NPCTYPE_BATTLE2;
+	pEnemy->dwX = pEnemy->dwStartX = 4; pEnemy->dwY = pEnemy->dwStartY = 6;
+	pEnemy->bySearchCx = pEnemy->bySearchCy = 4;
+	CTestSearchAI Proc;
+	Proc.Create(pEnemy);
+
+	/* 壁の向こうは見えない・壁が無ければ見える */
+	pPC->dwX = 8; pPC->dwY = 6;
+	BOOL bWall = Proc.IsInSight(pPC);
+	pPC->dwX = 4; pPC->dwY = 1;
+	BOOL bOpen = Proc.IsInSight(pPC);
+	printf("sight wall=%d open=%d\n", bWall, bOpen);
+	if (bWall || !bOpen) abort();
+
+	/* 壁の向こうの相手へは、壁の端（上）へ回り込む */
+	pPC->dwX = 8; pPC->dwY = 6;
+	int nDir = Proc.FindPathStep(pPC, 8, 6);
+	/* 回り込む道を最後までたどれるか（1歩ずつ進めて相手のとなりに着く） */
+	int nSteps = 0;
+	while (nDir >= 0 && nSteps < 40) {
+		pEnemy->dwX += anPosAddTblX[nDir];
+		pEnemy->dwY += anPosAddTblY[nDir];
+		nSteps ++;
+		if (abs((int)pEnemy->dwX - 8) + abs((int)pEnemy->dwY - 6) == 1) break;
+		nDir = Proc.FindPathStep(pPC, 8, 6);
+	}
+	printf("path steps=%d at=%u,%u\n", nSteps, pEnemy->dwX, pEnemy->dwY);
+	if (abs((int)pEnemy->dwX - 8) + abs((int)pEnemy->dwY - 6) != 1) abort();
+
+	/* 開始位置から 探索範囲×2＋4 を超えると離れすぎ */
+	pEnemy->dwX = 4 + 12; pEnemy->dwY = 6;
+	BOOL bNear = Proc.IsOverLeash();
+	pEnemy->dwX = 4 + 13; pEnemy->dwY = 6;
+	BOOL bFar = Proc.IsOverLeash();
+	printf("leash near=%d far=%d\n", bNear, bFar);
+	if (bNear || !bFar) abort();
+
+	/* 戦闘１：戦っている相手がとなりにいる間は、20秒たっても戦いをやめず、相手の方を向く */
+	CCharProcMOVERAND Proc1;
+	pEnemy->byNpcType = NPCTYPE_BATTLE1;
+	pEnemy->dwX = 10; pEnemy->dwY = pEnemy->dwStartY = 12;
+	pEnemy->dwStartX = 2;	/* 開始位置から離れた所で戦っている */
+	pEnemy->bySearchCx = pEnemy->bySearchCy = 3;
+	pEnemy->byDirection = 0;
+	pEnemy->byAreaX = pEnemy->byAreaY = 0;
+	pPC->dwX = 11; pPC->dwY = 12;
+	pEnemy->dwTargetTblID = pPC->dwTblID;
+	pEnemy->dwLastBattle = 5;
+	pEnemy->dwLastDotMove = s_dwFakeNow - 60000;
+	Proc1.Create(pEnemy);
+	DWORD dwStart = s_dwFakeNow;
+	for (int t = 0; t <= 20000; t += 500) {
+		Proc1.Proc(dwStart + t);
+	}
+	printf("battle1 keep=%d dir=%d pos=%u,%u\n", pEnemy->dwLastBattle != 0, pEnemy->byDirection, pEnemy->dwX, pEnemy->dwY);
+	if (pEnemy->dwLastBattle == 0 || pEnemy->byDirection != 3 || pEnemy->dwX != 10) abort();
+	/* 相手が遠くへ行って15秒たったらやめる */
+	pPC->dwX = 0; pPC->dwY = 0;
+	DWORD dwFar = dwStart + 20500;
+	for (int t = 0; t <= 16000; t += 500) {
+		Proc1.Proc(dwFar + t);
+	}
+	printf("battle1 release=%d target=%d\n", pEnemy->dwLastBattle == 0, pEnemy->dwTargetTblID == (DWORD)-1);
+	if (pEnemy->dwLastBattle != 0 || pEnemy->dwTargetTblID != (DWORD)-1) abort();
+
+	g_aCharInfo.RemoveAt(nChar, 3);
 	g_aMapInfo.RemoveAt(nMap);
 	delete [] aChar;
 }
@@ -944,6 +1068,7 @@ static void TestWorld(void)
 	}
 	TestSearchStep();
 	TestSearch2();
+	TestEnemyAI();
 
 	/* データには PC がいないので、NPC を複製して PC を作る（ログアウト中 3000 人、うち NLOGIN 人をログイン中にする） */
 	PCHARINFO pTemplate = NULL;
