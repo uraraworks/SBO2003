@@ -1453,6 +1453,7 @@ BOOL		TextOut(HDC hDC, int x, int y, LPCSTR pszText, int nLen);
 BOOL		W32VerifyMode(void);						/* 検査モード（テスト用。?verify=1） */
 void		W32VerifySkipCandidate(void);				/* 「次に描く画面は前と同じはず」と宣言する（違えば検査の失敗） */
 BOOL		TextOutOutline(HDC hDC, int x, int y, LPCSTR pszText, int nLen, COLORREF clOutline, COLORREF clText);	/* 黒縁取り文字（TextOut 5 回分と同じ画素） */
+void		W32ShadeSpan(HDC hDC, int x, int y, int cx, int nFade, COLORREF cl, int nAlpha);	/* 横 1 行を半透明で塗り、右端 nFade ドットをぼかす（戦闘ログの帯） */
 int			DrawText(HDC hDC, LPCSTR pszText, int nLen, LPRECT pRect, UINT uFormat);
 BOOL		GetTextExtentPoint32(HDC hDC, LPCSTR pszText, int nLen, LPSIZE pSize);
 #define		GetTextExtentPoint	GetTextExtentPoint32
