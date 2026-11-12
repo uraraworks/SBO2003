@@ -94,7 +94,7 @@ static std::map<DWORD, DWORD> s_mapBattleMode;
 
 static void	MercenaryRemove		(PCHARINFO pMerc, PCHARINFO pOwner, LPCSTR pszFmt);	/* 傭兵を消す */
 static int	GetMercRecipient	(PCHARINFO pOwner, PCHARINFO *apChar, int nMax);	/* 傭兵のことを知らせる相手 */
-static PEVENTINFO_DOOR GetDoor	(DWORD dwMapID, int x, int y);						/* そのマスの扉 */
+static PEVENTINFO_DOOR GetDoor	(DWORD dwMapID, int x, int y, PEVENTINFO *ppEvent = NULL);	/* そのマスの扉 */
 static BOOL	CanPutChar			(PCHARINFO pChar, DWORD dwMapID, int x, int y);		/* そのマスに立てるか */
 static BOOL	FindPosNearOwner	(PCHARINFO pChar, PCHARINFO pOwner, int &x, int &y);	/* 雇い主のとなりの空いたマス */
 static DWORD GetMercAtackWait	(PCHARINFO pChar);									/* 攻撃の間隔(ms) */
@@ -158,7 +158,7 @@ BOOL CCharProcMERCENARY::Proc(DWORD dwTime)
 		return TRUE;
 	}
 	/* 雇い主が別のマップへ行った？ */
-	if (pOwner->dwMapID != m_pChar->dwMapID) {
+	if ((pOwner->dwMapID != m_pChar->dwMapID) || !IsSameSpace (pOwner, m_pChar)) {
 		MercenaryRemove (m_pChar, pOwner, "%sとはここでお別れです。（傭兵は雇ったマップの中だけ一緒に行動します）");
 		return TRUE;
 	}
@@ -605,6 +605,10 @@ DWORD CCharProcMERCENARY::FindEnemy(PCHARINFO pOwner)
 		if ((pCharTmp->byNpcType != NPCTYPE_BATTLE1) && (pCharTmp->byNpcType != NPCTYPE_BATTLE2)) {
 			continue;
 		}
+		/* 別の空間にいる敵は相手にしない */
+		if (!IsSameSpace (m_pChar, pCharTmp)) {
+			continue;
+		}
 		if ((pCharTmp->wHP == 0) || (pCharTmp->byCharState == CHARSTATE_DEAD)) {
 			continue;
 		}
@@ -658,7 +662,7 @@ BOOL CCharProcMERCENARY::IsEnemyValid(DWORD dwTblID)
 		return FALSE;
 	}
 	if ((pCharTmp->wHP == 0) || (pCharTmp->byCharState == CHARSTATE_DEAD) ||
-		(pCharTmp->dwMapID != m_pChar->dwMapID)) {
+		(pCharTmp->dwMapID != m_pChar->dwMapID) || !IsSameSpace (m_pChar, pCharTmp)) {
 		return FALSE;
 	}
 	return TRUE;
@@ -702,8 +706,10 @@ BOOL CCharProcMERCENARY::CanWalk(int x, int y, BOOL bDoor)
 	/* 障害物？（閉まっている扉もここで止まる。道さがしでは開けて通れる扱い） */
 	if (CheckCharBlock (m_pChar, m_pChar->dwMapID, (DWORD)x, (DWORD)y) == FALSE) {
 		/* 扉のマス？（サーバーのマップは扉の絵のままなので、開いているかは扉の情報で見る） */
-		PEVENTINFO_DOOR pDoor = GetDoor (m_pChar->dwMapID, x, y);
-		if ((pDoor == NULL) || ((pDoor->dwTimeOpen == 0) && (bDoor == FALSE))) {
+		PEVENTINFO pEventDoor = NULL;
+		PEVENTINFO_DOOR pDoor = GetDoor (m_pChar->dwMapID, x, y, &pEventDoor);
+		/* 扉が開いているかは、自分のいる空間で見る */
+		if ((pDoor == NULL) || (!SpaceDoorIsOpen (m_pChar->dwMapID, pEventDoor, pDoor, m_pChar->dwSpaceID) && (bDoor == FALSE))) {
 			return FALSE;
 		}
 	}
@@ -846,7 +852,7 @@ void CCharProcMERCENARY::BuildPathField(int nMaxDist, BOOL bChars)
 					break;
 				}
 				PCHARINFO pCharTmp = g_aCharInfo[apTbl[t][j]];
-				if ((pCharTmp == m_pChar) || (pCharTmp->byNpcType == NPCTYPE_NOBLOCK) || IsQuestNpc (pCharTmp)) {
+				if ((pCharTmp == m_pChar) || (pCharTmp->byNpcType == NPCTYPE_NOBLOCK) || !IsInteractable (m_pChar, pCharTmp)) {
 					continue;
 				}
 				x = (int)pCharTmp->dwX - nOX;
@@ -913,15 +919,14 @@ void CCharProcMERCENARY::BuildPathField(int nMaxDist, BOOL bChars)
 BOOL CCharProcMERCENARY::OpenDoor(int x, int y)
 {
 	PEVENTINFO_DOOR pDoor;
+	PEVENTINFO pEventDoor = NULL;
 	PCHARINFO pOwner;
 
-	pDoor = GetDoor (m_pChar->dwMapID, x, y);
-	/* 扉が無い・すでに開いてる？ */
-	if ((pDoor == NULL) || pDoor->dwTimeOpen) {
+	pDoor = GetDoor (m_pChar->dwMapID, x, y, &pEventDoor);
+	/* 扉が無い・すでに開いてる？（傭兵のいる空間で開け閉めする。知らせるのもその空間の人だけ） */
+	if ((pDoor == NULL) || !SpaceDoorOpen (m_pChar->dwMapID, pEventDoor, pDoor, m_pChar->dwSpaceID)) {
 		return FALSE;
 	}
-	pDoor->dwTimeOpen = timeGetTime ();
-	SendCmdCHGMAP (m_pChar->dwMapID, pDoor->wBackGrpID, x, y);
 	pOwner = GetMercenaryOwner (m_pChar);
 	if (pOwner) {
 		SendCmdPLAYSOUND (pOwner->pID, SOUND_DOOR);
@@ -935,7 +940,7 @@ BOOL CCharProcMERCENARY::OpenDoor(int x, int y)
 /* 内容：	そのマスの扉の情報(扉が無ければ NULL)							 */
 /* ========================================================================= */
 
-static PEVENTINFO_DOOR GetDoor(DWORD dwMapID, int x, int y)
+static PEVENTINFO_DOOR GetDoor(DWORD dwMapID, int x, int y, PEVENTINFO *ppEvent)
 {
 	int i;
 	PMAPINFO pMap;
@@ -948,6 +953,9 @@ static PEVENTINFO_DOOR GetDoor(DWORD dwMapID, int x, int y)
 	for (i = 0; i < pMap->nEventCount; i ++) {
 		pEvent = &pMap->pEvent[i];
 		if ((pEvent->dwX == (DWORD)x) && (pEvent->dwY == (DWORD)y) && (pEvent->byType == EVENTTYPE_DOOR)) {
+			if (ppEvent) {
+				*ppEvent = pEvent;
+			}
 			return (PEVENTINFO_DOOR)pEvent->pData;
 		}
 	}
@@ -967,11 +975,11 @@ BOOL CCharProcMERCENARY::CanStep(int x, int y)
 		return FALSE;
 	}
 	/* プレイヤーと重なる？ */
-	if (CheckCharBlockPC (m_pChar->dwMapID, (DWORD)x, (DWORD)y) != -1) {
+	if (CheckCharBlockPC (m_pChar->dwMapID, (DWORD)x, (DWORD)y, m_pChar->dwSpaceID) != -1) {
 		return FALSE;
 	}
 	/* ほかのNPCと重なる？ */
-	if (CheckCharBlockNPC2 (m_pChar->dwTblID, m_pChar->dwMapID, (DWORD)x, (DWORD)y) != -1) {
+	if (CheckCharBlockNPC2 (m_pChar->dwTblID, m_pChar->dwMapID, (DWORD)x, (DWORD)y, m_pChar->dwSpaceID) != -1) {
 		return FALSE;
 	}
 	return TRUE;
@@ -1303,7 +1311,7 @@ PCHARINFO GetMercenaryFront(PCHARINFO pChar)
 			continue;
 		}
 		pMerc = g_aCharInfo[it->first];
-		if (!IsMercenary (pMerc) || (pMerc->dwMapID != pChar->dwMapID)) {
+		if (!IsMercenary (pMerc) || (pMerc->dwMapID != pChar->dwMapID) || !IsSameSpace (pMerc, pChar)) {
 			continue;
 		}
 		if ((pMerc->wHP == 0) || (pMerc->byCharState == CHARSTATE_DEAD)) {
@@ -1397,6 +1405,7 @@ void MercenaryTalk(PCHARINFO pChar, PCHARINFO pCharNpc)
 	ZeroMemory ((PBYTE)pCharNew, sizeof (CHARINFO));
 	pCharNew->byNpcType = NPCTYPE_MERCENARY;
 	SetInitCharData (pCharNew);
+	pCharNew->dwSpaceID		= pChar->dwSpaceID;		/* 雇い主と同じ空間にいる */
 	pCharNew->byGameState	= GAMESTATE_NPC;
 	pCharNew->byCharState	= CHARSTATE_MOVE;
 	pCharNew->dwMapID		= pChar->dwMapID;
@@ -1679,7 +1688,7 @@ static BOOL CanPutChar(PCHARINFO pChar, DWORD dwMapID, int x, int y)
 		return FALSE;
 	}
 	/* プレイヤーと重なる？ */
-	if (CheckCharBlockPC (dwMapID, (DWORD)x, (DWORD)y) != -1) {
+	if (CheckCharBlockPC (dwMapID, (DWORD)x, (DWORD)y, pChar->dwSpaceID) != -1) {
 		return FALSE;
 	}
 	return TRUE;
@@ -1708,7 +1717,7 @@ static BOOL FindPosNearOwner(PCHARINFO pChar, PCHARINFO pOwner, int &x, int &y)
 		if (CanPutChar (pChar, pOwner->dwMapID, x, y) == FALSE) {
 			continue;
 		}
-		if (CheckCharBlockNPC2 (pChar->dwTblID, pOwner->dwMapID, (DWORD)x, (DWORD)y) != -1) {
+		if (CheckCharBlockNPC2 (pChar->dwTblID, pOwner->dwMapID, (DWORD)x, (DWORD)y, pChar->dwSpaceID) != -1) {
 			continue;
 		}
 		return TRUE;

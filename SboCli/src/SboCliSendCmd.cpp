@@ -114,6 +114,7 @@ void SendCMDTARGETCHG		(DWORD);								/* ターゲット変更要求 */
 void SendCMDEQUUSERINFO		(BYTE);									/* 装備職業情報 */
 void SendCMDEQUUSERINFOREQ	(BYTE);									/* 装備職業情報要求 */
 void SendCmdADMINUNDO		(BYTE, BYTE, DWORD);					/* 管理者画面の「元に戻す」 */
+void SendCmdADMINSPACE		(BYTE, DWORD);							/* 管理者の空間の切り替え */
 void SendCMDSHOPBUY			(DWORD, DWORD);							/* アイテム購入 */
 void SendCMDDIFENCE			(void);									/* 防御 */
 void SendCMDTHROWSNOW		(void);									/* 雪を投げる */
@@ -3515,6 +3516,25 @@ void SendCmdADMINUNDO(BYTE byCmdSub, BYTE byScreen, DWORD dwStepID)
 
 	/* 案内文の欄はサーバーからの通知だけで使うので送らない */
 	cliSock.Send ((PBYTE)&Para, sizeof (Para) - sizeof (Para.szMsg));
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdADMINSPACE												 */
+/* 内容：コマンド送信(管理者の空間の切り替え)								 */
+/*       byCmdSub: ADMINSPACE_LISTREQ（空間の一覧の問い合わせ）・			 */
+/*                 ADMINSPACE_SET（dwSpaceID の空間へ切り替え）				 */
+/*       サーバーは構造体の全体の大きさを調べるので、一覧の欄も含めて送る	 */
+/* ========================================================================= */
+void SendCmdADMINSPACE(BYTE byCmdSub, DWORD dwSpaceID)
+{
+	CMDPARA_ADMINSPACE Para;
+
+	ZeroMemory (&Para, sizeof (Para));
+	Para.byCmd		= CMD_ADMINSPACE;
+	Para.byCmdSub	= byCmdSub;
+	Para.dwSpaceID	= dwSpaceID;
+
+	cliSock.Send ((PBYTE)&Para, sizeof (Para));
 }
 
 /* Copyright(C)URARA-works 2003-2005 */

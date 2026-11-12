@@ -170,8 +170,8 @@ void BattleProcCheck(PCHARINFO pChar)
 
 		bResult = TRUE;
 		pCharTmp = g_aCharInfo[pData[j]];
-		/* 依頼の見えるNPCは攻撃の相手にしない */
-		if (IsQuestNpc (pCharTmp)) {
+		/* 依頼の見えるNPC・別の空間のキャラは攻撃の相手にしない */
+		if (!IsInteractable (pChar, pCharTmp)) {
 			continue;
 		}
 
@@ -280,8 +280,8 @@ void BattleProcCheckPC(PCHARINFO pChar)
 
 		bResult = TRUE;
 		pCharTmp = g_aCharInfo[pData[j]];
-		/* 依頼の見えるNPCは攻撃の相手にしない */
-		if (IsQuestNpc (pCharTmp)) {
+		/* 依頼の見えるNPC・別の空間のキャラは攻撃の相手にしない */
+		if (!IsInteractable (pChar, pCharTmp)) {
 			continue;
 		}
 
@@ -641,6 +641,7 @@ BOOL BattleProcWeapon(PCHARINFO pChar)
 			pCharNew->byNpcType = NPCTYPE_ATACK;
 			SetInitCharData (pCharNew);
 
+			pCharNew->dwSpaceID = pChar->dwSpaceID;		/* 矢は撃った人と同じ空間 */
 			pCharNew->byGameState = GAMESTATE_NPC;
 			pCharNew->byAtackRate = pChar->byAtackRate;
 			pCharNew->dwXBack = pCharNew->dwX = pChar->dwX;
@@ -774,6 +775,10 @@ static BOOL BattleProcTell(PCHARINFO pChar, PMAPINFO pMap, DWORD dwWait, BOOL bL
 			(dwY != pCharTmp->dwY)) {
 			continue;
 		}
+		/* 別の空間にいる人には予兆を出さない */
+		if (!IsSameSpace (pChar, pCharTmp)) {
+			continue;
+		}
 		if ((pCharTmp->wHP == 0) || (pCharTmp->byCharState == CHARSTATE_DEAD)) {
 			continue;
 		}
@@ -860,6 +865,10 @@ static void BattleProcAtackArea(PCHARINFO pChar, DWORD dwMainTblID)
 		}
 		pCharTmp = g_aCharInfo[pData[j]];
 		if (pCharTmp->dwTblID == dwMainTblID) {
+			continue;
+		}
+		/* 別の空間にいるキャラには当たらない */
+		if (!IsSameSpace (pChar, pCharTmp)) {
 			continue;
 		}
 		/* 敵だけ */
@@ -1410,7 +1419,7 @@ static void GetRewardMember(PCHARINFO pChar, PCHARINFO pCharTarget, std::vector<
 				aMember[0].second = it->second.second;
 				continue;
 			}
-			if ((pCharTmp->byNpcType != NPCTYPE_INIT) || (pCharTmp->dwMapID != pCharTarget->dwMapID) ||
+			if ((pCharTmp->byNpcType != NPCTYPE_INIT) || (pCharTmp->dwMapID != pCharTarget->dwMapID) || !IsSameSpace (pCharTmp, pCharTarget) ||
 				(pCharTmp->byCharState == CHARSTATE_DEAD) || (pCharTmp->wHP == 0)) {
 				continue;
 			}
@@ -1438,7 +1447,7 @@ static void GetRewardMember(PCHARINFO pChar, PCHARINFO pCharTarget, std::vector<
 			}
 			PCHARINFO pCharTmp = g_aCharInfo[pPartyInfo->adwTblID[i]];
 			if ((pCharTmp->pID == 0) || (pCharTmp->byNpcType != NPCTYPE_INIT) ||
-				(pCharTmp->dwMapID != pCharTarget->dwMapID) ||
+				(pCharTmp->dwMapID != pCharTarget->dwMapID) || !IsSameSpace (pCharTmp, pCharTarget) ||
 				(pCharTmp->byCharState == CHARSTATE_DEAD) || (pCharTmp->wHP == 0)) {
 				continue;
 			}
@@ -1840,7 +1849,7 @@ static BOOL IsNeedHeal(PCHARINFO pChar, PMAGICINFO pInfo)
 			break;
 		}
 		pCharTmp = g_aCharInfo[pData[i]];
-		if ((pCharTmp == pChar) || !IsEnemy (pCharTmp) || (pCharTmp->wHP == 0) || (pCharTmp->wMaxHP == 0)) {
+		if ((pCharTmp == pChar) || !IsEnemy (pCharTmp) || (pCharTmp->wHP == 0) || (pCharTmp->wMaxHP == 0) || !IsSameSpace (pChar, pCharTmp)) {
 			continue;
 		}
 		if ((abs (GetCharDistanceX (pChar, pCharTmp)) > nAreaX) || (abs ((int)pCharTmp->dwY - (int)pChar->dwY) > nAreaY)) {
@@ -1982,7 +1991,7 @@ static BOOL BattleProcRangeMagic(PCHARINFO pChar, PMAPINFO pMap)
 	}
 	pCharTarget = g_aCharInfo[pChar->dwTargetTblID];
 	if ((pCharTarget == NULL) || (pCharTarget->byNpcType != NPCTYPE_INIT) ||
-		(pCharTarget->byGameState == GAMESTATE_LOGOFF) || (pCharTarget->dwMapID != pChar->dwMapID) ||
+		(pCharTarget->byGameState == GAMESTATE_LOGOFF) || (pCharTarget->dwMapID != pChar->dwMapID) || !IsSameSpace (pChar, pCharTarget) ||
 		(pCharTarget->wHP == 0) || (pCharTarget->byCharState == CHARSTATE_DEAD)) {
 		return FALSE;
 	}

@@ -296,6 +296,8 @@ enum {
 	CMD_SORTITEM,													/* 道具欄・預かり所の並べ替え（クライアント→サーバー。結果は CMD_CHARITEM・CMD_LEAVEITEMGET で返る） */
 	CMD_LEAVEITEMDISPOSE,											/* 預かり所の品を引き取らずに売る・捨てる（クライアント→サーバー。結果は CMD_LEAVEITEMGET で返る） */
 	CMD_CHARBUFF,													/* 攻撃力・守備力アップの残り時間(サーバー→本人とパーティの仲間。サーバーは受け取らない) */
+/* 以下、管理者用（CMD_MAPPARTSADD 以上は自動で管理者専用になる。CMD_CHARBUFF より後ろに足す） */
+	CMD_ADMINSPACE,													/* 管理者の空間の切り替え（空間の一覧・切り替え。結果はサーバー→クライアント） */
 	CMD_MAX
 };
 
@@ -2252,6 +2254,7 @@ typedef struct _CHARINFO {
 	DWORD		dwBridgeMapID;										/* byBridgeLayer を決めた時のマップID */
 	DWORD		dwBridgeX;											/* byBridgeLayer を決めた時の座標(X) */
 	DWORD		dwBridgeY;											/* byBridgeLayer を決めた時の座標(Y) */
+	DWORD		dwSpaceID;											/* 空間番号(0=ふつうの世界。保存しない。同じマップの同じ場所でも、空間が違えば見えない・ぶつからない・攻撃できない) */
 } CHARINFO, *PCHARINFO;
 
 /* キャラ情報通知 */
@@ -2606,6 +2609,17 @@ enum {
 
 #define MAX_ADMINUNDOMSG	400										/* 「元に戻す」の案内文の大きさ（UTF-8） */
 
+/* 管理者の空間の切り替え（CMD_ADMINSPACE の byCmdSub） */
+enum {
+	ADMINSPACE_LISTREQ = 0,										/* 空間の一覧の問い合わせ（クライアント→サーバー） */
+	ADMINSPACE_LIST,											/* 空間の一覧の通知（サーバー→クライアント。いま居る空間も入る） */
+	ADMINSPACE_SET,												/* その空間へ切り替える（クライアント→サーバー。0=ふつうの世界。結果は LIST で返る） */
+};
+
+#define SPACE_NORMAL		(0)										/* ふつうの世界の空間番号 */
+#define MAX_ADMINSPACE		(24)									/* 一覧に載せる空間の数の上限 */
+#define MAX_ADMINSPACENAME	(64)									/* 空間の名前（依頼名・マップ名）の大きさ（UTF-8） */
+
 #pragma pack(push, 1)
 /* 管理者画面の「元に戻す」 */
 typedef struct _CMDPARA_ADMINUNDO {
@@ -2617,6 +2631,26 @@ typedef struct _CMDPARA_ADMINUNDO {
 	DWORD		dwStepID;											/* 戻す変更の番号（INFO で知らせ、EXEC で指定） */
 	char		szMsg[MAX_ADMINUNDOMSG];							/* 案内文（サーバー→クライアント） */
 } CMDPARA_ADMINUNDO, *PCMDPARA_ADMINUNDO;
+
+/* 一覧の 1 件（空間 1 つ） */
+typedef struct _ADMINSPACEENTRY {
+	DWORD		dwSpaceID;											/* 空間番号（0 以外） */
+	WORD		wQuestID;											/* 討伐チャレンジの依頼番号 */
+	WORD		wMember;											/* いまその空間にいる人数（管理者も数える） */
+	DWORD		dwMapID;											/* 戦う場所のマップID */
+	char		szQuest[MAX_ADMINSPACENAME];						/* 依頼の名前（UTF-8） */
+	char		szMap[MAX_ADMINSPACENAME];							/* マップの名前（UTF-8） */
+} ADMINSPACEENTRY, *PADMINSPACEENTRY;
+
+/* 管理者の空間の切り替え */
+typedef struct _CMDPARA_ADMINSPACE {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byCmdSub;											/* サブコマンド(ADMINSPACE_*) */
+	BYTE		byResult;											/* 結果（LIST: 1=SET を受け付けた 0=受け付けなかった／ただの一覧） */
+	BYTE		byCount;											/* 一覧の件数（LIST） */
+	DWORD		dwSpaceID;											/* SET: 切り替え先の空間番号 / LIST: 本人がいま居る空間番号 */
+	ADMINSPACEENTRY	aEntry[MAX_ADMINSPACE];							/* 一覧（LIST。ふつうの世界(0)は入らない） */
+} CMDPARA_ADMINSPACE, *PCMDPARA_ADMINSPACE;
 #pragma pack(pop)
 
 /* ========================================================================= */
@@ -2776,7 +2810,8 @@ typedef struct _QUESTINFO {
 /* 討伐チャレンジの種類(QUESTINFO の byChallenge) */
 enum {
 	QUESTCHALLENGE_NONE = 0,									/* ふつうの依頼 */
-	QUESTCHALLENGE_OTHERWORLD,									/* 異空間（挑戦中の組にだけ。同じ依頼は一度に 1 組） */
+	QUESTCHALLENGE_OTHERWORLD,									/* 異空間（挑戦中の組にだけ見える。組ごとに別の空間で、何組でも同時に） */
+	QUESTCHALLENGE_ARENA,										/* 闘技場（ふつうの世界の人も観戦できる。手は出せない。同じ依頼は一度に 1 組） */
 	QUESTCHALLENGE_MAX
 };
 

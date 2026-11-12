@@ -216,6 +216,7 @@ BOOL CCharProcPUT::Proc(DWORD dwTime)
 	ZeroMemory ((PBYTE)pCharNew, sizeof (CHARINFO));
 	pCharNew->byNpcType = NPCTYPE_BATTLE1;
 	SetInitCharData (pCharNew);
+	pCharNew->dwSpaceID			= m_pChar->dwSpaceID;		/* 発生させる元と同じ空間に出す */
 	pCharNew->byGameState		= m_pChar->byGameState;
 	pCharNew->dwMapID			= m_pChar->dwMapID;
 	pCharNew->dwX				= dwX;
