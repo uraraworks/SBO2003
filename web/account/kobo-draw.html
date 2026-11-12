@@ -88,8 +88,13 @@
 	/* 管理者用エディタと同じ 16×16 の並び */
 	#palette { display: grid; grid-template-columns: repeat(16, 1fr); gap: 0; border: 1px solid #000; width: 288px; max-width: 100%; }
 	.sw { width: auto; height: auto; aspect-ratio: 1; padding: 0; border: 0; border-right: 1px solid rgba(0,0,0,0.5); border-bottom: 1px solid rgba(0,0,0,0.5); border-radius: 0; min-width: 0; min-height: 0; }
-	.sw.off { opacity: 0.25; cursor: not-allowed; }
-	.sw.sel { outline: 2px solid #fff; box-shadow: 0 0 0 4px #000; z-index: 1; position: relative; }
+	/* エディタと同じ見せ方: 色はそのまま、黒（透明）は小さな市松の印、使える色は右下に白い印 */
+	.sw { position: relative; }
+	.sw.off { cursor: not-allowed; opacity: 1; }
+	.sw.black::before { content: ''; position: absolute; left: 11%; top: 11%; width: 44%; height: 44%;
+		background: linear-gradient(#555, #555) 0 0 / 50% 50% no-repeat, linear-gradient(#555, #555) 100% 100% / 50% 50% no-repeat; }
+	.sw.use::after { content: ''; position: absolute; right: 1px; bottom: 1px; width: 4px; height: 4px; background: #fff; box-shadow: 0 0 0 1px #000; }
+	.sw.sel { outline: 2px solid #fff; box-shadow: 0 0 0 4px #000; z-index: 1; }
 	.checker {
 		background-color: #cfcfcf;
 		background-image:

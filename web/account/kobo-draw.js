@@ -451,8 +451,8 @@ function setColor(i) {
 }
 
 /*
- * パレット：管理者用エディタと同じく 256 色を 16×16 に番号順で並べる（ゲーム画像のパレットの並びのまま）。
- * このお題で使えない色（元の画像で使っていない番号）は薄くして押せないようにする。
+ * パレット：管理者用エディタと同じく 256 色を 16×16 に番号順で並べ、色もそのまま見せる。
+ * このお題で使える色（見本などで使っている番号）は右下に白い印、ほかは押せない。
  */
 function buildPalette() {
 	const box = $('palette');
@@ -461,13 +461,12 @@ function buildPalette() {
 	for (let i = 0; i < 256; i++) {
 		const c = S.task.palette[i] || [0, 0, 0];
 		const ok = usable.has(i);
-		const b = el('button', 'sw' + (i === S.task.transparent ? ' checker' : '') + (ok ? '' : ' off'));
+		const black = !c[0] && !c[1] && !c[2];
+		const b = el('button', 'sw' + (black ? ' black' : '') + (ok ? ' use' : ' off'));
 		b.type = 'button';
 		b.dataset.i = i;
 		b.title = '番号 ' + i + (i === S.task.transparent ? '（透明）' : '  (' + c[0] + ', ' + c[1] + ', ' + c[2] + ')') + (ok ? '' : '　このお題では使えません');
-		if (i !== S.task.transparent) {
-			b.style.background = 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
-		}
+		b.style.background = 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
 		if (ok) {
 			b.addEventListener('click', function () { setColor(i); });
 		} else {

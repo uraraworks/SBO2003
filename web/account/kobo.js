@@ -964,18 +964,16 @@ function renderPropose() {
 		});
 		er.classList.toggle('sel', i === sheet.transparent);
 	}
-	/* 管理者用エディタと同じく 256 色を 16×16 に番号順で並べる。元の画像で使っていない番号は薄く */
+	/* 管理者用エディタと同じく 256 色を 16×16 に番号順で並べ、色もそのまま見せる。元の画像で使っている番号は右下に白い印 */
 	function buildTools() {
 		tools.textContent = '';
 		const used = new Set(sheet.colors);
 		for (let i = 0; i < 256; i++) {
 			const c = sheet.palette[i];
-			const b = el('button', 'sw' + (i === sheet.transparent ? ' clear' : '') + (used.has(i) ? '' : ' unused'));
+			const b = el('button', 'sw' + (!c.r && !c.g && !c.b ? ' black' : '') + (used.has(i) ? ' use' : ''));
 			b.type = 'button';
 			b.dataset.idx = String(i);
-			if (i !== sheet.transparent) {
-				b.style.background = css(i);
-			}
+			b.style.background = css(i);
 			b.title = '番号 ' + i + (i === sheet.transparent ? '（透明）' : '  (' + c.r + ', ' + c.g + ', ' + c.b + ')');
 			b.addEventListener('click', function () { selectColor(i); });
 			tools.appendChild(b);
