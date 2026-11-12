@@ -1294,4 +1294,13 @@ space clear g1 step=1 flag16=1 c_step=0
 space clear g2 in c=0 d=0 c_space=0 enemies=0
 space clear g2 step=1 flag16=1
 space end enemies=0 copies=0
+== U. AdminQuest ==
+adminquest list got=1 sub=1 count=1 no=0 id=1 name=AdminQuest1 npc0=2,3
+adminquest edit got=1 sub=3 result=1 no=0 msg=0 | id=1 name=AdminQuest1b gold=123 npc0x=4 goals=goal0,goal1 count=1
+adminquest outside got=1 result=0 msg_byX=1 | gold=123 npc0x=4
+adminquest gate-in-normal got=1 result=0 | kind=3
+adminquest add got=1 result=1 no=1 count=2 | id=2 name=AdminQuest2
+adminquest badno got=1 result=0 count=2
+adminquest noname got=1 result=0 name=AdminQuest2
+adminquest short got=0
 == done ==

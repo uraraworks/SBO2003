@@ -1526,10 +1526,11 @@ static std::string CharJson(PCHARINFO pChar)
 	return out;
 }
 
-/* 依頼 1 件（goals は段の数ぶん、npcs は使っている欄だけ） */
-static std::string QuestJson(const QUESTINFO *pQuest)
+/* 依頼 1 件（goals は段の数ぶん、npcs は使っている欄だけ。bID=false なら wID（項目表の先頭）を入れない） */
+static std::string QuestJson(const QUESTINFO *pQuest, bool bID = true)
 {
-	std::string out = FieldsJson((const BYTE *)pQuest, s_aFieldQuest, COUNTOF(s_aFieldQuest));
+	std::string out = bID ? FieldsJson((const BYTE *)pQuest, s_aFieldQuest, COUNTOF(s_aFieldQuest)) :
+			FieldsJson((const BYTE *)pQuest, s_aFieldQuest + 1, COUNTOF(s_aFieldQuest) - 1);
 	bool bFirst = true;
 
 	out += ",\"goals\":[";
@@ -4100,6 +4101,67 @@ Exit:
 				",\"record\":{\"id\":" + JsonNum(nID) + "," + strRecord + "}}";
 	}
 	return s_strResult.c_str();
+}
+
+/*
+ * 管理者ウィンドウ（ゲーム画面の旧管理者画面）から依頼を書き込む。
+ *   nNo: 依頼の配列の番号（-1 なら足す）。届いた QUESTINFO を JSON にして
+ *   SboWebDataApply を通すので、確認・番号の振り方・保存はデータAPIと同じ。
+ *   結果: strErr が空ならうまくいった（nNoOut に書き込んだ番号）
+ */
+void SboDataQuestApplyInfo(int nNo, const QUESTINFO *pInfo, int &nNoOut, std::string &strErr)
+{
+	QUESTINFO Info;
+	bool bAdd = (nNo < 0);
+
+	nNoOut = -1;
+	strErr.clear();
+	if (!bAdd && nNo >= g_aQuestInfo.GetSize()) {
+		strErr = "依頼の番号が範囲外です（ほかの人が変えたかもしれません。取得し直してください）";
+		return;
+	}
+	Info = *pInfo;
+	/* 文字の欄は必ず終端させる */
+	Info.szName[sizeof(Info.szName) - 1] = 0;
+	Info.szExplain[sizeof(Info.szExplain) - 1] = 0;
+	Info.szMsgAccept[sizeof(Info.szMsgAccept) - 1] = 0;
+	Info.szMsgDone[sizeof(Info.szMsgDone) - 1] = 0;
+	for (int i = 0; i < MAX_QUESTSTEP; i ++) {
+		Info.aszGoal[i][MAX_QUESTGOAL - 1] = 0;
+	}
+	for (int i = 0; i < MAX_QUESTNPC; i ++) {
+		Info.aNpc[i].szName[sizeof(Info.aNpc[i].szName) - 1] = 0;
+		Info.aNpc[i].szSpeech[sizeof(Info.aNpc[i].szSpeech) - 1] = 0;
+	}
+	if (!bAdd) {
+		/* 番号は変えられない（データAPIと同じく、今の番号を書き戻す形にする） */
+		Info.wID = g_aQuestInfo[nNo]->wID;
+	}
+	std::string strJson = "{" + QuestJson(&Info, !bAdd) + "}";
+	const char *pszRes = SboWebDataApply("quest", bAdd ? g_aQuestInfo.GetSize() : nNo, strJson.c_str(), 1, "管理者ウィンドウ");
+
+	CJsonReader reader(pszRes ? pszRes : "");
+	JVal res;
+	if (!reader.Parse(res) || res.t != JVal::OBJ) {
+		strErr = "書き込めませんでした";
+		return;
+	}
+	const JVal *pOk = res.Get("ok");
+	if (pOk == NULL || pOk->t != JVal::BOOL_ || !pOk->b) {
+		const JVal *pErr = res.Get("error");
+		strErr = (pErr && pErr->t == JVal::STR) ? pErr->s : std::string("書き込めませんでした");
+		/* 「npcs[0].」は画面の言い方（見えるNPC 1 の）に直す */
+		for (int i = 0; i < MAX_QUESTNPC; i ++) {
+			std::string strFrom = "npcs[" + JsonNum(i) + "].";
+			size_t nPos = strErr.find(strFrom);
+			if (nPos != std::string::npos) {
+				strErr.replace(nPos, strFrom.size(), "見えるNPC " + JsonNum(i + 1) + " の ");
+			}
+		}
+		return;
+	}
+	const JVal *pID = res.Get("id");
+	nNoOut = (pID && pID->t == JVal::NUM) ? (int)pID->n : (bAdd ? g_aQuestInfo.GetSize() - 1 : nNo);
 }
 
 /*

@@ -110,6 +110,7 @@ extern void SendCMDEQUUSERINFO		(BYTE);									/* 装備職業情報 */
 extern void SendCMDEQUUSERINFOREQ	(BYTE);									/* 装備職業情報要求 */
 extern void SendCmdADMINUNDO		(BYTE, BYTE, DWORD);					/* 管理者画面の「元に戻す」 */
 extern void SendCmdADMINSPACE		(BYTE, DWORD);							/* 管理者の空間の切り替え */
+extern void SendCmdADMINQUEST		(BYTE, int, const QUESTINFO *);			/* 管理者ウィンドウのギルドの依頼の編集 */
 void SendCmdNPCROUTE		(BYTE, DWORD, DWORD, BYTE, BYTE, BYTE, const BYTE *, const BYTE *);	/* NPCの巡回ルート */
 extern void SendCmdNPCROUTE		(BYTE, DWORD, DWORD, BYTE, BYTE, BYTE, const BYTE *, const BYTE *);	/* NPCの巡回ルート */
 extern void SendCMDSHOPBUY			(DWORD, DWORD);							/* アイテム購入 */

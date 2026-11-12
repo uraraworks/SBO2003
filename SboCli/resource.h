@@ -36,6 +36,8 @@
 #define IDD_STTMPINFO_EDIT              230
 #define IDD_NPCROUTE                    231
 #define IDD_MAP_LIGHT                   232
+#define IDD_QUESTINFO                   233
+#define IDD_QUESTINFO_EDIT              234
 #define IDC_BUTTON1                     1000
 #define IDC_BUTTON2                     1001
 #define IDC_BUTTON3                     1002
@@ -216,6 +218,49 @@
 #define IDC_ML_CLICK                    1177
 #define IDC_ML_AREAINFO                 1178
 #define IDC_ML_LIGHTINFO                1179
+#define IDC_Q_ID                          1180
+#define IDC_Q_NAME                        1181
+#define IDC_Q_GUILD                       1182
+#define IDC_Q_SORT                        1183
+#define IDC_Q_STEPCOUNT                   1184
+#define IDC_Q_ONCE                        1185
+#define IDC_Q_STATE                       1186
+#define IDC_Q_EXPLAIN                     1187
+#define IDC_Q_MSGACCEPT                   1188
+#define IDC_Q_MSGDONE                     1189
+#define IDC_Q_GOLD                        1190
+#define IDC_Q_EXP                         1191
+#define IDC_Q_REWARDITEM                  1192
+#define IDC_Q_QUESTITEM                   1193
+#define IDC_Q_GOAL0                       1194
+#define IDC_Q_GOAL1                       1195
+#define IDC_Q_GOAL2                       1196
+#define IDC_Q_GOAL3                       1197
+#define IDC_Q_CHALLENGE                   1198
+#define IDC_Q_MEMBERMIN                   1199
+#define IDC_Q_LOANSTTMP                   1200
+#define IDC_Q_NPCSEL                      1201
+#define IDC_Q_NPCKIND                     1202
+#define IDC_Q_NPCDIR                      1203
+#define IDC_Q_NPCNAME                     1204
+#define IDC_Q_NPCGRP                      1205
+#define IDC_Q_NPCMAP                      1206
+#define IDC_Q_NPCX                        1207
+#define IDC_Q_NPCY                        1208
+#define IDC_Q_NPCSPEECH                   1209
+#define IDC_Q_NPCSTEPMIN                  1210
+#define IDC_Q_NPCSTEPMAX                  1211
+#define IDC_Q_NPCFLGNEED                  1212
+#define IDC_Q_NPCFLGHIDE                  1213
+#define IDC_Q_NPCSETFLG                   1214
+#define IDC_Q_NPCNEXTSTEP                 1215
+#define IDC_Q_NPCDESTMAP                  1216
+#define IDC_Q_NPCDESTX                    1217
+#define IDC_Q_NPCDESTY                    1218
+#define IDC_Q_NPCITEM                     1219
+#define IDC_Q_NPCSTTMP                    1220
+#define IDC_Q_NPCCLEAR                    1221
+#define IDC_Q_CLICK                       1222
 #define IDM_MAP_PARTS                   40001
 #define IDM_MAP_INFO                    40002
 #define IDM_MAP_ADD                     40003
@@ -246,14 +291,15 @@
 #define IDM_CHAR_STTMP                  40028
 #define IDM_ADMIN_UNDO                  40029
 #define IDM_CHAR_NPCROUTE               40030
+#define IDM_ETC_QUEST                   40031
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        233
-#define _APS_NEXT_COMMAND_VALUE         40031
-#define _APS_NEXT_CONTROL_VALUE         1180
+#define _APS_NEXT_RESOURCE_VALUE        235
+#define _APS_NEXT_COMMAND_VALUE         40032
+#define _APS_NEXT_CONTROL_VALUE         1223
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
