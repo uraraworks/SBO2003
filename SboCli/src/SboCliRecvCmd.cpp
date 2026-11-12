@@ -3389,6 +3389,15 @@ void RecvDataProcQUEST(PBYTE pData, DWORD dwDataSize)
 		}
 		if (pWndList == NULL) {
 			/* ギルドの人に話した返事：一覧の窓を開く */
+			/* 返事を待つ間に開いたコマンドが残っていたら閉じる（一覧の下に隠れて閉じられなくなる） */
+			for (int nNo = g_WndInfo.GetSize () - 1; nNo >= 0; nNo --) {
+				PWNDINFO pWndCmd = (PWNDINFO)g_WndInfo[nNo];
+				if ((pWndCmd->nType == WNDTYPE_COMMAND) && (pWndCmd->pParent == NULL)) {
+					EraseWindow (pWndCmd);
+					nNo = min (nNo, g_WndInfo.GetSize ());
+				}
+			}
+			g_dwMsgIDCommand = 0;
 			g_dwQuestWaitTime = 0;
 			g_szQuestMsg[0] = 0;
 			pWndList = MakeWindowQUEST (QUESTWND_LIST);

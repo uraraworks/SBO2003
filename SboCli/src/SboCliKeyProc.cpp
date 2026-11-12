@@ -712,6 +712,11 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 		(g_dwMsgIDCommand != 0)) {
 		bCommand = FALSE;
 	}
+	/* ギルドの受付に話して一覧の返事を待っている間は、コマンドを開かない
+	   （X を続けて押すと、一覧が届く前にコマンドが開き、一覧の下に残って閉じられなくなっていた） */
+	if (g_dwQuestWaitTime && (timeGetTime () - g_dwQuestWaitTime <= QUEST_WAITMAX)) {
+		bCommand = FALSE;
+	}
 
 	if ((byEvent == KEY_DOWN) && (byCode == VK_RETURN)) {
 		if (!g_bMoving && !g_bSpeech && !m_byKeyOnReturn && !g_dwActiveMsgID) {
