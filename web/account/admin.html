@@ -21,6 +21,8 @@
 	                   戻す時は、このタブを入れたコミットの前の admin.html から tab-npcroute の部分を持ってきて、admin-npcroute.js を読み込む
 	                   （API /api/admin/npcroute/set はサーバーに残してある）。
 	  ・レシピ       … 町の作り手（料理人など）と、作ってもらえるレシピ（できる物・材料・手数料）を決める（admin-recipe.js。API は sbosvr_data.js の /api/admin/recipe/save）
+	  ・ドット絵工房 … みんなでゲームのドット絵を描き合う仕組み（/kobo）の管理。お題を出す・案の系譜とコメントを見る・採用して
+	                   ゲーム画像に貼って保存する・提案を見る（admin-kobo.js。仕様は docs/kobo.md。API は server/node/sbosvr_kobo.js の /api/admin/kobo/*）
 	  ・ドット絵     … ゲームの画像（SboGrpData/grp の PNG）を手元のフォルダで直接描き直すエディタ（/dot。dot.html）を開く
 	API は server/node/sbosvr_account.js の /api/admin/*（ご意見箱は server/node/sbosvr_feedback.js、AI連携は server/node/sbosvr_data.js）。
 -->
@@ -443,6 +445,37 @@
 	.rc-grid label { margin: 0; }
 	.rc-card textarea { width: 100%; box-sizing: border-box; }
 	.rc-card select, .rc-card input[type="text"] { max-width: 100%; }
+	/* ドット絵工房（admin-kobo.js） */
+	.kb-nav { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+	.kb-nav button { margin: 0; }
+	.kb-counts { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 6px 0; }
+	.kb-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+	.kb-task { cursor: pointer; margin: 0; }
+	.kb-task:hover { border-color: var(--accent); }
+	.dim { opacity: 0.6; }
+	.kb-thumb { min-height: 24px; overflow: hidden; margin-bottom: 6px; }
+	.kb-pic { image-rendering: pixelated; display: block; max-width: 100%; background: #2a2f3a; border-radius: 2px; }
+	.kb-refs { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 8px 0; align-items: flex-end; }
+	.kb-art { margin: 6px 0; }
+	.kb-bar button { margin: 6px 6px 0 0; padding: 8px 12px; font-size: 13px; }
+	.kb-treewrap { overflow-x: auto; padding-bottom: 6px; }
+	.kb-tree { list-style: none; margin: 0; padding: 0 0 0 20px; border-left: 2px solid var(--border); }
+	.kb-tree.root { border-left: none; padding-left: 0; }
+	.kb-tree li { margin: 8px 0; }
+	.kb-work { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; display: inline-block; min-width: 220px; max-width: 100%; box-sizing: border-box; }
+	.kb-work.sel { border-color: var(--info); }
+	.kb-work.adopted { border-color: var(--ok); box-shadow: 0 0 0 1px var(--ok); }
+	.kb-cmt { border-top: 1px solid var(--border); padding: 6px 0; }
+	.kb-who .sub-text { margin-left: 4px; }
+	.kb-who .tag { margin-left: 4px; }
+	.kb-pic.kb-refpic { width: auto !important; max-width: 240px; max-height: 240px; image-rendering: pixelated; }
+	.kb-row { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; }
+	.kb-row label { display: inline-block; margin: 6px 0; }
+	.kb-modes { display: flex; flex-wrap: wrap; gap: 2px 16px; }
+	.kb-scroll { overflow: auto; max-width: 100%; max-height: 640px; border: 1px solid var(--border); border-radius: 6px; background: #000; margin: 8px 0; }
+	.kb-canvas { display: block; cursor: crosshair; touch-action: none; image-rendering: pixelated; }
+	.kb-sec h3 { font-size: 15px; }
+	.kb-adopted { border-color: var(--ok); }
 	.nr-warn { margin: 8px 0 0; padding: 8px 12px 8px 28px; background: rgba(240,184,74,0.12); border: 1px solid var(--accent);
 		border-radius: 8px; color: var(--accent); font-size: 13px; line-height: 1.5; }
 </style>
@@ -465,6 +498,7 @@
 		<button type="button" data-tab="plans">配置案</button>
 		<button type="button" data-tab="mapview">マップ確認</button>
 		<button type="button" data-tab="recipe">レシピ</button>
+		<button type="button" data-tab="kobo">ドット絵工房<span class="badge" id="kobo-count" hidden></span></button>
 		<button type="button" data-tab="dot">ドット絵</button>
 	</nav>
 </header>
@@ -653,6 +687,11 @@
 			<p class="sub-text" style="margin:6px 0 0">全部のマップだと、zip は 2 倍で 90MB・等倍で 30MB くらいです（PC で数十秒）。</p>
 			<div class="msg" id="md-msg"></div>
 		</div>
+	</section>
+
+	<!-- ドット絵工房（中身は admin-kobo.js） -->
+	<section id="tab-kobo" hidden>
+		<div id="kobo-root"></div>
 	</section>
 
 	<!-- ドット絵（エディタは別ページ /dot。サーバーには何も送らない） -->
@@ -1041,6 +1080,7 @@
 		$('tab-plans').hidden = true;
 		$('tab-mapview').hidden = true;
 		$('tab-recipe').hidden = true;
+		$('tab-kobo').hidden = true;
 		setMsg($('login-msg'), text || '');
 	}
 	function showMain() {
@@ -1051,7 +1091,8 @@
 		selectTab(location.hash === '#online' ? 'online' : location.hash === '#recover' ? 'recover' : location.hash === '#feedback' ? 'feedback' :
 			location.hash === '#changes' ? 'changes' : location.hash === '#ai' ? 'ai' : location.hash === '#mapdoc' ? 'mapdoc' :
 			location.hash === '#parts' ? 'parts' : location.hash === '#plans' ? 'plans' :
-			(location.hash === '#mapview' || location.hash === '#npcroute') ? 'mapview' : location.hash === '#recipe' ? 'recipe' : location.hash === '#dot' ? 'dot' : 'search');
+			(location.hash === '#mapview' || location.hash === '#npcroute') ? 'mapview' : location.hash === '#recipe' ? 'recipe' : location.hash === '#dot' ? 'dot' :
+			location.hash === '#kobo' ? 'kobo' : 'search');
 		if (location.hash === '#changes') {
 			loadChanges();
 		} else if (location.hash === '#ai') {
@@ -1064,7 +1105,10 @@
 			openMapView();
 		} else if (location.hash === '#recipe') {
 			openRecipe();
+		} else if (location.hash === '#kobo') {
+			openKobo();
 		}
+		loadKoboBadge();
 		loadRequests();
 		loadFeedback();
 	}
@@ -1165,7 +1209,8 @@
 		$('tab-mapview').hidden = name !== 'mapview';
 		$('tab-recipe').hidden = name !== 'recipe';
 		$('tab-dot').hidden = name !== 'dot';
-		document.body.classList.toggle('wide', name === 'parts' || name === 'plans' || name === 'mapview');
+		$('tab-kobo').hidden = name !== 'kobo';
+		document.body.classList.toggle('wide', name === 'parts' || name === 'plans' || name === 'mapview' || name === 'kobo');
 		/* マップ確認はページを動かさず、マップの欄が残りの高さを使う（admin-mapview.js の fitScroll） */
 		document.body.classList.toggle('mv-fit', name === 'mapview');
 		if (history.replaceState) {
@@ -1194,6 +1239,8 @@
 				openMapView();
 			} else if (b.dataset.tab === 'recipe') {
 				openRecipe();
+			} else if (b.dataset.tab === 'kobo') {
+				openKobo();
 			}
 		});
 	});
@@ -2179,6 +2226,30 @@
 			body.session = session;
 			return api(url, body);
 		});
+	}
+
+	/* ---- ドット絵工房（admin-kobo.js が作る。ES module なので動的に読む） ---- */
+	function koboBadge(n) {
+		$('kobo-count').textContent = String(n);
+		$('kobo-count').hidden = !n;
+	}
+	function openKobo() {
+		import('./admin-kobo.js').then(function (m) {
+			m.open(function (url, body) {
+				body.session = session;
+				return api(url, body);
+			}, koboBadge, $('kobo-root'));
+		}).catch(function (e) {
+			$('kobo-root').textContent = 'ドット絵工房のファイル（admin-kobo.js）が読めませんでした。' + (e && e.message || '');
+		});
+	}
+	/* タブのバッジ（新しい提案＋本人が隠したコメント）。サーバーがまだ対応していなければ何も出さない */
+	function loadKoboBadge() {
+		api('/api/admin/kobo/tasks', { session: session }).then(function (data) {
+			if (data && data.counts) {
+				koboBadge((data.counts.proposals || 0) + (data.counts.hiddenComments || 0));
+			}
+		}).catch(function () { /* 出なくても困らない */ });
 	}
 
 	/* 開いた時：このブラウザでログイン済み（Cookie が生きている）なら続きから */

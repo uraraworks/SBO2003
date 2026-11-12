@@ -1710,6 +1710,7 @@
 				<button type="button" class="sbo-link" id="sbo-quick-settings">アカウント設定</button>
 				<a class="sbo-link" href="https://github.com/uraraworks/SBO2003/wiki" target="_blank" rel="noopener">取扱説明書（遊び方ガイド）</a>
 				<a class="sbo-link" href="/feedback" target="_blank" rel="noopener">ご意見箱（要望・不具合はこちら）</a>
+				<a class="sbo-link" href="/kobo" target="_blank" rel="noopener">ドット絵工房（みんなでドット絵を描く）</a>
 				<a class="sbo-link" href="/changes" target="_blank" rel="noopener">更新履歴（何が変わったか）<span class="sbo-new-mark" hidden>NEW</span></a>
 				<button type="button" class="sbo-link" id="sbo-quick-forget">この端末の記憶を消す</button>
 			</div>
@@ -1758,6 +1759,7 @@
 	<!-- 取扱説明書は今は GitHub Wiki（遊び方ガイド等） -->
 	<a href="https://github.com/uraraworks/SBO2003/wiki" target="_blank" rel="noopener">取扱説明書</a> /
 	<a href="/feedback" target="_blank" rel="noopener">ご意見箱</a> /
+	<a href="/kobo" target="_blank" rel="noopener">ドット絵工房</a> /
 	<a href="/changes" target="_blank" rel="noopener">更新履歴<span class="sbo-new-mark" hidden>NEW</span></a> /
 	<a href="https://github.com/uraraworks/SBO2003" target="_blank" rel="noopener">GitHubで見る</a> /
 	<!-- 反映した日時とコミット（tools/web/build.sh がビルドの時に書き込む） -->
@@ -1966,6 +1968,7 @@
 			<button type="button" class="sbo-btn sbo-btn-sub" id="sbo-rc-newcode">復旧キーを作り直す</button>
 			<button type="button" class="sbo-btn sbo-btn-sub" id="sbo-rc-rename">キャラ名を変える</button>
 			<button type="button" class="sbo-btn sbo-btn-sub" id="sbo-rc-feedback">ご意見箱（要望・不具合を送る）</button>
+			<button type="button" class="sbo-btn sbo-btn-sub" id="sbo-rc-kobo">ドット絵工房（みんなでドット絵を描く）</button>
 			<button type="button" class="sbo-btn sbo-btn-sub" id="sbo-rc-remove" hidden>この端末の一覧から外す</button>
 			<button type="button" class="sbo-btn" data-close="1" style="margin-top:12px">ゲームへ戻る</button>
 		</div>
@@ -5167,6 +5170,10 @@
 	/* ご意見箱（/feedback。web/account/feedback.html） */
 	$('sbo-rc-feedback').addEventListener('click', function () {
 		location.href = '/feedback';
+	});
+	/* ドット絵工房（/kobo。web/account/kobo.html） */
+	$('sbo-rc-kobo').addEventListener('click', function () {
+		location.href = '/kobo';
 	});
 	$('sbo-quick-add-code').addEventListener('click', function () {
 		$('sbo-quick-redeem').click();

@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="robots" content="noindex">
+<title>描く｜ドット絵工房</title>
+<!--
+	ドット絵工房の描く画面（/kobo-draw?task=ID&from=base|blank|案id&work=作業中の案id）。PC もスマホも使える。
+	・キャンバスにお題の範囲（w×h）を拡大して描く。色はお題の colors だけ
+	・元イラスト・見本・プレビュー（種類ごとのアニメ）を見ながら描ける
+	・端末への自動保存は数秒ごと。サーバーへの作業中保存は「みんなに見せる」がオンの時だけ 1 分ごと
+	・出すには同意が要る（出した案は変えられない）
+	仕様は docs/kobo.md。描く部品は dot-core.js・dot-png.js（管理者用ドット絵エディタと同じもの）。
+-->
+<style>
+	:root {
+		--bg: #14161a;
+		--panel: #1d1f24;
+		--panel2: #262930;
+		--fg: #e8e8e8;
+		--sub: #9aa0a6;
+		--field: #0f1217;
+		--border: #3a404a;
+		--accent: #f0b84a;
+		--ok: #8fe07a;
+		--ng: #ff9b8a;
+	}
+	* { box-sizing: border-box; }
+	html, body {
+		height: 100%;
+		margin: 0;
+		overflow: hidden;
+		overscroll-behavior: none;
+		background: var(--bg);
+		color: var(--fg);
+		font: 14px/1.5 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		-webkit-text-size-adjust: 100%;
+		-webkit-user-select: none;
+		user-select: none;
+		-webkit-touch-callout: none;
+	}
+	a { color: #8fc1ff; }
+	button {
+		font: bold 13px/1.2 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		background: var(--panel2);
+		color: var(--fg);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		padding: 8px 10px;
+		cursor: pointer;
+		touch-action: manipulation;
+	}
+	button:disabled { opacity: 0.4; cursor: default; }
+	button.primary { background: var(--accent); color: #1d1f24; border-color: var(--accent); }
+	button.active { border-color: var(--accent); background: rgba(240, 184, 74, 0.2); }
+	#app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+	#top {
+		flex: none;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 6px 8px;
+		background: #0c0c0c;
+		padding-top: max(6px, env(safe-area-inset-top));
+	}
+	#top .title { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: bold; }
+	#top .title small { color: var(--sub); font-weight: normal; margin-left: 6px; }
+	#top button { padding: 7px 10px; white-space: nowrap; flex: none; }
+	#top .phone-only { display: none; }
+	#body { flex: 1 1 auto; display: flex; min-height: 0; }
+	#left {
+		flex: none;
+		width: 304px;
+		overflow-y: auto;
+		background: var(--panel);
+		padding: 8px;
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+	.group { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+	/* 道具などのボタンは「アイコン 名前 (キー)」の 1 行 */
+	.group button { display: flex; align-items: center; gap: 5px; padding: 5px 6px; font-size: 12px; white-space: nowrap; text-align: left; }
+	.group button small { font-weight: normal; color: var(--sub); font-size: 10px; }
+	/* アイコン（線画。色は文字と同じ） */
+	.ic { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; display: block; margin: 0 auto 3px; }
+	.group .ic { width: 16px; height: 16px; margin: 0; flex: none; }
+	/* 描くところの上の帯（戻す・進む・途中保存） */
+	#stagebar { position: absolute; left: 8px; top: 8px; display: flex; gap: 4px; z-index: 2; }
+	#stagebar button { padding: 6px 10px; background: rgba(0, 0, 0, 0.6); white-space: nowrap; }
+	#stagebar .ic { display: inline-block; vertical-align: -5px; margin: 0 4px 0 0; width: 18px; height: 18px; }
+	.group h5 { grid-column: 1 / -1; margin: 0; font-size: 11px; color: var(--sub); font-weight: normal; }
+	#cur { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--sub); }
+	#cur-sw { width: 28px; height: 28px; border-radius: 4px; border: 2px solid var(--fg); }
+	/* 管理者用エディタと同じ 16×16 の並び */
+	#palette { width: 288px; max-width: 100%; }
+	.palgrid { display: grid; grid-template-columns: repeat(16, 1fr); gap: 0; border: 1px solid #000; }
+	.palhead { font-size: 11px; color: var(--sub); margin: 6px 0 3px; }
+	.sw { width: auto; height: auto; aspect-ratio: 1; padding: 0; border: 0; border-right: 1px solid rgba(0,0,0,0.5); border-bottom: 1px solid rgba(0,0,0,0.5); border-radius: 0; min-width: 0; min-height: 0; }
+	/* エディタと同じ見せ方: 色はそのまま、黒（透明）は小さな市松の印、使えない色は ✗ */
+	.sw { position: relative; }
+	/* 使える色だけの時は 8 列で大きめに */
+	/* 見本の色は 8 列で大きめに */
+	.palgrid.sample { grid-template-columns: repeat(8, 1fr); }
+	.sw.off { cursor: not-allowed; opacity: 1; }
+	.sw.black::before { content: ''; position: absolute; left: 11%; top: 11%; width: 44%; height: 44%;
+		background: linear-gradient(#555, #555) 0 0 / 50% 50% no-repeat, linear-gradient(#555, #555) 100% 100% / 50% 50% no-repeat; }
+	/* 使えない色には ✗（白い線に黒のふち） */
+	.sw.off::after { content: ''; position: absolute; inset: 0;
+		background:
+			linear-gradient(to top right, transparent calc(50% - 1.5px), #000 calc(50% - 1.5px), #000 calc(50% - 0.5px), #fff calc(50% - 0.5px), #fff calc(50% + 0.5px), #000 calc(50% + 0.5px), #000 calc(50% + 1.5px), transparent calc(50% + 1.5px)),
+			linear-gradient(to bottom right, transparent calc(50% - 1.5px), #000 calc(50% - 1.5px), #000 calc(50% - 0.5px), #fff calc(50% - 0.5px), #fff calc(50% + 0.5px), #000 calc(50% + 0.5px), #000 calc(50% + 1.5px), transparent calc(50% + 1.5px)); }
+	.sw.sel { outline: 2px solid #fff; box-shadow: 0 0 0 4px #000; z-index: 1; }
+	.checker {
+		background-color: #cfcfcf;
+		background-image:
+			linear-gradient(45deg, #fff 25%, transparent 25%, transparent 75%, #fff 75%),
+			linear-gradient(45deg, #fff 25%, transparent 25%, transparent 75%, #fff 75%);
+		background-size: 8px 8px;
+		background-position: 0 0, 4px 4px;
+	}
+	#stage { flex: 1 1 auto; position: relative; min-width: 0; min-height: 0; background: #101216; }
+	#view { position: absolute; left: 0; top: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; display: block; }
+	#view.hand { cursor: grab; }
+	#info {
+		position: absolute;
+		left: 8px;
+		bottom: 8px;
+		font-size: 12px;
+		color: var(--sub);
+		background: rgba(0, 0, 0, 0.55);
+		padding: 2px 8px;
+		border-radius: 6px;
+		pointer-events: none;
+	}
+	#zoombtns { position: absolute; right: 8px; bottom: 8px; display: flex; gap: 4px; }
+	#zoombtns button { padding: 6px 12px; background: rgba(0, 0, 0, 0.6); }
+	#zoombtns select { background: rgba(0, 0, 0, 0.6); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 0 4px; font-size: 13px; }
+	#mini {
+		display: none;
+		position: absolute;
+		right: 8px;
+		top: 8px;
+		padding: 6px;
+		border-radius: 8px;
+		background: rgba(0, 0, 0, 0.6);
+		border: 1px solid var(--border);
+		max-width: 60%;
+		overflow: hidden;
+	}
+	#toast {
+		position: absolute;
+		left: 50%;
+		top: 52px;
+		transform: translateX(-50%);
+		background: rgba(0, 0, 0, 0.8);
+		padding: 6px 14px;
+		border-radius: 8px;
+		font-size: 13px;
+		pointer-events: none;
+		opacity: 0;
+		transition: opacity 0.25s;
+		max-width: 90%;
+		text-align: center;
+	}
+	#toast.show { opacity: 1; }
+	/* 「出す」の確認 */
+	.dlg-back { position: fixed; inset: 0; z-index: 40; background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; padding: 12px; }
+	.dlg { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; width: 440px; max-width: 100%; max-height: 100%; overflow-y: auto; -webkit-user-select: text; user-select: text; }
+	.dlg h3 { margin: 0 0 10px; font-size: 16px; }
+	.dlg-pic { display: inline-block; padding: 4px; border-radius: 4px; max-width: 100%; overflow: auto; }
+	.dlg-pic canvas { display: block; image-rendering: pixelated; }
+	#dlg-msg { min-height: 1.4em; margin: 8px 0 4px; color: var(--ng); font-size: 13px; }
+	.dlg-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+	.dlg-btns button { padding: 10px 18px; font-size: 14px; }
+	#top #submit { min-width: 4.5em; }
+	#side {
+		flex: none;
+		width: 330px;
+		overflow-y: auto;
+		background: var(--panel);
+		padding: 10px;
+		-webkit-user-select: text;
+		user-select: text;
+	}
+	/* 描くところと右の欄の仕切り（ドラッグで右の欄の幅を変える） */
+	#split { flex: none; width: 6px; cursor: col-resize; background: #2a2d34; touch-action: none; }
+	#split:hover, #split.drag { background: var(--accent, #e8b84a); }
+	#side h4 { margin: 0 0 6px; font-size: 13px; }
+	#side h4 small { color: var(--sub); font-weight: normal; margin-left: 4px; }
+	.sec { margin-bottom: 16px; }
+	.sec img { max-width: 100%; height: auto; border-radius: 4px; }
+	.imgs { display: flex; flex-wrap: wrap; gap: 6px; }
+	.imgs img.px, canvas.px { image-rendering: pixelated; }
+	.pv-row { display: flex; gap: 8px; flex-wrap: wrap; }
+	.pv-item { text-align: center; font-size: 11px; color: var(--sub); }
+	.pv-canvas { image-rendering: pixelated; display: block; border-radius: 4px; }
+	.pv-scale { display: flex; gap: 4px; margin-bottom: 6px; }
+	.pv-scale button { padding: 4px 10px; font-size: 12px; }
+	.pv-scale button:disabled { opacity: 0.4; }
+	.pv-text { align-self: center; font-size: 12px; color: var(--sub); min-width: 3.5em; text-align: center; }
+	#samples, #refs { overflow-x: auto; }
+	/* 元イラストはドット絵のことが多いので、拡大してもぼやけさせない */
+	#refs img { image-rendering: pixelated; max-width: none; display: block; }
+	#refs img.shrink { image-rendering: auto; }
+	#samples canvas { max-width: none !important; }
+	#close-side { display: none; }
+	label.row { display: block; margin: 8px 0 4px; font-weight: bold; font-size: 13px; }
+	input[type="text"] {
+		width: 100%;
+		background: var(--field);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		color: var(--fg);
+		font: 16px/1.4 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		padding: 8px;
+	}
+	.radios { display: flex; gap: 6px; flex-wrap: wrap; }
+	.radios label { flex: 1 1 120px; position: relative; cursor: pointer; }
+	.radios input { position: absolute; opacity: 0; pointer-events: none; }
+	.radios span { display: block; border: 1px solid var(--border); border-radius: 8px; padding: 7px 8px; text-align: center; color: var(--sub); font-size: 13px; line-height: 1.3; }
+	.radios small { display: block; font-size: 10px; }
+	.radios input:checked + span { border-color: var(--accent); color: var(--fg); background: rgba(240, 184, 74, 0.14); font-weight: bold; }
+	.check { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; font-size: 13px; }
+	.check input { margin-top: 3px; width: 18px; height: 18px; flex: none; }
+	.check ul { margin: 2px 0 0; padding-left: 16px; color: var(--sub); font-size: 12px; }
+	.note { font-size: 12px; color: var(--sub); margin: 4px 0; }
+	#msg { min-height: 1.4em; margin: 8px 0 4px; color: var(--ng); font-size: 13px; }
+	#msg.ok { color: var(--ok); }
+	#autosave { font-size: 12px; color: var(--sub); }
+	.savebtns { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+	.savebtns button { padding: 12px; font-size: 14px; }
+	#banner { padding: 8px 12px; font-size: 13px; background: #3a2d14; color: #ffd98a; flex: none; }
+	[hidden] { display: none !important; }
+	#loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--bg); z-index: 50; text-align: center; padding: 20px; }
+
+	/* スマホ・狭い画面: 下に道具と色、横の欄は全画面で開く */
+	@media (max-width: 860px) {
+		#top .phone-only { display: inline-block; }
+		#top { gap: 4px; }
+		#top button { padding: 6px 7px; font-size: 13px; }
+		#top #submit { min-width: 0; }
+		#stagebar #undo .lbl, #stagebar #redo .lbl { display: none; }
+		#stagebar #undo .ic, #stagebar #redo .ic { margin: 0; }
+		#top .title small { display: none; }
+		#body { flex-direction: column; }
+		#stage { order: 1; }
+		#left {
+			order: 2;
+			width: 100%;
+			max-height: 44%;
+			flex-direction: column;
+			gap: 6px;
+			padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+		}
+		.group { display: flex; overflow-x: auto; gap: 4px; padding-bottom: 2px; flex: none; }
+		.group button { font-size: 11px; }
+		.group .ic { width: 18px; height: 18px; }
+		.group h5 { display: none; }
+		/* スマホはキーが無いので (B) などは出さない */
+		.group button small { display: none; }
+		.group button { flex: none; min-height: 38px; padding: 6px 9px; }
+		#palette { max-height: 120px; overflow-y: auto; width: 100%; }
+		#cur { display: none; }
+		#split { display: none; }
+		#side {
+			display: none;
+			position: fixed;
+			inset: 0;
+			width: 100%;
+			z-index: 20;
+			padding-top: max(10px, env(safe-area-inset-top));
+			padding-bottom: calc(24px + env(safe-area-inset-bottom));
+		}
+		#side.open { display: block; }
+		#close-side { display: block; position: sticky; top: 0; float: right; z-index: 2; }
+		#mini { display: block; }
+		#zoombtns { bottom: 8px; }
+		.hide-phone { display: none !important; }
+	}
+	/* 管理人が直す時（?admin=…）は、プレイヤー向けの欄を出さない */
+	.admin-mode .player-only { display: none !important; }
+	#reply { width: 100%; box-sizing: border-box; min-height: 5em; font: inherit; }
+</style>
+</head>
+<body>
+<!-- 道具ボタンのアイコン（24×24 の線画。ゲーム画面のボタンと同じ描き方） -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+	<symbol id="ic-pen" viewBox="0 0 24 24"><path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 0 1 3 3L8 19z"/><path d="M14.5 6.5l3 3"/></symbol>
+	<symbol id="ic-eraser" viewBox="0 0 24 24"><path d="M9 20h11"/><path d="M4.5 15.5l9-9a2 2 0 0 1 2.8 0l2.2 2.2a2 2 0 0 1 0 2.8L11 19H8z"/><path d="M9.5 10.5l5 5"/></symbol>
+	<symbol id="ic-picker" viewBox="0 0 24 24"><path d="M14 6l4 4"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L17 9l-2-2z"/><path d="M15 8l-9 9-2 3 3-2 9-9"/></symbol>
+	<symbol id="ic-fill" viewBox="0 0 24 24"><path d="M5 11l7-7 7 7-7 7z"/><path d="M5 11h14"/><path d="M20 15s-1.5 2-1.5 3a1.5 1.5 0 0 0 3 0c0-1-1.5-3-1.5-3z"/></symbol>
+	<symbol id="ic-select" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1" stroke-dasharray="3.2 2.6"/><path d="M13 13l6 6M13 13v4.5M13 13h4.5"/></symbol>
+	<symbol id="ic-hand" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></symbol>
+	<symbol id="ic-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="1.5"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></symbol>
+	<symbol id="ic-cut" viewBox="0 0 24 24"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M8.2 15L17 4M15.8 15L7 4"/></symbol>
+	<symbol id="ic-paste" viewBox="0 0 24 24"><path d="M9 4h6v3H9z"/><path d="M15 5.5h3a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1h3"/><path d="M9 12h6M9 16h4"/></symbol>
+	<symbol id="ic-del" viewBox="0 0 24 24"><path d="M4 7h16M10 7V4h4v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></symbol>
+	<symbol id="ic-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1"/><path d="M9.3 4v16M14.7 4v16M4 9.3h16M4 14.7h16"/></symbol>
+	<symbol id="ic-fit" viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/><rect x="9" y="9" width="6" height="6"/></symbol>
+	<symbol id="ic-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></symbol>
+	<symbol id="ic-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></symbol>
+	<symbol id="ic-redo" viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></symbol>
+</svg>
+<div id="app">
+	<div id="top">
+		<button type="button" id="back" title="お題のページへ戻る">←</button>
+		<div class="title" id="title">読み込み中...</div>
+		<button type="button" id="open-ref" class="phone-only">見本</button>
+		<button type="button" id="submit" class="primary" title="案として出す">出す</button>
+	</div>
+	<div id="banner" hidden></div>
+	<div id="body">
+		<aside id="left">
+			<div class="group" id="tools">
+				<h5>道具</h5>
+				<button type="button" data-tool="pen" title="ペン（B）"><svg class="ic" aria-hidden="true"><use href="#ic-pen"/></svg>ペン<small>(B)</small></button>
+				<button type="button" data-tool="eraser" title="消しゴム（E）"><svg class="ic" aria-hidden="true"><use href="#ic-eraser"/></svg>消しゴム<small>(E)</small></button>
+				<button type="button" data-tool="picker" title="スポイト（I。右クリックでも）"><svg class="ic" aria-hidden="true"><use href="#ic-picker"/></svg>スポイト<small>(I)</small></button>
+				<button type="button" data-tool="fill" title="塗りつぶし（F）"><svg class="ic" aria-hidden="true"><use href="#ic-fill"/></svg>塗りつぶし<small>(F)</small></button>
+				<button type="button" data-tool="select" title="範囲を選んで動かす（M）"><svg class="ic" aria-hidden="true"><use href="#ic-select"/></svg>範囲選択<small>(M)</small></button>
+				<button type="button" data-tool="hand" title="移動（H。スペース+ドラッグでも）"><svg class="ic" aria-hidden="true"><use href="#ic-hand"/></svg>移動<small>(H)</small></button>
+			</div>
+			<div class="group" id="edit">
+				<h5>選んだ範囲</h5>
+				<button type="button" id="copy" title="コピー（Ctrl+C）"><svg class="ic" aria-hidden="true"><use href="#ic-copy"/></svg>コピー</button>
+				<button type="button" id="cut" title="切り取り（Ctrl+X）"><svg class="ic" aria-hidden="true"><use href="#ic-cut"/></svg>切り取り</button>
+				<button type="button" id="paste" title="貼り付け（Ctrl+V）"><svg class="ic" aria-hidden="true"><use href="#ic-paste"/></svg>貼り付け</button>
+				<button type="button" id="del" title="消す（Delete）"><svg class="ic" aria-hidden="true"><use href="#ic-del"/></svg>削除</button>
+			</div>
+			<div class="group" id="viewops">
+				<h5>表示</h5>
+				<button type="button" id="grid" title="グリッド（G）"><svg class="ic" aria-hidden="true"><use href="#ic-grid"/></svg>グリッド<small>(G)</small></button>
+				<button type="button" id="fit" title="全体を表示"><svg class="ic" aria-hidden="true"><use href="#ic-fit"/></svg>全体表示</button>
+			</div>
+			<div id="cur"><span id="cur-sw"></span><span id="cur-text"></span></div>
+			<div id="palette"></div>
+		</aside>
+		<div id="stage">
+			<canvas id="view"></canvas>
+			<div id="stagebar"><button type="button" id="undo" title="元に戻す（Ctrl+Z）"><svg class="ic" aria-hidden="true"><use href="#ic-undo"/></svg><span class="lbl">戻す</span></button><button type="button" id="redo" title="やり直す（Ctrl+Shift+Z）"><svg class="ic" aria-hidden="true"><use href="#ic-redo"/></svg><span class="lbl">進む</span></button><button type="button" id="save-wip" class="player-only" title="作業中として保存（あとから続きを描けます）"><svg class="ic" aria-hidden="true"><use href="#ic-save"/></svg><span class="lbl">途中保存</span></button></div>
+			<div id="info"></div>
+			<div id="zoombtns"><button type="button" id="zout" title="縮小（Cmd+右クリック・Cmd+ホイールでも）">−</button><select id="zoomSel" title="倍率"></select><button type="button" id="zin" title="拡大（Cmd+左クリック・Cmd+ホイールでも）">＋</button></div>
+			<div id="mini"></div>
+			<div id="toast"></div>
+		</div>
+		<div id="split" title="ドラッグで右の欄の幅を変える（ダブルクリックで元の幅）"></div>
+		<aside id="side">
+			<button type="button" id="close-side">閉じる</button>
+			<div class="sec" id="sec-refs">
+				<h4>元イラスト<small>何を描くか</small></h4>
+				<div class="pv-scale" id="ref-zoom" hidden><button type="button" id="ref-out" title="元イラストを小さく">−</button><span id="ref-z" class="pv-text"></span><button type="button" id="ref-in" title="元イラストを大きく">＋</button><button type="button" id="ref-fit" title="欄の幅に合わせる">幅に合わせる</button></div>
+				<div class="imgs" id="refs"></div>
+				<h4 style="margin-top:10px">見本<small>この絵柄に合わせよう</small></h4>
+				<div class="pv-scale"><button type="button" id="smp-out" title="見本を小さく">−</button><span id="smp-z" class="pv-text"></span><button type="button" id="smp-in" title="見本を大きく">＋</button></div>
+				<div class="imgs" id="samples"></div>
+				<p class="note">上手さより、ゲームになじむかで選びます。</p>
+			</div>
+			<div class="sec" id="sec-preview">
+				<h4>プレビュー<small>描くとすぐ変わります</small></h4>
+				<div class="pv-scale"><button type="button" id="pv-play" title="アニメを再生・止める">▶ 再生</button><button type="button" id="pv-prev" title="1 コマ戻す">◀</button><span id="pv-frame" class="pv-text"></span><button type="button" id="pv-next" title="1 コマ進める">▶</button></div>
+				<div class="pv-scale"><button type="button" data-pvs="1">等倍</button><button type="button" data-pvs="2" class="active">2倍</button><button type="button" data-pvs="4">4倍</button></div>
+				<div id="preview"></div>
+			</div>
+			<div class="sec" id="sec-save">
+				<h4 class="player-only">作業中の保存<small>あとから続きを描けます</small></h4>
+				<label class="check player-only"><input type="checkbox" id="share"><span>みんなに見せる（作業中でも、ほかの人が見られます）</span></label>
+				<div id="msg"></div>
+				<div id="autosave"></div>
+				<p class="note player-only">上の「途中保存」で作業中として保存、「出す」で案として出します。</p>
+			</div>
+		</aside>
+	</div>
+</div>
+<!-- 「出す」の確認 -->
+<div id="submit-dlg" class="dlg-back" hidden>
+	<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-title">
+		<h3 id="dlg-title">この絵を出す</h3>
+		<div class="checker dlg-pic"><canvas id="dlg-canvas"></canvas></div>
+		<label class="row" for="note" id="note-label">ひとこと（200字まで）</label>
+		<input type="text" id="note" maxlength="200" placeholder="例）髪の色を見本に近づけました" autocomplete="off">
+		<label class="row player-only">名前の出し方</label>
+		<div class="radios player-only">
+			<label><input type="radio" name="anon" value="0" checked><span>キャラ名<small id="my-name"></small></span></label>
+			<label><input type="radio" name="anon" value="1"><span>匿名<small>「匿名さん」</small></span></label>
+		</div>
+		<p class="note player-only">匿名でも、管理人にはだれの案か分かります。</p>
+		<label class="check player-only"><input type="checkbox" id="agree"><span>出すときの同意
+			<ul><li>自分で描きました</li><li>ゲームの一部として GPLv3 で配布されることがあります</li><li>ほかの人が描き足してよいです</li><li>採用されないこともあると分かっています</li></ul></span></label>
+		<p class="note" id="dlg-note">出すと案として固定され、あとから変えられません。みんなが見て、描き足しの元にできます。</p>
+		<div id="dlg-msg"></div>
+		<div class="dlg-btns">
+			<button type="button" id="dlg-cancel">やめる</button>
+			<button type="button" id="dlg-submit" class="primary" disabled>出す</button>
+		</div>
+	</div>
+</div>
+<div id="loading">読み込み中です...</div>
+<script type="module" src="/kobo-draw.js"></script>
+</body>
+</html>
