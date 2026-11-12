@@ -964,20 +964,22 @@ function renderPropose() {
 		});
 		er.classList.toggle('sel', i === sheet.transparent);
 	}
+	/* 管理者用エディタと同じく 256 色を 16×16 に番号順で並べる。元の画像で使っていない番号は薄く */
 	function buildTools() {
 		tools.textContent = '';
-		sheet.colors.forEach(function (i) {
-			if (i === sheet.transparent) {
-				return;
-			}
-			const b = el('button', 'sw');
+		const used = new Set(sheet.colors);
+		for (let i = 0; i < 256; i++) {
+			const c = sheet.palette[i];
+			const b = el('button', 'sw' + (i === sheet.transparent ? ' clear' : '') + (used.has(i) ? '' : ' unused'));
 			b.type = 'button';
 			b.dataset.idx = String(i);
-			b.style.background = css(i);
-			b.setAttribute('aria-label', '色 ' + i);
+			if (i !== sheet.transparent) {
+				b.style.background = css(i);
+			}
+			b.title = '番号 ' + i + (i === sheet.transparent ? '（透明）' : '  (' + c.r + ', ' + c.g + ', ' + c.b + ')');
 			b.addEventListener('click', function () { selectColor(i); });
 			tools.appendChild(b);
-		});
+		}
 	}
 	function resetPad() {
 		const sz = (sizeSel.value || '16x16').split('x');

@@ -194,7 +194,8 @@ export function composeOnBg(bg, src, pad) {
  *   walk … 4 方向（上・下・左・右）の歩きアニメ（向き d のコマは列 d*2 と d*2+1）
  *   tile … 1 コマを 3×3 に並べて継ぎ目を見る（コマが複数なら切り替え）
  *   anim … コマを順に再生
- * 返す: { update(indices, w, h), setScale(n), destroy() }
+ * opt.paused … true なら止めた状態で始める（描く画面。動き続けると気が散るので）
+ * 返す: { update(indices, w, h), setScale(n), play(), pause(), step(d), isPlaying(), frameText(), destroy() }
  */
 export function makePreview(container, task, opt) {
 	opt = opt || {};
@@ -209,6 +210,8 @@ export function makePreview(container, task, opt) {
 	let draws = [];
 	let nFrames = 1;
 	let dead = false;
+	let playing = !opt.paused;
+	let onFrame = null;		// コマが変わった時に呼ぶ（「2 / 8」の表示用）
 
 	function cols() {
 		return src ? Math.max(1, Math.floor(src.width / cw)) : 1;
@@ -294,10 +297,26 @@ export function makePreview(container, task, opt) {
 	function tick() {
 		frame = (frame + 1) % 1000000;
 		redraw();
+		if (onFrame) {
+			onFrame();
+		}
+	}
+	function startTimer() {
+		if (!timer && !dead) {
+			timer = window.setInterval(tick, Math.max(60, task.frameMs || 200));
+		}
+	}
+	function stopTimer() {
+		if (timer) {
+			window.clearInterval(timer);
+			timer = 0;
+		}
 	}
 
 	build();
-	timer = window.setInterval(tick, Math.max(60, task.frameMs || 200));
+	if (playing) {
+		startTimer();
+	}
 	loadBgCanvas(task).then(function (c) {
 		if (!dead) {
 			bg = c;
@@ -319,9 +338,36 @@ export function makePreview(container, task, opt) {
 			scale = n;
 			build();
 		},
+		play: function () {
+			playing = true;
+			startTimer();
+		},
+		pause: function () {
+			playing = false;
+			stopTimer();
+		},
+		/** 止めている時に 1 コマ進める（d = 1）・戻す（d = -1） */
+		step: function (d) {
+			const n = Math.max(1, nFrames);
+			frame = ((frame % n) + n + (d || 1)) % n;
+			redraw();
+			if (onFrame) {
+				onFrame();
+			}
+		},
+		isPlaying: function () {
+			return playing;
+		},
+		frameText: function () {
+			const n = Math.max(1, nFrames);
+			return (frame % n + 1) + ' / ' + n;
+		},
+		set onFrame(fn) {
+			onFrame = fn;
+		},
 		destroy: function () {
 			dead = true;
-			window.clearInterval(timer);
+			stopTimer();
 			container.textContent = '';
 		}
 	};

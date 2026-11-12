@@ -16,8 +16,21 @@ import { encodeIndexedPng, indicesToImageData } from '/dot-png.js';
 
 const $ = function (id) { return document.getElementById(id); };
 const UNDO_MAX = 50;
+const KEY_PV_PLAY = 'sbo_kobo_pv_play';		// プレビューを再生するか（'1' = 再生）
+const KEY_SMP_ZOOM = 'sbo_kobo_smp_zoom';	// 見本の倍率
 const LOCAL_SAVE_MS = 3000;		// 端末への自動保存
 const SERVER_SAVE_MS = 60000;	// サーバーへの作業中保存（「みんなに見せる」がオンの時だけ）
+/* 拡大・スクロールは管理者用ドット絵エディタ（dot-editor.js）と同じ決まりにそろえる */
+const PAD = 32;					// 絵のまわりの余白(px)。端まで画面の中央に持ってこられるように
+const ZOOMS = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32];
+const WHEEL_ZOOM_RATE = 0.002;	// Cmd+ホイール：回転量 1px あたり exp(量 × これ) 倍
+const PINCH_ZOOM_RATE = 0.01;	// ピンチ（Mac の Chrome では Ctrl 付きのホイール）
+const ZOOM_SNAP = 0.04;			// 整数倍にこれより近ければ吸い付ける
+const WHEEL_ZOOM_STEP = 100;	// Cmd+Shift+ホイール：1 段階に要る回転量
+const PINCH_ZOOM_STEP = 30;
+const WHEEL_ZOOM_SPEEDS = { slow: 2.5, normal: 1, fast: 0.4 };
+const WHEEL_ZOOM_COOLDOWN = 180;
+const WHEEL_ZOOM_IDLE = 500;
 
 /* ---- 状態 ---- */
 const S = {
@@ -154,6 +167,9 @@ function updateUndoButtons() {
 /* ============ 表示 ============ */
 
 function requestDraw() {
+	if (S.task && S.w) {
+		clampView();
+	}
 	if (drawQueued) {
 		return;
 	}
@@ -184,6 +200,8 @@ function draw() {
 	if (S.imgDirty) {
 		refreshImg();
 	}
+	clampView();
+	syncZoomSel();
 	const { w, h, z, ox, oy } = S;
 	ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 	ctx.fillStyle = '#101216';
@@ -267,7 +285,7 @@ function draw() {
 		ctx.strokeRect(x + 1.5, y + 1.5, z - 3, z - 3);
 	}
 	$('info').textContent = (S.hover && S.hover.x >= 0 && S.hover.y >= 0 && S.hover.x < w && S.hover.y < h ? S.hover.x + ', ' + S.hover.y + '　' : '') +
-		w + '×' + h + '　×' + (Math.round(z * 10) / 10);
+		w + '×' + h;
 }
 
 function resize() {
@@ -281,32 +299,116 @@ function resize() {
 }
 
 function fit() {
-	const z = Math.max(1, Math.floor(Math.min((vw - 24) / S.w, (vh - 24) / S.h)));
+	const zf = Math.min((vw - PAD * 2) / S.w, (vh - PAD * 2) / S.h);
+	let z = ZOOMS[0];
+	ZOOMS.forEach(function (v) { if (v <= zf) { z = v; } });
 	S.z = z;
 	S.ox = Math.round((vw - S.w * z) / 2);
 	S.oy = Math.round((vh - S.h * z) / 2);
 	requestDraw();
 }
 
-/** (px, py)（画面上の点）を動かさずに倍率を変える */
-function zoomAt(px, py, nz) {
-	nz = clamp(nz, 1, 80);
-	const ix = (px - S.ox) / S.z;
-	const iy = (py - S.oy) / S.z;
+/**
+ * 絵の位置をエディタのスクロールと同じ範囲に収める。
+ * 絵（＋余白）が画面より小さい向きは真ん中、大きい向きは余白 PAD まで動かせる。
+ */
+function clampView() {
+	const iw = S.w * S.z, ih = S.h * S.z;
+	if (iw + PAD * 2 <= vw) {
+		S.ox = (vw - iw) / 2;
+	} else {
+		S.ox = clamp(S.ox, vw - iw - PAD, PAD);
+	}
+	if (ih + PAD * 2 <= vh) {
+		S.oy = (vh - ih) / 2;
+	} else {
+		S.oy = clamp(S.oy, vh - ih - PAD, PAD);
+	}
+}
+
+/** 絵の (ix, iy) が画面の (sx, sy) に来るように倍率を変える */
+function setZoom(nz, ix, iy, sx, sy) {
+	nz = Math.round(clamp(nz, ZOOMS[0], ZOOMS[ZOOMS.length - 1]) * 100) / 100;
 	S.z = nz;
-	S.ox = px - ix * nz;
-	S.oy = py - iy * nz;
+	S.ox = sx - ix * nz;
+	S.oy = sy - iy * nz;
 	requestDraw();
 }
 
-function stepZoom(dir, px, py) {
-	let nz;
+/** (px, py)（画面上の点）を動かさずに倍率を変える */
+function zoomAt(px, py, nz) {
+	setZoom(nz, (px - S.ox) / S.z, (py - S.oy) / S.z, px, py);
+}
+
+/** 1, 2, 3, 4, 6, 8 … の決まった段階で 1 つ上・下 */
+function nextZoom(dir) {
 	if (dir > 0) {
-		nz = Math.max(Math.floor(S.z) + 1, Math.round(S.z * 1.2));
-	} else {
-		nz = Math.min(Math.ceil(S.z) - 1, Math.round(S.z / 1.2));
+		const up = ZOOMS.find(function (v) { return v > S.z; });
+		return up == null ? S.z : up;
 	}
-	zoomAt(px == null ? vw / 2 : px, py == null ? vh / 2 : py, nz);
+	const down = ZOOMS.slice().reverse().find(function (v) { return v < S.z; });
+	return down == null ? S.z : down;
+}
+
+function stepZoom(dir, px, py) {
+	zoomAt(px == null ? vw / 2 : px, py == null ? vh / 2 : py, nextZoom(dir));
+}
+
+/* 画面右下の倍率一覧（一覧にない倍率の時は、その項目を一時的に足す） */
+function zoomLabel(z) {
+	return (Number.isInteger(z) ? String(z) : z.toFixed(2).replace(/0$/, '')) + '倍';
+}
+function syncZoomSel() {
+	const sel = $('zoomSel');
+	const key = String(S.z);
+	if (!sel || sel.dataset.cur === key) {
+		return;
+	}
+	sel.dataset.cur = key;
+	const list = ZOOMS.indexOf(S.z) >= 0 ? ZOOMS : ZOOMS.concat([S.z]).sort(function (a, b) { return a - b; });
+	sel.textContent = '';
+	list.forEach(function (v) {
+		const o = el('option', '', zoomLabel(v));
+		o.value = String(v);
+		sel.appendChild(o);
+	});
+	sel.value = key;
+}
+
+/* ホイールの速さは管理者用エディタで選んだものを使う（同じ端末なら同じ設定） */
+function wheelSpeed() {
+	let v = 'normal';
+	try {
+		v = window.localStorage.getItem('sbo-dot-wheel-zoom-speed') || 'normal';
+	} catch (e) { /* 読めなければふつう */ }
+	return WHEEL_ZOOM_SPEEDS[v] || 1;
+}
+function wheelDeltaPx(e) {
+	const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? vh : 1;
+	const d = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+	return d * unit;
+}
+/* 回転量をためて、一定量を超えたら拡大(1)・縮小(-1)。まだなら 0 */
+const wheelAcc = { sum: 0, last: 0, stepAt: 0 };
+function wheelZoomDir(e) {
+	const now = performance.now();
+	const dy = wheelDeltaPx(e);
+	if (now - wheelAcc.last > WHEEL_ZOOM_IDLE || Math.sign(dy) !== Math.sign(wheelAcc.sum)) {
+		wheelAcc.sum = 0;
+	}
+	wheelAcc.last = now;
+	wheelAcc.sum += dy;
+	if (now - wheelAcc.stepAt < WHEEL_ZOOM_COOLDOWN) {
+		return 0;
+	}
+	const step = ((e.ctrlKey && !e.metaKey) ? PINCH_ZOOM_STEP : WHEEL_ZOOM_STEP) * wheelSpeed();
+	if (Math.abs(wheelAcc.sum) < step) {
+		return 0;
+	}
+	const dir = wheelAcc.sum < 0 ? 1 : -1;
+	wheelAcc.sum = 0;
+	wheelAcc.stepAt = now;
+	return dir;
 }
 
 /* ============ 道具・色 ============ */
@@ -340,28 +442,38 @@ function setColor(i) {
 	} else {
 		sw.className = '';
 		sw.style.background = 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
-		$('cur-text').textContent = '色 ' + i;
+		$('cur-text').textContent = '番号 ' + i + '  (' + c[0] + ', ' + c[1] + ', ' + c[2] + ')';
 	}
 	if (S.tool === 'eraser' || S.tool === 'picker') {
 		setTool(S.tool === 'picker' ? S.prevTool : 'pen');
 	}
 }
 
+/*
+ * パレット：管理者用エディタと同じく 256 色を 16×16 に番号順で並べる（ゲーム画像のパレットの並びのまま）。
+ * このお題で使えない色（元の画像で使っていない番号）は薄くして押せないようにする。
+ */
 function buildPalette() {
 	const box = $('palette');
 	box.textContent = '';
-	S.task.colors.forEach(function (i) {
-		const c = S.task.palette[i];
-		const b = el('button', 'sw' + (i === S.task.transparent ? ' checker' : ''));
+	const usable = new Set(S.task.colors);
+	for (let i = 0; i < 256; i++) {
+		const c = S.task.palette[i] || [0, 0, 0];
+		const ok = usable.has(i);
+		const b = el('button', 'sw' + (i === S.task.transparent ? ' checker' : '') + (ok ? '' : ' off'));
 		b.type = 'button';
 		b.dataset.i = i;
-		b.title = (i === S.task.transparent ? '透明' : '色') + ' ' + i;
+		b.title = '番号 ' + i + (i === S.task.transparent ? '（透明）' : '  (' + c[0] + ', ' + c[1] + ', ' + c[2] + ')') + (ok ? '' : '　このお題では使えません');
 		if (i !== S.task.transparent) {
 			b.style.background = 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
 		}
-		b.addEventListener('click', function () { setColor(i); });
+		if (ok) {
+			b.addEventListener('click', function () { setColor(i); });
+		} else {
+			b.disabled = true;
+		}
 		box.appendChild(b);
-	});
+	}
 }
 
 function pickAt(x, y) {
@@ -536,6 +648,13 @@ view.addEventListener('pointerdown', function (e) {
 	}
 	const p = pos(e);
 	if (e.pointerType === 'mouse') {
+		if ((e.metaKey || e.ctrlKey) && (e.button === 0 || e.button === 2)) {
+			/* Cmd+左 = 拡大（押した点が真ん中に来る）、Cmd+右 = 縮小 */
+			e.preventDefault();
+			setZoom(nextZoom(e.button === 0 ? 1 : -1), (p.px - S.ox) / S.z, (p.py - S.oy) / S.z, vw / 2, vh / 2);
+			mode = 'wait';
+			return;
+		}
 		if (e.button === 1 || (e.button === 0 && S.spaceDown)) {
 			e.preventDefault();
 			startPan(p);
@@ -572,7 +691,7 @@ view.addEventListener('pointermove', function (e) {
 		const mx = (a[0].x + a[1].x) / 2 - r.left;
 		const my = (a[0].y + a[1].y) / 2 - r.top;
 		const d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y);
-		const nz = clamp(gest.z * d / gest.d, 1, 80);
+		const nz = clamp(gest.z * d / gest.d, ZOOMS[0], ZOOMS[ZOOMS.length - 1]);
 		const ix = (gest.mx - gest.ox) / gest.z;
 		const iy = (gest.my - gest.oy) / gest.z;
 		S.z = nz;
@@ -656,10 +775,46 @@ view.addEventListener('pointerleave', function (e) {
 	}
 });
 view.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+/*
+ * ホイール（エディタと同じ）
+ *   そのまま: スクロール（Shift で横）
+ *   Cmd+ホイール: カーソルの位置を中心に細かく拡大縮小（整数倍に吸い付く）。ピンチも
+ *   Cmd+Shift+ホイール: 1, 2, 3, 4, 6, 8 … の段階で 1 つずつ
+ */
 view.addEventListener('wheel', function (e) {
 	e.preventDefault();
 	const p = pos(e);
-	stepZoom(e.deltaY < 0 ? 1 : -1, p.px, p.py);
+	if (!(e.metaKey || e.ctrlKey)) {
+		const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? vh : 1;
+		let dx = e.deltaX * unit, dy = e.deltaY * unit;
+		if (e.shiftKey && !dx) {
+			dx = dy;
+			dy = 0;
+		}
+		S.ox -= dx;
+		S.oy -= dy;
+		requestDraw();
+		return;
+	}
+	if (e.shiftKey) {
+		const dir = wheelZoomDir(e);
+		if (dir) {
+			stepZoom(dir, p.px, p.py);
+		}
+		return;
+	}
+	const dy = wheelDeltaPx(e);
+	const pinch = e.ctrlKey && !e.metaKey;
+	let z = S.z * Math.exp(-dy * (pinch ? PINCH_ZOOM_RATE : WHEEL_ZOOM_RATE) / wheelSpeed());
+	const near = Math.round(z);
+	if (near >= 1 && Math.abs(z - near) < ZOOM_SNAP * near && Math.abs(S.z - near) >= 0.005) {
+		/* 整数倍をまたいだ・近づいた時は、いったん整数倍で止める */
+		const crossed = (S.z - near) * (z - near) <= 0;
+		if (crossed || Math.abs(z - near) < Math.abs(S.z - near)) {
+			z = near;
+		}
+	}
+	zoomAt(p.px, p.py, z);
 }, { passive: false });
 
 /* ============ 範囲選択の操作 ============ */
@@ -1121,22 +1276,60 @@ function setupUi() {
 		refs.appendChild(el('p', 'note', '元イラストはありません。'));
 	}
 	const smp = $('samples');
+	const smpCanvases = [];
+	let smpZ = Number(lsGet(KEY_SMP_ZOOM)) || Math.max(1, Math.min(8, Math.floor(300 / task.w)));
 	(task.samples || []).concat(task.base ? [task.base] : []).forEach(function (id, n, arr) {
 		const wrap = el('div', 'checker');
-		const cv = thumbCanvas(task, id, Math.max(1, Math.floor(300 / task.w)));
+		const cv = thumbCanvas(task, id, smpZ);
 		cv.title = (task.base && n === arr.length - 1) ? '今の絵' : '見本';
 		wrap.appendChild(cv);
 		smp.appendChild(wrap);
+		smpCanvases.push(cv);
 	});
-	if (!smp.firstChild) {
+	/* 見本の拡大縮小（整数倍。読み込み前の canvas は task.w × task.h の大きさ） */
+	function applySmpZoom() {
+		smpCanvases.forEach(function (cv) { cv.style.width = (cv.width * smpZ) + 'px'; });
+		$('smp-z').textContent = '×' + smpZ;
+		$('smp-out').disabled = smpZ <= 1;
+		$('smp-in').disabled = smpZ >= 16;
+	}
+	$('smp-out').addEventListener('click', function () { smpZ = Math.max(1, smpZ - 1); lsSet(KEY_SMP_ZOOM, String(smpZ)); applySmpZoom(); });
+	$('smp-in').addEventListener('click', function () { smpZ = Math.min(16, smpZ + 1); lsSet(KEY_SMP_ZOOM, String(smpZ)); applySmpZoom(); });
+	if (smpCanvases.length) {
+		applySmpZoom();
+	} else {
+		$('smp-out').parentNode.hidden = true;
 		smp.appendChild(el('p', 'note', '見本はありません。'));
 	}
 
-	/* プレビュー */
-	pvMain = makePreview($('preview'), task, { scale: 2 });
+	/* プレビュー（最初は止めておく。描いている時に動くと気が散るので。再生したかは覚えておく） */
+	const bPlay = lsGet(KEY_PV_PLAY) === '1';
+	pvMain = makePreview($('preview'), task, { scale: 2, paused: !bPlay });
 	if (window.matchMedia('(max-width: 860px)').matches) {
-		pvMini = makePreview($('mini'), task, { scale: 1, compact: true });
+		pvMini = makePreview($('mini'), task, { scale: 1, compact: true, paused: !bPlay });
 	}
+	function syncPlay() {
+		const on = pvMain.isPlaying();
+		$('pv-play').textContent = on ? '■ 止める' : '▶ 再生';
+		$('pv-play').classList.toggle('active', on);
+		$('pv-prev').disabled = on;
+		$('pv-next').disabled = on;
+		$('pv-frame').textContent = pvMain.frameText();
+	}
+	pvMain.onFrame = function () { $('pv-frame').textContent = pvMain.frameText(); };
+	$('pv-play').addEventListener('click', function () {
+		const want = !pvMain.isPlaying();
+		[pvMain, pvMini].forEach(function (pv) {
+			if (pv) {
+				if (want) { pv.play(); } else { pv.pause(); }
+			}
+		});
+		lsSet(KEY_PV_PLAY, pvMain.isPlaying() ? '1' : '0');
+		syncPlay();
+	});
+	$('pv-prev').addEventListener('click', function () { pvMain.step(-1); if (pvMini) { pvMini.step(-1); } });
+	$('pv-next').addEventListener('click', function () { pvMain.step(1); if (pvMini) { pvMini.step(1); } });
+	syncPlay();
 	Array.prototype.forEach.call(document.querySelectorAll('[data-pvs]'), function (b) {
 		b.addEventListener('click', function () {
 			Array.prototype.forEach.call(document.querySelectorAll('[data-pvs]'), function (x) { x.classList.toggle('active', x === b); });
@@ -1168,6 +1361,10 @@ $('grid').addEventListener('click', toggleGrid);
 $('fit').addEventListener('click', fit);
 $('zin').addEventListener('click', function () { stepZoom(1); });
 $('zout').addEventListener('click', function () { stepZoom(-1); });
+$('zoomSel').addEventListener('change', function (e) {
+	zoomAt(vw / 2, vh / 2, Number(e.target.value));
+	view.focus && view.focus();
+});
 $('save-wip').addEventListener('click', function () { save(false, false); });
 $('submit').addEventListener('click', function () { save(true, false); });
 $('back').addEventListener('click', function () {

@@ -71,7 +71,7 @@
 	#body { flex: 1 1 auto; display: flex; min-height: 0; }
 	#left {
 		flex: none;
-		width: 212px;
+		width: 304px;
 		overflow-y: auto;
 		background: var(--panel);
 		padding: 8px;
@@ -85,9 +85,11 @@
 	.group h5 { grid-column: 1 / -1; margin: 0; font-size: 11px; color: var(--sub); font-weight: normal; }
 	#cur { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--sub); }
 	#cur-sw { width: 28px; height: 28px; border-radius: 4px; border: 2px solid var(--fg); }
-	#palette { display: flex; flex-wrap: wrap; gap: 2px; }
-	.sw { width: 22px; height: 22px; padding: 0; border: 1px solid #000; border-radius: 3px; }
-	.sw.sel { outline: 2px solid var(--accent); outline-offset: 1px; z-index: 1; position: relative; }
+	/* 管理者用エディタと同じ 16×16 の並び */
+	#palette { display: grid; grid-template-columns: repeat(16, 1fr); gap: 0; border: 1px solid #000; width: 288px; max-width: 100%; }
+	.sw { width: auto; height: auto; aspect-ratio: 1; padding: 0; border: 0; border-right: 1px solid rgba(0,0,0,0.5); border-bottom: 1px solid rgba(0,0,0,0.5); border-radius: 0; min-width: 0; min-height: 0; }
+	.sw.off { opacity: 0.25; cursor: not-allowed; }
+	.sw.sel { outline: 2px solid #fff; box-shadow: 0 0 0 4px #000; z-index: 1; position: relative; }
 	.checker {
 		background-color: #cfcfcf;
 		background-image:
@@ -112,6 +114,7 @@
 	}
 	#zoombtns { position: absolute; right: 8px; bottom: 8px; display: flex; gap: 4px; }
 	#zoombtns button { padding: 6px 12px; background: rgba(0, 0, 0, 0.6); }
+	#zoombtns select { background: rgba(0, 0, 0, 0.6); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 0 4px; font-size: 13px; }
 	#mini {
 		display: none;
 		position: absolute;
@@ -160,6 +163,10 @@
 	.pv-canvas { image-rendering: pixelated; display: block; border-radius: 4px; }
 	.pv-scale { display: flex; gap: 4px; margin-bottom: 6px; }
 	.pv-scale button { padding: 4px 10px; font-size: 12px; }
+	.pv-scale button:disabled { opacity: 0.4; }
+	.pv-text { align-self: center; font-size: 12px; color: var(--sub); min-width: 3.5em; text-align: center; }
+	#samples { overflow-x: auto; }
+	#samples canvas { max-width: none !important; }
 	#close-side { display: none; }
 	label.row { display: block; margin: 8px 0 4px; font-weight: bold; font-size: 13px; }
 	input[type="text"] {
@@ -207,8 +214,7 @@
 		.group { display: flex; overflow-x: auto; gap: 4px; padding-bottom: 2px; }
 		.group h5 { display: none; }
 		.group button { flex: none; min-width: 54px; min-height: 42px; padding: 6px 8px; }
-		#palette { max-height: 96px; overflow-y: auto; }
-		.sw { width: 26px; height: 26px; }
+		#palette { max-height: 120px; overflow-y: auto; width: 100%; }
 		#cur { display: none; }
 		#side {
 			display: none;
@@ -267,7 +273,7 @@
 		<div id="stage">
 			<canvas id="view"></canvas>
 			<div id="info"></div>
-			<div id="zoombtns"><button type="button" id="zout">−</button><button type="button" id="zin">＋</button></div>
+			<div id="zoombtns"><button type="button" id="zout" title="縮小（Cmd+右クリック・Cmd+ホイールでも）">−</button><select id="zoomSel" title="倍率"></select><button type="button" id="zin" title="拡大（Cmd+左クリック・Cmd+ホイールでも）">＋</button></div>
 			<div id="mini"></div>
 			<div id="toast"></div>
 		</div>
@@ -277,11 +283,13 @@
 				<h4>元イラスト<small>何を描くか</small></h4>
 				<div class="imgs" id="refs"></div>
 				<h4 style="margin-top:10px">見本<small>この絵柄に合わせよう</small></h4>
+				<div class="pv-scale"><button type="button" id="smp-out" title="見本を小さく">−</button><span id="smp-z" class="pv-text"></span><button type="button" id="smp-in" title="見本を大きく">＋</button></div>
 				<div class="imgs" id="samples"></div>
 				<p class="note">上手さより、ゲームになじむかで選びます。</p>
 			</div>
 			<div class="sec" id="sec-preview">
 				<h4>プレビュー<small>描くとすぐ変わります</small></h4>
+				<div class="pv-scale"><button type="button" id="pv-play" title="アニメを再生・止める">▶ 再生</button><button type="button" id="pv-prev" title="1 コマ戻す">◀</button><span id="pv-frame" class="pv-text"></span><button type="button" id="pv-next" title="1 コマ進める">▶</button></div>
 				<div class="pv-scale"><button type="button" data-pvs="1">等倍</button><button type="button" data-pvs="2" class="active">2倍</button><button type="button" data-pvs="4">4倍</button></div>
 				<div id="preview"></div>
 			</div>
