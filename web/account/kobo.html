@@ -327,7 +327,9 @@
 
 	/* 提案 */
 	.draw-pad { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
-	.draw-pad canvas { background: #fff; border-radius: 4px; image-rendering: pixelated; touch-action: none; max-width: 100%; }
+	.draw-pad canvas { display: block; background: #fff; border-radius: 4px; image-rendering: pixelated; touch-action: none; }
+	/* お絵かきは大きくするとはみ出すので、その分はスクロール */
+	.pad-view { overflow: auto; max-width: min(100%, 520px); max-height: 520px; border-radius: 4px; }
 	/* 管理者用エディタと同じ 16×16 の並び */
 	.pad-tools { display: grid; grid-template-columns: repeat(16, 1fr); width: 288px; max-width: 100%; border: 1px solid #000; }
 	.pad-tools .sw { aspect-ratio: 1; min-width: 0; min-height: 0; padding: 0; border: 0; border-right: 1px solid rgba(0,0,0,0.5); border-bottom: 1px solid rgba(0,0,0,0.5); border-radius: 0; }

@@ -1044,10 +1044,33 @@ function renderPropose() {
 	padBar.appendChild(el('span', '', '大きさ'));
 	const sizeSel = el('select');
 	padBar.appendChild(sizeSel);
+	/* 拡大（自動＝ 256px ほどに収まる倍率）。⌘/Ctrl＋ホイールでも変えられる */
+	const ZOOMS = [4, 6, 8, 10, 12, 16, 20, 24, 32];
+	padBar.appendChild(el('span', '', '拡大'));
+	const zoomOut = el('button', 'sub small', '－');
+	zoomOut.type = 'button';
+	zoomOut.title = '小さく';
+	const zoomSel = el('select');
+	const zAuto = el('option', '', '自動');
+	zAuto.value = 'auto';
+	zoomSel.appendChild(zAuto);
+	ZOOMS.forEach(function (z) {
+		const o = el('option', '', z + '倍');
+		o.value = String(z);
+		zoomSel.appendChild(o);
+	});
+	const zoomIn = el('button', 'sub small', '＋');
+	zoomIn.type = 'button';
+	zoomIn.title = '大きく';
+	padBar.appendChild(zoomOut);
+	padBar.appendChild(zoomSel);
+	padBar.appendChild(zoomIn);
 	const pad = el('div', 'draw-pad');
 	pad.style.marginTop = '8px';
 	const cv = el('canvas');
 	cv.style.cursor = 'crosshair';
+	const padView = el('div', 'pad-view');		// はみ出す分はスクロール
+	padView.appendChild(cv);
 	const tools = el('div', 'pad-tools');
 	const er = el('button', 'sub small', '消しゴム');
 	er.type = 'button';
@@ -1061,7 +1084,7 @@ function renderPropose() {
 	sb.appendChild(clr);
 	side.appendChild(sb);
 	side.appendChild(padNote);
-	pad.appendChild(cv);
+	pad.appendChild(padView);
 	pad.appendChild(side);
 	p.appendChild(padBar);
 	p.appendChild(pad);
@@ -1146,13 +1169,39 @@ function renderPropose() {
 			tools.appendChild(b);
 		}
 	}
+	function autoZoom() {
+		return Math.max(4, Math.floor(256 / Math.max(W, H)));
+	}
+	function sizeCanvas() {
+		Z = zoomSel.value === 'auto' ? autoZoom() : Number(zoomSel.value);
+		cv.width = W * Z + 1;
+		cv.height = H * Z + 1;
+	}
+	/* 倍率を変える（d=+1 大きく / -1 小さく） */
+	function stepZoom(d) {
+		const i = ZOOMS.findIndex(function (z) { return z >= Z; });
+		let j;
+		if (d > 0) {
+			j = ZOOMS[i] === Z ? i + 1 : i;
+		} else {
+			j = (i < 0 ? ZOOMS.length : i) - 1;
+		}
+		j = Math.max(0, Math.min(ZOOMS.length - 1, j));
+		zoomSel.value = String(ZOOMS[j]);
+		applyZoom();
+	}
+	function applyZoom() {
+		sizeCanvas();
+		redraw();
+		try {
+			window.localStorage.setItem('sbo_kobo_pad_zoom', zoomSel.value);
+		} catch (e) { /* 覚えられなくてもよい */ }
+	}
 	function resetPad() {
 		const sz = (sizeSel.value || '16x16').split('x');
 		W = Number(sz[0]);
 		H = Number(sz[1]);
-		Z = Math.max(4, Math.floor(256 / Math.max(W, H)));
-		cv.width = W * Z + 1;
-		cv.height = H * Z + 1;
+		sizeCanvas();
 		px = new Uint8Array(W * H).fill(sheet ? sheet.transparent : 0);
 		drawn = false;
 		if (roughSrc === 'pad') {
@@ -1246,6 +1295,22 @@ function renderPropose() {
 			if (e2 <= dx) { err += dx; y0 += sy; }
 		}
 	}
+	try {
+		const zv = window.localStorage.getItem('sbo_kobo_pad_zoom');
+		if (zv && Array.prototype.some.call(zoomSel.options, function (o) { return o.value === zv; })) {
+			zoomSel.value = zv;
+		}
+	} catch (e) { /* 読めなければ自動 */ }
+	zoomSel.addEventListener('change', applyZoom);
+	zoomIn.addEventListener('click', function () { stepZoom(1); });
+	zoomOut.addEventListener('click', function () { stepZoom(-1); });
+	padView.addEventListener('wheel', function (e) {
+		if (!e.metaKey && !e.ctrlKey) {
+			return;		/* ふつうのホイールはスクロール */
+		}
+		e.preventDefault();
+		stepZoom(e.deltaY < 0 ? 1 : -1);
+	}, { passive: false });
 	cv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 	cv.addEventListener('pointerdown', function (e) {
 		if (!sheet) {
