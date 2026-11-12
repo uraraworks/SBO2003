@@ -49,6 +49,7 @@
 	var MASTER_GAIN = 3.0;		/* MIDI の音量（GeneralUser GS は小さめなので、効果音とつり合うように持ち上げる） */
 	var AUDIO_GAIN = 1.5;		/* 音声ファイルの音量（MIDI とつり合うように調整する。Suno の曲は山が -3.4dB 前後なので、上げすぎると最大音量で割れる） */
 	var AUDIO_LOOP_GAP = 2500;	/* 音声 BGM をループする時、曲の最後から頭に戻るまでの間(ms) */
+	var LATENCY_HINT = 0.08;	/* 音を出す時のため（秒）。小さいと CPU が一瞬取られただけで途切れる */
 
 	/* ゲーム側から見た状態 */
 	var want = {
@@ -258,7 +259,23 @@
 			log('この環境では AudioContext が使えないので BGM は鳴りません');
 			return Promise.resolve();
 		}
-		ctx = new AC();
+		/*
+		 * 音を出す時の「ため（バッファ）」を大きめにする。
+		 * 何も指定しないと、ブラウザは効果音向けの一番小さいためを選ぶ（Mac の Chrome では
+		 * 128〜256 サンプル＝約 3〜5 ミリ秒）。シンセは AudioWorklet の別スレッドで動くが、
+		 * ゲーム画面の描画や他のアプリで CPU が一瞬でも取られると、その短い間に音を作り
+		 * きれず、BGM が時々プツプツ途切れていた。
+		 * BGM は 0.1 秒くらい遅れて鳴っても困らないので、0.08 秒ぶんためておく。
+		 * 効果音は別の AudioContext（CDXAudio_web.cpp、interactive）なので遅れない。
+		 * 数字の指定を受け付けない古いブラウザでは、いままで通りの作り方にする。
+		 */
+		try {
+			ctx = new AC({ latencyHint: LATENCY_HINT });
+		} catch (e) {
+			ctx = new AC();
+		}
+		log('AudioContext を作りました（サンプリング ' + ctx.sampleRate + 'Hz・ため ' +
+			(typeof ctx.baseLatency === 'number' ? Math.round(ctx.baseLatency * 1000) + 'ms' : '不明') + '）');
 		ctx.onstatechange = function () {
 			log('AudioContext: ' + ctx.state);
 		};
@@ -743,6 +760,12 @@
 				ready: ready,
 				failed: failed,
 				context: ctx ? ctx.state : 'none',
+				/* 音のため（秒）。baseLatency が小さすぎると途切れやすい */
+				sampleRate: ctx ? ctx.sampleRate : 0,
+				baseLatency: ctx ? ctx.baseLatency : null,
+				outputLatency: ctx ? ctx.outputLatency : null,
+				/* 対応しているブラウザだけ：音を作りきれずに無音で埋めた回数など（途切れの数） */
+				playout: (ctx && ctx.playoutStats && typeof ctx.playoutStats.toJSON === 'function') ? ctx.playoutStats.toJSON() : null,
 				playing: want.playing,
 				loop: want.loop,
 				volume: want.volume,
