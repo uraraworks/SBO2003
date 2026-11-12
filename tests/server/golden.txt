@@ -1,4 +1,12 @@
 getcharno mutations=ok
+S itemmsg 0 @2
+S itemmsg 1 same
+S itemmsg 2 @2
+S itemmsg 3 same
+S itemmsg 4 same
+S itemmsg 5 @2
+S itemmsg 6 @2
+S itemmsg full abc
 == A. SendTo ==
 send#0 size=0 id=100000 pri=0 total=8 sha=262701071aee8da1
 send#1 size=0 id=100000 pri=1 total=16 sha=b5355f837af2651c
