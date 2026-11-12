@@ -1036,6 +1036,10 @@
 	#sbo-quick-list {
 		max-height: 220px;
 		overflow-y: auto;
+		/* 中だけスクロールする箱は外にはみ出す枠を切ってしまうので、
+		   キーボードで選んだ時の枠（3px＋すき間2px）が見える分だけ内側に余白を取り、外へ広げて見た目を合わせる */
+		padding: 6px;
+		margin: -6px;
 	}
 	.sbo-acc-row {
 		display: flex;
