@@ -50,6 +50,7 @@ static DWORD s_dwLastSync = 0;									/* 最後に同期した時刻 */
 #define QUEST_FLG_CLEARED		16									/* 討伐チャレンジに成功した印の旗（ギルドで渡せる条件） */
 #define CHALLENGE_NEAR			8									/* 一緒に受ける・入る仲間の距離（マス） */
 #define CHALLENGE_ARRIVE_WAIT	10000								/* 入ってから行き先に着くまで待つ時間（ミリ秒） */
+#define CHALLENGE_CLEAR_WAIT	3000								/* 全部倒してから元の場所へ戻すまでの間（ミリ秒。何が起きたか分かるように） */
 
 /* 討伐チャレンジ中の人の、本物の状態の控え */
 typedef struct _LOANBAK {
@@ -74,6 +75,8 @@ typedef struct _CHALLENGE {
 	DWORD		dwPartyID;											/* 入った時のパーティ（変わった人は中断） */
 	DWORD		dwStart;											/* 始めた時刻 */
 	BOOL		bCleared;											/* 敵を全部倒した */
+	DWORD		dwClear;											/* 全部倒したと知らせた時刻（0=まだ） */
+	DWORD		dwClearTime;										/* かかった時間（ミリ秒） */
 	std::vector<DWORD>	aMember;									/* 挑戦中の人（テーブルID） */
 	std::vector<DWORD>	aEnemy;										/* 残っている敵（テーブルID） */
 } CHALLENGE;
@@ -92,6 +95,7 @@ static DWORD s_dwChallengeSeq = 0;								/* 挑戦の番号の採番 */
 
 static void ChallengeProc(void);
 static void ChallengeOnDecPlayer(PCHARINFO pChar);
+static void ChallengeClearMember(PCHARINFO p, struct _CHALLENGE *pCh, int nReason);
 static void ChallengeStart(PCHARINFO pChar, PQUESTINFO pQuest, PQUESTNPCINFO pDef);
 static void GetChallengeMembers(PCHARINFO pChar, WORD wQuestID, std::vector<PCHARINFO> &aOut);
 
@@ -1789,9 +1793,31 @@ static void ChallengeOnDecPlayer(PCHARINFO pChar)
 		}
 		return;
 	}
-	/* 挑戦中の人が切断した */
+	/* 挑戦中の人が切断した（全部倒した後の待ち時間なら成功にしてから） */
 	if (QuestInChallenge (pChar)) {
-		ChallengeLeave (pChar, CHALLENGELEAVE_LOGOUT);
+		std::map<DWORD, LOANBAK>::iterator itL = s_mapLoan.find (pChar->dwTblID);
+		std::map<DWORD, CHALLENGE>::iterator itC = s_mapChallenge.find (itL->second.dwSession);
+		if ((itC != s_mapChallenge.end ()) && itC->second.bCleared) {
+			ChallengeClearMember (pChar, &itC->second, CHALLENGELEAVE_LOGOUT);
+		} else {
+			ChallengeLeave (pChar, CHALLENGELEAVE_LOGOUT);
+		}
+	}
+}
+
+/* 全部倒した組の人を成功にして戻す（最後の段＋成功の印） */
+static void ChallengeClearMember(PCHARINFO p, CHALLENGE *pCh, int nReason)
+{
+	PQUESTINFO pQuest = FindQuest (pCh->wQuestID);
+
+	ChallengeLeave (p, nReason);
+	if (pQuest) {
+		p->byQuestStep = (BYTE)(max ((int)pQuest->byStepCount, 1) - 1);
+	}
+	p->wQuestFlg |= (WORD)(1 << (QUEST_FLG_CLEARED - 1));
+	if (nReason == CHALLENGELEAVE_CLEAR) {
+		SendCmdSYSMSG (p->pID, "元の姿に戻りました。ギルドに報告しましょう。", SPEECHCMD_BATTLE1);
+		QuestSendState (p);
 	}
 }
 
@@ -1808,20 +1834,29 @@ static void ChallengeProc(void)
 		std::vector<DWORD> aMember = itC->second.aMember;
 
 		if (itC->second.bCleared) {
-			PQUESTINFO pQuest = FindQuest (itC->second.wQuestID);
 			char szTime[64], szTmp[256];
-			MakeTimeText (dwNow - itC->second.dwStart, szTime, sizeof (szTime));
-			for (i = 0; i < aMember.size (); i ++) {
-				PCHARINFO p = g_aCharInfo[aMember[i]];
-				ChallengeLeave (p, CHALLENGELEAVE_CLEAR);
-				if (pQuest) {
-					p->byQuestStep = (BYTE)(max ((int)pQuest->byStepCount, 1) - 1);
+
+			/* 全部倒した：まずその場で知らせて、少し間をおいてから戻す（倒した瞬間に戻すと何が起きたか分からない） */
+			if (itC->second.dwClear == 0) {
+				itC->second.dwClearTime = dwNow - itC->second.dwStart;
+				itC->second.dwClear = dwNow;
+				if (itC->second.dwClear == 0) {
+					itC->second.dwClear = 1;
 				}
-				p->wQuestFlg |= (WORD)(1 << (QUEST_FLG_CLEARED - 1));
-				SendCmdPLAYSOUND (p->pID, SOUND_PI52);
-				snprintf (szTmp, sizeof (szTmp), "討伐成功！ タイム %s。元の姿に戻りました。ギルドに報告しましょう。", szTime);
-				SendCmdSYSMSG (p->pID, szTmp, SPEECHCMD_BATTLE1);
-				QuestSendState (p);
+				MakeTimeText (itC->second.dwClearTime, szTime, sizeof (szTime));
+				snprintf (szTmp, sizeof (szTmp), "討伐成功！ タイム %s。まもなく元の場所へ戻ります…", szTime);
+				for (i = 0; i < aMember.size (); i ++) {
+					PCHARINFO p = g_aCharInfo[aMember[i]];
+					SendCmdPLAYSOUND (p->pID, SOUND_PI52);
+					SendCmdSYSMSG (p->pID, szTmp, SPEECHCMD_BATTLE1);
+				}
+				continue;
+			}
+			if (dwNow - itC->second.dwClear < CHALLENGE_CLEAR_WAIT) {
+				continue;
+			}
+			for (i = 0; i < aMember.size (); i ++) {
+				ChallengeClearMember (g_aCharInfo[aMember[i]], &itC->second, CHALLENGELEAVE_CLEAR);
 			}
 			aEnd.push_back (dwSession);
 			continue;

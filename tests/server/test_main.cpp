@@ -2444,6 +2444,13 @@ static void TestChallenge(const std::vector<int> &aLogin)
 		DWORD dwExp0 = aBack[0].dwExp;		/* 本物の経験値（敵は経験値を出さないので変わらない） */
 		DeleteChar(pEnemy->dwTblID);
 		QuestChallengeProcNow();
+		/* すぐには戻さない（知らせてから 3 秒後） */
+		printf("challenge clear wait in=%d\n", (int)QuestInChallenge(pA));
+		s_dwFakeNow += 2000;
+		QuestChallengeProcNow();
+		printf("challenge clear wait2 in=%d\n", (int)QuestInChallenge(pA));
+		s_dwFakeNow += 1000;
+		QuestChallengeProcNow();
 		ChallengePrint("clear a", pA, wWeapon);
 		printf("challenge clear step=%u flag16=%d at_start=%d exp_same=%d enemies=%d\n", pA->byQuestStep, QuestFlagCheck(pA, 16),
 			(int)(pA->dwX == dwAX && pA->dwY == dwAY), (int)(pA->dwExp == dwExp0), ChallengeCountEnemy());

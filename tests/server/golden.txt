@@ -1177,6 +1177,8 @@ challenge leave blocked item0=1
 challenge proc a=1 b=1
 challenge dead b in=0 lv=30 pw=99 hp=480/500 mana=90 gold=5000 item0=0 weapon_equ=0
 challenge dead b state=1 at_start=1 quest=20 a_in=1
+challenge clear wait in=1
+challenge clear wait2 in=1
 challenge clear a in=0 lv=30 pw=99 hp=480/500 mana=90 gold=5000 item0=0 weapon_equ=0
 challenge clear step=1 flag16=1 at_start=1 exp_same=1 enemies=0
 challenge handin1 quest=0 gold+=100 done=1
