@@ -170,6 +170,22 @@ export function open(apiFn, badgeFn, target) {
 	show({ name: 'list' });
 }
 
+/* 上に「送りました」などを少しだけ出す */
+function flash(text) {
+	if (!root) return;
+	const m = h('div', { class: 'msg ok kb-flash', text: text });
+	root.insertBefore(m, root.children[1] || null);
+	setTimeout(() => m.remove(), 6000);
+}
+
+/* 描く画面（別のタブ）で送ったら知らせが来るので、今の画面を読み込み直して「送りました」を出す */
+const SAVED_TEXT = { fix: '管理人の修正を出しました', base: '今の絵を保存しました', sample: '見本を保存しました', proposal: '返事を送りました' };
+window.addEventListener('message', (e) => {
+	if (e.origin !== location.origin || !e.data || e.data.type !== 'kobo-admin-saved') return;
+	if (view.name !== 'form') show(view);
+	flash(SAVED_TEXT[e.data.mode] || '送りました');
+});
+
 function show(v) {
 	view = v;
 	const seq = ++renderSeq;
@@ -491,7 +507,7 @@ async function renderProposals(body, seq, status) {
 		const m = msgBox();
 		const ta = h('textarea', { rows: 2, placeholder: '返事（本人にだけ見えます）', value: p.reply || '' });
 		const upd = (data, okText) => api('/api/admin/kobo/proposal-update', Object.assign({ id: p.id }, data)).then((d) => {
-			if (d.ok) show({ name: 'proposals', status }); else setMsg(m, errText(d));
+			if (d.ok) { show({ name: 'proposals', status }); flash(okText || '保存しました'); } else setMsg(m, errText(d));
 		});
 		const bar = h('div', { class: 'kb-bar' });
 		for (const k of ['new', 'later', 'declined']) {
@@ -502,9 +518,9 @@ async function renderProposals(body, seq, status) {
 		card.appendChild(ta);
 		if (p.replyImg) {
 			card.appendChild(h('div', { class: 'kb-ref' }, h('div', { class: 'sub-text', text: '返事の絵' }), pic(p.replyImg, 256),
-				h('div', null, h('button', { type: 'button', class: 'sub', on: { click: () => { if (confirm('返事の絵を外しますか？')) upd({ replyImg: '' }); } } }, '絵を外す'))));
+				h('div', null, h('button', { type: 'button', class: 'sub', on: { click: () => { if (confirm('返事の絵を外しますか？')) upd({ replyImg: '' }, '返事の絵を外しました'); } } }, '絵を外す'))));
 		}
-		card.appendChild(h('div', null, h('button', { type: 'button', class: 'sub', on: { click: () => upd({ reply: ta.value }) } }, '返事を保存'),
+		card.appendChild(h('div', null, h('button', { type: 'button', class: 'sub', on: { click: () => upd({ reply: ta.value }, '返事を送りました') } }, '返事を保存'),
 			h('button', { type: 'button', class: 'sub', on: { click: () => openDraw('/kobo-draw?admin=proposal&id=' + encodeURIComponent(p.id)) } }, p.replyImg ? '返事の絵を描き直す' : '描き足して返事'),
 			p.replyAt ? h('span', { class: 'sub-text', text: dateText(p.replyAt) + ' に返事済み' }) : null));
 		card.appendChild(bar);

@@ -1525,6 +1525,14 @@ async function adminSave() {
 		clearLocal();
 		S.closed = true;
 		closeSubmit();
+		/* 開いた管理ページに知らせて（読み込み直して「送りました」を出す）、このタブは閉じる */
+		try {
+			if (window.opener && !window.opener.closed) {
+				window.opener.postMessage({ type: 'kobo-admin-saved', mode: S.admin }, location.origin);
+			}
+		} catch (e) { /* 知らせられなくてもよい */ }
+		window.close();
+		/* 閉じられなかった時（直接開いた時など）は、ここに出す */
 		const banner = $('banner');
 		banner.hidden = false;
 		banner.textContent = '送りました！このタブは閉じて大丈夫です。管理ページを読み込み直すと出ます。';

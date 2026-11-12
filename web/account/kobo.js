@@ -1864,9 +1864,11 @@ function renderPropose() {
 			if (data.ok) {
 				removeProposeDraft(draftKey);
 				proposeEdit = null;
+				proposeOpen = false;		/* 送ったら入力欄は閉じる */
 				renderPropose();
-				const ok = el('div', 'msg ok', edit ? '直しました！' : '送りました！ありがとう。管理人の返事は下の「自分の提案」で見られます。');
+				const ok = el('div', 'msg ok posted-msg', edit ? '直しました！' : '送りました！ありがとう。管理人の返事は下の「自分の提案」で見られます。');
 				$('propose').insertBefore(ok, $('propose').firstChild);
+				ok.scrollIntoView({ behavior: 'smooth', block: 'center' });
 				loadMyProposals();
 			} else {
 				msg.textContent = errText(data);
