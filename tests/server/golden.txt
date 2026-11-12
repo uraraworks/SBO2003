@@ -1228,4 +1228,13 @@ statusup recast at=250 events=2
 statusup 181s at=250 df=100 events=1
 statusup 281s at=200 df=100 events=0 buffpkt=5
 statusup enemy use=1 at_same=1 events=0
+== S. MagicWall ==
+magic=55 wall=0 hit=20/20 put-on-enemy=0
+magic=55 wall=1 hit=0/20 put-on-enemy=0
+magic=50 wall=0 hit=20/20 put-on-enemy=0
+magic=50 wall=1 hit=0/20 put-on-enemy=0
+magic=35 wall=0 hit=0/20 put-on-enemy=20
+magic=35 wall=1 hit=0/20 put-on-enemy=0
+heal wall=0 healed=1
+heal wall=1 healed=1
 == done ==

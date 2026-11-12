@@ -904,6 +904,7 @@ static void TestCharPush(const std::vector<int> &aLogin);
 static void TestLeaveDispose(const std::vector<int> &aLogin);
 static void TestChallenge(const std::vector<int> &aLogin);
 static void TestStatusUp(const std::vector<int> &aLogin);
+static void TestMagicWall(const std::vector<int> &aLogin);
 
 static void TestTownWarp(const std::vector<int> &aLogin)
 {
@@ -1338,6 +1339,147 @@ static void TestWorld(void)
 	TestChallenge(aLogin);
 	/* R. 攻撃力・守備力アップ */
 	TestStatusUp(aLogin);
+	/* S. 前方・周囲の特技が壁越しに届かない */
+	TestMagicWall(aLogin);
+}
+
+/* ------------------------------------------------------------------------- */
+/* S. 前方・周囲の特技が壁越しに届かない									 */
+/*    敵の1マス手前を壁にして、2マス先から前方・周囲の特技を使う。			 */
+/*    壁が無ければ当たり、壁があれば当たらないこと。置く魔法も壁の向こうに出ないこと */
+/*    回復は壁越しでも効くこと											 */
+/* ------------------------------------------------------------------------- */
+extern void DeleteChar(DWORD dwTblID);
+static void TestMagicWall(const std::vector<int> &aLogin)
+{
+	printf("== S. MagicWall ==\n");
+	if (aLogin.empty()) {
+		return;
+	}
+	PCHARINFO pPC = g_aCharInfo[aLogin[0]];
+	/* 壁にするパーツ */
+	int nWall = -1;
+	for (int i = 0; i < g_wCountMapParts; i ++) {
+		if (g_aMapPartsInfo[i].byHitType == PARTSHIT_BLOCK1) {
+			nWall = i;
+			break;
+		}
+	}
+	/* 左に2マス空いている戦闘用の敵を探す */
+	PCHARINFO pEnemy = NULL;
+	for (int i = 0; i < g_aCharInfo.GetSize() && !pEnemy; i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+		if (p->wGrpMain != CHARGRP_MAIN_NORMAL || (g_aMapInfo[p->dwMapID]->byFlg & MAPFLG_MAGIC)) {
+			continue;
+		}
+		if (p->byNpcType != NPCTYPE_BATTLE1 && p->byNpcType != NPCTYPE_BATTLE2) {
+			continue;
+		}
+		if (p->dwX < 3 || p->dwY < 1) {
+			continue;
+		}
+		if (CheckCharBlock(p->dwMapID, p->dwX - 1, p->dwY) && CheckCharBlock(p->dwMapID, p->dwX - 2, p->dwY)) {
+			pEnemy = p;
+		}
+	}
+	if (!pEnemy || nWall < 0) {
+		printf("no enemy\n");
+		return;
+	}
+	PMAPINFO pMap = g_aMapInfo[pEnemy->dwMapID];
+	DWORD dwPCMap = pPC->dwMapID;
+	DeleteTblNoPC((int)pPC->dwTblID);
+	pPC->dwMapID = pEnemy->dwMapID;
+	AddTblNoPC((int)pPC->dwTblID);
+	DWORD dwEnemyX = pEnemy->dwX, dwEnemyY = pEnemy->dwY;
+	WORD wHPBack = pEnemy->wHP, wMaxHPBack = pEnemy->wMaxHP;
+	DWORD dwPCX = pPC->dwX, dwPCY = pPC->dwY;
+	BYTE byDirBack = pPC->byDirection, abyMagicBack[MAX_USEMAGIC];
+	memcpy(abyMagicBack, pPC->abyMagic, sizeof(abyMagicBack));
+	int nWallPos = (int)(dwEnemyX - 1) + (int)dwEnemyY * pMap->nCX;
+	WORD wPartsBack = pMap->pwMap[nWallPos];
+
+	/* 十字突（前方2マス）・ブレイズフィールド（周囲2マス）・広がる火炎（周囲3マスに置く） */
+	static const BYTE abyMagic[] = {55, 50, 35};
+	for (size_t m = 0; m < sizeof(abyMagic) / sizeof(abyMagic[0]); m ++) {
+		BYTE byID = abyMagic[m];
+		if (byID >= g_aMagicInfo.GetSize()) {
+			continue;
+		}
+		for (int nWallOn = 0; nWallOn < 2; nWallOn ++) {
+			pMap->pwMap[nWallPos] = nWallOn ? (WORD)nWall : wPartsBack;
+			int nHit = 0, nTry = 20, nBeyond = 0;
+			for (int t = 0; t < nTry; t ++) {
+				pPC->dwX = dwEnemyX - 2;
+				pPC->dwY = dwEnemyY;
+				pPC->byDirection = 3;
+				pPC->abyMagic[0] = byID;
+				pPC->wMana = 9999;
+				pEnemy->dwX = dwEnemyX;
+				pEnemy->dwY = dwEnemyY;
+				pEnemy->wMaxHP = pEnemy->wHP = 30000;
+				MagicProc(pPC->dwTblID, byID, (DWORD)-1);
+				if (pEnemy->wHP < 30000) {
+					nHit ++;
+				}
+				/* 置いた魔法が敵のマスにあるか数えてから消す */
+				for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+					PCHARINFO p = g_aCharInfo[i];
+					if ((p->byNpcType != NPCTYPE_USEMAGIC && p->byNpcType != NPCTYPE_USEMAGICPARENT) ||
+						p->dwParentTblID != pPC->dwTblID || p->pProc == NULL) {
+						continue;
+					}
+					if (p->dwX == dwEnemyX && p->dwY == dwEnemyY) {
+						nBeyond ++;
+					}
+					DeleteChar(p->dwTblID);
+				}
+			}
+			printf("magic=%d wall=%d hit=%d/%d put-on-enemy=%d\n", byID, nWallOn, nHit, nTry, nBeyond);
+		}
+	}
+	/* 回復（周囲2マス）は壁越しでも仲間に効く */
+	if (aLogin.size() > 1 && 12 < g_aMagicInfo.GetSize()) {
+		PCHARINFO pPC2 = g_aCharInfo[aLogin[1]];
+		DWORD dwPC2Map = pPC2->dwMapID, dwPC2X = pPC2->dwX, dwPC2Y = pPC2->dwY;
+		WORD wPC2HP = pPC2->wHP, wPC2MaxHP = pPC2->wMaxHP;
+		DeleteTblNoPC((int)pPC2->dwTblID);
+		pPC2->dwMapID = pEnemy->dwMapID;
+		AddTblNoPC((int)pPC2->dwTblID);
+		for (int nWallOn = 0; nWallOn < 2; nWallOn ++) {
+			pMap->pwMap[nWallPos] = nWallOn ? (WORD)nWall : wPartsBack;
+			pPC->dwX = dwEnemyX - 2;
+			pPC->dwY = dwEnemyY;
+			pPC->byDirection = 3;
+			pPC->abyMagic[0] = 12;
+			pPC->wMana = 9999;
+			pPC2->dwX = dwEnemyX;
+			pPC2->dwY = dwEnemyY;
+			pPC2->wMaxHP = 30000;
+			pPC2->wHP = 1;
+			MagicProc(pPC->dwTblID, 12, (DWORD)-1);
+			printf("heal wall=%d healed=%d\n", nWallOn, pPC2->wHP > 1 ? 1 : 0);
+		}
+		DeleteTblNoPC((int)pPC2->dwTblID);
+		pPC2->dwMapID = dwPC2Map;
+		AddTblNoPC((int)pPC2->dwTblID);
+		pPC2->dwX = dwPC2X;
+		pPC2->dwY = dwPC2Y;
+		pPC2->wHP = wPC2HP;
+		pPC2->wMaxHP = wPC2MaxHP;
+	}
+	pMap->pwMap[nWallPos] = wPartsBack;
+	DeleteTblNoPC((int)pPC->dwTblID);
+	pPC->dwMapID = dwPCMap;
+	AddTblNoPC((int)pPC->dwTblID);
+	pPC->dwX = dwPCX;
+	pPC->dwY = dwPCY;
+	pPC->byDirection = byDirBack;
+	memcpy(pPC->abyMagic, abyMagicBack, sizeof(abyMagicBack));
+	pEnemy->dwX = dwEnemyX;
+	pEnemy->dwY = dwEnemyY;
+	pEnemy->wHP = wHPBack;
+	pEnemy->wMaxHP = wMaxHPBack;
 }
 
 /* ------------------------------------------------------------------------- */
