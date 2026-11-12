@@ -2152,6 +2152,8 @@ static BOOL MagicProcUseStatusUp(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pC
 	SetCharInfoTimerStatus (pCharTarget, byType, (BYTE)nRate, (DWORD)nSec * 1000);
 	SetCharInfoTimerStatusMin (pCharTarget, byType, (DWORD)nMin);
 	RenewATDF (pCharTarget->dwTblID);
+	/* 本人と仲間の HP の枠にアイコンを出す */
+	BuffSendState (pCharTarget);
 
 	snprintf (szTmp, sizeof (szTmp), "%s↑", pszName);
 	SendCmdADDCHAREFC (pCharTarget->dwTblID, clText, szTmp);

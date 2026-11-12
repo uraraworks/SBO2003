@@ -26,6 +26,8 @@ static BOOL	CharInfoTimerProc_SLEEP		(PCHARINFO pChar, PCHARINFOTIMEREVENT pInfo
 static BOOL	CharInfoTimerProc_STATUSUP	(PCHARINFO pChar, PCHARINFOTIMEREVENT pInfo);	/* キャラ情報タイマーイベント処理(攻撃力・守備力アップ) */
 
 #define POISON_INTERVAL		2000		/* 毒のダメージの間隔(ms) */
+void		BuffSendState				(PCHARINFO pChar);								/* 攻撃力・守備力アップの残りを本人と仲間へ送る */
+static BOOL s_bBuffEnded = FALSE;		/* 攻撃力・守備力アップが切れた(消した後で仲間に知らせる) */
 #define SLEEP_EFC_INTERVAL	2000		/* 眠っている間に「Zzz」を出す間隔(ms) */
 
 extern long genrand();					/* 乱数取得 */
@@ -106,6 +108,11 @@ void CharInfoTimerProc(DWORD dwTblID)
 			SAFE_DELETE (pInfo);
 			pChar->aTimerEvent.RemoveAt (i);
 			RenewATDF (pChar->dwTblID);
+			/* 攻撃力・守備力アップが切れたらアイコンを消すよう知らせる */
+			if (s_bBuffEnded) {
+				s_bBuffEnded = FALSE;
+				BuffSendState (pChar);
+			}
 			break;
 		}
 	}
@@ -314,8 +321,140 @@ static BOOL CharInfoTimerProc_STATUSUP(PCHARINFO pChar, PCHARINFOTIMEREVENT pInf
 		SendCmdSYSMSG (pChar->pID,
 				(pInfo->byType == CHARINFOTIMEREVENT_ATUP) ? "攻撃アップの効果が切れました" : "守りアップの効果が切れました",
 				SPEECHCMD_BATTLE1);
+		/* 切れたことは、呼び出し元でイベントを消した後に知らせる(残りが 0 になるように) */
+		s_bBuffEnded = TRUE;
 	}
 	return TRUE;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	GetBuffRest														 */
+/* 内容：	攻撃力・守備力アップの残り時間(ms)。かかっていなければ0			 */
+/* ========================================================================= */
+
+static DWORD GetBuffRest(PCHARINFO pChar, BYTE byType)
+{
+	int i, nCount;
+	DWORD dwPass;
+	PCHARINFOTIMEREVENT pInfo;
+
+	nCount = pChar->aTimerEvent.GetSize ();
+	for (i = 0; i < nCount; i ++) {
+		pInfo = pChar->aTimerEvent[i];
+		if (pInfo->byType == byType) {
+			dwPass = timeGetTime () - pInfo->dwTimeStart;
+			return (dwPass < pInfo->dwTimeValid) ? (pInfo->dwTimeValid - dwPass) : 1;
+		}
+	}
+	return 0;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	IsBuffOnline / SendBuffTo										 */
+/* 内容：	遊んでいる人か・pChar のアップの残りを pTo へ送る				 */
+/* ========================================================================= */
+
+static BOOL IsBuffOnline(PCHARINFO pChar)
+{
+	return pChar && (pChar->byNpcType == NPCTYPE_INIT) && (pChar->pID != 0) &&
+		(pChar->byGameState >= GAMESTATE_MOVE) && (pChar->byGameState != GAMESTATE_NPC);
+}
+
+static void SendBuffTo(PCHARINFO pTo, PCHARINFO pChar)
+{
+	CMDPARA_CHARBUFF Para;
+
+	if (!IsBuffOnline (pTo)) {
+		return;
+	}
+	ZeroMemory (&Para, sizeof (Para));
+	Para.byCmd		= CMD_CHARBUFF;
+	Para.dwTblID	= pChar->dwTblID;
+	Para.dwATUP		= GetBuffRest (pChar, CHARINFOTIMEREVENT_ATUP);
+	Para.dwDFUP		= GetBuffRest (pChar, CHARINFOTIMEREVENT_DFUP);
+	svrSock.SendTo (pTo->pID, (LPBYTE)&Para, sizeof (Para), SENDTIMEOUT);
+}
+
+
+/* ========================================================================= */
+/* 関数名：	GetBuffPartyMembers												 */
+/* 内容：	本人と、同じパーティでオンラインの仲間							 */
+/* ========================================================================= */
+
+static int GetBuffPartyMembers(PCHARINFO pChar, PCHARINFO *apOut)
+{
+	int i, nCount;
+	DWORD dwTbl;
+	PCHARINFO pTmp;
+
+	nCount = 0;
+	apOut[nCount ++] = pChar;
+	if ((pChar->dwPartyID == 0) || (pChar->dwPartyID >= (DWORD)g_aPartyInfo.GetSize ())) {
+		return nCount;
+	}
+	PPARTYINFO pParty = g_aPartyInfo[pChar->dwPartyID];
+	for (i = 0; i < MAX_PARTYMEMBER; i ++) {
+		dwTbl = pParty->adwTblID[i];
+		if (dwTbl == 0) {
+			break;
+		}
+		if ((dwTbl >= (DWORD)g_aCharInfo.GetSize ()) || (dwTbl == pChar->dwTblID)) {
+			continue;
+		}
+		pTmp = g_aCharInfo[dwTbl];
+		if (IsBuffOnline (pTmp) && (pTmp->dwPartyID == pChar->dwPartyID) && (nCount < MAX_PARTYMEMBER + 1)) {
+			apOut[nCount ++] = pTmp;
+		}
+	}
+	return nCount;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	BuffSendState													 */
+/* 内容：	pChar のアップの残りを、本人とパーティの仲間へ送る				 */
+/* ========================================================================= */
+
+void BuffSendState(PCHARINFO pChar)
+{
+	PCHARINFO apMember[MAX_PARTYMEMBER + 1];
+	int i, nCount;
+
+	if (pChar->byNpcType != NPCTYPE_INIT) {
+		return;
+	}
+	nCount = GetBuffPartyMembers (pChar, apMember);
+	for (i = 0; i < nCount; i ++) {
+		SendBuffTo (apMember[i], pChar);
+	}
+}
+
+
+/* ========================================================================= */
+/* 関数名：	BuffSendPartyAll												 */
+/* 内容：	パーティに入った時。仲間どうしでアップの残りを見せ合う			 */
+/*			(かかっていない人の分は送らない)								 */
+/* ========================================================================= */
+
+void BuffSendPartyAll(PCHARINFO pChar)
+{
+	PCHARINFO apMember[MAX_PARTYMEMBER + 1];
+	int i, j, nCount;
+
+	nCount = GetBuffPartyMembers (pChar, apMember);
+	for (i = 0; i < nCount; i ++) {
+		if ((GetBuffRest (apMember[i], CHARINFOTIMEREVENT_ATUP) == 0) &&
+			(GetBuffRest (apMember[i], CHARINFOTIMEREVENT_DFUP) == 0)) {
+			continue;
+		}
+		for (j = 0; j < nCount; j ++) {
+			if (i != j) {
+				SendBuffTo (apMember[j], apMember[i]);
+			}
+		}
+	}
 }
 
 

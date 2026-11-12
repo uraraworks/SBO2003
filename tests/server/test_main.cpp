@@ -2826,6 +2826,7 @@ static void TestStatusUp(const std::vector<int> &aLogin)
 	DeleteAllTimerEvent(pB);
 	RenewATDF(pB->dwTblID);
 	int nAT0 = pB->wAT, nDF0 = pB->wDF;
+	int nBuff0 = MockCmdCount(1001, CMD_CHARBUFF);		/* B はログインした順で 1001 番 */
 
 	/* 攻撃 25%・最低+3、守り 50%・最低+4、3分 */
 	pMagic->byType = MAGICTYPE_ATUP;
@@ -2834,8 +2835,8 @@ static void TestStatusUp(const std::vector<int> &aLogin)
 	pMagic->byType = MAGICTYPE_DFUP;
 	pMagic->wData1 = 50; pMagic->wData2 = 180; pMagic->wData3 = 4;
 	BOOL bDF = MagicProcItem(pA->dwTblID, 8, pB->dwTblID);
-	printf("statusup use=%d,%d at+%d df+%d events=%d\n", bAT, bDF,
-		(int)pB->wAT - nAT0, (int)pB->wDF - nDF0, pB->aTimerEvent.GetSize());
+	printf("statusup use=%d,%d at+%d df+%d events=%d buffpkt=%d\n", bAT, bDF,
+		(int)pB->wAT - nAT0, (int)pB->wDF - nDF0, pB->aTimerEvent.GetSize(), MockCmdCount(1001, CMD_CHARBUFF) - nBuff0);
 
 	/* 強い人は率で上がる(力を上げて計り直す) */
 	pB->byPW = 200;
@@ -2860,7 +2861,7 @@ static void TestStatusUp(const std::vector<int> &aLogin)
 	s_dwFakeNow += 100000;
 	g_dwTime = s_dwFakeNow;
 	CharInfoTimerProc(pB->dwTblID);
-	printf("statusup 281s at=%d df=%d events=%d\n", pB->wAT, pB->wDF, pB->aTimerEvent.GetSize());
+	printf("statusup 281s at=%d df=%d events=%d buffpkt=%d\n", pB->wAT, pB->wDF, pB->aTimerEvent.GetSize(), MockCmdCount(1001, CMD_CHARBUFF) - nBuff0);
 
 	/* 敵にはかからない */
 	PCHARINFO pEnemy = NULL;

@@ -426,6 +426,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	NULL,								/* CMD_QUESTSTATE(サーバー→クライアントのみ) */
 	RecvDataProcSORTITEM,				/* CMD_SORTITEM */
 	RecvDataProcLEAVEITEMDISPOSE,		/* CMD_LEAVEITEMDISPOSE */
+	NULL,								/* CMD_CHARBUFF(サーバー→クライアントのみ) */
 
 	NULL
 };
@@ -7520,6 +7521,8 @@ void RecvDataProcPARTY(PBYTE pData, DWORD dwDataSize)
 		/* 依頼の進み具合を仲間へ送り、見えるNPCを更新する */
 		QuestSendStateParty (pCharFrom->dwPartyID, NULL);
 		QuestSyncAll ();
+		/* 攻撃力・守備力アップのアイコンを、入った人と仲間で見せ合う */
+		BuffSendPartyAll (pCharFrom);
 		break;
 
 	case CMDPARTY_JOINNO:		/* 参加しない */
