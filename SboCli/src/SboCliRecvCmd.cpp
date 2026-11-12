@@ -142,6 +142,7 @@ void	RecvDataProcLOGINRES				(PBYTE, DWORD);			/* 受信データ処理(ログ�
 void	RecvDataProcWEBACCOUNT				(PBYTE, DWORD);			/* 受信データ処理(ブラウザ版のアカウント関係) */
 void	RecvDataProcADMINUNDO				(PBYTE, DWORD);			/* 受信データ処理(管理者画面の「元に戻す」) */
 void	RecvDataProcHASTE					(PBYTE, DWORD);			/* 受信データ処理(加速の状態) */
+void	RecvDataProcCHARBUFF				(PBYTE, DWORD);			/* 受信データ処理(攻撃力・守備力アップの残り) */
 void	RecvDataProcMAKERINFO				(PBYTE, DWORD);			/* 受信データ処理(作り手情報) */
 void	RecvDataProcRECIPEINFO				(PBYTE, DWORD);			/* 受信データ処理(レシピ情報) */
 void	RecvDataProcRECIPEMAKE				(PBYTE, DWORD);			/* 受信データ処理(作ってもらった結果) */
@@ -392,6 +393,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcQUESTSTATE,				/* CMD_QUESTSTATE */
 	NULL,								/* CMD_SORTITEM(クライアント→サーバーのみ) */
 	NULL,								/* CMD_LEAVEITEMDISPOSE(クライアント→サーバーのみ) */
+	RecvDataProcCHARBUFF,				/* CMD_CHARBUFF */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -3196,6 +3198,67 @@ void RecvDataProcHASTE(PBYTE pData, DWORD dwDataSize)
 	if (pPara->dwData == 0) {
 		g_byHasteRate = 0;
 	}
+}
+
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcCHARBUFF / GetCharBuffEnd							 */
+/* 内容：攻撃力・守備力アップの残り(本人とパーティの仲間の分)				 */
+/*		 届いた時刻＋残りを、切れる時刻として覚えておく(HP の枠のアイコン用) */
+/* ========================================================================= */
+#define MAX_CHARBUFF	16
+static struct {
+	DWORD	dwTblID;
+	DWORD	adwEnd[2];		/* 0=攻撃力アップ 1=守備力アップ が切れる時刻(0=かかっていない) */
+} s_aCharBuff[MAX_CHARBUFF];
+
+void RecvDataProcCHARBUFF(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_CHARBUFF pPara = (PCMDPARA_CHARBUFF)pData;
+	DWORD dwNow;
+	int i, nNo;
+
+	if (dwDataSize < sizeof (CMDPARA_CHARBUFF)) {
+		return;
+	}
+	dwNow = timeGetTime ();
+	/* 同じ人の分か、空いている(切れている)所を使う */
+	nNo = -1;
+	for (i = 0; i < MAX_CHARBUFF; i ++) {
+		if (s_aCharBuff[i].dwTblID == pPara->dwTblID) {
+			nNo = i;
+			break;
+		}
+	}
+	if (nNo < 0) {
+		for (i = 0; i < MAX_CHARBUFF; i ++) {
+			if (((int)(s_aCharBuff[i].adwEnd[0] - dwNow) <= 0) && ((int)(s_aCharBuff[i].adwEnd[1] - dwNow) <= 0)) {
+				nNo = i;
+				break;
+			}
+		}
+	}
+	if (nNo < 0) {
+		return;
+	}
+	s_aCharBuff[nNo].dwTblID	= pPara->dwTblID;
+	s_aCharBuff[nNo].adwEnd[0]	= pPara->dwATUP ? (dwNow + pPara->dwATUP) : 0;
+	s_aCharBuff[nNo].adwEnd[1]	= pPara->dwDFUP ? (dwNow + pPara->dwDFUP) : 0;
+	g_bDraw = TRUE;
+}
+
+/* 残り(ms)。かかっていなければ 0。nType 0=攻撃力アップ 1=守備力アップ */
+DWORD GetCharBuffRest(DWORD dwTblID, int nType)
+{
+	int i, nRest;
+
+	for (i = 0; i < MAX_CHARBUFF; i ++) {
+		if ((s_aCharBuff[i].dwTblID == dwTblID) && s_aCharBuff[i].adwEnd[nType]) {
+			nRest = (int)(s_aCharBuff[i].adwEnd[nType] - timeGetTime ());
+			return (nRest > 0) ? (DWORD)nRest : 0;
+		}
+	}
+	return 0;
 }
 
 

@@ -1221,4 +1221,11 @@ challenge warp b in=0 at_exit=1 quest=20 enemies=0
 challenge handin2 quest=0 gold+=0 exp_same=1
 challenge info reload same=1
 challenge end enemies=0 copies=0
+== R. StatusUp ==
+statusup use=1,1 at+3 df+4 events=2 buffpkt=2
+statusup strong at=250 df=150
+statusup recast at=250 events=2
+statusup 181s at=250 df=100 events=1
+statusup 281s at=200 df=100 events=0 buffpkt=5
+statusup enemy use=1 at_same=1 events=0
 == done ==

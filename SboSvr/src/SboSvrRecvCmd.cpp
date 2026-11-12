@@ -426,6 +426,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	NULL,								/* CMD_QUESTSTATE(サーバー→クライアントのみ) */
 	RecvDataProcSORTITEM,				/* CMD_SORTITEM */
 	RecvDataProcLEAVEITEMDISPOSE,		/* CMD_LEAVEITEMDISPOSE */
+	NULL,								/* CMD_CHARBUFF(サーバー→クライアントのみ) */
 
 	NULL
 };
@@ -2943,6 +2944,12 @@ void RenewATDF(DWORD dwTblID)
 				break;
 			}
 		}
+	}
+
+	/* 攻撃力・守備力アップ(僧侶の補助特技など) */
+	if (pChar->byNpcType == NPCTYPE_INIT) {
+		pChar->wAT = (WORD)min (65535, (int)pChar->wAT + GetStatusUpBonus (pChar, CHARINFOTIMEREVENT_ATUP, (int)pChar->wAT));
+		pChar->wDF = (WORD)min (65535, (int)pChar->wDF + GetStatusUpBonus (pChar, CHARINFOTIMEREVENT_DFUP, (int)pChar->wDF));
 	}
 
 	/* 防御力倍？ */
@@ -7544,6 +7551,8 @@ void RecvDataProcPARTY(PBYTE pData, DWORD dwDataSize)
 		/* 依頼の進み具合を仲間へ送り、見えるNPCを更新する */
 		QuestSendStateParty (pCharFrom->dwPartyID, NULL);
 		QuestSyncAll ();
+		/* 攻撃力・守備力アップのアイコンを、入った人と仲間で見せ合う */
+		BuffSendPartyAll (pCharFrom);
 		break;
 
 	case CMDPARTY_JOINNO:		/* 参加しない */

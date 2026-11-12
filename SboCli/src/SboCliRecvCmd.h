@@ -13,6 +13,7 @@
 /* ========================================================================= */
 extern int	GetCharNo				(DWORD);													/* キャラ番号取得 */
 extern int	GetCharNo2				(DWORD);													/* キャラ番号取得2 */
+extern DWORD	GetCharBuffRest			(DWORD dwTblID, int nType);									/* 攻撃力(0)・守備力(1)アップの残り(ms)。0=かかっていない */
 extern int	GetEventDataSize		(BYTE);														/* イベント種別毎のデータサイズを取得 */
 extern int	GetSubGameDataSize		(BYTE);														/* サブゲーム種別毎のデータサイズを取得 */
 extern int	GetItemDataSize			(BYTE);														/* アイテム種別毎のデータサイズを取得 */

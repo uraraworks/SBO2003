@@ -295,6 +295,7 @@ enum {
 	CMD_QUESTSTATE,													/* 依頼の進み具合(サーバー→本人。自分と仲間の分) */
 	CMD_SORTITEM,													/* 道具欄・預かり所の並べ替え（クライアント→サーバー。結果は CMD_CHARITEM・CMD_LEAVEITEMGET で返る） */
 	CMD_LEAVEITEMDISPOSE,											/* 預かり所の品を引き取らずに売る・捨てる（クライアント→サーバー。結果は CMD_LEAVEITEMGET で返る） */
+	CMD_CHARBUFF,													/* 攻撃力・守備力アップの残り時間(サーバー→本人とパーティの仲間。サーバーは受け取らない) */
 	CMD_MAX
 };
 
@@ -1144,6 +1145,8 @@ enum {
 	MAGICTYPE_HASTE,											/* 加速(付加データ1:速くなる率(%) 2:秒数) */
 	MAGICTYPE_POISON,											/* 毒(付加データ1:2秒ごとのダメージ 2:秒数 3:成功率(%、0なら100)) */
 	MAGICTYPE_SLEEP,											/* 眠り(付加データ1:秒数 2:成功率(%、0なら100)) */
+	MAGICTYPE_ATUP,												/* 攻撃力アップ(付加データ1:上がる率(%) 2:秒数 3:最低でも上がる量) */
+	MAGICTYPE_DFUP,												/* 守備力アップ(付加データ1:上がる率(%) 2:秒数 3:最低でも上がる量) */
 };
 
 /* 魔法利用情報 */
@@ -1209,6 +1212,8 @@ enum {
 	CHARINFOTIMEREVENT_HASTE,									/* 加速(byData=速くなる率%) */
 	CHARINFOTIMEREVENT_POISON,									/* 毒(byData=2秒ごとのダメージ) */
 	CHARINFOTIMEREVENT_SLEEP,									/* 眠り(dwTimeLast=眠った時のHP。減ったら起きる) */
+	CHARINFOTIMEREVENT_ATUP,									/* 攻撃力アップ(byData=上がる率%、dwTimeInterval=最低でも上がる量) */
+	CHARINFOTIMEREVENT_DFUP,									/* 守備力アップ(byData=上がる率%、dwTimeInterval=最低でも上がる量) */
 };
 
 
@@ -2838,6 +2843,15 @@ typedef struct _CMDPARA_QUESTSTATE {
 	BYTE		byCount;											/* 人数 */
 	QUESTSTATEENTRY	aEntry[MAX_PARTYMEMBER];						/* 本人と仲間 */
 } CMDPARA_QUESTSTATE, *PCMDPARA_QUESTSTATE;
+
+/* 攻撃力・守備力アップの残り時間（サーバー→本人とパーティの仲間。かかった時・切れた時・パーティに入った時）
+   残りが 0 ならかかっていない。HP の枠にアイコンを出すのに使う */
+typedef struct _CMDPARA_CHARBUFF {
+	BYTE		byCmd;												/* コマンドID */
+	DWORD		dwTblID;											/* 誰の分か */
+	DWORD		dwATUP;												/* 攻撃力アップの残り(ms) */
+	DWORD		dwDFUP;												/* 守備力アップの残り(ms) */
+} CMDPARA_CHARBUFF, *PCMDPARA_CHARBUFF;
 #pragma pack(pop)
 
 /* 並べ替えの対象(CMDPARA_SORTITEM の byTarget) */

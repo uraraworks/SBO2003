@@ -31,6 +31,7 @@ void DrawChar3			(void);										/* キャラの名前等の描画 */
 void DrawETC			(void);										/* ゲージ等の描画 */
 static void DrawFrameRect	(int x, int y, int cx, int cy, COLORREF cl);	/* 1ドットの枠を描く */
 static void DrawGuardMark	(int x, int y);								/* 構えの盾マーク */
+static void DrawBuffIcons	(int x, int y, DWORD dwTblID);				/* 攻撃力・守備力アップのアイコン(system.png) */
 void DrawObj			(void);										/* オブジェクトの描画 */
 void DrawEvent			(void);										/* イベント情報の描画 */
 void DrawMapEdit		(void);										/* マップ編集情報の描画 */
@@ -1885,6 +1886,8 @@ void DrawETC(void)
 			if (pChar->byDrunkLV > CHARSTATEDRUNK_NONE) {
 				g_pDibDrawMap->Blt (x + 3, y + 29, 16, 16, g_pDibSystem, pChar->byDrunkLV * 16, 112, TRUE);
 			}
+			/* 攻撃力・守備力アップのアイコン(HP 欄の左。仲間の分も) */
+			DrawBuffIcons (x + 3, y + 13, pChar->dwTblID);
 			y -= 48;
 		}
 	}
@@ -2015,6 +2018,38 @@ static void DrawGuardMark(int x, int y)
 	}
 	/* 真ん中の白い線 */
 	g_pDibDrawMap->FillRect (x + 4, y + 2, 1, 7, RGB (255, 255, 255));
+}
+
+
+/* ========================================================================= */
+/* 関数名：DrawBuffIcons													 */
+/* 内容：攻撃力アップ(剣)・守備力アップ(盾)のアイコン(16×16 を横に並べる)	 */
+/*		 絵は system.png の y=96 の行。x=144 構え、160 攻撃アップ、176 守りアップ */
+/*		 切れる15秒前から点滅する											 */
+/* ========================================================================= */
+#define BUFFICON_GRPX	160		/* system.png の攻撃アップの絵の左(守りアップはその右) */
+#define BUFFICON_GRPY	96
+static void DrawBuffIcons(int x, int y, DWORD dwTblID)
+{
+	int i;
+	DWORD dwRest;
+
+	for (i = 0; i < 2; i ++) {
+		dwRest = GetCharBuffRest (dwTblID, i);
+		if (dwRest == 0) {
+			continue;
+		}
+		/* 切れそうな時は点滅(点滅の間は描き直し続ける) */
+		if (dwRest < 15000) {
+			g_bDraw = TRUE;
+			if ((timeGetTime () / 250) % 2) {
+				x += 16;
+				continue;
+			}
+		}
+		g_pDibDrawMap->Blt (x, y, 16, 16, g_pDibSystem, BUFFICON_GRPX + i * 16, BUFFICON_GRPY, TRUE);
+		x += 16;
+	}
 }
 
 

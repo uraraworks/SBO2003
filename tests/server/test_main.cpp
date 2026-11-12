@@ -29,6 +29,8 @@
 #include "CharProcMERCENARY.h"
 #undef protected
 #include "SboSvrSubGameProcSugoroku.h"
+#include "SboSvrMagicProc.h"
+#include "SboSvrCharInfoTimerProc.h"
 #include "common/crc.h"
 #include <emscripten.h>
 #include <stdio.h>
@@ -901,6 +903,7 @@ static void TestSortItem(const std::vector<int> &aLogin);
 static void TestCharPush(const std::vector<int> &aLogin);
 static void TestLeaveDispose(const std::vector<int> &aLogin);
 static void TestChallenge(const std::vector<int> &aLogin);
+static void TestStatusUp(const std::vector<int> &aLogin);
 
 static void TestTownWarp(const std::vector<int> &aLogin)
 {
@@ -1333,6 +1336,8 @@ static void TestWorld(void)
 	TestLeaveDispose(aLogin);
 	/* Q. 討伐チャレンジ */
 	TestChallenge(aLogin);
+	/* R. 攻撃力・守備力アップ */
+	TestStatusUp(aLogin);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -3251,6 +3256,93 @@ static void TestCharPush(const std::vector<int> &aLogin)
 	pPC->byDirection = byDirBack;
 	pPC->byFlg = byFlgBack;
 	AddTblNoPC((int)pPC->dwTblID);
+}
+
+/* ========================================================================= */
+/* 関数名：	TestStatusUp												 */
+/* 内容：	攻撃力・守備力アップ(僧侶の補助特技)							 */
+/*			最低でも上がる量・率・かけ直し・時間切れで戻る・敵には効かない	 */
+/* ========================================================================= */
+static void TestStatusUp(const std::vector<int> &aLogin)
+{
+	printf("== R. StatusUp ==\n");
+	if (aLogin.size() < 2 || g_aMagicInfo.GetSize() <= 8) {
+		return;
+	}
+	PCHARINFO pA = g_aCharInfo[aLogin[0]];
+	PCHARINFO pB = g_aCharInfo[aLogin[1]];
+	if (g_aMapInfo[GetMapNo(pA->dwMapID)]->byFlg & MAPFLG_MAGIC) {
+		printf("magic map\n");
+		return;
+	}
+	/* 他人回復(8)の枠を借りて効果を差し替える */
+	PMAGICINFO pMagic = g_aMagicInfo[8];
+	MAGICINFO MagicBack = *pMagic;
+	pMagic->byTarget		= MAGICTARGET_PC;
+	pMagic->byTargetType	= MAGICTARGETTYPE_SELECT;
+	pMagic->byTargetEfectID	= 0;
+	pMagic->byUserEfectID	= 0;
+	BYTE byPWBack = pB->byPW, bySTBack = pB->byST;
+	DeleteAllTimerEvent(pB);
+	RenewATDF(pB->dwTblID);
+	int nAT0 = pB->wAT, nDF0 = pB->wDF;
+	int nBuff0 = MockCmdCount(1001, CMD_CHARBUFF);		/* B はログインした順で 1001 番 */
+
+	/* 攻撃 25%・最低+3、守り 50%・最低+4、3分 */
+	pMagic->byType = MAGICTYPE_ATUP;
+	pMagic->wData1 = 25; pMagic->wData2 = 180; pMagic->wData3 = 3;
+	BOOL bAT = MagicProcItem(pA->dwTblID, 8, pB->dwTblID);
+	pMagic->byType = MAGICTYPE_DFUP;
+	pMagic->wData1 = 50; pMagic->wData2 = 180; pMagic->wData3 = 4;
+	BOOL bDF = MagicProcItem(pA->dwTblID, 8, pB->dwTblID);
+	printf("statusup use=%d,%d at+%d df+%d events=%d buffpkt=%d\n", bAT, bDF,
+		(int)pB->wAT - nAT0, (int)pB->wDF - nDF0, pB->aTimerEvent.GetSize(), MockCmdCount(1001, CMD_CHARBUFF) - nBuff0);
+
+	/* 強い人は率で上がる(力を上げて計り直す) */
+	pB->byPW = 200;
+	pB->byST = 200;
+	RenewATDF(pB->dwTblID);
+	printf("statusup strong at=%d df=%d\n", pB->wAT, pB->wDF);
+
+	/* かけ直しても重ならない(時間が延びるだけ) */
+	s_dwFakeNow += 100000;
+	g_dwTime = s_dwFakeNow;
+	pMagic->byType = MAGICTYPE_ATUP;
+	pMagic->wData1 = 25; pMagic->wData2 = 180; pMagic->wData3 = 3;
+	MagicProcItem(pA->dwTblID, 8, pB->dwTblID);
+	printf("statusup recast at=%d events=%d\n", pB->wAT, pB->aTimerEvent.GetSize());
+
+	/* 守りは最初から3分で切れ、攻撃はかけ直しから3分まで残る */
+	s_dwFakeNow += 81000;
+	g_dwTime = s_dwFakeNow;
+	CharInfoTimerProc(pB->dwTblID);
+	CharInfoTimerProc(pB->dwTblID);
+	printf("statusup 181s at=%d df=%d events=%d\n", pB->wAT, pB->wDF, pB->aTimerEvent.GetSize());
+	s_dwFakeNow += 100000;
+	g_dwTime = s_dwFakeNow;
+	CharInfoTimerProc(pB->dwTblID);
+	printf("statusup 281s at=%d df=%d events=%d buffpkt=%d\n", pB->wAT, pB->wDF, pB->aTimerEvent.GetSize(), MockCmdCount(1001, CMD_CHARBUFF) - nBuff0);
+
+	/* 敵にはかからない */
+	PCHARINFO pEnemy = NULL;
+	for (int i = 0; i < g_aCharInfo.GetSize() && !pEnemy; i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+		if ((p->byNpcType == NPCTYPE_BATTLE1 || p->byNpcType == NPCTYPE_BATTLE2) && p->aTimerEvent.GetSize() == 0) {
+			pEnemy = p;
+		}
+	}
+	if (pEnemy) {
+		WORD wATBack = pEnemy->wAT;
+		BOOL bEnemy = MagicProcItem(pA->dwTblID, 8, pEnemy->dwTblID);
+		printf("statusup enemy use=%d at_same=%d events=%d\n", bEnemy, pEnemy->wAT == wATBack, pEnemy->aTimerEvent.GetSize());
+	}
+
+	/* 片付け */
+	*pMagic = MagicBack;
+	DeleteAllTimerEvent(pB);
+	pB->byPW = byPWBack;
+	pB->byST = bySTBack;
+	RenewATDF(pB->dwTblID);
 }
 
 /* ========================================================================= */
