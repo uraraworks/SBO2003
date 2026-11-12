@@ -88,17 +88,20 @@
 	/* 管理者用エディタと同じ 16×16 の並び */
 	#palette { display: grid; grid-template-columns: repeat(16, 1fr); gap: 0; border: 1px solid #000; width: 288px; max-width: 100%; }
 	.sw { width: auto; height: auto; aspect-ratio: 1; padding: 0; border: 0; border-right: 1px solid rgba(0,0,0,0.5); border-bottom: 1px solid rgba(0,0,0,0.5); border-radius: 0; min-width: 0; min-height: 0; }
-	/* エディタと同じ見せ方: 色はそのまま、黒（透明）は小さな市松の印、使える色は右下に白い印 */
+	/* エディタと同じ見せ方: 色はそのまま、黒（透明）は小さな市松の印、使えない色は ✗ */
 	.sw { position: relative; }
 	/* 使える色だけの時は 8 列で大きめに */
 	#palette.only { grid-template-columns: repeat(8, 1fr); }
-	#palette.only .sw.use::after { display: none; }
 	.palall { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--sub); cursor: pointer; }
 	.palall input { margin: 0; }
 	.sw.off { cursor: not-allowed; opacity: 1; }
 	.sw.black::before { content: ''; position: absolute; left: 11%; top: 11%; width: 44%; height: 44%;
 		background: linear-gradient(#555, #555) 0 0 / 50% 50% no-repeat, linear-gradient(#555, #555) 100% 100% / 50% 50% no-repeat; }
-	.sw.use::after { content: ''; position: absolute; right: 1px; bottom: 1px; width: 4px; height: 4px; background: #fff; box-shadow: 0 0 0 1px #000; }
+	/* 使えない色には ✗（白い線に黒のふち） */
+	.sw.off::after { content: ''; position: absolute; inset: 0;
+		background:
+			linear-gradient(to top right, transparent calc(50% - 1.5px), #000 calc(50% - 1.5px), #000 calc(50% - 0.5px), #fff calc(50% - 0.5px), #fff calc(50% + 0.5px), #000 calc(50% + 0.5px), #000 calc(50% + 1.5px), transparent calc(50% + 1.5px)),
+			linear-gradient(to bottom right, transparent calc(50% - 1.5px), #000 calc(50% - 1.5px), #000 calc(50% - 0.5px), #fff calc(50% - 0.5px), #fff calc(50% + 0.5px), #000 calc(50% + 0.5px), #000 calc(50% + 1.5px), transparent calc(50% + 1.5px)); }
 	.sw.sel { outline: 2px solid #fff; box-shadow: 0 0 0 4px #000; z-index: 1; }
 	.checker {
 		background-color: #cfcfcf;
