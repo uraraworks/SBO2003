@@ -217,7 +217,11 @@
 	.resume-item canvas { display: block; image-rendering: pixelated; }
 	.resume-item b { display: block; font-size: 14px; word-break: break-all; }
 	.resume-item small { display: block; font-size: 11px; color: var(--sub); }
+	/* 枠は絵の大きさに合わせる（小さい背景パーツで横いっぱいの市松模様にならないように） */
 	.card-thumb {
+		width: fit-content;
+		max-width: 100%;
+		box-sizing: border-box;
 		min-height: 64px;
 		display: flex;
 		align-items: center;
