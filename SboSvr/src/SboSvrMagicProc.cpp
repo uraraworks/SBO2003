@@ -45,6 +45,11 @@ static void MakeCharTblTarget_SCREEN		(PARRAYDWORD, PCHARINFO, PMAGICINFO);				/
 static BOOL MakeCharTblTargetSub_SCREEN		(PARRAYDWORD, int, PDWORD, PCHARINFO, PMAGICINFO);	/* ターゲットキャラの設定処理(画面内) */
 static void MakeCharTblTarget_FRONTSIDE		(PARRAYDWORD, PCHARINFO, PMAGICINFO);				/* ターゲットキャラの設定(前方横一列) */
 static BOOL MakeCharTblTargetSub_FRONTSIDE	(PARRAYDWORD, int, PDWORD, PCHARINFO, PMAGICINFO);	/* ターゲットキャラの設定処理(前方横一列) */
+static BOOL IsMagicWall						(DWORD dwMapID, int x, int y);						/* 特技・魔法が通り抜けられないマスか */
+static BOOL IsMagicLineClear				(DWORD dwMapID, int x0, int y0, int x1, int y1);	/* 線の上に通り抜けられないマスが無いか(片方向) */
+static int  GetMagicCharWidth				(PCHARINFO pChar);									/* キャラの横幅(マス) */
+BOOL IsMagicReachChar						(PCHARINFO pChar, PCHARINFO pCharTarget);			/* 使った人から相手まで壁越しでなく届くか */
+static BOOL IsMagicReachPosFrom				(PCHARINFO pChar, int x, int y);					/* 使った人からそのマスまで壁越しでなく届くか */
 static void MakePosTbl						(PCMYARRAYPOS, PCHARINFO, PMAGICINFO);				/* 座標情報の設定 */
 static void MakePosTbl_SELF					(PCMYARRAYPOS, PCHARINFO, PMAGICINFO);				/* 座標情報の設定(自分) */
 static void MakePosTbl_FRONT				(PCMYARRAYPOS, PCHARINFO, PMAGICINFO);				/* 座標情報の設定(前方) */
@@ -285,6 +290,143 @@ static BOOL MagicProcSub(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget, BOOL bIt
 Exit:
 	s_pCharMagicSrc = NULL;
 	return bRet;
+}
+
+/*
+	2026/11/12 特技・魔法が壁越しに届かないようにする
+	・前方／前方横一列／周囲の特技は、使った人から相手（置く魔法なら置くマス）までの間に
+	  通り抜けられないマス（壁・木・岩など、歩いてぶつかるマス）があると届かない。
+	  カウンターは越えて届く（灯りと同じ扱い）。
+	・間のマスはブレゼンハムの線で調べ、行きと帰りのどちらかの線が通れば届く（左右で差が出ないように）。
+	  斜めに1マス進む所は、角の2マスが両方とも壁なら通さない（壁の角のすき間から漏れないように）。
+	・画面内の特技と、相手を選ぶ特技はこれまでどおり。
+*/
+
+/* ========================================================================= */
+/* 関数名：IsMagicWall														 */
+/* 内容：特技・魔法が通り抜けられないマスか									 */
+/* 日付：2026/11/12															 */
+/* ========================================================================= */
+static BOOL IsMagicWall(DWORD dwMapID, int x, int y)
+{
+	int nPartsID;
+	PMAPINFO pMap;
+
+	if (dwMapID >= (DWORD)g_aMapInfo.GetSize ()) {
+		return TRUE;
+	}
+	pMap = g_aMapInfo[dwMapID];
+	if ((x < 0) || (x >= pMap->nCX) || (y < 0) || (y >= pMap->nCY)) {
+		return TRUE;
+	}
+	if (CheckCharBlock (dwMapID, (DWORD)x, (DWORD)y)) {
+		return FALSE;
+	}
+	/* カウンターは越えて届く */
+	nPartsID = pMap->pwMap[x + y * pMap->nCX];
+	if ((nPartsID < g_wCountMapParts) && (g_aMapPartsInfo[nPartsID].byHitType == PARTSHIT_COUNTER)) {
+		return FALSE;
+	}
+	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：IsMagicLineClear													 */
+/* 内容：線の上に通り抜けられないマスが無いか(両端は見ない・片方向)			 */
+/* 日付：2026/11/12															 */
+/* ========================================================================= */
+static BOOL IsMagicLineClear(DWORD dwMapID, int x0, int y0, int x1, int y1)
+{
+	int nDX, nDY, nSX, nSY, nErr, nErr2, nX, nY;
+
+	nDX = abs (x1 - x0);
+	nDY = -abs (y1 - y0);
+	nSX = (x0 < x1) ? 1 : -1;
+	nSY = (y0 < y1) ? 1 : -1;
+	nErr = nDX + nDY;
+	while ((x0 != x1) || (y0 != y1)) {
+		nErr2 = nErr * 2;
+		nX = x0;
+		nY = y0;
+		if (nErr2 >= nDY) {
+			nErr += nDY;
+			nX += nSX;
+		}
+		if (nErr2 <= nDX) {
+			nErr += nDX;
+			nY += nSY;
+		}
+		/* 斜めに進む時、角の2マスが両方とも壁なら通さない */
+		if ((nX != x0) && (nY != y0)) {
+			if (IsMagicWall (dwMapID, nX, y0) && IsMagicWall (dwMapID, x0, nY)) {
+				return FALSE;
+			}
+		}
+		x0 = nX;
+		y0 = nY;
+		if ((x0 == x1) && (y0 == y1)) {
+			break;
+		}
+		if (IsMagicWall (dwMapID, x0, y0)) {
+			return FALSE;
+		}
+	}
+	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：GetMagicCharWidth														 */
+/* 内容：キャラの横幅(マス)													 */
+/* 日付：2026/11/12															 */
+/* ========================================================================= */
+static int GetMagicCharWidth(PCHARINFO pChar)
+{
+	switch (pChar->wGrpMain) {
+	case CHARGRP_MAIN_3232:
+		return 2;
+	case CHARGRP_MAIN_4848:
+		return 3;
+	}
+	return 1;
+}
+
+/* ========================================================================= */
+/* 関数名：IsMagicReachPosFrom												 */
+/* 内容：使った人からそのマスまで壁越しでなく届くか							 */
+/*		 (横に大きいキャラは、そのマスに一番近い列から見る)					 */
+/* 日付：2026/11/12															 */
+/* ========================================================================= */
+static BOOL IsMagicReachPosFrom(PCHARINFO pChar, int x, int y)
+{
+	int nX0, nY0;
+
+	nX0 = (int)pChar->dwX;
+	if (x > nX0) {
+		nX0 = min (x, nX0 + GetMagicCharWidth (pChar) - 1);
+	}
+	nY0 = (int)pChar->dwY;
+	if (IsMagicLineClear (pChar->dwMapID, nX0, nY0, x, y)) {
+		return TRUE;
+	}
+	return IsMagicLineClear (pChar->dwMapID, x, y, nX0, nY0);
+}
+
+/* ========================================================================= */
+/* 関数名：IsMagicReachChar													 */
+/* 内容：使った人から相手まで壁越しでなく届くか								 */
+/* 日付：2026/11/12															 */
+/* ========================================================================= */
+BOOL IsMagicReachChar(PCHARINFO pChar, PCHARINFO pCharTarget)
+{
+	int nX;
+
+	if (pChar == pCharTarget) {
+		return TRUE;
+	}
+	/* 相手が横に大きい時は、使った人に一番近い列を見る */
+	nX = (int)pChar->dwX;
+	nX = max ((int)pCharTarget->dwX, min (nX, (int)pCharTarget->dwX + GetMagicCharWidth (pCharTarget) - 1));
+	return IsMagicReachPosFrom (pChar, nX, (int)pCharTarget->dwY);
 }
 
 /* ========================================================================= */
@@ -549,6 +691,10 @@ static BOOL MakeCharTblTargetSub_FRONT(PARRAYDWORD aTarget,
 			break;
 		}
 
+		/* 間に壁などがあれば届かない */
+		if (bCheck && (IsMagicReachChar (pChar, pCharTmp) == FALSE)) {
+			bCheck = FALSE;
+		}
 		/* 当たっている？ */
 		if (bCheck) {
 			aTarget->Add (pCharTmp->dwTblID);
@@ -641,7 +787,7 @@ static BOOL MakeCharTblTargetSub_CIRCLE(PARRAYDWORD aTarget,
 			continue;
 		}
 
-		if ((x <= pInfo->byTargetArea) && (y <= pInfo->byTargetArea)) {
+		if ((x <= pInfo->byTargetArea) && (y <= pInfo->byTargetArea) && IsMagicReachChar (pChar, pCharTmp)) {
 			aTarget->Add (pCharTmp->dwTblID);
 			if (pInfo->byTargetCount == MAGICTARGETCOUNT_ONE) {
 				bRet = FALSE;
@@ -855,6 +1001,10 @@ static BOOL MakeCharTblTargetSub_FRONTSIDE(PARRAYDWORD aTarget,
 			break;
 		}
 
+		/* 間に壁などがあれば届かない */
+		if (bCheck && (IsMagicReachChar (pChar, pCharTmp) == FALSE)) {
+			bCheck = FALSE;
+		}
 		/* 当たっている？ */
 		if (bCheck) {
 			aTarget->Add (pCharTmp->dwTblID);
@@ -933,6 +1083,10 @@ static void MakePosTbl_FRONT(PCMYARRAYPOS aTarget, PCHARINFO pChar, PMAGICINFO p
 
 	nCount = pInfo->byTargetArea;
 	for (i = 0; i < nCount - 1; i ++) {
+		/* 壁などに当たったら、その先には置かない */
+		if (IsMagicWall (pChar->dwMapID, nPosTmpX, nPosTmpY)) {
+			break;
+		}
 		bResult = CheckCharBlock (pChar->dwMapID, (DWORD)nPosTmpX, (DWORD)nPosTmpY);
 		if (bResult) {
 			PosInfo.dwMapID = pChar->dwMapID;
@@ -966,6 +1120,10 @@ static void MakePosTbl_CIRCLE(PCMYARRAYPOS aTarget, PCHARINFO pChar, PMAGICINFO 
 	for (j = (int)pChar->dwY - nCount; j <= (int)pChar->dwY + nCount; j ++) {
 		for (i = (int)dwX - nCount; i <= (int)dwX + nCount; i ++) {
 			bResult = CheckCharBlock (pChar->dwMapID, (DWORD)i, (DWORD)j);
+			/* 壁の向こうには置かない */
+			if (bResult) {
+				bResult = IsMagicReachPosFrom (pChar, i, j);
+			}
 			if (bResult) {
 				PosInfo.dwMapID = pChar->dwMapID;
 				PosInfo.dwX = (DWORD)i;
@@ -1056,6 +1214,10 @@ static void MakePosTbl_FRONTSIDE(PCMYARRAYPOS aTarget, PCHARINFO pChar, PMAGICIN
 		for (; y <= yMax; y ++) {
 			for (; x <= xMax; x ++) {
 				bResult = CheckCharBlock (pChar->dwMapID, (DWORD)x, (DWORD)y);
+				/* 壁の向こうには置かない */
+				if (bResult) {
+					bResult = IsMagicReachPosFrom (pChar, x, y);
+				}
 				if (bResult) {
 					PosInfo.dwMapID = pChar->dwMapID;
 					PosInfo.dwX = (DWORD)x;
@@ -1068,6 +1230,10 @@ static void MakePosTbl_FRONTSIDE(PCMYARRAYPOS aTarget, PCHARINFO pChar, PMAGICIN
 		for (; x <= xMax; x ++) {
 			for (; y <= yMax; y ++) {
 				bResult = CheckCharBlock (pChar->dwMapID, (DWORD)x, (DWORD)y);
+				/* 壁の向こうには置かない */
+				if (bResult) {
+					bResult = IsMagicReachPosFrom (pChar, x, y);
+				}
 				if (bResult) {
 					PosInfo.dwMapID = pChar->dwMapID;
 					PosInfo.dwX = (DWORD)x;
