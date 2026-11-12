@@ -3455,8 +3455,7 @@
 			renderBalloons();
 			/* 吹き出しを選ぶ時はキーボードを出さない */
 			sheetInput.blur();
-			sheet.style.bottom = '';
-			sheet.style.height = '';
+			resetSheetPos();
 		} else {
 			renderAll(sheetLog);
 			sheetInput.focus();
@@ -3615,8 +3614,7 @@
 	}
 	function closeSheet() {
 		sheet.classList.remove('sbo-open');
-		sheet.style.bottom = '';
-		sheet.style.height = '';
+		resetSheetPos();
 		sheetInput.blur();
 		canvas.focus();
 		setTimeout(onResize, 300);
@@ -3628,19 +3626,38 @@
 		openSheet();
 	});
 	document.getElementById('sbo-sheet-close').addEventListener('click', closeSheet);
-	/* キーボードに隠れないようにシートを持ち上げる */
+	/* キーボードに隠れないようにシートを持ち上げる。
+	   見えている範囲（visualViewport）の下端にシートの下端を合わせる。
+	   Gboard など他社製キーボードは高さの通知（resize）が遅れたり来なかったりして、
+	   開いた直後にシートがキーボードの裏に隠れることがあるので、開いている間は短い間隔でも合わせ直す */
+	function resetSheetPos() {
+		sheet.style.top = '';
+		sheet.style.bottom = '';
+		sheet.style.height = '';
+	}
 	if (window.visualViewport) {
 		var vv = window.visualViewport;
+		var sheetPosKey = '';
 		var adjustSheet = function () {
 			/* 吹き出しタブはキーボードを出さないので、ふつうの高さのまま */
 			if (!sheet.classList.contains('sbo-open') || sheetTab === 'balloon') {
 				return;
 			}
-			sheet.style.height = Math.floor(vv.height * 0.85) + 'px';
-			sheet.style.bottom = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)) + 'px';
+			var h = Math.floor(vv.height * 0.85);
+			var top = Math.round(vv.offsetTop + vv.height - h);
+			var key = h + ',' + top;
+			if (key === sheetPosKey && sheet.style.top) {
+				return;
+			}
+			sheetPosKey = key;
+			sheet.style.bottom = 'auto';
+			sheet.style.top = top + 'px';
+			sheet.style.height = h + 'px';
 		};
 		vv.addEventListener('resize', adjustSheet);
 		vv.addEventListener('scroll', adjustSheet);
+		window.addEventListener('resize', adjustSheet);
+		setInterval(adjustSheet, 150);
 	}
 
 	/* マップにいる間だけチャット欄を使えるようにする。
