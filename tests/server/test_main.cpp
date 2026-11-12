@@ -23,6 +23,7 @@
 #include "SboSvrRecvCmd.h"
 #include "CharProcSEARCH2.h"
 #include "CharProcSEARCH.h"
+#include "CharProcMOVERAND.h"
 /* 傭兵の道さがしを中から確かめるため、protected も見えるようにして読み込む */
 #define protected public
 #include "CharProcMERCENARY.h"
@@ -245,7 +246,7 @@ static void TestZlibPackets(void)
 	printf("BENCH zlib packets rounds=2 checks=16 same=1\n");
 }
 
-/* 変更前の CanStep を残して、返り値と BATTLE2 の副作用を照合する */
+/* 変更前の CanStep を残して、返り値を照合する（狙いを変えないことも確かめる） */
 class CTestSearch : public CCharProcSEARCH
 {
 public:
@@ -321,6 +322,8 @@ static void TestSearchStep(void)
 				pNpc->dwTargetTblID = (DWORD)-1;
 				BOOL bOld = Proc.OldCanStep(&aChar[0], x, y);
 				CHARINFO Old = *pNpc;
+				/* 2026/11/12 から CanStep は調べるだけで狙いを変えない（変えるのは追いかけている時の StepToward） */
+				Old.dwTargetTblID = (DWORD)-1;
 				pNpc->dwTargetTblID = (DWORD)-1;
 				BOOL bNew = Proc.CanStep(&aChar[0], x, y);
 				if (bOld != bNew || memcmp(&Old, pNpc, sizeof(Old))) {
@@ -341,6 +344,127 @@ static void TestSearchStep(void)
 	if (nOld != NRUN || nNew != nOld) abort();
 	printf("BENCH search step pcs=%d runs=%d old_ms=%.1f new_ms=%.1f cases=%d same=1\n", NPC, NRUN, d1 - d0, d2 - d1, nCases);
 	g_aCharInfo.RemoveAt(nChar, NPC + 2);
+	g_aMapInfo.RemoveAt(nMap);
+	delete [] aChar;
+}
+
+/* 敵の動き（2026/11/12 改善）の中身を外から呼べるようにする */
+class CTestSearchAI : public CCharProcSEARCH
+{
+public:
+	using CCharProcSEARCH::FindPathStep;
+	using CCharProcSEARCH::IsInSight;
+	using CCharProcSEARCH::IsOverLeash;
+};
+
+/* ========================================================================= */
+/* 関数名：	TestEnemyAI													 */
+/* 内容：	Q. 敵の動き：壁越しに見えない・回り込む・離れすぎ・戦闘１が戦い続ける */
+/* ========================================================================= */
+static void TestEnemyAI(void)
+{
+	printf("== Q. EnemyAI ==\n");
+	MAPINFO Map = {};
+	WORD awMap[16 * 16];
+	DWORD adwPC[1], adwNPC[2];
+	CHARINFO *aChar = new CHARINFO[3]();
+	int nMap = g_aMapInfo.GetSize(), nChar = g_aCharInfo.GetSize();
+	WORD wFloor = 0, wWall = 0;
+	for (int i = 0; i < g_wCountMapParts; i ++) {
+		if (g_aMapPartsInfo[i].byHitType == PARTSHIT_NONE) wFloor = (WORD)i;
+		if (g_aMapPartsInfo[i].byHitType == PARTSHIT_BLOCK1) wWall = (WORD)i;
+	}
+	std::fill(awMap, awMap + 16 * 16, wFloor);
+	/* x=6 の y=3〜9 が壁 */
+	for (int y = 3; y <= 9; y ++) awMap[6 + y * 16] = wWall;
+	Map.dwID = nMap;
+	Map.nCX = Map.nCY = 16;
+	Map.pwMap = awMap;
+	Map.paTblNoPC = adwPC;
+	Map.dwCountTblNoPC = 1;
+	Map.paTblNoNPC = adwNPC;
+	Map.dwCountTblNoNPC = 2;
+	g_aMapInfo.Add(&Map);
+	for (int i = 0; i < 3; i ++) {
+		PCHARINFO p = &aChar[i];
+		p->dwTblID = nChar + i; p->dwMapID = nMap;
+		p->wHP = p->wMaxHP = 10; p->byGameState = GAMESTATE_MOVE;
+		p->wGrpMain = CHARGRP_MAIN_NORMAL;
+		p->dwTargetTblID = (DWORD)-1;
+		g_aCharInfo.Add(p);
+	}
+	adwPC[0] = aChar[0].dwTblID;
+	adwNPC[0] = aChar[1].dwTblID;
+	adwNPC[1] = aChar[2].dwTblID;
+	PCHARINFO pPC = &aChar[0], pEnemy = &aChar[1], pOther = &aChar[2];
+	pOther->dwX = 15; pOther->dwY = 15;
+
+	pEnemy->byNpcType = NPCTYPE_BATTLE2;
+	pEnemy->dwX = pEnemy->dwStartX = 4; pEnemy->dwY = pEnemy->dwStartY = 6;
+	pEnemy->bySearchCx = pEnemy->bySearchCy = 4;
+	CTestSearchAI Proc;
+	Proc.Create(pEnemy);
+
+	/* 壁の向こうは見えない・壁が無ければ見える */
+	pPC->dwX = 8; pPC->dwY = 6;
+	BOOL bWall = Proc.IsInSight(pPC);
+	pPC->dwX = 4; pPC->dwY = 1;
+	BOOL bOpen = Proc.IsInSight(pPC);
+	printf("sight wall=%d open=%d\n", bWall, bOpen);
+	if (bWall || !bOpen) abort();
+
+	/* 壁の向こうの相手へは、壁の端（上）へ回り込む */
+	pPC->dwX = 8; pPC->dwY = 6;
+	int nDir = Proc.FindPathStep(pPC, 8, 6);
+	/* 回り込む道を最後までたどれるか（1歩ずつ進めて相手のとなりに着く） */
+	int nSteps = 0;
+	while (nDir >= 0 && nSteps < 40) {
+		pEnemy->dwX += anPosAddTblX[nDir];
+		pEnemy->dwY += anPosAddTblY[nDir];
+		nSteps ++;
+		if (abs((int)pEnemy->dwX - 8) + abs((int)pEnemy->dwY - 6) == 1) break;
+		nDir = Proc.FindPathStep(pPC, 8, 6);
+	}
+	printf("path steps=%d at=%u,%u\n", nSteps, pEnemy->dwX, pEnemy->dwY);
+	if (abs((int)pEnemy->dwX - 8) + abs((int)pEnemy->dwY - 6) != 1) abort();
+
+	/* 開始位置から 探索範囲×2＋4 を超えると離れすぎ */
+	pEnemy->dwX = 4 + 12; pEnemy->dwY = 6;
+	BOOL bNear = Proc.IsOverLeash();
+	pEnemy->dwX = 4 + 13; pEnemy->dwY = 6;
+	BOOL bFar = Proc.IsOverLeash();
+	printf("leash near=%d far=%d\n", bNear, bFar);
+	if (bNear || !bFar) abort();
+
+	/* 戦闘１：戦っている相手がとなりにいる間は、20秒たっても戦いをやめず、相手の方を向く */
+	CCharProcMOVERAND Proc1;
+	pEnemy->byNpcType = NPCTYPE_BATTLE1;
+	pEnemy->dwX = 10; pEnemy->dwY = pEnemy->dwStartY = 12;
+	pEnemy->dwStartX = 2;	/* 開始位置から離れた所で戦っている */
+	pEnemy->bySearchCx = pEnemy->bySearchCy = 3;
+	pEnemy->byDirection = 0;
+	pEnemy->byAreaX = pEnemy->byAreaY = 0;
+	pPC->dwX = 11; pPC->dwY = 12;
+	pEnemy->dwTargetTblID = pPC->dwTblID;
+	pEnemy->dwLastBattle = 5;
+	pEnemy->dwLastDotMove = s_dwFakeNow - 60000;
+	Proc1.Create(pEnemy);
+	DWORD dwStart = s_dwFakeNow;
+	for (int t = 0; t <= 20000; t += 500) {
+		Proc1.Proc(dwStart + t);
+	}
+	printf("battle1 keep=%d dir=%d pos=%u,%u\n", pEnemy->dwLastBattle != 0, pEnemy->byDirection, pEnemy->dwX, pEnemy->dwY);
+	if (pEnemy->dwLastBattle == 0 || pEnemy->byDirection != 3 || pEnemy->dwX != 10) abort();
+	/* 相手が遠くへ行って15秒たったらやめる */
+	pPC->dwX = 0; pPC->dwY = 0;
+	DWORD dwFar = dwStart + 20500;
+	for (int t = 0; t <= 16000; t += 500) {
+		Proc1.Proc(dwFar + t);
+	}
+	printf("battle1 release=%d target=%d\n", pEnemy->dwLastBattle == 0, pEnemy->dwTargetTblID == (DWORD)-1);
+	if (pEnemy->dwLastBattle != 0 || pEnemy->dwTargetTblID != (DWORD)-1) abort();
+
+	g_aCharInfo.RemoveAt(nChar, 3);
 	g_aMapInfo.RemoveAt(nMap);
 	delete [] aChar;
 }
@@ -778,6 +902,7 @@ static void TestQuest(const std::vector<int> &aLogin);
 static void TestSortItem(const std::vector<int> &aLogin);
 static void TestCharPush(const std::vector<int> &aLogin);
 static void TestLeaveDispose(const std::vector<int> &aLogin);
+static void TestChallenge(const std::vector<int> &aLogin);
 static void TestStatusUp(const std::vector<int> &aLogin);
 
 static void TestTownWarp(const std::vector<int> &aLogin)
@@ -947,6 +1072,7 @@ static void TestWorld(void)
 	}
 	TestSearchStep();
 	TestSearch2();
+	TestEnemyAI();
 
 	/* データには PC がいないので、NPC を複製して PC を作る（ログアウト中 3000 人、うち NLOGIN 人をログイン中にする） */
 	PCHARINFO pTemplate = NULL;
@@ -1208,7 +1334,9 @@ static void TestWorld(void)
 	TestCharPush(aLogin);
 	/* P. 預かり所の品を引き取らずに売る・捨てる */
 	TestLeaveDispose(aLogin);
-	/* Q. 攻撃力・守備力アップ */
+	/* Q. 討伐チャレンジ */
+	TestChallenge(aLogin);
+	/* R. 攻撃力・守備力アップ */
 	TestStatusUp(aLogin);
 }
 
@@ -2142,6 +2270,10 @@ static void TestQuest(const std::vector<int> &aLogin)
 			PosPara.byX = (BYTE)pPortal->dwX;
 			PosPara.byY = (BYTE)pPortal->dwY;
 			TestRecv(pOwner, &PosPara, sizeof(PosPara));
+			/* 乗った瞬間には移らない（歩き終わるまで少し待つ） */
+			printf("quest portal step wait moved=%d\n", (int)(pOwner->dwX == (DWORD)aCell[3].first && pOwner->dwY == (DWORD)aCell[3].second));
+			s_dwFakeNow += 1000;
+			QuestSyncProc();
 			printf("quest portal step to dest=%d\n", (int)(pOwner->dwX == (DWORD)aCell[3].first && pOwner->dwY == (DWORD)aCell[3].second));
 		}
 	}
@@ -2308,6 +2440,334 @@ static void TestQuest(const std::vector<int> &aLogin)
 	}
 	QuestSyncAll();
 	printf("quest end copies=%d\n", QuestCountCopies());
+}
+
+/* ------------------------------------------------------------------------- */
+/* P. 討伐チャレンジ（貸し出しの状態で戦い、どう終わっても元に戻る）		 */
+/* ------------------------------------------------------------------------- */
+static int ChallengeCountEnemy(void)
+{
+	int n = 0;
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		if (QuestIsChallengeEnemy(g_aCharInfo[i])) n ++;
+	}
+	return n;
+}
+
+static PCHARINFO ChallengeFindEnemy(void)
+{
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		if (QuestIsChallengeEnemy(g_aCharInfo[i])) return g_aCharInfo[i];
+	}
+	return NULL;
+}
+
+static void ChallengePrint(const char *pszLabel, PCHARINFO p, WORD wWeapon)
+{
+	printf("challenge %s in=%d lv=%u pw=%u hp=%u/%u mana=%u gold=%u item0=%d weapon_equ=%d\n", pszLabel, (int)QuestInChallenge(p),
+		p->byLevel, p->byPW, p->wHP, p->wMaxHP, p->wMaxMana, p->dwGold, (int)(p->waItem[0] == wWeapon),
+		(int)(p->waEqu[0] < MAX_MYITEM && p->waItem[p->waEqu[0]] == wWeapon));
+}
+
+static void TestChallenge(const std::vector<int> &aLogin)
+{
+	printf("== Q. Challenge ==\n");
+	if (aLogin.size() < 3) {
+		return;
+	}
+	PCHARINFO pA = g_aCharInfo[aLogin[0]], pB = g_aCharInfo[aLogin[1]], pC = g_aCharInfo[aLogin[2]];
+	PCHARINFO apPC[3] = { pA, pB, pC };
+	int nMap = (int)pA->dwMapID;
+	PMAPINFO pMap = g_aMapInfo[nMap];
+
+	/* 本物の状態（テスト用に決める。最後に戻す） */
+	CHARINFO aBack[3];
+	for (int i = 0; i < 3; i ++) {
+		aBack[i] = *apPC[i];
+		PCHARINFO p = apPC[i];
+		p->byAdminLV = ADMINLV_USER;
+		p->dwPartyID = 0;
+		p->wQuestID = 0; p->byQuestStep = 0; p->wQuestFlg = 0;
+		ZeroMemory(p->abyQuestDone, sizeof(p->abyQuestDone));
+		p->byLevel = 30; p->byPW = 99; p->wMaxHP = 500; p->wHP = 480; p->wMaxMana = 90; p->wMana = 80; p->dwGold = 5000;
+		ZeroMemory(p->waItem, sizeof(p->waItem));
+		for (int k = 0; k < MAX_EQUTYPE; k ++) p->waEqu[k] = 0xFFFF;
+	}
+
+	/* 空いているマス */
+	std::vector<std::pair<int, int> > aCell;
+	for (int r = 1; r < 12 && aCell.size() < 8; r ++) {
+		for (int dy = -r; dy <= r && aCell.size() < 8; dy ++) {
+			for (int dx = -r; dx <= r && aCell.size() < 8; dx ++) {
+				if (abs(dx) != r && abs(dy) != r) continue;
+				int x = (int)pA->dwX + dx, y = (int)pA->dwY + dy;
+				if (x < 3 || y < 3 || x >= pMap->nCX - 3 || y >= pMap->nCY - 3) continue;
+				if (!CheckCharBlock((DWORD)nMap, x, y) || CheckCharBlockNPC((DWORD)nMap, x, y) != (DWORD)-1 ||
+					CheckCharBlockPC((DWORD)nMap, x, y) != (DWORD)-1) continue;
+				aCell.push_back(std::make_pair(x, y));
+			}
+		}
+	}
+	printf("challenge cells=%d\n", (int)aCell.size());
+	if (aCell.size() < 8) {
+		return;
+	}
+
+	/* 貸し出しに使うアイテム（武器・鎧・HP回復を 1 つずつ） */
+	WORD wWeapon = 0, wArmor = 0, wPotion = 0, wMine = 0;
+	for (int i = 1; i < g_aItemInfo.GetSize(); i ++) {
+		PITEMINFO pI = g_aItemInfo[i];
+		if (pI->szName[0] == 0) continue;
+		if (!wWeapon && pI->byType == ITEMTYPE_WEAPON) wWeapon = (WORD)i;
+		else if (!wArmor && pI->byType == ITEMTYPE_ARMOR) wArmor = (WORD)i;
+		else if (!wPotion && pI->byType == ITEMTYPE_HPUP) wPotion = (WORD)i;
+		else if (!wMine) wMine = (WORD)i;
+	}
+
+	/* 貸し出しセットと敵のステータステンプレート */
+	int nStLoan = g_aStTmpInfo.GetSize(), nStEnemy = nStLoan + 1;
+	{
+		PSTATUSTEMPLATEINFO t = new STATUSTEMPLATEINFO;
+		ZeroMemory(t, sizeof(*t));
+		strcpy(t->szName, "貸し出し");
+		t->byLevel = 7; t->byPW = 11; t->byDEX = 12; t->byST = 13; t->byIT = 14; t->byLK = 15;
+		t->wMaxHP = 60; t->wMaxMana = 20; t->dwGold = 3;
+		t->waItem[0] = wPotion; t->waItem[1] = wWeapon; t->waItem[2] = wArmor; t->waItem[3] = wPotion;
+		t->abyMagic[0] = 1;
+		g_aStTmpInfo.Add(t);
+		t = new STATUSTEMPLATEINFO;
+		ZeroMemory(t, sizeof(*t));
+		strcpy(t->szName, "試しの魔物");
+		t->byLevel = 3; t->byPW = 5; t->byNpcType = NPCTYPE_MOVERAND; t->wMaxHP = 30; t->dwExp = 999; t->dwGold = 999; t->byDropProbability = 100;
+		t->waItem[0] = wMine;
+		g_aStTmpInfo.Add(t);
+	}
+
+	/* 依頼 20（2 人以上・入口 1・敵 1）。ギルドの人 */
+	g_aQuestInfo.RemoveAll();
+	{
+		PQUESTINFO p = new QUESTINFO;
+		ZeroMemory(p, sizeof(*p));
+		p->wID = 20; p->byState = QUESTSTATE_ON; p->byGuild = 0; p->byStepCount = 2;
+		strcpy(p->szName, "試しの討伐");
+		p->dwGold = 100; p->dwExp = 10;
+		p->byChallenge = QUESTCHALLENGE_OTHERWORLD; p->wLoanStTmp = (WORD)nStLoan; p->byMemberMin = 2;
+		for (int k = 0; k < MAX_QUESTNPC; k ++) { p->aNpc[k].byStepMax = QUESTNPC_NOSTEP; p->aNpc[k].byNextStep = QUESTNPC_NOSTEP; }
+		p->aNpc[0].dwMapID = pMap->dwID; p->aNpc[0].byX = (BYTE)aCell[0].first; p->aNpc[0].byY = (BYTE)aCell[0].second;
+		p->aNpc[0].byKind = QUESTNPCKIND_GATE; p->aNpc[0].wGrpID = 4; strcpy(p->aNpc[0].szName, "入口");
+		p->aNpc[0].dwDestMapID = pMap->dwID; p->aNpc[0].byDestX = (BYTE)aCell[3].first; p->aNpc[0].byDestY = (BYTE)aCell[3].second;
+		p->aNpc[1].dwMapID = pMap->dwID; p->aNpc[1].byX = (BYTE)aCell[2].first; p->aNpc[1].byY = (BYTE)aCell[2].second;
+		p->aNpc[1].byKind = QUESTNPCKIND_ENEMY; p->aNpc[1].wGrpID = 5; p->aNpc[1].wStTmp = (WORD)nStEnemy;
+		g_aQuestInfo.Add(p);
+	}
+	PCHARINFO pGuild = new CHARINFO;
+	ZeroMemory((PBYTE)pGuild, sizeof(CHARINFO));
+	pGuild->byNpcType = NPCTYPE_NOMOVE;
+	SetInitCharData(pGuild);
+	pGuild->byGameState = GAMESTATE_NPC;
+	pGuild->byCharState = CHARSTATE_MOVE;
+	pGuild->dwMapID = nMap;
+	pGuild->dwX = pGuild->dwXBack = pGuild->dwStartX = (DWORD)aCell[4].first;
+	pGuild->dwY = pGuild->dwYBack = pGuild->dwStartY = (DWORD)aCell[4].second;
+	strcpy(pGuild->szName, "ギルド受付");
+	pGuild->pszNpcSpeech = new char[8];
+	strcpy(pGuild->pszNpcSpeech, "@g0");
+	pGuild = AddChar(pGuild);
+	pGuild->pID = pGuild->dwTblID + 1;
+	{
+		CCharProcBase CharProcBase;
+		CharProcBase.SetProc(pGuild);
+	}
+	DWORD dwGuild = pGuild->dwTblID;
+
+	QuestMovePC(pA, nMap, aCell[4].first, aCell[4].second + 1);
+	QuestMovePC(pB, nMap, aCell[4].first + 1, aCell[4].second + 1);
+	QuestMovePC(pC, nMap, aCell[7].first, aCell[7].second);
+
+	/* 一人では受けられない（2 人以上） */
+	QuestSendCmd(pA, QUESTCMD_ACCEPT, 20, dwGuild);
+	printf("challenge solo accept=%u\n", pA->wQuestID);
+
+	/* パーティで受けると近くの仲間も受ける（パーティでない人は受けない） */
+	QuestSendParty(pA, pB, CMDPARTY_JOIN);
+	QuestSendParty(pB, pA, CMDPARTY_JOINOK);
+	QuestSendCmd(pA, QUESTCMD_ACCEPT, 20, dwGuild);
+	printf("challenge party accept a=%u b=%u c=%u\n", pA->wQuestID, pB->wQuestID, pC->wQuestID);
+	/* 後から仲間が一人で受けることはできない */
+	QuestSendCmd(pC, QUESTCMD_ACCEPT, 20, dwGuild);
+	printf("challenge other accept c=%u\n", pC->wQuestID);
+
+	/* 入口に乗る：二人とも貸し出しの状態で行き先へ。敵が 1 体出る（経験値・お金・落とす物は無し） */
+	DWORD dwAX = pA->dwX, dwAY = pA->dwY, dwBX = pB->dwX, dwBY = pB->dwY;
+	QuestSyncAll();
+	PCHARINFO pGate = QuestFindCopy(pA, 4);
+	printf("challenge gate found=%d\n", (int)(pGate != NULL));
+	if (pGate == NULL) {
+		return;
+	}
+	QuestSendTalk(pA, pGate->dwTblID);
+	ChallengePrint("start a", pA, wWeapon);
+	ChallengePrint("start b", pB, wWeapon);
+	printf("challenge start a_dest=%d b_dest=%d armor_equ=%d enemies=%d\n",
+		(int)(pA->dwX == (DWORD)aCell[3].first && pA->dwY == (DWORD)aCell[3].second),
+		(int)(pB->dwX == (DWORD)aCell[3].first && pB->dwY == (DWORD)aCell[3].second),
+		(int)(pA->waEqu[1] < MAX_MYITEM && pA->waItem[pA->waEqu[1]] == wArmor), ChallengeCountEnemy());
+	PCHARINFO pEnemy = ChallengeFindEnemy();
+	if (pEnemy) {
+		printf("challenge enemy type=%u hp=%u exp=%u gold=%u drop=%u\n", pEnemy->byNpcType, pEnemy->wMaxHP, pEnemy->dwExp, pEnemy->dwGold, pEnemy->byDropProbability);
+	}
+
+	/* 保存の間だけ本物の状態と入る前の場所になる */
+	QuestChallengeSaveSwap(TRUE);
+	printf("challenge saving lv=%u gold=%u at_start=%d\n", pA->byLevel, pA->dwGold, (int)(pA->dwX == dwAX && pA->dwY == dwAY));
+	QuestChallengeSaveSwap(FALSE);
+	printf("challenge saved lv=%u gold=%u at_dest=%d\n", pA->byLevel, pA->dwGold, (int)(pA->dwX == (DWORD)aCell[3].first));
+
+	/* 預かり所には入れられない */
+	{
+		CMDPARA_DATA1 Para;
+		ZeroMemory(&Para, sizeof(Para));
+		Para.byCmd = CMD_LEAVEITEM;
+		Para.pID = pA->pID;
+		Para.dwTblID = pA->dwTblID;
+		Para.byData = 0;
+		TestRecv(pA, &Para, sizeof(Para));
+		printf("challenge leave blocked item0=%d\n", (int)(pA->waItem[0] == wPotion));
+	}
+
+	/* 周期処理：まだ何も起きない */
+	QuestChallengeProcNow();
+	printf("challenge proc a=%d b=%d\n", (int)QuestInChallenge(pA), (int)QuestInChallenge(pB));
+
+	/* B が倒れる：B だけ中断して元の状態・入る前の場所へ。依頼は受けたまま */
+	pB->wHP = 0;
+	pB->byCharState = CHARSTATE_DEAD;
+	QuestChallengeProcNow();
+	ChallengePrint("dead b", pB, wWeapon);
+	printf("challenge dead b state=%u at_start=%d quest=%u a_in=%d\n", pB->byCharState, (int)(pB->dwX == dwBX && pB->dwY == dwBY), pB->wQuestID, (int)QuestInChallenge(pA));
+
+	/* 敵を倒す：A が元に戻り、最後の段・成功の印・入る前の場所へ */
+	if (pEnemy) {
+		DWORD dwExp0 = aBack[0].dwExp;		/* 本物の経験値（敵は経験値を出さないので変わらない） */
+		DeleteChar(pEnemy->dwTblID);
+		QuestChallengeProcNow();
+		/* すぐには戻さない（知らせてから 3 秒後） */
+		printf("challenge clear wait in=%d\n", (int)QuestInChallenge(pA));
+		s_dwFakeNow += 2000;
+		QuestChallengeProcNow();
+		printf("challenge clear wait2 in=%d\n", (int)QuestInChallenge(pA));
+		s_dwFakeNow += 1000;
+		QuestChallengeProcNow();
+		ChallengePrint("clear a", pA, wWeapon);
+		printf("challenge clear step=%u flag16=%d at_start=%d exp_same=%d enemies=%d\n", pA->byQuestStep, QuestFlagCheck(pA, 16),
+			(int)(pA->dwX == dwAX && pA->dwY == dwAY), (int)(pA->dwExp == dwExp0), ChallengeCountEnemy());
+	}
+
+	/* ギルドで渡す：初回は報酬あり */
+	QuestMovePC(pA, nMap, aCell[4].first, aCell[4].second + 1);
+	{
+		DWORD dwGold0 = pA->dwGold;
+		QuestSendCmd(pA, QUESTCMD_HANDIN, 0, dwGuild);
+		printf("challenge handin1 quest=%u gold+=%d done=%d\n", pA->wQuestID, (int)(pA->dwGold - dwGold0), (int)QuestIsDone(pA, 20));
+	}
+	/* B はまだ終わっていないので渡せない */
+	{
+		QuestSendCmd(pB, QUESTCMD_HANDIN, 0, dwGuild);
+		printf("challenge handin b quest=%u\n", pB->wQuestID);
+	}
+
+	/* もう一度：B を取り消して二人で受け直し、入ってから A が切断 */
+	QuestSendCmd(pB, QUESTCMD_CANCEL, 0, dwGuild);
+	QuestSendCmd(pA, QUESTCMD_ACCEPT, 20, dwGuild);
+	printf("challenge again a=%u b=%u\n", pA->wQuestID, pB->wQuestID);
+	QuestSyncAll();
+	pGate = QuestFindCopy(pA, 4);
+	if (pGate) {
+		QuestSendTalk(pA, pGate->dwTblID);
+	}
+	printf("challenge again in a=%d b=%d enemies=%d\n", (int)QuestInChallenge(pA), (int)QuestInChallenge(pB), ChallengeCountEnemy());
+	/* 二組目は入れない（同じ依頼は一度に 1 組） */
+	pC->wQuestID = 20;
+	QuestMovePC(pC, nMap, aCell[0].first, aCell[0].second + 1);
+	{
+		/* C 自身の入口（見えるNPC は持ち主ごと） */
+		QuestSyncAll();
+		PCHARINFO pGateC = QuestFindCopy(pC, 4);
+		if (pGateC) QuestSendTalk(pC, pGateC->dwTblID);
+		printf("challenge busy c_in=%d gate=%d\n", (int)QuestInChallenge(pC), (int)(pGateC != NULL));
+	}
+	pC->wQuestID = 0;
+	QuestSyncAll();
+
+	/* A が切断：その場で元の状態。場所はマップの表から外れた後（ログイン時）に入る前の場所へ */
+	QuestOnDecPlayer(pA);
+	printf("challenge logout a in=%d lv=%u\n", (int)QuestInChallenge(pA), pA->byLevel);
+	DeleteTblNoPC((int)pA->dwTblID);
+	QuestOnLogin(pA);
+	AddTblNoPC((int)pA->dwTblID);
+	printf("challenge relogin a at_start=%d\n", (int)(pA->dwX == (DWORD)aCell[4].first && pA->dwY == (DWORD)aCell[4].second + 1));
+
+	/* B が部屋の出口（同じマップの中のワープ）を踏む：B も元に戻ってその場に残り、誰もいなくなったので敵も消える */
+	{
+		EVENTINFO Event;
+		EVENTINFO_MOVE Move;
+		ZeroMemory(&Event, sizeof(Event));
+		ZeroMemory(&Move, sizeof(Move));
+		Move.dwX = (DWORD)aCell[5].first;
+		Move.dwY = (DWORD)aCell[5].second;
+		Event.byType = EVENTTYPE_MOVE;
+		Event.pData = &Move;
+		EventProc(pB, &Event, 0);
+		printf("challenge warp b still_in=%d\n", (int)QuestInChallenge(pB));
+		QuestChallengeProcNow();
+		ChallengePrint("warp b", pB, wWeapon);
+		printf("challenge warp b in=%d at_exit=%d quest=%u enemies=%d\n", (int)QuestInChallenge(pB),
+			(int)(pB->dwX == (DWORD)aCell[5].first && pB->dwY == (DWORD)aCell[5].second), pB->wQuestID, ChallengeCountEnemy());
+	}
+
+	/* 2 回目のクリア：報酬は無く、依頼は終わる */
+	pA->wQuestID = 20; pA->byQuestStep = 1; pA->wQuestFlg = (WORD)(1 << 15);
+	QuestMovePC(pA, nMap, aCell[4].first, aCell[4].second + 1);
+	{
+		DWORD dwGold0 = pA->dwGold, dwExp0 = pA->dwExp;
+		QuestSendCmd(pA, QUESTCMD_HANDIN, 0, dwGuild);
+		printf("challenge handin2 quest=%u gold+=%d exp_same=%d\n", pA->wQuestID, (int)(pA->dwGold - dwGold0), (int)(pA->dwExp == dwExp0));
+	}
+
+	/* 依頼データの新しい欄も保存して読み直せる */
+	{
+		QUESTINFO Bak = *g_aQuestInfo[0];
+		SaveQuestInfo();
+		for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) delete g_aQuestInfo[i];
+		g_aQuestInfo.RemoveAll();
+		LoadQuestInfo();
+		printf("challenge info reload same=%d\n", (int)(g_aQuestInfo.GetSize() == 1 && memcmp(g_aQuestInfo[0], &Bak, sizeof(Bak)) == 0));
+	}
+
+	/* 片付け */
+	QuestSendParty(pA, pA, CMDPARTY_BREAKUP);
+	for (int i = 0; i < 3; i ++) {
+		CHARINFO *pBk = &aBack[i];
+		PCHARINFO p = apPC[i];
+		p->wQuestID = 0; p->byQuestStep = 0; p->wQuestFlg = 0;
+		ZeroMemory(p->abyQuestDone, sizeof(p->abyQuestDone));
+		p->dwPartyID = 0;
+		p->byLevel = pBk->byLevel; p->byPW = pBk->byPW; p->wMaxHP = pBk->wMaxHP; p->wHP = pBk->wHP;
+		p->wMaxMana = pBk->wMaxMana; p->wMana = pBk->wMana; p->dwGold = pBk->dwGold; p->dwExp = pBk->dwExp;
+		p->byCharState = pBk->byCharState; p->byAdminLV = pBk->byAdminLV;
+		memcpy(p->waItem, pBk->waItem, sizeof(p->waItem));
+		memcpy(p->waEqu, pBk->waEqu, sizeof(p->waEqu));
+		QuestMovePC(p, (int)pBk->dwMapID, (int)pBk->dwX, (int)pBk->dwY);
+	}
+	QuestSyncAll();
+	DeleteChar(dwGuild);
+	for (int i = g_aStTmpInfo.GetSize() - 1; i >= nStLoan; i --) {
+		delete g_aStTmpInfo[i];
+		g_aStTmpInfo.RemoveAt(i);
+	}
+	for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) delete g_aQuestInfo[i];
+	g_aQuestInfo.RemoveAll();
+	printf("challenge end enemies=%d copies=%d\n", ChallengeCountEnemy(), QuestCountCopies());
 }
 
 /* ------------------------------------------------------------------------- */
@@ -2805,7 +3265,7 @@ static void TestCharPush(const std::vector<int> &aLogin)
 /* ========================================================================= */
 static void TestStatusUp(const std::vector<int> &aLogin)
 {
-	printf("== Q. StatusUp ==\n");
+	printf("== R. StatusUp ==\n");
 	if (aLogin.size() < 2 || g_aMagicInfo.GetSize() <= 8) {
 		return;
 	}

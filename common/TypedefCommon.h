@@ -2722,6 +2722,8 @@ enum {
 	QUESTNPCKIND_PORTAL,										/* ワープポータル（話すと行き先へ移る） */
 	QUESTNPCKIND_CHEST,											/* 宝箱（話すとアイテムが手に入る） */
 	QUESTNPCKIND_PERSON,										/* 人（台詞だけ） */
+	QUESTNPCKIND_GATE,											/* 討伐チャレンジの入口（乗ると近くの仲間と一緒に行き先へ移り、貸し出しの状態になる） */
+	QUESTNPCKIND_ENEMY,											/* 討伐チャレンジの敵（挑戦が始まった時に出る。強さは wStTmp のステータステンプレート） */
 	QUESTNPCKIND_MAX
 };
 
@@ -2745,6 +2747,7 @@ typedef struct _QUESTNPCINFO {
 	WORD		wItem;												/* 宝箱で渡すアイテム（0=なし） */
 	BYTE		bySetFlg;											/* 話したら立てるフラグ（0=なし 1〜16） */
 	BYTE		byNextStep;											/* 話したら段をこれにする（255=変えない） */
+	WORD		wStTmp;												/* 敵の強さ（ステータステンプレートの番号。種類が敵の時） */
 } QUESTNPCINFO, *PQUESTNPCINFO;
 
 /* 依頼情報（サーバーだけが持つ） */
@@ -2765,7 +2768,17 @@ typedef struct _QUESTINFO {
 	BYTE		byStepCount;										/* 段の数（1〜4）。最後の段に達していて依頼の品を持っていれば、ギルドで渡せる */
 	char		aszGoal[MAX_QUESTSTEP][MAX_QUESTGOAL];				/* 段ごとの「いまの目的」 */
 	QUESTNPCINFO	aNpc[MAX_QUESTNPC];								/* 見えるNPC */
+	BYTE		byChallenge;										/* 討伐チャレンジの種類(QUESTCHALLENGE_*。0=ふつうの依頼) */
+	WORD		wLoanStTmp;											/* 討伐チャレンジの貸し出しセット（ステータステンプレートの番号） */
+	BYTE		byMemberMin;										/* 討伐チャレンジに必要な人数（0・1=一人でもよい、2 以上はパーティを組んでいないと受けられない） */
 } QUESTINFO, *PQUESTINFO;
+
+/* 討伐チャレンジの種類(QUESTINFO の byChallenge) */
+enum {
+	QUESTCHALLENGE_NONE = 0,									/* ふつうの依頼 */
+	QUESTCHALLENGE_OTHERWORLD,									/* 異空間（挑戦中の組にだけ。同じ依頼は一度に 1 組） */
+	QUESTCHALLENGE_MAX
+};
 
 /* CMD_QUEST のサブコマンド(byType) */
 enum {
