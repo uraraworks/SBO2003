@@ -741,6 +741,12 @@
 		html body.sbo-pad.sbo-recording #sbo-rec-pad {
 			background: #8a3a3a;
 		}
+		/* マップにいない間（ログイン・読み込み中）はスクショ/録画を出さない。
+		   上の「#sbo-pad button」の display:flex に負けないよう詳細度を上げる */
+		html body.sbo-pad:not(.sbo-on-map) #sbo-shot-pad,
+		html body.sbo-pad:not(.sbo-on-map):not(.sbo-recording) #sbo-rec-pad {
+			display: none;
+		}
 		html body.sbo-pad #sbo-shot-pad:active,
 		html body.sbo-pad #sbo-rec-pad:active {
 			background: #3d4452;
