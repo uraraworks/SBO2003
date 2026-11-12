@@ -672,6 +672,11 @@
 	.sbo-pad-txt {
 		white-space: nowrap;
 	}
+	/* スクショ・録画はゲーム画面に重ねる丸ボタンなので絵だけ */
+	#sbo-shot-pad .sbo-pad-txt,
+	#sbo-rec-pad .sbo-pad-txt {
+		display: none;
+	}
 	@media (min-aspect-ratio: 13/10) {
 		body.sbo-pad .sbo-pad-txt {
 			display: none;
@@ -679,7 +684,7 @@
 	}
 
 	/* 縦持ちのパッド：左に十字キー、右下に大きな決定、そのまわりに弧状に丸ボタン、
-	   左上に小さな横長ボタン（表示・スクショ・録画）。全部 #sbo-pad 内で絶対配置（消えても位置はずれない） */
+	   左上に小さな横長ボタン（表示）。全部 #sbo-pad 内で絶対配置（消えても位置はずれない） */
 	@media (max-aspect-ratio: 129/100) {
 		body.sbo-pad .sbo-buttons {
 			display: contents;
@@ -700,10 +705,7 @@
 			color: rgba(255, 255, 255, 0.38);
 			pointer-events: none;
 		}
-		body.sbo-pad #sbo-pad button,
-		html body.sbo-pad.sbo-on-map #sbo-shot-pad,
-		html body.sbo-pad.sbo-on-map #sbo-rec-pad,
-		html body.sbo-pad.sbo-recording #sbo-rec-pad {
+		body.sbo-pad #sbo-pad button {
 			position: absolute;
 			display: flex;
 			width: auto;
@@ -712,10 +714,7 @@
 			gap: 2px;
 		}
 		/* 上の小さな横長ボタン */
-		body.sbo-pad #sbo-pad .sbo-b-tab,
-		html body.sbo-pad.sbo-on-map #sbo-shot-pad,
-		html body.sbo-pad.sbo-on-map #sbo-rec-pad,
-		html body.sbo-pad.sbo-recording #sbo-rec-pad {
+		body.sbo-pad #sbo-pad .sbo-b-tab {
 			top: 4px;
 			width: 56px;
 			min-width: 0;
@@ -726,37 +725,7 @@
 			font: bold 10px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
 		}
 		body.sbo-pad #sbo-pad .sbo-b-tab { left: calc(12px + env(safe-area-inset-left)); }
-		html body.sbo-pad.sbo-on-map #sbo-shot-pad { left: calc(74px + env(safe-area-inset-left)); right: auto; }
-		html body.sbo-pad.sbo-on-map #sbo-rec-pad,
-		html body.sbo-pad.sbo-recording #sbo-rec-pad { left: calc(136px + env(safe-area-inset-left)); right: auto; }
-		html body.sbo-pad.sbo-on-map #sbo-shot-pad,
-		html body.sbo-pad.sbo-on-map.sbo-sys-show #sbo-shot-pad,
-		html body.sbo-pad.sbo-on-map #sbo-rec-pad,
-		html body.sbo-pad.sbo-on-map.sbo-sys-show #sbo-rec-pad,
-		html body.sbo-pad.sbo-recording #sbo-rec-pad {
-			z-index: 1;
-			opacity: 1;
-			pointer-events: auto;
-			border: 1px solid rgba(255, 255, 255, 0.16);
-			background: #2a2f3a;
-			color: #eef0f4;
-		}
-		html body.sbo-pad.sbo-recording #sbo-rec-pad {
-			background: #8a3a3a;
-		}
-		/* マップにいない間（ログイン・読み込み中）はスクショ/録画を出さない。
-		   上の「#sbo-pad button」の display:flex に負けないよう詳細度を上げる */
-		html body.sbo-pad:not(.sbo-on-map) #sbo-shot-pad,
-		html body.sbo-pad:not(.sbo-on-map):not(.sbo-recording) #sbo-rec-pad {
-			display: none;
-		}
-		html body.sbo-pad #sbo-shot-pad:active,
-		html body.sbo-pad #sbo-rec-pad:active {
-			background: #3d4452;
-		}
-		body.sbo-pad #sbo-pad .sbo-btn-svg,
-		html body.sbo-pad #sbo-shot-pad .sbo-ic,
-		html body.sbo-pad #sbo-rec-pad .sbo-ic {
+		body.sbo-pad #sbo-pad .sbo-btn-svg {
 			width: 16px;
 			height: 16px;
 		}
@@ -1682,7 +1651,9 @@
 		<div id="sbo-overlay" style="position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none;"></div>
 		<div id="sbo-shot-flash"></div>
 		<!-- スマホのカメラボタン（縦持ちはゲーム画面の右上隅に重ねる。横持ちは左下） -->
-				<div id="sbo-rec-badge">REC <span id="sbo-rec-time">0:00</span></div>
+		<button type="button" id="sbo-shot-pad" title="スクリーンショット"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-camera"/></svg><span class="sbo-pad-txt">スクショ</span></button>
+		<button type="button" id="sbo-rec-pad" title="ゲーム画面を動画で録画"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-video"/></svg><span class="sbo-pad-txt">録画</span></button>
+		<div id="sbo-rec-badge">REC <span id="sbo-rec-time">0:00</span></div>
 		<!-- ログイン画面のボタン。ID・パスワードの入力欄は「ID・パスワードでログイン」を押した時だけ見せる -->
 		<div id="sbo-quick" data-sbo-ui="1">
 			<!-- この端末で前にログインしていた -->
@@ -1714,8 +1685,6 @@
 	<button type="button" class="sbo-link" id="sbo-forgot" data-sbo-ui="1">昔のアカウントを忘れてしまった方はこちら</button>
 	<!-- 仮想パッド：タッチ操作の端末だけ出す（?pad=1 で PC でも出せる） -->
 	<div id="sbo-pad">
-		<button type="button" id="sbo-shot-pad" title="スクリーンショット"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-camera"/></svg><span class="sbo-pad-txt">スクショ</span></button>
-		<button type="button" id="sbo-rec-pad" title="ゲーム画面を動画で録画"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-video"/></svg><span class="sbo-pad-txt">録画</span></button>
 		<div class="sbo-stick" id="sbo-stick">
 			<div class="sbo-dpad-arm sbo-dpad-up" data-dir="0"><span>▲</span></div>
 			<div class="sbo-dpad-arm sbo-dpad-down" data-dir="1"><span>▼</span></div>
@@ -3912,7 +3881,7 @@
 			document.body.classList.remove('sbo-sys-show');
 		}
 		document.getElementById('sbo-screen').addEventListener('click', function (ev) {
-			if (!usePad || window.matchMedia('(max-aspect-ratio: 129/100)').matches || ev.target.closest('#sbo-shot-pad, #sbo-rec-pad, [data-sbo-ui]')) {
+			if (!usePad || ev.target.closest('#sbo-shot-pad, #sbo-rec-pad, [data-sbo-ui]')) {
 				return;
 			}
 			if (document.body.classList.contains('sbo-sys-show')) {
