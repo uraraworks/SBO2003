@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="robots" content="noindex">
+<title>描く｜ドット絵工房</title>
+<!--
+	ドット絵工房の描く画面（/kobo-draw?task=ID&from=base|blank|案id&work=作業中の案id）。PC もスマホも使える。
+	・キャンバスにお題の範囲（w×h）を拡大して描く。色はお題の colors だけ
+	・元イラスト・見本・プレビュー（種類ごとのアニメ）を見ながら描ける
+	・端末への自動保存は数秒ごと。サーバーへの作業中保存は「みんなに見せる」がオンの時だけ 1 分ごと
+	・出すには同意が要る（出した案は変えられない）
+	仕様は docs/kobo.md。描く部品は dot-core.js・dot-png.js（管理者用ドット絵エディタと同じもの）。
+-->
+<style>
+	:root {
+		--bg: #14161a;
+		--panel: #1d1f24;
+		--panel2: #262930;
+		--fg: #e8e8e8;
+		--sub: #9aa0a6;
+		--field: #0f1217;
+		--border: #3a404a;
+		--accent: #f0b84a;
+		--ok: #8fe07a;
+		--ng: #ff9b8a;
+	}
+	* { box-sizing: border-box; }
+	html, body {
+		height: 100%;
+		margin: 0;
+		overflow: hidden;
+		overscroll-behavior: none;
+		background: var(--bg);
+		color: var(--fg);
+		font: 14px/1.5 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		-webkit-text-size-adjust: 100%;
+		-webkit-user-select: none;
+		user-select: none;
+		-webkit-touch-callout: none;
+	}
+	a { color: #8fc1ff; }
+	button {
+		font: bold 13px/1.2 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		background: var(--panel2);
+		color: var(--fg);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		padding: 8px 10px;
+		cursor: pointer;
+		touch-action: manipulation;
+	}
+	button:disabled { opacity: 0.4; cursor: default; }
+	button.primary { background: var(--accent); color: #1d1f24; border-color: var(--accent); }
+	button.active { border-color: var(--accent); background: rgba(240, 184, 74, 0.2); }
+	#app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+	#top {
+		flex: none;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 6px 8px;
+		background: #0c0c0c;
+		padding-top: max(6px, env(safe-area-inset-top));
+	}
+	#top .title { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: bold; }
+	#top .title small { color: var(--sub); font-weight: normal; margin-left: 6px; }
+	#top button { padding: 7px 10px; white-space: nowrap; flex: none; }
+	#top .phone-only { display: none; }
+	#body { flex: 1 1 auto; display: flex; min-height: 0; }
+	#left {
+		flex: none;
+		width: 212px;
+		overflow-y: auto;
+		background: var(--panel);
+		padding: 8px;
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+	.group { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+	.group button { padding: 8px 4px; font-size: 12px; }
+	.group button small { display: block; font-weight: normal; color: var(--sub); font-size: 10px; margin-top: 2px; }
+	.group h5 { grid-column: 1 / -1; margin: 0; font-size: 11px; color: var(--sub); font-weight: normal; }
+	#cur { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--sub); }
+	#cur-sw { width: 28px; height: 28px; border-radius: 4px; border: 2px solid var(--fg); }
+	#palette { display: flex; flex-wrap: wrap; gap: 2px; }
+	.sw { width: 22px; height: 22px; padding: 0; border: 1px solid #000; border-radius: 3px; }
+	.sw.sel { outline: 2px solid var(--accent); outline-offset: 1px; z-index: 1; position: relative; }
+	.checker {
+		background-color: #cfcfcf;
+		background-image:
+			linear-gradient(45deg, #fff 25%, transparent 25%, transparent 75%, #fff 75%),
+			linear-gradient(45deg, #fff 25%, transparent 25%, transparent 75%, #fff 75%);
+		background-size: 8px 8px;
+		background-position: 0 0, 4px 4px;
+	}
+	#stage { flex: 1 1 auto; position: relative; min-width: 0; min-height: 0; background: #101216; }
+	#view { position: absolute; left: 0; top: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; display: block; }
+	#view.hand { cursor: grab; }
+	#info {
+		position: absolute;
+		left: 8px;
+		bottom: 8px;
+		font-size: 12px;
+		color: var(--sub);
+		background: rgba(0, 0, 0, 0.55);
+		padding: 2px 8px;
+		border-radius: 6px;
+		pointer-events: none;
+	}
+	#zoombtns { position: absolute; right: 8px; bottom: 8px; display: flex; gap: 4px; }
+	#zoombtns button { padding: 6px 12px; background: rgba(0, 0, 0, 0.6); }
+	#mini {
+		display: none;
+		position: absolute;
+		right: 8px;
+		top: 8px;
+		padding: 6px;
+		border-radius: 8px;
+		background: rgba(0, 0, 0, 0.6);
+		border: 1px solid var(--border);
+		max-width: 60%;
+		overflow: hidden;
+	}
+	#toast {
+		position: absolute;
+		left: 50%;
+		top: 12px;
+		transform: translateX(-50%);
+		background: rgba(0, 0, 0, 0.8);
+		padding: 6px 14px;
+		border-radius: 8px;
+		font-size: 13px;
+		pointer-events: none;
+		opacity: 0;
+		transition: opacity 0.25s;
+		max-width: 90%;
+		text-align: center;
+	}
+	#toast.show { opacity: 1; }
+	#side {
+		flex: none;
+		width: 330px;
+		overflow-y: auto;
+		background: var(--panel);
+		padding: 10px;
+		-webkit-user-select: text;
+		user-select: text;
+	}
+	#side h4 { margin: 0 0 6px; font-size: 13px; }
+	#side h4 small { color: var(--sub); font-weight: normal; margin-left: 4px; }
+	.sec { margin-bottom: 16px; }
+	.sec img { max-width: 100%; height: auto; border-radius: 4px; }
+	.imgs { display: flex; flex-wrap: wrap; gap: 6px; }
+	.imgs img.px { image-rendering: pixelated; }
+	.pv-row { display: flex; gap: 8px; flex-wrap: wrap; }
+	.pv-item { text-align: center; font-size: 11px; color: var(--sub); }
+	.pv-canvas { image-rendering: pixelated; display: block; border-radius: 4px; }
+	.pv-scale { display: flex; gap: 4px; margin-bottom: 6px; }
+	.pv-scale button { padding: 4px 10px; font-size: 12px; }
+	#close-side { display: none; }
+	label.row { display: block; margin: 8px 0 4px; font-weight: bold; font-size: 13px; }
+	input[type="text"] {
+		width: 100%;
+		background: var(--field);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		color: var(--fg);
+		font: 16px/1.4 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		padding: 8px;
+	}
+	.radios { display: flex; gap: 6px; flex-wrap: wrap; }
+	.radios label { flex: 1 1 120px; position: relative; cursor: pointer; }
+	.radios input { position: absolute; opacity: 0; pointer-events: none; }
+	.radios span { display: block; border: 1px solid var(--border); border-radius: 8px; padding: 7px 8px; text-align: center; color: var(--sub); font-size: 13px; line-height: 1.3; }
+	.radios small { display: block; font-size: 10px; }
+	.radios input:checked + span { border-color: var(--accent); color: var(--fg); background: rgba(240, 184, 74, 0.14); font-weight: bold; }
+	.check { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; font-size: 13px; }
+	.check input { margin-top: 3px; width: 18px; height: 18px; flex: none; }
+	.check ul { margin: 2px 0 0; padding-left: 16px; color: var(--sub); font-size: 12px; }
+	.note { font-size: 12px; color: var(--sub); margin: 4px 0; }
+	#msg { min-height: 1.4em; margin: 8px 0 4px; color: var(--ng); font-size: 13px; }
+	#msg.ok { color: var(--ok); }
+	#autosave { font-size: 12px; color: var(--sub); }
+	.savebtns { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+	.savebtns button { padding: 12px; font-size: 14px; }
+	#banner { padding: 8px 12px; font-size: 13px; background: #3a2d14; color: #ffd98a; flex: none; }
+	[hidden] { display: none !important; }
+	#loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--bg); z-index: 50; text-align: center; padding: 20px; }
+
+	/* スマホ・狭い画面: 下に道具と色、横の欄は全画面で開く */
+	@media (max-width: 860px) {
+		#top .phone-only { display: inline-block; }
+		#top .title small { display: none; }
+		#body { flex-direction: column; }
+		#stage { order: 1; }
+		#left {
+			order: 2;
+			width: 100%;
+			max-height: 44%;
+			flex-direction: column;
+			gap: 6px;
+			padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+		}
+		.group { display: flex; overflow-x: auto; gap: 4px; padding-bottom: 2px; }
+		.group h5 { display: none; }
+		.group button { flex: none; min-width: 54px; min-height: 42px; padding: 6px 8px; }
+		#palette { max-height: 96px; overflow-y: auto; }
+		.sw { width: 26px; height: 26px; }
+		#cur { display: none; }
+		#side {
+			display: none;
+			position: fixed;
+			inset: 0;
+			width: 100%;
+			z-index: 20;
+			padding-top: max(10px, env(safe-area-inset-top));
+			padding-bottom: calc(24px + env(safe-area-inset-bottom));
+		}
+		#side.open { display: block; }
+		#close-side { display: block; position: sticky; top: 0; float: right; z-index: 2; }
+		#mini { display: block; }
+		#zoombtns { bottom: 8px; }
+		.hide-phone { display: none !important; }
+	}
+</style>
+</head>
+<body>
+<div id="app">
+	<div id="top">
+		<button type="button" id="back" title="お題のページへ戻る">←</button>
+		<div class="title" id="title">読み込み中...</div>
+		<button type="button" id="undo" title="元に戻す（Ctrl+Z）">戻す</button>
+		<button type="button" id="redo" title="やり直す（Ctrl+Shift+Z）">進む</button>
+		<button type="button" id="open-ref" class="phone-only">見本</button>
+		<button type="button" id="open-save" class="phone-only primary">保存</button>
+	</div>
+	<div id="banner" hidden></div>
+	<div id="body">
+		<aside id="left">
+			<div class="group" id="tools">
+				<h5>道具</h5>
+				<button type="button" data-tool="pen" title="ペン（B）">ペン<small>B</small></button>
+				<button type="button" data-tool="eraser" title="消しゴム（E）">消しゴム<small>E</small></button>
+				<button type="button" data-tool="picker" title="スポイト（I。右クリックでも）">スポイト<small>I</small></button>
+				<button type="button" data-tool="fill" title="塗りつぶし（F）">塗りつぶし<small>F</small></button>
+				<button type="button" data-tool="select" title="範囲を選んで動かす（M）">範囲選択<small>M</small></button>
+				<button type="button" data-tool="hand" title="移動（H。スペース+ドラッグでも）">移動<small>H</small></button>
+			</div>
+			<div class="group" id="edit">
+				<h5>選んだ範囲</h5>
+				<button type="button" id="copy" title="コピー（Ctrl+C）">コピー</button>
+				<button type="button" id="cut" title="切り取り（Ctrl+X）">切り取り</button>
+				<button type="button" id="paste" title="貼り付け（Ctrl+V）">貼り付け</button>
+				<button type="button" id="del" title="消す（Delete）">削除</button>
+			</div>
+			<div class="group" id="viewops">
+				<h5>表示</h5>
+				<button type="button" id="grid" title="グリッド（G）">グリッド</button>
+				<button type="button" id="fit" title="全体を表示">全体表示</button>
+			</div>
+			<div id="cur"><span id="cur-sw"></span><span id="cur-text"></span></div>
+			<div id="palette"></div>
+		</aside>
+		<div id="stage">
+			<canvas id="view"></canvas>
+			<div id="info"></div>
+			<div id="zoombtns"><button type="button" id="zout">−</button><button type="button" id="zin">＋</button></div>
+			<div id="mini"></div>
+			<div id="toast"></div>
+		</div>
+		<aside id="side">
+			<button type="button" id="close-side">閉じる</button>
+			<div class="sec" id="sec-refs">
+				<h4>元イラスト<small>何を描くか</small></h4>
+				<div class="imgs" id="refs"></div>
+				<h4 style="margin-top:10px">見本<small>この絵柄に合わせよう</small></h4>
+				<div class="imgs" id="samples"></div>
+				<p class="note">上手さより、ゲームになじむかで選びます。</p>
+			</div>
+			<div class="sec" id="sec-preview">
+				<h4>プレビュー<small>描くとすぐ変わります</small></h4>
+				<div class="pv-scale"><button type="button" data-pvs="1">等倍</button><button type="button" data-pvs="2" class="active">2倍</button><button type="button" data-pvs="4">4倍</button></div>
+				<div id="preview"></div>
+			</div>
+			<div class="sec" id="sec-save">
+				<h4>保存</h4>
+				<label class="row" for="note">ひとこと（200字まで）</label>
+				<input type="text" id="note" maxlength="200" placeholder="例）髪の色を見本に近づけました" autocomplete="off">
+				<label class="row">名前の出し方</label>
+				<div class="radios">
+					<label><input type="radio" name="anon" value="0" checked><span>キャラ名<small id="my-name"></small></span></label>
+					<label><input type="radio" name="anon" value="1"><span>匿名<small>「匿名さん」</small></span></label>
+				</div>
+				<p class="note">匿名でも、管理人にはだれの案か分かります。</p>
+				<label class="check"><input type="checkbox" id="share"><span>みんなに見せる（作業中でも、ほかの人が見られます）</span></label>
+				<label class="check"><input type="checkbox" id="agree"><span>出すときの同意
+					<ul><li>自分で描きました</li><li>ゲームの一部として GPLv3 で配布されることがあります</li><li>ほかの人が描き足してよいです</li><li>採用されないこともあると分かっています</li></ul></span></label>
+				<div id="msg"></div>
+				<div id="autosave"></div>
+				<div class="savebtns">
+					<button type="button" id="save-wip">作業中として保存</button>
+					<button type="button" id="submit" class="primary">出す</button>
+				</div>
+				<p class="note">「出す」と、案が固定されて、みんなが描き足しの元にできます。作業中の保存は、あとから続きを描けます。</p>
+			</div>
+		</aside>
+	</div>
+</div>
+<div id="loading">読み込み中です...</div>
+<script type="module" src="/kobo-draw.js"></script>
+</body>
+</html>

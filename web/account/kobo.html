@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>ドット絵工房｜スクラップブックオンライン</title>
+<!--
+	ドット絵工房（/kobo）。お題ごとにみんなでドット絵を描き、案を見て、コメントし合うページ。
+	・一覧とお題のページはログインしなくても見られる（見るだけ）
+	・描く・コメント・なじんでる・提案は、ブラウザ版でログインしたことのある人だけ
+	  （localStorage の sbo_device_token で本人確認。ご意見箱と同じ）
+	・描く画面は /kobo-draw（kobo-draw.html）
+	仕様は docs/kobo.md。API は /api/kobo/*。
+-->
+<style>
+	:root {
+		--page-bg: #efe6d2;
+		--ink: #2b2620;
+		--sub: #7a6f60;
+		--card: #fffaf0;
+		--card-border: #dccfb4;
+		--panel: #1d1f24;
+		--panel-fg: #e8e8e8;
+		--panel-sub: #9aa0a6;
+		--field: #0f1217;
+		--border: #3a404a;
+		--accent: #f0b84a;
+		--accent-ink: #9a6a10;
+		--ok: #8fe07a;
+		--ng: #ff9b8a;
+		--ng-ink: #b2412e;
+		--reply-bg: #f3ead6;
+		--link: #2f6db0;
+	}
+	html, body {
+		margin: 0;
+		padding: 0;
+		background: var(--page-bg);
+		color: var(--ink);
+		font: 14px/1.6 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		-webkit-text-size-adjust: 100%;
+	}
+	body {
+		min-height: 100vh;
+		display: flex;
+		flex-direction: column;
+	}
+	.site-header {
+		text-align: center;
+		background: #0c0c0c;
+		padding: 10px 16px;
+		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+	}
+	.site-header h1 {
+		margin: 0;
+		font-size: 15px;
+		font-weight: 600;
+		color: #f2f2f2;
+	}
+	.site-header a {
+		color: inherit;
+		text-decoration: none;
+	}
+	main {
+		flex: 1 1 auto;
+		width: 100%;
+		max-width: 880px;
+		margin: 0 auto;
+		padding: 24px 16px 40px;
+		box-sizing: border-box;
+	}
+	h2 { margin: 0 0 4px; font-size: 20px; }
+	h3 { margin: 28px 0 8px; font-size: 16px; }
+	h4 { margin: 0 0 6px; font-size: 14px; }
+	a { color: var(--link); }
+	.lead { margin: 0 0 18px; color: var(--sub); font-size: 13px; }
+	.back { display: inline-block; margin-bottom: 10px; font-size: 13px; }
+	.panel {
+		background: var(--panel);
+		color: var(--panel-fg);
+		border-radius: 12px;
+		padding: 18px 18px 20px;
+		box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+		margin-bottom: 14px;
+	}
+	.panel a { color: #8fc1ff; }
+	.panel p { margin: 0 0 8px; }
+	.now { color: var(--panel-sub); font-size: 13px; }
+	.panel .btn:not(.sub) { color: #1d1f24; }
+	.field-label { display: block; margin: 16px 0 6px; font-weight: bold; }
+	.field-label:first-child { margin-top: 0; }
+	textarea, input[type="text"] {
+		width: 100%;
+		box-sizing: border-box;
+		background: var(--field);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		color: var(--panel-fg);
+		font: 16px/1.5 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;	/* 16px 未満だと iPhone で拡大される */
+		padding: 10px;
+		resize: vertical;
+	}
+	textarea { min-height: 110px; }
+	.count { text-align: right; font-size: 12px; color: var(--panel-sub); margin-top: 4px; }
+	.count.over { color: var(--ng); }
+	.choices { display: flex; flex-wrap: wrap; gap: 8px; }
+	.choices label { flex: 1 1 0; min-width: 120px; position: relative; cursor: pointer; }
+	.choices.cats label { min-width: 88px; }
+	.choices input { position: absolute; opacity: 0; pointer-events: none; }
+	.choices span {
+		display: block;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		padding: 10px;
+		text-align: center;
+		color: var(--panel-sub);
+		line-height: 1.3;
+	}
+	.choices span small { display: block; font-size: 11px; margin-top: 3px; }
+	.choices input:checked + span {
+		border-color: var(--accent);
+		color: var(--panel-fg);
+		background: rgba(240, 184, 74, 0.14);
+		font-weight: bold;
+	}
+	.choices input:focus-visible + span { outline: 2px solid var(--accent); }
+	.note { font-size: 12px; color: var(--panel-sub); margin: 6px 0 0; }
+	.agree { display: flex; gap: 10px; align-items: flex-start; margin-top: 14px; font-size: 13px; }
+	.agree input { margin-top: 4px; width: 18px; height: 18px; flex: none; }
+	.agree ul { margin: 4px 0 0; padding-left: 18px; color: var(--panel-sub); }
+	.msg { min-height: 1.5em; margin-top: 10px; color: var(--ng); }
+	.msg.ok { color: var(--ok); }
+	.buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+	button, .btn {
+		display: inline-block;
+		box-sizing: border-box;
+		background: var(--accent);
+		color: #1d1f24;
+		border: none;
+		border-radius: 8px;
+		font: bold 15px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		padding: 13px 18px;
+		cursor: pointer;
+		text-decoration: none;
+		text-align: center;
+		touch-action: manipulation;
+	}
+	button.sub, .btn.sub {
+		background: transparent;
+		color: var(--panel-fg);
+		border: 1px solid var(--border);
+	}
+	.on-light button.sub, .on-light .btn.sub, button.sub.light, .btn.sub.light {
+		color: var(--ink);
+		border-color: var(--card-border);
+	}
+	button.small, .btn.small { padding: 8px 12px; font-size: 13px; }
+	button:disabled { opacity: 0.5; cursor: default; }
+	[hidden] { display: none !important; }
+	.empty { color: var(--sub); text-align: center; padding: 24px 0; }
+
+	/* 透明が分かる市松模様 */
+	.checker {
+		background-color: #d8d8d8;
+		background-image:
+			linear-gradient(45deg, #fff 25%, transparent 25%, transparent 75%, #fff 75%),
+			linear-gradient(45deg, #fff 25%, transparent 25%, transparent 75%, #fff 75%);
+		background-size: 12px 12px;
+		background-position: 0 0, 6px 6px;
+	}
+	.px { image-rendering: pixelated; display: block; max-width: 100%; }
+
+	/* タグ */
+	.tag {
+		display: inline-block;
+		border-radius: 4px;
+		padding: 0 6px;
+		font-size: 11px;
+		line-height: 18px;
+		border: 1px solid var(--card-border);
+		color: var(--sub);
+		white-space: nowrap;
+	}
+	.tag.k-char { color: #2f6db0; border-color: #9cbde0; }
+	.tag.k-part { color: #3d8a3d; border-color: #a9d3a9; }
+	.tag.k-effect { color: #8a4aa8; border-color: #cba6dd; }
+	.tag.wip { color: var(--accent-ink); border-color: var(--accent); }
+	.tag.adopted { color: #fff; background: #3d8a3d; border-color: #3d8a3d; }
+	.tag.mine { color: #fff; background: #2f6db0; border-color: #2f6db0; }
+	.tag.admin { color: #fff; background: #b2412e; border-color: #b2412e; font-weight: bold; }
+	.tag.st-open { color: #fff; background: #d88a14; border-color: #d88a14; }
+	.tag.st-judging { color: #fff; background: #5a6fb0; border-color: #5a6fb0; }
+	.tag.st-done { color: #fff; background: #3d8a3d; border-color: #3d8a3d; }
+
+	/* お題の一覧 */
+	.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; }
+	.card {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		background: var(--card);
+		border: 1px solid var(--card-border);
+		border-radius: 10px;
+		padding: 12px;
+		color: inherit;
+		text-decoration: none;
+	}
+	.card:hover { border-color: var(--accent); }
+	.card-thumb {
+		min-height: 64px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 6px;
+		overflow: hidden;
+		padding: 6px;
+	}
+	.card-title { font-weight: bold; font-size: 15px; word-break: break-all; }
+	.card-meta { font-size: 12px; color: var(--sub); display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+
+	/* お題のページ */
+	.task-head { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+	.task-desc { white-space: pre-wrap; word-break: break-word; margin: 8px 0 14px; }
+	.refs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+	@media (max-width: 640px) { .refs { grid-template-columns: 1fr; } }
+	.ref-box { background: var(--card); border: 1px solid var(--card-border); border-radius: 10px; padding: 12px; }
+	.ref-box h4 span { font-weight: normal; color: var(--sub); font-size: 12px; margin-left: 6px; }
+	.ref-box img { max-width: 100%; height: auto; border-radius: 4px; }
+	.ref-box .imgs { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+	.ref-box .imgs > div { padding: 4px; border-radius: 4px; }
+	.hint { font-size: 13px; background: var(--reply-bg); border-left: 3px solid var(--accent); padding: 8px 12px; border-radius: 0 6px 6px 0; margin-bottom: 14px; }
+	.credits { font-size: 13px; background: #e5f2e0; border: 1px solid #a9d3a9; border-radius: 8px; padding: 8px 12px; margin-bottom: 14px; }
+
+	/* 案の系譜（木） */
+	.tree, .tree ul { list-style: none; margin: 0; padding: 0; }
+	.tree ul { margin-left: 14px; border-left: 2px solid var(--card-border); }
+	.tree li { position: relative; padding: 6px 0 0 16px; }
+	.tree ul > li::before {
+		content: "";
+		position: absolute;
+		left: 0;
+		top: 34px;
+		width: 12px;
+		border-top: 2px solid var(--card-border);
+	}
+	.tree > li { padding-left: 0; }
+	.node {
+		display: flex;
+		gap: 10px;
+		align-items: flex-start;
+		width: 100%;
+		text-align: left;
+		background: var(--card);
+		color: var(--ink);
+		border: 1px solid var(--card-border);
+		border-radius: 10px;
+		padding: 8px;
+		font: inherit;
+		font-weight: normal;
+		cursor: pointer;
+	}
+	.node.sel { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(240, 184, 74, 0.45); }
+	.node.wipnode { border-style: dashed; }
+	.node.gone { cursor: default; color: var(--sub); background: transparent; }
+	.node-thumb { flex: none; padding: 4px; border-radius: 6px; max-width: 45%; }
+	.node-body { min-width: 0; flex: 1 1 auto; }
+	.node-line { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
+	.node-name { font-weight: bold; word-break: break-all; }
+	.node-name.anon { color: var(--sub); }
+	.node-note { font-size: 13px; word-break: break-word; margin-top: 2px; }
+	.node-stats { font-size: 12px; color: var(--sub); margin-top: 2px; }
+	@media (max-width: 520px) {
+		.node { flex-direction: column; }
+		.node-thumb { max-width: 100%; }
+	}
+
+	/* 案の詳しい表示 */
+	.detail { background: var(--card); border: 2px solid var(--accent); border-radius: 12px; padding: 14px; margin-top: 18px; }
+	.detail-head { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin-bottom: 8px; }
+	.scale-btns { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; align-items: center; }
+	.scale-btns button { padding: 6px 10px; font-size: 13px; background: transparent; color: var(--ink); border: 1px solid var(--card-border); }
+	.scale-btns button.active { background: var(--ink); color: var(--page-bg); border-color: var(--ink); }
+	.bigbox { overflow: auto; max-width: 100%; padding: 6px; border-radius: 6px; border: 1px solid var(--card-border); }
+	.bigbox canvas { display: block; }
+	.compare { display: flex; flex-wrap: wrap; gap: 14px; margin: 12px 0; }
+	.compare figure { margin: 0; }
+	.compare figcaption { font-size: 12px; color: var(--sub); margin-bottom: 4px; }
+	.compare canvas { display: block; border-radius: 4px; }
+	.pv-row { display: flex; gap: 10px; flex-wrap: wrap; }
+	.pv-item { text-align: center; font-size: 11px; color: var(--sub); }
+	.pv-canvas { image-rendering: pixelated; display: block; border-radius: 4px; }
+	.pv-wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 6px 0 12px; }
+	.actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; align-items: center; }
+	.actions button.sub, .actions .btn.sub { color: var(--ink); border-color: var(--card-border); }
+	button.cheer { background: transparent; color: var(--ink); border: 1px solid var(--card-border); }
+	button.cheer.on { background: #ffe9b0; border-color: var(--accent); }
+
+	/* コメント */
+	.comment { border-top: 1px solid var(--card-border); padding: 8px 0; }
+	.comment.reply { margin-left: 22px; border-left: 3px solid var(--accent); padding-left: 10px; background: var(--reply-bg); border-radius: 0 6px 6px 0; margin-top: 4px; border-top: none; }
+	.comment.hiddenc { opacity: 0.55; }
+	.comment-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 13px; }
+	.comment-name { font-weight: bold; }
+	.comment-date { color: var(--sub); font-size: 12px; margin-left: auto; }
+	.comment-body { white-space: pre-wrap; word-break: break-word; margin-top: 4px; }
+	.comment-actions { margin-top: 2px; text-align: right; }
+	.comment-actions button { background: transparent; color: var(--sub); border: none; padding: 4px 8px; font-size: 12px; font-weight: normal; text-decoration: underline; }
+	.reply-form { margin: 6px 0 4px 22px; }
+	.reply-form textarea { min-height: 70px; background: #fff; color: var(--ink); border-color: var(--card-border); }
+	.cform textarea { min-height: 80px; background: #fff; color: var(--ink); border-color: var(--card-border); }
+	.cform .count { color: var(--sub); }
+
+	/* 提案 */
+	.draw-pad { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
+	.draw-pad canvas { background: #fff; border-radius: 4px; image-rendering: pixelated; touch-action: none; max-width: 100%; }
+	.pad-tools { display: flex; flex-wrap: wrap; gap: 4px; max-width: 190px; }
+	.pad-tools .sw { width: 28px; height: 28px; padding: 0; border: 2px solid var(--border); border-radius: 4px; }
+	.pad-tools .sw.sel { border-color: var(--accent); }
+	.rough-preview { margin-top: 8px; }
+	.rough-preview img { max-width: 160px; max-height: 160px; image-rendering: pixelated; background: #fff; border-radius: 4px; }
+	.prop { background: var(--card); border: 1px solid var(--card-border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+	.prop-body { white-space: pre-wrap; word-break: break-word; margin-top: 4px; }
+	.prop img { max-width: 120px; image-rendering: pixelated; background: #fff; border-radius: 4px; margin-top: 4px; }
+	.prop .reply { margin-top: 8px; background: var(--reply-bg); border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0; padding: 6px 10px; }
+</style>
+</head>
+<body>
+<header class="site-header">
+	<h1><a href="/">スクラップブックオンライン</a></h1>
+</header>
+<main>
+	<div id="view-list">
+		<h2>ドット絵工房</h2>
+		<p class="lead">お題ごとに、みんなでドット絵を描く場所です。誰かの案を元に描き足したり、コメントで直し合ったりして、管理人が 1 つを採用します。
+			<br>今のゲームの絵柄に合わせるのが大事。上手さより、なじむかで選びます。</p>
+		<section class="panel" id="status-panel" hidden></section>
+		<div id="groups"><p class="empty">読み込み中です...</p></div>
+		<h3>こういうのどう？（お題の提案）</h3>
+		<div id="propose"></div>
+	</div>
+	<div id="view-task" hidden></div>
+</main>
+<script type="module" src="/kobo.js"></script>
+</body>
+</html>

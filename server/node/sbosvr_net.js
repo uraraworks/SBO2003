@@ -463,6 +463,16 @@ Module['sboNet'] = (function () {
 		if (Module['sboFeedback'] && Module['sboFeedback'].handleHttp(req, res, url)) {
 			return;
 		}
+		/* ドット絵工房のページと API・画像（sbosvr_kobo.js） */
+		if (url === '/kobo') {
+			url = '/kobo.html';
+		}
+		if (url === '/kobo-draw') {
+			url = '/kobo-draw.html';
+		}
+		if (Module['sboKobo'] && Module['sboKobo'].handleHttp(req, res, url)) {
+			return;
+		}
 		/* 更新履歴のページと API（sbosvr_changes.js） */
 		if (url === '/changes') {
 			url = '/changes.html';

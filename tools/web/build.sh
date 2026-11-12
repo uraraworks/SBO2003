@@ -186,22 +186,41 @@ fi
 # ドット絵エディタ（/dot。dot.html と dot-*.js。手元のフォルダの PNG を編集する）
 # キャラ名の変更ページ（/rename。プレイヤー用）
 # ご意見箱（/feedback。プレイヤー用。サーバーの /api/feedback/* を使う）
+# ドット絵工房（/kobo・/kobo-draw。プレイヤー用。管理ページのタブは admin-kobo.js。サーバーの /api/kobo/*・/api/admin/kobo/* を使う）
 # recover-admin.html は前の URL を /admin#recover へ送るだけ
 cp "$ROOT/web/account/admin.html" \
 	"$ROOT/web/account/admin-mapdoc.js" \
 	"$ROOT/web/account/admin-design.js" \
 	"$ROOT/web/account/admin-mapview.js" \
 	"$ROOT/web/account/admin-recipe.js" \
+	"$ROOT/web/account/admin-kobo.js" \
 	"$ROOT"/web/account/dot.html \
 	"$ROOT"/web/account/dot-*.js \
 	"$ROOT/web/account/rename.html" \
 	"$ROOT/web/account/feedback.html" \
 	"$ROOT/web/account/recover-admin.html" \
 	"$DIST/"
+# ドット絵工房のページ（kobo.html・kobo.js・kobo-draw.html・kobo-draw.js ほか kobo*）
+for f in "$ROOT"/web/account/kobo*.html "$ROOT"/web/account/kobo*.js; do
+	[ -e "$f" ] && cp "$f" "$DIST/"
+done
 
-# 管理ページの「マップ資料」で全体図を描くための画像（マップパーツとキャラ。admin-mapdoc.js が読む）
+# 管理ページが読むゲームの画像（SboGrpData/grp の PNG を全部。日本語名のものも）
+#   ・「マップ資料」で全体図を描く（map0[1-5]・char[01][0-9]。admin-mapdoc.js が読む）
+#   ・「ドット絵工房」でお題の元の画像を選ぶ・採用した絵を貼る（admin-kobo.js が index.json の一覧から読む）
 mkdir -p "$DIST/admin-grp"
-cp "$ROOT"/SboGrpData/grp/map0[1-5].png "$ROOT"/SboGrpData/grp/char[01][0-9].png "$DIST/admin-grp/"
+cp "$ROOT"/SboGrpData/grp/*.png "$DIST/admin-grp/"
+# 一覧（admin-grp/index.json = {"files":["800.png", ...]}）。名前に " や \ は無い前提で、シェルだけで書く（macOS・Linux 両方で動く）
+{
+	printf '{"files":['
+	first=1
+	for f in "$DIST"/admin-grp/*.png; do
+		[ -e "$f" ] || continue
+		if [ "$first" = 1 ]; then first=0; else printf ','; fi
+		printf '"%s"' "$(basename "$f")"
+	done
+	printf ']}\n'
+} > "$DIST/admin-grp/index.json"
 # パーツ図鑑の最初の下書き（サーバーに SboWebPartsDex.json が無い時に sbosvr_mapdesign.js が読む）
 cp "$ROOT/web/account/parts-dex-seed.json" "$DIST/admin-grp/"
 

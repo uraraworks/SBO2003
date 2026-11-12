@@ -130,6 +130,13 @@ Windows 版のメッセージログウィンドウは、ブラウザ版ではペ
   - `text` はプレイヤーに分かる言葉で（ファイル名や関数名は書かない）。`pr` は公開リポジトリのプルリクエスト番号の配列（無ければ省く）。
   - 管理者だけ・開発だけの変更（管理ページ、デプロイ、テストなど）は載せません。
 
+## ドット絵工房（/kobo）
+
+プレイヤーみんなでゲームのドット絵を描き合うページです（`web/account/kobo.html`・`kobo-draw.html`・`kobo*.js`・`dot-kobo.js`、管理は `/admin` の「ドット絵工房」タブ `admin-kobo.js`、サーバーは `server/node/sbosvr_kobo.js`）。
+管理者がお題を出し、プレイヤーが案を描いて出し（作業中／出した）、描き足し・コメント・なじんでるで直し合い、管理者が採用します。
+仕様・API・確認のしかた（wasm 無しで動く `tools/kobo/stub-server.js` と `tools/kobo/test-api.js`）は `docs/kobo.md` を見てください。
+採用した絵は管理ページの「ゲーム画像に貼って保存」でゲーム画像ごと保存し、`SboGrpData/grp` に置き換えてコミットします。
+
 ## ドット絵エディタ（/dot）
 
 ゲームの画像（`SboGrpData/grp` の PNG）を描き直す管理者用のページです（`web/account/dot.html`・`dot-*.js`。管理ページの「ドット絵」タブから開く）。
