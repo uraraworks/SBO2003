@@ -2493,11 +2493,23 @@ static void TestChallenge(const std::vector<int> &aLogin)
 	AddTblNoPC((int)pA->dwTblID);
 	printf("challenge relogin a at_start=%d\n", (int)(pA->dwX == (DWORD)aCell[4].first && pA->dwY == (DWORD)aCell[4].second + 1));
 
-	/* B がパーティを抜ける：B も戻り、誰もいなくなったので敵も消える */
-	pB->dwPartyID = 0;
-	QuestChallengeProcNow();
-	ChallengePrint("party b", pB, wWeapon);
-	printf("challenge party b enemies=%d\n", ChallengeCountEnemy());
+	/* B が部屋の出口（同じマップの中のワープ）を踏む：B も元に戻ってその場に残り、誰もいなくなったので敵も消える */
+	{
+		EVENTINFO Event;
+		EVENTINFO_MOVE Move;
+		ZeroMemory(&Event, sizeof(Event));
+		ZeroMemory(&Move, sizeof(Move));
+		Move.dwX = (DWORD)aCell[5].first;
+		Move.dwY = (DWORD)aCell[5].second;
+		Event.byType = EVENTTYPE_MOVE;
+		Event.pData = &Move;
+		EventProc(pB, &Event, 0);
+		printf("challenge warp b still_in=%d\n", (int)QuestInChallenge(pB));
+		QuestChallengeProcNow();
+		ChallengePrint("warp b", pB, wWeapon);
+		printf("challenge warp b in=%d at_exit=%d quest=%u enemies=%d\n", (int)QuestInChallenge(pB),
+			(int)(pB->dwX == (DWORD)aCell[5].first && pB->dwY == (DWORD)aCell[5].second), pB->wQuestID, ChallengeCountEnemy());
+	}
 
 	/* 2 回目のクリア：報酬は無く、依頼は終わる */
 	pA->wQuestID = 20; pA->byQuestStep = 1; pA->wQuestFlg = (WORD)(1 << 15);

@@ -55,6 +55,7 @@ static DWORD s_dwLastSync = 0;									/* 最後に同期した時刻 */
 typedef struct _LOANBAK {
 	DWORD		dwSession;											/* 挑戦の番号 */
 	BOOL		bArrived;											/* 行き先のマップに着いたか */
+	BOOL		bWarped;											/* 着いた後にマップの中のワープで動いた（部屋を出た） */
 	BYTE		byLevel, byPW, byDEX, byST, byIT, byLK;
 	BYTE		abyMagic[MAX_USEMAGIC];
 	WORD		waItem[MAX_MYITEM];
@@ -1841,7 +1842,7 @@ static void ChallengeProc(void)
 			} else if (p->wQuestID != itC->second.wQuestID) {
 				nReason = CHALLENGELEAVE_QUEST;
 			} else if (itL->second.bArrived) {
-				if (p->dwMapID != itC->second.dwMapNo) {
+				if ((p->dwMapID != itC->second.dwMapNo) || itL->second.bWarped) {
 					nReason = CHALLENGELEAVE_OUT;
 				}
 			} else if (p->dwMapID == itC->second.dwMapNo) {
@@ -1866,6 +1867,27 @@ static void ChallengeProc(void)
 void QuestChallengeProcNow(void)
 {
 	ChallengeProc ();
+}
+
+/* マップの中のワープ（座標変更イベント）で動いた時。
+ * 戦う部屋が入口と同じマップにあると、部屋を出てもマップが変わらないので、
+ * 着いた後のワープは「部屋を出た」として周期処理で中断する（入る時のワープは着いた印にする） */
+void QuestChallengeOnWarp(PCHARINFO pChar)
+{
+	std::map<DWORD, LOANBAK>::iterator itL = s_mapLoan.find (pChar->dwTblID);
+	std::map<DWORD, CHALLENGE>::iterator itC;
+
+	if (itL == s_mapLoan.end ()) {
+		return;
+	}
+	if (itL->second.bArrived) {
+		itL->second.bWarped = TRUE;
+		return;
+	}
+	itC = s_mapChallenge.find (itL->second.dwSession);
+	if ((itC != s_mapChallenge.end ()) && (pChar->dwMapID == itC->second.dwMapNo)) {
+		itL->second.bArrived = TRUE;
+	}
 }
 
 /* 倒れた人が「復活」を選んだ：挑戦中ならすぐ中断して入る前の場所へ（お金は減らさない）。処理したら TRUE */

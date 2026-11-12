@@ -1186,8 +1186,9 @@ challenge again in a=1 b=1 enemies=1
 challenge busy c_in=0 gate=1
 challenge logout a in=0 lv=30
 challenge relogin a at_start=1
-challenge party b in=0 lv=30 pw=99 hp=480/500 mana=90 gold=5000 item0=0 weapon_equ=0
-challenge party b enemies=0
+challenge warp b still_in=1
+challenge warp b in=0 lv=30 pw=99 hp=480/500 mana=90 gold=5000 item0=0 weapon_equ=0
+challenge warp b in=0 at_exit=1 quest=20 enemies=0
 challenge handin2 quest=0 gold+=0 exp_same=1
 challenge info reload same=1
 challenge end enemies=0 copies=0
