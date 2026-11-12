@@ -476,7 +476,21 @@ function buildPalette() {
 	const box = $('palette');
 	box.textContent = '';
 	const usable = new Set(S.task.colors);
-	const smp = (S.task.sampleColors || []).filter(function (i) { return usable.has(i); });
+	const smp = (S.task.sampleColors || S.sampleColorsLocal || []).filter(function (i) { return usable.has(i); });
+	if (!smp.length && !S.sampleColorsLocal && (S.task.samples || []).length) {
+		/* 古いお題（sampleColors が無い・空）は、見本の絵から数えて並べ直す */
+		S.sampleColorsLocal = [];
+		Promise.all(S.task.samples.map(loadIndexed)).then(function (imgs) {
+			const set = new Set();
+			imgs.forEach(function (img) { img.indices.forEach(function (i) { set.add(i); }); });
+			S.sampleColorsLocal = Array.from(set).filter(function (i) { return i !== S.task.transparent; }).sort(function (a, b) { return a - b; });
+			if (S.sampleColorsLocal.length) {
+				S.task.sampleColors = S.sampleColorsLocal;
+				buildPalette();
+				setColor(S.color);
+			}
+		}).catch(function () { /* 読めなければ見本の色は出さない */ });
+	}
 	if (smp.length) {
 		box.appendChild(el('div', 'palhead', '見本の色'));
 		const g1 = el('div', 'palgrid sample');
