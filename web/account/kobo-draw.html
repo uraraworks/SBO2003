@@ -184,6 +184,9 @@
 		-webkit-user-select: text;
 		user-select: text;
 	}
+	/* 描くところと右の欄の仕切り（ドラッグで右の欄の幅を変える） */
+	#split { flex: none; width: 6px; cursor: col-resize; background: #2a2d34; touch-action: none; }
+	#split:hover, #split.drag { background: var(--accent, #e8b84a); }
 	#side h4 { margin: 0 0 6px; font-size: 13px; }
 	#side h4 small { color: var(--sub); font-weight: normal; margin-left: 4px; }
 	.sec { margin-bottom: 16px; }
@@ -260,6 +263,7 @@
 		.group button { flex: none; min-height: 38px; padding: 6px 9px; }
 		#palette { max-height: 120px; overflow-y: auto; width: 100%; }
 		#cur { display: none; }
+		#split { display: none; }
 		#side {
 			display: none;
 			position: fixed;
@@ -341,6 +345,7 @@
 			<div id="mini"></div>
 			<div id="toast"></div>
 		</div>
+		<div id="split" title="ドラッグで右の欄の幅を変える（ダブルクリックで元の幅）"></div>
 		<aside id="side">
 			<button type="button" id="close-side">閉じる</button>
 			<div class="sec" id="sec-refs">

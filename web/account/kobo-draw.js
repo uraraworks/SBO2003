@@ -296,6 +296,56 @@ function draw() {
 		w + '×' + h;
 }
 
+/* 描くところと右の欄の仕切り。右の欄の幅はこの端末に覚えておく */
+const KEY_SIDE_W = 'kobo_side_w';
+const SIDE_W_DEFAULT = 330;
+function setupSplit() {
+	const split = $('split'), side = $('side');
+	if (!split || !side) {
+		return;
+	}
+	const clampW = function (w) {
+		const max = Math.max(220, window.innerWidth - ($('left').offsetWidth || 0) - 240);
+		return Math.round(Math.max(220, Math.min(max, w)));
+	};
+	const apply = function (w) {
+		side.style.width = clampW(w) + 'px';
+		resize();
+		window.dispatchEvent(new Event('kobo-side-resize'));
+	};
+	const saved = Number(lsGet(KEY_SIDE_W));
+	if (saved) {
+		apply(saved);
+	}
+	let startX = 0, startW = 0;
+	split.addEventListener('pointerdown', function (e) {
+		e.preventDefault();
+		split.setPointerCapture(e.pointerId);
+		split.classList.add('drag');
+		startX = e.clientX;
+		startW = side.offsetWidth;
+	});
+	split.addEventListener('pointermove', function (e) {
+		if (!split.classList.contains('drag')) {
+			return;
+		}
+		apply(startW + (startX - e.clientX));
+	});
+	const end = function () {
+		if (!split.classList.contains('drag')) {
+			return;
+		}
+		split.classList.remove('drag');
+		lsSet(KEY_SIDE_W, String(side.offsetWidth));
+	};
+	split.addEventListener('pointerup', end);
+	split.addEventListener('pointercancel', end);
+	split.addEventListener('dblclick', function () {
+		lsDel(KEY_SIDE_W);
+		apply(SIDE_W_DEFAULT);
+	});
+}
+
 function resize() {
 	const r = $('stage').getBoundingClientRect();
 	dpr = window.devicePixelRatio || 1;
@@ -2105,6 +2155,7 @@ $('close-side').addEventListener('click', function () { $('side').classList.remo
 $('mini').addEventListener('click', function () { openSide('sec-preview'); });
 
 window.addEventListener('resize', resize);
+setupSplit();
 if (window.ResizeObserver) {
 	new ResizeObserver(resize).observe($('stage'));
 }
