@@ -1203,6 +1203,8 @@ challenge solo accept=0
 challenge party accept a=20 b=20 c=0
 challenge other accept c=0
 challenge gate found=1
+challenge buff timers=0 charbuff_sent=1
+challenge child removed=1
 challenge start a in=1 lv=7 pw=11 hp=60/60 mana=20 gold=3 item0=0 weapon_equ=1
 challenge start b in=1 lv=7 pw=11 hp=60/60 mana=20 gold=3 item0=0 weapon_equ=1
 challenge start a_dest=1 b_dest=1 armor_equ=1 enemies=1
@@ -1210,9 +1212,13 @@ challenge enemy type=13 hp=30 exp=0 gold=0 drop=0
 challenge saving lv=30 gold=5000 at_start=1
 challenge saved lv=7 gold=3 at_dest=1
 challenge leave blocked item0=1
+challenge trade refused a_out=1 b=0
 challenge proc a=1 b=1
 challenge dead b in=0 lv=30 pw=99 hp=480/500 mana=90 gold=5000 item0=0 weapon_equ=0
 challenge dead b state=1 at_start=1 quest=20 a_in=1
+challenge reenter gate=1 b_in=0 challenges_enemy=1
+challenge separate conflict=1
+challenge helper conflict=0
 challenge clear wait in=1
 challenge clear wait2 in=1
 challenge clear a in=0 lv=30 pw=99 hp=480/500 mana=90 gold=5000 item0=0 weapon_equ=0
@@ -1220,7 +1226,9 @@ challenge clear step=1 flag16=1 at_start=1 exp_same=1 enemies=0
 challenge handin1 quest=0 gold+=100 done=1
 challenge handin b quest=20
 challenge again a=20 b=20
+challenge arena c_got info=1 pos=4
 challenge again in a=1 b=1 enemies=1
+challenge arena space_a=1 enemy_vis_c=1 a_vis_c=1 c_vis_a=1 c_hit_enemy=0 a_hit_c=0
 challenge busy c_in=0 gate=1
 challenge logout a in=0 lv=30
 challenge relogin a at_start=1
@@ -1229,6 +1237,8 @@ challenge warp b in=0 lv=30 pw=99 hp=480/500 mana=90 gold=5000 item0=0 weapon_eq
 challenge warp b in=0 at_exit=1 quest=20 enemies=0
 challenge handin2 quest=0 gold+=0 exp_same=1
 challenge info reload same=1
+challenge before breakup b_quest=20 party=1
+challenge after breakup b_quest=0 b_gate=0
 challenge end enemies=0 copies=0
 == R. StatusUp ==
 statusup use=1,1 at+3 df+4 events=2 buffpkt=2
@@ -1246,7 +1256,45 @@ magic=35 wall=0 hit=0/20 put-on-enemy=20
 magic=35 wall=1 hit=0/20 put-on-enemy=0
 heal wall=0 healed=1
 heal wall=1 healed=1
-== T. AdminQuest ==
+== T. Space ==
+space cells=8
+space set b=1 a=0
+space charinfo diff a_got_b=0 b_got_a=0
+space visible a_sees_b=0 b_sees_a=0 same=0 null=0
+space charinfo same a_got_b=1 visible=1
+space block s0_is_a=1 s1_is_b=1 s2_none=1
+space follow other=0
+space follow same=1
+space door open1=1 again=0 a_chgmap=0 b_chgmap=1 is_open s0=0 s1=1
+space door open0=1 a_chgmap=1 b_chgmap=0 dwTimeOpen_set=1
+space door close1 a_chgmap=0 b_chgmap=1 is_open s0=1 s1=0
+space door close0 a_chgmap=1 b_chgmap=0 is_open s0=0 s1=0
+space onchar b_on a_chgmap=0 b_chgmap=1 map_on=0
+space onchar b_off a_chgmap=0 b_chgmap=1
+space onchar a_on a_chgmap=1 b_chgmap=0 map_on=1
+space reset b=0
+space accept a=20 b=20 c=20 d=20
+space gate a=1 c=1
+space group1 in a=1 b=1 enemies=1
+space group2 in c=1 d=1 enemies=2
+space ids a_nonzero=1 b_same_a=1 d_same_c=1 groups_differ=1
+space enemies g1=1 g2=1
+space enemy visible a_own=1 a_other=0 c_own=1 c_other=0
+space attack other_enemy hp_same=1
+space attack own_enemy hp_down=1
+space dest same_tile=1
+space admin list reply=1 space=0
+space list count=2 first_member=2 quest=20
+space admin set invalid space=0
+space admin set g1 ok=1 mapinfo_resent=1 a_saw_e=1 e_sees_a=1 e_sees_c=0 e_sees_enemy1=1 e_sees_enemy2=0
+space admin set g2 ok=1 c_saw_e=1 e_sees_a=0 e_sees_c=1
+space admin back space=0 sees_a=0
+space clear g1 in a=0 b=0 c=1 d=1 a_space=0 enemies g2=1 total=1
+space clear g1 step=1 flag16=1 c_step=0
+space clear g2 in c=0 d=0 c_space=0 enemies=0
+space clear g2 step=1 flag16=1
+space end enemies=0 copies=0
+== U. AdminQuest ==
 adminquest list got=1 sub=1 count=1 no=0 id=1 name=AdminQuest1 npc0=2,3
 adminquest edit got=1 sub=3 result=1 no=0 msg=0 | id=1 name=AdminQuest1b gold=123 npc0x=4 goals=goal0,goal1 count=1
 adminquest outside got=1 result=0 msg_byX=1 | gold=123 npc0x=4

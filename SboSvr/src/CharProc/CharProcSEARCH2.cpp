@@ -195,8 +195,8 @@ BOOL CCharProcSEARCH2::IsTargetReady(void)
 	}
 
 	pChar = g_aCharInfo[m_pChar->dwTargetTblID];
-	/* マップが違う？ */
-	if (m_pChar->dwMapID != pChar->dwMapID) {
+	/* マップ・空間が違う？ */
+	if ((m_pChar->dwMapID != pChar->dwMapID) || !IsSameSpace (m_pChar, pChar)) {
 		goto Exit;
 	}
 	/* ログオフしている？ */
@@ -314,7 +314,7 @@ DWORD CCharProcSEARCH2::Search(
 			continue;
 		}
 		if (bPCCheck) {
-			dwResult = CheckCharBlockPC (m_pChar->dwMapID, x, y);
+			dwResult = CheckCharBlockPC (m_pChar->dwMapID, x, y, m_pChar->dwSpaceID);
 			if (dwResult != -1) {
 				dwRet = dwResult;
 				m_pChar->dwTargetTblID = dwResult;

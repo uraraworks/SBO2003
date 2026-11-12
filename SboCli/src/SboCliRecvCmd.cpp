@@ -142,6 +142,7 @@ void	RecvDataProcCONNECT					(PBYTE, DWORD);			/* 受信データ処理(接続�
 void	RecvDataProcLOGINRES				(PBYTE, DWORD);			/* 受信データ処理(ログイン応答) */
 void	RecvDataProcWEBACCOUNT				(PBYTE, DWORD);			/* 受信データ処理(ブラウザ版のアカウント関係) */
 void	RecvDataProcADMINUNDO				(PBYTE, DWORD);			/* 受信データ処理(管理者画面の「元に戻す」) */
+void	RecvDataProcADMINSPACE				(PBYTE, DWORD);			/* 受信データ処理(管理者の空間の切り替え) */
 void	RecvDataProcADMINQUEST				(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのギルドの依頼の編集) */
 void	RecvDataProcHASTE					(PBYTE, DWORD);			/* 受信データ処理(加速の状態) */
 void	RecvDataProcCHARBUFF				(PBYTE, DWORD);			/* 受信データ処理(攻撃力・守備力アップの残り) */
@@ -396,6 +397,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	NULL,								/* CMD_SORTITEM(クライアント→サーバーのみ) */
 	NULL,								/* CMD_LEAVEITEMDISPOSE(クライアント→サーバーのみ) */
 	RecvDataProcCHARBUFF,				/* CMD_CHARBUFF */
+	RecvDataProcADMINSPACE,				/* CMD_ADMINSPACE */
 	RecvDataProcADMINQUEST,				/* CMD_ADMINQUEST */
 	NULL
 };
@@ -3561,6 +3563,30 @@ void RecvDataProcADMINUNDO(PBYTE pData, DWORD dwDataSize)
 	/* 案内文を必ず終端させる */
 	pPara->szMsg[sizeof (pPara->szMsg) - 1] = 0;
 	AdminUndoOnRecv (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINSPACE											 */
+/* 内容：受信データ処理(管理者の空間の切り替え)								 */
+/*       空間の一覧と、いま居る空間・切り替えの結果が届く					 */
+/* ========================================================================= */
+void RecvDataProcADMINSPACE(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINSPACE pPara = (PCMDPARA_ADMINSPACE)pData;
+	int i;
+
+	if (dwDataSize < sizeof (CMDPARA_ADMINSPACE)) {
+		return;
+	}
+	/* 一覧の数と文字列を必ず範囲内・終端させる */
+	if (pPara->byCount > MAX_ADMINSPACE) {
+		pPara->byCount = MAX_ADMINSPACE;
+	}
+	for (i = 0; i < MAX_ADMINSPACE; i ++) {
+		pPara->aEntry[i].szQuest[sizeof (pPara->aEntry[i].szQuest) - 1] = 0;
+		pPara->aEntry[i].szMap[sizeof (pPara->aEntry[i].szMap) - 1] = 0;
+	}
+	AdminSpaceOnRecv (pPara);
 }
 
 /* ========================================================================= */

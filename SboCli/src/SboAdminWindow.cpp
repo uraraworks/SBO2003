@@ -79,6 +79,9 @@ enum {
 	IDC_LIST2,													/* リストコントロール２ */
 	IDC_RENEW,
 	IDC_TMPCHECK8,												/* チェック８ */
+	IDC_SPACELIST,												/* キャラ情報: 空間の一覧 */
+	IDC_SPACESET,												/* キャラ情報: 空間を切り替える */
+	IDC_SPACEREQ,												/* キャラ情報: 空間の一覧を取り直す */
 };
 
 /* ========================================================================= */
@@ -160,6 +163,13 @@ static HWND
 	m_hWndScrBar1,												/* スクロールバー１ */
 	m_hWndList1,												/* リストコントロール１ */
 	m_hWndList2;												/* リストコントロール２ */
+
+/* 管理者の空間の切り替え（キャラ情報画面） */
+static HWND m_hWndSpaceList, m_hWndSpaceSet, m_hWndSpaceReq;	/* 空間の一覧・切替ボタン・更新ボタン */
+static DWORD s_dwAdminSpace;									/* いま居る空間（0=ふつうの世界） */
+static int s_nAdminSpaceCount;									/* 一覧の数（ふつうの世界を除く） */
+static ADMINSPACEENTRY s_aAdminSpace[MAX_ADMINSPACE];			/* サーバーから届いた一覧 */
+static BOOL s_bAdminSpaceSetWait;								/* 切り替えの返事を待っている */
 
 PCMDPARA_ADDCHARINFO m_pAddCharInfo;							/* キャラ追加用テンポラリ */
 PCMDPARA_CHARINFO m_pParaCharInfo;								/* キャラ情報用テンポラリ */
@@ -288,6 +298,7 @@ static BYTE AdminUndoScreenFromType	(int);								/* 「元に戻す」の画面
 static void AdminUndoNotifyScreen	(void);								/* 開いている画面をサーバーに知らせる */
 static void AdminUndoRequest		(void);								/* 「この画面の変更を元に戻す」 */
 static void AdminUndoRefresh		(BYTE);								/* 元に戻した後に画面を作り直す */
+static void AdminSpaceFillList		(void);								/* 空間の一覧を作り直す */
 
 /* サーバーに知らせた画面（0xFF ならまだ知らせていない） */
 static BYTE s_byAdminUndoScreen = 0xFF;
@@ -1673,6 +1684,61 @@ void AdminUndoOnRecv(const void *pParaIn)
 }
 
 /* ========================================================================= */
+/* 関数名：AdminSpaceFillList												 */
+/* 内容：キャラ情報画面の空間の一覧を作り直す								 */
+/*       先頭は「0: ふつうの世界」、あとは「番号: 依頼名 (人数)」。			 */
+/*       いま居る空間を選んだ状態にする										 */
+/* ========================================================================= */
+static void AdminSpaceFillList(void)
+{
+	char szTmp[160];
+	int i, nSel = 0;
+
+	if (m_hWndSpaceList == NULL) {
+		return;
+	}
+	SendMessage (m_hWndSpaceList, CB_RESETCONTENT, 0, 0);
+	SendMessage (m_hWndSpaceList, CB_ADDSTRING, (WPARAM)0, (LPARAM)"0: ふつうの世界");
+	for (i = 0; i < s_nAdminSpaceCount; i ++) {
+		const ADMINSPACEENTRY *p = &s_aAdminSpace[i];
+		snprintf (szTmp, sizeof (szTmp), "%lu: %s (%d人)", (unsigned long)p->dwSpaceID,
+				p->szQuest[0] ? p->szQuest : "依頼名なし", (int)p->wMember);
+		SendMessage (m_hWndSpaceList, CB_ADDSTRING, (WPARAM)0, (LPARAM)szTmp);
+		if (p->dwSpaceID == s_dwAdminSpace) {
+			nSel = i + 1;
+		}
+	}
+	SendMessage (m_hWndSpaceList, CB_SETCURSEL, nSel, 0);
+}
+
+/* ========================================================================= */
+/* 関数名：AdminSpaceOnRecv													 */
+/* 内容：空間の一覧・切り替えの応答											 */
+/* ========================================================================= */
+void AdminSpaceOnRecv(const void *pParaIn)
+{
+	const CMDPARA_ADMINSPACE *pPara = (const CMDPARA_ADMINSPACE *)pParaIn;
+	int i;
+
+	s_dwAdminSpace = pPara->dwSpaceID;
+	s_nAdminSpaceCount = (pPara->byCount > MAX_ADMINSPACE) ? MAX_ADMINSPACE : pPara->byCount;
+	for (i = 0; i < s_nAdminSpaceCount; i ++) {
+		s_aAdminSpace[i] = pPara->aEntry[i];
+	}
+	if (s_bAdminSpaceSetWait) {
+		s_bAdminSpaceSetWait = FALSE;
+		if (!pPara->byResult && g_hWndAdmin) {
+			MessageBox (g_hWndAdmin, "空間を切り替えられませんでした。\n（なくなった空間・討伐チャレンジ中・倒れている時は切り替えられません）",
+					"空間の切り替え", MB_OK);
+		}
+	}
+	if (g_hWndAdmin && (g_nAdminWindowType == IDM_CHAR_INFO)) {
+		AdminSpaceFillList ();
+		InvalidateRect (g_hWndAdmin, NULL, TRUE);
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：AdminUndoRefresh													 */
 /* 内容：元に戻した後、その画面を開いたままなら作り直して新しい内容を出す	 */
 /* ========================================================================= */
@@ -2434,6 +2500,23 @@ void AdminOnCommandCharInfo(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 			SAFE_DELETE_ARRAY (pszTmp);
 			SAFE_DELETE_ARRAY (pszTmp2);
 		}
+		break;
+
+	/* 空間の切り替え（一覧で選んだ空間へ） */
+	case IDC_SPACESET:
+		{
+			int nSel = (int)SendMessage (m_hWndSpaceList, CB_GETCURSEL, 0, 0);
+			if ((nSel < 0) || (nSel > s_nAdminSpaceCount)) {
+				break;
+			}
+			s_bAdminSpaceSetWait = TRUE;
+			SendCmdADMINSPACE (ADMINSPACE_SET, (nSel == 0) ? SPACE_NORMAL : s_aAdminSpace[nSel - 1].dwSpaceID);
+		}
+		break;
+
+	/* 空間の一覧を取り直す */
+	case IDC_SPACEREQ:
+		SendCmdADMINSPACE (ADMINSPACE_LISTREQ, 0);
 		break;
 
 	/* 向き */
@@ -6016,6 +6099,14 @@ void AdminOnPaintCharInfo(HDC hDC)
 	MyTextOut (hDC, 12 * 10, 12 * 16 + 8, "権限:");
 	MyTextOut (hDC, 12 * 10, 12 * 18 + 8, "色:");
 
+	/* いま居る空間（自分だけが入れ替わる。ほかの空間のキャラは見えない） */
+	if (s_dwAdminSpace == SPACE_NORMAL) {
+		wsprintf (szBuf, "現在の空間:0 (ふつうの世界)");
+	} else {
+		wsprintf (szBuf, "現在の空間:%lu", (unsigned long)s_dwAdminSpace);
+	}
+	MyTextOut (hDC, 0, 12 * 23 + 2, szBuf);
+
 	SelectObject (hDC, hFontOld);
 
 	int i, xx, yy, pos = GetScrollPos (m_hWndScrBar1, SB_CTL);
@@ -8195,6 +8286,19 @@ void MakeAdminWndCharInfo(void)
 	}
 	SendMessage (m_hWndCombo5, CB_SETCURSEL, 0, 0);
 
+	/* 空間の切り替え（一覧から選んで「切替」。自分がいま居る空間だけが見える） */
+	m_hWndSpaceList = CreateWindow ("COMBOBOX", "", WS_CHILD | WS_VISIBLE | WS_VSCROLL | CBS_DROPDOWNLIST,
+			12 * 0, 12 * 24 + 4, 12 * 17, 12 * 10, g_hWndAdmin, (HMENU)IDC_SPACELIST, g_hInstance, NULL);
+	SendMessage (m_hWndSpaceList, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+	m_hWndSpaceSet = CreateWindow ("BUTTON", "切替", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+			12 * 17 + 4, 12 * 24 + 4, 32, 16, g_hWndAdmin, (HMENU)IDC_SPACESET, g_hInstance, NULL);
+	SendMessage (m_hWndSpaceSet, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+	m_hWndSpaceReq = CreateWindow ("BUTTON", "更新", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+			12 * 17 + 40, 12 * 24 + 4, 32, 16, g_hWndAdmin, (HMENU)IDC_SPACEREQ, g_hInstance, NULL);
+	SendMessage (m_hWndSpaceReq, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+	AdminSpaceFillList ();
+	SendCmdADMINSPACE (ADMINSPACE_LISTREQ, 0);
+
 	SAFE_DELETE (m_pParaCharInfo);
 	m_pParaCharInfo = new CMDPARA_CHARINFO;
 	ZeroMemory (m_pParaCharInfo, sizeof (CMDPARA_CHARINFO));
@@ -8244,6 +8348,9 @@ void DeleteAdminWndCharInfo(void)
 	SAFE_DESTROYWND (m_hWndCombo3);
 	SAFE_DESTROYWND (m_hWndCombo4);
 	SAFE_DESTROYWND (m_hWndCombo5);
+	SAFE_DESTROYWND (m_hWndSpaceList);
+	SAFE_DESTROYWND (m_hWndSpaceSet);
+	SAFE_DESTROYWND (m_hWndSpaceReq);
 	SAFE_DESTROYWND (m_hWndEdit1);
 	SAFE_DESTROYWND (m_hWndEdit2);
 	SAFE_DESTROYWND (m_hWndEdit3);

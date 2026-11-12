@@ -176,7 +176,7 @@ BOOL CCharProcBase::NpcProcSEARCH_Check(PCHARINFO pChar, PCHARINFO pCharTmp, int
 		goto Exit;
 	}
 
-	dwTblID = CheckCharBlockPC (pChar->dwMapID, nX, nY);
+	dwTblID = CheckCharBlockPC (pChar->dwMapID, nX, nY, pChar->dwSpaceID);
 	if (pdwBlockPC) {
 		*pdwBlockPC = dwTblID;
 	}
@@ -248,7 +248,7 @@ BOOL CCharProcBase::PartsMoveProc(PCHARINFO pChar)
 		bRet = CheckCharBlock (pChar->dwMapID, dwX, dwY);
 
 		/* NPCとぶつかる？ */
-		dwTblID = CheckCharBlockNPC (pChar->dwMapID, dwX, dwY);
+		dwTblID = CheckCharBlockNPC (pChar->dwMapID, dwX, dwY, pChar->dwSpaceID);
 		if ((dwTblID != -1) && (pChar->dwTblID != dwTblID)) {
 			bRet = FALSE;
 		}

@@ -444,7 +444,7 @@ static const DATAFIELD s_aFieldQuest[] = {
 	FLD (QUESTINFO, wRewardItem,		"報酬のアイテム",		FT_U16, 0, "item の番号（0=なし）。持ち物がいっぱいなら預かり所へ。どちらもいっぱいだと渡せずやり直し"),
 	FLD (QUESTINFO, wQuestItem,			"依頼の品",				FT_U16, 0, "item の番号（0=回収しない）。見えるNPC（宝箱）で渡し、ギルドで回収する。取り消した時は持ち物と預かり所から全部消す"),
 	FLD (QUESTINFO, byStepCount,		"段の数",				FT_U8, 0, "1〜4。受けた時は 0 段目。最後の段（段の数-1）に進み、依頼の品を持っていればギルドで渡せる。足す時に省くと 1"),
-	FLD (QUESTINFO, byChallenge,		"討伐チャレンジ",		FT_U8, 0, "0=ふつうの依頼 1=異空間の討伐チャレンジ（入口の見えるNPCに乗ると、近くで同じ依頼を受けた仲間と一緒に行き先へ移り、全員が貸し出しセットの状態になる。出ている敵を全部倒すと元に戻って最後の段へ。倒れる・パーティを抜ける・切断・行き先のマップから出ると、その人だけ中断して元に戻る。同じ依頼は一度に 1 組だけ。報酬は初めてクリアした時だけで、2 回目からは記録だけ）"),
+	FLD (QUESTINFO, byChallenge,		"討伐チャレンジ",		FT_U8, 0, "0=ふつうの依頼 1=異空間の討伐チャレンジ 2=闘技場の討伐チャレンジ（闘技場は戦う様子をほかの人が観戦できる。観客は見えるだけで手は出せず、同じ依頼は一度に 1 組。異空間は挑戦中の組にだけ見え、何組でも同時に。入口の見えるNPCに乗ると、近くで同じ依頼を受けた仲間と一緒に行き先へ移り、全員が貸し出しセットの状態になる。出ている敵を全部倒すと元に戻って最後の段へ。倒れる・パーティを抜ける・切断・行き先のマップから出ると、その人だけ中断して元に戻る。報酬は初めてクリアした時だけで、2 回目からは記録だけ）"),
 	FLD (QUESTINFO, wLoanStTmp,			"貸し出しセット",		FT_U16, 0, "討伐チャレンジの時。stTmp（ステータステンプレート）の id。レベル・能力・最大HP/Mana・特技・持ち物・お金・属性をこれにする。持ち物の武器・鎧などは種類ごとに最初の 1 つを自動で装備する。職業と見た目はそのまま"),
 	FLD (QUESTINFO, byMemberMin,		"必要な人数",			FT_U8, 0, "討伐チャレンジの時。0・1=一人でもよい。2 以上はパーティを組んでいないと受けられず、受けると近く（同じマップの 8 マス以内）の仲間全員が一緒に受ける。後から入った仲間は参加できない"),
 };
@@ -4035,12 +4035,12 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 					goto Exit;
 				}
 				if (((pN->byKind == QUESTNPCKIND_GATE) || (pN->byKind == QUESTNPCKIND_ENEMY)) && (Info.byChallenge == QUESTCHALLENGE_NONE)) {
-					strErr = strName + "入口（4）・敵（5）は討伐チャレンジ（byChallenge 1）の依頼にだけ置けます";
+					strErr = strName + "入口（4）・敵（5）は討伐チャレンジ（byChallenge 1・2）の依頼にだけ置けます";
 					goto Exit;
 				}
 			}
 			if (Info.byChallenge >= QUESTCHALLENGE_MAX) {
-				strErr = "byChallenge は 0（ふつう）か 1（異空間の討伐チャレンジ）で指定してください";
+				strErr = "byChallenge は 0（ふつう）・1（異空間の討伐チャレンジ）・2（闘技場の討伐チャレンジ）で指定してください";
 				goto Exit;
 			}
 			if (Info.byChallenge != QUESTCHALLENGE_NONE) {

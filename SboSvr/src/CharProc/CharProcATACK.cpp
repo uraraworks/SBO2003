@@ -50,8 +50,8 @@ BOOL CCharProcATACK::Proc(DWORD dwTime)
 		PCHARINFO pCharParent;
 
 		pCharParent = g_aCharInfo[m_pChar->dwParentTblID];
-		/* 発動者と別マップ？ */
-		if (m_pChar->dwMapID != pCharParent->dwMapID) {
+		/* 発動者と別マップ・別の空間？ */
+		if ((m_pChar->dwMapID != pCharParent->dwMapID) || !IsSameSpace (m_pChar, pCharParent)) {
 			/* 消滅 */
 			m_pChar->dwTimeDelete = 1;
 		}
@@ -103,10 +103,10 @@ BOOL CCharProcATACK::Proc(DWORD dwTime)
 		}
 	}
 
-	dwTblID = CheckCharBlockPC (m_pChar->dwMapID, m_pChar->dwX, m_pChar->dwY);
+	dwTblID = CheckCharBlockPC (m_pChar->dwMapID, m_pChar->dwX, m_pChar->dwY, m_pChar->dwSpaceID);
 	/* プレイヤーと重なってない？ */
 	if (dwTblID == -1) {
-		dwTblID = CheckCharBlockNPC2 (m_pChar->dwTblID, m_pChar->dwMapID, m_pChar->dwX, m_pChar->dwY);
+		dwTblID = CheckCharBlockNPC2 (m_pChar->dwTblID, m_pChar->dwMapID, m_pChar->dwX, m_pChar->dwY, m_pChar->dwSpaceID);
 		if (dwTblID == -1) {
 			goto Exit;
 		}
