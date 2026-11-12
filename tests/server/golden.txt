@@ -1235,4 +1235,6 @@ magic=50 wall=0 hit=20/20 put-on-enemy=0
 magic=50 wall=1 hit=0/20 put-on-enemy=0
 magic=35 wall=0 hit=0/20 put-on-enemy=20
 magic=35 wall=1 hit=0/20 put-on-enemy=0
+heal wall=0 healed=1
+heal wall=1 healed=1
 == done ==

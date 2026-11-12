@@ -1347,6 +1347,7 @@ static void TestWorld(void)
 /* S. 前方・周囲の特技が壁越しに届かない									 */
 /*    敵の1マス手前を壁にして、2マス先から前方・周囲の特技を使う。			 */
 /*    壁が無ければ当たり、壁があれば当たらないこと。置く魔法も壁の向こうに出ないこと */
+/*    回復は壁越しでも効くこと											 */
 /* ------------------------------------------------------------------------- */
 extern void DeleteChar(DWORD dwTblID);
 static void TestMagicWall(const std::vector<int> &aLogin)
@@ -1436,6 +1437,36 @@ static void TestMagicWall(const std::vector<int> &aLogin)
 			}
 			printf("magic=%d wall=%d hit=%d/%d put-on-enemy=%d\n", byID, nWallOn, nHit, nTry, nBeyond);
 		}
+	}
+	/* 回復（周囲2マス）は壁越しでも仲間に効く */
+	if (aLogin.size() > 1 && 12 < g_aMagicInfo.GetSize()) {
+		PCHARINFO pPC2 = g_aCharInfo[aLogin[1]];
+		DWORD dwPC2Map = pPC2->dwMapID, dwPC2X = pPC2->dwX, dwPC2Y = pPC2->dwY;
+		WORD wPC2HP = pPC2->wHP, wPC2MaxHP = pPC2->wMaxHP;
+		DeleteTblNoPC((int)pPC2->dwTblID);
+		pPC2->dwMapID = pEnemy->dwMapID;
+		AddTblNoPC((int)pPC2->dwTblID);
+		for (int nWallOn = 0; nWallOn < 2; nWallOn ++) {
+			pMap->pwMap[nWallPos] = nWallOn ? (WORD)nWall : wPartsBack;
+			pPC->dwX = dwEnemyX - 2;
+			pPC->dwY = dwEnemyY;
+			pPC->byDirection = 3;
+			pPC->abyMagic[0] = 12;
+			pPC->wMana = 9999;
+			pPC2->dwX = dwEnemyX;
+			pPC2->dwY = dwEnemyY;
+			pPC2->wMaxHP = 30000;
+			pPC2->wHP = 1;
+			MagicProc(pPC->dwTblID, 12, (DWORD)-1);
+			printf("heal wall=%d healed=%d\n", nWallOn, pPC2->wHP > 1 ? 1 : 0);
+		}
+		DeleteTblNoPC((int)pPC2->dwTblID);
+		pPC2->dwMapID = dwPC2Map;
+		AddTblNoPC((int)pPC2->dwTblID);
+		pPC2->dwX = dwPC2X;
+		pPC2->dwY = dwPC2Y;
+		pPC2->wHP = wPC2HP;
+		pPC2->wMaxHP = wPC2MaxHP;
 	}
 	pMap->pwMap[nWallPos] = wPartsBack;
 	DeleteTblNoPC((int)pPC->dwTblID);

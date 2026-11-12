@@ -50,6 +50,7 @@ static BOOL IsMagicLineClear				(DWORD dwMapID, int x0, int y0, int x1, int y1);
 static int  GetMagicCharWidth				(PCHARINFO pChar);									/* キャラの横幅(マス) */
 BOOL IsMagicReachChar						(PCHARINFO pChar, PCHARINFO pCharTarget);			/* 使った人から相手まで壁越しでなく届くか */
 static BOOL IsMagicReachPosFrom				(PCHARINFO pChar, int x, int y);					/* 使った人からそのマスまで壁越しでなく届くか */
+static BOOL IsMagicReachTarget				(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTarget);	/* 特技が相手に届くか(回復・応援は壁越しでも届く) */
 static void MakePosTbl						(PCMYARRAYPOS, PCHARINFO, PMAGICINFO);				/* 座標情報の設定 */
 static void MakePosTbl_SELF					(PCMYARRAYPOS, PCHARINFO, PMAGICINFO);				/* 座標情報の設定(自分) */
 static void MakePosTbl_FRONT				(PCMYARRAYPOS, PCHARINFO, PMAGICINFO);				/* 座標情報の設定(前方) */
@@ -300,6 +301,7 @@ Exit:
 	・間のマスはブレゼンハムの線で調べ、行きと帰りのどちらかの線が通れば届く（左右で差が出ないように）。
 	  斜めに1マス進む所は、角の2マスが両方とも壁なら通さない（壁の角のすき間から漏れないように）。
 	・画面内の特技と、相手を選ぶ特技はこれまでどおり。
+	・回復・蘇生・加速・攻撃アップ・守りアップ・明かりは、何かを飛ばすわけではないので壁越しでも届く。
 */
 
 /* ========================================================================= */
@@ -427,6 +429,25 @@ BOOL IsMagicReachChar(PCHARINFO pChar, PCHARINFO pCharTarget)
 	nX = (int)pChar->dwX;
 	nX = max ((int)pCharTarget->dwX, min (nX, (int)pCharTarget->dwX + GetMagicCharWidth (pCharTarget) - 1));
 	return IsMagicReachPosFrom (pChar, nX, (int)pCharTarget->dwY);
+}
+
+/* ========================================================================= */
+/* 関数名：IsMagicReachTarget												 */
+/* 内容：特技が相手に届くか(回復・応援は壁越しでも届く)						 */
+/* 日付：2026/11/12															 */
+/* ========================================================================= */
+static BOOL IsMagicReachTarget(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTarget)
+{
+	switch (pInfo->byType) {
+	case MAGICTYPE_HPUP:			/* HP増加 */
+	case MAGICTYPE_LIGHT:			/* 明かり */
+	case MAGICTYPE_RESURRECTION:	/* 蘇生 */
+	case MAGICTYPE_HASTE:			/* 加速 */
+	case MAGICTYPE_ATUP:			/* 攻撃力アップ */
+	case MAGICTYPE_DFUP:			/* 守備力アップ */
+		return TRUE;
+	}
+	return IsMagicReachChar (pChar, pCharTarget);
 }
 
 /* ========================================================================= */
@@ -692,7 +713,7 @@ static BOOL MakeCharTblTargetSub_FRONT(PARRAYDWORD aTarget,
 		}
 
 		/* 間に壁などがあれば届かない */
-		if (bCheck && (IsMagicReachChar (pChar, pCharTmp) == FALSE)) {
+		if (bCheck && (IsMagicReachTarget (pInfo, pChar, pCharTmp) == FALSE)) {
 			bCheck = FALSE;
 		}
 		/* 当たっている？ */
@@ -787,7 +808,7 @@ static BOOL MakeCharTblTargetSub_CIRCLE(PARRAYDWORD aTarget,
 			continue;
 		}
 
-		if ((x <= pInfo->byTargetArea) && (y <= pInfo->byTargetArea) && IsMagicReachChar (pChar, pCharTmp)) {
+		if ((x <= pInfo->byTargetArea) && (y <= pInfo->byTargetArea) && IsMagicReachTarget (pInfo, pChar, pCharTmp)) {
 			aTarget->Add (pCharTmp->dwTblID);
 			if (pInfo->byTargetCount == MAGICTARGETCOUNT_ONE) {
 				bRet = FALSE;
@@ -1002,7 +1023,7 @@ static BOOL MakeCharTblTargetSub_FRONTSIDE(PARRAYDWORD aTarget,
 		}
 
 		/* 間に壁などがあれば届かない */
-		if (bCheck && (IsMagicReachChar (pChar, pCharTmp) == FALSE)) {
+		if (bCheck && (IsMagicReachTarget (pInfo, pChar, pCharTmp) == FALSE)) {
 			bCheck = FALSE;
 		}
 		/* 当たっている？ */
