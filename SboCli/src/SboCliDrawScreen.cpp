@@ -150,7 +150,9 @@ void DrawScreen(HWND hWnd, HDC hDC)
 				for (i = 0; i < nCount; i ++) {
 					PSYSMSGINFO pSysMsgInfo = g_SysMsgInfo[i];
 					if (pSysMsgInfo->nY >= SYSMSG_EY) {
-						TextOut2 (hDCPrimary, 32 - x, 32 - y + pSysMsgInfo->nY, pSysMsgInfo->pszMsg, pSysMsgInfo->cl);
+						/* 戦闘ログは太字＋斜めも囲む太い縁取りで描く（草原など明るい背景でも読めるように） */
+						TextOutOutlineBold (hDCPrimary, 32 - x, 32 - y + pSysMsgInfo->nY, pSysMsgInfo->pszMsg,
+								(int)strlen (pSysMsgInfo->pszMsg), RGB (10, 10, 10), pSysMsgInfo->cl);
 					}
 				}
 				SelectObject (hDCPrimary, hFontOld);

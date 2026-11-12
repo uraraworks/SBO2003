@@ -1535,6 +1535,40 @@ BOOL TextOutOutline(HDC hDC, int x, int y, LPCSTR pszText, int nLen, COLORREF cl
 	return TRUE;
 }
 
+/* 太字＋太い縁取りの文字（明るい背景でも読みやすいように）。
+   本体は 1 ドット右へ重ねて太くし、縁は斜めも含めた周り 1 ドットを縁の色で囲む。
+   送り幅は変えない（右へ 1 ドットはみ出すだけ）。終わった時の文字色は本体色 */
+BOOL TextOutOutlineBold(HDC hDC, int x, int y, LPCSTR pszText, int nLen, COLORREF clOutline, COLORREF clText)
+{
+	W32Dc *pDc = W32GetDc(hDC);
+	W32GdiObj *pBmp = DcBitmap(pDc);
+	if (pBmp == NULL || pszText == NULL || nLen <= 0) {
+		return FALSE;
+	}
+	pDc->clText = clOutline;
+	BOOL bEmpty;
+	const W32TextMask *pMask = PrepareTextMask(pDc, pszText, nLen, &bEmpty);
+	pDc->clText = clText;
+	if (bEmpty) {
+		return TRUE;
+	}
+	if (pMask == NULL) {
+		return FALSE;
+	}
+	/* 縁：太くした本体（x と x+1）の上下左右・斜めの 1 ドット */
+	for (int dy = -1; dy <= 1; dy ++) {
+		for (int dx = -1; dx <= 2; dx ++) {
+			if (dy == 0 && (dx == 0 || dx == 1)) {
+				continue;
+			}
+			DrawTextMask(pDc, pBmp, pMask, x + dx, y + dy, clOutline);
+		}
+	}
+	DrawTextMask(pDc, pBmp, pMask, x, y, clText);
+	DrawTextMask(pDc, pBmp, pMask, x + 1, y, clText);
+	return TRUE;
+}
+
 BOOL GetTextExtentPoint32(HDC hDC, LPCSTR pszText, int nLen, LPSIZE pSize)
 {
 	if (pSize == NULL) {
@@ -1594,6 +1628,11 @@ BOOL TextOut(HDC, int, int, LPCSTR, int)
 }
 
 BOOL TextOutOutline(HDC, int, int, LPCSTR, int, COLORREF, COLORREF)
+{
+	return TRUE;
+}
+
+BOOL TextOutOutlineBold(HDC, int, int, LPCSTR, int, COLORREF, COLORREF)
 {
 	return TRUE;
 }
