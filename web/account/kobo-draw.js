@@ -1128,7 +1128,8 @@ async function save(bSubmit, bAuto) {
 		if (bSubmit) {
 			clearLocal();
 			S.closed = true;
-			location.href = '/kobo#task=' + encodeURIComponent(S.task.id) + '&work=' + encodeURIComponent(S.workId);
+			/* 出したら工房のトップへ（「出しました」と出した案へのリンクを出す） */
+			location.href = '/kobo#posted=' + encodeURIComponent(S.task.id) + '&work=' + encodeURIComponent(S.workId);
 			return true;
 		}
 		S.serverRev = rev;

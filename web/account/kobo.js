@@ -1685,9 +1685,33 @@ function loadMyProposals() {
 
 /* ============ 道案内 ============ */
 
+function showPosted(taskId, workId) {
+	const old = $('posted-msg');
+	if (old) {
+		old.remove();
+	}
+	const d = el('div', 'msg ok posted-msg', '出しました！ありがとう。 ');
+	d.id = 'posted-msg';
+	const a = el('a', '', '出した案を見る');
+	a.href = '#task=' + encodeURIComponent(taskId) + (workId ? '&work=' + encodeURIComponent(workId) : '');
+	d.appendChild(a);
+	const r = $('resume');
+	r.parentNode.insertBefore(d, r);
+	window.scrollTo(0, 0);
+}
+
 function route() {
 	const q = new URLSearchParams(location.hash.slice(1));
 	const id = q.get('task');
+	const posted = q.get('posted');
+	if (!posted && $('posted-msg')) {
+		$('posted-msg').remove();
+	}
+	if (posted) {
+		/* 描く画面で出した後。トップに「出しました」を出し、URL はトップに戻しておく */
+		history.replaceState(null, '', location.pathname);
+		showPosted(posted, q.get('work') || '');
+	}
 	if (!id) {
 		selWorkId = '';
 		T = null;
