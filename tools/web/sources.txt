@@ -34,6 +34,8 @@ SboCli/src/AdminWindowOld/AdminDlgNpcRoute.cpp
 SboCli/src/AdminWindowOld/AdminDlgMapLight.cpp
 SboCli/src/AdminWindowOld/AdminDlgStTmpInfo.cpp
 SboCli/src/AdminWindowOld/AdminDlgStTmpInfoEdit.cpp
+SboCli/src/AdminWindowOld/AdminDlgQuestInfo.cpp
+SboCli/src/AdminWindowOld/AdminDlgQuestInfoEdit.cpp
 SboCli/src/AdminWindowOld/AdminDlgSugorokuEvent.cpp
 SboCli/src/AdminWindowOld/AdminDlgSugorokuEventEdit.cpp
 SboCli/src/AdminWindowOld/AdminDlgSugorokuParts.cpp

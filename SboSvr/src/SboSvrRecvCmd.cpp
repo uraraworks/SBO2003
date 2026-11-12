@@ -44,6 +44,7 @@ typedef void (*RECVDATAPROC)(PBYTE, DWORD);
 
 void	MyOutputDebugString			(LPCTSTR lpszFormat, ...);						/* デバッグメッセージ出力 */
 BOOL	CheckAdminBan				(DWORD);										/* 管理者権限かチェックして、違ってたらＢＡＮ */
+extern void SboDataQuestApplyInfo	(int, const QUESTINFO *, int &, std::string &);	/* 管理者ウィンドウから依頼を書き込む(server/web_data_svr.cpp) */
 PCHARINFO AddChar					(PCHARINFO, BOOL bCheck=TRUE);					/* キャラ追加 */
 void	CharNpcIdEnsure				(PCHARINFO);									/* NPC番号がまだ無ければ振る(SboSvrSaveLoadChar.cpp) */
 void	DeleteChar					(DWORD);										/* キャラ削除 */
@@ -200,6 +201,7 @@ void	RecvDataProcADMINUNDO					(PBYTE, DWORD);				/* 管理者画面の「元に
 void	RecvDataProcNPCROUTE					(PBYTE, DWORD);				/* NPCの巡回ルート */
 void	RecvDataProcRECIPEMAKE					(PBYTE, DWORD);				/* レシピで作ってもらう */
 void	RecvDataProcQUEST						(PBYTE, DWORD);				/* ギルドの仕事依頼（一覧・受ける・取り消す・渡す） */
+void	RecvDataProcADMINQUEST					(PBYTE, DWORD);				/* 管理者ウィンドウのギルドの依頼の編集 */
 void	RecvDataProcSORTITEM					(PBYTE, DWORD);				/* 道具欄・預かり所の並べ替え */
 void	RecvDataProcLEAVEITEMDISPOSE			(PBYTE, DWORD);				/* 預かり所の品を売る・捨てる */
 void	RecvDataProcBATTLEMODE					(PBYTE, DWORD);				/* 戦闘モードの切り替え通知 */
@@ -427,6 +429,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcSORTITEM,				/* CMD_SORTITEM */
 	RecvDataProcLEAVEITEMDISPOSE,		/* CMD_LEAVEITEMDISPOSE */
 	NULL,								/* CMD_CHARBUFF(サーバー→クライアントのみ) */
+	RecvDataProcADMINQUEST,				/* CMD_ADMINQUEST */
 
 	NULL
 };
@@ -10322,6 +10325,77 @@ void RecvDataProcADMINUNDO(PBYTE pData, DWORD dwDataSize)
 	case ADMINUNDO_EXEC:		/* 元に戻す */
 		bRet = AdminUndoExec (pPara->byScreen, pPara->dwStepID, pID, strMsg, wCount);
 		SendCmdADMINUNDO (pID, ADMINUNDO_RESULT, pPara->byScreen, bRet ? 1 : 0, wCount, 0, strMsg.c_str ());
+		break;
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：SendAdminQuestItem												 */
+/* 内容：管理者ウィンドウへ依頼 1 件を送る（nNo が範囲外なら件数だけ）		 */
+/* ========================================================================= */
+static void SendAdminQuestItem(DWORD pID, int nNo)
+{
+	PCMDPARA_ADMINQUEST pPara = new CMDPARA_ADMINQUEST;
+
+	ZeroMemory (pPara, sizeof (CMDPARA_ADMINQUEST));
+	pPara->byCmd	= CMD_ADMINQUEST;
+	pPara->byCmdSub	= ADMINQUEST_ITEM;
+	pPara->wCount	= (WORD)g_aQuestInfo.GetSize ();
+	pPara->nNo		= nNo;
+	if ((nNo >= 0) && (nNo < g_aQuestInfo.GetSize ()) && g_aQuestInfo[nNo]) {
+		pPara->Info = *g_aQuestInfo[nNo];
+	} else {
+		pPara->nNo = -1;
+	}
+	svrSock.SendTo (pID, (PBYTE)pPara, sizeof (CMDPARA_ADMINQUEST));
+	SAFE_DELETE (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINQUEST											 */
+/* 内容：受信データ処理(管理者ウィンドウのギルドの依頼の編集)				 */
+/*       LISTREQ : 依頼を 1 件ずつ ITEM で送る（0 件なら件数 0 の ITEM だけ）	 */
+/*       SET     : データAPI（SboWebDataApply）と同じ確認を通して書き込み、	 */
+/*                 RESULT と、うまくいけばその依頼の ITEM を返す				 */
+/* ========================================================================= */
+void RecvDataProcADMINQUEST(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINQUEST pPara = (PCMDPARA_ADMINQUEST)pData;
+	PCMDPARA_ADMINQUEST pRes;
+	DWORD pID = s_pIDRecv;
+	int i, nNoOut = -1;
+	std::string strErr;
+
+	if (s_dwRecvSize < sizeof (CMDPARA_ADMINQUEST)) {
+		return;
+	}
+
+	switch (pPara->byCmdSub) {
+	case ADMINQUEST_LISTREQ:	/* 一覧の問い合わせ */
+		if (g_aQuestInfo.GetSize () == 0) {
+			SendAdminQuestItem (pID, -1);
+			break;
+		}
+		for (i = 0; i < g_aQuestInfo.GetSize (); i ++) {
+			SendAdminQuestItem (pID, i);
+		}
+		break;
+
+	case ADMINQUEST_SET:		/* 書き込み */
+		SboDataQuestApplyInfo (pPara->nNo, &pPara->Info, nNoOut, strErr);
+		pRes = new CMDPARA_ADMINQUEST;
+		ZeroMemory (pRes, sizeof (CMDPARA_ADMINQUEST));
+		pRes->byCmd		= CMD_ADMINQUEST;
+		pRes->byCmdSub	= ADMINQUEST_RESULT;
+		pRes->byResult	= strErr.empty () ? 1 : 0;
+		pRes->wCount	= (WORD)g_aQuestInfo.GetSize ();
+		pRes->nNo		= strErr.empty () ? nNoOut : pPara->nNo;
+		SboTextCopy (pRes->szMsg, sizeof (pRes->szMsg), strErr.c_str ());
+		svrSock.SendTo (pID, (PBYTE)pRes, sizeof (CMDPARA_ADMINQUEST));
+		SAFE_DELETE (pRes);
+		if (strErr.empty ()) {
+			SendAdminQuestItem (pID, nNoOut);
+		}
 		break;
 	}
 }

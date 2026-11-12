@@ -296,6 +296,8 @@ enum {
 	CMD_SORTITEM,													/* 道具欄・預かり所の並べ替え（クライアント→サーバー。結果は CMD_CHARITEM・CMD_LEAVEITEMGET で返る） */
 	CMD_LEAVEITEMDISPOSE,											/* 預かり所の品を引き取らずに売る・捨てる（クライアント→サーバー。結果は CMD_LEAVEITEMGET で返る） */
 	CMD_CHARBUFF,													/* 攻撃力・守備力アップの残り時間(サーバー→本人とパーティの仲間。サーバーは受け取らない) */
+/* 以下、管理者用（CMD_MAPPARTSADD 以上は自動で管理者専用になる。CMD_CHARBUFF より後ろに足す） */
+	CMD_ADMINQUEST,													/* 管理者ウィンドウのギルドの依頼の編集（一覧・書き込み。結果はサーバー→クライアント） */
 	CMD_MAX
 };
 
@@ -2852,6 +2854,30 @@ typedef struct _CMDPARA_CHARBUFF {
 	DWORD		dwATUP;												/* 攻撃力アップの残り(ms) */
 	DWORD		dwDFUP;												/* 守備力アップの残り(ms) */
 } CMDPARA_CHARBUFF, *PCMDPARA_CHARBUFF;
+#pragma pack(pop)
+
+/* 管理者ウィンドウのギルドの依頼の編集（CMD_ADMINQUEST の byCmdSub） */
+enum {
+	ADMINQUEST_LISTREQ = 0,										/* 一覧の問い合わせ（クライアント→サーバー） */
+	ADMINQUEST_ITEM,											/* 一覧の 1 件（サーバー→クライアント。nNo 番目・全部で wCount 件。0 件なら wCount=0 だけ届く） */
+	ADMINQUEST_SET,												/* 書き込み（クライアント→サーバー。nNo=-1 なら足す。データAPIと同じ確認を通す） */
+	ADMINQUEST_RESULT,											/* 書き込みの結果（サーバー→クライアント。byResult・szMsg。うまくいった時は続けて ITEM も届く） */
+};
+
+#define MAX_ADMINQUESTMSG	256										/* 書き込みの結果の文（UTF-8） */
+
+#pragma pack(push, 1)
+/* 管理者ウィンドウのギルドの依頼の編集（送受信とも同じ形） */
+typedef struct _CMDPARA_ADMINQUEST {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byCmdSub;											/* サブコマンド(ADMINQUEST_*) */
+	BYTE		byResult;											/* 結果（RESULT: 1=書き込んだ 0=書き込めなかった） */
+	BYTE		byReserve;											/* 予備 */
+	WORD		wCount;												/* 依頼の全部の件数（ITEM） */
+	int			nNo;												/* 依頼の配列の番号（ITEM・SET・RESULT。SET の -1 は足す） */
+	QUESTINFO	Info;												/* 依頼（ITEM・SET） */
+	char		szMsg[MAX_ADMINQUESTMSG];							/* 結果の文（RESULT。うまくいかなかった理由） */
+} CMDPARA_ADMINQUEST, *PCMDPARA_ADMINQUEST;
 #pragma pack(pop)
 
 /* 並べ替えの対象(CMDPARA_SORTITEM の byTarget) */

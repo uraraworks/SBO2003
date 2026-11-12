@@ -114,6 +114,7 @@ void SendCMDTARGETCHG		(DWORD);								/* ターゲット変更要求 */
 void SendCMDEQUUSERINFO		(BYTE);									/* 装備職業情報 */
 void SendCMDEQUUSERINFOREQ	(BYTE);									/* 装備職業情報要求 */
 void SendCmdADMINUNDO		(BYTE, BYTE, DWORD);					/* 管理者画面の「元に戻す」 */
+void SendCmdADMINQUEST		(BYTE, int, const QUESTINFO *);			/* 管理者ウィンドウのギルドの依頼の編集 */
 void SendCMDSHOPBUY			(DWORD, DWORD);							/* アイテム購入 */
 void SendCMDDIFENCE			(void);									/* 防御 */
 void SendCMDTHROWSNOW		(void);									/* 雪を投げる */
@@ -3515,6 +3516,28 @@ void SendCmdADMINUNDO(BYTE byCmdSub, BYTE byScreen, DWORD dwStepID)
 
 	/* 案内文の欄はサーバーからの通知だけで使うので送らない */
 	cliSock.Send ((PBYTE)&Para, sizeof (Para) - sizeof (Para.szMsg));
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdADMINQUEST												 */
+/* 内容：コマンド送信(管理者ウィンドウのギルドの依頼の編集)					 */
+/*       byCmdSub: ADMINQUEST_LISTREQ（一覧の問い合わせ）・					 */
+/*                 ADMINQUEST_SET（pInfo を nNo 番目に書き込む。-1 は足す）	 */
+/*       サーバーは構造体の全体の大きさを調べるので、全部の欄を送る			 */
+/* ========================================================================= */
+void SendCmdADMINQUEST(BYTE byCmdSub, int nNo, const QUESTINFO *pInfo)
+{
+	PCMDPARA_ADMINQUEST pPara = new CMDPARA_ADMINQUEST;
+
+	ZeroMemory (pPara, sizeof (CMDPARA_ADMINQUEST));
+	pPara->byCmd	= CMD_ADMINQUEST;
+	pPara->byCmdSub	= byCmdSub;
+	pPara->nNo		= nNo;
+	if (pInfo) {
+		pPara->Info = *pInfo;
+	}
+	cliSock.Send ((PBYTE)pPara, sizeof (CMDPARA_ADMINQUEST));
+	SAFE_DELETE (pPara);
 }
 
 /* Copyright(C)URARA-works 2003-2005 */

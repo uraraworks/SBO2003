@@ -906,6 +906,7 @@ static void TestLeaveDispose(const std::vector<int> &aLogin);
 static void TestChallenge(const std::vector<int> &aLogin);
 static void TestStatusUp(const std::vector<int> &aLogin);
 static void TestMagicWall(const std::vector<int> &aLogin);
+static void TestAdminQuest(const std::vector<int> &aLogin);
 
 static void TestTownWarp(const std::vector<int> &aLogin)
 {
@@ -1342,6 +1343,124 @@ static void TestWorld(void)
 	TestStatusUp(aLogin);
 	/* S. 前方・周囲の特技が壁越しに届かない */
 	TestMagicWall(aLogin);
+	/* T. 管理者ウィンドウからギルドの依頼を直す */
+	TestAdminQuest(aLogin);
+}
+
+/* ------------------------------------------------------------------------- */
+/* T. 管理者ウィンドウからギルドの依頼を直す（CMD_ADMINQUEST）				 */
+/*    一覧が 1 件ずつ届くか・直す／足すがデータAPIと同じ確認を通るか		 */
+/*    （マップの外・番号の範囲外は断って中身を変えない、足すと番号が振られる） */
+/* ------------------------------------------------------------------------- */
+static void TestRecv(PCHARINFO pChar, const void *pData, DWORD dwSize);
+static BOOL AdminQuestSend(PCHARINFO p, BYTE bySub, int nNo, const QUESTINFO *pInfo, CMDPARA_ADMINQUEST &Res, DWORD dwSize = sizeof(CMDPARA_ADMINQUEST))
+{
+	PCMDPARA_ADMINQUEST pPara = new CMDPARA_ADMINQUEST;
+	std::vector<BYTE> aCap;
+	BOOL bRet;
+
+	ZeroMemory(pPara, sizeof(*pPara));
+	pPara->byCmd = CMD_ADMINQUEST;
+	pPara->byCmdSub = bySub;
+	pPara->nNo = nNo;
+	if (pInfo) {
+		pPara->Info = *pInfo;
+	}
+	SvrSendCaptureBegin();
+	TestRecv(p, pPara, dwSize);
+	bRet = SvrSendCaptureEnd(aCap);
+	delete pPara;
+	ZeroMemory(&Res, sizeof(Res));
+	if (!bRet || aCap.size() != sizeof(CMDPARA_ADMINQUEST)) {
+		return FALSE;
+	}
+	memcpy(&Res, &aCap[0], sizeof(Res));
+	return TRUE;
+}
+
+static void TestAdminQuest(const std::vector<int> &aLogin)
+{
+	printf("== T. AdminQuest ==\n");
+	if (aLogin.size() < 1) {
+		return;
+	}
+	PCHARINFO pAdmin = g_aCharInfo[aLogin[0]];
+	BYTE byAdminBack = pAdmin->byAdminLV;
+	PMAPINFO pMap = g_aMapInfo[pAdmin->dwMapID];
+	CMDPARA_ADMINQUEST Res;
+	BOOL bGot;
+
+	pAdmin->byAdminLV = ADMINLV_ADMINISTRATOR;
+
+	/* 依頼 1 件（見えるNPC 1 つ） */
+	g_aQuestInfo.RemoveAll();
+	{
+		PQUESTINFO p = new QUESTINFO;
+		ZeroMemory(p, sizeof(*p));
+		p->wID = 1; p->byState = QUESTSTATE_ON; p->byStepCount = 2;
+		strcpy(p->szName, "AdminQuest1");
+		strcpy(p->aszGoal[0], "goal0");
+		strcpy(p->aszGoal[1], "goal1");
+		for (int i = 0; i < MAX_QUESTNPC; i ++) {
+			p->aNpc[i].byStepMax = QUESTNPC_NOSTEP;
+			p->aNpc[i].byNextStep = QUESTNPC_NOSTEP;
+		}
+		p->aNpc[0].byKind = QUESTNPCKIND_PERSON;
+		p->aNpc[0].dwMapID = pMap->dwID;
+		p->aNpc[0].byX = 2; p->aNpc[0].byY = 3;
+		strcpy(p->aNpc[0].szName, "npc");
+		g_aQuestInfo.Add(p);
+	}
+
+	/* 一覧（最初の 1 件） */
+	bGot = AdminQuestSend(pAdmin, ADMINQUEST_LISTREQ, 0, NULL, Res);
+	printf("adminquest list got=%d sub=%d count=%d no=%d id=%d name=%s npc0=%d,%d\n", bGot, Res.byCmdSub, Res.wCount, Res.nNo,
+			Res.Info.wID, Res.Info.szName, Res.Info.aNpc[0].byX, Res.Info.aNpc[0].byY);
+
+	/* 直す（名前・お金・NPC の場所。番号は送ってきた値ではなく元のまま） */
+	QUESTINFO Info = *g_aQuestInfo[0];
+	strcpy(Info.szName, "AdminQuest1b");
+	Info.dwGold = 123;
+	Info.aNpc[0].byX = 4;
+	Info.wID = 77;
+	bGot = AdminQuestSend(pAdmin, ADMINQUEST_SET, 0, &Info, Res);
+	printf("adminquest edit got=%d sub=%d result=%d no=%d msg=%d | id=%d name=%s gold=%lu npc0x=%d goals=%s,%s count=%d\n", bGot, Res.byCmdSub,
+			Res.byResult, Res.nNo, (int)strlen(Res.szMsg), g_aQuestInfo[0]->wID, g_aQuestInfo[0]->szName, (unsigned long)g_aQuestInfo[0]->dwGold,
+			g_aQuestInfo[0]->aNpc[0].byX, g_aQuestInfo[0]->aszGoal[0], g_aQuestInfo[0]->aszGoal[1], g_aQuestInfo.GetSize());
+
+	/* マップの外（断って中身を変えない） */
+	Info = *g_aQuestInfo[0];
+	Info.aNpc[0].byX = (BYTE)min(255, pMap->nCX);
+	Info.dwGold = 999;
+	bGot = AdminQuestSend(pAdmin, ADMINQUEST_SET, 0, &Info, Res);
+	printf("adminquest outside got=%d result=%d msg_byX=%d | gold=%lu npc0x=%d\n", bGot, Res.byResult,
+			(strstr(Res.szMsg, "byX") != NULL) ? 1 : 0, (unsigned long)g_aQuestInfo[0]->dwGold, g_aQuestInfo[0]->aNpc[0].byX);
+
+	/* 討伐チャレンジでない依頼に入口は置けない */
+	Info = *g_aQuestInfo[0];
+	Info.aNpc[0].byKind = QUESTNPCKIND_GATE;
+	Info.aNpc[0].dwDestMapID = pMap->dwID;
+	bGot = AdminQuestSend(pAdmin, ADMINQUEST_SET, 0, &Info, Res);
+	printf("adminquest gate-in-normal got=%d result=%d | kind=%d\n", bGot, Res.byResult, g_aQuestInfo[0]->aNpc[0].byKind);
+
+	/* 足す（番号は空いている一番小さい 2 が振られる） */
+	Info = *g_aQuestInfo[0];
+	strcpy(Info.szName, "AdminQuest2");
+	Info.wID = 0;
+	bGot = AdminQuestSend(pAdmin, ADMINQUEST_SET, -1, &Info, Res);
+	printf("adminquest add got=%d result=%d no=%d count=%d | id=%d name=%s\n", bGot, Res.byResult, Res.nNo, Res.wCount,
+			(g_aQuestInfo.GetSize() > 1) ? g_aQuestInfo[1]->wID : -1, (g_aQuestInfo.GetSize() > 1) ? g_aQuestInfo[1]->szName : "-");
+
+	/* 範囲外の番号・名前なし・短いパケット */
+	bGot = AdminQuestSend(pAdmin, ADMINQUEST_SET, 5, &Info, Res);
+	printf("adminquest badno got=%d result=%d count=%d\n", bGot, Res.byResult, g_aQuestInfo.GetSize());
+	Info.szName[0] = 0;
+	bGot = AdminQuestSend(pAdmin, ADMINQUEST_SET, 1, &Info, Res);
+	printf("adminquest noname got=%d result=%d name=%s\n", bGot, Res.byResult, g_aQuestInfo[1]->szName);
+	bGot = AdminQuestSend(pAdmin, ADMINQUEST_LISTREQ, 0, NULL, Res, 16);
+	printf("adminquest short got=%d\n", bGot);
+
+	pAdmin->byAdminLV = byAdminBack;
 }
 
 /* ------------------------------------------------------------------------- */

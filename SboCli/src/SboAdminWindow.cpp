@@ -22,6 +22,7 @@
 #include "AdminWindowOld/AdminAutoLayout.h"
 #include "AdminWindowOld/AdminDlgMapLight.h"
 #include "AdminWindowOld/AdminDlgStTmpInfo.h"
+#include "AdminWindowOld/AdminDlgQuestInfo.h"
 #include "AdminWindowOld/AdminDlgNpcRoute.h"
 
 /* ========================================================================= */
@@ -458,6 +459,11 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 			NpcRouteOnPosLeft ((int)wParam, (int)lParam);
 			break;
 
+		case IDM_ETC_QUEST:
+			/* ギルドの依頼の編集画面：見えるNPCの出る場所 */
+			AdminQuestOnPos ((int)wParam, (int)lParam, FALSE);
+			break;
+
 		case IDM_MAP_EVENT:
 			if ((SendMessage (m_hWndCheck1, BM_GETCHECK, 0, 0) & BST_CHECKED) == 0) {
 				if (g_pMapInfo->pbyFlg[g_pEventInfo->dwX + g_pMapInfo->nCX *
@@ -720,6 +726,11 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 		switch (g_nAdminWindowType) {
 		case IDM_CHAR_NPCROUTE:
 			NpcRouteOnPosRight ((int)wParam, (int)lParam);
+			break;
+
+		case IDM_ETC_QUEST:
+			/* ギルドの依頼の編集画面：見えるNPCの行き先 */
+			AdminQuestOnPos ((int)wParam, (int)lParam, TRUE);
 			break;
 
 		case IDM_MAP_EVENT:
@@ -1528,6 +1539,11 @@ void AdminOnCommand(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 		g_nAdminWindowType = IDM_ETC_SUBGAME;
 		g_bAdminPos = TRUE;
 		ShowDlgEtcSubGame (hWnd);
+		break;
+	case IDM_ETC_QUEST:
+		DeleteAdminWnd ();
+		g_nAdminWindowType = IDM_ETC_QUEST;
+		ShowDlgQuestInfo (hWnd);
 		break;
 	}
 
@@ -7229,6 +7245,7 @@ void DeleteAdminWnd(void)
 	CloseDlgCharMagicInfo ();
 	CloseDlgEquUserInfo ();
 	CloseDlgStTmpInfo ();
+	CloseDlgQuestInfo ();
 	CloseDlgAccSearch ();
 	CloseDlgNpcRoute ();
 	CloseDlgEtcSubGame ();

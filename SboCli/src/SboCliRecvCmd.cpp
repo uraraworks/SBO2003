@@ -20,6 +20,7 @@
 #include "SboCliDrawScreen.h"
 #include "SboAdminWindow.h"
 #include "AdminWindowOld/AdminDlgNpcRoute.h"
+#include "AdminWindowOld/AdminDlgQuestInfo.h"
 #include "SboCliDebugWindow.h"
 #include "SboCliMsgLogWindow.h"
 #include "SboCliBalloonWindow.h"
@@ -141,6 +142,7 @@ void	RecvDataProcCONNECT					(PBYTE, DWORD);			/* 受信データ処理(接続�
 void	RecvDataProcLOGINRES				(PBYTE, DWORD);			/* 受信データ処理(ログイン応答) */
 void	RecvDataProcWEBACCOUNT				(PBYTE, DWORD);			/* 受信データ処理(ブラウザ版のアカウント関係) */
 void	RecvDataProcADMINUNDO				(PBYTE, DWORD);			/* 受信データ処理(管理者画面の「元に戻す」) */
+void	RecvDataProcADMINQUEST				(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのギルドの依頼の編集) */
 void	RecvDataProcHASTE					(PBYTE, DWORD);			/* 受信データ処理(加速の状態) */
 void	RecvDataProcCHARBUFF				(PBYTE, DWORD);			/* 受信データ処理(攻撃力・守備力アップの残り) */
 void	RecvDataProcMAKERINFO				(PBYTE, DWORD);			/* 受信データ処理(作り手情報) */
@@ -394,6 +396,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	NULL,								/* CMD_SORTITEM(クライアント→サーバーのみ) */
 	NULL,								/* CMD_LEAVEITEMDISPOSE(クライアント→サーバーのみ) */
 	RecvDataProcCHARBUFF,				/* CMD_CHARBUFF */
+	RecvDataProcADMINQUEST,				/* CMD_ADMINQUEST */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -3528,6 +3531,22 @@ void RecvDataProcQUESTSTATE(PBYTE pData, DWORD dwDataSize)
 		pWnd->dwTimeDrawStart = 0;
 		g_bDraw = TRUE;
 	}
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINQUEST											 */
+/* 内容：受信データ処理(管理者ウィンドウのギルドの依頼の編集)				 */
+/*       一覧の 1 件・書き込みの結果が届く									 */
+/* ========================================================================= */
+void RecvDataProcADMINQUEST(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINQUEST pPara = (PCMDPARA_ADMINQUEST)pData;
+
+	if (dwDataSize < sizeof (CMDPARA_ADMINQUEST)) {
+		return;
+	}
+	pPara->szMsg[sizeof (pPara->szMsg) - 1] = 0;
+	AdminQuestOnRecv (pPara);
 }
 
 /* ========================================================================= */
