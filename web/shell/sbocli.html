@@ -13,7 +13,7 @@
 		--border: #3a404a;
 		--accent: #f0b84a;
 		--app-height: 100vh;
-		--pad-h: 168px;
+		--pad-h: 192px;
 		--pad-col-w: 136px;
 	}
 	html, body {
@@ -334,6 +334,7 @@
 		justify-content: space-between;
 		align-items: center;
 		padding: 8px calc(18px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left));
+		position: relative;
 		background: rgba(16, 18, 22, 0.96);
 		border-top: 1px solid var(--border);
 		border-bottom: 1px solid var(--border);
@@ -421,13 +422,16 @@
 		display: block;
 	}
 	/* タブレットの縦持ちはログ欄が広いので、文字も少し大きくして読みやすく */
-	@media (orientation: portrait) and (min-width: 600px) {
+	@media (max-aspect-ratio: 129/100) and (min-width: 600px) {
 		body.sbo-pad #sbo-chat-area {
 			font-size: 15px;
 		}
 	}
 
-	@media (orientation: landscape) {
+	/* 縦横の判定は orientation ではなく縦横比で行う。縦持ちでキーボードを出すと画面の高さが縮み、
+	   orientation: landscape に切り替わって横持ちの配置（📷🎥の丸ボタンなど）が出てしまうため。
+	   キーボードを出した縦持ちは 1.1 前後、横持ちのスマホは 2 前後、iPad の横持ちは 1.33〜1.45 */
+	@media (min-aspect-ratio: 13/10) {
 		body.sbo-pad {
 			flex-direction: row;
 			align-items: center;
@@ -503,9 +507,9 @@
 		position: absolute;
 		box-sizing: border-box;
 		pointer-events: none;
-		/* 右のボタンと同じ色・同じ縁取り */
-		background: #3b404c;
-		border: 2px solid #07080b;
+		/* 右のボタンと同じ色・細い淡い枠線のフラット */
+		background: #2a2f3a;
+		border: 1px solid rgba(255, 255, 255, 0.16);
 	}
 	.sbo-dpad-arm {
 		display: flex;
@@ -513,7 +517,6 @@
 		justify-content: center;
 		color: rgba(255, 255, 255, 0.8);
 		font-size: 14px;
-		text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.6);
 		line-height: 1;
 	}
 	/* 腕は 44px 幅。真ん中の四角（44px）と重ねて継ぎ目を隠す */
@@ -569,7 +572,7 @@
 	}
 	/* 押している方向は、ボタンを押した時と同じく暗くへこませ、矢印を金色にする */
 	.sbo-dpad-arm.sbo-dpad-on {
-		background: #2c3039;
+		background: #3a4150;
 		color: #f0c040;
 	}
 	/* 向きかえモード中は真ん中を光らせ、腕の色も変えて「歩かない」と分かるようにする */
@@ -579,6 +582,9 @@
 	}
 	.sbo-stick:has(.sbo-dpad-center.sbo-dpad-on) .sbo-dpad-arm {
 		border-color: rgba(240, 192, 64, 0.8);
+	}
+	.sbo-stick-note {
+		display: none;
 	}
 
 	/* ---- ボタン ----
@@ -607,13 +613,11 @@
 		justify-content: center;
 		gap: 2px;
 		padding: 0;
-		border: 2px solid #07080b;
-		border-radius: 8px;	/* 十字キーの腕の先と同じ丸み */
-		background: #3b404c;
-		box-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.32), inset -2px -2px 0 rgba(0, 0, 0, 0.45);
-		color: #fff;
+		border: 1px solid rgba(255, 255, 255, 0.16);
+		border-radius: 8px;
+		background: #2a2f3a;
+		color: #eef0f4;
 		font: bold 11px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
-		text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.6);
 		-webkit-tap-highlight-color: transparent;
 		touch-action: none;
 		-webkit-user-select: none;
@@ -622,11 +626,22 @@
 	}
 	/* 押している間は段差を逆にして、へこんで見せる */
 	.sbo-buttons button.sbo-pressed {
-		background: #2c3039;
-		box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.5), inset -2px -2px 0 rgba(255, 255, 255, 0.12);
+		background: #3d4452;
+	}
+	.sbo-buttons button.sbo-main.sbo-pressed {
+		background: #4a6a88;
 	}
 	.sbo-buttons button.sbo-main {
 		font-size: 13px;
+		background: #3c566e;
+		border-color: rgba(255, 255, 255, 0.22);
+	}
+	body.sbo-battle .sbo-buttons button.sbo-b-ctrl {
+		background: #8a3a3a;
+		border-color: rgba(255, 255, 255, 0.25);
+	}
+	body.sbo-battle .sbo-buttons button.sbo-b-ctrl.sbo-pressed {
+		background: #a04848;
 	}
 	.sbo-buttons button:disabled {
 		opacity: 0.35;
@@ -637,9 +652,8 @@
 		fill: none;
 		stroke: currentColor;
 		stroke-width: 2.4;
-		stroke-linecap: square;
-		stroke-linejoin: miter;
-		filter: drop-shadow(1px 1px 0 rgba(0, 0, 0, 0.6));
+		stroke-linecap: round;
+		stroke-linejoin: round;
 	}
 	.sbo-main .sbo-btn-svg {
 		width: 18px;
@@ -653,9 +667,148 @@
 		letter-spacing: -0.08em;
 	}
 	.sbo-btn-key {
-		font-size: 8px;
-		font-weight: normal;
-		opacity: 0.6;
+		display: none;
+	}
+	.sbo-pad-txt {
+		white-space: nowrap;
+	}
+	@media (min-aspect-ratio: 13/10) {
+		body.sbo-pad .sbo-pad-txt {
+			display: none;
+		}
+	}
+
+	/* 縦持ちのパッド：左に十字キー、右下に大きな決定、そのまわりに弧状に丸ボタン、
+	   左上に小さな横長ボタン（表示・スクショ・録画）。全部 #sbo-pad 内で絶対配置（消えても位置はずれない） */
+	@media (max-aspect-ratio: 129/100) {
+		body.sbo-pad .sbo-buttons {
+			display: contents;
+		}
+		body.sbo-pad .sbo-stick {
+			position: absolute;
+			left: calc(12px + env(safe-area-inset-left));
+			top: 46px;
+		}
+		body.sbo-pad .sbo-stick-note {
+			display: block;
+			position: absolute;
+			left: calc(12px + env(safe-area-inset-left));
+			top: 180px;
+			width: 132px;
+			text-align: center;
+			font: 9px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+			color: rgba(255, 255, 255, 0.38);
+			pointer-events: none;
+		}
+		body.sbo-pad #sbo-pad button,
+		html body.sbo-pad.sbo-on-map #sbo-shot-pad,
+		html body.sbo-pad.sbo-on-map #sbo-rec-pad,
+		html body.sbo-pad.sbo-recording #sbo-rec-pad {
+			position: absolute;
+			display: flex;
+			width: auto;
+			height: 38px;
+			border-radius: 10px;
+			gap: 2px;
+		}
+		/* 上の小さな横長ボタン */
+		body.sbo-pad #sbo-pad .sbo-b-tab,
+		html body.sbo-pad.sbo-on-map #sbo-shot-pad,
+		html body.sbo-pad.sbo-on-map #sbo-rec-pad,
+		html body.sbo-pad.sbo-recording #sbo-rec-pad {
+			top: 4px;
+			width: 56px;
+			min-width: 0;
+			flex-direction: column;
+			align-items: center;
+			justify-content: center;
+			padding: 0;
+			font: bold 10px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		}
+		body.sbo-pad #sbo-pad .sbo-b-tab { left: calc(12px + env(safe-area-inset-left)); }
+		html body.sbo-pad.sbo-on-map #sbo-shot-pad { left: calc(74px + env(safe-area-inset-left)); right: auto; }
+		html body.sbo-pad.sbo-on-map #sbo-rec-pad,
+		html body.sbo-pad.sbo-recording #sbo-rec-pad { left: calc(136px + env(safe-area-inset-left)); right: auto; }
+		html body.sbo-pad.sbo-on-map #sbo-shot-pad,
+		html body.sbo-pad.sbo-on-map.sbo-sys-show #sbo-shot-pad,
+		html body.sbo-pad.sbo-on-map #sbo-rec-pad,
+		html body.sbo-pad.sbo-on-map.sbo-sys-show #sbo-rec-pad,
+		html body.sbo-pad.sbo-recording #sbo-rec-pad {
+			z-index: 1;
+			opacity: 1;
+			pointer-events: auto;
+			border: 1px solid rgba(255, 255, 255, 0.16);
+			background: #2a2f3a;
+			color: #eef0f4;
+		}
+		html body.sbo-pad.sbo-recording #sbo-rec-pad {
+			background: #8a3a3a;
+		}
+		/* マップにいない間（ログイン・読み込み中）はスクショ/録画を出さない。
+		   上の「#sbo-pad button」の display:flex に負けないよう詳細度を上げる */
+		html body.sbo-pad:not(.sbo-on-map) #sbo-shot-pad,
+		html body.sbo-pad:not(.sbo-on-map):not(.sbo-recording) #sbo-rec-pad {
+			display: none;
+		}
+		html body.sbo-pad #sbo-shot-pad:active,
+		html body.sbo-pad #sbo-rec-pad:active {
+			background: #3d4452;
+		}
+		body.sbo-pad #sbo-pad .sbo-btn-svg,
+		html body.sbo-pad #sbo-shot-pad .sbo-ic,
+		html body.sbo-pad #sbo-rec-pad .sbo-ic {
+			width: 16px;
+			height: 16px;
+		}
+		/* 決定・まわりの丸ボタン */
+		body.sbo-pad #sbo-pad .sbo-b-x,
+		body.sbo-pad #sbo-pad .sbo-b-z,
+		body.sbo-pad #sbo-pad .sbo-b-s,
+		body.sbo-pad #sbo-pad .sbo-b-c,
+		body.sbo-pad #sbo-pad .sbo-b-ctrl {
+			border-radius: 50%;
+			padding: 0;
+		}
+		body.sbo-pad #sbo-pad .sbo-b-x {
+			right: calc(12px + env(safe-area-inset-right));
+			top: 84px;
+			width: 88px;
+			height: 88px;
+			gap: 3px;
+			font-size: 12px;
+		}
+		body.sbo-pad #sbo-pad .sbo-b-x .sbo-btn-svg {
+			width: 38px;
+			height: 38px;
+			stroke-width: 1.8;
+		}
+		body.sbo-pad #sbo-pad .sbo-b-z {
+			right: calc(108px + env(safe-area-inset-right));
+			top: 98px;
+			width: 60px;
+			height: 60px;
+			font-size: 9px;
+		}
+		body.sbo-pad #sbo-pad .sbo-b-s,
+		body.sbo-pad #sbo-pad .sbo-b-c {
+			right: calc(68px + env(safe-area-inset-right));
+			top: 20px;
+			width: 56px;
+			height: 56px;
+		}
+		body.sbo-pad #sbo-pad .sbo-b-ctrl {
+			right: calc(8px + env(safe-area-inset-right));
+			top: 24px;
+			width: 52px;
+			height: 52px;
+		}
+		body.sbo-pad #sbo-pad .sbo-b-z .sbo-btn-svg,
+		body.sbo-pad #sbo-pad .sbo-b-s .sbo-btn-svg,
+		body.sbo-pad #sbo-pad .sbo-b-c .sbo-btn-svg,
+		body.sbo-pad #sbo-pad .sbo-b-ctrl .sbo-btn-svg {
+			width: 20px;
+			height: 20px;
+		}
 	}
 
 	/* ---- チャット入力用のシート（下からせり上がる） ---- */
@@ -1210,7 +1363,7 @@
 		background: rgba(240, 184, 74, 0.75);
 	}
 	/* 横持ちは画面の左下隅（スティックの下）に置く */
-	@media (orientation: landscape) {
+	@media (min-aspect-ratio: 13/10) {
 		body.sbo-pad.sbo-on-map #sbo-shot-pad {
 			position: fixed;
 			right: auto;
@@ -1275,7 +1428,7 @@
 		background: rgba(192, 57, 43, 0.85);
 		border-color: rgba(255, 255, 255, 0.6);
 	}
-	@media (orientation: landscape) {
+	@media (min-aspect-ratio: 13/10) {
 		body.sbo-pad.sbo-on-map #sbo-rec-pad,
 		body.sbo-pad.sbo-recording #sbo-rec-pad {
 			position: fixed;
@@ -1529,9 +1682,7 @@
 		<div id="sbo-overlay" style="position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none;"></div>
 		<div id="sbo-shot-flash"></div>
 		<!-- スマホのカメラボタン（縦持ちはゲーム画面の右上隅に重ねる。横持ちは左下） -->
-		<button type="button" id="sbo-shot-pad" title="スクリーンショット"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-camera"/></svg></button>
-		<button type="button" id="sbo-rec-pad" title="ゲーム画面を動画で録画"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-video"/></svg></button>
-		<div id="sbo-rec-badge">REC <span id="sbo-rec-time">0:00</span></div>
+				<div id="sbo-rec-badge">REC <span id="sbo-rec-time">0:00</span></div>
 		<!-- ログイン画面のボタン。ID・パスワードの入力欄は「ID・パスワードでログイン」を押した時だけ見せる -->
 		<div id="sbo-quick" data-sbo-ui="1">
 			<!-- この端末で前にログインしていた -->
@@ -1563,6 +1714,8 @@
 	<button type="button" class="sbo-link" id="sbo-forgot" data-sbo-ui="1">昔のアカウントを忘れてしまった方はこちら</button>
 	<!-- 仮想パッド：タッチ操作の端末だけ出す（?pad=1 で PC でも出せる） -->
 	<div id="sbo-pad">
+		<button type="button" id="sbo-shot-pad" title="スクリーンショット"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-camera"/></svg><span class="sbo-pad-txt">スクショ</span></button>
+		<button type="button" id="sbo-rec-pad" title="ゲーム画面を動画で録画"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-video"/></svg><span class="sbo-pad-txt">録画</span></button>
 		<div class="sbo-stick" id="sbo-stick">
 			<div class="sbo-dpad-arm sbo-dpad-up" data-dir="0"><span>▲</span></div>
 			<div class="sbo-dpad-arm sbo-dpad-down" data-dir="1"><span>▼</span></div>
@@ -1570,6 +1723,7 @@
 			<div class="sbo-dpad-arm sbo-dpad-right" data-dir="3"><span>▶</span></div>
 			<div class="sbo-dpad-center"></div>
 		</div>
+		<div class="sbo-stick-note">長押しで向きかえ</div>
 		<!-- ボタンは全部「線画アイコン＋文字＋キー名」にそろえる。決定は右下に大きく -->
 		<div class="sbo-buttons">
 			<button type="button" class="sbo-b-s" data-vk="83" data-pad-need="1" data-pad-hide-battle="1"><svg class="sbo-btn-svg" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="M14.5 14.5L20 20"/></svg><span id="sbo-pad-s-label">調べる</span><span class="sbo-btn-key">S</span></button>
@@ -1884,7 +2038,7 @@
 		var cssW;
 		if (usePad) {
 			var vw = window.innerWidth, vh = window.innerHeight;
-			if (window.matchMedia('(orientation: landscape)').matches) {
+			if (window.matchMedia('(min-aspect-ratio: 13/10)').matches) {
 				/* 横持ち：左右のパッドの列を除いた中で一番大きく */
 				var padW = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pad-col-w')) || 136;
 				cssW = Math.min(vh * w / h, vw - padW * 2);
@@ -2176,6 +2330,12 @@
 	var PAD_INPUT_KEY = {90: 27, 88: 13};
 	function padTarget(vk) {
 		var input = PAD_INPUT_KEY[vk] ? gameInputShown() : null;
+		/* ゲームがゲーム画面にフォーカスを戻した後（キャラ作成の名前欄を残したまま性別選択を
+		   出した時など）は、入力欄が見えていてもゲームに送る。入力欄に Enter を送ると
+		   性別選択で決定が効かず先へ進めなかった */
+		if (input && document.activeElement === canvas) {
+			input = null;
+		}
 		if (input) {
 			return {vk: PAD_INPUT_KEY[vk], id: parseInt(input.dataset.w32Id, 10) || 0};
 		}
@@ -3301,8 +3461,7 @@
 			renderBalloons();
 			/* 吹き出しを選ぶ時はキーボードを出さない */
 			sheetInput.blur();
-			sheet.style.bottom = '';
-			sheet.style.height = '';
+			resetSheetPos();
 		} else {
 			renderAll(sheetLog);
 			sheetInput.focus();
@@ -3461,8 +3620,7 @@
 	}
 	function closeSheet() {
 		sheet.classList.remove('sbo-open');
-		sheet.style.bottom = '';
-		sheet.style.height = '';
+		resetSheetPos();
 		sheetInput.blur();
 		canvas.focus();
 		setTimeout(onResize, 300);
@@ -3474,19 +3632,38 @@
 		openSheet();
 	});
 	document.getElementById('sbo-sheet-close').addEventListener('click', closeSheet);
-	/* キーボードに隠れないようにシートを持ち上げる */
+	/* キーボードに隠れないようにシートを持ち上げる。
+	   見えている範囲（visualViewport）の下端にシートの下端を合わせる。
+	   Gboard など他社製キーボードは高さの通知（resize）が遅れたり来なかったりして、
+	   開いた直後にシートがキーボードの裏に隠れることがあるので、開いている間は短い間隔でも合わせ直す */
+	function resetSheetPos() {
+		sheet.style.top = '';
+		sheet.style.bottom = '';
+		sheet.style.height = '';
+	}
 	if (window.visualViewport) {
 		var vv = window.visualViewport;
+		var sheetPosKey = '';
 		var adjustSheet = function () {
 			/* 吹き出しタブはキーボードを出さないので、ふつうの高さのまま */
 			if (!sheet.classList.contains('sbo-open') || sheetTab === 'balloon') {
 				return;
 			}
-			sheet.style.height = Math.floor(vv.height * 0.85) + 'px';
-			sheet.style.bottom = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)) + 'px';
+			var h = Math.floor(vv.height * 0.85);
+			var top = Math.round(vv.offsetTop + vv.height - h);
+			var key = h + ',' + top;
+			if (key === sheetPosKey && sheet.style.top) {
+				return;
+			}
+			sheetPosKey = key;
+			sheet.style.bottom = 'auto';
+			sheet.style.top = top + 'px';
+			sheet.style.height = h + 'px';
 		};
 		vv.addEventListener('resize', adjustSheet);
 		vv.addEventListener('scroll', adjustSheet);
+		window.addEventListener('resize', adjustSheet);
+		setInterval(adjustSheet, 150);
 	}
 
 	/* マップにいる間だけチャット欄を使えるようにする。
@@ -3580,6 +3757,7 @@
 			}
 			lastState = state;
 			var battle = (state & 16) !== 0;
+			document.body.classList.toggle('sbo-battle', battle);
 			for (var i = 0; i < needButtons.length; i ++) {
 				var need = parseInt(needButtons[i].dataset.padNeed, 10);
 				needButtons[i].classList.toggle('sbo-pad-off', (state & need) === 0);
@@ -3734,7 +3912,7 @@
 			document.body.classList.remove('sbo-sys-show');
 		}
 		document.getElementById('sbo-screen').addEventListener('click', function (ev) {
-			if (!usePad || ev.target.closest('#sbo-shot-pad, #sbo-rec-pad, [data-sbo-ui]')) {
+			if (!usePad || window.matchMedia('(max-aspect-ratio: 129/100)').matches || ev.target.closest('#sbo-shot-pad, #sbo-rec-pad, [data-sbo-ui]')) {
 				return;
 			}
 			if (document.body.classList.contains('sbo-sys-show')) {
@@ -3866,14 +4044,14 @@
 			if (sec < 0) {
 				pcBtn.innerHTML = ICON_VIDEO + '録画';
 				pcBtn.title = 'ゲーム画面だけを音つきの動画で録画します（もう一度押すと止めて保存。最長3分）';
-				padBtn.innerHTML = ICON_VIDEO;
+				padBtn.innerHTML = ICON_VIDEO + '<span class="sbo-pad-txt">録画</span>';
 				return;
 			}
 			var t = Math.floor(sec / 60) + ':' + pad2(Math.floor(sec % 60));
 			timeEl.textContent = t;
 			pcBtn.innerHTML = ICON_STOP + '停止';
 			pcBtn.title = '録画を止めて保存します';
-			padBtn.innerHTML = ICON_STOP;
+			padBtn.innerHTML = ICON_STOP + '<span class="sbo-pad-txt">停止</span>';
 		}
 
 		function start() {
