@@ -82,6 +82,12 @@
 	.group { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
 	.group button { padding: 8px 4px; font-size: 12px; }
 	.group button small { display: block; font-weight: normal; color: var(--sub); font-size: 10px; margin-top: 2px; }
+	/* アイコン（線画。色は文字と同じ） */
+	.ic { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; display: block; margin: 0 auto 3px; }
+	/* 描くところの上の帯（戻す・進む・途中保存） */
+	#stagebar { position: absolute; left: 8px; top: 8px; display: flex; gap: 4px; z-index: 2; }
+	#stagebar button { padding: 6px 10px; background: rgba(0, 0, 0, 0.6); white-space: nowrap; }
+	#stagebar .ic { display: inline-block; vertical-align: -5px; margin: 0 4px 0 0; width: 18px; height: 18px; }
 	.group h5 { grid-column: 1 / -1; margin: 0; font-size: 11px; color: var(--sub); font-weight: normal; }
 	#cur { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--sub); }
 	#cur-sw { width: 28px; height: 28px; border-radius: 4px; border: 2px solid var(--fg); }
@@ -144,7 +150,7 @@
 	#toast {
 		position: absolute;
 		left: 50%;
-		top: 12px;
+		top: 52px;
 		transform: translateX(-50%);
 		background: rgba(0, 0, 0, 0.8);
 		padding: 6px 14px;
@@ -230,6 +236,8 @@
 		#top { gap: 4px; }
 		#top button { padding: 6px 7px; font-size: 13px; }
 		#top #submit { min-width: 0; }
+		#stagebar #undo .lbl, #stagebar #redo .lbl { display: none; }
+		#stagebar #undo .ic, #stagebar #redo .ic { margin: 0; }
 		#top .title small { display: none; }
 		#body { flex-direction: column; }
 		#stage { order: 1; }
@@ -241,7 +249,9 @@
 			gap: 6px;
 			padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
 		}
-		.group { display: flex; overflow-x: auto; gap: 4px; padding-bottom: 2px; }
+		.group { display: flex; overflow-x: auto; gap: 4px; padding-bottom: 2px; flex: none; }
+		.group button { font-size: 11px; }
+		.group .ic { width: 18px; height: 18px; margin-bottom: 1px; }
 		.group h5 { display: none; }
 		.group button { flex: none; min-width: 54px; min-height: 42px; padding: 6px 8px; }
 		#palette { max-height: 120px; overflow-y: auto; width: 100%; }
@@ -264,14 +274,29 @@
 </style>
 </head>
 <body>
+<!-- 道具ボタンのアイコン（24×24 の線画。ゲーム画面のボタンと同じ描き方） -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+	<symbol id="ic-pen" viewBox="0 0 24 24"><path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 0 1 3 3L8 19z"/><path d="M14.5 6.5l3 3"/></symbol>
+	<symbol id="ic-eraser" viewBox="0 0 24 24"><path d="M9 20h11"/><path d="M4.5 15.5l9-9a2 2 0 0 1 2.8 0l2.2 2.2a2 2 0 0 1 0 2.8L11 19H8z"/><path d="M9.5 10.5l5 5"/></symbol>
+	<symbol id="ic-picker" viewBox="0 0 24 24"><path d="M14 6l4 4"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L17 9l-2-2z"/><path d="M15 8l-9 9-2 3 3-2 9-9"/></symbol>
+	<symbol id="ic-fill" viewBox="0 0 24 24"><path d="M5 11l7-7 7 7-7 7z"/><path d="M5 11h14"/><path d="M20 15s-1.5 2-1.5 3a1.5 1.5 0 0 0 3 0c0-1-1.5-3-1.5-3z"/></symbol>
+	<symbol id="ic-select" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1" stroke-dasharray="3.2 2.6"/><path d="M13 13l6 6M13 13v4.5M13 13h4.5"/></symbol>
+	<symbol id="ic-hand" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></symbol>
+	<symbol id="ic-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="1.5"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></symbol>
+	<symbol id="ic-cut" viewBox="0 0 24 24"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M8.2 15L17 4M15.8 15L7 4"/></symbol>
+	<symbol id="ic-paste" viewBox="0 0 24 24"><path d="M9 4h6v3H9z"/><path d="M15 5.5h3a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1h3"/><path d="M9 12h6M9 16h4"/></symbol>
+	<symbol id="ic-del" viewBox="0 0 24 24"><path d="M4 7h16M10 7V4h4v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></symbol>
+	<symbol id="ic-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1"/><path d="M9.3 4v16M14.7 4v16M4 9.3h16M4 14.7h16"/></symbol>
+	<symbol id="ic-fit" viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/><rect x="9" y="9" width="6" height="6"/></symbol>
+	<symbol id="ic-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></symbol>
+	<symbol id="ic-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></symbol>
+	<symbol id="ic-redo" viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></symbol>
+</svg>
 <div id="app">
 	<div id="top">
 		<button type="button" id="back" title="お題のページへ戻る">←</button>
 		<div class="title" id="title">読み込み中...</div>
-		<button type="button" id="undo" title="元に戻す（Ctrl+Z）">戻す</button>
-		<button type="button" id="redo" title="やり直す（Ctrl+Shift+Z）">進む</button>
 		<button type="button" id="open-ref" class="phone-only">見本</button>
-		<button type="button" id="save-wip" title="作業中として保存（あとから続きを描けます）">途中保存</button>
 		<button type="button" id="submit" class="primary" title="案として出す">出す</button>
 	</div>
 	<div id="banner" hidden></div>
@@ -279,30 +304,31 @@
 		<aside id="left">
 			<div class="group" id="tools">
 				<h5>道具</h5>
-				<button type="button" data-tool="pen" title="ペン（B）">ペン<small>B</small></button>
-				<button type="button" data-tool="eraser" title="消しゴム（E）">消しゴム<small>E</small></button>
-				<button type="button" data-tool="picker" title="スポイト（I。右クリックでも）">スポイト<small>I</small></button>
-				<button type="button" data-tool="fill" title="塗りつぶし（F）">塗りつぶし<small>F</small></button>
-				<button type="button" data-tool="select" title="範囲を選んで動かす（M）">範囲選択<small>M</small></button>
-				<button type="button" data-tool="hand" title="移動（H。スペース+ドラッグでも）">移動<small>H</small></button>
+				<button type="button" data-tool="pen" title="ペン（B）"><svg class="ic" aria-hidden="true"><use href="#ic-pen"/></svg>ペン<small>B</small></button>
+				<button type="button" data-tool="eraser" title="消しゴム（E）"><svg class="ic" aria-hidden="true"><use href="#ic-eraser"/></svg>消しゴム<small>E</small></button>
+				<button type="button" data-tool="picker" title="スポイト（I。右クリックでも）"><svg class="ic" aria-hidden="true"><use href="#ic-picker"/></svg>スポイト<small>I</small></button>
+				<button type="button" data-tool="fill" title="塗りつぶし（F）"><svg class="ic" aria-hidden="true"><use href="#ic-fill"/></svg>塗りつぶし<small>F</small></button>
+				<button type="button" data-tool="select" title="範囲を選んで動かす（M）"><svg class="ic" aria-hidden="true"><use href="#ic-select"/></svg>範囲選択<small>M</small></button>
+				<button type="button" data-tool="hand" title="移動（H。スペース+ドラッグでも）"><svg class="ic" aria-hidden="true"><use href="#ic-hand"/></svg>移動<small>H</small></button>
 			</div>
 			<div class="group" id="edit">
 				<h5>選んだ範囲</h5>
-				<button type="button" id="copy" title="コピー（Ctrl+C）">コピー</button>
-				<button type="button" id="cut" title="切り取り（Ctrl+X）">切り取り</button>
-				<button type="button" id="paste" title="貼り付け（Ctrl+V）">貼り付け</button>
-				<button type="button" id="del" title="消す（Delete）">削除</button>
+				<button type="button" id="copy" title="コピー（Ctrl+C）"><svg class="ic" aria-hidden="true"><use href="#ic-copy"/></svg>コピー</button>
+				<button type="button" id="cut" title="切り取り（Ctrl+X）"><svg class="ic" aria-hidden="true"><use href="#ic-cut"/></svg>切り取り</button>
+				<button type="button" id="paste" title="貼り付け（Ctrl+V）"><svg class="ic" aria-hidden="true"><use href="#ic-paste"/></svg>貼り付け</button>
+				<button type="button" id="del" title="消す（Delete）"><svg class="ic" aria-hidden="true"><use href="#ic-del"/></svg>削除</button>
 			</div>
 			<div class="group" id="viewops">
 				<h5>表示</h5>
-				<button type="button" id="grid" title="グリッド（G）">グリッド</button>
-				<button type="button" id="fit" title="全体を表示">全体表示</button>
+				<button type="button" id="grid" title="グリッド（G）"><svg class="ic" aria-hidden="true"><use href="#ic-grid"/></svg>グリッド</button>
+				<button type="button" id="fit" title="全体を表示"><svg class="ic" aria-hidden="true"><use href="#ic-fit"/></svg>全体表示</button>
 			</div>
 			<div id="cur"><span id="cur-sw"></span><span id="cur-text"></span></div>
 			<div id="palette"></div>
 		</aside>
 		<div id="stage">
 			<canvas id="view"></canvas>
+			<div id="stagebar"><button type="button" id="undo" title="元に戻す（Ctrl+Z）"><svg class="ic" aria-hidden="true"><use href="#ic-undo"/></svg><span class="lbl">戻す</span></button><button type="button" id="redo" title="やり直す（Ctrl+Shift+Z）"><svg class="ic" aria-hidden="true"><use href="#ic-redo"/></svg><span class="lbl">進む</span></button><button type="button" id="save-wip" title="作業中として保存（あとから続きを描けます）"><svg class="ic" aria-hidden="true"><use href="#ic-save"/></svg><span class="lbl">途中保存</span></button></div>
 			<div id="info"></div>
 			<div id="zoombtns"><button type="button" id="zout" title="縮小（Cmd+右クリック・Cmd+ホイールでも）">−</button><select id="zoomSel" title="倍率"></select><button type="button" id="zin" title="拡大（Cmd+左クリック・Cmd+ホイールでも）">＋</button></div>
 			<div id="mini"></div>
