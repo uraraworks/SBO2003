@@ -973,17 +973,8 @@ function renderPropose() {
 	const edit = proposeEdit;
 	const p = el('section', 'panel');
 	if (edit) {
-		const eh = el('div', 'buttons');
-		eh.style.alignItems = 'center';
-		eh.appendChild(el('b', '', '自分の提案を直しています（' + dateText(edit.at) + ' に送ったもの）'));
-		const quit = el('button', 'sub small', '直すのをやめる');
-		quit.type = 'button';
-		quit.addEventListener('click', function () {
-			proposeEdit = null;
-			renderPropose();
-		});
-		eh.appendChild(quit);
-		p.appendChild(eh);
+		/* やめる時は下の「閉じる」で */
+		p.appendChild(el('p', 'now', '自分の提案を直しています（' + dateText(edit.at) + ' に送ったもの）'));
 	} else {
 		p.appendChild(el('p', 'now', '「こんなものを描いてみたい」「ここのパーツがほしい」など、お題の案を管理人に送れます。見えるのは管理人だけです。'));
 	}
