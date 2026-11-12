@@ -509,7 +509,7 @@ static void DrawMapLight(const char *pMapDark)
 	nLight = 0;
 	nCount = g_aCharInfo.GetSize ();
 	for (i = -1; i < nCount; i ++) {
-		int nLevel, xTmp, yTmp;
+		int xTmp, yTmp;
 
 		if (nLight >= MAPLIGHT_MAX) {
 			break;
@@ -531,11 +531,6 @@ static void DrawMapLight(const char *pMapDark)
 		if ((abs (xTmp) > DRAW_PARTS_X + 1) || (abs (yTmp) > DRAW_PARTS_Y + 1)) {
 			continue;
 		}
-		/* 1マス進むごとに暗くなる量(RenewMapDarkWork と同じ) */
-		nLevel = GetMapLightLevel ();
-		if (pChar->byLightLevel) {
-			nLevel = GetMapLightLevel () - pChar->byLightLevel;
-		}
 		/* 灯りの中心(歩き中のずれも入れて、なめらかについてくるように) */
 		anX[nLight] = (DRAW_PARTS_X + 1) * 32 + 16 - xTmp * 32 - anPosAddTblX[pChar->byDirection] * pChar->byDotMove;
 		anY[nLight] = (DRAW_PARTS_Y + 1) * 32 + 16 - yTmp * 32 - anPosAddTblY[pChar->byDirection] * pChar->byDotMove;
@@ -544,9 +539,8 @@ static void DrawMapLight(const char *pMapDark)
 		afPower[nLight] = 1.0f;
 		afWarm[nLight] = 0.0f;
 		apMask[nLight] = GetLightMask (pChar, 0, 0);
-		if (nLevel > 0) {
-			afR[nLight] = (100.0f / nLevel + 0.2f) * 32.0f * fFlicker;
-		}
+		/* 明かりの道具を持っていれば広くなる(GetCharLightTiles。0 は全部見える) */
+		afR[nLight] = GetCharLightTiles (pChar) * 32.0f * fFlicker;
 		/* キャラの灯り無しのマップでは、明かりの道具を持っていない自分は足元がうっすら見えるだけ */
 		if ((pChar == pMyChar) && (g_pMapInfo->byFlg & MAPFLG_NOCHARLIGHT) && (pChar->byLightLevel == 0)) {
 			afR[nLight] = 1.2f * 32.0f;

@@ -1890,11 +1890,37 @@ static BOOL IsInLightCircle(int dx, int dy, float fR)
 	return ((fX * fX + fY * fY) < fR * fR) ? TRUE : FALSE;
 }
 
+/* ========================================================================= */
+/* 関数名：GetCharLightTiles												 */
+/* 内容：キャラの丸い灯りの半径(マス。ゆらめき無し)							 */
+/*       0 なら暗くならない(灯りが強くて全部見える)							 */
+/*       灯りの半径は 100 / (マップの暗さ - 明かりの強さ) なので、暗いマップ	 */
+/*       ほど明かりの道具の差が小さかった(暗黒の道は暗さ 50 でランタン 11 だと	 */
+/*       2.2 マス → 2.8 マス)。明かりを持っている時は、持っていない時より		 */
+/*       最低でも LIGHTITEM_ADD_MIN マス広く照らす								 */
+/* ========================================================================= */
+#define LIGHTITEM_ADD_MIN	1.5f		/* 明かりの道具・特技で最低これだけ灯りを広げる(マス) */
+
+float GetCharLightTiles(PCHARINFO pChar)
+{
+	int nMap, nLevel;
+	float fR;
+
+	nMap = GetMapLightLevel ();
+	nLevel = nMap - pChar->byLightLevel;
+	if (nLevel <= 0) {
+		return 0.0f;			/* 暗くならない(もともと全部見える) */
+	}
+	fR = 100.0f / nLevel + 0.2f;
+	if (pChar->byLightLevel) {
+		fR = max (fR, 100.0f / nMap + 0.2f + LIGHTITEM_ADD_MIN);
+	}
+	return fR;
+}
+
 /* キャラの丸い灯りの半径(マス。DrawMapLight と同じ計算。0=照らさない) */
 static float GetCharLightRadius(PCHARINFO pChar)
 {
-	int nLevel;
-
 	if (pChar == g_aCharInfo[g_nMyCharID]) {
 		if ((g_pMapInfo->byFlg & MAPFLG_NOCHARLIGHT) && (pChar->byLightLevel == 0)) {
 			return 1.2f;		/* 足元がうっすら見えるだけ(ゆらめかない) */
@@ -1902,14 +1928,7 @@ static float GetCharLightRadius(PCHARINFO pChar)
 	} else if (pChar->byLightLevel == 0) {
 		return 0.0f;			/* ほかの人は灯りを持っている時だけ */
 	}
-	nLevel = GetMapLightLevel ();
-	if (pChar->byLightLevel) {
-		nLevel = GetMapLightLevel () - pChar->byLightLevel;
-	}
-	if (nLevel <= 0) {
-		return 0.0f;			/* 暗くならない(もともと全部見える) */
-	}
-	return (100.0f / nLevel + 0.2f) * LIGHTCIRCLE_FLICKER_CHAR;
+	return GetCharLightTiles (pChar) * LIGHTCIRCLE_FLICKER_CHAR;
 }
 
 /* ========================================================================= */
