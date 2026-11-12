@@ -261,6 +261,17 @@
 #define IDC_Q_NPCSTTMP                    1220
 #define IDC_Q_NPCCLEAR                    1221
 #define IDC_Q_CLICK                       1222
+#define IDC_Q_GRP_BASE                    1223
+#define IDC_Q_GRP_SEARCH                  1224
+#define IDC_Q_GRP_CHALLENGE               1225
+#define IDC_Q_GRP_GOAL                    1226
+#define IDC_Q_GRP_NPC                     1227
+#define IDC_Q_GRP_NPCCOMMON               1228
+#define IDC_Q_GRP_NPCDEST                 1229
+#define IDC_Q_GRP_NPCITEM                 1230
+#define IDC_Q_GRP_NPCENEMY                1231
+#define IDC_Q_NPCKINDHELP                 1232
+#define IDC_Q_SCROLL                      1233
 #define IDM_MAP_PARTS                   40001
 #define IDM_MAP_INFO                    40002
 #define IDM_MAP_ADD                     40003
@@ -299,7 +310,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        235
 #define _APS_NEXT_COMMAND_VALUE         40032
-#define _APS_NEXT_CONTROL_VALUE         1223
+#define _APS_NEXT_CONTROL_VALUE         1234
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
