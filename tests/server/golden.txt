@@ -1,4 +1,12 @@
 getcharno mutations=ok
+S itemmsg 0 @2
+S itemmsg 1 same
+S itemmsg 2 @2
+S itemmsg 3 same
+S itemmsg 4 same
+S itemmsg 5 @2
+S itemmsg 6 @2
+S itemmsg full abc
 == A. SendTo ==
 send#0 size=0 id=100000 pri=0 total=8 sha=262701071aee8da1
 send#1 size=0 id=100000 pri=1 total=16 sha=b5355f837af2651c
@@ -1101,6 +1109,7 @@ quest copy grp=2 vis owner=1 member=0 other=0 admin=1 block=-1
 quest copy grp=1 vis owner=0 member=1 other=0 admin=1 block=-1
 quest copy grp=2 vis owner=0 member=1 other=0 admin=1 block=-1
 quest admin portal moved=0
+quest admin own portal moved=1
 quest chest full item=0 leave=0 flag1=0 step=0
 quest chest item=1 flag1=1 step=1 person=1 chest=0
 quest member item=0 step=0

@@ -31,6 +31,7 @@
 #include "SboSvrSubGameProcSugoroku.h"
 #include "SboSvrMagicProc.h"
 #include "SboSvrCharInfoTimerProc.h"
+#include "SboSvrItemProc.h"
 #include "common/crc.h"
 #include <emscripten.h>
 #include <stdio.h>
@@ -2364,6 +2365,14 @@ static void TestQuest(const std::vector<int> &aLogin)
 			printf("quest admin portal moved=%d\n", (int)(pOther->dwX != dwX0 || pOther->dwY != dwY0));
 			pOther->byAdminLV = ADMINLV_USER;
 			QuestMovePC(pOther, nMap, aCell[7].first, aCell[7].second);
+
+			/* 依頼を受けた管理者：同じマスに重なったほかの人の光に話しても、自分の分の光で移る */
+			pMember->byAdminLV = ADMINLV_ADMINISTRATOR;
+			QuestMovePC(pMember, nMap, (int)pPortalA->dwX, (int)pPortalA->dwY + 1);
+			QuestSendTalk(pMember, pPortalA->dwTblID);
+			printf("quest admin own portal moved=%d\n", (int)(pMember->dwX == (DWORD)aCell[3].first && pMember->dwY == (DWORD)aCell[3].second));
+			pMember->byAdminLV = ADMINLV_USER;
+			QuestMovePC(pMember, nMap, aCell[6].first, aCell[6].second);
 		}
 	}
 
@@ -3655,6 +3664,30 @@ static void TestCharNo(void)
 	printf("getcharno mutations=ok\n");
 }
 
+/* S: アイテムを使った時のメッセージに入力待ち（@2）を足すか（無いと出てすぐ消える） */
+static void TestItemMsgWait(void)
+{
+	static const char *aMsg[] = {
+		"ギルドで探していた指輪。",		/* 無い → 足す */
+		"何も起こりませんでした。@2",	/* ある → そのまま */
+		"一行目@0二行目",				/* 待ちの後に文字 → 足す */
+		"読んだ。@0",					/* 点滅の待ちで終わる → そのまま */
+		"音@2@310",						/* 待ちの後は効果音だけ → そのまま */
+		"改行だけ@1",					/* 改行は待ちではない → 足す */
+		"@412345",						/* アイテム取得の印だけ → 足す */
+	};
+	for (size_t n = 0; n < sizeof(aMsg) / sizeof(aMsg[0]); n ++) {
+		char szMsg[64];
+		strcpy(szMsg, aMsg[n]);
+		ItemMsgAddWait(szMsg, sizeof(szMsg));
+		printf("S itemmsg %d %s\n", (int)n, (strcmp(szMsg, aMsg[n]) == 0) ? "same" : szMsg + strlen(aMsg[n]));
+	}
+	/* 入りきらない時は足さない */
+	char szFull[4] = "abc";
+	ItemMsgAddWait(szFull, sizeof(szFull));
+	printf("S itemmsg full %s\n", szFull);
+}
+
 int main(int argc, char **argv)
 {
 	setvbuf(stdout, NULL, _IOLBF, 0);
@@ -3665,6 +3698,7 @@ int main(int argc, char **argv)
 	}
 	TestMapNo();
 	TestCharNo();
+	TestItemMsgWait();
 	TestZlib();
 	TestZlibPackets();
 	TestSend();
