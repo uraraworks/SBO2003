@@ -10,6 +10,12 @@
  * ポータルで移る・宝箱でアイテムをもらう、などができる。ギルドに戻ると報酬。
  * 見えるNPC は保存せず、約 1 秒ごとの同期（QuestSyncProc）で作る・消す。
  * 見えるNPC の情報は IsCharVisibleTo を通った相手にだけ送る。
+ *
+ * 討伐チャレンジ（QUESTINFO の byChallenge）：入口の見えるNPC に乗ると、近くで同じ依頼を
+ * 受けた仲間と一緒に行き先へ移り、全員が貸し出しセット（ステータステンプレート）の状態になる。
+ * 本物の状態はメモリの控え（s_mapLoan）に置き、保存する時は本物を書く（SaveCharInfo が
+ * QuestChallengeSaveSwap を前後で呼ぶ）。倒れる・パーティを抜ける・切断・行き先から出ると、
+ * その人だけ中断して元に戻る。出ている敵を全部倒すと全員元に戻って最後の段へ。
  */
 #include "include.h"
 #include "Glbldata.h"
@@ -17,6 +23,7 @@
 #include "SboSvrRecvCmd.h"
 #include "SboSvrBattleProc.h"
 #include "SboSvrEventProc.h"
+#include "SboSvrCharInfoTimerProc.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -40,6 +47,57 @@ static DWORD s_dwLastSync = 0;									/* 最後に同期した時刻 */
 
 #define QUEST_SYNC_INTERVAL		1000								/* 同期の間隔（ミリ秒） */
 #define QUEST_GOLD_MAX			999999								/* お金の上限 */
+#define QUEST_FLG_CLEARED		16									/* 討伐チャレンジに成功した印の旗（ギルドで渡せる条件） */
+#define CHALLENGE_NEAR			8									/* 一緒に受ける・入る仲間の距離（マス） */
+#define CHALLENGE_ARRIVE_WAIT	10000								/* 入ってから行き先に着くまで待つ時間（ミリ秒） */
+#define CHALLENGE_CLEAR_WAIT	3000								/* 全部倒してから元の場所へ戻すまでの間（ミリ秒。何が起きたか分かるように） */
+
+/* 討伐チャレンジ中の人の、本物の状態の控え */
+typedef struct _LOANBAK {
+	DWORD		dwSession;											/* 挑戦の番号 */
+	BOOL		bArrived;											/* 行き先のマップに着いたか */
+	BOOL		bWarped;											/* 着いた後にマップの中のワープで動いた（部屋を出た） */
+	BYTE		byLevel, byPW, byDEX, byST, byIT, byLK;
+	BYTE		abyMagic[MAX_USEMAGIC];
+	WORD		waItem[MAX_MYITEM];
+	WORD		waEqu[MAX_EQUTYPE];
+	WORD		wMaxHP, wHP, wMaxMana, wMana;
+	DWORD		dwGold, dwExp;
+	char		chAttrFire, chAttrWater, chAttrWind, chAttrEarth, chAttrLight, chAttrDark;
+	DWORD		dwMapID, dwX, dwY;									/* 入る前にいた場所（戻る場所・保存する場所） */
+	BYTE		byDirection;
+} LOANBAK;
+
+/* 1 回の挑戦（一緒に入った組） */
+typedef struct _CHALLENGE {
+	WORD		wQuestID;											/* 依頼番号 */
+	DWORD		dwMapNo;											/* 戦う場所のマップ番号 */
+	DWORD		dwPartyID;											/* 入った時のパーティ（変わった人は中断） */
+	DWORD		dwStart;											/* 始めた時刻 */
+	BOOL		bCleared;											/* 敵を全部倒した */
+	DWORD		dwClear;											/* 全部倒したと知らせた時刻（0=まだ） */
+	DWORD		dwClearTime;										/* かかった時間（ミリ秒） */
+	std::vector<DWORD>	aMember;									/* 挑戦中の人（テーブルID） */
+	std::vector<DWORD>	aEnemy;										/* 残っている敵（テーブルID） */
+} CHALLENGE;
+
+/* 戻す場所（切断した人は、マップの表から外れてから動かす） */
+typedef struct _LOANPOS {
+	DWORD		dwMapID, dwX, dwY;
+	BYTE		byDirection;
+} LOANPOS;
+
+static std::map<DWORD, LOANBAK> s_mapLoan;						/* 挑戦中の人のテーブルID → 本物の控え */
+static std::map<DWORD, CHALLENGE> s_mapChallenge;				/* 挑戦の番号 → 挑戦 */
+static std::map<DWORD, DWORD> s_mapEnemy;						/* 敵のテーブルID → 挑戦の番号 */
+static std::map<DWORD, LOANPOS> s_mapPendingPos;				/* 切断した人のテーブルID → 戻す場所 */
+static DWORD s_dwChallengeSeq = 0;								/* 挑戦の番号の採番 */
+
+static void ChallengeProc(void);
+static void ChallengeOnDecPlayer(PCHARINFO pChar);
+static void ChallengeClearMember(PCHARINFO p, struct _CHALLENGE *pCh, int nReason);
+static void ChallengeStart(PCHARINFO pChar, PQUESTINFO pQuest, PQUESTNPCINFO pDef);
+static void GetChallengeMembers(PCHARINFO pChar, WORD wQuestID, std::vector<PCHARINFO> &aOut);
 
 /* ========================================================================= */
 /* 小さな道具																 */
@@ -329,7 +387,7 @@ static BOOL IsNpcWanted(PCHARINFO pOwner, PQUESTINFO pQuest, int nIdx)
 {
 	PQUESTNPCINFO pNpc = &pQuest->aNpc[nIdx];
 
-	if ((pNpc->byKind == QUESTNPCKIND_NONE) || (pNpc->byKind >= QUESTNPCKIND_MAX)) {
+	if ((pNpc->byKind == QUESTNPCKIND_NONE) || (pNpc->byKind >= QUESTNPCKIND_MAX) || (pNpc->byKind == QUESTNPCKIND_ENEMY)) {
 		return FALSE;
 	}
 	if (GetMapNo (pNpc->dwMapID) < 0) {
@@ -498,6 +556,8 @@ void QuestSyncProc(void)
 		return;
 	}
 	s_dwLastSync = dwNow;
+	/* 討伐チャレンジ（倒れた・抜けた人を戻す、全部倒したら成功） */
+	ChallengeProc ();
 	/* 依頼を受けている人も、出ている見えるNPC も無ければ何もしない */
 	if (s_mapNpc.empty ()) {
 		int i, nCount = g_aCharInfo.GetSize ();
@@ -525,6 +585,8 @@ void QuestOnDecPlayer(PCHARINFO pChar)
 		s_mapNpc.erase (pChar->dwTblID);
 		return;
 	}
+	/* 討伐チャレンジの敵が倒された・挑戦中の人が切断した */
+	ChallengeOnDecPlayer (pChar);
 	for (it = s_mapNpc.begin (); it != s_mapNpc.end (); it ++) {
 		if (it->second.dwOwner == pChar->dwTblID) {
 			aRemove.push_back (it->first);
@@ -540,6 +602,17 @@ void QuestOnLogin(PCHARINFO pChar)
 {
 	if (pChar->byNpcType != NPCTYPE_INIT) {
 		return;
+	}
+	/* 討伐チャレンジ中に切断した人は、入る前の場所へ（まだマップの表に入る前なので直接書き換える） */
+	{
+		std::map<DWORD, LOANPOS>::iterator itPos = s_mapPendingPos.find (pChar->dwTblID);
+		if (itPos != s_mapPendingPos.end ()) {
+			pChar->dwMapID = itPos->second.dwMapID;
+			pChar->dwX = pChar->dwXBack = itPos->second.dwX;
+			pChar->dwY = pChar->dwYBack = itPos->second.dwY;
+			pChar->byDirection = itPos->second.byDirection;
+			s_mapPendingPos.erase (itPos);
+		}
 	}
 	/* なくなった依頼や、段が範囲外の保存データは受けていないことにする */
 	if (pChar->wQuestID != 0) {
@@ -765,6 +838,12 @@ void QuestNpcTalk(PCHARINFO pChar, PCHARINFO pNpc)
 	}
 
 	switch (pDef->byKind) {
+	case QUESTNPCKIND_GATE:
+		/* 討伐チャレンジの入口：近くの仲間と一緒に入る（段・旗は入った全員が進む） */
+		ChallengeStart (pChar, pQuest, pDef);
+		QuestSyncAll ();
+		return;
+
 	case QUESTNPCKIND_PORTAL:
 		bChg = AdvanceQuest (pChar, pDef);
 		if (bChg) {
@@ -830,7 +909,8 @@ void QuestOnStep(PCHARINFO pChar)
 		}
 		PQUESTINFO pQuest = FindQuest (it->second.wQuestID);
 		if ((pQuest == NULL) || (it->second.nIdx >= MAX_QUESTNPC) ||
-			(pQuest->aNpc[it->second.nIdx].byKind != QUESTNPCKIND_PORTAL)) {
+			((pQuest->aNpc[it->second.nIdx].byKind != QUESTNPCKIND_PORTAL) &&
+			 (pQuest->aNpc[it->second.nIdx].byKind != QUESTNPCKIND_GATE))) {
 			continue;
 		}
 		if (!IsCharVisibleTo (pTmp, pChar)) {
@@ -967,6 +1047,8 @@ static void MakeRewardText(PQUESTINFO pQuest, char *pszOut, size_t nSize)
 	}
 	if (szTmp[0] == 0) {
 		strcpy (szTmp, "なし");
+	} else if (pQuest->byChallenge != QUESTCHALLENGE_NONE) {
+		snprintf (szTmp + strlen (szTmp), sizeof (szTmp) - strlen (szTmp), "（初回のみ）");
 	}
 	CopyStr (pszOut, nSize, szTmp);
 }
@@ -1015,6 +1097,7 @@ void QuestGuildTalk(PCHARINFO pChar, PCHARINFO pNpc)
 		Para.wQuestID = pQuest->wID;
 		if (pChar->wQuestID == pQuest->wID) {
 			Para.byMark = (IsLastStep (pChar, pQuest) &&
+				((pQuest->byChallenge == QUESTCHALLENGE_NONE) || QuestFlagCheck (pChar, QUEST_FLG_CLEARED)) &&
 				((pQuest->wQuestItem == 0) || (CountItem (pChar, pQuest->wQuestItem, NULL, NULL) > 0))) ? QUESTMARK_READY : QUESTMARK_MINE;
 		} else if ((pChar->wQuestID != 0) || (wParty == 0xFFFF) || ((wParty != 0) && (wParty != pQuest->wID))) {
 			Para.byMark = QUESTMARK_LOCKED;
@@ -1087,6 +1170,46 @@ static void DoAccept(PCHARINFO pChar, PCHARINFO pNpc, PQUESTINFO pQuest)
 		SendResult (pChar, QUESTRESULT_NG, 0, "仲間が別の依頼を受けているので、同じ依頼しか受けられません。");
 		return;
 	}
+	/* 討伐チャレンジは、近くの仲間と一緒に受ける（後から入った仲間は参加できない） */
+	if (pQuest->byChallenge != QUESTCHALLENGE_NONE) {
+		std::vector<PCHARINFO> aMember;
+		int nNeed = max ((int)pQuest->byMemberMin, 1);
+		char szTmp[256];
+		size_t i;
+
+		if (wParty == pQuest->wID) {
+			SendResult (pChar, QUESTRESULT_NG, 0, "討伐チャレンジは、仲間と一緒に受けた時だけ参加できます。");
+			return;
+		}
+		if ((nNeed >= 2) && (pChar->dwPartyID == 0)) {
+			snprintf (szTmp, sizeof (szTmp), "この依頼は %d 人以上でパーティを組んでから受けてください。", nNeed);
+			SendResult (pChar, QUESTRESULT_NG, 0, szTmp);
+			return;
+		}
+		GetChallengeMembers (pChar, 0, aMember);
+		if ((int)aMember.size () < nNeed) {
+			snprintf (szTmp, sizeof (szTmp), "近くにいる仲間が足りません（%d 人必要です）。", nNeed);
+			SendResult (pChar, QUESTRESULT_NG, 0, szTmp);
+			return;
+		}
+		for (i = 0; i < aMember.size (); i ++) {
+			PCHARINFO pTmp = aMember[i];
+			pTmp->wQuestID = pQuest->wID;
+			pTmp->byQuestStep = 0;
+			pTmp->wQuestFlg = 0;
+			ZeroMemory (pTmp->awQuestCount, sizeof (pTmp->awQuestCount));
+			pTmp->dwQuestAcceptTime = (DWORD)time (NULL);
+			if (pTmp == pChar) {
+				SendResult (pTmp, QUESTRESULT_ACCEPT, pQuest->wID, pQuest->szMsgAccept[0] ? pQuest->szMsgAccept : "依頼を受けました。");
+			} else {
+				snprintf (szTmp, sizeof (szTmp), "%sさんと一緒に、依頼「%s」を受けました。", pChar->szName, pQuest->szName);
+				SendCmdSYSMSG (pTmp->pID, szTmp, SPEECHCMD_BATTLE1);
+			}
+		}
+		QuestSendState (pChar);
+		QuestSyncAll ();
+		return;
+	}
 	pChar->wQuestID = pQuest->wID;
 	pChar->byQuestStep = 0;
 	pChar->wQuestFlg = 0;
@@ -1133,7 +1256,8 @@ static void DoHandIn(PCHARINFO pChar, PCHARINFO pNpc)
 		SendResult (pChar, QUESTRESULT_NG, 0, "ここでは渡せません。依頼を受けたギルドへ行ってください。");
 		return;
 	}
-	if (!IsLastStep (pChar, pQuest)) {
+	if (!IsLastStep (pChar, pQuest) ||
+			((pQuest->byChallenge != QUESTCHALLENGE_NONE) && !QuestFlagCheck (pChar, QUEST_FLG_CLEARED))) {
 		SendResult (pChar, QUESTRESULT_NG, pQuest->wID, "まだ終わっていないようです。");
 		return;
 	}
@@ -1152,10 +1276,13 @@ static void DoHandIn(PCHARINFO pChar, PCHARINFO pNpc)
 		LeaveBak = *pLeave;
 	}
 
+	/* 討伐チャレンジの報酬は初めてクリアした時だけ（2 回目からは記録だけ） */
+	BOOL bReward = !((pQuest->byChallenge != QUESTCHALLENGE_NONE) && QuestIsDone (pChar, pQuest->wID));
+
 	if (pQuest->wQuestItem) {
 		TakeItem (pChar, pQuest->wQuestItem);
 	}
-	if (pQuest->wRewardItem && !GiveItem (pChar, pQuest->wRewardItem, &bToLeave)) {
+	if (bReward && pQuest->wRewardItem && !GiveItem (pChar, pQuest->wRewardItem, &bToLeave)) {
 		memcpy (pChar->waItem, awItemBak, sizeof (awItemBak));
 		memcpy (pChar->waEqu, awEquBak, sizeof (awEquBak));
 		if ((dwLeaveIDBak == 0) && (pChar->dwLeaveID != 0) && (pChar->dwLeaveID < (DWORD)g_aLeaveInfo.GetSize ())) {
@@ -1168,14 +1295,19 @@ static void DoHandIn(PCHARINFO pChar, PCHARINFO pNpc)
 		return;
 	}
 
-	pChar->dwGold = min (pChar->dwGold + pQuest->dwGold, (DWORD)QUEST_GOLD_MAX);
-	if (pQuest->byOnce && (pQuest->wID < MAX_QUEST)) {
+	if (bReward) {
+		pChar->dwGold = min (pChar->dwGold + pQuest->dwGold, (DWORD)QUEST_GOLD_MAX);
+	}
+	if ((pQuest->byOnce || (pQuest->byChallenge != QUESTCHALLENGE_NONE)) && (pQuest->wID < MAX_QUEST)) {
 		pChar->abyQuestDone[pQuest->wID / 8] |= (BYTE)(1 << (pQuest->wID % 8));
 	}
 	WORD wID = pQuest->wID;
 	char szMsgDone[MAX_QUESTMSG];
 	CopyStr (szMsgDone, sizeof (szMsgDone), pQuest->szMsgDone[0] ? pQuest->szMsgDone : "ありがとう！ 依頼は完了です。");
-	DWORD dwExp = pQuest->dwExp;
+	DWORD dwExp = bReward ? pQuest->dwExp : 0;
+	if (!bReward) {
+		snprintf (szMsgDone + strlen (szMsgDone), sizeof (szMsgDone) - strlen (szMsgDone), "（2 回目からは報酬はありません）");
+	}
 	ClearQuest (pChar);
 
 	SendBagState (pChar);
@@ -1198,6 +1330,10 @@ void QuestRecv(PCHARINFO pChar, PCMDPARA_QUEST pPara)
 	PQUESTINFO pQuest;
 
 	if ((pChar->wHP == 0) || (pChar->byCharState == CHARSTATE_DEAD)) {
+		return;
+	}
+	if (QuestInChallenge (pChar) && (pPara->byType != QUESTCMD_LISTREQ)) {
+		SendResult (pChar, QUESTRESULT_NG, 0, "討伐チャレンジ中はできません。");
 		return;
 	}
 	switch (pPara->byType) {
@@ -1234,6 +1370,642 @@ void QuestRecv(PCHARINFO pChar, PCMDPARA_QUEST pPara)
 		}
 		DoHandIn (pChar, pNpc);
 		break;
+	}
+}
+
+/* ========================================================================= */
+/* 討伐チャレンジ															 */
+/* ========================================================================= */
+
+/* 挑戦中か（貸し出しの状態になっているか） */
+BOOL QuestInChallenge(PCHARINFO pChar)
+{
+	return (pChar != NULL) && (s_mapLoan.find (pChar->dwTblID) != s_mapLoan.end ());
+}
+
+/* 討伐チャレンジの敵か */
+BOOL QuestIsChallengeEnemy(PCHARINFO pChar)
+{
+	return (pChar != NULL) && (s_mapEnemy.find (pChar->dwTblID) != s_mapEnemy.end ());
+}
+
+/* 本人とパーティの、近くにいて一緒に受ける・入る人（本人を先頭に）
+   wQuestID が 0 なら「依頼を受けていない人」、そうでなければ「その依頼を受けている人」 */
+static void GetChallengeMembers(PCHARINFO pChar, WORD wQuestID, std::vector<PCHARINFO> &aOut)
+{
+	std::vector<PCHARINFO> aParty;
+	size_t i;
+
+	aOut.clear ();
+	GetPartyMembers (pChar, aParty);
+	for (i = 0; i < aParty.size (); i ++) {
+		PCHARINFO pTmp = aParty[i];
+		if (pTmp != pChar) {
+			if (pTmp->dwMapID != pChar->dwMapID) {
+				continue;
+			}
+			if ((abs ((int)pTmp->dwX - (int)pChar->dwX) > CHALLENGE_NEAR) || (abs ((int)pTmp->dwY - (int)pChar->dwY) > CHALLENGE_NEAR)) {
+				continue;
+			}
+		}
+		if (pTmp->wQuestID != wQuestID) {
+			continue;
+		}
+		if ((pTmp->wHP == 0) || (pTmp->byCharState == CHARSTATE_DEAD) || QuestInChallenge (pTmp)) {
+			continue;
+		}
+		aOut.push_back (pTmp);
+	}
+}
+
+/* 雇っている傭兵がいるか */
+static BOOL HasMercenary(PCHARINFO pChar)
+{
+	int i, nCount = g_aCharInfo.GetSize ();
+
+	for (i = 0; i < nCount; i ++) {
+		PCHARINFO pTmp = g_aCharInfo[i];
+		if (IsMercenary (pTmp) && (GetMercenaryOwner (pTmp) == pChar)) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* 控えとキャラの間で状態を写す（bToChar=TRUE で控え→キャラ）。位置は写さない */
+static void LoanXfer(PCHARINFO p, LOANBAK *b, BOOL bToChar)
+{
+#define LOANX(f)	if (bToChar) { p->f = b->f; } else { b->f = p->f; }
+#define LOANA(f)	if (bToChar) { memcpy (p->f, b->f, sizeof (p->f)); } else { memcpy (b->f, p->f, sizeof (p->f)); }
+	LOANX (byLevel);	LOANX (byPW);	LOANX (byDEX);	LOANX (byST);	LOANX (byIT);	LOANX (byLK);
+	LOANA (abyMagic);	LOANA (waItem);	LOANA (waEqu);
+	LOANX (wMaxHP);	LOANX (wHP);	LOANX (wMaxMana);	LOANX (wMana);
+	LOANX (dwGold);	LOANX (dwExp);
+	LOANX (chAttrFire);	LOANX (chAttrWater);	LOANX (chAttrWind);
+	LOANX (chAttrEarth);	LOANX (chAttrLight);	LOANX (chAttrDark);
+#undef LOANX
+#undef LOANA
+}
+
+/* 控えとキャラの状態・位置を入れ替える（保存の前後で使う） */
+static void LoanSwap(PCHARINFO p, LOANBAK *b)
+{
+	LOANBAK Tmp = *b;
+	DWORD dwMapID = p->dwMapID, dwX = p->dwX, dwY = p->dwY;
+	BYTE byDirection = p->byDirection;
+
+	LoanXfer (p, b, FALSE);			/* キャラ → 控え */
+	LoanXfer (p, &Tmp, TRUE);		/* 元の控え → キャラ */
+	p->dwMapID = Tmp.dwMapID;	p->dwX = Tmp.dwX;	p->dwY = Tmp.dwY;	p->byDirection = Tmp.byDirection;
+	b->dwMapID = dwMapID;	b->dwX = dwX;	b->dwY = dwY;	b->byDirection = byDirection;
+}
+
+/* 貸し出しセット（ステータステンプレート）にする。持ち物の装備品は種類ごとに最初の 1 つを装備 */
+static void LoanApply(PCHARINFO p, PSTATUSTEMPLATEINFO t)
+{
+	static const BYTE abyEquTypeTbl[MAX_EQUTYPE] = {
+		ITEMTYPE_WEAPON, ITEMTYPE_ARMOR, ITEMTYPE_SHILD, ITEMTYPE_HELMET, ITEMTYPE_EQU_HAND,
+		ITEMTYPE_EQU_LEG, ITEMTYPE_EQU_ACC1, ITEMTYPE_EQU_ACC2, ITEMTYPE_EQU_ACC3, 0
+	};
+	int i, j;
+
+	p->byLevel	= max (t->byLevel, (BYTE)1);
+	p->byPW		= t->byPW;
+	p->byDEX	= t->byDEX;
+	p->byST		= t->byST;
+	p->byIT		= t->byIT;
+	p->byLK		= t->byLK;
+	p->wMaxHP	= max (t->wMaxHP, (WORD)1);
+	p->wHP		= p->wMaxHP;
+	p->wMaxMana	= t->wMaxMana;
+	p->wMana	= t->wMaxMana;
+	p->dwGold	= t->dwGold;
+	p->dwExp	= 0;
+	p->chAttrFire	= t->chAttrFire;
+	p->chAttrWater	= t->chAttrWater;
+	p->chAttrWind	= t->chAttrWind;
+	p->chAttrEarth	= t->chAttrEarth;
+	p->chAttrLight	= t->chAttrLight;
+	p->chAttrDark	= t->chAttrDark;
+	memcpy (p->abyMagic, t->abyMagic, sizeof (p->abyMagic));
+	ZeroMemory (p->waItem, sizeof (p->waItem));
+	for (i = 0, j = 0; i < MAX_MYITEM; i ++) {
+		/* 無いアイテムの番号は持たせない */
+		if ((t->waItem[i] == 0) || (t->waItem[i] >= (WORD)g_aItemInfo.GetSize ())) {
+			continue;
+		}
+		p->waItem[j ++] = t->waItem[i];
+	}
+	for (i = 0; i < MAX_EQUTYPE; i ++) {
+		p->waEqu[i] = 0xFFFF;
+		if (abyEquTypeTbl[i] == 0) {
+			continue;
+		}
+		for (j = 0; j < MAX_MYITEM; j ++) {
+			if (p->waItem[j] && (g_aItemInfo[p->waItem[j]]->byType == abyEquTypeTbl[i])) {
+				p->waEqu[i] = (WORD)j;
+				break;
+			}
+		}
+	}
+}
+
+/* 状態を変えた後：タイマーの効果（加速・毒など）を消し、攻撃力・守備力を計算し直して知らせる */
+static void LoanSendAll(PCHARINFO p)
+{
+	DeleteAllTimerEvent (p);
+	p->chTimerPW = 0;
+	p->chTimerST = 0;
+	p->chTimerDEX = 0;
+	p->dwLastBattle = 0;
+	p->dwTargetTblID = -1;
+	RenewATDF (p->dwTblID);
+	if (p->pID != 0) {
+		SendCmdCHARITEM (p->pID, p->dwTblID);
+		SendCmdCHARSTATUS (p->pID, p->dwTblID);
+		SendCmdCHARSTATUSHP (URARASOCK_SENDALL, p->dwTblID);
+	}
+}
+
+/* 経過時間の文（m 分 ss 秒） */
+static void MakeTimeText(DWORD dwMs, char *pszOut, size_t nSize)
+{
+	DWORD dwSec = dwMs / 1000;
+	snprintf (pszOut, nSize, "%u分%02u秒", (unsigned)(dwSec / 60), (unsigned)(dwSec % 60));
+}
+
+/* 中断・成功の理由 */
+enum {
+	CHALLENGELEAVE_CLEAR = 0,		/* 全部倒した */
+	CHALLENGELEAVE_DEAD,			/* 倒れた */
+	CHALLENGELEAVE_PARTY,			/* パーティを抜けた */
+	CHALLENGELEAVE_OUT,				/* 戦う場所から出た（町転送など） */
+	CHALLENGELEAVE_QUEST,			/* 依頼が無くなった */
+	CHALLENGELEAVE_LOGOUT,			/* 切断した */
+};
+
+/* 挑戦から外して元の状態に戻す */
+static void ChallengeLeave(PCHARINFO p, int nReason)
+{
+	std::map<DWORD, LOANBAK>::iterator it = s_mapLoan.find (p->dwTblID);
+	LOANBAK Bak;
+	BOOL bMove;
+
+	if (it == s_mapLoan.end ()) {
+		return;
+	}
+	Bak = it->second;
+	s_mapLoan.erase (it);
+	{
+		std::map<DWORD, CHALLENGE>::iterator itC = s_mapChallenge.find (Bak.dwSession);
+		if (itC != s_mapChallenge.end ()) {
+			std::vector<DWORD> &aM = itC->second.aMember;
+			aM.erase (std::remove (aM.begin (), aM.end (), p->dwTblID), aM.end ());
+		}
+	}
+
+	LoanXfer (p, &Bak, TRUE);
+	if (p->byCharState == CHARSTATE_DEAD) {
+		p->byCharState = CHARSTATE_MOVE;
+	}
+	/* 入る前の HP が 0 のことはないはずだが、念のため */
+	if (p->wHP == 0) {
+		p->wHP = max (p->wMaxHP, (WORD)1);
+	}
+
+	if (nReason == CHALLENGELEAVE_LOGOUT) {
+		/* 切断：マップの表から外れた後に、入る前の場所へ（ログインか保存の時に動かす） */
+		LOANPOS Pos;
+		Pos.dwMapID = Bak.dwMapID;
+		Pos.dwX = Bak.dwX;
+		Pos.dwY = Bak.dwY;
+		Pos.byDirection = Bak.byDirection;
+		s_mapPendingPos[p->dwTblID] = Pos;
+		LoanSendAll (p);
+		return;
+	}
+
+	LoanSendAll (p);
+	switch (nReason) {
+	case CHALLENGELEAVE_DEAD:
+		SendCmdSYSMSG (p->pID, "力尽きてしまった…。挑戦は中断して、元の姿に戻りました。依頼は受けたままなので、また挑めます。", SPEECHCMD_BATTLE1);
+		break;
+	case CHALLENGELEAVE_PARTY:
+		SendCmdSYSMSG (p->pID, "パーティを抜けたので、挑戦は中断して元の姿に戻りました。", SPEECHCMD_BATTLE1);
+		break;
+	case CHALLENGELEAVE_OUT:
+		SendCmdSYSMSG (p->pID, "戦いの場から離れたので、挑戦は中断して元の姿に戻りました。", SPEECHCMD_BATTLE1);
+		break;
+	case CHALLENGELEAVE_QUEST:
+		SendCmdSYSMSG (p->pID, "依頼が無くなったので、挑戦は中断して元の姿に戻りました。", SPEECHCMD_BATTLE1);
+		break;
+	}
+
+	/* 戦う場所から出た人はその場で、ほかは入る前の場所へ戻す */
+	bMove = (nReason != CHALLENGELEAVE_OUT) && (Bak.dwMapID < (DWORD)g_aMapInfo.GetSize ());
+	if (bMove) {
+		SendCmdFADEINOUT (p->pID, 0);
+		SendCmdCHGBGM (p->pID, p->dwMapID, 0);
+		SubProcMapMove (p, Bak.dwMapID, Bak.dwX, Bak.dwY);
+	}
+}
+
+/* 敵を消す */
+static void ChallengeRemoveEnemy(DWORD dwTblID)
+{
+	s_mapEnemy.erase (dwTblID);
+	if (dwTblID >= (DWORD)g_aCharInfo.GetSize ()) {
+		return;
+	}
+	if (g_aCharInfo[dwTblID]->byNpcType == NPCTYPE_INIT) {
+		return;
+	}
+	DeleteChar (dwTblID);
+}
+
+/* 挑戦を終える（残っている人は戻し、残っている敵は消す） */
+static void ChallengeEnd(DWORD dwSession)
+{
+	std::map<DWORD, CHALLENGE>::iterator itC = s_mapChallenge.find (dwSession);
+	std::vector<DWORD> aMember, aEnemy;
+	size_t i;
+
+	if (itC == s_mapChallenge.end ()) {
+		return;
+	}
+	aMember = itC->second.aMember;
+	aEnemy = itC->second.aEnemy;
+	s_mapChallenge.erase (itC);
+	for (i = 0; i < aMember.size (); i ++) {
+		if (aMember[i] < (DWORD)g_aCharInfo.GetSize ()) {
+			ChallengeLeave (g_aCharInfo[aMember[i]], CHALLENGELEAVE_QUEST);
+		}
+	}
+	for (i = 0; i < aEnemy.size (); i ++) {
+		ChallengeRemoveEnemy (aEnemy[i]);
+	}
+}
+
+/* 敵を出す */
+static void ChallengeCreateEnemy(DWORD dwSession, CHALLENGE *pCh, PQUESTNPCINFO pDef)
+{
+	PCHARINFO pNew;
+	PSTATUSTEMPLATEINFO t;
+	int nMapNo = GetMapNo (pDef->dwMapID);
+	CCharProcBase CharProcBase;
+
+	if ((nMapNo < 0) || (pDef->wStTmp >= (WORD)g_aStTmpInfo.GetSize ())) {
+		return;
+	}
+	t = g_aStTmpInfo[pDef->wStTmp];
+
+	pNew = new CHARINFO;
+	ZeroMemory ((PBYTE)pNew, sizeof (CHARINFO));
+	pNew->byNpcType = NPCTYPE_BATTLE2;
+	SetInitCharData (pNew);
+	/* 倒した時の処理が戦闘 1・2 だけなので、それ以外の動き方は戦闘 2（探して攻撃）にする */
+	pNew->byNpcType = ((t->byNpcType == NPCTYPE_BATTLE1) || (t->byNpcType == NPCTYPE_BATTLE2)) ? t->byNpcType : NPCTYPE_BATTLE2;
+	pNew->byGameState	= GAMESTATE_NPC;
+	pNew->byCharState	= CHARSTATE_MOVE;
+	pNew->dwMapID		= (DWORD)nMapNo;
+	pNew->dwStartMapID	= (DWORD)nMapNo;
+	pNew->dwXBack = pNew->dwX = pNew->dwStartX = pDef->byX;
+	pNew->dwYBack = pNew->dwY = pNew->dwStartY = pDef->byY;
+	pNew->byDirection	= (pDef->byDir < 4) ? pDef->byDir : 1;
+	pNew->wGrpID		= pDef->wGrpID;
+	pNew->byLevel		= t->byLevel;
+	pNew->byPW			= t->byPW;
+	pNew->byDEX			= t->byDEX;
+	pNew->byST			= t->byST;
+	pNew->byIT			= t->byIT;
+	pNew->byLK			= t->byLK;
+	pNew->wMaxHP		= max (t->wMaxHP, (WORD)1);
+	pNew->wHP			= pNew->wMaxHP;
+	pNew->wMaxMana		= t->wMaxMana;
+	pNew->wMana			= t->wMaxMana;
+	pNew->wDFMagic		= t->wDFMagic;
+	pNew->chAttrFire	= t->chAttrFire;
+	pNew->chAttrWater	= t->chAttrWater;
+	pNew->chAttrWind	= t->chAttrWind;
+	pNew->chAttrEarth	= t->chAttrEarth;
+	pNew->chAttrLight	= t->chAttrLight;
+	pNew->chAttrDark	= t->chAttrDark;
+	pNew->byMoveProbabilityX	= t->byMoveProbabilityX;
+	pNew->byMoveProbabilityY	= t->byMoveProbabilityY;
+	pNew->bySearchCx	= t->bySearchCx;
+	pNew->bySearchCy	= t->bySearchCy;
+	memcpy (pNew->abyMagic, t->abyMagic, sizeof (pNew->abyMagic));
+	/* 経験値・お金・落とす物は無し（貸し出しの状態で増えても戻すので、はじめから出さない） */
+	pNew->dwGold = 0;
+	pNew->dwExp = 0;
+	pNew->byDropProbability = 0;
+	CopyStr (pNew->szName, sizeof (pNew->szName), pDef->szName[0] ? pDef->szName : t->szName);
+
+	pNew = AddChar (pNew);
+	pNew->pID = pNew->dwTblID + 1;
+	if (pNew->pProc == NULL) {
+		CharProcBase.SetProc (pNew);
+	}
+	RenewATDF (pNew->dwTblID);
+	s_mapEnemy[pNew->dwTblID] = dwSession;
+	pCh->aEnemy.push_back (pNew->dwTblID);
+	SendCmdCHARINFO3 (pNew->dwTblID);
+}
+
+/* 入口に乗った：近くで同じ依頼を受けた仲間と一緒に入る */
+static void ChallengeStart(PCHARINFO pChar, PQUESTINFO pQuest, PQUESTNPCINFO pDef)
+{
+	std::map<DWORD, CHALLENGE>::iterator itC;
+	std::vector<PCHARINFO> aMember;
+	PSTATUSTEMPLATEINFO t;
+	CHALLENGE Ch;
+	DWORD dwSession;
+	int i, nNeed, nDestMapNo;
+	char szTmp[512];
+
+	if ((pQuest->byChallenge == QUESTCHALLENGE_NONE) || QuestInChallenge (pChar)) {
+		return;
+	}
+	nDestMapNo = GetMapNo (pDef->dwDestMapID);
+	if ((nDestMapNo < 0) || (pQuest->wLoanStTmp >= (WORD)g_aStTmpInfo.GetSize ())) {
+		SendCmdSYSMSG (pChar->pID, "この討伐チャレンジは準備中です。", SPEECHCMD_BATTLE1);
+		return;
+	}
+	if (QuestFlagCheck (pChar, QUEST_FLG_CLEARED)) {
+		SendCmdSYSMSG (pChar->pID, "討伐はもう済んでいます。ギルドに報告しましょう。", SPEECHCMD_BATTLE1);
+		return;
+	}
+	/* 同じ依頼は一度に 1 組だけ */
+	for (itC = s_mapChallenge.begin (); itC != s_mapChallenge.end (); itC ++) {
+		if (itC->second.wQuestID == pQuest->wID) {
+			SendCmdSYSMSG (pChar->pID, "いま別の組が挑戦しています。終わるまで少し待ってください。", SPEECHCMD_BATTLE1);
+			return;
+		}
+	}
+	nNeed = max ((int)pQuest->byMemberMin, 1);
+	GetChallengeMembers (pChar, pQuest->wID, aMember);
+	if ((int)aMember.size () < nNeed) {
+		snprintf (szTmp, sizeof (szTmp), "一緒に挑む仲間が近くにそろっていません（%d 人必要です）。", nNeed);
+		SendCmdSYSMSG (pChar->pID, szTmp, SPEECHCMD_BATTLE1);
+		return;
+	}
+	for (i = 0; i < (int)aMember.size (); i ++) {
+		if (HasMercenary (aMember[i])) {
+			snprintf (szTmp, sizeof (szTmp), "%sさんの傭兵は一緒に入れません。別れてから来てください。", aMember[i]->szName);
+			SendCmdSYSMSG (pChar->pID, szTmp, SPEECHCMD_BATTLE1);
+			return;
+		}
+	}
+
+	t = g_aStTmpInfo[pQuest->wLoanStTmp];
+	dwSession = ++ s_dwChallengeSeq;
+	Ch.wQuestID = pQuest->wID;
+	Ch.dwMapNo = (DWORD)nDestMapNo;
+	Ch.dwPartyID = pChar->dwPartyID;
+	Ch.dwStart = timeGetTime ();
+	Ch.bCleared = FALSE;
+	s_mapChallenge[dwSession] = Ch;
+	CHALLENGE *pCh = &s_mapChallenge[dwSession];
+
+	/* 貸し出しの中身のお知らせ */
+	{
+		char szEqu[256] = "";
+		snprintf (szTmp, sizeof (szTmp), "討伐チャレンジ開始！ みんな同じ状態です：Lv%d 力%d 素早さ%d 体力%d 賢さ%d 運%d HP%d Mana%d",
+			max ((int)t->byLevel, 1), t->byPW, t->byDEX, t->byST, t->byIT, t->byLK, max ((int)t->wMaxHP, 1), t->wMaxMana);
+		for (i = 0; i < MAX_MYITEM; i ++) {
+			WORD wItem = t->waItem[i];
+			if ((wItem == 0) || (wItem >= (WORD)g_aItemInfo.GetSize ())) {
+				continue;
+			}
+			snprintf (szEqu + strlen (szEqu), sizeof (szEqu) - strlen (szEqu), "%s%s", szEqu[0] ? "、" : "持ち物：", g_aItemInfo[wItem]->szName);
+		}
+		for (i = 0; i < (int)aMember.size (); i ++) {
+			SendCmdSYSMSG (aMember[i]->pID, szTmp, SPEECHCMD_BATTLE1);
+			if (szEqu[0]) {
+				SendCmdSYSMSG (aMember[i]->pID, szEqu, SPEECHCMD_BATTLE1);
+			}
+			SendCmdSYSMSG (aMember[i]->pID, "倒れる・パーティを抜ける・切断すると、その人は中断して元の姿に戻ります。", SPEECHCMD_BATTLE1);
+		}
+	}
+
+	for (i = 0; i < (int)aMember.size (); i ++) {
+		PCHARINFO pTmp = aMember[i];
+		LOANBAK Bak;
+
+		CharTargetCancelPC (pTmp);
+		ZeroMemory (&Bak, sizeof (Bak));
+		LoanXfer (pTmp, &Bak, FALSE);
+		Bak.dwSession = dwSession;
+		Bak.bArrived = FALSE;
+		Bak.dwMapID = pTmp->dwMapID;
+		Bak.dwX = pTmp->dwX;
+		Bak.dwY = pTmp->dwY;
+		Bak.byDirection = pTmp->byDirection;
+		s_mapLoan[pTmp->dwTblID] = Bak;
+		pCh->aMember.push_back (pTmp->dwTblID);
+
+		LoanApply (pTmp, t);
+		LoanSendAll (pTmp);
+		AdvanceQuest (pTmp, pDef);
+		DoPortal (pTmp, pDef);
+	}
+
+	/* 敵を出す */
+	for (i = 0; i < MAX_QUESTNPC; i ++) {
+		if (pQuest->aNpc[i].byKind == QUESTNPCKIND_ENEMY) {
+			ChallengeCreateEnemy (dwSession, pCh, &pQuest->aNpc[i]);
+		}
+	}
+	for (i = 0; i < (int)aMember.size (); i ++) {
+		QuestSendState (aMember[i]);
+	}
+}
+
+/* キャラが消える・ログオフする時 */
+static void ChallengeOnDecPlayer(PCHARINFO pChar)
+{
+	std::map<DWORD, DWORD>::iterator itE = s_mapEnemy.find (pChar->dwTblID);
+
+	/* 敵が倒された */
+	if (itE != s_mapEnemy.end ()) {
+		std::map<DWORD, CHALLENGE>::iterator itC = s_mapChallenge.find (itE->second);
+		s_mapEnemy.erase (itE);
+		if (itC != s_mapChallenge.end ()) {
+			std::vector<DWORD> &aE = itC->second.aEnemy;
+			aE.erase (std::remove (aE.begin (), aE.end (), pChar->dwTblID), aE.end ());
+			/* 全部倒した（人を動かすのは周期処理で） */
+			if (aE.empty ()) {
+				itC->second.bCleared = TRUE;
+			}
+		}
+		return;
+	}
+	/* 挑戦中の人が切断した（全部倒した後の待ち時間なら成功にしてから） */
+	if (QuestInChallenge (pChar)) {
+		std::map<DWORD, LOANBAK>::iterator itL = s_mapLoan.find (pChar->dwTblID);
+		std::map<DWORD, CHALLENGE>::iterator itC = s_mapChallenge.find (itL->second.dwSession);
+		if ((itC != s_mapChallenge.end ()) && itC->second.bCleared) {
+			ChallengeClearMember (pChar, &itC->second, CHALLENGELEAVE_LOGOUT);
+		} else {
+			ChallengeLeave (pChar, CHALLENGELEAVE_LOGOUT);
+		}
+	}
+}
+
+/* 全部倒した組の人を成功にして戻す（最後の段＋成功の印） */
+static void ChallengeClearMember(PCHARINFO p, CHALLENGE *pCh, int nReason)
+{
+	PQUESTINFO pQuest = FindQuest (pCh->wQuestID);
+
+	ChallengeLeave (p, nReason);
+	if (pQuest) {
+		p->byQuestStep = (BYTE)(max ((int)pQuest->byStepCount, 1) - 1);
+	}
+	p->wQuestFlg |= (WORD)(1 << (QUEST_FLG_CLEARED - 1));
+	if (nReason == CHALLENGELEAVE_CLEAR) {
+		SendCmdSYSMSG (p->pID, "元の姿に戻りました。ギルドに報告しましょう。", SPEECHCMD_BATTLE1);
+		QuestSendState (p);
+	}
+}
+
+/* 周期処理：倒れた・抜けた人を戻す、全部倒したら成功、誰もいなくなったら終わり */
+static void ChallengeProc(void)
+{
+	std::map<DWORD, CHALLENGE>::iterator itC;
+	std::vector<DWORD> aEnd;
+	DWORD dwNow = timeGetTime ();
+	size_t i;
+
+	for (itC = s_mapChallenge.begin (); itC != s_mapChallenge.end (); itC ++) {
+		DWORD dwSession = itC->first;
+		std::vector<DWORD> aMember = itC->second.aMember;
+
+		if (itC->second.bCleared) {
+			char szTime[64], szTmp[256];
+
+			/* 全部倒した：まずその場で知らせて、少し間をおいてから戻す（倒した瞬間に戻すと何が起きたか分からない） */
+			if (itC->second.dwClear == 0) {
+				itC->second.dwClearTime = dwNow - itC->second.dwStart;
+				itC->second.dwClear = dwNow;
+				if (itC->second.dwClear == 0) {
+					itC->second.dwClear = 1;
+				}
+				MakeTimeText (itC->second.dwClearTime, szTime, sizeof (szTime));
+				snprintf (szTmp, sizeof (szTmp), "討伐成功！ タイム %s。まもなく元の場所へ戻ります…", szTime);
+				for (i = 0; i < aMember.size (); i ++) {
+					PCHARINFO p = g_aCharInfo[aMember[i]];
+					SendCmdPLAYSOUND (p->pID, SOUND_PI52);
+					SendCmdSYSMSG (p->pID, szTmp, SPEECHCMD_BATTLE1);
+				}
+				continue;
+			}
+			if (dwNow - itC->second.dwClear < CHALLENGE_CLEAR_WAIT) {
+				continue;
+			}
+			for (i = 0; i < aMember.size (); i ++) {
+				ChallengeClearMember (g_aCharInfo[aMember[i]], &itC->second, CHALLENGELEAVE_CLEAR);
+			}
+			aEnd.push_back (dwSession);
+			continue;
+		}
+
+		for (i = 0; i < aMember.size (); i ++) {
+			PCHARINFO p = g_aCharInfo[aMember[i]];
+			std::map<DWORD, LOANBAK>::iterator itL = s_mapLoan.find (aMember[i]);
+			int nReason = -1;
+
+			if (itL == s_mapLoan.end ()) {
+				continue;
+			}
+			if ((p->wHP == 0) || (p->byCharState == CHARSTATE_DEAD)) {
+				nReason = CHALLENGELEAVE_DEAD;
+			} else if (p->dwPartyID != itC->second.dwPartyID) {
+				nReason = CHALLENGELEAVE_PARTY;
+			} else if (p->wQuestID != itC->second.wQuestID) {
+				nReason = CHALLENGELEAVE_QUEST;
+			} else if (itL->second.bArrived) {
+				if ((p->dwMapID != itC->second.dwMapNo) || itL->second.bWarped) {
+					nReason = CHALLENGELEAVE_OUT;
+				}
+			} else if (p->dwMapID == itC->second.dwMapNo) {
+				itL->second.bArrived = TRUE;
+			} else if (dwNow - itC->second.dwStart > CHALLENGE_ARRIVE_WAIT) {
+				nReason = CHALLENGELEAVE_OUT;
+			}
+			if (nReason >= 0) {
+				ChallengeLeave (p, nReason);
+			}
+		}
+		if (itC->second.aMember.empty ()) {
+			aEnd.push_back (dwSession);
+		}
+	}
+	for (i = 0; i < aEnd.size (); i ++) {
+		ChallengeEnd (aEnd[i]);
+	}
+}
+
+/* 今すぐ周期処理をする（テスト用） */
+void QuestChallengeProcNow(void)
+{
+	ChallengeProc ();
+}
+
+/* マップの中のワープ（座標変更イベント）で動いた時。
+ * 戦う部屋が入口と同じマップにあると、部屋を出てもマップが変わらないので、
+ * 着いた後のワープは「部屋を出た」として周期処理で中断する（入る時のワープは着いた印にする） */
+void QuestChallengeOnWarp(PCHARINFO pChar)
+{
+	std::map<DWORD, LOANBAK>::iterator itL = s_mapLoan.find (pChar->dwTblID);
+	std::map<DWORD, CHALLENGE>::iterator itC;
+
+	if (itL == s_mapLoan.end ()) {
+		return;
+	}
+	if (itL->second.bArrived) {
+		itL->second.bWarped = TRUE;
+		return;
+	}
+	itC = s_mapChallenge.find (itL->second.dwSession);
+	if ((itC != s_mapChallenge.end ()) && (pChar->dwMapID == itC->second.dwMapNo)) {
+		itL->second.bArrived = TRUE;
+	}
+}
+
+/* 倒れた人が「復活」を選んだ：挑戦中ならすぐ中断して入る前の場所へ（お金は減らさない）。処理したら TRUE */
+BOOL QuestChallengeResurrection(PCHARINFO pChar)
+{
+	if (!QuestInChallenge (pChar)) {
+		return FALSE;
+	}
+	ChallengeLeave (pChar, CHALLENGELEAVE_DEAD);
+	return TRUE;
+}
+
+/* 保存の前後で呼ぶ：挑戦中の人は本物の状態と入る前の場所を保存させる（前後で同じ入れ替えをする）。
+   切断した人の戻す場所もここで書き込む */
+void QuestChallengeSaveSwap(BOOL bBegin)
+{
+	std::map<DWORD, LOANBAK>::iterator it;
+
+	for (it = s_mapLoan.begin (); it != s_mapLoan.end (); it ++) {
+		if (it->first < (DWORD)g_aCharInfo.GetSize ()) {
+			LoanSwap (g_aCharInfo[it->first], &it->second);
+		}
+	}
+	if (bBegin) {
+		std::map<DWORD, LOANPOS>::iterator itPos = s_mapPendingPos.begin ();
+		while (itPos != s_mapPendingPos.end ()) {
+			PCHARINFO p = (itPos->first < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[itPos->first] : NULL;
+			/* もうログインし直している人は、ログインの時に動かしている */
+			if ((p != NULL) && (p->pID == 0)) {
+				p->dwMapID = itPos->second.dwMapID;
+				p->dwX = p->dwXBack = itPos->second.dwX;
+				p->dwY = p->dwYBack = itPos->second.dwY;
+				p->byDirection = itPos->second.byDirection;
+			}
+			s_mapPendingPos.erase (itPos ++);
+		}
 	}
 }
 

@@ -37,5 +37,11 @@ extern BOOL QuestPartyConflict(PCHARINFO pA, PCHARINFO pB);		/* A 側と B 側�
 extern int  QuestFlagCheck(PCHARINFO pChar, int nFlg);			/* 旗が立っているか(1〜16) */
 extern BOOL QuestIsDone(PCHARINFO pChar, WORD wQuestID);		/* クリア済みの印があるか */
 extern BOOL QuestIsQuestItem(WORD wItem);						/* 依頼の品か（預けられない・売れない・捨てられない） */
+extern BOOL QuestInChallenge(PCHARINFO pChar);					/* 討伐チャレンジ中か（貸し出しの状態になっているか） */
+extern BOOL QuestIsChallengeEnemy(PCHARINFO pChar);				/* 討伐チャレンジの敵か */
+extern BOOL QuestChallengeResurrection(PCHARINFO pChar);		/* 倒れて「復活」を選んだ時。挑戦中なら中断して入る前の場所へ戻し TRUE */
+extern void QuestChallengeSaveSwap(BOOL bBegin);				/* キャラ情報を保存する前(TRUE)と後(FALSE)に呼ぶ。挑戦中の人は本物の状態を保存させる */
+extern void QuestChallengeProcNow(void);						/* 討伐チャレンジの周期処理を今すぐ（テスト用） */
+extern void QuestChallengeOnWarp(PCHARINFO pChar);				/* マップの中のワープで動いた時（挑戦中で着いた後なら部屋を出たとして中断） */
 
 /* Copyright(C)URARA-works 2003-2005 */

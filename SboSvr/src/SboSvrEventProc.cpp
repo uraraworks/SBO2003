@@ -91,6 +91,8 @@ void EventProc_MOVE(PCHARINFO pChar, PEVENTINFO pEvent, BYTE byData)
 	pChar->dwY = pMove->dwY;
 	pChar->dwXBack = pChar->dwX;
 	pChar->dwYBack = pChar->dwY;
+	/* 討伐チャレンジの部屋から出るワープか */
+	QuestChallengeOnWarp (pChar);
 
 	switch (pMove->byEfect) {
 	case EVENTMOVEEFECT_MOVE:

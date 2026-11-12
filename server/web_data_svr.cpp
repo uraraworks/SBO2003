@@ -444,6 +444,9 @@ static const DATAFIELD s_aFieldQuest[] = {
 	FLD (QUESTINFO, wRewardItem,		"報酬のアイテム",		FT_U16, 0, "item の番号（0=なし）。持ち物がいっぱいなら預かり所へ。どちらもいっぱいだと渡せずやり直し"),
 	FLD (QUESTINFO, wQuestItem,			"依頼の品",				FT_U16, 0, "item の番号（0=回収しない）。見えるNPC（宝箱）で渡し、ギルドで回収する。取り消した時は持ち物と預かり所から全部消す"),
 	FLD (QUESTINFO, byStepCount,		"段の数",				FT_U8, 0, "1〜4。受けた時は 0 段目。最後の段（段の数-1）に進み、依頼の品を持っていればギルドで渡せる。足す時に省くと 1"),
+	FLD (QUESTINFO, byChallenge,		"討伐チャレンジ",		FT_U8, 0, "0=ふつうの依頼 1=異空間の討伐チャレンジ（入口の見えるNPCに乗ると、近くで同じ依頼を受けた仲間と一緒に行き先へ移り、全員が貸し出しセットの状態になる。出ている敵を全部倒すと元に戻って最後の段へ。倒れる・パーティを抜ける・切断・行き先のマップから出ると、その人だけ中断して元に戻る。同じ依頼は一度に 1 組だけ。報酬は初めてクリアした時だけで、2 回目からは記録だけ）"),
+	FLD (QUESTINFO, wLoanStTmp,			"貸し出しセット",		FT_U16, 0, "討伐チャレンジの時。stTmp（ステータステンプレート）の id。レベル・能力・最大HP/Mana・特技・持ち物・お金・属性をこれにする。持ち物の武器・鎧などは種類ごとに最初の 1 つを自動で装備する。職業と見た目はそのまま"),
+	FLD (QUESTINFO, byMemberMin,		"必要な人数",			FT_U8, 0, "討伐チャレンジの時。0・1=一人でもよい。2 以上はパーティを組んでいないと受けられず、受けると近く（同じマップの 8 マス以内）の仲間全員が一緒に受ける。後から入った仲間は参加できない"),
 };
 
 /* 依頼の見えるNPC（受けた人とそのパーティにだけ見える。話すと台詞が出る。台詞の中身はサーバーが送り、見えるNPC自体の台詞は "@q" 固定） */
@@ -452,7 +455,7 @@ static const DATAFIELD s_aFieldQuestNpc[] = {
 	FLD (QUESTNPCINFO, byX,				"X座標",				FT_U8, 0, NULL),
 	FLD (QUESTNPCINFO, byY,				"Y座標",				FT_U8, 0, NULL),
 	FLD (QUESTNPCINFO, byDir,			"向き",					FT_U8, 0, "0=上 1=下 2=左 3=右"),
-	FLD (QUESTNPCINFO, byKind,			"種類",					FT_U8, 0, "1=ワープポータル（話すと行き先へ移る） 2=宝箱（話すと wItem をもらう） 3=人（台詞だけ）。0 は使わない欄（足す時は 1〜3 を指定）"),
+	FLD (QUESTNPCINFO, byKind,			"種類",					FT_U8, 0, "1=ワープポータル（話すと行き先へ移る） 2=宝箱（話すと wItem をもらう） 3=人（台詞だけ） 4=討伐チャレンジの入口（乗ると挑戦を始めて行き先へ移る。行き先は dwDestMapID・byDestX・byDestY） 5=討伐チャレンジの敵（挑戦が始まった時に出る。強さは wStTmp）。0 は使わない欄（足す時は 1〜5 を指定）"),
 	FLD (QUESTNPCINFO, wGrpID,			"見た目の画像ID",		FT_U16, 0, "キャラ画像ID（宝箱・ポータルも画像の番号で指定）"),
 	FLDS(QUESTNPCINFO, szName,			"名前",					FT_STR, 0, NULL),
 	FLDS(QUESTNPCINFO, szSpeech,		"話した時の台詞",		FT_STR, FF_MULTILINE, "話した人にだけ出る"),
@@ -466,6 +469,7 @@ static const DATAFIELD s_aFieldQuestNpc[] = {
 	FLD (QUESTNPCINFO, wItem,			"宝箱で渡すアイテム",	FT_U16, 0, "item の番号（0=なし）。持ち物がいっぱいなら預かり所へ"),
 	FLD (QUESTNPCINFO, bySetFlg,		"話したら立てる旗",		FT_U8, 0, "0=なし 1〜16。宝箱は、この旗が立っていると 2 度目はもらえない"),
 	FLD (QUESTNPCINFO, byNextStep,		"話したら進む段",		FT_U8, 0, "0〜3。255=変えない"),
+	FLD (QUESTNPCINFO, wStTmp,			"敵の強さ",				FT_U16, 0, "種類が 5（敵）の時。stTmp（ステータステンプレート）の id。レベル・能力・HP・特技・動き方（byNpcType）をこれにする。経験値・お金・落とす物は無し"),
 };
 
 /* アイテムの種別ごとの詳細 */
@@ -3989,7 +3993,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 					continue;
 				}
 				if (pN->byKind >= QUESTNPCKIND_MAX) {
-					strErr = strName + "byKind は 1（ポータル）・2（宝箱）・3（人）で指定してください";
+					strErr = strName + "byKind は 1（ポータル）・2（宝箱）・3（人）・4（討伐チャレンジの入口）・5（討伐チャレンジの敵）で指定してください";
 					goto Exit;
 				}
 				int nMapNo = GetMapNo(pN->dwMapID);
@@ -4014,7 +4018,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 					strErr = strName + "byFlgNeed・byFlgHide・bySetFlg は 0〜16 で指定してください";
 					goto Exit;
 				}
-				if (pN->byKind == QUESTNPCKIND_PORTAL) {
+				if ((pN->byKind == QUESTNPCKIND_PORTAL) || (pN->byKind == QUESTNPCKIND_GATE)) {
 					int nDest = GetMapNo(pN->dwDestMapID);
 					if (nDest < 0 || (int)pN->byDestX >= g_aMapInfo[nDest]->nCX || (int)pN->byDestY >= g_aMapInfo[nDest]->nCY) {
 						strErr = strName + "ポータルの dwDestMapID（マップID）・byDestX・byDestY が正しくありません";
@@ -4023,6 +4027,28 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 				}
 				if (pN->wItem != 0 && pN->wItem >= g_aItemInfo.GetSize()) {
 					strErr = strName + "wItem は item の番号（0 はなし）で指定してください";
+					goto Exit;
+				}
+				if ((pN->byKind == QUESTNPCKIND_ENEMY) && (pN->wStTmp >= g_aStTmpInfo.GetSize())) {
+					strErr = strName + "wStTmp（敵の強さ）は stTmp の id で指定してください";
+					goto Exit;
+				}
+				if (((pN->byKind == QUESTNPCKIND_GATE) || (pN->byKind == QUESTNPCKIND_ENEMY)) && (Info.byChallenge == QUESTCHALLENGE_NONE)) {
+					strErr = strName + "入口（4）・敵（5）は討伐チャレンジ（byChallenge 1）の依頼にだけ置けます";
+					goto Exit;
+				}
+			}
+			if (Info.byChallenge >= QUESTCHALLENGE_MAX) {
+				strErr = "byChallenge は 0（ふつう）か 1（異空間の討伐チャレンジ）で指定してください";
+				goto Exit;
+			}
+			if (Info.byChallenge != QUESTCHALLENGE_NONE) {
+				if (Info.wLoanStTmp >= g_aStTmpInfo.GetSize()) {
+					strErr = "wLoanStTmp（貸し出しセット）は stTmp の id で指定してください";
+					goto Exit;
+				}
+				if (Info.byMemberMin > MAX_PARTYMEMBER) {
+					strErr = "byMemberMin（必要な人数）は 0〜" + JsonNum(MAX_PARTYMEMBER) + " で指定してください";
 					goto Exit;
 				}
 			}
