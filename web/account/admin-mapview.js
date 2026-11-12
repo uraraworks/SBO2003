@@ -62,6 +62,7 @@
 	var undoStack = [], redoStack = [];
 	var stroke = null;				/* 描いている途中の 1 回分 {cells:[[x, y, 前, 後]], at:{"x,y": 番号}, last:[x, y]} */
 	var touchTap = null;			/* スマホのタップ（動かさずに離したら 1 マス置く） */
+	var wheelBlockUntil = 0;		/* この時刻（ms）まではマップ欄のホイールでのスクロールを止める（描いた直後の誤スクロール防ぎ） */
 	var draftTimer = 0;
 	var draftSaving = null;			/* 保存中の Promise */
 	var draftState = '';			/* 下書きの状態の文 */
@@ -604,9 +605,22 @@
 		if (!stroke) return;
 		var s = stroke;
 		stroke = null;
+		/* Magic Mouse などは、ボタンを離した時に表面をなでてホイールが出やすいので、離してから少しの間はスクロールしない */
+		wheelBlockUntil = Date.now() + WHEEL_BLOCK_MS;
 		if (!s.cells.length) return;
 		pushAction(s.cells);
 		useRecent(selPart);
+	}
+
+	/* マップ欄のホイール（Magic Mouse・トラックパッドのなで）。描いている間と、離してから少しの間は止める */
+	var WHEEL_BLOCK_MS = 1000;
+	var WHEEL_GAP_MS = 200;			/* 止めている間に続いたなで（慣性も）は、途切れるまでまとめて止める */
+	function onWheel(ev) {
+		if (ev.ctrlKey) return;			/* ピンチ・Ctrl+ホイールはブラウザの拡大のまま */
+		var now = Date.now();
+		if (!stroke && now >= wheelBlockUntil) return;
+		ev.preventDefault();
+		wheelBlockUntil = Math.max(wheelBlockUntil, now + WHEEL_GAP_MS);
 	}
 
 	function pushAction(cells) {
@@ -1101,6 +1115,7 @@
 		$('mv-add').addEventListener('click', addMap);
 		document.addEventListener('keydown', onKey);
 		window.addEventListener('pointerup', endStroke);
+		$('mv-scroll').addEventListener('wheel', onWheel, { passive: false });
 		/* 下書きの保存待ちがある時は、閉じる前に知らせる */
 		window.addEventListener('beforeunload', function (ev) {
 			if (draftTimer || draftSaving || bApplying) {
