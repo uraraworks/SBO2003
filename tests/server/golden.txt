@@ -1226,6 +1226,8 @@ challenge warp b in=0 lv=30 pw=99 hp=480/500 mana=90 gold=5000 item0=0 weapon_eq
 challenge warp b in=0 at_exit=1 quest=20 enemies=0
 challenge handin2 quest=0 gold+=0 exp_same=1
 challenge info reload same=1
+challenge before breakup b_quest=20 party=1
+challenge after breakup b_quest=0 b_gate=0
 challenge end enemies=0 copies=0
 == R. StatusUp ==
 statusup use=1,1 at+3 df+4 events=2 buffpkt=2

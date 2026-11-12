@@ -728,7 +728,9 @@ void OnDecPlayer(int nNo)
 	pChar->dwTargetTblID	= -1;
 
 	DeleteChildChar (pChar);		/* 自分が親のキャラを削除 */
+	QuestPartyLeaveHold (TRUE);		/* 切断で抜けた時は討伐チャレンジの依頼を取り消さない */
 	ProcBreakParty (pChar);			/* パーティから抜ける */
+	QuestPartyLeaveHold (FALSE);
 	CharTargetCancelPC (pChar);		/* ついてく解除 */
 	DeleteTblNoPC (nNo);			/* PC番号テーブルから削除 */
 	DeleteAllTimerEvent (pChar);	/* タイマーイベントを削除 */

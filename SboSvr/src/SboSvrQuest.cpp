@@ -1343,6 +1343,44 @@ static void DoCancel(PCHARINFO pChar)
 	QuestSyncAll ();
 }
 
+/* パーティを抜けた・解散した時（dwPartyID を 0 にした後に呼ぶ）。
+   討伐チャレンジはパーティで受けるものなので、まだ倒していない討伐チャレンジの依頼は取り消す
+   （倒し終えて報告を待つだけの人は、そのまま報告できる）。挑戦中の人は中断の処理で取り消す */
+static int s_nPartyLeaveHold = 0;								/* 0 より大きい間は取り消さない（切断でパーティから外れる時） */
+void QuestPartyLeaveHold(BOOL bHold)
+{
+	if (bHold) {
+		s_nPartyLeaveHold ++;
+	} else if (s_nPartyLeaveHold > 0) {
+		s_nPartyLeaveHold --;
+	}
+}
+
+void QuestOnPartyLeave(PCHARINFO pChar)
+{
+	PQUESTINFO pQuest;
+
+	/* 切断した人・それで解散した仲間は取り消さない（つなぎ直したらまた組めるように） */
+	if (s_nPartyLeaveHold > 0) {
+		return;
+	}
+	if ((pChar == NULL) || (pChar->wQuestID == 0) || QuestInChallenge (pChar)) {
+		return;
+	}
+	pQuest = FindQuest (pChar->wQuestID);
+	if ((pQuest == NULL) || (pQuest->byChallenge == QUESTCHALLENGE_NONE) || QuestFlagCheck (pChar, QUEST_FLG_CLEARED)) {
+		return;
+	}
+	if (pQuest->wQuestItem) {
+		while (TakeItem (pChar, pQuest->wQuestItem)) {
+		}
+		SendBagState (pChar);
+	}
+	ClearQuest (pChar);
+	SendCmdSYSMSG (pChar->pID, "パーティを抜けたので、討伐チャレンジの依頼は取り消しになりました。挑むときは、またパーティで受けてください。", SPEECHCMD_BATTLE1);
+	QuestSendState (pChar);
+}
+
 /* 渡す（依頼の品を回収して、報酬を渡す） */
 static void DoHandIn(PCHARINFO pChar, PCHARINFO pNpc)
 {
@@ -1711,6 +1749,8 @@ static void ChallengeLeave(PCHARINFO p, int nReason)
 		break;
 	case CHALLENGELEAVE_PARTY:
 		SendCmdSYSMSG (p->pID, "パーティを抜けたので、挑戦は中断して元の姿に戻りました。", SPEECHCMD_BATTLE1);
+		/* 討伐チャレンジはパーティで受けるものなので、抜けたら依頼も取り消し */
+		QuestOnPartyLeave (p);
 		break;
 	case CHALLENGELEAVE_OUT:
 		SendCmdSYSMSG (p->pID, "戦いの場から離れたので、挑戦は中断して元の姿に戻りました。", SPEECHCMD_BATTLE1);

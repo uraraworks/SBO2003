@@ -3221,6 +3221,7 @@ void ProcBreakParty(PCHARINFO pChar)
 		/* 抜けた人と残った仲間の依頼の進み具合・見えるNPCを更新する */
 		DWORD dwPartyIDOld = pChar->dwPartyID;
 		pChar->dwPartyID = 0;
+		QuestOnPartyLeave (pChar);
 		QuestSendStateParty (dwPartyIDOld, pChar);
 		QuestSyncAll ();
 	}
@@ -3277,6 +3278,7 @@ void ProcBreakUpParty(PCHARINFO pChar)
 		}
 		ZeroMemory (pPartyInfo, sizeof (PARTYINFO));
 		for (i = 0; i < (int)aMember.size (); i ++) {
+			QuestOnPartyLeave (g_aCharInfo[aMember[i]]);
 			QuestSendStateParty (0, g_aCharInfo[aMember[i]]);
 		}
 		QuestSyncAll ();

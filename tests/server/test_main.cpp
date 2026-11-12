@@ -2803,8 +2803,13 @@ static void TestChallenge(const std::vector<int> &aLogin)
 		printf("challenge info reload same=%d\n", (int)(g_aQuestInfo.GetSize() == 1 && memcmp(g_aQuestInfo[0], &Bak, sizeof(Bak)) == 0));
 	}
 
-	/* 片付け */
+	/* パーティを解散すると、まだ倒していない討伐チャレンジの依頼は取り消し（光も見えなくなる） */
+	printf("challenge before breakup b_quest=%u party=%d\n", pB->wQuestID, (int)(pB->dwPartyID != 0));
 	QuestSendParty(pA, pA, CMDPARTY_BREAKUP);
+	QuestSyncAll();
+	printf("challenge after breakup b_quest=%u b_gate=%d\n", pB->wQuestID, (int)(QuestFindCopy(pB, 4) != NULL));
+
+	/* 片付け */
 	for (int i = 0; i < 3; i ++) {
 		CHARINFO *pBk = &aBack[i];
 		PCHARINFO p = apPC[i];
