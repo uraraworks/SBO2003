@@ -517,11 +517,12 @@ async function renderProposals(body, seq, status) {
 		else bar.appendChild(h('button', { type: 'button', on: { click: () => show({ name: 'form', proposal: p }) } }, 'お題にする'));
 		card.appendChild(ta);
 		if (p.replyImg) {
-			card.appendChild(h('div', { class: 'kb-ref' }, h('div', { class: 'sub-text', text: '返事の絵' }), pic(p.replyImg, 256),
+			const older = p.img && (p.imgAt || p.at || 0) > (p.replyAt || 0);
+			card.appendChild(h('div', { class: 'kb-ref' }, h('div', { class: 'sub-text', text: older ? '前に返した絵（この後に本人がラフ絵を描き直しました）' : '返事の絵' }), pic(p.replyImg, 256),
 				h('div', null, h('button', { type: 'button', class: 'sub', on: { click: () => { if (confirm('返事の絵を外しますか？')) upd({ replyImg: '' }, '返事の絵を外しました'); } } }, '絵を外す'))));
 		}
 		card.appendChild(h('div', null, h('button', { type: 'button', class: 'sub', on: { click: () => upd({ reply: ta.value }, '返事を送りました') } }, '返事を保存'),
-			h('button', { type: 'button', class: 'sub', on: { click: () => openDraw('/kobo-draw?admin=proposal&id=' + encodeURIComponent(p.id)) } }, p.replyImg ? '返事の絵を描き直す' : '描き足して返事'),
+			h('button', { type: 'button', class: 'sub', on: { click: () => openDraw('/kobo-draw?admin=proposal&id=' + encodeURIComponent(p.id)) } }, !p.replyImg ? '描き足して返事' : (p.img && (p.imgAt || p.at || 0) > (p.replyAt || 0) ? '新しいラフ絵に描き足して返事' : '返事の絵を描き直す')),
 			p.replyAt ? h('span', { class: 'sub-text', text: dateText(p.replyAt) + ' に返事済み' }) : null));
 		card.appendChild(bar);
 		card.appendChild(m);

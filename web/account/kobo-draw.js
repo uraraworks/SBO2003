@@ -1070,7 +1070,8 @@ function toggleGrid() {
 function draftKey() {
 	if (S.admin) {
 		/* 管理人の直しはプレイヤーの「続きを描く」に出さない */
-		return 'kobo_admin_draft:' + S.admin + ':' + S.task.id + ':' + (S.adminTarget || '');
+		/* 土台の絵が変わったら（提案者が描き直した等）、前の描きかけは使わない */
+		return 'kobo_admin_draft:' + S.admin + ':' + S.task.id + ':' + (S.adminTarget || '') + (S.adminSrc ? ':' + S.adminSrc : '');
 	}
 	return 'kobo_draft:' + S.task.id + ':' + (S.workId || ('new-' + S.from));
 }
@@ -1476,9 +1477,13 @@ async function proposalTask(id) {
 	}
 	const pt = await padPalette(prop.kind);
 	const palette = pt.palette, transparent = pt.transparent, colors = pt.colors;
-	/* 返事の絵があればそれ、無ければラフ絵から。64 マスより大きい絵は元イラストとして横に出し、白紙から */
+	/*
+	 * 新しいほうの絵から描く。返事の絵の後に提案者がラフ絵を描き直していたら、そのラフ絵から。
+	 * 64 マスより大きい絵は元イラストとして横に出し、白紙から
+	 */
 	let img = null, ref = '';
-	const src = prop.replyImg || prop.img;
+	const src = proposalBase(prop);
+	S.adminSrc = src;
 	if (src) {
 		try {
 			const buf = await fetchBuf(imgUrl(src));
@@ -1501,6 +1506,14 @@ async function proposalTask(id) {
 		task: padTask('proposal-' + prop.id, '提案への返事：' + Array.from(prop.body || '').slice(0, 20).join(''), w, h, pt, ref),
 		initial: img ? img.indices : new Uint8Array(w * h).fill(transparent)
 	};
+}
+
+/* 管理人が描き足す土台の絵（返事の絵とラフ絵の新しいほう） */
+function proposalBase(prop) {
+	if (prop.img && (!prop.replyImg || (prop.imgAt || prop.at || 0) > (prop.replyAt || 0))) {
+		return prop.img;
+	}
+	return prop.replyImg || prop.img || '';
 }
 
 async function adminBoot(q) {

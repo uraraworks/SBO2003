@@ -99,7 +99,7 @@
 
 ```
 { id, account, name, anonymous, kind, body, img: '' | 画像id,
-  status: 'new' | 'later' | 'declined' | 'tasked' | 'withdrawn', reply: '', replyAt, taskId: '', at, editedAt, withdrawnAt, ip }
+  status: 'new' | 'later' | 'declined' | 'tasked' | 'withdrawn', reply: '', replyAt, taskId: '', at, editedAt, imgAt（ラフ絵を変えた時刻。返事の絵より新しければ管理人はラフ絵に描き足す）, withdrawnAt, ip }
 ```
 
 - 本人はお題になる前（`tasked` 以外）なら直せる・取り下げられる。見送り（`declined`）を直すと `new` に戻る。

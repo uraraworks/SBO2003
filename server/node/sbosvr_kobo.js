@@ -490,7 +490,7 @@ Module['sboKobo'] = (function () {
 			id: p.id, kind: p.kind, body: p.body, img: p.img || '',
 			name: (bAdmin || !p.anonymous) ? nameOf(p.account, p.name, cache) : '',
 			anonymous: !!p.anonymous, status: p.status, reply: p.reply || '', replyImg: p.replyImg || '', replyAt: p.replyAt || 0,
-			taskId: p.taskId || '', at: p.at, editedAt: p.editedAt || 0
+			taskId: p.taskId || '', at: p.at, editedAt: p.editedAt || 0, imgAt: p.imgAt || p.at
 		};
 		if (bAdmin) {
 			o.account = p.account;
@@ -1090,6 +1090,7 @@ Module['sboKobo'] = (function () {
 		}
 		if (strImg !== p.img) {
 			delImage(p.img);
+			p.imgAt = Date.now();		/* ラフ絵を変えた時刻（返事の絵より新しければ、管理人はこちらに描き足す） */
 		}
 		p.img = strImg;
 		p.body = text;
