@@ -141,6 +141,7 @@ export function thumbCanvas(task, id, scale) {
 	cv.width = task.w;
 	cv.height = task.h;
 	cv.className = 'px';
+	cv.style.imageRendering = 'pixelated';	// どのページで使ってもぼかさない
 	cv.style.width = (task.w * scale) + 'px';
 	cv.style.maxWidth = '100%';
 	cv.style.height = 'auto';
