@@ -31,6 +31,7 @@ protected:
 	BOOL	IsRoute			(void);									/* 巡回ルートを歩くか */
 	BOOL	ProcRoute		(DWORD dwTime);							/* 巡回ルートを歩く */
 	void	NextRoutePoint	(void);									/* 次の道しるべへ */
+	BOOL	ProcBattle		(DWORD dwTime);							/* 戦闘１の敵が戦っている間 */
 
 protected:
 	BOOL	m_bInit;									/* 初回処理済み */
@@ -42,6 +43,8 @@ protected:
 	int		m_nRouteDir;								/* 巡回ルートを進む向き(1:先へ -1:戻る) */
 	DWORD	m_dwRouteWaitEnd;							/* 道しるべで止まり終わる時間 */
 	DWORD	m_dwRouteStuck;								/* 巡回ルートで進めなくなった時間 */
+	DWORD	m_dwBattleTarget;							/* 戦闘１：戦っている相手 */
+	DWORD	m_dwBattleTime;								/* 戦闘１：最後に相手が近くにいた時間 */
 } CCharProcMOVERAND, *PCCharProcMOVERAND;
 
 /* Copyright(C)URARA-works 2006 */
