@@ -31,7 +31,7 @@ void DrawChar3			(void);										/* キャラの名前等の描画 */
 void DrawETC			(void);										/* ゲージ等の描画 */
 static void DrawFrameRect	(int x, int y, int cx, int cy, COLORREF cl);	/* 1ドットの枠を描く */
 static void DrawGuardMark	(int x, int y);								/* 構えの盾マーク */
-static void DrawBuffIcons	(int x, int y, DWORD dwTblID);				/* 攻撃力・守備力アップのアイコン */
+static void DrawBuffIcons	(int x, int y, DWORD dwTblID);				/* 攻撃力・守備力アップのアイコン(system.png) */
 void DrawObj			(void);										/* オブジェクトの描画 */
 void DrawEvent			(void);										/* イベント情報の描画 */
 void DrawMapEdit		(void);										/* マップ編集情報の描画 */
@@ -1887,7 +1887,7 @@ void DrawETC(void)
 				g_pDibDrawMap->Blt (x + 3, y + 29, 16, 16, g_pDibSystem, pChar->byDrunkLV * 16, 112, TRUE);
 			}
 			/* 攻撃力・守備力アップのアイコン(HP 欄の左。仲間の分も) */
-			DrawBuffIcons (x + 4, y + 15, pChar->dwTblID);
+			DrawBuffIcons (x + 3, y + 13, pChar->dwTblID);
 			y -= 48;
 		}
 	}
@@ -2023,44 +2023,16 @@ static void DrawGuardMark(int x, int y)
 
 /* ========================================================================= */
 /* 関数名：DrawBuffIcons													 */
-/* 内容：攻撃力アップ(剣)・守備力アップ(盾)のアイコン。幅9×高さ12ずつ横に並べる */
+/* 内容：攻撃力アップ(剣)・守備力アップ(盾)のアイコン(16×16 を横に並べる)	 */
+/*		 絵は system.png の y=96 の行。x=144 構え、160 攻撃アップ、176 守りアップ */
 /*		 切れる15秒前から点滅する											 */
 /* ========================================================================= */
+#define BUFFICON_GRPX	160		/* system.png の攻撃アップの絵の左(守りアップはその右) */
+#define BUFFICON_GRPY	96
 static void DrawBuffIcons(int x, int y, DWORD dwTblID)
 {
-	/* k=黒 w=白 y=金 r=赤 b=青 .=透明 */
-	static const char *s_apszSword[12] = {
-		"....k....",
-		"...kwk...",
-		"...kwk...",
-		"...kwk...",
-		"...kwk...",
-		"...kwk...",
-		"...kwk...",
-		".kkkwkkk.",
-		".kyyyyyk.",
-		".kkkrkkk.",
-		"...kyk...",
-		"...kkk...",
-	};
-	static const char *s_apszShield[12] = {
-		".kkkkkkk.",
-		"kbbbwbbbk",
-		"kbbbwbbbk",
-		"kbbbwbbbk",
-		"kwwwwwwwk",
-		"kbbbwbbbk",
-		"kbbbwbbbk",
-		".kbbwbbk.",
-		".kbbwbbk.",
-		"..kbwbk..",
-		"...kwk...",
-		"....k....",
-	};
-	const char **apszIcon[2] = {s_apszSword, s_apszShield};
-	int i, xx, yy;
+	int i;
 	DWORD dwRest;
-	COLORREF cl;
 
 	for (i = 0; i < 2; i ++) {
 		dwRest = GetCharBuffRest (dwTblID, i);
@@ -2071,24 +2043,12 @@ static void DrawBuffIcons(int x, int y, DWORD dwTblID)
 		if (dwRest < 15000) {
 			g_bDraw = TRUE;
 			if ((timeGetTime () / 250) % 2) {
-				x += 10;
+				x += 16;
 				continue;
 			}
 		}
-		for (yy = 0; yy < 12; yy ++) {
-			for (xx = 0; xx < 9; xx ++) {
-				switch (apszIcon[i][yy][xx]) {
-				case 'k':	cl = RGB (16, 16, 16);		break;
-				case 'w':	cl = RGB (255, 255, 255);	break;
-				case 'y':	cl = RGB (255, 200, 40);	break;
-				case 'r':	cl = RGB (220, 60, 40);		break;
-				case 'b':	cl = RGB (60, 140, 255);	break;
-				default:	continue;
-				}
-				g_pDibDrawMap->FillRect (x + xx, y + yy, 1, 1, cl);
-			}
-		}
-		x += 10;
+		g_pDibDrawMap->Blt (x, y, 16, 16, g_pDibSystem, BUFFICON_GRPX + i * 16, BUFFICON_GRPY, TRUE);
+		x += 16;
 	}
 }
 
