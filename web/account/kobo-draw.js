@@ -18,6 +18,7 @@ const $ = function (id) { return document.getElementById(id); };
 const UNDO_MAX = 50;
 const KEY_PV_PLAY = 'sbo_kobo_pv_play';		// プレビューを再生するか（'1' = 再生）
 const KEY_SMP_ZOOM = 'sbo_kobo_smp_zoom';	// 見本の倍率
+const KEY_REF_ZOOM = 'sbo_kobo_ref_zoom';	// 元イラストの倍率（0 = 欄の幅に合わせる）
 const LOCAL_SAVE_MS = 3000;		// 端末への自動保存
 const SERVER_SAVE_MS = 60000;	// サーバーへの作業中保存（「みんなに見せる」がオンの時だけ）
 /* 拡大・スクロールは管理者用ドット絵エディタ（dot-editor.js）と同じ決まりにそろえる */
@@ -1272,6 +1273,40 @@ function setupUi() {
 		im.addEventListener('error', function () { a.href = imgUrl(task.ref, 'jpg'); });
 		a.appendChild(im);
 		refs.appendChild(a);
+		/*
+		 * 拡大縮小。大きくする時は整数倍でくっきり（pixelated）、欄より大きい絵は「幅に合わせる」で縮めて見る。
+		 * refZ = 0 は幅に合わせる
+		 */
+		let refZ = Number(lsGet(KEY_REF_ZOOM)) || 0;
+		const applyRefZoom = function () {
+			const nw = im.naturalWidth;
+			if (!nw) {
+				return;
+			}
+			const boxW = Math.max(100, refs.clientWidth || 300);
+			const fitZ = boxW / nw;
+			const z = refZ || (fitZ >= 1 ? Math.floor(fitZ) : fitZ);
+			im.style.width = Math.round(nw * z) + 'px';
+			im.style.height = 'auto';
+			im.classList.toggle('shrink', z < 1);
+			$('ref-z').textContent = refZ ? '×' + refZ : (z >= 1 ? '×' + z + '（幅）' : '幅に合わせる');
+			$('ref-out').disabled = refZ === 1;
+			$('ref-in').disabled = refZ >= 16;
+			$('ref-fit').classList.toggle('active', !refZ);
+		};
+		const setRefZ = function (v) {
+			refZ = v;
+			lsSet(KEY_REF_ZOOM, String(v));
+			applyRefZoom();
+		};
+		const curZ = function () { return refZ || Math.max(1, Math.floor(Math.max(100, refs.clientWidth || 300) / (im.naturalWidth || 1))); };
+		$('ref-out').addEventListener('click', function () { setRefZ(Math.max(1, curZ() - 1)); });
+		$('ref-in').addEventListener('click', function () { setRefZ(Math.min(16, curZ() + 1)); });
+		$('ref-fit').addEventListener('click', function () { setRefZ(0); });
+		im.addEventListener('load', function () {
+			$('ref-zoom').hidden = false;
+			applyRefZoom();
+		});
 	} else {
 		refs.appendChild(el('p', 'note', '元イラストはありません。'));
 	}

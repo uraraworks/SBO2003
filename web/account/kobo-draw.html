@@ -165,7 +165,10 @@
 	.pv-scale button { padding: 4px 10px; font-size: 12px; }
 	.pv-scale button:disabled { opacity: 0.4; }
 	.pv-text { align-self: center; font-size: 12px; color: var(--sub); min-width: 3.5em; text-align: center; }
-	#samples { overflow-x: auto; }
+	#samples, #refs { overflow-x: auto; }
+	/* 元イラストはドット絵のことが多いので、拡大してもぼやけさせない */
+	#refs img { image-rendering: pixelated; max-width: none; display: block; }
+	#refs img.shrink { image-rendering: auto; }
 	#samples canvas { max-width: none !important; }
 	#close-side { display: none; }
 	label.row { display: block; margin: 8px 0 4px; font-weight: bold; font-size: 13px; }
@@ -281,6 +284,7 @@
 			<button type="button" id="close-side">閉じる</button>
 			<div class="sec" id="sec-refs">
 				<h4>元イラスト<small>何を描くか</small></h4>
+				<div class="pv-scale" id="ref-zoom" hidden><button type="button" id="ref-out" title="元イラストを小さく">−</button><span id="ref-z" class="pv-text"></span><button type="button" id="ref-in" title="元イラストを大きく">＋</button><button type="button" id="ref-fit" title="欄の幅に合わせる">幅に合わせる</button></div>
 				<div class="imgs" id="refs"></div>
 				<h4 style="margin-top:10px">見本<small>この絵柄に合わせよう</small></h4>
 				<div class="pv-scale"><button type="button" id="smp-out" title="見本を小さく">−</button><span id="smp-z" class="pv-text"></span><button type="button" id="smp-in" title="見本を大きく">＋</button></div>
