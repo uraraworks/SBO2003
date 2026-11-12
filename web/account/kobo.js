@@ -112,6 +112,7 @@ function loadList() {
 		const box = $('groups');
 		box.textContent = '';
 		const tasks = data.tasks || [];
+		renderResume(tasks, data.myWips || []);
 		if (!tasks.length) {
 			box.appendChild(el('p', 'empty', 'まだお題がありません。管理人がお題を出すと、ここに並びます。'));
 			return;
@@ -131,6 +132,114 @@ function loadList() {
 		$('groups').textContent = '';
 		$('groups').appendChild(el('p', 'empty', 'サーバーにつながりませんでした。少し待ってから読み込み直してね。'));
 	});
+}
+
+/* ============ 続きを描く ============ */
+
+const DRAFT_PREFIX = 'kobo_draft:';	// 描く画面がこの端末に残す途中の絵（kobo-draw.js の draftKey と同じ）
+
+function b64ToU8(b64) {
+	const bin = atob(b64);
+	const u8 = new Uint8Array(bin.length);
+	for (let i = 0; i < bin.length; i++) {
+		u8[i] = bin.charCodeAt(i);
+	}
+	return u8;
+}
+
+/** この端末の途中の絵（まだサーバーに作業中として保存していないもの）。[{taskId, from, at, d, w, h}] */
+function localDrafts() {
+	const a = [];
+	try {
+		for (let i = 0; i < window.localStorage.length; i++) {
+			const k = window.localStorage.key(i);
+			if (!k || k.indexOf(DRAFT_PREFIX) !== 0) {
+				continue;
+			}
+			const rest = k.slice(DRAFT_PREFIX.length);
+			const j = rest.indexOf(':');
+			if (j < 0) {
+				continue;
+			}
+			const d = JSON.parse(window.localStorage.getItem(k) || 'null');
+			if (!d || !d.d) {
+				continue;
+			}
+			const sub = rest.slice(j + 1);
+			a.push({ taskId: rest.slice(0, j), workId: sub.indexOf('new-') === 0 ? '' : sub, from: sub.indexOf('new-') === 0 ? sub.slice(4) : '', at: d.at || 0, d: d.d, w: d.w, h: d.h });
+		}
+	} catch (e) { /* 読めなければ無し */ }
+	return a;
+}
+
+/**
+ * トップに「続きを描く」を出す。サーバーの作業中の案（自分の）と、この端末の途中の絵。
+ * 募集中のお題のものだけ。同じ案は 1 つにまとめる（開くと描く画面が端末の途中の絵も聞いてくる）。
+ */
+function renderResume(tasks, myWips) {
+	const box = $('resume');
+	box.textContent = '';
+	const byId = {};
+	tasks.forEach(function (t) { byId[t.id] = t; });
+	const items = [];
+	const seen = {};
+	myWips.forEach(function (w) {
+		const t = byId[w.taskId];
+		if (!t || t.state !== 'open') {
+			return;
+		}
+		seen[w.id] = true;
+		items.push({ task: t, at: w.updatedAt, href: drawUrl(t, { work: w.id }), img: w.img, sub: w.share ? '作業中（みんなに見せている）' : '作業中（自分だけ）' });
+	});
+	localDrafts().forEach(function (d) {
+		const t = byId[d.taskId];
+		if (!t || t.state !== 'open' || d.w !== t.w || d.h !== t.h) {
+			return;
+		}
+		if (d.workId) {
+			if (seen[d.workId]) {
+				/* サーバーの作業中の案より端末の方が新しければ、時刻だけ新しくする */
+				items.forEach(function (it) { if (it.href.indexOf(encodeURIComponent(d.workId)) >= 0 && d.at > it.at) { it.at = d.at; } });
+			}
+			return;
+		}
+		items.push({ task: t, at: d.at, href: drawUrl(t, { from: d.from || 'blank' }), u8: d.d, sub: 'この端末に残っている描きかけ' });
+	});
+	if (!items.length) {
+		box.hidden = true;
+		return;
+	}
+	items.sort(function (a, b) { return b.at - a.at; });
+	box.hidden = false;
+	box.appendChild(el('h3', '', '続きを描く'));
+	const list = el('div', 'resume-list');
+	items.forEach(function (it) {
+		const t = it.task;
+		const a = el('a', 'resume-item');
+		a.href = it.href;
+		const scale = fitScale(t.w, t.h, 96, 48);
+		const th = el('div', 'checker');
+		if (it.img) {
+			th.appendChild(thumbCanvas(t, it.img, scale));
+		} else {
+			let cv;
+			try {
+				cv = indicesToCanvas(b64ToU8(it.u8), t.w, t.h, displayPalette(t));
+			} catch (e) {
+				cv = el('canvas');
+			}
+			cv.style.width = (t.w * scale) + 'px';
+			th.appendChild(cv);
+		}
+		a.appendChild(th);
+		const tx = el('div');
+		tx.appendChild(el('b', '', t.title));
+		tx.appendChild(el('small', '', it.sub));
+		tx.appendChild(el('small', '', dateText(it.at)));
+		a.appendChild(tx);
+		list.appendChild(a);
+	});
+	box.appendChild(list);
 }
 
 function taskCard(t) {
@@ -826,6 +935,8 @@ function bytesToBase64(bytes) {
 	return btoa(bin);
 }
 
+let proposeOpen = false;	// 提案の入力欄を開いているか
+
 function renderPropose() {
 	const box = $('propose');
 	box.textContent = '';
@@ -1254,6 +1365,20 @@ function renderPropose() {
 			}
 		}).catch(function () { send.disabled = false; msg.textContent = 'サーバーにつながりませんでした。'; });
 	});
+	/* 入力欄とお絵かきはふだん閉じておき、「お題を提案する」で開く（送った後は開いたまま） */
+	p.hidden = !proposeOpen;
+	const openWrap = el('div', 'buttons');
+	const openBtn = el('button', '', 'お題を提案する');
+	openBtn.type = 'button';
+	openBtn.addEventListener('click', function () {
+		proposeOpen = true;
+		p.hidden = false;
+		openWrap.hidden = true;
+		ta.focus();
+	});
+	openWrap.appendChild(openBtn);
+	openWrap.hidden = proposeOpen;
+	box.appendChild(openWrap);
 	box.appendChild(p);
 
 	box.appendChild(el('h3', '', '自分の提案'));

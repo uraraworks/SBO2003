@@ -282,6 +282,10 @@ async function main() {
 		eq(r.works.length, 1, '見せている作業中は見える');
 		r = await api.post('/api/kobo/tasks', {});
 		eq(r.tasks[0].wip, 1, '見せている作業中の数');
+		r = await api.post('/api/kobo/tasks', { token: 'tokA' });
+		ok(r.myWips.length === 1 && r.myWips[0].id === wA.id && r.myWips[0].taskId === task.id, '自分の作業中（続きを描く）');
+		r = await api.post('/api/kobo/tasks', { token: 'tokB' });
+		eq(r.myWips.length, 0, '人の作業中は続きに出ない');
 		r = await api.p('tokB', 'save', { taskId: task.id, workId: wA.id, data: draw(3) });
 		eq(r._status, 404, '人の案は上書きできない');
 		r = await api.p('tokA', 'save', { taskId: task.id, workId: wA.id, data: draw(3), submit: true, agree: false });

@@ -660,7 +660,24 @@ Module['sboKobo'] = (function () {
 	function apiTasks(body, req, res) {
 		load();
 		var a = sortTasks(store.tasks.filter(function (t) { return t.state !== 'hidden'; }));
-		reply(res, 200, { tasks: a.map(taskListView) });
+		/* 端末トークンがあれば、自分の作業中の案（募集中のお題のもの）も返す（トップの「続きを描く」用） */
+		var info = body.token ? acc().tokenInfo(str(body.token, 128)) : null;
+		var aWips = [];
+		if (info && info.account) {
+			var mapOpen = {};
+			a.forEach(function (t) {
+				if (t.state === 'open') {
+					mapOpen[t.id] = true;
+				}
+			});
+			store.works.forEach(function (w) {
+				if (w.account === info.account && w.status === 'wip' && !w.deleted && mapOpen[w.taskId]) {
+					aWips.push({ id: w.id, taskId: w.taskId, img: w.img, share: !!w.share, updatedAt: w.updatedAt || w.at });
+				}
+			});
+			aWips.sort(function (x, y) { return y.updatedAt - x.updatedAt; });
+		}
+		reply(res, 200, { tasks: a.map(taskListView), myWips: aWips });
 	}
 
 	function apiTask(body, req, res) {
