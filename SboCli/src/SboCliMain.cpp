@@ -7,8 +7,10 @@
 /* ========================================================================= */
 
 #include "stdafx.h"
+#include <time.h>
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
+#include <emscripten/html5.h>
 #endif
 #include "../Common/Info/InfoJob.h"
 #include "Lib/png.h"
@@ -249,6 +251,18 @@ static BOOL IsDrawEveryFrame(void)
 }
 
 
+/* タブの表示・非表示が変わった。裏にいる間はブラウザが描画フレームを止めるので、
+   タイマーで 1 秒おきに回す（ブラウザの決まりで、長く裏にいると 1 分おきまで延びる） */
+static EM_BOOL OnVisibilityChangeWeb(int, const EmscriptenVisibilityChangeEvent *pEvent, void *)
+{
+	if (pEvent->hidden) {
+		emscripten_set_main_loop_timing (EM_TIMING_SETTIMEOUT, 1000);
+	} else {
+		emscripten_set_main_loop_timing (EM_TIMING_RAF, 1);
+	}
+	return EM_FALSE;
+}
+
 /* ========================================================================= */
 /* 関数名：	MainLoopWeb														 */
 /* 内容：	ブラウザ版のメインループ（描画フレームごとに呼ばれる）			 */
@@ -360,6 +374,9 @@ void SboCliMain(LPSTR lpszArgs)
 #ifdef __EMSCRIPTEN__
 	/* ブラウザでは無限ループできないので、描画フレームごとに呼んでもらう */
 	emscripten_set_main_loop (MainLoopWeb, 0, 0);
+	/* タブが裏に回ると描画フレームが来なくなり、生存確認も受信処理も止まって
+	   90 秒でサーバーに切られていた。裏にいる間はタイマー（1 秒おき）で回す */
+	emscripten_set_visibilitychange_callback (NULL, EM_FALSE, OnVisibilityChangeWeb);
 	return;
 #else
 	while (MainLoopStep () != MAINLOOP_QUIT) {
@@ -2834,6 +2851,9 @@ void TimerProcCharAnimeBOMBBLOCK(PCHARINFO pChar)
 /* 日付：	2006/01/09														 */
 /* ========================================================================= */
 
+/* 前に生存確認を送った時の本当の時計（0 なら未送信。g_wLastProcSecond が 0xFFFF に戻されたら数え直す） */
+static time_t s_tLastHartBeatWall = 0;
+
 void TimerProcCharHartBeat(PCHARINFO pChar)
 {
 	DWORD dwTime;
@@ -2862,16 +2882,14 @@ void TimerProcCharHartBeat(PCHARINFO pChar)
 	}
 
 	pChar->dwLastHartBeat = timeGetTime ();
-	if (g_wLastProcSecond != 0xFFFF) {
-		WORD wLastProcSecondBack, wTmp;
-
-		wLastProcSecondBack = g_wLastProcSecond;
-		wTmp = sysTime.wSecond;
-		if (wLastProcSecondBack > wTmp) {
-			wTmp += 60;
-		}
-
-		if (abs (wLastProcSecondBack - wTmp) * 1000 < SENDHARTBEATTIME - 1000) {
+	/* 時計の速さを変える改造の検出：前の生存確認から本当の時計（time）で
+	   9 秒たっていないのに送る時期が来たら、2 回続いた時に終了する。
+	   以前は「秒」の数字だけ（0〜59）を比べていたので、ちょうど 1 分おきに
+	   呼ばれると 0 秒と見なしてしまっていた（ブラウザ版はタブを裏にすると
+	   1 分おきにしか動かないことがある） */
+	time_t tNow = time (NULL);
+	if ((g_wLastProcSecond != 0xFFFF) && (s_tLastHartBeatWall != 0)) {
+		if ((tNow - s_tLastHartBeatWall) * 1000 < SENDHARTBEATTIME - 1000) {
 			if (g_bHartbeatCheck == FALSE) {
 				g_bHartbeatCheck = TRUE;
 			} else {
@@ -2882,6 +2900,7 @@ void TimerProcCharHartBeat(PCHARINFO pChar)
 			g_bHartbeatCheck = FALSE;
 		}
 	}
+	s_tLastHartBeatWall = tNow;
 	g_wLastProcSecond = sysTime.wSecond;
 }
 

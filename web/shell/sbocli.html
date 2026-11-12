@@ -103,6 +103,35 @@
 		transition: width 0.2s linear;
 	}
 
+	/* 切断された時にゲーム画面に出す「つなぎ直す」ボタン（押すと読み込み直す）。
+	   真ん中の「接続が途切れました」の窓の少し下に置く */
+	#sbo-reconnect {
+		display: none;
+		position: absolute;
+		left: 50%;
+		top: 62%;
+		transform: translateX(-50%);
+		z-index: 30;
+		padding: 14px 28px;
+		border: 2px solid var(--accent);
+		border-radius: 10px;
+		background: rgba(24, 28, 36, 0.92);
+		color: var(--accent);
+		font: bold 18px/1.3 sans-serif;
+		cursor: pointer;
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+	}
+	#sbo-reconnect small {
+		display: block;
+		margin-top: 4px;
+		color: #c8ccd4;
+		font-size: 12px;
+		font-weight: normal;
+	}
+	body.sbo-conn-lost #sbo-reconnect {
+		display: block;
+	}
+
 	/* ===================================================================
 	   チャット欄（共通）
 	   =================================================================== */
@@ -1664,6 +1693,7 @@
 		<canvas id="sbo-sharp" aria-hidden="true"></canvas>
 		<div id="sbo-overlay" style="position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none;"></div>
 		<div id="sbo-shot-flash"></div>
+		<button type="button" id="sbo-reconnect">つなぎ直す<small>ページを読み込み直します</small></button>
 		<!-- スマホのカメラボタン（縦持ちはゲーム画面の右上隅に重ねる。横持ちは左下） -->
 		<button type="button" id="sbo-shot-pad" title="スクリーンショット"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-camera"/></svg><span class="sbo-pad-txt">スクショ</span></button>
 		<button type="button" id="sbo-rec-pad" title="ゲーム画面を動画で録画"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-video"/></svg><span class="sbo-pad-txt">録画</span></button>
@@ -3676,7 +3706,7 @@
 			return;
 		}
 		document.body.classList.toggle('sbo-lost', lost);
-		var ph = lost ? '切断されました（再読み込みで再接続）' : null;
+		var ph = lost ? '切断されました（「つなぎ直す」で再接続）' : null;
 		chatInput.placeholder = ph || '発言を入力して Enter';
 		sheetInput.placeholder = ph || '発言を入力';
 		/* スマホで触ってもキーボードが出ないよう、読むだけにする */
@@ -3696,9 +3726,15 @@
 			});
 		}
 	}
+	document.getElementById('sbo-reconnect').addEventListener('click', function () {
+		this.disabled = true;
+		location.reload();
+	});
 	setInterval(function () {
 		if (sboReady && Module['_SboWebGetGameState']) {
 			var st = Module['_SboWebGetGameState']();
+			/* 切断されたらゲーム画面に「つなぎ直す」ボタンを出す */
+			document.body.classList.toggle('sbo-conn-lost', st === GAMESTATE_CONNECTLOST);
 			if (st === GAMESTATE_CONNECTLOST) {
 				/* マップで遊んでいた時の切断だけログを残して出しておく */
 				if (document.body.classList.contains('sbo-on-map')) {
