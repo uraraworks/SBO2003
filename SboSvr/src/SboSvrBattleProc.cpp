@@ -31,11 +31,22 @@ static	void	BattleProcAtackArea	(PCHARINFO, DWORD);				/* なぎ払い・貫通�
 static	BOOL	BattleProcTell		(PCHARINFO, PMAPINFO, DWORD, BOOL);	/* 敵の攻撃の予兆「！」 */
 		void	ResurrectionBack	(PCHARINFO);					/* 復活位置で蘇生 */
 static	void	BattleProcMagic		(PCHARINFO, PCHARINFO, BYTE);	/* 戦闘処理(魔法) */
+static	int		GetEnemyTurnTime	(PCHARINFO);					/* 敵の行動の間隔(ms) */
+static	BOOL	IsEnemy				(PCHARINFO);					/* 戦闘１・戦闘２の敵か */
+static	BYTE	GetDirectionTo		(PCHARINFO, PCHARINFO, BYTE);	/* 相手のいる方の向き */
+static	BOOL	IsHealMagic			(PMAGICINFO);					/* 味方(自分側)のHPを増やす特技か */
+static	BOOL	IsNeedHeal			(PCHARINFO, PMAGICINFO);		/* 回復の特技を使う意味があるか */
+static	BOOL	CanReachMagic		(PCHARINFO, PCHARINFO, PMAGICINFO, BYTE *);	/* 離れた相手に届く特技か */
+static	int		ChooseEnemyMagic	(PCHARINFO, PCHARINFO, BOOL);	/* 敵が使う特技の枠を選ぶ */
+static	BOOL	BattleProcRangeMagic(PCHARINFO, PMAPINFO);			/* 離れた相手へ特技を使う */
 static	int		GetWeponMin			(PCHARINFO);					/* 武器の減少値を取得 */
 static	int		DamageProc			(PCHARINFO, PCHARINFO, BOOL, BOOL, int);	/* ダメージ量計算 */
 		int		RenkeiCheck			(PCHARINFO, PCHARINFO);			/* 連携ボーナスの倍率(%) */
 
 #define RENKEI_TIME		2000		/* 別の人が殴ってからこの時間(ms)以内に殴ると連携 */
+#define ENEMYHEAL_RATE	70			/* 敵はHPがこの割合(%)以上なら回復の特技を使わない */
+#define ENEMYHEAL_PINCH	30			/* 敵はHPがこの割合(%)以下なら回復の特技を優先する */
+#define ENEMYHEAL_PINCHRATE	50		/* HPが少ない時に回復を優先する確率(%) */
 #define RENKEI_RATE		130			/* 連携の時のダメージ(%) */
 		void	AddBattleDamage		(PCHARINFO, PCHARINFO, int);	/* 敵に与えたダメージを覚える(報酬を分ける用) */
 		void	ClearBattleDamage	(DWORD);						/* 覚えたダメージを消す(キャラ削除時) */
@@ -108,13 +119,8 @@ void BattleProcCheck(PCHARINFO pChar)
 		行動タイミングの判定
 	***************************/
 
-	/* 攻撃タイミングになっているかを計算。最大4秒で255を100%とする。 */
-	nTmp = pChar->byDEX;
-	nTmp = nTmp * 100 / 255;
-	nTmp = max (nTmp, 1);
-	nTmp = 1000 + (4000 - ((4000 * nTmp) / 100));
-	/* 加速していれば間隔が短くなる */
-	nTmp = nTmp * 100 / (100 + GetHasteRate (pChar));
+	/* 攻撃タイミングになっているかを計算。最大4秒で255を100%とする。加速していれば間隔が短くなる */
+	nTmp = GetEnemyTurnTime (pChar);
 
 	if (pChar->dwLastBattle == 1) {
 		pChar->dwLastBattle = timeGetTime ();
@@ -174,6 +180,10 @@ void BattleProcCheck(PCHARINFO pChar)
 			(dwY != pCharTmp->dwY)) {
 			continue;
 		}
+		/* 敵は狙っている相手にだけ行動する（以前は特技だけ、目の前の誰にでも使っていた） */
+		if (IsEnemy (pChar) && (pChar->dwTargetTblID != pCharTmp->dwTblID)) {
+			continue;
+		}
 		bAtack = TRUE;
 
 		/* PCの行動？ */
@@ -216,7 +226,12 @@ void BattleProcCheck(PCHARINFO pChar)
 		if (pMerc) {
 			BattleProc (pChar, pMerc);
 			pChar->dwLastBattle = timeGetTime ();
+			bAtack = TRUE;
 		}
+	}
+	/* 狙っている相手が目の前にいない？ 届く特技があれば離れたところから使う */
+	if (!bAtack && IsEnemy (pChar)) {
+		BattleProcRangeMagic (pChar, pMap);
 	}
 }
 
@@ -374,27 +389,30 @@ BOOL DamageAfterProcNPC(PCHARINFO pChar, PCHARINFO pCharTarget)
 			return FALSE;
 		}
 
+		/* 傭兵・プレイヤー以外(敵どうしの魔法など)からの攻撃では狙いを変えない */
+		if ((pChar->byNpcType != NPCTYPE_INIT) && !IsMercenary (pChar)) {
+			return FALSE;
+		}
 		if (pCharTarget->dwLastBattle == 0) {
-			/* 最初に攻撃してきたキャラをターゲットにする */
+			/* 最初に攻撃してきたキャラをターゲットにする（向きは相手のいる方。離れた所から撃たれた時も） */
 			pCharTarget->dwTargetTblID = pChar->dwTblID;
-			pCharTarget->byDirection = abyDirectionTbl[pChar->byDirection];
+			pCharTarget->byDirection = GetDirectionTo (pCharTarget, pChar, abyDirectionTbl[pChar->byDirection]);
 			pCharTarget->byFlg |= CHARINFOFLG_DIRECTION;
 			pCharTarget->dwLastBattle = 1;
 
 		} else {
 			/* ターゲット以外からの攻撃？ */
 			if (pChar->dwTblID != pCharTarget->dwTargetTblID) {
-				/* 攻撃タイミングになっているかを計算。最大4秒で255を100%とする。 */
-				nTmp = pChar->byDEX;
-				nTmp = nTmp * 100 / 255;
-				nTmp = max (nTmp, 1);
-				nTmp = 1000 + (4000 - ((4000 * nTmp) / 100));
-
-				/* 2ターン以上行動していない？ */
-				if (abs (timeGetTime () - pCharTarget->dwLastBattle) / nTmp >= 2) {
-					/* 目の前にはいないと判断してターゲット解除 */
-					pCharTarget->dwLastBattle = 0;
-					pCharTarget->dwTargetTblID = -1;
+				/* 敵自身の行動の間隔で数えて（以前は殴った人の素早さで数えていた）、
+				   2ターン以上行動していない？ 今の相手とは戦えていないので、殴ってきた人に乗り換える */
+				nTmp = GetEnemyTurnTime (pCharTarget);
+				if ((pCharTarget->dwLastBattle <= 1) ||
+					((DWORD)(timeGetTime () - pCharTarget->dwLastBattle) / (DWORD)nTmp >= 2)) {
+					pCharTarget->dwTargetTblID = pChar->dwTblID;
+					if (abs (GetCharDistanceX (pCharTarget, pChar)) + abs ((int)pChar->dwY - (int)pCharTarget->dwY) == 1) {
+						pCharTarget->byDirection = GetDirectionTo (pCharTarget, pChar, pCharTarget->byDirection);
+						pCharTarget->byFlg |= CHARINFOFLG_DIRECTION;
+					}
 				}
 			}
 		}
@@ -566,9 +584,11 @@ static BOOL BattleProc(PCHARINFO pChar, PCHARINFO pCharTarget)
 	bRet = TRUE;
 
 	/* 傭兵には特技を使わない(特技の相手はプレイヤーと敵だけの作りのため) */
+	byNo = 0;
 	if (pChar->byNpcType && !IsMercenary (pCharTarget)) {
-		byNo = (BYTE)(genrand () % MAX_USEMAGIC);
-		if (pChar->abyMagic[byNo]) {
+		int nNo = ChooseEnemyMagic (pChar, pCharTarget, FALSE);
+		if (nNo >= 0) {
+			byNo = (BYTE)nNo;
 			nType = 1;
 		}
 	}
@@ -755,6 +775,10 @@ static BOOL BattleProcTell(PCHARINFO pChar, PMAPINFO pMap, DWORD dwWait, BOOL bL
 			continue;
 		}
 		if ((pCharTmp->wHP == 0) || (pCharTmp->byCharState == CHARSTATE_DEAD)) {
+			continue;
+		}
+		/* 狙っている相手にだけ殴るので、予兆もその相手にだけ */
+		if (pCharTmp->dwTblID != pChar->dwTargetTblID) {
 			continue;
 		}
 		/* 攻撃できる時間を過ぎてから出した時は、ここから dwTell 待ってから殴る */
@@ -1174,7 +1198,13 @@ void ResurrectionBack(PCHARINFO pChar)
 /* ========================================================================= */
 static void BattleProcMagic(PCHARINFO pChar, PCHARINFO pCharTarget, BYTE byNo)
 {
-	MagicProc (pChar->dwTblID, pChar->abyMagic[byNo], pCharTarget->dwTblID);
+	BYTE byID = pChar->abyMagic[byNo];
+
+	/* 敵が「選んだ相手」に使う回復は、戦っている相手ではなく自分に使う */
+	if ((pChar->byNpcType != NPCTYPE_INIT) && (byID < g_aMagicInfo.GetSize ()) && IsHealMagic (g_aMagicInfo[byID])) {
+		pCharTarget = pChar;
+	}
+	MagicProc (pChar->dwTblID, byID, pCharTarget->dwTblID);
 }
 
 /* ========================================================================= */
@@ -1725,6 +1755,266 @@ int RenkeiCheck(PCHARINFO pChar, PCHARINFO pCharTarget)
 	}
 	s_mapLastHit[pCharTarget->dwTblID] = std::make_pair (pChar->dwTblID, dwNow);
 	return nRet;
+}
+
+/* ========================================================================= */
+/* 関数名：	GetEnemyTurnTime												 */
+/* 内容：	敵の行動の間隔(ms)。素早さ0で5秒〜255で1秒。加速で短くなる		 */
+/* ========================================================================= */
+static int GetEnemyTurnTime(PCHARINFO pChar)
+{
+	int nTmp;
+
+	nTmp = pChar->byDEX;
+	nTmp = nTmp * 100 / 255;
+	nTmp = max (nTmp, 1);
+	nTmp = 1000 + (4000 - ((4000 * nTmp) / 100));
+	nTmp = nTmp * 100 / (100 + GetHasteRate (pChar));
+	nTmp = max (nTmp, 1);
+
+	return nTmp;
+}
+
+/* ========================================================================= */
+/* 関数名：	IsEnemy															 */
+/* 内容：	戦闘１・戦闘２の敵か											 */
+/* ========================================================================= */
+static BOOL IsEnemy(PCHARINFO pChar)
+{
+	return (pChar->byNpcType == NPCTYPE_BATTLE1) || (pChar->byNpcType == NPCTYPE_BATTLE2);
+}
+
+/* ========================================================================= */
+/* 関数名：	GetDirectionTo													 */
+/* 内容：	pChar から見て pCharTo のいる方の向き(同じ場所なら byDefault)	 */
+/* ========================================================================= */
+static BYTE GetDirectionTo(PCHARINFO pChar, PCHARINFO pCharTo, BYTE byDefault)
+{
+	int nDX, nDY;
+
+	nDX = GetCharDistanceX (pChar, pCharTo);
+	nDY = (int)pCharTo->dwY - (int)pChar->dwY;
+	if ((nDX == 0) && (nDY == 0)) {
+		return byDefault;
+	}
+	if (abs (nDX) > abs (nDY)) {
+		return (nDX < 0) ? 2 : 3;
+	}
+	return (nDY < 0) ? 0 : 1;
+}
+
+/* ========================================================================= */
+/* 関数名：	IsHealMagic														 */
+/* 内容：	味方(自分側)のHPを増やす特技か									 */
+/* ========================================================================= */
+static BOOL IsHealMagic(PMAGICINFO pInfo)
+{
+	return (pInfo->byType == MAGICTYPE_HPUP) && (pInfo->byTarget != MAGICTARGET_NPC);
+}
+
+/* ========================================================================= */
+/* 関数名：	IsNeedHeal														 */
+/* 内容：	回復の特技を使う意味があるか									 */
+/*			自分か、届く範囲の仲間(敵)のHPが ENEMYHEAL_RATE(%) より少ない時	 */
+/* ========================================================================= */
+static BOOL IsNeedHeal(PCHARINFO pChar, PMAGICINFO pInfo)
+{
+	int i, nAreaX, nAreaY;
+	PMAPINFO pMap;
+	PDWORD pData;
+	PCHARINFO pCharTmp;
+
+	if ((pChar->wMaxHP == 0) || ((int)pChar->wHP * 100 < (int)pChar->wMaxHP * ENEMYHEAL_RATE)) {
+		return TRUE;
+	}
+	switch (pInfo->byTargetType) {
+	case MAGICTARGETTYPE_CIRCLE:	nAreaX = nAreaY = pInfo->byTargetArea;	break;
+	case MAGICTARGETTYPE_SCREEN:	nAreaX = DRAW_PARTS_X; nAreaY = DRAW_PARTS_Y;	break;
+	default:
+		return FALSE;
+	}
+	pMap = g_aMapInfo[pChar->dwMapID];
+	pData = pMap->paTblNoNPC;
+	for (i = 0; i < (int)pMap->dwCountTblNoNPC; i ++) {
+		if (pData[i] == -1) {
+			break;
+		}
+		pCharTmp = g_aCharInfo[pData[i]];
+		if ((pCharTmp == pChar) || !IsEnemy (pCharTmp) || (pCharTmp->wHP == 0) || (pCharTmp->wMaxHP == 0)) {
+			continue;
+		}
+		if ((abs (GetCharDistanceX (pChar, pCharTmp)) > nAreaX) || (abs ((int)pCharTmp->dwY - (int)pChar->dwY) > nAreaY)) {
+			continue;
+		}
+		if ((int)pCharTmp->wHP * 100 < (int)pCharTmp->wMaxHP * ENEMYHEAL_RATE) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* ========================================================================= */
+/* 関数名：	CanReachMagic													 */
+/* 内容：	目の前にいない相手に届く攻撃の特技か。届くなら使う時の向きを返す	 */
+/*			・前方の特技／前へ飛ぶ魔法：まっすぐ並んでいて、届く距離で、	 */
+/*			  間に通れないマスが無い										 */
+/*			・周囲の特技：範囲の中にいる	・画面内の特技：画面の中にいる	 */
+/* ========================================================================= */
+static BOOL CanReachMagic(PCHARINFO pChar, PCHARINFO pCharTarget, PMAGICINFO pInfo, BYTE *pbyDirection)
+{
+	int i, nDX, nDY, nDist, nArea;
+	BOOL bLine;
+
+	/* 相手側に効く特技だけ */
+	if (pInfo->byTarget == MAGICTARGET_PC) {
+		return FALSE;
+	}
+	nDX = GetCharDistanceX (pChar, pCharTarget);
+	nDY = (int)pCharTarget->dwY - (int)pChar->dwY;
+	*pbyDirection = GetDirectionTo (pChar, pCharTarget, pChar->byDirection);
+
+	bLine = FALSE;
+	nArea = pInfo->byTargetArea;
+	switch (pInfo->byTargetType) {
+	case MAGICTARGETTYPE_FRONT:			/* 前方 */
+		bLine = TRUE;
+		break;
+	case MAGICTARGETTYPE_SELF:			/* 自分の場所から前へ飛んでいく魔法 */
+		if (((pInfo->byType == MAGICTYPE_PUT) || (pInfo->byType == MAGICTYPE_PUTSELF)) && pInfo->wData4) {
+			bLine = TRUE;
+		}
+		break;
+	case MAGICTARGETTYPE_CIRCLE:		/* 周囲 */
+		return (abs (nDX) <= nArea) && (abs (nDY) <= nArea);
+	case MAGICTARGETTYPE_SCREEN:		/* 画面内 */
+		return (abs (nDX) <= DRAW_PARTS_X) && (abs (nDY) <= DRAW_PARTS_Y);
+	}
+	if (bLine == FALSE) {
+		return FALSE;
+	}
+	if ((nDX != 0) && (nDY != 0)) {
+		return FALSE;
+	}
+	nDist = abs (nDX) + abs (nDY);
+	if ((nDist == 0) || (nDist > nArea)) {
+		return FALSE;
+	}
+	/* 間に壁などがある？ */
+	for (i = 1; i < nDist; i ++) {
+		if (CheckCharBlock (pChar->dwMapID,
+				(DWORD)((int)pChar->dwX + anPosAddTblX[*pbyDirection] * i),
+				(DWORD)((int)pChar->dwY + anPosAddTblY[*pbyDirection] * i)) == FALSE) {
+			return FALSE;
+		}
+	}
+	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：	ChooseEnemyMagic												 */
+/* 内容：	敵が使う特技の枠を選ぶ(使わずに普通に殴るなら -1)				 */
+/*			・これまでどおり16枠からくじを引き、空き枠なら普通の攻撃		 */
+/*			  （同じ特技を何枠にも入れると出やすい、という作りはそのまま）	 */
+/*			・回復の特技は、自分や近くの仲間のHPが減っていなければ使わない	 */
+/*			・自分のHPが少ない時は、ENEMYHEAL_PINCHRATE(%)で回復を優先する	 */
+/*			・bRange の時は、離れた相手に届く攻撃の特技だけ					 */
+/* ========================================================================= */
+static int ChooseEnemyMagic(PCHARINFO pChar, PCHARINFO pCharTarget, BOOL bRange)
+{
+	int i, nNo, nCount, anHeal[MAX_USEMAGIC];
+	BYTE byID, byDirection;
+	PMAGICINFO pInfo;
+
+	/* HPが少ない？ 使える回復があれば優先する */
+	if ((pChar->wMaxHP > 0) && ((int)pChar->wHP * 100 <= (int)pChar->wMaxHP * ENEMYHEAL_PINCH) &&
+		((int)(genrand () % 100) < ENEMYHEAL_PINCHRATE)) {
+		nCount = 0;
+		for (i = 0; i < MAX_USEMAGIC; i ++) {
+			byID = pChar->abyMagic[i];
+			if ((byID == 0) || (byID >= g_aMagicInfo.GetSize ())) {
+				continue;
+			}
+			if (IsHealMagic (g_aMagicInfo[byID])) {
+				anHeal[nCount ++] = i;
+			}
+		}
+		if (nCount > 0) {
+			return anHeal[genrand () % nCount];
+		}
+	}
+
+	nNo = (int)(genrand () % MAX_USEMAGIC);
+	byID = pChar->abyMagic[nNo];
+	if ((byID == 0) || (byID >= g_aMagicInfo.GetSize ())) {
+		return -1;
+	}
+	pInfo = g_aMagicInfo[byID];
+	if (IsHealMagic (pInfo)) {
+		/* 離れた所からは回復しない（回復は目の前の相手と戦っている時の番で使う） */
+		if (bRange || (IsNeedHeal (pChar, pInfo) == FALSE)) {
+			return -1;
+		}
+		return nNo;
+	}
+	if (bRange && (CanReachMagic (pChar, pCharTarget, pInfo, &byDirection) == FALSE)) {
+		return -1;
+	}
+	return nNo;
+}
+
+/* ========================================================================= */
+/* 関数名：	BattleProcRangeMagic											 */
+/* 内容：	狙っている相手が目の前にいない時、届く特技があれば使う			 */
+/*			くじは1回の番につき1回だけ引く(外れたら次の番まで待つ。		 */
+/*			その間に相手が目の前に来たら普通に戦う)							 */
+/* ========================================================================= */
+static BOOL BattleProcRangeMagic(PCHARINFO pChar, PMAPINFO pMap)
+{
+	static std::map<DWORD, DWORD> s_mapTry;		/* キャラごとに、くじを引いた時の dwLastBattle */
+	int nNo;
+	BYTE byDirection;
+	PCHARINFO pCharTarget;
+	PMAGICINFO pInfo;
+
+	if ((pChar->dwTargetTblID == -1) || (pChar->dwTargetTblID >= (DWORD)g_aCharInfo.GetSize ())) {
+		return FALSE;
+	}
+	pCharTarget = g_aCharInfo[pChar->dwTargetTblID];
+	if ((pCharTarget == NULL) || (pCharTarget->byNpcType != NPCTYPE_INIT) ||
+		(pCharTarget->byGameState == GAMESTATE_LOGOFF) || (pCharTarget->dwMapID != pChar->dwMapID) ||
+		(pCharTarget->wHP == 0) || (pCharTarget->byCharState == CHARSTATE_DEAD)) {
+		return FALSE;
+	}
+	/* 特技を使えないマップ？ */
+	if (pMap->byFlg & MAPFLG_MAGIC) {
+		return FALSE;
+	}
+	/* この番ではもうくじを引いた？ */
+	std::map<DWORD, DWORD>::iterator it = s_mapTry.find (pChar->dwTblID);
+	if ((it != s_mapTry.end ()) && (it->second == pChar->dwLastBattle)) {
+		return FALSE;
+	}
+	s_mapTry[pChar->dwTblID] = pChar->dwLastBattle;
+
+	nNo = ChooseEnemyMagic (pChar, pCharTarget, TRUE);
+	if (nNo < 0) {
+		return FALSE;
+	}
+	pInfo = g_aMagicInfo[pChar->abyMagic[nNo]];
+	if (CanReachMagic (pChar, pCharTarget, pInfo, &byDirection) == FALSE) {
+		return FALSE;
+	}
+	/* 相手の方を向いてから使う */
+	if (pChar->byDirection != byDirection) {
+		pChar->byDirection = byDirection;
+		pChar->byFlg |= CHARINFOFLG_DIRECTION;
+	}
+	BattleProcMagic (pChar, pCharTarget, (BYTE)nNo);
+	pChar->dwLastBattle = timeGetTime ();
+	if (pChar->dwLastBattle <= 1) {
+		pChar->dwLastBattle = 2;
+	}
+	return TRUE;
 }
 
 /* Copyright(C)URARA-works 2003-2005 */

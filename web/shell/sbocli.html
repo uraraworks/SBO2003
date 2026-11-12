@@ -13,7 +13,7 @@
 		--border: #3a404a;
 		--accent: #f0b84a;
 		--app-height: 100vh;
-		--pad-h: 168px;
+		--pad-h: 192px;
 		--pad-col-w: 136px;
 	}
 	html, body {
@@ -85,6 +85,22 @@
 		font-size: 13px;
 		color: var(--sub);
 		min-height: 1.4em;
+	}
+	/* 読み込みの進み具合（ゲームデータのダウンロード中だけ出す） */
+	.sbo-load-bar {
+		width: min(320px, 80%);
+		height: 8px;
+		margin: 6px auto 0;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		background: rgba(0, 0, 0, 0.35);
+		overflow: hidden;
+	}
+	.sbo-load-bar > div {
+		height: 100%;
+		width: 0;
+		background: var(--accent);
+		transition: width 0.2s linear;
 	}
 
 	/* ===================================================================
@@ -318,6 +334,7 @@
 		justify-content: space-between;
 		align-items: center;
 		padding: 8px calc(18px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left));
+		position: relative;
 		background: rgba(16, 18, 22, 0.96);
 		border-top: 1px solid var(--border);
 		border-bottom: 1px solid var(--border);
@@ -405,13 +422,16 @@
 		display: block;
 	}
 	/* タブレットの縦持ちはログ欄が広いので、文字も少し大きくして読みやすく */
-	@media (orientation: portrait) and (min-width: 600px) {
+	@media (max-aspect-ratio: 129/100) and (min-width: 600px) {
 		body.sbo-pad #sbo-chat-area {
 			font-size: 15px;
 		}
 	}
 
-	@media (orientation: landscape) {
+	/* 縦横の判定は orientation ではなく縦横比で行う。縦持ちでキーボードを出すと画面の高さが縮み、
+	   orientation: landscape に切り替わって横持ちの配置（📷🎥の丸ボタンなど）が出てしまうため。
+	   キーボードを出した縦持ちは 1.1 前後、横持ちのスマホは 2 前後、iPad の横持ちは 1.33〜1.45 */
+	@media (min-aspect-ratio: 13/10) {
 		body.sbo-pad {
 			flex-direction: row;
 			align-items: center;
@@ -487,9 +507,9 @@
 		position: absolute;
 		box-sizing: border-box;
 		pointer-events: none;
-		/* 右のボタンと同じ色・同じ縁取り */
-		background: #3b404c;
-		border: 2px solid #07080b;
+		/* 右のボタンと同じ色・細い淡い枠線のフラット */
+		background: #2a2f3a;
+		border: 1px solid rgba(255, 255, 255, 0.16);
 	}
 	.sbo-dpad-arm {
 		display: flex;
@@ -497,7 +517,6 @@
 		justify-content: center;
 		color: rgba(255, 255, 255, 0.8);
 		font-size: 14px;
-		text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.6);
 		line-height: 1;
 	}
 	/* 腕は 44px 幅。真ん中の四角（44px）と重ねて継ぎ目を隠す */
@@ -553,7 +572,7 @@
 	}
 	/* 押している方向は、ボタンを押した時と同じく暗くへこませ、矢印を金色にする */
 	.sbo-dpad-arm.sbo-dpad-on {
-		background: #2c3039;
+		background: #3a4150;
 		color: #f0c040;
 	}
 	/* 向きかえモード中は真ん中を光らせ、腕の色も変えて「歩かない」と分かるようにする */
@@ -563,6 +582,9 @@
 	}
 	.sbo-stick:has(.sbo-dpad-center.sbo-dpad-on) .sbo-dpad-arm {
 		border-color: rgba(240, 192, 64, 0.8);
+	}
+	.sbo-stick-note {
+		display: none;
 	}
 
 	/* ---- ボタン ----
@@ -591,13 +613,11 @@
 		justify-content: center;
 		gap: 2px;
 		padding: 0;
-		border: 2px solid #07080b;
-		border-radius: 8px;	/* 十字キーの腕の先と同じ丸み */
-		background: #3b404c;
-		box-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.32), inset -2px -2px 0 rgba(0, 0, 0, 0.45);
-		color: #fff;
+		border: 1px solid rgba(255, 255, 255, 0.16);
+		border-radius: 8px;
+		background: #2a2f3a;
+		color: #eef0f4;
 		font: bold 11px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
-		text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.6);
 		-webkit-tap-highlight-color: transparent;
 		touch-action: none;
 		-webkit-user-select: none;
@@ -606,11 +626,22 @@
 	}
 	/* 押している間は段差を逆にして、へこんで見せる */
 	.sbo-buttons button.sbo-pressed {
-		background: #2c3039;
-		box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.5), inset -2px -2px 0 rgba(255, 255, 255, 0.12);
+		background: #3d4452;
+	}
+	.sbo-buttons button.sbo-main.sbo-pressed {
+		background: #4a6a88;
 	}
 	.sbo-buttons button.sbo-main {
 		font-size: 13px;
+		background: #3c566e;
+		border-color: rgba(255, 255, 255, 0.22);
+	}
+	body.sbo-battle .sbo-buttons button.sbo-b-ctrl {
+		background: #8a3a3a;
+		border-color: rgba(255, 255, 255, 0.25);
+	}
+	body.sbo-battle .sbo-buttons button.sbo-b-ctrl.sbo-pressed {
+		background: #a04848;
 	}
 	.sbo-buttons button:disabled {
 		opacity: 0.35;
@@ -621,9 +652,8 @@
 		fill: none;
 		stroke: currentColor;
 		stroke-width: 2.4;
-		stroke-linecap: square;
-		stroke-linejoin: miter;
-		filter: drop-shadow(1px 1px 0 rgba(0, 0, 0, 0.6));
+		stroke-linecap: round;
+		stroke-linejoin: round;
 	}
 	.sbo-main .sbo-btn-svg {
 		width: 18px;
@@ -637,9 +667,117 @@
 		letter-spacing: -0.08em;
 	}
 	.sbo-btn-key {
-		font-size: 8px;
-		font-weight: normal;
-		opacity: 0.6;
+		display: none;
+	}
+	.sbo-pad-txt {
+		white-space: nowrap;
+	}
+	/* スクショ・録画はゲーム画面に重ねる丸ボタンなので絵だけ */
+	#sbo-shot-pad .sbo-pad-txt,
+	#sbo-rec-pad .sbo-pad-txt {
+		display: none;
+	}
+	@media (min-aspect-ratio: 13/10) {
+		body.sbo-pad .sbo-pad-txt {
+			display: none;
+		}
+	}
+
+	/* 縦持ちのパッド：左に十字キー、右下に大きな決定、そのまわりに弧状に丸ボタン、
+	   左上に小さな横長ボタン（表示）。全部 #sbo-pad 内で絶対配置（消えても位置はずれない） */
+	@media (max-aspect-ratio: 129/100) {
+		body.sbo-pad .sbo-buttons {
+			display: contents;
+		}
+		body.sbo-pad .sbo-stick {
+			position: absolute;
+			left: calc(12px + env(safe-area-inset-left));
+			top: 46px;
+		}
+		body.sbo-pad .sbo-stick-note {
+			display: block;
+			position: absolute;
+			left: calc(12px + env(safe-area-inset-left));
+			top: 180px;
+			width: 132px;
+			text-align: center;
+			font: 9px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+			color: rgba(255, 255, 255, 0.38);
+			pointer-events: none;
+		}
+		body.sbo-pad #sbo-pad button {
+			position: absolute;
+			display: flex;
+			width: auto;
+			height: 38px;
+			border-radius: 10px;
+			gap: 2px;
+		}
+		/* 上の小さな横長ボタン */
+		body.sbo-pad #sbo-pad .sbo-b-tab {
+			top: 4px;
+			width: 56px;
+			min-width: 0;
+			flex-direction: column;
+			align-items: center;
+			justify-content: center;
+			padding: 0;
+			font: bold 10px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		}
+		body.sbo-pad #sbo-pad .sbo-b-tab { left: calc(12px + env(safe-area-inset-left)); }
+		body.sbo-pad #sbo-pad .sbo-btn-svg {
+			width: 16px;
+			height: 16px;
+		}
+		/* 決定・まわりの丸ボタン */
+		body.sbo-pad #sbo-pad .sbo-b-x,
+		body.sbo-pad #sbo-pad .sbo-b-z,
+		body.sbo-pad #sbo-pad .sbo-b-s,
+		body.sbo-pad #sbo-pad .sbo-b-c,
+		body.sbo-pad #sbo-pad .sbo-b-ctrl {
+			border-radius: 50%;
+			padding: 0;
+		}
+		body.sbo-pad #sbo-pad .sbo-b-x {
+			right: calc(12px + env(safe-area-inset-right));
+			top: 84px;
+			width: 88px;
+			height: 88px;
+			gap: 3px;
+			font-size: 12px;
+		}
+		body.sbo-pad #sbo-pad .sbo-b-x .sbo-btn-svg {
+			width: 38px;
+			height: 38px;
+			stroke-width: 1.8;
+		}
+		body.sbo-pad #sbo-pad .sbo-b-z {
+			right: calc(108px + env(safe-area-inset-right));
+			top: 98px;
+			width: 60px;
+			height: 60px;
+			font-size: 9px;
+		}
+		body.sbo-pad #sbo-pad .sbo-b-s,
+		body.sbo-pad #sbo-pad .sbo-b-c {
+			right: calc(68px + env(safe-area-inset-right));
+			top: 20px;
+			width: 56px;
+			height: 56px;
+		}
+		body.sbo-pad #sbo-pad .sbo-b-ctrl {
+			right: calc(8px + env(safe-area-inset-right));
+			top: 24px;
+			width: 52px;
+			height: 52px;
+		}
+		body.sbo-pad #sbo-pad .sbo-b-z .sbo-btn-svg,
+		body.sbo-pad #sbo-pad .sbo-b-s .sbo-btn-svg,
+		body.sbo-pad #sbo-pad .sbo-b-c .sbo-btn-svg,
+		body.sbo-pad #sbo-pad .sbo-b-ctrl .sbo-btn-svg {
+			width: 20px;
+			height: 20px;
+		}
 	}
 
 	/* ---- チャット入力用のシート（下からせり上がる） ---- */
@@ -921,6 +1059,16 @@
 		font-size: 18px;
 		cursor: pointer;
 	}
+	/* キーボードで選んでいるボタン・リンクが分かるように枠を付ける（マウスで押した時は出さない） */
+	#sbo-quick .sbo-btn:focus-visible,
+	#sbo-quick .sbo-link:focus-visible,
+	#sbo-quick .sbo-acc-gear:focus-visible,
+	#sbo-recover .sbo-btn:focus-visible,
+	#sbo-recover .sbo-check input:focus-visible,
+	#sbo-quick-return:focus-visible {
+		outline: 3px solid #fff;
+		outline-offset: 2px;
+	}
 	#sbo-quick-back.sbo-multi #sbo-quick-settings,
 	#sbo-quick-back:not(.sbo-multi) .sbo-acc-gear {
 		display: none;
@@ -1194,7 +1342,7 @@
 		background: rgba(240, 184, 74, 0.75);
 	}
 	/* 横持ちは画面の左下隅（スティックの下）に置く */
-	@media (orientation: landscape) {
+	@media (min-aspect-ratio: 13/10) {
 		body.sbo-pad.sbo-on-map #sbo-shot-pad {
 			position: fixed;
 			right: auto;
@@ -1259,7 +1407,7 @@
 		background: rgba(192, 57, 43, 0.85);
 		border-color: rgba(255, 255, 255, 0.6);
 	}
-	@media (orientation: landscape) {
+	@media (min-aspect-ratio: 13/10) {
 		body.sbo-pad.sbo-on-map #sbo-rec-pad,
 		body.sbo-pad.sbo-recording #sbo-rec-pad {
 			position: fixed;
@@ -1513,8 +1661,8 @@
 		<div id="sbo-overlay" style="position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none;"></div>
 		<div id="sbo-shot-flash"></div>
 		<!-- スマホのカメラボタン（縦持ちはゲーム画面の右上隅に重ねる。横持ちは左下） -->
-		<button type="button" id="sbo-shot-pad" title="スクリーンショット"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-camera"/></svg></button>
-		<button type="button" id="sbo-rec-pad" title="ゲーム画面を動画で録画"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-video"/></svg></button>
+		<button type="button" id="sbo-shot-pad" title="スクリーンショット"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-camera"/></svg><span class="sbo-pad-txt">スクショ</span></button>
+		<button type="button" id="sbo-rec-pad" title="ゲーム画面を動画で録画"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-video"/></svg><span class="sbo-pad-txt">録画</span></button>
 		<div id="sbo-rec-badge">REC <span id="sbo-rec-time">0:00</span></div>
 		<!-- ログイン画面のボタン。ID・パスワードの入力欄は「ID・パスワードでログイン」を押した時だけ見せる -->
 		<div id="sbo-quick" data-sbo-ui="1">
@@ -1554,6 +1702,7 @@
 			<div class="sbo-dpad-arm sbo-dpad-right" data-dir="3"><span>▶</span></div>
 			<div class="sbo-dpad-center"></div>
 		</div>
+		<div class="sbo-stick-note">長押しで向きかえ</div>
 		<!-- ボタンは全部「線画アイコン＋文字＋キー名」にそろえる。決定は右下に大きく -->
 		<div class="sbo-buttons">
 			<button type="button" class="sbo-b-s" data-vk="83" data-pad-need="1" data-pad-hide-battle="1"><svg class="sbo-btn-svg" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="M14.5 14.5L20 20"/></svg><span id="sbo-pad-s-label">調べる</span><span class="sbo-btn-key">S</span></button>
@@ -1794,6 +1943,37 @@
 (function () {
 	var canvas = document.getElementById('canvas');
 	var status = document.getElementById('sbo-status');
+	/*
+	 * 読み込み中の表示。Emscripten の setStatus は英語で "Downloading data... (読んだバイト数/全体)" などを
+	 * 渡してくるので、ダウンロード中はプログレスバーと割合に、ほかは日本語にして出す。
+	 * 2 回目からはゲームデータをブラウザに保存してあるので、ダウンロードの表示は出ない。
+	 */
+	var loadBar = null;
+	var loadText = null;
+	function setLoadStatus(text) {
+		text = text || '';
+		var m = /^Downloading data\.\.\. \((\d+)\/(\d+)\)/.exec(text);
+		if (!m) {
+			loadBar = loadText = null;
+			status.textContent = !text ? '' : (/^(Downloading|Preparing|Running)/.test(text) ? '準備中...' : text);
+			return;
+		}
+		var done = Number(m[1]);
+		var total = Math.max(Number(m[2]), done, 1);
+		if (!loadBar || !status.contains(loadBar)) {
+			status.textContent = '';
+			loadText = document.createElement('div');
+			var bar = document.createElement('div');
+			bar.className = 'sbo-load-bar';
+			loadBar = document.createElement('div');
+			bar.appendChild(loadBar);
+			status.appendChild(loadText);
+			status.appendChild(bar);
+		}
+		/* バイト数は展開後の大きさ（実際に届くのは圧縮した約半分）なので、割合だけ出す */
+		loadText.textContent = 'ゲームデータを読み込み中... ' + Math.floor(done * 100 / total) + '%';
+		loadBar.style.width = (done * 100 / total) + '%';
+	}
 	var params = new URLSearchParams(location.search);
 	/* 古い版から読み込み直した時に付けた印（sboOnNewVersion）はアドレス欄から消しておく */
 	if (params.has('sbo_reload') && window.history && history.replaceState) {
@@ -1837,7 +2017,7 @@
 		var cssW;
 		if (usePad) {
 			var vw = window.innerWidth, vh = window.innerHeight;
-			if (window.matchMedia('(orientation: landscape)').matches) {
+			if (window.matchMedia('(min-aspect-ratio: 13/10)').matches) {
 				/* 横持ち：左右のパッドの列を除いた中で一番大きく */
 				var padW = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pad-col-w')) || 136;
 				cssW = Math.min(vh * w / h, vw - padW * 2);
@@ -2129,6 +2309,12 @@
 	var PAD_INPUT_KEY = {90: 27, 88: 13};
 	function padTarget(vk) {
 		var input = PAD_INPUT_KEY[vk] ? gameInputShown() : null;
+		/* ゲームがゲーム画面にフォーカスを戻した後（キャラ作成の名前欄を残したまま性別選択を
+		   出した時など）は、入力欄が見えていてもゲームに送る。入力欄に Enter を送ると
+		   性別選択で決定が効かず先へ進めなかった */
+		if (input && document.activeElement === canvas) {
+			input = null;
+		}
 		if (input) {
 			return {vk: PAD_INPUT_KEY[vk], id: parseInt(input.dataset.w32Id, 10) || 0};
 		}
@@ -3254,8 +3440,7 @@
 			renderBalloons();
 			/* 吹き出しを選ぶ時はキーボードを出さない */
 			sheetInput.blur();
-			sheet.style.bottom = '';
-			sheet.style.height = '';
+			resetSheetPos();
 		} else {
 			renderAll(sheetLog);
 			sheetInput.focus();
@@ -3414,8 +3599,7 @@
 	}
 	function closeSheet() {
 		sheet.classList.remove('sbo-open');
-		sheet.style.bottom = '';
-		sheet.style.height = '';
+		resetSheetPos();
 		sheetInput.blur();
 		canvas.focus();
 		setTimeout(onResize, 300);
@@ -3427,19 +3611,38 @@
 		openSheet();
 	});
 	document.getElementById('sbo-sheet-close').addEventListener('click', closeSheet);
-	/* キーボードに隠れないようにシートを持ち上げる */
+	/* キーボードに隠れないようにシートを持ち上げる。
+	   見えている範囲（visualViewport）の下端にシートの下端を合わせる。
+	   Gboard など他社製キーボードは高さの通知（resize）が遅れたり来なかったりして、
+	   開いた直後にシートがキーボードの裏に隠れることがあるので、開いている間は短い間隔でも合わせ直す */
+	function resetSheetPos() {
+		sheet.style.top = '';
+		sheet.style.bottom = '';
+		sheet.style.height = '';
+	}
 	if (window.visualViewport) {
 		var vv = window.visualViewport;
+		var sheetPosKey = '';
 		var adjustSheet = function () {
 			/* 吹き出しタブはキーボードを出さないので、ふつうの高さのまま */
 			if (!sheet.classList.contains('sbo-open') || sheetTab === 'balloon') {
 				return;
 			}
-			sheet.style.height = Math.floor(vv.height * 0.85) + 'px';
-			sheet.style.bottom = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)) + 'px';
+			var h = Math.floor(vv.height * 0.85);
+			var top = Math.round(vv.offsetTop + vv.height - h);
+			var key = h + ',' + top;
+			if (key === sheetPosKey && sheet.style.top) {
+				return;
+			}
+			sheetPosKey = key;
+			sheet.style.bottom = 'auto';
+			sheet.style.top = top + 'px';
+			sheet.style.height = h + 'px';
 		};
 		vv.addEventListener('resize', adjustSheet);
 		vv.addEventListener('scroll', adjustSheet);
+		window.addEventListener('resize', adjustSheet);
+		setInterval(adjustSheet, 150);
 	}
 
 	/* マップにいる間だけチャット欄を使えるようにする。
@@ -3533,6 +3736,7 @@
 			}
 			lastState = state;
 			var battle = (state & 16) !== 0;
+			document.body.classList.toggle('sbo-battle', battle);
 			for (var i = 0; i < needButtons.length; i ++) {
 				var need = parseInt(needButtons[i].dataset.padNeed, 10);
 				needButtons[i].classList.toggle('sbo-pad-off', (state & need) === 0);
@@ -3819,14 +4023,14 @@
 			if (sec < 0) {
 				pcBtn.innerHTML = ICON_VIDEO + '録画';
 				pcBtn.title = 'ゲーム画面だけを音つきの動画で録画します（もう一度押すと止めて保存。最長3分）';
-				padBtn.innerHTML = ICON_VIDEO;
+				padBtn.innerHTML = ICON_VIDEO + '<span class="sbo-pad-txt">録画</span>';
 				return;
 			}
 			var t = Math.floor(sec / 60) + ':' + pad2(Math.floor(sec % 60));
 			timeEl.textContent = t;
 			pcBtn.innerHTML = ICON_STOP + '停止';
 			pcBtn.title = '録画を止めて保存します';
-			padBtn.innerHTML = ICON_STOP;
+			padBtn.innerHTML = ICON_STOP + '<span class="sbo-pad-txt">停止</span>';
 		}
 
 		function start() {
@@ -4248,7 +4452,7 @@
 			console.warn(text);
 		},
 		setStatus: function (text) {
-			status.textContent = text || '';
+			setLoadStatus(text);
 		},
 		/* サーバーから「このページは古い版」と言われた（デプロイ前から開いたままのタブ。CUraraSockTCP_web.cpp） */
 		sboOnNewVersion: function () {
@@ -4492,6 +4696,7 @@
 	}
 
 	/* ログイン画面にいる間だけボタンを出す */
+	var bQuickShown = false;
 	setInterval(function () {
 		var state = loginState();
 		var list = loadList();
@@ -4503,29 +4708,165 @@
 			renderList(list);
 		}
 		quick.classList.toggle('sbo-show', bShow);
+		if (bShow && !bQuickShown) {
+			tmQuickShow = Date.now();
+		}
+		bQuickShown = bShow;
 		/* ボタンの画面の裏にあるアカウント名の欄にフォーカスが残っていると、
 		   ロゴ・タイトルを飛ばすキー（日本語入力中なら「さ」など）が見えない欄に入ってしまう。
-		   ボタンの画面を出している間はゲーム画面へフォーカスを戻しておく */
+		   ボタンの画面を出している間は、フォーカスが行き場の無い所（ゲーム画面・裏の欄など）にあれば
+		   いちばん上のボタンへ移す（キーボードだけで選んで Enter で入れるように） */
 		if (bShow) {
-			blurHiddenLoginInput();
+			focusQuickIfLost();
+		} else if (quick.contains(document.activeElement)) {
+			/* ボタンを押してログインへ進んだら、キーがゲームに届くようにゲーム画面へ戻す */
+			focusCanvas();
 		}
 		forgot.classList.toggle('sbo-show', state === 1 && !bShow);
-		/* ID・パスワードの入力中は、ボタンの画面へ戻れるようにする */
-		quickReturn.classList.toggle('sbo-show', state === 1 && bDismissed && bHave &&
+		/* ID・パスワードの入力中は、ボタンの画面へ戻れるようにする（はじめての端末なら「ようこそ」へ） */
+		quickReturn.classList.toggle('sbo-show', state === 1 && bDismissed &&
 			!recover.classList.contains('sbo-show'));
 	}, 250);
 
-	function blurHiddenLoginInput() {
-		var active = document.activeElement;
-		if (!active || !active.dataset || !active.dataset.w32Id || !active.closest('#sbo-overlay')) {
-			return;
-		}
-		active.blur();
+	function focusCanvas() {
 		var cv = document.getElementById('canvas');
 		if (cv) {
-			cv.focus();
+			cv.focus({ preventScroll: true });
 		}
 	}
+
+	/* ---- キーボードだけで操作する（ボタンの画面・復旧などの画面） ----
+	   ↑↓（ボタンの一覧では ←→ も）で選び、Enter で押す。Tab は画面の中だけを回る */
+	var tmQuickShow = 0;		/* ボタンの画面を出した時刻（ロゴを飛ばした Enter の押しっぱなしで押さないように） */
+	var QUICK_KEY_GUARD_MS = 500;
+	function focusables(root) {
+		return Array.prototype.filter.call(
+			root.querySelectorAll('button, a[href], input, textarea, select'),
+			function (el) {
+				return !el.disabled && !el.hidden && el.offsetParent !== null && el.getClientRects().length > 0;
+			});
+	}
+	function shownQuickCard() {
+		return quick.querySelector('#sbo-quick.sbo-back #sbo-quick-back, #sbo-quick.sbo-new #sbo-quick-new');
+	}
+	function focusQuickIfLost() {
+		var card = shownQuickCard();
+		if (!card || card.contains(document.activeElement)) {
+			return;
+		}
+		var active = document.activeElement;
+		var bLost = !active || active === document.body || active.id === 'canvas' ||
+			(active.dataset && active.dataset.w32Id && active.closest('#sbo-overlay')) ||
+			quick.contains(active) || active.offsetParent === null;
+		if (!bLost) {
+			return;
+		}
+		if (active && active.blur && active !== document.body) {
+			active.blur();
+		}
+		var a = focusables(card);
+		if (a.length) {
+			a[0].focus({ preventScroll: true });
+		}
+	}
+	/* root の中で、今のフォーカスから nStep だけ先へ（端まで行ったら反対側へ回る） */
+	function moveFocus(root, nStep, bSkipGear) {
+		var a = focusables(root);
+		var cur = document.activeElement;
+		if (bSkipGear) {
+			/* ↑↓ ではアカウントの行の ⚙ を飛ばす（⚙ からはその行のボタンから数える） */
+			a = a.filter(function (el) { return !el.classList.contains('sbo-acc-gear'); });
+			if (cur && cur.classList && cur.classList.contains('sbo-acc-gear')) {
+				cur = cur.parentNode.querySelector('.sbo-btn');
+			}
+		}
+		if (!a.length) {
+			return;
+		}
+		var i = a.indexOf(cur);
+		if (i < 0) {
+			i = nStep > 0 ? -1 : 0;
+		}
+		var el = a[(i + nStep + a.length) % a.length];
+		el.focus();
+		if (el.scrollIntoView) {
+			el.scrollIntoView({ block: 'nearest' });
+		}
+	}
+	quick.addEventListener('keydown', function (ev) {
+		var card = shownQuickCard();
+		if (!card || ev.isComposing || ev.altKey || ev.ctrlKey || ev.metaKey) {
+			return;
+		}
+		var key = ev.key;
+		if (key === 'Enter' || key === ' ') {
+			/* 出たばかり・押しっぱなしの Enter では押さない（タイトルを飛ばしたキーで勝手に入らないように） */
+			if (ev.repeat || Date.now() - tmQuickShow < QUICK_KEY_GUARD_MS) {
+				ev.preventDefault();
+			}
+			return;
+		}
+		var nStep = 0;
+		if (key === 'ArrowDown') {
+			nStep = 1;
+		} else if (key === 'ArrowUp') {
+			nStep = -1;
+		} else if (key === 'Tab') {
+			nStep = ev.shiftKey ? -1 : 1;
+		} else if ((key === 'ArrowRight' || key === 'ArrowLeft') && ev.target.closest &&
+				ev.target.closest('.sbo-acc-row')) {
+			/* アカウントの行は「ではじめる」と ⚙ を左右で行き来する */
+			var row = ev.target.closest('.sbo-acc-row');
+			var b = focusables(row);
+			var j = b.indexOf(ev.target) + (key === 'ArrowRight' ? 1 : -1);
+			if (j >= 0 && j < b.length) {
+				b[j].focus();
+			}
+			ev.preventDefault();
+			return;
+		}
+		if (nStep) {
+			ev.preventDefault();
+			moveFocus(card, nStep, key !== 'Tab');
+		}
+	});
+	/* ボタンの画面が出ている間にゲーム画面やページの余白をクリックしてフォーカスが外れても、
+	   見回りを待たずにすぐボタンへ戻す。キーを押した時に外れていたら、そのキーでボタンを選び直す
+	   （Enter はそのまま押さず、選ぶだけ） */
+	document.addEventListener('click', function () {
+		if (quick.classList.contains('sbo-show')) {
+			setTimeout(focusQuickIfLost, 0);
+		}
+	});
+	document.addEventListener('keydown', function (ev) {
+		var card = quick.classList.contains('sbo-show') ? shownQuickCard() : null;
+		if (!card || card.contains(document.activeElement) || ev.isComposing) {
+			return;
+		}
+		if (!/^(Enter| |Tab|ArrowUp|ArrowDown|ArrowLeft|ArrowRight)$/.test(ev.key)) {
+			return;
+		}
+		var before = document.activeElement;
+		focusQuickIfLost();
+		if (document.activeElement !== before) {
+			ev.preventDefault();
+			ev.stopPropagation();
+		}
+	}, true);
+	/* ID・パスワードの入力中に Esc を押したら、ボタンの画面へ戻る
+	   （入力欄のキーはゲームに渡すので、先回りして受け取る） */
+	document.addEventListener('keydown', function (ev) {
+		if (ev.key !== 'Escape' || ev.isComposing || !quickReturn.classList.contains('sbo-show')) {
+			return;
+		}
+		var t = ev.target;
+		if (!(t && t.dataset && t.dataset.w32Id && t.closest && t.closest('#sbo-overlay'))) {
+			return;
+		}
+		ev.preventDefault();
+		ev.stopPropagation();
+		quickReturn.click();
+	}, true);
 
 	/* 「ID・パスワードでログイン」を押したら、アカウント名（入っていればパスワード）の欄へ */
 	function focusLoginInput() {
@@ -4558,6 +4899,8 @@
 	});
 	quickReturn.addEventListener('click', function () {
 		bDismissed = false;
+		/* すぐにボタンの画面へフォーカスを移す（ボタンの画面が出るのは次の見回りの時なので、その時に移る） */
+		focusCanvas();
 	});
 	document.querySelector('[data-quick-recover]').addEventListener('click', function () {
 		forgot.click();
@@ -4606,18 +4949,66 @@
 		return document.getElementById(id);
 	}
 	function showStep(name) {
+		var step = null;
 		Array.prototype.forEach.call(recover.querySelectorAll('.sbo-step'), function (el) {
 			el.classList.toggle('sbo-show', el.dataset.step === name);
+			if (el.dataset.step === name) {
+				step = el;
+			}
 		});
 		recover.classList.add('sbo-show');
+		/* キーボードで続けて操作できるように、出した画面の最初の欄・ボタンへフォーカスを移す
+		   （決まった欄へ移したい所は、呼んだ後にそちらで focus し直す） */
+		if (step && !step.contains(document.activeElement)) {
+			var a = focusables(step);
+			if (a.length) {
+				a[0].focus({ preventScroll: true });
+			}
+		}
 	}
 	function closeRecover() {
 		recover.classList.remove('sbo-show');
-		var c = document.getElementById('canvas');
-		if (c) {
-			c.focus();
-		}
+		/* ボタンの画面が出ていれば、そのボタンへ（次の見回りで移る）。でなければゲーム画面へ */
+		focusCanvas();
 	}
+	function shownStep() {
+		return recover.classList.contains('sbo-show') ? recover.querySelector('.sbo-step.sbo-show') : null;
+	}
+	/* 復旧・復旧キー・アカウント設定の画面のキー操作
+	   Esc＝閉じる（「保存しました」に印を付けるまでは閉じない）、入力欄で Enter＝その画面のボタン、
+	   チェックボックスで Enter＝印を付け外し、Tab は画面の中だけを回る */
+	recover.addEventListener('keydown', function (ev) {
+		var step = shownStep();
+		if (!step || ev.isComposing || ev.keyCode === 229 || ev.altKey || ev.ctrlKey || ev.metaKey) {
+			return;
+		}
+		var t = ev.target;
+		if (ev.key === 'Escape') {
+			var close = step.querySelector('[data-close]');
+			if (close && !close.disabled) {
+				ev.preventDefault();
+				close.click();
+			}
+		} else if (ev.key === 'Tab') {
+			ev.preventDefault();
+			moveFocus(step, ev.shiftKey ? -1 : 1);
+		} else if (ev.key === 'Enter' && t.tagName === 'INPUT' && t.type === 'checkbox') {
+			ev.preventDefault();
+			t.click();
+		} else if (ev.key === 'Enter' && t.tagName === 'INPUT') {
+			/* 最後の欄でなければ次の欄へ、最後の欄ならその画面のボタン（閉じる以外の最初のもの）を押す */
+			ev.preventDefault();
+			var inputs = Array.prototype.filter.call(step.querySelectorAll('input[type="text"], input[type="password"]'),
+				function (el) { return focusables(step).indexOf(el) >= 0; });
+			var i = inputs.indexOf(t);
+			var btn = step.querySelector('.sbo-btn:not([data-close])');
+			if (step.dataset.step === 'form' && i >= 0 && i + 1 < inputs.length) {
+				inputs[i + 1].focus();
+			} else if (btn && !btn.disabled) {
+				btn.click();
+			}
+		}
+	});
 	function setMsg(el, text, bOk) {
 		el.textContent = text || '';
 		el.classList.toggle('sbo-ok', !!bOk);

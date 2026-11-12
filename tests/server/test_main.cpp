@@ -23,6 +23,7 @@
 #include "SboSvrRecvCmd.h"
 #include "CharProcSEARCH2.h"
 #include "CharProcSEARCH.h"
+#include "CharProcMOVERAND.h"
 /* 傭兵の道さがしを中から確かめるため、protected も見えるようにして読み込む */
 #define protected public
 #include "CharProcMERCENARY.h"
@@ -243,7 +244,7 @@ static void TestZlibPackets(void)
 	printf("BENCH zlib packets rounds=2 checks=16 same=1\n");
 }
 
-/* 変更前の CanStep を残して、返り値と BATTLE2 の副作用を照合する */
+/* 変更前の CanStep を残して、返り値を照合する（狙いを変えないことも確かめる） */
 class CTestSearch : public CCharProcSEARCH
 {
 public:
@@ -319,6 +320,8 @@ static void TestSearchStep(void)
 				pNpc->dwTargetTblID = (DWORD)-1;
 				BOOL bOld = Proc.OldCanStep(&aChar[0], x, y);
 				CHARINFO Old = *pNpc;
+				/* 2026/11/12 から CanStep は調べるだけで狙いを変えない（変えるのは追いかけている時の StepToward） */
+				Old.dwTargetTblID = (DWORD)-1;
 				pNpc->dwTargetTblID = (DWORD)-1;
 				BOOL bNew = Proc.CanStep(&aChar[0], x, y);
 				if (bOld != bNew || memcmp(&Old, pNpc, sizeof(Old))) {
@@ -339,6 +342,127 @@ static void TestSearchStep(void)
 	if (nOld != NRUN || nNew != nOld) abort();
 	printf("BENCH search step pcs=%d runs=%d old_ms=%.1f new_ms=%.1f cases=%d same=1\n", NPC, NRUN, d1 - d0, d2 - d1, nCases);
 	g_aCharInfo.RemoveAt(nChar, NPC + 2);
+	g_aMapInfo.RemoveAt(nMap);
+	delete [] aChar;
+}
+
+/* 敵の動き（2026/11/12 改善）の中身を外から呼べるようにする */
+class CTestSearchAI : public CCharProcSEARCH
+{
+public:
+	using CCharProcSEARCH::FindPathStep;
+	using CCharProcSEARCH::IsInSight;
+	using CCharProcSEARCH::IsOverLeash;
+};
+
+/* ========================================================================= */
+/* 関数名：	TestEnemyAI													 */
+/* 内容：	Q. 敵の動き：壁越しに見えない・回り込む・離れすぎ・戦闘１が戦い続ける */
+/* ========================================================================= */
+static void TestEnemyAI(void)
+{
+	printf("== Q. EnemyAI ==\n");
+	MAPINFO Map = {};
+	WORD awMap[16 * 16];
+	DWORD adwPC[1], adwNPC[2];
+	CHARINFO *aChar = new CHARINFO[3]();
+	int nMap = g_aMapInfo.GetSize(), nChar = g_aCharInfo.GetSize();
+	WORD wFloor = 0, wWall = 0;
+	for (int i = 0; i < g_wCountMapParts; i ++) {
+		if (g_aMapPartsInfo[i].byHitType == PARTSHIT_NONE) wFloor = (WORD)i;
+		if (g_aMapPartsInfo[i].byHitType == PARTSHIT_BLOCK1) wWall = (WORD)i;
+	}
+	std::fill(awMap, awMap + 16 * 16, wFloor);
+	/* x=6 の y=3〜9 が壁 */
+	for (int y = 3; y <= 9; y ++) awMap[6 + y * 16] = wWall;
+	Map.dwID = nMap;
+	Map.nCX = Map.nCY = 16;
+	Map.pwMap = awMap;
+	Map.paTblNoPC = adwPC;
+	Map.dwCountTblNoPC = 1;
+	Map.paTblNoNPC = adwNPC;
+	Map.dwCountTblNoNPC = 2;
+	g_aMapInfo.Add(&Map);
+	for (int i = 0; i < 3; i ++) {
+		PCHARINFO p = &aChar[i];
+		p->dwTblID = nChar + i; p->dwMapID = nMap;
+		p->wHP = p->wMaxHP = 10; p->byGameState = GAMESTATE_MOVE;
+		p->wGrpMain = CHARGRP_MAIN_NORMAL;
+		p->dwTargetTblID = (DWORD)-1;
+		g_aCharInfo.Add(p);
+	}
+	adwPC[0] = aChar[0].dwTblID;
+	adwNPC[0] = aChar[1].dwTblID;
+	adwNPC[1] = aChar[2].dwTblID;
+	PCHARINFO pPC = &aChar[0], pEnemy = &aChar[1], pOther = &aChar[2];
+	pOther->dwX = 15; pOther->dwY = 15;
+
+	pEnemy->byNpcType = NPCTYPE_BATTLE2;
+	pEnemy->dwX = pEnemy->dwStartX = 4; pEnemy->dwY = pEnemy->dwStartY = 6;
+	pEnemy->bySearchCx = pEnemy->bySearchCy = 4;
+	CTestSearchAI Proc;
+	Proc.Create(pEnemy);
+
+	/* 壁の向こうは見えない・壁が無ければ見える */
+	pPC->dwX = 8; pPC->dwY = 6;
+	BOOL bWall = Proc.IsInSight(pPC);
+	pPC->dwX = 4; pPC->dwY = 1;
+	BOOL bOpen = Proc.IsInSight(pPC);
+	printf("sight wall=%d open=%d\n", bWall, bOpen);
+	if (bWall || !bOpen) abort();
+
+	/* 壁の向こうの相手へは、壁の端（上）へ回り込む */
+	pPC->dwX = 8; pPC->dwY = 6;
+	int nDir = Proc.FindPathStep(pPC, 8, 6);
+	/* 回り込む道を最後までたどれるか（1歩ずつ進めて相手のとなりに着く） */
+	int nSteps = 0;
+	while (nDir >= 0 && nSteps < 40) {
+		pEnemy->dwX += anPosAddTblX[nDir];
+		pEnemy->dwY += anPosAddTblY[nDir];
+		nSteps ++;
+		if (abs((int)pEnemy->dwX - 8) + abs((int)pEnemy->dwY - 6) == 1) break;
+		nDir = Proc.FindPathStep(pPC, 8, 6);
+	}
+	printf("path steps=%d at=%u,%u\n", nSteps, pEnemy->dwX, pEnemy->dwY);
+	if (abs((int)pEnemy->dwX - 8) + abs((int)pEnemy->dwY - 6) != 1) abort();
+
+	/* 開始位置から 探索範囲×2＋4 を超えると離れすぎ */
+	pEnemy->dwX = 4 + 12; pEnemy->dwY = 6;
+	BOOL bNear = Proc.IsOverLeash();
+	pEnemy->dwX = 4 + 13; pEnemy->dwY = 6;
+	BOOL bFar = Proc.IsOverLeash();
+	printf("leash near=%d far=%d\n", bNear, bFar);
+	if (bNear || !bFar) abort();
+
+	/* 戦闘１：戦っている相手がとなりにいる間は、20秒たっても戦いをやめず、相手の方を向く */
+	CCharProcMOVERAND Proc1;
+	pEnemy->byNpcType = NPCTYPE_BATTLE1;
+	pEnemy->dwX = 10; pEnemy->dwY = pEnemy->dwStartY = 12;
+	pEnemy->dwStartX = 2;	/* 開始位置から離れた所で戦っている */
+	pEnemy->bySearchCx = pEnemy->bySearchCy = 3;
+	pEnemy->byDirection = 0;
+	pEnemy->byAreaX = pEnemy->byAreaY = 0;
+	pPC->dwX = 11; pPC->dwY = 12;
+	pEnemy->dwTargetTblID = pPC->dwTblID;
+	pEnemy->dwLastBattle = 5;
+	pEnemy->dwLastDotMove = s_dwFakeNow - 60000;
+	Proc1.Create(pEnemy);
+	DWORD dwStart = s_dwFakeNow;
+	for (int t = 0; t <= 20000; t += 500) {
+		Proc1.Proc(dwStart + t);
+	}
+	printf("battle1 keep=%d dir=%d pos=%u,%u\n", pEnemy->dwLastBattle != 0, pEnemy->byDirection, pEnemy->dwX, pEnemy->dwY);
+	if (pEnemy->dwLastBattle == 0 || pEnemy->byDirection != 3 || pEnemy->dwX != 10) abort();
+	/* 相手が遠くへ行って15秒たったらやめる */
+	pPC->dwX = 0; pPC->dwY = 0;
+	DWORD dwFar = dwStart + 20500;
+	for (int t = 0; t <= 16000; t += 500) {
+		Proc1.Proc(dwFar + t);
+	}
+	printf("battle1 release=%d target=%d\n", pEnemy->dwLastBattle == 0, pEnemy->dwTargetTblID == (DWORD)-1);
+	if (pEnemy->dwLastBattle != 0 || pEnemy->dwTargetTblID != (DWORD)-1) abort();
+
+	g_aCharInfo.RemoveAt(nChar, 3);
 	g_aMapInfo.RemoveAt(nMap);
 	delete [] aChar;
 }
@@ -775,6 +899,7 @@ static void TestTailMapChg(const std::vector<int> &aLogin);
 static void TestQuest(const std::vector<int> &aLogin);
 static void TestSortItem(const std::vector<int> &aLogin);
 static void TestCharPush(const std::vector<int> &aLogin);
+static void TestLeaveDispose(const std::vector<int> &aLogin);
 static void TestChallenge(const std::vector<int> &aLogin);
 
 static void TestTownWarp(const std::vector<int> &aLogin)
@@ -944,6 +1069,7 @@ static void TestWorld(void)
 	}
 	TestSearchStep();
 	TestSearch2();
+	TestEnemyAI();
 
 	/* データには PC がいないので、NPC を複製して PC を作る（ログアウト中 3000 人、うち NLOGIN 人をログイン中にする） */
 	PCHARINFO pTemplate = NULL;
@@ -1203,7 +1329,9 @@ static void TestWorld(void)
 	TestSortItem(aLogin);
 	/* O. 押せるNPCを押す向き */
 	TestCharPush(aLogin);
-	/* P. 討伐チャレンジ */
+	/* P. 預かり所の品を引き取らずに売る・捨てる */
+	TestLeaveDispose(aLogin);
+	/* Q. 討伐チャレンジ */
 	TestChallenge(aLogin);
 }
 
@@ -2078,10 +2206,37 @@ static void TestQuest(const std::vector<int> &aLogin)
 		}
 	}
 
-	/* 宝箱：持ち主が話す → 品物・旗1・次の段。仲間（別の人の宝箱）は見えないので何も起きない */
+	/* 管理者は見えるだけ：光に話しても移らない */
+	{
+		PCHARINFO pPortalA = QuestFindCopy(pOwner, 1);
+		if (pPortalA) {
+			pOther->byAdminLV = ADMINLV_ADMINISTRATOR;
+			QuestMovePC(pOther, nMap, (int)pPortalA->dwX, (int)pPortalA->dwY + 1);
+			DWORD dwX0 = pOther->dwX, dwY0 = pOther->dwY;
+			QuestSendTalk(pOther, pPortalA->dwTblID);
+			printf("quest admin portal moved=%d\n", (int)(pOther->dwX != dwX0 || pOther->dwY != dwY0));
+			pOther->byAdminLV = ADMINLV_USER;
+			QuestMovePC(pOther, nMap, aCell[7].first, aCell[7].second);
+		}
+	}
+
+	/* 宝箱：持ち物がいっぱいなら受け取れない（預かり所にも入らず、旗も立たない） */
 	PCHARINFO pChest = QuestFindCopy(pOwner, 2);
 	if (pChest) {
 		QuestMovePC(pOwner, nMap, (int)pChest->dwX, (int)pChest->dwY + 1);
+		for (int i = 0; i < MAX_MYITEM; i ++) pOwner->waItem[i] = wItemR;
+		QuestSendTalk(pOwner, pChest->dwTblID);
+		int nLeaveQ = 0;
+		if (pOwner->dwLeaveID && pOwner->dwLeaveID < (DWORD)g_aLeaveInfo.GetSize()) {
+			PLEAVEINFO pL = g_aLeaveInfo[pOwner->dwLeaveID];
+			for (int i = 0; i < pL->byCount; i ++) if (pL->waItem[i] == wItemQ) nLeaveQ += pL->byItemCount[i];
+		}
+		printf("quest chest full item=%d leave=%d flag1=%d step=%u\n", QuestCountItem(pOwner, wItemQ), nLeaveQ, QuestFlagCheck(pOwner, 1), pOwner->byQuestStep);
+		ZeroMemory(pOwner->waItem, sizeof(pOwner->waItem));
+	}
+
+	/* 宝箱：持ち主が話す → 品物・旗1・次の段。仲間（別の人の宝箱）は見えないので何も起きない */
+	if (pChest) {
 		QuestSendTalk(pOwner, pChest->dwTblID);
 		printf("quest chest item=%d flag1=%d step=%u person=%d chest=%d\n", QuestCountItem(pOwner, wItemQ), QuestFlagCheck(pOwner, 1),
 			pOwner->byQuestStep, (QuestFindCopy(pOwner, 3) != NULL), (QuestFindCopy(pOwner, 2) != NULL));
@@ -2220,6 +2375,49 @@ static void TestQuest(const std::vector<int> &aLogin)
 		printf("quest npc loaded=%d\n", nQuestNpcLoaded);
 	}
 
+	/* 依頼の品は預けられない・売れない。預かり所が100種類なら断られる（どちらも結果が返る） */
+	{
+		ZeroMemory(pOther->waItem, sizeof(pOther->waItem));
+		pOther->waItem[0] = wItemQ;
+		pOther->waItem[1] = wItemR;
+		CMDPARA_DATA1 Leave;
+		ZeroMemory(&Leave, sizeof(Leave));
+		Leave.byCmd = CMD_LEAVEITEM;
+		Leave.pID = pOther->pID;
+		Leave.dwTblID = pOther->dwTblID;
+		MockTrace(1);
+		Leave.byData = 0;
+		TestRecv(pOther, &Leave, sizeof(Leave));
+		int nQ = QuestCountItem(pOther, wItemQ);
+		CMDPARA_DATA5 Sell;
+		ZeroMemory(&Sell, sizeof(Sell));
+		Sell.byCmd = CMD_DROPITEM;
+		Sell.byData = 0;
+		Sell.pID = pOther->pID;
+		Sell.dwTblID = pOther->dwTblID;
+		Sell.dwData1 = 1;
+		Sell.dwData2 = wItemQ;
+		DWORD dwGold0 = pOther->dwGold;
+		TestRecv(pOther, &Sell, sizeof(Sell));
+		int nQSell = QuestCountItem(pOther, wItemQ);
+		/* 預かり所を100種類で埋める */
+		AddLeaveItem(pOther, wItemR);
+		PLEAVEINFO pL = g_aLeaveInfo[pOther->dwLeaveID];
+		LEAVEINFO LeaveBack = *pL;
+		for (int i = 0; i < MAX_LEAVEITEM; i ++) { pL->waItem[i] = (WORD)(60000 + i); pL->byItemCount[i] = 1; }
+		pL->byCount = MAX_LEAVEITEM;
+		Leave.byData = 1;
+		TestRecv(pOther, &Leave, sizeof(Leave));
+		int nR = QuestCountItem(pOther, wItemR);
+		*pL = LeaveBack;
+		Leave.byData = 1;
+		TestRecv(pOther, &Leave, sizeof(Leave));
+		MockTrace(0);
+		char *psz = MockCmdData(anConn[2], CMD_LEAVEITEM);
+		printf("quest leave questitem=%d sell=%d gold+=%d full=%d res=%s after=%d\n", nQ, nQSell, (int)(pOther->dwGold - dwGold0), nR, psz, QuestCountItem(pOther, wItemR));
+		free(psz);
+	}
+
 	/* 片付け */
 	pOther->szAcc[0] = 0;
 	for (int i = 0; i < 4; i ++) {
@@ -2264,7 +2462,7 @@ static void ChallengePrint(const char *pszLabel, PCHARINFO p, WORD wWeapon)
 
 static void TestChallenge(const std::vector<int> &aLogin)
 {
-	printf("== P. Challenge ==\n");
+	printf("== Q. Challenge ==\n");
 	if (aLogin.size() < 3) {
 		return;
 	}
@@ -2806,6 +3004,143 @@ static void TestSortItem(const std::vector<int> &aLogin)
 	memcpy(p->waEqu, awEquBack, sizeof(awEquBack));
 	p->byAdminLV = byAdminBack;
 	pL->byAdminLV = byAdminBackL;
+}
+
+/* ------------------------------------------------------------------------- */
+/* P. 預かり所の品を引き取らずに売る・捨てる（CMD_LEAVEITEMDISPOSE）			 */
+/*    売値は店と同じ 価値/4（最低1）。値打ちの無い品は売れない・捨てられない	 */
+/*    品はどちらもだめ・所持金 999999 を超える分は売らない・番号や品の違い、	 */
+/*    個数の多すぎ・他人・短いパケットは弾く									 */
+/* ------------------------------------------------------------------------- */
+static void DisposeSend(PCHARINFO pFrom, PCHARINFO p, BYTE byMode, BYTE byNo, BYTE byCount, WORD wItem, DWORD dwSize = sizeof(CMDPARA_LEAVEITEMDISPOSE))
+{
+	CMDPARA_LEAVEITEMDISPOSE Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_LEAVEITEMDISPOSE;
+	Para.byMode = byMode;
+	Para.byNo = byNo;
+	Para.byCount = byCount;
+	Para.wItemID = wItem;
+	Para.dwTblID = p->dwTblID;
+	TestRecv(pFrom, &Para, dwSize);
+}
+
+static void TestLeaveDispose(const std::vector<int> &aLogin)
+{
+	printf("== P. LeaveDispose ==\n");
+	if (aLogin.empty()) {
+		return;
+	}
+	/* 値打ちのある品 2 つ・値打ちの無い品・捨てられない品を探す */
+	WORD wSell1 = 0, wSell2 = 0, wNoGold = 0, wNoDrop = 0;
+	for (int i = 1; i < g_aItemInfo.GetSize(); i ++) {
+		PITEMINFO pItem = g_aItemInfo[i];
+		if (pItem->szName[0] == 0) continue;
+		if (pItem->byFlg & ITEMFLG_DROP) {
+			if (wNoDrop == 0) wNoDrop = (WORD)i;
+			continue;
+		}
+		if (pItem->dwGold == 0) {
+			if (wNoGold == 0) wNoGold = (WORD)i;
+		} else if (wSell1 == 0) {
+			wSell1 = (WORD)i;
+		} else if ((wSell2 == 0) && (pItem->dwGold >= 8)) {
+			wSell2 = (WORD)i;
+		}
+	}
+	printf("dispose picked sell1=%u(%u) sell2=%u(%u) nogold=%u nodrop=%u\n", wSell1, wSell1 ? g_aItemInfo[wSell1]->dwGold : 0,
+			wSell2, wSell2 ? g_aItemInfo[wSell2]->dwGold : 0, wNoGold, wNoDrop);
+	if ((wSell1 == 0) || (wSell2 == 0)) {
+		return;
+	}
+
+	PCHARINFO p = g_aCharInfo[aLogin[0]];
+	PCHARINFO pOther = (aLogin.size() >= 2) ? g_aCharInfo[aLogin[1]] : NULL;
+	BYTE byAdminBack = p->byAdminLV;
+	DWORD dwGoldBack = p->dwGold;
+	DWORD dwLeaveBack = p->dwLeaveID;
+	LEAVEINFO LeaveBack;
+	ZeroMemory(&LeaveBack, sizeof(LeaveBack));
+	if (dwLeaveBack && dwLeaveBack < (DWORD)g_aLeaveInfo.GetSize()) LeaveBack = *g_aLeaveInfo[dwLeaveBack];
+	if (dwLeaveBack) {
+		ZeroMemory(g_aLeaveInfo[dwLeaveBack], sizeof(LEAVEINFO));
+		g_aLeaveInfo[dwLeaveBack]->byUse = 1;
+	}
+	p->byAdminLV = ADMINLV_USER;
+	p->dwGold = 100;
+
+	/* 口座が無い時は何も起きない */
+	if (dwLeaveBack == 0) {
+		DisposeSend(p, p, LEAVEDISPOSE_SELL, 0, 1, wSell1);
+		SortPrintLeave("dispose noaccount", p);
+	}
+	for (int i = 0; i < 5; i ++) AddLeaveItem(p, wSell2);
+	AddLeaveItem(p, wSell1);
+	if (wNoGold) AddLeaveItem(p, wNoGold);
+	if (wNoDrop) AddLeaveItem(p, wNoDrop);
+	SortPrintLeave("dispose init", p);
+	printf("dispose init gold=%u\n", p->dwGold);
+
+	/* 2 個売る：価値/4 × 2 */
+	DisposeSend(p, p, LEAVEDISPOSE_SELL, 0, 2, wSell2);
+	SortPrintLeave("dispose sell 2", p);
+	printf("dispose sell 2 gold=%u\n", p->dwGold);
+	/* 弾くもの：品が違う・個数が多すぎ・0個・番号が範囲外・方法が違う・他人・短いパケット */
+	DisposeSend(p, p, LEAVEDISPOSE_SELL, 0, 1, wSell1);
+	DisposeSend(p, p, LEAVEDISPOSE_SELL, 0, 4, wSell2);
+	DisposeSend(p, p, LEAVEDISPOSE_DROP, 0, 0, wSell2);
+	DisposeSend(p, p, LEAVEDISPOSE_DROP, 50, 1, wSell2);
+	DisposeSend(p, p, 7, 0, 1, wSell2);
+	if (pOther) {
+		BYTE byAdminBackO = pOther->byAdminLV;
+		pOther->byAdminLV = ADMINLV_USER;
+		DisposeSend(pOther, p, LEAVEDISPOSE_DROP, 0, 1, wSell2);
+		pOther->byAdminLV = byAdminBackO;
+	}
+	DisposeSend(p, p, LEAVEDISPOSE_DROP, 0, 1, wSell2, 5);
+	SortPrintLeave("dispose invalid", p);
+	printf("dispose invalid gold=%u\n", p->dwGold);
+
+	/* 値打ちの無い品は売れないが捨てられる。捨てられない品はどちらもだめ */
+	if (wNoGold) {
+		DisposeSend(p, p, LEAVEDISPOSE_SELL, 2, 1, wNoGold);
+		SortPrintLeave("dispose nogold sell", p);
+		DisposeSend(p, p, LEAVEDISPOSE_DROP, 2, 1, wNoGold);
+		SortPrintLeave("dispose nogold drop", p);
+	}
+	if (wNoDrop) {
+		int nNo = p->dwLeaveID ? g_aLeaveInfo[p->dwLeaveID]->byCount - 1 : 0;
+		DisposeSend(p, p, LEAVEDISPOSE_SELL, (BYTE)nNo, 1, wNoDrop);
+		DisposeSend(p, p, LEAVEDISPOSE_DROP, (BYTE)nNo, 1, wNoDrop);
+		SortPrintLeave("dispose nodrop", p);
+	}
+
+	/* 所持金の上限：1 個分しか入らない時は 1 個だけ売る */
+	DWORD dwSell2 = g_aItemInfo[wSell2]->dwGold / 4;
+	if (dwSell2 == 0) dwSell2 = 1;
+	p->dwGold = 999999 - dwSell2 - 1;
+	DisposeSend(p, p, LEAVEDISPOSE_SELL, 0, 3, wSell2);
+	SortPrintLeave("dispose sell cap", p);
+	printf("dispose sell cap gold=%u\n", p->dwGold);
+	/* もう 1 個も入らない時は売らない */
+	DisposeSend(p, p, LEAVEDISPOSE_SELL, 0, 1, wSell2);
+	SortPrintLeave("dispose sell full", p);
+	printf("dispose sell full gold=%u\n", p->dwGold);
+
+	/* 残りを全部捨てる：枠が詰まる */
+	DisposeSend(p, p, LEAVEDISPOSE_DROP, 0, 2, wSell2);
+	SortPrintLeave("dispose drop all", p);
+	printf("dispose drop all gold=%u\n", p->dwGold);
+
+	/* 片付け */
+	if (dwLeaveBack) {
+		*g_aLeaveInfo[dwLeaveBack] = LeaveBack;
+	} else if (p->dwLeaveID && p->dwLeaveID < (DWORD)g_aLeaveInfo.GetSize()) {
+		ZeroMemory(g_aLeaveInfo[p->dwLeaveID], sizeof(LEAVEINFO));
+		p->dwLeaveID = 0;
+	}
+	p->dwGold = dwGoldBack;
+	p->byAdminLV = byAdminBack;
 }
 
 /* ------------------------------------------------------------------------- */

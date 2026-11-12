@@ -51,6 +51,8 @@ extern PWNDINFO MakeWindowLEAVE_SELECT					(BYTE);						/* 預かり所：どち
 extern PWNDINFO MakeWindowLEAVE_ITEM					(void);						/* 預かり所：アイテム選択 */
 extern PWNDINFO MakeWindowLEAVE_ITEMGET					(void);						/* 預かり所：引き取るアイテム選択 */
 extern PWNDINFO MakeWindowLEAVE_GOLD					(BYTE);						/* 預かり所：預ける金額設定 */
+extern PWNDINFO MakeWindowLEAVE_DISPOSEMENU			(void);						/* 預かり所：手放す品を売る・捨てる */
+extern PWNDINFO MakeWindowLEAVE_DISPOSECOUNT			(BYTE);						/* 預かり所：手放す個数 */
 extern PWNDINFO MakeWindowCOMMANDITEMCHAR				(void);						/* 道具使う相手選択 */
 extern PWNDINFO MakeWindowCOMMANDITEMCHARBATTLE			(void);						/* 道具使う相手選択(戦闘マップ) */
 extern PWNDINFO MakeWindowCOMMANDTRADE					(void);						/* 取り引きコマンド */

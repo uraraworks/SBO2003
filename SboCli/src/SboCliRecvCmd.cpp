@@ -201,6 +201,7 @@ void	RecvDataProcTARGETCHARPC			(PBYTE, DWORD);			/* 受信データ処理(つ�
 void	RecvDataProcADDCHAREFC				(PBYTE, DWORD);			/* 受信データ処理(文字エフェクト追加) */
 void	RecvDataProcCHGMAPCOLOR				(PBYTE, DWORD);			/* 受信データ処理(マップ色変換) */
 void	RecvDataProcSTTMPLATE				(PBYTE, DWORD);			/* 受信データ処理(ステータステンプレート情報) */
+void	RecvDataProcLEAVEITEM				(PBYTE, DWORD);			/* 受信データ処理(預けた結果) */
 void	RecvDataProcLEAVEITEMGET			(PBYTE, DWORD);			/* 受信データ処理(預けてるアイテム一覧) */
 void	RecvDataProcCOUNTSUBGAME			(PBYTE, DWORD);			/* 受信データ処理(サブゲーム数通知) */
 void	RecvDataProcSUBGAMEINFO				(PBYTE, DWORD);			/* 受信データ処理(サブゲーム情報更新) */
@@ -292,7 +293,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcADDCHAREFC,				/* CMD_ADDCHAREFC */
 	NULL,								/* CMD_CHGEQU */
 	RecvDataProcCHGMAPCOLOR,			/* CMD_CHGMAPCOLOR */
-	NULL,								/* CMD_LEAVEITEM */
+	RecvDataProcLEAVEITEM,				/* CMD_LEAVEITEM */
 	RecvDataProcLEAVEITEMGET,			/* CMD_LEAVEITEMGET */
 	RecvDataProcCOUNTSUBGAME,			/* CMD_COUNTSUBGAME */
 	RecvDataProcSUBSTATUS,				/* CMD_SUBSTATUS */
@@ -390,6 +391,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcQUEST,					/* CMD_QUEST */
 	RecvDataProcQUESTSTATE,				/* CMD_QUESTSTATE */
 	NULL,								/* CMD_SORTITEM(クライアント→サーバーのみ) */
+	NULL,								/* CMD_LEAVEITEMDISPOSE(クライアント→サーバーのみ) */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -6095,10 +6097,42 @@ void RecvDataProcLEAVEITEMGET(BYTE *pData, DWORD dwDataSize)
 		}
 	}
 
-	if ((g_nProcShopState == LEAVESTATE_ITEMSELECTGET) || (g_nProcShopState == LEAVESTATE_ITEMSORTSWAP)) {
+	/* 手放すよう頼んだ結果：その品の預かり数がいくつ減ったかで、セリフを決める */
+	if ((g_nProcShopState == LEAVESTATE_ITEMSELECTDISPOSE) && g_wLeaveDisposeItem) {
+		int i, nAfter = 0, nDone;
+		for (i = 0; (i < g_pLeaveInfo->byCount) && (i < MAX_LEAVEITEM); i ++) {
+			if (g_pLeaveInfo->waItem[i] == g_wLeaveDisposeItem) {
+				nAfter += g_pLeaveInfo->byItemCount[i];
+			}
+		}
+		nDone = g_nLeaveDisposeBefore - nAfter;
+		LPCSTR pszName = (g_wLeaveDisposeItem < g_aItemInfo.GetSize ()) ? g_aItemInfo[g_wLeaveDisposeItem]->szName : "";
+		if (nDone <= 0) {
+			if (g_byLeaveDisposeMode == LEAVEDISPOSE_SELL) {
+				wsprintf (g_szLeaveResult, "＊｢申し訳ありませんが、%sは@1　 お引き取りできないお品です。", pszName);
+			} else {
+				wsprintf (g_szLeaveResult, "＊｢申し訳ありませんが、%sは@1　 手放せないお品です。", pszName);
+			}
+		} else if (g_byLeaveDisposeMode == LEAVEDISPOSE_SELL) {
+			DWORD dwSell = 1;
+			if (g_wLeaveDisposeItem < g_aItemInfo.GetSize ()) {
+				dwSell = max (g_aItemInfo[g_wLeaveDisposeItem]->dwGold / 4, (DWORD)1);
+			}
+			wsprintf (g_szLeaveResult, "＊｢%sを%d個、%uゴールドで@1　 買い取りました。", pszName, nDone, dwSell * nDone);
+		} else {
+			wsprintf (g_szLeaveResult, "＊｢%sを%d個、処分しておきました。", pszName, nDone);
+		}
+		g_wLeaveDisposeItem = 0;
+	}
+
+	if ((g_nProcShopState == LEAVESTATE_ITEMSELECTGET) || (g_nProcShopState == LEAVESTATE_ITEMSORTSWAP) || (g_nProcShopState == LEAVESTATE_ITEMSELECTDISPOSE)) {
 
 		PWNDINFO pWndTmp;
-		if (g_pLeaveInfo->byCount == 0) {
+		if ((g_pLeaveInfo->byCount == 0) && (g_nProcShopState == LEAVESTATE_ITEMSELECTDISPOSE) && g_szLeaveResult[0]) {
+			pWndTmp = MakeWindowLEAVE (11);
+			g_WndInfo.Add (pWndTmp);
+		} else if (g_pLeaveInfo->byCount == 0) {
+			g_szLeaveResult[0] = 0;
 			pWndTmp = MakeWindowLEAVE (4);
 			g_WndInfo.Add (pWndTmp);
 		} else {
@@ -6110,6 +6144,32 @@ void RecvDataProcLEAVEITEMGET(BYTE *pData, DWORD dwDataSize)
 		g_dwActiveMsgID = pWndTmp->dwID;
 		g_bEnableMove = TRUE;
 	}
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcLEAVEITEM											 */
+/* 内容：受信データ処理(預けた結果)											 */
+/*       いっぱい・依頼の品の時は預かり所の人が断る							 */
+/* ========================================================================= */
+void RecvDataProcLEAVEITEM(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_DATA1 pRecv = (PCMDPARA_DATA1)pData;
+	PWNDINFO pWndTmp;
+	BYTE bySelect = 1;
+
+	if (g_nProcShopState != LEAVESTATE_ITEMPUTWAIT) {
+		return;
+	}
+	if (pRecv->byData == LEAVEITEMRES_FULL) {
+		bySelect = 3;
+	} else if (pRecv->byData == LEAVEITEMRES_QUEST) {
+		bySelect = 13;
+	}
+	pWndTmp = MakeWindowLEAVE (bySelect);
+	g_WndInfo.Add (pWndTmp);
+	g_dwActiveMsgID = pWndTmp->dwID;
+	g_bEnableMove = TRUE;
+	g_bDraw = TRUE;
 }
 
 /* ========================================================================= */

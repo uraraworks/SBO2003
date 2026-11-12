@@ -201,6 +201,7 @@ void	RecvDataProcNPCROUTE					(PBYTE, DWORD);				/* NPCの巡回ルート */
 void	RecvDataProcRECIPEMAKE					(PBYTE, DWORD);				/* レシピで作ってもらう */
 void	RecvDataProcQUEST						(PBYTE, DWORD);				/* ギルドの仕事依頼（一覧・受ける・取り消す・渡す） */
 void	RecvDataProcSORTITEM					(PBYTE, DWORD);				/* 道具欄・預かり所の並べ替え */
+void	RecvDataProcLEAVEITEMDISPOSE			(PBYTE, DWORD);				/* 預かり所の品を売る・捨てる */
 void	RecvDataProcBATTLEMODE					(PBYTE, DWORD);				/* 戦闘モードの切り替え通知 */
 /* 端末トークン（server/web_account_svr.cpp） */
 BOOL	WebAccTokenToAccount					(LPCSTR, LPSTR, int);		/* 端末トークンからアカウント名を引く */
@@ -424,6 +425,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcQUEST,					/* CMD_QUEST */
 	NULL,								/* CMD_QUESTSTATE(サーバー→クライアントのみ) */
 	RecvDataProcSORTITEM,				/* CMD_SORTITEM */
+	RecvDataProcLEAVEITEMDISPOSE,		/* CMD_LEAVEITEMDISPOSE */
 
 	NULL
 };
@@ -3363,7 +3365,7 @@ void RecvDataProc(PBYTE pData, DWORD dwDataSize)
 	}
 
 	/* 管理者用のコマンド（管理者ウィンドウからしか送らないもの）は管理者だけ */
-	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_SORTITEM)) ||
+	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE)) ||
 			(byCmd == CMD_CHARITEM)) {
 		if (!CheckAdminBan (nNo)) {
 			SAFE_DELETE_ARRAY (pData);
@@ -6070,6 +6072,12 @@ void RecvDataProcDROPITEM(PBYTE pData, DWORD dwDataSize)
 #endif
 			return;
 		}
+		/* 依頼の品は売れない・捨てられない（持ち物を送り直して元に戻す） */
+		if (QuestIsQuestItem ((WORD)pPara->dwData2)) {
+			SendCmdSYSMSG (pChar->pID, "依頼の品は、売ったり捨てたりできません。", SPEECHCMD_BATTLE1);
+			SendCmdCHARITEM (pChar->pID, pPara->dwTblID);
+			return;
+		}
 
 		/* 売った？（売値はクライアントの申告ではなく、クライアントと同じ式でサーバーが決める） */
 		if (pPara->dwData1 > 0) {
@@ -6772,6 +6780,7 @@ static BOOL QuestChallengeBlock(PCHARINFO pChar)
 /* 内容：受信データ処理(アイテム預ける)										 */
 /* 日付：2003/11/07															 */
 /* ========================================================================= */
+static void SendLeaveItemResult(PCHARINFO pChar, BYTE byResult);
 void RecvDataProcLEAVEITEM(PBYTE pData, DWORD dwDataSize)
 {
 	PCMDPARA_DATA1 pPara = (PCMDPARA_DATA1)pData;
@@ -6798,12 +6807,32 @@ void RecvDataProcLEAVEITEM(PBYTE pData, DWORD dwDataSize)
 		}
 	}
 
-	/* 預かり所に入れる（いっぱいなら何もしない） */
+	/* 依頼の品は預けられない */
+	if (QuestIsQuestItem (pChar->waItem[pPara->byData])) {
+		SendLeaveItemResult (pChar, LEAVEITEMRES_QUEST);
+		return;
+	}
+	/* 預かり所に入れる（いっぱいなら断る） */
 	if (!AddLeaveItem (pChar, pChar->waItem[pPara->byData])) {
+		SendLeaveItemResult (pChar, LEAVEITEMRES_FULL);
 		return;
 	}
 	DelCharItem (pPara->dwTblID, pPara->byData);
 	SendCmdCHARITEM (pPara->pID, pPara->dwTblID);
+	SendLeaveItemResult (pChar, LEAVEITEMRES_OK);
+}
+
+/* 預けた結果をクライアントに返す（クライアントは結果を待ってから預かり所の人の返事を出す） */
+static void SendLeaveItemResult(PCHARINFO pChar, BYTE byResult)
+{
+	CMDPARA_DATA1 Para;
+
+	ZeroMemory (&Para, sizeof (Para));
+	Para.byCmd		= CMD_LEAVEITEM;
+	Para.byData		= byResult;
+	Para.pID		= pChar->pID;
+	Para.dwTblID	= pChar->dwTblID;
+	svrSock.SendTo (pChar->pID, (LPBYTE)&Para, sizeof (Para), SENDTIMEOUT);
 }
 
 /* ========================================================================= */
@@ -10411,7 +10440,7 @@ BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, 
 	/* 管理者用のコマンドだけ（ログインや「元に戻す」自体は通さない） */
 	if ((byCmd >= CMD_MAX) || (RecvDataProcTbl[byCmd] == NULL) ||
 			((byCmd < CMD_MAPPARTSADD) && (byCmd != CMD_CHARITEM)) ||
-			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_SORTITEM)) {
+			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE)) {
 		return FALSE;
 	}
 
@@ -11098,6 +11127,98 @@ void RecvDataProcSORTITEM(PBYTE pData, DWORD dwDataSize)
 		}
 		SendCmdLEAVEITEMGET (pChar->dwTblID);
 	}
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcLEAVEITEMDISPOSE										 */
+/* 内容：受信データ処理(預かり所の品を引き取らずに売る・捨てる)				 */
+/*       売値は店の買い取りと同じ（価値の1/4、最低1）。捨てられない品・		 */
+/*       価値の無い品は売れない。所持金は 999999 までなので、超える分は売らない。 */
+/*       結果は預かり所の一覧（CMD_LEAVEITEMGET）で返す（断った時も返す）	 */
+/* 日付：2026/11/11															 */
+/* ========================================================================= */
+void RecvDataProcLEAVEITEMDISPOSE(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_LEAVEITEMDISPOSE pPara = (PCMDPARA_LEAVEITEMDISPOSE)pData;
+	PCHARINFO pChar;
+	PLEAVEINFO pInfo = NULL;
+	PITEMINFO pItem;
+	int i, nCount;
+
+	if (s_dwRecvSize < sizeof (CMDPARA_LEAVEITEMDISPOSE)) {
+		return;
+	}
+	if (!IsRecvChar (pPara->dwTblID)) {
+		return;
+	}
+	pChar = g_aCharInfo[pPara->dwTblID];
+	if ((pChar == NULL) || (pChar->pID == 0) || (pChar->byNpcType != NPCTYPE_INIT)) {
+		return;
+	}
+
+	if (g_aLeaveInfo.GetSize () == 0) {
+	} else if (g_aLeaveInfo.GetSize () == 1) {
+	} else if (pChar->dwLeaveID >= (DWORD)g_aLeaveInfo.GetSize ()) {
+	} else if (pChar->dwLeaveID) {
+		pInfo = g_aLeaveInfo[pChar->dwLeaveID];
+	}
+	if (pInfo == NULL) {
+		SendCmdLEAVEITEMGET (pChar->dwTblID);
+		return;
+	}
+
+	/* 番号・品・個数が預かり所の中身と合っているか */
+	if ((pPara->byNo >= pInfo->byCount) || (pPara->byNo >= MAX_LEAVEITEM) ||
+			(pInfo->waItem[pPara->byNo] != pPara->wItemID) ||
+			(pPara->wItemID == 0) || (pPara->wItemID >= (WORD)g_aItemInfo.GetSize ()) ||
+			(pPara->byCount == 0) || (pPara->byCount > pInfo->byItemCount[pPara->byNo])) {
+		SendCmdLEAVEITEMGET (pChar->dwTblID);
+		return;
+	}
+	pItem = g_aItemInfo[pPara->wItemID];
+	/* 捨てられない品・依頼の品は売るのも捨てるのもだめ */
+	if ((pItem == NULL) || (pItem->byFlg & ITEMFLG_DROP) || QuestIsQuestItem (pPara->wItemID)) {
+		SendCmdLEAVEITEMGET (pChar->dwTblID);
+		return;
+	}
+
+	nCount = pPara->byCount;
+	if (pPara->byMode == LEAVEDISPOSE_SELL) {
+		/* 価値の無い品は買い取らない */
+		if (pItem->dwGold == 0) {
+			SendCmdLEAVEITEMGET (pChar->dwTblID);
+			return;
+		}
+		DWORD dwSell = max (pItem->dwGold / 4, (DWORD)1);
+		/* 所持金が 999999 を超える分は売らない */
+		DWORD dwRoom = (pChar->dwGold >= 999999) ? 0 : (999999 - pChar->dwGold);
+		if ((DWORD)nCount > dwRoom / dwSell) {
+			nCount = (int)(dwRoom / dwSell);
+		}
+		if (nCount <= 0) {
+			SendCmdLEAVEITEMGET (pChar->dwTblID);
+			return;
+		}
+		pChar->dwGold += dwSell * nCount;
+		SendCmdCHARSTATUSGOLDEXP (pChar->pID, pChar->dwTblID);
+
+	} else if (pPara->byMode != LEAVEDISPOSE_DROP) {
+		SendCmdLEAVEITEMGET (pChar->dwTblID);
+		return;
+	}
+
+	/* 預かり所から減らす（0個になったら詰める） */
+	pInfo->byItemCount[pPara->byNo] -= (BYTE)nCount;
+	if (pInfo->byItemCount[pPara->byNo] == 0) {
+		for (i = pPara->byNo; i < MAX_LEAVEITEM - 1; i ++) {
+			pInfo->waItem[i] = pInfo->waItem[i + 1];
+			pInfo->byItemCount[i] = pInfo->byItemCount[i + 1];
+		}
+		pInfo->waItem[i] = 0;
+		pInfo->byItemCount[i] = 0;
+		pInfo->byCount --;
+	}
+	SendCmdLEAVEITEMGET (pChar->dwTblID);
 }
 
 /* ========================================================================= */

@@ -182,6 +182,7 @@
 	#zoomSel { font-size: 12px; padding: 1px 4px; }
 	#status .sw { display: inline-block; width: 12px; height: 12px; border: 1px solid #888; vertical-align: -2px; margin-right: 4px; }
 	#empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; color: var(--sub); text-align: center; line-height: 2; pointer-events: none; overflow-y: auto; padding: 16px; }
+	#empty[hidden] { display: none; }
 	/* リロードした直後など、絵を開いていない時に出す控えの一覧 */
 	#startDrafts { pointer-events: auto; width: min(720px, 100%); text-align: left; line-height: 1.5; }
 	#startDrafts h3 { margin: 0 0 8px; font-size: 14px; color: var(--fg); }

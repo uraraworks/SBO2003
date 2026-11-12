@@ -197,24 +197,14 @@ static const char *GetGoal(PQUESTINFO pQuest, BYTE byStep)
 /* 見えるかどうか															 */
 /* ========================================================================= */
 
-/* pSrc の情報を pDst に送ってよいか */
-BOOL IsCharVisibleTo(PCHARINFO pSrc, PCHARINFO pDst)
+/* pSrc（見えるNPC）が、依頼を受けた人・その仲間として pDst のものか（管理者の特別扱いなし） */
+static BOOL IsQuestNpcFor(PCHARINFO pSrc, PCHARINFO pDst)
 {
 	std::map<DWORD, QNPCENTRY>::iterator it;
 	PCHARINFO pOwner;
 
-	if (!IsQuestNpc (pSrc)) {
-		return TRUE;
-	}
-	if (s_nRemoving) {
-		return TRUE;
-	}
 	if (pDst == NULL) {
 		return FALSE;
-	}
-	/* 管理者には全部見える */
-	if (pDst->byAdminLV != ADMINLV_USER) {
-		return TRUE;
 	}
 	it = s_mapNpc.find (pSrc->dwTblID);
 	if ((it == s_mapNpc.end ()) || (it->second.dwOwner >= (DWORD)g_aCharInfo.GetSize ())) {
@@ -230,6 +220,48 @@ BOOL IsCharVisibleTo(PCHARINFO pSrc, PCHARINFO pDst)
 	}
 	/* 依頼を受けていない仲間には、パーティの誰かの分が見える */
 	return (pDst->dwPartyID != 0) && (pDst->dwPartyID == pOwner->dwPartyID);
+}
+
+/* pSrc の情報を pDst に送ってよいか */
+BOOL IsCharVisibleTo(PCHARINFO pSrc, PCHARINFO pDst)
+{
+	if (!IsQuestNpc (pSrc)) {
+		return TRUE;
+	}
+	if (s_nRemoving) {
+		return TRUE;
+	}
+	if (pDst == NULL) {
+		return FALSE;
+	}
+	/* 管理者には全部見える（見えるだけ。光で移る・宝箱を開けるのは受けた人と仲間だけ） */
+	if (pDst->byAdminLV != ADMINLV_USER) {
+		return TRUE;
+	}
+	return IsQuestNpcFor (pSrc, pDst);
+}
+
+/* 依頼の品か（どれかの依頼の「持ち帰る品」か、見える宝箱の中身）
+   依頼の品は預かり所に預けられない・売れない・捨てられない */
+BOOL QuestIsQuestItem(WORD wItem)
+{
+	int i, j;
+
+	if (wItem == 0) {
+		return FALSE;
+	}
+	for (i = 0; i < g_aQuestInfo.GetSize (); i ++) {
+		PQUESTINFO pQuest = g_aQuestInfo[i];
+		if (pQuest->wQuestItem == wItem) {
+			return TRUE;
+		}
+		for (j = 0; j < MAX_QUESTNPC; j ++) {
+			if ((pQuest->aNpc[j].byKind == QUESTNPCKIND_CHEST) && (pQuest->aNpc[j].wItem == wItem)) {
+				return TRUE;
+			}
+		}
+	}
+	return FALSE;
 }
 
 /* 同上（相手をプレイヤーIDで指定） */
@@ -657,7 +689,8 @@ static BOOL TakeItem(PCHARINFO pChar, WORD wItem)
 	return FALSE;
 }
 
-/* アイテムを 1 個渡す（持ち物へ、いっぱいなら預かり所へ）。渡せたら TRUE */
+/* アイテムを 1 個渡す（持ち物へ、いっぱいなら預かり所へ）。渡せたら TRUE
+   pbToLeave が NULL の時は持ち物にだけ入れる（依頼の品は預かり所に入れない） */
 static BOOL GiveItem(PCHARINFO pChar, WORD wItem, BOOL *pbToLeave)
 {
 	if (pbToLeave) {
@@ -670,10 +703,11 @@ static BOOL GiveItem(PCHARINFO pChar, WORD wItem, BOOL *pbToLeave)
 		AddCharItem (pChar->dwTblID, wItem);
 		return TRUE;
 	}
+	if (pbToLeave == NULL) {
+		return FALSE;
+	}
 	if (AddLeaveItem (pChar, wItem)) {
-		if (pbToLeave) {
-			*pbToLeave = TRUE;
-		}
+		*pbToLeave = TRUE;
 		return TRUE;
 	}
 	return FALSE;
@@ -770,8 +804,20 @@ void QuestNpcTalk(PCHARINFO pChar, PCHARINFO pNpc)
 		return;
 	}
 
-	/* 台詞は話した人にだけ出す */
-	if (pDef->szSpeech[0]) {
+	/* 管理者は見えるだけ（依頼を受けた人・仲間でなければ、光で移ったり宝箱を開けたりはできない） */
+	if (!IsQuestNpcFor (pNpc, pChar)) {
+		SendCmdSYSMSG (pChar->pID, "これは、依頼を受けた人のためのものです。（管理者なので見えています）", SPEECHCMD_BATTLE1);
+		return;
+	}
+
+	/* 宝箱は、受けた人が中身を受け取れた時だけ台詞を出す（受け取れないのに「見つけた」と出ないように） */
+	if (pDef->byKind == QUESTNPCKIND_CHEST) {
+		if (pChar->wQuestID != it->second.wQuestID) {
+			SendCmdSYSMSG (pChar->pID, "これは、依頼を受けた人のためのものです。", SPEECHCMD_BATTLE1);
+			return;
+		}
+	} else if (pDef->szSpeech[0]) {
+		/* 台詞は話した人にだけ出す */
 		snprintf (szTmp, sizeof (szTmp), "%s「%s」", pNpc->szName, pDef->szSpeech);
 		SendCmdSYSMSG (pChar->pID, szTmp, SPEECHCMD_BATTLE1);
 	}
@@ -783,7 +829,7 @@ void QuestNpcTalk(PCHARINFO pChar, PCHARINFO pNpc)
 		return;
 	}
 
-	/* その依頼を受けている人だけが、進める・受け取る（見ているだけの仲間・管理者は台詞だけ） */
+	/* その依頼を受けている人だけが、進める・受け取る（見ているだけの仲間は台詞だけ） */
 	if (pChar->wQuestID != it->second.wQuestID) {
 		if (pDef->szSpeech[0] == 0) {
 			SendCmdSYSMSG (pChar->pID, "これは、依頼を受けた人のためのものです。", SPEECHCMD_BATTLE1);
@@ -813,19 +859,20 @@ void QuestNpcTalk(PCHARINFO pChar, PCHARINFO pNpc)
 			SendCmdSYSMSG (pChar->pID, "もう中身は空っぽのようだ。", SPEECHCMD_BATTLE1);
 			return;
 		}
+		/* 依頼の品は持ち物にだけ入れる（預かり所には入れない）。持てない時は受け取れない */
+		if ((pDef->wItem != 0) && !GiveItem (pChar, pDef->wItem, NULL)) {
+			SendCmdSYSMSG (pChar->pID, "持ち物がいっぱいで受け取れません。持ち物をあけてからもう一度どうぞ。", SPEECHCMD_BATTLE1);
+			return;
+		}
+		if (pDef->szSpeech[0]) {
+			snprintf (szTmp, sizeof (szTmp), "%s「%s」", pNpc->szName, pDef->szSpeech);
+			SendCmdSYSMSG (pChar->pID, szTmp, SPEECHCMD_BATTLE1);
+		}
 		if (pDef->wItem != 0) {
-			BOOL bToLeave = FALSE;
-			if (!GiveItem (pChar, pDef->wItem, &bToLeave)) {
-				SendCmdSYSMSG (pChar->pID, "持ち物がいっぱいで受け取れません。あけてからもう一度どうぞ。", SPEECHCMD_BATTLE1);
-				return;
-			}
 			SendBagState (pChar);
 			SendCmdPLAYSOUND (pChar->pID, SOUND_PI52);
 			snprintf (szTmp, sizeof (szTmp), "%sを手に入れました。", ItemName (pDef->wItem));
 			SendCmdSYSMSG (pChar->pID, szTmp, SPEECHCMD_BATTLE1);
-			if (bToLeave) {
-				SendCmdSYSMSG (pChar->pID, "持ちきれないので、預かり所へ運ばれました。", SPEECHCMD_BATTLE1);
-			}
 		}
 		break;
 

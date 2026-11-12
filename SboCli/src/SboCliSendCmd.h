@@ -121,6 +121,7 @@ extern void SendCmdREQ_GUARD		(BOOL bGuard);							/* 構え(防御)の開始・
 extern void SendCmdBATTLEMODE		(BOOL bBattle);							/* 戦闘モードの切り替え通知 */
 extern void SendCmdQUEST			(BYTE byType, WORD wQuestID, DWORD dwNpcTblID);	/* ギルドの仕事依頼（一覧・受ける・取り消す・渡す） */
 extern void SendCmdSORTITEM			(BYTE byTarget, BYTE byMode, BYTE byNo1, BYTE byNo2);	/* 道具欄・預かり所の並べ替え */
+extern void SendCmdLEAVEITEMDISPOSE	(BYTE byMode, BYTE byNo, BYTE byCount, WORD wItemID);	/* 預かり所の品を売る・捨てる */
 
 extern void SendCmdRECIPEMAKE		(BYTE, WORD);							/* レシピで作ってもらう要求 */
 
