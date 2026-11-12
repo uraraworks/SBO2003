@@ -422,13 +422,16 @@
 		display: block;
 	}
 	/* タブレットの縦持ちはログ欄が広いので、文字も少し大きくして読みやすく */
-	@media (orientation: portrait) and (min-width: 600px) {
+	@media (max-aspect-ratio: 129/100) and (min-width: 600px) {
 		body.sbo-pad #sbo-chat-area {
 			font-size: 15px;
 		}
 	}
 
-	@media (orientation: landscape) {
+	/* 縦横の判定は orientation ではなく縦横比で行う。縦持ちでキーボードを出すと画面の高さが縮み、
+	   orientation: landscape に切り替わって横持ちの配置（📷🎥の丸ボタンなど）が出てしまうため。
+	   キーボードを出した縦持ちは 1.1 前後、横持ちのスマホは 2 前後、iPad の横持ちは 1.33〜1.45 */
+	@media (min-aspect-ratio: 13/10) {
 		body.sbo-pad {
 			flex-direction: row;
 			align-items: center;
@@ -669,7 +672,7 @@
 	.sbo-pad-txt {
 		white-space: nowrap;
 	}
-	@media (orientation: landscape) {
+	@media (min-aspect-ratio: 13/10) {
 		body.sbo-pad .sbo-pad-txt {
 			display: none;
 		}
@@ -677,7 +680,7 @@
 
 	/* 縦持ちのパッド：左に十字キー、右下に大きな決定、そのまわりに弧状に丸ボタン、
 	   左上に小さな横長ボタン（表示・スクショ・録画）。全部 #sbo-pad 内で絶対配置（消えても位置はずれない） */
-	@media (orientation: portrait) {
+	@media (max-aspect-ratio: 129/100) {
 		body.sbo-pad .sbo-buttons {
 			display: contents;
 		}
@@ -1360,7 +1363,7 @@
 		background: rgba(240, 184, 74, 0.75);
 	}
 	/* 横持ちは画面の左下隅（スティックの下）に置く */
-	@media (orientation: landscape) {
+	@media (min-aspect-ratio: 13/10) {
 		body.sbo-pad.sbo-on-map #sbo-shot-pad {
 			position: fixed;
 			right: auto;
@@ -1425,7 +1428,7 @@
 		background: rgba(192, 57, 43, 0.85);
 		border-color: rgba(255, 255, 255, 0.6);
 	}
-	@media (orientation: landscape) {
+	@media (min-aspect-ratio: 13/10) {
 		body.sbo-pad.sbo-on-map #sbo-rec-pad,
 		body.sbo-pad.sbo-recording #sbo-rec-pad {
 			position: fixed;
@@ -2035,7 +2038,7 @@
 		var cssW;
 		if (usePad) {
 			var vw = window.innerWidth, vh = window.innerHeight;
-			if (window.matchMedia('(orientation: landscape)').matches) {
+			if (window.matchMedia('(min-aspect-ratio: 13/10)').matches) {
 				/* 横持ち：左右のパッドの列を除いた中で一番大きく */
 				var padW = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pad-col-w')) || 136;
 				cssW = Math.min(vh * w / h, vw - padW * 2);
@@ -3886,7 +3889,7 @@
 			document.body.classList.remove('sbo-sys-show');
 		}
 		document.getElementById('sbo-screen').addEventListener('click', function (ev) {
-			if (!usePad || window.matchMedia('(orientation: portrait)').matches || ev.target.closest('#sbo-shot-pad, #sbo-rec-pad, [data-sbo-ui]')) {
+			if (!usePad || window.matchMedia('(max-aspect-ratio: 129/100)').matches || ev.target.closest('#sbo-shot-pad, #sbo-rec-pad, [data-sbo-ui]')) {
 				return;
 			}
 			if (document.body.classList.contains('sbo-sys-show')) {
