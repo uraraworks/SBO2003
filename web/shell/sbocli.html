@@ -1059,6 +1059,16 @@
 		font-size: 18px;
 		cursor: pointer;
 	}
+	/* キーボードで選んでいるボタン・リンクが分かるように枠を付ける（マウスで押した時は出さない） */
+	#sbo-quick .sbo-btn:focus-visible,
+	#sbo-quick .sbo-link:focus-visible,
+	#sbo-quick .sbo-acc-gear:focus-visible,
+	#sbo-recover .sbo-btn:focus-visible,
+	#sbo-recover .sbo-check input:focus-visible,
+	#sbo-quick-return:focus-visible {
+		outline: 3px solid #fff;
+		outline-offset: 2px;
+	}
 	#sbo-quick-back.sbo-multi #sbo-quick-settings,
 	#sbo-quick-back:not(.sbo-multi) .sbo-acc-gear {
 		display: none;
@@ -4686,6 +4696,7 @@
 	}
 
 	/* ログイン画面にいる間だけボタンを出す */
+	var bQuickShown = false;
 	setInterval(function () {
 		var state = loginState();
 		var list = loadList();
@@ -4697,29 +4708,142 @@
 			renderList(list);
 		}
 		quick.classList.toggle('sbo-show', bShow);
+		if (bShow && !bQuickShown) {
+			tmQuickShow = Date.now();
+		}
+		bQuickShown = bShow;
 		/* ボタンの画面の裏にあるアカウント名の欄にフォーカスが残っていると、
 		   ロゴ・タイトルを飛ばすキー（日本語入力中なら「さ」など）が見えない欄に入ってしまう。
-		   ボタンの画面を出している間はゲーム画面へフォーカスを戻しておく */
+		   ボタンの画面を出している間は、フォーカスが行き場の無い所（ゲーム画面・裏の欄など）にあれば
+		   いちばん上のボタンへ移す（キーボードだけで選んで Enter で入れるように） */
 		if (bShow) {
-			blurHiddenLoginInput();
+			focusQuickIfLost();
+		} else if (quick.contains(document.activeElement)) {
+			/* ボタンを押してログインへ進んだら、キーがゲームに届くようにゲーム画面へ戻す */
+			focusCanvas();
 		}
 		forgot.classList.toggle('sbo-show', state === 1 && !bShow);
-		/* ID・パスワードの入力中は、ボタンの画面へ戻れるようにする */
-		quickReturn.classList.toggle('sbo-show', state === 1 && bDismissed && bHave &&
+		/* ID・パスワードの入力中は、ボタンの画面へ戻れるようにする（はじめての端末なら「ようこそ」へ） */
+		quickReturn.classList.toggle('sbo-show', state === 1 && bDismissed &&
 			!recover.classList.contains('sbo-show'));
 	}, 250);
 
-	function blurHiddenLoginInput() {
-		var active = document.activeElement;
-		if (!active || !active.dataset || !active.dataset.w32Id || !active.closest('#sbo-overlay')) {
-			return;
-		}
-		active.blur();
+	function focusCanvas() {
 		var cv = document.getElementById('canvas');
 		if (cv) {
-			cv.focus();
+			cv.focus({ preventScroll: true });
 		}
 	}
+
+	/* ---- キーボードだけで操作する（ボタンの画面・復旧などの画面） ----
+	   ↑↓（ボタンの一覧では ←→ も）で選び、Enter で押す。Tab は画面の中だけを回る */
+	var tmQuickShow = 0;		/* ボタンの画面を出した時刻（ロゴを飛ばした Enter の押しっぱなしで押さないように） */
+	var QUICK_KEY_GUARD_MS = 500;
+	function focusables(root) {
+		return Array.prototype.filter.call(
+			root.querySelectorAll('button, a[href], input, textarea, select'),
+			function (el) {
+				return !el.disabled && !el.hidden && el.offsetParent !== null && el.getClientRects().length > 0;
+			});
+	}
+	function shownQuickCard() {
+		return quick.querySelector('#sbo-quick.sbo-back #sbo-quick-back, #sbo-quick.sbo-new #sbo-quick-new');
+	}
+	function focusQuickIfLost() {
+		var card = shownQuickCard();
+		if (!card || card.contains(document.activeElement)) {
+			return;
+		}
+		var active = document.activeElement;
+		var bLost = !active || active === document.body || active.id === 'canvas' ||
+			(active.dataset && active.dataset.w32Id && active.closest('#sbo-overlay')) ||
+			quick.contains(active) || active.offsetParent === null;
+		if (!bLost) {
+			return;
+		}
+		if (active && active.blur && active !== document.body) {
+			active.blur();
+		}
+		var a = focusables(card);
+		if (a.length) {
+			a[0].focus({ preventScroll: true });
+		}
+	}
+	/* root の中で、今のフォーカスから nStep だけ先へ（端まで行ったら反対側へ回る） */
+	function moveFocus(root, nStep, bSkipGear) {
+		var a = focusables(root);
+		var cur = document.activeElement;
+		if (bSkipGear) {
+			/* ↑↓ ではアカウントの行の ⚙ を飛ばす（⚙ からはその行のボタンから数える） */
+			a = a.filter(function (el) { return !el.classList.contains('sbo-acc-gear'); });
+			if (cur && cur.classList && cur.classList.contains('sbo-acc-gear')) {
+				cur = cur.parentNode.querySelector('.sbo-btn');
+			}
+		}
+		if (!a.length) {
+			return;
+		}
+		var i = a.indexOf(cur);
+		if (i < 0) {
+			i = nStep > 0 ? -1 : 0;
+		}
+		var el = a[(i + nStep + a.length) % a.length];
+		el.focus();
+		if (el.scrollIntoView) {
+			el.scrollIntoView({ block: 'nearest' });
+		}
+	}
+	quick.addEventListener('keydown', function (ev) {
+		var card = shownQuickCard();
+		if (!card || ev.isComposing || ev.altKey || ev.ctrlKey || ev.metaKey) {
+			return;
+		}
+		var key = ev.key;
+		if (key === 'Enter' || key === ' ') {
+			/* 出たばかり・押しっぱなしの Enter では押さない（タイトルを飛ばしたキーで勝手に入らないように） */
+			if (ev.repeat || Date.now() - tmQuickShow < QUICK_KEY_GUARD_MS) {
+				ev.preventDefault();
+			}
+			return;
+		}
+		var nStep = 0;
+		if (key === 'ArrowDown') {
+			nStep = 1;
+		} else if (key === 'ArrowUp') {
+			nStep = -1;
+		} else if (key === 'Tab') {
+			nStep = ev.shiftKey ? -1 : 1;
+		} else if ((key === 'ArrowRight' || key === 'ArrowLeft') && ev.target.closest &&
+				ev.target.closest('.sbo-acc-row')) {
+			/* アカウントの行は「ではじめる」と ⚙ を左右で行き来する */
+			var row = ev.target.closest('.sbo-acc-row');
+			var b = focusables(row);
+			var j = b.indexOf(ev.target) + (key === 'ArrowRight' ? 1 : -1);
+			if (j >= 0 && j < b.length) {
+				b[j].focus();
+			}
+			ev.preventDefault();
+			return;
+		}
+		if (nStep) {
+			ev.preventDefault();
+			moveFocus(card, nStep, key !== 'Tab');
+		}
+	});
+	/* ID・パスワードの入力中に Esc を押したら、ボタンの画面へ戻る
+	   （入力欄のキーはゲームに渡すので、先回りして受け取る） */
+	document.addEventListener('keydown', function (ev) {
+		if (ev.key !== 'Escape' || ev.isComposing || !quickReturn.classList.contains('sbo-show')) {
+			return;
+		}
+		var t = ev.target;
+		if (!(t && t.dataset && t.dataset.w32Id && t.closest && t.closest('#sbo-overlay'))) {
+			return;
+		}
+		ev.preventDefault();
+		ev.stopPropagation();
+		quickReturn.click();
+	}, true);
 
 	/* 「ID・パスワードでログイン」を押したら、アカウント名（入っていればパスワード）の欄へ */
 	function focusLoginInput() {
@@ -4752,6 +4876,8 @@
 	});
 	quickReturn.addEventListener('click', function () {
 		bDismissed = false;
+		/* すぐにボタンの画面へフォーカスを移す（ボタンの画面が出るのは次の見回りの時なので、その時に移る） */
+		focusCanvas();
 	});
 	document.querySelector('[data-quick-recover]').addEventListener('click', function () {
 		forgot.click();
@@ -4800,18 +4926,66 @@
 		return document.getElementById(id);
 	}
 	function showStep(name) {
+		var step = null;
 		Array.prototype.forEach.call(recover.querySelectorAll('.sbo-step'), function (el) {
 			el.classList.toggle('sbo-show', el.dataset.step === name);
+			if (el.dataset.step === name) {
+				step = el;
+			}
 		});
 		recover.classList.add('sbo-show');
+		/* キーボードで続けて操作できるように、出した画面の最初の欄・ボタンへフォーカスを移す
+		   （決まった欄へ移したい所は、呼んだ後にそちらで focus し直す） */
+		if (step && !step.contains(document.activeElement)) {
+			var a = focusables(step);
+			if (a.length) {
+				a[0].focus({ preventScroll: true });
+			}
+		}
 	}
 	function closeRecover() {
 		recover.classList.remove('sbo-show');
-		var c = document.getElementById('canvas');
-		if (c) {
-			c.focus();
-		}
+		/* ボタンの画面が出ていれば、そのボタンへ（次の見回りで移る）。でなければゲーム画面へ */
+		focusCanvas();
 	}
+	function shownStep() {
+		return recover.classList.contains('sbo-show') ? recover.querySelector('.sbo-step.sbo-show') : null;
+	}
+	/* 復旧・復旧キー・アカウント設定の画面のキー操作
+	   Esc＝閉じる（「保存しました」に印を付けるまでは閉じない）、入力欄で Enter＝その画面のボタン、
+	   チェックボックスで Enter＝印を付け外し、Tab は画面の中だけを回る */
+	recover.addEventListener('keydown', function (ev) {
+		var step = shownStep();
+		if (!step || ev.isComposing || ev.keyCode === 229 || ev.altKey || ev.ctrlKey || ev.metaKey) {
+			return;
+		}
+		var t = ev.target;
+		if (ev.key === 'Escape') {
+			var close = step.querySelector('[data-close]');
+			if (close && !close.disabled) {
+				ev.preventDefault();
+				close.click();
+			}
+		} else if (ev.key === 'Tab') {
+			ev.preventDefault();
+			moveFocus(step, ev.shiftKey ? -1 : 1);
+		} else if (ev.key === 'Enter' && t.tagName === 'INPUT' && t.type === 'checkbox') {
+			ev.preventDefault();
+			t.click();
+		} else if (ev.key === 'Enter' && t.tagName === 'INPUT') {
+			/* 最後の欄でなければ次の欄へ、最後の欄ならその画面のボタン（閉じる以外の最初のもの）を押す */
+			ev.preventDefault();
+			var inputs = Array.prototype.filter.call(step.querySelectorAll('input[type="text"], input[type="password"]'),
+				function (el) { return focusables(step).indexOf(el) >= 0; });
+			var i = inputs.indexOf(t);
+			var btn = step.querySelector('.sbo-btn:not([data-close])');
+			if (step.dataset.step === 'form' && i >= 0 && i + 1 < inputs.length) {
+				inputs[i + 1].focus();
+			} else if (btn && !btn.disabled) {
+				btn.click();
+			}
+		}
+	});
 	function setMsg(el, text, bOk) {
 		el.textContent = text || '';
 		el.classList.toggle('sbo-ok', !!bOk);
