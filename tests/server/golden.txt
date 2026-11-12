@@ -1109,6 +1109,7 @@ quest copy grp=2 vis owner=1 member=0 other=0 admin=1 block=-1
 quest copy grp=1 vis owner=0 member=1 other=0 admin=1 block=-1
 quest copy grp=2 vis owner=0 member=1 other=0 admin=1 block=-1
 quest admin portal moved=0
+quest admin own portal moved=1
 quest chest full item=0 leave=0 flag1=0 step=0
 quest chest item=1 flag1=1 step=1 person=1 chest=0
 quest member item=0 step=0

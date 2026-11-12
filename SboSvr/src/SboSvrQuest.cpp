@@ -795,14 +795,46 @@ static void DoPortal(PCHARINFO pChar, PQUESTNPCINFO pDef)
 	}
 }
 
+/* 同じマスに重なっている見えるNPC のうち、pChar が受けた依頼（または仲間の依頼）の分を探す
+   管理者にはほかの人の分の光・宝箱も同じマスに重なって見えるので、
+   先に見つかったほかの人の分に乗ると「依頼を受けた人のためのもの」と言われて入れなかった */
+static PCHARINFO FindOwnQuestNpcAt(PCHARINFO pChar, PCHARINFO pNpc)
+{
+	std::map<DWORD, QNPCENTRY>::iterator it;
+
+	if (IsQuestNpcFor (pNpc, pChar)) {
+		return pNpc;
+	}
+	for (it = s_mapNpc.begin (); it != s_mapNpc.end (); it ++) {
+		if (it->first >= (DWORD)g_aCharInfo.GetSize ()) {
+			continue;
+		}
+		PCHARINFO pTmp = g_aCharInfo[it->first];
+		if ((pTmp == NULL) || (pTmp == pNpc) || (pTmp->dwMapID != pNpc->dwMapID) ||
+			(pTmp->dwX != pNpc->dwX) || (pTmp->dwY != pNpc->dwY)) {
+			continue;
+		}
+		if (IsQuestNpcFor (pTmp, pChar)) {
+			return pTmp;
+		}
+	}
+	return pNpc;
+}
+
 /* 見えるNPC に話しかけた */
 void QuestNpcTalk(PCHARINFO pChar, PCHARINFO pNpc)
 {
-	std::map<DWORD, QNPCENTRY>::iterator it = s_mapNpc.find (pNpc->dwTblID);
+	std::map<DWORD, QNPCENTRY>::iterator it;
 	PQUESTINFO pQuest;
 	PQUESTNPCINFO pDef;
 	char szTmp[512];
 	BOOL bChg = FALSE;
+
+	if ((pChar == NULL) || (pNpc == NULL)) {
+		return;
+	}
+	pNpc = FindOwnQuestNpcAt (pChar, pNpc);
+	it = s_mapNpc.find (pNpc->dwTblID);
 
 	if ((it == s_mapNpc.end ()) || !IsCharVisibleTo (pNpc, pChar)) {
 		return;
