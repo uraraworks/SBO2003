@@ -13,6 +13,7 @@ import {
 } from '/dot-kobo.js';
 import { floodFill, bresenham, getRegion, putRegion, fillRect } from '/dot-core.js';
 import { encodeIndexedPng, indicesToImageData } from '/dot-png.js';
+import { installTouch } from '/kobo-touch.js';
 
 const $ = function (id) { return document.getElementById(id); };
 const UNDO_MAX = 50;
@@ -657,8 +658,8 @@ function startPan(p) {
 	panStart = { px: p.px, py: p.py, ox: S.ox, oy: S.oy };
 }
 
-function startGesture() {
-	const a = Array.from(ptrs.values());
+function startGesture(pts) {
+	const a = pts || Array.from(ptrs.values());
 	const r = view.getBoundingClientRect();
 	const mx = (a[0].x + a[1].x) / 2 - r.left;
 	const my = (a[0].y + a[1].y) / 2 - r.top;
@@ -671,6 +672,9 @@ function startGesture() {
 }
 
 view.addEventListener('pointerdown', function (e) {
+	if (e.pointerType === 'touch') {
+		return;		/* 指は下の installTouch で */
+	}
 	view.setPointerCapture(e.pointerId);
 	ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
 	if (ptrs.size === 2 && e.pointerType === 'touch') {
@@ -708,6 +712,9 @@ view.addEventListener('pointerdown', function (e) {
 });
 
 view.addEventListener('pointermove', function (e) {
+	if (e.pointerType === 'touch') {
+		return;
+	}
 	const rec = ptrs.get(e.pointerId);
 	if (rec) {
 		rec.x = e.clientX;
@@ -721,7 +728,18 @@ view.addEventListener('pointermove', function (e) {
 		}
 	}
 	if (mode === 'gesture' && ptrs.size >= 2) {
-		const a = Array.from(ptrs.values());
+		gestureMove(Array.from(ptrs.values()));
+		return;
+	}
+	if (!rec || ptrs.size > 1) {
+		return;
+	}
+	moveTo(p);
+});
+
+/* 2 本指のピンチ・スクロール（点は {x, y} の client 座標） */
+function gestureMove(a) {
+	{
 		const r = view.getBoundingClientRect();
 		const mx = (a[0].x + a[1].x) / 2 - r.left;
 		const my = (a[0].y + a[1].y) / 2 - r.top;
@@ -733,11 +751,11 @@ view.addEventListener('pointermove', function (e) {
 		S.ox = mx - ix * nz;
 		S.oy = my - iy * nz;
 		requestDraw();
-		return;
 	}
-	if (!rec || ptrs.size > 1) {
-		return;
-	}
+}
+
+/* 押したまま動かした時（ペン・マウス・指で共通） */
+function moveTo(p) {
 	if (mode === 'draw') {
 		const v = toolValue();
 		bresenham(last.x, last.y, p.x, p.y, function (x, y) { plotPixel(x, y, v); });
@@ -772,9 +790,12 @@ view.addEventListener('pointermove', function (e) {
 		S.sel = { x: S.float.x, y: S.float.y, w: S.float.w, h: S.float.h };
 		onChange();
 	}
-});
+}
 
 function pointerEnd(e) {
+	if (e.pointerType === 'touch') {
+		return;
+	}
 	ptrs.delete(e.pointerId);
 	if (mode === 'gesture') {
 		if (ptrs.size < 2) {
@@ -791,6 +812,10 @@ function pointerEnd(e) {
 	if (ptrs.size) {
 		return;
 	}
+	finishTool();
+}
+/* 指・ボタンを離した時 */
+function finishTool() {
 	if (mode === 'draw') {
 		endStroke();
 	} else if (mode === 'marquee') {
@@ -799,6 +824,17 @@ function pointerEnd(e) {
 		}
 		requestDraw();
 	}
+	mode = null;
+}
+/* gesture の倍率を整数に寄せて終わる */
+function endGesture() {
+	if (gest) {
+		const nz = Math.max(1, Math.round(S.z));
+		if (nz !== S.z) {
+			zoomAt(gest.mx, gest.my, nz);
+		}
+	}
+	gest = null;
 	mode = null;
 }
 view.addEventListener('pointerup', pointerEnd);
@@ -810,6 +846,49 @@ view.addEventListener('pointerleave', function (e) {
 	}
 });
 view.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+/*
+ * スマホ: 1 本指で描く・2 本指でスクロールと拡大縮小・長押しで色を拾う（kobo-touch.js）。
+ * 触れてから 80ms は描かずに待ち、その間に 2 本目が来たらスクロールにする。
+ */
+function touchPos(q) {
+	return pos({ clientX: q.x, clientY: q.y });
+}
+installTouch(view, {
+	dragStart: function (pts) {
+		startTool(touchPos(pts[0]));
+		pts.slice(1).forEach(function (q) { moveTo(touchPos(q)); });
+	},
+	dragMove: function (q) {
+		moveTo(touchPos(q));
+	},
+	dragEnd: function () {
+		finishTool();
+	},
+	dragCancel: function () {
+		cancelCurrent();
+	},
+	tap: function (q) {
+		const p = touchPos(q);
+		startTool(p);
+		finishTool();
+	},
+	longPress: function (q) {
+		const p = touchPos(q);
+		pickAt(p.x, p.y);
+	},
+	multiStart: function (pts) {
+		cancelCurrent();
+		startGesture(pts);
+	},
+	multiMove: function (pts) {
+		if (mode === 'gesture') {
+			gestureMove(pts);
+		}
+	},
+	multiEnd: function () {
+		endGesture();
+	}
+});
 /*
  * ホイール（エディタと同じ）
  *   そのまま: スクロール（Shift で横）

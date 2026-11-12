@@ -8,6 +8,7 @@ import {
 	loadIndexed, displayPalette, indicesToCanvas, loadBgCanvas, composeOnBg, makePreview, thumbCanvas
 } from '/dot-kobo.js';
 import { decodeIndexedPng, encodeIndexedPng } from '/dot-png.js';
+import { installTouch } from '/kobo-touch.js';
 
 const KIND_TEXT = { char: 'NPC・敵', part: '背景パーツ', effect: 'エフェクト' };
 const STATE_TEXT = { open: '募集中', judging: '選考中', done: 'できあがり' };
@@ -1059,6 +1060,10 @@ function renderPropose() {
 		o.value = String(z);
 		zoomSel.appendChild(o);
 	});
+	const zCustom = el('option', '', '');		// ⌘＋ホイール・ピンチで半端な倍率の時
+	zCustom.value = 'custom';
+	zCustom.hidden = true;
+	zoomSel.appendChild(zCustom);
 	const zoomIn = el('button', 'sub small', '＋');
 	zoomIn.type = 'button';
 	zoomIn.title = '大きく';
@@ -1169,33 +1174,86 @@ function renderPropose() {
 			tools.appendChild(b);
 		}
 	}
+	/*
+	 * 倍率。zf が見た目の倍率（小数もある）、Z は canvas に描く時の整数の倍率（zf 以上）。
+	 * ⌘/Ctrl＋ホイールとピンチはなめらかに（整数倍で一度止まる）、－＋と ⌘＋Shift＋ホイールは段階で。
+	 */
+	let zf = 0;			// 0 = 自動
 	function autoZoom() {
 		return Math.max(4, Math.floor(256 / Math.max(W, H)));
 	}
+	function curZoom() {
+		return zf || autoZoom();
+	}
 	function sizeCanvas() {
-		Z = zoomSel.value === 'auto' ? autoZoom() : Number(zoomSel.value);
+		const z = curZoom();
+		Z = Math.max(2, Math.ceil(z - 0.001));
 		cv.width = W * Z + 1;
 		cv.height = H * Z + 1;
-	}
-	/* 倍率を変える（d=+1 大きく / -1 小さく） */
-	function stepZoom(d) {
-		const i = ZOOMS.findIndex(function (z) { return z >= Z; });
-		let j;
-		if (d > 0) {
-			j = ZOOMS[i] === Z ? i + 1 : i;
+		cv.style.width = (W * z + 1) + 'px';
+		cv.style.height = (H * z + 1) + 'px';
+		if (!zf) {
+			zoomSel.value = 'auto';
+		} else if (ZOOMS.indexOf(zf) >= 0) {
+			zoomSel.value = String(zf);
 		} else {
-			j = (i < 0 ? ZOOMS.length : i) - 1;
+			zCustom.textContent = (Math.round(zf * 10) / 10) + '倍';
+			zoomSel.value = 'custom';
 		}
-		j = Math.max(0, Math.min(ZOOMS.length - 1, j));
-		zoomSel.value = String(ZOOMS[j]);
-		applyZoom();
 	}
-	function applyZoom() {
+	/* 倍率を変える。fx, fy（client 座標）の点が動かないようにスクロールも合わせる */
+	function setZoom(nz, fx, fy) {
+		nz = Math.max(ZOOMS[0] / 2, Math.min(ZOOMS[ZOOMS.length - 1], nz));
+		const old = curZoom();
+		const r = padView.getBoundingClientRect();
+		const ax = (fx == null ? r.left + r.width / 2 : fx) - r.left;
+		const ay = (fy == null ? r.top + r.height / 2 : fy) - r.top;
+		const ix = (padView.scrollLeft + ax) / old;
+		const iy = (padView.scrollTop + ay) / old;
+		zf = nz;
 		sizeCanvas();
 		redraw();
+		padView.scrollLeft = ix * nz - ax;
+		padView.scrollTop = iy * nz - ay;
+		saveZoom();
+	}
+	function saveZoom() {
 		try {
-			window.localStorage.setItem('sbo_kobo_pad_zoom', zoomSel.value);
+			window.localStorage.setItem('sbo_kobo_pad_zoom', zf ? String(zf) : 'auto');
 		} catch (e) { /* 覚えられなくてもよい */ }
+	}
+	/* 段階で（d=+1 大きく / -1 小さく） */
+	function stepZoom(d, fx, fy) {
+		const z = curZoom();
+		let n;
+		if (d > 0) {
+			n = ZOOMS.find(function (q) { return q > z + 0.001; });
+		} else {
+			n = ZOOMS.slice().reverse().find(function (q) { return q < z - 0.001; });
+		}
+		if (n) {
+			setZoom(n, fx, fy);
+		}
+	}
+	/* ⌘/Ctrl＋ホイール（ドット絵エディタと同じ動き。整数倍をまたぐ・近づいた時は一度止める） */
+	function wheelZoom(e) {
+		let speed = 1;
+		try {
+			speed = { slow: 2.5, normal: 1, fast: 0.4 }[window.localStorage.getItem('sbo-dot-wheel-zoom-speed') || 'normal'] || 1;
+		} catch (err) { /* ふつう */ }
+		const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+		const dy = (Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX) * unit;
+		const pinch = e.ctrlKey && !e.metaKey;		// Mac のトラックパッドのピンチは Ctrl 付きのホイール
+		const cur = curZoom();
+		let z = cur * Math.exp(-dy * (pinch ? 0.01 : 0.002) / speed);
+		const near = Math.round(z);
+		if (near >= 1 && Math.abs(z - near) < 0.04 * near && Math.abs(cur - near) >= 0.005) {
+			const crossed = (cur - near) * (z - near) <= 0;
+			if (crossed || Math.abs(z - near) < Math.abs(cur - near)) {
+				z = near;
+			}
+		}
+		setZoom(z, e.clientX, e.clientY);
 	}
 	function resetPad() {
 		const sz = (sizeSel.value || '16x16').split('x');
@@ -1296,25 +1354,139 @@ function renderPropose() {
 		}
 	}
 	try {
-		const zv = window.localStorage.getItem('sbo_kobo_pad_zoom');
-		if (zv && Array.prototype.some.call(zoomSel.options, function (o) { return o.value === zv; })) {
-			zoomSel.value = zv;
+		const zv = Number(window.localStorage.getItem('sbo_kobo_pad_zoom'));
+		if (zv >= 1 && zv <= 64) {
+			zf = zv;
 		}
 	} catch (e) { /* 読めなければ自動 */ }
-	zoomSel.addEventListener('change', applyZoom);
+	zoomSel.addEventListener('change', function () {
+		if (zoomSel.value === 'auto') {
+			zf = 0;
+			sizeCanvas();
+			redraw();
+			saveZoom();
+		} else if (zoomSel.value !== 'custom') {
+			setZoom(Number(zoomSel.value));
+		}
+	});
 	zoomIn.addEventListener('click', function () { stepZoom(1); });
 	zoomOut.addEventListener('click', function () { stepZoom(-1); });
+	let wheelStepAt = 0, wheelSum = 0;
 	padView.addEventListener('wheel', function (e) {
 		if (!e.metaKey && !e.ctrlKey) {
 			return;		/* ふつうのホイールはスクロール */
 		}
 		e.preventDefault();
-		stepZoom(e.deltaY < 0 ? 1 : -1);
+		if (e.shiftKey) {
+			/* ⌘＋Shift＋ホイール: 回転量をためて 100px ごとに 1 段 */
+			const t = performance.now();
+			if (t - wheelStepAt > 500) {
+				wheelSum = 0;
+			}
+			wheelStepAt = t;
+			wheelSum += Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+			if (Math.abs(wheelSum) >= 100) {
+				stepZoom(wheelSum < 0 ? 1 : -1, e.clientX, e.clientY);
+				wheelSum = 0;
+			}
+			return;
+		}
+		wheelZoom(e);
 	}, { passive: false });
+
+	/* スマホ: 1 本指で描く・2 本指でスクロールと拡大縮小・長押しで色を拾う（kobo-touch.js） */
+	let snapPx = null;		// 描き始めの絵（2 本指になったら戻す）
+	let pinch = null;
+	function touchPt(q) {
+		return padPoint({ clientX: q.x, clientY: q.y });
+	}
+	installTouch(cv, {
+		dragStart: function (pts) {
+			if (!sheet) {
+				return;
+			}
+			snapPx = { px: px.slice(), drawn: drawn, roughSrc: roughSrc };
+			last = touchPt(pts[0]);
+			plot(last[0], last[1]);
+			pts.slice(1).forEach(function (q) {
+				const pt = touchPt(q);
+				line(last, pt);
+				last = pt;
+			});
+			redraw();
+		},
+		dragMove: function (q) {
+			if (!last) {
+				return;
+			}
+			const pt = touchPt(q);
+			line(last, pt);
+			last = pt;
+			redraw();
+		},
+		dragEnd: function () {
+			snapPx = null;
+			up();
+		},
+		dragCancel: function () {
+			if (snapPx) {
+				px = snapPx.px;
+				drawn = snapPx.drawn;
+				roughSrc = snapPx.roughSrc;
+				snapPx = null;
+				redraw();
+			}
+			last = null;
+		},
+		tap: function (q) {
+			if (!sheet) {
+				return;
+			}
+			const pt = touchPt(q);
+			plot(pt[0], pt[1]);
+			redraw();
+			draftLater();
+		},
+		longPress: function (q) {
+			const pt = touchPt(q);
+			if (sheet && pt[0] >= 0 && pt[1] >= 0 && pt[0] < W && pt[1] < H) {
+				selectColor(px[pt[1] * W + pt[0]]);
+			}
+		},
+		multiStart: function (pts) {
+			pinch = {
+				d: Math.max(10, Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)),
+				cx: (pts[0].x + pts[1].x) / 2, cy: (pts[0].y + pts[1].y) / 2,
+				z: curZoom(), sl: padView.scrollLeft, st: padView.scrollTop
+			};
+		},
+		multiMove: function (pts) {
+			if (!pinch) {
+				return;
+			}
+			const cx = (pts[0].x + pts[1].x) / 2, cy = (pts[0].y + pts[1].y) / 2;
+			const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+			const nz = pinch.z * d / pinch.d;
+			if (Math.abs(nz - curZoom()) > 0.01) {
+				setZoom(nz, pinch.cx, pinch.cy);
+				pinch.sl = padView.scrollLeft + (cx - pinch.cx);
+				pinch.st = padView.scrollTop + (cy - pinch.cy);
+			}
+			padView.scrollLeft = pinch.sl - (cx - pinch.cx);
+			padView.scrollTop = pinch.st - (cy - pinch.cy);
+		},
+		multiEnd: function () {
+			/* 倍率は整数に寄せる（ドットがそろって見える） */
+			if (pinch && zf && Math.round(zf) !== zf) {
+				setZoom(Math.max(2, Math.round(zf)), pinch.cx, pinch.cy);
+			}
+			pinch = null;
+		}
+	});
 	cv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 	cv.addEventListener('pointerdown', function (e) {
-		if (!sheet) {
-			return;
+		if (!sheet || e.pointerType === 'touch') {
+			return;		/* 指は installTouch で */
 		}
 		e.preventDefault();
 		const pt = padPoint(e);
@@ -1334,7 +1506,7 @@ function renderPropose() {
 		redraw();
 	});
 	cv.addEventListener('pointermove', function (e) {
-		if (!last) {
+		if (!last || e.pointerType === 'touch') {
 			return;
 		}
 		const pt = padPoint(e);
