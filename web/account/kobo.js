@@ -1938,7 +1938,9 @@ function loadMyProposals() {
 			const d = el('div', 'prop');
 			const h = el('div', 'node-line');
 			h.appendChild(el('span', 'tag k-' + pr.kind, KIND_TEXT[pr.kind] || pr.kind));
-			h.appendChild(el('span', 'tag', PROPOSAL_STATUS[pr.status] || pr.status));
+			/* 新着のままでも、管理人が返事をしたら「待っています」ではなく「返事がありました」 */
+			const stText = pr.status === 'new' && (pr.reply || pr.replyImg) ? '管理人から返事がありました' : (PROPOSAL_STATUS[pr.status] || pr.status);
+			h.appendChild(el('span', 'tag', stText));
 			if (pr.anonymous) {
 				h.appendChild(el('span', 'tag', '匿名'));
 			}
