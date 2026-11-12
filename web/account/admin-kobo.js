@@ -839,8 +839,25 @@ async function renderForm(body, seq, v) {
 			saveBtn.disabled = true;
 			setMsg(msg, '保存しています…');
 			const palette256 = normalizePalette(S.img.palette);
+			/* 使える色：見本があれば見本（と描き直しなら今の絵）で使っている色だけ、無ければ画像全体の色 */
 			const used = new Uint8Array(256);
-			for (let i = 0; i < S.img.indices.length; i++) used[S.img.indices[i]] = 1;
+			const mark = (idx) => { for (let i = 0; i < idx.length; i++) used[idx[i]] = 1; };
+			let nSample = 0;
+			if (S.samplesDirty) {
+				for (const sp of S.samples) { mark(cutOut(S.img, sp.x, sp.y, S.sel.w, S.sel.h)); nSample++; }
+			} else if (editing) {
+				for (const id of task.samples || []) {
+					const res = await fetch(imgUrl(id), { credentials: 'same-origin' });
+					if (!res.ok) throw new Error('今の見本が読めません（HTTP ' + res.status + '）');
+					mark((await decodeIndexedPng(await res.arrayBuffer())).indices);
+					nSample++;
+				}
+			}
+			if (nSample) {
+				if (!S.fresh) mark(cutOut(S.img, S.sel.x, S.sel.y, S.sel.w, S.sel.h));
+			} else {
+				mark(S.img.indices);
+			}
 			const transparent = findTransparentIndex(palette256);
 			used[transparent] = 1;
 			const colors = [];
@@ -897,7 +914,7 @@ async function renderForm(body, seq, v) {
 		modeBox,
 		h('div', { class: 'kb-scroll' }, canvas), selInfo, existing,
 		rebaseRow,
-		h('div', { class: 'sub-text', text: '見本（同じ画像の中の、描く範囲と同じ大きさの場所を 0〜4 個）：上の「見本を選ぶ」でクリック。' }), sampleThumbs));
+		h('div', { class: 'sub-text', text: '見本（同じ画像の中の、描く範囲と同じ大きさの場所を 0〜4 個）：上の「見本を選ぶ」でクリック。見本があると、描く人が使える色は見本（描き直しなら今の絵も）で使っている色だけになります。無ければ画像全体の色です。' }), sampleThumbs));
 	body.appendChild(sec('3. 背景（等倍で並べて見る時の 16×16 の 1 マス）',
 		h('div', { class: 'kb-row' }, h('label', null, '画像 ', bgSelect), h('label', { class: 'check' }, bgOff, '背景を使わない')),
 		h('div', { class: 'kb-scroll' }, bgCanvas), bgPrev));
