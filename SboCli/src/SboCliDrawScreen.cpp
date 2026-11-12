@@ -98,6 +98,49 @@ void TextOut2(HDC hdc, int iX, int iY, char *pStr, COLORREF Color)
 }
 
 /* ========================================================================= */
+/* 関数名：DrawSysMsgBand													 */
+/* 内容：戦闘ログ（システムメッセージ）の後ろに半透明の暗い帯を敷く			 */
+/*		 草原など明るい背景でも細い文字が読めるように。右端は 1 文字ぶんぼかす */
+/*		 行が重なっても濃くならないよう、1 ドット行ごとに 1 回だけ塗る		 */
+/* ========================================================================= */
+static void DrawSysMsgBand(HDC hDC, int nX, int nY)
+{
+	const int nFade = 14;		/* 右端をぼかす幅（1 文字ぶん） */
+	const int nAlpha = 120;		/* 帯の濃さ（0〜255） */
+	int i, yy, nCount = g_SysMsgInfo.GetSize ();
+	int anRight[SCRSIZEY + 2];
+	TEXTMETRIC tm;
+	SIZE size;
+
+	if (nCount <= 0) {
+		return;
+	}
+	GetTextMetrics (hDC, &tm);
+	for (yy = 0; yy < SCRSIZEY + 2; yy ++) {
+		anRight[yy] = 0;
+	}
+	for (i = 0; i < nCount; i ++) {
+		PSYSMSGINFO pSysMsgInfo = g_SysMsgInfo[i];
+		if (pSysMsgInfo->nY < SYSMSG_EY) {
+			continue;
+		}
+		GetTextExtentPoint32 (hDC, pSysMsgInfo->pszMsg, strlen (pSysMsgInfo->pszMsg), &size);
+		/* 縁取りの 1 ドットと上下 1 ドットの余白も含めて帯にする（行の間にすき間が出ないように） */
+		for (yy = pSysMsgInfo->nY - 2; yy <= pSysMsgInfo->nY + tm.tmHeight + 1; yy ++) {
+			if (yy < 0 || yy >= SCRSIZEY + 2) {
+				continue;
+			}
+			anRight[yy] = max (anRight[yy], size.cx + 2);
+		}
+	}
+	for (yy = 0; yy < SCRSIZEY + 2; yy ++) {
+		if (anRight[yy] > 0) {
+			W32ShadeSpan (hDC, nX, nY + yy, anRight[yy], nFade, RGB (0, 0, 0), nAlpha);
+		}
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：DrawScreen														 */
 /* 内容：画面の描画															 */
 /* 日付：2003/04/29															 */
@@ -147,12 +190,11 @@ void DrawScreen(HWND hWnd, HDC hDC)
 				hDCPrimary = g_pDibDrawMap->Lock ();
 				HFONT hFontOld = (HFONT)SelectObject (hDCPrimary, g_hFont14);
 				SetBkMode (hDCPrimary, TRANSPARENT);
+				DrawSysMsgBand (hDCPrimary, 32 - x, 32 - y);
 				for (i = 0; i < nCount; i ++) {
 					PSYSMSGINFO pSysMsgInfo = g_SysMsgInfo[i];
 					if (pSysMsgInfo->nY >= SYSMSG_EY) {
-						/* 戦闘ログは太字＋斜めも囲む太い縁取りで描く（草原など明るい背景でも読めるように） */
-						TextOutOutlineBold (hDCPrimary, 32 - x, 32 - y + pSysMsgInfo->nY, pSysMsgInfo->pszMsg,
-								(int)strlen (pSysMsgInfo->pszMsg), RGB (10, 10, 10), pSysMsgInfo->cl);
+						TextOut2 (hDCPrimary, 32 - x, 32 - y + pSysMsgInfo->nY, pSysMsgInfo->pszMsg, pSysMsgInfo->cl);
 					}
 				}
 				SelectObject (hDCPrimary, hFontOld);
