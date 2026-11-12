@@ -238,10 +238,12 @@ static BOOL IsQuestNpcFor(PCHARINFO pSrc, PCHARINFO pDst)
 BOOL IsCharVisibleTo(PCHARINFO pSrc, PCHARINFO pDst)
 {
 	/* 空間が違えば見えない（管理者も、いま居る空間のものしか見えない）。
-	   ただし闘技場の空間は、ふつうの世界の人から見える（観戦。見えるだけで手は出せない） */
+	   ただし闘技場の空間とふつうの世界は、おたがいに見える（観客は戦いを観戦し、挑戦者からも観客が見える。
+	   見えるだけで、ぶつかり・攻撃・魔法・会話などは届かない） */
 	if (pDst != NULL) {
 		if (pSrc->dwSpaceID != pDst->dwSpaceID) {
-			if ((pDst->dwSpaceID != SPACE_NORMAL) || !SpaceIsArena (pSrc->dwSpaceID)) {
+			if (!(((pDst->dwSpaceID == SPACE_NORMAL) && SpaceIsArena (pSrc->dwSpaceID)) ||
+				  ((pSrc->dwSpaceID == SPACE_NORMAL) && SpaceIsArena (pDst->dwSpaceID)))) {
 				return FALSE;
 			}
 		}

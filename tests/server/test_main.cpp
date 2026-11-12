@@ -2754,9 +2754,9 @@ static void TestChallenge(const std::vector<int> &aLogin)
 	printf("challenge again in a=%d b=%d enemies=%d\n", (int)QuestInChallenge(pA), (int)QuestInChallenge(pB), ChallengeCountEnemy());
 	{
 		PCHARINFO pEn = ChallengeFindEnemy();
-		printf("challenge arena space_a=%d enemy_vis_c=%d a_vis_c=%d c_vis_a=%d c_hit_enemy=%d\n",
+		printf("challenge arena space_a=%d enemy_vis_c=%d a_vis_c=%d c_vis_a=%d c_hit_enemy=%d a_hit_c=%d\n",
 			(int)(pA->dwSpaceID != 0), pEn ? IsCharVisibleTo(pEn, pC) : -1, IsCharVisibleTo(pA, pC), IsCharVisibleTo(pC, pA),
-			pEn ? IsInteractable(pC, pEn) : -1);
+			pEn ? IsInteractable(pC, pEn) : -1, IsInteractable(pA, pC));
 	}
 	if (pQ20) pQ20->byChallenge = byChallengeBak;
 	/* 二組目は入れない（同じ依頼は一度に 1 組） */

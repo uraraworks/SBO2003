@@ -1219,7 +1219,7 @@ challenge handin b quest=20
 challenge again a=20 b=20
 challenge arena c_got info=1 pos=4
 challenge again in a=1 b=1 enemies=1
-challenge arena space_a=1 enemy_vis_c=1 a_vis_c=1 c_vis_a=0 c_hit_enemy=0
+challenge arena space_a=1 enemy_vis_c=1 a_vis_c=1 c_vis_a=1 c_hit_enemy=0 a_hit_c=0
 challenge busy c_in=0 gate=1
 challenge logout a in=0 lv=30
 challenge relogin a at_start=1
