@@ -2265,6 +2265,10 @@ static void TestQuest(const std::vector<int> &aLogin)
 			PosPara.byX = (BYTE)pPortal->dwX;
 			PosPara.byY = (BYTE)pPortal->dwY;
 			TestRecv(pOwner, &PosPara, sizeof(PosPara));
+			/* 乗った瞬間には移らない（歩き終わるまで少し待つ） */
+			printf("quest portal step wait moved=%d\n", (int)(pOwner->dwX == (DWORD)aCell[3].first && pOwner->dwY == (DWORD)aCell[3].second));
+			s_dwFakeNow += 1000;
+			QuestSyncProc();
 			printf("quest portal step to dest=%d\n", (int)(pOwner->dwX == (DWORD)aCell[3].first && pOwner->dwY == (DWORD)aCell[3].second));
 		}
 	}

@@ -43,9 +43,17 @@ typedef struct _QNPCENTRY {
 
 static std::map<DWORD, QNPCENTRY> s_mapNpc;						/* NPC のテーブルID → 出どころ */
 static int s_nRemoving = 0;										/* 消している間は送る相手を絞らない */
+/* 光に乗って、移るのを待っている人 */
+typedef struct _STEPWAIT {
+	DWORD		dwNpcTblID;											/* 乗った光（見えるNPC）のテーブルID */
+	DWORD		dwTime;												/* 乗った時刻 */
+	DWORD		dwMapID, dwX, dwY;									/* 乗った場所（動いたらやめる） */
+} STEPWAIT;
+static std::map<DWORD, STEPWAIT> s_mapStepWait;					/* 乗った人のテーブルID → 待ち */
 static DWORD s_dwLastSync = 0;									/* 最後に同期した時刻 */
 
 #define QUEST_SYNC_INTERVAL		1000								/* 同期の間隔（ミリ秒） */
+#define QUEST_STEP_WAIT			1000								/* 光（ポータル・入口）に乗ってから移るまでの間（ミリ秒。歩き終わる前に移らないように） */
 #define QUEST_GOLD_MAX			999999								/* お金の上限 */
 #define QUEST_FLG_CLEARED		16									/* 討伐チャレンジに成功した印の旗（ギルドで渡せる条件） */
 #define CHALLENGE_NEAR			8									/* 一緒に受ける・入る仲間の距離（マス） */
@@ -94,6 +102,7 @@ static std::map<DWORD, LOANPOS> s_mapPendingPos;				/* 切断した人のテー�
 static DWORD s_dwChallengeSeq = 0;								/* 挑戦の番号の採番 */
 
 static void ChallengeProc(void);
+static void StepWaitProc(DWORD dwNow);
 static void ChallengeOnDecPlayer(PCHARINFO pChar);
 static void ChallengeClearMember(PCHARINFO p, struct _CHALLENGE *pCh, int nReason);
 static void ChallengeStart(PCHARINFO pChar, PQUESTINFO pQuest, PQUESTNPCINFO pDef);
@@ -552,6 +561,8 @@ void QuestSyncProc(void)
 {
 	DWORD dwNow = timeGetTime ();
 
+	/* 光に乗って少し待った人を移す（毎回見る） */
+	StepWaitProc (dwNow);
 	if ((s_dwLastSync != 0) && (dwNow - s_dwLastSync < QUEST_SYNC_INTERVAL)) {
 		return;
 	}
@@ -585,6 +596,7 @@ void QuestOnDecPlayer(PCHARINFO pChar)
 		s_mapNpc.erase (pChar->dwTblID);
 		return;
 	}
+	s_mapStepWait.erase (pChar->dwTblID);
 	/* 討伐チャレンジの敵が倒された・挑戦中の人が切断した */
 	ChallengeOnDecPlayer (pChar);
 	for (it = s_mapNpc.begin (); it != s_mapNpc.end (); it ++) {
@@ -919,8 +931,63 @@ void QuestOnStep(PCHARINFO pChar)
 		pNpc = pTmp;
 		break;
 	}
-	/* 移すと見えるNPC の一覧が変わるので、探し終えてから呼ぶ */
-	if (pNpc) {
+	/* 乗った瞬間に移すと、歩き（スクロール）が終わる前に画面が変わって何が起きたか分からない。
+	 * 少しその場で待ってから移す（待つ間に降りたらやめる）。話しかけた時はすぐ移る */
+	if (pNpc == NULL) {
+		s_mapStepWait.erase (pChar->dwTblID);
+		return;
+	}
+	{
+		std::map<DWORD, STEPWAIT>::iterator itW = s_mapStepWait.find (pChar->dwTblID);
+		STEPWAIT Wait;
+		if ((itW != s_mapStepWait.end ()) && (itW->second.dwNpcTblID == pNpc->dwTblID) &&
+			(itW->second.dwX == pChar->dwX) && (itW->second.dwY == pChar->dwY)) {
+			return;
+		}
+		Wait.dwNpcTblID = pNpc->dwTblID;
+		Wait.dwTime = timeGetTime ();
+		Wait.dwMapID = pChar->dwMapID;
+		Wait.dwX = pChar->dwX;
+		Wait.dwY = pChar->dwY;
+		s_mapStepWait[pChar->dwTblID] = Wait;
+	}
+}
+
+/* 光に乗って待っている人を、時間が来たら移す */
+static void StepWaitProc(DWORD dwNow)
+{
+	std::map<DWORD, STEPWAIT>::iterator it;
+	std::vector<std::pair<DWORD, DWORD> > aGo;
+	size_t i;
+
+	if (s_mapStepWait.empty ()) {
+		return;
+	}
+	for (it = s_mapStepWait.begin (); it != s_mapStepWait.end (); ) {
+		PCHARINFO pChar = (it->first < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[it->first] : NULL;
+		/* 降りた・マップが変わった・いなくなった */
+		if ((pChar == NULL) || (pChar->byNpcType != NPCTYPE_INIT) || (pChar->dwMapID != it->second.dwMapID) ||
+			(pChar->dwX != it->second.dwX) || (pChar->dwY != it->second.dwY)) {
+			s_mapStepWait.erase (it ++);
+			continue;
+		}
+		if (dwNow - it->second.dwTime < QUEST_STEP_WAIT) {
+			it ++;
+			continue;
+		}
+		aGo.push_back (std::make_pair (it->first, it->second.dwNpcTblID));
+		s_mapStepWait.erase (it ++);
+	}
+	/* 移すと見えるNPC の一覧が変わるので、待ちの一覧を見終えてから */
+	for (i = 0; i < aGo.size (); i ++) {
+		PCHARINFO pChar = g_aCharInfo[aGo[i].first];
+		if ((aGo[i].second >= (DWORD)g_aCharInfo.GetSize ()) || (s_mapNpc.find (aGo[i].second) == s_mapNpc.end ())) {
+			continue;
+		}
+		PCHARINFO pNpc = g_aCharInfo[aGo[i].second];
+		if ((pNpc->dwMapID != pChar->dwMapID) || (pNpc->dwX != pChar->dwX) || (pNpc->dwY != pChar->dwY)) {
+			continue;
+		}
 		QuestNpcTalk (pChar, pNpc);
 	}
 }
