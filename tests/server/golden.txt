@@ -1181,4 +1181,11 @@ dispose sell full leave: n=3 7*2 1*1 2*1
 dispose sell full gold=999998
 dispose drop all leave: n=2 1*1 2*1
 dispose drop all gold=999998
+== Q. StatusUp ==
+statusup use=1,1 at+3 df+4 events=2
+statusup strong at=250 df=150
+statusup recast at=250 events=2
+statusup 181s at=250 df=100 events=1
+statusup 281s at=200 df=100 events=0
+statusup enemy use=1 at_same=1 events=0
 == done ==

@@ -64,6 +64,8 @@ static BOOL MagicProcUse_HPDOWNRATE			(PMAGICINFO, PCHARINFO, PCHARINFO);					/*
 static BOOL MagicProcUse_HASTE				(PMAGICINFO, PCHARINFO, PCHARINFO);					/* 魔法処理(使用処理:加速) */
 static BOOL MagicProcUse_POISON				(PMAGICINFO, PCHARINFO, PCHARINFO);					/* 魔法処理(使用処理:毒) */
 static BOOL MagicProcUse_SLEEP				(PMAGICINFO, PCHARINFO, PCHARINFO);					/* 魔法処理(使用処理:眠り) */
+static BOOL MagicProcUse_ATUP				(PMAGICINFO, PCHARINFO, PCHARINFO);					/* 魔法処理(使用処理:攻撃力アップ) */
+static BOOL MagicProcUse_DFUP				(PMAGICINFO, PCHARINFO, PCHARINFO);					/* 魔法処理(使用処理:守備力アップ) */
 
 extern long genrand();													/* 乱数取得 */
 
@@ -83,6 +85,8 @@ static const MAGICPROC MagicProcTbl[] = {
 	MagicProcUse_HASTE,				/* 加速 */
 	MagicProcUse_POISON,			/* 毒 */
 	MagicProcUse_SLEEP,				/* 眠り */
+	MagicProcUse_ATUP,				/* 攻撃力アップ */
+	MagicProcUse_DFUP,				/* 守備力アップ */
 };
 
 /* ========================================================================= */
@@ -2121,3 +2125,61 @@ void TownWarpRecord(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY, int nF
 }
 
 /* Copyright(C)URARA-works 2003-2005 */
+
+/* ========================================================================= */
+/* 関数名：MagicProcUseStatusUp												 */
+/* 内容：攻撃力・守備力アップをかける(プレイヤーだけ)						 */
+/*		 付加データ1:上がる率(%) 2:秒数 3:最低でも上がる量					 */
+/*		 同じ種類はかけ直し(時間が延びるだけで重ならない)					 */
+/* ========================================================================= */
+static BOOL MagicProcUseStatusUp(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTarget,
+		BYTE byType, LPCSTR pszName, COLORREF clText)
+{
+	char szTmp[256];
+	int nRate, nSec, nMin;
+
+	/* 敵や傭兵の攻撃力・守備力は作りが違うのでプレイヤーだけ */
+	if (pCharTarget->byNpcType != NPCTYPE_INIT) {
+		return FALSE;
+	}
+	if ((pCharTarget->byCharState == CHARSTATE_DEAD) || (pCharTarget->wHP == 0)) {
+		return FALSE;
+	}
+	nRate = min (255, max (0, (int)pInfo->wData1));
+	nSec  = max (1, (int)pInfo->wData2);
+	nMin  = min (255, max (0, (int)pInfo->wData3));
+
+	SetCharInfoTimerStatus (pCharTarget, byType, (BYTE)nRate, (DWORD)nSec * 1000);
+	SetCharInfoTimerStatusMin (pCharTarget, byType, (DWORD)nMin);
+	RenewATDF (pCharTarget->dwTblID);
+
+	snprintf (szTmp, sizeof (szTmp), "%s↑", pszName);
+	SendCmdADDCHAREFC (pCharTarget->dwTblID, clText, szTmp);
+	if (pInfo->byTargetEfectID) {
+		pCharTarget->byEfect = pInfo->byTargetEfectID;
+		SendCmdEFECTCHG (pCharTarget->pID, pCharTarget->dwTblID, pCharTarget->byEfect);
+		pCharTarget->byEfect = 0;
+	}
+	/* かけてもらった人のログに続く時間を出す(切れた時もログに出る) */
+	if (nSec % 60 == 0) {
+		snprintf (szTmp, sizeof (szTmp), "%sアップがかかりました（%d分）", pszName, nSec / 60);
+	} else {
+		snprintf (szTmp, sizeof (szTmp), "%sアップがかかりました（%d秒）", pszName, nSec);
+	}
+	SendCmdSYSMSG (pCharTarget->pID, szTmp, SPEECHCMD_BATTLE1);
+	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：MagicProcUse_ATUP / MagicProcUse_DFUP							 */
+/* 内容：魔法処理(使用処理:攻撃力アップ・守備力アップ)						 */
+/* ========================================================================= */
+BOOL MagicProcUse_ATUP(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTarget)
+{
+	return MagicProcUseStatusUp (pInfo, pChar, pCharTarget, CHARINFOTIMEREVENT_ATUP, "攻撃", RGB (255, 120, 80));
+}
+
+BOOL MagicProcUse_DFUP(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTarget)
+{
+	return MagicProcUseStatusUp (pInfo, pChar, pCharTarget, CHARINFOTIMEREVENT_DFUP, "守り", RGB (100, 180, 255));
+}

@@ -132,6 +132,17 @@ static void MakeEffectStr(PMAGICINFO pInfo, BOOL bInner, int nDepth, LPSTR pszDs
 		wsprintf (szTmp, "%d秒間、攻撃の間隔が短くなる（%d％速く）", pInfo->wData2, pInfo->wData1);
 		break;
 
+	case MAGICTYPE_ATUP:			/* 攻撃力アップ */
+	case MAGICTYPE_DFUP:			/* 守備力アップ */
+		if (pInfo->wData3 > 0) {
+			wsprintf (szTmp, "%d秒間、%sが%d％上がる（最低でも+%d）", pInfo->wData2,
+					(pInfo->byType == MAGICTYPE_ATUP) ? "攻撃力" : "守備力", pInfo->wData1, pInfo->wData3);
+		} else {
+			wsprintf (szTmp, "%d秒間、%sが%d％上がる", pInfo->wData2,
+					(pInfo->byType == MAGICTYPE_ATUP) ? "攻撃力" : "守備力", pInfo->wData1);
+		}
+		break;
+
 	case MAGICTYPE_POISON:			/* 毒 */
 		if (bInner) {
 			wsprintf (szTmp, "毒にする（%d秒間、2秒ごとに%dのダメージ）", pInfo->wData2, pInfo->wData1);

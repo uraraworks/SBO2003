@@ -2945,6 +2945,12 @@ void RenewATDF(DWORD dwTblID)
 		}
 	}
 
+	/* 攻撃力・守備力アップ(僧侶の補助特技など) */
+	if (pChar->byNpcType == NPCTYPE_INIT) {
+		pChar->wAT = (WORD)min (65535, (int)pChar->wAT + GetStatusUpBonus (pChar, CHARINFOTIMEREVENT_ATUP, (int)pChar->wAT));
+		pChar->wDF = (WORD)min (65535, (int)pChar->wDF + GetStatusUpBonus (pChar, CHARINFOTIMEREVENT_DFUP, (int)pChar->wDF));
+	}
+
 	/* 防御力倍？ */
 	bResult = CheckCharInfoTimer (dwTblID, CHARINFOTIMEREVENT_DIFENCE);
 	if (bResult) {

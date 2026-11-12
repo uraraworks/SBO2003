@@ -1144,6 +1144,8 @@ enum {
 	MAGICTYPE_HASTE,											/* 加速(付加データ1:速くなる率(%) 2:秒数) */
 	MAGICTYPE_POISON,											/* 毒(付加データ1:2秒ごとのダメージ 2:秒数 3:成功率(%、0なら100)) */
 	MAGICTYPE_SLEEP,											/* 眠り(付加データ1:秒数 2:成功率(%、0なら100)) */
+	MAGICTYPE_ATUP,												/* 攻撃力アップ(付加データ1:上がる率(%) 2:秒数 3:最低でも上がる量) */
+	MAGICTYPE_DFUP,												/* 守備力アップ(付加データ1:上がる率(%) 2:秒数 3:最低でも上がる量) */
 };
 
 /* 魔法利用情報 */
@@ -1209,6 +1211,8 @@ enum {
 	CHARINFOTIMEREVENT_HASTE,									/* 加速(byData=速くなる率%) */
 	CHARINFOTIMEREVENT_POISON,									/* 毒(byData=2秒ごとのダメージ) */
 	CHARINFOTIMEREVENT_SLEEP,									/* 眠り(dwTimeLast=眠った時のHP。減ったら起きる) */
+	CHARINFOTIMEREVENT_ATUP,									/* 攻撃力アップ(byData=上がる率%、dwTimeInterval=最低でも上がる量) */
+	CHARINFOTIMEREVENT_DFUP,									/* 守備力アップ(byData=上がる率%、dwTimeInterval=最低でも上がる量) */
 };
 
 

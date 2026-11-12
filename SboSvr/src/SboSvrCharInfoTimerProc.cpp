@@ -23,6 +23,7 @@ static BOOL	CharInfoTimerProc_DIFENCE	(PCHARINFO pChar, PCHARINFOTIMEREVENT pInf
 static BOOL	CharInfoTimerProc_HASTE		(PCHARINFO pChar, PCHARINFOTIMEREVENT pInfo);	/* キャラ情報タイマーイベント処理(加速) */
 static BOOL	CharInfoTimerProc_POISON	(PCHARINFO pChar, PCHARINFOTIMEREVENT pInfo);	/* キャラ情報タイマーイベント処理(毒) */
 static BOOL	CharInfoTimerProc_SLEEP		(PCHARINFO pChar, PCHARINFOTIMEREVENT pInfo);	/* キャラ情報タイマーイベント処理(眠り) */
+static BOOL	CharInfoTimerProc_STATUSUP	(PCHARINFO pChar, PCHARINFOTIMEREVENT pInfo);	/* キャラ情報タイマーイベント処理(攻撃力・守備力アップ) */
 
 #define POISON_INTERVAL		2000		/* 毒のダメージの間隔(ms) */
 #define SLEEP_EFC_INTERVAL	2000		/* 眠っている間に「Zzz」を出す間隔(ms) */
@@ -95,6 +96,10 @@ void CharInfoTimerProc(DWORD dwTblID)
 			break;
 		case CHARINFOTIMEREVENT_SLEEP:		/* 眠り */
 			bResult = CharInfoTimerProc_SLEEP (pChar, pInfo);
+			break;
+		case CHARINFOTIMEREVENT_ATUP:		/* 攻撃力アップ */
+		case CHARINFOTIMEREVENT_DFUP:		/* 守備力アップ */
+			bResult = CharInfoTimerProc_STATUSUP (pChar, pInfo);
 			break;
 		}
 		if (bResult) {
@@ -249,6 +254,68 @@ BYTE GetHasteRate(PCHARINFO pChar)
 BOOL IsSleep(PCHARINFO pChar)
 {
 	return CheckCharInfoTimer (pChar->dwTblID, CHARINFOTIMEREVENT_SLEEP);
+}
+
+
+/* ========================================================================= */
+/* 関数名：	SetCharInfoTimerStatusMin										 */
+/* 内容：	攻撃力・守備力アップの「最低でも上がる量」を覚えておく			 */
+/* ========================================================================= */
+
+void SetCharInfoTimerStatusMin(PCHARINFO pChar, BYTE byType, DWORD dwMin)
+{
+	int i, nCount;
+
+	nCount = pChar->aTimerEvent.GetSize ();
+	for (i = 0; i < nCount; i ++) {
+		if (pChar->aTimerEvent[i]->byType == byType) {
+			pChar->aTimerEvent[i]->dwTimeInterval = dwMin;
+			break;
+		}
+	}
+}
+
+
+/* ========================================================================= */
+/* 関数名：	GetStatusUpBonus												 */
+/* 内容：	攻撃力・守備力アップで上がる量									 */
+/*			nBase(アップ無しの値)の率(%)、ただし最低でも決めた量は上がる	 */
+/*			かかっていなければ0												 */
+/* ========================================================================= */
+
+int GetStatusUpBonus(PCHARINFO pChar, BYTE byType, int nBase)
+{
+	int i, nCount;
+	PCHARINFOTIMEREVENT pInfo;
+
+	nCount = pChar->aTimerEvent.GetSize ();
+	for (i = 0; i < nCount; i ++) {
+		pInfo = pChar->aTimerEvent[i];
+		if (pInfo->byType == byType) {
+			return max (nBase * (int)pInfo->byData / 100, (int)pInfo->dwTimeInterval);
+		}
+	}
+	return 0;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CharInfoTimerProc_STATUSUP										 */
+/* 内容：	キャラ情報タイマーイベント処理(攻撃力・守備力アップ)			 */
+/*			時間が来たら終わり(戻した値は呼び出し元の RenewATDF で反映)		 */
+/* ========================================================================= */
+
+static BOOL CharInfoTimerProc_STATUSUP(PCHARINFO pChar, PCHARINFOTIMEREVENT pInfo)
+{
+	if (timeGetTime () - pInfo->dwTimeStart < pInfo->dwTimeValid) {
+		return FALSE;
+	}
+	if (pChar->byNpcType == NPCTYPE_INIT) {
+		SendCmdSYSMSG (pChar->pID,
+				(pInfo->byType == CHARINFOTIMEREVENT_ATUP) ? "攻撃アップの効果が切れました" : "守りアップの効果が切れました",
+				SPEECHCMD_BATTLE1);
+	}
+	return TRUE;
 }
 
 
