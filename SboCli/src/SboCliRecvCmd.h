@@ -60,6 +60,9 @@ extern int	GetAttackType			(PCHARINFO pChar);											/* 攻撃種別を取得
 extern void	StartTurnGage			(PCHARINFO pChar, DWORD dwAtackTblID);						/* ターンゲージ開始 */
 extern void	CancelTurnGage			(PCHARINFO pChar);											/* ターンゲージをキャンセル */
 extern PITEMINFO_WEAPON GetBowWeapon(PCHARINFO pChar);
+extern BOOL IsBowAttackTarget(PCHARINFO pChar, PCHARINFO pTarget);
+extern void PauseBowTurnGage(PCHARINFO pChar);
+extern void UpdateBowTurnGage(PCHARINFO pChar);
 extern int FindBowAttackTarget(PCHARINFO pChar, BYTE byRate);
 extern int	FindNextAttackTarget	(PCHARINFO pChar);											/* 連続攻撃の次の相手を探す */
 extern BOOL	g_bGuard;																			/* Z を押し続けて構えている */

@@ -2946,7 +2946,7 @@ static void TimerProcAutoTurnGage(PCHARINFO pChar, DWORD dwTime)
 		return;
 	}
 
-	nFront = GetBowWeapon(pChar) ? FindBowAttackTarget(pChar, 100) : FindFrontAttackTarget (pChar);
+	nFront = FindFrontAttackTarget (pChar);
 	if (nFront == -1) {
 		g_dwAutoGageSuppress = (DWORD)-1;
 		/* 目の前から敵がいなくなってしばらくたったらゲージを消す(一瞬ずれただけでは消さない) */
@@ -2994,7 +2994,8 @@ void TimerProcCharTurnLV(PCHARINFO pChar)
 	dwTime = timeGetTime ();
 	/* 戦闘モードで目の前に敵がいれば、相手を選ばなくてもゲージを溜める */
 	if ((g_nMyCharID >= 0) && (pChar == g_aCharInfo[g_nMyCharID])) {
-		TimerProcAutoTurnGage (pChar, dwTime);
+        if (GetBowWeapon(pChar)) UpdateBowTurnGage(pChar);
+        else TimerProcAutoTurnGage (pChar, dwTime);
 	}
 	/* ターンゲージ溜まり中 */
 	if (pChar->dwTimeTurnLV == 0) {
@@ -3037,7 +3038,6 @@ void TimerProcCharTurnLV(PCHARINFO pChar)
                     if (GetBowWeapon(pChar)) {
                         nTmp = FindBowAttackTarget(pChar, pChar->byTurnLV);
                         if (nTmp != -1) {
-                            pChar->dwAtackTblID = g_aCharInfo[nTmp]->dwTblID;
                             SendCmdREQ_ATTACK(pChar->dwAtackTblID, pChar->byTurnLV);
                             ContinueTurnGage(pChar);
                         }

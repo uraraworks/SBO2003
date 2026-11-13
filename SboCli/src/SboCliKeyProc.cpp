@@ -1008,7 +1008,7 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 		}
 
 	/* ターゲット指定？ */
-	} else if ((byEvent == KEY_UP) && (byCode == 'B') && (!g_dwMsgIDCommand) && (g_bEnableMove)) {
+	} else if ((byEvent == KEY_UP) && ((byCode == 'B') || (byCode == VK_ESCAPE && GetBowWeapon(pChar))) && (!g_dwMsgIDCommand) && (g_bEnableMove)) {
 		PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
 		/* 爆弾ゲームに参加中？ */
 		if (pChar->abySubStatus[0] == SUBGAMEID_BOMB) {
@@ -1021,7 +1021,8 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 		} else if (pChar->abySubStatus[0] == SUBGAMEID_WAR) {
 
 		/* ターンゲージ溜まり中？(連続攻撃もここで止める) */
-		} else if ((pChar->byTurnLV > 0) || pChar->dwTimeTurnLV) {
+		} else if ((pChar->byTurnLV > 0) || pChar->dwTimeTurnLV ||
+            (GetBowWeapon(pChar) && pChar->dwAtackTblID && pChar->dwAtackTblID != (DWORD)-1)) {
 			/* 目の前の敵で自動で溜め直さないように覚えておく(離れるか別の敵が来るまで) */
 			g_dwAutoGageSuppress = pChar->dwAtackTblID;
 			CancelTurnGage (pChar);
@@ -6962,6 +6963,7 @@ void KeyProcSUBWAR_TURN_MAGIC_PRIEST(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 /* ========================================================================= */
 static BOOL ShotTurnGage(PCHARINFO pChar)
 {
+    if (GetBowWeapon(pChar)) UpdateBowTurnGage(pChar);
 	if ((pChar->dwTimeTurnLV == 0) || (pChar->byTurnLV < TURNGAGE_LAP)) {
 		return FALSE;
 	}
@@ -7001,7 +7003,13 @@ void KeyProcBATTLE_COMMAND(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 	}
 	pChar = g_aCharInfo[g_nMyCharID];
 
-	if ((byEvent == KEY_UP) && (byCode == 'B')) {
+	if ((byEvent == KEY_UP) && ((byCode == 'B') ||
+        (byCode == VK_ESCAPE && GetBowWeapon(g_aCharInfo[g_nMyCharID])))) {
+        PCHARINFO bowChar = g_aCharInfo[g_nMyCharID];
+        if (GetBowWeapon(bowChar)) {
+            CancelTurnGage(bowChar);
+            SendCmdTARGETCHAR((DWORD)-1);
+        }
 		int nNo = GetWindowID (g_dwMsgIDCommand);
 		EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
 		g_bDraw = TRUE;
@@ -7010,7 +7018,7 @@ void KeyProcBATTLE_COMMAND(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		/* 連続攻撃中なら、コマンドを閉じてもゲージはそのまま続ける */
 
 	} else if ((byEvent == KEY_UP) && (byCode == 'A') && (g_bEnableMove) &&
-				(pWnd->nData1 == 0) && ShotTurnGage (pChar)) {
+				(pWnd->nData1 == 0) && !GetBowWeapon(pChar) && ShotTurnGage (pChar)) {
 		/* 「攻撃」：連続攻撃中でゲージが1周以上溜まっていれば、相手を選び直さずにそのまま殴る
 		   (攻撃音とかぶるので決定音は鳴らさない) */
 		int nNo = GetWindowID (g_dwMsgIDCommand);
@@ -7031,18 +7039,9 @@ void KeyProcBATTLE_COMMAND(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				ARRAYUSECHARINFO aUseCharInfoTmp;
 //				PUSECHARINFO pUseCharInfo;
 
-				nTmp = GetAttackType (pChar);
-				if ((nTmp == ATACKTYPE_ARROW) || (nTmp == ATACKTYPE_BOW)) {
-					StartTurnGage (pChar, -1);
+				int nArea = GetBowWeapon(pChar) ? -1 : 3;
 
-					int nNo = GetWindowID (g_dwMsgIDCommand);
-					EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
-					g_bDraw = TRUE;
-					g_dwMsgIDCommand = 0;
-					break;
-				}
-
-				nResult = GetUseCharInfo (3, pChar, FALSE, MAGICTARGET_NPC, aUseCharInfoTmp, nLen);
+				nResult = GetUseCharInfo (nArea, pChar, FALSE, MAGICTARGET_NPC, aUseCharInfoTmp, nLen);
 				if (nResult == 0) {
 					DeleteUseCharInfo (&aUseCharInfoTmp);
 					break;
@@ -7061,7 +7060,7 @@ void KeyProcBATTLE_COMMAND(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				}
 #endif
 				DeleteUseCharInfo (&aUseCharInfoTmp);
-				PWNDINFO pWndNew = MakeWindowBATTLE_TARGET (3, FALSE, MAGICTARGET_NPC);
+				PWNDINFO pWndNew = MakeWindowBATTLE_TARGET (nArea, FALSE, MAGICTARGET_NPC);
 				if (pWndNew == NULL) {
 					break;
 				}
@@ -7169,7 +7168,13 @@ void KeyProcBATTLE_TARGET(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		dwTime = 125;
 	}
 
-	if ((byEvent == KEY_UP) && (byCode == 'B')) {
+	if ((byEvent == KEY_UP) && ((byCode == 'B') ||
+        (byCode == VK_ESCAPE && GetBowWeapon(g_aCharInfo[g_nMyCharID])))) {
+        PCHARINFO bowChar = g_aCharInfo[g_nMyCharID];
+        if (GetBowWeapon(bowChar)) {
+            CancelTurnGage(bowChar);
+            SendCmdTARGETCHAR((DWORD)-1);
+        }
 		int nNo = GetWindowID (pWnd->dwID);
 		EraseWindow (pWnd);
 		g_bDraw = TRUE;
@@ -7188,6 +7193,10 @@ void KeyProcBATTLE_TARGET(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			/* 攻撃 */
 			if (pWndTmp->nData1 == 0) {
 				pInfo = g_aUseCharInfo[pWnd->nData1];
+                if (GetBowWeapon(pChar)) {
+                    int target = GetCharNo2(pInfo->dwTblID);
+                    if (target < 0 || !IsBowAttackTarget(pChar, g_aCharInfo[target])) return;
+                }
 				StartTurnGage (pChar, pInfo->dwTblID);
 				SendCmdTARGETCHAR (pInfo->dwTblID);
 			}
