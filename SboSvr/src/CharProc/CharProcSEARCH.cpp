@@ -30,6 +30,18 @@
 	・進めるかを調べるだけでは狙う相手を変えない（以前はよける候補のマスにいた人へ変わっていた）。
 	  まっすぐ進む先を別の人がふさいでいる時だけ、その人に狙いを変える
 	・マップから人がいなくなったら、開始位置に戻ってHPを満タンにする
+
+	2026/11/13 回り込みと狙う相手の変え方（戦闘２）
+	・以前は、まっすぐ進めない時に「もう一方の軸へ1歩」を道さがしより先に試していた。
+	  L字の壁などでは、道さがしが壁の端へ向かわせても、次の順番でもう一方の軸の1歩が
+	  相手の高さへ引き戻すので、壁の前を上下に行ったり来たりしていた。
+	  まっすぐ進めなくなったら道さがしを先に使い、回り込み中はその道をたどり続ける
+	  （相手のとなりに着く・相手が変わる・道が見つからない時に回り込みをやめる）。
+	  道さがしの範囲も少し広げた（外側4→6マス、一辺32→40マス）
+	・狙いの相手がとなりにいない（壁で回り込めない等）のに、別のプレイヤーがとなりにいたら、
+	  そのプレイヤーに狙いを変えて殴る
+	・狙いの相手がとなりにいても、ほかのプレイヤーもとなりにいる（囲まれている）時は、
+	  自分が行動するたびに半分の確率で、となりの別のプレイヤーへ狙いを変える
 */
 
 #include "stdafx.h"
@@ -37,6 +49,7 @@
 #include "SboSvrSendCmd.h"
 #include "SboSvrBattleProc.h"
 #include "SboSvrQuest.h"
+#include "SboSvrCharInfoTimerProc.h"
 #include "CharProcSEARCH.h"
 #include <vector>
 
@@ -59,9 +72,11 @@
 /* 開始位置から離れてよい距離：探索範囲 × 2 ＋ これ(マス) */
 #define SEARCH_LEASHMARGIN		(4)
 /* 道さがしで見る範囲：自分と目標を囲む四角の外側にこれだけ広げる(マス) */
-#define SEARCH_PATHMARGIN		(4)
+#define SEARCH_PATHMARGIN		(6)
 /* 道さがしで見る範囲の一辺の最大(マス) */
-#define SEARCH_PATHMAX			(32)
+#define SEARCH_PATHMAX			(40)
+/* 囲まれている時、行動するたびにとなりの別のプレイヤーへ狙いを変える確率(%) */
+#define SEARCH_SWITCHRATE		(50)
 
 /* ========================================================================= */
 /* 関数名：	CCharProcSEARCH::CCharProcSEARCH								 */
@@ -79,6 +94,8 @@ CCharProcSEARCH::CCharProcSEARCH()
 	m_dwTargetLast	= (DWORD)-1;
 	m_bGiveUp		= FALSE;
 	m_dwGiveUpEnd	= 0;
+	m_bDetour		= FALSE;
+	m_dwBattleSeen	= 0;
 }
 
 
@@ -128,6 +145,7 @@ BOOL CCharProcSEARCH::Proc(DWORD dwTime)
 			m_dwTargetLast	= (DWORD)-1;
 			m_bGoHome		= FALSE;
 			m_bGiveUp		= TRUE;
+			m_bDetour		= FALSE;
 			if ((m_pChar->dwX != m_pChar->dwStartX) || (m_pChar->dwY != m_pChar->dwStartY)) {
 				m_pChar->dwX = m_pChar->dwStartX;
 				m_pChar->dwY = m_pChar->dwStartY;
@@ -205,7 +223,8 @@ BOOL CCharProcSEARCH::ProcTarget(DWORD dwTime)
 {
 	int nX, nY, nDX, nDY, nRate;
 	BYTE byDirection;
-	BOOL bFlg;
+	BOOL bFlg, bActed;
+	DWORD dwTblID;
 	PCHARINFO pCharTmp;
 
 	pCharTmp = g_aCharInfo[m_pChar->dwTargetTblID];
@@ -217,14 +236,37 @@ BOOL CCharProcSEARCH::ProcTarget(DWORD dwTime)
 		m_dwLostTime	= 0;
 		m_bGoHome		= FALSE;
 		m_bGiveUp		= FALSE;
+		m_bDetour		= FALSE;
 	}
 	if ((m_pChar->byNpcType == NPCTYPE_BATTLE2) && (m_pChar->dwLastBattle == 0)) {
 		m_pChar->dwLastBattle = 1;
 	}
+	/* 前の順番から行動した？（戦闘処理が行動するたびに dwLastBattle を今の時間にする） */
+	bActed = FALSE;
+	if ((m_pChar->dwLastBattle > 1) && (m_dwBattleSeen > 1) && (m_pChar->dwLastBattle != m_dwBattleSeen)) {
+		bActed = TRUE;
+	}
+	m_dwBattleSeen = m_pChar->dwLastBattle;
 
 	if (IsTargetValid (pCharTmp) == FALSE) {
 		DropTarget ();
 		return FALSE;
+	}
+
+	/* 戦闘２：となりのプレイヤーへ狙いを変える（眠っている間は変えない） */
+	if ((m_pChar->byNpcType == NPCTYPE_BATTLE2) && (IsSleep (m_pChar) == FALSE)) {
+		dwTblID = (DWORD)-1;
+		if (GetNextToDirection (pCharTmp) < 0) {
+			/* 狙いの相手はとなりにいないのに、別のプレイヤーがとなりにいる？ その人を殴る */
+			dwTblID = FindNextToPC (pCharTmp->dwTblID);
+		} else if (bActed && ((int)(genrand () % 100) < SEARCH_SWITCHRATE)) {
+			/* 囲まれている？ 行動するたびに、ときどきとなりの別の人へ */
+			dwTblID = FindNextToPC (pCharTmp->dwTblID);
+		}
+		if (dwTblID != -1) {
+			ChangeTarget (dwTblID, dwTime);
+			pCharTmp = g_aCharInfo[dwTblID];
+		}
 	}
 
 	nX = (int)m_pChar->dwX + anPosAddTblX[m_pChar->byDirection];
@@ -233,6 +275,7 @@ BOOL CCharProcSEARCH::ProcTarget(DWORD dwTime)
 	if ((CheckCharX (m_pChar, (DWORD)nX, pCharTmp->dwX)) && ((DWORD)nY == pCharTmp->dwY)) {
 		m_dwStuckTime	= dwTime;
 		m_dwLostTime	= 0;
+		m_bDetour		= FALSE;
 		return FALSE;
 	}
 
@@ -261,6 +304,8 @@ BOOL CCharProcSEARCH::ProcTarget(DWORD dwTime)
 		}
 	}
 	if (bFlg) {
+		/* 相手のとなりに着いたので回り込みはおしまい */
+		m_bDetour = FALSE;
 		m_pChar->byDirection = byDirection;
 		m_pChar->byFlg |= CHARINFOFLG_DIRECTION;
 		m_dwStuckTime	= dwTime;
@@ -379,6 +424,7 @@ BOOL CCharProcSEARCH::ProcGoHome(DWORD dwTime)
 	if ((abs ((int)m_pChar->dwX - (int)m_pChar->dwStartX) <= GetWanderArea (TRUE)) &&
 		(abs ((int)m_pChar->dwY - (int)m_pChar->dwStartY) <= GetWanderArea (FALSE))) {
 		m_bGoHome	= FALSE;
+		m_bDetour	= FALSE;
 		m_dwRestEnd	= dwTime + 1000 + (DWORD)(genrand () % 2000);
 		ResetAtHome (dwTime);
 		return FALSE;
@@ -475,6 +521,7 @@ void CCharProcSEARCH::DropTarget(BOOL bGiveUp)
 	m_dwLostTime	= 0;
 	m_dwStuckTime	= m_dwLastTimeProc;
 	m_bGoHome		= TRUE;
+	m_bDetour		= FALSE;
 	/* 追うのをあきらめた時は、しばらく新しく探さずに帰り、着いたらHPを戻す。
 	   相手が倒れた・いなくなった時は、帰りながら近くの人を探す */
 	m_bGiveUp		= bGiveUp;
@@ -581,6 +628,16 @@ BOOL CCharProcSEARCH::StepToward(PCHARINFO pCharTmp, int nX, int nY)
 			nDirSub = (nDX < 0) ? 2 : 3;
 		}
 	}
+	/* 回り込み中は、道さがしの道を先にたどる（もう一方の軸の1歩で引き戻されないように） */
+	if (m_bDetour) {
+		nDir = FindPathStep (pCharTmp, nX, nY);
+		if ((nDir >= 0) && StepDirection (pCharTmp, nDir)) {
+			return TRUE;
+		}
+		/* 道が見つからない・ふさがれた時は、まっすぐ近づくやり方に戻す */
+		m_bDetour = FALSE;
+	}
+
 	if (StepDirection (pCharTmp, nDirMain)) {
 		return TRUE;
 	}
@@ -597,13 +654,15 @@ BOOL CCharProcSEARCH::StepToward(PCHARINFO pCharTmp, int nX, int nY)
 			return TRUE;
 		}
 	}
-	if ((nDirSub >= 0) && StepDirection (pCharTmp, nDirSub)) {
-		return TRUE;
-	}
-
-	/* まっすぐ近づけない時は、近くの範囲で道をさがして回り込む */
+	/* まっすぐ近づけない時は、近くの範囲で道をさがして回り込む。
+	   以前はもう一方の軸の1歩を先に試していたので、L字の壁の前で上下に行ったり来たりしていた */
 	nDir = FindPathStep (pCharTmp, nX, nY);
 	if ((nDir >= 0) && StepDirection (pCharTmp, nDir)) {
+		m_bDetour = TRUE;
+		return TRUE;
+	}
+	/* 道が見つからない（さがす範囲が広すぎる等）時だけ、もう一方の軸へ */
+	if ((nDirSub >= 0) && StepDirection (pCharTmp, nDirSub)) {
 		return TRUE;
 	}
 	return FALSE;
@@ -874,6 +933,98 @@ int CCharProcSEARCH::GetWanderArea(BOOL bX)
 	nRet = min (nRet, 3);
 
 	return nRet;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CCharProcSEARCH::GetNextToDirection								 */
+/* 内容：	上下左右のとなりにいればその向き(いなければ -1)				 */
+/* 日付：	2026/11/13														 */
+/* ========================================================================= */
+
+int CCharProcSEARCH::GetNextToDirection(PCHARINFO pCharTmp)
+{
+	if (m_pChar->dwX == pCharTmp->dwX) {
+		if (m_pChar->dwY + 1 == pCharTmp->dwY) {
+			return 1;
+		}
+		if (m_pChar->dwY == pCharTmp->dwY + 1) {
+			return 0;
+		}
+	}
+	if (m_pChar->dwY == pCharTmp->dwY) {
+		if (CheckCharX (m_pChar, m_pChar->dwX, pCharTmp->dwX + 1)) {
+			return 2;
+		}
+		if (CheckCharX (m_pChar, m_pChar->dwX, pCharTmp->dwX - 1)) {
+			return 3;
+		}
+	}
+	return -1;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CCharProcSEARCH::FindNextToPC									 */
+/* 内容：	となりにいる(dwExcept 以外の)プレイヤーをくじで1人選ぶ			 */
+/*			(いなければ -1)													 */
+/* 日付：	2026/11/13														 */
+/* ========================================================================= */
+
+DWORD CCharProcSEARCH::FindNextToPC(DWORD dwExcept)
+{
+	int j, nCount;
+	DWORD dwRet;
+	PMAPINFO pMap;
+	PDWORD pData;
+	PCHARINFO pCharTmp;
+
+	dwRet = (DWORD)-1;
+	nCount = 0;
+
+	pMap = g_aMapInfo[m_pChar->dwMapID];
+	pData = pMap->paTblNoPC;
+	for (j = 0; j < (int)pMap->dwCountTblNoPC; j ++) {
+		if (pData[j] == -1) {
+			break;
+		}
+		if (pData[j] == dwExcept) {
+			continue;
+		}
+		pCharTmp = g_aCharInfo[pData[j]];
+		if ((pCharTmp->wHP == 0) || (pCharTmp->byGameState < GAMESTATE_MOVE)) {
+			continue;
+		}
+		if (!IsInteractable (m_pChar, pCharTmp)) {
+			continue;
+		}
+		if (GetNextToDirection (pCharTmp) < 0) {
+			continue;
+		}
+		/* となりの人の中から同じ確率で選ぶ */
+		nCount ++;
+		if ((genrand () % nCount) == 0) {
+			dwRet = pCharTmp->dwTblID;
+		}
+	}
+
+	return dwRet;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CCharProcSEARCH::ChangeTarget									 */
+/* 内容：	狙う相手を変える(向きは ProcTarget の続きで相手の方へ変わる)	 */
+/* 日付：	2026/11/13														 */
+/* ========================================================================= */
+
+void CCharProcSEARCH::ChangeTarget(DWORD dwTblID, DWORD dwTime)
+{
+	m_pChar->dwTargetTblID = dwTblID;
+	m_dwTargetLast	= dwTblID;
+	m_dwStuckTime	= dwTime;
+	m_dwLostTime	= 0;
+	m_bDetour		= FALSE;
 }
 
 /* Copyright(C)URARA-works 2006 */
