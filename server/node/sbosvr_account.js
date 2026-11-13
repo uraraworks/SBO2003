@@ -931,6 +931,12 @@ Module['sboAccount'] = (function () {
 		}
 		var r = JSON.parse(UTF8ToString(_SboWebAdminOnline()));
 		r.at = Date.now();
+		/* 各キャラの利用環境（os・browser・device）を付ける。slot は接続の番号なので外へは出さない */
+		var net = Module['sboNet'];
+		(r.players || []).forEach(function (p) {
+			p.env = net && net.envOfSlot ? net.envOfSlot(p.slot) : null;
+			delete p.slot;
+		});
 		reply(res, 200, r);
 	}
 

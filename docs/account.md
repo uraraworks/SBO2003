@@ -96,6 +96,13 @@
 - **キャラ名を変える** … 探したキャラの名前を変えられます。ログイン中でも変えられ、本人と近くの人にはすぐ新しい名前が届きます
   （遠くにいる人は入り直すまで前の名前のことがあります）。本人の場合の待ち時間・NG ワード・予約は管理者には効きません。
 - **復旧の承認** … 前の承認ページと同じです。承認待ちの数がタブに出ます。
+- **プレイヤー（利用環境の統計）** … ログイン中の一覧の各行に「iOS・Safari」のような利用環境が付き、その下に OS・ブラウザ・端末別の統計
+  （今日・7日・30日・90日・全期間。人数／メイン環境／ログイン回数）が出ます。ゲームにログインできた時（ID・パスワードでも端末トークンでも）に 1 回記録します。
+  環境は接続時の User-Agent を分類した結果（OS・ブラウザ・端末）だけで、生の User-Agent と IP は残しません。iPad は Mac と同じ User-Agent なので、
+  ブラウザ版が接続 URL に付ける `tp=1`（タッチ画面）で見分けます。Windows 版ソフト（TCP 接続）は「Windows版ソフト」です。
+  保存先は `SBODATA/SboWebStats.json`（日付（日本時間）× アカウント × 環境 → 回数。アカウント名はソルト付き SHA-256 の先頭 16 桁。
+  90 日より古い日はアカウントの部分を捨てて「日付 × 環境 → 回数」だけ残すので、全期間は延べ回数だけ出ます）。
+  実装は `server/node/sbosvr_stats.js`（API は `/api/admin/stats/env`）、テストは `node tests/server/test_stats.js`。
 - **AI連携** … AI（Claude Code など）から設定データを読み書きするキーの発行・取り消しと、変更履歴・元に戻す。詳しくは [ai-data.md](ai-data.md)。
 - **マップ資料** … マップごとの全体図（屋根を外して NPC の番号・敵の出る範囲・入口を重ねた PNG）と、NPC・敵・お店・イベントの資料（Markdown）を
   今のサーバーのデータから作って zip で書き出します（`/admin#mapdoc`）。1 マップだけも選べます。中身は `README.md`（目次・敵の索引・気づいたこと）・
@@ -155,4 +162,5 @@
 | `web/account/rename.html` | キャラ名の変更ページ（`/rename`。プレイヤー用） |
 | `web/account/feedback.html` | ご意見箱（`/feedback`。プレイヤー用） |
 | `server/node/sbosvr_feedback.js` | ご意見箱の保存・API（`/api/feedback/*`・`/api/admin/feedback/*`） |
+| `server/node/sbosvr_stats.js` | 利用環境（OS・ブラウザ・端末）の分類・記録・集計と API（`/api/admin/stats/env`） |
 | `web/account/recover-admin.html` | 前の承認ページの URL（`/admin#recover` へ移動するだけ） |

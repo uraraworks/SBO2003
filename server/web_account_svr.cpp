@@ -8,6 +8,7 @@
  * 見る必要がある部分だけを受け持つ。
  *
  *   C → JS : WebAccTokenToAccount / WebAccIssueToken（ゲームの通信から呼ぶ）
+ *            WebStatNoteLogin（ログインできた時に、利用環境の統計へ記録する）
  *   JS → C : SboWebAccInfo        アカウントの表示用情報（JSON）
  *            SboWebAccRecoverFind アカウント復旧の照合（JSON）
  *            SboWebAccSetPassword 復旧したアカウントのパスワードを変える
@@ -72,6 +73,23 @@ BOOL WebAccIssueToken(LPCSTR pszAcc, LPSTR pszToken, int nSize)
 		return FALSE;
 	}
 	return W32JsWebAccIssueToken(pszAcc, pszToken, nSize) ? TRUE : FALSE;
+}
+
+/* ログインできた時に、利用環境（OS・ブラウザ・端末）の統計へ 1 回記録する */
+EM_JS(void, W32JsWebStatNoteLogin, (int nSlot, const char *pszAcc), {
+	if (Module['sboStats']) {
+		Module['sboStats'].noteLogin(nSlot, UTF8ToString(pszAcc));
+	}
+});
+
+/* ゲームにログインできた時に呼ぶ（ID とパスワードでも端末トークンでも同じ）。
+   接続スロット番号は プレイヤーID - URARASOCK_IDBASE（Node.js 側の接続の番号） */
+void WebStatNoteLogin(PCHARINFO pChar)
+{
+	if ((pChar == NULL) || (pChar->pID < URARASOCK_IDBASE) || (pChar->szAcc[0] == 0)) {
+		return;
+	}
+	W32JsWebStatNoteLogin((int)(pChar->pID - URARASOCK_IDBASE), pChar->szAcc);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -436,7 +454,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebAdminSearch(const char *pszKey
 /*
  * 管理ページの「ログイン中のプレイヤー」一覧
  *   オンライン数（g_dwOnline）と同じ数え方で、ゲームに入っている人だけを出す。
- *   結果: {"players":[{"account","name","level","admin","mapID","mapName","x","y","playMinutes","loginMs"}],"online":N}
+ *   結果: {"players":[{"account","name","slot"（接続の番号。Node.js 側で利用環境を引く）,"level","admin","mapID","mapName","x","y","playMinutes","loginMs"}],"online":N}
  *   並びはマップ ID 順、同じマップの中はキャラ名順。
  */
 extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebAdminOnline(void)
@@ -475,8 +493,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebAdminOnline(void)
 		info.strName = W32TextToUtf8Str(pChar->szName);
 		info.strJson = "{\"account\":" + JsonStr(pChar->szAcc) + ",\"name\":" + JsonStr(info.strName);
 		snprintf(sz, sizeof(sz),
-				",\"level\":%d,\"admin\":%s,\"mapID\":%u,\"x\":%u,\"y\":%u,\"playMinutes\":%u,\"loginMs\":%u",
-				pChar->byLevel, (pChar->byAdminLV != ADMINLV_USER) ? "true" : "false",
+				",\"slot\":%d,\"level\":%d,\"admin\":%s,\"mapID\":%u,\"x\":%u,\"y\":%u,\"playMinutes\":%u,\"loginMs\":%u",
+				(int)(pChar->pID - URARASOCK_IDBASE), pChar->byLevel, (pChar->byAdminLV != ADMINLV_USER) ? "true" : "false",
 				(unsigned)pChar->dwMapID, (unsigned)pChar->dwX, (unsigned)pChar->dwY,
 				(unsigned)dwPlayMinutes, (unsigned)dwLoginMs);
 		info.strJson += sz;

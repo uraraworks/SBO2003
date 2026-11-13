@@ -4480,7 +4480,15 @@
 		   （デプロイ前から開いたままのタブ）、サーバーが読み込み直しの合図を返す */
 		sboWsUrl: (function (url) {
 			var ver = window.SBO_ASSET_VER && window.SBO_ASSET_VER['sbocli.wasm'];
-			return (url && ver) ? url + (url.indexOf('?') >= 0 ? '&' : '?') + 'cv=' + ver : url;
+			if (!url || !ver) {
+				return url;
+			}
+			url += (url.indexOf('?') >= 0 ? '&' : '?') + 'cv=' + ver;
+			/* iPadOS の Safari は Mac と同じ User-Agent なので、タッチ画面なら tp=1 でサーバーに知らせる（利用環境の統計用） */
+			if (navigator.maxTouchPoints > 1) {
+				url += '&tp=1';
+			}
+			return url;
 		})(params.get('ws') || window.SBO_DEFAULT_WS || ''),
 		/* .wasm / .data に版（中身のハッシュ）を付けて読む。版の一覧はサーバー（Node.js 版）が
 		   ページに書き込む。版付きの URL はブラウザが長く覚えるので、リロードで読み直さない */
