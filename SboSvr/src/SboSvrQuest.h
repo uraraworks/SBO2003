@@ -71,6 +71,8 @@ extern void SpaceSendMapState(PCHARINFO pChar);					/* その人がいる空間�
 extern BOOL SpaceDoorIsOpen(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID);	/* 扉がその空間で開いているか */
 extern BOOL SpaceDoorOpen(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID);	/* 扉をその空間で開ける（開けたら TRUE。クライアントへもその空間にだけ知らせる） */
 extern void SpaceDoorProc(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor);	/* 扉が閉まる時間を見る（ふつうの世界と、ほかの空間の分） */
+extern int  SpaceDoorEnemyCount(DWORD dwMapID, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID);	/* 扉の数える範囲にいる、その空間の生きている敵の数（「敵を全部倒す」扉用） */
+extern void SpaceEnemyDoorCheckMap(DWORD dwMapID);				/* そのマップの「敵を全部倒す」扉を今すぐ見直す（敵が倒れて消えた時） */
 extern void SpaceOnCharMapProc(PMAPINFO pMap, PEVENTINFO pEvent, PEVENTINFO_ONCHARMAP pInfo);	/* 「乗っている間変わるマス」の処理（ふつうの世界と、ほかの空間の分） */
 
 /* Copyright(C)URARA-works 2003-2005 */

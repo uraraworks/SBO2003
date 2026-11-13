@@ -1443,7 +1443,11 @@ static const DATAFIELD s_aFieldEvDoor[] = {
 	FLD (EVENTINFO_DOOR, wGrpID,		"扉の画像ID",			FT_U16, 0, NULL),
 	FLD (EVENTINFO_DOOR, wBackGrpID,	"背景の画像ID",			FT_U16, 0, NULL),
 	FLD (EVENTINFO_DOOR, byTimeClose,	"閉まるまで(100ms)",	FT_U8, 0, NULL),
-	FLD (EVENTINFO_DOOR, byType,		"種別",					FT_U8, 0, NULL),
+	FLD (EVENTINFO_DOOR, byType,		"種別",					FT_U8, 0, "0=カギ不要 1=敵を全部倒す（範囲の敵がいない間は開きっぱなし、敵が出ると閉まる。扉コマンドでは開かない）"),
+	FLD (EVENTINFO_DOOR, wAreaX1,		"敵を数える範囲 左上X",	FT_U16, 0, "種別1の時に数える範囲。4つとも0ならマップ全体"),
+	FLD (EVENTINFO_DOOR, wAreaY1,		"敵を数える範囲 左上Y",	FT_U16, 0, NULL),
+	FLD (EVENTINFO_DOOR, wAreaX2,		"敵を数える範囲 右下X",	FT_U16, 0, NULL),
+	FLD (EVENTINFO_DOOR, wAreaY2,		"敵を数える範囲 右下Y",	FT_U16, 0, NULL),
 };
 static const DATAFIELD s_aFieldEvHpMana[] = {
 	FLD (EVENTINFO_HPMANA, byType,		"種別",					FT_U8, 0, NULL),

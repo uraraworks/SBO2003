@@ -877,6 +877,7 @@ enum {
 /* 扉種別 */
 enum {
 	EVENTDOOTTYPE_NONE = 0,
+	EVENTDOOTTYPE_ENEMY,										/* 敵を全部倒すと開く（敵がいない間は開きっぱなし。敵が出るとまた閉まる） */
 	EVENTDOOTTYPE_MAX,
 };
 
@@ -2471,6 +2472,11 @@ typedef struct _EVENTINFO_DOOR {
 	WORD		wBackGrpID;											/* 背景のグラフィックID */
 	BYTE		byTimeClose;										/* 閉まるまでの時間(100ms) */
 	BYTE		byType;												/* 種別 */
+	WORD		wAreaX1;											/* 敵を数える範囲 左上X（種別が「敵を全部倒す」の時。全部0ならマップ全体） */
+	WORD		wAreaY1;											/* 敵を数える範囲 左上Y */
+	WORD		wAreaX2;											/* 敵を数える範囲 右下X */
+	WORD		wAreaY2;											/* 敵を数える範囲 右下Y */
+	DWORD		dwCheckTime;										/* 最後に敵を数えた時間（サーバーだけ。保存しない） */
 } EVENTINFO_DOOR, *PEVENTINFO_DOOR;
 
 /* イベントデータ(HP/Mana回復) */

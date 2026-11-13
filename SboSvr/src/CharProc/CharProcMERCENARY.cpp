@@ -831,7 +831,12 @@ void CCharProcMERCENARY::BuildPathField(int nMaxDist, BOOL bChars)
 			continue;
 		}
 		if (pEvent->byType == EVENTTYPE_DOOR) {
-			if (s_abyEvent[y * nW + x] == 0) {
+			/* 「敵を全部倒す」扉は開けられないので、閉まっていたら通れない */
+			PEVENTINFO_DOOR pDoorTmp = (PEVENTINFO_DOOR)pEvent->pData;
+			if (pDoorTmp && (pDoorTmp->byType == EVENTDOOTTYPE_ENEMY) &&
+				!SpaceDoorIsOpen (m_pChar->dwMapID, pEvent, pDoorTmp, m_pChar->dwSpaceID)) {
+				s_abyEvent[y * nW + x] = 2;
+			} else if (s_abyEvent[y * nW + x] == 0) {
 				s_abyEvent[y * nW + x] = 1;
 			}
 		} else {

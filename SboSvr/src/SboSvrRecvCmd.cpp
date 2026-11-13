@@ -1088,6 +1088,9 @@ void DeleteChar(DWORD dwTblID)
 	PCCharProcBase pProc;
 
 	pChar = g_aCharInfo[dwTblID];
+	/* 敵が消える時は、そのマップの「敵を全部倒す」扉をすぐ見直す */
+	BOOL bEnemy = (pChar->byNpcType == NPCTYPE_BATTLE1) || (pChar->byNpcType == NPCTYPE_BATTLE2) || (pChar->byNpcType == NPCTYPE_MIMIC);
+	DWORD dwMapID = pChar->dwMapID;
 
 	/* 討伐報酬用に覚えていたダメージを消す */
 	ClearBattleDamage (dwTblID);
@@ -1095,6 +1098,10 @@ void DeleteChar(DWORD dwTblID)
 	pProc = (PCCharProcBase)pChar->pProc;
 	SAFE_DELETE (pProc);
 	ZeroMemory (pChar, sizeof (CHARINFO));
+
+	if (bEnemy) {
+		SpaceEnemyDoorCheckMap (dwMapID);
+	}
 }
 
 
@@ -5000,6 +5007,22 @@ static BOOL OpenDoorFront(PCHARINFO pChar)
 			}
 /* とりあえず鍵は無しで。 */
 			PEVENTINFO_DOOR pDoor = (PEVENTINFO_DOOR)pEvent->pData;
+			/* 敵を全部倒すと開く扉（手では開けられない。閉まっていたら残りの敵の数を知らせる） */
+			if (pDoor && (pDoor->byType == EVENTDOOTTYPE_ENEMY)) {
+				if (SpaceDoorIsOpen (pChar->dwMapID, pEvent, pDoor, pChar->dwSpaceID)) {
+					return FALSE;
+				}
+				char szTmp[128];
+				int nEnemy = SpaceDoorEnemyCount (pChar->dwMapID, pDoor, pChar->dwSpaceID);
+				if (nEnemy > 0) {
+					wsprintf (szTmp, "扉はかたく閉ざされている。まだ魔物の気配がする…（残り%d体）@2", nEnemy);
+				} else {
+					wsprintf (szTmp, "扉はかたく閉ざされている。@2");
+				}
+				SendCmdMAPMSG (pChar->pID, szTmp);
+				SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
+				return TRUE;
+			}
 			/* すでに開いてる？（扉は空間ごとに開け閉めする。開けたことはその空間の人にだけ知らせる） */
 			if (!SpaceDoorOpen (pChar->dwMapID, pEvent, pDoor, pChar->dwSpaceID)) {
 				return FALSE;

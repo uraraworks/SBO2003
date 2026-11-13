@@ -1317,4 +1317,14 @@ mimic examine type=13 dir=2 target_pc=1 proc=1 sysmsg=1 charinfo=1 hp=30
 mimic examine again type=13
 mimic hit type=13 dir=3 target_pc=1 damaged=1
 mimic kill hp=0 removed=1
+== X. EnemyDoor ==
+enemydoor outside count=0 other=1 open=1
+enemydoor spawn count=1 open=0 chgmap=1
+enemydoor command open=0 mapmsg=1 sound=0
+enemydoor examine open=0 mapmsg=1
+enemydoor force=0
+enemydoor clear open=1 chgmap=1 sound=1 sysmsg=1
+enemydoor later open=1
+enemydoor respawn onDoor open=1
+enemydoor respawn open=0 sysmsg=1
 == done ==

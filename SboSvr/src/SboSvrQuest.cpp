@@ -31,6 +31,7 @@
 #include <vector>
 #include <algorithm>
 #include <tuple>
+#include <set>
 
 extern void SendCmdMAPCHARINFO(DWORD);
 
@@ -2336,8 +2337,8 @@ BOOL SpaceDoorIsOpen(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor, DW
 	return (pDoor != NULL) && (SpaceDoorTime (dwMapID, pEvent, pDoor, dwSpaceID) != 0);
 }
 
-/* 扉をその空間で開ける */
-BOOL SpaceDoorOpen(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID)
+/* 扉をその空間で開ける（種別は見ない） */
+static BOOL SpaceDoorOpenRaw(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID)
 {
 	if ((pDoor == NULL) || SpaceDoorIsOpen (dwMapID, pEvent, pDoor, dwSpaceID)) {
 		return FALSE;
@@ -2352,10 +2353,264 @@ BOOL SpaceDoorOpen(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor, DWOR
 	return TRUE;
 }
 
+/* 扉をその空間で開ける（プレイヤー・傭兵が開ける時。「敵を全部倒す」扉は手では開けられない） */
+BOOL SpaceDoorOpen(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID)
+{
+	if ((pDoor == NULL) || (pDoor->byType == EVENTDOOTTYPE_ENEMY)) {
+		return FALSE;
+	}
+	return SpaceDoorOpenRaw (dwMapID, pEvent, pDoor, dwSpaceID);
+}
+
+/* 扉をその空間で閉める */
+static void SpaceDoorClose(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID)
+{
+	if (dwSpaceID == SPACE_NORMAL) {
+		pDoor->dwTimeOpen = 0;
+	} else {
+		s_mapSpaceDoor.erase (SPACEKEY (dwMapID, pEvent->dwX, pEvent->dwY, dwSpaceID));
+	}
+	SendCmdCHGMAPSpace (dwMapID, dwSpaceID, pDoor->wGrpID, (int)pEvent->dwX, (int)pEvent->dwY);
+}
+
+/* ========================================================================= */
+/* 敵を全部倒すと開く扉															 */
+/* ========================================================================= */
+/*
+ * 扉の「敵を数える範囲」（全部0ならマップ全体）に、その空間の生きている敵がいなくなったら開き、
+ * 敵がいない間は開きっぱなし。敵がまた出てきたら閉まる（扉の上に誰か立っている間は閉めない）。
+ * プレイヤーの扉コマンド・傭兵では開けられない。空間ごとに別々に開け閉めする。
+ */
+
+#define ENEMYDOOR_CHECKTIME		(500)							/* ふだんの見回りの間隔(ms) */
+#define ENEMYDOOR_NOTIFYRANGE	(12)							/* 範囲の外でも扉からこのマス以内の人には知らせる */
+
+/* 数える敵か（生きている戦闘1・戦闘2・宝箱の敵） */
+static BOOL IsDoorEnemy(PCHARINFO pChar)
+{
+	if ((pChar == NULL) || IsQuestNpc (pChar)) {
+		return FALSE;
+	}
+	if ((pChar->byNpcType != NPCTYPE_BATTLE1) && (pChar->byNpcType != NPCTYPE_BATTLE2) && (pChar->byNpcType != NPCTYPE_MIMIC)) {
+		return FALSE;
+	}
+	if ((pChar->wHP == 0) || (pChar->byCharState == CHARSTATE_DEAD)) {
+		return FALSE;
+	}
+	return TRUE;
+}
+
+/* 扉の数える範囲の中か */
+static BOOL IsInDoorArea(PEVENTINFO_DOOR pDoor, DWORD dwX, DWORD dwY)
+{
+	DWORD dwX1, dwY1, dwX2, dwY2;
+
+	if ((pDoor->wAreaX1 == 0) && (pDoor->wAreaY1 == 0) && (pDoor->wAreaX2 == 0) && (pDoor->wAreaY2 == 0)) {
+		return TRUE;	/* マップ全体 */
+	}
+	dwX1 = min (pDoor->wAreaX1, pDoor->wAreaX2);
+	dwX2 = max (pDoor->wAreaX1, pDoor->wAreaX2);
+	dwY1 = min (pDoor->wAreaY1, pDoor->wAreaY2);
+	dwY2 = max (pDoor->wAreaY1, pDoor->wAreaY2);
+	return (dwX >= dwX1) && (dwX <= dwX2) && (dwY >= dwY1) && (dwY <= dwY2);
+}
+
+/* 扉の範囲にいる、その空間の生きている敵の数 */
+int SpaceDoorEnemyCount(DWORD dwMapID, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID)
+{
+	PMAPINFO pMap;
+	int i, nCount, nRet = 0;
+
+	int nMapNo = GetMapNo (dwMapID);
+	if ((pDoor == NULL) || (nMapNo < 0)) {
+		return 0;
+	}
+	pMap = g_aMapInfo[nMapNo];
+	if (pMap->paTblNoNPC == NULL) {
+		return 0;
+	}
+	nCount = (int)pMap->dwCountTblNoNPC;
+	for (i = 0; i < nCount; i ++) {
+		PCHARINFO pCharTmp;
+		if (pMap->paTblNoNPC[i] == -1) {
+			break;
+		}
+		pCharTmp = g_aCharInfo[pMap->paTblNoNPC[i]];
+		if ((pCharTmp->dwSpaceID != dwSpaceID) || !IsDoorEnemy (pCharTmp)) {
+			continue;
+		}
+		if (!IsInDoorArea (pDoor, pCharTmp->dwX, pCharTmp->dwY)) {
+			continue;
+		}
+		nRet ++;
+	}
+	return nRet;
+}
+
+/* 扉のマスに、その空間の誰か（倒れていない人・ぶつかるNPC）が立っているか */
+static BOOL IsCharOnDoor(PMAPINFO pMap, PEVENTINFO pEvent, DWORD dwSpaceID)
+{
+	int t, i;
+
+	for (t = 0; t < 2; t ++) {
+		PDWORD pData = (t == 0) ? pMap->paTblNoPC : pMap->paTblNoNPC;
+		int nCount = (int)((t == 0) ? pMap->dwCountTblNoPC : pMap->dwCountTblNoNPC);
+		if (pData == NULL) {
+			continue;
+		}
+		for (i = 0; i < nCount; i ++) {
+			PCHARINFO pCharTmp;
+			if (pData[i] == -1) {
+				break;
+			}
+			pCharTmp = g_aCharInfo[pData[i]];
+			if (pCharTmp->dwSpaceID != dwSpaceID) {
+				continue;
+			}
+			if (t == 0) {
+				if ((pCharTmp->wHP == 0) || (pCharTmp->byGameState < GAMESTATE_MOVE)) {
+					continue;
+				}
+			} else {
+				if (IsQuestNpc (pCharTmp) ||
+					(pCharTmp->byNpcType == NPCTYPE_PUT) || (pCharTmp->byNpcType == NPCTYPE_USEMAGIC) ||
+					(pCharTmp->byNpcType == NPCTYPE_ATACK) || (pCharTmp->byNpcType == NPCTYPE_USEMAGICPARENT)) {
+					continue;
+				}
+			}
+			if (CheckCharX (pCharTmp, pCharTmp->dwX, pEvent->dwX) && (pCharTmp->dwY == pEvent->dwY)) {
+				return TRUE;
+			}
+		}
+	}
+	return FALSE;
+}
+
+/* 扉の近く（数える範囲の中か、扉から少しの所）にいる、その空間の人に知らせる */
+static void EnemyDoorNotify(PMAPINFO pMap, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID, LPCSTR pszMsg)
+{
+	int i, nCount;
+
+	if (pMap->paTblNoPC == NULL) {
+		return;
+	}
+	nCount = (int)pMap->dwCountTblNoPC;
+	for (i = 0; i < nCount; i ++) {
+		PCHARINFO pCharTmp;
+		if (pMap->paTblNoPC[i] == -1) {
+			break;
+		}
+		pCharTmp = g_aCharInfo[pMap->paTblNoPC[i]];
+		if ((pCharTmp->pID == 0) || (pCharTmp->byGameState < GAMESTATE_MOVE) || (pCharTmp->dwSpaceID != dwSpaceID)) {
+			continue;
+		}
+		if (!IsInDoorArea (pDoor, pCharTmp->dwX, pCharTmp->dwY) &&
+			((abs ((int)pCharTmp->dwX - (int)pEvent->dwX) > ENEMYDOOR_NOTIFYRANGE) ||
+			 (abs ((int)pCharTmp->dwY - (int)pEvent->dwY) > ENEMYDOOR_NOTIFYRANGE))) {
+			continue;
+		}
+		SendCmdPLAYSOUND (pCharTmp->pID, SOUND_DOOR);
+		SendCmdSYSMSG (pCharTmp->pID, (LPTSTR)pszMsg, SPEECHCMD_BATTLE1);
+	}
+}
+
+/* 敵を全部倒すと開く扉の、開け閉めを見る（bNow なら間隔を待たずに今すぐ） */
+static void EnemyDoorProc(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor, BOOL bNow)
+{
+	PMAPINFO pMap;
+	std::set<DWORD> aSpace;
+	std::set<DWORD>::iterator itS;
+	int i, nCount;
+
+	int nMapNo = GetMapNo (dwMapID);
+	if (nMapNo < 0) {
+		return;
+	}
+	if (!bNow && pDoor->dwCheckTime && (g_dwTime - pDoor->dwCheckTime < ENEMYDOOR_CHECKTIME)) {
+		return;
+	}
+	pDoor->dwCheckTime = g_dwTime ? g_dwTime : 1;
+	pMap = g_aMapInfo[nMapNo];
+
+	/* 見る空間：ふつうの世界・このマップにいる人の空間・開いたままの空間 */
+	aSpace.insert (SPACE_NORMAL);
+	if (pMap->paTblNoPC) {
+		nCount = (int)pMap->dwCountTblNoPC;
+		for (i = 0; i < nCount; i ++) {
+			if (pMap->paTblNoPC[i] == -1) {
+				break;
+			}
+			aSpace.insert (g_aCharInfo[pMap->paTblNoPC[i]]->dwSpaceID);
+		}
+	}
+	if (!s_mapSpaceDoor.empty ()) {
+		std::map<SPACEKEY, DWORD>::iterator it = s_mapSpaceDoor.lower_bound (SPACEKEY (dwMapID, pEvent->dwX, pEvent->dwY, 0));
+		while ((it != s_mapSpaceDoor.end ()) &&
+				(std::get<0> (it->first) == dwMapID) && (std::get<1> (it->first) == pEvent->dwX) && (std::get<2> (it->first) == pEvent->dwY)) {
+			aSpace.insert (std::get<3> (it->first));
+			it ++;
+		}
+	}
+
+	for (itS = aSpace.begin (); itS != aSpace.end (); itS ++) {
+		DWORD dwSpaceID = *itS;
+		BOOL bOpen = SpaceDoorIsOpen (dwMapID, pEvent, pDoor, dwSpaceID);
+
+		/* 終わった挑戦の空間は片付ける */
+		if (!SpaceExists (dwSpaceID)) {
+			if (bOpen) {
+				s_mapSpaceDoor.erase (SPACEKEY (dwMapID, pEvent->dwX, pEvent->dwY, dwSpaceID));
+			}
+			continue;
+		}
+		int nEnemy = SpaceDoorEnemyCount (dwMapID, pDoor, dwSpaceID);
+		if ((nEnemy == 0) && !bOpen) {
+			/* 全部倒した */
+			SpaceDoorOpenRaw (dwMapID, pEvent, pDoor, dwSpaceID);
+			EnemyDoorNotify (pMap, pEvent, pDoor, dwSpaceID, "魔物の気配が消え、扉が開いた！");
+		} else if ((nEnemy > 0) && bOpen) {
+			/* 敵がまた出てきた（扉の上に誰かいる間は待つ） */
+			if (IsCharOnDoor (pMap, pEvent, dwSpaceID)) {
+				continue;
+			}
+			SpaceDoorClose (dwMapID, pEvent, pDoor, dwSpaceID);
+			EnemyDoorNotify (pMap, pEvent, pDoor, dwSpaceID, "魔物の気配がして、扉が閉ざされた…");
+		}
+	}
+}
+
+/* そのマップの「敵を全部倒す」扉を今すぐ見直す（敵が倒れて消えた時） */
+void SpaceEnemyDoorCheckMap(DWORD dwMapID)
+{
+	PMAPINFO pMap;
+	int i;
+
+	int nMapNo = GetMapNo (dwMapID);
+	if (nMapNo < 0) {
+		return;
+	}
+	pMap = g_aMapInfo[nMapNo];
+	for (i = 0; i < pMap->nEventCount; i ++) {
+		PEVENTINFO pEvent = &pMap->pEvent[i];
+		if ((pEvent->byType != EVENTTYPE_DOOR) || (pEvent->pData == NULL)) {
+			continue;
+		}
+		PEVENTINFO_DOOR pDoor = (PEVENTINFO_DOOR)pEvent->pData;
+		if (pDoor->byType == EVENTDOOTTYPE_ENEMY) {
+			EnemyDoorProc (dwMapID, pEvent, pDoor, TRUE);
+		}
+	}
+}
+
 /* 扉が閉まる時間を見る */
 void SpaceDoorProc(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor)
 {
 	if (pDoor == NULL) {
+		return;
+	}
+	/* 敵を全部倒すと開く扉は、時間では閉めない */
+	if (pDoor->byType == EVENTDOOTTYPE_ENEMY) {
+		EnemyDoorProc (dwMapID, pEvent, pDoor, FALSE);
 		return;
 	}
 	/* ふつうの世界 */
