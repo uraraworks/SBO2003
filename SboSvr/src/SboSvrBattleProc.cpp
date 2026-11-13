@@ -24,6 +24,7 @@
 		void	BattleProcCheckPC	(PCHARINFO);					/* 戦闘行動チェック(PC) */
 		BOOL	DamageAfterProcPC	(PCHARINFO, PCHARINFO);			/* ダメージ受けた後の処理(PC) */
 		BOOL	DamageAfterProcNPC	(PCHARINFO, PCHARINFO);			/* ダメージ受けた後の処理(NPC) */
+		BOOL	MimicReveal			(PCHARINFO, PCHARINFO);			/* 宝箱の敵が正体を現す */
 static	BOOL	BattleProc			(PCHARINFO, PCHARINFO);			/* 戦闘処理 */
 		BOOL	BattleProcWeapon	(PCHARINFO);					/* 武器処理 */
 		BOOL	BattleProcAtack		(PCHARINFO, PCHARINFO);			/* 戦闘処理(直接攻撃) */
@@ -378,6 +379,12 @@ BOOL DamageAfterProcNPC(PCHARINFO pChar, PCHARINFO pCharTarget)
 	if (pChar->byNpcType == NPCTYPE_ATACK) {
 		pChar = g_aCharInfo[pChar->dwParentTblID];
 	} 
+
+	/* 宝箱の敵（正体前）がプレイヤー・傭兵に叩かれた？ 生きていれば正体を現す（戦闘２になる） */
+	if ((pCharTarget->byNpcType == NPCTYPE_MIMIC) && (pCharTarget->wHP > 0) &&
+		((pChar->byNpcType == NPCTYPE_INIT) || IsMercenary (pChar))) {
+		MimicReveal (pCharTarget, pChar);
+	}
 
 	nTmp = pCharTarget->wHP;
 	if (nTmp > 0) {
@@ -871,8 +878,9 @@ static void BattleProcAtackArea(PCHARINFO pChar, DWORD dwMainTblID)
 		if (!IsSameSpace (pChar, pCharTmp)) {
 			continue;
 		}
-		/* 敵だけ */
-		if ((pCharTmp->byNpcType != NPCTYPE_BATTLE1) && (pCharTmp->byNpcType != NPCTYPE_BATTLE2)) {
+		/* 敵だけ（正体前の宝箱の敵も当たる） */
+		if ((pCharTmp->byNpcType != NPCTYPE_BATTLE1) && (pCharTmp->byNpcType != NPCTYPE_BATTLE2) &&
+			(pCharTmp->byNpcType != NPCTYPE_MIMIC)) {
 			continue;
 		}
 		if (pCharTmp->wHP == 0) {
@@ -955,6 +963,7 @@ BOOL BattleProcAtack(PCHARINFO pChar, PCHARINFO pCharTarget)
 	case NPCTYPE_INIT:
 	case NPCTYPE_BATTLE1:	/* ランダム移動、最初に攻撃してきたキャラをターゲットに。追いかけない。 */
 	case NPCTYPE_BATTLE2:	/* 周り２キャラの範囲で検索してついていって攻撃 */
+	case NPCTYPE_MIMIC:		/* 宝箱の敵（正体前。叩かれると正体を現す） */
 	case NPCTYPE_MERCENARY:	/* 傭兵 */
 		break;
 	default:
@@ -1782,6 +1791,44 @@ static int GetEnemyTurnTime(PCHARINFO pChar)
 	nTmp = max (nTmp, 1);
 
 	return nTmp;
+}
+
+/* ========================================================================= */
+/* 関数名：	MimicReveal														 */
+/* 内容：	宝箱の敵が正体を現す（戦闘２の敵になって pWho を狙う）			 */
+/*			pWho の方へ振り向き、見た目・種別を全員に送る。					 */
+/*			戻り値：正体を現した時 TRUE（宝箱の敵の正体前でなければ FALSE）	 */
+/* 日付：	2026/11/13														 */
+/* ========================================================================= */
+BOOL MimicReveal(PCHARINFO pMimic, PCHARINFO pWho)
+{
+	char szMsg[MAX_CHARNAMEBUF + 32];
+	CCharProcBase CharProcBase;
+
+	if ((pMimic == NULL) || (pWho == NULL) || (pMimic->byNpcType != NPCTYPE_MIMIC)) {
+		return FALSE;
+	}
+
+	/* 調べた（叩いた）人の方へ振り向く（同じマスなら下向き） */
+	pMimic->byDirection = GetDirectionTo (pMimic, pWho, 1);
+	pMimic->byFlg |= CHARINFOFLG_DIRECTION;
+
+	/* 戦闘２の敵になる（処理クラスを作り直す）。直接置いた宝箱の敵は、保存する時だけ宝箱の敵に戻す */
+	pMimic->byNpcType = NPCTYPE_BATTLE2;
+	pMimic->byMimic = (pMimic->dwParentTblID == (DWORD)-1) ? 1 : 0;
+	CharProcBase.SetProc (pMimic);
+
+	/* 調べた人を狙う（すぐ戦いが始まる） */
+	pMimic->dwTargetTblID = pWho->dwTblID;
+	pMimic->dwLastBattle = 1;
+
+	/* 見た目・種別を全員に送る */
+	SendCmdCHARINFO3 (pMimic->dwTblID);
+
+	wsprintf (szMsg, "宝箱は%sだった！", pMimic->szName);
+	SendCmdSYSMSG (pMimic->dwTblID, szMsg, SPEECHCMD_SCREEN);
+	SendCmdADDCHAREFC (pMimic->dwTblID, RGB (255, 255, 64) | CHAREFC_BIG, "!");
+	return TRUE;
 }
 
 /* ========================================================================= */

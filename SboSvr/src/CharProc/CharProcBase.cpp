@@ -136,6 +136,14 @@ void CCharProcBase::SetProc(PCHARINFO pChar)
 	case NPCTYPE_SEARCH2:			pProc = new CCharProcSEARCH2;			break;	/* 検索してついていく2 */
 	case NPCTYPE_MERCENARY:			pProc = new CCharProcMERCENARY;			break;	/* 傭兵 */
 	case NPCTYPE_QUESTNPC:			pProc = new CCharProcNOMOVE;			break;	/* 依頼の見えるNPC（動かない） */
+	case NPCTYPE_MIMIC:																/* 宝箱の敵（正体前）：動かない・上向き固定 */
+		pChar->byDirection		= 0;
+		pChar->dwTargetTblID	= (DWORD)-1;
+		pChar->dwLastBattle		= 0;
+		pChar->byMimic			= 0;
+		pChar->byFlg			|= CHARINFOFLG_DIRECTION;
+		pProc = new CCharProcNOMOVE;
+		break;
 
 	}
 

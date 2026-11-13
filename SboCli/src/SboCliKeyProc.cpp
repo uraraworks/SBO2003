@@ -8256,6 +8256,17 @@ void CmdProcHanasu(PWNDINFO pWnd)
 		goto Exit;
 	}
 
+	/* 宝箱の敵（正体前）？ ただの宝箱のふりなので話しても何も起きない（調べると正体を現す） */
+	if (pChar2->byNpcType == NPCTYPE_MIMIC) {
+		int nNo = GetWindowID (g_dwMsgIDCommand);
+		if (nNo >= 0) {
+			EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
+			g_dwMsgIDCommand = 0;
+			g_bDraw = TRUE;
+		}
+		return;
+	}
+
 	if (pChar2->pszNpcSpeech) {
 		dwCRC = g_crc.GetCRC ((PBYTE)pChar2->pszNpcSpeech, strlen (pChar2->pszNpcSpeech) + 1);
 		if (pChar2->dwSpeechCRC != dwCRC) {
@@ -8624,6 +8635,7 @@ int GetSKeyTalkChar(void)
 	case NPCTYPE_BOMB:				/* 爆弾 */
 	case NPCTYPE_BOMBBLOCK:			/* 爆弾ゲームの壁 */
 	case NPCTYPE_BOMBITEM:			/* 爆弾ゲームのアイテム */
+	case NPCTYPE_MIMIC:				/* 宝箱の敵（正体前）。話さずに調べる（調べると正体を現す） */
 		return -1;
 	}
 	if (g_pMapInfo->pbyFlg == NULL) {
@@ -8743,6 +8755,27 @@ static BOOL SiraberuQuestNpc(PCHARINFO pChar)
 }
 
 /* ========================================================================= */
+/* 関数名：IsFrontMimic														 */
+/* 内容：目の前のマスに宝箱の敵（正体前）がいるか							 */
+/*		 いる時は調べるでサーバーへ問い合わせる（サーバーが正体を現させる）	 */
+/* ========================================================================= */
+static BOOL IsFrontMimic(PCHARINFO pChar)
+{
+	int i, nCount = g_aCharInfo.GetSize ();
+	DWORD dwX = pChar->dwX + anPosAddTblX[pChar->byDirection];
+	DWORD dwY = pChar->dwY + anPosAddTblY[pChar->byDirection];
+
+	for (i = 0; i < nCount; i ++) {
+		PCHARINFO pTmp = (PCHARINFO)g_aCharInfo[i];
+		if ((pTmp != pChar) && (pTmp->byNpcType == NPCTYPE_MIMIC) &&
+			CheckCharX (pTmp, pTmp->dwX, dwX) && (pTmp->dwY == dwY)) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* ========================================================================= */
 /* 関数名：CmdProcSiraberu													 */
 /* 内容：コマンド処理(調べる)												 */
 /* 日付：2003/07/12															 */
@@ -8802,7 +8835,7 @@ BOOL CmdProcSiraberu(PWNDINFO pWnd)
 		dwY = pChar->dwY + anPosAddTblY[pChar->byDirection];
 		if (pChar->dwX >= 0 && pChar->dwX < (DWORD)g_pMapInfo->nCX &&
 			pChar->dwY >= 0 && pChar->dwY < (DWORD)g_pMapInfo->nCY) {
-			if (g_pMapInfo->pbyFlg[dwX + g_pMapInfo->nCX * dwY] & MAPFLG_EVENT) {
+			if ((g_pMapInfo->pbyFlg[dwX + g_pMapInfo->nCX * dwY] & MAPFLG_EVENT) || IsFrontMimic (pChar)) {
 				byFlg = 1;
 				/* サーバーにイベント問い合わせ */
 				if (SendCmdEVENTCHECK (2) == FALSE) {

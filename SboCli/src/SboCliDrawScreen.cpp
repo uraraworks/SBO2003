@@ -1046,6 +1046,14 @@ void DrawCharLine(int nLine)
 		/* 通常グラフィック？ */
 		if (wGrpMain == CHARGRP_MAIN_NORMAL) {
 			no = wGrpID / 16;
+			/* 正体を現した宝箱の敵？ 上向きの絵はただの宝箱なので、上を向いた時は下向きの絵で描く。
+			   絵ID 194〜196（char13.png の3〜5行目）で、種別が戦闘１・戦闘２の時だけ。
+			   正体前（宝箱の敵）や、依頼の宝箱などの同じ絵のNPCは、上向きの宝箱のまま描く */
+			if ((pChar->byDirection == 0) &&
+				((pChar->byNpcType == NPCTYPE_BATTLE1) || (pChar->byNpcType == NPCTYPE_BATTLE2)) &&
+				(wGrpID >= MIMIC_GRPID_FIRST) && (wGrpID <= MIMIC_GRPID_LAST)) {
+				xx = 1 * 64 + (pChar->byAnime * 32);
+			}
 			if (pChar->byCharState == CHARSTATE_DEAD) {
 				xx = pChar->byDirection * 64;
 				yy = 32 * 1;

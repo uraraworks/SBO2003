@@ -122,6 +122,7 @@ void	RecvDataProcMAPMSGREQ					(PBYTE, DWORD);				/* メッセージ要求 */
 void	RecvDataProcCHGMSG						(PBYTE, DWORD);				/* メッセージ更新 */
 void	RecvDataProcOPENDOOR					(PBYTE, DWORD);				/* 扉開け要求 */
 static BOOL OpenDoorFront						(PCHARINFO);				/* 目の前の扉を開ける */
+static PCHARINFO FindFrontMimic					(PCHARINFO);				/* 目の前の宝箱の敵(正体前)を探す */
 static BOOL IsEventExamine						(PEVENTINFO, BYTE);			/* 調べた時に何か起きるイベントか */
 void	RecvDataProcCHGCHARGRP					(PBYTE, DWORD);				/* 着せ替え要求 */
 void	RecvDataProcCHGCHARGRPBACK				(PBYTE, DWORD);				/* キャラ画像記録 */
@@ -4535,6 +4536,17 @@ void RecvDataProcEVENTCHECK(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 
+	/* 目の前を調べた時(Sキー)、目の前に宝箱の敵(正体前)がいれば正体を現す */
+	if (pPara->byData == 2) {
+		PCHARINFO pMimic = FindFrontMimic (pChar);
+		if (pMimic) {
+			MimicReveal (pMimic, pChar);
+			/* クライアントは返事が来るまで歩けないので、位置を送って待ちを解く */
+			SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
+			return;
+		}
+	}
+
 	pMap = g_aMapInfo[nNo];
 	pEvent = pMap->pEvent;
 	if (!pEvent) {
@@ -4580,6 +4592,51 @@ void RecvDataProcEVENTCHECK(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	SendCmdMAPMSG (pChar->pID, "何も見つかりませんでした。@2");
+}
+
+/* ========================================================================= */
+/* 関数名：FindFrontMimic													 */
+/* 内容：目の前の宝箱の敵(正体前)を探す										 */
+/*		 戻り値：見つけた宝箱の敵（いなければ NULL）						 */
+/* 日付：2026/11/13															 */
+/* ========================================================================= */
+static PCHARINFO FindFrontMimic(PCHARINFO pChar)
+{
+	PMAPINFO pMap;
+	PDWORD pData;
+	DWORD dwX, dwY;
+	int i, nNo;
+
+	nNo = GetMapNo (pChar->dwMapID);
+	if (nNo < 0) {
+		return NULL;
+	}
+	pMap = g_aMapInfo[nNo];
+	pData = pMap->paTblNoNPC;
+	if (pData == NULL) {
+		return NULL;
+	}
+	dwX = pChar->dwX + anPosAddTblX[pChar->byDirection];
+	dwY = pChar->dwY + anPosAddTblY[pChar->byDirection];
+	for (i = 0; i < (int)pMap->dwCountTblNoNPC; i ++) {
+		PCHARINFO pCharTmp;
+
+		if (pData[i] == -1) {
+			break;
+		}
+		pCharTmp = g_aCharInfo[pData[i]];
+		if ((pCharTmp->byNpcType != NPCTYPE_MIMIC) || (pCharTmp->wHP == 0)) {
+			continue;
+		}
+		/* 別の空間のキャラは調べられない */
+		if (pCharTmp->dwSpaceID != pChar->dwSpaceID) {
+			continue;
+		}
+		if (CheckCharX (pCharTmp, pCharTmp->dwX, dwX) && (pCharTmp->dwY == dwY)) {
+			return pCharTmp;
+		}
+	}
+	return NULL;
 }
 
 /* ========================================================================= */
@@ -5356,7 +5413,8 @@ void RecvDataProcREQ_ATTACK(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	if (!((pCharTarget->byNpcType == NPCTYPE_BATTLE1) ||
-		(pCharTarget->byNpcType == NPCTYPE_BATTLE2))) {
+		(pCharTarget->byNpcType == NPCTYPE_BATTLE2) ||
+		(pCharTarget->byNpcType == NPCTYPE_MIMIC))) {
 		return;
 	}
 	if ((pMap->byFlg & MAPFLG_BATTLE) == 0) {
@@ -5806,6 +5864,10 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 	pChar = g_aCharInfo[pPara->dwTblID];
 	/* 別の空間にいるキャラとは話せない */
 	if ((s_nCharNoRecv >= 0) && !IsSameSpace (g_aCharInfo[s_nCharNoRecv], pChar)) {
+		return;
+	}
+	/* 宝箱の敵（正体前）は話しても何も起きない（調べると正体を現す） */
+	if (pChar->byNpcType == NPCTYPE_MIMIC) {
 		return;
 	}
 	/* 依頼の見えるNPC（台詞が「@q」。受けた人・仲間だけに見える）？ 話すとポータル・宝箱など */
@@ -6698,7 +6760,8 @@ void RecvDataProcTARGETCHAR(PBYTE pData, DWORD dwDataSize)
 				return;
 			}
 			if (!((pCharTmp->byNpcType == NPCTYPE_BATTLE1) ||
-				(pCharTmp->byNpcType == NPCTYPE_BATTLE2)
+				(pCharTmp->byNpcType == NPCTYPE_BATTLE2) ||
+				(pCharTmp->byNpcType == NPCTYPE_MIMIC)
 				)) {
 				return;
 			}

@@ -194,6 +194,7 @@ BOOL CCharProcATACK::Proc(DWORD dwTime)
 		switch (pCharTarget->byNpcType) {
 		case NPCTYPE_BATTLE1:	/* ランダム移動、最初に攻撃してきたキャラをターゲットに。追いかけない。 */
 		case NPCTYPE_BATTLE2:	/* 周り２キャラの範囲で検索してついていって攻撃 */
+		case NPCTYPE_MIMIC:		/* 宝箱の敵（正体前。当たると正体を現す） */
 			break;
 		default:
 			goto Exit;

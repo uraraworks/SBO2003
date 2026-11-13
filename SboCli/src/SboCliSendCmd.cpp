@@ -413,6 +413,11 @@ void SendCmdCHARPOS(BYTE byDirection, BOOL bMovingFlg)
 						(pCharTmp->byNpcType != NPCTYPE_QUESTNPC)) {
 						/* NPCとはぶつかる */
 						delete [] pSendData;
+						/* 宝箱の敵（正体前）にぶつかった？ 壁にぶつかった時（ぶつかる(音付き)）と同じ音を鳴らす */
+						if (pCharTmp->byNpcType == NPCTYPE_MIMIC) {
+							DXAudio.PlaySecoundary (&aSoundTbl[SOUND_BLOCK]);
+							g_dwTimeMoveDisable = timeGetTime () + 250;
+						}
 						if ((pCharTmp->byNpcType == NPCTYPE_BLOCK) ||
 							(pCharTmp->byNpcType == NPCTYPE_BLOCK2) ||
 							(pCharTmp->byNpcType == NPCTYPE_BLOCK3) ||
