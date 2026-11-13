@@ -3925,6 +3925,8 @@ void RecvDataProcMAPPARTSINFO(PBYTE pData, DWORD dwDataSize)
 		pParts->pAnimeInfo = pRecv->pAnimeInfo;
 		pParts->byLevel = pRecv->byLevel;
 		pParts->byLight = pRecv->byLight;
+		pParts->byDamage = pRecv->byDamage;
+		pParts->byPoison = pRecv->byPoison;
 		pRead += sizeof (MAPPARTSINFOSAVE);
 
 		if (pRecv->pAnimeInfo) {
@@ -4686,6 +4688,8 @@ void RecvDataProcMAPPARTS(PBYTE pData, DWORD dwDataSize)
 		pPartsTmp->pAnimeInfo = pRecv->pAnimeInfo;
 		pPartsTmp->byLevel = pRecv->byLevel;
 		pPartsTmp->byLight = pRecv->byLight;
+		pPartsTmp->byDamage = pRecv->byDamage;
+		pPartsTmp->byPoison = pRecv->byPoison;
 		pRecv += sizeof (MAPPARTSINFOSAVE);
 		if (pPartsTmp->pAnimeInfo) {
 			pPartsTmp->pAnimeInfo = new ANIMEINFO[pPartsTmp->byAnimeCount];
@@ -4712,6 +4716,8 @@ void RecvDataProcMAPPARTS(PBYTE pData, DWORD dwDataSize)
 		pPartsTmp->pAnimeInfo = pRecv->pAnimeInfo;
 		pPartsTmp->byLevel = pRecv->byLevel;
 		pPartsTmp->byLight = pRecv->byLight;
+		pPartsTmp->byDamage = pRecv->byDamage;
+		pPartsTmp->byPoison = pRecv->byPoison;
 		pRecv ++;
 		if (pPartsTmp->pAnimeInfo) {
 			pPartsTmp->pAnimeInfo = new ANIMEINFO[pPartsTmp->byAnimeCount];

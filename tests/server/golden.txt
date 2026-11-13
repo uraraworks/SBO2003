@@ -1303,4 +1303,18 @@ adminquest add got=1 result=1 no=1 count=2 | id=2 name=AdminQuest2
 adminquest badno got=1 result=0 count=2
 adminquest noname got=1 result=0 name=AdminQuest2
 adminquest short got=0
+== V. FloorDamage ==
+floor step hp=15
+floor turn hp=15
+floor low hp=1
+floor poison hp=45 poison=1
+floor poison again hp=40 same_start=1
+== W. Mimic ==
+mimic idle type=24 dir=0 block=1 proc=1
+mimic talk type=24 dir=0 target=0 sysmsg=0 charinfo=0
+mimic examine away type=24
+mimic examine type=13 dir=2 target_pc=1 proc=1 sysmsg=1 charinfo=1 hp=30
+mimic examine again type=13
+mimic hit type=13 dir=3 target_pc=1 damaged=1
+mimic kill hp=0 removed=1
 == done ==

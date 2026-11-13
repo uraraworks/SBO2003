@@ -69,6 +69,7 @@ void	SetInitCharData				(PCHARINFO);									/* キャラの初期値を設定 *
 void	CharTargetPC				(PCHARINFO, PCHARINFO, DWORD);					/* キャラのついてく設定 */
 void	CharTargetCancelPC			(PCHARINFO);									/* キャラのついていく解除 */
 void	TailMoveChain				(PCHARINFO);									/* ついてきているキャラを順に動かす */
+static void FloorDamageOnStep		(PCHARINFO);									/* ダメージ床に1歩入った時の処理 */
 BOOL	CheckCharX					(PCHARINFO pChar, DWORD dwX, DWORD dwXTarget);	/* キャラサイズに合わせた当たり判定(横) */
 int		GetCharX					(PCHARINFO, DWORD, DWORD, BOOL);				/* キャラサイズに合わせた距離を求める(横) */
 int		GetCharDistanceX			(PCHARINFO, PCHARINFO);							/* キャラサイズに合わせた距離を求める(横) */
@@ -121,6 +122,7 @@ void	RecvDataProcMAPMSGREQ					(PBYTE, DWORD);				/* メッセージ要求 */
 void	RecvDataProcCHGMSG						(PBYTE, DWORD);				/* メッセージ更新 */
 void	RecvDataProcOPENDOOR					(PBYTE, DWORD);				/* 扉開け要求 */
 static BOOL OpenDoorFront						(PCHARINFO);				/* 目の前の扉を開ける */
+static PCHARINFO FindFrontMimic					(PCHARINFO);				/* 目の前の宝箱の敵(正体前)を探す */
 static BOOL IsEventExamine						(PEVENTINFO, BYTE);			/* 調べた時に何か起きるイベントか */
 void	RecvDataProcCHGCHARGRP					(PBYTE, DWORD);				/* 着せ替え要求 */
 void	RecvDataProcCHGCHARGRPBACK				(PBYTE, DWORD);				/* キャラ画像記録 */
@@ -2141,6 +2143,11 @@ void TailMoveChain(PCHARINFO pParent)
 		pChar->byFlg &= ~CHARINFOFLG_DIRECTION;
 		pChar->byFlg &= ~CHARINFOFLG_MOVE;
 
+		/* ついていっているプレイヤーもダメージ床を踏む（傭兵はHPの知らせ方が違うので今は踏まない） */
+		if (pChar->byNpcType == NPCTYPE_INIT) {
+			FloorDamageOnStep (pChar);
+		}
+
 		/* 次は、このキャラについてきているキャラ */
 		pParent = pChar;
 	}
@@ -3808,6 +3815,54 @@ void RecvDataProcCHGDIRECTION(PBYTE pData, DWORD dwDataSize)
 }
 
 /* ========================================================================= */
+/* 関数名：FloorDamageOnStep												 */
+/* 内容：ダメージ床（毒沼・溶岩など）のマスに1歩入った時の処理				 */
+/*		 パーツの byDamage だけHPが減る(HPは1で止まり、床では倒れない)		 */
+/*		 byPoison が 0 でなければ、その秒数だけ毒になる(毒の強さは byDamage)	 */
+/* ========================================================================= */
+static void FloorDamageOnStep(PCHARINFO pChar)
+{
+	int nMapNo, nDamage;
+	PMAPINFO pMap;
+	PMAPPARTSINFO pParts;
+	WORD wParts;
+	char szTmp[16];
+
+	if ((pChar->wHP == 0) || (pChar->byCharState == CHARSTATE_DEAD)) {
+		return;
+	}
+	nMapNo = GetMapNo (pChar->dwMapID);
+	if (nMapNo < 0) {
+		return;
+	}
+	pMap = g_aMapInfo[nMapNo];
+	if ((pChar->dwX >= (DWORD)pMap->nCX) || (pChar->dwY >= (DWORD)pMap->nCY)) {
+		return;
+	}
+	wParts = pMap->pwMap[pChar->dwX + pChar->dwY * pMap->nCX];
+	if (wParts >= g_wCountMapParts) {
+		return;
+	}
+	pParts = &g_aMapPartsInfo[wParts];
+	if (pParts->byDamage == 0) {
+		return;
+	}
+
+	nDamage = min ((int)pParts->byDamage, (int)pChar->wHP - 1);
+	if (nDamage > 0) {
+		pChar->wHP -= (WORD)nDamage;
+		wsprintf (szTmp, "%d", nDamage);
+		SendCmdADDCHAREFC (pChar->dwTblID, RGB (250, 60, 4), szTmp);
+		SendCmdCHARSTATUSHPMANA (pChar->dwTblID, pChar->dwTblID);
+	}
+	/* 毒になる床（もう毒なら、かけ直さない。歩くたびに毒の時計が戻らないように） */
+	if (pParts->byPoison && !CheckCharInfoTimer (pChar->dwTblID, CHARINFOTIMEREVENT_POISON)) {
+		SetCharInfoTimerStatus (pChar, CHARINFOTIMEREVENT_POISON, pParts->byDamage, (DWORD)pParts->byPoison * 1000);
+		SendCmdADDCHAREFC (pChar->dwTblID, RGB (190, 80, 255), "毒");
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcCHARPOS												 */
 /* 内容：受信データ処理(移動要求)											 */
 /* 日付：2003/05/17															 */
@@ -3866,6 +3921,7 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 		if ((pChar->dwX != (DWORD)pPara->byX) || (pChar->dwY != (DWORD)pPara->byY)) {
 			RenewCharBridgeLayerSvr (pChar, (int)pPara->byX, (int)pPara->byY, pPara->byDirection);
 		}
+		BOOL bStep = ((pChar->dwX != (DWORD)pPara->byX) || (pChar->dwY != (DWORD)pPara->byY));
 		pChar->byDirection = pPara->byDirection;
 		pChar->dwX = (DWORD)pPara->byX;
 		pChar->dwY = (DWORD)pPara->byY;
@@ -3883,6 +3939,11 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 		if (pChar->dwLastBattle) {
 			/* 移動しなおしたのでカウンタ初期化 */
 			pChar->dwLastBattle = timeGetTime ();
+		}
+
+		/* ダメージ床（毒沼・溶岩など）に入った？ */
+		if (bStep) {
+			FloorDamageOnStep (pChar);
 		}
 
 		/* 依頼の見えるポータルに乗った？ */
@@ -3994,6 +4055,8 @@ void RecvDataProcMAPPARTSADD(PBYTE pData, DWORD dwDataSize)
 		pPartsTmp1->byAnimeCount = pPartsTmp2->byAnimeCount;
 		pPartsTmp1->byLevel = pPartsTmp2->byLevel;
 		pPartsTmp1->byLight = pPartsTmp2->byLight;
+		pPartsTmp1->byDamage = pPartsTmp2->byDamage;
+		pPartsTmp1->byPoison = pPartsTmp2->byPoison;
 		pPartsTmp1->wGrpID = pPartsTmp2->wGrpID;
 		pPartsTmp1->wBackID = pPartsTmp2->wBackID;
 		pPartsTmp1->pAnimeInfo = pPartsTmp2->pAnimeInfo;
@@ -4090,6 +4153,8 @@ void RecvDataProcMAPPARTS(PBYTE pData, DWORD dwDataSize)
 	pPartsTmp->byAnimeCount = pRecv->byAnimeCount;
 	pPartsTmp->byLevel = pRecv->byLevel;
 	pPartsTmp->byLight = pRecv->byLight;
+	pPartsTmp->byDamage = pRecv->byDamage;
+	pPartsTmp->byPoison = pRecv->byPoison;
 	pPartsTmp->wGrpID = pRecv->wGrpID;
 	pPartsTmp->wBackID = pRecv->wBackID;
 	pPartsTmp->pAnimeInfo = pRecv->pAnimeInfo;
@@ -4471,6 +4536,17 @@ void RecvDataProcEVENTCHECK(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 
+	/* 目の前を調べた時(Sキー)、目の前に宝箱の敵(正体前)がいれば正体を現す */
+	if (pPara->byData == 2) {
+		PCHARINFO pMimic = FindFrontMimic (pChar);
+		if (pMimic) {
+			MimicReveal (pMimic, pChar);
+			/* クライアントは返事が来るまで歩けないので、位置を送って待ちを解く */
+			SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
+			return;
+		}
+	}
+
 	pMap = g_aMapInfo[nNo];
 	pEvent = pMap->pEvent;
 	if (!pEvent) {
@@ -4516,6 +4592,51 @@ void RecvDataProcEVENTCHECK(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	SendCmdMAPMSG (pChar->pID, "何も見つかりませんでした。@2");
+}
+
+/* ========================================================================= */
+/* 関数名：FindFrontMimic													 */
+/* 内容：目の前の宝箱の敵(正体前)を探す										 */
+/*		 戻り値：見つけた宝箱の敵（いなければ NULL）						 */
+/* 日付：2026/11/13															 */
+/* ========================================================================= */
+static PCHARINFO FindFrontMimic(PCHARINFO pChar)
+{
+	PMAPINFO pMap;
+	PDWORD pData;
+	DWORD dwX, dwY;
+	int i, nNo;
+
+	nNo = GetMapNo (pChar->dwMapID);
+	if (nNo < 0) {
+		return NULL;
+	}
+	pMap = g_aMapInfo[nNo];
+	pData = pMap->paTblNoNPC;
+	if (pData == NULL) {
+		return NULL;
+	}
+	dwX = pChar->dwX + anPosAddTblX[pChar->byDirection];
+	dwY = pChar->dwY + anPosAddTblY[pChar->byDirection];
+	for (i = 0; i < (int)pMap->dwCountTblNoNPC; i ++) {
+		PCHARINFO pCharTmp;
+
+		if (pData[i] == -1) {
+			break;
+		}
+		pCharTmp = g_aCharInfo[pData[i]];
+		if ((pCharTmp->byNpcType != NPCTYPE_MIMIC) || (pCharTmp->wHP == 0)) {
+			continue;
+		}
+		/* 別の空間のキャラは調べられない */
+		if (pCharTmp->dwSpaceID != pChar->dwSpaceID) {
+			continue;
+		}
+		if (CheckCharX (pCharTmp, pCharTmp->dwX, dwX) && (pCharTmp->dwY == dwY)) {
+			return pCharTmp;
+		}
+	}
+	return NULL;
 }
 
 /* ========================================================================= */
@@ -5292,7 +5413,8 @@ void RecvDataProcREQ_ATTACK(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	if (!((pCharTarget->byNpcType == NPCTYPE_BATTLE1) ||
-		(pCharTarget->byNpcType == NPCTYPE_BATTLE2))) {
+		(pCharTarget->byNpcType == NPCTYPE_BATTLE2) ||
+		(pCharTarget->byNpcType == NPCTYPE_MIMIC))) {
 		return;
 	}
 	if ((pMap->byFlg & MAPFLG_BATTLE) == 0) {
@@ -5742,6 +5864,10 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 	pChar = g_aCharInfo[pPara->dwTblID];
 	/* 別の空間にいるキャラとは話せない */
 	if ((s_nCharNoRecv >= 0) && !IsSameSpace (g_aCharInfo[s_nCharNoRecv], pChar)) {
+		return;
+	}
+	/* 宝箱の敵（正体前）は話しても何も起きない（調べると正体を現す） */
+	if (pChar->byNpcType == NPCTYPE_MIMIC) {
 		return;
 	}
 	/* 依頼の見えるNPC（台詞が「@q」。受けた人・仲間だけに見える）？ 話すとポータル・宝箱など */
@@ -6634,7 +6760,8 @@ void RecvDataProcTARGETCHAR(PBYTE pData, DWORD dwDataSize)
 				return;
 			}
 			if (!((pCharTmp->byNpcType == NPCTYPE_BATTLE1) ||
-				(pCharTmp->byNpcType == NPCTYPE_BATTLE2)
+				(pCharTmp->byNpcType == NPCTYPE_BATTLE2) ||
+				(pCharTmp->byNpcType == NPCTYPE_MIMIC)
 				)) {
 				return;
 			}

@@ -20,6 +20,7 @@ extern void AddBattleDamage		(PCHARINFO, PCHARINFO, int);				/* 敵に与えた�
 extern void ClearBattleDamage	(DWORD);									/* 覚えたダメージを消す(キャラ削除時) */
 extern int  RenkeiCheck			(PCHARINFO, PCHARINFO);						/* 連携ボーナスの倍率(%)。当たった時に呼ぶ */
 extern BOOL BattleProcAtack		(PCHARINFO, PCHARINFO);						/* 戦闘処理(直接攻撃) */
+extern BOOL MimicReveal			(PCHARINFO, PCHARINFO);						/* 宝箱の敵が正体を現す（第2引数を狙う戦闘２になる） */
 extern void ResurrectionBack	(PCHARINFO);								/* 復活位置で蘇生 */
 extern void	AddStatus			(PCHARINFO pChar, BYTE byType, int nData);	/* パラメータの追加 */
 extern void AddExp				(PCHARINFO, DWORD, BOOL);					/* 経験値を追加 */

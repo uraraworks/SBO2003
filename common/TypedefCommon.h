@@ -978,6 +978,7 @@ enum {
 	NPCTYPE_CHGPUSH,											/* 押せて話すと切り替え */
 	NPCTYPE_RESERVE4,
 	NPCTYPE_SEARCH2,											/* 検索してついていく2 */
+	NPCTYPE_MIMIC,											/* 宝箱の敵（ふだんは宝箱のふり。調べると正体を現して戦闘２になる） */
 	NPCTYPE_MAX
 };
 
@@ -985,6 +986,10 @@ enum {
 #define NPCTYPE_MERCENARY	(100)
 /* ギルドの依頼の「見えるNPC」（ワープポータル・宝箱など。依頼を受けた人と仲間にだけ見える。保存せず、動かず、誰ともぶつからない） */
 #define NPCTYPE_QUESTNPC	(101)
+
+/* 宝箱の敵の絵ID（char13.png の3〜5行目＝木・銀・赤の宝箱の敵。上向きの2コマがただの宝箱で、他の向きが顔のある敵） */
+#define MIMIC_GRPID_FIRST	(194)
+#define MIMIC_GRPID_LAST	(196)
 
 /* NPC巡回ルートの回り方 */
 enum {
@@ -1646,6 +1651,8 @@ typedef struct _MAPPARTSINFO {
 	BYTE		byLight;											/* 灯りの範囲(マス。0なら光らない。暗いマップで周りを照らす) */
 	WORD		wGrpID;												/* グラフィックID */
 	WORD		wBackID;											/* 重ね合わせ時の背景ID */
+	BYTE		byDamage;											/* ダメージ床：1歩ごとのダメージ(0ならダメージ床ではない。HPは1で止まり倒れない) */
+	BYTE		byPoison;											/* ダメージ床：踏むと毒になる秒数(0なら毒にならない。毒の強さは byDamage) */
 	DWORD		dwLastAnime;										/* 最後にアニメーションした時間 */
 	ANIMEINFO	*pAnimeInfo;										/* アニメーション情報 */
 } MAPPARTSINFO, *PMAPPARTSINFO;
@@ -1660,6 +1667,8 @@ typedef struct _MAPPARTSINFOSAVE {
 	BYTE		byLight;											/* 灯りの範囲(マス。0なら光らない。暗いマップで周りを照らす) */
 	WORD		wGrpID;												/* グラフィックID */
 	WORD		wBackID;											/* 重ね合わせ時の背景ID */
+	BYTE		byDamage;											/* ダメージ床：1歩ごとのダメージ(0ならダメージ床ではない。HPは1で止まり倒れない) */
+	BYTE		byPoison;											/* ダメージ床：踏むと毒になる秒数(0なら毒にならない。毒の強さは byDamage) */
 	ANIMEINFO	*pAnimeInfo;										/* アニメーション情報 */
 } MAPPARTSINFOSAVE, *PMAPPARTSINFOSAVE;
 
@@ -2256,6 +2265,7 @@ typedef struct _CHARINFO {
 	DWORD		dwBridgeX;											/* byBridgeLayer を決めた時の座標(X) */
 	DWORD		dwBridgeY;											/* byBridgeLayer を決めた時の座標(Y) */
 	DWORD		dwSpaceID;											/* 空間番号(0=ふつうの世界。保存しない。同じマップの同じ場所でも、空間が違えば見えない・ぶつからない・攻撃できない) */
+	BYTE		byMimic;											/* 直接置いた宝箱の敵が正体を現した後(1)。保存する時は宝箱の敵(NPCTYPE_MIMIC)として保存する（サーバーだけ。送信しない） */
 } CHARINFO, *PCHARINFO;
 
 /* キャラ情報通知 */

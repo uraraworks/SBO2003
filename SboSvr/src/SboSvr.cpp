@@ -1264,6 +1264,8 @@ BOOL SaveMapPartsInfo(void)
 		pSave->byAnimeCount = pParts->byAnimeCount;
 		pSave->byLevel = pParts->byLevel;
 		pSave->byLight = pParts->byLight;
+		pSave->byDamage = pParts->byDamage;
+		pSave->byPoison = pParts->byPoison;
 		pSave->wGrpID = pParts->wGrpID;
 		pSave->wBackID = pParts->wBackID;
 		pSave->pAnimeInfo = pParts->pAnimeInfo;
@@ -1327,6 +1329,8 @@ BOOL LoadMapPartsInfo(void)
 		pParts->byAnimeCount = pLoad->byAnimeCount;
 		pParts->byLevel = pLoad->byLevel;
 		pParts->byLight = pLoad->byLight;
+		pParts->byDamage = pLoad->byDamage;
+		pParts->byPoison = pLoad->byPoison;
 		pParts->wGrpID = pLoad->wGrpID;
 		pParts->wBackID = pLoad->wBackID;
 		pParts->pAnimeInfo = pLoad->pAnimeInfo;

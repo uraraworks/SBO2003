@@ -1431,6 +1431,7 @@ static BOOL ItemUse_HPDOWN(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pIt
 	switch (pCharTarget->byNpcType) {
 	case NPCTYPE_BATTLE1:
 	case NPCTYPE_BATTLE2:
+	case NPCTYPE_MIMIC:		/* 宝箱の敵（正体前。当たると正体を現す） */
 		break;
 	default:
 		strcpy (pszMsg, "使えない相手です。@2");

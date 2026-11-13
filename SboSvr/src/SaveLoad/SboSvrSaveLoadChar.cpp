@@ -252,6 +252,10 @@ BOOL CheckSaveChar(PCHARINFO pChar)
 		/* プレイヤーのキャラは保存しない */
 		return FALSE;
 	}
+	/* 直接置いた宝箱の敵が正体を現した後は、宝箱の敵として保存する（戦闘２のまま消えてしまわないように） */
+	if (pChar->byMimic && (pChar->byNpcType == NPCTYPE_BATTLE2)) {
+		return TRUE;
+	}
 	if ((pChar->byNpcType == NPCTYPE_BATTLE1) ||
 		(pChar->byNpcType == NPCTYPE_BATTLE2) ||
 		(pChar->byNpcType == NPCTYPE_USEMAGIC) ||
@@ -577,8 +581,12 @@ static BOOL SaveCharInfoMain(void)
 				dwOffset += sizeof (pInfo->byRoofLV);
 				break;
 			case 5:		/* NPC移動種別 */
-				CopyMemory (&pData[dwOffset], &pInfo->byNpcType, sizeof (pInfo->byNpcType));
-				dwOffset += sizeof (pInfo->byNpcType);
+				{
+					/* 正体を現した後の宝箱の敵は、宝箱の敵として保存する */
+					BYTE byNpcTypeSave = ((pInfo->byMimic) && (pInfo->byNpcType == NPCTYPE_BATTLE2)) ? (BYTE)NPCTYPE_MIMIC : pInfo->byNpcType;
+					CopyMemory (&pData[dwOffset], &byNpcTypeSave, sizeof (byNpcTypeSave));
+					dwOffset += sizeof (byNpcTypeSave);
+				}
 				break;
 			case 6:		/* 保存用フラグ */
 				CopyMemory (&pData[dwOffset], &pInfo->bySaveFlg, sizeof (pInfo->bySaveFlg));

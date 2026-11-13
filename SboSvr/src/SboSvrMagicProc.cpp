@@ -591,6 +591,9 @@ static BOOL MakeCharTblTargetSub_SELF(PARRAYDWORD aTarget,
 		case NPCTYPE_BATTLE2:	/* 戦闘２ */
 			bCheck = TRUE;
 			break;
+		case NPCTYPE_MIMIC:		/* 宝箱の敵(正体前)。プレイヤーの特技だけが当たる(当たると正体を現す) */
+			bCheck = (pChar->byNpcType == NPCTYPE_INIT);
+			break;
 		}
 
 		if (bCheck == FALSE) {
@@ -678,6 +681,9 @@ static BOOL MakeCharTblTargetSub_FRONT(PARRAYDWORD aTarget,
 		case NPCTYPE_BATTLE1:	/* 戦闘１ */
 		case NPCTYPE_BATTLE2:	/* 戦闘２ */
 			bCheck = TRUE;
+			break;
+		case NPCTYPE_MIMIC:		/* 宝箱の敵(正体前)。プレイヤーの特技だけが当たる(当たると正体を現す) */
+			bCheck = (pChar->byNpcType == NPCTYPE_INIT);
 			break;
 		}
 
@@ -807,6 +813,9 @@ static BOOL MakeCharTblTargetSub_CIRCLE(PARRAYDWORD aTarget,
 		case NPCTYPE_BATTLE2:	/* 戦闘２ */
 			bCheck = TRUE;
 			break;
+		case NPCTYPE_MIMIC:		/* 宝箱の敵(正体前)。プレイヤーの特技だけが当たる(当たると正体を現す) */
+			bCheck = (pChar->byNpcType == NPCTYPE_INIT);
+			break;
 		}
 
 		if (bCheck == FALSE) {
@@ -898,6 +907,9 @@ static BOOL MakeCharTblTargetSub_SCREEN(PARRAYDWORD aTarget,
 		case NPCTYPE_BATTLE2:	/* 戦闘２ */
 			bCheck = TRUE;
 			break;
+		case NPCTYPE_MIMIC:		/* 宝箱の敵(正体前)。プレイヤーの特技だけが当たる(当たると正体を現す) */
+			bCheck = (pChar->byNpcType == NPCTYPE_INIT);
+			break;
 		}
 
 		if (bCheck == FALSE) {
@@ -988,6 +1000,9 @@ static BOOL MakeCharTblTargetSub_FRONTSIDE(PARRAYDWORD aTarget,
 		case NPCTYPE_BATTLE1:	/* 戦闘１ */
 		case NPCTYPE_BATTLE2:	/* 戦闘２ */
 			bCheck = TRUE;
+			break;
+		case NPCTYPE_MIMIC:		/* 宝箱の敵(正体前)。プレイヤーの特技だけが当たる(当たると正体を現す) */
+			bCheck = (pChar->byNpcType == NPCTYPE_INIT);
 			break;
 		}
 

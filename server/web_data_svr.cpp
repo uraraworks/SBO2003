@@ -367,7 +367,7 @@ static const DATAFIELD s_aFieldStTmp[] = {
 	FLD (STATUSTEMPLATEINFO, byST,			"体力",				FT_U8, 0, NULL),
 	FLD (STATUSTEMPLATEINFO, byIT,			"賢さ",				FT_U8, 0, NULL),
 	FLD (STATUSTEMPLATEINFO, byLK,			"運のよさ",			FT_U8, 0, NULL),
-	FLD (STATUSTEMPLATEINFO, byNpcType,		"NPC種別",			FT_U8, 0, "0=未設定 1=移動しない 2=ランダム移動 11=戦闘1 12=検索して追尾 13=戦闘2 など"),
+	FLD (STATUSTEMPLATEINFO, byNpcType,		"NPC種別",			FT_U8, 0, "0=未設定 1=移動しない 2=ランダム移動 11=戦闘1 12=検索して追尾 13=戦闘2 24=宝箱の敵（ふだんは宝箱のふり。調べると正体を現して戦闘2になる） など"),
 	FLD (STATUSTEMPLATEINFO, byDropProbability,	"ドロップ率",	FT_U8, 0, NULL),
 	FLD (STATUSTEMPLATEINFO, byMoveProbabilityX,	"移動確率X",	FT_U8, 0, NULL),
 	FLD (STATUSTEMPLATEINFO, byMoveProbabilityY,	"移動確率Y",	FT_U8, 0, NULL),
@@ -1321,7 +1321,7 @@ static std::string UserWorkJson(const USERWORK &w, const DATAFIELD *paField)
 
 static const DATAFIELD s_aFieldChar[] = {
 	FLDS(CHARINFO, szName,				"名前",					FT_STR, 0, NULL),
-	FLD (CHARINFO, byNpcType,			"NPC種別",				FT_U8, 0, "0=プレイヤー（未設定） 1=移動しない 2=ランダム移動 5=NPC発生（発生元） 11=戦闘1 12=検索して追尾 13=戦闘2 16=重なったキャラに魔法 17=重なったキャラに攻撃 など"),
+	FLD (CHARINFO, byNpcType,			"NPC種別",				FT_U8, 0, "0=プレイヤー（未設定） 1=移動しない 2=ランダム移動 5=NPC発生（発生元） 11=戦闘1 12=検索して追尾 13=戦闘2 16=重なったキャラに魔法 17=重なったキャラに攻撃 24=宝箱の敵（調べると正体を現して戦闘2になる） など"),
 	FLD (CHARINFO, byAdminLV,			"管理権限",				FT_U8, RO, NULL),
 	FLD (CHARINFO, dwMapID,				"マップID",				FT_U32, 0, "map の dwID"),
 	FLD (CHARINFO, dwX,					"X",					FT_U32, 0, NULL),
@@ -1408,6 +1408,8 @@ static const DATAFIELD s_aFieldMapParts[] = {
 	FLD (MAPPARTSINFO, byAnimeCount,	"アニメのコマ数",		FT_U8, RO, "anime の数（anime を変えると変わる）"),
 	FLD (MAPPARTSINFO, byLevel,			"透明度",				FT_U8, 0, NULL),
 	FLD (MAPPARTSINFO, byLight,			"灯りの範囲",			FT_U8, 0, "暗いマップでこのパーツが周りを照らす範囲（マス）。0 なら光らない。1〜7"),
+	FLD (MAPPARTSINFO, byDamage,		"ダメージ床",			FT_U8, 0, "このパーツのマスに1歩入るたびに減るHP。0 ならダメージ床ではない。HPは1で止まり倒れない（毒沼・溶岩など）"),
+	FLD (MAPPARTSINFO, byPoison,		"毒になる秒数",			FT_U8, 0, "ダメージ床を踏むと毒になる秒数。0 なら毒にならない。毒は2秒ごとに byDamage ずつ減る（毒・眠りの効きにくさで防げる）"),
 	FLD (MAPPARTSINFO, wGrpID,			"画像ID",				FT_U16, 0, NULL),
 	FLD (MAPPARTSINFO, wBackID,			"重ねる時の背景ID",		FT_U16, 0, NULL),
 };
