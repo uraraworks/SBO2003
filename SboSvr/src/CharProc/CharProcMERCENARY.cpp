@@ -16,7 +16,7 @@
 	・戦闘できるマップで、雇い主か傭兵を狙っている敵・雇い主のすぐ近くの敵がいれば、
 	  列を離れて自分で近づいて殴る。敵がいなくなったら、また雇い主についていく。
 	  攻撃の間隔は素早さで決まる（1〜3秒）。
-	・敵からも狙われる。倒れたら10秒そのままで、その間に蘇生の道具か特技を使えば起き上がる。
+	・敵からも狙われる。倒れたら30秒そのままで、その間に蘇生の道具か特技を使えば起き上がる。
 	・雇い主が別のマップへ行った・ログアウトした・倒れた時は、その場でいなくなる。
 	  保存はしない（サーバーを再起動しても残らない）。
 	・倒した敵の経験値・お金・道具は雇い主がもらう（傭兵の取り分は無し）。
@@ -68,7 +68,7 @@
 /* 雇い主に近づけないまま、この時間たったら、となりへ移る(ms) */
 #define MERC_STUCKTIME			(4000)
 /* 倒れてから帰るまでの時間(ms) */
-#define MERC_DEADTIME			(10000)
+#define MERC_DEADTIME			(30000)
 /* 仲間の一覧を知らせ直す間隔(ms) */
 #define MERC_SYNCTIME			(3000)
 /* 持たせてもらった道具を使うか考える間隔(ms) */
@@ -1529,7 +1529,7 @@ BOOL MercenaryDamaged(PCHARINFO pChar, PCHARINFO pMerc)
 
 	pOwner = GetMercenaryOwner (pMerc);
 	if (pOwner) {
-		snprintf (szTmp, sizeof (szTmp), "%sは倒れてしまった！ 10秒以内に蘇生の道具か特技を使うと起き上がります。", pMerc->szName);
+		snprintf (szTmp, sizeof (szTmp), "%sは倒れてしまった！ 30秒以内に蘇生の道具か特技を使うと起き上がります。", pMerc->szName);
 		SendCmdSYSMSG (pOwner->pID, szTmp, SPEECHCMD_BATTLE1);
 	}
 	return TRUE;
