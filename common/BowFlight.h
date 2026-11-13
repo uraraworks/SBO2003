@@ -19,6 +19,11 @@ inline BOOL BowEnemy(PCHARINFO c) {
     return c && c->wHP && c->byCharState != CHARSTATE_DEAD &&
         (c->byNpcType == NPCTYPE_BATTLE1 || c->byNpcType == NPCTYPE_BATTLE2 || c->byNpcType == NPCTYPE_MIMIC);
 }
+/* 同じ行・列にいる別マスの相手だけを狙う。照準射程は武器の基本射程。 */
+inline BOOL BowInLineRange(PCHARINFO c, PCHARINFO t, int range) {
+    int dx = (int)t->dwX - (int)c->dwX, dy = (int)t->dwY - (int)c->dwY;
+    return ((dx == 0) != (dy == 0)) && abs(dx) + abs(dy) <= range;
+}
 inline int BowOffsetX(PCHARINFO c) {
     return c->dwBowDuration ? (int)c->dwX * 32 - c->nBowDrawX : anPosAddTblX[c->byDirection] * c->byDotMove;
 }

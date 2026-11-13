@@ -997,17 +997,6 @@ void SendCmdCHARPOS(DWORD pIDSend, int nNo, BYTE byFlg, BYTE byInside)
 {
     PCHARINFO c = g_aCharInfo[nNo];
     DWORD now = timeGetTime();
-    if (BowEnemy(c) && (c->byFlg & CHARINFOFLG_MOVE ||
-        c->nBowMoveX != (int)c->dwX || c->nBowMoveY != (int)c->dwY)) {
-        if (c->dwBowMoveTime && now != c->dwBowMoveTime) {
-            c->dwBowMoveInterval = now - c->dwBowMoveTime;
-            c->nBowVelocityX = (int)c->dwX - c->nBowMoveX;
-            c->nBowVelocityY = (int)c->dwY - c->nBowMoveY;
-            if (abs(c->nBowVelocityX) > 1 || abs(c->nBowVelocityY) > 1) c->dwBowMoveInterval = 0;
-        }
-        c->nBowMoveX = c->dwX; c->nBowMoveY = c->dwY;
-        c->dwBowMoveTime = now;
-    }
 	PCMDPARA_CHARPOS pSendData;
 
 	pSendData = (PCMDPARA_CHARPOS)new BYTE[sizeof(CMDPARA_CHARPOS) + sizeof(BOWFLIGHTINFO)];

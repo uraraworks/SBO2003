@@ -46,12 +46,21 @@ static int TestBowOnly()
     req.byCmd = CMD_REQ_ATTACK; req.pID = pc->pID; req.dwTblID = pc->dwTblID;
     req.dwData = enemy->dwTblID; req.byData = 100;
     TestRecv(pc, &req, sizeof(req));
+    BowCheck(pc->dwLastBattle == 0, "diagonal request rejected");
+    pc->dwTargetTblID = enemy->dwTblID;
+    BattleProcWeapon(pc);
+    bool diagonalArrow = false;
+    for (int i = 0; i < g_aCharInfo.GetSize(); ++i)
+        if (g_aCharInfo[i]->dwBowDuration && g_aCharInfo[i]->pID) diagonalArrow = true;
+    BowCheck(!diagonalArrow, "diagonal launch rejected");
+    enemy->dwY = 2;
+    TestRecv(pc, &req, sizeof(req));
     BowCheck(pc->dwLastBattle == 1 && enemy->dwLastBattle == 0, "request does not alert enemy");
     BattleProcCheck(pc);
     PCHARINFO arrow = NULL;
     for (int i = 0; i < g_aCharInfo.GetSize(); ++i)
         if (g_aCharInfo[i]->dwBowDuration) arrow = g_aCharInfo[i];
-    BowCheck(arrow && arrow->nBowEndX == 128 && arrow->nBowEndY == 128, "diagonal fixed endpoint");
+    BowCheck(arrow && arrow->nBowEndX == 128 && arrow->nBowEndY == 64 && arrow->byDirection == 3 && pc->byDirection == 3, "horizontal fixed endpoint and shooter direction");
     std::vector<BYTE> packet;
     SvrSendCaptureBegin();
     SendCmdCHARPOS(arrow->pID, arrow->dwTblID, FLGCHARPOS_BOWLAUNCH, 1);
@@ -68,9 +77,9 @@ static int TestBowOnly()
     s_dwFakeNow += 60;
     ((CCharProcATACK*)arrow->pProc)->Proc(s_dwFakeNow);
     BowCheck(enemy->dwLastBattle == 0, "flight does not alert enemy before contact");
-    enemy->dwX = 5; enemy->dwY = 4;
+    enemy->dwX = 5; enemy->dwY = 2;
     BowCheck(arrow->nBowEndX == 128, "moving target does not change trajectory");
-    enemy->dwX = 4; enemy->dwY = 4;
+    enemy->dwX = 4; enemy->dwY = 2;
     s_dwFakeNow += 300;
     ((CCharProcATACK*)arrow->pProc)->Proc(s_dwFakeNow);
     BowCheck(enemy->dwLastBattle != 0 && enemy->dwTargetTblID == pc->dwTblID, "contact alerts enemy to shooter");
@@ -83,10 +92,10 @@ static int TestBowOnly()
     enemy->dwSpaceID = 9;
     pc->dwLastBattle = 0; TestRecv(pc, &req, sizeof(req));
     BowCheck(pc->dwLastBattle == 0, "different space rejected");
-    enemy->dwSpaceID = 0; enemy->dwX = 9; enemy->dwY = 9;
+    enemy->dwSpaceID = 0; enemy->dwX = 9; enemy->dwY = 2;
     TestRecv(pc, &req, sizeof(req));
     BowCheck(pc->dwLastBattle == 0, "out of range request rejected");
-    enemy->dwX = 4; enemy->dwY = 4;
+    enemy->dwX = 4; enemy->dwY = 2;
     TestRecv(pc, &req, sizeof(req)-1);
     BowCheck(pc->dwLastBattle == 0, "short attack packet rejected");
     auto fire = [&]() -> PCHARINFO {
@@ -98,16 +107,14 @@ static int TestBowOnly()
     };
     arrow = fire(); BowCheck(arrow != NULL, "miss test arrow created");
     arrowID = arrow->dwTblID;
-    enemy->dwX = 6; enemy->dwY = 4;
+    enemy->dwX = 6; enemy->dwY = 2;
     s_dwFakeNow += 1000;
     ((CCharProcATACK*)arrow->pProc)->Proc(s_dwFakeNow);
     BowCheck(enemy->dwLastBattle == 0 && !g_aCharInfo[arrowID]->pID, "target can dodge fixed trajectory");
-    enemy->dwX = 4; enemy->dwY = 4;
-    enemy->dwBowMoveInterval = 320; enemy->dwBowMoveTime = s_dwFakeNow;
-    enemy->nBowVelocityX = 1; enemy->nBowVelocityY = 0;
-    arrow = fire(); BowCheck(arrow && arrow->nBowEndX > 128, "moving enemy is led using observed speed");
-    DeleteChar(arrow->dwTblID); enemy->dwBowMoveInterval = 0;
-    int cell = 3 + 3 * map->nCX;
+    enemy->dwX = 4; enemy->dwY = 2;
+    arrow = fire(); BowCheck(arrow && arrow->nBowEndX == 128 && arrow->nBowEndY == 64, "current position aimed without prediction");
+    DeleteChar(arrow->dwTblID);
+    int cell = 3 + 2 * map->nCX;
     WORD oldPart = map->pwMap[cell];
     // 合成パーツを一つだけ壁にして通過マスの判定を確認する。
     PMAPPARTSINFO oldParts = g_aMapPartsInfo;
@@ -121,13 +128,15 @@ static int TestBowOnly()
     s_dwFakeNow += 1000;
     ((CCharProcATACK*)arrow->pProc)->Proc(s_dwFakeNow);
     BowCheck(!g_aCharInfo[arrowID]->pID && enemy->dwLastBattle == 0, "intermediate wall stops arrow before enemy");
+    pc->dwLastBattle = 0; TestRecv(pc, &req, sizeof(req));
+    BowCheck(pc->dwLastBattle == 0, "wall blocks targeting");
     map->pwMap[cell] = oldPart;
     weapon->byData1 = 5;
-    enemy->dwX = 5; enemy->dwY = 5; enemy->dwLastBattle = 0;
+    enemy->dwX = 5; enemy->dwY = 2; enemy->dwLastBattle = 0;
     arrow = fire(); arrowID = arrow->dwTblID;
     s_dwFakeNow += 1000;
     ((CCharProcATACK*)arrow->pProc)->Proc(s_dwFakeNow);
-    BowCheck(enemy->dwLastBattle != 0 && !g_aCharInfo[arrowID]->pID, "diagonal three tiles hits");
+    BowCheck(enemy->dwLastBattle != 0 && !g_aCharInfo[arrowID]->pID, "horizontal three tiles hits");
     g_aMapPartsInfo[wall].byHitType = PARTSHIT_COUNTER;
     map->pwMap[cell] = wall;
     enemy->dwLastBattle = 0;
@@ -150,6 +159,27 @@ static int TestBowOnly()
     s_dwFakeNow += 1000;
     ((CCharProcATACK*)arrow->pProc)->Proc(s_dwFakeNow);
     BowCheck(enemy->dwLastBattle != 0, "lap five reaches five tiles");
+    for (int direction = 0; direction < 4; ++direction) {
+        pc->dwX = pc->dwY = 5;
+        pc->byDirection = (direction + 1) % 4;
+        enemy->dwX = 5 + anPosAddTblX[direction] * 2;
+        enemy->dwY = 5 + anPosAddTblY[direction] * 2;
+        enemy->dwLastBattle = 0;
+        arrow = fire(); BowCheck(arrow && arrow->byDirection == direction && pc->byDirection == direction,
+            "cardinal shooter and arrow direction");
+        arrowID = arrow->dwTblID;
+        s_dwFakeNow += 1000;
+        ((CCharProcATACK*)arrow->pProc)->Proc(s_dwFakeNow);
+        BowCheck(enemy->dwLastBattle != 0 && !g_aCharInfo[arrowID]->pID, "cardinal direction hits");
+    }
+    pc->dwX = pc->dwY = 2;
+    enemy->dwX = 5; enemy->dwY = 2; enemy->dwLastBattle = 0;
+    PCHARINFO between = BowTestChar(NPCTYPE_BATTLE1, 3, 2);
+    arrow = fire(); arrowID = arrow->dwTblID;
+    s_dwFakeNow += 1000;
+    ((CCharProcATACK*)arrow->pProc)->Proc(s_dwFakeNow);
+    BowCheck(between->dwLastBattle != 0 && enemy->dwLastBattle == 0 && !g_aCharInfo[arrowID]->pID,
+        "intermediate enemy takes first hit");
     --g_wCountMapParts;
     delete[] g_aMapPartsInfo; g_aMapPartsInfo = oldParts;
     printf("bow tests passed\n");

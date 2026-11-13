@@ -2866,12 +2866,20 @@ PITEMINFO_WEAPON GetBowWeapon(PCHARINFO c)
     return BowWeapon(c, g_aItemInfo[id]);
 }
 
-/* 射程はチェビシェフ距離。壁越しの候補も表示し、飛翔時の衝突で止める。 */
+/* 縦横の射程内で、途中に壁がない相手だけを候補にする。 */
 BOOL IsBowAttackTarget(PCHARINFO c, PCHARINFO t)
 {
     PITEMINFO_WEAPON w = GetBowWeapon(c);
-    return w && BowEnemy(t) && !t->dwTimeDelete && t->dwMapID == c->dwMapID &&
-        max(abs((int)t->dwX - (int)c->dwX), abs((int)t->dwY - (int)c->dwY)) <= w->byData1;
+    if (!w || !BowEnemy(t) || t->dwTimeDelete || t->dwMapID != c->dwMapID ||
+        !g_pMapInfo || !BowInLineRange(c, t, w->byData1)) return FALSE;
+    int x = c->dwX, y = c->dwY;
+    int sx = ((int)t->dwX > x) - ((int)t->dwX < x);
+    int sy = ((int)t->dwY > y) - ((int)t->dwY < y);
+    while (TRUE) {
+        x += sx; y += sy;
+        if (x == (int)t->dwX && y == (int)t->dwY) return TRUE;
+        if (IsSightWall(x, y)) return FALSE;
+    }
 }
 
 /* 自動選択しない。選んだ相手だけを発射時にも検証する。 */

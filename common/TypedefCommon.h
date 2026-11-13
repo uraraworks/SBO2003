@@ -2117,9 +2117,7 @@ typedef struct _CHARINFO {
 	BYTE		byEfectIdle;										/* 常に表示するエフェクト */
 	BYTE		byEfcAnime;											/* エフェクトアニメ番号 */
 	/* 弓の固定軌道。実行中のみ使用し、キャラ保存や既存パケットには含めない */
-	int nBowMoveX, nBowMoveY, nBowVelocityX, nBowVelocityY;
 	DWORD dwBowOwnerPID;
-	DWORD dwBowMoveTime, dwBowMoveInterval; /* 直近の移動を観測（先読み用） */
 	DWORD dwBowStartTime, dwBowDuration, dwBowElapsed;
 	int nBowStartX, nBowStartY, nBowEndX, nBowEndY; /* ピクセル */
 	int nBowDrawX, nBowDrawY;

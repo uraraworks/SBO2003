@@ -691,25 +691,18 @@ BOOL BattleProcWeapon(PCHARINFO pChar)
                 double dx = (int)target->dwX - (int)pChar->dwX;
                 double dy = (int)target->dwY - (int)pChar->dwY;
                 if (!BowEnemy(target) || target->dwMapID != pChar->dwMapID || !IsInteractable(pChar, target) ||
-                    max(fabs(dx), fabs(dy)) > pWeapon->byData1 || (dx == 0 && dy == 0) || !IsMagicReachChar(pChar, target)) {
+                    !BowInLineRange(pChar, target, pWeapon->byData1) || !IsMagicReachChar(pChar, target)) {
                     delete (PCCharProcBase)pCharNew->pProc; delete pCharNew; return TRUE;
                 }
-                double tx = target->dwX * 32.0, ty = target->dwY * 32.0;
                 double speed = 32.0 / BowTileTime(pChar->byAtackRate);
-                /* 直近も動いている敵だけを先読み。停止していれば現在地を狙う。 */
-                double vx = 0, vy = 0;
-                if (target->dwBowMoveInterval && timeGetTime() - target->dwBowMoveTime < target->dwBowMoveInterval + 100) {
-                    vx = target->nBowVelocityX * 32.0 / target->dwBowMoveInterval;
-                    vy = target->nBowVelocityY * 32.0 / target->dwBowMoveInterval;
-                }
-                /* 発射時の距離から飛行時間を求め、周回数に応じて先読みする。 */
                 double rx = dx * 32, ry = dy * 32;
-                double flight = max(fabs(rx), fabs(ry)) / speed;
-                tx += vx * flight * BowLaps(pChar->byAtackRate) / 5.0;
-                ty += vy * flight * BowLaps(pChar->byAtackRate) / 5.0;
-                rx = tx - pChar->dwX * 32.0; ry = ty - pChar->dwY * 32.0;
                 double distance = max(fabs(rx), fabs(ry));
                 if (distance > range * 32) { rx *= range*32/distance; ry *= range*32/distance; }
+                BYTE direction = dx ? (dx < 0 ? 2 : 3) : (dy < 0 ? 0 : 1);
+                if (pChar->byDirection != direction) {
+                    pChar->byDirection = direction;
+                    pChar->byFlg |= CHARINFOFLG_DIRECTION;
+                }
                 pCharNew->nBowStartX = (int)pChar->dwX * 32;
                 pCharNew->nBowStartY = (int)pChar->dwY * 32;
                 PMAPINFO map = g_aMapInfo[pChar->dwMapID];
@@ -721,7 +714,7 @@ BOOL BattleProcWeapon(PCHARINFO pChar)
                 pCharNew->dwBowOwnerPID = pChar->pID;
                 pCharNew->dwBowStartTime = timeGetTime();
                 pCharNew->dwBowElapsed = 0;
-                pCharNew->byDirection = fabs(rx) > fabs(ry) ? (rx < 0 ? 2 : 3) : (ry < 0 ? 0 : 1);
+                pCharNew->byDirection = direction;
                 BYTE effects[] = {pWeapon->byData2, pWeapon->byData3, pWeapon->byData4, pWeapon->byData5};
                 pCharNew->byEfect = effects[pCharNew->byDirection];
                 pCharNew->wHP = range;

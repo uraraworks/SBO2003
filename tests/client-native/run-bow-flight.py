@@ -54,7 +54,14 @@ bool g_bBattleMode=true,g_bGuard=false,g_bAutoGage=false,g_bReqestPos=false;
 DWORD g_dwGuardGageElapse=0;
 struct { bool byFadeIn=false,byFadeOut=false; } g_FadeInOutInfo;
 const int MAPFLG_BATTLE=1;
-struct Map { int byFlg=MAPFLG_BATTLE; } map;
+const int PARTSHIT_COUNTER=1, PARTSHIT_BLOCK1=2;
+struct Map { int byFlg=MAPFLG_BATTLE,nCX=16,nCY=16; unsigned short pwMap[256]={}; } map;
+using PMAPINFO=Map*;
+struct Part { int byHitType=0; } g_pMapPartsInfo[3];
+int g_wCountMapParts=3;
+bool CheckCharBlock(DWORD x,DWORD y) {
+    return x<16 && y<16 && map.pwMap[x+y*16]==0;
+}
 Map* g_pMapInfo=&map;
 int unlocked=0;
 using PBYTE=unsigned char*;
@@ -80,6 +87,9 @@ int GetCharNo2(DWORD id) {
 gage_a = recv.index('static DWORD s_dwBowGageX')
 gage_b = recv.index('/* ========================================================================= */', recv.index('void CancelTurnGage(PCHARINFO pChar)\n{'))
 code += recv[gage_a:gage_b]
+sight_a = recv.index('BOOL IsSightWall(int x, int y)\n{')
+sight_b = recv.index('\n}', sight_a) + 2
+code += recv[sight_a:sight_b]
 code += 'void tick(PCHARINFO pChar) {\n' + main[start:end] + '\n}\n' + recv[a:b]
 def function(source, signature):
     start = source.index(signature + '\n{')
@@ -93,7 +103,7 @@ code += function(key, 'static BOOL ShotTurnGage(PCHARINFO pChar)')
 code += r'''
 int main() {
     for (int dx: {-137, 0, 137}) for (int dy: {-91, 0, 91}) {
-        if (!dx && !dy) continue;
+        if ((!dx) == (!dy)) continue;
         CHARINFO c;
         c.dwBowDuration=1000;c.dwBowStartTime=100;
         c.nBowStartX=200;c.nBowStartY=200;
@@ -122,8 +132,19 @@ int main() {
     now=100;UpdateBowTurnGage(&c);assert(c.dwTimeTurnLV==0);
     StartTurnGage(&c,far.dwTblID);c.byTurnLV=60;
     assert(FindBowAttackTarget(&c,20)==2); // 近い敵がいても選んだ相手だけ
-    tie.dwX=10;tie.dwY=10;assert(IsBowAttackTarget(&c,&tie)); // 射程端の斜め
-    tie.dwX=11;assert(!IsBowAttackTarget(&c,&tie));
+    tie.dwX=10;tie.dwY=10;assert(!IsBowAttackTarget(&c,&tie)); // 斜めは射程内でも対象外
+    for (int direction=0;direction<4;++direction) {
+        tie.dwX=5+anPosAddTblX[direction]*5;tie.dwY=5+anPosAddTblY[direction]*5;
+        assert(IsBowAttackTarget(&c,&tie)); // 縦横の射程端
+        tie.dwX=5+anPosAddTblX[direction]*6;tie.dwY=5+anPosAddTblY[direction]*6;
+        assert(!IsBowAttackTarget(&c,&tie));
+    }
+    tie.dwX=5;tie.dwY=5;assert(!IsBowAttackTarget(&c,&tie));
+    g_pMapPartsInfo[1].byHitType=PARTSHIT_COUNTER;
+    g_pMapPartsInfo[2].byHitType=PARTSHIT_BLOCK1;
+    map.pwMap[6+5*16]=2;assert(!IsBowAttackTarget(&c,&far));
+    map.pwMap[6+5*16]=1;assert(IsBowAttackTarget(&c,&far));
+    map.pwMap[6+5*16]=0;
     c.byDotMove=10;UpdateBowTurnGage(&c);
     assert(c.dwAtackTblID==2 && c.byTurnLV==0 && c.dwTimeTurnLV==0);
     c.byDotMove=0;now=200;UpdateBowTurnGage(&c);assert(c.dwTimeTurnLV==200);
@@ -133,6 +154,13 @@ int main() {
     far.dwX=12;UpdateBowTurnGage(&c);assert(c.dwTimeTurnLV==0 && c.dwAtackTblID==2);
     now=400;UpdateBowTurnGage(&c);assert(c.dwTimeTurnLV==0);
     far.dwX=8;UpdateBowTurnGage(&c);assert(c.dwTimeTurnLV==400);
+    c.byTurnLV=80;far.dwY=6;UpdateBowTurnGage(&c);
+    assert(c.byTurnLV==0 && c.dwTimeTurnLV==0 && c.dwAtackTblID==2);
+    now=450;UpdateBowTurnGage(&c);assert(c.dwTimeTurnLV==0);
+    far.dwY=5;UpdateBowTurnGage(&c);assert(c.dwTimeTurnLV==450);
+    c.byTurnLV=80;map.pwMap[6+5*16]=2;UpdateBowTurnGage(&c);
+    assert(c.byTurnLV==0 && c.dwTimeTurnLV==0 && c.dwAtackTblID==2);
+    map.pwMap[6+5*16]=0;now=500;UpdateBowTurnGage(&c);assert(c.dwTimeTurnLV==500);
     c.byTurnLV=80;StartTurnGage(&c,1);assert(c.byTurnLV==0 && c.dwAtackTblID==1);
     near.wHP=0;UpdateBowTurnGage(&c);assert(!c.dwAtackTblID && !c.dwTimeTurnLV && unlocked==1);
     StartTurnGage(&c,2);far.dwTimeDelete=1;UpdateBowTurnGage(&c);assert(!c.dwAtackTblID && unlocked==2);
@@ -155,7 +183,7 @@ int main() {
     SendCmdREQ_ATTACK(1,100);assert(sends==before); // 別の相手に勝手に送らない
     c.byDirection=3;c.byDotMove=19;
     assert(BowOffsetX(&c)==19 && BowOffsetY(&c)==0);
-    puts("bow client: 8 directions, straight interpolation, selected target, charge reset/resume, early/just/continuous shots, invalid targets, range, legacy offsets OK");
+    puts("bow client: 4 directions, straight interpolation, selected target, charge reset/resume, early/just/continuous shots, invalid targets, range, legacy offsets OK");
 }
 '''
 with tempfile.TemporaryDirectory(prefix='sbo-bow-client-') as temp:
