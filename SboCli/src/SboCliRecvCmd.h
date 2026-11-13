@@ -54,7 +54,7 @@ extern BOOL	IsBlock					(int x, int y, BOOL bHide);									/* ぶつかり判�
 extern BOOL	CheckCharX				(PCHARINFO pChar, DWORD dwX, DWORD dwXTarget);				/* キャラサイズに合わせた当たり判定(横) */
 extern int	GetCharCenterX			(PCHARINFO pChar);											/* キャラの中心位置を取得 */
 extern BOOL	CheckTargetPos			(int nXFrom, int nYFrom, int nXTo, int nYTo, int nCount);	/* 指定座標までたどり着けるかチェック */
-extern int	GetUseCharInfo			(int nArea, PCHARINFO pMyChar, BOOL bSelf, int nType, ARRAYUSECHARINFO &aDst, int &nLen);	/* 誰に使うか一覧を取得 */
+extern int	GetUseCharInfo			(int nArea, PCHARINFO pMyChar, BOOL bSelf, int nType, BOOL bMerc, ARRAYUSECHARINFO &aDst, int &nLen);	/* 誰に使うか一覧を取得 */
 extern void	DeleteUseCharInfo		(PARRAYUSECHARINFO pSrc);									/* 誰に使うか一覧を削除 */
 extern int	GetAttackType			(PCHARINFO pChar);											/* 攻撃種別を取得 */
 extern void	StartTurnGage			(PCHARINFO pChar, DWORD dwAtackTblID);						/* ターンゲージ開始 */

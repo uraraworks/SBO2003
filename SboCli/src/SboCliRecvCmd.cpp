@@ -130,7 +130,7 @@ BOOL	CheckCharX							(PCHARINFO pChar, DWORD dwX, DWORD dwXTarget);			/* キャ
 int		GetCharCenterX						(PCHARINFO pChar);										/* キャラの中心位置を取得 */
 BOOL	CheckTargetPos						(int nXFrom, int nYFrom, int nXTo, int nYTo, int nCount);					/* 指定座標までたどり着けるかチェック */
 void	CheckTargetPosWork					(int nXFrom, int nYFrom, int nXTo, int nYTo, int nCount, BOOL *pbCheck);	/* 指定座標までたどり着けるかチェック処理 */
-int		GetUseCharInfo						(int nArea, PCHARINFO pMyChar, BOOL bSelf, int nType, ARRAYUSECHARINFO &aDst, int &nLen);	/* 誰に使うか一覧を取得 */
+int		GetUseCharInfo						(int nArea, PCHARINFO pMyChar, BOOL bSelf, int nType, BOOL bMerc, ARRAYUSECHARINFO &aDst, int &nLen);	/* 誰に使うか一覧を取得 */
 int		GetAttackType						(PCHARINFO pChar);										/* 攻撃種別を取得 */
 void	StartTurnGage						(PCHARINFO pChar);										/* ターンゲージ開始 */
 void	CancelTurnGage						(PCHARINFO pChar);										/* ターンゲージをキャンセル */
@@ -2693,6 +2693,7 @@ int GetUseCharInfo(
 	PCHARINFO pMyChar,			/* [in] 一覧に含めないキャラ情報 */
 	BOOL bSelf,					/* [in] 自分を含めるか */
 	int nType,					/* [in] 種別 */
+	BOOL bMerc,					/* [in] 傭兵も含めるか(回復・蘇生の特技) */
 	ARRAYUSECHARINFO &aDst,		/* [ou] 作成した一覧 */
 	int &nLen)					/* [ou] 最大文字列長 */
 {
@@ -2719,6 +2720,11 @@ int GetUseCharInfo(
 		case NPCTYPE_BATTLE1:				/* ランダム移動、最初に攻撃してきたキャラをターゲットに。追いかけない。 */
 		case NPCTYPE_BATTLE2:				/* 周り２キャラの範囲で検索してついていって攻撃 */
 			if (!((nType == MAGICTARGET_NPC) || (nType == MAGICTARGET_ALL))) {
+				continue;
+			}
+			break;
+		case NPCTYPE_MERCENARY:				/* 傭兵(プレイヤーの回復・蘇生の特技だけ) */
+			if (!bMerc || (nType == MAGICTARGET_NPC)) {
 				continue;
 			}
 			break;

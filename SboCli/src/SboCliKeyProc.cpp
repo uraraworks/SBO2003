@@ -96,6 +96,7 @@ LRESULT CALLBACK NameWndProc				(HWND, UINT, WPARAM, LPARAM);	/* キャラ名入
 LRESULT CALLBACK MakeWndProc				(HWND, UINT, WPARAM, LPARAM);	/* 作成ボタン用メッセージ処理 */
 LRESULT CALLBACK SpeechWndProc				(HWND, UINT, WPARAM, LPARAM);	/* 発言入力欄用メッセージ処理 */
 static BOOL IsSpeechModeEnable				(BYTE);							/* 発言の種類が今選べるか */
+static BOOL IsMercMagic						(PMAGICINFO pInfo);			/* 雇った傭兵にも使える特技か(回復・蘇生) */
 #define SPEECHMODE_MAX	(4)															/* 発言の種類の数(g_bySpeechMode) */
 LRESULT CALLBACK SpeechEditWndProc			(HWND, UINT, WPARAM, LPARAM);	/* 自己紹介設定欄用メッセージ処理 */
 LRESULT CALLBACK ChgPasswordWndProc			(HWND, UINT, WPARAM, LPARAM);	/* パスワード変更用メッセージ処理 */
@@ -5493,7 +5494,7 @@ void KeyProcCOMMANDMAGIC(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 					}
 
 					/* キャラ選択 */
-					pWndTmp = MakeWindowBATTLE_TARGET (pInfo->byTargetArea, bTmp, pInfo->byTarget);
+					pWndTmp = MakeWindowBATTLE_TARGET (pInfo->byTargetArea, bTmp, pInfo->byTarget, IsMercMagic (pInfo));
 					if (pWndTmp == NULL) {
 						pWndTmp = MakeWindowMSG ("対象者がいません。@2", FALSE);
 						break;
@@ -5635,7 +5636,7 @@ void KeyProcCOMMANDMAGICBATTLE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 					}
 
 					/* キャラ選択 */
-					pWndNew = MakeWindowBATTLE_TARGET (pInfo->byTargetArea, bTmp, pInfo->byTarget);
+					pWndNew = MakeWindowBATTLE_TARGET (pInfo->byTargetArea, bTmp, pInfo->byTarget, IsMercMagic (pInfo));
 					if (pWndNew == NULL) {
 						pWndTmp = MakeWindowMSG ("対象者がいません。@2", FALSE);
 						break;
@@ -7042,7 +7043,7 @@ void KeyProcBATTLE_COMMAND(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 					break;
 				}
 
-				nResult = GetUseCharInfo (3, pChar, FALSE, MAGICTARGET_NPC, aUseCharInfoTmp, nLen);
+				nResult = GetUseCharInfo (3, pChar, FALSE, MAGICTARGET_NPC, FALSE, aUseCharInfoTmp, nLen);
 				if (nResult == 0) {
 					DeleteUseCharInfo (&aUseCharInfoTmp);
 					break;
@@ -7061,7 +7062,7 @@ void KeyProcBATTLE_COMMAND(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				}
 #endif
 				DeleteUseCharInfo (&aUseCharInfoTmp);
-				PWNDINFO pWndNew = MakeWindowBATTLE_TARGET (3, FALSE, MAGICTARGET_NPC);
+				PWNDINFO pWndNew = MakeWindowBATTLE_TARGET (3, FALSE, MAGICTARGET_NPC, FALSE);
 				if (pWndNew == NULL) {
 					break;
 				}
@@ -9324,5 +9325,19 @@ extern "C" EMSCRIPTEN_KEEPALIVE int SboWebChatKinds(void)
 	return nRet;
 }
 #endif
+
+/* ========================================================================= */
+/* 関数名：	IsMercMagic														 */
+/* 内容：	雇った傭兵にも使える特技か(プレイヤー側の回復・蘇生)			 */
+/*			サーバーの IsMercMagic と同じ判定。相手を選ぶ一覧に傭兵を出す	 */
+/* 日付：	2026/11/13														 */
+/* ========================================================================= */
+static BOOL IsMercMagic(PMAGICINFO pInfo)
+{
+	if ((pInfo->byType != MAGICTYPE_HPUP) && (pInfo->byType != MAGICTYPE_RESURRECTION)) {
+		return FALSE;
+	}
+	return (pInfo->byTarget != MAGICTARGET_NPC);
+}
 
 /* Copyright(C)URARA-works 2003-2005 */

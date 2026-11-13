@@ -104,7 +104,7 @@ PWNDINFO MakeWindowSUBWAR_TURN_MAGIC_PRIEST		(void);				/* 戦場ゲーム：行
 PWNDINFO MakeWindowITEMEQU						(void);				/* 装備アイテム */
 PWNDINFO MakeWindowSTATUS_ATTR					(void);				/* ステータス表示(属性) */
 PWNDINFO MakeWindowBATTLE_COMMAND				(void);				/* 戦闘：コマンド */
-PWNDINFO MakeWindowBATTLE_TARGET				(int nArea, BOOL bMyChar, int nType);	/* 戦闘：ターゲット選択 */
+PWNDINFO MakeWindowBATTLE_TARGET				(int nArea, BOOL bMyChar, int nType, BOOL bMerc);	/* 戦闘：ターゲット選択 */
 
 PWNDINFO MakeWindowSUBSUGOROKU_JOINMODE			(void);				/* すごろく：参加モード選択 */
 PWNDINFO MakeWindowSUBSUGOROKU_COMMAND			(void);				/* すごろく：行動状態 */
@@ -2953,7 +2953,8 @@ PWNDINFO MakeWindowBATTLE_COMMAND(void)
 PWNDINFO MakeWindowBATTLE_TARGET(
 	int nArea,			/* [in] 範囲 */
 	BOOL bMyChar,		/* [in] 自分を含める？ */
-	int nType)			/* [in] 種別 */
+	int nType,			/* [in] 種別 */
+	BOOL bMerc)			/* [in] 雇った傭兵も含める？(回復・蘇生の特技) */
 {
 	int nResult, nLen;
 	PCHARINFO pMyChar;
@@ -2964,7 +2965,7 @@ PWNDINFO MakeWindowBATTLE_TARGET(
 	nLen = 0;
 	pMyChar = g_aCharInfo[g_nMyCharID];
 
-	nResult = GetUseCharInfo (nArea, pMyChar, bMyChar, nType, g_aUseCharInfo, nLen);
+	nResult = GetUseCharInfo (nArea, pMyChar, bMyChar, nType, bMerc, g_aUseCharInfo, nLen);
 	if (nResult <= 0) {
 		return NULL;
 	}

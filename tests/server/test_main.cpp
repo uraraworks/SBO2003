@@ -897,7 +897,7 @@ static void PrintTownWarp(const char *pszLabel, PCHARINFO pChar)
 }
 
 static void TestShipBed(const std::vector<int> &aLogin);
-static void TestMercenary(const std::vector<int> &aLogin);
+static void TestMercenary(const std::vector<int> &aLogin, BOOL bMagic = FALSE);
 static void TestTailMapChg(const std::vector<int> &aLogin);
 static void TestQuest(const std::vector<int> &aLogin);
 static void TestSortItem(const std::vector<int> &aLogin);
@@ -1355,6 +1355,8 @@ static void TestWorld(void)
 	TestFloorDamage(aLogin);
 	/* W. 宝箱の敵（調べる・叩くと正体を現す） */
 	TestMimic(aLogin);
+	/* K2. 傭兵への回復・蘇生の特技（ゲームの乱数を使うので最後） */
+	TestMercenary(aLogin, TRUE);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1828,9 +1830,80 @@ static void PrintItems(const char *pszLabel, PCHARINFO p)
 	printf("\n");
 }
 
-static void TestMercenary(const std::vector<int> &aLogin)
+/* ------------------------------------------------------------------------- */
+/* K2. 傭兵への特技：プレイヤーの回復・蘇生の特技が傭兵にも効く			 */
+/*     （攻撃の特技は当たらない）。ゲームの乱数を使うので最後に流す		 */
+/* ------------------------------------------------------------------------- */
+static void TestMercMagicBody(PCHARINFO pOwner, PCHARINFO pMerc, CCharProcMERCENARY *pProc, PMAPINFO pMap)
 {
-	printf("== K. Mercenary ==\n");
+	int nHealSel = -1, nHealCircle = -1, nResSel = -1, nResScreen = -1, nAtkCircle = -1;
+	for (int i = 1; i < g_aMagicInfo.GetSize(); i ++) {
+		PMAGICINFO pM = g_aMagicInfo[i];
+		if (pM == NULL) continue;
+		if (pM->byType == MAGICTYPE_HPUP && pM->byTarget != MAGICTARGET_NPC) {
+			if (nHealSel < 0 && (pM->byTargetType == MAGICTARGETTYPE_SELECT || pM->byTargetType == MAGICTARGETTYPE_SELECT2)) nHealSel = i;
+			if (nHealCircle < 0 && pM->byTargetType == MAGICTARGETTYPE_CIRCLE && pM->byTargetArea >= 1) nHealCircle = i;
+		}
+		if (pM->byType == MAGICTYPE_RESURRECTION && pM->byTarget != MAGICTARGET_NPC) {
+			if (nResSel < 0 && (pM->byTargetType == MAGICTARGETTYPE_SELECT || pM->byTargetType == MAGICTARGETTYPE_SELECT2)) nResSel = i;
+			if (nResScreen < 0 && pM->byTargetType == MAGICTARGETTYPE_SCREEN) nResScreen = i;
+		}
+		if (nAtkCircle < 0 && pM->byType == MAGICTYPE_HPDOWN && pM->byTarget == MAGICTARGET_NPC &&
+			pM->byTargetType == MAGICTARGETTYPE_CIRCLE && pM->byTargetArea >= 1) nAtkCircle = i;
+	}
+	printf("merc magic found healsel=%d healcircle=%d ressel=%d resscreen=%d atkcircle=%d\n",
+		(int)(nHealSel > 0), (int)(nHealCircle > 0), (int)(nResSel > 0), (int)(nResScreen > 0), (int)(nAtkCircle > 0));
+	BYTE byMapFlgBack = pMap->byFlg;
+	pMap->byFlg &= ~MAPFLG_MAGIC;
+	/* 雇い主のとなりに置く */
+	pMerc->dwX = pOwner->dwX + 1;
+	pMerc->dwY = pOwner->dwY;
+	pOwner->wHP = pOwner->wMaxHP;
+	pOwner->byDirection = 3;
+
+	/* 選んで回復 */
+	pMerc->wHP = 1;
+	if (nHealSel > 0) MagicProcItem(pOwner->dwTblID, (BYTE)nHealSel, pMerc->dwTblID);
+	printf("merc magic healsel up=%d\n", (int)(pMerc->wHP > 1));
+	/* 周りを回復 */
+	pMerc->wHP = 1;
+	if (nHealCircle > 0) MagicProcItem(pOwner->dwTblID, (BYTE)nHealCircle, (DWORD)-1);
+	printf("merc magic healcircle up=%d\n", (int)(pMerc->wHP > 1));
+	/* 周りへの攻撃は傭兵に当たらない */
+	WORD wHPAtk = pMerc->wHP = pMerc->wMaxHP;
+	if (nAtkCircle > 0) MagicProcItem(pOwner->dwTblID, (BYTE)nAtkCircle, (DWORD)-1);
+	printf("merc magic atkcircle same=%d\n", (int)(pMerc->wHP == wHPAtk));
+
+	/* 倒れた傭兵を選んで蘇生 → 傭兵の処理で起き上がる */
+	pMerc->wHP = 0;
+	MercenaryDamaged(NULL, pMerc);
+	s_dwFakeNow += 100;
+	g_dwTime = s_dwFakeNow;
+	pProc->Proc(g_dwTime);
+	if (nResSel > 0) MagicProcItem(pOwner->dwTblID, (BYTE)nResSel, pMerc->dwTblID);
+	s_dwFakeNow += 100;
+	g_dwTime = s_dwFakeNow;
+	pProc->Proc(g_dwTime);
+	printf("merc magic ressel alive=%d state=%d owner=%d\n", (int)(pMerc->wHP > 0),
+		(int)(pMerc->byCharState != CHARSTATE_DEAD), (int)(GetMercenaryOwner(pMerc) == pOwner));
+	/* 画面内の蘇生 */
+	pMerc->wHP = 0;
+	MercenaryDamaged(NULL, pMerc);
+	s_dwFakeNow += 100;
+	g_dwTime = s_dwFakeNow;
+	pProc->Proc(g_dwTime);
+	if (nResScreen > 0) MagicProcItem(pOwner->dwTblID, (BYTE)nResScreen, (DWORD)-1);
+	s_dwFakeNow += 100;
+	g_dwTime = s_dwFakeNow;
+	pProc->Proc(g_dwTime);
+	printf("merc magic resscreen alive=%d state=%d\n", (int)(pMerc->wHP > 0), (int)(pMerc->byCharState != CHARSTATE_DEAD));
+	pMerc->wHP = pMerc->wMaxHP;
+	pMap->byFlg = byMapFlgBack;
+}
+
+static void TestMercenary(const std::vector<int> &aLogin, BOOL bMagic)
+{
+	printf(bMagic ? "== K2. Mercenary magic ==\n" : "== K. Mercenary ==\n");
 	if (aLogin.empty()) {
 		return;
 	}
@@ -1911,6 +1984,24 @@ static void TestMercenary(const std::vector<int> &aLogin)
 	}
 	CCharProcMERCENARY *pProc = (CCharProcMERCENARY *)pMerc->pProc;
 	printf("merc hired dist=%d\n", abs((int)pMerc->dwX - (int)pOwner->dwX) + abs((int)pMerc->dwY - (int)pOwner->dwY));
+
+	/* 特技のテストだけ（最後に流す） */
+	if (bMagic) {
+		MercenarySetBattleMode(pOwner, FALSE);	/* 戦わせない */
+		TestMercMagicBody(pOwner, pMerc, pProc, pMap);
+		MercenaryOwnerLogout(pOwner);
+		DeleteTblNoPC((int)pOwner->dwTblID);
+		pOwner->dwMapID = dwMapBack;
+		pOwner->dwX = dwXBack;
+		pOwner->dwY = dwYBack;
+		memcpy(pOwner->waItem, waItemBack, sizeof(waItemBack));
+		memcpy(pOwner->waEqu, waEquBack, sizeof(waEquBack));
+		pOwner->wHP = wHPBack;
+		pOwner->wMaxHP = wMaxHPBack;
+		pOwner->dwGold = dwGoldBack;
+		AddTblNoPC((int)pOwner->dwTblID);
+		return;
+	}
 
 	/* 1) 道さがし：傭兵をいろいろなマスに置き、マップの敵へ行く道を前の方法と比べる */
 	{
