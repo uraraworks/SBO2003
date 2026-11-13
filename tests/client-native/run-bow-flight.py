@@ -149,7 +149,8 @@ int main() {
     assert(c.dwAtackTblID==2 && c.byTurnLV==0 && c.dwTimeTurnLV==0);
     c.byDotMove=0;now=200;UpdateBowTurnGage(&c);assert(c.dwTimeTurnLV==200);
     c.byTurnLV=80;c.byDirection=0;UpdateBowTurnGage(&c);
-    assert(c.dwTimeTurnLV==0 && c.byTurnLV==0 && c.dwAtackTblID==2);
+    assert(c.dwTimeTurnLV==200 && c.byTurnLV==80 && c.dwAtackTblID==2);
+    PauseBowTurnGage(&c);assert(c.dwTimeTurnLV==0 && c.byTurnLV==0);
     now=300;UpdateBowTurnGage(&c);assert(c.dwTimeTurnLV==300);
     far.dwX=12;UpdateBowTurnGage(&c);assert(c.dwTimeTurnLV==0 && c.dwAtackTblID==2);
     now=400;UpdateBowTurnGage(&c);assert(c.dwTimeTurnLV==0);

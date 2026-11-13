@@ -2821,14 +2821,12 @@ DWORD	g_dwAutoGageLastFront	= 0;			/* 自動ゲージで最後に目の前に敵
 DWORD	g_dwAutoGageSuppress	= (DWORD)-1;	/* Z でやめた相手(目の前から離れるまで自動で溜め直さない) */
 
 static DWORD s_dwBowGageX, s_dwBowGageY;
-static BYTE s_byBowGageDirection;
 
 void StartTurnGage(PCHARINFO pChar, DWORD dwAtackTblID)
 {
     if (GetBowWeapon(pChar)) {
         s_dwBowGageX = pChar->dwX;
         s_dwBowGageY = pChar->dwY;
-        s_byBowGageDirection = pChar->byDirection;
     }
 	pChar->byTurnLV		= 0;
 	pChar->dwAtackTblID	= dwAtackTblID;
@@ -2912,10 +2910,9 @@ void UpdateBowTurnGage(PCHARINFO c)
         g_bDraw = TRUE;
         return;
     }
-    BOOL changed = s_dwBowGageX != c->dwX || s_dwBowGageY != c->dwY || s_byBowGageDirection != c->byDirection;
+    BOOL changed = s_dwBowGageX != c->dwX || s_dwBowGageY != c->dwY;  /* 向きは見ない(自動で向く場合はリセットしない) */
     s_dwBowGageX = c->dwX;
     s_dwBowGageY = c->dwY;
-    s_byBowGageDirection = c->byDirection;
     if (changed || c->byDotMove || g_bReqestPos || !IsBowAttackTarget(c, g_aCharInfo[target])) {
         PauseBowTurnGage(c);
         return;
