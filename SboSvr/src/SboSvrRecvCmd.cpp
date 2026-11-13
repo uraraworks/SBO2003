@@ -69,6 +69,7 @@ void	SetInitCharData				(PCHARINFO);									/* キャラの初期値を設定 *
 void	CharTargetPC				(PCHARINFO, PCHARINFO, DWORD);					/* キャラのついてく設定 */
 void	CharTargetCancelPC			(PCHARINFO);									/* キャラのついていく解除 */
 void	TailMoveChain				(PCHARINFO);									/* ついてきているキャラを順に動かす */
+static void FloorDamageOnStep		(PCHARINFO);									/* ダメージ床に1歩入った時の処理 */
 BOOL	CheckCharX					(PCHARINFO pChar, DWORD dwX, DWORD dwXTarget);	/* キャラサイズに合わせた当たり判定(横) */
 int		GetCharX					(PCHARINFO, DWORD, DWORD, BOOL);				/* キャラサイズに合わせた距離を求める(横) */
 int		GetCharDistanceX			(PCHARINFO, PCHARINFO);							/* キャラサイズに合わせた距離を求める(横) */
@@ -2141,6 +2142,11 @@ void TailMoveChain(PCHARINFO pParent)
 		pChar->byFlg &= ~CHARINFOFLG_DIRECTION;
 		pChar->byFlg &= ~CHARINFOFLG_MOVE;
 
+		/* ついていっているプレイヤーもダメージ床を踏む（傭兵はHPの知らせ方が違うので今は踏まない） */
+		if (pChar->byNpcType == NPCTYPE_INIT) {
+			FloorDamageOnStep (pChar);
+		}
+
 		/* 次は、このキャラについてきているキャラ */
 		pParent = pChar;
 	}
@@ -3808,6 +3814,54 @@ void RecvDataProcCHGDIRECTION(PBYTE pData, DWORD dwDataSize)
 }
 
 /* ========================================================================= */
+/* 関数名：FloorDamageOnStep												 */
+/* 内容：ダメージ床（毒沼・溶岩など）のマスに1歩入った時の処理				 */
+/*		 パーツの byDamage だけHPが減る(HPは1で止まり、床では倒れない)		 */
+/*		 byPoison が 0 でなければ、その秒数だけ毒になる(毒の強さは byDamage)	 */
+/* ========================================================================= */
+static void FloorDamageOnStep(PCHARINFO pChar)
+{
+	int nMapNo, nDamage;
+	PMAPINFO pMap;
+	PMAPPARTSINFO pParts;
+	WORD wParts;
+	char szTmp[16];
+
+	if ((pChar->wHP == 0) || (pChar->byCharState == CHARSTATE_DEAD)) {
+		return;
+	}
+	nMapNo = GetMapNo (pChar->dwMapID);
+	if (nMapNo < 0) {
+		return;
+	}
+	pMap = g_aMapInfo[nMapNo];
+	if ((pChar->dwX >= (DWORD)pMap->nCX) || (pChar->dwY >= (DWORD)pMap->nCY)) {
+		return;
+	}
+	wParts = pMap->pwMap[pChar->dwX + pChar->dwY * pMap->nCX];
+	if (wParts >= g_wCountMapParts) {
+		return;
+	}
+	pParts = &g_aMapPartsInfo[wParts];
+	if (pParts->byDamage == 0) {
+		return;
+	}
+
+	nDamage = min ((int)pParts->byDamage, (int)pChar->wHP - 1);
+	if (nDamage > 0) {
+		pChar->wHP -= (WORD)nDamage;
+		wsprintf (szTmp, "%d", nDamage);
+		SendCmdADDCHAREFC (pChar->dwTblID, RGB (250, 60, 4), szTmp);
+		SendCmdCHARSTATUSHPMANA (pChar->dwTblID, pChar->dwTblID);
+	}
+	/* 毒になる床（もう毒なら、かけ直さない。歩くたびに毒の時計が戻らないように） */
+	if (pParts->byPoison && !CheckCharInfoTimer (pChar->dwTblID, CHARINFOTIMEREVENT_POISON)) {
+		SetCharInfoTimerStatus (pChar, CHARINFOTIMEREVENT_POISON, pParts->byDamage, (DWORD)pParts->byPoison * 1000);
+		SendCmdADDCHAREFC (pChar->dwTblID, RGB (190, 80, 255), "毒");
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcCHARPOS												 */
 /* 内容：受信データ処理(移動要求)											 */
 /* 日付：2003/05/17															 */
@@ -3866,6 +3920,7 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 		if ((pChar->dwX != (DWORD)pPara->byX) || (pChar->dwY != (DWORD)pPara->byY)) {
 			RenewCharBridgeLayerSvr (pChar, (int)pPara->byX, (int)pPara->byY, pPara->byDirection);
 		}
+		BOOL bStep = ((pChar->dwX != (DWORD)pPara->byX) || (pChar->dwY != (DWORD)pPara->byY));
 		pChar->byDirection = pPara->byDirection;
 		pChar->dwX = (DWORD)pPara->byX;
 		pChar->dwY = (DWORD)pPara->byY;
@@ -3883,6 +3938,11 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 		if (pChar->dwLastBattle) {
 			/* 移動しなおしたのでカウンタ初期化 */
 			pChar->dwLastBattle = timeGetTime ();
+		}
+
+		/* ダメージ床（毒沼・溶岩など）に入った？ */
+		if (bStep) {
+			FloorDamageOnStep (pChar);
 		}
 
 		/* 依頼の見えるポータルに乗った？ */
@@ -3994,6 +4054,8 @@ void RecvDataProcMAPPARTSADD(PBYTE pData, DWORD dwDataSize)
 		pPartsTmp1->byAnimeCount = pPartsTmp2->byAnimeCount;
 		pPartsTmp1->byLevel = pPartsTmp2->byLevel;
 		pPartsTmp1->byLight = pPartsTmp2->byLight;
+		pPartsTmp1->byDamage = pPartsTmp2->byDamage;
+		pPartsTmp1->byPoison = pPartsTmp2->byPoison;
 		pPartsTmp1->wGrpID = pPartsTmp2->wGrpID;
 		pPartsTmp1->wBackID = pPartsTmp2->wBackID;
 		pPartsTmp1->pAnimeInfo = pPartsTmp2->pAnimeInfo;
@@ -4090,6 +4152,8 @@ void RecvDataProcMAPPARTS(PBYTE pData, DWORD dwDataSize)
 	pPartsTmp->byAnimeCount = pRecv->byAnimeCount;
 	pPartsTmp->byLevel = pRecv->byLevel;
 	pPartsTmp->byLight = pRecv->byLight;
+	pPartsTmp->byDamage = pRecv->byDamage;
+	pPartsTmp->byPoison = pRecv->byPoison;
 	pPartsTmp->wGrpID = pRecv->wGrpID;
 	pPartsTmp->wBackID = pRecv->wBackID;
 	pPartsTmp->pAnimeInfo = pRecv->pAnimeInfo;

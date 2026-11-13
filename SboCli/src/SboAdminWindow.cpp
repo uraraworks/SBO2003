@@ -1836,6 +1836,13 @@ void AdminOnCommandMapParts(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 			ZeroMemory (szTmp, sizeof (szTmp));
 			GetWindowText (m_hWndEdit3, szTmp, sizeof (szTmp));
 			pParts->byLight = (BYTE)max (0, min (atoi (szTmp), 7));
+			/* ダメージ床(1歩ごとのダメージ)と毒になる秒数(0〜255) */
+			ZeroMemory (szTmp, sizeof (szTmp));
+			GetWindowText (m_hWndEdit4, szTmp, sizeof (szTmp));
+			pParts->byDamage = (BYTE)max (0, min (atoi (szTmp), 255));
+			ZeroMemory (szTmp, sizeof (szTmp));
+			GetWindowText (m_hWndEdit5, szTmp, sizeof (szTmp));
+			pParts->byPoison = (BYTE)max (0, min (atoi (szTmp), 255));
 
 			SendCmdMAPPARTS (g_nSelectPartsID);
 		}
@@ -1861,6 +1868,8 @@ void AdminOnCommandMapParts(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 			SetWindowText (m_hWndEdit1, szTmp);
 			SetWindowText (m_hWndEdit2, "");
 			SetWindowText (m_hWndEdit3, "");
+			SetWindowText (m_hWndEdit4, "");
+			SetWindowText (m_hWndEdit5, "");
 			InvalidateRect (g_hWndAdmin, NULL, TRUE);
 		}
 		break;
@@ -6996,6 +7005,11 @@ void AdminOnLButtonDownMapParts(BOOL fDoubleClick, int x, int y, UINT keyFlags)
 			/* 灯りの範囲 */
 			wsprintf (szTmp, "%d", pParts->byLight);
 			SetWindowText (m_hWndEdit3, szTmp);
+			/* ダメージ床 */
+			wsprintf (szTmp, "%d", pParts->byDamage);
+			SetWindowText (m_hWndEdit4, szTmp);
+			wsprintf (szTmp, "%d", pParts->byPoison);
+			SetWindowText (m_hWndEdit5, szTmp);
 
 			InvalidateRect (g_hWndAdmin, NULL, TRUE);
 		}
@@ -7366,6 +7380,8 @@ void MakeAdminWndMapParts(void)
 	m_hWndEdit1 = GetDlgItem (m_hWndDialog, IDC_EDIT1);
 	m_hWndEdit2 = GetDlgItem (m_hWndDialog, IDC_EDIT2);
 	m_hWndEdit3 = GetDlgItem (m_hWndDialog, IDC_EDIT3);		/* 灯りの範囲 */
+	m_hWndEdit4 = GetDlgItem (m_hWndDialog, IDC_EDIT4);		/* ダメージ床(1歩ごとのダメージ) */
+	m_hWndEdit5 = GetDlgItem (m_hWndDialog, IDC_EDIT5);		/* ダメージ床(毒になる秒数) */
 	m_hWndButton1 = GetDlgItem (m_hWndDialog, IDC_BUTTON6);
 	m_hWndButton2 = GetDlgItem (m_hWndDialog, IDC_BUTTON7);
 	m_hWndButton3 = GetDlgItem (m_hWndDialog, IDC_BUTTON5);

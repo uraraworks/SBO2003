@@ -1646,6 +1646,8 @@ typedef struct _MAPPARTSINFO {
 	BYTE		byLight;											/* 灯りの範囲(マス。0なら光らない。暗いマップで周りを照らす) */
 	WORD		wGrpID;												/* グラフィックID */
 	WORD		wBackID;											/* 重ね合わせ時の背景ID */
+	BYTE		byDamage;											/* ダメージ床：1歩ごとのダメージ(0ならダメージ床ではない。HPは1で止まり倒れない) */
+	BYTE		byPoison;											/* ダメージ床：踏むと毒になる秒数(0なら毒にならない。毒の強さは byDamage) */
 	DWORD		dwLastAnime;										/* 最後にアニメーションした時間 */
 	ANIMEINFO	*pAnimeInfo;										/* アニメーション情報 */
 } MAPPARTSINFO, *PMAPPARTSINFO;
@@ -1660,6 +1662,8 @@ typedef struct _MAPPARTSINFOSAVE {
 	BYTE		byLight;											/* 灯りの範囲(マス。0なら光らない。暗いマップで周りを照らす) */
 	WORD		wGrpID;												/* グラフィックID */
 	WORD		wBackID;											/* 重ね合わせ時の背景ID */
+	BYTE		byDamage;											/* ダメージ床：1歩ごとのダメージ(0ならダメージ床ではない。HPは1で止まり倒れない) */
+	BYTE		byPoison;											/* ダメージ床：踏むと毒になる秒数(0なら毒にならない。毒の強さは byDamage) */
 	ANIMEINFO	*pAnimeInfo;										/* アニメーション情報 */
 } MAPPARTSINFOSAVE, *PMAPPARTSINFOSAVE;
 

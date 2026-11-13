@@ -908,6 +908,7 @@ static void TestStatusUp(const std::vector<int> &aLogin);
 static void TestMagicWall(const std::vector<int> &aLogin);
 static void TestSpace(const std::vector<int> &aLogin);
 static void TestAdminQuest(const std::vector<int> &aLogin);
+static void TestFloorDamage(const std::vector<int> &aLogin);
 extern void BattleProcCheck(PCHARINFO);
 
 static void TestTownWarp(const std::vector<int> &aLogin)
@@ -1349,6 +1350,8 @@ static void TestWorld(void)
 	TestSpace(aLogin);
 	/* U. 管理者ウィンドウからギルドの依頼を直す */
 	TestAdminQuest(aLogin);
+	/* V. ダメージ床（毒沼・溶岩など） */
+	TestFloorDamage(aLogin);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -3515,6 +3518,125 @@ static BOOL PushIsFree(PMAPINFO pMap, int x, int y)
 		return FALSE;
 	}
 	return (CheckCharBlockNPC(pMap->dwID, x, y) == (DWORD)-1);
+}
+
+/* ------------------------------------------------------------------------- */
+/* V. ダメージ床（パーツの byDamage・byPoison）								 */
+/*    1歩入るとHPが減るか・向きを変えただけでは減らないか・HPは1で止まるか	 */
+/*    毒になる床で毒になるか・もう毒ならかけ直さないか						 */
+/* ------------------------------------------------------------------------- */
+static void FloorStep(PCHARINFO pPC, int x, int y, BYTE byDir)
+{
+	CMDPARA_CHARPOS Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_CHARPOS;
+	Para.pID = pPC->pID;
+	Para.dwTblID = pPC->dwTblID;
+	Para.dwMapID = pPC->dwMapID;
+	Para.byX = (BYTE)x;
+	Para.byY = (BYTE)y;
+	Para.byDirection = byDir;
+	TestRecv(pPC, &Para, sizeof(Para));
+}
+
+static void TestFloorDamage(const std::vector<int> &aLogin)
+{
+	printf("== V. FloorDamage ==\n");
+	if (aLogin.size() < 1) {
+		return;
+	}
+	PCHARINFO pPC = g_aCharInfo[aLogin[0]];
+	/* プレイヤーのいるマップで、横に2マス続けて歩ける所を探す */
+	int nMapNo = GetMapNo(pPC->dwMapID);
+	if (nMapNo < 0) {
+		printf("no map\n");
+		return;
+	}
+	PMAPINFO pMap = g_aMapInfo[nMapNo];
+	int nX = -1, nY = -1;
+	for (int y = 0; y < pMap->nCY && nX < 0; y ++) {
+		for (int x = 0; x + 1 < pMap->nCX; x ++) {
+			if (PushIsFree(pMap, x, y) && PushIsFree(pMap, x + 1, y)) {
+				nX = x;
+				nY = y;
+				break;
+			}
+		}
+	}
+	if (nX < 0) {
+		printf("no floor\n");
+		return;
+	}
+	PMAPPARTSINFO pParts = &g_aMapPartsInfo[pMap->pwMap[(nX + 1) + nY * pMap->nCX]];
+	BYTE byDamageBack = pParts->byDamage, byPoisonBack = pParts->byPoison;
+	DWORD dwXBack = pPC->dwX, dwYBack = pPC->dwY;
+	BYTE byDirBack = pPC->byDirection;
+	WORD wHPBack = pPC->wHP;
+	/* 左のマスと同じパーツなら、左のマスもダメージ床になるので、立つ所は直接置く */
+	pParts->byDamage = 5;
+	pParts->byPoison = 0;
+
+	DeleteTblNoPC((int)pPC->dwTblID);
+	pPC->dwX = pPC->dwXBack = (DWORD)nX;
+	pPC->dwY = pPC->dwYBack = (DWORD)nY;
+	AddTblNoPC((int)pPC->dwTblID);
+	pPC->wHP = 20;
+	FloorStep(pPC, nX + 1, nY, 3);
+	printf("floor step hp=%d\n", pPC->wHP);
+	/* その場で向きを変えただけ（同じマスの CHARPOS）では減らない */
+	FloorStep(pPC, nX + 1, nY, 0);
+	printf("floor turn hp=%d\n", pPC->wHP);
+	/* HPは1で止まる */
+	DeleteTblNoPC((int)pPC->dwTblID);
+	pPC->dwX = pPC->dwXBack = (DWORD)nX;
+	AddTblNoPC((int)pPC->dwTblID);
+	pPC->wHP = 3;
+	FloorStep(pPC, nX + 1, nY, 3);
+	printf("floor low hp=%d\n", pPC->wHP);
+	/* 毒になる床 */
+	pParts->byPoison = 10;
+	DeleteTblNoPC((int)pPC->dwTblID);
+	pPC->dwX = pPC->dwXBack = (DWORD)nX;
+	AddTblNoPC((int)pPC->dwTblID);
+	pPC->wHP = 50;
+	FloorStep(pPC, nX + 1, nY, 3);
+	int nPoison = CheckCharInfoTimer(pPC->dwTblID, CHARINFOTIMEREVENT_POISON);
+	DWORD dwStart = 0;
+	for (int i = 0; i < pPC->aTimerEvent.GetSize(); i ++) {
+		if (pPC->aTimerEvent[i]->byType == CHARINFOTIMEREVENT_POISON) {
+			dwStart = pPC->aTimerEvent[i]->dwTimeStart;
+		}
+	}
+	printf("floor poison hp=%d poison=%d\n", pPC->wHP, nPoison);
+	/* もう毒ならかけ直さない（毒の始まりの時刻が変わらない） */
+	s_dwFakeNow += 500;
+	DeleteTblNoPC((int)pPC->dwTblID);
+	pPC->dwX = pPC->dwXBack = (DWORD)nX;
+	AddTblNoPC((int)pPC->dwTblID);
+	FloorStep(pPC, nX + 1, nY, 3);
+	DWORD dwStart2 = 0;
+	for (int i = 0; i < pPC->aTimerEvent.GetSize(); i ++) {
+		if (pPC->aTimerEvent[i]->byType == CHARINFOTIMEREVENT_POISON) {
+			dwStart2 = pPC->aTimerEvent[i]->dwTimeStart;
+		}
+	}
+	printf("floor poison again hp=%d same_start=%d\n", pPC->wHP, (int)(dwStart == dwStart2));
+
+	/* 片付け */
+	for (int i = pPC->aTimerEvent.GetSize() - 1; i >= 0; i --) {
+		if (pPC->aTimerEvent[i]->byType == CHARINFOTIMEREVENT_POISON) {
+			delete pPC->aTimerEvent[i];
+			pPC->aTimerEvent.RemoveAt(i);
+		}
+	}
+	pParts->byDamage = byDamageBack;
+	pParts->byPoison = byPoisonBack;
+	DeleteTblNoPC((int)pPC->dwTblID);
+	pPC->dwX = pPC->dwXBack = dwXBack;
+	pPC->dwY = pPC->dwYBack = dwYBack;
+	AddTblNoPC((int)pPC->dwTblID);
+	pPC->byDirection = byDirBack;
+	pPC->wHP = wHPBack;
 }
 
 static void TestCharPush(const std::vector<int> &aLogin)

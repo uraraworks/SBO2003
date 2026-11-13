@@ -1303,4 +1303,10 @@ adminquest add got=1 result=1 no=1 count=2 | id=2 name=AdminQuest2
 adminquest badno got=1 result=0 count=2
 adminquest noname got=1 result=0 name=AdminQuest2
 adminquest short got=0
+== V. FloorDamage ==
+floor step hp=15
+floor turn hp=15
+floor low hp=1
+floor poison hp=45 poison=1
+floor poison again hp=40 same_start=1
 == done ==
