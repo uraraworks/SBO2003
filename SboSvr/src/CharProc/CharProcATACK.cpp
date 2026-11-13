@@ -117,7 +117,7 @@ BOOL CCharProcATACK::HitCurrentCell(void)
 	DWORD dwTblID;
 	BOOL bRet = FALSE, bResult;
 	PCHARINFO pCharTarget, pCharParent;
-	dwTblID = CheckCharBlockPC (m_pChar->dwMapID, m_pChar->dwX, m_pChar->dwY, m_pChar->dwSpaceID);
+	dwTblID = m_pChar->dwBowDuration ? (DWORD)-1 : CheckCharBlockPC (m_pChar->dwMapID, m_pChar->dwX, m_pChar->dwY, m_pChar->dwSpaceID);
 	/* プレイヤーと重なってない？ */
 	if (dwTblID == -1) {
 		dwTblID = CheckCharBlockNPC2 (m_pChar->dwTblID, m_pChar->dwMapID, m_pChar->dwX, m_pChar->dwY, m_pChar->dwSpaceID);
@@ -252,10 +252,9 @@ BOOL CCharProcATACK::ProcBow(DWORD now)
         int y = (int)floor((c->nBowStartY + (double)dy * i / pixels + 16) / 32);
         if (x == (int)c->dwX && y == (int)c->dwY) continue;
         /* 斜めに角を横切る時も壁を抜けない。カウンターは既存と同様に通す。 */
-        BOOL blocked = IsMagicWall(c->dwMapID, x, y) ||
-            (!CheckCharBlock(c, c->dwMapID, x, y) && CheckCharBlock(c->dwMapID, x, y));
+        BOOL blocked = IsMagicWall(c->dwMapID, x, y);
         if (x != (int)c->dwX && y != (int)c->dwY) {
-            blocked |= IsMagicWall(c->dwMapID, x, c->dwY) || IsMagicWall(c->dwMapID, c->dwX, y);
+            blocked |= IsMagicWall(c->dwMapID, x, c->dwY) && IsMagicWall(c->dwMapID, c->dwX, y);
         }
         c->dwBowElapsed = (DWORD)((double)c->dwBowDuration * i / pixels);
         if (blocked) { DeleteChar(c->dwTblID); return FALSE; }

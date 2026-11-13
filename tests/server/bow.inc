@@ -34,7 +34,7 @@ static int TestBowOnly()
     PITEMINFO item = new ITEMINFO; ZeroMemory(item, sizeof(*item));
     PITEMINFO_WEAPON weapon = new ITEMINFO_WEAPON; ZeroMemory(weapon, sizeof(*weapon));
     item->byType = ITEMTYPE_WEAPON; item->pData = weapon;
-    weapon->byAtackType = ATACKTYPE_BOW; weapon->byData1 = 3;
+    weapon->byAtackType = ATACKTYPE_ARROW; weapon->byData1 = 3;
     weapon->byData2 = weapon->byData3 = weapon->byData4 = weapon->byData5 = 1;
     int itemID = g_aItemInfo.GetSize(); g_aItemInfo.Add(item);
     PCHARINFO pc = BowTestChar(NPCTYPE_INIT, 2, 2);
@@ -75,22 +75,10 @@ static int TestBowOnly()
     ((CCharProcATACK*)arrow->pProc)->Proc(s_dwFakeNow);
     BowCheck(enemy->dwLastBattle != 0 && enemy->dwTargetTblID == pc->dwTblID, "contact alerts enemy to shooter");
     BowCheck(g_aCharInfo[arrowID]->pID == 0, "arrow disappears on first contact");
-    BowCheck(BowRange(3,20) == 3 && BowRange(3,100) == 7 && BowRange(3,ATACKRATE_JUST) == 7 &&
-        BowTileTime(20) == 200 && BowTileTime(100) == 100, "lap prototype values");
-    weapon->byAtackType = ATACKTYPE_ARROW;
-    BowCheck(!BowWeapon(pc,item), "throwing weapons are not bows");
+    BowCheck(BowRange(5,20) == 4 && BowRange(5,100) == 6 &&
+        BowTileTime(20) == 98 && BowTileTime(100) == 50, "lap range and speed");
+    BowCheck(BowWeapon(pc,item) != NULL, "player arrow weapons use lock-on");
     pc->dwTargetTblID = (DWORD)-1;
-    BowCheck(BattleProcWeapon(pc), "legacy projectile still launches without target");
-    arrow = NULL;
-    for (int i = 0; i < g_aCharInfo.GetSize(); ++i)
-        if (g_aCharInfo[i]->byNpcType == NPCTYPE_ATACK && g_aCharInfo[i]->pID) arrow = g_aCharInfo[i];
-    BowCheck(arrow && !arrow->dwBowDuration && arrow->wHP == 3, "legacy projectile keeps original range and movement");
-    SvrSendCaptureBegin();
-    SendCmdCHARPOS(arrow->pID, arrow->dwTblID, 0, 1);
-    BowCheck(SvrSendCaptureEnd(packet) && packet.size() == sizeof(CMDPARA_CHARPOS), "legacy projectile packet size is unchanged");
-
-    DeleteChar(arrow->dwTblID);
-    weapon->byAtackType = ATACKTYPE_BOW;
     enemy->dwLastBattle = 0; enemy->dwTargetTblID = (DWORD)-1;
     enemy->dwSpaceID = 9;
     pc->dwLastBattle = 0; TestRecv(pc, &req, sizeof(req));
@@ -128,12 +116,41 @@ static int TestBowOnly()
     WORD wall = g_wCountMapParts++;
     g_aMapPartsInfo[wall] = g_aMapPartsInfo[oldPart];
     g_aMapPartsInfo[wall].byHitType = PARTSHIT_BLOCK1;
-    map->pwMap[cell] = wall;
     arrow = fire(); arrowID = arrow->dwTblID;
+    map->pwMap[cell] = wall;
     s_dwFakeNow += 1000;
     ((CCharProcATACK*)arrow->pProc)->Proc(s_dwFakeNow);
     BowCheck(!g_aCharInfo[arrowID]->pID && enemy->dwLastBattle == 0, "intermediate wall stops arrow before enemy");
-    map->pwMap[cell] = oldPart; --g_wCountMapParts;
+    map->pwMap[cell] = oldPart;
+    weapon->byData1 = 5;
+    enemy->dwX = 5; enemy->dwY = 5; enemy->dwLastBattle = 0;
+    arrow = fire(); arrowID = arrow->dwTblID;
+    s_dwFakeNow += 1000;
+    ((CCharProcATACK*)arrow->pProc)->Proc(s_dwFakeNow);
+    BowCheck(enemy->dwLastBattle != 0 && !g_aCharInfo[arrowID]->pID, "diagonal three tiles hits");
+    g_aMapPartsInfo[wall].byHitType = PARTSHIT_COUNTER;
+    map->pwMap[cell] = wall;
+    enemy->dwLastBattle = 0;
+    arrow = fire(); arrowID = arrow->dwTblID;
+    s_dwFakeNow += 1000;
+    ((CCharProcATACK*)arrow->pProc)->Proc(s_dwFakeNow);
+    BowCheck(enemy->dwLastBattle != 0 && !g_aCharInfo[arrowID]->pID, "counter passes arrow");
+    map->pwMap[cell] = oldPart;
+    enemy->dwX = 7; enemy->dwY = 2; enemy->dwLastBattle = 0;
+    pc->dwTargetTblID = enemy->dwTblID; pc->byAtackRate = 20;
+    BowCheck(BattleProcWeapon(pc), "lap one launches");
+    arrow = NULL;
+    for (int i = 0; i < g_aCharInfo.GetSize(); ++i)
+        if (g_aCharInfo[i]->dwBowDuration && g_aCharInfo[i]->pID) arrow = g_aCharInfo[i];
+    BowCheck(arrow != NULL, "lap one arrow created");
+    s_dwFakeNow += 1000;
+    ((CCharProcATACK*)arrow->pProc)->Proc(s_dwFakeNow);
+    BowCheck(enemy->dwLastBattle == 0, "lap one does not reach five tiles");
+    arrow = fire();
+    s_dwFakeNow += 1000;
+    ((CCharProcATACK*)arrow->pProc)->Proc(s_dwFakeNow);
+    BowCheck(enemy->dwLastBattle != 0, "lap five reaches five tiles");
+    --g_wCountMapParts;
     delete[] g_aMapPartsInfo; g_aMapPartsInfo = oldParts;
     printf("bow tests passed\n");
     return 0;

@@ -5405,8 +5405,8 @@ void RecvDataProcREQ_ATTACK(PBYTE pData, DWORD dwDataSize)
             BYTE rate = GetAtackRateReq(pChar, pPara->byData);
             double dx = (int)pCharTarget->dwX - (int)pChar->dwX;
             double dy = (int)pCharTarget->dwY - (int)pChar->dwY;
-            int range = BowRange(bow->byData1, rate);
-            if (dx * dx + dy * dy > range * range) return;
+            int range = bow->byData1;
+            if (max(fabs(dx), fabs(dy)) > range || (dx == 0 && dy == 0) || !IsMagicReachChar(pChar, pCharTarget)) return;
             pChar->byAtackRate = rate;
             pChar->dwTargetTblID = pPara->dwData;
             pChar->dwLastBattle = 1;

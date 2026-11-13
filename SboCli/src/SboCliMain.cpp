@@ -2942,11 +2942,11 @@ static void TimerProcAutoTurnGage(PCHARINFO pChar, DWORD dwTime)
 		return;
 	}
 	/* 相手を選んで溜めているゲージ・弓はそのまま */
-	if ((pChar->dwTimeTurnLV && (g_bAutoGage == FALSE)) || ((GetAttackType (pChar) == ATACKTYPE_ARROW) || GetBowWeapon(pChar))) {
+	if (pChar->dwTimeTurnLV && (g_bAutoGage == FALSE)) {
 		return;
 	}
 
-	nFront = FindFrontAttackTarget (pChar);
+	nFront = GetBowWeapon(pChar) ? FindBowAttackTarget(pChar, 100) : FindFrontAttackTarget (pChar);
 	if (nFront == -1) {
 		g_dwAutoGageSuppress = (DWORD)-1;
 		/* 目の前から敵がいなくなってしばらくたったらゲージを消す(一瞬ずれただけでは消さない) */

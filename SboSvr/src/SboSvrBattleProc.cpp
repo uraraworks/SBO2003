@@ -684,14 +684,14 @@ BOOL BattleProcWeapon(PCHARINFO pChar)
 				break;
 			}
 
-            if (pWeapon->byAtackType == ATACKTYPE_BOW && pChar->byNpcType == NPCTYPE_INIT) {
+            if ((pWeapon->byAtackType == ATACKTYPE_ARROW || pWeapon->byAtackType == ATACKTYPE_BOW) && pChar->byNpcType == NPCTYPE_INIT) {
                 if (pChar->dwTargetTblID >= (DWORD)g_aCharInfo.GetSize()) { delete (PCCharProcBase)pCharNew->pProc; delete pCharNew; return TRUE; }
                 PCHARINFO target = g_aCharInfo[pChar->dwTargetTblID];
                 int range = BowRange(pWeapon->byData1, pChar->byAtackRate);
                 double dx = (int)target->dwX - (int)pChar->dwX;
                 double dy = (int)target->dwY - (int)pChar->dwY;
                 if (!BowEnemy(target) || target->dwMapID != pChar->dwMapID || !IsInteractable(pChar, target) ||
-                    dx * dx + dy * dy > range * range || dx * dx + dy * dy == 0) {
+                    max(fabs(dx), fabs(dy)) > pWeapon->byData1 || (dx == 0 && dy == 0) || !IsMagicReachChar(pChar, target)) {
                     delete (PCCharProcBase)pCharNew->pProc; delete pCharNew; return TRUE;
                 }
                 double tx = target->dwX * 32.0, ty = target->dwY * 32.0;
@@ -702,18 +702,13 @@ BOOL BattleProcWeapon(PCHARINFO pChar)
                     vx = target->nBowVelocityX * 32.0 / target->dwBowMoveInterval;
                     vy = target->nBowVelocityY * 32.0 / target->dwBowMoveInterval;
                 }
-                /* |r + v*t| = speed*t を解き、発射時の着弾予測位置を固定する。 */
+                /* 発射時の距離から飛行時間を求め、周回数に応じて先読みする。 */
                 double rx = dx * 32, ry = dy * 32;
-                double a = vx*vx + vy*vy - speed*speed, b = 2*(rx*vx + ry*vy), cc = rx*rx + ry*ry;
-                double disc = b*b - 4*a*cc, flight = sqrt(cc) / speed;
-                if (fabs(a) > 0.000001 && disc >= 0) {
-                    double t1 = (-b - sqrt(disc))/(2*a), t2 = (-b + sqrt(disc))/(2*a);
-                    if (t1 > 0) flight = t1;
-                    if (t2 > 0 && (t1 <= 0 || t2 < t1)) flight = t2;
-                } else if (fabs(b) > 0.000001 && -cc/b > 0) flight = -cc/b;
-                tx += vx * flight; ty += vy * flight;
+                double flight = max(fabs(rx), fabs(ry)) / speed;
+                tx += vx * flight * BowLaps(pChar->byAtackRate) / 5.0;
+                ty += vy * flight * BowLaps(pChar->byAtackRate) / 5.0;
                 rx = tx - pChar->dwX * 32.0; ry = ty - pChar->dwY * 32.0;
-                double distance = sqrt(rx*rx + ry*ry);
+                double distance = max(fabs(rx), fabs(ry));
                 if (distance > range * 32) { rx *= range*32/distance; ry *= range*32/distance; }
                 pCharNew->nBowStartX = (int)pChar->dwX * 32;
                 pCharNew->nBowStartY = (int)pChar->dwY * 32;
@@ -722,7 +717,7 @@ BOOL BattleProcWeapon(PCHARINFO pChar)
                 pCharNew->nBowEndY = max(0, min((map->nCY-1)*32, (int)(pCharNew->nBowStartY + ry)));
                 rx = pCharNew->nBowEndX - pCharNew->nBowStartX;
                 ry = pCharNew->nBowEndY - pCharNew->nBowStartY;
-                pCharNew->dwBowDuration = max(1, (int)(sqrt(rx*rx + ry*ry) / speed));
+                pCharNew->dwBowDuration = max(1, (int)(max(fabs(rx), fabs(ry)) / speed));
                 pCharNew->dwBowOwnerPID = pChar->pID;
                 pCharNew->dwBowStartTime = timeGetTime();
                 pCharNew->dwBowElapsed = 0;

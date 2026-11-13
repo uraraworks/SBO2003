@@ -2,18 +2,18 @@
 #include <math.h>
 extern int anPosAddTblX[], anPosAddTblY[];
 
-/* プロトタイプ: 1～5周。1周目は基礎射程、以後1周につき1マス追加。 */
+/* 周回数は1～5。 */
 inline int BowLaps(int rate) {
     if (rate == ATACKRATE_JUST || rate == 0) rate = 100;
     return rate < TURNGAGE_LAP ? 1 : (rate > 100 ? TURNGAGE_LAPMAX : rate / TURNGAGE_LAP);
 }
-inline int BowRange(int base, int rate) { return base + BowLaps(rate) - 1; }
-/* 1マス200/175/150/125/100ms。斜めでも実距離あたりの速度は同じ。 */
-inline int BowTileTime(int rate) { return 225 - 25 * BowLaps(rate); }
+inline int BowRange(int base, int rate) { return (base * (6 + BowLaps(rate)) + 9) / 10; }
+/* 1マスあたり98/86/74/62/50ms。 */
+inline int BowTileTime(int rate) { return 110 - 12 * BowLaps(rate); }
 inline PITEMINFO_WEAPON BowWeapon(PCHARINFO c, PITEMINFO item) {
     if (!c || c->byNpcType != NPCTYPE_INIT || !item || item->byType != ITEMTYPE_WEAPON || !item->pData) return NULL;
     PITEMINFO_WEAPON w = (PITEMINFO_WEAPON)item->pData;
-    return w->byAtackType == ATACKTYPE_BOW ? w : NULL;
+    return (w->byAtackType == ATACKTYPE_ARROW || w->byAtackType == ATACKTYPE_BOW) ? w : NULL;
 }
 inline BOOL BowEnemy(PCHARINFO c) {
     return c && c->wHP && c->byCharState != CHARSTATE_DEAD &&

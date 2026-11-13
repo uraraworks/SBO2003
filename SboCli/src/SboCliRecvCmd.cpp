@@ -2855,14 +2855,14 @@ int FindBowAttackTarget(PCHARINFO c, BYTE rate)
 {
     PITEMINFO_WEAPON w = GetBowWeapon(c);
     if (!w) return -1;
-    int range = BowRange(w->byData1, rate), best = -1;
+    int range = w->byData1, best = -1;
     double bestDist = range * range + 1.0, bestAngle = -2.0;
     for (int i = 0; i < g_aCharInfo.GetSize(); ++i) {
         PCHARINFO t = g_aCharInfo[i];
         if (!BowEnemy(t) || t->dwTimeDelete || t->dwMapID != c->dwMapID) continue;
         double dx = (int)t->dwX - (int)c->dwX, dy = (int)t->dwY - (int)c->dwY;
         double d = dx * dx + dy * dy;
-        if (d <= 0 || d > range * range) continue;
+        if (d <= 0 || max(fabs(dx), fabs(dy)) > range) continue;
         double angle = (dx * anPosAddTblX[c->byDirection] + dy * anPosAddTblY[c->byDirection]) / sqrt(d);
         if (d < bestDist || (d == bestDist && angle > bestAngle)) {
             best = i; bestDist = d; bestAngle = angle;
