@@ -323,6 +323,86 @@
 		font-size: 13px;
 		word-break: break-all;
 	}
+	.online-env {
+		color: var(--info);
+		font-size: 12px;
+		white-space: nowrap;
+	}
+	/* 利用環境の統計 */
+	.env-btns {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin: 6px 0 0;
+	}
+	.env-btns button {
+		margin: 0;
+		padding: 8px 12px;
+		font-size: 13px;
+	}
+	.env-btns button.on {
+		background: var(--accent);
+		color: #1d1f24;
+		border-color: var(--accent);
+	}
+	.env-table {
+		width: 100%;
+		border-collapse: collapse;
+		margin-top: 12px;
+		font-size: 13px;
+	}
+	.env-table caption {
+		text-align: left;
+		font-weight: bold;
+		font-size: 14px;
+		padding-bottom: 2px;
+	}
+	.env-table th {
+		color: var(--sub);
+		font-weight: normal;
+		font-size: 12px;
+		text-align: right;
+		padding: 2px 4px;
+		white-space: nowrap;
+	}
+	.env-table th:first-child, .env-table td:first-child {
+		text-align: left;
+	}
+	.env-table td {
+		padding: 4px;
+		border-top: 1px solid var(--border);
+		text-align: right;
+		white-space: nowrap;
+	}
+	.env-table td.env-name {
+		white-space: normal;
+		overflow-wrap: break-word;
+	}
+	.env-table td.env-bar {
+		width: 34%;
+		min-width: 76px;
+	}
+	.env-bar-box {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+	.env-bar-fill {
+		height: 10px;
+		min-width: 1px;
+		border-radius: 2px;
+		background: var(--info);
+		flex: 0 0 auto;
+	}
+	.env-bar-pct {
+		color: var(--sub);
+		font-size: 12px;
+		min-width: 3em;
+		text-align: left;
+	}
+	.env-note {
+		margin: 8px 0 0;
+	}
 	[hidden] { display: none !important; }
 	/* パーツ図鑑・配置案は横に広く使う */
 	body.wide main { max-width: 1240px; }
@@ -540,6 +620,26 @@
 		</div>
 		<div class="msg" id="online-msg"></div>
 		<div id="online-list"></div>
+
+		<h2 class="env-title" style="font-size:16px;margin:22px 0 4px">利用環境の統計</h2>
+		<p class="sub-text" style="margin:0">
+			ゲームにログインした時の OS・ブラウザ・端末です（アカウント名は元に戻せない形でしか残しません。ブラウザの細かい情報や IP は記録しません）。
+		</p>
+		<div class="env-btns" id="env-days">
+			<button type="button" class="sub" data-days="1">今日</button>
+			<button type="button" class="sub" data-days="7">7日</button>
+			<button type="button" class="sub" data-days="30">30日</button>
+			<button type="button" class="sub" data-days="90">90日</button>
+			<button type="button" class="sub" data-days="0">全期間</button>
+		</div>
+		<div class="env-btns" id="env-mode">
+			<button type="button" class="sub" data-mode="accounts">人数</button>
+			<button type="button" class="sub" data-mode="main">メイン環境</button>
+			<button type="button" class="sub" data-mode="logins">ログイン回数</button>
+		</div>
+		<p class="sub-text env-note" id="env-howto"></p>
+		<div class="msg" id="env-msg"></div>
+		<div class="card" id="env-box" hidden></div>
 	</section>
 
 	<!-- 復旧の承認 -->
@@ -1093,7 +1193,9 @@
 			location.hash === '#parts' ? 'parts' : location.hash === '#plans' ? 'plans' :
 			(location.hash === '#mapview' || location.hash === '#npcroute') ? 'mapview' : location.hash === '#recipe' ? 'recipe' : location.hash === '#dot' ? 'dot' :
 			location.hash === '#kobo' ? 'kobo' : 'search');
-		if (location.hash === '#changes') {
+		if (location.hash === '#online') {
+			loadEnvStats();
+		} else if (location.hash === '#changes') {
 			loadChanges();
 		} else if (location.hash === '#ai') {
 			loadAi();
@@ -1225,6 +1327,8 @@
 			selectTab(b.dataset.tab);
 			if (b.dataset.tab === 'recover') {
 				loadRequests();
+			} else if (b.dataset.tab === 'online') {
+				loadEnvStats();
 			} else if (b.dataset.tab === 'feedback') {
 				loadFeedback();
 			} else if (b.dataset.tab === 'changes') {
@@ -1248,6 +1352,7 @@
 	/* ---- プレイヤー（ログイン中） ---- */
 	function loadOnline() {
 		var btn = $('online-get');
+		loadEnvStats();
 		btn.disabled = true;
 		setMsg($('online-msg'), '取得しています...', true);
 		api('/api/admin/online', { session: session }).then(function (data) {
@@ -1282,6 +1387,9 @@
 				if (p.admin) {
 					head.appendChild(el('span', 'tag admin', '管理者'));
 				}
+				if (p.env) {
+					head.appendChild(el('span', 'online-env', envLabel('osBrowser', p.env.os + '+' + p.env.browser)));
+				}
 				row.appendChild(head);
 				row.appendChild(el('div', 'online-map', p.mapID + '：' + (p.mapName || '（名前の無いマップ）') +
 					'　(' + p.x + ', ' + p.y + ')'));
@@ -1294,6 +1402,140 @@
 		});
 	}
 	$('online-get').addEventListener('click', loadOnline);
+
+	/* ---- 利用環境の統計 ---- */
+	var ENV_NAMES = {
+		os: { windows: 'Windows', mac: 'Mac', ios: 'iOS', android: 'Android', linux: 'Linux', chromeos: 'ChromeOS', other: 'その他' },
+		browser: { chrome: 'Chrome', safari: 'Safari', edge: 'Edge', firefox: 'Firefox', samsung: 'Samsung', opera: 'Opera', native: 'Windows版ソフト', other: 'その他' },
+		device: { pc: 'パソコン', phone: 'スマホ', tablet: 'タブレット' }
+	};
+	var ENV_TITLES = { os: 'OS 別', browser: 'ブラウザ別', device: '端末別', osBrowser: 'OS とブラウザの組み合わせ' };
+	var ENV_HOWTO = {
+		accounts: '人数：期間内にその環境で 1 回でもログインした人の数です。複数の環境を使う人は、使った環境すべてに 1 人ずつ数えます（合計が実人数より多くなります）。',
+		main: 'メイン環境：人ごとに、期間内で一番多く使った環境 1 つだけで数えます（合計が実人数になります。同じ回数なら、最後に使った方）。',
+		logins: 'ログイン回数：期間内の延べログイン回数です（同じ人が何度入っても数えます）。'
+	};
+	var envDays = 7;
+	var envMode = 'main';
+	var envData = null;
+
+	/* 表示名。key は OS・ブラウザ・端末のどれか 1 つ、または osBrowser の「os+browser」 */
+	function envLabel(axis, key) {
+		if (axis === 'osBrowser') {
+			var a = String(key).split('+');
+			return (ENV_NAMES.os[a[0]] || 'その他') + '・' + (ENV_NAMES.browser[a[1]] || 'その他');
+		}
+		return ENV_NAMES[axis][key] || 'その他';
+	}
+	function envNum(v) {
+		return v == null ? '—' : String(v);
+	}
+
+	function loadEnvStats() {
+		setMsg($('env-msg'), '集計しています...', true);
+		api('/api/admin/stats/env', { session: session, days: envDays }).then(function (data) {
+			if (!data.axes) {
+				if (data.httpStatus !== 401) {
+					setMsg($('env-msg'), '集計できませんでした（' + (data.error || data.httpStatus) + '）');
+				}
+				return;
+			}
+			setMsg($('env-msg'), '');
+			envData = data;
+			drawEnvStats();
+		}).catch(function () {
+			setMsg($('env-msg'), 'サーバーにつながりませんでした。');
+		});
+	}
+
+	function drawEnvStats() {
+		var d = envData;
+		if (!d) {
+			return;
+		}
+		var bAll = d.days === 0;
+		/* 全期間は延べ回数しか分からない */
+		var mode = bAll ? 'logins' : envMode;
+		Array.prototype.forEach.call(document.querySelectorAll('#env-days button'), function (b) {
+			b.classList.toggle('on', +b.dataset.days === d.days);
+		});
+		Array.prototype.forEach.call(document.querySelectorAll('#env-mode button'), function (b) {
+			b.classList.toggle('on', b.dataset.mode === mode);
+			b.disabled = bAll && b.dataset.mode !== 'logins';
+		});
+		$('env-howto').textContent = ENV_HOWTO[mode];
+		var box = $('env-box');
+		box.textContent = '';
+		box.hidden = false;
+		var head = el('div', 'sub-text');
+		if (bAll) {
+			head.textContent = d.since + ' に記録を始めてからの延べログイン回数です。90 日より前は人を覚えていないので、人数は出せません。';
+		} else {
+			head.textContent = d.since + ' に記録を始めた日から集計（それ以前はありません）。ログインした人：' + d.total + ' 人　PCとスマホ/タブレット両方：' + d.multi + ' 人';
+		}
+		box.appendChild(head);
+		['os', 'browser', 'device', 'osBrowser'].forEach(function (axis) {
+			box.appendChild(envTable(axis, d.axes[axis] || [], mode, d.total));
+		});
+	}
+
+	function envTable(axis, rows, mode, nTotal) {
+		var t = el('table', 'env-table');
+		t.appendChild(el('caption', null, ENV_TITLES[axis]));
+		var tr = el('tr');
+		['', '人数', 'メイン', '回数', ''].forEach(function (h) {
+			tr.appendChild(el('th', null, h));
+		});
+		var th = el('thead');
+		th.appendChild(tr);
+		t.appendChild(th);
+		/* 棒は選んだ数え方の割合（人数・メインは実人数、回数は延べ回数に対して） */
+		var nSum = 0;
+		rows.forEach(function (r) { nSum += r.logins; });
+		var nBase = mode === 'logins' ? nSum : nTotal;
+		var tb = el('tbody');
+		rows.slice().sort(function (a, b) {
+			return (b[mode] || 0) - (a[mode] || 0) || b.logins - a.logins;
+		}).forEach(function (r) {
+			var pct = nBase ? Math.round((r[mode] || 0) * 1000 / nBase) / 10 : 0;
+			var row = el('tr');
+			row.appendChild(el('td', 'env-name', envLabel(axis, r.key)));
+			row.appendChild(el('td', null, envNum(r.accounts)));
+			row.appendChild(el('td', null, envNum(r.main)));
+			row.appendChild(el('td', null, envNum(r.logins)));
+			var cell = el('td', 'env-bar');
+			var bar = el('div', 'env-bar-box');
+			var fill = el('div', 'env-bar-fill');
+			fill.style.width = Math.min(100, pct) * 0.7 + '%';
+			bar.appendChild(fill);
+			bar.appendChild(el('span', 'env-bar-pct', pct + '%'));
+			cell.appendChild(bar);
+			row.appendChild(cell);
+			tb.appendChild(row);
+		});
+		if (!rows.length) {
+			var none = el('tr');
+			var td = el('td', 'sub-text', 'まだ記録がありません');
+			td.colSpan = 5;
+			none.appendChild(td);
+			tb.appendChild(none);
+		}
+		t.appendChild(tb);
+		return t;
+	}
+
+	Array.prototype.forEach.call(document.querySelectorAll('#env-days button'), function (b) {
+		b.addEventListener('click', function () {
+			envDays = +b.dataset.days;
+			loadEnvStats();
+		});
+	});
+	Array.prototype.forEach.call(document.querySelectorAll('#env-mode button'), function (b) {
+		b.addEventListener('click', function () {
+			envMode = b.dataset.mode;
+			drawEnvStats();
+		});
+	});
 
 	/* ---- キャラを探す ---- */
 	var RENAME_NG = {

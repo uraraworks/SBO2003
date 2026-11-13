@@ -64,6 +64,26 @@ Module['sboNet'] = (function () {
 		return ((a[0] & 255) | ((a[1] & 255) << 8) | ((a[2] & 255) << 16) | ((a[3] & 255) << 24)) >>> 0;
 	}
 
+	/* 接続の利用環境 {os, browser, device}（統計用。sbosvr_stats.js が User-Agent を分類する。
+	   生の User-Agent は残さない）。ua が null なら Windows 版ソフト（TCP） */
+	function statsEnv(ua, bTouch) {
+		var st = Module['sboStats'];
+		if (!st) {
+			return null;
+		}
+		return ua === null ? st.nativeEnv() : st.classifyEnv(ua, bTouch);
+	}
+
+	/* 接続スロット番号（プレイヤー ID - 100000）の接続の利用環境。見つからなければ null */
+	function envOfSlot(slot) {
+		for (var id in aConn) {
+			if (aConn[id].slot === slot) {
+				return aConn[id].env || null;
+			}
+		}
+		return null;
+	}
+
 	/* 新しい接続を C 側に知らせる。満員なら閉じる */
 	function accept(conn) {
 		var id = nNextConn++;
@@ -113,6 +133,7 @@ Module['sboNet'] = (function () {
 		sock.setNoDelay(true);
 		var conn = {
 			kind: 'TCP', addr: sock.remoteAddress, slot: -1, closing: false,
+			env: statsEnv(null, false),		/* Windows 版ソフト */
 			send: function (u8) { sock.write(u8); },
 			end: function () { sock.end(); },
 			kill: function () { sock.destroy(); }
@@ -187,6 +208,7 @@ Module['sboNet'] = (function () {
 
 		var conn = {
 			kind: 'WebSocket', addr: addr, slot: -1, closing: false,
+			env: statsEnv(req.headers['user-agent'], new URLSearchParams(String(req.url || '').split('?').slice(1).join('?')).get('tp') === '1'),
 			send: function (u8) { sock.write(wsFrame(2, u8)); },
 			end: function () {
 				try { sock.write(wsFrame(8, Buffer.from([0x03, 0xE8]))); } catch (e) {}
@@ -480,6 +502,10 @@ Module['sboNet'] = (function () {
 		if (Module['sboChanges'] && Module['sboChanges'].handleHttp(req, res, url)) {
 			return;
 		}
+		/* 利用環境の統計の API（sbosvr_stats.js） */
+		if (Module['sboStats'] && Module['sboStats'].handleHttp(req, res, url)) {
+			return;
+		}
 		/* AI 支援用のデータ API と MCP の入口（sbosvr_data.js）。/api/ の受け持ちより先に見る */
 		if (Module['sboData'] && Module['sboData'].handleHttp(req, res, url)) {
 			return;
@@ -629,6 +655,8 @@ Module['sboNet'] = (function () {
 		wwwDir: function () {
 			return strWwwDir;
 		},
+		/* 接続スロット番号の接続の利用環境（sbosvr_stats.js・sbosvr_account.js が使う） */
+		envOfSlot: envOfSlot,
 		listen: function (port) {
 			var tcp = net.createServer(onTcp);
 			tcp.on('error', function (e) {
@@ -757,5 +785,8 @@ Module['sboNet'] = (function () {
 })();
 
 Module['onExit'] = function (code) {
+	if (Module['sboStats']) {
+		Module['sboStats'].flush();
+	}
 	console.log('[SboSvr] 終了しました（終了コード ' + code + '）');
 };

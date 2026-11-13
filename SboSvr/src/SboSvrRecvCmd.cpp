@@ -211,6 +211,7 @@ void	RecvDataProcBATTLEMODE					(PBYTE, DWORD);				/* 戦闘モードの切り�
 /* 端末トークン（server/web_account_svr.cpp） */
 BOOL	WebAccTokenToAccount					(LPCSTR, LPSTR, int);		/* 端末トークンからアカウント名を引く */
 static void	SendWebOptBgm					(PCHARINFO);				/* 音楽ON/OFFのアカウント設定を送る */
+void	WebStatNoteLogin						(PCHARINFO);				/* ログインできた時に利用環境の統計へ記録する */
 BOOL	WebAccIssueToken						(LPCSTR, LPSTR, int);		/* 端末トークンを発行する */
 void	RecvDataProcDIFENCE						(PBYTE, DWORD);				/* 防御 */
 void	RecvDataProcTHROWSNOW					(PBYTE, DWORD);				/* 雪を投げる */
@@ -3539,6 +3540,7 @@ void RecvDataProcLOGINREQ(PBYTE pData, DWORD dwDataSize)
 		SendCmdCHARINFO (pPara->pID, pCharTmp->dwTblID);
 		SendCmdLOGINRES (pPara->pID, pCharTmp->dwTblID, 2);
 		SendWebOptBgm (pCharTmp);
+		WebStatNoteLogin (pCharTmp);
 		AddrTmp.S_un.S_addr = pCharTmp->dwLastIPAddress;
 		g_LogLogin.Write ("ログイン\t[%s][%s][%d.%d.%d.%d][%02X-%02X-%02X-%02X-%02X-%02X]",
 				pCharTmp->szName,
@@ -3599,6 +3601,7 @@ void RecvDataProcLOGINREQ(PBYTE pData, DWORD dwDataSize)
 	SendCmdCHARINFO (pChar->pID, pChar->dwTblID);
 	SendCmdLOGINRES (pChar->pID, pChar->dwTblID, 2);
 	SendWebOptBgm (pChar);
+	WebStatNoteLogin (pChar);
 }
 
 /* ========================================================================= */
