@@ -7,6 +7,7 @@
 /* ========================================================================= */
 
 #include "stdafx.h"
+#include "common/BowFlight.h"
 #include "../Common/Info/InfoJob.h"
 #include "../Common/Info/SubGame/InfoSubGameBase.h"
 #include "../Common/Command/Command.h"
@@ -2791,8 +2792,9 @@ int GetAttackType(PCHARINFO pChar)
 	pWeapon = (PITEMINFO_WEAPON)pItem->pData;
 
 	switch (pWeapon->byAtackType) {
+	case ATACKTYPE_BOW:
 	case ATACKTYPE_ARROW:		/* 矢 */
-		nRet = ATACKTYPE_ARROW;
+		nRet = pWeapon->byAtackType;
 		break;
 	}
 
@@ -2840,6 +2842,34 @@ void CancelTurnGage(PCHARINFO pChar)
 /*			周り2マス以内にいる敵のうち、一番近いもの						 */
 /*			戻り値：キャラ番号（いなければ -1）								 */
 /* ========================================================================= */
+
+PITEMINFO_WEAPON GetBowWeapon(PCHARINFO c)
+{
+    if (c->waEqu[0] >= MAX_MYITEM) return NULL;
+    int id = c->waItem[c->waEqu[0]];
+    if (id < 0 || id >= g_aItemInfo.GetSize()) return NULL;
+    return BowWeapon(c, g_aItemInfo[id]);
+}
+
+int FindBowAttackTarget(PCHARINFO c, BYTE rate)
+{
+    PITEMINFO_WEAPON w = GetBowWeapon(c);
+    if (!w) return -1;
+    int range = BowRange(w->byData1, rate), best = -1;
+    double bestDist = range * range + 1.0, bestAngle = -2.0;
+    for (int i = 0; i < g_aCharInfo.GetSize(); ++i) {
+        PCHARINFO t = g_aCharInfo[i];
+        if (!BowEnemy(t) || t->dwTimeDelete || t->dwMapID != c->dwMapID) continue;
+        double dx = (int)t->dwX - (int)c->dwX, dy = (int)t->dwY - (int)c->dwY;
+        double d = dx * dx + dy * dy;
+        if (d <= 0 || d > range * range) continue;
+        double angle = (dx * anPosAddTblX[c->byDirection] + dy * anPosAddTblY[c->byDirection]) / sqrt(d);
+        if (d < bestDist || (d == bestDist && angle > bestAngle)) {
+            best = i; bestDist = d; bestAngle = angle;
+        }
+    }
+    return best;
+}
 
 int FindNextAttackTarget(PCHARINFO pChar)
 {
@@ -2973,10 +3003,6 @@ void ContinueTurnGage(PCHARINFO pChar)
 	CancelTurnGage (pChar);
 	g_dwTurnGageContinue = timeGetTime ();
 
-	/* 弓（相手を決めずに撃つ）は続けない */
-	if (dwAtackTblID == (DWORD)-1) {
-		return;
-	}
 	/* 戦闘モードではない・戦闘マップではない？ */
 	if ((g_bBattleMode == FALSE) || (g_pMapInfo == NULL) || ((g_pMapInfo->byFlg & MAPFLG_BATTLE) == 0)) {
 		return;
@@ -4027,6 +4053,7 @@ void RecvDataProcCHARINFO(PBYTE pData, DWORD dwDataSize)
 		pCharDst->dwTailBackTblID	= -1;
 	}
 
+	pCharDst->dwBowDuration = 0;
 	pCharDst->pID					= pChar->pID;
 	pCharDst->dwTblID				= pChar->dwTblID;
 	pCharDst->byAdminLV				= pChar->byAdminLV;
@@ -4352,6 +4379,7 @@ void RecvDataProcCHGDIRECTION(PBYTE pData, DWORD dwDataSize)
 /* ========================================================================= */
 void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 {
+    if (dwDataSize < sizeof(CMDPARA_CHARPOS)) return;
 	PCMDPARA_CHARPOS pChar = (PCMDPARA_CHARPOS)pData;
 	int x = 0, y = 0, nNo = GetCharNo (pChar->pID);
 	PCHARINFO pMyChar;
@@ -4420,13 +4448,33 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 		}
 	}
 
-	if (pChar->byDirection == 99) {
-		g_aCharInfo[nNo]->dwTimeDelete = timeGetTime ();
-		return;
-	}
-
 	PCHARINFO pCharDst = g_aCharInfo[nNo];
+    if ((pChar->byFlg & FLGCHARPOS_BOW) && pCharDst->byNpcType == NPCTYPE_ATACK &&
+        dwDataSize >= sizeof(CMDPARA_CHARPOS) + sizeof(BOWFLIGHTINFO)) {
+        BOWFLIGHTINFO flight;
+        CopyMemory(&flight, pData + sizeof(CMDPARA_CHARPOS), sizeof(flight));
+        if (flight.dwDuration > 0 && flight.dwDuration <= 60000 && flight.dwElapsed <= flight.dwDuration) {
+            pCharDst->nBowStartX = flight.nStartX; pCharDst->nBowStartY = flight.nStartY;
+            pCharDst->nBowEndX = flight.nEndX; pCharDst->nBowEndY = flight.nEndY;
+            pCharDst->dwBowDuration = flight.dwDuration;
+            pCharDst->dwBowElapsed = flight.dwElapsed;
+            pCharDst->dwBowStartTime = timeGetTime();
+            double t = (double)flight.dwElapsed / flight.dwDuration;
+            pCharDst->nBowDrawX = (int)(flight.nStartX + (flight.nEndX - flight.nStartX) * t);
+            pCharDst->nBowDrawY = (int)(flight.nStartY + (flight.nEndY - flight.nStartY) * t);
+        }
+    }
 
+    if (pChar->byDirection == 99) {
+        if (pCharDst->dwBowDuration) {
+            pCharDst->nBowEndX = pCharDst->nBowStartX = pCharDst->nBowDrawX;
+            pCharDst->nBowEndY = pCharDst->nBowStartY = pCharDst->nBowDrawY;
+            pCharDst->dwBowElapsed = pCharDst->dwBowDuration;
+            pCharDst->byDotMove = 0;
+        }
+        pCharDst->dwTimeDelete = timeGetTime();
+        return;
+    }
 	/* 削除中？ */
 	if (pCharDst->dwTimeDelete) {
 		pCharDst->dwTimeDelete = 0;
@@ -4435,7 +4483,7 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 
 	if (pCharDst->dwX != pChar->byX || pCharDst->dwY != pChar->byY) {
 		pCharDst->byDotMove = 0;
-		if (pChar->byFlg != 1) {
+		if (!(pChar->byFlg & FLGCHARPOS_NOANIME)) {
 			/* 1マスは32ドット。以前は31にしていたので、歩き出しの1コマ目で
 			   1ドット飛んで、マスの区切りでひっかかって見えていた */
 			pCharDst->byDotMove = 32;

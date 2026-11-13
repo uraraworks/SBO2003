@@ -7032,7 +7032,7 @@ void KeyProcBATTLE_COMMAND(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 //				PUSECHARINFO pUseCharInfo;
 
 				nTmp = GetAttackType (pChar);
-				if (nTmp == ATACKTYPE_ARROW) {
+				if ((nTmp == ATACKTYPE_ARROW) || (nTmp == ATACKTYPE_BOW)) {
 					StartTurnGage (pChar, -1);
 
 					int nNo = GetWindowID (g_dwMsgIDCommand);

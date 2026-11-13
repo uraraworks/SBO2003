@@ -45,7 +45,7 @@ static void MakeCharTblTarget_SCREEN		(PARRAYDWORD, PCHARINFO, PMAGICINFO);				/
 static BOOL MakeCharTblTargetSub_SCREEN		(PARRAYDWORD, int, PDWORD, PCHARINFO, PMAGICINFO);	/* ターゲットキャラの設定処理(画面内) */
 static void MakeCharTblTarget_FRONTSIDE		(PARRAYDWORD, PCHARINFO, PMAGICINFO);				/* ターゲットキャラの設定(前方横一列) */
 static BOOL MakeCharTblTargetSub_FRONTSIDE	(PARRAYDWORD, int, PDWORD, PCHARINFO, PMAGICINFO);	/* ターゲットキャラの設定処理(前方横一列) */
-static BOOL IsMagicWall						(DWORD dwMapID, int x, int y);						/* 特技・魔法が通り抜けられないマスか */
+BOOL IsMagicWall						(DWORD dwMapID, int x, int y);						/* 特技・魔法が通り抜けられないマスか */
 static BOOL IsMagicLineClear				(DWORD dwMapID, int x0, int y0, int x1, int y1);	/* 線の上に通り抜けられないマスが無いか(片方向) */
 static int  GetMagicCharWidth				(PCHARINFO pChar);									/* キャラの横幅(マス) */
 BOOL IsMagicReachChar						(PCHARINFO pChar, PCHARINFO pCharTarget);			/* 使った人から相手まで壁越しでなく届くか */
@@ -314,7 +314,7 @@ Exit:
 /* 内容：特技・魔法が通り抜けられないマスか									 */
 /* 日付：2026/11/12															 */
 /* ========================================================================= */
-static BOOL IsMagicWall(DWORD dwMapID, int x, int y)
+BOOL IsMagicWall(DWORD dwMapID, int x, int y)
 {
 	int nPartsID;
 	PMAPINFO pMap;

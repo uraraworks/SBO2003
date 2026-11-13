@@ -10,7 +10,7 @@ import tempfile
 here = Path(__file__).resolve().parent
 root = here.parent.parent
 source = (root / "SboCli/src/SboCliRecvCmd.cpp").read_text()
-names = "RequestCharPosInfo FlushCharPosInfo PrepareRecvCharPosInfo RenewCharPosInfo RenewMapDarkHideArea GetMyPosDarkType IsHideAreaCross IsMapHasHideArea IsMapHideArea GetMapLightLevel IsMapDarkFlg IsMapViewMode GetMapViewRange IsSightBlock IsInViewRange ResetMapViewSeen RenewMapViewSeen RenewMapViewLights RenewMapDark RenewMapDarkParts IsLightOtherRoom RenewMapDarkLightFlood GetMapPosLight IsInLightCircle GetCharLightRadius GetMapDarkLevel RenewMapDarkCorner RenewMapDarkWork CheckCharBlock IsSightWall".split()
+names = "RequestCharPosInfo FlushCharPosInfo PrepareRecvCharPosInfo RenewCharPosInfo RenewMapDarkHideArea GetMyPosDarkType IsHideAreaCross IsMapHasHideArea IsMapHideArea GetMapLightLevel IsMapDarkFlg IsMapViewMode GetMapViewRange IsSightBlock IsInViewRange ResetMapViewSeen RenewMapViewSeen RenewMapViewLights RenewMapDark RenewMapDarkParts IsLightOtherRoom RenewMapDarkLightFlood GetMapPosLight IsInLightCircle GetCharLightTiles GetCharLightRadius GetMapDarkLevel RenewMapDarkCorner RenewMapDarkWork CheckCharBlock IsSightWall".split()
 def extract(text, name):
     match = re.search(r"^(?:static )?(?:void|BOOL|BYTE|int|float) " + name + r"\([^\n]*\)\n\{", text, re.M)
     assert match, name
@@ -34,7 +34,7 @@ state += "\nstatic BOOL s_bCharPosInfoDirty = FALSE;\n"
 state += "\nstatic BYTE s_abyHideShow[SCRMARTSSIZE];\n"
 state += source[source.index("#define VIEW_SEEN_LEVEL"):source.index("/* 今の場所で見える範囲(視界)が効くか")]
 state += "\nstatic BOOL s_bLightIgnoreViewRange = FALSE;\n"
-state += "\n".join(re.findall(r"^#define LIGHTCIRCLE_[^\n]*", source, re.M))
+state += "\n".join(re.findall(r"^#define (?:LIGHTCIRCLE_|LIGHTITEM_)[^\n]*", source, re.M))
 prototypes = "\n".join(f[:f.index("\n{")] + ";" for f in functions)
 with tempfile.TemporaryDirectory(prefix="sbo-renew-") as directory:
     directory = Path(directory)

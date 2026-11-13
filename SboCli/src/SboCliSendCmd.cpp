@@ -7,6 +7,7 @@
 /* ========================================================================= */
 
 #include "stdafx.h"
+#include "common/BowFlight.h"
 #include "../Common/Info/InfoJob.h"
 #include "../Common/Command/Command.h"
 #include "Glbldata.h"
@@ -2919,6 +2920,13 @@ void SendCmdREQ_ATTACK(
 
 	pSendData = new CMDPARA_DATA4;
 	ZeroMemory (pSendData, sizeof (CMDPARA_DATA4));
+    PCHARINFO c = g_aCharInfo[g_nMyCharID];
+    if (GetBowWeapon(c)) {
+        int target = FindBowAttackTarget(c, byTurnLV);
+        if (target < 0) { delete pSendData; return; }
+        dwTblID = g_aCharInfo[target]->dwTblID;
+        c->dwAtackTblID = dwTblID;
+    }
 	pSendData->byCmd	= CMD_REQ_ATTACK;
 	pSendData->pID		= g_pMyID;
 	pSendData->byData	= byTurnLV;

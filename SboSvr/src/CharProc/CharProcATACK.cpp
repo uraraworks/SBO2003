@@ -7,8 +7,10 @@
 /* ========================================================================= */
 
 #include "stdafx.h"
+#include "common/BowFlight.h"
 #include "SboSvrRecvCmd.h"
 #include "SboSvrBattleProc.h"
+#include "SboSvrMagicProc.h"
 #include "CharProcATACK.h"
 
 /* ========================================================================= */
@@ -35,8 +37,9 @@ BOOL CCharProcATACK::Proc(DWORD dwTime)
 	PCHARINFO pCharTarget, pCharParent;
 
 	bRet = FALSE;
+    if (m_pChar->dwBowDuration) return ProcBow(dwTime);
 	/* 1 マス進む間隔(ms)。投げた雪玉は、速くなった歩き（1 マス約 280ms）に追いつかれないよう速くする */
-	DWORD dwInterval = 400;
+	DWORD dwInterval = 200;
 //Todo:画像ID設定
 	if (m_pChar->wGrpID == 213) {
 		dwInterval = 180;
@@ -82,7 +85,8 @@ BOOL CCharProcATACK::Proc(DWORD dwTime)
 			nY = m_pChar->dwY + anPosAddTblY[m_pChar->byDirection];
 
 			/* 障害物にぶるかる？ */
-			if (CheckCharBlock (m_pChar, m_pChar->dwMapID, nX, nY) == FALSE) {
+			if ((CheckCharBlock (m_pChar, m_pChar->dwMapID, nX, nY) == FALSE) &&
+				(CheckCharBlock (m_pChar->dwMapID, nX, nY) || IsMagicWall (m_pChar->dwMapID, nX, nY))) {
 				/* 次で消滅 */
 				m_pChar->dwTimeDelete = 1;
 				m_pChar->dwTimeLogin = 0;
@@ -103,6 +107,16 @@ BOOL CCharProcATACK::Proc(DWORD dwTime)
 		}
 	}
 
+	return HitCurrentCell();
+Exit:
+	return bRet;
+}
+
+BOOL CCharProcATACK::HitCurrentCell(void)
+{
+	DWORD dwTblID;
+	BOOL bRet = FALSE, bResult;
+	PCHARINFO pCharTarget, pCharParent;
 	dwTblID = CheckCharBlockPC (m_pChar->dwMapID, m_pChar->dwX, m_pChar->dwY, m_pChar->dwSpaceID);
 	/* プレイヤーと重なってない？ */
 	if (dwTblID == -1) {
@@ -217,3 +231,39 @@ Exit:
 }
 
 /* Copyright(C)URARA-works 2006 */
+
+/* 1ピクセル以下に分割して通過マスを既存の接触判定へ渡す。発射後は追尾しない。 */
+BOOL CCharProcATACK::ProcBow(DWORD now)
+{
+    PCHARINFO c = m_pChar;
+    if (c->dwParentTblID >= (DWORD)g_aCharInfo.GetSize() ||
+        g_aCharInfo[c->dwParentTblID]->pID != c->dwBowOwnerPID ||
+        c->dwMapID != g_aCharInfo[c->dwParentTblID]->dwMapID ||
+        !IsSameSpace(c, g_aCharInfo[c->dwParentTblID])) {
+        DeleteChar(c->dwTblID); return FALSE;
+    }
+    DWORD elapsed = min(now - c->dwBowStartTime, c->dwBowDuration);
+    int dx = c->nBowEndX - c->nBowStartX, dy = c->nBowEndY - c->nBowStartY;
+    int pixels = max(abs(dx), abs(dy));
+    int from = (int)((double)pixels * c->dwBowElapsed / c->dwBowDuration);
+    int to = (int)((double)pixels * elapsed / c->dwBowDuration);
+    for (int i = from + 1; i <= to; ++i) {
+        int x = (int)floor((c->nBowStartX + (double)dx * i / pixels + 16) / 32);
+        int y = (int)floor((c->nBowStartY + (double)dy * i / pixels + 16) / 32);
+        if (x == (int)c->dwX && y == (int)c->dwY) continue;
+        /* 斜めに角を横切る時も壁を抜けない。カウンターは既存と同様に通す。 */
+        BOOL blocked = IsMagicWall(c->dwMapID, x, y) ||
+            (!CheckCharBlock(c, c->dwMapID, x, y) && CheckCharBlock(c->dwMapID, x, y));
+        if (x != (int)c->dwX && y != (int)c->dwY) {
+            blocked |= IsMagicWall(c->dwMapID, x, c->dwY) || IsMagicWall(c->dwMapID, c->dwX, y);
+        }
+        c->dwBowElapsed = (DWORD)((double)c->dwBowDuration * i / pixels);
+        if (blocked) { DeleteChar(c->dwTblID); return FALSE; }
+        c->dwX = x; c->dwY = y;
+        c->byFlg |= CHARINFOFLG_MOVE;
+        if (HitCurrentCell()) { DeleteChar(c->dwTblID); return TRUE; }
+    }
+    c->dwBowElapsed = elapsed;
+    if (elapsed >= c->dwBowDuration) { DeleteChar(c->dwTblID); return FALSE; }
+    return FALSE;
+}
