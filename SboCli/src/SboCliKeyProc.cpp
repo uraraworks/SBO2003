@@ -78,6 +78,7 @@ void KeyProcSUBWAR_TURN_MAGIC_WITCH			(PWNDINFO, BYTE, BYTE);		/* 戦場ゲー�
 void KeyProcSUBWAR_TURN_MAGIC_TARGET		(PWNDINFO, BYTE, BYTE);		/* 戦場ゲーム：魔法対象者選択 */
 void KeyProcSUBWAR_TURN_MAGIC_PRIEST		(PWNDINFO, BYTE, BYTE);		/* 戦場ゲーム：魔法：僧侶 */
 static BOOL ShotTurnGage						(PCHARINFO);				/* ゲージが溜まっていれば殴る(ジャスト・早撃ち) */
+static BOOL HandleBowLockKey(PCHARINFO, BYTE);
 void KeyProcBATTLE_COMMAND					(PWNDINFO, BYTE, BYTE);		/* 戦闘：コマンド */
 void KeyProcBATTLE_TARGET					(PWNDINFO, BYTE, BYTE);		/* 戦闘：ターゲット選択 */
 void KeyProcSUBSUGOROKU_JOINMODE			(PWNDINFO, BYTE, BYTE);		/* すごろく：参加モード選択 */
@@ -96,6 +97,7 @@ LRESULT CALLBACK NameWndProc				(HWND, UINT, WPARAM, LPARAM);	/* キャラ名入
 LRESULT CALLBACK MakeWndProc				(HWND, UINT, WPARAM, LPARAM);	/* 作成ボタン用メッセージ処理 */
 LRESULT CALLBACK SpeechWndProc				(HWND, UINT, WPARAM, LPARAM);	/* 発言入力欄用メッセージ処理 */
 static BOOL IsSpeechModeEnable				(BYTE);							/* 発言の種類が今選べるか */
+static BOOL IsMercMagic						(PMAGICINFO pInfo);			/* 雇った傭兵にも使える特技か(回復・蘇生) */
 #define SPEECHMODE_MAX	(4)															/* 発言の種類の数(g_bySpeechMode) */
 LRESULT CALLBACK SpeechEditWndProc			(HWND, UINT, WPARAM, LPARAM);	/* 自己紹介設定欄用メッセージ処理 */
 LRESULT CALLBACK ChgPasswordWndProc			(HWND, UINT, WPARAM, LPARAM);	/* パスワード変更用メッセージ処理 */
@@ -848,6 +850,9 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 		}
 	}
 
+    /* ロック中の X/C はコマンドを開かない。既存ウィンドウの決定は別経路。 */
+    if ((byEvent == KEY_UP) && bCommand && HandleBowLockKey(pChar, byCode)) return;
+
 	if ((byEvent == KEY_UP) && (byCode == 'A') && (bCommand == TRUE)) {
 		PWNDINFO pWnd = NULL;
 		/* 爆弾ゲームに参加中？ */
@@ -1008,7 +1013,7 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 		}
 
 	/* ターゲット指定？ */
-	} else if ((byEvent == KEY_UP) && (byCode == 'B') && (!g_dwMsgIDCommand) && (g_bEnableMove)) {
+	} else if ((byEvent == KEY_UP) && ((byCode == 'B') || (byCode == VK_ESCAPE && GetBowWeapon(pChar))) && (!g_dwMsgIDCommand) && (g_bEnableMove)) {
 		PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
 		/* 爆弾ゲームに参加中？ */
 		if (pChar->abySubStatus[0] == SUBGAMEID_BOMB) {
@@ -1021,12 +1026,13 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 		} else if (pChar->abySubStatus[0] == SUBGAMEID_WAR) {
 
 		/* ターンゲージ溜まり中？(連続攻撃もここで止める) */
-		} else if ((pChar->byTurnLV > 0) || pChar->dwTimeTurnLV) {
+		} else if ((pChar->byTurnLV > 0) || pChar->dwTimeTurnLV ||
+            (GetBowWeapon(pChar) && pChar->dwAtackTblID && pChar->dwAtackTblID != (DWORD)-1)) {
 			/* 目の前の敵で自動で溜め直さないように覚えておく(離れるか別の敵が来るまで) */
 			g_dwAutoGageSuppress = pChar->dwAtackTblID;
 			CancelTurnGage (pChar);
 			SAFE_DELETE (g_pTargetSelectInfo);
-			SendCmdTARGETCHAR ((DWORD)-1);
+			if (!GetBowWeapon(pChar)) SendCmdTARGETCHAR ((DWORD)-1);
 
 		/* 詠唱中？ */
 		} else if (pChar->dwTimeTurnMagicLV) {
@@ -1069,6 +1075,7 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 		if (g_pMapInfo->byFlg & MAPFLG_BATTLE) {
 			if (g_bBattleMode) {
 				g_bBattleMode = FALSE;
+                if (GetBowWeapon(pChar)) CancelTurnGage(pChar);
 				AddSysMsg ("戦闘モードを解除しました。", RGB (255, 255, 255));
 			} else {
 				g_bBattleMode = TRUE;
@@ -5493,7 +5500,7 @@ void KeyProcCOMMANDMAGIC(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 					}
 
 					/* キャラ選択 */
-					pWndTmp = MakeWindowBATTLE_TARGET (pInfo->byTargetArea, bTmp, pInfo->byTarget);
+					pWndTmp = MakeWindowBATTLE_TARGET (pInfo->byTargetArea, bTmp, pInfo->byTarget, IsMercMagic (pInfo));
 					if (pWndTmp == NULL) {
 						pWndTmp = MakeWindowMSG ("対象者がいません。@2", FALSE);
 						break;
@@ -5635,7 +5642,9 @@ void KeyProcCOMMANDMAGICBATTLE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 					}
 
 					/* キャラ選択 */
-					pWndNew = MakeWindowBATTLE_TARGET (pInfo->byTargetArea, bTmp, pInfo->byTarget);
+                    // 弓の枠は特技の選択枠を作る前に消す。
+                    if (GetBowWeapon(pChar)) CancelTurnGage(pChar);
+					pWndNew = MakeWindowBATTLE_TARGET (pInfo->byTargetArea, bTmp, pInfo->byTarget, IsMercMagic (pInfo));
 					if (pWndNew == NULL) {
 						pWndTmp = MakeWindowMSG ("対象者がいません。@2", FALSE);
 						break;
@@ -5645,7 +5654,7 @@ void KeyProcCOMMANDMAGICBATTLE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 					g_WndInfo.Add (pWndNew);
 					g_dwActiveMsgID = pWndNew->dwID;
 					bClose = FALSE;
-					CancelTurnGage (pChar);
+					if (!GetBowWeapon(pChar)) CancelTurnGage (pChar);
 				/* 町転送で、選べる行き先が2つ以上 */
 				} else if (IsTownWarpMagic ((BYTE)g_aMagicInfoBattle[nData1]) && (GetTownWarpSelectCount () >= 2)) {
 					if (pWnd->pChild) {
@@ -6960,8 +6969,18 @@ void KeyProcSUBWAR_TURN_MAGIC_PRIEST(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 /* 内容：ゲージが1周以上溜まっていれば殴る(満タン直後ならジャスト、		 */
 /*		 それより前なら早撃ち)。殴ったら TRUE								 */
 /* ========================================================================= */
+/* 内部キー A/B は実キー X/Z。ロック中は溜まった X だけを発射に渡す。 */
+static BOOL HandleBowLockKey(PCHARINFO pChar, BYTE byCode)
+{
+    if (!GetBowWeapon(pChar) || !pChar->dwAtackTblID || pChar->dwAtackTblID == (DWORD)-1 ||
+        (byCode != 'A' && byCode != 'C')) return FALSE;
+    if (byCode == 'A') ShotTurnGage(pChar);
+    return TRUE;
+}
+
 static BOOL ShotTurnGage(PCHARINFO pChar)
 {
+    if (GetBowWeapon(pChar)) UpdateBowTurnGage(pChar);
 	if ((pChar->dwTimeTurnLV == 0) || (pChar->byTurnLV < TURNGAGE_LAP)) {
 		return FALSE;
 	}
@@ -7001,7 +7020,12 @@ void KeyProcBATTLE_COMMAND(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 	}
 	pChar = g_aCharInfo[g_nMyCharID];
 
-	if ((byEvent == KEY_UP) && (byCode == 'B')) {
+	if ((byEvent == KEY_UP) && ((byCode == 'B') ||
+        (byCode == VK_ESCAPE && GetBowWeapon(g_aCharInfo[g_nMyCharID])))) {
+        PCHARINFO bowChar = g_aCharInfo[g_nMyCharID];
+        if (GetBowWeapon(bowChar)) {
+            CancelTurnGage(bowChar);
+        }
 		int nNo = GetWindowID (g_dwMsgIDCommand);
 		EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
 		g_bDraw = TRUE;
@@ -7031,18 +7055,9 @@ void KeyProcBATTLE_COMMAND(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				ARRAYUSECHARINFO aUseCharInfoTmp;
 //				PUSECHARINFO pUseCharInfo;
 
-				nTmp = GetAttackType (pChar);
-				if (nTmp == ATACKTYPE_ARROW) {
-					StartTurnGage (pChar, -1);
+				int nArea = GetBowWeapon(pChar) ? -1 : 3;
 
-					int nNo = GetWindowID (g_dwMsgIDCommand);
-					EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
-					g_bDraw = TRUE;
-					g_dwMsgIDCommand = 0;
-					break;
-				}
-
-				nResult = GetUseCharInfo (3, pChar, FALSE, MAGICTARGET_NPC, aUseCharInfoTmp, nLen);
+				nResult = GetUseCharInfo (nArea, pChar, FALSE, MAGICTARGET_NPC, FALSE, aUseCharInfoTmp, nLen);
 				if (nResult == 0) {
 					DeleteUseCharInfo (&aUseCharInfoTmp);
 					break;
@@ -7061,7 +7076,7 @@ void KeyProcBATTLE_COMMAND(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				}
 #endif
 				DeleteUseCharInfo (&aUseCharInfoTmp);
-				PWNDINFO pWndNew = MakeWindowBATTLE_TARGET (3, FALSE, MAGICTARGET_NPC);
+				PWNDINFO pWndNew = MakeWindowBATTLE_TARGET (nArea, FALSE, MAGICTARGET_NPC, FALSE);
 				if (pWndNew == NULL) {
 					break;
 				}
@@ -7169,7 +7184,12 @@ void KeyProcBATTLE_TARGET(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		dwTime = 125;
 	}
 
-	if ((byEvent == KEY_UP) && (byCode == 'B')) {
+	if ((byEvent == KEY_UP) && ((byCode == 'B') ||
+        (byCode == VK_ESCAPE && GetBowWeapon(g_aCharInfo[g_nMyCharID])))) {
+        PCHARINFO bowChar = g_aCharInfo[g_nMyCharID];
+        if (GetBowWeapon(bowChar)) {
+            CancelTurnGage(bowChar);
+        }
 		int nNo = GetWindowID (pWnd->dwID);
 		EraseWindow (pWnd);
 		g_bDraw = TRUE;
@@ -7188,6 +7208,10 @@ void KeyProcBATTLE_TARGET(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			/* 攻撃 */
 			if (pWndTmp->nData1 == 0) {
 				pInfo = g_aUseCharInfo[pWnd->nData1];
+                if (GetBowWeapon(pChar)) {
+                    int target = GetCharNo2(pInfo->dwTblID);
+                    if (target < 0 || !IsBowAttackTarget(pChar, g_aCharInfo[target])) return;
+                }
 				StartTurnGage (pChar, pInfo->dwTblID);
 				SendCmdTARGETCHAR (pInfo->dwTblID);
 			}
@@ -7239,6 +7263,10 @@ void KeyProcBATTLE_TARGET(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 
 		if (bMove) {
 			pInfo = g_aUseCharInfo[pWnd->nData1];
+            if (!g_pTargetSelectInfo) {
+                g_pTargetSelectInfo = new TARGETSELECTINFO;
+                ZeroMemory(g_pTargetSelectInfo, sizeof(TARGETSELECTINFO));
+            }
 			g_pTargetSelectInfo->dwTblID = pInfo->dwTblID;
 
 			pWnd->dwTime = timeGetTime ();
@@ -9324,5 +9352,19 @@ extern "C" EMSCRIPTEN_KEEPALIVE int SboWebChatKinds(void)
 	return nRet;
 }
 #endif
+
+/* ========================================================================= */
+/* 関数名：	IsMercMagic														 */
+/* 内容：	雇った傭兵にも使える特技か(プレイヤー側の回復・蘇生)			 */
+/*			サーバーの IsMercMagic と同じ判定。相手を選ぶ一覧に傭兵を出す	 */
+/* 日付：	2026/11/13														 */
+/* ========================================================================= */
+static BOOL IsMercMagic(PMAGICINFO pInfo)
+{
+	if ((pInfo->byType != MAGICTYPE_HPUP) && (pInfo->byType != MAGICTYPE_RESURRECTION)) {
+		return FALSE;
+	}
+	return (pInfo->byTarget != MAGICTARGET_NPC);
+}
 
 /* Copyright(C)URARA-works 2003-2005 */

@@ -1203,6 +1203,7 @@ challenge solo accept=0
 challenge party accept a=20 b=20 c=0
 challenge other accept c=0
 challenge gate found=1
+challenge start mapinfo a=1 b=1
 challenge buff timers=0 charbuff_sent=1
 challenge child removed=1
 challenge start a in=1 lv=7 pw=11 hp=60/60 mana=20 gold=3 item0=0 weapon_equ=1
@@ -1317,4 +1318,13 @@ mimic examine type=13 dir=2 target_pc=1 proc=1 sysmsg=1 charinfo=1 hp=30
 mimic examine again type=13
 mimic hit type=13 dir=3 target_pc=1 damaged=1
 mimic kill hp=0 removed=1
+== K2. Mercenary magic ==
+merc map=91 enemies=17 size=255x160
+merc hired dist=1
+merc magic found healsel=1 healcircle=1 ressel=1 resscreen=1 atkcircle=1
+merc magic healsel up=1
+merc magic healcircle up=1
+merc magic atkcircle same=1
+merc magic ressel alive=1 state=1 owner=1
+merc magic resscreen alive=1 state=1
 == done ==

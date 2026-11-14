@@ -9,6 +9,7 @@
 #include <vector>
 #include "include.h"
 #include "Glbldata.h"
+#include "common/BowFlight.h"
 #include "../Common/Command/Command.h"
 #include "../Common/Info/InfoJob.h"
 #include "../Common/Info/SubGame/InfoSubGameWAR.h"
@@ -994,9 +995,11 @@ void SendCmdCHGDIRECTION(DWORD pIDSend, int nNo)
 /* ========================================================================= */
 void SendCmdCHARPOS(DWORD pIDSend, int nNo, BYTE byFlg, BYTE byInside)
 {
+    PCHARINFO c = g_aCharInfo[nNo];
+    DWORD now = timeGetTime();
 	PCMDPARA_CHARPOS pSendData;
 
-	pSendData = (PCMDPARA_CHARPOS)new CMDPARA_CHARPOS;
+	pSendData = (PCMDPARA_CHARPOS)new BYTE[sizeof(CMDPARA_CHARPOS) + sizeof(BOWFLIGHTINFO)];
 	ZeroMemory (pSendData, sizeof (CMDPARA_CHARPOS));
 	pSendData->byCmd = CMD_CHARPOS;
 	pSendData->pID = g_aCharInfo[nNo]->pID;
@@ -1006,6 +1009,14 @@ void SendCmdCHARPOS(DWORD pIDSend, int nNo, BYTE byFlg, BYTE byInside)
 	pSendData->byY = (BYTE)g_aCharInfo[nNo]->dwY;
 	pSendData->byDirection = g_aCharInfo[nNo]->byDirection;
 	pSendData->byFlg = byFlg;
+    DWORD packetSize = sizeof(CMDPARA_CHARPOS);
+    if (c->dwBowDuration) {
+        pSendData->byFlg |= FLGCHARPOS_BOW;
+        BOWFLIGHTINFO flight = {c->nBowStartX, c->nBowStartY, c->nBowEndX, c->nBowEndY,
+            c->dwBowDuration, c->byDirection == 99 ? c->dwBowElapsed : min(now - c->dwBowStartTime, c->dwBowDuration)};
+        CopyMemory((PBYTE)pSendData + packetSize, &flight, sizeof(flight));
+        packetSize += sizeof(flight);
+    }
 
 //	char szTmp[128];
 //	wsprintf (szTmp, "→CHARPOS送信 ID:%d\r\n", pSendData->dwTblID);
@@ -1018,7 +1029,7 @@ void SendCmdCHARPOS(DWORD pIDSend, int nNo, BYTE byFlg, BYTE byInside)
 		}
 		if ((byInside == 3) || (pIDSend == URARASOCK_SENDALL) || !byInside) {
 			if (!IsCharVisibleToPID (g_aCharInfo[nNo], pIDSend)) {
-				delete pSendData;
+				delete[] (PBYTE)pSendData;
 				return;
 			}
 		}
@@ -1029,23 +1040,23 @@ void SendCmdCHARPOS(DWORD pIDSend, int nNo, BYTE byFlg, BYTE byInside)
 //		IDirectPlay8Server *pSvr = svr.GetPtr ();
 //		pSvr->GetSendQueueInfo (g_aCharInfo[nNo]->pID, &dwNumMsgs, NULL, DPNGETSENDQUEUEINFO_PRIORITY_NORMAL);
 //		if (dwNumMsgs < 10) {
-			svrSock.SendTo (pIDSend, (LPBYTE)pSendData, sizeof (CMDPARA_CHARPOS), SENDTIMEOUT);
+			svrSock.SendTo (pIDSend, (LPBYTE)pSendData, packetSize, SENDTIMEOUT);
 //		}
 
 	} else if (pIDSend == URARASOCK_SENDALL || !byInside) {
-		svrSock.SendTo (pIDSend, (LPBYTE)pSendData, sizeof (CMDPARA_CHARPOS), SENDTIMEOUT);
+		svrSock.SendTo (pIDSend, (LPBYTE)pSendData, packetSize, SENDTIMEOUT);
 
 	} else if (byInside == 2) {
 		/* マップ全体へ。ただし同じ空間の人にだけ */
-		SendCmdInsideMapSpace (g_aCharInfo[nNo]->dwMapID, g_aCharInfo[nNo]->dwSpaceID, (LPBYTE)pSendData, sizeof (CMDPARA_CHARPOS));
+		SendCmdInsideMapSpace (g_aCharInfo[nNo]->dwMapID, g_aCharInfo[nNo]->dwSpaceID, (LPBYTE)pSendData, packetSize);
 
 	} else if (byInside == 4) {
-		SendCmdInside2 (g_aCharInfo[nNo], (LPBYTE)pSendData, sizeof (CMDPARA_CHARPOS), 0, SENDINSIDE_INSIDENOME, TRUE, TRUE, 2);
+		SendCmdInside2 (g_aCharInfo[nNo], (LPBYTE)pSendData, packetSize, 0, SENDINSIDE_INSIDENOME, TRUE, TRUE, 2);
 
 	} else {
-		SendCmdInside2 (g_aCharInfo[nNo], (LPBYTE)pSendData, sizeof (CMDPARA_CHARPOS), SENDTIMEOUT, SENDINSIDE_INSIDENOME, TRUE, TRUE, 2);
+		SendCmdInside2 (g_aCharInfo[nNo], (LPBYTE)pSendData, packetSize, SENDTIMEOUT, SENDINSIDE_INSIDENOME, TRUE, TRUE, 2);
 	}
-	delete pSendData;
+	delete[] (PBYTE)pSendData;
 }
 
 /* ========================================================================= */

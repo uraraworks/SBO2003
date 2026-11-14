@@ -48,7 +48,8 @@ char dark[SCRMARTSSIZE]{}, darkPos[SCRMARTSSIZE]{};
 char *g_pMapDarkTmp = dark, *g_pMapDarkTmpPos = darkPos;
 #include "renew-functions.inc"
 constexpr int SCRSIZEX = 480, SCRSIZEY = 480;
-const int anPosAddTblX[] = {0, 0, -1, 1}, anPosAddTblY[] = {-1, 1, 0, 0};
+int anPosAddTblX[] = {0, 0, -1, 1}, anPosAddTblY[] = {-1, 1, 0, 0};
+#include "common/BowFlight.h"
 static DWORD testTime = 0;
 static DWORD timeGetTime() { return testTime; }
 struct Dib {
