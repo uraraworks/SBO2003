@@ -122,6 +122,8 @@
 #define IDC_STATIC_DATA4                1080
 #define IDC_MAGIC                       1081
 #define IDC_STTMP                       1082
+#define IDC_MAGICTYPE                   1234
+#define IDC_MAGICFIND                   1235
 #define IDC_MODIFY                      1083
 #define IDC_DELETE                      1084
 #define IDC_PUT                         1085
@@ -310,7 +312,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        235
 #define _APS_NEXT_COMMAND_VALUE         40032
-#define _APS_NEXT_CONTROL_VALUE         1234
+#define _APS_NEXT_CONTROL_VALUE         1236
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

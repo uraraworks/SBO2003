@@ -10,6 +10,7 @@
 #include "../Glbldata.h"
 #include "../SboCliSendCmd.h"
 #include "../SboCliRecvCmd.h"
+#include "AdminListFilter.h"
 
 /* ========================================================================= */
 /* グローバル変数定義														 */
@@ -30,6 +31,8 @@ static LRESULT CALLBACK DlgProc(HWND, UINT, WPARAM, LPARAM);					/* ダイアロ
 static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam);				/* メッセージハンドラ(WM_INITDIALOG) */
 static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify);		/* メッセージハンドラ(WM_COMMAND) */
 static void RenewList(void);													/* リスト更新 */
+static void RenewMagicCombo(void);												/* 追加する魔法の一覧を絞り込んで作り直す */
+static int GetMagicComboID(void);												/* 一覧で選んでいる魔法ID */
 
 /* ========================================================================= */
 /* 関数名：ShowDlgCharMagicInfo												 */
@@ -149,15 +152,18 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 	ListView_SetExtendedListViewStyle (hWndTmp, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
 
 
-	hWndTmp = GetDlgItem (hWnd, IDC_MAGIC);
-	nCount = g_aMagicInfo.GetSize ();
-	for (i = 0; i < nCount; i ++) {
-		PMAGICINFO pInfo;
-
-		pInfo = g_aMagicInfo[i];
-		/* 魔法名 */
-		SendMessage (hWndTmp, CB_ADDSTRING, (WPARAM)i, (LPARAM)pInfo->szName);
+	/* 種別で絞り込み */
+	hWndTmp = GetDlgItem (hWnd, IDC_MAGICTYPE);
+	SendMessage (hWndTmp, CB_ADDSTRING, 0, (LPARAM)"すべて");
+	for (i = 0; g_aStrType[i][0] != 'z'; i ++) {
+		SendMessage (hWndTmp, CB_ADDSTRING, 0, (LPARAM)g_aStrType[i]);
 	}
+	SendMessage (hWndTmp, CB_SETCURSEL, 0, 0);
+
+	/* 魔法名（itemdata に魔法ID）。ダイアログ作成中なので s_hWndDlg ではなく hWnd で作る */
+	s_hWndDlg = hWnd;
+	RenewMagicCombo ();
+	SendMessage (GetDlgItem (hWnd, IDC_MAGIC), CB_SETCURSEL, (WPARAM)-1, 0);
 
 
 	hWndTmp = GetDlgItem (hWnd, IDC_STTMP);
@@ -199,9 +205,7 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 
 	case IDC_ADD:		/* 追加 */
 		{
-			int nNo;
-			BYTE byNo;
-			HWND hWndTmp;
+			int nNo, nMagicID;
 
 			for (nNo = 0; nNo < MAX_USEMAGIC; nNo ++) {
 				if (s_pChar->abyMagic[nNo] == 0) {
@@ -212,20 +216,18 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 				break;
 			}
 
-			hWndTmp = GetDlgItem (s_hWndDlg, IDC_MAGIC);
-			byNo = (BYTE)SendMessage (hWndTmp, CB_GETCURSEL, 0, 0);
-			if ((int)byNo < 0) {
+			nMagicID = GetMagicComboID ();
+			if (nMagicID <= 0) {
 				break;
 			}
-			s_pChar->abyMagic[nNo] = byNo;
+			s_pChar->abyMagic[nNo] = (BYTE)nMagicID;
 			RenewList ();
 		}
 		break;
 
 	case IDC_MODIFY:	/* 更新 */
 		{
-			int nNo;
-			BYTE byNo;
+			int nNo, nMagicID;
 			HWND hWndTmp;
 
 			hWndTmp = GetDlgItem (s_hWndDlg, IDC_LIST);
@@ -234,12 +236,11 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 				break;
 			}
 
-			hWndTmp = GetDlgItem (s_hWndDlg, IDC_MAGIC);
-			byNo = (BYTE)SendMessage (hWndTmp, CB_GETCURSEL, 0, 0);
-			if ((int)byNo < 0) {
+			nMagicID = GetMagicComboID ();
+			if (nMagicID <= 0) {
 				break;
 			}
-			s_pChar->abyMagic[nNo] = byNo;
+			s_pChar->abyMagic[nNo] = (BYTE)nMagicID;
 			RenewList ();
 		}
 		break;
@@ -296,7 +297,76 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 			SendCmdSTTMPLATE ((DWORD)nNo, CMDSTTMPLATETYPE_CHG);
 		}
 		break;
+
+	case IDC_MAGICTYPE:	/* 種別で絞り込み */
+		if (nCodeNotify == CBN_SELCHANGE) {
+			RenewMagicCombo ();
+		}
+		break;
+
+	case IDC_MAGICFIND:	/* 名前で絞り込み（部分一致） */
+		if (nCodeNotify == EN_CHANGE) {
+			RenewMagicCombo ();
+		}
+		break;
 	}
+}
+
+/* ========================================================================= */
+/* 関数名：GetMagicComboID													 */
+/* 内容：一覧で選んでいる魔法ID（無ければ-1）								 */
+/* ========================================================================= */
+static int GetMagicComboID(void)
+{
+	HWND hWndTmp = GetDlgItem (s_hWndDlg, IDC_MAGIC);
+	int nSel = (int)SendMessage (hWndTmp, CB_GETCURSEL, 0, 0);
+	if (nSel < 0) {
+		return -1;
+	}
+	return (int)SendMessage (hWndTmp, CB_GETITEMDATA, nSel, 0);
+}
+
+/* ========================================================================= */
+/* 関数名：RenewMagicCombo													 */
+/* 内容：追加する魔法の一覧を、種別と名前の部分一致で絞り込んで作り直す		 */
+/* 		 選んでいた魔法が残っていればそのまま								 */
+/* ========================================================================= */
+static void RenewMagicCombo(void)
+{
+	HWND hWndCombo = GetDlgItem (s_hWndDlg, IDC_MAGIC);
+	if (hWndCombo == NULL) {
+		return;
+	}
+	int nOldID = GetMagicComboID ();
+
+	/* 種別（0=すべて、1〜=種別+1） */
+	int nType = (int)SendMessage (GetDlgItem (s_hWndDlg, IDC_MAGICTYPE), CB_GETCURSEL, 0, 0) - 1;
+	char szKey[128];
+	szKey[0] = 0;
+	GetWindowText (GetDlgItem (s_hWndDlg, IDC_MAGICFIND), szKey, sizeof (szKey));
+
+	SendMessage (hWndCombo, CB_RESETCONTENT, 0, 0);
+	int i, nSel = -1, nCount = g_aMagicInfo.GetSize ();
+	/* 0番は「無し」なので出さない（所持魔法は BYTE なので 255 まで） */
+	for (i = 1; (i < nCount) && (i <= 255); i ++) {
+		PMAGICINFO pInfo = g_aMagicInfo[i];
+		if ((nType >= 0) && (pInfo->byType != nType)) {
+			continue;
+		}
+		if (!AdminFilterMatch (pInfo->szName, szKey)) {
+			continue;
+		}
+		int nIndex = (int)SendMessage (hWndCombo, CB_ADDSTRING, 0, (LPARAM)pInfo->szName);
+		SendMessage (hWndCombo, CB_SETITEMDATA, nIndex, (LPARAM)i);
+		if (i == nOldID) {
+			nSel = nIndex;
+		}
+	}
+	/* 選んでいたものが消えたら先頭を選ぶ（すぐ「追加」できるように） */
+	if ((nSel < 0) && (SendMessage (hWndCombo, CB_GETCOUNT, 0, 0) > 0)) {
+		nSel = 0;
+	}
+	SendMessage (hWndCombo, CB_SETCURSEL, nSel, 0);
 }
 
 /* ========================================================================= */
