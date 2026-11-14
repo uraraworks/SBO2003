@@ -88,7 +88,7 @@ extern PWNDINFO MakeWindowSUBWAR_TURN_MAGIC_TARGET		(void);						/* 戦場ゲー
 extern PWNDINFO MakeWindowSUBWAR_TURN_MAGIC_PRIEST		(void);						/* 戦場ゲーム：行動(魔法：僧侶) */
 
 extern PWNDINFO MakeWindowBATTLE_COMMAND				(void);									/* 戦闘：コマンド */
-extern PWNDINFO MakeWindowBATTLE_TARGET					(int nArea, BOOL bMyChar, int nType);	/* 戦闘：ターゲット選択 */
+extern PWNDINFO MakeWindowBATTLE_TARGET					(int nArea, BOOL bMyChar, int nType, BOOL bMerc);	/* 戦闘：ターゲット選択 */
 
 extern PWNDINFO MakeWindowSUBSUGOROKU_JOINMODE			(void);						/* すごろく：参加モード選択 */
 extern PWNDINFO MakeWindowSUBSUGOROKU_COMMAND			(void);						/* すごろく：行動選択 */

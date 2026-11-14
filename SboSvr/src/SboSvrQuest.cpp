@@ -2022,6 +2022,11 @@ static void ChallengeStart(PCHARINFO pChar, PQUESTINFO pQuest, PQUESTNPCINFO pDe
 		}
 	}
 
+	/* 戻る場所は、仲間も全員、光に入った人の入る前の場所にする
+	   （各自の場所に戻すと、光から離れていた仲間がばらばらの場所へ戻ってしまう） */
+	DWORD dwBackMapID = pChar->dwMapID, dwBackX = pChar->dwX, dwBackY = pChar->dwY;
+	BYTE byBackDirection = pChar->byDirection;
+
 	for (i = 0; i < (int)aMember.size (); i ++) {
 		PCHARINFO pTmp = aMember[i];
 		LOANBAK Bak;
@@ -2034,17 +2039,29 @@ static void ChallengeStart(PCHARINFO pChar, PQUESTINFO pQuest, PQUESTNPCINFO pDe
 		LoanXfer (pTmp, &Bak, FALSE);
 		Bak.dwSession = dwSession;
 		Bak.bArrived = FALSE;
-		Bak.dwMapID = pTmp->dwMapID;
-		Bak.dwX = pTmp->dwX;
-		Bak.dwY = pTmp->dwY;
-		Bak.byDirection = pTmp->byDirection;
+		Bak.dwMapID = dwBackMapID;
+		Bak.dwX = dwBackX;
+		Bak.dwY = dwBackY;
+		Bak.byDirection = byBackDirection;
 		s_mapLoan[pTmp->dwTblID] = Bak;
 		pCh->aMember.push_back (pTmp->dwTblID);
 
 		LoanApply (pTmp, t);
 		LoanSendAll (pTmp);
 		AdvanceQuest (pTmp, pDef);
-		DoPortal (pTmp, pDef);
+		if (!Ch.bArena && ((DWORD)nDestMapNo == pTmp->dwMapID)) {
+			/* 同じマップの中のワープ（座標変更）ではマップ情報が届かないので、
+			   クライアントにふつうの世界のキャラが残り、その場に止まったまま見えてしまう。
+			   マップを移る時と同じ流れで見え方を作り直す
+			   （闘技場はふつうの世界のキャラも見えたまま動きが届くので、今までどおりのワープ） */
+			SendCmdPLAYSOUND (pTmp->pID, SOUND_MOVE);
+			SendCmdFADEINOUT (pTmp->pID, 0);
+			SubProcMapMove (pTmp, (DWORD)nDestMapNo, pDef->byDestX, pDef->byDestY);
+			/* 入る時のワープは「着いた」印にする（座標変更イベントで移った時と同じ） */
+			QuestChallengeOnWarp (pTmp);
+		} else {
+			DoPortal (pTmp, pDef);
+		}
 		/* 移動で届くマップ情報は扉が閉じたままなので、この空間の扉などの状態を送る */
 		SpaceSendMapState (pTmp);
 	}

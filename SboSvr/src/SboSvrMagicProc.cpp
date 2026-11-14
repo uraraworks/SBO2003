@@ -11,6 +11,7 @@
 #include "SboSvrRecvCmd.h"
 #include "SboSvrBattleProc.h"
 #include "SboSvrCharInfoTimerProc.h"
+#include <vector>
 
 /* ========================================================================= */
 /* 定数定義																	 */
@@ -21,6 +22,10 @@ typedef BOOL (*MAGICPROC)(PMAGICINFO, PCHARINFO, PCHARINFO);
 /* 重なったキャラに効果を出している魔法キャラ（床など）。効果の処理の間だけ入る。
    町転送の床が覚えている行き先を帰還の処理で使う */
 static PCHARINFO s_pCharMagicSrc = NULL;
+
+/* 傭兵を対象に探している間だけ TRUE（MakeCharTblTargetMerc の中だけ） */
+static BOOL s_bMercScan = FALSE;
+typedef BOOL (*MAKECHARTBLTARGETSUB)(PARRAYDWORD, int, PDWORD, PCHARINFO, PMAGICINFO);
 
 
 /* ========================================================================= */
@@ -45,7 +50,9 @@ static void MakeCharTblTarget_SCREEN		(PARRAYDWORD, PCHARINFO, PMAGICINFO);				/
 static BOOL MakeCharTblTargetSub_SCREEN		(PARRAYDWORD, int, PDWORD, PCHARINFO, PMAGICINFO);	/* ターゲットキャラの設定処理(画面内) */
 static void MakeCharTblTarget_FRONTSIDE		(PARRAYDWORD, PCHARINFO, PMAGICINFO);				/* ターゲットキャラの設定(前方横一列) */
 static BOOL MakeCharTblTargetSub_FRONTSIDE	(PARRAYDWORD, int, PDWORD, PCHARINFO, PMAGICINFO);	/* ターゲットキャラの設定処理(前方横一列) */
-static BOOL IsMagicWall						(DWORD dwMapID, int x, int y);						/* 特技・魔法が通り抜けられないマスか */
+static BOOL IsMercMagic						(PCHARINFO pChar, PMAGICINFO pInfo);				/* 傭兵にも効かせる特技か(プレイヤー側の回復・蘇生) */
+static void MakeCharTblTargetMerc			(PARRAYDWORD, PCHARINFO, PMAGICINFO, BYTE, MAKECHARTBLTARGETSUB);	/* ターゲットキャラの設定(傭兵) */
+BOOL IsMagicWall						(DWORD dwMapID, int x, int y);						/* 特技・魔法が通り抜けられないマスか */
 static BOOL IsMagicLineClear				(DWORD dwMapID, int x0, int y0, int x1, int y1);	/* 線の上に通り抜けられないマスが無いか(片方向) */
 static int  GetMagicCharWidth				(PCHARINFO pChar);									/* キャラの横幅(マス) */
 BOOL IsMagicReachChar						(PCHARINFO pChar, PCHARINFO pCharTarget);			/* 使った人から相手まで壁越しでなく届くか */
@@ -226,6 +233,12 @@ static BOOL MagicProcSub(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget, BOOL bIt
 
 		case MAGICTARGETTYPE_SELECT:		/* 選択 */
 		case MAGICTARGETTYPE_SELECT2:		/* 選択(自分以外) */
+			/* 傭兵に効かせられるのはプレイヤーの回復・蘇生の特技だけ */
+			if ((dwTblIDTarget < (DWORD)g_aCharInfo.GetSize ()) &&
+				(g_aCharInfo[dwTblIDTarget]->byNpcType == NPCTYPE_MERCENARY) &&
+				(IsMercMagic (pChar, pInfo) == FALSE)) {
+				break;
+			}
 			aCharTblTarget.Add (dwTblIDTarget);
 			break;
 		}
@@ -314,7 +327,7 @@ Exit:
 /* 内容：特技・魔法が通り抜けられないマスか									 */
 /* 日付：2026/11/12															 */
 /* ========================================================================= */
-static BOOL IsMagicWall(DWORD dwMapID, int x, int y)
+BOOL IsMagicWall(DWORD dwMapID, int x, int y)
 {
 	int nPartsID;
 	PMAPINFO pMap;
@@ -335,6 +348,36 @@ static BOOL IsMagicWall(DWORD dwMapID, int x, int y)
 		return FALSE;
 	}
 	return TRUE;
+}
+
+/* 閉じた扉は画像の当たり判定に関係なく弓を遮る。開閉は射手の空間で見る。 */
+BOOL IsBowWall(PCHARINFO c, int x, int y)
+{
+    if (c->dwMapID >= (DWORD)g_aMapInfo.GetSize()) return TRUE;
+    PMAPINFO map = g_aMapInfo[c->dwMapID];
+    if (x < 0 || y < 0 || x >= map->nCX || y >= map->nCY) return TRUE;
+    for (int i = 0; i < map->nEventCount; ++i) {
+        PEVENTINFO e = &map->pEvent[i];
+        if (e->byType != EVENTTYPE_DOOR || !e->pData || e->dwX != (DWORD)x || e->dwY != (DWORD)y) continue;
+        if (!SpaceDoorIsOpen(c->dwMapID, e, (PEVENTINFO_DOOR)e->pData, c->dwSpaceID)) return TRUE;
+        // 別空間では共有マップの画像が閉扉のままでも開いている。
+        return FALSE;
+    }
+    return IsMagicWall(c->dwMapID, x, y);
+}
+
+BOOL IsBowReachChar(PCHARINFO c, PCHARINFO t)
+{
+    if (c->dwMapID != t->dwMapID || !IsSameSpace(c, t)) return FALSE;
+    int x = c->dwX, y = c->dwY;
+    int dx = (int)t->dwX - x, dy = (int)t->dwY - y;
+    if ((!dx) == (!dy)) return FALSE;
+    int sx = (dx > 0) - (dx < 0), sy = (dy > 0) - (dy < 0);
+    do {
+        x += sx; y += sy;
+        if (IsBowWall(c, x, y)) return FALSE;
+    } while (x != (int)t->dwX || y != (int)t->dwY);
+    return TRUE;
 }
 
 /* ========================================================================= */
@@ -504,6 +547,83 @@ Exit:
 	return byRet;
 }
 
+/*
+	2026/11/13 プレイヤーの回復・蘇生の特技を傭兵にも効かせる
+	・傭兵はNPCの一覧(paTblNoNPC)にいるので、プレイヤー側(PC)を対象にする特技では見つからなかった。
+	・回復(HP増加)と蘇生だけ、プレイヤー(と、プレイヤーが置いた魔法)が使った時に、
+	  NPCの一覧から傭兵だけを探して対象に加える。攻撃の特技や敵の特技は今までどおり傭兵に当たらない。
+	・道具を使った時と同じく、倒れてから帰るまでの間に蘇生すると起き上がる。
+*/
+
+/* ========================================================================= */
+/* 関数名：IsMercMagic														 */
+/* 内容：傭兵にも効かせる特技か(プレイヤー側の回復・蘇生)					 */
+/* 日付：2026/11/13															 */
+/* ========================================================================= */
+static BOOL IsMercMagic(PCHARINFO pChar, PMAGICINFO pInfo)
+{
+	PCHARINFO pCharUser;
+
+	if ((pInfo->byType != MAGICTYPE_HPUP) && (pInfo->byType != MAGICTYPE_RESURRECTION)) {
+		return FALSE;
+	}
+	/* 敵向けの特技(NPCが対象)は除く */
+	if (pInfo->byTarget == MAGICTARGET_NPC) {
+		return FALSE;
+	}
+	/* 使ったのがプレイヤーか、プレイヤーが置いた魔法か */
+	pCharUser = pChar;
+	if ((pCharUser->byNpcType != NPCTYPE_INIT) && (pCharUser->dwParentTblID != -1) &&
+		(pCharUser->dwParentTblID < (DWORD)g_aCharInfo.GetSize ())) {
+		pCharUser = g_aCharInfo[pCharUser->dwParentTblID];
+	}
+	return (pCharUser->byNpcType == NPCTYPE_INIT);
+}
+
+/* ========================================================================= */
+/* 関数名：MakeCharTblTargetMerc											 */
+/* 内容：ターゲットキャラの設定(傭兵)。プレイヤー側の回復・蘇生の時だけ		 */
+/*		 NPCの一覧から傭兵を探し、pfnSub の判定(範囲・向き)で加える			 */
+/* 日付：2026/11/13															 */
+/* ========================================================================= */
+static void MakeCharTblTargetMerc(PARRAYDWORD aTarget, PCHARINFO pChar, PMAGICINFO pInfo,
+					BYTE byTarget, MAKECHARTBLTARGETSUB pfnSub)
+{
+	int i, nMaxNPC;
+	PMAPINFO pMap;
+	std::vector<DWORD> aMerc;
+
+	/* プレイヤー側を対象にしていない？ */
+	if (byTarget == MAGICTARGET_NPC) {
+		return;
+	}
+	if (IsMercMagic (pChar, pInfo) == FALSE) {
+		return;
+	}
+	/* 一人だけの特技で、もう相手が決まっている？ */
+	if ((pInfo->byTargetCount == MAGICTARGETCOUNT_ONE) && (aTarget->GetSize () > 0)) {
+		return;
+	}
+
+	pMap = g_aMapInfo[pChar->dwMapID];
+	nMaxNPC = (int)pMap->dwCountTblNoNPC;
+	for (i = 0; i < nMaxNPC; i ++) {
+		if (pMap->paTblNoNPC[i] == -1) {
+			break;
+		}
+		if (g_aCharInfo[pMap->paTblNoNPC[i]]->byNpcType == NPCTYPE_MERCENARY) {
+			aMerc.push_back (pMap->paTblNoNPC[i]);
+		}
+	}
+	if (aMerc.empty ()) {
+		return;
+	}
+
+	s_bMercScan = TRUE;
+	pfnSub (aTarget, (int)aMerc.size (), &aMerc[0], pChar, pInfo);
+	s_bMercScan = FALSE;
+}
+
 /* ========================================================================= */
 /* 関数名：MakeCharTblTarget_SELF											 */
 /* 内容：ターゲットキャラの設定(自分)										 */
@@ -554,6 +674,8 @@ static void MakeCharTblTarget_SELF(PARRAYDWORD aTarget, PCHARINFO pChar, PMAGICI
 		}
 		break;
 	}
+	/* プレイヤーの回復・蘇生の特技は、雇った傭兵にも効く */
+	MakeCharTblTargetMerc (aTarget, pChar, pInfo, byTarget, MakeCharTblTargetSub_SELF);
 }
 
 /* ========================================================================= */
@@ -593,6 +715,9 @@ static BOOL MakeCharTblTargetSub_SELF(PARRAYDWORD aTarget,
 			break;
 		case NPCTYPE_MIMIC:		/* 宝箱の敵(正体前)。プレイヤーの特技だけが当たる(当たると正体を現す) */
 			bCheck = (pChar->byNpcType == NPCTYPE_INIT);
+			break;
+		case NPCTYPE_MERCENARY:	/* 傭兵。プレイヤーの回復・蘇生の特技で、傭兵を探している時だけ */
+			bCheck = s_bMercScan;
 			break;
 		}
 
@@ -645,6 +770,8 @@ static void MakeCharTblTarget_FRONT(PARRAYDWORD aTarget, PCHARINFO pChar, PMAGIC
 		}
 		break;
 	}
+	/* プレイヤーの回復・蘇生の特技は、雇った傭兵にも効く */
+	MakeCharTblTargetMerc (aTarget, pChar, pInfo, byTarget, MakeCharTblTargetSub_FRONT);
 }
 
 /* ========================================================================= */
@@ -684,6 +811,9 @@ static BOOL MakeCharTblTargetSub_FRONT(PARRAYDWORD aTarget,
 			break;
 		case NPCTYPE_MIMIC:		/* 宝箱の敵(正体前)。プレイヤーの特技だけが当たる(当たると正体を現す) */
 			bCheck = (pChar->byNpcType == NPCTYPE_INIT);
+			break;
+		case NPCTYPE_MERCENARY:	/* 傭兵。プレイヤーの回復・蘇生の特技で、傭兵を探している時だけ */
+			bCheck = s_bMercScan;
 			break;
 		}
 
@@ -776,6 +906,8 @@ static void MakeCharTblTarget_CIRCLE(PARRAYDWORD aTarget, PCHARINFO pChar, PMAGI
 		}
 		break;
 	}
+	/* プレイヤーの回復・蘇生の特技は、雇った傭兵にも効く */
+	MakeCharTblTargetMerc (aTarget, pChar, pInfo, byTarget, MakeCharTblTargetSub_CIRCLE);
 }
 
 /* ========================================================================= */
@@ -815,6 +947,9 @@ static BOOL MakeCharTblTargetSub_CIRCLE(PARRAYDWORD aTarget,
 			break;
 		case NPCTYPE_MIMIC:		/* 宝箱の敵(正体前)。プレイヤーの特技だけが当たる(当たると正体を現す) */
 			bCheck = (pChar->byNpcType == NPCTYPE_INIT);
+			break;
+		case NPCTYPE_MERCENARY:	/* 傭兵。プレイヤーの回復・蘇生の特技で、傭兵を探している時だけ */
+			bCheck = s_bMercScan;
 			break;
 		}
 
@@ -870,6 +1005,8 @@ static void MakeCharTblTarget_SCREEN(PARRAYDWORD aTarget, PCHARINFO pChar, PMAGI
 		}
 		break;
 	}
+	/* プレイヤーの回復・蘇生の特技は、雇った傭兵にも効く */
+	MakeCharTblTargetMerc (aTarget, pChar, pInfo, byTarget, MakeCharTblTargetSub_SCREEN);
 }
 
 /* ========================================================================= */
@@ -909,6 +1046,9 @@ static BOOL MakeCharTblTargetSub_SCREEN(PARRAYDWORD aTarget,
 			break;
 		case NPCTYPE_MIMIC:		/* 宝箱の敵(正体前)。プレイヤーの特技だけが当たる(当たると正体を現す) */
 			bCheck = (pChar->byNpcType == NPCTYPE_INIT);
+			break;
+		case NPCTYPE_MERCENARY:	/* 傭兵。プレイヤーの回復・蘇生の特技で、傭兵を探している時だけ */
+			bCheck = s_bMercScan;
 			break;
 		}
 
@@ -964,6 +1104,8 @@ static void MakeCharTblTarget_FRONTSIDE(PARRAYDWORD aTarget, PCHARINFO pChar, PM
 		}
 		break;
 	}
+	/* プレイヤーの回復・蘇生の特技は、雇った傭兵にも効く */
+	MakeCharTblTargetMerc (aTarget, pChar, pInfo, byTarget, MakeCharTblTargetSub_FRONTSIDE);
 }
 
 /* ========================================================================= */
@@ -1003,6 +1145,9 @@ static BOOL MakeCharTblTargetSub_FRONTSIDE(PARRAYDWORD aTarget,
 			break;
 		case NPCTYPE_MIMIC:		/* 宝箱の敵(正体前)。プレイヤーの特技だけが当たる(当たると正体を現す) */
 			bCheck = (pChar->byNpcType == NPCTYPE_INIT);
+			break;
+		case NPCTYPE_MERCENARY:	/* 傭兵。プレイヤーの回復・蘇生の特技で、傭兵を探している時だけ */
+			bCheck = s_bMercScan;
 			break;
 		}
 

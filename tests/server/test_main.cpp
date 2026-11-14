@@ -470,6 +470,160 @@ static void TestEnemyAI(void)
 	delete [] aChar;
 }
 
+/* 戦闘２の回り込み・狙いを変える（2026/11/13）の中身を外から呼べるようにする */
+class CTestSearchAI2 : public CCharProcSEARCH
+{
+public:
+	using CCharProcSEARCH::ProcTarget;
+};
+
+/* ========================================================================= */
+/* 関数名：	TestEnemyAI2													 */
+/* 内容：	V. 戦闘２：L字の壁を回り込む・となりの人へ狙いを変える・囲まれたら相手を変える */
+/* ========================================================================= */
+static void TestEnemyAI2(void)
+{
+	printf("== V. EnemyAI2 ==\n");
+	MAPINFO Map = {};
+	WORD awMap[16 * 16];
+	DWORD adwPC[4], adwNPC[1];
+	CHARINFO *aChar = new CHARINFO[5]();
+	int nMap = g_aMapInfo.GetSize(), nChar = g_aCharInfo.GetSize();
+	WORD wFloor = 0, wWall = 0;
+	for (int i = 0; i < g_wCountMapParts; i ++) {
+		if (g_aMapPartsInfo[i].byHitType == PARTSHIT_NONE) wFloor = (WORD)i;
+		if (g_aMapPartsInfo[i].byHitType == PARTSHIT_BLOCK1) wWall = (WORD)i;
+	}
+	std::fill(awMap, awMap + 16 * 16, wFloor);
+	/* L字の壁：x=6 の y=3〜9 と、y=9 の x=2〜6 */
+	for (int y = 3; y <= 9; y ++) awMap[6 + y * 16] = wWall;
+	for (int x = 2; x <= 6; x ++) awMap[x + 9 * 16] = wWall;
+	Map.dwID = nMap;
+	Map.nCX = Map.nCY = 16;
+	Map.pwMap = awMap;
+	Map.paTblNoPC = adwPC;
+	Map.dwCountTblNoPC = 1;
+	Map.paTblNoNPC = adwNPC;
+	Map.dwCountTblNoNPC = 1;
+	g_aMapInfo.Add(&Map);
+	for (int i = 0; i < 5; i ++) {
+		PCHARINFO p = &aChar[i];
+		p->dwTblID = nChar + i; p->dwMapID = nMap;
+		p->wHP = p->wMaxHP = 10; p->byGameState = GAMESTATE_MOVE;
+		p->wGrpMain = CHARGRP_MAIN_NORMAL;
+		p->dwTargetTblID = (DWORD)-1;
+		p->dwX = p->dwY = 15;
+		g_aCharInfo.Add(p);
+	}
+	PCHARINFO pEnemy = &aChar[0];
+	PCHARINFO apPC[4] = { &aChar[1], &aChar[2], &aChar[3], &aChar[4] };
+	for (int i = 0; i < 4; i ++) adwPC[i] = apPC[i]->dwTblID;
+	adwNPC[0] = pEnemy->dwTblID;
+
+	pEnemy->byNpcType = NPCTYPE_BATTLE2;
+	pEnemy->dwX = pEnemy->dwStartX = 4; pEnemy->dwY = pEnemy->dwStartY = 6;
+	pEnemy->bySearchCx = pEnemy->bySearchCy = 5;
+	pEnemy->byMoveProbabilityX = pEnemy->byMoveProbabilityY = 100;
+	CTestSearchAI2 Proc;
+	Proc.Create(pEnemy);
+
+	/* L字の壁の内側の角から、壁の向こうの相手へ回り込んでとなりに着く（上下に行ったり来たりしない） */
+	apPC[0]->dwX = 8; apPC[0]->dwY = 7;
+	pEnemy->dwTargetTblID = apPC[0]->dwTblID;
+	pEnemy->dwLastBattle = 1;
+	DWORD dwTime = s_dwFakeNow;
+	int nSteps = 0, nBack = 0;
+	BYTE byLastDir = 0xFF;
+	for (int i = 0; i < 40; i ++) {
+		dwTime += 500;
+		g_dwTime = dwTime;
+		DWORD dwX = pEnemy->dwX, dwY = pEnemy->dwY;
+		Proc.ProcTarget(dwTime);
+		if ((dwX != pEnemy->dwX) || (dwY != pEnemy->dwY)) {
+			/* 前の1歩と逆向きに戻った回数 */
+			if ((byLastDir != 0xFF) && (pEnemy->byDirection == abyDirectionTbl[byLastDir])) nBack ++;
+			byLastDir = pEnemy->byDirection;
+			nSteps ++;
+		}
+		if (abs((int)pEnemy->dwX - 8) + abs((int)pEnemy->dwY - 7) == 1) break;
+	}
+	printf("lwall steps=%d back=%d at=%u,%u\n", nSteps, nBack, pEnemy->dwX, pEnemy->dwY);
+	if ((abs((int)pEnemy->dwX - 8) + abs((int)pEnemy->dwY - 7) != 1) || nBack) abort();
+
+	/* 狙いの相手は壁の向こう、別の人がとなりにいる → となりの人へ狙いを変えて向く */
+	Map.dwCountTblNoPC = 2;
+	pEnemy->dwX = 4; pEnemy->dwY = 6; pEnemy->byDirection = 0;
+	apPC[0]->dwX = 8; apPC[0]->dwY = 7;
+	apPC[1]->dwX = 3; apPC[1]->dwY = 6;
+	pEnemy->dwTargetTblID = apPC[0]->dwTblID;
+	dwTime += 500;
+	Proc.ProcTarget(dwTime);
+	printf("nextto target=%d dir=%d\n", pEnemy->dwTargetTblID == apPC[1]->dwTblID, pEnemy->byDirection);
+	if ((pEnemy->dwTargetTblID != apPC[1]->dwTblID) || (pEnemy->byDirection != 2)) abort();
+	/* 倒れている人には変えない */
+	apPC[1]->wHP = 0;
+	pEnemy->dwTargetTblID = apPC[0]->dwTblID;
+	dwTime += 500;
+	Proc.ProcTarget(dwTime);
+	printf("nextto dead keep=%d\n", pEnemy->dwTargetTblID == apPC[0]->dwTblID);
+	if (pEnemy->dwTargetTblID != apPC[0]->dwTblID) abort();
+	apPC[1]->wHP = 10;
+
+	/* 一人だけがとなりなら、行動しても相手は変えない */
+	Map.dwCountTblNoPC = 1;
+	pEnemy->dwX = 10; pEnemy->dwY = 12;
+	apPC[0]->dwX = 10; apPC[0]->dwY = 11;
+	pEnemy->dwTargetTblID = apPC[0]->dwTblID;
+	pEnemy->dwLastBattle = 100;
+	int nChange = 0;
+	for (int i = 0; i < 20; i ++) {
+		dwTime += 500;
+		pEnemy->dwLastBattle += 1000;	/* 毎回行動した */
+		Proc.ProcTarget(dwTime);
+		if (pEnemy->dwTargetTblID != apPC[0]->dwTblID) nChange ++;
+	}
+	printf("alone change=%d\n", nChange);
+	if (nChange) abort();
+
+	/* 4方向から囲まれたら、行動するたびにときどきとなりの別の人へ変える */
+	Map.dwCountTblNoPC = 4;
+	apPC[1]->dwX = 10; apPC[1]->dwY = 13;
+	apPC[2]->dwX = 9; apPC[2]->dwY = 12;
+	apPC[3]->dwX = 11; apPC[3]->dwY = 12;
+	int anHit[4] = {};
+	nChange = 0;
+	for (int i = 0; i < 40; i ++) {
+		DWORD dwOld = pEnemy->dwTargetTblID;
+		dwTime += 500;
+		pEnemy->dwLastBattle += 1000;
+		Proc.ProcTarget(dwTime);
+		if (pEnemy->dwTargetTblID != dwOld) nChange ++;
+		for (int k = 0; k < 4; k ++) {
+			if (pEnemy->dwTargetTblID == apPC[k]->dwTblID) {
+				anHit[k] ++;
+				/* 狙いの相手の方を向いている */
+				int nDir = -1;
+				if (apPC[k]->dwY < pEnemy->dwY) nDir = 0; else if (apPC[k]->dwY > pEnemy->dwY) nDir = 1;
+				else if (apPC[k]->dwX < pEnemy->dwX) nDir = 2; else nDir = 3;
+				if (pEnemy->byDirection != nDir) abort();
+			}
+		}
+	}
+	printf("surround change=%d hit=%d,%d,%d,%d\n", nChange, anHit[0], anHit[1], anHit[2], anHit[3]);
+	if ((nChange < 5) || !anHit[0] || !anHit[1] || !anHit[2] || !anHit[3]) abort();
+	/* 行動していない間（ゲージが溜まるまで）は変えない */
+	DWORD dwKeep = pEnemy->dwTargetTblID;
+	for (int i = 0; i < 10; i ++) {
+		dwTime += 500;
+		Proc.ProcTarget(dwTime);
+		if (pEnemy->dwTargetTblID != dwKeep) abort();
+	}
+
+	g_aCharInfo.RemoveAt(nChar, 5);
+	g_aMapInfo.RemoveAt(nMap);
+	delete [] aChar;
+}
+
 /* ------------------------------------------------------------------------- */
 /* A. 送信																	 */
 /* ------------------------------------------------------------------------- */
@@ -897,7 +1051,7 @@ static void PrintTownWarp(const char *pszLabel, PCHARINFO pChar)
 }
 
 static void TestShipBed(const std::vector<int> &aLogin);
-static void TestMercenary(const std::vector<int> &aLogin);
+static void TestMercenary(const std::vector<int> &aLogin, BOOL bMagic = FALSE);
 static void TestTailMapChg(const std::vector<int> &aLogin);
 static void TestQuest(const std::vector<int> &aLogin);
 static void TestSortItem(const std::vector<int> &aLogin);
@@ -1081,6 +1235,7 @@ static void TestWorld(void)
 	TestSearchStep();
 	TestSearch2();
 	TestEnemyAI();
+	TestEnemyAI2();
 
 	/* データには PC がいないので、NPC を複製して PC を作る（ログアウト中 3000 人、うち NLOGIN 人をログイン中にする） */
 	PCHARINFO pTemplate = NULL;
@@ -1358,6 +1513,8 @@ static void TestWorld(void)
 	TestMimic(aLogin);
 	/* X. 敵を全部倒すと開く扉 */
 	TestEnemyDoor(aLogin);
+	/* K2. 傭兵への回復・蘇生の特技（ゲームの乱数を使うので最後） */
+	TestMercenary(aLogin, TRUE);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1831,9 +1988,80 @@ static void PrintItems(const char *pszLabel, PCHARINFO p)
 	printf("\n");
 }
 
-static void TestMercenary(const std::vector<int> &aLogin)
+/* ------------------------------------------------------------------------- */
+/* K2. 傭兵への特技：プレイヤーの回復・蘇生の特技が傭兵にも効く			 */
+/*     （攻撃の特技は当たらない）。ゲームの乱数を使うので最後に流す		 */
+/* ------------------------------------------------------------------------- */
+static void TestMercMagicBody(PCHARINFO pOwner, PCHARINFO pMerc, CCharProcMERCENARY *pProc, PMAPINFO pMap)
 {
-	printf("== K. Mercenary ==\n");
+	int nHealSel = -1, nHealCircle = -1, nResSel = -1, nResScreen = -1, nAtkCircle = -1;
+	for (int i = 1; i < g_aMagicInfo.GetSize(); i ++) {
+		PMAGICINFO pM = g_aMagicInfo[i];
+		if (pM == NULL) continue;
+		if (pM->byType == MAGICTYPE_HPUP && pM->byTarget != MAGICTARGET_NPC) {
+			if (nHealSel < 0 && (pM->byTargetType == MAGICTARGETTYPE_SELECT || pM->byTargetType == MAGICTARGETTYPE_SELECT2)) nHealSel = i;
+			if (nHealCircle < 0 && pM->byTargetType == MAGICTARGETTYPE_CIRCLE && pM->byTargetArea >= 1) nHealCircle = i;
+		}
+		if (pM->byType == MAGICTYPE_RESURRECTION && pM->byTarget != MAGICTARGET_NPC) {
+			if (nResSel < 0 && (pM->byTargetType == MAGICTARGETTYPE_SELECT || pM->byTargetType == MAGICTARGETTYPE_SELECT2)) nResSel = i;
+			if (nResScreen < 0 && pM->byTargetType == MAGICTARGETTYPE_SCREEN) nResScreen = i;
+		}
+		if (nAtkCircle < 0 && pM->byType == MAGICTYPE_HPDOWN && pM->byTarget == MAGICTARGET_NPC &&
+			pM->byTargetType == MAGICTARGETTYPE_CIRCLE && pM->byTargetArea >= 1) nAtkCircle = i;
+	}
+	printf("merc magic found healsel=%d healcircle=%d ressel=%d resscreen=%d atkcircle=%d\n",
+		(int)(nHealSel > 0), (int)(nHealCircle > 0), (int)(nResSel > 0), (int)(nResScreen > 0), (int)(nAtkCircle > 0));
+	BYTE byMapFlgBack = pMap->byFlg;
+	pMap->byFlg &= ~MAPFLG_MAGIC;
+	/* 雇い主のとなりに置く */
+	pMerc->dwX = pOwner->dwX + 1;
+	pMerc->dwY = pOwner->dwY;
+	pOwner->wHP = pOwner->wMaxHP;
+	pOwner->byDirection = 3;
+
+	/* 選んで回復 */
+	pMerc->wHP = 1;
+	if (nHealSel > 0) MagicProcItem(pOwner->dwTblID, (BYTE)nHealSel, pMerc->dwTblID);
+	printf("merc magic healsel up=%d\n", (int)(pMerc->wHP > 1));
+	/* 周りを回復 */
+	pMerc->wHP = 1;
+	if (nHealCircle > 0) MagicProcItem(pOwner->dwTblID, (BYTE)nHealCircle, (DWORD)-1);
+	printf("merc magic healcircle up=%d\n", (int)(pMerc->wHP > 1));
+	/* 周りへの攻撃は傭兵に当たらない */
+	WORD wHPAtk = pMerc->wHP = pMerc->wMaxHP;
+	if (nAtkCircle > 0) MagicProcItem(pOwner->dwTblID, (BYTE)nAtkCircle, (DWORD)-1);
+	printf("merc magic atkcircle same=%d\n", (int)(pMerc->wHP == wHPAtk));
+
+	/* 倒れた傭兵を選んで蘇生 → 傭兵の処理で起き上がる */
+	pMerc->wHP = 0;
+	MercenaryDamaged(NULL, pMerc);
+	s_dwFakeNow += 100;
+	g_dwTime = s_dwFakeNow;
+	pProc->Proc(g_dwTime);
+	if (nResSel > 0) MagicProcItem(pOwner->dwTblID, (BYTE)nResSel, pMerc->dwTblID);
+	s_dwFakeNow += 100;
+	g_dwTime = s_dwFakeNow;
+	pProc->Proc(g_dwTime);
+	printf("merc magic ressel alive=%d state=%d owner=%d\n", (int)(pMerc->wHP > 0),
+		(int)(pMerc->byCharState != CHARSTATE_DEAD), (int)(GetMercenaryOwner(pMerc) == pOwner));
+	/* 画面内の蘇生 */
+	pMerc->wHP = 0;
+	MercenaryDamaged(NULL, pMerc);
+	s_dwFakeNow += 100;
+	g_dwTime = s_dwFakeNow;
+	pProc->Proc(g_dwTime);
+	if (nResScreen > 0) MagicProcItem(pOwner->dwTblID, (BYTE)nResScreen, (DWORD)-1);
+	s_dwFakeNow += 100;
+	g_dwTime = s_dwFakeNow;
+	pProc->Proc(g_dwTime);
+	printf("merc magic resscreen alive=%d state=%d\n", (int)(pMerc->wHP > 0), (int)(pMerc->byCharState != CHARSTATE_DEAD));
+	pMerc->wHP = pMerc->wMaxHP;
+	pMap->byFlg = byMapFlgBack;
+}
+
+static void TestMercenary(const std::vector<int> &aLogin, BOOL bMagic)
+{
+	printf(bMagic ? "== K2. Mercenary magic ==\n" : "== K. Mercenary ==\n");
 	if (aLogin.empty()) {
 		return;
 	}
@@ -1914,6 +2142,24 @@ static void TestMercenary(const std::vector<int> &aLogin)
 	}
 	CCharProcMERCENARY *pProc = (CCharProcMERCENARY *)pMerc->pProc;
 	printf("merc hired dist=%d\n", abs((int)pMerc->dwX - (int)pOwner->dwX) + abs((int)pMerc->dwY - (int)pOwner->dwY));
+
+	/* 特技のテストだけ（最後に流す） */
+	if (bMagic) {
+		MercenarySetBattleMode(pOwner, FALSE);	/* 戦わせない */
+		TestMercMagicBody(pOwner, pMerc, pProc, pMap);
+		MercenaryOwnerLogout(pOwner);
+		DeleteTblNoPC((int)pOwner->dwTblID);
+		pOwner->dwMapID = dwMapBack;
+		pOwner->dwX = dwXBack;
+		pOwner->dwY = dwYBack;
+		memcpy(pOwner->waItem, waItemBack, sizeof(waItemBack));
+		memcpy(pOwner->waEqu, waEquBack, sizeof(waEquBack));
+		pOwner->wHP = wHPBack;
+		pOwner->wMaxHP = wMaxHPBack;
+		pOwner->dwGold = dwGoldBack;
+		AddTblNoPC((int)pOwner->dwTblID);
+		return;
+	}
 
 	/* 1) 道さがし：傭兵をいろいろなマスに置き、マップの敵へ行く道を前の方法と比べる */
 	{
@@ -2908,7 +3154,10 @@ static void TestChallenge(const std::vector<int> &aLogin)
 		pChild->pID = pChild->dwTblID + 1;
 		dwChildTbl = pChild->dwTblID;
 	}
+	int nMapInfoA0 = MockCmdCount(1000, CMD_MAPINFO), nMapInfoB0 = MockCmdCount(1001, CMD_MAPINFO);
 	QuestSendTalk(pA, pGate->dwTblID);
+	/* 同じマップの中で移る時も、マップ情報を送り直して見え方を作り直す（ふつうの世界のキャラが残らないように） */
+	printf("challenge start mapinfo a=%d b=%d\n", MockCmdCount(1000, CMD_MAPINFO) - nMapInfoA0, MockCmdCount(1001, CMD_MAPINFO) - nMapInfoB0);
 	printf("challenge buff timers=%d charbuff_sent=%d\n", pA->aTimerEvent.GetSize(), (int)(MockCmdCount(1000, CMD_CHARBUFF) > nBuff0));
 	printf("challenge child removed=%d\n", (int)(g_aCharInfo[dwChildTbl]->byNpcType != NPCTYPE_USEMAGICPARENT));
 	ChallengePrint("start a", pA, wWeapon);
@@ -2957,12 +3206,12 @@ static void TestChallenge(const std::vector<int> &aLogin)
 	QuestChallengeProcNow();
 	printf("challenge proc a=%d b=%d\n", (int)QuestInChallenge(pA), (int)QuestInChallenge(pB));
 
-	/* B が倒れる：B だけ中断して元の状態・入る前の場所へ。依頼は受けたまま */
+	/* B が倒れる：B だけ中断して元の状態・光に入った A の入る前の場所へ（仲間は全員同じ場所へ戻る）。依頼は受けたまま */
 	pB->wHP = 0;
 	pB->byCharState = CHARSTATE_DEAD;
 	QuestChallengeProcNow();
 	ChallengePrint("dead b", pB, wWeapon);
-	printf("challenge dead b state=%u at_start=%d quest=%u a_in=%d\n", pB->byCharState, (int)(pB->dwX == dwBX && pB->dwY == dwBY), pB->wQuestID, (int)QuestInChallenge(pA));
+	printf("challenge dead b state=%u at_start=%d quest=%u a_in=%d\n", pB->byCharState, (int)(pB->dwX == dwAX && pB->dwY == dwAY && dwBX != dwAX), pB->wQuestID, (int)QuestInChallenge(pA));
 
 	/* 倒れて出た B は、A がまだ中にいる間は入り直せない（一人で別の組を始めない） */
 	{
@@ -4725,6 +4974,8 @@ static void TestItemMsgWait(void)
 	printf("S itemmsg full %s\n", szFull);
 }
 
+#include "bow.inc"
+
 int main(int argc, char **argv)
 {
 	setvbuf(stdout, NULL, _IOLBF, 0);
@@ -4733,6 +4984,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "chdir failed\n");
 		return 1;
 	}
+	if (argc >= 3 && strcmp(argv[2], "--bow") == 0) return TestBowOnly();
 	TestMapNo();
 	TestCharNo();
 	TestItemMsgWait();

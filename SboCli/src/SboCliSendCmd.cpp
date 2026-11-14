@@ -7,6 +7,7 @@
 /* ========================================================================= */
 
 #include "stdafx.h"
+#include "common/BowFlight.h"
 #include "../Common/Info/InfoJob.h"
 #include "../Common/Command/Command.h"
 #include "Glbldata.h"
@@ -249,6 +250,8 @@ void SendCmdCHGDIRECTION(BYTE byDirection)
 //		return;
 //	}
 
+    if (GetBowWeapon(pChar) && pChar->byDirection != byDirection) PauseBowTurnGage(pChar);
+
 	g_bReqestPos = TRUE;
 	pSendData = (PCMDPARA_DATA1)new BYTE[sizeof (CMDPARA_DATA1)];
 	ZeroMemory (pSendData, sizeof (CMDPARA_DATA1));
@@ -435,6 +438,7 @@ void SendCmdCHARPOS(BYTE byDirection, BOOL bMovingFlg)
 	}
 
 SendCmdCHARPOSEND:
+    if (GetBowWeapon(pChar)) PauseBowTurnGage(pChar);
 	g_bSendCharPosDone = TRUE;
 	PostMessage (g_hWndMain, WM_RCVDATA, (WPARAM)pSendData, (LPARAM)sizeof (CMDPARA_CHARPOS));
 	g_bReqestPos = TRUE;
@@ -2919,6 +2923,12 @@ void SendCmdREQ_ATTACK(
 
 	pSendData = new CMDPARA_DATA4;
 	ZeroMemory (pSendData, sizeof (CMDPARA_DATA4));
+    PCHARINFO c = g_aCharInfo[g_nMyCharID];
+    if (GetBowWeapon(c)) {
+        int target = FindBowAttackTarget(c, byTurnLV);
+        if (target < 0) { delete pSendData; return; }
+        if (dwTblID != c->dwAtackTblID || c->byDotMove || g_bReqestPos) { delete pSendData; return; }
+    }
 	pSendData->byCmd	= CMD_REQ_ATTACK;
 	pSendData->pID		= g_pMyID;
 	pSendData->byData	= byTurnLV;

@@ -19,6 +19,8 @@ typedef class CCharProcATACK : public CCharProcBase
 public:
 	CCharProcATACK();									/* コンストラクタ */
 
+	BOOL ProcBow(DWORD dwTime);
+	BOOL HitCurrentCell(void);
 	BOOL Proc		(DWORD dwTime);								/* 処理 */
 } CCharProcATACK, *PCCharProcATACK;
 
