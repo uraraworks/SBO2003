@@ -3021,6 +3021,20 @@ void AdminOnCommandCharStatus(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 		m_dwSelectpID = -1;
 		break;
 
+	/* 蘇生（選んだキャラをHP満タンで生き返らせる。入力欄の値は送らない） */
+	case IDC_BUTTON5:
+		if (m_dwSelectID == -1) {
+			break;
+		}
+		{
+			int nTmp = GetCharNo (m_dwSelectpID);
+			if (nTmp < 0) {
+				break;
+			}
+			SendCmdADMINRESURRECT (g_aCharInfo[nTmp]->dwTblID);
+		}
+		break;
+
 	/* 更新 */
 	case IDC_BUTTON2:
 	/* 追加 */
@@ -8478,6 +8492,11 @@ void MakeAdminWndCharStatus(void)
 			12 * 0, 1, 32, 16, g_hWndAdmin, (HMENU)IDC_BUTTON1, g_hInstance, NULL);
 	SendMessage (m_hWndButton1, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
+	/* 蘇生（選んだキャラをHP満タンで生き返らせる） */
+	m_hWndButton5 = CreateWindow ("BUTTON", "蘇生", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+			36, 1, 32, 16, g_hWndAdmin, (HMENU)IDC_BUTTON5, g_hInstance, NULL);
+	SendMessage (m_hWndButton5, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+
 	/* 性別 */
 	m_hWndCombo1 = CreateWindow ("COMBOBOX", "", WS_CHILD | WS_VISIBLE | WS_VSCROLL | CBS_DROPDOWNLIST,
 			12 * 4 - 3, 15 * 6 + 52, 12 * 3, 12 * 10, g_hWndAdmin, (HMENU)IDC_TMPCOMBO1, g_hInstance, NULL);
@@ -8719,6 +8738,7 @@ void DeleteAdminWndCharStatus(void)
 	SAFE_DESTROYWND (m_hWndButton2);
 	SAFE_DESTROYWND (m_hWndButton3);
 	SAFE_DESTROYWND (m_hWndButton4);
+	SAFE_DESTROYWND (m_hWndButton5);
 	SAFE_DESTROYWND (m_hWndCombo1);
 	SAFE_DESTROYWND (m_hWndCombo2);
 	SAFE_DESTROYWND (m_hWndCombo3);

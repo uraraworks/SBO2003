@@ -117,6 +117,7 @@ void SendCMDEQUUSERINFOREQ	(BYTE);									/* 装備職業情報要求 */
 void SendCmdADMINUNDO		(BYTE, BYTE, DWORD);					/* 管理者画面の「元に戻す」 */
 void SendCmdADMINSPACE		(BYTE, DWORD);							/* 管理者の空間の切り替え */
 void SendCmdADMINQUEST		(BYTE, int, const QUESTINFO *);			/* 管理者ウィンドウのギルドの依頼の編集 */
+void SendCmdADMINRESURRECT	(DWORD);								/* 管理者ウィンドウからキャラをHP満タンで蘇生 */
 void SendCMDSHOPBUY			(DWORD, DWORD);							/* アイテム購入 */
 void SendCMDDIFENCE			(void);									/* 防御 */
 void SendCMDTHROWSNOW		(void);									/* 雪を投げる */
@@ -3575,6 +3576,22 @@ void SendCmdADMINQUEST(BYTE byCmdSub, int nNo, const QUESTINFO *pInfo)
 	}
 	cliSock.Send ((PBYTE)pPara, sizeof (CMDPARA_ADMINQUEST));
 	SAFE_DELETE (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdADMINRESURRECT											 */
+/* 内容：コマンド送信(管理者ウィンドウからキャラをHP満タンで蘇生)			 */
+/*       dwTblID: サーバーのキャラ番号（CHARINFO の dwTblID）				 */
+/* ========================================================================= */
+void SendCmdADMINRESURRECT(DWORD dwTblID)
+{
+	CMDPARA_DATA1 Para;
+
+	ZeroMemory (&Para, sizeof (Para));
+	Para.byCmd		= CMD_ADMINRESURRECT;
+	Para.pID		= g_pMyID;
+	Para.dwTblID	= dwTblID;
+	cliSock.Send ((PBYTE)&Para, sizeof (Para));
 }
 
 /* Copyright(C)URARA-works 2003-2005 */

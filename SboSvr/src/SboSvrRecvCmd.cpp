@@ -206,6 +206,7 @@ void	RecvDataProcNPCROUTE					(PBYTE, DWORD);				/* NPCの巡回ルート */
 void	RecvDataProcRECIPEMAKE					(PBYTE, DWORD);				/* レシピで作ってもらう */
 void	RecvDataProcQUEST						(PBYTE, DWORD);				/* ギルドの仕事依頼（一覧・受ける・取り消す・渡す） */
 void	RecvDataProcADMINQUEST					(PBYTE, DWORD);				/* 管理者ウィンドウのギルドの依頼の編集 */
+void	RecvDataProcADMINRESURRECT				(PBYTE, DWORD);				/* 管理者ウィンドウからキャラを蘇生 */
 void	RecvDataProcSORTITEM					(PBYTE, DWORD);				/* 道具欄・預かり所の並べ替え */
 void	RecvDataProcLEAVEITEMDISPOSE			(PBYTE, DWORD);				/* 預かり所の品を売る・捨てる */
 void	RecvDataProcBATTLEMODE					(PBYTE, DWORD);				/* 戦闘モードの切り替え通知 */
@@ -436,6 +437,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	NULL,								/* CMD_CHARBUFF(サーバー→クライアントのみ) */
 	RecvDataProcADMINSPACE,				/* CMD_ADMINSPACE */
 	RecvDataProcADMINQUEST,				/* CMD_ADMINQUEST */
+	RecvDataProcADMINRESURRECT,			/* CMD_ADMINRESURRECT */
 
 	NULL
 };
@@ -10662,6 +10664,107 @@ void RecvDataProcADMINQUEST(PBYTE pData, DWORD dwDataSize)
 			SendAdminQuestItem (pID, nNoOut);
 		}
 		break;
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：GetResurrectionEfectID											 */
+/* 内容：蘇生のエフェクト番号を特技のデータから探す							 */
+/*       効果種別が「蘇生」で相手側のエフェクトがある最初の特技のもの。	 */
+/*       無ければ蘇生アイテムと同じ 14 番									 */
+/* ========================================================================= */
+static BYTE GetResurrectionEfectID(void)
+{
+	int i, nCount;
+	PMAGICINFO pInfo;
+
+	nCount = g_aMagicInfo.GetSize ();
+	for (i = 0; i < nCount; i ++) {
+		pInfo = g_aMagicInfo[i];
+		if ((pInfo == NULL) || (pInfo->byType != MAGICTYPE_RESURRECTION)) {
+			continue;
+		}
+		if (pInfo->byTargetEfectID) {
+			return pInfo->byTargetEfectID;
+		}
+	}
+	return 14;
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINRESURRECT										 */
+/* 内容：受信データ処理(管理者ウィンドウからキャラを蘇生)					 */
+/*       倒れていればHP満タンで生き返らせ、倒れていなければHPを満タンにする */
+/* ========================================================================= */
+void RecvDataProcADMINRESURRECT(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_DATA1 pPara = (PCMDPARA_DATA1)pData;
+	PCHARINFO pChar;
+	BOOL bDead;
+	long lTmp;
+	char szTmp[128];
+
+	if (s_dwRecvSize < sizeof (CMDPARA_DATA1)) {
+		return;
+	}
+	if (pPara->dwTblID >= (DWORD)g_aCharInfo.GetSize ()) {
+		return;
+	}
+	pChar = g_aCharInfo[pPara->dwTblID];
+	if ((pChar == NULL) || (pChar->pID == 0)) {
+		return;
+	}
+	/* ログインしていない・マップにいないキャラ（保存されているだけ）は相手にしない */
+	if ((pChar->byGameState != GAMESTATE_NPC) && (pChar->byGameState != GAMESTATE_MOVE)) {
+		return;
+	}
+	if (GetMapNo (pChar->dwMapID) < 0) {
+		return;
+	}
+
+	bDead = ((pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0));
+	if (!bDead && (pChar->wHP >= pChar->wMaxHP)) {
+		if (s_pIDRecv) {
+			wsprintf (szTmp, "%sは倒れていません（HPも満タンです）。", pChar->szName);
+			SendCmdSYSMSG (s_pIDRecv, szTmp, SPEECHCMD_BATTLE1);
+		}
+		return;
+	}
+
+	lTmp = (long)pChar->wMaxHP - (long)pChar->wHP;
+	pChar->wHP = pChar->wMaxHP;
+	if (pChar->wHP == 0) {
+		pChar->wHP = 1;
+	}
+	if (pChar->byCharState == CHARSTATE_DEAD) {
+		pChar->byCharState = CHARSTATE_MOVE;
+	}
+
+	/* エフェクト発動（蘇生の特技と同じもの） */
+	pChar->byEfect = GetResurrectionEfectID ();
+	SendCmdEFECTCHG (pChar->pID, pChar->dwTblID, pChar->byEfect);
+	pChar->byEfect = 0;
+
+	/* 文字エフェクト発動（回復した量） */
+	if (lTmp > 0) {
+		wsprintf (szTmp, "%d", lTmp);
+		SendCmdADDCHAREFC (pChar->dwTblID, RGB (139, 213, 255), szTmp);
+	}
+
+	/* HPを通知（本人は倒れた窓が閉じる） */
+	SendCmdCHARSTATUSHP (URARASOCK_SENDALL, pChar->dwTblID);
+
+	if (bDead) {
+		/* 本人と管理者に「生き返りました」 */
+		if (pChar->byGameState == GAMESTATE_MOVE) {
+			SendCmdSYSMSG2 (pChar->pID, SYSMSG_RESURRECTION, pChar->pID, 0);
+		}
+		if (s_pIDRecv && (s_pIDRecv != pChar->pID)) {
+			SendCmdSYSMSG2 (s_pIDRecv, SYSMSG_RESURRECTION, pChar->pID, 0);
+		}
+	} else if (s_pIDRecv) {
+		wsprintf (szTmp, "%sのHPを満タンにしました。", pChar->szName);
+		SendCmdSYSMSG (s_pIDRecv, szTmp, SPEECHCMD_BATTLE1);
 	}
 }
 
