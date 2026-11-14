@@ -27,4 +27,6 @@ extern BOOL IsMagicKeyUsable				(PCHARINFO pChar, BYTE byMagicID);	/* 特技が�
 extern BOOL IsMagicKeyMode					(PCHARINFO pChar);				/* 1〜5 キーで特技を使える状態か */
 extern void RegisterMagicKey				(int nNo, BYTE byMagicID);		/* 特技を枠に登録する・外す */
 extern void UseMagicKey						(PCHARINFO pChar, int nNo);		/* 枠の特技を使う */
+extern BOOL IsMagicBandShown				(PCHARINFO pChar);				/* 戦闘モード中の特技ショートカットの帯（スマホのボタン）を出す状態か */
+extern BOOL GetMagicKeySlotLabel			(PCHARINFO pChar, int nNo, LPSTR pszName, int nSize, int *pnKind, BOOL *pbDark);	/* 帯・ボタンの1枠ぶんの文字と色分け(空きは FALSE) */
 /* Copyright(C)URARA-works 2003-2005 */

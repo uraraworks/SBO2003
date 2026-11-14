@@ -105,6 +105,9 @@ BOOL IsMagicKeyUsable						(PCHARINFO, BYTE);			/* 特技が今使えるか */
 BOOL IsMagicKeyMode							(PCHARINFO);				/* 1〜5 キーで特技を使える状態か */
 void RegisterMagicKey						(int, BYTE);				/* 特技を枠に登録する・外す */
 void UseMagicKey							(PCHARINFO, int);			/* 枠の特技を使う */
+BOOL IsMagicBandShown						(PCHARINFO);				/* 戦闘モード中の帯（スマホのボタン）を出す状態か */
+BOOL GetMagicKeySlotLabel					(PCHARINFO, int, LPSTR, int, int *, BOOL *);	/* 帯・ボタンの1枠ぶんの文字と色分け */
+static BOOL IsMagicListOpen					(void);							/* 特技の一覧（登録できる画面）を開いているか */
 #define SPEECHMODE_MAX	(4)															/* 発言の種類の数(g_bySpeechMode) */
 LRESULT CALLBACK SpeechEditWndProc			(HWND, UINT, WPARAM, LPARAM);	/* 自己紹介設定欄用メッセージ処理 */
 LRESULT CALLBACK ChgPasswordWndProc			(HWND, UINT, WPARAM, LPARAM);	/* パスワード変更用メッセージ処理 */
@@ -9356,6 +9359,8 @@ ChatMsgProc_END:
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
+#include <string>
+std::string W32TextToUtf8Str(const char *psz, int nLen);		/* ゲーム内の文字列を UTF-8 にする（platform/w32_sjis.cpp） */
 
 /* ========================================================================= */
 /* 関数名：SboWebGetPadState												 */
@@ -9467,6 +9472,73 @@ extern "C" EMSCRIPTEN_KEEPALIVE int SboWebChatKinds(void)
 		nRet |= 2;
 	}
 	return nRet;
+}
+
+/* ========================================================================= */
+/* 関数名：	SboWebGetMagicKeyState											 */
+/* 内容：	スマホの特技ショートカットのボタン用の状態をJSON(UTF-8)で返す	 */
+/*			（ブラウザ版。シェル HTML が0.1秒ごとに読む）					 */
+/*			{"fire":1,"reg":0,"slots":[{"n":"強打","k":0,"d":0},{"e":1},…]}	 */
+/*			fire=戦闘モード中で帯の表示設定が「表示」（押すと発動）			 */
+/*			reg =特技の一覧を開いている（押すとカーソルの特技を登録）		 */
+/*			n=名前の頭2文字 k=0攻撃/1回復/2補助 d=暗くする e=空き枠			 */
+/*			戻した文字列は次の呼び出しまで有効（解放は不要）				 */
+/* ========================================================================= */
+extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebGetMagicKeyState(void)
+{
+	static std::string strRet;
+	PCHARINFO pChar;
+	int i, nFire = 0, nReg = 0;
+
+	strRet = "{\"fire\":0,\"reg\":0,\"slots\":[]}";
+	if ((g_byGameState < GAMESTATE_MOVE) || (g_byGameState == GAMESTATE_CONNECTLOST)) {
+		return strRet.c_str ();
+	}
+	if ((g_pMapInfo == NULL) || (g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ()) || g_bSpeech) {
+		return strRet.c_str ();
+	}
+	pChar = g_aCharInfo[g_nMyCharID];
+	if (IsMagicListOpen ()) {
+		nReg = 1;
+	} else if (!g_dwActiveMsgID && IsMagicBandShown (pChar)) {
+		nFire = 1;
+	}
+	if (!nFire && !nReg) {
+		return strRet.c_str ();
+	}
+
+	strRet = nFire ? "{\"fire\":1,\"reg\":0,\"slots\":[" : "{\"fire\":0,\"reg\":1,\"slots\":[";
+	for (i = 0; i < MAX_MAGICKEY; i ++) {
+		char szName[16];
+		int nKind;
+		BOOL bDark;
+		std::string strName;
+		size_t j;
+
+		if (i > 0) {
+			strRet += ",";
+		}
+		if (!GetMagicKeySlotLabel (pChar, i, szName, sizeof (szName), &nKind, &bDark)) {
+			strRet += "{\"e\":1}";
+			continue;
+		}
+		strRet += "{\"n\":\"";
+		/* JSON に入れられる文字だけ通す（引用符・バックスラッシュ・制御文字は落とす） */
+		strName = W32TextToUtf8Str (szName, -1);
+		for (j = 0; j < strName.size (); j ++) {
+			unsigned char c = (unsigned char)strName[j];
+			if ((c >= 0x20) && (c != '"') && (c != '\\')) {
+				strRet += (char)c;
+			}
+		}
+		strRet += "\",\"k\":";
+		strRet += (char)('0' + nKind);
+		strRet += ",\"d\":";
+		strRet += bDark ? "1" : "0";
+		strRet += "}";
+	}
+	strRet += "]}";
+	return strRet.c_str ();
 }
 #endif
 
@@ -9638,6 +9710,75 @@ BOOL IsMagicKeyUsable(PCHARINFO pChar, BYTE byMagicID)
 		return (pChar->wHP > pInfo->wMana);
 	}
 	return (pChar->wMana >= pInfo->wMana);
+}
+
+/* ========================================================================= */
+/* 関数名：	IsMagicBandShown												 */
+/* 内容：	戦闘モード中の特技ショートカットの帯を出す状態か				 */
+/*			PC の帯の描画(DrawMagicKeyBand)とスマホのボタン(SboWebGetMagicKeyState)の*/
+/*			両方がこの関数で決める（出る・出ないが食い違わないように）		 */
+/* ========================================================================= */
+BOOL IsMagicBandShown(PCHARINFO pChar)
+{
+	if (!g_bMagicBar || !g_bBattleMode || (g_pMapInfo == NULL) || ((g_pMapInfo->byFlg & MAPFLG_BATTLE) == 0)) {
+		return FALSE;
+	}
+	if ((pChar->abySubStatus[0] != 0) || (pChar->byCharState == CHARSTATE_DEAD)) {
+		return FALSE;
+	}
+	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：	GetMagicKeySlotLabel											 */
+/* 内容：	nNo 番目の枠を帯・ボタンに出す内容を返す						 */
+/*			pszName に特技名の頭2文字、*pnKind に色分け(0=攻撃 1=回復 2=補助)、 */
+/*			*pbDark に暗くするか(詠唱中・覚えていない・Mana/HP不足)。		 */
+/*			枠が空なら FALSE													 */
+/* ========================================================================= */
+BOOL GetMagicKeySlotLabel(PCHARINFO pChar, int nNo, LPSTR pszName, int nSize, int *pnKind, BOOL *pbDark)
+{
+	BYTE byMagicID;
+	PMAGICINFO pInfo;
+	int nLen;
+
+	pszName[0] = 0;
+	*pnKind = 2;
+	*pbDark = FALSE;
+	if ((nNo < 0) || (nNo >= MAX_MAGICKEY)) {
+		return FALSE;
+	}
+	byMagicID = g_abyMagicKey[nNo];
+	if ((byMagicID == 0) || (byMagicID >= g_aMagicInfo.GetSize ())) {
+		return FALSE;
+	}
+	pInfo = g_aMagicInfo[byMagicID];
+	nLen = SboTextFitWidth (pInfo->szName, 4);		/* 全角2文字 */
+	nLen = min (nLen, nSize - 1);
+	CopyMemory (pszName, pInfo->szName, nLen);
+	pszName[nLen] = 0;
+	*pnKind = GetMagicKeyKind (pInfo);
+	*pbDark = (pChar->dwTimeTurnMagicLV != 0) || !IsMagicKeyUsable (pChar, byMagicID);
+	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：	IsMagicListOpen													 */
+/* 内容：	特技の一覧（戦闘の特技一覧・「強さ」の特技一覧。カーソルを合わせて	 */
+/*			1〜5 キーで登録できる画面）を今開いているか						 */
+/* ========================================================================= */
+static BOOL IsMagicListOpen(void)
+{
+	int nNo;
+
+	if (!g_dwActiveMsgID) {
+		return FALSE;
+	}
+	nNo = GetWindowID (g_dwActiveMsgID);
+	if ((nNo < 0) || (nNo >= g_WndInfo.GetSize ())) {
+		return FALSE;
+	}
+	return (g_WndInfo[nNo]->nType == WNDTYPE_STATUSMAGIC) || (g_WndInfo[nNo]->nType == WNDTYPE_COMMANDMAGICBATTLE);
 }
 
 /* ========================================================================= */

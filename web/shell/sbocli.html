@@ -809,6 +809,152 @@
 		}
 	}
 
+	/* ---- 特技ショートカットのボタン（戦闘中の発動・特技一覧での登録） ----
+	   番号と特技名の頭2文字（アイコンは無いので文字）。色は PC の帯と同じで赤=攻撃・緑=回復・青=補助、
+	   Mana 不足・詠唱中は暗く、空き枠は「-」。常には出さず、戦闘モード中（オプションの帯が「表示」の時）と
+	   特技の一覧を開いている間だけ出す。縦持ちはログとパッドの間（ゲーム画面の外なのでマップを隠さない）、
+	   横持ちは発動を「特技 C」の長押しで開く扇、登録を左上に小さく並べる */
+	#sbo-magic,
+	#sbo-magic-fan {
+		display: none;
+	}
+	body.sbo-pad #sbo-magic.sbo-on {
+		display: flex;
+		flex: none;
+		align-items: center;
+		gap: 6px;
+		width: 100%;
+		box-sizing: border-box;
+		padding: 5px calc(12px + env(safe-area-inset-right)) 5px calc(12px + env(safe-area-inset-left));
+		background: rgba(16, 18, 22, 0.96);
+		border-top: 1px solid var(--border);
+		touch-action: none;
+		-webkit-user-select: none;
+		user-select: none;
+	}
+	#sbo-magic .sbo-magic-tag {
+		display: none;
+		flex: none;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 2px;
+		color: #f0b84a;
+		font: bold 12px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		white-space: nowrap;
+	}
+	#sbo-magic .sbo-magic-tag small {
+		font-size: 8px;
+		font-weight: normal;
+		opacity: 0.85;
+	}
+	/* 登録用は枠と見出しを琥珀色にして、発動用と見分ける */
+	body.sbo-pad #sbo-magic.sbo-reg {
+		background: rgba(52, 38, 10, 0.97);
+		border-top: 2px solid #f0b84a;
+	}
+	#sbo-magic.sbo-reg .sbo-magic-tag {
+		display: flex;
+	}
+	.sbo-magic-btn {
+		flex: 1 1 0;
+		min-width: 0;
+		height: 36px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 3px;
+		padding: 0;
+		border: 1px solid rgba(255, 255, 255, 0.16);
+		border-radius: 8px;
+		background: #2a2f3a;
+		color: #82b4ff;
+		font: bold 13px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		white-space: nowrap;
+		-webkit-tap-highlight-color: transparent;
+		touch-action: none;
+		-webkit-user-select: none;
+		user-select: none;
+		cursor: pointer;
+	}
+	.sbo-magic-btn .sbo-magic-no {
+		font-size: 10px;
+		color: rgba(255, 255, 255, 0.6);
+	}
+	.sbo-magic-btn.sbo-mk0 { color: #ff7870; }
+	.sbo-magic-btn.sbo-mk1 { color: #78e682; }
+	.sbo-magic-btn.sbo-mk2 { color: #82b4ff; }
+	.sbo-magic-btn.sbo-mke { color: #8a8f98; }
+	.sbo-magic-btn.sbo-mkd { opacity: 0.45; }
+	.sbo-magic-btn.sbo-pressed,
+	.sbo-magic-btn.sbo-hot {
+		background: #3d4452;
+	}
+	#sbo-magic.sbo-reg .sbo-magic-btn {
+		border-color: rgba(240, 184, 74, 0.55);
+		background: #3a3020;
+	}
+	#sbo-magic.sbo-reg .sbo-magic-btn.sbo-pressed {
+		background: #5a4a26;
+	}
+	@media (min-aspect-ratio: 13/10) {
+		/* 横持ち：登録用は左上（十字キーの上）に小さく 3 列で並べる。発動用の帯は出さない（扇で出す） */
+		body.sbo-pad #sbo-magic.sbo-on.sbo-fire {
+			display: none;
+		}
+		body.sbo-pad #sbo-magic.sbo-on {
+			display: grid;
+			grid-template-columns: repeat(3, 1fr);
+			position: fixed;
+			left: calc(6px + env(safe-area-inset-left));
+			top: calc(6px + env(safe-area-inset-top));
+			width: calc(var(--pad-col-w) - 10px);
+			z-index: 800;
+			padding: 4px;
+			gap: 4px;
+			border: 2px solid #f0b84a;
+			border-radius: 8px;
+		}
+		body.sbo-pad #sbo-magic.sbo-reg .sbo-magic-tag {
+			grid-column: 1 / -1;
+			flex-direction: row;
+			gap: 4px;
+		}
+		#sbo-magic .sbo-magic-btn {
+			height: 28px;
+			font-size: 11px;
+			gap: 2px;
+			border-radius: 6px;
+		}
+	}
+	/* 横持ちの「特技 C」長押しで開く扇（指を滑らせて離した所を発動） */
+	#sbo-magic-fan.sbo-on {
+		display: block;
+		position: fixed;
+		left: 0;
+		top: 0;
+		width: 0;
+		height: 0;
+		z-index: 900;
+		pointer-events: none;
+	}
+	#sbo-magic-fan .sbo-magic-btn {
+		position: absolute;
+		width: 56px;
+		height: 42px;
+		flex: none;
+		font-size: 13px;
+		background: rgba(26, 30, 38, 0.96);
+		border: 2px solid rgba(255, 255, 255, 0.35);
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+		pointer-events: none;
+	}
+	#sbo-magic-fan .sbo-magic-btn.sbo-hot {
+		background: #6a5420;
+		border-color: #f0b84a;
+		transform: scale(1.12);
+	}
+
 	/* ---- チャット入力用のシート（下からせり上がる） ---- */
 	body.sbo-pad #sbo-chat-sheet {
 		display: flex;
@@ -1829,6 +1975,24 @@
 	<button type="button" id="sbo-chat-latest">↓ 最新へ</button>
 </div>
 
+<!-- スマホの特技ショートカット（戦闘中=発動・特技一覧=登録。シェルの JS がログとパッドの間へ移す） -->
+<div id="sbo-magic" data-sbo-ui="1">
+	<span class="sbo-magic-tag">登録<small>押した番号へ</small></span>
+	<button type="button" class="sbo-magic-btn" data-slot="0"></button>
+	<button type="button" class="sbo-magic-btn" data-slot="1"></button>
+	<button type="button" class="sbo-magic-btn" data-slot="2"></button>
+	<button type="button" class="sbo-magic-btn" data-slot="3"></button>
+	<button type="button" class="sbo-magic-btn" data-slot="4"></button>
+</div>
+<!-- 横持ちの「特技 C」長押しで開く扇 -->
+<div id="sbo-magic-fan" data-sbo-ui="1">
+	<button type="button" class="sbo-magic-btn" data-slot="0"></button>
+	<button type="button" class="sbo-magic-btn" data-slot="1"></button>
+	<button type="button" class="sbo-magic-btn" data-slot="2"></button>
+	<button type="button" class="sbo-magic-btn" data-slot="3"></button>
+	<button type="button" class="sbo-magic-btn" data-slot="4"></button>
+</div>
+
 <!-- PC のチャットパネル -->
 <div id="sbo-chat-panel">
 	<div id="sbo-chat-head">
@@ -2360,12 +2524,31 @@
 		return {vk: vk, id: 0};
 	}
 
+	/* 特技ショートカットの扇（横持ちの「特技 C」長押し）。定義は下の特技ショートカットの項 */
+	var magicFan = null;
+	var FAN_HOLD_MS = 300;
+
 	/* 指を離さずにボタンの外へずらした時も離したことにする */
 	function bindPadButton(el, vk) {
 		var touchId = null;
 		var target = null;	/* 押した時に決めた送り先（離す時も同じ所へ送る） */
+		/* 「特技 C」だけは、戦闘中の横持ちなら長押しで扇を開く。短く押した時は今まで通り
+		   一覧を開くので、押した瞬間にはキーを送らず、長押しになるかどうかを見てから送る */
+		var holdable = (vk === 67);
+		var holdTimer = 0;
+		var holdPending = false;
 		function press() {
 			el.classList.add('sbo-pressed');
+			if (holdable && magicFan && magicFan.canOpen()) {
+				holdPending = true;
+				holdTimer = setTimeout(function () {
+					holdTimer = 0;
+					if (holdPending) {
+						magicFan.open(el);
+					}
+				}, FAN_HOLD_MS);
+				return;
+			}
 			target = padTarget(vk);
 			padKey(target.vk, true, target.id);
 		}
@@ -2374,6 +2557,20 @@
 				return;
 			}
 			el.classList.remove('sbo-pressed');
+			if (holdPending) {
+				holdPending = false;
+				if (holdTimer) {
+					/* 長押しになる前に離した＝普通のタップ */
+					clearTimeout(holdTimer);
+					holdTimer = 0;
+					var tg = padTarget(vk);
+					padKey(tg.vk, true, tg.id);
+					padKey(tg.vk, false, tg.id);
+				} else {
+					magicFan.close(true);
+				}
+				return;
+			}
 			if (target) {
 				padKey(target.vk, false, target.id);
 				target = null;
@@ -2384,25 +2581,65 @@
 			touchId = ev.changedTouches[0].identifier;
 			press();
 		}, {passive: false});
-		function onTouchEnd(ev) {
-			for (var i = 0; i < ev.changedTouches.length; i ++) {
-				if (ev.changedTouches[i].identifier === touchId) {
-					ev.preventDefault();
-					touchId = null;
-					release();
-					return;
+		function findTouch(list) {
+			for (var i = 0; i < list.length; i ++) {
+				if (list[i].identifier === touchId) {
+					return list[i];
 				}
+			}
+			return null;
+		}
+		function onTouchEnd(ev) {
+			if (findTouch(ev.changedTouches)) {
+				ev.preventDefault();
+				touchId = null;
+				release();
 			}
 		}
 		el.addEventListener('touchend', onTouchEnd, {passive: false});
-		el.addEventListener('touchcancel', onTouchEnd, {passive: false});
+		el.addEventListener('touchcancel', function (ev) {
+			if (findTouch(ev.changedTouches)) {
+				touchId = null;
+				if (holdPending && magicFan && magicFan.isOpen()) {
+					/* 取り消しは発動しない */
+					magicFan.close(false);
+				}
+				release();
+			}
+		}, {passive: false});
+		if (holdable) {
+			/* 扇が開いている間、指を滑らせて狙う */
+			el.addEventListener('touchmove', function (ev) {
+				var tc = findTouch(ev.changedTouches);
+				if (tc && magicFan && magicFan.isOpen()) {
+					ev.preventDefault();
+					magicFan.move(tc.clientX, tc.clientY);
+				}
+			}, {passive: false});
+		}
 		/* マウス（?pad=1 で PC から試す時） */
 		el.addEventListener('mousedown', function (ev) {
 			ev.preventDefault();
 			press();
 		});
 		el.addEventListener('mouseup', release);
-		el.addEventListener('mouseleave', release);
+		el.addEventListener('mouseleave', function () {
+			if (!(holdable && magicFan && magicFan.isOpen())) {
+				release();
+			}
+		});
+		if (holdable) {
+			document.addEventListener('mousemove', function (ev) {
+				if (magicFan && magicFan.isOpen()) {
+					magicFan.move(ev.clientX, ev.clientY);
+				}
+			});
+			document.addEventListener('mouseup', function () {
+				if (magicFan && magicFan.isOpen()) {
+					release();
+				}
+			});
+		}
 	}
 	var padButtons = document.querySelectorAll('#sbo-pad button[data-vk]');
 	for (var i = 0; i < padButtons.length; i ++) {
@@ -3834,6 +4071,177 @@
 				zLabel.textContent = battle ? '構え(長押し)' : ((state & 32) ? '名前' : 'キャンセル');
 			}
 		}, 100);
+	})();
+
+	/* ---- 特技ショートカットのボタン（スマホ） ----
+	   ゲーム側（SboCliKeyProc.cpp の SboWebGetMagicKeyState）が 0.1 秒ごとに JSON で返す
+	   {fire, reg, slots:[{n:名前の頭2文字, k:0攻撃/1回復/2補助, d:暗く, e:空き}×5]} を見て出す。
+	   fire=戦闘モード中で帯が「表示」＝押すと発動 / reg=特技の一覧を開いている＝押すとカーソルの特技を登録。
+	   どちらもゲームには仮想キーの 1〜5（VK 0x31〜0x35）を送るだけで、PC のキーと同じ処理に乗る。
+	   縦持ちはログとパッドの間にボタンの列、横持ちは発動を「特技 C」の長押しで開く扇、
+	   登録を左上の小さな列で出す */
+	(function () {
+		var bar = document.getElementById('sbo-magic');
+		var fanEl = document.getElementById('sbo-magic-fan');
+		if (!bar || !fanEl) {
+			return;
+		}
+		var barBtns = bar.querySelectorAll('.sbo-magic-btn');
+		var fanBtns = fanEl.querySelectorAll('.sbo-magic-btn');
+		var padEl = document.getElementById('sbo-pad');
+		var VK_1 = 0x31;
+		var state = {fire: 0, reg: 0, slots: []};
+		var lastJson = '';
+		var fanOpen = false;
+		var fanPos = [];	/* 開いた時の各ボタンの中心 */
+		var fanHot = -1;
+		var FAN_R = 94;
+		var FAN_STEP = 38;
+		var FAN_HIT = 36;
+
+		/* ログとパッドの間（ゲーム画面の外なのでマップを隠さない） */
+		if (usePad && padEl) {
+			padEl.parentNode.insertBefore(bar, padEl);
+		}
+		for (var i = 0; i < barBtns.length; i ++) {
+			bindPadButton(barBtns[i], VK_1 + i);
+		}
+
+		function landscape() {
+			return window.matchMedia('(min-aspect-ratio: 13/10)').matches;
+		}
+		function paint(btns, slots) {
+			for (var i = 0; i < btns.length; i ++) {
+				var s = slots[i] || {e: 1};
+				var b = btns[i];
+				b.textContent = '';
+				var no = document.createElement('span');
+				no.className = 'sbo-magic-no';
+				no.textContent = String(i + 1);
+				var nm = document.createElement('span');
+				nm.textContent = s.e ? '-' : (s.n || '');
+				b.appendChild(no);
+				b.appendChild(nm);
+				b.classList.toggle('sbo-mke', !!s.e);
+				b.classList.toggle('sbo-mk0', !s.e && s.k === 0);
+				b.classList.toggle('sbo-mk1', !s.e && s.k === 1);
+				b.classList.toggle('sbo-mk2', !s.e && s.k !== 0 && s.k !== 1);
+				/* 暗くするのは発動用だけ（登録は使えない特技でも入れられる） */
+				b.classList.toggle('sbo-mkd', !s.e && !!s.d && !!state.fire);
+			}
+		}
+		function apply() {
+			var on = !!(state.fire || state.reg);
+			bar.classList.toggle('sbo-on', on);
+			bar.classList.toggle('sbo-fire', !!state.fire);
+			bar.classList.toggle('sbo-reg', !!state.reg);
+			if (on) {
+				paint(barBtns, state.slots);
+			}
+			if (fanOpen) {
+				if (state.fire) {
+					paint(fanBtns, state.slots);
+				} else {
+					closeFan(false);
+				}
+			}
+			/* ログ欄が縮んでも、最新を見ていた時は下端のままにする */
+			var area = document.getElementById('sbo-chat-area');
+			var box = document.getElementById('sbo-chat-box');
+			if (area && box && !box.classList.contains('sbo-scrolled')) {
+				area.scrollTop = area.scrollHeight;
+			}
+		}
+		function poll() {
+			if (!document.body.classList.contains('sbo-pad')) {
+				return;
+			}
+			var json = '';
+			if (sboReady && Module['_SboWebGetMagicKeyState'] && Module['UTF8ToString']) {
+				json = Module['UTF8ToString'](Module['_SboWebGetMagicKeyState']());
+			}
+			/* 向きが変わった時も描き直す */
+			var key = json + (landscape() ? 'L' : 'P');
+			if (key === lastJson) {
+				return;
+			}
+			lastJson = key;
+			try {
+				state = json ? JSON.parse(json) : {fire: 0, reg: 0, slots: []};
+			} catch (e) {
+				state = {fire: 0, reg: 0, slots: []};
+			}
+			apply();
+		}
+		setInterval(poll, 100);
+
+		/* ---- 横持ち：「特技 C」長押しで開く扇 ---- */
+		function openFan(anchor) {
+			var r = anchor.getBoundingClientRect();
+			var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+			var vw = window.innerWidth, vh = window.innerHeight;
+			paint(fanBtns, state.slots);
+			fanPos = [];
+			for (var i = 0; i < fanBtns.length; i ++) {
+				/* 左向きの扇：上から 1〜5 */
+				var a = (180 + (2 - i) * FAN_STEP) * Math.PI / 180;
+				var x = cx + FAN_R * Math.cos(a);
+				var y = cy + FAN_R * Math.sin(a);
+				x = Math.max(32, Math.min(vw - 32, x));
+				y = Math.max(26, Math.min(vh - 26, y));
+				fanPos.push({x: x, y: y});
+				fanBtns[i].style.left = (x - 28) + 'px';
+				fanBtns[i].style.top = (y - 21) + 'px';
+				fanBtns[i].classList.remove('sbo-hot');
+			}
+			fanHot = -1;
+			fanOpen = true;
+			fanEl.classList.add('sbo-on');
+			try {
+				if (navigator.vibrate) {
+					navigator.vibrate(12);
+				}
+			} catch (e) { /* 振動できなくても困らない */ }
+		}
+		function moveFan(x, y) {
+			var best = -1, bestD = FAN_HIT * FAN_HIT;
+			for (var i = 0; i < fanPos.length; i ++) {
+				var dx = fanPos[i].x - x, dy = fanPos[i].y - y;
+				var d = dx * dx + dy * dy;
+				if (d < bestD) {
+					bestD = d;
+					best = i;
+				}
+			}
+			if (best !== fanHot) {
+				fanHot = best;
+				for (var j = 0; j < fanBtns.length; j ++) {
+					fanBtns[j].classList.toggle('sbo-hot', j === best);
+				}
+			}
+		}
+		/* fire が true なら、狙っていた特技を発動して閉じる */
+		function closeFan(fire) {
+			var no = fanHot;
+			fanOpen = false;
+			fanHot = -1;
+			fanEl.classList.remove('sbo-on');
+			if (fire && no >= 0 && state.fire) {
+				padKey(VK_1 + no, true, 0);
+				padKey(VK_1 + no, false, 0);
+			}
+		}
+		magicFan = {
+			canOpen: function () {
+				return !!state.fire && landscape();
+			},
+			isOpen: function () {
+				return fanOpen;
+			},
+			open: openFan,
+			move: moveFan,
+			close: closeFan
+		};
 	})();
 
 	/* ---- スクリーンショット ----
