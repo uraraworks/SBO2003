@@ -70,7 +70,7 @@ void	SetInitCharData				(PCHARINFO);									/* キャラの初期値を設定 *
 void	CharTargetPC				(PCHARINFO, PCHARINFO, DWORD);					/* キャラのついてく設定 */
 void	CharTargetCancelPC			(PCHARINFO);									/* キャラのついていく解除 */
 void	TailMoveChain				(PCHARINFO);									/* ついてきているキャラを順に動かす */
-static void FloorDamageOnStep		(PCHARINFO);									/* ダメージ床に1歩入った時の処理 */
+void	FloorDamageOnStep			(PCHARINFO);									/* ダメージ床に1歩入った時の処理 */
 BOOL	CheckCharX					(PCHARINFO pChar, DWORD dwX, DWORD dwXTarget);	/* キャラサイズに合わせた当たり判定(横) */
 int		GetCharX					(PCHARINFO, DWORD, DWORD, BOOL);				/* キャラサイズに合わせた距離を求める(横) */
 int		GetCharDistanceX			(PCHARINFO, PCHARINFO);							/* キャラサイズに合わせた距離を求める(横) */
@@ -2152,10 +2152,8 @@ void TailMoveChain(PCHARINFO pParent)
 		pChar->byFlg &= ~CHARINFOFLG_DIRECTION;
 		pChar->byFlg &= ~CHARINFOFLG_MOVE;
 
-		/* ついていっているプレイヤーもダメージ床を踏む（傭兵はHPの知らせ方が違うので今は踏まない） */
-		if (pChar->byNpcType == NPCTYPE_INIT) {
-			FloorDamageOnStep (pChar);
-		}
+		/* ついていっているプレイヤーと傭兵もダメージ床を踏む */
+		FloorDamageOnStep (pChar);
 
 		/* 次は、このキャラについてきているキャラ */
 		pParent = pChar;
@@ -3830,8 +3828,9 @@ void RecvDataProcCHGDIRECTION(PBYTE pData, DWORD dwDataSize)
 /* 内容：ダメージ床（毒沼・溶岩など）のマスに1歩入った時の処理				 */
 /*		 パーツの byDamage だけHPが減る(HPは1で止まり、床では倒れない)		 */
 /*		 byPoison が 0 でなければ、その秒数だけ毒になる(毒の強さは byDamage)	 */
+/*		 プレイヤー・傭兵・敵(戦闘1・戦闘2)が踏む。ほかのNPCは踏まない		 */
 /* ========================================================================= */
-static void FloorDamageOnStep(PCHARINFO pChar)
+void FloorDamageOnStep(PCHARINFO pChar)
 {
 	int nMapNo, nDamage;
 	PMAPINFO pMap;
@@ -3839,6 +3838,16 @@ static void FloorDamageOnStep(PCHARINFO pChar)
 	WORD wParts;
 	char szTmp[16];
 
+	/* 踏むのはプレイヤー・傭兵・敵だけ（村人・押せる岩・爆弾などは踏まない） */
+	switch (pChar->byNpcType) {
+	case NPCTYPE_INIT:			/* プレイヤー */
+	case NPCTYPE_MERCENARY:		/* 傭兵 */
+	case NPCTYPE_BATTLE1:		/* 敵(戦闘1) */
+	case NPCTYPE_BATTLE2:		/* 敵(戦闘2。正体を現した宝箱の敵も) */
+		break;
+	default:
+		return;
+	}
 	if ((pChar->wHP == 0) || (pChar->byCharState == CHARSTATE_DEAD)) {
 		return;
 	}
@@ -3864,7 +3873,10 @@ static void FloorDamageOnStep(PCHARINFO pChar)
 		pChar->wHP -= (WORD)nDamage;
 		wsprintf (szTmp, "%d", nDamage);
 		SendCmdADDCHAREFC (pChar->dwTblID, RGB (250, 60, 4), szTmp);
-		SendCmdCHARSTATUSHPMANA (pChar->dwTblID, pChar->dwTblID);
+		/* HPを知らせるのはプレイヤーだけ（傭兵は傭兵の処理が右下の一覧へ送り直す） */
+		if (pChar->byNpcType == NPCTYPE_INIT) {
+			SendCmdCHARSTATUSHPMANA (pChar->dwTblID, pChar->dwTblID);
+		}
 	}
 	/* 毒になる床（もう毒なら、かけ直さない。歩くたびに毒の時計が戻らないように） */
 	if (pParts->byPoison && !CheckCharInfoTimer (pChar->dwTblID, CHARINFOTIMEREVENT_POISON)) {

@@ -3877,6 +3877,27 @@ static void TestFloorDamage(const std::vector<int> &aLogin)
 	}
 	printf("floor poison again hp=%d same_start=%d\n", pPC->wHP, (int)(dwStart == dwStart2));
 
+	/* 敵（戦闘1・戦闘2）と傭兵も踏む（HPは1で止まる）。村人など、ほかのNPCは踏まない
+	   （NPCは歩いた時に TimerProcChar から呼ばれる。ここでは種類だけ変えて直接呼ぶ） */
+	{
+		static const BYTE abyType[] = {NPCTYPE_BATTLE1, NPCTYPE_BATTLE2, NPCTYPE_MERCENARY, NPCTYPE_MOVERAND};
+		BYTE byNpcTypeBack = pPC->byNpcType;
+		pParts->byPoison = 0;
+		DeleteTblNoPC((int)pPC->dwTblID);
+		pPC->dwX = pPC->dwXBack = (DWORD)(nX + 1);
+		AddTblNoPC((int)pPC->dwTblID);
+		for (size_t i = 0; i < sizeof(abyType) / sizeof(abyType[0]); i ++) {
+			pPC->byNpcType = abyType[i];
+			pPC->wHP = 20;
+			FloorDamageOnStep(pPC);
+			int nHP1 = pPC->wHP;
+			pPC->wHP = 3;
+			FloorDamageOnStep(pPC);
+			printf("floor npc type=%d hp=%d low=%d\n", (int)abyType[i], nHP1, (int)pPC->wHP);
+		}
+		pPC->byNpcType = byNpcTypeBack;
+	}
+
 	/* 片付け */
 	for (int i = pPC->aTimerEvent.GetSize() - 1; i >= 0; i --) {
 		if (pPC->aTimerEvent[i]->byType == CHARINFOTIMEREVENT_POISON) {

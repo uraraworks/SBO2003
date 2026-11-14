@@ -1063,6 +1063,10 @@ BOOL TimerProcChar(PCHARINFO pChar)
 		pChar->byFlg &= ~CHARINFOFLG_MOVE;
 		SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 1);
 		CheckCharPosSend (pChar);
+		/* 敵・傭兵がダメージ床に入った？（プレイヤーは移動を受け取った時に見ている） */
+		if (pChar->byNpcType != NPCTYPE_INIT) {
+			FloorDamageOnStep (pChar);
+		}
 	}
 
 	/* 前のキャラが動いた？（今は移動を受け取った時に列ごと動かすので、旗が残っていた時だけ） */
