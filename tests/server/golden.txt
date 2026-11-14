@@ -1320,6 +1320,7 @@ floor npc type=11 hp=15 low=1
 floor npc type=13 hp=15 low=1
 floor npc type=100 hp=15 low=1
 floor npc type=2 hp=20 low=3
+floor avoid on=0 off=1 search_step=0 nodamage_step=1
 == W. Mimic ==
 mimic idle type=24 dir=0 block=1 proc=1
 mimic talk type=24 dir=0 target=0 sysmsg=0 charinfo=0

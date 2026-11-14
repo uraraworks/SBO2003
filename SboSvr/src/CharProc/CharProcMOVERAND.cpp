@@ -277,6 +277,11 @@ BOOL CCharProcMOVERAND::IsMovePos(int x, int y)
 		return FALSE;
 	}
 
+	/* ダメージ床（毒沼・溶岩など）には自分から入らない（巡回ルートは決められた道なので通る） */
+	if ((IsRoute () == FALSE) && IsAvoidDamageFloor (m_pChar, pMap, x, y)) {
+		return FALSE;
+	}
+
 	/* プレイヤーと重なる？ */
 	pData = pMap->paTblNoPC;
 	for (j = 0; j < (int)pMap->dwCountTblNoPC; j ++) {
