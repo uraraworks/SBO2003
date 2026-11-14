@@ -23,6 +23,7 @@
 #include "AdminWindowOld/AdminDlgMapLight.h"
 #include "AdminWindowOld/AdminDlgStTmpInfo.h"
 #include "AdminWindowOld/AdminDlgQuestInfo.h"
+#include "AdminWindowOld/AdminListFilter.h"
 #include "AdminWindowOld/AdminDlgNpcRoute.h"
 
 /* ========================================================================= */
@@ -284,6 +285,8 @@ void MakeItemEditWindow				(BYTE);								/* 種類別アイテム編集ウィ�
 void DeleteItemEditWindow			(void);								/* 種類別アイテム編集ウィンドウ消去 */
 void MakeAdminWndCharItem			(void);								/* キャラアイテム編集ウィンドウ作成 */
 void DeleteAdminWndCharItem			(void);								/* キャラアイテム編集ウィンドウ消去 */
+static void RenewCharItemCombo		(void);								/* キャラアイテム編集: 追加するアイテムの一覧を絞り込んで作り直す */
+static int GetCharItemComboID		(void);								/* キャラアイテム編集: 一覧で選んでいるアイテムID */
 void MakeAdminWndSvrInfo			(void);								/* サーバー情報ウィンドウ作成 */
 void DeleteAdminWndSvrInfo			(void);								/* サーバー情報ウィンドウ消去 */
 void MakeAdminWndShopInfo			(void);								/* 店情報ウィンドウ作成 */
@@ -4696,7 +4699,7 @@ void AdminOnCommandCharItem(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 	/* 追加 */
 	case IDC_BUTTON2:
 		{
-			int nItemID = SendMessage (m_hWndCombo1, CB_GETCURSEL, 0, 0);
+			int nItemID = GetCharItemComboID ();
 			if (nItemID <= 0) {
 				break;
 			}
@@ -4725,7 +4728,7 @@ void AdminOnCommandCharItem(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 	/* 更新 */
 	case IDC_BUTTON3:
 		{
-			int nItemID = SendMessage (m_hWndCombo1, CB_GETCURSEL, 0, 0);
+			int nItemID = GetCharItemComboID ();
 			if (nItemID <= 0) {
 				break;
 			}
@@ -4804,7 +4807,81 @@ void AdminOnCommandCharItem(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 			SendCmdSTTMPLATE ((DWORD)nID, CMDSTTMPLATETYPE_CHG);
 		}
 		break;
+
+	/* 種別で絞り込み */
+	case IDC_TMPCOMBO3:
+		if (codeNotify == CBN_SELCHANGE) {
+			RenewCharItemCombo ();
+		}
+		break;
+
+	/* 名前で絞り込み（部分一致） */
+	case IDC_TMPEDIT1:
+		if (codeNotify == EN_CHANGE) {
+			RenewCharItemCombo ();
+		}
+		break;
 	}
+}
+
+/* ========================================================================= */
+/* 関数名：GetCharItemComboID												 */
+/* 内容：キャラアイテム編集: 一覧で選んでいるアイテムID（無ければ-1）		 */
+/* ========================================================================= */
+static int GetCharItemComboID(void)
+{
+	int nSel = (int)SendMessage (m_hWndCombo1, CB_GETCURSEL, 0, 0);
+	if (nSel < 0) {
+		return -1;
+	}
+	return (int)SendMessage (m_hWndCombo1, CB_GETITEMDATA, nSel, 0);
+}
+
+/* ========================================================================= */
+/* 関数名：RenewCharItemCombo												 */
+/* 内容：キャラアイテム編集: 追加するアイテムの一覧を、種別と名前の部分一致で */
+/* 		 絞り込んで作り直す。選んでいたアイテムが残っていればそのまま		 */
+/* ========================================================================= */
+static void RenewCharItemCombo(void)
+{
+	if (m_hWndCombo1 == NULL) {
+		return;
+	}
+	int nOldID = GetCharItemComboID ();
+
+	/* 種別（0=すべて、1〜=種別+1） */
+	int nType = -1;
+	if (m_hWndCombo3) {
+		nType = (int)SendMessage (m_hWndCombo3, CB_GETCURSEL, 0, 0) - 1;
+	}
+	char szKey[128];
+	szKey[0] = 0;
+	if (m_hWndEdit1) {
+		GetWindowText (m_hWndEdit1, szKey, sizeof (szKey));
+	}
+
+	SendMessage (m_hWndCombo1, CB_RESETCONTENT, 0, 0);
+	int i, nSel = -1, nCount = g_aItemInfo.GetSize ();
+	/* 0番は「無し」なので出さない */
+	for (i = 1; i < nCount; i ++) {
+		PITEMINFO pInfo = g_aItemInfo[i];
+		if ((nType >= 0) && (pInfo->byType != nType)) {
+			continue;
+		}
+		if (!AdminFilterMatch (pInfo->szName, szKey)) {
+			continue;
+		}
+		int nIndex = (int)SendMessage (m_hWndCombo1, CB_ADDSTRING, 0, (LPARAM)pInfo->szName);
+		SendMessage (m_hWndCombo1, CB_SETITEMDATA, nIndex, (LPARAM)i);
+		if (i == nOldID) {
+			nSel = nIndex;
+		}
+	}
+	/* 選んでいたものが消えたら先頭を選ぶ（すぐ「追加」できるように） */
+	if ((nSel < 0) && (SendMessage (m_hWndCombo1, CB_GETCOUNT, 0, 0) > 0)) {
+		nSel = 0;
+	}
+	SendMessage (m_hWndCombo1, CB_SETCURSEL, nSel, 0);
 }
 
 /* ========================================================================= */
@@ -6555,7 +6632,9 @@ void AdminOnPaintCharItem(HDC hDC)
 	}
 
 	MyTextOut (hDC, 230, 48, "アイテム一覧:");
-	MyTextOut (hDC, 230, 112, "ｽﾃｰﾀｽﾃﾝﾌﾟﾚｰﾄ一覧:");
+	MyTextOut (hDC, 230, 64, "種別");
+	MyTextOut (hDC, 230, 86, "名前");
+	MyTextOut (hDC, 230, 158, "ｽﾃｰﾀｽﾃﾝﾌﾟﾚｰﾄ一覧:");
 
 	SelectObject (hDC, hFontOld);
 }
@@ -9867,15 +9946,15 @@ void MakeAdminWndCharItem(void)
 	SendMessage (m_hWndButton1, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
 	m_hWndButton2 = CreateWindow ("BUTTON", "追加", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-			238, 88, 36, 18, g_hWndAdmin, (HMENU)IDC_BUTTON2, g_hInstance, NULL);
+			238, 130, 36, 18, g_hWndAdmin, (HMENU)IDC_BUTTON2, g_hInstance, NULL);
 	SendMessage (m_hWndButton2, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
 	m_hWndButton3 = CreateWindow ("BUTTON", "更新", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-			238 + 16 * 3, 88, 36, 18, g_hWndAdmin, (HMENU)IDC_BUTTON3, g_hInstance, NULL);
+			238 + 16 * 3, 130, 36, 18, g_hWndAdmin, (HMENU)IDC_BUTTON3, g_hInstance, NULL);
 	SendMessage (m_hWndButton3, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
 	m_hWndButton4 = CreateWindow ("BUTTON", "消去", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-			238 + 16 * 6, 88, 36, 18, g_hWndAdmin, (HMENU)IDC_BUTTON4, g_hInstance, NULL);
+			238 + 16 * 6, 130, 36, 18, g_hWndAdmin, (HMENU)IDC_BUTTON4, g_hInstance, NULL);
 	SendMessage (m_hWndButton4, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
 	/* 所持アイテム一覧 */
@@ -9898,19 +9977,33 @@ void MakeAdminWndCharItem(void)
 	lvcol.pszText = "アイテム名";
 	ListView_InsertColumn (m_hWndList1, 1, &lvcol);
 
-	/* アイテム名一覧 */
-	m_hWndCombo1 = CreateWindow ("COMBOBOX", "", WS_CHILD | WS_VISIBLE | WS_VSCROLL | CBS_DROPDOWNLIST,
-			230, 60, 12 * 12, 12 * 10, g_hWndAdmin, (HMENU)IDC_TMPCOMBO1, g_hInstance, NULL);
-	SendMessage (m_hWndCombo1, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+	/* 種別で絞り込み */
+	m_hWndCombo3 = CreateWindow ("COMBOBOX", "", WS_CHILD | WS_VISIBLE | WS_VSCROLL | CBS_DROPDOWNLIST,
+			262, 60, 112, 12 * 16, g_hWndAdmin, (HMENU)IDC_TMPCOMBO3, g_hInstance, NULL);
+	SendMessage (m_hWndCombo3, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+	SendMessage (m_hWndCombo3, CB_ADDSTRING, 0, (LPARAM)"すべて");
 
 	int i;
-	for (i = 0; i < g_aItemInfo.GetSize (); i ++) {
-		SendMessage (m_hWndCombo1, CB_ADDSTRING, (WPARAM)i, (LPARAM)g_aItemInfo[i]->szName);
+	for (i = 0; aItemeTypeNameTbl[i][0] != 'z'; i ++) {
+		SendMessage (m_hWndCombo3, CB_ADDSTRING, 0, (LPARAM)aItemeTypeNameTbl[i]);
 	}
-	
+	SendMessage (m_hWndCombo3, CB_SETCURSEL, 0, 0);
+
+	/* 名前で絞り込み（部分一致） */
+	m_hWndEdit1 = CreateWindowEx (WS_EX_CLIENTEDGE, "EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+			262, 82, 112, 18, g_hWndAdmin, (HMENU)IDC_TMPEDIT1, g_hInstance, NULL);
+	SendMessage (m_hWndEdit1, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+
+	/* アイテム名一覧（itemdata にアイテムID） */
+	m_hWndCombo1 = CreateWindow ("COMBOBOX", "", WS_CHILD | WS_VISIBLE | WS_VSCROLL | CBS_DROPDOWNLIST,
+			230, 106, 12 * 12, 12 * 10, g_hWndAdmin, (HMENU)IDC_TMPCOMBO1, g_hInstance, NULL);
+	SendMessage (m_hWndCombo1, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+	RenewCharItemCombo ();
+	SendMessage (m_hWndCombo1, CB_SETCURSEL, (WPARAM)-1, 0);
+
 	/* ステータステンプレート一覧 */
 	m_hWndCombo2 = CreateWindow ("COMBOBOX", "", WS_CHILD | WS_VISIBLE | WS_VSCROLL | CBS_DROPDOWNLIST,
-			230, 128, 12 * 12, 12 * 10, g_hWndAdmin, (HMENU)IDC_TMPCOMBO2, g_hInstance, NULL);
+			230, 172, 12 * 12, 12 * 10, g_hWndAdmin, (HMENU)IDC_TMPCOMBO2, g_hInstance, NULL);
 	SendMessage (m_hWndCombo2, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
 	for (i = 0; i < g_aStTmpInfo.GetSize (); i ++) {
@@ -9919,11 +10012,11 @@ void MakeAdminWndCharItem(void)
 	}
 
 	m_hWndButton5 = CreateWindow ("BUTTON", "←取得", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-			248, 156, 48, 18, g_hWndAdmin, (HMENU)IDC_BUTTON5, g_hInstance, NULL);
+			248, 198, 48, 18, g_hWndAdmin, (HMENU)IDC_BUTTON5, g_hInstance, NULL);
 	SendMessage (m_hWndButton5, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
 	m_hWndButton6 = CreateWindow ("BUTTON", "→反映", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-			248 + 62, 156, 48, 18, g_hWndAdmin, (HMENU)IDC_BUTTON6, g_hInstance, NULL);
+			248 + 62, 198, 48, 18, g_hWndAdmin, (HMENU)IDC_BUTTON6, g_hInstance, NULL);
 	SendMessage (m_hWndButton6, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
 	g_bAdminPos = TRUE;
@@ -9962,6 +10055,8 @@ void DeleteAdminWndCharItem(void)
 	SAFE_DESTROYWND (m_hWndButton6);
 	SAFE_DESTROYWND (m_hWndList1);
 	SAFE_DESTROYWND (m_hWndCombo1);
+	SAFE_DESTROYWND (m_hWndCombo2);
+	SAFE_DESTROYWND (m_hWndCombo3);
 
 	g_bAdminPos = FALSE;
 	m_dwSelectID = 0;
