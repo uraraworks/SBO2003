@@ -7,6 +7,7 @@
 /* ========================================================================= */
 
 #include "stdafx.h"
+#include "common/BowFlight.h"
 #include "Glbldata.h"
 #include "SboCliDrawWindow.h"
 #include "SboCliRecvCmd.h"
@@ -181,8 +182,8 @@ void DrawScreen(HWND hWnd, HDC hDC)
 			if (bRet) {
 				pChar = g_aCharInfo[g_nMyCharID];
 				nCount = g_SysMsgInfo.GetSize ();
-				x = anPosAddTblX[pChar->byDirection] * pChar->byDotMove;
-				y = anPosAddTblY[pChar->byDirection] * pChar->byDotMove;
+				x = BowOffsetX(pChar);
+				y = BowOffsetY(pChar);
 
 				/* ウィンドウを表示 */
 				DrawWindow (g_pDibDrawMap, 32 - x, 32 - y);
@@ -532,8 +533,8 @@ static void DrawMapLight(const char *pMapDark)
 			continue;
 		}
 		/* 灯りの中心(歩き中のずれも入れて、なめらかについてくるように) */
-		anX[nLight] = (DRAW_PARTS_X + 1) * 32 + 16 - xTmp * 32 - anPosAddTblX[pChar->byDirection] * pChar->byDotMove;
-		anY[nLight] = (DRAW_PARTS_Y + 1) * 32 + 16 - yTmp * 32 - anPosAddTblY[pChar->byDirection] * pChar->byDotMove;
+		anX[nLight] = (DRAW_PARTS_X + 1) * 32 + 16 - xTmp * 32 - BowOffsetX(pChar);
+		anY[nLight] = (DRAW_PARTS_Y + 1) * 32 + 16 - yTmp * 32 - BowOffsetY(pChar);
 		/* 明るさが 0 になる距離(ドット)。灯りが強くて暗くならない時は 0 */
 		afR[nLight] = 0.0f;
 		afPower[nLight] = 1.0f;
@@ -1018,8 +1019,8 @@ void DrawCharLine(int nLine)
 		y = 256;
 		x -= (xTmp * 32);
 		y -= (yTmp * 32);
-		x -= (anPosAddTblX[pChar->byDirection] * pChar->byDotMove);
-		y -= (anPosAddTblY[pChar->byDirection] * pChar->byDotMove);
+		x -= (BowOffsetX(pChar));
+		y -= (BowOffsetY(pChar));
 
 		y -= 8;
 		nGrpSizeX = 32;
@@ -1472,8 +1473,8 @@ void DrawChar2(void)
 			x -= (xTmp * 32);
 			y -= (yTmp * 32);
 		}
-		x -= (anPosAddTblX[pChar->byDirection] * pChar->byDotMove);
-		y -= (anPosAddTblY[pChar->byDirection] * pChar->byDotMove);
+		x -= (BowOffsetX(pChar));
+		y -= (BowOffsetY(pChar));
 
 		y -= 8;
 		/* 自分のすぐ下の敵の予兆の「!」は、自分に重ならないように敵の体の上に出す */
@@ -1560,8 +1561,8 @@ void DrawChar2(void)
 			x -= (xTmp * 32);
 			y -= (yTmp * 32);
 		}
-		x -= (anPosAddTblX[pChar->byDirection] * pChar->byDotMove);
-		y -= (anPosAddTblY[pChar->byDirection] * pChar->byDotMove);
+		x -= (BowOffsetX(pChar));
+		y -= (BowOffsetY(pChar));
 		x += (GetCharCenterX (pChar) - 16);
 
 		y -= 8;
@@ -1676,8 +1677,8 @@ void DrawChar3(void)
 			x -= (xTmp * 32);
 			y -= (yTmp * 32);
 		}
-		x -= (anPosAddTblX[pChar->byDirection] * pChar->byDotMove);
-		y -= (anPosAddTblY[pChar->byDirection] * pChar->byDotMove);
+		x -= (BowOffsetX(pChar));
+		y -= (BowOffsetY(pChar));
 
 		/* ターゲット選択情報 */
 		if (g_pTargetSelectInfo) {
@@ -1851,8 +1852,8 @@ void DrawETC(void)
 	}
 
 	pChar = g_aCharInfo[g_nMyCharID];
-	x -= (anPosAddTblX[pChar->byDirection] * pChar->byDotMove);
-	y -= (anPosAddTblY[pChar->byDirection] * pChar->byDotMove);
+	x -= (BowOffsetX(pChar));
+	y -= (BowOffsetY(pChar));
 
 	/* 表示していい？ */
 	if (g_byViewMode >= 2) {
@@ -1943,8 +1944,8 @@ void DrawETC(void)
 	if (pChar->dwTimeTurnMagicLV) {
 		x = 256;
 		y = 256;
-		x -= (anPosAddTblX[pChar->byDirection] * pChar->byDotMove);
-		y -= (anPosAddTblY[pChar->byDirection] * pChar->byDotMove);
+		x -= (BowOffsetX(pChar));
+		y -= (BowOffsetY(pChar));
 		x -= 3;
 		y -= 16;
 
@@ -1959,8 +1960,8 @@ void DrawETC(void)
 	} else if (pChar->dwTimeTurnLV) {
 		x = 256;
 		y = 256;
-		x -= (anPosAddTblX[pChar->byDirection] * pChar->byDotMove);
-		y -= (anPosAddTblY[pChar->byDirection] * pChar->byDotMove);
+		x -= (BowOffsetX(pChar));
+		y -= (BowOffsetY(pChar));
 		x -= 3;
 		y -= 16;
 
@@ -2016,8 +2017,8 @@ void DrawETC(void)
 	if (g_bGuard) {
 		x = 256;
 		y = 256;
-		x -= (anPosAddTblX[pChar->byDirection] * pChar->byDotMove);
-		y -= (anPosAddTblY[pChar->byDirection] * pChar->byDotMove);
+		x -= (BowOffsetX(pChar));
+		y -= (BowOffsetY(pChar));
 		x -= 3;
 		y -= 16;
 		if (pChar->dwTimeTurnMagicLV || pChar->dwTimeTurnLV) {

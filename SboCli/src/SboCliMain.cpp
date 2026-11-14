@@ -7,6 +7,7 @@
 /* ========================================================================= */
 
 #include "stdafx.h"
+#include "common/BowFlight.h"
 #include <time.h>
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -2495,6 +2496,17 @@ void TimerProcChar(PCHARINFO pChar)
 
 void TimerProcCharDotMove(PCHARINFO pChar)
 {
+    if (pChar->dwBowDuration) {
+        DWORD elapsed = min(pChar->dwBowElapsed + (timeGetTime() - pChar->dwBowStartTime), pChar->dwBowDuration);
+        double t = (double)elapsed / pChar->dwBowDuration;
+        int x = (int)(pChar->nBowStartX + (pChar->nBowEndX - pChar->nBowStartX) * t);
+        int y = (int)(pChar->nBowStartY + (pChar->nBowEndY - pChar->nBowStartY) * t);
+        if (x != pChar->nBowDrawX || y != pChar->nBowDrawY) g_bDraw = TRUE;
+        pChar->nBowDrawX = x; pChar->nBowDrawY = y;
+        /* 既存の移動中判定との互換性。描画位置は2軸の補間値を使う。 */
+        pChar->byDotMove = elapsed < pChar->dwBowDuration ? 1 : 0;
+        return;
+    }
 	/* 自分が一歩歩き終わった（はずの）時刻。続けて歩く時は次の一歩をここから数える */
 	static DWORD s_dwTimeMyDotEnd = 0;
 	int nTime1, nTime2Q, nTmp;
@@ -2930,7 +2942,7 @@ static void TimerProcAutoTurnGage(PCHARINFO pChar, DWORD dwTime)
 		return;
 	}
 	/* 相手を選んで溜めているゲージ・弓はそのまま */
-	if ((pChar->dwTimeTurnLV && (g_bAutoGage == FALSE)) || (GetAttackType (pChar) == ATACKTYPE_ARROW)) {
+	if (pChar->dwTimeTurnLV && (g_bAutoGage == FALSE)) {
 		return;
 	}
 
@@ -2982,7 +2994,8 @@ void TimerProcCharTurnLV(PCHARINFO pChar)
 	dwTime = timeGetTime ();
 	/* 戦闘モードで目の前に敵がいれば、相手を選ばなくてもゲージを溜める */
 	if ((g_nMyCharID >= 0) && (pChar == g_aCharInfo[g_nMyCharID])) {
-		TimerProcAutoTurnGage (pChar, dwTime);
+        if (GetBowWeapon(pChar)) UpdateBowTurnGage(pChar);
+        else TimerProcAutoTurnGage (pChar, dwTime);
 	}
 	/* ターンゲージ溜まり中 */
 	if (pChar->dwTimeTurnLV == 0) {
@@ -3022,11 +3035,19 @@ void TimerProcCharTurnLV(PCHARINFO pChar)
 				}
 				/* 移動中ではない？ */
 				if (pChar->byDotMove == 0) {
+                    if (GetBowWeapon(pChar)) {
+                        nTmp = FindBowAttackTarget(pChar, pChar->byTurnLV);
+                        if (nTmp != -1) {
+                            SendCmdREQ_ATTACK(pChar->dwAtackTblID, pChar->byTurnLV);
+                            ContinueTurnGage(pChar);
+                        }
+                        return;
+                    }
 					/* 弓など、相手を決めずに撃つ？ */
 					if (pChar->dwAtackTblID == (DWORD)-1) {
 						/* 攻撃要求 */
 						SendCmdREQ_ATTACK (-1, pChar->byTurnLV);
-						CancelTurnGage (pChar);
+						ContinueTurnGage (pChar);
 						return;
 					}
 					/* 目の前に敵がいれば、選んだ相手でなくてもそちらを殴る(連続攻撃) */

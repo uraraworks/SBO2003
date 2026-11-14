@@ -4553,6 +4553,8 @@ static void TestItemMsgWait(void)
 	printf("S itemmsg full %s\n", szFull);
 }
 
+#include "bow.inc"
+
 int main(int argc, char **argv)
 {
 	setvbuf(stdout, NULL, _IOLBF, 0);
@@ -4561,6 +4563,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "chdir failed\n");
 		return 1;
 	}
+	if (argc >= 3 && strcmp(argv[2], "--bow") == 0) return TestBowOnly();
 	TestMapNo();
 	TestCharNo();
 	TestItemMsgWait();

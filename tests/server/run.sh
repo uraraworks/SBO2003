@@ -5,7 +5,7 @@ set -e
 cd "$(dirname "$0")/../.."
 source "${EMSDK_ENV:-$HOME/emsdk/emsdk_env.sh}" >/dev/null 2>&1
 cmake --preset mac-release >/dev/null
-cmake --build --preset mac-release --target SboSvrTests -j8 2>&1 | grep -E "error|Error" || true
+cmake --build --preset mac-release --target SboSvrTests -j8 > /tmp/sbosvr-test-build.log 2>&1 || { cat /tmp/sbosvr-test-build.log >&2; exit 1; }
 # golden は本物のゲームデータ（非公開リポジトリの Release/SBODATA）で作っているので、それを探す
 # （公開リポジトリの Release/SBODATA は 10×10 の草原だけなので、比べても一致しない）
 SRC="$(tools/server/find-data.sh)" || {
