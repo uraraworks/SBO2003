@@ -1901,24 +1901,28 @@ static BOOL IsInLightCircle(int dx, int dy, float fR)
 /*       ほど明かりの道具の差が小さかった(暗黒の道は暗さ 50 でランタン 11 だと	 */
 /*       2.2 マス → 2.8 マス)。明かりを持っている時は、持っていない時より		 */
 /*       最低でも LIGHTITEM_ADD_MIN マス広く照らす								 */
+/*       明かり無しは昔の見え方に合わせて1マス小さくする(LIGHT_NONE_SUB)		 */
 /* ========================================================================= */
 #define LIGHTITEM_ADD_MIN	2.5f		/* 明かりの道具・特技で最低これだけ灯りを広げる(マス) */
+#define LIGHT_NONE_SUB		1.0f		/* 明かり無しの丸を小さくする量(マス)。昔のマス単位の暗さでは見えるのが 100/暗さ 未満の距離までだったのに、丸がかかるマスも見えるようにしたので約1マス広く見えていた */
+#define LIGHT_NONE_MIN		1.2f		/* 明かり無しの丸の最小(マス) */
 
 float GetCharLightTiles(PCHARINFO pChar)
 {
 	int nMap, nLevel;
-	float fR;
+	float fR, fBase;
 
 	nMap = GetMapLightLevel ();
 	nLevel = nMap - pChar->byLightLevel;
 	if (nLevel <= 0) {
 		return 0.0f;			/* 暗くならない(もともと全部見える) */
 	}
-	fR = 100.0f / nLevel + 0.2f;
-	if (pChar->byLightLevel) {
-		fR = max (fR, 100.0f / nMap + 0.2f + LIGHTITEM_ADD_MIN);
+	fBase = 100.0f / nMap + 0.2f;		/* 明かり無しの丸(昔の計算) */
+	if (pChar->byLightLevel == 0) {
+		return max (LIGHT_NONE_MIN, fBase - LIGHT_NONE_SUB);
 	}
-	return fR;
+	fR = 100.0f / nLevel + 0.2f;
+	return max (fR, fBase + LIGHTITEM_ADD_MIN);
 }
 
 /* キャラの丸い灯りの半径(マス。DrawMapLight と同じ計算。0=照らさない) */
