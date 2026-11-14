@@ -2905,7 +2905,10 @@ static void TestChallenge(const std::vector<int> &aLogin)
 		pChild->pID = pChild->dwTblID + 1;
 		dwChildTbl = pChild->dwTblID;
 	}
+	int nMapInfoA0 = MockCmdCount(1000, CMD_MAPINFO), nMapInfoB0 = MockCmdCount(1001, CMD_MAPINFO);
 	QuestSendTalk(pA, pGate->dwTblID);
+	/* 同じマップの中で移る時も、マップ情報を送り直して見え方を作り直す（ふつうの世界のキャラが残らないように） */
+	printf("challenge start mapinfo a=%d b=%d\n", MockCmdCount(1000, CMD_MAPINFO) - nMapInfoA0, MockCmdCount(1001, CMD_MAPINFO) - nMapInfoB0);
 	printf("challenge buff timers=%d charbuff_sent=%d\n", pA->aTimerEvent.GetSize(), (int)(MockCmdCount(1000, CMD_CHARBUFF) > nBuff0));
 	printf("challenge child removed=%d\n", (int)(g_aCharInfo[dwChildTbl]->byNpcType != NPCTYPE_USEMAGICPARENT));
 	ChallengePrint("start a", pA, wWeapon);
@@ -2954,12 +2957,12 @@ static void TestChallenge(const std::vector<int> &aLogin)
 	QuestChallengeProcNow();
 	printf("challenge proc a=%d b=%d\n", (int)QuestInChallenge(pA), (int)QuestInChallenge(pB));
 
-	/* B が倒れる：B だけ中断して元の状態・入る前の場所へ。依頼は受けたまま */
+	/* B が倒れる：B だけ中断して元の状態・光に入った A の入る前の場所へ（仲間は全員同じ場所へ戻る）。依頼は受けたまま */
 	pB->wHP = 0;
 	pB->byCharState = CHARSTATE_DEAD;
 	QuestChallengeProcNow();
 	ChallengePrint("dead b", pB, wWeapon);
-	printf("challenge dead b state=%u at_start=%d quest=%u a_in=%d\n", pB->byCharState, (int)(pB->dwX == dwBX && pB->dwY == dwBY), pB->wQuestID, (int)QuestInChallenge(pA));
+	printf("challenge dead b state=%u at_start=%d quest=%u a_in=%d\n", pB->byCharState, (int)(pB->dwX == dwAX && pB->dwY == dwAY && dwBX != dwAX), pB->wQuestID, (int)QuestInChallenge(pA));
 
 	/* 倒れて出た B は、A がまだ中にいる間は入り直せない（一人で別の組を始めない） */
 	{
