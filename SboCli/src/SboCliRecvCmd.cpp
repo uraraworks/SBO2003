@@ -1902,7 +1902,7 @@ static BOOL IsInLightCircle(int dx, int dy, float fR)
 /*       2.2 マス → 2.8 マス)。明かりを持っている時は、持っていない時より		 */
 /*       最低でも LIGHTITEM_ADD_MIN マス広く照らす								 */
 /* ========================================================================= */
-#define LIGHTITEM_ADD_MIN	1.5f		/* 明かりの道具・特技で最低これだけ灯りを広げる(マス) */
+#define LIGHTITEM_ADD_MIN	2.5f		/* 明かりの道具・特技で最低これだけ灯りを広げる(マス) */
 
 float GetCharLightTiles(PCHARINFO pChar)
 {

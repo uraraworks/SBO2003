@@ -473,6 +473,8 @@ static void DrawMapViewFog(void)
 /*			どおり pMapDark(RenewMapDark で作ったもの)で決める				 */
 /* ========================================================================= */
 #define MAPLIGHT_MAX	32									/* 灯りの最大数 */
+#define LIGHTITEM_POWER	1.6f								/* 明かりの道具の強さ(1 より大きいと真ん中が全部明るい。1.6 なら半径の 4 割まで) */
+#define LIGHTITEM_WARM	0.5f								/* 明かりの道具の炎の色の強さ(光源の暖色は 1) */
 
 static void DrawMapLight(const char *pMapDark)
 {
@@ -542,6 +544,12 @@ static void DrawMapLight(const char *pMapDark)
 		apMask[nLight] = GetLightMask (pChar, 0, 0);
 		/* 明かりの道具を持っていれば広くなる(GetCharLightTiles。0 は全部見える) */
 		afR[nLight] = GetCharLightTiles (pChar) * 32.0f * fFlicker;
+		/* 明かりの道具・特技の灯りは、真ん中あたりを昼のように明るくして、炎の色を少し付ける。
+		   広がりだけ増やしても、端がうっすら伸びるだけで明るくなった気がしなかった */
+		if (pChar->byLightLevel) {
+			afPower[nLight] = LIGHTITEM_POWER;
+			afWarm[nLight] = LIGHTITEM_WARM;
+		}
 		/* キャラの灯り無しのマップでは、明かりの道具を持っていない自分は足元がうっすら見えるだけ */
 		if ((pChar == pMyChar) && (g_pMapInfo->byFlg & MAPFLG_NOCHARLIGHT) && (pChar->byLightLevel == 0)) {
 			afR[nLight] = 1.2f * 32.0f;
