@@ -1098,7 +1098,13 @@
 	#sbo-quick .sbo-acc-gear:focus-visible,
 	#sbo-recover .sbo-btn:focus-visible,
 	#sbo-recover .sbo-check input:focus-visible,
-	#sbo-quick-return:focus-visible {
+	#sbo-quick-return:focus-visible,
+	body.sbo-padnav #sbo-quick .sbo-btn:focus,
+	body.sbo-padnav #sbo-quick .sbo-link:focus,
+	body.sbo-padnav #sbo-quick .sbo-acc-gear:focus,
+	body.sbo-padnav #sbo-recover .sbo-btn:focus,
+	body.sbo-padnav #sbo-recover .sbo-check input:focus {
+		/* body.sbo-padnav … 仮想パッドで選んでいる間（タッチの後は :focus-visible にならないことがあるため） */
 		outline: 3px solid #fff;
 		outline-offset: 2px;
 	}
@@ -1989,10 +1995,39 @@
 	 */
 	var loadBar = null;
 	var loadText = null;
+	/* ダウンロードが終わると、すぐ次の表示（準備中・空）が来てバーが消え、100% が見えないまま
+	   タイトルへ進んでしまう。終わった時は 100% を少しの間（LOAD_FULL_MS）見せてから次の表示にする */
+	var LOAD_FULL_MS = 600;
+	var loadHoldUntil = 0;		/* この時刻までは 100% のまま見せる */
+	var loadHoldTimer = null;
+	var loadHoldText = null;	/* 100% を見せている間に来た次の表示（最後の 1 つだけ覚える） */
+	function setLoadFull() {
+		loadText.textContent = 'ゲームデータを読み込み中... 100%';
+		loadBar.style.width = '100%';
+		if (!loadHoldUntil) {
+			/* バーは 0.2 秒かけて伸びるので、伸びきってから見せる時間を数える */
+			loadHoldUntil = Date.now() + 200 + LOAD_FULL_MS;
+		}
+	}
 	function setLoadStatus(text) {
 		text = text || '';
 		var m = /^Downloading data\.\.\. \((\d+)\/(\d+)\)/.exec(text);
 		if (!m) {
+			/* ダウンロードの表示から別の表示に変わる時は、まず 100% にする */
+			if (loadBar && status.contains(loadBar)) {
+				setLoadFull();
+			}
+			var wait = loadHoldUntil - Date.now();
+			if (wait > 0) {
+				loadHoldText = text;
+				if (!loadHoldTimer) {
+					loadHoldTimer = setTimeout(function () {
+						loadHoldTimer = null;
+						setLoadStatus(loadHoldText);
+					}, wait);
+				}
+				return;
+			}
 			loadBar = loadText = null;
 			status.textContent = !text ? '' : (/^(Downloading|Preparing|Running)/.test(text) ? '準備中...' : text);
 			return;
@@ -2010,6 +2045,10 @@
 			status.appendChild(bar);
 		}
 		/* バイト数は展開後の大きさ（実際に届くのは圧縮した約半分）なので、割合だけ出す */
+		if (done >= total) {
+			setLoadFull();
+			return;
+		}
 		loadText.textContent = 'ゲームデータを読み込み中... ' + Math.floor(done * 100 / total) + '%';
 		loadBar.style.width = (done * 100 / total) + '%';
 	}
@@ -2300,6 +2339,7 @@
 	var PAD_MIN_HOLD_MS = 150;
 	var padKeyDownAt = {};
 	var padKeyUpTimer = {};
+	var padKeyToUi = {};	/* 手前の画面（ログインのボタンなど）で使ったキー（離した時もゲームへ送らない） */
 
 	/* nHtmlID はキーを渡す入力欄の番号（ゲーム画面に渡す時は 0） */
 	function padKey(vk, down, nHtmlID) {
@@ -2307,6 +2347,17 @@
 			return;
 		}
 		nHtmlID = nHtmlID || 0;
+		/* ログインのボタンの画面・復旧などの画面が手前に出ている間は、パッドのキーをその画面の
+		   操作（上下で選ぶ・決定で押す）に使い、裏のゲーム画面には送らない。
+		   送るとゲームのログイン窓で決定が効き「アカウント名を入れて」と出てしまう */
+		if (down && !nHtmlID && window.sboPadUiKey && window.sboPadUiKey(vk)) {
+			padKeyToUi[vk] = true;
+			return;
+		}
+		if (!down && padKeyToUi[vk]) {
+			delete padKeyToUi[vk];
+			return;
+		}
 		if (down) {
 			if (padKeyUpTimer[vk]) {
 				clearTimeout(padKeyUpTimer[vk]);
@@ -4554,7 +4605,7 @@
 		onRuntimeInitialized: function () {
 			dotPreviewApply();
 			sboReady = true;
-			status.textContent = '';
+			setLoadStatus('');
 			canvas.focus();
 			/* 画面サイズが決まった後に拡大率を合わせる */
 			setTimeout(fitScale, 0);
@@ -4878,6 +4929,59 @@
 			el.scrollIntoView({ block: 'nearest' });
 		}
 	}
+	/* 仮想パッド（スマホ）のキーを、手前に出ている画面の操作に使う。使ったら true（ゲームには送らない）
+	   十字キーの上下＝選ぶ（アカウントの行では左右で ⚙）、決定(X)＝押す、キャンセル(Z)＝閉じる */
+	window.sboPadUiKey = function (vk) {
+		var root = shownStep() || (quick.classList.contains('sbo-show') ? shownQuickCard() : null);
+		if (!root) {
+			return false;
+		}
+		document.body.classList.add('sbo-padnav');
+		var cur = document.activeElement;
+		if (!root.contains(cur)) {
+			/* まだ何も選んでいなければ、どのキーでもまず一番上を選ぶだけにする */
+			if (vk === 37 || vk === 38 || vk === 39 || vk === 40 || vk === 88) {
+				var a = focusables(root);
+				if (a.length) {
+					a[0].focus({ preventScroll: true });
+				}
+			}
+			return true;
+		}
+		if (vk === 38 || vk === 40) {
+			moveFocus(root, vk === 40 ? 1 : -1, true);
+		} else if ((vk === 37 || vk === 39) && cur.closest && cur.closest('.sbo-acc-row')) {
+			var b = focusables(cur.closest('.sbo-acc-row'));
+			var j = b.indexOf(cur) + (vk === 39 ? 1 : -1);
+			if (j >= 0 && j < b.length) {
+				b[j].focus();
+			}
+		} else if (vk === 88) {
+			/* 出たばかりの画面では押さない（ロゴを飛ばした決定で勝手に入らないように） */
+			if (root !== shownStep() && Date.now() - tmQuickShow < QUICK_KEY_GUARD_MS) {
+				return true;
+			}
+			if (cur.tagName === 'INPUT' && cur.type !== 'checkbox') {
+				/* 入力欄ではキーボードの Enter と同じ（次の欄へ・その画面のボタンを押す） */
+				cur.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+			} else if (cur.click) {
+				cur.click();
+			}
+		} else if (vk === 90) {
+			var close = root.querySelector('[data-close]');
+			if (close && !close.disabled && focusables(root).indexOf(close) >= 0) {
+				close.click();
+			}
+		}
+		/* ほかのキー（調べる・表示など）も、この画面の間はゲームへ送らない */
+		return true;
+	};
+	/* 画面に触ったら、パッドで選んでいる印（枠）は外す（ふつうのタップでは枠を出さない） */
+	document.addEventListener('touchstart', function (ev) {
+		if (!(ev.target.closest && ev.target.closest('#sbo-pad'))) {
+			document.body.classList.remove('sbo-padnav');
+		}
+	}, { passive: true, capture: true });
 	quick.addEventListener('keydown', function (ev) {
 		var card = shownQuickCard();
 		if (!card || ev.isComposing || ev.altKey || ev.ctrlKey || ev.metaKey) {
