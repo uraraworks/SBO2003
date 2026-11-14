@@ -1064,6 +1064,7 @@ static void TestSpace(const std::vector<int> &aLogin);
 static void TestAdminQuest(const std::vector<int> &aLogin);
 static void TestFloorDamage(const std::vector<int> &aLogin);
 static void TestMimic(const std::vector<int> &aLogin);
+static void TestEnemyDoor(const std::vector<int> &aLogin);
 extern void BattleProcCheck(PCHARINFO);
 
 static void TestTownWarp(const std::vector<int> &aLogin)
@@ -1510,6 +1511,8 @@ static void TestWorld(void)
 	TestFloorDamage(aLogin);
 	/* W. 宝箱の敵（調べる・叩くと正体を現す） */
 	TestMimic(aLogin);
+	/* X. 敵を全部倒すと開く扉 */
+	TestEnemyDoor(aLogin);
 	/* K2. 傭兵への回復・蘇生の特技（ゲームの乱数を使うので最後） */
 	TestMercenary(aLogin, TRUE);
 }
@@ -4044,6 +4047,175 @@ static void TestMimic(const std::vector<int> &aLogin)
 	pPC->byDirection = byDirBack;
 	pPC->dwTargetTblID = dwTargetBack;
 	pPC->dwLastBattle = dwLastBattleBack;
+	AddTblNoPC((int)pPC->dwTblID);
+}
+
+/* ------------------------------------------------------------------------- */
+/* X. 敵を全部倒すと開く扉（扉イベントの種別 EVENTDOOTTYPE_ENEMY）			 */
+/*    敵がいる間は扉コマンドで開かず残りの数を知らせるか・傭兵も開けられないか */
+/*    最後の1体が倒れたらすぐ開いて知らせるか・範囲の外や別の空間の敵は		 */
+/*    数えないか・敵がまた出たら閉まるか（扉の上に人がいる間は待つか）		 */
+/* ------------------------------------------------------------------------- */
+static PCHARINFO EnemyDoorMake(PCHARINFO pPC, int nX, int nY, DWORD dwSpaceID)
+{
+	PCHARINFO pE = new CHARINFO;
+	ZeroMemory((PBYTE)pE, sizeof(CHARINFO));
+	pE->byNpcType = NPCTYPE_BATTLE1;
+	SetInitCharData(pE);
+	pE->byGameState = GAMESTATE_NPC;
+	pE->dwMapID = pPC->dwMapID;
+	pE->dwXBack = pE->dwX = (DWORD)nX;
+	pE->dwYBack = pE->dwY = (DWORD)nY;
+	pE->dwSpaceID = dwSpaceID;
+	pE->wGrpMain = CHARGRP_MAIN_NORMAL;
+	pE->wMaxHP = pE->wHP = 30;
+	strcpy(pE->szName, "とびらの番人");
+	pE = AddChar(pE);
+	pE->pID = pE->dwTblID + 1;
+	return pE;
+}
+
+static int EnemyDoorOpen(PCHARINFO pPC, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor)
+{
+	return (int)SpaceDoorIsOpen(pPC->dwMapID, pEvent, pDoor, SPACE_NORMAL);
+}
+
+static void TestEnemyDoor(const std::vector<int> &aLogin)
+{
+	printf("== X. EnemyDoor ==\n");
+	if (aLogin.size() < 1) {
+		return;
+	}
+	PCHARINFO pPC = g_aCharInfo[aLogin[0]];
+	int nMapNo = GetMapNo(pPC->dwMapID);
+	if (nMapNo < 0) {
+		printf("no map\n");
+		return;
+	}
+	PMAPINFO pMap = g_aMapInfo[nMapNo];
+	/* 横に4マス続けて空いている所（左から プレイヤー・扉・敵・範囲の外の敵） */
+	int nX = -1, nY = -1;
+	for (int y = 0; y < pMap->nCY && nX < 0; y ++) {
+		for (int x = 0; x + 3 < pMap->nCX; x ++) {
+			if (PushIsFree(pMap, x, y) && PushIsFree(pMap, x + 1, y) && PushIsFree(pMap, x + 2, y) && PushIsFree(pMap, x + 3, y)) {
+				nX = x;
+				nY = y;
+				break;
+			}
+		}
+	}
+	if (nX < 0) {
+		printf("no floor\n");
+		return;
+	}
+	DWORD dwXBack = pPC->dwX, dwYBack = pPC->dwY;
+	BYTE byDirBack = pPC->byDirection;
+	DWORD dwSpaceBack = pPC->dwSpaceID;
+	DWORD dwNowBack = s_dwFakeNow;
+	const int nConn = 1000;		/* aLogin[0] は 1000 番 */
+
+	/* 扉イベントを一時的に足す（範囲は プレイヤー〜敵 の3マス） */
+	int nEventBack = pMap->nEventCount;
+	PEVENTINFO pEventBack = pMap->pEvent;
+	pMap->pEvent = new EVENTINFO[nEventBack + 1];
+	ZeroMemory(pMap->pEvent, sizeof(EVENTINFO) * (nEventBack + 1));
+	if (nEventBack) {
+		memcpy(pMap->pEvent, pEventBack, sizeof(EVENTINFO) * nEventBack);
+	}
+	PEVENTINFO pEvent = &pMap->pEvent[nEventBack];
+	EVENTINFO_DOOR Door;
+	ZeroMemory(&Door, sizeof(Door));
+	Door.wGrpID = 11;
+	Door.wBackGrpID = 22;
+	Door.byTimeClose = 30;
+	Door.byType = EVENTDOOTTYPE_ENEMY;
+	Door.wAreaX1 = (WORD)(nX + 2);		/* 右下→左上の順に入れても同じ四角 */
+	Door.wAreaY1 = (WORD)nY;
+	Door.wAreaX2 = (WORD)nX;
+	Door.wAreaY2 = (WORD)nY;
+	pEvent->dwX = (DWORD)(nX + 1);
+	pEvent->dwY = (DWORD)nY;
+	pEvent->byType = EVENTTYPE_DOOR;
+	pEvent->pData = (PBYTE)&Door;
+	pMap->nEventCount = nEventBack + 1;
+
+	MimicPC(pPC, nX, nY, 3);
+	pPC->dwSpaceID = SPACE_NORMAL;
+
+	/* 範囲の外（右端）と別の空間の敵だけ：数えないので開く */
+	PCHARINFO pOut = EnemyDoorMake(pPC, nX + 3, nY, SPACE_NORMAL);
+	PCHARINFO pOther = EnemyDoorMake(pPC, nX + 2, nY, 77);
+	SpaceEnemyDoorCheckMap(pPC->dwMapID);
+	printf("enemydoor outside count=%d other=%d open=%d\n", SpaceDoorEnemyCount(pPC->dwMapID, &Door, SPACE_NORMAL),
+		SpaceDoorEnemyCount(pPC->dwMapID, &Door, 77), EnemyDoorOpen(pPC, pEvent, &Door));
+	DeleteChar(pOther->dwTblID);
+
+	/* 範囲の中に敵が出る：閉まる */
+	PCHARINFO pE = EnemyDoorMake(pPC, nX + 2, nY, SPACE_NORMAL);
+	int nMap0 = MockCmdCount(nConn, CMD_CHGMAP);
+	SpaceEnemyDoorCheckMap(pPC->dwMapID);
+	printf("enemydoor spawn count=%d open=%d chgmap=%d\n", SpaceDoorEnemyCount(pPC->dwMapID, &Door, SPACE_NORMAL),
+		EnemyDoorOpen(pPC, pEvent, &Door), MockCmdCount(nConn, CMD_CHGMAP) - nMap0);
+
+	/* 扉コマンド：開かず、残りの数を知らせる */
+	{
+		CMDPARA_DATA1 Para;
+		ZeroMemory(&Para, sizeof(Para));
+		Para.byCmd = CMD_OPENDOOR;
+		Para.pID = pPC->pID;
+		Para.dwTblID = pPC->dwTblID;
+		int nMsg0 = MockCmdCount(nConn, CMD_MAPMSG), nSnd0 = MockCmdCount(nConn, CMD_PLAYSOUND);
+		TestRecv(pPC, &Para, sizeof(Para));
+		printf("enemydoor command open=%d mapmsg=%d sound=%d\n", EnemyDoorOpen(pPC, pEvent, &Door),
+			MockCmdCount(nConn, CMD_MAPMSG) - nMsg0, MockCmdCount(nConn, CMD_PLAYSOUND) - nSnd0);
+	}
+	/* Sキーで目の前を調べても同じ */
+	{
+		int nMsg0 = MockCmdCount(nConn, CMD_MAPMSG);
+		MimicExamine(pPC);
+		printf("enemydoor examine open=%d mapmsg=%d\n", EnemyDoorOpen(pPC, pEvent, &Door), MockCmdCount(nConn, CMD_MAPMSG) - nMsg0);
+	}
+	/* 傭兵などが開けようとしても開かない */
+	printf("enemydoor force=%d\n", (int)SpaceDoorOpen(pPC->dwMapID, pEvent, &Door, SPACE_NORMAL));
+
+	/* 最後の1体が倒れる：すぐ開いて、近くの人に音とメッセージ */
+	{
+		int nMap1 = MockCmdCount(nConn, CMD_CHGMAP), nSnd0 = MockCmdCount(nConn, CMD_PLAYSOUND), nSys0 = MockCmdCount(nConn, CMD_SYSMSG);
+		DeleteChar(pE->dwTblID);
+		printf("enemydoor clear open=%d chgmap=%d sound=%d sysmsg=%d\n", EnemyDoorOpen(pPC, pEvent, &Door),
+			MockCmdCount(nConn, CMD_CHGMAP) - nMap1, MockCmdCount(nConn, CMD_PLAYSOUND) - nSnd0, MockCmdCount(nConn, CMD_SYSMSG) - nSys0);
+	}
+	/* 開いている間は時間がたっても閉まらない */
+	s_dwFakeNow += 60000;
+	g_dwTime = s_dwFakeNow;
+	SpaceDoorProc(pPC->dwMapID, pEvent, &Door);
+	printf("enemydoor later open=%d\n", EnemyDoorOpen(pPC, pEvent, &Door));
+
+	/* 敵がまた出る：扉の上に人がいる間は閉めない、降りたら閉まる */
+	pE = EnemyDoorMake(pPC, nX + 2, nY, SPACE_NORMAL);
+	MimicPC(pPC, nX + 1, nY, 3);
+	SpaceEnemyDoorCheckMap(pPC->dwMapID);
+	printf("enemydoor respawn onDoor open=%d\n", EnemyDoorOpen(pPC, pEvent, &Door));
+	MimicPC(pPC, nX, nY, 3);
+	{
+		int nSys0 = MockCmdCount(nConn, CMD_SYSMSG);
+		SpaceEnemyDoorCheckMap(pPC->dwMapID);
+		printf("enemydoor respawn open=%d sysmsg=%d\n", EnemyDoorOpen(pPC, pEvent, &Door), MockCmdCount(nConn, CMD_SYSMSG) - nSys0);
+	}
+
+	/* 片付け */
+	DeleteChar(pE->dwTblID);
+	DeleteChar(pOut->dwTblID);
+	pMap->nEventCount = nEventBack;
+	delete [] pMap->pEvent;
+	pMap->pEvent = pEventBack;
+	s_dwFakeNow = dwNowBack;
+	g_dwTime = s_dwFakeNow;
+	DeleteTblNoPC((int)pPC->dwTblID);
+	pPC->dwX = pPC->dwXBack = dwXBack;
+	pPC->dwY = pPC->dwYBack = dwYBack;
+	pPC->byDirection = byDirBack;
+	pPC->dwSpaceID = dwSpaceBack;
 	AddTblNoPC((int)pPC->dwTblID);
 }
 

@@ -2331,6 +2331,15 @@ void AdminOnCommandMapEvent(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 					GetWindowText (m_hWndEdit3, szTmp, 5);
 					pDoor->byTimeClose = (BYTE)atoi (szTmp);
 					pDoor->byType = (BYTE)SendMessage (m_hWndCombo2, CB_GETCURSEL, 0, 0);
+
+					/* 敵を数える範囲 */
+					HWND ahWnd[4] = {m_hWndEdit4, m_hWndEdit5, m_hWndEdit6, m_hWndEdit7};
+					WORD *apwArea[4] = {&pDoor->wAreaX1, &pDoor->wAreaY1, &pDoor->wAreaX2, &pDoor->wAreaY2};
+					for (int i = 0; i < 4; i ++) {
+						ZeroMemory (szTmp, sizeof (szTmp));
+						GetWindowText (ahWnd[i], szTmp, 5);
+						*apwArea[i] = (WORD)atoi (szTmp);
+					}
 				}
 				break;
 
@@ -5981,6 +5990,9 @@ void AdminOnPaintMapEvent(HDC hDC)
 					MyTextOut (hDC, 0, 64 + 16 * 1, "背景グラフィックID:");
 					MyTextOut (hDC, 0, 64 + 16 * 2, "閉まるまでの時間(100ms):");
 					MyTextOut (hDC, 0, 64 + 16 * 3 + 2, "種別:");
+					MyTextOut (hDC, 0, 64 + 16 * 5, "範囲 左上X,Y:");
+					MyTextOut (hDC, 0, 64 + 16 * 6, "範囲 右下X,Y:");
+					MyTextOut (hDC, 0, 64 + 16 * 7, "(敵を数える範囲。全部0=マップ全体)");
 				}
 				break;
 
@@ -7927,7 +7939,7 @@ void MakeAdminWndEventInfoType(void)
 			m_hWndCombo2 = CreateWindow ("COMBOBOX", "", WS_CHILD | WS_VISIBLE | WS_VSCROLL | CBS_DROPDOWNLIST,
 					12 * 13 - 2, 64 + 16 * 3, 12 * 10, 12 * 10, g_hWndAdmin, (HMENU)IDC_TMPCOMBO2, g_hInstance, NULL);
 			SendMessage (m_hWndCombo2, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
-			LPCTSTR liststr[] = {"カギ不要"};
+			LPCTSTR liststr[] = {"カギ不要", "敵を全部倒す"};
 
 			for (int i = 0; i < EVENTDOOTTYPE_MAX; i ++) {
 				SendMessage (m_hWndCombo2, CB_ADDSTRING, (WPARAM)0, (LPARAM)liststr[i]);
@@ -7940,6 +7952,17 @@ void MakeAdminWndEventInfoType(void)
 			wsprintf (szTmp, "%d", pDoor->byTimeClose);
 			SetWindowText (m_hWndEdit3, szTmp);
 			SendMessage (m_hWndCombo2, CB_SETCURSEL, pDoor->byType, 0);
+
+			/* 敵を数える範囲（種別が「敵を全部倒す」の時。全部0ならマップ全体） */
+			HWND *aphWnd[4] = {&m_hWndEdit4, &m_hWndEdit5, &m_hWndEdit6, &m_hWndEdit7};
+			WORD awArea[4] = {pDoor->wAreaX1, pDoor->wAreaY1, pDoor->wAreaX2, pDoor->wAreaY2};
+			for (int i = 0; i < 4; i ++) {
+				*aphWnd[i] = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+						12 * 9 + (i % 2) * 36, 64 + 16 * (5 + i / 2), 32, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
+				SendMessage (*aphWnd[i], WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+				wsprintf (szTmp, "%d", awArea[i]);
+				SetWindowText (*aphWnd[i], szTmp);
+			}
 		}
 		break;
 

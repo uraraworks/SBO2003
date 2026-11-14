@@ -1496,6 +1496,10 @@ BOOL SaveMapInfo(void)
 							WriteData (hFile, "wBackGrpID", sizeof (pInfo->wBackGrpID), (PBYTE)&pInfo->wBackGrpID);		/* 背景のグラフィックID */
 							WriteData (hFile, "byTimeClose", sizeof (pInfo->byTimeClose), (PBYTE)&pInfo->byTimeClose);	/* 閉まるまでの時間 */
 							WriteData (hFile, "byType", sizeof (pInfo->byType), (PBYTE)&pInfo->byType);					/* 種別 */
+							WriteData (hFile, "wAreaX1", sizeof (pInfo->wAreaX1), (PBYTE)&pInfo->wAreaX1);				/* 敵を数える範囲 */
+							WriteData (hFile, "wAreaY1", sizeof (pInfo->wAreaY1), (PBYTE)&pInfo->wAreaY1);
+							WriteData (hFile, "wAreaX2", sizeof (pInfo->wAreaX2), (PBYTE)&pInfo->wAreaX2);
+							WriteData (hFile, "wAreaY2", sizeof (pInfo->wAreaY2), (PBYTE)&pInfo->wAreaY2);
 							WriteFile (hFile, &byTmp, 1, &dwBytes, NULL);	/* 区切り */
 						}
 						break;
@@ -1831,7 +1835,17 @@ BOOL LoadMapInfo(void)
 													CopyMemory (&pInfo->byTimeClose, &pData[dwFilePtr], dwSize);	dwFilePtr += dwSize;	continue;
 												} else if (strcmp (pszTmp, "byType") == 0) {				/* 種別 */
 													CopyMemory (&pInfo->byType, &pData[dwFilePtr], dwSize);	dwFilePtr += dwSize;	continue;
+												} else if (strcmp (pszTmp, "wAreaX1") == 0) {				/* 敵を数える範囲 */
+													CopyMemory (&pInfo->wAreaX1, &pData[dwFilePtr], dwSize);	dwFilePtr += dwSize;	continue;
+												} else if (strcmp (pszTmp, "wAreaY1") == 0) {
+													CopyMemory (&pInfo->wAreaY1, &pData[dwFilePtr], dwSize);	dwFilePtr += dwSize;	continue;
+												} else if (strcmp (pszTmp, "wAreaX2") == 0) {
+													CopyMemory (&pInfo->wAreaX2, &pData[dwFilePtr], dwSize);	dwFilePtr += dwSize;	continue;
+												} else if (strcmp (pszTmp, "wAreaY2") == 0) {
+													CopyMemory (&pInfo->wAreaY2, &pData[dwFilePtr], dwSize);	dwFilePtr += dwSize;	continue;
 												}
+												/* 知らない項目は読み飛ばす */
+												dwFilePtr += dwSize;
 											}
 										}
 										break;
