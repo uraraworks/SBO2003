@@ -54,11 +54,16 @@ extern BOOL	IsBlock					(int x, int y, BOOL bHide);									/* ぶつかり判�
 extern BOOL	CheckCharX				(PCHARINFO pChar, DWORD dwX, DWORD dwXTarget);				/* キャラサイズに合わせた当たり判定(横) */
 extern int	GetCharCenterX			(PCHARINFO pChar);											/* キャラの中心位置を取得 */
 extern BOOL	CheckTargetPos			(int nXFrom, int nYFrom, int nXTo, int nYTo, int nCount);	/* 指定座標までたどり着けるかチェック */
-extern int	GetUseCharInfo			(int nArea, PCHARINFO pMyChar, BOOL bSelf, int nType, ARRAYUSECHARINFO &aDst, int &nLen);	/* 誰に使うか一覧を取得 */
+extern int	GetUseCharInfo			(int nArea, PCHARINFO pMyChar, BOOL bSelf, int nType, BOOL bMerc, ARRAYUSECHARINFO &aDst, int &nLen);	/* 誰に使うか一覧を取得 */
 extern void	DeleteUseCharInfo		(PARRAYUSECHARINFO pSrc);									/* 誰に使うか一覧を削除 */
 extern int	GetAttackType			(PCHARINFO pChar);											/* 攻撃種別を取得 */
 extern void	StartTurnGage			(PCHARINFO pChar, DWORD dwAtackTblID);						/* ターンゲージ開始 */
 extern void	CancelTurnGage			(PCHARINFO pChar);											/* ターンゲージをキャンセル */
+extern PITEMINFO_WEAPON GetBowWeapon(PCHARINFO pChar);
+extern BOOL IsBowAttackTarget(PCHARINFO pChar, PCHARINFO pTarget);
+extern void PauseBowTurnGage(PCHARINFO pChar);
+extern void UpdateBowTurnGage(PCHARINFO pChar);
+extern int FindBowAttackTarget(PCHARINFO pChar, BYTE byRate);
 extern int	FindNextAttackTarget	(PCHARINFO pChar);											/* 連続攻撃の次の相手を探す */
 extern BOOL	g_bGuard;																			/* Z を押し続けて構えている */
 extern DWORD	g_dwGuardGageElapse;																/* 構えた時に溜まっていたゲージの時間(構えている間は止める) */

@@ -1206,6 +1206,7 @@ enum {
 	ATACKTYPE_ARROW,											/* 矢 */
 	ATACKTYPE_SWEEP,											/* なぎ払い(目の前と、自分の左右のマスにも当たる。斧など) */
 	ATACKTYPE_PIERCE,											/* 貫通(目の前と、その1マス先にも当たる。槍など) */
+	ATACKTYPE_BOW,										/* 弓（既存の飛び道具とは別の武器種） */
 	ATACKTYPE_MAX
 };
 
@@ -2115,6 +2116,11 @@ typedef struct _CHARINFO {
 	BYTE		byEfect;											/* エフェクト状態 */
 	BYTE		byEfectIdle;										/* 常に表示するエフェクト */
 	BYTE		byEfcAnime;											/* エフェクトアニメ番号 */
+	/* 弓の固定軌道。実行中のみ使用し、キャラ保存や既存パケットには含めない */
+	DWORD dwBowOwnerPID;
+	DWORD dwBowStartTime, dwBowDuration, dwBowElapsed;
+	int nBowStartX, nBowStartY, nBowEndX, nBowEndY; /* ピクセル */
+	int nBowDrawX, nBowDrawY;
 	BYTE		byDotMove;											/* ドット移動量 */
 	BYTE		byAnime;											/* アニメーション番号 */
 	BYTE		byNpcType;											/* NPC移動種別 */
@@ -3031,6 +3037,15 @@ typedef struct _CMDPARA_CHARPOS {
 	BYTE		byDirection;										/* 向き */
 	BYTE		byFlg;												/* フラグ */
 } CMDPARA_CHARPOS, *PCMDPARA_CHARPOS;
+
+#define FLGCHARPOS_BOW 0x02
+#define FLGCHARPOS_BOWLAUNCH 0x04
+/* 弓が接触した敵の CHARPOS。射手本人だけへ送り、既存ヘッダーを使う。 */
+#define FLGCHARPOS_BOWHIT 0x08
+typedef struct _BOWFLIGHTINFO {
+	int nStartX, nStartY, nEndX, nEndY;
+	DWORD dwDuration, dwElapsed;
+} BOWFLIGHTINFO;
 #pragma pack(pop)
 
 /* キャラ情報要求 */

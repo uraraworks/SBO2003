@@ -2577,6 +2577,8 @@
 	var sheet = document.getElementById('sbo-chat-sheet');
 	var sheetLog = document.getElementById('sbo-sheet-log');
 	var sheetInput = document.getElementById('sbo-sheet-input');
+	var sheetFollow = true;
+	var sheetScrollLock = 0;
 	var chatOpenBtn = document.getElementById('sbo-chat-open');
 
 	/* ---- 発言の中の URL ----
@@ -2680,17 +2682,38 @@
 	function atBottom(sc) {
 		return sc.scrollHeight - sc.scrollTop - sc.clientHeight < 8;
 	}
+	/* 自分で動かしたスクロールの通知では追従状態を変えない */
+	function lockSheetScroll() {
+		sheetScrollLock ++;
+		requestAnimationFrame(function () { sheetScrollLock --; });
+	}
+	function sheetStickBottom() {
+		if (!sheetFollow || !sheet.classList.contains('sbo-open') || sheetTab !== 'chat') {
+			return;
+		}
+		lockSheetScroll();
+		sheetLog.scrollTop = sheetLog.scrollHeight;
+	}
+	sheetLog.addEventListener('scroll', function () {
+		if (!sheetScrollLock) {
+			sheetFollow = atBottom(sheetLog);
+		}
+	});
 	/* 下端を見ている時だけ新しい行に追従する。
 	   縦持ちのログ欄は下端に「発言する…」があるので、それが見えている＝追従している */
 	function appendTo(box, entry) {
 		var sc = scrollerOf(box);
-		var follow = atBottom(sc);
+		var follow = box === sheetLog ? sheetFollow : atBottom(sc);
 		box.appendChild(makeLine(entry, box.ownerDocument));
 		while (box.children.length > CHAT_LOG_MAX) {
 			box.removeChild(box.firstChild);
 		}
 		if (follow) {
-			sc.scrollTop = sc.scrollHeight;
+			if (box === sheetLog) {
+				sheetStickBottom();
+			} else {
+				sc.scrollTop = sc.scrollHeight;
+			}
 		}
 	}
 	function renderAll(box) {
@@ -3479,8 +3502,12 @@
 			sheetInput.blur();
 			resetSheetPos();
 		} else {
+			sheetFollow = true;
+			lockSheetScroll();
 			renderAll(sheetLog);
 			sheetInput.focus();
+			requestAnimationFrame(sheetStickBottom);
+			setTimeout(sheetStickBottom, 300);
 		}
 	}
 	(function () {
@@ -3656,7 +3683,10 @@
 		sheet.style.top = '';
 		sheet.style.bottom = '';
 		sheet.style.height = '';
+		sheetStickBottom();
 	}
+	sheetInput.addEventListener('focus', sheetStickBottom);
+	window.addEventListener('resize', sheetStickBottom);
 	if (window.visualViewport) {
 		var vv = window.visualViewport;
 		var sheetPosKey = '';
@@ -3675,8 +3705,10 @@
 			sheet.style.bottom = 'auto';
 			sheet.style.top = top + 'px';
 			sheet.style.height = h + 'px';
+			sheetStickBottom();
 		};
 		vv.addEventListener('resize', adjustSheet);
+		vv.addEventListener('resize', sheetStickBottom);
 		vv.addEventListener('scroll', adjustSheet);
 		window.addEventListener('resize', adjustSheet);
 		setInterval(adjustSheet, 150);

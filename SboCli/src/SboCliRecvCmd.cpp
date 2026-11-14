@@ -7,6 +7,8 @@
 /* ========================================================================= */
 
 #include "stdafx.h"
+#include "common/BowFlight.h"
+#include "SboCliRecvCmd.h"
 #include "../Common/Info/InfoJob.h"
 #include "../Common/Info/SubGame/InfoSubGameBase.h"
 #include "../Common/Command/Command.h"
@@ -130,9 +132,9 @@ BOOL	CheckCharX							(PCHARINFO pChar, DWORD dwX, DWORD dwXTarget);			/* キャ
 int		GetCharCenterX						(PCHARINFO pChar);										/* キャラの中心位置を取得 */
 BOOL	CheckTargetPos						(int nXFrom, int nYFrom, int nXTo, int nYTo, int nCount);					/* 指定座標までたどり着けるかチェック */
 void	CheckTargetPosWork					(int nXFrom, int nYFrom, int nXTo, int nYTo, int nCount, BOOL *pbCheck);	/* 指定座標までたどり着けるかチェック処理 */
-int		GetUseCharInfo						(int nArea, PCHARINFO pMyChar, BOOL bSelf, int nType, ARRAYUSECHARINFO &aDst, int &nLen);	/* 誰に使うか一覧を取得 */
+int		GetUseCharInfo						(int nArea, PCHARINFO pMyChar, BOOL bSelf, int nType, BOOL bMerc, ARRAYUSECHARINFO &aDst, int &nLen);	/* 誰に使うか一覧を取得 */
 int		GetAttackType						(PCHARINFO pChar);										/* 攻撃種別を取得 */
-void	StartTurnGage						(PCHARINFO pChar);										/* ターンゲージ開始 */
+void	StartTurnGage						(PCHARINFO pChar, DWORD dwAtackTblID);										/* ターンゲージ開始 */
 void	CancelTurnGage						(PCHARINFO pChar);										/* ターンゲージをキャンセル */
 int		FindNextAttackTarget				(PCHARINFO pChar);										/* 連続攻撃の次の相手を探す */
 void	ContinueTurnGage					(PCHARINFO pChar);										/* 連続攻撃：次のターンゲージを溜め始める */
@@ -2693,6 +2695,7 @@ int GetUseCharInfo(
 	PCHARINFO pMyChar,			/* [in] 一覧に含めないキャラ情報 */
 	BOOL bSelf,					/* [in] 自分を含めるか */
 	int nType,					/* [in] 種別 */
+	BOOL bMerc,					/* [in] 傭兵も含めるか(回復・蘇生の特技) */
 	ARRAYUSECHARINFO &aDst,		/* [ou] 作成した一覧 */
 	int &nLen)					/* [ou] 最大文字列長 */
 {
@@ -2710,6 +2713,10 @@ int GetUseCharInfo(
 		if ((bSelf == FALSE) && (pMyChar == pCharTmp)) {
 			continue;
 		}
+        /* -1 は弓の攻撃相手選択専用。特技・近接の候補条件は変えない。 */
+        if (nArea == -1) {
+            if (!IsBowAttackTarget(pMyChar, pCharTmp)) continue;
+        } else {
 		switch (pCharTmp->byNpcType) {
 		case NPCTYPE_INIT:
 			if (!((nType == MAGICTARGET_PC) || (nType == MAGICTARGET_ALL))) {
@@ -2722,6 +2729,11 @@ int GetUseCharInfo(
 				continue;
 			}
 			break;
+		case NPCTYPE_MERCENARY:				/* 傭兵(プレイヤーの回復・蘇生の特技だけ) */
+			if (!bMerc || (nType == MAGICTARGET_NPC)) {
+				continue;
+			}
+			break;
 		default:
 			continue;
 		}
@@ -2730,6 +2742,8 @@ int GetUseCharInfo(
 		if (bResult == FALSE) {
 			continue;
 		}
+
+        }
 
 		pInfo = new USECHARINFO;
 		ZeroMemory (pInfo, sizeof (USECHARINFO));
@@ -2791,8 +2805,9 @@ int GetAttackType(PCHARINFO pChar)
 	pWeapon = (PITEMINFO_WEAPON)pItem->pData;
 
 	switch (pWeapon->byAtackType) {
+	case ATACKTYPE_BOW:
 	case ATACKTYPE_ARROW:		/* 矢 */
-		nRet = ATACKTYPE_ARROW;
+		nRet = pWeapon->byAtackType;
 		break;
 	}
 
@@ -2811,12 +2826,25 @@ BOOL	g_bAutoGage				= FALSE;		/* 目の前の敵で自動で溜め始めたゲ�
 DWORD	g_dwAutoGageLastFront	= 0;			/* 自動ゲージで最後に目の前に敵がいた時間 */
 DWORD	g_dwAutoGageSuppress	= (DWORD)-1;	/* Z でやめた相手(目の前から離れるまで自動で溜め直さない) */
 
+static DWORD s_dwBowGageX, s_dwBowGageY;
+
 void StartTurnGage(PCHARINFO pChar, DWORD dwAtackTblID)
 {
+    if (GetBowWeapon(pChar)) {
+        if (!g_pTargetSelectInfo) {
+            g_pTargetSelectInfo = new TARGETSELECTINFO;
+            ZeroMemory(g_pTargetSelectInfo, sizeof(TARGETSELECTINFO));
+        }
+        g_pTargetSelectInfo->dwTblID = dwAtackTblID;
+        s_dwBowGageX = pChar->dwX;
+        s_dwBowGageY = pChar->dwY;
+    }
 	pChar->byTurnLV		= 0;
 	pChar->dwAtackTblID	= dwAtackTblID;
 	pChar->dwTimeTurnLV = timeGetTime ();
 	g_bAutoGage			= FALSE;
+    if (GetBowWeapon(pChar) && (pChar->byDotMove || g_bReqestPos || FindBowAttackTarget(pChar, 0) < 0))
+        PauseBowTurnGage(pChar);
 }
 
 
@@ -2828,6 +2856,12 @@ void StartTurnGage(PCHARINFO pChar, DWORD dwAtackTblID)
 
 void CancelTurnGage(PCHARINFO pChar)
 {
+    if (GetBowWeapon(pChar) && g_nMyCharID >= 0 && pChar == g_aCharInfo[g_nMyCharID]) {
+        if (pChar->dwAtackTblID && pChar->dwAtackTblID != (DWORD)-1)
+            SendCmdTARGETCHAR((DWORD)-1);
+        SAFE_DELETE(g_pTargetSelectInfo);
+        g_bDraw = TRUE;
+    }
 	pChar->byTurnLV		= 0;
 	pChar->dwAtackTblID	= 0;
 	pChar->dwTimeTurnLV = 0;
@@ -2840,6 +2874,108 @@ void CancelTurnGage(PCHARINFO pChar)
 /*			周り2マス以内にいる敵のうち、一番近いもの						 */
 /*			戻り値：キャラ番号（いなければ -1）								 */
 /* ========================================================================= */
+
+PITEMINFO_WEAPON GetBowWeapon(PCHARINFO c)
+{
+    if (c->waEqu[0] >= MAX_MYITEM) return NULL;
+    int id = c->waItem[c->waEqu[0]];
+    if (id < 0 || id >= g_aItemInfo.GetSize()) return NULL;
+    return BowWeapon(c, g_aItemInfo[id]);
+}
+
+/* クライアントのマップには、その空間の扉の開閉画像が反映されている。 */
+static BOOL IsBowWall(int x, int y)
+{
+    if (!g_pMapInfo || x < 0 || y < 0 || x >= g_pMapInfo->nCX || y >= g_pMapInfo->nCY) return TRUE;
+    for (int i = 0; i < g_pMapInfo->nEventCount; ++i) {
+        PEVENTINFO e = &g_pMapInfo->pEvent[i];
+        if (e->byType != EVENTTYPE_DOOR || !e->pData || e->dwX != (DWORD)x || e->dwY != (DWORD)y) continue;
+        PEVENTINFO_DOOR d = (PEVENTINFO_DOOR)e->pData;
+        if (g_pMapInfo->pwMap[x + y * g_pMapInfo->nCX] == d->wGrpID) return TRUE;
+    }
+    return IsSightWall(x, y);
+}
+
+/* 縦横の射程内で、途中に壁・閉じた扉がない相手だけを候補にする。 */
+BOOL IsBowAttackTarget(PCHARINFO c, PCHARINFO t)
+{
+    PITEMINFO_WEAPON w = GetBowWeapon(c);
+    if (!w || !BowEnemy(t) || t->dwTimeDelete || t->dwMapID != c->dwMapID ||
+        !g_pMapInfo || !BowInLineRange(c, t, w->byData1)) return FALSE;
+    int x = c->dwX, y = c->dwY;
+    int sx = ((int)t->dwX > x) - ((int)t->dwX < x);
+    int sy = ((int)t->dwY > y) - ((int)t->dwY < y);
+    while (TRUE) {
+        x += sx; y += sy;
+        if (IsBowWall(x, y)) return FALSE;
+        if (x == (int)t->dwX && y == (int)t->dwY) return TRUE;
+    }
+}
+
+/* 自動選択しない。選んだ相手だけを発射時にも検証する。 */
+int FindBowAttackTarget(PCHARINFO c, BYTE rate)
+{
+    if (c->dwAtackTblID == 0 || c->dwAtackTblID == (DWORD)-1) return -1;
+    int target = GetCharNo2(c->dwAtackTblID);
+    return target >= 0 && BowFacingTarget(c, g_aCharInfo[target]) &&
+        IsBowAttackTarget(c, g_aCharInfo[target]) ? target : -1;
+}
+
+/* ロックを保ったまま溜め直す。移動・方向変更の送信時にも呼ぶ。 */
+void PauseBowTurnGage(PCHARINFO c)
+{
+    c->byTurnLV = 0;
+    c->dwTimeTurnLV = 0;
+    c->dwLastTurnLV = 0;
+    g_dwGuardGageElapse = 0;
+    g_bDraw = TRUE;
+}
+
+void UpdateBowTurnGage(PCHARINFO c)
+{
+    if (c->dwAtackTblID == 0 || c->dwAtackTblID == (DWORD)-1) {
+        if (c->byTurnLV || c->dwTimeTurnLV) PauseBowTurnGage(c);
+        return;
+    }
+    int target = GetCharNo2(c->dwAtackTblID);
+    if (!g_bBattleMode || !g_pMapInfo || !(g_pMapInfo->byFlg & MAPFLG_BATTLE) ||
+        !c->wHP || c->byCharState == CHARSTATE_DEAD || c->dwTimeTurnMagicLV ||
+        target < 0 || !BowEnemy(g_aCharInfo[target]) || g_aCharInfo[target]->dwTimeDelete ||
+        g_aCharInfo[target]->dwMapID != c->dwMapID) {
+        CancelTurnGage(c);
+        g_bDraw = TRUE;
+        return;
+    }
+    BOOL changed = s_dwBowGageX != c->dwX || s_dwBowGageY != c->dwY;
+    s_dwBowGageX = c->dwX;
+    s_dwBowGageY = c->dwY;
+    if (changed || c->byDotMove || g_bReqestPos || FindBowAttackTarget(c, 0) < 0) {
+        PauseBowTurnGage(c);
+        return;
+    }
+    if (!c->dwTimeTurnLV && !g_bGuard && !g_FadeInOutInfo.byFadeIn && !g_FadeInOutInfo.byFadeOut) {
+        StartTurnGage(c, c->dwAtackTblID);
+    }
+}
+
+/* 接触による自動切替は、次のゲージの進行を保つ。手動解除後は再ロックしない。 */
+static void RecvBowHitTarget(DWORD targetID)
+{
+    if (g_nMyCharID < 0 || g_nMyCharID >= g_aCharInfo.GetSize()) return;
+    PCHARINFO c = g_aCharInfo[g_nMyCharID];
+    if (!GetBowWeapon(c) || !c->dwAtackTblID || c->dwAtackTblID == (DWORD)-1) return;
+    int target = GetCharNo2(targetID);
+    if (target < 0 || g_aCharInfo[target]->dwMapID != c->dwMapID) return;
+    c->dwAtackTblID = targetID;
+    if (!g_pTargetSelectInfo) {
+        g_pTargetSelectInfo = new TARGETSELECTINFO;
+        ZeroMemory(g_pTargetSelectInfo, sizeof(TARGETSELECTINFO));
+    }
+    g_pTargetSelectInfo->dwTblID = targetID;
+    SendCmdTARGETCHAR(targetID);
+    UpdateBowTurnGage(c); // 死亡なら解除、線上の射程外なら従来どおり停止する。
+    g_bDraw = TRUE;
+}
 
 int FindNextAttackTarget(PCHARINFO pChar)
 {
@@ -2965,6 +3101,13 @@ DWORD	g_dwTurnGageContinue = 0;		/* 殴って次のゲージを溜め始めた�
 
 void ContinueTurnGage(PCHARINFO pChar)
 {
+    if (GetBowWeapon(pChar)) {
+        // 発射後はロックと枠を保持し、条件が揃った時だけ次を溜める。
+        PauseBowTurnGage(pChar);
+        g_dwTurnGageContinue = timeGetTime();
+        UpdateBowTurnGage(pChar);
+        return;
+    }
 	DWORD dwAtackTblID;
 	BOOL bAutoGage;
 
@@ -2973,10 +3116,6 @@ void ContinueTurnGage(PCHARINFO pChar)
 	CancelTurnGage (pChar);
 	g_dwTurnGageContinue = timeGetTime ();
 
-	/* 弓（相手を決めずに撃つ）は続けない */
-	if (dwAtackTblID == (DWORD)-1) {
-		return;
-	}
 	/* 戦闘モードではない・戦闘マップではない？ */
 	if ((g_bBattleMode == FALSE) || (g_pMapInfo == NULL) || ((g_pMapInfo->byFlg & MAPFLG_BATTLE) == 0)) {
 		return;
@@ -4027,6 +4166,7 @@ void RecvDataProcCHARINFO(PBYTE pData, DWORD dwDataSize)
 		pCharDst->dwTailBackTblID	= -1;
 	}
 
+	pCharDst->dwBowDuration = 0;
 	pCharDst->pID					= pChar->pID;
 	pCharDst->dwTblID				= pChar->dwTblID;
 	pCharDst->byAdminLV				= pChar->byAdminLV;
@@ -4352,7 +4492,12 @@ void RecvDataProcCHGDIRECTION(PBYTE pData, DWORD dwDataSize)
 /* ========================================================================= */
 void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 {
+    if (dwDataSize < sizeof(CMDPARA_CHARPOS)) return;
 	PCMDPARA_CHARPOS pChar = (PCMDPARA_CHARPOS)pData;
+    if (pChar->byFlg & FLGCHARPOS_BOWHIT) {
+        RecvBowHitTarget(pChar->dwTblID);
+        return;
+    }
 	int x = 0, y = 0, nNo = GetCharNo (pChar->pID);
 	PCHARINFO pMyChar;
 
@@ -4420,13 +4565,33 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 		}
 	}
 
-	if (pChar->byDirection == 99) {
-		g_aCharInfo[nNo]->dwTimeDelete = timeGetTime ();
-		return;
-	}
-
 	PCHARINFO pCharDst = g_aCharInfo[nNo];
+    if ((pChar->byFlg & FLGCHARPOS_BOW) && pCharDst->byNpcType == NPCTYPE_ATACK &&
+        dwDataSize >= sizeof(CMDPARA_CHARPOS) + sizeof(BOWFLIGHTINFO)) {
+        BOWFLIGHTINFO flight;
+        CopyMemory(&flight, pData + sizeof(CMDPARA_CHARPOS), sizeof(flight));
+        if (flight.dwDuration > 0 && flight.dwDuration <= 60000 && flight.dwElapsed <= flight.dwDuration) {
+            pCharDst->nBowStartX = flight.nStartX; pCharDst->nBowStartY = flight.nStartY;
+            pCharDst->nBowEndX = flight.nEndX; pCharDst->nBowEndY = flight.nEndY;
+            pCharDst->dwBowDuration = flight.dwDuration;
+            pCharDst->dwBowElapsed = flight.dwElapsed;
+            pCharDst->dwBowStartTime = timeGetTime();
+            double t = (double)flight.dwElapsed / flight.dwDuration;
+            pCharDst->nBowDrawX = (int)(flight.nStartX + (flight.nEndX - flight.nStartX) * t);
+            pCharDst->nBowDrawY = (int)(flight.nStartY + (flight.nEndY - flight.nStartY) * t);
+        }
+    }
 
+    if (pChar->byDirection == 99) {
+        if (pCharDst->dwBowDuration) {
+            pCharDst->nBowEndX = pCharDst->nBowStartX = pCharDst->nBowDrawX;
+            pCharDst->nBowEndY = pCharDst->nBowStartY = pCharDst->nBowDrawY;
+            pCharDst->dwBowElapsed = pCharDst->dwBowDuration;
+            pCharDst->byDotMove = 0;
+        }
+        pCharDst->dwTimeDelete = timeGetTime();
+        return;
+    }
 	/* 削除中？ */
 	if (pCharDst->dwTimeDelete) {
 		pCharDst->dwTimeDelete = 0;
@@ -4435,7 +4600,7 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 
 	if (pCharDst->dwX != pChar->byX || pCharDst->dwY != pChar->byY) {
 		pCharDst->byDotMove = 0;
-		if (pChar->byFlg != 1) {
+		if (!(pChar->byFlg & FLGCHARPOS_NOANIME)) {
 			/* 1マスは32ドット。以前は31にしていたので、歩き出しの1コマ目で
 			   1ドット飛んで、マスの区切りでひっかかって見えていた */
 			pCharDst->byDotMove = 32;
