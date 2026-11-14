@@ -212,6 +212,12 @@ BOOL CCharProcPUT::Proc(DWORD dwTime)
 		goto Exit;
 	}
 
+	/* ダメージ床（毒沼・溶岩など）？ 敵は出さない */
+	if (IsDamageFloor (pMap, (int)dwX, (int)dwY)) {
+		/* 今回はあきらめる */
+		goto Exit;
+	}
+
 	pCharNew = new CHARINFO;
 	ZeroMemory ((PBYTE)pCharNew, sizeof (CHARINFO));
 	pCharNew->byNpcType = NPCTYPE_BATTLE1;

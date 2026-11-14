@@ -3976,6 +3976,30 @@ static void TestFloorDamage(const std::vector<int> &aLogin)
 		pPC->byNpcType = byNpcTypeBack;
 	}
 
+	/* 敵・傭兵は自分からはダメージ床に入らない（もう上にいる時は出られるように、よけない）。
+	   戦闘２の1歩の判定でも、ダメージ床をなくせば入れる */
+	{
+		WORD wDmg = pMap->pwMap[(nX + 1) + nY * pMap->nCX];
+		BYTE byNpcTypeBack = pPC->byNpcType;
+		printf("floor avoid on=%d", IsAvoidDamageFloor(pPC, pMap, nX + 1, nY));
+		if (pMap->pwMap[nX + nY * pMap->nCX] != wDmg) {
+			DeleteTblNoPC((int)pPC->dwTblID);
+			pPC->dwX = pPC->dwXBack = (DWORD)nX;
+			AddTblNoPC((int)pPC->dwTblID);
+			printf(" off=%d", IsAvoidDamageFloor(pPC, pMap, nX + 1, nY));
+			CTestSearch Proc;
+			Proc.Create(pPC);
+			pPC->byNpcType = NPCTYPE_BATTLE2;
+			int nStep1 = Proc.CanStep(NULL, nX + 1, nY);
+			pParts->byDamage = 0;
+			int nStep2 = Proc.CanStep(NULL, nX + 1, nY);
+			pParts->byDamage = 5;
+			pPC->byNpcType = byNpcTypeBack;
+			printf(" search_step=%d nodamage_step=%d", nStep1, nStep2);
+		}
+		printf("\n");
+	}
+
 	/* 片付け */
 	for (int i = pPC->aTimerEvent.GetSize() - 1; i >= 0; i --) {
 		if (pPC->aTimerEvent[i]->byType == CHARINFOTIMEREVENT_POISON) {

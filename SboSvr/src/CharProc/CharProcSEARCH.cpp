@@ -573,6 +573,10 @@ BOOL CCharProcSEARCH::CanStep(PCHARINFO pCharTmp, int x, int y, PDWORD pdwBlockP
 	if ((x < 0) || (x >= pMap->nCX) || (y < 0) || (y >= pMap->nCY)) {
 		return FALSE;
 	}
+	/* ダメージ床（毒沼・溶岩など）には自分から入らない（追いかけている時も） */
+	if (IsAvoidDamageFloor (m_pChar, pMap, x, y)) {
+		return FALSE;
+	}
 	/* 障害物・イベント。NpcProcSEARCH_Check は戦闘２だとふさいでいるプレイヤーへ
 	   狙いを変えるが、ここでは調べるだけなので狙いは戻す（変えるかは ProcTarget が決める） */
 	dwBlockPC		= (DWORD)-1;
@@ -702,12 +706,13 @@ int CCharProcSEARCH::FindPathStep(PCHARINFO pCharTmp, int nX, int nY)
 		return -1;
 	}
 
-	/* 通れないマス（地形・イベント・ほかのキャラ） */
+	/* 通れないマス（地形・イベント・ダメージ床・ほかのキャラ） */
 	abyBlock.assign (nW * nH, 0);
 	for (y = 0; y < nH; y ++) {
 		for (x = 0; x < nW; x ++) {
 			if ((CheckCharBlock (pMap->dwID, (DWORD)(nX1 + x), (DWORD)(nY1 + y)) == FALSE) ||
-				CheckEventBlock (pMap->dwID, (DWORD)(nX1 + x), (DWORD)(nY1 + y))) {
+				CheckEventBlock (pMap->dwID, (DWORD)(nX1 + x), (DWORD)(nY1 + y)) ||
+				IsAvoidDamageFloor (m_pChar, pMap, nX1 + x, nY1 + y)) {
 				abyBlock[x + y * nW] = 1;
 			}
 		}
