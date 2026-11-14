@@ -401,6 +401,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcCHARBUFF,				/* CMD_CHARBUFF */
 	RecvDataProcADMINSPACE,				/* CMD_ADMINSPACE */
 	RecvDataProcADMINQUEST,				/* CMD_ADMINQUEST */
+	NULL,								/* CMD_ADMINRESURRECT(クライアント→サーバーのみ) */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */

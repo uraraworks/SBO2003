@@ -299,6 +299,7 @@ enum {
 /* 以下、管理者用（CMD_MAPPARTSADD 以上は自動で管理者専用になる。CMD_CHARBUFF より後ろに足す） */
 	CMD_ADMINSPACE,													/* 管理者の空間の切り替え（空間の一覧・切り替え。結果はサーバー→クライアント） */
 	CMD_ADMINQUEST,													/* 管理者ウィンドウのギルドの依頼の編集（一覧・書き込み。結果はサーバー→クライアント） */
+	CMD_ADMINRESURRECT,												/* 管理者ウィンドウからキャラをHP満タンで蘇生（CMDPARA_DATA1 の dwTblID が相手） */
 	CMD_MAX
 };
 

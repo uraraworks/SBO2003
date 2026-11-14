@@ -1334,6 +1334,12 @@ enemydoor clear open=1 chgmap=1 sound=1 sysmsg=1
 enemydoor later open=1
 enemydoor respawn onDoor open=1
 enemydoor respawn open=0 sysmsg=1
+== Y. AdminResurrect ==
+adminres user hp=0 dead=1
+adminres short hp=0 dead=1
+adminres dead full=1 dead=0 efc_ok=1 efc=14
+adminres alive full=1 dead=0
+adminres badno ok
 == K2. Mercenary magic ==
 merc map=91 enemies=17 size=255x160
 merc hired dist=1

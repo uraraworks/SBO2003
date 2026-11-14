@@ -1065,6 +1065,7 @@ static void TestAdminQuest(const std::vector<int> &aLogin);
 static void TestFloorDamage(const std::vector<int> &aLogin);
 static void TestMimic(const std::vector<int> &aLogin);
 static void TestEnemyDoor(const std::vector<int> &aLogin);
+static void TestAdminResurrect(const std::vector<int> &aLogin);
 extern void BattleProcCheck(PCHARINFO);
 
 static void TestTownWarp(const std::vector<int> &aLogin)
@@ -1513,6 +1514,8 @@ static void TestWorld(void)
 	TestMimic(aLogin);
 	/* X. 敵を全部倒すと開く扉 */
 	TestEnemyDoor(aLogin);
+	/* Y. 管理者ウィンドウの蘇生ボタン */
+	TestAdminResurrect(aLogin);
 	/* K2. 傭兵への回復・蘇生の特技（ゲームの乱数を使うので最後） */
 	TestMercenary(aLogin, TRUE);
 }
@@ -1630,6 +1633,81 @@ static void TestAdminQuest(const std::vector<int> &aLogin)
 	bGot = AdminQuestSend(pAdmin, ADMINQUEST_LISTREQ, 0, NULL, Res, 16);
 	printf("adminquest short got=%d\n", bGot);
 
+	pAdmin->byAdminLV = byAdminBack;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Y. 管理者ウィンドウの蘇生ボタン（CMD_ADMINRESURRECT）					 */
+/*    倒れた人がHP満タンで起き上がるか・蘇生の特技と同じエフェクトが出るか	 */
+/*    管理者でない人・短いパケットは弾くか・倒れていない人はHPだけ満タン	 */
+/* ------------------------------------------------------------------------- */
+static void TestAdminResurrect(const std::vector<int> &aLogin)
+{
+	printf("== Y. AdminResurrect ==\n");
+	if (aLogin.size() < 2) {
+		return;
+	}
+	PCHARINFO pAdmin = g_aCharInfo[aLogin[0]];
+	PCHARINFO pTarget = g_aCharInfo[aLogin[1]];
+	BYTE byAdminBack = pAdmin->byAdminLV;
+	BYTE byTargetAdminBack = pTarget->byAdminLV;
+	WORD wHPBack = pTarget->wHP;
+	BYTE byStateBack = pTarget->byCharState;
+	CMDPARA_DATA1 Para;
+	std::vector<BYTE> aCap;
+	BYTE byEfc = 14;
+	int i, nEfc;
+
+	/* データの蘇生の特技のエフェクト番号（サーバーと同じ探し方） */
+	for (i = 0; i < g_aMagicInfo.GetSize(); i ++) {
+		PMAGICINFO pInfo = g_aMagicInfo[i];
+		if (pInfo && (pInfo->byType == MAGICTYPE_RESURRECTION) && pInfo->byTargetEfectID) {
+			byEfc = pInfo->byTargetEfectID;
+			break;
+		}
+	}
+
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_ADMINRESURRECT;
+	Para.dwTblID = pTarget->dwTblID;
+
+	/* 管理者でない人からは効かない */
+	pAdmin->byAdminLV = ADMINLV_USER;
+	pTarget->byAdminLV = ADMINLV_USER;
+	pTarget->wHP = 0;
+	pTarget->byCharState = CHARSTATE_DEAD;
+	TestRecv(pAdmin, &Para, sizeof(Para));
+	printf("adminres user hp=%d dead=%d\n", pTarget->wHP, (pTarget->byCharState == CHARSTATE_DEAD) ? 1 : 0);
+
+	pAdmin->byAdminLV = ADMINLV_ADMINISTRATOR;
+	/* 短いパケットは無視 */
+	TestRecv(pAdmin, &Para, 8);
+	printf("adminres short hp=%d dead=%d\n", pTarget->wHP, (pTarget->byCharState == CHARSTATE_DEAD) ? 1 : 0);
+
+	/* 倒れた人を蘇生（HP満タン・エフェクトは蘇生の特技のもの。最初に送るのがエフェクト） */
+	SvrSendCaptureBegin();
+	TestRecv(pAdmin, &Para, sizeof(Para));
+	SvrSendCaptureEnd(aCap);
+	nEfc = -1;
+	if ((aCap.size() == sizeof(CMDPARA_DATA4)) && (aCap[0] == CMD_EFECTCHG)) {
+		nEfc = ((PCMDPARA_DATA4)&aCap[0])->byData;
+	}
+	printf("adminres dead full=%d dead=%d efc_ok=%d efc=%d\n", (pTarget->wHP == pTarget->wMaxHP) ? 1 : 0,
+			(pTarget->byCharState == CHARSTATE_DEAD) ? 1 : 0, (nEfc == byEfc) ? 1 : 0, nEfc);
+
+	/* 倒れていない人はHPだけ満タン */
+	pTarget->wHP = 1;
+	TestRecv(pAdmin, &Para, sizeof(Para));
+	printf("adminres alive full=%d dead=%d\n", (pTarget->wHP == pTarget->wMaxHP) ? 1 : 0, (pTarget->byCharState == CHARSTATE_DEAD) ? 1 : 0);
+
+	/* 範囲外の番号は無視 */
+	Para.dwTblID = (DWORD)g_aCharInfo.GetSize();
+	TestRecv(pAdmin, &Para, sizeof(Para));
+	printf("adminres badno ok\n");
+
+	pTarget->wHP = wHPBack;
+	pTarget->byCharState = byStateBack;
+	pTarget->byAdminLV = byTargetAdminBack;
 	pAdmin->byAdminLV = byAdminBack;
 }
 
