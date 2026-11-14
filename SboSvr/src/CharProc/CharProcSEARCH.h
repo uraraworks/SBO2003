@@ -36,6 +36,9 @@ protected:
 	void	ResetAtHome		(DWORD dwTime);							/* 家に着いた：HPを戻す */
 	BOOL	StepDirection	(PCHARINFO pCharTmp, int nDirection);	/* 指定の向きへ1歩進む */
 	int		GetWanderArea	(BOOL bX);								/* うろつく範囲 */
+	int		GetNextToDirection	(PCHARINFO pCharTmp);				/* となりにいればその向き(いなければ -1) */
+	DWORD	FindNextToPC	(DWORD dwExcept);						/* となりにいるプレイヤーをくじで1人選ぶ */
+	void	ChangeTarget	(DWORD dwTblID, DWORD dwTime);			/* 狙う相手を変える */
 
 protected:
 	BOOL	m_bInit;									/* 初回処理済み */
@@ -46,6 +49,8 @@ protected:
 	BOOL	m_bGoHome;									/* 開始位置へ戻る途中 */
 	BOOL	m_bGiveUp;									/* 追うのをあきらめて帰る途中（着いたらHPを戻す） */
 	DWORD	m_dwGiveUpEnd;								/* あきらめてから、新しく探さずに帰る間の終わり */
+	BOOL	m_bDetour;									/* 回り込み中（まっすぐより道さがしを先に使う） */
+	DWORD	m_dwBattleSeen;								/* 前の順番で見た dwLastBattle（行動したかを知る） */
 } CCharProcSEARCH, *PCCharProcSEARCH;
 
 /* Copyright(C)URARA-works 2006 */

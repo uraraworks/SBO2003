@@ -470,6 +470,160 @@ static void TestEnemyAI(void)
 	delete [] aChar;
 }
 
+/* 戦闘２の回り込み・狙いを変える（2026/11/13）の中身を外から呼べるようにする */
+class CTestSearchAI2 : public CCharProcSEARCH
+{
+public:
+	using CCharProcSEARCH::ProcTarget;
+};
+
+/* ========================================================================= */
+/* 関数名：	TestEnemyAI2													 */
+/* 内容：	V. 戦闘２：L字の壁を回り込む・となりの人へ狙いを変える・囲まれたら相手を変える */
+/* ========================================================================= */
+static void TestEnemyAI2(void)
+{
+	printf("== V. EnemyAI2 ==\n");
+	MAPINFO Map = {};
+	WORD awMap[16 * 16];
+	DWORD adwPC[4], adwNPC[1];
+	CHARINFO *aChar = new CHARINFO[5]();
+	int nMap = g_aMapInfo.GetSize(), nChar = g_aCharInfo.GetSize();
+	WORD wFloor = 0, wWall = 0;
+	for (int i = 0; i < g_wCountMapParts; i ++) {
+		if (g_aMapPartsInfo[i].byHitType == PARTSHIT_NONE) wFloor = (WORD)i;
+		if (g_aMapPartsInfo[i].byHitType == PARTSHIT_BLOCK1) wWall = (WORD)i;
+	}
+	std::fill(awMap, awMap + 16 * 16, wFloor);
+	/* L字の壁：x=6 の y=3〜9 と、y=9 の x=2〜6 */
+	for (int y = 3; y <= 9; y ++) awMap[6 + y * 16] = wWall;
+	for (int x = 2; x <= 6; x ++) awMap[x + 9 * 16] = wWall;
+	Map.dwID = nMap;
+	Map.nCX = Map.nCY = 16;
+	Map.pwMap = awMap;
+	Map.paTblNoPC = adwPC;
+	Map.dwCountTblNoPC = 1;
+	Map.paTblNoNPC = adwNPC;
+	Map.dwCountTblNoNPC = 1;
+	g_aMapInfo.Add(&Map);
+	for (int i = 0; i < 5; i ++) {
+		PCHARINFO p = &aChar[i];
+		p->dwTblID = nChar + i; p->dwMapID = nMap;
+		p->wHP = p->wMaxHP = 10; p->byGameState = GAMESTATE_MOVE;
+		p->wGrpMain = CHARGRP_MAIN_NORMAL;
+		p->dwTargetTblID = (DWORD)-1;
+		p->dwX = p->dwY = 15;
+		g_aCharInfo.Add(p);
+	}
+	PCHARINFO pEnemy = &aChar[0];
+	PCHARINFO apPC[4] = { &aChar[1], &aChar[2], &aChar[3], &aChar[4] };
+	for (int i = 0; i < 4; i ++) adwPC[i] = apPC[i]->dwTblID;
+	adwNPC[0] = pEnemy->dwTblID;
+
+	pEnemy->byNpcType = NPCTYPE_BATTLE2;
+	pEnemy->dwX = pEnemy->dwStartX = 4; pEnemy->dwY = pEnemy->dwStartY = 6;
+	pEnemy->bySearchCx = pEnemy->bySearchCy = 5;
+	pEnemy->byMoveProbabilityX = pEnemy->byMoveProbabilityY = 100;
+	CTestSearchAI2 Proc;
+	Proc.Create(pEnemy);
+
+	/* L字の壁の内側の角から、壁の向こうの相手へ回り込んでとなりに着く（上下に行ったり来たりしない） */
+	apPC[0]->dwX = 8; apPC[0]->dwY = 7;
+	pEnemy->dwTargetTblID = apPC[0]->dwTblID;
+	pEnemy->dwLastBattle = 1;
+	DWORD dwTime = s_dwFakeNow;
+	int nSteps = 0, nBack = 0;
+	BYTE byLastDir = 0xFF;
+	for (int i = 0; i < 40; i ++) {
+		dwTime += 500;
+		g_dwTime = dwTime;
+		DWORD dwX = pEnemy->dwX, dwY = pEnemy->dwY;
+		Proc.ProcTarget(dwTime);
+		if ((dwX != pEnemy->dwX) || (dwY != pEnemy->dwY)) {
+			/* 前の1歩と逆向きに戻った回数 */
+			if ((byLastDir != 0xFF) && (pEnemy->byDirection == abyDirectionTbl[byLastDir])) nBack ++;
+			byLastDir = pEnemy->byDirection;
+			nSteps ++;
+		}
+		if (abs((int)pEnemy->dwX - 8) + abs((int)pEnemy->dwY - 7) == 1) break;
+	}
+	printf("lwall steps=%d back=%d at=%u,%u\n", nSteps, nBack, pEnemy->dwX, pEnemy->dwY);
+	if ((abs((int)pEnemy->dwX - 8) + abs((int)pEnemy->dwY - 7) != 1) || nBack) abort();
+
+	/* 狙いの相手は壁の向こう、別の人がとなりにいる → となりの人へ狙いを変えて向く */
+	Map.dwCountTblNoPC = 2;
+	pEnemy->dwX = 4; pEnemy->dwY = 6; pEnemy->byDirection = 0;
+	apPC[0]->dwX = 8; apPC[0]->dwY = 7;
+	apPC[1]->dwX = 3; apPC[1]->dwY = 6;
+	pEnemy->dwTargetTblID = apPC[0]->dwTblID;
+	dwTime += 500;
+	Proc.ProcTarget(dwTime);
+	printf("nextto target=%d dir=%d\n", pEnemy->dwTargetTblID == apPC[1]->dwTblID, pEnemy->byDirection);
+	if ((pEnemy->dwTargetTblID != apPC[1]->dwTblID) || (pEnemy->byDirection != 2)) abort();
+	/* 倒れている人には変えない */
+	apPC[1]->wHP = 0;
+	pEnemy->dwTargetTblID = apPC[0]->dwTblID;
+	dwTime += 500;
+	Proc.ProcTarget(dwTime);
+	printf("nextto dead keep=%d\n", pEnemy->dwTargetTblID == apPC[0]->dwTblID);
+	if (pEnemy->dwTargetTblID != apPC[0]->dwTblID) abort();
+	apPC[1]->wHP = 10;
+
+	/* 一人だけがとなりなら、行動しても相手は変えない */
+	Map.dwCountTblNoPC = 1;
+	pEnemy->dwX = 10; pEnemy->dwY = 12;
+	apPC[0]->dwX = 10; apPC[0]->dwY = 11;
+	pEnemy->dwTargetTblID = apPC[0]->dwTblID;
+	pEnemy->dwLastBattle = 100;
+	int nChange = 0;
+	for (int i = 0; i < 20; i ++) {
+		dwTime += 500;
+		pEnemy->dwLastBattle += 1000;	/* 毎回行動した */
+		Proc.ProcTarget(dwTime);
+		if (pEnemy->dwTargetTblID != apPC[0]->dwTblID) nChange ++;
+	}
+	printf("alone change=%d\n", nChange);
+	if (nChange) abort();
+
+	/* 4方向から囲まれたら、行動するたびにときどきとなりの別の人へ変える */
+	Map.dwCountTblNoPC = 4;
+	apPC[1]->dwX = 10; apPC[1]->dwY = 13;
+	apPC[2]->dwX = 9; apPC[2]->dwY = 12;
+	apPC[3]->dwX = 11; apPC[3]->dwY = 12;
+	int anHit[4] = {};
+	nChange = 0;
+	for (int i = 0; i < 40; i ++) {
+		DWORD dwOld = pEnemy->dwTargetTblID;
+		dwTime += 500;
+		pEnemy->dwLastBattle += 1000;
+		Proc.ProcTarget(dwTime);
+		if (pEnemy->dwTargetTblID != dwOld) nChange ++;
+		for (int k = 0; k < 4; k ++) {
+			if (pEnemy->dwTargetTblID == apPC[k]->dwTblID) {
+				anHit[k] ++;
+				/* 狙いの相手の方を向いている */
+				int nDir = -1;
+				if (apPC[k]->dwY < pEnemy->dwY) nDir = 0; else if (apPC[k]->dwY > pEnemy->dwY) nDir = 1;
+				else if (apPC[k]->dwX < pEnemy->dwX) nDir = 2; else nDir = 3;
+				if (pEnemy->byDirection != nDir) abort();
+			}
+		}
+	}
+	printf("surround change=%d hit=%d,%d,%d,%d\n", nChange, anHit[0], anHit[1], anHit[2], anHit[3]);
+	if ((nChange < 5) || !anHit[0] || !anHit[1] || !anHit[2] || !anHit[3]) abort();
+	/* 行動していない間（ゲージが溜まるまで）は変えない */
+	DWORD dwKeep = pEnemy->dwTargetTblID;
+	for (int i = 0; i < 10; i ++) {
+		dwTime += 500;
+		Proc.ProcTarget(dwTime);
+		if (pEnemy->dwTargetTblID != dwKeep) abort();
+	}
+
+	g_aCharInfo.RemoveAt(nChar, 5);
+	g_aMapInfo.RemoveAt(nMap);
+	delete [] aChar;
+}
+
 /* ------------------------------------------------------------------------- */
 /* A. 送信																	 */
 /* ------------------------------------------------------------------------- */
@@ -1080,6 +1234,7 @@ static void TestWorld(void)
 	TestSearchStep();
 	TestSearch2();
 	TestEnemyAI();
+	TestEnemyAI2();
 
 	/* データには PC がいないので、NPC を複製して PC を作る（ログアウト中 3000 人、うち NLOGIN 人をログイン中にする） */
 	PCHARINFO pTemplate = NULL;
