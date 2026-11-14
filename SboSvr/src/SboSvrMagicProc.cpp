@@ -337,6 +337,36 @@ BOOL IsMagicWall(DWORD dwMapID, int x, int y)
 	return TRUE;
 }
 
+/* 閉じた扉は画像の当たり判定に関係なく弓を遮る。開閉は射手の空間で見る。 */
+BOOL IsBowWall(PCHARINFO c, int x, int y)
+{
+    if (c->dwMapID >= (DWORD)g_aMapInfo.GetSize()) return TRUE;
+    PMAPINFO map = g_aMapInfo[c->dwMapID];
+    if (x < 0 || y < 0 || x >= map->nCX || y >= map->nCY) return TRUE;
+    for (int i = 0; i < map->nEventCount; ++i) {
+        PEVENTINFO e = &map->pEvent[i];
+        if (e->byType != EVENTTYPE_DOOR || !e->pData || e->dwX != (DWORD)x || e->dwY != (DWORD)y) continue;
+        if (!SpaceDoorIsOpen(c->dwMapID, e, (PEVENTINFO_DOOR)e->pData, c->dwSpaceID)) return TRUE;
+        // 別空間では共有マップの画像が閉扉のままでも開いている。
+        return FALSE;
+    }
+    return IsMagicWall(c->dwMapID, x, y);
+}
+
+BOOL IsBowReachChar(PCHARINFO c, PCHARINFO t)
+{
+    if (c->dwMapID != t->dwMapID || !IsSameSpace(c, t)) return FALSE;
+    int x = c->dwX, y = c->dwY;
+    int dx = (int)t->dwX - x, dy = (int)t->dwY - y;
+    if ((!dx) == (!dy)) return FALSE;
+    int sx = (dx > 0) - (dx < 0), sy = (dy > 0) - (dy < 0);
+    do {
+        x += sx; y += sy;
+        if (IsBowWall(c, x, y)) return FALSE;
+    } while (x != (int)t->dwX || y != (int)t->dwY);
+    return TRUE;
+}
+
 /* ========================================================================= */
 /* 関数名：IsMagicLineClear													 */
 /* 内容：線の上に通り抜けられないマスが無いか(両端は見ない・片方向)			 */

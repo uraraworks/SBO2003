@@ -216,6 +216,9 @@ BOOL CCharProcATACK::HitCurrentCell(void)
 	}
 
 	m_pChar->dwTargetTblID = dwTblID;
+    // ダメージ・死亡通知より先に接触先を射手へ知らせる（回避・0ダメージでも矢は止まる）。
+    if (m_pChar->dwBowDuration && pCharParent->byNpcType == NPCTYPE_INIT)
+        SendCmdCHARPOS(pCharParent->pID, dwTblID, FLGCHARPOS_BOWHIT, 0);
 	bResult = BattleProcAtack (m_pChar, g_aCharInfo[dwTblID]);
 
 	/* 対象は一人？ */
@@ -252,9 +255,9 @@ BOOL CCharProcATACK::ProcBow(DWORD now)
         int y = (int)floor((c->nBowStartY + (double)dy * i / pixels + 16) / 32);
         if (x == (int)c->dwX && y == (int)c->dwY) continue;
         /* 斜めに角を横切る時も壁を抜けない。カウンターは既存と同様に通す。 */
-        BOOL blocked = IsMagicWall(c->dwMapID, x, y);
+        BOOL blocked = IsBowWall(c, x, y);
         if (x != (int)c->dwX && y != (int)c->dwY) {
-            blocked |= IsMagicWall(c->dwMapID, x, c->dwY) && IsMagicWall(c->dwMapID, c->dwX, y);
+            blocked |= IsBowWall(c, x, c->dwY) && IsBowWall(c, c->dwX, y);
         }
         c->dwBowElapsed = (DWORD)((double)c->dwBowDuration * i / pixels);
         if (blocked) { DeleteChar(c->dwTblID); return FALSE; }

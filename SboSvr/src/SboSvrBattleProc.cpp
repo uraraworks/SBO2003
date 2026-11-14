@@ -691,7 +691,7 @@ BOOL BattleProcWeapon(PCHARINFO pChar)
                 double dx = (int)target->dwX - (int)pChar->dwX;
                 double dy = (int)target->dwY - (int)pChar->dwY;
                 if (!BowEnemy(target) || target->dwMapID != pChar->dwMapID || !IsInteractable(pChar, target) ||
-                    !BowInLineRange(pChar, target, pWeapon->byData1) || !IsMagicReachChar(pChar, target)) {
+                    !BowInLineRange(pChar, target, pWeapon->byData1) || !IsBowReachChar(pChar, target)) {
                     delete (PCCharProcBase)pCharNew->pProc; delete pCharNew; return TRUE;
                 }
                 double speed = 32.0 / BowTileTime(pChar->byAtackRate);

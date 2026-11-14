@@ -2825,6 +2825,11 @@ static DWORD s_dwBowGageX, s_dwBowGageY;
 void StartTurnGage(PCHARINFO pChar, DWORD dwAtackTblID)
 {
     if (GetBowWeapon(pChar)) {
+        if (!g_pTargetSelectInfo) {
+            g_pTargetSelectInfo = new TARGETSELECTINFO;
+            ZeroMemory(g_pTargetSelectInfo, sizeof(TARGETSELECTINFO));
+        }
+        g_pTargetSelectInfo->dwTblID = dwAtackTblID;
         s_dwBowGageX = pChar->dwX;
         s_dwBowGageY = pChar->dwY;
     }
@@ -2843,6 +2848,12 @@ void StartTurnGage(PCHARINFO pChar, DWORD dwAtackTblID)
 
 void CancelTurnGage(PCHARINFO pChar)
 {
+    if (GetBowWeapon(pChar) && g_nMyCharID >= 0 && pChar == g_aCharInfo[g_nMyCharID]) {
+        if (pChar->dwAtackTblID && pChar->dwAtackTblID != (DWORD)-1)
+            SendCmdTARGETCHAR((DWORD)-1);
+        SAFE_DELETE(g_pTargetSelectInfo);
+        g_bDraw = TRUE;
+    }
 	pChar->byTurnLV		= 0;
 	pChar->dwAtackTblID	= 0;
 	pChar->dwTimeTurnLV = 0;
@@ -2864,7 +2875,20 @@ PITEMINFO_WEAPON GetBowWeapon(PCHARINFO c)
     return BowWeapon(c, g_aItemInfo[id]);
 }
 
-/* 縦横の射程内で、途中に壁がない相手だけを候補にする。 */
+/* クライアントのマップには、その空間の扉の開閉画像が反映されている。 */
+static BOOL IsBowWall(int x, int y)
+{
+    if (!g_pMapInfo || x < 0 || y < 0 || x >= g_pMapInfo->nCX || y >= g_pMapInfo->nCY) return TRUE;
+    for (int i = 0; i < g_pMapInfo->nEventCount; ++i) {
+        PEVENTINFO e = &g_pMapInfo->pEvent[i];
+        if (e->byType != EVENTTYPE_DOOR || !e->pData || e->dwX != (DWORD)x || e->dwY != (DWORD)y) continue;
+        PEVENTINFO_DOOR d = (PEVENTINFO_DOOR)e->pData;
+        if (g_pMapInfo->pwMap[x + y * g_pMapInfo->nCX] == d->wGrpID) return TRUE;
+    }
+    return IsSightWall(x, y);
+}
+
+/* 縦横の射程内で、途中に壁・閉じた扉がない相手だけを候補にする。 */
 BOOL IsBowAttackTarget(PCHARINFO c, PCHARINFO t)
 {
     PITEMINFO_WEAPON w = GetBowWeapon(c);
@@ -2875,8 +2899,8 @@ BOOL IsBowAttackTarget(PCHARINFO c, PCHARINFO t)
     int sy = ((int)t->dwY > y) - ((int)t->dwY < y);
     while (TRUE) {
         x += sx; y += sy;
+        if (IsBowWall(x, y)) return FALSE;
         if (x == (int)t->dwX && y == (int)t->dwY) return TRUE;
-        if (IsSightWall(x, y)) return FALSE;
     }
 }
 
@@ -2893,20 +2917,23 @@ void PauseBowTurnGage(PCHARINFO c)
 {
     c->byTurnLV = 0;
     c->dwTimeTurnLV = 0;
+    c->dwLastTurnLV = 0;
     g_dwGuardGageElapse = 0;
     g_bDraw = TRUE;
 }
 
 void UpdateBowTurnGage(PCHARINFO c)
 {
-    if (c->dwAtackTblID == 0 || c->dwAtackTblID == (DWORD)-1) return;
+    if (c->dwAtackTblID == 0 || c->dwAtackTblID == (DWORD)-1) {
+        if (c->byTurnLV || c->dwTimeTurnLV) PauseBowTurnGage(c);
+        return;
+    }
     int target = GetCharNo2(c->dwAtackTblID);
     if (!g_bBattleMode || !g_pMapInfo || !(g_pMapInfo->byFlg & MAPFLG_BATTLE) ||
         !c->wHP || c->byCharState == CHARSTATE_DEAD || c->dwTimeTurnMagicLV ||
         target < 0 || !BowEnemy(g_aCharInfo[target]) || g_aCharInfo[target]->dwTimeDelete ||
         g_aCharInfo[target]->dwMapID != c->dwMapID) {
         CancelTurnGage(c);
-        SendCmdTARGETCHAR((DWORD)-1);
         g_bDraw = TRUE;
         return;
     }
@@ -2920,6 +2947,25 @@ void UpdateBowTurnGage(PCHARINFO c)
     if (!c->dwTimeTurnLV && !g_bGuard && !g_FadeInOutInfo.byFadeIn && !g_FadeInOutInfo.byFadeOut) {
         StartTurnGage(c, c->dwAtackTblID);
     }
+}
+
+/* 接触による自動切替は、次のゲージの進行を保つ。手動解除後は再ロックしない。 */
+static void RecvBowHitTarget(DWORD targetID)
+{
+    if (g_nMyCharID < 0 || g_nMyCharID >= g_aCharInfo.GetSize()) return;
+    PCHARINFO c = g_aCharInfo[g_nMyCharID];
+    if (!GetBowWeapon(c) || !c->dwAtackTblID || c->dwAtackTblID == (DWORD)-1) return;
+    int target = GetCharNo2(targetID);
+    if (target < 0 || g_aCharInfo[target]->dwMapID != c->dwMapID) return;
+    c->dwAtackTblID = targetID;
+    if (!g_pTargetSelectInfo) {
+        g_pTargetSelectInfo = new TARGETSELECTINFO;
+        ZeroMemory(g_pTargetSelectInfo, sizeof(TARGETSELECTINFO));
+    }
+    g_pTargetSelectInfo->dwTblID = targetID;
+    SendCmdTARGETCHAR(targetID);
+    UpdateBowTurnGage(c); // 死亡なら解除、線上の射程外なら従来どおり停止する。
+    g_bDraw = TRUE;
 }
 
 int FindNextAttackTarget(PCHARINFO pChar)
@@ -3046,6 +3092,13 @@ DWORD	g_dwTurnGageContinue = 0;		/* 殴って次のゲージを溜め始めた�
 
 void ContinueTurnGage(PCHARINFO pChar)
 {
+    if (GetBowWeapon(pChar)) {
+        // 発射後はロックと枠を保持し、条件が揃った時だけ次を溜める。
+        PauseBowTurnGage(pChar);
+        g_dwTurnGageContinue = timeGetTime();
+        UpdateBowTurnGage(pChar);
+        return;
+    }
 	DWORD dwAtackTblID;
 	BOOL bAutoGage;
 
@@ -4432,6 +4485,10 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 {
     if (dwDataSize < sizeof(CMDPARA_CHARPOS)) return;
 	PCMDPARA_CHARPOS pChar = (PCMDPARA_CHARPOS)pData;
+    if (pChar->byFlg & FLGCHARPOS_BOWHIT) {
+        RecvBowHitTarget(pChar->dwTblID);
+        return;
+    }
 	int x = 0, y = 0, nNo = GetCharNo (pChar->pID);
 	PCHARINFO pMyChar;
 

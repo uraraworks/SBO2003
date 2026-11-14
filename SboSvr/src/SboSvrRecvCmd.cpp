@@ -5403,7 +5403,7 @@ void RecvDataProcREQ_ATTACK(PBYTE pData, DWORD dwDataSize)
                 pCharTarget->dwMapID != pChar->dwMapID || GetMapNo(pChar->dwMapID) < 0 ||
                 !(g_aMapInfo[pChar->dwMapID]->byFlg & MAPFLG_BATTLE)) return;
             BYTE rate = GetAtackRateReq(pChar, pPara->byData);
-            if (!BowInLineRange(pChar, pCharTarget, bow->byData1) || !IsMagicReachChar(pChar, pCharTarget)) return;
+            if (!BowInLineRange(pChar, pCharTarget, bow->byData1) || !IsBowReachChar(pChar, pCharTarget)) return;
             pChar->byAtackRate = rate;
             pChar->dwTargetTblID = pPara->dwData;
             pChar->dwLastBattle = 1;

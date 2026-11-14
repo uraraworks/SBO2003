@@ -1027,7 +1027,7 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 			g_dwAutoGageSuppress = pChar->dwAtackTblID;
 			CancelTurnGage (pChar);
 			SAFE_DELETE (g_pTargetSelectInfo);
-			SendCmdTARGETCHAR ((DWORD)-1);
+			if (!GetBowWeapon(pChar)) SendCmdTARGETCHAR ((DWORD)-1);
 
 		/* 詠唱中？ */
 		} else if (pChar->dwTimeTurnMagicLV) {
@@ -1070,6 +1070,7 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 		if (g_pMapInfo->byFlg & MAPFLG_BATTLE) {
 			if (g_bBattleMode) {
 				g_bBattleMode = FALSE;
+                if (GetBowWeapon(pChar)) CancelTurnGage(pChar);
 				AddSysMsg ("戦闘モードを解除しました。", RGB (255, 255, 255));
 			} else {
 				g_bBattleMode = TRUE;
@@ -5636,6 +5637,8 @@ void KeyProcCOMMANDMAGICBATTLE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 					}
 
 					/* キャラ選択 */
+                    // 弓の枠は特技の選択枠を作る前に消す。
+                    if (GetBowWeapon(pChar)) CancelTurnGage(pChar);
 					pWndNew = MakeWindowBATTLE_TARGET (pInfo->byTargetArea, bTmp, pInfo->byTarget);
 					if (pWndNew == NULL) {
 						pWndTmp = MakeWindowMSG ("対象者がいません。@2", FALSE);
@@ -5646,7 +5649,7 @@ void KeyProcCOMMANDMAGICBATTLE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 					g_WndInfo.Add (pWndNew);
 					g_dwActiveMsgID = pWndNew->dwID;
 					bClose = FALSE;
-					CancelTurnGage (pChar);
+					if (!GetBowWeapon(pChar)) CancelTurnGage (pChar);
 				/* 町転送で、選べる行き先が2つ以上 */
 				} else if (IsTownWarpMagic ((BYTE)g_aMagicInfoBattle[nData1]) && (GetTownWarpSelectCount () >= 2)) {
 					if (pWnd->pChild) {
@@ -7008,7 +7011,6 @@ void KeyProcBATTLE_COMMAND(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
         PCHARINFO bowChar = g_aCharInfo[g_nMyCharID];
         if (GetBowWeapon(bowChar)) {
             CancelTurnGage(bowChar);
-            SendCmdTARGETCHAR((DWORD)-1);
         }
 		int nNo = GetWindowID (g_dwMsgIDCommand);
 		EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
@@ -7018,7 +7020,7 @@ void KeyProcBATTLE_COMMAND(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		/* 連続攻撃中なら、コマンドを閉じてもゲージはそのまま続ける */
 
 	} else if ((byEvent == KEY_UP) && (byCode == 'A') && (g_bEnableMove) &&
-				(pWnd->nData1 == 0) && !GetBowWeapon(pChar) && ShotTurnGage (pChar)) {
+				(pWnd->nData1 == 0) && ShotTurnGage (pChar)) {
 		/* 「攻撃」：連続攻撃中でゲージが1周以上溜まっていれば、相手を選び直さずにそのまま殴る
 		   (攻撃音とかぶるので決定音は鳴らさない) */
 		int nNo = GetWindowID (g_dwMsgIDCommand);
@@ -7173,7 +7175,6 @@ void KeyProcBATTLE_TARGET(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
         PCHARINFO bowChar = g_aCharInfo[g_nMyCharID];
         if (GetBowWeapon(bowChar)) {
             CancelTurnGage(bowChar);
-            SendCmdTARGETCHAR((DWORD)-1);
         }
 		int nNo = GetWindowID (pWnd->dwID);
 		EraseWindow (pWnd);
@@ -7248,6 +7249,10 @@ void KeyProcBATTLE_TARGET(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 
 		if (bMove) {
 			pInfo = g_aUseCharInfo[pWnd->nData1];
+            if (!g_pTargetSelectInfo) {
+                g_pTargetSelectInfo = new TARGETSELECTINFO;
+                ZeroMemory(g_pTargetSelectInfo, sizeof(TARGETSELECTINFO));
+            }
 			g_pTargetSelectInfo->dwTblID = pInfo->dwTblID;
 
 			pWnd->dwTime = timeGetTime ();

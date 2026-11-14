@@ -3040,6 +3040,8 @@ typedef struct _CMDPARA_CHARPOS {
 
 #define FLGCHARPOS_BOW 0x02
 #define FLGCHARPOS_BOWLAUNCH 0x04
+/* 弓が接触した敵の CHARPOS。射手本人だけへ送り、既存ヘッダーを使う。 */
+#define FLGCHARPOS_BOWHIT 0x08
 typedef struct _BOWFLIGHTINFO {
 	int nStartX, nStartY, nEndX, nEndY;
 	DWORD dwDuration, dwElapsed;

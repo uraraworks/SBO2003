@@ -145,6 +145,52 @@ static int TestBowOnly()
     ((CCharProcATACK*)arrow->pProc)->Proc(s_dwFakeNow);
     BowCheck(enemy->dwLastBattle != 0 && !g_aCharInfo[arrowID]->pID, "counter passes arrow");
     map->pwMap[cell] = oldPart;
+    // 扉の画像が歩ける・カウンターであっても、閉じたイベント扉で遮る。
+    int oldEventCount = map->nEventCount;
+    PEVENTINFO oldEvents = map->pEvent;
+    EVENTINFO doorEvent = {};
+    EVENTINFO_DOOR door = {};
+    doorEvent.byType = EVENTTYPE_DOOR; doorEvent.dwX = 3; doorEvent.dwY = 2;
+    doorEvent.pData = &door;
+    door.wGrpID = wall; door.wBackGrpID = oldPart;
+    enemy->dwLastBattle = 0;
+    arrow = fire(); arrowID = arrow->dwTblID;
+    map->nEventCount = 1; map->pEvent = &doorEvent;
+    map->pwMap[cell] = wall;
+    pc->dwLastBattle = 0; TestRecv(pc, &req, sizeof(req));
+    BowCheck(pc->dwLastBattle == 0 && IsBowWall(pc, 3, 2), "closed door rejects request even with counter hit type");
+    int liveArrows = 0;
+    for (int i=0;i<g_aCharInfo.GetSize();++i)
+        if (g_aCharInfo[i]->dwBowDuration && g_aCharInfo[i]->pID) ++liveArrows;
+    BattleProcWeapon(pc);
+    int afterArrows = 0;
+    for (int i=0;i<g_aCharInfo.GetSize();++i)
+        if (g_aCharInfo[i]->dwBowDuration && g_aCharInfo[i]->pID) ++afterArrows;
+    BowCheck(liveArrows == afterArrows, "closed door rejects launch revalidation");
+    s_dwFakeNow += 1000;
+    ((CCharProcATACK*)arrow->pProc)->Proc(s_dwFakeNow);
+    BowCheck(!g_aCharInfo[arrowID]->pID && enemy->dwLastBattle == 0, "door closed during flight stops arrow");
+    map->pwMap[cell] = oldPart;
+    BowCheck(IsBowWall(pc, 3, 2), "closed door blocks even with walkable image");
+    door.dwTimeOpen = s_dwFakeNow;
+    pc->dwLastBattle = 0; TestRecv(pc, &req, sizeof(req));
+    BowCheck(pc->dwLastBattle != 0 && !IsBowWall(pc, 3, 2), "open normal-space door accepts request");
+    arrow = fire(); arrowID = arrow->dwTblID;
+    s_dwFakeNow += 1000;
+    ((CCharProcATACK*)arrow->pProc)->Proc(s_dwFakeNow);
+    BowCheck(!g_aCharInfo[arrowID]->pID && enemy->dwLastBattle != 0, "open door passes flight");
+    door.dwTimeOpen = 0;
+    pc->dwSpaceID = enemy->dwSpaceID = 7;
+    BowCheck(IsBowWall(pc, 3, 2), "private-space door initially closed");
+    BowCheck(SpaceDoorOpen(pc->dwMapID, &doorEvent, &door, 7), "private-space door opens");
+    g_aMapPartsInfo[wall].byHitType = PARTSHIT_BLOCK1;
+    map->pwMap[cell] = wall;
+    BowCheck(!IsBowWall(pc, 3, 2) && IsBowReachChar(pc, enemy), "open private door ignores shared closed image");
+    pc->dwSpaceID = enemy->dwSpaceID = 8;
+    BowCheck(IsBowWall(pc, 3, 2) && !IsBowReachChar(pc, enemy), "other private-space door remains closed");
+    pc->dwSpaceID = enemy->dwSpaceID = 0;
+    map->nEventCount = oldEventCount; map->pEvent = oldEvents;
+    map->pwMap[cell] = oldPart;
     enemy->dwX = 7; enemy->dwY = 2; enemy->dwLastBattle = 0;
     pc->dwTargetTblID = enemy->dwTblID; pc->byAtackRate = 20;
     BowCheck(BattleProcWeapon(pc), "lap one launches");
@@ -177,7 +223,14 @@ static int TestBowOnly()
     PCHARINFO between = BowTestChar(NPCTYPE_BATTLE1, 3, 2);
     arrow = fire(); arrowID = arrow->dwTblID;
     s_dwFakeNow += 1000;
+    SvrSendCaptureBegin();
     ((CCharProcATACK*)arrow->pProc)->Proc(s_dwFakeNow);
+    BowCheck(SvrSendCaptureEnd(packet) && packet.size() == sizeof(CMDPARA_CHARPOS),
+        "contact notification preserves CHARPOS header size");
+    CopyMemory(&pos, packet.data(), sizeof(pos));
+    BowCheck(pos.byCmd == CMD_CHARPOS && pos.byFlg == FLGCHARPOS_BOWHIT &&
+        pos.dwTblID == between->dwTblID && pos.pID == between->pID,
+        "contact notification identifies intermediate enemy before damage");
     BowCheck(between->dwLastBattle != 0 && enemy->dwLastBattle == 0 && !g_aCharInfo[arrowID]->pID,
         "intermediate enemy takes first hit");
     --g_wCountMapParts;
