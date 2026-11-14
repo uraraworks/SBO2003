@@ -4,7 +4,7 @@
 			"id": "bgm", "title": "BGM（MIDI）", "lead": "作者のみなさんのご厚意で、2003年の公開当時から使わせていただいている曲です。",
 			"groups": [
 				{
-					"author": "のん太", "site": "ateliernonta.com", "url": "https://www.ateliernonta.com/music-assets",
+					"author": "のん太", "site": "Atelier Nonta", "url": "https://www.ateliernonta.com/music-assets",
 					"items": [
 						{"title": "飛空艇１", "file": "airship1.mid"},
 						{"title": "戦闘１", "file": "battle1.mid"},
