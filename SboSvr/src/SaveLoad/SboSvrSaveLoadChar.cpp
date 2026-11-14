@@ -14,7 +14,7 @@
 /* ========================================================================= */
 /* 定数定義																	 */
 /* ========================================================================= */
-#define DATACOUNTCOLUMN		(78)									/* 保存データ数 */
+#define DATACOUNTCOLUMN		(80)									/* 保存データ数 */
 
 /* ========================================================================= */
 /* 構造体定義																 */
@@ -112,6 +112,8 @@ static const char *s_aszName[] = {
 	"dwNpcID",					/* NPC番号 */
 	"abyTownWarp",				/* 町転送の行き先帳 */
 	"abyQuest",					/* ギルドの依頼（受けている依頼・段・旗・数・受けた時刻・クリア済みの印） */
+	"abyMagicKey",				/* 特技ショートカット（枠数・各枠の特技ID） */
+	"byOptMagicBar",			/* 特技ショートカットの帯の表示設定 */
 	"z"
 };
 
@@ -511,6 +513,10 @@ static BOOL SaveCharInfoMain(void)
 			case 77:	/* ギルドの依頼 [依頼番号(WORD)][段(BYTE)][旗(WORD)][数(WORD)×4][受けた時刻(DWORD)][クリア済みの印(BYTE)×MAX_QUESTDONEBYTE] */
 				dwDataSizeTmp += 2 + 1 + 2 + 2 * MAX_QUESTCOUNT + 4 + MAX_QUESTDONEBYTE;
 				break;
+			case 78:	/* 特技ショートカット [枠数(BYTE)][特技ID(BYTE)×枠数] */
+				dwDataSizeTmp += 1 + MAX_MAGICKEY;
+				break;
+			case 79:	dwDataSizeTmp += sizeof (pInfo->byOptMagicBar);			break;	/* 特技ショートカットの帯の表示設定 */
 			}
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
@@ -927,6 +933,14 @@ static BOOL SaveCharInfoMain(void)
 					CopyMemory (&pData[dwOffset], pInfo->abyQuestDone, MAX_QUESTDONEBYTE);
 					dwOffset += MAX_QUESTDONEBYTE;
 				}
+				break;
+			case 78:	/* 特技ショートカット */
+				pData[dwOffset ++] = (BYTE)MAX_MAGICKEY;		/* 枠数 */
+				CopyMemory (&pData[dwOffset], pInfo->abyMagicKey, MAX_MAGICKEY);
+				dwOffset += MAX_MAGICKEY;
+				break;
+			case 79:	/* 特技ショートカットの帯の表示設定 */
+				pData[dwOffset ++] = pInfo->byOptMagicBar;
 				break;
 			}
 		}
@@ -1597,6 +1611,23 @@ BOOL LoadCharInfo(void)
 				dwOffsetTmp += 4;
 				CopyMemory (pInfo->abyQuestDone, &pData[dwOffsetTmp], MAX_QUESTDONEBYTE);
 				dwOffsetTmp += MAX_QUESTDONEBYTE;
+			}
+
+			/* 特技ショートカット（無い古いデータは全部空のまま。保存時と枠数が変わっていても読めるよう収まる分だけ） */
+			if (strcmp (aHeaderInfo[i].szName, s_aszName[78]) == 0) {
+				DWORD dwKeyCount = pData[dwOffsetTmp ++];
+
+				ZeroMemory (pInfo->abyMagicKey, sizeof (pInfo->abyMagicKey));
+				CopyMemory (pInfo->abyMagicKey, &pData[dwOffsetTmp], min (dwKeyCount, (DWORD)MAX_MAGICKEY));
+				dwOffsetTmp += dwKeyCount;
+			}
+
+			/* 特技ショートカットの帯の表示設定（無い古いデータは表示のまま） */
+			if (strcmp (aHeaderInfo[i].szName, s_aszName[79]) == 0) {
+				pInfo->byOptMagicBar = pData[dwOffsetTmp ++];
+				if (pInfo->byOptMagicBar > OPTMAGICBAR_HIDE) {
+					pInfo->byOptMagicBar = OPTMAGICBAR_SHOW;
+				}
 			}
 		}
 	}

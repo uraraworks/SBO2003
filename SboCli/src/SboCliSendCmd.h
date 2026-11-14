@@ -112,6 +112,7 @@ extern void SendCmdADMINUNDO		(BYTE, BYTE, DWORD);					/* 管理者画面の「�
 extern void SendCmdADMINSPACE		(BYTE, DWORD);							/* 管理者の空間の切り替え */
 extern void SendCmdADMINQUEST		(BYTE, int, const QUESTINFO *);			/* 管理者ウィンドウのギルドの依頼の編集 */
 extern void SendCmdADMINRESURRECT	(DWORD dwTblID);						/* 管理者ウィンドウからキャラをHP満タンで蘇生 */
+extern void SendCmdMAGICKEY			(BYTE byNo, BYTE byMagicID);			/* 特技ショートカットの登録 */
 void SendCmdNPCROUTE		(BYTE, DWORD, DWORD, BYTE, BYTE, BYTE, const BYTE *, const BYTE *);	/* NPCの巡回ルート */
 extern void SendCmdNPCROUTE		(BYTE, DWORD, DWORD, BYTE, BYTE, BYTE, const BYTE *, const BYTE *);	/* NPCの巡回ルート */
 extern void SendCMDSHOPBUY			(DWORD, DWORD);							/* アイテム購入 */

@@ -837,6 +837,7 @@ void DrawWindowCOMMANDOPTION(PWNDINFO pWnd)
 	TextOut2 (hDC, 32, 16 * 8, "天候の描画ON/OFF", RGB (255, 255, 255));
 	TextOut2 (hDC, 32, 16 * 9, "タイトル画面のスキップ", RGB (255, 255, 255));
 	TextOut2 (hDC, 32, 16 * 10, "発言の音ON/OFF", RGB (255, 255, 255));
+	TextOut2 (hDC, 32, 16 * 11, "特技ショートカットの帯", RGB (255, 255, 255));
 
 	SelectObject (hDC, hFontOld);
 	pWnd->pDib->Unlock ();
@@ -3408,6 +3409,12 @@ void DrawWindowCOMMANDMAGICBATTLE(PWNDINFO pWnd)
 		PMAGICINFO pInfo = g_aMagicInfo[g_aMagicInfoBattle[i]];
 		wsprintf (szTmp, "%s", pInfo->szName);
 		TextOut2 (hDC, 32, 16 + i * 16, szTmp, RGB (255, 255, 255));
+		/* 特技ショートカットに登録している番号（1〜5キーで登録・解除） */
+		int nKey = GetMagicKeyNo ((BYTE)g_aMagicInfoBattle[i]);
+		if (nKey >= 0) {
+			wsprintf (szTmp, "%d", nKey + 1);
+			TextOut2 (hDC, pWnd->nCx - 16 - 16, 16 + i * 16, szTmp, RGB (255, 230, 100));
+		}
 	}
 	pWnd->pDib->Blt (16, 16 + g_byComSelectMagic * 16, 8, 16, g_pDibSystem, 64, 16, TRUE);
 
@@ -4762,9 +4769,11 @@ void DrawWindowSTATUSMAGIC(PWNDINFO pWnd)
 	SetBkColor (hDC, RGB (40, 40, 40));
 	TextOut2 (hDC, 32, 0, "特技", RGB (255, 255, 255));
 	TextOut2 (hDC, 32, nListCy, "説明", RGB (255, 255, 255));
+	TextOut2 (hDC, 32 + 8 * 6, 0, "1〜5キーで登録", RGB (255, 230, 100));
 	SetBkMode (hDC, TRANSPARENT);
 	TextOut2 (hDC, 32, 0, "特技", RGB (255, 255, 255));
 	TextOut2 (hDC, 32, nListCy, "説明", RGB (255, 255, 255));
+	TextOut2 (hDC, 32 + 8 * 6, 0, "1〜5キーで登録", RGB (255, 230, 100));
 
 	if (pWnd->nData2 == 0) {
 		TextOut2 (hDC, 32, 16, "覚えている特技はありません", RGB (200, 200, 200));
@@ -4785,6 +4794,13 @@ void DrawWindowSTATUSMAGIC(PWNDINFO pWnd)
 		int y = 16 + nNo * 16;
 
 		TextOut2 (hDC, 32, y, pInfo->szName, RGB (255, 255, 255));
+
+		/* 特技ショートカットに登録している番号 */
+		int nKey = GetMagicKeyNo (byMagicID);
+		if (nKey >= 0) {
+			wsprintf (szTmp, "%d", nKey + 1);
+			TextOut2 (hDC, xUse - 16, y, szTmp, RGB (255, 230, 100));
+		}
 
 		/* 使える場面（「特技」コマンドに出るのは「ふだん」と「いつでも」） */
 		LPCSTR pszUse = "ふだん";

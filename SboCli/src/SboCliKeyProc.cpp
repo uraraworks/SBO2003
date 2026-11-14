@@ -98,6 +98,13 @@ LRESULT CALLBACK MakeWndProc				(HWND, UINT, WPARAM, LPARAM);	/* 作成ボタン
 LRESULT CALLBACK SpeechWndProc				(HWND, UINT, WPARAM, LPARAM);	/* 発言入力欄用メッセージ処理 */
 static BOOL IsSpeechModeEnable				(BYTE);							/* 発言の種類が今選べるか */
 static BOOL IsMercMagic						(PMAGICINFO pInfo);			/* 雇った傭兵にも使える特技か(回復・蘇生) */
+int  GetMagicKeyNo							(BYTE);						/* 特技ショートカットの登録枠(無ければ -1) */
+BOOL IsMagicLearned							(PCHARINFO, BYTE);			/* 今の職業でその特技を覚えているか */
+int  GetMagicKeyKind						(PMAGICINFO);				/* 帯の色分けの種類 */
+BOOL IsMagicKeyUsable						(PCHARINFO, BYTE);			/* 特技が今使えるか */
+BOOL IsMagicKeyMode							(PCHARINFO);				/* 1〜5 キーで特技を使える状態か */
+void RegisterMagicKey						(int, BYTE);				/* 特技を枠に登録する・外す */
+void UseMagicKey							(PCHARINFO, int);			/* 枠の特技を使う */
 #define SPEECHMODE_MAX	(4)															/* 発言の種類の数(g_bySpeechMode) */
 LRESULT CALLBACK SpeechEditWndProc			(HWND, UINT, WPARAM, LPARAM);	/* 自己紹介設定欄用メッセージ処理 */
 LRESULT CALLBACK ChgPasswordWndProc			(HWND, UINT, WPARAM, LPARAM);	/* パスワード変更用メッセージ処理 */
@@ -146,6 +153,9 @@ BYTE m_byKeyOnX = 0,
 	 m_byKeyOnTab = 0,
 	 m_byKeyOn1 = 0,
 	 m_byKeyOn2 = 0,
+	 m_byKeyOn3 = 0,
+	 m_byKeyOn4 = 0,
+	 m_byKeyOn5 = 0,
 	 m_byKeyOnEsc = 0,
 	 m_byKeyOnCtrl = 0;
 
@@ -488,6 +498,51 @@ void KeyProc(void)
 		KeyEvPush (byEvent, byCode);
 	}
 
+	/* 3キー押した */
+	if ((g_abyKeyState['3'] & 0x80) && (m_byKeyOn3 == 0)) {
+		m_byKeyOn3 = 1;
+		byEvent = KEY_DOWN;
+		byCode = '3';
+		KeyEvPush (byEvent, byCode);
+
+	/* 3キー離した */
+	} else if (((g_abyKeyState['3'] & 0x80) == 0) && (m_byKeyOn3 == 1)) {
+		m_byKeyOn3 = 0;
+		byEvent = KEY_UP;
+		byCode = '3';
+		KeyEvPush (byEvent, byCode);
+	}
+
+	/* 4キー押した */
+	if ((g_abyKeyState['4'] & 0x80) && (m_byKeyOn4 == 0)) {
+		m_byKeyOn4 = 1;
+		byEvent = KEY_DOWN;
+		byCode = '4';
+		KeyEvPush (byEvent, byCode);
+
+	/* 4キー離した */
+	} else if (((g_abyKeyState['4'] & 0x80) == 0) && (m_byKeyOn4 == 1)) {
+		m_byKeyOn4 = 0;
+		byEvent = KEY_UP;
+		byCode = '4';
+		KeyEvPush (byEvent, byCode);
+	}
+
+	/* 5キー押した */
+	if ((g_abyKeyState['5'] & 0x80) && (m_byKeyOn5 == 0)) {
+		m_byKeyOn5 = 1;
+		byEvent = KEY_DOWN;
+		byCode = '5';
+		KeyEvPush (byEvent, byCode);
+
+	/* 5キー離した */
+	} else if (((g_abyKeyState['5'] & 0x80) == 0) && (m_byKeyOn5 == 1)) {
+		m_byKeyOn5 = 0;
+		byEvent = KEY_UP;
+		byCode = '5';
+		KeyEvPush (byEvent, byCode);
+	}
+
 	/* Enterキー押した */
 	if ((g_abyKeyState[VK_RETURN] & 0x80) && (m_byKeyOnReturn == 0)) {
 		m_byKeyOnReturn = 1;
@@ -731,13 +786,28 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 	/* 自分にエフェクト発動？ */
 	} else if ((byEvent == KEY_DOWN) && (byCode == '1') && (g_bEnableMove)) {
 		if (!g_bSpeech && !m_byKeyOnReturn && !g_dwActiveMsgID) {
-			SendCmdEFCREQ (0, g_byUseEfcID);
+			/* 戦闘モード中は、登録した特技を使う */
+			if (IsMagicKeyMode (pChar)) {
+				UseMagicKey (pChar, 0);
+			} else {
+				SendCmdEFCREQ (0, g_byUseEfcID);
+			}
 		}
 
 	/* 目の前のキャラにエフェクト発動？ */
 	} else if ((byEvent == KEY_DOWN) && (byCode == '2') && (g_bEnableMove)) {
 		if (!g_bSpeech && !m_byKeyOnReturn && !g_dwActiveMsgID) {
-			SendCmdEFCREQ (1, g_byUseEfcID);
+			if (IsMagicKeyMode (pChar)) {
+				UseMagicKey (pChar, 1);
+			} else {
+				SendCmdEFCREQ (1, g_byUseEfcID);
+			}
+		}
+
+	/* 戦闘モード中に、登録した特技を使う(3〜5。戦闘モード中でなければ何もしない) */
+	} else if ((byEvent == KEY_DOWN) && (byCode >= '3') && (byCode <= '5') && (g_bEnableMove)) {
+		if (!g_bSpeech && !m_byKeyOnReturn && !g_dwActiveMsgID && IsMagicKeyMode (pChar)) {
+			UseMagicKey (pChar, byCode - '1');
 		}
 	}
 
@@ -2413,6 +2483,25 @@ void KeyProcCOMMANDOPTION(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				g_dwActiveMsgID = pWndTmp->dwID;
 			}
 			break;
+
+		/* 特技ショートカットの帯の表示/非表示（戦闘モード中に画面の下に出す帯。キーでの発動はどちらでもできる） */
+		case 10:
+			{
+				PWNDINFO pWndTmp;
+				if (g_bMagicBar) {
+					g_bMagicBar = FALSE;
+					pWndTmp = MakeWindowMSG ("特技ショートカットの帯を出さなくしました。@2", FALSE);
+				} else {
+					g_bMagicBar = TRUE;
+					pWndTmp = MakeWindowMSG ("特技ショートカットの帯を出します。@2", FALSE);
+				}
+				/* アカウントごとに覚えてもらう */
+				SendCmdWEBACCOUNT (WEBACC_OPTMAGICBAR, g_bMagicBar ? OPTMAGICBAR_SHOW : OPTMAGICBAR_HIDE);
+				g_bDraw = TRUE;
+				g_WndInfo.Add (pWndTmp);
+				g_dwActiveMsgID = pWndTmp->dwID;
+			}
+			break;
 		}
 		/* 変えた設定をその場で保存する（ブラウザ版は終了時の保存が来ないため） */
 		SaveIniOption ();
@@ -2836,6 +2925,27 @@ void KeyProcSTATUSMAGIC(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		EraseWindow (pWnd);
 		g_bDraw = TRUE;
 		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
+
+	} else if ((byEvent == KEY_DOWN) && (byCode >= '1') && (byCode <= '5')) {
+		/* 1〜5 キー：カーソルの特技をその枠に登録する（同じ特技が入っていれば外す） */
+		PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
+		int i, nNo = 0;
+
+		for (i = 0; i < MAX_USEMAGIC; i ++) {
+			BYTE byMagicID = pChar->abyMagic[i];
+			if (byMagicID == 0) {
+				break;
+			}
+			if (byMagicID >= g_aMagicInfo.GetSize ()) {
+				continue;
+			}
+			if (nNo == pWnd->nData1) {
+				RegisterMagicKey (byCode - '1', byMagicID);
+				pWnd->dwTimeDrawStart = 0;
+				break;
+			}
+			nNo ++;
+		}
 
 	} else if ((byEvent == KEY_UP) && (byCode == 'A') && (g_bEnableMove)) {
 		/* 全部閉じる（「強さ」で決定を押した時の元の動きと同じ） */
@@ -5590,6 +5700,13 @@ void KeyProcCOMMANDMAGICBATTLE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		EraseWindow (pWnd);
 		g_bDraw = TRUE;
 		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
+
+	} else if ((byEvent == KEY_DOWN) && (byCode >= '1') && (byCode <= '5')) {
+		/* 1〜5 キー：カーソルの特技をその枠に登録する（同じ特技が入っていれば外す） */
+		if ((pWnd->nData1 >= 0) && (pWnd->nData1 < g_aMagicInfoBattle.GetSize ())) {
+			RegisterMagicKey (byCode - '1', (BYTE)g_aMagicInfoBattle[pWnd->nData1]);
+			pWnd->dwTimeDrawStart = 0;
+		}
 
 	} else if ((byEvent == KEY_UP) && (byCode == 'A') && (g_bEnableMove)) {
 		int			nData1;
@@ -9365,6 +9482,281 @@ static BOOL IsMercMagic(PMAGICINFO pInfo)
 		return FALSE;
 	}
 	return (pInfo->byTarget != MAGICTARGET_NPC);
+}
+
+/* ========================================================================= */
+/* 特技ショートカット（1〜5 キーに特技を登録して、戦闘モード中にキー1つで使う） */
+/* ========================================================================= */
+
+/* ========================================================================= */
+/* 関数名：	GetMagicKeyNo													 */
+/* 内容：	特技が登録されている枠の番号を返す(0〜MAX_MAGICKEY-1。無ければ -1) */
+/* ========================================================================= */
+int GetMagicKeyNo(BYTE byMagicID)
+{
+	int i;
+
+	if (byMagicID == 0) {
+		return -1;
+	}
+	for (i = 0; i < MAX_MAGICKEY; i ++) {
+		if (g_abyMagicKey[i] == byMagicID) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+/* ========================================================================= */
+/* 関数名：	IsMagicLearned													 */
+/* 内容：	今の職業で、その特技を覚えているか								 */
+/*			（転職すると覚えている特技が入れ替わるので、登録だけ残る枠がある）	 */
+/* ========================================================================= */
+BOOL IsMagicLearned(PCHARINFO pChar, BYTE byMagicID)
+{
+	int i;
+
+	if (byMagicID == 0) {
+		return FALSE;
+	}
+	for (i = 0; i < MAX_USEMAGIC; i ++) {
+		if (pChar->abyMagic[i] == byMagicID) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* ========================================================================= */
+/* 関数名：	GetMagicKeyKind													 */
+/* 内容：	帯の色分け用の種類を返す(0=HPを減らす攻撃 1=回復 2=それ以外の補助)	 */
+/* ========================================================================= */
+int GetMagicKeyKind(PMAGICINFO pInfo)
+{
+	switch (pInfo->byType) {
+	case MAGICTYPE_HPDOWN:
+	case MAGICTYPE_HPDOWNAT:
+	case MAGICTYPE_HPDOWNHPCOST:
+	case MAGICTYPE_HPDOWNRATE:
+		return 0;
+	case MAGICTYPE_HPUP:
+	case MAGICTYPE_RESURRECTION:
+		return 1;
+	}
+	return 2;
+}
+
+/* ========================================================================= */
+/* 関数名：	GetMagicShortName												 */
+/* 内容：	特技名から「（１体・前１マス）」のような後ろの説明を除いた名前を取る */
+/* ========================================================================= */
+static void GetMagicShortName(PMAGICINFO pInfo, LPSTR pszDst, int nSize)
+{
+	int nLen = 0;
+
+	while (pInfo->szName[nLen]) {
+		if (((BYTE)pInfo->szName[nLen] == 0xEF) && ((BYTE)pInfo->szName[nLen + 1] == 0xBC) && ((BYTE)pInfo->szName[nLen + 2] == 0x88)) {
+			break;		/* 全角の「（」(UTF-8) */
+		}
+		if (pInfo->szName[nLen] == '(') {
+			break;
+		}
+		nLen += SboTextCharLen (&pInfo->szName[nLen]);
+	}
+	nLen = min (nLen, nSize - 1);
+	nLen = SboTextFitBytes (pInfo->szName, nLen);
+	CopyMemory (pszDst, pInfo->szName, nLen);
+	pszDst[nLen] = 0;
+}
+
+/* ========================================================================= */
+/* 関数名：	RegisterMagicKey												 */
+/* 内容：	特技を nNo 番目の枠に登録する（登録のメッセージも出す）			 */
+/*			別の特技が入っている枠なら置き換え、同じ特技が入っている枠なら外す。*/
+/*			同じ特技が別の枠にあればそちらは外す（重複させない）			 */
+/* ========================================================================= */
+void RegisterMagicKey(int nNo, BYTE byMagicID)
+{
+	char szMsg[128], szName[64];
+	int i;
+	PMAGICINFO pInfo;
+
+	if ((nNo < 0) || (nNo >= MAX_MAGICKEY) || (byMagicID == 0) || (byMagicID >= g_aMagicInfo.GetSize ())) {
+		return;
+	}
+	pInfo = g_aMagicInfo[byMagicID];
+	GetMagicShortName (pInfo, szName, sizeof (szName));
+
+	if (g_abyMagicKey[nNo] == byMagicID) {
+		g_abyMagicKey[nNo] = 0;
+		SendCmdMAGICKEY ((BYTE)nNo, 0);
+		_snprintf (szMsg, sizeof (szMsg) - 1, "%d から %s を外しました。", nNo + 1, szName);
+	} else {
+		for (i = 0; i < MAX_MAGICKEY; i ++) {
+			if (g_abyMagicKey[i] == byMagicID) {
+				g_abyMagicKey[i] = 0;
+			}
+		}
+		g_abyMagicKey[nNo] = byMagicID;
+		SendCmdMAGICKEY ((BYTE)nNo, byMagicID);
+		_snprintf (szMsg, sizeof (szMsg) - 1, "%d に %s を登録しました。", nNo + 1, szName);
+	}
+	szMsg[sizeof (szMsg) - 1] = 0;
+	AddSysMsg (szMsg, RGB (255, 255, 255));
+	g_bDraw = TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：	IsMagicKeyMode													 */
+/* 内容：	1〜5 キーで特技を使える状態か(C キーで特技一覧を開ける条件と同じ)	 */
+/* ========================================================================= */
+BOOL IsMagicKeyMode(PCHARINFO pChar)
+{
+	if ((g_pMapInfo == NULL) || ((g_pMapInfo->byFlg & MAPFLG_BATTLE) == 0) || (g_bBattleMode == FALSE)) {
+		return FALSE;
+	}
+	return ((pChar->abySubStatus[0] == 0) && (pChar->dwTimeTurnMagicLV == 0));
+}
+
+/* ========================================================================= */
+/* 関数名：	IsMagicKeyUsable												 */
+/* 内容：	特技が今使えるか(覚えている・戦闘で使える・Mana/HPが足りる)		 */
+/*			帯を暗くするかの判定にも使う									 */
+/* ========================================================================= */
+BOOL IsMagicKeyUsable(PCHARINFO pChar, BYTE byMagicID)
+{
+	PMAGICINFO pInfo;
+
+	if ((byMagicID == 0) || (byMagicID >= g_aMagicInfo.GetSize ()) || !IsMagicLearned (pChar, byMagicID)) {
+		return FALSE;
+	}
+	pInfo = g_aMagicInfo[byMagicID];
+	if (pInfo->byTypeInfoID == MAGICUSETYPE_WALK) {
+		return FALSE;
+	}
+	if (pInfo->byType == MAGICTYPE_HPDOWNHPCOST) {
+		return (pChar->wHP > pInfo->wMana);
+	}
+	return (pChar->wMana >= pInfo->wMana);
+}
+
+/* ========================================================================= */
+/* 関数名：	UseMagicKey														 */
+/* 内容：	nNo 番目の枠の特技を、特技一覧から選んだ時と同じ流れで使う		 */
+/*			相手を選ぶ特技は、敵向きなら自動ゲージで狙っている敵(無ければ	 */
+/*			目の前の敵)、味方向きなら自分に使う								 */
+/*			使えない時は何もせずシステムメッセージを出す					 */
+/* ========================================================================= */
+void UseMagicKey(PCHARINFO pChar, int nNo)
+{
+	BYTE byMagicID;
+	PMAGICINFO pInfo;
+	char szMsg[128];
+	DWORD dwTarget = 0;
+	BOOL bSelect = FALSE;
+
+	if ((nNo < 0) || (nNo >= MAX_MAGICKEY)) {
+		return;
+	}
+	byMagicID = g_abyMagicKey[nNo];
+	if ((byMagicID == 0) || (byMagicID >= g_aMagicInfo.GetSize ())) {
+		_snprintf (szMsg, sizeof (szMsg) - 1, "%d には特技が登録されていません。", nNo + 1);
+		szMsg[sizeof (szMsg) - 1] = 0;
+		AddSysMsg (szMsg, RGB (255, 255, 255));
+		return;
+	}
+	pInfo = g_aMagicInfo[byMagicID];
+
+	if (!IsMagicLearned (pChar, byMagicID)) {
+		_snprintf (szMsg, sizeof (szMsg) - 1, "%s は今は覚えていません。", pInfo->szName);
+		szMsg[sizeof (szMsg) - 1] = 0;
+		AddSysMsg (szMsg, RGB (255, 255, 255));
+		return;
+	}
+	if (pInfo->byTypeInfoID == MAGICUSETYPE_WALK) {
+		_snprintf (szMsg, sizeof (szMsg) - 1, "%s は戦闘中は使えません。", pInfo->szName);
+		szMsg[sizeof (szMsg) - 1] = 0;
+		AddSysMsg (szMsg, RGB (255, 255, 255));
+		return;
+	}
+	if (pInfo->byType == MAGICTYPE_HPDOWNHPCOST) {
+		if (pChar->wHP <= pInfo->wMana) {
+			AddSysMsg ("HPが足りません。", RGB (255, 255, 255));
+			return;
+		}
+	} else if (pChar->wMana < pInfo->wMana) {
+		AddSysMsg ("Manaが足りません。", RGB (255, 255, 255));
+		return;
+	}
+	/* 行き先を選ぶ特技は、選ぶ画面が要るのでメニューから使う */
+	if (IsTownWarpMagic (byMagicID) && (GetTownWarpSelectCount () >= 2)) {
+		AddSysMsg ("行き先を選ぶ特技は、特技の一覧から使ってください。", RGB (255, 255, 255));
+		return;
+	}
+
+	/* 相手を選ぶ特技 */
+	if ((pInfo->byTargetType == MAGICTARGETTYPE_SELECT) || (pInfo->byTargetType == MAGICTARGETTYPE_SELECT2)) {
+		BOOL bEnemy = (pInfo->byTarget == MAGICTARGET_NPC);
+
+		/* 敵も味方も選べる特技は、HPを減らす・状態を悪くする特技なら敵向き */
+		if (pInfo->byTarget == MAGICTARGET_ALL) {
+			switch (pInfo->byType) {
+			case MAGICTYPE_HPDOWN:
+			case MAGICTYPE_HPDOWNAT:
+			case MAGICTYPE_HPDOWNHPCOST:
+			case MAGICTYPE_HPDOWNRATE:
+			case MAGICTYPE_POISON:
+			case MAGICTYPE_SLEEP:
+				bEnemy = TRUE;
+				break;
+			}
+		}
+		if (bEnemy) {
+			int nChar = -1;
+
+			/* 自動ゲージで今狙っている敵 */
+			if (g_bAutoGage && pChar->dwTimeTurnLV && (pChar->dwAtackTblID != 0) && (pChar->dwAtackTblID != (DWORD)-1)) {
+				nChar = GetCharNo2 (pChar->dwAtackTblID);
+				if ((nChar >= 0) && (g_aCharInfo[nChar]->byCharState == CHARSTATE_DEAD)) {
+					nChar = -1;
+				}
+			}
+			/* 無ければ目の前の敵 */
+			if (nChar < 0) {
+				nChar = FindFrontAttackTarget (pChar);
+			}
+			if (nChar < 0) {
+				AddSysMsg ("相手がいません。", RGB (255, 255, 255));
+				return;
+			}
+			dwTarget = g_aCharInfo[nChar]->dwTblID;
+			bSelect = TRUE;
+
+		} else if (pInfo->byTargetType == MAGICTARGETTYPE_SELECT2) {
+			/* 自分以外を選ぶ味方向きの特技は、誰に使うか決められない */
+			AddSysMsg ("相手を選ぶ特技は、特技の一覧から使ってください。", RGB (255, 255, 255));
+			return;
+		}
+		/* 味方向きは自分（相手を決めなければ自分に使う） */
+		if (bSelect) {
+			SAFE_DELETE (g_pTargetSelectInfo);
+			g_pTargetSelectInfo = new TARGETSELECTINFO;
+			ZeroMemory (g_pTargetSelectInfo, sizeof (TARGETSELECTINFO));
+			g_pTargetSelectInfo->dwTblID = dwTarget;
+		}
+		if (!GetBowWeapon (pChar)) {
+			CancelTurnGage (pChar);
+		}
+	}
+
+	/* 詠唱開始（特技一覧から選んだ時と同じ） */
+	g_byTownWarpSel = 0;
+	g_byComSelectMagic = byMagicID;
+	pChar->dwTimeTurnMagicLV = timeGetTime ();
+	pChar->byTurnMagicLV = 1;
+	SendCmdEFECTCHG (pInfo->byUserEfectID, TRUE);
+	DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
+	g_bDraw = TRUE;
 }
 
 /* Copyright(C)URARA-works 2003-2005 */

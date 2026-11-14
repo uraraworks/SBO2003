@@ -209,12 +209,14 @@ void	RecvDataProcRECIPEMAKE					(PBYTE, DWORD);				/* レシピで作っても�
 void	RecvDataProcQUEST						(PBYTE, DWORD);				/* ギルドの仕事依頼（一覧・受ける・取り消す・渡す） */
 void	RecvDataProcADMINQUEST					(PBYTE, DWORD);				/* 管理者ウィンドウのギルドの依頼の編集 */
 void	RecvDataProcADMINRESURRECT				(PBYTE, DWORD);				/* 管理者ウィンドウからキャラを蘇生 */
+void	RecvDataProcMAGICKEY					(PBYTE, DWORD);				/* 特技ショートカットの登録 */
 void	RecvDataProcSORTITEM					(PBYTE, DWORD);				/* 道具欄・預かり所の並べ替え */
 void	RecvDataProcLEAVEITEMDISPOSE			(PBYTE, DWORD);				/* 預かり所の品を売る・捨てる */
 void	RecvDataProcBATTLEMODE					(PBYTE, DWORD);				/* 戦闘モードの切り替え通知 */
 /* 端末トークン（server/web_account_svr.cpp） */
 BOOL	WebAccTokenToAccount					(LPCSTR, LPSTR, int);		/* 端末トークンからアカウント名を引く */
 static void	SendWebOptBgm					(PCHARINFO);				/* 音楽ON/OFFのアカウント設定を送る */
+static void	SendMagicKeySetting				(PCHARINFO);				/* 特技ショートカットと帯の表示設定を送る */
 void	WebStatNoteLogin						(PCHARINFO);				/* ログインできた時に利用環境の統計へ記録する */
 BOOL	WebAccIssueToken						(LPCSTR, LPSTR, int);		/* 端末トークンを発行する */
 void	RecvDataProcDIFENCE						(PBYTE, DWORD);				/* 防御 */
@@ -440,6 +442,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcADMINSPACE,				/* CMD_ADMINSPACE */
 	RecvDataProcADMINQUEST,				/* CMD_ADMINQUEST */
 	RecvDataProcADMINRESURRECT,			/* CMD_ADMINRESURRECT */
+	RecvDataProcMAGICKEY,				/* CMD_MAGICKEY */
 
 	NULL
 };
@@ -3408,7 +3411,7 @@ void RecvDataProc(PBYTE pData, DWORD dwDataSize)
 	}
 
 	/* 管理者用のコマンド（管理者ウィンドウからしか送らないもの）は管理者だけ */
-	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE)) ||
+	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY)) ||
 			(byCmd == CMD_CHARITEM)) {
 		if (!CheckAdminBan (nNo)) {
 			SAFE_DELETE_ARRAY (pData);
@@ -3550,6 +3553,7 @@ void RecvDataProcLOGINREQ(PBYTE pData, DWORD dwDataSize)
 		SendCmdCHARINFO (pPara->pID, pCharTmp->dwTblID);
 		SendCmdLOGINRES (pPara->pID, pCharTmp->dwTblID, 2);
 		SendWebOptBgm (pCharTmp);
+		SendMagicKeySetting (pCharTmp);
 		WebStatNoteLogin (pCharTmp);
 		AddrTmp.S_un.S_addr = pCharTmp->dwLastIPAddress;
 		g_LogLogin.Write ("ログイン\t[%s][%s][%d.%d.%d.%d][%02X-%02X-%02X-%02X-%02X-%02X]",
@@ -3611,6 +3615,7 @@ void RecvDataProcLOGINREQ(PBYTE pData, DWORD dwDataSize)
 	SendCmdCHARINFO (pChar->pID, pChar->dwTblID);
 	SendCmdLOGINRES (pChar->pID, pChar->dwTblID, 2);
 	SendWebOptBgm (pChar);
+	SendMagicKeySetting (pChar);
 	WebStatNoteLogin (pChar);
 }
 
@@ -10527,6 +10532,16 @@ void RecvDataProcWEBACCOUNT(PBYTE pData, DWORD dwDataSize)
 		/* 保存は定期保存・終了時の保存に任せる */
 		g_aCharInfo[s_nCharNoRecv]->byOptBgm = pPara->byData;
 		break;
+
+	case WEBACC_OPTMAGICBAR:	/* 特技ショートカットの帯の表示設定を覚える */
+		if ((s_dwRecvSize < sizeof (CMDPARA_WEBACCOUNT)) || (s_nCharNoRecv < 0)) {
+			return;
+		}
+		if ((pPara->byData != OPTMAGICBAR_SHOW) && (pPara->byData != OPTMAGICBAR_HIDE)) {
+			return;
+		}
+		g_aCharInfo[s_nCharNoRecv]->byOptMagicBar = pPara->byData;
+		break;
 	}
 }
 
@@ -10547,6 +10562,70 @@ static void SendWebOptBgm(PCHARINFO pChar)
 	SendData.byCmdSub = WEBACC_OPTBGM;
 	SendData.byData = pChar->byOptBgm;
 	svrSock.SendTo (pChar->pID, (LPBYTE)&SendData, sizeof (SendData), SENDTIMEOUT);
+}
+
+/* ========================================================================= */
+/* 関数名：SendMagicKeySetting												 */
+/* 内容：特技ショートカットの登録と帯の表示設定をログインしたクライアントへ送る */
+/*       （別のアカウントで入り直した時に前の設定が残らないよう、毎回送る）	 */
+/* ========================================================================= */
+static void SendMagicKeySetting(PCHARINFO pChar)
+{
+	CMDPARA_WEBACCOUNT SendBar;
+	CMDPARA_MAGICKEY SendKey;
+
+	if ((pChar == NULL) || (pChar->pID == 0)) {
+		return;
+	}
+	ZeroMemory (&SendBar, sizeof (SendBar));
+	SendBar.byCmd = CMD_WEBACCOUNT;
+	SendBar.byCmdSub = WEBACC_OPTMAGICBAR;
+	SendBar.byData = pChar->byOptMagicBar;
+	svrSock.SendTo (pChar->pID, (LPBYTE)&SendBar, sizeof (SendBar), SENDTIMEOUT);
+
+	ZeroMemory (&SendKey, sizeof (SendKey));
+	SendKey.byCmd = CMD_MAGICKEY;
+	SendKey.byCmdSub = MAGICKEY_ALL;
+	CopyMemory (SendKey.abyMagicKey, pChar->abyMagicKey, sizeof (SendKey.abyMagicKey));
+	svrSock.SendTo (pChar->pID, (LPBYTE)&SendKey, sizeof (SendKey), SENDTIMEOUT);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcMAGICKEY												 */
+/* 内容：受信データ処理(特技ショートカットの登録)							 */
+/*       byNo 番目の枠に byMagicID を入れる（0 なら外す）。覚えていない特技は */
+/*       入れない。同じ特技が別の枠にあればそちらは外す（重複させない）		 */
+/*       保存は定期保存・終了時の保存に任せる								 */
+/* ========================================================================= */
+void RecvDataProcMAGICKEY(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_MAGICKEY pPara = (PCMDPARA_MAGICKEY)pData;
+	PCHARINFO pChar;
+	int i;
+
+	if ((s_dwRecvSize < sizeof (CMDPARA_MAGICKEY)) || (s_nCharNoRecv < 0)) {
+		return;
+	}
+	if ((pPara->byCmdSub != MAGICKEY_SET) || (pPara->byNo >= MAX_MAGICKEY)) {
+		return;
+	}
+	pChar = g_aCharInfo[s_nCharNoRecv];
+	if (pPara->byMagicID != 0) {
+		for (i = 0; i < MAX_USEMAGIC; i ++) {
+			if (pChar->abyMagic[i] == pPara->byMagicID) {
+				break;
+			}
+		}
+		if (i >= MAX_USEMAGIC) {
+			return;
+		}
+		for (i = 0; i < MAX_MAGICKEY; i ++) {
+			if (pChar->abyMagicKey[i] == pPara->byMagicID) {
+				pChar->abyMagicKey[i] = 0;
+			}
+		}
+	}
+	pChar->abyMagicKey[pPara->byNo] = pPara->byMagicID;
 }
 
 
@@ -10924,7 +11003,7 @@ BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, 
 	/* 管理者用のコマンドだけ（ログインや「元に戻す」自体は通さない） */
 	if ((byCmd >= CMD_MAX) || (RecvDataProcTbl[byCmd] == NULL) ||
 			((byCmd < CMD_MAPPARTSADD) && (byCmd != CMD_CHARITEM)) ||
-			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE)) {
+			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY)) {
 		return FALSE;
 	}
 

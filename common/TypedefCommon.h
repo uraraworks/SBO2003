@@ -58,6 +58,7 @@
 #define MAX_PARTYMEMBER		6										/* 最大パーティ数 */
 #define MAX_USEMAGIC		16										/* 覚えられる魔法数 */
 #define MAX_NPCROUTE		16										/* NPCの巡回ルートの道しるべの最大数 */
+#define MAX_MAGICKEY		5										/* 特技ショートカットの枠数（1〜5 キー） */
 #define MAX_TOWNWARP		4										/* 町転送の行き先帳に覚えておける町の数 */
 #define MAX_TOWNWARPNAME	64										/* 町転送の行き先の名前の大きさ（UTF-8） */
 /* 町転送で選べる行き先の数（復活位置を含む）。Lv1～4:1 Lv5～9:2 Lv10～14:3 Lv15～:4 */
@@ -300,6 +301,8 @@ enum {
 	CMD_ADMINSPACE,													/* 管理者の空間の切り替え（空間の一覧・切り替え。結果はサーバー→クライアント） */
 	CMD_ADMINQUEST,													/* 管理者ウィンドウのギルドの依頼の編集（一覧・書き込み。結果はサーバー→クライアント） */
 	CMD_ADMINRESURRECT,												/* 管理者ウィンドウからキャラをHP満タンで蘇生（CMDPARA_DATA1 の dwTblID が相手） */
+/* 以下、プレイヤー用（CMD_MAGICKEY はクライアント→サーバーも受ける。管理者用の判定から外すこと） */
+	CMD_MAGICKEY,													/* 特技ショートカットの登録（変更はクライアント→サーバー、ログイン時の全枠はサーバー→本人） */
 	CMD_MAX
 };
 
@@ -2161,6 +2164,8 @@ typedef struct _CHARINFO {
 	BYTE		abyMagic[MAX_USEMAGIC];								/* 呪文 */
 	BYTE		abyJobMagic[MAX_JOBMAGIC][MAX_USEMAGIC];			/* 転職前の職業で覚えていた呪文（職業ID別） */
 	BYTE		byOptBgm;											/* 音楽ON/OFFのアカウント設定(OPTBGM_*) */
+	BYTE		abyMagicKey[MAX_MAGICKEY];							/* 特技ショートカットに登録した特技ID（0=空。保存する） */
+	BYTE		byOptMagicBar;										/* 特技ショートカットの帯のアカウント設定(OPTMAGICBAR_*。保存する) */
 	BYTE		byRouteCount;										/* 巡回ルートの道しるべ数(2以上で巡回する) */
 	BYTE		byRouteMode;										/* 巡回ルートの回り方(NPCROUTEMODE_*) */
 	BYTE		byRouteWait;										/* 巡回ルートの各道しるべで止まる秒数 */
@@ -2578,6 +2583,7 @@ enum {
 	WEBACC_TOKENREQ,											/* 端末トークン発行要求（クライアント→サーバー） */
 	WEBACC_TOKEN,												/* 端末トークン通知（サーバー→クライアント） */
 	WEBACC_OPTBGM,												/* 音楽ON/OFFのアカウント設定（両方向。byData に OPTBGM_*） */
+	WEBACC_OPTMAGICBAR,											/* 特技ショートカットの帯の表示設定（両方向。byData に OPTMAGICBAR_*） */
 };
 
 /* 音楽ON/OFFのアカウント設定（CHARINFO の byOptBgm） */
@@ -2586,6 +2592,27 @@ enum {
 	OPTBGM_ON,													/* 音楽を鳴らす */
 	OPTBGM_OFF,													/* 音楽を止める */
 };
+
+/* 特技ショートカットの帯の表示設定（CHARINFO の byOptMagicBar。0 が既定=表示） */
+enum {
+	OPTMAGICBAR_SHOW = 0,										/* 帯を出す */
+	OPTMAGICBAR_HIDE,											/* 帯を出さない（キーでの発動はできる） */
+};
+
+/* 特技ショートカット（CMD_MAGICKEY の byCmdSub） */
+enum {
+	MAGICKEY_SET = 0,											/* 1枠を登録・解除する（クライアント→サーバー。byNo 番目に byMagicID。0 なら外す） */
+	MAGICKEY_ALL,												/* 全枠を知らせる（サーバー→本人。abyMagicKey） */
+};
+
+/* 特技ショートカット */
+typedef struct _CMDPARA_MAGICKEY {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byCmdSub;											/* サブコマンド(MAGICKEY_*) */
+	BYTE		byNo;												/* 枠の番号(0〜MAX_MAGICKEY-1。MAGICKEY_SET) */
+	BYTE		byMagicID;											/* 登録する特技ID(0=外す。MAGICKEY_SET) */
+	BYTE		abyMagicKey[MAX_MAGICKEY];							/* 全枠の特技ID(MAGICKEY_ALL) */
+} CMDPARA_MAGICKEY, *PCMDPARA_MAGICKEY;
 
 #define MAX_WEBTOKEN		64										/* 端末トークンの文字数（16進） */
 

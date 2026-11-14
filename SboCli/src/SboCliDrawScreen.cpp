@@ -11,6 +11,7 @@
 #include "Glbldata.h"
 #include "SboCliDrawWindow.h"
 #include "SboCliRecvCmd.h"
+#include "SboCliKeyProc.h"
 #include "AdminWindowOld/AdminDlgNpcRoute.h"
 #include "AdminWindowOld/AdminDlgMapLight.h"
 #include <math.h>
@@ -142,6 +143,87 @@ static void DrawSysMsgBand(HDC hDC, int nX, int nY)
 }
 
 /* ========================================================================= */
+/* 関数名：DrawMagicKeyBand													 */
+/* 内容：戦闘モード中だけ、画面の下に特技ショートカットの帯を出す			 */
+/*		 「1 炎の 2 回復 …」（番号と特技名の頭2文字）。空きは「-」			 */
+/*		 色は攻撃(赤系)・回復(緑系)・それ以外の補助(青系)。Mana不足・詠唱中・	 */
+/*		 覚えていない特技は暗くする。後ろに薄い暗い帯を敷き、マップを隠しすぎない */
+/*		 ウィンドウより下になるよう、ウィンドウを描く前に呼ぶ				 */
+/* ========================================================================= */
+static void DrawMagicKeyBand(PCHARINFO pChar, int nX, int nY)
+{
+	const int nFade = 14;		/* 右端をぼかす幅 */
+	const int nAlpha = 120;		/* 帯の濃さ（0〜255） */
+	const int nGap = 10;		/* 枠と枠の間 */
+	const int nLeft = 4;
+	int i, yy, x, nWidth = 0;
+	int anWidth[MAX_MAGICKEY];
+	char aszText[MAX_MAGICKEY][32];
+	COLORREF aClr[MAX_MAGICKEY];
+	HDC hDC;
+	HFONT hFontOld;
+	SIZE size;
+
+	if (!g_bMagicBar || !g_bBattleMode || (g_pMapInfo == NULL) || ((g_pMapInfo->byFlg & MAPFLG_BATTLE) == 0)) {
+		return;
+	}
+	if (pChar->abySubStatus[0] != 0) {
+		return;
+	}
+
+	hDC = g_pDibDrawMap->Lock ();
+	hFontOld = (HFONT)SelectObject (hDC, g_hFont14);
+	SetBkMode (hDC, TRANSPARENT);
+
+	for (i = 0; i < MAX_MAGICKEY; i ++) {
+		BYTE byMagicID = g_abyMagicKey[i];
+		int nR = 150, nG = 150, nB = 150;
+		BOOL bDark = FALSE;
+
+		if ((byMagicID == 0) || (byMagicID >= g_aMagicInfo.GetSize ())) {
+			wsprintf (aszText[i], "%d -", i + 1);
+		} else {
+			PMAGICINFO pInfo = g_aMagicInfo[byMagicID];
+			char szName[16];
+			int nLen = SboTextFitWidth (pInfo->szName, 4);		/* 全角2文字 */
+
+			nLen = min (nLen, (int)sizeof (szName) - 1);
+			CopyMemory (szName, pInfo->szName, nLen);
+			szName[nLen] = 0;
+			wsprintf (aszText[i], "%d %s", i + 1, szName);
+			switch (GetMagicKeyKind (pInfo)) {
+			case 0:		nR = 255;	nG = 120;	nB = 110;	break;		/* 攻撃 */
+			case 1:		nR = 120;	nG = 230;	nB = 130;	break;		/* 回復 */
+			default:	nR = 130;	nG = 180;	nB = 255;	break;		/* 補助 */
+			}
+			bDark = (pChar->dwTimeTurnMagicLV != 0) || !IsMagicKeyUsable (pChar, byMagicID);
+		}
+		if (bDark) {
+			nR = nR * 45 / 100;
+			nG = nG * 45 / 100;
+			nB = nB * 45 / 100;
+		}
+		aClr[i] = RGB (nR, nG, nB);
+		GetTextExtentPoint32 (hDC, aszText[i], strlen (aszText[i]), &size);
+		anWidth[i] = size.cx;
+		nWidth += size.cx + ((i > 0) ? nGap : 0);
+	}
+
+	/* 後ろの帯（上下 1 ドットの余白つき。右端はぼかす） */
+	for (yy = SCRSIZEY - 21; yy < SCRSIZEY; yy ++) {
+		W32ShadeSpan (hDC, nX, nY + yy, nLeft + nWidth + 4, nFade, RGB (0, 0, 0), nAlpha);
+	}
+	x = nLeft;
+	for (i = 0; i < MAX_MAGICKEY; i ++) {
+		TextOut2 (hDC, nX + x, nY + SCRSIZEY - 19, aszText[i], aClr[i]);
+		x += anWidth[i] + nGap;
+	}
+
+	SelectObject (hDC, hFontOld);
+	g_pDibDrawMap->Unlock ();
+}
+
+/* ========================================================================= */
 /* 関数名：DrawScreen														 */
 /* 内容：画面の描画															 */
 /* 日付：2003/04/29															 */
@@ -184,6 +266,9 @@ void DrawScreen(HWND hWnd, HDC hDC)
 				nCount = g_SysMsgInfo.GetSize ();
 				x = BowOffsetX(pChar);
 				y = BowOffsetY(pChar);
+
+				/* 特技ショートカットの帯（ウィンドウの下に敷く） */
+				DrawMagicKeyBand (pChar, 32 - x, 32 - y);
 
 				/* ウィンドウを表示 */
 				DrawWindow (g_pDibDrawMap, 32 - x, 32 - y);

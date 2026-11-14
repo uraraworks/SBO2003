@@ -709,7 +709,7 @@ PWNDINFO MakeWindowCOMMANDOPTION(void)
 	ZeroMemory (pWnd, sizeof (WNDINFO));
 	pWnd->dwID = g_dwNewID;
 	g_dwNewID ++;
-	pWnd->nData2 = 10;
+	pWnd->nData2 = 11;
 	pWnd->nX = 32 + 16 * 2;
 	pWnd->nY = 50 + 16 * 11;
 	pWnd->nCx = 16 * 16;
@@ -2351,7 +2351,8 @@ PWNDINFO MakeWindowCOMMANDMAGICBATTLE(void)
 	pWnd->nData2 = nCount;
 	pWnd->nX = 32 + 16 * 3;
 	pWnd->nY = 50 + 16 * 1;
-	pWnd->nCx = (16 * 4) + (nLen * 8);
+	/* 名前の右に、特技ショートカットに登録した番号を出す分(半角2文字)を足す */
+	pWnd->nCx = (16 * 4) + (nLen * 8) + 16;
 	pWnd->nCy = 16 * (2 + pWnd->nData2);
 	pWnd->nType = WNDTYPE_COMMANDMAGICBATTLE;
 	pWnd->pDib = new CImg32;

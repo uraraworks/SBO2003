@@ -143,6 +143,7 @@ void	RecvDataProc						(PBYTE, DWORD);			/* 受信データ処理 */
 void	RecvDataProcCONNECT					(PBYTE, DWORD);			/* 受信データ処理(接続応答) */
 void	RecvDataProcLOGINRES				(PBYTE, DWORD);			/* 受信データ処理(ログイン応答) */
 void	RecvDataProcWEBACCOUNT				(PBYTE, DWORD);			/* 受信データ処理(ブラウザ版のアカウント関係) */
+void	RecvDataProcMAGICKEY				(PBYTE, DWORD);			/* 受信データ処理(特技ショートカット) */
 void	RecvDataProcADMINUNDO				(PBYTE, DWORD);			/* 受信データ処理(管理者画面の「元に戻す」) */
 void	RecvDataProcADMINSPACE				(PBYTE, DWORD);			/* 受信データ処理(管理者の空間の切り替え) */
 void	RecvDataProcADMINQUEST				(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのギルドの依頼の編集) */
@@ -402,6 +403,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcADMINSPACE,				/* CMD_ADMINSPACE */
 	RecvDataProcADMINQUEST,				/* CMD_ADMINQUEST */
 	NULL,								/* CMD_ADMINRESURRECT(クライアント→サーバーのみ) */
+	RecvDataProcMAGICKEY,				/* CMD_MAGICKEY */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -3782,6 +3784,26 @@ void RecvDataProcWEBACCOUNT(PBYTE pData, DWORD dwDataSize)
 			SaveIniOption ();
 		}
 		break;
+
+	case WEBACC_OPTMAGICBAR:	/* 特技ショートカットの帯の表示設定（ログインした直後に届く） */
+		g_bMagicBar = (pPara->byData == OPTMAGICBAR_HIDE) ? FALSE : TRUE;
+		g_bDraw = TRUE;
+		break;
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcMAGICKEY												 */
+/* 内容：受信データ処理(特技ショートカット)									 */
+/*       ログインした直後に、登録している全枠が届く							 */
+/* ========================================================================= */
+void RecvDataProcMAGICKEY(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_MAGICKEY pPara = (PCMDPARA_MAGICKEY)pData;
+
+	if (pPara->byCmdSub == MAGICKEY_ALL) {
+		CopyMemory (g_abyMagicKey, pPara->abyMagicKey, sizeof (g_abyMagicKey));
+		g_bDraw = TRUE;
 	}
 }
 
