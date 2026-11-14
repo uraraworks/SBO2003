@@ -1,5 +1,6 @@
 #!/bin/bash
 # 現在のコードの出力が golden.txt と一致するか確かめる（BENCH 行と [utf8] ログは除く）
+set -euo pipefail
 cd "$(dirname "$0")"
 ./run.sh /tmp/sbosvr-test-now.txt
 f() { grep -v -e '^BENCH' -e '^\[' "$1"; }

@@ -1203,6 +1203,7 @@ challenge solo accept=0
 challenge party accept a=20 b=20 c=0
 challenge other accept c=0
 challenge gate found=1
+challenge start mapinfo a=1 b=1
 challenge buff timers=0 charbuff_sent=1
 challenge child removed=1
 challenge start a in=1 lv=7 pw=11 hp=60/60 mana=20 gold=3 item0=0 weapon_equ=1

@@ -8,6 +8,7 @@
 
 #include "include.h"
 #include "Glbldata.h"
+#include "common/BowFlight.h"
 #include "../../Common/Info/InfoJob.h"
 #include "ProcFunc/ProcFunc.h"
 #include "SboSvrRecvCmd.h"
@@ -641,6 +642,7 @@ BOOL BattleProcWeapon(PCHARINFO pChar)
 
 	pWeapon = (PITEMINFO_WEAPON)pItem->pData;
 	switch (pWeapon->byAtackType) {
+	case ATACKTYPE_BOW:
 	case ATACKTYPE_ARROW:		/* 矢 */
 		{
 			PCHARINFO pCharNew = new CHARINFO;
@@ -682,6 +684,37 @@ BOOL BattleProcWeapon(PCHARINFO pChar)
 				break;
 			}
 
+            if ((pWeapon->byAtackType == ATACKTYPE_ARROW || pWeapon->byAtackType == ATACKTYPE_BOW) && pChar->byNpcType == NPCTYPE_INIT) {
+                if (pChar->dwTargetTblID >= (DWORD)g_aCharInfo.GetSize()) { delete (PCCharProcBase)pCharNew->pProc; delete pCharNew; return TRUE; }
+                PCHARINFO target = g_aCharInfo[pChar->dwTargetTblID];
+                int range = BowRange(pWeapon->byData1, pChar->byAtackRate);
+                double dx = (int)target->dwX - (int)pChar->dwX;
+                double dy = (int)target->dwY - (int)pChar->dwY;
+                if (!BowEnemy(target) || target->dwMapID != pChar->dwMapID || !IsInteractable(pChar, target) ||
+                    !BowFacingTarget(pChar, target) || !BowInLineRange(pChar, target, pWeapon->byData1) || !IsBowReachChar(pChar, target)) {
+                    delete (PCCharProcBase)pCharNew->pProc; delete pCharNew; return TRUE;
+                }
+                double speed = 32.0 / BowTileTime(pChar->byAtackRate);
+                double rx = dx * 32, ry = dy * 32;
+                double distance = max(fabs(rx), fabs(ry));
+                if (distance > range * 32) { rx *= range*32/distance; ry *= range*32/distance; }
+                BYTE direction = dx ? (dx < 0 ? 2 : 3) : (dy < 0 ? 0 : 1);
+                pCharNew->nBowStartX = (int)pChar->dwX * 32;
+                pCharNew->nBowStartY = (int)pChar->dwY * 32;
+                PMAPINFO map = g_aMapInfo[pChar->dwMapID];
+                pCharNew->nBowEndX = max(0, min((map->nCX-1)*32, (int)(pCharNew->nBowStartX + rx)));
+                pCharNew->nBowEndY = max(0, min((map->nCY-1)*32, (int)(pCharNew->nBowStartY + ry)));
+                rx = pCharNew->nBowEndX - pCharNew->nBowStartX;
+                ry = pCharNew->nBowEndY - pCharNew->nBowStartY;
+                pCharNew->dwBowDuration = max(1, (int)(max(fabs(rx), fabs(ry)) / speed));
+                pCharNew->dwBowOwnerPID = pChar->pID;
+                pCharNew->dwBowStartTime = timeGetTime();
+                pCharNew->dwBowElapsed = 0;
+                pCharNew->byDirection = direction;
+                BYTE effects[] = {pWeapon->byData2, pWeapon->byData3, pWeapon->byData4, pWeapon->byData5};
+                pCharNew->byEfect = effects[pCharNew->byDirection];
+                pCharNew->wHP = range;
+            }
 			pCharNew = AddChar (pCharNew);
 
 			/* 属性が火？ */
@@ -692,6 +725,7 @@ BOOL BattleProcWeapon(PCHARINFO pChar)
 			pCharNew->pID = pCharNew->dwTblID + 1;
 //			RenewATDF (pCharNew->dwTblID);
 			SendCmdCHARINFO3 (pCharNew->dwTblID);
+            if (pCharNew->dwBowDuration) SendCmdCHARPOS(pCharNew->pID, pCharNew->dwTblID, FLGCHARPOS_BOWLAUNCH, 1);
 		}
 		break;
 
@@ -1956,11 +1990,11 @@ static BOOL CanReachMagic(PCHARINFO pChar, PCHARINFO pCharTarget, PMAGICINFO pIn
 	if ((nDist == 0) || (nDist > nArea)) {
 		return FALSE;
 	}
-	/* 間に壁などがある？ */
+	/* 実際の特技と同じ壁判定（カウンターは通す） */
 	for (i = 1; i < nDist; i ++) {
-		if (CheckCharBlock (pChar->dwMapID,
-				(DWORD)((int)pChar->dwX + anPosAddTblX[*pbyDirection] * i),
-				(DWORD)((int)pChar->dwY + anPosAddTblY[*pbyDirection] * i)) == FALSE) {
+		if (IsMagicWall (pChar->dwMapID,
+				(int)pChar->dwX + anPosAddTblX[*pbyDirection] * i,
+				(int)pChar->dwY + anPosAddTblY[*pbyDirection] * i)) {
 			return FALSE;
 		}
 	}

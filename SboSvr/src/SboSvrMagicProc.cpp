@@ -52,7 +52,7 @@ static void MakeCharTblTarget_FRONTSIDE		(PARRAYDWORD, PCHARINFO, PMAGICINFO);		
 static BOOL MakeCharTblTargetSub_FRONTSIDE	(PARRAYDWORD, int, PDWORD, PCHARINFO, PMAGICINFO);	/* ターゲットキャラの設定処理(前方横一列) */
 static BOOL IsMercMagic						(PCHARINFO pChar, PMAGICINFO pInfo);				/* 傭兵にも効かせる特技か(プレイヤー側の回復・蘇生) */
 static void MakeCharTblTargetMerc			(PARRAYDWORD, PCHARINFO, PMAGICINFO, BYTE, MAKECHARTBLTARGETSUB);	/* ターゲットキャラの設定(傭兵) */
-static BOOL IsMagicWall						(DWORD dwMapID, int x, int y);						/* 特技・魔法が通り抜けられないマスか */
+BOOL IsMagicWall						(DWORD dwMapID, int x, int y);						/* 特技・魔法が通り抜けられないマスか */
 static BOOL IsMagicLineClear				(DWORD dwMapID, int x0, int y0, int x1, int y1);	/* 線の上に通り抜けられないマスが無いか(片方向) */
 static int  GetMagicCharWidth				(PCHARINFO pChar);									/* キャラの横幅(マス) */
 BOOL IsMagicReachChar						(PCHARINFO pChar, PCHARINFO pCharTarget);			/* 使った人から相手まで壁越しでなく届くか */
@@ -327,7 +327,7 @@ Exit:
 /* 内容：特技・魔法が通り抜けられないマスか									 */
 /* 日付：2026/11/12															 */
 /* ========================================================================= */
-static BOOL IsMagicWall(DWORD dwMapID, int x, int y)
+BOOL IsMagicWall(DWORD dwMapID, int x, int y)
 {
 	int nPartsID;
 	PMAPINFO pMap;
@@ -348,6 +348,36 @@ static BOOL IsMagicWall(DWORD dwMapID, int x, int y)
 		return FALSE;
 	}
 	return TRUE;
+}
+
+/* 閉じた扉は画像の当たり判定に関係なく弓を遮る。開閉は射手の空間で見る。 */
+BOOL IsBowWall(PCHARINFO c, int x, int y)
+{
+    if (c->dwMapID >= (DWORD)g_aMapInfo.GetSize()) return TRUE;
+    PMAPINFO map = g_aMapInfo[c->dwMapID];
+    if (x < 0 || y < 0 || x >= map->nCX || y >= map->nCY) return TRUE;
+    for (int i = 0; i < map->nEventCount; ++i) {
+        PEVENTINFO e = &map->pEvent[i];
+        if (e->byType != EVENTTYPE_DOOR || !e->pData || e->dwX != (DWORD)x || e->dwY != (DWORD)y) continue;
+        if (!SpaceDoorIsOpen(c->dwMapID, e, (PEVENTINFO_DOOR)e->pData, c->dwSpaceID)) return TRUE;
+        // 別空間では共有マップの画像が閉扉のままでも開いている。
+        return FALSE;
+    }
+    return IsMagicWall(c->dwMapID, x, y);
+}
+
+BOOL IsBowReachChar(PCHARINFO c, PCHARINFO t)
+{
+    if (c->dwMapID != t->dwMapID || !IsSameSpace(c, t)) return FALSE;
+    int x = c->dwX, y = c->dwY;
+    int dx = (int)t->dwX - x, dy = (int)t->dwY - y;
+    if ((!dx) == (!dy)) return FALSE;
+    int sx = (dx > 0) - (dx < 0), sy = (dy > 0) - (dy < 0);
+    do {
+        x += sx; y += sy;
+        if (IsBowWall(c, x, y)) return FALSE;
+    } while (x != (int)t->dwX || y != (int)t->dwY);
+    return TRUE;
 }
 
 /* ========================================================================= */

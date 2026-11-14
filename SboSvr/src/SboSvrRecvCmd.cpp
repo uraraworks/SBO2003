@@ -8,6 +8,7 @@
 
 #include "include.h"
 #include "Glbldata.h"
+#include "common/BowFlight.h"
 #include "CharProc/CharProcBase.h"
 #include "CharProc/CharProcPUT.h"
 #include "../Common/Info/InfoJob.h"
@@ -5369,6 +5370,7 @@ void RecvDataProcREQ_GUARD(PBYTE pData, DWORD dwDataSize)
 
 void RecvDataProcREQ_ATTACK(PBYTE pData, DWORD dwDataSize)
 {
+    if (!IsRecvSizeOK(sizeof(CMDPARA_DATA4), 0)) return;
 	PCMDPARA_DATA4 pPara = (PCMDPARA_DATA4)pData;
 	PCHARINFO pChar, pCharTarget;
 	PMAPINFO pMap, pMapTarget;
@@ -5392,6 +5394,23 @@ void RecvDataProcREQ_ATTACK(PBYTE pData, DWORD dwDataSize)
 	}
 	/* 殴ったら構えは解ける */
 	SetGuard (pChar, FALSE);
+    if (pChar->waEqu[0] < MAX_MYITEM && pChar->waItem[pChar->waEqu[0]] < g_aItemInfo.GetSize()) {
+        PITEMINFO_WEAPON bow = BowWeapon(pChar, g_aItemInfo[pChar->waItem[pChar->waEqu[0]]]);
+        if (bow) {
+            if (pPara->dwData >= (DWORD)g_aCharInfo.GetSize()) return;
+            pCharTarget = g_aCharInfo[pPara->dwData];
+            if (!BowEnemy(pCharTarget) || !IsInteractable(pChar, pCharTarget) ||
+                pCharTarget->dwMapID != pChar->dwMapID || GetMapNo(pChar->dwMapID) < 0 ||
+                !(g_aMapInfo[pChar->dwMapID]->byFlg & MAPFLG_BATTLE)) return;
+            BYTE rate = GetAtackRateReq(pChar, pPara->byData);
+            if (!BowFacingTarget(pChar, pCharTarget) || !BowInLineRange(pChar, pCharTarget, bow->byData1) ||
+                !IsBowReachChar(pChar, pCharTarget)) return;
+            pChar->byAtackRate = rate;
+            pChar->dwTargetTblID = pPara->dwData;
+            pChar->dwLastBattle = 1;
+            return;
+        }
+    }
 	/* ターゲット指定無し？ */
 //Todo:武器の判定
 	if (pPara->dwData == -1) {
