@@ -71,6 +71,8 @@ void	CharTargetPC				(PCHARINFO, PCHARINFO, DWORD);					/* キャラのついて
 void	CharTargetCancelPC			(PCHARINFO);									/* キャラのついていく解除 */
 void	TailMoveChain				(PCHARINFO);									/* ついてきているキャラを順に動かす */
 void	FloorDamageOnStep			(PCHARINFO);									/* ダメージ床に1歩入った時の処理 */
+BOOL	IsDamageFloor				(PMAPINFO, int, int);							/* ダメージ床のマスか */
+BOOL	IsAvoidDamageFloor			(PCHARINFO, PMAPINFO, int, int);				/* 敵・傭兵が自分からは入らないダメージ床か */
 BOOL	CheckCharX					(PCHARINFO pChar, DWORD dwX, DWORD dwXTarget);	/* キャラサイズに合わせた当たり判定(横) */
 int		GetCharX					(PCHARINFO, DWORD, DWORD, BOOL);				/* キャラサイズに合わせた距離を求める(横) */
 int		GetCharDistanceX			(PCHARINFO, PCHARINFO);							/* キャラサイズに合わせた距離を求める(横) */
@@ -3823,6 +3825,37 @@ void RecvDataProcCHGDIRECTION(PBYTE pData, DWORD dwDataSize)
 	PinCharBridgeLayerSvr (pChar);
 	pChar->byDirection = pPara->byData;
 	pChar->byFlg |= CHARINFOFLG_DIRECTION;
+}
+
+/* ========================================================================= */
+/* 関数名：IsDamageFloor													 */
+/* 内容：ダメージ床（パーツの byDamage が 0 でない）のマスか					 */
+/* ========================================================================= */
+BOOL IsDamageFloor(PMAPINFO pMap, int x, int y)
+{
+	WORD wParts;
+
+	if ((pMap == NULL) || (x < 0) || (y < 0) || (x >= pMap->nCX) || (y >= pMap->nCY)) {
+		return FALSE;
+	}
+	wParts = pMap->pwMap[x + y * pMap->nCX];
+	if (wParts >= g_wCountMapParts) {
+		return FALSE;
+	}
+	return (g_aMapPartsInfo[wParts].byDamage != 0);
+}
+
+/* ========================================================================= */
+/* 関数名：IsAvoidDamageFloor												 */
+/* 内容：敵・傭兵が自分から歩く時に、よけるダメージ床か						 */
+/*		 もうダメージ床の上にいる時は、出られなくならないように、よけない	 */
+/* ========================================================================= */
+BOOL IsAvoidDamageFloor(PCHARINFO pChar, PMAPINFO pMap, int x, int y)
+{
+	if (IsDamageFloor (pMap, x, y) == FALSE) {
+		return FALSE;
+	}
+	return (IsDamageFloor (pMap, (int)pChar->dwX, (int)pChar->dwY) == FALSE);
 }
 
 /* ========================================================================= */

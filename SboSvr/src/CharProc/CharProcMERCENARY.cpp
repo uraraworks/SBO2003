@@ -717,6 +717,10 @@ BOOL CCharProcMERCENARY::CanWalk(int x, int y, BOOL bDoor)
 	if (CheckEventBlock (m_pChar->dwMapID, (DWORD)x, (DWORD)y, EVENTTYPE_DOOR)) {
 		return FALSE;
 	}
+	/* ダメージ床（毒沼・溶岩など）には自分から入らない（「ついていく」の列で雇い主の後を歩く時は踏む） */
+	if (IsAvoidDamageFloor (m_pChar, pMap, x, y)) {
+		return FALSE;
+	}
 	return TRUE;
 }
 
@@ -899,6 +903,9 @@ void CCharProcMERCENARY::BuildPathField(int nMaxDist, BOOL bChars)
 					bWalk = FALSE;
 				} else if ((byEvent == 0) && (CheckCharBlock (m_pChar, m_pChar->dwMapID, (DWORD)x, (DWORD)y) == FALSE)) {
 					/* 障害物(扉のマスなら、閉まっていても開けて通れる) */
+					bWalk = FALSE;
+				} else if (IsAvoidDamageFloor (m_pChar, pMap, x, y)) {
+					/* ダメージ床には自分から入らない */
 					bWalk = FALSE;
 				}
 				if (bWalk == FALSE) {
