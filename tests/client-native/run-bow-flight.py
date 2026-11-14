@@ -33,6 +33,7 @@ struct CHARINFO {
     DWORD dwX=0,dwY=0,dwMapID=0,dwTimeDelete=0,dwTblID=0;
     DWORD dwAtackTblID=0,dwTimeTurnLV=0,dwTimeTurnMagicLV=0;
     BYTE byTurnLV=0;
+    BYTE abySubStatus[1]={};
     DWORD dwLastTurnLV=0;
     int byNpcType=0,wHP=1,byCharState=0,byDirection=0,byDotMove=0;
     DWORD dwBowStartTime=0,dwBowDuration=0,dwBowElapsed=0;
@@ -75,6 +76,7 @@ struct TARGETSELECTINFO { DWORD dwTblID=0; };
 TARGETSELECTINFO* g_pTargetSelectInfo=nullptr;
 #define SAFE_DELETE(p) do { delete (p); (p)=nullptr; } while(0)
 void CancelTurnGage(PCHARINFO);
+int FindBowAttackTarget(PCHARINFO, BYTE);
 void PauseBowTurnGage(PCHARINFO);
 void UpdateBowTurnGage(PCHARINFO);
 using PBYTE=unsigned char*;
@@ -121,6 +123,7 @@ start = send.index('void SendCmdREQ_ATTACK(\n')
 end = send.index('\n}', start) + 2
 code += send[start:end] + '\n'
 code += function(key, 'static BOOL ShotTurnGage(PCHARINFO pChar)')
+code += function(key, 'static BOOL HandleBowLockKey(PCHARINFO pChar, BYTE byCode)')
 # 実際のタイマーと、Ctrl・コマンド・相手選択のキャンセル部分を抽出する。
 code += r'''
 DWORD GetTurnGageTime(PCHARINFO) { return 1000; }
@@ -139,7 +142,32 @@ for name, sig in [('commandCancel','void KeyProcBATTLE_COMMAND('), ('targetCance
 # コマンド内の X でも、溜まった弓を通常の ShotTurnGage に渡す。
 command = key[key.index('void KeyProcBATTLE_COMMAND('):key.index('void KeyProcBATTLE_TARGET(')]
 condition = command[command.index('(pWnd->nData1 == 0)'):].split(') {',1)[0]
-code += 'struct Window { int nData1=0; };\nBOOL commandX(PCHARINFO pChar) { Window window; auto pWnd=&window; return ' + condition + '; }\n'
+code += 'struct Window { int nData1=0; DWORD dwID=1; };\nBOOL commandX(PCHARINFO pChar) { Window window; auto pWnd=&window; return ' + condition + '; }\n'
+
+code += r'''
+const int KEY_UP=1, TURNGAGE_LATETIME=100;
+using PWNDINFO=Window*;
+int opened=0;
+Window commandWindow;
+PWNDINFO MakeWindowBATTLE_COMMAND() { ++opened;return &commandWindow; }
+PWNDINFO MakeWindowCOMMAND() { ++opened;return &commandWindow; }
+struct { void Add(PWNDINFO) {} } g_WndInfo;
+DWORD g_dwActiveMsgID=0;
+int aSoundTbl[1]={};const int SOUND_CURSOR08=0;
+struct { void PlaySecoundary(int*) {} } DXAudio;
+'''
+move = key[key.index('void KeyProcMove(BYTE byEvent, BYTE byCode)\n{'):]
+guard = move[move.index('    if ((byEvent == KEY_UP) && bCommand && HandleBowLockKey'):].split('\n',1)[0]
+x_start = move.index('} else if (pChar->dwTimeTurnMagicLV == 0) {')
+x_end = move.index('\n\t/* Cキー', x_start)
+x_branch = move[x_start:x_end].replace('} else if', 'if', 1)
+c_start = move.index("\t\tif ((pChar->abySubStatus[0] == 0)", x_end)
+c_end = move.index("\n\t} else if", c_start)
+code += 'void moveCommand(PCHARINFO pChar, BYTE byCode) { BYTE byEvent=KEY_UP;BOOL bCommand=TRUE;\n' + guard
+code += "\nif (byCode=='A') { PWNDINFO pWnd=nullptr;\n" + x_branch + "\n} else if (byCode=='C') {\n" + move[c_start:c_end] + '} }\n'
+z_start = move.index('\t\t\tg_dwAutoGageSuppress = pChar->dwAtackTblID;')
+z_end = move.index('\n\n', z_start)
+code += 'DWORD g_dwAutoGageSuppress=0;\nvoid moveZ(PCHARINFO pChar) {\n' + move[z_start:z_end] + '}\n'
 
 code += r'''
 int main() {
@@ -190,7 +218,9 @@ int main() {
     assert(c.dwAtackTblID==2 && c.byTurnLV==0 && c.dwTimeTurnLV==0);
     c.byDotMove=0;now=200;UpdateBowTurnGage(&c);assert(c.dwTimeTurnLV==200);
     c.byTurnLV=80;c.byDirection=0;UpdateBowTurnGage(&c);
-    assert(c.dwTimeTurnLV==200 && c.byTurnLV==80 && c.dwAtackTblID==2);
+    assert(c.dwTimeTurnLV==0 && c.byTurnLV==0 && c.dwAtackTblID==2);
+    now=250;UpdateBowTurnGage(&c);assert(!c.dwTimeTurnLV && !c.byTurnLV);
+    c.byDirection=3;UpdateBowTurnGage(&c);assert(c.dwTimeTurnLV==250);
     PauseBowTurnGage(&c);assert(c.dwTimeTurnLV==0 && c.byTurnLV==0);
     now=300;UpdateBowTurnGage(&c);assert(c.dwTimeTurnLV==300);
     far.dwX=12;UpdateBowTurnGage(&c);assert(c.dwTimeTurnLV==0 && c.dwAtackTblID==2);
@@ -212,6 +242,33 @@ int main() {
     g_aCharInfo.push_back(&far);StartTurnGage(&c,2);g_bBattleMode=false;
     UpdateBowTurnGage(&c);assert(!c.dwAtackTblID && unlocked==5);
     g_bBattleMode=true;UpdateBowTurnGage(&c);assert(c.dwTimeTurnLV==0); // 自動再ロックしない
+    // 四方向すべてで、他の三方向を向く間は溜まらず、古い満タン値でも発射しない。
+    for (int direction=0;direction<4;++direction) {
+        far.dwX=5+anPosAddTblX[direction]*3;far.dwY=5+anPosAddTblY[direction]*3;
+        for (int facing=0;facing<4;++facing) {
+            c.byDirection=facing;++now;StartTurnGage(&c,2);
+            assert((c.dwTimeTurnLV!=0)==(facing==direction));
+            int sent=sends, windows=opened;
+            moveCommand(&c,'A');moveCommand(&c,'C');assert(opened==windows && sends==sent);
+            for (int rate: {20,100,ATACKRATE_JUST}) {
+                c.byTurnLV=(rate==20?20:100);just=(rate==ATACKRATE_JUST);
+                if (facing!=direction) {
+                    c.dwTimeTurnLV=now;now+=2000;TimerProcCharTurnLV(&c);
+                    assert(!c.dwTimeTurnLV && !c.byTurnLV && sends==sent);
+                    c.dwTimeTurnLV=now;c.byTurnLV=100;
+                    moveCommand(&c,'A');SendCmdREQ_ATTACK(2,rate);
+                    assert(!c.dwTimeTurnLV && !c.byTurnLV && sends==sent && opened==windows);
+                }
+            }
+            if (facing==direction) {
+                c.byTurnLV=TURNGAGE_LAP;just=false;moveCommand(&c,'A');
+                assert(sends==sent+1 && opened==windows);
+            }
+            moveZ(&c);assert(!c.dwAtackTblID && !g_pTargetSelectInfo);
+            moveCommand(&c,'A');assert(opened==windows+1); // Z解除後はXで開く。
+        }
+    }
+    c.byDirection=3;far.dwX=8;far.dwY=5;
     // 早撃ち・ジャスト・満タン相当の要求でも同じ相手へ送り、次のゲージも同じ相手。
     for (int rate: {20,100,ATACKRATE_JUST}) {
         ++now;StartTurnGage(&c,2);c.byTurnLV=(rate==20?20:100);just=(rate==ATACKRATE_JUST);
@@ -242,6 +299,7 @@ int main() {
     for (int direction=0;direction<4;++direction) {
         far.dwX=5+anPosAddTblX[direction]*3;far.dwY=5+anPosAddTblY[direction]*3;
         near.dwX=5+anPosAddTblX[direction];near.dwY=5+anPosAddTblY[direction];
+        c.byDirection=direction;
         StartTurnGage(&c,2);c.byTurnLV=80;c.dwLastTurnLV=now;
         DWORD started=c.dwTimeTurnLV,last=c.dwLastTurnLV;
         int count=targetSends.size();
@@ -255,7 +313,7 @@ int main() {
         ++now;TimerProcCharTurnLV(&c);assert(c.byTurnLV>=80);
         just=false;assert(ShotTurnGage(&c) && packet.dwData==1); // 次の発射先も接触先。
     }
-    far.dwX=8;far.dwY=5;
+    c.byDirection=3;far.dwX=8;far.dwY=5;
     StartTurnGage(&c,2);c.byTurnLV=80;near.dwX=6;near.dwY=6;hit(1);
     assert(c.dwAtackTblID==1 && !c.dwTimeTurnLV && !c.byTurnLV);
     near.dwY=5;++now;UpdateBowTurnGage(&c);assert(c.dwTimeTurnLV==now);
@@ -300,13 +358,14 @@ int main() {
     assert(!c.byTurnLV && !c.dwTimeTurnLV);
     // 近接のキャンセルは従来どおりターゲット枠や送信には触れない。
     bowEquipped=false;StartTurnGage(&c,2);SAFE_DELETE(g_pTargetSelectInfo);g_pTargetSelectInfo=new TARGETSELECTINFO{2};
+    assert(!HandleBowLockKey(&c,'A') && !HandleBowLockKey(&c,'C'));
     int prev=unlocked;CancelTurnGage(&c);
     assert(!c.dwAtackTblID && !c.byTurnLV && !c.dwTimeTurnLV);
     assert(g_pTargetSelectInfo && unlocked==prev);SAFE_DELETE(g_pTargetSelectInfo);
     bowEquipped=true;
     c.byDirection=3;c.byDotMove=19;
     assert(BowOffsetX(&c)==19 && BowOffsetY(&c)==0);
-    puts("bow client: 4 directions, straight interpolation, selected target, hit retarget/frame/charge preservation, charge reset/resume, early/just/continuous shots, Ctrl/cancel frame cleanup, closed/open doors, stale gauge cleanup, melee cancellation, invalid targets, range, legacy offsets OK");
+    puts("bow client: 4 directions, straight interpolation, selected target, hit retarget/frame/charge preservation, charge reset/resume, early/just/continuous shots, Ctrl/cancel frame cleanup, closed/open doors, stale gauge cleanup, melee cancellation, invalid targets, range, legacy offsets, facing-only charge/fire, locked X/C suppression, Z then X command OK");
 }
 '''
 with tempfile.TemporaryDirectory(prefix='sbo-bow-client-') as temp:

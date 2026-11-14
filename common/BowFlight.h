@@ -24,6 +24,12 @@ inline BOOL BowInLineRange(PCHARINFO c, PCHARINFO t, int range) {
     int dx = (int)t->dwX - (int)c->dwX, dy = (int)t->dwY - (int)c->dwY;
     return ((dx == 0) != (dy == 0)) && abs(dx) + abs(dy) <= range;
 }
+/* 同じ行・列にいる相手の方を向いているか（候補選択とは分けて検証）。 */
+inline BOOL BowFacingTarget(PCHARINFO c, PCHARINFO t) {
+    int dx = (int)t->dwX - (int)c->dwX, dy = (int)t->dwY - (int)c->dwY;
+    if ((dx == 0) == (dy == 0)) return FALSE;
+    return c->byDirection == (dx ? (dx < 0 ? 2 : 3) : (dy < 0 ? 0 : 1));
+}
 inline int BowOffsetX(PCHARINFO c) {
     return c->dwBowDuration ? (int)c->dwX * 32 - c->nBowDrawX : anPosAddTblX[c->byDirection] * c->byDotMove;
 }

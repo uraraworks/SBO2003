@@ -78,6 +78,7 @@ void KeyProcSUBWAR_TURN_MAGIC_WITCH			(PWNDINFO, BYTE, BYTE);		/* 戦場ゲー�
 void KeyProcSUBWAR_TURN_MAGIC_TARGET		(PWNDINFO, BYTE, BYTE);		/* 戦場ゲーム：魔法対象者選択 */
 void KeyProcSUBWAR_TURN_MAGIC_PRIEST		(PWNDINFO, BYTE, BYTE);		/* 戦場ゲーム：魔法：僧侶 */
 static BOOL ShotTurnGage						(PCHARINFO);				/* ゲージが溜まっていれば殴る(ジャスト・早撃ち) */
+static BOOL HandleBowLockKey(PCHARINFO, BYTE);
 void KeyProcBATTLE_COMMAND					(PWNDINFO, BYTE, BYTE);		/* 戦闘：コマンド */
 void KeyProcBATTLE_TARGET					(PWNDINFO, BYTE, BYTE);		/* 戦闘：ターゲット選択 */
 void KeyProcSUBSUGOROKU_JOINMODE			(PWNDINFO, BYTE, BYTE);		/* すごろく：参加モード選択 */
@@ -847,6 +848,9 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 			SendCmdCHARPOS (3, TRUE);
 		}
 	}
+
+    /* ロック中の X/C はコマンドを開かない。既存ウィンドウの決定は別経路。 */
+    if ((byEvent == KEY_UP) && bCommand && HandleBowLockKey(pChar, byCode)) return;
 
 	if ((byEvent == KEY_UP) && (byCode == 'A') && (bCommand == TRUE)) {
 		PWNDINFO pWnd = NULL;
@@ -6964,6 +6968,15 @@ void KeyProcSUBWAR_TURN_MAGIC_PRIEST(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 /* 内容：ゲージが1周以上溜まっていれば殴る(満タン直後ならジャスト、		 */
 /*		 それより前なら早撃ち)。殴ったら TRUE								 */
 /* ========================================================================= */
+/* 内部キー A/B は実キー X/Z。ロック中は溜まった X だけを発射に渡す。 */
+static BOOL HandleBowLockKey(PCHARINFO pChar, BYTE byCode)
+{
+    if (!GetBowWeapon(pChar) || !pChar->dwAtackTblID || pChar->dwAtackTblID == (DWORD)-1 ||
+        (byCode != 'A' && byCode != 'C')) return FALSE;
+    if (byCode == 'A') ShotTurnGage(pChar);
+    return TRUE;
+}
+
 static BOOL ShotTurnGage(PCHARINFO pChar)
 {
     if (GetBowWeapon(pChar)) UpdateBowTurnGage(pChar);

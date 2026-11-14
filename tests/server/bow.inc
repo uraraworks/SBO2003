@@ -54,6 +54,7 @@ static int TestBowOnly()
         if (g_aCharInfo[i]->dwBowDuration && g_aCharInfo[i]->pID) diagonalArrow = true;
     BowCheck(!diagonalArrow, "diagonal launch rejected");
     enemy->dwY = 2;
+    pc->byDirection = 3;
     TestRecv(pc, &req, sizeof(req));
     BowCheck(pc->dwLastBattle == 1 && enemy->dwLastBattle == 0, "request does not alert enemy");
     BattleProcCheck(pc);
@@ -211,6 +212,23 @@ static int TestBowOnly()
         enemy->dwX = 5 + anPosAddTblX[direction] * 2;
         enemy->dwY = 5 + anPosAddTblY[direction] * 2;
         enemy->dwLastBattle = 0;
+        for (int facing=0;facing<4;++facing) {
+            pc->byDirection = facing;
+            for (int rate : {20, 100, ATACKRATE_JUST}) {
+                req.byData = rate; pc->dwLastBattle = 0; pc->dwTargetTblID = (DWORD)-1;
+                TestRecv(pc, &req, sizeof(req));
+                BowCheck((pc->dwLastBattle != 0) == (facing == direction), "request requires facing target for early/full/just shots");
+            }
+            if (facing != direction) {
+                pc->dwTargetTblID = enemy->dwTblID;
+                BattleProcWeapon(pc);
+                bool live = false;
+                for (int i=0;i<g_aCharInfo.GetSize();++i)
+                    if (g_aCharInfo[i]->dwBowDuration && g_aCharInfo[i]->pID) live = true;
+                BowCheck(!live && pc->byDirection == facing, "launch revalidates facing without auto turn");
+            }
+        }
+        req.byData = 100; pc->byDirection = direction;
         arrow = fire(); BowCheck(arrow && arrow->byDirection == direction && pc->byDirection == direction,
             "cardinal shooter and arrow direction");
         arrowID = arrow->dwTblID;

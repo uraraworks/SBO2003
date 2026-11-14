@@ -2837,6 +2837,8 @@ void StartTurnGage(PCHARINFO pChar, DWORD dwAtackTblID)
 	pChar->dwAtackTblID	= dwAtackTblID;
 	pChar->dwTimeTurnLV = timeGetTime ();
 	g_bAutoGage			= FALSE;
+    if (GetBowWeapon(pChar) && (pChar->byDotMove || g_bReqestPos || FindBowAttackTarget(pChar, 0) < 0))
+        PauseBowTurnGage(pChar);
 }
 
 
@@ -2909,7 +2911,8 @@ int FindBowAttackTarget(PCHARINFO c, BYTE rate)
 {
     if (c->dwAtackTblID == 0 || c->dwAtackTblID == (DWORD)-1) return -1;
     int target = GetCharNo2(c->dwAtackTblID);
-    return target >= 0 && IsBowAttackTarget(c, g_aCharInfo[target]) ? target : -1;
+    return target >= 0 && BowFacingTarget(c, g_aCharInfo[target]) &&
+        IsBowAttackTarget(c, g_aCharInfo[target]) ? target : -1;
 }
 
 /* ロックを保ったまま溜め直す。移動・方向変更の送信時にも呼ぶ。 */
@@ -2937,10 +2940,10 @@ void UpdateBowTurnGage(PCHARINFO c)
         g_bDraw = TRUE;
         return;
     }
-    BOOL changed = s_dwBowGageX != c->dwX || s_dwBowGageY != c->dwY;  /* 向きは見ない(自動で向く場合はリセットしない) */
+    BOOL changed = s_dwBowGageX != c->dwX || s_dwBowGageY != c->dwY;
     s_dwBowGageX = c->dwX;
     s_dwBowGageY = c->dwY;
-    if (changed || c->byDotMove || g_bReqestPos || !IsBowAttackTarget(c, g_aCharInfo[target])) {
+    if (changed || c->byDotMove || g_bReqestPos || FindBowAttackTarget(c, 0) < 0) {
         PauseBowTurnGage(c);
         return;
     }

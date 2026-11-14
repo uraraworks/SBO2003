@@ -691,7 +691,7 @@ BOOL BattleProcWeapon(PCHARINFO pChar)
                 double dx = (int)target->dwX - (int)pChar->dwX;
                 double dy = (int)target->dwY - (int)pChar->dwY;
                 if (!BowEnemy(target) || target->dwMapID != pChar->dwMapID || !IsInteractable(pChar, target) ||
-                    !BowInLineRange(pChar, target, pWeapon->byData1) || !IsBowReachChar(pChar, target)) {
+                    !BowFacingTarget(pChar, target) || !BowInLineRange(pChar, target, pWeapon->byData1) || !IsBowReachChar(pChar, target)) {
                     delete (PCCharProcBase)pCharNew->pProc; delete pCharNew; return TRUE;
                 }
                 double speed = 32.0 / BowTileTime(pChar->byAtackRate);
@@ -699,10 +699,6 @@ BOOL BattleProcWeapon(PCHARINFO pChar)
                 double distance = max(fabs(rx), fabs(ry));
                 if (distance > range * 32) { rx *= range*32/distance; ry *= range*32/distance; }
                 BYTE direction = dx ? (dx < 0 ? 2 : 3) : (dy < 0 ? 0 : 1);
-                if (pChar->byDirection != direction) {
-                    pChar->byDirection = direction;
-                    pChar->byFlg |= CHARINFOFLG_DIRECTION;
-                }
                 pCharNew->nBowStartX = (int)pChar->dwX * 32;
                 pCharNew->nBowStartY = (int)pChar->dwY * 32;
                 PMAPINFO map = g_aMapInfo[pChar->dwMapID];
