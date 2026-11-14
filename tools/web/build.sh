@@ -231,4 +231,8 @@ sed "s/@@SBO_BUILD_DATE@@/$BUILD_DATE/g; s/@@SBO_BUILD_COMMIT@@/$BUILD_COMMIT/g"
 sed "s/@@SBO_BUILD_DATE@@/$BUILD_DATE/g; s/@@SBO_BUILD_COMMIT@@/$BUILD_COMMIT/g" "$ROOT/web/changes/changes.html" > "$DIST/changes.html"
 cp "$ROOT/web/changes/changes.json" "$DIST/changes-seed.json"
 
+# クレジットのページ（/credits。使わせていただいている BGM・効果音などの一覧。中身は credits.json）
+sed "s/@@SBO_BUILD_DATE@@/$BUILD_DATE/g; s/@@SBO_BUILD_COMMIT@@/$BUILD_COMMIT/g" "$ROOT/web/credits/credits.html" > "$DIST/credits.html"
+cp "$ROOT/web/credits/credits.json" "$DIST/credits.json"
+
 echo "[build] 完了: $DIST/sbocli.html"

@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>クレジット｜スクラップブックオンライン</title>
+<meta name="description" content="スクラップブックオンラインで使わせていただいている BGM・効果音などの素材の一覧です。">
+<!--
+	クレジットのページ（/credits）。使わせていただいている BGM・効果音の曲名（素材名）・ファイル名・作者・配布元を並べる。
+	中身は web/credits/credits.json（ビルドで /credits.json として置く）。曲や効果音を足した時はそちらに 1 行足す。
+	MIDI の本体は非公開側（SBO2003-private）にあるが、曲名と作者名だけはここに書いてよい。
+	音源・フォント・ライブラリは数が少なく増えにくいので、このファイルに直接書いている。
+-->
+<style>
+	:root {
+		--page-bg: #efe6d2;
+		--ink: #2b2620;
+		--sub: #7a6f60;
+		--panel: #1d1f24;
+		--panel-fg: #e8e8e8;
+		--panel-sub: #9aa0a6;
+		--line: rgba(255, 255, 255, 0.1);
+		--accent: #f0b84a;
+	}
+	html, body {
+		margin: 0;
+		padding: 0;
+		background: var(--page-bg);
+		color: var(--ink);
+		font: 14px/1.6 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		-webkit-text-size-adjust: 100%;
+	}
+	body {
+		min-height: 100vh;
+		display: flex;
+		flex-direction: column;
+	}
+	.site-header {
+		text-align: center;
+		background: #0c0c0c;
+		padding: 10px 16px;
+		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+	}
+	.site-header h1 {
+		margin: 0;
+		font-size: 15px;
+		font-weight: 600;
+		color: #f2f2f2;
+		letter-spacing: 0.03em;
+	}
+	.site-header a {
+		color: inherit;
+		text-decoration: none;
+	}
+	.site-header p {
+		margin: 2px 0 0;
+		font-size: 11px;
+		color: #a8a8a8;
+	}
+	main {
+		flex: 1 1 auto;
+		width: 100%;
+		max-width: 760px;
+		margin: 0 auto;
+		padding: 24px 16px 32px;
+		box-sizing: border-box;
+	}
+	h2 {
+		margin: 0 0 4px;
+		font-size: 20px;
+	}
+	h3 {
+		margin: 26px 0 4px;
+		font-size: 16px;
+	}
+	.lead {
+		margin: 0 0 14px;
+		color: var(--sub);
+		font-size: 13px;
+	}
+	.lead a {
+		color: inherit;
+	}
+	.toc {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin: 0 0 10px;
+	}
+	.toc a {
+		font-size: 12px;
+		padding: 4px 12px;
+		border-radius: 999px;
+		border: 1px solid #c9bda6;
+		color: var(--ink);
+		text-decoration: none;
+	}
+	.search {
+		width: 100%;
+		box-sizing: border-box;
+		font: inherit;
+		padding: 8px 12px;
+		border-radius: 8px;
+		border: 1px solid #c9bda6;
+		background: #fffaf0;
+		color: var(--ink);
+		margin-bottom: 6px;
+	}
+	.panel {
+		background: var(--panel);
+		color: var(--panel-fg);
+		border-radius: 12px;
+		box-shadow: 0 2px 6px rgba(60, 45, 20, 0.22), 0 14px 36px rgba(60, 45, 20, 0.22);
+		overflow: hidden;
+		margin-bottom: 12px;
+	}
+	.panel > summary {
+		list-style: none;
+		cursor: pointer;
+		padding: 10px 18px;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 4px 10px;
+	}
+	.panel > summary::-webkit-details-marker {
+		display: none;
+	}
+	.panel > summary::before {
+		content: "▸";
+		color: var(--panel-sub);
+		width: 10px;
+	}
+	.panel[open] > summary::before {
+		content: "▾";
+	}
+	.author {
+		font-weight: 700;
+		color: var(--accent);
+	}
+	.count {
+		font-size: 12px;
+		color: var(--panel-sub);
+	}
+	.meta {
+		padding: 0 18px 8px 38px;
+		font-size: 12px;
+		color: var(--panel-sub);
+	}
+	.meta a {
+		color: var(--panel-fg);
+	}
+	table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 13px;
+	}
+	th, td {
+		text-align: left;
+		padding: 5px 18px;
+		border-top: 1px solid var(--line);
+		vertical-align: top;
+	}
+	th {
+		font-size: 11px;
+		font-weight: 400;
+		color: var(--panel-sub);
+	}
+	td.file {
+		font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+		font-size: 12px;
+		color: var(--panel-sub);
+		word-break: break-all;
+		width: 40%;
+	}
+	.note {
+		display: inline-block;
+		margin-left: 6px;
+		font-size: 11px;
+		color: var(--panel-sub);
+	}
+	.msg {
+		padding: 16px 18px;
+		color: var(--panel-sub);
+	}
+	.other li {
+		padding: 8px 18px;
+		border-top: 1px solid var(--line);
+	}
+	.other ul {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+	.other li:first-child {
+		border-top: 0;
+	}
+	.other a {
+		color: var(--panel-fg);
+	}
+	.other .sub {
+		font-size: 12px;
+		color: var(--panel-sub);
+	}
+	.site-footer {
+		padding: 8px 16px;
+		font-size: 11px;
+		text-align: center;
+		color: #8c8c8c;
+		background: #1a1a1a;
+	}
+	.site-footer a {
+		color: #8c8c8c;
+	}
+	@media (max-width: 520px) {
+		th, td {
+			padding: 5px 12px;
+		}
+		.panel > summary {
+			padding: 10px 12px;
+		}
+		.meta {
+			padding: 0 12px 8px 32px;
+		}
+		td.file {
+			width: 45%;
+		}
+	}
+</style>
+</head>
+<body>
+<header class="site-header">
+	<h1><a href="/">スクラップブックオンライン</a></h1>
+	<p>2003年に始まった個人制作MMORPG</p>
+</header>
+<main>
+	<h2>クレジット</h2>
+	<p class="lead">ゲームで使わせていただいている音楽・効果音などの一覧です。すてきな素材を作ってくださったみなさんに、心から感謝しています。<br>
+		20年以上前に使わせていただいた素材も多く、作者さんのサイトが無くなって作者・配布元が分からなくなっているものもあります。お心当たりのある方や、間違いに気づいた方は<a href="/feedback">ご意見箱</a>で教えてください。</p>
+	<nav class="toc" id="toc"></nav>
+	<input type="search" class="search" id="search" placeholder="曲名・ファイル名・作者で探す" autocomplete="off">
+	<div id="list">
+		<section class="panel"><div class="msg">読み込んでいます…</div></section>
+	</div>
+
+	<h3 id="other">音源・フォント・ライブラリ</h3>
+	<p class="lead">ブラウザ版で BGM を鳴らす仕組みや、文字の表示に使っているものです。</p>
+	<section class="panel other">
+		<ul>
+			<li>GeneralUser GS（BGM の音色・サウンドフォント）<br><span class="sub">S. Christian Collins ／ <a href="https://github.com/uraraworks/SBO2003/blob/main/web/soundfont/GeneralUserGS-LICENSE.txt" target="_blank" rel="noopener">GeneralUser GS License</a></span></li>
+			<li>spessasynth_lib（BGM の MIDI シンセ）<br><span class="sub">spessasus ／ <a href="https://github.com/uraraworks/SBO2003/blob/main/web/vendor/spessasynth/LICENSE" target="_blank" rel="noopener">Apache License 2.0</a></span></li>
+			<li>BIZ UDゴシック（文字）<br><span class="sub">The BIZ UDGothic Project Authors ／ <a href="https://github.com/uraraworks/SBO2003/blob/main/web/font/OFL.txt" target="_blank" rel="noopener">SIL Open Font License 1.1</a></span></li>
+			<li>DotGothic16（16 ドットの文字）<br><span class="sub">The DotGothic16 Project Authors ／ <a href="https://github.com/uraraworks/SBO2003/blob/main/web/font/OFL-DotGothic16.txt" target="_blank" rel="noopener">SIL Open Font License 1.1</a></span></li>
+			<li>Noto Emoji（白黒の絵文字）<br><span class="sub">Google LLC ／ <a href="https://github.com/uraraworks/SBO2003/blob/main/web/font/OFL-NotoEmoji.txt" target="_blank" rel="noopener">SIL Open Font License 1.1</a></span></li>
+		</ul>
+	</section>
+</main>
+<footer class="site-footer">
+	<a href="https://www.urara-works.jp/" target="_blank" rel="noopener">© URARA-works</a> /
+	<a href="/status">サーバー状況</a> /
+	<a href="https://github.com/uraraworks/SBO2003/wiki" target="_blank" rel="noopener">取扱説明書</a> /
+	<a href="/feedback">ご意見箱</a> /
+	<a href="/changes">更新履歴</a> /
+	<a href="https://github.com/uraraworks/SBO2003" target="_blank" rel="noopener">GitHubで見る</a> /
+	<span title="反映した日時とコミット">@@SBO_BUILD_DATE@@ <a href="https://github.com/uraraworks/SBO2003/commit/@@SBO_BUILD_COMMIT@@" target="_blank" rel="noopener">@@SBO_BUILD_COMMIT@@</a></span>
+</footer>
+<script>
+(function () {
+	var list = document.getElementById('list');
+	var toc = document.getElementById('toc');
+	var search = document.getElementById('search');
+	var sections = [];
+
+	function el(tag, cls, text) {
+		var e = document.createElement(tag);
+		if (cls) {
+			e.className = cls;
+		}
+		if (text != null) {
+			e.textContent = text;
+		}
+		return e;
+	}
+
+	/* 作者ごとの箱（開け閉めできる。曲名とファイル名の表） */
+	function makeGroup(g) {
+		var box = el('details', 'panel');
+		box.open = true;
+		var sum = el('summary');
+		sum.appendChild(el('span', 'author', g.author));
+		var cnt = el('span', 'count', g.items.length + ' 件');
+		sum.appendChild(cnt);
+		box.appendChild(sum);
+
+		/* 配布元（リンク・閉鎖したサイトの URL・ひとこと） */
+		if (g.site || g.url || g.urltext || g.note) {
+			var meta = el('div', 'meta');
+			var parts = [];
+			if (g.url) {
+				var a = el('a', null, g.site || g.url);
+				a.href = g.url;
+				a.target = '_blank';
+				a.rel = 'noopener';
+				parts.push(a);
+			} else if (g.site) {
+				parts.push(document.createTextNode(g.site));
+			}
+			if (g.urltext) {
+				parts.push(document.createTextNode('配布元：' + g.urltext));
+			}
+			if (g.note) {
+				parts.push(document.createTextNode(g.note));
+			}
+			parts.forEach(function (p, i) {
+				if (i) {
+					meta.appendChild(document.createTextNode(' ／ '));
+				}
+				meta.appendChild(p);
+			});
+			box.appendChild(meta);
+		}
+
+		var table = el('table');
+		var head = el('tr');
+		head.appendChild(el('th', null, '曲名・素材名'));
+		head.appendChild(el('th', null, 'ファイル名'));
+		table.appendChild(head);
+		var rows = [];
+		g.items.forEach(function (it) {
+			var tr = el('tr');
+			var td = el('td', null, it.title);
+			if (it.note) {
+				td.appendChild(el('span', 'note', it.note));
+			}
+			tr.appendChild(td);
+			tr.appendChild(el('td', 'file', it.file));
+			table.appendChild(tr);
+			/* 探す時に見る文字（作者名も含める） */
+			rows.push({ tr: tr, key: (it.title + ' ' + it.file + ' ' + (it.note || '') + ' ' + g.author).toLowerCase() });
+		});
+		box.appendChild(table);
+		return { box: box, cnt: cnt, rows: rows, total: g.items.length };
+	}
+
+	function render(data) {
+		list.textContent = '';
+		data.sections.forEach(function (s) {
+			var h = el('h3', null, s.title);
+			h.id = s.id;
+			list.appendChild(h);
+			if (s.lead) {
+				list.appendChild(el('p', 'lead', s.lead));
+			}
+			var link = el('a', null, s.title);
+			link.href = '#' + s.id;
+			toc.appendChild(link);
+			var sec = { head: h, groups: [] };
+			s.groups.forEach(function (g) {
+				var grp = makeGroup(g);
+				list.appendChild(grp.box);
+				sec.groups.push(grp);
+			});
+			sections.push(sec);
+		});
+		var other = el('a', null, '音源・フォント');
+		other.href = '#other';
+		toc.appendChild(other);
+	}
+
+	/* 文字で絞り込む（当たった行だけ出す。当たりの無い作者の箱は隠す） */
+	function filter() {
+		var q = search.value.trim().toLowerCase();
+		sections.forEach(function (sec) {
+			sec.groups.forEach(function (grp) {
+				var hit = 0;
+				grp.rows.forEach(function (r) {
+					var ok = !q || r.key.indexOf(q) >= 0;
+					r.tr.hidden = !ok;
+					if (ok) {
+						hit++;
+					}
+				});
+				grp.box.hidden = q !== '' && hit === 0;
+				grp.cnt.textContent = q ? hit + ' / ' + grp.total + ' 件' : grp.total + ' 件';
+			});
+		});
+	}
+	search.addEventListener('input', filter);
+
+	fetch('/credits.json').then(function (res) {
+		if (!res.ok) {
+			throw new Error(res.status);
+		}
+		return res.json();
+	}).then(function (data) {
+		render(data);
+		filter();
+		/* #bgm などで開いた時は、並べ終わってからその場所へ */
+		if (location.hash) {
+			var t = document.getElementById(location.hash.slice(1));
+			if (t) {
+				t.scrollIntoView();
+			}
+		}
+	}).catch(function () {
+		list.innerHTML = '<section class="panel"><div class="msg">一覧を読み込めませんでした。しばらくしてから開き直してください。</div></section>';
+	});
+})();
+</script>
+</body>
+</html>

@@ -197,6 +197,7 @@ web/replace   … Windows 専用クラスの Web 版（Windows 版の実装は�
 | `web/replace/` | CDXAudio（Web Audio）、CUraraSockTCP（WebSocket）、LibMusic・MAC アドレス・管理画面の代わり |
 | `web/shell/sbocli.html` | ページの HTML（キー・マウスの受け渡しもここ） |
 | `web/changes/` | 更新履歴のページ（`/changes`）と最初の中身 `changes.json` |
+| `web/credits/` | クレジットのページ（`/credits`）。BGM・効果音などの曲名・ファイル名・作者は `credits.json`。曲や効果音を足したらここにも 1 行足す |
 | `web/bgm/sbo_bgm.js` | BGM プレイヤー（`LibMusicLoader_web.cpp` から `window.SboBgm` を呼ぶ） |
 | `web/vendor/spessasynth/` | MIDI シンセ spessasynth_lib（Apache-2.0）。更新は `tools/web/update_spessasynth.sh` |
 | `web/soundfont/` | サウンドフォント GeneralUser GS 2.0.3（SF3、ライセンスは同じ場所の txt） |
