@@ -58,11 +58,11 @@
 						{"title": "異教徒達の集会", "file": "w0040.mid"},
 						{"title": "業を背負う者達", "file": "w0041.mid"},
 						{"title": "のんびりと散歩をしながら", "file": "w0043.mid"},
-						{"title": "恐怖、昼時のバーゲンセール", "file": "w0045.mid", "note": "作者を確認中"},
+						{"title": "恐怖、昼時のバーゲンセール", "file": "w0045.mid", "note": "wanna さんの曲と思われます"},
 						{"title": "闘竜士　-竜騎士の余興-", "file": "w0053.mid"},
 						{"title": "故郷を守る者達の戦い", "file": "w0054.mid"},
 						{"title": "遊戯的戦闘風楽曲", "file": "w0057.mid"},
-						{"title": "緑溢れる広場", "file": "w0064.mid", "note": "作者を確認中"},
+						{"title": "緑溢れる広場", "file": "w0064.mid", "note": "wanna さんの曲と思われます"},
 						{"title": "風吹き荒れる草原", "file": "w0067.mid"},
 						{"title": "変なお店の名物おじさん", "file": "w0068.mid"},
 						{"title": "教会の見える丘", "file": "w0069.mid"},
@@ -78,7 +78,7 @@
 						{"title": "戦場を駆ける銃士", "file": "w0123.mid"},
 						{"title": "民族の誇りを", "file": "w0125.mid"},
 						{"title": "倒壊までの残り僅かな時間", "file": "w0130.mid"},
-						{"title": "暖かな北の大地での暮らし", "file": "w0132.mid", "note": "作者を確認中"},
+						{"title": "暖かな北の大地での暮らし", "file": "w0132.mid", "note": "wanna さんの曲と思われます"},
 						{"title": "いつもより素敵に見える景色", "file": "w0136.mid"},
 						{"title": "小さな戦いの勝利者達", "file": "wj013.mid"},
 						{"title": "ドラムロール（ティンパニ）", "file": "wj014.mid"},
@@ -136,7 +136,7 @@
 					]
 				},
 				{
-					"author": "COSMOS", "urltext": "www2s.sni.ne.jp/watanabe/", "note": "配布元のサイトは今は開けません",
+					"author": "COSMOS", "urltext": "www2s.sni.ne.jp/watanabe/", "note": "配布元のサイトは今はありません",
 					"items": [
 						{"title": "ハッピーバースデイ・トゥ・ユウ", "file": "happybirthday_s.mid"},
 						{"title": "Jingle Bells", "file": "jinglebells_s.mid"},
@@ -145,7 +145,7 @@
 					]
 				},
 				{
-					"author": "作者を確認中",
+					"author": "作者不明", "note": "当時いただいた曲で、作者・配布元が分からなくなっています",
 					"items": [
 						{"title": "OMOIDE", "file": "omoide.mid"}
 					]
@@ -268,7 +268,7 @@
 					]
 				},
 				{
-					"author": "配布元を確認中",
+					"author": "作者不明", "note": "当時集めたフリー素材で、作者・配布元が分からなくなっています",
 					"items": [
 						{"title": "$142", "file": "$142.wav"},
 						{"title": "じゃんけん ぐー", "file": "(じゃんけん)ぐー.wav"},
@@ -288,7 +288,6 @@
 						{"title": "voice011", "file": "voice011.wav"},
 						{"title": "voice012", "file": "voice012.wav"},
 						{"title": "voice028", "file": "voice028.wav"},
-						{"title": "へぇ", "file": "へぇ.wav"},
 						{"title": "サイレン", "file": "サイレン.wav"},
 						{"title": "ダメージ", "file": "ダメージ.wav"},
 						{"title": "トイレ流す", "file": "トイレ流す.wav"},

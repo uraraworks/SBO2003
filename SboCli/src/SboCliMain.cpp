@@ -986,6 +986,10 @@ BOOL OnCreate(HWND hWnd)
 		if (adwSoundNoTbl[i] == 0xFFFFFFFF) {
 			break;
 		}
+		/* 欠番（ファイルを外した音）は読まない。番号はデータが使っているのでずらさない */
+		if (adwBgmIDTbl[adwSoundNoTbl[i]] == 0) {
+			continue;
+		}
 		DXAudio.GetSegFromRes (FindResource (g_hDll,
 				MAKEINTRESOURCE (adwBgmIDTbl[adwSoundNoTbl[i]]), "WAVE"),
 				&aSoundTbl[adwSoundNoTbl[i]]);
