@@ -467,6 +467,10 @@ Module['sboNet'] = (function () {
 		if (url === '/status') {
 			url = '/status.html';
 		}
+		/* クレジットのページ（素材の一覧。中身は /credits.json） */
+		if (url === '/credits') {
+			url = '/credits.html';
+		}
 		/* 管理ページ（スマホでも使える）・キャラ名の変更ページ（web/account/） */
 		if (url === '/admin') {
 			url = '/admin.html';

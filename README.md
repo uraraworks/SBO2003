@@ -39,6 +39,8 @@ tools/server/run.sh       # http://localhost:8080/ で遊べます（停止は t
 
 ## 含まれていないもの
 
+使わせていただいている BGM・効果音の曲名・ファイル名・作者は、ゲームの `/credits`（中身は [web/credits/credits.json](web/credits/credits.json)）にまとめています。
+
 - **BGM の MIDI**：作曲者さんに再配布の許可をいただけていないため入れていません。無くてもビルドでき、BGM が鳴らないだけです。
   手元にある場合は `SboSoundData/MIDI/` に置くとビルドに入ります。
 - **BGM の音声ファイル（.m4a）**：新しく入れ替えた曲です。非公開側（SBO2003-private）の `SboSoundData/Audio/` に置き、
