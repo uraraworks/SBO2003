@@ -1360,6 +1360,8 @@ static const DATAFIELD s_aFieldChar[] = {
 	FLD (CHARINFO, chAttrLight,			"属性(光)",				FT_S8, RO, NULL),
 	FLD (CHARINFO, chAttrDark,			"属性(闇)",				FT_S8, RO, NULL),
 	FLDA(CHARINFO, abyMagic,			"覚えている特技",		FT_U8ARR, BYTE, RO, "magic の番号"),
+	FLDA(CHARINFO, abyMagicKey,			"特技ショートカット",	FT_U8ARR, BYTE, RO, "1〜5 キーの枠に登録した magic の番号（0 は空）"),
+	FLD (CHARINFO, byOptMagicBar,		"特技ショートカットの帯",	FT_U8, RO, "0=表示 1=非表示（アカウントごとの設定）"),
 	FLDA(CHARINFO, waItem,				"持ち物",				FT_U16ARR, WORD, RO, "item の番号"),
 	FLDA(CHARINFO, waEqu,				"装備",					FT_U16ARR, WORD, RO, "持ち物（waItem）の何番目か。65535 は無し。順に 武器・鎧・盾・兜・小手・靴・首飾り・指輪1・指輪2"),
 	FLD (CHARINFO, dwGold,				"所持金",				FT_U32, RO, NULL),

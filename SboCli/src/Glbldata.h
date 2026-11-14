@@ -233,6 +233,8 @@ extern PCMDPARA_WARSELECTTURN g_pWarSelectTurn;							/* 戦場ゲーム行動�
 extern PSUBGAMECLIENT_WARINFO g_pWarInfo;								/* 戦場ゲーム情報 */
 extern PCMDPARA_WARSELECTMAGICTARGET g_pWarMagicTarget;					/* 戦場ゲーム魔法対象者一覧 */
 extern PTARGETSELECTINFO g_pTargetSelectInfo;							/* ターゲット選択情報 */
+extern BYTE g_abyMagicKey[MAX_MAGICKEY];								/* 特技ショートカットに登録した特技ID(0=空) */
+extern BOOL g_bMagicBar;												/* 特技ショートカットの帯を出すか */
 extern CmyArray<PWNDINFO, PWNDINFO> g_WndInfo;							/* ウィンドウ情報 */
 extern CmyArray<PCHARINFO, PCHARINFO> g_aCharInfo;						/* キャラ情報 */
 extern CmyArray<PSYSMSGINFO, PSYSMSGINFO> g_SysMsgInfo;					/* システムメッセージ情報 */

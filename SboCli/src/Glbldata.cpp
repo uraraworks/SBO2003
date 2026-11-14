@@ -241,6 +241,8 @@ PCMDPARA_WARSELECTTURN g_pWarSelectTurn;							/* 戦場ゲーム行動順序 */
 PSUBGAMECLIENT_WARINFO g_pWarInfo;									/* 戦場ゲーム情報 */
 PCMDPARA_WARSELECTMAGICTARGET g_pWarMagicTarget;					/* 戦場ゲーム魔法対象者一覧 */
 PTARGETSELECTINFO g_pTargetSelectInfo;								/* ターゲット選択情報 */
+BYTE g_abyMagicKey[MAX_MAGICKEY];									/* 特技ショートカットに登録した特技ID(0=空。サーバーに保存) */
+BOOL g_bMagicBar = TRUE;											/* 特技ショートカットの帯を出すか(アカウントごとにサーバーに保存) */
 CmyArray<PWNDINFO, PWNDINFO> g_WndInfo;								/* ウィンドウ情報 */
 CmyArray<PCHARINFO, PCHARINFO> g_aCharInfo;							/* キャラ情報 */
 CmyArray<PSYSMSGINFO, PSYSMSGINFO> g_SysMsgInfo;					/* システムメッセージ情報 */

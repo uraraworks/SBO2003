@@ -118,6 +118,7 @@ void SendCmdADMINUNDO		(BYTE, BYTE, DWORD);					/* 管理者画面の「元に�
 void SendCmdADMINSPACE		(BYTE, DWORD);							/* 管理者の空間の切り替え */
 void SendCmdADMINQUEST		(BYTE, int, const QUESTINFO *);			/* 管理者ウィンドウのギルドの依頼の編集 */
 void SendCmdADMINRESURRECT	(DWORD);								/* 管理者ウィンドウからキャラをHP満タンで蘇生 */
+void SendCmdMAGICKEY		(BYTE, BYTE);							/* 特技ショートカットの登録 */
 void SendCMDSHOPBUY			(DWORD, DWORD);							/* アイテム購入 */
 void SendCMDDIFENCE			(void);									/* 防御 */
 void SendCMDTHROWSNOW		(void);									/* 雪を投げる */
@@ -179,6 +180,7 @@ void SendCmdLOGINREQ(void)
 /*       WEBACC_TOKENLOGIN … g_szWebToken の端末トークンでログイン要求		 */
 /*       WEBACC_TOKENREQ   … ログインできたので端末トークンを発行してもらう	 */
 /*       WEBACC_OPTBGM     … 音楽ON/OFFをアカウントに覚えてもらう(byData)	 */
+/*       WEBACC_OPTMAGICBAR … 特技ショートカットの帯の表示をアカウントに覚えてもらう */
 /* ========================================================================= */
 void SendCmdWEBACCOUNT(BYTE byCmdSub, BYTE byData)
 {
@@ -3591,6 +3593,23 @@ void SendCmdADMINRESURRECT(DWORD dwTblID)
 	Para.byCmd		= CMD_ADMINRESURRECT;
 	Para.pID		= g_pMyID;
 	Para.dwTblID	= dwTblID;
+	cliSock.Send ((PBYTE)&Para, sizeof (Para));
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdMAGICKEY													 */
+/* 内容：コマンド送信(特技ショートカットの登録)								 */
+/*       byNo 番目の枠に byMagicID を登録する（0 なら外す）					 */
+/* ========================================================================= */
+void SendCmdMAGICKEY(BYTE byNo, BYTE byMagicID)
+{
+	CMDPARA_MAGICKEY Para;
+
+	ZeroMemory (&Para, sizeof (Para));
+	Para.byCmd		= CMD_MAGICKEY;
+	Para.byCmdSub	= MAGICKEY_SET;
+	Para.byNo		= byNo;
+	Para.byMagicID	= byMagicID;
 	cliSock.Send ((PBYTE)&Para, sizeof (Para));
 }
 
