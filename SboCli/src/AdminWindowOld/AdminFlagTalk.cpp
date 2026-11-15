@@ -14,6 +14,7 @@
 #include "../SboCliSendCmd.h"
 #include "AdminFlagTalk.h"
 #include <vector>
+#include <algorithm>
 
 /* ========================================================================= */
 /* グローバル変数定義														 */
@@ -33,6 +34,37 @@ static BYTE s_abyCharFlagNum[MAX_FLAGNUM];
 static DWORD s_dwCharFlagSeq = 0;
 
 static ADMINFLAGTALKRESULT s_Result;									/* 直近の書き込みの結果 */
+static BOOL s_bFlagNameAsked = FALSE;									/* 名前表を一度取り寄せたか */
+static std::vector<void (*)(void)> s_apfnListener;						/* 届いた時にお知らせする先（画面） */
+
+/* ========================================================================= */
+/* 関数名：Notify															 */
+/* 内容：届いたことを画面に知らせる（画面は更新番号を見て描き直す）			 */
+/*       お知らせの中で画面が外れてもよいよう、写しを回す					 */
+/* ========================================================================= */
+static void Notify(void)
+{
+	std::vector<void (*)(void)> apfn = s_apfnListener;
+
+	for (size_t i = 0; i < apfn.size (); i ++) {
+		/* 呼ぶ前に外されていないか見る */
+		if (std::find (s_apfnListener.begin (), s_apfnListener.end (), apfn[i]) != s_apfnListener.end ()) {
+			apfn[i] ();
+		}
+	}
+}
+
+void AdminFlagTalkAddListener(void (*pfnListener)(void))
+{
+	if (std::find (s_apfnListener.begin (), s_apfnListener.end (), pfnListener) == s_apfnListener.end ()) {
+		s_apfnListener.push_back (pfnListener);
+	}
+}
+
+void AdminFlagTalkRemoveListener(void (*pfnListener)(void))
+{
+	s_apfnListener.erase (std::remove (s_apfnListener.begin (), s_apfnListener.end (), pfnListener), s_apfnListener.end ());
+}
 
 /* ========================================================================= */
 /* 関数名：SetResult														 */
@@ -86,10 +118,12 @@ void AdminFlagNameOnRecv(const void *pData)
 		SetResult (CMD_ADMINFLAGNAME, pPara->byResult, pPara->nNo, pPara->szMsg);
 		break;
 	}
+	Notify ();
 }
 
 void AdminFlagNameRequest(void)
 {
+	s_bFlagNameAsked = TRUE;
 	s_aFlagName.clear ();
 	s_abyFlagNameHave.clear ();
 	s_dwFlagNameSeq ++;
@@ -117,6 +151,36 @@ const FLAGNAMEINFO *AdminFlagNameGet(int nNo)
 DWORD AdminFlagNameGetSeq(void)
 {
 	return s_dwFlagNameSeq;
+}
+
+/* 名前表の配列の番号（削除済みの枠も含む。無ければ -1） */
+int AdminFlagNameFindIndex(BYTE byKind, WORD wNo)
+{
+	for (size_t i = 0; i < s_aFlagName.size (); i ++) {
+		if (s_abyFlagNameHave[i] && (s_aFlagName[i].byKind == byKind) && (s_aFlagName[i].wNo == wNo)) {
+			return (int)i;
+		}
+	}
+	return -1;
+}
+
+/* 有効な名前（無ければ NULL） */
+const char *AdminFlagNameFind(BYTE byKind, WORD wNo)
+{
+	int nIndex = AdminFlagNameFindIndex (byKind, wNo);
+
+	if ((nIndex < 0) || (s_aFlagName[nIndex].byState != FLAGNAMESTATE_ON)) {
+		return NULL;
+	}
+	return s_aFlagName[nIndex].szName;
+}
+
+/* まだ一度も取り寄せていなければ取り寄せる */
+void AdminFlagNameLoadIfEmpty(void)
+{
+	if (!s_bFlagNameAsked) {
+		AdminFlagNameRequest ();
+	}
 }
 
 /* ========================================================================= */
@@ -158,6 +222,7 @@ void AdminTalkOnRecv(const void *pData)
 		SetResult (CMD_ADMINTALK, pPara->byResult, pPara->nNo, pPara->szMsg);
 		break;
 	}
+	Notify ();
 }
 
 void AdminTalkRequest(void)
@@ -211,6 +276,7 @@ void AdminCharFlagOnRecv(const void *pData)
 		SetResult (CMD_ADMINCHARFLAG, pPara->byResult, -1, pPara->szMsg);
 		break;
 	}
+	Notify ();
 }
 
 void AdminCharFlagRequest(DWORD dwTblID)

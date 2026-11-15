@@ -37,6 +37,10 @@ SboCli/src/AdminWindowOld/AdminDlgStTmpInfoEdit.cpp
 SboCli/src/AdminWindowOld/AdminDlgQuestInfo.cpp
 SboCli/src/AdminWindowOld/AdminDlgQuestInfoEdit.cpp
 SboCli/src/AdminWindowOld/AdminFlagTalk.cpp
+SboCli/src/AdminWindowOld/AdminDlgFlagName.cpp
+SboCli/src/AdminWindowOld/AdminDlgTalk.cpp
+SboCli/src/AdminWindowOld/AdminDlgTalkEdit.cpp
+SboCli/src/AdminWindowOld/AdminDlgCharFlag.cpp
 SboCli/src/AdminWindowOld/AdminDlgSugorokuEvent.cpp
 SboCli/src/AdminWindowOld/AdminDlgSugorokuEventEdit.cpp
 SboCli/src/AdminWindowOld/AdminDlgSugorokuParts.cpp

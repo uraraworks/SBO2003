@@ -52,4 +52,13 @@ extern DWORD AdminCharFlagGetSeq(void);									/* 更新番号 */
 /* 書き込みの結果 */
 extern const ADMINFLAGTALKRESULT *AdminFlagTalkGetResult(void);			/* 直近の結果 */
 
+/* 届いた時のお知らせ（画面が更新番号を見て描き直す）。届くたびに、登録された関数を全部呼ぶ */
+extern void AdminFlagTalkAddListener(void (*pfnListener)(void));		/* 登録（画面を開いた時） */
+extern void AdminFlagTalkRemoveListener(void (*pfnListener)(void));		/* 外す（画面を閉じた時） */
+
+/* 名前表の引き方（画面で、印・数値の番号の横に名前を出すため） */
+extern int  AdminFlagNameFindIndex(BYTE byKind, WORD wNo);				/* 名前表の配列の番号（削除済みの枠も含む。無ければ -1） */
+extern const char *AdminFlagNameFind(BYTE byKind, WORD wNo);			/* 有効な名前（無ければ NULL） */
+extern void AdminFlagNameLoadIfEmpty(void);								/* まだ一度も届いていなければ取り寄せる（画面を開く時に呼ぶ） */
+
 /* Copyright(C)URARA-works 2026 */
