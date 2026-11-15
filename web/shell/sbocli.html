@@ -812,22 +812,22 @@
 	/* ---- 特技ショートカットのボタン（戦闘中の発動・特技一覧での登録） ----
 	   番号と特技名の頭2文字（アイコンは無いので文字）。色は PC の帯と同じで赤=攻撃・緑=回復・青=補助、
 	   Mana 不足・詠唱中は暗く、空き枠は「-」。常には出さず、戦闘モード中（オプションの帯が「表示」の時）と
-	   特技の一覧を開いている間だけ出す。縦持ちはログとパッドの間（ゲーム画面の外なのでマップを隠さない）、
-	   横持ちは発動を「特技 C」の長押しで開く扇、登録を左上に小さく並べる */
+	   特技の一覧を開いている間だけ出す。縦持ちはパッドの上端の空き（戦闘中は隠れる「表示」の場所から
+	   「特技」の左まで）に重ねる＝ログの高さは削らない。横持ちは発動を「特技 C」の長押しで
+	   ゲーム画面側へ開く扇、登録を左上に小さく並べる */
 	#sbo-magic,
 	#sbo-magic-fan {
 		display: none;
 	}
 	body.sbo-pad #sbo-magic.sbo-on {
 		display: flex;
-		flex: none;
 		align-items: center;
-		gap: 6px;
-		width: 100%;
+		gap: 4px;
 		box-sizing: border-box;
-		padding: 5px calc(12px + env(safe-area-inset-right)) 5px calc(12px + env(safe-area-inset-left));
+		padding: 3px;
 		background: rgba(16, 18, 22, 0.96);
-		border-top: 1px solid var(--border);
+		border: 1px solid var(--border);
+		border-radius: 10px;
 		touch-action: none;
 		-webkit-user-select: none;
 		user-select: none;
@@ -851,10 +851,43 @@
 	/* 登録用は枠と見出しを琥珀色にして、発動用と見分ける */
 	body.sbo-pad #sbo-magic.sbo-reg {
 		background: rgba(52, 38, 10, 0.97);
-		border-top: 2px solid #f0b84a;
+		border: 2px solid #f0b84a;
 	}
 	#sbo-magic.sbo-reg .sbo-magic-tag {
 		display: flex;
+	}
+	/* 縦持ち：パッド（#sbo-pad）の上端に重ねる。左は戦闘中なら「表示」が隠れているので端まで、
+	   登録（一覧を開いている間）は「表示」が出ているかもしれないのでその右から。
+	   右は「特技」「戦闘」の手前まで。十字キー（上端 46px）にも掛からない */
+	@media (max-aspect-ratio: 129/100) {
+		body.sbo-pad #sbo-magic.sbo-on {
+			position: absolute;
+			left: calc(12px + env(safe-area-inset-left));
+			right: calc(130px + env(safe-area-inset-right));
+			top: 2px;
+			height: 42px;
+			z-index: 5;
+		}
+		body.sbo-pad #sbo-magic.sbo-reg {
+			left: calc(74px + env(safe-area-inset-left));
+		}
+		/* 登録用の見出しは幅が足りないので縦持ちでは出さない（琥珀色の枠で見分ける） */
+		body.sbo-pad #sbo-magic.sbo-reg .sbo-magic-tag {
+			display: none;
+		}
+		/* #sbo-pad button の共通指定（絶対配置・丸み）に負けないよう、詳しく書く */
+		body.sbo-pad #sbo-pad #sbo-magic .sbo-magic-btn {
+			position: static;
+			flex: 1 1 0;
+			width: auto;
+			height: 36px;
+			flex-direction: column;
+			gap: 2px;
+			border-radius: 8px;
+		}
+		#sbo-magic .sbo-magic-btn .sbo-magic-no {
+			font-size: 9px;
+		}
 	}
 	.sbo-magic-btn {
 		flex: 1 1 0;
@@ -944,7 +977,7 @@
 		height: 42px;
 		flex: none;
 		font-size: 13px;
-		background: rgba(26, 30, 38, 0.96);
+		background: rgba(26, 30, 38, 0.82);
 		border: 2px solid rgba(255, 255, 255, 0.35);
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
 		pointer-events: none;
@@ -4136,8 +4169,8 @@
 	   {fire, reg, slots:[{n:名前の頭2文字, k:0攻撃/1回復/2補助, d:暗く, e:空き}×5]} を見て出す。
 	   fire=戦闘モード中で帯が「表示」＝押すと発動 / reg=特技の一覧を開いている＝押すとカーソルの特技を登録。
 	   どちらもゲームには仮想キーの 1〜5（VK 0x31〜0x35）を送るだけで、PC のキーと同じ処理に乗る。
-	   縦持ちはログとパッドの間にボタンの列、横持ちは発動を「特技 C」の長押しで開く扇、
-	   登録を左上の小さな列で出す */
+	   縦持ちはパッドの上端に重ねたボタンの列（ログの高さは削らない）、横持ちは発動を「特技 C」の
+	   長押しでゲーム画面側へ開く扇、登録を左上の小さな列で出す */
 	(function () {
 		var bar = document.getElementById('sbo-magic');
 		var fanEl = document.getElementById('sbo-magic-fan');
@@ -4153,13 +4186,14 @@
 		var fanOpen = false;
 		var fanPos = [];	/* 開いた時の各ボタンの中心 */
 		var fanHot = -1;
-		var FAN_R = 94;
-		var FAN_STEP = 38;
+		var FAN_R = 120;
+		var FAN_STEP = 34;
 		var FAN_HIT = 36;
+		var FAN_PIVOT = 60;	/* 扇の中心を「特技 C」より左へずらす距離（右側のボタン列に掛けない） */
 
-		/* ログとパッドの間（ゲーム画面の外なのでマップを隠さない） */
+		/* パッドの中へ移す（縦持ちはパッドの上端の空きに重ねる。横持ちは fixed なのでどこでも同じ） */
 		if (usePad && padEl) {
-			padEl.parentNode.insertBefore(bar, padEl);
+			padEl.appendChild(bar);
 		}
 		for (var i = 0; i < barBtns.length; i ++) {
 			bindPadButton(barBtns[i], VK_1 + i);
@@ -4240,11 +4274,16 @@
 			var vw = window.innerWidth, vh = window.innerHeight;
 			paint(fanBtns, state.slots);
 			fanPos = [];
+			/* 左向き（ゲーム画面側）の弧。中心は C より左へずらし、上下にはみ出さない高さへ寄せる。
+			   右側の「戦闘」「攻撃」などのボタン列には掛からない */
+			var half = FAN_R * Math.sin(2 * FAN_STEP * Math.PI / 180) + 26;
+			var px = cx - FAN_PIVOT;
+			var py = Math.max(half, Math.min(vh - half, cy));
 			for (var i = 0; i < fanBtns.length; i ++) {
-				/* 左向きの扇：上から 1〜5 */
+				/* 上から 1〜5 */
 				var a = (180 + (2 - i) * FAN_STEP) * Math.PI / 180;
-				var x = cx + FAN_R * Math.cos(a);
-				var y = cy + FAN_R * Math.sin(a);
+				var x = px + FAN_R * Math.cos(a);
+				var y = py + FAN_R * Math.sin(a);
 				x = Math.max(32, Math.min(vw - 32, x));
 				y = Math.max(26, Math.min(vh - 26, y));
 				fanPos.push({x: x, y: y});
