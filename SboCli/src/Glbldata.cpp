@@ -125,6 +125,7 @@ BOOL g_bWindowActive,												/* ウィンドウがアクティブ */
 	 g_bChatSound,												/* 発言の音ON/OFF */
 	 g_bCpuMax,														/* CPUフル活動 */
 	 g_bBlock,														/* 当たり判定 */
+	 g_bViewNpcPut,													/* 管理者:NPC発生を表示する */
 	 g_bProcShopConfirm,											/* 店:確認中 */
 	 g_bTitleSkip,													/* ロゴ・タイトル飛ばす */
 	 g_bMainWindowView,												/* メインウィンドウ表示切り替え */
