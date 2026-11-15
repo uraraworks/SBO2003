@@ -19,6 +19,7 @@
 #include <string.h>
 
 /* 合う行が無い時（会話セットが無い・削除済みも）の台詞 */
+extern void ItemMsgAddWait (LPSTR, int);		/* 最後に入力待ちを足す(SboSvrItemProc.cpp) */
 #define TALK_NOANSWER		"……"
 
 /* ========================================================================= */
@@ -238,7 +239,7 @@ void TalkNpcTalk(PCHARINFO pChar, PCHARINFO pNpc)
 {
 	PTALKINFO pTalk;
 	int nLine;
-	char szSpeech[MAX_TALKMSG];
+	char szSpeech[MAX_TALKMSG + 4];	/* 最後に @2 を足せるよう少し余分に */
 
 	if ((pChar == NULL) || (pNpc == NULL) || (pChar->pID == 0)) {
 		return;
@@ -256,6 +257,8 @@ void TalkNpcTalk(PCHARINFO pChar, PCHARINFO pNpc)
 			TalkApplyLine (pLine, pChar->abyFlag, pChar->abyFlagNum);
 		}
 	}
+	/* 最後が入力待ちで終わっていないと、窓がすぐ閉じて読めないので @2 を足す（道具の説明文と同じ） */
+	ItemMsgAddWait (szSpeech, sizeof (szSpeech));
 	SendCmdTALKMSG (pChar->pID, pNpc->dwTblID, szSpeech);
 }
 
