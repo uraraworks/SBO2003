@@ -2417,6 +2417,13 @@
 		var target = null;	/* 押した時に決めた送り先（離す時も同じ所へ送る） */
 		function press() {
 			el.classList.add('sbo-pressed');
+			/* ログインのボタンの画面などが手前に出ている間は、その画面の操作に使う。
+			   padTarget より先に見る（裏のログイン窓の ID 欄を「ゲームの入力欄」とみなして
+			   決定を Enter で送ってしまい、「アカウント名を入力してください」と出ていた） */
+			if (sboReady && window.sboPadUiKey && window.sboPadUiKey(vk)) {
+				target = null;
+				return;
+			}
 			target = padTarget(vk);
 			padKey(target.vk, true, target.id);
 		}
