@@ -47,6 +47,7 @@ extern void SendCmdPLAYSOUNDinside		(DWORD, BYTE);									/* 画面内のキャ
 extern void SendCmdMAPMSG				(DWORD, LPSTR);									/* コマンド送信(メッセージ通知) */
 extern void SendCmdMAPMSGREQ			(DWORD, LPSTR);									/* コマンド送信(メッセージ通知) */
 extern void SendCmdSYSMSG				(DWORD, LPCTSTR, BYTE byFlg = SPEECHCMD_ALL);	/* コマンド送信(システムメッセージ) */
+extern void SendCmdTALKMSG				(DWORD, DWORD, LPCSTR);						/* コマンド送信(会話データで選ばれた台詞。本人だけ) */
 extern void SendCmdSYSMSGMAP			(DWORD, LPSTR, BYTE byFlg = SPEECHCMD_ALL);		/* コマンド送信(マップ内システムメッセージ) */
 extern void SendCmdEFECTCHG				(DWORD, DWORD, BYTE, BOOL bIdle = FALSE);		/* コマンド送信(エフェクト変更) */
 extern void SendCmdCOMEFC				(PCHARINFO);									/* コマンド送信(吹き出し通知) */

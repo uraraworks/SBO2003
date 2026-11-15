@@ -71,6 +71,8 @@ extern CmyArray<PEQUUSERINFO, PEQUUSERINFO> g_aEquUserInfo;					/* 装備職業�
 extern CmyArray<PMAKERINFO, PMAKERINFO> g_aMakerInfo;							/* 作り手情報 */
 extern CmyArray<PRECIPEINFO, PRECIPEINFO> g_aRecipeInfo;						/* レシピ情報 */
 extern CmyArray<PQUESTINFO, PQUESTINFO> g_aQuestInfo;							/* 依頼情報 */
+extern CmyArray<PFLAGNAMEINFO, PFLAGNAMEINFO> g_aFlagNameInfo;				/* フラグの名前表 */
+extern CmyArray<PTALKINFO, PTALKINFO> g_aTalkInfo;							/* 会話データ */
 
 
 /* 向き別縦横増減テーブル */

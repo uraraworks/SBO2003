@@ -330,6 +330,11 @@ void ShowDlgQuestInfoEdit(HWND hWndParent, int nNo)
 		ZeroMemory (&s_Info, sizeof (s_Info));
 		s_Info.byState = QUESTSTATE_ON;
 		s_Info.byStepCount = 1;
+		/* 完了した時に立てる印・動かす数値は「無し」（0 のままだと印 0・数値 0 になる） */
+		for (int i = 0; i < MAX_QUESTDONESET; i ++) {
+			s_Info.awDoneSetFlag[i] = FLAG_NOBIT;
+		}
+		s_Info.byDoneNumNo = FLAG_NONUM;
 		for (int i = 0; i < MAX_QUESTNPC; i ++) {
 			ClearNpc (&s_Info.aNpc[i]);
 		}

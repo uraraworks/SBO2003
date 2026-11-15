@@ -323,6 +323,10 @@ typedef struct _QUESTFILE {
 	BYTE		byChallenge;
 	WORD		wLoanStTmp;
 	BYTE		byMemberMin;
+	WORD		awDoneSetFlag[MAX_QUESTDONESET];		/* 完了した時に立てる印（番号+1。0=無し。古いファイルには無く、0 =無しで読める） */
+	BYTE		byDoneNumNo;							/* 完了した時に動かす数値の番号（番号+1。0=無し） */
+	BYTE		byDoneNumOp;
+	BYTE		byDoneNumVal;
 } QUESTFILE;
 
 /* 依頼情報のカラム */
@@ -364,6 +368,10 @@ static const COLINFO s_aQuestCol[] = {
 	COL (QUESTFILE, byChallenge,	COL_U8),
 	COL (QUESTFILE, wLoanStTmp,		COL_U16),
 	COL (QUESTFILE, byMemberMin,	COL_U8),
+	COLS(QUESTFILE, awDoneSetFlag,	COL_U16ARR, MAX_QUESTDONESET),
+	COL (QUESTFILE, byDoneNumNo,	COL_U8),
+	COL (QUESTFILE, byDoneNumOp,	COL_U8),
+	COL (QUESTFILE, byDoneNumVal,	COL_U8),
 };
 
 BOOL SaveQuestInfo(void);										/* 依頼情報保存 */
@@ -385,6 +393,12 @@ static void ToFile(QUESTFILE *p, const QUESTINFO *q)
 	p->byStepCount = q->byStepCount;
 	memcpy (p->aszGoal, q->aszGoal, sizeof (p->aszGoal));
 	p->byChallenge = q->byChallenge;	p->wLoanStTmp = q->wLoanStTmp;	p->byMemberMin = q->byMemberMin;
+	/* 印・数値の番号は「番号+1」で保存する（0=無し。この項目が無い古いファイルは全部 0 で「無し」になる） */
+	for (i = 0; i < MAX_QUESTDONESET; i ++) {
+		p->awDoneSetFlag[i] = (q->awDoneSetFlag[i] < MAX_FLAGBIT) ? (WORD)(q->awDoneSetFlag[i] + 1) : 0;
+	}
+	p->byDoneNumNo = (q->byDoneNumNo < MAX_FLAGNUM) ? (BYTE)(q->byDoneNumNo + 1) : 0;
+	p->byDoneNumOp = q->byDoneNumOp;	p->byDoneNumVal = q->byDoneNumVal;
 	for (i = 0; i < MAX_QUESTNPC; i ++) {
 		const QUESTNPCINFO *n = &q->aNpc[i];
 		p->adwNpcMapID[i] = n->dwMapID;	p->abyNpcX[i] = n->byX;	p->abyNpcY[i] = n->byY;
@@ -415,6 +429,11 @@ static void FromFile(QUESTINFO *q, const QUESTFILE *p)
 	q->byStepCount = p->byStepCount;
 	memcpy (q->aszGoal, p->aszGoal, sizeof (q->aszGoal));
 	q->byChallenge = p->byChallenge;	q->wLoanStTmp = p->wLoanStTmp;	q->byMemberMin = p->byMemberMin;
+	for (i = 0; i < MAX_QUESTDONESET; i ++) {
+		q->awDoneSetFlag[i] = ((p->awDoneSetFlag[i] >= 1) && (p->awDoneSetFlag[i] <= MAX_FLAGBIT)) ? (WORD)(p->awDoneSetFlag[i] - 1) : (WORD)FLAG_NOBIT;
+	}
+	q->byDoneNumNo = ((p->byDoneNumNo >= 1) && (p->byDoneNumNo <= MAX_FLAGNUM)) ? (BYTE)(p->byDoneNumNo - 1) : (BYTE)FLAG_NONUM;
+	q->byDoneNumOp = p->byDoneNumOp;	q->byDoneNumVal = p->byDoneNumVal;
 	q->szName[MAX_QUESTNAME - 1] = 0;
 	q->szExplain[MAX_QUESTMSG - 1] = 0;
 	q->szMsgAccept[MAX_QUESTMSG - 1] = 0;

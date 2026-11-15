@@ -78,7 +78,26 @@
 #define MAX_QUESTGOAL		128										/* 依頼の「いまの目的」の欄のバイト数（終端含む） */
 #define MAX_QUESTLIST		16										/* ギルドの一覧に出す依頼の最大数 */
 #define MAX_QUESTDONEBYTE	(MAX_QUEST / 8)							/* 一度きり依頼のクリア済みの印の大きさ（バイト） */
+#define MAX_QUESTDONESET	2										/* 依頼を完了した時に立てる印の数（QUESTINFO の awDoneSetFlag） */
 #define QUESTNPC_NOSTEP		(0xFF)									/* 見えるNPCで「段を変えない」を表す値（byNextStep）、「どの段でも」を表す値（byStepMax） */
+
+/* キャラのフラグ（ずっと残る印と数値）と、フラグで台詞を出し分ける会話データ。番号の割り振りは目安で、コードでは強制しない
+   印: 1〜199 本筋 / 200〜599 地域 / 600〜899 お使い / 900〜1023 予備。数値も同じ考え方で 0〜127 */
+#define MAX_FLAGBIT			1024									/* 印（ON/OFF）の数 */
+#define MAX_FLAGBITBYTE		(MAX_FLAGBIT / 8)						/* 印の大きさ（バイト。abyFlag） */
+#define MAX_FLAGNUM			128										/* 数値（0〜255）の数（abyFlagNum） */
+#define MAX_FLAGNAME		96										/* 名前の欄のバイト数（UTF-8・終端含む。全角 20 字ほど） */
+#define MAX_FLAGNAMEINFO	(MAX_FLAGBIT + MAX_FLAGNUM)				/* 名前表の最大件数（印と数値の番号ごとに 1 件まで。削除済みの枠も数える） */
+#define FLAG_NOBIT			(0xFFFF)								/* 印の番号の「無し」（印 0 も使えるよう 0 ではなくこれにする） */
+#define FLAG_NONUM			(0xFF)									/* 数値の番号の「無し」 */
+#define MAX_TALK			1000									/* 会話セット番号の上限（番号は 1〜999。0 は使わない） */
+#define MAX_TALKLINE		16										/* 1 つの会話セットの行数 */
+#define MAX_TALKNEED		4										/* 行の「立っている必要のある印」「立っていてはいけない印」の数 */
+#define MAX_TALKCOND		2										/* 行の数値の条件の数 */
+#define MAX_TALKSET			2										/* 行の「話した後に立てる印」「消す印」の数 */
+#define MAX_TALKACT			2										/* 行の「話した後の数値の動き」の数 */
+#define MAX_TALKNAME		64										/* 会話セットの名前（管理用メモ）の欄のバイト数（終端含む） */
+#define MAX_TALKMSG			1024									/* 台詞の欄のバイト数（終端含む）。1 セット（16 行）が通信の 1 パケットに収まる大きさ */
 #define MAX_SUBGAME_WARMEMBER	4									/* 戦場ゲーム最大参加人数 */
 
 /* 入力できる長さ（表示幅。半角1文字=1、全角1文字=2）
@@ -303,6 +322,11 @@ enum {
 	CMD_ADMINRESURRECT,												/* 管理者ウィンドウからキャラをHP満タンで蘇生（CMDPARA_DATA1 の dwTblID が相手） */
 /* 以下、プレイヤー用（CMD_MAGICKEY はクライアント→サーバーも受ける。管理者用の判定から外すこと） */
 	CMD_MAGICKEY,													/* 特技ショートカットの登録（変更はクライアント→サーバー、ログイン時の全枠はサーバー→本人） */
+	CMD_TALKMSG,													/* 会話データで選ばれた台詞(サーバー→本人だけ。サーバーは受け取らない) */
+/* 以下、管理者用（CMD_MAPPARTSADD 以上は自動で管理者専用になる。CMD_TALKMSG より後ろに足す） */
+	CMD_ADMINFLAGNAME,												/* 管理者ウィンドウのフラグの名前表の編集（一覧・書き込み。結果はサーバー→クライアント） */
+	CMD_ADMINTALK,													/* 管理者ウィンドウの会話データの編集（一覧・書き込み。結果はサーバー→クライアント） */
+	CMD_ADMINCHARFLAG,												/* 管理者ウィンドウのキャラのフラグの取得・変更（結果はサーバー→クライアント） */
 	CMD_MAX
 };
 
@@ -2179,6 +2203,8 @@ typedef struct _CHARINFO {
 	WORD		awQuestCount[MAX_QUESTCOUNT];						/* 依頼の数（倒した数など。ステップ2で使う。保存する） */
 	DWORD		dwQuestAcceptTime;									/* 依頼を受けた時刻（time_t の秒。保存する） */
 	BYTE		abyQuestDone[MAX_QUESTDONEBYTE];					/* 一度きりの依頼のクリア済みの印（依頼番号のビット。保存する） */
+	BYTE		abyFlag[MAX_FLAGBITBYTE];							/* キャラのフラグ（印。ビット番号=印の番号。保存する。サーバーだけが持ち、クライアントへは送らない） */
+	BYTE		abyFlagNum[MAX_FLAGNUM];							/* キャラのフラグ（数値 0〜255。保存する。サーバーだけが持つ） */
 	BYTE		abyTownWarpX[MAX_TOWNWARP];							/* 行き先帳の町の座標(X)（新しく記録した順） */
 	BYTE		abyTownWarpY[MAX_TOWNWARP];							/* 行き先帳の町の座標(Y) */
 	DWORD		adwTownWarpMapID[MAX_TOWNWARP];						/* 行き先帳の町のマップID */
@@ -2856,6 +2882,10 @@ typedef struct _QUESTINFO {
 	BYTE		byChallenge;										/* 討伐チャレンジの種類(QUESTCHALLENGE_*。0=ふつうの依頼) */
 	WORD		wLoanStTmp;											/* 討伐チャレンジの貸し出しセット（ステータステンプレートの番号） */
 	BYTE		byMemberMin;										/* 討伐チャレンジに必要な人数（0・1=一人でもよい、2 以上はパーティを組んでいないと受けられない） */
+	WORD		awDoneSetFlag[MAX_QUESTDONESET];					/* 完了した時に立てるキャラの印（0xFFFF=無し。ただし 0 で埋めたままだと「印 0」になるので、足す時は FLAG_NOBIT で埋める） */
+	BYTE		byDoneNumNo;										/* 完了した時に動かすキャラの数値の番号（0〜127。FLAG_NONUM=無し） */
+	BYTE		byDoneNumOp;										/* 数値の動き(TALKNUMOP_*。する/足す) */
+	BYTE		byDoneNumVal;										/* 数値の動きの値 */
 } QUESTINFO, *PQUESTINFO;
 
 /* 討伐チャレンジの種類(QUESTINFO の byChallenge) */
@@ -2962,6 +2992,161 @@ typedef struct _CMDPARA_ADMINQUEST {
 	QUESTINFO	Info;												/* 依頼（ITEM・SET） */
 	char		szMsg[MAX_ADMINQUESTMSG];							/* 結果の文（RESULT。うまくいかなかった理由） */
 } CMDPARA_ADMINQUEST, *PCMDPARA_ADMINQUEST;
+#pragma pack(pop)
+
+/* ========================================================================= */
+/* キャラのフラグと会話データ													 */
+/*   フラグはキャラごとに保存する「印 1024 個（ON/OFF）」と「数値 128 個		 */
+/*   （0〜255）」。サーバーだけが持ち、クライアントへは送らない。			 */
+/*   会話データは NPC の台詞を "@tNNN"（NNN=会話セット番号 1〜999）にすると	 */
+/*   使える。話した人のフラグとレベルで行を選び、その人にだけ台詞を出す。	 */
+/*   名前表（フラグの番号→名前）と会話データはサーバーの設定データ			 */
+/*   （SBODATA/SboDataFlagNameInfo.dat・SboDataTalkInfo.dat）で、			 */
+/*   台詞そのものはクライアントへ送らない（選ばれた 1 行だけ CMD_TALKMSG）。	 */
+/* ========================================================================= */
+
+/* フラグの種類(FLAGNAMEINFO の byKind) */
+enum {
+	FLAGKIND_BIT = 0,											/* 印（ON/OFF。番号 0〜1023） */
+	FLAGKIND_NUM,												/* 数値（0〜255。番号 0〜127） */
+	FLAGKIND_MAX
+};
+
+/* 名前表の状態(FLAGNAMEINFO の byState) */
+enum {
+	FLAGNAMESTATE_NONE = 0,										/* 削除済み（枠だけ残る。同じ種類・番号を足し直す時はこの枠を使う） */
+	FLAGNAMESTATE_ON,											/* 有効 */
+};
+
+/* フラグの名前表の 1 件（印か数値の 1 つに付ける名前。種類と番号は同じ組が 1 件まで） */
+typedef struct _FLAGNAMEINFO {
+	BYTE		byState;											/* 状態(FLAGNAMESTATE_*) */
+	BYTE		byKind;												/* 種類(FLAGKIND_*) */
+	WORD		wNo;												/* 番号（印は 0〜1023、数値は 0〜127） */
+	char		szName[MAX_FLAGNAME];								/* 名前（管理用。プレイヤーには出ない） */
+} FLAGNAMEINFO, *PFLAGNAMEINFO;
+
+/* 数値の条件の比べ方(TALKLINEINFO の abyCondCmp) */
+enum {
+	TALKCMP_GE = 0,												/* 以上 */
+	TALKCMP_EQ,													/* ちょうど */
+	TALKCMP_LE,													/* 以下 */
+	TALKCMP_MAX
+};
+
+/* 数値の動き(TALKLINEINFO の abyActOp・QUESTINFO の byDoneNumOp) */
+enum {
+	TALKNUMOP_SET = 0,											/* ○にする */
+	TALKNUMOP_ADD,												/* ○足す（255 で止まる） */
+	TALKNUMOP_MAX
+};
+
+/* 会話セットの 1 行（条件に合う行の中から、順位が一番小さい行を話す） */
+typedef struct _TALKLINEINFO {
+	BYTE		byRank;												/* 順位（小さいほど先に見る。同じ順位が複数ならくじで 1 行） */
+	BYTE		byLvMin;											/* レベル下限（0=気にしない） */
+	BYTE		byLvMax;											/* レベル上限（0=気にしない） */
+	WORD		awNeed[MAX_TALKNEED];								/* 立っている必要のある印（FLAG_NOBIT=無し） */
+	WORD		awNot[MAX_TALKNEED];								/* 立っていてはいけない印（FLAG_NOBIT=無し） */
+	BYTE		abyCondNo[MAX_TALKCOND];							/* 数値の条件の数値番号（FLAG_NONUM=無し） */
+	BYTE		abyCondCmp[MAX_TALKCOND];							/* 比べ方(TALKCMP_*) */
+	BYTE		abyCondVal[MAX_TALKCOND];							/* 比べる値 */
+	char		szSpeech[MAX_TALKMSG];								/* 台詞（NPC の台詞と同じ書き方。@0 でページ送りなど） */
+	WORD		awSetOn[MAX_TALKSET];								/* 話した後に立てる印（FLAG_NOBIT=無し） */
+	WORD		awSetOff[MAX_TALKSET];								/* 話した後に消す印（FLAG_NOBIT=無し） */
+	BYTE		abyActNo[MAX_TALKACT];								/* 話した後に動かす数値の番号（FLAG_NONUM=無し） */
+	BYTE		abyActOp[MAX_TALKACT];								/* 動かし方(TALKNUMOP_*) */
+	BYTE		abyActVal[MAX_TALKACT];								/* 動かす値 */
+} TALKLINEINFO, *PTALKLINEINFO;
+
+/* 会話セットの状態(TALKINFO の byState) */
+enum {
+	TALKSTATE_NONE = 0,											/* 削除済み（枠だけ残る。同じ番号を足し直す時はこの枠を使う。話しかけても何も言わない） */
+	TALKSTATE_ON,												/* 有効 */
+};
+
+/* 会話セット（サーバーだけが持つ） */
+typedef struct _TALKINFO {
+	BYTE		byState;											/* 状態(TALKSTATE_*) */
+	WORD		wID;												/* 会話セット番号（1〜999。NPC の台詞 "@tNNN" の NNN。ほかのセットと重ならない） */
+	BYTE		byLineCount;										/* 使っている行の数（0〜16。先頭からこの数だけ使う） */
+	char		szName[MAX_TALKNAME];								/* 名前（管理用のメモ） */
+	TALKLINEINFO	aLine[MAX_TALKLINE];							/* 行 */
+} TALKINFO, *PTALKINFO;
+
+/* 管理者ウィンドウのフラグの名前表の編集（CMD_ADMINFLAGNAME の byCmdSub） */
+enum {
+	ADMINFLAGNAME_LISTREQ = 0,									/* 一覧の問い合わせ（クライアント→サーバー） */
+	ADMINFLAGNAME_ITEM,											/* 一覧の続き（サーバー→クライアント。nNo 番目から byCount 件。wCount=全部の件数。0 件なら wCount=0 だけ届く） */
+	ADMINFLAGNAME_SET,											/* 書き込み（クライアント→サーバー。nNo=-1 なら足す。削除は byState=0。aInfo[0] を使う） */
+	ADMINFLAGNAME_RESULT,										/* 書き込みの結果（サーバー→クライアント。byResult・szMsg。うまくいった時は続けて ITEM も届く） */
+};
+
+#define MAX_ADMINFLAGNAMEBATCH	16									/* ADMINFLAGNAME_ITEM 1 つに入れる件数 */
+
+#pragma pack(push, 1)
+/* 管理者ウィンドウのフラグの名前表の編集（送受信とも同じ形） */
+typedef struct _CMDPARA_ADMINFLAGNAME {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byCmdSub;											/* サブコマンド(ADMINFLAGNAME_*) */
+	BYTE		byResult;											/* 結果（RESULT: 1=書き込んだ 0=書き込めなかった） */
+	BYTE		byCount;											/* aInfo に入っている件数（ITEM） */
+	WORD		wCount;												/* 名前表の全部の件数（ITEM・RESULT） */
+	int			nNo;												/* 名前表の配列の番号（ITEM は先頭。SET・RESULT。SET の -1 は足す） */
+	FLAGNAMEINFO	aInfo[MAX_ADMINFLAGNAMEBATCH];					/* 名前表（ITEM・SET） */
+	char		szMsg[MAX_ADMINQUESTMSG];							/* 結果の文（RESULT。うまくいかなかった理由） */
+} CMDPARA_ADMINFLAGNAME, *PCMDPARA_ADMINFLAGNAME;
+
+/* 管理者ウィンドウの会話データの編集（CMD_ADMINTALK の byCmdSub） */
+enum {
+	ADMINTALK_LISTREQ = 0,										/* 一覧の問い合わせ（クライアント→サーバー） */
+	ADMINTALK_ITEM,												/* 一覧の 1 件（サーバー→クライアント。nNo 番目・全部で wCount 件。0 件なら wCount=0 だけ届く） */
+	ADMINTALK_SET,												/* 書き込み（クライアント→サーバー。nNo=-1 なら足す。削除は byState=0。データAPIと同じ確認を通す） */
+	ADMINTALK_RESULT,											/* 書き込みの結果（サーバー→クライアント。byResult・szMsg。うまくいった時は続けて ITEM も届く） */
+};
+
+/* 管理者ウィンドウの会話データの編集（送受信とも同じ形） */
+typedef struct _CMDPARA_ADMINTALK {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byCmdSub;											/* サブコマンド(ADMINTALK_*) */
+	BYTE		byResult;											/* 結果（RESULT: 1=書き込んだ 0=書き込めなかった） */
+	BYTE		byReserve;											/* 予備 */
+	WORD		wCount;												/* 会話セットの全部の件数（ITEM・RESULT） */
+	int			nNo;												/* 会話セットの配列の番号（ITEM・SET・RESULT。SET の -1 は足す） */
+	TALKINFO	Info;												/* 会話セット（ITEM・SET） */
+	char		szMsg[MAX_ADMINQUESTMSG];							/* 結果の文（RESULT。うまくいかなかった理由） */
+} CMDPARA_ADMINTALK, *PCMDPARA_ADMINTALK;
+
+/* 管理者ウィンドウのキャラのフラグ（CMD_ADMINCHARFLAG の byCmdSub） */
+enum {
+	ADMINCHARFLAG_GET = 0,										/* 取得（クライアント→サーバー。dwTblID のキャラの印と数値を全部返す） */
+	ADMINCHARFLAG_INFO,											/* 取得の結果（サーバー→クライアント。dwTblID・abyFlag・abyFlagNum） */
+	ADMINCHARFLAG_SET,											/* 変更（クライアント→サーバー。byKind が印なら wNo の印を wValue(0/1) に、数値なら wNo の数値を wValue(0〜255) に。結果は INFO と RESULT） */
+	ADMINCHARFLAG_RESULT,										/* 変更の結果（サーバー→クライアント。byResult・szMsg） */
+};
+
+/* 管理者ウィンドウのキャラのフラグの取得・変更（送受信とも同じ形） */
+typedef struct _CMDPARA_ADMINCHARFLAG {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byCmdSub;											/* サブコマンド(ADMINCHARFLAG_*) */
+	BYTE		byResult;											/* 結果（RESULT: 1=変えた 0=変えられなかった） */
+	BYTE		byKind;												/* 種類(FLAGKIND_*。SET) */
+	DWORD		dwTblID;											/* 相手のキャラのテーブルID */
+	WORD		wNo;												/* 番号（SET） */
+	WORD		wValue;												/* 値（SET） */
+	BYTE		abyFlag[MAX_FLAGBITBYTE];							/* 印（INFO） */
+	BYTE		abyFlagNum[MAX_FLAGNUM];							/* 数値（INFO） */
+	char		szMsg[MAX_ADMINQUESTMSG];							/* 結果の文（RESULT。うまくいかなかった理由） */
+} CMDPARA_ADMINCHARFLAG, *PCMDPARA_ADMINCHARFLAG;
+
+/* 会話データで選ばれた台詞（サーバー→本人だけ。この後ろに wSize バイトの台詞（UTF-8・終端の 0 を含む）が続く。
+   通信の可変長の文字列（CMDPARA_SPEECH など）と同じ並べ方
+   NPC の台詞と同じ書き方（@0 でページ送りなど）で、普通の町の人と同じ会話の窓に出す） */
+typedef struct _CMDPARA_TALKMSG {
+	BYTE		byCmd;												/* コマンドID */
+	DWORD		dwTblID;											/* 話しかけた相手（NPC）のテーブルID */
+	WORD		wSize;												/* 台詞のバイト数（終端の 0 を含む） */
+} CMDPARA_TALKMSG, *PCMDPARA_TALKMSG;
 #pragma pack(pop)
 
 /* 並べ替えの対象(CMDPARA_SORTITEM の byTarget) */
