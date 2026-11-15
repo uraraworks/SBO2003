@@ -27,6 +27,10 @@
 #include "SboCliMsgLogWindow.h"
 #include "SboCliAdminWindow.h"
 
+/* 接続ボタンを押してから、サーバーの返事を待つ長さ（ミリ秒）。
+   サーバーが混んでいる時（ステージングなど）は10秒では足りず「接続できませんでした」になりやすかった */
+#define CONNECT_TIMEOUT		30000
+
 /* ========================================================================= */
 /* 定数定義																	 */
 /* ========================================================================= */
@@ -1108,7 +1112,7 @@ void OnCommand(HWND hWnd, int nID)
 			g_WndInfo.Add (pWnd);
 			InvalidateRect (g_hWndMain, NULL, FALSE);
 			g_dwMsgIDConnect = pWnd->dwID;
-			SetTimer (hWnd, 0, 10000, NULL);
+			SetTimer (hWnd, 0, CONNECT_TIMEOUT, NULL);
 			SetFocus (g_hWndMain);
 			cliSock.Connect (g_hWndMain, g_wPort, g_pszServer);
 		}
@@ -1130,7 +1134,7 @@ void OnCommand(HWND hWnd, int nID)
 		g_WndInfo.Add (pWnd);
 		InvalidateRect (g_hWndMain, NULL, FALSE);
 		g_dwMsgIDConnect = pWnd->dwID;
-		SetTimer (hWnd, 0, 10000, NULL);
+		SetTimer (hWnd, 0, CONNECT_TIMEOUT, NULL);
 		SetFocus (g_hWndMain);
 		cliSock.Connect (g_hWndMain, g_wPort, g_pszServer);
 		break;
