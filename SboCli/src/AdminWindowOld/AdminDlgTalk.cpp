@@ -12,6 +12,11 @@
  * 変わっていたら一覧を描き直す。
  * ・編集／追加：編集画面（AdminDlgTalkEdit.cpp）を出す
  * ・削除：選んでいる会話セットを消す（サーバー側は「削除済みの枠」として残る）
+ * 会話セットは全マップ分が 1 つの一覧に並ぶので、サーバーが一覧と一緒に知らせる
+ * 「使用先」（"@t番号" の台詞を持つ NPC。マップ名：NPC名）を右の列に出し、
+ * マップを選んで、そのマップの NPC が使っているセットだけに絞り込める。
+ * 絞り込みの欄は、名前・番号・使用先（マップ名・NPC名）のどれかに部分一致すれば出す。
+ * キャラ情報の「会話編集」からは OpenTalkEditFromNpc で、この一覧を開かずに編集画面を直接開く。
  */
 #include "stdafx.h"
 #include "../../resource.h"
@@ -23,6 +28,7 @@
 #include "AdminDlgTalk.h"
 #include "AdminDlgTalkEdit.h"
 #include <vector>
+#include <string>
 #include <algorithm>
 
 /* ========================================================================= */
@@ -36,13 +42,15 @@ static DWORD s_dwTalkSeqSeen = 0;								/* 描き直した時の会話データ
 static DWORD s_dwResultSeqSeen = 0;								/* 見た書き込みの結果の番号 */
 static BOOL s_bWait = FALSE;									/* 削除の結果を待っている */
 static std::vector<int> s_anRow;								/* 一覧の行 → 会話セットの配列の番号 */
+static HWND s_hWndOpenParent = NULL;							/* キャラ情報から開く編集画面の親（届くのを待っている間だけ） */
+static int s_nOpenNo = 0;										/* キャラ情報から開く会話セット番号（0=待っていない） */
 
 /* 一覧の列（名前と幅） */
 static const struct {
 	LPCSTR	pszName;
 	int		nWidth;
 } s_aColumn[] = {
-	{"番号(@t)", 60}, {"名前", 210}, {"行数", 40},
+	{"番号(@t)", 60}, {"名前", 120}, {"行数", 36}, {"使用先（マップ：NPC）", 360},
 };
 
 /* 並べ方（会話セット番号の順） */
@@ -59,6 +67,10 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam);				/* メッ
 static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify);		/* メッセージハンドラ(WM_COMMAND) */
 static void OnChanged(void);													/* 会話データ・書き込みの結果が届いた */
 static void RenewList(void);													/* リスト更新 */
+static void RenewMapCombo(void);												/* マップの絞り込みの選択肢を作り直す */
+static DWORD GetFilterMapID(void);												/* 絞り込みで選んでいるマップID（すべてなら -1） */
+static void BuildUseText(WORD wTalkNo, DWORD dwMapID, std::string &strOut, BOOL &bInMap);	/* 会話セットの使用先の文字・選んだマップで使われているか */
+static void OnOpenFromNpcChanged(void);											/* キャラ情報から開く待ちの間に届いた */
 static int GetSelIndex(HWND hWnd);												/* 一覧で選んでいる会話セットの配列の番号（無ければ -1） */
 
 /* ========================================================================= */
@@ -213,8 +225,14 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 	int nIndex = GetSelIndex (hWnd);
 
 	switch (nID) {
-	case IDC_TK_FIND:	/* 名前・番号で絞り込み（部分一致） */
+	case IDC_TK_FIND:	/* 名前・番号・使用先で絞り込み（部分一致） */
 		if (nCodeNotify == EN_CHANGE) {
+			RenewList ();
+		}
+		break;
+
+	case IDC_TK_MAP:	/* マップで絞り込み */
+		if (nCodeNotify == CBN_SELCHANGE) {
 			RenewList ();
 		}
 		break;
@@ -274,20 +292,118 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 }
 
 /* ========================================================================= */
+/* 関数名：GetFilterMapID													 */
+/* 内容：絞り込みで選んでいるマップID（「すべて」なら -1）					 */
+/* ========================================================================= */
+static DWORD GetFilterMapID(void)
+{
+	HWND hWndCombo = GetDlgItem (s_hWndDlg, IDC_TK_MAP);
+	int nSel = (int)SendMessage (hWndCombo, CB_GETCURSEL, 0, 0);
+
+	if (nSel <= 0) {
+		return (DWORD)-1;
+	}
+	return (DWORD)SendMessage (hWndCombo, CB_GETITEMDATA, nSel, 0);
+}
+
+/* ========================================================================= */
+/* 関数名：RenewMapCombo													 */
+/* 内容：マップの絞り込みの選択肢を作り直す（「すべて」＋サーバーのマップの並び）	 */
+/*       選んでいたマップは、同じマップIDがあれば選び直す					 */
+/* ========================================================================= */
+static void RenewMapCombo(void)
+{
+	HWND hWndCombo = GetDlgItem (s_hWndDlg, IDC_TK_MAP);
+	DWORD dwOld = GetFilterMapID ();
+	int nCount = AdminTalkGetMapCount ();
+	int nNewSel = 0;
+	char szTmp[160], szName[128];
+
+	/* 数も中身も変わっていなければそのまま */
+	if ((int)SendMessage (hWndCombo, CB_GETCOUNT, 0, 0) == nCount + 1) {
+		BOOL bSame = TRUE;
+		for (int i = 0; i < nCount; i ++) {
+			if ((DWORD)SendMessage (hWndCombo, CB_GETITEMDATA, i + 1, 0) != AdminTalkGetMapID (i)) {
+				bSame = FALSE;
+				break;
+			}
+		}
+		if (bSame) {
+			return;
+		}
+	}
+
+	SendMessage (hWndCombo, CB_RESETCONTENT, 0, 0);
+	SendMessage (hWndCombo, CB_ADDSTRING, 0, (LPARAM)"すべて");
+	SendMessage (hWndCombo, CB_SETITEMDATA, 0, (LPARAM)(DWORD)-1);
+	for (int i = 0; i < nCount; i ++) {
+		int nPos;
+
+		/* 同じ名前のマップがあるので、番号も添える */
+		AdminTalkFormatMapName (AdminTalkGetMapID (i), szName, sizeof (szName));
+		snprintf (szTmp, sizeof (szTmp), "%s [%u]", szName, (unsigned)AdminTalkGetMapID (i));
+		nPos = (int)SendMessage (hWndCombo, CB_ADDSTRING, 0, (LPARAM)szTmp);
+		SendMessage (hWndCombo, CB_SETITEMDATA, nPos, (LPARAM)AdminTalkGetMapID (i));
+		if (AdminTalkGetMapID (i) == dwOld) {
+			nNewSel = nPos;
+		}
+	}
+	SendMessage (hWndCombo, CB_SETCURSEL, nNewSel, 0);
+}
+
+/* ========================================================================= */
+/* 関数名：BuildUseText														 */
+/* 内容：会話セット番号を使っている NPC を「マップ名：NPC名」で並べた文字にする	 */
+/*       使っている NPC が無ければ「未使用」。dwMapID の NPC が使っていれば bInMap=TRUE */
+/*       （dwMapID=-1 の時は bInMap は常に TRUE）							 */
+/* ========================================================================= */
+static void BuildUseText(WORD wTalkNo, DWORD dwMapID, std::string &strOut, BOOL &bInMap)
+{
+	char szMap[128];
+	int nUse = AdminTalkGetUseCount ();
+
+	strOut.clear ();
+	bInMap = (dwMapID == (DWORD)-1) ? TRUE : FALSE;
+	for (int i = 0; i < nUse; i ++) {
+		const CMDPARA_ADMINTALKUSE *pUse = AdminTalkGetUse (i);
+
+		if ((pUse == NULL) || (pUse->wTalkNo != wTalkNo)) {
+			continue;
+		}
+		if (!strOut.empty ()) {
+			strOut += "、";
+		}
+		AdminTalkFormatMapName (pUse->dwMapID, szMap, sizeof (szMap));
+		strOut += szMap;
+		strOut += "：";
+		strOut += pUse->szName[0] ? pUse->szName : "(名無し)";
+		if (pUse->dwMapID == dwMapID) {
+			bInMap = TRUE;
+		}
+	}
+	if (strOut.empty ()) {
+		strOut = "未使用";
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：RenewList														 */
-/* 内容：リスト更新（有効な会話セットを番号順に。名前・番号で絞り込み）		 */
+/* 内容：リスト更新（有効な会話セットを番号順に。マップ・名前・番号・使用先で絞り込み）	 */
 /* ========================================================================= */
 static void RenewList(void)
 {
 	HWND hWndTmp;
 	char szTmp[160], szKey[128];
 	int i, nCount, nSel, nSelRow = -1, nAll = 0;
+	DWORD dwFilterMap;
 
 	if (s_hWndDlg == NULL) {
 		return;
 	}
 	s_dwTalkSeqSeen = AdminTalkGetSeq ();
 	hWndTmp = GetDlgItem (s_hWndDlg, IDC_LIST);
+	RenewMapCombo ();
+	dwFilterMap = GetFilterMapID ();
 
 	nSel = GetSelIndex (s_hWndDlg);
 	szKey[0] = 0;
@@ -303,9 +419,19 @@ static void RenewList(void)
 			continue;
 		}
 		nAll ++;
-		snprintf (szTmp, sizeof (szTmp), "%u", (unsigned)pInfo->wID);
-		if (!AdminFilterMatch (pInfo->szName, szKey) && (strstr (szTmp, szKey) == NULL)) {
-			continue;
+		{
+			std::string strUse;
+			BOOL bInMap;
+
+			BuildUseText (pInfo->wID, dwFilterMap, strUse, bInMap);
+			if (!bInMap) {
+				continue;
+			}
+			snprintf (szTmp, sizeof (szTmp), "%u", (unsigned)pInfo->wID);
+			if (!AdminFilterMatch (pInfo->szName, szKey) && (strstr (szTmp, szKey) == NULL) &&
+				!AdminFilterMatch (strUse.c_str (), szKey)) {
+				continue;
+			}
 		}
 		s_anRow.push_back (i);
 	}
@@ -326,6 +452,13 @@ static void RenewList(void)
 		ListView_SetItemText (hWndTmp, i, 1, (LPSTR)pInfo->szName);
 		snprintf (szTmp, sizeof (szTmp), "%u", (unsigned)pInfo->byLineCount);
 		ListView_SetItemText (hWndTmp, i, 2, szTmp);
+		{
+			std::string strUse;
+			BOOL bInMap;
+
+			BuildUseText (pInfo->wID, (DWORD)-1, strUse, bInMap);
+			ListView_SetItemText (hWndTmp, i, 3, (LPSTR)strUse.c_str ());
+		}
 		if (s_anRow[i] == nSel) {
 			nSelRow = i;
 		}
@@ -336,6 +469,41 @@ static void RenewList(void)
 
 	snprintf (szTmp, sizeof (szTmp), "会話セット %d 件（いま %d 件を表示）", nAll, (int)s_anRow.size ());
 	SetDlgItemText (s_hWndDlg, IDC_TK_MSG, szTmp);
+}
+
+/* ========================================================================= */
+/* 関数名：OpenTalkEditFromNpc												 */
+/* 内容：キャラ情報の「会話編集」から、NPC の台詞 "@t番号" の会話セットの編集画面を開く	 */
+/*       編集画面は会話セットの一覧（届いたもの）から探すので、先に一覧を取り直し、	 */
+/*       最後まで届いてから開く（一覧の画面は開かなくてよい）。				 */
+/*       セットがまだ無い番号なら、その番号で追加の画面になる				 */
+/* ========================================================================= */
+void OpenTalkEditFromNpc(HWND hWndParent, int nTalkNo)
+{
+	if (IsDlgTalkEditOpen ()) {
+		MessageBox (hWndParent, "編集中の会話セットがあります。閉じてから開いてください。", TALK_TITLE, MB_OK);
+		return;
+	}
+	s_hWndOpenParent = hWndParent;
+	s_nOpenNo = nTalkNo;
+	AdminFlagTalkAddListener (OnOpenFromNpcChanged);
+	AdminFlagNameLoadIfEmpty ();		/* 編集画面で印・数値の名前を出すため */
+	AdminTalkRequest ();
+}
+
+/* 一覧が最後まで届いたら編集画面を開く */
+static void OnOpenFromNpcChanged(void)
+{
+	HWND hWndParent = s_hWndOpenParent;
+	int nNo = s_nOpenNo;
+
+	if ((nNo == 0) || !AdminTalkIsLoaded ()) {
+		return;
+	}
+	s_nOpenNo = 0;
+	s_hWndOpenParent = NULL;
+	AdminFlagTalkRemoveListener (OnOpenFromNpcChanged);
+	ShowDlgTalkEditByNo (hWndParent, nNo);
 }
 
 /* Copyright(C)URARA-works 2026 */

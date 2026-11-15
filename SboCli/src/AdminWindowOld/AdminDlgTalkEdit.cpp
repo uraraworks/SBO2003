@@ -33,6 +33,7 @@
 static HWND s_hWndDlg = NULL;									/* ダイアログのウィンドウハンドル */
 static HWND s_hWndParent = NULL;								/* 親ウィンドウ */
 static int s_nNo = -1;											/* 会話セットの配列の番号（-1 なら追加） */
+static int s_nPresetID = 0;										/* 追加の時に番号の欄へ入れておく会話セット番号（0=空欄） */
 static int s_nLineSel = -1;										/* 右に出している行（-1=行が無い） */
 static BOOL s_bWait = FALSE;									/* 書き込みの結果を待っている */
 static TALKINFO s_Info;											/* 編集中の内容 */
@@ -176,6 +177,33 @@ void ShowDlgTalkEdit(HWND hWndParent, int nNo)
 }
 
 /* ========================================================================= */
+/* 関数名：ShowDlgTalkEditByNo												 */
+/* 内容：会話セット番号（NPC の台詞 "@t番号" の数字）で開く					 */
+/*       有効なセットがあればそれを直す。無い（削除済み含む）なら、その番号で追加の画面にする */
+/* ========================================================================= */
+void ShowDlgTalkEditByNo(HWND hWndParent, int nTalkNo)
+{
+	int nIndex = -1;
+
+	if ((nTalkNo < 1) || (nTalkNo >= MAX_TALK)) {
+		char szMsg[96];
+		snprintf (szMsg, sizeof (szMsg), "会話セットの番号は 1〜%d です（@t の後ろの数字）。", MAX_TALK - 1);
+		MessageBox (hWndParent, szMsg, TALKEDIT_TITLE, MB_OK);
+		return;
+	}
+	for (int i = 0; i < AdminTalkGetCount (); i ++) {
+		const TALKINFO *pInfo = AdminTalkGet (i);
+		if (pInfo && (pInfo->wID == (WORD)nTalkNo) && (pInfo->byState == TALKSTATE_ON)) {
+			nIndex = i;
+			break;
+		}
+	}
+	s_nPresetID = (nIndex < 0) ? nTalkNo : 0;
+	ShowDlgTalkEdit (hWndParent, nIndex);
+	s_nPresetID = 0;						/* 開く処理の中で使い終わっている */
+}
+
+/* ========================================================================= */
 /* 関数名：CloseDlgTalkEdit													 */
 /* 内容：ダイアログ終了														 */
 /* ========================================================================= */
@@ -274,7 +302,7 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 		EnableWindow (GetDlgItem (hWnd, IDC_TE_ID), FALSE);		/* 番号は足す時に決め、あとから変えられない */
 	} else {
 		SetWindowText (hWnd, "会話データの追加");
-		AdminFlagSetNo (hWnd, IDC_TE_ID, 0, TRUE);
+		AdminFlagSetNo (hWnd, IDC_TE_ID, (unsigned long)s_nPresetID, (s_nPresetID <= 0) ? TRUE : FALSE);
 	}
 	SetDlgItemText (hWnd, IDC_TE_NAME, s_Info.szName);
 	SetDlgItemText (hWnd, IDC_TE_HELP,

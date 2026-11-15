@@ -10900,9 +10900,55 @@ static void SendAdminTalkItem(DWORD pID, int nNo)
 }
 
 /* ========================================================================= */
+/* 関数名：SendAdminTalkUseAll												 */
+/* 内容：管理者ウィンドウへ、マップの名前（MAP）と会話セットの使用先（USE）を送る */
+/*       USE は、保存されている NPC（プレイヤーでも、増えた分身でもない）のうち	 */
+/*       台詞が "@t番号" のもの 1 体ごとに 1 つ。書式の判定は TalkIsNpc と同じ	 */
+/* ========================================================================= */
+static void SendAdminTalkUseAll(DWORD pID)
+{
+	PCMDPARA_ADMINTALKUSE pPara = new CMDPARA_ADMINTALKUSE;
+	int i;
+
+	/* マップの名前（絞り込みの選択肢に使う） */
+	for (i = 0; i < g_aMapInfo.GetSize (); i ++) {
+		PMAPINFO pMap = g_aMapInfo[i];
+		if (pMap == NULL) {
+			continue;
+		}
+		ZeroMemory (pPara, sizeof (CMDPARA_ADMINTALKUSE));
+		pPara->byCmd	= CMD_ADMINTALK;
+		pPara->byCmdSub	= ADMINTALK_MAP;
+		pPara->dwMapID	= pMap->dwID;
+		if (pMap->pszName) {
+			SboTextCopy (pPara->szName, sizeof (pPara->szName), (const char *)pMap->pszName);
+		}
+		svrSock.SendTo (pID, (PBYTE)pPara, sizeof (CMDPARA_ADMINTALKUSE));
+	}
+
+	/* 使っている NPC */
+	for (i = 0; i < g_aCharInfo.GetSize (); i ++) {
+		PCHARINFO pNpc = g_aCharInfo[i];
+		if ((pNpc == NULL) || pNpc->szAcc[0] || (pNpc->dwParentTblID != (DWORD)-1) || !TalkIsNpc (pNpc)) {
+			continue;
+		}
+		ZeroMemory (pPara, sizeof (CMDPARA_ADMINTALKUSE));
+		pPara->byCmd	= CMD_ADMINTALK;
+		pPara->byCmdSub	= ADMINTALK_USE;
+		pPara->wTalkNo	= (WORD)TalkGetNo (pNpc);
+		pPara->dwMapID	= pNpc->dwMapID;
+		pPara->dwNpcID	= pNpc->dwNpcID;
+		SboTextCopy (pPara->szName, sizeof (pPara->szName), pNpc->szName);
+		svrSock.SendTo (pID, (PBYTE)pPara, sizeof (CMDPARA_ADMINTALKUSE));
+	}
+	SAFE_DELETE (pPara);
+}
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcADMINTALK											 */
 /* 内容：受信データ処理(管理者ウィンドウの会話データの編集)					 */
-/*       LISTREQ : 会話セットを 1 件ずつ ITEM で送る（0 件なら件数 0 の ITEM だけ）*/
+/*       LISTREQ : マップの名前（MAP）・使用先（USE）を送った後、				 */
+/*                 会話セットを 1 件ずつ ITEM で送る（0 件なら件数 0 の ITEM だけ）*/
 /*       SET     : データAPI（SboWebDataApply）と同じ確認を通して書き込み、	 */
 /*                 RESULT と、うまくいけばその会話セットの ITEM を返す		 */
 /* ========================================================================= */
@@ -10920,6 +10966,7 @@ void RecvDataProcADMINTALK(PBYTE pData, DWORD dwDataSize)
 
 	switch (pPara->byCmdSub) {
 	case ADMINTALK_LISTREQ:		/* 一覧の問い合わせ */
+		SendAdminTalkUseAll (pID);
 		if (g_aTalkInfo.GetSize () == 0) {
 			SendAdminTalkItem (pID, -1);
 			break;

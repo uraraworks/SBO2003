@@ -26,6 +26,9 @@ static DWORD s_dwFlagNameSeq = 0;
 static std::vector<TALKINFO> s_aTalk;									/* サーバーから届いた会話セット */
 static std::vector<BYTE> s_abyTalkHave;
 static DWORD s_dwTalkSeq = 0;
+static std::vector<CMDPARA_ADMINTALKUSE> s_aTalkMap;					/* サーバーから届いたマップの名前（届いた順＝サーバーのマップの並び） */
+static std::vector<CMDPARA_ADMINTALKUSE> s_aTalkUse;					/* サーバーから届いた会話セットの使用先 */
+static BOOL s_bTalkLoaded = FALSE;										/* 取り直しの返事が最後の 1 件まで届いたか */
 
 static BOOL s_bCharFlag = FALSE;										/* キャラのフラグが届いているか */
 static DWORD s_dwCharFlagTblID = 0;
@@ -189,7 +192,25 @@ void AdminFlagNameLoadIfEmpty(void)
 void AdminTalkOnRecv(const void *pData)
 {
 	const CMDPARA_ADMINTALK *pPara = (const CMDPARA_ADMINTALK *)pData;
-	int nCount = pPara->wCount;
+	int nCount;
+
+	/* マップの名前・使用先は ITEM より先に届く。覚えるだけで、画面へのお知らせは ITEM の時にまとめて */
+	if ((pPara->byCmdSub == ADMINTALK_MAP) || (pPara->byCmdSub == ADMINTALK_USE)) {
+		CMDPARA_ADMINTALKUSE Use = *(const CMDPARA_ADMINTALKUSE *)pData;
+
+		Use.szName[sizeof (Use.szName) - 1] = 0;
+		if (Use.byCmdSub == ADMINTALK_MAP) {
+			if ((int)s_aTalkMap.size () < 4096) {
+				s_aTalkMap.push_back (Use);
+			}
+		} else {
+			if ((int)s_aTalkUse.size () < 65536) {
+				s_aTalkUse.push_back (Use);
+			}
+		}
+		return;
+	}
+	nCount = pPara->wCount;
 
 	if (nCount > MAX_TALK) {
 		nCount = MAX_TALK;
@@ -215,6 +236,10 @@ void AdminTalkOnRecv(const void *pData)
 			}
 			s_abyTalkHave[pPara->nNo] = 1;
 		}
+		/* 一覧の最後の 1 件（0 件なら件数だけの ITEM）まで届いた */
+		if ((nCount == 0) || (pPara->nNo == nCount - 1)) {
+			s_bTalkLoaded = TRUE;
+		}
 		s_dwTalkSeq ++;
 		break;
 
@@ -229,8 +254,62 @@ void AdminTalkRequest(void)
 {
 	s_aTalk.clear ();
 	s_abyTalkHave.clear ();
+	s_aTalkMap.clear ();
+	s_aTalkUse.clear ();
+	s_bTalkLoaded = FALSE;
 	s_dwTalkSeq ++;
 	SendCmdADMINTALK (ADMINTALK_LISTREQ, 0, NULL);
+}
+
+BOOL AdminTalkIsLoaded(void)
+{
+	return s_bTalkLoaded;
+}
+
+int AdminTalkGetMapCount(void)
+{
+	return (int)s_aTalkMap.size ();
+}
+
+DWORD AdminTalkGetMapID(int nIndex)
+{
+	if ((nIndex < 0) || (nIndex >= (int)s_aTalkMap.size ())) {
+		return (DWORD)-1;
+	}
+	return s_aTalkMap[nIndex].dwMapID;
+}
+
+const char *AdminTalkGetMapName(int nIndex)
+{
+	if ((nIndex < 0) || (nIndex >= (int)s_aTalkMap.size ())) {
+		return "";
+	}
+	return s_aTalkMap[nIndex].szName;
+}
+
+/* マップIDから名前（名前が空・知らないマップなら「マップ番号」。pszOut は nSize バイト） */
+void AdminTalkFormatMapName(DWORD dwMapID, char *pszOut, int nSize)
+{
+	for (size_t i = 0; i < s_aTalkMap.size (); i ++) {
+		if ((s_aTalkMap[i].dwMapID == dwMapID) && s_aTalkMap[i].szName[0]) {
+			snprintf (pszOut, nSize, "%s", s_aTalkMap[i].szName);
+			return;
+		}
+	}
+	snprintf (pszOut, nSize, "マップ%u", (unsigned)dwMapID);
+}
+
+int AdminTalkGetUseCount(void)
+{
+	return (int)s_aTalkUse.size ();
+}
+
+const CMDPARA_ADMINTALKUSE *AdminTalkGetUse(int nIndex)
+{
+	if ((nIndex < 0) || (nIndex >= (int)s_aTalkUse.size ())) {
+		return NULL;
+	}
+	return &s_aTalkUse[nIndex];
 }
 
 void AdminTalkSend(int nNo, const TALKINFO *pInfo)
