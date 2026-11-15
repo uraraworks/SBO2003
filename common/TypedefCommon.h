@@ -3103,6 +3103,8 @@ enum {
 	ADMINTALK_ITEM,												/* 一覧の 1 件（サーバー→クライアント。nNo 番目・全部で wCount 件。0 件なら wCount=0 だけ届く） */
 	ADMINTALK_SET,												/* 書き込み（クライアント→サーバー。nNo=-1 なら足す。削除は byState=0。データAPIと同じ確認を通す） */
 	ADMINTALK_RESULT,											/* 書き込みの結果（サーバー→クライアント。byResult・szMsg。うまくいった時は続けて ITEM も届く） */
+	ADMINTALK_MAP,												/* マップの名前（サーバー→クライアント。CMDPARA_ADMINTALKUSE。LISTREQ への返事の先頭にマップの数だけ届く） */
+	ADMINTALK_USE,												/* 使用先（サーバー→クライアント。CMDPARA_ADMINTALKUSE。"@t番号" の台詞を持つ NPC 1 体ごとに、MAP の後・ITEM の前に届く） */
 };
 
 /* 管理者ウィンドウの会話データの編集（送受信とも同じ形） */
@@ -3116,6 +3118,17 @@ typedef struct _CMDPARA_ADMINTALK {
 	TALKINFO	Info;												/* 会話セット（ITEM・SET） */
 	char		szMsg[MAX_ADMINQUESTMSG];							/* 結果の文（RESULT。うまくいかなかった理由） */
 } CMDPARA_ADMINTALK, *PCMDPARA_ADMINTALK;
+
+/* 管理者ウィンドウの会話セット一覧に出す、マップの名前・会話セットの使用先（サーバー→クライアントだけ。ADMINTALK_MAP・ADMINTALK_USE）。
+   会話セットは全マップ分が 1 つの一覧に並ぶので、どのマップの NPC が使っているかを一緒に知らせる */
+typedef struct _CMDPARA_ADMINTALKUSE {
+	BYTE		byCmd;												/* コマンドID(CMD_ADMINTALK) */
+	BYTE		byCmdSub;											/* サブコマンド(ADMINTALK_MAP か ADMINTALK_USE) */
+	WORD		wTalkNo;											/* 会話セット番号（USE。NPC の台詞の "@t" の後ろの数字） */
+	DWORD		dwMapID;											/* マップID（MAP・USE） */
+	DWORD		dwNpcID;											/* NPC番号（USE。CHARINFO の dwNpcID。0 は未設定） */
+	char		szName[MAX_CHARNAMEBUF];							/* 名前（MAP: マップの名前 / USE: NPC の名前。UTF-8） */
+} CMDPARA_ADMINTALKUSE, *PCMDPARA_ADMINTALKUSE;
 
 /* 管理者ウィンドウのキャラのフラグ（CMD_ADMINCHARFLAG の byCmdSub） */
 enum {

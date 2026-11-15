@@ -980,6 +980,9 @@ BEGIN
     LTEXT           "会話セット一覧（@t番号で使う）：",IDC_STATIC,7,26,150,8
     LTEXT           "絞り込み",IDC_STATIC,7,40,30,8
     EDITTEXT        IDC_TK_FIND,38,38,80,12,ES_AUTOHSCROLL
+    LTEXT           "マップ",IDC_STATIC,124,40,22,8
+    COMBOBOX        IDC_TK_MAP,147,38,69,100,CBS_DROPDOWNLIST | WS_VSCROLL | 
+                    WS_TABSTOP
     CONTROL         "List2",IDC_LIST,"SysListView32",LVS_REPORT | 
                     LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_BORDER | 
                     WS_TABSTOP,7,53,209,103

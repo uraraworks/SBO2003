@@ -3798,6 +3798,12 @@ void RecvDataProcADMINTALK(PBYTE pData, DWORD dwDataSize)
 {
 	PCMDPARA_ADMINTALK pPara = (PCMDPARA_ADMINTALK)pData;
 
+	/* マップの名前・使用先は小さい別の形（会話セット 1 件を載せない） */
+	if ((dwDataSize >= sizeof (CMDPARA_ADMINTALKUSE)) &&
+		((pPara->byCmdSub == ADMINTALK_MAP) || (pPara->byCmdSub == ADMINTALK_USE))) {
+		AdminTalkOnRecv (pPara);
+		return;
+	}
 	if (dwDataSize < sizeof (CMDPARA_ADMINTALK)) {
 		return;
 	}

@@ -87,6 +87,7 @@ enum {
 	IDC_SPACESET,												/* キャラ情報: 空間を切り替える */
 	IDC_SPACEREQ,												/* キャラ情報: 空間の一覧を取り直す */
 	IDC_CHARFLAG,												/* キャラ情報: キャラのフラグを開く */
+	IDC_CHARTALK,												/* キャラ情報: 台詞が @t のNPCの会話セットの編集画面を開く */
 };
 
 /* ========================================================================= */
@@ -170,6 +171,7 @@ static HWND
 	m_hWndList2;												/* リストコントロール２ */
 
 /* 管理者の空間の切り替え（キャラ情報画面） */
+static HWND m_hWndButtonTalk;									/* キャラ情報の「会話編集」ボタン */
 static HWND m_hWndSpaceList, m_hWndSpaceSet, m_hWndSpaceReq;	/* 空間の一覧・切替ボタン・更新ボタン */
 static DWORD s_dwAdminSpace;									/* いま居る空間（0=ふつうの世界） */
 static int s_nAdminSpaceCount;									/* 一覧の数（ふつうの世界を除く） */
@@ -2561,6 +2563,26 @@ void AdminOnCommandCharInfo(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 			break;
 		}
 		ShowDlgCharFlag (hWnd, m_pParaCharInfo->dwTblID, m_pParaCharInfo->szName);
+		break;
+
+	/* 会話編集（台詞欄が "@t番号" のNPC。その番号の会話セットの編集画面を直接開く。無い番号なら新規作成） */
+	case IDC_CHARTALK:
+		{
+			char szSpeech[16];
+			int nNo = 0, i;
+
+			ZeroMemory (szSpeech, sizeof (szSpeech));
+			GetWindowText (m_hWndEdit1, szSpeech, sizeof (szSpeech) - 1);
+			/* 書式の判定はサーバー（SboSvrTalk の TalkIsNpc・TalkGetNo）と同じ：先頭が "@t" と数字、数字が続く間が番号 */
+			if ((szSpeech[0] != '@') || (szSpeech[1] != 't') || (szSpeech[2] < '0') || (szSpeech[2] > '9')) {
+				MessageBox (hWnd, "台詞の欄が「@t番号」（例：@t12）のNPCを選んでください。", "会話編集", MB_OK);
+				break;
+			}
+			for (i = 2; (szSpeech[i] >= '0') && (szSpeech[i] <= '9') && (nNo < 10000); i ++) {
+				nNo = nNo * 10 + (szSpeech[i] - '0');
+			}
+			OpenTalkEditFromNpc (hWnd, nNo);
+		}
 		break;
 
 	/* 向き */
@@ -8467,6 +8489,11 @@ void MakeAdminWndCharInfo(void)
 			12 * 17 + 76, 12 * 24 + 4, 40, 16, g_hWndAdmin, (HMENU)IDC_CHARFLAG, g_hInstance, NULL);
 	SendMessage (m_hWndButton12, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
+	/* 会話編集（台詞が "@t番号" のNPCの、その番号の会話セットの編集画面を開く。「フラグ」の右） */
+	m_hWndButtonTalk = CreateWindow ("BUTTON", "会話編集", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+			12 * 17 + 120, 12 * 24 + 4, 56, 16, g_hWndAdmin, (HMENU)IDC_CHARTALK, g_hInstance, NULL);
+	SendMessage (m_hWndButtonTalk, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+
 	SAFE_DELETE (m_pParaCharInfo);
 	m_pParaCharInfo = new CMDPARA_CHARINFO;
 	ZeroMemory (m_pParaCharInfo, sizeof (CMDPARA_CHARINFO));
@@ -8511,6 +8538,7 @@ void DeleteAdminWndCharInfo(void)
 	SAFE_DESTROYWND (m_hWndButton12);
 	SAFE_DESTROYWND (m_hWndButton13);
 	SAFE_DESTROYWND (m_hWndButton14);
+	SAFE_DESTROYWND (m_hWndButtonTalk);
 	SAFE_DESTROYWND (m_hWndScrBar1);
 	SAFE_DESTROYWND (m_hWndCombo1);
 	SAFE_DESTROYWND (m_hWndCombo2);

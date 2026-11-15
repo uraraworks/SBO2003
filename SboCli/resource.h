@@ -287,6 +287,7 @@
 #define IDC_FN_MSG                        1242
 #define IDC_TK_FIND                       1243
 #define IDC_TK_MSG                        1244
+#define IDC_TK_MAP                        1339
 #define IDC_TE_ID                         1245
 #define IDC_TE_NAME                       1246
 #define IDC_TE_LINES                      1247

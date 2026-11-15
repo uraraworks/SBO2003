@@ -41,6 +41,13 @@ extern void AdminTalkSend(int nNo, const TALKINFO *pInfo);				/* nNo 番目に�
 extern int  AdminTalkGetCount(void);									/* 届いている件数 */
 extern const TALKINFO *AdminTalkGet(int nNo);							/* 届いている 1 件（まだ届いていなければ NULL） */
 extern DWORD AdminTalkGetSeq(void);										/* 更新番号 */
+extern BOOL AdminTalkIsLoaded(void);									/* 取り直しの返事が最後の 1 件まで届いたか（使用先・マップの名前も届いている） */
+extern int  AdminTalkGetMapCount(void);									/* 届いているマップの数（絞り込みの選択肢） */
+extern DWORD AdminTalkGetMapID(int nIndex);								/* nIndex 番目のマップID（範囲外は -1） */
+extern const char *AdminTalkGetMapName(int nIndex);						/* nIndex 番目のマップの名前（空のことがある） */
+extern void AdminTalkFormatMapName(DWORD dwMapID, char *pszOut, int nSize);	/* マップIDから表示用の名前（名前が無ければ「マップ番号」） */
+extern int  AdminTalkGetUseCount(void);									/* 会話セットの使用先（"@t番号" の NPC）の数 */
+extern const CMDPARA_ADMINTALKUSE *AdminTalkGetUse(int nIndex);			/* 使用先 1 件（wTalkNo=会話セット番号・dwMapID・dwNpcID・szName=NPC名） */
 
 /* キャラのフラグ（プレイヤーのキャラ 1 人分。サーバーのキャラ番号 dwTblID で指す） */
 extern void AdminCharFlagRequest(DWORD dwTblID);						/* そのキャラの印と数値を取り直す */
