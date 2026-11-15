@@ -837,6 +837,7 @@ BOOL OnCreate(HWND hWnd)
 	g_bProcShopConfirm		= FALSE;
 	g_nProcShopSelect		= 0;
 	g_bBlock				= TRUE;
+	g_bViewNpcPut			= TRUE;		/* 既定は今まで通り見える */
 	g_byUseEfcID			= 0;
 	g_byTextFadeInOut		= 0;
 	g_bTitleSkip			= FALSE;

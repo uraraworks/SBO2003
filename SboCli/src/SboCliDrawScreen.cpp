@@ -31,6 +31,7 @@ void DrawCharLine		(int);										/* 指定ラインのキャラ描画 */
 void DrawChar2			(void);										/* キャラのエフェクトの描画 */
 void DrawChar3			(void);										/* キャラの名前等の描画 */
 void DrawETC			(void);										/* ゲージ等の描画 */
+static BOOL IsHideNpcPut	(PCHARINFO pChar);						/* NPC発生を描かない？ */
 static void DrawFrameRect	(int x, int y, int cx, int cy, COLORREF cl);	/* 1ドットの枠を描く */
 static void DrawGuardMark	(int x, int y);								/* 構えの盾マーク */
 static void DrawBuffIcons	(int x, int y, DWORD dwTblID);				/* 攻撃力・守備力アップのアイコン(system.png) */
@@ -1029,6 +1030,25 @@ void DrawMapLine(int nLine, int nType)
 
 
 /* ========================================================================= */
+/* 関数名：	IsHideNpcPut												 */
+/* 内容：	NPC発生（管理者にだけ見える目印）を描かないか				 */
+/* 			一般プレイヤーには見せない。管理者もスクショ用に				 */
+/* 			「その他→各種通知」の「NPC発生を表示」を外すと隠れる			 */
+/* ========================================================================= */
+
+static BOOL IsHideNpcPut(PCHARINFO pChar)
+{
+	if (pChar->byNpcType != NPCTYPE_PUT) {
+		return FALSE;
+	}
+	if (g_aCharInfo[g_nMyCharID]->byAdminLV == ADMINLV_USER) {
+		return TRUE;
+	}
+	return (g_bViewNpcPut == FALSE);
+}
+
+
+/* ========================================================================= */
 /* 関数名：	DrawCharLine													 */
 /* 内容：	キャラの描画													 */
 /* 日付：	2003/05/11														 */
@@ -1071,10 +1091,9 @@ void DrawCharLine(int nLine)
 			continue;
 		}
 
-		if (pCharMyChar->byAdminLV == ADMINLV_USER) {
-			if (pChar->byNpcType == NPCTYPE_PUT) {
-				continue;
-			}
+		/* NPC発生は管理者だけ見える（管理者も「各種通知」で隠せる） */
+		if (IsHideNpcPut (pChar)) {
+			continue;
 		}
 
 		nMapDark = 0;
@@ -1534,10 +1553,9 @@ void DrawChar2(void)
 			continue;
 		}
 
-		if (g_aCharInfo[g_nMyCharID]->byAdminLV == ADMINLV_USER) {
-			if (pChar->byNpcType == NPCTYPE_PUT) {
-				continue;
-			}
+		/* NPC発生は管理者だけ見える（管理者も「各種通知」で隠せる） */
+		if (IsHideNpcPut (pChar)) {
+			continue;
 		}
 		xTmp = dwMyX - pChar->dwX;
 		yTmp = dwMyY - pChar->dwY;
@@ -1618,10 +1636,9 @@ void DrawChar2(void)
 			continue;
 		}
 
-		if (g_aCharInfo[g_nMyCharID]->byAdminLV == ADMINLV_USER) {
-			if (pChar->byNpcType == NPCTYPE_PUT) {
-				continue;
-			}
+		/* NPC発生は管理者だけ見える（管理者も「各種通知」で隠せる） */
+		if (IsHideNpcPut (pChar)) {
+			continue;
 		}
 		xTmp = dwMyX - pChar->dwX;
 		yTmp = dwMyY - pChar->dwY;
@@ -1747,10 +1764,9 @@ void DrawChar3(void)
 			continue;
 		}
 
-		if (g_aCharInfo[g_nMyCharID]->byAdminLV == ADMINLV_USER) {
-			if (pChar->byNpcType == NPCTYPE_PUT) {
-				continue;
-			}
+		/* NPC発生は管理者だけ見える（管理者も「各種通知」で隠せる） */
+		if (IsHideNpcPut (pChar)) {
+			continue;
 		}
 
 		pDibDrawTmp.FillRect (0, 0, 8 * 20, 14 * 2, RGB (0, 0, 0));

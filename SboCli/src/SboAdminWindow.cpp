@@ -3686,6 +3686,11 @@ void AdminOnCommandEtcVersion(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 		g_bySoundCount = 0;
 		InvalidateRect (hWnd, NULL, TRUE);
 		break;
+
+	/* NPC発生を表示 */
+	case IDC_TMPCHECK1:
+		g_bViewNpcPut = ((SendMessage (m_hWndCheck1, BM_GETCHECK, 0, 0) & BST_CHECKED) != 0);
+		break;
 	}
 }
 
@@ -9245,6 +9250,12 @@ void MakeAdminWndEtcVersion(void)
 	m_hWndButton7 = CreateWindow ("BUTTON", "ｶｳﾝﾀﾘｾｯﾄ", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
 			12 * 13, 12 * 5, 12 * 5, 16, g_hWndAdmin, (HMENU)IDC_BUTTON7, g_hInstance, NULL);
 	SendMessage (m_hWndButton7, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+
+	/* NPC発生（管理者にだけ見える目印）の表示。スクショに写さない時に外す */
+	m_hWndCheck1 = CreateWindow ("BUTTON", "NPC発生を表示", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+			12 * 0, 12 * 9, 12 * 9, 16, g_hWndAdmin, (HMENU)IDC_TMPCHECK1, g_hInstance, NULL);
+	SendMessage (m_hWndCheck1, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+	SendMessage (m_hWndCheck1, BM_SETCHECK, g_bViewNpcPut ? BST_CHECKED : BST_UNCHECKED, 0);
 }
 
 /* ========================================================================= */
@@ -9261,6 +9272,7 @@ void DeleteAdminWndEtcVersion(void)
 	SAFE_DESTROYWND (m_hWndButton5);
 	SAFE_DESTROYWND (m_hWndButton6);
 	SAFE_DESTROYWND (m_hWndButton7);
+	SAFE_DESTROYWND (m_hWndCheck1);
 }
 
 /* ========================================================================= */
