@@ -2011,7 +2011,7 @@ int GetMapDarkLevel(PCHARINFO pChar, int x, int y)
 /* 壁をたどって照らす時、その壁(表の bx,by・マップの mx,my)が
    「灯りの丸の中なのに灯りが届いていない床(閉まった扉の向こうの通路など)」の方に近ければ TRUE。
    灯りの届いた床と同じ近さなら照らす(部屋の壁はそのまま見せる)。
-   見ない所(3マスより遠く)に暗い床が無ければ照らす */
+   見ない所(3マスより遠く)に暗い床が無ければ照らす。表の外の床は暗い床として数える */
 #define TRACEWALL_DARK_RANGE	(3)									/* 壁をたどる時に暗い床を探すマス数 */
 static BOOL IsTraceWallNearDarkFloor(PCHARINFO pChar, int bx, int by, int mx, int my)
 {
@@ -2023,15 +2023,19 @@ static BOOL IsTraceWallNearDarkFloor(PCHARINFO pChar, int bx, int by, int mx, in
 		for (dx = -TRACEWALL_DARK_RANGE; dx <= TRACEWALL_DARK_RANGE; dx ++) {
 			nx = bx + dx;
 			ny = by + dy;
-			/* 表の外は分からないので数えない */
-			if ((nx < 0) || (nx >= nWidth) || (ny < 0) || (ny >= DRAW_PARTS_Y * 2 + 3)) {
-				continue;
-			}
 			nDist = max (abs (dx), abs (dy));
 			if ((nDist >= nLit) && (nDist >= nDark)) {
 				continue;
 			}
 			if (IsSightWall (mx + dx, my + dy)) {
+				continue;
+			}
+			/* 表の外(灯りを広げていない所)の床は、灯りの丸の中なら暗い床として数える。
+			   数えないと、1歩動いて扉の向こうの床が表に入ったとたん壁が消えていた */
+			if ((nx < 0) || (nx >= nWidth) || (ny < 0) || (ny >= DRAW_PARTS_Y * 2 + 3)) {
+				if (GetMapDarkLevel (pChar, mx + dx, my + dy) > 1) {
+					nDark = min (nDark, nDist);
+				}
 				continue;
 			}
 			if (g_pMapDarkTmpPos[nx + nWidth * ny] == 2) {
