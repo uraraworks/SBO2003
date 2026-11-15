@@ -858,14 +858,15 @@
 	}
 	/* 縦持ち：パッド（#sbo-pad）の上端に重ねる。左は戦闘中なら「表示」が隠れているので端まで、
 	   登録（一覧を開いている間）は「表示」が出ているかもしれないのでその右から。
-	   右は「特技」「戦闘」の手前まで。十字キー（上端 46px）にも掛からない */
+	   右は「特技」「戦闘」の手前まで。十字キー（上端 46px）とは 10px ほどあけ、押し間違えないようにする
+	   （ボタンは低めの 26px で、番号と名前を横に並べる） */
 	@media (max-aspect-ratio: 129/100) {
 		body.sbo-pad #sbo-magic.sbo-on {
 			position: absolute;
 			left: calc(12px + env(safe-area-inset-left));
 			right: calc(130px + env(safe-area-inset-right));
 			top: 2px;
-			height: 42px;
+			height: 34px;
 			z-index: 5;
 		}
 		body.sbo-pad #sbo-magic.sbo-reg {
@@ -880,13 +881,22 @@
 			position: static;
 			flex: 1 1 0;
 			width: auto;
-			height: 36px;
-			flex-direction: column;
-			gap: 2px;
+			height: 26px;
+			flex-direction: row;
+			gap: 3px;
 			border-radius: 8px;
 		}
 		#sbo-magic .sbo-magic-btn .sbo-magic-no {
-			font-size: 9px;
+			font-size: 10px;
+		}
+		/* 登録列は「表示」の右からで幅が狭いので、すき間を詰めて「1強打」を枠に収める */
+		body.sbo-pad #sbo-magic.sbo-reg {
+			gap: 3px;
+		}
+		body.sbo-pad #sbo-pad #sbo-magic.sbo-reg .sbo-magic-btn {
+			gap: 1px;
+			padding: 0 1px;
+			font-size: 12px;
 		}
 	}
 	.sbo-magic-btn {
