@@ -23,6 +23,7 @@
 #include "SboAdminWindow.h"
 #include "AdminWindowOld/AdminDlgNpcRoute.h"
 #include "AdminWindowOld/AdminDlgQuestInfo.h"
+#include "AdminWindowOld/AdminFlagTalk.h"
 #include "SboCliDebugWindow.h"
 #include "SboCliMsgLogWindow.h"
 #include "SboCliBalloonWindow.h"
@@ -147,6 +148,10 @@ void	RecvDataProcMAGICKEY				(PBYTE, DWORD);			/* 受信データ処理(特技�
 void	RecvDataProcADMINUNDO				(PBYTE, DWORD);			/* 受信データ処理(管理者画面の「元に戻す」) */
 void	RecvDataProcADMINSPACE				(PBYTE, DWORD);			/* 受信データ処理(管理者の空間の切り替え) */
 void	RecvDataProcADMINQUEST				(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのギルドの依頼の編集) */
+void	RecvDataProcADMINFLAGNAME			(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのフラグの名前表の編集) */
+void	RecvDataProcADMINTALK				(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウの会話データの編集) */
+void	RecvDataProcADMINCHARFLAG			(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのキャラのフラグ) */
+void	RecvDataProcTALKMSG					(PBYTE, DWORD);			/* 受信データ処理(会話データで選ばれた台詞) */
 void	RecvDataProcHASTE					(PBYTE, DWORD);			/* 受信データ処理(加速の状態) */
 void	RecvDataProcCHARBUFF				(PBYTE, DWORD);			/* 受信データ処理(攻撃力・守備力アップの残り) */
 void	RecvDataProcMAKERINFO				(PBYTE, DWORD);			/* 受信データ処理(作り手情報) */
@@ -404,6 +409,10 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcADMINQUEST,				/* CMD_ADMINQUEST */
 	NULL,								/* CMD_ADMINRESURRECT(クライアント→サーバーのみ) */
 	RecvDataProcMAGICKEY,				/* CMD_MAGICKEY */
+	RecvDataProcTALKMSG,				/* CMD_TALKMSG */
+	RecvDataProcADMINFLAGNAME,			/* CMD_ADMINFLAGNAME */
+	RecvDataProcADMINTALK,				/* CMD_ADMINTALK */
+	RecvDataProcADMINCHARFLAG,			/* CMD_ADMINCHARFLAG */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -3714,6 +3723,92 @@ void RecvDataProcADMINQUEST(PBYTE pData, DWORD dwDataSize)
 	}
 	pPara->szMsg[sizeof (pPara->szMsg) - 1] = 0;
 	AdminQuestOnRecv (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINFLAGNAME										 */
+/* 内容：受信データ処理(管理者ウィンドウのフラグの名前表の編集)				 */
+/*       一覧の続き・書き込みの結果が届く（画面は無いので覚えておくだけ）		 */
+/* ========================================================================= */
+void RecvDataProcADMINFLAGNAME(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINFLAGNAME pPara = (PCMDPARA_ADMINFLAGNAME)pData;
+
+	if (dwDataSize < sizeof (CMDPARA_ADMINFLAGNAME)) {
+		return;
+	}
+	pPara->szMsg[sizeof (pPara->szMsg) - 1] = 0;
+	AdminFlagNameOnRecv (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINTALK											 */
+/* 内容：受信データ処理(管理者ウィンドウの会話データの編集)					 */
+/*       一覧の 1 件・書き込みの結果が届く（画面は無いので覚えておくだけ）		 */
+/* ========================================================================= */
+void RecvDataProcADMINTALK(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINTALK pPara = (PCMDPARA_ADMINTALK)pData;
+
+	if (dwDataSize < sizeof (CMDPARA_ADMINTALK)) {
+		return;
+	}
+	pPara->szMsg[sizeof (pPara->szMsg) - 1] = 0;
+	AdminTalkOnRecv (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINCHARFLAG										 */
+/* 内容：受信データ処理(管理者ウィンドウのキャラのフラグ)					 */
+/*       キャラの印・数値・変更の結果が届く（画面は無いので覚えておくだけ）	 */
+/* ========================================================================= */
+void RecvDataProcADMINCHARFLAG(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINCHARFLAG pPara = (PCMDPARA_ADMINCHARFLAG)pData;
+
+	if (dwDataSize < sizeof (CMDPARA_ADMINCHARFLAG)) {
+		return;
+	}
+	pPara->szMsg[sizeof (pPara->szMsg) - 1] = 0;
+	AdminCharFlagOnRecv (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcTALKMSG												 */
+/* 内容：受信データ処理(会話データで選ばれた台詞)							 */
+/*       普通の町の人に話しかけた時と同じ会話の窓（ページ送りあり）で出す。	 */
+/*       台詞はサーバーが話しかけた本人にだけ送ってくる						 */
+/* ========================================================================= */
+void RecvDataProcTALKMSG(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_TALKMSG pPara = (PCMDPARA_TALKMSG)pData;
+	PWNDINFO pWndTmp;
+	DWORD dwSize;
+
+	if (g_byGameState < GAMESTATE_MOVE) {
+		return;
+	}
+	if (dwDataSize < sizeof (CMDPARA_TALKMSG)) {
+		return;
+	}
+	/* 届いた大きさより長い申告は、届いた分までにする */
+	dwSize = pPara->wSize;
+	if (dwSize > dwDataSize - sizeof (CMDPARA_TALKMSG)) {
+		dwSize = dwDataSize - sizeof (CMDPARA_TALKMSG);
+	}
+	if (dwSize == 0) {
+		return;
+	}
+
+	LPSTR pszTmp = new char[dwSize + 1];
+	ZeroMemory (pszTmp, dwSize + 1);
+	memcpy (pszTmp, pData + sizeof (CMDPARA_TALKMSG), dwSize);
+
+	pWndTmp = MakeWindowMSG (pszTmp, TRUE);
+	SAFE_DELETE_ARRAY (pszTmp);
+	g_WndInfo.Add (pWndTmp);
+	g_dwActiveMsgID = pWndTmp->dwID;
+	g_bDraw = TRUE;
 }
 
 /* ========================================================================= */

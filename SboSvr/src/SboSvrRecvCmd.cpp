@@ -46,6 +46,8 @@ typedef void (*RECVDATAPROC)(PBYTE, DWORD);
 void	MyOutputDebugString			(LPCTSTR lpszFormat, ...);						/* デバッグメッセージ出力 */
 BOOL	CheckAdminBan				(DWORD);										/* 管理者権限かチェックして、違ってたらＢＡＮ */
 extern void SboDataQuestApplyInfo	(int, const QUESTINFO *, int &, std::string &);	/* 管理者ウィンドウから依頼を書き込む(server/web_data_svr.cpp) */
+extern void SboDataFlagNameApplyInfo	(int, const FLAGNAMEINFO *, int &, std::string &);	/* 管理者ウィンドウからフラグの名前表を書き込む(server/web_data_svr.cpp) */
+extern void SboDataTalkApplyInfo		(int, const TALKINFO *, int &, std::string &);		/* 管理者ウィンドウから会話データを書き込む(server/web_data_svr.cpp) */
 PCHARINFO AddChar					(PCHARINFO, BOOL bCheck=TRUE);					/* キャラ追加 */
 void	CharNpcIdEnsure				(PCHARINFO);									/* NPC番号がまだ無ければ振る(SboSvrSaveLoadChar.cpp) */
 void	DeleteChar					(DWORD);										/* キャラ削除 */
@@ -210,6 +212,9 @@ void	RecvDataProcQUEST						(PBYTE, DWORD);				/* ギルドの仕事依頼（一
 void	RecvDataProcADMINQUEST					(PBYTE, DWORD);				/* 管理者ウィンドウのギルドの依頼の編集 */
 void	RecvDataProcADMINRESURRECT				(PBYTE, DWORD);				/* 管理者ウィンドウからキャラを蘇生 */
 void	RecvDataProcMAGICKEY					(PBYTE, DWORD);				/* 特技ショートカットの登録 */
+void	RecvDataProcADMINFLAGNAME				(PBYTE, DWORD);				/* 管理者ウィンドウのフラグの名前表の編集 */
+void	RecvDataProcADMINTALK					(PBYTE, DWORD);				/* 管理者ウィンドウの会話データの編集 */
+void	RecvDataProcADMINCHARFLAG				(PBYTE, DWORD);				/* 管理者ウィンドウのキャラのフラグの取得・変更 */
 void	RecvDataProcSORTITEM					(PBYTE, DWORD);				/* 道具欄・預かり所の並べ替え */
 void	RecvDataProcLEAVEITEMDISPOSE			(PBYTE, DWORD);				/* 預かり所の品を売る・捨てる */
 void	RecvDataProcBATTLEMODE					(PBYTE, DWORD);				/* 戦闘モードの切り替え通知 */
@@ -443,6 +448,10 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcADMINQUEST,				/* CMD_ADMINQUEST */
 	RecvDataProcADMINRESURRECT,			/* CMD_ADMINRESURRECT */
 	RecvDataProcMAGICKEY,				/* CMD_MAGICKEY */
+	NULL,								/* CMD_TALKMSG(サーバー→クライアントのみ) */
+	RecvDataProcADMINFLAGNAME,			/* CMD_ADMINFLAGNAME */
+	RecvDataProcADMINTALK,				/* CMD_ADMINTALK */
+	RecvDataProcADMINCHARFLAG,			/* CMD_ADMINCHARFLAG */
 
 	NULL
 };
@@ -5974,6 +5983,13 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 		}
 		return;
 	}
+	/* 会話データのNPC（台詞が「@tNNN」）？ 話しかけた本人のフラグとレベルで行を選び、本人にだけ台詞を送る */
+	if (TalkIsNpc (pChar)) {
+		if ((s_nCharNoRecv >= 0) && IsNearRecvChar (pChar, 2)) {
+			TalkNpcTalk (g_aCharInfo[s_nCharNoRecv], pChar);
+		}
+		return;
+	}
 	/* ギルドのNPC（台詞が「@gNN」）？ 依頼の一覧を送る */
 	if (QuestIsGuildNpc (pChar)) {
 		if ((s_nCharNoRecv >= 0) && IsNearRecvChar (pChar, 2)) {
@@ -10777,6 +10793,250 @@ void RecvDataProcADMINQUEST(PBYTE pData, DWORD dwDataSize)
 		}
 		break;
 	}
+}
+
+/* ========================================================================= */
+/* 関数名：SendAdminFlagNameItem											 */
+/* 内容：管理者ウィンドウへフラグの名前表を nNo 番目から最大 1 パケットぶん送る	 */
+/*       （nNo が範囲外なら件数だけ）										 */
+/* ========================================================================= */
+static void SendAdminFlagNameItem(DWORD pID, int nNo)
+{
+	PCMDPARA_ADMINFLAGNAME pPara = new CMDPARA_ADMINFLAGNAME;
+	int i, nCount = g_aFlagNameInfo.GetSize ();
+
+	ZeroMemory (pPara, sizeof (CMDPARA_ADMINFLAGNAME));
+	pPara->byCmd	= CMD_ADMINFLAGNAME;
+	pPara->byCmdSub	= ADMINFLAGNAME_ITEM;
+	pPara->wCount	= (WORD)nCount;
+	pPara->nNo		= nNo;
+	if ((nNo >= 0) && (nNo < nCount)) {
+		for (i = 0; (i < MAX_ADMINFLAGNAMEBATCH) && (nNo + i < nCount); i ++) {
+			if (g_aFlagNameInfo[nNo + i]) {
+				pPara->aInfo[i] = *g_aFlagNameInfo[nNo + i];
+			}
+		}
+		pPara->byCount = (BYTE)i;
+	} else {
+		pPara->nNo = -1;
+	}
+	svrSock.SendTo (pID, (PBYTE)pPara, sizeof (CMDPARA_ADMINFLAGNAME));
+	SAFE_DELETE (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINFLAGNAME										 */
+/* 内容：受信データ処理(管理者ウィンドウのフラグの名前表の編集)				 */
+/*       LISTREQ : 名前表を MAX_ADMINFLAGNAMEBATCH 件ずつ ITEM で送る			 */
+/*                 （0 件なら件数 0 の ITEM だけ）							 */
+/*       SET     : データAPI（SboWebDataApply）と同じ確認を通して書き込み、	 */
+/*                 RESULT と、うまくいけばその 1 件の ITEM を返す			 */
+/* ========================================================================= */
+void RecvDataProcADMINFLAGNAME(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINFLAGNAME pPara = (PCMDPARA_ADMINFLAGNAME)pData;
+	PCMDPARA_ADMINFLAGNAME pRes;
+	DWORD pID = s_pIDRecv;
+	int i, nNoOut = -1;
+	std::string strErr;
+
+	if (s_dwRecvSize < sizeof (CMDPARA_ADMINFLAGNAME)) {
+		return;
+	}
+
+	switch (pPara->byCmdSub) {
+	case ADMINFLAGNAME_LISTREQ:	/* 一覧の問い合わせ */
+		if (g_aFlagNameInfo.GetSize () == 0) {
+			SendAdminFlagNameItem (pID, -1);
+			break;
+		}
+		for (i = 0; i < g_aFlagNameInfo.GetSize (); i += MAX_ADMINFLAGNAMEBATCH) {
+			SendAdminFlagNameItem (pID, i);
+		}
+		break;
+
+	case ADMINFLAGNAME_SET:		/* 書き込み */
+		pPara->aInfo[0].szName[sizeof (pPara->aInfo[0].szName) - 1] = 0;
+		SboDataFlagNameApplyInfo (pPara->nNo, &pPara->aInfo[0], nNoOut, strErr);
+		pRes = new CMDPARA_ADMINFLAGNAME;
+		ZeroMemory (pRes, sizeof (CMDPARA_ADMINFLAGNAME));
+		pRes->byCmd		= CMD_ADMINFLAGNAME;
+		pRes->byCmdSub	= ADMINFLAGNAME_RESULT;
+		pRes->byResult	= strErr.empty () ? 1 : 0;
+		pRes->wCount	= (WORD)g_aFlagNameInfo.GetSize ();
+		pRes->nNo		= strErr.empty () ? nNoOut : pPara->nNo;
+		SboTextCopy (pRes->szMsg, sizeof (pRes->szMsg), strErr.c_str ());
+		svrSock.SendTo (pID, (PBYTE)pRes, sizeof (CMDPARA_ADMINFLAGNAME));
+		SAFE_DELETE (pRes);
+		if (strErr.empty ()) {
+			SendAdminFlagNameItem (pID, nNoOut);
+		}
+		break;
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：SendAdminTalkItem												 */
+/* 内容：管理者ウィンドウへ会話セット 1 件を送る（nNo が範囲外なら件数だけ）	 */
+/* ========================================================================= */
+static void SendAdminTalkItem(DWORD pID, int nNo)
+{
+	PCMDPARA_ADMINTALK pPara = new CMDPARA_ADMINTALK;
+
+	ZeroMemory (pPara, sizeof (CMDPARA_ADMINTALK));
+	pPara->byCmd	= CMD_ADMINTALK;
+	pPara->byCmdSub	= ADMINTALK_ITEM;
+	pPara->wCount	= (WORD)g_aTalkInfo.GetSize ();
+	pPara->nNo		= nNo;
+	if ((nNo >= 0) && (nNo < g_aTalkInfo.GetSize ()) && g_aTalkInfo[nNo]) {
+		pPara->Info = *g_aTalkInfo[nNo];
+	} else {
+		pPara->nNo = -1;
+	}
+	svrSock.SendTo (pID, (PBYTE)pPara, sizeof (CMDPARA_ADMINTALK));
+	SAFE_DELETE (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINTALK											 */
+/* 内容：受信データ処理(管理者ウィンドウの会話データの編集)					 */
+/*       LISTREQ : 会話セットを 1 件ずつ ITEM で送る（0 件なら件数 0 の ITEM だけ）*/
+/*       SET     : データAPI（SboWebDataApply）と同じ確認を通して書き込み、	 */
+/*                 RESULT と、うまくいけばその会話セットの ITEM を返す		 */
+/* ========================================================================= */
+void RecvDataProcADMINTALK(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINTALK pPara = (PCMDPARA_ADMINTALK)pData;
+	PCMDPARA_ADMINTALK pRes;
+	DWORD pID = s_pIDRecv;
+	int i, nNoOut = -1;
+	std::string strErr;
+
+	if (s_dwRecvSize < sizeof (CMDPARA_ADMINTALK)) {
+		return;
+	}
+
+	switch (pPara->byCmdSub) {
+	case ADMINTALK_LISTREQ:		/* 一覧の問い合わせ */
+		if (g_aTalkInfo.GetSize () == 0) {
+			SendAdminTalkItem (pID, -1);
+			break;
+		}
+		for (i = 0; i < g_aTalkInfo.GetSize (); i ++) {
+			SendAdminTalkItem (pID, i);
+		}
+		break;
+
+	case ADMINTALK_SET:			/* 書き込み */
+		SboDataTalkApplyInfo (pPara->nNo, &pPara->Info, nNoOut, strErr);
+		pRes = new CMDPARA_ADMINTALK;
+		ZeroMemory (pRes, sizeof (CMDPARA_ADMINTALK));
+		pRes->byCmd		= CMD_ADMINTALK;
+		pRes->byCmdSub	= ADMINTALK_RESULT;
+		pRes->byResult	= strErr.empty () ? 1 : 0;
+		pRes->wCount	= (WORD)g_aTalkInfo.GetSize ();
+		pRes->nNo		= strErr.empty () ? nNoOut : pPara->nNo;
+		SboTextCopy (pRes->szMsg, sizeof (pRes->szMsg), strErr.c_str ());
+		svrSock.SendTo (pID, (PBYTE)pRes, sizeof (CMDPARA_ADMINTALK));
+		SAFE_DELETE (pRes);
+		if (strErr.empty ()) {
+			SendAdminTalkItem (pID, nNoOut);
+		}
+		break;
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：SendAdminCharFlagInfo											 */
+/* 内容：管理者ウィンドウへキャラのフラグ（印・数値）を全部送る				 */
+/* ========================================================================= */
+static void SendAdminCharFlagInfo(DWORD pID, PCHARINFO pChar)
+{
+	PCMDPARA_ADMINCHARFLAG pPara = new CMDPARA_ADMINCHARFLAG;
+
+	ZeroMemory (pPara, sizeof (CMDPARA_ADMINCHARFLAG));
+	pPara->byCmd	= CMD_ADMINCHARFLAG;
+	pPara->byCmdSub	= ADMINCHARFLAG_INFO;
+	pPara->dwTblID	= pChar->dwTblID;
+	CopyMemory (pPara->abyFlag, pChar->abyFlag, sizeof (pPara->abyFlag));
+	CopyMemory (pPara->abyFlagNum, pChar->abyFlagNum, sizeof (pPara->abyFlagNum));
+	svrSock.SendTo (pID, (PBYTE)pPara, sizeof (CMDPARA_ADMINCHARFLAG));
+	SAFE_DELETE (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：SendAdminCharFlagResult											 */
+/* 内容：管理者ウィンドウへキャラのフラグの変更の結果を送る					 */
+/* ========================================================================= */
+static void SendAdminCharFlagResult(DWORD pID, DWORD dwTblID, BYTE byResult, LPCSTR pszMsg)
+{
+	PCMDPARA_ADMINCHARFLAG pPara = new CMDPARA_ADMINCHARFLAG;
+
+	ZeroMemory (pPara, sizeof (CMDPARA_ADMINCHARFLAG));
+	pPara->byCmd	= CMD_ADMINCHARFLAG;
+	pPara->byCmdSub	= ADMINCHARFLAG_RESULT;
+	pPara->byResult	= byResult;
+	pPara->dwTblID	= dwTblID;
+	SboTextCopy (pPara->szMsg, sizeof (pPara->szMsg), pszMsg);
+	svrSock.SendTo (pID, (PBYTE)pPara, sizeof (CMDPARA_ADMINCHARFLAG));
+	SAFE_DELETE (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINCHARFLAG										 */
+/* 内容：受信データ処理(管理者ウィンドウのキャラのフラグの取得・変更)		 */
+/*       GET : 相手（プレイヤーのキャラ）の印と数値を INFO で返す			 */
+/*       SET : 印を立てる・消す／数値を ○にする。結果を RESULT で、			 */
+/*             うまくいけば変えた後の INFO も返す							 */
+/*       相手はログアウト中のプレイヤーでもよい（次にログインした時に効く）	 */
+/* ========================================================================= */
+void RecvDataProcADMINCHARFLAG(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINCHARFLAG pPara = (PCMDPARA_ADMINCHARFLAG)pData;
+	PCHARINFO pChar;
+	DWORD pID = s_pIDRecv;
+
+	if (s_dwRecvSize < sizeof (CMDPARA_ADMINCHARFLAG)) {
+		return;
+	}
+	if ((pPara->byCmdSub != ADMINCHARFLAG_GET) && (pPara->byCmdSub != ADMINCHARFLAG_SET)) {
+		return;
+	}
+	if (pPara->dwTblID >= (DWORD)g_aCharInfo.GetSize ()) {
+		SendAdminCharFlagResult (pID, pPara->dwTblID, 0, "キャラが見つかりません。");
+		return;
+	}
+	pChar = g_aCharInfo[pPara->dwTblID];
+	/* プレイヤーのキャラだけ（NPC・敵は持たない） */
+	if ((pChar == NULL) || (pChar->byNpcType != NPCTYPE_INIT) || (pChar->szAcc[0] == 0)) {
+		SendAdminCharFlagResult (pID, pPara->dwTblID, 0, "プレイヤーのキャラを選んでください。");
+		return;
+	}
+
+	if (pPara->byCmdSub == ADMINCHARFLAG_GET) {
+		SendAdminCharFlagInfo (pID, pChar);
+		return;
+	}
+
+	/* 変更 */
+	if (pPara->byKind == FLAGKIND_BIT) {
+		if ((pPara->wNo >= MAX_FLAGBIT) || (pPara->wValue > 1)) {
+			SendAdminCharFlagResult (pID, pPara->dwTblID, 0, "印の番号は 0〜1023、値は 0（消す）か 1（立てる）で指定してください。");
+			return;
+		}
+		FlagBitSet (pChar->abyFlag, pPara->wNo, pPara->wValue ? TRUE : FALSE);
+	} else if (pPara->byKind == FLAGKIND_NUM) {
+		if ((pPara->wNo >= MAX_FLAGNUM) || (pPara->wValue > 255)) {
+			SendAdminCharFlagResult (pID, pPara->dwTblID, 0, "数値の番号は 0〜127、値は 0〜255 で指定してください。");
+			return;
+		}
+		FlagNumSet (pChar->abyFlagNum, pPara->wNo, pPara->wValue);
+	} else {
+		SendAdminCharFlagResult (pID, pPara->dwTblID, 0, "種類は 0（印）か 1（数値）で指定してください。");
+		return;
+	}
+	SendAdminCharFlagResult (pID, pPara->dwTblID, 1, "");
+	SendAdminCharFlagInfo (pID, pChar);
 }
 
 /* ========================================================================= */

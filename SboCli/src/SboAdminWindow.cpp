@@ -23,6 +23,9 @@
 #include "AdminWindowOld/AdminDlgMapLight.h"
 #include "AdminWindowOld/AdminDlgStTmpInfo.h"
 #include "AdminWindowOld/AdminDlgQuestInfo.h"
+#include "AdminWindowOld/AdminDlgFlagName.h"
+#include "AdminWindowOld/AdminDlgTalk.h"
+#include "AdminWindowOld/AdminDlgCharFlag.h"
 #include "AdminWindowOld/AdminListFilter.h"
 #include "AdminWindowOld/AdminDlgNpcRoute.h"
 
@@ -83,6 +86,7 @@ enum {
 	IDC_SPACELIST,												/* キャラ情報: 空間の一覧 */
 	IDC_SPACESET,												/* キャラ情報: 空間を切り替える */
 	IDC_SPACEREQ,												/* キャラ情報: 空間の一覧を取り直す */
+	IDC_CHARFLAG,												/* キャラ情報: キャラのフラグを開く */
 };
 
 /* ========================================================================= */
@@ -1559,6 +1563,16 @@ void AdminOnCommand(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 		g_nAdminWindowType = IDM_ETC_QUEST;
 		ShowDlgQuestInfo (hWnd);
 		break;
+	case IDM_ETC_FLAGNAME:
+		DeleteAdminWnd ();
+		g_nAdminWindowType = IDM_ETC_FLAGNAME;
+		ShowDlgFlagName (hWnd);
+		break;
+	case IDM_ETC_TALK:
+		DeleteAdminWnd ();
+		g_nAdminWindowType = IDM_ETC_TALK;
+		ShowDlgTalk (hWnd);
+		break;
 	}
 
 	switch (g_nAdminWindowType) {
@@ -2538,6 +2552,15 @@ void AdminOnCommandCharInfo(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 	/* 空間の一覧を取り直す */
 	case IDC_SPACEREQ:
 		SendCmdADMINSPACE (ADMINSPACE_LISTREQ, 0);
+		break;
+
+	/* キャラのフラグ（選んでいるプレイヤーの印・数値を名前付きで見て直す） */
+	case IDC_CHARFLAG:
+		if (!m_pParaCharInfo || (m_pParaCharInfo->szName[0] == 0)) {
+			MessageBox (hWnd, "キャラを選んでください。", "キャラのフラグ", MB_OK);
+			break;
+		}
+		ShowDlgCharFlag (hWnd, m_pParaCharInfo->dwTblID, m_pParaCharInfo->szName);
 		break;
 
 	/* 向き */
@@ -7456,6 +7479,9 @@ void DeleteAdminWnd(void)
 	CloseDlgEquUserInfo ();
 	CloseDlgStTmpInfo ();
 	CloseDlgQuestInfo ();
+	CloseDlgFlagName ();
+	CloseDlgTalk ();
+	CloseDlgCharFlag ();
 	CloseDlgAccSearch ();
 	CloseDlgNpcRoute ();
 	CloseDlgEtcSubGame ();
@@ -8431,6 +8457,11 @@ void MakeAdminWndCharInfo(void)
 	AdminSpaceFillList ();
 	SendCmdADMINSPACE (ADMINSPACE_LISTREQ, 0);
 
+	/* キャラのフラグ（選んでいるプレイヤーの印・数値。NPC には無い） */
+	m_hWndButton12 = CreateWindow ("BUTTON", "フラグ", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+			12 * 17 + 76, 12 * 24 + 4, 40, 16, g_hWndAdmin, (HMENU)IDC_CHARFLAG, g_hInstance, NULL);
+	SendMessage (m_hWndButton12, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+
 	SAFE_DELETE (m_pParaCharInfo);
 	m_pParaCharInfo = new CMDPARA_CHARINFO;
 	ZeroMemory (m_pParaCharInfo, sizeof (CMDPARA_CHARINFO));
@@ -8472,6 +8503,7 @@ void DeleteAdminWndCharInfo(void)
 	SAFE_DESTROYWND (m_hWndButton9);
 	SAFE_DESTROYWND (m_hWndButton10);
 	SAFE_DESTROYWND (m_hWndButton11);
+	SAFE_DESTROYWND (m_hWndButton12);
 	SAFE_DESTROYWND (m_hWndButton13);
 	SAFE_DESTROYWND (m_hWndButton14);
 	SAFE_DESTROYWND (m_hWndScrBar1);

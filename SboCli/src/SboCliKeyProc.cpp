@@ -8617,6 +8617,20 @@ void CmdProcHanasu(PWNDINFO pWnd)
 		}
 		return;
 
+	/* 会話データ(@tNNN)？ 話す内容は、話した人のフラグを見てサーバーが選び、その人にだけ CMD_TALKMSG で届く
+	   （台詞そのものはクライアントへ送られていない。依頼の @g と同じ流れ） */
+	} else if (pChar2->pszNpcSpeech[0] == '@' && pChar2->pszNpcSpeech[1] == 't' &&
+			(pChar2->pszNpcSpeech[2] >= '0') && (pChar2->pszNpcSpeech[2] <= '9')) {
+		SendCmdTALKRAND (pChar2->dwTblID);
+		pChar2->byDirection = abyDirectionTbl[pChar->byDirection];
+		int nNo = GetWindowID (g_dwMsgIDCommand);
+		if (nNo >= 0) {
+			EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
+			g_dwMsgIDCommand = 0;
+			g_bDraw = TRUE;
+		}
+		return;
+
 	/* 傭兵所？ 雇う・お別れするのはサーバーが決めて、お知らせが来る */
 	} else if (pChar2->pszNpcSpeech[0] == '@' && pChar2->pszNpcSpeech[1] == 'm') {
 

@@ -32,6 +32,7 @@
 #include "SboSvrMagicProc.h"
 #include "SboSvrCharInfoTimerProc.h"
 #include "SboSvrItemProc.h"
+#include "SboSvrTalk.h"
 #include "common/crc.h"
 #include <emscripten.h>
 #include <stdio.h>
@@ -1066,6 +1067,7 @@ static void TestFloorDamage(const std::vector<int> &aLogin);
 static void TestMimic(const std::vector<int> &aLogin);
 static void TestEnemyDoor(const std::vector<int> &aLogin);
 static void TestAdminResurrect(const std::vector<int> &aLogin);
+static void TestFlagTalk(const std::vector<int> &aLogin);
 extern void BattleProcCheck(PCHARINFO);
 
 static void TestTownWarp(const std::vector<int> &aLogin)
@@ -1516,6 +1518,7 @@ static void TestWorld(void)
 	TestEnemyDoor(aLogin);
 	/* Y. 管理者ウィンドウの蘇生ボタン */
 	TestAdminResurrect(aLogin);
+	TestFlagTalk(aLogin);
 	/* K2. 傭兵への回復・蘇生の特技（ゲームの乱数を使うので最後） */
 	TestMercenary(aLogin, TRUE);
 }
@@ -1640,6 +1643,138 @@ static void TestAdminQuest(const std::vector<int> &aLogin)
 /* Y. 管理者ウィンドウの蘇生ボタン（CMD_ADMINRESURRECT）					 */
 /*    倒れた人がHP満タンで起き上がるか・蘇生の特技と同じエフェクトが出るか	 */
 /*    管理者でない人・短いパケットは弾くか・倒れていない人はHPだけ満タン	 */
+/* ------------------------------------------------------------------------- */
+/* Z. キャラのフラグと会話データ											 */
+/*    印・数値の読み書き（範囲の外・255 で止まる）・会話の行の選び方		 */
+/*    （順位・必要な印・いけない印・数値の条件・レベル・同順位のくじ）		 */
+/*    話した後の印・数値の動き												 */
+/* ------------------------------------------------------------------------- */
+static void TalkTestLineInit(TALKLINEINFO *pLine, int nRank)
+{
+	int i;
+
+	ZeroMemory(pLine, sizeof(*pLine));
+	pLine->byRank = (BYTE)nRank;
+	for (i = 0; i < MAX_TALKNEED; i ++) {
+		pLine->awNeed[i] = FLAG_NOBIT;
+		pLine->awNot[i] = FLAG_NOBIT;
+	}
+	for (i = 0; i < MAX_TALKCOND; i ++) {
+		pLine->abyCondNo[i] = FLAG_NONUM;
+	}
+	for (i = 0; i < MAX_TALKSET; i ++) {
+		pLine->awSetOn[i] = FLAG_NOBIT;
+		pLine->awSetOff[i] = FLAG_NOBIT;
+	}
+	for (i = 0; i < MAX_TALKACT; i ++) {
+		pLine->abyActNo[i] = FLAG_NONUM;
+	}
+}
+
+static void TestFlagTalk(const std::vector<int> &aLogin)
+{
+	printf("== Z. FlagTalk ==\n");
+	(void)aLogin;
+	static TALKINFO Talk;
+	BYTE abyFlag[MAX_FLAGBITBYTE], abyNum[MAX_FLAGNUM];
+
+	ZeroMemory(abyFlag, sizeof(abyFlag));
+	ZeroMemory(abyNum, sizeof(abyNum));
+
+	/* 印 */
+	FlagBitSet(abyFlag, 5, TRUE);
+	FlagBitSet(abyFlag, 1023, TRUE);
+	FlagBitSet(abyFlag, 1024, TRUE);
+	printf("flagtalk bit 5=%d 1023=%d 1024=%d 6=%d\n", FlagBitGet(abyFlag, 5) ? 1 : 0, FlagBitGet(abyFlag, 1023) ? 1 : 0,
+			FlagBitGet(abyFlag, 1024) ? 1 : 0, FlagBitGet(abyFlag, 6) ? 1 : 0);
+	FlagBitSet(abyFlag, 5, FALSE);
+	printf("flagtalk bit off 5=%d 1023=%d\n", FlagBitGet(abyFlag, 5) ? 1 : 0, FlagBitGet(abyFlag, 1023) ? 1 : 0);
+
+	/* 数値 */
+	FlagNumSet(abyNum, 3, 300);
+	printf("flagtalk num clamp=%d", FlagNumGet(abyNum, 3));
+	FlagNumAdd(abyNum, 3, 10);
+	printf(" add=%d", FlagNumGet(abyNum, 3));
+	FlagNumSet(abyNum, 4, 7);
+	FlagNumAdd(abyNum, 4, 1);
+	printf(" four=%d", FlagNumGet(abyNum, 4));
+	FlagNumSet(abyNum, MAX_FLAGNUM, 9);
+	printf(" out=%d\n", FlagNumGet(abyNum, MAX_FLAGNUM));
+
+	/* 行の選び方 */
+	ZeroMemory(&Talk, sizeof(Talk));
+	Talk.byState = TALKSTATE_ON;
+	Talk.wID = 1;
+	Talk.byLineCount = 7;
+	TalkTestLineInit(&Talk.aLine[0], 1);
+	Talk.aLine[0].awNeed[0] = 0;							/* 印 0 が必要（0 番も条件に使える） */
+	TalkTestLineInit(&Talk.aLine[1], 2);
+	Talk.aLine[1].awNeed[0] = 10;
+	Talk.aLine[1].awNot[0] = 11;
+	TalkTestLineInit(&Talk.aLine[2], 3);
+	Talk.aLine[2].abyCondNo[0] = 2;
+	Talk.aLine[2].abyCondCmp[0] = TALKCMP_GE;
+	Talk.aLine[2].abyCondVal[0] = 5;
+	TalkTestLineInit(&Talk.aLine[3], 3);
+	Talk.aLine[3].abyCondNo[0] = 2;
+	Talk.aLine[3].abyCondCmp[0] = TALKCMP_EQ;
+	Talk.aLine[3].abyCondVal[0] = 2;
+	TalkTestLineInit(&Talk.aLine[4], 4);
+	Talk.aLine[4].byLvMin = 10;
+	Talk.aLine[4].byLvMax = 20;
+	TalkTestLineInit(&Talk.aLine[5], 9);
+	TalkTestLineInit(&Talk.aLine[6], 9);
+
+	ZeroMemory(abyFlag, sizeof(abyFlag));
+	ZeroMemory(abyNum, sizeof(abyNum));
+	printf("flagtalk pick none=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0));
+	FlagBitSet(abyFlag, 0, TRUE);
+	printf(" flag0=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0));
+	FlagBitSet(abyFlag, 0, FALSE);
+	FlagBitSet(abyFlag, 10, TRUE);
+	printf(" need=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0));
+	FlagBitSet(abyFlag, 11, TRUE);
+	printf(" not=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0));
+	FlagBitSet(abyFlag, 10, FALSE);
+	FlagBitSet(abyFlag, 11, FALSE);
+	FlagNumSet(abyNum, 2, 5);
+	printf(" ge=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0));
+	FlagNumSet(abyNum, 2, 2);
+	printf(" eq=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0));
+	FlagNumSet(abyNum, 2, 3);
+	printf(" nomatch=%d\n", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0));
+	printf("flagtalk level 9=%d 10=%d 20=%d 21=%d\n", TalkPickLine(&Talk, abyFlag, abyNum, 9, 0), TalkPickLine(&Talk, abyFlag, abyNum, 10, 0),
+			TalkPickLine(&Talk, abyFlag, abyNum, 20, 0), TalkPickLine(&Talk, abyFlag, abyNum, 21, 0));
+	printf("flagtalk tie rand0=%d rand1=%d rand3=%d\n", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0), TalkPickLine(&Talk, abyFlag, abyNum, 1, 1),
+			TalkPickLine(&Talk, abyFlag, abyNum, 1, 3));
+	/* 合う行が無い・知らない比べ方は合わない */
+	Talk.byLineCount = 1;
+	TalkTestLineInit(&Talk.aLine[0], 1);
+	Talk.aLine[0].abyCondNo[0] = 2;
+	Talk.aLine[0].abyCondCmp[0] = 99;
+	printf("flagtalk badcmp=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0));
+	Talk.byLineCount = 0;
+	printf(" empty=%d\n", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0));
+
+	/* 話した後の動き（立てる→消す→数値。数値は 255 で止まる） */
+	TALKLINEINFO Line;
+	TalkTestLineInit(&Line, 1);
+	Line.awSetOn[0] = 20;
+	Line.awSetOff[0] = 21;
+	Line.abyActNo[0] = 5;
+	Line.abyActOp[0] = TALKNUMOP_SET;
+	Line.abyActVal[0] = 200;
+	Line.abyActNo[1] = 5;
+	Line.abyActOp[1] = TALKNUMOP_ADD;
+	Line.abyActVal[1] = 100;
+	ZeroMemory(abyFlag, sizeof(abyFlag));
+	ZeroMemory(abyNum, sizeof(abyNum));
+	FlagBitSet(abyFlag, 21, TRUE);
+	TalkApplyLine(&Line, abyFlag, abyNum);
+	printf("flagtalk apply on=%d off=%d num=%d other=%d\n", FlagBitGet(abyFlag, 20) ? 1 : 0, FlagBitGet(abyFlag, 21) ? 1 : 0,
+			FlagNumGet(abyNum, 5), FlagNumGet(abyNum, 6));
+}
+
 /* ------------------------------------------------------------------------- */
 static void TestAdminResurrect(const std::vector<int> &aLogin)
 {

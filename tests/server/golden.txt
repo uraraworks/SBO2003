@@ -1345,6 +1345,15 @@ adminres short hp=0 dead=1
 adminres dead full=1 dead=0 efc_ok=1 efc=14
 adminres alive full=1 dead=0
 adminres badno ok
+== Z. FlagTalk ==
+flagtalk bit 5=1 1023=1 1024=0 6=0
+flagtalk bit off 5=0 1023=1
+flagtalk num clamp=255 add=255 four=8 out=0
+flagtalk pick none=5 flag0=0 need=1 not=5 ge=2 eq=3 nomatch=5
+flagtalk level 9=5 10=4 20=4 21=5
+flagtalk tie rand0=5 rand1=6 rand3=6
+flagtalk badcmp=-1 empty=-1
+flagtalk apply on=1 off=0 num=255 other=0
 == K2. Mercenary magic ==
 merc map=91 enemies=17 size=255x160
 merc hired dist=1

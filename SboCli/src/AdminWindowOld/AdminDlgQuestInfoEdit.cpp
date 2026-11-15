@@ -23,6 +23,7 @@
 #include "../SboCliSendCmd.h"
 #include "AdminDlgQuestInfo.h"
 #include "AdminDlgQuestInfoEdit.h"
+#include "AdminFlagUi.h"
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -39,7 +40,7 @@ static BOOL s_bWait = FALSE;									/* 書き込みの結果を待っている 
 static QUESTINFO s_Info;										/* 編集中の内容 */
 
 #define QUESTEDIT_TITLE		"ギルドの依頼"
-#define QUESTEDIT_MAXCY		380		/* 画面の高さの上限（ダイアログ単位）。越えたらスクロール */
+#define QUESTEDIT_MAXCY		384		/* 画面の高さの上限（ダイアログ単位）。越えたらスクロール */
 #define QUESTEDIT_GAP		2		/* 枠どうしのすき間（ダイアログ単位） */
 #define QUESTEDIT_SCROLLCX	16		/* スクロールバーの幅 */
 #define QUESTEDIT_WHEEL		36		/* ホイール 1 目盛りで動かすドット数 */
@@ -134,6 +135,8 @@ static void RenewNpcSel(HWND hWnd);												/* 見えるNPCの一覧の文字
 static void LayoutInit(HWND hWnd);												/* 枠ごとの部品と元の位置を覚える */
 static void RenewLayout(HWND hWnd);												/* 種類に合わせて使う枠だけ出して詰める */
 static void OnScrollMsg(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);		/* スクロールバー・ホイール */
+static void OnFlagNameChanged(void);											/* フラグの名前表が届いた */
+static void UpdateDoneNames(HWND hWnd);											/* 完了時の印・数値の番号の横の名前を作り直す */
 static void FillKindCombo(HWND hWnd, int nKind);								/* 見えるNPCの種類の一覧を作る */
 static int GetNpcKind(HWND hWnd);												/* 選んでいる見えるNPCの種類 */
 
@@ -330,6 +333,11 @@ void ShowDlgQuestInfoEdit(HWND hWndParent, int nNo)
 		ZeroMemory (&s_Info, sizeof (s_Info));
 		s_Info.byState = QUESTSTATE_ON;
 		s_Info.byStepCount = 1;
+		/* 完了した時に立てる印・動かす数値は「無し」（0 のままだと印 0・数値 0 になる） */
+		for (int i = 0; i < MAX_QUESTDONESET; i ++) {
+			s_Info.awDoneSetFlag[i] = FLAG_NOBIT;
+		}
+		s_Info.byDoneNumNo = FLAG_NONUM;
 		for (int i = 0; i < MAX_QUESTNPC; i ++) {
 			ClearNpc (&s_Info.aNpc[i]);
 		}
@@ -348,6 +356,9 @@ void ShowDlgQuestInfoEdit(HWND hWndParent, int nNo)
 		GetWindowRect (g_hWndAdmin ? g_hWndAdmin : hWndParent, &rc);
 		SetWindowPos (s_hWndDlg, NULL, rc.left + 24, rc.top + 24, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
 	}
+	/* 完了時の印・数値の名前を出すため、フラグの名前表を取り寄せておく（届いたら出し直す） */
+	AdminFlagTalkAddListener (OnFlagNameChanged);
+	AdminFlagNameLoadIfEmpty ();
 	ShowWindow (s_hWndDlg, SW_SHOW);
 }
 
@@ -360,6 +371,7 @@ void CloseDlgQuestInfoEdit(void)
 	if (s_hWndDlg == NULL) {
 		return;
 	}
+	AdminFlagTalkRemoveListener (OnFlagNameChanged);
 	DestroyWindow (s_hWndDlg);
 	s_hWndDlg = NULL;
 	s_hWndParent = NULL;
@@ -521,6 +533,21 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 	SetNum (hWnd, IDC_Q_MEMBERMIN, s_Info.byMemberMin);
 	FillStTmpCombo (hWnd, IDC_Q_LOANSTTMP, s_Info.wLoanStTmp);
 
+	/* 完了した時のフラグ（空欄=無し。印・数値の名前は番号の横に出す） */
+	s_hWndDlg = hWnd;		/* 名前を出す小物が使う（CreateDialog から戻る前に呼ばれる） */
+	for (i = 0; i < MAX_QUESTDONESET; i ++) {
+		AdminFlagSetNo (hWnd, IDC_Q_DONEBIT0 + i, s_Info.awDoneSetFlag[i], s_Info.awDoneSetFlag[i] == FLAG_NOBIT);
+	}
+	{
+		BOOL bNone = (s_Info.byDoneNumNo == FLAG_NONUM) ? TRUE : FALSE;
+		AdminFlagSetNo (hWnd, IDC_Q_DONENUM, s_Info.byDoneNumNo, bNone);
+		SendDlgItemMessage (hWnd, IDC_Q_DONEOP, CB_ADDSTRING, 0, (LPARAM)"にする");
+		SendDlgItemMessage (hWnd, IDC_Q_DONEOP, CB_ADDSTRING, 0, (LPARAM)"足す");
+		SendDlgItemMessage (hWnd, IDC_Q_DONEOP, CB_SETCURSEL, (s_Info.byDoneNumOp < TALKNUMOP_MAX) ? s_Info.byDoneNumOp : 0, 0);
+		AdminFlagSetNo (hWnd, IDC_Q_DONEVAL, s_Info.byDoneNumVal, bNone);
+	}
+	UpdateDoneNames (hWnd);
+
 	/* 見えるNPC（種類の一覧は LoadNpc で依頼の種類に合わせて作る） */
 	SendDlgItemMessage (hWnd, IDC_Q_NPCDIR, CB_ADDSTRING, 0, (LPARAM)"上");
 	SendDlgItemMessage (hWnd, IDC_Q_NPCDIR, CB_ADDSTRING, 0, (LPARAM)"下");
@@ -541,6 +568,12 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 /* ========================================================================= */
 static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 {
+	/* 完了時の印・数値の番号が変わったら、横の名前を出し直す */
+	if ((nCodeNotify == EN_CHANGE) && ((nID == IDC_Q_DONEBIT0) || (nID == IDC_Q_DONEBIT1) || (nID == IDC_Q_DONENUM))) {
+		UpdateDoneNames (hWnd);
+		return;
+	}
+
 	switch (nID) {
 	case IDC_Q_NPCSEL:		/* 見えるNPCの欄を切り替える */
 		if (nCodeNotify == CBN_SELCHANGE) {
@@ -597,6 +630,24 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 		CloseDlgQuestInfoEdit ();
 		break;
 	}
+}
+
+/* ========================================================================= */
+/* 関数名：OnFlagNameChanged / UpdateDoneNames								 */
+/* 内容：フラグの名前表が届いたら、完了時の印・数値の番号の横の名前を作り直す	 */
+/* ========================================================================= */
+static void OnFlagNameChanged(void)
+{
+	if (s_hWndDlg) {
+		UpdateDoneNames (s_hWndDlg);
+	}
+}
+
+static void UpdateDoneNames(HWND hWnd)
+{
+	AdminFlagUpdateName (hWnd, IDC_Q_DONEBIT0, IDC_Q_DONEBITN0, FLAGKIND_BIT);
+	AdminFlagUpdateName (hWnd, IDC_Q_DONEBIT1, IDC_Q_DONEBITN1, FLAGKIND_BIT);
+	AdminFlagUpdateName (hWnd, IDC_Q_DONENUM, IDC_Q_DONENUMN, FLAGKIND_NUM);
 }
 
 /* ========================================================================= */
@@ -701,6 +752,7 @@ static void LayoutInit(HWND hWnd)
 {
 	static const int s_anGroup[] = {
 		IDC_Q_GRP_BASE, IDC_Q_GRP_SEARCH, IDC_Q_GRP_CHALLENGE, IDC_Q_GRP_GOAL,
+		IDC_Q_GRP_DONE,
 		IDC_Q_GRP_NPC, IDC_Q_GRP_NPCCOMMON, IDC_Q_GRP_NPCDEST, IDC_Q_GRP_NPCITEM, IDC_Q_GRP_NPCENEMY,
 	};
 	std::vector<HWND> ahWnd;
@@ -1055,6 +1107,24 @@ static BOOL SaveAll(HWND hWnd)
 	if (!GetNumRange (hWnd, IDC_Q_MEMBERMIN, MAX_PARTYMEMBER, "必要な人数", ul)) return FALSE;
 	Info.byMemberMin = (BYTE)ul;
 	Info.wLoanStTmp = (WORD)GetSel (hWnd, IDC_Q_LOANSTTMP);
+	/* 完了した時のフラグ（空欄=無し） */
+	for (int i = 0; i < MAX_QUESTDONESET; i ++) {
+		char szName[64];
+		snprintf (szName, sizeof (szName), "完了した時に立てる印 %d 個目の番号", i + 1);
+		if (!AdminFlagGetBit (hWnd, s_hWndDlg, IDC_Q_DONEBIT0 + i, szName, QUESTEDIT_TITLE, Info.awDoneSetFlag[i])) return FALSE;
+	}
+	if (!AdminFlagGetNum (hWnd, s_hWndDlg, IDC_Q_DONENUM, "完了した時の数値の番号", QUESTEDIT_TITLE, Info.byDoneNumNo)) return FALSE;
+	Info.byDoneNumOp = (BYTE)GetSel (hWnd, IDC_Q_DONEOP);
+	if (Info.byDoneNumOp >= TALKNUMOP_MAX) {
+		Info.byDoneNumOp = TALKNUMOP_SET;
+	}
+	if (!GetNumRange (hWnd, IDC_Q_DONEVAL, 255, "完了した時の数値の値", ul)) return FALSE;
+	Info.byDoneNumVal = (BYTE)ul;
+	if (Info.byDoneNumNo == FLAG_NONUM) {
+		/* 数値を動かさない時は、する/足す・値も空にしておく */
+		Info.byDoneNumOp = TALKNUMOP_SET;
+		Info.byDoneNumVal = 0;
+	}
 	/* 隠れている枠（この依頼の種類では使わない）は空にしておく */
 	if (!SectionVisible (IDC_Q_GRP_SEARCH, Info.byChallenge, QUESTNPCKIND_NONE)) {
 		Info.wQuestItem = 0;
