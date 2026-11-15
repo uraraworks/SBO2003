@@ -17,7 +17,7 @@ SBOP2 のステージング用ホスト（Google Cloud の e2-micro）に、Sbo2
 - ブラウザ版は https で開くと自動で `wss://<同じホスト>/ws` につなぐので、SBOP2 のような wss シムは要りません。
 - Basic 認証はサイト全体にかけ、`/ws` だけ外します（iPhone の Safari は WebSocket に Basic 認証を付けないため。ここはゲームのログインで守られます）。
 - 遊んだデータ（`SBODATA/` と `SboSvr.ini`）は Docker の名前付きボリューム `sbo2003-staging_data` に入ります。イメージを作り直しても消えません。
-- e2-micro に合わせて、メモリ 160MB・CPU 0.2 コアの上限を付けています（`compose.yaml`）。
+- e2-micro に合わせて、メモリ 320MB・CPU 0.5 コアの上限を付けています（`compose.yaml`）。
   サーバーは誰もつながっていない時は長めに休むので、普段の CPU は 1 コアの 3〜4% ほどです。
 
 ## ファイル
