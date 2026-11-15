@@ -310,6 +310,16 @@ static void AdminSpaceFillList		(void);								/* 空間の一覧を作り直す
 /* サーバーに知らせた画面（0xFF ならまだ知らせていない） */
 static BYTE s_byAdminUndoScreen = 0xFF;
 
+/* マップパーツ一覧のスクロール（ドット単位。ホイールやトラックパッドでなめらかに動かす） */
+#define	MAPPARTS_LIST_COLS		10			/* 一覧の横の数 */
+#define	MAPPARTS_LIST_CY		(32 * 4)	/* 一覧の見える高さ（ドット） */
+#define	MAPPARTS_LINE_STEP		32			/* スクロールバーの矢印 1 回で動かすドット数（1 段） */
+static int s_nMapPartsScrollY;				/* 一覧の今のスクロール位置（ドット） */
+static int s_nMapPartsWheelRest;			/* ホイールの端数（細かい量をためておく） */
+static int  MapPartsScrollMax		(void);							/* 一覧のスクロールの最大（ドット） */
+static void MapPartsSetScroll		(int nPos);						/* 一覧のスクロール位置を変える */
+static BOOL AdminOnMouseWheelMapParts	(HWND hWnd, WPARAM wParam, LPARAM lParam);	/* 一覧の上でホイール */
+
 /* ========================================================================= */
 /* 関数名：GetAdminBgmCount													 */
 /* 内容：BGM一覧の数（MIDIの曲＋音声ファイルの曲）							 */
@@ -841,7 +851,8 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 		break;
 
 	case WM_MAPPARTSCOUNT:
-		SetScrollRange (m_hWndMapPartsScrParts, SB_CTL, 0, max ((g_wCountMapParts / 10) - 3, 0), FALSE);
+		SetScrollRange (m_hWndMapPartsScrParts, SB_CTL, 0, MapPartsScrollMax (), FALSE);
+		MapPartsSetScroll (s_nMapPartsScrollY);
 		InvalidateRect (hWnd, NULL, TRUE);
 		break;
 
@@ -1812,6 +1823,12 @@ LRESULT CALLBACK WndProcDialog(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 	HANDLE_MSG (hWnd, WM_VSCROLL, AdminOnVScroll);
 	HANDLE_MSG (hWnd, WM_LBUTTONDOWN, AdminOnLButtonDown);
 	HANDLE_MSG (hWnd, WM_RBUTTONDOWN, AdminOnRButtonDown);
+	case WM_MOUSEWHEEL:
+		/* マップパーツ一覧の上なら一覧をスクロール（それ以外はいつもどおり親へ） */
+		if ((g_nAdminWindowType == IDM_MAP_PARTS) && AdminOnMouseWheelMapParts (hWnd, wParam, lParam)) {
+			return 1;
+		}
+		return 0;
 	default:	return 0;
 	}
 	return 1;
@@ -5900,13 +5917,16 @@ void AdminOnPaintMapParts(HDC hDC)
 	delete pDibTmp;
 	ReleaseDC (GetDlgItem (m_hWndDialog, IDC_PARTSGRP), hDCTmp2);
 
-	pDibTmp = new CImg32;
-	pDibTmp->Create (32, 32);
-	pos = GetScrollPos (m_hWndMapPartsScrParts, SB_CTL) * 10;
+	/* パーツリストの表示（ドット単位でずらすので、1 段多く裏の画像に描いてから切り出す） */
+	int nScrollY = s_nMapPartsScrollY;
+	int nRowTop = nScrollY / 32;
+	int nRowsDraw = MAPPARTS_LIST_CY / 32 + 1;
+	CImg32 *pDibList = new CImg32;
+	pDibList->Create (32 * MAPPARTS_LIST_COLS, 32 * nRowsDraw);
+	pDibList->FillRect (0, 0, 32 * MAPPARTS_LIST_COLS, 32 * nRowsDraw, RGB (0, 0, 0));
+	pos = nRowTop * MAPPARTS_LIST_COLS;
 	hDCTmp2 = GetWindowDC (GetDlgItem (m_hWndDialog, IDC_PARTS));
-	BitBlt (hDCTmp2, 0, 0, 32 * 10, 32 * 4, NULL, 0, 0, BLACKNESS);
-	/* パーツリストの表示 */
-	for (i = 0; i < 40; i ++) {
+	for (i = 0; i < MAPPARTS_LIST_COLS * nRowsDraw; i ++) {
 		if (i + pos >= g_wCountMapParts) {
 			break;
 		}
@@ -5925,10 +5945,7 @@ void AdminOnPaintMapParts(HDC hDC)
 		xx = dwID % g_byMapGrpCountX * 32;
 		yy = dwID / g_byMapGrpCountX * 32;
 
-		pDibTmp->Blt (0, 0, 32, 32, g_apDibMap[dwNo], xx, yy);
-		hDCTmp = pDibTmp->Lock ();
-		BitBlt (hDCTmp2, (i % 10) * 32, (i / 10) * 32, 32, 32, hDCTmp, 0, 0, SRCCOPY);
-		pDibTmp->Unlock ();
+		pDibList->Blt ((i % MAPPARTS_LIST_COLS) * 32, (i / MAPPARTS_LIST_COLS) * 32, 32, 32, g_apDibMap[dwNo], xx, yy);
 
 		pParts = (PMAPPARTSINFO)&g_pMapPartsInfo[i + pos];
 		no = pParts->wGrpID;
@@ -5942,12 +5959,13 @@ void AdminOnPaintMapParts(HDC hDC)
 		xx = dwID % g_byMapGrpCountX * 32;
 		yy = dwID / g_byMapGrpCountX * 32;
 
-		pDibTmp->Blt (0, 0, 32, 32, g_apDibMap[dwNo], xx, yy, TRUE);
-		hDCTmp = pDibTmp->Lock ();
-		BitBlt (hDCTmp2, (i % 10) * 32, (i / 10) * 32, 32, 32, hDCTmp, 0, 0, SRCCOPY);
-		pDibTmp->Unlock ();
+		pDibList->Blt ((i % MAPPARTS_LIST_COLS) * 32, (i / MAPPARTS_LIST_COLS) * 32, 32, 32, g_apDibMap[dwNo], xx, yy, TRUE);
 	}
-	delete pDibTmp;
+	hDCTmp = pDibList->Lock ();
+	BitBlt (hDCTmp2, 0, 0, 32 * MAPPARTS_LIST_COLS, MAPPARTS_LIST_CY, hDCTmp, 0, nScrollY % 32, SRCCOPY);
+	pDibList->Unlock ();
+	delete pDibList;
+	ReleaseDC (GetDlgItem (m_hWndDialog, IDC_PARTS), hDCTmp2);
 }
 
 /* ========================================================================= */
@@ -6944,15 +6962,17 @@ void AdminOnHScrollMapParts(HWND hWndCtl, UINT code, int pos)
 void AdminOnVScrollMapParts(HWND hWndCtl, UINT code, int pos)
 {
 	switch (code) {
-	case SB_LINEUP:
-		pos = GetScrollPos (hWndCtl, SB_CTL);
-		pos --;
-		break;
-
-	case SB_LINEDOWN:
-		pos = GetScrollPos (hWndCtl, SB_CTL);
-		pos ++;
-		break;
+	if (hWndCtl != m_hWndMapPartsScrParts) {
+		return;
+	}
+	/* 位置はドット単位。矢印は 1 段、空いている所は 3 段ずつ動かす */
+	switch (code) {
+	case SB_LINEUP:		pos = s_nMapPartsScrollY - MAPPARTS_LINE_STEP;		break;
+	case SB_LINEDOWN:	pos = s_nMapPartsScrollY + MAPPARTS_LINE_STEP;		break;
+	case SB_PAGEUP:		pos = s_nMapPartsScrollY - MAPPARTS_LINE_STEP * 3;	break;
+	case SB_PAGEDOWN:	pos = s_nMapPartsScrollY + MAPPARTS_LINE_STEP * 3;	break;
+	case SB_TOP:		pos = 0;											break;
+	case SB_BOTTOM:		pos = MapPartsScrollMax ();							break;
 
 	case SB_THUMBPOSITION:
 	case SB_THUMBTRACK:
@@ -6961,13 +6981,74 @@ void AdminOnVScrollMapParts(HWND hWndCtl, UINT code, int pos)
 	default:
 		return;
 	}
-	pos = min ((g_wCountMapParts / 10) - 3, pos);
-	pos = max (0, pos);
+	s_nMapPartsWheelRest = 0;
+	MapPartsSetScroll (pos);
+}
 
-	if (hWndCtl == m_hWndMapPartsScrParts) {
-		SetScrollPos (hWndCtl, SB_CTL, pos, TRUE);
+/* ========================================================================= */
+/* 関数名：MapPartsScrollMax												 */
+/* 内容：マップパーツ一覧のスクロールの最大（ドット）						 */
+/* ========================================================================= */
+static int MapPartsScrollMax(void)
+{
+	int nRows = (g_wCountMapParts + MAPPARTS_LIST_COLS - 1) / MAPPARTS_LIST_COLS;
+	return max (0, nRows * 32 - MAPPARTS_LIST_CY);
+}
+
+/* ========================================================================= */
+/* 関数名：MapPartsSetScroll												 */
+/* 内容：マップパーツ一覧のスクロール位置を変えて描き直す					 */
+/* ========================================================================= */
+static void MapPartsSetScroll(int nPos)
+{
+	nPos = max (0, min (nPos, MapPartsScrollMax ()));
+	BOOL bChange = (nPos != s_nMapPartsScrollY);
+	s_nMapPartsScrollY = nPos;
+	if (m_hWndMapPartsScrParts) {
+		SetScrollPos (m_hWndMapPartsScrParts, SB_CTL, nPos, TRUE);
+	}
+	if (bChange) {
 		InvalidateRect (g_hWndAdmin, NULL, TRUE);
 	}
+}
+
+/* ========================================================================= */
+/* 関数名：AdminOnMouseWheelMapParts										 */
+/* 内容：マップパーツ一覧の上でホイールが回された（処理したら TRUE）		 */
+/* ========================================================================= */
+static BOOL AdminOnMouseWheelMapParts(HWND hWnd, WPARAM wParam, LPARAM lParam)
+{
+	RECT rcParts, rcBar;
+	POINT ptPos;
+
+	if ((hWnd != m_hWndDialog) || (m_hWndMapPartsScrParts == NULL)) {
+		return FALSE;
+	}
+	/* 一覧とその横のスクロールバーの上だけ（ほかの所は画面全体のスクロールに回す） */
+	ptPos.x = GET_X_LPARAM (lParam);
+	ptPos.y = GET_Y_LPARAM (lParam);
+	ClientToScreen (hWnd, &ptPos);
+	GetWindowRect (GetDlgItem (hWnd, IDC_PARTS), &rcParts);
+	GetWindowRect (m_hWndMapPartsScrParts, &rcBar);
+	UnionRect (&rcParts, &rcParts, &rcBar);
+	if (!PtInRect (&rcParts, ptPos)) {
+		return FALSE;
+	}
+
+	/* 120 でマウス 1 目盛り＝100 ドット。トラックパッドや Magic Mouse の細かい量は
+	   端数をためて 1 ドットずつ動かす */
+	s_nMapPartsWheelRest += (short)HIWORD (wParam) * 100;
+	int nMove = s_nMapPartsWheelRest / 120;
+	s_nMapPartsWheelRest -= nMove * 120;
+	if (nMove) {
+		int nOld = s_nMapPartsScrollY;
+		MapPartsSetScroll (s_nMapPartsScrollY - nMove);
+		if (s_nMapPartsScrollY == nOld) {
+			/* 端に着いたら端数は捨てる（戻す時にもたつかないように） */
+			s_nMapPartsWheelRest = 0;
+		}
+	}
+	return TRUE;
 }
 
 /* ========================================================================= */
@@ -7110,9 +7191,9 @@ void AdminOnLButtonDownMapParts(BOOL fDoubleClick, int x, int y, UINT keyFlags)
 	GetWindowRect (GetDlgItem (m_hWndDialog, IDC_PARTS), &rcGrp);
 	/* パーツが押された？ */
 	if (PtInRect (&rcGrp, ptPos)) {
-		no = (GetScrollPos (m_hWndMapPartsScrParts, SB_CTL) * 10) +
-				((ptPos.x - rcGrp.left) / 32) + ((ptPos.y - rcGrp.top) / 32 * 10);
-		if (no < g_wCountMapParts) {
+		no = ((ptPos.y - rcGrp.top + s_nMapPartsScrollY) / 32 * MAPPARTS_LIST_COLS) +
+				((ptPos.x - rcGrp.left) / 32);
+		if (((ptPos.x - rcGrp.left) / 32 < MAPPARTS_LIST_COLS) && (ptPos.y - rcGrp.top < MAPPARTS_LIST_CY) && (no < g_wCountMapParts)) {
 			char szTmp[16] = {0};
 			PMAPPARTSINFO pParts = (PMAPPARTSINFO)&g_pMapPartsInfo[no];
 
@@ -7525,7 +7606,9 @@ void MakeAdminWndMapParts(void)
 	SetScrollRange (m_hWndMapPartsScrGrp, SB_CTL, 0, (g_byMapGrpCountX * g_byMapGrpCountY * g_wCountMapPartsGrp) - 5, FALSE);
 	
 	m_hWndMapPartsScrParts = GetDlgItem (m_hWndDialog, IDC_SCRPARTS);
-	SetScrollRange (m_hWndMapPartsScrParts, SB_CTL, 0, max ((g_wCountMapParts / 10) - 3, 0), FALSE);
+	SetScrollRange (m_hWndMapPartsScrParts, SB_CTL, 0, MapPartsScrollMax (), FALSE);
+	s_nMapPartsWheelRest = 0;
+	MapPartsSetScroll (s_nMapPartsScrollY);
 
 	for (i = 0; i < PARTSHIT_MAX; i ++) {
 		SendMessage (m_hWndCombo1, CB_ADDSTRING, (WPARAM)0, (LPARAM)liststr[i]);
