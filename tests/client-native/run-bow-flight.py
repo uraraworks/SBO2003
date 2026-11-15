@@ -64,7 +64,7 @@ struct EVENTINFO { int byType=EVENTTYPE_DOOR; DWORD dwX=0,dwY=0; void* pData=nul
 using PEVENTINFO=EVENTINFO*;
 struct Map { int nEventCount=0; PEVENTINFO pEvent=nullptr; int byFlg=MAPFLG_BATTLE,nCX=16,nCY=16; unsigned short pwMap[256]={}; } map;
 using PMAPINFO=Map*;
-struct Part { int byHitType=0; } g_pMapPartsInfo[3];
+struct Part { int byHitType=0; int byLow=0; } g_pMapPartsInfo[3];
 int g_wCountMapParts=3;
 bool CheckCharBlock(DWORD x,DWORD y) {
     return x<16 && y<16 && map.pwMap[x+y*16]==0;

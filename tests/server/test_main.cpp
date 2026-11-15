@@ -1064,6 +1064,7 @@ static void TestMagicWall(const std::vector<int> &aLogin);
 static void TestSpace(const std::vector<int> &aLogin);
 static void TestAdminQuest(const std::vector<int> &aLogin);
 static void TestFloorDamage(const std::vector<int> &aLogin);
+static void TestLowParts(const std::vector<int> &aLogin);
 static void TestMimic(const std::vector<int> &aLogin);
 static void TestEnemyDoor(const std::vector<int> &aLogin);
 static void TestAdminResurrect(const std::vector<int> &aLogin);
@@ -1512,6 +1513,8 @@ static void TestWorld(void)
 	TestAdminQuest(aLogin);
 	/* V. ダメージ床（毒沼・溶岩など） */
 	TestFloorDamage(aLogin);
+	/* 低いパーツ（灯り・矢・特技が越える） */
+	TestLowParts(aLogin);
 	/* W. 宝箱の敵（調べる・叩くと正体を現す） */
 	TestMimic(aLogin);
 	/* X. 敵を全部倒すと開く扉 */
@@ -4150,6 +4153,46 @@ static void TestFloorDamage(const std::vector<int> &aLogin)
 	AddTblNoPC((int)pPC->dwTblID);
 	pPC->byDirection = byDirBack;
 	pPC->wHP = wHPBack;
+}
+
+/* ------------------------------------------------------------------------- */
+/* 低いパーツ（byLow）：ぶつかるが、特技・矢の見通しは越える。保存の形も確かめる	 */
+/* ------------------------------------------------------------------------- */
+static void TestLowParts(const std::vector<int> &aLogin)
+{
+	printf("== V2. LowParts ==\n");
+	if (aLogin.size() < 1) {
+		return;
+	}
+	PCHARINFO pPC = g_aCharInfo[aLogin[0]];
+	int nMapNo = GetMapNo(pPC->dwMapID);
+	if (nMapNo < 0) {
+		printf("no map\n");
+		return;
+	}
+	PMAPINFO pMap = g_aMapInfo[nMapNo];
+	int nX = pMap->nCX / 2, nY = pMap->nCY / 2;
+	PMAPPARTSINFO pParts = &g_aMapPartsInfo[pMap->pwMap[nX + nY * pMap->nCX]];
+	BYTE byHitBack = pParts->byHitType, byLowBack = pParts->byLow;
+	pParts->byHitType = PARTSHIT_BLOCK1;
+	pParts->byLow = 0;
+	BOOL bWall0 = IsMagicWall(pMap->dwID, nX, nY);
+	pParts->byLow = 1;
+	BOOL bWall1 = IsMagicWall(pMap->dwID, nX, nY);
+	/* ぶつかり判定は変わらない */
+	BOOL bBlock1 = !pMap->pwMap ? FALSE : (pParts->byHitType == PARTSHIT_BLOCK1);
+	printf("low wall normal=%d low=%d hit=%d\n", bWall0 ? 1 : 0, bWall1 ? 1 : 0, bBlock1 ? 1 : 0);
+	/* 保存用の byLight への入れ方（灯りと重ならない・今のデータはそのまま） */
+	MAPPARTSINFOSAVE Save;
+	ZeroMemory(&Save, sizeof(Save));
+	pParts->byLight = 5;
+	Save.byLight = MAPPARTS_MAKE_SAVELIGHT(pParts);
+	printf("low save light=%d low=%d\n", MAPPARTS_SAVE_LIGHT(&Save), MAPPARTS_SAVE_LOW(&Save));
+	Save.byLight = 3;
+	printf("low old data light=%d low=%d\n", MAPPARTS_SAVE_LIGHT(&Save), MAPPARTS_SAVE_LOW(&Save));
+	pParts->byLight = 0;
+	pParts->byHitType = byHitBack;
+	pParts->byLow = byLowBack;
 }
 
 /* ------------------------------------------------------------------------- */

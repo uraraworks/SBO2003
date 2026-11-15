@@ -1860,6 +1860,8 @@ void AdminOnCommandMapParts(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 			ZeroMemory (szTmp, sizeof (szTmp));
 			GetWindowText (m_hWndEdit5, szTmp, sizeof (szTmp));
 			pParts->byPoison = (BYTE)max (0, min (atoi (szTmp), 255));
+			/* 低い(灯り・矢が通る) */
+			pParts->byLow = (SendMessage (GetDlgItem (m_hWndDialog, IDC_PARTS_LOW), BM_GETCHECK, 0, 0) & BST_CHECKED) ? 1 : 0;
 
 			SendCmdMAPPARTS (g_nSelectPartsID);
 		}
@@ -1887,6 +1889,7 @@ void AdminOnCommandMapParts(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 			SetWindowText (m_hWndEdit3, "");
 			SetWindowText (m_hWndEdit4, "");
 			SetWindowText (m_hWndEdit5, "");
+			SendMessage (GetDlgItem (m_hWndDialog, IDC_PARTS_LOW), BM_SETCHECK, 0, 0);
 			InvalidateRect (g_hWndAdmin, NULL, TRUE);
 		}
 		break;
@@ -7143,6 +7146,8 @@ void AdminOnLButtonDownMapParts(BOOL fDoubleClick, int x, int y, UINT keyFlags)
 			SetWindowText (m_hWndEdit4, szTmp);
 			wsprintf (szTmp, "%d", pParts->byPoison);
 			SetWindowText (m_hWndEdit5, szTmp);
+			/* 低い */
+			SendMessage (GetDlgItem (m_hWndDialog, IDC_PARTS_LOW), BM_SETCHECK, pParts->byLow ? 1 : 0, 0);
 
 			InvalidateRect (g_hWndAdmin, NULL, TRUE);
 		}

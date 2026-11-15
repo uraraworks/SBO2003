@@ -4127,6 +4127,7 @@ void RecvDataProcMAPPARTSADD(PBYTE pData, DWORD dwDataSize)
 		pPartsTmp1->byAnimeCount = pPartsTmp2->byAnimeCount;
 		pPartsTmp1->byLevel = pPartsTmp2->byLevel;
 		pPartsTmp1->byLight = pPartsTmp2->byLight;
+		pPartsTmp1->byLow = pPartsTmp2->byLow;
 		pPartsTmp1->byDamage = pPartsTmp2->byDamage;
 		pPartsTmp1->byPoison = pPartsTmp2->byPoison;
 		pPartsTmp1->wGrpID = pPartsTmp2->wGrpID;
@@ -4224,7 +4225,8 @@ void RecvDataProcMAPPARTS(PBYTE pData, DWORD dwDataSize)
 	pPartsTmp->byAnimeType = pRecv->byAnimeType;
 	pPartsTmp->byAnimeCount = pRecv->byAnimeCount;
 	pPartsTmp->byLevel = pRecv->byLevel;
-	pPartsTmp->byLight = pRecv->byLight;
+	pPartsTmp->byLight = MAPPARTS_SAVE_LIGHT (pRecv);
+	pPartsTmp->byLow = MAPPARTS_SAVE_LOW (pRecv);
 	pPartsTmp->byDamage = pRecv->byDamage;
 	pPartsTmp->byPoison = pRecv->byPoison;
 	pPartsTmp->wGrpID = pRecv->wGrpID;

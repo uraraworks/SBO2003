@@ -615,7 +615,7 @@ void SendCmdMAPPARTS(int nNo)
 	pSend->byAnimeType = pParts->byAnimeType;
 	pSend->byAnimeCount = pParts->byAnimeCount;
 	pSend->byLevel = pParts->byLevel;
-	pSend->byLight = pParts->byLight;
+	pSend->byLight = MAPPARTS_MAKE_SAVELIGHT (pParts);
 	pSend->byDamage = pParts->byDamage;
 	pSend->byPoison = pParts->byPoison;
 	pSend->wGrpID = pParts->wGrpID;

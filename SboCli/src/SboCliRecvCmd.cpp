@@ -2498,8 +2498,8 @@ BOOL IsSightWall(int x, int y)
 	if (nPartsID >= g_wCountMapParts) {
 		return TRUE;
 	}
-	/* カウンターは低い家具なので灯りが越えていく */
-	if (g_pMapPartsInfo[nPartsID].byHitType == PARTSHIT_COUNTER) {
+	/* カウンターと「低い」パーツは低い物なので灯りが越えていく */
+	if ((g_pMapPartsInfo[nPartsID].byHitType == PARTSHIT_COUNTER) || g_pMapPartsInfo[nPartsID].byLow) {
 		return FALSE;
 	}
 	return TRUE;
@@ -4262,7 +4262,8 @@ void RecvDataProcMAPPARTSINFO(PBYTE pData, DWORD dwDataSize)
 		pParts->wBackID = pRecv->wBackID;
 		pParts->pAnimeInfo = pRecv->pAnimeInfo;
 		pParts->byLevel = pRecv->byLevel;
-		pParts->byLight = pRecv->byLight;
+		pParts->byLight = MAPPARTS_SAVE_LIGHT (pRecv);
+		pParts->byLow = MAPPARTS_SAVE_LOW (pRecv);
 		pParts->byDamage = pRecv->byDamage;
 		pParts->byPoison = pRecv->byPoison;
 		pRead += sizeof (MAPPARTSINFOSAVE);
@@ -5051,7 +5052,8 @@ void RecvDataProcMAPPARTS(PBYTE pData, DWORD dwDataSize)
 		pPartsTmp->wBackID = pRecv->wBackID;
 		pPartsTmp->pAnimeInfo = pRecv->pAnimeInfo;
 		pPartsTmp->byLevel = pRecv->byLevel;
-		pPartsTmp->byLight = pRecv->byLight;
+		pPartsTmp->byLight = MAPPARTS_SAVE_LIGHT (pRecv);
+		pPartsTmp->byLow = MAPPARTS_SAVE_LOW (pRecv);
 		pPartsTmp->byDamage = pRecv->byDamage;
 		pPartsTmp->byPoison = pRecv->byPoison;
 		pRecv += sizeof (MAPPARTSINFOSAVE);
@@ -5079,7 +5081,8 @@ void RecvDataProcMAPPARTS(PBYTE pData, DWORD dwDataSize)
 		pPartsTmp->wBackID = pRecv->wBackID;
 		pPartsTmp->pAnimeInfo = pRecv->pAnimeInfo;
 		pPartsTmp->byLevel = pRecv->byLevel;
-		pPartsTmp->byLight = pRecv->byLight;
+		pPartsTmp->byLight = MAPPARTS_SAVE_LIGHT (pRecv);
+		pPartsTmp->byLow = MAPPARTS_SAVE_LOW (pRecv);
 		pPartsTmp->byDamage = pRecv->byDamage;
 		pPartsTmp->byPoison = pRecv->byPoison;
 		pRecv ++;

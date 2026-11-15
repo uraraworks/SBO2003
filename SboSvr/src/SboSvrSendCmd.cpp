@@ -520,7 +520,7 @@ void SendCmdMAPPARTSINFO(DWORD pIDSend)
 		pSend->wBackID = pParts->wBackID;
 		pSend->pAnimeInfo = pParts->pAnimeInfo;
 		pSend->byLevel = pParts->byLevel;
-		pSend->byLight = pParts->byLight;
+		pSend->byLight = MAPPARTS_MAKE_SAVELIGHT (pParts);
 		pSend->byDamage = pParts->byDamage;
 		pSend->byPoison = pParts->byPoison;
 		pData += sizeof (MAPPARTSINFOSAVE);
@@ -1291,7 +1291,7 @@ void SendCmdMAPPARTS(DWORD pIDSend, int nNo)
 	pSend->wBackID = pParts->wBackID;
 	pSend->pAnimeInfo = pParts->pAnimeInfo;
 	pSend->byLevel = pParts->byLevel;
-	pSend->byLight = pParts->byLight;
+	pSend->byLight = MAPPARTS_MAKE_SAVELIGHT (pParts);
 	pSend->byDamage = pParts->byDamage;
 	pSend->byPoison = pParts->byPoison;
 	if (pParts->pAnimeInfo) {
