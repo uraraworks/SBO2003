@@ -2017,6 +2017,15 @@ static BOOL IsTraceWallNearDarkFloor(PCHARINFO pChar, int bx, int by, int mx, in
 {
 	int dx, dy, nx, ny, nWidth, nDist, nLit, nDark;
 
+	/* 「ぶつかる(音無し)」のマス(水面・何も無い所など)は低い物が多いので、
+	   向こうの床が暗くても照らす(島のまわりの水が黒い影になっていた) */
+	if ((mx >= 0) && (mx < g_pMapInfo->nCX) && (my >= 0) && (my < g_pMapInfo->nCY)) {
+		int nPartsID = g_pMapInfo->pwMap[mx + my * g_pMapInfo->nCX];
+		if ((nPartsID < g_wCountMapParts) && (g_pMapPartsInfo[nPartsID].byHitType == PARTSHIT_BLOCK2)) {
+			return FALSE;
+		}
+	}
+
 	nWidth = DRAW_PARTS_X * 2 + 3;
 	nLit = nDark = TRACEWALL_DARK_RANGE + 1;
 	for (dy = -TRACEWALL_DARK_RANGE; dy <= TRACEWALL_DARK_RANGE; dy ++) {
