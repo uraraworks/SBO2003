@@ -819,6 +819,13 @@
 	#sbo-magic-fan {
 		display: none;
 	}
+	/* ショートカットを選んでいる間は、ほかのボタンと十字キーを暗くして、開いた 1〜5 を目立たせる */
+	body.sbo-fan-open #sbo-pad .sbo-stick,
+	body.sbo-fan-open #sbo-pad button:not(#sbo-shortcut):not(.sbo-fan-anchor):not(.sbo-magic-btn),
+	body.sbo-fan-open #sbo-chat-open {
+		opacity: 0.3;
+		transition: opacity 0.1s;
+	}
 	/* 縦持ち・戦闘中の中央ボタン（横持ちと戦闘外では出さない） */
 	body.sbo-pad #sbo-pad #sbo-shortcut {
 		display: none;
@@ -4240,6 +4247,7 @@
 		var FAN_OVER = 56;
 		var fanOrigin = {x: 0, y: 0};
 		var fanStep = 0;
+		var fanAnchor = null;	/* 扇を開いたボタン（暗くしない） */
 		var UP_R = 130;	/* 縦持ちの弧の半径・刻み・ボタンより持ち上げる量 */
 		var UP_STEP = 38;
 		var UP_LIFT = 20;
@@ -4369,6 +4377,9 @@
 				scBtn.classList.toggle('sbo-open', !!up);
 			}
 			fanEl.classList.add('sbo-on');
+			document.body.classList.add('sbo-fan-open');
+			fanAnchor = anchor;
+			anchor.classList.add('sbo-fan-anchor');
 			try {
 				if (navigator.vibrate) {
 					navigator.vibrate(12);
@@ -4410,6 +4421,11 @@
 			fanSticky = false;
 			fanHot = -1;
 			fanEl.classList.remove('sbo-on');
+			document.body.classList.remove('sbo-fan-open');
+			if (fanAnchor) {
+				fanAnchor.classList.remove('sbo-fan-anchor');
+				fanAnchor = null;
+			}
 			if (scBtn) {
 				scBtn.classList.remove('sbo-open');
 			}
