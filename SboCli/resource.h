@@ -179,6 +179,7 @@
 #define IDC_GRP                         1131
 #define IDC_PARA1                       1132
 #define IDC_MARK                        1133
+#define IDC_PARTS_LOW                   1340
 #define IDC_LVUPINFO                    1134
 #define IDC_PW                          1135
 #define IDC_DEX                         1136
@@ -400,7 +401,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        239
 #define _APS_NEXT_COMMAND_VALUE         40034
-#define _APS_NEXT_CONTROL_VALUE         1340
+#define _APS_NEXT_CONTROL_VALUE         1341
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

@@ -1683,9 +1683,16 @@ typedef struct _MAPPARTSINFO {
 	WORD		wBackID;											/* 重ね合わせ時の背景ID */
 	BYTE		byDamage;											/* ダメージ床：1歩ごとのダメージ(0ならダメージ床ではない。HPは1で止まり倒れない) */
 	BYTE		byPoison;											/* ダメージ床：踏むと毒になる秒数(0なら毒にならない。毒の強さは byDamage) */
+	BYTE		byLow;												/* 低い：1なら、ぶつかるが灯り・矢・飛ぶ特技・見通しは越える(水面・柵など。カウンターと同じ) */
 	DWORD		dwLastAnime;										/* 最後にアニメーションした時間 */
 	ANIMEINFO	*pAnimeInfo;										/* アニメーション情報 */
 } MAPPARTSINFO, *PMAPPARTSINFO;
+
+/* 「低い」は保存形式の大きさを変えないよう、保存用の byLight の最上位ビットに入れる(灯りは 0〜7 なので今のデータはそのまま読める) */
+#define MAPPARTS_SAVE_LOWBIT		0x80
+#define MAPPARTS_SAVE_LIGHT(p)		((BYTE)((p)->byLight & 0x7F))
+#define MAPPARTS_SAVE_LOW(p)		((BYTE)(((p)->byLight & MAPPARTS_SAVE_LOWBIT) ? 1 : 0))
+#define MAPPARTS_MAKE_SAVELIGHT(p)	((BYTE)(((p)->byLight & 0x7F) | ((p)->byLow ? MAPPARTS_SAVE_LOWBIT : 0)))
 
 /* マップパーツ情報保存用 */
 typedef struct _MAPPARTSINFOSAVE {

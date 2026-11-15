@@ -1283,7 +1283,7 @@ BOOL SaveMapPartsInfo(void)
 		pSave->byAnimeType = pParts->byAnimeType;
 		pSave->byAnimeCount = pParts->byAnimeCount;
 		pSave->byLevel = pParts->byLevel;
-		pSave->byLight = pParts->byLight;
+		pSave->byLight = MAPPARTS_MAKE_SAVELIGHT (pParts);
 		pSave->byDamage = pParts->byDamage;
 		pSave->byPoison = pParts->byPoison;
 		pSave->wGrpID = pParts->wGrpID;
@@ -1348,7 +1348,8 @@ BOOL LoadMapPartsInfo(void)
 		pParts->byAnimeType = pLoad->byAnimeType;
 		pParts->byAnimeCount = pLoad->byAnimeCount;
 		pParts->byLevel = pLoad->byLevel;
-		pParts->byLight = pLoad->byLight;
+		pParts->byLight = MAPPARTS_SAVE_LIGHT (pLoad);
+		pParts->byLow = MAPPARTS_SAVE_LOW (pLoad);
 		pParts->byDamage = pLoad->byDamage;
 		pParts->byPoison = pLoad->byPoison;
 		pParts->wGrpID = pLoad->wGrpID;

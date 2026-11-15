@@ -1463,6 +1463,7 @@ static const DATAFIELD s_aFieldMapParts[] = {
 	FLD (MAPPARTSINFO, byLight,			"灯りの範囲",			FT_U8, 0, "暗いマップでこのパーツが周りを照らす範囲（マス）。0 なら光らない。1〜7"),
 	FLD (MAPPARTSINFO, byDamage,		"ダメージ床",			FT_U8, 0, "このパーツのマスに1歩入るたびに減るHP。0 ならダメージ床ではない。HPは1で止まり倒れない（毒沼・溶岩など）"),
 	FLD (MAPPARTSINFO, byPoison,		"毒になる秒数",			FT_U8, 0, "ダメージ床を踏むと毒になる秒数。0 なら毒にならない。毒は2秒ごとに byDamage ずつ減る（毒・眠りの効きにくさで防げる）"),
+	FLD (MAPPARTSINFO, byLow,			"低い",					FT_U8, 0, "1 なら低い物（水面・柵など）。ぶつかって通れないが、灯り・矢・飛ぶ特技・見通しは越える（カウンターと同じ）。0 なら普通"),
 	FLD (MAPPARTSINFO, wGrpID,			"画像ID",				FT_U16, 0, NULL),
 	FLD (MAPPARTSINFO, wBackID,			"重ねる時の背景ID",		FT_U16, 0, NULL),
 };
