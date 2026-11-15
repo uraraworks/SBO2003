@@ -2015,7 +2015,8 @@ int GetMapDarkLevel(PCHARINFO pChar, int x, int y)
 #define TRACEWALL_DARK_RANGE	(3)									/* 壁をたどる時に暗い床を探すマス数 */
 static BOOL IsTraceWallNearDarkFloor(PCHARINFO pChar, int bx, int by, int mx, int my)
 {
-	int dx, dy, nx, ny, nWidth, nDist, nLit, nDark;
+	int dx, dy, nx, ny, nWidth, nDist, nLit, nDark, i, nLitCnt, nDarkCnt;
+	int anLitCnt[TRACEWALL_DARK_RANGE + 1], anDarkCnt[TRACEWALL_DARK_RANGE + 1];
 
 	/* 「ぶつかる(音無し)」のマス(水面・何も無い所など)は低い物が多いので、
 	   向こうの床が暗くても照らす(島のまわりの水が黒い影になっていた) */
@@ -2028,14 +2029,13 @@ static BOOL IsTraceWallNearDarkFloor(PCHARINFO pChar, int bx, int by, int mx, in
 
 	nWidth = DRAW_PARTS_X * 2 + 3;
 	nLit = nDark = TRACEWALL_DARK_RANGE + 1;
+	ZeroMemory (anLitCnt, sizeof (anLitCnt));
+	ZeroMemory (anDarkCnt, sizeof (anDarkCnt));
 	for (dy = -TRACEWALL_DARK_RANGE; dy <= TRACEWALL_DARK_RANGE; dy ++) {
 		for (dx = -TRACEWALL_DARK_RANGE; dx <= TRACEWALL_DARK_RANGE; dx ++) {
 			nx = bx + dx;
 			ny = by + dy;
 			nDist = max (abs (dx), abs (dy));
-			if ((nDist >= nLit) && (nDist >= nDark)) {
-				continue;
-			}
 			if (IsSightWall (mx + dx, my + dy)) {
 				continue;
 			}
@@ -2044,20 +2044,35 @@ static BOOL IsTraceWallNearDarkFloor(PCHARINFO pChar, int bx, int by, int mx, in
 			if ((nx < 0) || (nx >= nWidth) || (ny < 0) || (ny >= DRAW_PARTS_Y * 2 + 3)) {
 				if (GetMapDarkLevel (pChar, mx + dx, my + dy) > 1) {
 					nDark = min (nDark, nDist);
+					anDarkCnt[nDist] ++;
 				}
 				continue;
 			}
 			if (g_pMapDarkTmpPos[nx + nWidth * ny] == 2) {
 				nLit = min (nLit, nDist);
+				anLitCnt[nDist] ++;
 			} else if (g_pMapDarkTmpPos[nx + nWidth * ny] == 0) {
 				/* 灯りの丸の外で暗いだけの床は数えない */
 				if (GetMapDarkLevel (pChar, mx + dx, my + dy) > 1) {
 					nDark = min (nDark, nDist);
+					anDarkCnt[nDist] ++;
 				}
 			}
 		}
 	}
-	return (nDark < nLit) ? TRUE : FALSE;
+	if (nDark != nLit) {
+		return (nDark < nLit) ? TRUE : FALSE;
+	}
+	if (nDark > TRACEWALL_DARK_RANGE) {
+		return FALSE;
+	}
+	/* 同じ近さなら、その近さまでの明るい床と暗い床の数を比べて多い方に合わせる。
+	   (扉の2マス横の壁が、部屋の中からは見え、扉の外からは出っ張りに見えていた) */
+	for (i = 0, nLitCnt = nDarkCnt = 0; i <= nDark; i ++) {
+		nLitCnt += anLitCnt[i];
+		nDarkCnt += anDarkCnt[i];
+	}
+	return (nDarkCnt > nLitCnt) ? TRUE : FALSE;
 }
 
 /* ========================================================================= */
