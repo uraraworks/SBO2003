@@ -819,6 +819,10 @@
 	#sbo-magic-fan {
 		display: none;
 	}
+	/* 縦持ち・戦闘中の中央ボタン（横持ちと戦闘外では出さない） */
+	body.sbo-pad #sbo-pad #sbo-shortcut {
+		display: none;
+	}
 	body.sbo-pad #sbo-magic.sbo-on {
 		display: flex;
 		align-items: center;
@@ -861,6 +865,32 @@
 	   右は「特技」「戦闘」の手前まで。十字キー（上端 46px）とは 10px ほどあけ、押し間違えないようにする
 	   （ボタンは低めの 26px で、番号と名前を横に並べる） */
 	@media (max-aspect-ratio: 129/100) {
+		/* 戦闘中は 5 つの列の代わりに、十字キー（右端 x=144px・上端 46px）と右のボタン群（「キャンセル」は
+		   左端 W-168px・上端 98px、「特技」は左端 W-124px）の間の空いた中央上寄りに、丸いボタンを 1 つだけ置く。
+		   画面の真ん中 x=W/2 に置き、どのボタンとも 20px 前後あける */
+		body.sbo-pad #sbo-pad #sbo-shortcut.sbo-on {
+			display: flex;
+			left: calc(50% - 25px);
+			top: 22px;
+			width: 50px;
+			height: 50px;
+			padding: 0;
+			border-radius: 50%;
+			font-size: 9px;
+			z-index: 5;
+			color: #f0c040;
+			border-color: rgba(240, 192, 64, 0.5);
+		}
+		body.sbo-pad #sbo-pad #sbo-shortcut .sbo-btn-svg {
+			width: 20px;
+			height: 20px;
+		}
+		body.sbo-pad #sbo-pad #sbo-shortcut.sbo-open {
+			background: #3d4452;
+		}
+		body.sbo-pad #sbo-magic.sbo-on.sbo-fire:not(.sbo-reg) {
+			display: none;
+		}
 		body.sbo-pad #sbo-magic.sbo-on {
 			position: absolute;
 			left: calc(12px + env(safe-area-inset-left));
@@ -992,6 +1022,7 @@
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
 		pointer-events: none;
 	}
+	/* 縦持ちの中央ボタンから上へ開く弧（タップで開いたままにした時の 2 回目のタップは座標で当てる） */
 	#sbo-magic-fan .sbo-magic-btn.sbo-hot {
 		background: #6a5420;
 		border-color: #f0b84a;
@@ -1942,6 +1973,8 @@
 			<button type="button" class="sbo-b-ctrl" data-vk="17" data-pad-need="4"><svg class="sbo-btn-svg" viewBox="0 0 24 24"><path d="M18 3h3v3L9 18l-3-3zM5 14l5 5M4 20l2-2"/></svg><span>戦闘</span><span class="sbo-btn-key">Ctrl</span></button>
 			<button type="button" class="sbo-b-z" data-vk="90"><svg class="sbo-btn-svg" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg><span class="sbo-btn-label" id="sbo-pad-z-label">キャンセル</span><span class="sbo-btn-key">Z</span></button>
 			<button type="button" class="sbo-b-x sbo-main" data-vk="88"><svg class="sbo-btn-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/></svg><span id="sbo-pad-x-label">決定</span><span class="sbo-btn-key">X</span></button>
+			<!-- 縦持ち・戦闘中だけ出る特技ショートカット（押すと 1〜5 の特技が上に開く）。「特技」(C) とは別のボタン -->
+			<button type="button" class="sbo-b-sc" id="sbo-shortcut" aria-label="特技ショートカット 1〜5"><svg class="sbo-btn-svg" viewBox="0 0 24 24"><path d="M13 2L5 13h6l-1 9 8-11h-6z"/></svg><span class="sbo-btn-label">ｼｮｰﾄｶｯﾄ</span></button>
 		</div>
 	</div>
 	<!-- 横持ちのチャットボタン（縦持ちはログ欄の下端の「発言する…」） -->
@@ -4189,6 +4222,8 @@
 		}
 		var barBtns = bar.querySelectorAll('.sbo-magic-btn');
 		var fanBtns = fanEl.querySelectorAll('.sbo-magic-btn');
+		var scBtn = document.getElementById('sbo-shortcut');	/* 縦持ち・戦闘中の中央ボタン */
+		var fanSticky = false;	/* タップで開いたまま（次のタップで発動／外で閉じる） */
 		var padEl = document.getElementById('sbo-pad');
 		var VK_1 = 0x31;
 		var state = {fire: 0, reg: 0, slots: []};
@@ -4199,6 +4234,9 @@
 		var FAN_R = 120;
 		var FAN_STEP = 34;
 		var FAN_HIT = 36;
+		var UP_R = 130;	/* 縦持ちの弧の半径・刻み・ボタンより持ち上げる量 */
+		var UP_STEP = 38;
+		var UP_LIFT = 20;
 		var FAN_PIVOT = 60;	/* 扇の中心を「特技 C」より左へずらす距離（右側のボタン列に掛けない） */
 
 		/* パッドの中へ移す（縦持ちはパッドの上端の空きに重ねる。横持ちは fixed なのでどこでも同じ） */
@@ -4237,6 +4275,9 @@
 			bar.classList.toggle('sbo-on', on);
 			bar.classList.toggle('sbo-fire', !!state.fire);
 			bar.classList.toggle('sbo-reg', !!state.reg);
+			if (scBtn) {
+				scBtn.classList.toggle('sbo-on', !!state.fire);
+			}
 			if (on) {
 				paint(barBtns, state.slots);
 			}
@@ -4278,22 +4319,34 @@
 		setInterval(poll, 100);
 
 		/* ---- 横持ち：「特技 C」長押しで開く扇 ---- */
-		function openFan(anchor) {
+		/* up が true なら縦持ちの中央ボタンから上へ開く弧（左から 1〜5）、false なら横持ちの左向きの弧 */
+		function openFan(anchor, up) {
 			var r = anchor.getBoundingClientRect();
 			var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
 			var vw = window.innerWidth, vh = window.innerHeight;
 			paint(fanBtns, state.slots);
 			fanPos = [];
-			/* 左向き（ゲーム画面側）の弧。中心は C より左へずらし、上下にはみ出さない高さへ寄せる。
-			   右側の「戦闘」「攻撃」などのボタン列には掛からない */
-			var half = FAN_R * Math.sin(2 * FAN_STEP * Math.PI / 180) + 26;
-			var px = cx - FAN_PIVOT;
-			var py = Math.max(half, Math.min(vh - half, cy));
+			var px, py, rad, step;
+			if (up) {
+				/* ボタンの少し上を中心に、ゲーム画面側（上）へ弧を描く。左右は画面の端で止める */
+				rad = UP_R;
+				step = UP_STEP;
+				px = cx;
+				py = cy - UP_LIFT;
+			} else {
+				/* 左向き（ゲーム画面側）の弧。中心は C より左へずらし、上下にはみ出さない高さへ寄せる。
+				   右側の「戦闘」「攻撃」などのボタン列には掛からない */
+				rad = FAN_R;
+				step = FAN_STEP;
+				var half = FAN_R * Math.sin(2 * FAN_STEP * Math.PI / 180) + 26;
+				px = cx - FAN_PIVOT;
+				py = Math.max(half, Math.min(vh - half, cy));
+			}
 			for (var i = 0; i < fanBtns.length; i ++) {
-				/* 上から 1〜5 */
-				var a = (180 + (2 - i) * FAN_STEP) * Math.PI / 180;
-				var x = px + FAN_R * Math.cos(a);
-				var y = py + FAN_R * Math.sin(a);
+				/* 横持ちは上から、縦持ちは左から 1〜5 */
+				var a = up ? (270 + (i - 2) * step) * Math.PI / 180 : (180 + (2 - i) * step) * Math.PI / 180;
+				var x = px + rad * Math.cos(a);
+				var y = py + rad * Math.sin(a);
 				x = Math.max(32, Math.min(vw - 32, x));
 				y = Math.max(26, Math.min(vh - 26, y));
 				fanPos.push({x: x, y: y});
@@ -4303,6 +4356,10 @@
 			}
 			fanHot = -1;
 			fanOpen = true;
+			fanSticky = false;
+			if (scBtn) {
+				scBtn.classList.toggle('sbo-open', !!up);
+			}
 			fanEl.classList.add('sbo-on');
 			try {
 				if (navigator.vibrate) {
@@ -4331,12 +4388,125 @@
 		function closeFan(fire) {
 			var no = fanHot;
 			fanOpen = false;
+			fanSticky = false;
 			fanHot = -1;
 			fanEl.classList.remove('sbo-on');
+			if (scBtn) {
+				scBtn.classList.remove('sbo-open');
+			}
 			if (fire && no >= 0 && state.fire) {
 				padKey(VK_1 + no, true, 0);
 				padKey(VK_1 + no, false, 0);
 			}
+		}
+		/* ---- 縦持ち：中央の「ショートカット」ボタン ----
+		   押して滑らせて離した所の特技を発動（横持ちの扇と同じ）。滑らせずに離した時は開いたままにし、
+		   次のタップで発動して閉じる（外・もう一度ボタンで閉じる） */
+		function fanHit(x, y) {
+			moveFan(x, y);
+			return fanHot;
+		}
+		if (scBtn) {
+			var scTouch = null;
+			var scDown = false;
+			var scSwallow = false;	/* 開いたまま状態のボタンを押して閉じた時、離した時に何もしない */
+			var scPress = function (x, y) {
+				if (!state.fire) {
+					return;
+				}
+				scDown = true;
+				if (fanOpen) {
+					/* 開いたままの時にもう一度押した＝閉じる */
+					scSwallow = true;
+					closeFan(false);
+					return;
+				}
+				scSwallow = false;
+				openFan(scBtn, true);
+				scBtn.classList.add('sbo-pressed');
+			};
+			var scRelease = function (cancel) {
+				if (!scDown) {
+					return;
+				}
+				scDown = false;
+				scBtn.classList.remove('sbo-pressed');
+				if (scSwallow) {
+					scSwallow = false;
+					return;
+				}
+				if (cancel || !fanOpen) {
+					closeFan(false);
+				} else if (fanHot >= 0) {
+					closeFan(true);
+				} else {
+					/* 滑らせずに離した＝開いたままにして、次のタップを待つ */
+					fanSticky = true;
+				}
+			};
+			var scFind = function (list) {
+				for (var i = 0; i < list.length; i ++) {
+					if (list[i].identifier === scTouch) {
+						return list[i];
+					}
+				}
+				return null;
+			};
+			scBtn.addEventListener('touchstart', function (ev) {
+				ev.preventDefault();
+				scTouch = ev.changedTouches[0].identifier;
+				scPress();
+			}, {passive: false});
+			scBtn.addEventListener('touchmove', function (ev) {
+				var tc = scFind(ev.changedTouches);
+				if (tc && fanOpen && !fanSticky) {
+					ev.preventDefault();
+					moveFan(tc.clientX, tc.clientY);
+				}
+			}, {passive: false});
+			scBtn.addEventListener('touchend', function (ev) {
+				if (scFind(ev.changedTouches)) {
+					ev.preventDefault();
+					scTouch = null;
+					scRelease(false);
+				}
+			}, {passive: false});
+			scBtn.addEventListener('touchcancel', function (ev) {
+				if (scFind(ev.changedTouches)) {
+					scTouch = null;
+					scRelease(true);
+				}
+			}, {passive: false});
+			/* マウス（?pad=1 で PC から試す時） */
+			scBtn.addEventListener('mousedown', function (ev) {
+				ev.preventDefault();
+				scPress();
+			});
+			document.addEventListener('mousemove', function (ev) {
+				if (scDown && fanOpen && !fanSticky) {
+					moveFan(ev.clientX, ev.clientY);
+				}
+			});
+			document.addEventListener('mouseup', function () {
+				scRelease(false);
+			});
+			/* 開いたまま状態の次のタップ：特技の上なら発動、外なら閉じる（ボタン自身は上の処理） */
+			var stickyTap = function (ev, x, y) {
+				if (!fanOpen || !fanSticky || scBtn.contains(ev.target)) {
+					return;
+				}
+				ev.preventDefault();
+				ev.stopPropagation();
+				fanHit(x, y);
+				closeFan(fanHot >= 0);
+			};
+			document.addEventListener('touchstart', function (ev) {
+				var t = ev.changedTouches[0];
+				stickyTap(ev, t.clientX, t.clientY);
+			}, {capture: true, passive: false});
+			document.addEventListener('mousedown', function (ev) {
+				stickyTap(ev, ev.clientX, ev.clientY);
+			}, true);
 		}
 		magicFan = {
 			canOpen: function () {
