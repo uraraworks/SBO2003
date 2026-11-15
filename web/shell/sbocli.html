@@ -4233,7 +4233,13 @@
 		var fanHot = -1;
 		var FAN_R = 120;
 		var FAN_STEP = 34;
-		var FAN_HIT = 36;
+		/* 方向で選ぶ（フリック入力のように、ボタンまで届かなくても向きで光る）。
+		   押した所から FAN_DEAD 未満は「真ん中＝選ばない」、ボタンを FAN_OVER より先へ
+		   突き抜けても選ばない。向きは一番近いボタンの向きと 1 刻み分以上ずれていたら選ばない */
+		var FAN_DEAD = 24;
+		var FAN_OVER = 56;
+		var fanOrigin = {x: 0, y: 0};
+		var fanStep = 0;
 		var UP_R = 130;	/* 縦持ちの弧の半径・刻み・ボタンより持ち上げる量 */
 		var UP_STEP = 38;
 		var UP_LIFT = 20;
@@ -4327,6 +4333,7 @@
 			paint(fanBtns, state.slots);
 			fanPos = [];
 			var px, py, rad, step;
+			fanOrigin = {x: cx, y: cy};
 			if (up) {
 				/* ボタンの少し上を中心に、ゲーム画面側（上）へ弧を描く。左右は画面の端で止める */
 				rad = UP_R;
@@ -4354,6 +4361,7 @@
 				fanBtns[i].style.top = (y - 21) + 'px';
 				fanBtns[i].classList.remove('sbo-hot');
 			}
+			fanStep = step * Math.PI / 180;
 			fanHot = -1;
 			fanOpen = true;
 			fanSticky = false;
@@ -4368,13 +4376,24 @@
 			} catch (e) { /* 振動できなくても困らない */ }
 		}
 		function moveFan(x, y) {
-			var best = -1, bestD = FAN_HIT * FAN_HIT;
-			for (var i = 0; i < fanPos.length; i ++) {
-				var dx = fanPos[i].x - x, dy = fanPos[i].y - y;
-				var d = dx * dx + dy * dy;
-				if (d < bestD) {
-					bestD = d;
-					best = i;
+			var best = -1;
+			var fx = x - fanOrigin.x, fy = y - fanOrigin.y;
+			var fd = Math.sqrt(fx * fx + fy * fy);
+			if (fd >= FAN_DEAD) {
+				var fa = Math.atan2(fy, fx);
+				var bestA = fanStep;
+				for (var i = 0; i < fanPos.length; i ++) {
+					var bx = fanPos[i].x - fanOrigin.x, by = fanPos[i].y - fanOrigin.y;
+					var bd = Math.sqrt(bx * bx + by * by);
+					var da = Math.abs(Math.atan2(by, bx) - fa);
+					if (da > Math.PI) {
+						da = 2 * Math.PI - da;
+					}
+					/* ボタンを突き抜けた先は選ばない */
+					if ((fd <= bd + FAN_OVER) && (da < bestA)) {
+						bestA = da;
+						best = i;
+					}
 				}
 			}
 			if (best !== fanHot) {
