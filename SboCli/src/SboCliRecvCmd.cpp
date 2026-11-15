@@ -2151,6 +2151,11 @@ void RenewMapDarkCorner(PCHARINFO pChar)
 			if (!IsInViewRange (mx, my - 1)) {
 				continue;
 			}
+			/* 天井の向こうが閉まった扉の先の暗い床なら照らさない
+			   (扉の横の壁の上が出っ張りのように見えていた) */
+			if (GetMapLightLevel () && IsTraceWallNearDarkFloor (pChar, x, y - 1, mx, my - 1)) {
+				continue;
+			}
 			nTmp = GetMapDarkLevel (pChar, mx, my - 1);
 			if (GetMapLightLevel () && (nTmp <= 1)) {
 				continue;
