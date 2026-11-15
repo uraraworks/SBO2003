@@ -6961,7 +6961,6 @@ void AdminOnHScrollMapParts(HWND hWndCtl, UINT code, int pos)
 /* ========================================================================= */
 void AdminOnVScrollMapParts(HWND hWndCtl, UINT code, int pos)
 {
-	switch (code) {
 	if (hWndCtl != m_hWndMapPartsScrParts) {
 		return;
 	}
