@@ -2008,6 +2008,45 @@ int GetMapDarkLevel(PCHARINFO pChar, int x, int y)
 	return nTmp;
 }
 
+/* 壁をたどって照らす時、その壁(表の bx,by・マップの mx,my)が
+   「灯りの丸の中なのに灯りが届いていない床(閉まった扉の向こうの通路など)」の方に近ければ TRUE。
+   灯りの届いた床と同じ近さなら照らす(部屋の壁はそのまま見せる)。
+   見ない所(3マスより遠く)に暗い床が無ければ照らす */
+#define TRACEWALL_DARK_RANGE	(3)									/* 壁をたどる時に暗い床を探すマス数 */
+static BOOL IsTraceWallNearDarkFloor(PCHARINFO pChar, int bx, int by, int mx, int my)
+{
+	int dx, dy, nx, ny, nWidth, nDist, nLit, nDark;
+
+	nWidth = DRAW_PARTS_X * 2 + 3;
+	nLit = nDark = TRACEWALL_DARK_RANGE + 1;
+	for (dy = -TRACEWALL_DARK_RANGE; dy <= TRACEWALL_DARK_RANGE; dy ++) {
+		for (dx = -TRACEWALL_DARK_RANGE; dx <= TRACEWALL_DARK_RANGE; dx ++) {
+			nx = bx + dx;
+			ny = by + dy;
+			/* 表の外は分からないので数えない */
+			if ((nx < 0) || (nx >= nWidth) || (ny < 0) || (ny >= DRAW_PARTS_Y * 2 + 3)) {
+				continue;
+			}
+			nDist = max (abs (dx), abs (dy));
+			if ((nDist >= nLit) && (nDist >= nDark)) {
+				continue;
+			}
+			if (IsSightWall (mx + dx, my + dy)) {
+				continue;
+			}
+			if (g_pMapDarkTmpPos[nx + nWidth * ny] == 2) {
+				nLit = min (nLit, nDist);
+			} else if (g_pMapDarkTmpPos[nx + nWidth * ny] == 0) {
+				/* 灯りの丸の外で暗いだけの床は数えない */
+				if (GetMapDarkLevel (pChar, mx + dx, my + dy) > 1) {
+					nDark = min (nDark, nDist);
+				}
+			}
+		}
+	}
+	return (nDark < nLit) ? TRUE : FALSE;
+}
+
 /* ========================================================================= */
 /* 関数名：RenewMapDarkCorner												 */
 /* 内容：灯りの角の壁を照らす												 */
@@ -2171,6 +2210,11 @@ void RenewMapDarkCorner(PCHARINFO pChar)
 					continue;
 				}
 				if (IsHideAreaCross (nFromX, nFromY, mx + anDX[i], my + anDY[i])) {
+					continue;
+				}
+				/* 閉まった扉の向こうの通路の壁のように、灯りの届かない床の方に近い壁は照らさない
+				   (壁だけ見えて床が真っ黒な通路になっていた) */
+				if (IsTraceWallNearDarkFloor (pChar, nx, ny, mx + anDX[i], my + anDY[i])) {
 					continue;
 				}
 				nTmp = GetMapDarkLevel (pChar, mx + anDX[i], my + anDY[i]);
