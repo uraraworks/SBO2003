@@ -5115,6 +5115,10 @@ void RecvDataProcCHGMAP(PBYTE pData, DWORD dwDataSize)
 
 	g_pMapInfo->pwMap[pMap->nX + pMap->nY * g_pMapInfo->nCX] = pMap->wMap;
 	g_bDraw = TRUE;
+
+	/* 扉が開いた・閉まった時などに、灯り(見える所)を作り直す。
+	   作り直さないと、扉が閉まってもその場から動くまで向こうが見えたままだった */
+	RequestCharPosInfo ();
 }
 
 /* ========================================================================= */
