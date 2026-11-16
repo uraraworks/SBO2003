@@ -16,6 +16,18 @@
 #include "SboCliMsgLogWindow.h"
 #include "SboCliDrawScreen.h"
 
+/* お店の「買う」確認文：自分が装備できない性別限定品なら注意書きを足す（買うこと自体は止めない） */
+static void ShopAddSexWarn(LPSTR pszMsg, int nSize, PITEMINFO pItem, PCHARINFO pChar)
+{
+	if ((pItem->bySexDistinction == SEXDISTINCTION_ALL) || CheckItemSexDistinction (pItem, pChar)) {
+		return;
+	}
+	/* @1 は次の行へ */
+	strcat (pszMsg, (pItem->bySexDistinction == SEXDISTINCTION_FEMALE) ?
+		"@1※この品は女性しか装備できません。" : "@1※この品は男性しか装備できません。");
+	pszMsg[nSize - 1] = 0;
+}
+
 /* ========================================================================= */
 /* 関数プロトタイプ宣言														 */
 /* ========================================================================= */
@@ -3333,6 +3345,7 @@ void KeyProcSHOP(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				char szMsgTmp[2048];
 				PITEMINFO pItem = g_aItemInfo[pShop->awItem[nTmp]];
 				wsprintf (szMsgTmp, pShop->apMsg[SHOPMSG_BUYCONF], pItem->szName, pItem->dwGold);
+				ShopAddSexWarn (szMsgTmp, sizeof (szMsgTmp), pItem, pChar);
 				pWndNew = MakeWindowMSG (szMsgTmp, TRUE);
 				pWndNew->pParent = pWndTmp;
 				pWndTmp->pChild = pWndNew;
@@ -3553,6 +3566,7 @@ void KeyProcSHOPSELL(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				char szMsgTmp[2048];
 				PITEMINFO pItem = g_aItemInfo[pShop->awItem[nTmp]];
 				wsprintf (szMsgTmp, pShop->apMsg[SHOPMSG_BUYCONF], pItem->szName, pItem->dwGold);
+				ShopAddSexWarn (szMsgTmp, sizeof (szMsgTmp), pItem, pChar);
 				pWndNew = MakeWindowMSG (szMsgTmp, TRUE);
 				pWndNew->pParent = pWndTmp;
 				pWndTmp->pChild = pWndNew;

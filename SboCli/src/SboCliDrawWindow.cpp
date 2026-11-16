@@ -4473,6 +4473,19 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 			nCyNew = max (nCyNew, ITEMINFO_CY);
 		}
 	}
+	/* 性別限定の装備品は「性別：」の行を足す（「装備：」の次の行）ので1行分広げる */
+	BOOL bSexLine = FALSE;
+	PCHARINFO pCharSex = ((g_nMyCharID >= 0) && (g_nMyCharID < g_aCharInfo.GetSize ())) ? g_aCharInfo[g_nMyCharID] : NULL;
+	if (pCharSex && pItem->pData && (pItem->bySexDistinction != SEXDISTINCTION_ALL) &&
+		((pItem->byType == ITEMTYPE_WEAPON) || (pItem->byType == ITEMTYPE_ARMOR) ||
+		 (pItem->byType == ITEMTYPE_SHILD) || (pItem->byType == ITEMTYPE_HELMET) ||
+		 (pItem->byType == ITEMTYPE_EQU_HAND) || (pItem->byType == ITEMTYPE_EQU_LEG) ||
+		 (pItem->byType == ITEMTYPE_EQU_ACC1) || (pItem->byType == ITEMTYPE_EQU_ACC2) ||
+		 (pItem->byType == ITEMTYPE_EQU_ACC3))) {
+		bSexLine = TRUE;
+		nCyNew += ITEMINFO_LINE;
+		nCyNew = (nCyNew + 15) / 16 * 16;
+	}
 	/* 作り手の一覧の横：本体の下に足す欄の分だけ広げる */
 	int nFooterTop = nCyNew - 16;
 	if (pRecipe) {
@@ -4653,6 +4666,14 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 		TextOut2 (hDC, 16, 16 + ITEMINFO_LINE * 3, "装備：", RGB (200, 200, 200));
 		wsprintf (szTmp, "%s", g_aEquUserInfo[wEqu]);
 		TextOut2 (hDC, 16 + ITEMINFO_LINE * 3, 16 + ITEMINFO_LINE * 3, szTmp, RGB (150, 255, 200));
+		/* 性別限定：装備できる時は他の値と同じ色、できない時は赤 */
+		if (bSexLine) {
+			BOOL bOk = CheckItemSexDistinction (pItem, pCharSex);
+			TextOut2 (hDC, 16, 16 + ITEMINFO_LINE * 4, "性別：", RGB (200, 200, 200));
+			strcpy (szTmp, (pItem->bySexDistinction == SEXDISTINCTION_FEMALE) ? "女性のみ" : "男性のみ");
+			TextOut2 (hDC, 16 + ITEMINFO_LINE * 3, 16 + ITEMINFO_LINE * 4, szTmp,
+				bOk ? RGB (150, 255, 200) : RGB (255, 130, 130));
+		}
 	}
 
 	/* 特技の書：覚える特技と説明 */
