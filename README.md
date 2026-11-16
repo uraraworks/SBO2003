@@ -5,7 +5,12 @@
 サーバーは Node.js、クライアントはブラウザで動かしています。
 
 <p align="center">
-  <a href="https://sbo2003.urara-works.jp/">▶ ブラウザで遊ぶ</a>
+  <a href="https://sbo2003.urara-works.jp/about"><img src="web/about/img/11-adventure.png" width="480" alt="パーティで洞窟を冒険している画面"></a>
+</p>
+
+<p align="center">
+  <a href="https://sbo2003.urara-works.jp/">▶ ブラウザで遊ぶ</a> ／
+  <a href="https://sbo2003.urara-works.jp/about">どんなゲーム？（紹介ページ）</a>
 </p>
 
 後継の「スクラップブックオンライン ページ.2」は [SBOP2](https://github.com/uraraworks/SBOP2) で公開しています。
