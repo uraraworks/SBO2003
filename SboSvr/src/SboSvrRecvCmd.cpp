@@ -71,6 +71,8 @@ void	DeleteChildChar				(PCHARINFO);									/* 自分が親のキャラを削�
 void	SetInitCharData				(PCHARINFO);									/* キャラの初期値を設定 */
 void	CharTargetPC				(PCHARINFO, PCHARINFO, DWORD);					/* キャラのついてく設定 */
 void	CharTargetCancelPC			(PCHARINFO);									/* キャラのついていく解除 */
+void	TailBattleMode				(PCHARINFO, BOOL);								/* 戦闘モードに合わせて列を離れる・戻る */
+void	TailReturnForget			(DWORD);										/* 戦闘で列を離れた時に覚えた先頭を消す */
 void	TailMoveChain				(PCHARINFO);									/* ついてきているキャラを順に動かす */
 void	FloorDamageOnStep			(PCHARINFO);									/* ダメージ床に1歩入った時の処理 */
 BOOL	IsDamageFloor				(PMAPINFO, int, int);							/* ダメージ床のマスか */
@@ -1109,6 +1111,8 @@ void DeleteChar(DWORD dwTblID)
 	BOOL bEnemy = (pChar->byNpcType == NPCTYPE_BATTLE1) || (pChar->byNpcType == NPCTYPE_BATTLE2) || (pChar->byNpcType == NPCTYPE_MIMIC);
 	DWORD dwMapID = pChar->dwMapID;
 
+	/* 戦闘で列を離れた時に覚えた先頭を消す */
+	TailReturnForget (dwTblID);
 	/* 討伐報酬用に覚えていたダメージを消す */
 	ClearBattleDamage (dwTblID);
 	OnDecPlayer ((int)pChar->dwTblID);
@@ -3035,6 +3039,9 @@ void SubProcMapMove(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY)
 		SendCmdFADEINOUT (pChar->pID, 1);
 		return;
 	}
+
+	/* マップ移動したら、戦闘で列を離れた時の戻り先は忘れる */
+	TailReturnForget (pChar->dwTblID);
 
 	pMap = g_aMapInfo[dwMapID];
 
@@ -5411,6 +5418,204 @@ void RecvDataProcBATTLEMODE(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	MercenarySetBattleMode (g_aCharInfo[pPara->dwTblID], pPara->byData != 0);
+	/* ついていっているプレイヤーは、戦闘モードの間だけ列から抜ける */
+	TailBattleMode (g_aCharInfo[pPara->dwTblID], pPara->byData != 0);
+}
+
+
+/* ========================================================================= */
+/* 戦闘モードで列を離れたプレイヤーが、戻る先の先頭を覚えておく入れ物		 */
+/* CHARINFO は通信・保存でそのまま使われるので、サーバーだけの表で持つ		 */
+/* 先頭の pID と名前も覚え、テーブルIDの使い回しで別人に戻らないようにする	 */
+/* ========================================================================= */
+typedef struct _TAILRETURN {
+	DWORD	dwPID;											/* 本人のpID(使い回し確認用) */
+	DWORD	dwHeadTblID;									/* 先頭のテーブルID */
+	DWORD	dwHeadPID;										/* 先頭のpID */
+	char	szHeadName[sizeof (((PCHARINFO)0)->szName)];	/* 先頭の名前 */
+} TAILRETURN;
+static std::map<DWORD, TAILRETURN> s_mapTailReturn;
+
+
+/* ========================================================================= */
+/* 関数名：	TailReturnForget												 */
+/* 内容：	覚えている戻り先の先頭を消す									 */
+/*			(Zで別の人についていく・解除・マップ移動・ログアウト・倒れた時)	 */
+/* ========================================================================= */
+
+void TailReturnForget(DWORD dwTblID)
+{
+	if (s_mapTailReturn.empty ()) {
+		return;
+	}
+	s_mapTailReturn.erase (dwTblID);
+}
+
+
+/* ========================================================================= */
+/* 関数名：	TailReturnFindEnd												 */
+/* 内容：	覚えた先頭の列の最後尾を探す(戻れない時は NULL)					 */
+/* ========================================================================= */
+
+static PCHARINFO TailReturnFindEnd(PCHARINFO pChar, const TAILRETURN &Info)
+{
+	int i;
+	DWORD dwCount = (DWORD)g_aCharInfo.GetSize ();
+	PCHARINFO pHead, pCur, pNext;
+
+	if (Info.dwHeadTblID >= dwCount) {
+		return NULL;
+	}
+	pHead = g_aCharInfo[Info.dwHeadTblID];
+	/* 先頭がまだ同じ人で、同じマップ・同じ空間にいて、倒れていない？ */
+	if ((pHead == pChar) || (pHead->pID == 0) || (pHead->pID != Info.dwHeadPID) ||
+		(strcmp (pHead->szName, Info.szHeadName) != 0) ||
+		(pHead->dwMapID != pChar->dwMapID) || !IsInteractable (pChar, pHead) ||
+		(pHead->byCharState == CHARSTATE_DEAD) || (pHead->wHP == 0)) {
+		return NULL;
+	}
+	/* 最後尾までたどる(輪になっていても止まるように回数を区切る) */
+	pCur = pHead;
+	for (i = 0; i < 100; i ++) {
+		if ((pCur->dwTailBackTblID == (DWORD)-1) || (pCur->dwTailBackTblID >= dwCount)) {
+			return pCur;
+		}
+		pNext = g_aCharInfo[pCur->dwTailBackTblID];
+		if ((pNext == pChar) || (pNext->dwTailTblID != pCur->dwTblID) || (pNext->dwMapID != pChar->dwMapID)) {
+			return NULL;
+		}
+		pCur = pNext;
+	}
+	return NULL;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	TailBattleMode													 */
+/* 内容：	戦闘モードの切り替えに合わせて、列から一時的に抜ける・戻る		 */
+/*			傭兵・NPCは対象外。戦闘モードON=先頭を覚えて列から抜ける		 */
+/*			OFF=先頭の列の最後尾に戻る(離れていれば、となりへワープ)		 */
+/* ========================================================================= */
+
+void TailBattleMode(PCHARINFO pChar, BOOL bBattle)
+{
+	DWORD dwCount = (DWORD)g_aCharInfo.GetSize ();
+	PCHARINFO pPrev, pNext, pEnd, pHead;
+	CCHAR_TAIL Packet;
+	TAILRETURN Info;
+
+	if ((pChar == NULL) || (pChar->pID == 0) || (pChar->byNpcType != NPCTYPE_INIT) || IsMercenary (pChar)) {
+		return;
+	}
+
+	if (bBattle) {
+		int i;
+
+		if ((pChar->dwTailTblID == (DWORD)-1) || (pChar->dwTailTblID >= dwCount)) {
+			return;
+		}
+		/* 列の先頭をたどる */
+		pHead = pChar;
+		for (i = 0; i < 100; i ++) {
+			if ((pHead->dwTailTblID == (DWORD)-1) || (pHead->dwTailTblID >= dwCount)) {
+				break;
+			}
+			pHead = g_aCharInfo[pHead->dwTailTblID];
+			if (pHead == pChar) {
+				return;
+			}
+		}
+		if (pHead == pChar) {
+			return;
+		}
+		ZeroMemory (&Info, sizeof (Info));
+		Info.dwPID			= pChar->pID;
+		Info.dwHeadTblID	= pHead->dwTblID;
+		Info.dwHeadPID		= pHead->pID;
+		lstrcpyn (Info.szHeadName, pHead->szName, sizeof (Info.szHeadName));
+
+		/* 列から抜ける。後ろの人は前の人へ直接つなぎ直す(傭兵が抜ける時と同じ) */
+		pPrev = g_aCharInfo[pChar->dwTailTblID];
+		pNext = NULL;
+		if ((pChar->dwTailBackTblID < dwCount) && (g_aCharInfo[pChar->dwTailBackTblID]->dwTailTblID == pChar->dwTblID)) {
+			pNext = g_aCharInfo[pChar->dwTailBackTblID];
+		}
+		if (pPrev->dwTailBackTblID == pChar->dwTblID) {
+			pPrev->dwTailBackTblID = pNext ? pNext->dwTblID : (DWORD)-1;
+		}
+		if (pNext) {
+			pNext->dwTailTblID = pPrev->dwTblID;
+		}
+		pChar->dwTailTblID		= (DWORD)-1;
+		pChar->dwTailBackTblID	= (DWORD)-1;
+		s_mapTailReturn[pChar->dwTblID] = Info;
+
+		/* 本人へ知らせる */
+		Packet.Make (pChar->dwTblID, (DWORD)-1, CHAR_TAIL_BATTLE);
+		svrSock.SendTo (pChar->pID, Packet.Get (), Packet.GetSize ());
+		/* 前の人の画面は、後ろをつなぎ直す(後ろがいなければ空にする。メッセージは出ない) */
+		if (pPrev->pID != 0) {
+			if (pNext) {
+				Packet.Make (pPrev->dwTblID, pNext->dwTblID, CHAR_TAIL_BACK);
+			} else {
+				Packet.Make (pPrev->dwTblID, (DWORD)-1, CHAR_TAIL_BACKOFF);
+			}
+			svrSock.SendTo (pPrev->pID, Packet.Get (), Packet.GetSize ());
+		}
+		/* 後ろの人の画面は、前の人へつなぎ直す(つなぎ直しはメッセージ無し) */
+		if (pNext && (pNext->pID != 0)) {
+			Packet.Make (pNext->dwTblID, pPrev->dwTblID, CHAR_TAIL_ON);
+			svrSock.SendTo (pNext->pID, Packet.Get (), Packet.GetSize ());
+		}
+		return;
+	}
+
+	/* 戦闘モード解除 */
+	std::map<DWORD, TAILRETURN>::iterator it = s_mapTailReturn.find (pChar->dwTblID);
+	if (it == s_mapTailReturn.end ()) {
+		return;
+	}
+	Info = it->second;
+	/* どちらにしても、覚えた先頭はここで消す */
+	s_mapTailReturn.erase (it);
+	if (Info.dwPID != pChar->pID) {
+		return;
+	}
+
+	pEnd = NULL;
+	if ((pChar->dwTailTblID == (DWORD)-1) && (pChar->dwTailBackTblID == (DWORD)-1) &&
+		(pChar->byCharState != CHARSTATE_DEAD) && (pChar->wHP != 0)) {
+		pEnd = TailReturnFindEnd (pChar, Info);
+	}
+	if (pEnd == NULL) {
+		SendCmdSYSMSG (pChar->pID, "列に戻れませんでした。", SPEECHCMD_BATTLE1);
+		return;
+	}
+
+	/* 最後尾のとなりにいなければ、となりの空いたマスへ同じマップ内でワープする(フェード) */
+	int nDist = abs ((int)pChar->dwX - (int)pEnd->dwX) + abs ((int)pChar->dwY - (int)pEnd->dwY);
+	if (nDist != 1) {
+		int x, y;
+
+		if (!FindPosNearChar (pChar, pEnd, x, y)) {
+			SendCmdSYSMSG (pChar->pID, "列に戻れませんでした。", SPEECHCMD_BATTLE1);
+			return;
+		}
+		SubProcMove (pChar, (DWORD)x, (DWORD)y);
+		/* 向きは最後尾に合わせる */
+		pChar->byDirection = pEnd->byDirection;
+		pChar->byDirectionBack = pChar->byDirectionBack2 = pChar->byDirection;
+	}
+
+	/* 最後尾につく(TailOn と同じつなぎ方。メッセージは「列に戻りました。」だけ) */
+	pChar->dwTailTblID		= pEnd->dwTblID;
+	pEnd->dwTailBackTblID	= pChar->dwTblID;
+	Packet.Make (pChar->dwTblID, pEnd->dwTblID, CHAR_TAIL_RETURN);
+	svrSock.SendTo (pChar->pID, Packet.Get (), Packet.GetSize ());
+	if (pEnd->pID != 0) {
+		Packet.Make (pEnd->dwTblID, pChar->dwTblID, CHAR_TAIL_BACK);
+		svrSock.SendTo (pEnd->pID, Packet.Get (), Packet.GetSize ());
+	}
 }
 
 
@@ -10415,6 +10620,8 @@ void RecvDataProcMAIN_CHAR_TAIL(PBYTE pData, DWORD dwDataSize)
 		goto Exit;
 	}
 	pChar = g_aCharInfo[Packet.m_dwTblID];
+	/* 自分でZを押したら、戦闘で列を離れた時の戻り先は忘れる */
+	TailReturnForget (pChar->dwTblID);
 	/* 誰かについていっている？ */
 	if (pChar->dwTailTblID != -1) {
 		/* ついていくのを解除 */

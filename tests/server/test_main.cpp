@@ -34,6 +34,7 @@
 #include "SboSvrItemProc.h"
 #include "SboSvrTalk.h"
 #include "common/crc.h"
+#include "common/Command/Command.h"
 #include <emscripten.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -1054,6 +1055,7 @@ static void PrintTownWarp(const char *pszLabel, PCHARINFO pChar)
 static void TestShipBed(const std::vector<int> &aLogin);
 static void TestMercenary(const std::vector<int> &aLogin, BOOL bMagic = FALSE);
 static void TestTailMapChg(const std::vector<int> &aLogin);
+static void TestTailBattle(const std::vector<int> &aLogin);
 static void TestQuest(const std::vector<int> &aLogin);
 static void TestSortItem(const std::vector<int> &aLogin);
 static void TestCharPush(const std::vector<int> &aLogin);
@@ -1493,6 +1495,8 @@ static void TestWorld(void)
 	TestMercenary(aLogin);
 	/* L. ついていく列のマップ間移動で暗転が1回だけ */
 	TestTailMapChg(aLogin);
+	/* L2. 戦闘モードの間だけ、ついていく列から抜ける */
+	TestTailBattle(aLogin);
 	/* M. ギルドの依頼 */
 	TestQuest(aLogin);
 	/* N. 道具欄・預かり所の並べ替え */
@@ -2700,6 +2704,117 @@ static void TestTailMapChg(const std::vector<int> &aLogin)
 		p->dwTailBackTblID = adwBack[i][4];
 		AddTblNoPC((int)p->dwTblID);
 	}
+}
+
+/* ------------------------------------------------------------------------- */
+/* L2. 戦闘モードの間だけ、ついていく列から抜ける							 */
+/*    ON=列から抜けて後ろは前の人へつなぎ直し・OFF=最後尾へ戻る				 */
+/*    離れていれば最後尾のとなりへワープ・先頭がいなければ戻れない			 */
+/*    傭兵・列に入っていない人・Zで解除した人は対象外						 */
+/* ------------------------------------------------------------------------- */
+static void TailBattleSend(PCHARINFO p, BYTE byOn)
+{
+	CMDPARA_DATA1 Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_BATTLEMODE;
+	Para.pID = p->pID;
+	Para.dwTblID = p->dwTblID;
+	Para.byData = byOn;
+	TestRecv(p, &Para, sizeof(Para));
+}
+
+static void TestTailBattle(const std::vector<int> &aLogin)
+{
+	printf("== L2. Tail battle ==\n");
+	if (aLogin.size() < 3) {
+		return;
+	}
+	/* 港町レジェンタ(14)の乗り場の近くに先頭・2人目・3人目を縦に並べて列にする */
+	PMAPINFO pPort = g_aMapInfo[GetMapNo(14)];
+	PCHARINFO apChar[3];
+	DWORD adwBack[3][5];
+	for (int i = 0; i < 3; i ++) {
+		PCHARINFO p = apChar[i] = g_aCharInfo[aLogin[i]];
+		adwBack[i][0] = p->dwMapID; adwBack[i][1] = p->dwX; adwBack[i][2] = p->dwY;
+		adwBack[i][3] = p->dwTailTblID; adwBack[i][4] = p->dwTailBackTblID;
+		DeleteTblNoPC((int)p->dwTblID);
+		p->dwMapID = pPort->dwID;
+		p->dwX = p->dwXBack = 40;
+		p->dwY = p->dwYBack = 50 + i;
+		p->byCharState = CHARSTATE_MOVE;
+		if (p->wHP == 0) p->wHP = 10;
+		AddTblNoPC((int)p->dwTblID);
+	}
+	for (int i = 0; i < 3; i ++) {
+		apChar[i]->dwTailTblID = (i > 0) ? apChar[i - 1]->dwTblID : (DWORD)-1;
+		apChar[i]->dwTailBackTblID = (i < 2) ? apChar[i + 1]->dwTblID : (DWORD)-1;
+	}
+	PCHARINFO pA = apChar[0], pB = apChar[1], pC = apChar[2];
+	#define TAILSTATE(label) printf("tailbattle %s A(back=%d) B(front=%d back=%d) C(front=%d)\n", label, \
+		pA->dwTailBackTblID == pB->dwTblID ? 1 : (pA->dwTailBackTblID == pC->dwTblID ? 2 : (int)pA->dwTailBackTblID), \
+		pB->dwTailTblID == pA->dwTblID ? 1 : (int)pB->dwTailTblID, \
+		pB->dwTailBackTblID == pC->dwTblID ? 1 : (int)pB->dwTailBackTblID, \
+		pC->dwTailTblID == pA->dwTblID ? 1 : (pC->dwTailTblID == pB->dwTblID ? 2 : (int)pC->dwTailTblID))
+
+	/* 真ん中の人が戦闘モードON：列から抜けて、後ろの人は先頭へつなぎ直し */
+	MockTrace(1);
+	TailBattleSend(pB, 1);
+	MockTrace(0);
+	TAILSTATE("on");
+	/* 戦闘モードOFF：となりにいれば、ワープせずに最後尾につく */
+	TailBattleSend(pB, 0);
+	TAILSTATE("off");
+	printf("tailbattle off end=%d\n", pC->dwTailBackTblID == pB->dwTblID ? 1 : 0);
+
+	/* 離れた所でON→OFF：最後尾のとなりへワープして戻る */
+	TailBattleSend(pB, 1);
+	DeleteTblNoPC((int)pB->dwTblID);
+	pB->dwX = pB->dwXBack = 40;
+	pB->dwY = pB->dwYBack = 56;
+	AddTblNoPC((int)pB->dwTblID);
+	TailBattleSend(pB, 0);
+	{
+		/* 列の最後尾は B のはずで、その前は先頭 A の後ろの C */
+		int nDist = abs((int)pB->dwX - (int)pC->dwX) + abs((int)pB->dwY - (int)pC->dwY);
+		printf("tailbattle warp front=%d dist=%d samemap=%d\n", pB->dwTailTblID == pC->dwTblID ? 1 : 0, nDist, pB->dwMapID == pPort->dwID ? 1 : 0);
+	}
+
+	/* 先頭がいなくなったら戻れない・覚えは消える */
+	TailBattleSend(pB, 1);
+	DWORD dwPIDBack = pA->pID;
+	pA->pID = 0;
+	TailBattleSend(pB, 0);
+	pA->pID = dwPIDBack;
+	printf("tailbattle nohead front=%d\n", (int)pB->dwTailTblID);
+	/* 覚えが消えているので、もう一度OFFしても何も起きない */
+	TailBattleSend(pB, 0);
+	printf("tailbattle again front=%d\n", (int)pB->dwTailTblID);
+
+	/* Zで別の人についたら覚えは消える（ONのまま列に戻ったりしない） */
+	pB->dwTailTblID = pB->dwTailBackTblID = (DWORD)-1;
+	pC->dwTailTblID = pA->dwTblID; pA->dwTailBackTblID = pC->dwTblID;
+	pB->dwTailTblID = pC->dwTblID; pC->dwTailBackTblID = pB->dwTblID;
+	TailBattleSend(pB, 1);
+	{
+		CCHAR_TAIL Z;
+		Z.Make(pB->dwTblID, pA->dwTblID, CHAR_TAIL_REQ);
+		/* Z は ついていっていない時にだけ新しく始まる */
+		TestRecv(pB, Z.Get(), Z.GetSize());
+	}
+	TailBattleSend(pB, 0);
+	printf("tailbattle zforget front=%d\n", pB->dwTailTblID == pA->dwTblID ? 1 : 0);
+
+	for (int i = 0; i < 3; i ++) {
+		PCHARINFO p = apChar[i];
+		DeleteTblNoPC((int)p->dwTblID);
+		p->dwMapID = adwBack[i][0];
+		p->dwX = p->dwXBack = adwBack[i][1];
+		p->dwY = p->dwYBack = adwBack[i][2];
+		p->dwTailTblID = adwBack[i][3];
+		p->dwTailBackTblID = adwBack[i][4];
+		AddTblNoPC((int)p->dwTblID);
+	}
+	#undef TAILSTATE
 }
 
 /* ------------------------------------------------------------------------- */

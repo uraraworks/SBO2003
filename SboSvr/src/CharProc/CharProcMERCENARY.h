@@ -89,6 +89,7 @@ extern BOOL			MercenaryDamaged	(PCHARINFO pChar, PCHARINFO pMerc);		/* 傭兵が
 extern BOOL			MercenaryItemCheck	(PCHARINFO pMerc, BYTE byItemType);		/* その種類の道具を傭兵に使えるか */
 extern void			MercenaryTailOff	(PCHARINFO pMerc);						/* 傭兵を「ついていく」の列から外す */
 extern void			MercenaryTailOffBack(PCHARINFO pChar);						/* すぐ後ろに並んでいる傭兵を列から外す */
+extern BOOL			FindPosNearChar		(PCHARINFO pChar, PCHARINFO pTarget, int &x, int &y);		/* 相手のとなりの空いたマス */
 extern void			MercenarySetBattleMode(PCHARINFO pChar, BOOL bBattle);		/* 雇い主の戦闘モードを覚える */
 
 /* 道具を持たせる（取り引き画面で渡す。傭兵は持っている道具を全部返そうとする） */
