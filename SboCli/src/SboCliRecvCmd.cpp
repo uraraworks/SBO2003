@@ -7900,6 +7900,20 @@ void RecvDataProcMAIN_CHAR_TAIL(PBYTE pData, DWORD dwDataSize)
 		}
 		wsprintf (szTmp, "%sにはついていけません。", pCharTarget->szName);
 		break;
+	case CHAR_TAIL_BATTLE:		/* 戦闘のため、一時的に列を離れます */
+		pChar->dwTailTblID = -1;
+		wsprintf (szTmp, "戦闘のため、一時的に列を離れます。");
+		break;
+	case CHAR_TAIL_BACKOFF:		/* 後ろの人が列を離れた（後ろが空になっただけ） */
+		pChar->dwTailBackTblID = -1;
+		break;
+	case CHAR_TAIL_RETURN:		/* 列に戻りました */
+		if (pCharTarget == NULL) {
+			break;
+		}
+		pChar->dwTailTblID = pCharTarget->dwTblID;
+		wsprintf (szTmp, "列に戻りました。");
+		break;
 	}
 
 	if (strlen (szTmp) > 0) {

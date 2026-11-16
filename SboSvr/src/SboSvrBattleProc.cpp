@@ -327,6 +327,7 @@ BOOL DamageAfterProcPC(PCHARINFO pChar, PCHARINFO pCharTarget)
 		return FALSE;
 	}
 
+	TailReturnForget (pCharTarget->dwTblID);
 	TailOff (pCharTarget);
 	TailOff (pCharTarget);
 

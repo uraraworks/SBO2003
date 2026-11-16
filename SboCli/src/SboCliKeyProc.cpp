@@ -1162,8 +1162,9 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 				if (nScore >= 0) {
 					/* 昔のターゲット要求で、パネルに名前を付ける（付いていれば外す） */
 					SendCmdTARGETCHAR (g_aCharInfo[nScore]->dwTblID);
-				} else {
-					/* ついていく要求 */
+				} else if (!g_bBattleMode) {
+					/* ついていく要求（ついていく・解除は通常モードの時だけ。
+					   戦闘モード中の Z はふつうのキャンセルだけにして、戦闘で列を離れた人の戻り先も消さない） */
 					SendCmdCHAR_TAIL (-1);
 				}
 				CancelTurnGage (pChar);

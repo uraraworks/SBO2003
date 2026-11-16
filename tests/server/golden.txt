@@ -1103,6 +1103,20 @@ merc return gone=1 bag_heal=2 leave_added=1
 tailmapchg 0 map=40 pos=(40,9) fade=0
 tailmapchg 1 map=40 pos=(40,9) fade=0
 tailmapchg 2 map=40 pos=(40,9) fade=0
+== L2. Tail battle ==
+tailbattle area found=1
+tailbattle on A(back=2) B(front=-1 back=-1) C(front=1)
+tailbattle off A(back=2) B(front=1407 back=-1) C(front=1)
+tailbattle off end=1
+tailbattle warp front=1 dist=1 samemap=1
+tailbattle nohead front=-1
+tailbattle again front=-1
+tailbattle zforget front=0
+tailbattle head on A(back=-1) B(front=-1) C(front=-1)
+tailbattle head off A(back=B:1) B(front=A:1 back=C:1) C(front=B:1)
+tailbattle self wait B(front=-1) C(front=A:1)
+tailbattle self off B(front=C:1)
+tailbattle z in battle B(front=C:1)
 == M. Quest ==
 quest map=6 cells=8
 quest party same=1 nonzero=1
