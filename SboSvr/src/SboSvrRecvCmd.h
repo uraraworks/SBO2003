@@ -44,6 +44,7 @@ extern void		CharNpcIdEnsure				(PCHARINFO);									/* NPC番号がまだ無け
 extern void		CharNpcIdRenumberAll		(void);											/* 読み込み後に NPC番号を振り直す */
 extern int		CharFindByNpcId				(DWORD);										/* NPC番号からテーブル番号を探す */
 extern void		CharTargetCancelPC			(PCHARINFO);									/* キャラのついていく解除 */
+extern void		CharTargetCancelPCKeepBack	(PCHARINFO);									/* ターゲットと前の人へのついていくだけ解除（後ろの列は残す） */
 extern void		TailMoveChain				(PCHARINFO);									/* ついてきているキャラを順に動かす */
 extern void		FloorDamageOnStep			(PCHARINFO);									/* ダメージ床に1歩入った時の処理 */
 extern BOOL		IsDamageFloor				(PMAPINFO, int, int);							/* ダメージ床のマスか */

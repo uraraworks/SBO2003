@@ -1131,6 +1131,14 @@ tailchase z again B(active=0)
 tailchase z C(front=A:1 active=0)
 tailchase keymove blocked=1 active=1
 tailchase headgone B(active=0) C(active=0)
+tailscatter D->last C ng3=1 D(front=-1 back=-1) C(back=-1)
+tailscatter D->head A ng3=0 D(front=-1) A(back=C:1)
+tailscatter D->away B ng3=1 D(front=-1) B(back=-1)
+tailscatter B self Z front=C:1 C(back=B:1)
+tailmerc hired=1
+tailmerc return B(front=A:1) M(front=-1) A(back=B:1)
+tailmerc D->merc D(front=B:1) B(back=D:1) M(front=-1 back=-1) res=2
+tailmerc D->lone merc ng=6 D(front=-1)
 == M. Quest ==
 quest map=6 cells=8
 quest party same=1 nonzero=1
@@ -1466,4 +1474,18 @@ merc magic healcircle up=1
 merc magic atkcircle same=1
 merc magic ressel alive=1 state=1 owner=1
 merc magic resscreen alive=1 state=1
+== AC. Tail item move ==
+tailitem dest=(20,8)
+tailitem a-head A map=0 pos=(20,8) front=-1 back=1 fade=[0] chgbgm=1
+tailitem a-head B map=0 pos=(20,8) front=0 back=2 fade=[0] chgbgm=1
+tailitem a-head C map=0 pos=(20,8) front=1 back=-1 fade=[0] chgbgm=1
+tailitem c-middle A map=14 pos=(40,10) front=-1 back=-1 fade=[] chgbgm=0
+tailitem c-middle B map=0 pos=(20,8) front=-1 back=2 fade=[0] chgbgm=1
+tailitem c-middle C map=0 pos=(20,8) front=1 back=-1 fade=[0] chgbgm=1
+tailitem c-tail A map=14 pos=(40,10) front=-1 back=1 fade=[] chgbgm=0
+tailitem c-tail B map=14 pos=(40,11) front=0 back=-1 fade=[] chgbgm=0
+tailitem c-tail C map=0 pos=(20,8) front=-1 back=-1 fade=[0] chgbgm=1
+tailitem b-return A map=14 pos=(9,14) front=-1 back=1 fade=[0] chgbgm=1
+tailitem b-return B map=14 pos=(9,14) front=0 back=2 fade=[0] chgbgm=1
+tailitem b-return C map=14 pos=(9,14) front=1 back=-1 fade=[0] chgbgm=1
 == done ==

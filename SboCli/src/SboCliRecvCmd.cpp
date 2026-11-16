@@ -7998,6 +7998,13 @@ void RecvDataProcMAIN_CHAR_TAIL(PBYTE pData, DWORD dwDataSize)
 		}
 		pChar->dwTailTblID = pCharTarget->dwTblID;
 		break;
+	case CHAR_TAIL_NG3:			/* ○○の列は戦闘でばらけているので、今はついていけません */
+		pChar->dwTailTblID = -1;
+		if (pCharTarget == NULL) {
+			break;
+		}
+		wsprintf (szTmp, "%sの列は戦闘でばらけているので、今はついていけません。", pCharTarget->szName);
+		break;
 	case CHAR_TAIL_CHASEEND:	/* 追いかけるのをやめた（自分で動けるように戻すだけ） */
 		pChar->dwTailTblID = -1;
 		break;

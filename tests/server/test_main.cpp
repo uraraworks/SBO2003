@@ -20,6 +20,7 @@
  *   O. 接続ID検索                … 配列・ID変更後も先頭の一致を返すことと、多数キャラでの速さ
  */
 #include "stdafx.h"
+#include <algorithm>
 #include "SboSvrRecvCmd.h"
 #include "CharProcSEARCH2.h"
 #include "CharProcSEARCH.h"
@@ -1058,6 +1059,7 @@ static void TestShipBed(const std::vector<int> &aLogin);
 static void TestMercenary(const std::vector<int> &aLogin, BOOL bMagic = FALSE);
 static void TestTailMapChg(const std::vector<int> &aLogin);
 static void TestTailBattle(const std::vector<int> &aLogin);
+extern "C" char *MockLastBody(int nConn, int nCmd);
 static void TestQuest(const std::vector<int> &aLogin);
 static void TestSortItem(const std::vector<int> &aLogin);
 static void TestCharPush(const std::vector<int> &aLogin);
@@ -1075,6 +1077,7 @@ static void TestImportant(const std::vector<int> &aLogin);
 static void TestAdminResurrect(const std::vector<int> &aLogin);
 static void TestFlagTalk(const std::vector<int> &aLogin);
 static void TestMarket(const std::vector<int> &aLogin);
+static void TestTailItemMove(const std::vector<int> &aLogin);
 extern void BattleProcCheck(PCHARINFO);
 
 static void TestTownWarp(const std::vector<int> &aLogin)
@@ -1536,6 +1539,226 @@ static void TestWorld(void)
 	TestImportant(aLogin);
 	/* K2. 傭兵への回復・蘇生の特技（ゲームの乱数を使うので最後） */
 	TestMercenary(aLogin, TRUE);
+	/* AC. 移動アイテム・帰還の床で、ついていく列ごと移動する（時刻と乱数を使うので最後） */
+	TestTailItemMove(aLogin);
+}
+
+/* ------------------------------------------------------------------------- */
+/* AC. ついていく列の移動アイテム・帰還の床：列ごと連れて行く				 */
+/*    (a) 先頭が移動アイテム (b) 先頭が帰還の床（町転送の床）で移動			 */
+/*        → 後ろの人も同じ場所へ移り、列はそのまま・フェードアウト(0)が1回	 */
+/*    (c) 列の途中の人が使うと、前の人からは外れ、後ろの人を連れて行く		 */
+/* ------------------------------------------------------------------------- */
+static int TailIdx(PCHARINFO *apChar, DWORD dwTblID)
+{
+	for (int i = 0; i < 3; i ++) {
+		if (apChar[i]->dwTblID == dwTblID) return i;
+	}
+	return -1;		/* 列にいない（-1 の時も含む） */
+}
+
+static void TailItemPrint(const char *pszLabel, PCHARINFO *apChar, int nTrace)
+{
+	for (int i = 0; i < 3; i ++) {
+		PCHARINFO p = apChar[i];
+		char *pszFade = MockCmdData(1000 + i, CMD_FADEINOUT);		/* aLogin[i] は接続 1000+i */
+		char *pszBgm = MockCmdData(1000 + i, CMD_CHGBGM);
+		printf("tailitem %s %c map=%u pos=(%u,%u) front=%d back=%d fade=[%s] chgbgm=%d\n",
+			pszLabel, 'A' + i, p->dwMapID, p->dwX, p->dwY,
+			TailIdx(apChar, p->dwTailTblID), TailIdx(apChar, p->dwTailBackTblID),
+			pszFade, (int)(pszBgm[0] ? 1 + std::count(pszBgm, pszBgm + strlen(pszBgm), ',') : 0));
+		free(pszFade);
+		free(pszBgm);
+	}
+	(void)nTrace;
+}
+
+static void TestTailItemMove(const std::vector<int> &aLogin)
+{
+	printf("== AC. Tail item move ==\n");
+	if (aLogin.size() < 4) {
+		return;
+	}
+	DWORD dwNowBack = s_dwFakeNow, dwTimeBack = g_dwTime;
+	PMAPINFO pPort = g_aMapInfo[GetMapNo(14)];
+	/* 始まりの町で、右に2マス・下に1マス空いている所を探す（移動先・床を置く所） */
+	DWORD dwCastX = 0, dwCastY = 0;
+	for (DWORD y = 1; y + 3 < (DWORD)g_aMapInfo[0]->nCY && !dwCastX; y ++) {
+		for (DWORD x = 1; x + 3 < (DWORD)g_aMapInfo[0]->nCX && !dwCastX; x ++) {
+			if (CheckCharBlock(0, x, y) && CheckCharBlock(0, x + 1, y) && CheckCharBlock(0, x + 2, y) && CheckCharBlock(0, x, y + 1)) {
+				dwCastX = x;
+				dwCastY = y;
+			}
+		}
+	}
+	printf("tailitem dest=(%u,%u)\n", dwCastX, dwCastY);
+
+	PCHARINFO apChar[3];
+	DWORD adwBack[3][5];
+	for (int i = 0; i < 3; i ++) {
+		PCHARINFO p = apChar[i] = g_aCharInfo[aLogin[i]];
+		adwBack[i][0] = p->dwMapID; adwBack[i][1] = p->dwX; adwBack[i][2] = p->dwY;
+		adwBack[i][3] = p->dwTailTblID; adwBack[i][4] = p->dwTailBackTblID;
+	}
+	PCHARINFO pCaster = g_aCharInfo[aLogin[3]];
+
+	/* 列（A←B←C）を港町の同じ場所に縦に並べる。移動の後で呼び直す */
+	auto setLine = [&](DWORD dwMapID, DWORD dwX, DWORD dwY) {
+		for (int i = 0; i < 3; i ++) {
+			PCHARINFO p = apChar[i];
+			DeleteTblNoPC((int)p->dwTblID);
+			p->dwMapID = dwMapID;
+			p->dwX = p->dwXBack = dwX;
+			p->dwY = p->dwYBack = dwY + i;
+			p->byCharState = CHARSTATE_MOVE;
+			if (p->wHP == 0) p->wHP = 10;
+			p->dwTargetTblID = p->dwTargetTblID2 = p->dwTargetTblID3 = (DWORD)-1;
+			AddTblNoPC((int)p->dwTblID);
+		}
+		for (int i = 0; i < 3; i ++) {
+			apChar[i]->dwTailTblID = (i > 0) ? apChar[i - 1]->dwTblID : (DWORD)-1;
+			apChar[i]->dwTailBackTblID = (i < 2) ? apChar[i + 1]->dwTblID : (DWORD)-1;
+		}
+	};
+
+	/* 移動アイテム：テスト用に実データの道具を1つ移動アイテムへ書き換えて使う（終わったら戻す） */
+	int nItem = 0;
+	for (int i = 1; i < g_aItemInfo.GetSize() && !nItem; i ++) {
+		if (g_aItemInfo[i] && g_aItemInfo[i]->szName[0]) nItem = i;
+	}
+	ITEMINFO ItemBack = *g_aItemInfo[nItem];
+	ITEMINFO_RURA Rura;
+	Rura.dwEnableMapID = 0;
+	Rura.dwMapID = 0;
+	Rura.dwX = dwCastX;
+	Rura.dwY = dwCastY;
+	PITEMINFO pItem = g_aItemInfo[nItem];
+	pItem->byType = ITEMTYPE_RURA;
+	pItem->pData = &Rura;
+	pItem->pMsg = NULL;
+	pItem->byFlg &= ~ITEMFLG_LOST;
+	pItem->byEraseProbability = 0;
+	pItem->bySexDistinction = SEXDISTINCTION_ALL;
+	pItem->bySound = 0;
+	WORD wItemBack[3] = { apChar[0]->waItem[0], apChar[1]->waItem[0], apChar[2]->waItem[0] };
+	for (int i = 0; i < 3; i ++) apChar[i]->waItem[0] = (WORD)nItem;
+	BYTE byMapFlgBack = pPort->byFlg;
+	pPort->byFlg &= ~MAPFLG_MOVE;
+
+	/* (a) 先頭が移動アイテムを使う */
+	setLine(pPort->dwID, 40, 10);
+	MockTrace(1);
+	ItemProc(apChar[0]->dwTblID, 0, apChar[0]->dwTblID);
+	MockTrace(0);
+	TailItemPrint("a-head", apChar, 0);
+
+	/* (c) 列の途中の人が使う（A はその場・B と C が一緒に移る） */
+	setLine(pPort->dwID, 40, 10);
+	MockTrace(1);
+	ItemProc(apChar[1]->dwTblID, 0, apChar[1]->dwTblID);
+	MockTrace(0);
+	TailItemPrint("c-middle", apChar, 0);
+
+	/* 最後尾が使う（前の人から外れて一人で移る） */
+	setLine(pPort->dwID, 40, 10);
+	MockTrace(1);
+	ItemProc(apChar[2]->dwTblID, 0, apChar[2]->dwTblID);
+	MockTrace(0);
+	TailItemPrint("c-tail", apChar, 0);
+
+	pPort->byFlg = byMapFlgBack;
+	for (int i = 0; i < 3; i ++) apChar[i]->waItem[0] = wItemBack[i];
+	*g_aItemInfo[nItem] = ItemBack;
+
+	/* (b) 先頭が町転送の床（帰還）に乗る。D が始まりの町で床を出し、A が歩いて乗る */
+	DWORD dwMapBack = pCaster->dwMapID, dwXBack = pCaster->dwX, dwYBack = pCaster->dwY;
+	BYTE byLevelBack = pCaster->byLevel, byDirBack = pCaster->byDirection, abyMagicBack[MAX_USEMAGIC];
+	WORD wManaBack = pCaster->wMana;
+	DWORD dwStartMapBack = pCaster->dwStartMapID, dwStartXBack = pCaster->dwStartX, dwStartYBack = pCaster->dwStartY;
+	memcpy(abyMagicBack, pCaster->abyMagic, sizeof(abyMagicBack));
+	/* 行き先は D の復活位置（港町） */
+	pCaster->dwStartMapID = pPort->dwID;
+	pCaster->dwStartX = 40;
+	pCaster->dwStartY = 54;
+	DeleteTblNoPC((int)pCaster->dwTblID);
+	pCaster->dwMapID = 0;
+	pCaster->dwX = dwCastX;
+	pCaster->dwY = dwCastY;
+	pCaster->byDirection = 3;
+	AddTblNoPC((int)pCaster->dwTblID);
+	pCaster->byLevel = 15;
+	pCaster->abyMagic[0] = 24;
+	pCaster->wMana = 9999;
+	pCaster->byCharState = CHARSTATE_MOVE;
+	pCaster->byTownWarpSel = 0;
+	s_dwFakeNow += 5000;
+	g_dwTime = s_dwFakeNow;
+	MagicProc(pCaster->dwTblID, 24, (DWORD)-1);
+	PCHARINFO pFloor = NULL;
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+		if (p->byNpcType == NPCTYPE_USEMAGIC && p->dwParentTblID == pCaster->dwTblID && p->pProc && p->dwTimeDelete) {
+			pFloor = p;
+		}
+	}
+	if (pFloor == NULL) {
+		printf("tailitem b no floor\n");
+	} else {
+		/* A が床の上・B と C はその後ろ（床の外）に並ぶ */
+		setLine(0, pFloor->dwX, pFloor->dwY);
+		DeleteTblNoPC((int)apChar[0]->dwTblID);
+		apChar[0]->dwX = apChar[0]->dwXBack = pFloor->dwX;
+		apChar[0]->dwY = apChar[0]->dwYBack = pFloor->dwY;
+		AddTblNoPC((int)apChar[0]->dwTblID);
+		for (int i = 1; i < 3; i ++) {
+			DeleteTblNoPC((int)apChar[i]->dwTblID);
+			apChar[i]->dwX = apChar[i]->dwXBack = dwCastX;
+			apChar[i]->dwY = apChar[i]->dwYBack = dwCastY + i;
+			AddTblNoPC((int)apChar[i]->dwTblID);
+		}
+		apChar[0]->dwLastDotMove = s_dwFakeNow;
+		MockTrace(1);
+		for (int k = 0; k < 8 && apChar[0]->dwMapID == 0; k ++) {
+			s_dwFakeNow += 300;
+			g_dwTime = s_dwFakeNow;
+			apChar[0]->dwLastDotMove = s_dwFakeNow;
+			((PCCharProcBase)pFloor->pProc)->Proc(s_dwFakeNow);
+		}
+		MockTrace(0);
+		TailItemPrint("b-return", apChar, 0);
+		/* 床を片付ける */
+		pFloor->dwTimeDelete = 0;
+		pFloor->dwTimeLogin = 0;
+		pFloor->dwLastDotMove = 0;
+		s_dwFakeNow += 300;
+		((PCCharProcBase)pFloor->pProc)->Proc(s_dwFakeNow);
+	}
+
+	/* 元に戻す */
+	DeleteTblNoPC((int)pCaster->dwTblID);
+	pCaster->dwMapID = dwMapBack;
+	pCaster->dwX = dwXBack;
+	pCaster->dwY = dwYBack;
+	AddTblNoPC((int)pCaster->dwTblID);
+	pCaster->byLevel = byLevelBack;
+	pCaster->byDirection = byDirBack;
+	pCaster->wMana = wManaBack;
+	pCaster->dwStartMapID = dwStartMapBack;
+	pCaster->dwStartX = dwStartXBack;
+	pCaster->dwStartY = dwStartYBack;
+	memcpy(pCaster->abyMagic, abyMagicBack, sizeof(abyMagicBack));
+	for (int i = 0; i < 3; i ++) {
+		PCHARINFO p = apChar[i];
+		DeleteTblNoPC((int)p->dwTblID);
+		p->dwMapID = adwBack[i][0];
+		p->dwX = p->dwXBack = adwBack[i][1];
+		p->dwY = p->dwYBack = adwBack[i][2];
+		p->dwTailTblID = adwBack[i][3];
+		p->dwTailBackTblID = adwBack[i][4];
+		AddTblNoPC((int)p->dwTblID);
+	}
+	s_dwFakeNow = dwNowBack;
+	g_dwTime = dwTimeBack;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -3002,6 +3225,125 @@ static void TestTailBattle(const std::vector<int> &aLogin)
 	}
 	TAILRESET();
 	for (int k = 0; k < 3; k ++) TailReturnForget(apChar[k]->dwTblID);
+
+	/* ---- ばらけている間は、外の人がついていけない（CHAR_TAIL_NG3）。傭兵まわりの列の入れ替え ---- */
+	if (aLogin.size() >= 4) {
+		PCHARINFO pD = g_aCharInfo[aLogin[3]];
+		DWORD dwDBack[5] = { pD->dwMapID, pD->dwX, pD->dwY, pD->dwTailTblID, pD->dwTailBackTblID };
+		BYTE byDirBack = pD->byDirection;
+		int nUp = 0;
+		for (int d = 0; d < 4; d ++) if (anPosAddTblX[d] == 0 && anPosAddTblY[d] == -1) nUp = d;
+		DeleteTblNoPC((int)pD->dwTblID);
+		pD->dwMapID = pPort->dwID;
+		pD->byCharState = CHARSTATE_MOVE;
+		if (pD->wHP == 0) pD->wHP = 10;
+		pD->dwTailTblID = pD->dwTailBackTblID = (DWORD)-1;
+		AddTblNoPC((int)pD->dwTblID);
+		for (int k = 0; k < 4; k ++) MercenarySetBattleMode(g_aCharInfo[aLogin[k]], FALSE);
+
+		/* 外の人 D が、列の最後尾の1歩後ろから pT に Z を押す。結果の種類(届いた CHAR_TAIL の最後の1つ)を返す */
+		#define TAILZ(pT_, x_, y_, res_) do { \
+			TAILPLACE(pD, (x_), (y_)); pD->byDirection = (BYTE)nUp; \
+			MockTrace(1); \
+			CCHAR_TAIL Zd_; Zd_.Make(pD->dwTblID, (pT_)->dwTblID, CHAR_TAIL_REQ); \
+			TestRecv(pD, Zd_.Get(), Zd_.GetSize()); \
+			MockTrace(0); \
+			char *psz_ = MockLastBody(1000 + 3, CMD_MAIN_CHAR); \
+			unsigned int u_ = 0xFFFFFFFF; \
+			unsigned int uSub_ = 0; if (strlen(psz_) >= 28) { sscanf(psz_ + 2, "%2x", &uSub_); if (uSub_ == CMDCHAR_TAIL) sscanf(psz_ + 20, "%2x", &u_); } \
+			free(psz_); \
+			(res_) = (int)u_; } while (0)
+		int nRes;
+
+		/* B が戦闘モードで離れている間(A→C の列)：外の D が最後尾 C にZ → NG3 で列は変わらない */
+		TAILRESET();
+		TailBattleSend(pB, 1);
+		TAILPLACE(pB, nX0 + 1, nY0 + 5);
+		TAILZ(pC, nX0, nY0 + 3, nRes);
+		printf("tailscatter D->last C ng3=%d D(front=%d back=%d) C(back=%d)\n", nRes == CHAR_TAIL_NG3 ? 1 : 0,
+			(int)pD->dwTailTblID, (int)pD->dwTailBackTblID, (int)pC->dwTailBackTblID);
+		/* 先頭 A にZ(A の後ろは C がつながっているので元々ついていけないが、列は変わらない) */
+		TAILZ(pA, nX0, nY0 + 1, nRes);
+		printf("tailscatter D->head A ng3=%d D(front=%d) A(back=C:%d)\n", nRes == CHAR_TAIL_NG3 ? 1 : 0,
+			(int)pD->dwTailTblID, pA->dwTailBackTblID == pC->dwTblID ? 1 : 0);
+		/* 離れている B にZ → NG3 */
+		TAILZ(pB, nX0 + 1, nY0 + 6, nRes);
+		printf("tailscatter D->away B ng3=%d D(front=%d) B(back=%d)\n", nRes == CHAR_TAIL_NG3 ? 1 : 0,
+			(int)pD->dwTailTblID, (int)pB->dwTailBackTblID);
+
+		/* B が通常モードに戻って待っている状態：自分でZを押して C の後ろに入るのは断られない */
+		TAILPLACE(pB, nX0, nY0 + 3);
+		pB->byDirection = (BYTE)nUp;
+		MercenarySetBattleMode(pB, FALSE);		/* サーバーの覚えだけ通常モードに戻す(戻り先は覚えたまま待っている) */
+		{
+			CCHAR_TAIL Zb;
+			Zb.Make(pB->dwTblID, pC->dwTblID, CHAR_TAIL_REQ);
+			TestRecv(pB, Zb.Get(), Zb.GetSize());
+		}
+		printf("tailscatter B self Z front=C:%d C(back=B:%d)\n", pB->dwTailTblID == pC->dwTblID ? 1 : 0,
+			pC->dwTailBackTblID == pB->dwTblID ? 1 : 0);
+		TAILRESET();
+		for (int k = 0; k < 3; k ++) TailReturnForget(apChar[k]->dwTblID);
+		for (int k = 0; k < 4; k ++) MercenarySetBattleMode(g_aCharInfo[aLogin[k]], FALSE);
+
+		/* B が傭兵を連れている */
+		TAILPLACE(pB, nX0, nY0 + 1);
+		pB->byDirection = 3;
+		CHARINFO Npc;
+		ZeroMemory(&Npc, sizeof(Npc));
+		strcpy(Npc.szName, "ハーン");
+		static char szSpeechT[] = "@m";
+		Npc.pszNpcSpeech = szSpeechT;
+		PCHARINFO pM = NULL;
+		MercenaryTalk(pB, &Npc);
+		for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+			if (GetMercenaryOwner(g_aCharInfo[i]) == pB) pM = g_aCharInfo[i];
+		}
+		printf("tailmerc hired=%d\n", pM ? 1 : 0);
+		if (pM) {
+			/* B が戦闘モードで離れ、傭兵が B の後ろについた後、戦闘モードを解除すると B が列に戻れる */
+			pC->dwTailTblID = (DWORD)-1;	/* A→B の2人の列にする */
+			pC->dwTailBackTblID = (DWORD)-1;
+			pB->dwTailBackTblID = (DWORD)-1;
+			TailBattleSend(pB, 1);
+			pB->dwTailBackTblID = pM->dwTblID;
+			pM->dwTailTblID = pB->dwTblID;
+			pM->dwTailBackTblID = (DWORD)-1;
+			TailBattleSend(pB, 0);
+			printf("tailmerc return B(front=A:%d) M(front=%d) A(back=B:%d)\n", pB->dwTailTblID == pA->dwTblID ? 1 : 0,
+				(int)pM->dwTailTblID, pA->dwTailBackTblID == pB->dwTblID ? 1 : 0);
+			TailReturnForget(pB->dwTblID);
+
+			/* A→B→傭兵(Bの) の列で、D が傭兵の後ろからZ → D は B の後ろにつながり、傭兵は列から外れる */
+			pB->dwTailBackTblID = pM->dwTblID;
+			pM->dwTailTblID = pB->dwTblID;
+			pM->dwTailBackTblID = (DWORD)-1;
+			pM->dwX = pM->dwXBack = nX0;
+			pM->dwY = pM->dwYBack = nY0 + 2;
+			pM->byCharState = CHARSTATE_MOVE;
+			TAILZ(pM, nX0, nY0 + 3, nRes);
+			printf("tailmerc D->merc D(front=B:%d) B(back=D:%d) M(front=%d back=%d) res=%d\n", pD->dwTailTblID == pB->dwTblID ? 1 : 0,
+				pB->dwTailBackTblID == pD->dwTblID ? 1 : 0, (int)pM->dwTailTblID, (int)pM->dwTailBackTblID, nRes);
+			/* 傭兵の前にプレイヤーがいなければ断る(NG2) */
+			pD->dwTailTblID = pD->dwTailBackTblID = (DWORD)-1;
+			pB->dwTailBackTblID = (DWORD)-1;
+			pM->dwTailTblID = pM->dwTailBackTblID = (DWORD)-1;
+			TAILZ(pM, nX0, nY0 + 3, nRes);
+			printf("tailmerc D->lone merc ng=%d D(front=%d)\n", nRes, (int)pD->dwTailTblID);
+			MercenaryTalk(pB, &Npc);		/* もう一度話しかけてお別れ */
+		}
+		TAILRESET();
+		#undef TAILZ
+
+		DeleteTblNoPC((int)pD->dwTblID);
+		pD->dwMapID = dwDBack[0];
+		pD->dwX = pD->dwXBack = dwDBack[1];
+		pD->dwY = pD->dwYBack = dwDBack[2];
+		pD->dwTailTblID = dwDBack[3];
+		pD->dwTailBackTblID = dwDBack[4];
+		pD->byDirection = byDirBack;
+		AddTblNoPC((int)pD->dwTblID);
+	}
 	#undef TAILRESET
 
 	for (int i = 0; i < 3; i ++) {
