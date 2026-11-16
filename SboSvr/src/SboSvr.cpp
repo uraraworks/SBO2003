@@ -307,6 +307,8 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			SaveMakerInfo ();
 			SaveRecipeInfo ();
 			SaveQuestInfo ();
+			SaveFlagNameInfo ();
+			SaveTalkInfo ();
 			SendCmdSYSMSG (URARASOCK_SENDALL, "SYSTEM:サーバー情報を保存しました。");
 		}
 		break;
@@ -482,6 +484,8 @@ BOOL OnCreate(HWND hWnd)
 	LoadMakerInfo ();
 	LoadRecipeInfo ();
 	LoadQuestInfo ();
+	LoadFlagNameInfo ();
+	LoadTalkInfo ();
 
 	g_pComEfcInfo = new COMEFCINFO[99];
 	ZeroMemory (g_pComEfcInfo, sizeof (COMEFCINFO) * 99);
@@ -590,6 +594,8 @@ void OnDestroy(HWND hWnd)
 	SaveMakerInfo ();			/* 作り手情報の保存 */
 	SaveRecipeInfo ();			/* レシピ情報の保存 */
 	SaveQuestInfo ();			/* 依頼情報の保存 */
+	SaveFlagNameInfo ();		/* フラグの名前表の保存 */
+	SaveTalkInfo ();			/* 会話データの保存 */
 
 	for (i = 0; i < g_aCharInfo.GetSize (); i ++) {
 		SAFE_DELETE_ARRAY (g_aCharInfo[i]->pszSpeech);
@@ -694,6 +700,16 @@ void OnDestroy(HWND hWnd)
 		SAFE_DELETE (g_aQuestInfo[i]);
 	}
 	g_aQuestInfo.RemoveAll ();
+
+	for (i = 0; i < g_aFlagNameInfo.GetSize (); i ++) {
+		SAFE_DELETE (g_aFlagNameInfo[i]);
+	}
+	g_aFlagNameInfo.RemoveAll ();
+
+	for (i = 0; i < g_aTalkInfo.GetSize (); i ++) {
+		SAFE_DELETE (g_aTalkInfo[i]);
+	}
+	g_aTalkInfo.RemoveAll ();
 
 
 	SAFE_DELETE (g_pServerInfoUploadInfo);
@@ -1267,7 +1283,7 @@ BOOL SaveMapPartsInfo(void)
 		pSave->byAnimeType = pParts->byAnimeType;
 		pSave->byAnimeCount = pParts->byAnimeCount;
 		pSave->byLevel = pParts->byLevel;
-		pSave->byLight = pParts->byLight;
+		pSave->byLight = MAPPARTS_MAKE_SAVELIGHT (pParts);
 		pSave->byDamage = pParts->byDamage;
 		pSave->byPoison = pParts->byPoison;
 		pSave->wGrpID = pParts->wGrpID;
@@ -1332,7 +1348,8 @@ BOOL LoadMapPartsInfo(void)
 		pParts->byAnimeType = pLoad->byAnimeType;
 		pParts->byAnimeCount = pLoad->byAnimeCount;
 		pParts->byLevel = pLoad->byLevel;
-		pParts->byLight = pLoad->byLight;
+		pParts->byLight = MAPPARTS_SAVE_LIGHT (pLoad);
+		pParts->byLow = MAPPARTS_SAVE_LOW (pLoad);
 		pParts->byDamage = pLoad->byDamage;
 		pParts->byPoison = pLoad->byPoison;
 		pParts->wGrpID = pLoad->wGrpID;

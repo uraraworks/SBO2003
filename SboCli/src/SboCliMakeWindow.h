@@ -112,5 +112,8 @@ extern DWORD MakerStateHash								(int nMaker);				/* 画面に出ている内�
 extern void MakerSetMsg									(PWNDINFO pWndList, LPCSTR pszMsg);	/* 作り手の画面のメッセージを差し替える */
 extern void MakerSetTalkMsg								(PWNDINFO pWndList);		/* 作り手の話しかけた時の台詞を出す */
 extern void MakerScrollFit								(PWNDINFO pWndList, int nIndex, int nCount);	/* 一覧のカーソルとスクロールを整える */
+extern void ListScrollFitMargin							(PWNDINFO pWndList, int nIndex, int nCount, int nMargin);	/* 一覧のカーソルとスクロールを余白付きで整える */
+extern BOOL ListScrollKey								(PWNDINFO pWndList, BYTE byCode, int nCount);	/* 一覧の上下左右キーでカーソルを動かす */
+extern int ListScrollTop								(int nTop, int nIndex, int nCount, int nRows, int nMargin);	/* 一覧の先頭位置を余白付きで決める */
 
 /* Copyright(C)URARA-works 2003-2005 */

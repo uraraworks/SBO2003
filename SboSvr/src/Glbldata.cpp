@@ -77,6 +77,8 @@ CmyArray<PEQUUSERINFO, PEQUUSERINFO> g_aEquUserInfo;				/* 装備職業情報 */
 CmyArray<PMAKERINFO, PMAKERINFO> g_aMakerInfo;						/* 作り手情報 */
 CmyArray<PRECIPEINFO, PRECIPEINFO> g_aRecipeInfo;					/* レシピ情報 */
 CmyArray<PQUESTINFO, PQUESTINFO> g_aQuestInfo;						/* 依頼情報 */
+CmyArray<PFLAGNAMEINFO, PFLAGNAMEINFO> g_aFlagNameInfo;				/* フラグの名前表 */
+CmyArray<PTALKINFO, PTALKINFO> g_aTalkInfo;							/* 会話データ */
 
 
 /* 向き別縦横増減テーブル */

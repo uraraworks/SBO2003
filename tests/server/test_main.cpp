@@ -32,6 +32,7 @@
 #include "SboSvrMagicProc.h"
 #include "SboSvrCharInfoTimerProc.h"
 #include "SboSvrItemProc.h"
+#include "SboSvrTalk.h"
 #include "common/crc.h"
 #include <emscripten.h>
 #include <stdio.h>
@@ -1063,9 +1064,11 @@ static void TestMagicWall(const std::vector<int> &aLogin);
 static void TestSpace(const std::vector<int> &aLogin);
 static void TestAdminQuest(const std::vector<int> &aLogin);
 static void TestFloorDamage(const std::vector<int> &aLogin);
+static void TestLowParts(const std::vector<int> &aLogin);
 static void TestMimic(const std::vector<int> &aLogin);
 static void TestEnemyDoor(const std::vector<int> &aLogin);
 static void TestAdminResurrect(const std::vector<int> &aLogin);
+static void TestFlagTalk(const std::vector<int> &aLogin);
 extern void BattleProcCheck(PCHARINFO);
 
 static void TestTownWarp(const std::vector<int> &aLogin)
@@ -1510,12 +1513,15 @@ static void TestWorld(void)
 	TestAdminQuest(aLogin);
 	/* V. ダメージ床（毒沼・溶岩など） */
 	TestFloorDamage(aLogin);
+	/* 低いパーツ（灯り・矢・特技が越える） */
+	TestLowParts(aLogin);
 	/* W. 宝箱の敵（調べる・叩くと正体を現す） */
 	TestMimic(aLogin);
 	/* X. 敵を全部倒すと開く扉 */
 	TestEnemyDoor(aLogin);
 	/* Y. 管理者ウィンドウの蘇生ボタン */
 	TestAdminResurrect(aLogin);
+	TestFlagTalk(aLogin);
 	/* K2. 傭兵への回復・蘇生の特技（ゲームの乱数を使うので最後） */
 	TestMercenary(aLogin, TRUE);
 }
@@ -1640,6 +1646,138 @@ static void TestAdminQuest(const std::vector<int> &aLogin)
 /* Y. 管理者ウィンドウの蘇生ボタン（CMD_ADMINRESURRECT）					 */
 /*    倒れた人がHP満タンで起き上がるか・蘇生の特技と同じエフェクトが出るか	 */
 /*    管理者でない人・短いパケットは弾くか・倒れていない人はHPだけ満タン	 */
+/* ------------------------------------------------------------------------- */
+/* Z. キャラのフラグと会話データ											 */
+/*    印・数値の読み書き（範囲の外・255 で止まる）・会話の行の選び方		 */
+/*    （順位・必要な印・いけない印・数値の条件・レベル・同順位のくじ）		 */
+/*    話した後の印・数値の動き												 */
+/* ------------------------------------------------------------------------- */
+static void TalkTestLineInit(TALKLINEINFO *pLine, int nRank)
+{
+	int i;
+
+	ZeroMemory(pLine, sizeof(*pLine));
+	pLine->byRank = (BYTE)nRank;
+	for (i = 0; i < MAX_TALKNEED; i ++) {
+		pLine->awNeed[i] = FLAG_NOBIT;
+		pLine->awNot[i] = FLAG_NOBIT;
+	}
+	for (i = 0; i < MAX_TALKCOND; i ++) {
+		pLine->abyCondNo[i] = FLAG_NONUM;
+	}
+	for (i = 0; i < MAX_TALKSET; i ++) {
+		pLine->awSetOn[i] = FLAG_NOBIT;
+		pLine->awSetOff[i] = FLAG_NOBIT;
+	}
+	for (i = 0; i < MAX_TALKACT; i ++) {
+		pLine->abyActNo[i] = FLAG_NONUM;
+	}
+}
+
+static void TestFlagTalk(const std::vector<int> &aLogin)
+{
+	printf("== Z. FlagTalk ==\n");
+	(void)aLogin;
+	static TALKINFO Talk;
+	BYTE abyFlag[MAX_FLAGBITBYTE], abyNum[MAX_FLAGNUM];
+
+	ZeroMemory(abyFlag, sizeof(abyFlag));
+	ZeroMemory(abyNum, sizeof(abyNum));
+
+	/* 印 */
+	FlagBitSet(abyFlag, 5, TRUE);
+	FlagBitSet(abyFlag, 1023, TRUE);
+	FlagBitSet(abyFlag, 1024, TRUE);
+	printf("flagtalk bit 5=%d 1023=%d 1024=%d 6=%d\n", FlagBitGet(abyFlag, 5) ? 1 : 0, FlagBitGet(abyFlag, 1023) ? 1 : 0,
+			FlagBitGet(abyFlag, 1024) ? 1 : 0, FlagBitGet(abyFlag, 6) ? 1 : 0);
+	FlagBitSet(abyFlag, 5, FALSE);
+	printf("flagtalk bit off 5=%d 1023=%d\n", FlagBitGet(abyFlag, 5) ? 1 : 0, FlagBitGet(abyFlag, 1023) ? 1 : 0);
+
+	/* 数値 */
+	FlagNumSet(abyNum, 3, 300);
+	printf("flagtalk num clamp=%d", FlagNumGet(abyNum, 3));
+	FlagNumAdd(abyNum, 3, 10);
+	printf(" add=%d", FlagNumGet(abyNum, 3));
+	FlagNumSet(abyNum, 4, 7);
+	FlagNumAdd(abyNum, 4, 1);
+	printf(" four=%d", FlagNumGet(abyNum, 4));
+	FlagNumSet(abyNum, MAX_FLAGNUM, 9);
+	printf(" out=%d\n", FlagNumGet(abyNum, MAX_FLAGNUM));
+
+	/* 行の選び方 */
+	ZeroMemory(&Talk, sizeof(Talk));
+	Talk.byState = TALKSTATE_ON;
+	Talk.wID = 1;
+	Talk.byLineCount = 7;
+	TalkTestLineInit(&Talk.aLine[0], 1);
+	Talk.aLine[0].awNeed[0] = 0;							/* 印 0 が必要（0 番も条件に使える） */
+	TalkTestLineInit(&Talk.aLine[1], 2);
+	Talk.aLine[1].awNeed[0] = 10;
+	Talk.aLine[1].awNot[0] = 11;
+	TalkTestLineInit(&Talk.aLine[2], 3);
+	Talk.aLine[2].abyCondNo[0] = 2;
+	Talk.aLine[2].abyCondCmp[0] = TALKCMP_GE;
+	Talk.aLine[2].abyCondVal[0] = 5;
+	TalkTestLineInit(&Talk.aLine[3], 3);
+	Talk.aLine[3].abyCondNo[0] = 2;
+	Talk.aLine[3].abyCondCmp[0] = TALKCMP_EQ;
+	Talk.aLine[3].abyCondVal[0] = 2;
+	TalkTestLineInit(&Talk.aLine[4], 4);
+	Talk.aLine[4].byLvMin = 10;
+	Talk.aLine[4].byLvMax = 20;
+	TalkTestLineInit(&Talk.aLine[5], 9);
+	TalkTestLineInit(&Talk.aLine[6], 9);
+
+	ZeroMemory(abyFlag, sizeof(abyFlag));
+	ZeroMemory(abyNum, sizeof(abyNum));
+	printf("flagtalk pick none=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0));
+	FlagBitSet(abyFlag, 0, TRUE);
+	printf(" flag0=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0));
+	FlagBitSet(abyFlag, 0, FALSE);
+	FlagBitSet(abyFlag, 10, TRUE);
+	printf(" need=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0));
+	FlagBitSet(abyFlag, 11, TRUE);
+	printf(" not=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0));
+	FlagBitSet(abyFlag, 10, FALSE);
+	FlagBitSet(abyFlag, 11, FALSE);
+	FlagNumSet(abyNum, 2, 5);
+	printf(" ge=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0));
+	FlagNumSet(abyNum, 2, 2);
+	printf(" eq=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0));
+	FlagNumSet(abyNum, 2, 3);
+	printf(" nomatch=%d\n", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0));
+	printf("flagtalk level 9=%d 10=%d 20=%d 21=%d\n", TalkPickLine(&Talk, abyFlag, abyNum, 9, 0), TalkPickLine(&Talk, abyFlag, abyNum, 10, 0),
+			TalkPickLine(&Talk, abyFlag, abyNum, 20, 0), TalkPickLine(&Talk, abyFlag, abyNum, 21, 0));
+	printf("flagtalk tie rand0=%d rand1=%d rand3=%d\n", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0), TalkPickLine(&Talk, abyFlag, abyNum, 1, 1),
+			TalkPickLine(&Talk, abyFlag, abyNum, 1, 3));
+	/* 合う行が無い・知らない比べ方は合わない */
+	Talk.byLineCount = 1;
+	TalkTestLineInit(&Talk.aLine[0], 1);
+	Talk.aLine[0].abyCondNo[0] = 2;
+	Talk.aLine[0].abyCondCmp[0] = 99;
+	printf("flagtalk badcmp=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0));
+	Talk.byLineCount = 0;
+	printf(" empty=%d\n", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0));
+
+	/* 話した後の動き（立てる→消す→数値。数値は 255 で止まる） */
+	TALKLINEINFO Line;
+	TalkTestLineInit(&Line, 1);
+	Line.awSetOn[0] = 20;
+	Line.awSetOff[0] = 21;
+	Line.abyActNo[0] = 5;
+	Line.abyActOp[0] = TALKNUMOP_SET;
+	Line.abyActVal[0] = 200;
+	Line.abyActNo[1] = 5;
+	Line.abyActOp[1] = TALKNUMOP_ADD;
+	Line.abyActVal[1] = 100;
+	ZeroMemory(abyFlag, sizeof(abyFlag));
+	ZeroMemory(abyNum, sizeof(abyNum));
+	FlagBitSet(abyFlag, 21, TRUE);
+	TalkApplyLine(&Line, abyFlag, abyNum);
+	printf("flagtalk apply on=%d off=%d num=%d other=%d\n", FlagBitGet(abyFlag, 20) ? 1 : 0, FlagBitGet(abyFlag, 21) ? 1 : 0,
+			FlagNumGet(abyNum, 5), FlagNumGet(abyNum, 6));
+}
+
 /* ------------------------------------------------------------------------- */
 static void TestAdminResurrect(const std::vector<int> &aLogin)
 {
@@ -3034,6 +3172,96 @@ static void TestQuest(const std::vector<int> &aLogin)
 		free(psz);
 	}
 
+	/* 古い形式（持ち物 10 個）のキャラを読むと、11〜20 枠は空のままで、後ろの列もずれない。
+	   いま保存したファイルを「持ち物の列を 10 個分に縮めた形」に書き換えて読み直す */
+	{
+		WORD awItemBak[MAX_MYITEM], awEquBak[MAX_EQUTYPE];
+		char szAccBak[sizeof(pOther->szAcc)], szNameBak[sizeof(pOther->szName)];
+		memcpy(awItemBak, pOther->waItem, sizeof(awItemBak));
+		memcpy(awEquBak, pOther->waEqu, sizeof(awEquBak));
+		memcpy(szAccBak, pOther->szAcc, sizeof(szAccBak));
+		memcpy(szNameBak, pOther->szName, sizeof(szNameBak));
+		for (int i = 0; i < MAX_MYITEM; i ++) pOther->waItem[i] = (WORD)(i < 10 ? i + 1 : 777);
+		for (int i = 0; i < MAX_EQUTYPE; i ++) pOther->waEqu[i] = 0xFFFF;
+		pOther->waEqu[0] = 3;
+		strcpy(pOther->szAcc, "legacyitem");
+		strcpy(pOther->szName, "旧持ち物");
+		SaveCharInfo();
+
+		const char *pszFile = "SBODATA/SboDataCharInfo.dat";
+		std::vector<BYTE> aFile;
+		FILE *fp = fopen(pszFile, "rb");
+		if (fp) {
+			BYTE abyBuf[4096];
+			size_t n;
+			while ((n = fread(abyBuf, 1, sizeof(abyBuf), fp)) > 0) aFile.insert(aFile.end(), abyBuf, abyBuf + n);
+			fclose(fp);
+		}
+		/* ヘッダ：列数・データ数、続いて「列名 + 開始位置」 */
+		DWORD dwColumn = 0, dwData = 0;
+		size_t nHead = 8, nCountPos = 0, nItemPos = 0;
+		DWORD dwCountOfs = 0, dwItemOfs = 0;
+		if (aFile.size() > 8) {
+			memcpy(&dwColumn, &aFile[0], 4);
+			memcpy(&dwData, &aFile[4], 4);
+			for (DWORD c = 0; c < dwColumn; c ++) {
+				const char *pszName = (const char *)&aFile[nHead];
+				size_t nPos = nHead + strlen(pszName) + 1;
+				DWORD dwOfs;
+				memcpy(&dwOfs, &aFile[nPos], 4);
+				if (strcmp(pszName, "waItemCount") == 0) { nCountPos = nPos; dwCountOfs = dwOfs; }
+				if (strcmp(pszName, "waItem") == 0) { nItemPos = nPos; dwItemOfs = dwOfs; }
+				nHead = nPos + 4;
+			}
+		}
+		int nPatched = 0;
+		if (nCountPos && nItemPos && dwData > 0) {
+			const DWORD dwNew = 10 * sizeof(WORD), dwOld = MAX_MYITEM * sizeof(WORD);
+			std::vector<BYTE> aNew(aFile.begin(), aFile.begin() + dwItemOfs);
+			for (DWORD r = 0; r < dwData; r ++) aFile[dwCountOfs + r] = 10;
+			memcpy(&aNew[dwCountOfs], &aFile[dwCountOfs], dwData);
+			for (DWORD r = 0; r < dwData; r ++) aNew.insert(aNew.end(), aFile.begin() + dwItemOfs + r * dwOld, aFile.begin() + dwItemOfs + r * dwOld + dwNew);
+			aNew.insert(aNew.end(), aFile.begin() + dwItemOfs + dwData * dwOld, aFile.end());
+			/* 持ち物の列より後ろの列は、縮めた分だけ開始位置を前へ */
+			size_t nPos = 8;
+			for (DWORD c = 0; c < dwColumn; c ++) {
+				size_t nPosOfs = nPos + strlen((const char *)&aNew[nPos]) + 1;
+				DWORD dwOfs;
+				memcpy(&dwOfs, &aNew[nPosOfs], 4);
+				if (dwOfs > dwItemOfs) {
+					dwOfs -= dwData * (dwOld - dwNew);
+					memcpy(&aNew[nPosOfs], &dwOfs, 4);
+				}
+				nPos = nPosOfs + 4;
+			}
+			fp = fopen(pszFile, "wb");
+			if (fp) {
+				fwrite(&aNew[0], 1, aNew.size(), fp);
+				fclose(fp);
+				nPatched = 1;
+			}
+		}
+		LoadCharInfo();
+		PCHARINFO pLegacy = NULL;
+		for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+			if (g_aCharInfo[i] != pOther && strcmp(g_aCharInfo[i]->szAcc, "legacyitem") == 0) pLegacy = g_aCharInfo[i];
+		}
+		if (pLegacy) {
+			int nHead10 = 0, nTail0 = 0;
+			for (int i = 0; i < 10; i ++) if (pLegacy->waItem[i] == i + 1) nHead10 ++;
+			for (int i = 10; i < MAX_MYITEM; i ++) if (pLegacy->waItem[i] == 0) nTail0 ++;
+			printf("legacy item load patched=%d first10=%d rest0=%d equ=%u,%u name=%s\n", nPatched, nHead10, nTail0,
+				pLegacy->waEqu[0], pLegacy->waEqu[1], pLegacy->szName);
+			pLegacy->szAcc[0] = 0;
+		} else {
+			printf("legacy item load patched=%d not found\n", nPatched);
+		}
+		memcpy(pOther->waItem, awItemBak, sizeof(awItemBak));
+		memcpy(pOther->waEqu, awEquBak, sizeof(awEquBak));
+		memcpy(pOther->szAcc, szAccBak, sizeof(szAccBak));
+		memcpy(pOther->szName, szNameBak, sizeof(szNameBak));
+	}
+
 	/* 片付け */
 	pOther->szAcc[0] = 0;
 	for (int i = 0; i < 4; i ++) {
@@ -4015,6 +4243,46 @@ static void TestFloorDamage(const std::vector<int> &aLogin)
 	AddTblNoPC((int)pPC->dwTblID);
 	pPC->byDirection = byDirBack;
 	pPC->wHP = wHPBack;
+}
+
+/* ------------------------------------------------------------------------- */
+/* 低いパーツ（byLow）：ぶつかるが、特技・矢の見通しは越える。保存の形も確かめる	 */
+/* ------------------------------------------------------------------------- */
+static void TestLowParts(const std::vector<int> &aLogin)
+{
+	printf("== V2. LowParts ==\n");
+	if (aLogin.size() < 1) {
+		return;
+	}
+	PCHARINFO pPC = g_aCharInfo[aLogin[0]];
+	int nMapNo = GetMapNo(pPC->dwMapID);
+	if (nMapNo < 0) {
+		printf("no map\n");
+		return;
+	}
+	PMAPINFO pMap = g_aMapInfo[nMapNo];
+	int nX = pMap->nCX / 2, nY = pMap->nCY / 2;
+	PMAPPARTSINFO pParts = &g_aMapPartsInfo[pMap->pwMap[nX + nY * pMap->nCX]];
+	BYTE byHitBack = pParts->byHitType, byLowBack = pParts->byLow;
+	pParts->byHitType = PARTSHIT_BLOCK1;
+	pParts->byLow = 0;
+	BOOL bWall0 = IsMagicWall(pMap->dwID, nX, nY);
+	pParts->byLow = 1;
+	BOOL bWall1 = IsMagicWall(pMap->dwID, nX, nY);
+	/* ぶつかり判定は変わらない */
+	BOOL bBlock1 = !pMap->pwMap ? FALSE : (pParts->byHitType == PARTSHIT_BLOCK1);
+	printf("low wall normal=%d low=%d hit=%d\n", bWall0 ? 1 : 0, bWall1 ? 1 : 0, bBlock1 ? 1 : 0);
+	/* 保存用の byLight への入れ方（灯りと重ならない・今のデータはそのまま） */
+	MAPPARTSINFOSAVE Save;
+	ZeroMemory(&Save, sizeof(Save));
+	pParts->byLight = 5;
+	Save.byLight = MAPPARTS_MAKE_SAVELIGHT(pParts);
+	printf("low save light=%d low=%d\n", MAPPARTS_SAVE_LIGHT(&Save), MAPPARTS_SAVE_LOW(&Save));
+	Save.byLight = 3;
+	printf("low old data light=%d low=%d\n", MAPPARTS_SAVE_LIGHT(&Save), MAPPARTS_SAVE_LOW(&Save));
+	pParts->byLight = 0;
+	pParts->byHitType = byHitBack;
+	pParts->byLow = byLowBack;
 }
 
 /* ------------------------------------------------------------------------- */

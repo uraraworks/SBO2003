@@ -39,6 +39,8 @@ extern BOOL SaveEquUserInfo(void);
 extern BOOL SaveMakerInfo(void);
 extern BOOL SaveRecipeInfo(void);
 extern BOOL SaveQuestInfo(void);
+extern BOOL SaveFlagNameInfo(void);
+extern BOOL SaveTalkInfo(void);
 extern int GetMapNo(DWORD);
 extern BOOL SaveCharInfo(void);
 extern BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, BYTE byScreen);	/* SboSvrRecvCmd.cpp */
@@ -285,6 +287,7 @@ enum {
 
 #define FF_READONLY		(0x01)		/* 読むだけ */
 #define FF_MULTILINE	(0x02)		/* 改行を入れてよい */
+#define FF_PADMAX		(0x04)		/* 配列の「無し」が最大値（短い配列の残りを 0 ではなく 255／65535 で埋める。フラグの番号の配列用） */
 
 typedef struct _DATAFIELD {
 	const char		*pszName;		/* 項目名（JSON のキー。ソースの変数名と同じ） */
@@ -428,6 +431,41 @@ static const DATAFIELD s_aFieldRecipe[] = {
 	FLD (RECIPEINFO, dwGold,			"手数料",				FT_U32, 0, "作ってもらう時に払うゴールド"),
 };
 
+/* フラグの名前表（印・数値の番号に付ける名前。管理用でプレイヤーには出ない） */
+static const DATAFIELD s_aFieldFlagName[] = {
+	FLD (FLAGNAMEINFO, byState,			"状態",					FT_U8, 0, "0=削除済み（枠だけ残る。同じ種類・番号をもう一度使う時は、足さずにこの枠の byState を 1 に戻す） 1=有効"),
+	FLD (FLAGNAMEINFO, byKind,			"種類",					FT_U8, 0, "0=印（ON/OFF） 1=数値（0〜255）。同じ種類・番号の組は 1 件まで"),
+	FLD (FLAGNAMEINFO, wNo,				"番号",					FT_U16, 0, "印は 0〜1023、数値は 0〜127。割り振りの目安: 印は 1〜199 本筋・200〜599 地域・600〜899 お使い・900〜1023 予備。数値は 0〜127"),
+	FLDS(FLAGNAMEINFO, szName,			"名前",					FT_STR, 0, "全角 20 字ほど（UTF-8 で最大 95 バイト）。例: 「港町の事件を解決した」"),
+};
+
+/* 会話セット（lines は項目表の外で扱う） */
+static const DATAFIELD s_aFieldTalk[] = {
+	FLD (TALKINFO, byState,				"状態",					FT_U8, 0, "0=削除済み（枠だけ残る。話しかけても「……」と言うだけ。同じ番号をもう一度使う時は、足さずにこの枠の byState を 1 に戻す） 1=有効。足す時に省くと 1"),
+	FLD (TALKINFO, wID,					"会話セット番号",		FT_U16, 0, "1〜999。NPC の台詞を \"@tNNN\"（NNN はこの番号。例 @t012）にすると、その NPC に話しかけた時にこのセットを使う。足す時に必ず指定（ほかのセットと重ならない）。あとから変えられない。id（配列の番号）とは別"),
+	FLDS(TALKINFO, szName,				"名前",					FT_STR, 0, "管理用のメモ（プレイヤーには出ない）。最大 63 バイト"),
+};
+
+/* 会話セットの 1 行 */
+static const char *s_pszNoteTalkNoBit = "キャラのフラグの印の番号（0〜1023）。65535=無し（印 0 を使えるよう 0 ではなく 65535 が無し。短い配列は残りが無しになる）";
+static const char *s_pszNoteTalkNoNum = "キャラのフラグの数値の番号（0〜127）。255=無し（短い配列は残りが無しになる）";
+static const DATAFIELD s_aFieldTalkLine[] = {
+	FLD (TALKLINEINFO, byRank,			"順位",					FT_U8, 0, "小さいほど先に見る。条件に合う行のうち順位が一番小さい行が選ばれ、同じ順位が複数あればくじで 1 行"),
+	FLD (TALKLINEINFO, byLvMin,			"レベル下限",			FT_U8, 0, "0=気にしない"),
+	FLD (TALKLINEINFO, byLvMax,			"レベル上限",			FT_U8, 0, "0=気にしない"),
+	FLDA(TALKLINEINFO, awNeed,			"立っている必要のある印",	FT_U16ARR, WORD, FF_PADMAX, s_pszNoteTalkNoBit),
+	FLDA(TALKLINEINFO, awNot,			"立っていてはいけない印",	FT_U16ARR, WORD, FF_PADMAX, s_pszNoteTalkNoBit),
+	FLDA(TALKLINEINFO, abyCondNo,		"数値の条件の数値番号",	FT_U8ARR, BYTE, FF_PADMAX, s_pszNoteTalkNoNum),
+	FLDA(TALKLINEINFO, abyCondCmp,		"数値の条件の比べ方",	FT_U8ARR, BYTE, 0, "abyCondNo と同じ並び。0=以上 1=ちょうど 2=以下"),
+	FLDA(TALKLINEINFO, abyCondVal,		"数値の条件の値",		FT_U8ARR, BYTE, 0, "abyCondNo と同じ並び。0〜255"),
+	FLDS(TALKLINEINFO, szSpeech,		"台詞",					FT_STR, FF_MULTILINE, "NPC の台詞と同じ書き方（@0 入力待ち・@1 改行・@2 点滅無しで入力待ち など。ページ送りあり）。話しかけた本人にだけ出る。最大 1023 バイト。空だと「……」"),
+	FLDA(TALKLINEINFO, awSetOn,			"話した後に立てる印",	FT_U16ARR, WORD, FF_PADMAX, s_pszNoteTalkNoBit),
+	FLDA(TALKLINEINFO, awSetOff,		"話した後に消す印",		FT_U16ARR, WORD, FF_PADMAX, s_pszNoteTalkNoBit),
+	FLDA(TALKLINEINFO, abyActNo,		"話した後に動かす数値の番号",	FT_U8ARR, BYTE, FF_PADMAX, s_pszNoteTalkNoNum),
+	FLDA(TALKLINEINFO, abyActOp,		"話した後の数値の動かし方",	FT_U8ARR, BYTE, 0, "abyActNo と同じ並び。0=○にする 1=○足す（255 で止まる）"),
+	FLDA(TALKLINEINFO, abyActVal,		"話した後の数値の値",	FT_U8ARR, BYTE, 0, "abyActNo と同じ並び。0〜255"),
+};
+
 /* 依頼情報（ギルドの仕事依頼。npcs・goals は項目表の外で扱う） */
 static const DATAFIELD s_aFieldQuest[] = {
 	FLD (QUESTINFO, wID,				"依頼番号",				FT_U16, FF_READONLY, "足す時に自動で振られる（1〜511。ほかの依頼と重ならない）。プレイヤーの受注・クリア済みの印はこの番号で覚えているので変わらない。id（配列の番号）とは別"),
@@ -447,6 +485,10 @@ static const DATAFIELD s_aFieldQuest[] = {
 	FLD (QUESTINFO, byChallenge,		"討伐チャレンジ",		FT_U8, 0, "0=ふつうの依頼 1=異空間の討伐チャレンジ 2=闘技場の討伐チャレンジ（闘技場は戦う様子をほかの人が観戦できる。観客は見えるだけで手は出せず、同じ依頼は一度に 1 組。異空間は挑戦中の組にだけ見え、何組でも同時に。入口の見えるNPCに乗ると、近くで同じ依頼を受けた仲間と一緒に行き先へ移り、全員が貸し出しセットの状態になる。出ている敵を全部倒すと元に戻って最後の段へ。倒れる・パーティを抜ける・切断・行き先のマップから出ると、その人だけ中断して元に戻る。報酬は初めてクリアした時だけで、2 回目からは記録だけ）"),
 	FLD (QUESTINFO, wLoanStTmp,			"貸し出しセット",		FT_U16, 0, "討伐チャレンジの時。stTmp（ステータステンプレート）の id。レベル・能力・最大HP/Mana・特技・持ち物・お金・属性をこれにする。持ち物の武器・鎧などは種類ごとに最初の 1 つを自動で装備する。職業と見た目はそのまま"),
 	FLD (QUESTINFO, byMemberMin,		"必要な人数",			FT_U8, 0, "討伐チャレンジの時。0・1=一人でもよい。2 以上はパーティを組んでいないと受けられず、受けると近く（同じマップの 8 マス以内）の仲間全員が一緒に受ける。後から入った仲間は参加できない"),
+	FLDA(QUESTINFO, awDoneSetFlag,		"完了した時に立てる印",	FT_U16ARR, WORD, FF_PADMAX, "キャラのフラグの印の番号（0〜1023）を最大 2 つ。65535=無し（足す時に省くと 2 つとも無し。短い配列は残りが無しになる）。ギルドで依頼を完了して報酬を受け取った時に立てる（討伐チャレンジの 2 回目からは動かさない）。名前は flag で付ける"),
+	FLD (QUESTINFO, byDoneNumNo,		"完了した時に動かす数値の番号",	FT_U8, 0, "キャラのフラグの数値の番号（0〜127）。255=無し（足す時に省くと無し）"),
+	FLD (QUESTINFO, byDoneNumOp,		"完了した時の数値の動かし方",	FT_U8, 0, "0=○にする 1=○足す（255 で止まる）。番号が無しなら使わない"),
+	FLD (QUESTINFO, byDoneNumVal,		"完了した時の数値の値",	FT_U8, 0, "0〜255。番号が無しなら使わない"),
 };
 
 /* 依頼の見えるNPC（受けた人とそのパーティにだけ見える。話すと台詞が出る。台詞の中身はサーバーが送り、見えるNPC自体の台詞は "@q" 固定） */
@@ -742,7 +784,7 @@ static bool SetField(BYTE *pBase, const DATAFIELD &f, const JVal &v, std::string
 			return false;
 		}
 		for (size_t i = 0; i < f.nSize; i ++) {
-			n = 0;
+			n = (f.nFlags & FF_PADMAX) ? nMax : 0;
 			if (i < v.a.size() && !GetInt(v.a[i], nMin, nMax, n, strErr, strName + "[" + JsonNum((long long)i) + "]")) {
 				return false;
 			}
@@ -795,6 +837,9 @@ static std::string FieldSchemaJson(const DATAFIELD *paField, int nCount)
 		}
 		if (f.nFlags & FF_MULTILINE) {
 			out += ",\"multiline\":true";
+		}
+		if (f.nFlags & FF_PADMAX) {
+			out += ",\"padMax\":true";
 		}
 		if (f.pszNote) {
 			out += ",\"note\":" + JsonStr(f.pszNote);
@@ -887,6 +932,8 @@ enum {
 	KIND_MAKER,
 	KIND_RECIPE,
 	KIND_QUEST,
+	KIND_FLAG,
+	KIND_TALK,
 	/* ここから下は読むだけ */
 	KIND_CHAR,
 	KIND_MAP,
@@ -906,9 +953,9 @@ static bool KindWritable(int nKind)
 	return (nKind < KIND_MAX) && (nKind != KIND_LEAVE);
 }
 
-static const char *s_apszKindName[] = { "magic", "magicUser", "equUser", "job", "stTmp", "item", "maker", "recipe", "quest", "char", "map", "mapParts", "efc", "comEfc", "leave", "subGame" };
+static const char *s_apszKindName[] = { "magic", "magicUser", "equUser", "job", "stTmp", "item", "maker", "recipe", "quest", "flag", "talk", "char", "map", "mapParts", "efc", "comEfc", "leave", "subGame" };
 static const char *s_apszKindLabel[] = {
-	"特技（魔法）情報", "特技を使える職業", "装備できる職業", "職業情報とレベルアップ情報", "ステータステンプレート（NPC・敵のひな形）", "アイテム情報", "作り手（料理人など）", "レシピ（作り手に頼んで作ってもらう物）", "ギルドの仕事依頼",
+	"特技（魔法）情報", "特技を使える職業", "装備できる職業", "職業情報とレベルアップ情報", "ステータステンプレート（NPC・敵のひな形）", "アイテム情報", "作り手（料理人など）", "レシピ（作り手に頼んで作ってもらう物）", "ギルドの仕事依頼", "フラグの名前表（印・数値に付ける名前）", "会話データ（フラグで台詞を出し分ける）",
 	"キャラ情報（プレイヤー・NPC）", "マップ情報", "マップパーツ", "エフェクト情報", "吹き出し情報", "預かり所", "サブゲーム情報"
 };
 static const char *s_apszKindNote[] = {
@@ -920,7 +967,9 @@ static const char *s_apszKindNote[] = {
 	"番号 0 は「なし」として使われる。detail は byType ごとに項目が違う（スキーマの detailByType を参照）。szMsg は使った時のメッセージ",
 	"町の作り手NPC（料理人など）。NPC の台詞を \"@cNN\"（NN は作り手の番号 2 桁、例 @c00）にすると、その NPC に話しかけた時に作り手の画面が開く。削除は byState=0（空き枠になり、次に足す時に使い回す）。ファイルが無い時は 0 件",
 	"作り手に頼んで材料からアイテムを作ってもらうレシピ。byMaker は maker の番号、wItem・awMatItem は item の番号。材料は持ち物と預かり所の両方から使い、できた物は持ち物へ（いっぱいなら預かり所へ）。削除は byState=0",
-	"ギルドの仕事依頼（読み書き。削除なし。止めるのは byState=0）。NPC の台詞を \"@gNN\"（NN=byGuild）にするとギルドの人になり、話すと一覧が開く。受けた人とそのパーティにだけ「見えるNPC」（npcs。ポータル・宝箱・人）が出て、段（0 から）と旗（1〜16）で出し分ける。goals は段ごとの「いまの目的」（文字列の配列）、npcs は配列で丸ごと置き換え。出口は既存のマップのイベントで作る（データだけ）。足す時の依頼番号（wID）は自動",
+	"ギルドの仕事依頼（読み書き。削除なし。止めるのは byState=0）。NPC の台詞を \"@gNN\"（NN=byGuild）にするとギルドの人になり、話すと一覧が開く。受けた人とそのパーティにだけ「見えるNPC」（npcs。ポータル・宝箱・人）が出て、段（0 から）と旗（1〜16）で出し分ける。goals は段ごとの「いまの目的」（文字列の配列）、npcs は配列で丸ごと置き換え。出口は既存のマップのイベントで作る（データだけ）。足す時の依頼番号（wID）は自動。完了した時にキャラのフラグを動かせる（awDoneSetFlag・byDoneNumNo・byDoneNumOp・byDoneNumVal。古い依頼は「無し」）",
+	"キャラごとにずっと残る「フラグ」（印 1024 個=ON/OFF の 0〜1023、数値 128 個=0〜255 の 0〜127）に付ける名前の表（読み書き）。名前は管理用でプレイヤーには出ない。byKind が 0=印・1=数値、wNo が番号で、同じ組は 1 件まで。削除は byState=0（枠だけ残り、足し直す時はその枠の byState を 1 に戻す）。ファイルが無い時は 0 件。キャラのフラグの中身は char の読み出しの flags で読める（読むだけ）。番号の割り振りの目安: 印は 1〜199 本筋・200〜599 地域・600〜899 お使い・900〜1023 予備",
+	"会話データ（読み書き）。NPC の台詞を \"@tNNN\"（NNN=wID。例 @t012）にすると、話しかけた人のフラグ（印・数値）とレベルで lines（最大 16 行）から 1 行を選び、その人にだけ台詞を出す（台詞はクライアントへ送らない）。選び方: 条件（立っている必要のある印 awNeed 4・立っていてはいけない印 awNot 4・数値の条件 2・レベル下限上限）に全部合う行のうち byRank が一番小さい行、同じ順位が複数ならくじ。合う行が無ければ「……」。話した後に印を立てる・消す・数値を動かす。lines は配列で丸ごと置き換え。削除は byState=0（枠だけ残り、足し直す時はその枠の byState を 1 に戻す）。ファイルが無い時は 0 件",
 	"プレイヤーと NPC（敵・町の人・発生元など）の全キャラ。番号（id）はキャラのテーブル番号で再起動で変わることがある。NPC は npcId（変わらない番号）で指す。isPlayer でプレイヤーか分かる。書き換えられるのは保存される NPC だけ（プレイヤー・発生した敵は不可）。足す時は dwMapID・dwX・dwY が要る。消す時は変更に {\"deleted\": true}。アカウント名・パスワード・IP は出さない",
 	"マップの情報・イベント・店・メッセージ・アイテム配置。番号は配列の番号（dwID はマップID で、キャラの dwMapID はこちら）。events・shops・messages は配列で丸ごと置き換え。マス目のパーツは sbo_map_tiles で読み、sbo_map_tiles_set で書く。大きさの変更・マップの追加はできない",
 	"マップパーツ（マス目の parts に入る番号）の表示・当たり判定。byHitType 0 なら通れる。anime は配列で丸ごと置き換え（コマ数 byAnimeCount も変わる）。追加できる（消せない）",
@@ -929,7 +978,7 @@ static const char *s_apszKindNote[] = {
 	"読むだけ。プレイヤーごとの預かり所（キャラの dwLeaveID がこの番号）。items は item の番号と個数",
 	"爆弾ゲーム・迷路・ダンジョン・戦場ゲーム・すごろくの設定。detail は byType ごとに項目が違う（省いた項目は前の値のまま）。種別（byType）の変更・追加・すごろくのマス（events・parts）は管理者ウィンドウで"
 };
-static const int s_anKindMax[] = { 256, 256, 256, 256, 65535, 65535, MAX_MAKER, MAX_RECIPE, MAX_QUEST - 1, 0, 0, 65535, 255, MAX_COMEFC, 0, 0 };
+static const int s_anKindMax[] = { 256, 256, 256, 256, 65535, 65535, MAX_MAKER, MAX_RECIPE, MAX_QUEST - 1, MAX_FLAGNAMEINFO, MAX_TALK - 1, 0, 0, 65535, 255, MAX_COMEFC, 0, 0 };
 
 static int KindFromName(const char *pszKind)
 {
@@ -953,6 +1002,8 @@ static int KindCount(int nKind)
 	case KIND_MAKER:		return g_aMakerInfo.GetSize();
 	case KIND_RECIPE:		return g_aRecipeInfo.GetSize();
 	case KIND_QUEST:		return g_aQuestInfo.GetSize();
+	case KIND_FLAG:			return g_aFlagNameInfo.GetSize();
+	case KIND_TALK:			return g_aTalkInfo.GetSize();
 	case KIND_CHAR:			return g_aCharInfo.GetSize();
 	case KIND_MAP:			return g_aMapInfo.GetSize();
 	case KIND_MAPPARTS:		return g_wCountMapParts;
@@ -1412,6 +1463,7 @@ static const DATAFIELD s_aFieldMapParts[] = {
 	FLD (MAPPARTSINFO, byLight,			"灯りの範囲",			FT_U8, 0, "暗いマップでこのパーツが周りを照らす範囲（マス）。0 なら光らない。1〜7"),
 	FLD (MAPPARTSINFO, byDamage,		"ダメージ床",			FT_U8, 0, "このパーツのマスに1歩入るたびに減るHP。0 ならダメージ床ではない。HPは1で止まり倒れない（毒沼・溶岩など）"),
 	FLD (MAPPARTSINFO, byPoison,		"毒になる秒数",			FT_U8, 0, "ダメージ床を踏むと毒になる秒数。0 なら毒にならない。毒は2秒ごとに byDamage ずつ減る（毒・眠りの効きにくさで防げる）"),
+	FLD (MAPPARTSINFO, byLow,			"低い",					FT_U8, 0, "1 なら低い物（水面・柵など）。ぶつかって通れないが、灯り・矢・飛ぶ特技・見通しは越える（カウンターと同じ）。0 なら普通"),
 	FLD (MAPPARTSINFO, wGrpID,			"画像ID",				FT_U16, 0, NULL),
 	FLD (MAPPARTSINFO, wBackID,			"重ねる時の背景ID",		FT_U16, 0, NULL),
 };
@@ -1531,6 +1583,28 @@ static std::string CharJson(PCHARINFO pChar)
 		out += JsonNum(pChar->awQuestCount[i]);
 	}
 	out += "]}";
+	/* キャラのフラグ（読むだけ。立っている印の番号と、0 でない数値。プレイヤーだけ） */
+	if (bPlayer) {
+		out += ",\"flags\":{\"bits\":[";
+		bool bFirst = true;
+		for (int i = 0; i < MAX_FLAGBIT; i ++) {
+			if (pChar->abyFlag[i / 8] & (1 << (i % 8))) {
+				if (!bFirst) out += ",";
+				bFirst = false;
+				out += JsonNum(i);
+			}
+		}
+		out += "],\"nums\":{";
+		bFirst = true;
+		for (int i = 0; i < MAX_FLAGNUM; i ++) {
+			if (pChar->abyFlagNum[i]) {
+				if (!bFirst) out += ",";
+				bFirst = false;
+				out += "\"" + JsonNum(i) + "\":" + JsonNum(pChar->abyFlagNum[i]);
+			}
+		}
+		out += "}}";
+	}
 	return out;
 }
 
@@ -1557,6 +1631,40 @@ static std::string QuestJson(const QUESTINFO *pQuest, bool bID = true)
 		if (!bFirst) out += ",";
 		bFirst = false;
 		out += "{" + FieldsJson((const BYTE *)&pQuest->aNpc[i], s_aFieldQuestNpc, COUNTOF(s_aFieldQuestNpc)) + "}";
+	}
+	out += "]";
+	return out;
+}
+
+/* 会話セットの 1 行を「無し」で埋めた姿にする（0 で埋めると印 0・数値 0 を指す条件になるので） */
+static void TalkLineInit(TALKLINEINFO *pLine)
+{
+	memset(pLine, 0, sizeof(*pLine));
+	for (int i = 0; i < MAX_TALKNEED; i ++) {
+		pLine->awNeed[i] = FLAG_NOBIT;
+		pLine->awNot[i] = FLAG_NOBIT;
+	}
+	for (int i = 0; i < MAX_TALKCOND; i ++) {
+		pLine->abyCondNo[i] = FLAG_NONUM;
+	}
+	for (int i = 0; i < MAX_TALKSET; i ++) {
+		pLine->awSetOn[i] = FLAG_NOBIT;
+		pLine->awSetOff[i] = FLAG_NOBIT;
+	}
+	for (int i = 0; i < MAX_TALKACT; i ++) {
+		pLine->abyActNo[i] = FLAG_NONUM;
+	}
+}
+
+/* 会話セット 1 件（lines は使っている行だけ） */
+static std::string TalkJson(const TALKINFO *pTalk)
+{
+	std::string out = FieldsJson((const BYTE *)pTalk, s_aFieldTalk, COUNTOF(s_aFieldTalk));
+
+	out += ",\"lines\":[";
+	for (int i = 0; i < MAX_TALKLINE && i < (int)pTalk->byLineCount; i ++) {
+		if (i) out += ",";
+		out += "{" + FieldsJson((const BYTE *)&pTalk->aLine[i], s_aFieldTalkLine, COUNTOF(s_aFieldTalkLine)) + "}";
 	}
 	out += "]";
 	return out;
@@ -1905,6 +2013,13 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataSchema(void)
 			out.insert(out.size() - 1, ",{\"name\":\"goals\",\"type\":\"string[]\",\"label\":\"段ごとのいまの目的\",\"maxCount\":" + JsonNum(MAX_QUESTSTEP) + ",\"maxBytes\":" + JsonNum(MAX_QUESTGOAL - 1) + ",\"note\":\"0 段目から順に。最後の段の目的は「ギルドへ持ち帰る」などにする。配列で丸ごと置き換え\"}"
 					",{\"name\":\"npcs\",\"type\":\"object[]\",\"label\":\"見えるNPC\",\"maxCount\":" + JsonNum(MAX_QUESTNPC) + ",\"fields\":" + FieldSchemaJson(s_aFieldQuestNpc, COUNTOF(s_aFieldQuestNpc)) + ",\"note\":\"配列で丸ごと置き換え。省いた項目は 0（byStepMax は省くと 255=どの段でも、byNextStep は省くと 255=変えない）\"}");
 			break;
+		case KIND_FLAG:
+			out += FieldSchemaJson(s_aFieldFlagName, COUNTOF(s_aFieldFlagName));
+			break;
+		case KIND_TALK:
+			out += FieldSchemaJson(s_aFieldTalk, COUNTOF(s_aFieldTalk));
+			out.insert(out.size() - 1, ",{\"name\":\"lines\",\"type\":\"object[]\",\"label\":\"行\",\"maxCount\":" + JsonNum(MAX_TALKLINE) + ",\"fields\":" + FieldSchemaJson(s_aFieldTalkLine, COUNTOF(s_aFieldTalkLine)) + ",\"note\":\"配列で丸ごと置き換え。省いた項目は、印・数値の番号が無し（65535・255）・それ以外は 0。台詞が空の行は「……」と言う。1 行ごとに順位・条件・台詞・話した後の動きを持つ\"}");
+			break;
 		case KIND_CHAR:
 			out += FieldSchemaJson(s_aFieldChar, COUNTOF(s_aFieldChar));
 			out.insert(out.size() - 1, ",{\"name\":\"npcId\",\"type\":\"u32\",\"label\":\"NPC番号\",\"readonly\":true,\"note\":\"保存される NPC ごとに決まった番号（再起動しても変わらない）。id（テーブル番号）は再起動で変わることがあるので、NPC を指す時はこちら。プレイヤー・発生した敵は 0\"}"
@@ -1912,6 +2027,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataSchema(void)
 					",{\"name\":\"szNpcSpeech\",\"type\":\"string\",\"label\":\"NPC の台詞\",\"note\":\"@5NN は店（NN はそのマップの店の番号）・@cNN は作り手（NN は maker の番号）\"}"
 					",{\"name\":\"jobMagic\",\"type\":\"object\",\"label\":\"転職前の職業で覚えていた特技\",\"readonly\":true}"
 					",{\"name\":\"townWarp\",\"type\":\"object\",\"label\":\"町転送の行き先帳\",\"readonly\":true,\"note\":\"教会で復活位置を記録した町（新しい順）。[マップID, 横, 縦]\"}"
+					",{\"name\":\"flags\",\"type\":\"object\",\"label\":\"キャラのフラグ\",\"readonly\":true,\"note\":\"{bits: 立っている印の番号の並び, nums: {数値の番号: 値}（0 でないものだけ）}。プレイヤーだけ。書き込みはできない（管理者ウィンドウで変える）\"}"
 					",{\"name\":\"quest\",\"type\":\"object\",\"label\":\"受けているギルドの依頼\",\"readonly\":true,\"note\":\"{questId: 依頼番号（0=受けていない）, step: 段, flags: 旗（ビット 0=旗1 …）, counts: 数 4 つ}。プレイヤーだけ\"}"
 					",{\"name\":\"route\",\"type\":\"object\",\"label\":\"巡回ルート\",\"note\":\"{mode: 0=折り返す 1=最初に戻る, wait: 止まる秒数 0〜60, points: [[x,y],...] 2〜16 個（巡回をやめる時は []）}。動かない・ランダム移動の NPC だけ\"}"
 					",{\"name\":\"deleted\",\"type\":\"bool\",\"label\":\"消す\",\"note\":\"変更に {\\\"deleted\\\": true} を入れるとその NPC を消す（記録は残り、元に戻すと足し直す）\"}");
@@ -2033,6 +2149,12 @@ static std::string RecordJson(int nKind, int nID)
 		break;
 	case KIND_QUEST:
 		out += QuestJson(g_aQuestInfo[nID]);
+		break;
+	case KIND_FLAG:
+		out += FieldsJson((const BYTE *)g_aFlagNameInfo[nID], s_aFieldFlagName, COUNTOF(s_aFieldFlagName));
+		break;
+	case KIND_TALK:
+		out += TalkJson(g_aTalkInfo[nID]);
 		break;
 	case KIND_CHAR:
 		if (CharIsEmpty(g_aCharInfo[nID])) {
@@ -2160,7 +2282,7 @@ static bool CharRouteSame(PCHARINFO p, int nMode, int nWait, const std::vector<i
 /* キャラ（NPC）の変更・追加・削除。bDeleted は消した時 true（record は null） */
 static bool CharApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::string &strErr, std::string &strRecord, int &nIDOut, bool &bDeleted)
 {
-	static const char *apszExtra[] = { "szNpcSpeech", "route", "deleted", "isPlayer", "online", "jobMagic", "townWarp", "quest", "npcId", NULL };
+	static const char *apszExtra[] = { "szNpcSpeech", "route", "deleted", "isPlayer", "online", "jobMagic", "townWarp", "quest", "flags", "npcId", NULL };
 	PCHARINFO pSrc = bAdd ? NULL : g_aCharInfo[nID];
 	DWORD dwNpcIdAdd = 0;
 	bDeleted = false;
@@ -3916,6 +4038,11 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 					Info.aNpc[k].byStepMax = QUESTNPC_NOSTEP;
 					Info.aNpc[k].byNextStep = QUESTNPC_NOSTEP;
 				}
+				/* 完了した時に立てる印・動かす数値は「無し」から（0 のままだと印 0・数値 0 になる） */
+				for (int k = 0; k < MAX_QUESTDONESET; k ++) {
+					Info.awDoneSetFlag[k] = FLAG_NOBIT;
+				}
+				Info.byDoneNumNo = FLAG_NONUM;
 			}
 			if (!CheckKnownKeys(chg, s_aFieldQuest, COUNTOF(s_aFieldQuest), apszQuestExtra, strErr)) {
 				goto Exit;
@@ -3980,6 +4107,20 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 			/* 内容の確認 */
 			if (Info.byState > QUESTSTATE_ON) {
 				strErr = "byState は 0（止める）か 1（出す）で指定してください";
+				goto Exit;
+			}
+			for (int k = 0; k < MAX_QUESTDONESET; k ++) {
+				if (Info.awDoneSetFlag[k] >= MAX_FLAGBIT && Info.awDoneSetFlag[k] != FLAG_NOBIT) {
+					strErr = "awDoneSetFlag[" + JsonNum(k) + "] は印の番号（0〜" + JsonNum(MAX_FLAGBIT - 1) + "）か 65535（無し）で指定してください";
+					goto Exit;
+				}
+			}
+			if (Info.byDoneNumNo >= MAX_FLAGNUM && Info.byDoneNumNo != FLAG_NONUM) {
+				strErr = "byDoneNumNo は数値の番号（0〜" + JsonNum(MAX_FLAGNUM - 1) + "）か 255（無し）で指定してください";
+				goto Exit;
+			}
+			if (Info.byDoneNumOp >= TALKNUMOP_MAX) {
+				strErr = "byDoneNumOp は 0（○にする）か 1（○足す）で指定してください";
 				goto Exit;
 			}
 			if (Info.szName[0] == 0) {
@@ -4096,6 +4237,180 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 		}
 		break;
 
+	case KIND_FLAG:
+		{
+			FLAGNAMEINFO Info;
+			memset(&Info, 0, sizeof(Info));
+			if (!bAdd) {
+				Info = *g_aFlagNameInfo[nID];
+			} else {
+				Info.byState = FLAGNAMESTATE_ON;
+			}
+			if (!CheckKnownKeys(chg, s_aFieldFlagName, COUNTOF(s_aFieldFlagName), NULL, strErr) ||
+					!ApplyFields((BYTE *)&Info, s_aFieldFlagName, COUNTOF(s_aFieldFlagName), chg, strErr, "")) {
+				goto Exit;
+			}
+			if (Info.byState > FLAGNAMESTATE_ON) {
+				strErr = "byState は 0（削除済み）か 1（有効）で指定してください";
+				goto Exit;
+			}
+			if (Info.byKind >= FLAGKIND_MAX) {
+				strErr = "byKind は 0（印）か 1（数値）で指定してください";
+				goto Exit;
+			}
+			if (Info.wNo >= ((Info.byKind == FLAGKIND_BIT) ? MAX_FLAGBIT : MAX_FLAGNUM)) {
+				strErr = "wNo は、印なら 0〜" + JsonNum(MAX_FLAGBIT - 1) + "、数値なら 0〜" + JsonNum(MAX_FLAGNUM - 1) + " で指定してください";
+				goto Exit;
+			}
+			if (Info.byState == FLAGNAMESTATE_ON && Info.szName[0] == 0) {
+				strErr = "szName（名前）は空にできません（消す時は byState を 0 にします）";
+				goto Exit;
+			}
+			/* 同じ種類・番号の組は 1 件まで（削除済みの枠も数える。足し直す時はその枠を直す） */
+			for (int k = 0; k < g_aFlagNameInfo.GetSize(); k ++) {
+				if ((bAdd || k != nID) && g_aFlagNameInfo[k]->byKind == Info.byKind && g_aFlagNameInfo[k]->wNo == Info.wNo) {
+					strErr = std::string("同じ種類・番号の名前がもうあります（id ") + JsonNum(k) + "。" +
+							(g_aFlagNameInfo[k]->byState == FLAGNAMESTATE_NONE ? "削除済みの枠なので、足さずにその id の byState を 1 に戻して名前を付けてください）" : "足さずにその id を更新してください）");
+					goto Exit;
+				}
+			}
+			strRecord = FieldsJson((const BYTE *)&Info, s_aFieldFlagName, COUNTOF(s_aFieldFlagName));
+			if (bApply) {
+				if (bAdd) {
+					PFLAGNAMEINFO pNew = new FLAGNAMEINFO;
+					*pNew = Info;
+					g_aFlagNameInfo.Add(pNew);
+				} else {
+					*g_aFlagNameInfo[nID] = Info;
+				}
+				SaveFlagNameInfo();
+			}
+		}
+		break;
+
+	case KIND_TALK:
+		{
+			static const char *apszTalkExtra[] = { "lines", NULL };
+			TALKINFO Info;
+			WORD wIDOld;
+			memset(&Info, 0, sizeof(Info));
+			if (!bAdd) {
+				Info = *g_aTalkInfo[nID];
+			} else {
+				Info.byState = TALKSTATE_ON;
+				for (int k = 0; k < MAX_TALKLINE; k ++) {
+					TalkLineInit(&Info.aLine[k]);
+				}
+			}
+			wIDOld = Info.wID;
+			if (!CheckKnownKeys(chg, s_aFieldTalk, COUNTOF(s_aFieldTalk), apszTalkExtra, strErr) ||
+					!ApplyFields((BYTE *)&Info, s_aFieldTalk, COUNTOF(s_aFieldTalk), chg, strErr, "")) {
+				goto Exit;
+			}
+			/* 会話セット番号は足す時に決め、あとから変えられない（同じ値を書き戻すのは許す） */
+			if (!bAdd && Info.wID != wIDOld) {
+				strErr = "wID は変えられません（足す時に決めます）";
+				goto Exit;
+			}
+			if (bAdd) {
+				if (chg.Get("wID") == NULL) {
+					strErr = "足す時は wID（会話セット番号 1〜" + JsonNum(MAX_TALK - 1) + "）を指定してください";
+					goto Exit;
+				}
+				if (Info.wID < 1 || Info.wID >= MAX_TALK) {
+					strErr = "wID（会話セット番号）は 1〜" + JsonNum(MAX_TALK - 1) + " で指定してください";
+					goto Exit;
+				}
+				for (int k = 0; k < g_aTalkInfo.GetSize(); k ++) {
+					if (g_aTalkInfo[k]->wID == Info.wID) {
+						strErr = "wID " + JsonNum(Info.wID) + " の会話セットがもうあります（id " + JsonNum(k) + "。" +
+								(g_aTalkInfo[k]->byState == TALKSTATE_NONE ? "削除済みの枠なので、足さずにその id の byState を 1 に戻してください）" : "足さずにその id を更新してください）");
+						goto Exit;
+					}
+				}
+			}
+			/* 行（丸ごと置き換え） */
+			if (const JVal *pLines = chg.Get("lines")) {
+				if (pLines->t != JVal::ARR || pLines->a.size() > (size_t)MAX_TALKLINE) {
+					strErr = "lines はオブジェクトの配列で、" + JsonNum(MAX_TALKLINE) + " 行までです";
+					goto Exit;
+				}
+				for (int k = 0; k < MAX_TALKLINE; k ++) {
+					TalkLineInit(&Info.aLine[k]);
+				}
+				for (size_t k = 0; k < pLines->a.size(); k ++) {
+					const JVal &l = pLines->a[k];
+					std::string strName = "lines[" + JsonNum((long long)k) + "].";
+					if (l.t != JVal::OBJ) {
+						strErr = "lines の要素はオブジェクトで指定してください";
+						goto Exit;
+					}
+					if (!CheckKnownKeys(l, s_aFieldTalkLine, COUNTOF(s_aFieldTalkLine), NULL, strErr) ||
+							!ApplyFields((BYTE *)&Info.aLine[k], s_aFieldTalkLine, COUNTOF(s_aFieldTalkLine), l, strErr, strName)) {
+						goto Exit;
+					}
+				}
+				Info.byLineCount = (BYTE)pLines->a.size();
+			}
+			/* 内容の確認 */
+			if (Info.byState > TALKSTATE_ON) {
+				strErr = "byState は 0（削除済み）か 1（有効）で指定してください";
+				goto Exit;
+			}
+			for (int k = 0; k < (int)Info.byLineCount && k < MAX_TALKLINE; k ++) {
+				const TALKLINEINFO &L = Info.aLine[k];
+				std::string strName = "lines[" + JsonNum(k) + "].";
+				if (L.byLvMin != 0 && L.byLvMax != 0 && L.byLvMin > L.byLvMax) {
+					strErr = strName + "byLvMin（レベル下限）が byLvMax（レベル上限）より大きいです";
+					goto Exit;
+				}
+				for (int j = 0; j < MAX_TALKNEED; j ++) {
+					if ((L.awNeed[j] >= MAX_FLAGBIT && L.awNeed[j] != FLAG_NOBIT) || (L.awNot[j] >= MAX_FLAGBIT && L.awNot[j] != FLAG_NOBIT)) {
+						strErr = strName + "awNeed・awNot は印の番号（0〜" + JsonNum(MAX_FLAGBIT - 1) + "）か 65535（無し）で指定してください";
+						goto Exit;
+					}
+				}
+				for (int j = 0; j < MAX_TALKSET; j ++) {
+					if ((L.awSetOn[j] >= MAX_FLAGBIT && L.awSetOn[j] != FLAG_NOBIT) || (L.awSetOff[j] >= MAX_FLAGBIT && L.awSetOff[j] != FLAG_NOBIT)) {
+						strErr = strName + "awSetOn・awSetOff は印の番号（0〜" + JsonNum(MAX_FLAGBIT - 1) + "）か 65535（無し）で指定してください";
+						goto Exit;
+					}
+				}
+				for (int j = 0; j < MAX_TALKCOND; j ++) {
+					if (L.abyCondNo[j] >= MAX_FLAGNUM && L.abyCondNo[j] != FLAG_NONUM) {
+						strErr = strName + "abyCondNo は数値の番号（0〜" + JsonNum(MAX_FLAGNUM - 1) + "）か 255（無し）で指定してください";
+						goto Exit;
+					}
+					if (L.abyCondCmp[j] >= TALKCMP_MAX) {
+						strErr = strName + "abyCondCmp は 0（以上）・1（ちょうど）・2（以下）のどれかで指定してください";
+						goto Exit;
+					}
+				}
+				for (int j = 0; j < MAX_TALKACT; j ++) {
+					if (L.abyActNo[j] >= MAX_FLAGNUM && L.abyActNo[j] != FLAG_NONUM) {
+						strErr = strName + "abyActNo は数値の番号（0〜" + JsonNum(MAX_FLAGNUM - 1) + "）か 255（無し）で指定してください";
+						goto Exit;
+					}
+					if (L.abyActOp[j] >= TALKNUMOP_MAX) {
+						strErr = strName + "abyActOp は 0（○にする）か 1（○足す）で指定してください";
+						goto Exit;
+					}
+				}
+			}
+			strRecord = TalkJson(&Info);
+			if (bApply) {
+				if (bAdd) {
+					PTALKINFO pNew = new TALKINFO;
+					*pNew = Info;
+					g_aTalkInfo.Add(pNew);
+				} else {
+					*g_aTalkInfo[nID] = Info;
+				}
+				SaveTalkInfo();
+			}
+		}
+		break;
+
 	}
 
 Exit:
@@ -4170,6 +4485,95 @@ void SboDataQuestApplyInfo(int nNo, const QUESTINFO *pInfo, int &nNoOut, std::st
 	}
 	const JVal *pID = res.Get("id");
 	nNoOut = (pID && pID->t == JVal::NUM) ? (int)pID->n : (bAdd ? g_aQuestInfo.GetSize() - 1 : nNo);
+}
+
+/*
+ * SboWebDataApply の結果（JSON）を、管理者ウィンドウ用の「理由の文」と書き込んだ番号にする
+ *   うまくいった時は strErr が空になり、nNoOut に書き込んだ番号が入る
+ */
+static void ApplyResultToErr(const char *pszRes, int nNoDefault, int &nNoOut, std::string &strErr)
+{
+	CJsonReader reader(pszRes ? pszRes : "");
+	JVal res;
+	if (!reader.Parse(res) || res.t != JVal::OBJ) {
+		strErr = "書き込めませんでした";
+		return;
+	}
+	const JVal *pOk = res.Get("ok");
+	if (pOk == NULL || pOk->t != JVal::BOOL_ || !pOk->b) {
+		const JVal *pErr = res.Get("error");
+		strErr = (pErr && pErr->t == JVal::STR) ? pErr->s : std::string("書き込めませんでした");
+		return;
+	}
+	const JVal *pID = res.Get("id");
+	nNoOut = (pID && pID->t == JVal::NUM) ? (int)pID->n : nNoDefault;
+}
+
+/*
+ * 管理者ウィンドウからフラグの名前表を書き込む（依頼と同じ作り）。
+ *   nNo: 名前表の配列の番号（-1 なら足す）。届いた FLAGNAMEINFO を JSON にして
+ *   SboWebDataApply を通すので、確認（同じ種類・番号の重なり・範囲）・保存はデータAPIと同じ。
+ *   結果: strErr が空ならうまくいった（nNoOut に書き込んだ番号）
+ */
+void SboDataFlagNameApplyInfo(int nNo, const FLAGNAMEINFO *pInfo, int &nNoOut, std::string &strErr)
+{
+	FLAGNAMEINFO Info;
+	bool bAdd = (nNo < 0);
+
+	nNoOut = -1;
+	strErr.clear();
+	if (!bAdd && nNo >= g_aFlagNameInfo.GetSize()) {
+		strErr = "名前表の番号が範囲外です（ほかの人が変えたかもしれません。取得し直してください）";
+		return;
+	}
+	Info = *pInfo;
+	Info.szName[sizeof(Info.szName) - 1] = 0;
+	std::string strJson = "{" + FieldsJson((const BYTE *)&Info, s_aFieldFlagName, COUNTOF(s_aFieldFlagName)) + "}";
+	const char *pszRes = SboWebDataApply("flag", bAdd ? g_aFlagNameInfo.GetSize() : nNo, strJson.c_str(), 1, "管理者ウィンドウ");
+	ApplyResultToErr(pszRes, bAdd ? g_aFlagNameInfo.GetSize() - 1 : nNo, nNoOut, strErr);
+}
+
+/*
+ * 管理者ウィンドウから会話データを書き込む（依頼と同じ作り）。
+ *   nNo: 会話セットの配列の番号（-1 なら足す）。届いた TALKINFO を JSON にして
+ *   SboWebDataApply を通すので、確認・保存はデータAPIと同じ。
+ *   会話セット番号（wID）は足す時に決め、直す時は今の番号を書き戻す（変えられない）。
+ *   結果: strErr が空ならうまくいった（nNoOut に書き込んだ番号）
+ */
+void SboDataTalkApplyInfo(int nNo, const TALKINFO *pInfo, int &nNoOut, std::string &strErr)
+{
+	TALKINFO Info;
+	bool bAdd = (nNo < 0);
+
+	nNoOut = -1;
+	strErr.clear();
+	if (!bAdd && nNo >= g_aTalkInfo.GetSize()) {
+		strErr = "会話セットの番号が範囲外です（ほかの人が変えたかもしれません。取得し直してください）";
+		return;
+	}
+	Info = *pInfo;
+	/* 文字の欄は必ず終端させる。行の数は範囲に収める */
+	Info.szName[sizeof(Info.szName) - 1] = 0;
+	if (Info.byLineCount > MAX_TALKLINE) {
+		Info.byLineCount = MAX_TALKLINE;
+	}
+	for (int i = 0; i < MAX_TALKLINE; i ++) {
+		Info.aLine[i].szSpeech[sizeof(Info.aLine[i].szSpeech) - 1] = 0;
+	}
+	if (!bAdd) {
+		Info.wID = g_aTalkInfo[nNo]->wID;
+	}
+	std::string strJson = "{" + TalkJson(&Info) + "}";
+	const char *pszRes = SboWebDataApply("talk", bAdd ? g_aTalkInfo.GetSize() : nNo, strJson.c_str(), 1, "管理者ウィンドウ");
+	ApplyResultToErr(pszRes, bAdd ? g_aTalkInfo.GetSize() - 1 : nNo, nNoOut, strErr);
+	/* 「lines[0].」は画面の言い方（行 1 の）に直す */
+	for (int i = 0; i < MAX_TALKLINE && !strErr.empty(); i ++) {
+		std::string strFrom = "lines[" + JsonNum(i) + "].";
+		size_t nPos = strErr.find(strFrom);
+		if (nPos != std::string::npos) {
+			strErr.replace(nPos, strFrom.size(), "行 " + JsonNum(i + 1) + " の ");
+		}
+	}
 }
 
 /*

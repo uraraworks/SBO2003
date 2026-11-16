@@ -23,6 +23,7 @@
 #include "SboAdminWindow.h"
 #include "AdminWindowOld/AdminDlgNpcRoute.h"
 #include "AdminWindowOld/AdminDlgQuestInfo.h"
+#include "AdminWindowOld/AdminFlagTalk.h"
 #include "SboCliDebugWindow.h"
 #include "SboCliMsgLogWindow.h"
 #include "SboCliBalloonWindow.h"
@@ -147,6 +148,10 @@ void	RecvDataProcMAGICKEY				(PBYTE, DWORD);			/* 受信データ処理(特技�
 void	RecvDataProcADMINUNDO				(PBYTE, DWORD);			/* 受信データ処理(管理者画面の「元に戻す」) */
 void	RecvDataProcADMINSPACE				(PBYTE, DWORD);			/* 受信データ処理(管理者の空間の切り替え) */
 void	RecvDataProcADMINQUEST				(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのギルドの依頼の編集) */
+void	RecvDataProcADMINFLAGNAME			(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのフラグの名前表の編集) */
+void	RecvDataProcADMINTALK				(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウの会話データの編集) */
+void	RecvDataProcADMINCHARFLAG			(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのキャラのフラグ) */
+void	RecvDataProcTALKMSG					(PBYTE, DWORD);			/* 受信データ処理(会話データで選ばれた台詞) */
 void	RecvDataProcHASTE					(PBYTE, DWORD);			/* 受信データ処理(加速の状態) */
 void	RecvDataProcCHARBUFF				(PBYTE, DWORD);			/* 受信データ処理(攻撃力・守備力アップの残り) */
 void	RecvDataProcMAKERINFO				(PBYTE, DWORD);			/* 受信データ処理(作り手情報) */
@@ -406,6 +411,10 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcADMINQUEST,				/* CMD_ADMINQUEST */
 	NULL,								/* CMD_ADMINRESURRECT(クライアント→サーバーのみ) */
 	RecvDataProcMAGICKEY,				/* CMD_MAGICKEY */
+	RecvDataProcTALKMSG,				/* CMD_TALKMSG */
+	RecvDataProcADMINFLAGNAME,			/* CMD_ADMINFLAGNAME */
+	RecvDataProcADMINTALK,				/* CMD_ADMINTALK */
+	RecvDataProcADMINCHARFLAG,			/* CMD_ADMINCHARFLAG */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -2001,6 +2010,73 @@ int GetMapDarkLevel(PCHARINFO pChar, int x, int y)
 	return nTmp;
 }
 
+/* 壁をたどって照らす時、その壁(表の bx,by・マップの mx,my)が
+   「灯りの丸の中なのに灯りが届いていない床(閉まった扉の向こうの通路など)」の方に近ければ TRUE。
+   灯りの届いた床と同じ近さなら照らす(部屋の壁はそのまま見せる)。
+   見ない所(3マスより遠く)に暗い床が無ければ照らす。表の外の床は暗い床として数える */
+#define TRACEWALL_DARK_RANGE	(3)									/* 壁をたどる時に暗い床を探すマス数 */
+static BOOL IsTraceWallNearDarkFloor(PCHARINFO pChar, int bx, int by, int mx, int my)
+{
+	int dx, dy, nx, ny, nWidth, nDist, nLit, nDark, i, nLitCnt, nDarkCnt;
+	int anLitCnt[TRACEWALL_DARK_RANGE + 1], anDarkCnt[TRACEWALL_DARK_RANGE + 1];
+
+	/* 「ぶつかる(音無し)」のマス(水面・何も無い所など)は低い物が多いので、
+	   向こうの床が暗くても照らす(島のまわりの水が黒い影になっていた) */
+	if ((mx >= 0) && (mx < g_pMapInfo->nCX) && (my >= 0) && (my < g_pMapInfo->nCY)) {
+		int nPartsID = g_pMapInfo->pwMap[mx + my * g_pMapInfo->nCX];
+		if ((nPartsID < g_wCountMapParts) && (g_pMapPartsInfo[nPartsID].byHitType == PARTSHIT_BLOCK2)) {
+			return FALSE;
+		}
+	}
+
+	nWidth = DRAW_PARTS_X * 2 + 3;
+	nLit = nDark = TRACEWALL_DARK_RANGE + 1;
+	ZeroMemory (anLitCnt, sizeof (anLitCnt));
+	ZeroMemory (anDarkCnt, sizeof (anDarkCnt));
+	for (dy = -TRACEWALL_DARK_RANGE; dy <= TRACEWALL_DARK_RANGE; dy ++) {
+		for (dx = -TRACEWALL_DARK_RANGE; dx <= TRACEWALL_DARK_RANGE; dx ++) {
+			nx = bx + dx;
+			ny = by + dy;
+			nDist = max (abs (dx), abs (dy));
+			if (IsSightWall (mx + dx, my + dy)) {
+				continue;
+			}
+			/* 表の外(灯りを広げていない所)の床は、灯りの丸の中なら暗い床として数える。
+			   数えないと、1歩動いて扉の向こうの床が表に入ったとたん壁が消えていた */
+			if ((nx < 0) || (nx >= nWidth) || (ny < 0) || (ny >= DRAW_PARTS_Y * 2 + 3)) {
+				if (GetMapDarkLevel (pChar, mx + dx, my + dy) > 1) {
+					nDark = min (nDark, nDist);
+					anDarkCnt[nDist] ++;
+				}
+				continue;
+			}
+			if (g_pMapDarkTmpPos[nx + nWidth * ny] == 2) {
+				nLit = min (nLit, nDist);
+				anLitCnt[nDist] ++;
+			} else if (g_pMapDarkTmpPos[nx + nWidth * ny] == 0) {
+				/* 灯りの丸の外で暗いだけの床は数えない */
+				if (GetMapDarkLevel (pChar, mx + dx, my + dy) > 1) {
+					nDark = min (nDark, nDist);
+					anDarkCnt[nDist] ++;
+				}
+			}
+		}
+	}
+	if (nDark != nLit) {
+		return (nDark < nLit) ? TRUE : FALSE;
+	}
+	if (nDark > TRACEWALL_DARK_RANGE) {
+		return FALSE;
+	}
+	/* 同じ近さなら、その近さまでの明るい床と暗い床の数を比べて多い方に合わせる。
+	   (扉の2マス横の壁が、部屋の中からは見え、扉の外からは出っ張りに見えていた) */
+	for (i = 0, nLitCnt = nDarkCnt = 0; i <= nDark; i ++) {
+		nLitCnt += anLitCnt[i];
+		nDarkCnt += anDarkCnt[i];
+	}
+	return (nDarkCnt > nLitCnt) ? TRUE : FALSE;
+}
+
 /* ========================================================================= */
 /* 関数名：RenewMapDarkCorner												 */
 /* 内容：灯りの角の壁を照らす												 */
@@ -2101,6 +2177,11 @@ void RenewMapDarkCorner(PCHARINFO pChar)
 			if (!IsInViewRange (mx, my - 1)) {
 				continue;
 			}
+			/* 天井の向こうが閉まった扉の先の暗い床なら照らさない
+			   (扉の横の壁の上が出っ張りのように見えていた) */
+			if (GetMapLightLevel () && IsTraceWallNearDarkFloor (pChar, x, y - 1, mx, my - 1)) {
+				continue;
+			}
 			nTmp = GetMapDarkLevel (pChar, mx, my - 1);
 			if (GetMapLightLevel () && (nTmp <= 1)) {
 				continue;
@@ -2164,6 +2245,11 @@ void RenewMapDarkCorner(PCHARINFO pChar)
 					continue;
 				}
 				if (IsHideAreaCross (nFromX, nFromY, mx + anDX[i], my + anDY[i])) {
+					continue;
+				}
+				/* 閉まった扉の向こうの通路の壁のように、灯りの届かない床の方に近い壁は照らさない
+				   (壁だけ見えて床が真っ黒な通路になっていた) */
+				if (IsTraceWallNearDarkFloor (pChar, nx, ny, mx + anDX[i], my + anDY[i])) {
 					continue;
 				}
 				nTmp = GetMapDarkLevel (pChar, mx + anDX[i], my + anDY[i]);
@@ -2414,8 +2500,8 @@ BOOL IsSightWall(int x, int y)
 	if (nPartsID >= g_wCountMapParts) {
 		return TRUE;
 	}
-	/* カウンターは低い家具なので灯りが越えていく */
-	if (g_pMapPartsInfo[nPartsID].byHitType == PARTSHIT_COUNTER) {
+	/* カウンターと「低い」パーツは低い物なので灯りが越えていく */
+	if ((g_pMapPartsInfo[nPartsID].byHitType == PARTSHIT_COUNTER) || g_pMapPartsInfo[nPartsID].byLow) {
 		return FALSE;
 	}
 	return TRUE;
@@ -3719,6 +3805,98 @@ void RecvDataProcADMINQUEST(PBYTE pData, DWORD dwDataSize)
 }
 
 /* ========================================================================= */
+/* 関数名：RecvDataProcADMINFLAGNAME										 */
+/* 内容：受信データ処理(管理者ウィンドウのフラグの名前表の編集)				 */
+/*       一覧の続き・書き込みの結果が届く（画面は無いので覚えておくだけ）		 */
+/* ========================================================================= */
+void RecvDataProcADMINFLAGNAME(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINFLAGNAME pPara = (PCMDPARA_ADMINFLAGNAME)pData;
+
+	if (dwDataSize < sizeof (CMDPARA_ADMINFLAGNAME)) {
+		return;
+	}
+	pPara->szMsg[sizeof (pPara->szMsg) - 1] = 0;
+	AdminFlagNameOnRecv (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINTALK											 */
+/* 内容：受信データ処理(管理者ウィンドウの会話データの編集)					 */
+/*       一覧の 1 件・書き込みの結果が届く（画面は無いので覚えておくだけ）		 */
+/* ========================================================================= */
+void RecvDataProcADMINTALK(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINTALK pPara = (PCMDPARA_ADMINTALK)pData;
+
+	/* マップの名前・使用先は小さい別の形（会話セット 1 件を載せない） */
+	if ((dwDataSize >= sizeof (CMDPARA_ADMINTALKUSE)) &&
+		((pPara->byCmdSub == ADMINTALK_MAP) || (pPara->byCmdSub == ADMINTALK_USE))) {
+		AdminTalkOnRecv (pPara);
+		return;
+	}
+	if (dwDataSize < sizeof (CMDPARA_ADMINTALK)) {
+		return;
+	}
+	pPara->szMsg[sizeof (pPara->szMsg) - 1] = 0;
+	AdminTalkOnRecv (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINCHARFLAG										 */
+/* 内容：受信データ処理(管理者ウィンドウのキャラのフラグ)					 */
+/*       キャラの印・数値・変更の結果が届く（画面は無いので覚えておくだけ）	 */
+/* ========================================================================= */
+void RecvDataProcADMINCHARFLAG(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINCHARFLAG pPara = (PCMDPARA_ADMINCHARFLAG)pData;
+
+	if (dwDataSize < sizeof (CMDPARA_ADMINCHARFLAG)) {
+		return;
+	}
+	pPara->szMsg[sizeof (pPara->szMsg) - 1] = 0;
+	AdminCharFlagOnRecv (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcTALKMSG												 */
+/* 内容：受信データ処理(会話データで選ばれた台詞)							 */
+/*       普通の町の人に話しかけた時と同じ会話の窓（ページ送りあり）で出す。	 */
+/*       台詞はサーバーが話しかけた本人にだけ送ってくる						 */
+/* ========================================================================= */
+void RecvDataProcTALKMSG(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_TALKMSG pPara = (PCMDPARA_TALKMSG)pData;
+	PWNDINFO pWndTmp;
+	DWORD dwSize;
+
+	if (g_byGameState < GAMESTATE_MOVE) {
+		return;
+	}
+	if (dwDataSize < sizeof (CMDPARA_TALKMSG)) {
+		return;
+	}
+	/* 届いた大きさより長い申告は、届いた分までにする */
+	dwSize = pPara->wSize;
+	if (dwSize > dwDataSize - sizeof (CMDPARA_TALKMSG)) {
+		dwSize = dwDataSize - sizeof (CMDPARA_TALKMSG);
+	}
+	if (dwSize == 0) {
+		return;
+	}
+
+	LPSTR pszTmp = new char[dwSize + 1];
+	ZeroMemory (pszTmp, dwSize + 1);
+	memcpy (pszTmp, pData + sizeof (CMDPARA_TALKMSG), dwSize);
+
+	pWndTmp = MakeWindowMSG (pszTmp, TRUE);
+	SAFE_DELETE_ARRAY (pszTmp);
+	g_WndInfo.Add (pWndTmp);
+	g_dwActiveMsgID = pWndTmp->dwID;
+	g_bDraw = TRUE;
+}
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcADMINUNDO											 */
 
 /* 内容：受信データ処理(管理者画面の「元に戻す」)							 */
@@ -4092,7 +4270,8 @@ void RecvDataProcMAPPARTSINFO(PBYTE pData, DWORD dwDataSize)
 		pParts->wBackID = pRecv->wBackID;
 		pParts->pAnimeInfo = pRecv->pAnimeInfo;
 		pParts->byLevel = pRecv->byLevel;
-		pParts->byLight = pRecv->byLight;
+		pParts->byLight = MAPPARTS_SAVE_LIGHT (pRecv);
+		pParts->byLow = MAPPARTS_SAVE_LOW (pRecv);
 		pParts->byDamage = pRecv->byDamage;
 		pParts->byPoison = pRecv->byPoison;
 		pRead += sizeof (MAPPARTSINFOSAVE);
@@ -4881,7 +5060,8 @@ void RecvDataProcMAPPARTS(PBYTE pData, DWORD dwDataSize)
 		pPartsTmp->wBackID = pRecv->wBackID;
 		pPartsTmp->pAnimeInfo = pRecv->pAnimeInfo;
 		pPartsTmp->byLevel = pRecv->byLevel;
-		pPartsTmp->byLight = pRecv->byLight;
+		pPartsTmp->byLight = MAPPARTS_SAVE_LIGHT (pRecv);
+		pPartsTmp->byLow = MAPPARTS_SAVE_LOW (pRecv);
 		pPartsTmp->byDamage = pRecv->byDamage;
 		pPartsTmp->byPoison = pRecv->byPoison;
 		pRecv += sizeof (MAPPARTSINFOSAVE);
@@ -4909,7 +5089,8 @@ void RecvDataProcMAPPARTS(PBYTE pData, DWORD dwDataSize)
 		pPartsTmp->wBackID = pRecv->wBackID;
 		pPartsTmp->pAnimeInfo = pRecv->pAnimeInfo;
 		pPartsTmp->byLevel = pRecv->byLevel;
-		pPartsTmp->byLight = pRecv->byLight;
+		pPartsTmp->byLight = MAPPARTS_SAVE_LIGHT (pRecv);
+		pPartsTmp->byLow = MAPPARTS_SAVE_LOW (pRecv);
 		pPartsTmp->byDamage = pRecv->byDamage;
 		pPartsTmp->byPoison = pRecv->byPoison;
 		pRecv ++;
@@ -4974,6 +5155,10 @@ void RecvDataProcCHGMAP(PBYTE pData, DWORD dwDataSize)
 
 	g_pMapInfo->pwMap[pMap->nX + pMap->nY * g_pMapInfo->nCX] = pMap->wMap;
 	g_bDraw = TRUE;
+
+	/* 扉が開いた・閉まった時などに、灯り(見える所)を作り直す。
+	   作り直さないと、扉が閉まってもその場から動くまで向こうが見えたままだった */
+	RequestCharPosInfo ();
 }
 
 /* ========================================================================= */
@@ -5841,9 +6026,8 @@ void RecvDataProcCHARITEM(PBYTE pData, DWORD dwDataSize)
 			if (pWnd->nType != WNDTYPE_COMMANDITEM) {
 				continue;
 			}
-			if (pWnd->nData1 >= nCount) {
-				pWnd->nData1 = max (0, nCount - 1);
-			}
+			/* カーソルの番号は一覧の先頭(byData1)からの数。持ち物の数に収める */
+			ListScrollFitMargin (pWnd, (int)pWnd->byData1 + pWnd->nData1, nCount, LISTSCROLL_MARGIN);
 			pWnd->dwTimeDrawStart = 0;
 			g_bDraw = TRUE;
 			UpdateWindowITEMINFOList (pWnd);

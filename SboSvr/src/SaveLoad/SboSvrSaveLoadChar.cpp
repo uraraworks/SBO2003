@@ -14,7 +14,7 @@
 /* ========================================================================= */
 /* 定数定義																	 */
 /* ========================================================================= */
-#define DATACOUNTCOLUMN		(80)									/* 保存データ数 */
+#define DATACOUNTCOLUMN		(82)									/* 保存データ数 */
 
 /* ========================================================================= */
 /* 構造体定義																 */
@@ -114,6 +114,8 @@ static const char *s_aszName[] = {
 	"abyQuest",					/* ギルドの依頼（受けている依頼・段・旗・数・受けた時刻・クリア済みの印） */
 	"abyMagicKey",				/* 特技ショートカット（枠数・各枠の特技ID） */
 	"byOptMagicBar",			/* 特技ショートカットの帯の表示設定 */
+	"abyFlag",					/* キャラのフラグ（印 1024 個のビット） */
+	"abyFlagNum",				/* キャラのフラグ（数値 128 個） */
 	"z"
 };
 
@@ -517,6 +519,8 @@ static BOOL SaveCharInfoMain(void)
 				dwDataSizeTmp += 1 + MAX_MAGICKEY;
 				break;
 			case 79:	dwDataSizeTmp += sizeof (pInfo->byOptMagicBar);			break;	/* 特技ショートカットの帯の表示設定 */
+			case 80:	dwDataSizeTmp += sizeof (pInfo->abyFlag);				break;	/* キャラのフラグ（印） */
+			case 81:	dwDataSizeTmp += sizeof (pInfo->abyFlagNum);			break;	/* キャラのフラグ（数値） */
 			}
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
@@ -942,6 +946,14 @@ static BOOL SaveCharInfoMain(void)
 			case 79:	/* 特技ショートカットの帯の表示設定 */
 				pData[dwOffset ++] = pInfo->byOptMagicBar;
 				break;
+			case 80:	/* キャラのフラグ（印） */
+				CopyMemory (&pData[dwOffset], pInfo->abyFlag, sizeof (pInfo->abyFlag));
+				dwOffset += sizeof (pInfo->abyFlag);
+				break;
+			case 81:	/* キャラのフラグ（数値） */
+				CopyMemory (&pData[dwOffset], pInfo->abyFlagNum, sizeof (pInfo->abyFlagNum));
+				dwOffset += sizeof (pInfo->abyFlagNum);
+				break;
 			}
 		}
 	}
@@ -976,7 +988,7 @@ BOOL LoadCharInfo(void)
 	char szFileName[MAX_PATH + 1];
 	BYTE byTmp;
 	BOOL bRet;
-	PBYTE pData;
+	PBYTE pData, pbyItemCount;
 	HANDLE hFile;
 	DWORD i, j, dwSize, dwBytes, dwOffset, dwDataCount, dwColumnCount;
 	PJOBINFO pJobInfo;
@@ -1000,6 +1012,7 @@ BOOL LoadCharInfo(void)
 
 	bRet = FALSE;
 	pData = NULL;
+	pbyItemCount = NULL;
 	hFile = INVALID_HANDLE_VALUE;
 
 
@@ -1075,6 +1088,12 @@ BOOL LoadCharInfo(void)
 		ZeroMemory (pInfo, sizeof (CHARINFO));
 		SetInitCharData (pInfo);
 		AddChar (pInfo, FALSE);
+	}
+
+	/* 所持アイテム数（キャラごと）。列が無い古いデータは当時の最大数10個とみなす */
+	pbyItemCount = new BYTE[dwDataCount + 1];
+	for (i = 0; i < dwDataCount; i ++) {
+		pbyItemCount[i] = 10;
 	}
 
 	dwColumnCount = aHeaderInfo.GetSize ();
@@ -1450,12 +1469,15 @@ BOOL LoadCharInfo(void)
 			if (strcmp (aHeaderInfo[i].szName, s_aszName[60]) == 0) {
 				CopyMemory (&byTmp, &pData[dwOffsetTmp], sizeof (byTmp));
 				dwOffsetTmp += sizeof (byTmp);
+				pbyItemCount[j] = byTmp;
 			}
 
-			/* 所持アイテム */
+			/* 所持アイテム（保存時の個数分だけ進める。枠数が変わっても読めるよう収まる分だけ入れる） */
 			if (strcmp (aHeaderInfo[i].szName, s_aszName[61]) == 0) {
-				CopyMemory (&pInfo->waItem, &pData[dwOffsetTmp], sizeof (pInfo->waItem));
-				dwOffsetTmp += sizeof (pInfo->waItem);
+				DWORD dwCountTmp = pbyItemCount[j];
+
+				CopyMemory (&pInfo->waItem, &pData[dwOffsetTmp], min (dwCountTmp, (DWORD)MAX_MYITEM) * sizeof (WORD));
+				dwOffsetTmp += dwCountTmp * sizeof (WORD);
 			}
 
 			/* MACアドレス */
@@ -1629,6 +1651,18 @@ BOOL LoadCharInfo(void)
 					pInfo->byOptMagicBar = OPTMAGICBAR_SHOW;
 				}
 			}
+
+			/* キャラのフラグ・印（無い古いデータは全部 0 =「立っていない」のまま） */
+			if (strcmp (aHeaderInfo[i].szName, s_aszName[80]) == 0) {
+				CopyMemory (pInfo->abyFlag, &pData[dwOffsetTmp], sizeof (pInfo->abyFlag));
+				dwOffsetTmp += sizeof (pInfo->abyFlag);
+			}
+
+			/* キャラのフラグ・数値（無い古いデータは全部 0 のまま） */
+			if (strcmp (aHeaderInfo[i].szName, s_aszName[81]) == 0) {
+				CopyMemory (pInfo->abyFlagNum, &pData[dwOffsetTmp], sizeof (pInfo->abyFlagNum));
+				dwOffsetTmp += sizeof (pInfo->abyFlagNum);
+			}
 		}
 	}
 
@@ -1667,6 +1701,12 @@ BOOL LoadCharInfo(void)
 			pInfo->wGrpMain = CHARGRP_MAIN_NORMAL;
 			pInfo->wGrpID = pInfo->wGrpIDBack;
 			pInfo->wGrpSub = 0;
+		}
+		/* 装備が持ち物の範囲外を指していたら未装備に戻す */
+		for (k = 0; k < MAX_EQUTYPE; k ++) {
+			if ((pInfo->waEqu[k] != 0xFFFF) && (pInfo->waEqu[k] >= MAX_MYITEM)) {
+				pInfo->waEqu[k] = 0xFFFF;
+			}
 		}
 		if (pInfo->wMana > pInfo->wMaxMana) {
 			pInfo->wMana = pInfo->wMaxMana;
@@ -1736,6 +1776,7 @@ Exit:
 		CloseHandle (hFile);
 	}
 	SAFE_DELETE_ARRAY (pData);
+	SAFE_DELETE_ARRAY (pbyItemCount);
 	return bRet;
 }
 

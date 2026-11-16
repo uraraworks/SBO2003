@@ -1235,14 +1235,19 @@ void DrawWindowCOMMANDITEM(PWNDINFO pWnd)
 	char szTmp[128];
 	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
 	int i, nEquNo = -1, nCount = GetItemCount (g_nMyCharID);
-	for (i = 0; i < nCount; i ++) {
-		PITEMINFO pItem = g_aItemInfo[pChar->waItem[i]];
+	/* 手持ちは byData1 から窓の行数ぶんだけ描く（10行を超える分はスクロール） */
+	for (i = 0; i < pWnd->nData2; i ++) {
+		int nNo = pWnd->byData1 + i;
+		if (nNo >= nCount) {
+			break;
+		}
+		PITEMINFO pItem = g_aItemInfo[pChar->waItem[nNo]];
 		wsprintf (szTmp, "%s", pItem->szName);
 		TextOut2 (hDC, 32, 16 + i * 16, szTmp,
-				((pWnd->dwData != 0) && ((int)pWnd->dwData - 1 == i)) ? RGB (255, 255, 0) : RGB (255, 255, 255));
+				((pWnd->dwData != 0) && ((int)pWnd->dwData - 1 == nNo)) ? RGB (255, 255, 0) : RGB (255, 255, 255));
 
 		for (int j = 0; j < 10; j ++) {
-			if (pChar->waEqu[j] == i) {
+			if (pChar->waEqu[j] == nNo) {
 				nEquNo = 16 + i * 16;
 				pWnd->pDib->Blt (16, nEquNo, 8, 16, g_pDibSystem, 64, 16, TRUE);
 			}
@@ -1448,13 +1453,18 @@ void DrawWindowSHOP_SELL(PWNDINFO pWnd)
 	char szTmp[128];
 	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
 	int i, nEquNo = -1, nCount = GetItemCount (g_nMyCharID);
-	for (i = 0; i < nCount; i ++) {
-		PITEMINFO pItem = g_aItemInfo[pChar->waItem[i]];
+	/* 手持ちは byData1 から窓の行数ぶんだけ描く（10行を超える分はスクロール） */
+	for (i = 0; i < pWnd->nData2; i ++) {
+		int nNo = pWnd->byData1 + i;
+		if (nNo >= nCount) {
+			break;
+		}
+		PITEMINFO pItem = g_aItemInfo[pChar->waItem[nNo]];
 		wsprintf (szTmp, "%s", pItem->szName);
 		TextOut2 (hDC, 32, 16 + i * 16, szTmp, RGB (255, 255, 255));
 
 		for (int j = 0; j < 10; j ++) {
-			if (pChar->waEqu[j] == i) {
+			if (pChar->waEqu[j] == nNo) {
 				nEquNo = 16 + i * 16;
 				pWnd->pDib->Blt (16, nEquNo, 8, 16, g_pDibSystem, 64, 16, TRUE);
 			}
@@ -2469,13 +2479,18 @@ void DrawWindowLEAVE_ITEM(PWNDINFO pWnd)
 	char szTmp[128];
 	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
 	int i, nEquNo = -1, nCount = GetItemCount (g_nMyCharID);
-	for (i = 0; i < nCount; i ++) {
-		PITEMINFO pItem = g_aItemInfo[pChar->waItem[i]];
+	/* 手持ちは byData1 から窓の行数ぶんだけ描く（10行を超える分はスクロール） */
+	for (i = 0; i < pWnd->nData2; i ++) {
+		int nNo = pWnd->byData1 + i;
+		if (nNo >= nCount) {
+			break;
+		}
+		PITEMINFO pItem = g_aItemInfo[pChar->waItem[nNo]];
 		wsprintf (szTmp, "%s", pItem->szName);
 		TextOut2 (hDC, 32, 16 + i * 16, szTmp, RGB (255, 255, 255));
 
 		for (int j = 0; j < 10; j ++) {
-			if (pChar->waEqu[j] == i) {
+			if (pChar->waEqu[j] == nNo) {
 				nEquNo = 16 + i * 16;
 				pWnd->pDib->Blt (16, nEquNo, 8, 16, g_pDibSystem, 64, 16, TRUE);
 			}
@@ -2829,19 +2844,24 @@ void DrawWindowTRADEITEM(PWNDINFO pWnd)
 	char szTmp[128];
 	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
 	int i, j, nEquNo = -1, nCount = GetItemCount (g_nMyCharID);
-	for (i = 0; i < nCount; i ++) {
-		PITEMINFO pItem = g_aItemInfo[pChar->waItem[i]];
+	/* 手持ちは byData1 から窓の行数ぶんだけ描く（10行を超える分はスクロール） */
+	for (i = 0; i < pWnd->nData2; i ++) {
+		int nNo = pWnd->byData1 + i;
+		if (nNo >= nCount) {
+			break;
+		}
+		PITEMINFO pItem = g_aItemInfo[pChar->waItem[nNo]];
 		wsprintf (szTmp, "%s", pItem->szName);
 		COLORREF cl = RGB (255, 255, 255);
 		for (j = 0; j < MAX_MYITEM; j ++) {
-			if (i == g_pTradeInfo->waItem1[j]) {
+			if (nNo == g_pTradeInfo->waItem1[j]) {
 				cl = RGB (128, 128, 128);
 			}
 		}
 		TextOut2 (hDC, 32, 16 + i * 16, szTmp, cl);
 
 		for (int j = 0; j < 10; j ++) {
-			if (pChar->waEqu[j] == i) {
+			if (pChar->waEqu[j] == nNo) {
 				nEquNo = 16 + i * 16;
 				pWnd->pDib->Blt (16, nEquNo, 8, 16, g_pDibSystem, 64, 16, TRUE);
 			}

@@ -1084,17 +1084,17 @@ merc hired dist=1
 merc path cases=1785 reach=149 diffreach=0 diffdist=0 baddir=0
 merc findenemy near=12 found=1 same=1
 merc items heal=1 other=1
-merc trade weapon owner 7 7 8 7 0 0 0 0 0 0
-merc trade weapon merc  0 0 0 0 0 0 0 0 0 0
-merc trade gold owner 7 7 8 7 0 0 0 0 0 0
+merc trade weapon owner 7 7 8 7 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+merc trade weapon merc  0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+merc trade gold owner 7 7 8 7 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 merc trade gold owner_gold=100 merc_gold=0
-merc trade heal owner 8 7 0 0 0 0 0 0 0 0
-merc trade heal merc  7 7 0 0 0 0 0 0 0 0
-merc trade back owner 8 7 7 7 0 0 0 0 0 0
-merc trade back merc  0 0 0 0 0 0 0 0 0 0
-merc trade far10 merc  7 0 0 0 0 0 0 0 0 0
-merc trade far11 merc  0 0 0 0 0 0 0 0 0 0
-merc trade again merc  7 7 0 0 0 0 0 0 0 0
+merc trade heal owner 8 7 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+merc trade heal merc  7 7 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+merc trade back owner 8 7 7 7 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+merc trade back merc  0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+merc trade far10 merc  7 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+merc trade far11 merc  0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+merc trade again merc  7 7 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 merc selfheal up=1 items=1
 merc selfheal wait items=1
 merc ownerheal up=1 items=0
@@ -1136,6 +1136,7 @@ quest char save=1 load=1
 quest char reload id=2 step=1 flg=4660 counts=1,22,333,4444 time=1700000000 done=06,80
 quest npc loaded=0
 quest leave questitem=1 sell=1 gold+=0 full=1 res=2,1,0 after=0
+legacy item load patched=1 first10=10 rest0=10 equ=3,65535 name=旧持ち物
 quest end copies=0
 == N. SortItem ==
 sortkey [アイテム] [あいてむ] same=1 len=9,9
@@ -1159,19 +1160,19 @@ sortkey codes: 3042 3044 3046 0 3042 3044 3046
 sortkey order: かがみ 樫の剣 ガラス ばくだん はしご パン ひのきの棒 皮の盾 布の服 明かりの旅術書 薬草 力の種
 sortkey null len=0
 sort picked: 8(type3) 7(type2) 9(type4) 12(type7) 10(type5) 151(type14)
-sort my init items: 8 7 9 12 10 7 0 0 0 0 equ: 0 65535 65535 4 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
-sort my swap 0,4 items: 10 7 9 12 8 7 0 0 0 0 equ: 4 65535 65535 0 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
-sort my swap invalid items: 10 7 9 12 8 7 0 0 0 0 equ: 4 65535 65535 0 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
-sort my type items: 7 7 12 8 10 9 0 0 0 0 equ: 3 65535 65535 4 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
-sort my name items: 8 7 7 10 9 12 0 0 0 0 equ: 0 65535 65535 3 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
-sort my name again(desc) items: 12 9 10 7 7 8 0 0 0 0 equ: 5 65535 65535 2 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
-sort my name again(asc) items: 8 7 7 10 9 12 0 0 0 0 equ: 0 65535 65535 3 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
-sort my other-char items: 8 7 7 10 9 12 0 0 0 0 equ: 0 65535 65535 3 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
-sort my short items: 8 7 7 10 9 12 0 0 0 0 equ: 0 65535 65535 3 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
+sort my init items: 8 7 9 12 10 7 0 0 0 0 0 0 0 0 0 0 0 0 0 0 equ: 0 65535 65535 4 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
+sort my swap 0,4 items: 10 7 9 12 8 7 0 0 0 0 0 0 0 0 0 0 0 0 0 0 equ: 4 65535 65535 0 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
+sort my swap invalid items: 10 7 9 12 8 7 0 0 0 0 0 0 0 0 0 0 0 0 0 0 equ: 4 65535 65535 0 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
+sort my type items: 7 7 12 8 10 9 0 0 0 0 0 0 0 0 0 0 0 0 0 0 equ: 3 65535 65535 4 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
+sort my name items: 8 7 7 10 9 12 0 0 0 0 0 0 0 0 0 0 0 0 0 0 equ: 0 65535 65535 3 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
+sort my name again(desc) items: 12 9 10 7 7 8 0 0 0 0 0 0 0 0 0 0 0 0 0 0 equ: 5 65535 65535 2 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
+sort my name again(asc) items: 8 7 7 10 9 12 0 0 0 0 0 0 0 0 0 0 0 0 0 0 equ: 0 65535 65535 3 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
+sort my other-char items: 8 7 7 10 9 12 0 0 0 0 0 0 0 0 0 0 0 0 0 0 equ: 0 65535 65535 3 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
+sort my short items: 8 7 7 10 9 12 0 0 0 0 0 0 0 0 0 0 0 0 0 0 equ: 0 65535 65535 3 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
 sort trading=1
-sort my trading items: 8 7 7 10 9 12 0 0 0 0 equ: 0 65535 65535 3 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
+sort my trading items: 8 7 7 10 9 12 0 0 0 0 0 0 0 0 0 0 0 0 0 0 equ: 0 65535 65535 3 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
 sort trading cleared=0
-sort my after trade items: 8 7 10 7 9 12 0 0 0 0 equ: 0 65535 65535 2 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
+sort my after trade items: 8 7 10 7 9 12 0 0 0 0 0 0 0 0 0 0 0 0 0 0 equ: 0 65535 65535 2 65535 65535 65535 65535 65535 65535 equid: 8 - - 10 - - - - - -
 sort leave noaccount leave: none
 sort leave init leave: n=4 10*1 7*2 8*1 9*1
 sort leave swap 0,3 leave: n=4 9*1 7*2 8*1 10*1
@@ -1321,6 +1322,10 @@ floor npc type=13 hp=15 low=1
 floor npc type=100 hp=15 low=1
 floor npc type=2 hp=20 low=3
 floor avoid on=0 off=1 search_step=0 nodamage_step=1
+== V2. LowParts ==
+low wall normal=1 low=0 hit=1
+low save light=5 low=1
+low old data light=3 low=0
 == W. Mimic ==
 mimic idle type=24 dir=0 block=1 proc=1
 mimic talk type=24 dir=0 target=0 sysmsg=0 charinfo=0
@@ -1345,6 +1350,15 @@ adminres short hp=0 dead=1
 adminres dead full=1 dead=0 efc_ok=1 efc=14
 adminres alive full=1 dead=0
 adminres badno ok
+== Z. FlagTalk ==
+flagtalk bit 5=1 1023=1 1024=0 6=0
+flagtalk bit off 5=0 1023=1
+flagtalk num clamp=255 add=255 four=8 out=0
+flagtalk pick none=5 flag0=0 need=1 not=5 ge=2 eq=3 nomatch=5
+flagtalk level 9=5 10=4 20=4 21=5
+flagtalk tie rand0=5 rand1=6 rand3=6
+flagtalk badcmp=-1 empty=-1
+flagtalk apply on=1 off=0 num=255 other=0
 == K2. Mercenary magic ==
 merc map=91 enemies=17 size=255x160
 merc hired dist=1
