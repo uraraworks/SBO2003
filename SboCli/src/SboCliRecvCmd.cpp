@@ -415,6 +415,11 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcADMINFLAGNAME,			/* CMD_ADMINFLAGNAME */
 	RecvDataProcADMINTALK,				/* CMD_ADMINTALK */
 	RecvDataProcADMINCHARFLAG,			/* CMD_ADMINCHARFLAG */
+	NULL,								/* CMD_MARKETLIST(クライアント側の受け取りは画面の担当が足す) */
+	NULL,								/* CMD_MARKETPUT(同上) */
+	NULL,								/* CMD_MARKETBUY(同上) */
+	NULL,								/* CMD_MARKETTAKEBACK(同上) */
+	NULL,								/* CMD_MARKETGOLDGET(同上) */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */

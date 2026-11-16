@@ -20,6 +20,7 @@
 #include "SboSvrSaveLoadRecipeInfo.h"
 #include "SboSvrSaveLoadQuestInfo.h"
 #include "SboSvrSaveLoadTalkInfo.h"
+#include "SboSvrSaveLoadMarket.h"
 
 
 /* Copyright(C)URARA-works 2003-2005 */
