@@ -5116,6 +5116,8 @@ void DrawWindowMARKET(PWNDINFO pWnd)
 				MarketThirdText (nKind, pEntry, szTmp, sizeof (szTmp));
 				TextOut2 (hDC, xThird, 16 + i * 16, szTmp, clText);
 			}
+			/* 上下に続きがあれば枠に▲▼（道具・預かり所と同じ） */
+			DrawListScrollMark (hDC, pWnd->nCx, pWnd->nCy, pWnd->byData1, pWnd->nData2, (int)g_MarketList.byCount);
 		}
 		break;
 
@@ -5137,6 +5139,7 @@ void DrawWindowMARKET(PWNDINFO pWnd)
 					}
 				}
 			}
+			DrawListScrollMark (hDC, pWnd->nCx, pWnd->nCy, pWnd->byData1, pWnd->nData2, nCount);
 		}
 		break;
 
