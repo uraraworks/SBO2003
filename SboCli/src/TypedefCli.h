@@ -177,7 +177,7 @@ enum {
 	MARKETWAIT_TAKEBACK,										/* 引き取りの結果 */
 	MARKETWAIT_GOLDGET,											/* 売上の受け取りの結果 */
 };
-#define MARKET_LISTROWS				(10)										/* 一覧に一度に出す行数 */
+#define MARKET_LISTROWS				(7)										/* 一覧に一度に出す行数（下に出す詳細の窓がセリフ欄に重ならないように7行） */
 #define MARKET_WAITMAX				(5000)										/* 返事を待つ最長時間(ms) */
 #define MARKET_LISTY				(16 * 4)									/* 一覧の上端（右上の所持金の窓の下） */
 #define MARKET_CONFY				(16 * 17)									/* 「はい／いいえ」の上端（一覧の下・台詞の上） */
