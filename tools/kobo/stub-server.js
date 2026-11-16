@@ -4,7 +4,7 @@
  *
  *   node tools/kobo/stub-server.js --port 8790 --data /tmp/kobo-stub [--fast]
  *
- * ・server/node/sbosvr_kobo.js をそのまま読み込む（Module・FS と Module['sboAccount'] は偽物）
+ * ・server/node/sbosvr_kobo.js と sbosvr_dotdraft.js（ドット絵エディタの控え）をそのまま読み込む（Module・FS と Module['sboAccount'] は偽物）
  * ・端末トークン tokA=アリス(acca)・tokB=ボブ(accb)・tokC=キャラ無し(accc)。管理者は session 'admin' か Cookie
  * ・管理ページ /admin は最初からログイン済みで開く（/api/admin/me が Cookie を付けて ok を返す）
  * ・未知の /api/* は 200 で {}
@@ -121,6 +121,9 @@ if (FAST) {
 var FS = { cwd: function () { return DATA; } };
 var code = fs.readFileSync(path.join(ROOT, 'server/node/sbosvr_kobo.js'), 'utf8');
 new Function('Module', 'FS', 'require', 'console', code)(Module, FS, require, console);
+/* ドット絵エディタの控え（サーバー保存）も同じ偽物のログインで動かす */
+code = fs.readFileSync(path.join(ROOT, 'server/node/sbosvr_dotdraft.js'), 'utf8');
+new Function('Module', 'FS', 'require', 'console', code)(Module, FS, require, console);
 
 /* ---------------- 静的ファイル ---------------- */
 var MIME = {
@@ -231,6 +234,9 @@ function fakeApi(req, res, url) {
 var server = http.createServer(function (req, res) {
 	var url = req.url.split('?')[0];
 	if (Module['sboKobo'].handleHttp(req, res, url)) {
+		return;
+	}
+	if (Module['sboDotDraft'].handleHttp(req, res, url)) {
 		return;
 	}
 	if (url.indexOf('/api/') === 0) {

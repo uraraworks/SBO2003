@@ -258,6 +258,9 @@
 	.tag { display: inline-block; border-radius: 4px; padding: 0 5px; font-size: 11px; border: 1px solid var(--border); margin-right: 4px; }
 	.tag.auto { color: var(--info); border-color: var(--info); }
 	.tag.orig { color: var(--ok); border-color: var(--ok); }
+	.tag.remote { color: var(--accent); border-color: var(--accent); }
+	.tag.local { color: var(--sub); }
+	.sub-text.warn { color: var(--ng, #e88); margin-bottom: 6px; }
 
 	/* ---- トースト・ダイアログ ---- */
 	#toast {
@@ -300,7 +303,7 @@
 	<input type="file" id="fileInput" accept=".png,image/png" multiple hidden>
 	<span style="width:8px"></span>
 	<button id="btnSave" title="Cmd+S（Windows は Ctrl+S）">保存</button>
-	<button id="btnDraft" class="sub" title="元のファイルは上書きせず、ブラウザの中に控えを残します（Cmd+Shift+S）">一時保存</button>
+	<button id="btnDraft" class="sub" title="元のファイルは上書きせず、控えを残します。管理ページにログインしていればサーバーに置くので、ほかの端末でも続きを描けます（Cmd+Shift+S）">一時保存</button>
 	<button id="btnTry" class="sub" title="この絵をゲームに読み込ませて試します">ゲームで試す</button>
 	<span class="gap"></span>
 	<button id="btnHelp" class="sub" title="キーボードの一覧（?）">? ショートカット</button>

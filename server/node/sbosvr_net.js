@@ -479,7 +479,7 @@ Module['sboNet'] = (function () {
 		if (url === '/admin') {
 			url = '/admin.html';
 		}
-		/* ドット絵エディタ（管理者用。手元のフォルダの画像を編集するだけでサーバーには何も送らない） */
+		/* ドット絵エディタ（管理者用。手元のフォルダの画像を編集する。一時保存の控えだけサーバーに置く＝sbosvr_dotdraft.js） */
 		if (url === '/dot') {
 			url = '/dot.html';
 		}
@@ -508,6 +508,10 @@ Module['sboNet'] = (function () {
 			url = '/changes.html';
 		}
 		if (Module['sboChanges'] && Module['sboChanges'].handleHttp(req, res, url)) {
+			return;
+		}
+		/* ドット絵エディタの控え（一時保存）の API（sbosvr_dotdraft.js） */
+		if (Module['sboDotDraft'] && Module['sboDotDraft'].handleHttp(req, res, url)) {
 			return;
 		}
 		/* 利用環境の統計の API（sbosvr_stats.js） */
