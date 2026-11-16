@@ -988,7 +988,7 @@ BOOL LoadCharInfo(void)
 	char szFileName[MAX_PATH + 1];
 	BYTE byTmp;
 	BOOL bRet;
-	PBYTE pData;
+	PBYTE pData, pbyItemCount;
 	HANDLE hFile;
 	DWORD i, j, dwSize, dwBytes, dwOffset, dwDataCount, dwColumnCount;
 	PJOBINFO pJobInfo;
@@ -1012,6 +1012,7 @@ BOOL LoadCharInfo(void)
 
 	bRet = FALSE;
 	pData = NULL;
+	pbyItemCount = NULL;
 	hFile = INVALID_HANDLE_VALUE;
 
 
@@ -1087,6 +1088,12 @@ BOOL LoadCharInfo(void)
 		ZeroMemory (pInfo, sizeof (CHARINFO));
 		SetInitCharData (pInfo);
 		AddChar (pInfo, FALSE);
+	}
+
+	/* 所持アイテム数（キャラごと）。列が無い古いデータは当時の最大数10個とみなす */
+	pbyItemCount = new BYTE[dwDataCount + 1];
+	for (i = 0; i < dwDataCount; i ++) {
+		pbyItemCount[i] = 10;
 	}
 
 	dwColumnCount = aHeaderInfo.GetSize ();
@@ -1462,12 +1469,15 @@ BOOL LoadCharInfo(void)
 			if (strcmp (aHeaderInfo[i].szName, s_aszName[60]) == 0) {
 				CopyMemory (&byTmp, &pData[dwOffsetTmp], sizeof (byTmp));
 				dwOffsetTmp += sizeof (byTmp);
+				pbyItemCount[j] = byTmp;
 			}
 
-			/* 所持アイテム */
+			/* 所持アイテム（保存時の個数分だけ進める。枠数が変わっても読めるよう収まる分だけ入れる） */
 			if (strcmp (aHeaderInfo[i].szName, s_aszName[61]) == 0) {
-				CopyMemory (&pInfo->waItem, &pData[dwOffsetTmp], sizeof (pInfo->waItem));
-				dwOffsetTmp += sizeof (pInfo->waItem);
+				DWORD dwCountTmp = pbyItemCount[j];
+
+				CopyMemory (&pInfo->waItem, &pData[dwOffsetTmp], min (dwCountTmp, (DWORD)MAX_MYITEM) * sizeof (WORD));
+				dwOffsetTmp += dwCountTmp * sizeof (WORD);
 			}
 
 			/* MACアドレス */
@@ -1692,6 +1702,12 @@ BOOL LoadCharInfo(void)
 			pInfo->wGrpID = pInfo->wGrpIDBack;
 			pInfo->wGrpSub = 0;
 		}
+		/* 装備が持ち物の範囲外を指していたら未装備に戻す */
+		for (k = 0; k < MAX_EQUTYPE; k ++) {
+			if ((pInfo->waEqu[k] != 0xFFFF) && (pInfo->waEqu[k] >= MAX_MYITEM)) {
+				pInfo->waEqu[k] = 0xFFFF;
+			}
+		}
 		if (pInfo->wMana > pInfo->wMaxMana) {
 			pInfo->wMana = pInfo->wMaxMana;
 		}
@@ -1760,6 +1776,7 @@ Exit:
 		CloseHandle (hFile);
 	}
 	SAFE_DELETE_ARRAY (pData);
+	SAFE_DELETE_ARRAY (pbyItemCount);
 	return bRet;
 }
 

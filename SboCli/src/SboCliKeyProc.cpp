@@ -16,6 +16,42 @@
 #include "SboCliMsgLogWindow.h"
 #include "SboCliDrawScreen.h"
 
+/* 装備品の装備職業情報の番号を返す（装備品でなければ 0xFFFF） */
+static WORD ShopGetItemEquNo(PITEMINFO pItem)
+{
+	if (pItem->pData == NULL) {
+		return 0xFFFF;
+	}
+	switch (pItem->byType) {
+	case ITEMTYPE_WEAPON:	return ((PITEMINFO_WEAPON)pItem->pData)->wEqu;
+	case ITEMTYPE_ARMOR:	return ((PITEMINFO_ARMOR)pItem->pData)->wEqu;
+	case ITEMTYPE_SHILD:	return ((PITEMINFO_SHILD)pItem->pData)->wEqu;
+	case ITEMTYPE_HELMET:	return ((PITEMINFO_HELMET)pItem->pData)->wEqu;
+	case ITEMTYPE_EQU_HAND:	return ((PITEMINFO_EQU_HAND)pItem->pData)->wEqu;
+	case ITEMTYPE_EQU_LEG:	return ((PITEMINFO_EQU_LEG)pItem->pData)->wEqu;
+	case ITEMTYPE_EQU_ACC1:	return ((PITEMINFO_EQU_ACC1)pItem->pData)->wEqu;
+	case ITEMTYPE_EQU_ACC2:	return ((PITEMINFO_EQU_ACC2)pItem->pData)->wEqu;
+	case ITEMTYPE_EQU_ACC3:	return ((PITEMINFO_EQU_ACC3)pItem->pData)->wEqu;
+	}
+	return 0xFFFF;
+}
+
+/* お店の「買う」確認文：自分が装備できない品（性別・今の職業）なら注意書きを足す（買うこと自体は止めない） */
+static void ShopAddEquWarn(LPSTR pszMsg, int nSize, PITEMINFO pItem, PCHARINFO pChar)
+{
+	/* @1 は次の行へ */
+	if ((pItem->bySexDistinction != SEXDISTINCTION_ALL) && !CheckItemSexDistinction (pItem, pChar)) {
+		strcat (pszMsg, (pItem->bySexDistinction == SEXDISTINCTION_FEMALE) ?
+			"@1※この品は女性しか装備できません。" : "@1※この品は男性しか装備できません。");
+	}
+	/* 職業は転職すれば使えるので「今の職業では」とする */
+	WORD wEqu = ShopGetItemEquNo (pItem);
+	if ((wEqu != 0xFFFF) && (wEqu < g_aEquUserInfo.GetSize ()) && !CheckEquUserInfo (wEqu, pChar->byJOB)) {
+		strcat (pszMsg, "@1※今の職業では装備できません。");
+	}
+	pszMsg[nSize - 1] = 0;
+}
+
 /* ========================================================================= */
 /* 関数プロトタイプ宣言														 */
 /* ========================================================================= */
@@ -1811,10 +1847,10 @@ void KeyProcCOMMANDITEM(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 
 		/* 入れ替え中：2つ目を決めたら入れ替える（同じ行なら何もしない） */
 		if (pWnd->dwData) {
-			int nNo1 = (int)pWnd->dwData - 1;
+			int nNo1 = (int)pWnd->dwData - 1, nNo2 = pWnd->byData1 + pWnd->nData1;
 			pWnd->dwData = 0;
-			if (nNo1 != pWnd->nData1) {
-				SendCmdSORTITEM (SORTITEMTARGET_MYITEM, SORTITEMMODE_SWAP, (BYTE)nNo1, (BYTE)pWnd->nData1);
+			if (nNo1 != nNo2) {
+				SendCmdSORTITEM (SORTITEMTARGET_MYITEM, SORTITEMMODE_SWAP, (BYTE)nNo1, (BYTE)nNo2);
 			}
 			return;
 		}
@@ -1828,20 +1864,8 @@ void KeyProcCOMMANDITEM(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 	} else if ((byEvent == KEY_DOWN) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
 		BOOL bMove = FALSE;
 
-		if ((byCode == VK_UP) && (pWnd->nData1 > 0)) {
-			pWnd->nData1 --;
-			bMove = TRUE;
-
-		} else if ((byCode == VK_DOWN) && (pWnd->nData1 < pWnd->nData2 - 1)) {
-			pWnd->nData1 ++;
-			bMove = TRUE;
-
-		} else if (byCode == VK_LEFT) {
-			pWnd->nData1 = 0;
-			bMove = TRUE;
-
-		} else if (byCode == VK_RIGHT) {
-			pWnd->nData1 = pWnd->nData2 - 1;
+		/* 一覧は10行ずつ見せ、上下に余白を残してスクロールする */
+		if (ListScrollKey (pWnd, byCode, GetItemCount (g_nMyCharID))) {
 			bMove = TRUE;
 		}
 
@@ -1916,7 +1940,7 @@ void KeyProcCOMMANDITEMBATTLE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 
 		} else {
 			PWNDINFO pWndParent = (PWNDINFO)pWnd->pParent;
-			BYTE byNo = pWnd->nData1;
+			BYTE byNo = pWnd->byData1 + pWnd->nData1;
 			PITEMINFO pItem = g_aItemInfo[pChar->waItem[byNo]];
 
 			SendCmdUSEITEM (byNo, pChar->dwTblID);
@@ -1933,20 +1957,8 @@ void KeyProcCOMMANDITEMBATTLE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 	} else if ((byEvent == KEY_DOWN) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
 		BOOL bMove = FALSE;
 
-		if ((byCode == VK_UP) && (pWnd->nData1 > 0)) {
-			pWnd->nData1 --;
-			bMove = TRUE;
-
-		} else if ((byCode == VK_DOWN) && (pWnd->nData1 < pWnd->nData2 - 1)) {
-			pWnd->nData1 ++;
-			bMove = TRUE;
-
-		} else if (byCode == VK_LEFT) {
-			pWnd->nData1 = 0;
-			bMove = TRUE;
-
-		} else if (byCode == VK_RIGHT) {
-			pWnd->nData1 = pWnd->nData2 - 1;
+		/* 一覧は10行ずつ見せ、上下に余白を残してスクロールする */
+		if (ListScrollKey (pWnd, byCode, GetItemCount (g_nMyCharID))) {
 			bMove = TRUE;
 		}
 
@@ -2024,7 +2036,7 @@ void KeyProcCOMMANDITEMPROC(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				}
 
 				PWNDINFO pWndParent = (PWNDINFO)pWnd->pParent;
-				BYTE byNo = pWndParent->nData1;
+				BYTE byNo = pWndParent->byData1 + pWndParent->nData1;
 				PITEMINFO pItem = g_aItemInfo[pChar->waItem[byNo]];
 
 				SendCmdUSEITEM (byNo, pChar->dwTblID);
@@ -2043,7 +2055,7 @@ void KeyProcCOMMANDITEMPROC(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			{
 				PWNDINFO pWndParent = (PWNDINFO)pWnd->pParent;
 				PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
-				BYTE byNo = pWndParent->nData1;
+				BYTE byNo = pWndParent->byData1 + pWndParent->nData1;
 				PITEMINFO pItem = g_aItemInfo[pChar->waItem[byNo]];
 				char szTmp[128];
 				ZeroMemory (szTmp, sizeof (szTmp));
@@ -2188,7 +2200,7 @@ void KeyProcSORTMENU(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			if (byMode == SORTITEMMODE_SWAP) {
 				/* 一覧を入れ替えモードにする（1+選んだ番号） */
 				if (pWndList) {
-					pWndList->dwData = 1 + pWndList->nData1;
+					pWndList->dwData = 1 + pWndList->byData1 + pWndList->nData1;
 				}
 			} else {
 				SendCmdSORTITEM (SORTITEMTARGET_MYITEM, byMode, 0, 0);
@@ -2255,9 +2267,9 @@ void KeyProcCOMMANDITEMCHAR(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		PWNDINFO pWndParent = (PWNDINFO)pWnd->pParent;
 
 		PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
-		BYTE byNo = ((PWNDINFO)pWndParent->pParent)->nData1;
+		BYTE byNo = ((PWNDINFO)pWndParent->pParent)->byData1 + ((PWNDINFO)pWndParent->pParent)->nData1;
 		if (pWndParent->nType == WNDTYPE_COMMANDITEMBATTLE) {
-			byNo = (BYTE)pWndParent->nData1;
+			byNo = (BYTE)(pWndParent->byData1 + pWndParent->nData1);
 		}
 		PITEMINFO pItem = g_aItemInfo[pChar->waItem[byNo]];
 
@@ -3337,6 +3349,7 @@ void KeyProcSHOP(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				char szMsgTmp[2048];
 				PITEMINFO pItem = g_aItemInfo[pShop->awItem[nTmp]];
 				wsprintf (szMsgTmp, pShop->apMsg[SHOPMSG_BUYCONF], pItem->szName, pItem->dwGold);
+				ShopAddEquWarn (szMsgTmp, sizeof (szMsgTmp), pItem, pChar);
 				pWndNew = MakeWindowMSG (szMsgTmp, TRUE);
 				pWndNew->pParent = pWndTmp;
 				pWndTmp->pChild = pWndNew;
@@ -3377,6 +3390,9 @@ void KeyProcSHOP(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		/* 売る */
 		case SHOPMSG_SELL:
 			nTmp = pWnd->nData1;
+			if (g_bProcShopConfirm == FALSE) {
+				nTmp += pWnd->byData1;							/* 一覧のスクロール分 */
+			}
 			EraseWindow (pWnd);
 			char szMsgTmp[256];
 
@@ -3446,20 +3462,8 @@ void KeyProcSHOP(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 	} else if ((byEvent == KEY_DOWN) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
 		BOOL bMove = FALSE;
 
-		if ((byCode == VK_UP) && (pWnd->nData1 > 0)) {
-			pWnd->nData1 --;
-			bMove = TRUE;
-
-		} else if ((byCode == VK_DOWN) && (pWnd->nData1 < pWnd->nData2 - 1)) {
-			pWnd->nData1 ++;
-			bMove = TRUE;
-
-		} else if (byCode == VK_LEFT) {
-			pWnd->nData1 = 0;
-			bMove = TRUE;
-
-		} else if (byCode == VK_RIGHT) {
-			pWnd->nData1 = pWnd->nData2 - 1;
+		/* 売る物の一覧は手持ちを10行ずつ見せ、上下に余白を残してスクロールする */
+		if (ListScrollKey (pWnd, byCode, ((g_nProcShopState == SHOPMSG_SELL) && (g_bProcShopConfirm == FALSE)) ? GetItemCount (g_nMyCharID) : pWnd->nData2)) {
 			bMove = TRUE;
 		}
 
@@ -3557,6 +3561,7 @@ void KeyProcSHOPSELL(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				char szMsgTmp[2048];
 				PITEMINFO pItem = g_aItemInfo[pShop->awItem[nTmp]];
 				wsprintf (szMsgTmp, pShop->apMsg[SHOPMSG_BUYCONF], pItem->szName, pItem->dwGold);
+				ShopAddEquWarn (szMsgTmp, sizeof (szMsgTmp), pItem, pChar);
 				pWndNew = MakeWindowMSG (szMsgTmp, TRUE);
 				pWndNew->pParent = pWndTmp;
 				pWndTmp->pChild = pWndNew;
@@ -3711,6 +3716,7 @@ void KeyProcCOMMANDEQU(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		pWndParent->dwTimeDrawStart = 0;
 		pWndParent->nData1 = (int)pChar->wAT;
 		pWndParent->nData2 = (int)pChar->wDF;
+		pWndParent->dwData = (DWORD)pChar->wDFMagic;
 
 		pChar->waEqu[pWnd->nData1] = nTmp;
 		RenewATDF (g_nMyCharID);
@@ -3771,6 +3777,7 @@ void KeyProcCOMMANDEQUSUB(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		pWndParent->dwTimeDrawStart = 0;
 		pWndParent->nData1 = (int)pChar->wAT;
 		pWndParent->nData2 = (int)pChar->wDF;
+		pWndParent->dwData = (DWORD)pChar->wDFMagic;
 
 		EraseWindow (pWnd);
 		g_dwActiveMsgID = ((PWNDINFO)pWndParent->pParent)->dwID;
@@ -3870,6 +3877,7 @@ void KeyProcCOMMANDEQUSUB(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			pWndParent->dwTimeDrawStart = 0;
 			pWndParent->nData1 = (int)pChar->wAT;
 			pWndParent->nData2 = (int)pChar->wDF;
+			pWndParent->dwData = (DWORD)pChar->wDFMagic;
 
 			pChar->waEqu[byType] = nTmp2;
 			RenewATDF (g_nMyCharID);
@@ -4099,7 +4107,7 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		case LEAVESTATE_ITEM:
 			/* 装備中？ */
 			for (i = 0; i < 10; i ++) {
-				if (pChar->waEqu[i] == pWnd->nData1) {
+				if (pChar->waEqu[i] == pWnd->byData1 + pWnd->nData1) {
 					break;
 				}
 			}
@@ -4108,7 +4116,7 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 
 			} else {
 				/* 預かり所がいっぱい・依頼の品は断られるので、サーバーの返事を待ってから返事を出す */
-				SendCmdLEAVEITEM (pWnd->nData1);
+				SendCmdLEAVEITEM (pWnd->byData1 + pWnd->nData1);
 				g_nProcShopState = LEAVESTATE_ITEMPUTWAIT;
 				g_bEnableMove = FALSE;
 			}
@@ -4357,47 +4365,37 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			}
 
 		} else {
-			if ((byCode == VK_UP) && (pWnd->nData1 > 0)) {
+			/* 引き取る・並べ替え・手放す・預ける一覧は10行ずつ見せ、上下に余白を残してスクロールする */
+			int nListCount = -1;
+			if ((g_nProcShopState == LEAVESTATE_ITEMSELECTGET) || (g_nProcShopState == LEAVESTATE_ITEMSORTSWAP) || (g_nProcShopState == LEAVESTATE_ITEMSELECTDISPOSE)) {
+				nListCount = g_pLeaveInfo ? (int)g_pLeaveInfo->byCount : 0;
+			} else if (g_nProcShopState == LEAVESTATE_ITEM) {
+				nListCount = GetItemCount (g_nMyCharID);
+			}
+
+			if (nListCount >= 0) {
+				if (ListScrollKey (pWnd, byCode, nListCount)) {
+					bMove = TRUE;
+					pWnd->byAnime = 1;
+				}
+
+			} else if ((byCode == VK_UP) && (pWnd->nData1 > 0)) {
 				pWnd->nData1 --;
 				bMove = TRUE;
 				pWnd->byAnime = 1;
-				if (pWnd->nData1 == 0) {
-					if (g_pLeaveInfo && (g_pLeaveInfo->byCount > 10)) {
-						if (pWnd->nData1 + pWnd->byData1 > 0) {
-							pWnd->nData1 ++;
-							pWnd->byData1 --;
-						}
-					}
-				}
 
 			} else if ((byCode == VK_DOWN) && (pWnd->nData1 < pWnd->nData2 - 1)) {
 				pWnd->nData1 ++;
 				bMove = TRUE;
 				pWnd->byAnime = 1;
-				if ((g_nProcShopState == LEAVESTATE_ITEMSELECTGET) || (g_nProcShopState == LEAVESTATE_ITEMSORTSWAP) || (g_nProcShopState == LEAVESTATE_ITEMSELECTDISPOSE)) {
-					if (pWnd->nData1 == pWnd->nData2 - 1) {
-						if (g_pLeaveInfo && (g_pLeaveInfo->byCount > 10)) {
-							if (pWnd->nData1 + pWnd->byData1 < g_pLeaveInfo->byCount - 1) {
-								pWnd->nData1 --;
-								pWnd->byData1 ++;
-							}
-						}
-					}
-				}
 
 			} else if (byCode == VK_LEFT) {
 				pWnd->nData1 = 0;
-				pWnd->byData1 = 0;
 				bMove = TRUE;
 				pWnd->byAnime = 1;
 
 			} else if ((byCode == VK_RIGHT) && (pWnd->nData1 < pWnd->nData2 - 1)) {
 				pWnd->nData1 = pWnd->nData2 - 1;
-				if ((g_nProcShopState == LEAVESTATE_ITEMSELECTGET) || (g_nProcShopState == LEAVESTATE_ITEMSORTSWAP) || (g_nProcShopState == LEAVESTATE_ITEMSELECTDISPOSE)) {
-					if (g_pLeaveInfo && (g_pLeaveInfo->byCount > 10)) {
-						pWnd->byData1 = g_pLeaveInfo->byCount - 10;
-					}
-				}
 				bMove = TRUE;
 				pWnd->byAnime = 1;
 			}
@@ -4627,21 +4625,21 @@ void KeyProcTRADEITEM(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		PWNDINFO pWndParent = (PWNDINFO)pWnd->pParent;
 		PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
 
-		int i, j;
+		int i, j, nSel = pWnd->byData1 + pWnd->nData1;				/* 選んだ品の番号（スクロール分を足す） */
 		for (i = 0; i < MAX_MYITEM; i ++) {
-			if (g_pTradeInfo->waItem1[i] == pWnd->nData1) {
+			if (g_pTradeInfo->waItem1[i] == nSel) {
 				break;
 			}
 		}
 		if (i == MAX_MYITEM) {
 			/* 装備しているかチェック */
 			for (j = 0; j < 10; j ++) {
-				if (pChar->waEqu[j] == pWnd->nData1) {
+				if (pChar->waEqu[j] == nSel) {
 					break;
 				}
 			}
 			if (j == 10) {
-				g_pTradeInfo->waItem1[pWndParent->nData1 - 2] = pWnd->nData1;
+				g_pTradeInfo->waItem1[pWndParent->nData1 - 2] = nSel;
 				if (pWndParent->nData1 == pWndParent->nData2 - 1) {
 					if (pWndParent->nData2 < MAX_MYITEM + 2) {
 						pWndParent->nData2 ++;
@@ -4656,20 +4654,8 @@ void KeyProcTRADEITEM(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 	} else if ((byEvent == KEY_DOWN) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
 		BOOL bMove = FALSE;
 
-		if ((byCode == VK_UP) && (pWnd->nData1 > 0)) {
-			pWnd->nData1 --;
-			bMove = TRUE;
-
-		} else if ((byCode == VK_DOWN) && (pWnd->nData1 < pWnd->nData2 - 1)) {
-			pWnd->nData1 ++;
-			bMove = TRUE;
-
-		} else if (byCode == VK_LEFT) {
-			pWnd->nData1 = 0;
-			bMove = TRUE;
-
-		} else if (byCode == VK_RIGHT) {
-			pWnd->nData1 = pWnd->nData2 - 1;
+		/* 手持ちは10行ずつ見せ、上下に余白を残してスクロールする */
+		if (ListScrollKey (pWnd, byCode, GetItemCount (g_nMyCharID))) {
 			bMove = TRUE;
 		}
 
