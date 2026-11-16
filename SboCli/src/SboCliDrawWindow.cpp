@@ -2521,21 +2521,29 @@ void DrawWindowLEAVE_ITEMGET(PWNDINFO pWnd)
 
 	char szTmp[128];
 	int i, nNo = (int)pWnd->byData1, nLen = 0;
+	/* 窓の幅は預かっている全部の品の中で一番長い名前に合わせる */
+	/* （見えている行だけで決めるとスクロールのたびに幅が変わってガタガタするため） */
+	for (i = 0; (i < (int)g_pLeaveInfo->byCount) && (i < MAX_LEAVEITEM); i ++) {
+		if (g_pLeaveInfo->waItem[i] >= g_aItemInfo.GetSize ()) {
+			continue;
+		}
+		PITEMINFO pItem = g_aItemInfo[g_pLeaveInfo->waItem[i]];
+		if (g_pLeaveInfo->byItemCount[i] > 1) {
+			wsprintf (szTmp, "%s(%d)", pItem->szName, g_pLeaveInfo->byItemCount[i]);
+		} else {
+			wsprintf (szTmp, "%s", pItem->szName);
+		}
+		if (SboTextWidth (szTmp) > nLen) {
+			nLen = SboTextWidth (szTmp);
+		}
+	}
+	/* 見えている行数（先頭 nNo から最大10行。途中に壊れた品番があればそこまで） */
 	for (i = 0; i < 10; i ++) {
 		if (i + nNo >= g_pLeaveInfo->byCount) {
 			break;
 		}
 		if (g_pLeaveInfo->waItem[i + nNo] >= g_aItemInfo.GetSize ()) {
 			break;
-		}
-		PITEMINFO pItem = g_aItemInfo[g_pLeaveInfo->waItem[i + nNo]];
-		if (g_pLeaveInfo->byItemCount[i + nNo] > 1) {
-			wsprintf (szTmp, "%s(%d)", pItem->szName, g_pLeaveInfo->byItemCount[i + nNo]);
-		} else {
-			wsprintf (szTmp, "%s", pItem->szName);
-		}
-		if (SboTextWidth (szTmp) > nLen) {
-			nLen = SboTextWidth (szTmp);
 		}
 	}
 	nLen += 2;
