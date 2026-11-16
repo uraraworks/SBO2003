@@ -3172,6 +3172,96 @@ static void TestQuest(const std::vector<int> &aLogin)
 		free(psz);
 	}
 
+	/* 古い形式（持ち物 10 個）のキャラを読むと、11〜20 枠は空のままで、後ろの列もずれない。
+	   いま保存したファイルを「持ち物の列を 10 個分に縮めた形」に書き換えて読み直す */
+	{
+		WORD awItemBak[MAX_MYITEM], awEquBak[MAX_EQUTYPE];
+		char szAccBak[sizeof(pOther->szAcc)], szNameBak[sizeof(pOther->szName)];
+		memcpy(awItemBak, pOther->waItem, sizeof(awItemBak));
+		memcpy(awEquBak, pOther->waEqu, sizeof(awEquBak));
+		memcpy(szAccBak, pOther->szAcc, sizeof(szAccBak));
+		memcpy(szNameBak, pOther->szName, sizeof(szNameBak));
+		for (int i = 0; i < MAX_MYITEM; i ++) pOther->waItem[i] = (WORD)(i < 10 ? i + 1 : 777);
+		for (int i = 0; i < MAX_EQUTYPE; i ++) pOther->waEqu[i] = 0xFFFF;
+		pOther->waEqu[0] = 3;
+		strcpy(pOther->szAcc, "legacyitem");
+		strcpy(pOther->szName, "旧持ち物");
+		SaveCharInfo();
+
+		const char *pszFile = "SBODATA/SboDataCharInfo.dat";
+		std::vector<BYTE> aFile;
+		FILE *fp = fopen(pszFile, "rb");
+		if (fp) {
+			BYTE abyBuf[4096];
+			size_t n;
+			while ((n = fread(abyBuf, 1, sizeof(abyBuf), fp)) > 0) aFile.insert(aFile.end(), abyBuf, abyBuf + n);
+			fclose(fp);
+		}
+		/* ヘッダ：列数・データ数、続いて「列名 + 開始位置」 */
+		DWORD dwColumn = 0, dwData = 0;
+		size_t nHead = 8, nCountPos = 0, nItemPos = 0;
+		DWORD dwCountOfs = 0, dwItemOfs = 0;
+		if (aFile.size() > 8) {
+			memcpy(&dwColumn, &aFile[0], 4);
+			memcpy(&dwData, &aFile[4], 4);
+			for (DWORD c = 0; c < dwColumn; c ++) {
+				const char *pszName = (const char *)&aFile[nHead];
+				size_t nPos = nHead + strlen(pszName) + 1;
+				DWORD dwOfs;
+				memcpy(&dwOfs, &aFile[nPos], 4);
+				if (strcmp(pszName, "waItemCount") == 0) { nCountPos = nPos; dwCountOfs = dwOfs; }
+				if (strcmp(pszName, "waItem") == 0) { nItemPos = nPos; dwItemOfs = dwOfs; }
+				nHead = nPos + 4;
+			}
+		}
+		int nPatched = 0;
+		if (nCountPos && nItemPos && dwData > 0) {
+			const DWORD dwNew = 10 * sizeof(WORD), dwOld = MAX_MYITEM * sizeof(WORD);
+			std::vector<BYTE> aNew(aFile.begin(), aFile.begin() + dwItemOfs);
+			for (DWORD r = 0; r < dwData; r ++) aFile[dwCountOfs + r] = 10;
+			memcpy(&aNew[dwCountOfs], &aFile[dwCountOfs], dwData);
+			for (DWORD r = 0; r < dwData; r ++) aNew.insert(aNew.end(), aFile.begin() + dwItemOfs + r * dwOld, aFile.begin() + dwItemOfs + r * dwOld + dwNew);
+			aNew.insert(aNew.end(), aFile.begin() + dwItemOfs + dwData * dwOld, aFile.end());
+			/* 持ち物の列より後ろの列は、縮めた分だけ開始位置を前へ */
+			size_t nPos = 8;
+			for (DWORD c = 0; c < dwColumn; c ++) {
+				size_t nPosOfs = nPos + strlen((const char *)&aNew[nPos]) + 1;
+				DWORD dwOfs;
+				memcpy(&dwOfs, &aNew[nPosOfs], 4);
+				if (dwOfs > dwItemOfs) {
+					dwOfs -= dwData * (dwOld - dwNew);
+					memcpy(&aNew[nPosOfs], &dwOfs, 4);
+				}
+				nPos = nPosOfs + 4;
+			}
+			fp = fopen(pszFile, "wb");
+			if (fp) {
+				fwrite(&aNew[0], 1, aNew.size(), fp);
+				fclose(fp);
+				nPatched = 1;
+			}
+		}
+		LoadCharInfo();
+		PCHARINFO pLegacy = NULL;
+		for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+			if (g_aCharInfo[i] != pOther && strcmp(g_aCharInfo[i]->szAcc, "legacyitem") == 0) pLegacy = g_aCharInfo[i];
+		}
+		if (pLegacy) {
+			int nHead10 = 0, nTail0 = 0;
+			for (int i = 0; i < 10; i ++) if (pLegacy->waItem[i] == i + 1) nHead10 ++;
+			for (int i = 10; i < MAX_MYITEM; i ++) if (pLegacy->waItem[i] == 0) nTail0 ++;
+			printf("legacy item load patched=%d first10=%d rest0=%d equ=%u,%u name=%s\n", nPatched, nHead10, nTail0,
+				pLegacy->waEqu[0], pLegacy->waEqu[1], pLegacy->szName);
+			pLegacy->szAcc[0] = 0;
+		} else {
+			printf("legacy item load patched=%d not found\n", nPatched);
+		}
+		memcpy(pOther->waItem, awItemBak, sizeof(awItemBak));
+		memcpy(pOther->waEqu, awEquBak, sizeof(awEquBak));
+		memcpy(pOther->szAcc, szAccBak, sizeof(szAccBak));
+		memcpy(pOther->szName, szNameBak, sizeof(szNameBak));
+	}
+
 	/* 片付け */
 	pOther->szAcc[0] = 0;
 	for (int i = 0; i < 4; i ++) {

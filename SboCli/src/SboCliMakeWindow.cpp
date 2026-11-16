@@ -11,6 +11,7 @@
 #include "SboCliDrawWindow.h"
 #include "SboCliRecvCmd.h"
 #include "SboCliKeyProc.h"
+#include "SboCliSendCmd.h"
 
 /* ========================================================================= */
 /* 定数定義																	 */
@@ -122,6 +123,9 @@ DWORD MakerStateHash							(int);				/* 画面に出ている内容が変わっ�
 void MakerSetMsg								(PWNDINFO, LPCSTR);	/* 作り手の画面のメッセージを差し替える */
 void MakerSetTalkMsg							(PWNDINFO);			/* 作り手の話しかけた時の台詞を出す */
 void MakerScrollFit								(PWNDINFO, int, int);	/* 一覧のカーソルとスクロールを整える */
+int ListScrollTop								(int, int, int, int, int);	/* 一覧の先頭位置を余白付きで決める */
+void ListScrollFitMargin						(PWNDINFO, int, int, int);	/* 一覧のカーソルとスクロールを余白付きで整える */
+BOOL ListScrollKey								(PWNDINFO, BYTE, int);	/* 一覧の上下左右キーでカーソルを動かす */
 PWNDINFO MakeWindowITEMINFO						(int x, int y);		/* アイテム情報 */
 PWNDINFO MakeWindowITEMINFOList					(PWNDINFO pWndList);	/* アイテム情報(一覧の横) */
 void UpdateWindowITEMINFOList					(PWNDINFO pWndList);	/* アイテム情報(一覧の横)の更新 */
@@ -584,7 +588,7 @@ PWNDINFO MakeWindowCOMMANDITEM(void)
 	if (nLen < 2) {
 		nLen = 4;
 	}
-	pWnd->nData2 = nCount;
+	pWnd->nData2 = min (nCount, LISTROWS_MAX);						/* 10行を超える分はスクロール */
 	pWnd->nX = 32 + 16 * 3;
 	pWnd->nY = 50 + 16 * 2;
 	pWnd->nCx = (16 * 4) + (nLen * 8);
@@ -623,7 +627,7 @@ PWNDINFO MakeWindowCOMMANDITEMBATTLE(void)
 	if (nLen < 2) {
 		nLen = 4;
 	}
-	pWnd->nData2 = nCount;
+	pWnd->nData2 = min (nCount, LISTROWS_MAX);						/* 10行を超える分はスクロール */
 	pWnd->nX = 32 + 16 * 3;
 	pWnd->nY = 50 + 16 * 2;
 	pWnd->nCx = (16 * 4) + (nLen * 8);
@@ -827,6 +831,9 @@ PWNDINFO MakeWindowSHOP(int nNo, int nMsgNo)
 
 	g_nProcShopID = nNo;
 	g_nProcShopState = SHOPMSG_OPEN;
+	/* 買う時のアイテム情報に出す預かり所の数のため、預かり所の中身を取りに行く */
+	g_bProcShopLeaveOK = FALSE;
+	SendCmdLEAVEITEMGET ((DWORD)-1);
 	g_bProcShopConfirm = FALSE;
 
 	PSHOPINFO pShop = &g_pMapInfo->pShopInfo[g_nProcShopID];
@@ -903,7 +910,7 @@ PWNDINFO MakeWindowSHOP_SELL(void)
 	if (nLen % 2) {
 		nLen ++;
 	}
-	pWnd->nData2 = nCount;
+	pWnd->nData2 = min (nCount, LISTROWS_MAX);						/* 10行を超える分はスクロール */
 	pWnd->nX = 32 + 16 * 5;
 	pWnd->nY = 50 + 16 * 5;
 	pWnd->nCx = (16 * 4) + (nLen * 8);
@@ -965,6 +972,8 @@ PWNDINFO MakeWindowSHOPSELL(int nNo)
 
 	g_nProcShopID = nNo;
 	g_bProcShopConfirm = FALSE;
+	g_bProcShopLeaveOK = FALSE;
+	SendCmdLEAVEITEMGET ((DWORD)-1);
 
 	PWNDINFO pWnd = MakeWindowSHOP_BUY (SHOPMSG_BUY);
 	pWnd->nType = WNDTYPE_SHOPSELL;
@@ -1448,7 +1457,7 @@ PWNDINFO MakeWindowLEAVE_ITEM(void)
 	if (nLen % 2) {
 		nLen ++;
 	}
-	pWnd->nData2 = nCount;
+	pWnd->nData2 = min (nCount, LISTROWS_MAX);						/* 10行を超える分はスクロール */
 	pWnd->nX = 32 + 16 * 5;
 	pWnd->nY = 50 + 16 * 5;
 	pWnd->nCx = (16 * 4) + (nLen * 8);
@@ -1497,12 +1506,7 @@ PWNDINFO MakeWindowLEAVE_ITEMGET(void)
 	/* 手放した後などで作り直す時は、前に選んでいた辺りにカーソルを合わせる */
 	if ((g_nLeaveListPos >= 0) && (g_pLeaveInfo->byCount > 0)) {
 		int nPos = min (g_nLeaveListPos, (int)g_pLeaveInfo->byCount - 1);
-		int nTop = 0;
-		if (g_pLeaveInfo->byCount > 10) {
-			nTop = max (0, min (nPos - 5, (int)g_pLeaveInfo->byCount - 10));
-		}
-		pWnd->byData1 = (BYTE)nTop;
-		pWnd->nData1 = nPos - nTop;
+		ListScrollFitMargin (pWnd, nPos, (int)g_pLeaveInfo->byCount, LISTSCROLL_MARGIN);
 	}
 	g_nLeaveListPos = -1;
 
@@ -1928,7 +1932,7 @@ PWNDINFO MakeWindowTRADE(DWORD dwTblID)
 	pWnd->pDib = new CImg32;
 	pWnd->nData2 = 3;
 	pWnd->nX = 32;
-	pWnd->nY = 50 + 16 * 2;
+	pWnd->nY = 0;										/* 並べる品は両側20個まで。432ドットの高さが画面(480)に収まるよう一番上に置く */
 	pWnd->nCx = (16 * 4) + (16 * 22);
 	pWnd->nCy = 16 * (2 + 5 + MAX_MYITEM);
 	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
@@ -1969,7 +1973,7 @@ PWNDINFO MakeWindowTRADEITEM(void)
 	if (nLen % 2) {
 		nLen ++;
 	}
-	pWnd->nData2 = nCount;
+	pWnd->nData2 = min (nCount, LISTROWS_MAX);						/* 10行を超える分はスクロール */
 	pWnd->nX = 32 + 16 * 5;
 	pWnd->nY = 50 + 16 * 5;
 	pWnd->nCx = (16 * 4) + (nLen * 8);
@@ -3153,7 +3157,8 @@ void UpdateWindowITEMINFOList(PWNDINFO pWndList)
 			nItemID = g_pLeaveInfo->waItem[nNo];
 		}
 	} else {
-		/* 自分の持ち物の一覧 */
+		/* 自分の持ち物の一覧（byData1 だけスクロールしている） */
+		nNo += pWndList->byData1;
 		if ((g_nMyCharID >= 0) && (g_nMyCharID < g_aCharInfo.GetSize ()) && (nNo >= 0) && (nNo < MAX_MYITEM)) {
 			pChar = g_aCharInfo[g_nMyCharID];
 			nItemID = pChar->waItem[nNo];
@@ -3419,6 +3424,67 @@ DWORD MakerStateHash(int nMaker)
 	}
 #undef MAKER_MIX
 	return dw;
+}
+
+/* ========================================================================= */
+/* 関数名：ListScrollFitMargin												 */
+/* 内容：一覧のカーソルとスクロールを、上下に余白を残して整える				 */
+/*       byData1=先頭の番号、nData1=窓内のカーソル行、nData2=窓の行数		 */
+/*       カーソルが窓の端から nMargin 行以内に来たら一覧を1行ずらす。		 */
+/*       先頭・末尾まで来て、ずらせない時はカーソルだけが動く				 */
+/* ========================================================================= */
+int ListScrollTop(int nTop, int nIndex, int nCount, int nRows, int nMargin)
+{
+	/* 窓が小さい時は余白を詰める */
+	nRows = max (nRows, 1);
+	nMargin = min (nMargin, (nRows - 1) / 2);
+	if (nIndex < nTop + nMargin) {
+		nTop = nIndex - nMargin;
+	}
+	if (nIndex > nTop + nRows - 1 - nMargin) {
+		nTop = nIndex - (nRows - 1 - nMargin);
+	}
+	return max (min (nTop, nCount - nRows), 0);
+}
+
+void ListScrollFitMargin(PWNDINFO pWndList, int nIndex, int nCount, int nMargin)
+{
+	int nTop;
+
+	if (nIndex >= nCount) {
+		nIndex = nCount - 1;
+	}
+	if (nIndex < 0) {
+		nIndex = 0;
+	}
+	nTop = ListScrollTop ((int)pWndList->byData1, nIndex, nCount, pWndList->nData2, nMargin);
+	pWndList->byData1 = (BYTE)nTop;
+	pWndList->nData1 = nIndex - nTop;
+}
+
+/* ========================================================================= */
+/* 関数名：ListScrollKey													 */
+/* 内容：一覧の上下左右キーの処理（余白付きスクロール）					 */
+/*       ←で先頭、→で末尾。動かしたら TRUE									 */
+/* ========================================================================= */
+BOOL ListScrollKey(PWNDINFO pWndList, BYTE byCode, int nCount)
+{
+	int nIndex = (int)pWndList->byData1 + pWndList->nData1;
+	int nIndexNew = nIndex;
+
+	if ((byCode == VK_UP) && (nIndex > 0)) {
+		nIndexNew = nIndex - 1;
+	} else if ((byCode == VK_DOWN) && (nIndex < nCount - 1)) {
+		nIndexNew = nIndex + 1;
+	} else if (byCode == VK_LEFT) {
+		nIndexNew = 0;
+	} else if (byCode == VK_RIGHT) {
+		nIndexNew = max (nCount - 1, 0);
+	} else {
+		return FALSE;
+	}
+	ListScrollFitMargin (pWndList, nIndexNew, nCount, LISTSCROLL_MARGIN);
+	return TRUE;
 }
 
 /* ========================================================================= */

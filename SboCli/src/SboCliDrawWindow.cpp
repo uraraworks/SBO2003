@@ -1235,14 +1235,19 @@ void DrawWindowCOMMANDITEM(PWNDINFO pWnd)
 	char szTmp[128];
 	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
 	int i, nEquNo = -1, nCount = GetItemCount (g_nMyCharID);
-	for (i = 0; i < nCount; i ++) {
-		PITEMINFO pItem = g_aItemInfo[pChar->waItem[i]];
+	/* 手持ちは byData1 から窓の行数ぶんだけ描く（10行を超える分はスクロール） */
+	for (i = 0; i < pWnd->nData2; i ++) {
+		int nNo = pWnd->byData1 + i;
+		if (nNo >= nCount) {
+			break;
+		}
+		PITEMINFO pItem = g_aItemInfo[pChar->waItem[nNo]];
 		wsprintf (szTmp, "%s", pItem->szName);
 		TextOut2 (hDC, 32, 16 + i * 16, szTmp,
-				((pWnd->dwData != 0) && ((int)pWnd->dwData - 1 == i)) ? RGB (255, 255, 0) : RGB (255, 255, 255));
+				((pWnd->dwData != 0) && ((int)pWnd->dwData - 1 == nNo)) ? RGB (255, 255, 0) : RGB (255, 255, 255));
 
 		for (int j = 0; j < 10; j ++) {
-			if (pChar->waEqu[j] == i) {
+			if (pChar->waEqu[j] == nNo) {
 				nEquNo = 16 + i * 16;
 				pWnd->pDib->Blt (16, nEquNo, 8, 16, g_pDibSystem, 64, 16, TRUE);
 			}
@@ -1448,13 +1453,18 @@ void DrawWindowSHOP_SELL(PWNDINFO pWnd)
 	char szTmp[128];
 	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
 	int i, nEquNo = -1, nCount = GetItemCount (g_nMyCharID);
-	for (i = 0; i < nCount; i ++) {
-		PITEMINFO pItem = g_aItemInfo[pChar->waItem[i]];
+	/* 手持ちは byData1 から窓の行数ぶんだけ描く（10行を超える分はスクロール） */
+	for (i = 0; i < pWnd->nData2; i ++) {
+		int nNo = pWnd->byData1 + i;
+		if (nNo >= nCount) {
+			break;
+		}
+		PITEMINFO pItem = g_aItemInfo[pChar->waItem[nNo]];
 		wsprintf (szTmp, "%s", pItem->szName);
 		TextOut2 (hDC, 32, 16 + i * 16, szTmp, RGB (255, 255, 255));
 
 		for (int j = 0; j < 10; j ++) {
-			if (pChar->waEqu[j] == i) {
+			if (pChar->waEqu[j] == nNo) {
 				nEquNo = 16 + i * 16;
 				pWnd->pDib->Blt (16, nEquNo, 8, 16, g_pDibSystem, 64, 16, TRUE);
 			}
@@ -2472,13 +2482,18 @@ void DrawWindowLEAVE_ITEM(PWNDINFO pWnd)
 	char szTmp[128];
 	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
 	int i, nEquNo = -1, nCount = GetItemCount (g_nMyCharID);
-	for (i = 0; i < nCount; i ++) {
-		PITEMINFO pItem = g_aItemInfo[pChar->waItem[i]];
+	/* 手持ちは byData1 から窓の行数ぶんだけ描く（10行を超える分はスクロール） */
+	for (i = 0; i < pWnd->nData2; i ++) {
+		int nNo = pWnd->byData1 + i;
+		if (nNo >= nCount) {
+			break;
+		}
+		PITEMINFO pItem = g_aItemInfo[pChar->waItem[nNo]];
 		wsprintf (szTmp, "%s", pItem->szName);
 		TextOut2 (hDC, 32, 16 + i * 16, szTmp, RGB (255, 255, 255));
 
 		for (int j = 0; j < 10; j ++) {
-			if (pChar->waEqu[j] == i) {
+			if (pChar->waEqu[j] == nNo) {
 				nEquNo = 16 + i * 16;
 				pWnd->pDib->Blt (16, nEquNo, 8, 16, g_pDibSystem, 64, 16, TRUE);
 			}
@@ -2832,19 +2847,24 @@ void DrawWindowTRADEITEM(PWNDINFO pWnd)
 	char szTmp[128];
 	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
 	int i, j, nEquNo = -1, nCount = GetItemCount (g_nMyCharID);
-	for (i = 0; i < nCount; i ++) {
-		PITEMINFO pItem = g_aItemInfo[pChar->waItem[i]];
+	/* 手持ちは byData1 から窓の行数ぶんだけ描く（10行を超える分はスクロール） */
+	for (i = 0; i < pWnd->nData2; i ++) {
+		int nNo = pWnd->byData1 + i;
+		if (nNo >= nCount) {
+			break;
+		}
+		PITEMINFO pItem = g_aItemInfo[pChar->waItem[nNo]];
 		wsprintf (szTmp, "%s", pItem->szName);
 		COLORREF cl = RGB (255, 255, 255);
 		for (j = 0; j < MAX_MYITEM; j ++) {
-			if (i == g_pTradeInfo->waItem1[j]) {
+			if (nNo == g_pTradeInfo->waItem1[j]) {
 				cl = RGB (128, 128, 128);
 			}
 		}
 		TextOut2 (hDC, 32, 16 + i * 16, szTmp, cl);
 
 		for (int j = 0; j < 10; j ++) {
-			if (pChar->waEqu[j] == i) {
+			if (pChar->waEqu[j] == nNo) {
 				nEquNo = 16 + i * 16;
 				pWnd->pDib->Blt (16, nEquNo, 8, 16, g_pDibSystem, 64, 16, TRUE);
 			}
@@ -4486,6 +4506,50 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 			nCyNew = max (nCyNew, ITEMINFO_CY);
 		}
 	}
+	/* 性別限定の装備品は「性別：」の行を足す（「装備：」の次の行）ので1行分広げる */
+	BOOL bSexLine = FALSE;
+	PCHARINFO pCharSex = ((g_nMyCharID >= 0) && (g_nMyCharID < g_aCharInfo.GetSize ())) ? g_aCharInfo[g_nMyCharID] : NULL;
+	if (pCharSex && pItem->pData && (pItem->bySexDistinction != SEXDISTINCTION_ALL) &&
+		((pItem->byType == ITEMTYPE_WEAPON) || (pItem->byType == ITEMTYPE_ARMOR) ||
+		 (pItem->byType == ITEMTYPE_SHILD) || (pItem->byType == ITEMTYPE_HELMET) ||
+		 (pItem->byType == ITEMTYPE_EQU_HAND) || (pItem->byType == ITEMTYPE_EQU_LEG) ||
+		 (pItem->byType == ITEMTYPE_EQU_ACC1) || (pItem->byType == ITEMTYPE_EQU_ACC2) ||
+		 (pItem->byType == ITEMTYPE_EQU_ACC3))) {
+		bSexLine = TRUE;
+		nCyNew += ITEMINFO_LINE;
+		nCyNew = (nCyNew + 15) / 16 * 16;
+	}
+	/* お店の買う一覧から出ている時は、手持ち・預かり所の数の行を本体の一番下に足す */
+	BOOL bShopLine = FALSE;
+	int nShopRow = 0, nHaveHand = 0, nHaveLeave = 0;
+	if (pWnd->nType2 != ITEMINFOPOS_LIST) {
+		for (int w = 0; w < g_WndInfo.GetSize (); w ++) {
+			PWNDINFO pWndShop = g_WndInfo[w];
+			if (((pWndShop->nType == WNDTYPE_SHOP) || (pWndShop->nType == WNDTYPE_SHOPSELL)) && (pWndShop->pWndTmp == (void *)pWnd)) {
+				bShopLine = TRUE;
+				break;
+			}
+		}
+	}
+	if (bShopLine) {
+		nShopRow = (nCyNew - 16 * 2) / ITEMINFO_LINE;
+		nCyNew += ITEMINFO_LINE;
+		nCyNew = (nCyNew + 15) / 16 * 16;
+		if (pCharSex) {
+			for (int h = 0; h < MAX_MYITEM; h ++) {
+				if (pCharSex->waItem[h] == (WORD)pWnd->nData1) {
+					nHaveHand ++;
+				}
+			}
+		}
+		if (g_bProcShopLeaveOK && g_pLeaveInfo) {
+			for (int h = 0; (h < (int)g_pLeaveInfo->byCount) && (h < MAX_LEAVEITEM); h ++) {
+				if (g_pLeaveInfo->waItem[h] == (WORD)pWnd->nData1) {
+					nHaveLeave += g_pLeaveInfo->byItemCount[h];
+				}
+			}
+		}
+	}
 	/* 作り手の一覧の横：本体の下に足す欄の分だけ広げる */
 	int nFooterTop = nCyNew - 16;
 	if (pRecipe) {
@@ -4665,7 +4729,29 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 		TextOut2 (hDC, 16 + ITEMINFO_LINE * nLen, 16 + ITEMINFO_LINE * 2, szTmp, RGB (150, 255, 200));
 		TextOut2 (hDC, 16, 16 + ITEMINFO_LINE * 3, "装備：", RGB (200, 200, 200));
 		wsprintf (szTmp, "%s", g_aEquUserInfo[wEqu]);
-		TextOut2 (hDC, 16 + ITEMINFO_LINE * 3, 16 + ITEMINFO_LINE * 3, szTmp, RGB (150, 255, 200));
+		/* 今の職業で装備できない時は赤（転職すれば使えるので注意だけ） */
+		BOOL bJobOk = (pCharSex == NULL) || (wEqu >= g_aEquUserInfo.GetSize ()) || CheckEquUserInfo (wEqu, pCharSex->byJOB);
+		TextOut2 (hDC, 16 + ITEMINFO_LINE * 3, 16 + ITEMINFO_LINE * 3, szTmp,
+			bJobOk ? RGB (150, 255, 200) : RGB (255, 130, 130));
+		/* 性別限定：装備できる時は他の値と同じ色、できない時は赤 */
+		if (bSexLine) {
+			BOOL bOk = CheckItemSexDistinction (pItem, pCharSex);
+			TextOut2 (hDC, 16, 16 + ITEMINFO_LINE * 4, "性別：", RGB (200, 200, 200));
+			strcpy (szTmp, (pItem->bySexDistinction == SEXDISTINCTION_FEMALE) ? "女性のみ" : "男性のみ");
+			TextOut2 (hDC, 16 + ITEMINFO_LINE * 3, 16 + ITEMINFO_LINE * 4, szTmp,
+				bOk ? RGB (150, 255, 200) : RGB (255, 130, 130));
+		}
+	}
+
+	/* お店の買う一覧：持っている数（手持ち・預かり所。預かり所は届くまで「?」） */
+	if (bShopLine) {
+		TextOut2 (hDC, 16, 16 + ITEMINFO_LINE * nShopRow, "所持：", RGB (200, 200, 200));
+		if (g_bProcShopLeaveOK && g_pLeaveInfo) {
+			wsprintf (szTmp, "手持ち%d 預かり%d", nHaveHand, nHaveLeave);
+		} else {
+			wsprintf (szTmp, "手持ち%d 預かり?", nHaveHand);
+		}
+		TextOut2 (hDC, 16 + ITEMINFO_LINE * 3, 16 + ITEMINFO_LINE * nShopRow, szTmp, RGB (150, 255, 200));
 	}
 
 	/* 特技の書：覚える特技と説明 */

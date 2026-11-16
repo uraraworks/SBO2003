@@ -45,7 +45,7 @@
 #define MAX_MAGICNAME		64										/* 魔法名の欄のバイト数（終端含む） */
 #define MAX_MAGICEXPLAIN	512										/* 魔法説明文の欄のバイト数（終端含む） */
 #define MAX_COMEFC			99										/* 最大吹き出し種類 */
-#define MAX_MYITEM			10										/* 最大所持アイテム */
+#define MAX_MYITEM			20										/* 最大所持アイテム */
 #define MAX_SHOPITEM		10										/* 最大売り物数 */
 #define MAX_SHOPMSG			12										/* メッセージ数 */
 #define MAX_LENCHAREFC		32										/* 文字エフェクトの欄のバイト数（終端含む） */

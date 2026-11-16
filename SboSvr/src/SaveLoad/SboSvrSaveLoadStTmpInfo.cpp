@@ -364,8 +364,9 @@ BOOL LoadStTmpInfo(void)
 	BOOL bRet;
 	PBYTE pData;
 	HANDLE hFile;
-	DWORD i, j, dwSize, dwBytes, dwOffset, dwDataCount, dwColumnCount;
+	DWORD i, j, dwSize, dwBytes, dwOffset, dwDataCount, dwColumnCount, dwItemCount, dwItemOffset;
 	CmyArray<HEADERINFO, HEADERINFO>aHeaderInfo;
+	CmyArray<DWORD, DWORD>adwAllOffset;
 
 	/* ファイル名の作成 */
 	GetModuleFileName (NULL, szFileName, MAX_PATH);
@@ -376,6 +377,8 @@ BOOL LoadStTmpInfo(void)
 		}
 	}
 	strcat (szFileName, "SBODATA\\SboDataStTmpInfo.dat");
+	dwItemCount = 10;		/* 所持アイテム列の1件あたりの個数（古いデータは10個） */
+	dwItemOffset = 0;
 
 
 	/*************************
@@ -428,6 +431,10 @@ BOOL LoadStTmpInfo(void)
 
 		CopyMemory (&Info.dwOffset, &pData[dwOffset], sizeof (Info.dwOffset));
 		dwOffset += sizeof (Info.dwOffset);
+		adwAllOffset.Add (Info.dwOffset);
+		if (strcmp (Info.szName, "waItem") == 0) {
+			dwItemOffset = Info.dwOffset;
+		}
 
 		bTmp = FALSE;
 		for (j = 0;  ; j ++) {
@@ -458,6 +465,20 @@ BOOL LoadStTmpInfo(void)
 		pInfo = new STATUSTEMPLATEINFO;
 		ZeroMemory (pInfo, sizeof (STATUSTEMPLATEINFO));
 		g_aStTmpInfo.Add (pInfo);
+	}
+
+	/* 所持アイテム列の幅は次の列の位置から求める（保存時の所持数が今と違っても読めるように） */
+	if (dwDataCount > 0) {
+		DWORD dwNext = dwSize;
+
+		for (i = 0; i < (DWORD)adwAllOffset.GetSize (); i ++) {
+			if ((adwAllOffset[i] > dwItemOffset) && (adwAllOffset[i] < dwNext)) {
+				dwNext = adwAllOffset[i];
+			}
+		}
+		if (dwItemOffset && (dwNext > dwItemOffset)) {
+			dwItemCount = (dwNext - dwItemOffset) / dwDataCount / sizeof (WORD);
+		}
 	}
 
 	dwColumnCount = aHeaderInfo.GetSize ();
@@ -562,8 +583,8 @@ BOOL LoadStTmpInfo(void)
 				dwOffsetTmp += sizeof (pInfo->wDFMagic);
 
 			} else if (strcmp (aHeaderInfo[i].szName, s_aszName[23]) == 0) {			/* 所持アイテム */
-				CopyMemory (&pInfo->waItem, &pData[dwOffsetTmp], sizeof (pInfo->waItem));
-				dwOffsetTmp += sizeof (pInfo->waItem);
+				CopyMemory (&pInfo->waItem, &pData[dwOffsetTmp], min (dwItemCount, (DWORD)MAX_MYITEM) * sizeof (WORD));
+				dwOffsetTmp += dwItemCount * sizeof (WORD);
 
 			} else if (strcmp (aHeaderInfo[i].szName, s_aszName[24]) == 0) {			/* 所持金 */
 				CopyMemory (&pInfo->dwGold, &pData[dwOffsetTmp], sizeof (pInfo->dwGold));
