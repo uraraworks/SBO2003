@@ -6027,6 +6027,76 @@ BOOL TailChaseIsActive(PCHARINFO pChar)
 
 
 /* ========================================================================= */
+/* 関数名：	TailReturnHeadOf												 */
+/* 内容：	その人が列を離れて戻る途中なら、戻り先の先頭(テーブルID)を返す	 */
+/*			(離れている・追いかけ中のどちらでもない時は -1)					 */
+/* ========================================================================= */
+
+static DWORD TailReturnHeadOf(PCHARINFO pChar)
+{
+	std::map<DWORD, TAILRETURN>::iterator it = s_mapTailReturn.find (pChar->dwTblID);
+	if ((it != s_mapTailReturn.end ()) && (it->second.dwPID == pChar->pID)) {
+		return it->second.dwHeadTblID;
+	}
+	std::map<DWORD, TAILCHASE>::iterator itChase = s_mapTailChase.find (pChar->dwTblID);
+	if ((itChase != s_mapTailChase.end ()) && (itChase->second.Info.dwPID == pChar->pID)) {
+		return itChase->second.Info.dwHeadTblID;
+	}
+	return (DWORD)-1;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	TailIsScattered													 */
+/* 内容：	その人の列が戦闘でばらけている途中か							 */
+/*			(その人自身が列を離れている・追いかけ中、または同じ列の先頭を	 */
+/*			戻り先に覚えている人がいる)。ばらけている間にほかの人が入ると、	 */
+/*			戻る人が戻れなくなったり順番が変わったりするので入れないようにする	 */
+/*			dwExceptHead: この先頭の列なら除く(元の列の人が自分で入り直す時)	 */
+/* ========================================================================= */
+
+static BOOL TailIsScattered(PCHARINFO pTarget, DWORD dwExceptHead)
+{
+	int i;
+	DWORD dwCount = (DWORD)g_aCharInfo.GetSize ();
+	PCHARINFO pHead;
+
+	if (s_mapTailReturn.empty () && s_mapTailChase.empty ()) {
+		return FALSE;
+	}
+	/* 相手自身が列を離れている・戻る途中 */
+	if (TailReturnHeadOf (pTarget) != (DWORD)-1) {
+		return TRUE;
+	}
+	/* 相手の列の先頭をたどる */
+	pHead = pTarget;
+	for (i = 0; i < 100; i ++) {
+		if ((pHead->dwTailTblID == (DWORD)-1) || (pHead->dwTailTblID >= dwCount)) {
+			break;
+		}
+		pHead = g_aCharInfo[pHead->dwTailTblID];
+	}
+	if (pHead->dwTblID == dwExceptHead) {
+		return FALSE;
+	}
+	/* その先頭を戻り先に覚えている人がいる？ */
+	std::map<DWORD, TAILRETURN>::iterator it;
+	for (it = s_mapTailReturn.begin (); it != s_mapTailReturn.end (); ++ it) {
+		if ((it->second.dwHeadTblID == pHead->dwTblID) && (it->second.dwHeadPID == pHead->pID)) {
+			return TRUE;
+		}
+	}
+	std::map<DWORD, TAILCHASE>::iterator itChase;
+	for (itChase = s_mapTailChase.begin (); itChase != s_mapTailChase.end (); ++ itChase) {
+		if ((itChase->second.Info.dwHeadTblID == pHead->dwTblID) && (itChase->second.Info.dwHeadPID == pHead->pID)) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+
+/* ========================================================================= */
 /* 関数名：	TailChaseCancel													 */
 /* 内容：	追いかけをやめる(本人のクライアントを動けるように戻す)			 */
 /*			bRestore=TRUE で、消えている最中なら本人もほかの人も元に戻す		 */
@@ -6087,6 +6157,8 @@ static void TailChaseLink(PCHARINFO pChar, PCHARINFO pEnd)
 	CCHAR_TAIL Packet;
 
 	s_mapTailChase.erase (pChar->dwTblID);
+	/* 追いかけている間に後ろについた傭兵は外す（列の最後へ入り直す） */
+	MercenaryTailOffBack (pChar);
 	pChar->dwTailTblID		= pEnd->dwTblID;
 	pEnd->dwTailBackTblID	= pChar->dwTblID;
 	Packet.Make (pChar->dwTblID, pEnd->dwTblID, CHAR_TAIL_RETURN);
@@ -6362,6 +6434,9 @@ static void TailReturnDo(PCHARINFO pChar, const TAILRETURN &Info)
 	TAILCHASE Chase;
 	int nDX, nDY, nDist;
 
+	/* 列を離れている間に自分の傭兵が後ろについてきていたら、先に外す
+	   （残っていると「後ろに人がいる」扱いで戻れなかった。傭兵は戻った後に列の最後へ入り直す） */
+	MercenaryTailOffBack (pChar);
 	if ((pChar->dwTailTblID == (DWORD)-1) && (pChar->dwTailBackTblID == (DWORD)-1) &&
 		(pChar->byCharState != CHARSTATE_DEAD) && (pChar->wHP != 0) && !TailChaseIsActive (pChar)) {
 		bTarget = TailChaseTarget (pChar, Info, pTarget, bPending);
@@ -11549,6 +11624,7 @@ void RecvDataProcMAIN_CHAR_TAIL(PBYTE pData, DWORD dwDataSize)
 	BOOL bResult;
 	PCHARINFO pChar, pCharTarget;
 	CCHAR_TAIL Packet;
+	DWORD dwMyHead;
 
 	pChar = pCharTarget = NULL;
 
@@ -11570,6 +11646,8 @@ void RecvDataProcMAIN_CHAR_TAIL(PBYTE pData, DWORD dwDataSize)
 		svrSock.SendTo (pChar->pID, Packet.Get (), Packet.GetSize ());
 		goto Exit;
 	}
+	/* 自分が元いた列(戦闘でばらけた列)には、自分で入り直せるように覚えておく */
+	dwMyHead = TailReturnHeadOf (pChar);
 	/* 自分でZを押したら、戦闘で列を離れた時の戻り先は忘れる */
 	TailReturnForget (pChar->dwTblID);
 	/* 誰かについていっている？ */
@@ -11587,6 +11665,35 @@ void RecvDataProcMAIN_CHAR_TAIL(PBYTE pData, DWORD dwDataSize)
 		bResult = IsTail (pChar, pCharTarget);
 		if (bResult == FALSE) {
 			Packet.Make (pChar->dwTblID, -1, CHAR_TAIL_NG2);
+			svrSock.SendTo (pChar->pID, Packet.Get (), Packet.GetSize ());
+			goto Exit;
+		}
+		/* 傭兵には直接ついていかない。傭兵の前にいる人(雇い主の列のプレイヤー)に
+		   ついていき、傭兵は列の最後へ回ってもらう（傭兵は戦いで列を出入りするので、
+		   傭兵の後ろにつくと列が切れたりつなぎ直しが重なったりしていた） */
+		if (IsMercenary (pCharTarget)) {
+			PCHARINFO pFront = pCharTarget;
+			int i;
+			for (i = 0; i < 100; i ++) {
+				if ((pFront->dwTailTblID == (DWORD)-1) || (pFront->dwTailTblID >= (DWORD)g_aCharInfo.GetSize ())) {
+					pFront = NULL;
+					break;
+				}
+				pFront = g_aCharInfo[pFront->dwTailTblID];
+				if (!IsMercenary (pFront)) {
+					break;
+				}
+			}
+			if ((pFront == NULL) || IsMercenary (pFront) || (pFront == pChar)) {
+				Packet.Make (pChar->dwTblID, -1, CHAR_TAIL_NG2);
+				svrSock.SendTo (pChar->pID, Packet.Get (), Packet.GetSize ());
+				goto Exit;
+			}
+			pCharTarget = pFront;
+		}
+		/* 戦闘でばらけている列(と、その列を離れている人)には入れない */
+		if (TailIsScattered (pCharTarget, dwMyHead)) {
+			Packet.Make (pChar->dwTblID, pCharTarget->dwTblID, CHAR_TAIL_NG3);
 			svrSock.SendTo (pChar->pID, Packet.Get (), Packet.GetSize ());
 			goto Exit;
 		}
