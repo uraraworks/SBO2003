@@ -1281,42 +1281,6 @@
 	a.sbo-link {
 		display: inline-block;
 	}
-	/* ログイン画面の「もうすぐ再起動」のお知らせ（予告の後に来た人向け。ゲーム画面の上端に重ねる） */
-	#sbo-restart-note {
-		display: none;
-		position: absolute;
-		left: 8px; right: 8px; top: 8px;
-		z-index: 60;
-		padding: 8px 12px;
-		border: 1px solid #f0b84a;
-		border-radius: 8px;
-		background: rgba(60, 40, 8, 0.94);
-		color: #ffe7b0;
-		font-size: 13px;
-		line-height: 1.5;
-		text-align: left;
-		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
-		pointer-events: none;
-	}
-	#sbo-restart-note.sbo-show {
-		display: block;
-	}
-	/* お知らせを出している間は、ログインのボタンの画面を少し下げて重ならないようにする */
-	body.sbo-restart-on #sbo-quick {
-		padding-top: 96px;
-		box-sizing: border-box;
-	}
-	#sbo-restart-note strong {
-		display: block;
-		color: #ffd27a;
-		font-size: 14px;
-	}
-	#sbo-restart-note small {
-		display: block;
-		margin-top: 2px;
-		color: #e8cf9a;
-		font-size: 12px;
-	}
 	#sbo-forgot, #sbo-quick-return {
 		display: none;
 		font-size: 13px;
@@ -1967,8 +1931,6 @@
 		<button type="button" id="sbo-shot-pad" title="スクリーンショット"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-camera"/></svg><span class="sbo-pad-txt">スクショ</span></button>
 		<button type="button" id="sbo-rec-pad" title="ゲーム画面を動画で録画"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-video"/></svg><span class="sbo-pad-txt">録画</span></button>
 		<div id="sbo-rec-badge">REC <span id="sbo-rec-time">0:00</span></div>
-		<!-- 再起動の予告の後にログイン画面へ来た人に「もうすぐ再起動」を知らせる（/health の restartNotice） -->
-		<div id="sbo-restart-note" role="status" aria-live="polite"></div>
 		<!-- ログイン画面のボタン。ID・パスワードの入力欄は「ID・パスワードでログイン」を押した時だけ見せる -->
 		<div id="sbo-quick" data-sbo-ui="1">
 			<!-- この端末で前にログインしていた -->
@@ -2059,73 +2021,6 @@
 		}
 		update();
 		setInterval(update, 60000);
-	})();
-	/* ログイン画面にいる間、サーバーが再起動を予告中なら「もうすぐ再起動」を出す
-	   （予告はゲームにいた人にしか届かないので、後から来た人が急に切断されて驚かないように。
-	   予告の中身は /health の restartNotice。server/node/sbosvr_net.js が覚え、15 分で忘れる。
-	   ログインした後は、サーバーがゲームの中でも同じ予告を本人に流す） */
-	(function () {
-		var note = document.getElementById('sbo-restart-note');
-		if (!note || location.protocol.indexOf('http') !== 0) {
-			return;
-		}
-		var FETCH_MS = 15000;		/* ログイン画面にいる間に問い合わせる間隔 */
-		var data = null;			/* { lines, agoSec } と、受け取った時刻 tmGot */
-		var tmFetch = 0;
-		var bFetching = false;
-		function loginState() {
-			var fn = window.Module && window.Module['_SboWebLoginState'];
-			return typeof fn === 'function' ? fn() : 0;
-		}
-		function fetchNotice() {
-			bFetching = true;
-			tmFetch = Date.now();
-			fetch('/health', { cache: 'no-store' }).then(function (res) {
-				return res.ok ? res.json() : null;
-			}).then(function (json) {
-				var n = json && json.restartNotice;
-				data = (n && Array.isArray(n.lines) && n.lines.length) ?
-					{ lines: n.lines, agoSec: n.agoSec || 0, tmGot: Date.now() } : null;
-			}).catch(function () {
-				/* つながらない時（再起動中など）は出したままにしない */
-				data = null;
-			}).then(function () {
-				bFetching = false;
-				render();
-			});
-		}
-		var strShown = '';
-		function render() {
-			var bShow = loginState() === 1 && !!data;
-			if (bShow) {
-				var nMin = Math.floor((data.agoSec + (Date.now() - data.tmGot) / 1000) / 60);
-				var strAgo = nMin < 1 ? 'ついさっき' : '約' + nMin + '分前';
-				var strSig = data.lines.join('\n') + '|' + strAgo;
-				if (strSig !== strShown) {
-					strShown = strSig;
-					note.textContent = '';
-					var head = document.createElement('strong');
-					head.textContent = '⚠ もうすぐサーバーが再起動します';
-					note.appendChild(head);
-					data.lines.forEach(function (strLine) {
-						var line = document.createElement('div');
-						line.textContent = strLine;
-						note.appendChild(line);
-					});
-					var tail = document.createElement('small');
-					tail.textContent = '（' + strAgo + 'のお知らせ）今ログインすると、すぐに切断されることがあります。再起動が終わってから入るのがおすすめです。';
-					note.appendChild(tail);
-				}
-			}
-			note.classList.toggle('sbo-show', bShow);
-			document.body.classList.toggle('sbo-restart-on', bShow);
-		}
-		setInterval(function () {
-			if (loginState() === 1 && !bFetching && Date.now() - tmFetch >= FETCH_MS) {
-				fetchNotice();
-			}
-			render();
-		}, 1000);
 	})();
 	/* 「更新履歴」に、前に /changes を見た時より新しい項目があれば NEW を付ける
 	   （見た日付は web/changes/changes.html が localStorage の sbo_changes_seen に覚える） */

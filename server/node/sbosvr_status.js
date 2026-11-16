@@ -10,8 +10,6 @@
  * HTTP（GET。sbosvr_net.js がここへ回す。どちらも別のサイトから読めるよう CORS を許す）
  *   /health      → {"status":"ok","onlinePlayers":N}
  *                  SBOP2 の /health と同じ形。デプロイの確認（"ok" が含まれるか）にも使う。
- *                  再起動を予告中なら restartNotice: {lines:[文...], agoSec:予告からの秒数} も付ける
- *                  （ログイン画面に「もうすぐ再起動」を出すのに使う。予告は sbosvr_net.js が覚える）
  *   /api/status  → サーバー状況の詳しい値（サーバー状況ページ status.html が読む）
  *
  * 直近 24 時間の記録は 1 時間ごとの最大人数で、SBODATA/SboWebStatus.json に保存する
@@ -141,21 +139,6 @@ Module['sboStatus'] = (function () {
 		};
 	}
 
-	/* 覚えている再起動の予告（古くなったら忘れる。C 側の LOGIN_NOTICE_KEEP_MS と同じ 15 分） */
-	var RESTART_NOTICE_KEEP_MS = 15 * 60 * 1000;
-	function restartNotice() {
-		var n = Module['sboRestartNotice'];
-		if (!n) {
-			return null;
-		}
-		var nAgo = Date.now() - n.at;
-		if (nAgo >= RESTART_NOTICE_KEEP_MS) {
-			Module['sboRestartNotice'] = null;
-			return null;
-		}
-		return { lines: n.lines, agoSec: Math.floor(nAgo / 1000) };
-	}
-
 	function reply(res, status, obj, method) {
 		var body = JSON.stringify(obj);
 		res.writeHead(status, {
@@ -181,12 +164,7 @@ Module['sboStatus'] = (function () {
 			return true;
 		}
 		if (url === '/health') {
-			var obj = { status: 'ok', onlinePlayers: st.online };
-			var notice = restartNotice();
-			if (notice) {
-				obj.restartNotice = notice;
-			}
-			reply(res, 200, obj, req.method);
+			reply(res, 200, { status: 'ok', onlinePlayers: st.online }, req.method);
 			return true;
 		}
 		try {
