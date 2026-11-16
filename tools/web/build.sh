@@ -235,4 +235,9 @@ cp "$ROOT/web/changes/changes.json" "$DIST/changes-seed.json"
 sed "s/@@SBO_BUILD_DATE@@/$BUILD_DATE/g; s/@@SBO_BUILD_COMMIT@@/$BUILD_COMMIT/g" "$ROOT/web/credits/credits.html" > "$DIST/credits.html"
 cp "$ROOT/web/credits/credits.json" "$DIST/credits.json"
 
+# 紹介ページ（/about。はじめての人向け。スクショは /about/ に置く）
+sed "s/@@SBO_BUILD_DATE@@/$BUILD_DATE/g; s/@@SBO_BUILD_COMMIT@@/$BUILD_COMMIT/g" "$ROOT/web/about/about.html" > "$DIST/about.html"
+mkdir -p "$DIST/about"
+cp "$ROOT"/web/about/img/*.png "$DIST/about/"
+
 echo "[build] 完了: $DIST/sbocli.html"

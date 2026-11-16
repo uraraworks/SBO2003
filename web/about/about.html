@@ -1,0 +1,734 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>スクラップブックオンラインとは｜ブラウザで遊べる2DオンラインRPG</title>
+<meta name="description" content="2003年に生まれた個人制作の2DオンラインRPG「スクラップブックオンライン」が、ブラウザで遊べるようになって帰ってきました。インストール不要・無料、PCでもスマホでも。ドット絵の世界を、みんなで冒険しよう。">
+<meta property="og:type" content="website">
+<meta property="og:title" content="スクラップブックオンライン｜ブラウザで遊べる2DオンラインRPG">
+<meta property="og:description" content="インストール不要・無料。ドット絵の世界を、みんなで冒険しよう。いまも開発中で、毎日のように新しい遊びが増えています。">
+<meta property="og:url" content="https://sbo2003.urara-works.jp/about">
+<meta property="og:image" content="https://sbo2003.urara-works.jp/about/01-hero.png">
+<meta name="twitter:card" content="summary_large_image">
+<!--
+	紹介ページ（/about）。はじめての人に「どんなゲームか」「みんなで遊べること」「いまも作っている途中なこと」を伝える。
+	画像は web/about/img/（ビルドで /about/ に置く）。ゲーム画面だけを 960x962 前後で撮り、同じ名前で置き換えれば差し替えられる。
+	下のほうの「最近の更新」は /api/changes、「いま遊んでいる人」は /health をその場で読む（読めなければ隠すだけ）。
+	見出しのドット文字は Google Fonts の DotGothic16（読めなければふつうのゴシック）。
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
+<style>
+	:root {
+		--page-bg: #efe6d2;
+		--ink: #2b2620;
+		--sub: #6f6455;
+		--panel: #1d1f24;
+		--panel-fg: #e8e8e8;
+		--panel-sub: #9aa0a6;
+		--accent: #f0b84a;
+		--accent-ink: #3a2a08;
+		--green: #5fae6b;
+		--line: #d6c9ae;
+		--dot: "DotGothic16", "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+	}
+	html, body {
+		margin: 0;
+		padding: 0;
+		background: var(--page-bg);
+		color: var(--ink);
+		font: 15px/1.8 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		-webkit-text-size-adjust: 100%;
+	}
+	img {
+		max-width: 100%;
+		height: auto;
+		display: block;
+	}
+	/* ドット絵はぼかさずに拡大する */
+	.shot img {
+		image-rendering: pixelated;
+	}
+	a {
+		color: #8a5a00;
+	}
+	.site-header {
+		text-align: center;
+		background: #0c0c0c;
+		padding: 10px 16px;
+		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+	}
+	.site-header h1 {
+		margin: 0;
+		font-size: 15px;
+		font-weight: 600;
+		color: #f2f2f2;
+		letter-spacing: 0.03em;
+	}
+	.site-header a {
+		color: inherit;
+		text-decoration: none;
+	}
+	.site-header p {
+		margin: 2px 0 0;
+		font-size: 11px;
+		color: #a8a8a8;
+	}
+
+	/* ---- 最初の画面（ヒーロー） ---- */
+	.hero {
+		background: var(--panel);
+		color: var(--panel-fg);
+		padding: 36px 16px 44px;
+	}
+	.hero-inner {
+		max-width: 1040px;
+		margin: 0 auto;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+		gap: 32px;
+		align-items: center;
+	}
+	.hero .kicker {
+		margin: 0 0 6px;
+		font-size: 13px;
+		color: var(--accent);
+		letter-spacing: 0.08em;
+	}
+	.hero h2 {
+		margin: 0 0 14px;
+		font-family: var(--dot);
+		font-weight: 400;
+		font-size: 34px;
+		line-height: 1.35;
+		letter-spacing: 0.02em;
+	}
+	.hero h2 small {
+		display: block;
+		font-size: 17px;
+		color: var(--panel-sub);
+		margin-top: 6px;
+	}
+	.hero p.lead {
+		margin: 0 0 18px;
+		color: #cfd3d8;
+	}
+	.badges {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin: 0 0 22px;
+		padding: 0;
+		list-style: none;
+	}
+	.badges li {
+		font-size: 12px;
+		padding: 2px 10px;
+		border-radius: 999px;
+		border: 1px solid rgba(255, 255, 255, 0.22);
+		color: #e6e6e6;
+	}
+	.cta {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 10px;
+		align-items: center;
+	}
+	.btn {
+		display: inline-block;
+		font-family: var(--dot);
+		font-size: 18px;
+		padding: 10px 22px;
+		border-radius: 6px;
+		text-decoration: none;
+		border: 2px solid transparent;
+		line-height: 1.4;
+	}
+	.btn-play {
+		background: var(--accent);
+		color: var(--accent-ink);
+		border-color: #ffd98a;
+		box-shadow: 0 3px 0 #a5761d;
+	}
+	.btn-play:hover {
+		filter: brightness(1.06);
+	}
+	.btn-sub {
+		color: #e8e8e8;
+		border-color: rgba(255, 255, 255, 0.3);
+	}
+	.cta-note {
+		width: 100%;
+		margin: 6px 0 0;
+		font-size: 12px;
+		color: var(--panel-sub);
+	}
+	.online {
+		margin: 14px 0 0;
+		font-size: 13px;
+		color: #bfe3c4;
+	}
+	.online::before {
+		content: "";
+		display: inline-block;
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--green);
+		margin-right: 6px;
+		vertical-align: 1px;
+		box-shadow: 0 0 6px var(--green);
+	}
+	.hero .shot {
+		margin: 0;
+		border: 3px solid #3a3d44;
+		border-radius: 6px;
+		overflow: hidden;
+		box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+	}
+
+	/* ---- 本文 ---- */
+	main {
+		max-width: 1040px;
+		margin: 0 auto;
+		padding: 8px 16px 40px;
+		box-sizing: border-box;
+	}
+	section {
+		margin: 48px 0 0;
+	}
+	.sec-title {
+		margin: 0 0 6px;
+		font-family: var(--dot);
+		font-weight: 400;
+		font-size: 26px;
+		line-height: 1.4;
+	}
+	.sec-title::before {
+		content: "▶ ";
+		color: #c08a1c;
+	}
+	.sec-lead {
+		margin: 0 0 20px;
+		color: var(--sub);
+	}
+	.feature {
+		display: grid;
+		grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+		gap: 24px;
+		align-items: center;
+		margin: 0 0 32px;
+	}
+	.feature:nth-of-type(even) .shot {
+		order: 2;
+	}
+	.feature h4 {
+		margin: 0 0 6px;
+		font-family: var(--dot);
+		font-weight: 400;
+		font-size: 20px;
+	}
+	.feature p {
+		margin: 0 0 8px;
+	}
+	.feature ul {
+		margin: 0;
+		padding-left: 1.2em;
+		color: var(--sub);
+		font-size: 14px;
+	}
+	.shot {
+		margin: 0;
+	}
+	.shot img {
+		width: 100%;
+		border-radius: 6px;
+		border: 2px solid #2a2c31;
+		box-shadow: 0 6px 18px rgba(60, 45, 20, 0.25);
+	}
+	.shot figcaption {
+		font-size: 12px;
+		color: var(--sub);
+		margin-top: 6px;
+	}
+	.cards {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+		gap: 14px;
+	}
+	.card {
+		background: #fffaf0;
+		border: 1px solid var(--line);
+		border-radius: 10px;
+		padding: 14px 16px;
+	}
+	.card h4 {
+		margin: 0 0 4px;
+		font-family: var(--dot);
+		font-weight: 400;
+		font-size: 17px;
+	}
+	.card p {
+		margin: 0;
+		font-size: 13.5px;
+		line-height: 1.7;
+		color: #4a4236;
+	}
+	.card .icon {
+		font-size: 22px;
+		line-height: 1;
+		margin-bottom: 6px;
+	}
+	.gallery {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 14px;
+	}
+
+	/* スマホの画面とPCの画面を並べる */
+	.devices {
+		display: grid;
+		grid-template-columns: minmax(0, 0.42fr) minmax(0, 1fr);
+		gap: 24px;
+		align-items: end;
+	}
+
+	/* 開発中のコーナー（暗い帯） */
+	.dev {
+		background: var(--panel);
+		color: var(--panel-fg);
+		border-radius: 14px;
+		padding: 26px 24px;
+	}
+	.dev .sec-lead {
+		color: #c4c8cd;
+	}
+	.dev a {
+		color: var(--accent);
+	}
+	.dev-grid {
+		display: grid;
+		grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+		gap: 24px;
+	}
+	.news {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+	.news li {
+		padding: 8px 0;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+		font-size: 13.5px;
+		line-height: 1.7;
+	}
+	.news .date {
+		color: var(--panel-sub);
+		font-size: 12px;
+		margin-right: 6px;
+	}
+	.news .kind {
+		display: inline-block;
+		font-size: 11px;
+		padding: 0 6px;
+		border-radius: 4px;
+		background: #3a3d44;
+		color: #f2f2f2;
+		margin-right: 6px;
+	}
+	.news .kind-新機能 {
+		background: #8a5a00;
+	}
+	.news .kind-改善 {
+		background: #2f6b3a;
+	}
+	.links {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+	.links li {
+		margin: 0 0 10px;
+		font-size: 14px;
+	}
+	.links small {
+		display: block;
+		color: var(--panel-sub);
+		font-size: 12px;
+	}
+
+	/* はじめかた */
+	.steps {
+		counter-reset: step;
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+		gap: 14px;
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+	.steps li {
+		counter-increment: step;
+		background: #fffaf0;
+		border: 1px solid var(--line);
+		border-radius: 10px;
+		padding: 14px 16px 14px 56px;
+		position: relative;
+		font-size: 14px;
+	}
+	.steps li::before {
+		content: counter(step);
+		position: absolute;
+		left: 14px;
+		top: 12px;
+		width: 30px;
+		height: 30px;
+		border-radius: 50%;
+		background: var(--accent);
+		color: var(--accent-ink);
+		font-family: var(--dot);
+		font-size: 18px;
+		text-align: center;
+		line-height: 30px;
+	}
+	.steps b {
+		display: block;
+		font-family: var(--dot);
+		font-weight: 400;
+		font-size: 16px;
+	}
+	.final {
+		text-align: center;
+		margin: 56px 0 0;
+	}
+	.final p {
+		color: var(--sub);
+		margin: 0 0 14px;
+	}
+	.site-footer {
+		text-align: center;
+		font-size: 12px;
+		padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+		color: #8c8c8c;
+		background: #1a1a1a;
+		margin-top: 48px;
+		line-height: 1.9;
+	}
+	.site-footer a {
+		color: #8c8c8c;
+	}
+
+	@media (max-width: 760px) {
+		.hero {
+			padding: 24px 16px 32px;
+		}
+		.hero-inner,
+		.gallery,
+		.feature,
+		.dev-grid {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 18px;
+		}
+		.hero .shot {
+			order: -1;
+		}
+		.hero h2 {
+			font-size: 27px;
+		}
+		.feature:nth-of-type(even) .shot {
+			order: 0;
+		}
+		.sec-title {
+			font-size: 22px;
+		}
+		.devices {
+			grid-template-columns: minmax(0, 0.8fr);
+			justify-content: center;
+		}
+		.devices .pc {
+			display: none;
+		}
+		.dev {
+			padding: 20px 16px;
+		}
+	}
+</style>
+</head>
+<body>
+<header class="site-header">
+	<h1><a href="/">スクラップブックオンライン</a></h1>
+	<p>Scrapbook Online（SBO2003）</p>
+</header>
+
+<div class="hero">
+	<div class="hero-inner">
+		<div>
+			<p class="kicker">ブラウザで遊べる 2D オンライン RPG</p>
+			<h2>ドット絵の世界を、<br>みんなで冒険しよう。<small>スクラップブックオンライン</small></h2>
+			<p class="lead">2003年に生まれた手作りのオンラインRPGが、ブラウザでそのまま遊べるようになって帰ってきました。町を歩いて、仲間と一列に並んで、ちょっと寄り道して料理を作って。ゆるく集まって、わいわい遊べるゲームです。</p>
+			<ul class="badges">
+				<li>無料</li>
+				<li>インストール不要</li>
+				<li>PC・スマホ・タブレット</li>
+				<li>ボタンひとつでログイン</li>
+				<li>ただいま開発中</li>
+			</ul>
+			<div class="cta">
+				<a class="btn btn-play" href="/">▶ いますぐ遊ぶ</a>
+				<a class="btn btn-sub" href="https://github.com/uraraworks/SBO2003/wiki" target="_blank" rel="noopener">遊び方ガイド</a>
+				<p class="cta-note">メールアドレスもパスワードも要りません。「すぐにはじめる」を押せば、その場でキャラを作れます。</p>
+			</div>
+			<p class="online" id="online" hidden></p>
+		</div>
+		<figure class="shot">
+			<img src="/about/01-hero.png" width="960" height="962" alt="町の広場に何人ものキャラクターが集まって話している様子">
+		</figure>
+	</div>
+</div>
+
+<main>
+	<section id="what">
+		<h3 class="sec-title">どんなゲーム？</h3>
+		<p class="sec-lead">昔ながらの見下ろし型のドット絵RPGを、たくさんの人が同じ世界でいっしょに遊ぶ「オンラインRPG」です。</p>
+		<div class="cards">
+			<div class="card">
+				<div class="icon">🗺️</div>
+				<h4>100をこえるマップ</h4>
+				<p>港町、空に近い都市、雪国、深い森、暗い洞窟、迷路…。当時の仲間たちが描いた広い世界を、自分の足で旅できます。</p>
+			</div>
+			<div class="card">
+				<div class="icon">⚔️</div>
+				<h4>8つの職業</h4>
+				<p>旅人・戦士・武道家・僧侶・魔法使い・商人・召喚士・吟遊詩人。転職して、職業ごとのいろんな特技を覚えられます。</p>
+			</div>
+			<div class="card">
+				<div class="icon">💬</div>
+				<h4>吹き出しでおしゃべり</h4>
+				<p>発言はキャラの頭の上に吹き出しで出ます。絵文字もOK。周りの人・パーティ・マップ全体と、送り先も選べます。</p>
+			</div>
+			<div class="card">
+				<div class="icon">📱</div>
+				<h4>どこでも遊べる</h4>
+				<p>PCのブラウザでも、スマホでも。スマホでは十字キーとボタンが画面に出るので、そのまま冒険に出られます。</p>
+			</div>
+		</div>
+	</section>
+
+	<section id="together">
+		<h3 class="sec-title">みんなで遊ぶと、もっと楽しい</h3>
+		<p class="sec-lead">ひとりでのんびり旅するのもいいけれど、誰かと会えたらそれがいちばんの楽しみ。いっしょに遊ぶための仕組みがたくさんあります。</p>
+
+		<div class="feature">
+			<figure class="shot">
+				<img src="/about/02-party.png" width="960" height="962" alt="3人のキャラクターが一列になってフィールドを歩いている" loading="lazy">
+			</figure>
+			<div>
+				<h4>「ついていく」で一列に</h4>
+				<p>前の人の後ろにくっついて、一列になって歩けます。道案内してもらったり、みんなで連なって町を練り歩いたり。先頭の人が戦い始めると、列の人もばらけていっしょに戦えます。</p>
+				<ul>
+					<li>パーティを組むと、近くで倒した敵の経験値やお金をみんなで分け合えます</li>
+					<li>パーティだけに届く発言で、作戦会議もこっそりと</li>
+				</ul>
+			</div>
+		</div>
+
+		<div class="feature">
+			<figure class="shot">
+				<img src="/about/11-adventure.png" width="960" height="962" alt="3人のパーティが暗い洞窟の水辺を一列で探索している" loading="lazy">
+			</figure>
+			<div>
+				<h4>仲間と、知らない場所へ</h4>
+				<p>森の奥、水の流れる洞窟、雪山の向こう。ひとりだと心細い場所も、仲間がいればどんどん進めます。マップに入るとその土地の名前が大きく出て、旅をしている気分を盛り上げてくれます。</p>
+				<ul>
+					<li>暗いダンジョンはランタンや明かりの特技で照らしながら</li>
+					<li>道に迷ったら、詳しい人に「ついていく」のがいちばん</li>
+				</ul>
+			</div>
+		</div>
+
+		<div class="feature">
+			<figure class="shot">
+				<img src="/about/03-battle.png" width="960" height="962" alt="3人のパーティが敵を囲んで戦っている。ダメージと回復の表示" loading="lazy">
+			</figure>
+			<div>
+				<h4>アクション感のある戦闘</h4>
+				<p>戦闘モードに切り替えて、ゲージが溜まったら攻撃。続けて攻撃したり、構えて身を守ったり、弓で遠くから狙ったり。特技は1〜5キー（スマホはショートカットボタン）にすぐ使えるよう登録できます。</p>
+				<ul>
+					<li>仲間と同じ敵を倒せば、ダメージを与えた全員に報酬</li>
+					<li>町のNPCを傭兵として雇って、いっしょに戦ってもらうこともできます</li>
+				</ul>
+			</div>
+		</div>
+
+		<div class="feature">
+			<figure class="shot">
+				<img src="/about/12-party-battle2.png" width="960" height="962" alt="草原でパーティが回復の特技を使いながら敵と戦っている" loading="lazy">
+			</figure>
+			<div>
+				<h4>役割を分けて、力を合わせて</h4>
+				<p>前に出て殴る戦士、遠くから特技を放つ魔法使い、傷を治す僧侶。2人が続けざまに同じ敵へ攻撃を当てると「連携！」で威力が上がります。息が合うと、とっても気持ちいい。</p>
+			</div>
+		</div>
+
+		<div class="feature">
+			<figure class="shot">
+				<img src="/about/07-minigame.png" width="960" height="962" alt="爆弾ゲームの試合中。3人が爆弾を置いて爆風が十字に広がっている" loading="lazy">
+			</figure>
+			<div>
+				<h4>ミニゲームでひと休み</h4>
+				<p>雪玉を投げ合う雪合戦、爆弾を置いて爆風を当て合う爆弾ゲーム、赤と青に分かれてサイコロで攻め合う戦場ゲーム、すごろく。冒険の合間に、集まった人たちでわいわい遊べます。</p>
+			</div>
+		</div>
+	</section>
+
+	<section id="life">
+		<h3 class="sec-title">冒険だけじゃない、町の暮らし</h3>
+		<p class="sec-lead">町には住人がいて、お店や屋台が並び、頼みごとをしてくる人もいます。寄り道がいちばん楽しいかも。</p>
+		<div class="gallery">
+			<figure class="shot">
+				<img src="/about/05-craft.png" width="960" height="962" alt="作り手に料理を頼む画面" loading="lazy">
+				<figcaption>🍳 料理・合成 ─ 材料を集めて町の作り手に頼むと、料理や道具を作ってくれます。</figcaption>
+			</figure>
+			<figure class="shot">
+				<img src="/about/06-trade.png" width="960" height="962" alt="取引所の受付" loading="lazy">
+				<figcaption>💰 取引所 ─ 品物に値段を付けて預けておけば、ほかの人が買ってくれます。</figcaption>
+			</figure>
+			<figure class="shot">
+				<img src="/about/04-dark.png" width="960" height="962" alt="暗い洞窟をランタンの灯りで照らしながら進む" loading="lazy">
+				<figcaption>🏮 暗い洞窟 ─ ランタンや明かりの特技で、まわりを照らしながら進みます。</figcaption>
+			</figure>
+			<figure class="shot">
+				<img src="/about/08-scenery.png" width="960" height="962" alt="森の中の村に入ったところ。村の名前が大きく出ている" loading="lazy">
+				<figcaption>🌲 新しい土地へ ─ 入った時に名前が大きく出迎えてくれます。町の人に話しかけると、その土地の話が聞けるかも。</figcaption>
+			</figure>
+		</div>
+		<div class="cards" style="margin-top:18px">
+			<div class="card">
+				<div class="icon">📜</div>
+				<h4>ギルドの依頼</h4>
+				<p>探し物や、装備とレベルを決めて挑む「討伐チャレンジ」。受けた人だけに見える依頼人が現れます。</p>
+			</div>
+			<div class="card">
+				<div class="icon">⛵</div>
+				<h4>船で別の大陸へ</h4>
+				<p>港から船に乗って、遠くの町へ。教会で町を記録しておけば、旅人の特技でひとっ飛びも。</p>
+			</div>
+			<div class="card">
+				<div class="icon">🎨</div>
+				<h4>ドット絵工房</h4>
+				<p>ゲームで使うドット絵を、お題に合わせてみんなで描き合う<a href="/kobo">工房</a>。採用されると、あなたの絵がゲームの中に。</p>
+			</div>
+		</div>
+	</section>
+
+	<section id="devices">
+		<h3 class="sec-title">PCでも、スマホでも</h3>
+		<p class="sec-lead">アプリのインストールは要りません。ページを開けばすぐに遊べて、スクリーンショットや動画もボタンひとつで保存できます。</p>
+		<div class="devices">
+			<figure class="shot">
+				<img src="/about/09-mobile.png" width="1170" height="1992" alt="スマホの縦持ちで遊んでいる画面。下に十字キーとボタン" loading="lazy">
+				<figcaption>スマホは十字キー＋ボタンで操作</figcaption>
+			</figure>
+			<figure class="shot pc">
+				<img src="/about/10-pc.png" width="1100" height="760" alt="PCのブラウザで遊んでいる画面。右にメッセージログ" loading="lazy">
+				<figcaption>PCはキーボードで。メッセージログも横に出せます</figcaption>
+			</figure>
+		</div>
+	</section>
+
+	<section id="dev">
+		<div class="dev">
+			<h3 class="sec-title">いまも、作っている途中です</h3>
+			<p class="sec-lead">20年ぶりに開発を再開して、ほぼ毎日なにかしら新しくなっています。まだ荒削りなところもありますが、だからこそ「こうだったらいいな」がゲームに届きやすい時期。ぜひ遊んで、感想を聞かせてください。</p>
+			<div class="dev-grid">
+				<div>
+					<p style="margin:0 0 6px;font-size:13px;color:var(--panel-sub)">最近の更新</p>
+					<ul class="news" id="news">
+						<li>読み込み中…</li>
+					</ul>
+					<p style="margin:10px 0 0;font-size:13px"><a href="/changes">更新履歴をぜんぶ見る →</a></p>
+				</div>
+				<ul class="links">
+					<li><a href="/feedback">📮 ご意見箱</a><small>「こうしてほしい」「ここが変かも」を気軽にどうぞ。名前なしでも送れます。</small></li>
+					<li><a href="https://www.urara-works.jp/diary/sbo2003/" target="_blank" rel="noopener">📔 開発日記・SBO旅だより</a><small>どう作っているかのお話と、世界を旅する紀行文。</small></li>
+					<li><a href="https://github.com/uraraworks/SBO2003" target="_blank" rel="noopener">🛠️ ソースコード（GitHub）</a><small>ゲームのプログラムは公開しています（GPLv3）。</small></li>
+					<li><a href="/status">📈 サーバー状況</a><small>いま何人いるか、サーバーが動いているかを見られます。</small></li>
+				</ul>
+			</div>
+		</div>
+	</section>
+
+	<section id="start">
+		<h3 class="sec-title">はじめかた</h3>
+		<ol class="steps">
+			<li><b>ページを開く</b><a href="/">sbo2003.urara-works.jp</a> を開くと、ゲームの読み込みが始まります。</li>
+			<li><b>「すぐにはじめる」</b>アカウントは自動で作られます。名前を決めてキャラを作りましょう。</li>
+			<li><b>町へ出発！</b>まずは始まりの町の人に話しかけてみて。困ったら<a href="https://github.com/uraraworks/SBO2003/wiki" target="_blank" rel="noopener">遊び方ガイド</a>をどうぞ。</li>
+		</ol>
+	</section>
+
+	<div class="final">
+		<p>ふらっと寄って、ちょっと歩いてみるだけでも大歓迎です。</p>
+		<a class="btn btn-play" href="/">▶ いますぐ遊ぶ</a>
+	</div>
+</main>
+
+<footer class="site-footer">
+	<a href="https://www.urara-works.jp/" target="_blank" rel="noopener">© URARA-works</a> /
+	<a href="/status">サーバー状況</a> /
+	<a href="https://github.com/uraraworks/SBO2003/wiki" target="_blank" rel="noopener">取扱説明書</a> /
+	<a href="/feedback">ご意見箱</a> /
+	<a href="/kobo">ドット絵工房</a> /
+	<a href="/changes">更新履歴</a> /
+	<a href="/credits">クレジット</a> /
+	<a href="https://github.com/uraraworks/SBO2003" target="_blank" rel="noopener">GitHubで見る</a> /
+	<span title="反映した日時とコミット">@@SBO_BUILD_DATE@@ <a href="https://github.com/uraraworks/SBO2003/commit/@@SBO_BUILD_COMMIT@@" target="_blank" rel="noopener">@@SBO_BUILD_COMMIT@@</a></span>
+</footer>
+<script>
+(function () {
+	/* いま遊んでいる人数（/health）。読めない・0人の時は出さない */
+	fetch('/health', { cache: 'no-store' }).then(function (res) {
+		return res.ok ? res.json() : null;
+	}).then(function (data) {
+		var n = data && data.onlinePlayers;
+		if (n > 0) {
+			var el = document.getElementById('online');
+			el.textContent = 'いま ' + n + ' 人が遊んでいます';
+			el.hidden = false;
+		}
+	}).catch(function () {});
+
+	/* 最近の更新（/api/changes の新しい方から 5 件） */
+	var news = document.getElementById('news');
+	fetch('/api/changes', { cache: 'no-store' }).then(function (res) {
+		return res.ok ? res.json() : null;
+	}).then(function (data) {
+		if (!data || !Array.isArray(data.items) || !data.items.length) {
+			throw new Error('no data');
+		}
+		news.textContent = '';
+		data.items.slice(0, 5).forEach(function (it) {
+			var li = document.createElement('li');
+			var d = document.createElement('span');
+			d.className = 'date';
+			d.textContent = String(it.date || '').replace(/^\d{4}-0?(\d+)-0?(\d+)$/, '$1/$2');
+			var k = document.createElement('span');
+			k.className = 'kind kind-' + (it.kind || '');
+			k.textContent = it.kind || '';
+			li.appendChild(d);
+			li.appendChild(k);
+			/* 長い説明は最初の一文だけ */
+			var text = String(it.text || '');
+			var m = /^[^。]*。/.exec(text);
+			li.appendChild(document.createTextNode(m ? m[0] : text));
+			news.appendChild(li);
+		});
+	}).catch(function () {
+		news.innerHTML = '<li>ただいま読み込めませんでした。<a href="/changes">更新履歴</a>から見られます。</li>';
+	});
+})();
+</script>
+</body>
+</html>
