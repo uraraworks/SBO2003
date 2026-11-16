@@ -46,6 +46,7 @@ typedef void (*RECVDATAPROC)(PBYTE, DWORD);
 void	MyOutputDebugString			(LPCTSTR lpszFormat, ...);						/* デバッグメッセージ出力 */
 BOOL	CheckAdminBan				(DWORD);										/* 管理者権限かチェックして、違ってたらＢＡＮ */
 extern void SboDataQuestApplyInfo	(int, const QUESTINFO *, int &, std::string &);	/* 管理者ウィンドウから依頼を書き込む(server/web_data_svr.cpp) */
+extern void SboWebSendLoginNotice	(DWORD);	/* ログインした人に、覚えている再起動の予告を見せる(server/web_account_svr.cpp) */
 extern void SboDataFlagNameApplyInfo	(int, const FLAGNAMEINFO *, int &, std::string &);	/* 管理者ウィンドウからフラグの名前表を書き込む(server/web_data_svr.cpp) */
 extern void SboDataTalkApplyInfo		(int, const TALKINFO *, int &, std::string &);		/* 管理者ウィンドウから会話データを書き込む(server/web_data_svr.cpp) */
 PCHARINFO AddChar					(PCHARINFO, BOOL bCheck=TRUE);					/* キャラ追加 */
@@ -3787,6 +3788,8 @@ void RecvDataProcCHGSTATE(PBYTE pData, DWORD dwDataSize)
 		SendCmdSYSMSG (URARASOCK_SENDALL, szBuf);
 	}
 	SendMsgMostCrowdedMap (pPara->pID);
+	/* 再起動の予告の後にログインした人にも、もうすぐ再起動することを知らせる */
+	SboWebSendLoginNotice (pPara->pID);
 }
 
 /* ========================================================================= */
