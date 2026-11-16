@@ -88,6 +88,27 @@ Module['sboNet'] = (function () {
 			}
 			return a.join(',');
 		},
+		/* 覚えたパケットのうち、先頭がコマンド nCmd の最後の 1 つの中身を 16 進で返す（無ければ空） */
+		lastBody: function (n, nCmd) {
+			var c = aConn[n];
+			if (!c) {
+				return '';
+			}
+			var b = Buffer.concat(c.raw), s = '', nPos = 0;
+			while (nPos + 8 <= b.length) {
+				var nSize = b.readUInt32LE(nPos);
+				var body = b.subarray(nPos + 8, nPos + 8 + nSize);
+				/* 圧縮されたパケット（先頭 0xFF・元の大きさ 4 バイトの後ろが zlib）は伸ばして見る */
+				if (body.length > 5 && body[0] === 0xFF) {
+					try { body = zlib.inflateSync(Buffer.from(body.subarray(5))); } catch (e) { body = Buffer.alloc(0); }
+				}
+				if (body.length >= 1 && body[0] === nCmd) {
+					s = body.toString('hex');
+				}
+				nPos += 8 + nSize;
+			}
+			return s;
+		},
 		reset: function () { aConn = {}; }
 	};
 })();

@@ -4,6 +4,7 @@ out/
 /Release/SBODATA/SboDataMakerInfo.dat
 /Release/SBODATA/SboDataRecipeInfo.dat
 /Release/SBODATA/SboDataQuestInfo.dat
+/Release/SBODATA/SboDataMarket.dat
 
 # 本番用の配布 zip（deploy/production/make-zip.sh の出力）
 publish/

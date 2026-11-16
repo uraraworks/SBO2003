@@ -148,7 +148,39 @@ enum {
 	WNDTYPE_TOWNWARP,											/* 町転送：行き先の選択 */
 	WNDTYPE_QUEST,												/* ギルドの依頼：一覧・進み具合 */
 	WNDTYPE_SORTMENU,											/* 並べ替え：入れ替え・種類順・50音順（byData1=対象 SORTITEMTARGET_*） */
+	WNDTYPE_MARKET,												/* 取引所（商人ギルドの出張所）の受付 */
 };
+
+/* 取引所ウィンドウ(WNDTYPE_MARKET)の nType2 */
+enum {
+	MARKETWND_MENU = 0,											/* 受付のメニュー（買う・出品する・自分の出品・売上を受け取る・やめる） */
+	MARKETWND_LIST,												/* 出品の一覧（dwData=MARKETLIST_*。買う一覧／自分の出品） */
+	MARKETWND_ITEM,												/* 出品する品を手持ちから選ぶ */
+	MARKETWND_PRICE,											/* 出品の値段の入力（nData1=値段、byData1=桁） */
+	MARKETWND_CONF,												/* 「はい／いいえ」の確認（byData1=MARKETCONF_*） */
+};
+/* 取引所の確認の種類(MARKETWND_CONF の byData1) */
+enum {
+	MARKETCONF_BUY = 0,											/* 買う */
+	MARKETCONF_PUT,												/* 出品する */
+	MARKETCONF_TAKEBACK,										/* 引き取る */
+	MARKETCONF_GOLDGET,											/* 売上を受け取る */
+};
+/* 取引所：返事待ちの種類 */
+enum {
+	MARKETWAIT_NONE = 0,										/* 待っていない */
+	MARKETWAIT_BUYLIST,											/* 買う一覧の返事 */
+	MARKETWAIT_MINELIST,										/* 自分の出品の一覧の返事 */
+	MARKETWAIT_SALE,											/* 売上の額（自分の出品の一覧に付いてくる）の返事 */
+	MARKETWAIT_PUT,												/* 出品の結果 */
+	MARKETWAIT_BUY,												/* 買う結果 */
+	MARKETWAIT_TAKEBACK,										/* 引き取りの結果 */
+	MARKETWAIT_GOLDGET,											/* 売上の受け取りの結果 */
+};
+#define MARKET_LISTROWS				(10)										/* 一覧に一度に出す行数 */
+#define MARKET_WAITMAX				(5000)										/* 返事を待つ最長時間(ms) */
+#define MARKET_LISTY				(16 * 4)									/* 一覧の上端（右上の所持金の窓の下） */
+#define MARKET_CONFY				(16 * 17)									/* 「はい／いいえ」の上端（一覧の下・台詞の上） */
 
 /* 依頼ウィンドウ(WNDTYPE_QUEST)の nType2 */
 enum {

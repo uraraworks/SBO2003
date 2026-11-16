@@ -112,6 +112,28 @@ extern DWORD MakerStateHash								(int nMaker);				/* 画面に出ている内�
 extern void MakerSetMsg									(PWNDINFO pWndList, LPCSTR pszMsg);	/* 作り手の画面のメッセージを差し替える */
 extern void MakerSetTalkMsg								(PWNDINFO pWndList);		/* 作り手の話しかけた時の台詞を出す */
 extern void MakerScrollFit								(PWNDINFO pWndList, int nIndex, int nCount);	/* 一覧のカーソルとスクロールを整える */
+extern PWNDINFO MakeWindowMARKET_MENU					(void);						/* 取引所：受付のメニュー */
+extern PWNDINFO MakeWindowMARKET_LIST					(int nKind);				/* 取引所：出品の一覧 */
+extern PWNDINFO MakeWindowMARKET_ITEM					(void);						/* 取引所：出品する品を手持ちから選ぶ */
+extern PWNDINFO MakeWindowMARKET_PRICE					(DWORD dwPrice);			/* 取引所：出品の値段の入力 */
+extern PWNDINFO MakeWindowMARKET_CONF					(int nKind);				/* 取引所：はい／いいえ */
+extern LPCSTR MarketItemName							(WORD wItemID);				/* 取引所：品の名前 */
+extern DWORD MarketPriceMin								(WORD wItemID);				/* 取引所：値段の下限 */
+extern DWORD MarketFee									(DWORD dwPrice);			/* 取引所：手数料 */
+extern PWNDINFO MarketFindWindow						(int nType2);				/* 取引所：窓を探す */
+extern BOOL MarketIsOpen								(void);						/* 取引所：窓が開いているか */
+extern void MarketEraseAll								(void);						/* 取引所：窓を全部消す */
+extern void MarketClose									(LPCSTR pszMsg);			/* 取引所：受付を閉じる */
+extern void MarketSetMsg								(PWNDINFO pWndOwner, LPCSTR pszMsg);	/* 取引所：台詞を差し替える */
+extern void MarketCutText								(char *pszDst, int nDstSize, LPCSTR pszSrc, int nMaxUnit);	/* 取引所：表示幅で切る */
+extern void MarketThirdText								(int nKind, const MARKETENTRY *pEntry, char *pszDst, int nDstSize);	/* 取引所：一覧の3列目の文字 */
+extern void MarketGetLayout								(int nKind, int *pnNameUnit, int *pnPriceChar, int *pnThirdUnit);	/* 取引所：一覧の列の幅 */
+extern void MarketOpen									(void);						/* 取引所：受付を開く */
+extern void MarketShowMenu								(LPCSTR pszMsg);			/* 取引所：メニューを出す */
+extern void MarketShowList								(int nKind, int nCursor);	/* 取引所：一覧を出す */
+extern void MarketShowItem								(int nCursor);				/* 取引所：出品する品の選択を出す */
+extern void MarketShowPrice								(DWORD dwPrice);			/* 取引所：値段の入力を出す */
+extern void MarketShowConf								(int nKind, LPCSTR pszMsg);	/* 取引所：はい／いいえを出す */
 extern void ListScrollFitMargin							(PWNDINFO pWndList, int nIndex, int nCount, int nMargin);	/* 一覧のカーソルとスクロールを余白付きで整える */
 extern BOOL ListScrollKey								(PWNDINFO pWndList, BYTE byCode, int nCount);	/* 一覧の上下左右キーでカーソルを動かす */
 extern int ListScrollTop								(int nTop, int nIndex, int nCount, int nRows, int nMargin);	/* 一覧の先頭位置を余白付きで決める */

@@ -23,6 +23,7 @@
 #include "SboSvrSubGameProcSugoroku.h"
 #include "SboSvrAdminUndo.h"
 #include "SboSvrNpcRoute.h"
+#include "SboSvrMarket.h"
 #include "CharProc/CharProcMERCENARY.h"
 #include "SboSvrMagicProc.h"
 #include <map>
@@ -221,6 +222,11 @@ void	RecvDataProcADMINCHARFLAG				(PBYTE, DWORD);				/* 管理者ウィンドウ
 void	RecvDataProcSORTITEM					(PBYTE, DWORD);				/* 道具欄・預かり所の並べ替え */
 void	RecvDataProcLEAVEITEMDISPOSE			(PBYTE, DWORD);				/* 預かり所の品を売る・捨てる */
 void	RecvDataProcBATTLEMODE					(PBYTE, DWORD);				/* 戦闘モードの切り替え通知 */
+void	RecvDataProcMARKETLIST					(PBYTE, DWORD);				/* 取引所の一覧 */
+void	RecvDataProcMARKETPUT					(PBYTE, DWORD);				/* 取引所に出品する */
+void	RecvDataProcMARKETBUY					(PBYTE, DWORD);				/* 取引所で買う */
+void	RecvDataProcMARKETTAKEBACK				(PBYTE, DWORD);				/* 取引所の出品を引き取る */
+void	RecvDataProcMARKETGOLDGET				(PBYTE, DWORD);				/* 取引所の売上を受け取る */
 /* 端末トークン（server/web_account_svr.cpp） */
 BOOL	WebAccTokenToAccount					(LPCSTR, LPSTR, int);		/* 端末トークンからアカウント名を引く */
 static void	SendWebOptBgm					(PCHARINFO);				/* 音楽ON/OFFのアカウント設定を送る */
@@ -278,6 +284,7 @@ extern BOOL SaveItemInfo				(void);								/* アイテム情報保存 */
 extern BOOL SaveEfcInfo					(void);								/* エフェクト情報保存 */
 extern BOOL SaveStTmpInfo				(void);								/* ステータステンプレート情報保存 */
 extern BOOL SaveLeaveInfo				(void);								/* 預かり所情報保存 */
+extern BOOL SaveMarket					(void);								/* 取引所の出品・売上保存 */
 extern BOOL SaveSubGameInfo				(void);								/* サブゲーム情報保存 */
 extern BOOL SaveJobInfo					(void);								/* 職業情報情報保存 */
 extern BOOL SaveMagicUserInfo			(void);								/* 魔法利用者情報情報保存 */
@@ -455,6 +462,11 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcADMINFLAGNAME,			/* CMD_ADMINFLAGNAME */
 	RecvDataProcADMINTALK,				/* CMD_ADMINTALK */
 	RecvDataProcADMINCHARFLAG,			/* CMD_ADMINCHARFLAG */
+	RecvDataProcMARKETLIST,				/* CMD_MARKETLIST */
+	RecvDataProcMARKETPUT,				/* CMD_MARKETPUT */
+	RecvDataProcMARKETBUY,				/* CMD_MARKETBUY */
+	RecvDataProcMARKETTAKEBACK,			/* CMD_MARKETTAKEBACK */
+	RecvDataProcMARKETGOLDGET,			/* CMD_MARKETGOLDGET */
 
 	NULL
 };
@@ -3430,7 +3442,7 @@ void RecvDataProc(PBYTE pData, DWORD dwDataSize)
 	}
 
 	/* 管理者用のコマンド（管理者ウィンドウからしか送らないもの）は管理者だけ */
-	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY)) ||
+	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET))) ||
 			(byCmd == CMD_CHARITEM)) {
 		if (!CheckAdminBan (nNo)) {
 			SAFE_DELETE_ARRAY (pData);
@@ -4417,6 +4429,7 @@ void RecvDataProcSAVEMAP(PBYTE pData, DWORD dwDataSize)
 	SaveMagicUserInfo ();
 	SaveMagicInfo ();
 	SaveEquUserInfo ();
+	SaveMarket ();
 	WebThreadRenew ();
 
 	PCHARINFO pChar = g_aCharInfo[pPara->dwTblID];
@@ -11655,7 +11668,7 @@ BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, 
 	/* 管理者用のコマンドだけ（ログインや「元に戻す」自体は通さない） */
 	if ((byCmd >= CMD_MAX) || (RecvDataProcTbl[byCmd] == NULL) ||
 			((byCmd < CMD_MAPPARTSADD) && (byCmd != CMD_CHARITEM)) ||
-			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY)) {
+			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET))) {
 		return FALSE;
 	}
 
@@ -12434,6 +12447,78 @@ void RecvDataProcLEAVEITEMDISPOSE(PBYTE pData, DWORD dwDataSize)
 		pInfo->byCount --;
 	}
 	SendCmdLEAVEITEMGET (pChar->dwTblID);
+}
+
+/* ========================================================================= */
+/* 関数名：MarketRecvChar													 */
+/* 内容：取引所のコマンドの送り主を確かめる（正しければキャラを返す）		 */
+/*       サイズ不足・別人・キャラがいない・倒れている・討伐チャレンジ中は NULL */
+/* ========================================================================= */
+static PCHARINFO MarketRecvChar(PBYTE pData)
+{
+	PCMDPARA_MARKET pPara = (PCMDPARA_MARKET)pData;
+	PCHARINFO pChar;
+
+	if (s_dwRecvSize < sizeof (CMDPARA_MARKET)) {
+		return NULL;
+	}
+	if (!IsRecvChar (pPara->dwTblID)) {
+		return NULL;
+	}
+	pChar = g_aCharInfo[pPara->dwTblID];
+	if ((pChar == NULL) || (pChar->pID == 0) || (pChar->byNpcType != NPCTYPE_INIT)) {
+		return NULL;
+	}
+	if ((pChar->wHP == 0) || (pChar->byCharState == CHARSTATE_DEAD)) {
+		return NULL;
+	}
+	/* 討伐チャレンジ中は預かり所・取り引きと同じく使わない（貸し出しの品が出入りしないように） */
+	if (QuestChallengeBlock (pChar)) {
+		return NULL;
+	}
+	return pChar;
+}
+
+/* 取引所の受信処理（中身は SboSvrMarket.cpp） */
+void RecvDataProcMARKETLIST(PBYTE pData, DWORD dwDataSize)
+{
+	PCHARINFO pChar = MarketRecvChar (pData);
+	if (pChar) {
+		MarketList (pChar, ((PCMDPARA_MARKET)pData)->byType);
+	}
+}
+
+void RecvDataProcMARKETPUT(PBYTE pData, DWORD dwDataSize)
+{
+	PCHARINFO pChar = MarketRecvChar (pData);
+	if (pChar) {
+		MarketPut (pChar, ((PCMDPARA_MARKET)pData)->byNo, ((PCMDPARA_MARKET)pData)->dwPrice);
+	}
+}
+
+void RecvDataProcMARKETBUY(PBYTE pData, DWORD dwDataSize)
+{
+	PCHARINFO pChar = MarketRecvChar (pData);
+	if (pChar) {
+		PCMDPARA_MARKET pPara = (PCMDPARA_MARKET)pData;
+		MarketBuy (pChar, pPara->dwID, pPara->wItemID, pPara->dwPrice);
+	}
+}
+
+void RecvDataProcMARKETTAKEBACK(PBYTE pData, DWORD dwDataSize)
+{
+	PCHARINFO pChar = MarketRecvChar (pData);
+	if (pChar) {
+		MarketTakeBack (pChar, ((PCMDPARA_MARKET)pData)->dwID);
+	}
+}
+
+void RecvDataProcMARKETGOLDGET(PBYTE pData, DWORD dwDataSize)
+{
+	PCHARINFO pChar = MarketRecvChar (pData);
+	if (pChar) {
+		MarketGoldGet (pChar);
+	}
 }
 
 /* ========================================================================= */

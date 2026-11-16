@@ -327,6 +327,12 @@ enum {
 	CMD_ADMINFLAGNAME,												/* 管理者ウィンドウのフラグの名前表の編集（一覧・書き込み。結果はサーバー→クライアント） */
 	CMD_ADMINTALK,													/* 管理者ウィンドウの会話データの編集（一覧・書き込み。結果はサーバー→クライアント） */
 	CMD_ADMINCHARFLAG,												/* 管理者ウィンドウのキャラのフラグの取得・変更（結果はサーバー→クライアント） */
+/* 以下、プレイヤー用（取引所。クライアント→サーバーも受ける。管理者用の判定から外すこと） */
+	CMD_MARKETLIST,													/* 取引所の一覧（要求はクライアント→サーバー、一覧はサーバー→クライアント） */
+	CMD_MARKETPUT,													/* 取引所に出品する（クライアント→サーバー。結果はサーバー→クライアント） */
+	CMD_MARKETBUY,													/* 取引所で買う（クライアント→サーバー。結果はサーバー→クライアント） */
+	CMD_MARKETTAKEBACK,												/* 取引所の自分の出品を引き取る（クライアント→サーバー。結果はサーバー→クライアント） */
+	CMD_MARKETGOLDGET,												/* 取引所に貯まった売上を受け取る（クライアント→サーバー。結果はサーバー→クライアント） */
 	CMD_MAX
 };
 
@@ -2975,6 +2981,100 @@ typedef struct _CMDPARA_CHARBUFF {
 	DWORD		dwATUP;												/* 攻撃力アップの残り(ms) */
 	DWORD		dwDFUP;												/* 守備力アップの残り(ms) */
 } CMDPARA_CHARBUFF, *PCMDPARA_CHARBUFF;
+#pragma pack(pop)
+
+/* ========================================================================= */
+/* 取引所（商人ギルドの出張所。台詞が "@b" のNPCが受付。docs/market.md）		 */
+/*   受付の近く（同じマップで 3 マス以内）でしか使えない。品は 1 件 = 1 個。	 */
+/*   手数料は値段の 5%（切り捨て）。出品者の手取り = 値段 - 手数料。			 */
+/*   値段は 1〜999999。下限は品の元の売値（価値/4・最低1。店の売値と同じ式）。	 */
+/*   1 アカウント 5 件まで（期限切れも数える）。期限は 7 日（過ぎると買えない）。*/
+/*   自分のアカウントの出品は「買う」一覧に出ず、買えない。売上はアカウント単位。*/
+/* ========================================================================= */
+#define MARKET_MAXPUT			(5)									/* 1 アカウントの出品数の上限（期限切れを含む） */
+#define MARKET_LISTMAX			(100)								/* 一覧 1 回で届く件数の上限（新しい順） */
+#define MARKET_DAYS				(7)									/* 出品の期限（日） */
+#define MARKET_LIMITSEC			(MARKET_DAYS * 24 * 60 * 60)		/* 出品の期限（秒） */
+#define MARKET_FEE_PERCENT		(5)									/* 手数料（%。切り捨て） */
+#define MARKET_PRICEMAX			(999999)							/* 値段の上限（所持金の上限と同じ） */
+#define MARKET_RANGE			(3)									/* 受付からの距離（マス）。これより遠いと使えない */
+
+/* 一覧の種類（CMD_MARKETLIST の byType） */
+enum {
+	MARKETLIST_BUY = 0,											/* 買う一覧（出品中で、自分のアカウント以外の品。新しい順） */
+	MARKETLIST_MINE,											/* 自分のアカウントの出品（出品中と期限切れ。新しい順） */
+};
+
+/* 出品の状態（MARKETENTRY の byState） */
+enum {
+	MARKETSTATE_ON = 0,											/* 出品中 */
+	MARKETSTATE_EXPIRED,										/* 期限切れ（買えない。出品者が引き取る） */
+};
+
+/* 結果（CMDPARA_MARKET の byResult。サーバー→クライアント） */
+enum {
+	MARKETRES_OK = 0,											/* できた */
+	MARKETRES_NOGOLD,											/* 所持金が足りない（BUY） */
+	MARKETRES_ITEMFULL,											/* 手持ちがいっぱい（BUY・TAKEBACK） */
+	MARKETRES_GONE,												/* もう無い・値段や品が変わった（BUY・TAKEBACK） */
+	MARKETRES_LIMIT,											/* 出品が 5 件に達している（PUT） */
+	MARKETRES_NGITEM,											/* 出せない品：装備中・取引不可・依頼の品・手持ちに無い（PUT） */
+	MARKETRES_PRICE,											/* 値段が下限未満・上限超え（PUT） */
+	MARKETRES_OWN,												/* 自分のアカウントの品は買えない（BUY） */
+	MARKETRES_GOLDMAX,											/* 所持金が上限で受け取れない（GOLDGET） */
+	MARKETRES_NOGOLDSALE,										/* 受け取れる売上が無い（GOLDGET） */
+	MARKETRES_FAR,												/* 受付の近くにいない（全部） */
+};
+
+#pragma pack(push, 1)
+/* 取引所の要求と結果（PUT・BUY・TAKEBACK・GOLDGET と、LIST の要求。要求も結果も同じ形）
+   クライアント→サーバー（byResult は 0 でよい。使う欄は下の表）
+     CMD_MARKETLIST     : byType=MARKETLIST_*
+     CMD_MARKETPUT      : byNo=手持ちの位置(0〜MAX_MYITEM-1)・dwPrice=値段
+     CMD_MARKETBUY      : dwID=出品ID・wItemID=見えていた品・dwPrice=見えていた値段
+     CMD_MARKETTAKEBACK : dwID=出品ID
+     CMD_MARKETGOLDGET  : （無し）
+   サーバー→クライアント（LIST の返事は CMDPARA_MARKETLIST）。byResult=MARKETRES_*
+     PUT OK       : dwID=出品ID・wItemID・dwPrice=値段・dwGold=手取り
+     BUY OK       : dwID・wItemID・dwPrice=払った額
+     TAKEBACK OK  : dwID・wItemID
+     GOLDGET OK   : dwGold=受け取った額・dwPrice=受付に残った売上
+     結果が OK 以外の時も、要求の dwID などをそのまま返す
+   どの結果も、返したあとに CMD_CHARITEM・所持金の更新が本人に届く */
+typedef struct _CMDPARA_MARKET {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byResult;											/* 結果(MARKETRES_*。サーバー→クライアント) */
+	BYTE		byType;												/* 一覧の種類(MARKETLIST_*。CMD_MARKETLIST) */
+	BYTE		byNo;												/* 手持ちの位置(CMD_MARKETPUT) */
+	WORD		wItemID;											/* 品の種類ID */
+	DWORD		dwTblID;											/* 本人のテーブルID */
+	DWORD		dwID;												/* 出品ID */
+	DWORD		dwPrice;											/* 値段 */
+	DWORD		dwGold;												/* 金額（手取り・受け取った額） */
+} CMDPARA_MARKET, *PCMDPARA_MARKET;
+
+/* 一覧の 1 件 */
+typedef struct _MARKETENTRY {
+	DWORD		dwID;												/* 出品ID */
+	WORD		wItemID;											/* 品の種類ID */
+	BYTE		byState;											/* 状態(MARKETSTATE_*) */
+	DWORD		dwPrice;											/* 値段 */
+	DWORD		dwRemain;											/* 残り秒（期限切れは 0） */
+	char		szSeller[MAX_CHARNAMEBUF];							/* 出品者の名前（終端あり） */
+} MARKETENTRY, *PMARKETENTRY;
+
+/* 取引所の一覧（サーバー→クライアント。CMD_MARKETLIST の返事）
+   届く大きさは offsetof(CMDPARA_MARKETLIST, aEntry) + byCount * sizeof(MARKETENTRY)
+   （byCount 件ぶんだけで、MARKET_LISTMAX 件ぶんには満たない）。
+   dwSale は本人のアカウントの売上（どの種類の一覧にも付く） */
+typedef struct _CMDPARA_MARKETLIST {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byType;												/* 一覧の種類(MARKETLIST_*) */
+	BYTE		byCount;											/* 件数（0〜MARKET_LISTMAX） */
+	DWORD		dwTblID;											/* 本人のテーブルID */
+	DWORD		dwSale;												/* 受付に貯まっている売上（ゴールド） */
+	MARKETENTRY	aEntry[MARKET_LISTMAX];								/* 一覧（新しい順） */
+} CMDPARA_MARKETLIST, *PCMDPARA_MARKETLIST;
 #pragma pack(pop)
 
 /* 管理者ウィンドウのギルドの依頼の編集（CMD_ADMINQUEST の byCmdSub） */
