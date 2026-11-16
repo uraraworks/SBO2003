@@ -407,16 +407,16 @@ void DrawWindowFrame(PWNDINFO pWnd)
 /* ========================================================================= */
 /* 関数名：DrawListScrollMark												 */
 /* 内容：スクロールする一覧の枠に▲▼を描く（上に続きがあれば上の枠に▲、		 */
-/*       下に続きがあれば下の枠に▼。右から2文字目の位置）					 */
+/*       下に続きがあれば下の枠に▼。枠の線から4ドット内側・右の枠寄り） */
 /*       nTop=先頭の番号、nRows=窓の行数、nCount=全部の数					 */
 /* ========================================================================= */
 void DrawListScrollMark(HDC hDC, int nCx, int nCy, int nTop, int nRows, int nCount)
 {
 	if (nTop > 0) {
-		TextOut2 (hDC, nCx - 32, 0, "▲", RGB (255, 255, 255));
+		TextOut2 (hDC, nCx - 24, 4, "▲", RGB (255, 255, 255));
 	}
 	if (nTop + nRows < nCount) {
-		TextOut2 (hDC, nCx - 32, nCy - 16, "▼", RGB (255, 255, 255));
+		TextOut2 (hDC, nCx - 24, nCy - 20, "▼", RGB (255, 255, 255));
 	}
 }
 
