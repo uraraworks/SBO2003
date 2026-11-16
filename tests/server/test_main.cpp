@@ -1058,6 +1058,7 @@ static void TestShipBed(const std::vector<int> &aLogin);
 static void TestMercenary(const std::vector<int> &aLogin, BOOL bMagic = FALSE);
 static void TestTailMapChg(const std::vector<int> &aLogin);
 static void TestTailBattle(const std::vector<int> &aLogin);
+extern "C" char *MockLastBody(int nConn, int nCmd);
 static void TestQuest(const std::vector<int> &aLogin);
 static void TestSortItem(const std::vector<int> &aLogin);
 static void TestCharPush(const std::vector<int> &aLogin);
@@ -3002,6 +3003,125 @@ static void TestTailBattle(const std::vector<int> &aLogin)
 	}
 	TAILRESET();
 	for (int k = 0; k < 3; k ++) TailReturnForget(apChar[k]->dwTblID);
+
+	/* ---- ばらけている間は、外の人がついていけない（CHAR_TAIL_NG3）。傭兵まわりの列の入れ替え ---- */
+	if (aLogin.size() >= 4) {
+		PCHARINFO pD = g_aCharInfo[aLogin[3]];
+		DWORD dwDBack[5] = { pD->dwMapID, pD->dwX, pD->dwY, pD->dwTailTblID, pD->dwTailBackTblID };
+		BYTE byDirBack = pD->byDirection;
+		int nUp = 0;
+		for (int d = 0; d < 4; d ++) if (anPosAddTblX[d] == 0 && anPosAddTblY[d] == -1) nUp = d;
+		DeleteTblNoPC((int)pD->dwTblID);
+		pD->dwMapID = pPort->dwID;
+		pD->byCharState = CHARSTATE_MOVE;
+		if (pD->wHP == 0) pD->wHP = 10;
+		pD->dwTailTblID = pD->dwTailBackTblID = (DWORD)-1;
+		AddTblNoPC((int)pD->dwTblID);
+		for (int k = 0; k < 4; k ++) MercenarySetBattleMode(g_aCharInfo[aLogin[k]], FALSE);
+
+		/* 外の人 D が、列の最後尾の1歩後ろから pT に Z を押す。結果の種類(届いた CHAR_TAIL の最後の1つ)を返す */
+		#define TAILZ(pT_, x_, y_, res_) do { \
+			TAILPLACE(pD, (x_), (y_)); pD->byDirection = (BYTE)nUp; \
+			MockTrace(1); \
+			CCHAR_TAIL Zd_; Zd_.Make(pD->dwTblID, (pT_)->dwTblID, CHAR_TAIL_REQ); \
+			TestRecv(pD, Zd_.Get(), Zd_.GetSize()); \
+			MockTrace(0); \
+			char *psz_ = MockLastBody(1000 + 3, CMD_MAIN_CHAR); \
+			unsigned int u_ = 0xFFFFFFFF; \
+			unsigned int uSub_ = 0; if (strlen(psz_) >= 28) { sscanf(psz_ + 2, "%2x", &uSub_); if (uSub_ == CMDCHAR_TAIL) sscanf(psz_ + 20, "%2x", &u_); } \
+			free(psz_); \
+			(res_) = (int)u_; } while (0)
+		int nRes;
+
+		/* B が戦闘モードで離れている間(A→C の列)：外の D が最後尾 C にZ → NG3 で列は変わらない */
+		TAILRESET();
+		TailBattleSend(pB, 1);
+		TAILPLACE(pB, nX0 + 1, nY0 + 5);
+		TAILZ(pC, nX0, nY0 + 3, nRes);
+		printf("tailscatter D->last C ng3=%d D(front=%d back=%d) C(back=%d)\n", nRes == CHAR_TAIL_NG3 ? 1 : 0,
+			(int)pD->dwTailTblID, (int)pD->dwTailBackTblID, (int)pC->dwTailBackTblID);
+		/* 先頭 A にZ(A の後ろは C がつながっているので元々ついていけないが、列は変わらない) */
+		TAILZ(pA, nX0, nY0 + 1, nRes);
+		printf("tailscatter D->head A ng3=%d D(front=%d) A(back=C:%d)\n", nRes == CHAR_TAIL_NG3 ? 1 : 0,
+			(int)pD->dwTailTblID, pA->dwTailBackTblID == pC->dwTblID ? 1 : 0);
+		/* 離れている B にZ → NG3 */
+		TAILZ(pB, nX0 + 1, nY0 + 6, nRes);
+		printf("tailscatter D->away B ng3=%d D(front=%d) B(back=%d)\n", nRes == CHAR_TAIL_NG3 ? 1 : 0,
+			(int)pD->dwTailTblID, (int)pB->dwTailBackTblID);
+
+		/* B が通常モードに戻って待っている状態：自分でZを押して C の後ろに入るのは断られない */
+		TAILPLACE(pB, nX0, nY0 + 3);
+		pB->byDirection = (BYTE)nUp;
+		MercenarySetBattleMode(pB, FALSE);		/* サーバーの覚えだけ通常モードに戻す(戻り先は覚えたまま待っている) */
+		{
+			CCHAR_TAIL Zb;
+			Zb.Make(pB->dwTblID, pC->dwTblID, CHAR_TAIL_REQ);
+			TestRecv(pB, Zb.Get(), Zb.GetSize());
+		}
+		printf("tailscatter B self Z front=C:%d C(back=B:%d)\n", pB->dwTailTblID == pC->dwTblID ? 1 : 0,
+			pC->dwTailBackTblID == pB->dwTblID ? 1 : 0);
+		TAILRESET();
+		for (int k = 0; k < 3; k ++) TailReturnForget(apChar[k]->dwTblID);
+		for (int k = 0; k < 4; k ++) MercenarySetBattleMode(g_aCharInfo[aLogin[k]], FALSE);
+
+		/* B が傭兵を連れている */
+		TAILPLACE(pB, nX0, nY0 + 1);
+		pB->byDirection = 3;
+		CHARINFO Npc;
+		ZeroMemory(&Npc, sizeof(Npc));
+		strcpy(Npc.szName, "ハーン");
+		static char szSpeechT[] = "@m";
+		Npc.pszNpcSpeech = szSpeechT;
+		PCHARINFO pM = NULL;
+		MercenaryTalk(pB, &Npc);
+		for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+			if (GetMercenaryOwner(g_aCharInfo[i]) == pB) pM = g_aCharInfo[i];
+		}
+		printf("tailmerc hired=%d\n", pM ? 1 : 0);
+		if (pM) {
+			/* B が戦闘モードで離れ、傭兵が B の後ろについた後、戦闘モードを解除すると B が列に戻れる */
+			pC->dwTailTblID = (DWORD)-1;	/* A→B の2人の列にする */
+			pC->dwTailBackTblID = (DWORD)-1;
+			pB->dwTailBackTblID = (DWORD)-1;
+			TailBattleSend(pB, 1);
+			pB->dwTailBackTblID = pM->dwTblID;
+			pM->dwTailTblID = pB->dwTblID;
+			pM->dwTailBackTblID = (DWORD)-1;
+			TailBattleSend(pB, 0);
+			printf("tailmerc return B(front=A:%d) M(front=%d) A(back=B:%d)\n", pB->dwTailTblID == pA->dwTblID ? 1 : 0,
+				(int)pM->dwTailTblID, pA->dwTailBackTblID == pB->dwTblID ? 1 : 0);
+			TailReturnForget(pB->dwTblID);
+
+			/* A→B→傭兵(Bの) の列で、D が傭兵の後ろからZ → D は B の後ろにつながり、傭兵は列から外れる */
+			pB->dwTailBackTblID = pM->dwTblID;
+			pM->dwTailTblID = pB->dwTblID;
+			pM->dwTailBackTblID = (DWORD)-1;
+			pM->dwX = pM->dwXBack = nX0;
+			pM->dwY = pM->dwYBack = nY0 + 2;
+			pM->byCharState = CHARSTATE_MOVE;
+			TAILZ(pM, nX0, nY0 + 3, nRes);
+			printf("tailmerc D->merc D(front=B:%d) B(back=D:%d) M(front=%d back=%d) res=%d\n", pD->dwTailTblID == pB->dwTblID ? 1 : 0,
+				pB->dwTailBackTblID == pD->dwTblID ? 1 : 0, (int)pM->dwTailTblID, (int)pM->dwTailBackTblID, nRes);
+			/* 傭兵の前にプレイヤーがいなければ断る(NG2) */
+			pD->dwTailTblID = pD->dwTailBackTblID = (DWORD)-1;
+			pB->dwTailBackTblID = (DWORD)-1;
+			pM->dwTailTblID = pM->dwTailBackTblID = (DWORD)-1;
+			TAILZ(pM, nX0, nY0 + 3, nRes);
+			printf("tailmerc D->lone merc ng=%d D(front=%d)\n", nRes, (int)pD->dwTailTblID);
+			MercenaryTalk(pB, &Npc);		/* もう一度話しかけてお別れ */
+		}
+		TAILRESET();
+		#undef TAILZ
+
+		DeleteTblNoPC((int)pD->dwTblID);
+		pD->dwMapID = dwDBack[0];
+		pD->dwX = pD->dwXBack = dwDBack[1];
+		pD->dwY = pD->dwYBack = dwDBack[2];
+		pD->dwTailTblID = dwDBack[3];
+		pD->dwTailBackTblID = dwDBack[4];
+		pD->byDirection = byDirBack;
+		AddTblNoPC((int)pD->dwTblID);
+	}
 	#undef TAILRESET
 
 	for (int i = 0; i < 3; i ++) {
