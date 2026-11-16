@@ -33,6 +33,7 @@
 #include "SboSvrCharInfoTimerProc.h"
 #include "SboSvrItemProc.h"
 #include "SboSvrTalk.h"
+#include "SboSvrMarket.h"
 #include "common/crc.h"
 #include "common/Command/Command.h"
 #include <emscripten.h>
@@ -1071,6 +1072,7 @@ static void TestMimic(const std::vector<int> &aLogin);
 static void TestEnemyDoor(const std::vector<int> &aLogin);
 static void TestAdminResurrect(const std::vector<int> &aLogin);
 static void TestFlagTalk(const std::vector<int> &aLogin);
+static void TestMarket(const std::vector<int> &aLogin);
 extern void BattleProcCheck(PCHARINFO);
 
 static void TestTownWarp(const std::vector<int> &aLogin)
@@ -1526,6 +1528,8 @@ static void TestWorld(void)
 	/* Y. 管理者ウィンドウの蘇生ボタン */
 	TestAdminResurrect(aLogin);
 	TestFlagTalk(aLogin);
+	/* AA. 取引所（委託販売） */
+	TestMarket(aLogin);
 	/* K2. 傭兵への回復・蘇生の特技（ゲームの乱数を使うので最後） */
 	TestMercenary(aLogin, TRUE);
 }
@@ -4371,6 +4375,448 @@ static void TestLeaveDispose(const std::vector<int> &aLogin)
 	}
 	p->dwGold = dwGoldBack;
 	p->byAdminLV = byAdminBack;
+}
+
+/* ------------------------------------------------------------------------- */
+/* AA. 取引所（委託販売。CMD_MARKET*）										 */
+/*    受付の近くでだけ使える・出品（装備中・取引不可・依頼の品・値段の範囲・5 件）*/
+/*    買う（自分の品・値段違い・所持金・手持ちいっぱい）・手数料 5%（切り捨て）・	 */
+/*    売上の受け取り（上限）・期限切れ・引き取り・保存して読み直し			 */
+/* ------------------------------------------------------------------------- */
+extern BOOL SaveMarket(void);
+extern BOOL LoadMarket(void);
+EM_JS(char *, MockLastBody, (int nConn, int nCmd), {
+	return stringToNewUTF8(Module["sboNet"].lastBody(nConn, nCmd));
+});
+
+/* 最後に届いた取引所のパケットを取り出す（届いていなければ FALSE。pOut は大きいほうの構造体の大きさ） */
+static BOOL MarketLast(int nConn, BYTE byCmd, std::vector<BYTE> &aOut)
+{
+	char *psz = MockLastBody(nConn, byCmd);
+	size_t n = strlen(psz) / 2;
+	aOut.assign(n, 0);
+	for (size_t i = 0; i < n; i ++) {
+		unsigned int u = 0;
+		sscanf(psz + i * 2, "%2x", &u);
+		aOut[i] = (BYTE)u;
+	}
+	free(psz);
+	return n > 0;
+}
+
+/* 取引所へ 1 つ頼んで結果（MARKETRES_*。届かなければ -1）を返す。届いたパケットは Last に入る */
+static CMDPARA_MARKET s_MarketLast;
+static int MarketAsk(PCHARINFO p, int nConn, BYTE byCmd, BYTE byType, BYTE byNo, WORD wItem, DWORD dwID, DWORD dwPrice, DWORD dwSize = sizeof(CMDPARA_MARKET))
+{
+	CMDPARA_MARKET Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = byCmd;
+	Para.byType = byType;
+	Para.byNo = byNo;
+	Para.wItemID = wItem;
+	Para.dwTblID = p->dwTblID;
+	Para.dwID = dwID;
+	Para.dwPrice = dwPrice;
+	/* 前の結果と見分けるため、送る前に届いた数を覚える */
+	int nBefore = MockCmdCount(nConn, byCmd);
+	TestRecv(p, &Para, dwSize);
+	if (MockCmdCount(nConn, byCmd) == nBefore) {
+		return -1;
+	}
+	std::vector<BYTE> a;
+	if (!MarketLast(nConn, byCmd, a) || a.size() < sizeof(CMDPARA_MARKET)) {
+		return -1;
+	}
+	memcpy(&s_MarketLast, &a[0], sizeof(s_MarketLast));
+	return s_MarketLast.byResult;
+}
+
+/* 一覧を頼む。届いた件数（届かなければ -1）。aEntry に中身。pdwSale に売上。pnSize に届いた大きさ */
+static int MarketAskList(PCHARINFO p, int nConn, BYTE byType, std::vector<MARKETENTRY> &aEntry, DWORD *pdwSale, size_t *pnSize)
+{
+	CMDPARA_MARKET Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_MARKETLIST;
+	Para.byType = byType;
+	Para.dwTblID = p->dwTblID;
+	int nBefore = MockCmdCount(nConn, CMD_MARKETLIST);
+	TestRecv(p, &Para, sizeof(Para));
+	aEntry.clear();
+	if (MockCmdCount(nConn, CMD_MARKETLIST) == nBefore) {
+		return -1;
+	}
+	std::vector<BYTE> a;
+	if (!MarketLast(nConn, CMD_MARKETLIST, a) || a.size() < offsetof(CMDPARA_MARKETLIST, aEntry)) {
+		return -1;
+	}
+	std::vector<BYTE> aFull(sizeof(CMDPARA_MARKETLIST), 0);
+	memcpy(&aFull[0], &a[0], a.size() < aFull.size() ? a.size() : aFull.size());
+	PCMDPARA_MARKETLIST pList = (PCMDPARA_MARKETLIST)&aFull[0];
+	for (int i = 0; i < pList->byCount; i ++) {
+		aEntry.push_back(pList->aEntry[i]);
+	}
+	if (pdwSale) *pdwSale = pList->dwSale;
+	if (pnSize) *pnSize = a.size();
+	return pList->byCount;
+}
+
+static void TestMarket(const std::vector<int> &aLogin)
+{
+	printf("== AA. Market ==\n");
+	if (aLogin.size() < 2) {
+		return;
+	}
+	PCHARINFO pA = g_aCharInfo[aLogin[0]], pB = g_aCharInfo[aLogin[1]];
+	int nConnA = 1000, nConnB = 1001;
+	int nMap = (int)pA->dwMapID;
+	PMAPINFO pMap = g_aMapInfo[nMap];
+
+	/* 受付にする NPC（今ある NPC の台詞を一時的に "@b" にする。キャラは増やさない）と、その近くの空きマス 2 つ */
+	PCHARINFO pNpc = NULL;
+	std::vector<std::pair<int, int> > aCell;
+	for (int i = 0; i < g_aCharInfo.GetSize() && !pNpc; i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+		if (p->byNpcType == 0 || p->szAcc[0] != 0 || p->dwMapID != (DWORD)nMap || IsQuestNpc(p) || p->dwSpaceID != 0) continue;
+		aCell.clear();
+		for (int dy = -2; dy <= 2 && aCell.size() < 2; dy ++) {
+			for (int dx = -2; dx <= 2 && aCell.size() < 2; dx ++) {
+				int x = (int)p->dwX + dx, y = (int)p->dwY + dy;
+				if (dx == 0 && dy == 0) continue;
+				if (x < 3 || y < 3 || x >= pMap->nCX - 3 || y >= pMap->nCY - 3) continue;
+				if (!CheckCharBlock((DWORD)nMap, x, y) || CheckCharBlockNPC((DWORD)nMap, x, y) != (DWORD)-1 ||
+					CheckCharBlockPC((DWORD)nMap, x, y) != (DWORD)-1) continue;
+				aCell.push_back(std::make_pair(x, y));
+			}
+		}
+		if (aCell.size() == 2) pNpc = p;
+	}
+	printf("market npc=%d\n", pNpc ? 1 : 0);
+	if (!pNpc) {
+		return;
+	}
+
+	/* 品：値打ちのある品を 8 個（取引できる・依頼の品でない）。取引不可の品・依頼の品・値打ちの無い品も探す */
+	std::vector<WORD> aItem;
+	WORD wTrade = 0, wQuestItem = 0, wNoGold = 0;
+	for (int i = 3; i < g_aItemInfo.GetSize(); i ++) {
+		PITEMINFO pItem = g_aItemInfo[i];
+		if (pItem->szName[0] == 0) continue;
+		if (pItem->byFlg & ITEMFLG_TRADE) {
+			if (!wTrade) wTrade = (WORD)i;
+		} else if (QuestIsQuestItem((WORD)i)) {
+			if (!wQuestItem) wQuestItem = (WORD)i;
+		} else if (pItem->dwGold == 0) {
+			if (!wNoGold) wNoGold = (WORD)i;
+		} else if (pItem->dwGold >= 40 && aItem.size() < 8) {
+			aItem.push_back((WORD)i);
+		}
+	}
+	printf("market picked items=%d trade=%d quest=%d nogold=%d\n", (int)aItem.size(), wTrade ? 1 : 0, wQuestItem ? 1 : 0, wNoGold ? 1 : 0);
+	if (aItem.size() < 8) {
+		return;
+	}
+
+	/* 状態を控える */
+	PCHARINFO apPC[2] = { pA, pB };
+	DWORD dwMapBack[2], dwXBack[2], dwYBack[2], dwGoldBack[2];
+	WORD awItemBack[2][MAX_MYITEM], awEquBack[2][MAX_EQUTYPE];
+	BYTE byAdminBack[2];
+	char szAccBack[2][sizeof(pA->szAcc)], szNameBack[2][sizeof(pA->szName)];
+	for (int i = 0; i < 2; i ++) {
+		PCHARINFO p = apPC[i];
+		dwMapBack[i] = p->dwMapID; dwXBack[i] = p->dwX; dwYBack[i] = p->dwY; dwGoldBack[i] = p->dwGold;
+		memcpy(awItemBack[i], p->waItem, sizeof(awItemBack[i]));
+		memcpy(awEquBack[i], p->waEqu, sizeof(awEquBack[i]));
+		byAdminBack[i] = p->byAdminLV;
+		memcpy(szAccBack[i], p->szAcc, sizeof(szAccBack[i]));
+		memcpy(szNameBack[i], p->szName, sizeof(szNameBack[i]));
+		p->byAdminLV = ADMINLV_USER;
+		ZeroMemory(p->waItem, sizeof(p->waItem));
+		for (int j = 0; j < MAX_EQUTYPE; j ++) p->waEqu[j] = 0xFFFF;
+	}
+	strcpy(pA->szAcc, "mktsell"); strcpy(pA->szName, "売り手");
+	strcpy(pB->szAcc, "mktbuy");  strcpy(pB->szName, "買い手");
+	char *pszSpeechBack = pNpc->pszNpcSpeech;
+	pNpc->pszNpcSpeech = new char[8];
+	strcpy(pNpc->pszNpcSpeech, "@b");
+	QuestMovePC(pA, nMap, aCell[0].first, aCell[0].second);
+	QuestMovePC(pB, nMap, aCell[1].first, aCell[1].second);
+	MarketClear();
+	MockTrace(1);
+
+	/* 売り手の手持ち：品 8 個のうち先頭から 7 個 */
+	for (int i = 0; i < 7; i ++) pA->waItem[i] = aItem[i];
+	pB->dwGold = 5000;
+	#define MKTCOUNT(p) GetItemCount((p)->dwTblID)
+	DWORD dwMin0 = g_aItemInfo[aItem[0]]->dwGold / 4;
+	if (dwMin0 == 0) dwMin0 = 1;
+	printf("market init a_items=%d min0_ok=%d\n", MKTCOUNT(pA), (int)(dwMin0 >= 10));
+
+	/* 受付が近くにいない時は何もできない（台詞が違う・遠い） */
+	pNpc->pszNpcSpeech[1] = 0x78;
+	std::vector<MARKETENTRY> aE;
+	DWORD dwSale = 99;
+	size_t nSize = 0;
+	int nRes, nR1, nR2, nR3;
+	nR1 = MarketAsk(pA, nConnA, CMD_MARKETPUT, 0, 0, 0, 0, 1000);
+	nR2 = MarketAskList(pA, nConnA, MARKETLIST_MINE, aE, NULL, NULL);
+	printf("market nospeech put=%d list=%d items=%d\n", nR1, nR2, MKTCOUNT(pA));
+	pNpc->pszNpcSpeech[1] = 0x62;
+	DWORD dwXKeep = pA->dwX;
+	pA->dwX = pNpc->dwX + MARKET_RANGE + 1;
+	nR1 = MarketAsk(pA, nConnA, CMD_MARKETPUT, 0, 0, 0, 0, 1000);
+	printf("market far put=%d items=%d\n", nR1, MKTCOUNT(pA));
+	pA->dwX = pNpc->dwX + MARKET_RANGE;
+	nR1 = MarketAskList(pA, nConnA, MARKETLIST_MINE, aE, NULL, NULL);
+	printf("market edge ok list=%d\n", nR1);
+	pA->dwX = dwXKeep;
+
+	/* 出せない品：位置が範囲外・空き枠・装備中・取引不可・依頼の品・値打ちの無い品は下限 1 */
+	nR1 = MarketAsk(pA, nConnA, CMD_MARKETPUT, 0, MAX_MYITEM, 0, 0, 1000);
+	nR2 = MarketAsk(pA, nConnA, CMD_MARKETPUT, 0, 10, 0, 0, 1000);
+	printf("market ng range=%d empty=%d\n", nR1, nR2);
+	pA->waEqu[0] = 1;
+	nR1 = MarketAsk(pA, nConnA, CMD_MARKETPUT, 0, 1, 0, 0, 1000);
+	printf("market ng equip=%d items=%d\n", nR1, MKTCOUNT(pA));
+	pA->waEqu[0] = 0xFFFF;
+	if (wTrade) {
+		pA->waItem[7] = wTrade;
+		nR1 = MarketAsk(pA, nConnA, CMD_MARKETPUT, 0, 7, 0, 0, 1000);
+		printf("market ng trade=%d\n", nR1);
+		pA->waItem[7] = 0;
+	}
+	if (wQuestItem) {
+		pA->waItem[7] = wQuestItem;
+		nR1 = MarketAsk(pA, nConnA, CMD_MARKETPUT, 0, 7, 0, 0, 1000);
+		printf("market ng quest=%d\n", nR1);
+		pA->waItem[7] = 0;
+	}
+	if (wNoGold) {
+		pA->waItem[7] = wNoGold;
+		nR1 = MarketAsk(pA, nConnA, CMD_MARKETPUT, 0, 7, 0, 0, 0);
+		nR2 = MarketAsk(pA, nConnA, CMD_MARKETPUT, 0, 7, 0, 0, 1);
+		printf("market nogold-item price0=%d price1=%d\n", nR1, nR2);
+		printf("market nogold-item listed=%d items=%d\n", (int)g_aMarketItem.size(), MKTCOUNT(pA));
+		/* 戻す（出品できてしまったので片付ける） */
+		if (!g_aMarketItem.empty()) {
+			MarketClear();
+		}
+		pA->waItem[7] = 0;
+		for (int i = 0; i < 7; i ++) pA->waItem[i] = aItem[i];
+	}
+	/* 値段：下限未満・上限超え・ちょうど下限・ちょうど上限 */
+	nR1 = MarketAsk(pA, nConnA, CMD_MARKETPUT, 0, 0, 0, 0, dwMin0 - 1);
+	nR2 = MarketAsk(pA, nConnA, CMD_MARKETPUT, 0, 0, 0, 0, MARKET_PRICEMAX + 1);
+	nR3 = MarketAsk(pA, nConnA, CMD_MARKETPUT, 0, 0, 0, 0, 1000, 5);
+	printf("market price low=%d high=%d size_short=%d\n", nR1, nR2, nR3);
+	printf("market price none listed=%d items=%d\n", (int)g_aMarketItem.size(), MKTCOUNT(pA));
+
+	/* 出品：手数料 5%（切り捨て）。手取りは返事の dwGold */
+	nRes = MarketAsk(pA, nConnA, CMD_MARKETPUT, 0, 0, 0, 0, 1000);
+	printf("market put1 res=%d id=%u item_ok=%d price=%u net=%u items=%d listed=%d\n", nRes, s_MarketLast.dwID,
+		(int)(s_MarketLast.wItemID == aItem[0]), s_MarketLast.dwPrice, s_MarketLast.dwGold, MKTCOUNT(pA), (int)g_aMarketItem.size());
+	/* 手持ちは詰まる：先頭が元の 2 番目の品になる */
+	printf("market put1 shift first_ok=%d\n", (int)(pA->waItem[0] == aItem[1]));
+	DWORD dwId1 = s_MarketLast.dwID;
+	nRes = MarketAsk(pA, nConnA, CMD_MARKETPUT, 0, 0, 0, 0, 999);			/* 手数料 49・手取り 950 */
+	printf("market put2 res=%d net=%u\n", nRes, s_MarketLast.dwGold);
+	DWORD dwId2 = s_MarketLast.dwID;
+	nRes = MarketAsk(pA, nConnA, CMD_MARKETPUT, 0, 0, 0, 0, 19);			/* 手数料 0（切り捨て）。下限を超えていれば */
+	printf("market put3 res=%d net=%u\n", nRes, s_MarketLast.dwGold);
+	if (nRes != MARKETRES_OK) {
+		nRes = MarketAsk(pA, nConnA, CMD_MARKETPUT, 0, 0, 0, 0, MARKET_PRICEMAX);
+		printf("market put3b res=%d net=%u\n", nRes, s_MarketLast.dwGold);
+	}
+	nRes = MarketAsk(pA, nConnA, CMD_MARKETPUT, 0, 0, 0, 0, 20000);
+	printf("market put4 res=%d\n", nRes);
+	nRes = MarketAsk(pA, nConnA, CMD_MARKETPUT, 0, 0, 0, 0, 1000);
+	printf("market put5 res=%d\n", nRes);
+	/* 6 件目は断る（期限切れも数える） */
+	nRes = MarketAsk(pA, nConnA, CMD_MARKETPUT, 0, 0, 0, 0, 1000);
+	printf("market put6 res=%d listed=%d items=%d\n", nRes, (int)g_aMarketItem.size(), MKTCOUNT(pA));
+	/* 1 件目の次の ID は増えていく */
+	printf("market ids ascending=%d\n", (int)(dwId2 > dwId1 && g_dwMarketNextID > dwId2));
+
+	/* 一覧：自分のアカウントの品は「買う」に出ない・買い手には全部出る・新しい順 */
+	dwSale = 99;
+	int nA = MarketAskList(pA, nConnA, MARKETLIST_BUY, aE, &dwSale, &nSize);
+	printf("market list a buy=%d size_ok=%d sale=%u\n", nA, (int)(nSize == offsetof(CMDPARA_MARKETLIST, aEntry)), dwSale);
+	int nB = MarketAskList(pB, nConnB, MARKETLIST_BUY, aE, &dwSale, &nSize);
+	printf("market list b buy=%d size_ok=%d sale=%u\n", nB, (int)(nSize == offsetof(CMDPARA_MARKETLIST, aEntry) + sizeof(MARKETENTRY) * nB), dwSale);
+	BOOL bDesc = TRUE, bSeller = TRUE, bState = TRUE, bRemain = TRUE;
+	for (size_t i = 0; i < aE.size(); i ++) {
+		if (i && aE[i - 1].dwID <= aE[i].dwID) bDesc = FALSE;
+		if (strcmp(aE[i].szSeller, "売り手") != 0) bSeller = FALSE;
+		if (aE[i].byState != MARKETSTATE_ON) bState = FALSE;
+		if (aE[i].dwRemain < MARKET_LIMITSEC - 5 || aE[i].dwRemain > MARKET_LIMITSEC) bRemain = FALSE;
+	}
+	printf("market list b entries desc=%d seller=%d on=%d remain=%d first_price=%u last_price=%u\n", bDesc, bSeller, bState, bRemain,
+		aE.empty() ? 0 : aE[0].dwPrice, aE.empty() ? 0 : aE.back().dwPrice);
+	int nMineA = MarketAskList(pA, nConnA, MARKETLIST_MINE, aE, &dwSale, NULL);
+	int nMineB = MarketAskList(pB, nConnB, MARKETLIST_MINE, aE, &dwSale, NULL);
+	printf("market list mine a=%d b=%d\n", nMineA, nMineB);
+	/* 一覧の種類が違う・短いパケットは届かない */
+	{
+		CMDPARA_MARKET Para;
+		ZeroMemory(&Para, sizeof(Para));
+		Para.byCmd = CMD_MARKETLIST; Para.byType = 9; Para.dwTblID = pA->dwTblID;
+		int n0 = MockCmdCount(nConnA, CMD_MARKETLIST);
+		TestRecv(pA, &Para, sizeof(Para));
+		Para.byType = MARKETLIST_BUY;
+		TestRecv(pA, &Para, 4);
+		printf("market list invalid replies=%d\n", MockCmdCount(nConnA, CMD_MARKETLIST) - n0);
+	}
+
+	/* 買う：自分の品・もう無い・値段違い・品違い・所持金不足・手持ちいっぱい */
+	printf("market buy own=%d\n", MarketAsk(pA, nConnA, CMD_MARKETBUY, 0, 0, aItem[1], dwId1, 1000));
+	nR1 = MarketAsk(pB, nConnB, CMD_MARKETBUY, 0, 0, aItem[0], 9999, 1000);
+	nR2 = MarketAsk(pB, nConnB, CMD_MARKETBUY, 0, 0, aItem[0], dwId1, 1001);
+	nR3 = MarketAsk(pB, nConnB, CMD_MARKETBUY, 0, 0, aItem[3], dwId1, 1000);
+	printf("market buy gone=%d wrongprice=%d wrongitem=%d\n", nR1, nR2, nR3);
+	pB->dwGold = 999;
+	nR1 = MarketAsk(pB, nConnB, CMD_MARKETBUY, 0, 0, aItem[0], dwId1, 1000);
+	printf("market buy nogold=%d gold=%u\n", nR1, pB->dwGold);
+	pB->dwGold = 5000;
+	for (int i = 0; i < MAX_MYITEM; i ++) pB->waItem[i] = aItem[7];
+	nR1 = MarketAsk(pB, nConnB, CMD_MARKETBUY, 0, 0, aItem[0], dwId1, 1000);
+	printf("market buy full=%d gold=%u items=%d listed=%d\n", nR1, pB->dwGold, MKTCOUNT(pB), (int)g_aMarketItem.size());
+	pB->waItem[MAX_MYITEM - 1] = 0;
+	/* 買えた：払う・品が手持ちへ・売上は手取り（1000-50）・出品は消える */
+	nRes = MarketAsk(pB, nConnB, CMD_MARKETBUY, 0, 0, aItem[0], dwId1, 1000);
+	printf("market buy ok=%d gold=%u items=%d last_ok=%d listed=%d sale_a=%u sale_b=%u\n", nRes, pB->dwGold, MKTCOUNT(pB),
+		(int)(pB->waItem[MAX_MYITEM - 1] == aItem[0]), (int)g_aMarketItem.size(), MarketGetSale("mktsell"), MarketGetSale("mktbuy"));
+	nR1 = MarketAsk(pB, nConnB, CMD_MARKETBUY, 0, 0, aItem[0], dwId1, 1000);
+	printf("market buy again=%d\n", nR1);
+	pB->waItem[MAX_MYITEM - 2] = 0;
+	nRes = MarketAsk(pB, nConnB, CMD_MARKETBUY, 0, 0, aItem[1], dwId2, 999);
+	printf("market buy2=%d gold=%u sale_a=%u (999-49)\n", nRes, pB->dwGold, MarketGetSale("mktsell"));
+
+	/* 売上は一覧の見出しにも付く（手取りの合計） */
+	nR1 = MarketAskList(pA, nConnA, MARKETLIST_MINE, aE, &dwSale, NULL);
+	printf("market list mine after sale=%d sale=%u\n", nR1, dwSale);
+
+	/* 売上の受け取り：買い手には無い・売り手は所持金の上限まで・上限なら受け取れない */
+	nR1 = MarketAsk(pB, nConnB, CMD_MARKETGOLDGET, 0, 0, 0, 0, 0);
+	printf("market goldget nosale=%d\n", nR1);
+	DWORD dwSaleBefore = MarketGetSale("mktsell");
+	pA->dwGold = 999999 - 100;
+	nRes = MarketAsk(pA, nConnA, CMD_MARKETGOLDGET, 0, 0, 0, 0, 0);
+	printf("market goldget cap res=%d got=%u left=%u gold=%u sale=%u\n", nRes, s_MarketLast.dwGold, s_MarketLast.dwPrice, pA->dwGold, MarketGetSale("mktsell"));
+	nRes = MarketAsk(pA, nConnA, CMD_MARKETGOLDGET, 0, 0, 0, 0, 0);
+	printf("market goldget full res=%d gold=%u sale=%u\n", nRes, pA->dwGold, MarketGetSale("mktsell"));
+	pA->dwGold = 0;
+	nRes = MarketAsk(pA, nConnA, CMD_MARKETGOLDGET, 0, 0, 0, 0, 0);
+	printf("market goldget all res=%d got=%u left=%u gold=%u sale=%u rows=%d same_total=%d\n", nRes, s_MarketLast.dwGold, s_MarketLast.dwPrice, pA->dwGold,
+		MarketGetSale("mktsell"), (int)g_aMarketSale.size(), (int)(dwSaleBefore == pA->dwGold + 100));
+	nR1 = MarketAsk(pA, nConnA, CMD_MARKETGOLDGET, 0, 0, 0, 0, 0);
+	printf("market goldget again=%d\n", nR1);
+
+	/* 期限切れ：一覧に出ない・買えない・出品者は「期限切れ」で見える・引き取れる */
+	{
+		MarketClear();
+		for (int i = 0; i < MAX_MYITEM; i ++) pB->waItem[i] = 0;
+		pA->waItem[0] = aItem[0]; pA->waItem[1] = aItem[1]; pA->waItem[2] = aItem[2];
+		MarketAsk(pA, nConnA, CMD_MARKETPUT, 0, 0, 0, 0, 3000);
+		DWORD dwIdOld = s_MarketLast.dwID;
+		MarketAsk(pA, nConnA, CMD_MARKETPUT, 0, 0, 0, 0, 4000);
+		DWORD dwIdNew = s_MarketLast.dwID;
+		MarketAsk(pA, nConnA, CMD_MARKETPUT, 0, 0, 0, 0, 5000);
+		DWORD dwIdMid = s_MarketLast.dwID;
+		/* 古いほうを 8 日前、真ん中を 6 日と 23 時間前（まだ有効）にする */
+		DWORD dwNow = (DWORD)time(NULL);
+		for (size_t i = 0; i < g_aMarketItem.size(); i ++) {
+			if (g_aMarketItem[i].dwID == dwIdOld) g_aMarketItem[i].dwTime = dwNow - 8 * 24 * 3600;
+			if (g_aMarketItem[i].dwID == dwIdMid) g_aMarketItem[i].dwTime = dwNow - (MARKET_LIMITSEC - 3600);
+		}
+		int n = MarketAskList(pB, nConnB, MARKETLIST_BUY, aE, &dwSale, NULL);
+		printf("market expire buylist=%d ids_ok=%d remain_mid=%d\n", n, (int)(n == 2 && aE[0].dwID == dwIdMid && aE[1].dwID == dwIdNew),
+			(int)(n == 2 && aE[0].dwRemain > 3500 && aE[0].dwRemain <= 3600));
+		nR1 = MarketAsk(pB, nConnB, CMD_MARKETBUY, 0, 0, aItem[0], dwIdOld, 3000);
+		printf("market expire buy=%d\n", nR1);
+		n = MarketAskList(pA, nConnA, MARKETLIST_MINE, aE, &dwSale, NULL);
+		printf("market expire mine=%d state=%d,%d,%d remain_old=%u\n", n, n == 3 ? aE[0].byState : -1, n == 3 ? aE[1].byState : -1, n == 3 ? aE[2].byState : -1,
+			n == 3 ? aE[2].dwRemain : 1);
+		/* 引き取り：他人の品・無い品は断る。手持ちがいっぱいなら断って残す。期限切れも出品中も戻せる */
+		nR1 = MarketAsk(pB, nConnB, CMD_MARKETTAKEBACK, 0, 0, 0, dwIdOld, 0);
+		nR2 = MarketAsk(pA, nConnA, CMD_MARKETTAKEBACK, 0, 0, 0, 12345, 0);
+		printf("market takeback other=%d none=%d\n", nR1, nR2);
+		for (int i = 0; i < MAX_MYITEM; i ++) pA->waItem[i] = aItem[7];
+		nR1 = MarketAsk(pA, nConnA, CMD_MARKETTAKEBACK, 0, 0, 0, dwIdOld, 0);
+		printf("market takeback full=%d listed=%d\n", nR1, (int)g_aMarketItem.size());
+		for (int i = 0; i < MAX_MYITEM; i ++) pA->waItem[i] = 0;
+		nRes = MarketAsk(pA, nConnA, CMD_MARKETTAKEBACK, 0, 0, 0, dwIdOld, 0);
+		printf("market takeback expired=%d item_ok=%d listed=%d first_ok=%d\n", nRes, (int)(s_MarketLast.wItemID == aItem[0]), (int)g_aMarketItem.size(), (int)(pA->waItem[0] == aItem[0]));
+		nRes = MarketAsk(pA, nConnA, CMD_MARKETTAKEBACK, 0, 0, 0, dwIdNew, 0);
+		printf("market takeback active=%d listed=%d items=%d\n", nRes, (int)g_aMarketItem.size(), MKTCOUNT(pA));
+		nR1 = MarketAsk(pA, nConnA, CMD_MARKETTAKEBACK, 0, 0, 0, dwIdNew, 0);
+		printf("market takeback again=%d\n", nR1);
+		/* 出品数は引き取ると空く（期限切れも数えていたので、5 件いっぱいから 1 件戻して出せる） */
+		MarketClear();
+		for (int i = 0; i < 6; i ++) pA->waItem[i] = aItem[i];
+		int nOk = 0;
+		for (int i = 0; i < 6; i ++) if (MarketAsk(pA, nConnA, CMD_MARKETPUT, 0, 0, 0, 0, 1000) == MARKETRES_OK) nOk ++;
+		g_aMarketItem[0].dwTime = dwNow - 9 * 24 * 3600;
+		MarketAskList(pA, nConnA, MARKETLIST_MINE, aE, &dwSale, NULL);		/* 期限切れに変わる */
+		nR1 = MarketAsk(pA, nConnA, CMD_MARKETPUT, 0, 0, 0, 0, 1000);
+		printf("market limit ok=%d listed=%d put_with_expired=%d\n", nOk, (int)g_aMarketItem.size(), nR1);
+		MarketAsk(pA, nConnA, CMD_MARKETTAKEBACK, 0, 0, 0, g_aMarketItem[0].dwID, 0);
+		nR1 = MarketAsk(pA, nConnA, CMD_MARKETPUT, 0, 0, 0, 0, 1000);
+		printf("market limit after takeback listed=%d put=%d\n", (int)g_aMarketItem.size(), nR1);
+	}
+
+	/* 保存して読み直す：出品・売上・状態・次の出品 ID */
+	{
+		MarketClear();
+		for (int i = 0; i < 3; i ++) pA->waItem[i] = aItem[i];
+		for (int i = 3; i < MAX_MYITEM; i ++) pA->waItem[i] = 0;
+		MarketAsk(pA, nConnA, CMD_MARKETPUT, 0, 0, 0, 0, 1000);
+		MarketAsk(pA, nConnA, CMD_MARKETPUT, 0, 0, 0, 0, 2000);
+		MarketAsk(pB, nConnB, CMD_MARKETBUY, 0, 0, aItem[0], g_aMarketItem[0].dwID, 1000);
+		pB->waItem[MAX_MYITEM - 1] = 0;
+		g_aMarketItem[0].byState = MARKETSTATE_EXPIRED;
+		MARKETSALE Sale;
+		ZeroMemory(&Sale, sizeof(Sale));
+		strcpy(Sale.szAcc, "mktother"); Sale.dwGold = 4242;
+		g_aMarketSale.push_back(Sale);
+		std::vector<MARKETITEM> aItemBefore = g_aMarketItem;
+		std::vector<MARKETSALE> aSaleBefore = g_aMarketSale;
+		DWORD dwNextBefore = g_dwMarketNextID;
+		BOOL bSaved = SaveMarket();
+		MarketClear();
+		BOOL bLoaded = LoadMarket();
+		BOOL bSame = (aItemBefore.size() == g_aMarketItem.size()) && (aSaleBefore.size() == g_aMarketSale.size());
+		for (size_t i = 0; bSame && i < aItemBefore.size(); i ++) {
+			bSame = (memcmp(&aItemBefore[i], &g_aMarketItem[i], sizeof(MARKETITEM)) == 0);
+		}
+		for (size_t i = 0; bSame && i < aSaleBefore.size(); i ++) {
+			bSame = (memcmp(&aSaleBefore[i], &g_aMarketSale[i], sizeof(MARKETSALE)) == 0);
+		}
+		printf("market save=%d load=%d same=%d items=%d sales=%d next_same=%d sale_a=%u other=%u\n", (int)bSaved, (int)bLoaded, (int)bSame,
+			(int)g_aMarketItem.size(), (int)g_aMarketSale.size(), (int)(g_dwMarketNextID == dwNextBefore), MarketGetSale("mktsell"), MarketGetSale("mktother"));
+		/* 空にして保存すると、次に読むと 0 件 */
+		MarketClear();
+		bSaved = SaveMarket();
+		bLoaded = LoadMarket();
+		printf("market save empty=%d load=%d items=%d sales=%d next=%u\n", (int)bSaved, (int)bLoaded, (int)g_aMarketItem.size(), (int)g_aMarketSale.size(), g_dwMarketNextID);
+	}
+
+	/* 片付け */
+	MockTrace(0);
+	MarketClear();
+	delete[] pNpc->pszNpcSpeech;
+	pNpc->pszNpcSpeech = pszSpeechBack;
+	for (int i = 0; i < 2; i ++) {
+		PCHARINFO p = apPC[i];
+		memcpy(p->waItem, awItemBack[i], sizeof(awItemBack[i]));
+		memcpy(p->waEqu, awEquBack[i], sizeof(awEquBack[i]));
+		p->dwGold = dwGoldBack[i];
+		p->byAdminLV = byAdminBack[i];
+		memcpy(p->szAcc, szAccBack[i], sizeof(szAccBack[i]));
+		memcpy(p->szName, szNameBack[i], sizeof(szNameBack[i]));
+		QuestMovePC(p, (int)dwMapBack[i], (int)dwXBack[i], (int)dwYBack[i]);
+	}
+	#undef MKTCOUNT
+	printf("market end\n");
 }
 
 /* ------------------------------------------------------------------------- */

@@ -125,6 +125,7 @@ void KeyProcSTATUSMAGIC					(PWNDINFO, BYTE, BYTE);		/* 強さ：覚えている
 void KeyProcMAKER							(PWNDINFO, BYTE, BYTE);		/* 作り手（レシピ）：作れる物の一覧・確認 */
 void KeyProcTOWNWARP						(PWNDINFO, BYTE, BYTE);		/* 町転送：行き先の選択 */
 void KeyProcQUEST							(PWNDINFO, BYTE, BYTE);		/* ギルドの依頼：一覧・進み具合 */
+void KeyProcMARKET							(PWNDINFO, BYTE, BYTE);		/* 取引所（商人ギルドの出張所）の受付 */
 
 LRESULT CALLBACK AccWndProc					(HWND, UINT, WPARAM, LPARAM);	/* アカウント名入力用メッセージ処理 */
 LRESULT CALLBACK PasWndProc					(HWND, UINT, WPARAM, LPARAM);	/* パスワード入力用メッセージ処理 */
@@ -276,6 +277,7 @@ const KEYPROC KeyProcTbl[] = {
 	KeyProcTOWNWARP,					/* WNDTYPE_TOWNWARP					町転送：行き先の選択 */
 	KeyProcQUEST,						/* WNDTYPE_QUEST					ギルドの依頼：一覧・進み具合 */
 	KeyProcSORTMENU,					/* WNDTYPE_SORTMENU					並べ替え：入れ替え・種類順・50音順 */
+	KeyProcMARKET,						/* WNDTYPE_MARKET					取引所（商人ギルドの出張所）の受付 */
 };
 
 
@@ -8631,6 +8633,20 @@ void CmdProcHanasu(PWNDINFO pWnd)
 		}
 		return;
 
+	/* 取引所（商人ギルドの出張所）の受付？ 台詞が "@b"。一覧や結果はサーバーから届く */
+	} else if (pChar2->pszNpcSpeech[0] == '@' && pChar2->pszNpcSpeech[1] == 'b') {
+		/* コマンドウィンドウを閉じる */
+		int nNo = GetWindowID (g_dwMsgIDCommand);
+		if (nNo >= 0) {
+			EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
+			g_dwMsgIDCommand = 0;
+			g_bDraw = TRUE;
+		}
+		pChar2->byDirection = abyDirectionTbl[pChar->byDirection];
+		/* 所持金の窓とメニューを出す（窓は MarketOpen が登録する） */
+		MarketOpen ();
+		pWndTmp = NULL;
+
 	/* 冒険者登録所？ */
 	} else if (pChar2->pszNpcSpeech[0] == '@' && pChar2->pszNpcSpeech[1] == 'a') {
 		/* コマンドウィンドウを閉じる */
@@ -9899,6 +9915,342 @@ void UseMagicKey(PCHARINFO pChar, int nNo)
 	SendCmdEFECTCHG (pInfo->byUserEfectID, TRUE);
 	DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
 	g_bDraw = TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：KeyProcMARKET_Wait												 */
+/* 内容：取引所：サーバーの返事を待つ（台詞を「少々お待ちください」にして		 */
+/*       キーを受け付けなくする。返事は RecvDataProcMARKET* が受ける）		 */
+/* ========================================================================= */
+static void KeyProcMARKET_Wait(PWNDINFO pWndOwner, int nWait)
+{
+	g_nMarketWait = nWait;
+	g_dwMarketWaitTime = timeGetTime ();
+	MarketSetMsg (pWndOwner, "＊｢少々お待ちください。@2");
+	g_dwActiveMsgID = pWndOwner->dwID;
+	g_bDraw = TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：KeyProcMARKET_Cancel												 */
+/* 内容：取引所：取り消し（Zキー・「いいえ」）。ひとつ前の画面へ戻る			 */
+/*       pWnd は戻る時に消えるので、呼んだ後は触らないこと					 */
+/* ========================================================================= */
+static void KeyProcMARKET_Cancel(PWNDINFO pWnd)
+{
+	PWNDINFO pWndList;
+
+	switch (pWnd->nType2) {
+	case MARKETWND_MENU:
+		MarketClose ("＊｢ありがとうございました。@1　 またどうぞ。@2");
+		break;
+
+	case MARKETWND_LIST:
+	case MARKETWND_ITEM:
+		MarketShowMenu (NULL);
+		break;
+
+	case MARKETWND_PRICE:
+		MarketShowItem (g_nMarketSelNo);
+		break;
+
+	case MARKETWND_CONF:
+		switch (pWnd->byData1) {
+		case MARKETCONF_BUY:
+		case MARKETCONF_TAKEBACK:
+			/* 一覧へ戻る（一覧は残してある） */
+			pWndList = MarketFindWindow (MARKETWND_LIST);
+			if (pWndList == NULL) {
+				MarketShowMenu (NULL);
+				break;
+			}
+			{
+				BOOL bBuy = (pWnd->byData1 == MARKETCONF_BUY);
+				EraseWindow (pWnd);
+				MarketSetMsg (pWndList, bBuy ? "＊｢どれをお買い求めですか？@2" : "＊｢どれを引き取りますか？@2");
+			}
+			pWndList->dwTimeDrawStart = 0;
+			g_dwActiveMsgID = pWndList->dwID;
+			break;
+
+		case MARKETCONF_PUT:
+			MarketShowPrice (g_dwMarketSelPrice);
+			break;
+
+		default:
+			MarketShowMenu (NULL);
+			break;
+		}
+		break;
+	}
+	g_bDraw = TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：KeyProcMARKET													 */
+/* 内容：キー入力処理(取引所の受付)											 */
+/*       メニュー → 買う／出品する／自分の出品／売上を受け取る				 */
+/*       決定=x・取消=z・↑↓・値段は ←→ で桁を選んで ↑↓ で数字を変える		 */
+/*       サーバーへ頼んだ後は、返事（RecvDataProcMARKET*）が来るまで待つ		 */
+/* ========================================================================= */
+void KeyProcMARKET(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
+{
+	DWORD dwTime = 250;
+	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
+	PWNDINFO pWndList;
+	char szTmp[512];
+
+	if (pWnd->byRepeate > 1) {
+		dwTime = 125;
+	}
+
+	/* サーバーの返事待ち（一定時間たったらあきらめて、メニューへ戻る） */
+	if (g_nMarketWait != MARKETWAIT_NONE) {
+		if (timeGetTime () > g_dwMarketWaitTime + MARKET_WAITMAX) {
+			g_nMarketWait = MARKETWAIT_NONE;
+			MarketShowMenu ("＊｢うまく伝わらなかったようです。@1　 もう一度お願いします。@2");
+		}
+		return;
+	}
+
+	if ((byEvent == KEY_UP) && (byCode == 'B')) {
+		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
+		KeyProcMARKET_Cancel (pWnd);
+
+	} else if ((byEvent == KEY_UP) && (byCode == 'A') && (g_bEnableMove)) {
+		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
+		pWnd->dwTimeDrawStart = 0;
+		pWnd->byAnime = 1;
+		g_bDraw = TRUE;
+
+		switch (pWnd->nType2) {
+		/* 受付のメニュー */
+		case MARKETWND_MENU:
+			switch (pWnd->nData1) {
+			case 0:		/* 買う */
+				SendCmdMARKET (CMD_MARKETLIST, MARKETLIST_BUY, 0, 0, 0, 0);
+				KeyProcMARKET_Wait (pWnd, MARKETWAIT_BUYLIST);
+				break;
+
+			case 1:		/* 出品する */
+				MarketShowItem (0);
+				break;
+
+			case 2:		/* 自分の出品 */
+				SendCmdMARKET (CMD_MARKETLIST, MARKETLIST_MINE, 0, 0, 0, 0);
+				KeyProcMARKET_Wait (pWnd, MARKETWAIT_MINELIST);
+				break;
+
+			case 3:		/* 売上を受け取る（売上の額は一覧に付いてくる） */
+				SendCmdMARKET (CMD_MARKETLIST, MARKETLIST_MINE, 0, 0, 0, 0);
+				KeyProcMARKET_Wait (pWnd, MARKETWAIT_SALE);
+				break;
+
+			default:	/* やめる */
+				MarketClose ("＊｢ありがとうございました。@1　 またどうぞ。@2");
+				break;
+			}
+			break;
+
+		/* 買う・自分の出品の一覧：選ぶと確認 */
+		case MARKETWND_LIST:
+			{
+				int nIndex = (int)pWnd->byData1 + pWnd->nData1;
+				if (nIndex >= (int)g_MarketList.byCount) {
+					break;
+				}
+				const MARKETENTRY *pEntry = &g_MarketList.aEntry[nIndex];
+				g_dwMarketSelID = pEntry->dwID;
+				g_wMarketSelItem = pEntry->wItemID;
+				g_dwMarketSelPrice = pEntry->dwPrice;
+
+				if (pWnd->dwData == MARKETLIST_BUY) {
+					if (pChar->dwGold < pEntry->dwPrice) {
+						MarketSetMsg (pWnd, "＊｢所持金が足りないようですね。@2");
+						g_dwActiveMsgID = pWnd->dwID;
+						break;
+					}
+					if (GetItemCount (g_nMyCharID) >= MAX_MYITEM) {
+						MarketSetMsg (pWnd, "＊｢持ち物がいっぱいです。@1　 整理してからお越しください。@2");
+						g_dwActiveMsgID = pWnd->dwID;
+						break;
+					}
+					wsprintf (szTmp, "＊｢%sを%dゴールドで@1　 買いますか？@2", MarketItemName (pEntry->wItemID), (int)pEntry->dwPrice);
+					MarketShowConf (MARKETCONF_BUY, szTmp);
+				} else {
+					if (GetItemCount (g_nMyCharID) >= MAX_MYITEM) {
+						MarketSetMsg (pWnd, "＊｢持ち物がいっぱいです。@1　 整理してからお越しください。@2");
+						g_dwActiveMsgID = pWnd->dwID;
+						break;
+					}
+					wsprintf (szTmp, "＊｢%sを引き取りますか？@2", MarketItemName (pEntry->wItemID));
+					MarketShowConf (MARKETCONF_TAKEBACK, szTmp);
+				}
+			}
+			break;
+
+		/* 出品する品を選んだ → 値段へ（装備中・取引できない品は選べない） */
+		case MARKETWND_ITEM:
+			{
+				int i, nNo = (int)pWnd->byData1 + pWnd->nData1;
+				if (nNo >= GetItemCount (g_nMyCharID)) {
+					break;
+				}
+				for (i = 0; i < 10; i ++) {
+					if (pChar->waEqu[i] == nNo) {
+						break;
+					}
+				}
+				if (i < 10) {
+					MarketSetMsg (pWnd, "＊｢装備中の品はお預かりできません。@2");
+					g_dwActiveMsgID = pWnd->dwID;
+					break;
+				}
+				if (g_aItemInfo[pChar->waItem[nNo]]->byFlg & ITEMFLG_TRADE) {
+					MarketSetMsg (pWnd, "＊｢その品は取り引きできません。@2");
+					g_dwActiveMsgID = pWnd->dwID;
+					break;
+				}
+				g_nMarketSelNo = nNo;
+				g_wMarketSelItem = pChar->waItem[nNo];
+				g_dwMarketSelPrice = 0;
+				MarketShowPrice (0);
+			}
+			break;
+
+		/* 値段を決めた → 手数料と手取りを見せて確認 */
+		case MARKETWND_PRICE:
+			{
+				DWORD dwPrice = (DWORD)pWnd->nData1;
+				DWORD dwMin = MarketPriceMin (g_wMarketSelItem);
+				if (dwPrice < dwMin) {
+					MarketSetMsg (pWnd, "＊｢その値段では出せません。@2");
+					g_dwActiveMsgID = pWnd->dwID;
+					break;
+				}
+				g_dwMarketSelPrice = dwPrice;
+				DWORD dwFee = MarketFee (dwPrice);
+				wsprintf (szTmp, "＊｢手数料%dゴールド、@1　 手取り%dゴールドです。@1　 出品しますか？@2", (int)dwFee, (int)(dwPrice - dwFee));
+				MarketShowConf (MARKETCONF_PUT, szTmp);
+			}
+			break;
+
+		/* はい／いいえ */
+		case MARKETWND_CONF:
+			if (pWnd->nData1 != 0) {
+				KeyProcMARKET_Cancel (pWnd);
+				break;
+			}
+			switch (pWnd->byData1) {
+			case MARKETCONF_BUY:
+			case MARKETCONF_TAKEBACK:
+				pWndList = MarketFindWindow (MARKETWND_LIST);
+				if (pWndList == NULL) {
+					MarketShowMenu (NULL);
+					break;
+				}
+				{
+					BOOL bBuy = (pWnd->byData1 == MARKETCONF_BUY);
+					EraseWindow (pWnd);
+					if (bBuy) {
+						SendCmdMARKET (CMD_MARKETBUY, 0, 0, g_wMarketSelItem, g_dwMarketSelID, g_dwMarketSelPrice);
+						KeyProcMARKET_Wait (pWndList, MARKETWAIT_BUY);
+					} else {
+						SendCmdMARKET (CMD_MARKETTAKEBACK, 0, 0, 0, g_dwMarketSelID, 0);
+						KeyProcMARKET_Wait (pWndList, MARKETWAIT_TAKEBACK);
+					}
+				}
+				break;
+
+			case MARKETCONF_PUT:
+				SendCmdMARKET (CMD_MARKETPUT, 0, (BYTE)g_nMarketSelNo, 0, 0, g_dwMarketSelPrice);
+				KeyProcMARKET_Wait (pWnd, MARKETWAIT_PUT);
+				break;
+
+			default:	/* 売上を受け取る */
+				SendCmdMARKET (CMD_MARKETGOLDGET, 0, 0, 0, 0, 0);
+				KeyProcMARKET_Wait (pWnd, MARKETWAIT_GOLDGET);
+				break;
+			}
+			break;
+		}
+
+	} else if ((byEvent == KEY_DOWN) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
+		BOOL bMove = FALSE;
+
+		switch (pWnd->nType2) {
+		case MARKETWND_LIST:
+			/* 10行ずつ見せ、上下に余白を残してスクロールする（預かり所と同じ） */
+			if (ListScrollKey (pWnd, byCode, (int)g_MarketList.byCount)) {
+				bMove = TRUE;
+				pWnd->byAnime = 1;
+			}
+			break;
+
+		case MARKETWND_ITEM:
+			if (ListScrollKey (pWnd, byCode, GetItemCount (g_nMyCharID))) {
+				bMove = TRUE;
+				pWnd->byAnime = 1;
+			}
+			break;
+
+		case MARKETWND_PRICE:
+			/* 値段：↑↓で桁の数字を変え（0〜9でひと回り）、←→で桁を選ぶ。下限未満にはならない */
+			if ((byCode == VK_UP) || (byCode == VK_DOWN)) {
+				int i, nUnit = 1;
+				for (i = 0; i < 5 - (int)pWnd->byData1; i ++) {
+					nUnit *= 10;
+				}
+				int nDigit = (pWnd->nData1 / nUnit) % 10;
+				int nDigitNew = (byCode == VK_UP) ? (nDigit + 1) % 10 : (nDigit + 9) % 10;
+				int nValue = pWnd->nData1 + (nDigitNew - nDigit) * nUnit;
+				nValue = max (nValue, (int)MarketPriceMin (g_wMarketSelItem));
+				nValue = min (nValue, MARKET_PRICEMAX);
+				pWnd->nData1 = nValue;
+				bMove = TRUE;
+				pWnd->byAnime = 0;
+
+			} else if ((byCode == VK_LEFT) && (pWnd->byData1 > 0)) {
+				pWnd->byData1 --;
+				bMove = TRUE;
+				pWnd->byAnime = 1;
+
+			} else if ((byCode == VK_RIGHT) && (pWnd->byData1 < 5)) {
+				pWnd->byData1 ++;
+				bMove = TRUE;
+				pWnd->byAnime = 1;
+			}
+			break;
+
+		default:	/* メニュー・はい／いいえ */
+			if ((byCode == VK_UP) && (pWnd->nData1 > 0)) {
+				pWnd->nData1 --;
+				bMove = TRUE;
+				pWnd->byAnime = 1;
+			} else if ((byCode == VK_DOWN) && (pWnd->nData1 < pWnd->nData2 - 1)) {
+				pWnd->nData1 ++;
+				bMove = TRUE;
+				pWnd->byAnime = 1;
+			}
+			break;
+		}
+
+		if (bMove) {
+			pWnd->dwTime = timeGetTime ();
+			pWnd->byRepeate ++;
+			pWnd->dwTimeKey = timeGetTime ();
+			pWnd->dwTimeDrawStart = 0;
+			g_bDraw = TRUE;
+
+			/* 一覧の横の品の詳細を出し直す（一覧・品選びの時だけ付いている） */
+			UpdateWindowITEMINFOList (pWnd);
+		}
+
+	} else if (byEvent == KEY_UP) {
+		pWnd->dwTimeKey = timeGetTime () - 250;
+		pWnd->byRepeate = 0;
+		g_bDraw = TRUE;
+	}
 }
 
 /* Copyright(C)URARA-works 2003-2005 */

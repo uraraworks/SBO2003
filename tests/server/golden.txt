@@ -1387,6 +1387,59 @@ flagtalk level 9=5 10=4 20=4 21=5
 flagtalk tie rand0=5 rand1=6 rand3=6
 flagtalk badcmp=-1 empty=-1
 flagtalk apply on=1 off=0 num=255 other=0
+== AA. Market ==
+market npc=1
+market picked items=8 trade=1 quest=0 nogold=1
+market init a_items=7 min0_ok=1
+market nospeech put=10 list=-1 items=7
+market far put=10 items=7
+market edge ok list=0
+market ng range=5 empty=5
+market ng equip=5 items=7
+market ng trade=5
+market nogold-item price0=6 price1=0
+market nogold-item listed=1 items=7
+market price low=6 high=6 size_short=-1
+market price none listed=0 items=7
+market put1 res=0 id=1 item_ok=1 price=1000 net=950 items=6 listed=1
+market put1 shift first_ok=1
+market put2 res=0 net=950
+market put3 res=0 net=19
+market put4 res=0
+market put5 res=0
+market put6 res=4 listed=5 items=2
+market ids ascending=1
+market list a buy=0 size_ok=1 sale=0
+market list b buy=5 size_ok=1 sale=0
+market list b entries desc=1 seller=1 on=1 remain=1 first_price=1000 last_price=1000
+market list mine a=5 b=0
+market list invalid replies=0
+market buy own=3
+market buy gone=3 wrongprice=3 wrongitem=3
+market buy nogold=1 gold=999
+market buy full=2 gold=5000 items=20 listed=5
+market buy ok=0 gold=4000 items=20 last_ok=1 listed=4 sale_a=950 sale_b=0
+market buy again=3
+market buy2=0 gold=3001 sale_a=1900 (999-49)
+market list mine after sale=3 sale=1900
+market goldget nosale=9
+market goldget cap res=0 got=100 left=1800 gold=999999 sale=1800
+market goldget full res=8 gold=999999 sale=1800
+market goldget all res=0 got=1800 left=0 gold=1800 sale=0 rows=0 same_total=1
+market goldget again=9
+market expire buylist=2 ids_ok=1 remain_mid=1
+market expire buy=3
+market expire mine=3 state=0,0,1 remain_old=0
+market takeback other=3 none=3
+market takeback full=2 listed=3
+market takeback expired=0 item_ok=1 listed=2 first_ok=1
+market takeback active=0 listed=1 items=2
+market takeback again=3
+market limit ok=5 listed=5 put_with_expired=4
+market limit after takeback listed=5 put=0
+market save=1 load=1 same=1 items=1 sales=2 next_same=1 sale_a=950 other=4242
+market save empty=1 load=1 items=0 sales=0 next=1
+market end
 == K2. Mercenary magic ==
 merc map=91 enemies=17 size=255x160
 merc hired dist=1

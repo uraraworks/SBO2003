@@ -221,6 +221,14 @@ extern CMDPARA_QUESTSTATE g_QuestState;									/* 自分と仲間の依頼の�
 extern char g_szQuestMsg[MAX_QUESTMSG];									/* 依頼の窓の詳細欄に出す「お知らせ」「確認の文」（空なら選んだ依頼の説明） */
 
 extern int g_nProcMakerID;												/* 開いている作り手の番号（開いていなければ -1） */
+extern CMDPARA_MARKETLIST g_MarketList;									/* 取引所の一覧（サーバーから届いたもの） */
+extern int g_nMarketWait;												/* 取引所：返事待ちの種類(MARKETWAIT_*) */
+extern DWORD g_dwMarketWaitTime;										/* 取引所：返事待ちを始めた時間 */
+extern char g_szMarketResult[256];										/* 取引所：結果のセリフ（次の一覧のセリフの頭に付ける） */
+extern DWORD g_dwMarketSelID;											/* 取引所：選んだ出品ID */
+extern WORD g_wMarketSelItem;											/* 取引所：選んだ品の種類ID */
+extern DWORD g_dwMarketSelPrice;										/* 取引所：選んだ出品の値段（出品する時は入れた値段） */
+extern int g_nMarketSelNo;												/* 取引所：出品する手持ちの位置 */
 extern int g_nLeaveListPos;												/* 預かり所の一覧を作り直す時に合わせる番号（-1=先頭） */
 extern char g_szLeaveResult[256];									/* 預かり所で手放した結果（次の一覧のセリフの頭に付ける） */
 extern WORD g_wLeaveDisposeItem;										/* 預かり所で手放すよう頼んだ品（0=頼んでいない。結果は一覧の数の差で見る） */

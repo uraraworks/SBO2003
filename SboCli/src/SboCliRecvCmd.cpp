@@ -161,6 +161,11 @@ void	RecvDataProcNPCROUTE				(PBYTE, DWORD);			/* 受信データ処理(NPCの�
 void	RecvDataProcTOWNWARP				(PBYTE, DWORD);			/* 受信データ処理(町転送の行き先一覧) */
 void	RecvDataProcQUEST					(PBYTE, DWORD);			/* 受信データ処理(ギルドの仕事依頼：一覧・結果) */
 void	RecvDataProcQUESTSTATE				(PBYTE, DWORD);			/* 受信データ処理(依頼の進み具合) */
+void	RecvDataProcMARKETLIST				(PBYTE, DWORD);			/* 受信データ処理(取引所の一覧) */
+void	RecvDataProcMARKETPUT				(PBYTE, DWORD);			/* 受信データ処理(取引所に出品した結果) */
+void	RecvDataProcMARKETBUY				(PBYTE, DWORD);			/* 受信データ処理(取引所で買った結果) */
+void	RecvDataProcMARKETTAKEBACK			(PBYTE, DWORD);			/* 受信データ処理(取引所の出品を引き取った結果) */
+void	RecvDataProcMARKETGOLDGET			(PBYTE, DWORD);			/* 受信データ処理(取引所の売上を受け取った結果) */
 /* ブラウザ版のアカウント関係（web/replace/SboCliWebAccount_web.cpp） */
 void	WebAccSaveToken						(LPCSTR);				/* 端末トークンをページへ渡す */
 void	WebAccOnTokenNG						(void);					/* 端末トークンが無効だった */
@@ -415,6 +420,11 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcADMINFLAGNAME,			/* CMD_ADMINFLAGNAME */
 	RecvDataProcADMINTALK,				/* CMD_ADMINTALK */
 	RecvDataProcADMINCHARFLAG,			/* CMD_ADMINCHARFLAG */
+	RecvDataProcMARKETLIST,				/* CMD_MARKETLIST */
+	RecvDataProcMARKETPUT,				/* CMD_MARKETPUT */
+	RecvDataProcMARKETBUY,				/* CMD_MARKETBUY */
+	RecvDataProcMARKETTAKEBACK,			/* CMD_MARKETTAKEBACK */
+	RecvDataProcMARKETGOLDGET,			/* CMD_MARKETGOLDGET */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -7943,6 +7953,203 @@ void RecvDataProcMAIN_CHAR_TAIL(PBYTE pData, DWORD dwDataSize)
 	if (strlen (szTmp) > 0) {
 		AddSysMsg (szTmp, RGB (255, 255, 255));
 	}
+}
+
+/* ========================================================================= */
+/* 取引所（商人ギルドの出張所）の受信処理                                    */
+/* 一覧が届いたら、頼んだ画面（買う・自分の出品・売上）に切り替える。          */
+/* 結果が届いたら、結果の台詞を出す。買う・引き取りは一覧を取り直す。          */
+/* 結果の後に CMD_CHARITEM・所持金の更新が続けて届く（ここでは触らない）。    */
+/* ========================================================================= */
+
+/* ========================================================================= */
+/* 関数名：MarketResultText													 */
+/* 内容：取引所：結果のコード(byResult)に合わせた台詞を作る（@2 は付けない）	 */
+/* ========================================================================= */
+static void MarketResultText(BYTE byCmd, PCMDPARA_MARKET pPara, char *pszDst, int nDstSize)
+{
+	char szTmp[512];
+	LPCSTR pszName = MarketItemName (pPara->wItemID);
+
+	switch (pPara->byResult) {
+	case MARKETRES_OK:
+		switch (byCmd) {
+		case CMD_MARKETPUT:
+			wsprintf (szTmp, "＊｢%sを%dゴールドで@1　 お預かりしました。@1　 売れたら手取り%dゴールドです。",
+					pszName, (int)pPara->dwPrice, (int)pPara->dwGold);
+			break;
+		case CMD_MARKETBUY:
+			wsprintf (szTmp, "＊｢%sを%dゴールドで@1　 お買い上げ、ありがとうございます。", pszName, (int)pPara->dwPrice);
+			break;
+		case CMD_MARKETTAKEBACK:
+			wsprintf (szTmp, "＊｢%sをお返ししました。", pszName);
+			break;
+		default:	/* 売上の受け取り */
+			if (pPara->dwPrice > 0) {
+				wsprintf (szTmp, "＊｢%dゴールドをお渡ししました。@1　 残りの%dゴールドは、@1　 このまま預かっておきます。", (int)pPara->dwGold, (int)pPara->dwPrice);
+			} else {
+				wsprintf (szTmp, "＊｢%dゴールドをお渡ししました。", (int)pPara->dwGold);
+			}
+			break;
+		}
+		break;
+
+	case MARKETRES_NOGOLD:
+		lstrcpy (szTmp, "＊｢所持金が足りないようですね。");
+		break;
+	case MARKETRES_ITEMFULL:
+		lstrcpy (szTmp, "＊｢持ち物がいっぱいです。@1　 整理してからお越しください。");
+		break;
+	case MARKETRES_GONE:
+		if (byCmd == CMD_MARKETBUY) {
+			lstrcpy (szTmp, "＊｢その品は、もう売れてしまったか、@1　 値段が変わったようです。");
+		} else {
+			lstrcpy (szTmp, "＊｢その出品は、もうありません。");
+		}
+		break;
+	case MARKETRES_LIMIT:
+		wsprintf (szTmp, "＊｢出品は%d件までです。@1　 （期限切れの品も数えます）@1　 引き取ってからお越しください。", MARKET_MAXPUT);
+		break;
+	case MARKETRES_NGITEM:
+		lstrcpy (szTmp, "＊｢その品はお預かりできません。@1　 （装備中・取り引きできない品・@1　 依頼の品）");
+		break;
+	case MARKETRES_PRICE:
+		wsprintf (szTmp, "＊｢その値段では出せません。@1　 %dゴールド以上、%dゴールド以下で@1　 お願いします。",
+				(int)MarketPriceMin (pPara->wItemID), MARKET_PRICEMAX);
+		break;
+	case MARKETRES_OWN:
+		lstrcpy (szTmp, "＊｢ご自分の出品はお買いになれません。");
+		break;
+	case MARKETRES_GOLDMAX:
+		lstrcpy (szTmp, "＊｢これ以上お金を持てません。@1　 使ってからお越しください。");
+		break;
+	case MARKETRES_NOGOLDSALE:
+		lstrcpy (szTmp, "＊｢売上はありません。");
+		break;
+	case MARKETRES_FAR:
+		lstrcpy (szTmp, "＊｢もう少し近くへお越しください。");
+		break;
+	default:
+		lstrcpy (szTmp, "＊｢うまくいきませんでした。");
+		break;
+	}
+	lstrcpyn (pszDst, szTmp, nDstSize);
+}
+
+/* ========================================================================= */
+/* 関数名：MarketOnResult													 */
+/* 内容：取引所：結果を受け取った時の共通処理								 */
+/*       出品・売上の受け取りは、結果の台詞とともにメニューへ戻る。			 */
+/*       買う・引き取りは、台詞をとっておいて一覧を取り直す（一覧に台詞を付ける）*/
+/* ========================================================================= */
+static void MarketOnResult(BYTE byCmd, PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_MARKET pPara = (PCMDPARA_MARKET)pData;
+	char szTmp[640], szResult[384];
+
+	if (dwDataSize < sizeof (CMDPARA_MARKET)) {
+		return;
+	}
+	/* 受付を閉じた後に届いた結果は、台詞を出さない */
+	if (!MarketIsOpen ()) {
+		return;
+	}
+	g_nMarketWait = MARKETWAIT_NONE;
+	MarketResultText (byCmd, pPara, szResult, sizeof (szResult));
+
+	/* 買う・引き取り：近くにいない時以外は、一覧を取り直す */
+	if (((byCmd == CMD_MARKETBUY) || (byCmd == CMD_MARKETTAKEBACK)) && (pPara->byResult != MARKETRES_FAR)) {
+		lstrcpyn (g_szMarketResult, szResult, sizeof (g_szMarketResult));
+		SendCmdMARKET (CMD_MARKETLIST, (byCmd == CMD_MARKETBUY) ? MARKETLIST_BUY : MARKETLIST_MINE, 0, 0, 0, 0);
+		g_nMarketWait = (byCmd == CMD_MARKETBUY) ? MARKETWAIT_BUYLIST : MARKETWAIT_MINELIST;
+		g_dwMarketWaitTime = timeGetTime ();
+		return;
+	}
+
+	wsprintf (szTmp, "%s@1　 他に御用は？@2", szResult);
+	MarketShowMenu (szTmp);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcMARKETLIST											 */
+/* 内容：受信データ処理(取引所の一覧)										 */
+/*       頼んだ画面（買う・自分の出品・売上）に切り替える。頼んでいない一覧は捨てる */
+/* ========================================================================= */
+void RecvDataProcMARKETLIST(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_MARKETLIST pPara = (PCMDPARA_MARKETLIST)pData;
+	int i, nCount, nKind;
+	char szTmp[256];
+
+	if (dwDataSize < offsetof (CMDPARA_MARKETLIST, aEntry)) {
+		return;
+	}
+	if (!MarketIsOpen ()) {
+		return;
+	}
+	/* 頼んだ種類の一覧か */
+	nKind = (g_nMarketWait == MARKETWAIT_BUYLIST) ? MARKETLIST_BUY : MARKETLIST_MINE;
+	if (((g_nMarketWait != MARKETWAIT_BUYLIST) && (g_nMarketWait != MARKETWAIT_MINELIST) && (g_nMarketWait != MARKETWAIT_SALE)) ||
+		(pPara->byType != nKind)) {
+		return;
+	}
+
+	/* 届いた件数ぶんだけ写す（サイズ不足・多すぎる件数は切る） */
+	nCount = min ((int)pPara->byCount, MARKET_LISTMAX);
+	nCount = min (nCount, (int)((dwDataSize - offsetof (CMDPARA_MARKETLIST, aEntry)) / sizeof (MARKETENTRY)));
+	ZeroMemory (&g_MarketList, sizeof (g_MarketList));
+	g_MarketList.byCmd		= pPara->byCmd;
+	g_MarketList.byType		= pPara->byType;
+	g_MarketList.byCount	= (BYTE)nCount;
+	g_MarketList.dwTblID	= pPara->dwTblID;
+	g_MarketList.dwSale		= pPara->dwSale;
+	for (i = 0; i < nCount; i ++) {
+		CopyMemory (&g_MarketList.aEntry[i], &pPara->aEntry[i], sizeof (MARKETENTRY));
+		g_MarketList.aEntry[i].szSeller[MAX_CHARNAMEBUF - 1] = 0;
+	}
+
+	if (g_nMarketWait == MARKETWAIT_SALE) {
+		/* 売上：額を見せて確認 */
+		g_nMarketWait = MARKETWAIT_NONE;
+		if (g_MarketList.dwSale == 0) {
+			MarketShowMenu ("＊｢売上はありません。@1　 他に御用は？@2");
+			return;
+		}
+		PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
+		if (pChar->dwGold + g_MarketList.dwSale > MARKET_PRICEMAX) {
+			wsprintf (szTmp, "＊｢%dゴールドを受け取りますか？@1　 （持ちきれない分は残しておきます）@2", (int)g_MarketList.dwSale);
+		} else {
+			wsprintf (szTmp, "＊｢%dゴールドを受け取りますか？@2", (int)g_MarketList.dwSale);
+		}
+		MarketShowConf (MARKETCONF_GOLDGET, szTmp);
+		return;
+	}
+	g_nMarketWait = MARKETWAIT_NONE;
+	MarketShowList (nKind, 0);
+}
+
+/* 出品した結果 */
+void RecvDataProcMARKETPUT(PBYTE pData, DWORD dwDataSize)
+{
+	MarketOnResult (CMD_MARKETPUT, pData, dwDataSize);
+}
+
+/* 買った結果 */
+void RecvDataProcMARKETBUY(PBYTE pData, DWORD dwDataSize)
+{
+	MarketOnResult (CMD_MARKETBUY, pData, dwDataSize);
+}
+
+/* 出品を引き取った結果 */
+void RecvDataProcMARKETTAKEBACK(PBYTE pData, DWORD dwDataSize)
+{
+	MarketOnResult (CMD_MARKETTAKEBACK, pData, dwDataSize);
+}
+
+/* 売上を受け取った結果 */
+void RecvDataProcMARKETGOLDGET(PBYTE pData, DWORD dwDataSize)
+{
+	MarketOnResult (CMD_MARKETGOLDGET, pData, dwDataSize);
 }
 
 /* Copyright(C)URARA-works 2003-2006 */
