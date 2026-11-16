@@ -3832,7 +3832,7 @@ void MarketCutText(char *pszDst, int nDstSize, LPCSTR pszSrc, int nMaxUnit)
 void MarketThirdText(int nKind, const MARKETENTRY *pEntry, char *pszDst, int nDstSize)
 {
 	if (nKind == MARKETLIST_BUY) {
-		MarketCutText (pszDst, nDstSize, pEntry->szSeller, 12);
+		MarketCutText (pszDst, nDstSize, pEntry->szSeller, MAX_CHARNAME_WIDTH);
 	} else if (pEntry->byState == MARKETSTATE_EXPIRED) {
 		lstrcpyn (pszDst, "期限切れ", nDstSize);
 	} else if (pEntry->dwRemain >= 24 * 60 * 60) {
@@ -3846,20 +3846,11 @@ void MarketThirdText(int nKind, const MARKETENTRY *pEntry, char *pszDst, int nDs
 /* 一覧の列の幅を求める（nNameUnit=品名・nPriceChar=値段の字数・nThirdUnit=3列目。半角=1） */
 void MarketGetLayout(int nKind, int *pnNameUnit, int *pnPriceChar, int *pnThirdUnit)
 {
-	int i, nName = 8, nPrice = 4, nThird = (nKind == MARKETLIST_BUY) ? 8 : 10;
-	char szTmp[128];
-
-	for (i = 0; i < (int)g_MarketList.byCount; i ++) {
-		const MARKETENTRY *pEntry = &g_MarketList.aEntry[i];
-		nName = max (nName, min (SboTextWidth (MarketItemName (pEntry->wItemID)), 24));
-		wsprintf (szTmp, "%dG", (int)pEntry->dwPrice);
-		nPrice = max (nPrice, (int)strlen (szTmp));
-		MarketThirdText (nKind, pEntry, szTmp, sizeof (szTmp));
-		nThird = max (nThird, SboTextWidth (szTmp));
-	}
-	*pnNameUnit = nName;
-	*pnPriceChar = nPrice;
-	*pnThirdUnit = nThird;
+	/* 一覧ごとに列の幅を決め打ちにする（中身によって枠の幅や列の位置が変わらないように）
+	 * 品名=全角12字・値段=「999999G」の7字・3列目=買う一覧はキャラ名、自分の出品は「残り23時間」が入る幅 */
+	*pnNameUnit = 24;
+	*pnPriceChar = 7;
+	*pnThirdUnit = (nKind == MARKETLIST_BUY) ? MAX_CHARNAME_WIDTH : 10;
 }
 
 /* ========================================================================= */
