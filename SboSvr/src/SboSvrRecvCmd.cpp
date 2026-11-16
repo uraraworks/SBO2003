@@ -1111,8 +1111,9 @@ void DeleteChar(DWORD dwTblID)
 	BOOL bEnemy = (pChar->byNpcType == NPCTYPE_BATTLE1) || (pChar->byNpcType == NPCTYPE_BATTLE2) || (pChar->byNpcType == NPCTYPE_MIMIC);
 	DWORD dwMapID = pChar->dwMapID;
 
-	/* 戦闘で列を離れた時に覚えた先頭を消す */
+	/* 戦闘で列を離れた時に覚えた先頭と、戦闘モードの覚えを消す */
 	TailReturnForget (dwTblID);
+	MercenaryClearBattleMode (dwTblID);
 	/* 討伐報酬用に覚えていたダメージを消す */
 	ClearBattleDamage (dwTblID);
 	OnDecPlayer ((int)pChar->dwTblID);
@@ -3040,7 +3041,8 @@ void SubProcMapMove(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY)
 		return;
 	}
 
-	/* マップ移動したら、戦闘で列を離れた時の戻り先は忘れる */
+	/* マップ移動したら、戦闘で列を離れた時の戻り先は忘れる
+	   (戦闘モードの覚えは消さない。クライアントもマップ移動で戦闘モードを解除しないので合わせる) */
 	TailReturnForget (pChar->dwTblID);
 
 	pMap = g_aMapInfo[dwMapID];
@@ -5433,6 +5435,7 @@ typedef struct _TAILRETURN {
 	DWORD	dwHeadTblID;									/* 先頭のテーブルID */
 	DWORD	dwHeadPID;										/* 先頭のpID */
 	char	szHeadName[sizeof (((PCHARINFO)0)->szName)];	/* 先頭の名前 */
+	int		nOrder;											/* 列での並び順(先頭から何番目か。戻る時の順番) */
 } TAILRETURN;
 static std::map<DWORD, TAILRETURN> s_mapTailReturn;
 
@@ -5441,6 +5444,8 @@ static std::map<DWORD, TAILRETURN> s_mapTailReturn;
 /* 関数名：	TailReturnForget												 */
 /* 内容：	覚えている戻り先の先頭を消す									 */
 /*			(Zで別の人についていく・解除・マップ移動・ログアウト・倒れた時)	 */
+/*			この人を先頭として覚えている人も全員忘れさせ、戻れないと知らせる	 */
+/*			(先頭が戦闘モードを解除できないので、覚えたままにならないように)	 */
 /* ========================================================================= */
 
 void TailReturnForget(DWORD dwTblID)
@@ -5449,6 +5454,28 @@ void TailReturnForget(DWORD dwTblID)
 		return;
 	}
 	s_mapTailReturn.erase (dwTblID);
+
+	/* この人を先頭として覚えている人を集める */
+	std::vector<DWORD> adwMember;
+	std::map<DWORD, TAILRETURN>::iterator it;
+	for (it = s_mapTailReturn.begin (); it != s_mapTailReturn.end (); ++ it) {
+		if (it->second.dwHeadTblID == dwTblID) {
+			adwMember.push_back (it->first);
+		}
+	}
+	DWORD dwCount = (DWORD)g_aCharInfo.GetSize ();
+	for (size_t i = 0; i < adwMember.size (); i ++) {
+		DWORD dwMember = adwMember[i];
+		DWORD dwPID = s_mapTailReturn[dwMember].dwPID;
+		s_mapTailReturn.erase (dwMember);
+		if (dwMember >= dwCount) {
+			continue;
+		}
+		PCHARINFO pMember = g_aCharInfo[dwMember];
+		if ((pMember->pID != 0) && (pMember->pID == dwPID)) {
+			SendCmdSYSMSG (pMember->pID, "列に戻れませんでした。", SPEECHCMD_BATTLE1);
+		}
+	}
 }
 
 
@@ -5491,98 +5518,71 @@ static PCHARINFO TailReturnFindEnd(PCHARINFO pChar, const TAILRETURN &Info)
 
 
 /* ========================================================================= */
-/* 関数名：	TailBattleMode													 */
-/* 内容：	戦闘モードの切り替えに合わせて、列から一時的に抜ける・戻る		 */
-/*			傭兵・NPCは対象外。戦闘モードON=先頭を覚えて列から抜ける		 */
-/*			OFF=先頭の列の最後尾に戻る(離れていれば、となりへワープ)		 */
+/* 関数名：	TailLeave														 */
+/* 内容：	列から一時的に抜ける(戻り先の先頭と並び順を覚える)				 */
+/*			後ろの人は前の人へ直接つなぎ直す(傭兵が抜ける時と同じ)			 */
 /* ========================================================================= */
 
-void TailBattleMode(PCHARINFO pChar, BOOL bBattle)
+static void TailLeave(PCHARINFO pChar, PCHARINFO pHead, int nOrder)
 {
 	DWORD dwCount = (DWORD)g_aCharInfo.GetSize ();
-	PCHARINFO pPrev, pNext, pEnd, pHead;
+	PCHARINFO pPrev, pNext;
 	CCHAR_TAIL Packet;
 	TAILRETURN Info;
 
-	if ((pChar == NULL) || (pChar->pID == 0) || (pChar->byNpcType != NPCTYPE_INIT) || IsMercenary (pChar)) {
-		return;
+	ZeroMemory (&Info, sizeof (Info));
+	Info.dwPID			= pChar->pID;
+	Info.dwHeadTblID	= pHead->dwTblID;
+	Info.dwHeadPID		= pHead->pID;
+	Info.nOrder			= nOrder;
+	lstrcpyn (Info.szHeadName, pHead->szName, sizeof (Info.szHeadName));
+
+	pPrev = g_aCharInfo[pChar->dwTailTblID];
+	pNext = NULL;
+	if ((pChar->dwTailBackTblID < dwCount) && (g_aCharInfo[pChar->dwTailBackTblID]->dwTailTblID == pChar->dwTblID)) {
+		pNext = g_aCharInfo[pChar->dwTailBackTblID];
 	}
+	if (pPrev->dwTailBackTblID == pChar->dwTblID) {
+		pPrev->dwTailBackTblID = pNext ? pNext->dwTblID : (DWORD)-1;
+	}
+	if (pNext) {
+		pNext->dwTailTblID = pPrev->dwTblID;
+	}
+	pChar->dwTailTblID		= (DWORD)-1;
+	pChar->dwTailBackTblID	= (DWORD)-1;
+	s_mapTailReturn[pChar->dwTblID] = Info;
 
-	if (bBattle) {
-		int i;
-
-		if ((pChar->dwTailTblID == (DWORD)-1) || (pChar->dwTailTblID >= dwCount)) {
-			return;
-		}
-		/* 列の先頭をたどる */
-		pHead = pChar;
-		for (i = 0; i < 100; i ++) {
-			if ((pHead->dwTailTblID == (DWORD)-1) || (pHead->dwTailTblID >= dwCount)) {
-				break;
-			}
-			pHead = g_aCharInfo[pHead->dwTailTblID];
-			if (pHead == pChar) {
-				return;
-			}
-		}
-		if (pHead == pChar) {
-			return;
-		}
-		ZeroMemory (&Info, sizeof (Info));
-		Info.dwPID			= pChar->pID;
-		Info.dwHeadTblID	= pHead->dwTblID;
-		Info.dwHeadPID		= pHead->pID;
-		lstrcpyn (Info.szHeadName, pHead->szName, sizeof (Info.szHeadName));
-
-		/* 列から抜ける。後ろの人は前の人へ直接つなぎ直す(傭兵が抜ける時と同じ) */
-		pPrev = g_aCharInfo[pChar->dwTailTblID];
-		pNext = NULL;
-		if ((pChar->dwTailBackTblID < dwCount) && (g_aCharInfo[pChar->dwTailBackTblID]->dwTailTblID == pChar->dwTblID)) {
-			pNext = g_aCharInfo[pChar->dwTailBackTblID];
-		}
-		if (pPrev->dwTailBackTblID == pChar->dwTblID) {
-			pPrev->dwTailBackTblID = pNext ? pNext->dwTblID : (DWORD)-1;
-		}
+	/* 本人へ知らせる */
+	Packet.Make (pChar->dwTblID, (DWORD)-1, CHAR_TAIL_BATTLE);
+	svrSock.SendTo (pChar->pID, Packet.Get (), Packet.GetSize ());
+	/* 前の人の画面は、後ろをつなぎ直す(後ろがいなければ空にする。メッセージは出ない) */
+	if (pPrev->pID != 0) {
 		if (pNext) {
-			pNext->dwTailTblID = pPrev->dwTblID;
+			Packet.Make (pPrev->dwTblID, pNext->dwTblID, CHAR_TAIL_BACK);
+		} else {
+			Packet.Make (pPrev->dwTblID, (DWORD)-1, CHAR_TAIL_BACKOFF);
 		}
-		pChar->dwTailTblID		= (DWORD)-1;
-		pChar->dwTailBackTblID	= (DWORD)-1;
-		s_mapTailReturn[pChar->dwTblID] = Info;
-
-		/* 本人へ知らせる */
-		Packet.Make (pChar->dwTblID, (DWORD)-1, CHAR_TAIL_BATTLE);
-		svrSock.SendTo (pChar->pID, Packet.Get (), Packet.GetSize ());
-		/* 前の人の画面は、後ろをつなぎ直す(後ろがいなければ空にする。メッセージは出ない) */
-		if (pPrev->pID != 0) {
-			if (pNext) {
-				Packet.Make (pPrev->dwTblID, pNext->dwTblID, CHAR_TAIL_BACK);
-			} else {
-				Packet.Make (pPrev->dwTblID, (DWORD)-1, CHAR_TAIL_BACKOFF);
-			}
-			svrSock.SendTo (pPrev->pID, Packet.Get (), Packet.GetSize ());
-		}
-		/* 後ろの人の画面は、前の人へつなぎ直す(つなぎ直しはメッセージ無し) */
-		if (pNext && (pNext->pID != 0)) {
-			Packet.Make (pNext->dwTblID, pPrev->dwTblID, CHAR_TAIL_ON);
-			svrSock.SendTo (pNext->pID, Packet.Get (), Packet.GetSize ());
-		}
-		return;
+		svrSock.SendTo (pPrev->pID, Packet.Get (), Packet.GetSize ());
 	}
-
-	/* 戦闘モード解除 */
-	std::map<DWORD, TAILRETURN>::iterator it = s_mapTailReturn.find (pChar->dwTblID);
-	if (it == s_mapTailReturn.end ()) {
-		return;
+	/* 後ろの人の画面は、前の人へつなぎ直す(つなぎ直しはメッセージ無し) */
+	if (pNext && (pNext->pID != 0)) {
+		Packet.Make (pNext->dwTblID, pPrev->dwTblID, CHAR_TAIL_ON);
+		svrSock.SendTo (pNext->pID, Packet.Get (), Packet.GetSize ());
 	}
-	Info = it->second;
-	/* どちらにしても、覚えた先頭はここで消す */
-	s_mapTailReturn.erase (it);
-	if (Info.dwPID != pChar->pID) {
-		return;
-	}
+}
 
-	pEnd = NULL;
+
+/* ========================================================================= */
+/* 関数名：	TailReturnDo													 */
+/* 内容：	覚えた先頭の列の最後尾へ戻る(となりにいなければ空いたマスへワープ)	 */
+/*			戻れなければ「列に戻れませんでした。」。覚えは呼び出し側で消す済み	 */
+/* ========================================================================= */
+
+static void TailReturnDo(PCHARINFO pChar, const TAILRETURN &Info)
+{
+	PCHARINFO pEnd = NULL;
+	CCHAR_TAIL Packet;
+
 	if ((pChar->dwTailTblID == (DWORD)-1) && (pChar->dwTailBackTblID == (DWORD)-1) &&
 		(pChar->byCharState != CHARSTATE_DEAD) && (pChar->wHP != 0)) {
 		pEnd = TailReturnFindEnd (pChar, Info);
@@ -5616,6 +5616,135 @@ void TailBattleMode(PCHARINFO pChar, BOOL bBattle)
 		Packet.Make (pEnd->dwTblID, pChar->dwTblID, CHAR_TAIL_BACK);
 		svrSock.SendTo (pEnd->pID, Packet.Get (), Packet.GetSize ());
 	}
+}
+
+
+/* ========================================================================= */
+/* 関数名：	TailBattleMode													 */
+/* 内容：	戦闘モードの切り替えに合わせて、列から一時的に抜ける・戻る		 */
+/*			傭兵・NPCは対象外(傭兵は列に残り、自分で動く)					 */
+/*			先頭がON=列の全員が抜ける。先頭がOFF=覚えた人が元の順で戻る		 */
+/*			後ろの人がON=自分だけ抜ける。OFF=先頭が戦闘モード中なら待つ		 */
+/*			(RecvDataProcBATTLEMODE で MercenarySetBattleMode の後に呼ぶ)	 */
+/* ========================================================================= */
+
+void TailBattleMode(PCHARINFO pChar, BOOL bBattle)
+{
+	DWORD dwCount = (DWORD)g_aCharInfo.GetSize ();
+	PCHARINFO pHead, pCur, pNext;
+	TAILRETURN Info;
+	int i;
+
+	if ((pChar == NULL) || (pChar->pID == 0) || (pChar->byNpcType != NPCTYPE_INIT) || IsMercenary (pChar)) {
+		return;
+	}
+
+	/* 列の先頭(先頭自身は列には入っていない)。ONは後ろに人がいる時だけ。
+	   OFFは、全員が抜けて後ろが空になっていても、覚えている人を戻す */
+	if ((pChar->dwTailTblID == (DWORD)-1) && (!bBattle || (pChar->dwTailBackTblID != (DWORD)-1))) {
+		if (bBattle) {
+			/* 並んでいる順に、傭兵以外のプレイヤーを集めてから全員抜ける */
+			std::vector<PCHARINFO> apMember;
+			std::vector<int> anOrder;
+			pCur = pChar;
+			for (i = 1; i <= 100; i ++) {
+				if (pCur->dwTailBackTblID >= dwCount) {
+					break;
+				}
+				pNext = g_aCharInfo[pCur->dwTailBackTblID];
+				if ((pNext == pChar) || (pNext->dwTailTblID != pCur->dwTblID)) {
+					break;
+				}
+				if ((pNext->pID != 0) && (pNext->byNpcType == NPCTYPE_INIT) && !IsMercenary (pNext)) {
+					apMember.push_back (pNext);
+					anOrder.push_back (i);
+				}
+				pCur = pNext;
+			}
+			for (size_t j = 0; j < apMember.size (); j ++) {
+				TailLeave (apMember[j], pChar, anOrder[j]);
+			}
+			return;
+		}
+
+		/* 戦闘モード解除：この先頭を覚えている人を、覚えた順で戻す */
+		std::multimap<int, DWORD> mapOrder;
+		std::map<DWORD, TAILRETURN>::iterator it;
+		for (it = s_mapTailReturn.begin (); it != s_mapTailReturn.end (); ++ it) {
+			if ((it->second.dwHeadTblID == pChar->dwTblID) && (it->second.dwHeadPID == pChar->pID)) {
+				mapOrder.insert (std::make_pair (it->second.nOrder, it->first));
+			}
+		}
+		std::multimap<int, DWORD>::iterator itOrder;
+		for (itOrder = mapOrder.begin (); itOrder != mapOrder.end (); ++ itOrder) {
+			DWORD dwMember = itOrder->second;
+			it = s_mapTailReturn.find (dwMember);
+			if ((it == s_mapTailReturn.end ()) || (dwMember >= dwCount)) {
+				continue;
+			}
+			PCHARINFO pMember = g_aCharInfo[dwMember];
+			Info = it->second;
+			if (Info.dwPID != pMember->pID) {
+				/* 別の人になっている */
+				s_mapTailReturn.erase (it);
+				continue;
+			}
+			/* 自分で戦闘モード中の人は戻さず、覚えたまま待つ */
+			if (IsCharBattleMode (pMember)) {
+				continue;
+			}
+			s_mapTailReturn.erase (it);
+			TailReturnDo (pMember, Info);
+		}
+		/* 先頭自身も覚えがあれば、下の戻る処理へ進む */
+	}
+
+	if (bBattle) {
+		if ((pChar->dwTailTblID == (DWORD)-1) || (pChar->dwTailTblID >= dwCount)) {
+			return;
+		}
+		/* 列の先頭をたどりながら、先頭から何番目かを数える */
+		int nOrder = 1;
+		pHead = pChar;
+		for (i = 0; i < 100; i ++) {
+			if ((pHead->dwTailTblID == (DWORD)-1) || (pHead->dwTailTblID >= dwCount)) {
+				break;
+			}
+			pHead = g_aCharInfo[pHead->dwTailTblID];
+			if (pHead == pChar) {
+				return;
+			}
+			if (pHead->dwTailTblID != (DWORD)-1) {
+				nOrder ++;
+			}
+		}
+		if (pHead == pChar) {
+			return;
+		}
+		TailLeave (pChar, pHead, nOrder);
+		return;
+	}
+
+	/* 戦闘モード解除 */
+	std::map<DWORD, TAILRETURN>::iterator it = s_mapTailReturn.find (pChar->dwTblID);
+	if (it == s_mapTailReturn.end ()) {
+		return;
+	}
+	Info = it->second;
+	if (Info.dwPID != pChar->pID) {
+		s_mapTailReturn.erase (it);
+		return;
+	}
+	/* 覚えた先頭が今も戦闘モード中なら、戻さずに覚えたまま待つ(先頭の解除でまとめて戻る) */
+	if ((Info.dwHeadTblID < dwCount) && (Info.dwHeadTblID != pChar->dwTblID)) {
+		pHead = g_aCharInfo[Info.dwHeadTblID];
+		if ((pHead->pID != 0) && (pHead->pID == Info.dwHeadPID) && IsCharBattleMode (pHead)) {
+			return;
+		}
+	}
+	/* どちらにしても、覚えた先頭はここで消す */
+	s_mapTailReturn.erase (it);
+	TailReturnDo (pChar, Info);
 }
 
 
@@ -10620,6 +10749,10 @@ void RecvDataProcMAIN_CHAR_TAIL(PBYTE pData, DWORD dwDataSize)
 		goto Exit;
 	}
 	pChar = g_aCharInfo[Packet.m_dwTblID];
+	/* 戦闘モード中のZは普通のキャンセル扱い。「ついていく」の開始・解除は通常モードの時だけ */
+	if (IsCharBattleMode (pChar)) {
+		goto Exit;
+	}
 	/* 自分でZを押したら、戦闘で列を離れた時の戻り先は忘れる */
 	TailReturnForget (pChar->dwTblID);
 	/* 誰かについていっている？ */

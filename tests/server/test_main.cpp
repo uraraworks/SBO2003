@@ -2795,6 +2795,8 @@ static void TestTailBattle(const std::vector<int> &aLogin)
 	pC->dwTailTblID = pA->dwTblID; pA->dwTailBackTblID = pC->dwTblID;
 	pB->dwTailTblID = pC->dwTblID; pC->dwTailBackTblID = pB->dwTblID;
 	TailBattleSend(pB, 1);
+	/* 戦闘モード中のZは無視されるので、サーバーの覚えだけ通常モードに戻してからZを押す */
+	MercenarySetBattleMode(pB, FALSE);
 	{
 		CCHAR_TAIL Z;
 		Z.Make(pB->dwTblID, pA->dwTblID, CHAR_TAIL_REQ);
@@ -2803,6 +2805,48 @@ static void TestTailBattle(const std::vector<int> &aLogin)
 	}
 	TailBattleSend(pB, 0);
 	printf("tailbattle zforget front=%d\n", pB->dwTailTblID == pA->dwTblID ? 1 : 0);
+
+	/* 並びを A-B-C に戻す(位置も縦に並べる) */
+	#define TAILRESET() do { \
+		PCHARINFO ap_[3] = { pA, pB, pC }; \
+		for (int k_ = 0; k_ < 3; k_ ++) { \
+			DeleteTblNoPC((int)ap_[k_]->dwTblID); \
+			ap_[k_]->dwX = ap_[k_]->dwXBack = 40; ap_[k_]->dwY = ap_[k_]->dwYBack = 50 + k_; \
+			AddTblNoPC((int)ap_[k_]->dwTblID); \
+			ap_[k_]->dwTailTblID = (k_ > 0) ? ap_[k_ - 1]->dwTblID : (DWORD)-1; \
+			ap_[k_]->dwTailBackTblID = (k_ < 2) ? ap_[k_ + 1]->dwTblID : (DWORD)-1; \
+		} } while (0)
+	TAILRESET();
+	/* 先頭のONで後ろの2人が抜ける → 先頭のOFFで同じ順(B,C)に戻る */
+	TailBattleSend(pA, 1);
+	printf("tailbattle head on A(back=%d) B(front=%d) C(front=%d)\n", (int)pA->dwTailBackTblID,
+		(int)pB->dwTailTblID, (int)pC->dwTailTblID);
+	TailBattleSend(pA, 0);
+	printf("tailbattle head off A(back=B:%d) B(front=A:%d back=C:%d) C(front=B:%d)\n",
+		pA->dwTailBackTblID == pB->dwTblID ? 1 : 0, pB->dwTailTblID == pA->dwTblID ? 1 : 0,
+		pB->dwTailBackTblID == pC->dwTblID ? 1 : 0, pC->dwTailTblID == pB->dwTblID ? 1 : 0);
+
+	/* 後ろの人が自分でON中は、先頭のOFFでは戻らない。その人がOFFすると戻る */
+	TAILRESET();
+	TailBattleSend(pA, 1);
+	TailBattleSend(pB, 1);
+	TailBattleSend(pA, 0);
+	printf("tailbattle self wait B(front=%d) C(front=A:%d)\n", (int)pB->dwTailTblID, pC->dwTailTblID == pA->dwTblID ? 1 : 0);
+	TailBattleSend(pB, 0);
+	printf("tailbattle self off B(front=C:%d)\n", pB->dwTailTblID == pC->dwTblID ? 1 : 0);
+
+	/* 戦闘モード中のZは何もしない(覚えも列も変わらない) */
+	TAILRESET();
+	TailBattleSend(pB, 1);
+	{
+		CCHAR_TAIL Z;
+		Z.Make(pB->dwTblID, pA->dwTblID, CHAR_TAIL_REQ);
+		TestRecv(pB, Z.Get(), Z.GetSize());
+	}
+	TailBattleSend(pB, 0);
+	printf("tailbattle z in battle B(front=C:%d)\n", pB->dwTailTblID == pC->dwTblID ? 1 : 0);
+	TAILRESET();
+	#undef TAILRESET
 
 	for (int i = 0; i < 3; i ++) {
 		PCHARINFO p = apChar[i];
