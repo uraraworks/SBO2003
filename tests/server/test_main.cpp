@@ -34,6 +34,7 @@
 #include "SboSvrItemProc.h"
 #include "SboSvrTalk.h"
 #include "common/crc.h"
+#include "common/Command/Command.h"
 #include <emscripten.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -1054,6 +1055,7 @@ static void PrintTownWarp(const char *pszLabel, PCHARINFO pChar)
 static void TestShipBed(const std::vector<int> &aLogin);
 static void TestMercenary(const std::vector<int> &aLogin, BOOL bMagic = FALSE);
 static void TestTailMapChg(const std::vector<int> &aLogin);
+static void TestTailBattle(const std::vector<int> &aLogin);
 static void TestQuest(const std::vector<int> &aLogin);
 static void TestSortItem(const std::vector<int> &aLogin);
 static void TestCharPush(const std::vector<int> &aLogin);
@@ -1493,6 +1495,8 @@ static void TestWorld(void)
 	TestMercenary(aLogin);
 	/* L. ついていく列のマップ間移動で暗転が1回だけ */
 	TestTailMapChg(aLogin);
+	/* L2. 戦闘モードの間だけ、ついていく列から抜ける */
+	TestTailBattle(aLogin);
 	/* M. ギルドの依頼 */
 	TestQuest(aLogin);
 	/* N. 道具欄・預かり所の並べ替え */
@@ -2703,6 +2707,178 @@ static void TestTailMapChg(const std::vector<int> &aLogin)
 }
 
 /* ------------------------------------------------------------------------- */
+/* L2. 戦闘モードの間だけ、ついていく列から抜ける							 */
+/*    ON=列から抜けて後ろは前の人へつなぎ直し・OFF=最後尾へ戻る				 */
+/*    離れていれば最後尾のとなりへワープ・先頭がいなければ戻れない			 */
+/*    傭兵・列に入っていない人・Zで解除した人は対象外						 */
+/* ------------------------------------------------------------------------- */
+static void TailBattleSend(PCHARINFO p, BYTE byOn)
+{
+	CMDPARA_DATA1 Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_BATTLEMODE;
+	Para.pID = p->pID;
+	Para.dwTblID = p->dwTblID;
+	Para.byData = byOn;
+	TestRecv(p, &Para, sizeof(Para));
+}
+
+static void TestTailBattle(const std::vector<int> &aLogin)
+{
+	printf("== L2. Tail battle ==\n");
+	if (aLogin.size() < 3) {
+		return;
+	}
+	/* 港町レジェンタ(14)の乗り場の近くに先頭・2人目・3人目を縦に並べて列にする */
+	PMAPINFO pPort = g_aMapInfo[GetMapNo(14)];
+	/* 列の周り(横1マス・縦は先頭の前から6マス先まで)がぜんぶ通れる場所を探す */
+	int nX0 = -1, nY0 = -1;
+	for (int y = 1; y + 7 < pPort->nCY && nX0 < 0; y ++) {
+		for (int x = 1; x + 1 < pPort->nCX && nX0 < 0; x ++) {
+			bool bOpen = true;
+			for (int dy = -1; dy <= 6 && bOpen; dy ++) {
+				for (int dx = -1; dx <= 1 && bOpen; dx ++) {
+					if (!CheckCharBlock(pPort->dwID, x + dx, y + dy) || CheckEventBlock(pPort->dwID, x + dx, y + dy)) bOpen = false;
+				}
+			}
+			if (bOpen) { nX0 = x; nY0 = y; }
+		}
+	}
+	printf("tailbattle area found=%d\n", nX0 >= 0 ? 1 : 0);
+	if (nX0 < 0) {
+		return;
+	}
+	PCHARINFO apChar[3];
+	DWORD adwBack[3][5];
+	for (int i = 0; i < 3; i ++) {
+		PCHARINFO p = apChar[i] = g_aCharInfo[aLogin[i]];
+		adwBack[i][0] = p->dwMapID; adwBack[i][1] = p->dwX; adwBack[i][2] = p->dwY;
+		adwBack[i][3] = p->dwTailTblID; adwBack[i][4] = p->dwTailBackTblID;
+		DeleteTblNoPC((int)p->dwTblID);
+		p->dwMapID = pPort->dwID;
+		p->dwX = p->dwXBack = nX0;
+		p->dwY = p->dwYBack = nY0 + i;
+		p->byCharState = CHARSTATE_MOVE;
+		if (p->wHP == 0) p->wHP = 10;
+		AddTblNoPC((int)p->dwTblID);
+	}
+	for (int i = 0; i < 3; i ++) {
+		apChar[i]->dwTailTblID = (i > 0) ? apChar[i - 1]->dwTblID : (DWORD)-1;
+		apChar[i]->dwTailBackTblID = (i < 2) ? apChar[i + 1]->dwTblID : (DWORD)-1;
+	}
+	PCHARINFO pA = apChar[0], pB = apChar[1], pC = apChar[2];
+	#define TAILSTATE(label) printf("tailbattle %s A(back=%d) B(front=%d back=%d) C(front=%d)\n", label, \
+		pA->dwTailBackTblID == pB->dwTblID ? 1 : (pA->dwTailBackTblID == pC->dwTblID ? 2 : (int)pA->dwTailBackTblID), \
+		pB->dwTailTblID == pA->dwTblID ? 1 : (int)pB->dwTailTblID, \
+		pB->dwTailBackTblID == pC->dwTblID ? 1 : (int)pB->dwTailBackTblID, \
+		pC->dwTailTblID == pA->dwTblID ? 1 : (pC->dwTailTblID == pB->dwTblID ? 2 : (int)pC->dwTailTblID))
+
+	/* 真ん中の人が戦闘モードON：列から抜けて、後ろの人は先頭へつなぎ直し */
+	MockTrace(1);
+	TailBattleSend(pB, 1);
+	MockTrace(0);
+	TAILSTATE("on");
+	/* 戦闘モードOFF：となりにいれば、ワープせずに最後尾につく */
+	TailBattleSend(pB, 0);
+	TAILSTATE("off");
+	printf("tailbattle off end=%d\n", pC->dwTailBackTblID == pB->dwTblID ? 1 : 0);
+
+	/* 離れた所でON→OFF：最後尾のとなりへワープして戻る */
+	TailBattleSend(pB, 1);
+	DeleteTblNoPC((int)pB->dwTblID);
+	pB->dwX = pB->dwXBack = nX0;
+	pB->dwY = pB->dwYBack = nY0 + 6;
+	AddTblNoPC((int)pB->dwTblID);
+	TailBattleSend(pB, 0);
+	{
+		/* 列の最後尾は B のはずで、その前は先頭 A の後ろの C */
+		int nDist = abs((int)pB->dwX - (int)pC->dwX) + abs((int)pB->dwY - (int)pC->dwY);
+		printf("tailbattle warp front=%d dist=%d samemap=%d\n", pB->dwTailTblID == pC->dwTblID ? 1 : 0, nDist, pB->dwMapID == pPort->dwID ? 1 : 0);
+	}
+
+	/* 先頭がいなくなったら戻れない・覚えは消える */
+	TailBattleSend(pB, 1);
+	DWORD dwPIDBack = pA->pID;
+	pA->pID = 0;
+	TailBattleSend(pB, 0);
+	pA->pID = dwPIDBack;
+	printf("tailbattle nohead front=%d\n", (int)pB->dwTailTblID);
+	/* 覚えが消えているので、もう一度OFFしても何も起きない */
+	TailBattleSend(pB, 0);
+	printf("tailbattle again front=%d\n", (int)pB->dwTailTblID);
+
+	/* Zで別の人についたら覚えは消える（ONのまま列に戻ったりしない） */
+	pB->dwTailTblID = pB->dwTailBackTblID = (DWORD)-1;
+	pC->dwTailTblID = pA->dwTblID; pA->dwTailBackTblID = pC->dwTblID;
+	pB->dwTailTblID = pC->dwTblID; pC->dwTailBackTblID = pB->dwTblID;
+	TailBattleSend(pB, 1);
+	/* 戦闘モード中のZは無視されるので、サーバーの覚えだけ通常モードに戻してからZを押す */
+	MercenarySetBattleMode(pB, FALSE);
+	{
+		CCHAR_TAIL Z;
+		Z.Make(pB->dwTblID, pA->dwTblID, CHAR_TAIL_REQ);
+		/* Z は ついていっていない時にだけ新しく始まる */
+		TestRecv(pB, Z.Get(), Z.GetSize());
+	}
+	TailBattleSend(pB, 0);
+	printf("tailbattle zforget front=%d\n", pB->dwTailTblID == pA->dwTblID ? 1 : 0);
+
+	/* 並びを A-B-C に戻す(位置も縦に並べる) */
+	#define TAILRESET() do { \
+		PCHARINFO ap_[3] = { pA, pB, pC }; \
+		for (int k_ = 0; k_ < 3; k_ ++) { \
+			DeleteTblNoPC((int)ap_[k_]->dwTblID); \
+			ap_[k_]->dwX = ap_[k_]->dwXBack = nX0; ap_[k_]->dwY = ap_[k_]->dwYBack = nY0 + k_; \
+			AddTblNoPC((int)ap_[k_]->dwTblID); \
+			ap_[k_]->dwTailTblID = (k_ > 0) ? ap_[k_ - 1]->dwTblID : (DWORD)-1; \
+			ap_[k_]->dwTailBackTblID = (k_ < 2) ? ap_[k_ + 1]->dwTblID : (DWORD)-1; \
+		} } while (0)
+	TAILRESET();
+	/* 先頭のONで後ろの2人が抜ける → 先頭のOFFで同じ順(B,C)に戻る */
+	TailBattleSend(pA, 1);
+	printf("tailbattle head on A(back=%d) B(front=%d) C(front=%d)\n", (int)pA->dwTailBackTblID,
+		(int)pB->dwTailTblID, (int)pC->dwTailTblID);
+	TailBattleSend(pA, 0);
+	printf("tailbattle head off A(back=B:%d) B(front=A:%d back=C:%d) C(front=B:%d)\n",
+		pA->dwTailBackTblID == pB->dwTblID ? 1 : 0, pB->dwTailTblID == pA->dwTblID ? 1 : 0,
+		pB->dwTailBackTblID == pC->dwTblID ? 1 : 0, pC->dwTailTblID == pB->dwTblID ? 1 : 0);
+
+	/* 後ろの人が自分でON中は、先頭のOFFでは戻らない。その人がOFFすると戻る */
+	TAILRESET();
+	TailBattleSend(pA, 1);
+	TailBattleSend(pB, 1);
+	TailBattleSend(pA, 0);
+	printf("tailbattle self wait B(front=%d) C(front=A:%d)\n", (int)pB->dwTailTblID, pC->dwTailTblID == pA->dwTblID ? 1 : 0);
+	TailBattleSend(pB, 0);
+	printf("tailbattle self off B(front=C:%d)\n", pB->dwTailTblID == pC->dwTblID ? 1 : 0);
+
+	/* 戦闘モード中のZは何もしない(覚えも列も変わらない) */
+	TAILRESET();
+	TailBattleSend(pB, 1);
+	{
+		CCHAR_TAIL Z;
+		Z.Make(pB->dwTblID, pA->dwTblID, CHAR_TAIL_REQ);
+		TestRecv(pB, Z.Get(), Z.GetSize());
+	}
+	TailBattleSend(pB, 0);
+	printf("tailbattle z in battle B(front=C:%d)\n", pB->dwTailTblID == pC->dwTblID ? 1 : 0);
+	TAILRESET();
+	#undef TAILRESET
+
+	for (int i = 0; i < 3; i ++) {
+		PCHARINFO p = apChar[i];
+		DeleteTblNoPC((int)p->dwTblID);
+		p->dwMapID = adwBack[i][0];
+		p->dwX = p->dwXBack = adwBack[i][1];
+		p->dwY = p->dwYBack = adwBack[i][2];
+		p->dwTailTblID = adwBack[i][3];
+		p->dwTailBackTblID = adwBack[i][4];
+		AddTblNoPC((int)p->dwTblID);
+	}
+	#undef TAILSTATE
+}
+
+/* ------------------------------------------------------------------------- */
 /* M. ギルドの依頼															 */
 /*    受ける → 見えるNPCが持ち主と仲間にだけ届く・ぶつからない・宝箱・ポータル・	 */
 /*    渡して報酬・別の依頼の人は仲間になれない・取り消し・保存して読み直し	 */
@@ -3170,6 +3346,96 @@ static void TestQuest(const std::vector<int> &aLogin)
 		char *psz = MockCmdData(anConn[2], CMD_LEAVEITEM);
 		printf("quest leave questitem=%d sell=%d gold+=%d full=%d res=%s after=%d\n", nQ, nQSell, (int)(pOther->dwGold - dwGold0), nR, psz, QuestCountItem(pOther, wItemR));
 		free(psz);
+	}
+
+	/* 古い形式（持ち物 10 個）のキャラを読むと、11〜20 枠は空のままで、後ろの列もずれない。
+	   いま保存したファイルを「持ち物の列を 10 個分に縮めた形」に書き換えて読み直す */
+	{
+		WORD awItemBak[MAX_MYITEM], awEquBak[MAX_EQUTYPE];
+		char szAccBak[sizeof(pOther->szAcc)], szNameBak[sizeof(pOther->szName)];
+		memcpy(awItemBak, pOther->waItem, sizeof(awItemBak));
+		memcpy(awEquBak, pOther->waEqu, sizeof(awEquBak));
+		memcpy(szAccBak, pOther->szAcc, sizeof(szAccBak));
+		memcpy(szNameBak, pOther->szName, sizeof(szNameBak));
+		for (int i = 0; i < MAX_MYITEM; i ++) pOther->waItem[i] = (WORD)(i < 10 ? i + 1 : 777);
+		for (int i = 0; i < MAX_EQUTYPE; i ++) pOther->waEqu[i] = 0xFFFF;
+		pOther->waEqu[0] = 3;
+		strcpy(pOther->szAcc, "legacyitem");
+		strcpy(pOther->szName, "旧持ち物");
+		SaveCharInfo();
+
+		const char *pszFile = "SBODATA/SboDataCharInfo.dat";
+		std::vector<BYTE> aFile;
+		FILE *fp = fopen(pszFile, "rb");
+		if (fp) {
+			BYTE abyBuf[4096];
+			size_t n;
+			while ((n = fread(abyBuf, 1, sizeof(abyBuf), fp)) > 0) aFile.insert(aFile.end(), abyBuf, abyBuf + n);
+			fclose(fp);
+		}
+		/* ヘッダ：列数・データ数、続いて「列名 + 開始位置」 */
+		DWORD dwColumn = 0, dwData = 0;
+		size_t nHead = 8, nCountPos = 0, nItemPos = 0;
+		DWORD dwCountOfs = 0, dwItemOfs = 0;
+		if (aFile.size() > 8) {
+			memcpy(&dwColumn, &aFile[0], 4);
+			memcpy(&dwData, &aFile[4], 4);
+			for (DWORD c = 0; c < dwColumn; c ++) {
+				const char *pszName = (const char *)&aFile[nHead];
+				size_t nPos = nHead + strlen(pszName) + 1;
+				DWORD dwOfs;
+				memcpy(&dwOfs, &aFile[nPos], 4);
+				if (strcmp(pszName, "waItemCount") == 0) { nCountPos = nPos; dwCountOfs = dwOfs; }
+				if (strcmp(pszName, "waItem") == 0) { nItemPos = nPos; dwItemOfs = dwOfs; }
+				nHead = nPos + 4;
+			}
+		}
+		int nPatched = 0;
+		if (nCountPos && nItemPos && dwData > 0) {
+			const DWORD dwNew = 10 * sizeof(WORD), dwOld = MAX_MYITEM * sizeof(WORD);
+			std::vector<BYTE> aNew(aFile.begin(), aFile.begin() + dwItemOfs);
+			for (DWORD r = 0; r < dwData; r ++) aFile[dwCountOfs + r] = 10;
+			memcpy(&aNew[dwCountOfs], &aFile[dwCountOfs], dwData);
+			for (DWORD r = 0; r < dwData; r ++) aNew.insert(aNew.end(), aFile.begin() + dwItemOfs + r * dwOld, aFile.begin() + dwItemOfs + r * dwOld + dwNew);
+			aNew.insert(aNew.end(), aFile.begin() + dwItemOfs + dwData * dwOld, aFile.end());
+			/* 持ち物の列より後ろの列は、縮めた分だけ開始位置を前へ */
+			size_t nPos = 8;
+			for (DWORD c = 0; c < dwColumn; c ++) {
+				size_t nPosOfs = nPos + strlen((const char *)&aNew[nPos]) + 1;
+				DWORD dwOfs;
+				memcpy(&dwOfs, &aNew[nPosOfs], 4);
+				if (dwOfs > dwItemOfs) {
+					dwOfs -= dwData * (dwOld - dwNew);
+					memcpy(&aNew[nPosOfs], &dwOfs, 4);
+				}
+				nPos = nPosOfs + 4;
+			}
+			fp = fopen(pszFile, "wb");
+			if (fp) {
+				fwrite(&aNew[0], 1, aNew.size(), fp);
+				fclose(fp);
+				nPatched = 1;
+			}
+		}
+		LoadCharInfo();
+		PCHARINFO pLegacy = NULL;
+		for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+			if (g_aCharInfo[i] != pOther && strcmp(g_aCharInfo[i]->szAcc, "legacyitem") == 0) pLegacy = g_aCharInfo[i];
+		}
+		if (pLegacy) {
+			int nHead10 = 0, nTail0 = 0;
+			for (int i = 0; i < 10; i ++) if (pLegacy->waItem[i] == i + 1) nHead10 ++;
+			for (int i = 10; i < MAX_MYITEM; i ++) if (pLegacy->waItem[i] == 0) nTail0 ++;
+			printf("legacy item load patched=%d first10=%d rest0=%d equ=%u,%u name=%s\n", nPatched, nHead10, nTail0,
+				pLegacy->waEqu[0], pLegacy->waEqu[1], pLegacy->szName);
+			pLegacy->szAcc[0] = 0;
+		} else {
+			printf("legacy item load patched=%d not found\n", nPatched);
+		}
+		memcpy(pOther->waItem, awItemBak, sizeof(awItemBak));
+		memcpy(pOther->waEqu, awEquBak, sizeof(awEquBak));
+		memcpy(pOther->szAcc, szAccBak, sizeof(szAccBak));
+		memcpy(pOther->szName, szNameBak, sizeof(szNameBak));
 	}
 
 	/* 片付け */

@@ -1739,6 +1739,17 @@ static BOOL FindPosNearOwner(PCHARINFO pChar, PCHARINFO pOwner, int &x, int &y)
 
 
 /* ========================================================================= */
+/* 関数名：	FindPosNearChar													 */
+/* 内容：	相手のとなりの空いたマス(戦闘から列に戻るプレイヤー用)			 */
+/* ========================================================================= */
+
+BOOL FindPosNearChar(PCHARINFO pChar, PCHARINFO pTarget, int &x, int &y)
+{
+	return FindPosNearOwner (pChar, pTarget, x, y);
+}
+
+
+/* ========================================================================= */
 /* 関数名：	GetMercAtackWait												 */
 /* 内容：	攻撃の間隔(ms)。素早さ0で3秒〜255で1秒(プレイヤーのゲージと同じ幅)	 */
 /* ========================================================================= */
@@ -1793,6 +1804,28 @@ void MercenarySetBattleMode(PCHARINFO pChar, BOOL bBattle)
 	} else {
 		s_mapBattleMode.erase (pChar->dwTblID);
 	}
+}
+
+
+/* ========================================================================= */
+/* 関数名：	MercenaryClearBattleMode										 */
+/* 内容：	戦闘モードの覚えを消す(マップ移動・ログアウト)					 */
+/* ========================================================================= */
+
+void MercenaryClearBattleMode(DWORD dwTblID)
+{
+	s_mapBattleMode.erase (dwTblID);
+}
+
+
+/* ========================================================================= */
+/* 関数名：	IsCharBattleMode												 */
+/* 内容：	そのプレイヤーが今、戦闘モードか								 */
+/* ========================================================================= */
+
+BOOL IsCharBattleMode(PCHARINFO pChar)
+{
+	return (pChar != NULL) && (pChar->pID != 0) && IsOwnerBattleMode (pChar);
 }
 
 

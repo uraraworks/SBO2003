@@ -22,6 +22,9 @@ enum {
 	CHAR_TAIL_OFF2,									/* ついていくのが解除されました */
 	CHAR_TAIL_NG,									/* ○○は最後尾ではありません */
 	CHAR_TAIL_NG2,									/* ○○にはついていけません */
+	CHAR_TAIL_BATTLE,								/* 戦闘のため、一時的に列を離れます */
+	CHAR_TAIL_BACKOFF,								/* 後ろの人が列を離れた（後ろを空にする。メッセージなし） */
+	CHAR_TAIL_RETURN,								/* 列に戻りました */
 };
 
 
