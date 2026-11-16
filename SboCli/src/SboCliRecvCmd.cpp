@@ -6021,9 +6021,8 @@ void RecvDataProcCHARITEM(PBYTE pData, DWORD dwDataSize)
 			if (pWnd->nType != WNDTYPE_COMMANDITEM) {
 				continue;
 			}
-			if (pWnd->nData1 >= nCount) {
-				pWnd->nData1 = max (0, nCount - 1);
-			}
+			/* カーソルの番号は一覧の先頭(byData1)からの数。持ち物の数に収める */
+			ListScrollFitMargin (pWnd, (int)pWnd->byData1 + pWnd->nData1, nCount, LISTSCROLL_MARGIN);
 			pWnd->dwTimeDrawStart = 0;
 			g_bDraw = TRUE;
 			UpdateWindowITEMINFOList (pWnd);
