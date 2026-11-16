@@ -4486,6 +4486,37 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 		nCyNew += ITEMINFO_LINE;
 		nCyNew = (nCyNew + 15) / 16 * 16;
 	}
+	/* お店の買う一覧から出ている時は、手持ち・預かり所の数の行を本体の一番下に足す */
+	BOOL bShopLine = FALSE;
+	int nShopRow = 0, nHaveHand = 0, nHaveLeave = 0;
+	if (pWnd->nType2 != ITEMINFOPOS_LIST) {
+		for (int w = 0; w < g_WndInfo.GetSize (); w ++) {
+			PWNDINFO pWndShop = g_WndInfo[w];
+			if (((pWndShop->nType == WNDTYPE_SHOP) || (pWndShop->nType == WNDTYPE_SHOPSELL)) && (pWndShop->pWndTmp == (void *)pWnd)) {
+				bShopLine = TRUE;
+				break;
+			}
+		}
+	}
+	if (bShopLine) {
+		nShopRow = (nCyNew - 16 * 2) / ITEMINFO_LINE;
+		nCyNew += ITEMINFO_LINE;
+		nCyNew = (nCyNew + 15) / 16 * 16;
+		if (pCharSex) {
+			for (int h = 0; h < MAX_MYITEM; h ++) {
+				if (pCharSex->waItem[h] == (WORD)pWnd->nData1) {
+					nHaveHand ++;
+				}
+			}
+		}
+		if (g_bProcShopLeaveOK && g_pLeaveInfo) {
+			for (int h = 0; (h < (int)g_pLeaveInfo->byCount) && (h < MAX_LEAVEITEM); h ++) {
+				if (g_pLeaveInfo->waItem[h] == (WORD)pWnd->nData1) {
+					nHaveLeave += g_pLeaveInfo->byItemCount[h];
+				}
+			}
+		}
+	}
 	/* 作り手の一覧の横：本体の下に足す欄の分だけ広げる */
 	int nFooterTop = nCyNew - 16;
 	if (pRecipe) {
@@ -4677,6 +4708,17 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 			TextOut2 (hDC, 16 + ITEMINFO_LINE * 3, 16 + ITEMINFO_LINE * 4, szTmp,
 				bOk ? RGB (150, 255, 200) : RGB (255, 130, 130));
 		}
+	}
+
+	/* お店の買う一覧：持っている数（手持ち・預かり所。預かり所は届くまで「?」） */
+	if (bShopLine) {
+		TextOut2 (hDC, 16, 16 + ITEMINFO_LINE * nShopRow, "所持：", RGB (200, 200, 200));
+		if (g_bProcShopLeaveOK && g_pLeaveInfo) {
+			wsprintf (szTmp, "手持ち%d 預かり%d", nHaveHand, nHaveLeave);
+		} else {
+			wsprintf (szTmp, "手持ち%d 預かり?", nHaveHand);
+		}
+		TextOut2 (hDC, 16 + ITEMINFO_LINE * 3, 16 + ITEMINFO_LINE * nShopRow, szTmp, RGB (150, 255, 200));
 	}
 
 	/* 特技の書：覚える特技と説明 */

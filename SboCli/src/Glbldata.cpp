@@ -233,6 +233,7 @@ char g_szLeaveResult[256] = "";										/* 預かり所で手放した結果（
 WORD g_wLeaveDisposeItem = 0;										/* 預かり所で手放すよう頼んだ品（0=頼んでいない。結果は一覧の数の差で見る） */
 int g_nLeaveDisposeBefore = 0;										/* 頼んだ時のその品の預かり数（全部の枠の合計） */
 BYTE g_byLeaveDisposeMode = 0;										/* 頼んだ方法(LEAVEDISPOSE_*) */
+BOOL g_bProcShopLeaveOK = FALSE;										/* 預かり所の中身（g_pLeaveInfo）をお店を開いてから受け取ったか */
 BOOL g_bProcMakerLeaveOK = FALSE;									/* 預かり所の中身（g_pLeaveInfo）を作り手の画面を開いてから受け取ったか */
 BOOL g_bProcMakerWait = FALSE;										/* 作成要求を出して、サーバーの返事待ちか */
 DWORD g_dwProcMakerWaitTime = 0;									/* 返事待ちを始めた時間 */

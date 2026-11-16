@@ -209,6 +209,8 @@ void	RecvDataProcADDCHAREFC				(PBYTE, DWORD);			/* 受信データ処理(文字
 void	RecvDataProcCHGMAPCOLOR				(PBYTE, DWORD);			/* 受信データ処理(マップ色変換) */
 void	RecvDataProcSTTMPLATE				(PBYTE, DWORD);			/* 受信データ処理(ステータステンプレート情報) */
 void	RecvDataProcLEAVEITEM				(PBYTE, DWORD);			/* 受信データ処理(預けた結果) */
+static void ShopRedrawItemInfo			(void);					/* お店の買う一覧のアイテム情報を描き直す */
+static BOOL ShopIsWindowOpen			(void);					/* お店の画面の窓が出ているか */
 void	RecvDataProcLEAVEITEMGET			(PBYTE, DWORD);			/* 受信データ処理(預けてるアイテム一覧) */
 void	RecvDataProcCOUNTSUBGAME			(PBYTE, DWORD);			/* 受信データ処理(サブゲーム数通知) */
 void	RecvDataProcSUBGAMEINFO				(PBYTE, DWORD);			/* 受信データ処理(サブゲーム情報更新) */
@@ -5831,6 +5833,9 @@ void RecvDataProcCHARITEM(PBYTE pData, DWORD dwDataSize)
 	/* 自分の手持ちが変わったら（並べ替えなど）、開いている道具の一覧を描き直す */
 	if (nNo == g_nMyCharID) {
 		int i, nCount = GetItemCount (nNo);
+		if ((g_nProcShopID >= 0) && (g_nProcMakerID < 0)) {
+			ShopRedrawItemInfo ();	/* お店の買う一覧の「手持ち○個」 */
+		}
 		for (i = 0; i < g_WndInfo.GetSize (); i ++) {
 			PWNDINFO pWnd = g_WndInfo[i];
 			if (pWnd->nType != WNDTYPE_COMMANDITEM) {
@@ -6384,6 +6389,40 @@ void RecvDataProcSTTMPLATE(BYTE *pData, DWORD dwDataSize)
 }
 
 /* ========================================================================= */
+/* 関数名：ShopIsWindowOpen													 */
+/* 内容：お店の画面（買う・売る）の窓が出ているか							 */
+/* ========================================================================= */
+static BOOL ShopIsWindowOpen(void)
+{
+	int i;
+
+	for (i = 0; i < g_WndInfo.GetSize (); i ++) {
+		PWNDINFO pWndInfo = g_WndInfo[i];
+		if ((pWndInfo->nType == WNDTYPE_SHOP) || (pWndInfo->nType == WNDTYPE_SHOPSELL)) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* ========================================================================= */
+/* 関数名：ShopRedrawItemInfo												 */
+/* 内容：お店を開いている間、アイテム情報を描き直す（手持ち・預かり所の数が変わった時） */
+/* ========================================================================= */
+static void ShopRedrawItemInfo(void)
+{
+	int i;
+
+	for (i = 0; i < g_WndInfo.GetSize (); i ++) {
+		PWNDINFO pWndInfo = g_WndInfo[i];
+		if (pWndInfo->nType == WNDTYPE_ITEMINFO) {
+			pWndInfo->dwTimeDrawStart = 0;
+			g_bDraw = TRUE;
+		}
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcLEAVEITEMGET											 */
 /* 内容：受信データ処理(預けてるアイテム一覧)								 */
 /* 日付：2003/11/07															 */
@@ -6398,6 +6437,15 @@ void RecvDataProcLEAVEITEMGET(BYTE *pData, DWORD dwDataSize)
 	g_pLeaveInfo->byCount = pPara->byCount;
 	CopyMemory (g_pLeaveInfo->waItem, pPara->waItem, sizeof (g_pLeaveInfo->waItem));
 	CopyMemory (g_pLeaveInfo->byItemCount, pPara->byItemCount, sizeof (g_pLeaveInfo->byItemCount));
+
+	/* お店の画面を開いている間は、アイテム情報の「預かり所○個」に使う */
+	/* （g_nProcShopID は閉じ方によって残ることがあるので、お店の窓が本当に出ているかも見る。 */
+	/*   残っていると預かり所の画面が開かなくなるため） */
+	if ((g_nProcShopID >= 0) && (g_nProcMakerID < 0) && ShopIsWindowOpen ()) {
+		g_bProcShopLeaveOK = TRUE;
+		ShopRedrawItemInfo ();
+		return;
+	}
 
 	/* 作り手の画面を開いている間は、預かり所の画面ではなく材料の数え直しに使う */
 	if (g_nProcMakerID >= 0) {
