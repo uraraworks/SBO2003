@@ -375,7 +375,7 @@ void MarketBuy(PCHARINFO pChar, DWORD dwID, WORD wItemID, DWORD dwPrice)
 		SendResult (pChar, CMD_MARKETBUY, MARKETRES_NOGOLD, dwID, wItemID, dwPrice, 0);
 		return;
 	}
-	if (GetItemCount (pChar->dwTblID) >= MAX_MYITEM) {
+	if (!CanAddCharItem (pChar->dwTblID, wItemID)) {
 		SendResult (pChar, CMD_MARKETBUY, MARKETRES_ITEMFULL, dwID, wItemID, dwPrice, 0);
 		return;
 	}
@@ -411,7 +411,7 @@ void MarketTakeBack(PCHARINFO pChar, DWORD dwID)
 		return;
 	}
 	wItemID = g_aMarketItem[nNo].wItemID;
-	if (GetItemCount (pChar->dwTblID) >= MAX_MYITEM) {
+	if (!CanAddCharItem (pChar->dwTblID, wItemID)) {
 		SendResult (pChar, CMD_MARKETTAKEBACK, MARKETRES_ITEMFULL, dwID, wItemID, g_aMarketItem[nNo].dwPrice, 0);
 		return;
 	}

@@ -65,6 +65,7 @@ void DrawWindowCOMMAND							(PWNDINFO);			/* コマンド */
 void DrawWindowCOMMANDETC						(PWNDINFO);			/* その他コマンド */
 void DrawListScrollMark						(HDC, int, int, int, int, int);	/* スクロールする一覧の枠に▲▼を描く */
 void DrawWindowCOMMANDITEM						(PWNDINFO);			/* 道具 */
+void DrawWindowIMPORTANT						(PWNDINFO);			/* 大事な物の一覧 */
 void DrawWindowCOMMANDITEMBATTLE				(PWNDINFO);			/* 道具(戦闘マップ) */
 void DrawWindowCOMMANDITEMPROC					(PWNDINFO);			/* 道具処理選択 */
 void DrawWindowSORTMENU							(PWNDINFO);			/* 並べ替え：入れ替え・種類順・50音順 */
@@ -354,6 +355,7 @@ void DrawWindow(CImg32 *pDib, int x, int y)
 		case WNDTYPE_QUEST:					DrawWindowQUEST (pWnd);					break;
 		case WNDTYPE_SORTMENU:				DrawWindowSORTMENU (pWnd);				break;
 		case WNDTYPE_MARKET:				DrawWindowMARKET (pWnd);				break;
+		case WNDTYPE_IMPORTANT:				DrawWindowIMPORTANT (pWnd);				break;
 		}
 		s_bDrawingWindow = FALSE;
 		pDib->BltAlpha2 (pWnd->nX + x, pWnd->nY + y, pWnd->nCx, pWnd->nCy, pWnd->pDib, 0, 0, 15, TRUE);
@@ -1254,11 +1256,16 @@ void DrawWindowCOMMANDITEM(PWNDINFO pWnd)
 
 	char szTmp[128];
 	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
-	int i, nEquNo = -1, nCount = GetItemCount (g_nMyCharID);
+	int i, nEquNo = -1, nCount = GetItemCount (g_nMyCharID), nRows = GetItemListRows (g_nMyCharID);
 	/* 手持ちは byData1 から窓の行数ぶんだけ描く（10行を超える分はスクロール） */
 	for (i = 0; i < pWnd->nData2; i ++) {
 		int nNo = pWnd->byData1 + i;
+		if (nNo >= nRows) {
+			break;
+		}
+		/* 大事な物を持っている時だけ、最後の行に「大事な物…」 */
 		if (nNo >= nCount) {
+			TextOut2 (hDC, 32, 16 + i * 16, "大事な物…", RGB (255, 255, 255));
 			break;
 		}
 		PITEMINFO pItem = g_aItemInfo[pChar->waItem[nNo]];
@@ -1266,12 +1273,66 @@ void DrawWindowCOMMANDITEM(PWNDINFO pWnd)
 		TextOut2 (hDC, 32, 16 + i * 16, szTmp,
 				((pWnd->dwData != 0) && ((int)pWnd->dwData - 1 == nNo)) ? RGB (255, 255, 0) : RGB (255, 255, 255));
 
+		/* ショートカットに登録している番号（1〜5キーで登録・解除。種類IDで覚えているので同じ品は全部に付く） */
+		int nKey = GetItemKeyNo (pChar->waItem[nNo]);
+		if (nKey >= 0) {
+			wsprintf (szTmp, "%d", nKey + 1);
+			TextOut2 (hDC, pWnd->nCx - 24, 16 + i * 16, szTmp, RGB (255, 230, 100));
+		}
+
 		for (int j = 0; j < 10; j ++) {
 			if (pChar->waEqu[j] == nNo) {
 				nEquNo = 16 + i * 16;
 				pWnd->pDib->Blt (16, nEquNo, 8, 16, g_pDibSystem, 64, 16, TRUE);
 			}
 		}
+	}
+
+	/* 上や下にまだ品がある時は、枠の上下に▲▼を出す */
+	DrawListScrollMark (hDC, pWnd->nCx, pWnd->nCy, pWnd->byData1, pWnd->nData2, nRows);
+
+	SelectObject (hDC, hFontOld);
+	pWnd->pDib->Unlock ();
+	pWnd->dwTimeDrawStart = timeGetTime ();
+
+	DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
+}
+
+/* ========================================================================= */
+/* 関数名：DrawWindowIMPORTANT												 */
+/* 内容：ウィンドウの描画(大事な物の一覧。見るだけ)							 */
+/* ========================================================================= */
+void DrawWindowIMPORTANT(PWNDINFO pWnd)
+{
+	if (pWnd->dwTimeDrawStart) {
+		DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
+		return;
+	}
+
+	DrawWindowFrame (pWnd);
+
+	HDC hDC = pWnd->pDib->Lock ();
+	HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFontBasic);
+
+	SetBkColor (hDC, RGB (40, 40, 40));
+	TextOut2 (hDC, 32, 0, "大事な物", RGB (255, 255, 255));
+	SetBkMode (hDC, TRANSPARENT);
+	TextOut2 (hDC, 32, 0, "大事な物", RGB (255, 255, 255));
+
+	char szTmp[128];
+	int i, nCount = GetImportantCount (g_nMyCharID);
+	/* byData1 から窓の行数ぶんだけ描く（10行を超える分はスクロール） */
+	for (i = 0; i < pWnd->nData2; i ++) {
+		int nNo = pWnd->byData1 + i;
+		if (nNo >= nCount) {
+			break;
+		}
+		int nItemID = GetImportantItem (g_nMyCharID, nNo);
+		if ((nItemID <= 0) || (nItemID >= g_aItemInfo.GetSize ())) {
+			continue;
+		}
+		wsprintf (szTmp, "%s", g_aItemInfo[nItemID]->szName);
+		TextOut2 (hDC, 32, 16 + i * 16, szTmp, RGB (255, 255, 255));
 	}
 
 	/* 上や下にまだ品がある時は、枠の上下に▲▼を出す */

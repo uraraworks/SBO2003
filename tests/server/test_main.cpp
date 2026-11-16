@@ -1070,6 +1070,7 @@ static void TestFloorDamage(const std::vector<int> &aLogin);
 static void TestLowParts(const std::vector<int> &aLogin);
 static void TestMimic(const std::vector<int> &aLogin);
 static void TestEnemyDoor(const std::vector<int> &aLogin);
+static void TestImportant(const std::vector<int> &aLogin);
 static void TestAdminResurrect(const std::vector<int> &aLogin);
 static void TestFlagTalk(const std::vector<int> &aLogin);
 static void TestMarket(const std::vector<int> &aLogin);
@@ -1530,6 +1531,8 @@ static void TestWorld(void)
 	TestFlagTalk(aLogin);
 	/* AA. 取引所（委託販売） */
 	TestMarket(aLogin);
+	/* AB. 大事な物の欄と鍵の扉（保存の読み直しでキャラが増えるので最後に流す） */
+	TestImportant(aLogin);
 	/* K2. 傭兵への回復・蘇生の特技（ゲームの乱数を使うので最後） */
 	TestMercenary(aLogin, TRUE);
 }
@@ -2727,6 +2730,18 @@ static void TailBattleSend(PCHARINFO p, BYTE byOn)
 	TestRecv(p, &Para, sizeof(Para));
 }
 
+/* 列に戻る途中のプレイヤーを、時間を進めながら歩かせる(100ms刻み) */
+static void TailChaseAdvance(PCHARINFO *apChar, int nCount, int nMs)
+{
+	for (int t = 0; t < nMs; t += 100) {
+		s_dwFakeNow += 100;
+		g_dwTime = s_dwFakeNow;
+		for (int i = 0; i < nCount; i ++) {
+			TailChaseProc(apChar[i]);
+		}
+	}
+}
+
 static void TestTailBattle(const std::vector<int> &aLogin)
 {
 	printf("== L2. Tail battle ==\n");
@@ -2777,6 +2792,9 @@ static void TestTailBattle(const std::vector<int> &aLogin)
 		pB->dwTailBackTblID == pC->dwTblID ? 1 : (int)pB->dwTailBackTblID, \
 		pC->dwTailTblID == pA->dwTblID ? 1 : (pC->dwTailTblID == pB->dwTblID ? 2 : (int)pC->dwTailTblID))
 
+	#define TAILPLACE(p_, x_, y_) do { DeleteTblNoPC((int)(p_)->dwTblID); \
+		(p_)->dwX = (p_)->dwXBack = (x_); (p_)->dwY = (p_)->dwYBack = (y_); AddTblNoPC((int)(p_)->dwTblID); } while (0)
+
 	/* 真ん中の人が戦闘モードON：列から抜けて、後ろの人は先頭へつなぎ直し */
 	MockTrace(1);
 	TailBattleSend(pB, 1);
@@ -2787,17 +2805,49 @@ static void TestTailBattle(const std::vector<int> &aLogin)
 	TAILSTATE("off");
 	printf("tailbattle off end=%d\n", pC->dwTailBackTblID == pB->dwTblID ? 1 : 0);
 
-	/* 離れた所でON→OFF：最後尾のとなりへワープして戻る */
+	/* 画面内の離れた所でON→OFF：追いかけ始める(まだ列にはつながらず、歩いて着いてからつながる) */
 	TailBattleSend(pB, 1);
-	DeleteTblNoPC((int)pB->dwTblID);
-	pB->dwX = pB->dwXBack = nX0;
-	pB->dwY = pB->dwYBack = nY0 + 6;
-	AddTblNoPC((int)pB->dwTblID);
+	TAILPLACE(pB, nX0 + 1, nY0 + 5);
 	TailBattleSend(pB, 0);
+	printf("tailchase near start active=%d linked=%d moved=%d\n", TailChaseIsActive(pB) ? 1 : 0,
+		pB->dwTailTblID == pC->dwTblID ? 1 : 0, pB->dwY != (DWORD)(nY0 + 5) ? 1 : 0);
 	{
-		/* 列の最後尾は B のはずで、その前は先頭 A の後ろの C */
+		int nMs = 0, nSteps = 0;
+		PCHARINFO apRun[1] = { pB };
+		for (; nMs < 6000 && pB->dwTailTblID != pC->dwTblID; nMs += 100) {
+			DWORD dwX = pB->dwX, dwY = pB->dwY;
+			TailChaseAdvance(apRun, 1, 100);
+			if (dwX != pB->dwX || dwY != pB->dwY) nSteps ++;
+		}
 		int nDist = abs((int)pB->dwX - (int)pC->dwX) + abs((int)pB->dwY - (int)pC->dwY);
-		printf("tailbattle warp front=%d dist=%d samemap=%d\n", pB->dwTailTblID == pC->dwTblID ? 1 : 0, nDist, pB->dwMapID == pPort->dwID ? 1 : 0);
+		printf("tailchase near arrived front=%d active=%d dist=%d steps=%d ms=%d\n", pB->dwTailTblID == pC->dwTblID ? 1 : 0,
+			TailChaseIsActive(pB) ? 1 : 0, nDist, nSteps, nMs);
+	}
+
+	/* 画面の外でON→OFF：フェードを挟んで最後尾のとなりへワープして戻る */
+	TailBattleSend(pB, 1);
+	int nFarX = -1, nFarY = -1;
+	for (int y = 0; y < pPort->nCY && nFarX < 0; y ++) {
+		for (int x = 0; x < pPort->nCX && nFarX < 0; x ++) {
+			if (abs(x - nX0) > DRAW_PARTS_X + 1 && CheckCharBlock(pPort->dwID, x, y) && !CheckEventBlock(pPort->dwID, x, y)) {
+				nFarX = x; nFarY = y;
+			}
+		}
+	}
+	printf("tailchase far found=%d\n", nFarX >= 0 ? 1 : 0);
+	if (nFarX >= 0) {
+		TAILPLACE(pB, nFarX, nFarY);
+		TailBattleSend(pB, 0);
+		PCHARINFO apRun[1] = { pB };
+		printf("tailchase far start active=%d stay=%d linked=%d\n", TailChaseIsActive(pB) ? 1 : 0,
+			(pB->dwX == (DWORD)nFarX && pB->dwY == (DWORD)nFarY) ? 1 : 0, pB->dwTailTblID == pC->dwTblID ? 1 : 0);
+		TailChaseAdvance(apRun, 1, 500);
+		printf("tailchase far fading active=%d stay=%d linked=%d\n", TailChaseIsActive(pB) ? 1 : 0,
+			(pB->dwX == (DWORD)nFarX && pB->dwY == (DWORD)nFarY) ? 1 : 0, pB->dwTailTblID == pC->dwTblID ? 1 : 0);
+		TailChaseAdvance(apRun, 1, 600);
+		int nDist = abs((int)pB->dwX - (int)pC->dwX) + abs((int)pB->dwY - (int)pC->dwY);
+		printf("tailchase far done front=%d active=%d dist=%d samemap=%d dir=%d\n", pB->dwTailTblID == pC->dwTblID ? 1 : 0,
+			TailChaseIsActive(pB) ? 1 : 0, nDist, pB->dwMapID == pPort->dwID ? 1 : 0, pB->byDirection == pC->byDirection ? 1 : 0);
 	}
 
 	/* 先頭がいなくなったら戻れない・覚えは消える */
@@ -2852,8 +2902,17 @@ static void TestTailBattle(const std::vector<int> &aLogin)
 	TailBattleSend(pA, 1);
 	TailBattleSend(pB, 1);
 	TailBattleSend(pA, 0);
+	{
+		/* Cは離れているので、歩いて追いついてから列につながる */
+		PCHARINFO apRun[1] = { pC };
+		TailChaseAdvance(apRun, 1, 3000);
+	}
 	printf("tailbattle self wait B(front=%d) C(front=A:%d)\n", (int)pB->dwTailTblID, pC->dwTailTblID == pA->dwTblID ? 1 : 0);
 	TailBattleSend(pB, 0);
+	{
+		PCHARINFO apRun[1] = { pB };
+		TailChaseAdvance(apRun, 1, 3000);
+	}
 	printf("tailbattle self off B(front=C:%d)\n", pB->dwTailTblID == pC->dwTblID ? 1 : 0);
 
 	/* 戦闘モード中のZは何もしない(覚えも列も変わらない) */
@@ -2867,6 +2926,81 @@ static void TestTailBattle(const std::vector<int> &aLogin)
 	TailBattleSend(pB, 0);
 	printf("tailbattle z in battle B(front=C:%d)\n", pB->dwTailTblID == pC->dwTblID ? 1 : 0);
 	TAILRESET();
+
+	/* 3人ばらけて先頭がOFF：Bが先頭Aを、CがBを追い、B→Cの順でつながる(Cは先に着いてもBがつながるまで待つ) */
+	TailBattleSend(pA, 1);
+	TAILPLACE(pB, nX0 + 1, nY0 + 4);
+	TAILPLACE(pC, nX0 - 1, nY0 + 6);
+	TailBattleSend(pA, 0);
+	printf("tailchase scatter start B(active=%d) C(active=%d)\n", TailChaseIsActive(pB) ? 1 : 0, TailChaseIsActive(pC) ? 1 : 0);
+	{
+		PCHARINFO apRun[2] = { pB, pC };
+		int nMsB = -1, nMsC = -1;
+		for (int nMs = 0; nMs < 10000 && (nMsB < 0 || nMsC < 0); nMs += 100) {
+			TailChaseAdvance(apRun, 2, 100);
+			if (nMsB < 0 && pB->dwTailTblID == pA->dwTblID) nMsB = nMs;
+			if (nMsC < 0 && pC->dwTailTblID == pB->dwTblID) nMsC = nMs;
+		}
+		printf("tailchase scatter done A(back=B:%d) B(front=A:%d back=C:%d) C(front=B:%d) Bfirst=%d\n",
+			pA->dwTailBackTblID == pB->dwTblID ? 1 : 0, pB->dwTailTblID == pA->dwTblID ? 1 : 0,
+			pB->dwTailBackTblID == pC->dwTblID ? 1 : 0, pC->dwTailTblID == pB->dwTblID ? 1 : 0,
+			(nMsB >= 0 && nMsC >= nMsB) ? 1 : 0);
+	}
+
+	/* 追いかけ中に自分で戦闘モードにする：追いかけをやめて戻り先を覚えた状態に。OFFでまた追いかける */
+	TAILRESET();
+	TailBattleSend(pA, 1);
+	TAILPLACE(pB, nX0 + 1, nY0 + 4);
+	TAILPLACE(pC, nX0 - 1, nY0 + 6);
+	TailBattleSend(pA, 0);
+	TailBattleSend(pB, 1);
+	printf("tailchase battle on B(active=%d front=%d) C(active=%d)\n", TailChaseIsActive(pB) ? 1 : 0, (int)pB->dwTailTblID, TailChaseIsActive(pC) ? 1 : 0);
+	TailBattleSend(pB, 0);
+	printf("tailchase battle off B(active=%d)\n", TailChaseIsActive(pB) ? 1 : 0);
+
+	/* 追いかけ中に通常モードでZ：追いかけをやめて戻り先も忘れる。ほかの人(C)はそのまま先頭を追う */
+	{
+		CCHAR_TAIL Z;
+		MercenarySetBattleMode(pB, FALSE);
+		Z.Make(pB->dwTblID, pA->dwTblID, CHAR_TAIL_REQ);
+		TestRecv(pB, Z.Get(), Z.GetSize());
+		printf("tailchase z B(active=%d front=%d) C(active=%d)\n", TailChaseIsActive(pB) ? 1 : 0, (int)pB->dwTailTblID, TailChaseIsActive(pC) ? 1 : 0);
+		TailBattleSend(pB, 0);
+		printf("tailchase z again B(active=%d)\n", TailChaseIsActive(pB) ? 1 : 0);
+		PCHARINFO apRun[1] = { pC };
+		TailChaseAdvance(apRun, 1, 6000);
+		printf("tailchase z C(front=A:%d active=%d)\n", pC->dwTailTblID == pA->dwTblID ? 1 : 0, TailChaseIsActive(pC) ? 1 : 0);
+	}
+
+	/* 追いかけ中に本人から動く要求が来ても動けない(今の位置を送り返す) */
+	TAILRESET();
+	TailBattleSend(pA, 1);
+	TAILPLACE(pB, nX0 + 1, nY0 + 4);
+	TailBattleSend(pA, 0);
+	{
+		CMDPARA_CHARPOS Pos;
+		ZeroMemory(&Pos, sizeof(Pos));
+		Pos.byCmd = CMD_CHARPOS;
+		Pos.pID = pB->pID;
+		Pos.dwTblID = pB->dwTblID;
+		Pos.dwMapID = pB->dwMapID;
+		Pos.byX = (BYTE)(pB->dwX - 1);
+		Pos.byY = (BYTE)pB->dwY;
+		Pos.byDirection = 2;
+		DWORD dwXBack = pB->dwX;
+		TestRecv(pB, &Pos, sizeof(Pos));
+		printf("tailchase keymove blocked=%d active=%d\n", pB->dwX == dwXBack ? 1 : 0, TailChaseIsActive(pB) ? 1 : 0);
+	}
+	/* 先頭がいなくなったら追いかけをやめる */
+	{
+		DWORD dwPIDBack = pA->pID;
+		pA->pID = 0;
+		TailReturnForget(pA->dwTblID);
+		pA->pID = dwPIDBack;
+		printf("tailchase headgone B(active=%d) C(active=%d)\n", TailChaseIsActive(pB) ? 1 : 0, TailChaseIsActive(pC) ? 1 : 0);
+	}
+	TAILRESET();
+	for (int k = 0; k < 3; k ++) TailReturnForget(apChar[k]->dwTblID);
 	#undef TAILRESET
 
 	for (int i = 0; i < 3; i ++) {
@@ -2879,6 +3013,7 @@ static void TestTailBattle(const std::vector<int> &aLogin)
 		p->dwTailBackTblID = adwBack[i][4];
 		AddTblNoPC((int)p->dwTblID);
 	}
+	#undef TAILPLACE
 	#undef TAILSTATE
 }
 
@@ -2946,6 +3081,8 @@ static int QuestCountItem(PCHARINFO p, WORD wItem)
 {
 	int n = 0;
 	for (int i = 0; i < MAX_MYITEM; i ++) if (p->waItem[i] == wItem) n ++;
+	/* 依頼の品は大事な物の欄に入るので、そちらも数える */
+	for (int i = 0; i < MAX_IMPORTANT; i ++) if (p->waImportant[i] == wItem) n ++;
 	return n;
 }
 
@@ -5230,6 +5367,213 @@ static void TestEnemyDoor(const std::vector<int> &aLogin)
 	pPC->byDirection = byDirBack;
 	pPC->dwSpaceID = dwSpaceBack;
 	AddTblNoPC((int)pPC->dwTblID);
+}
+
+/* ------------------------------------------------------------------------- */
+/* AB. 大事な物の欄と鍵の扉												 */
+/*    印の品・依頼の品が手持ちではなく大事な物の欄に入るか（同じ物を重ねない・	 */
+/*    いっぱいなら入らない）・保存して読み直しても残るか・列が無い古いデータは空か */
+/*    CountItem/TakeItem が欄も見るか・手持ちの大事な物を移し替えるか（装備は動かさず */
+/*    添字がずれないか）・鍵の扉が鍵なしで開かず、鍵ありで開いて鍵は減らないか	 */
+/* ------------------------------------------------------------------------- */
+static int ImportantCountOf(PCHARINFO p, WORD w)
+{
+	int n = 0;
+	for (int i = 0; i < MAX_IMPORTANT; i ++) if (p->waImportant[i] == w) n ++;
+	return n;
+}
+
+static void TestImportant(const std::vector<int> &aLogin)
+{
+	printf("== AB. Important ==\n");
+	if (aLogin.size() < 1) {
+		return;
+	}
+	PCHARINFO pPC = g_aCharInfo[aLogin[0]];
+	int nMapNo = GetMapNo(pPC->dwMapID);
+	if (nMapNo < 0) {
+		printf("no map\n");
+		return;
+	}
+	/* 使う品（名前があり、依頼の品でも印付きでもない物を 4 つ） */
+	WORD awItem[4] = {0, 0, 0, 0};
+	int nFound = 0;
+	for (int i = 1; i < g_aItemInfo.GetSize() && nFound < 4; i ++) {
+		if (g_aItemInfo[i]->szName[0] == 0 || IsImportantItem((WORD)i)) continue;
+		awItem[nFound ++] = (WORD)i;
+	}
+	if (nFound < 4) {
+		printf("no items\n");
+		return;
+	}
+	WORD wKey = awItem[0], wNorm = awItem[1], wQuest = awItem[2], wEqu = awItem[3];
+	BYTE byFlgBack = g_aItemInfo[wKey]->byFlg;
+	WORD awItemBack[MAX_MYITEM], awEquBack[MAX_EQUTYPE], awImpBack[MAX_IMPORTANT];
+	memcpy(awItemBack, pPC->waItem, sizeof(awItemBack));
+	memcpy(awEquBack, pPC->waEqu, sizeof(awEquBack));
+	memcpy(awImpBack, pPC->waImportant, sizeof(awImpBack));
+	ZeroMemory(pPC->waItem, sizeof(pPC->waItem));
+	ZeroMemory(pPC->waImportant, sizeof(pPC->waImportant));
+	FillMemory(pPC->waEqu, sizeof(pPC->waEqu), 0xFF);
+
+	/* 印の品・依頼の品・ふつうの品の振り分け（同じ物は重ねず 1 個 1 枠） */
+	g_aItemInfo[wKey]->byFlg |= ITEMFLG_IMPORTANT;
+	PQUESTINFO pQ = new QUESTINFO;
+	ZeroMemory(pQ, sizeof(*pQ));
+	pQ->wID = 9999; pQ->byState = QUESTSTATE_ON; pQ->wQuestItem = wQuest;
+	g_aQuestInfo.Add(pQ);
+	AddCharItem(pPC->dwTblID, wKey);
+	AddCharItem(pPC->dwTblID, wKey);
+	AddCharItem(pPC->dwTblID, wQuest);
+	AddCharItem(pPC->dwTblID, wNorm);
+	printf("important add bag=%d imp=%d key=%d quest=%d norm=%d\n", GetItemCount(pPC->dwTblID), GetImportantCount(pPC->dwTblID),
+		ImportantCountOf(pPC, wKey), ImportantCountOf(pPC, wQuest), ImportantCountOf(pPC, wNorm));
+
+	/* 数える・取り上げる（大事な物の欄も見る。手持ちの品も今までどおり） */
+	printf("important count key=%d quest=%d norm=%d\n", QuestCountItemAll(pPC, wKey), QuestCountItemAll(pPC, wQuest), QuestCountItemAll(pPC, wNorm));
+	BOOL bTake1 = QuestTakeItemOne(pPC, wKey), bTake2 = QuestTakeItemOne(pPC, wQuest), bTake3 = QuestTakeItemOne(pPC, wNorm), bTake4 = QuestTakeItemOne(pPC, wQuest);
+	printf("important take %d%d%d%d bag=%d imp=%d key=%d\n", (int)bTake1, (int)bTake2, (int)bTake3, (int)bTake4,
+		GetItemCount(pPC->dwTblID), GetImportantCount(pPC->dwTblID), QuestCountItemAll(pPC, wKey));
+
+	/* 大事な物の欄がいっぱいなら受け取れない（手持ちは別） */
+	for (int i = 0; i < MAX_IMPORTANT; i ++) pPC->waImportant[i] = wKey;
+	printf("important full canKey=%d canNorm=%d\n", (int)CanAddCharItem(pPC->dwTblID, wKey), (int)CanAddCharItem(pPC->dwTblID, wNorm));
+	AddCharItem(pPC->dwTblID, wKey);
+	printf("important full add imp=%d bag=%d\n", GetImportantCount(pPC->dwTblID), GetItemCount(pPC->dwTblID));
+
+	/* 保存して読み直す（読み込みは保存済みの個数分だけ読む。列が無い古いデータは ZeroMemory のまま空） */
+	ZeroMemory(pPC->waImportant, sizeof(pPC->waImportant));
+	pPC->waImportant[0] = wKey; pPC->waImportant[1] = wQuest; pPC->waImportant[2] = wKey;
+	char szAccBack[MAX_ACCNAME], szNameBack[MAX_CHARNAMEBUF];
+	memcpy(szAccBack, pPC->szAcc, sizeof(szAccBack));
+	memcpy(szNameBack, pPC->szName, sizeof(szNameBack));
+	strcpy(pPC->szAcc, "imptest");
+	strcpy(pPC->szName, "大事な物テスト");
+	BOOL bSaved = SaveCharInfo();
+	BOOL bLoaded = LoadCharInfo();
+	PCHARINFO pLoaded = NULL;
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		if (g_aCharInfo[i] != pPC && strcmp(g_aCharInfo[i]->szAcc, "imptest") == 0) pLoaded = g_aCharInfo[i];
+	}
+	printf("important save=%d load=%d found=%d\n", (int)bSaved, (int)bLoaded, pLoaded ? 1 : 0);
+	if (pLoaded) {
+		printf("important reload imp=%d key=%d quest=%d first=%d,%d,%d\n", GetImportantCount(pLoaded->dwTblID), ImportantCountOf(pLoaded, wKey),
+			ImportantCountOf(pLoaded, wQuest), pLoaded->waImportant[0] == wKey, pLoaded->waImportant[1] == wQuest, pLoaded->waImportant[2] == wKey);
+		strcpy(pLoaded->szAcc, "imptestX");		/* 読み込みで増えた分は、次の探し物の邪魔にならないよう名前を変える */
+	}
+	memcpy(pPC->szAcc, szAccBack, sizeof(szAccBack));
+	memcpy(pPC->szName, szNameBack, sizeof(szNameBack));
+
+	/* 古いキャラ：手持ちにある印の品・依頼の品を欄へ移す（装備中は動かさず、添字がずれない） */
+	ZeroMemory(pPC->waImportant, sizeof(pPC->waImportant));
+	ZeroMemory(pPC->waItem, sizeof(pPC->waItem));
+	FillMemory(pPC->waEqu, sizeof(pPC->waEqu), 0xFF);
+	pPC->waItem[0] = wNorm; pPC->waItem[1] = wKey; pPC->waItem[2] = wEqu; pPC->waItem[3] = wKey; pPC->waItem[4] = wQuest;
+	g_aItemInfo[wKey]->byFlg |= ITEMFLG_IMPORTANT;
+	pPC->waEqu[0] = 3;		/* 2 つ目の鍵を装備中 */
+	pPC->waEqu[1] = 2;
+	int nMoved = MoveImportantItems(pPC);
+	printf("important move moved=%d bag=%d,%d,%d,%d,%d imp=%d key=%d quest=%d equ=%d,%d\n", nMoved,
+		pPC->waItem[0] == wNorm, pPC->waItem[1] == wEqu, pPC->waItem[2] == wKey, pPC->waItem[3] == 0, pPC->waItem[4] == 0,
+		GetImportantCount(pPC->dwTblID), ImportantCountOf(pPC, wKey), ImportantCountOf(pPC, wQuest), pPC->waEqu[0], pPC->waEqu[1]);
+	printf("important move again=%d\n", MoveImportantItems(pPC));
+
+	/* 鍵の扉 */
+	PMAPINFO pMap = g_aMapInfo[nMapNo];
+	int nX = -1, nY = -1;
+	for (int y = 0; y < pMap->nCY && nX < 0; y ++) {
+		for (int x = 0; x + 2 < pMap->nCX; x ++) {
+			if (PushIsFree(pMap, x, y) && PushIsFree(pMap, x + 1, y) && PushIsFree(pMap, x + 2, y)) {
+				nX = x;
+				nY = y;
+				break;
+			}
+		}
+	}
+	if (nX >= 0) {
+		DWORD dwXBack = pPC->dwX, dwYBack = pPC->dwY;
+		BYTE byDirBack = pPC->byDirection;
+		DWORD dwSpaceBack = pPC->dwSpaceID;
+		DWORD dwNowBack = s_dwFakeNow;
+		const int nConn = 1000;
+		int nEventBack = pMap->nEventCount;
+		PEVENTINFO pEventBack = pMap->pEvent;
+		pMap->pEvent = new EVENTINFO[nEventBack + 1];
+		ZeroMemory(pMap->pEvent, sizeof(EVENTINFO) * (nEventBack + 1));
+		if (nEventBack) {
+			memcpy(pMap->pEvent, pEventBack, sizeof(EVENTINFO) * nEventBack);
+		}
+		PEVENTINFO pEvent = &pMap->pEvent[nEventBack];
+		EVENTINFO_DOOR Door;
+		ZeroMemory(&Door, sizeof(Door));
+		Door.wGrpID = 11;
+		Door.wBackGrpID = 22;
+		Door.byTimeClose = 30;
+		Door.byType = EVENTDOOTTYPE_KEY;
+		Door.wKeyItem = wKey;
+		pEvent->dwX = (DWORD)(nX + 1);
+		pEvent->dwY = (DWORD)nY;
+		pEvent->byType = EVENTTYPE_DOOR;
+		pEvent->pData = (PBYTE)&Door;
+		pMap->nEventCount = nEventBack + 1;
+		MimicPC(pPC, nX, nY, 3);
+		pPC->dwSpaceID = SPACE_NORMAL;
+
+		ZeroMemory(pPC->waImportant, sizeof(pPC->waImportant));
+		ZeroMemory(pPC->waItem, sizeof(pPC->waItem));
+		FillMemory(pPC->waEqu, sizeof(pPC->waEqu), 0xFF);
+		CMDPARA_DATA1 Para;
+		ZeroMemory(&Para, sizeof(Para));
+		Para.byCmd = CMD_OPENDOOR;
+		Para.pID = pPC->pID;
+		Para.dwTblID = pPC->dwTblID;
+		/* 鍵なし：開かず「鍵がかかっている」 */
+		int nMsg0 = MockCmdCount(nConn, CMD_MAPMSG), nSnd0 = MockCmdCount(nConn, CMD_PLAYSOUND);
+		TestRecv(pPC, &Para, sizeof(Para));
+		printf("keydoor nokey open=%d mapmsg=%d sound=%d\n", EnemyDoorOpen(pPC, pEvent, &Door),
+			MockCmdCount(nConn, CMD_MAPMSG) - nMsg0, MockCmdCount(nConn, CMD_PLAYSOUND) - nSnd0);
+		MimicExamine(pPC);
+		printf("keydoor nokey examine open=%d\n", EnemyDoorOpen(pPC, pEvent, &Door));
+		/* 傭兵などは鍵を持たないので開けられない */
+		printf("keydoor force=%d\n", (int)SpaceDoorOpen(pPC->dwMapID, pEvent, &Door, SPACE_NORMAL));
+		/* 鍵あり（大事な物の欄）：開く。鍵は減らない */
+		AddCharItem(pPC->dwTblID, wKey);
+		nMsg0 = MockCmdCount(nConn, CMD_MAPMSG); nSnd0 = MockCmdCount(nConn, CMD_PLAYSOUND);
+		int nChg0 = MockCmdCount(nConn, CMD_CHGMAP);
+		TestRecv(pPC, &Para, sizeof(Para));
+		printf("keydoor key open=%d mapmsg=%d sound=%d chgmap=%d keys=%d\n", EnemyDoorOpen(pPC, pEvent, &Door),
+			MockCmdCount(nConn, CMD_MAPMSG) - nMsg0, MockCmdCount(nConn, CMD_PLAYSOUND) - nSnd0,
+			MockCmdCount(nConn, CMD_CHGMAP) - nChg0, ImportantCountOf(pPC, wKey));
+		/* 開いた後に閉まる動きは普通の扉と同じ。手持ちに鍵があっても開く */
+		s_dwFakeNow += 60000;
+		g_dwTime = s_dwFakeNow;
+		SpaceDoorProc(pPC->dwMapID, pEvent, &Door);
+		printf("keydoor closed=%d\n", 1 - EnemyDoorOpen(pPC, pEvent, &Door));
+		ZeroMemory(pPC->waImportant, sizeof(pPC->waImportant));
+		AddCharItemBag(pPC->dwTblID, wKey);
+		MimicExamine(pPC);
+		printf("keydoor bagkey open=%d\n", EnemyDoorOpen(pPC, pEvent, &Door));
+
+		pMap->nEventCount = nEventBack;
+		delete [] pMap->pEvent;
+		pMap->pEvent = pEventBack;
+		s_dwFakeNow = dwNowBack;
+		g_dwTime = s_dwFakeNow;
+		DeleteTblNoPC((int)pPC->dwTblID);
+		pPC->dwX = pPC->dwXBack = dwXBack;
+		pPC->dwY = pPC->dwYBack = dwYBack;
+		pPC->byDirection = byDirBack;
+		pPC->dwSpaceID = dwSpaceBack;
+		AddTblNoPC((int)pPC->dwTblID);
+	}
+
+	/* 片付け */
+	g_aQuestInfo.RemoveAt(g_aQuestInfo.GetSize() - 1);
+	delete pQ;
+	g_aItemInfo[wKey]->byFlg = byFlgBack;
+	memcpy(pPC->waItem, awItemBack, sizeof(awItemBack));
+	memcpy(pPC->waEqu, awEquBack, sizeof(awEquBack));
+	memcpy(pPC->waImportant, awImpBack, sizeof(awImpBack));
 }
 
 static void TestCharPush(const std::vector<int> &aLogin)

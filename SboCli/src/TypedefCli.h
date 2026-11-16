@@ -149,6 +149,7 @@ enum {
 	WNDTYPE_QUEST,												/* ギルドの依頼：一覧・進み具合 */
 	WNDTYPE_SORTMENU,											/* 並べ替え：入れ替え・種類順・50音順（byData1=対象 SORTITEMTARGET_*） */
 	WNDTYPE_MARKET,												/* 取引所（商人ギルドの出張所）の受付 */
+	WNDTYPE_IMPORTANT,											/* 大事な物の一覧（見るだけ。道具の一覧の最後の行から開く） */
 };
 
 /* 取引所ウィンドウ(WNDTYPE_MARKET)の nType2 */

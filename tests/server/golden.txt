@@ -1108,7 +1108,12 @@ tailbattle area found=1
 tailbattle on A(back=2) B(front=-1 back=-1) C(front=1)
 tailbattle off A(back=2) B(front=1407 back=-1) C(front=1)
 tailbattle off end=1
-tailbattle warp front=1 dist=1 samemap=1
+tailchase near start active=1 linked=0 moved=0
+tailchase near arrived front=1 active=0 dist=1 steps=3 ms=1000
+tailchase far found=1
+tailchase far start active=1 stay=1 linked=0
+tailchase far fading active=1 stay=1 linked=0
+tailchase far done front=1 active=0 dist=1 samemap=1 dir=1
 tailbattle nohead front=-1
 tailbattle again front=-1
 tailbattle zforget front=0
@@ -1117,6 +1122,15 @@ tailbattle head off A(back=B:1) B(front=A:1 back=C:1) C(front=B:1)
 tailbattle self wait B(front=-1) C(front=A:1)
 tailbattle self off B(front=C:1)
 tailbattle z in battle B(front=C:1)
+tailchase scatter start B(active=1) C(active=1)
+tailchase scatter done A(back=B:1) B(front=A:1 back=C:1) C(front=B:1) Bfirst=1
+tailchase battle on B(active=0 front=-1) C(active=1)
+tailchase battle off B(active=1)
+tailchase z B(active=0 front=-1) C(active=1)
+tailchase z again B(active=0)
+tailchase z C(front=A:1 active=0)
+tailchase keymove blocked=1 active=1
+tailchase headgone B(active=0) C(active=0)
 == M. Quest ==
 quest map=6 cells=8
 quest party same=1 nonzero=1
@@ -1130,7 +1144,7 @@ quest copy grp=1 vis owner=0 member=1 other=0 admin=1 block=-1
 quest copy grp=2 vis owner=0 member=1 other=0 admin=1 block=-1
 quest admin portal moved=0
 quest admin own portal moved=1
-quest chest full item=0 leave=0 flag1=0 step=0
+quest chest full item=1 leave=0 flag1=1 step=1
 quest chest item=1 flag1=1 step=1 person=1 chest=0
 quest member item=0 step=0
 quest portal to dest=1
@@ -1426,6 +1440,22 @@ market limit after takeback listed=5 put=0
 market save=1 load=1 same=1 items=1 sales=2 next_same=1 sale_a=950 other=4242
 market save empty=1 load=1 items=0 sales=0 next=1
 market end
+== AB. Important ==
+important add bag=1 imp=3 key=2 quest=1 norm=0
+important count key=2 quest=1 norm=1
+important take 1110 bag=0 imp=1 key=1
+important full canKey=0 canNorm=1
+important full add imp=30 bag=0
+important save=1 load=1 found=1
+important reload imp=3 key=2 quest=1 first=1,1,1
+important move moved=2 bag=1,1,1,1,1 imp=2 key=1 quest=1 equ=2,1
+important move again=0
+keydoor nokey open=0 mapmsg=1 sound=0
+keydoor nokey examine open=0
+keydoor force=0
+keydoor key open=1 mapmsg=1 sound=1 chgmap=1 keys=1
+keydoor closed=1
+keydoor bagkey open=1
 == K2. Mercenary magic ==
 merc map=91 enemies=17 size=255x160
 merc hired dist=1

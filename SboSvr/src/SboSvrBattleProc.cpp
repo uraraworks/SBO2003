@@ -491,11 +491,11 @@ BOOL DamageAfterProcNPC(PCHARINFO pChar, PCHARINFO pCharTarget)
 				}
 			}
 
-			/* もう持てない？ */
-			if (GetItemCount (pCharGet->dwTblID) >= MAX_MYITEM) {
+			/* もう持てない？（大事な物は大事な物の欄の空きを見る） */
+			if (!CanAddCharItem (pCharGet->dwTblID, nGetItemNo)) {
 				byGetItem = 1;
-				/* 手持ちがいっぱいなら預かり所へ送る（預かり所もいっぱいならあきらめる） */
-				if (AddLeaveItem (pCharGet, (WORD)nGetItemNo)) {
+				/* 手持ちがいっぱいなら預かり所へ送る（預かり所もいっぱいならあきらめる。大事な物は預かり所へ送らない） */
+				if (!IsImportantItem ((WORD)nGetItemNo) && AddLeaveItem (pCharGet, (WORD)nGetItemNo)) {
 					byGetItem = 3;
 				}
 
@@ -1005,6 +1005,10 @@ BOOL BattleProcAtack(PCHARINFO pChar, PCHARINFO pCharTarget)
 		goto Exit;
 	}
 
+	/* 攻撃したら隠れるが解ける */
+	if (pChar->byNpcType == NPCTYPE_INIT) {
+		HideBreak (pChar, TRUE);
+	}
 
 	bSPAtack	= FALSE;
 	bMiss		= FALSE;

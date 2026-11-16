@@ -307,7 +307,7 @@ typedef struct _DATAFIELD {
 #define FLDK(st, name, key, label, type, flags, note)	{ key, label, type, offsetof(st, name), 0, flags, note }
 
 static const char *s_pszNoteMagicType =
-	"0=効果無し 1=HP減少 2=HP増加 3=明かり 4=魔法発生 5=帰還 6=HP減少(攻撃力) 7=魔法発生(自分) 8=蘇生 9=HP減少(HP消費) 10=HP減少(率) 11=加速(データ1=速くなる率%・2=秒) 12=毒(データ1=2秒ごとのダメージ・2=秒・3=成功率%) 13=眠り(データ1=秒・2=成功率%) 14=攻撃力アップ(データ1=上がる率%・2=秒・3=最低でも上がる量、プレイヤーだけ) 15=守備力アップ(同じ)";
+	"0=効果無し 1=HP減少 2=HP増加 3=明かり 4=魔法発生 5=帰還 6=HP減少(攻撃力) 7=魔法発生(自分) 8=蘇生 9=HP減少(HP消費) 10=HP減少(率) 11=加速(データ1=速くなる率%・2=秒) 12=毒(データ1=2秒ごとのダメージ・2=秒・3=成功率%) 13=眠り(データ1=秒・2=成功率%) 14=攻撃力アップ(データ1=上がる率%・2=秒・3=最低でも上がる量、プレイヤーだけ) 15=守備力アップ(同じ) 16=隠れる(データ2=秒、自分にかける。敵が見つけられる範囲が半分になり、攻撃すると解ける)";
 static const char *s_pszNoteAttr = "0=無し 1=火 2=水 3=風 4=土 5=光 6=闇";
 
 /* 特技（魔法）情報 */
@@ -401,7 +401,7 @@ static const DATAFIELD s_aFieldItem[] = {
 	FLDS(ITEMINFO, szName,				"名前",					FT_STR, 0, NULL),
 	FLD (ITEMINFO, byType,				"種別",					FT_U8, 0, s_pszNoteItemType),
 	FLD (ITEMINFO, byData,				"付加データ",			FT_U8, 0, "武器は攻撃力、防具は守備力（首飾り・指輪は detail.byEquType の効果量）"),
-	FLD (ITEMINFO, byFlg,				"フラグ",				FT_U8, 0, NULL),
+	FLD (ITEMINFO, byFlg,				"フラグ",				FT_U8, 0, "ビット: 1=捨てられない 2=使うとなくなる 4=取り引き不可 8=大事な物（手持ちではなく大事な物の欄に入る。依頼の品も同じ欄）"),
 	FLD (ITEMINFO, bySound,				"使った時の音",			FT_U8, 0, NULL),
 	FLD (ITEMINFO, bySexDistinction,	"性別",					FT_U8, 0, "0=全員 1=男性のみ 2=女性のみ"),
 	FLD (ITEMINFO, byEraseProbability,	"無くなる確率",			FT_U8, 0, NULL),
@@ -1412,8 +1412,10 @@ static const DATAFIELD s_aFieldChar[] = {
 	FLD (CHARINFO, chAttrDark,			"属性(闇)",				FT_S8, RO, NULL),
 	FLDA(CHARINFO, abyMagic,			"覚えている特技",		FT_U8ARR, BYTE, RO, "magic の番号"),
 	FLDA(CHARINFO, abyMagicKey,			"特技ショートカット",	FT_U8ARR, BYTE, RO, "1〜5 キーの枠に登録した magic の番号（0 は空）"),
+	FLDA(CHARINFO, awKeyItem,			"ショートカットの装備品・道具",	FT_U16ARR, WORD, RO, "abyMagicKey と同じ 1〜5 キーの枠に登録した item の番号（0 は特技の枠か空き。装備品は持ち替え、道具は使う）"),
 	FLD (CHARINFO, byOptMagicBar,		"特技ショートカットの帯",	FT_U8, RO, "0=表示 1=非表示（アカウントごとの設定）"),
 	FLDA(CHARINFO, waItem,				"持ち物",				FT_U16ARR, WORD, RO, "item の番号"),
+	FLDA(CHARINFO, waImportant,			"大事な物",				FT_U16ARR, WORD, RO, "item の番号（0 は空。鍵や依頼の品など。持ち物とは別の欄）"),
 	FLDA(CHARINFO, waEqu,				"装備",					FT_U16ARR, WORD, RO, "持ち物（waItem）の何番目か。65535 は無し。順に 武器・鎧・盾・兜・小手・靴・首飾り・指輪1・指輪2"),
 	FLD (CHARINFO, dwGold,				"所持金",				FT_U32, RO, NULL),
 	FLD (CHARINFO, dwExp,				"経験値",				FT_U32, RO, NULL),
@@ -1497,7 +1499,8 @@ static const DATAFIELD s_aFieldEvDoor[] = {
 	FLD (EVENTINFO_DOOR, wGrpID,		"扉の画像ID",			FT_U16, 0, NULL),
 	FLD (EVENTINFO_DOOR, wBackGrpID,	"背景の画像ID",			FT_U16, 0, NULL),
 	FLD (EVENTINFO_DOOR, byTimeClose,	"閉まるまで(100ms)",	FT_U8, 0, NULL),
-	FLD (EVENTINFO_DOOR, byType,		"種別",					FT_U8, 0, "0=カギ不要 1=敵を全部倒す（範囲の敵がいない間は開きっぱなし、敵が出ると閉まる。扉コマンドでは開かない）"),
+	FLD (EVENTINFO_DOOR, byType,		"種別",					FT_U8, 0, "0=カギ不要 1=敵を全部倒す（範囲の敵がいない間は開きっぱなし、敵が出ると閉まる。扉コマンドでは開かない） 2=鍵（wKeyItem の品を大事な物の欄か持ち物に持っていれば開く。鍵は減らない。傭兵は開けられない）"),
+	FLD (EVENTINFO_DOOR, wKeyItem,		"鍵の品",				FT_U16, 0, "種別2の時に必要な item の番号"),
 	FLD (EVENTINFO_DOOR, wAreaX1,		"敵を数える範囲 左上X",	FT_U16, 0, "種別1の時に数える範囲。4つとも0ならマップ全体"),
 	FLD (EVENTINFO_DOOR, wAreaY1,		"敵を数える範囲 左上Y",	FT_U16, 0, NULL),
 	FLD (EVENTINFO_DOOR, wAreaX2,		"敵を数える範囲 右下X",	FT_U16, 0, NULL),

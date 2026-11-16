@@ -39,6 +39,7 @@ PWNDINFO MakeWindowLOGINMENUCHARMAKE			(void);				/* ログインメニューの
 PWNDINFO MakeWindowCOMMAND						(void);				/* コマンド */
 PWNDINFO MakeWindowCOMMANDETC					(void);				/* その他コマンド */
 PWNDINFO MakeWindowCOMMANDITEM					(void);				/* 道具 */
+PWNDINFO MakeWindowIMPORTANT					(void);				/* 大事な物の一覧 */
 PWNDINFO MakeWindowCOMMANDITEMBATTLE			(void);				/* 道具(戦闘マップ) */
 PWNDINFO MakeWindowCOMMANDITEMPROC				(void);				/* 道具処理選択 */
 PWNDINFO MakeWindowSORTMENU						(BYTE);				/* 並べ替え：入れ替え・種類順・50音順 */
@@ -576,10 +577,55 @@ PWNDINFO MakeWindowCOMMANDITEM(void)
 	g_dwNewID ++;
 
 	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
-	int i, nCount = GetItemCount (g_nMyCharID), nLen = 0, nLenTmp;
+	int i, nCount = GetItemCount (g_nMyCharID), nRows = GetItemListRows (g_nMyCharID), nLen = 0, nLenTmp;
 	for (i = 0; i < nCount; i ++) {
 		PITEMINFO pItem = g_aItemInfo[pChar->waItem[i]];
 		nLenTmp = SboTextWidth (pItem->szName);
+		nLen = max (nLen, nLenTmp);
+	}
+	/* 大事な物を持っている時は、最後の行に「大事な物…」を出す */
+	if (nRows > nCount) {
+		nLen = max (nLen, SboTextWidth ("大事な物…"));
+	}
+	if (nLen % 2) {
+		nLen ++;
+	}
+	if (nLen < 2) {
+		nLen = 4;
+	}
+	pWnd->nData2 = min (nRows, LISTROWS_MAX);						/* 10行を超える分はスクロール */
+	pWnd->nX = 32 + 16 * 3;
+	pWnd->nY = 50 + 16 * 2;
+	pWnd->nCx = (16 * 4) + (nLen * 8);
+	pWnd->nCx = max (pWnd->nCx, 16 * 8);						/* 入れ替え中の題字「入れ替え」と右上の▲が重ならない幅 */
+	pWnd->nCy = 16 * (2 + pWnd->nData2);
+	pWnd->nType = WNDTYPE_COMMANDITEM;
+	pWnd->pDib = new CImg32;
+	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
+	pWnd->pDib->SetColorKey (RGB (40, 40, 40));
+
+	return pWnd;
+}
+
+/* ========================================================================= */
+/* 関数名：MakeWindowIMPORTANT												 */
+/* 内容：ウィンドウの作成(大事な物の一覧。見るだけ)							 */
+/* 備考：道具の一覧の最後の行「大事な物…」から開く。10行ずつ見せてスクロール	 */
+/* ========================================================================= */
+PWNDINFO MakeWindowIMPORTANT(void)
+{
+	PWNDINFO pWnd = new WNDINFO;
+	ZeroMemory (pWnd, sizeof (WNDINFO));
+	pWnd->dwID = g_dwNewID;
+	g_dwNewID ++;
+
+	int i, nCount = GetImportantCount (g_nMyCharID), nLen = 0, nLenTmp;
+	for (i = 0; i < nCount; i ++) {
+		int nItemID = GetImportantItem (g_nMyCharID, i);
+		if ((nItemID <= 0) || (nItemID >= g_aItemInfo.GetSize ())) {
+			continue;
+		}
+		nLenTmp = SboTextWidth (g_aItemInfo[nItemID]->szName);
 		nLen = max (nLen, nLenTmp);
 	}
 	if (nLen % 2) {
@@ -588,13 +634,13 @@ PWNDINFO MakeWindowCOMMANDITEM(void)
 	if (nLen < 2) {
 		nLen = 4;
 	}
-	pWnd->nData2 = min (nCount, LISTROWS_MAX);						/* 10行を超える分はスクロール */
-	pWnd->nX = 32 + 16 * 3;
-	pWnd->nY = 50 + 16 * 2;
+	pWnd->nData2 = min (max (nCount, 1), LISTROWS_MAX);				/* 10行を超える分はスクロール */
+	pWnd->nX = 32 + 16 * 4;
+	pWnd->nY = 50 + 16 * 3;
 	pWnd->nCx = (16 * 4) + (nLen * 8);
-	pWnd->nCx = max (pWnd->nCx, 16 * 8);						/* 入れ替え中の題字「入れ替え」と右上の▲が重ならない幅 */
+	pWnd->nCx = max (pWnd->nCx, 16 * 8);							/* 題字「大事な物」と右上の▲が重ならない幅 */
 	pWnd->nCy = 16 * (2 + pWnd->nData2);
-	pWnd->nType = WNDTYPE_COMMANDITEM;
+	pWnd->nType = WNDTYPE_IMPORTANT;
 	pWnd->pDib = new CImg32;
 	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
 	pWnd->pDib->SetColorKey (RGB (40, 40, 40));
@@ -3162,6 +3208,12 @@ void UpdateWindowITEMINFOList(PWNDINFO pWndList)
 		nNo += pWndList->byData1;
 		if (g_pLeaveInfo && (nNo >= 0) && (nNo < g_pLeaveInfo->byCount) && (nNo < MAX_LEAVEITEM)) {
 			nItemID = g_pLeaveInfo->waItem[nNo];
+		}
+	} else if (pWndList->nType == WNDTYPE_IMPORTANT) {
+		/* 大事な物の一覧（byData1 だけスクロールしている） */
+		nNo += pWndList->byData1;
+		if ((g_nMyCharID >= 0) && (g_nMyCharID < g_aCharInfo.GetSize ()) && (nNo >= 0)) {
+			nItemID = GetImportantItem (g_nMyCharID, nNo);
 		}
 	} else {
 		/* 自分の持ち物の一覧（byData1 だけスクロールしている） */

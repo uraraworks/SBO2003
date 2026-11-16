@@ -21,7 +21,14 @@ extern int		GetItemDataSize				(BYTE);											/* アイテム種別毎のデ�
 extern int		GetItemCount				(DWORD);										/* アイテム数を取得 */
 extern int		GetSubGameID				(PSUBGAMEINFO);									/* サブゲームIDを取得 */
 extern int		SearchEvent					(DWORD, DWORD, DWORD);							/* 座標を元にイベント番号検索 */
-extern void		AddCharItem					(DWORD, DWORD);									/* アイテム追加 */
+extern void		AddCharItem					(DWORD, DWORD);									/* アイテム追加（大事な物・依頼の品は大事な物の欄へ） */
+extern void		AddCharItemBag				(DWORD, DWORD);									/* 手持ちの空きにアイテム追加（大事な物の振り分けなし。取り引きの組み直し用） */
+extern BOOL		IsImportantItem				(WORD);											/* 大事な物の欄に入る品か（大事な物の印・依頼の品） */
+extern int		GetImportantCount			(DWORD);										/* 大事な物の数を取得 */
+extern BOOL		CanAddCharItem				(DWORD, DWORD);									/* その品を今受け取れるか（大事な物は欄、他は手持ちの空き） */
+extern int		CountImportantItem			(PCHARINFO, WORD);								/* 大事な物の欄にある、その品の数 */
+extern BOOL		DelImportantItem			(PCHARINFO, WORD);								/* 大事な物の欄から、その品を1個取り除く（取ったら TRUE） */
+extern int		MoveImportantItems			(PCHARINFO);									/* 手持ちにある大事な物・依頼の品（装備中以外）を大事な物の欄へ移す（移した数） */
 extern void		DelCharItem					(DWORD, BYTE);									/* アイテム捨てる */
 extern BOOL		AddLeaveItem				(PCHARINFO, WORD);								/* 預かり所にアイテムを1個入れる */
 extern void		SortItemList				(WORD *, BYTE *, int, BYTE, int *);				/* アイテムの並びを種類順・50音順に並べ替える */
@@ -58,6 +65,8 @@ extern void		RenewATDF					(DWORD);										/* 攻撃力・守備力の更新 *
 extern BOOL		CheckMagicUserInfo			(BYTE, BYTE);									/* 魔法利用者情報にあるか判定 */
 extern void		SubProcMapMove				(PCHARINFO, DWORD, DWORD, DWORD);				/* マップ移動処理 */
 extern void		TailReturnForget			(DWORD);										/* 戦闘で列を離れた時に覚えた先頭を消す */
+extern void		TailChaseProc				(PCHARINFO);									/* 列に戻る途中のプレイヤーを歩かせる(タイマー処理から) */
+extern BOOL		TailChaseIsActive			(PCHARINFO);									/* 列に戻る途中(追いかけ中)か */
 extern void		SubProcMove					(PCHARINFO, DWORD, DWORD);						/* 同マップ内移動処理 */
 extern void		DeleteEvent					(DWORD, int);									/* イベント情報を削除 */
 extern void		RecvDataProc				(BYTE *, DWORD);								/* 受信データ処理 */

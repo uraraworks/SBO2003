@@ -664,6 +664,7 @@ void SendCmdCHARINFO(DWORD pIDSend, int nNo)
 					pSendData->bySearchCx			= pChar->bySearchCx;
 					pSendData->bySearchCy			= pChar->bySearchCy;
 					pSendData->byLightLevel			= pChar->byLightLevel;
+					pSendData->byHide				= pChar->byHide;
 					pSendData->wGrpID				= pChar->wGrpID;
 					pSendData->wGrpMain				= pChar->wGrpMain;
 					pSendData->wGrpSub				= pChar->wGrpSub;
@@ -787,6 +788,7 @@ void SendCmdCHARINFO2(DWORD pIDSend, DWORD dwID, int nNo)
 					pSendData->byEfectIdle		= pChar->byEfectIdle;
 					pSendData->byNpcType		= pChar->byNpcType;
 					pSendData->byLightLevel		= pChar->byLightLevel;
+					pSendData->byHide			= pChar->byHide;
 					pSendData->wGrpID			= pChar->wGrpID;
 					pSendData->wGrpMain			= pChar->wGrpMain;
 					pSendData->wGrpSub			= pChar->wGrpSub;
@@ -907,6 +909,7 @@ void SendCmdCHARINFO3(int nNo)
 	pSendData->bySearchCx			= pChar->bySearchCx;
 	pSendData->bySearchCy			= pChar->bySearchCy;
 	pSendData->byLightLevel			= pChar->byLightLevel;
+	pSendData->byHide				= pChar->byHide;
 	pSendData->wGrpID				= pChar->wGrpID;
 	pSendData->wGrpMain				= pChar->wGrpMain;
 	pSendData->wGrpSub				= pChar->wGrpSub;
@@ -2145,6 +2148,7 @@ void SendCmdCHARITEM(DWORD pIDSend, DWORD dwID)
 	pSendData->dwTblID = dwID;
 	CopyMemory (pSendData->waItem, pChar->waItem, sizeof (pChar->waItem));
 	CopyMemory (pSendData->waEqu, pChar->waEqu, sizeof (pChar->waEqu));
+	CopyMemory (pSendData->waImportant, pChar->waImportant, sizeof (pChar->waImportant));
 
 	svrSock.SendTo (pIDSend, (PBYTE)pSendData, sizeof (CMDPARA_CHARITEM), SENDTIMEOUT);
 	delete pSendData;

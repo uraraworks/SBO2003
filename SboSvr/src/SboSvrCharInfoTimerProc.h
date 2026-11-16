@@ -19,5 +19,8 @@ extern void SetCharInfoTimerStatusMin	(PCHARINFO pChar, BYTE byType, DWORD dwMin
 extern int  GetStatusUpBonus		(PCHARINFO pChar, BYTE byType, int nBase);	/* 攻撃力・守備力アップで上がる量(かかっていなければ0) */
 extern void BuffSendState			(PCHARINFO pChar);					/* 攻撃力・守備力アップの残りを本人と仲間へ送る */
 extern void BuffSendPartyAll		(PCHARINFO pChar);					/* パーティに入った時、仲間どうしでアップの残りを見せ合う */
+extern void HideStart				(PCHARINFO pChar, DWORD dwTimeValid);	/* 隠れる(周りへ半透明を知らせる) */
+extern void HideBreak				(PCHARINFO pChar, BOOL bSend);		/* 隠れるを解く */
+extern BOOL IsHideOutOfSight		(PCHARINFO pSeeker, PCHARINFO pTarget);	/* 隠れている相手が、敵の索敵範囲の半分より外にいるか */
 
 /* Copyright(C)URARA-works 2003-2006 */

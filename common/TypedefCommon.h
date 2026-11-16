@@ -46,6 +46,7 @@
 #define MAX_MAGICEXPLAIN	512										/* 魔法説明文の欄のバイト数（終端含む） */
 #define MAX_COMEFC			99										/* 最大吹き出し種類 */
 #define MAX_MYITEM			20										/* 最大所持アイテム */
+#define MAX_IMPORTANT		30										/* 大事な物の欄の大きさ（鍵・依頼の品など。手持ちとは別。1個1枠） */
 #define MAX_SHOPITEM		10										/* 最大売り物数 */
 #define MAX_SHOPMSG			12										/* メッセージ数 */
 #define MAX_LENCHAREFC		32										/* 文字エフェクトの欄のバイト数（終端含む） */
@@ -139,6 +140,7 @@
 #define ITEMFLG_DROP			(0x01)								/* アイテムフラグ：捨てられない */
 #define ITEMFLG_LOST			(0x02)								/* アイテムフラグ：使うとなくなる */
 #define ITEMFLG_TRADE			(0x04)								/* アイテムフラグ：取り引き不可 */
+#define ITEMFLG_IMPORTANT		(0x08)								/* アイテムフラグ：大事な物（手持ちではなく大事な物の欄に入る） */
 
 /* マップ用のフラグ */
 #define MAPFLG_EFECT			(0x01)								/* エフェクトを許可 */
@@ -912,6 +914,7 @@ enum {
 enum {
 	EVENTDOOTTYPE_NONE = 0,
 	EVENTDOOTTYPE_ENEMY,										/* 敵を全部倒すと開く（敵がいない間は開きっぱなし。敵が出るとまた閉まる） */
+	EVENTDOOTTYPE_KEY,											/* 鍵（大事な物）を持っていると開く（鍵は減らない） */
 	EVENTDOOTTYPE_MAX,
 };
 
@@ -1190,6 +1193,7 @@ enum {
 	MAGICTYPE_SLEEP,											/* 眠り(付加データ1:秒数 2:成功率(%、0なら100)) */
 	MAGICTYPE_ATUP,												/* 攻撃力アップ(付加データ1:上がる率(%) 2:秒数 3:最低でも上がる量) */
 	MAGICTYPE_DFUP,												/* 守備力アップ(付加データ1:上がる率(%) 2:秒数 3:最低でも上がる量) */
+	MAGICTYPE_HIDE,												/* 隠れる(付加データ2:秒数。自分にかける。敵が見つけられる範囲が半分になる) */
 };
 
 /* 魔法利用情報 */
@@ -1258,6 +1262,7 @@ enum {
 	CHARINFOTIMEREVENT_SLEEP,									/* 眠り(dwTimeLast=眠った時のHP。減ったら起きる) */
 	CHARINFOTIMEREVENT_ATUP,									/* 攻撃力アップ(byData=上がる率%、dwTimeInterval=最低でも上がる量) */
 	CHARINFOTIMEREVENT_DFUP,									/* 守備力アップ(byData=上がる率%、dwTimeInterval=最低でも上がる量) */
+	CHARINFOTIMEREVENT_HIDE,									/* 隠れる(時間が来るか、攻撃したら解ける) */
 };
 
 
@@ -2187,6 +2192,7 @@ typedef struct _CHARINFO {
 	BYTE		bySearchCy;											/* 検索範囲Y */
 	BYTE		byLightLevel;										/* 明るさレベル */
 	BYTE		byLightLevelBack;									/* 明るさレベル（最初） */
+	BYTE		byHide;												/* 隠れている(0以外。敵に見つかりにくく、画面では半透明) */
 	BYTE		byAtackRate;										/* 攻撃力の割合 */
 
 	BYTE		abySubStatus[MAX_SUBSTATUS];						/* 保存しないサブステータス */
@@ -2202,6 +2208,7 @@ typedef struct _CHARINFO {
 	BYTE		abyJobMagic[MAX_JOBMAGIC][MAX_USEMAGIC];			/* 転職前の職業で覚えていた呪文（職業ID別） */
 	BYTE		byOptBgm;											/* 音楽ON/OFFのアカウント設定(OPTBGM_*) */
 	BYTE		abyMagicKey[MAX_MAGICKEY];							/* 特技ショートカットに登録した特技ID（0=空。保存する） */
+	WORD		awKeyItem[MAX_MAGICKEY];							/* ショートカットに登録した装備品・道具のアイテムの種類ID（0=特技の枠か空き。abyMagicKey と同じ枠を共有。保存する） */
 	BYTE		byOptMagicBar;										/* 特技ショートカットの帯のアカウント設定(OPTMAGICBAR_*。保存する) */
 	BYTE		byRouteCount;										/* 巡回ルートの道しるべ数(2以上で巡回する) */
 	BYTE		byRouteMode;										/* 巡回ルートの回り方(NPCROUTEMODE_*) */
@@ -2255,6 +2262,7 @@ typedef struct _CHARINFO {
 	WORD		wTimePutInterval;									/* 発生周期 */
 	WORD		wLightTime;											/* 明かり維持時間 */
 	WORD		waItem[MAX_MYITEM];									/* 所持アイテム */
+	WORD		waImportant[MAX_IMPORTANT];							/* 大事な物の欄（0=空。同じ物を複数持ってよい。保存する。本人にだけ CMD_CHARITEM で送り、他人には送らない） */
 	DWORD		dwTargetTblID;										/* ターゲット先のテーブルID */
 	DWORD		dwTargetTblID2;										/* ターゲット先のテーブルID */
 	DWORD		dwTargetTblID3;										/* ターゲット先のテーブルID */
@@ -2342,6 +2350,7 @@ typedef struct _CMDPARA_CHARINFO {
 	BYTE		bySearchCx;											/* 検索範囲X */
 	BYTE		bySearchCy;											/* 検索範囲Y */
 	BYTE		byLightLevel;										/* 明るさレベル */
+	BYTE		byHide;												/* 隠れている(0以外。他人にも送る) */
 	WORD		wGrpID;												/* グラフィックID */
 	WORD		wGrpMain;											/* グラフィック種別(メイン) */
 	WORD		wGrpSub;											/* グラフィック種別(サブ) */
@@ -2392,6 +2401,7 @@ typedef struct _CMDPARA_CHARINFO2 {
 	BYTE		byEfectIdle;										/* 常に表示するエフェクト */
 	BYTE		byNpcType;											/* NPC移動種別 */
 	BYTE		byLightLevel;										/* 明るさレベル */
+	BYTE		byHide;												/* 隠れている(0以外。他人にも送る) */
 	WORD		wGrpID;												/* グラフィックID */
 	WORD		wGrpMain;											/* グラフィック種別(メイン) */
 	WORD		wGrpSub;											/* グラフィック種別(サブ) */
@@ -2528,6 +2538,7 @@ typedef struct _EVENTINFO_DOOR {
 	WORD		wAreaX2;											/* 敵を数える範囲 右下X */
 	WORD		wAreaY2;											/* 敵を数える範囲 右下Y */
 	DWORD		dwCheckTime;										/* 最後に敵を数えた時間（サーバーだけ。保存しない） */
+	WORD		wKeyItem;											/* 必要な鍵の品の種類ID（種別が「鍵」の時） */
 } EVENTINFO_DOOR, *PEVENTINFO_DOOR;
 
 /* イベントデータ(HP/Mana回復) */
@@ -2640,8 +2651,8 @@ enum {
 
 /* 特技ショートカット（CMD_MAGICKEY の byCmdSub） */
 enum {
-	MAGICKEY_SET = 0,											/* 1枠を登録・解除する（クライアント→サーバー。byNo 番目に byMagicID。0 なら外す） */
-	MAGICKEY_ALL,												/* 全枠を知らせる（サーバー→本人。abyMagicKey） */
+	MAGICKEY_SET = 0,											/* 1枠を登録・解除する（クライアント→サーバー。byNo 番目に byMagicID か wItemID。どちらも 0 なら外す） */
+	MAGICKEY_ALL,												/* 全枠を知らせる（サーバー→本人。abyMagicKey・awKeyItem） */
 };
 
 /* 特技ショートカット */
@@ -2649,8 +2660,10 @@ typedef struct _CMDPARA_MAGICKEY {
 	BYTE		byCmd;												/* コマンドID */
 	BYTE		byCmdSub;											/* サブコマンド(MAGICKEY_*) */
 	BYTE		byNo;												/* 枠の番号(0〜MAX_MAGICKEY-1。MAGICKEY_SET) */
-	BYTE		byMagicID;											/* 登録する特技ID(0=外す。MAGICKEY_SET) */
+	BYTE		byMagicID;											/* 登録する特技ID(0=特技ではない。MAGICKEY_SET) */
 	BYTE		abyMagicKey[MAX_MAGICKEY];							/* 全枠の特技ID(MAGICKEY_ALL) */
+	WORD		wItemID;											/* 登録する装備品・道具のアイテムの種類ID(0=アイテムではない。MAGICKEY_SET。byMagicID も 0 なら枠を外す) */
+	WORD		awKeyItem[MAX_MAGICKEY];							/* 全枠の装備品・道具のアイテムの種類ID(MAGICKEY_ALL。0=特技の枠か空き) */
 } CMDPARA_MAGICKEY, *PCMDPARA_MAGICKEY;
 
 #define MAX_WEBTOKEN		64										/* 端末トークンの文字数（16進） */
@@ -3556,6 +3569,7 @@ typedef struct _CMDPARA_CHARITEM {
 	DWORD		dwTblID;											/* テーブルID */
 	WORD		waItem[MAX_MYITEM];									/* 所持アイテム */
 	WORD		waEqu[MAX_EQUTYPE];									/* 装備品 */
+	WORD		waImportant[MAX_IMPORTANT];							/* 大事な物の欄（サーバー→本人のみ。クライアントから送られた分は使わない） */
 } CMDPARA_CHARITEM, *PCMDPARA_CHARITEM;
 
 /* サーバー情報 */
