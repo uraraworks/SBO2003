@@ -1193,6 +1193,7 @@ enum {
 	MAGICTYPE_SLEEP,											/* 眠り(付加データ1:秒数 2:成功率(%、0なら100)) */
 	MAGICTYPE_ATUP,												/* 攻撃力アップ(付加データ1:上がる率(%) 2:秒数 3:最低でも上がる量) */
 	MAGICTYPE_DFUP,												/* 守備力アップ(付加データ1:上がる率(%) 2:秒数 3:最低でも上がる量) */
+	MAGICTYPE_HIDE,												/* 隠れる(付加データ2:秒数。自分にかける。敵が見つけられる範囲が半分になる) */
 };
 
 /* 魔法利用情報 */
@@ -1261,6 +1262,7 @@ enum {
 	CHARINFOTIMEREVENT_SLEEP,									/* 眠り(dwTimeLast=眠った時のHP。減ったら起きる) */
 	CHARINFOTIMEREVENT_ATUP,									/* 攻撃力アップ(byData=上がる率%、dwTimeInterval=最低でも上がる量) */
 	CHARINFOTIMEREVENT_DFUP,									/* 守備力アップ(byData=上がる率%、dwTimeInterval=最低でも上がる量) */
+	CHARINFOTIMEREVENT_HIDE,									/* 隠れる(時間が来るか、攻撃したら解ける) */
 };
 
 
@@ -2190,6 +2192,7 @@ typedef struct _CHARINFO {
 	BYTE		bySearchCy;											/* 検索範囲Y */
 	BYTE		byLightLevel;										/* 明るさレベル */
 	BYTE		byLightLevelBack;									/* 明るさレベル（最初） */
+	BYTE		byHide;												/* 隠れている(0以外。敵に見つかりにくく、画面では半透明) */
 	BYTE		byAtackRate;										/* 攻撃力の割合 */
 
 	BYTE		abySubStatus[MAX_SUBSTATUS];						/* 保存しないサブステータス */
@@ -2205,6 +2208,7 @@ typedef struct _CHARINFO {
 	BYTE		abyJobMagic[MAX_JOBMAGIC][MAX_USEMAGIC];			/* 転職前の職業で覚えていた呪文（職業ID別） */
 	BYTE		byOptBgm;											/* 音楽ON/OFFのアカウント設定(OPTBGM_*) */
 	BYTE		abyMagicKey[MAX_MAGICKEY];							/* 特技ショートカットに登録した特技ID（0=空。保存する） */
+	WORD		awKeyItem[MAX_MAGICKEY];							/* ショートカットに登録した装備品・道具のアイテムの種類ID（0=特技の枠か空き。abyMagicKey と同じ枠を共有。保存する） */
 	BYTE		byOptMagicBar;										/* 特技ショートカットの帯のアカウント設定(OPTMAGICBAR_*。保存する) */
 	BYTE		byRouteCount;										/* 巡回ルートの道しるべ数(2以上で巡回する) */
 	BYTE		byRouteMode;										/* 巡回ルートの回り方(NPCROUTEMODE_*) */
@@ -2346,6 +2350,7 @@ typedef struct _CMDPARA_CHARINFO {
 	BYTE		bySearchCx;											/* 検索範囲X */
 	BYTE		bySearchCy;											/* 検索範囲Y */
 	BYTE		byLightLevel;										/* 明るさレベル */
+	BYTE		byHide;												/* 隠れている(0以外。他人にも送る) */
 	WORD		wGrpID;												/* グラフィックID */
 	WORD		wGrpMain;											/* グラフィック種別(メイン) */
 	WORD		wGrpSub;											/* グラフィック種別(サブ) */
@@ -2396,6 +2401,7 @@ typedef struct _CMDPARA_CHARINFO2 {
 	BYTE		byEfectIdle;										/* 常に表示するエフェクト */
 	BYTE		byNpcType;											/* NPC移動種別 */
 	BYTE		byLightLevel;										/* 明るさレベル */
+	BYTE		byHide;												/* 隠れている(0以外。他人にも送る) */
 	WORD		wGrpID;												/* グラフィックID */
 	WORD		wGrpMain;											/* グラフィック種別(メイン) */
 	WORD		wGrpSub;											/* グラフィック種別(サブ) */
@@ -2645,8 +2651,8 @@ enum {
 
 /* 特技ショートカット（CMD_MAGICKEY の byCmdSub） */
 enum {
-	MAGICKEY_SET = 0,											/* 1枠を登録・解除する（クライアント→サーバー。byNo 番目に byMagicID。0 なら外す） */
-	MAGICKEY_ALL,												/* 全枠を知らせる（サーバー→本人。abyMagicKey） */
+	MAGICKEY_SET = 0,											/* 1枠を登録・解除する（クライアント→サーバー。byNo 番目に byMagicID か wItemID。どちらも 0 なら外す） */
+	MAGICKEY_ALL,												/* 全枠を知らせる（サーバー→本人。abyMagicKey・awKeyItem） */
 };
 
 /* 特技ショートカット */
@@ -2654,8 +2660,10 @@ typedef struct _CMDPARA_MAGICKEY {
 	BYTE		byCmd;												/* コマンドID */
 	BYTE		byCmdSub;											/* サブコマンド(MAGICKEY_*) */
 	BYTE		byNo;												/* 枠の番号(0〜MAX_MAGICKEY-1。MAGICKEY_SET) */
-	BYTE		byMagicID;											/* 登録する特技ID(0=外す。MAGICKEY_SET) */
+	BYTE		byMagicID;											/* 登録する特技ID(0=特技ではない。MAGICKEY_SET) */
 	BYTE		abyMagicKey[MAX_MAGICKEY];							/* 全枠の特技ID(MAGICKEY_ALL) */
+	WORD		wItemID;											/* 登録する装備品・道具のアイテムの種類ID(0=アイテムではない。MAGICKEY_SET。byMagicID も 0 なら枠を外す) */
+	WORD		awKeyItem[MAX_MAGICKEY];							/* 全枠の装備品・道具のアイテムの種類ID(MAGICKEY_ALL。0=特技の枠か空き) */
 } CMDPARA_MAGICKEY, *PCMDPARA_MAGICKEY;
 
 #define MAX_WEBTOKEN		64										/* 端末トークンの文字数（16進） */

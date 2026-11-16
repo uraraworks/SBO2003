@@ -143,7 +143,18 @@ BOOL IsMagicKeyUsable						(PCHARINFO, BYTE);			/* 特技が今使えるか */
 BOOL IsMagicKeyMode							(PCHARINFO);				/* 1〜5 キーで特技を使える状態か */
 void RegisterMagicKey						(int, BYTE);				/* 特技を枠に登録する・外す */
 void UseMagicKey							(PCHARINFO, int);			/* 枠の特技を使う */
-BOOL IsMagicBandShown						(PCHARINFO);				/* 戦闘モード中の帯（スマホのボタン）を出す状態か */
+BOOL IsMagicBandShown						(PCHARINFO);				/* 帯（スマホのボタン）を出す状態か */
+int  GetItemKeyNo							(WORD);						/* 装備品・道具のショートカットの登録枠(無ければ -1) */
+void RegisterItemKey						(int, WORD);				/* 装備品・道具を枠に登録する・外す */
+void RegisterItemKeyAtCursor				(PWNDINFO, int);			/* 道具の一覧のカーソルの品を枠に登録する */
+void UseItemKey								(PCHARINFO, int);			/* 枠の装備品に持ち替える・道具を使う */
+BOOL IsItemKeyMode							(PCHARINFO);				/* 戦闘モードでなくても 1〜5 キーで装備品・道具を使える状態か */
+BOOL HasItemKey								(void);						/* 装備品・道具の枠が1つでもあるか */
+void PruneItemKeys							(PCHARINFO);				/* 手持ちから無くなった装備品・道具を枠から外す */
+static BOOL IsBattleModeNow					(void);						/* 戦闘マップで戦闘モード中か */
+static int  GetItemEquSlot					(PITEMINFO);				/* 装備品が入る場所(waEqu の番号。装備品でなければ -1) */
+static BOOL CanEquipItem					(PCHARINFO, PITEMINFO);		/* 今の性別・職業で装備できるか */
+static int  FindItemInHand					(PCHARINFO, WORD);			/* 手持ちからアイテムの種類IDを探す */
 BOOL GetMagicKeySlotLabel					(PCHARINFO, int, LPSTR, int, int *, BOOL *);	/* 帯・ボタンの1枠ぶんの文字と色分け */
 static BOOL IsMagicListOpen					(void);							/* 特技の一覧（登録できる画面）を開いているか */
 #define SPEECHMODE_MAX	(4)															/* 発言の種類の数(g_bySpeechMode) */
@@ -826,31 +837,28 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 		}
 		m_byKeyOnReturn = 1;
 
-	/* 自分にエフェクト発動？ */
-	} else if ((byEvent == KEY_DOWN) && (byCode == '1') && (g_bEnableMove)) {
+	/* 自分にエフェクト発動？（以前は 1 キー。1〜5 はショートカットに使うので Q キーへ移した） */
+	} else if ((byEvent == KEY_DOWN) && (byCode == 'Q') && (g_bEnableMove)) {
 		if (!g_bSpeech && !m_byKeyOnReturn && !g_dwActiveMsgID) {
-			/* 戦闘モード中は、登録した特技を使う */
-			if (IsMagicKeyMode (pChar)) {
-				UseMagicKey (pChar, 0);
-			} else {
-				SendCmdEFCREQ (0, g_byUseEfcID);
-			}
+			SendCmdEFCREQ (0, g_byUseEfcID);
 		}
 
-	/* 目の前のキャラにエフェクト発動？ */
-	} else if ((byEvent == KEY_DOWN) && (byCode == '2') && (g_bEnableMove)) {
+	/* 目の前のキャラにエフェクト発動？（以前は 2 キー。W キーへ移した） */
+	} else if ((byEvent == KEY_DOWN) && (byCode == 'W') && (g_bEnableMove)) {
 		if (!g_bSpeech && !m_byKeyOnReturn && !g_dwActiveMsgID) {
-			if (IsMagicKeyMode (pChar)) {
-				UseMagicKey (pChar, 1);
-			} else {
-				SendCmdEFCREQ (1, g_byUseEfcID);
-			}
+			SendCmdEFCREQ (1, g_byUseEfcID);
 		}
 
-	/* 戦闘モード中に、登録した特技を使う(3〜5。戦闘モード中でなければ何もしない) */
-	} else if ((byEvent == KEY_DOWN) && (byCode >= '3') && (byCode <= '5') && (g_bEnableMove)) {
-		if (!g_bSpeech && !m_byKeyOnReturn && !g_dwActiveMsgID && IsMagicKeyMode (pChar)) {
-			UseMagicKey (pChar, byCode - '1');
+	/* 1〜5 キー：登録した装備品・道具は戦闘モードでなくても使う。特技の枠は戦闘モード中だけ */
+	} else if ((byEvent == KEY_DOWN) && (byCode >= '1') && (byCode <= '5') && (g_bEnableMove)) {
+		if (!g_bSpeech && !m_byKeyOnReturn && !g_dwActiveMsgID) {
+			if (g_awKeyItem[byCode - '1'] != 0) {
+				if (IsItemKeyMode (pChar)) {
+					UseItemKey (pChar, byCode - '1');
+				}
+			} else if (IsMagicKeyMode (pChar)) {
+				UseMagicKey (pChar, byCode - '1');
+			}
 		}
 	}
 
@@ -1882,6 +1890,10 @@ void KeyProcCOMMANDITEM(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		g_WndInfo.Add (pWndNew);
 		g_dwActiveMsgID = pWndNew->dwID;
 
+	} else if ((byEvent == KEY_DOWN) && (byCode >= '1') && (byCode <= '5')) {
+		/* 1〜5 キー：カーソルの品をその枠に登録する（同じ品が入っていれば外す） */
+		RegisterItemKeyAtCursor (pWnd, byCode - '1');
+
 	} else if ((byEvent == KEY_DOWN) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
 		BOOL bMove = FALSE;
 
@@ -2024,6 +2036,10 @@ void KeyProcCOMMANDITEMBATTLE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			}
 			CancelTurnGage (pChar);
 		}
+
+	} else if ((byEvent == KEY_DOWN) && (byCode >= '1') && (byCode <= '5')) {
+		/* 1〜5 キー：カーソルの品をその枠に登録する（同じ品が入っていれば外す） */
+		RegisterItemKeyAtCursor (pWnd, byCode - '1');
 
 	} else if ((byEvent == KEY_DOWN) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
 		BOOL bMove = FALSE;
@@ -9564,10 +9580,12 @@ extern "C" EMSCRIPTEN_KEEPALIVE int SboWebChatKinds(void)
 /* 関数名：	SboWebGetMagicKeyState											 */
 /* 内容：	スマホの特技ショートカットのボタン用の状態をJSON(UTF-8)で返す	 */
 /*			（ブラウザ版。シェル HTML が0.1秒ごとに読む）					 */
-/*			{"fire":1,"reg":0,"slots":[{"n":"強打","k":0,"d":0},{"e":1},…]}	 */
-/*			fire=戦闘モード中で帯の表示設定が「表示」（押すと発動）			 */
-/*			reg =特技の一覧を開いている（押すとカーソルの特技を登録）		 */
-/*			n=名前の頭2文字 k=0攻撃/1回復/2補助 d=暗くする e=空き枠			 */
+/*			{"fire":1,"reg":0,"b":1,"slots":[{"n":"強打","k":0,"t":0,"d":0},{"e":1},…]}	 */
+/*			fire=帯の表示設定が「表示」で、戦闘モード中（装備品・道具の枠が	 */
+/*			     あれば戦闘外でも）（押すと発動）							 */
+/*			reg =特技の一覧か道具の一覧を開いている（押すとカーソルの特技・道具を登録）*/
+/*			b=戦闘モード中 n=名前の頭2文字 k=0攻撃/1回復/2補助/3装備品/4道具	 */
+/*			t=0特技/1装備品/2道具 d=暗くする e=空き枠							 */
 /*			戻した文字列は次の呼び出しまで有効（解放は不要）				 */
 /* ========================================================================= */
 extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebGetMagicKeyState(void)
@@ -9576,7 +9594,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebGetMagicKeyState(void)
 	PCHARINFO pChar;
 	int i, nFire = 0, nReg = 0;
 
-	strRet = "{\"fire\":0,\"reg\":0,\"slots\":[]}";
+	strRet = "{\"fire\":0,\"reg\":0,\"b\":0,\"slots\":[]}";
 	if ((g_byGameState < GAMESTATE_MOVE) || (g_byGameState == GAMESTATE_CONNECTLOST)) {
 		return strRet.c_str ();
 	}
@@ -9593,7 +9611,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebGetMagicKeyState(void)
 		return strRet.c_str ();
 	}
 
-	strRet = nFire ? "{\"fire\":1,\"reg\":0,\"slots\":[" : "{\"fire\":0,\"reg\":1,\"slots\":[";
+	strRet = nFire ? "{\"fire\":1,\"reg\":0" : "{\"fire\":0,\"reg\":1";
+	strRet += IsBattleModeNow () ? ",\"b\":1,\"slots\":[" : ",\"b\":0,\"slots\":[";
 	for (i = 0; i < MAX_MAGICKEY; i ++) {
 		char szName[16];
 		int nKind;
@@ -9619,6 +9638,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebGetMagicKeyState(void)
 		}
 		strRet += "\",\"k\":";
 		strRet += (char)('0' + nKind);
+		strRet += ",\"t\":";
+		strRet += (char)('0' + ((nKind >= 3) ? (nKind - 2) : 0));		/* 0=特技 1=装備品 2=道具 */
 		strRet += ",\"d\":";
 		strRet += bDark ? "1" : "0";
 		strRet += "}";
@@ -9747,7 +9768,7 @@ void RegisterMagicKey(int nNo, BYTE byMagicID)
 
 	if (g_abyMagicKey[nNo] == byMagicID) {
 		g_abyMagicKey[nNo] = 0;
-		SendCmdMAGICKEY ((BYTE)nNo, 0);
+		SendCmdMAGICKEY ((BYTE)nNo, 0, 0);
 		_snprintf (szMsg, sizeof (szMsg) - 1, "%d から %s を外しました。", nNo + 1, szName);
 	} else {
 		for (i = 0; i < MAX_MAGICKEY; i ++) {
@@ -9756,7 +9777,8 @@ void RegisterMagicKey(int nNo, BYTE byMagicID)
 			}
 		}
 		g_abyMagicKey[nNo] = byMagicID;
-		SendCmdMAGICKEY ((BYTE)nNo, byMagicID);
+		g_awKeyItem[nNo] = 0;		/* 装備品・道具が入っていた枠は置き換え */
+		SendCmdMAGICKEY ((BYTE)nNo, byMagicID, 0);
 		_snprintf (szMsg, sizeof (szMsg) - 1, "%d に %s を登録しました。", nNo + 1, szName);
 	}
 	szMsg[sizeof (szMsg) - 1] = 0;
@@ -9806,13 +9828,17 @@ BOOL IsMagicKeyUsable(PCHARINFO pChar, BYTE byMagicID)
 /* ========================================================================= */
 BOOL IsMagicBandShown(PCHARINFO pChar)
 {
-	if (!g_bMagicBar || !g_bBattleMode || (g_pMapInfo == NULL) || ((g_pMapInfo->byFlg & MAPFLG_BATTLE) == 0)) {
+	if (!g_bMagicBar || (g_pMapInfo == NULL)) {
 		return FALSE;
 	}
 	if ((pChar->abySubStatus[0] != 0) || (pChar->byCharState == CHARSTATE_DEAD)) {
 		return FALSE;
 	}
-	return TRUE;
+	/* 戦闘モード中は出す。戦闘モードでない時は、装備品・道具の枠が1つでもある時だけ出す（特技だけなら今まで通り出さない） */
+	if (IsBattleModeNow ()) {
+		return TRUE;
+	}
+	return HasItemKey ();
 }
 
 /* ========================================================================= */
@@ -9834,6 +9860,28 @@ BOOL GetMagicKeySlotLabel(PCHARINFO pChar, int nNo, LPSTR pszName, int nSize, in
 	if ((nNo < 0) || (nNo >= MAX_MAGICKEY)) {
 		return FALSE;
 	}
+	/* 装備品・道具の枠（名前の頭2文字。色は 3=装備品 4=道具。持ち物に無い・装備できない品は暗く） */
+	if (g_awKeyItem[nNo] != 0) {
+		WORD wItemID = g_awKeyItem[nNo];
+		PITEMINFO pItem;
+		int nEqu;
+
+		if (wItemID >= g_aItemInfo.GetSize ()) {
+			return FALSE;
+		}
+		pItem = g_aItemInfo[wItemID];
+		nEqu = GetItemEquSlot (pItem);
+		nLen = SboTextFitWidth (pItem->szName, 4);		/* 全角2文字 */
+		nLen = min (nLen, nSize - 1);
+		CopyMemory (pszName, pItem->szName, nLen);
+		pszName[nLen] = 0;
+		*pnKind = (nEqu >= 0) ? 3 : 4;
+		*pbDark = (FindItemInHand (pChar, wItemID) < 0);
+		if ((nEqu >= 0) && !CanEquipItem (pChar, pItem)) {
+			*pbDark = TRUE;
+		}
+		return TRUE;
+	}
 	byMagicID = g_abyMagicKey[nNo];
 	if ((byMagicID == 0) || (byMagicID >= g_aMagicInfo.GetSize ())) {
 		return FALSE;
@@ -9844,7 +9892,8 @@ BOOL GetMagicKeySlotLabel(PCHARINFO pChar, int nNo, LPSTR pszName, int nSize, in
 	CopyMemory (pszName, pInfo->szName, nLen);
 	pszName[nLen] = 0;
 	*pnKind = GetMagicKeyKind (pInfo);
-	*pbDark = (pChar->dwTimeTurnMagicLV != 0) || !IsMagicKeyUsable (pChar, byMagicID);
+	/* 特技の枠は戦闘モード中でなければ使えないので暗くする（装備品・道具の枠がある時だけ戦闘外でも帯が出る） */
+	*pbDark = (pChar->dwTimeTurnMagicLV != 0) || !IsMagicKeyUsable (pChar, byMagicID) || !IsBattleModeNow ();
 	return TRUE;
 }
 
@@ -9863,6 +9912,10 @@ static BOOL IsMagicListOpen(void)
 	nNo = GetWindowID (g_dwActiveMsgID);
 	if ((nNo < 0) || (nNo >= g_WndInfo.GetSize ())) {
 		return FALSE;
+	}
+	/* 道具の一覧は、入れ替えを選んでいる間は登録できない */
+	if ((g_WndInfo[nNo]->nType == WNDTYPE_COMMANDITEM) || (g_WndInfo[nNo]->nType == WNDTYPE_COMMANDITEMBATTLE)) {
+		return (g_WndInfo[nNo]->dwData == 0);
 	}
 	return (g_WndInfo[nNo]->nType == WNDTYPE_STATUSMAGIC) || (g_WndInfo[nNo]->nType == WNDTYPE_COMMANDMAGICBATTLE);
 }
@@ -9984,6 +10037,311 @@ void UseMagicKey(PCHARINFO pChar, int nNo)
 	SendCmdEFECTCHG (pInfo->byUserEfectID, TRUE);
 	DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
 	g_bDraw = TRUE;
+}
+
+/* ========================================================================= */
+/* 装備品・道具のショートカット（特技と同じ 1〜5 の枠に、アイテムの種類ID	 */
+/* （waItem の中身）で覚える。持ち物の番号で覚えないのは、並べ替えや削除で	 */
+/* 番号が詰まるため）														 */
+/* ========================================================================= */
+
+/* ========================================================================= */
+/* 関数名：	IsBattleModeNow													 */
+/* 内容：	戦闘マップで戦闘モード中か										 */
+/* ========================================================================= */
+static BOOL IsBattleModeNow(void)
+{
+	if ((g_pMapInfo == NULL) || ((g_pMapInfo->byFlg & MAPFLG_BATTLE) == 0) || (g_bBattleMode == FALSE)) {
+		return FALSE;
+	}
+	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：	GetItemEquSlot													 */
+/* 内容：	装備品が入る場所(waEqu の番号)を返す。装備品でなければ -1		 */
+/* ========================================================================= */
+static int GetItemEquSlot(PITEMINFO pItem)
+{
+	switch (pItem->byType) {
+	case ITEMTYPE_WEAPON:	return 0;
+	case ITEMTYPE_ARMOR:	return 1;
+	case ITEMTYPE_SHILD:	return 2;
+	case ITEMTYPE_HELMET:	return 3;
+	case ITEMTYPE_EQU_HAND:	return 4;
+	case ITEMTYPE_EQU_LEG:	return 5;
+	case ITEMTYPE_EQU_ACC1:	return 6;
+	case ITEMTYPE_EQU_ACC2:	return 7;
+	case ITEMTYPE_EQU_ACC3:	return 8;
+	}
+	return -1;
+}
+
+/* ========================================================================= */
+/* 関数名：	CanEquipItem													 */
+/* 内容：	今の性別・職業でその装備品を付けられるか（サーバーの CheckCharEqu と同じ判定） */
+/* ========================================================================= */
+static BOOL CanEquipItem(PCHARINFO pChar, PITEMINFO pItem)
+{
+	WORD wEqu = 0xFFFF;
+
+	if (CheckItemSexDistinction (pItem, pChar) == FALSE) {
+		return FALSE;
+	}
+	switch (pItem->byType) {
+	case ITEMTYPE_WEAPON:	wEqu = ((PITEMINFO_WEAPON)pItem->pData)->wEqu;		break;
+	case ITEMTYPE_ARMOR:	wEqu = ((PITEMINFO_ARMOR)pItem->pData)->wEqu;		break;
+	case ITEMTYPE_SHILD:	wEqu = ((PITEMINFO_SHILD)pItem->pData)->wEqu;		break;
+	case ITEMTYPE_HELMET:	wEqu = ((PITEMINFO_HELMET)pItem->pData)->wEqu;		break;
+	case ITEMTYPE_EQU_HAND:	wEqu = ((PITEMINFO_EQU_HAND)pItem->pData)->wEqu;	break;
+	case ITEMTYPE_EQU_LEG:	wEqu = ((PITEMINFO_EQU_LEG)pItem->pData)->wEqu;		break;
+	case ITEMTYPE_EQU_ACC1:	wEqu = ((PITEMINFO_EQU_ACC1)pItem->pData)->wEqu;	break;
+	case ITEMTYPE_EQU_ACC2:	wEqu = ((PITEMINFO_EQU_ACC2)pItem->pData)->wEqu;	break;
+	case ITEMTYPE_EQU_ACC3:	wEqu = ((PITEMINFO_EQU_ACC3)pItem->pData)->wEqu;	break;
+	}
+	if ((wEqu != 0xFFFF) && (CheckEquUserInfo (wEqu, pChar->byJOB) == FALSE)) {
+		return FALSE;
+	}
+	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：	FindItemInHand													 */
+/* 内容：	手持ちからアイテムの種類IDを探して、持ち物の番号を返す(無ければ -1) */
+/* ========================================================================= */
+static int FindItemInHand(PCHARINFO pChar, WORD wItemID)
+{
+	int i;
+
+	if (wItemID == 0) {
+		return -1;
+	}
+	for (i = 0; i < MAX_MYITEM; i ++) {
+		if (pChar->waItem[i] == wItemID) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+/* ========================================================================= */
+/* 関数名：	GetItemKeyNo													 */
+/* 内容：	装備品・道具が登録されている枠の番号を返す(無ければ -1)			 */
+/* ========================================================================= */
+int GetItemKeyNo(WORD wItemID)
+{
+	int i;
+
+	if (wItemID == 0) {
+		return -1;
+	}
+	for (i = 0; i < MAX_MAGICKEY; i ++) {
+		if (g_awKeyItem[i] == wItemID) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+/* ========================================================================= */
+/* 関数名：	HasItemKey														 */
+/* 内容：	装備品・道具の枠が1つでもあるか									 */
+/* ========================================================================= */
+BOOL HasItemKey(void)
+{
+	int i;
+
+	for (i = 0; i < MAX_MAGICKEY; i ++) {
+		if (g_awKeyItem[i] != 0) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* ========================================================================= */
+/* 関数名：	RegisterItemKey													 */
+/* 内容：	装備品・道具を nNo 番目の枠に登録する（登録のメッセージも出す）	 */
+/*			別のものが入っている枠なら置き換え、同じものが入っている枠なら外す。*/
+/*			同じ種類が別の枠にあればそちらは外す（重複させない）			 */
+/* ========================================================================= */
+void RegisterItemKey(int nNo, WORD wItemID)
+{
+	char szMsg[128];
+	int i;
+	PITEMINFO pItem;
+
+	if ((nNo < 0) || (nNo >= MAX_MAGICKEY) || (wItemID == 0) || (wItemID >= g_aItemInfo.GetSize ())) {
+		return;
+	}
+	pItem = g_aItemInfo[wItemID];
+	if (pItem->byType == ITEMTYPE_NONE) {
+		AddSysMsg ("この品はショートカットに登録できません。", RGB (255, 255, 255));
+		return;
+	}
+
+	if (g_awKeyItem[nNo] == wItemID) {
+		g_awKeyItem[nNo] = 0;
+		SendCmdMAGICKEY ((BYTE)nNo, 0, 0);
+		_snprintf (szMsg, sizeof (szMsg) - 1, "%d から %s を外しました。", nNo + 1, pItem->szName);
+	} else {
+		for (i = 0; i < MAX_MAGICKEY; i ++) {
+			if (g_awKeyItem[i] == wItemID) {
+				g_awKeyItem[i] = 0;
+			}
+		}
+		g_abyMagicKey[nNo] = 0;		/* 特技が入っていた枠は置き換え */
+		g_awKeyItem[nNo] = wItemID;
+		SendCmdMAGICKEY ((BYTE)nNo, 0, wItemID);
+		_snprintf (szMsg, sizeof (szMsg) - 1, "%d に %s を登録しました。", nNo + 1, pItem->szName);
+	}
+	szMsg[sizeof (szMsg) - 1] = 0;
+	AddSysMsg (szMsg, RGB (255, 255, 255));
+	g_bDraw = TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：	RegisterItemKeyAtCursor											 */
+/* 内容：	道具の一覧のカーソルの品を nSlot 番目の枠に登録する（入れ替え中は何もしない） */
+/* ========================================================================= */
+void RegisterItemKeyAtCursor(PWNDINFO pWnd, int nSlot)
+{
+	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
+	int nNo = (int)pWnd->byData1 + pWnd->nData1;
+
+	if (pWnd->dwData) {
+		return;
+	}
+	if ((nNo < 0) || (nNo >= MAX_MYITEM) || (pChar->waItem[nNo] == 0)) {
+		return;
+	}
+	RegisterItemKey (nSlot, pChar->waItem[nNo]);
+	pWnd->dwTimeDrawStart = 0;
+}
+
+/* ========================================================================= */
+/* 関数名：	IsItemKeyMode													 */
+/* 内容：	戦闘モードでなくても、1〜5 キーで装備品・道具を使える状態か		 */
+/* ========================================================================= */
+BOOL IsItemKeyMode(PCHARINFO pChar)
+{
+	return (pChar->abySubStatus[0] == 0);
+}
+
+/* ========================================================================= */
+/* 関数名：	PruneItemKeys													 */
+/* 内容：	手持ちから種類が無くなった装備品・道具の枠を外す（同じ種類がまだ	 */
+/*			残っていれば残す）。自分の持ち物が届くたびに呼ぶ				 */
+/* ========================================================================= */
+void PruneItemKeys(PCHARINFO pChar)
+{
+	int i;
+
+	for (i = 0; i < MAX_MAGICKEY; i ++) {
+		if ((g_awKeyItem[i] != 0) && (FindItemInHand (pChar, g_awKeyItem[i]) < 0)) {
+			char szMsg[128];
+			LPCSTR pszName = (g_awKeyItem[i] < g_aItemInfo.GetSize ()) ? g_aItemInfo[g_awKeyItem[i]]->szName : "";
+
+			_snprintf (szMsg, sizeof (szMsg) - 1, "%s が無くなったので %d から外しました。", pszName, i + 1);
+			szMsg[sizeof (szMsg) - 1] = 0;
+			AddSysMsg (szMsg, RGB (255, 255, 255));
+			g_awKeyItem[i] = 0;
+			SendCmdMAGICKEY ((BYTE)i, 0, 0);
+			g_bDraw = TRUE;
+		}
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：	UseItemKey														 */
+/* 内容：	nNo 番目の枠を使う												 */
+/*			装備品＝その装備に持ち替える（すでに装備中なら何もせず知らせるだけ。	 */
+/*			外しはしない）。弓の溜め中は取り消してから替える				 */
+/*			道具＝使う。目の前に相手がいればその相手、いなければ自分に使う	 */
+/*			（道具コマンドの「使う」と同じ決め方。選ぶ窓は出さない）			 */
+/* ========================================================================= */
+void UseItemKey(PCHARINFO pChar, int nNo)
+{
+	WORD wItemID;
+	PITEMINFO pItem;
+	char szMsg[128];
+	int nHand, nEqu;
+
+	if ((nNo < 0) || (nNo >= MAX_MAGICKEY)) {
+		return;
+	}
+	wItemID = g_awKeyItem[nNo];
+	if ((wItemID == 0) || (wItemID >= g_aItemInfo.GetSize ())) {
+		return;
+	}
+	pItem = g_aItemInfo[wItemID];
+	nHand = FindItemInHand (pChar, wItemID);
+	if (nHand < 0) {
+		PruneItemKeys (pChar);
+		return;
+	}
+	nEqu = GetItemEquSlot (pItem);
+
+	/* 装備品：持ち替え */
+	if (nEqu >= 0) {
+		WORD wNow = pChar->waEqu[nEqu];
+
+		if ((wNow < MAX_MYITEM) && (pChar->waItem[wNow] == wItemID)) {
+			_snprintf (szMsg, sizeof (szMsg) - 1, "%s はすでに装備しています。", pItem->szName);
+			szMsg[sizeof (szMsg) - 1] = 0;
+			AddSysMsg (szMsg, RGB (255, 255, 255));
+			return;
+		}
+		if (!CanEquipItem (pChar, pItem)) {
+			_snprintf (szMsg, sizeof (szMsg) - 1, "%s は今は装備できません。", pItem->szName);
+			szMsg[sizeof (szMsg) - 1] = 0;
+			AddSysMsg (szMsg, RGB (255, 255, 255));
+			return;
+		}
+		/* 弓の溜め中は、替える前（弓を持っている間）に取り消す */
+		if ((nEqu == 0) && GetBowWeapon (pChar)) {
+			CancelTurnGage (pChar);
+		}
+		pChar->waEqu[nEqu] = (WORD)nHand;
+		RenewATDF (g_nMyCharID);
+		SendCmdCHGEQU (g_nMyCharID, (BYTE)nEqu);
+		_snprintf (szMsg, sizeof (szMsg) - 1, "%s に持ち替えました。", pItem->szName);
+		szMsg[sizeof (szMsg) - 1] = 0;
+		AddSysMsg (szMsg, RGB (255, 255, 255));
+		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
+		g_bDraw = TRUE;
+		return;
+	}
+
+	/* 道具：使う（目の前の相手がいればその相手、いなければ自分） */
+	{
+		DWORD dwTarget = pChar->dwTblID;
+		DWORD dwX = pChar->dwX + anPosAddTblX[pChar->byDirection],
+			  dwY = pChar->dwY + anPosAddTblY[pChar->byDirection];
+		int i;
+
+		for (i = 0; i < g_aCharInfo.GetSize (); i ++) {
+			PCHARINFO pCharTmp = g_aCharInfo[i];
+
+			if (pCharTmp == pChar) {
+				continue;
+			}
+			if (CheckCharX (pCharTmp, pCharTmp->dwX, dwX) && (dwY == pCharTmp->dwY)) {
+				if ((pCharTmp->byNpcType == 0) ||
+					(pCharTmp->byNpcType == NPCTYPE_BATTLE1) ||
+					(pCharTmp->byNpcType == NPCTYPE_BATTLE2) ||
+					(pCharTmp->byNpcType == NPCTYPE_MERCENARY)) {
+					dwTarget = pCharTmp->dwTblID;
+					break;
+				}
+			}
+		}
+		SendCmdUSEITEM ((BYTE)nHand, dwTarget);
+		/* 戦闘マップでは、道具コマンド(戦闘)と同じくターンゲージを取り消す */
+		if ((g_pMapInfo != NULL) && (g_pMapInfo->byFlg & MAPFLG_BATTLE)) {
+			CancelTurnGage (pChar);
+		}
+	}
 }
 
 /* ========================================================================= */

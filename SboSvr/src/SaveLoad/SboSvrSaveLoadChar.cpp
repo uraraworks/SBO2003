@@ -14,7 +14,7 @@
 /* ========================================================================= */
 /* 定数定義																	 */
 /* ========================================================================= */
-#define DATACOUNTCOLUMN		(83)									/* 保存データ数 */
+#define DATACOUNTCOLUMN		(84)									/* 保存データ数 */
 
 /* ========================================================================= */
 /* 構造体定義																 */
@@ -116,6 +116,7 @@ static const char *s_aszName[] = {
 	"byOptMagicBar",			/* 特技ショートカットの帯の表示設定 */
 	"abyFlag",					/* キャラのフラグ（印 1024 個のビット） */
 	"abyFlagNum",				/* キャラのフラグ（数値 128 個） */
+	"awKeyItem",				/* ショートカットに登録した装備品・道具（枠数・各枠のアイテムの種類ID。0=特技の枠か空き） */
 	"waImportant",				/* 大事な物の欄（個数＋品の種類ID） */
 	"z"
 };
@@ -522,7 +523,10 @@ static BOOL SaveCharInfoMain(void)
 			case 79:	dwDataSizeTmp += sizeof (pInfo->byOptMagicBar);			break;	/* 特技ショートカットの帯の表示設定 */
 			case 80:	dwDataSizeTmp += sizeof (pInfo->abyFlag);				break;	/* キャラのフラグ（印） */
 			case 81:	dwDataSizeTmp += sizeof (pInfo->abyFlagNum);			break;	/* キャラのフラグ（数値） */
-			case 82:	dwDataSizeTmp += sizeof (BYTE) + MAX_IMPORTANT * sizeof (WORD);	break;	/* 大事な物の欄 [個数(BYTE)][WORD×個数] */
+			case 82:	/* ショートカットの装備品・道具 [枠数(BYTE)][アイテムの種類ID(WORD)×枠数] */
+				dwDataSizeTmp += 1 + MAX_MAGICKEY * sizeof (WORD);
+				break;
+			case 83:	dwDataSizeTmp += sizeof (BYTE) + MAX_IMPORTANT * sizeof (WORD);	break;	/* 大事な物の欄 [個数(BYTE)][WORD×個数] */
 			}
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
@@ -956,7 +960,12 @@ static BOOL SaveCharInfoMain(void)
 				CopyMemory (&pData[dwOffset], pInfo->abyFlagNum, sizeof (pInfo->abyFlagNum));
 				dwOffset += sizeof (pInfo->abyFlagNum);
 				break;
-			case 82:	/* 大事な物の欄（個数を先に書く。読み込みは個数分だけ読む） */
+			case 82:	/* ショートカットの装備品・道具 */
+				pData[dwOffset ++] = (BYTE)MAX_MAGICKEY;		/* 枠数 */
+				CopyMemory (&pData[dwOffset], pInfo->awKeyItem, MAX_MAGICKEY * sizeof (WORD));
+				dwOffset += MAX_MAGICKEY * sizeof (WORD);
+				break;
+			case 83:	/* 大事な物の欄（個数を先に書く。読み込みは個数分だけ読む） */
 				pData[dwOffset ++] = (BYTE)MAX_IMPORTANT;
 				CopyMemory (&pData[dwOffset], pInfo->waImportant, sizeof (pInfo->waImportant));
 				dwOffset += sizeof (pInfo->waImportant);
@@ -1671,8 +1680,17 @@ BOOL LoadCharInfo(void)
 				dwOffsetTmp += sizeof (pInfo->abyFlagNum);
 			}
 
-			/* 大事な物の欄（保存時の個数分だけ進める。収まる分だけ入れる。無い古いデータは空のまま） */
+			/* ショートカットの装備品・道具（無い古いデータは全部空のまま。保存時と枠数が変わっていても読めるよう収まる分だけ） */
 			if (strcmp (aHeaderInfo[i].szName, s_aszName[82]) == 0) {
+				DWORD dwKeyCount = pData[dwOffsetTmp ++];
+
+				ZeroMemory (pInfo->awKeyItem, sizeof (pInfo->awKeyItem));
+				CopyMemory (pInfo->awKeyItem, &pData[dwOffsetTmp], min (dwKeyCount, (DWORD)MAX_MAGICKEY) * sizeof (WORD));
+				dwOffsetTmp += dwKeyCount * sizeof (WORD);
+			}
+
+			/* 大事な物の欄（保存時の個数分だけ進める。収まる分だけ入れる。無い古いデータは空のまま） */
+			if (strcmp (aHeaderInfo[i].szName, s_aszName[83]) == 0) {
 				DWORD dwCountTmp = pData[dwOffsetTmp ++];
 
 				ZeroMemory (pInfo->waImportant, sizeof (pInfo->waImportant));

@@ -3294,6 +3294,9 @@ void SubProcMapMove(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY)
 
 	ZeroMemory (pChar->abySubStatus, sizeof (pChar->abySubStatus));
 
+	/* マップ移動したら隠れるが解ける(この後のキャラ情報で周りに伝わる) */
+	HideBreak (pChar, FALSE);
+
 	pChar->dwLastHartBeat = 0;
 	pChar->byDirection = 99;
 	SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 4);
@@ -11725,9 +11728,24 @@ static void SendMagicKeySetting(PCHARINFO pChar)
 {
 	CMDPARA_WEBACCOUNT SendBar;
 	CMDPARA_MAGICKEY SendKey;
+	int i, j;
 
 	if ((pChar == NULL) || (pChar->pID == 0)) {
 		return;
+	}
+	/* 手持ちに無い装備品・道具の枠は外す（預けた・使い切った後に入り直した時など） */
+	for (i = 0; i < MAX_MAGICKEY; i ++) {
+		if (pChar->awKeyItem[i] == 0) {
+			continue;
+		}
+		for (j = 0; j < MAX_MYITEM; j ++) {
+			if (pChar->waItem[j] == pChar->awKeyItem[i]) {
+				break;
+			}
+		}
+		if (j >= MAX_MYITEM) {
+			pChar->awKeyItem[i] = 0;
+		}
 	}
 	ZeroMemory (&SendBar, sizeof (SendBar));
 	SendBar.byCmd = CMD_WEBACCOUNT;
@@ -11739,14 +11757,17 @@ static void SendMagicKeySetting(PCHARINFO pChar)
 	SendKey.byCmd = CMD_MAGICKEY;
 	SendKey.byCmdSub = MAGICKEY_ALL;
 	CopyMemory (SendKey.abyMagicKey, pChar->abyMagicKey, sizeof (SendKey.abyMagicKey));
+	CopyMemory (SendKey.awKeyItem, pChar->awKeyItem, sizeof (SendKey.awKeyItem));
 	svrSock.SendTo (pChar->pID, (LPBYTE)&SendKey, sizeof (SendKey), SENDTIMEOUT);
 }
 
 /* ========================================================================= */
 /* 関数名：RecvDataProcMAGICKEY												 */
 /* 内容：受信データ処理(特技ショートカットの登録)							 */
-/*       byNo 番目の枠に byMagicID を入れる（0 なら外す）。覚えていない特技は */
-/*       入れない。同じ特技が別の枠にあればそちらは外す（重複させない）		 */
+/*       byNo 番目の枠に特技(byMagicID)か装備品・道具(wItemID)を入れる		 */
+/*       （両方 0 なら外す。両方入っていたら無視）。覚えていない特技・手持ちに */
+/*       無いアイテムは入れない。同じものが別の枠にあればそちらは外す		 */
+/*       （重複させない）。特技と装備品・道具は同じ枠を共有する				 */
 /*       保存は定期保存・終了時の保存に任せる								 */
 /* ========================================================================= */
 void RecvDataProcMAGICKEY(PBYTE pData, DWORD dwDataSize)
@@ -11761,7 +11782,37 @@ void RecvDataProcMAGICKEY(PBYTE pData, DWORD dwDataSize)
 	if ((pPara->byCmdSub != MAGICKEY_SET) || (pPara->byNo >= MAX_MAGICKEY)) {
 		return;
 	}
+	if ((pPara->byMagicID != 0) && (pPara->wItemID != 0)) {
+		return;
+	}
 	pChar = g_aCharInfo[s_nCharNoRecv];
+	if (pPara->wItemID != 0) {
+		PITEMINFO pItem;
+
+		if (pPara->wItemID >= g_aItemInfo.GetSize ()) {
+			return;
+		}
+		pItem = g_aItemInfo[pPara->wItemID];
+		if (pItem->byType == ITEMTYPE_NONE) {
+			return;
+		}
+		for (i = 0; i < MAX_MYITEM; i ++) {
+			if (pChar->waItem[i] == pPara->wItemID) {
+				break;
+			}
+		}
+		if (i >= MAX_MYITEM) {
+			return;
+		}
+		for (i = 0; i < MAX_MAGICKEY; i ++) {
+			if (pChar->awKeyItem[i] == pPara->wItemID) {
+				pChar->awKeyItem[i] = 0;
+			}
+		}
+		pChar->awKeyItem[pPara->byNo] = pPara->wItemID;
+		pChar->abyMagicKey[pPara->byNo] = 0;
+		return;
+	}
 	if (pPara->byMagicID != 0) {
 		for (i = 0; i < MAX_USEMAGIC; i ++) {
 			if (pChar->abyMagic[i] == pPara->byMagicID) {
@@ -11778,6 +11829,7 @@ void RecvDataProcMAGICKEY(PBYTE pData, DWORD dwDataSize)
 		}
 	}
 	pChar->abyMagicKey[pPara->byNo] = pPara->byMagicID;
+	pChar->awKeyItem[pPara->byNo] = 0;
 }
 
 

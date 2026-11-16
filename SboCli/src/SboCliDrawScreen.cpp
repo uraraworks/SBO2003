@@ -46,6 +46,7 @@ static void DrawLineClip	(int x1, int y1, int x2, int y2, int nWidth, COLORREF c
 void DrawWeather		(void);										/* 天候の描画 */
 static void DrawMapLight	(const char *pMapDark);						/* 丸くゆらめく灯りの描画 */
 static void DrawMapViewFog	(void);										/* 見える範囲の外に白い霧をかける */
+static void DrawCharLightGlow	(void);									/* 明かりを使っている人の体をぼんやり光らせる */
 
 static BOOL s_bDrawCharBridgeUpper = FALSE;							/* TRUE なら橋の上を渡っている人だけ描く */
 static BYTE s_abyBridgeCol[DRAW_PARTS_X * 2 + 3];						/* 橋を重ねる列(NULL でない時だけ見る) */
@@ -146,7 +147,8 @@ static void DrawSysMsgBand(HDC hDC, int nX, int nY)
 
 /* ========================================================================= */
 /* 関数名：DrawMagicKeyBand													 */
-/* 内容：戦闘モード中だけ、画面の下に特技ショートカットの帯を出す			 */
+/* 内容：戦闘モード中（装備品・道具の枠があれば戦闘外でも）、画面の下に		 */
+/*		 ショートカットの帯を出す											 */
 /*		 「1 炎の 2 回復 …」（番号と特技名の頭2文字）。空きは「-」			 */
 /*		 色は攻撃(赤系)・回復(緑系)・それ以外の補助(青系)。Mana不足・詠唱中・	 */
 /*		 覚えていない特技は暗くする。後ろに薄い暗い帯を敷き、マップを隠しすぎない */
@@ -188,6 +190,8 @@ static void DrawMagicKeyBand(PCHARINFO pChar, int nX, int nY)
 			switch (nKind) {
 			case 0:		nR = 255;	nG = 120;	nB = 110;	break;		/* 攻撃 */
 			case 1:		nR = 120;	nG = 230;	nB = 130;	break;		/* 回復 */
+			case 3:		nR = 205;	nG = 150;	nB = 255;	break;		/* 装備品 */
+			case 4:		nR = 240;	nG = 220;	nB = 100;	break;		/* 道具 */
 			default:	nR = 130;	nG = 180;	nB = 255;	break;		/* 補助 */
 			}
 		}
@@ -496,6 +500,7 @@ BOOL DrawScreenMOVE(void)
 		DrawMapLight (aMapDark);	/* 丸くゆらめく灯りで暗くする */
 		CopyMemory (g_pMapDarkTmp, aMapDark, SCRMARTSSIZE);
 	}
+	DrawCharLightGlow ();	/* 明かりを使っている人の体をぼんやり光らせる(暗幕の後に描く) */
 	DrawChar2 ();			/* エフェクトを描画 */
 	DrawEvent ();			/* イベント情報を描画 */
 	DrawMapEdit ();			/* マップ編集情報を描画 */
@@ -835,6 +840,112 @@ static void DrawMapLight(const char *pMapDark)
 					g = g * (256 - nWarm * 14 / 100) >> 8;
 					b = b * (256 - nWarm * 42 / 100) >> 8;
 				}
+				*pDst = (dw & 0xFF000000) | (r << 16) | (g << 8) | b;
+			}
+		}
+	}
+}
+
+
+/* ========================================================================= */
+/* 関数名：	DrawCharLightGlow												 */
+/* 内容：	明かり(特技・ランタン・たいまつ等)を使っている人の体を			 */
+/*			柔らかい暖色でぼんやり光らせる									 */
+/*			明かりでマップ全体が明るくなるマップでも、誰が使っているか		 */
+/*			分かるようにする。DrawMapLight の暗幕の後に、体のまわりの		 */
+/*			小さな円だけスクリーン合成(明るい所でも暗い所でも見える)する	 */
+/*			ゆっくり呼吸のように明滅する									 */
+/* ========================================================================= */
+#define CHARGLOW_RADIUS		22			/* 光の半径(ドット) */
+#define CHARGLOW_BASE		0.34f		/* 光の強さの中心(0〜1) */
+#define CHARGLOW_SWING		0.10f		/* 明滅の振れ幅 */
+
+static void DrawCharLightGlow(void)
+{
+	int i, x, y, nCount, nWidth, nHeight, nMapW;
+	float fTime, fBreath;
+	PCHARINFO pMyChar, pChar;
+	LPBYTE pBits;
+
+	if ((g_nMyCharID < 0) || (g_pDibDrawMap == NULL)) {
+		return;
+	}
+	pBits = g_pDibDrawMap->GetBits ();
+	if (pBits == NULL) {
+		return;
+	}
+	nWidth	= g_pDibDrawMap->Width ();
+	nHeight	= g_pDibDrawMap->Height ();
+	nMapW	= DRAW_PARTS_X * 2 + 3;
+	pMyChar	= g_aCharInfo[g_nMyCharID];
+
+	/* 呼吸のようなゆっくりした明滅(周期 約 2.6 秒) */
+	fTime = (float)(timeGetTime () % 600000);
+	fBreath = CHARGLOW_BASE + CHARGLOW_SWING * sinf (fTime * 0.0024f);
+
+	nCount = g_aCharInfo.GetSize ();
+	for (i = 0; i < nCount; i ++) {
+		int xTmp, yTmp, nCX, nCY, nX0, nX1, nY0, nY1;
+
+		pChar = g_aCharInfo[i];
+		if (pChar->byLightLevel == 0) {
+			continue;
+		}
+		xTmp = (int)pMyChar->dwX - (int)pChar->dwX;
+		yTmp = (int)pMyChar->dwY - (int)pChar->dwY;
+		if ((abs (xTmp) > DRAW_PARTS_X + 1) || (abs (yTmp) > DRAW_PARTS_Y + 1)) {
+			continue;
+		}
+		/* キャラ描画(DrawCharLine)と同じ見えない条件 */
+		if (pChar != pMyChar) {
+			if (GetMapLightLevel ()) {
+				if (g_pMapDarkTmp[(DRAW_PARTS_X + 1 - xTmp) + nMapW * (DRAW_PARTS_Y + 1 - yTmp)] <= 1) {
+					continue;
+				}
+			}
+			if (IsMapViewMode () && IsMapDarkHidePos (xTmp, yTmp)) {
+				continue;
+			}
+			if (IsLightOtherRoom ((int)pChar->dwX, (int)pChar->dwY)) {
+				continue;
+			}
+		}
+		/* 体の中心(キャラ描画と同じ座標。絵は 32 ドット角で 8 ドット上にずらして描く) */
+		nCX = 256 + 16 - xTmp * 32 - BowOffsetX (pChar);
+		nCY = 256 - 8 + 16 - yTmp * 32 - BowOffsetY (pChar);
+
+		nX0 = max (0, nCX - CHARGLOW_RADIUS);
+		nX1 = min (nWidth - 1, nCX + CHARGLOW_RADIUS);
+		nY0 = max (0, nCY - CHARGLOW_RADIUS);
+		nY1 = min (nHeight - 1, nCY + CHARGLOW_RADIUS);
+		for (y = nY0; y <= nY1; y ++) {
+			PDWORD pDst = (PDWORD)(pBits + (nWidth * 4) * (nHeight - 1 - y)) + nX0;
+			int nDY = y - nCY;
+			for (x = nX0; x <= nX1; x ++, pDst ++) {
+				int nDX = x - nCX;
+				int nD2 = nDX * nDX + nDY * nDY;
+				float fRate;
+				int nA;
+				DWORD dw, r, g, b;
+
+				if (nD2 >= CHARGLOW_RADIUS * CHARGLOW_RADIUS) {
+					continue;
+				}
+				/* 真ん中が一番強く、端へなめらかに消える */
+				fRate = 1.0f - sqrtf ((float)nD2) / CHARGLOW_RADIUS;
+				fRate *= fRate;
+				nA = (int)(fRate * fBreath * 256.0f);
+				if (nA <= 0) {
+					continue;
+				}
+				/* スクリーン合成: 暖色(255,205,120)を c + (255-c) * 色 * 強さ で重ねる */
+				dw = *pDst;
+				r = (dw >> 16) & 0xFF;
+				g = (dw >> 8) & 0xFF;
+				b = dw & 0xFF;
+				r += ((255 - r) * 255 >> 8) * nA >> 8;
+				g += ((255 - g) * 205 >> 8) * nA >> 8;
+				b += ((255 - b) * 120 >> 8) * nA >> 8;
 				*pDst = (dw & 0xFF000000) | (r << 16) | (g << 8) | b;
 			}
 		}
@@ -1512,6 +1623,10 @@ void DrawCharLine(int nLine)
 
 				if (pChar->byFadeLevel) {
 					g_pDibDrawMap->BltAlpha (x, y, nGrpSizeX, nGrpSizeY, pDib, xx, yy, pChar->byFadeLevel, TRUE);
+
+				} else if (pChar->byHide) {
+					/* 隠れている間は半透明(BltAlpha は大きいほど透明。明るい所は半分、暗い所ほど薄く) */
+					g_pDibDrawMap->BltAlpha (x, y, nGrpSizeX, nGrpSizeY, pDib, xx, yy, (BYTE)(100 - byLevel / 2), TRUE);
 
 				} else {
 					g_pDibDrawMap->BltLevel (x, y, nGrpSizeX, nGrpSizeY, pDib, xx, yy, byLevel, TRUE);

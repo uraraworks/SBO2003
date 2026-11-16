@@ -121,7 +121,7 @@ void SendCmdADMINFLAGNAME	(BYTE, int, const FLAGNAMEINFO *);		/* 管理者ウィ
 void SendCmdADMINTALK		(BYTE, int, const TALKINFO *);			/* 管理者ウィンドウの会話データの編集 */
 void SendCmdADMINCHARFLAG	(BYTE, DWORD, BYTE, WORD, WORD);		/* 管理者ウィンドウのキャラのフラグの取得・変更 */
 void SendCmdADMINRESURRECT	(DWORD);								/* 管理者ウィンドウからキャラをHP満タンで蘇生 */
-void SendCmdMAGICKEY		(BYTE, BYTE);							/* 特技ショートカットの登録 */
+void SendCmdMAGICKEY		(BYTE, BYTE, WORD);						/* ショートカットの登録（特技・装備品・道具） */
 void SendCMDSHOPBUY			(DWORD, DWORD);							/* アイテム購入 */
 void SendCMDDIFENCE			(void);									/* 防御 */
 void SendCMDTHROWSNOW		(void);									/* 雪を投げる */
@@ -3691,10 +3691,11 @@ void SendCmdADMINRESURRECT(DWORD dwTblID)
 
 /* ========================================================================= */
 /* 関数名：SendCmdMAGICKEY													 */
-/* 内容：コマンド送信(特技ショートカットの登録)								 */
-/*       byNo 番目の枠に byMagicID を登録する（0 なら外す）					 */
+/* 内容：コマンド送信(ショートカットの登録)									 */
+/*       byNo 番目の枠に、特技(byMagicID)か装備品・道具(wItemID)を登録する	 */
+/*       （どちらか片方だけ。両方 0 なら枠を外す）							 */
 /* ========================================================================= */
-void SendCmdMAGICKEY(BYTE byNo, BYTE byMagicID)
+void SendCmdMAGICKEY(BYTE byNo, BYTE byMagicID, WORD wItemID)
 {
 	CMDPARA_MAGICKEY Para;
 
@@ -3703,6 +3704,7 @@ void SendCmdMAGICKEY(BYTE byNo, BYTE byMagicID)
 	Para.byCmdSub	= MAGICKEY_SET;
 	Para.byNo		= byNo;
 	Para.byMagicID	= byMagicID;
+	Para.wItemID	= wItemID;
 	cliSock.Send ((PBYTE)&Para, sizeof (Para));
 }
 

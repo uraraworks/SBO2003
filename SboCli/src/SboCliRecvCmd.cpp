@@ -27,6 +27,7 @@
 #include "SboCliDebugWindow.h"
 #include "SboCliMsgLogWindow.h"
 #include "SboCliBalloonWindow.h"
+extern void PruneItemKeys (PCHARINFO pChar);					/* 手持ちから無くなった装備品・道具をショートカットの枠から外す（SboCliKeyProc.cpp） */
 #ifdef __EMSCRIPTEN__
 extern void SboWebChatNotify(void);								/* 発言が来たことをシェルに知らせる（タブの題名で新着を知らせる） */
 #endif
@@ -4031,6 +4032,7 @@ void RecvDataProcMAGICKEY(PBYTE pData, DWORD dwDataSize)
 
 	if (pPara->byCmdSub == MAGICKEY_ALL) {
 		CopyMemory (g_abyMagicKey, pPara->abyMagicKey, sizeof (g_abyMagicKey));
+		CopyMemory (g_awKeyItem, pPara->awKeyItem, sizeof (g_awKeyItem));
 		g_bDraw = TRUE;
 	}
 }
@@ -4467,6 +4469,7 @@ void RecvDataProcCHARINFO(PBYTE pData, DWORD dwDataSize)
 	pCharDst->byMoveProbabilityX	= pChar->byMoveProbabilityX;
 	pCharDst->byMoveProbabilityY	= pChar->byMoveProbabilityY;
 	pCharDst->byLightLevel			= pChar->byLightLevel;
+	pCharDst->byHide				= pChar->byHide;
 	pCharDst->bySearchCx			= pChar->bySearchCx;
 	pCharDst->bySearchCy			= pChar->bySearchCy;
 	pCharDst->wTimePutInterval		= pChar->wTimePutInterval;
@@ -4618,6 +4621,7 @@ void RecvDataProcCHARINFO2(PBYTE pData, DWORD dwDataSize)
 	pCharDst->byEfectIdle	= pChar->byEfectIdle;
 	pCharDst->byNpcType		= pChar->byNpcType;
 	pCharDst->byLightLevel	= pChar->byLightLevel;
+	pCharDst->byHide		= pChar->byHide;
 	pCharDst->wGrpID		= pChar->wGrpID;
 	pCharDst->wGrpMain		= pChar->wGrpMain;
 	pCharDst->wGrpSub		= pChar->wGrpSub;
@@ -6067,6 +6071,8 @@ void RecvDataProcCHARITEM(PBYTE pData, DWORD dwDataSize)
 	/* 自分の手持ちが変わったら（並べ替えなど）、開いている道具の一覧を描き直す */
 	if (nNo == g_nMyCharID) {
 		int i, nCount = GetItemListRows (nNo);
+		/* 手持ちから無くなった種類の装備品・道具は、ショートカットの枠から外す */
+		PruneItemKeys (pChar);
 		if ((g_nProcShopID >= 0) && (g_nProcMakerID < 0)) {
 			ShopRedrawItemInfo ();	/* お店の買う一覧の「手持ち○個」 */
 		}
