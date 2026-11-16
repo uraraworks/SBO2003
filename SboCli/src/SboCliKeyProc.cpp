@@ -16,6 +16,42 @@
 #include "SboCliMsgLogWindow.h"
 #include "SboCliDrawScreen.h"
 
+/* 装備品の装備職業情報の番号を返す（装備品でなければ 0xFFFF） */
+static WORD ShopGetItemEquNo(PITEMINFO pItem)
+{
+	if (pItem->pData == NULL) {
+		return 0xFFFF;
+	}
+	switch (pItem->byType) {
+	case ITEMTYPE_WEAPON:	return ((PITEMINFO_WEAPON)pItem->pData)->wEqu;
+	case ITEMTYPE_ARMOR:	return ((PITEMINFO_ARMOR)pItem->pData)->wEqu;
+	case ITEMTYPE_SHILD:	return ((PITEMINFO_SHILD)pItem->pData)->wEqu;
+	case ITEMTYPE_HELMET:	return ((PITEMINFO_HELMET)pItem->pData)->wEqu;
+	case ITEMTYPE_EQU_HAND:	return ((PITEMINFO_EQU_HAND)pItem->pData)->wEqu;
+	case ITEMTYPE_EQU_LEG:	return ((PITEMINFO_EQU_LEG)pItem->pData)->wEqu;
+	case ITEMTYPE_EQU_ACC1:	return ((PITEMINFO_EQU_ACC1)pItem->pData)->wEqu;
+	case ITEMTYPE_EQU_ACC2:	return ((PITEMINFO_EQU_ACC2)pItem->pData)->wEqu;
+	case ITEMTYPE_EQU_ACC3:	return ((PITEMINFO_EQU_ACC3)pItem->pData)->wEqu;
+	}
+	return 0xFFFF;
+}
+
+/* お店の「買う」確認文：自分が装備できない品（性別・今の職業）なら注意書きを足す（買うこと自体は止めない） */
+static void ShopAddEquWarn(LPSTR pszMsg, int nSize, PITEMINFO pItem, PCHARINFO pChar)
+{
+	/* @1 は次の行へ */
+	if ((pItem->bySexDistinction != SEXDISTINCTION_ALL) && !CheckItemSexDistinction (pItem, pChar)) {
+		strcat (pszMsg, (pItem->bySexDistinction == SEXDISTINCTION_FEMALE) ?
+			"@1※この品は女性しか装備できません。" : "@1※この品は男性しか装備できません。");
+	}
+	/* 職業は転職すれば使えるので「今の職業では」とする */
+	WORD wEqu = ShopGetItemEquNo (pItem);
+	if ((wEqu != 0xFFFF) && (wEqu < g_aEquUserInfo.GetSize ()) && !CheckEquUserInfo (wEqu, pChar->byJOB)) {
+		strcat (pszMsg, "@1※今の職業では装備できません。");
+	}
+	pszMsg[nSize - 1] = 0;
+}
+
 /* ========================================================================= */
 /* 関数プロトタイプ宣言														 */
 /* ========================================================================= */
@@ -3312,6 +3348,7 @@ void KeyProcSHOP(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				char szMsgTmp[2048];
 				PITEMINFO pItem = g_aItemInfo[pShop->awItem[nTmp]];
 				wsprintf (szMsgTmp, pShop->apMsg[SHOPMSG_BUYCONF], pItem->szName, pItem->dwGold);
+				ShopAddEquWarn (szMsgTmp, sizeof (szMsgTmp), pItem, pChar);
 				pWndNew = MakeWindowMSG (szMsgTmp, TRUE);
 				pWndNew->pParent = pWndTmp;
 				pWndTmp->pChild = pWndNew;
@@ -3523,6 +3560,7 @@ void KeyProcSHOPSELL(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				char szMsgTmp[2048];
 				PITEMINFO pItem = g_aItemInfo[pShop->awItem[nTmp]];
 				wsprintf (szMsgTmp, pShop->apMsg[SHOPMSG_BUYCONF], pItem->szName, pItem->dwGold);
+				ShopAddEquWarn (szMsgTmp, sizeof (szMsgTmp), pItem, pChar);
 				pWndNew = MakeWindowMSG (szMsgTmp, TRUE);
 				pWndNew->pParent = pWndTmp;
 				pWndTmp->pChild = pWndNew;

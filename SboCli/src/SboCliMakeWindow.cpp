@@ -11,6 +11,7 @@
 #include "SboCliDrawWindow.h"
 #include "SboCliRecvCmd.h"
 #include "SboCliKeyProc.h"
+#include "SboCliSendCmd.h"
 
 /* ========================================================================= */
 /* 定数定義																	 */
@@ -830,6 +831,9 @@ PWNDINFO MakeWindowSHOP(int nNo, int nMsgNo)
 
 	g_nProcShopID = nNo;
 	g_nProcShopState = SHOPMSG_OPEN;
+	/* 買う時のアイテム情報に出す預かり所の数のため、預かり所の中身を取りに行く */
+	g_bProcShopLeaveOK = FALSE;
+	SendCmdLEAVEITEMGET ((DWORD)-1);
 	g_bProcShopConfirm = FALSE;
 
 	PSHOPINFO pShop = &g_pMapInfo->pShopInfo[g_nProcShopID];
@@ -968,6 +972,8 @@ PWNDINFO MakeWindowSHOPSELL(int nNo)
 
 	g_nProcShopID = nNo;
 	g_bProcShopConfirm = FALSE;
+	g_bProcShopLeaveOK = FALSE;
+	SendCmdLEAVEITEMGET ((DWORD)-1);
 
 	PWNDINFO pWnd = MakeWindowSHOP_BUY (SHOPMSG_BUY);
 	pWnd->nType = WNDTYPE_SHOPSELL;
