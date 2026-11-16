@@ -75,6 +75,8 @@ void	CharTargetPC				(PCHARINFO, PCHARINFO, DWORD);					/* キャラのついて
 void	CharTargetCancelPC			(PCHARINFO);									/* キャラのついていく解除 */
 void	TailBattleMode				(PCHARINFO, BOOL);								/* 戦闘モードに合わせて列を離れる・戻る */
 void	TailReturnForget			(DWORD);										/* 戦闘で列を離れた時に覚えた先頭を消す */
+void	TailChaseProc				(PCHARINFO);									/* 列に戻る途中のプレイヤーを歩かせる */
+BOOL	TailChaseIsActive			(PCHARINFO);									/* 列に戻る途中(追いかけ中)か */
 void	TailMoveChain				(PCHARINFO);									/* ついてきているキャラを順に動かす */
 void	FloorDamageOnStep			(PCHARINFO);									/* ダメージ床に1歩入った時の処理 */
 BOOL	IsDamageFloor				(PMAPINFO, int, int);							/* ダメージ床のマスか */
@@ -3139,12 +3141,13 @@ void SubProcMapMove(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY)
 	QuestSyncAll ();
 }
 
-/* ========================================================================= */
-/* 関数名：SubProcMove														 */
-/* 内容：同マップ内移動処理													 */
+/* 関数名：SubProcMoveEx													 */
+/* 内容：同マップ内移動処理(向きを指定。bFadeOut=FALSEなら本人の暗転は			 */
+/*		すでに始めてあるので送らない)										 */
+/*		向きは CHARINFO を送る前に決める(ほかの人の画面にも合わせて出る)	 */
 /* 日付：2004/08/11															 */
 /* ========================================================================= */
-void SubProcMove(PCHARINFO pChar, DWORD dwX, DWORD dwY)
+static void SubProcMoveEx(PCHARINFO pChar, DWORD dwX, DWORD dwY, BYTE byDirection, BOOL bFadeOut)
 {
 	/* ターゲットを解除 */
 	pChar->dwTargetTblID = -1;
@@ -3160,8 +3163,10 @@ void SubProcMove(PCHARINFO pChar, DWORD dwX, DWORD dwY)
 		pChar->dwTargetTblID3 = -1;
 	}
 
-	SendCmdFADEINOUT (pChar->pID, 0);
-	pChar->byDirection = 1;
+	if (bFadeOut) {
+		SendCmdFADEINOUT (pChar->pID, 0);
+	}
+	pChar->byDirection = byDirection;
 	pChar->byDirectionBack2 = pChar->byDirection;
 	pChar->byDirectionBack = pChar->byDirection;
 	pChar->dwX = pChar->dwXBack = dwX;
@@ -3169,6 +3174,16 @@ void SubProcMove(PCHARINFO pChar, DWORD dwX, DWORD dwY)
 	SendCmdCHARINFO (pChar->pID, -1);
 	SendCmdFADEINOUT (pChar->pID, 1);
 	SendCmdCHARINFO3 (pChar->dwTblID);
+}
+
+/* ========================================================================= */
+/* 関数名：SubProcMove														 */
+/* 内容：同マップ内移動処理													 */
+/* 日付：2004/08/11															 */
+/* ========================================================================= */
+void SubProcMove(PCHARINFO pChar, DWORD dwX, DWORD dwY)
+{
+	SubProcMoveEx (pChar, dwX, dwY, 1, TRUE);
 }
 
 /* ========================================================================= */
@@ -3975,6 +3990,11 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 	if (pChar->dwMapID == pPara->dwMapID) {
 		/* 誰かに引っ張られてる？ */
 		if (pChar->dwTargetTblID3 != -1) {
+			return;
+		}
+		/* 列に戻る途中(サーバーが歩かせている)は、自分では動けない。今の位置を送り返す */
+		if (TailChaseIsActive (pChar)) {
+			SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
 			return;
 		}
 		/* 向きは 0～3、座標はマップの中 */
@@ -5457,19 +5477,53 @@ static std::map<DWORD, TAILRETURN> s_mapTailReturn;
 
 
 /* ========================================================================= */
+/* 戦闘モードを解除して列に戻る途中(前の人を歩いて追いかけている・消えている)の人 */
+/* 前の人 = 並び順で一つ前に戻る人(その人がまだ追いかけ中ならその人)、いなければ	 */
+/* 先頭の列の今の最後尾。前の人が列につながるまでは着いても列にはつながない	 */
+/* (並び順を守る)。追いかけ中はサーバーの dwTailTblID は -1 のまま(誰かが後ろに	 */
+/* つながっても引っぱられない)で、クライアントだけ CHAR_TAIL_CHASE で動けなくする */
+/* ========================================================================= */
+#define TAILCHASE_STEPTIME		(290)		/* 1歩の間隔(ms)。ふつうの歩き(1マス約280ms)と同じくらい */
+#define TAILCHASE_FADETIME		(900)		/* 消え始めてから現れるまで(ms)。傭兵のワープと同じ */
+#define TAILCHASE_LIMIT			(10000)		/* 追いかけてもこの時間たっても着かなければワープ(ms) */
+#define TAILCHASE_STUCK			(3000)		/* これだけ近づけなければワープ(ms) */
+#define TAILCHASE_GIVEUP		(30000)		/* 前の人を待つ分も入れて、これだけかかったら戻れなかったことにする(ms) */
+#define TAILCHASE_PATHDIST		(12)		/* 道さがしで見る範囲(自分から何マスか) */
+
+typedef struct _TAILCHASE {
+	TAILRETURN	Info;							/* 戻り先(先頭・並び順) */
+	DWORD		dwOrigStart;					/* 戻り始めた時間 */
+	DWORD		dwStart;						/* 今の追いかけを始めた時間(となりで待つ間は進める) */
+	DWORD		dwLastStep;						/* 最後に歩いた時間 */
+	DWORD		dwProgress;						/* 最後に近づけた時間 */
+	DWORD		dwWarpTime;						/* 消え始めた時間(0=消えていない) */
+	DWORD		dwPrevTblID;					/* クライアントに知らせた追いかける相手 */
+	int			nBestDist;						/* 今までで一番近づいた道のり */
+} TAILCHASE;
+static std::map<DWORD, TAILCHASE> s_mapTailChase;
+static void TailChaseCancel(PCHARINFO pChar, LPTSTR pszMsg, BOOL bRestore);
+
+
+/* ========================================================================= */
 /* 関数名：	TailReturnForget												 */
 /* 内容：	覚えている戻り先の先頭を消す									 */
 /*			(Zで別の人についていく・解除・マップ移動・ログアウト・倒れた時)	 */
 /*			この人を先頭として覚えている人も全員忘れさせ、戻れないと知らせる	 */
 /*			(先頭が戦闘モードを解除できないので、覚えたままにならないように)	 */
+/*			列に戻る途中(追いかけ中)の人も同じ(本人の追いかけもやめる)		 */
 /* ========================================================================= */
 
 void TailReturnForget(DWORD dwTblID)
 {
-	if (s_mapTailReturn.empty ()) {
+	if (s_mapTailReturn.empty () && s_mapTailChase.empty ()) {
 		return;
 	}
 	s_mapTailReturn.erase (dwTblID);
+	DWORD dwCount = (DWORD)g_aCharInfo.GetSize ();
+	/* 本人の追いかけをやめる(クライアントには動けるように戻す) */
+	if ((dwTblID < dwCount) && (s_mapTailChase.find (dwTblID) != s_mapTailChase.end ())) {
+		TailChaseCancel (g_aCharInfo[dwTblID], NULL, FALSE);
+	}
 
 	/* この人を先頭として覚えている人を集める */
 	std::vector<DWORD> adwMember;
@@ -5479,7 +5533,6 @@ void TailReturnForget(DWORD dwTblID)
 			adwMember.push_back (it->first);
 		}
 	}
-	DWORD dwCount = (DWORD)g_aCharInfo.GetSize ();
 	for (size_t i = 0; i < adwMember.size (); i ++) {
 		DWORD dwMember = adwMember[i];
 		DWORD dwPID = s_mapTailReturn[dwMember].dwPID;
@@ -5490,6 +5543,20 @@ void TailReturnForget(DWORD dwTblID)
 		PCHARINFO pMember = g_aCharInfo[dwMember];
 		if ((pMember->pID != 0) && (pMember->pID == dwPID)) {
 			SendCmdSYSMSG (pMember->pID, "列に戻れませんでした。", SPEECHCMD_BATTLE1);
+		}
+	}
+
+	/* この人を先頭として戻る途中の人も、追いかけをやめる */
+	std::vector<DWORD> adwChase;
+	std::map<DWORD, TAILCHASE>::iterator itChase;
+	for (itChase = s_mapTailChase.begin (); itChase != s_mapTailChase.end (); ++ itChase) {
+		if (itChase->second.Info.dwHeadTblID == dwTblID) {
+			adwChase.push_back (itChase->first);
+		}
+	}
+	for (size_t i = 0; i < adwChase.size (); i ++) {
+		if (adwChase[i] < dwCount) {
+			TailChaseCancel (g_aCharInfo[adwChase[i]], "列に戻れませんでした。", TRUE);
 		}
 	}
 }
@@ -5530,6 +5597,436 @@ static PCHARINFO TailReturnFindEnd(PCHARINFO pChar, const TAILRETURN &Info)
 		pCur = pNext;
 	}
 	return NULL;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	TailChaseTarget													 */
+/* 内容：	追いかける相手を決める											 */
+/*			並び順で一つ前に戻る人(まだ追いかけ中)、いなければ先頭の列の最後尾	 */
+/*			bPending=TRUE なら相手はまだ列につながっていない					 */
+/*			先頭がいなくなっていれば FALSE									 */
+/* ========================================================================= */
+
+static BOOL TailChaseTarget(PCHARINFO pChar, const TAILRETURN &Info, PCHARINFO &pTarget, BOOL &bPending)
+{
+	PCHARINFO pEnd, pTmp;
+	DWORD dwCount = (DWORD)g_aCharInfo.GetSize ();
+	int nBest = -1;
+
+	pEnd = TailReturnFindEnd (pChar, Info);
+	if (pEnd == NULL) {
+		return FALSE;
+	}
+	pTarget		= pEnd;
+	bPending	= FALSE;
+	std::map<DWORD, TAILCHASE>::iterator it;
+	for (it = s_mapTailChase.begin (); it != s_mapTailChase.end (); ++ it) {
+		const TAILRETURN &InfoTmp = it->second.Info;
+		if ((it->first == pChar->dwTblID) || (it->first >= dwCount) ||
+			(InfoTmp.dwHeadTblID != Info.dwHeadTblID) || (InfoTmp.dwHeadPID != Info.dwHeadPID) ||
+			(InfoTmp.nOrder >= Info.nOrder)) {
+			continue;
+		}
+		pTmp = g_aCharInfo[it->first];
+		if ((pTmp->pID == 0) || (pTmp->pID != InfoTmp.dwPID) ||
+			(pTmp->dwMapID != pChar->dwMapID) || !IsSameSpace (pChar, pTmp)) {
+			continue;
+		}
+		if (InfoTmp.nOrder > nBest) {
+			nBest		= InfoTmp.nOrder;
+			pTarget		= pTmp;
+			bPending	= TRUE;
+		}
+	}
+	return TRUE;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	TailChaseCanStep												 */
+/* 内容：	追いかける時にそのマスへ歩いていけるか							 */
+/*			地形・イベント(扉も開けない)・ダメージ床・人が立っているマスは避ける */
+/* ========================================================================= */
+
+static BOOL TailChaseCanStep(PCHARINFO pChar, PMAPINFO pMap, int x, int y)
+{
+	if ((x < 0) || (x >= pMap->nCX) || (y < 0) || (y >= pMap->nCY)) {
+		return FALSE;
+	}
+	if (CheckCharBlock (pChar, pChar->dwMapID, (DWORD)x, (DWORD)y) == FALSE) {
+		return FALSE;
+	}
+	if (CheckEventBlock (pChar->dwMapID, (DWORD)x, (DWORD)y, 0xFF)) {
+		return FALSE;
+	}
+	if (IsAvoidDamageFloor (pChar, pMap, x, y)) {
+		return FALSE;
+	}
+	if (CheckCharBlockPC (pChar->dwMapID, (DWORD)x, (DWORD)y, pChar->dwSpaceID) != (DWORD)-1) {
+		return FALSE;
+	}
+	if (CheckCharBlockNPC2 (pChar->dwTblID, pChar->dwMapID, (DWORD)x, (DWORD)y, pChar->dwSpaceID) != (DWORD)-1) {
+		return FALSE;
+	}
+	return TRUE;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	TailChaseFindDir												 */
+/* 内容：	相手のとなりのマスへ行く一番近い道の、最初の向き(幅優先)		 */
+/*			自分のまわり TAILCHASE_PATHDIST マスの中だけ探す				 */
+/*			(行けなければ -1、もうとなりなら -2。*pnDist は道のり)			 */
+/*			傭兵の道さがし(CCharProcMERCENARY::PathDir)と同じ考え方で、		 */
+/*			傭兵は閉まった扉を開けるが、こちらは扉を開けない				 */
+/* ========================================================================= */
+
+static int TailChaseFindDir(PCHARINFO pChar, PCHARINFO pTarget, int *pnDist)
+{
+	const int nR = TAILCHASE_PATHDIST;
+	const int nW = nR * 2 + 1;
+	static short s_anFirst[(TAILCHASE_PATHDIST * 2 + 1) * (TAILCHASE_PATHDIST * 2 + 1)];
+	static short s_anDist[(TAILCHASE_PATHDIST * 2 + 1) * (TAILCHASE_PATHDIST * 2 + 1)];
+	static int s_anQueue[(TAILCHASE_PATHDIST * 2 + 1) * (TAILCHASE_PATHDIST * 2 + 1)];
+	int nSX, nSY, nTX, nTY, nOX, nOY, nHead, nTail, nPos, nDir, nNext, x, y, i;
+	PMAPINFO pMap;
+
+	nSX = (int)pChar->dwX;
+	nSY = (int)pChar->dwY;
+	nTX = (int)pTarget->dwX;
+	nTY = (int)pTarget->dwY;
+	if (pnDist) {
+		*pnDist = 0;
+	}
+	if (abs (nTX - nSX) + abs (nTY - nSY) <= 1) {
+		return -2;
+	}
+	if ((pChar->dwMapID >= (DWORD)g_aMapInfo.GetSize ()) || (abs (nTX - nSX) > nR) || (abs (nTY - nSY) > nR)) {
+		return -1;
+	}
+	pMap = g_aMapInfo[pChar->dwMapID];
+	nOX = nSX - nR;
+	nOY = nSY - nR;
+	for (i = 0; i < nW * nW; i ++) {
+		s_anFirst[i] = -1;
+		s_anDist[i] = 0;
+	}
+	nHead = nTail = 0;
+	nPos = nR * nW + nR;
+	s_anFirst[nPos] = 4;
+	s_anQueue[nTail ++] = nPos;
+	while (nHead < nTail) {
+		nPos = s_anQueue[nHead ++];
+		x = nOX + (nPos % nW);
+		y = nOY + (nPos / nW);
+		/* 相手のとなりのマスに着いた */
+		if ((s_anFirst[nPos] != 4) && (abs (x - nTX) + abs (y - nTY) == 1)) {
+			if (pnDist) {
+				*pnDist = s_anDist[nPos];
+			}
+			return s_anFirst[nPos];
+		}
+		for (nDir = 0; nDir < 4; nDir ++) {
+			int nNX = x + anPosAddTblX[nDir];
+			int nNY = y + anPosAddTblY[nDir];
+			if ((nNX < nOX) || (nNX >= nOX + nW) || (nNY < nOY) || (nNY >= nOY + nW)) {
+				continue;
+			}
+			nNext = (nNY - nOY) * nW + (nNX - nOX);
+			if (s_anFirst[nNext] != -1) {
+				continue;
+			}
+			if (TailChaseCanStep (pChar, pMap, nNX, nNY) == FALSE) {
+				/* 何度も調べ直さないよう、行けないマスとして覚える */
+				s_anFirst[nNext] = -4;
+				continue;
+			}
+			s_anFirst[nNext] = (s_anFirst[nPos] == 4) ? (short)nDir : s_anFirst[nPos];
+			s_anDist[nNext] = (short)(s_anDist[nPos] + 1);
+			s_anQueue[nTail ++] = nNext;
+		}
+	}
+	return -1;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	TailChaseIsActive												 */
+/* 内容：	列に戻る途中(追いかけ中・消えている)か							 */
+/* ========================================================================= */
+
+BOOL TailChaseIsActive(PCHARINFO pChar)
+{
+	if (s_mapTailChase.empty () || (pChar == NULL)) {
+		return FALSE;
+	}
+	return (s_mapTailChase.find (pChar->dwTblID) != s_mapTailChase.end ());
+}
+
+
+/* ========================================================================= */
+/* 関数名：	TailChaseCancel													 */
+/* 内容：	追いかけをやめる(本人のクライアントを動けるように戻す)			 */
+/*			bRestore=TRUE で、消えている最中なら本人もほかの人も元に戻す		 */
+/*			(マップ移動・ログアウトの時は FALSE。pszMsg があれば知らせる)	 */
+/* ========================================================================= */
+
+static void TailChaseCancel(PCHARINFO pChar, LPTSTR pszMsg, BOOL bRestore)
+{
+	CCHAR_TAIL Packet;
+	BOOL bWarp;
+	DWORD dwPID;
+
+	std::map<DWORD, TAILCHASE>::iterator it = s_mapTailChase.find (pChar->dwTblID);
+	if (it == s_mapTailChase.end ()) {
+		return;
+	}
+	bWarp	= (it->second.dwWarpTime != 0);
+	dwPID	= it->second.Info.dwPID;
+	s_mapTailChase.erase (it);
+	if ((pChar->pID == 0) || (pChar->pID != dwPID)) {
+		return;
+	}
+	if (bWarp && bRestore) {
+		SendCmdFADEINOUT (pChar->pID, 1);
+		SendCmdCHARINFO3 (pChar->dwTblID);
+	}
+	Packet.Make (pChar->dwTblID, (DWORD)-1, CHAR_TAIL_CHASEEND);
+	svrSock.SendTo (pChar->pID, Packet.Get (), Packet.GetSize ());
+	if (pszMsg) {
+		SendCmdSYSMSG (pChar->pID, pszMsg, SPEECHCMD_BATTLE1);
+	}
+}
+
+
+/* ========================================================================= */
+/* 関数名：	TailChaseSendTarget												 */
+/* 内容：	本人に「○○を追いかけています。」を知らせる(動けなくもする)		 */
+/* ========================================================================= */
+
+static void TailChaseSendTarget(PCHARINFO pChar, TAILCHASE &Chase, PCHARINFO pTarget)
+{
+	CCHAR_TAIL Packet;
+
+	Chase.dwPrevTblID = pTarget->dwTblID;
+	Packet.Make (pChar->dwTblID, pTarget->dwTblID, CHAR_TAIL_CHASE);
+	svrSock.SendTo (pChar->pID, Packet.Get (), Packet.GetSize ());
+}
+
+
+/* ========================================================================= */
+/* 関数名：	TailChaseLink													 */
+/* 内容：	最後尾につなぐ(TailOn と同じつなぎ方。「列に戻りました。」を出す)	 */
+/*			追いかけ中の記録は消す											 */
+/* ========================================================================= */
+
+static void TailChaseLink(PCHARINFO pChar, PCHARINFO pEnd)
+{
+	CCHAR_TAIL Packet;
+
+	s_mapTailChase.erase (pChar->dwTblID);
+	pChar->dwTailTblID		= pEnd->dwTblID;
+	pEnd->dwTailBackTblID	= pChar->dwTblID;
+	Packet.Make (pChar->dwTblID, pEnd->dwTblID, CHAR_TAIL_RETURN);
+	svrSock.SendTo (pChar->pID, Packet.Get (), Packet.GetSize ());
+	if (pEnd->pID != 0) {
+		Packet.Make (pEnd->dwTblID, pChar->dwTblID, CHAR_TAIL_BACK);
+		svrSock.SendTo (pEnd->pID, Packet.Get (), Packet.GetSize ());
+	}
+}
+
+
+/* ========================================================================= */
+/* 関数名：	TailChaseWarpStart												 */
+/* 内容：	ワープで戻る：まず本人の画面を暗くし、ほかの人の画面ではふっと消す	 */
+/*			傭兵の WarpNearOwner と同じく、向き99の座標通知で消し始める。	 */
+/*			TAILCHASE_FADETIME たってから TailChaseWarpFinish で現れる		 */
+/*			(消えている間もサーバーの位置はそのまま。となりに空きが無ければ	 */
+/*			始めずに FALSE)													 */
+/* ========================================================================= */
+
+static BOOL TailChaseWarpStart(PCHARINFO pChar, TAILCHASE &Chase, PCHARINFO pTarget)
+{
+	int x, y;
+	BYTE byDirection;
+
+	if (!FindPosNearChar (pChar, pTarget, x, y)) {
+		return FALSE;
+	}
+	SendCmdFADEINOUT (pChar->pID, 0);
+	byDirection = pChar->byDirection;
+	pChar->byDirection = 99;
+	SendCmdCHARPOS (0, pChar->dwTblID, 0, 1);
+	pChar->byDirection = byDirection;
+	Chase.dwWarpTime = g_dwTime ? g_dwTime : 1;
+	return TRUE;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	TailChaseWarpFinish												 */
+/* 内容：	消えていた人を、前の人のとなりに出す(フェードイン)				 */
+/*			向きは前の人に合わせ、向きを決めてから位置を送る				 */
+/*			前の人が最後尾なら、そのまま列につなぐ。まだ追いかけ中の人なら	 */
+/*			となりで待つ(その人が先にワープ中なら、その人が出るまで消えたまま) */
+/* ========================================================================= */
+
+static void TailChaseWarpFinish(PCHARINFO pChar, TAILCHASE &Chase, PCHARINFO pTarget, BOOL bPending)
+{
+	int x, y;
+
+	if (bPending) {
+		std::map<DWORD, TAILCHASE>::iterator it = s_mapTailChase.find (pTarget->dwTblID);
+		if ((it != s_mapTailChase.end ()) && it->second.dwWarpTime) {
+			return;
+		}
+	}
+	if (!FindPosNearChar (pChar, pTarget, x, y)) {
+		TailChaseCancel (pChar, "列に戻れませんでした。", TRUE);
+		return;
+	}
+	SubProcMoveEx (pChar, (DWORD)x, (DWORD)y, (pTarget->byDirection < 4) ? pTarget->byDirection : (BYTE)1, FALSE);
+	Chase.dwWarpTime = 0;
+	if (!bPending) {
+		TailChaseLink (pChar, pTarget);
+		return;
+	}
+	/* 位置の通知で本人の「追いかけ中」が解けるので、知らせ直す */
+	Chase.dwStart = Chase.dwProgress = g_dwTime;
+	Chase.nBestDist = 0x7FFFFFFF;
+	TailChaseSendTarget (pChar, Chase, pTarget);
+}
+
+
+/* ========================================================================= */
+/* 関数名：	TailChaseProc													 */
+/* 内容：	列に戻る途中のプレイヤーを歩かせる(タイマー処理から毎回呼ぶ)		 */
+/*			・となりに着いたら列につなぐ(前の人がまだ追いかけ中なら待つ)		 */
+/*			・歩くのは TAILCHASE_STEPTIME ごとに1マス						 */
+/*			・画面の外・道が無い・時間がかかる・近づけない時はワープする		 */
+/* ========================================================================= */
+
+void TailChaseProc(PCHARINFO pChar)
+{
+	DWORD dwNow = g_dwTime;
+	PCHARINFO pTarget = NULL;
+	BOOL bPending = FALSE;
+	int nDX, nDY, nDist, nDir, nPathDist;
+
+	if (s_mapTailChase.empty ()) {
+		return;
+	}
+	std::map<DWORD, TAILCHASE>::iterator it = s_mapTailChase.find (pChar->dwTblID);
+	if (it == s_mapTailChase.end ()) {
+		return;
+	}
+	TAILCHASE &Chase = it->second;
+
+	/* 別の人になった・ほかの列につながった */
+	if ((pChar->pID == 0) || (pChar->pID != Chase.Info.dwPID) || (pChar->dwTailTblID != (DWORD)-1)) {
+		s_mapTailChase.erase (it);
+		return;
+	}
+	/* 倒れた */
+	if ((pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0)) {
+		TailChaseCancel (pChar, NULL, TRUE);
+		return;
+	}
+	/* 先頭がいなくなった */
+	if (!TailChaseTarget (pChar, Chase.Info, pTarget, bPending)) {
+		TailChaseCancel (pChar, "列に戻れませんでした。", TRUE);
+		return;
+	}
+	/* 時間がかかりすぎた */
+	if ((DWORD)(dwNow - Chase.dwOrigStart) >= TAILCHASE_GIVEUP) {
+		TailChaseCancel (pChar, "列に戻れませんでした。", TRUE);
+		return;
+	}
+
+	/* 消えている最中。時間が来たら前の人のとなりに出る */
+	if (Chase.dwWarpTime) {
+		if ((DWORD)(dwNow - Chase.dwWarpTime) >= TAILCHASE_FADETIME) {
+			TailChaseWarpFinish (pChar, Chase, pTarget, bPending);
+		}
+		return;
+	}
+
+	/* 追いかける相手が変わった */
+	if (Chase.dwPrevTblID != pTarget->dwTblID) {
+		TailChaseSendTarget (pChar, Chase, pTarget);
+	}
+
+	nDX		= (int)pTarget->dwX - (int)pChar->dwX;
+	nDY		= (int)pTarget->dwY - (int)pChar->dwY;
+	nDist	= abs (nDX) + abs (nDY);
+	/* となりに着いた */
+	if (nDist == 1) {
+		if (!bPending) {
+			TailChaseLink (pChar, pTarget);
+			return;
+		}
+		/* 前の人がつながるまで待つ(待っている間は時間を数えない) */
+		Chase.dwStart = Chase.dwProgress = dwNow;
+		return;
+	}
+	/* 画面の外(クライアントの表示範囲の外)ならワープ */
+	if ((abs (nDX) > DRAW_PARTS_X) || (abs (nDY) > DRAW_PARTS_Y)) {
+		if (!TailChaseWarpStart (pChar, Chase, pTarget)) {
+			TailChaseCancel (pChar, "列に戻れませんでした。", TRUE);
+		}
+		return;
+	}
+	/* 前の人を待つ間は時間切れにしない。そうでなければ、時間がかかったらワープ */
+	if (bPending) {
+		Chase.dwStart = Chase.dwProgress = dwNow;
+	} else if (((DWORD)(dwNow - Chase.dwStart) >= TAILCHASE_LIMIT) || ((DWORD)(dwNow - Chase.dwProgress) >= TAILCHASE_STUCK)) {
+		if (!TailChaseWarpStart (pChar, Chase, pTarget)) {
+			TailChaseCancel (pChar, "列に戻れませんでした。", TRUE);
+		}
+		return;
+	}
+
+	/* 歩く間隔 */
+	if ((DWORD)(dwNow - Chase.dwLastStep) < TAILCHASE_STEPTIME) {
+		return;
+	}
+	nPathDist = 0;
+	nDir = TailChaseFindDir (pChar, pTarget, &nPathDist);
+	if (nDir < 0) {
+		/* 道が無い(前の人を待っている間は、そのまま待つ) */
+		if (!bPending) {
+			if (!TailChaseWarpStart (pChar, Chase, pTarget)) {
+				TailChaseCancel (pChar, "列に戻れませんでした。", TRUE);
+			}
+		}
+		return;
+	}
+	if (nPathDist < Chase.nBestDist) {
+		Chase.nBestDist = nPathDist;
+		Chase.dwProgress = dwNow;
+	}
+
+	/* 1マス歩く(TailMoveChain がついてくる人を動かす時と同じ送り方) */
+	int x = (int)pChar->dwX + anPosAddTblX[nDir];
+	int y = (int)pChar->dwY + anPosAddTblY[nDir];
+	RenewCharBridgeLayerSvr (pChar, x, y, (BYTE)nDir);
+	pChar->byDirectionBack2	= pChar->byDirectionBack;
+	pChar->byDirectionBack	= pChar->byDirection;
+	pChar->dwXBack			= pChar->dwX;
+	pChar->dwYBack			= pChar->dwY;
+	pChar->byDirection		= (BYTE)nDir;
+	pChar->dwX				= (DWORD)x;
+	pChar->dwY				= (DWORD)y;
+	pChar->dwLastDotMove	= dwNow;
+	Chase.dwLastStep		= dwNow;
+	SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 1);
+	SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
+	CheckCharPosSend (pChar);
+	pChar->byFlg &= ~CHARINFOFLG_DIRECTION;
+	pChar->byFlg &= ~CHARINFOFLG_MOVE;
+	/* 後ろに誰かがついてきていれば、その人も動かす */
+	TailMoveChain (pChar);
 }
 
 
@@ -5590,47 +6087,65 @@ static void TailLeave(PCHARINFO pChar, PCHARINFO pHead, int nOrder)
 
 /* ========================================================================= */
 /* 関数名：	TailReturnDo													 */
-/* 内容：	覚えた先頭の列の最後尾へ戻る(となりにいなければ空いたマスへワープ)	 */
+/* 内容：	覚えた先頭の列に戻る											 */
+/*			前の人(TailChaseTarget)のとなりにいればそのままつなぐ。			 */
+/*			画面内に見えていれば、歩いて追いかける(「○○を追いかけています。」)。*/
+/*			画面外・道が無い時は、フェードを挟んでとなりへワープする。		 */
 /*			戻れなければ「列に戻れませんでした。」。覚えは呼び出し側で消す済み	 */
 /* ========================================================================= */
 
 static void TailReturnDo(PCHARINFO pChar, const TAILRETURN &Info)
 {
-	PCHARINFO pEnd = NULL;
-	CCHAR_TAIL Packet;
+	PCHARINFO pTarget = NULL;
+	BOOL bPending = FALSE, bTarget = FALSE;
+	TAILCHASE Chase;
+	int nDX, nDY, nDist;
 
 	if ((pChar->dwTailTblID == (DWORD)-1) && (pChar->dwTailBackTblID == (DWORD)-1) &&
-		(pChar->byCharState != CHARSTATE_DEAD) && (pChar->wHP != 0)) {
-		pEnd = TailReturnFindEnd (pChar, Info);
+		(pChar->byCharState != CHARSTATE_DEAD) && (pChar->wHP != 0) && !TailChaseIsActive (pChar)) {
+		bTarget = TailChaseTarget (pChar, Info, pTarget, bPending);
 	}
-	if (pEnd == NULL) {
+	if (!bTarget) {
 		SendCmdSYSMSG (pChar->pID, "列に戻れませんでした。", SPEECHCMD_BATTLE1);
 		return;
 	}
 
-	/* 最後尾のとなりにいなければ、となりの空いたマスへ同じマップ内でワープする(フェード) */
-	int nDist = abs ((int)pChar->dwX - (int)pEnd->dwX) + abs ((int)pChar->dwY - (int)pEnd->dwY);
-	if (nDist != 1) {
-		int x, y;
-
-		if (!FindPosNearChar (pChar, pEnd, x, y)) {
-			SendCmdSYSMSG (pChar->pID, "列に戻れませんでした。", SPEECHCMD_BATTLE1);
-			return;
-		}
-		SubProcMove (pChar, (DWORD)x, (DWORD)y);
-		/* 向きは最後尾に合わせる */
-		pChar->byDirection = pEnd->byDirection;
-		pChar->byDirectionBack = pChar->byDirectionBack2 = pChar->byDirection;
+	nDX		= (int)pTarget->dwX - (int)pChar->dwX;
+	nDY		= (int)pTarget->dwY - (int)pChar->dwY;
+	nDist	= abs (nDX) + abs (nDY);
+	/* 最後尾のとなりにいれば、すぐ列につなぐ */
+	if ((nDist == 1) && !bPending) {
+		TailChaseLink (pChar, pTarget);
+		return;
 	}
 
-	/* 最後尾につく(TailOn と同じつなぎ方。メッセージは「列に戻りました。」だけ) */
-	pChar->dwTailTblID		= pEnd->dwTblID;
-	pEnd->dwTailBackTblID	= pChar->dwTblID;
-	Packet.Make (pChar->dwTblID, pEnd->dwTblID, CHAR_TAIL_RETURN);
-	svrSock.SendTo (pChar->pID, Packet.Get (), Packet.GetSize ());
-	if (pEnd->pID != 0) {
-		Packet.Make (pEnd->dwTblID, pChar->dwTblID, CHAR_TAIL_BACK);
-		svrSock.SendTo (pEnd->pID, Packet.Get (), Packet.GetSize ());
+	ZeroMemory (&Chase, sizeof (Chase));
+	Chase.Info			= Info;
+	Chase.dwOrigStart	= Chase.dwStart = Chase.dwProgress = g_dwTime;
+	Chase.dwLastStep	= g_dwTime;
+	Chase.dwPrevTblID	= (DWORD)-1;
+	Chase.nBestDist		= 0x7FFFFFFF;
+	s_mapTailChase[pChar->dwTblID] = Chase;
+	TAILCHASE &Ref = s_mapTailChase[pChar->dwTblID];
+
+	/* 前の人のとなりで、その人がつながるのを待つ */
+	if (nDist == 1) {
+		TailChaseSendTarget (pChar, Ref, pTarget);
+		return;
+	}
+	/* 画面内に見えていて、歩いて行ける道があれば追いかける */
+	if ((abs (nDX) <= DRAW_PARTS_X) && (abs (nDY) <= DRAW_PARTS_Y)) {
+		int nPathDist = 0;
+		if (TailChaseFindDir (pChar, pTarget, &nPathDist) >= 0) {
+			Ref.nBestDist = nPathDist;
+			TailChaseSendTarget (pChar, Ref, pTarget);
+			return;
+		}
+	}
+	/* 画面の外・道が無い：フェードを挟んでワープ */
+	if (!TailChaseWarpStart (pChar, Ref, pTarget)) {
+		s_mapTailChase.erase (pChar->dwTblID);
+		SendCmdSYSMSG (pChar->pID, "列に戻れませんでした。", SPEECHCMD_BATTLE1);
 	}
 }
 
@@ -5652,6 +6167,17 @@ void TailBattleMode(PCHARINFO pChar, BOOL bBattle)
 	int i;
 
 	if ((pChar == NULL) || (pChar->pID == 0) || (pChar->byNpcType != NPCTYPE_INIT) || IsMercenary (pChar)) {
+		return;
+	}
+
+	/* 列に戻る途中(追いかけ中)で戦闘モードにした：追いかけをやめて、また列から離れた状態(戻り先を覚えた状態)に戻る */
+	if (bBattle && TailChaseIsActive (pChar)) {
+		CCHAR_TAIL PacketChase;
+		Info = s_mapTailChase[pChar->dwTblID].Info;
+		TailChaseCancel (pChar, NULL, TRUE);
+		s_mapTailReturn[pChar->dwTblID] = Info;
+		PacketChase.Make (pChar->dwTblID, (DWORD)-1, CHAR_TAIL_BATTLE);
+		svrSock.SendTo (pChar->pID, PacketChase.Get (), PacketChase.GetSize ());
 		return;
 	}
 
@@ -10767,6 +11293,14 @@ void RecvDataProcMAIN_CHAR_TAIL(PBYTE pData, DWORD dwDataSize)
 	pChar = g_aCharInfo[Packet.m_dwTblID];
 	/* 戦闘モード中のZは普通のキャンセル扱い。「ついていく」の開始・解除は通常モードの時だけ */
 	if (IsCharBattleMode (pChar)) {
+		goto Exit;
+	}
+	/* 列に戻る途中(追いかけ中)のZは、追いかけをやめて解除 */
+	if (TailChaseIsActive (pChar)) {
+		TailChaseCancel (pChar, NULL, TRUE);
+		TailReturnForget (pChar->dwTblID);
+		Packet.Make (pChar->dwTblID, -1, CHAR_TAIL_OFF);
+		svrSock.SendTo (pChar->pID, Packet.Get (), Packet.GetSize ());
 		goto Exit;
 	}
 	/* 自分でZを押したら、戦闘で列を離れた時の戻り先は忘れる */
