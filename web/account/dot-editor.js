@@ -190,7 +190,20 @@ async function openBytes(fileName, bytes, handle = null) {
   return tab;
 }
 
-function openDraftRecord(d) {
+// 控えを開く。サーバーの控えは中身をここで読む
+async function openDraftRecord(d) {
+  try {
+    const full = await store.loadDraft(d);
+    return openDraftData(full);
+  } catch (err) {
+    console.error(err);
+    toast('控えを開けませんでした: ' + err.message, 'ng');
+    renderDrafts();
+    return null;
+  }
+}
+
+function openDraftData(d) {
   const palette = C.normalizePalette(d.palette);
   const layers = d.layers.map((l) => ({ name: l.name, visible: l.visible, ghost: l.ghost, data: Int16Array.from(l.data) }));
   const entry = S.dir && S.dir.files.find((f) => f.name === d.file);
@@ -201,6 +214,7 @@ function openDraftRecord(d) {
     fromDraft: true, dirty: !!d.auto,
   });
   tab.draftName = d.auto ? null : d.name;
+  tab.draftSavedAt = d.auto ? 0 : d.savedAt; // ほかの端末で上書きされていないかの確かめに使う
   addTab(tab);
   return tab;
 }
@@ -1634,19 +1648,31 @@ async function saveDraftNow(tab, asNew) {
   if (!tab) return;
   try {
     commitFloat(tab);
-    const overwrite = !asNew && tab.draftId;
-    const id = overwrite ? tab.draftId : newId('d');
-    const name = overwrite && tab.draftName ? tab.draftName : `${tab.fileName} ${stamp()}`;
-    await store.putDraft(draftRecord(tab, { id, name }));
+    let overwrite = !asNew && tab.draftId;
+    let id = overwrite ? tab.draftId : newId('d');
+    let name = overwrite && tab.draftName ? tab.draftName : `${tab.fileName} ${stamp()}`;
+    let r = await store.putDraft(draftRecord(tab, { id, name }), { baseSavedAt: overwrite ? tab.draftSavedAt : 0 });
+    let note = '';
+    if (r.conflict) {
+      // ほかの端末で先に上書きされていた。消さずに、別の控えとして残す
+      overwrite = false;
+      id = newId('d');
+      name = `${name}（ここで描いた分）`;
+      r = await store.putDraft(draftRecord(tab, { id, name }));
+      note = 'ほかの端末で先に上書きされていたので、別の控えにしました。';
+    }
     tab.draftId = id;
     tab.draftName = name;
+    tab.draftSavedAt = r.savedAt || 0;
     tab.dirty = false; // 控えに残したので、うっかり閉じても戻せる
     renderTabs();
     await clearAutosave(tab);
     await refreshDraftIndex();
     renderFileList();
     renderDrafts();
-    toast(overwrite ? `一時保存を上書きしました（${name}）` : `一時保存しました（${name}）`, 'ok');
+    const where = r.where === 'server' ? 'サーバーに' : 'この端末だけに';
+    toast(note + (overwrite ? `${where}一時保存を上書きしました（${name}）` : `${where}一時保存しました（${name}）`)
+      + (r.where === 'local' && r.reason ? `　※${r.reason}` : ''), r.where === 'server' ? 'ok' : 'ng');
   } catch (err) {
     console.error(err);
     toast('一時保存できませんでした: ' + err.message, 'ng');
@@ -1694,6 +1720,9 @@ async function renderDrafts() {
   // 絵を何も開いていない時（リロード直後など）は、全部の控えを見せる
   const list = all.filter((d) => S.showAllDrafts || !tab || d.file === tab.fileName);
   box.textContent = '';
+  const rs = store.getRemoteState();
+  if (rs === 'login') box.append(el('div', { class: 'sub-text warn' }, '管理ページ（/admin）にログインすると、控えをサーバーに置いてほかの端末でも続きを描けます。今はこの端末だけに保存します。'));
+  else if (rs === 'offline') box.append(el('div', { class: 'sub-text warn' }, 'サーバーに届かないので、控えはこの端末だけに保存します。'));
   if (!list.length) {
     box.append(el('div', { class: 'sub-text' }, S.showAllDrafts ? '控えはまだありません' : 'このファイルの控えはまだありません'));
     return;
@@ -1705,12 +1734,16 @@ async function renderDrafts() {
       el('div', { class: 'info' },
         d.auto ? el('span', { class: 'tag auto' }, '自動') : null,
         d.kind === 'orig' ? el('span', { class: 'tag orig' }, '元の絵') : null,
+        d.remote ? el('span', { class: 'tag remote', title: 'サーバーに保存。ほかの端末でも開けます' }, 'サーバー')
+          : !d.auto && (d.kind || 'manual') === 'manual' ? el('span', { class: 'tag local', title: 'この端末（ブラウザ）の中だけにあります' }, 'この端末') : null,
         nameEl,
         el('div', { class: 'sub-text' }, `${d.file}　${stamp(new Date(d.savedAt))}`),
         el('div', { class: 'btns' },
           el('button', { class: 'mini', onclick: () => { openDraftRecord(d); } }, '開く'),
           el('button', { class: 'sub mini', onclick: () => startDraftRename(d, nameEl) }, '名前変更'),
           el('button', { class: 'sub mini', onclick: () => exportDraftPng(d) }, 'PNG を書き出す'),
+          !d.remote && !d.auto && (d.kind || 'manual') === 'manual' && store.getRemoteState() === 'ok'
+            ? el('button', { class: 'sub mini', title: 'ほかの端末でも開けるよう、サーバーに移します', onclick: () => moveDraftToServer(d) }, 'サーバーへ移す') : null,
           (() => {
             const b = el('button', { class: 'danger mini' }, '削除');
             twoStep(b, 'もう一度押すと削除', async () => { await store.deleteDraft(d.id); await refreshDraftIndex(); renderFileList(); renderDrafts(); });
@@ -1718,6 +1751,21 @@ async function renderDrafts() {
           })())));
     box.append(row);
   }
+}
+
+// この端末だけにある手の控えを、サーバーへ移す（同じ id のまま。移せたらこの端末の分は消える）
+async function moveDraftToServer(d) {
+  try {
+    const r = await store.putDraft(d);
+    if (r.where !== 'server') throw new Error(r.reason || 'サーバーに届きませんでした');
+    for (const t of S.tabs) if (t.draftId === d.id) t.draftSavedAt = r.savedAt;
+    toast(`サーバーへ移しました（${d.name}）`, 'ok');
+  } catch (err) {
+    toast('サーバーへ移せませんでした: ' + err.message, 'ng');
+  }
+  await refreshDraftIndex();
+  renderFileList();
+  renderDrafts();
 }
 
 // 絵を開いていない時に真ん中に出す「控えから続ける」一覧（新しい順）
@@ -1758,8 +1806,15 @@ function startDraftRename(d, nameEl) {
     if (finished) return;
     finished = true;
     if (ok && input.value.trim() && input.value.trim() !== d.name) {
-      d.name = input.value.trim();
-      await store.putDraft(d);
+      const name = input.value.trim();
+      try {
+        await store.renameDraft(d, name);
+      } catch (err) {
+        toast(err.message, 'ng');
+        renderDrafts();
+        return;
+      }
+      d.name = name;
       for (const t of S.tabs) if (t.draftId === d.id) { t.draftName = d.name; t.label = d.name; }
       renderTabs();
     }
@@ -1771,6 +1826,7 @@ function startDraftRename(d, nameEl) {
 
 async function exportDraftPng(d) {
   try {
+    d = await store.loadDraft(d);
     const palette = C.normalizePalette(d.palette);
     const t = C.findTransparentIndex(palette);
     const bytes = await encodeIndexedPng({ width: d.width, height: d.height, indices: C.flatten(d.layers, d.width, d.height, t), palette });
@@ -2213,6 +2269,10 @@ function init() {
 
   renderPreviewList();
   refreshDraftIndex().then(() => { renderFileList(); renderDrafts(); });
+  // ほかの端末で保存した控えが見えるよう、このタブに戻ってきた時に一覧を読み直す
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') refreshDraftIndex().then(() => { renderFileList(); renderDrafts(); });
+  });
   offerRestore();
   // 前のフォルダがあれば「前のフォルダを開く」を出す
   store.loadDirHandle().then((h) => {
