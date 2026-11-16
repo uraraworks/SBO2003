@@ -252,6 +252,7 @@ PSUBGAMECLIENT_WARINFO g_pWarInfo;									/* 戦場ゲーム情報 */
 PCMDPARA_WARSELECTMAGICTARGET g_pWarMagicTarget;					/* 戦場ゲーム魔法対象者一覧 */
 PTARGETSELECTINFO g_pTargetSelectInfo;								/* ターゲット選択情報 */
 BYTE g_abyMagicKey[MAX_MAGICKEY];									/* 特技ショートカットに登録した特技ID(0=空。サーバーに保存) */
+WORD g_awKeyItem[MAX_MAGICKEY];										/* ショートカットに登録した装備品・道具のアイテムの種類ID(0=特技の枠か空き。サーバーに保存) */
 BOOL g_bMagicBar = TRUE;											/* 特技ショートカットの帯を出すか(アカウントごとにサーバーに保存) */
 CmyArray<PWNDINFO, PWNDINFO> g_WndInfo;								/* ウィンドウ情報 */
 CmyArray<PCHARINFO, PCHARINFO> g_aCharInfo;							/* キャラ情報 */

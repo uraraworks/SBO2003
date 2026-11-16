@@ -1266,6 +1266,13 @@ void DrawWindowCOMMANDITEM(PWNDINFO pWnd)
 		TextOut2 (hDC, 32, 16 + i * 16, szTmp,
 				((pWnd->dwData != 0) && ((int)pWnd->dwData - 1 == nNo)) ? RGB (255, 255, 0) : RGB (255, 255, 255));
 
+		/* ショートカットに登録している番号（1〜5キーで登録・解除。種類IDで覚えているので同じ品は全部に付く） */
+		int nKey = GetItemKeyNo (pChar->waItem[nNo]);
+		if (nKey >= 0) {
+			wsprintf (szTmp, "%d", nKey + 1);
+			TextOut2 (hDC, pWnd->nCx - 24, 16 + i * 16, szTmp, RGB (255, 230, 100));
+		}
+
 		for (int j = 0; j < 10; j ++) {
 			if (pChar->waEqu[j] == nNo) {
 				nEquNo = 16 + i * 16;
