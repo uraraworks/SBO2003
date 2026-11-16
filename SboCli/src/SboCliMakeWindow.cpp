@@ -1170,10 +1170,11 @@ PWNDINFO MakeWindowCOMMANDEQUSub(void)
 	g_dwNewID ++;
 	pWnd->nData1 = (int)pChar->wAT;
 	pWnd->nData2 = (int)pChar->wDF;
+	pWnd->dwData = (DWORD)pChar->wDFMagic;			/* 魔法防御（後から足した値なので2行目に出す） */
 	pWnd->nX = 32 + 16;
 	pWnd->nY = 16 * 14;
 	pWnd->nCx = 16 * 13;
-	pWnd->nCy = 16 * 3;
+	pWnd->nCy = 16 * 4;
 	pWnd->nType = WNDTYPE_COMMANDEQUSUB;
 	pWnd->pDib = new CImg32;
 	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);

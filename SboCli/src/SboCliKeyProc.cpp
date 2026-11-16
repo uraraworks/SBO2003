@@ -3715,6 +3715,7 @@ void KeyProcCOMMANDEQU(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		pWndParent->dwTimeDrawStart = 0;
 		pWndParent->nData1 = (int)pChar->wAT;
 		pWndParent->nData2 = (int)pChar->wDF;
+		pWndParent->dwData = (DWORD)pChar->wDFMagic;
 
 		pChar->waEqu[pWnd->nData1] = nTmp;
 		RenewATDF (g_nMyCharID);
@@ -3775,6 +3776,7 @@ void KeyProcCOMMANDEQUSUB(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		pWndParent->dwTimeDrawStart = 0;
 		pWndParent->nData1 = (int)pChar->wAT;
 		pWndParent->nData2 = (int)pChar->wDF;
+		pWndParent->dwData = (DWORD)pChar->wDFMagic;
 
 		EraseWindow (pWnd);
 		g_dwActiveMsgID = ((PWNDINFO)pWndParent->pParent)->dwID;
@@ -3874,6 +3876,7 @@ void KeyProcCOMMANDEQUSUB(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			pWndParent->dwTimeDrawStart = 0;
 			pWndParent->nData1 = (int)pChar->wAT;
 			pWndParent->nData2 = (int)pChar->wDF;
+			pWndParent->dwData = (DWORD)pChar->wDFMagic;
 
 			pChar->waEqu[byType] = nTmp2;
 			RenewATDF (g_nMyCharID);
