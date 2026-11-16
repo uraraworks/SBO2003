@@ -2011,6 +2011,9 @@ void DrawWindowCOMMANDEQUSUB(PWNDINFO pWnd)
 
 	wsprintf (szTmp, "攻撃力:%d 守備力:%d", pWnd->nData1, pWnd->nData2);
 	TextOut2 (hDC, 16, 16, szTmp, RGB (255, 255, 255));
+	/* 魔法防御（首飾り・指輪で上がる） */
+	wsprintf (szTmp, "魔法防御:%d", (int)pWnd->dwData);
+	TextOut2 (hDC, 16, 32, szTmp, RGB (255, 255, 255));
 
 	SelectObject (hDC, hFontOld);
 	pWnd->pDib->Unlock ();
@@ -4399,6 +4402,16 @@ static BOOL IsWindowOverlapID(int x, int y, int cx, int cy, DWORD dwID)
 	return IsWindowOverlapRect (x, y, cx, cy, (PWNDINFO)g_WndInfo[nNo]);
 }
 
+/* 首飾り・指輪の値の名前（装備効果 byEquType で守備力か魔法防御かが変わる） */
+static LPCSTR GetEquTypeLabel(BYTE byEquType)
+{
+	switch (byEquType) {
+	case EQUTYPE_DF:		return "守備力：";
+	case EQUTYPE_DFMAGIC:	return "魔法防御：";
+	}
+	return "効果：";
+}
+
 /* ========================================================================= */
 /* 関数名：DrawWindowITEMINFO												 */
 /* 内容：ウィンドウの描画(アイテム情報)										 */
@@ -4628,19 +4641,19 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 	case ITEMTYPE_EQU_ACC1:		/* 装備(首飾り) */
 		if (pItem->pData) {
 			wEqu = ((PITEMINFO_EQU_ACC1)pItem->pData)->wEqu;
-			strcpy (szTmp, "効果：");
+			strcpy (szTmp, GetEquTypeLabel (((PITEMINFO_EQU_ACC1)pItem->pData)->byEquType));
 		}
 		break;
 	case ITEMTYPE_EQU_ACC2:		/* 装備(指輪1) */
 		if (pItem->pData) {
 			wEqu = ((PITEMINFO_EQU_ACC2)pItem->pData)->wEqu;
-			strcpy (szTmp, "効果：");
+			strcpy (szTmp, GetEquTypeLabel (((PITEMINFO_EQU_ACC2)pItem->pData)->byEquType));
 		}
 		break;
 	case ITEMTYPE_EQU_ACC3:		/* 装備(指輪2) */
 		if (pItem->pData) {
 			wEqu = ((PITEMINFO_EQU_ACC3)pItem->pData)->wEqu;
-			strcpy (szTmp, "効果：");
+			strcpy (szTmp, GetEquTypeLabel (((PITEMINFO_EQU_ACC3)pItem->pData)->byEquType));
 		}
 		break;
 	}
