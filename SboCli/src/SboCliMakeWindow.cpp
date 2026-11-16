@@ -592,7 +592,7 @@ PWNDINFO MakeWindowCOMMANDITEM(void)
 	pWnd->nX = 32 + 16 * 3;
 	pWnd->nY = 50 + 16 * 2;
 	pWnd->nCx = (16 * 4) + (nLen * 8);
-	pWnd->nCx = max (pWnd->nCx, 16 * 7);						/* 入れ替え中の題字「入れ替え」が入る幅 */
+	pWnd->nCx = max (pWnd->nCx, 16 * 8);						/* 入れ替え中の題字「入れ替え」と右上の▲が重ならない幅 */
 	pWnd->nCy = 16 * (2 + pWnd->nData2);
 	pWnd->nType = WNDTYPE_COMMANDITEM;
 	pWnd->pDib = new CImg32;
@@ -631,6 +631,7 @@ PWNDINFO MakeWindowCOMMANDITEMBATTLE(void)
 	pWnd->nX = 32 + 16 * 3;
 	pWnd->nY = 50 + 16 * 2;
 	pWnd->nCx = (16 * 4) + (nLen * 8);
+	pWnd->nCx = max (pWnd->nCx, 16 * 7);						/* 題字「道具」と右上の▲が重ならない幅 */
 	pWnd->nCy = 16 * (2 + pWnd->nData2);
 	pWnd->nType = WNDTYPE_COMMANDITEMBATTLE;
 	pWnd->pDib = new CImg32;
