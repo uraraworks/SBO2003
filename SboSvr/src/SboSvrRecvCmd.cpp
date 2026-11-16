@@ -80,6 +80,7 @@ void	DeleteChildChar				(PCHARINFO);									/* 自分が親のキャラを削�
 void	SetInitCharData				(PCHARINFO);									/* キャラの初期値を設定 */
 void	CharTargetPC				(PCHARINFO, PCHARINFO, DWORD);					/* キャラのついてく設定 */
 void	CharTargetCancelPC			(PCHARINFO);									/* キャラのついていく解除 */
+void	CharTargetCancelPCKeepBack	(PCHARINFO);									/* ターゲットと前の人へのついていくだけ解除 */
 void	TailBattleMode				(PCHARINFO, BOOL);								/* 戦闘モードに合わせて列を離れる・戻る */
 void	TailReturnForget			(DWORD);										/* 戦闘で列を離れた時に覚えた先頭を消す */
 void	TailChaseProc				(PCHARINFO);									/* 列に戻る途中のプレイヤーを歩かせる */
@@ -2289,6 +2290,19 @@ void CharTargetPC(PCHARINFO pCharParent, PCHARINFO pCharChild, DWORD dwData)
 /* ========================================================================= */
 void CharTargetCancelPC(PCHARINFO pChar)
 {
+	CharTargetCancelPCKeepBack (pChar);
+	/* 後ろについてきている人も外す */
+	TailOff (pChar);
+}
+
+/* ========================================================================= */
+/* 関数名：	CharTargetCancelPCKeepBack										 */
+/* 内容：	ターゲットと「前の人についていく」だけ解除し、					 */
+/*			後ろについてきている人の列は残す								 */
+/*			（移動の翼・町転送などで列ごと連れて行く時に使う）				 */
+/* ========================================================================= */
+void CharTargetCancelPCKeepBack(PCHARINFO pChar)
+{
 	PCHARINFO pCharTmp;
 
 	/* 誰かにターゲットにされている？ */
@@ -2309,8 +2323,10 @@ void CharTargetCancelPC(PCHARINFO pChar)
 		SendCmdTARGETCHARPC (pChar->pID, pChar->dwTblID);
 	}
 
-	TailOff (pChar);
-	TailOff (pChar);
+	/* 誰かについていっているなら、その人からは離れる */
+	if (pChar->dwTailTblID != -1) {
+		TailOff (pChar);
+	}
 }
 
 /* ========================================================================= */
@@ -3288,6 +3304,10 @@ void SubProcMapMove(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY)
 		if (!((pCharTmp->dwMapID == dwMapID) &&
 			  (pCharTmp->dwX == min (dwX, (DWORD)pMap->nCX - 1)) &&
 			  (pCharTmp->dwY == min (dwY, (DWORD)pMap->nCY - 1)))) {
+			/* 先頭と同じように暗転・BGM切り替えをしてから連れて行く
+			   （移動の翼・町転送などでも列ごと移動する） */
+			SendCmdCHGBGM (pCharTmp->pID, pCharTmp->dwMapID, 0);
+			SendCmdFADEINOUT (pCharTmp->pID, 0);
 			SubProcMapMove (pCharTmp, dwMapID, dwX, dwY);
 		}
 	}

@@ -1851,7 +1851,8 @@ BOOL MagicProcUse_RETURN(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTarge
 
 	/* マップ移動 */
 	SendCmdCHGBGM (pCharTarget->pID, pCharTarget->dwMapID, 0);
-	CharTargetCancelPC (pCharTarget);
+	/* 列の後ろの人は残し、SubProcMapMove で列ごと連れて行く */
+	CharTargetCancelPCKeepBack (pCharTarget);
 	SendCmdFADEINOUT (pCharTarget->pID, 0);
 	SubProcMapMove (pCharTarget, dwMapID, dwX, dwY);
 	pCharTarget->dwLastDotMove = timeGetTime () - 2000;

@@ -1474,4 +1474,18 @@ merc magic healcircle up=1
 merc magic atkcircle same=1
 merc magic ressel alive=1 state=1 owner=1
 merc magic resscreen alive=1 state=1
+== AC. Tail item move ==
+tailitem dest=(20,8)
+tailitem a-head A map=0 pos=(20,8) front=-1 back=1 fade=[0] chgbgm=1
+tailitem a-head B map=0 pos=(20,8) front=0 back=2 fade=[0] chgbgm=1
+tailitem a-head C map=0 pos=(20,8) front=1 back=-1 fade=[0] chgbgm=1
+tailitem c-middle A map=14 pos=(40,10) front=-1 back=-1 fade=[] chgbgm=0
+tailitem c-middle B map=0 pos=(20,8) front=-1 back=2 fade=[0] chgbgm=1
+tailitem c-middle C map=0 pos=(20,8) front=1 back=-1 fade=[0] chgbgm=1
+tailitem c-tail A map=14 pos=(40,10) front=-1 back=1 fade=[] chgbgm=0
+tailitem c-tail B map=14 pos=(40,11) front=0 back=-1 fade=[] chgbgm=0
+tailitem c-tail C map=0 pos=(20,8) front=-1 back=-1 fade=[0] chgbgm=1
+tailitem b-return A map=14 pos=(9,14) front=-1 back=1 fade=[0] chgbgm=1
+tailitem b-return B map=14 pos=(9,14) front=0 back=2 fade=[0] chgbgm=1
+tailitem b-return C map=14 pos=(9,14) front=1 back=-1 fade=[0] chgbgm=1
 == done ==
