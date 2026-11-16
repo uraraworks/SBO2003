@@ -2723,6 +2723,18 @@ static void TailBattleSend(PCHARINFO p, BYTE byOn)
 	TestRecv(p, &Para, sizeof(Para));
 }
 
+/* 列に戻る途中のプレイヤーを、時間を進めながら歩かせる(100ms刻み) */
+static void TailChaseAdvance(PCHARINFO *apChar, int nCount, int nMs)
+{
+	for (int t = 0; t < nMs; t += 100) {
+		s_dwFakeNow += 100;
+		g_dwTime = s_dwFakeNow;
+		for (int i = 0; i < nCount; i ++) {
+			TailChaseProc(apChar[i]);
+		}
+	}
+}
+
 static void TestTailBattle(const std::vector<int> &aLogin)
 {
 	printf("== L2. Tail battle ==\n");
@@ -2773,6 +2785,9 @@ static void TestTailBattle(const std::vector<int> &aLogin)
 		pB->dwTailBackTblID == pC->dwTblID ? 1 : (int)pB->dwTailBackTblID, \
 		pC->dwTailTblID == pA->dwTblID ? 1 : (pC->dwTailTblID == pB->dwTblID ? 2 : (int)pC->dwTailTblID))
 
+	#define TAILPLACE(p_, x_, y_) do { DeleteTblNoPC((int)(p_)->dwTblID); \
+		(p_)->dwX = (p_)->dwXBack = (x_); (p_)->dwY = (p_)->dwYBack = (y_); AddTblNoPC((int)(p_)->dwTblID); } while (0)
+
 	/* 真ん中の人が戦闘モードON：列から抜けて、後ろの人は先頭へつなぎ直し */
 	MockTrace(1);
 	TailBattleSend(pB, 1);
@@ -2783,17 +2798,49 @@ static void TestTailBattle(const std::vector<int> &aLogin)
 	TAILSTATE("off");
 	printf("tailbattle off end=%d\n", pC->dwTailBackTblID == pB->dwTblID ? 1 : 0);
 
-	/* 離れた所でON→OFF：最後尾のとなりへワープして戻る */
+	/* 画面内の離れた所でON→OFF：追いかけ始める(まだ列にはつながらず、歩いて着いてからつながる) */
 	TailBattleSend(pB, 1);
-	DeleteTblNoPC((int)pB->dwTblID);
-	pB->dwX = pB->dwXBack = nX0;
-	pB->dwY = pB->dwYBack = nY0 + 6;
-	AddTblNoPC((int)pB->dwTblID);
+	TAILPLACE(pB, nX0 + 1, nY0 + 5);
 	TailBattleSend(pB, 0);
+	printf("tailchase near start active=%d linked=%d moved=%d\n", TailChaseIsActive(pB) ? 1 : 0,
+		pB->dwTailTblID == pC->dwTblID ? 1 : 0, pB->dwY != (DWORD)(nY0 + 5) ? 1 : 0);
 	{
-		/* 列の最後尾は B のはずで、その前は先頭 A の後ろの C */
+		int nMs = 0, nSteps = 0;
+		PCHARINFO apRun[1] = { pB };
+		for (; nMs < 6000 && pB->dwTailTblID != pC->dwTblID; nMs += 100) {
+			DWORD dwX = pB->dwX, dwY = pB->dwY;
+			TailChaseAdvance(apRun, 1, 100);
+			if (dwX != pB->dwX || dwY != pB->dwY) nSteps ++;
+		}
 		int nDist = abs((int)pB->dwX - (int)pC->dwX) + abs((int)pB->dwY - (int)pC->dwY);
-		printf("tailbattle warp front=%d dist=%d samemap=%d\n", pB->dwTailTblID == pC->dwTblID ? 1 : 0, nDist, pB->dwMapID == pPort->dwID ? 1 : 0);
+		printf("tailchase near arrived front=%d active=%d dist=%d steps=%d ms=%d\n", pB->dwTailTblID == pC->dwTblID ? 1 : 0,
+			TailChaseIsActive(pB) ? 1 : 0, nDist, nSteps, nMs);
+	}
+
+	/* 画面の外でON→OFF：フェードを挟んで最後尾のとなりへワープして戻る */
+	TailBattleSend(pB, 1);
+	int nFarX = -1, nFarY = -1;
+	for (int y = 0; y < pPort->nCY && nFarX < 0; y ++) {
+		for (int x = 0; x < pPort->nCX && nFarX < 0; x ++) {
+			if (abs(x - nX0) > DRAW_PARTS_X + 1 && CheckCharBlock(pPort->dwID, x, y) && !CheckEventBlock(pPort->dwID, x, y)) {
+				nFarX = x; nFarY = y;
+			}
+		}
+	}
+	printf("tailchase far found=%d\n", nFarX >= 0 ? 1 : 0);
+	if (nFarX >= 0) {
+		TAILPLACE(pB, nFarX, nFarY);
+		TailBattleSend(pB, 0);
+		PCHARINFO apRun[1] = { pB };
+		printf("tailchase far start active=%d stay=%d linked=%d\n", TailChaseIsActive(pB) ? 1 : 0,
+			(pB->dwX == (DWORD)nFarX && pB->dwY == (DWORD)nFarY) ? 1 : 0, pB->dwTailTblID == pC->dwTblID ? 1 : 0);
+		TailChaseAdvance(apRun, 1, 500);
+		printf("tailchase far fading active=%d stay=%d linked=%d\n", TailChaseIsActive(pB) ? 1 : 0,
+			(pB->dwX == (DWORD)nFarX && pB->dwY == (DWORD)nFarY) ? 1 : 0, pB->dwTailTblID == pC->dwTblID ? 1 : 0);
+		TailChaseAdvance(apRun, 1, 600);
+		int nDist = abs((int)pB->dwX - (int)pC->dwX) + abs((int)pB->dwY - (int)pC->dwY);
+		printf("tailchase far done front=%d active=%d dist=%d samemap=%d dir=%d\n", pB->dwTailTblID == pC->dwTblID ? 1 : 0,
+			TailChaseIsActive(pB) ? 1 : 0, nDist, pB->dwMapID == pPort->dwID ? 1 : 0, pB->byDirection == pC->byDirection ? 1 : 0);
 	}
 
 	/* 先頭がいなくなったら戻れない・覚えは消える */
@@ -2848,8 +2895,17 @@ static void TestTailBattle(const std::vector<int> &aLogin)
 	TailBattleSend(pA, 1);
 	TailBattleSend(pB, 1);
 	TailBattleSend(pA, 0);
+	{
+		/* Cは離れているので、歩いて追いついてから列につながる */
+		PCHARINFO apRun[1] = { pC };
+		TailChaseAdvance(apRun, 1, 3000);
+	}
 	printf("tailbattle self wait B(front=%d) C(front=A:%d)\n", (int)pB->dwTailTblID, pC->dwTailTblID == pA->dwTblID ? 1 : 0);
 	TailBattleSend(pB, 0);
+	{
+		PCHARINFO apRun[1] = { pB };
+		TailChaseAdvance(apRun, 1, 3000);
+	}
 	printf("tailbattle self off B(front=C:%d)\n", pB->dwTailTblID == pC->dwTblID ? 1 : 0);
 
 	/* 戦闘モード中のZは何もしない(覚えも列も変わらない) */
@@ -2863,6 +2919,81 @@ static void TestTailBattle(const std::vector<int> &aLogin)
 	TailBattleSend(pB, 0);
 	printf("tailbattle z in battle B(front=C:%d)\n", pB->dwTailTblID == pC->dwTblID ? 1 : 0);
 	TAILRESET();
+
+	/* 3人ばらけて先頭がOFF：Bが先頭Aを、CがBを追い、B→Cの順でつながる(Cは先に着いてもBがつながるまで待つ) */
+	TailBattleSend(pA, 1);
+	TAILPLACE(pB, nX0 + 1, nY0 + 4);
+	TAILPLACE(pC, nX0 - 1, nY0 + 6);
+	TailBattleSend(pA, 0);
+	printf("tailchase scatter start B(active=%d) C(active=%d)\n", TailChaseIsActive(pB) ? 1 : 0, TailChaseIsActive(pC) ? 1 : 0);
+	{
+		PCHARINFO apRun[2] = { pB, pC };
+		int nMsB = -1, nMsC = -1;
+		for (int nMs = 0; nMs < 10000 && (nMsB < 0 || nMsC < 0); nMs += 100) {
+			TailChaseAdvance(apRun, 2, 100);
+			if (nMsB < 0 && pB->dwTailTblID == pA->dwTblID) nMsB = nMs;
+			if (nMsC < 0 && pC->dwTailTblID == pB->dwTblID) nMsC = nMs;
+		}
+		printf("tailchase scatter done A(back=B:%d) B(front=A:%d back=C:%d) C(front=B:%d) Bfirst=%d\n",
+			pA->dwTailBackTblID == pB->dwTblID ? 1 : 0, pB->dwTailTblID == pA->dwTblID ? 1 : 0,
+			pB->dwTailBackTblID == pC->dwTblID ? 1 : 0, pC->dwTailTblID == pB->dwTblID ? 1 : 0,
+			(nMsB >= 0 && nMsC >= nMsB) ? 1 : 0);
+	}
+
+	/* 追いかけ中に自分で戦闘モードにする：追いかけをやめて戻り先を覚えた状態に。OFFでまた追いかける */
+	TAILRESET();
+	TailBattleSend(pA, 1);
+	TAILPLACE(pB, nX0 + 1, nY0 + 4);
+	TAILPLACE(pC, nX0 - 1, nY0 + 6);
+	TailBattleSend(pA, 0);
+	TailBattleSend(pB, 1);
+	printf("tailchase battle on B(active=%d front=%d) C(active=%d)\n", TailChaseIsActive(pB) ? 1 : 0, (int)pB->dwTailTblID, TailChaseIsActive(pC) ? 1 : 0);
+	TailBattleSend(pB, 0);
+	printf("tailchase battle off B(active=%d)\n", TailChaseIsActive(pB) ? 1 : 0);
+
+	/* 追いかけ中に通常モードでZ：追いかけをやめて戻り先も忘れる。ほかの人(C)はそのまま先頭を追う */
+	{
+		CCHAR_TAIL Z;
+		MercenarySetBattleMode(pB, FALSE);
+		Z.Make(pB->dwTblID, pA->dwTblID, CHAR_TAIL_REQ);
+		TestRecv(pB, Z.Get(), Z.GetSize());
+		printf("tailchase z B(active=%d front=%d) C(active=%d)\n", TailChaseIsActive(pB) ? 1 : 0, (int)pB->dwTailTblID, TailChaseIsActive(pC) ? 1 : 0);
+		TailBattleSend(pB, 0);
+		printf("tailchase z again B(active=%d)\n", TailChaseIsActive(pB) ? 1 : 0);
+		PCHARINFO apRun[1] = { pC };
+		TailChaseAdvance(apRun, 1, 6000);
+		printf("tailchase z C(front=A:%d active=%d)\n", pC->dwTailTblID == pA->dwTblID ? 1 : 0, TailChaseIsActive(pC) ? 1 : 0);
+	}
+
+	/* 追いかけ中に本人から動く要求が来ても動けない(今の位置を送り返す) */
+	TAILRESET();
+	TailBattleSend(pA, 1);
+	TAILPLACE(pB, nX0 + 1, nY0 + 4);
+	TailBattleSend(pA, 0);
+	{
+		CMDPARA_CHARPOS Pos;
+		ZeroMemory(&Pos, sizeof(Pos));
+		Pos.byCmd = CMD_CHARPOS;
+		Pos.pID = pB->pID;
+		Pos.dwTblID = pB->dwTblID;
+		Pos.dwMapID = pB->dwMapID;
+		Pos.byX = (BYTE)(pB->dwX - 1);
+		Pos.byY = (BYTE)pB->dwY;
+		Pos.byDirection = 2;
+		DWORD dwXBack = pB->dwX;
+		TestRecv(pB, &Pos, sizeof(Pos));
+		printf("tailchase keymove blocked=%d active=%d\n", pB->dwX == dwXBack ? 1 : 0, TailChaseIsActive(pB) ? 1 : 0);
+	}
+	/* 先頭がいなくなったら追いかけをやめる */
+	{
+		DWORD dwPIDBack = pA->pID;
+		pA->pID = 0;
+		TailReturnForget(pA->dwTblID);
+		pA->pID = dwPIDBack;
+		printf("tailchase headgone B(active=%d) C(active=%d)\n", TailChaseIsActive(pB) ? 1 : 0, TailChaseIsActive(pC) ? 1 : 0);
+	}
+	TAILRESET();
+	for (int k = 0; k < 3; k ++) TailReturnForget(apChar[k]->dwTblID);
 	#undef TAILRESET
 
 	for (int i = 0; i < 3; i ++) {
@@ -2875,6 +3006,7 @@ static void TestTailBattle(const std::vector<int> &aLogin)
 		p->dwTailBackTblID = adwBack[i][4];
 		AddTblNoPC((int)p->dwTblID);
 	}
+	#undef TAILPLACE
 	#undef TAILSTATE
 }
 

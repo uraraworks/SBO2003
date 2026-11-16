@@ -1164,6 +1164,11 @@ BOOL TimerProcChar(PCHARINFO pChar)
 		pProc->Proc (timeGetTime ());
 	}
 
+	/* 戦闘から列に戻る途中のプレイヤーを、前の人のところまで歩かせる */
+	if (pChar->byNpcType == NPCTYPE_INIT) {
+		TailChaseProc (pChar);
+	}
+
 	bRet = TRUE;
 Exit:
 	return bRet;

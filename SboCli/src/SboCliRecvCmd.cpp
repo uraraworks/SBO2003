@@ -7925,6 +7925,19 @@ void RecvDataProcMAIN_CHAR_TAIL(PBYTE pData, DWORD dwDataSize)
 		pChar->dwTailTblID = pCharTarget->dwTblID;
 		wsprintf (szTmp, "列に戻りました。");
 		break;
+	case CHAR_TAIL_CHASE:		/* ○○を追いかけています（列に戻る途中。動かさず、サーバーが歩かせる） */
+		if (pCharTarget == NULL) {
+			break;
+		}
+		/* 追いかける相手が変わった時だけメッセージを出す */
+		if (pChar->dwTailTblID != pCharTarget->dwTblID) {
+			wsprintf (szTmp, "%sを追いかけています。", pCharTarget->szName);
+		}
+		pChar->dwTailTblID = pCharTarget->dwTblID;
+		break;
+	case CHAR_TAIL_CHASEEND:	/* 追いかけるのをやめた（自分で動けるように戻すだけ） */
+		pChar->dwTailTblID = -1;
+		break;
 	}
 
 	if (strlen (szTmp) > 0) {
