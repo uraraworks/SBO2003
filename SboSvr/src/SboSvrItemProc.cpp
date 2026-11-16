@@ -470,7 +470,8 @@ static BOOL ItemUse_RURA(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pItem
 	/* 効果音再生 */
 	PlayItemSound (pItem, pChar);
 
-	CharTargetCancelPC (pChar);
+	/* 列の後ろの人は残し、SubProcMapMove で列ごと連れて行く */
+	CharTargetCancelPCKeepBack (pChar);
 	SendCmdFADEINOUT (pChar->pID, 0);
 	SubProcMapMove (pChar, pInfo->dwMapID, pInfo->dwX, pInfo->dwY);
 
