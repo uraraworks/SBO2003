@@ -27,6 +27,10 @@ extern BOOL IsMagicKeyUsable				(PCHARINFO pChar, BYTE byMagicID);	/* 特技が�
 extern BOOL IsMagicKeyMode					(PCHARINFO pChar);				/* 1〜5 キーで特技を使える状態か */
 extern void RegisterMagicKey				(int nNo, BYTE byMagicID);		/* 特技を枠に登録する・外す */
 extern void UseMagicKey						(PCHARINFO pChar, int nNo);		/* 枠の特技を使う */
-extern BOOL IsMagicBandShown				(PCHARINFO pChar);				/* 戦闘モード中の特技ショートカットの帯（スマホのボタン）を出す状態か */
-extern BOOL GetMagicKeySlotLabel			(PCHARINFO pChar, int nNo, LPSTR pszName, int nSize, int *pnKind, BOOL *pbDark);	/* 帯・ボタンの1枠ぶんの文字と色分け(空きは FALSE) */
+extern BOOL IsMagicBandShown				(PCHARINFO pChar);				/* ショートカットの帯（スマホのボタン）を出す状態か(戦闘モード中。装備品・道具の枠があれば戦闘外でも) */
+extern int  GetItemKeyNo					(WORD wItemID);					/* 装備品・道具のショートカットの登録枠(0〜4。無ければ -1) */
+extern void RegisterItemKey					(int nNo, WORD wItemID);		/* 装備品・道具を枠に登録する・外す */
+extern void UseItemKey						(PCHARINFO pChar, int nNo);		/* 枠の装備品に持ち替える・道具を使う */
+extern void PruneItemKeys					(PCHARINFO pChar);				/* 手持ちから無くなった装備品・道具を枠から外す */
+extern BOOL GetMagicKeySlotLabel			(PCHARINFO pChar, int nNo, LPSTR pszName, int nSize, int *pnKind, BOOL *pbDark);	/* 帯・ボタンの1枠ぶんの文字と色分け(0攻撃 1回復 2補助 3装備品 4道具。空きは FALSE) */
 /* Copyright(C)URARA-works 2003-2005 */

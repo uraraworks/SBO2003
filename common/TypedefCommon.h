@@ -2205,6 +2205,7 @@ typedef struct _CHARINFO {
 	BYTE		abyJobMagic[MAX_JOBMAGIC][MAX_USEMAGIC];			/* 転職前の職業で覚えていた呪文（職業ID別） */
 	BYTE		byOptBgm;											/* 音楽ON/OFFのアカウント設定(OPTBGM_*) */
 	BYTE		abyMagicKey[MAX_MAGICKEY];							/* 特技ショートカットに登録した特技ID（0=空。保存する） */
+	WORD		awKeyItem[MAX_MAGICKEY];							/* ショートカットに登録した装備品・道具のアイテムの種類ID（0=特技の枠か空き。abyMagicKey と同じ枠を共有。保存する） */
 	BYTE		byOptMagicBar;										/* 特技ショートカットの帯のアカウント設定(OPTMAGICBAR_*。保存する) */
 	BYTE		byRouteCount;										/* 巡回ルートの道しるべ数(2以上で巡回する) */
 	BYTE		byRouteMode;										/* 巡回ルートの回り方(NPCROUTEMODE_*) */
@@ -2645,8 +2646,8 @@ enum {
 
 /* 特技ショートカット（CMD_MAGICKEY の byCmdSub） */
 enum {
-	MAGICKEY_SET = 0,											/* 1枠を登録・解除する（クライアント→サーバー。byNo 番目に byMagicID。0 なら外す） */
-	MAGICKEY_ALL,												/* 全枠を知らせる（サーバー→本人。abyMagicKey） */
+	MAGICKEY_SET = 0,											/* 1枠を登録・解除する（クライアント→サーバー。byNo 番目に byMagicID か wItemID。どちらも 0 なら外す） */
+	MAGICKEY_ALL,												/* 全枠を知らせる（サーバー→本人。abyMagicKey・awKeyItem） */
 };
 
 /* 特技ショートカット */
@@ -2654,8 +2655,10 @@ typedef struct _CMDPARA_MAGICKEY {
 	BYTE		byCmd;												/* コマンドID */
 	BYTE		byCmdSub;											/* サブコマンド(MAGICKEY_*) */
 	BYTE		byNo;												/* 枠の番号(0〜MAX_MAGICKEY-1。MAGICKEY_SET) */
-	BYTE		byMagicID;											/* 登録する特技ID(0=外す。MAGICKEY_SET) */
+	BYTE		byMagicID;											/* 登録する特技ID(0=特技ではない。MAGICKEY_SET) */
 	BYTE		abyMagicKey[MAX_MAGICKEY];							/* 全枠の特技ID(MAGICKEY_ALL) */
+	WORD		wItemID;											/* 登録する装備品・道具のアイテムの種類ID(0=アイテムではない。MAGICKEY_SET。byMagicID も 0 なら枠を外す) */
+	WORD		awKeyItem[MAX_MAGICKEY];							/* 全枠の装備品・道具のアイテムの種類ID(MAGICKEY_ALL。0=特技の枠か空き) */
 } CMDPARA_MAGICKEY, *PCMDPARA_MAGICKEY;
 
 #define MAX_WEBTOKEN		64										/* 端末トークンの文字数（16進） */

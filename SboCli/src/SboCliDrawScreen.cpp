@@ -147,7 +147,8 @@ static void DrawSysMsgBand(HDC hDC, int nX, int nY)
 
 /* ========================================================================= */
 /* 関数名：DrawMagicKeyBand													 */
-/* 内容：戦闘モード中だけ、画面の下に特技ショートカットの帯を出す			 */
+/* 内容：戦闘モード中（装備品・道具の枠があれば戦闘外でも）、画面の下に		 */
+/*		 ショートカットの帯を出す											 */
 /*		 「1 炎の 2 回復 …」（番号と特技名の頭2文字）。空きは「-」			 */
 /*		 色は攻撃(赤系)・回復(緑系)・それ以外の補助(青系)。Mana不足・詠唱中・	 */
 /*		 覚えていない特技は暗くする。後ろに薄い暗い帯を敷き、マップを隠しすぎない */
@@ -189,6 +190,8 @@ static void DrawMagicKeyBand(PCHARINFO pChar, int nX, int nY)
 			switch (nKind) {
 			case 0:		nR = 255;	nG = 120;	nB = 110;	break;		/* 攻撃 */
 			case 1:		nR = 120;	nG = 230;	nB = 130;	break;		/* 回復 */
+			case 3:		nR = 205;	nG = 150;	nB = 255;	break;		/* 装備品 */
+			case 4:		nR = 240;	nG = 220;	nB = 100;	break;		/* 道具 */
 			default:	nR = 130;	nG = 180;	nB = 255;	break;		/* 補助 */
 			}
 		}

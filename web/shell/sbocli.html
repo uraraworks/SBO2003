@@ -964,6 +964,9 @@
 	.sbo-magic-btn.sbo-mk0 { color: #ff7870; }
 	.sbo-magic-btn.sbo-mk1 { color: #78e682; }
 	.sbo-magic-btn.sbo-mk2 { color: #82b4ff; }
+	/* 装備品（持ち替え）は紫、道具は黄 */
+	.sbo-magic-btn.sbo-mk3 { color: #cd96ff; }
+	.sbo-magic-btn.sbo-mk4 { color: #f0dc64; }
 	.sbo-magic-btn.sbo-mke { color: #8a8f98; }
 	.sbo-magic-btn.sbo-mkd { opacity: 0.45; }
 	.sbo-magic-btn.sbo-pressed,
@@ -979,7 +982,7 @@
 	}
 	@media (min-aspect-ratio: 13/10) {
 		/* 横持ち：登録用は左上（十字キーの上）に小さく 3 列で並べる。発動用の帯は出さない（扇で出す） */
-		body.sbo-pad #sbo-magic.sbo-on.sbo-fire {
+		body.sbo-pad #sbo-magic.sbo-on.sbo-fire:not(.sbo-nofan) {
 			display: none;
 		}
 		body.sbo-pad #sbo-magic.sbo-on {
@@ -4217,7 +4220,9 @@
 	/* ---- 特技ショートカットのボタン（スマホ） ----
 	   ゲーム側（SboCliKeyProc.cpp の SboWebGetMagicKeyState）が 0.1 秒ごとに JSON で返す
 	   {fire, reg, slots:[{n:名前の頭2文字, k:0攻撃/1回復/2補助, d:暗く, e:空き}×5]} を見て出す。
-	   fire=戦闘モード中で帯が「表示」＝押すと発動 / reg=特技の一覧を開いている＝押すとカーソルの特技を登録。
+	   fire=戦闘モード中（装備品・道具の枠が 1 つでもあれば戦闘外でも）で帯が「表示」＝押すと発動 /
+	   reg=特技の一覧か道具の一覧を開いている＝押すとカーソルの特技・道具を登録。
+	   b=戦闘モード中（横持ちの戦闘外は扇ではなく左上の列で出す）。各枠の t=0 特技 1 装備品 2 道具、k=色（0 攻撃 1 回復 2 補助 3 装備品 4 道具）、d=今は使えない（暗くする）。
 	   どちらもゲームには仮想キーの 1〜5（VK 0x31〜0x35）を送るだけで、PC のキーと同じ処理に乗る。
 	   縦持ちはパッドの上端に重ねたボタンの列（ログの高さは削らない）、横持ちは発動を「特技 C」の
 	   長押しでゲーム画面側へ開く扇、登録を左上の小さな列で出す */
@@ -4279,7 +4284,9 @@
 				b.classList.toggle('sbo-mke', !!s.e);
 				b.classList.toggle('sbo-mk0', !s.e && s.k === 0);
 				b.classList.toggle('sbo-mk1', !s.e && s.k === 1);
-				b.classList.toggle('sbo-mk2', !s.e && s.k !== 0 && s.k !== 1);
+				b.classList.toggle('sbo-mk2', !s.e && s.k !== 0 && s.k !== 1 && s.k !== 3 && s.k !== 4);
+				b.classList.toggle('sbo-mk3', !s.e && s.k === 3);
+				b.classList.toggle('sbo-mk4', !s.e && s.k === 4);
 				/* 暗くするのは発動用だけ（登録は使えない特技でも入れられる） */
 				b.classList.toggle('sbo-mkd', !s.e && !!s.d && !!state.fire);
 			}
@@ -4289,6 +4296,8 @@
 			bar.classList.toggle('sbo-on', on);
 			bar.classList.toggle('sbo-fire', !!state.fire);
 			bar.classList.toggle('sbo-reg', !!state.reg);
+			/* 横持ちで戦闘モードではない時（装備品・道具の枠がある時だけ出る）は、扇ではなく左上の小さな列で出す */
+			bar.classList.toggle('sbo-nofan', !!state.fire && !state.b);
 			if (scBtn) {
 				scBtn.classList.toggle('sbo-on', !!state.fire);
 			}
@@ -4545,7 +4554,7 @@
 		}
 		magicFan = {
 			canOpen: function () {
-				return !!state.fire && landscape();
+				return !!state.fire && !!state.b && landscape();
 			},
 			isOpen: function () {
 				return fanOpen;
