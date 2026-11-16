@@ -85,6 +85,7 @@ extern "C" void SboSockOnClose(int nNo);
 
 extern LRESULT WINAPI WndProc(HWND, UINT, WPARAM, LPARAM);
 extern void TimerProc(void);
+extern BOOL SaveMapInfo(void);
 extern void sgenrand(unsigned long);
 extern void SendCmdInsideMap(DWORD, LPBYTE, DWORD);
 extern void SvrSendCaptureBegin(void);
@@ -5553,6 +5554,33 @@ static void TestImportant(const std::vector<int> &aLogin)
 		AddCharItemBag(pPC->dwTblID, wKey);
 		MimicExamine(pPC);
 		printf("keydoor bagkey open=%d\n", EnemyDoorOpen(pPC, pEvent, &Door));
+
+		/* 鍵の品の番号がマップの保存データに書かれる（サーバーを再起動しても鍵の扉のまま） */
+		{
+			int nMapNo = -1;
+			for (int m = 0; m < g_aMapInfo.GetSize(); m ++) if (g_aMapInfo[m] == pMap) nMapNo = m;
+			SaveMapInfo();
+			char szMapFile[64];
+			sprintf(szMapFile, "SBODATA/SboDataMapInfo%03d.dat", nMapNo);
+			std::vector<BYTE> aMapFile;
+			FILE *fpMap = fopen(szMapFile, "rb");
+			if (fpMap) {
+				BYTE abyBuf[4096];
+				size_t n;
+				while ((n = fread(abyBuf, 1, sizeof(abyBuf), fpMap)) > 0) aMapFile.insert(aMapFile.end(), abyBuf, abyBuf + n);
+				fclose(fpMap);
+			}
+			int nSaved = 0;
+			const char szLabel[] = "wKeyItem";
+			for (size_t k = 0; k + sizeof(szLabel) + 4 + 2 <= aMapFile.size(); k ++) {
+				if (memcmp(&aMapFile[k], szLabel, sizeof(szLabel)) == 0) {
+					WORD wSaved = 0;
+					memcpy(&wSaved, &aMapFile[k + sizeof(szLabel) + 4], 2);
+					if (wSaved == wKey) nSaved = 1;
+				}
+			}
+			printf("keydoor saved=%d\n", nSaved);
+		}
 
 		pMap->nEventCount = nEventBack;
 		delete [] pMap->pEvent;
