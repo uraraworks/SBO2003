@@ -63,6 +63,7 @@ void DrawWindowLOGINMENUCHARINFO				(PWNDINFO);			/* ログインメニューの
 void DrawWindowLOGINMENUCHARMAKE				(PWNDINFO);			/* ログインメニューのキャラ作成 */
 void DrawWindowCOMMAND							(PWNDINFO);			/* コマンド */
 void DrawWindowCOMMANDETC						(PWNDINFO);			/* その他コマンド */
+void DrawListScrollMark						(HDC, int, int, int, int, int);	/* スクロールする一覧の枠に▲▼を描く */
 void DrawWindowCOMMANDITEM						(PWNDINFO);			/* 道具 */
 void DrawWindowCOMMANDITEMBATTLE				(PWNDINFO);			/* 道具(戦闘マップ) */
 void DrawWindowCOMMANDITEMPROC					(PWNDINFO);			/* 道具処理選択 */
@@ -402,6 +403,23 @@ void DrawWindowFrame(PWNDINFO pWnd)
 	TintWindowFrame (pDib, 0, 16, 16, pWnd->nCy - 32);
 	TintWindowFrame (pDib, pWnd->nCx - 16, 16, 16, pWnd->nCy - 32);
 }
+
+/* ========================================================================= */
+/* 関数名：DrawListScrollMark												 */
+/* 内容：スクロールする一覧の枠に▲▼を描く（上に続きがあれば上の枠に▲、		 */
+/*       下に続きがあれば下の枠に▼。右から2文字目の位置）					 */
+/*       nTop=先頭の番号、nRows=窓の行数、nCount=全部の数					 */
+/* ========================================================================= */
+void DrawListScrollMark(HDC hDC, int nCx, int nCy, int nTop, int nRows, int nCount)
+{
+	if (nTop > 0) {
+		TextOut2 (hDC, nCx - 32, 0, "▲", RGB (255, 255, 255));
+	}
+	if (nTop + nRows < nCount) {
+		TextOut2 (hDC, nCx - 32, nCy - 16, "▼", RGB (255, 255, 255));
+	}
+}
+
 
 /* ========================================================================= */
 /* 関数名：DrawWindowFrame2													 */
@@ -1254,6 +1272,9 @@ void DrawWindowCOMMANDITEM(PWNDINFO pWnd)
 		}
 	}
 
+	/* 上や下にまだ品がある時は、枠の上下に▲▼を出す */
+	DrawListScrollMark (hDC, pWnd->nCx, pWnd->nCy, pWnd->byData1, pWnd->nData2, nCount);
+
 	SelectObject (hDC, hFontOld);
 	pWnd->pDib->Unlock ();
 	pWnd->dwTimeDrawStart = timeGetTime ();
@@ -1470,6 +1491,9 @@ void DrawWindowSHOP_SELL(PWNDINFO pWnd)
 			}
 		}
 	}
+
+	/* 上や下にまだ品がある時は、枠の上下に▲▼を出す */
+	DrawListScrollMark (hDC, pWnd->nCx, pWnd->nCy, pWnd->byData1, pWnd->nData2, nCount);
 
 	SelectObject (hDC, hFontOld);
 	pWnd->pDib->Unlock ();
@@ -2500,6 +2524,9 @@ void DrawWindowLEAVE_ITEM(PWNDINFO pWnd)
 		}
 	}
 
+	/* 上や下にまだ品がある時は、枠の上下に▲▼を出す */
+	DrawListScrollMark (hDC, pWnd->nCx, pWnd->nCy, pWnd->byData1, pWnd->nData2, nCount);
+
 	SelectObject (hDC, hFontOld);
 	pWnd->pDib->Unlock ();
 	pWnd->dwTimeDrawStart = timeGetTime ();
@@ -2521,16 +2548,15 @@ void DrawWindowLEAVE_ITEMGET(PWNDINFO pWnd)
 
 	char szTmp[128];
 	int i, nNo = (int)pWnd->byData1, nLen = 0;
-	for (i = 0; i < 10; i ++) {
-		if (i + nNo >= g_pLeaveInfo->byCount) {
-			break;
+	/* 窓の幅は預かっている全部の品の中で一番長い名前に合わせる */
+	/* （見えている行だけで決めるとスクロールのたびに幅が変わってガタガタするため） */
+	for (i = 0; (i < (int)g_pLeaveInfo->byCount) && (i < MAX_LEAVEITEM); i ++) {
+		if (g_pLeaveInfo->waItem[i] >= g_aItemInfo.GetSize ()) {
+			continue;
 		}
-		if (g_pLeaveInfo->waItem[i + nNo] >= g_aItemInfo.GetSize ()) {
-			break;
-		}
-		PITEMINFO pItem = g_aItemInfo[g_pLeaveInfo->waItem[i + nNo]];
-		if (g_pLeaveInfo->byItemCount[i + nNo] > 1) {
-			wsprintf (szTmp, "%s(%d)", pItem->szName, g_pLeaveInfo->byItemCount[i + nNo]);
+		PITEMINFO pItem = g_aItemInfo[g_pLeaveInfo->waItem[i]];
+		if (g_pLeaveInfo->byItemCount[i] > 1) {
+			wsprintf (szTmp, "%s(%d)", pItem->szName, g_pLeaveInfo->byItemCount[i]);
 		} else {
 			wsprintf (szTmp, "%s", pItem->szName);
 		}
@@ -2538,12 +2564,21 @@ void DrawWindowLEAVE_ITEMGET(PWNDINFO pWnd)
 			nLen = SboTextWidth (szTmp);
 		}
 	}
+	/* 見えている行数（先頭 nNo から最大10行。途中に壊れた品番があればそこまで） */
+	for (i = 0; i < 10; i ++) {
+		if (i + nNo >= g_pLeaveInfo->byCount) {
+			break;
+		}
+		if (g_pLeaveInfo->waItem[i + nNo] >= g_aItemInfo.GetSize ()) {
+			break;
+		}
+	}
 	nLen += 2;
 	if (nLen % 2) {
 		nLen ++;
 	}
-	if (((g_nProcShopState == LEAVESTATE_ITEMSORTSWAP) || (g_nProcShopState == LEAVESTATE_ITEMSELECTDISPOSE)) && (nLen < 8)) {
-		nLen = 8;													/* 題字「入れ替え」「手放す」が入る幅 */
+	if (((g_nProcShopState == LEAVESTATE_ITEMSORTSWAP) || (g_nProcShopState == LEAVESTATE_ITEMSELECTDISPOSE)) && (nLen < 10)) {
+		nLen = 10;													/* 題字「入れ替え」「手放す」と右上の▲が重ならない幅 */
 	}
 	SAFE_DELETE (pWnd->pDib);
 	pWnd->pDib = new CImg32;
@@ -2579,6 +2614,9 @@ void DrawWindowLEAVE_ITEMGET(PWNDINFO pWnd)
 				((g_nProcShopState == LEAVESTATE_ITEMSORTSWAP) && (pWnd->dwData != 0) && ((int)pWnd->dwData - 1 == i + nNo)) ?
 				RGB (255, 255, 0) : RGB (255, 255, 255));
 	}
+
+	/* 上や下にまだ品がある時は、枠の上下に▲▼を出す */
+	DrawListScrollMark (hDC, pWnd->pDib->Width (), pWnd->pDib->Height (), nNo, pWnd->nData2, (int)g_pLeaveInfo->byCount);
 
 	SelectObject (hDC, hFontOld);
 	pWnd->pDib->Unlock ();
@@ -2870,6 +2908,9 @@ void DrawWindowTRADEITEM(PWNDINFO pWnd)
 			}
 		}
 	}
+
+	/* 上や下にまだ品がある時は、枠の上下に▲▼を出す */
+	DrawListScrollMark (hDC, pWnd->nCx, pWnd->nCy, pWnd->byData1, pWnd->nData2, nCount);
 
 	SelectObject (hDC, hFontOld);
 	pWnd->pDib->Unlock ();
