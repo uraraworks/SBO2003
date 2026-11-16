@@ -1513,6 +1513,10 @@ void DrawCharLine(int nLine)
 				if (pChar->byFadeLevel) {
 					g_pDibDrawMap->BltAlpha (x, y, nGrpSizeX, nGrpSizeY, pDib, xx, yy, pChar->byFadeLevel, TRUE);
 
+				} else if (pChar->byHide) {
+					/* 隠れている間は半透明(BltAlpha は大きいほど透明。暗い所ではさらに薄く) */
+					g_pDibDrawMap->BltAlpha (x, y, nGrpSizeX, nGrpSizeY, pDib, xx, yy, (BYTE)min (100, 50 + byLevel / 2), TRUE);
+
 				} else {
 					g_pDibDrawMap->BltLevel (x, y, nGrpSizeX, nGrpSizeY, pDib, xx, yy, byLevel, TRUE);
 				}

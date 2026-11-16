@@ -1005,6 +1005,10 @@ BOOL BattleProcAtack(PCHARINFO pChar, PCHARINFO pCharTarget)
 		goto Exit;
 	}
 
+	/* 攻撃したら隠れるが解ける */
+	if (pChar->byNpcType == NPCTYPE_INIT) {
+		HideBreak (pChar, TRUE);
+	}
 
 	bSPAtack	= FALSE;
 	bMiss		= FALSE;

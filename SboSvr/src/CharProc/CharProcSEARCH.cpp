@@ -317,7 +317,8 @@ BOOL CCharProcSEARCH::ProcTarget(DWORD dwTime)
 	nDX = (int)pCharTmp->dwX - (int)m_pChar->dwX;
 	nDY = (int)pCharTmp->dwY - (int)m_pChar->dwY;
 	if ((abs (nDX) > m_pChar->bySearchCx + SEARCH_LOSTMARGIN) ||
-		(abs (nDY) > m_pChar->bySearchCy + SEARCH_LOSTMARGIN)) {
+		(abs (nDY) > m_pChar->bySearchCy + SEARCH_LOSTMARGIN) ||
+		IsHideOutOfSight (m_pChar, pCharTmp)) {	/* 隠れた人は、半分の範囲より外なら見失う */
 		if (m_dwLostTime == 0) {
 			m_dwLostTime = dwTime;
 		} else if ((DWORD)(dwTime - m_dwLostTime) >= SEARCH_LOSTTIME) {
@@ -489,6 +490,10 @@ DWORD CCharProcSEARCH::FindTarget(void)
 		nDX = abs ((int)pCharTmp->dwX - (int)m_pChar->dwX);
 		nDY = abs ((int)pCharTmp->dwY - (int)m_pChar->dwY);
 		if ((nDX > m_pChar->bySearchCx) || (nDY > m_pChar->bySearchCy)) {
+			continue;
+		}
+		/* 隠れている人は、索敵範囲の半分の中でしか見つけられない */
+		if (IsHideOutOfSight (m_pChar, pCharTmp)) {
 			continue;
 		}
 		nDistance = nDX + nDY;

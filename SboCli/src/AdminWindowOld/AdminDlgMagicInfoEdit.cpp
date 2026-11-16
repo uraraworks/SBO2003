@@ -330,6 +330,10 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 				ShowWindow (GetDlgItem (hWnd, IDC_DATA2), TRUE);
 				ShowWindow (GetDlgItem (hWnd, IDC_DATA3), TRUE);
 				break;
+			case MAGICTYPE_HIDE:			/* 隠れる(自分にかける。付加データ2が秒数) */
+				SetWindowText (GetDlgItem (hWnd, IDC_STATIC_DATA2), "続く秒数：");
+				ShowWindow (GetDlgItem (hWnd, IDC_DATA2), TRUE);
+				break;
 			}
 		}
 		break;
