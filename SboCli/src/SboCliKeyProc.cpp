@@ -16,6 +16,42 @@
 #include "SboCliMsgLogWindow.h"
 #include "SboCliDrawScreen.h"
 
+/* 装備品の装備職業情報の番号を返す（装備品でなければ 0xFFFF） */
+static WORD ShopGetItemEquNo(PITEMINFO pItem)
+{
+	if (pItem->pData == NULL) {
+		return 0xFFFF;
+	}
+	switch (pItem->byType) {
+	case ITEMTYPE_WEAPON:	return ((PITEMINFO_WEAPON)pItem->pData)->wEqu;
+	case ITEMTYPE_ARMOR:	return ((PITEMINFO_ARMOR)pItem->pData)->wEqu;
+	case ITEMTYPE_SHILD:	return ((PITEMINFO_SHILD)pItem->pData)->wEqu;
+	case ITEMTYPE_HELMET:	return ((PITEMINFO_HELMET)pItem->pData)->wEqu;
+	case ITEMTYPE_EQU_HAND:	return ((PITEMINFO_EQU_HAND)pItem->pData)->wEqu;
+	case ITEMTYPE_EQU_LEG:	return ((PITEMINFO_EQU_LEG)pItem->pData)->wEqu;
+	case ITEMTYPE_EQU_ACC1:	return ((PITEMINFO_EQU_ACC1)pItem->pData)->wEqu;
+	case ITEMTYPE_EQU_ACC2:	return ((PITEMINFO_EQU_ACC2)pItem->pData)->wEqu;
+	case ITEMTYPE_EQU_ACC3:	return ((PITEMINFO_EQU_ACC3)pItem->pData)->wEqu;
+	}
+	return 0xFFFF;
+}
+
+/* お店の「買う」確認文：自分が装備できない品（性別・今の職業）なら注意書きを足す（買うこと自体は止めない） */
+static void ShopAddEquWarn(LPSTR pszMsg, int nSize, PITEMINFO pItem, PCHARINFO pChar)
+{
+	/* @1 は次の行へ */
+	if ((pItem->bySexDistinction != SEXDISTINCTION_ALL) && !CheckItemSexDistinction (pItem, pChar)) {
+		strcat (pszMsg, (pItem->bySexDistinction == SEXDISTINCTION_FEMALE) ?
+			"@1※この品は女性しか装備できません。" : "@1※この品は男性しか装備できません。");
+	}
+	/* 職業は転職すれば使えるので「今の職業では」とする */
+	WORD wEqu = ShopGetItemEquNo (pItem);
+	if ((wEqu != 0xFFFF) && (wEqu < g_aEquUserInfo.GetSize ()) && !CheckEquUserInfo (wEqu, pChar->byJOB)) {
+		strcat (pszMsg, "@1※今の職業では装備できません。");
+	}
+	pszMsg[nSize - 1] = 0;
+}
+
 /* ========================================================================= */
 /* 関数プロトタイプ宣言														 */
 /* ========================================================================= */
@@ -105,6 +141,9 @@ BOOL IsMagicKeyUsable						(PCHARINFO, BYTE);			/* 特技が今使えるか */
 BOOL IsMagicKeyMode							(PCHARINFO);				/* 1〜5 キーで特技を使える状態か */
 void RegisterMagicKey						(int, BYTE);				/* 特技を枠に登録する・外す */
 void UseMagicKey							(PCHARINFO, int);			/* 枠の特技を使う */
+BOOL IsMagicBandShown						(PCHARINFO);				/* 戦闘モード中の帯（スマホのボタン）を出す状態か */
+BOOL GetMagicKeySlotLabel					(PCHARINFO, int, LPSTR, int, int *, BOOL *);	/* 帯・ボタンの1枠ぶんの文字と色分け */
+static BOOL IsMagicListOpen					(void);							/* 特技の一覧（登録できる画面）を開いているか */
 #define SPEECHMODE_MAX	(4)															/* 発言の種類の数(g_bySpeechMode) */
 LRESULT CALLBACK SpeechEditWndProc			(HWND, UINT, WPARAM, LPARAM);	/* 自己紹介設定欄用メッセージ処理 */
 LRESULT CALLBACK ChgPasswordWndProc			(HWND, UINT, WPARAM, LPARAM);	/* パスワード変更用メッセージ処理 */
@@ -1123,8 +1162,9 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 				if (nScore >= 0) {
 					/* 昔のターゲット要求で、パネルに名前を付ける（付いていれば外す） */
 					SendCmdTARGETCHAR (g_aCharInfo[nScore]->dwTblID);
-				} else {
-					/* ついていく要求 */
+				} else if (!g_bBattleMode) {
+					/* ついていく要求（ついていく・解除は通常モードの時だけ。
+					   戦闘モード中の Z はふつうのキャンセルだけにして、戦闘で列を離れた人の戻り先も消さない） */
 					SendCmdCHAR_TAIL (-1);
 				}
 				CancelTurnGage (pChar);
@@ -1807,10 +1847,10 @@ void KeyProcCOMMANDITEM(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 
 		/* 入れ替え中：2つ目を決めたら入れ替える（同じ行なら何もしない） */
 		if (pWnd->dwData) {
-			int nNo1 = (int)pWnd->dwData - 1;
+			int nNo1 = (int)pWnd->dwData - 1, nNo2 = pWnd->byData1 + pWnd->nData1;
 			pWnd->dwData = 0;
-			if (nNo1 != pWnd->nData1) {
-				SendCmdSORTITEM (SORTITEMTARGET_MYITEM, SORTITEMMODE_SWAP, (BYTE)nNo1, (BYTE)pWnd->nData1);
+			if (nNo1 != nNo2) {
+				SendCmdSORTITEM (SORTITEMTARGET_MYITEM, SORTITEMMODE_SWAP, (BYTE)nNo1, (BYTE)nNo2);
 			}
 			return;
 		}
@@ -1824,20 +1864,8 @@ void KeyProcCOMMANDITEM(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 	} else if ((byEvent == KEY_DOWN) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
 		BOOL bMove = FALSE;
 
-		if ((byCode == VK_UP) && (pWnd->nData1 > 0)) {
-			pWnd->nData1 --;
-			bMove = TRUE;
-
-		} else if ((byCode == VK_DOWN) && (pWnd->nData1 < pWnd->nData2 - 1)) {
-			pWnd->nData1 ++;
-			bMove = TRUE;
-
-		} else if (byCode == VK_LEFT) {
-			pWnd->nData1 = 0;
-			bMove = TRUE;
-
-		} else if (byCode == VK_RIGHT) {
-			pWnd->nData1 = pWnd->nData2 - 1;
+		/* 一覧は10行ずつ見せ、上下に余白を残してスクロールする */
+		if (ListScrollKey (pWnd, byCode, GetItemCount (g_nMyCharID))) {
 			bMove = TRUE;
 		}
 
@@ -1912,7 +1940,7 @@ void KeyProcCOMMANDITEMBATTLE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 
 		} else {
 			PWNDINFO pWndParent = (PWNDINFO)pWnd->pParent;
-			BYTE byNo = pWnd->nData1;
+			BYTE byNo = pWnd->byData1 + pWnd->nData1;
 			PITEMINFO pItem = g_aItemInfo[pChar->waItem[byNo]];
 
 			SendCmdUSEITEM (byNo, pChar->dwTblID);
@@ -1929,20 +1957,8 @@ void KeyProcCOMMANDITEMBATTLE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 	} else if ((byEvent == KEY_DOWN) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
 		BOOL bMove = FALSE;
 
-		if ((byCode == VK_UP) && (pWnd->nData1 > 0)) {
-			pWnd->nData1 --;
-			bMove = TRUE;
-
-		} else if ((byCode == VK_DOWN) && (pWnd->nData1 < pWnd->nData2 - 1)) {
-			pWnd->nData1 ++;
-			bMove = TRUE;
-
-		} else if (byCode == VK_LEFT) {
-			pWnd->nData1 = 0;
-			bMove = TRUE;
-
-		} else if (byCode == VK_RIGHT) {
-			pWnd->nData1 = pWnd->nData2 - 1;
+		/* 一覧は10行ずつ見せ、上下に余白を残してスクロールする */
+		if (ListScrollKey (pWnd, byCode, GetItemCount (g_nMyCharID))) {
 			bMove = TRUE;
 		}
 
@@ -2020,7 +2036,7 @@ void KeyProcCOMMANDITEMPROC(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				}
 
 				PWNDINFO pWndParent = (PWNDINFO)pWnd->pParent;
-				BYTE byNo = pWndParent->nData1;
+				BYTE byNo = pWndParent->byData1 + pWndParent->nData1;
 				PITEMINFO pItem = g_aItemInfo[pChar->waItem[byNo]];
 
 				SendCmdUSEITEM (byNo, pChar->dwTblID);
@@ -2039,7 +2055,7 @@ void KeyProcCOMMANDITEMPROC(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			{
 				PWNDINFO pWndParent = (PWNDINFO)pWnd->pParent;
 				PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
-				BYTE byNo = pWndParent->nData1;
+				BYTE byNo = pWndParent->byData1 + pWndParent->nData1;
 				PITEMINFO pItem = g_aItemInfo[pChar->waItem[byNo]];
 				char szTmp[128];
 				ZeroMemory (szTmp, sizeof (szTmp));
@@ -2184,7 +2200,7 @@ void KeyProcSORTMENU(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			if (byMode == SORTITEMMODE_SWAP) {
 				/* 一覧を入れ替えモードにする（1+選んだ番号） */
 				if (pWndList) {
-					pWndList->dwData = 1 + pWndList->nData1;
+					pWndList->dwData = 1 + pWndList->byData1 + pWndList->nData1;
 				}
 			} else {
 				SendCmdSORTITEM (SORTITEMTARGET_MYITEM, byMode, 0, 0);
@@ -2251,9 +2267,9 @@ void KeyProcCOMMANDITEMCHAR(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		PWNDINFO pWndParent = (PWNDINFO)pWnd->pParent;
 
 		PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
-		BYTE byNo = ((PWNDINFO)pWndParent->pParent)->nData1;
+		BYTE byNo = ((PWNDINFO)pWndParent->pParent)->byData1 + ((PWNDINFO)pWndParent->pParent)->nData1;
 		if (pWndParent->nType == WNDTYPE_COMMANDITEMBATTLE) {
-			byNo = (BYTE)pWndParent->nData1;
+			byNo = (BYTE)(pWndParent->byData1 + pWndParent->nData1);
 		}
 		PITEMINFO pItem = g_aItemInfo[pChar->waItem[byNo]];
 
@@ -3333,6 +3349,7 @@ void KeyProcSHOP(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				char szMsgTmp[2048];
 				PITEMINFO pItem = g_aItemInfo[pShop->awItem[nTmp]];
 				wsprintf (szMsgTmp, pShop->apMsg[SHOPMSG_BUYCONF], pItem->szName, pItem->dwGold);
+				ShopAddEquWarn (szMsgTmp, sizeof (szMsgTmp), pItem, pChar);
 				pWndNew = MakeWindowMSG (szMsgTmp, TRUE);
 				pWndNew->pParent = pWndTmp;
 				pWndTmp->pChild = pWndNew;
@@ -3373,6 +3390,9 @@ void KeyProcSHOP(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		/* 売る */
 		case SHOPMSG_SELL:
 			nTmp = pWnd->nData1;
+			if (g_bProcShopConfirm == FALSE) {
+				nTmp += pWnd->byData1;							/* 一覧のスクロール分 */
+			}
 			EraseWindow (pWnd);
 			char szMsgTmp[256];
 
@@ -3442,20 +3462,8 @@ void KeyProcSHOP(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 	} else if ((byEvent == KEY_DOWN) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
 		BOOL bMove = FALSE;
 
-		if ((byCode == VK_UP) && (pWnd->nData1 > 0)) {
-			pWnd->nData1 --;
-			bMove = TRUE;
-
-		} else if ((byCode == VK_DOWN) && (pWnd->nData1 < pWnd->nData2 - 1)) {
-			pWnd->nData1 ++;
-			bMove = TRUE;
-
-		} else if (byCode == VK_LEFT) {
-			pWnd->nData1 = 0;
-			bMove = TRUE;
-
-		} else if (byCode == VK_RIGHT) {
-			pWnd->nData1 = pWnd->nData2 - 1;
+		/* 売る物の一覧は手持ちを10行ずつ見せ、上下に余白を残してスクロールする */
+		if (ListScrollKey (pWnd, byCode, ((g_nProcShopState == SHOPMSG_SELL) && (g_bProcShopConfirm == FALSE)) ? GetItemCount (g_nMyCharID) : pWnd->nData2)) {
 			bMove = TRUE;
 		}
 
@@ -3553,6 +3561,7 @@ void KeyProcSHOPSELL(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				char szMsgTmp[2048];
 				PITEMINFO pItem = g_aItemInfo[pShop->awItem[nTmp]];
 				wsprintf (szMsgTmp, pShop->apMsg[SHOPMSG_BUYCONF], pItem->szName, pItem->dwGold);
+				ShopAddEquWarn (szMsgTmp, sizeof (szMsgTmp), pItem, pChar);
 				pWndNew = MakeWindowMSG (szMsgTmp, TRUE);
 				pWndNew->pParent = pWndTmp;
 				pWndTmp->pChild = pWndNew;
@@ -3707,6 +3716,7 @@ void KeyProcCOMMANDEQU(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		pWndParent->dwTimeDrawStart = 0;
 		pWndParent->nData1 = (int)pChar->wAT;
 		pWndParent->nData2 = (int)pChar->wDF;
+		pWndParent->dwData = (DWORD)pChar->wDFMagic;
 
 		pChar->waEqu[pWnd->nData1] = nTmp;
 		RenewATDF (g_nMyCharID);
@@ -3767,6 +3777,7 @@ void KeyProcCOMMANDEQUSUB(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		pWndParent->dwTimeDrawStart = 0;
 		pWndParent->nData1 = (int)pChar->wAT;
 		pWndParent->nData2 = (int)pChar->wDF;
+		pWndParent->dwData = (DWORD)pChar->wDFMagic;
 
 		EraseWindow (pWnd);
 		g_dwActiveMsgID = ((PWNDINFO)pWndParent->pParent)->dwID;
@@ -3866,6 +3877,7 @@ void KeyProcCOMMANDEQUSUB(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			pWndParent->dwTimeDrawStart = 0;
 			pWndParent->nData1 = (int)pChar->wAT;
 			pWndParent->nData2 = (int)pChar->wDF;
+			pWndParent->dwData = (DWORD)pChar->wDFMagic;
 
 			pChar->waEqu[byType] = nTmp2;
 			RenewATDF (g_nMyCharID);
@@ -4095,7 +4107,7 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		case LEAVESTATE_ITEM:
 			/* 装備中？ */
 			for (i = 0; i < 10; i ++) {
-				if (pChar->waEqu[i] == pWnd->nData1) {
+				if (pChar->waEqu[i] == pWnd->byData1 + pWnd->nData1) {
 					break;
 				}
 			}
@@ -4104,7 +4116,7 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 
 			} else {
 				/* 預かり所がいっぱい・依頼の品は断られるので、サーバーの返事を待ってから返事を出す */
-				SendCmdLEAVEITEM (pWnd->nData1);
+				SendCmdLEAVEITEM (pWnd->byData1 + pWnd->nData1);
 				g_nProcShopState = LEAVESTATE_ITEMPUTWAIT;
 				g_bEnableMove = FALSE;
 			}
@@ -4353,47 +4365,37 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			}
 
 		} else {
-			if ((byCode == VK_UP) && (pWnd->nData1 > 0)) {
+			/* 引き取る・並べ替え・手放す・預ける一覧は10行ずつ見せ、上下に余白を残してスクロールする */
+			int nListCount = -1;
+			if ((g_nProcShopState == LEAVESTATE_ITEMSELECTGET) || (g_nProcShopState == LEAVESTATE_ITEMSORTSWAP) || (g_nProcShopState == LEAVESTATE_ITEMSELECTDISPOSE)) {
+				nListCount = g_pLeaveInfo ? (int)g_pLeaveInfo->byCount : 0;
+			} else if (g_nProcShopState == LEAVESTATE_ITEM) {
+				nListCount = GetItemCount (g_nMyCharID);
+			}
+
+			if (nListCount >= 0) {
+				if (ListScrollKey (pWnd, byCode, nListCount)) {
+					bMove = TRUE;
+					pWnd->byAnime = 1;
+				}
+
+			} else if ((byCode == VK_UP) && (pWnd->nData1 > 0)) {
 				pWnd->nData1 --;
 				bMove = TRUE;
 				pWnd->byAnime = 1;
-				if (pWnd->nData1 == 0) {
-					if (g_pLeaveInfo && (g_pLeaveInfo->byCount > 10)) {
-						if (pWnd->nData1 + pWnd->byData1 > 0) {
-							pWnd->nData1 ++;
-							pWnd->byData1 --;
-						}
-					}
-				}
 
 			} else if ((byCode == VK_DOWN) && (pWnd->nData1 < pWnd->nData2 - 1)) {
 				pWnd->nData1 ++;
 				bMove = TRUE;
 				pWnd->byAnime = 1;
-				if ((g_nProcShopState == LEAVESTATE_ITEMSELECTGET) || (g_nProcShopState == LEAVESTATE_ITEMSORTSWAP) || (g_nProcShopState == LEAVESTATE_ITEMSELECTDISPOSE)) {
-					if (pWnd->nData1 == pWnd->nData2 - 1) {
-						if (g_pLeaveInfo && (g_pLeaveInfo->byCount > 10)) {
-							if (pWnd->nData1 + pWnd->byData1 < g_pLeaveInfo->byCount - 1) {
-								pWnd->nData1 --;
-								pWnd->byData1 ++;
-							}
-						}
-					}
-				}
 
 			} else if (byCode == VK_LEFT) {
 				pWnd->nData1 = 0;
-				pWnd->byData1 = 0;
 				bMove = TRUE;
 				pWnd->byAnime = 1;
 
 			} else if ((byCode == VK_RIGHT) && (pWnd->nData1 < pWnd->nData2 - 1)) {
 				pWnd->nData1 = pWnd->nData2 - 1;
-				if ((g_nProcShopState == LEAVESTATE_ITEMSELECTGET) || (g_nProcShopState == LEAVESTATE_ITEMSORTSWAP) || (g_nProcShopState == LEAVESTATE_ITEMSELECTDISPOSE)) {
-					if (g_pLeaveInfo && (g_pLeaveInfo->byCount > 10)) {
-						pWnd->byData1 = g_pLeaveInfo->byCount - 10;
-					}
-				}
 				bMove = TRUE;
 				pWnd->byAnime = 1;
 			}
@@ -4623,21 +4625,21 @@ void KeyProcTRADEITEM(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		PWNDINFO pWndParent = (PWNDINFO)pWnd->pParent;
 		PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
 
-		int i, j;
+		int i, j, nSel = pWnd->byData1 + pWnd->nData1;				/* 選んだ品の番号（スクロール分を足す） */
 		for (i = 0; i < MAX_MYITEM; i ++) {
-			if (g_pTradeInfo->waItem1[i] == pWnd->nData1) {
+			if (g_pTradeInfo->waItem1[i] == nSel) {
 				break;
 			}
 		}
 		if (i == MAX_MYITEM) {
 			/* 装備しているかチェック */
 			for (j = 0; j < 10; j ++) {
-				if (pChar->waEqu[j] == pWnd->nData1) {
+				if (pChar->waEqu[j] == nSel) {
 					break;
 				}
 			}
 			if (j == 10) {
-				g_pTradeInfo->waItem1[pWndParent->nData1 - 2] = pWnd->nData1;
+				g_pTradeInfo->waItem1[pWndParent->nData1 - 2] = nSel;
 				if (pWndParent->nData1 == pWndParent->nData2 - 1) {
 					if (pWndParent->nData2 < MAX_MYITEM + 2) {
 						pWndParent->nData2 ++;
@@ -4652,20 +4654,8 @@ void KeyProcTRADEITEM(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 	} else if ((byEvent == KEY_DOWN) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
 		BOOL bMove = FALSE;
 
-		if ((byCode == VK_UP) && (pWnd->nData1 > 0)) {
-			pWnd->nData1 --;
-			bMove = TRUE;
-
-		} else if ((byCode == VK_DOWN) && (pWnd->nData1 < pWnd->nData2 - 1)) {
-			pWnd->nData1 ++;
-			bMove = TRUE;
-
-		} else if (byCode == VK_LEFT) {
-			pWnd->nData1 = 0;
-			bMove = TRUE;
-
-		} else if (byCode == VK_RIGHT) {
-			pWnd->nData1 = pWnd->nData2 - 1;
+		/* 手持ちは10行ずつ見せ、上下に余白を残してスクロールする */
+		if (ListScrollKey (pWnd, byCode, GetItemCount (g_nMyCharID))) {
 			bMove = TRUE;
 		}
 
@@ -8614,6 +8604,20 @@ void CmdProcHanasu(PWNDINFO pWnd)
 		}
 		return;
 
+	/* 会話データ(@tNNN)？ 話す内容は、話した人のフラグを見てサーバーが選び、その人にだけ CMD_TALKMSG で届く
+	   （台詞そのものはクライアントへ送られていない。依頼の @g と同じ流れ） */
+	} else if (pChar2->pszNpcSpeech[0] == '@' && pChar2->pszNpcSpeech[1] == 't' &&
+			(pChar2->pszNpcSpeech[2] >= '0') && (pChar2->pszNpcSpeech[2] <= '9')) {
+		SendCmdTALKRAND (pChar2->dwTblID);
+		pChar2->byDirection = abyDirectionTbl[pChar->byDirection];
+		int nNo = GetWindowID (g_dwMsgIDCommand);
+		if (nNo >= 0) {
+			EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
+			g_dwMsgIDCommand = 0;
+			g_bDraw = TRUE;
+		}
+		return;
+
 	/* 傭兵所？ 雇う・お別れするのはサーバーが決めて、お知らせが来る */
 	} else if (pChar2->pszNpcSpeech[0] == '@' && pChar2->pszNpcSpeech[1] == 'm') {
 
@@ -9356,6 +9360,8 @@ ChatMsgProc_END:
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
+#include <string>
+std::string W32TextToUtf8Str(const char *psz, int nLen);		/* ゲーム内の文字列を UTF-8 にする（platform/w32_sjis.cpp） */
 
 /* ========================================================================= */
 /* 関数名：SboWebGetPadState												 */
@@ -9467,6 +9473,73 @@ extern "C" EMSCRIPTEN_KEEPALIVE int SboWebChatKinds(void)
 		nRet |= 2;
 	}
 	return nRet;
+}
+
+/* ========================================================================= */
+/* 関数名：	SboWebGetMagicKeyState											 */
+/* 内容：	スマホの特技ショートカットのボタン用の状態をJSON(UTF-8)で返す	 */
+/*			（ブラウザ版。シェル HTML が0.1秒ごとに読む）					 */
+/*			{"fire":1,"reg":0,"slots":[{"n":"強打","k":0,"d":0},{"e":1},…]}	 */
+/*			fire=戦闘モード中で帯の表示設定が「表示」（押すと発動）			 */
+/*			reg =特技の一覧を開いている（押すとカーソルの特技を登録）		 */
+/*			n=名前の頭2文字 k=0攻撃/1回復/2補助 d=暗くする e=空き枠			 */
+/*			戻した文字列は次の呼び出しまで有効（解放は不要）				 */
+/* ========================================================================= */
+extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebGetMagicKeyState(void)
+{
+	static std::string strRet;
+	PCHARINFO pChar;
+	int i, nFire = 0, nReg = 0;
+
+	strRet = "{\"fire\":0,\"reg\":0,\"slots\":[]}";
+	if ((g_byGameState < GAMESTATE_MOVE) || (g_byGameState == GAMESTATE_CONNECTLOST)) {
+		return strRet.c_str ();
+	}
+	if ((g_pMapInfo == NULL) || (g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ()) || g_bSpeech) {
+		return strRet.c_str ();
+	}
+	pChar = g_aCharInfo[g_nMyCharID];
+	if (IsMagicListOpen ()) {
+		nReg = 1;
+	} else if (!g_dwActiveMsgID && IsMagicBandShown (pChar)) {
+		nFire = 1;
+	}
+	if (!nFire && !nReg) {
+		return strRet.c_str ();
+	}
+
+	strRet = nFire ? "{\"fire\":1,\"reg\":0,\"slots\":[" : "{\"fire\":0,\"reg\":1,\"slots\":[";
+	for (i = 0; i < MAX_MAGICKEY; i ++) {
+		char szName[16];
+		int nKind;
+		BOOL bDark;
+		std::string strName;
+		size_t j;
+
+		if (i > 0) {
+			strRet += ",";
+		}
+		if (!GetMagicKeySlotLabel (pChar, i, szName, sizeof (szName), &nKind, &bDark)) {
+			strRet += "{\"e\":1}";
+			continue;
+		}
+		strRet += "{\"n\":\"";
+		/* JSON に入れられる文字だけ通す（引用符・バックスラッシュ・制御文字は落とす） */
+		strName = W32TextToUtf8Str (szName, -1);
+		for (j = 0; j < strName.size (); j ++) {
+			unsigned char c = (unsigned char)strName[j];
+			if ((c >= 0x20) && (c != '"') && (c != '\\')) {
+				strRet += (char)c;
+			}
+		}
+		strRet += "\",\"k\":";
+		strRet += (char)('0' + nKind);
+		strRet += ",\"d\":";
+		strRet += bDark ? "1" : "0";
+		strRet += "}";
+	}
+	strRet += "]}";
+	return strRet.c_str ();
 }
 #endif
 
@@ -9638,6 +9711,75 @@ BOOL IsMagicKeyUsable(PCHARINFO pChar, BYTE byMagicID)
 		return (pChar->wHP > pInfo->wMana);
 	}
 	return (pChar->wMana >= pInfo->wMana);
+}
+
+/* ========================================================================= */
+/* 関数名：	IsMagicBandShown												 */
+/* 内容：	戦闘モード中の特技ショートカットの帯を出す状態か				 */
+/*			PC の帯の描画(DrawMagicKeyBand)とスマホのボタン(SboWebGetMagicKeyState)の*/
+/*			両方がこの関数で決める（出る・出ないが食い違わないように）		 */
+/* ========================================================================= */
+BOOL IsMagicBandShown(PCHARINFO pChar)
+{
+	if (!g_bMagicBar || !g_bBattleMode || (g_pMapInfo == NULL) || ((g_pMapInfo->byFlg & MAPFLG_BATTLE) == 0)) {
+		return FALSE;
+	}
+	if ((pChar->abySubStatus[0] != 0) || (pChar->byCharState == CHARSTATE_DEAD)) {
+		return FALSE;
+	}
+	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：	GetMagicKeySlotLabel											 */
+/* 内容：	nNo 番目の枠を帯・ボタンに出す内容を返す						 */
+/*			pszName に特技名の頭2文字、*pnKind に色分け(0=攻撃 1=回復 2=補助)、 */
+/*			*pbDark に暗くするか(詠唱中・覚えていない・Mana/HP不足)。		 */
+/*			枠が空なら FALSE													 */
+/* ========================================================================= */
+BOOL GetMagicKeySlotLabel(PCHARINFO pChar, int nNo, LPSTR pszName, int nSize, int *pnKind, BOOL *pbDark)
+{
+	BYTE byMagicID;
+	PMAGICINFO pInfo;
+	int nLen;
+
+	pszName[0] = 0;
+	*pnKind = 2;
+	*pbDark = FALSE;
+	if ((nNo < 0) || (nNo >= MAX_MAGICKEY)) {
+		return FALSE;
+	}
+	byMagicID = g_abyMagicKey[nNo];
+	if ((byMagicID == 0) || (byMagicID >= g_aMagicInfo.GetSize ())) {
+		return FALSE;
+	}
+	pInfo = g_aMagicInfo[byMagicID];
+	nLen = SboTextFitWidth (pInfo->szName, 4);		/* 全角2文字 */
+	nLen = min (nLen, nSize - 1);
+	CopyMemory (pszName, pInfo->szName, nLen);
+	pszName[nLen] = 0;
+	*pnKind = GetMagicKeyKind (pInfo);
+	*pbDark = (pChar->dwTimeTurnMagicLV != 0) || !IsMagicKeyUsable (pChar, byMagicID);
+	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：	IsMagicListOpen													 */
+/* 内容：	特技の一覧（戦闘の特技一覧・「強さ」の特技一覧。カーソルを合わせて	 */
+/*			1〜5 キーで登録できる画面）を今開いているか						 */
+/* ========================================================================= */
+static BOOL IsMagicListOpen(void)
+{
+	int nNo;
+
+	if (!g_dwActiveMsgID) {
+		return FALSE;
+	}
+	nNo = GetWindowID (g_dwActiveMsgID);
+	if ((nNo < 0) || (nNo >= g_WndInfo.GetSize ())) {
+		return FALSE;
+	}
+	return (g_WndInfo[nNo]->nType == WNDTYPE_STATUSMAGIC) || (g_WndInfo[nNo]->nType == WNDTYPE_COMMANDMAGICBATTLE);
 }
 
 /* ========================================================================= */

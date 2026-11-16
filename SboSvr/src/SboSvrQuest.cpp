@@ -1494,6 +1494,10 @@ static void DoHandIn(PCHARINFO pChar, PCHARINFO pNpc)
 	if ((pQuest->byOnce || (pQuest->byChallenge != QUESTCHALLENGE_NONE)) && (pQuest->wID < MAX_QUEST)) {
 		pChar->abyQuestDone[pQuest->wID / 8] |= (BYTE)(1 << (pQuest->wID % 8));
 	}
+	/* 完了した時に立てる印・数値の動き（討伐チャレンジの 2 回目からは記録だけなので動かさない） */
+	if (bReward) {
+		FlagApplyQuestDone (pChar, pQuest);
+	}
 	WORD wID = pQuest->wID;
 	char szMsgDone[MAX_QUESTMSG];
 	CopyStr (szMsgDone, sizeof (szMsgDone), pQuest->szMsgDone[0] ? pQuest->szMsgDone : "ありがとう！ 依頼は完了です。");

@@ -61,6 +61,7 @@ extern void RecvCmdOnSendMsg	(DWORD pID, LPCSTR pszMsg);					/* 送るメッセ�
 void SendCmdMAPMSGREQ			(DWORD, LPSTR);								/* コマンド送信(メッセージ通知) */
 void SendCmdSYSMSG				(DWORD, LPTSTR, BYTE);						/* コマンド送信(システムメッセージ) */
 void SendCmdSYSMSGMAP			(DWORD, LPSTR, BYTE);						/* コマンド送信(マップ内システムメッセージ) */
+void SendCmdTALKMSG				(DWORD, DWORD, LPCSTR);						/* コマンド送信(会話データで選ばれた台詞) */
 void SendCmdEFECTCHG			(DWORD, DWORD, BYTE, BOOL);					/* コマンド送信(エフェクト変更) */
 void SendCmdCOMEFC				(PCHARINFO);								/* コマンド送信(吹き出し通知) */
 void SendCmdERR					(DWORD, BYTE);								/* コマンド送信(エラー通知) */
@@ -519,7 +520,7 @@ void SendCmdMAPPARTSINFO(DWORD pIDSend)
 		pSend->wBackID = pParts->wBackID;
 		pSend->pAnimeInfo = pParts->pAnimeInfo;
 		pSend->byLevel = pParts->byLevel;
-		pSend->byLight = pParts->byLight;
+		pSend->byLight = MAPPARTS_MAKE_SAVELIGHT (pParts);
 		pSend->byDamage = pParts->byDamage;
 		pSend->byPoison = pParts->byPoison;
 		pData += sizeof (MAPPARTSINFOSAVE);
@@ -1290,7 +1291,7 @@ void SendCmdMAPPARTS(DWORD pIDSend, int nNo)
 	pSend->wBackID = pParts->wBackID;
 	pSend->pAnimeInfo = pParts->pAnimeInfo;
 	pSend->byLevel = pParts->byLevel;
-	pSend->byLight = pParts->byLight;
+	pSend->byLight = MAPPARTS_MAKE_SAVELIGHT (pParts);
 	pSend->byDamage = pParts->byDamage;
 	pSend->byPoison = pParts->byPoison;
 	if (pParts->pAnimeInfo) {
@@ -1677,6 +1678,35 @@ void SendCmdSYSMSG(DWORD pIDSend, LPCTSTR pszStr, BYTE byType)
 	} else {
 		svrSock.SendTo (pIDSend, pData, nSize, SENDTIMEOUT);
 	}
+	delete [] pData;
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdTALKMSG													 */
+/* 内容：コマンド送信(会話データで選ばれた台詞。pIDSend の本人だけに送る)	 */
+/*       台詞は終端の 0 まで送る（長さは MAX_TALKMSG 未満に収める）			 */
+/* 日付：2026/11/15															 */
+/* ========================================================================= */
+void SendCmdTALKMSG(DWORD pIDSend, DWORD dwNpcTblID, LPCSTR pszStr)
+{
+	BYTE *pData;
+	PCMDPARA_TALKMSG pSendData;
+	int nLen = (int)strlen (pszStr);
+	int nSize;
+
+	if (nLen >= MAX_TALKMSG) {
+		nLen = MAX_TALKMSG - 1;
+	}
+	nSize = (int)sizeof (CMDPARA_TALKMSG) + nLen + 1;
+	pData = new BYTE[nSize];
+	ZeroMemory (pData, nSize);
+	pSendData = (PCMDPARA_TALKMSG)pData;
+	pSendData->byCmd = CMD_TALKMSG;
+	pSendData->dwTblID = dwNpcTblID;
+	pSendData->wSize = (WORD)(nLen + 1);
+	memcpy (pData + sizeof (CMDPARA_TALKMSG), pszStr, nLen);
+
+	svrSock.SendTo (pIDSend, pData, nSize, SENDTIMEOUT);
 	delete [] pData;
 }
 

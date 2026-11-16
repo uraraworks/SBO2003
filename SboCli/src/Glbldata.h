@@ -116,6 +116,7 @@ extern BOOL g_bWindowActive,										/* ウィンドウがアクティブ */
 			g_bChatSound,											/* 発言の音ON/OFF */
 			g_bCpuMax,												/* CPUフル活動 */
 		    g_bBlock,												/* 当たり判定 */
+		    g_bViewNpcPut,											/* 管理者:NPC発生を表示する */
 			g_bProcShopConfirm,										/* 店:確認中 */
 			g_bTitleSkip,											/* ロゴ・タイトル飛ばす */
 			g_bMainWindowView,										/* メインウィンドウ表示切り替え */
@@ -225,6 +226,7 @@ extern char g_szLeaveResult[256];									/* 預かり所で手放した結果�
 extern WORD g_wLeaveDisposeItem;										/* 預かり所で手放すよう頼んだ品（0=頼んでいない。結果は一覧の数の差で見る） */
 extern int g_nLeaveDisposeBefore;										/* 頼んだ時のその品の預かり数（全部の枠の合計） */
 extern BYTE g_byLeaveDisposeMode;										/* 頼んだ方法(LEAVEDISPOSE_*) */
+extern BOOL g_bProcShopLeaveOK;										/* 預かり所の中身（g_pLeaveInfo）をお店を開いてから受け取ったか */
 extern BOOL g_bProcMakerLeaveOK;										/* 預かり所の中身（g_pLeaveInfo）を作り手の画面を開いてから受け取ったか */
 extern BOOL g_bProcMakerWait;											/* 作成要求を出して、サーバーの返事待ちか */
 extern DWORD g_dwProcMakerWaitTime;										/* 返事待ちを始めた時間 */

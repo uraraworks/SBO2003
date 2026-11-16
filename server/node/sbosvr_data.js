@@ -90,6 +90,9 @@ Module['sboData'] = (function () {
 		recipe: 'SboDataRecipeInfo.dat',
 		/* ギルドの仕事依頼（ファイルが無い時は 0 件。初めて保存した時に作られる） */
 		quest: 'SboDataQuestInfo.dat',
+		/* キャラのフラグの名前表と会話データ（どちらもファイルが無い時は 0 件。初めて保存した時に作られる） */
+		flag: 'SboDataFlagNameInfo.dat',
+		talk: 'SboDataTalkInfo.dat',
 		/* NPC（プレイヤーは書き換えられない。ファイルはプレイヤーと一緒） */
 		char: 'SboDataCharInfo.dat',
 		/* マップは 1 マップ 1 ファイル（SboDataMapInfo000.dat〜）。マス目（tiles）も同じファイル */
@@ -661,8 +664,8 @@ Module['sboData'] = (function () {
 
 	/* 追加した記録を「消す」変更。消せない種類は null */
 	function eraseChanges(kind) {
-		if (kind === 'maker' || kind === 'recipe' || kind === 'quest') {
-			return { byState: 0 };		/* 依頼は削除が無いので、追加した依頼は「止める」（0）にする */
+		if (kind === 'maker' || kind === 'recipe' || kind === 'quest' || kind === 'flag' || kind === 'talk') {
+			return { byState: 0 };		/* 依頼は削除が無いので、追加した依頼は「止める」（0）にする。名前表・会話データの 0 は「削除済み」 */
 		}
 
 		if (kind === 'char') {

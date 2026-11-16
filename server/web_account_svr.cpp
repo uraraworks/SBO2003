@@ -17,6 +17,8 @@
  *            SboWebAdminOnline    管理ページのログイン中プレイヤー一覧（キャラ名・今いるマップ）
  *            SboWebAccAdminStamp  管理者のアカウント名・パスワードの指紋（覚えたログインの取り消し用）
  *            SboWebAdminNotice    全員にシステムメッセージ（お知らせ）を流す（デプロイ前の再起動予告など）
+ *            SboWebSetLoginNotice 再起動の予告を覚える（予告の後にログインした人にも見せる。空で忘れる）
+ *   C → C  : SboWebSendLoginNotice ログインした人に、覚えている予告を見せる（SboSvrRecvCmd.cpp から呼ぶ）
  *
  * パスワードは C 側の外へ出さない（照合もここで行う）。
  * キャラ名はゲームの中でも UTF-8 で持っている（JS とも UTF-8 でやり取りする）。
@@ -537,4 +539,70 @@ extern "C" EMSCRIPTEN_KEEPALIVE void SboWebAdminNotice(const char *pszUtf8)
 	}
 	std::string strMsg = W32Utf8ToTextStr(strUtf8.c_str());
 	SendCmdSYSMSG(URARASOCK_SENDALL, strMsg.c_str());
+}
+
+/*
+ * 再起動の予告を覚えておいて、予告の後にログインした人にも見せる
+ *   全員へのお知らせはその時ゲームにいた人にしか届かないので、予告の後に入った人は
+ *   何も知らずに急に切断されてしまう。予告（server/node/sbosvr_net.js が「再起動」を含むお知らせを
+ *   流した時に覚えさせる）から LOGIN_NOTICE_KEEP_MS の間にログインした人には、
+ *   「約○分前に次のお知らせがありました」と添えて同じ文を本人にだけ流す。
+ *   更新の中止を知らせた時・サーバーの再起動（プロセスが変わる）で忘れる。
+ */
+#define LOGIN_NOTICE_KEEP_MS	(15 * 60 * 1000)	/* 予告を覚えておく長さ（デプロイは実測 4〜5 分） */
+static std::vector<std::string>	s_astrLoginNotice;	/* 覚えている予告（UTF-8、1 行ずつ） */
+static DWORD					s_dwLoginNoticeTime;	/* 覚えた時刻（timeGetTime） */
+
+/* pszUtf8 は 1 行ずつ改行で区切る。空なら忘れる */
+extern "C" EMSCRIPTEN_KEEPALIVE void SboWebSetLoginNotice(const char *pszUtf8)
+{
+	s_astrLoginNotice.clear();
+	if (pszUtf8 == NULL) {
+		return;
+	}
+	std::string strAll = pszUtf8;
+	size_t nPos = 0;
+	while (nPos <= strAll.size()) {
+		size_t nEnd = strAll.find('\n', nPos);
+		if (nEnd == std::string::npos) {
+			nEnd = strAll.size();
+		}
+		std::string strLine = strAll.substr(nPos, nEnd - nPos);
+		if (!strLine.empty() && strLine[strLine.size() - 1] == '\r') {
+			strLine.erase(strLine.size() - 1);
+		}
+		if (strLine.compare(0, 7, "SYSTEM:") == 0) {
+			strLine.erase(0, 7);
+		}
+		if (!strLine.empty()) {
+			s_astrLoginNotice.push_back(strLine);
+		}
+		nPos = nEnd + 1;
+	}
+	s_dwLoginNoticeTime = timeGetTime();
+}
+
+/* ログインした人（pID）に、覚えている予告を見せる */
+void SboWebSendLoginNotice(DWORD pID)
+{
+	if (s_astrLoginNotice.empty()) {
+		return;
+	}
+	DWORD dwPast = timeGetTime() - s_dwLoginNoticeTime;
+	if (dwPast >= LOGIN_NOTICE_KEEP_MS) {
+		s_astrLoginNotice.clear();
+		return;
+	}
+	char szAgo[64];
+	if (dwPast < 60 * 1000) {
+		strcpy(szAgo, "ついさっき");
+	} else {
+		snprintf(szAgo, sizeof(szAgo), "約%u分前", (unsigned)(dwPast / 60000));
+	}
+	std::string strHead = std::string("SYSTEM:※ログインする前（") + szAgo + "）に、次のお知らせがありました。";
+	SendCmdSYSMSG(pID, W32Utf8ToTextStr(strHead.c_str()).c_str());
+	for (size_t i = 0; i < s_astrLoginNotice.size(); i ++) {
+		std::string strMsg = "SYSTEM:" + s_astrLoginNotice[i];
+		SendCmdSYSMSG(pID, W32Utf8ToTextStr(strMsg.c_str()).c_str());
+	}
 }

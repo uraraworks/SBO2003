@@ -32,6 +32,7 @@ void DrawChar2			(void);										/* キャラのエフェクトの描画 */
 void DrawChar3			(void);										/* キャラの名前等の描画 */
 static void DrawDropEffects	(void);									/* アイテムドロップ演出の描画 */
 void DrawETC			(void);										/* ゲージ等の描画 */
+static BOOL IsHideNpcPut	(PCHARINFO pChar);						/* NPC発生を描かない？ */
 static void DrawFrameRect	(int x, int y, int cx, int cy, COLORREF cl);	/* 1ドットの枠を描く */
 static void DrawGuardMark	(int x, int y);								/* 構えの盾マーク */
 static void DrawBuffIcons	(int x, int y, DWORD dwTblID);				/* 攻撃力・守備力アップのアイコン(system.png) */
@@ -165,10 +166,8 @@ static void DrawMagicKeyBand(PCHARINFO pChar, int nX, int nY)
 	HFONT hFontOld;
 	SIZE size;
 
-	if (!g_bMagicBar || !g_bBattleMode || (g_pMapInfo == NULL) || ((g_pMapInfo->byFlg & MAPFLG_BATTLE) == 0)) {
-		return;
-	}
-	if (pChar->abySubStatus[0] != 0) {
+	/* 出す条件はスマホのボタン（SboWebGetMagicKeyState）と同じ関数で決める */
+	if (!IsMagicBandShown (pChar)) {
 		return;
 	}
 
@@ -177,27 +176,20 @@ static void DrawMagicKeyBand(PCHARINFO pChar, int nX, int nY)
 	SetBkMode (hDC, TRANSPARENT);
 
 	for (i = 0; i < MAX_MAGICKEY; i ++) {
-		BYTE byMagicID = g_abyMagicKey[i];
 		int nR = 150, nG = 150, nB = 150;
-		BOOL bDark = FALSE;
+		char szName[16];
+		int nKind;
+		BOOL bDark;
 
-		if ((byMagicID == 0) || (byMagicID >= g_aMagicInfo.GetSize ())) {
+		if (!GetMagicKeySlotLabel (pChar, i, szName, sizeof (szName), &nKind, &bDark)) {
 			wsprintf (aszText[i], "%d -", i + 1);
 		} else {
-			PMAGICINFO pInfo = g_aMagicInfo[byMagicID];
-			char szName[16];
-			int nLen = SboTextFitWidth (pInfo->szName, 4);		/* 全角2文字 */
-
-			nLen = min (nLen, (int)sizeof (szName) - 1);
-			CopyMemory (szName, pInfo->szName, nLen);
-			szName[nLen] = 0;
 			wsprintf (aszText[i], "%d %s", i + 1, szName);
-			switch (GetMagicKeyKind (pInfo)) {
+			switch (nKind) {
 			case 0:		nR = 255;	nG = 120;	nB = 110;	break;		/* 攻撃 */
 			case 1:		nR = 120;	nG = 230;	nB = 130;	break;		/* 回復 */
 			default:	nR = 130;	nG = 180;	nB = 255;	break;		/* 補助 */
 			}
-			bDark = (pChar->dwTimeTurnMagicLV != 0) || !IsMagicKeyUsable (pChar, byMagicID);
 		}
 		if (bDark) {
 			nR = nR * 45 / 100;
@@ -1040,6 +1032,25 @@ void DrawMapLine(int nLine, int nType)
 
 
 /* ========================================================================= */
+/* 関数名：	IsHideNpcPut												 */
+/* 内容：	NPC発生（管理者にだけ見える目印）を描かないか				 */
+/* 			一般プレイヤーには見せない。管理者もスクショ用に				 */
+/* 			「その他→各種通知」の「NPC発生を表示」を外すと隠れる			 */
+/* ========================================================================= */
+
+static BOOL IsHideNpcPut(PCHARINFO pChar)
+{
+	if (pChar->byNpcType != NPCTYPE_PUT) {
+		return FALSE;
+	}
+	if (g_aCharInfo[g_nMyCharID]->byAdminLV == ADMINLV_USER) {
+		return TRUE;
+	}
+	return (g_bViewNpcPut == FALSE);
+}
+
+
+/* ========================================================================= */
 /* 関数名：	DrawCharLine													 */
 /* 内容：	キャラの描画													 */
 /* 日付：	2003/05/11														 */
@@ -1082,10 +1093,9 @@ void DrawCharLine(int nLine)
 			continue;
 		}
 
-		if (pCharMyChar->byAdminLV == ADMINLV_USER) {
-			if (pChar->byNpcType == NPCTYPE_PUT) {
-				continue;
-			}
+		/* NPC発生は管理者だけ見える（管理者も「各種通知」で隠せる） */
+		if (IsHideNpcPut (pChar)) {
+			continue;
 		}
 
 		nMapDark = 0;
@@ -1545,10 +1555,9 @@ void DrawChar2(void)
 			continue;
 		}
 
-		if (g_aCharInfo[g_nMyCharID]->byAdminLV == ADMINLV_USER) {
-			if (pChar->byNpcType == NPCTYPE_PUT) {
-				continue;
-			}
+		/* NPC発生は管理者だけ見える（管理者も「各種通知」で隠せる） */
+		if (IsHideNpcPut (pChar)) {
+			continue;
 		}
 		xTmp = dwMyX - pChar->dwX;
 		yTmp = dwMyY - pChar->dwY;
@@ -1629,10 +1638,9 @@ void DrawChar2(void)
 			continue;
 		}
 
-		if (g_aCharInfo[g_nMyCharID]->byAdminLV == ADMINLV_USER) {
-			if (pChar->byNpcType == NPCTYPE_PUT) {
-				continue;
-			}
+		/* NPC発生は管理者だけ見える（管理者も「各種通知」で隠せる） */
+		if (IsHideNpcPut (pChar)) {
+			continue;
 		}
 		xTmp = dwMyX - pChar->dwX;
 		yTmp = dwMyY - pChar->dwY;
@@ -1758,10 +1766,9 @@ void DrawChar3(void)
 			continue;
 		}
 
-		if (g_aCharInfo[g_nMyCharID]->byAdminLV == ADMINLV_USER) {
-			if (pChar->byNpcType == NPCTYPE_PUT) {
-				continue;
-			}
+		/* NPC発生は管理者だけ見える（管理者も「各種通知」で隠せる） */
+		if (IsHideNpcPut (pChar)) {
+			continue;
 		}
 
 		pDibDrawTmp.FillRect (0, 0, 8 * 20, 14 * 2, RGB (0, 0, 0));

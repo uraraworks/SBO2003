@@ -111,6 +111,9 @@ extern void SendCMDEQUUSERINFOREQ	(BYTE);									/* 装備職業情報要求 */
 extern void SendCmdADMINUNDO		(BYTE, BYTE, DWORD);					/* 管理者画面の「元に戻す」 */
 extern void SendCmdADMINSPACE		(BYTE, DWORD);							/* 管理者の空間の切り替え */
 extern void SendCmdADMINQUEST		(BYTE, int, const QUESTINFO *);			/* 管理者ウィンドウのギルドの依頼の編集 */
+extern void SendCmdADMINFLAGNAME	(BYTE, int, const FLAGNAMEINFO *);		/* 管理者ウィンドウのフラグの名前表の編集 */
+extern void SendCmdADMINTALK		(BYTE, int, const TALKINFO *);			/* 管理者ウィンドウの会話データの編集 */
+extern void SendCmdADMINCHARFLAG	(BYTE, DWORD, BYTE, WORD, WORD);		/* 管理者ウィンドウのキャラのフラグの取得・変更 */
 extern void SendCmdADMINRESURRECT	(DWORD dwTblID);						/* 管理者ウィンドウからキャラをHP満タンで蘇生 */
 extern void SendCmdMAGICKEY			(BYTE byNo, BYTE byMagicID);			/* 特技ショートカットの登録 */
 void SendCmdNPCROUTE		(BYTE, DWORD, DWORD, BYTE, BYTE, BYTE, const BYTE *, const BYTE *);	/* NPCの巡回ルート */

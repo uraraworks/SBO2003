@@ -342,9 +342,9 @@ BOOL IsMagicWall(DWORD dwMapID, int x, int y)
 	if (CheckCharBlock (dwMapID, (DWORD)x, (DWORD)y)) {
 		return FALSE;
 	}
-	/* カウンターは越えて届く */
+	/* カウンターと「低い」パーツは越えて届く */
 	nPartsID = pMap->pwMap[x + y * pMap->nCX];
-	if ((nPartsID < g_wCountMapParts) && (g_aMapPartsInfo[nPartsID].byHitType == PARTSHIT_COUNTER)) {
+	if ((nPartsID < g_wCountMapParts) && ((g_aMapPartsInfo[nPartsID].byHitType == PARTSHIT_COUNTER) || g_aMapPartsInfo[nPartsID].byLow)) {
 		return FALSE;
 	}
 	return TRUE;

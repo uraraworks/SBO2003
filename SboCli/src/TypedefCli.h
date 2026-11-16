@@ -13,6 +13,8 @@
 #define SCRSIZEX	(32 * (DRAW_PARTS_X * 2 + 1))				/* マップ表示サイズ(横) */
 #define SCRSIZEY	(32 * (DRAW_PARTS_Y * 2 + 1))				/* マップ表示サイズ(縦) */
 #define SCRMARTSSIZE	((DRAW_PARTS_X * 2 + 3) * (DRAW_PARTS_Y * 2 + 3))		/* 表示マップパーツ数 */
+#define LISTROWS_MAX	10										/* 一覧の窓に出す最大行数（手持ちが多い時はスクロール） */
+#define LISTSCROLL_MARGIN	3										/* 一覧のスクロールで上下に残す余白の行数 */
 #define SYSMSG_SY	(DRAW_PARTS_Y * 2 * 32)						/* システムメッセージ表示開始位置(縦) */
 #define SYSMSG_EY	(DRAW_PARTS_Y * 2 * 32 - 140)				/* システムメッセージ表示終了位置(縦) */
 #define MAX_NUMMSGS		(10)

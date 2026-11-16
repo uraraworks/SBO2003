@@ -117,6 +117,9 @@ void SendCMDEQUUSERINFOREQ	(BYTE);									/* 装備職業情報要求 */
 void SendCmdADMINUNDO		(BYTE, BYTE, DWORD);					/* 管理者画面の「元に戻す」 */
 void SendCmdADMINSPACE		(BYTE, DWORD);							/* 管理者の空間の切り替え */
 void SendCmdADMINQUEST		(BYTE, int, const QUESTINFO *);			/* 管理者ウィンドウのギルドの依頼の編集 */
+void SendCmdADMINFLAGNAME	(BYTE, int, const FLAGNAMEINFO *);		/* 管理者ウィンドウのフラグの名前表の編集 */
+void SendCmdADMINTALK		(BYTE, int, const TALKINFO *);			/* 管理者ウィンドウの会話データの編集 */
+void SendCmdADMINCHARFLAG	(BYTE, DWORD, BYTE, WORD, WORD);		/* 管理者ウィンドウのキャラのフラグの取得・変更 */
 void SendCmdADMINRESURRECT	(DWORD);								/* 管理者ウィンドウからキャラをHP満タンで蘇生 */
 void SendCmdMAGICKEY		(BYTE, BYTE);							/* 特技ショートカットの登録 */
 void SendCMDSHOPBUY			(DWORD, DWORD);							/* アイテム購入 */
@@ -612,7 +615,7 @@ void SendCmdMAPPARTS(int nNo)
 	pSend->byAnimeType = pParts->byAnimeType;
 	pSend->byAnimeCount = pParts->byAnimeCount;
 	pSend->byLevel = pParts->byLevel;
-	pSend->byLight = pParts->byLight;
+	pSend->byLight = MAPPARTS_MAKE_SAVELIGHT (pParts);
 	pSend->byDamage = pParts->byDamage;
 	pSend->byPoison = pParts->byPoison;
 	pSend->wGrpID = pParts->wGrpID;
@@ -3577,6 +3580,72 @@ void SendCmdADMINQUEST(BYTE byCmdSub, int nNo, const QUESTINFO *pInfo)
 		pPara->Info = *pInfo;
 	}
 	cliSock.Send ((PBYTE)pPara, sizeof (CMDPARA_ADMINQUEST));
+	SAFE_DELETE (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdADMINFLAGNAME												 */
+/* 内容：コマンド送信(管理者ウィンドウのフラグの名前表の編集)				 */
+/*       byCmdSub: ADMINFLAGNAME_LISTREQ（一覧の問い合わせ）・				 */
+/*                 ADMINFLAGNAME_SET（pInfo を nNo 番目に書き込む。-1 は足す。	 */
+/*                 削除は byState=0 にして書き込む）						 */
+/* ========================================================================= */
+void SendCmdADMINFLAGNAME(BYTE byCmdSub, int nNo, const FLAGNAMEINFO *pInfo)
+{
+	PCMDPARA_ADMINFLAGNAME pPara = new CMDPARA_ADMINFLAGNAME;
+
+	ZeroMemory (pPara, sizeof (CMDPARA_ADMINFLAGNAME));
+	pPara->byCmd	= CMD_ADMINFLAGNAME;
+	pPara->byCmdSub	= byCmdSub;
+	pPara->nNo		= nNo;
+	if (pInfo) {
+		pPara->aInfo[0] = *pInfo;
+	}
+	cliSock.Send ((PBYTE)pPara, sizeof (CMDPARA_ADMINFLAGNAME));
+	SAFE_DELETE (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdADMINTALK													 */
+/* 内容：コマンド送信(管理者ウィンドウの会話データの編集)					 */
+/*       byCmdSub: ADMINTALK_LISTREQ（一覧の問い合わせ）・					 */
+/*                 ADMINTALK_SET（pInfo を nNo 番目に書き込む。-1 は足す）	 */
+/*       サーバーは構造体の全体の大きさを調べるので、全部の欄を送る			 */
+/* ========================================================================= */
+void SendCmdADMINTALK(BYTE byCmdSub, int nNo, const TALKINFO *pInfo)
+{
+	PCMDPARA_ADMINTALK pPara = new CMDPARA_ADMINTALK;
+
+	ZeroMemory (pPara, sizeof (CMDPARA_ADMINTALK));
+	pPara->byCmd	= CMD_ADMINTALK;
+	pPara->byCmdSub	= byCmdSub;
+	pPara->nNo		= nNo;
+	if (pInfo) {
+		pPara->Info = *pInfo;
+	}
+	cliSock.Send ((PBYTE)pPara, sizeof (CMDPARA_ADMINTALK));
+	SAFE_DELETE (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdADMINCHARFLAG												 */
+/* 内容：コマンド送信(管理者ウィンドウのキャラのフラグの取得・変更)			 */
+/*       byCmdSub: ADMINCHARFLAG_GET（dwTblID のキャラの印と数値を取得）・	 */
+/*                 ADMINCHARFLAG_SET（byKind が印なら wNo の印を wValue(0/1) に、*/
+/*                 数値なら wNo の数値を wValue(0〜255) に）					 */
+/* ========================================================================= */
+void SendCmdADMINCHARFLAG(BYTE byCmdSub, DWORD dwTblID, BYTE byKind, WORD wNo, WORD wValue)
+{
+	PCMDPARA_ADMINCHARFLAG pPara = new CMDPARA_ADMINCHARFLAG;
+
+	ZeroMemory (pPara, sizeof (CMDPARA_ADMINCHARFLAG));
+	pPara->byCmd	= CMD_ADMINCHARFLAG;
+	pPara->byCmdSub	= byCmdSub;
+	pPara->byKind	= byKind;
+	pPara->dwTblID	= dwTblID;
+	pPara->wNo		= wNo;
+	pPara->wValue	= wValue;
+	cliSock.Send ((PBYTE)pPara, sizeof (CMDPARA_ADMINCHARFLAG));
 	SAFE_DELETE (pPara);
 }
 
