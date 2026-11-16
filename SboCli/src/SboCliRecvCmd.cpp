@@ -7103,8 +7103,19 @@ void RecvDataProcSYSMSG2(BYTE *pData, DWORD dwDataSize)
 			return;
 		}
 		pChar = g_aCharInfo[nNo];
-		wsprintf (szTmp, aSysMsgTbl[pRecv->pID], pChar->szName, g_aItemInfo[pRecv->dwData2]->szName);
-		break;
+		if (pRecv->pID == SYSMSG_GETITEM1) {
+			/* 敵の今の位置を覚えて、アイテムの絵が飛び出す演出を始める(敵はまだ消えていない) */
+			AddDropEffect (pChar->dwMapID, (int)pChar->dwX * 32 - BowOffsetX (pChar),
+					(int)pChar->dwY * 32 - BowOffsetY (pChar), pRecv->dwData2);
+			wsprintf (szTmp, aSysMsgTbl[pRecv->pID], pChar->szName, g_aItemInfo[pRecv->dwData2]->szName);
+		} else {
+			/* もらった人が分かったので、その人の頭上へ移す */
+			SetDropEffectOwner (pRecv->dwData2, pRecv->dwData1);
+			strcpy (szTmp, "★");
+			wsprintf (szTmp + strlen (szTmp), aSysMsgTbl[pRecv->pID], pChar->szName, g_aItemInfo[pRecv->dwData2]->szName);
+		}
+		AddSysMsg (szTmp, RGB (255, 215, 64));	/* ドロップは目立つように金色 */
+		return;
 
 	case SYSMSG_USESPECIALTY:
 		nNo = GetCharNo (pRecv->dwData1);

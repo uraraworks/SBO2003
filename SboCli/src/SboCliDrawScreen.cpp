@@ -30,6 +30,7 @@ void DrawMapLine		(int, int);									/* 指定ラインの背景描画 */
 void DrawCharLine		(int);										/* 指定ラインのキャラ描画 */
 void DrawChar2			(void);										/* キャラのエフェクトの描画 */
 void DrawChar3			(void);										/* キャラの名前等の描画 */
+static void DrawDropEffects	(void);									/* アイテムドロップ演出の描画 */
 void DrawETC			(void);										/* ゲージ等の描画 */
 static BOOL IsHideNpcPut	(PCHARINFO pChar);						/* NPC発生を描かない？ */
 static void DrawFrameRect	(int x, int y, int cx, int cy, COLORREF cl);	/* 1ドットの枠を描く */
@@ -501,6 +502,7 @@ BOOL DrawScreenMOVE(void)
 	DrawNpcRoute ();		/* NPCの巡回情報を描画 */
 	DrawMapLightEdit ();	/* 明るさの範囲・光源の編集中の印を描画 */
 	DrawChar3 ();			/* 文字を描画 */
+	DrawDropEffects ();		/* アイテムドロップ演出を描画 */
 	DrawETC ();				/* ゲージ等の描画 */
 
 	if (g_hWndDebug) {
@@ -1929,6 +1931,212 @@ void DrawChar3(void)
 
 	SelectObject (hDC, hFontOld);
 	g_pDibDrawMap->Unlock ();
+}
+
+/* ========================================================================= */
+/* アイテムドロップ演出														 */
+/* 敵がアイテムを落とした時、敵の位置からアイテムの絵が跳ね上がり、キラッと	 */
+/* 光り、もらった人の頭上で浮かんでから消える。ブラウザ版は毎フレーム描画	 */
+/* しているので、時刻(timeGetTime)だけで位置を決める						 */
+/* ========================================================================= */
+#define DROPFX_MAX		8		/* 同時に出せる数 */
+#define DROPFX_HOP		350		/* 跳ね上がる時間(ms) */
+#define DROPFX_MOVE		250		/* もらった人の頭上へ移る時間(ms) */
+#define DROPFX_FLOAT	1000	/* 浮かんでいる時間(ms) */
+#define DROPFX_FADE		400		/* 消えるまでの時間(ms。浮かんでいる時間の終わりの部分) */
+#define DROPFX_SPARK	300		/* 光る時間(ms。跳ね終わりから) */
+
+typedef struct _DROPFXINFO {
+	BOOL	bUse;				/* 使用中 */
+	DWORD	dwStart;			/* 開始時間 */
+	DWORD	dwMapID;			/* 敵のいたマップ */
+	int		nWorldX, nWorldY;	/* 敵のいた位置(ドット。歩き中のずれも含む) */
+	DWORD	dwItemNo;			/* アイテム番号 */
+	DWORD	dwOwnerID;			/* もらった人のキャラID(0は不明) */
+	DWORD	dwMoveStart;		/* 頭上へ移り始める時間(0は移らない) */
+} DROPFXINFO;
+
+static DROPFXINFO g_aDropFx[DROPFX_MAX];
+
+/* 追加(いっぱいなら一番古いものを使う) */
+void AddDropEffect(DWORD dwMapID, int nWorldX, int nWorldY, DWORD dwItemNo)
+{
+	int i, nUse = 0;
+
+	for (i = 0; i < DROPFX_MAX; i ++) {
+		if (!g_aDropFx[i].bUse) {
+			nUse = i;
+			break;
+		}
+		if ((int)(g_aDropFx[nUse].dwStart - g_aDropFx[i].dwStart) > 0) {
+			nUse = i;
+		}
+	}
+	DROPFXINFO *p = &g_aDropFx[nUse];
+	ZeroMemory (p, sizeof (DROPFXINFO));
+	p->bUse = TRUE;
+	p->dwStart = timeGetTime ();
+	p->dwMapID = dwMapID;
+	p->nWorldX = nWorldX;
+	p->nWorldY = nWorldY;
+	p->dwItemNo = dwItemNo;
+	g_bDraw = TRUE;
+}
+
+/* もらった人を設定(同じアイテムでまだ持ち主のいない一番新しい演出に付ける) */
+void SetDropEffectOwner(DWORD dwItemNo, DWORD dwCharID)
+{
+	int i, nFind = -1;
+	DWORD dwNow = timeGetTime ();
+
+	for (i = 0; i < DROPFX_MAX; i ++) {
+		DROPFXINFO *p = &g_aDropFx[i];
+		if (!p->bUse || p->dwOwnerID || (p->dwItemNo != dwItemNo)) {
+			continue;
+		}
+		if ((nFind < 0) || ((int)(p->dwStart - g_aDropFx[nFind].dwStart) > 0)) {
+			nFind = i;
+		}
+	}
+	if (nFind < 0) {
+		return;
+	}
+	g_aDropFx[nFind].dwOwnerID = dwCharID;
+	/* 跳ね終わる前なら跳ね終わりから、過ぎていればすぐ移る */
+	g_aDropFx[nFind].dwMoveStart = max (dwNow, g_aDropFx[nFind].dwStart + DROPFX_HOP);
+}
+
+/* アイテムの種別に合わせた system.png の 16x16 の絵の位置 */
+static void GetDropIconPos(PITEMINFO pItem, int *pnX, int *pnY)
+{
+	int x = 128, y = 0;	/* 袋 */
+
+	switch (pItem->byType) {
+	case ITEMTYPE_WEAPON:		x = 0;		y = 96;	break;
+	case ITEMTYPE_SEED:			x = 16;		y = 96;	break;
+	case ITEMTYPE_ARMOR:		x = 32;		y = 96;	break;
+	case ITEMTYPE_HELMET:		x = 48;		y = 96;	break;
+	case ITEMTYPE_EQU_HAND:		x = 64;		y = 96;	break;
+	case ITEMTYPE_EQU_LEG:		x = 80;		y = 96;	break;
+	case ITEMTYPE_EQU_ACC1:		x = 96;		y = 96;	break;
+	case ITEMTYPE_EQU_ACC2:
+	case ITEMTYPE_EQU_ACC3:		x = 112;	y = 96;	break;
+	case ITEMTYPE_SHILD:		x = 144;	y = 64;	break;
+	case ITEMTYPE_MAGIC:
+	case ITEMTYPE_MSG:			x = 160;	y = 64;	break;
+	case ITEMTYPE_HPUP:
+	case ITEMTYPE_MANAUP:
+	case ITEMTYPE_HPMANAUP:
+	case ITEMTYPE_SAKE:			x = 208;	y = 64;	break;
+	}
+	*pnX = x;
+	*pnY = y;
+}
+
+static void DrawDropEffects(void)
+{
+	int i;
+	DWORD dwNow = timeGetTime ();
+
+	if (g_nMyCharID < 0) {
+		return;
+	}
+	PCHARINFO pMy = g_aCharInfo[g_nMyCharID];
+
+	for (i = 0; i < DROPFX_MAX; i ++) {
+		DROPFXINFO *p = &g_aDropFx[i];
+		if (!p->bUse) {
+			continue;
+		}
+		DWORD dwTime = dwNow - p->dwStart;
+		/* 終わる時間(頭上へ移る場合は移り終わってから1秒) */
+		DWORD dwEnd = DROPFX_HOP + DROPFX_FLOAT;
+		if (p->dwMoveStart) {
+			dwEnd = (p->dwMoveStart - p->dwStart) + DROPFX_MOVE + DROPFX_FLOAT;
+		}
+		if ((dwTime >= dwEnd) || (dwTime > 10000)) {
+			p->bUse = FALSE;
+			continue;
+		}
+		if ((p->dwMapID != pMy->dwMapID) || (p->dwItemNo >= (DWORD)g_aItemInfo.GetSize ())) {
+			continue;
+		}
+		g_bDraw = TRUE;
+
+		/* 敵がいた場所の画面位置(絵の真ん中と足元の高さ) */
+		int x = 256 + p->nWorldX - (int)pMy->dwX * 32 + 16;
+		int y = 256 + p->nWorldY - (int)pMy->dwY * 32 - 8;
+		float fHopY = 0.0f;
+		int nSparkX, nSparkY;
+		BYTE byLevel = 0;
+
+		if (dwTime < DROPFX_HOP) {
+			/* 放物線で跳ね上がる(横へも少しずつずれる) */
+			float u = (float)dwTime / DROPFX_HOP;
+			fHopY = 4.0f * u * (1.0f - u) * 28.0f;
+			x += (int)(u * 10.0f);
+			y -= 8;
+		} else {
+			x += 10;
+			y -= 8;
+		}
+		y -= (int)fHopY;
+
+		/* もらった人が分かる時は、その人の頭上へ移る */
+		if (p->dwOwnerID) {
+			int nNo = GetCharNo (p->dwOwnerID);
+			if (nNo >= 0) {
+				PCHARINFO pOwner = g_aCharInfo[nNo];
+				int tx = 256 + ((int)pOwner->dwX - (int)pMy->dwX) * 32 - BowOffsetX (pOwner) + GetCharCenterX (pOwner);
+				int ty = 256 + ((int)pOwner->dwY - (int)pMy->dwY) * 32 - BowOffsetY (pOwner) - 8 - 20;
+				DWORD dwMoveTime = dwNow - p->dwMoveStart;
+				if ((int)dwMoveTime < 0) {
+					dwMoveTime = 0;
+				}
+				float r = (dwMoveTime >= DROPFX_MOVE) ? 1.0f : ((float)dwMoveTime / DROPFX_MOVE);
+				r = r * (2.0f - r);	/* 最初が速く、最後がゆっくり */
+				int nFromX = 256 + p->nWorldX - (int)pMy->dwX * 32 + 26;
+				int nFromY = 256 + p->nWorldY - (int)pMy->dwY * 32 - 16;
+				x = nFromX + (int)((tx - nFromX) * r);
+				y = nFromY + (int)((ty - nFromY) * r);
+			}
+		}
+		nSparkX = x;
+		nSparkY = y;
+
+		/* 浮かんでいる間は、ゆっくり上へ動く */
+		DWORD dwFloatStart = DROPFX_HOP;
+		if (p->dwMoveStart) {
+			dwFloatStart = (p->dwMoveStart - p->dwStart) + DROPFX_MOVE;
+		}
+		if (dwTime >= dwFloatStart) {
+			DWORD dwF = dwTime - dwFloatStart;
+			y -= (int)(dwF / 100);
+			nSparkY = y;
+			/* 終わりのほうで薄くなって消える(BltAlpha は大きいほど透明) */
+			if (dwF + DROPFX_FADE > DROPFX_FLOAT) {
+				byLevel = (BYTE)(min (100, (int)((dwF + DROPFX_FADE - DROPFX_FLOAT) * 100 / DROPFX_FADE)));
+			}
+		}
+
+		/* アイテムの絵 */
+		int nGx, nGy;
+		GetDropIconPos (g_aItemInfo[p->dwItemNo], &nGx, &nGy);
+		if (byLevel) {
+			g_pDibDrawMap->BltAlpha (x - 8, y - 8, 16, 16, g_pDibSystem, nGx, nGy, byLevel, TRUE);
+		} else {
+			g_pDibDrawMap->Blt (x - 8, y - 8, 16, 16, g_pDibSystem, nGx, nGy, TRUE);
+		}
+
+		/* 跳ね終わりにキラッと光る(白い十字が大きくなって小さくなる) */
+		if ((dwTime >= DROPFX_HOP - 60) && (dwTime < DROPFX_HOP - 60 + DROPFX_SPARK)) {
+			float u = (float)(dwTime - (DROPFX_HOP - 60)) / DROPFX_SPARK;
+			int nLen = (int)(10.0f * (1.0f - fabsf (2.0f * u - 1.0f))) + 1;
+			FillRectClip (nSparkX - nLen, nSparkY - 1, nLen * 2 + 1, 2, RGB (255, 255, 255));
+			FillRectClip (nSparkX - 1, nSparkY - nLen, 2, nLen * 2 + 1, RGB (255, 255, 255));
+			FillRectClip (nSparkX - 4, nSparkY - 4, 8, 8, RGB (255, 255, 200));
+		}
+	}
 }
 
 /* ========================================================================= */

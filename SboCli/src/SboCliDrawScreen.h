@@ -12,5 +12,7 @@
 extern void TextOut2	(HDC, int, int, char *, COLORREF);			/* 黒縁取りで文字描画 */
 extern void DrawScreen	(HWND, HDC);								/* 画面の描画 */
 extern void AddSysMsg	(LPSTR, COLORREF);							/* システムメッセージの追加 */
+extern void AddDropEffect	(DWORD dwMapID, int nWorldX, int nWorldY, DWORD dwItemNo);	/* アイテムドロップ演出の追加 */
+extern void SetDropEffectOwner	(DWORD dwItemNo, DWORD dwCharID);	/* 演出のアイテムをもらった人を設定 */
 
 /* Copyright(C)URARA-works 2003-2006 */
