@@ -130,6 +130,7 @@ void SendCmdRESURRECTION	(void);									/* 蘇生 */
 void SendCmdREQ_ATTACK		(DWORD dwTblID, BYTE byTurnLV);			/* 攻撃要求 */
 void SendCmdREQ_GUARD		(BOOL bGuard);							/* 構え(防御)の開始・終了 */
 void SendCmdRECIPEMAKE		(BYTE, WORD);							/* レシピで作ってもらう要求 */
+void SendCmdMARKET			(BYTE, BYTE, BYTE, WORD, DWORD, DWORD);	/* 取引所の要求 */
 void SendCmdQUEST			(BYTE, WORD, DWORD);					/* ギルドの仕事依頼 */
 
 
@@ -3080,6 +3081,29 @@ void SendCmdRECIPEMAKE(
 	SendData.wRecipeID	= wRecipeID;
 	SendData.pID		= g_pMyID;
 	SendData.dwTblID	= g_aCharInfo[g_nMyCharID]->dwTblID;
+
+	cliSock.Send ((PBYTE)&SendData, sizeof (SendData));
+}
+
+/* ========================================================================= */
+/* 関数名：	SendCmdMARKET													 */
+/* 内容：	コマンド送信(取引所の要求)										 */
+/*			byCmd=CMD_MARKETLIST/PUT/BUY/TAKEBACK/GOLDGET。使う欄は		 */
+/*			LIST=byType、PUT=byNo+dwPrice、BUY=dwID+wItemID+dwPrice、		 */
+/*			TAKEBACK=dwID、GOLDGET=無し										 */
+/* ========================================================================= */
+void SendCmdMARKET(BYTE byCmd, BYTE byType, BYTE byNo, WORD wItemID, DWORD dwID, DWORD dwPrice)
+{
+	CMDPARA_MARKET SendData;
+
+	ZeroMemory (&SendData, sizeof (SendData));
+	SendData.byCmd		= byCmd;
+	SendData.byType		= byType;
+	SendData.byNo		= byNo;
+	SendData.wItemID	= wItemID;
+	SendData.dwTblID	= g_aCharInfo[g_nMyCharID]->dwTblID;
+	SendData.dwID		= dwID;
+	SendData.dwPrice	= dwPrice;
 
 	cliSock.Send ((PBYTE)&SendData, sizeof (SendData));
 }

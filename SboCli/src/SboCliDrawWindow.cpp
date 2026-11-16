@@ -135,6 +135,7 @@ void DrawWindowSTATUSMAGIC						(PWNDINFO);			/* 強さ：覚えている特技 
 void DrawWindowMAKER							(PWNDINFO);			/* 作り手（レシピ）：作れる物の一覧・確認 */
 void DrawWindowTOWNWARP						(PWNDINFO);			/* 町転送：行き先の選択 */
 void DrawWindowQUEST						(PWNDINFO);			/* ギルドの依頼：一覧・進み具合 */
+void DrawWindowMARKET						(PWNDINFO);			/* 取引所（商人ギルドの出張所）の受付 */
 
 void DrawWindowSUBSUGOROKU_JOINMODE				(PWNDINFO);			/* ウィンドウの描画(すごろく：参加モード選択) */
 void DrawWindowSUBSUGOROKU_COMMAND				(PWNDINFO);			/* ウィンドウの描画(すごろく：行動選択) */
@@ -351,6 +352,7 @@ void DrawWindow(CImg32 *pDib, int x, int y)
 		case WNDTYPE_TOWNWARP:				DrawWindowTOWNWARP (pWnd);				break;
 		case WNDTYPE_QUEST:					DrawWindowQUEST (pWnd);					break;
 		case WNDTYPE_SORTMENU:				DrawWindowSORTMENU (pWnd);				break;
+		case WNDTYPE_MARKET:				DrawWindowMARKET (pWnd);				break;
 		}
 		s_bDrawingWindow = FALSE;
 		pDib->BltAlpha2 (pWnd->nX + x, pWnd->nY + y, pWnd->nCx, pWnd->nCy, pWnd->pDib, 0, 0, 15, TRUE);
@@ -4939,6 +4941,122 @@ void DrawWindowSTATUSMAGIC(PWNDINFO pWnd)
 	pWnd->dwTimeDrawStart = timeGetTime ();
 
 	if (pWnd->nData2 > 0) {
+		DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
+	}
+}
+
+
+/* ========================================================================= */
+/* 関数名：DrawWindowMARKET													 */
+/* 内容：ウィンドウの描画(取引所の受付：メニュー・一覧・品選び・値段・確認)	 */
+/*       見た目は預かり所・お店の一覧と同じ（白い字・カーソル・枠）			 */
+/* ========================================================================= */
+void DrawWindowMARKET(PWNDINFO pWnd)
+{
+	char szTmp[160], szTmp2[160];
+	int i, nNo;
+	COLORREF clText;
+	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
+
+	/* 値段の入力は、描き終わっていればカーソルも要らない */
+	if (pWnd->dwTimeDrawStart) {
+		if (pWnd->nType2 != MARKETWND_PRICE) {
+			DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
+		}
+		return;
+	}
+
+	DrawWindowFrame (pWnd);
+	HDC hDC = pWnd->pDib->Lock ();
+	HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFontBasic);
+	SetBkMode (hDC, TRANSPARENT);
+	SetBkColor (hDC, RGB (40, 40, 40));
+
+	switch (pWnd->nType2) {
+	case MARKETWND_MENU:
+		TextOut2 (hDC, 32, 16, "買う", RGB (255, 255, 255));
+		TextOut2 (hDC, 32, 32, "出品する", RGB (255, 255, 255));
+		TextOut2 (hDC, 32, 48, "自分の出品", RGB (255, 255, 255));
+		TextOut2 (hDC, 32, 64, "売上を受け取る", RGB (255, 255, 255));
+		TextOut2 (hDC, 32, 80, "やめる", RGB (255, 255, 255));
+		break;
+
+	case MARKETWND_LIST:
+		{
+			int nKind = (int)pWnd->dwData;
+			int nNameUnit, nPriceChar, nThirdUnit;
+			MarketGetLayout (nKind, &nNameUnit, &nPriceChar, &nThirdUnit);
+			int xPrice = 32 + (nNameUnit + 1) * 8;
+			int xThird = xPrice + (nPriceChar + 1) * 8;
+
+			for (i = 0; i < pWnd->nData2; i ++) {
+				nNo = (int)pWnd->byData1 + i;
+				if (nNo >= (int)g_MarketList.byCount) {
+					break;
+				}
+				const MARKETENTRY *pEntry = &g_MarketList.aEntry[nNo];
+				/* 買う一覧：所持金が足りない品は灰色。自分の出品：期限切れの品は灰色 */
+				if (nKind == MARKETLIST_BUY) {
+					clText = (pChar->dwGold >= pEntry->dwPrice) ? RGB (255, 255, 255) : RGB (150, 150, 150);
+				} else {
+					clText = (pEntry->byState == MARKETSTATE_EXPIRED) ? RGB (150, 150, 150) : RGB (255, 255, 255);
+				}
+				MarketCutText (szTmp, sizeof (szTmp), MarketItemName (pEntry->wItemID), nNameUnit);
+				TextOut2 (hDC, 32, 16 + i * 16, szTmp, clText);
+
+				/* 値段は右にそろえる（左を空白で埋める） */
+				wsprintf (szTmp, "%dG", (int)pEntry->dwPrice);
+				int nPad = max (nPriceChar - (int)strlen (szTmp), 0);
+				FillMemory (szTmp2, nPad, ' ');
+				lstrcpy (&szTmp2[nPad], szTmp);
+				TextOut2 (hDC, xPrice, 16 + i * 16, szTmp2, clText);
+
+				MarketThirdText (nKind, pEntry, szTmp, sizeof (szTmp));
+				TextOut2 (hDC, xThird, 16 + i * 16, szTmp, clText);
+			}
+		}
+		break;
+
+	case MARKETWND_ITEM:
+		{
+			int nCount = GetItemCount (g_nMyCharID);
+			for (i = 0; i < pWnd->nData2; i ++) {
+				nNo = (int)pWnd->byData1 + i;
+				if (nNo >= nCount) {
+					break;
+				}
+				PITEMINFO pItem = g_aItemInfo[pChar->waItem[nNo]];
+				/* 取引できない品は灰色（装備中の印は預かり所と同じ） */
+				clText = (pItem->byFlg & ITEMFLG_TRADE) ? RGB (150, 150, 150) : RGB (255, 255, 255);
+				TextOut2 (hDC, 32, 16 + i * 16, pItem->szName, clText);
+				for (int j = 0; j < 10; j ++) {
+					if (pChar->waEqu[j] == nNo) {
+						pWnd->pDib->Blt (16, 16 + i * 16, 8, 16, g_pDibSystem, 64, 16, TRUE);
+					}
+				}
+			}
+		}
+		break;
+
+	case MARKETWND_PRICE:
+		wsprintf (szTmp, "%06dG", pWnd->nData1);
+		if (pWnd->byAnime == 1) {
+			szTmp[pWnd->byData1] = '*';
+		}
+		TextOut2 (hDC, 16, 16, szTmp, RGB (255, 255, 255));
+		break;
+
+	case MARKETWND_CONF:
+		TextOut2 (hDC, 32, 16, "はい", RGB (255, 255, 255));
+		TextOut2 (hDC, 32, 32, "いいえ", RGB (255, 255, 255));
+		break;
+	}
+
+	SelectObject (hDC, hFontOld);
+	pWnd->pDib->Unlock ();
+	pWnd->dwTimeDrawStart = timeGetTime ();
+
+	if (pWnd->nType2 != MARKETWND_PRICE) {
 		DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
 	}
 }

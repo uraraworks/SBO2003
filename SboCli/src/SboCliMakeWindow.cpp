@@ -3150,6 +3150,12 @@ void UpdateWindowITEMINFOList(PWNDINFO pWndList)
 		if (nRecipe >= 0) {
 			nItemID = g_aRecipeInfo[nRecipe].wItem;
 		}
+	} else if ((pWndList->nType == WNDTYPE_MARKET) && (pWndList->nType2 == MARKETWND_LIST)) {
+		/* 取引所の一覧は出品の品を出す（byData1 だけスクロールしている） */
+		nNo += pWndList->byData1;
+		if ((nNo >= 0) && (nNo < (int)g_MarketList.byCount)) {
+			nItemID = g_MarketList.aEntry[nNo].wItemID;
+		}
 	} else if ((pWndList->nType == WNDTYPE_LEAVE) && ((g_nProcShopState == LEAVESTATE_ITEMSELECTGET) || (g_nProcShopState == LEAVESTATE_ITEMSORTSWAP) || (g_nProcShopState == LEAVESTATE_ITEMSELECTDISPOSE))) {
 		/* 預かり所の引き取る一覧は byData1 だけスクロールしている */
 		nNo += pWndList->byData1;
@@ -3640,4 +3646,459 @@ PWNDINFO MakeWindowMAKER_CONF(int nRecipe)
 	pWnd->pDib->SetColorKey (RGB (40, 40, 40));
 	DXAudio.PlaySecoundary (&aSoundTbl[SOUND_CONFIRM]);
 	return pWnd;
+}
+
+/* ========================================================================= */
+/* 取引所（商人ギルドの出張所）の受付                                        */
+/* 台詞が "@b" のNPCに話しかけると、メニュー（MARKETWND_MENU）が出る。        */
+/* 買う・自分の出品の一覧は MARKETWND_LIST、出品する品選びは MARKETWND_ITEM、 */
+/* 値段の入力は MARKETWND_PRICE、確認は MARKETWND_CONF。                     */
+/* 一覧・結果はサーバーから届く（SboCliRecvCmd.cpp の RecvDataProcMARKET*）。 */
+/* 画面の決まり事は docs/market.md                                            */
+/* ========================================================================= */
+
+/* 品の名前（種類IDが範囲外でも落ちないように） */
+LPCSTR MarketItemName(WORD wItemID)
+{
+	if ((wItemID == 0) || ((int)wItemID >= g_aItemInfo.GetSize ())) {
+		return "品物";
+	}
+	return g_aItemInfo[wItemID]->szName;
+}
+
+/* 値段の下限（品の元の売値。サーバーと同じ「価値の 1/4・最低 1」） */
+DWORD MarketPriceMin(WORD wItemID)
+{
+	if ((wItemID == 0) || ((int)wItemID >= g_aItemInfo.GetSize ())) {
+		return 1;
+	}
+	return max (g_aItemInfo[wItemID]->dwGold / 4, (DWORD)1);
+}
+
+/* 手数料（値段の 5%。切り捨て） */
+DWORD MarketFee(DWORD dwPrice)
+{
+	return (DWORD)((unsigned long long)dwPrice * MARKET_FEE_PERCENT / 100);
+}
+
+/* 取引所の窓を探す（種別 nType2 の窓。無ければ NULL） */
+PWNDINFO MarketFindWindow(int nType2)
+{
+	for (int i = 0; i < g_WndInfo.GetSize (); i ++) {
+		if ((g_WndInfo[i]->nType == WNDTYPE_MARKET) && (g_WndInfo[i]->nType2 == nType2)) {
+			return g_WndInfo[i];
+		}
+	}
+	return NULL;
+}
+
+/* 取引所の窓が開いているか */
+BOOL MarketIsOpen(void)
+{
+	for (int i = 0; i < g_WndInfo.GetSize (); i ++) {
+		if (g_WndInfo[i]->nType == WNDTYPE_MARKET) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* 取引所の窓を全部消す（所持金の窓は残す。台詞・横の詳細も一緒に消える） */
+void MarketEraseAll(void)
+{
+	for (;;) {
+		PWNDINFO pWnd = NULL;
+		for (int i = 0; i < g_WndInfo.GetSize (); i ++) {
+			if (g_WndInfo[i]->nType == WNDTYPE_MARKET) {
+				pWnd = g_WndInfo[i];
+				break;
+			}
+		}
+		if (pWnd == NULL) {
+			break;
+		}
+		EraseWindow (pWnd);
+	}
+}
+
+/* 受付を閉じる（窓も所持金の窓も消して、別れの台詞を出す） */
+void MarketClose(LPCSTR pszMsg)
+{
+	MarketEraseAll ();
+	int nNo = GetWindowID (g_dwMsgIDGold);
+	if (nNo >= 0) {
+		EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
+	}
+	g_nMarketWait = MARKETWAIT_NONE;
+	g_szMarketResult[0] = 0;
+	if (pszMsg) {
+		PWNDINFO pWndMsg = MakeWindowMSG ((LPSTR)pszMsg, TRUE);
+		g_WndInfo.Add (pWndMsg);
+		g_dwActiveMsgID = pWndMsg->dwID;
+	}
+	g_bDraw = TRUE;
+}
+
+/* 取引所の窓の台詞を差し替える（台詞は窓の子にする。MakeWindowMSG が前の台詞を消す） */
+void MarketSetMsg(PWNDINFO pWndOwner, LPCSTR pszMsg)
+{
+	PWNDINFO pWndMsg = MakeWindowMSG ((LPSTR)pszMsg, TRUE);
+
+	pWndMsg->pParent = pWndOwner;
+	pWndOwner->pChild = pWndMsg;
+	g_WndInfo.Add (pWndMsg);
+}
+
+/* 全角・半角まざりの文字列を、表示幅 nMaxUnit（半角=1・全角=2）に収まるように切る */
+void MarketCutText(char *pszDst, int nDstSize, LPCSTR pszSrc, int nMaxUnit)
+{
+	int nPos = 0, nUnit = 0, nLen;
+	char szOne[8];
+
+	pszDst[0] = 0;
+	while (pszSrc[nPos]) {
+		nLen = max (SboTextCharLen (&pszSrc[nPos]), 1);
+		if ((nLen >= (int)sizeof (szOne)) || (nPos + nLen >= nDstSize)) {
+			break;
+		}
+		ZeroMemory (szOne, sizeof (szOne));
+		CopyMemory (szOne, &pszSrc[nPos], nLen);
+		int nW = SboTextWidth (szOne);
+		if (nUnit + nW > nMaxUnit) {
+			break;
+		}
+		nUnit += nW;
+		nPos += nLen;
+		pszDst[nPos] = 0;
+	}
+	CopyMemory (pszDst, pszSrc, nPos);
+	pszDst[nPos] = 0;
+}
+
+/* 一覧の3列目（買う一覧は出品者、自分の出品は残り日数）の文字 */
+void MarketThirdText(int nKind, const MARKETENTRY *pEntry, char *pszDst, int nDstSize)
+{
+	if (nKind == MARKETLIST_BUY) {
+		MarketCutText (pszDst, nDstSize, pEntry->szSeller, 12);
+	} else if (pEntry->byState == MARKETSTATE_EXPIRED) {
+		lstrcpyn (pszDst, "期限切れ", nDstSize);
+	} else if (pEntry->dwRemain >= 24 * 60 * 60) {
+		/* 日数は切り上げ（出したばかりの7日は「残り7日」） */
+		wsprintf (pszDst, "残り%d日", (int)((pEntry->dwRemain + 24 * 60 * 60 - 1) / (24 * 60 * 60)));
+	} else {
+		wsprintf (pszDst, "残り%d時間", (int)max (pEntry->dwRemain / (60 * 60), (DWORD)1));
+	}
+}
+
+/* 一覧の列の幅を求める（nNameUnit=品名・nPriceChar=値段の字数・nThirdUnit=3列目。半角=1） */
+void MarketGetLayout(int nKind, int *pnNameUnit, int *pnPriceChar, int *pnThirdUnit)
+{
+	int i, nName = 8, nPrice = 4, nThird = (nKind == MARKETLIST_BUY) ? 8 : 10;
+	char szTmp[128];
+
+	for (i = 0; i < (int)g_MarketList.byCount; i ++) {
+		const MARKETENTRY *pEntry = &g_MarketList.aEntry[i];
+		nName = max (nName, min (SboTextWidth (MarketItemName (pEntry->wItemID)), 24));
+		wsprintf (szTmp, "%dG", (int)pEntry->dwPrice);
+		nPrice = max (nPrice, (int)strlen (szTmp));
+		MarketThirdText (nKind, pEntry, szTmp, sizeof (szTmp));
+		nThird = max (nThird, SboTextWidth (szTmp));
+	}
+	*pnNameUnit = nName;
+	*pnPriceChar = nPrice;
+	*pnThirdUnit = nThird;
+}
+
+/* ========================================================================= */
+/* 関数名：MakeWindowMARKET_MENU											 */
+/* 内容：ウィンドウの作成(取引所：受付のメニュー)							 */
+/*       nData1=カーソル（買う・出品する・自分の出品・売上を受け取る・やめる）	 */
+/* ========================================================================= */
+PWNDINFO MakeWindowMARKET_MENU(void)
+{
+	PWNDINFO pWnd = new WNDINFO;
+	ZeroMemory (pWnd, sizeof (WNDINFO));
+	pWnd->dwID = g_dwNewID;
+	g_dwNewID ++;
+	pWnd->nData2 = 5;
+	pWnd->nX = 16 * 19;
+	pWnd->nY = 16 * 8;
+	pWnd->nCx = 16 * 10;
+	pWnd->nCy = 16 * (2 + pWnd->nData2);
+	pWnd->nType = WNDTYPE_MARKET;
+	pWnd->nType2 = MARKETWND_MENU;
+	pWnd->pDib = new CImg32;
+	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
+	pWnd->pDib->SetColorKey (RGB (40, 40, 40));
+	return pWnd;
+}
+
+/* ========================================================================= */
+/* 関数名：MakeWindowMARKET_LIST											 */
+/* 内容：ウィンドウの作成(取引所：出品の一覧)								 */
+/*       nKind=MARKETLIST_*（dwData に持つ）。一覧は g_MarketList				 */
+/*       byData1=先頭の番号 nData1=画面内のカーソル位置 nData2=表示行数		 */
+/* ========================================================================= */
+PWNDINFO MakeWindowMARKET_LIST(int nKind)
+{
+	int nNameUnit, nPriceChar, nThirdUnit;
+	PWNDINFO pWnd = new WNDINFO;
+
+	ZeroMemory (pWnd, sizeof (WNDINFO));
+	pWnd->dwID = g_dwNewID;
+	g_dwNewID ++;
+	pWnd->dwData = (DWORD)nKind;
+	pWnd->nData2 = min (max ((int)g_MarketList.byCount, 1), MARKET_LISTROWS);
+	MarketGetLayout (nKind, &nNameUnit, &nPriceChar, &nThirdUnit);
+	pWnd->nX = 16;
+	pWnd->nY = MARKET_LISTY;
+	/* 左の枠とカーソル + 品名 + 値段 + 3列目 + 右の枠（画面の幅まで） */
+	pWnd->nCx = 32 + (nNameUnit + 1 + nPriceChar + 1 + nThirdUnit) * 8 + 16;
+	pWnd->nCx = (pWnd->nCx + 15) / 16 * 16;
+	pWnd->nCx = min (pWnd->nCx, SCRSIZEX - 32);
+	pWnd->nCy = 16 * (2 + pWnd->nData2);
+	pWnd->nType = WNDTYPE_MARKET;
+	pWnd->nType2 = MARKETWND_LIST;
+	pWnd->pDib = new CImg32;
+	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
+	pWnd->pDib->SetColorKey (RGB (40, 40, 40));
+	return pWnd;
+}
+
+/* ========================================================================= */
+/* 関数名：MakeWindowMARKET_ITEM											 */
+/* 内容：ウィンドウの作成(取引所：出品する品を手持ちから選ぶ)				 */
+/*       作りは預かり所の「預ける」の品選びと同じ（10行を超える分はスクロール） */
+/* ========================================================================= */
+PWNDINFO MakeWindowMARKET_ITEM(void)
+{
+	PWNDINFO pWnd = new WNDINFO;
+	ZeroMemory (pWnd, sizeof (WNDINFO));
+	pWnd->dwID = g_dwNewID;
+	g_dwNewID ++;
+
+	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
+	int i, nCount = GetItemCount (g_nMyCharID), nLen = 0;
+	for (i = 0; i < nCount; i ++) {
+		nLen = max (nLen, SboTextWidth (g_aItemInfo[pChar->waItem[i]]->szName));
+	}
+	if (nLen % 2) {
+		nLen ++;
+	}
+	pWnd->nData2 = min (max (nCount, 1), LISTROWS_MAX);
+	pWnd->nX = 16;
+	pWnd->nY = MARKET_LISTY;
+	pWnd->nCx = (16 * 4) + (nLen * 8);
+	pWnd->nCy = 16 * (2 + pWnd->nData2);
+	pWnd->nType = WNDTYPE_MARKET;
+	pWnd->nType2 = MARKETWND_ITEM;
+	pWnd->pDib = new CImg32;
+	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
+	pWnd->pDib->SetColorKey (RGB (40, 40, 40));
+	return pWnd;
+}
+
+/* ========================================================================= */
+/* 関数名：MakeWindowMARKET_PRICE											 */
+/* 内容：ウィンドウの作成(取引所：出品の値段の入力)							 */
+/*       預かり所の金額入力と同じ。nData1=値段 byData1=いじっている桁(0〜5)	 */
+/* ========================================================================= */
+PWNDINFO MakeWindowMARKET_PRICE(DWORD dwPrice)
+{
+	PWNDINFO pWnd = new WNDINFO;
+	ZeroMemory (pWnd, sizeof (WNDINFO));
+	pWnd->dwID = g_dwNewID;
+	g_dwNewID ++;
+	pWnd->nX = 16;
+	pWnd->nY = 16 * 14;
+	pWnd->nCx = (16 * 4) + (8 * 4);
+	pWnd->nCy = 16 * 3;
+	pWnd->nType = WNDTYPE_MARKET;
+	pWnd->nType2 = MARKETWND_PRICE;
+	pWnd->nData1 = (int)min (dwPrice, (DWORD)MARKET_PRICEMAX);
+	pWnd->byData1 = 5;
+	pWnd->pDib = new CImg32;
+	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
+	pWnd->pDib->SetColorKey (RGB (40, 40, 40));
+	return pWnd;
+}
+
+/* ========================================================================= */
+/* 関数名：MakeWindowMARKET_CONF											 */
+/* 内容：ウィンドウの作成(取引所：「はい／いいえ」)							 */
+/*       byData1=MARKETCONF_* nData1=カーソル(0:はい 1:いいえ)				 */
+/* ========================================================================= */
+PWNDINFO MakeWindowMARKET_CONF(int nKind)
+{
+	PWNDINFO pWnd = new WNDINFO;
+	ZeroMemory (pWnd, sizeof (WNDINFO));
+	pWnd->dwID = g_dwNewID;
+	g_dwNewID ++;
+	pWnd->nData2 = 2;
+	pWnd->nX = 16;
+	pWnd->nY = MARKET_CONFY;
+	pWnd->nCx = 16 * 6;
+	pWnd->nCy = 16 * (2 + pWnd->nData2);
+	pWnd->nType = WNDTYPE_MARKET;
+	pWnd->nType2 = MARKETWND_CONF;
+	pWnd->byData1 = (BYTE)nKind;
+	pWnd->pDib = new CImg32;
+	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
+	pWnd->pDib->SetColorKey (RGB (40, 40, 40));
+	DXAudio.PlaySecoundary (&aSoundTbl[SOUND_CONFIRM]);
+	return pWnd;
+}
+
+/* 所持金の窓が無ければ出す */
+static void MarketEnsureGold(void)
+{
+	if (GetWindowID (g_dwMsgIDGold) < 0) {
+		g_WndInfo.Add (MakeWindowGOLD ());
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：MarketShowMenu													 */
+/* 内容：受付のメニューを出す（pszMsg=台詞。NULL なら「他に御用は？」）		 */
+/* ========================================================================= */
+void MarketShowMenu(LPCSTR pszMsg)
+{
+	MarketEraseAll ();
+	MarketEnsureGold ();
+	PWNDINFO pWnd = MakeWindowMARKET_MENU ();
+	g_WndInfo.Add (pWnd);
+	MarketSetMsg (pWnd, pszMsg ? pszMsg : "＊｢他に御用は？@2");
+	g_dwActiveMsgID = pWnd->dwID;
+	g_nMarketWait = MARKETWAIT_NONE;
+	g_bDraw = TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：MarketOpen														 */
+/* 内容：受付に話しかけた時：所持金の窓とメニューを出す						 */
+/* ========================================================================= */
+void MarketOpen(void)
+{
+	g_szMarketResult[0] = 0;
+	ZeroMemory (&g_MarketList, sizeof (g_MarketList));
+	MarketShowMenu ("＊｢ようこそ、商人ギルドの出張所へ。@1　 どのような御用でしょう？@2");
+}
+
+/* ========================================================================= */
+/* 関数名：MarketShowList													 */
+/* 内容：出品の一覧（g_MarketList）を出す。nCursor=合わせる番号				 */
+/*       一覧が空ならメニューへ戻る。g_szMarketResult があれば台詞の頭に付ける	 */
+/* ========================================================================= */
+void MarketShowList(int nKind, int nCursor)
+{
+	char szMsg[640], szHead[256];
+
+	/* 直前の結果のセリフ（一度出したら空にする） */
+	lstrcpyn (szHead, g_szMarketResult, sizeof (szHead));
+	g_szMarketResult[0] = 0;
+
+	if (g_MarketList.byCount == 0) {
+		if (nKind == MARKETLIST_BUY) {
+			wsprintf (szMsg, "%s%s＊｢いま出品はありません。@1　 他に御用は？@2", szHead, szHead[0] ? "@1" : "");
+		} else {
+			wsprintf (szMsg, "%s%s＊｢出品している品はありません。@1　 他に御用は？@2", szHead, szHead[0] ? "@1" : "");
+		}
+		MarketShowMenu (szMsg);
+		return;
+	}
+
+	MarketEraseAll ();
+	MarketEnsureGold ();
+	PWNDINFO pWnd = MakeWindowMARKET_LIST (nKind);
+	g_WndInfo.Add (pWnd);
+	ListScrollFitMargin (pWnd, nCursor, (int)g_MarketList.byCount, LISTSCROLL_MARGIN);
+	if (nKind == MARKETLIST_BUY) {
+		wsprintf (szMsg, "%s%s＊｢どれをお買い求めですか？@2", szHead, szHead[0] ? "@1" : "");
+	} else {
+		wsprintf (szMsg, "%s%s＊｢どれを引き取りますか？@1　 （出品中の品も取り下げられます）@2", szHead, szHead[0] ? "@1" : "");
+	}
+	MarketSetMsg (pWnd, szMsg);
+	/* 一覧の横にカーソルの品の詳細を出す（一覧を登録した後で付ける） */
+	MakeWindowITEMINFOList (pWnd);
+	g_dwActiveMsgID = pWnd->dwID;
+	g_nMarketWait = MARKETWAIT_NONE;
+	g_bDraw = TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：MarketShowItem													 */
+/* 内容：出品する品を手持ちから選ぶ窓を出す（nCursor=合わせる手持ちの位置）	 */
+/* ========================================================================= */
+void MarketShowItem(int nCursor)
+{
+	int nCount = GetItemCount (g_nMyCharID);
+
+	if (nCount == 0) {
+		MarketShowMenu ("何も持っていません。@1@1＊｢他に御用は？@2");
+		return;
+	}
+	MarketEraseAll ();
+	MarketEnsureGold ();
+	PWNDINFO pWnd = MakeWindowMARKET_ITEM ();
+	g_WndInfo.Add (pWnd);
+	ListScrollFitMargin (pWnd, nCursor, nCount, LISTSCROLL_MARGIN);
+	MarketSetMsg (pWnd, "＊｢どれを出品しますか？@1　 （装備中の品は出せません）@2");
+	MakeWindowITEMINFOList (pWnd);
+	g_dwActiveMsgID = pWnd->dwID;
+	g_nMarketWait = MARKETWAIT_NONE;
+	g_bDraw = TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：MarketShowPrice													 */
+/* 内容：出品の値段の入力窓を出す（選んだ品は g_wMarketSelItem・手持ちの位置は	 */
+/*       g_nMarketSelNo）。dwPrice=最初の値段（0 なら下限）					 */
+/* ========================================================================= */
+void MarketShowPrice(DWORD dwPrice)
+{
+	char szMsg[256];
+	DWORD dwMin = MarketPriceMin (g_wMarketSelItem);
+
+	if (dwPrice < dwMin) {
+		dwPrice = dwMin;
+	}
+	MarketEraseAll ();
+	MarketEnsureGold ();
+	PWNDINFO pWnd = MakeWindowMARKET_PRICE (dwPrice);
+	g_WndInfo.Add (pWnd);
+	wsprintf (szMsg, "＊｢%sをいくらで出しますか？@1　 %dゴールド以上で、@1　 ↑↓で数字、←→で桁を選びます。@2", MarketItemName (g_wMarketSelItem), (int)dwMin);
+	MarketSetMsg (pWnd, szMsg);
+	g_dwActiveMsgID = pWnd->dwID;
+	g_nMarketWait = MARKETWAIT_NONE;
+	g_bDraw = TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：MarketShowConf													 */
+/* 内容：「はい／いいえ」を出す。pszMsg=確認の台詞							 */
+/*       買う・引き取りは一覧を残してその上に、出品・売上は他の窓を消して出す	 */
+/* ========================================================================= */
+void MarketShowConf(int nKind, LPCSTR pszMsg)
+{
+	PWNDINFO pWndOwner = NULL;
+
+	if ((nKind == MARKETCONF_BUY) || (nKind == MARKETCONF_TAKEBACK)) {
+		pWndOwner = MarketFindWindow (MARKETWND_LIST);
+	}
+	if (pWndOwner == NULL) {
+		MarketEraseAll ();
+		MarketEnsureGold ();
+	} else {
+		/* 一覧の下の「はい／いいえ」が残っていたら消す */
+		PWNDINFO pWndOld = MarketFindWindow (MARKETWND_CONF);
+		if (pWndOld) {
+			EraseWindow (pWndOld);
+		}
+	}
+	PWNDINFO pWnd = MakeWindowMARKET_CONF (nKind);
+	g_WndInfo.Add (pWnd);
+	MarketSetMsg ((pWndOwner != NULL) ? pWndOwner : pWnd, pszMsg);
+	g_dwActiveMsgID = pWnd->dwID;
+	g_nMarketWait = MARKETWAIT_NONE;
+	g_bDraw = TRUE;
 }
