@@ -22,6 +22,7 @@ extern int		GetItemCount				(DWORD);										/* アイテム数を取得 */
 extern int		GetSubGameID				(PSUBGAMEINFO);									/* サブゲームIDを取得 */
 extern int		SearchEvent					(DWORD, DWORD, DWORD);							/* 座標を元にイベント番号検索 */
 extern void		AddCharItem					(DWORD, DWORD);									/* アイテム追加（大事な物・依頼の品は大事な物の欄へ） */
+extern void		AddCharItemBag				(DWORD, DWORD);									/* 手持ちの空きにアイテム追加（大事な物の振り分けなし。取り引きの組み直し用） */
 extern BOOL		IsImportantItem				(WORD);											/* 大事な物の欄に入る品か（大事な物の印・依頼の品） */
 extern int		GetImportantCount			(DWORD);										/* 大事な物の数を取得 */
 extern BOOL		CanAddCharItem				(DWORD, DWORD);									/* その品を今受け取れるか（大事な物は欄、他は手持ちの空き） */

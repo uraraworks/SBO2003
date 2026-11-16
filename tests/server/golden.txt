@@ -1144,7 +1144,7 @@ quest copy grp=1 vis owner=0 member=1 other=0 admin=1 block=-1
 quest copy grp=2 vis owner=0 member=1 other=0 admin=1 block=-1
 quest admin portal moved=0
 quest admin own portal moved=1
-quest chest full item=0 leave=0 flag1=0 step=0
+quest chest full item=1 leave=0 flag1=1 step=1
 quest chest item=1 flag1=1 step=1 person=1 chest=0
 quest member item=0 step=0
 quest portal to dest=1
@@ -1440,6 +1440,22 @@ market limit after takeback listed=5 put=0
 market save=1 load=1 same=1 items=1 sales=2 next_same=1 sale_a=950 other=4242
 market save empty=1 load=1 items=0 sales=0 next=1
 market end
+== AB. Important ==
+important add bag=1 imp=3 key=2 quest=1 norm=0
+important count key=2 quest=1 norm=1
+important take 1110 bag=0 imp=1 key=1
+important full canKey=0 canNorm=1
+important full add imp=30 bag=0
+important save=1 load=1 found=1
+important reload imp=3 key=2 quest=1 first=1,1,1
+important move moved=2 bag=1,1,1,1,1 imp=2 key=1 quest=1 equ=2,1
+important move again=0
+keydoor nokey open=0 mapmsg=1 sound=0
+keydoor nokey examine open=0
+keydoor force=0
+keydoor key open=1 mapmsg=1 sound=1 chgmap=1 keys=1
+keydoor closed=1
+keydoor bagkey open=1
 == K2. Mercenary magic ==
 merc map=91 enemies=17 size=255x160
 merc hired dist=1

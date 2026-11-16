@@ -55,6 +55,8 @@ extern void QuestPartyLeaveHold(BOOL bHold);					/* TRUE の間は QuestOnPartyL
 extern int  QuestFlagCheck(PCHARINFO pChar, int nFlg);			/* 旗が立っているか(1〜16) */
 extern BOOL QuestIsDone(PCHARINFO pChar, WORD wQuestID);		/* クリア済みの印があるか */
 extern BOOL QuestIsQuestItem(WORD wItem);						/* 依頼の品か（預けられない・売れない・捨てられない） */
+extern int  QuestCountItemAll(PCHARINFO pChar, WORD wItem);		/* 持ち物（大事な物の欄を含む）と預かり所にある数（テスト用） */
+extern BOOL QuestTakeItemOne(PCHARINFO pChar, WORD wItem);			/* 1 個取り除く（大事な物の欄→持ち物→預かり所の順。テスト用） */
 extern BOOL QuestInChallenge(PCHARINFO pChar);					/* 討伐チャレンジ中か（貸し出しの状態になっているか） */
 extern BOOL QuestIsChallengeEnemy(PCHARINFO pChar);				/* 討伐チャレンジの敵か */
 extern BOOL QuestChallengeResurrection(PCHARINFO pChar);		/* 倒れて「復活」を選んだ時。挑戦中なら中断して入る前の場所へ戻し TRUE */

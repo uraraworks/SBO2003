@@ -746,6 +746,17 @@ static BOOL TakeItem(PCHARINFO pChar, WORD wItem)
 	return FALSE;
 }
 
+/* テスト用：持ち物（大事な物の欄を含む）と預かり所にある数・1 個取り除く */
+int QuestCountItemAll(PCHARINFO pChar, WORD wItem)
+{
+	return CountItem (pChar, wItem, NULL, NULL);
+}
+
+BOOL QuestTakeItemOne(PCHARINFO pChar, WORD wItem)
+{
+	return TakeItem (pChar, wItem);
+}
+
 /* アイテムを 1 個渡す（持ち物へ、いっぱいなら預かり所へ）。渡せたら TRUE
    pbToLeave が NULL の時は持ち物にだけ入れる（依頼の品は預かり所に入れない） */
 static BOOL GiveItem(PCHARINFO pChar, WORD wItem, BOOL *pbToLeave)
