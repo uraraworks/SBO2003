@@ -62,6 +62,13 @@ int		GetItemCount				(DWORD);										/* アイテム数を取得 */
 int		GetSubGameID				(PSUBGAMEINFO);									/* サブゲームIDを取得 */
 int		SearchEvent					(DWORD, DWORD, DWORD);							/* 座標を元にイベント番号検索 */
 void	AddCharItem					(DWORD, DWORD);									/* アイテム追加 */
+void	AddCharItemBag				(DWORD, DWORD);									/* 手持ちの空きにアイテム追加（大事な物の振り分けなし） */
+BOOL	IsImportantItem				(WORD);											/* 大事な物の欄に入る品か */
+int		GetImportantCount			(DWORD);										/* 大事な物の数を取得 */
+BOOL	CanAddCharItem				(DWORD, DWORD);									/* その品を今受け取れるか */
+int		CountImportantItem			(PCHARINFO, WORD);								/* 大事な物の欄にある、その品の数 */
+BOOL	DelImportantItem			(PCHARINFO, WORD);								/* 大事な物の欄から、その品を1個取り除く */
+int		MoveImportantItems			(PCHARINFO);									/* 手持ちの大事な物を大事な物の欄へ移す */
 void	DelCharItem					(DWORD, BYTE);									/* アイテム捨てる */
 BOOL	AddLeaveItem				(PCHARINFO, WORD);								/* 預かり所にアイテムを1個入れる */
 BOOL	CheckCharItem				(DWORD, DWORD, BYTE);							/* アイテム持ってるかチェック */
@@ -873,6 +880,10 @@ static BOOL TradeCheckItem(PCHARINFO pChar, const WORD *pwaItem)
 				(pChar->waItem[pwaItem[i]] >= g_aItemInfo.GetSize ())) {
 			return FALSE;
 		}
+		/* 大事な物・依頼の品は取り引きに出せない（古いキャラで手持ちに残っていた場合の抜け道ふさぎ） */
+		if (IsImportantItem (pChar->waItem[pwaItem[i]])) {
+			return FALSE;
+		}
 		abUse[pwaItem[i]] = TRUE;
 	}
 	return TRUE;
@@ -1353,6 +1364,161 @@ int GetItemCount(DWORD dwID)
 
 
 /* ========================================================================= */
+/* 関数名：	IsImportantItem													 */
+/* 内容：	大事な物の欄に入る品か（大事な物の印がある品、依頼の品）		 */
+/* ========================================================================= */
+
+BOOL IsImportantItem(WORD wItem)
+{
+	if ((wItem == 0) || (wItem >= (WORD)g_aItemInfo.GetSize ())) {
+		return FALSE;
+	}
+	if (g_aItemInfo[wItem]->byFlg & ITEMFLG_IMPORTANT) {
+		return TRUE;
+	}
+	return QuestIsQuestItem (wItem);
+}
+
+
+/* ========================================================================= */
+/* 関数名：	GetImportantCount												 */
+/* 内容：	大事な物の数を取得												 */
+/* ========================================================================= */
+
+int GetImportantCount(DWORD dwID)
+{
+	int i, nRet;
+	PCHARINFO pChar;
+
+	nRet  = 0;
+	pChar = g_aCharInfo[dwID];
+	for (i = 0; i < MAX_IMPORTANT; i ++) {
+		if (pChar->waImportant[i]) {
+			nRet ++;
+		}
+	}
+
+	return nRet;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CanAddCharItem													 */
+/* 内容：	その品を今受け取れるか（大事な物は大事な物の欄、他は手持ちの空き）*/
+/* ========================================================================= */
+
+BOOL CanAddCharItem(DWORD dwCharID, DWORD dwItemID)
+{
+	if ((dwItemID < 0x10000) && IsImportantItem ((WORD)dwItemID)) {
+		return GetImportantCount (dwCharID) < MAX_IMPORTANT;
+	}
+	return GetItemCount (dwCharID) < MAX_MYITEM;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CountImportantItem												 */
+/* 内容：	大事な物の欄にある、その品の数									 */
+/* ========================================================================= */
+
+int CountImportantItem(PCHARINFO pChar, WORD wItem)
+{
+	int i, nRet;
+
+	nRet = 0;
+	if ((pChar == NULL) || (wItem == 0)) {
+		return 0;
+	}
+	for (i = 0; i < MAX_IMPORTANT; i ++) {
+		if (pChar->waImportant[i] == wItem) {
+			nRet ++;
+		}
+	}
+
+	return nRet;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	DelImportantItem												 */
+/* 内容：	大事な物の欄から、その品を1個取り除く（後ろを前へつめる）		 */
+/* ========================================================================= */
+
+BOOL DelImportantItem(PCHARINFO pChar, WORD wItem)
+{
+	int i, j;
+
+	if ((pChar == NULL) || (wItem == 0)) {
+		return FALSE;
+	}
+	for (i = 0; i < MAX_IMPORTANT; i ++) {
+		if (pChar->waImportant[i] != wItem) {
+			continue;
+		}
+		for (j = i; j < MAX_IMPORTANT - 1; j ++) {
+			pChar->waImportant[j] = pChar->waImportant[j + 1];
+		}
+		pChar->waImportant[MAX_IMPORTANT - 1] = 0;
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	MoveImportantItems												 */
+/* 内容：	手持ちにある大事な物・依頼の品（装備中以外）を大事な物の欄へ移す	 */
+/*			（古いキャラの持ち物の直し。欄がいっぱいなら残りは手持ちのまま）	 */
+/* ========================================================================= */
+
+int MoveImportantItems(PCHARINFO pChar)
+{
+	int i, j, k, nRet;
+	BOOL bEqu;
+
+	nRet = 0;
+	if (pChar == NULL) {
+		return 0;
+	}
+	for (i = 0; i < MAX_MYITEM; ) {
+		WORD wItem = pChar->waItem[i];
+
+		if ((wItem == 0) || !IsImportantItem (wItem)) {
+			i ++;
+			continue;
+		}
+		/* 装備中の物は動かさない（装備の添字がずれるため） */
+		bEqu = FALSE;
+		for (j = 0; j < MAX_EQUTYPE; j ++) {
+			if (pChar->waEqu[j] == i) {
+				bEqu = TRUE;
+			}
+		}
+		if (bEqu) {
+			i ++;
+			continue;
+		}
+		/* 大事な物の欄に空きが無ければ、そのまま手持ちに置く */
+		for (k = 0; k < MAX_IMPORTANT; k ++) {
+			if (pChar->waImportant[k] == 0) {
+				break;
+			}
+		}
+		if (k >= MAX_IMPORTANT) {
+			break;
+		}
+		pChar->waImportant[k] = wItem;
+		/* 手持ちを詰める（装備の添字も一緒に直る）。詰めたので同じ位置をもう一度見る */
+		DelCharItem (pChar->dwTblID, (BYTE)i);
+		nRet ++;
+	}
+
+	return nRet;
+}
+
+
+/* ========================================================================= */
 /* 関数名：	SearchEvent														 */
 /* 内容：	座標を元にイベント番号検索										 */
 /* 日付：	2004/01/31														 */
@@ -1399,6 +1565,35 @@ void AddCharItem(DWORD dwCharID, DWORD dwItemID)
 		PostMessage (g_hWndMain, WM_DECPLAYER, pChar->pID, (LPARAM)pChar->dwTblID);
 		return;
 	}
+
+	/* 大事な物・依頼の品は手持ちではなく大事な物の欄へ（同じ物を重ねず1個1枠） */
+	if (IsImportantItem ((WORD)dwItemID)) {
+		for (i = 0; i < MAX_IMPORTANT; i ++) {
+			if (pChar->waImportant[i]) {
+				continue;
+			}
+			pChar->waImportant[i] = (WORD)dwItemID;
+			break;
+		}
+		return;
+	}
+
+	AddCharItemBag (dwCharID, dwItemID);
+}
+
+
+/* ========================================================================= */
+/* 関数名：	AddCharItemBag													 */
+/* 内容：	手持ちの空きにアイテム追加（大事な物の振り分けはしない。取り引きで	 */
+/*			手持ちを組み直す時用）											 */
+/* ========================================================================= */
+
+void AddCharItemBag(DWORD dwCharID, DWORD dwItemID)
+{
+	int i;
+	PCHARINFO pChar;
+
+	pChar = g_aCharInfo[dwCharID];
 
 	/* 空きスペースを探して追加 */
 	for (i = 0; i < MAX_MYITEM; i ++) {
@@ -3772,6 +3967,8 @@ void RecvDataProcCHGSTATE(PBYTE pData, DWORD dwDataSize)
 	/* 町転送の行き先一覧を送信 */
 	SendCmdTOWNWARP (pChar->dwTblID);
 	/* 受けている依頼の確認と、本人・仲間の進み具合を送信 */
+	/* 古いキャラの手持ちにある大事な物・依頼の品を、大事な物の欄へ移す */
+	MoveImportantItems (pChar);
 	QuestOnLogin (pChar);
 	/* マップデータを送信 */
 	SendCmdMAPINFO (pPara->pID, GetMapNo (pChar->dwMapID));
@@ -5090,6 +5287,28 @@ void RecvDataProcOPENDOOR(PBYTE pData, DWORD dwDataSize)
 }
 
 /* ========================================================================= */
+/* 関数名：DoorHasKey														 */
+/* 内容：鍵の扉の鍵（wKeyItem）を、大事な物の欄か手持ちに持っているか			 */
+/* ========================================================================= */
+static BOOL DoorHasKey(PCHARINFO pChar, PEVENTINFO_DOOR pDoor)
+{
+	int i;
+
+	if ((pDoor->wKeyItem == 0) || (pDoor->wKeyItem >= (WORD)g_aItemInfo.GetSize ())) {
+		return FALSE;
+	}
+	if (CountImportantItem (pChar, pDoor->wKeyItem) > 0) {
+		return TRUE;
+	}
+	for (i = 0; i < MAX_MYITEM; i ++) {
+		if (pChar->waItem[i] == pDoor->wKeyItem) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* ========================================================================= */
 /* 関数名：OpenDoorFront													 */
 /* 内容：目の前の扉を開ける													 */
 /*		 戻り値：開けた時 TRUE（扉が無い・もう開いている時は何もせず FALSE）	 */
@@ -5117,8 +5336,27 @@ static BOOL OpenDoorFront(PCHARINFO pChar)
 			if (pEvent->byType != EVENTTYPE_DOOR) {
 				continue;
 			}
-/* とりあえず鍵は無しで。 */
 			PEVENTINFO_DOOR pDoor = (PEVENTINFO_DOOR)pEvent->pData;
+			/* 鍵の扉（鍵の品を大事な物の欄か手持ちに持っていれば開く。鍵は減らない。品の名前は教えない） */
+			if (pDoor && (pDoor->byType == EVENTDOOTTYPE_KEY)) {
+				if (SpaceDoorIsOpen (pChar->dwMapID, pEvent, pDoor, pChar->dwSpaceID)) {
+					return FALSE;
+				}
+				if (!DoorHasKey (pChar, pDoor)) {
+					SendCmdMAPMSG (pChar->pID, "鍵がかかっている。@2");
+					SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
+					return TRUE;
+				}
+				if (!SpaceDoorOpenKey (pChar->dwMapID, pEvent, pDoor, pChar->dwSpaceID)) {
+					return FALSE;
+				}
+				char szKey[128];
+				wsprintf (szKey, "%sで扉を開けた。@2", g_aItemInfo[pDoor->wKeyItem]->szName);
+				SendCmdMAPMSG (pChar->pID, szKey);
+				SendCmdPLAYSOUND (pChar->pID, SOUND_DOOR);
+				SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
+				return TRUE;
+			}
 			/* 敵を全部倒すと開く扉（手では開けられない。閉まっていたら残りの敵の数を知らせる） */
 			if (pDoor && (pDoor->byType == EVENTDOOTTYPE_ENEMY)) {
 				if (SpaceDoorIsOpen (pChar->dwMapID, pEvent, pDoor, pChar->dwSpaceID)) {
@@ -7166,13 +7404,13 @@ void RecvDataProcGETITEM(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
-	/* もう持てない？ */
-	if (GetItemCount (pPara->dwTblID) >= MAX_MYITEM) {
-		return;
-	}
 
 	/* メッセージの「@4」でもらえるものだけ（クライアントが勝手に頼んできたものは渡さない） */
 	if ((pPara->dwData1 == 0) || (pPara->dwData1 >= (DWORD)g_aItemInfo.GetSize ())) {
+		return;
+	}
+	/* もう持てない？（大事な物は大事な物の欄の空きを見る） */
+	if (!CanAddCharItem (pPara->dwTblID, pPara->dwData1)) {
 		return;
 	}
 	if (!CheckMsgCode (pChar, '4', (int)pPara->dwData1, 0, 0)) {
@@ -7272,6 +7510,8 @@ void RecvDataProcCHARITEM(PBYTE pData, DWORD dwDataSize)
 	pChar = g_aCharInfo[pPara->dwTblID];
 	CopyMemory (pChar->waItem, pPara->waItem, sizeof (pChar->waItem));
 	CopyMemory (pChar->waEqu, pPara->waEqu, sizeof (pChar->waEqu));
+	/* 管理者が足した手持ちの大事な物は、大事な物の欄へ移す（欄そのものは送られた値を使わない） */
+	MoveImportantItems (pChar);
 	SendCmdCHGITEM (pChar->pID, pChar->dwTblID);
 	SendCmdCHARITEM (pChar->pID, pChar->dwTblID);
 }
@@ -8083,8 +8323,8 @@ void RecvDataProcLEAVEITEMGET(PBYTE pData, DWORD dwDataSize)
 			(pPara->dwData >= MAX_LEAVEITEM) || (pInfo->byItemCount[pPara->dwData] == 0)) {
 		return;
 	}
-	/* もう持てない？ */
-	if (GetItemCount (pChar->dwTblID) >= MAX_MYITEM) {
+	/* もう持てない？（大事な物は大事な物の欄の空きを見る） */
+	if (!CanAddCharItem (pChar->dwTblID, pInfo->waItem[pPara->dwData])) {
 		return;
 	}
 
@@ -8994,6 +9234,10 @@ void RecvDataProcSHOPBUY(PBYTE pData, DWORD dwDataSize)
 	if (pChar->dwGold < pItem->dwGold) {
 		return;
 	}
+	/* もう持てない？（大事な物は大事な物の欄の空きを見る） */
+	if (!CanAddCharItem (pChar->dwTblID, dwItemID)) {
+		return;
+	}
 
 	pChar->dwGold -= pItem->dwGold;
 	SendCmdCHARSTATUSGOLDEXP (pPara->pID, pPara->dwTblID);
@@ -9496,7 +9740,7 @@ void RecvDataProcTRADEPROC(PBYTE pData, DWORD dwDataSize)
 			}
 		}
 		if (j == MAX_MYITEM) {
-			AddCharItem (pChar1->dwTblID, waItemTmp1[i]);
+			AddCharItemBag (pChar1->dwTblID, waItemTmp1[i]);
 		} else {
 			for (k = 0; k < 10; k ++) {
 				if (pChar1->waEqu[k] != 0xFFFF) {
@@ -9514,7 +9758,7 @@ void RecvDataProcTRADEPROC(PBYTE pData, DWORD dwDataSize)
 			}
 		}
 		if (j == MAX_MYITEM) {
-			AddCharItem (pChar2->dwTblID, waItemTmp2[i]);
+			AddCharItemBag (pChar2->dwTblID, waItemTmp2[i]);
 		} else {
 			for (k = 0; k < 10; k ++) {
 				if (pChar2->waEqu[k] != 0xFFFF) {
@@ -12338,9 +12582,9 @@ static BOOL RecipeIsUsableItem(PCHARINFO pChar, int nNo)
 static BYTE RecipeMake(PCHARINFO pChar, PRECIPEINFO pRecipe, int *pnToInv, int *pnToLeave)
 {
 	PLEAVEINFO pLeave = NULL;
-	BOOL abyInvUsed[MAX_MYITEM];
+	BOOL abyInvUsed[MAX_MYITEM], abyImpUsed[MAX_IMPORTANT];
 	int anLeaveTake[MAX_LEAVEITEM];
-	WORD awItemBak[MAX_MYITEM], awEquBak[10];
+	WORD awItemBak[MAX_MYITEM], awEquBak[10], awImpBak[MAX_IMPORTANT];
 	DWORD dwLeaveIDBak;
 	LEAVEINFO LeaveBak;
 	int i, k, n, nFree, nNeed, nToInv = 0, nToLeave = 0;
@@ -12360,6 +12604,7 @@ static BYTE RecipeMake(PCHARINFO pChar, PRECIPEINFO pRecipe, int *pnToInv, int *
 
 	/* 材料が揃っているか（持ち物を先に使い、足りない分を預かり所から使う計画を立てる） */
 	ZeroMemory (abyInvUsed, sizeof (abyInvUsed));
+	ZeroMemory (abyImpUsed, sizeof (abyImpUsed));
 	ZeroMemory (anLeaveTake, sizeof (anLeaveTake));
 	for (k = 0; k < MAX_RECIPEMAT; k ++) {
 		WORD wMat = pRecipe->awMatItem[k];
@@ -12371,6 +12616,13 @@ static BYTE RecipeMake(PCHARINFO pChar, PRECIPEINFO pRecipe, int *pnToInv, int *
 		for (i = 0; (i < MAX_MYITEM) && (nNeed > 0); i ++) {
 			if (!abyInvUsed[i] && (pChar->waItem[i] == wMat) && RecipeIsUsableItem (pChar, i)) {
 				abyInvUsed[i] = TRUE;
+				nNeed --;
+			}
+		}
+		/* 大事な物の欄にある分（捨てられない印の品は使えない） */
+		for (i = 0; (i < MAX_IMPORTANT) && (nNeed > 0); i ++) {
+			if (!abyImpUsed[i] && (pChar->waImportant[i] == wMat) && !(g_aItemInfo[wMat]->byFlg & ITEMFLG_DROP)) {
+				abyImpUsed[i] = TRUE;
 				nNeed --;
 			}
 		}
@@ -12392,10 +12644,18 @@ static BYTE RecipeMake(PCHARINFO pChar, PRECIPEINFO pRecipe, int *pnToInv, int *
 	/* ここから先は途中で失敗したら元に戻せるよう、今の状態を控えておく */
 	memcpy (awItemBak, pChar->waItem, sizeof (awItemBak));
 	memcpy (awEquBak, pChar->waEqu, sizeof (awEquBak));
+	memcpy (awImpBak, pChar->waImportant, sizeof (awImpBak));
 	dwLeaveIDBak = pChar->dwLeaveID;
 	ZeroMemory (&LeaveBak, sizeof (LeaveBak));
 	if (pLeave) {
 		LeaveBak = *pLeave;
+	}
+
+	/* 材料を使う：大事な物の欄（後ろから消して詰める） */
+	for (i = MAX_IMPORTANT - 1; i >= 0; i --) {
+		if (abyImpUsed[i]) {
+			DelImportantItem (pChar, pChar->waImportant[i]);
+		}
 	}
 
 	/* 材料を使う：持ち物（後ろから消して詰める） */
@@ -12424,18 +12684,18 @@ static BYTE RecipeMake(PCHARINFO pChar, PRECIPEINFO pRecipe, int *pnToInv, int *
 	}
 
 	/* できた物を渡す：持ち物へ、いっぱいなら預かり所へ */
-	nFree = MAX_MYITEM - GetItemCount (pChar->dwTblID);
 	for (i = 0; i < pRecipe->byCount; i ++) {
-		if (nFree > 0) {
+		/* 大事な物の欄に入る品は、欄に空きがなければ作れない（預かり所へは送らない） */
+		if (CanAddCharItem (pChar->dwTblID, pRecipe->wItem)) {
 			AddCharItem (pChar->dwTblID, pRecipe->wItem);
-			nFree --;
 			nToInv ++;
 			continue;
 		}
-		if (!AddLeaveItem (pChar, pRecipe->wItem)) {
+		if (IsImportantItem (pRecipe->wItem) || !AddLeaveItem (pChar, pRecipe->wItem)) {
 			/* 預かり所もいっぱい：何も変えなかったことにする */
 			memcpy (pChar->waItem, awItemBak, sizeof (awItemBak));
 			memcpy (pChar->waEqu, awEquBak, sizeof (awEquBak));
+			memcpy (pChar->waImportant, awImpBak, sizeof (awImpBak));
 			if ((dwLeaveIDBak == 0) && (pChar->dwLeaveID != 0) && (pChar->dwLeaveID < (DWORD)g_aLeaveInfo.GetSize ())) {
 				ZeroMemory (g_aLeaveInfo[pChar->dwLeaveID], sizeof (LEAVEINFO));
 				pChar->dwLeaveID = 0;

@@ -55,6 +55,8 @@ extern void QuestPartyLeaveHold(BOOL bHold);					/* TRUE の間は QuestOnPartyL
 extern int  QuestFlagCheck(PCHARINFO pChar, int nFlg);			/* 旗が立っているか(1〜16) */
 extern BOOL QuestIsDone(PCHARINFO pChar, WORD wQuestID);		/* クリア済みの印があるか */
 extern BOOL QuestIsQuestItem(WORD wItem);						/* 依頼の品か（預けられない・売れない・捨てられない） */
+extern int  QuestCountItemAll(PCHARINFO pChar, WORD wItem);		/* 持ち物（大事な物の欄を含む）と預かり所にある数（テスト用） */
+extern BOOL QuestTakeItemOne(PCHARINFO pChar, WORD wItem);			/* 1 個取り除く（大事な物の欄→持ち物→預かり所の順。テスト用） */
 extern BOOL QuestInChallenge(PCHARINFO pChar);					/* 討伐チャレンジ中か（貸し出しの状態になっているか） */
 extern BOOL QuestIsChallengeEnemy(PCHARINFO pChar);				/* 討伐チャレンジの敵か */
 extern BOOL QuestChallengeResurrection(PCHARINFO pChar);		/* 倒れて「復活」を選んだ時。挑戦中なら中断して入る前の場所へ戻し TRUE */
@@ -70,6 +72,7 @@ extern int  SpaceGetList(PADMINSPACEENTRY pEntry, int nMax);	/* いま在る空�
 extern void SpaceSendMapState(PCHARINFO pChar);					/* その人がいる空間の、扉・「乗っている間変わるマス」の状態を本人に送る */
 extern BOOL SpaceDoorIsOpen(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID);	/* 扉がその空間で開いているか */
 extern BOOL SpaceDoorOpen(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID);	/* 扉をその空間で開ける（開けたら TRUE。クライアントへもその空間にだけ知らせる） */
+extern BOOL SpaceDoorOpenKey(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID);	/* 「鍵」の扉をその空間で開ける（鍵を持っているかは呼ぶ側で確かめる） */
 extern void SpaceDoorProc(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor);	/* 扉が閉まる時間を見る（ふつうの世界と、ほかの空間の分） */
 extern int  SpaceDoorEnemyCount(DWORD dwMapID, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID);	/* 扉の数える範囲にいる、その空間の生きている敵の数（「敵を全部倒す」扉用） */
 extern void SpaceEnemyDoorCheckMap(DWORD dwMapID);				/* そのマップの「敵を全部倒す」扉を今すぐ見直す（敵が倒れて消えた時） */

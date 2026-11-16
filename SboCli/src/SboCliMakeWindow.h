@@ -99,6 +99,7 @@ extern PWNDINFO MakeWindowITEMINFOList					(PWNDINFO pWndList);		/* アイテム
 extern void UpdateWindowITEMINFOList						(PWNDINFO pWndList);		/* アイテム情報(一覧の横)の更新 */
 extern PWNDINFO MakeWindowDEAD_COMMAND					(void);						/* 死亡中：コマンド */
 extern PWNDINFO MakeWindowSTATUSMAGIC					(void);						/* 強さ：覚えている特技 */
+extern PWNDINFO MakeWindowIMPORTANT						(void);						/* 大事な物の一覧（見るだけ） */
 extern PWNDINFO MakeWindowMAKER							(int nMaker);				/* 作り手：作れる物の一覧 */
 extern PWNDINFO MakeWindowMAKER_CONF					(int nRecipe);				/* 作り手：確認 */
 extern PWNDINFO MakeWindowTOWNWARP					(int nMode);						/* 町転送：行き先の選択 */

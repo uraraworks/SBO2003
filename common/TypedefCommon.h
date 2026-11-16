@@ -46,6 +46,7 @@
 #define MAX_MAGICEXPLAIN	512										/* 魔法説明文の欄のバイト数（終端含む） */
 #define MAX_COMEFC			99										/* 最大吹き出し種類 */
 #define MAX_MYITEM			20										/* 最大所持アイテム */
+#define MAX_IMPORTANT		30										/* 大事な物の欄の大きさ（鍵・依頼の品など。手持ちとは別。1個1枠） */
 #define MAX_SHOPITEM		10										/* 最大売り物数 */
 #define MAX_SHOPMSG			12										/* メッセージ数 */
 #define MAX_LENCHAREFC		32										/* 文字エフェクトの欄のバイト数（終端含む） */
@@ -139,6 +140,7 @@
 #define ITEMFLG_DROP			(0x01)								/* アイテムフラグ：捨てられない */
 #define ITEMFLG_LOST			(0x02)								/* アイテムフラグ：使うとなくなる */
 #define ITEMFLG_TRADE			(0x04)								/* アイテムフラグ：取り引き不可 */
+#define ITEMFLG_IMPORTANT		(0x08)								/* アイテムフラグ：大事な物（手持ちではなく大事な物の欄に入る） */
 
 /* マップ用のフラグ */
 #define MAPFLG_EFECT			(0x01)								/* エフェクトを許可 */
@@ -912,6 +914,7 @@ enum {
 enum {
 	EVENTDOOTTYPE_NONE = 0,
 	EVENTDOOTTYPE_ENEMY,										/* 敵を全部倒すと開く（敵がいない間は開きっぱなし。敵が出るとまた閉まる） */
+	EVENTDOOTTYPE_KEY,											/* 鍵（大事な物）を持っていると開く（鍵は減らない） */
 	EVENTDOOTTYPE_MAX,
 };
 
@@ -2259,6 +2262,7 @@ typedef struct _CHARINFO {
 	WORD		wTimePutInterval;									/* 発生周期 */
 	WORD		wLightTime;											/* 明かり維持時間 */
 	WORD		waItem[MAX_MYITEM];									/* 所持アイテム */
+	WORD		waImportant[MAX_IMPORTANT];							/* 大事な物の欄（0=空。同じ物を複数持ってよい。保存する。本人にだけ CMD_CHARITEM で送り、他人には送らない） */
 	DWORD		dwTargetTblID;										/* ターゲット先のテーブルID */
 	DWORD		dwTargetTblID2;										/* ターゲット先のテーブルID */
 	DWORD		dwTargetTblID3;										/* ターゲット先のテーブルID */
@@ -2534,6 +2538,7 @@ typedef struct _EVENTINFO_DOOR {
 	WORD		wAreaX2;											/* 敵を数える範囲 右下X */
 	WORD		wAreaY2;											/* 敵を数える範囲 右下Y */
 	DWORD		dwCheckTime;										/* 最後に敵を数えた時間（サーバーだけ。保存しない） */
+	WORD		wKeyItem;											/* 必要な鍵の品の種類ID（種別が「鍵」の時） */
 } EVENTINFO_DOOR, *PEVENTINFO_DOOR;
 
 /* イベントデータ(HP/Mana回復) */
@@ -3564,6 +3569,7 @@ typedef struct _CMDPARA_CHARITEM {
 	DWORD		dwTblID;											/* テーブルID */
 	WORD		waItem[MAX_MYITEM];									/* 所持アイテム */
 	WORD		waEqu[MAX_EQUTYPE];									/* 装備品 */
+	WORD		waImportant[MAX_IMPORTANT];							/* 大事な物の欄（サーバー→本人のみ。クライアントから送られた分は使わない） */
 } CMDPARA_CHARITEM, *PCMDPARA_CHARITEM;
 
 /* サーバー情報 */

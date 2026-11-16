@@ -2148,6 +2148,7 @@ void SendCmdCHARITEM(DWORD pIDSend, DWORD dwID)
 	pSendData->dwTblID = dwID;
 	CopyMemory (pSendData->waItem, pChar->waItem, sizeof (pChar->waItem));
 	CopyMemory (pSendData->waEqu, pChar->waEqu, sizeof (pChar->waEqu));
+	CopyMemory (pSendData->waImportant, pChar->waImportant, sizeof (pChar->waImportant));
 
 	svrSock.SendTo (pIDSend, (PBYTE)pSendData, sizeof (CMDPARA_CHARITEM), SENDTIMEOUT);
 	delete pSendData;

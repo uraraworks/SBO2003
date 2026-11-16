@@ -328,6 +328,7 @@ static BOOL BuildState(const ADMINUNDO_KEY &Key, std::vector<BYTE> &aPacket, std
 			Para.dwTblID	= Key.a;
 			CopyMemory (Para.waItem, pChar->waItem, sizeof (Para.waItem));
 			CopyMemory (Para.waEqu, pChar->waEqu, sizeof (Para.waEqu));
+			CopyMemory (Para.waImportant, pChar->waImportant, sizeof (Para.waImportant));
 			PutBytes (aPacket, &Para, sizeof (Para));
 		}
 		return TRUE;
