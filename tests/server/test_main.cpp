@@ -2731,6 +2731,23 @@ static void TestTailBattle(const std::vector<int> &aLogin)
 	}
 	/* 港町レジェンタ(14)の乗り場の近くに先頭・2人目・3人目を縦に並べて列にする */
 	PMAPINFO pPort = g_aMapInfo[GetMapNo(14)];
+	/* 列の周り(横1マス・縦は先頭の前から6マス先まで)がぜんぶ通れる場所を探す */
+	int nX0 = -1, nY0 = -1;
+	for (int y = 1; y + 7 < pPort->nCY && nX0 < 0; y ++) {
+		for (int x = 1; x + 1 < pPort->nCX && nX0 < 0; x ++) {
+			bool bOpen = true;
+			for (int dy = -1; dy <= 6 && bOpen; dy ++) {
+				for (int dx = -1; dx <= 1 && bOpen; dx ++) {
+					if (!CheckCharBlock(pPort->dwID, x + dx, y + dy) || CheckEventBlock(pPort->dwID, x + dx, y + dy)) bOpen = false;
+				}
+			}
+			if (bOpen) { nX0 = x; nY0 = y; }
+		}
+	}
+	printf("tailbattle area found=%d\n", nX0 >= 0 ? 1 : 0);
+	if (nX0 < 0) {
+		return;
+	}
 	PCHARINFO apChar[3];
 	DWORD adwBack[3][5];
 	for (int i = 0; i < 3; i ++) {
@@ -2739,8 +2756,8 @@ static void TestTailBattle(const std::vector<int> &aLogin)
 		adwBack[i][3] = p->dwTailTblID; adwBack[i][4] = p->dwTailBackTblID;
 		DeleteTblNoPC((int)p->dwTblID);
 		p->dwMapID = pPort->dwID;
-		p->dwX = p->dwXBack = 40;
-		p->dwY = p->dwYBack = 50 + i;
+		p->dwX = p->dwXBack = nX0;
+		p->dwY = p->dwYBack = nY0 + i;
 		p->byCharState = CHARSTATE_MOVE;
 		if (p->wHP == 0) p->wHP = 10;
 		AddTblNoPC((int)p->dwTblID);
@@ -2769,8 +2786,8 @@ static void TestTailBattle(const std::vector<int> &aLogin)
 	/* 離れた所でON→OFF：最後尾のとなりへワープして戻る */
 	TailBattleSend(pB, 1);
 	DeleteTblNoPC((int)pB->dwTblID);
-	pB->dwX = pB->dwXBack = 40;
-	pB->dwY = pB->dwYBack = 56;
+	pB->dwX = pB->dwXBack = nX0;
+	pB->dwY = pB->dwYBack = nY0 + 6;
 	AddTblNoPC((int)pB->dwTblID);
 	TailBattleSend(pB, 0);
 	{
@@ -2811,7 +2828,7 @@ static void TestTailBattle(const std::vector<int> &aLogin)
 		PCHARINFO ap_[3] = { pA, pB, pC }; \
 		for (int k_ = 0; k_ < 3; k_ ++) { \
 			DeleteTblNoPC((int)ap_[k_]->dwTblID); \
-			ap_[k_]->dwX = ap_[k_]->dwXBack = 40; ap_[k_]->dwY = ap_[k_]->dwYBack = 50 + k_; \
+			ap_[k_]->dwX = ap_[k_]->dwXBack = nX0; ap_[k_]->dwY = ap_[k_]->dwYBack = nY0 + k_; \
 			AddTblNoPC((int)ap_[k_]->dwTblID); \
 			ap_[k_]->dwTailTblID = (k_ > 0) ? ap_[k_ - 1]->dwTblID : (DWORD)-1; \
 			ap_[k_]->dwTailBackTblID = (k_ < 2) ? ap_[k_ + 1]->dwTblID : (DWORD)-1; \
