@@ -2087,6 +2087,7 @@ void TimerProc(void)
 		case WNDTYPE_QUEST:
 		case WNDTYPE_SORTMENU:
 		case WNDTYPE_MARKET:
+		case WNDTYPE_IMPORTANT:
 			if (dwTime > pWnd->dwTime + 250) {
 				pWnd->dwTime = dwTime;
 				if (g_dwActiveMsgID == pWnd->dwID) {

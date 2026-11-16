@@ -835,9 +835,9 @@ void CCharProcMERCENARY::BuildPathField(int nMaxDist, BOOL bChars)
 			continue;
 		}
 		if (pEvent->byType == EVENTTYPE_DOOR) {
-			/* 「敵を全部倒す」扉は開けられないので、閉まっていたら通れない */
+			/* 「敵を全部倒す」扉・「鍵」の扉は傭兵には開けられないので、閉まっていたら通れない */
 			PEVENTINFO_DOOR pDoorTmp = (PEVENTINFO_DOOR)pEvent->pData;
-			if (pDoorTmp && (pDoorTmp->byType == EVENTDOOTTYPE_ENEMY) &&
+			if (pDoorTmp && ((pDoorTmp->byType == EVENTDOOTTYPE_ENEMY) || (pDoorTmp->byType == EVENTDOOTTYPE_KEY)) &&
 				!SpaceDoorIsOpen (m_pChar->dwMapID, pEvent, pDoorTmp, m_pChar->dwSpaceID)) {
 				s_abyEvent[y * nW + x] = 2;
 			} else if (s_abyEvent[y * nW + x] == 0) {
@@ -1946,10 +1946,10 @@ static void MercenaryReturnItems(PCHARINFO pMerc, PCHARINFO pOwner, BOOL bOnline
 		}
 		if ((pOwner == NULL) || (wItemID >= (WORD)g_aItemInfo.GetSize ())) {
 			nLost ++;
-		} else if (GetItemCount (pOwner->dwTblID) < MAX_MYITEM) {
+		} else if (CanAddCharItem (pOwner->dwTblID, wItemID)) {
 			AddCharItem (pOwner->dwTblID, wItemID);
 			nBag ++;
-		} else if (AddLeaveItem (pOwner, wItemID)) {
+		} else if (!IsImportantItem (wItemID) && AddLeaveItem (pOwner, wItemID)) {
 			nLeave ++;
 		} else {
 			nLost ++;

@@ -600,6 +600,44 @@ int GetItemDataSize(BYTE byType)
 /* 内容：アイテム数を取得													 */
 /* 日付：2003/09/13															 */
 /* ========================================================================= */
+/* 大事な物の数を取得 */
+int GetImportantCount(DWORD dwID)
+{
+	int i, nRet = 0;
+	PCHARINFO pChar = g_aCharInfo[dwID];
+
+	for (i = 0; i < MAX_IMPORTANT; i ++) {
+		if (pChar->waImportant[i]) {
+			nRet ++;
+		}
+	}
+	return nRet;
+}
+
+/* 大事な物の n 番目（0〜。空きを飛ばして数える）の品の種類ID */
+int GetImportantItem(DWORD dwID, int nNo)
+{
+	int i, n = 0;
+	PCHARINFO pChar = g_aCharInfo[dwID];
+
+	for (i = 0; i < MAX_IMPORTANT; i ++) {
+		if (pChar->waImportant[i] == 0) {
+			continue;
+		}
+		if (n == nNo) {
+			return pChar->waImportant[i];
+		}
+		n ++;
+	}
+	return 0;
+}
+
+/* 道具の一覧の行数（手持ち＋、大事な物を持っている時だけ最後に「大事な物…」の行） */
+int GetItemListRows(DWORD dwID)
+{
+	return GetItemCount (dwID) + ((GetImportantCount (dwID) > 0) ? 1 : 0);
+}
+
 int GetItemCount(DWORD dwID)
 {
 	PCHARINFO pChar = g_aCharInfo[dwID];
@@ -6023,16 +6061,25 @@ void RecvDataProcCHARITEM(PBYTE pData, DWORD dwDataSize)
 	pChar = g_aCharInfo[nNo];
 	CopyMemory (pChar->waItem, pPara->waItem, sizeof (pChar->waItem));
 	CopyMemory (pChar->waEqu, pPara->waEqu, sizeof (pChar->waEqu));
+	CopyMemory (pChar->waImportant, pPara->waImportant, sizeof (pChar->waImportant));
 	RenewATDF (nNo);
 
 	/* 自分の手持ちが変わったら（並べ替えなど）、開いている道具の一覧を描き直す */
 	if (nNo == g_nMyCharID) {
-		int i, nCount = GetItemCount (nNo);
+		int i, nCount = GetItemListRows (nNo);
 		if ((g_nProcShopID >= 0) && (g_nProcMakerID < 0)) {
 			ShopRedrawItemInfo ();	/* お店の買う一覧の「手持ち○個」 */
 		}
 		for (i = 0; i < g_WndInfo.GetSize (); i ++) {
 			PWNDINFO pWnd = g_WndInfo[i];
+			if (pWnd->nType == WNDTYPE_IMPORTANT) {
+				/* 大事な物の一覧は大事な物の数に収める */
+				ListScrollFitMargin (pWnd, (int)pWnd->byData1 + pWnd->nData1, GetImportantCount (nNo), LISTSCROLL_MARGIN);
+				pWnd->dwTimeDrawStart = 0;
+				g_bDraw = TRUE;
+				UpdateWindowITEMINFOList (pWnd);
+				continue;
+			}
 			if (pWnd->nType != WNDTYPE_COMMANDITEM) {
 				continue;
 			}

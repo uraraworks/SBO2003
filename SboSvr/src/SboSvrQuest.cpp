@@ -682,10 +682,12 @@ void QuestOnLogin(PCHARINFO pChar)
 /* 依頼の品・報酬の持ち物の扱い												 */
 /* ========================================================================= */
 
-/* 持ち物と預かり所にある数 */
+/* 持ち物（大事な物の欄を含む）と預かり所にある数 */
 static int CountItem(PCHARINFO pChar, WORD wItem, int *pnInv, int *pnLeave)
 {
 	int i, nInv = 0, nLeave = 0;
+
+	nInv += CountImportantItem (pChar, wItem);
 
 	for (i = 0; i < MAX_MYITEM; i ++) {
 		if (pChar->waItem[i] == wItem) {
@@ -709,11 +711,14 @@ static int CountItem(PCHARINFO pChar, WORD wItem, int *pnInv, int *pnLeave)
 	return nInv + nLeave;
 }
 
-/* 持ち物か預かり所から 1 個取り除く（持ち物を先に）。取ったら TRUE */
+/* 大事な物の欄か持ち物か預かり所から 1 個取り除く（大事な物の欄、持ち物の順）。取ったら TRUE */
 static BOOL TakeItem(PCHARINFO pChar, WORD wItem)
 {
 	int i;
 
+	if (DelImportantItem (pChar, wItem)) {
+		return TRUE;
+	}
 	for (i = 0; i < MAX_MYITEM; i ++) {
 		if (pChar->waItem[i] == wItem) {
 			DelCharItem (pChar->dwTblID, (BYTE)i);
@@ -751,11 +756,12 @@ static BOOL GiveItem(PCHARINFO pChar, WORD wItem, BOOL *pbToLeave)
 	if ((wItem == 0) || (wItem >= (WORD)g_aItemInfo.GetSize ())) {
 		return FALSE;
 	}
-	if (GetItemCount (pChar->dwTblID) < MAX_MYITEM) {
+	if (CanAddCharItem (pChar->dwTblID, wItem)) {
 		AddCharItem (pChar->dwTblID, wItem);
 		return TRUE;
 	}
-	if (pbToLeave == NULL) {
+	/* 大事な物は預かり所へ送らない */
+	if ((pbToLeave == NULL) || IsImportantItem (wItem)) {
 		return FALSE;
 	}
 	if (AddLeaveItem (pChar, wItem)) {
@@ -1438,7 +1444,7 @@ void QuestOnPartyLeave(PCHARINFO pChar)
 static void DoHandIn(PCHARINFO pChar, PCHARINFO pNpc)
 {
 	PQUESTINFO pQuest = FindQuest (pChar->wQuestID);
-	WORD awItemBak[MAX_MYITEM], awEquBak[10];
+	WORD awItemBak[MAX_MYITEM], awEquBak[10], awImpBak[MAX_IMPORTANT];
 	DWORD dwLeaveIDBak;
 	LEAVEINFO LeaveBak;
 	PLEAVEINFO pLeave = NULL;
@@ -1462,6 +1468,7 @@ static void DoHandIn(PCHARINFO pChar, PCHARINFO pNpc)
 	/* 途中で失敗したら元に戻せるよう、今の状態を控える */
 	memcpy (awItemBak, pChar->waItem, sizeof (awItemBak));
 	memcpy (awEquBak, pChar->waEqu, sizeof (awEquBak));
+	memcpy (awImpBak, pChar->waImportant, sizeof (awImpBak));
 	dwLeaveIDBak = pChar->dwLeaveID;
 	ZeroMemory (&LeaveBak, sizeof (LeaveBak));
 	if ((pChar->dwLeaveID != 0) && (pChar->dwLeaveID < (DWORD)g_aLeaveInfo.GetSize ())) {
@@ -1478,6 +1485,7 @@ static void DoHandIn(PCHARINFO pChar, PCHARINFO pNpc)
 	if (bReward && pQuest->wRewardItem && !GiveItem (pChar, pQuest->wRewardItem, &bToLeave)) {
 		memcpy (pChar->waItem, awItemBak, sizeof (awItemBak));
 		memcpy (pChar->waEqu, awEquBak, sizeof (awEquBak));
+		memcpy (pChar->waImportant, awImpBak, sizeof (awImpBak));
 		if ((dwLeaveIDBak == 0) && (pChar->dwLeaveID != 0) && (pChar->dwLeaveID < (DWORD)g_aLeaveInfo.GetSize ())) {
 			ZeroMemory (g_aLeaveInfo[pChar->dwLeaveID], sizeof (LEAVEINFO));
 			pChar->dwLeaveID = 0;
@@ -2374,10 +2382,20 @@ static BOOL SpaceDoorOpenRaw(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR p
 	return TRUE;
 }
 
-/* 扉をその空間で開ける（プレイヤー・傭兵が開ける時。「敵を全部倒す」扉は手では開けられない） */
+/* 扉をその空間で開ける（プレイヤー・傭兵が開ける時。「敵を全部倒す」扉は手では開けられない。
+   「鍵」の扉は鍵を持っているか確かめた後で SpaceDoorOpenKey を使う（傭兵は鍵を持たないので開けられない）） */
 BOOL SpaceDoorOpen(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID)
 {
-	if ((pDoor == NULL) || (pDoor->byType == EVENTDOOTTYPE_ENEMY)) {
+	if ((pDoor == NULL) || (pDoor->byType == EVENTDOOTTYPE_ENEMY) || (pDoor->byType == EVENTDOOTTYPE_KEY)) {
+		return FALSE;
+	}
+	return SpaceDoorOpenRaw (dwMapID, pEvent, pDoor, dwSpaceID);
+}
+
+/* 「鍵」の扉を、鍵を持っている人が開ける（持っているかは呼ぶ側で確かめる。鍵は減らない） */
+BOOL SpaceDoorOpenKey(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID)
+{
+	if ((pDoor == NULL) || (pDoor->byType != EVENTDOOTTYPE_KEY)) {
 		return FALSE;
 	}
 	return SpaceDoorOpenRaw (dwMapID, pEvent, pDoor, dwSpaceID);

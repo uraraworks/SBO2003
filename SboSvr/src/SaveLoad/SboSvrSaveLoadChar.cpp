@@ -14,7 +14,7 @@
 /* ========================================================================= */
 /* 定数定義																	 */
 /* ========================================================================= */
-#define DATACOUNTCOLUMN		(82)									/* 保存データ数 */
+#define DATACOUNTCOLUMN		(83)									/* 保存データ数 */
 
 /* ========================================================================= */
 /* 構造体定義																 */
@@ -116,6 +116,7 @@ static const char *s_aszName[] = {
 	"byOptMagicBar",			/* 特技ショートカットの帯の表示設定 */
 	"abyFlag",					/* キャラのフラグ（印 1024 個のビット） */
 	"abyFlagNum",				/* キャラのフラグ（数値 128 個） */
+	"waImportant",				/* 大事な物の欄（個数＋品の種類ID） */
 	"z"
 };
 
@@ -521,6 +522,7 @@ static BOOL SaveCharInfoMain(void)
 			case 79:	dwDataSizeTmp += sizeof (pInfo->byOptMagicBar);			break;	/* 特技ショートカットの帯の表示設定 */
 			case 80:	dwDataSizeTmp += sizeof (pInfo->abyFlag);				break;	/* キャラのフラグ（印） */
 			case 81:	dwDataSizeTmp += sizeof (pInfo->abyFlagNum);			break;	/* キャラのフラグ（数値） */
+			case 82:	dwDataSizeTmp += sizeof (BYTE) + MAX_IMPORTANT * sizeof (WORD);	break;	/* 大事な物の欄 [個数(BYTE)][WORD×個数] */
 			}
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
@@ -953,6 +955,11 @@ static BOOL SaveCharInfoMain(void)
 			case 81:	/* キャラのフラグ（数値） */
 				CopyMemory (&pData[dwOffset], pInfo->abyFlagNum, sizeof (pInfo->abyFlagNum));
 				dwOffset += sizeof (pInfo->abyFlagNum);
+				break;
+			case 82:	/* 大事な物の欄（個数を先に書く。読み込みは個数分だけ読む） */
+				pData[dwOffset ++] = (BYTE)MAX_IMPORTANT;
+				CopyMemory (&pData[dwOffset], pInfo->waImportant, sizeof (pInfo->waImportant));
+				dwOffset += sizeof (pInfo->waImportant);
 				break;
 			}
 		}
@@ -1662,6 +1669,15 @@ BOOL LoadCharInfo(void)
 			if (strcmp (aHeaderInfo[i].szName, s_aszName[81]) == 0) {
 				CopyMemory (pInfo->abyFlagNum, &pData[dwOffsetTmp], sizeof (pInfo->abyFlagNum));
 				dwOffsetTmp += sizeof (pInfo->abyFlagNum);
+			}
+
+			/* 大事な物の欄（保存時の個数分だけ進める。収まる分だけ入れる。無い古いデータは空のまま） */
+			if (strcmp (aHeaderInfo[i].szName, s_aszName[82]) == 0) {
+				DWORD dwCountTmp = pData[dwOffsetTmp ++];
+
+				ZeroMemory (pInfo->waImportant, sizeof (pInfo->waImportant));
+				CopyMemory (pInfo->waImportant, &pData[dwOffsetTmp], min (dwCountTmp, (DWORD)MAX_IMPORTANT) * sizeof (WORD));
+				dwOffsetTmp += dwCountTmp * sizeof (WORD);
 			}
 		}
 	}

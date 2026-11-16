@@ -18,6 +18,9 @@ extern int	GetEventDataSize		(BYTE);														/* イベント種別毎のデ
 extern int	GetSubGameDataSize		(BYTE);														/* サブゲーム種別毎のデータサイズを取得 */
 extern int	GetItemDataSize			(BYTE);														/* アイテム種別毎のデータサイズを取得 */
 extern int	GetItemCount			(DWORD);													/* アイテム数を取得 */
+extern int	GetImportantCount		(DWORD);													/* 大事な物の数を取得 */
+extern int	GetImportantItem		(DWORD, int);												/* 大事な物の n 番目（0〜）の品の種類ID（無ければ 0） */
+extern int	GetItemListRows			(DWORD);													/* 道具の一覧の行数（手持ち＋「大事な物…」の行） */
 extern int	GetItemCountType		(DWORD, BYTE);												/* 種類指定でアイテム数を取得 */
 extern int	GetItemCountTypeEqu		(DWORD, BYTE);												/* 種類指定でアイテム数を取得(装備不可は除く) */
 extern int	GetItemCountTypeID		(DWORD, BYTE, BYTE);										/* 種類指定でアイテムIDを取得 */

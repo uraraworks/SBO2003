@@ -65,6 +65,7 @@ void KeyProcCOMMAND							(PWNDINFO, BYTE, BYTE);		/* コマンド */
 void KeyProcCOMMANDETC						(PWNDINFO, BYTE, BYTE);		/* その他コマンド */
 void KeyProcCOMMANDETC_CONF					(PWNDINFO, BYTE, BYTE);		/* 管理人呼び出し確認 */
 void KeyProcCOMMANDITEM						(PWNDINFO, BYTE, BYTE);		/* 道具コマンド */
+void KeyProcIMPORTANT						(PWNDINFO, BYTE, BYTE);		/* 大事な物の一覧（見るだけ） */
 void KeyProcCOMMANDITEMBATTLE				(PWNDINFO, BYTE, BYTE);		/* 道具コマンド(戦闘マップ) */
 void KeyProcCOMMANDITEMPROC					(PWNDINFO, BYTE, BYTE);		/* 道具処理選択 */
 void KeyProcSORTMENU						(PWNDINFO, BYTE, BYTE);		/* 並べ替え：入れ替え・種類順・50音順 */
@@ -278,6 +279,7 @@ const KEYPROC KeyProcTbl[] = {
 	KeyProcQUEST,						/* WNDTYPE_QUEST					ギルドの依頼：一覧・進み具合 */
 	KeyProcSORTMENU,					/* WNDTYPE_SORTMENU					並べ替え：入れ替え・種類順・50音順 */
 	KeyProcMARKET,						/* WNDTYPE_MARKET					取引所（商人ギルドの出張所）の受付 */
+	KeyProcIMPORTANT,					/* WNDTYPE_IMPORTANT				大事な物の一覧（見るだけ） */
 };
 
 
@@ -1422,7 +1424,7 @@ void KeyProcCOMMAND(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		/* 道具 */
 		case 3:
 			{
-				if (GetItemCount (g_nMyCharID) == 0) {
+				if ((GetItemCount (g_nMyCharID) == 0) && (GetImportantCount (g_nMyCharID) == 0)) {
 					PWNDINFO pWndTmp;
 					pWndTmp = MakeWindowMSG ("何も持っていません。@2", FALSE);
 					g_WndInfo.Add (pWndTmp);
@@ -1847,13 +1849,30 @@ void KeyProcCOMMANDITEM(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		pWnd->dwTimeDrawStart = 0;
 		g_bDraw = TRUE;
 
-		/* 入れ替え中：2つ目を決めたら入れ替える（同じ行なら何もしない） */
+		/* 入れ替え中：2つ目を決めたら入れ替える（同じ行なら何もしない。「大事な物…」の行は入れ替えられない） */
 		if (pWnd->dwData) {
 			int nNo1 = (int)pWnd->dwData - 1, nNo2 = pWnd->byData1 + pWnd->nData1;
 			pWnd->dwData = 0;
-			if (nNo1 != nNo2) {
+			if ((nNo1 != nNo2) && (nNo2 < GetItemCount (g_nMyCharID))) {
 				SendCmdSORTITEM (SORTITEMTARGET_MYITEM, SORTITEMMODE_SWAP, (BYTE)nNo1, (BYTE)nNo2);
 			}
+			return;
+		}
+
+		/* 最後の行「大事な物…」：大事な物の一覧を開く（使う・捨てるなどは無し） */
+		if (((int)pWnd->byData1 + pWnd->nData1 >= GetItemCount (g_nMyCharID)) && (GetImportantCount (g_nMyCharID) > 0)) {
+			PWNDINFO pWndImp = MakeWindowIMPORTANT ();
+			/* 道具の横の詳細欄は、大事な物の一覧の横に出し直す */
+			if (pWnd->pWndTmp) {
+				EraseWindow ((PWNDINFO)pWnd->pWndTmp);
+				pWnd->pWndTmp = NULL;
+			}
+			pWndImp->pParent = pWnd;
+			pWnd->pChild = pWndImp;
+			g_WndInfo.Add (pWndImp);
+			g_dwActiveMsgID = pWndImp->dwID;
+			g_bDraw = TRUE;
+			MakeWindowITEMINFOList (pWndImp);
 			return;
 		}
 
@@ -1867,7 +1886,57 @@ void KeyProcCOMMANDITEM(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		BOOL bMove = FALSE;
 
 		/* 一覧は10行ずつ見せ、上下に余白を残してスクロールする */
-		if (ListScrollKey (pWnd, byCode, GetItemCount (g_nMyCharID))) {
+		if (ListScrollKey (pWnd, byCode, GetItemListRows (g_nMyCharID))) {
+			bMove = TRUE;
+		}
+
+		if (bMove) {
+			pWnd->dwTime = timeGetTime ();
+			pWnd->byAnime = 1;
+			pWnd->byRepeate ++;
+			pWnd->dwTimeKey = timeGetTime ();
+			pWnd->dwTimeDrawStart = 0;
+			g_bDraw = TRUE;
+
+			/* アイテムの詳細を出し直す */
+			UpdateWindowITEMINFOList (pWnd);
+		}
+
+	} else if (byEvent == KEY_UP) {
+		pWnd->dwTimeKey = timeGetTime () - 250;
+		pWnd->byRepeate = 0;
+		g_bDraw = TRUE;
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：KeyProcIMPORTANT													 */
+/* 内容：キー入力処理(大事な物の一覧。見るだけ)								 */
+/*       ESC・キャンセルで道具の一覧に戻る（道具の横の詳細欄も出し直す）	 */
+/* ========================================================================= */
+void KeyProcIMPORTANT(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
+{
+	DWORD dwTime = 250;
+	if (pWnd->byRepeate > 1) {
+		dwTime = 125;
+	}
+
+	if ((byEvent == KEY_UP) && (byCode == 'B')) {
+		PWNDINFO pWndParent = (PWNDINFO)pWnd->pParent;
+
+		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
+		EraseWindow (pWnd);
+		/* 道具の一覧に戻ったら、横の詳細欄を出し直す */
+		if (pWndParent && (pWndParent->pWndTmp == NULL)) {
+			MakeWindowITEMINFOList (pWndParent);
+		}
+		g_bDraw = TRUE;
+
+	} else if ((byEvent == KEY_DOWN) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
+		BOOL bMove = FALSE;
+
+		/* 一覧は10行ずつ見せ、上下に余白を残してスクロールする */
+		if (ListScrollKey (pWnd, byCode, GetImportantCount (g_nMyCharID))) {
 			bMove = TRUE;
 		}
 

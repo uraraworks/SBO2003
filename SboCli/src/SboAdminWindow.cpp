@@ -2371,6 +2371,11 @@ void AdminOnCommandMapEvent(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 					pDoor->byTimeClose = (BYTE)atoi (szTmp);
 					pDoor->byType = (BYTE)SendMessage (m_hWndCombo2, CB_GETCURSEL, 0, 0);
 
+					/* 鍵の品の番号（種別が「鍵」の時） */
+					ZeroMemory (szTmp, sizeof (szTmp));
+					GetWindowText (m_hWndEdit8, szTmp, 6);
+					pDoor->wKeyItem = (WORD)atoi (szTmp);
+
 					/* 敵を数える範囲 */
 					HWND ahWnd[4] = {m_hWndEdit4, m_hWndEdit5, m_hWndEdit6, m_hWndEdit7};
 					WORD *apwArea[4] = {&pDoor->wAreaX1, &pDoor->wAreaY1, &pDoor->wAreaX2, &pDoor->wAreaY2};
@@ -3784,6 +3789,8 @@ void AdminOnCommandItemList(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 			SendMessage (m_hWndCheck2, BM_SETCHECK, pItem->byFlg & ITEMFLG_LOST, 0);
 			/* 取引不可フラグ */
 			SendMessage (m_hWndCheck5, BM_SETCHECK, pItem->byFlg & ITEMFLG_TRADE, 0);
+			/* 大事な物フラグ */
+			SendMessage (m_hWndCheck6, BM_SETCHECK, (pItem->byFlg & ITEMFLG_IMPORTANT) ? BST_CHECKED : BST_UNCHECKED, 0);
 			BYTE byNo = 0;
 			int i;
 			for (i = 0; ; i ++) {
@@ -4241,6 +4248,11 @@ void AdminOnCommandItemList(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 			pItem->byFlg &= ~ITEMFLG_TRADE;
 			if (SendMessage (m_hWndCheck5, BM_GETCHECK, 0, 0) & BST_CHECKED) {
 				pItem->byFlg |= ITEMFLG_TRADE;
+			}
+			/* 大事な物フラグ */
+			pItem->byFlg &= ~ITEMFLG_IMPORTANT;
+			if (SendMessage (m_hWndCheck6, BM_GETCHECK, 0, 0) & BST_CHECKED) {
+				pItem->byFlg |= ITEMFLG_IMPORTANT;
 			}
 			/* 使った時のメッセージ */
 			switch (pItem->byType) {
@@ -6152,6 +6164,7 @@ void AdminOnPaintMapEvent(HDC hDC)
 					MyTextOut (hDC, 0, 64 + 16 * 1, "背景グラフィックID:");
 					MyTextOut (hDC, 0, 64 + 16 * 2, "閉まるまでの時間(100ms):");
 					MyTextOut (hDC, 0, 64 + 16 * 3 + 2, "種別:");
+					MyTextOut (hDC, 0, 64 + 16 * 4, "鍵の品の番号:");
 					MyTextOut (hDC, 0, 64 + 16 * 5, "範囲 左上X,Y:");
 					MyTextOut (hDC, 0, 64 + 16 * 6, "範囲 右下X,Y:");
 					MyTextOut (hDC, 0, 64 + 16 * 7, "(敵を数える範囲。全部0=マップ全体)");
@@ -8172,7 +8185,7 @@ void MakeAdminWndEventInfoType(void)
 			m_hWndCombo2 = CreateWindow ("COMBOBOX", "", WS_CHILD | WS_VISIBLE | WS_VSCROLL | CBS_DROPDOWNLIST,
 					12 * 13 - 2, 64 + 16 * 3, 12 * 10, 12 * 10, g_hWndAdmin, (HMENU)IDC_TMPCOMBO2, g_hInstance, NULL);
 			SendMessage (m_hWndCombo2, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
-			LPCTSTR liststr[] = {"カギ不要", "敵を全部倒す"};
+			LPCTSTR liststr[] = {"カギ不要", "敵を全部倒す", "鍵（大事な物）"};
 
 			for (int i = 0; i < EVENTDOOTTYPE_MAX; i ++) {
 				SendMessage (m_hWndCombo2, CB_ADDSTRING, (WPARAM)0, (LPARAM)liststr[i]);
@@ -8185,6 +8198,13 @@ void MakeAdminWndEventInfoType(void)
 			wsprintf (szTmp, "%d", pDoor->byTimeClose);
 			SetWindowText (m_hWndEdit3, szTmp);
 			SendMessage (m_hWndCombo2, CB_SETCURSEL, pDoor->byType, 0);
+
+			/* 鍵の品の番号（種別が「鍵」の時。アイテムの番号） */
+			m_hWndEdit8 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+					12 * 13, 64 + 16 * 4, 40, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
+			SendMessage (m_hWndEdit8, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+			wsprintf (szTmp, "%d", pDoor->wKeyItem);
+			SetWindowText (m_hWndEdit8, szTmp);
 
 			/* 敵を数える範囲（種別が「敵を全部倒す」の時。全部0ならマップ全体） */
 			HWND *aphWnd[4] = {&m_hWndEdit4, &m_hWndEdit5, &m_hWndEdit6, &m_hWndEdit7};
@@ -9586,6 +9606,10 @@ void MakeItemEditWindow(BYTE byType)
 			12 * 26, 137 + 22 + 32, 72, 16, g_hWndAdmin, (HMENU)IDC_TMPCHECK5, g_hInstance, NULL);
 	SendMessage (m_hWndCheck5, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
+	m_hWndCheck6 = CreateWindow ("BUTTON", "大事な物", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+			12 * 26 + 76, 137 + 22 + 32, 72, 16, g_hWndAdmin, (HMENU)NULL, g_hInstance, NULL);
+	SendMessage (m_hWndCheck6, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+
 	m_hWndCombo4 = CreateWindow ("COMBOBOX", "", WS_CHILD | WS_VISIBLE | WS_VSCROLL | CBS_DROPDOWNLIST,
 			12 * 19, 137 + 22 + 16, 72, 12 * 5, g_hWndAdmin, (HMENU)IDC_TMPCOMBO4, g_hInstance, NULL);
 	SendMessage (m_hWndCombo4, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
@@ -10082,6 +10106,7 @@ void DeleteItemEditWindow(void)
 	SAFE_DESTROYWND (m_hWndCheck3);
 	SAFE_DESTROYWND (m_hWndCheck4);
 	SAFE_DESTROYWND (m_hWndCheck5);
+	SAFE_DESTROYWND (m_hWndCheck6);
 	SAFE_DESTROYWND (m_hWndCombo3);
 	SAFE_DESTROYWND (m_hWndCombo4);
 	SAFE_DESTROYWND (m_hWndCombo5);
