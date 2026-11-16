@@ -10,6 +10,7 @@
 
 #include "stdafx.h"
 #include "SboSvrRecvCmd.h"
+#include "SboSvrCharInfoTimerProc.h"
 #include "CharProcSEARCH2.h"
 #include <algorithm>
 #include <functional>
@@ -212,6 +213,10 @@ BOOL CCharProcSEARCH2::IsTargetReady(void)
 		  (abs (m_pChar->dwY - pChar->dwY) <= m_pChar->bySearchCy))) {
 		goto Exit;
 	}
+	/* 隠れている？ 半分の範囲より外なら見失う */
+	if (IsHideOutOfSight (m_pChar, pChar)) {
+		goto Exit;
+	}
 
 	bRet = TRUE;
 Exit:
@@ -315,6 +320,10 @@ DWORD CCharProcSEARCH2::Search(
 		}
 		if (bPCCheck) {
 			dwResult = CheckCharBlockPC (m_pChar->dwMapID, x, y, m_pChar->dwSpaceID);
+			/* 隠れている人は、半分の範囲より外なら見つからない */
+			if ((dwResult != -1) && IsHideOutOfSight (m_pChar, g_aCharInfo[dwResult])) {
+				dwResult = (DWORD)-1;
+			}
 			if (dwResult != -1) {
 				dwRet = dwResult;
 				m_pChar->dwTargetTblID = dwResult;

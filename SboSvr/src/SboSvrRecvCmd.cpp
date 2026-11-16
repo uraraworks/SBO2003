@@ -3099,6 +3099,9 @@ void SubProcMapMove(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY)
 
 	ZeroMemory (pChar->abySubStatus, sizeof (pChar->abySubStatus));
 
+	/* マップ移動したら隠れるが解ける(この後のキャラ情報で周りに伝わる) */
+	HideBreak (pChar, FALSE);
+
 	pChar->dwLastHartBeat = 0;
 	pChar->byDirection = 99;
 	SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 4);

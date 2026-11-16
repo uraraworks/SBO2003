@@ -79,6 +79,8 @@ static BOOL MagicProcUse_POISON				(PMAGICINFO, PCHARINFO, PCHARINFO);					/* �
 static BOOL MagicProcUse_SLEEP				(PMAGICINFO, PCHARINFO, PCHARINFO);					/* 魔法処理(使用処理:眠り) */
 static BOOL MagicProcUse_ATUP				(PMAGICINFO, PCHARINFO, PCHARINFO);					/* 魔法処理(使用処理:攻撃力アップ) */
 static BOOL MagicProcUse_DFUP				(PMAGICINFO, PCHARINFO, PCHARINFO);					/* 魔法処理(使用処理:守備力アップ) */
+static BOOL MagicProcUse_HIDE				(PMAGICINFO, PCHARINFO, PCHARINFO);					/* 魔法処理(使用処理:隠れる) */
+static BOOL IsHideBreakMagic				(PMAGICINFO);										/* 使うと隠れるが解ける(攻撃系)の特技か */
 
 extern long genrand();													/* 乱数取得 */
 
@@ -100,6 +102,7 @@ static const MAGICPROC MagicProcTbl[] = {
 	MagicProcUse_SLEEP,				/* 眠り */
 	MagicProcUse_ATUP,				/* 攻撃力アップ */
 	MagicProcUse_DFUP,				/* 守備力アップ */
+	MagicProcUse_HIDE,				/* 隠れる */
 };
 
 /* ========================================================================= */
@@ -270,6 +273,11 @@ static BOOL MagicProcSub(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget, BOOL bIt
 			SendCmdEFECTCHG (pChar->pID, pChar->dwTblID, pChar->byEfect);
 			pChar->byEfect = 0;
 		}
+	}
+
+	/* 攻撃系の特技を使ったら、隠れるが解ける(回復・補助は解けない) */
+	if ((pChar->byNpcType == NPCTYPE_INIT) && IsHideBreakMagic (pInfo)) {
+		HideBreak (pChar, TRUE);
 	}
 
 	/* 重なったキャラに魔法発動？ */
@@ -493,6 +501,7 @@ static BOOL IsMagicReachTarget(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCha
 	case MAGICTYPE_HASTE:			/* 加速 */
 	case MAGICTYPE_ATUP:			/* 攻撃力アップ */
 	case MAGICTYPE_DFUP:			/* 守備力アップ */
+	case MAGICTYPE_HIDE:			/* 隠れる */
 		return TRUE;
 	}
 	return IsMagicReachChar (pChar, pCharTarget);
@@ -2538,4 +2547,69 @@ BOOL MagicProcUse_ATUP(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTarget)
 BOOL MagicProcUse_DFUP(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTarget)
 {
 	return MagicProcUseStatusUp (pInfo, pChar, pCharTarget, CHARINFOTIMEREVENT_DFUP, "守り", RGB (100, 180, 255));
+}
+
+/* ========================================================================= */
+/* 関数名：IsHideBreakMagic													 */
+/* 内容：使うと隠れるが解ける(攻撃系)の特技か								 */
+/*		 HP減少・毒・眠りが攻撃系。魔法発生は、置く魔法が攻撃系なら攻撃系	 */
+/*		 回復・蘇生・明かり・加速・アップ・帰還などは解けない				 */
+/* ========================================================================= */
+static BOOL IsHideBreakMagic(PMAGICINFO pInfo)
+{
+	PMAGICINFO pInfoChild;
+
+	switch (pInfo->byType) {
+	case MAGICTYPE_HPDOWN:			/* HP減少 */
+	case MAGICTYPE_HPDOWNAT:		/* HP減少(攻撃力) */
+	case MAGICTYPE_HPDOWNHPCOST:	/* HP減少(HP消費) */
+	case MAGICTYPE_HPDOWNRATE:		/* HP減少(率) */
+	case MAGICTYPE_POISON:			/* 毒 */
+	case MAGICTYPE_SLEEP:			/* 眠り */
+		return TRUE;
+
+	case MAGICTYPE_PUT:				/* 魔法発生 */
+	case MAGICTYPE_PUTSELF:			/* 魔法発生(自分) */
+		/* 付加データ1が、置く魔法の番号 */
+		if (pInfo->wData1 >= (WORD)g_aMagicInfo.GetSize ()) {
+			return FALSE;
+		}
+		pInfoChild = g_aMagicInfo[pInfo->wData1];
+		if ((pInfoChild == NULL) || (pInfoChild == pInfo) ||
+			(pInfoChild->byType == MAGICTYPE_PUT) || (pInfoChild->byType == MAGICTYPE_PUTSELF)) {
+			return FALSE;
+		}
+		return IsHideBreakMagic (pInfoChild);
+	}
+	return FALSE;
+}
+
+/* ========================================================================= */
+/* 関数名：MagicProcUse_HIDE												 */
+/* 内容：魔法処理(使用処理:隠れる)											 */
+/*		 付加データ2:秒数(攻撃力アップなどと同じ)。自分にかける				 */
+/*		 敵が見つけられる範囲が半分になり、画面では半透明になる			 */
+/*		 攻撃するか、攻撃系の特技を使うか、時間が来ると解ける				 */
+/* ========================================================================= */
+BOOL MagicProcUse_HIDE(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTarget)
+{
+	int nSec;
+
+	/* プレイヤーが自分にかける時だけ */
+	if ((pCharTarget->byNpcType != NPCTYPE_INIT) || (pChar != pCharTarget)) {
+		return FALSE;
+	}
+	if ((pCharTarget->byCharState == CHARSTATE_DEAD) || (pCharTarget->wHP == 0)) {
+		return FALSE;
+	}
+	nSec = max (1, (int)pInfo->wData2);
+
+	HideStart (pCharTarget, (DWORD)nSec * 1000);
+	if (pInfo->byTargetEfectID) {
+		pCharTarget->byEfect = pInfo->byTargetEfectID;
+		SendCmdEFECTCHG (pCharTarget->pID, pCharTarget->dwTblID, pCharTarget->byEfect);
+		pCharTarget->byEfect = 0;
+	}
+	SendCmdSYSMSG (pCharTarget->pID, "姿を隠した", SPEECHCMD_BATTLE1);
+	return TRUE;
 }

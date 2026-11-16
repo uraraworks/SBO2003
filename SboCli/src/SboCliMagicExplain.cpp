@@ -143,6 +143,10 @@ static void MakeEffectStr(PMAGICINFO pInfo, BOOL bInner, int nDepth, LPSTR pszDs
 		}
 		break;
 
+	case MAGICTYPE_HIDE:			/* 隠れる */
+		wsprintf (szTmp, "%d秒間、敵に見つかりにくくなる（攻撃すると解ける）", pInfo->wData2);
+		break;
+
 	case MAGICTYPE_POISON:			/* 毒 */
 		if (bInner) {
 			wsprintf (szTmp, "毒にする（%d秒間、2秒ごとに%dのダメージ）", pInfo->wData2, pInfo->wData1);

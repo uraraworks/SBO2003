@@ -4429,6 +4429,7 @@ void RecvDataProcCHARINFO(PBYTE pData, DWORD dwDataSize)
 	pCharDst->byMoveProbabilityX	= pChar->byMoveProbabilityX;
 	pCharDst->byMoveProbabilityY	= pChar->byMoveProbabilityY;
 	pCharDst->byLightLevel			= pChar->byLightLevel;
+	pCharDst->byHide				= pChar->byHide;
 	pCharDst->bySearchCx			= pChar->bySearchCx;
 	pCharDst->bySearchCy			= pChar->bySearchCy;
 	pCharDst->wTimePutInterval		= pChar->wTimePutInterval;
@@ -4580,6 +4581,7 @@ void RecvDataProcCHARINFO2(PBYTE pData, DWORD dwDataSize)
 	pCharDst->byEfectIdle	= pChar->byEfectIdle;
 	pCharDst->byNpcType		= pChar->byNpcType;
 	pCharDst->byLightLevel	= pChar->byLightLevel;
+	pCharDst->byHide		= pChar->byHide;
 	pCharDst->wGrpID		= pChar->wGrpID;
 	pCharDst->wGrpMain		= pChar->wGrpMain;
 	pCharDst->wGrpSub		= pChar->wGrpSub;

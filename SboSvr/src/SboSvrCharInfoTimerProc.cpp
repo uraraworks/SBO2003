@@ -24,6 +24,7 @@ static BOOL	CharInfoTimerProc_HASTE		(PCHARINFO pChar, PCHARINFOTIMEREVENT pInfo
 static BOOL	CharInfoTimerProc_POISON	(PCHARINFO pChar, PCHARINFOTIMEREVENT pInfo);	/* キャラ情報タイマーイベント処理(毒) */
 static BOOL	CharInfoTimerProc_SLEEP		(PCHARINFO pChar, PCHARINFOTIMEREVENT pInfo);	/* キャラ情報タイマーイベント処理(眠り) */
 static BOOL	CharInfoTimerProc_STATUSUP	(PCHARINFO pChar, PCHARINFOTIMEREVENT pInfo);	/* キャラ情報タイマーイベント処理(攻撃力・守備力アップ) */
+static BOOL	CharInfoTimerProc_HIDE		(PCHARINFO pChar, PCHARINFOTIMEREVENT pInfo);	/* キャラ情報タイマーイベント処理(隠れる) */
 
 #define POISON_INTERVAL		2000		/* 毒のダメージの間隔(ms) */
 void		BuffSendState				(PCHARINFO pChar);								/* 攻撃力・守備力アップの残りを本人と仲間へ送る */
@@ -48,6 +49,8 @@ void DeleteAllTimerEvent(PCHARINFO pChar)
 		SAFE_DELETE (pChar->aTimerEvent[i]);
 	}
 	pChar->aTimerEvent.RemoveAll ();
+	/* 隠れるはタイマーと一緒に消える(ログアウト・やり直しでは持ち越さない) */
+	pChar->byHide = 0;
 }
 
 
@@ -102,6 +105,9 @@ void CharInfoTimerProc(DWORD dwTblID)
 		case CHARINFOTIMEREVENT_ATUP:		/* 攻撃力アップ */
 		case CHARINFOTIMEREVENT_DFUP:		/* 守備力アップ */
 			bResult = CharInfoTimerProc_STATUSUP (pChar, pInfo);
+			break;
+		case CHARINFOTIMEREVENT_HIDE:		/* 隠れる */
+			bResult = CharInfoTimerProc_HIDE (pChar, pInfo);
 			break;
 		}
 		if (bResult) {
@@ -325,6 +331,96 @@ static BOOL CharInfoTimerProc_STATUSUP(PCHARINFO pChar, PCHARINFOTIMEREVENT pInf
 		s_bBuffEnded = TRUE;
 	}
 	return TRUE;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CharInfoTimerProc_HIDE											 */
+/* 内容：	キャラ情報タイマーイベント処理(隠れる)							 */
+/*			時間が来るか、倒れたら解ける(解けた事を周りに知らせる)			 */
+/* ========================================================================= */
+
+static BOOL CharInfoTimerProc_HIDE(PCHARINFO pChar, PCHARINFOTIMEREVENT pInfo)
+{
+	/* もう解けている(攻撃した・マップ移動した)なら、イベントだけ片付ける */
+	if (pChar->byHide == 0) {
+		return TRUE;
+	}
+	if ((pChar->wHP != 0) && (timeGetTime () - pInfo->dwTimeStart < pInfo->dwTimeValid)) {
+		return FALSE;
+	}
+	pChar->byHide = 0;
+	if (pChar->byNpcType == NPCTYPE_INIT) {
+		SendCmdSYSMSG (pChar->pID, "隠れが解けた", SPEECHCMD_BATTLE1);
+	}
+	/* 周りの人の画面も元の濃さに戻す */
+	SendCmdCHARINFO3 (pChar->dwTblID);
+	return TRUE;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	HideStart														 */
+/* 内容：	隠れる(かけ直しは時間が延びるだけ)。周りに半透明を知らせる		 */
+/* ========================================================================= */
+
+void HideStart(PCHARINFO pChar, DWORD dwTimeValid)
+{
+	SetCharInfoTimerStatus (pChar, CHARINFOTIMEREVENT_HIDE, 1, dwTimeValid);
+	pChar->byHide = 1;
+	SendCmdCHARINFO3 (pChar->dwTblID);
+}
+
+
+/* ========================================================================= */
+/* 関数名：	HideBreak														 */
+/* 内容：	隠れるを解く(攻撃した・攻撃の特技を使った・マップ移動した)		 */
+/*			bSend が TRUE なら、周りへ知らせる(マップ移動中は FALSE)		 */
+/* ========================================================================= */
+
+void HideBreak(PCHARINFO pChar, BOOL bSend)
+{
+	int i, nCount;
+
+	if (pChar->byHide == 0) {
+		return;
+	}
+	pChar->byHide = 0;
+	nCount = pChar->aTimerEvent.GetSize ();
+	for (i = 0; i < nCount; i ++) {
+		if (pChar->aTimerEvent[i]->byType == CHARINFOTIMEREVENT_HIDE) {
+			SAFE_DELETE (pChar->aTimerEvent[i]);
+			pChar->aTimerEvent.RemoveAt (i);
+			break;
+		}
+	}
+	if (pChar->byNpcType == NPCTYPE_INIT) {
+		SendCmdSYSMSG (pChar->pID, "隠れが解けた", SPEECHCMD_BATTLE1);
+	}
+	if (bSend) {
+		SendCmdCHARINFO3 (pChar->dwTblID);
+	}
+}
+
+
+/* ========================================================================= */
+/* 関数名：	IsHideOutOfSight												 */
+/* 内容：	隠れている相手が、pSeeker(敵)の索敵範囲の半分より外にいるか		 */
+/*			TRUE なら見つけられない・追っていても見失う						 */
+/*			(索敵範囲が小さくても、1マスは見える)							 */
+/* ========================================================================= */
+
+BOOL IsHideOutOfSight(PCHARINFO pSeeker, PCHARINFO pTarget)
+{
+	int nHalfX, nHalfY;
+
+	if ((pTarget == NULL) || (pTarget->byHide == 0)) {
+		return FALSE;
+	}
+	nHalfX = max (1, (int)pSeeker->bySearchCx / 2);
+	nHalfY = max (1, (int)pSeeker->bySearchCy / 2);
+	return (abs ((int)pTarget->dwX - (int)pSeeker->dwX) > nHalfX) ||
+		(abs ((int)pTarget->dwY - (int)pSeeker->dwY) > nHalfY);
 }
 
 
