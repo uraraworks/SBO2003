@@ -62,6 +62,12 @@ int		GetItemCount				(DWORD);										/* アイテム数を取得 */
 int		GetSubGameID				(PSUBGAMEINFO);									/* サブゲームIDを取得 */
 int		SearchEvent					(DWORD, DWORD, DWORD);							/* 座標を元にイベント番号検索 */
 void	AddCharItem					(DWORD, DWORD);									/* アイテム追加 */
+BOOL	IsImportantItem				(WORD);											/* 大事な物の欄に入る品か */
+int		GetImportantCount			(DWORD);										/* 大事な物の数を取得 */
+BOOL	CanAddCharItem				(DWORD, DWORD);									/* その品を今受け取れるか */
+int		CountImportantItem			(PCHARINFO, WORD);								/* 大事な物の欄にある、その品の数 */
+BOOL	DelImportantItem			(PCHARINFO, WORD);								/* 大事な物の欄から、その品を1個取り除く */
+int		MoveImportantItems			(PCHARINFO);									/* 手持ちの大事な物を大事な物の欄へ移す */
 void	DelCharItem					(DWORD, BYTE);									/* アイテム捨てる */
 BOOL	AddLeaveItem				(PCHARINFO, WORD);								/* 預かり所にアイテムを1個入れる */
 BOOL	CheckCharItem				(DWORD, DWORD, BYTE);							/* アイテム持ってるかチェック */
@@ -1353,6 +1359,161 @@ int GetItemCount(DWORD dwID)
 
 
 /* ========================================================================= */
+/* 関数名：	IsImportantItem													 */
+/* 内容：	大事な物の欄に入る品か（大事な物の印がある品、依頼の品）		 */
+/* ========================================================================= */
+
+BOOL IsImportantItem(WORD wItem)
+{
+	if ((wItem == 0) || (wItem >= (WORD)g_aItemInfo.GetSize ())) {
+		return FALSE;
+	}
+	if (g_aItemInfo[wItem]->byFlg & ITEMFLG_IMPORTANT) {
+		return TRUE;
+	}
+	return QuestIsQuestItem (wItem);
+}
+
+
+/* ========================================================================= */
+/* 関数名：	GetImportantCount												 */
+/* 内容：	大事な物の数を取得												 */
+/* ========================================================================= */
+
+int GetImportantCount(DWORD dwID)
+{
+	int i, nRet;
+	PCHARINFO pChar;
+
+	nRet  = 0;
+	pChar = g_aCharInfo[dwID];
+	for (i = 0; i < MAX_IMPORTANT; i ++) {
+		if (pChar->waImportant[i]) {
+			nRet ++;
+		}
+	}
+
+	return nRet;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CanAddCharItem													 */
+/* 内容：	その品を今受け取れるか（大事な物は大事な物の欄、他は手持ちの空き）*/
+/* ========================================================================= */
+
+BOOL CanAddCharItem(DWORD dwCharID, DWORD dwItemID)
+{
+	if ((dwItemID < 0x10000) && IsImportantItem ((WORD)dwItemID)) {
+		return GetImportantCount (dwCharID) < MAX_IMPORTANT;
+	}
+	return GetItemCount (dwCharID) < MAX_MYITEM;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CountImportantItem												 */
+/* 内容：	大事な物の欄にある、その品の数									 */
+/* ========================================================================= */
+
+int CountImportantItem(PCHARINFO pChar, WORD wItem)
+{
+	int i, nRet;
+
+	nRet = 0;
+	if ((pChar == NULL) || (wItem == 0)) {
+		return 0;
+	}
+	for (i = 0; i < MAX_IMPORTANT; i ++) {
+		if (pChar->waImportant[i] == wItem) {
+			nRet ++;
+		}
+	}
+
+	return nRet;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	DelImportantItem												 */
+/* 内容：	大事な物の欄から、その品を1個取り除く（後ろを前へつめる）		 */
+/* ========================================================================= */
+
+BOOL DelImportantItem(PCHARINFO pChar, WORD wItem)
+{
+	int i, j;
+
+	if ((pChar == NULL) || (wItem == 0)) {
+		return FALSE;
+	}
+	for (i = 0; i < MAX_IMPORTANT; i ++) {
+		if (pChar->waImportant[i] != wItem) {
+			continue;
+		}
+		for (j = i; j < MAX_IMPORTANT - 1; j ++) {
+			pChar->waImportant[j] = pChar->waImportant[j + 1];
+		}
+		pChar->waImportant[MAX_IMPORTANT - 1] = 0;
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	MoveImportantItems												 */
+/* 内容：	手持ちにある大事な物・依頼の品（装備中以外）を大事な物の欄へ移す	 */
+/*			（古いキャラの持ち物の直し。欄がいっぱいなら残りは手持ちのまま）	 */
+/* ========================================================================= */
+
+int MoveImportantItems(PCHARINFO pChar)
+{
+	int i, j, k, nRet;
+	BOOL bEqu;
+
+	nRet = 0;
+	if (pChar == NULL) {
+		return 0;
+	}
+	for (i = 0; i < MAX_MYITEM; ) {
+		WORD wItem = pChar->waItem[i];
+
+		if ((wItem == 0) || !IsImportantItem (wItem)) {
+			i ++;
+			continue;
+		}
+		/* 装備中の物は動かさない（装備の添字がずれるため） */
+		bEqu = FALSE;
+		for (j = 0; j < MAX_EQUTYPE; j ++) {
+			if (pChar->waEqu[j] == i) {
+				bEqu = TRUE;
+			}
+		}
+		if (bEqu) {
+			i ++;
+			continue;
+		}
+		/* 大事な物の欄に空きが無ければ、そのまま手持ちに置く */
+		for (k = 0; k < MAX_IMPORTANT; k ++) {
+			if (pChar->waImportant[k] == 0) {
+				break;
+			}
+		}
+		if (k >= MAX_IMPORTANT) {
+			break;
+		}
+		pChar->waImportant[k] = wItem;
+		/* 手持ちを詰める（装備の添字も一緒に直る）。詰めたので同じ位置をもう一度見る */
+		DelCharItem (pChar->dwTblID, (BYTE)i);
+		nRet ++;
+	}
+
+	return nRet;
+}
+
+
+/* ========================================================================= */
 /* 関数名：	SearchEvent														 */
 /* 内容：	座標を元にイベント番号検索										 */
 /* 日付：	2004/01/31														 */
@@ -1397,6 +1558,18 @@ void AddCharItem(DWORD dwCharID, DWORD dwItemID)
 	/* 存在しないアイテムを追加しようとした？ */
 	if (dwItemID >= (DWORD)g_aItemInfo.GetSize ()) {
 		PostMessage (g_hWndMain, WM_DECPLAYER, pChar->pID, (LPARAM)pChar->dwTblID);
+		return;
+	}
+
+	/* 大事な物・依頼の品は手持ちではなく大事な物の欄へ（同じ物を重ねず1個1枠） */
+	if (IsImportantItem ((WORD)dwItemID)) {
+		for (i = 0; i < MAX_IMPORTANT; i ++) {
+			if (pChar->waImportant[i]) {
+				continue;
+			}
+			pChar->waImportant[i] = (WORD)dwItemID;
+			break;
+		}
 		return;
 	}
 
@@ -7163,13 +7336,13 @@ void RecvDataProcGETITEM(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
-	/* もう持てない？ */
-	if (GetItemCount (pPara->dwTblID) >= MAX_MYITEM) {
-		return;
-	}
 
 	/* メッセージの「@4」でもらえるものだけ（クライアントが勝手に頼んできたものは渡さない） */
 	if ((pPara->dwData1 == 0) || (pPara->dwData1 >= (DWORD)g_aItemInfo.GetSize ())) {
+		return;
+	}
+	/* もう持てない？（大事な物は大事な物の欄の空きを見る） */
+	if (!CanAddCharItem (pPara->dwTblID, pPara->dwData1)) {
 		return;
 	}
 	if (!CheckMsgCode (pChar, '4', (int)pPara->dwData1, 0, 0)) {
@@ -8080,8 +8253,8 @@ void RecvDataProcLEAVEITEMGET(PBYTE pData, DWORD dwDataSize)
 			(pPara->dwData >= MAX_LEAVEITEM) || (pInfo->byItemCount[pPara->dwData] == 0)) {
 		return;
 	}
-	/* もう持てない？ */
-	if (GetItemCount (pChar->dwTblID) >= MAX_MYITEM) {
+	/* もう持てない？（大事な物は大事な物の欄の空きを見る） */
+	if (!CanAddCharItem (pChar->dwTblID, pInfo->waItem[pPara->dwData])) {
 		return;
 	}
 
@@ -8989,6 +9162,10 @@ void RecvDataProcSHOPBUY(PBYTE pData, DWORD dwDataSize)
 
 	/* お金が足りない？ */
 	if (pChar->dwGold < pItem->dwGold) {
+		return;
+	}
+	/* もう持てない？（大事な物は大事な物の欄の空きを見る） */
+	if (!CanAddCharItem (pChar->dwTblID, dwItemID)) {
 		return;
 	}
 
