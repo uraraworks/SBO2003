@@ -4665,7 +4665,10 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 		TextOut2 (hDC, 16 + ITEMINFO_LINE * nLen, 16 + ITEMINFO_LINE * 2, szTmp, RGB (150, 255, 200));
 		TextOut2 (hDC, 16, 16 + ITEMINFO_LINE * 3, "装備：", RGB (200, 200, 200));
 		wsprintf (szTmp, "%s", g_aEquUserInfo[wEqu]);
-		TextOut2 (hDC, 16 + ITEMINFO_LINE * 3, 16 + ITEMINFO_LINE * 3, szTmp, RGB (150, 255, 200));
+		/* 今の職業で装備できない時は赤（転職すれば使えるので注意だけ） */
+		BOOL bJobOk = (pCharSex == NULL) || (wEqu >= g_aEquUserInfo.GetSize ()) || CheckEquUserInfo (wEqu, pCharSex->byJOB);
+		TextOut2 (hDC, 16 + ITEMINFO_LINE * 3, 16 + ITEMINFO_LINE * 3, szTmp,
+			bJobOk ? RGB (150, 255, 200) : RGB (255, 130, 130));
 		/* 性別限定：装備できる時は他の値と同じ色、できない時は赤 */
 		if (bSexLine) {
 			BOOL bOk = CheckItemSexDistinction (pItem, pCharSex);
