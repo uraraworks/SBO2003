@@ -775,16 +775,40 @@ Module['sboNet'] = (function () {
 			return;
 		}
 		/* Windows PowerShell 5.1 は BOM を付けることがあるので取り除く */
+		var astrLines = [];
 		strText.replace(/^\uFEFF/, '').split(/\r?\n/).forEach(function (strLine) {
 			strLine = strLine.trim();
 			if (!strLine) {
 				return;
 			}
+			astrLines.push(strLine);
 			var p = stringToNewUTF8(strLine);
 			_SboWebAdminNotice(p);
 			_free(p);
 			console.log('[SboSvr] お知らせを流しました: ' + strLine);
 		});
+		rememberRestartNotice(astrLines);
+	}
+
+	/*
+	 * 再起動の予告を覚える（予告の後にログインした人・ログイン画面の人にも見せるため）
+	 *   お知らせに「中止」があれば忘れる（更新の中止。production-publish の cancel-notice）。
+	 *   それ以外で「再起動」があれば、その文を覚える（デプロイ開始時の予告・差し替え直前の「まもなく」）。
+	 *   ゲームの中: C 側の SboWebSetLoginNotice（server/web_account_svr.cpp）がログインした人に流す。
+	 *   ログイン画面: /health の restartNotice（sbosvr_status.js）を web/shell/sbocli.html が出す。
+	 *   覚えておくのは 15 分まで（sbosvr_status.js の RESTART_NOTICE_KEEP_MS・C 側の LOGIN_NOTICE_KEEP_MS）。
+	 */
+	function rememberRestartNotice(astrLines) {
+		var strAll = astrLines.join('\n');
+		var bCancel = /中止/.test(strAll);
+		if (!bCancel && !/再起動/.test(strAll)) {
+			return;
+		}
+		Module['sboRestartNotice'] = bCancel ? null : { lines: astrLines.slice(), at: Date.now() };
+		var p = stringToNewUTF8(bCancel ? '' : strAll);
+		_SboWebSetLoginNotice(p);
+		_free(p);
+		console.log('[SboSvr] 再起動の予告を' + (bCancel ? '忘れました' : '覚えました（後からログインした人にも見せます）'));
 	}
 })();
 
