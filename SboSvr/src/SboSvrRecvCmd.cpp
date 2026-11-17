@@ -5607,6 +5607,16 @@ void RecvDataProcCHGNAMESEX(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
+	/* もう名前のあるキャラに名前付きで届いたら（作成画面は名前が空の時だけ出る）、何も変えない。
+	   以前はここで作成日を今日に書き換え、同名あつかいで名前まで消していたので、
+	   レベルやプレイ時間はそのままで作成日だけ新しくなることがあった */
+	/* （名前を空で送るのは「冒険の書をけす」。使えない名前で空にされた時は消さない） */
+	if ((pChar->szName[0] != 0) && ((pPara->szName[0] != 0) || !bName)) {
+		if (pChar->pID) {
+			SendCmdCHARINFO (pChar->pID, -1);
+		}
+		return;
+	}
 	pChar->bySaveFlg &= ~CHARINFOSAVEFLG_FEMALE;
 	if (pPara->bySex) {
 		pChar->bySaveFlg |= CHARINFOSAVEFLG_FEMALE;
@@ -5645,7 +5655,8 @@ void RecvDataProcCHGNAMESEX(PBYTE pData, DWORD dwDataSize)
 		delete pChar;
 		g_aCharInfo[pPara->dwTblID] = pCharNew;
 
-	} else {
+	} else if (bName) {
+		/* 作成日は名前が決まった時だけ（同名などで断った時は付けない） */
 		SYSTEMTIME sysTime;
 		GetLocalTime (&sysTime);
 		pChar->wMakeYear = sysTime.wYear;
