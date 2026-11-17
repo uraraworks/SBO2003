@@ -45,6 +45,7 @@
 #define IDD_STORYINFO                   239
 #define IDD_STORYINFO_EDIT              240
 #define IDD_FLAGGROUP                   241
+#define IDD_CHARCHEST                   242
 #define IDC_BUTTON1                     1000
 #define IDC_BUTTON2                     1001
 #define IDC_BUTTON3                     1002
@@ -413,6 +414,15 @@
 #define IDC_FG_MSG                        1393
 #define IDC_CF_BITGROUP                   1394
 #define IDC_CF_NUMGROUP                   1395
+#define IDC_CF_CHEST                      1403
+#define IDC_CC_WHO                        1404
+#define IDC_CC_MSG                        1405
+#define IDC_CC_LIST                       1406
+#define IDC_CC_OPEN                       1407
+#define IDC_CC_CLOSE                      1408
+#define IDC_CC_CLEAR                      1409
+#define IDC_CC_ONLY                       1410
+#define IDC_CC_GET                        1411
 #define IDC_TE_NEEDITEM                   1377
 #define IDC_TE_NEEDITEMN                  1378
 #define IDC_TE_TAKEITEM                   1379
@@ -459,9 +469,9 @@
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        242
+#define _APS_NEXT_RESOURCE_VALUE        243
 #define _APS_NEXT_COMMAND_VALUE         40036
-#define _APS_NEXT_CONTROL_VALUE         1403
+#define _APS_NEXT_CONTROL_VALUE         1412
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

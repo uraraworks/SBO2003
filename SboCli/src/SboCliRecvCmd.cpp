@@ -176,6 +176,7 @@ void	RecvDataProcMARKETGOLDGET			(PBYTE, DWORD);			/* 受信データ処理(取�
 void	RecvDataProcRECYCLELIST				(PBYTE, DWORD);			/* 受信データ処理(リサイクルボックスの中身) */
 void	RecvDataProcRECYCLEPUT				(PBYTE, DWORD);			/* 受信データ処理(リサイクルボックスに入れた結果) */
 void	RecvDataProcRECYCLETAKE				(PBYTE, DWORD);			/* 受信データ処理(リサイクルボックスからもらった結果) */
+void	RecvDataProcADMINCHEST				(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのキャラの開けた宝箱の記録) */
 /* ブラウザ版のアカウント関係（web/replace/SboCliWebAccount_web.cpp） */
 void	WebAccSaveToken						(LPCSTR);				/* 端末トークンをページへ渡す */
 void	WebAccOnTokenNG						(void);					/* 端末トークンが無効だった */
@@ -443,6 +444,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcRECYCLELIST,			/* CMD_RECYCLELIST */
 	RecvDataProcRECYCLEPUT,				/* CMD_RECYCLEPUT */
 	RecvDataProcRECYCLETAKE,			/* CMD_RECYCLETAKE */
+	RecvDataProcADMINCHEST,				/* CMD_ADMINCHEST */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -4039,6 +4041,22 @@ void RecvDataProcADMINCHARFLAG(PBYTE pData, DWORD dwDataSize)
 	}
 	pPara->szMsg[sizeof (pPara->szMsg) - 1] = 0;
 	AdminCharFlagOnRecv (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINCHEST											 */
+/* 内容：受信データ処理(管理者ウィンドウのキャラの開けた宝箱の記録)			 */
+/*       全宝箱の一覧・キャラの記録・変更の結果が届く（画面は覚えた物を見る）*/
+/* ========================================================================= */
+void RecvDataProcADMINCHEST(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINCHEST pPara = (PCMDPARA_ADMINCHEST)pData;
+
+	if (dwDataSize < sizeof (CMDPARA_ADMINCHEST)) {
+		return;
+	}
+	pPara->szMsg[sizeof (pPara->szMsg) - 1] = 0;
+	AdminChestOnRecv (pPara);
 }
 
 /* ========================================================================= */

@@ -28,6 +28,7 @@ extern void AdminFlagNameOnRecv(const void *pPara);						/* サーバーから�
 extern void AdminTalkOnRecv(const void *pPara);							/* サーバーから届いた（CMDPARA_ADMINTALK） */
 extern void AdminCharFlagOnRecv(const void *pPara);						/* サーバーから届いた（CMDPARA_ADMINCHARFLAG） */
 extern void AdminFlagGroupOnRecv(const void *pPara);					/* サーバーから届いた（CMDPARA_ADMINFLAGGROUP） */
+extern void AdminChestOnRecv(const void *pPara);						/* サーバーから届いた（CMDPARA_ADMINCHEST） */
 
 /* フラグの名前表 */
 extern void AdminFlagNameRequest(void);									/* サーバーから取り直す（届くまで空） */
@@ -68,6 +69,15 @@ extern void AdminCharFlagSetBit(DWORD dwTblID, WORD wNo, BOOL bOn);		/* 印を�
 extern void AdminCharFlagSetNum(DWORD dwTblID, WORD wNo, BYTE byVal);	/* 数値を変える */
 extern BOOL AdminCharFlagGet(DWORD *pdwTblID, BYTE *pbyFlag, BYTE *pbyFlagNum);	/* 届いている 1 人分（届いていなければ FALSE。各配列は MAX_FLAGBITBYTE・MAX_FLAGNUM バイト。NULL 可） */
 extern DWORD AdminCharFlagGetSeq(void);									/* 更新番号 */
+
+/* キャラの開けた宝箱の記録（全宝箱の一覧と、プレイヤーのキャラ 1 人分の記録。印とは別） */
+extern void AdminChestRequest(DWORD dwTblID);							/* 全宝箱の一覧とそのキャラの記録を取り直す */
+extern void AdminChestSet(DWORD dwTblID, WORD wChestNo, BOOL bOpened);	/* 宝箱 1 つを開けた・開けていないにする */
+extern void AdminChestClear(DWORD dwTblID);								/* 全部開けていないに戻す */
+extern int  AdminChestGetCount(void);									/* 届いている全宝箱の数（宝箱番号の順。消した宝箱は無い） */
+extern const ADMINCHESTROW *AdminChestGetRow(int nIndex);				/* 全宝箱の 1 件（範囲外・まだ届いていなければ NULL） */
+extern BOOL AdminChestGetOpened(DWORD *pdwTblID, BYTE *pbyOpened);		/* 届いている 1 人分の記録（届いていなければ FALSE。pbyOpened は MAX_CHESTBYTE バイト。NULL 可） */
+extern DWORD AdminChestGetSeq(void);									/* 更新番号（一覧・記録が届くたびに増える） */
 
 /* 書き込みの結果 */
 extern const ADMINFLAGTALKRESULT *AdminFlagTalkGetResult(void);			/* 直近の結果 */

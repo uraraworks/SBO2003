@@ -44,6 +44,7 @@ SboCli/src/AdminWindowOld/AdminDlgFlagGroup.cpp
 SboCli/src/AdminWindowOld/AdminDlgTalk.cpp
 SboCli/src/AdminWindowOld/AdminDlgTalkEdit.cpp
 SboCli/src/AdminWindowOld/AdminDlgCharFlag.cpp
+SboCli/src/AdminWindowOld/AdminDlgCharChest.cpp
 SboCli/src/AdminWindowOld/AdminDlgSugorokuEvent.cpp
 SboCli/src/AdminWindowOld/AdminDlgSugorokuEventEdit.cpp
 SboCli/src/AdminWindowOld/AdminDlgSugorokuParts.cpp

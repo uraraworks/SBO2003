@@ -1609,6 +1609,18 @@ mapswap open again item+=0 swap=0 bit=1
 mapswap open full item+=0 bit=0 sys=1 msg=0 swap=0 parts_closed=1
 mapswap open wrongdir item+=0 bit=0
 mapswap open flags_dont_open=1 npc_examine=0
+== AG3. AdminChest ==
+viewflag cells=8
+adminchest user bit=0 reply_b=0 reply_a=0 swap=0
+adminchest admin-b reply=3
+adminchest list packets=3
+adminchest list first got=1 sub=1 total=10 start=0 rows=8 no=100 map_ok=1 x=1 y=1 item=1 name_ok=1 memo=テスト倉庫の奥
+adminchest list order=100,101,102,107 map_name_ok=1
+adminchest list noitem name_empty=1
+adminchest set on bit100=1 bit101=0 bit_b=0 reply=2 swap=1 swap_b=0 parts_a_open=1 parts_b_closed=1
+adminchest set off bit100=0 swap=1 parts_a_closed=1 reply=2
+adminchest bad got=1,1,1,1 result=0,0,0,0 unchanged=1 swap=0
+adminchest clear zero=1 swap=1 reply=2 parts_a_closed=1
 == K2. Mercenary magic ==
 merc map=91 enemies=17 size=255x160
 merc hired dist=1

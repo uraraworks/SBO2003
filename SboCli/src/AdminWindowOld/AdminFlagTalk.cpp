@@ -42,6 +42,12 @@ static BYTE s_abyCharFlag[MAX_FLAGBITBYTE];
 static BYTE s_abyCharFlagNum[MAX_FLAGNUM];
 static DWORD s_dwCharFlagSeq = 0;
 
+static std::vector<ADMINCHESTROW> s_aChest;								/* サーバーから届いた全宝箱の一覧（宝箱番号の順） */
+static BOOL s_bChestOpened = FALSE;										/* キャラの開けた宝箱の記録が届いているか */
+static DWORD s_dwChestTblID = 0;
+static BYTE s_abyChestOpened[MAX_CHESTBYTE];
+static DWORD s_dwChestSeq = 0;
+
 static ADMINFLAGTALKRESULT s_Result;									/* 直近の書き込みの結果 */
 static BOOL s_bFlagNameAsked = FALSE;									/* 名前表を一度取り寄せたか */
 static std::vector<void (*)(void)> s_apfnListener;						/* 届いた時にお知らせする先（画面） */
@@ -599,6 +605,94 @@ BOOL AdminCharFlagGet(DWORD *pdwTblID, BYTE *pbyFlag, BYTE *pbyFlagNum)
 DWORD AdminCharFlagGetSeq(void)
 {
 	return s_dwCharFlagSeq;
+}
+
+/* ========================================================================= */
+/* キャラの開けた宝箱の記録													 */
+/* ========================================================================= */
+void AdminChestOnRecv(const void *pData)
+{
+	const CMDPARA_ADMINCHEST *pPara = (const CMDPARA_ADMINCHEST *)pData;
+
+	switch (pPara->byCmdSub) {
+	case ADMINCHEST_ROWS:
+		/* wTotal 件のうち wStart 番目から byRows 件。先頭の回で入れ物を作り直す */
+		if (pPara->wStart == 0) {
+			s_aChest.clear ();
+		}
+		if (((int)pPara->wStart != (int)s_aChest.size ()) || (pPara->byRows > ADMINCHEST_ROWMAX)) {
+			return;		/* 順に届かなかった回は捨てる（次の取り直しでそろう） */
+		}
+		for (int i = 0; i < pPara->byRows; i ++) {
+			ADMINCHESTROW Row = pPara->aRow[i];
+
+			Row.szMap[sizeof (Row.szMap) - 1] = 0;
+			Row.szItem[sizeof (Row.szItem) - 1] = 0;
+			Row.szMemo[sizeof (Row.szMemo) - 1] = 0;
+			s_aChest.push_back (Row);
+		}
+		s_dwChestSeq ++;
+		break;
+
+	case ADMINCHEST_INFO:
+		s_bChestOpened = TRUE;
+		s_dwChestTblID = pPara->dwTblID;
+		CopyMemory (s_abyChestOpened, pPara->abyOpened, sizeof (s_abyChestOpened));
+		s_dwChestSeq ++;
+		break;
+
+	case ADMINCHEST_RESULT:
+		SetResult (CMD_ADMINCHEST, pPara->byResult, -1, pPara->szMsg);
+		break;
+	}
+	Notify ();
+}
+
+void AdminChestRequest(DWORD dwTblID)
+{
+	SendCmdADMINCHEST (ADMINCHEST_GET, dwTblID, 0, 0);
+}
+
+void AdminChestSet(DWORD dwTblID, WORD wChestNo, BOOL bOpened)
+{
+	SendCmdADMINCHEST (ADMINCHEST_SET, dwTblID, wChestNo, bOpened ? 1 : 0);
+}
+
+void AdminChestClear(DWORD dwTblID)
+{
+	SendCmdADMINCHEST (ADMINCHEST_CLEAR, dwTblID, 0, 0);
+}
+
+int AdminChestGetCount(void)
+{
+	return (int)s_aChest.size ();
+}
+
+const ADMINCHESTROW *AdminChestGetRow(int nIndex)
+{
+	if ((nIndex < 0) || (nIndex >= (int)s_aChest.size ())) {
+		return NULL;
+	}
+	return &s_aChest[nIndex];
+}
+
+BOOL AdminChestGetOpened(DWORD *pdwTblID, BYTE *pbyOpened)
+{
+	if (!s_bChestOpened) {
+		return FALSE;
+	}
+	if (pdwTblID) {
+		*pdwTblID = s_dwChestTblID;
+	}
+	if (pbyOpened) {
+		CopyMemory (pbyOpened, s_abyChestOpened, sizeof (s_abyChestOpened));
+	}
+	return TRUE;
+}
+
+DWORD AdminChestGetSeq(void)
+{
+	return s_dwChestSeq;
 }
 
 /* ========================================================================= */
