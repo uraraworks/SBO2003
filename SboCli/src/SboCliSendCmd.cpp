@@ -123,6 +123,7 @@ void SendCmdADMINFLAGGROUP	(BYTE, int, const FLAGGROUPINFO *);		/* 管理者ウ�
 void SendCmdADMINFLAGNAME	(BYTE, int, const FLAGNAMEINFO *);		/* 管理者ウィンドウのフラグの名前表の編集 */
 void SendCmdADMINTALK		(BYTE, int, const TALKINFO *);			/* 管理者ウィンドウの会話データの編集 */
 void SendCmdADMINCHARFLAG	(BYTE, DWORD, BYTE, WORD, WORD);		/* 管理者ウィンドウのキャラのフラグの取得・変更 */
+void SendCmdADMINCHEST		(BYTE, DWORD, WORD, WORD);				/* 管理者ウィンドウのキャラの開けた宝箱の記録の取得・変更 */
 void SendCmdADMINVIEWALL	(BOOL);									/* 管理者ウィンドウの「印で隠れたNPCも表示」の切り替え */
 void SendCmdADMINRESURRECT	(DWORD);								/* 管理者ウィンドウからキャラをHP満タンで蘇生 */
 void SendCmdMAGICKEY		(BYTE, BYTE, WORD);						/* ショートカットの登録（特技・装備品・道具） */
@@ -3760,6 +3761,27 @@ void SendCmdADMINCHARFLAG(BYTE byCmdSub, DWORD dwTblID, BYTE byKind, WORD wNo, W
 	pPara->wNo		= wNo;
 	pPara->wValue	= wValue;
 	cliSock.Send ((PBYTE)pPara, sizeof (CMDPARA_ADMINCHARFLAG));
+	SAFE_DELETE (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdADMINCHEST												 */
+/* 内容：コマンド送信(管理者ウィンドウのキャラの開けた宝箱の記録の取得・変更)	 */
+/*       byCmdSub: ADMINCHEST_GET（全宝箱の一覧と dwTblID のキャラの記録を取得）・*/
+/*                 ADMINCHEST_SET（wNo の宝箱を wValue(1=開けた 0=開けていない) に）・*/
+/*                 ADMINCHEST_CLEAR（全部開けていないに戻す）				 */
+/* ========================================================================= */
+void SendCmdADMINCHEST(BYTE byCmdSub, DWORD dwTblID, WORD wNo, WORD wValue)
+{
+	PCMDPARA_ADMINCHEST pPara = new CMDPARA_ADMINCHEST;
+
+	ZeroMemory (pPara, sizeof (CMDPARA_ADMINCHEST));
+	pPara->byCmd	= CMD_ADMINCHEST;
+	pPara->byCmdSub	= byCmdSub;
+	pPara->dwTblID	= dwTblID;
+	pPara->wNo		= wNo;
+	pPara->wValue	= wValue;
+	cliSock.Send ((PBYTE)pPara, sizeof (CMDPARA_ADMINCHEST));
 	SAFE_DELETE (pPara);
 }
 

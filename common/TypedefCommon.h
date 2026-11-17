@@ -374,6 +374,8 @@ enum {
 	CMD_RECYCLELIST,												/* リサイクルボックスの中身（要求はクライアント→サーバー、一覧はサーバー→クライアント） */
 	CMD_RECYCLEPUT,													/* リサイクルボックスに入れる（クライアント→サーバー。結果はサーバー→クライアント） */
 	CMD_RECYCLETAKE,												/* リサイクルボックスからもらう（クライアント→サーバー。結果はサーバー→クライアント） */
+/* 以下、管理者用（CMD_MAPPARTSADD 以上は自動で管理者専用になる。CMD_RECYCLETAKE より後ろに足す） */
+	CMD_ADMINCHEST,													/* 管理者ウィンドウのキャラの開けた宝箱の記録（全宝箱の一覧・取得・変更。結果はサーバー→クライアント） */
 	CMD_MAX
 };
 
@@ -3735,6 +3737,44 @@ typedef struct _CMDPARA_ADMINCHARFLAG {
 	BYTE		abyFlagNum[MAX_FLAGNUM];							/* 数値（INFO） */
 	char		szMsg[MAX_ADMINQUESTMSG];							/* 結果の文（RESULT。うまくいかなかった理由） */
 } CMDPARA_ADMINCHARFLAG, *PCMDPARA_ADMINCHARFLAG;
+
+/* 管理者ウィンドウのキャラの開けた宝箱の記録（CMD_ADMINCHEST の byCmdSub）。印（フラグ）とは別の記録（abyChestOpened） */
+enum {
+	ADMINCHEST_GET = 0,											/* 取得（クライアント→サーバー。全宝箱の一覧 ROWS を何回かに分けて返し、続けて dwTblID のキャラの記録 INFO を返す） */
+	ADMINCHEST_ROWS,											/* 全宝箱の一覧の一部（サーバー→クライアント。wTotal 件のうち wStart 番目から byRows 件。宝箱番号の順。消した宝箱は含まない） */
+	ADMINCHEST_INFO,											/* 記録（サーバー→クライアント。dwTblID・abyOpened） */
+	ADMINCHEST_SET,												/* 変更（クライアント→サーバー。wNo の宝箱を wValue(1=開けた 0=開けていない) に。結果は RESULT と INFO） */
+	ADMINCHEST_CLEAR,											/* 全部「開けていない」に戻す（クライアント→サーバー。結果は RESULT と INFO） */
+	ADMINCHEST_RESULT,											/* 変更の結果（サーバー→クライアント。byResult・szMsg） */
+};
+#define ADMINCHEST_ROWMAX	8										/* 一覧 1 回に載せる宝箱の数 */
+#define MAX_ADMINCHESTMAP	32										/* 一覧のマップ名のバイト数（UTF-8・終端含む。長ければ切る） */
+typedef struct _ADMINCHESTROW {
+	WORD		wChestNo;											/* 宝箱の番号（0〜2047） */
+	WORD		wMapNo;												/* マップの番号 */
+	WORD		wX;													/* X */
+	WORD		wY;													/* Y */
+	WORD		wGiveItem;											/* 渡す品（0=無し） */
+	char		szMap[MAX_ADMINCHESTMAP];							/* マップ名（無ければ空） */
+	char		szItem[MAX_ITEMNAME];								/* 品名（無ければ空） */
+	char		szMemo[MAX_MAPSWAPMEMO];							/* 管理用のメモ */
+} ADMINCHESTROW, *PADMINCHESTROW;
+
+/* 管理者ウィンドウのキャラの開けた宝箱の記録（送受信とも同じ形） */
+typedef struct _CMDPARA_ADMINCHEST {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byCmdSub;											/* サブコマンド(ADMINCHEST_*) */
+	BYTE		byResult;											/* 結果（RESULT: 1=変えた 0=変えられなかった） */
+	BYTE		byRows;												/* aRow に入っている件数（ROWS） */
+	DWORD		dwTblID;											/* 相手のキャラのテーブルID */
+	WORD		wNo;												/* 宝箱の番号（SET） */
+	WORD		wValue;												/* 値（SET） */
+	WORD		wTotal;												/* 全宝箱の件数（ROWS） */
+	WORD		wStart;												/* aRow の先頭が何番目か（ROWS） */
+	BYTE		abyOpened[MAX_CHESTBYTE];							/* 開けた宝箱の記録（INFO） */
+	ADMINCHESTROW	aRow[ADMINCHEST_ROWMAX];						/* 宝箱の行（ROWS） */
+	char		szMsg[MAX_ADMINQUESTMSG];							/* 結果の文（RESULT。うまくいかなかった理由） */
+} CMDPARA_ADMINCHEST, *PCMDPARA_ADMINCHEST;
 
 /* 会話データで選ばれた台詞（サーバー→本人だけ。この後ろに wSize バイトの台詞（UTF-8・終端の 0 を含む）が続く。
    通信の可変長の文字列（CMDPARA_SPEECH など）と同じ並べ方

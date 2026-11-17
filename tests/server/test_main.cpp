@@ -1085,6 +1085,7 @@ static void TestTailItemMove(const std::vector<int> &aLogin);
 static void TestViewFlag(const std::vector<int> &aLogin);
 static void TestViewFlagTalk(const std::vector<int> &aLogin);
 static void TestMapSwap(const std::vector<int> &aLogin);
+static void TestAdminChest(const std::vector<int> &aLogin);
 static void TestMapSwapSave(const std::vector<int> &aLogin);
 extern void BattleProcCheck(PCHARINFO);
 
@@ -1553,6 +1554,8 @@ static void TestWorld(void)
 	TestViewFlag(aLogin);
 	/* AG. 印で変わるマス・宝箱（差し替えの送信・通れる判定・調べて品と記録・持ち物いっぱい・API の書き込み。乱数を使わない） */
 	TestMapSwap(aLogin);
+	/* AG3. 管理者ウィンドウのキャラの開けた宝箱の記録（全宝箱の一覧・立てる／消す・全部戻す・差し替えの送り直し・管理者以外は断る） */
+	TestAdminChest(aLogin);
 	/* K2. 傭兵への回復・蘇生の特技（ゲームの乱数を使うので最後） */
 	TestMercenary(aLogin, TRUE);
 	/* AC. 移動アイテム・帰還の床で、ついていく列ごと移動する（時刻と乱数を使うので最後） */
@@ -9110,6 +9113,170 @@ static void TestMapSwap(const std::vector<int> &aLogin)
 	/* 片付け：マップを元に戻す */
 	QuestMovePC(pA, nMap, aCell[0].first, aCell[0].second);
 	SwapRestore(pMap, Bak);
+}
+
+/* ------------------------------------------------------------------------- */
+/* AG3. 管理者ウィンドウのキャラの開けた宝箱の記録（CMD_ADMINCHEST）				 */
+/*   (a) 管理者以外は断る（一覧も変更も、記録は動かず返事も無い）				 */
+/*   (b) 一覧：全宝箱が宝箱番号の順に、番号・マップ・座標・品名・メモ付きで届く	 */
+/*       （8 件ずつ。続けてキャラの記録 INFO）。消した宝箱（今はどのマップにも無い番号）は出ない */
+/*   (c) 立てる・消すと記録が変わり、ログイン中なら差し替えが送り直されて見た目が変わる */
+/*   (d) 無い番号・範囲外の値は断る。全部戻すと全部 0 になり、差し替えも送り直す	 */
+/* ------------------------------------------------------------------------- */
+static BOOL AdminChestSend(PCHARINFO p, BYTE bySub, DWORD dwTblID, WORD wNo, WORD wValue, BOOL bCapture, CMDPARA_ADMINCHEST &Res)
+{
+	PCMDPARA_ADMINCHEST pPara = new CMDPARA_ADMINCHEST;
+	std::vector<BYTE> aCap;
+	BOOL bRet = TRUE;
+
+	ZeroMemory(pPara, sizeof(*pPara));
+	pPara->byCmd = CMD_ADMINCHEST;
+	pPara->byCmdSub = bySub;
+	pPara->dwTblID = dwTblID;
+	pPara->wNo = wNo;
+	pPara->wValue = wValue;
+	if (bCapture) SvrSendCaptureBegin();
+	TestRecv(p, pPara, sizeof(CMDPARA_ADMINCHEST));
+	if (bCapture) bRet = SvrSendCaptureEnd(aCap);
+	delete pPara;
+	ZeroMemory(&Res, sizeof(Res));
+	if (!bCapture) return TRUE;		/* 実際に送らせた時は、届いた数を SpCnt で見る */
+	if (!bRet || aCap.size() < sizeof(CMDPARA_ADMINCHEST)) return FALSE;
+	memcpy(&Res, &aCap[0], sizeof(Res));
+	return TRUE;
+}
+
+static void TestAdminChest(const std::vector<int> &aLogin)
+{
+	printf("== AG3. AdminChest ==\n");
+	std::vector<std::pair<int, int> > aCell;
+	if (!ViewSetup(aLogin, aCell)) {
+		return;
+	}
+	PCHARINFO pA = g_aCharInfo[aLogin[0]], pB = g_aCharInfo[aLogin[1]], pC = g_aCharInfo[aLogin[2]];
+	int nMap = (int)pA->dwMapID;
+	PMAPINFO pMap = g_aMapInfo[nMap];
+	WORD wWalk = 0xFFFF;
+	for (int i = 0; i < (int)g_wCountMapParts; i ++) {
+		if ((wWalk == 0xFFFF) && (g_aMapPartsInfo[i].byHitType == PARTSHIT_NONE) && (g_aMapPartsInfo[i].byDamage == 0)) wWalk = (WORD)i;
+	}
+	if ((wWalk == 0xFFFF) || (g_aItemInfo.GetSize() < 2)) {
+		printf("adminchest no parts/items\n");
+		return;
+	}
+	/* 後で戻す。ほかのマップの宝箱は一覧に混ざらないよう、いったん無いことにする */
+	MAPINFO Bak = *pMap;
+	std::vector<BYTE> aSwapCountBak(g_aMapInfo.GetSize());
+	for (int i = 0; i < g_aMapInfo.GetSize(); i ++) {
+		aSwapCountBak[i] = g_aMapInfo[i]->bySwapCount;
+		if (i != nMap) g_aMapInfo[i]->bySwapCount = 0;
+	}
+	char szAccBack[sizeof(pA->szAcc)];
+	strcpy(szAccBack, pA->szAcc);
+	strcpy(pA->szAcc, "chestadmintest");
+	BYTE abyBak[MAX_CHESTBYTE];
+	memcpy(abyBak, pA->abyChestOpened, sizeof(abyBak));
+	ZeroMemory(pA->abyChestOpened, sizeof(pA->abyChestOpened));
+
+	/* 宝箱 10 件（番号 100〜109。8 件ずつなので 2 回に分かれる）。最初の 1 件だけ品とメモを付け、位置は画面内の空きマス */
+	ZeroMemory(pMap->aSwap, sizeof(pMap->aSwap));
+	pMap->bySwapCount = 10;
+	for (int k = 0; k < 10; k ++) {
+		MAPSWAP *pSw = &pMap->aSwap[k];
+		pSw->wX = (WORD)aCell[3 + (k % 5)].first;
+		pSw->wY = (WORD)aCell[3 + (k % 5)].second;
+		pSw->byKind = MAPSWAPKIND_CHEST;
+		pSw->wParts = wWalk;
+		pSw->wChestNo = (WORD)(109 - k);		/* 並びは逆順で持たせ、宝箱番号の順に直って届くか見る */
+	}
+	pMap->aSwap[9].wGiveItem = 1;				/* 番号 100 */
+	strcpy(pMap->aSwap[9].szMemo, "テスト倉庫の奥");
+	strcpy(pMap->aSwap[9].szMsg, "宝箱を開けた！");
+	pMap->aSwap[8].wChestNo = 101;
+	pMap->aSwap[8].wGiveItem = 0;
+	WORD wBaseParts = pMap->pwMap[pMap->aSwap[9].wX + pMap->aSwap[9].wY * pMap->nCX];
+	int nX0 = pMap->aSwap[9].wX, nY0 = pMap->aSwap[9].wY;
+	CMDPARA_ADMINCHEST Res;
+	DWORD dwTbl = pA->dwTblID;
+
+	/* (a) 管理者でない B（と A 自身）は、一覧も変更も断られる：記録は動かず、返事も届かない */
+	{
+		int b0 = SpCnt(pB, CMD_ADMINCHEST), a0 = SpCnt(pA, CMD_ADMINCHEST), sw0 = SpCnt(pA, CMD_MAPSWAP);
+		AdminChestSend(pB, ADMINCHEST_SET, dwTbl, 100, 1, FALSE, Res);
+		AdminChestSend(pA, ADMINCHEST_SET, dwTbl, 100, 1, FALSE, Res);
+		AdminChestSend(pB, ADMINCHEST_GET, dwTbl, 0, 0, FALSE, Res);
+		AdminChestSend(pA, ADMINCHEST_CLEAR, dwTbl, 0, 0, FALSE, Res);
+		printf("adminchest user bit=%d reply_b=%d reply_a=%d swap=%d\n", (int)ChestOpenedGet(pA, 100), SpCnt(pB, CMD_ADMINCHEST) - b0,
+			SpCnt(pA, CMD_ADMINCHEST) - a0, SpCnt(pA, CMD_MAPSWAP) - sw0);
+		/* 管理者の一覧の問い合わせは通る（下の (b)）。同じ B が管理者になれば通ることも見る */
+		pB->byAdminLV = ADMINLV_ADMINISTRATOR;
+		b0 = SpCnt(pB, CMD_ADMINCHEST);
+		AdminChestSend(pB, ADMINCHEST_GET, dwTbl, 0, 0, FALSE, Res);
+		printf("adminchest admin-b reply=%d\n", SpCnt(pB, CMD_ADMINCHEST) - b0);
+		pB->byAdminLV = ADMINLV_USER;
+	}
+
+	/* (b) 一覧：10 件が 8 件＋2 件に分かれて届き、続けて記録が届く。内容は宝箱番号の順 */
+	{
+		int c0 = SpCnt(pC, CMD_ADMINCHEST);
+		AdminChestSend(pC, ADMINCHEST_GET, dwTbl, 0, 0, FALSE, Res);
+		printf("adminchest list packets=%d\n", SpCnt(pC, CMD_ADMINCHEST) - c0);
+		BOOL bGot = AdminChestSend(pC, ADMINCHEST_GET, dwTbl, 0, 0, TRUE, Res);
+		const ADMINCHESTROW *pR = &Res.aRow[0];
+		printf("adminchest list first got=%d sub=%d total=%d start=%d rows=%d no=%d map_ok=%d x=%d y=%d item=%d name_ok=%d memo=%s\n", (int)bGot, Res.byCmdSub, Res.wTotal, Res.wStart,
+			Res.byRows, pR->wChestNo, (int)(pR->wMapNo == nMap), pR->wX == nX0, pR->wY == nY0, pR->wGiveItem, (int)(strcmp(pR->szItem, g_aItemInfo[1]->szName) == 0), pR->szMemo);
+		printf("adminchest list order=%d,%d,%d,%d map_name_ok=%d\n", Res.aRow[0].wChestNo, Res.aRow[1].wChestNo, Res.aRow[2].wChestNo, Res.aRow[7].wChestNo,
+			(int)(pMap->pszName == NULL || strncmp(pR->szMap, pMap->pszName, sizeof(pR->szMap) - 1) == 0));
+		/* 渡す品が無い行の品名は空 */
+		printf("adminchest list noitem name_empty=%d\n", (int)(Res.aRow[1].szItem[0] == 0 && Res.aRow[1].szMemo[0] == 0));
+	}
+
+	/* (c) 立てる・消す：記録が変わり、差し替えが A に送り直されて、宝箱の見た目が変わる（B は変わらない） */
+	{
+		int c0 = SpCnt(pC, CMD_ADMINCHEST), sw0 = SpCnt(pA, CMD_MAPSWAP), swB0 = SpCnt(pB, CMD_MAPSWAP);
+		AdminChestSend(pC, ADMINCHEST_SET, dwTbl, 100, 1, FALSE, Res);
+		printf("adminchest set on bit100=%d bit101=%d bit_b=%d reply=%d swap=%d swap_b=%d parts_a_open=%d parts_b_closed=%d\n", (int)ChestOpenedGet(pA, 100), (int)ChestOpenedGet(pA, 101),
+			(int)ChestOpenedGet(pB, 100), SpCnt(pC, CMD_ADMINCHEST) - c0, SpCnt(pA, CMD_MAPSWAP) - sw0, SpCnt(pB, CMD_MAPSWAP) - swB0,
+			(int)(MapSwapParts(pMap, pA, nX0, nY0) == wWalk), (int)(MapSwapParts(pMap, pB, nX0, nY0) == wBaseParts));
+		sw0 = SpCnt(pA, CMD_MAPSWAP); c0 = SpCnt(pC, CMD_ADMINCHEST);
+		AdminChestSend(pC, ADMINCHEST_SET, dwTbl, 100, 0, FALSE, Res);
+		printf("adminchest set off bit100=%d swap=%d parts_a_closed=%d reply=%d\n", (int)ChestOpenedGet(pA, 100), SpCnt(pA, CMD_MAPSWAP) - sw0,
+			(int)(MapSwapParts(pMap, pA, nX0, nY0) == wBaseParts), SpCnt(pC, CMD_ADMINCHEST) - c0);
+	}
+
+	/* (d) 無い番号（どのマップにも無い＝消した宝箱）・範囲外の値・範囲外のキャラは断る。記録も差し替えも動かない */
+	{
+		int sw0 = SpCnt(pA, CMD_MAPSWAP);
+		BOOL bGot1 = AdminChestSend(pC, ADMINCHEST_SET, dwTbl, 2000, 1, TRUE, Res);
+		int nR1 = Res.byResult;
+		BOOL bGot2 = AdminChestSend(pC, ADMINCHEST_SET, dwTbl, 100, 2, TRUE, Res);
+		int nR2 = Res.byResult;
+		BOOL bGot3 = AdminChestSend(pC, ADMINCHEST_SET, dwTbl, MAX_CHESTNO, 1, TRUE, Res);
+		int nR3 = Res.byResult;
+		BOOL bGot4 = AdminChestSend(pC, ADMINCHEST_SET, (DWORD)g_aCharInfo.GetSize() + 5, 100, 1, TRUE, Res);
+		int nR4 = Res.byResult;
+		BOOL bNo = TRUE;
+		for (int i = 0; i < MAX_CHESTBYTE; i ++) if (pA->abyChestOpened[i]) bNo = FALSE;
+		printf("adminchest bad got=%d,%d,%d,%d result=%d,%d,%d,%d unchanged=%d swap=%d\n", (int)bGot1, (int)bGot2, (int)bGot3, (int)bGot4, nR1, nR2, nR3, nR4, (int)bNo,
+			SpCnt(pA, CMD_MAPSWAP) - sw0);
+	}
+
+	/* (e) 全部戻す：全部の記録が 0 になり、差し替えが送り直される */
+	{
+		ChestOpenedSet(pA, 100, TRUE); ChestOpenedSet(pA, 105, TRUE); ChestOpenedSet(pA, 109, TRUE); ChestOpenedSet(pA, 2000, TRUE);
+		int sw0 = SpCnt(pA, CMD_MAPSWAP), c0 = SpCnt(pC, CMD_ADMINCHEST);
+		AdminChestSend(pC, ADMINCHEST_CLEAR, dwTbl, 0, 0, FALSE, Res);
+		BOOL bZero = TRUE;
+		for (int i = 0; i < MAX_CHESTBYTE; i ++) if (pA->abyChestOpened[i]) bZero = FALSE;
+		printf("adminchest clear zero=%d swap=%d reply=%d parts_a_closed=%d\n", (int)bZero, SpCnt(pA, CMD_MAPSWAP) - sw0, SpCnt(pC, CMD_ADMINCHEST) - c0,
+			(int)(MapSwapParts(pMap, pA, nX0, nY0) == wBaseParts));
+	}
+
+	/* 片付け */
+	for (int i = 0; i < g_aMapInfo.GetSize(); i ++) g_aMapInfo[i]->bySwapCount = aSwapCountBak[i];
+	SwapRestore(pMap, Bak);
+	memcpy(pA->abyChestOpened, abyBak, sizeof(abyBak));
+	strcpy(pA->szAcc, szAccBack);
 }
 
 /* ------------------------------------------------------------------------- */

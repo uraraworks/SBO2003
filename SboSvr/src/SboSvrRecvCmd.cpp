@@ -247,6 +247,7 @@ void	RecvDataProcMARKETGOLDGET				(PBYTE, DWORD);				/* 取引所の売上を受
 void	RecvDataProcRECYCLELIST					(PBYTE, DWORD);				/* リサイクルボックスの中身 */
 void	RecvDataProcRECYCLEPUT					(PBYTE, DWORD);				/* リサイクルボックスに入れる */
 void	RecvDataProcRECYCLETAKE					(PBYTE, DWORD);				/* リサイクルボックスからもらう */
+void	RecvDataProcADMINCHEST					(PBYTE, DWORD);				/* 管理者ウィンドウのキャラの開けた宝箱の記録 */
 void	RecvDataProcTALKANSWER					(PBYTE, DWORD);				/* 会話データの「はい・いいえ」の答え */
 /* 端末トークン（server/web_account_svr.cpp） */
 BOOL	WebAccTokenToAccount					(LPCSTR, LPSTR, int);		/* 端末トークンからアカウント名を引く */
@@ -498,6 +499,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcRECYCLELIST,			/* CMD_RECYCLELIST */
 	RecvDataProcRECYCLEPUT,				/* CMD_RECYCLEPUT */
 	RecvDataProcRECYCLETAKE,			/* CMD_RECYCLETAKE */
+	RecvDataProcADMINCHEST,				/* CMD_ADMINCHEST */
 
 	NULL
 };
@@ -12612,6 +12614,168 @@ void RecvDataProcADMINCHARFLAG(PBYTE pData, DWORD dwDataSize)
 	}
 	SendAdminCharFlagResult (pID, pPara->dwTblID, 1, "");
 	SendAdminCharFlagInfo (pID, pChar);
+}
+
+/* ========================================================================= */
+/* 関数名：SendAdminChestInfo												 */
+/* 内容：管理者ウィンドウへキャラの開けた宝箱の記録を送る					 */
+/* ========================================================================= */
+static void SendAdminChestInfo(DWORD pID, PCHARINFO pChar)
+{
+	PCMDPARA_ADMINCHEST pPara = new CMDPARA_ADMINCHEST;
+
+	ZeroMemory (pPara, sizeof (CMDPARA_ADMINCHEST));
+	pPara->byCmd	= CMD_ADMINCHEST;
+	pPara->byCmdSub	= ADMINCHEST_INFO;
+	pPara->dwTblID	= pChar->dwTblID;
+	CopyMemory (pPara->abyOpened, pChar->abyChestOpened, sizeof (pPara->abyOpened));
+	svrSock.SendTo (pID, (PBYTE)pPara, sizeof (CMDPARA_ADMINCHEST));
+	SAFE_DELETE (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：SendAdminChestResult												 */
+/* 内容：管理者ウィンドウへ宝箱の記録の変更の結果を送る						 */
+/* ========================================================================= */
+static void SendAdminChestResult(DWORD pID, DWORD dwTblID, BYTE byResult, LPCSTR pszMsg)
+{
+	PCMDPARA_ADMINCHEST pPara = new CMDPARA_ADMINCHEST;
+
+	ZeroMemory (pPara, sizeof (CMDPARA_ADMINCHEST));
+	pPara->byCmd	= CMD_ADMINCHEST;
+	pPara->byCmdSub	= ADMINCHEST_RESULT;
+	pPara->byResult	= byResult;
+	pPara->dwTblID	= dwTblID;
+	SboTextCopy (pPara->szMsg, sizeof (pPara->szMsg), pszMsg);
+	svrSock.SendTo (pID, (PBYTE)pPara, sizeof (CMDPARA_ADMINCHEST));
+	SAFE_DELETE (pPara);
+}
+
+/* 全マップの宝箱の行を宝箱番号の順に集める（(宝箱番号, (マップ番号, 行の番号))。消した宝箱は無いので入らない） */
+static void AdminChestCollect(std::vector<std::pair<int, std::pair<int, int> > > &aRow)
+{
+	for (int i = 0; i < g_aMapInfo.GetSize (); i ++) {
+		PMAPINFO pMap = g_aMapInfo[i];
+
+		for (int j = 0; j < pMap->bySwapCount && j < MAX_MAPSWAP; j ++) {
+			if ((pMap->aSwap[j].byKind == MAPSWAPKIND_CHEST) && (pMap->aSwap[j].wChestNo < MAX_CHESTNO)) {
+				aRow.push_back (std::make_pair ((int)pMap->aSwap[j].wChestNo, std::make_pair (i, j)));
+			}
+		}
+	}
+	std::sort (aRow.begin (), aRow.end ());
+}
+
+/* ========================================================================= */
+/* 関数名：SendAdminChestRows												 */
+/* 内容：管理者ウィンドウへ全宝箱の一覧（メモ付き）を ADMINCHEST_ROWMAX 件ずつ送る	 */
+/*       0 件でも wTotal=0 の 1 回は送る（クライアントが「無い」と分かるように）	 */
+/* ========================================================================= */
+static void SendAdminChestRows(DWORD pID)
+{
+	std::vector<std::pair<int, std::pair<int, int> > > aRow;
+	int nTotal, nStart = 0;
+
+	AdminChestCollect (aRow);
+	nTotal = (int)aRow.size ();
+	do {
+		PCMDPARA_ADMINCHEST pPara = new CMDPARA_ADMINCHEST;
+		int nCnt = min (ADMINCHEST_ROWMAX, nTotal - nStart);
+
+		ZeroMemory (pPara, sizeof (CMDPARA_ADMINCHEST));
+		pPara->byCmd	= CMD_ADMINCHEST;
+		pPara->byCmdSub	= ADMINCHEST_ROWS;
+		pPara->wTotal	= (WORD)nTotal;
+		pPara->wStart	= (WORD)nStart;
+		pPara->byRows	= (BYTE)nCnt;
+		for (int k = 0; k < nCnt; k ++) {
+			PMAPINFO pMap = g_aMapInfo[aRow[nStart + k].second.first];
+			const MAPSWAP *pSw = &pMap->aSwap[aRow[nStart + k].second.second];
+			PADMINCHESTROW pOut = &pPara->aRow[k];
+
+			pOut->wChestNo	= pSw->wChestNo;
+			pOut->wMapNo	= (WORD)aRow[nStart + k].second.first;
+			pOut->wX		= pSw->wX;
+			pOut->wY		= pSw->wY;
+			pOut->wGiveItem	= pSw->wGiveItem;
+			SboTextCopy (pOut->szMap, sizeof (pOut->szMap), pMap->pszName ? pMap->pszName : "");
+			if ((pSw->wGiveItem != 0) && (pSw->wGiveItem < g_aItemInfo.GetSize ())) {
+				SboTextCopy (pOut->szItem, sizeof (pOut->szItem), g_aItemInfo[pSw->wGiveItem]->szName);
+			}
+			SboTextCopy (pOut->szMemo, sizeof (pOut->szMemo), pSw->szMemo);
+		}
+		svrSock.SendTo (pID, (PBYTE)pPara, sizeof (CMDPARA_ADMINCHEST));
+		SAFE_DELETE (pPara);
+		nStart += nCnt;
+	} while (nStart < nTotal);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINCHEST											 */
+/* 内容：受信データ処理(管理者ウィンドウのキャラの開けた宝箱の記録)			 */
+/*       管理者だけ（管理者用のコマンドとして受信の入口で断る。ここでも確かめる）*/
+/*       GET   : 全宝箱の一覧を ROWS で、キャラの記録を INFO で返す			 */
+/*       SET   : 宝箱 1 つを開けた・開けていないにする						 */
+/*       CLEAR : 全部開けていないに戻す										 */
+/*       変えたら、そのキャラがログイン中なら差し替えを送り直し、宝箱の見た目をすぐ変える。*/
+/*       保存は、ふつうのキャラの保存に乗る。相手はログアウト中でもよい		 */
+/* ========================================================================= */
+void RecvDataProcADMINCHEST(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINCHEST pPara = (PCMDPARA_ADMINCHEST)pData;
+	PCHARINFO pChar;
+	DWORD pID = s_pIDRecv;
+
+	if (!s_bAdminRecv || (s_dwRecvSize < sizeof (CMDPARA_ADMINCHEST))) {
+		return;
+	}
+	if ((pPara->byCmdSub != ADMINCHEST_GET) && (pPara->byCmdSub != ADMINCHEST_SET) && (pPara->byCmdSub != ADMINCHEST_CLEAR)) {
+		return;
+	}
+	if (pPara->dwTblID >= (DWORD)g_aCharInfo.GetSize ()) {
+		SendAdminChestResult (pID, pPara->dwTblID, 0, "キャラが見つかりません。");
+		return;
+	}
+	pChar = g_aCharInfo[pPara->dwTblID];
+	/* プレイヤーのキャラだけ（NPC・敵は持たない） */
+	if ((pChar == NULL) || (pChar->byNpcType != NPCTYPE_INIT) || (pChar->szAcc[0] == 0)) {
+		SendAdminChestResult (pID, pPara->dwTblID, 0, "プレイヤーのキャラを選んでください。");
+		return;
+	}
+
+	if (pPara->byCmdSub == ADMINCHEST_GET) {
+		SendAdminChestRows (pID);
+		SendAdminChestInfo (pID, pChar);
+		return;
+	}
+
+	if (pPara->byCmdSub == ADMINCHEST_SET) {
+		std::vector<std::pair<int, std::pair<int, int> > > aRow;
+		BOOL bFound = FALSE;
+
+		if ((pPara->wNo >= MAX_CHESTNO) || (pPara->wValue > 1)) {
+			SendAdminChestResult (pID, pPara->dwTblID, 0, "宝箱の番号は 0〜2047、値は 0（開けていない）か 1（開けた）で指定してください。");
+			return;
+		}
+		AdminChestCollect (aRow);
+		for (size_t i = 0; i < aRow.size (); i ++) {
+			if (aRow[i].first == (int)pPara->wNo) {
+				bFound = TRUE;
+				break;
+			}
+		}
+		if (!bFound) {
+			SendAdminChestResult (pID, pPara->dwTblID, 0, "その番号の宝箱はありません（消した宝箱です）。");
+			return;
+		}
+		ChestOpenedSet (pChar, pPara->wNo, pPara->wValue ? TRUE : FALSE);
+	} else {
+		ZeroMemory (pChar->abyChestOpened, sizeof (pChar->abyChestOpened));
+	}
+	/* ログイン中なら、差し替え（宝箱の見た目）をその人にだけ送り直す */
+	CharViewRefresh (pChar);
+	SendAdminChestResult (pID, pPara->dwTblID, 1, "");
+	SendAdminChestInfo (pID, pChar);
 }
 
 /* ========================================================================= */

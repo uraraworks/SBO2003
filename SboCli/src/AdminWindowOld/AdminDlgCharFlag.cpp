@@ -14,6 +14,7 @@
  *       名前の無い印は立っている物だけが出る。番号を入れて「立てる」「消す」もできる
  * ・数値：名前の付いた数値は全部、名前の無い数値は 0 でない物だけが出る。
  *         選ぶと番号と値が下の欄に入る。値を直して「設定」で変える
+ * ・「宝箱」ボタン：開けた宝箱の記録（印とは別）を見て直す画面（AdminDlgCharChest.cpp）を開く
  * ・「立っている印・0でない数値だけ」にチェックすると、立っている物だけに絞る
  * ・フラグのグループ（メイン-サブ）：一覧に「グループ」列（ルシー-3 の形）を出す。
  *   一覧の上の欄でグループを選ぶと、そのグループの番号の帯の全部（名前が無くて立っていない物も）に絞れる
@@ -26,6 +27,7 @@
 #include "AdminFlagTalk.h"
 #include "AdminFlagUi.h"
 #include "AdminDlgCharFlag.h"
+#include "AdminDlgCharChest.h"
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -114,6 +116,7 @@ void CloseDlgCharFlag(void)
 	if (s_hWndDlg == NULL) {
 		return;
 	}
+	CloseDlgCharChest ();
 	AdminFlagTalkRemoveListener (OnChanged);
 	DestroyWindow (s_hWndDlg);
 	s_hWndDlg = NULL;
@@ -275,6 +278,10 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 		AdminFlagNameRequest ();
 		AdminFlagGroupRequest ();
 		AdminCharFlagRequest (s_dwTblID);
+		break;
+
+	case IDC_CF_CHEST:	/* 開けた宝箱の記録の画面を開く（印とは別の記録） */
+		ShowDlgCharChest (hWnd, s_dwTblID, s_szCharName);
 		break;
 
 	case IDC_CF_BITGROUP:	/* 印のグループで絞り込み */
