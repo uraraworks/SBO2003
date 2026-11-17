@@ -73,6 +73,7 @@ extern CmyArray<PRECIPEINFO, PRECIPEINFO> g_aRecipeInfo;						/* レシピ情報
 extern CmyArray<PQUESTINFO, PQUESTINFO> g_aQuestInfo;							/* 依頼情報 */
 extern CmyArray<PFLAGNAMEINFO, PFLAGNAMEINFO> g_aFlagNameInfo;				/* フラグの名前表 */
 extern CmyArray<PTALKINFO, PTALKINFO> g_aTalkInfo;							/* 会話データ */
+extern CmyArray<PSTORYINFO, PSTORYINFO> g_aStoryInfo;						/* 思い出の本のシナリオ */
 
 
 /* 向き別縦横増減テーブル */

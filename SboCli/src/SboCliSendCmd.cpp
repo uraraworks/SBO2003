@@ -117,6 +117,7 @@ void SendCMDEQUUSERINFOREQ	(BYTE);									/* 装備職業情報要求 */
 void SendCmdADMINUNDO		(BYTE, BYTE, DWORD);					/* 管理者画面の「元に戻す」 */
 void SendCmdADMINSPACE		(BYTE, DWORD);							/* 管理者の空間の切り替え */
 void SendCmdADMINQUEST		(BYTE, int, const QUESTINFO *);			/* 管理者ウィンドウのギルドの依頼の編集 */
+void SendCmdADMINSTORY		(BYTE, int, const STORYINFO *);			/* 管理者ウィンドウの思い出の本の編集 */
 void SendCmdADMINFLAGNAME	(BYTE, int, const FLAGNAMEINFO *);		/* 管理者ウィンドウのフラグの名前表の編集 */
 void SendCmdADMINTALK		(BYTE, int, const TALKINFO *);			/* 管理者ウィンドウの会話データの編集 */
 void SendCmdADMINCHARFLAG	(BYTE, DWORD, BYTE, WORD, WORD);		/* 管理者ウィンドウのキャラのフラグの取得・変更 */
@@ -3604,6 +3605,27 @@ void SendCmdADMINQUEST(BYTE byCmdSub, int nNo, const QUESTINFO *pInfo)
 		pPara->Info = *pInfo;
 	}
 	cliSock.Send ((PBYTE)pPara, sizeof (CMDPARA_ADMINQUEST));
+	SAFE_DELETE (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdADMINSTORY												 */
+/* 内容：コマンド送信(管理者ウィンドウの思い出の本の編集)					 */
+/*       byCmdSub: ADMINSTORY_LISTREQ（一覧の問い合わせ）・					 */
+/*                 ADMINSTORY_SET（pInfo を nNo 番目に書き込む。-1 は足す）	 */
+/* ========================================================================= */
+void SendCmdADMINSTORY(BYTE byCmdSub, int nNo, const STORYINFO *pInfo)
+{
+	PCMDPARA_ADMINSTORY pPara = new CMDPARA_ADMINSTORY;
+
+	ZeroMemory (pPara, sizeof (CMDPARA_ADMINSTORY));
+	pPara->byCmd	= CMD_ADMINSTORY;
+	pPara->byCmdSub	= byCmdSub;
+	pPara->nNo		= nNo;
+	if (pInfo) {
+		pPara->Info = *pInfo;
+	}
+	cliSock.Send ((PBYTE)pPara, sizeof (CMDPARA_ADMINSTORY));
 	SAFE_DELETE (pPara);
 }
 

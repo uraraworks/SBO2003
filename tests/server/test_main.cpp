@@ -1061,6 +1061,7 @@ static void TestTailMapChg(const std::vector<int> &aLogin);
 static void TestTailBattle(const std::vector<int> &aLogin);
 extern "C" char *MockLastBody(int nConn, int nCmd);
 static void TestQuest(const std::vector<int> &aLogin);
+static void TestStory(const std::vector<int> &aLogin);
 static void TestSortItem(const std::vector<int> &aLogin);
 static void TestCharPush(const std::vector<int> &aLogin);
 static void TestLeaveDispose(const std::vector<int> &aLogin);
@@ -1547,6 +1548,8 @@ static void TestWorld(void)
 	TestTailItemMove(aLogin);
 	/* AE. 印で見える・消えるNPC：話して印が立つ時の見え直し（会話で乱数を使うので、いちばん最後） */
 	TestViewFlagTalk(aLogin);
+	/* M2. 思い出の本（保存の読み直しでキャラの欄が書き換わるので、いちばん最後） */
+	TestStory(aLogin);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -3458,6 +3461,308 @@ static int QuestCountCopies(void)
 	return n;
 }
 
+/* ------------------------------------------------------------------------- */
+/* M2. 思い出の本（語り部 @r・クリア済みのお話をやり直す）					 */
+/*    クリア→やり直し→依頼をまた受けられる／印が消える／後のお話も戻る／	 */
+/*    前のお話は残る／2回目は報酬なし・印は立つ／依頼中・遠くは断る／		 */
+/*    古い保存データのもらい済みの補完・お話の保存と読み込み				 */
+/* ------------------------------------------------------------------------- */
+extern BOOL SaveStoryInfo(void);
+extern BOOL LoadStoryInfo(void);
+
+static PSTORYINFO StoryTestNew(WORD wID, LPCSTR pszName, WORD wClear, WORD wPrev, WORD wFrom, WORD wTo, WORD wQuest, BYTE byCountNum)
+{
+	PSTORYINFO p = new STORYINFO;
+	ZeroMemory(p, sizeof(*p));
+	p->wID = wID; p->byState = STORYSTATE_ON; p->wSort = wID;
+	strcpy(p->szName, pszName);
+	strcpy(p->szExplain, "説明");
+	p->wClearFlag = wClear; p->wPrevStory = wPrev;
+	for (int i = 0; i < MAX_STORYFLAGRANGE; i ++) p->awFlagFrom[i] = p->awFlagTo[i] = FLAG_NOBIT;
+	for (int i = 0; i < MAX_STORYNUM; i ++) p->abyNum[i] = FLAG_NONUM;
+	p->awFlagFrom[0] = wFrom; p->awFlagTo[0] = wTo;
+	p->awQuest[0] = wQuest;
+	p->byCountNum = byCountNum;
+	return p;
+}
+
+static void StoryReset(PCHARINFO p, WORD wStory, DWORD dwNpc)
+{
+	QuestSendCmd(p, QUESTCMD_STORYRESET, wStory, dwNpc);
+}
+
+static BOOL AdminStorySend(PCHARINFO p, BYTE bySub, int nNo, const STORYINFO *pInfo, CMDPARA_ADMINSTORY &Res)
+{
+	PCMDPARA_ADMINSTORY pPara = new CMDPARA_ADMINSTORY;
+	std::vector<BYTE> aCap;
+	BOOL bRet;
+
+	ZeroMemory(pPara, sizeof(*pPara));
+	pPara->byCmd = CMD_ADMINSTORY;
+	pPara->byCmdSub = bySub;
+	pPara->nNo = nNo;
+	if (pInfo) pPara->Info = *pInfo;
+	SvrSendCaptureBegin();
+	TestRecv(p, pPara, sizeof(CMDPARA_ADMINSTORY));
+	bRet = SvrSendCaptureEnd(aCap);
+	delete pPara;
+	ZeroMemory(&Res, sizeof(Res));
+	if (!bRet || aCap.size() < sizeof(CMDPARA_ADMINSTORY)) return FALSE;
+	memcpy(&Res, &aCap[0], sizeof(Res));
+	return TRUE;
+}
+
+static void TestStory(const std::vector<int> &aLogin)
+{
+	printf("== M2. Story ==\n");
+	if (aLogin.size() < 3) {
+		return;
+	}
+	PCHARINFO pOwner = g_aCharInfo[aLogin[0]], pFar = g_aCharInfo[aLogin[1]], pAdmin = g_aCharInfo[aLogin[2]];
+	PCHARINFO apPC[3] = { pOwner, pFar, pAdmin };
+	int nMap = (int)pOwner->dwMapID;
+	PMAPINFO pMap = g_aMapInfo[nMap];
+	DWORD dwMapBack[3], dwXBack[3], dwYBack[3], dwGoldBack[3];
+	BYTE byAdminBack = pAdmin->byAdminLV;
+	for (int i = 0; i < 3; i ++) {
+		dwMapBack[i] = apPC[i]->dwMapID; dwXBack[i] = apPC[i]->dwX; dwYBack[i] = apPC[i]->dwY;
+		dwGoldBack[i] = apPC[i]->dwGold;
+		apPC[i]->wQuestID = 0; apPC[i]->byQuestStep = 0; apPC[i]->wQuestFlg = 0;
+		apPC[i]->dwPartyID = 0;
+		apPC[i]->dwSpaceID = SPACE_NORMAL;
+		apPC[i]->dwTargetTblID = apPC[i]->dwTargetTblID2 = apPC[i]->dwTargetTblID3 = (DWORD)-1;
+		ZeroMemory(apPC[i]->abyQuestDone, sizeof(apPC[i]->abyQuestDone));
+		ZeroMemory(apPC[i]->abyQuestRewarded, sizeof(apPC[i]->abyQuestRewarded));
+		ZeroMemory(apPC[i]->abyFlag, sizeof(apPC[i]->abyFlag));
+		ZeroMemory(apPC[i]->abyFlagNum, sizeof(apPC[i]->abyFlagNum));
+	}
+	pAdmin->byAdminLV = ADMINLV_USER;
+
+	/* 空いているマスを 4 つ */
+	std::vector<std::pair<int, int> > aCell;
+	for (int r = 1; r < 12 && aCell.size() < 4; r ++) {
+		for (int dy = -r; dy <= r && aCell.size() < 4; dy ++) {
+			for (int dx = -r; dx <= r && aCell.size() < 4; dx ++) {
+				if (abs(dx) != r && abs(dy) != r) continue;
+				int x = (int)pOwner->dwX + dx, y = (int)pOwner->dwY + dy;
+				if (x < 3 || y < 3 || x >= pMap->nCX - 3 || y >= pMap->nCY - 3) continue;
+				if (!CheckCharBlock((DWORD)nMap, x, y) || CheckCharBlockNPC((DWORD)nMap, x, y) != (DWORD)-1 ||
+					CheckCharBlockPC((DWORD)nMap, x, y) != (DWORD)-1) continue;
+				aCell.push_back(std::make_pair(x, y));
+			}
+		}
+	}
+	printf("story cells=%d\n", (int)aCell.size());
+	if (aCell.size() < 4) {
+		return;
+	}
+
+	/* 依頼を差し替える（あとで戻す） */
+	std::vector<PQUESTINFO> aQuestBack;
+	for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) aQuestBack.push_back(g_aQuestInfo[i]);
+	g_aQuestInfo.RemoveAll();
+	/* 依頼 1・2：一度きり・お金だけの報酬・終えると印 100・110 が立つ */
+	for (int q = 1; q <= 2; q ++) {
+		PQUESTINFO p = new QUESTINFO;
+		ZeroMemory(p, sizeof(*p));
+		p->wNeedFlag = p->wNotFlag = FLAG_NOBIT;
+		p->wID = (WORD)q; p->byState = QUESTSTATE_ON; p->byGuild = 0; p->wSort = (WORD)q; p->byOnce = 1; p->byStepCount = 1;
+		sprintf(p->szName, "思い出依頼%d", q);
+		p->dwGold = (q == 1) ? 100 : 50;
+		for (int k = 0; k < MAX_QUESTDONESET; k ++) p->awDoneSetFlag[k] = FLAG_NOBIT;
+		p->awDoneSetFlag[0] = (WORD)(q == 1 ? 100 : 110);
+		p->byDoneNumNo = FLAG_NONUM;
+		for (int k = 0; k < MAX_QUESTNPC; k ++) { p->aNpc[k].byStepMax = QUESTNPC_NOSTEP; p->aNpc[k].byNextStep = QUESTNPC_NOSTEP; }
+		g_aQuestInfo.Add(p);
+	}
+	/* お話を差し替える：1=L1（印 100・依頼 1・回数は数値 5）、2=L2（前は 1・印 110・依頼 2）、3=止めているお話 */
+	std::vector<PSTORYINFO> aStoryBack;
+	for (int i = 0; i < g_aStoryInfo.GetSize(); i ++) aStoryBack.push_back(g_aStoryInfo[i]);
+	g_aStoryInfo.RemoveAll();
+	g_aStoryInfo.Add(StoryTestNew(1, "L1", 100, 0, 100, 100, 1, 5));
+	g_aStoryInfo.Add(StoryTestNew(2, "L2", 110, 1, 110, 110, 2, FLAG_NONUM));
+	g_aStoryInfo.Add(StoryTestNew(3, "止めた話", 120, 0, 120, 120, 0, FLAG_NONUM));
+	g_aStoryInfo[2]->byState = STORYSTATE_OFF;
+	g_aStoryInfo[0]->abyNum[0] = 6;						/* 数値 6 も 0 に戻す */
+
+	/* ギルドの人（@g0）と語り部（@r） */
+	PCHARINFO apNpc[2];
+	LPCSTR apszSpeech[2] = { "@g0", "@r" };
+	for (int n = 0; n < 2; n ++) {
+		PCHARINFO p = new CHARINFO;
+		ZeroMemory((PBYTE)p, sizeof(CHARINFO));
+		p->byNpcType = NPCTYPE_NOMOVE;
+		SetInitCharData(p);
+		p->byGameState = GAMESTATE_NPC;
+		p->byCharState = CHARSTATE_MOVE;
+		p->dwMapID = nMap;
+		p->dwX = p->dwXBack = p->dwStartX = (DWORD)aCell[n].first;
+		p->dwY = p->dwYBack = p->dwStartY = (DWORD)aCell[n].second;
+		strcpy(p->szName, n == 0 ? "ギルド受付" : "語り部");
+		p->pszNpcSpeech = new char[8];
+		strcpy(p->pszNpcSpeech, apszSpeech[n]);
+		p = AddChar(p);
+		p->pID = p->dwTblID + 1;
+		CCharProcBase CharProcBase;
+		CharProcBase.SetProc(p);
+		apNpc[n] = p;
+	}
+	DWORD dwGuild = apNpc[0]->dwTblID, dwTeller = apNpc[1]->dwTblID;
+
+	/* 遠くの人と近くの人 */
+	QuestMovePC(pOwner, nMap, aCell[0].first, aCell[0].second + 1);
+	QuestMovePC(pFar, nMap, aCell[2].first, aCell[2].second);
+	QuestMovePC(pAdmin, nMap, aCell[3].first, aCell[3].second);
+	pFar->dwX = pFar->dwXBack = (DWORD)(pMap->nCX - 3);
+	pFar->dwY = pFar->dwYBack = (DWORD)(pMap->nCY - 3);
+
+	/* まだ何もクリアしていない：本は空（0 件の 1 パケットだけ届く） */
+	int nList0 = MockCmdCount(1000, CMD_QUEST);
+	QuestSendTalk(pOwner, dwTeller);
+	printf("story empty list packets=%d\n", MockCmdCount(1000, CMD_QUEST) - nList0);
+
+	/* 依頼 1 を受けて終える（報酬 100・印 100・もらい済み） */
+	DWORD dwGold0 = pOwner->dwGold;
+	QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 1, dwGuild);
+	QuestSendCmd(pOwner, QUESTCMD_HANDIN, 0, dwGuild);
+	printf("story q1 clear gold+=%d flag100=%d done=%d rewarded=%d quest=%u\n", (int)(pOwner->dwGold - dwGold0),
+		FlagBitGet(pOwner->abyFlag, 100), (int)QuestIsDone(pOwner, 1), (int)QuestIsRewarded(pOwner, 1), pOwner->wQuestID);
+	QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 1, dwGuild);
+	printf("story q1 once-blocked quest=%u\n", pOwner->wQuestID);
+
+	/* 依頼 2 も終える。さらに止めているお話の印 120 と、数値 5・6 に値を入れておく */
+	QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 2, dwGuild);
+	QuestSendCmd(pOwner, QUESTCMD_HANDIN, 0, dwGuild);
+	FlagBitSet(pOwner->abyFlag, 120, TRUE);
+	FlagBitSet(pOwner->abyFlag, 99, TRUE);				/* 範囲の外の印（もらった印）は残る */
+	FlagBitSet(pOwner->abyFlag, 111, TRUE);
+	FlagNumSet(pOwner->abyFlagNum, 5, 3);
+	FlagNumSet(pOwner->abyFlagNum, 6, 9);
+	printf("story q2 clear flag110=%d done=%d\n", FlagBitGet(pOwner->abyFlag, 110), (int)QuestIsDone(pOwner, 2));
+
+	/* 本：止めているお話は出ない（2 件）。遠くの人は話しても届かない */
+	nList0 = MockCmdCount(1000, CMD_QUEST);
+	QuestSendTalk(pOwner, dwTeller);
+	printf("story list packets=%d\n", MockCmdCount(1000, CMD_QUEST) - nList0);
+
+	/* 遠くの人（印は立てておく）はやり直せない */
+	FlagBitSet(pFar->abyFlag, 100, TRUE);
+	StoryReset(pFar, 1, dwTeller);
+	printf("story far refused flag100=%d\n", FlagBitGet(pFar->abyFlag, 100));
+
+	/* 後のお話 L2 だけやり直す：L1 の印・依頼はそのまま */
+	StoryReset(pOwner, 2, dwTeller);
+	printf("story reset L2 flag100=%d flag110=%d flag111=%d done1=%d done2=%d count5=%u\n", FlagBitGet(pOwner->abyFlag, 100),
+		FlagBitGet(pOwner->abyFlag, 110), FlagBitGet(pOwner->abyFlag, 111), (int)QuestIsDone(pOwner, 1), (int)QuestIsDone(pOwner, 2),
+		FlagNumGet(pOwner->abyFlagNum, 5));
+
+	/* L2 の依頼 2 をまた受けられて、2 回目は報酬なし・印は立つ */
+	dwGold0 = pOwner->dwGold;
+	QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 2, dwGuild);
+	printf("story q2 reaccept quest=%u\n", pOwner->wQuestID);
+	/* 依頼中は、その依頼を含むお話をやり直せない */
+	FlagBitSet(pOwner->abyFlag, 110, TRUE);
+	StoryReset(pOwner, 2, dwTeller);
+	StoryReset(pOwner, 1, dwTeller);
+	printf("story busy refused flag100=%d flag110=%d quest=%u count5=%u\n", FlagBitGet(pOwner->abyFlag, 100), FlagBitGet(pOwner->abyFlag, 110),
+		pOwner->wQuestID, FlagNumGet(pOwner->abyFlagNum, 5));
+	FlagBitSet(pOwner->abyFlag, 110, FALSE);
+	QuestSendCmd(pOwner, QUESTCMD_HANDIN, 0, dwGuild);
+	printf("story q2 second gold+=%d flag110=%d done=%d rewarded=%d\n", (int)(pOwner->dwGold - dwGold0), FlagBitGet(pOwner->abyFlag, 110),
+		(int)QuestIsDone(pOwner, 2), (int)QuestIsRewarded(pOwner, 2));
+
+	/* 前のお話 L1 をやり直すと、後の L2 もいっしょに戻る。数値 6 は 0、数値 5（回数）は +1 */
+	StoryReset(pOwner, 1, dwTeller);
+	printf("story reset L1 flag99=%d flag100=%d flag110=%d flag111=%d flag120=%d done1=%d done2=%d count5=%u num6=%u rewarded1=%d rewarded2=%d\n",
+		FlagBitGet(pOwner->abyFlag, 99), FlagBitGet(pOwner->abyFlag, 100), FlagBitGet(pOwner->abyFlag, 110), FlagBitGet(pOwner->abyFlag, 111),
+		FlagBitGet(pOwner->abyFlag, 120), (int)QuestIsDone(pOwner, 1), (int)QuestIsDone(pOwner, 2), FlagNumGet(pOwner->abyFlagNum, 5),
+		FlagNumGet(pOwner->abyFlagNum, 6), (int)QuestIsRewarded(pOwner, 1), (int)QuestIsRewarded(pOwner, 2));
+
+	/* やり直した依頼 1 をまた受けて終える：報酬なし・印は立つ */
+	dwGold0 = pOwner->dwGold;
+	QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 1, dwGuild);
+	printf("story q1 reaccept quest=%u\n", pOwner->wQuestID);
+	QuestSendCmd(pOwner, QUESTCMD_HANDIN, 0, dwGuild);
+	printf("story q1 second gold+=%d flag100=%d done=%d\n", (int)(pOwner->dwGold - dwGold0), FlagBitGet(pOwner->abyFlag, 100), (int)QuestIsDone(pOwner, 1));
+
+	/* 本が空に戻ったら（印を全部消す）また空 */
+	ZeroMemory(pOwner->abyFlag, sizeof(pOwner->abyFlag));
+	nList0 = MockCmdCount(1000, CMD_QUEST);
+	QuestSendTalk(pOwner, dwTeller);
+	printf("story empty again packets=%d\n", MockCmdCount(1000, CMD_QUEST) - nList0);
+
+	/* 管理者ウィンドウ：足す・直す・断る（前のお話が無い／自分自身／輪になる） */
+	{
+		CMDPARA_ADMINSTORY Res;
+		STORYINFO Info = *g_aStoryInfo[0];
+		pAdmin->byAdminLV = ADMINLV_ADMINISTRATOR;
+		BOOL bGot = AdminStorySend(pAdmin, ADMINSTORY_LISTREQ, 0, NULL, Res);
+		printf("adminstory list got=%d count=%d id=%d name=%s\n", bGot, Res.wCount, Res.Info.wID, Res.Info.szName);
+		Info.wID = 0; strcpy(Info.szName, "L3"); Info.wPrevStory = 2; Info.wClearFlag = 130;
+		Info.awFlagFrom[0] = 130; Info.awFlagTo[0] = 131;
+		bGot = AdminStorySend(pAdmin, ADMINSTORY_SET, -1, &Info, Res);
+		printf("adminstory add got=%d result=%d count=%d id=%d prev=%d\n", bGot, Res.byResult, g_aStoryInfo.GetSize(),
+			(g_aStoryInfo.GetSize() > 3) ? g_aStoryInfo[3]->wID : -1, (g_aStoryInfo.GetSize() > 3) ? g_aStoryInfo[3]->wPrevStory : -1);
+		Info = *g_aStoryInfo[0];
+		Info.wPrevStory = 2;
+		bGot = AdminStorySend(pAdmin, ADMINSTORY_SET, 0, &Info, Res);
+		printf("adminstory loop got=%d result=%d prev=%d\n", bGot, Res.byResult, g_aStoryInfo[0]->wPrevStory);
+		Info = *g_aStoryInfo[0];
+		Info.wPrevStory = 1;
+		bGot = AdminStorySend(pAdmin, ADMINSTORY_SET, 0, &Info, Res);
+		printf("adminstory self got=%d result=%d prev=%d\n", bGot, Res.byResult, g_aStoryInfo[0]->wPrevStory);
+		Info = *g_aStoryInfo[0];
+		Info.awFlagFrom[0] = 50; Info.awFlagTo[0] = 40;
+		bGot = AdminStorySend(pAdmin, ADMINSTORY_SET, 0, &Info, Res);
+		printf("adminstory range got=%d result=%d from=%u\n", bGot, Res.byResult, g_aStoryInfo[0]->awFlagFrom[0]);
+		Info = *g_aStoryInfo[0];
+		strcpy(Info.szName, "L1改"); Info.byState = STORYSTATE_OFF;
+		bGot = AdminStorySend(pAdmin, ADMINSTORY_SET, 0, &Info, Res);
+		printf("adminstory edit got=%d result=%d name=%s state=%d id=%u\n", bGot, Res.byResult, g_aStoryInfo[0]->szName,
+			g_aStoryInfo[0]->byState, g_aStoryInfo[0]->wID);
+		pAdmin->byAdminLV = ADMINLV_USER;
+	}
+
+	/* お話の保存と読み込み：印 0 の範囲・数値 0・「無し」が崩れない */
+	{
+		g_aStoryInfo.RemoveAll();
+		g_aStoryInfo.Add(StoryTestNew(7, "保存", 0, 0, 0, 0, 0, FLAG_NONUM));
+		g_aStoryInfo[0]->abyNum[0] = 0;
+		g_aStoryInfo[0]->awQuest[1] = 2;
+		g_aStoryInfo[0]->byCountNum = 0;
+		BOOL bSaved = SaveStoryInfo();
+		g_aStoryInfo.RemoveAll();
+		BOOL bLoaded = LoadStoryInfo();
+		PSTORYINFO p = (g_aStoryInfo.GetSize() > 0) ? g_aStoryInfo[0] : NULL;
+		if (p) {
+			printf("story save=%d load=%d count=%d id=%u name=%s clear=%u prev=%u from=%u,%u to=%u,%u num=%u,%u quest=%u,%u count=%u\n", (int)bSaved, (int)bLoaded,
+				g_aStoryInfo.GetSize(), p->wID, p->szName, p->wClearFlag, p->wPrevStory, p->awFlagFrom[0], p->awFlagFrom[1], p->awFlagTo[0],
+				p->awFlagTo[1], p->abyNum[0], p->abyNum[1], p->awQuest[0], p->awQuest[1], p->byCountNum);
+		} else {
+			printf("story save=%d load=%d not found\n", (int)bSaved, (int)bLoaded);
+		}
+	}
+
+	/* 片付け */
+	g_aStoryInfo.RemoveAll();
+	for (size_t i = 0; i < aStoryBack.size(); i ++) g_aStoryInfo.Add(aStoryBack[i]);
+	g_aQuestInfo.RemoveAll();
+	for (size_t i = 0; i < aQuestBack.size(); i ++) g_aQuestInfo.Add(aQuestBack[i]);
+	pAdmin->byAdminLV = byAdminBack;
+	for (int i = 0; i < 3; i ++) {
+		apPC[i]->wQuestID = 0; apPC[i]->byQuestStep = 0; apPC[i]->wQuestFlg = 0;
+		ZeroMemory(apPC[i]->abyQuestDone, sizeof(apPC[i]->abyQuestDone));
+		ZeroMemory(apPC[i]->abyQuestRewarded, sizeof(apPC[i]->abyQuestRewarded));
+		ZeroMemory(apPC[i]->abyFlag, sizeof(apPC[i]->abyFlag));
+		ZeroMemory(apPC[i]->abyFlagNum, sizeof(apPC[i]->abyFlagNum));
+		apPC[i]->dwGold = dwGoldBack[i];
+		QuestMovePC(apPC[i], (int)dwMapBack[i], (int)dwXBack[i], (int)dwYBack[i]);
+	}
+	for (int n = 0; n < 2; n ++) {
+		DeleteChar(apNpc[n]->dwTblID);
+	}
+}
+
 static void TestQuest(const std::vector<int> &aLogin)
 {
 	printf("== M. Quest ==\n");
@@ -3899,7 +4204,9 @@ static void TestQuest(const std::vector<int> &aLogin)
 	pOther->awQuestCount[0] = 1; pOther->awQuestCount[1] = 22; pOther->awQuestCount[2] = 333; pOther->awQuestCount[3] = 4444;
 	pOther->dwQuestAcceptTime = 1700000000;
 	ZeroMemory(pOther->abyQuestDone, sizeof(pOther->abyQuestDone));
+	ZeroMemory(pOther->abyQuestRewarded, sizeof(pOther->abyQuestRewarded));
 	pOther->abyQuestDone[0] = 0x06; pOther->abyQuestDone[63] = 0x80;
+	pOther->abyQuestRewarded[0] = 0x02; pOther->abyQuestRewarded[63] = 0x80;
 	strcpy(pOther->szAcc, "questtest");
 	strcpy(pOther->szName, "依頼テスト");
 	BOOL bSaved = SaveCharInfo();
@@ -3917,6 +4224,7 @@ static void TestQuest(const std::vector<int> &aLogin)
 		printf("quest char reload id=%u step=%u flg=%u counts=%u,%u,%u,%u time=%u done=%02x,%02x\n", pLoaded->wQuestID, pLoaded->byQuestStep,
 			pLoaded->wQuestFlg, pLoaded->awQuestCount[0], pLoaded->awQuestCount[1], pLoaded->awQuestCount[2], pLoaded->awQuestCount[3],
 			pLoaded->dwQuestAcceptTime, pLoaded->abyQuestDone[0], pLoaded->abyQuestDone[63]);
+		printf("quest char reload rewarded=%02x,%02x\n", pLoaded->abyQuestRewarded[0], pLoaded->abyQuestRewarded[63]);
 	} else {
 		printf("quest char reload not found\n");
 	}
@@ -4069,12 +4377,65 @@ static void TestQuest(const std::vector<int> &aLogin)
 		memcpy(pOther->szName, szNameBak, sizeof(szNameBak));
 	}
 
+	/* 思い出の本：古い保存データ（もらい済みの列が無い）を読むと、クリア済みの依頼はもらい済みになる */
+	{
+		BYTE abyDoneBak[MAX_QUESTDONEBYTE];
+		char szAccBak[sizeof(pOther->szAcc)], szNameBak[sizeof(pOther->szName)];
+		memcpy(abyDoneBak, pOther->abyQuestDone, sizeof(abyDoneBak));
+		memcpy(szAccBak, pOther->szAcc, sizeof(szAccBak));
+		memcpy(szNameBak, pOther->szName, sizeof(szNameBak));
+		strcpy(pOther->szAcc, "storybf");
+		strcpy(pOther->szName, "旧もらい済み");
+		ZeroMemory(pOther->abyQuestDone, sizeof(pOther->abyQuestDone));
+		ZeroMemory(pOther->abyQuestRewarded, sizeof(pOther->abyQuestRewarded));
+		pOther->abyQuestDone[0] = 0x06;
+		SaveCharInfo();
+		/* 保存した列名を「別の名前」に書き換えて、古いデータ（列が無い）にする */
+		const char *pszFile = "SBODATA/SboDataCharInfo.dat";
+		std::vector<BYTE> aFile;
+		FILE *fp = fopen(pszFile, "rb");
+		if (fp) {
+			BYTE abyBuf[4096];
+			size_t n;
+			while ((n = fread(abyBuf, 1, sizeof(abyBuf), fp)) > 0) aFile.insert(aFile.end(), abyBuf, abyBuf + n);
+			fclose(fp);
+		}
+		int nPatched = 0;
+		if (aFile.size() > 8) {
+			DWORD dwColumn = 0;
+			size_t nHead = 8;
+			memcpy(&dwColumn, &aFile[0], 4);
+			for (DWORD c = 0; c < dwColumn; c ++) {
+				char *pszName = (char *)&aFile[nHead];
+				if (strcmp(pszName, "abyQuestRewarded") == 0) { pszName[0] = 'X'; nPatched ++; }
+				nHead += strlen(pszName) + 1 + 4;
+			}
+			fp = fopen(pszFile, "wb");
+			if (fp) { fwrite(&aFile[0], 1, aFile.size(), fp); fclose(fp); }
+		}
+		LoadCharInfo();
+		PCHARINFO pLoaded = NULL;
+		for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+			if (g_aCharInfo[i] != pOther && strcmp(g_aCharInfo[i]->szAcc, "storybf") == 0) pLoaded = g_aCharInfo[i];
+		}
+		if (pLoaded) {
+			printf("quest old save patched=%d done=%02x rewarded=%02x\n", nPatched, pLoaded->abyQuestDone[0], pLoaded->abyQuestRewarded[0]);
+			pLoaded->szAcc[0] = 0;
+		} else {
+			printf("quest old save patched=%d not found\n", nPatched);
+		}
+		memcpy(pOther->abyQuestDone, abyDoneBak, sizeof(abyDoneBak));
+		memcpy(pOther->szAcc, szAccBak, sizeof(szAccBak));
+		memcpy(pOther->szName, szNameBak, sizeof(szNameBak));
+	}
+
 	/* 片付け */
 	pOther->szAcc[0] = 0;
 	for (int i = 0; i < 4; i ++) {
 		apPC[i]->wQuestID = 0; apPC[i]->byQuestStep = 0; apPC[i]->wQuestFlg = 0;
 		ZeroMemory(apPC[i]->awQuestCount, sizeof(apPC[i]->awQuestCount));
 		ZeroMemory(apPC[i]->abyQuestDone, sizeof(apPC[i]->abyQuestDone));
+		ZeroMemory(apPC[i]->abyQuestRewarded, sizeof(apPC[i]->abyQuestRewarded));
 		apPC[i]->dwPartyID = 0;
 		memcpy(apPC[i]->waItem, awItemBack[i], sizeof(awItemBack[i]));
 		apPC[i]->dwGold = dwGoldBack[i];
@@ -4131,6 +4492,7 @@ static void TestChallenge(const std::vector<int> &aLogin)
 		p->dwPartyID = 0;
 		p->wQuestID = 0; p->byQuestStep = 0; p->wQuestFlg = 0;
 		ZeroMemory(p->abyQuestDone, sizeof(p->abyQuestDone));
+		ZeroMemory(p->abyQuestRewarded, sizeof(p->abyQuestRewarded));
 		p->byLevel = 30; p->byPW = 99; p->wMaxHP = 500; p->wHP = 480; p->wMaxMana = 90; p->wMana = 80; p->dwGold = 5000;
 		ZeroMemory(p->waItem, sizeof(p->waItem));
 		for (int k = 0; k < MAX_EQUTYPE; k ++) p->waEqu[k] = 0xFFFF;
@@ -4472,6 +4834,7 @@ static void TestChallenge(const std::vector<int> &aLogin)
 		PCHARINFO p = apPC[i];
 		p->wQuestID = 0; p->byQuestStep = 0; p->wQuestFlg = 0;
 		ZeroMemory(p->abyQuestDone, sizeof(p->abyQuestDone));
+		ZeroMemory(p->abyQuestRewarded, sizeof(p->abyQuestRewarded));
 		p->dwPartyID = 0;
 		p->byLevel = pBk->byLevel; p->byPW = pBk->byPW; p->wMaxHP = pBk->wMaxHP; p->wHP = pBk->wHP;
 		p->wMaxMana = pBk->wMaxMana; p->wMana = pBk->wMana; p->dwGold = pBk->dwGold; p->dwExp = pBk->dwExp;
@@ -6347,6 +6710,7 @@ static void TestSpace(const std::vector<int> &aLogin)
 		p->dwTargetTblID = (DWORD)-1;
 		p->wQuestID = 0; p->byQuestStep = 0; p->wQuestFlg = 0;
 		ZeroMemory(p->abyQuestDone, sizeof(p->abyQuestDone));
+		ZeroMemory(p->abyQuestRewarded, sizeof(p->abyQuestRewarded));
 		p->byLevel = 30; p->byPW = 99; p->wMaxHP = 500; p->wHP = 480; p->wMaxMana = 90; p->wMana = 80; p->dwGold = 5000;
 		ZeroMemory(p->waItem, sizeof(p->waItem));
 		for (int k = 0; k < MAX_EQUTYPE; k ++) p->waEqu[k] = 0xFFFF;
@@ -6640,6 +7004,7 @@ static void TestSpace(const std::vector<int> &aLogin)
 		p->dwTargetTblID = (DWORD)-1;
 		p->wQuestID = 0; p->byQuestStep = 0; p->wQuestFlg = 0;
 		ZeroMemory(p->abyQuestDone, sizeof(p->abyQuestDone));
+		ZeroMemory(p->abyQuestRewarded, sizeof(p->abyQuestRewarded));
 		p->dwPartyID = 0;
 		p->byLevel = pBk->byLevel; p->byPW = pBk->byPW; p->wMaxHP = pBk->wMaxHP; p->wHP = pBk->wHP;
 		p->wMaxMana = pBk->wMaxMana; p->wMana = pBk->wMana; p->dwGold = pBk->dwGold; p->dwExp = pBk->dwExp;

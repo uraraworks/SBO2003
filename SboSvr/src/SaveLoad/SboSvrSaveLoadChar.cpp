@@ -14,7 +14,7 @@
 /* ========================================================================= */
 /* 定数定義																	 */
 /* ========================================================================= */
-#define DATACOUNTCOLUMN		(86)									/* 保存データ数 */
+#define DATACOUNTCOLUMN		(87)									/* 保存データ数 */
 
 /* ========================================================================= */
 /* 構造体定義																 */
@@ -120,6 +120,7 @@ static const char *s_aszName[] = {
 	"waImportant",				/* 大事な物の欄（個数＋品の種類ID） */
 	"wShowFlag",				/* この印が立っている人にだけ見える（番号+1。0=無し） */
 	"wHideFlag",				/* この印が立っている人には見えない（番号+1。0=無し） */
+	"abyQuestRewarded",			/* 依頼の報酬をもうもらっている印（依頼番号のビット。思い出の本でやり直しても消えない） */
 	"z"
 };
 
@@ -531,6 +532,7 @@ static BOOL SaveCharInfoMain(void)
 			case 83:	dwDataSizeTmp += sizeof (BYTE) + MAX_IMPORTANT * sizeof (WORD);	break;	/* 大事な物の欄 [個数(BYTE)][WORD×個数] */
 			case 84:	dwDataSizeTmp += sizeof (WORD);							break;	/* この印が立っている人にだけ見える（番号+1） */
 			case 85:	dwDataSizeTmp += sizeof (WORD);							break;	/* この印が立っている人には見えない（番号+1） */
+			case 86:	dwDataSizeTmp += MAX_QUESTDONEBYTE;						break;	/* 依頼の報酬をもうもらっている印 */
 			}
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
@@ -982,6 +984,10 @@ static BOOL SaveCharInfoMain(void)
 					CopyMemory (&pData[dwOffset], &wSave, sizeof (WORD));
 					dwOffset += sizeof (WORD);
 				}
+				break;
+			case 86:	/* 依頼の報酬をもうもらっている印 */
+				CopyMemory (&pData[dwOffset], pInfo->abyQuestRewarded, MAX_QUESTDONEBYTE);
+				dwOffset += MAX_QUESTDONEBYTE;
 				break;
 			}
 		}
@@ -1724,6 +1730,29 @@ BOOL LoadCharInfo(void)
 				} else {
 					pInfo->wHideFlag = wFlag;
 				}
+			}
+
+			/* 依頼の報酬をもうもらっている印 */
+			if (strcmp (aHeaderInfo[i].szName, s_aszName[86]) == 0) {
+				CopyMemory (pInfo->abyQuestRewarded, &pData[dwOffsetTmp], MAX_QUESTDONEBYTE);
+				dwOffsetTmp += MAX_QUESTDONEBYTE;
+			}
+		}
+	}
+
+	/* この列が無い古いデータは、クリア済みの依頼の報酬はもうもらっているとみなす（やり直しで報酬が二度出ないように） */
+	{
+		BOOL bHasRewarded = FALSE;
+
+		for (i = 0; i < (DWORD)aHeaderInfo.GetSize (); i ++) {
+			if (strcmp (aHeaderInfo[i].szName, s_aszName[86]) == 0) {
+				bHasRewarded = TRUE;
+				break;
+			}
+		}
+		if (!bHasRewarded) {
+			for (i = 0; i < dwDataCount; i ++) {
+				CopyMemory (g_aCharInfo[i]->abyQuestRewarded, g_aCharInfo[i]->abyQuestDone, MAX_QUESTDONEBYTE);
 			}
 		}
 	}

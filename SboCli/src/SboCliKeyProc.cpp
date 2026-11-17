@@ -5339,7 +5339,7 @@ void KeyProcCONF(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 	}
 
 	/* ギルドの依頼の確認：はいならサーバーに頼む。質問の文は依頼の窓の詳細欄に出している */
-	if ((pWnd->nType2 >= IDCONFIRMTYPE_QUESTACCEPT) && (pWnd->nType2 <= IDCONFIRMTYPE_QUESTHANDIN)) {
+	if ((pWnd->nType2 >= IDCONFIRMTYPE_QUESTACCEPT) && (pWnd->nType2 <= IDCONFIRMTYPE_STORYRESET)) {
 		if ((byEvent == KEY_UP) && ((byCode == 'A') || (byCode == 'B'))) {
 			PWNDINFO pWndList = (PWNDINFO)pWnd->pParent;
 			BOOL bYes = (byCode == 'A') && (pWnd->nData1 == 0);
@@ -5350,6 +5350,8 @@ void KeyProcCONF(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 					byType = QUESTCMD_CANCEL;
 				} else if (pWnd->nType2 == IDCONFIRMTYPE_QUESTHANDIN) {
 					byType = QUESTCMD_HANDIN;
+				} else if (pWnd->nType2 == IDCONFIRMTYPE_STORYRESET) {
+					byType = QUESTCMD_STORYRESET;
 				}
 				SendCmdQUEST (byType, (WORD)pWnd->dwData, g_dwQuestGuildTblID);
 				DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
@@ -7500,13 +7502,21 @@ void KeyProcQUEST(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		PQUESTLISTITEM pItem;
 		PWNDINFO pWndConf;
 		int nType = 0;
-		char szTmp[MAX_QUESTNAME + 64];
+		char szTmp[MAX_QUESTNAME + MAX_QUESTGOAL + 64];
 
 		if ((pWnd->nData1 < 0) || (pWnd->nData1 >= g_nQuestListCount)) {
 			return;
 		}
 		pItem = &g_aQuestList[pWnd->nData1];
-		switch (pItem->byMark) {
+		if (g_bQuestBook) {
+			/* 思い出の本：選んだお話を最初からやり直すか確認（続きのお話があれば、いっしょに戻ることも伝える） */
+			nType = IDCONFIRMTYPE_STORYRESET;
+			if (pItem->szGoal[0]) {
+				_snprintf (szTmp, sizeof (szTmp) - 1, "「%s」を最初からやり直しますか？\n%sもいっしょに最初に戻ります。", pItem->szName, pItem->szGoal);
+			} else {
+				_snprintf (szTmp, sizeof (szTmp) - 1, "「%s」を最初からやり直しますか？", pItem->szName);
+			}
+		} else switch (pItem->byMark) {
 		case QUESTMARK_FREE:
 			nType = IDCONFIRMTYPE_QUESTACCEPT;
 			_snprintf (szTmp, sizeof (szTmp) - 1, "「%s」を受けますか？", pItem->szName);
@@ -8667,10 +8677,10 @@ void CmdProcHanasu(PWNDINFO pWnd)
 			pWndTmp = NULL;
 		}
 
-	/* ギルドの依頼の受付(@g)・依頼の見える人(@q)？ 返事（一覧・お知らせ）はサーバーから届く */
+	/* ギルドの依頼の受付(@g)・依頼の見える人(@q)・思い出の本の語り部(@r)？ 返事（一覧・お知らせ）はサーバーから届く */
 	} else if (pChar2->pszNpcSpeech[0] == '@' &&
-		((pChar2->pszNpcSpeech[1] == 'g') || (pChar2->pszNpcSpeech[1] == 'q'))) {
-		if (pChar2->pszNpcSpeech[1] == 'g') {
+		((pChar2->pszNpcSpeech[1] == 'g') || (pChar2->pszNpcSpeech[1] == 'q') || (pChar2->pszNpcSpeech[1] == 'r'))) {
+		if ((pChar2->pszNpcSpeech[1] == 'g') || (pChar2->pszNpcSpeech[1] == 'r')) {
 			/* 一覧を開くのは、返事が届いてから */
 			g_dwQuestWaitTime = timeGetTime ();
 			if (g_dwQuestWaitTime == 0) {
@@ -8678,9 +8688,9 @@ void CmdProcHanasu(PWNDINFO pWnd)
 			}
 		}
 		SendCmdTALKRAND (pChar2->dwTblID);
-		/* ギルドの人はこちらを向く。依頼の見える物(@q)は宝箱や光もあるので向きを変えない
+		/* ギルドの人・語り部はこちらを向く。依頼の見える物(@q)は宝箱や光もあるので向きを変えない
 		   （宝箱の絵は向きによって別の絵（化け箱）になっている） */
-		if (pChar2->pszNpcSpeech[1] == 'g') {
+		if ((pChar2->pszNpcSpeech[1] == 'g') || (pChar2->pszNpcSpeech[1] == 'r')) {
 			pChar2->byDirection = abyDirectionTbl[pChar->byDirection];
 		}
 		int nNo = GetWindowID (g_dwMsgIDCommand);

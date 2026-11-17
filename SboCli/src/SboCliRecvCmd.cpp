@@ -23,6 +23,7 @@
 #include "SboAdminWindow.h"
 #include "AdminWindowOld/AdminDlgNpcRoute.h"
 #include "AdminWindowOld/AdminDlgQuestInfo.h"
+#include "AdminWindowOld/AdminDlgStoryInfo.h"
 #include "AdminWindowOld/AdminFlagTalk.h"
 #include "SboCliDebugWindow.h"
 #include "SboCliMsgLogWindow.h"
@@ -151,6 +152,7 @@ void	RecvDataProcADMINSPACE				(PBYTE, DWORD);			/* 受信データ処理(管理
 void	RecvDataProcADMINQUEST				(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのギルドの依頼の編集) */
 void	RecvDataProcADMINFLAGNAME			(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのフラグの名前表の編集) */
 void	RecvDataProcADMINTALK				(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウの会話データの編集) */
+void	RecvDataProcADMINSTORY				(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウの思い出の本の編集) */
 void	RecvDataProcADMINCHARFLAG			(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのキャラのフラグ) */
 void	RecvDataProcTALKMSG					(PBYTE, DWORD);			/* 受信データ処理(会話データで選ばれた台詞) */
 void	RecvDataProcHASTE					(PBYTE, DWORD);			/* 受信データ処理(加速の状態) */
@@ -426,6 +428,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcMARKETBUY,				/* CMD_MARKETBUY */
 	RecvDataProcMARKETTAKEBACK,			/* CMD_MARKETTAKEBACK */
 	RecvDataProcMARKETGOLDGET,			/* CMD_MARKETGOLDGET */
+	RecvDataProcADMINSTORY,				/* CMD_ADMINSTORY */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -3731,6 +3734,7 @@ void RecvDataProcQUEST(PBYTE pData, DWORD dwDataSize)
 
 	switch (pPara->byType) {
 	case QUESTCMD_LISTITEM:
+	case QUESTCMD_STORYITEM:	/* 思い出の本の一覧（語り部に話した返事）。ギルドの一覧と同じ窓に出す */
 		/* 頼んでいない（開いていない・返事待ちでもない）のに届いた一覧は捨てる */
 		if ((pWndList == NULL) &&
 			((g_dwQuestWaitTime == 0) || (timeGetTime () - g_dwQuestWaitTime > QUEST_WAITMAX))) {
@@ -3772,6 +3776,7 @@ void RecvDataProcQUEST(PBYTE pData, DWORD dwDataSize)
 			g_dwMsgIDCommand = 0;
 			g_dwQuestWaitTime = 0;
 			g_szQuestMsg[0] = 0;
+			g_bQuestBook = (pPara->byType == QUESTCMD_STORYITEM) ? TRUE : FALSE;
 			pWndList = MakeWindowQUEST (QUESTWND_LIST);
 			g_WndInfo.Add (pWndList);
 			g_dwActiveMsgID = pWndList->dwID;
@@ -3800,7 +3805,7 @@ void RecvDataProcQUEST(PBYTE pData, DWORD dwDataSize)
 			_snprintf (g_szQuestMsg, sizeof (g_szQuestMsg) - 1, "%s", pPara->szMsg);
 			g_szQuestMsg[sizeof (g_szQuestMsg) - 1] = 0;
 			pWndList->dwTimeDrawStart = 0;
-			SendCmdQUEST (QUESTCMD_LISTREQ, 0, g_dwQuestGuildTblID);
+			SendCmdQUEST (g_bQuestBook ? QUESTCMD_STORYREQ : QUESTCMD_LISTREQ, 0, g_dwQuestGuildTblID);
 		}
 		g_bDraw = TRUE;
 		break;
@@ -3851,6 +3856,22 @@ void RecvDataProcADMINQUEST(PBYTE pData, DWORD dwDataSize)
 	}
 	pPara->szMsg[sizeof (pPara->szMsg) - 1] = 0;
 	AdminQuestOnRecv (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINSTORY											 */
+/* 内容：受信データ処理(管理者ウィンドウの思い出の本の編集)					 */
+/*       一覧の 1 件・書き込みの結果が届く									 */
+/* ========================================================================= */
+void RecvDataProcADMINSTORY(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINSTORY pPara = (PCMDPARA_ADMINSTORY)pData;
+
+	if (dwDataSize < sizeof (CMDPARA_ADMINSTORY)) {
+		return;
+	}
+	pPara->szMsg[sizeof (pPara->szMsg) - 1] = 0;
+	AdminStoryOnRecv (pPara);
 }
 
 /* ========================================================================= */
