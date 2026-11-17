@@ -75,6 +75,7 @@ void KeyProcCOMMANDOPTIONVOLSOUND			(PWNDINFO, BYTE, BYTE);		/* 効果音音量�
 void KeyProcCOMMANDOPTIONVOLMUSIC			(PWNDINFO, BYTE, BYTE);		/* 曲音量設定 */
 void KeyProcCOMMANDSTATUS					(PWNDINFO, BYTE, BYTE);		/* 強さコマンド */
 void KeyProcMSG								(PWNDINFO, BYTE, BYTE);		/* メッセージ */
+extern BOOL MsgProc							(PWNDINFO);					/* メッセージ処理（SboCliMain.cpp） */
 void KeyProcMALEFAMALE						(PWNDINFO, BYTE, BYTE);		/* 男女 */
 void KeyProcDELETECONFIRM					(PWNDINFO, BYTE, BYTE);		/* 削除確認 */
 void KeyProcNAMECOLOR						(PWNDINFO, BYTE, BYTE);		/* 名前の色設定 */
@@ -1923,7 +1924,7 @@ void KeyProcCOMMANDITEM(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 
 /* ========================================================================= */
 /* 関数名：KeyProcIMPORTANT													 */
-/* 内容：キー入力処理(大事な物の一覧。見るだけ)								 */
+/* 内容：キー入力処理(大事な物の一覧。決定で使う＝読み物を読む)				 */
 /*       ESC・キャンセルで道具の一覧に戻る（道具の横の詳細欄も出し直す）	 */
 /* ========================================================================= */
 void KeyProcIMPORTANT(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
@@ -1941,6 +1942,24 @@ void KeyProcIMPORTANT(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		/* 道具の一覧に戻ったら、横の詳細欄を出し直す */
 		if (pWndParent && (pWndParent->pWndTmp == NULL)) {
 			MakeWindowITEMINFOList (pWndParent);
+		}
+		g_bDraw = TRUE;
+
+	} else if ((byEvent == KEY_UP) && (byCode == 'A') && (g_bEnableMove)) {
+		/* 決定：選んだ品を使う（読み物なら文が出る。減らない。使えるかはサーバーが決める） */
+		int nNo = pWnd->byData1 + pWnd->nData1;
+		int nItemID = GetImportantItem (g_nMyCharID, nNo);
+
+		if (nItemID == 0) {
+			return;
+		}
+		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
+		SendCmdUSEITEM ((BYTE)(IMPORTANT_USEBASE + nNo), (DWORD)nItemID);
+		/* コマンドウィンドウを閉じる（文は窓が閉じてから出る） */
+		int nWnd = GetWindowID (g_dwMsgIDCommand);
+		if (nWnd >= 0) {
+			EraseWindow ((PWNDINFO)g_WndInfo[nWnd]);
+			g_dwMsgIDCommand = 0;
 		}
 		g_bDraw = TRUE;
 
@@ -3091,6 +3110,28 @@ void KeyProcSTATUSMAGIC(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 /* ========================================================================= */
 void KeyProcMSG(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 {
+	/* アイテムの読み物：キャンセルで残りのページを飛ばして閉じる
+	   （音・アイテム取得などの制御コードは順に処理する。復活位置の「はい・いいえ」が出たらそこで止まる） */
+	if (pWnd->bMsgSkip && (byEvent == KEY_UP) && ((byCode == 'B') || (byCode == VK_ESCAPE)) && (pWnd->nData2 != MSGSTATE_STARTPOSCONF) && pWnd->pszMsg) {
+		BYTE byBak = pWnd->byData1;
+		int nLen = (int)strlen (pWnd->pszMsg);
+
+		pWnd->byData1 = 0;		/* 1 文字ごとの音は鳴らさない */
+		pWnd->nData2 = 0;
+		while (pWnd->nData1 < nLen) {
+			pWnd->nData1 += max (SboTextCharLen (&pWnd->pszMsg[pWnd->nData1]), 1);
+			MsgProc (pWnd);
+			if (pWnd->nData2 == MSGSTATE_STARTPOSCONF) {
+				break;
+			}
+			pWnd->nData2 = 0;
+		}
+		pWnd->byData1 = byBak;
+		pWnd->nMsgDrawLen = 0;
+		pWnd->dwTimeDrawStart = 0;
+		g_bDraw = TRUE;
+		return;
+	}
 	if (pWnd->nData2 == 0) {
 		return;
 	}

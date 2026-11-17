@@ -1976,34 +1976,53 @@ static void TestFlagTalk(const std::vector<int> &aLogin)
 
 	ZeroMemory(abyFlag, sizeof(abyFlag));
 	ZeroMemory(abyNum, sizeof(abyNum));
-	printf("flagtalk pick none=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, 0));
+	printf("flagtalk pick none=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, NULL, NULL, 0));
 	FlagBitSet(abyFlag, 0, TRUE);
-	printf(" flag0=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, 0));
+	printf(" flag0=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, NULL, NULL, 0));
 	FlagBitSet(abyFlag, 0, FALSE);
 	FlagBitSet(abyFlag, 10, TRUE);
-	printf(" need=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, 0));
+	printf(" need=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, NULL, NULL, 0));
 	FlagBitSet(abyFlag, 11, TRUE);
-	printf(" not=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, 0));
+	printf(" not=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, NULL, NULL, 0));
 	FlagBitSet(abyFlag, 10, FALSE);
 	FlagBitSet(abyFlag, 11, FALSE);
 	FlagNumSet(abyNum, 2, 5);
-	printf(" ge=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, 0));
+	printf(" ge=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, NULL, NULL, 0));
 	FlagNumSet(abyNum, 2, 2);
-	printf(" eq=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, 0));
+	printf(" eq=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, NULL, NULL, 0));
 	FlagNumSet(abyNum, 2, 3);
-	printf(" nomatch=%d\n", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, 0));
-	printf("flagtalk level 9=%d 10=%d 20=%d 21=%d\n", TalkPickLine(&Talk, abyFlag, abyNum, 9, 0, 0, 0), TalkPickLine(&Talk, abyFlag, abyNum, 10, 0, 0, 0),
-			TalkPickLine(&Talk, abyFlag, abyNum, 20, 0, 0, 0), TalkPickLine(&Talk, abyFlag, abyNum, 21, 0, 0, 0));
-	printf("flagtalk tie rand0=%d rand1=%d rand3=%d\n", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, 0), TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, 1),
-			TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, 3));
+	printf(" nomatch=%d\n", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, NULL, NULL, 0));
+	printf("flagtalk level 9=%d 10=%d 20=%d 21=%d\n", TalkPickLine(&Talk, abyFlag, abyNum, 9, 0, 0, NULL, NULL, 0), TalkPickLine(&Talk, abyFlag, abyNum, 10, 0, 0, NULL, NULL, 0),
+			TalkPickLine(&Talk, abyFlag, abyNum, 20, 0, 0, NULL, NULL, 0), TalkPickLine(&Talk, abyFlag, abyNum, 21, 0, 0, NULL, NULL, 0));
+	printf("flagtalk tie rand0=%d rand1=%d rand3=%d\n", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, NULL, NULL, 0), TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, NULL, NULL, 1),
+			TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, NULL, NULL, 3));
 	/* 合う行が無い・知らない比べ方は合わない */
 	Talk.byLineCount = 1;
 	TalkTestLineInit(&Talk.aLine[0], 1);
 	Talk.aLine[0].abyCondNo[0] = 2;
 	Talk.aLine[0].abyCondCmp[0] = 99;
-	printf("flagtalk badcmp=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, 0));
+	printf("flagtalk badcmp=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, NULL, NULL, 0));
 	Talk.byLineCount = 0;
-	printf(" empty=%d\n", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, 0));
+	printf(" empty=%d\n", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, NULL, NULL, 0));
+
+	/* 持っている物の条件（手持ち・大事な物の欄のどちらでも合う。0 は条件なし） */
+	{
+		WORD awItem[MAX_MYITEM], awImp[MAX_IMPORTANT];
+		ZeroMemory(awItem, sizeof(awItem));
+		ZeroMemory(awImp, sizeof(awImp));
+		Talk.byLineCount = 2;
+		TalkTestLineInit(&Talk.aLine[0], 1);
+		Talk.aLine[0].wNeedItem = 7;
+		TalkTestLineInit(&Talk.aLine[1], 2);
+		printf("flagtalk needitem none=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, awItem, awImp, 0));
+		awItem[MAX_MYITEM - 1] = 7;
+		printf(" item=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, awItem, awImp, 0));
+		awItem[MAX_MYITEM - 1] = 0;
+		awImp[MAX_IMPORTANT - 1] = 7;
+		printf(" imp=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, awItem, awImp, 0));
+		awImp[MAX_IMPORTANT - 1] = 8;
+		printf(" other=%d\n", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, awItem, awImp, 0));
+	}
 
 	/* 話した後の動き（立てる→消す→数値。数値は 255 で止まる） */
 	TALKLINEINFO Line;
@@ -4133,11 +4152,11 @@ static void TestQuest(const std::vector<int> &aLogin)
 		BYTE abyF[MAX_FLAGBITBYTE], abyN[MAX_FLAGNUM];
 		ZeroMemory(abyF, sizeof(abyF));
 		ZeroMemory(abyN, sizeof(abyN));
-		printf("flagtalk quest cond none=%d q2s0=%d q2s1=%d q2s2=%d q2s3=%d q3s1=%d", TalkPickLine(pTalk, abyF, abyN, 1, 0, 0, 0),
-			TalkPickLine(pTalk, abyF, abyN, 1, 2, 0, 0), TalkPickLine(pTalk, abyF, abyN, 1, 2, 1, 0), TalkPickLine(pTalk, abyF, abyN, 1, 2, 2, 0),
-			TalkPickLine(pTalk, abyF, abyN, 1, 2, 3, 0), TalkPickLine(pTalk, abyF, abyN, 1, 3, 1, 0));
+		printf("flagtalk quest cond none=%d q2s0=%d q2s1=%d q2s2=%d q2s3=%d q3s1=%d", TalkPickLine(pTalk, abyF, abyN, 1, 0, 0, NULL, NULL, 0),
+			TalkPickLine(pTalk, abyF, abyN, 1, 2, 0, NULL, NULL, 0), TalkPickLine(pTalk, abyF, abyN, 1, 2, 1, NULL, NULL, 0), TalkPickLine(pTalk, abyF, abyN, 1, 2, 2, NULL, NULL, 0),
+			TalkPickLine(pTalk, abyF, abyN, 1, 2, 3, NULL, NULL, 0), TalkPickLine(pTalk, abyF, abyN, 1, 3, 1, NULL, NULL, 0));
 		pTalk->aLine[0].byQuestStepMax = QUESTNPC_NOSTEP;
-		printf(" any s200=%d\n", TalkPickLine(pTalk, abyF, abyN, 1, 2, 200, 0));
+		printf(" any s200=%d\n", TalkPickLine(pTalk, abyF, abyN, 1, 2, 200, NULL, NULL, 0));
 		pTalk->aLine[0].byQuestStepMax = 2;
 		g_aTalkInfo.Add(pTalk);
 
@@ -7572,6 +7591,29 @@ static void TestItemMsgWait(void)
 	char szFull[4] = "abc";
 	ItemMsgAddWait(szFull, sizeof(szFull));
 	printf("S itemmsg full %s\n", szFull);
+
+	/* {f番号}・{v番号} を印・数値で置き換える */
+	BYTE abyF[MAX_FLAGBITBYTE], abyN[MAX_FLAGNUM];
+	ZeroMemory(abyF, sizeof(abyF));
+	ZeroMemory(abyN, sizeof(abyN));
+	FlagBitSet(abyF, 3, TRUE);
+	FlagBitSet(abyF, 1023, TRUE);
+	abyN[2] = 45;
+	abyN[127] = 255;
+	static const char *aExp[] = {
+		"印{f3}{f4}{f1023} 数{v2}/{v127}/{v0}",	/* 通常 */
+		"{f1024}{v128}{f}{f3{v2}{x3}{f99999}",	/* 範囲外・崩れ → そのまま（{v2} は置き換わる） */
+		"あ{f3}い",								/* 日本語の間 */
+	};
+	for (size_t n = 0; n < sizeof(aExp) / sizeof(aExp[0]); n ++) {
+		char szOut[128];
+		ItemMsgExpand(szOut, sizeof(szOut), aExp[n], abyF, abyN);
+		printf("S itemmsg expand %d %s\n", (int)n, szOut);
+	}
+	/* 入りきらない時は文字の途中で切らない */
+	char szSmall[8];
+	ItemMsgExpand(szSmall, sizeof(szSmall), "あい{f3}う", abyF, abyN);
+	printf("S itemmsg expand small %s len=%d\n", szSmall, (int)strlen(szSmall));
 }
 
 #include "bow.inc"

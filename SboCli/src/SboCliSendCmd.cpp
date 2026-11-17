@@ -1558,6 +1558,8 @@ void SendCmdPLAYSOUNDALL(DWORD dwID)
 /* 内容：コマンド送信(アイテム使う)											 */
 /* 日付：2003/09/15															 */
 /* ========================================================================= */
+DWORD g_dwTimeUseItemSend = 0;		/* 最後にアイテムを使うコマンドを送った時刻（0=まだ。返ってきた文をキャンセルで飛ばせるか決めるのに使う） */
+
 void SendCmdUSEITEM(BYTE byNo, DWORD dwID)
 {
 	if (g_aCharInfo[g_nMyCharID]->wHP == 0) {
@@ -1571,6 +1573,7 @@ void SendCmdUSEITEM(BYTE byNo, DWORD dwID)
 	pSendData->dwTblID = g_aCharInfo[g_nMyCharID]->dwTblID;
 	pSendData->byData = byNo;
 	pSendData->dwData = dwID;
+	g_dwTimeUseItemSend = timeGetTime () | 1;
 
 	cliSock.Send ((PBYTE)pSendData, sizeof (CMDPARA_DATA4));
 	delete pSendData;

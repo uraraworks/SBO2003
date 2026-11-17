@@ -5584,6 +5584,11 @@ void RecvDataProcMAPMSG(PBYTE pData, DWORD dwDataSize)
 
 	PWNDINFO pWndTmp;
 	pWndTmp = MakeWindowMSG ((LPSTR)(pPara + 1), FALSE);
+	/* アイテムを使って 5 秒以内に届いた文は、キャンセルで残りを飛ばして閉じられる（読み物用） */
+	if (g_dwTimeUseItemSend && (timeGetTime () - g_dwTimeUseItemSend < 5000)) {
+		pWndTmp->bMsgSkip = TRUE;
+		g_dwTimeUseItemSend = 0;
+	}
 	g_WndInfo.Add (pWndTmp);
 	g_dwActiveMsgID = pWndTmp->dwID;
 	g_bEnableMove = TRUE;

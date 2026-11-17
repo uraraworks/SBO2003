@@ -469,6 +469,7 @@ static const DATAFIELD s_aFieldTalkLine[] = {
 	FLD (TALKLINEINFO, wQuestID,		"受けている依頼の条件",	FT_U16, 0, "quest の依頼番号（wID）。0=条件なし。0 以外なら、話した人がいまその依頼を受けていて、段が byQuestStepMin〜byQuestStepMax の時だけこの行に合う"),
 	FLD (TALKLINEINFO, byQuestStepMin,	"依頼の段の下限",		FT_U8, 0, "wQuestID が 0 以外の時。段は 0 から数える（quest の見えるNPC の byStepMin と同じ）"),
 	FLD (TALKLINEINFO, byQuestStepMax,	"依頼の段の上限",		FT_U8, 0, "wQuestID が 0 以外の時。255=どの段でも（quest の見えるNPC の byStepMax と同じ）。省くと 255"),
+	FLD (TALKLINEINFO, wNeedItem,		"持っている物の条件",	FT_U16, 0, "item の番号（0=条件なし）。0 以外なら、話した人がそのアイテムを手持ちか大事な物の欄に 1 つ以上持っている時だけ合う（預かり所は見ない）"),
 };
 
 /* 依頼情報（ギルドの仕事依頼。npcs・goals は項目表の外で扱う） */
@@ -1136,7 +1137,7 @@ static std::string ItemWorkJson(const ITEMWORK &w)
 	return out;
 }
 
-#define MAX_ITEMMSG		1024		/* 使った時のメッセージの長さ（バイト） */
+#define MAX_ITEMMSG		4096		/* 使った時のメッセージの長さ（バイト。読み物を数ページ書けるよう 4096。保存は文字列そのままなので形式の変換は要らない） */
 
 static bool ItemApply(ITEMWORK &w, const JVal &chg, std::string &strErr)
 {
@@ -4453,6 +4454,10 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 				}
 				if (L.wGiveItem != 0 && L.wGiveItem >= g_aItemInfo.GetSize()) {
 					strErr = strName + "wGiveItem は item の番号（0 は渡さない）で指定してください";
+					goto Exit;
+				}
+				if (L.wNeedItem != 0 && L.wNeedItem >= g_aItemInfo.GetSize()) {
+					strErr = strName + "wNeedItem は item の番号（0 は条件なし）で指定してください";
 					goto Exit;
 				}
 				if (L.wQuestID != 0 && L.byQuestStepMax != QUESTNPC_NOSTEP && L.byQuestStepMin > L.byQuestStepMax) {

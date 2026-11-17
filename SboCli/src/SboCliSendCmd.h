@@ -65,6 +65,7 @@ extern void SendCmdDROPITEM			(BYTE, DWORD, DWORD);					/* アイテム捨てる
 extern void SendCmdREQCHARITEM		(DWORD);								/* 所持アイテム情報要求 */
 extern void SendCmdCHARITEM			(DWORD);								/* 所持アイテム情報 */
 extern void SendCmdPLAYSOUNDALL		(DWORD);								/* 効果音放送 */
+extern DWORD g_dwTimeUseItemSend;                    /* 最後にアイテムを使うコマンドを送った時刻 */
 extern void SendCmdUSEITEM			(BYTE, DWORD);							/* アイテム使う */
 extern void SendCmdSVRINFOREQ		(void);									/* サーバー情報要求 */
 extern void SendCmdNAMECOLOR		(DWORD, COLORREF, COLORREF);			/* 名前の色設定 */

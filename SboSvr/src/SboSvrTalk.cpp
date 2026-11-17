@@ -139,10 +139,10 @@ PTALKINFO TalkFind(int nNo)
 
 /* ========================================================================= */
 /* 関数名：TalkLineMatch													 */
-/* 内容：行の条件に合うか（印・数値・レベル・受けている依頼）				 */
+/* 内容：行の条件に合うか（印・数値・レベル・受けている依頼・持っている物）				 */
 /*       範囲の外の番号（FLAG_NOBIT など）は「条件なし」として飛ばす			 */
 /* ========================================================================= */
-static BOOL TalkLineMatch(const TALKLINEINFO *pLine, const BYTE *pbyFlag, const BYTE *pbyFlagNum, int nLevel, WORD wQuestID, BYTE byQuestStep)
+static BOOL TalkLineMatch(const TALKLINEINFO *pLine, const BYTE *pbyFlag, const BYTE *pbyFlagNum, int nLevel, WORD wQuestID, BYTE byQuestStep, const WORD *pwItem, const WORD *pwImportant)
 {
 	int i;
 
@@ -161,6 +161,20 @@ static BOOL TalkLineMatch(const TALKLINEINFO *pLine, const BYTE *pbyFlag, const 
 			return FALSE;
 		}
 		if ((pLine->byQuestStepMax != QUESTNPC_NOSTEP) && (byQuestStep > pLine->byQuestStepMax)) {
+			return FALSE;
+		}
+	}
+	/* 持っている物の条件（手持ちか大事な物の欄に 1 つ以上。預かり所は見ない） */
+	if (pLine->wNeedItem != 0) {
+		BOOL bHave = FALSE;
+
+		for (i = 0; (i < MAX_MYITEM) && pwItem && !bHave; i ++) {
+			bHave = (pwItem[i] == pLine->wNeedItem);
+		}
+		for (i = 0; (i < MAX_IMPORTANT) && pwImportant && !bHave; i ++) {
+			bHave = (pwImportant[i] == pLine->wNeedItem);
+		}
+		if (!bHave) {
 			return FALSE;
 		}
 	}
@@ -194,7 +208,7 @@ static BOOL TalkLineMatch(const TALKLINEINFO *pLine, const BYTE *pbyFlag, const 
 /* 内容：条件に合う行を選ぶ（順位が一番小さい行たちから、同じ順位ならくじで 1 行）*/
 /*       戻り値：行の番号（合う行が無ければ -1）							 */
 /* ========================================================================= */
-int TalkPickLine(const TALKINFO *pTalk, const BYTE *pbyFlag, const BYTE *pbyFlagNum, int nLevel, WORD wQuestID, BYTE byQuestStep, DWORD dwRand)
+int TalkPickLine(const TALKINFO *pTalk, const BYTE *pbyFlag, const BYTE *pbyFlagNum, int nLevel, WORD wQuestID, BYTE byQuestStep, const WORD *pwItem, const WORD *pwImportant, DWORD dwRand)
 {
 	int i, nCount, nMatch = 0, nRank = 256, anMatch[MAX_TALKLINE];
 
@@ -202,7 +216,7 @@ int TalkPickLine(const TALKINFO *pTalk, const BYTE *pbyFlag, const BYTE *pbyFlag
 	for (i = 0; i < nCount; i ++) {
 		const TALKLINEINFO *pLine = &pTalk->aLine[i];
 
-		if (!TalkLineMatch (pLine, pbyFlag, pbyFlagNum, nLevel, wQuestID, byQuestStep)) {
+		if (!TalkLineMatch (pLine, pbyFlag, pbyFlagNum, nLevel, wQuestID, byQuestStep, pwItem, pwImportant)) {
 			continue;
 		}
 		if (pLine->byRank < nRank) {
@@ -262,7 +276,7 @@ void TalkNpcTalk(PCHARINFO pChar, PCHARINFO pNpc)
 	SboTextCopy (szSpeech, sizeof (szSpeech), TALK_NOANSWER);
 	pTalk = TalkFind (TalkGetNo (pNpc));
 	if (pTalk) {
-		nLine = TalkPickLine (pTalk, pChar->abyFlag, pChar->abyFlagNum, pChar->byLevel, pChar->wQuestID, pChar->byQuestStep, (DWORD)genrand ());
+		nLine = TalkPickLine (pTalk, pChar->abyFlag, pChar->abyFlagNum, pChar->byLevel, pChar->wQuestID, pChar->byQuestStep, pChar->waItem, pChar->waImportant, (DWORD)genrand ());
 		if (nLine >= 0) {
 			const TALKLINEINFO *pLine = &pTalk->aLine[nLine];
 
