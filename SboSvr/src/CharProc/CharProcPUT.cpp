@@ -158,10 +158,7 @@ void RenewPutChildChar(PCHARINFO pParent)
 
 BOOL CCharProcPUT::Proc(DWORD dwTime)
 {
-	BOOL bRet, bResult;
-	DWORD dwTmpX, dwTmpY, dwX, dwY;
-	PMAPINFO pMap;
-	PCHARINFO pCharNew;
+	BOOL bRet;
 
 	bRet = FALSE;
 	if (abs (dwTime - m_pChar->dwLastDotMove) < 1000) {
@@ -175,6 +172,28 @@ BOOL CCharProcPUT::Proc(DWORD dwTime)
 		goto Exit;
 	}
 
+	bRet = PutOne (dwTime);
+Exit:
+	return bRet;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CCharProcPUT::PutOne											 */
+/* 内容：	発生範囲からマスを1つくじで選び、キャラを1体出す				 */
+/*			選んだマスが通れない・イベント・ダメージ床なら今回はあきらめる	 */
+/* 戻り値：	出したら TRUE													 */
+/* 日付：	2026/11/17（Proc から切り出し）									 */
+/* ========================================================================= */
+
+BOOL CCharProcPUT::PutOne(DWORD dwTime)
+{
+	BOOL bRet, bResult;
+	DWORD dwTmpX, dwTmpY, dwX, dwY;
+	PMAPINFO pMap;
+	PCHARINFO pCharNew;
+
+	bRet = FALSE;
 	dwTmpX = 0, dwTmpY = 0, dwX = m_pChar->dwX, dwY = m_pChar->dwY;
 	if (m_pChar->byAreaX) {
 		dwTmpX = genrand () % m_pChar->byAreaX;
@@ -254,6 +273,45 @@ BOOL CCharProcPUT::Proc(DWORD dwTime)
 	bRet = TRUE;
 Exit:
 	return bRet;
+}
+
+/* ========================================================================= */
+/* 関数名：	PutCharFillAll													 */
+/* 内容：	サーバー起動時に、各NPC発生を発生数まですぐ出す					 */
+/*			発生から出たキャラは保存しないので、起動直後は 0 体。			 */
+/*			（Node 版の timeGetTime はプロセス起動からの時間なので、		 */
+/*			  ふだんの処理だと発生周期が過ぎるまで 1 体目すら出なかった）	 */
+/*			すでに出ている数（byPutCountNow）からの不足分だけ出すので、		 */
+/*			二度呼んでも発生数を超えない。									 */
+/*			選んだマスが通れない時もあるので、1体あたり何回かまで引き直す。	 */
+/*			それでも出なかった分は、ふだんの処理（発生周期ごと）に任せる。	 */
+/* 日付：	2026/11/17														 */
+/* ========================================================================= */
+
+void PutCharFillAll(void)
+{
+	int i, nCount, nTry, nTryMax;
+	DWORD dwTime;
+
+	dwTime = timeGetTime ();
+	/* 出したキャラは後ろに足されるので、起動時にいたキャラだけを見る */
+	nCount = g_aCharInfo.GetSize ();
+	for (i = 0; i < nCount; i ++) {
+		PCHARINFO pChar = g_aCharInfo[i];
+		CCharProcPUT *pProc;
+
+		if ((pChar == NULL) || (pChar->byNpcType != NPCTYPE_PUT) || (pChar->pProc == NULL)) {
+			continue;
+		}
+		if (pChar->byPutCountNow >= pChar->byPutCount) {
+			continue;
+		}
+		pProc = (CCharProcPUT *)pChar->pProc;
+		nTryMax = (pChar->byPutCount - pChar->byPutCountNow) * 50;
+		for (nTry = 0; (nTry < nTryMax) && (pChar->byPutCountNow < pChar->byPutCount); nTry ++) {
+			pProc->PutOne (dwTime);
+		}
+	}
 }
 
 /* Copyright(C)URARA-works 2006 */
