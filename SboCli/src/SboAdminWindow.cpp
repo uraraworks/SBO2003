@@ -31,6 +31,7 @@
 #include "AdminWindowOld/AdminFlagUi.h"
 #include "AdminWindowOld/AdminListFilter.h"
 #include "AdminWindowOld/AdminDlgNpcRoute.h"
+#include "AdminWindowOld/AdminDlgMapSwap.h"
 
 /* ========================================================================= */
 /* 定数定義																	 */
@@ -491,6 +492,11 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 		switch (g_nAdminWindowType) {
 		case IDM_CHAR_NPCROUTE:
 			NpcRouteOnPosLeft ((int)wParam, (int)lParam);
+			break;
+
+		case IDM_MAP_SWAP:
+			/* 印で変わるマス・宝箱：クリックしたマスを X・Y に入れる */
+			MapSwapDlgOnPos ((int)wParam, (int)lParam);
 			break;
 
 		case IDM_ETC_QUEST:
@@ -1575,6 +1581,12 @@ void AdminOnCommand(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 		g_bAdminPos = TRUE;
 		ShowDlgNpcRoute (hWnd);
 		break;
+	case IDM_MAP_SWAP:
+		DeleteAdminWnd ();
+		g_nAdminWindowType = IDM_MAP_SWAP;
+		g_bAdminPos = TRUE;
+		ShowDlgMapSwap (hWnd);
+		break;
 	case IDM_ACC_SEARCH:
 		DeleteAdminWnd ();
 		g_nAdminWindowType = IDM_ACC_SEARCH;
@@ -1663,6 +1675,7 @@ static BYTE AdminUndoScreenFromType(int nType)
 	case IDM_ETC_MAGICUSERINFO:	return ADMINSCR_MAGICUSERINFO;
 	case IDM_ETC_EQUUSERINFO:	return ADMINSCR_EQUUSERINFO;
 	case IDM_CHAR_NPCROUTE:		return ADMINSCR_NPCROUTE;
+	case IDM_MAP_SWAP:			return ADMINSCR_SWAP;
 	}
 	return ADMINSCR_NONE;
 }
@@ -1698,7 +1711,7 @@ static void AdminUndoRequest(void)
 				"この画面は「元に戻す」に対応していません。\n\n"
 				"対応している画面：パーツ（マップの塗り替え）・マップ情報・イベント情報・メッセージ・店情報・"
 				"ステータス情報・所持アイテム情報・所持魔法情報・ステータステンプレート情報・アイテム一覧・ふきだし・効果いろいろ・"
-				"職業情報（レベルアップ情報も）・魔法情報・魔法利用者情報・装備職業情報・NPCの巡回",
+				"職業情報（レベルアップ情報も）・魔法情報・魔法利用者情報・装備職業情報・NPCの巡回・印で変わるマス・宝箱",
 				"元に戻す", MB_OK);
 		return;
 	}
@@ -1826,6 +1839,11 @@ static void AdminUndoRefresh(BYTE byScreen)
 	/* 選んでいるNPCや編集中の道しるべを残したいので、巡回ルートだけ取り直す */
 	case IDM_CHAR_NPCROUTE:
 		NpcRouteReload ();
+		break;
+
+	/* 選んでいる行や入力中の内容を残したいので、表だけ取り直す */
+	case IDM_MAP_SWAP:
+		MapSwapDlgReload ();
 		break;
 
 	default:
@@ -7683,6 +7701,7 @@ void DeleteAdminWnd(void)
 	CloseDlgCharFlag ();
 	CloseDlgAccSearch ();
 	CloseDlgNpcRoute ();
+	CloseDlgMapSwap ();
 	CloseDlgEtcSubGame ();
 	g_bAdminPos = FALSE;
 }

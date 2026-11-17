@@ -1647,6 +1647,20 @@ adminchest set on bit100=1 bit101=0 bit_b=0 reply=2 swap=1 swap_b=0 parts_a_open
 adminchest set off bit100=0 swap=1 parts_a_closed=1 reply=2
 adminchest bad got=1,1,1,1 result=0,0,0,0 unchanged=1 swap=0
 adminchest clear zero=1 swap=1 reply=2 parts_a_closed=1
+== AI. AdminSwap ==
+viewflag cells=8
+adminswap user count=0 reply_a=0 reply_b=0 swap=0
+adminswap get reply=0 got=1 sub=1 map_ok=1 count=0 next_chest_ok=1 next_box_ok=1
+adminswap add flag count=1 kind=0 flag=7 cmp=1 parts_ok=1 swap_a=1 swap_b=1 swap_c=1
+adminswap add auto count=4 chest_no=0,1 (high0+0,+1) item=1 msg=宝箱を開けた memo=テスト 箱1 box_no_ok=1 high=2 boxhigh_ok=1
+adminswap set no_same=1 x_ok=1 item=0 memo=直した msg_empty=1 swap=1 count=4
+adminswap set kind=0 flag=9 cmp=0
+adminswap del count=3 row2_kind=2 swap=1
+adminswap no reuse new=2 (not 1) high=3
+adminswap explicit retired count=5 no=1
+adminswap kind mismatch tried=10 changed_mask=0 result_msgs=10
+adminswap rejected tried=8 changed_mask=0 result_msgs=8 swap_resent=0 unchanged=1
+adminswap undo ok=1 count=0 swap=9 high_kept=3
 == K2. Mercenary magic ==
 merc map=91 enemies=17 size=255x160
 merc hired dist=1

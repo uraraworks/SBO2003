@@ -14,6 +14,7 @@
 #include "SboCliKeyProc.h"
 #include "AdminWindowOld/AdminDlgNpcRoute.h"
 #include "AdminWindowOld/AdminDlgMapLight.h"
+#include "AdminWindowOld/AdminDlgMapSwap.h"
 #include <math.h>
 
 /* ========================================================================= */
@@ -40,6 +41,7 @@ void DrawObj			(void);										/* オブジェクトの描画 */
 void DrawEvent			(void);										/* イベント情報の描画 */
 void DrawMapEdit		(void);										/* マップ編集情報の描画 */
 void DrawNpcRoute		(void);										/* NPCの巡回情報の描画 */
+void DrawMapSwapEdit	(void);										/* 印で変わるマス・宝箱の編集中の枠 */
 void DrawMapLightEdit	(void);										/* 明るさの範囲・光源の編集中の印 */
 static void FillRectClip	(int x, int y, int cx, int cy, COLORREF cl);	/* 画像の外にはみ出さない矩形塗りつぶし */
 static void DrawLineClip	(int x1, int y1, int x2, int y2, int nWidth, COLORREF cl);	/* 線を描く */
@@ -506,6 +508,7 @@ BOOL DrawScreenMOVE(void)
 	DrawMapEdit ();			/* マップ編集情報を描画 */
 	DrawNpcRoute ();		/* NPCの巡回情報を描画 */
 	DrawMapLightEdit ();	/* 明るさの範囲・光源の編集中の印を描画 */
+	DrawMapSwapEdit ();		/* 印で変わるマス・宝箱の編集中の枠を描画 */
 	DrawChar3 ();			/* 文字を描画 */
 	DrawDropEffects ();		/* アイテムドロップ演出を描画 */
 	DrawETC ();				/* ゲージ等の描画 */
@@ -2962,6 +2965,49 @@ void DrawMapLightEdit(void)
 	}
 	SelectObject (hDC, hFontOld);
 	g_pDibDrawMap->Unlock ();
+}
+
+/* ========================================================================= */
+/* 関数名：DrawMapSwapEdit													 */
+/* 内容：印で変わるマス・宝箱の画面を開いている間、表の各行のマスに枠を描く	 */
+/*       枠の色は 印=水色 宝箱=黄 リサイクル箱=緑。選んでいる行は太く白で重ねる	 */
+/*       自分のマップが変わったら表を取り直す								 */
+/* ========================================================================= */
+void DrawMapSwapEdit(void)
+{
+	static const COLORREF aclKind[] = {RGB (80, 220, 255), RGB (255, 220, 60), RGB (70, 220, 120)};	/* MAPSWAPKIND_* の順 */
+	int i, nSel, xTmp, yTmp, x1, y1, nW;
+	PCHARINFO pChar;
+
+	if ((g_nMyCharID < 0) || (g_hWndAdmin == NULL) || (g_nAdminWindowType != IDM_MAP_SWAP)) {
+		return;
+	}
+	MapSwapDlgTick ();
+	if (!IsDlgMapSwapOpen () || (g_pMapInfo == NULL)) {
+		return;
+	}
+	pChar = g_aCharInfo[g_nMyCharID];
+	xTmp = ((int)pChar->dwX - DRAW_PARTS_X - 1) * 32;		/* マップのドット座標から画像の座標へ */
+	yTmp = ((int)pChar->dwY - DRAW_PARTS_Y - 1) * 32;
+	nSel = MapSwapDlgGetSel ();
+	for (i = 0; i < MapSwapDlgGetCount (); i ++) {
+		const ADMINSWAPROW *pRow = MapSwapDlgGetRow (i);
+		COLORREF cl = aclKind[(pRow->byKind <= MAPSWAPKIND_RECYCLE) ? pRow->byKind : 0];
+
+		x1 = pRow->wX * 32 - xTmp;
+		y1 = pRow->wY * 32 - yTmp;
+		nW = (i == nSel) ? 4 : 2;
+		if (i == nSel) {
+			FillRectClip (x1 - 2, y1 - 2, 36, 2, RGB (255, 255, 255));
+			FillRectClip (x1 - 2, y1 + 32, 36, 2, RGB (255, 255, 255));
+			FillRectClip (x1 - 2, y1, 2, 32, RGB (255, 255, 255));
+			FillRectClip (x1 + 32, y1, 2, 32, RGB (255, 255, 255));
+		}
+		FillRectClip (x1, y1, 32, nW, cl);
+		FillRectClip (x1, y1 + 32 - nW, 32, nW, cl);
+		FillRectClip (x1, y1, nW, 32, cl);
+		FillRectClip (x1 + 32 - nW, y1, nW, 32, cl);
+	}
 }
 
 /* ========================================================================= */

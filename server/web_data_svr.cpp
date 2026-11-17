@@ -25,6 +25,7 @@
 #include "SboSvrAdminUndo.h"
 #include "SboSvrNpcRoute.h"
 #include "SboSvrRecycle.h"
+#include "SboSvrMapSwapEdit.h"
 #include "CharProc/IncludeCharProc.h"
 
 #include <emscripten.h>
@@ -2370,7 +2371,6 @@ static std::string RecordJson(int nKind, int nID)
  *   retired … 番号は使ったが今はどのマップにも無い（消した）宝箱の番号。使い回さない
  *   nextNo … 次に自動で振る番号（-1=使い切り）
  */
-static int ChestHighAll();
 extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataChests()
 {
 	std::vector<std::pair<int, std::pair<int, int> > > aRow;		/* (宝箱番号, (マップ番号, 行の番号)) */
@@ -2440,7 +2440,6 @@ static std::string RecycleItemName(WORD wItemID)
 	return JsonStr((wItemID != 0 && wItemID < g_aItemInfo.GetSize()) ? g_aItemInfo[wItemID]->szName : "");
 }
 
-static int RecycleBoxHighAll();
 static std::string RecycleStockJson(DWORD dwBoxNo, int &nKinds, int &nTotal)
 {
 	std::string strStock;
@@ -2991,73 +2990,13 @@ static void ResendMapToPlayers(PMAPINFO pMap, int nID)
 	}
 }
 
-/* 宝箱の番号を、全マップを通して使っている行があるか（nSkipMap のマップの行は数えない。-1 なら全部数える） */
-static bool ChestNoUsedElsewhere(int nSkipMap, int nChestNo)
-{
-	for (int i = 0; i < g_aMapInfo.GetSize(); i ++) {
-		PMAPINFO pMap = g_aMapInfo[i];
-		if (i == nSkipMap) continue;
-		for (int j = 0; j < pMap->bySwapCount && j < MAX_MAPSWAP; j ++) {
-			if (pMap->aSwap[j].byKind == MAPSWAPKIND_CHEST && pMap->aSwap[j].wChestNo == nChestNo) {
-				return true;
-			}
-		}
-	}
-	return false;
-}
-
-/* 今までに使った宝箱の番号の最大+1（全マップ。消した宝箱の番号を使い回さないための覚えを含む） */
-static int ChestHighAll()
-{
-	int nHigh = 0;
-	for (int i = 0; i < g_aMapInfo.GetSize(); i ++) {
-		PMAPINFO pMap = g_aMapInfo[i];
-		nHigh = max(nHigh, (int)pMap->wChestHigh);
-		for (int j = 0; j < pMap->bySwapCount && j < MAX_MAPSWAP; j ++) {
-			if (pMap->aSwap[j].byKind == MAPSWAPKIND_CHEST && pMap->aSwap[j].wChestNo < MAX_CHESTNO) {
-				nHigh = max(nHigh, (int)pMap->aSwap[j].wChestNo + 1);
-			}
-		}
-	}
-	return nHigh;
-}
-
-/* リサイクル箱の番号を、全マップを通して使っている行があるか（nSkipMap のマップの行は数えない） */
-static bool RecycleBoxNoUsedElsewhere(int nSkipMap, int nBoxNo)
-{
-	for (int i = 0; i < g_aMapInfo.GetSize(); i ++) {
-		PMAPINFO pMap = g_aMapInfo[i];
-		if (i == nSkipMap) continue;
-		for (int j = 0; j < pMap->bySwapCount && j < MAX_MAPSWAP; j ++) {
-			if (pMap->aSwap[j].byKind == MAPSWAPKIND_RECYCLE && pMap->aSwap[j].wBoxNo == nBoxNo) {
-				return true;
-			}
-		}
-	}
-	return false;
-}
-
-/* 今までに使ったリサイクル箱の番号の最大（全マップ。消した箱の番号を使い回さないための覚えを含む。0=まだ無し） */
-static int RecycleBoxHighAll()
-{
-	int nHigh = 0;
-	for (int i = 0; i < g_aMapInfo.GetSize(); i ++) {
-		PMAPINFO pMap = g_aMapInfo[i];
-		nHigh = max(nHigh, (int)pMap->wBoxHigh);
-		for (int j = 0; j < pMap->bySwapCount && j < MAX_MAPSWAP; j ++) {
-			if (pMap->aSwap[j].byKind == MAPSWAPKIND_RECYCLE && pMap->aSwap[j].wBoxNo <= MAX_RECYCLEBOX) {
-				nHigh = max(nHigh, (int)pMap->aSwap[j].wBoxNo);
-			}
-		}
-	}
-	return nHigh;
-}
-
-/* swaps（印で変わるマス）を w に読む。宝箱・リサイクル箱の番号は省くと空き番号を自動で振る（それぞれ全マップ通しで重ならない。消した番号は使い回さない） */
+/* swaps（印で変わるマス）を w に読む。JSON を MAPSWAPEDITROW に直すだけで、範囲・種類違いの欄・重なり・番号の自動振りは
+   ゲーム内の管理者ウィンドウと同じ MapSwapBuild（SboSvrMapSwapEdit.cpp）が行う */
 static bool ParseMapSwaps(const JVal &sw, int nID, MAPINFO &w, std::string &strErr)
 {
 	static const char *apszKey[] = { "kind", "x", "y", "wParts", "wFlag", "byCmp", "wChestNo", "wBoxNo", "wGiveItem", "szMsg", "szMemo", NULL };
 	long long n;
+	const long long nAny = 1LL << 40;		/* 型だけ確かめる（範囲は MapSwapBuild） */
 
 	if (sw.t != JVal::ARR) {
 		strErr = "swaps は配列で指定してください";
@@ -3067,172 +3006,64 @@ static bool ParseMapSwaps(const JVal &sw, int nID, MAPINFO &w, std::string &strE
 		strErr = "swaps は " + JsonNum(MAX_MAPSWAP) + " 個までです";
 		return false;
 	}
-	ZeroMemory(w.aSwap, sizeof(w.aSwap));
-	w.bySwapCount = (BYTE)sw.a.size();
-	int nNext = ChestHighAll();			/* 自動で振る番号（消した番号は飛ばす） */
-	int nHighNew = (int)w.wChestHigh;
-	std::vector<char> abyUsed(MAX_CHESTNO, 0);
-	int nNextBox = RecycleBoxHighAll() + 1;		/* リサイクル箱の自動で振る番号（1 から。消した番号は飛ばす） */
-	int nBoxHighNew = (int)w.wBoxHigh;
-	std::vector<char> abyBoxUsed(MAX_RECYCLEBOX + 1, 0);
-	/* まず番号を指定された宝箱・リサイクル箱を確定してから、省かれた分に自動で振る */
-	for (int pass = 0; pass < 2; pass ++) {
-		for (size_t i = 0; i < sw.a.size(); i ++) {
-			const JVal &e = sw.a[i];
-			std::string strP = "swaps[" + JsonNum((long long)i) + "]";
-			if (e.t != JVal::OBJ) {
-				strErr = strP + " はオブジェクトで指定してください";
+	std::vector<MAPSWAPEDITROW> aRow(sw.a.size());
+	for (size_t i = 0; i < sw.a.size(); i ++) {
+		const JVal &e = sw.a[i];
+		std::string strP = "swaps[" + JsonNum((long long)i) + "]";
+		MAPSWAPEDITROW &r = aRow[i];
+		if (e.t != JVal::OBJ) {
+			strErr = strP + " はオブジェクトで指定してください";
+			return false;
+		}
+		for (size_t k = 0; k < e.o.size(); k ++) {
+			bool bOk = false;
+			for (int m = 0; apszKey[m]; m ++) if (e.o[k].first == apszKey[m]) bOk = true;
+			if (!bOk) {
+				strErr = strP + ": 知らない項目です: " + e.o[k].first;
 				return false;
 			}
-			PMAPSWAP p = &w.aSwap[i];
-			if (pass == 0) {
-				for (size_t k = 0; k < e.o.size(); k ++) {
-					bool bOk = false;
-					for (int m = 0; apszKey[m]; m ++) if (e.o[k].first == apszKey[m]) bOk = true;
-					if (!bOk) {
-						strErr = strP + ": 知らない項目です: " + e.o[k].first;
-						return false;
-					}
-				}
-				const JVal *pk = e.Get("kind"), *px = e.Get("x"), *py = e.Get("y"), *pp = e.Get("wParts");
-				p->byKind = MAPSWAPKIND_FLAG;
-				if (pk) {
-					if (pk->t == JVal::STR && (pk->s == "flag" || pk->s == "chest" || pk->s == "recycle")) {
-						p->byKind = (pk->s == "chest") ? MAPSWAPKIND_CHEST : (pk->s == "recycle") ? MAPSWAPKIND_RECYCLE : MAPSWAPKIND_FLAG;
-					} else {
-						if (!GetInt(*pk, 0, 2, n, strErr, strP + ".kind")) return false;
-						p->byKind = (BYTE)n;
-					}
-				}
-				if (!px || !py || !pp) {
-					strErr = strP + " には x・y・wParts が要ります";
-					return false;
-				}
-				if (!GetInt(*px, 0, w.nCX - 1, n, strErr, strP + ".x")) return false;
-				p->wX = (WORD)n;
-				if (!GetInt(*py, 0, w.nCY - 1, n, strErr, strP + ".y")) return false;
-				p->wY = (WORD)n;
-				if (!GetInt(*pp, 0, (long long)g_wCountMapParts - 1, n, strErr, strP + ".wParts")) return false;
-				p->wParts = (WORD)n;
-				const JVal *pf = e.Get("wFlag"), *pc = e.Get("byCmp"), *pn = e.Get("wChestNo"), *pb = e.Get("wBoxNo"), *pg = e.Get("wGiveItem"), *pm = e.Get("szMsg"), *pme = e.Get("szMemo");
-				p->wFlag = FLAG_NOBIT;
-				p->wChestNo = 0xFFFF;
-				if (p->byKind == MAPSWAPKIND_RECYCLE) {
-					p->wBoxNo = 0;		/* 0=まだ振っていない（番号は 1 から） */
-				}
-				if (p->byKind == MAPSWAPKIND_FLAG) {
-					if (pn || pb || pg || pm || pme) {
-						strErr = strP + ": 印で変わる行（kind 0）に wChestNo・wBoxNo・wGiveItem・szMsg・szMemo は使えません（宝箱は kind 1・リサイクル箱は kind 2）";
-						return false;
-					}
-					if (!pf) {
-						strErr = strP + " には wFlag（印の番号）が要ります";
-						return false;
-					}
-					if (!GetInt(*pf, 0, MAX_FLAGBIT - 1, n, strErr, strP + ".wFlag")) return false;
-					p->wFlag = (WORD)n;
-					if (pc) {
-						if (!GetInt(*pc, 0, 1, n, strErr, strP + ".byCmp")) return false;
-						p->byCmp = (BYTE)n;
-					}
-				} else if (p->byKind == MAPSWAPKIND_RECYCLE) {
-					if (pf || pc || pn || pg || pm) {
-						strErr = strP + ": リサイクル箱の行（kind 2）に使えるのは x・y・wParts（開いた絵）・szMemo・wBoxNo だけです";
-						return false;
-					}
-					if (pme) {
-						if (pme->t != JVal::STR || !CheckText(pme->s, MAX_MAPSWAPMEMO, false, strErr, strP + ".szMemo")) {
-							if (strErr.empty()) strErr = strP + ".szMemo は文字列で指定してください";
-							return false;
-						}
-						CopyMemory(p->szMemo, pme->s.c_str(), pme->s.size() + 1);
-					}
-					if (pb) {
-						if (!GetInt(*pb, 1, MAX_RECYCLEBOX, n, strErr, strP + ".wBoxNo")) return false;
-						if (abyBoxUsed[(size_t)n]) {
-							strErr = strP + ".wBoxNo " + JsonNum(n) + " は、この swaps の中で重なっています";
-							return false;
-						}
-						if (RecycleBoxNoUsedElsewhere(nID, (int)n)) {
-							strErr = strP + ".wBoxNo " + JsonNum(n) + " は、ほかのマップのリサイクル箱がもう使っています（箱の番号は全マップ通しで重ならない）";
-							return false;
-						}
-						abyBoxUsed[(size_t)n] = 1;
-						p->wBoxNo = (WORD)n;
-						nBoxHighNew = max(nBoxHighNew, (int)n);
-					}
-				} else {
-					if (pf || pc || pb) {
-						strErr = strP + ": 宝箱の行（kind 1）に wFlag・byCmp・wBoxNo は使えません（宝箱は印ではなく開けた記録を使います）";
-						return false;
-					}
-					if (pg) {
-						if (!GetInt(*pg, 0, 65535, n, strErr, strP + ".wGiveItem")) return false;
-						if (n != 0 && n >= g_aItemInfo.GetSize()) {
-							strErr = strP + ".wGiveItem のアイテム " + JsonNum(n) + " がありません（item は " + JsonNum(g_aItemInfo.GetSize()) + " 個）";
-							return false;
-						}
-						p->wGiveItem = (WORD)n;
-					}
-					if (pm) {
-						if (pm->t != JVal::STR || !CheckText(pm->s, MAX_MAPSWAPMSG, false, strErr, strP + ".szMsg")) {
-							if (strErr.empty()) strErr = strP + ".szMsg は文字列で指定してください";
-							return false;
-						}
-						CopyMemory(p->szMsg, pm->s.c_str(), pm->s.size() + 1);
-					}
-					if (pme) {
-						if (pme->t != JVal::STR || !CheckText(pme->s, MAX_MAPSWAPMEMO, false, strErr, strP + ".szMemo")) {
-							if (strErr.empty()) strErr = strP + ".szMemo は文字列で指定してください";
-							return false;
-						}
-						CopyMemory(p->szMemo, pme->s.c_str(), pme->s.size() + 1);
-					}
-					if (pn) {
-						if (!GetInt(*pn, 0, MAX_CHESTNO - 1, n, strErr, strP + ".wChestNo")) return false;
-						if (abyUsed[(size_t)n]) {
-							strErr = strP + ".wChestNo " + JsonNum(n) + " は、この swaps の中で重なっています";
-							return false;
-						}
-						if (ChestNoUsedElsewhere(nID, (int)n)) {
-							strErr = strP + ".wChestNo " + JsonNum(n) + " は、ほかのマップの宝箱がもう使っています（宝箱の番号は全マップ通しで重ならない）";
-							return false;
-						}
-						abyUsed[(size_t)n] = 1;
-						p->wChestNo = (WORD)n;
-						nHighNew = max(nHighNew, (int)n + 1);
-					}
-				}
-			} else if (p->byKind == MAPSWAPKIND_RECYCLE && p->wBoxNo == 0) {
-				while (nNextBox <= MAX_RECYCLEBOX && (abyBoxUsed[nNextBox] || RecycleBoxNoUsedElsewhere(nID, nNextBox))) {
-					nNextBox ++;
-				}
-				if (nNextBox > MAX_RECYCLEBOX) {
-					strErr = "リサイクル箱の番号を使い切りました（1〜" + JsonNum(MAX_RECYCLEBOX) + "）。消した箱の番号は使い回しません";
-					return false;
-				}
-				abyBoxUsed[nNextBox] = 1;
-				p->wBoxNo = (WORD)nNextBox;
-				nBoxHighNew = max(nBoxHighNew, nNextBox);
-				nNextBox ++;
-			} else if (p->byKind == MAPSWAPKIND_CHEST && p->wChestNo == 0xFFFF) {
-				while (nNext < MAX_CHESTNO && (abyUsed[nNext] || ChestNoUsedElsewhere(nID, nNext))) {
-					nNext ++;
-				}
-				if (nNext >= MAX_CHESTNO) {
-					strErr = "宝箱の番号を使い切りました（0〜" + JsonNum(MAX_CHESTNO - 1) + "）。消した宝箱の番号は使い回しません";
-					return false;
-				}
-				abyUsed[nNext] = 1;
-				p->wChestNo = (WORD)nNext;
-				nHighNew = max(nHighNew, nNext + 1);
-				nNext ++;
+		}
+		const JVal *pk = e.Get("kind"), *px = e.Get("x"), *py = e.Get("y"), *pp = e.Get("wParts");
+		r.nKind = MAPSWAPKIND_FLAG;
+		if (pk) {
+			if (pk->t == JVal::STR && (pk->s == "flag" || pk->s == "chest" || pk->s == "recycle")) {
+				r.nKind = (pk->s == "chest") ? MAPSWAPKIND_CHEST : (pk->s == "recycle") ? MAPSWAPKIND_RECYCLE : MAPSWAPKIND_FLAG;
+			} else {
+				if (!GetInt(*pk, -nAny, nAny, n, strErr, strP + ".kind")) return false;
+				r.nKind = n;
 			}
 		}
+		if (!px || !py || !pp) {
+			strErr = strP + " には x・y・wParts が要ります";
+			return false;
+		}
+		if (!GetInt(*px, -nAny, nAny, r.nX, strErr, strP + ".x")) return false;
+		if (!GetInt(*py, -nAny, nAny, r.nY, strErr, strP + ".y")) return false;
+		if (!GetInt(*pp, -nAny, nAny, r.nParts, strErr, strP + ".wParts")) return false;
+		struct { const char *pszKey; DWORD dwBit; long long *pn; } aInt[] = {
+			{ "wFlag", MAPSWAPEDIT_FLAG, &r.nFlag }, { "byCmp", MAPSWAPEDIT_CMP, &r.nCmp },
+			{ "wChestNo", MAPSWAPEDIT_CHESTNO, &r.nChestNo }, { "wBoxNo", MAPSWAPEDIT_BOXNO, &r.nBoxNo },
+			{ "wGiveItem", MAPSWAPEDIT_GIVEITEM, &r.nGiveItem } };
+		for (size_t m = 0; m < COUNTOF(aInt); m ++) {
+			const JVal *pv = e.Get(aInt[m].pszKey);
+			if (!pv) continue;
+			if (!GetInt(*pv, -nAny, nAny, *aInt[m].pn, strErr, strP + "." + aInt[m].pszKey)) return false;
+			r.dwHas |= aInt[m].dwBit;
+		}
+		struct { const char *pszKey; DWORD dwBit; std::string *ps; } aStr[] = {
+			{ "szMsg", MAPSWAPEDIT_MSG, &r.strMsg }, { "szMemo", MAPSWAPEDIT_MEMO, &r.strMemo } };
+		for (size_t m = 0; m < COUNTOF(aStr); m ++) {
+			const JVal *pv = e.Get(aStr[m].pszKey);
+			if (!pv) continue;
+			if (pv->t != JVal::STR) {
+				strErr = strP + "." + aStr[m].pszKey + " は文字列で指定してください";
+				return false;
+			}
+			*aStr[m].ps = pv->s;
+			r.dwHas |= aStr[m].dwBit;
+		}
 	}
-	w.wChestHigh = (WORD)nHighNew;
-	w.wBoxHigh = (WORD)nBoxHighNew;
-	return true;
+	return MapSwapBuild(nID, w, aRow, "swaps", strErr) ? true : false;
 }
 
 /* マップの変更（設定・イベント・店・メッセージ。配列は丸ごと置き換え） */
@@ -3584,12 +3415,8 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 	pMap->byLightCount		= w.byLightCount;
 	CopyMemory(pMap->aLight, w.aLight, sizeof(pMap->aLight));
 	/* 印で変わるマスが変わったら、マップ全体の送り直しは要らず、いるプレイヤーに差し替え一覧だけ送る */
-	bool bSwapChg = pMap->bySwapCount != w.bySwapCount || pMap->wChestHigh != w.wChestHigh || pMap->wBoxHigh != w.wBoxHigh ||
-		memcmp(pMap->aSwap, w.aSwap, sizeof(pMap->aSwap)) != 0;
-	pMap->bySwapCount		= w.bySwapCount;
-	CopyMemory(pMap->aSwap, w.aSwap, sizeof(pMap->aSwap));
-	pMap->wChestHigh		= w.wChestHigh;
-	pMap->wBoxHigh			= w.wBoxHigh;
+	bool bSwapChg = MapSwapChanged(*pMap, w) ? true : false;
+	MapSwapSet(pMap, w);
 	SAFE_DELETE_ARRAY(pMap->pszName);
 	if (!strName.empty()) {
 		pMap->pszName = new char[strName.size() + 1];

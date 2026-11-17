@@ -46,6 +46,7 @@
 #define IDD_STORYINFO_EDIT              240
 #define IDD_FLAGGROUP                   241
 #define IDD_CHARCHEST                   242
+#define IDD_ADMINSWAP                   243
 #define IDC_BUTTON1                     1000
 #define IDC_BUTTON2                     1001
 #define IDC_BUTTON3                     1002
@@ -465,14 +466,42 @@
 #define IDM_ETC_TALK                    40033
 #define IDM_ETC_STORY                   40034
 #define IDM_ETC_FLAGGROUP               40035
+#define IDM_MAP_SWAP                    40036
+#define IDC_AS_LIST                       1413
+#define IDC_AS_COUNT                      1414
+#define IDC_AS_KIND                       1415
+#define IDC_AS_NO                         1416
+#define IDC_AS_X                          1417
+#define IDC_AS_Y                          1418
+#define IDC_AS_HERE                       1419
+#define IDC_AS_PARTS                      1420
+#define IDC_AS_PICKPARTS                  1421
+#define IDC_AS_FLAG                       1422
+#define IDC_AS_CMP                        1423
+#define IDC_AS_ITEM                       1424
+#define IDC_AS_ITEMNAME                   1425
+#define IDC_AS_MSG                        1426
+#define IDC_AS_MEMO                       1427
+#define IDC_AS_ADD                        1428
+#define IDC_AS_SET                        1429
+#define IDC_AS_DEL                        1430
+#define IDC_AS_GET                        1431
+#define IDC_AS_STATUS                     1432
+#define IDC_AS_L_NO                       1433
+#define IDC_AS_L_AUTO                     1434
+#define IDC_AS_L_FLAG                     1435
+#define IDC_AS_L_CMP                      1436
+#define IDC_AS_L_ITEM                     1437
+#define IDC_AS_L_MSG                      1438
+#define IDC_AS_L_MEMO                     1439
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        243
-#define _APS_NEXT_COMMAND_VALUE         40036
-#define _APS_NEXT_CONTROL_VALUE         1413
+#define _APS_NEXT_RESOURCE_VALUE        244
+#define _APS_NEXT_COMMAND_VALUE         40037
+#define _APS_NEXT_CONTROL_VALUE         1440
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
