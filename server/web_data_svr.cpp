@@ -42,6 +42,7 @@ extern BOOL SaveQuestInfo(void);
 extern BOOL SaveFlagNameInfo(void);
 extern BOOL SaveTalkInfo(void);
 extern BOOL SaveStoryInfo(void);
+extern BOOL SaveFlagGroupInfo(void);
 extern int GetMapNo(DWORD);
 extern BOOL SaveCharInfo(void);
 extern BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, BYTE byScreen);	/* SboSvrRecvCmd.cpp */
@@ -438,6 +439,18 @@ static const DATAFIELD s_aFieldFlagName[] = {
 	FLD (FLAGNAMEINFO, byKind,			"種類",					FT_U8, 0, "0=印（ON/OFF） 1=数値（0〜255）。同じ種類・番号の組は 1 件まで"),
 	FLD (FLAGNAMEINFO, wNo,				"番号",					FT_U16, 0, "印は 0〜1023、数値は 0〜127。割り振りの目安: 印は 1〜199 本筋・200〜599 地域・600〜899 お使い・900〜1023 予備。数値は 0〜127"),
 	FLDS(FLAGNAMEINFO, szName,			"名前",					FT_STR, 0, "全角 20 字ほど（UTF-8 で最大 95 バイト）。例: 「港町の事件を解決した」"),
+};
+
+/* フラグのグループ（印・数値の番号の帯に「メイン名」を付ける。番号 n が帯 wFrom〜wTo に入るなら、メイン=グループ・サブ=n-wFrom+1 で「ルシー-3」と呼べる。
+   見せ方・入力・絞り込みだけの層で、会話データ・依頼・NPC の見える条件・思い出の本などが覚えている番号は変わらない） */
+static const DATAFIELD s_aFieldFlagGroup[] = {
+	FLD (FLAGGROUPINFO, wID,			"グループ番号",			FT_U16, FF_READONLY, "足す時に自動で振られる（1〜255。変わらない）。管理者ウィンドウの「グループ番号-サブ」の入力（例 3-2）はこの番号で指す。id（配列の番号）とは別"),
+	FLD (FLAGGROUPINFO, byState,		"状態",					FT_U8, 0, "0=削除済み（枠だけ残る。帯はほかのグループが使える） 1=有効。足す時に省くと 1"),
+	FLD (FLAGGROUPINFO, byKind,			"種類",					FT_U8, 0, "0=印（ON/OFF） 1=数値（0〜255）。同じ種類で有効なグループの帯が重なるのは不可（足す時に省くと 0）"),
+	FLDS(FLAGGROUPINFO, szName,			"メイン名",				FT_STR, 0, "全角 20 字ほど（UTF-8 で最大 63 バイト）。例: 「ルシー」。有効なグループでは空にできない"),
+	FLD (FLAGGROUPINFO, wFrom,			"番号の帯の先頭",		FT_U16, 0, "その番号も含む。印は 0〜1023、数値は 0〜127。足す時は必ず指定。例: ルシー=印 100〜139 なら wFrom=100・wTo=139"),
+	FLD (FLAGGROUPINFO, wTo,			"番号の帯の最後",		FT_U16, 0, "その番号も含む。wFrom 以上。足す時は必ず指定"),
+	FLD (FLAGGROUPINFO, wSort,			"並び順",				FT_U16, 0, "一覧で小さい順に並ぶ（同じなら番号順）"),
 };
 
 /* 会話セット（lines は項目表の外で扱う） */
@@ -964,6 +977,7 @@ enum {
 	KIND_FLAG,
 	KIND_TALK,
 	KIND_STORY,
+	KIND_FLAGGROUP,
 	/* ここから下は読むだけ */
 	KIND_CHAR,
 	KIND_MAP,
@@ -983,9 +997,9 @@ static bool KindWritable(int nKind)
 	return (nKind < KIND_MAX) && (nKind != KIND_LEAVE);
 }
 
-static const char *s_apszKindName[] = { "magic", "magicUser", "equUser", "job", "stTmp", "item", "maker", "recipe", "quest", "flag", "talk", "story", "char", "map", "mapParts", "efc", "comEfc", "leave", "subGame" };
+static const char *s_apszKindName[] = { "magic", "magicUser", "equUser", "job", "stTmp", "item", "maker", "recipe", "quest", "flag", "talk", "story", "flagGroup", "char", "map", "mapParts", "efc", "comEfc", "leave", "subGame" };
 static const char *s_apszKindLabel[] = {
-	"特技（魔法）情報", "特技を使える職業", "装備できる職業", "職業情報とレベルアップ情報", "ステータステンプレート（NPC・敵のひな形）", "アイテム情報", "作り手（料理人など）", "レシピ（作り手に頼んで作ってもらう物）", "ギルドの仕事依頼", "フラグの名前表（印・数値に付ける名前）", "会話データ（フラグで台詞を出し分ける）", "思い出の本のシナリオ（クリア済みのミニシナリオをやり直す）",
+	"特技（魔法）情報", "特技を使える職業", "装備できる職業", "職業情報とレベルアップ情報", "ステータステンプレート（NPC・敵のひな形）", "アイテム情報", "作り手（料理人など）", "レシピ（作り手に頼んで作ってもらう物）", "ギルドの仕事依頼", "フラグの名前表（印・数値に付ける名前）", "会話データ（フラグで台詞を出し分ける）", "思い出の本のシナリオ（クリア済みのミニシナリオをやり直す）", "フラグのグループ（印・数値の番号の帯に「メイン-サブ」の名前を付ける）",
 	"キャラ情報（プレイヤー・NPC）", "マップ情報", "マップパーツ", "エフェクト情報", "吹き出し情報", "預かり所", "サブゲーム情報"
 };
 static const char *s_apszKindNote[] = {
@@ -1001,6 +1015,7 @@ static const char *s_apszKindNote[] = {
 	"キャラごとにずっと残る「フラグ」（印 1024 個=ON/OFF の 0〜1023、数値 128 個=0〜255 の 0〜127）に付ける名前の表（読み書き）。名前は管理用でプレイヤーには出ない。byKind が 0=印・1=数値、wNo が番号で、同じ組は 1 件まで。削除は byState=0（枠だけ残り、足し直す時はその枠の byState を 1 に戻す）。ファイルが無い時は 0 件。キャラのフラグの中身は char の読み出しの flags で読める（読むだけ）。番号の割り振りの目安: 印は 1〜199 本筋・200〜599 地域・600〜899 お使い・900〜1023 予備",
 	"会話データ（読み書き）。NPC の台詞を \"@tNNN\"（NNN=wID。例 @t012）にすると、話しかけた人のフラグ（印・数値）とレベルで lines（最大 16 行）から 1 行を選び、その人にだけ台詞を出す（台詞はクライアントへ送らない）。選び方: 条件（立っている必要のある印 awNeed 4・立っていてはいけない印 awNot 4・数値の条件 2・レベル下限上限）に全部合う行のうち byRank が一番小さい行、同じ順位が複数ならくじ。合う行が無ければ「……」。話した後に印を立てる・消す・数値を動かす。lines は配列で丸ごと置き換え。削除は byState=0（枠だけ残り、足し直す時はその枠の byState を 1 に戻す）。ファイルが無い時は 0 件",
 	"思い出の本（読み書き。削除なし。止めるのは byState=0）。NPC の台詞を \"@r\" にすると語り部になり、話すと、そのキャラがクリアしたシナリオ（byState=1 で、クリアした印 wClearFlag が立っている）の一覧が wSort 順に開く。選んで確認すると、そのシナリオと、wPrevStory をたどってそれにつながる後のシナリオ全部について、印の範囲（awFlagFrom〜awFlagTo）を消し、数値（abyNum）を 0 に戻し、依頼（awQuest）のクリア済みの印を消して、最初からやり直せる（byCountNum の数値は選んだシナリオだけ +1）。依頼の報酬は初回だけ（もらい済みの印は消えない）。そのキャラが戻す依頼のどれかを受けている間と、語り部から離れている時は断る。足す時のシナリオ番号（wID 1〜255）は自動。印・数値の「無し」は 65535・255。ファイルが無い時は 0 件",
+	"フラグのグループ（読み書き。削除は byState=0）。キャラのフラグの印（0〜1023）・数値（0〜127）の番号の帯 wFrom〜wTo に「メイン名」szName を付けて、「メイン-サブ」で管理するための層（例: ルシー＝印 100〜139）。番号 n が有効なグループの帯に入る時、メイン=そのグループ・サブ=n-wFrom+1（1 始まり）で、「ルシー-3（103）」のように呼べる（flag の一覧にも計算した group・sub が出る。読むだけ）。見せ方・入力・絞り込みだけの層で、会話データ・依頼・NPC の見える条件・思い出の本などが覚えている番号は一切変わらない。同じ種類で有効なグループの帯が重なるのは不可。足す時のグループ番号（wID 1〜255）は自動。ファイルが無い時は 0 件",
 	"プレイヤーと NPC（敵・町の人・発生元など）の全キャラ。番号（id）はキャラのテーブル番号で再起動で変わることがある。NPC は npcId（変わらない番号）で指す。isPlayer でプレイヤーか分かる。書き換えられるのは保存される NPC だけ（プレイヤー・発生した敵は不可）。足す時は dwMapID・dwX・dwY が要る。消す時は変更に {\"deleted\": true}。アカウント名・パスワード・IP は出さない",
 	"マップの情報・イベント・店・メッセージ・アイテム配置。番号は配列の番号（dwID はマップID で、キャラの dwMapID はこちら）。events・shops・messages は配列で丸ごと置き換え。マス目のパーツは sbo_map_tiles で読み、sbo_map_tiles_set で書く。大きさの変更・マップの追加はできない",
 	"マップパーツ（マス目の parts に入る番号）の表示・当たり判定。byHitType 0 なら通れる。anime は配列で丸ごと置き換え（コマ数 byAnimeCount も変わる）。追加できる（消せない）",
@@ -1009,7 +1024,7 @@ static const char *s_apszKindNote[] = {
 	"読むだけ。プレイヤーごとの預かり所（キャラの dwLeaveID がこの番号）。items は item の番号と個数",
 	"爆弾ゲーム・迷路・ダンジョン・戦場ゲーム・すごろくの設定。detail は byType ごとに項目が違う（省いた項目は前の値のまま）。種別（byType）の変更・追加・すごろくのマス（events・parts）は管理者ウィンドウで"
 };
-static const int s_anKindMax[] = { 256, 256, 256, 256, 65535, 65535, MAX_MAKER, MAX_RECIPE, MAX_QUEST - 1, MAX_FLAGNAMEINFO, MAX_TALK - 1, MAX_STORY - 1, 0, 0, 65535, 255, MAX_COMEFC, 0, 0 };
+static const int s_anKindMax[] = { 256, 256, 256, 256, 65535, 65535, MAX_MAKER, MAX_RECIPE, MAX_QUEST - 1, MAX_FLAGNAMEINFO, MAX_TALK - 1, MAX_STORY - 1, MAX_FLAGGROUP - 1, 0, 0, 65535, 255, MAX_COMEFC, 0, 0 };
 
 static int KindFromName(const char *pszKind)
 {
@@ -1036,6 +1051,7 @@ static int KindCount(int nKind)
 	case KIND_FLAG:			return g_aFlagNameInfo.GetSize();
 	case KIND_TALK:			return g_aTalkInfo.GetSize();
 	case KIND_STORY:		return g_aStoryInfo.GetSize();
+	case KIND_FLAGGROUP:	return g_aFlagGroupInfo.GetSize();
 	case KIND_CHAR:			return g_aCharInfo.GetSize();
 	case KIND_MAP:			return g_aMapInfo.GetSize();
 	case KIND_MAPPARTS:		return g_wCountMapParts;
@@ -1045,6 +1061,26 @@ static int KindCount(int nKind)
 	case KIND_SUBGAME:		return g_aSubaGameInfo.GetSize();
 	}
 	return 0;
+}
+
+/* --- フラグのグループ（メイン-サブ。計算して出すだけで、番号は変えない） ---------- */
+/* 種類 byKind の番号 wNo が帯に入る有効なグループ（無ければ NULL。重なりは作れないので 1 つだけ） */
+static const FLAGGROUPINFO *FlagGroupOf(BYTE byKind, WORD wNo)
+{
+	for (int i = 0; i < g_aFlagGroupInfo.GetSize(); i ++) {
+		if (FlagGroupHas(g_aFlagGroupInfo[i], byKind, wNo)) {
+			return g_aFlagGroupInfo[i];
+		}
+	}
+	return NULL;
+}
+
+/* kind "flag" の記録に付ける、計算した group（メイン名）・sub（サブ。1 始まり）。どのグループにも入らなければ "" と 0 */
+static std::string FlagGroupExtraJson(BYTE byKind, WORD wNo)
+{
+	const FLAGGROUPINFO *pGrp = FlagGroupOf(byKind, wNo);
+
+	return std::string(",\"group\":") + JsonStr(pGrp ? pGrp->szName : "") + ",\"sub\":" + JsonNum(pGrp ? FlagGroupSub(pGrp, wNo) : 0);
 }
 
 /* --- アイテムの作業用コピー ------------------------------------------------ */
@@ -2074,6 +2110,11 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataSchema(void)
 			break;
 		case KIND_FLAG:
 			out += FieldSchemaJson(s_aFieldFlagName, COUNTOF(s_aFieldFlagName));
+			out.insert(out.size() - 1, ",{\"name\":\"group\",\"type\":\"string\",\"label\":\"グループ（メイン名）\",\"readonly\":true,\"note\":\"この番号が入る有効なグループ（flagGroup）のメイン名。どのグループにも入らなければ空。計算して出すだけで、書き込みはできない\"}"
+					",{\"name\":\"sub\",\"type\":\"u16\",\"label\":\"グループの中の番号（サブ）\",\"readonly\":true,\"note\":\"番号 - グループの wFrom + 1（1 始まり）。「ルシー-3」の 3。グループに入らなければ 0。読むだけ\"}");
+			break;
+		case KIND_FLAGGROUP:
+			out += FieldSchemaJson(s_aFieldFlagGroup, COUNTOF(s_aFieldFlagGroup));
 			break;
 		case KIND_TALK:
 			out += FieldSchemaJson(s_aFieldTalk, COUNTOF(s_aFieldTalk));
@@ -2213,7 +2254,11 @@ static std::string RecordJson(int nKind, int nID)
 		out += QuestJson(g_aQuestInfo[nID]);
 		break;
 	case KIND_FLAG:
-		out += FieldsJson((const BYTE *)g_aFlagNameInfo[nID], s_aFieldFlagName, COUNTOF(s_aFieldFlagName));
+		out += FieldsJson((const BYTE *)g_aFlagNameInfo[nID], s_aFieldFlagName, COUNTOF(s_aFieldFlagName)) +
+				FlagGroupExtraJson(g_aFlagNameInfo[nID]->byKind, g_aFlagNameInfo[nID]->wNo);
+		break;
+	case KIND_FLAGGROUP:
+		out += FieldsJson((const BYTE *)g_aFlagGroupInfo[nID], s_aFieldFlagGroup, COUNTOF(s_aFieldFlagGroup));
 		break;
 	case KIND_TALK:
 		out += TalkJson(g_aTalkInfo[nID]);
@@ -4337,9 +4382,33 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 			} else {
 				Info.byState = FLAGNAMESTATE_ON;
 			}
-			if (!CheckKnownKeys(chg, s_aFieldFlagName, COUNTOF(s_aFieldFlagName), NULL, strErr) ||
-					!ApplyFields((BYTE *)&Info, s_aFieldFlagName, COUNTOF(s_aFieldFlagName), chg, strErr, "")) {
-				goto Exit;
+			/* group・sub は計算して出す読むだけの項目。今の値と同じものを書き戻すのは許す（取得した記録をそのまま渡せるように） */
+			{
+				static const char *apszFlagExtra[] = { "group", "sub", NULL };
+				JVal chg2 = chg;
+				if (!CheckKnownKeys(chg, s_aFieldFlagName, COUNTOF(s_aFieldFlagName), apszFlagExtra, strErr)) {
+					goto Exit;
+				}
+				for (size_t k = 0; k < chg2.o.size(); ) {
+					const std::string &strKey = chg2.o[k].first;
+					if (strKey == "group" || strKey == "sub") {
+						const FLAGGROUPINFO *pGrp = bAdd ? NULL : FlagGroupOf(Info.byKind, Info.wNo);
+						const JVal &v = chg2.o[k].second;
+						bool bSame = !bAdd && ((strKey == "group") ?
+								(v.t == JVal::STR && v.s == (pGrp ? pGrp->szName : "")) :
+								(v.t == JVal::NUM && v.n == (pGrp ? FlagGroupSub(pGrp, Info.wNo) : 0)));
+						if (!bSame) {
+							strErr = strKey + " は計算して出す読むだけの項目です（変えられません。番号の帯はグループ flagGroup で決めます）";
+							goto Exit;
+						}
+						chg2.o.erase(chg2.o.begin() + k);
+					} else {
+						k ++;
+					}
+				}
+				if (!ApplyFields((BYTE *)&Info, s_aFieldFlagName, COUNTOF(s_aFieldFlagName), chg2, strErr, "")) {
+					goto Exit;
+				}
 			}
 			if (Info.byState > FLAGNAMESTATE_ON) {
 				strErr = "byState は 0（削除済み）か 1（有効）で指定してください";
@@ -4365,7 +4434,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 					goto Exit;
 				}
 			}
-			strRecord = FieldsJson((const BYTE *)&Info, s_aFieldFlagName, COUNTOF(s_aFieldFlagName));
+			strRecord = FieldsJson((const BYTE *)&Info, s_aFieldFlagName, COUNTOF(s_aFieldFlagName)) + FlagGroupExtraJson(Info.byKind, Info.wNo);
 			if (bApply) {
 				if (bAdd) {
 					PFLAGNAMEINFO pNew = new FLAGNAMEINFO;
@@ -4675,6 +4744,106 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 		}
 		break;
 
+	case KIND_FLAGGROUP:
+		{
+			FLAGGROUPINFO Info;
+			memset(&Info, 0, sizeof(Info));
+			if (!bAdd) {
+				Info = *g_aFlagGroupInfo[nID];
+			} else {
+				Info.byState = FLAGGROUPSTATE_ON;
+			}
+			if (!CheckKnownKeys(chg, s_aFieldFlagGroup, COUNTOF(s_aFieldFlagGroup), NULL, strErr)) {
+				goto Exit;
+			}
+			/* wID は読むだけ（自動で振る）。同じ値を書き戻すのは許す（取得した記録をそのまま渡せるように） */
+			{
+				JVal chg2 = chg;
+				for (size_t k = 0; k < chg2.o.size(); k ++) {
+					if (chg2.o[k].first == "wID") {
+						if (!(chg2.o[k].second.t == JVal::NUM && !bAdd && chg2.o[k].second.n == Info.wID)) {
+							strErr = "wID は変えられません（足す時に自動で振られます）";
+							goto Exit;
+						}
+						chg2.o.erase(chg2.o.begin() + k);
+						break;
+					}
+				}
+				if (bAdd && (chg2.Get("wFrom") == NULL || chg2.Get("wTo") == NULL)) {
+					strErr = "足す時は wFrom・wTo（番号の帯の先頭と最後）を指定してください";
+					goto Exit;
+				}
+				if (!ApplyFields((BYTE *)&Info, s_aFieldFlagGroup, COUNTOF(s_aFieldFlagGroup), chg2, strErr, "")) {
+					goto Exit;
+				}
+			}
+			/* 内容の確認 */
+			if (Info.byState > FLAGGROUPSTATE_ON) {
+				strErr = "byState は 0（削除済み）か 1（有効）で指定してください";
+				goto Exit;
+			}
+			if (Info.byKind >= FLAGKIND_MAX) {
+				strErr = "byKind は 0（印）か 1（数値）で指定してください";
+				goto Exit;
+			}
+			if (Info.byState == FLAGGROUPSTATE_ON && Info.szName[0] == 0) {
+				strErr = "szName（メイン名）は空にできません（消す時は byState を 0 にします）";
+				goto Exit;
+			}
+			{
+				WORD wMax = (Info.byKind == FLAGKIND_BIT) ? MAX_FLAGBIT : MAX_FLAGNUM;
+				if (Info.wFrom >= wMax || Info.wTo >= wMax || Info.wFrom > Info.wTo) {
+					strErr = "wFrom〜wTo は、印なら 0〜" + JsonNum(MAX_FLAGBIT - 1) + "、数値なら 0〜" + JsonNum(MAX_FLAGNUM - 1) + " の範囲で、wFrom <= wTo にしてください";
+					goto Exit;
+				}
+			}
+			/* 同じ種類で、有効なグループの帯が重なるのは不可（削除済みの枠の帯は数えない） */
+			if (Info.byState == FLAGGROUPSTATE_ON) {
+				for (int k = 0; k < g_aFlagGroupInfo.GetSize(); k ++) {
+					const FLAGGROUPINFO *pO = g_aFlagGroupInfo[k];
+					if ((bAdd || k != nID) && pO->byState == FLAGGROUPSTATE_ON && pO->byKind == Info.byKind &&
+							Info.wFrom <= pO->wTo && pO->wFrom <= Info.wTo) {
+						strErr = "番号の帯 " + JsonNum(Info.wFrom) + "〜" + JsonNum(Info.wTo) + " が、グループ「" + pO->szName + "」（id " + JsonNum(k) +
+								"・" + JsonNum(pO->wFrom) + "〜" + JsonNum(pO->wTo) + "）と重なっています（同じ種類で帯は重ねられません）";
+						goto Exit;
+					}
+				}
+			}
+			/* グループ番号を振る（1〜MAX_FLAGGROUP-1 で使われていない一番小さい番号） */
+			if (bAdd) {
+				WORD wNew = 0;
+				for (WORD w = 1; w < MAX_FLAGGROUP && wNew == 0; w ++) {
+					bool bUsed = false;
+					for (int k = 0; k < g_aFlagGroupInfo.GetSize(); k ++) {
+						if (g_aFlagGroupInfo[k]->wID == w) {
+							bUsed = true;
+							break;
+						}
+					}
+					if (!bUsed) {
+						wNew = w;
+					}
+				}
+				if (wNew == 0) {
+					strErr = "グループがいっぱいで足せません";
+					goto Exit;
+				}
+				Info.wID = wNew;
+			}
+			strRecord = FieldsJson((const BYTE *)&Info, s_aFieldFlagGroup, COUNTOF(s_aFieldFlagGroup));
+			if (bApply) {
+				if (bAdd) {
+					PFLAGGROUPINFO pNew = new FLAGGROUPINFO;
+					*pNew = Info;
+					g_aFlagGroupInfo.Add(pNew);
+				} else {
+					*g_aFlagGroupInfo[nID] = Info;
+				}
+				SaveFlagGroupInfo();
+			}
+		}
+		break;
+
 	}
 
 Exit:
@@ -4826,6 +4995,36 @@ void SboDataStoryApplyInfo(int nNo, const STORYINFO *pInfo, int &nNoOut, std::st
 			FieldsJson((const BYTE *)&Info, s_aFieldStory, COUNTOF(s_aFieldStory))) + "}";
 	const char *pszRes = SboWebDataApply("story", bAdd ? g_aStoryInfo.GetSize() : nNo, strJson.c_str(), 1, "管理者ウィンドウ");
 	ApplyResultToErr(pszRes, bAdd ? g_aStoryInfo.GetSize() - 1 : nNo, nNoOut, strErr);
+}
+
+/*
+ * 管理者ウィンドウからフラグのグループを書き込む（思い出の本と同じ作り）。
+ *   nNo: グループの配列の番号（-1 なら足す）。届いた FLAGGROUPINFO を JSON にして
+ *   SboWebDataApply を通すので、確認（帯の範囲・同じ種類での重なり）・番号の振り方・保存はデータAPIと同じ。
+ *   グループ番号（wID）は足す時に自動で振り、直す時は今の番号を書き戻す（変えられない）。
+ *   結果: strErr が空ならうまくいった（nNoOut に書き込んだ番号）
+ */
+void SboDataFlagGroupApplyInfo(int nNo, const FLAGGROUPINFO *pInfo, int &nNoOut, std::string &strErr)
+{
+	FLAGGROUPINFO Info;
+	bool bAdd = (nNo < 0);
+
+	nNoOut = -1;
+	strErr.clear();
+	if (!bAdd && nNo >= g_aFlagGroupInfo.GetSize()) {
+		strErr = "グループの番号が範囲外です（ほかの人が変えたかもしれません。取得し直してください）";
+		return;
+	}
+	Info = *pInfo;
+	/* 文字の欄は必ず終端させる */
+	Info.szName[sizeof(Info.szName) - 1] = 0;
+	if (!bAdd) {
+		Info.wID = g_aFlagGroupInfo[nNo]->wID;
+	}
+	std::string strJson = "{" + (bAdd ? FieldsJson((const BYTE *)&Info, s_aFieldFlagGroup + 1, COUNTOF(s_aFieldFlagGroup) - 1) :
+			FieldsJson((const BYTE *)&Info, s_aFieldFlagGroup, COUNTOF(s_aFieldFlagGroup))) + "}";
+	const char *pszRes = SboWebDataApply("flagGroup", bAdd ? g_aFlagGroupInfo.GetSize() : nNo, strJson.c_str(), 1, "管理者ウィンドウ");
+	ApplyResultToErr(pszRes, bAdd ? g_aFlagGroupInfo.GetSize() - 1 : nNo, nNoOut, strErr);
 }
 
 /*

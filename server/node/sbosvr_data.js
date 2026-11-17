@@ -95,6 +95,8 @@ Module['sboData'] = (function () {
 		talk: 'SboDataTalkInfo.dat',
 		/* 思い出の本のシナリオ（ファイルが無い時は 0 件。初めて保存した時に作られる） */
 		story: 'SboDataStoryInfo.dat',
+		/* フラグのグループ（印・数値の番号の帯に付けるメイン名。ファイルが無い時は 0 件。初めて保存した時に作られる） */
+		flagGroup: 'SboDataFlagGroupInfo.dat',
 		/* NPC（プレイヤーは書き換えられない。ファイルはプレイヤーと一緒） */
 		char: 'SboDataCharInfo.dat',
 		/* マップは 1 マップ 1 ファイル（SboDataMapInfo000.dat〜）。マス目（tiles）も同じファイル */
@@ -666,7 +668,7 @@ Module['sboData'] = (function () {
 
 	/* 追加した記録を「消す」変更。消せない種類は null */
 	function eraseChanges(kind) {
-		if (kind === 'maker' || kind === 'recipe' || kind === 'quest' || kind === 'flag' || kind === 'talk' || kind === 'story') {
+		if (kind === 'maker' || kind === 'recipe' || kind === 'quest' || kind === 'flag' || kind === 'talk' || kind === 'story' || kind === 'flagGroup') {
 			return { byState: 0 };		/* 依頼・思い出の本のシナリオは削除が無いので、追加したものは「止める」（0）にする。名前表・会話データの 0 は「削除済み」 */
 		}
 

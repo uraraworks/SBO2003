@@ -119,6 +119,7 @@ void SendCmdADMINUNDO		(BYTE, BYTE, DWORD);					/* 管理者画面の「元に�
 void SendCmdADMINSPACE		(BYTE, DWORD);							/* 管理者の空間の切り替え */
 void SendCmdADMINQUEST		(BYTE, int, const QUESTINFO *);			/* 管理者ウィンドウのギルドの依頼の編集 */
 void SendCmdADMINSTORY		(BYTE, int, const STORYINFO *);			/* 管理者ウィンドウの思い出の本の編集 */
+void SendCmdADMINFLAGGROUP	(BYTE, int, const FLAGGROUPINFO *);		/* 管理者ウィンドウのフラグのグループの編集 */
 void SendCmdADMINFLAGNAME	(BYTE, int, const FLAGNAMEINFO *);		/* 管理者ウィンドウのフラグの名前表の編集 */
 void SendCmdADMINTALK		(BYTE, int, const TALKINFO *);			/* 管理者ウィンドウの会話データの編集 */
 void SendCmdADMINCHARFLAG	(BYTE, DWORD, BYTE, WORD, WORD);		/* 管理者ウィンドウのキャラのフラグの取得・変更 */
@@ -3650,6 +3651,28 @@ void SendCmdADMINSTORY(BYTE byCmdSub, int nNo, const STORYINFO *pInfo)
 		pPara->Info = *pInfo;
 	}
 	cliSock.Send ((PBYTE)pPara, sizeof (CMDPARA_ADMINSTORY));
+	SAFE_DELETE (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdADMINFLAGGROUP											 */
+/* 内容：コマンド送信(管理者ウィンドウのフラグのグループの編集)				 */
+/*       byCmdSub: ADMINFLAGGROUP_LISTREQ（一覧の問い合わせ）・				 */
+/*                 ADMINFLAGGROUP_SET（pInfo を nNo 番目に書き込む。-1 は足す。*/
+/*                 削除は byState=0）										 */
+/* ========================================================================= */
+void SendCmdADMINFLAGGROUP(BYTE byCmdSub, int nNo, const FLAGGROUPINFO *pInfo)
+{
+	PCMDPARA_ADMINFLAGGROUP pPara = new CMDPARA_ADMINFLAGGROUP;
+
+	ZeroMemory (pPara, sizeof (CMDPARA_ADMINFLAGGROUP));
+	pPara->byCmd	= CMD_ADMINFLAGGROUP;
+	pPara->byCmdSub	= byCmdSub;
+	pPara->nNo		= nNo;
+	if (pInfo) {
+		pPara->Info = *pInfo;
+	}
+	cliSock.Send ((PBYTE)pPara, sizeof (CMDPARA_ADMINFLAGGROUP));
 	SAFE_DELETE (pPara);
 }
 

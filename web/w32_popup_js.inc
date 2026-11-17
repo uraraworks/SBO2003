@@ -90,6 +90,7 @@ EM_JS(void, W32JsPopInit, (void), {
 		'.w32-lv>table{border-collapse:collapse;table-layout:fixed;cursor:default}',
 		'.w32-lv th{position:sticky;top:0;z-index:1;background:#fff;border-right:1px solid #e5e5e5;border-bottom:1px solid #e5e5e5;',
 		'font-weight:normal;text-align:left;padding:1px 4px;overflow:hidden;white-space:nowrap;height:18px;box-sizing:border-box}',
+		'.w32-lv th .w32-lvgrip{position:absolute;top:0;right:0;width:6px;height:100%;cursor:col-resize}',
 		'.w32-lv td{padding:0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;height:17px}',
 		'.w32-lv.w32-grid td{border-right:1px solid #f0f0f0;border-bottom:1px solid #f0f0f0}',
 		'.w32-lv tr.w32-sel td{background:#cce8ff}',
@@ -583,7 +584,7 @@ EM_JS(void, W32JsPopInit, (void), {
 		table.appendChild(tbody);
 		el.appendChild(table);
 		el.tabIndex = 0;
-		el.w32Lv = {table: table, colgroup: colgroup, hrow: hrow, tbody: tbody, widths: []};
+		el.w32Lv = {table: table, colgroup: colgroup, hrow: hrow, tbody: tbody, widths: [], id: id};
 		var rowOf = function (ev) {
 			var tr = ev.target.closest('tr');
 			return (tr && tr.parentNode === tbody) ? tr.sectionRowIndex : -1;
@@ -637,6 +638,67 @@ EM_JS(void, W32JsPopInit, (void), {
 				_W32JsOnListView(id, cur, 1);
 			}
 		});
+	};
+	/* 列幅を変えた（ドラッグ・自動幅）。見た目を直して C++ 側の列幅にも伝える */
+	P.lvSetColWidth = function (el, nCol, w) {
+		var lv = el.w32Lv;
+		w = Math.max(10, Math.round(w));
+		lv.widths[nCol] = w;
+		lv.colgroup.children[nCol].style.width = w + 'px';
+		P.lvWidth(lv);
+		_W32JsOnListColWidth(lv.id, nCol, w);
+	};
+	/* 見出しと中身の一番長い文字に合わせた幅（Windows の自動幅と同じ） */
+	P.lvAutoWidth = function (el, nCol) {
+		var lv = el.w32Lv;
+		var cv = P.lvMeasure || (P.lvMeasure = document.createElement('canvas').getContext('2d'));
+		var th = lv.hrow.children[nCol];
+		cv.font = getComputedStyle(th).font;
+		var w = cv.measureText(th.title || '').width;
+		var rows = lv.tbody.rows;
+		if (rows.length) {
+			cv.font = getComputedStyle(rows[0]).font;
+		}
+		for (var i = 0; i < rows.length; i ++) {
+			var c = rows[i].cells[nCol];
+			if (c) {
+				var tw = cv.measureText(c.textContent).width + (nCol === 0 ? 20 : 0);
+				if (tw > w) {
+					w = tw;
+				}
+			}
+		}
+		P.lvSetColWidth(el, nCol, w + 12);
+	};
+	/* 見出しの右端につかみ（ドラッグで幅を変える・ダブルクリックで自動幅）を付ける */
+	P.lvAddGrip = function (el, th) {
+		var lv = el.w32Lv;
+		var grip = document.createElement('div');
+		grip.className = 'w32-lvgrip';
+		grip.addEventListener('mousedown', function (ev) {
+			if (ev.button !== 0) {
+				return;
+			}
+			ev.preventDefault();
+			ev.stopPropagation();
+			var x0 = ev.clientX;
+			var w0 = lv.widths[th.cellIndex];
+			var move = function (e) {
+				P.lvSetColWidth(el, th.cellIndex, w0 + e.clientX - x0);
+			};
+			var up = function () {
+				document.removeEventListener('mousemove', move);
+				document.removeEventListener('mouseup', up);
+			};
+			document.addEventListener('mousemove', move);
+			document.addEventListener('mouseup', up);
+		});
+		grip.addEventListener('dblclick', function (ev) {
+			ev.preventDefault();
+			ev.stopPropagation();
+			P.lvAutoWidth(el, th.cellIndex);
+		});
+		th.appendChild(grip);
 	};
 	P.lvWidth = function (lv) {
 		var w = 0;
@@ -1105,6 +1167,8 @@ EM_JS(void, W32JsPopListView, (int nID, int nOp, int nRow, int nCol, const char 
 		col.style.width = nValue + 'px';
 		var th = document.createElement('th');
 		th.textContent = text;
+		th.title = text;
+		P.lvAddGrip(el, th);
 		var first = lv.widths.length === 0;
 		lv.colgroup.insertBefore(col, lv.colgroup.children[nCol] || null);
 		lv.hrow.insertBefore(th, lv.hrow.children[nCol] || null);

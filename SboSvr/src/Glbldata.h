@@ -72,6 +72,7 @@ extern CmyArray<PMAKERINFO, PMAKERINFO> g_aMakerInfo;							/* 作り手情報 *
 extern CmyArray<PRECIPEINFO, PRECIPEINFO> g_aRecipeInfo;						/* レシピ情報 */
 extern CmyArray<PQUESTINFO, PQUESTINFO> g_aQuestInfo;							/* 依頼情報 */
 extern CmyArray<PFLAGNAMEINFO, PFLAGNAMEINFO> g_aFlagNameInfo;				/* フラグの名前表 */
+extern CmyArray<PFLAGGROUPINFO, PFLAGGROUPINFO> g_aFlagGroupInfo;			/* フラグのグループ（メイン-サブの帯） */
 extern CmyArray<PTALKINFO, PTALKINFO> g_aTalkInfo;							/* 会話データ */
 extern CmyArray<PSTORYINFO, PSTORYINFO> g_aStoryInfo;						/* 思い出の本のシナリオ */
 

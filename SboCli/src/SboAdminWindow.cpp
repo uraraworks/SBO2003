@@ -25,6 +25,7 @@
 #include "AdminWindowOld/AdminDlgQuestInfo.h"
 #include "AdminWindowOld/AdminDlgStoryInfo.h"
 #include "AdminWindowOld/AdminDlgFlagName.h"
+#include "AdminWindowOld/AdminDlgFlagGroup.h"
 #include "AdminWindowOld/AdminDlgTalk.h"
 #include "AdminWindowOld/AdminDlgCharFlag.h"
 #include "AdminWindowOld/AdminFlagUi.h"
@@ -1594,6 +1595,11 @@ void AdminOnCommand(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 		DeleteAdminWnd ();
 		g_nAdminWindowType = IDM_ETC_FLAGNAME;
 		ShowDlgFlagName (hWnd);
+		break;
+	case IDM_ETC_FLAGGROUP:
+		DeleteAdminWnd ();
+		g_nAdminWindowType = IDM_ETC_FLAGGROUP;
+		ShowDlgFlagGroup (hWnd);
 		break;
 	case IDM_ETC_TALK:
 		DeleteAdminWnd ();
@@ -7672,6 +7678,7 @@ void DeleteAdminWnd(void)
 	CloseDlgQuestInfo ();
 	CloseDlgStoryInfo ();
 	CloseDlgFlagName ();
+	CloseDlgFlagGroup ();
 	CloseDlgTalk ();
 	CloseDlgCharFlag ();
 	CloseDlgAccSearch ();
@@ -8607,7 +8614,7 @@ void MakeAdminWndCharInfo(void)
 	};
 	AdminFlagNameLoadIfEmpty ();
 	for (int nView = 0; nView < 2; nView ++) {
-		HWND hWndTmp = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_NUMBER,
+		HWND hWndTmp = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
 				12 * 22 + 96, s_aViewFlag[nView].nY, 32, 11, g_hWndAdmin, (HMENU)(INT_PTR)s_aViewFlag[nView].nEdit, g_hInstance, NULL);
 		SendMessage (hWndTmp, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 		hWndTmp = CreateWindow ("STATIC", "", WS_CHILD | WS_VISIBLE,

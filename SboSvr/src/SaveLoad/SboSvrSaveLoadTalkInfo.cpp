@@ -307,6 +307,32 @@ static const COLINFO s_aFlagNameCol[] = {
 };
 
 /* ========================================================================= */
+/* フラグのグループ（SboDataFlagGroupInfo.dat。名前表とは別のファイル）		 */
+/* ========================================================================= */
+
+/* ファイルに書く 1 件ぶん */
+typedef struct _FLAGGROUPFILE {
+	WORD		wID;
+	BYTE		byState;
+	BYTE		byKind;
+	char		szName[MAX_FLAGGROUPNAME];
+	WORD		wFrom;
+	WORD		wTo;
+	WORD		wSort;
+} FLAGGROUPFILE;
+
+/* フラグのグループのカラム */
+static const COLINFO s_aFlagGroupCol[] = {
+	COL (FLAGGROUPFILE, wID,		COL_U16),
+	COL (FLAGGROUPFILE, byState,	COL_U8),
+	COL (FLAGGROUPFILE, byKind,		COL_U8),
+	COLS(FLAGGROUPFILE, szName,		COL_STR, MAX_FLAGGROUPNAME),
+	COL (FLAGGROUPFILE, wFrom,		COL_U16),
+	COL (FLAGGROUPFILE, wTo,		COL_U16),
+	COL (FLAGGROUPFILE, wSort,		COL_U16),
+};
+
+/* ========================================================================= */
 /* 会話データ																 */
 /* ========================================================================= */
 
@@ -382,6 +408,8 @@ static const COLINFO s_aTalkCol[] = {
 
 BOOL SaveFlagNameInfo(void);									/* フラグの名前表保存 */
 BOOL LoadFlagNameInfo(void);									/* フラグの名前表読み込み */
+BOOL SaveFlagGroupInfo(void);									/* フラグのグループ保存 */
+BOOL LoadFlagGroupInfo(void);									/* フラグのグループ読み込み */
 BOOL SaveTalkInfo(void);										/* 会話データ保存 */
 BOOL LoadTalkInfo(void);										/* 会話データ読み込み */
 
@@ -519,6 +547,70 @@ BOOL LoadFlagNameInfo(void)
 		memcpy (pInfo->szName, p->szName, sizeof (pInfo->szName));
 		pInfo->szName[MAX_FLAGNAME - 1] = 0;
 		g_aFlagNameInfo.Add (pInfo);
+	}
+	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：SaveFlagGroupInfo												 */
+/* 内容：フラグのグループ保存												 */
+/* ========================================================================= */
+BOOL SaveFlagGroupInfo(void)
+{
+	char szFile[MAX_PATH + 1];
+	std::vector<FLAGGROUPFILE> aData;
+	int i, nCount = g_aFlagGroupInfo.GetSize ();
+
+	MakeFileName (szFile, "SboDataFlagGroupInfo.dat");
+	/* 1 件も無く、ファイルも無い時は作らない（公開リポジトリにはデータを置かない） */
+	if (nCount == 0) {
+		HANDLE hFile = CreateFile (szFile, GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+		if (hFile == INVALID_HANDLE_VALUE) {
+			return TRUE;
+		}
+		CloseHandle (hFile);
+	}
+	aData.resize (nCount ? nCount : 1);
+	for (i = 0; i < nCount; i ++) {
+		memset (&aData[i], 0, sizeof (FLAGGROUPFILE));
+		aData[i].wID = g_aFlagGroupInfo[i]->wID;
+		aData[i].byState = g_aFlagGroupInfo[i]->byState;
+		aData[i].byKind = g_aFlagGroupInfo[i]->byKind;
+		memcpy (aData[i].szName, g_aFlagGroupInfo[i]->szName, sizeof (aData[i].szName));
+		aData[i].wFrom = g_aFlagGroupInfo[i]->wFrom;
+		aData[i].wTo = g_aFlagGroupInfo[i]->wTo;
+		aData[i].wSort = g_aFlagGroupInfo[i]->wSort;
+	}
+	return SaveColumns (szFile, s_aFlagGroupCol, sizeof (s_aFlagGroupCol) / sizeof (s_aFlagGroupCol[0]), (const BYTE *)&aData[0], sizeof (FLAGGROUPFILE), nCount);
+}
+
+/* ========================================================================= */
+/* 関数名：LoadFlagGroupInfo												 */
+/* 内容：フラグのグループ読み込み（ファイルが無ければ 0 件）				 */
+/* ========================================================================= */
+BOOL LoadFlagGroupInfo(void)
+{
+	char szFile[MAX_PATH + 1];
+	std::vector<BYTE> aData;
+	int i, nCount = 0;
+
+	MakeFileName (szFile, "SboDataFlagGroupInfo.dat");
+	if (!LoadColumns (szFile, s_aFlagGroupCol, sizeof (s_aFlagGroupCol) / sizeof (s_aFlagGroupCol[0]), sizeof (FLAGGROUPFILE), MAX_FLAGGROUP - 1, aData, &nCount)) {
+		return FALSE;
+	}
+	for (i = 0; i < nCount; i ++) {
+		const FLAGGROUPFILE *p = (const FLAGGROUPFILE *)&aData[sizeof (FLAGGROUPFILE) * i];
+		PFLAGGROUPINFO pInfo = new FLAGGROUPINFO;
+		memset (pInfo, 0, sizeof (*pInfo));
+		pInfo->wID = p->wID;
+		pInfo->byState = p->byState;
+		pInfo->byKind = p->byKind;
+		memcpy (pInfo->szName, p->szName, sizeof (pInfo->szName));
+		pInfo->szName[MAX_FLAGGROUPNAME - 1] = 0;
+		pInfo->wFrom = p->wFrom;
+		pInfo->wTo = p->wTo;
+		pInfo->wSort = p->wSort;
+		g_aFlagGroupInfo.Add (pInfo);
 	}
 	return TRUE;
 }
