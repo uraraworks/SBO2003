@@ -157,6 +157,7 @@ void	RecvDataProcADMINSTORY				(PBYTE, DWORD);			/* 受信データ処理(管理
 void	RecvDataProcADMINFLAGGROUP			(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのフラグのグループの編集) */
 void	RecvDataProcADMINCHARFLAG			(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのキャラのフラグ) */
 void	RecvDataProcTALKMSG					(PBYTE, DWORD);			/* 受信データ処理(会話データで選ばれた台詞) */
+void	RecvDataProcMAPSWAP					(PBYTE, DWORD);			/* 受信データ処理(印で変わるマスの差し替え一覧) */
 void	RecvDataProcHASTE					(PBYTE, DWORD);			/* 受信データ処理(加速の状態) */
 void	RecvDataProcCHARBUFF				(PBYTE, DWORD);			/* 受信データ処理(攻撃力・守備力アップの残り) */
 void	RecvDataProcMAKERINFO				(PBYTE, DWORD);			/* 受信データ処理(作り手情報) */
@@ -434,6 +435,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	NULL,								/* CMD_TALKANSWER(クライアント→サーバーのみ) */
 	NULL,								/* CMD_ADMINVIEWALL(クライアント→サーバーのみ) */
 	RecvDataProcADMINFLAGGROUP,			/* CMD_ADMINFLAGGROUP */
+	RecvDataProcMAPSWAP,				/* CMD_MAPSWAP */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -4270,6 +4272,7 @@ void RecvDataProcMAPINFO(PBYTE pData, DWORD dwDataSize)
 		SAFE_DELETE_ARRAY (g_pMapInfo->pbyFlg);
 		SAFE_DELETE_ARRAY (g_pMapInfo->pdwMapChar);
 	}
+	MapSwapReset ();		/* 印で変わるマスの差し替え（マップ情報を作り直すので、置き換えた記録は捨てる） */
 
 	/* 一度見た所の記録を消す(迷路の作り直しなどで形が変わるので) */
 	ResetMapViewSeen ();
@@ -4278,6 +4281,7 @@ void RecvDataProcMAPINFO(PBYTE pData, DWORD dwDataSize)
 	CopyMemory (g_pMapInfo, pMap, sizeof (MAPINFO));
 	g_pMapInfo->pszName = NULL;
 	g_pMapInfo->pbyRoofLV = NULL;
+	g_pMapInfo->bySwapCount = 0;		/* サーバーは 0 で送ってくる。念のため */
 
 	g_pMapInfo->pwMap = new WORD[pMap->nCX * pMap->nCY];
 	CopyMemory ((PBYTE)g_pMapInfo->pwMap, (PBYTE)pData + sizeof (CMDPARA_MAPINFO),
@@ -5323,6 +5327,116 @@ void RecvDataProcMAPPARTS(PBYTE pData, DWORD dwDataSize)
 }
 
 /* ========================================================================= */
+/* 印で変わるマス															 */
+/*   サーバーが送る、この人の分の差し替え一覧を、手元のマップ(pwMap)に直接	 */
+/*   書き込む（描画・移動の先読みなど pwMap を見る所が全部そのまま効く）。	 */
+/*   元のパーツは覚えておき、次の一覧が来た時・マップが変わる時に戻す		 */
+/* ========================================================================= */
+typedef struct _MAPSWAPSAVE {
+	WORD	wX;
+	WORD	wY;
+	WORD	wBase;						/* 差し替える前（元）のパーツ */
+	BYTE	byApplied;					/* pwMap に差し替えを書いてある */
+	BYTE	byExamine;					/* 目の前で調べると開くマス */
+} MAPSWAPSAVE;
+static MAPSWAPSAVE s_aMapSwap[MAX_MAPSWAP];
+static int s_nMapSwap = 0;
+
+/* 差し替えを元に戻す（一覧は空にする） */
+void MapSwapRestore(void)
+{
+	int i;
+
+	for (i = 0; i < s_nMapSwap; i ++) {
+		if (s_aMapSwap[i].byApplied && g_pMapInfo && g_pMapInfo->pwMap &&
+			(s_aMapSwap[i].wX < g_pMapInfo->nCX) && (s_aMapSwap[i].wY < g_pMapInfo->nCY)) {
+			g_pMapInfo->pwMap[s_aMapSwap[i].wX + s_aMapSwap[i].wY * g_pMapInfo->nCX] = s_aMapSwap[i].wBase;
+		}
+	}
+	s_nMapSwap = 0;
+}
+
+/* 差し替えの記録を捨てる（マップ情報を作り直す時。pwMap はもう無いので書き戻さない） */
+void MapSwapReset(void)
+{
+	s_nMapSwap = 0;
+}
+
+/* 目の前で調べると開くマスか（調べる問い合わせを送ってよいか） */
+BOOL MapSwapIsExamine(int nX, int nY)
+{
+	int i;
+
+	for (i = 0; i < s_nMapSwap; i ++) {
+		if (s_aMapSwap[i].byExamine && (s_aMapSwap[i].wX == nX) && (s_aMapSwap[i].wY == nY)) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* マップのパーツが書き換わった時。差し替え中のマスなら、元のパーツだけ覚え直して TRUE（pwMap は書かない） */
+BOOL MapSwapOnChg(int nX, int nY, WORD wMap)
+{
+	int i;
+
+	for (i = 0; i < s_nMapSwap; i ++) {
+		if (s_aMapSwap[i].byApplied && (s_aMapSwap[i].wX == nX) && (s_aMapSwap[i].wY == nY)) {
+			s_aMapSwap[i].wBase = wMap;
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcMAPSWAP												 */
+/* 内容：受信データ処理(印で変わるマスの差し替え一覧)						 */
+/* ========================================================================= */
+void RecvDataProcMAPSWAP(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_MAPSWAP pPara = (PCMDPARA_MAPSWAP)pData;
+	PMAPSWAPSEND paSend;
+	int i, nCount;
+
+	if ((g_pMapInfo == NULL) || (g_pMapInfo->pwMap == NULL) || (g_pMapInfo->dwID != pPara->dwMapID)) {
+		return;
+	}
+	nCount = pPara->wCount;
+	if ((dwDataSize < sizeof (CMDPARA_MAPSWAP)) ||
+		((DWORD)nCount * sizeof (MAPSWAPSEND) > dwDataSize - sizeof (CMDPARA_MAPSWAP))) {
+		return;
+	}
+	if (nCount > MAX_MAPSWAP) {
+		nCount = MAX_MAPSWAP;
+	}
+	MapSwapRestore ();
+	paSend = (PMAPSWAPSEND)(pData + sizeof (CMDPARA_MAPSWAP));
+	for (i = 0; i < nCount; i ++) {
+		MAPSWAPSAVE *pSave = &s_aMapSwap[s_nMapSwap];
+		DWORD dwPos;
+
+		if ((paSend[i].wX >= g_pMapInfo->nCX) || (paSend[i].wY >= g_pMapInfo->nCY)) {
+			continue;
+		}
+		dwPos = paSend[i].wX + paSend[i].wY * g_pMapInfo->nCX;
+		pSave->wX = paSend[i].wX;
+		pSave->wY = paSend[i].wY;
+		pSave->wBase = g_pMapInfo->pwMap[dwPos];
+		pSave->byApplied = 0;
+		pSave->byExamine = (paSend[i].byFlg & MAPSWAPSEND_EXAMINE) ? 1 : 0;
+		if ((paSend[i].byFlg & MAPSWAPSEND_APPLY) && (g_wCountMapParts > paSend[i].wParts)) {
+			g_pMapInfo->pwMap[dwPos] = paSend[i].wParts;
+			pSave->byApplied = 1;
+		}
+		s_nMapSwap ++;
+	}
+	g_bDraw = TRUE;
+	/* 灯り(見える所)を作り直す（壁が通れる・橋がかかるなどで変わるため） */
+	RequestCharPosInfo ();
+}
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcCHGMAP												 */
 /* 内容：受信データ処理(マップ更新)											 */
 /* 日付：2003/05/31															 */
@@ -5334,7 +5448,10 @@ void RecvDataProcCHGMAP(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 
-	g_pMapInfo->pwMap[pMap->nX + pMap->nY * g_pMapInfo->nCX] = pMap->wMap;
+	/* 印で変わるマスで差し替え中のマスは、差し替えたまま、元のパーツだけ覚え直す */
+	if (!MapSwapOnChg (pMap->nX, pMap->nY, pMap->wMap)) {
+		g_pMapInfo->pwMap[pMap->nX + pMap->nY * g_pMapInfo->nCX] = pMap->wMap;
+	}
 	g_bDraw = TRUE;
 
 	/* 扉が開いた・閉まった時などに、灯り(見える所)を作り直す。
@@ -5358,6 +5475,7 @@ void RecvDataProcADDDELMAP(PBYTE pData, DWORD dwDataSize)
 	if (g_pMapInfo->dwID != pMap->dwID) {
 		return;
 	}
+	MapSwapRestore ();		/* 座標がずれるので、印で変わるマスの差し替えは元に戻す（サーバーが送り直す） */
 
 	switch (pMap->byType) {
 	case 0:

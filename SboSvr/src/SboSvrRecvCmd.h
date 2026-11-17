@@ -56,6 +56,7 @@ extern int		GetCharDistanceX			(PCHARINFO, PCHARINFO);							/* キャラサイ�
 extern DWORD	GetCharXPos					(PCHARINFO, DWORD, BYTE);						/* キャラサイズに合わせた座標を補正(横) */
 extern BOOL		CheckCharBlock				(DWORD, DWORD, DWORD);							/* キャラのぶつかり判定 */
 extern BOOL		CheckCharBlock				(PCHARINFO pChar, DWORD, DWORD, DWORD);			/* キャラのぶつかり判定 */
+extern BOOL		CheckCharBlockFor			(PCHARINFO pViewer, DWORD, DWORD, DWORD);		/* 同上（pViewer の印で差し替えたパーツで判定。NULL・プレイヤー以外はベースのパーツ） */
 extern int		GetCharBridgeLayerSvr		(PCHARINFO pChar, BOOL *pbKnown);				/* 立体交差の橋の上(1)か下(2)か */
 extern void		FitCharDirectionBridgeLayer	(PCHARINFO pChar);								/* ログアウト時の向きを橋の上か下かに合わせる */
 extern DWORD	CheckCharBlockPC			(DWORD, DWORD, DWORD, DWORD dwSpaceID = 0);		/* キャラのキャラとのぶつかり判定（同じ空間のキャラとだけ） */

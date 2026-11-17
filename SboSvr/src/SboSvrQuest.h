@@ -51,6 +51,12 @@ inline BOOL IsInteractable(PCHARINFO pChar, PCHARINFO pTarget)
 extern BOOL IsCharVisibleTo(PCHARINFO pSrc, PCHARINFO pDst);	/* pSrc の情報を pDst に送ってよいか（見えるNPC以外は常に TRUE） */
 extern BOOL IsCharVisibleToPID(PCHARINFO pSrc, DWORD pIDDst);	/* 同上（受け取る人をプレイヤーIDで指定。SENDALL など該当者なしは見えるNPCだけ FALSE） */
 extern void CharViewRefresh(PCHARINFO pChar);					/* 印が変わった時、その人がいる所の条件付きNPCの見え方を、その人にだけ送り直す */
+extern WORD MapSwapParts(PMAPINFO pMap, PCHARINFO pViewer, int x, int y);	/* (x,y) のパーツ（印で変わるマスを pViewer の印で差し替えた後。pViewer が NULL・プレイヤー以外はベースのまま） */
+extern void MapSwapSend(PCHARINFO pChar, PMAPINFO pMap, BOOL bForce);	/* 印で変わるマスの差し替え一覧を本人にだけ送る（bForce=FALSE は送るものが無ければ送らない） */
+extern BOOL ChestOpenedGet(const PCHARINFO pChar, int nChestNo);	/* 開けた宝箱の記録を見る（番号 0〜2047） */
+extern void ChestOpenedSet(PCHARINFO pChar, int nChestNo, BOOL bOn);	/* 開けた宝箱の記録を立てる・消す */
+extern void MapSwapSendMap(PMAPINFO pMap);						/* そのマップにいるプレイヤー全員に差し替え一覧を送り直す */
+extern BOOL MapSwapExamine(PCHARINFO pChar);					/* 目の前の「調べると開く」マスを調べた（品を渡して印を立てて文を出す）。処理した時 TRUE */
 extern void CharViewRefreshNpc(PCHARINFO pNpc);					/* 条件付きNPCの条件を変えた時、そのマップの全員に見え直しを送る */
 extern BOOL SpaceIsArena(DWORD dwSpaceID);						/* 闘技場の空間か（ふつうの世界から観戦できる） */
 extern void QuestRemovingBegin(void);							/* 見えるNPCを消す間、送る相手の絞り込みを止める */

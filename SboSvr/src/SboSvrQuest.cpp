@@ -22,6 +22,7 @@
 #include "CharProc/IncludeCharProc.h"
 #include "SboSvrRecvCmd.h"
 #include "SboSvrBattleProc.h"
+#include "SboSvrItemProc.h"
 #include "SboSvrEventProc.h"
 #include "SboSvrCharInfoTimerProc.h"
 #include <stdio.h>
@@ -379,6 +380,201 @@ static void ViewRefreshOne(PCHARINFO pNpc, PCHARINFO pDst)
 	}
 }
 
+/* ========================================================================= */
+/* 印で変わるマス（MAPSWAP）													 */
+/*   見た目と通れるか（当たり判定）を、その人の印で差し替える。				 */
+/*   差し替えるのは本人（プレイヤー）の目だけ。NPC・敵・傭兵・宝箱の敵などは	 */
+/*   ふつうにベースのパーツで動く。「印で隠れたNPCも表示」をオンにした管理者は	 */
+/*   ベースのパーツのまま見える（印を見ずに全部見る設定なので）。			 */
+/* ========================================================================= */
+
+/* 差し替えを見る人か（プレイヤーのキャラで、印どおりに見る人）。違えば NULL */
+static PCHARINFO MapSwapViewer(PCHARINFO pChar)
+{
+	if ((pChar == NULL) || (pChar->byNpcType != NPCTYPE_INIT)) {
+		return NULL;
+	}
+	if ((pChar->byAdminLV != ADMINLV_USER) && pChar->byViewAllNpc) {
+		return NULL;
+	}
+	return pChar;
+}
+
+/* 開けた宝箱の記録（キャラごとのビット。番号は全マップ通し 0〜2047） */
+BOOL ChestOpenedGet(const PCHARINFO pChar, int nChestNo)
+{
+	if ((pChar == NULL) || (nChestNo < 0) || (nChestNo >= MAX_CHESTNO)) {
+		return FALSE;
+	}
+	return (pChar->abyChestOpened[nChestNo / 8] & (1 << (nChestNo % 8))) ? TRUE : FALSE;
+}
+
+void ChestOpenedSet(PCHARINFO pChar, int nChestNo, BOOL bOn)
+{
+	if ((pChar == NULL) || (nChestNo < 0) || (nChestNo >= MAX_CHESTNO)) {
+		return;
+	}
+	if (bOn) {
+		pChar->abyChestOpened[nChestNo / 8] |= (BYTE)(1 << (nChestNo % 8));
+	} else {
+		pChar->abyChestOpened[nChestNo / 8] &= (BYTE)~(1 << (nChestNo % 8));
+	}
+}
+
+/* この行の差し替えが、いま効いているか（宝箱は開けた記録、印で変わるは印を見る） */
+static BOOL MapSwapIsActive(const MAPSWAP *pSwap, const PCHARINFO pViewer)
+{
+	BOOL bOn;
+
+	if (pSwap->byKind == MAPSWAPKIND_CHEST) {
+		return ChestOpenedGet (pViewer, pSwap->wChestNo);
+	}
+	if (pSwap->wFlag >= MAX_FLAGBIT) {
+		return FALSE;
+	}
+	bOn = FlagBitGet (pViewer->abyFlag, pSwap->wFlag) ? TRUE : FALSE;
+	return (pSwap->byCmp == MAPSWAPCMP_OFF) ? !bOn : bOn;
+}
+
+/* 調べると開く行か（宝箱の行。まだ開けていない人が目の前で調べると、品を渡して記録を立てて文を出す） */
+static BOOL MapSwapIsExamineRow(const MAPSWAP *pSwap)
+{
+	return (pSwap->byKind == MAPSWAPKIND_CHEST) && (pSwap->wChestNo < MAX_CHESTNO);
+}
+
+/* (x,y) のパーツ。pViewer の印で差し替えた後の番号（pViewer が NULL・プレイヤー以外ならベースのまま） */
+WORD MapSwapParts(PMAPINFO pMap, PCHARINFO pViewer, int x, int y)
+{
+	WORD wBase;
+	int i;
+
+	wBase = pMap->pwMap[x + y * pMap->nCX];
+	if (pMap->bySwapCount == 0) {
+		return wBase;
+	}
+	pViewer = MapSwapViewer (pViewer);
+	if (pViewer == NULL) {
+		return wBase;
+	}
+	for (i = 0; i < pMap->bySwapCount && i < MAX_MAPSWAP; i ++) {
+		const MAPSWAP *pSwap = &pMap->aSwap[i];
+
+		if ((pSwap->wX != x) || (pSwap->wY != y) || (pSwap->wParts >= g_wCountMapParts)) {
+			continue;
+		}
+		if (MapSwapIsActive (pSwap, pViewer)) {
+			return pSwap->wParts;
+		}
+	}
+	return wBase;
+}
+
+/* pChar の差し替え一覧を pMap について本人に送る。bForce=FALSE の時、送るものが無ければ何も送らない */
+void MapSwapSend(PCHARINFO pChar, PMAPINFO pMap, BOOL bForce)
+{
+	MAPSWAPSEND aSend[MAX_MAPSWAP];
+	PCHARINFO pViewer;
+	int i, nCount = 0;
+
+	if ((pChar == NULL) || (pChar->pID == 0) || (pMap == NULL)) {
+		return;
+	}
+	pViewer = MapSwapViewer (pChar);
+	if (pViewer != NULL) {
+		for (i = 0; i < pMap->bySwapCount && i < MAX_MAPSWAP; i ++) {
+			const MAPSWAP *pSwap = &pMap->aSwap[i];
+			BYTE byFlg = 0;
+
+			if ((pSwap->wX >= pMap->nCX) || (pSwap->wY >= pMap->nCY)) {
+				continue;
+			}
+			if ((pSwap->wParts < g_wCountMapParts) && MapSwapIsActive (pSwap, pViewer)) {
+				byFlg |= MAPSWAPSEND_APPLY;
+			} else if (MapSwapIsExamineRow (pSwap) && !MapSwapIsActive (pSwap, pViewer)) {
+				byFlg |= MAPSWAPSEND_EXAMINE;
+			}
+			if (byFlg == 0) {
+				continue;
+			}
+			aSend[nCount].wX = pSwap->wX;
+			aSend[nCount].wY = pSwap->wY;
+			aSend[nCount].wParts = pSwap->wParts;
+			aSend[nCount].byFlg = byFlg;
+			nCount ++;
+		}
+	}
+	if ((nCount == 0) && !bForce && (pMap->bySwapCount == 0)) {
+		return;
+	}
+	SendCmdMAPSWAP (pChar->pID, pMap->dwID, aSend, nCount);
+}
+
+/* マップ pMap の中にいるプレイヤー全員に、差し替え一覧を送り直す（マップの表やパーツを書き換えた時） */
+void MapSwapSendMap(PMAPINFO pMap)
+{
+	int i;
+
+	for (i = 0; i < g_aCharInfo.GetSize (); i ++) {
+		PCHARINFO pChar = g_aCharInfo[i];
+
+		if ((pChar == NULL) || (pChar->pID == 0) || (pChar->byNpcType != NPCTYPE_INIT) ||
+			(pChar->byGameState < GAMESTATE_MOVE) || (pChar->dwMapID != pMap->dwID)) {
+			continue;
+		}
+		MapSwapSend (pChar, pMap, TRUE);
+	}
+}
+
+/* 目の前（byData=2 の調べる）のマスが「調べると開く」マスなら開ける。処理した時 TRUE。
+   印がまだ立っていない人が調べると、品を渡して（受け取れなければ何も動かさない）印を立てて文を出す */
+BOOL MapSwapExamine(PCHARINFO pChar)
+{
+	PMAPINFO pMap;
+	int i, nNo, x, y;
+
+	if ((pChar == NULL) || (pChar->byNpcType != NPCTYPE_INIT) || (pChar->byDirection >= 4)) {
+		return FALSE;
+	}
+	nNo = GetMapNo (pChar->dwMapID);
+	if (nNo < 0) {
+		return FALSE;
+	}
+	pMap = g_aMapInfo[nNo];
+	if (pMap->bySwapCount == 0) {
+		return FALSE;
+	}
+	x = (int)pChar->dwX + anPosAddTblX[pChar->byDirection];
+	y = (int)pChar->dwY + anPosAddTblY[pChar->byDirection];
+	for (i = 0; i < pMap->bySwapCount && i < MAX_MAPSWAP; i ++) {
+		const MAPSWAP *pSwap = &pMap->aSwap[i];
+		char szMsg[MAX_MAPSWAPMSG + 8];
+
+		if ((pSwap->wX != x) || (pSwap->wY != y) || !MapSwapIsExamineRow (pSwap)) {
+			continue;
+		}
+		if (ChestOpenedGet (pChar, pSwap->wChestNo)) {
+			continue;			/* もう開けた人は何も起きない（ほかのイベントに任せる） */
+		}
+		/* 品を渡す（宝箱・会話データと同じ渡し方と知らせ）。受け取れない時は記録を立てず、同じ知らせだけ出る */
+		if ((pSwap->wGiveItem != 0) && !QuestTalkExchange (pChar, 0, pSwap->wGiveItem)) {
+			SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
+			return TRUE;
+		}
+		ChestOpenedSet (pChar, pSwap->wChestNo, TRUE);
+		if (pSwap->szMsg[0]) {
+			SboTextCopy (szMsg, MAX_MAPSWAPMSG + 4, pSwap->szMsg);
+			ItemMsgAddWait (szMsg, sizeof (szMsg));
+			SendCmdMAPMSG (pChar->pID, szMsg);
+		} else {
+			/* クライアントは返事が来るまで歩けないので、位置を送って待ちを解く */
+			SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
+		}
+		MapSwapSend (pChar, pMap, FALSE);		/* 記録が動いたので、差し替えを本人にだけ送り直す */
+		return TRUE;
+	}
+	return FALSE;
+}
+
 /* 印が変わった時、その人がいるマップの条件付きNPCの見え方を、その人にだけ送り直す */
 void CharViewRefresh(PCHARINFO pChar)
 {
@@ -390,6 +586,10 @@ void CharViewRefresh(PCHARINFO pChar)
 		return;
 	}
 	pMap = g_aMapInfo[pChar->dwMapID];
+	/* 印で変わるマスの差し替えも、その人にだけ送り直す（印が変わった全部の所からここを通る） */
+	if ((pChar->byGameState >= GAMESTATE_MOVE) && (pChar->byNpcType == NPCTYPE_INIT)) {
+		MapSwapSend (pChar, pMap, FALSE);
+	}
 	pData = pMap->paTblNoNPC;
 	if (pData == NULL) {
 		return;

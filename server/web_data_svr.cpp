@@ -29,6 +29,7 @@
 #include <emscripten.h>
 #include <string>
 #include <vector>
+#include <algorithm>
 
 extern BOOL SaveItemInfo(void);
 extern BOOL SaveStTmpInfo(void);
@@ -1716,7 +1717,18 @@ static std::string CharJson(PCHARINFO pChar)
 				out += "\"" + JsonNum(i) + "\":" + JsonNum(pChar->abyFlagNum[i]);
 			}
 		}
-		out += "}}";
+		out += "}";
+		/* 開けた宝箱の番号（読むだけ。印とは別の記録） */
+		out += ",\"chests\":[";
+		bFirst = true;
+		for (int i = 0; i < MAX_CHESTNO; i ++) {
+			if (pChar->abyChestOpened[i / 8] & (1 << (i % 8))) {
+				if (!bFirst) out += ",";
+				bFirst = false;
+				out += JsonNum(i);
+			}
+		}
+		out += "]}";
 	}
 	return out;
 }
@@ -1812,6 +1824,23 @@ static std::string MapJson(PMAPINFO pMap)
 				",\"power\":" + JsonNum(pLight->byPower ? pLight->byPower : 100) +
 				",\"flicker\":" + JsonNum((pLight->byFlg & MAPLIGHTFLG_NOFLICKER) ? 0 : 1) +
 				",\"warm\":" + JsonNum((pLight->byFlg & MAPLIGHTFLG_WARM) ? 1 : 0) + "}";
+	}
+	out += "]";
+
+	/* 印で変わるマス（kind 0=印で変わる・1=宝箱。見た目と通れるかを、その人の印・開けた宝箱の記録で差し替える） */
+	out += ",\"swaps\":[";
+	for (i = 0; i < pMap->bySwapCount && i < MAX_MAPSWAP; i ++) {
+		const MAPSWAP *pSw = &pMap->aSwap[i];
+		if (i) out += ",";
+		out += "{\"kind\":" + JsonNum(pSw->byKind) + ",\"x\":" + JsonNum(pSw->wX) + ",\"y\":" + JsonNum(pSw->wY) +
+				",\"wParts\":" + JsonNum(pSw->wParts);
+		if (pSw->byKind == MAPSWAPKIND_CHEST) {
+			out += ",\"wChestNo\":" + JsonNum(pSw->wChestNo) + ",\"wGiveItem\":" + JsonNum(pSw->wGiveItem) +
+					",\"szMsg\":" + JsonStr(pSw->szMsg) + ",\"szMemo\":" + JsonStr(pSw->szMemo);
+		} else {
+			out += ",\"wFlag\":" + JsonNum(pSw->wFlag) + ",\"byCmp\":" + JsonNum(pSw->byCmp);
+		}
+		out += "}";
 	}
 	out += "]";
 
@@ -2331,6 +2360,54 @@ static std::string RecordJson(int nKind, int nID)
 	return out + "}";
 }
 
+/*
+ * 宝箱（印で変わるマスの kind 1）の一覧。全マップ通し・読むだけ。
+ *   chests … 宝箱番号の順。mapNo はマップの番号（map の id）、mapName はマップ名、item はアイテム名（無ければ ""）
+ *   retired … 番号は使ったが今はどのマップにも無い（消した）宝箱の番号。使い回さない
+ *   nextNo … 次に自動で振る番号（-1=使い切り）
+ */
+static int ChestHighAll();
+extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataChests()
+{
+	std::vector<std::pair<int, std::pair<int, int> > > aRow;		/* (宝箱番号, (マップ番号, 行の番号)) */
+	std::vector<char> abyUsed(MAX_CHESTNO, 0);
+	for (int i = 0; i < g_aMapInfo.GetSize(); i ++) {
+		PMAPINFO pMap = g_aMapInfo[i];
+		for (int j = 0; j < pMap->bySwapCount && j < MAX_MAPSWAP; j ++) {
+			if (pMap->aSwap[j].byKind == MAPSWAPKIND_CHEST && pMap->aSwap[j].wChestNo < MAX_CHESTNO) {
+				aRow.push_back(std::make_pair((int)pMap->aSwap[j].wChestNo, std::make_pair(i, j)));
+				abyUsed[pMap->aSwap[j].wChestNo] = 1;
+			}
+		}
+	}
+	std::sort(aRow.begin(), aRow.end());
+	std::string out = "{\"chests\":[";
+	for (size_t k = 0; k < aRow.size(); k ++) {
+		PMAPINFO pMap = g_aMapInfo[aRow[k].second.first];
+		const MAPSWAP *pSw = &pMap->aSwap[aRow[k].second.second];
+		if (k) out += ",";
+		out += "{\"chestNo\":" + JsonNum(pSw->wChestNo) + ",\"mapNo\":" + JsonNum(aRow[k].second.first) +
+				",\"mapName\":" + TextJson(pMap->pszName) + ",\"x\":" + JsonNum(pSw->wX) + ",\"y\":" + JsonNum(pSw->wY) +
+				",\"wParts\":" + JsonNum(pSw->wParts) + ",\"wGiveItem\":" + JsonNum(pSw->wGiveItem) +
+				",\"item\":" + JsonStr((pSw->wGiveItem != 0 && pSw->wGiveItem < g_aItemInfo.GetSize()) ? g_aItemInfo[pSw->wGiveItem]->szName : "") +
+				",\"szMsg\":" + JsonStr(pSw->szMsg) + ",\"szMemo\":" + JsonStr(pSw->szMemo) + "}";
+	}
+	out += "],\"retired\":[";
+	int nHigh = ChestHighAll();
+	bool bFirst = true;
+	for (int n = 0; n < nHigh && n < MAX_CHESTNO; n ++) {
+		if (!abyUsed[n]) {
+			if (!bFirst) out += ",";
+			bFirst = false;
+			out += JsonNum(n);
+		}
+	}
+	int nNext = nHigh;
+	out += "],\"nextNo\":" + JsonNum(nNext < MAX_CHESTNO ? nNext : -1) + ",\"max\":" + JsonNum(MAX_CHESTNO) + "}";
+	s_strResult = out;
+	return s_strResult.c_str();
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataGet(const char *pszKind, int nID)
 {
 	int nKind = KindFromName(pszKind);
@@ -2779,10 +2856,178 @@ static void ResendMapToPlayers(PMAPINFO pMap, int nID)
 	}
 }
 
+/* 宝箱の番号を、全マップを通して使っている行があるか（nSkipMap のマップの行は数えない。-1 なら全部数える） */
+static bool ChestNoUsedElsewhere(int nSkipMap, int nChestNo)
+{
+	for (int i = 0; i < g_aMapInfo.GetSize(); i ++) {
+		PMAPINFO pMap = g_aMapInfo[i];
+		if (i == nSkipMap) continue;
+		for (int j = 0; j < pMap->bySwapCount && j < MAX_MAPSWAP; j ++) {
+			if (pMap->aSwap[j].byKind == MAPSWAPKIND_CHEST && pMap->aSwap[j].wChestNo == nChestNo) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+/* 今までに使った宝箱の番号の最大+1（全マップ。消した宝箱の番号を使い回さないための覚えを含む） */
+static int ChestHighAll()
+{
+	int nHigh = 0;
+	for (int i = 0; i < g_aMapInfo.GetSize(); i ++) {
+		PMAPINFO pMap = g_aMapInfo[i];
+		nHigh = max(nHigh, (int)pMap->wChestHigh);
+		for (int j = 0; j < pMap->bySwapCount && j < MAX_MAPSWAP; j ++) {
+			if (pMap->aSwap[j].byKind == MAPSWAPKIND_CHEST && pMap->aSwap[j].wChestNo < MAX_CHESTNO) {
+				nHigh = max(nHigh, (int)pMap->aSwap[j].wChestNo + 1);
+			}
+		}
+	}
+	return nHigh;
+}
+
+/* swaps（印で変わるマス）を w に読む。宝箱の番号は省くと空き番号を自動で振る（全マップ通しで重ならない。消した番号は使い回さない） */
+static bool ParseMapSwaps(const JVal &sw, int nID, MAPINFO &w, std::string &strErr)
+{
+	static const char *apszKey[] = { "kind", "x", "y", "wParts", "wFlag", "byCmp", "wChestNo", "wGiveItem", "szMsg", "szMemo", NULL };
+	long long n;
+
+	if (sw.t != JVal::ARR) {
+		strErr = "swaps は配列で指定してください";
+		return false;
+	}
+	if (sw.a.size() > MAX_MAPSWAP) {
+		strErr = "swaps は " + JsonNum(MAX_MAPSWAP) + " 個までです";
+		return false;
+	}
+	ZeroMemory(w.aSwap, sizeof(w.aSwap));
+	w.bySwapCount = (BYTE)sw.a.size();
+	int nNext = ChestHighAll();			/* 自動で振る番号（消した番号は飛ばす） */
+	int nHighNew = (int)w.wChestHigh;
+	std::vector<char> abyUsed(MAX_CHESTNO, 0);
+	/* まず番号を指定された宝箱を確定してから、省かれた分に自動で振る */
+	for (int pass = 0; pass < 2; pass ++) {
+		for (size_t i = 0; i < sw.a.size(); i ++) {
+			const JVal &e = sw.a[i];
+			std::string strP = "swaps[" + JsonNum((long long)i) + "]";
+			if (e.t != JVal::OBJ) {
+				strErr = strP + " はオブジェクトで指定してください";
+				return false;
+			}
+			PMAPSWAP p = &w.aSwap[i];
+			if (pass == 0) {
+				for (size_t k = 0; k < e.o.size(); k ++) {
+					bool bOk = false;
+					for (int m = 0; apszKey[m]; m ++) if (e.o[k].first == apszKey[m]) bOk = true;
+					if (!bOk) {
+						strErr = strP + ": 知らない項目です: " + e.o[k].first;
+						return false;
+					}
+				}
+				const JVal *pk = e.Get("kind"), *px = e.Get("x"), *py = e.Get("y"), *pp = e.Get("wParts");
+				p->byKind = MAPSWAPKIND_FLAG;
+				if (pk) {
+					if (pk->t == JVal::STR && (pk->s == "flag" || pk->s == "chest")) {
+						p->byKind = (pk->s == "chest") ? MAPSWAPKIND_CHEST : MAPSWAPKIND_FLAG;
+					} else {
+						if (!GetInt(*pk, 0, 1, n, strErr, strP + ".kind")) return false;
+						p->byKind = (BYTE)n;
+					}
+				}
+				if (!px || !py || !pp) {
+					strErr = strP + " には x・y・wParts が要ります";
+					return false;
+				}
+				if (!GetInt(*px, 0, w.nCX - 1, n, strErr, strP + ".x")) return false;
+				p->wX = (WORD)n;
+				if (!GetInt(*py, 0, w.nCY - 1, n, strErr, strP + ".y")) return false;
+				p->wY = (WORD)n;
+				if (!GetInt(*pp, 0, (long long)g_wCountMapParts - 1, n, strErr, strP + ".wParts")) return false;
+				p->wParts = (WORD)n;
+				const JVal *pf = e.Get("wFlag"), *pc = e.Get("byCmp"), *pn = e.Get("wChestNo"), *pg = e.Get("wGiveItem"), *pm = e.Get("szMsg"), *pme = e.Get("szMemo");
+				p->wFlag = FLAG_NOBIT;
+				p->wChestNo = 0xFFFF;
+				if (p->byKind == MAPSWAPKIND_FLAG) {
+					if (pn || pg || pm || pme) {
+						strErr = strP + ": 印で変わる行（kind 0）に wChestNo・wGiveItem・szMsg・szMemo は使えません（宝箱は kind 1）";
+						return false;
+					}
+					if (!pf) {
+						strErr = strP + " には wFlag（印の番号）が要ります";
+						return false;
+					}
+					if (!GetInt(*pf, 0, MAX_FLAGBIT - 1, n, strErr, strP + ".wFlag")) return false;
+					p->wFlag = (WORD)n;
+					if (pc) {
+						if (!GetInt(*pc, 0, 1, n, strErr, strP + ".byCmp")) return false;
+						p->byCmp = (BYTE)n;
+					}
+				} else {
+					if (pf || pc) {
+						strErr = strP + ": 宝箱の行（kind 1）に wFlag・byCmp は使えません（宝箱は印ではなく開けた記録を使います）";
+						return false;
+					}
+					if (pg) {
+						if (!GetInt(*pg, 0, 65535, n, strErr, strP + ".wGiveItem")) return false;
+						if (n != 0 && n >= g_aItemInfo.GetSize()) {
+							strErr = strP + ".wGiveItem のアイテム " + JsonNum(n) + " がありません（item は " + JsonNum(g_aItemInfo.GetSize()) + " 個）";
+							return false;
+						}
+						p->wGiveItem = (WORD)n;
+					}
+					if (pm) {
+						if (pm->t != JVal::STR || !CheckText(pm->s, MAX_MAPSWAPMSG, false, strErr, strP + ".szMsg")) {
+							if (strErr.empty()) strErr = strP + ".szMsg は文字列で指定してください";
+							return false;
+						}
+						CopyMemory(p->szMsg, pm->s.c_str(), pm->s.size() + 1);
+					}
+					if (pme) {
+						if (pme->t != JVal::STR || !CheckText(pme->s, MAX_MAPSWAPMEMO, false, strErr, strP + ".szMemo")) {
+							if (strErr.empty()) strErr = strP + ".szMemo は文字列で指定してください";
+							return false;
+						}
+						CopyMemory(p->szMemo, pme->s.c_str(), pme->s.size() + 1);
+					}
+					if (pn) {
+						if (!GetInt(*pn, 0, MAX_CHESTNO - 1, n, strErr, strP + ".wChestNo")) return false;
+						if (abyUsed[(size_t)n]) {
+							strErr = strP + ".wChestNo " + JsonNum(n) + " は、この swaps の中で重なっています";
+							return false;
+						}
+						if (ChestNoUsedElsewhere(nID, (int)n)) {
+							strErr = strP + ".wChestNo " + JsonNum(n) + " は、ほかのマップの宝箱がもう使っています（宝箱の番号は全マップ通しで重ならない）";
+							return false;
+						}
+						abyUsed[(size_t)n] = 1;
+						p->wChestNo = (WORD)n;
+						nHighNew = max(nHighNew, (int)n + 1);
+					}
+				}
+			} else if (p->byKind == MAPSWAPKIND_CHEST && p->wChestNo == 0xFFFF) {
+				while (nNext < MAX_CHESTNO && (abyUsed[nNext] || ChestNoUsedElsewhere(nID, nNext))) {
+					nNext ++;
+				}
+				if (nNext >= MAX_CHESTNO) {
+					strErr = "宝箱の番号を使い切りました（0〜" + JsonNum(MAX_CHESTNO - 1) + "）。消した宝箱の番号は使い回しません";
+					return false;
+				}
+				abyUsed[nNext] = 1;
+				p->wChestNo = (WORD)nNext;
+				nHighNew = max(nHighNew, nNext + 1);
+				nNext ++;
+			}
+		}
+	}
+	w.wChestHigh = (WORD)nHighNew;
+	return true;
+}
+
 /* マップの変更（設定・イベント・店・メッセージ。配列は丸ごと置き換え） */
 static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr, std::string &strRecord)
 {
-	static const char *apszExtra[] = { "szName", "darkAreas", "lights", "events", "shops", "messages", "items", NULL };
+	static const char *apszExtra[] = { "szName", "darkAreas", "lights", "swaps", "events", "shops", "messages", "items", NULL };
 	PMAPINFO pMap = g_aMapInfo[nID];
 	long long n;
 
@@ -2928,6 +3173,12 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 				if (n) pLight->byFlg |= MAPLIGHTFLG_WARM;
 			}
 		}
+	}
+
+	/* 印で変わるマス（丸ごと置き換え） */
+	const JVal *pSwaps = chg.Get("swaps");
+	if (pSwaps && !ParseMapSwaps(*pSwaps, nID, w, strErr)) {
+		return false;
 	}
 
 	std::vector<MAPEVWORK> aEvOld, aEv;
@@ -3121,6 +3372,12 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 	CopyMemory(pMap->aDarkArea, w.aDarkArea, sizeof(pMap->aDarkArea));
 	pMap->byLightCount		= w.byLightCount;
 	CopyMemory(pMap->aLight, w.aLight, sizeof(pMap->aLight));
+	/* 印で変わるマスが変わったら、マップ全体の送り直しは要らず、いるプレイヤーに差し替え一覧だけ送る */
+	bool bSwapChg = pMap->bySwapCount != w.bySwapCount || pMap->wChestHigh != w.wChestHigh ||
+		memcmp(pMap->aSwap, w.aSwap, sizeof(pMap->aSwap)) != 0;
+	pMap->bySwapCount		= w.bySwapCount;
+	CopyMemory(pMap->aSwap, w.aSwap, sizeof(pMap->aSwap));
+	pMap->wChestHigh		= w.wChestHigh;
 	SAFE_DELETE_ARRAY(pMap->pszName);
 	if (!strName.empty()) {
 		pMap->pszName = new char[strName.size() + 1];
@@ -3200,6 +3457,9 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 		 * マップに入った時と同じくキャラも送り直す（送らないと自分のキャラが消えて操作できなくなる） */
 		ResendMapToPlayers(pMap, nID);
 	} else {
+		if (bSwapChg) {
+			MapSwapSendMap(pMap);
+		}
 		if (pShops) {
 			for (int i = 0; i < pMap->byCountShop; i ++) {
 				SendCmdSHOPMap((DWORD)nID, (BYTE)i);
@@ -5378,6 +5638,10 @@ static void ShiftMapPos(PMAPINFO pMap, int dx, int dy, std::vector<char> &abyChg
 	for (i = 0; i < pMap->byLightCount && i < MAX_MAPLIGHT; i ++) {
 		pMap->aLight[i].wX += dx;
 		pMap->aLight[i].wY += dy;
+	}
+	for (i = 0; i < pMap->bySwapCount && i < MAX_MAPSWAP; i ++) {
+		pMap->aSwap[i].wX += dx;
+		pMap->aSwap[i].wY += dy;
 	}
 	for (i = 0; i < pMap->nItemCount && pMap->pItem; i ++) {
 		pMap->pItem[i].dwX += dx;

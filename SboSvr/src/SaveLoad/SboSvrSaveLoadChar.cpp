@@ -14,7 +14,7 @@
 /* ========================================================================= */
 /* 定数定義																	 */
 /* ========================================================================= */
-#define DATACOUNTCOLUMN		(87)									/* 保存データ数 */
+#define DATACOUNTCOLUMN		(88)									/* 保存データ数 */
 
 /* ========================================================================= */
 /* 構造体定義																 */
@@ -121,6 +121,7 @@ static const char *s_aszName[] = {
 	"wShowFlag",				/* この印が立っている人にだけ見える（番号+1。0=無し） */
 	"wHideFlag",				/* この印が立っている人には見えない（番号+1。0=無し） */
 	"abyQuestRewarded",			/* 依頼の報酬をもうもらっている印（依頼番号のビット。思い出の本でやり直しても消えない） */
+	"abyChestOpened",			/* 開けた宝箱の記録（宝箱の番号 2048 個のビット。思い出の本でやり直しても消えない） */
 	"z"
 };
 
@@ -533,6 +534,7 @@ static BOOL SaveCharInfoMain(void)
 			case 84:	dwDataSizeTmp += sizeof (WORD);							break;	/* この印が立っている人にだけ見える（番号+1） */
 			case 85:	dwDataSizeTmp += sizeof (WORD);							break;	/* この印が立っている人には見えない（番号+1） */
 			case 86:	dwDataSizeTmp += MAX_QUESTDONEBYTE;						break;	/* 依頼の報酬をもうもらっている印 */
+			case 87:	dwDataSizeTmp += MAX_CHESTBYTE;							break;	/* 開けた宝箱の記録 */
 			}
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
@@ -988,6 +990,10 @@ static BOOL SaveCharInfoMain(void)
 			case 86:	/* 依頼の報酬をもうもらっている印 */
 				CopyMemory (&pData[dwOffset], pInfo->abyQuestRewarded, MAX_QUESTDONEBYTE);
 				dwOffset += MAX_QUESTDONEBYTE;
+				break;
+			case 87:	/* 開けた宝箱の記録 */
+				CopyMemory (&pData[dwOffset], pInfo->abyChestOpened, MAX_CHESTBYTE);
+				dwOffset += MAX_CHESTBYTE;
 				break;
 			}
 		}
@@ -1736,6 +1742,12 @@ BOOL LoadCharInfo(void)
 			if (strcmp (aHeaderInfo[i].szName, s_aszName[86]) == 0) {
 				CopyMemory (pInfo->abyQuestRewarded, &pData[dwOffsetTmp], MAX_QUESTDONEBYTE);
 				dwOffsetTmp += MAX_QUESTDONEBYTE;
+			}
+
+			/* 開けた宝箱の記録（無い古いデータは全部 0 =「まだ開けていない」のまま） */
+			if (strcmp (aHeaderInfo[i].szName, s_aszName[87]) == 0) {
+				CopyMemory (pInfo->abyChestOpened, &pData[dwOffsetTmp], MAX_CHESTBYTE);
+				dwOffsetTmp += MAX_CHESTBYTE;
 			}
 		}
 	}

@@ -9192,7 +9192,7 @@ BOOL CmdProcSiraberu(PWNDINFO pWnd)
 		dwY = pChar->dwY + anPosAddTblY[pChar->byDirection];
 		if (pChar->dwX >= 0 && pChar->dwX < (DWORD)g_pMapInfo->nCX &&
 			pChar->dwY >= 0 && pChar->dwY < (DWORD)g_pMapInfo->nCY) {
-			if ((g_pMapInfo->pbyFlg[dwX + g_pMapInfo->nCX * dwY] & MAPFLG_EVENT) || IsFrontMimic (pChar)) {
+			if ((g_pMapInfo->pbyFlg[dwX + g_pMapInfo->nCX * dwY] & MAPFLG_EVENT) || IsFrontMimic (pChar) || MapSwapIsExamine ((int)dwX, (int)dwY)) {
 				byFlg = 1;
 				/* サーバーにイベント問い合わせ */
 				if (SendCmdEVENTCHECK (2) == FALSE) {

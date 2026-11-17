@@ -94,6 +94,8 @@
 #define MAX_FLAGNUM			128										/* 数値（0〜255）の数（abyFlagNum） */
 #define MAX_FLAGNAME		96										/* 名前の欄のバイト数（UTF-8・終端含む。全角 20 字ほど） */
 #define MAX_FLAGNAMEINFO	(MAX_FLAGBIT + MAX_FLAGNUM)				/* 名前表の最大件数（印と数値の番号ごとに 1 件まで。削除済みの枠も数える） */
+#define MAX_CHESTNO			2048									/* 「印で変わるマス」の宝箱の番号の数（0〜2047。全マップ通しの番号） */
+#define MAX_CHESTBYTE		(MAX_CHESTNO / 8)						/* 開けた宝箱の記録の大きさ（バイト。abyChestOpened） */
 #define FLAG_NOBIT			(0xFFFF)								/* 印の番号の「無し」（印 0 も使えるよう 0 ではなくこれにする） */
 /* 印の番号（FLAG_NOBIT=無し）を、通信・保存用の「番号+1（0=無し）」にする・戻す。
    0 のままのデータが「印 0」の条件にならないようにするため */
@@ -366,6 +368,8 @@ enum {
 /* 以下、管理者用（CMD_MAPPARTSADD 以上は自動で管理者専用になる。CMD_TALKANSWER より後ろに足す） */
 	CMD_ADMINVIEWALL,												/* 管理者ウィンドウの「印で隠れたNPCも表示」の切り替え（クライアント→サーバー。CMDPARA_DATA1 の byData=1 がオン・0 がオフ。保存しない） */
 	CMD_ADMINFLAGGROUP,												/* 管理者ウィンドウのフラグのグループの編集（一覧・書き込み。結果はサーバー→クライアント） */
+/* 以下、プレイヤー用（サーバー→本人だけ。サーバーは受け取らない） */
+	CMD_MAPSWAP,													/* 印で変わるマスの、その人の分の差し替え一覧（サーバー→本人だけ。CMDPARA_MAPSWAP） */
 	CMD_MAX
 };
 
@@ -2014,6 +2018,33 @@ typedef struct _MAPLIGHT {
 #define MAPLIGHTFLG_NOFLICKER	(0x01)								/* ゆらめかない */
 #define MAPLIGHTFLG_WARM		(0x02)								/* 暖色(炎のような橙色) */
 
+/* 印で変わるマス（その人の記録を見て、マスのパーツをその人の画面だけ別のパーツに差し替える。サーバーだけが持つ。
+   差し替えるのはパーツの 1 層（pwMap）だけ）。種類が 2 つある。
+   (a) MAPSWAPKIND_FLAG 印で変わる（物語のしかけ用。依頼を終えた人にだけ橋がかかる、崩れた壁が通れる、など）：
+       wFlag の印を見る。byCmp=0 は「印が立っている時に差し替え」、1 は「印が立っていない時に差し替え」。
+   (b) MAPSWAPKIND_CHEST 宝箱：wChestNo（全マップ通しの番号 0〜2047）の「開けた宝箱の記録」（キャラの abyChestOpened）が
+       立っている人にだけ wParts（開いた後のパーツ）に差し替える。記録がまだ立っていない人が目の前のそのマスを調べると、
+       wGiveItem を渡して（持ち物がいっぱいなら渡さず、記録も立てない）記録を立てて szMsg を出す。印は使わない */
+#define MAX_MAPSWAP			64										/* 1マップに置ける「印で変わるマス」の数 */
+#define MAX_MAPSWAPMSG		96										/* 調べた時の文のバイト数（UTF-8・終端含む） */
+#define MAX_MAPSWAPMEMO		64										/* 管理用のメモのバイト数（UTF-8・終端含む） */
+#define MAPSWAPCMP_ON		0										/* 印が立っている時に差し替える */
+#define MAPSWAPCMP_OFF		1										/* 印が立っていない時に差し替える */
+#define MAPSWAPKIND_FLAG	0										/* 印で変わる */
+#define MAPSWAPKIND_CHEST	1										/* 宝箱 */
+typedef struct _MAPSWAP {
+	WORD			wX;												/* X */
+	WORD			wY;												/* Y */
+	WORD			wFlag;											/* 印の番号(0〜1023。印で変わる行) */
+	BYTE			byCmp;											/* MAPSWAPCMP_*（印で変わる行） */
+	BYTE			byKind;											/* MAPSWAPKIND_* */
+	WORD			wParts;											/* 差し替え後のパーツ番号 */
+	WORD			wGiveItem;										/* 調べた時に渡すアイテム(0=無し。宝箱の行) */
+	WORD			wChestNo;										/* 宝箱の番号(0〜2047。全マップ通しで重ならない。宝箱の行) */
+	char			szMsg[MAX_MAPSWAPMSG];							/* 調べた時の文(UTF-8。空=無し。宝箱の行) */
+	char			szMemo[MAX_MAPSWAPMEMO];						/* 管理用のメモ(UTF-8。例「ルシー 港の倉庫の奥」。プレイヤーには出さない) */
+} MAPSWAP, *PMAPSWAP;
+
 /* マップ情報 */
 typedef struct _MAPINFO {
 	DWORD			dwID;											/* マップID */
@@ -2052,6 +2083,9 @@ typedef struct _MAPINFO {
 	MAPLIGHT		aLight[MAX_MAPLIGHT];							/* 光源 */
 	BYTE			byViewRange;									/* 見える範囲(マス。0=制限なし。壁の向こうと範囲の外は見えない) */
 	WORD			wViewHideParts;									/* 見えない所に描くパーツ(0=黒) */
+	BYTE			bySwapCount;									/* 印で変わるマスの数（サーバーだけ。クライアントへは 0 で送る） */
+	MAPSWAP			aSwap[MAX_MAPSWAP];								/* 印で変わるマス */
+	WORD			wChestHigh;										/* このマップで今までに使った宝箱の番号の最大+1（0=まだ無し。消した宝箱の番号を使い回さないための覚え。サーバーだけ。保存する） */
 } MAPINFO, *PMAPINFO;
 
 /* 橋のパーツか（1=縦に渡る橋 2=横に渡る橋 0=橋ではない） */
@@ -2257,6 +2291,7 @@ typedef struct _CHARINFO {
 	BYTE		abyQuestRewarded[MAX_QUESTDONEBYTE];				/* 依頼の報酬をもうもらっている印（依頼番号のビット。保存する。思い出の本でやり直しても消えない。報酬は初回だけ） */
 	BYTE		abyFlag[MAX_FLAGBITBYTE];							/* キャラのフラグ（印。ビット番号=印の番号。保存する。サーバーだけが持ち、クライアントへは送らない） */
 	BYTE		abyFlagNum[MAX_FLAGNUM];							/* キャラのフラグ（数値 0〜255。保存する。サーバーだけが持つ） */
+	BYTE		abyChestOpened[MAX_CHESTBYTE];						/* 開けた宝箱の記録（「印で変わるマス」の宝箱の番号のビット。保存する。印とは別。思い出の本でやり直しても戻さない＝宝は一度きり。サーバーだけが持つ） */
 	BYTE		abyTownWarpX[MAX_TOWNWARP];							/* 行き先帳の町の座標(X)（新しく記録した順） */
 	BYTE		abyTownWarpY[MAX_TOWNWARP];							/* 行き先帳の町の座標(Y) */
 	DWORD		adwTownWarpMapID[MAX_TOWNWARP];						/* 行き先帳の町のマップID */
@@ -3640,6 +3675,22 @@ typedef struct _CMDPARA_TALKMSG {
 	DWORD		dwTblID;											/* 話しかけた相手（NPC）のテーブルID */
 	WORD		wSize;												/* 台詞のバイト数（終端の 0 を含む） */
 } CMDPARA_TALKMSG, *PCMDPARA_TALKMSG;
+
+/* 印で変わるマスの差し替え一覧（サーバー→本人だけ。いま効いている差し替え全部。前の一覧は取り消して置き換える。
+   この後ろに wCount 件の MAPSWAPSEND が続く（差し替わっている行と調べられる行だけ）。マップ ID が今のマップと違えば捨てる） */
+typedef struct _MAPSWAPSEND {
+	WORD		wX;													/* X */
+	WORD		wY;													/* Y */
+	WORD		wParts;												/* この人の画面で使うパーツ番号（MAPSWAPSEND_APPLY の時だけ） */
+	BYTE		byFlg;												/* MAPSWAPSEND_* の組み合わせ */
+} MAPSWAPSEND, *PMAPSWAPSEND;
+#define MAPSWAPSEND_APPLY	(0x01)									/* いま差し替わっている（wParts を使う） */
+#define MAPSWAPSEND_EXAMINE	(0x02)									/* この人が目の前で調べると開く（Sキーで調べる問い合わせを送ってよいマス） */
+typedef struct _CMDPARA_MAPSWAP {
+	BYTE		byCmd;												/* コマンドID */
+	DWORD		dwMapID;											/* マップID */
+	WORD		wCount;												/* 件数 */
+} CMDPARA_MAPSWAP, *PCMDPARA_MAPSWAP;
 #pragma pack(pop)
 
 /* 並べ替えの対象(CMDPARA_SORTITEM の byTarget) */

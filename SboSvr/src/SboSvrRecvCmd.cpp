@@ -97,6 +97,7 @@ int		GetCharDistanceX			(PCHARINFO, PCHARINFO);							/* キャラサイズに�
 DWORD	GetCharXPos					(PCHARINFO, DWORD, BYTE);						/* キャラサイズに合わせた座標を補正(横) */
 BOOL	CheckCharBlock				(DWORD, DWORD, DWORD);							/* キャラのぶつかり判定 */
 BOOL	CheckCharBlock				(PCHARINFO pChar, DWORD, DWORD, DWORD);			/* キャラのぶつかり判定 */
+BOOL	CheckCharBlockFor			(PCHARINFO pViewer, DWORD, DWORD, DWORD);		/* 同上（pViewer の印で差し替えたパーツで判定） */
 DWORD	CheckCharBlockPC			(DWORD, DWORD, DWORD, DWORD);					/* キャラのキャラとのぶつかり判定 */
 DWORD	CheckCharBlockNPC			(DWORD, DWORD, DWORD, DWORD, PCHARINFO);		/* キャラのキャラとのぶつかり判定(NPC) */
 DWORD	CheckCharBlockNPC2			(DWORD, DWORD, DWORD, DWORD, DWORD, PCHARINFO);	/* キャラのキャラとのぶつかり判定2(NPC) */
@@ -488,6 +489,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcTALKANSWER,				/* CMD_TALKANSWER */
 	RecvDataProcADMINVIEWALL,			/* CMD_ADMINVIEWALL */
 	RecvDataProcADMINFLAGGROUP,			/* CMD_ADMINFLAGGROUP */
+	NULL,								/* CMD_MAPSWAP(サーバー→クライアントのみ) */
 
 	NULL
 };
@@ -2714,6 +2716,11 @@ void FitCharDirectionBridgeLayer(PCHARINFO pChar)
 /* ========================================================================= */
 BOOL CheckCharBlock(DWORD dwMapID, DWORD dwX, DWORD dwY)
 {
+	return CheckCharBlockFor (NULL, dwMapID, dwX, dwY);
+}
+/* pViewer がプレイヤーなら、その人の印で差し替えたパーツで判定する（NULL ならベースのパーツ） */
+BOOL CheckCharBlockFor(PCHARINFO pViewer, DWORD dwMapID, DWORD dwX, DWORD dwY)
+{
 	BYTE byHitType;
 	int nPartsID, nX, nY;
 	PMAPINFO pMap;
@@ -2731,7 +2738,7 @@ BOOL CheckCharBlock(DWORD dwMapID, DWORD dwX, DWORD dwY)
 		return FALSE;
 	}
 
-	nPartsID = pMap->pwMap[nX + nY * pMap->nCX];
+	nPartsID = MapSwapParts (pMap, pViewer, nX, nY);
 	if (nPartsID >= g_wCountMapParts) {
 		return FALSE;
 	}
@@ -2779,27 +2786,27 @@ BOOL CheckCharBlock(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY)
 	case CHARGRP_MAIN_NORMAL:
 	case CHARGRP_MAIN_SUBWAR:
 	case CHARGRP_MAIN_1632:
-		bRet = CheckCharBlock (dwMapID, dwX, dwY);
+		bRet = CheckCharBlockFor (pChar, dwMapID, dwX, dwY);
 		break;
 
 	case CHARGRP_MAIN_3232:
-		bRet = CheckCharBlock (dwMapID, dwX, dwY);
+		bRet = CheckCharBlockFor (pChar, dwMapID, dwX, dwY);
 		if (bRet == FALSE) {
 			break;
 		}
-		bRet = CheckCharBlock (dwMapID, dwX + 1, dwY);
+		bRet = CheckCharBlockFor (pChar, dwMapID, dwX + 1, dwY);
 		break;
 
 	case CHARGRP_MAIN_4848:
-		bRet = CheckCharBlock (dwMapID, dwX, dwY);
+		bRet = CheckCharBlockFor (pChar, dwMapID, dwX, dwY);
 		if (bRet == FALSE) {
 			break;
 		}
-		bRet = CheckCharBlock (dwMapID, dwX + 1, dwY);
+		bRet = CheckCharBlockFor (pChar, dwMapID, dwX + 1, dwY);
 		if (bRet == FALSE) {
 			break;
 		}
-		bRet = CheckCharBlock (dwMapID, dwX + 2, dwY);
+		bRet = CheckCharBlockFor (pChar, dwMapID, dwX + 2, dwY);
 		break;
 	}
 
@@ -4188,7 +4195,7 @@ void FloorDamageOnStep(PCHARINFO pChar)
 	if ((pChar->dwX >= (DWORD)pMap->nCX) || (pChar->dwY >= (DWORD)pMap->nCY)) {
 		return;
 	}
-	wParts = pMap->pwMap[pChar->dwX + pChar->dwY * pMap->nCX];
+	wParts = MapSwapParts (pMap, pChar, (int)pChar->dwX, (int)pChar->dwY);
 	if (wParts >= g_wCountMapParts) {
 		return;
 	}
@@ -4905,6 +4912,11 @@ void RecvDataProcEVENTCHECK(PBYTE pData, DWORD dwDataSize)
 			SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
 			return;
 		}
+	}
+
+	/* 目の前を調べた時(Sキー)、目の前が「印で変わるマス」の宝箱で、まだ開けていなければ開ける */
+	if ((pPara->byData == 2) && MapSwapExamine (pChar)) {
+		return;
 	}
 
 	pMap = g_aMapInfo[nNo];

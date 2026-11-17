@@ -36,6 +36,7 @@
  *   /api/data/schema    {}                                   → {kinds:[...]}
  *   /api/data/list      {kind, q?, offset?, limit?, fields?} → {kind, total, offset, records:[...]}
  *   /api/data/get       {kind, id}                           → {record}
+ *   /api/data/chests    {}                                   → 全マップの宝箱（印で変わるマスの kind 1）の一覧。読むだけ {chests, retired, nextNo}
  *   /api/data/tiles     {id, x?, y?, w?, h?}                 → マップのマス目（parts・flags・roof、最大 128×128）
  *   /api/data/update    {kind, updates:[{id, changes}], note?, previewId?}
  *   /api/data/add       {kind, records:[{...}], note?, previewId?}
@@ -56,6 +57,7 @@
  *   /api/admin/data/list   {session, kind, offset?, limit?}   → 上の list と同じ（マップ資料の書き出し用。読むだけ）
  *   /api/admin/data/tiles  {session, id, x?, y?, w?, h?}      → 上の tiles と同じ
  *   /api/admin/mapedit/apply {session, id, cells:[[x, y, 前, 後]], note?, force?} → マップ確認の編集を反映（履歴 1 件）
+ *   /api/admin/mapedit/swaps/save {session, id, swaps:[...]} → 印で変わるマス・宝箱をそのマップの分だけ置き換える（履歴 1 件。読むのは /api/admin/data/list の fields:["swaps"]、宝箱の一覧は /api/admin/data/chests）
  *   /api/admin/mapedit/draft/get・list・save {session, id?, cells?} → 編集の下書き（SboWebMapDrafts.json）
  *   /api/admin/mapedit/snap/list・save・get・delete {session, id, name?, cells?, snapId?} → 名前を付けたスナップショット（SboWebMapSnapshots.json）
  *   /api/admin/mapedit/resize {session, id, top?, bottom?, left?, right?, fill?, check?} → マップを広げる（履歴に残らない）
@@ -515,6 +517,13 @@ Module['sboData'] = (function () {
 			fail(404, 'not_found', r.error);
 		}
 		r.note = 'parts[行][列] は mapParts の番号、flags はマスのフラグ、roof は屋根レベル。左上が (x, y)';
+		return r;
+	}
+
+	/* 全マップの宝箱の一覧（読むだけ） */
+	function opChests() {
+		var r = JSON.parse(UTF8ToString(_SboWebDataChests()));
+		r.note = 'chests は宝箱番号の順。mapNo は map の番号。retired は消した宝箱の番号（使い回さない）。宝箱の足し方・直し方は map の swaps（kind 1）';
 		return r;
 	}
 
@@ -1515,6 +1524,27 @@ Module['sboData'] = (function () {
 		return { id: 'admin', label: '管理ページ', write: true, rateKey: 'admin' };
 	}
 
+	/* マップ確認の編集：印で変わるマス・宝箱（map の swaps）を、そのマップの分だけ丸ごと置き換える。履歴に 1 件（元に戻せる） */
+	function apiAdminMapSwapsSave(body) {
+		var who = adminWho(body);
+		var id = checkId(body.id);
+		if (id >= count('map')) {
+			fail(404, 'not_found', 'map に ' + id + ' 番はありません');
+		}
+		if (!Array.isArray(body.swaps)) {
+			fail(400, 'swaps', 'swaps は配列で指定してください');
+		}
+		var before = getRecord('map', id);
+		var r = applyC('map', id, { swaps: body.swaps }, false);
+		if (!r.ok) {
+			fail(400, 'invalid', r.error);
+		}
+		var aDone = applyAll('map', [{ id: id, changes: { swaps: body.swaps } }], who);
+		var e = addHistory({ op: 'update', kind: 'map', by: who.label, note: 'マップ確認：印で変わるマス・宝箱', items: aDone });
+		log(who.label + ' が map ' + id + ' の印で変わるマスを変更（履歴 ' + e.historyId + '）');
+		return { ok: true, historyId: e.historyId, swaps: (aDone[0].after && aDone[0].after.swaps) || [], before: (before && before.swaps) || [] };
+	}
+
 	function apiAdminKeys(body) {
 		adminWho(body);
 		return { keys: keys().keys.slice().reverse().map(keyPublic) };
@@ -1631,6 +1661,12 @@ Module['sboData'] = (function () {
 				}
 			},
 			run: opTiles
+		},
+		{
+			name: 'sbo_chests', write: false,
+			description: '全マップの宝箱（map の swaps の kind 1）の一覧。宝箱番号・マップ番号とマップ名・x,y・中身のアイテム名・メモ。retired は消した番号（使い回さない）、nextNo は次に自動で振る番号。',
+			inputSchema: { type: 'object', properties: {} },
+			run: opChests
 		},
 		{
 			name: 'sbo_map_tiles_set', write: true,
@@ -1897,6 +1933,7 @@ Module['sboData'] = (function () {
 		'/api/data/list': opList,
 		'/api/data/get': opGet,
 		'/api/data/tiles': opTiles,
+		'/api/data/chests': opChests,
 		'/api/data/tiles/set': opTilesSet,
 		'/api/data/update': opUpdate,
 		'/api/data/add': opAdd,
@@ -1921,12 +1958,14 @@ Module['sboData'] = (function () {
 		/* マップ資料の書き出し（管理ページの「マップ資料」）。読むだけ */
 		'/api/admin/data/list': function (body) { adminWho(body); return opList(body); },
 		'/api/admin/data/tiles': function (body) { adminWho(body); return opTiles(body); },
+		'/api/admin/data/chests': function (body) { adminWho(body); return opChests(body); },
 		/* 作り手・レシピの保存（管理ページの「レシピ」）。読む方は /api/admin/data/list */
 		'/api/admin/recipe/save': apiAdminRecipeSave,
 		/* NPC の巡回ルートを決める（管理ページの「NPCの巡回」） */
 		'/api/admin/npcroute/set': apiAdminNpcRouteSet,
 		/* マップ確認の編集モード（反映・下書き） */
 		'/api/admin/mapedit/apply': apiAdminMapEditApply,
+		'/api/admin/mapedit/swaps/save': apiAdminMapSwapsSave,
 		'/api/admin/mapedit/draft/get': apiAdminMapEditDraftGet,
 		'/api/admin/mapedit/draft/list': apiAdminMapEditDraftList,
 		'/api/admin/mapedit/draft/save': apiAdminMapEditDraftSave,
@@ -2091,6 +2130,7 @@ Module['sboData'] = (function () {
 		count: count,
 		getRecord: getRecord,
 		opTiles: opTiles,
+		opChests: opChests,
 		dataDir: dataDir,
 		readJsonFile: readJsonFile,
 		writeJsonFile: writeJsonFile,
