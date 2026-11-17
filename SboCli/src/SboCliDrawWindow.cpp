@@ -358,6 +358,10 @@ void DrawWindow(CImg32 *pDib, int x, int y)
 		case WNDTYPE_IMPORTANT:				DrawWindowIMPORTANT (pWnd);				break;
 		}
 		s_bDrawingWindow = FALSE;
+		/* 一覧の横の詳細欄は、カーソルの所に品が無い時（「大事な物…」の行など）は画面に出さない（空の枠が透けて見えないように） */
+		if ((pWnd->nType == WNDTYPE_ITEMINFO) && (pWnd->nType2 == ITEMINFOPOS_LIST) && ((pWnd->nData1 <= 0) || (pWnd->nData1 >= g_aItemInfo.GetSize ()))) {
+			continue;
+		}
 		pDib->BltAlpha2 (pWnd->nX + x, pWnd->nY + y, pWnd->nCx, pWnd->nCy, pWnd->pDib, 0, 0, 15, TRUE);
 	}
 }
