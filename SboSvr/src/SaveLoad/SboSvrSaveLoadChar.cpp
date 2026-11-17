@@ -14,7 +14,7 @@
 /* ========================================================================= */
 /* 定数定義																	 */
 /* ========================================================================= */
-#define DATACOUNTCOLUMN		(84)									/* 保存データ数 */
+#define DATACOUNTCOLUMN		(86)									/* 保存データ数 */
 
 /* ========================================================================= */
 /* 構造体定義																 */
@@ -118,6 +118,8 @@ static const char *s_aszName[] = {
 	"abyFlagNum",				/* キャラのフラグ（数値 128 個） */
 	"awKeyItem",				/* ショートカットに登録した装備品・道具（枠数・各枠のアイテムの種類ID。0=特技の枠か空き） */
 	"waImportant",				/* 大事な物の欄（個数＋品の種類ID） */
+	"wShowFlag",				/* この印が立っている人にだけ見える（番号+1。0=無し） */
+	"wHideFlag",				/* この印が立っている人には見えない（番号+1。0=無し） */
 	"z"
 };
 
@@ -527,6 +529,8 @@ static BOOL SaveCharInfoMain(void)
 				dwDataSizeTmp += 1 + MAX_MAGICKEY * sizeof (WORD);
 				break;
 			case 83:	dwDataSizeTmp += sizeof (BYTE) + MAX_IMPORTANT * sizeof (WORD);	break;	/* 大事な物の欄 [個数(BYTE)][WORD×個数] */
+			case 84:	dwDataSizeTmp += sizeof (WORD);							break;	/* この印が立っている人にだけ見える（番号+1） */
+			case 85:	dwDataSizeTmp += sizeof (WORD);							break;	/* この印が立っている人には見えない（番号+1） */
 			}
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
@@ -969,6 +973,15 @@ static BOOL SaveCharInfoMain(void)
 				pData[dwOffset ++] = (BYTE)MAX_IMPORTANT;
 				CopyMemory (&pData[dwOffset], pInfo->waImportant, sizeof (pInfo->waImportant));
 				dwOffset += sizeof (pInfo->waImportant);
+				break;
+			case 84:	/* この印が立っている人にだけ見える（番号+1 で書く。0=無し。古い読み込みで 0 が「印 0」にならないように） */
+			case 85:	/* この印が立っている人には見えない（同上） */
+				{
+					WORD wFlag = (i == 84) ? pInfo->wShowFlag : pInfo->wHideFlag;
+					WORD wSave = wFlag;
+					CopyMemory (&pData[dwOffset], &wSave, sizeof (WORD));
+					dwOffset += sizeof (WORD);
+				}
 				break;
 			}
 		}
@@ -1696,6 +1709,21 @@ BOOL LoadCharInfo(void)
 				ZeroMemory (pInfo->waImportant, sizeof (pInfo->waImportant));
 				CopyMemory (pInfo->waImportant, &pData[dwOffsetTmp], min (dwCountTmp, (DWORD)MAX_IMPORTANT) * sizeof (WORD));
 				dwOffsetTmp += dwCountTmp * sizeof (WORD);
+			}
+
+			/* 見える・見えない条件の印（番号+1。0 や範囲外は必ず「無し」にする。無い古いデータは作った時の「無し」のまま） */
+			if ((strcmp (aHeaderInfo[i].szName, s_aszName[84]) == 0) || (strcmp (aHeaderInfo[i].szName, s_aszName[85]) == 0)) {
+				WORD wLoad;
+				WORD wFlag;
+
+				CopyMemory (&wLoad, &pData[dwOffsetTmp], sizeof (WORD));
+				dwOffsetTmp += sizeof (WORD);
+				wFlag = CharFlagWireFix (wLoad);	/* 範囲外は 0（無し） */
+				if (strcmp (aHeaderInfo[i].szName, s_aszName[84]) == 0) {
+					pInfo->wShowFlag = wFlag;
+				} else {
+					pInfo->wHideFlag = wFlag;
+				}
 			}
 		}
 	}

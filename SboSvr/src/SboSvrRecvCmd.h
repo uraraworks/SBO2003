@@ -59,8 +59,8 @@ extern BOOL		CheckCharBlock				(PCHARINFO pChar, DWORD, DWORD, DWORD);			/* キ�
 extern int		GetCharBridgeLayerSvr		(PCHARINFO pChar, BOOL *pbKnown);				/* 立体交差の橋の上(1)か下(2)か */
 extern void		FitCharDirectionBridgeLayer	(PCHARINFO pChar);								/* ログアウト時の向きを橋の上か下かに合わせる */
 extern DWORD	CheckCharBlockPC			(DWORD, DWORD, DWORD, DWORD dwSpaceID = 0);		/* キャラのキャラとのぶつかり判定（同じ空間のキャラとだけ） */
-extern DWORD	CheckCharBlockNPC			(DWORD, DWORD, DWORD, DWORD dwSpaceID = 0);		/* キャラのキャラとのぶつかり判定(NPC。同じ空間のキャラとだけ) */
-extern DWORD	CheckCharBlockNPC2			(DWORD, DWORD, DWORD, DWORD, DWORD dwSpaceID = 0);	/* キャラのキャラとのぶつかり判定2(NPC。同じ空間のキャラとだけ) */
+extern DWORD	CheckCharBlockNPC			(DWORD, DWORD, DWORD, DWORD dwSpaceID = 0, PCHARINFO pViewer = NULL);		/* キャラのキャラとのぶつかり判定(NPC。同じ空間のキャラとだけ。pViewer に見えない条件付きNPCとはぶつからない) */
+extern DWORD	CheckCharBlockNPC2			(DWORD, DWORD, DWORD, DWORD, DWORD dwSpaceID = 0, PCHARINFO pViewer = NULL);	/* キャラのキャラとのぶつかり判定2(NPC。同上) */
 extern BOOL		CheckEventBlock				(DWORD, DWORD, DWORD, BYTE bCheck = 0xFF);		/* 指定座標にイベントがあるか判定 */
 extern void		RenewATDF					(DWORD);										/* 攻撃力・守備力の更新 */
 extern BOOL		CheckMagicUserInfo			(BYTE, BYTE);									/* 魔法利用者情報にあるか判定 */

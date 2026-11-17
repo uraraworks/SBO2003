@@ -90,6 +90,21 @@
 #define MAX_FLAGNAME		96										/* 名前の欄のバイト数（UTF-8・終端含む。全角 20 字ほど） */
 #define MAX_FLAGNAMEINFO	(MAX_FLAGBIT + MAX_FLAGNUM)				/* 名前表の最大件数（印と数値の番号ごとに 1 件まで。削除済みの枠も数える） */
 #define FLAG_NOBIT			(0xFFFF)								/* 印の番号の「無し」（印 0 も使えるよう 0 ではなくこれにする） */
+/* 印の番号（FLAG_NOBIT=無し）を、通信・保存用の「番号+1（0=無し）」にする・戻す。
+   0 のままのデータが「印 0」の条件にならないようにするため */
+inline WORD CharFlagToWire(WORD wFlag)
+{
+	return (wFlag < MAX_FLAGBIT) ? (WORD)(wFlag + 1) : (WORD)0;
+}
+inline WORD CharFlagFromWire(WORD wWire)
+{
+	return ((wWire >= 1) && (wWire <= MAX_FLAGBIT)) ? (WORD)(wWire - 1) : (WORD)FLAG_NOBIT;
+}
+/* 番号+1 の形のまま、範囲外だけ 0（無し）に直す */
+inline WORD CharFlagWireFix(WORD wWire)
+{
+	return (wWire <= MAX_FLAGBIT) ? wWire : (WORD)0;
+}
 #define FLAG_NONUM			(0xFF)									/* 数値の番号の「無し」 */
 #define MAX_TALK			1000									/* 会話セット番号の上限（番号は 1〜999。0 は使わない） */
 #define MAX_TALKLINE		16										/* 1 つの会話セットの行数 */
@@ -2326,6 +2341,8 @@ typedef struct _CHARINFO {
 	DWORD		dwBridgeY;											/* byBridgeLayer を決めた時の座標(Y) */
 	DWORD		dwSpaceID;											/* 空間番号(0=ふつうの世界。保存しない。同じマップの同じ場所でも、空間が違えば見えない・ぶつからない・攻撃できない) */
 	BYTE		byMimic;											/* 直接置いた宝箱の敵が正体を現した後(1)。保存する時は宝箱の敵(NPCTYPE_MIMIC)として保存する（サーバーだけ。送信しない） */
+	WORD		wShowFlag;											/* NPC：この印が立っている人にだけ見える（番号+1。0=条件なし。0 初期化のままで条件なしになる。サーバーだけ。保存する。送信は wShowFlagNo） */
+	WORD		wHideFlag;											/* NPC：この印が立っている人には見えない（番号+1。0=条件なし。両方ある時は両方を満たす人にだけ見える） */
 } CHARINFO, *PCHARINFO;
 
 /* キャラ情報通知 */
@@ -2378,6 +2395,8 @@ typedef struct _CMDPARA_CHARINFO {
 	DWORD		dwTailTblID;										/* ついていっているキャラのテーブルID */
 	DWORD		dwTailBackTblID;									/* ついてきているキャラのテーブルID */
 	DWORD		dwNpcID;											/* NPC番号（保存する NPC ごとに決まった番号。管理者画面に出す） */
+	WORD		wShowFlagNo;										/* NPC：この印が立っている人にだけ見える（番号+1。0=無し。本人と管理者にだけ入れる。0 のままの送り手でも「無し」になるよう +1 にしている） */
+	WORD		wHideFlagNo;										/* NPC：この印が立っている人には見えない（番号+1。0=無し） */
 	char		szName[MAX_CHARNAMEBUF];							/* キャラ名 */
 	char		szAcc[MAX_ACCNAME];									/* アカウント名 */
 	char		szPas[MAX_ACCNAME];									/* パスワード */

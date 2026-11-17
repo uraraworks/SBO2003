@@ -38,6 +38,7 @@ void SendCmdCHARINFO2			(DWORD, int);								/* コマンド送信(キャラ情�
 void SendCmdCHARINFO3			(int);										/* コマンド送信(キャラ情報通知) */
 void SendCmdCHGDIRECTION		(DWORD, int);								/* コマンド送信(向き変更要求) */
 void SendCmdCHARPOS				(DWORD, int, BYTE, BYTE);					/* コマンド送信(座標通知) */
+void SendCmdCHARHIDE			(DWORD, int);								/* コマンド送信(キャラを消す通知。1人にだけ) */
 void SendCmdSPEECH				(DWORD, int, BYTE);							/* コマンド送信(発言通知) */
 void SendCmdONLINE				(DWORD);									/* コマンド送信(オンライン数通知) */
 void SendCmdMAPPARTS			(DWORD, int);								/* コマンド送信(マップパーツ更新) */
@@ -580,6 +581,8 @@ static void MaskCharInfoForOther(PCMDPARA_CHARINFO pSendData)
 	pSendData->bySearchCx			= 0;
 	pSendData->bySearchCy			= 0;
 	pSendData->dwNpcID				= 0;
+	pSendData->wShowFlagNo			= 0;
+	pSendData->wHideFlagNo			= 0;
 }
 
 /* ========================================================================= */
@@ -690,6 +693,8 @@ void SendCmdCHARINFO(DWORD pIDSend, int nNo)
 					pSendData->dwTailTblID			= pChar->dwTailTblID;
 					pSendData->dwTailBackTblID		= pChar->dwTailBackTblID;
 					pSendData->dwNpcID				= pChar->dwNpcID;
+					pSendData->wShowFlagNo			= CharFlagWireFix (pChar->wShowFlag);
+					pSendData->wHideFlagNo			= CharFlagWireFix (pChar->wHideFlag);
 					pSendData->byAreaX				= pChar->byAreaX;
 					pSendData->byAreaY				= pChar->byAreaY;
 					pSendData->byPutCount			= pChar->byPutCount;
@@ -932,6 +937,8 @@ void SendCmdCHARINFO3(int nNo)
 	pSendData->dwTailTblID			= pChar->dwTailTblID;
 	pSendData->dwTailBackTblID		= pChar->dwTailBackTblID;
 	pSendData->dwNpcID				= pChar->dwNpcID;
+	pSendData->wShowFlagNo			= CharFlagWireFix (pChar->wShowFlag);
+	pSendData->wHideFlagNo			= CharFlagWireFix (pChar->wHideFlag);
 	pSendData->byAreaX				= pChar->byAreaX;
 	pSendData->byAreaY				= pChar->byAreaY;
 	pSendData->byPutCount			= pChar->byPutCount;
@@ -1026,9 +1033,9 @@ void SendCmdCHARPOS(DWORD pIDSend, int nNo, BYTE byFlg, BYTE byInside)
 //	wsprintf (szTmp, "→CHARPOS送信 ID:%d\r\n", pSendData->dwTblID);
 //	OutputDebugString (szTmp);
 
-	/* 依頼の見えるNPC・別の空間にいるキャラの座標は、見える人にだけ送る（範囲送信は SendCmdInside2 が絞る） */
-	if (IsQuestNpc (g_aCharInfo[nNo]) || (g_aCharInfo[nNo]->dwSpaceID != 0)) {
-		if (IsQuestNpc (g_aCharInfo[nNo]) && (byInside == 2)) {
+	/* 依頼の見えるNPC・印で見えるNPC・別の空間にいるキャラの座標は、見える人にだけ送る（範囲送信は SendCmdInside2 が絞る） */
+	if (IsQuestNpc (g_aCharInfo[nNo]) || (g_aCharInfo[nNo]->dwSpaceID != 0) || CharHasViewCond (g_aCharInfo[nNo])) {
+		if ((IsQuestNpc (g_aCharInfo[nNo]) || CharHasViewCond (g_aCharInfo[nNo])) && (byInside == 2)) {
 			byInside = 1;		/* マップ全体への送信は絞り込めないので、範囲送信（絞り込みあり）にする */
 		}
 		if ((byInside == 3) || (pIDSend == URARASOCK_SENDALL) || !byInside) {
@@ -1061,6 +1068,32 @@ void SendCmdCHARPOS(DWORD pIDSend, int nNo, BYTE byFlg, BYTE byInside)
 		SendCmdInside2 (g_aCharInfo[nNo], (LPBYTE)pSendData, packetSize, SENDTIMEOUT, SENDINSIDE_INSIDENOME, TRUE, TRUE, 2);
 	}
 	delete[] (PBYTE)pSendData;
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdCHARHIDE													 */
+/* 内容：コマンド送信(キャラを消す通知)										 */
+/*       向き 99 の座標通知を 1 人にだけ送る。クライアントはそのキャラを	 */
+/*       消す。サーバーのキャラ自体は消えない（印で見えなくなった時に使う）	 */
+/* ========================================================================= */
+void SendCmdCHARHIDE(DWORD pIDSend, int nNo)
+{
+	CMDPARA_CHARPOS Para;
+	PCHARINFO pChar;
+
+	if ((nNo < 0) || (nNo >= g_aCharInfo.GetSize ())) {
+		return;
+	}
+	pChar = g_aCharInfo[nNo];
+	ZeroMemory (&Para, sizeof (Para));
+	Para.byCmd			= CMD_CHARPOS;
+	Para.pID			= pChar->pID;
+	Para.dwTblID		= pChar->dwTblID;
+	Para.dwMapID		= pChar->dwMapID;
+	Para.byX			= (BYTE)pChar->dwX;
+	Para.byY			= (BYTE)pChar->dwY;
+	Para.byDirection	= 99;
+	svrSock.SendTo (pIDSend, (LPBYTE)&Para, sizeof (Para), SENDTIMEOUT);
 }
 
 /* ========================================================================= */
