@@ -335,6 +335,7 @@ typedef struct _TALKFILE {
 	BYTE		abyQuestStepMin[MAX_TALKLINE];
 	BYTE		abyQuestStepMax[MAX_TALKLINE];		/* 段の上限+1 で保存する（0=どの段でも。古いファイルには無く、0 =どの段でも で読める） */
 	WORD		awNeedItem[MAX_TALKLINE];			/* 持っている物の条件（0=条件なし。古いファイルには無く、0 で読める） */
+	WORD		awTakeItem[MAX_TALKLINE];			/* 取り上げるアイテム（0=取り上げない。古いファイルには無く、0 で読める） */
 } TALKFILE;
 
 /* 台詞は行ごとに別のカラム（szSpeech0〜szSpeech15）。名前は 1 つずつ書く */
@@ -368,6 +369,7 @@ static const COLINFO s_aTalkCol[] = {
 	COLS(TALKFILE, abyQuestStepMin,	COL_U8ARR, MAX_TALKLINE),
 	COLS(TALKFILE, abyQuestStepMax,	COL_U8ARR, MAX_TALKLINE),
 	COLS(TALKFILE, awNeedItem,		COL_U16ARR, MAX_TALKLINE),
+	COLS(TALKFILE, awTakeItem,		COL_U16ARR, MAX_TALKLINE),
 };
 
 BOOL SaveFlagNameInfo(void);									/* フラグの名前表保存 */
@@ -407,7 +409,7 @@ static void TalkToFile(TALKFILE *p, const TALKINFO *t)
 		memcpy (p->aszSpeech[i], l->szSpeech, MAX_TALKMSG);
 		p->awGiveItem[i] = l->wGiveItem;	p->awQuestID[i] = l->wQuestID;
 		p->abyQuestStepMin[i] = l->byQuestStepMin;	p->abyQuestStepMax[i] = (BYTE)(l->byQuestStepMax + 1);
-		p->awNeedItem[i] = l->wNeedItem;
+		p->awNeedItem[i] = l->wNeedItem;	p->awTakeItem[i] = l->wTakeItem;
 	}
 }
 
@@ -445,7 +447,7 @@ static void TalkFromFile(TALKINFO *t, const TALKFILE *p)
 		memcpy (l->szSpeech, p->aszSpeech[i], MAX_TALKMSG);
 		l->wGiveItem = p->awGiveItem[i];	l->wQuestID = p->awQuestID[i];
 		l->byQuestStepMin = p->abyQuestStepMin[i];	l->byQuestStepMax = (BYTE)(p->abyQuestStepMax[i] - 1);
-		l->wNeedItem = p->awNeedItem[i];
+		l->wNeedItem = p->awNeedItem[i];	l->wTakeItem = p->awTakeItem[i];
 		l->szSpeech[MAX_TALKMSG - 1] = 0;
 	}
 }

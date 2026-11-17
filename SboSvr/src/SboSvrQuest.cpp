@@ -943,6 +943,129 @@ BOOL QuestGiveItemNotice(PCHARINFO pChar, WORD wItem)
 	return TRUE;
 }
 
+/* ------------------------------------------------------------------------- */
+/* 会話データの引き換え（取り上げる品 wTakeItem と渡す品 wGiveItem）				 */
+/* ------------------------------------------------------------------------- */
+
+/* 取り上げられる品を探す。戻り値：QUESTTAKE_NONE=持っていない、QUESTTAKE_BAG=手持ち（*pnIdx に位置）、
+   QUESTTAKE_IMPORTANT=大事な物の欄。手持ちを先に見て、装備中の品は飛ばす（装備していない同じ品があればそれを取る） */
+int QuestTakeFind(PCHARINFO pChar, WORD wItem, int *pnIdx)
+{
+	int i, j;
+
+	if ((pChar == NULL) || (wItem == 0)) {
+		return QUESTTAKE_NONE;
+	}
+	for (i = 0; i < MAX_MYITEM; i ++) {
+		BOOL bEqu = FALSE;
+
+		if (pChar->waItem[i] != wItem) {
+			continue;
+		}
+		for (j = 0; j < MAX_EQUTYPE; j ++) {
+			if (pChar->waEqu[j] == i) {
+				bEqu = TRUE;
+			}
+		}
+		if (!bEqu) {
+			if (pnIdx) {
+				*pnIdx = i;
+			}
+			return QUESTTAKE_BAG;
+		}
+	}
+	if (CountImportantItem (pChar, wItem) > 0) {
+		return QUESTTAKE_IMPORTANT;
+	}
+	return QUESTTAKE_NONE;
+}
+
+/* 預かり所へ 1 つ足せるか（足さずに確かめるだけ。AddLeaveItem と同じ条件） */
+static BOOL LeaveCanAdd(PCHARINFO pChar, WORD wItem)
+{
+	int i;
+
+	if (g_aLeaveInfo.GetSize () == 0) {
+		return FALSE;
+	}
+	if ((pChar->dwLeaveID == 0) || (pChar->dwLeaveID >= (DWORD)g_aLeaveInfo.GetSize ())) {
+		return TRUE;	/* 口座が無ければ作れる */
+	}
+	PLEAVEINFO pLeave = g_aLeaveInfo[pChar->dwLeaveID];
+	for (i = 0; (i < pLeave->byCount) && (i < MAX_LEAVEITEM); i ++) {
+		if ((pLeave->waItem[i] == wItem) && (pLeave->byItemCount[i] < 255)) {
+			return TRUE;
+		}
+	}
+	return pLeave->byCount < MAX_LEAVEITEM;
+}
+
+/* nTakeKind の品を 1 つ取り上げた後で、wGive を受け取れるか（持ち物へ、いっぱいなら預かり所へ。大事な物は預かり所へ送らない）。
+   取り上げて空く枠も数える（引換券で持ち物がいっぱいでも、券と引き換えなら入る） */
+BOOL QuestCanGiveAfterTake(PCHARINFO pChar, WORD wGive, int nTakeKind)
+{
+	int i, nBag = 0, nImp = 0;
+
+	if ((wGive == 0) || (wGive >= (WORD)g_aItemInfo.GetSize ())) {
+		return FALSE;
+	}
+	for (i = 0; i < MAX_MYITEM; i ++) {
+		if (pChar->waItem[i]) {
+			nBag ++;
+		}
+	}
+	for (i = 0; i < MAX_IMPORTANT; i ++) {
+		if (pChar->waImportant[i]) {
+			nImp ++;
+		}
+	}
+	if (nTakeKind == QUESTTAKE_BAG) {
+		nBag --;
+	} else if (nTakeKind == QUESTTAKE_IMPORTANT) {
+		nImp --;
+	}
+	if (IsImportantItem (wGive)) {
+		return nImp < MAX_IMPORTANT;
+	}
+	if (nBag < MAX_MYITEM) {
+		return TRUE;
+	}
+	return LeaveCanAdd (pChar, wGive);
+}
+
+/* 会話の行のアイテムの動き（取り上げる → 渡す）。印・数値を動かしてよい時 TRUE
+   順番：取り上げる品を持っているか → 渡す品を受け取れるか → 両方よければ取り上げて渡す。
+   どちらかがダメなら何も変えない（持っていない時は知らせも出さない。受け取れない時は今までと同じ知らせ） */
+BOOL QuestTalkExchange(PCHARINFO pChar, WORD wTake, WORD wGive)
+{
+	int nKind, nIdx = 0;
+	char szTmp[256];
+
+	if (wTake == 0) {
+		return (wGive == 0) || QuestGiveItemNotice (pChar, wGive);
+	}
+	nKind = QuestTakeFind (pChar, wTake, &nIdx);
+	if (nKind == QUESTTAKE_NONE) {
+		return FALSE;
+	}
+	if ((wGive != 0) && !QuestCanGiveAfterTake (pChar, wGive, nKind)) {
+		SendCmdSYSMSG (pChar->pID, "持ち物がいっぱいで受け取れませんでした。", SPEECHCMD_BATTLE1);
+		return FALSE;
+	}
+	if (nKind == QUESTTAKE_BAG) {
+		DelCharItem (pChar->dwTblID, (BYTE)nIdx);
+	} else {
+		DelImportantItem (pChar, wTake);
+	}
+	SendBagState (pChar);
+	snprintf (szTmp, sizeof (szTmp), "%sを渡しました。", ItemName (wTake));
+	SendCmdSYSMSG (pChar->pID, szTmp, SPEECHCMD_BATTLE1);
+	if (wGive != 0) {
+		QuestGiveItemNotice (pChar, wGive);
+	}
+	return TRUE;
+}
+
 /* 依頼を受ける条件の印に合うか（FLAG_NOBIT=条件なし） */
 BOOL QuestFlagOk(PCHARINFO pChar, const QUESTINFO *pQuest)
 {

@@ -286,7 +286,9 @@ void TalkNpcTalk(PCHARINFO pChar, PCHARINFO pNpc)
 			/* アイテムを渡す（宝箱・依頼の報酬と同じ渡し方と知らせ）。
 			   受け取れなかった時は印・数値を動かさない（一度きりのお礼が消えないように。台詞はそのまま言う） */
 			wGiveItem = pLine->wGiveItem;
-			if ((wGiveItem == 0) || QuestGiveItemNotice (pChar, wGiveItem)) {
+			/* 取り上げる品（wTakeItem）があれば、先に持っているか・渡す品を受け取れるかを確かめ、両方よければ取り上げて渡す。
+			   どちらかがダメなら何も変えず印・数値も動かさない（引換券だけ取られることが無いように） */
+			if (QuestTalkExchange (pChar, pLine->wTakeItem, wGiveItem)) {
 				TalkApplyLine (pLine, pChar->abyFlag, pChar->abyFlagNum);
 			}
 		}
