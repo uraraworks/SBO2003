@@ -359,6 +359,10 @@ void DrawWindow(CImg32 *pDib, int x, int y)
 		}
 		s_bDrawingWindow = FALSE;
 		/* 一覧の横の詳細欄は、カーソルの所に品が無い時（「大事な物…」の行など）は画面に出さない（空の枠が透けて見えないように） */
+		/* ボタンでログインして接続中は、空のログイン窓を出さない */
+		if ((pWnd->nType == WNDTYPE_LOGIN) && g_bLoginHide) {
+			continue;
+		}
 		if ((pWnd->nType == WNDTYPE_ITEMINFO) && (pWnd->nType2 == ITEMINFOPOS_LIST) && ((pWnd->nData1 <= 0) || (pWnd->nData1 >= g_aItemInfo.GetSize ()))) {
 			continue;
 		}
@@ -609,6 +613,14 @@ void DrawWindowMSG3SEC(PWNDINFO pWnd)
 /* ========================================================================= */
 void DrawWindowLOGIN(PWNDINFO pWnd)
 {
+	/* ボタンでログインして接続中は、入力欄・接続ボタンも隠す（枠は DrawWindow で描かない） */
+	if (g_bLoginHide) {
+		ShowWindow (g_hWndAcc, SW_HIDE);
+		ShowWindow (g_hWndPas, SW_HIDE);
+		ShowWindow (g_hWndCon, SW_HIDE);
+		pWnd->dwTimeDrawStart = 0;		/* 出す時に描き直して入力欄を出す */
+		return;
+	}
 	if (pWnd->dwTimeDrawStart) {
 		InvalidateRect (g_hWndAcc, NULL, FALSE);
 		InvalidateRect (g_hWndPas, NULL, FALSE);
