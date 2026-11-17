@@ -117,6 +117,7 @@ extern void SendCmdADMINSTORY		(BYTE, int, const STORYINFO *);			/* 管理者ウ
 extern void SendCmdADMINFLAGNAME	(BYTE, int, const FLAGNAMEINFO *);		/* 管理者ウィンドウのフラグの名前表の編集 */
 extern void SendCmdADMINTALK		(BYTE, int, const TALKINFO *);			/* 管理者ウィンドウの会話データの編集 */
 extern void SendCmdADMINCHARFLAG	(BYTE, DWORD, BYTE, WORD, WORD);		/* 管理者ウィンドウのキャラのフラグの取得・変更 */
+extern void SendCmdADMINVIEWALL		(BOOL bOn);								/* 管理者ウィンドウの「印で隠れたNPCも表示」の切り替え */
 extern void SendCmdADMINRESURRECT	(DWORD dwTblID);						/* 管理者ウィンドウからキャラをHP満タンで蘇生 */
 extern void SendCmdMAGICKEY			(BYTE byNo, BYTE byMagicID, WORD wItemID);	/* ショートカットの登録（特技・装備品・道具） */
 void SendCmdNPCROUTE		(BYTE, DWORD, DWORD, BYTE, BYTE, BYTE, const BYTE *, const BYTE *);	/* NPCの巡回ルート */

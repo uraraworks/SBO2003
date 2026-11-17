@@ -226,6 +226,7 @@ void	RecvDataProcRECIPEMAKE					(PBYTE, DWORD);				/* レシピで作っても�
 void	RecvDataProcQUEST						(PBYTE, DWORD);				/* ギルドの仕事依頼（一覧・受ける・取り消す・渡す） */
 void	RecvDataProcADMINQUEST					(PBYTE, DWORD);				/* 管理者ウィンドウのギルドの依頼の編集 */
 void	RecvDataProcADMINRESURRECT				(PBYTE, DWORD);				/* 管理者ウィンドウからキャラを蘇生 */
+void	RecvDataProcADMINVIEWALL				(PBYTE, DWORD);				/* 管理者ウィンドウの「印で隠れたNPCも表示」の切り替え */
 void	RecvDataProcMAGICKEY					(PBYTE, DWORD);				/* 特技ショートカットの登録 */
 void	RecvDataProcADMINFLAGNAME				(PBYTE, DWORD);				/* 管理者ウィンドウのフラグの名前表の編集 */
 void	RecvDataProcADMINTALK					(PBYTE, DWORD);				/* 管理者ウィンドウの会話データの編集 */
@@ -483,6 +484,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcMARKETGOLDGET,			/* CMD_MARKETGOLDGET */
 	RecvDataProcADMINSTORY,				/* CMD_ADMINSTORY */
 	RecvDataProcTALKANSWER,				/* CMD_TALKANSWER */
+	RecvDataProcADMINVIEWALL,			/* CMD_ADMINVIEWALL */
 
 	NULL
 };
@@ -2043,6 +2045,7 @@ void SetInitCharData(PCHARINFO pChar)
 	pChar->dwStTmplateID	= -1;
 	pChar->wShowFlag		= 0;				/* 見える・見えない条件の印（番号+1。0=無し） */
 	pChar->wHideFlag		= 0;
+	pChar->byViewAllNpc	= 0;
 	for (i = 0; i < 10; i ++) {
 		pChar->waEqu[i] = 0xFFFF;
 	}
@@ -12541,6 +12544,36 @@ static BYTE GetResurrectionEfectID(void)
 }
 
 /* ========================================================================= */
+/* 関数名：RecvDataProcADMINVIEWALL											 */
+/* 内容：受信データ処理(管理者ウィンドウの「印で隠れたNPCも表示」の切り替え) */
+/*       送った管理者本人のメモリ上のフラグだけを変える（保存しない）。		 */
+/*       変えたら、いるマップの条件付きNPCを出し直す						 */
+/* ========================================================================= */
+void RecvDataProcADMINVIEWALL(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_DATA1 pPara = (PCMDPARA_DATA1)pData;
+	PCHARINFO pChar;
+	BYTE byNew;
+
+	if (s_dwRecvSize < sizeof (CMDPARA_DATA1)) {
+		return;
+	}
+	if (s_nCharNoRecv < 0) {
+		return;
+	}
+	pChar = g_aCharInfo[s_nCharNoRecv];
+	if ((pChar == NULL) || (pChar->pID == 0) || (pChar->byAdminLV == ADMINLV_USER)) {
+		return;
+	}
+	byNew = (pPara->byData != 0) ? 1 : 0;
+	if (pChar->byViewAllNpc == byNew) {
+		return;
+	}
+	pChar->byViewAllNpc = byNew;
+	CharViewRefresh (pChar);
+}
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcADMINRESURRECT										 */
 /* 内容：受信データ処理(管理者ウィンドウからキャラを蘇生)					 */
 /*       倒れていればHP満タンで生き返らせ、倒れていなければHPを満タンにする */
@@ -12740,7 +12773,7 @@ BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, 
 	/* 管理者用のコマンドだけ（ログインや「元に戻す」自体は通さない） */
 	if ((byCmd >= CMD_MAX) || (RecvDataProcTbl[byCmd] == NULL) ||
 			((byCmd < CMD_MAPPARTSADD) && (byCmd != CMD_CHARITEM)) ||
-			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET))) {
+			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_ADMINVIEWALL) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET))) {
 		return FALSE;
 	}
 

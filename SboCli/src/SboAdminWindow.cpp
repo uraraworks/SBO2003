@@ -3796,6 +3796,12 @@ void AdminOnCommandEtcVersion(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 	case IDC_TMPCHECK1:
 		g_bViewNpcPut = ((SendMessage (m_hWndCheck1, BM_GETCHECK, 0, 0) & BST_CHECKED) != 0);
 		break;
+
+	/* 印で隠れたNPCも表示（サーバーに送る。保存しない・既定オフ） */
+	case IDC_TMPCHECK2:
+		g_bViewHiddenNpc = ((SendMessage (m_hWndCheck2, BM_GETCHECK, 0, 0) & BST_CHECKED) != 0);
+		SendCmdADMINVIEWALL (g_bViewHiddenNpc);
+		break;
 	}
 }
 
@@ -9471,6 +9477,13 @@ void MakeAdminWndEtcVersion(void)
 			12 * 0, 12 * 9, 12 * 9, 16, g_hWndAdmin, (HMENU)IDC_TMPCHECK1, g_hInstance, NULL);
 	SendMessage (m_hWndCheck1, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 	SendMessage (m_hWndCheck1, BM_SETCHECK, g_bViewNpcPut ? BST_CHECKED : BST_UNCHECKED, 0);
+
+	/* 印で隠れたNPC（CHARINFO の wShowFlag・wHideFlag）も、印に関わらず全部見る。切り替えはサーバーに送る。
+	   サーバー側は保存しない（ログインし直すとオフ）ので、窓を作り直した時も、サーバーに合わせてオフから始める */
+	m_hWndCheck2 = CreateWindow ("BUTTON", "印で隠れたNPCも表示", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+			12 * 0, 12 * 11, 12 * 14, 16, g_hWndAdmin, (HMENU)IDC_TMPCHECK2, g_hInstance, NULL);
+	SendMessage (m_hWndCheck2, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+	SendMessage (m_hWndCheck2, BM_SETCHECK, g_bViewHiddenNpc ? BST_CHECKED : BST_UNCHECKED, 0);
 }
 
 /* ========================================================================= */
@@ -9488,6 +9501,7 @@ void DeleteAdminWndEtcVersion(void)
 	SAFE_DESTROYWND (m_hWndButton6);
 	SAFE_DESTROYWND (m_hWndButton7);
 	SAFE_DESTROYWND (m_hWndCheck1);
+	SAFE_DESTROYWND (m_hWndCheck2);
 }
 
 /* ========================================================================= */

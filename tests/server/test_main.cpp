@@ -7797,6 +7797,47 @@ static void TestViewFlag(const std::vector<int> &aLogin)
 		printf(" guard b=%d\n", SpCnt(pB, CMD_TALKMSG) - bt);
 	}
 
+	/* (c2) 管理者も、ふだんは印どおり（C は印 5 なし：ピピは見えず・ぶつからず・話せない。見張りの兵は見える）。
+	   「印で隠れたNPCも表示」（CMD_ADMINVIEWALL）をオンにすると全部見える。切り替えた時は、その管理者にだけ出し直しが届く。
+	   管理者でない人が送っても変わらない */
+	{
+		BYTE byAdminKeep = pC->byAdminLV;
+		char szAccKeep[MAX_ACCNAME];
+		strcpy(szAccKeep, pC->szAcc);
+		strcpy(pC->szAcc, "viewtest");
+		CMDPARA_DATA1 Para;
+		ZeroMemory(&Para, sizeof(Para));
+		Para.byCmd = CMD_ADMINVIEWALL;
+		Para.byData = 1;
+		printf("viewflag viewall default flag=%d pipi=%d guard=%d both=%d\n", (int)pC->byViewAllNpc, (int)IsCharVisibleTo(pPipi, pC),
+			(int)IsCharVisibleTo(pGuard, pC), (int)IsCharVisibleTo(pBoth, pC));
+		int ai = SpCnt(pA, CMD_CHARINFO), ap = SpCnt(pA, CMD_CHARPOS), bi = SpCnt(pB, CMD_CHARINFO), bp = SpCnt(pB, CMD_CHARPOS);
+		int ci = SpCnt(pC, CMD_CHARINFO), cp = SpCnt(pC, CMD_CHARPOS);
+		TestRecv(pC, &Para, sizeof(Para));
+		printf("viewflag viewall on flag=%d pipi=%d guard=%d both=%d c_charinfo=%d c_hide=%d a=%d,%d b=%d,%d\n", (int)pC->byViewAllNpc,
+			(int)IsCharVisibleTo(pPipi, pC), (int)IsCharVisibleTo(pGuard, pC), (int)IsCharVisibleTo(pBoth, pC), SpCnt(pC, CMD_CHARINFO) - ci,
+			SpCnt(pC, CMD_CHARPOS) - cp, SpCnt(pA, CMD_CHARINFO) - ai + SpCnt(pA, CMD_CHARPOS) - ap, 0, SpCnt(pB, CMD_CHARINFO) - bi + SpCnt(pB, CMD_CHARPOS) - bp, 0);
+		printf("viewflag viewall on block pipi=%d interact=%d talk_ok=%d\n",
+			(int)(CheckCharBlockNPC((DWORD)nMap, pPipi->dwX, pPipi->dwY, 0, pC) == pPipi->dwTblID), (int)IsInteractable(pC, pPipi), (int)IsCharSeenBy(pPipi, pC));
+		/* 同じ値をもう一度送っても、出し直しは起きない */
+		ci = SpCnt(pC, CMD_CHARINFO); cp = SpCnt(pC, CMD_CHARPOS);
+		TestRecv(pC, &Para, sizeof(Para));
+		printf("viewflag viewall again c=%d", SpCnt(pC, CMD_CHARINFO) - ci + SpCnt(pC, CMD_CHARPOS) - cp);
+		/* オフに戻すと、元の印どおり：ピピは消え（隠す通知が届く）、見張りの兵はそのまま */
+		Para.byData = 0;
+		ci = SpCnt(pC, CMD_CHARINFO); cp = SpCnt(pC, CMD_CHARPOS);
+		TestRecv(pC, &Para, sizeof(Para));
+		printf(" off flag=%d pipi=%d guard=%d c_charinfo=%d c_hide=%d\n", (int)pC->byViewAllNpc, (int)IsCharVisibleTo(pPipi, pC),
+			(int)IsCharVisibleTo(pGuard, pC), SpCnt(pC, CMD_CHARINFO) - ci, SpCnt(pC, CMD_CHARPOS) - cp);
+		/* 管理者でない人が送っても変わらない */
+		pC->byAdminLV = ADMINLV_USER;
+		Para.byData = 1;
+		TestRecv(pC, &Para, sizeof(Para));
+		printf("viewflag viewall user flag=%d\n", (int)pC->byViewAllNpc);
+		pC->byAdminLV = byAdminKeep;
+		strcpy(pC->szAcc, szAccKeep);
+	}
+
 	/* (d) 保存：条件は「番号+1・0=無し」で書く（古い読み込みや 0 のデータが「印 0」にならないように）。
 	   保存したファイルを開いて、NPC番号で探した行の値を見る。読み込みは別の所（M. Quest）で確かめる */
 	{

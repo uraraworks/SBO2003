@@ -1489,17 +1489,22 @@ keydoor saved=1
 == AD. ViewFlag ==
 viewflag cells=8
 viewflag has cond helper=0 pipi=1 guard=1 both=1 player=0
-viewflag visible pipi a=0 b=1 admin=1 null=0 guard a=1 b=0 admin=1 null=0
-viewflag visible both(5 and not 6) b56=0 b5=1 a=0 admin=1 helper a=1 null=1
-viewflag visiblepid pipi a=0 b=1 admin=1 all=0 guard a=1 b=0 helper all=1
-viewflag send charinfo pipi a=0 b=1 admin=1 charinfo3 a=0 b=1 admin=1 guard a=1 b=0 admin=1 charpos a=0 b=1 admin=1
+viewflag visible pipi a=0 b=1 admin=0 null=0 guard a=1 b=0 admin=1 null=0
+viewflag visible both(5 and not 6) b56=0 b5=1 a=0 admin=0 helper a=1 null=1
+viewflag visiblepid pipi a=0 b=1 admin=0 all=0 guard a=1 b=0 helper all=1
+viewflag send charinfo pipi a=0 b=1 admin=0 charinfo3 a=0 b=1 admin=0 guard a=1 b=0 admin=1 charpos a=0 b=1 admin=0
 viewflag send all a_minus_b=-1
 viewflag admin set a_flag=1 a_charinfo=2 a_hide=1 b_charinfo=0 b_hide=0 admin_charinfo=0 admin_hide=0
 viewflag admin clear a_flag=0 a_charinfo=1 a_hide=2
-viewflag npc cond off a=1 b=1 admin=1 on hide a=1 b=0 admin=0
-viewflag block pipi a=0 b=1 admin=1 none=1 guard a=1 b=0
-viewflag block2 pipi a=0 b=1 interact a=0 b=1 admin=1 guard a=1 b=0 admin=1
+viewflag npc cond off a=1 b=1 admin=1 on hide a=1 b=0 admin=1
+viewflag block pipi a=0 b=1 admin=0 none=1 guard a=1 b=0
+viewflag block2 pipi a=0 b=1 interact a=0 b=1 admin=0 guard a=1 b=0 admin=1
 viewflag talk pipi a=0 both a=0 guard b=0
+viewflag viewall default flag=0 pipi=0 guard=1 both=0
+viewflag viewall on flag=1 pipi=1 guard=1 both=1 c_charinfo=3 c_hide=0 a=0,0 b=0,0
+viewflag viewall on block pipi=1 interact=1 talk_ok=1
+viewflag viewall again c=0 off flag=0 pipi=0 guard=1 c_charinfo=1 c_hide=2
+viewflag viewall user flag=0
 viewflag save=1 columns=1 helper=0,0 pipi=6,0 guard=0,6 both=6,7
 viewflag wire to=0,1,6,1024 from=65535,0,5,1023,65535
 viewflag fresh show=0 hide=0 cond=0

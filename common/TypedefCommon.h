@@ -363,6 +363,8 @@ enum {
 	CMD_ADMINSTORY,													/* 管理者ウィンドウの思い出の本の編集（一覧・書き込み。結果はサーバー→クライアント） */
 /* 以下、プレイヤー用（クライアント→サーバーも受ける。管理者用の判定から外すこと） */
 	CMD_TALKANSWER,													/* 会話データの「はい・いいえ」の答え（クライアント→サーバー。CMDPARA_DATA1 の byData=1 がはい・0 がいいえ、dwTblID=話しかけた NPC。返事はサーバー→本人の CMD_TALKMSG） */
+/* 以下、管理者用（CMD_MAPPARTSADD 以上は自動で管理者専用になる。CMD_TALKANSWER より後ろに足す） */
+	CMD_ADMINVIEWALL,												/* 管理者ウィンドウの「印で隠れたNPCも表示」の切り替え（クライアント→サーバー。CMDPARA_DATA1 の byData=1 がオン・0 がオフ。保存しない） */
 	CMD_MAX
 };
 
@@ -2357,6 +2359,7 @@ typedef struct _CHARINFO {
 	BYTE		byMimic;											/* 直接置いた宝箱の敵が正体を現した後(1)。保存する時は宝箱の敵(NPCTYPE_MIMIC)として保存する（サーバーだけ。送信しない） */
 	WORD		wShowFlag;											/* NPC：この印が立っている人にだけ見える（番号+1。0=条件なし。0 初期化のままで条件なしになる。サーバーだけ。保存する。送信は wShowFlagNo） */
 	WORD		wHideFlag;											/* NPC：この印が立っている人には見えない（番号+1。0=条件なし。両方ある時は両方を満たす人にだけ見える） */
+	BYTE		byViewAllNpc;										/* 管理者：印で隠れたNPCも全部見る(1)（CMD_ADMINVIEWALL。サーバーだけ。保存しない。ログインし直すと 0） */
 } CHARINFO, *PCHARINFO;
 
 /* キャラ情報通知 */

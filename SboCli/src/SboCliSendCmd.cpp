@@ -122,6 +122,7 @@ void SendCmdADMINSTORY		(BYTE, int, const STORYINFO *);			/* 管理者ウィン�
 void SendCmdADMINFLAGNAME	(BYTE, int, const FLAGNAMEINFO *);		/* 管理者ウィンドウのフラグの名前表の編集 */
 void SendCmdADMINTALK		(BYTE, int, const TALKINFO *);			/* 管理者ウィンドウの会話データの編集 */
 void SendCmdADMINCHARFLAG	(BYTE, DWORD, BYTE, WORD, WORD);		/* 管理者ウィンドウのキャラのフラグの取得・変更 */
+void SendCmdADMINVIEWALL	(BOOL);									/* 管理者ウィンドウの「印で隠れたNPCも表示」の切り替え */
 void SendCmdADMINRESURRECT	(DWORD);								/* 管理者ウィンドウからキャラをHP満タンで蘇生 */
 void SendCmdMAGICKEY		(BYTE, BYTE, WORD);						/* ショートカットの登録（特技・装備品・道具） */
 void SendCMDSHOPBUY			(DWORD, DWORD);							/* アイテム購入 */
@@ -3716,6 +3717,21 @@ void SendCmdADMINCHARFLAG(BYTE byCmdSub, DWORD dwTblID, BYTE byKind, WORD wNo, W
 	pPara->wValue	= wValue;
 	cliSock.Send ((PBYTE)pPara, sizeof (CMDPARA_ADMINCHARFLAG));
 	SAFE_DELETE (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdADMINVIEWALL												 */
+/* 内容：コマンド送信(管理者ウィンドウの「印で隠れたNPCも表示」の切り替え)	 */
+/* ========================================================================= */
+void SendCmdADMINVIEWALL(BOOL bOn)
+{
+	CMDPARA_DATA1 Para;
+
+	ZeroMemory (&Para, sizeof (Para));
+	Para.byCmd		= CMD_ADMINVIEWALL;
+	Para.pID		= g_pMyID;
+	Para.byData		= bOn ? 1 : 0;
+	cliSock.Send ((PBYTE)&Para, sizeof (Para));
 }
 
 /* ========================================================================= */

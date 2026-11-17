@@ -430,6 +430,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcMARKETGOLDGET,			/* CMD_MARKETGOLDGET */
 	RecvDataProcADMINSTORY,				/* CMD_ADMINSTORY */
 	NULL,								/* CMD_TALKANSWER(クライアント→サーバーのみ) */
+	NULL,								/* CMD_ADMINVIEWALL(クライアント→サーバーのみ) */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
