@@ -3127,6 +3127,7 @@ void KeyProcMSG(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			pWnd->nData2 = 0;
 		}
 		pWnd->byData1 = byBak;
+		pWnd->nMsgBackLine = 0;
 		pWnd->nMsgDrawLen = 0;
 		pWnd->dwTimeDrawStart = 0;
 		g_bDraw = TRUE;
@@ -3140,11 +3141,39 @@ void KeyProcMSG(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		return;
 	}
 
+	/* 入力待ちの間は上下キーで前の行を読み返せる（上=1行前へ、下=1行先へ。最新の行より先へは行かない） */
+	if ((byEvent == KEY_DOWN) && ((byCode == VK_UP) || (byCode == VK_DOWN))) {
+		DWORD dwTime = (pWnd->byRepeate > 1) ? 125 : 250;
+		int nBack = pWnd->nMsgBackLine;
+		if (timeGetTime () <= pWnd->dwTimeKey + dwTime) {
+			return;
+		}
+		if (byCode == VK_UP) {
+			nBack = min (nBack + 1, pWnd->nMsgScrollMax);
+		} else {
+			nBack = max (nBack - 1, 0);
+		}
+		pWnd->byRepeate ++;
+		pWnd->dwTimeKey = timeGetTime ();
+		if (nBack != pWnd->nMsgBackLine) {
+			pWnd->nMsgBackLine = nBack;
+			pWnd->dwTimeDrawStart = 0;
+			g_bDraw = TRUE;
+		}
+		return;
+	}
+	if ((byEvent == KEY_UP) && ((byCode == VK_UP) || (byCode == VK_DOWN))) {
+		pWnd->dwTimeKey = timeGetTime () - 250;
+		pWnd->byRepeate = 0;
+		return;
+	}
+
 	if ((byEvent == KEY_UP) && ((byCode == 'A') || (byCode == 'Y'))) {
 		if (pWnd->nData2 == 1) {
 			DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
 		}
 		pWnd->nData2 = 0;
+		pWnd->nMsgBackLine = 0;		/* 読み返していたら最新の行に戻して続きを流す */
 		pWnd->dwTimeDrawStart = 0;
 	}
 
@@ -3154,6 +3183,7 @@ void KeyProcMSG(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		}
 //		if (pWnd->nData2 == 2) {
 			pWnd->nData2 = 0;
+			pWnd->nMsgBackLine = 0;
 			pWnd->dwTimeDrawStart = 0;
 //		}
 	}
