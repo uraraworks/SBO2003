@@ -32,6 +32,7 @@ SboCli/src/AdminWindowOld/AdminDlgMagicUserInfo.cpp
 SboCli/src/AdminWindowOld/AdminDlgMagicUserInfoEdit.cpp
 SboCli/src/AdminWindowOld/AdminDlgNpcRoute.cpp
 SboCli/src/AdminWindowOld/AdminDlgMapLight.cpp
+SboCli/src/AdminWindowOld/AdminDlgMapSwap.cpp
 SboCli/src/AdminWindowOld/AdminDlgStTmpInfo.cpp
 SboCli/src/AdminWindowOld/AdminDlgStTmpInfoEdit.cpp
 SboCli/src/AdminWindowOld/AdminDlgQuestInfo.cpp

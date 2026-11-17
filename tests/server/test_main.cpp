@@ -1086,6 +1086,7 @@ static void TestViewFlag(const std::vector<int> &aLogin);
 static void TestViewFlagTalk(const std::vector<int> &aLogin);
 static void TestMapSwap(const std::vector<int> &aLogin);
 static void TestAdminChest(const std::vector<int> &aLogin);
+static void TestAdminSwap(const std::vector<int> &aLogin);
 static void TestMapSwapSave(const std::vector<int> &aLogin);
 extern void BattleProcCheck(PCHARINFO);
 
@@ -1556,6 +1557,8 @@ static void TestWorld(void)
 	TestMapSwap(aLogin);
 	/* AG3. 管理者ウィンドウのキャラの開けた宝箱の記録（全宝箱の一覧・立てる／消す・全部戻す・差し替えの送り直し・管理者以外は断る） */
 	TestAdminChest(aLogin);
+	/* AI. 管理者ウィンドウの「印で変わるマス・宝箱」（CMD_ADMINSWAP。足す・直す・消す・番号の自動振り・重なりと種類違いの拒否・送り直し・元に戻す） */
+	TestAdminSwap(aLogin);
 	/* K2. 傭兵への回復・蘇生の特技（ゲームの乱数を使うので最後） */
 	TestMercenary(aLogin, TRUE);
 	/* AC. 移動アイテム・帰還の床で、ついていく列ごと移動する（時刻と乱数を使うので最後） */
@@ -9533,6 +9536,251 @@ static void TestAdminChest(const std::vector<int> &aLogin)
 	SwapRestore(pMap, Bak);
 	memcpy(pA->abyChestOpened, abyBak, sizeof(abyBak));
 	strcpy(pA->szAcc, szAccBack);
+}
+
+/* ------------------------------------------------------------------------- */
+/* AI. 管理者ウィンドウの「印で変わるマス・宝箱」（CMD_ADMINSWAP）				 */
+/*   (a) 管理者以外は断る（表は動かず、返事も差し替えの送り直しも無い）			 */
+/*   (b) 取得・足す（印・宝箱・リサイクル箱）：表に入り、番号は自動で振られ、	 */
+/*       そのマップの人（B も）へ差し替えが送り直される						 */
+/*   (c) 直す・消す：番号は変わらず、消した番号は使い回さない				 */
+/*   (d) 重なり（表の中・ほかのマップ）・種類に合わない欄・範囲外・古い画面は断り、表も送り直しも動かない */
+/*   (e) 元に戻す（画面ごとのアンドゥ）で足す前の表に戻る					 */
+/* ------------------------------------------------------------------------- */
+extern BOOL AdminUndoExec(BYTE byScreen, DWORD dwStepID, DWORD pID, std::string &strMsg, WORD &wCount);
+
+static void AdminSwapRow(ADMINSWAPROW &R, BYTE byKind, int x, int y, WORD wParts, BYTE byHas)
+{
+	ZeroMemory(&R, sizeof(R));
+	R.byKind = byKind; R.wX = (WORD)x; R.wY = (WORD)y; R.wParts = wParts; R.byHas = byHas;
+}
+
+/* 1 つ送る。bCapture なら、返事（最初の 1 つ）を Res に入れる */
+static BOOL AdminSwapSend(PCHARINFO p, BYTE bySub, DWORD dwMapID, WORD wIndex, const ADMINSWAPROW *pRow, BOOL bCapture, CMDPARA_ADMINSWAP &Res)
+{
+	PCMDPARA_ADMINSWAP pPara = new CMDPARA_ADMINSWAP;
+	std::vector<BYTE> aCap;
+	BOOL bRet = TRUE;
+
+	ZeroMemory(pPara, sizeof(*pPara));
+	pPara->byCmd = CMD_ADMINSWAP;
+	pPara->byCmdSub = bySub;
+	pPara->dwMapID = dwMapID;
+	pPara->wIndex = wIndex;
+	if (pRow) pPara->Row = *pRow;
+	if (bCapture) SvrSendCaptureBegin();
+	TestRecv(p, pPara, sizeof(CMDPARA_ADMINSWAP));
+	if (bCapture) bRet = SvrSendCaptureEnd(aCap);
+	delete pPara;
+	ZeroMemory(&Res, sizeof(Res));
+	if (!bCapture) return TRUE;
+	if (!bRet || aCap.size() < sizeof(CMDPARA_ADMINSWAP)) return FALSE;
+	memcpy(&Res, &aCap[0], sizeof(Res));
+	return TRUE;
+}
+
+static void TestAdminSwap(const std::vector<int> &aLogin)
+{
+	printf("== AI. AdminSwap ==\n");
+	std::vector<std::pair<int, int> > aCell;
+	if (!ViewSetup(aLogin, aCell)) {
+		return;
+	}
+	PCHARINFO pA = g_aCharInfo[aLogin[0]], pB = g_aCharInfo[aLogin[1]], pC = g_aCharInfo[aLogin[2]];
+	int nMap = (int)pA->dwMapID;
+	PMAPINFO pMap = g_aMapInfo[nMap];
+	WORD wWalk = 0xFFFF;
+	for (int i = 0; i < (int)g_wCountMapParts; i ++) {
+		if ((wWalk == 0xFFFF) && (g_aMapPartsInfo[i].byHitType == PARTSHIT_NONE) && (g_aMapPartsInfo[i].byDamage == 0)) wWalk = (WORD)i;
+	}
+	int nOther = -1;
+	for (int i = 0; i < g_aMapInfo.GetSize(); i ++) if (i != nMap) { nOther = i; break; }
+	if ((wWalk == 0xFFFF) || (g_aItemInfo.GetSize() < 2) || (nOther < 0)) {
+		printf("adminswap no parts/items/map\n");
+		return;
+	}
+	MAPINFO Bak = *pMap, BakOther = *g_aMapInfo[nOther];
+	DWORD dwMapID = pMap->dwID;
+	ZeroMemory(pMap->aSwap, sizeof(pMap->aSwap));
+	pMap->bySwapCount = 0;
+	ZeroMemory(g_aMapInfo[nOther]->aSwap, sizeof(g_aMapInfo[nOther]->aSwap));
+	g_aMapInfo[nOther]->bySwapCount = 0;
+	int nHigh0 = ChestHighAllForTest();
+	int nBoxHigh0 = 0;
+	for (int i = 0; i < g_aMapInfo.GetSize(); i ++) nBoxHigh0 = max(nBoxHigh0, (int)g_aMapInfo[i]->wBoxHigh);
+	CMDPARA_ADMINSWAP Res;
+	ADMINSWAPROW R;
+	const WORD wBad = (WORD)g_wCountMapParts;
+
+	/* (a) 管理者でない A・B は断られる */
+	{
+		AdminSwapRow(R, MAPSWAPKIND_FLAG, aCell[3].first, aCell[3].second, wWalk, ADMINSWAPHAS_FLAG | ADMINSWAPHAS_CMP);
+		R.wFlag = 7;
+		int a0 = SpCnt(pA, CMD_ADMINSWAP), b0 = SpCnt(pB, CMD_ADMINSWAP), sw0 = SpCnt(pA, CMD_MAPSWAP);
+		AdminSwapSend(pA, ADMINSWAP_ADD, dwMapID, 0, &R, FALSE, Res);
+		AdminSwapSend(pB, ADMINSWAP_ADD, dwMapID, 0, &R, FALSE, Res);
+		AdminSwapSend(pB, ADMINSWAP_GET, dwMapID, 0, NULL, FALSE, Res);
+		AdminSwapSend(pA, ADMINSWAP_RESTORE, dwMapID, 0, NULL, FALSE, Res);
+		printf("adminswap user count=%d reply_a=%d reply_b=%d swap=%d\n", (int)pMap->bySwapCount, SpCnt(pA, CMD_ADMINSWAP) - a0,
+			SpCnt(pB, CMD_ADMINSWAP) - b0, SpCnt(pA, CMD_MAPSWAP) - sw0);
+	}
+
+	/* (b) 取得と足す */
+	{
+		int c0 = SpCnt(pC, CMD_ADMINSWAP);
+		AdminSwapSend(pC, ADMINSWAP_GET, dwMapID, 0, NULL, FALSE, Res);
+		BOOL bGot = AdminSwapSend(pC, ADMINSWAP_GET, dwMapID, 0, NULL, TRUE, Res);
+		printf("adminswap get reply=%d got=%d sub=%d map_ok=%d count=%d next_chest_ok=%d next_box_ok=%d\n", SpCnt(pC, CMD_ADMINSWAP) - c0 - 1, (int)bGot, Res.byCmdSub,
+			(int)(Res.dwMapID == dwMapID), Res.byCount, (int)(Res.wNextChest == nHigh0), (int)(Res.wNextBox == nBoxHigh0 + 1));
+
+		int sw0 = SpCnt(pA, CMD_MAPSWAP), swB0 = SpCnt(pB, CMD_MAPSWAP), swC0 = SpCnt(pC, CMD_MAPSWAP);
+		AdminSwapRow(R, MAPSWAPKIND_FLAG, aCell[3].first, aCell[3].second, wWalk, ADMINSWAPHAS_FLAG | ADMINSWAPHAS_CMP);
+		R.wFlag = 7; R.byCmp = 1;
+		AdminSwapSend(pC, ADMINSWAP_ADD, dwMapID, 0, &R, FALSE, Res);
+		printf("adminswap add flag count=%d kind=%d flag=%d cmp=%d parts_ok=%d swap_a=%d swap_b=%d swap_c=%d\n", (int)pMap->bySwapCount, (int)pMap->aSwap[0].byKind,
+			(int)pMap->aSwap[0].wFlag, (int)pMap->aSwap[0].byCmp, (int)(pMap->aSwap[0].wParts == wWalk), SpCnt(pA, CMD_MAPSWAP) - sw0,
+			SpCnt(pB, CMD_MAPSWAP) - swB0, SpCnt(pC, CMD_MAPSWAP) - swC0);
+
+		/* 宝箱 2 つ（番号は省く）とリサイクル箱 1 つ */
+		AdminSwapRow(R, MAPSWAPKIND_CHEST, aCell[4].first, aCell[4].second, wWalk, ADMINSWAPHAS_GIVEITEM | ADMINSWAPHAS_MSG | ADMINSWAPHAS_MEMO);
+		R.wGiveItem = 1; strcpy(R.szMsg, "宝箱を開けた"); strcpy(R.szMemo, "テスト 箱1");
+		AdminSwapSend(pC, ADMINSWAP_ADD, dwMapID, 0, &R, FALSE, Res);
+		AdminSwapRow(R, MAPSWAPKIND_CHEST, aCell[5].first, aCell[5].second, wWalk, 0);
+		AdminSwapSend(pC, ADMINSWAP_ADD, dwMapID, 0, &R, FALSE, Res);
+		AdminSwapRow(R, MAPSWAPKIND_RECYCLE, aCell[6].first, aCell[6].second, wWalk, ADMINSWAPHAS_MEMO);
+		strcpy(R.szMemo, "テスト 回収箱");
+		AdminSwapSend(pC, ADMINSWAP_ADD, dwMapID, 0, &R, FALSE, Res);
+		printf("adminswap add auto count=%d chest_no=%d,%d (high0+%d,+%d) item=%d msg=%s memo=%s box_no_ok=%d high=%d boxhigh_ok=%d\n", (int)pMap->bySwapCount,
+			(int)pMap->aSwap[1].wChestNo - nHigh0, (int)pMap->aSwap[2].wChestNo - nHigh0, 0, 1, (int)pMap->aSwap[1].wGiveItem, pMap->aSwap[1].szMsg, pMap->aSwap[1].szMemo,
+			(int)(pMap->aSwap[3].wBoxNo == nBoxHigh0 + 1), (int)pMap->wChestHigh - nHigh0, (int)(pMap->wBoxHigh == nBoxHigh0 + 1));
+	}
+
+	/* (c) 直す・消す */
+	{
+		int sw0 = SpCnt(pA, CMD_MAPSWAP);
+		WORD wNo1 = pMap->aSwap[1].wChestNo;
+		/* 行 1 の宝箱を、番号そのままで位置とメモを変える */
+		AdminSwapRow(R, MAPSWAPKIND_CHEST, aCell[7].first, aCell[7].second, wWalk, ADMINSWAPHAS_NO | ADMINSWAPHAS_GIVEITEM | ADMINSWAPHAS_MEMO);
+		R.wNo = wNo1; R.wGiveItem = 0; strcpy(R.szMemo, "直した");
+		AdminSwapSend(pC, ADMINSWAP_SET, dwMapID, 1, &R, FALSE, Res);
+		printf("adminswap set no_same=%d x_ok=%d item=%d memo=%s msg_empty=%d swap=%d count=%d\n", (int)(pMap->aSwap[1].wChestNo == wNo1), (int)(pMap->aSwap[1].wX == aCell[7].first),
+			(int)pMap->aSwap[1].wGiveItem, pMap->aSwap[1].szMemo, (int)(pMap->aSwap[1].szMsg[0] == 0), SpCnt(pA, CMD_MAPSWAP) - sw0, (int)pMap->bySwapCount);
+		/* 番号を省いて種類を印に変える */
+		AdminSwapRow(R, MAPSWAPKIND_FLAG, aCell[7].first, aCell[7].second, wWalk, ADMINSWAPHAS_FLAG);
+		R.wFlag = 9;
+		AdminSwapSend(pC, ADMINSWAP_SET, dwMapID, 1, &R, FALSE, Res);
+		printf("adminswap set kind=%d flag=%d cmp=%d\n", (int)pMap->aSwap[1].byKind, (int)pMap->aSwap[1].wFlag, (int)pMap->aSwap[1].byCmp);
+		/* 消す：行が詰まり、消した宝箱の番号は使い回さない */
+		WORD wNo2 = pMap->aSwap[2].wChestNo;
+		sw0 = SpCnt(pA, CMD_MAPSWAP);
+		AdminSwapSend(pC, ADMINSWAP_DEL, dwMapID, 2, NULL, FALSE, Res);
+		printf("adminswap del count=%d row2_kind=%d swap=%d\n", (int)pMap->bySwapCount, (int)pMap->aSwap[2].byKind, SpCnt(pA, CMD_MAPSWAP) - sw0);
+		AdminSwapRow(R, MAPSWAPKIND_CHEST, aCell[5].first, aCell[5].second, wWalk, 0);
+		AdminSwapSend(pC, ADMINSWAP_ADD, dwMapID, 0, &R, FALSE, Res);
+		printf("adminswap no reuse new=%d (not %d) high=%d\n", (int)pMap->aSwap[3].wChestNo - nHigh0, (int)wNo2 - nHigh0, (int)pMap->wChestHigh - nHigh0);
+		/* 消した番号を明示すれば通る */
+		AdminSwapRow(R, MAPSWAPKIND_CHEST, aCell[5].first, aCell[5].second, wWalk, ADMINSWAPHAS_NO);
+		R.wNo = wNo2;
+		AdminSwapSend(pC, ADMINSWAP_ADD, dwMapID, 0, &R, FALSE, Res);
+		printf("adminswap explicit retired count=%d no=%d\n", (int)pMap->bySwapCount, (int)pMap->aSwap[4].wChestNo - nHigh0);
+	}
+
+	/* (d) 断る：表も送り直しも動かない */
+	{
+		MAPINFO Keep = *pMap;
+		g_aMapInfo[nOther]->bySwapCount = 1;
+		g_aMapInfo[nOther]->aSwap[0].byKind = MAPSWAPKIND_CHEST;
+		g_aMapInfo[nOther]->aSwap[0].wChestNo = 1500;
+		g_aMapInfo[nOther]->aSwap[0].wParts = wWalk;
+		int sw0 = SpCnt(pA, CMD_MAPSWAP), nMask = 0, nMsg = 0, nTry = 0;
+		struct { BYTE kind; BYTE has; } aT[] = {
+			{ MAPSWAPKIND_CHEST, ADMINSWAPHAS_FLAG },							/* 宝箱に印 */
+			{ MAPSWAPKIND_CHEST, ADMINSWAPHAS_CMP },							/* 宝箱に比べ方 */
+			{ MAPSWAPKIND_FLAG, ADMINSWAPHAS_FLAG | ADMINSWAPHAS_GIVEITEM },	/* 印に品 */
+			{ MAPSWAPKIND_FLAG, ADMINSWAPHAS_FLAG | ADMINSWAPHAS_MSG },			/* 印に文 */
+			{ MAPSWAPKIND_FLAG, ADMINSWAPHAS_FLAG | ADMINSWAPHAS_NO },			/* 印に番号 */
+			{ MAPSWAPKIND_FLAG, 0 },											/* 印の番号なし */
+			{ MAPSWAPKIND_RECYCLE, ADMINSWAPHAS_MSG },							/* リサイクル箱に文 */
+			{ MAPSWAPKIND_RECYCLE, ADMINSWAPHAS_GIVEITEM },						/* リサイクル箱に品 */
+			{ MAPSWAPKIND_RECYCLE, ADMINSWAPHAS_FLAG },							/* リサイクル箱に印 */
+			{ 3, 0 },															/* 知らない種類 */
+		};
+		for (size_t k = 0; k < sizeof(aT) / sizeof(aT[0]); k ++) {
+			AdminSwapRow(R, aT[k].kind, aCell[0].first, aCell[0].second, wWalk, aT[k].has);
+			R.wFlag = 1; R.wGiveItem = 1; strcpy(R.szMsg, "x");
+			BOOL bGot = AdminSwapSend(pC, ADMINSWAP_ADD, dwMapID, 0, &R, TRUE, Res);
+			nTry ++;
+			if (!(Keep.bySwapCount == pMap->bySwapCount && memcmp(Keep.aSwap, pMap->aSwap, sizeof(Keep.aSwap)) == 0)) nMask |= 1 << k;
+			if (bGot && Res.byCmdSub == ADMINSWAP_RESULT && Res.byResult == 0 && Res.szMsg[0]) nMsg ++;
+		}
+		printf("adminswap kind mismatch tried=%d changed_mask=%d result_msgs=%d\n", nTry, nMask, nMsg);
+
+		/* 範囲外・重なり・古い画面・行の外 */
+		int nBad = 0, nMsg2 = 0, nTry2 = 0;
+		for (int k = 0; k < 8; k ++) {
+			BYTE byKind = MAPSWAPKIND_CHEST; BYTE byHas = 0; DWORD dwID = dwMapID; BYTE bySub = ADMINSWAP_ADD; WORD wIdx = 0;
+			AdminSwapRow(R, byKind, aCell[0].first, aCell[0].second, wWalk, byHas);
+			switch (k) {
+			case 0: R.wX = (WORD)pMap->nCX; break;											/* X が外 */
+			case 1: R.wY = (WORD)pMap->nCY; break;											/* Y が外 */
+			case 2: R.wParts = wBad; break;													/* パーツが外 */
+			case 3: R.byHas = ADMINSWAPHAS_NO; R.wNo = pMap->aSwap[1].wChestNo ? pMap->aSwap[3].wChestNo : 0; break;	/* 表の中で重なる宝箱の番号 */
+			case 4: R.byHas = ADMINSWAPHAS_NO; R.wNo = 1500; break;							/* ほかのマップが使っている宝箱の番号 */
+			case 5: R.byHas = ADMINSWAPHAS_GIVEITEM; R.wGiveItem = (WORD)g_aItemInfo.GetSize(); break;	/* 無い品 */
+			case 6: dwID = g_aMapInfo[nOther]->dwID; break;									/* 古い画面（今いるマップと違う） */
+			case 7: bySub = ADMINSWAP_DEL; wIdx = 50; break;								/* 行の外 */
+			}
+			BOOL bGot = AdminSwapSend(pC, bySub, dwID, wIdx, &R, TRUE, Res);
+			nTry2 ++;
+			if (!(Keep.bySwapCount == pMap->bySwapCount && memcmp(Keep.aSwap, pMap->aSwap, sizeof(Keep.aSwap)) == 0)) nBad |= 1 << k;
+			if (bGot && Res.byCmdSub == ADMINSWAP_RESULT && Res.byResult == 0 && Res.szMsg[0]) nMsg2 ++;
+		}
+		/* リサイクル箱の番号の重なり（表の中・ほかのマップ） */
+		g_aMapInfo[nOther]->aSwap[0].byKind = MAPSWAPKIND_RECYCLE;
+		g_aMapInfo[nOther]->aSwap[0].wBoxNo = 900;
+		AdminSwapRow(R, MAPSWAPKIND_RECYCLE, aCell[0].first, aCell[0].second, wWalk, ADMINSWAPHAS_NO);
+		R.wNo = 900;
+		AdminSwapSend(pC, ADMINSWAP_ADD, dwMapID, 0, &R, FALSE, Res);
+		if (pMap->bySwapCount != Keep.bySwapCount) nBad |= 1 << 8;
+		R.wNo = pMap->aSwap[3].byKind == MAPSWAPKIND_RECYCLE ? pMap->aSwap[3].wBoxNo : 1;
+		AdminSwapSend(pC, ADMINSWAP_ADD, dwMapID, 0, &R, FALSE, Res);
+		if (pMap->bySwapCount != Keep.bySwapCount) nBad |= 1 << 9;
+		/* 64 個を超える */
+		{
+			MAPINFO Full = *pMap;
+			pMap->bySwapCount = MAX_MAPSWAP;
+			for (int i = Keep.bySwapCount; i < MAX_MAPSWAP; i ++) {
+				pMap->aSwap[i] = Keep.aSwap[0];
+			}
+			AdminSwapRow(R, MAPSWAPKIND_FLAG, aCell[0].first, aCell[0].second, wWalk, ADMINSWAPHAS_FLAG);
+			AdminSwapSend(pC, ADMINSWAP_ADD, dwMapID, 0, &R, FALSE, Res);
+			if (pMap->bySwapCount != MAX_MAPSWAP) nBad |= 1 << 10;
+			pMap->bySwapCount = Full.bySwapCount;
+			memcpy(pMap->aSwap, Full.aSwap, sizeof(pMap->aSwap));
+		}
+		printf("adminswap rejected tried=%d changed_mask=%d result_msgs=%d swap_resent=%d unchanged=%d\n", nTry2, nBad, nMsg2, SpCnt(pA, CMD_MAPSWAP) - sw0,
+			(int)(Keep.bySwapCount == pMap->bySwapCount && memcmp(Keep.aSwap, pMap->aSwap, sizeof(Keep.aSwap)) == 0));
+		g_aMapInfo[nOther]->bySwapCount = 0;
+	}
+
+	/* (e) 元に戻す：画面「印で変わるマス・宝箱」の記録で、足す前（空）の表に戻る */
+	{
+		std::string strMsg;
+		WORD wCount = 0;
+		int sw0 = SpCnt(pA, CMD_MAPSWAP);
+		BOOL bOk = AdminUndoExec(ADMINSCR_SWAP, 0, 0, strMsg, wCount);
+		printf("adminswap undo ok=%d count=%d swap=%d high_kept=%d\n", (int)bOk, (int)pMap->bySwapCount, SpCnt(pA, CMD_MAPSWAP) - sw0, (int)pMap->wChestHigh - nHigh0);
+	}
+
+	/* 片付け */
+	{
+		MAPINFO *pOt = g_aMapInfo[nOther];
+		pOt->bySwapCount = BakOther.bySwapCount;
+		memcpy(pOt->aSwap, BakOther.aSwap, sizeof(pOt->aSwap));
+		pOt->wChestHigh = BakOther.wChestHigh;
+		pOt->wBoxHigh = BakOther.wBoxHigh;
+	}
+	SwapRestore(pMap, Bak);
 }
 
 /* ------------------------------------------------------------------------- */

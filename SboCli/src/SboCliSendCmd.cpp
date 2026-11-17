@@ -3786,6 +3786,29 @@ void SendCmdADMINCHEST(BYTE byCmdSub, DWORD dwTblID, WORD wNo, WORD wValue)
 }
 
 /* ========================================================================= */
+/* 関数名：SendCmdADMINSWAP													 */
+/* 内容：コマンド送信(管理者ウィンドウの「印で変わるマス・宝箱」)			 */
+/*       byCmdSub: ADMINSWAP_GET（今いるマップの表を取得）・				 */
+/*                 ADMINSWAP_ADD（pRow を足す）・ADMINSWAP_SET（wIndex の行を pRow に直す）・*/
+/*                 ADMINSWAP_DEL（wIndex の行を消す）。dwMapID は表を取ったマップ	 */
+/* ========================================================================= */
+void SendCmdADMINSWAP(BYTE byCmdSub, DWORD dwMapID, WORD wIndex, const ADMINSWAPROW *pRow)
+{
+	PCMDPARA_ADMINSWAP pPara = new CMDPARA_ADMINSWAP;
+
+	ZeroMemory (pPara, sizeof (CMDPARA_ADMINSWAP));
+	pPara->byCmd	= CMD_ADMINSWAP;
+	pPara->byCmdSub	= byCmdSub;
+	pPara->dwMapID	= dwMapID;
+	pPara->wIndex	= wIndex;
+	if (pRow) {
+		pPara->Row = *pRow;
+	}
+	cliSock.Send ((PBYTE)pPara, sizeof (CMDPARA_ADMINSWAP));
+	SAFE_DELETE (pPara);
+}
+
+/* ========================================================================= */
 /* 関数名：SendCmdADMINVIEWALL												 */
 /* 内容：コマンド送信(管理者ウィンドウの「印で隠れたNPCも表示」の切り替え)	 */
 /* ========================================================================= */

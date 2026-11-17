@@ -25,6 +25,8 @@
 #include "SboSvrNpcRoute.h"
 #include "SboSvrMarket.h"
 #include "SboSvrRecycle.h"
+#include "SboSvrQuest.h"
+#include "SboSvrMapSwapEdit.h"
 #include "CharProc/CharProcMERCENARY.h"
 #include "SboSvrMagicProc.h"
 #include <map>
@@ -250,6 +252,7 @@ void	RecvDataProcRECYCLEPUT					(PBYTE, DWORD);				/* リサイクルボック�
 void	RecvDataProcRECYCLETAKE					(PBYTE, DWORD);				/* リサイクルボックスからもらう */
 void	RecvDataProcRECYCLECLOSE				(PBYTE, DWORD);				/* リサイクルボックスの窓を閉じた */
 void	RecvDataProcADMINCHEST					(PBYTE, DWORD);				/* 管理者ウィンドウのキャラの開けた宝箱の記録 */
+void	RecvDataProcADMINSWAP					(PBYTE, DWORD);				/* 管理者ウィンドウの「印で変わるマス・宝箱」 */
 void	RecvDataProcTALKANSWER					(PBYTE, DWORD);				/* 会話データの「はい・いいえ」の答え */
 /* 端末トークン（server/web_account_svr.cpp） */
 BOOL	WebAccTokenToAccount					(LPCSTR, LPSTR, int);		/* 端末トークンからアカウント名を引く */
@@ -503,6 +506,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcRECYCLETAKE,			/* CMD_RECYCLETAKE */
 	RecvDataProcRECYCLECLOSE,			/* CMD_RECYCLECLOSE */
 	RecvDataProcADMINCHEST,				/* CMD_ADMINCHEST */
+	RecvDataProcADMINSWAP,				/* CMD_ADMINSWAP */
 
 	NULL
 };
@@ -12811,6 +12815,145 @@ void RecvDataProcADMINCHEST(PBYTE pData, DWORD dwDataSize)
 	CharViewRefresh (pChar);
 	SendAdminChestResult (pID, pPara->dwTblID, 1, "");
 	SendAdminChestInfo (pID, pChar);
+}
+
+/* ========================================================================= */
+/* 関数名：SendAdminSwapInfo												 */
+/* 内容：管理者ウィンドウへマップの差し替え表を送る							 */
+/* ========================================================================= */
+static void SendAdminSwapInfo(DWORD pID, PMAPINFO pMap)
+{
+	PCMDPARA_ADMINSWAP pPara = new CMDPARA_ADMINSWAP;
+
+	ZeroMemory (pPara, sizeof (CMDPARA_ADMINSWAP));
+	pPara->byCmd		= CMD_ADMINSWAP;
+	pPara->byCmdSub		= ADMINSWAP_INFO;
+	pPara->dwMapID		= pMap->dwID;
+	pPara->byCount		= pMap->bySwapCount;
+	pPara->wNextChest	= (WORD)ChestHighAll ();
+	pPara->wNextBox		= (WORD)(RecycleBoxHighAll () + 1);
+	for (int i = 0; i < pMap->bySwapCount && i < MAX_MAPSWAP; i ++) {
+		MapSwapWireFromSwap (pMap->aSwap[i], pPara->aRow[i]);
+	}
+	svrSock.SendTo (pID, (PBYTE)pPara, sizeof (CMDPARA_ADMINSWAP));
+	SAFE_DELETE (pPara);
+}
+
+/* 管理者ウィンドウへ差し替え表の変更の結果を送る */
+static void SendAdminSwapResult(DWORD pID, DWORD dwMapID, BYTE byResult, LPCSTR pszMsg)
+{
+	PCMDPARA_ADMINSWAP pPara = new CMDPARA_ADMINSWAP;
+
+	ZeroMemory (pPara, sizeof (CMDPARA_ADMINSWAP));
+	pPara->byCmd	= CMD_ADMINSWAP;
+	pPara->byCmdSub	= ADMINSWAP_RESULT;
+	pPara->byResult	= byResult;
+	pPara->dwMapID	= dwMapID;
+	SboTextCopy (pPara->szMsg, sizeof (pPara->szMsg), pszMsg);
+	svrSock.SendTo (pID, (PBYTE)pPara, sizeof (CMDPARA_ADMINSWAP));
+	SAFE_DELETE (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINSWAP											 */
+/* 内容：受信データ処理(管理者ウィンドウの「印で変わるマス・宝箱」)			 */
+/*       管理者だけ（受信の入口で断る。ここでも確かめる）					 */
+/*       GET     : 送ってきた人のいるマップの差し替え表を INFO で返す		 */
+/*       ADD/SET/DEL : 1 行足す・直す・消す。表全体を MapSwapBuild（データ API の	 */
+/*                 swaps と同じ確かめ・番号の自動振り）に通してから反映する	 */
+/*       RESTORE : 表を丸ごと置き換える（「元に戻す」用。同じ確かめを通す）	 */
+/*       変えたら、そのマップの全員へ差し替えを送り直し、マップを保存する		 */
+/*       （データ API と同じ。ほかのマップの編集のように定期保存を待たない。	 */
+/*        番号の覚え wChestHigh・wBoxHigh を失わないため）					 */
+/* ========================================================================= */
+void RecvDataProcADMINSWAP(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINSWAP pPara = (PCMDPARA_ADMINSWAP)pData;
+	DWORD pID = s_pIDRecv;
+	PCHARINFO pChar = (s_nCharNoRecv >= 0) ? g_aCharInfo[s_nCharNoRecv] : NULL;
+	BYTE bySub;
+	int nMapNo;
+	PMAPINFO pMap;
+	MAPINFO w;
+	std::vector<MAPSWAPEDITROW> aRow;
+	std::string strErr;
+
+	if (!s_bAdminRecv || (s_dwRecvSize < sizeof (CMDPARA_ADMINSWAP))) {
+		return;
+	}
+	bySub = pPara->byCmdSub;
+	if ((bySub != ADMINSWAP_GET) && (bySub != ADMINSWAP_ADD) && (bySub != ADMINSWAP_SET) &&
+		(bySub != ADMINSWAP_DEL) && (bySub != ADMINSWAP_RESTORE)) {
+		return;
+	}
+	/* 取得は送ってきた人のいるマップ。変更は指定のマップ（人がいる時は、今いるマップと同じでなければ断る） */
+	if ((bySub == ADMINSWAP_GET) && pChar) {
+		nMapNo = GetMapNo (pChar->dwMapID);
+	} else {
+		nMapNo = GetMapNo (pPara->dwMapID);
+	}
+	if (nMapNo < 0) {
+		if (pID) SendAdminSwapResult (pID, pPara->dwMapID, 0, "マップが見つかりません。");
+		return;
+	}
+	pMap = g_aMapInfo[nMapNo];
+	if (bySub == ADMINSWAP_GET) {
+		if (pID) SendAdminSwapInfo (pID, pMap);
+		return;
+	}
+	if (pChar && (bySub != ADMINSWAP_RESTORE) && (pChar->dwMapID != pMap->dwID)) {
+		SendAdminSwapResult (pID, pPara->dwMapID, 0, "マップが変わりました。取り直してから操作してください。");
+		SendAdminSwapInfo (pID, g_aMapInfo[GetMapNo (pChar->dwMapID) >= 0 ? GetMapNo (pChar->dwMapID) : nMapNo]);
+		return;
+	}
+
+	/* 変更後の表を入力の形で作る */
+	if (bySub == ADMINSWAP_RESTORE) {
+		if (pPara->byCount > MAX_MAPSWAP) {
+			if (pID) SendAdminSwapResult (pID, pMap->dwID, 0, "行が多すぎます。");
+			return;
+		}
+		aRow.resize (pPara->byCount);
+		for (int i = 0; i < pPara->byCount; i ++) {
+			MapSwapEditFromWire (pPara->aRow[i], aRow[i]);
+		}
+	} else {
+		for (int i = 0; i < pMap->bySwapCount && i < MAX_MAPSWAP; i ++) {
+			MAPSWAPEDITROW Row;
+			MapSwapToEdit (pMap->aSwap[i], Row);
+			aRow.push_back (Row);
+		}
+		if (bySub == ADMINSWAP_ADD) {
+			MAPSWAPEDITROW Row;
+			MapSwapEditFromWire (pPara->Row, Row);
+			aRow.push_back (Row);
+		} else {
+			if (pPara->wIndex >= aRow.size ()) {
+				if (pID) SendAdminSwapResult (pID, pMap->dwID, 0, "その行はありません。取り直してから操作してください。");
+				return;
+			}
+			if (bySub == ADMINSWAP_DEL) {
+				aRow.erase (aRow.begin () + pPara->wIndex);
+			} else {
+				MapSwapEditFromWire (pPara->Row, aRow[pPara->wIndex]);
+			}
+		}
+	}
+
+	w = *pMap;
+	if (!MapSwapBuild (nMapNo, w, aRow, "行", strErr)) {
+		if (pID) SendAdminSwapResult (pID, pMap->dwID, 0, strErr.c_str ());
+		return;
+	}
+	if (MapSwapChanged (*pMap, w)) {
+		MapSwapSet (pMap, w);
+		MapSwapSendMap (pMap);
+		SaveMapInfo ();
+	}
+	if (pID) {
+		SendAdminSwapResult (pID, pMap->dwID, 1, "");
+		SendAdminSwapInfo (pID, pMap);
+	}
 }
 
 /* ========================================================================= */
