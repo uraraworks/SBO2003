@@ -1088,6 +1088,7 @@ static void TestMapSwap(const std::vector<int> &aLogin);
 static void TestAdminChest(const std::vector<int> &aLogin);
 static void TestAdminSwap(const std::vector<int> &aLogin);
 static void TestMapSwapSave(const std::vector<int> &aLogin);
+static void TestJobMagicKey(const std::vector<int> &aLogin);
 extern void BattleProcCheck(PCHARINFO);
 
 static void TestTownWarp(const std::vector<int> &aLogin)
@@ -1559,6 +1560,8 @@ static void TestWorld(void)
 	TestAdminChest(aLogin);
 	/* AI. 管理者ウィンドウの「印で変わるマス・宝箱」（CMD_ADMINSWAP。足す・直す・消す・番号の自動振り・重なりと種類違いの拒否・送り直し・元に戻す） */
 	TestAdminSwap(aLogin);
+	/* AD2. 転職で特技ショートカットを職業ごとに切り替え・特技の並べ替え・列の保存（保存の読み直しがあるので、K2 の前に流す） */
+	TestJobMagicKey(aLogin);
 	/* K2. 傭兵への回復・蘇生の特技（ゲームの乱数を使うので最後） */
 	TestMercenary(aLogin, TRUE);
 	/* AC. 移動アイテム・帰還の床で、ついていく列ごと移動する（時刻と乱数を使うので最後） */
@@ -9786,6 +9789,194 @@ static void TestAdminSwap(const std::vector<int> &aLogin)
 /* ------------------------------------------------------------------------- */
 /* AG2. 保存・読み直し：宝箱の記録（キャラの列）・印で変わるマス（マップの項目）・古いデータ	 */
 /* ------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
+/* AD2. 転職の特技ショートカット・特技の並べ替え・abyJobMagicKey の保存		 */
+/* ------------------------------------------------------------------------- */
+static void JobKeyPrint(const char *pszLabel, PCHARINFO p)
+{
+	printf("jobkey %s key=%d,%d,%d,%d,%d item=%d,%d,%d,%d,%d saved=%08x\n", pszLabel,
+		p->abyMagicKey[0], p->abyMagicKey[1], p->abyMagicKey[2], p->abyMagicKey[3], p->abyMagicKey[4],
+		p->awKeyItem[0], p->awKeyItem[1], p->awKeyItem[2], p->awKeyItem[3], p->awKeyItem[4], (unsigned)p->dwJobMagicKeySaved);
+}
+
+static void MagicListPrint(const char *pszLabel, int nRet, const BYTE *pabyMagic)
+{
+	printf("magicsort %s ret=%d list=", pszLabel, nRet);
+	for (int i = 0; i < 8; i ++) printf("%s%d", i ? "," : "", pabyMagic[i]);
+	printf("\n");
+}
+
+static void TestJobMagicKey(const std::vector<int> &aLogin)
+{
+	printf("== AD2. JobMagicKey ==\n");
+	if (aLogin.size() < 3) {
+		return;
+	}
+	PCHARINFO pA = g_aCharInfo[aLogin[2]];
+	BYTE byJobBak = pA->byJOB;
+	BYTE abyMagicBak[sizeof(pA->abyMagic)], abyKeyBak[sizeof(pA->abyMagicKey)], abyJobKeyBak0[sizeof(pA->abyJobMagicKey)];
+	WORD awKeyItemBak[MAX_MAGICKEY], awJobKeyItemBak[sizeof(pA->awJobKeyItem) / sizeof(WORD)];
+	DWORD dwSavedBak0 = pA->dwJobMagicKeySaved;
+	memcpy(abyMagicBak, pA->abyMagic, sizeof(abyMagicBak)); memcpy(abyKeyBak, pA->abyMagicKey, sizeof(abyKeyBak));
+	memcpy(abyJobKeyBak0, pA->abyJobMagicKey, sizeof(abyJobKeyBak0)); memcpy(awKeyItemBak, pA->awKeyItem, sizeof(awKeyItemBak));
+	memcpy(awJobKeyItemBak, pA->awJobKeyItem, sizeof(awJobKeyItemBak));
+	/* 特技IDは名前のあるもの先頭8つ */
+	BYTE abyID[8];
+	int nID = 0;
+	for (int i = 1; i < g_aMagicInfo.GetSize() && i < 256 && nID < 8; i ++) {
+		if (g_aMagicInfo[i] && g_aMagicInfo[i]->szName[0]) abyID[nID ++] = (BYTE)i;
+	}
+	printf("jobkey ids=%d\n", nID);
+	if (nID < 8) {
+		return;
+	}
+	const BYTE byJobA = 1, byJobB = 2;
+
+	/* (1) ChangeJobMagicKey */
+	ZeroMemory(pA->abyMagic, sizeof(pA->abyMagic));
+	ZeroMemory(pA->abyMagicKey, sizeof(pA->abyMagicKey));
+	ZeroMemory(pA->awKeyItem, sizeof(pA->awKeyItem));
+	ZeroMemory(pA->abyJobMagicKey, sizeof(pA->abyJobMagicKey));
+	ZeroMemory(pA->awJobKeyItem, sizeof(pA->awJobKeyItem));
+	pA->dwJobMagicKeySaved = 0;
+	pA->byJOB = byJobA;
+	pA->abyMagic[0] = abyID[0]; pA->abyMagic[1] = abyID[1]; pA->abyMagic[2] = abyID[2];
+	pA->abyMagicKey[0] = abyID[0]; pA->abyMagicKey[1] = abyID[1];		/* 特技の枠 */
+	pA->awKeyItem[2] = 77;												/* 道具の枠 */
+	JobKeyPrint("A set", pA);
+	/* B へ（初めて）：B の abyMagic は abyID[1] だけ → abyID[0] の枠は外れ、abyID[1]・道具の枠は残る */
+	ZeroMemory(pA->abyMagic, sizeof(pA->abyMagic));
+	pA->abyMagic[0] = abyID[1]; pA->abyMagic[1] = abyID[3];
+	pA->byJOB = byJobB;
+	ChangeJobMagicKey(pA, byJobA, byJobB);
+	JobKeyPrint("to B first", pA);
+	/* B で別の枠 */
+	pA->abyMagicKey[3] = abyID[3];
+	JobKeyPrint("B set", pA);
+	/* A へ戻す：A の枠が戻る（abyMagic は A の呪文に戻した状態） */
+	ZeroMemory(pA->abyMagic, sizeof(pA->abyMagic));
+	pA->abyMagic[0] = abyID[0]; pA->abyMagic[1] = abyID[1]; pA->abyMagic[2] = abyID[2];
+	pA->byJOB = byJobA;
+	ChangeJobMagicKey(pA, byJobB, byJobA);
+	JobKeyPrint("back A", pA);
+	/* B へ戻す：B の枠が戻る */
+	ZeroMemory(pA->abyMagic, sizeof(pA->abyMagic));
+	pA->abyMagic[0] = abyID[1]; pA->abyMagic[1] = abyID[3];
+	pA->byJOB = byJobB;
+	ChangeJobMagicKey(pA, byJobA, byJobB);
+	JobKeyPrint("back B", pA);
+	/* 同じ職業・範囲外の職業は何もしない／覚えない */
+	ChangeJobMagicKey(pA, byJobB, byJobB);
+	JobKeyPrint("same", pA);
+
+	/* (2) SortMagicList */
+	{
+		BYTE abyM[MAX_USEMAGIC];
+		for (int mode = 0; mode < 3; mode ++) {
+			const char *apszName[] = { "swap", "type", "name", "name again" };
+			ZeroMemory(abyM, sizeof(abyM));
+			if (mode == 0) {
+				/* 空きを含む並び：詰めてから入れ替え（詰めた後の番号） */
+				abyM[1] = abyID[0]; abyM[3] = abyID[1]; abyM[4] = abyID[2]; abyM[7] = abyID[3];
+				int r = SortMagicList(abyM, SORTITEMMODE_SWAP, 0, 2);
+				MagicListPrint("swap 0,2 (gaps packed)", r, abyM);
+				r = SortMagicList(abyM, SORTITEMMODE_SWAP, 1, 9);
+				MagicListPrint("swap out of range", r, abyM);
+				r = SortMagicList(abyM, SORTITEMMODE_SWAP, 1, 1);
+				MagicListPrint("swap same", r, abyM);
+			} else {
+				for (int i = 0; i < 8; i ++) abyM[i] = abyID[7 - i];
+				abyM[9] = abyID[0];											/* 空きの後ろにあるもの */
+				BYTE byMode = (mode == 1) ? SORTITEMMODE_TYPE : SORTITEMMODE_NAME;
+				int r = SortMagicList(abyM, byMode, 0, 0);
+				MagicListPrint(apszName[mode], r, abyM);
+				BYTE abyCopy[MAX_USEMAGIC];
+				memcpy(abyCopy, abyM, sizeof(abyCopy));
+				r = SortMagicList(abyM, byMode, 0, 0);
+				MagicListPrint((mode == 1) ? "type again(desc)" : "name again(desc)", r, abyM);
+				int nZero = 0, nTail = 1;
+				for (int i = 0; i < MAX_USEMAGIC; i ++) { if (abyM[i] == 0) nZero ++; else if (nZero) nTail = 0; }
+				printf("magicsort %s packed=%d zeros=%d\n", apszName[mode], nTail, nZero);
+			}
+		}
+		/* 1つ以下は並べ替えない・不正な方法 */
+		ZeroMemory(abyM, sizeof(abyM)); abyM[0] = abyID[0];
+		printf("magicsort single ret=%d bad_mode ret=%d null ret=%d\n", (int)SortMagicList(abyM, SORTITEMMODE_NAME, 0, 0), (int)SortMagicList(abyM, 99, 0, 0), (int)SortMagicList(NULL, SORTITEMMODE_NAME, 0, 0));
+	}
+
+	/* (3) 保存→読み込み。列が無い古いデータは全部空 */
+	char szAccBak[sizeof(pA->szAcc)], szNameBak[sizeof(pA->szName)];
+	memcpy(szAccBak, pA->szAcc, sizeof(szAccBak));
+	memcpy(szNameBak, pA->szName, sizeof(szNameBak));
+	ZeroMemory(pA->abyJobMagicKey, sizeof(pA->abyJobMagicKey));
+	ZeroMemory(pA->awJobKeyItem, sizeof(pA->awJobKeyItem));
+	pA->abyJobMagicKey[1][0] = 11; pA->abyJobMagicKey[1][4] = 12;
+	pA->abyJobMagicKey[31][2] = 13;
+	pA->dwJobMagicKeySaved = (1UL << 1) | (1UL << 31);
+	DWORD dwSavedBak = pA->dwJobMagicKeySaved;
+	BYTE abyJobKeyBak[sizeof(pA->abyJobMagicKey)];
+	memcpy(abyJobKeyBak, pA->abyJobMagicKey, sizeof(abyJobKeyBak));
+	strcpy(pA->szAcc, "jobkeytest");
+	strcpy(pA->szName, "転職キーテスト");
+	BOOL bSaved = SaveCharInfo();
+	BOOL bLoaded = LoadCharInfo();
+	PCHARINFO pLoaded = NULL;
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		if (g_aCharInfo[i] != pA && strcmp(g_aCharInfo[i]->szAcc, "jobkeytest") == 0) pLoaded = g_aCharInfo[i];
+	}
+	printf("jobkey save=%d load=%d found=%d\n", (int)bSaved, (int)bLoaded, (int)(pLoaded != NULL));
+	if (pLoaded) {
+		printf("jobkey reload key=%d,%d,%d saved_same=%d key_same=%d\n", pLoaded->abyJobMagicKey[1][0], pLoaded->abyJobMagicKey[1][4], pLoaded->abyJobMagicKey[31][2],
+			(int)(pLoaded->dwJobMagicKeySaved == dwSavedBak), (int)(memcmp(pLoaded->abyJobMagicKey, abyJobKeyBak, sizeof(abyJobKeyBak)) == 0));
+		pLoaded->szAcc[0] = 0;
+	}
+	{
+		const char *pszFile = "SBODATA/SboDataCharInfo.dat";
+		strcpy(pA->szAcc, "jobkeyold");
+		SaveCharInfo();
+		std::vector<BYTE> aFile;
+		FILE *fp = fopen(pszFile, "rb");
+		if (fp) {
+			BYTE abyBuf[4096];
+			size_t n;
+			while ((n = fread(abyBuf, 1, sizeof(abyBuf), fp)) > 0) aFile.insert(aFile.end(), abyBuf, abyBuf + n);
+			fclose(fp);
+		}
+		int nPatched = 0;
+		if (aFile.size() > 8) {
+			DWORD dwColumn = 0;
+			size_t nHead = 8;
+			memcpy(&dwColumn, &aFile[0], 4);
+			for (DWORD c = 0; c < dwColumn; c ++) {
+				char *pszName = (char *)&aFile[nHead];
+				if (strcmp(pszName, "abyJobMagicKey") == 0) { pszName[0] = 'X'; nPatched ++; }
+				nHead += strlen(pszName) + 1 + 4;
+			}
+			fp = fopen(pszFile, "wb");
+			if (fp) { fwrite(&aFile[0], 1, aFile.size(), fp); fclose(fp); }
+		}
+		LoadCharInfo();
+		PCHARINFO pOld = NULL;
+		for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+			if (g_aCharInfo[i] != pA && g_aCharInfo[i] != pLoaded && strcmp(g_aCharInfo[i]->szAcc, "jobkeyold") == 0) pOld = g_aCharInfo[i];
+		}
+		if (pOld) {
+			int nAny = 0;
+			for (size_t i = 0; i < sizeof(pOld->abyJobMagicKey); i ++) nAny |= ((BYTE *)pOld->abyJobMagicKey)[i];
+			printf("jobkey old save patched=%d found=1 all_zero=%d saved=%u name_ok=%d\n", nPatched, (int)(nAny == 0), (unsigned)pOld->dwJobMagicKeySaved, (int)(strcmp(pOld->szName, "転職キーテスト") == 0));
+			pOld->szAcc[0] = 0;
+		} else {
+			printf("jobkey old save patched=%d not found\n", nPatched);
+		}
+	}
+	memcpy(pA->szAcc, szAccBak, sizeof(szAccBak));
+	memcpy(pA->szName, szNameBak, sizeof(szNameBak));
+	pA->byJOB = byJobBak; pA->dwJobMagicKeySaved = dwSavedBak0;
+	memcpy(pA->abyMagic, abyMagicBak, sizeof(abyMagicBak)); memcpy(pA->abyMagicKey, abyKeyBak, sizeof(abyKeyBak));
+	memcpy(pA->abyJobMagicKey, abyJobKeyBak0, sizeof(abyJobKeyBak0)); memcpy(pA->awKeyItem, awKeyItemBak, sizeof(awKeyItemBak));
+	memcpy(pA->awJobKeyItem, awJobKeyItemBak, sizeof(awJobKeyItemBak));
+}
+
 static void TestMapSwapSave(const std::vector<int> &aLogin)
 {
 	printf("== AG2. MapSwapSave ==\n");

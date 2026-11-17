@@ -100,6 +100,7 @@ void CCharProcBase::SetProc(PCHARINFO pChar)
 
 	pProc = (PCCharProcBase)pChar->pProc;
 	SAFE_DELETE (pProc);
+	pChar->pProc = NULL;							/* 消した後に処理が作られない種別でも、消した物を指したままにしない */
 
 	switch (pChar->byNpcType) {
 	case NPCTYPE_NOMOVE:

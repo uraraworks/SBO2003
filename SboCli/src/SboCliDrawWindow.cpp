@@ -5008,14 +5008,18 @@ void DrawWindowSTATUSMAGIC(PWNDINFO pWnd)
 	HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFontBasic);
 
 	/* 枠の上に載る見出しは背景を塗ってから重ねて描く（「強さ」と同じ） */
+	/* 入れ替え中(dwData=1+選んだ行)は見出しを「入れ替え」にして、選んだ行を黄色で描く */
+	LPSTR pszTitle = (LPSTR)(pWnd->dwData ? "入れ替え" : "特技");
+	LPSTR pszHint = (LPSTR)(pWnd->dwData ? "入れ替える先を選んでね" : "決定で並べ替え・1〜5キーで登録");
+	int xHint = 32 + SboTextWidth (pszTitle) * 8 + 16;
 	SetBkColor (hDC, RGB (40, 40, 40));
-	TextOut2 (hDC, 32, 0, "特技", RGB (255, 255, 255));
+	TextOut2 (hDC, 32, 0, pszTitle, RGB (255, 255, 255));
 	TextOut2 (hDC, 32, nListCy, "説明", RGB (255, 255, 255));
-	TextOut2 (hDC, 32 + 8 * 6, 0, "1〜5キーで登録", RGB (255, 230, 100));
+	TextOut2 (hDC, xHint, 0, pszHint, RGB (255, 230, 100));
 	SetBkMode (hDC, TRANSPARENT);
-	TextOut2 (hDC, 32, 0, "特技", RGB (255, 255, 255));
+	TextOut2 (hDC, 32, 0, pszTitle, RGB (255, 255, 255));
 	TextOut2 (hDC, 32, nListCy, "説明", RGB (255, 255, 255));
-	TextOut2 (hDC, 32 + 8 * 6, 0, "1〜5キーで登録", RGB (255, 230, 100));
+	TextOut2 (hDC, xHint, 0, pszHint, RGB (255, 230, 100));
 
 	if (pWnd->nData2 == 0) {
 		TextOut2 (hDC, 32, 16, "覚えている特技はありません", RGB (200, 200, 200));
@@ -5035,7 +5039,8 @@ void DrawWindowSTATUSMAGIC(PWNDINFO pWnd)
 		PMAGICINFO pInfo = g_aMagicInfo[byMagicID];
 		int y = 16 + nNo * 16;
 
-		TextOut2 (hDC, 32, y, pInfo->szName, RGB (255, 255, 255));
+		TextOut2 (hDC, 32, y, pInfo->szName,
+				((pWnd->dwData != 0) && ((int)pWnd->dwData - 1 == nNo)) ? RGB (255, 255, 0) : RGB (255, 255, 255));
 
 		/* 特技ショートカットに登録している番号 */
 		int nKey = GetMagicKeyNo (byMagicID);

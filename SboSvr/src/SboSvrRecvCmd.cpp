@@ -9249,6 +9249,49 @@ void RecvDataProcJOBINFOREQ(PBYTE pData, DWORD dwDataSize)
 }
 
 /* ========================================================================= */
+/* 関数名：ChangeJobMagicKey												 */
+/* 内容：転職した時に特技ショートカットを職業ごとに切り替える				 */
+/*       今の職業のショートカットを職業別に覚えておき、新しい職業で以前		 */
+/*       使っていたショートカットがあればそれに戻す。まだ無い職業なら、		 */
+/*       装備品・道具の枠はそのまま、新しい職業で使えない特技の枠だけ外す	 */
+/*       （abyMagic は新しい職業のものに入れ替えてから呼ぶ）				 */
+/* 日付：2026/11/17															 */
+/* ========================================================================= */
+void ChangeJobMagicKey(PCHARINFO pChar, BYTE byJobOld, BYTE byJobNew)
+{
+	int i, j;
+
+	if ((pChar == NULL) || (byJobOld == byJobNew)) {
+		return;
+	}
+	/* 今の職業のショートカットを覚えておく */
+	if (byJobOld < MAX_JOBMAGIC) {
+		CopyMemory (pChar->abyJobMagicKey[byJobOld], pChar->abyMagicKey, sizeof (pChar->abyMagicKey));
+		CopyMemory (pChar->awJobKeyItem[byJobOld], pChar->awKeyItem, sizeof (pChar->awKeyItem));
+		pChar->dwJobMagicKeySaved |= (1UL << byJobOld);
+	}
+	/* 新しい職業で以前使っていたショートカットがあれば戻す */
+	if ((byJobNew < MAX_JOBMAGIC) && (pChar->dwJobMagicKeySaved & (1UL << byJobNew))) {
+		CopyMemory (pChar->abyMagicKey, pChar->abyJobMagicKey[byJobNew], sizeof (pChar->abyMagicKey));
+		CopyMemory (pChar->awKeyItem, pChar->awJobKeyItem[byJobNew], sizeof (pChar->awKeyItem));
+	}
+	/* 今覚えていない特技の枠は外す（装備品・道具の枠は、ログインの時と同じく送る時に手持ちを確かめる） */
+	for (i = 0; i < MAX_MAGICKEY; i ++) {
+		if (pChar->abyMagicKey[i] == 0) {
+			continue;
+		}
+		for (j = 0; j < MAX_USEMAGIC; j ++) {
+			if (pChar->abyMagic[j] == pChar->abyMagicKey[i]) {
+				break;
+			}
+		}
+		if (j >= MAX_USEMAGIC) {
+			pChar->abyMagicKey[i] = 0;
+		}
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcJOBCHG												 */
 /* 内容：受信データ処理(職業変更)											 */
 /* 日付：2004/07/11															 */
@@ -9323,6 +9366,10 @@ void RecvDataProcJOBCHG(PBYTE pData, DWORD dwDataSize)
 		if (bRestore) {
 			SendCmdSYSMSG (pChar->pID, "以前この職業で覚えていた特技を思い出しました。", SPEECHCMD_BATTLE1);
 		}
+
+		/* 特技ショートカットも職業ごとに覚えておき、新しい職業のものに切り替える */
+		ChangeJobMagicKey (pChar, byJobOld, byJobNew);
+		SendMagicKeySetting (pChar);
 	}
 
 	/* 装備品をチェック */
@@ -13821,6 +13868,127 @@ void SortItemList(WORD *pwaItem, BYTE *pbyCount, int nCount, BYTE byMode, int *p
 	}
 }
 
+/* 特技の並べ替えの1件分 */
+typedef struct _SORTMAGICENTRY {
+	int					nOld;										/* 並べ替える前の番号 */
+	BYTE				byMagicID;									/* 特技ID */
+	int					nScene;										/* 使える場面の順（ふだん→いつでも→戦闘中） */
+	int					nType;										/* 効果種別 */
+	int					nMana;										/* 消費Mana */
+	std::vector<unsigned>	aKey;									/* 50音キー */
+} SORTMAGICENTRY;
+
+/* 特技の種類順の比較（使える場面→効果種別→消費Mana→50音キー→特技ID） */
+static bool SortMagicLessType(const SORTMAGICENTRY &a, const SORTMAGICENTRY &b)
+{
+	if (a.nScene != b.nScene) {
+		return a.nScene < b.nScene;
+	}
+	if (a.nType != b.nType) {
+		return a.nType < b.nType;
+	}
+	if (a.nMana != b.nMana) {
+		return a.nMana < b.nMana;
+	}
+	if (a.aKey != b.aKey) {
+		return a.aKey < b.aKey;
+	}
+	return a.byMagicID < b.byMagicID;
+}
+
+/* 特技の50音順の比較（50音キー→特技ID） */
+static bool SortMagicLessName(const SORTMAGICENTRY &a, const SORTMAGICENTRY &b)
+{
+	if (a.aKey != b.aKey) {
+		return a.aKey < b.aKey;
+	}
+	return a.byMagicID < b.byMagicID;
+}
+
+/* ========================================================================= */
+/* 関数名：SortMagicList													 */
+/* 内容：覚えている特技の並びを入れ替え・種類順・50音順に並べ替える			 */
+/*       空き(0)は後ろに詰める。入れ替えは詰めた後の番号(byNo1,byNo2)で		 */
+/*       もうその順に並んでいたら逆の順（降順）にする（道具の並べ替えと同じ） */
+/*       並べ替えたら TRUE														 */
+/* 日付：2026/11/17															 */
+/* ========================================================================= */
+BOOL SortMagicList(BYTE *pabyMagic, BYTE byMode, BYTE byNo1, BYTE byNo2)
+{
+	std::vector<SORTMAGICENTRY> aEntry;
+	int i, nCount;
+
+	if (pabyMagic == NULL) {
+		return FALSE;
+	}
+	/* 空きを後ろに詰める */
+	nCount = 0;
+	for (i = 0; i < MAX_USEMAGIC; i ++) {
+		BYTE byMagic = pabyMagic[i];
+		pabyMagic[i] = 0;
+		if (byMagic) {
+			pabyMagic[nCount ++] = byMagic;
+		}
+	}
+
+	if (byMode == SORTITEMMODE_SWAP) {
+		if ((byNo1 >= nCount) || (byNo2 >= nCount) || (byNo1 == byNo2)) {
+			return FALSE;
+		}
+		BYTE byTmp = pabyMagic[byNo1];
+		pabyMagic[byNo1] = pabyMagic[byNo2];
+		pabyMagic[byNo2] = byTmp;
+		return TRUE;
+	}
+	if ((byMode != SORTITEMMODE_TYPE) && (byMode != SORTITEMMODE_NAME)) {
+		return FALSE;
+	}
+	if (nCount <= 1) {
+		return FALSE;
+	}
+
+	aEntry.resize (nCount);
+	for (i = 0; i < nCount; i ++) {
+		PMAGICINFO pInfo = NULL;
+		aEntry[i].nOld		= i;
+		aEntry[i].byMagicID	= pabyMagic[i];
+		aEntry[i].nScene	= 3;
+		aEntry[i].nType		= 255;
+		aEntry[i].nMana		= 65535;
+		if ((int)pabyMagic[i] < (int)g_aMagicInfo.GetSize ()) {
+			pInfo = g_aMagicInfo[pabyMagic[i]];
+		}
+		if (pInfo) {
+			switch (pInfo->byTypeInfoID) {
+			case MAGICUSETYPE_WALK:			aEntry[i].nScene = 0;	break;	/* ふだん */
+			case MAGICUSETYPE_WALKBATTLE:	aEntry[i].nScene = 1;	break;	/* いつでも */
+			case MAGICUSETYPE_BATTLE:		aEntry[i].nScene = 2;	break;	/* 戦闘中 */
+			}
+			aEntry[i].nType	= pInfo->byType;
+			aEntry[i].nMana	= pInfo->wMana;
+			ItemNameSortKey (pInfo->szName, aEntry[i].aKey);
+		}
+	}
+	bool (*pfnLess)(const SORTMAGICENTRY &, const SORTMAGICENTRY &) =
+			(byMode == SORTITEMMODE_TYPE) ? SortMagicLessType : SortMagicLessName;
+	std::stable_sort (aEntry.begin (), aEntry.end (), pfnLess);
+
+	/* もうこの順に並んでいた（続けて同じ並べ替えを選んだ）なら、逆の順にする */
+	for (i = 0; i < nCount; i ++) {
+		if (aEntry[i].nOld != i) {
+			break;
+		}
+	}
+	if (i == nCount) {
+		std::stable_sort (aEntry.begin (), aEntry.end (),
+				[pfnLess](const SORTMAGICENTRY &a, const SORTMAGICENTRY &b) { return pfnLess (b, a); });
+	}
+	for (i = 0; i < nCount; i ++) {
+		pabyMagic[i] = aEntry[i].byMagicID;
+	}
+	return TRUE;
+}
+
 /* ========================================================================= */
 /* 関数名：RecvDataProcSORTITEM												 */
 /* 内容：受信データ処理(道具欄・預かり所の並べ替え)							 */
@@ -13912,6 +14080,11 @@ void RecvDataProcSORTITEM(PBYTE pData, DWORD dwDataSize)
 			SortItemList (pInfo->waItem, pInfo->byItemCount, nCount, pPara->byMode, NULL);
 		}
 		SendCmdLEAVEITEMGET (pChar->dwTblID);
+
+	} else if (pPara->byTarget == SORTITEMTARGET_MAGIC) {
+		/* 覚えている特技（並び順は今の職業の分。転職すると職業別の保存にそのまま入る） */
+		SortMagicList (pChar->abyMagic, pPara->byMode, pPara->byNo1, pPara->byNo2);
+		SendCmdCHARSTATUS (pChar->pID, pChar->dwTblID);
 	}
 }
 

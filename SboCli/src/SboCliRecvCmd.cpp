@@ -6681,6 +6681,15 @@ void RecvDataProcCHARSTATUS(BYTE *pData, DWORD dwDataSize)
 			}
 		}
 		RenewUseMagicInfo ();
+
+		/* 「強さ」の特技の一覧を開いていたら、並べ替えた後の順で描き直す */
+		for (int iWnd = 0; iWnd < g_WndInfo.GetSize (); iWnd ++) {
+			PWNDINFO pWndMagic = (PWNDINFO)g_WndInfo[iWnd];
+			if (pWndMagic->nType == WNDTYPE_STATUSMAGIC) {
+				pWndMagic->dwTimeDrawStart = 0;
+				g_bDraw = TRUE;
+			}
+		}
 	}
 
 	int nNoTmp = GetWindowID (g_dwMsgIDGold);
