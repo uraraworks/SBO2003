@@ -248,7 +248,7 @@ static BOOL IsQuestNpcFor(PCHARINFO pSrc, PCHARINFO pDst)
 extern PCHARINFO GetMercenaryOwner(PCHARINFO pMerc);			/* 傭兵の雇い主（CharProcMERCENARY.cpp） */
 
 /* 印の条件（wShowFlag・wHideFlag）で、pSrc が pViewer に見えるか。空間は見ない。
-   管理者には常に見える。プレイヤーでない相手（敵・町の人）には見える（傭兵だけは雇い主の目で見る） */
+   管理者も一般プレイヤーと同じく印どおりに見える（「印で隠れたNPCも表示」をオンにした管理者にだけ、常に見える）。プレイヤーでない相手（敵・町の人）には見える（傭兵だけは雇い主の目で見る） */
 BOOL CharViewCondOk(PCHARINFO pSrc, PCHARINFO pViewer)
 {
 	if (pViewer == NULL) {
@@ -260,7 +260,7 @@ BOOL CharViewCondOk(PCHARINFO pSrc, PCHARINFO pViewer)
 			return TRUE;
 		}
 	}
-	if (pViewer->byAdminLV != ADMINLV_USER) {
+	if ((pViewer->byAdminLV != ADMINLV_USER) && pViewer->byViewAllNpc) {
 		return TRUE;
 	}
 	/* wShowFlag・wHideFlag は「番号+1（0=無し）」なので、番号に戻してから見る */

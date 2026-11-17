@@ -119,6 +119,10 @@ inline WORD CharFlagWireFix(WORD wWire)
 #define MAX_TALKACT			2										/* 行の「話した後の数値の動き」の数 */
 #define MAX_TALKNAME		64										/* 会話セットの名前（管理用メモ）の欄のバイト数（終端含む） */
 #define MAX_TALKMSG			1024									/* 台詞の欄のバイト数（終端含む）。1 セット（16 行）が通信の 1 パケットに収まる大きさ */
+#define MAX_TALKNOMSG		128										/* 「いいえ」の返事の欄のバイト数（終端含む）。台詞より短くして、1 セット（16 行）が 1 パケットに収まるようにしてある */
+#define TALK_NOMSG_DEFAULT	"そうですか。また声をかけてくださいね。"	/* 「いいえ」の返事が空の時の既定（行の話し手が分からないので、だれが言っても自然な一言） */
+#define TALK_ASK_TIMEOUT	(60 * 1000)								/* 「はい・いいえ」の答えを待つ時間（ミリ秒。過ぎた答えは無視する） */
+#define TALK_ASK_RANGE		2										/* 「はい・いいえ」に答える時、話しかけた NPC との間に許す距離（マス。話しかける時と同じ） */
 #define MAX_SUBGAME_WARMEMBER	4									/* 戦場ゲーム最大参加人数 */
 
 /* 入力できる長さ（表示幅。半角1文字=1、全角1文字=2）
@@ -357,6 +361,10 @@ enum {
 	CMD_MARKETGOLDGET,												/* 取引所に貯まった売上を受け取る（クライアント→サーバー。結果はサーバー→クライアント） */
 /* 以下、管理者用（CMD_MAPPARTSADD 以上は自動で管理者専用になる。CMD_MARKETGOLDGET より後ろに足す） */
 	CMD_ADMINSTORY,													/* 管理者ウィンドウの思い出の本の編集（一覧・書き込み。結果はサーバー→クライアント） */
+/* 以下、プレイヤー用（クライアント→サーバーも受ける。管理者用の判定から外すこと） */
+	CMD_TALKANSWER,													/* 会話データの「はい・いいえ」の答え（クライアント→サーバー。CMDPARA_DATA1 の byData=1 がはい・0 がいいえ、dwTblID=話しかけた NPC。返事はサーバー→本人の CMD_TALKMSG） */
+/* 以下、管理者用（CMD_MAPPARTSADD 以上は自動で管理者専用になる。CMD_TALKANSWER より後ろに足す） */
+	CMD_ADMINVIEWALL,												/* 管理者ウィンドウの「印で隠れたNPCも表示」の切り替え（クライアント→サーバー。CMDPARA_DATA1 の byData=1 がオン・0 がオフ。保存しない） */
 	CMD_MAX
 };
 
@@ -2351,6 +2359,7 @@ typedef struct _CHARINFO {
 	BYTE		byMimic;											/* 直接置いた宝箱の敵が正体を現した後(1)。保存する時は宝箱の敵(NPCTYPE_MIMIC)として保存する（サーバーだけ。送信しない） */
 	WORD		wShowFlag;											/* NPC：この印が立っている人にだけ見える（番号+1。0=条件なし。0 初期化のままで条件なしになる。サーバーだけ。保存する。送信は wShowFlagNo） */
 	WORD		wHideFlag;											/* NPC：この印が立っている人には見えない（番号+1。0=条件なし。両方ある時は両方を満たす人にだけ見える） */
+	BYTE		byViewAllNpc;										/* 管理者：印で隠れたNPCも全部見る(1)（CMD_ADMINVIEWALL。サーバーだけ。保存しない。ログインし直すと 0） */
 } CHARINFO, *PCHARINFO;
 
 /* キャラ情報通知 */
@@ -3270,6 +3279,8 @@ typedef struct _TALKLINEINFO {
 	BYTE		byQuestStepMax;										/* 依頼の段の上限（255=どの段でも） */
 	WORD		wNeedItem;											/* 持っている物の条件（0=条件なし。0 以外なら、そのアイテムを手持ちか大事な物の欄に 1 つ以上持っている人だけ。預かり所は見ない） */
 	WORD		wTakeItem;											/* 話した後に取り上げるアイテム（0=取り上げない。手持ち→大事な物の欄の順に 1 つ。装備中は取らない。持っていなければ印・数値・渡すは動かさない） */
+	BYTE		byAsk;												/* 0=今まで通り 1=台詞のあと「はい・いいえ」で聞く（はいの時だけ印・数値・渡す・取り上げるを反映。いいえは何も動かさず szNoMsg を言う） */
+	char		szNoMsg[MAX_TALKNOMSG];								/* 「いいえ」の時の返事（byAsk=1 の時だけ。空なら TALK_NOMSG_DEFAULT） */
 } TALKLINEINFO, *PTALKLINEINFO;
 
 /* 会話セットの状態(TALKINFO の byState) */

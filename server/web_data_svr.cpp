@@ -471,6 +471,8 @@ static const DATAFIELD s_aFieldTalkLine[] = {
 	FLD (TALKLINEINFO, byQuestStepMax,	"依頼の段の上限",		FT_U8, 0, "wQuestID が 0 以外の時。255=どの段でも（quest の見えるNPC の byStepMax と同じ）。省くと 255"),
 	FLD (TALKLINEINFO, wNeedItem,		"持っている物の条件",	FT_U16, 0, "item の番号（0=条件なし）。0 以外なら、話した人がそのアイテムを手持ちか大事な物の欄に 1 つ以上持っている時だけ合う（預かり所は見ない）"),
 	FLD (TALKLINEINFO, wTakeItem,		"話した後に取り上げるアイテム",	FT_U16, 0, "item の番号（0=取り上げない）。この行で話した後に、手持ち→大事な物の欄の順にこの品を 1 つ取り上げる（装備中の品は取らない。預かり所は見ない）。引換券→景品のような引き換え用で、wGiveItem と組む。取り上げる品を持っていない時、または渡す品を受け取れない時は、何も取らず印・数値・渡すも動かさない（台詞は言う）"),
+	FLD (TALKLINEINFO, byAsk,			"はい・いいえで聞く",	FT_U8, 0, "0=今まで通り 1=台詞のあとに「はい・いいえ」を選ばせる。1 の行は、台詞を言った時には印・数値・渡す物・取り上げる物をまだ動かさず、「はい」の答えが来た時（話しかけた NPC の近く 2 マス以内・同じマップ・60 秒以内・その行がまだ条件に合う時だけ）に、今までと同じ反映をする。「いいえ」は何も動かさず szNoMsg を言う。答えが無効（遠い・時間切れ・ほかの NPC に話した・マップ移動・切断）なら何も起きない"),
+	FLDS(TALKLINEINFO, szNoMsg,			"いいえの返事",			FT_STR, FF_MULTILINE, "byAsk=1 の行で「いいえ」を選んだ時の返事（台詞と同じ書き方）。最大 127 バイト。空だと「そうですか。また声をかけてくださいね。」"),
 };
 
 /* 依頼情報（ギルドの仕事依頼。npcs・goals は項目表の外で扱う） */
@@ -4463,6 +4465,10 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 				}
 				if (L.wTakeItem != 0 && L.wTakeItem >= g_aItemInfo.GetSize()) {
 					strErr = strName + "wTakeItem は item の番号（0 は取り上げない）で指定してください";
+					goto Exit;
+				}
+				if (L.byAsk > 1) {
+					strErr = strName + "byAsk は 0（今まで通り）か 1（はい・いいえで聞く）で指定してください";
 					goto Exit;
 				}
 				if (L.wQuestID != 0 && L.byQuestStepMax != QUESTNPC_NOSTEP && L.byQuestStepMin > L.byQuestStepMax) {

@@ -1067,6 +1067,10 @@ void DrawWindowMSG(PWNDINFO pWnd)
 					i ++;
 					continue;
 
+				case 'y':		/* 会話データの「はい・いいえ」待ち（サーバーが台詞の最後に付ける） */
+					i ++;
+					continue;
+
 				case '9':		/* キャラ画像記録 */
 					i += 6;
 					continue;

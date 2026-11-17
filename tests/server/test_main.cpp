@@ -4284,6 +4284,277 @@ static void TestQuest(const std::vector<int> &aLogin)
 		g_aTalkInfo.RemoveAt(g_aTalkInfo.GetSize() - 1);
 	}
 
+	/* 会話の行：「はい・いいえ」で聞く（byAsk）。聞く行では印・数値・渡す物が動かない→はいで動く→いいえは動かず返事→
+	   遠い・時間切れ・保留なし・ほかの NPC への答えは無視→古い会話データを読むと byAsk=0 */
+	{
+		PTALKINFO pTalk = new TALKINFO;
+		PCHARINFO pNpcReal = g_aCharInfo[dwGuild];
+		char szSpeechBak[8];
+		DWORD dwMapB = pP4->dwMapID, dwXB = pP4->dwX, dwYB = pP4->dwY;
+		std::vector<BYTE> aCap;
+		WORD wFill = 0;
+		for (int i = 1; i < g_aItemInfo.GetSize(); i ++) {
+			if (g_aItemInfo[i]->szName[0] && i != wItemQ && i != wItemR) { wFill = (WORD)i; break; }
+		}
+		ZeroMemory(pTalk, sizeof(*pTalk));
+		pTalk->wID = 996; pTalk->byState = TALKSTATE_ON; pTalk->byLineCount = 1;
+		TalkTestLineInit(&pTalk->aLine[0], 1);
+		pTalk->aLine[0].byAsk = 1;
+		strcpy(pTalk->aLine[0].szSpeech, "ほしいですか？");
+		strcpy(pTalk->aLine[0].szNoMsg, "また今度ね。");
+		pTalk->aLine[0].wGiveItem = wItemQ;
+		pTalk->aLine[0].awSetOn[0] = 504; pTalk->aLine[0].abyActNo[0] = 9; pTalk->aLine[0].abyActOp[0] = TALKNUMOP_ADD; pTalk->aLine[0].abyActVal[0] = 1;
+		g_aTalkInfo.Add(pTalk);
+		/* 本物の NPC（ギルド受付）の台詞を一時的に @t996 にして、そのそばに置く */
+		strcpy(szSpeechBak, pNpcReal->pszNpcSpeech);
+		strcpy(pNpcReal->pszNpcSpeech, "@t996");
+		pP4->dwMapID = pNpcReal->dwMapID; pP4->dwX = pNpcReal->dwX + 1; pP4->dwY = pNpcReal->dwY;
+		ZeroMemory(pP4->waItem, sizeof(pP4->waItem));
+		ZeroMemory(pP4->waImportant, sizeof(pP4->waImportant));
+		FlagBitSet(pP4->abyFlag, 504, FALSE);
+		FlagNumSet(pP4->abyFlagNum, 9, 0);
+		TalkPendClear(pP4->dwTblID);
+
+		/* 送った台詞の中身を調べる（横取りの間は誰にも送られないので、数えるのは別に 1 回ずつ流す） */
+		struct Has {
+			static bool In(const std::vector<BYTE> &a, const char *psz) {
+				size_t n = strlen(psz);
+				for (size_t i = 0; i + n <= a.size(); i ++) if (memcmp(&a[i], psz, n) == 0) return true;
+				return false;
+			}
+		};
+		/* 話す：台詞（末尾に @y）は届くが、印・数値・渡す物は動かない。保留ができる */
+		SvrSendCaptureBegin();
+		TalkNpcTalk(pP4, pNpcReal);
+		SvrSendCaptureEnd(aCap);
+		bool bTail = Has::In(aCap, "ほしいですか？@y") && !Has::In(aCap, "@2");
+		int nTalk = MockCmdCount(anConn[3], CMD_TALKMSG), nPz = QuestCountItem(pP4, wItemQ);
+		TalkNpcTalk(pP4, pNpcReal);
+		printf("talk ask first talkmsg=%d tail=%d flag=%d num=%d item%+d pend=%d", MockCmdCount(anConn[3], CMD_TALKMSG) - nTalk, bTail ? 1 : 0,
+			FlagBitGet(pP4->abyFlag, 504) ? 1 : 0, FlagNumGet(pP4->abyFlagNum, 9), QuestCountItem(pP4, wItemQ) - nPz, TalkPendGet(pP4->dwTblID) ? 1 : 0);
+		/* はい（本物のパケット経由。一般のプレイヤーが送れる）：印・数値・渡す物が動いて、保留が消える */
+		CMDPARA_DATA1 Ans;
+		ZeroMemory(&Ans, sizeof(Ans));
+		Ans.byCmd = CMD_TALKANSWER; Ans.byData = 1; Ans.dwTblID = dwGuild;
+		nPz = QuestCountItem(pP4, wItemQ);
+		TestRecv(pP4, &Ans, sizeof(Ans));
+		printf(" | yes flag=%d num=%d item%+d pend=%d", FlagBitGet(pP4->abyFlag, 504) ? 1 : 0, FlagNumGet(pP4->abyFlagNum, 9), QuestCountItem(pP4, wItemQ) - nPz, TalkPendGet(pP4->dwTblID) ? 1 : 0);
+		/* 保留が無い時の答えは無視（二重に送っても 1 回しか動かない） */
+		nPz = QuestCountItem(pP4, wItemQ);
+		TestRecv(pP4, &Ans, sizeof(Ans));
+		printf(" again flag=%d num=%d item%+d\n", FlagBitGet(pP4->abyFlag, 504) ? 1 : 0, FlagNumGet(pP4->abyFlagNum, 9), QuestCountItem(pP4, wItemQ) - nPz);
+
+		/* いいえ：何も動かず、返事（szNoMsg）が届く。保留は消える */
+		FlagBitSet(pP4->abyFlag, 504, FALSE);
+		FlagNumSet(pP4->abyFlagNum, 9, 0);
+		Ans.byData = 0;
+		TalkNpcTalk(pP4, pNpcReal);
+		SvrSendCaptureBegin();
+		TestRecv(pP4, &Ans, sizeof(Ans));
+		SvrSendCaptureEnd(aCap);
+		bool bNo1 = Has::In(aCap, "また今度ね。@2");
+		TalkNpcTalk(pP4, pNpcReal);
+		nTalk = MockCmdCount(anConn[3], CMD_TALKMSG); nPz = QuestCountItem(pP4, wItemQ);
+		TestRecv(pP4, &Ans, sizeof(Ans));
+		printf("talk ask no talkmsg=%d msg=%d flag=%d num=%d item%+d pend=%d", MockCmdCount(anConn[3], CMD_TALKMSG) - nTalk, bNo1 ? 1 : 0,
+			FlagBitGet(pP4->abyFlag, 504) ? 1 : 0, FlagNumGet(pP4->abyFlagNum, 9), QuestCountItem(pP4, wItemQ) - nPz, TalkPendGet(pP4->dwTblID) ? 1 : 0);
+		/* いいえの返事が空なら既定の一言 */
+		pTalk->aLine[0].szNoMsg[0] = 0;
+		TalkNpcTalk(pP4, pNpcReal);
+		SvrSendCaptureBegin();
+		TalkAnswer(pP4, dwGuild, FALSE);
+		SvrSendCaptureEnd(aCap);
+		bool bNoDef = Has::In(aCap, TALK_NOMSG_DEFAULT "@2");
+		printf(" default msg=%d\n", bNoDef ? 1 : 0);
+
+		/* 遠い：答えは無視（保留は消える） */
+		TalkNpcTalk(pP4, pNpcReal);
+		pP4->dwX = pNpcReal->dwX + 5;
+		TalkAnswer(pP4, dwGuild, TRUE);
+		printf("talk ask far flag=%d num=%d pend=%d", FlagBitGet(pP4->abyFlag, 504) ? 1 : 0, FlagNumGet(pP4->abyFlagNum, 9), TalkPendGet(pP4->dwTblID) ? 1 : 0);
+		/* 2 マスまでは受ける */
+		pP4->dwX = pNpcReal->dwX + 2;
+		TalkNpcTalk(pP4, pNpcReal);
+		TalkAnswer(pP4, dwGuild, TRUE);
+		printf(" near2 flag=%d", FlagBitGet(pP4->abyFlag, 504) ? 1 : 0);
+		FlagBitSet(pP4->abyFlag, 504, FALSE);
+		FlagNumSet(pP4->abyFlagNum, 9, 0);
+		pP4->dwX = pNpcReal->dwX + 1;
+		/* 別のマップに移った */
+		TalkNpcTalk(pP4, pNpcReal);
+		pP4->dwMapID = pNpcReal->dwMapID + 1;
+		TalkAnswer(pP4, dwGuild, TRUE);
+		pP4->dwMapID = pNpcReal->dwMapID;
+		printf(" othermap flag=%d", FlagBitGet(pP4->abyFlag, 504) ? 1 : 0);
+		/* 別の空間に移った */
+		TalkNpcTalk(pP4, pNpcReal);
+		pP4->dwSpaceID = 5;
+		TalkAnswer(pP4, dwGuild, TRUE);
+		pP4->dwSpaceID = 0;
+		printf(" otherspace flag=%d\n", FlagBitGet(pP4->abyFlag, 504) ? 1 : 0);
+
+		/* 時間切れ（60 秒）：59 秒なら受け、61 秒は捨てる */
+		TalkNpcTalk(pP4, pNpcReal);
+		TalkPendGet(pP4->dwTblID)->dwTime = timeGetTime() - (TALK_ASK_TIMEOUT - 1000);
+		TalkAnswer(pP4, dwGuild, TRUE);
+		printf("talk ask time 59s flag=%d", FlagBitGet(pP4->abyFlag, 504) ? 1 : 0);
+		FlagBitSet(pP4->abyFlag, 504, FALSE);
+		FlagNumSet(pP4->abyFlagNum, 9, 0);
+		TalkNpcTalk(pP4, pNpcReal);
+		TalkPendGet(pP4->dwTblID)->dwTime = timeGetTime() - (TALK_ASK_TIMEOUT + 1000);
+		TalkAnswer(pP4, dwGuild, TRUE);
+		printf(" 61s flag=%d pend=%d", FlagBitGet(pP4->abyFlag, 504) ? 1 : 0, TalkPendGet(pP4->dwTblID) ? 1 : 0);
+		/* ほかの NPC への答えは無視（保留はそのまま残り、本物の NPC への答えは通る） */
+		TalkNpcTalk(pP4, pNpcReal);
+		TalkAnswer(pP4, pOwner->dwTblID, TRUE);
+		printf(" otherNpc flag=%d pend=%d", FlagBitGet(pP4->abyFlag, 504) ? 1 : 0, TalkPendGet(pP4->dwTblID) ? 1 : 0);
+		TalkAnswer(pP4, dwGuild, TRUE);
+		printf(" then flag=%d", FlagBitGet(pP4->abyFlag, 504) ? 1 : 0);
+		FlagBitSet(pP4->abyFlag, 504, FALSE);
+		FlagNumSet(pP4->abyFlagNum, 9, 0);
+		/* ほかの NPC に話しかけると保留は消える（話しかけの通信 CMD_TALKRAND 経由） */
+		TalkNpcTalk(pP4, pNpcReal);
+		CMDPARA_DATA1 Rand;
+		ZeroMemory(&Rand, sizeof(Rand));
+		Rand.byCmd = CMD_TALKRAND; Rand.dwTblID = pOwner->dwTblID;
+		TestRecv(pP4, &Rand, sizeof(Rand));
+		printf(" talkother pend=%d", TalkPendGet(pP4->dwTblID) ? 1 : 0);
+		TalkAnswer(pP4, dwGuild, TRUE);
+		printf(" flag=%d", FlagBitGet(pP4->abyFlag, 504) ? 1 : 0);
+		/* ログアウトで消える */
+		TalkNpcTalk(pP4, pNpcReal);
+		TalkPendClear(pP4->dwTblID);
+		TalkAnswer(pP4, dwGuild, TRUE);
+		printf(" cleared flag=%d\n", FlagBitGet(pP4->abyFlag, 504) ? 1 : 0);
+
+		/* はいの時にその行がもう条件に合わない（印が変わった）なら何も動かさない。渡す物が受け取れなくても印は動かさない */
+		pTalk->aLine[0].awNeed[0] = 505;
+		FlagBitSet(pP4->abyFlag, 505, TRUE);
+		TalkNpcTalk(pP4, pNpcReal);
+		FlagBitSet(pP4->abyFlag, 505, FALSE);
+		nPz = QuestCountItem(pP4, wItemQ);
+		TalkAnswer(pP4, dwGuild, TRUE);
+		printf("talk ask cond gone flag=%d item%+d", FlagBitGet(pP4->abyFlag, 504) ? 1 : 0, QuestCountItem(pP4, wItemQ) - nPz);
+		pTalk->aLine[0].awNeed[0] = FLAG_NOBIT;
+		BYTE byFlgBak = g_aItemInfo[wItemQ]->byFlg;
+		g_aItemInfo[wItemQ]->byFlg |= ITEMFLG_IMPORTANT;
+		ZeroMemory(pP4->waItem, sizeof(pP4->waItem));
+		for (int i = 0; i < MAX_IMPORTANT; i ++) pP4->waImportant[i] = wFill;
+		nPz = QuestCountItem(pP4, wItemQ);
+		TalkNpcTalk(pP4, pNpcReal);
+		TalkAnswer(pP4, dwGuild, TRUE);
+		printf(" full flag=%d num=%d item%+d", FlagBitGet(pP4->abyFlag, 504) ? 1 : 0, FlagNumGet(pP4->abyFlagNum, 9), QuestCountItem(pP4, wItemQ) - nPz);
+		g_aItemInfo[wItemQ]->byFlg = byFlgBak;
+		ZeroMemory(pP4->waImportant, sizeof(pP4->waImportant));
+		/* 聞く行をやめた後の答えは無視 */
+		TalkNpcTalk(pP4, pNpcReal);
+		pTalk->aLine[0].byAsk = 0;
+		TalkAnswer(pP4, dwGuild, TRUE);
+		printf(" askoff flag=%d\n", FlagBitGet(pP4->abyFlag, 504) ? 1 : 0);
+		pTalk->aLine[0].byAsk = 1;
+
+		/* 管理者が送った時も、遠ければ無視（管理者でも近くで答える） */
+		TalkNpcTalk(pP4, pNpcReal);
+		pP4->byAdminLV = ADMINLV_ADMINISTRATOR;
+		pP4->dwX = pNpcReal->dwX + 9;
+		TestRecv(pP4, &Ans, sizeof(Ans));
+		pP4->byAdminLV = ADMINLV_USER;
+		pP4->dwX = pNpcReal->dwX + 1;
+		printf("talk ask admin far flag=%d\n", FlagBitGet(pP4->abyFlag, 504) ? 1 : 0);
+		Ans.byData = 1;
+		TalkPendClear(pP4->dwTblID);
+
+		/* 保存して読み直す：聞く行・返事はそのまま。古い会話データ（新しい列が無い）では byAsk=0・返事は空 */
+		{
+			extern BOOL SaveTalkInfo(void);
+			extern BOOL LoadTalkInfo(void);
+			std::vector<PTALKINFO> aBak;
+			char szFile[MAX_PATH + 1];
+			strcpy(pTalk->aLine[0].szNoMsg, "また今度ね。");
+			for (int i = 0; i < g_aTalkInfo.GetSize(); i ++) aBak.push_back(g_aTalkInfo[i]);
+			SaveTalkInfo();
+			g_aTalkInfo.RemoveAll();
+			LoadTalkInfo();
+			PTALKINFO pLoad = NULL;
+			for (int i = 0; i < g_aTalkInfo.GetSize(); i ++) if (g_aTalkInfo[i]->wID == 996) pLoad = g_aTalkInfo[i];
+			printf("talk ask reload ask=%d nomsg=%s speech=%s", pLoad ? pLoad->aLine[0].byAsk : 9, pLoad ? pLoad->aLine[0].szNoMsg : "-", pLoad ? pLoad->aLine[0].szSpeech : "-");
+			/* 保存したファイルから新しい列（byAsk・返事）の見出しだけ外して、古い形にする */
+			GetModuleFileName(NULL, szFile, MAX_PATH);
+			for (int i = (int)strlen(szFile) - 1; i > 0; i --) if (szFile[i] == '\\') { szFile[i + 1] = 0; break; }
+			strcat(szFile, "SBODATA\\SboDataTalkInfo.dat");
+			{
+				std::vector<BYTE> aFile;
+				HANDLE hFile = CreateFile(szFile, GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+				if (hFile != INVALID_HANDLE_VALUE) {
+					DWORD dwSize = GetFileSize(hFile, NULL), dwBytes = 0;
+					aFile.resize(dwSize);
+					if (dwSize) ReadFile(hFile, &aFile[0], dwSize, &dwBytes, NULL);
+					CloseHandle(hFile);
+				}
+				DWORD dwCols = 0, dwData = 0;
+				if (aFile.size() > 8) { memcpy(&dwCols, &aFile[0], 4); memcpy(&dwData, &aFile[4], 4); }
+				std::vector<std::pair<std::string, DWORD> > aCol;
+				size_t nPos = 8;
+				for (DWORD i = 0; i < dwCols && nPos < aFile.size(); i ++) {
+					std::string strName((const char *)&aFile[nPos]);
+					nPos += strName.size() + 1;
+					DWORD dwOff;
+					memcpy(&dwOff, &aFile[nPos], 4);
+					nPos += 4;
+					aCol.push_back(std::make_pair(strName, dwOff));
+				}
+				DWORD dwOldHead = (DWORD)nPos;
+				std::vector<std::pair<std::string, DWORD> > aKeep;
+				for (size_t i = 0; i < aCol.size(); i ++) {
+					if (aCol[i].first != "abyAsk" && aCol[i].first.compare(0, 7, "szNoMsg") != 0) aKeep.push_back(aCol[i]);
+				}
+				DWORD dwNewHead = 8;
+				for (size_t i = 0; i < aKeep.size(); i ++) dwNewHead += (DWORD)aKeep[i].first.size() + 1 + 4;
+				std::vector<BYTE> aOut;
+				DWORD dwTmp = (DWORD)aKeep.size();
+				aOut.insert(aOut.end(), (BYTE *)&dwTmp, (BYTE *)&dwTmp + 4);
+				aOut.insert(aOut.end(), (BYTE *)&dwData, (BYTE *)&dwData + 4);
+				for (size_t i = 0; i < aKeep.size(); i ++) {
+					aOut.insert(aOut.end(), aKeep[i].first.c_str(), aKeep[i].first.c_str() + aKeep[i].first.size() + 1);
+					dwTmp = aKeep[i].second - dwOldHead + dwNewHead;
+					aOut.insert(aOut.end(), (BYTE *)&dwTmp, (BYTE *)&dwTmp + 4);
+				}
+				aOut.insert(aOut.end(), aFile.begin() + dwOldHead, aFile.end());
+				hFile = CreateFile(szFile, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+				if (hFile != INVALID_HANDLE_VALUE) {
+					DWORD dwBytes = 0;
+					WriteFile(hFile, &aOut[0], (DWORD)aOut.size(), &dwBytes, NULL);
+					CloseHandle(hFile);
+				}
+			}
+			for (int i = 0; i < g_aTalkInfo.GetSize(); i ++) delete g_aTalkInfo[i];
+			g_aTalkInfo.RemoveAll();
+			LoadTalkInfo();
+			pLoad = NULL;
+			for (int i = 0; i < g_aTalkInfo.GetSize(); i ++) if (g_aTalkInfo[i]->wID == 996) pLoad = g_aTalkInfo[i];
+			printf(" | old ask=%d nomsg=%s speech=%s\n", pLoad ? pLoad->aLine[0].byAsk : 9, (pLoad && pLoad->aLine[0].szNoMsg[0]) ? pLoad->aLine[0].szNoMsg : "(empty)", pLoad ? pLoad->aLine[0].szSpeech : "-");
+			for (int i = 0; i < g_aTalkInfo.GetSize(); i ++) delete g_aTalkInfo[i];
+			g_aTalkInfo.RemoveAll();
+			for (size_t i = 0; i < aBak.size(); i ++) g_aTalkInfo.Add(aBak[i]);
+			pTalk = NULL;
+			for (int i = 0; i < g_aTalkInfo.GetSize(); i ++) if (g_aTalkInfo[i]->wID == 996) pTalk = g_aTalkInfo[i];
+		}
+
+		/* 元に戻す */
+		strcpy(pNpcReal->pszNpcSpeech, szSpeechBak);
+		pP4->dwMapID = dwMapB; pP4->dwX = dwXB; pP4->dwY = dwYB;
+		TalkPendClear(pP4->dwTblID);
+		ZeroMemory(pP4->waItem, sizeof(pP4->waItem));
+		ZeroMemory(pP4->waImportant, sizeof(pP4->waImportant));
+		FlagBitSet(pP4->abyFlag, 504, FALSE);
+		FlagNumSet(pP4->abyFlagNum, 9, 0);
+		if (pTalk) {
+			for (int i = g_aTalkInfo.GetSize() - 1; i >= 0; i --) {
+				if (g_aTalkInfo[i] == pTalk) { delete pTalk; g_aTalkInfo.RemoveAt(i); break; }
+			}
+		}
+	}
+
 	/* 保存して読み直す：依頼情報（見えるNPC もそのまま） */
 	{
 		std::vector<QUESTINFO> aBak;
@@ -7524,6 +7795,47 @@ static void TestViewFlag(const std::vector<int> &aLogin)
 		int bt = SpCnt(pB, CMD_TALKMSG);
 		QuestSendTalk(pB, pGuard->dwTblID);
 		printf(" guard b=%d\n", SpCnt(pB, CMD_TALKMSG) - bt);
+	}
+
+	/* (c2) 管理者も、ふだんは印どおり（C は印 5 なし：ピピは見えず・ぶつからず・話せない。見張りの兵は見える）。
+	   「印で隠れたNPCも表示」（CMD_ADMINVIEWALL）をオンにすると全部見える。切り替えた時は、その管理者にだけ出し直しが届く。
+	   管理者でない人が送っても変わらない */
+	{
+		BYTE byAdminKeep = pC->byAdminLV;
+		char szAccKeep[MAX_ACCNAME];
+		strcpy(szAccKeep, pC->szAcc);
+		strcpy(pC->szAcc, "viewtest");
+		CMDPARA_DATA1 Para;
+		ZeroMemory(&Para, sizeof(Para));
+		Para.byCmd = CMD_ADMINVIEWALL;
+		Para.byData = 1;
+		printf("viewflag viewall default flag=%d pipi=%d guard=%d both=%d\n", (int)pC->byViewAllNpc, (int)IsCharVisibleTo(pPipi, pC),
+			(int)IsCharVisibleTo(pGuard, pC), (int)IsCharVisibleTo(pBoth, pC));
+		int ai = SpCnt(pA, CMD_CHARINFO), ap = SpCnt(pA, CMD_CHARPOS), bi = SpCnt(pB, CMD_CHARINFO), bp = SpCnt(pB, CMD_CHARPOS);
+		int ci = SpCnt(pC, CMD_CHARINFO), cp = SpCnt(pC, CMD_CHARPOS);
+		TestRecv(pC, &Para, sizeof(Para));
+		printf("viewflag viewall on flag=%d pipi=%d guard=%d both=%d c_charinfo=%d c_hide=%d a=%d,%d b=%d,%d\n", (int)pC->byViewAllNpc,
+			(int)IsCharVisibleTo(pPipi, pC), (int)IsCharVisibleTo(pGuard, pC), (int)IsCharVisibleTo(pBoth, pC), SpCnt(pC, CMD_CHARINFO) - ci,
+			SpCnt(pC, CMD_CHARPOS) - cp, SpCnt(pA, CMD_CHARINFO) - ai + SpCnt(pA, CMD_CHARPOS) - ap, 0, SpCnt(pB, CMD_CHARINFO) - bi + SpCnt(pB, CMD_CHARPOS) - bp, 0);
+		printf("viewflag viewall on block pipi=%d interact=%d talk_ok=%d\n",
+			(int)(CheckCharBlockNPC((DWORD)nMap, pPipi->dwX, pPipi->dwY, 0, pC) == pPipi->dwTblID), (int)IsInteractable(pC, pPipi), (int)IsCharSeenBy(pPipi, pC));
+		/* 同じ値をもう一度送っても、出し直しは起きない */
+		ci = SpCnt(pC, CMD_CHARINFO); cp = SpCnt(pC, CMD_CHARPOS);
+		TestRecv(pC, &Para, sizeof(Para));
+		printf("viewflag viewall again c=%d", SpCnt(pC, CMD_CHARINFO) - ci + SpCnt(pC, CMD_CHARPOS) - cp);
+		/* オフに戻すと、元の印どおり：ピピは消え（隠す通知が届く）、見張りの兵はそのまま */
+		Para.byData = 0;
+		ci = SpCnt(pC, CMD_CHARINFO); cp = SpCnt(pC, CMD_CHARPOS);
+		TestRecv(pC, &Para, sizeof(Para));
+		printf(" off flag=%d pipi=%d guard=%d c_charinfo=%d c_hide=%d\n", (int)pC->byViewAllNpc, (int)IsCharVisibleTo(pPipi, pC),
+			(int)IsCharVisibleTo(pGuard, pC), SpCnt(pC, CMD_CHARINFO) - ci, SpCnt(pC, CMD_CHARPOS) - cp);
+		/* 管理者でない人が送っても変わらない */
+		pC->byAdminLV = ADMINLV_USER;
+		Para.byData = 1;
+		TestRecv(pC, &Para, sizeof(Para));
+		printf("viewflag viewall user flag=%d\n", (int)pC->byViewAllNpc);
+		pC->byAdminLV = byAdminKeep;
+		strcpy(pC->szAcc, szAccKeep);
 	}
 
 	/* (d) 保存：条件は「番号+1・0=無し」で書く（古い読み込みや 0 のデータが「印 0」にならないように）。

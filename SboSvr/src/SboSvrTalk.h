@@ -26,5 +26,18 @@ extern PTALKINFO TalkFind(int nNo);										/* 会話セット番号から探�
 extern int  TalkPickLine(const TALKINFO *pTalk, const BYTE *pbyFlag, const BYTE *pbyFlagNum, int nLevel, WORD wQuestID, BYTE byQuestStep, const WORD *pwItem, const WORD *pwImportant, DWORD dwRand);	/* 条件に合う行を選ぶ（無ければ -1。wQuestID・byQuestStep は話した人が今受けている依頼と段（0=受けていない）。dwRand は同じ順位が複数ある時のくじ） */
 extern void TalkApplyLine(const TALKLINEINFO *pLine, BYTE *pbyFlag, BYTE *pbyFlagNum);	/* 話した後の印・数値の動きを反映する */
 extern void TalkNpcTalk(PCHARINFO pChar, PCHARINFO pNpc);				/* 会話データの NPC に話しかけた（行を選び、印を動かし、本人にだけ台詞を送る） */
+extern void TalkAnswer(PCHARINFO pChar, DWORD dwNpcTblID, BOOL bYes);	/* 「はい・いいえ」の答え（保留中の問いが有効な時だけ、はい=反映・いいえ=返事。無効なら黙って捨てる） */
+
+/* 「はい・いいえ」で聞く行の保留中の問い（キャラごとに 1 つ。保存しない） */
+typedef struct _TALKPEND {
+	WORD		wTalkNo;											/* 会話セット番号 */
+	BYTE		byLine;												/* 行の番号 */
+	DWORD		dwNpcTblID;											/* 話しかけた NPC のテーブルID */
+	DWORD		dwTime;												/* 問いかけた時刻（timeGetTime） */
+	DWORD		dwMapID;											/* 問いかけた時にいたマップ */
+	DWORD		dwSpaceID;											/* 問いかけた時にいた空間 */
+} TALKPEND;
+extern TALKPEND *TalkPendGet(DWORD dwTblID);							/* 保留中の問い（無ければ NULL） */
+extern void TalkPendClear(DWORD dwTblID);								/* 保留中の問いを消す（ログアウト・別の NPC に話した時） */
 
 /* Copyright(C)URARA-works 2003-2005 */

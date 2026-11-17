@@ -58,6 +58,7 @@ void SendCmdACCADD			(LPSTR, LPSTR);							/* アカウント追加要求 */
 void SendCmdGETACC			(DWORD);								/* アカウント・パスワード取得 */
 void SendCmdCHGACC			(DWORD, LPSTR, LPSTR);					/* アカウント・パスワード更新 */
 void SendCmdTALKRAND		(DWORD);								/* 話してランダム要求 */
+void SendCmdTALKANSWER		(DWORD, BOOL);							/* 会話データの「はい・いいえ」の答え */
 void SendCmdSTOPRAND		(DWORD);								/* 止まるかランダム切り替え */
 void SendCmdGETACCINFO		(DWORD);								/* アカウント情報要求 */
 void SendCmdCHGACCSTATE		(DWORD, BYTE);							/* アカウント状態更新 */
@@ -121,6 +122,7 @@ void SendCmdADMINSTORY		(BYTE, int, const STORYINFO *);			/* 管理者ウィン�
 void SendCmdADMINFLAGNAME	(BYTE, int, const FLAGNAMEINFO *);		/* 管理者ウィンドウのフラグの名前表の編集 */
 void SendCmdADMINTALK		(BYTE, int, const TALKINFO *);			/* 管理者ウィンドウの会話データの編集 */
 void SendCmdADMINCHARFLAG	(BYTE, DWORD, BYTE, WORD, WORD);		/* 管理者ウィンドウのキャラのフラグの取得・変更 */
+void SendCmdADMINVIEWALL	(BOOL);									/* 管理者ウィンドウの「印で隠れたNPCも表示」の切り替え */
 void SendCmdADMINRESURRECT	(DWORD);								/* 管理者ウィンドウからキャラをHP満タンで蘇生 */
 void SendCmdMAGICKEY		(BYTE, BYTE, WORD);						/* ショートカットの登録（特技・装備品・道具） */
 void SendCMDSHOPBUY			(DWORD, DWORD);							/* アイテム購入 */
@@ -1225,6 +1227,25 @@ void SendCmdTALKRAND(DWORD dwTblID)
 	pSendData = new CMDPARA_DATA1;
 	pSendData->byCmd = CMD_TALKRAND;
 	pSendData->dwTblID = dwTblID;
+
+	cliSock.Send ((PBYTE)pSendData, sizeof (CMDPARA_DATA1));
+	delete pSendData;
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdTALKANSWER												 */
+/* 内容：コマンド送信(会話データの「はい・いいえ」の答え)					 */
+/*       台詞の最後の @y で出した「はい・いいえ」の答えを、話しかけた NPC の	 */
+/*       テーブルIDと一緒に送る。有効かどうかはサーバーが決める				 */
+/* ========================================================================= */
+void SendCmdTALKANSWER(DWORD dwNpcTblID, BOOL bYes)
+{
+	PCMDPARA_DATA1 pSendData;
+	pSendData = new CMDPARA_DATA1;
+	ZeroMemory (pSendData, sizeof (CMDPARA_DATA1));
+	pSendData->byCmd = CMD_TALKANSWER;
+	pSendData->byData = bYes ? 1 : 0;
+	pSendData->dwTblID = dwNpcTblID;
 
 	cliSock.Send ((PBYTE)pSendData, sizeof (CMDPARA_DATA1));
 	delete pSendData;
@@ -3696,6 +3717,21 @@ void SendCmdADMINCHARFLAG(BYTE byCmdSub, DWORD dwTblID, BYTE byKind, WORD wNo, W
 	pPara->wValue	= wValue;
 	cliSock.Send ((PBYTE)pPara, sizeof (CMDPARA_ADMINCHARFLAG));
 	SAFE_DELETE (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdADMINVIEWALL												 */
+/* 内容：コマンド送信(管理者ウィンドウの「印で隠れたNPCも表示」の切り替え)	 */
+/* ========================================================================= */
+void SendCmdADMINVIEWALL(BOOL bOn)
+{
+	CMDPARA_DATA1 Para;
+
+	ZeroMemory (&Para, sizeof (Para));
+	Para.byCmd		= CMD_ADMINVIEWALL;
+	Para.pID		= g_pMyID;
+	Para.byData		= bOn ? 1 : 0;
+	cliSock.Send ((PBYTE)&Para, sizeof (Para));
 }
 
 /* ========================================================================= */

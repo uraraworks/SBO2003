@@ -336,10 +336,13 @@ typedef struct _TALKFILE {
 	BYTE		abyQuestStepMax[MAX_TALKLINE];		/* 段の上限+1 で保存する（0=どの段でも。古いファイルには無く、0 =どの段でも で読める） */
 	WORD		awNeedItem[MAX_TALKLINE];			/* 持っている物の条件（0=条件なし。古いファイルには無く、0 で読める） */
 	WORD		awTakeItem[MAX_TALKLINE];			/* 取り上げるアイテム（0=取り上げない。古いファイルには無く、0 で読める） */
+	BYTE		abyAsk[MAX_TALKLINE];				/* 「はい・いいえ」で聞く（0=聞かない。古いファイルには無く、0 で読める） */
+	char		aszNoMsg[MAX_TALKLINE][MAX_TALKNOMSG];	/* 「いいえ」の返事（古いファイルには無く、空で読める） */
 } TALKFILE;
 
 /* 台詞は行ごとに別のカラム（szSpeech0〜szSpeech15）。名前は 1 つずつ書く */
 #define TALKCOL_SPEECH(n)	{ "szSpeech" #n, COL_STR, offsetof (TALKFILE, aszSpeech[n]), MAX_TALKMSG }
+#define TALKCOL_NOMSG(n)	{ "szNoMsg" #n, COL_STR, offsetof (TALKFILE, aszNoMsg[n]), MAX_TALKNOMSG }
 
 /* 会話データのカラム */
 static const COLINFO s_aTalkCol[] = {
@@ -370,6 +373,11 @@ static const COLINFO s_aTalkCol[] = {
 	COLS(TALKFILE, abyQuestStepMax,	COL_U8ARR, MAX_TALKLINE),
 	COLS(TALKFILE, awNeedItem,		COL_U16ARR, MAX_TALKLINE),
 	COLS(TALKFILE, awTakeItem,		COL_U16ARR, MAX_TALKLINE),
+	COLS(TALKFILE, abyAsk,			COL_U8ARR, MAX_TALKLINE),
+	TALKCOL_NOMSG (0),  TALKCOL_NOMSG (1),  TALKCOL_NOMSG (2),  TALKCOL_NOMSG (3),
+	TALKCOL_NOMSG (4),  TALKCOL_NOMSG (5),  TALKCOL_NOMSG (6),  TALKCOL_NOMSG (7),
+	TALKCOL_NOMSG (8),  TALKCOL_NOMSG (9),  TALKCOL_NOMSG (10), TALKCOL_NOMSG (11),
+	TALKCOL_NOMSG (12), TALKCOL_NOMSG (13), TALKCOL_NOMSG (14), TALKCOL_NOMSG (15),
 };
 
 BOOL SaveFlagNameInfo(void);									/* フラグの名前表保存 */
@@ -410,6 +418,8 @@ static void TalkToFile(TALKFILE *p, const TALKINFO *t)
 		p->awGiveItem[i] = l->wGiveItem;	p->awQuestID[i] = l->wQuestID;
 		p->abyQuestStepMin[i] = l->byQuestStepMin;	p->abyQuestStepMax[i] = (BYTE)(l->byQuestStepMax + 1);
 		p->awNeedItem[i] = l->wNeedItem;	p->awTakeItem[i] = l->wTakeItem;
+		p->abyAsk[i] = l->byAsk;
+		memcpy (p->aszNoMsg[i], l->szNoMsg, MAX_TALKNOMSG);
 	}
 }
 
@@ -448,6 +458,9 @@ static void TalkFromFile(TALKINFO *t, const TALKFILE *p)
 		l->wGiveItem = p->awGiveItem[i];	l->wQuestID = p->awQuestID[i];
 		l->byQuestStepMin = p->abyQuestStepMin[i];	l->byQuestStepMax = (BYTE)(p->abyQuestStepMax[i] - 1);
 		l->wNeedItem = p->awNeedItem[i];	l->wTakeItem = p->awTakeItem[i];
+		l->byAsk = p->abyAsk[i] ? 1 : 0;
+		memcpy (l->szNoMsg, p->aszNoMsg[i], MAX_TALKNOMSG);
+		l->szNoMsg[MAX_TALKNOMSG - 1] = 0;
 		l->szSpeech[MAX_TALKMSG - 1] = 0;
 	}
 }

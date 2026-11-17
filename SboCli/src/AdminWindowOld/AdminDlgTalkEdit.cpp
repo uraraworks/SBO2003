@@ -339,7 +339,8 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 			"どの行も合わなければ何も言いません。"
 			"印・数値は、話した人のキャラのフラグです。番号の横の名前は「その他→フラグの名前」で付けます。"
 			"渡すアイテムは、その行で話すたびに 1 つ渡します（回数は数えません）。"
-			"一度きりにしたい時は、「話した後に立てる印」と「立っていてはいけない印」に同じ印を入れてください。");
+			"一度きりにしたい時は、「話した後に立てる印」と「立っていてはいけない印」に同じ印を入れてください。"
+			"「はい・いいえで聞く」を入れた行は、台詞のあとに「はい・いいえ」を選ばせます。「はい」の時だけ印・数値・渡す物・取り上げる物を動かし、「いいえ」は何も動かさず、いいえの返事（空なら既定の一言）を言います。");
 
 	/* 行の一覧 */
 	hWndTmp = GetDlgItem (hWnd, IDC_TE_LINES);
@@ -381,7 +382,8 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 static void EnableLine(BOOL bEnable)
 {
 	static const int s_anSingle[] = {IDC_TE_RANK, IDC_TE_LVMIN, IDC_TE_LVMAX, IDC_TE_SPEECH,
-			IDC_TE_QID, IDC_TE_QSTEPMIN, IDC_TE_QSTEPMAX, IDC_TE_GIVEITEM, IDC_TE_NEEDITEM, IDC_TE_TAKEITEM};
+			IDC_TE_QID, IDC_TE_QSTEPMIN, IDC_TE_QSTEPMAX, IDC_TE_GIVEITEM, IDC_TE_NEEDITEM, IDC_TE_TAKEITEM,
+			IDC_TE_ASK, IDC_TE_NOMSG};
 
 	for (size_t i = 0; i < sizeof (s_anSingle) / sizeof (s_anSingle[0]); i ++) {
 		EnableWindow (GetDlgItem (s_hWndDlg, s_anSingle[i]), bEnable);
@@ -412,6 +414,8 @@ static void EnableLine(BOOL bEnable)
 		AdminFlagSetNo (s_hWndDlg, IDC_TE_GIVEITEM, 0, TRUE);
 		AdminFlagSetNo (s_hWndDlg, IDC_TE_NEEDITEM, 0, TRUE);
 		AdminFlagSetNo (s_hWndDlg, IDC_TE_TAKEITEM, 0, TRUE);
+		CheckDlgButton (s_hWndDlg, IDC_TE_ASK, BST_UNCHECKED);
+		SetDlgItemText (s_hWndDlg, IDC_TE_NOMSG, "");
 		for (size_t i = 0; i < sizeof (s_aFlagCtrl) / sizeof (s_aFlagCtrl[0]); i ++) {
 			for (int j = 0; j < s_aFlagCtrl[i].nCount; j ++) {
 				AdminFlagSetNo (s_hWndDlg, s_aFlagCtrl[i].nEdit + j, 0, TRUE);
@@ -707,6 +711,8 @@ static void LoadLine(int nLine)
 	AdminFlagSetNo (s_hWndDlg, IDC_TE_GIVEITEM, pLine->wGiveItem, pLine->wGiveItem == 0);
 	AdminFlagSetNo (s_hWndDlg, IDC_TE_NEEDITEM, pLine->wNeedItem, pLine->wNeedItem == 0);
 	AdminFlagSetNo (s_hWndDlg, IDC_TE_TAKEITEM, pLine->wTakeItem, pLine->wTakeItem == 0);
+	CheckDlgButton (s_hWndDlg, IDC_TE_ASK, pLine->byAsk ? BST_CHECKED : BST_UNCHECKED);
+	AdminSetMultiText (s_hWndDlg, IDC_TE_NOMSG, pLine->szNoMsg);
 	UpdateItemName ();
 	UpdateAllNames ();
 }
@@ -800,6 +806,9 @@ static BOOL SaveLine(int nLine)
 		if (!AdminFlagGetValue (s_hWndDlg, s_hWndDlg, IDC_TE_TAKEITEM, 65535, strName + "取り上げる物", TALKEDIT_TITLE, ul)) return FALSE;
 		L.wTakeItem = (WORD)ul;
 	}
+	/* 「はい・いいえ」で聞く行（いいえの返事は聞く行の時だけ使う） */
+	L.byAsk = (IsDlgButtonChecked (s_hWndDlg, IDC_TE_ASK) == BST_CHECKED) ? 1 : 0;
+	if (!AdminGetText (s_hWndDlg, s_hWndDlg, IDC_TE_NOMSG, L.szNoMsg, sizeof (L.szNoMsg), TRUE, (strName + "いいえの返事").c_str (), TALKEDIT_TITLE)) return FALSE;
 
 	s_Info.aLine[nLine] = L;
 	return TRUE;
