@@ -1175,10 +1175,12 @@ talk give first item+=1 flag=1 talkmsg=1 sysmsg=1 second item+=0 sysmsg=0 quest 
 quest info reload count=3 same=1
 quest char save=1 load=1
 quest char reload id=2 step=1 flg=4660 counts=1,22,333,4444 time=1700000000 done=06,80
+quest char reload rewarded=02,80
 quest char reload viewcond show=0 hide=0
 quest npc loaded=0
 quest leave questitem=1 sell=1 gold+=0 full=1 res=2,1,0 after=0
 legacy item load patched=1 first10=10 rest0=10 equ=3,65535 name=旧持ち物
+quest old save patched=1 done=06 rewarded=06
 quest end copies=0
 == N. SortItem ==
 sortkey [アイテム] [あいてむ] same=1 len=9,9
@@ -1517,4 +1519,27 @@ viewflag cells=8
 viewflag talk first flag=1 talkmsg=1 a_charinfo=1 a_hide=1 b_charinfo=0 b_hide=0 admin_charinfo=0 admin_hide=0 second a_charinfo=0 a_hide=0
 viewflag after talk pipi=1 guard=0
 viewflag talk visible pipi b=1 guard b=0 guard admin=1
+== M2. Story ==
+story cells=4
+story empty list packets=1
+story q1 clear gold+=100 flag100=1 done=1 rewarded=1 quest=0
+story q1 once-blocked quest=0
+story q2 clear flag110=1 done=1
+story list packets=2
+story far refused flag100=1
+story reset L2 flag100=1 flag110=0 flag111=1 done1=1 done2=0 count5=3
+story q2 reaccept quest=2
+story busy refused flag100=1 flag110=1 quest=2 count5=3
+story q2 second gold+=0 flag110=1 done=1 rewarded=1
+story reset L1 flag99=1 flag100=0 flag110=0 flag111=1 flag120=1 done1=0 done2=0 count5=4 num6=0 rewarded1=1 rewarded2=1
+story q1 reaccept quest=1
+story q1 second gold+=0 flag100=1 done=1
+story empty again packets=1
+adminstory list got=1 count=3 id=1 name=L1
+adminstory add got=1 result=1 count=4 id=4 prev=2
+adminstory loop got=1 result=0 prev=0
+adminstory self got=1 result=0 prev=0
+adminstory range got=1 result=0 from=100
+adminstory edit got=1 result=1 name=L1改 state=0 id=1
+story save=1 load=1 count=1 id=7 name=保存 clear=0 prev=0 from=0,65535 to=0,65535 num=0,255 quest=0,2 count=0
 == done ==

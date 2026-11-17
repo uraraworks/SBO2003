@@ -3427,7 +3427,7 @@ void DrawWindowQUEST(PWNDINFO pWnd)
 	HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFontBasic);
 	static char aszLine[32][QUESTWRAP_LINEBYTES];
 	int i, nLines;
-	LPCSTR pszTitle = bList ? "ギルドの依頼" : "依頼";
+	LPCSTR pszTitle = bList ? (g_bQuestBook ? "思い出の本" : "ギルドの依頼") : "依頼";
 
 	SetBkColor (hDC, RGB (40, 40, 40));
 	TextOut2 (hDC, 48, 0, (LPSTR)pszTitle, RGB (255, 255, 255));
@@ -3439,7 +3439,7 @@ void DrawWindowQUEST(PWNDINFO pWnd)
 		int nWidth = (pWnd->nCx - 48 - 16) / 8;
 
 		if (g_nQuestListCount <= 0) {
-			TextOut2 (hDC, 32, 16, "いま出せる依頼はありません。", RGB (255, 255, 255));
+			TextOut2 (hDC, 32, 16, (LPSTR)(g_bQuestBook ? "まだ思い出はありません。" : "いま出せる依頼はありません。"), RGB (255, 255, 255));
 		}
 		for (i = 0; i < QUEST_LISTROWS; i ++) {
 			int nNo = pWnd->nData2 + i;
