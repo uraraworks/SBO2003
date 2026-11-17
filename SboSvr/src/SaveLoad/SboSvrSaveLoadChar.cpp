@@ -264,6 +264,11 @@ BOOL CheckSaveChar(PCHARINFO pChar)
 		/* プレイヤーのキャラは保存しない */
 		return FALSE;
 	}
+	/* NPC発生などから出てきたキャラ（親がいる）は保存しない。
+	   （発生した宝箱の敵は正体前だと種別が宝箱の敵のままで保存され、再起動のたびに親の発生数と別に増えていた） */
+	if (pChar->dwParentTblID != (DWORD)-1) {
+		return FALSE;
+	}
 	/* 直接置いた宝箱の敵が正体を現した後は、宝箱の敵として保存する（戦闘２のまま消えてしまわないように） */
 	if (pChar->byMimic && (pChar->byNpcType == NPCTYPE_BATTLE2)) {
 		return TRUE;
