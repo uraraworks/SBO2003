@@ -7024,6 +7024,37 @@ static void TestFloorDamage(const std::vector<int> &aLogin)
 		printf("\n");
 	}
 
+	/* ダメージ床が効かない敵（ステータステンプレートの byNoFloorDamage）は、
+	   よけずに素通りし、HPも減らない。発生元から出た敵（テンプレートは親が持つ）も同じ */
+	{
+		BYTE byNpcTypeBack = pPC->byNpcType;
+		DWORD dwStTmpBack = pPC->dwStTmplateID;
+		PSTATUSTEMPLATEINFO pTmp = new STATUSTEMPLATEINFO;
+		ZeroMemory(pTmp, sizeof(STATUSTEMPLATEINFO));
+		pTmp->byNoFloorDamage = 1;
+		int nTmp = g_aStTmpInfo.GetSize();
+		g_aStTmpInfo.Add(pTmp);
+		DeleteTblNoPC((int)pPC->dwTblID);
+		pPC->dwX = pPC->dwXBack = (DWORD)nX;
+		AddTblNoPC((int)pPC->dwTblID);
+		pPC->byNpcType = NPCTYPE_BATTLE2;
+		pPC->dwStTmplateID = (DWORD)nTmp;
+		int nAvoid = IsAvoidDamageFloor(pPC, pMap, nX + 1, nY);
+		DeleteTblNoPC((int)pPC->dwTblID);
+		pPC->dwX = pPC->dwXBack = (DWORD)(nX + 1);
+		AddTblNoPC((int)pPC->dwTblID);
+		pPC->wHP = 20;
+		FloorDamageOnStep(pPC);
+		int nHP1 = pPC->wHP;
+		pTmp->byNoFloorDamage = 0;
+		FloorDamageOnStep(pPC);
+		printf("floor immune avoid=%d hp=%d normal_hp=%d\n", nAvoid, nHP1, (int)pPC->wHP);
+		pPC->dwStTmplateID = dwStTmpBack;
+		pPC->byNpcType = byNpcTypeBack;
+		g_aStTmpInfo.RemoveAt(nTmp);
+		delete pTmp;
+	}
+
 	/* 片付け */
 	for (int i = pPC->aTimerEvent.GetSize() - 1; i >= 0; i --) {
 		if (pPC->aTimerEvent[i]->byType == CHARINFOTIMEREVENT_POISON) {
