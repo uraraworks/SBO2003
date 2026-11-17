@@ -2271,6 +2271,14 @@ void KeyProcSORTMENU(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			PWNDINFO pWndTmp = MakeWindowLEAVE (1);
 			g_WndInfo.Add (pWndTmp);
 			g_dwActiveMsgID = pWndTmp->dwID;
+		} else if (pWnd->byData1 == SORTITEMTARGET_MAGIC) {
+			/* 特技：一覧へ戻る */
+			PWNDINFO pWndList = (PWNDINFO)pWnd->pParent;
+			EraseWindow (pWnd);
+			if (pWndList) {
+				pWndList->dwTimeDrawStart = 0;
+				g_dwActiveMsgID = pWndList->dwID;
+			}
 		} else {
 			/* 手持ち：親の「使う/捨てる/並べ替え」へ戻る */
 			EraseWindow (pWnd);
@@ -2285,7 +2293,24 @@ void KeyProcSORTMENU(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 
 		BYTE byMode = (BYTE)(SORTITEMMODE_SWAP + pWnd->nData1);
 
-		if (pWnd->byData1 == SORTITEMTARGET_LEAVE) {
+		if (pWnd->byData1 == SORTITEMTARGET_MAGIC) {
+			/* 覚えている特技（「強さ」の特技の一覧 → この窓） */
+			PWNDINFO pWndList = (PWNDINFO)pWnd->pParent;
+			if (byMode == SORTITEMMODE_SWAP) {
+				/* 一覧を入れ替えモードにする（1+選んだ行） */
+				if (pWndList) {
+					pWndList->dwData = 1 + pWndList->nData1;
+				}
+			} else {
+				SendCmdSORTITEM (SORTITEMTARGET_MAGIC, byMode, 0, 0);
+			}
+			EraseWindow (pWnd);
+			if (pWndList) {
+				pWndList->dwTimeDrawStart = 0;
+				g_dwActiveMsgID = pWndList->dwID;
+			}
+
+		} else if (pWnd->byData1 == SORTITEMTARGET_LEAVE) {
 			/* 預かり所 */
 			EraseWindow (pWnd);
 			if (byMode == SORTITEMMODE_SWAP) {
@@ -3032,9 +3057,38 @@ void KeyProcMAKER(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 }
 
 /* ========================================================================= */
+/* 関数名：	StatusMagicRowToIndex											 */
+/* 内容：	「強さ」の特技の一覧の行番号を、サーバーが空きを詰めた時の		 */
+/* 			覚えている特技の番号（並べ替えの入れ替えで送る番号）にする		 */
+/* 			見つからなければ -1												 */
+/* 日付：	2026/11/17														 */
+/* ========================================================================= */
+static int StatusMagicRowToIndex(int nRow)
+{
+	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
+	int i, nRowTmp = 0, nIndex = 0;
+
+	for (i = 0; i < MAX_USEMAGIC; i ++) {
+		BYTE byMagicID = pChar->abyMagic[i];
+		if (byMagicID == 0) {
+			break;
+		}
+		/* 一覧に出ない（知らない）特技も、サーバーでは数に入る */
+		if (byMagicID < g_aMagicInfo.GetSize ()) {
+			if (nRowTmp == nRow) {
+				return nIndex;
+			}
+			nRowTmp ++;
+		}
+		nIndex ++;
+	}
+	return -1;
+}
+
+/* ========================================================================= */
 /* 関数名：	KeyProcSTATUSMAGIC												 */
 /* 内容：	キー入力処理(強さ：覚えている特技)								 */
-/* 			上下で特技を選ぶと下の欄に説明が出る。見るだけで使いはしない	 */
+/* 			上下で特技を選ぶと下の欄に説明が出る。決定で並べ替え（使いはしない） */
 /* 日付：	2026/11/07														 */
 /* ========================================================================= */
 void KeyProcSTATUSMAGIC(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
@@ -3045,12 +3099,18 @@ void KeyProcSTATUSMAGIC(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 	}
 
 	if ((byEvent == KEY_UP) && (byCode == 'B')) {
+		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
+		g_bDraw = TRUE;
+		if (pWnd->dwData) {
+			/* 入れ替え中：入れ替えをやめて一覧に戻る */
+			pWnd->dwData = 0;
+			pWnd->dwTimeDrawStart = 0;
+			return;
+		}
 		/* コマンドメニューに戻る */
 		EraseWindow (pWnd);
-		g_bDraw = TRUE;
-		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
 
-	} else if ((byEvent == KEY_DOWN) && (byCode >= '1') && (byCode <= '5')) {
+	} else if ((byEvent == KEY_DOWN) && (byCode >= '1') && (byCode <= '5') && (pWnd->dwData == 0)) {
 		/* 1〜5 キー：カーソルの特技をその枠に登録する（同じ特技が入っていれば外す） */
 		PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
 		int i, nNo = 0;
@@ -3072,10 +3132,29 @@ void KeyProcSTATUSMAGIC(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		}
 
 	} else if ((byEvent == KEY_UP) && (byCode == 'A') && (g_bEnableMove)) {
-		/* 全部閉じる（「強さ」で決定を押した時の元の動きと同じ） */
 		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
-		EraseWindow ((PWNDINFO)g_WndInfo[GetWindowID (g_dwMsgIDCommand)]);
 		g_bDraw = TRUE;
+		if (pWnd->dwData) {
+			/* 入れ替え中：2つ目を決めたら入れ替える（同じ行なら何もしない） */
+			int nNo1 = StatusMagicRowToIndex ((int)pWnd->dwData - 1), nNo2 = StatusMagicRowToIndex (pWnd->nData1);
+			pWnd->dwData = 0;
+			pWnd->dwTimeDrawStart = 0;
+			if ((nNo1 >= 0) && (nNo2 >= 0) && (nNo1 != nNo2)) {
+				SendCmdSORTITEM (SORTITEMTARGET_MAGIC, SORTITEMMODE_SWAP, (BYTE)nNo1, (BYTE)nNo2);
+			}
+			return;
+		}
+		if (pWnd->nData2 <= 1) {
+			/* 並べ替える物が無い：全部閉じる（「強さ」で決定を押した時の元の動きと同じ） */
+			EraseWindow ((PWNDINFO)g_WndInfo[GetWindowID (g_dwMsgIDCommand)]);
+			return;
+		}
+		/* 並べ替え（入れ替え・種類順・50音順。道具の並べ替えと同じ窓） */
+		PWNDINFO pWndTmp = MakeWindowSORTMENU (SORTITEMTARGET_MAGIC);
+		pWndTmp->pParent = pWnd;
+		pWnd->pChild = pWndTmp;
+		g_WndInfo.Add (pWndTmp);
+		g_dwActiveMsgID = pWndTmp->dwID;
 
 	} else if ((byEvent == KEY_DOWN) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
 		BOOL bMove = FALSE;
@@ -10040,7 +10119,11 @@ static BOOL IsMagicListOpen(void)
 	if ((g_WndInfo[nNo]->nType == WNDTYPE_COMMANDITEM) || (g_WndInfo[nNo]->nType == WNDTYPE_COMMANDITEMBATTLE)) {
 		return (g_WndInfo[nNo]->dwData == 0);
 	}
-	return (g_WndInfo[nNo]->nType == WNDTYPE_STATUSMAGIC) || (g_WndInfo[nNo]->nType == WNDTYPE_COMMANDMAGICBATTLE);
+	/* 「強さ」の特技の一覧も、入れ替えを選んでいる間は登録できない */
+	if (g_WndInfo[nNo]->nType == WNDTYPE_STATUSMAGIC) {
+		return (g_WndInfo[nNo]->dwData == 0);
+	}
+	return (g_WndInfo[nNo]->nType == WNDTYPE_COMMANDMAGICBATTLE);
 }
 
 /* ========================================================================= */

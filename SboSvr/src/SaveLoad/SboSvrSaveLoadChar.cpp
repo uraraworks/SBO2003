@@ -14,7 +14,7 @@
 /* ========================================================================= */
 /* 定数定義																	 */
 /* ========================================================================= */
-#define DATACOUNTCOLUMN		(88)									/* 保存データ数 */
+#define DATACOUNTCOLUMN		(89)									/* 保存データ数 */
 
 /* ========================================================================= */
 /* 構造体定義																 */
@@ -122,6 +122,7 @@ static const char *s_aszName[] = {
 	"wHideFlag",				/* この印が立っている人には見えない（番号+1。0=無し） */
 	"abyQuestRewarded",			/* 依頼の報酬をもうもらっている印（依頼番号のビット。思い出の本でやり直しても消えない） */
 	"abyChestOpened",			/* 開けた宝箱の記録（宝箱の番号 2048 個のビット。思い出の本でやり直しても消えない） */
+	"abyJobMagicKey",			/* 転職前の職業で使っていた特技ショートカット（職業ID別） */
 	"z"
 };
 
@@ -131,6 +132,7 @@ static const char *s_aszName[] = {
 /* ========================================================================= */
 static BOOL CheckSaveChar(PCHARINFO);								/* キャラ情報を保存するかチェック */
 static DWORD GetJobMagicSaveCount(PCHARINFO);						/* 職業別の呪文を何職業分保存するか */
+static DWORD GetJobMagicKeySaveCount(PCHARINFO);					/* 職業別の特技ショートカットを何職業分保存するか */
 BOOL SaveCharInfo(void);											/* キャラ情報保存 */
 BOOL LoadCharInfo(void);											/* キャラ情報読み込み */
 void UpdatePlayTime(PCHARINFO pChar);								/* ログイン中のプレイ時間を加算 */
@@ -303,6 +305,25 @@ static DWORD GetJobMagicSaveCount(PCHARINFO pChar)
 			if (pChar->abyJobMagic[i][j]) {
 				return (DWORD)(i + 1);
 			}
+		}
+	}
+	return 0;
+}
+
+/* ========================================================================= */
+/* 関数名：GetJobMagicKeySaveCount											 */
+/* 内容：職業別の特技ショートカットを何職業分保存するか（最後の覚えている職業まで） */
+/*       保存形式は キャラごとに [職業数(BYTE)][枠数(BYTE)] に続けて職業ごとに	 */
+/*       [覚えている(BYTE)][特技ID(BYTE)×枠数][アイテムの種類ID(WORD)×枠数]		 */
+/*       古いデータにはこのカラムが無いので、読み込み時は全て「まだ無い」のまま	 */
+/* ========================================================================= */
+static DWORD GetJobMagicKeySaveCount(PCHARINFO pChar)
+{
+	int i;
+
+	for (i = MAX_JOBMAGIC - 1; i >= 0; i --) {
+		if (pChar->dwJobMagicKeySaved & (1UL << i)) {
+			return (DWORD)(i + 1);
 		}
 	}
 	return 0;
@@ -535,6 +556,9 @@ static BOOL SaveCharInfoMain(void)
 			case 85:	dwDataSizeTmp += sizeof (WORD);							break;	/* この印が立っている人には見えない（番号+1） */
 			case 86:	dwDataSizeTmp += MAX_QUESTDONEBYTE;						break;	/* 依頼の報酬をもうもらっている印 */
 			case 87:	dwDataSizeTmp += MAX_CHESTBYTE;							break;	/* 開けた宝箱の記録 */
+			case 88:	/* 転職前の職業で使っていた特技ショートカット */
+				dwDataSizeTmp += 2 + GetJobMagicKeySaveCount (pInfo) * (1 + MAX_MAGICKEY + MAX_MAGICKEY * sizeof (WORD));
+				break;
 			}
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
@@ -994,6 +1018,21 @@ static BOOL SaveCharInfoMain(void)
 			case 87:	/* 開けた宝箱の記録 */
 				CopyMemory (&pData[dwOffset], pInfo->abyChestOpened, MAX_CHESTBYTE);
 				dwOffset += MAX_CHESTBYTE;
+				break;
+			case 88:	/* 転職前の職業で使っていた特技ショートカット */
+				{
+					DWORD k, dwJobCount = GetJobMagicKeySaveCount (pInfo);
+
+					pData[dwOffset ++] = (BYTE)dwJobCount;		/* 職業数 */
+					pData[dwOffset ++] = (BYTE)MAX_MAGICKEY;	/* 枠数 */
+					for (k = 0; k < dwJobCount; k ++) {
+						pData[dwOffset ++] = (pInfo->dwJobMagicKeySaved & (1UL << k)) ? 1 : 0;
+						CopyMemory (&pData[dwOffset], pInfo->abyJobMagicKey[k], MAX_MAGICKEY);
+						dwOffset += MAX_MAGICKEY;
+						CopyMemory (&pData[dwOffset], pInfo->awJobKeyItem[k], MAX_MAGICKEY * sizeof (WORD));
+						dwOffset += MAX_MAGICKEY * sizeof (WORD);
+					}
+				}
 				break;
 			}
 		}
@@ -1748,6 +1787,27 @@ BOOL LoadCharInfo(void)
 			if (strcmp (aHeaderInfo[i].szName, s_aszName[87]) == 0) {
 				CopyMemory (pInfo->abyChestOpened, &pData[dwOffsetTmp], MAX_CHESTBYTE);
 				dwOffsetTmp += MAX_CHESTBYTE;
+			}
+
+			/* 転職前の職業で使っていた特技ショートカット（無い古いデータは全部「まだ無い」のまま。
+			   保存時と職業数・枠数が変わっていても読めるよう、収まる分だけ取り込む） */
+			if (strcmp (aHeaderInfo[i].szName, s_aszName[88]) == 0) {
+				DWORD dwJobCount, dwKeyCount, dwJob;
+
+				dwJobCount = pData[dwOffsetTmp ++];
+				dwKeyCount = pData[dwOffsetTmp ++];
+				for (dwJob = 0; dwJob < dwJobCount; dwJob ++) {
+					BYTE bySaved = pData[dwOffsetTmp ++];
+
+					if (dwJob < MAX_JOBMAGIC) {
+						if (bySaved) {
+							pInfo->dwJobMagicKeySaved |= (1UL << dwJob);
+						}
+						CopyMemory (pInfo->abyJobMagicKey[dwJob], &pData[dwOffsetTmp], min (dwKeyCount, (DWORD)MAX_MAGICKEY));
+						CopyMemory (pInfo->awJobKeyItem[dwJob], &pData[dwOffsetTmp + dwKeyCount], min (dwKeyCount, (DWORD)MAX_MAGICKEY) * sizeof (WORD));
+					}
+					dwOffsetTmp += dwKeyCount + dwKeyCount * sizeof (WORD);
+				}
 			}
 		}
 	}

@@ -2280,6 +2280,9 @@ typedef struct _CHARINFO {
 	BYTE		byOptBgm;											/* 音楽ON/OFFのアカウント設定(OPTBGM_*) */
 	BYTE		abyMagicKey[MAX_MAGICKEY];							/* 特技ショートカットに登録した特技ID（0=空。保存する） */
 	WORD		awKeyItem[MAX_MAGICKEY];							/* ショートカットに登録した装備品・道具のアイテムの種類ID（0=特技の枠か空き。abyMagicKey と同じ枠を共有。保存する） */
+	BYTE		abyJobMagicKey[MAX_JOBMAGIC][MAX_MAGICKEY];			/* 転職前の職業で使っていたショートカットの特技ID（職業ID別。保存する） */
+	WORD		awJobKeyItem[MAX_JOBMAGIC][MAX_MAGICKEY];			/* 転職前の職業で使っていたショートカットの装備品・道具（職業ID別。保存する） */
+	DWORD		dwJobMagicKeySaved;									/* abyJobMagicKey・awJobKeyItem を覚えている職業のビット（職業ID番目のビット。保存する） */
 	BYTE		byOptMagicBar;										/* 特技ショートカットの帯のアカウント設定(OPTMAGICBAR_*。保存する) */
 	BYTE		byRouteCount;										/* 巡回ルートの道しるべ数(2以上で巡回する) */
 	BYTE		byRouteMode;										/* 巡回ルートの回り方(NPCROUTEMODE_*) */
@@ -3806,6 +3809,7 @@ typedef struct _CMDPARA_MAPSWAP {
 enum {
 	SORTITEMTARGET_MYITEM = 0,									/* 手持ちの道具 */
 	SORTITEMTARGET_LEAVE,										/* 預かり所 */
+	SORTITEMTARGET_MAGIC,										/* 覚えている特技（種類順=使える場面→効果→消費Mana） */
 };
 
 /* 並べ替えの方法(CMDPARA_SORTITEM の byMode) */

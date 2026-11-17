@@ -729,6 +729,10 @@ PWNDINFO MakeWindowSORTMENU(BYTE byTarget)
 	if (byTarget == SORTITEMTARGET_LEAVE) {
 		pWnd->nX = 16 * 21;
 		pWnd->nY = 16 * 8;
+	} else if (byTarget == SORTITEMTARGET_MAGIC) {
+		/* 「強さ」の特技の一覧の右寄りに重ねる */
+		pWnd->nX = 32 + 16 * 15;
+		pWnd->nY = 50 + 16 * 3;
 	} else {
 		pWnd->nX = 32 + 16 * 9;
 		pWnd->nY = 50 + 16 * 6;
@@ -3306,7 +3310,7 @@ PWNDINFO MakeWindowSTATUSMAGIC(void)
 	/* 左の枠とカーソル + 名前 + 使える場面(半角8) + 消費Mana(半角8) + 右の枠 */
 	pWnd->nCx		= 32 + nLen * 8 + 16 + 8 * 8 + 8 + 8 * 8 + 16;
 	pWnd->nCx		= (pWnd->nCx + 15) / 16 * 16;
-	pWnd->nCx		= max (pWnd->nCx, 16 * 20);
+	pWnd->nCx		= max (pWnd->nCx, 16 * 22);
 	pWnd->nCx		= min (pWnd->nCx, SCRSIZEX - pWnd->nX);
 	pWnd->nCy		= STATUSMAGIC_LIST_CY (nCount) + STATUSMAGIC_EXPLAIN_CY;
 	pWnd->nType		= WNDTYPE_STATUSMAGIC;
