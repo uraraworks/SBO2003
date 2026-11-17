@@ -8841,20 +8841,6 @@ void CmdProcHanasu(PWNDINFO pWnd)
 		MarketOpen ();
 		pWndTmp = NULL;
 
-	/* リサイクルボックス（おすそわけの共有の箱）？ 台詞が "@d"。中身や結果はサーバーから届く */
-	} else if (pChar2->pszNpcSpeech[0] == '@' && pChar2->pszNpcSpeech[1] == 'd') {
-		/* コマンドウィンドウを閉じる */
-		int nNo = GetWindowID (g_dwMsgIDCommand);
-		if (nNo >= 0) {
-			EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
-			g_dwMsgIDCommand = 0;
-			g_bDraw = TRUE;
-		}
-		pChar2->byDirection = abyDirectionTbl[pChar->byDirection];
-		/* メニュー（箱の中身を頼んで、届いたら開く） */
-		RecycleOpen (pChar2->dwTblID);
-		pWndTmp = NULL;
-
 	/* 冒険者登録所？ */
 	} else if (pChar2->pszNpcSpeech[0] == '@' && pChar2->pszNpcSpeech[1] == 'a') {
 		/* コマンドウィンドウを閉じる */
@@ -10885,7 +10871,7 @@ void KeyProcRECYCLE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				break;
 
 			case 1:		/* もらう（中身を取り直してから一覧を出す） */
-				SendCmdRECYCLE (CMD_RECYCLELIST, g_dwRecycleNpcTblID, 0, 0);
+				SendCmdRECYCLE (CMD_RECYCLELIST, 0, 0);
 				KeyProcRECYCLE_Wait (pWnd, RECYCLEWAIT_TAKELIST);
 				break;
 
@@ -10915,7 +10901,7 @@ void KeyProcRECYCLE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 					g_dwActiveMsgID = pWnd->dwID;
 					break;
 				}
-				SendCmdRECYCLE (CMD_RECYCLETAKE, g_dwRecycleNpcTblID, pEntry->wItemID, 0);
+				SendCmdRECYCLE (CMD_RECYCLETAKE, pEntry->wItemID, 0);
 				KeyProcRECYCLE_Wait (pWnd, RECYCLEWAIT_TAKE);
 			}
 			break;
@@ -10944,7 +10930,7 @@ void KeyProcRECYCLE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 
 		/* 個数を決めた → 入れる */
 		case RECYCLEWND_COUNT:
-			SendCmdRECYCLE (CMD_RECYCLEPUT, g_dwRecycleNpcTblID, g_wRecycleSelItem, (BYTE)pWnd->nData1);
+			SendCmdRECYCLE (CMD_RECYCLEPUT, g_wRecycleSelItem, (BYTE)pWnd->nData1);
 			KeyProcRECYCLE_Wait (pWnd, RECYCLEWAIT_PUT);
 			break;
 		}

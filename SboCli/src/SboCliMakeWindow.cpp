@@ -4163,7 +4163,8 @@ void MarketShowConf(int nKind, LPCSTR pszMsg)
 
 /* ========================================================================= */
 /* リサイクルボックス（おすそわけの共有の箱）                                */
-/* 台詞が "@d" のNPCに話しかけると、サーバーへ中身を頼み、届いたらメニュー     */
+/* マップの箱を調べる（Sキー）と、サーバーが箱を開いて中身を送ってくるので、     */
+/* 届いたらメニュー                                                          */
 /* （RECYCLEWND_MENU）を出す。「もらう」は一覧 RECYCLEWND_LIST（選ぶと 1 個もらう）、*/
 /* 「入れる」は手持ちを品ごとにまとめた一覧 RECYCLEWND_ITEM → 個数 RECYCLEWND_COUNT。*/
 /* 品を選ぶ画面の作りは取引所・預かり所と同じ（▲▼で続きを示す）。          */
@@ -4211,9 +4212,12 @@ void RecycleEraseAll(void)
 	}
 }
 
-/* 閉じる（窓を消して、別れの台詞を出す） */
+/* 閉じる（窓を消して、別れの台詞を出す。サーバーへ知らせて、箱を閉じた絵に戻してもらう） */
 void RecycleClose(LPCSTR pszMsg)
 {
+	if (RecycleIsOpen ()) {
+		SendCmdRECYCLE (CMD_RECYCLECLOSE, 0, 0);
+	}
 	RecycleEraseAll ();
 	g_nRecycleWait = RECYCLEWAIT_NONE;
 	g_szRecycleResult[0] = 0;
@@ -4403,24 +4407,15 @@ void RecycleShowMenu(LPCSTR pszMsg)
 
 /* ========================================================================= */
 /* 関数名：RecycleOpen														 */
-/* 内容：箱に話しかけた時：中身を頼む（届いたらメニューが出る）				 */
+/* 内容：箱を調べて（Sキー）サーバーが箱を開いた時：窓（メニュー）を開く		 */
+/*       中身は知らせと一緒に届いて g_RecycleList に入っている				 */
 /* ========================================================================= */
-void RecycleOpen(DWORD dwNpcTblID)
+void RecycleOpen(void)
 {
-	g_dwRecycleNpcTblID = dwNpcTblID;
 	g_szRecycleResult[0] = 0;
-	g_nRecycleLeft = 0;
-	ZeroMemory (&g_RecycleList, sizeof (g_RecycleList));
-	/* 返事が来るまでの間も窓（台詞）を出しておく。メニューが届いたら差し替える */
+	g_nRecycleLeft = (int)g_RecycleList.byLeft;
 	RecycleEraseAll ();
-	PWNDINFO pWnd = MakeWindowRECYCLE_MENU ();
-	g_WndInfo.Add (pWnd);
-	MarketSetMsg (pWnd, "リサイクルボックスです。@2");
-	g_dwActiveMsgID = pWnd->dwID;
-	SendCmdRECYCLE (CMD_RECYCLELIST, dwNpcTblID, 0, 0);
-	g_nRecycleWait = RECYCLEWAIT_OPEN;
-	g_dwRecycleWaitTime = timeGetTime ();
-	g_bDraw = TRUE;
+	RecycleShowMenu (NULL);
 }
 
 /* ========================================================================= */

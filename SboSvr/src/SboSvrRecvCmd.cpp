@@ -248,6 +248,7 @@ void	RecvDataProcMARKETGOLDGET				(PBYTE, DWORD);				/* 取引所の売上を受
 void	RecvDataProcRECYCLELIST					(PBYTE, DWORD);				/* リサイクルボックスの中身 */
 void	RecvDataProcRECYCLEPUT					(PBYTE, DWORD);				/* リサイクルボックスに入れる */
 void	RecvDataProcRECYCLETAKE					(PBYTE, DWORD);				/* リサイクルボックスからもらう */
+void	RecvDataProcRECYCLECLOSE				(PBYTE, DWORD);				/* リサイクルボックスの窓を閉じた */
 void	RecvDataProcADMINCHEST					(PBYTE, DWORD);				/* 管理者ウィンドウのキャラの開けた宝箱の記録 */
 void	RecvDataProcTALKANSWER					(PBYTE, DWORD);				/* 会話データの「はい・いいえ」の答え */
 /* 端末トークン（server/web_account_svr.cpp） */
@@ -500,6 +501,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcRECYCLELIST,			/* CMD_RECYCLELIST */
 	RecvDataProcRECYCLEPUT,				/* CMD_RECYCLEPUT */
 	RecvDataProcRECYCLETAKE,			/* CMD_RECYCLETAKE */
+	RecvDataProcRECYCLECLOSE,			/* CMD_RECYCLECLOSE */
 	RecvDataProcADMINCHEST,				/* CMD_ADMINCHEST */
 
 	NULL
@@ -2062,6 +2064,7 @@ void SetInitCharData(PCHARINFO pChar)
 	pChar->wShowFlag		= 0;				/* 見える・見えない条件の印（番号+1。0=無し） */
 	pChar->wHideFlag		= 0;
 	pChar->byViewAllNpc	= 0;
+	pChar->wRecycleBox	= 0;				/* 開いているリサイクル箱（無し） */
 	for (i = 0; i < 10; i ++) {
 		pChar->waEqu[i] = 0xFFFF;
 	}
@@ -3714,7 +3717,7 @@ void RecvDataProc(PBYTE pData, DWORD dwDataSize)
 	}
 
 	/* 管理者用のコマンド（管理者ウィンドウからしか送らないもの）は管理者だけ */
-	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && (byCmd != CMD_TALKANSWER) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET)) && ((byCmd < CMD_RECYCLELIST) || (byCmd > CMD_RECYCLETAKE))) ||
+	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && (byCmd != CMD_TALKANSWER) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET)) && ((byCmd < CMD_RECYCLELIST) || (byCmd > CMD_RECYCLECLOSE))) ||
 			(byCmd == CMD_CHARITEM)) {
 		if (!CheckAdminBan (nNo)) {
 			SAFE_DELETE_ARRAY (pData);
@@ -13064,7 +13067,7 @@ BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, 
 	/* 管理者用のコマンドだけ（ログインや「元に戻す」自体は通さない） */
 	if ((byCmd >= CMD_MAX) || (RecvDataProcTbl[byCmd] == NULL) ||
 			((byCmd < CMD_MAPPARTSADD) && (byCmd != CMD_CHARITEM)) ||
-			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_ADMINVIEWALL) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET)) || ((byCmd >= CMD_RECYCLELIST) && (byCmd <= CMD_RECYCLETAKE))) {
+			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_ADMINVIEWALL) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET)) || ((byCmd >= CMD_RECYCLELIST) && (byCmd <= CMD_RECYCLECLOSE))) {
 		return FALSE;
 	}
 
@@ -13969,7 +13972,7 @@ void RecvDataProcRECYCLELIST(PBYTE pData, DWORD dwDataSize)
 {
 	PCHARINFO pChar = RecycleRecvChar (pData);
 	if (pChar) {
-		RecycleList (pChar, ((PCMDPARA_RECYCLE)pData)->dwNpcTblID);
+		RecycleList (pChar, FALSE);
 	}
 }
 
@@ -13978,7 +13981,7 @@ void RecvDataProcRECYCLEPUT(PBYTE pData, DWORD dwDataSize)
 	PCHARINFO pChar = RecycleRecvChar (pData);
 	if (pChar) {
 		PCMDPARA_RECYCLE pPara = (PCMDPARA_RECYCLE)pData;
-		RecyclePut (pChar, pPara->dwNpcTblID, pPara->wItemID, pPara->byCount);
+		RecyclePut (pChar, pPara->wItemID, pPara->byCount);
 	}
 }
 
@@ -13986,8 +13989,19 @@ void RecvDataProcRECYCLETAKE(PBYTE pData, DWORD dwDataSize)
 {
 	PCHARINFO pChar = RecycleRecvChar (pData);
 	if (pChar) {
-		RecycleTake (pChar, ((PCMDPARA_RECYCLE)pData)->dwNpcTblID, ((PCMDPARA_RECYCLE)pData)->wItemID);
+		RecycleTake (pChar, ((PCMDPARA_RECYCLE)pData)->wItemID);
 	}
+}
+
+/* 窓を閉じた：箱を閉じた絵に戻す（倒れていても戻す。持ち物は動かないので RecycleRecvChar の確かめは要らない） */
+void RecvDataProcRECYCLECLOSE(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_RECYCLE pPara = (PCMDPARA_RECYCLE)pData;
+
+	if ((s_dwRecvSize < sizeof (CMDPARA_RECYCLE)) || !IsRecvChar (pPara->dwTblID)) {
+		return;
+	}
+	RecycleClose (g_aCharInfo[pPara->dwTblID]);
 }
 
 /* ========================================================================= */

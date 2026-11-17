@@ -150,7 +150,7 @@ enum {
 	WNDTYPE_SORTMENU,											/* 並べ替え：入れ替え・種類順・50音順（byData1=対象 SORTITEMTARGET_*） */
 	WNDTYPE_MARKET,												/* 取引所（商人ギルドの出張所）の受付 */
 	WNDTYPE_IMPORTANT,											/* 大事な物の一覧（見るだけ。道具の一覧の最後の行から開く） */
-	WNDTYPE_RECYCLE,											/* リサイクルボックス（おすそわけの共有の箱。台詞が "@d" のNPC） */
+	WNDTYPE_RECYCLE,											/* リサイクルボックス（おすそわけの共有の箱。マップに置いた箱を調べると開く） */
 };
 
 /* 取引所ウィンドウ(WNDTYPE_MARKET)の nType2 */
@@ -194,7 +194,7 @@ enum {
 /* リサイクルボックス：返事待ちの種類 */
 enum {
 	RECYCLEWAIT_NONE = 0,										/* 待っていない */
-	RECYCLEWAIT_OPEN,											/* 話しかけた時の中身の返事（来たらメニューを出す） */
+	RECYCLEWAIT_OPEN,											/* 箱が開いた知らせの中身（来たらメニューを出す） */
 	RECYCLEWAIT_TAKELIST,										/* 「もらう」の一覧の返事 */
 	RECYCLEWAIT_PUT,											/* 入れた結果 */
 	RECYCLEWAIT_TAKE,											/* もらった結果 */

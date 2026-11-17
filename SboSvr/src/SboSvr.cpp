@@ -1489,6 +1489,9 @@ BOOL SaveMapInfo(void)
 		if (pMap->wChestHigh) {
 			WriteData (hFile, "wChestHigh", sizeof (pMap->wChestHigh), (PBYTE)&pMap->wChestHigh);
 		}
+		if (pMap->wBoxHigh) {
+			WriteData (hFile, "wBoxHigh", sizeof (pMap->wBoxHigh), (PBYTE)&pMap->wBoxHigh);
+		}
 		/* 見える範囲（無いマップは書かない。古いサーバーでも読めるように） */
 		if (pMap->byViewRange) {
 			WriteData (hFile, "byViewRange", sizeof (pMap->byViewRange), (PBYTE)&pMap->byViewRange);
@@ -1740,8 +1743,11 @@ BOOL LoadMapInfo(void)
 					for (int nSw = 0; nSw < pMap->bySwapCount; nSw ++) {
 						pMap->aSwap[nSw].szMsg[MAX_MAPSWAPMSG - 1] = 0;
 						pMap->aSwap[nSw].szMemo[MAX_MAPSWAPMEMO - 1] = 0;
-						if (pMap->aSwap[nSw].wChestNo < MAX_CHESTNO) {
+						if ((pMap->aSwap[nSw].byKind == MAPSWAPKIND_CHEST) && (pMap->aSwap[nSw].wChestNo < MAX_CHESTNO)) {
 							pMap->wChestHigh = max (pMap->wChestHigh, (WORD)(pMap->aSwap[nSw].wChestNo + 1));
+						}
+						if ((pMap->aSwap[nSw].byKind == MAPSWAPKIND_RECYCLE) && (pMap->aSwap[nSw].wBoxNo <= MAX_RECYCLEBOX)) {
+							pMap->wBoxHigh = max (pMap->wBoxHigh, pMap->aSwap[nSw].wBoxNo);
 						}
 					}
 					dwFilePtr += dwSize;	continue;
@@ -1749,6 +1755,11 @@ BOOL LoadMapInfo(void)
 					WORD wHighTmp = 0;
 					CopyMemory (&wHighTmp, &pData[dwFilePtr], min (dwSize, (DWORD)sizeof (wHighTmp)));
 					pMap->wChestHigh = max (pMap->wChestHigh, min (wHighTmp, (WORD)MAX_CHESTNO));
+					dwFilePtr += dwSize;	continue;
+				} else if (strcmp (pszTmp, "wBoxHigh") == 0) {				/* 使ったリサイクル箱番号の最大 */
+					WORD wHighTmp = 0;
+					CopyMemory (&wHighTmp, &pData[dwFilePtr], min (dwSize, (DWORD)sizeof (wHighTmp)));
+					pMap->wBoxHigh = max (pMap->wBoxHigh, min (wHighTmp, (WORD)MAX_RECYCLEBOX));
 					dwFilePtr += dwSize;	continue;
 				} else if (strcmp (pszTmp, "aLight") == 0) {					/* 光源 */
 					pMap->byLightCount = (BYTE)min (dwSize / sizeof (MAPLIGHT), (DWORD)MAX_MAPLIGHT);

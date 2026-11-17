@@ -1829,7 +1829,7 @@ static std::string MapJson(PMAPINFO pMap)
 	}
 	out += "]";
 
-	/* 印で変わるマス（kind 0=印で変わる・1=宝箱。見た目と通れるかを、その人の印・開けた宝箱の記録で差し替える） */
+	/* 印で変わるマス（kind 0=印で変わる・1=宝箱・2=リサイクル箱。見た目と通れるかを、その人の印・開けた宝箱の記録・開いているリサイクル箱で差し替える） */
 	out += ",\"swaps\":[";
 	for (i = 0; i < pMap->bySwapCount && i < MAX_MAPSWAP; i ++) {
 		const MAPSWAP *pSw = &pMap->aSwap[i];
@@ -1839,6 +1839,8 @@ static std::string MapJson(PMAPINFO pMap)
 		if (pSw->byKind == MAPSWAPKIND_CHEST) {
 			out += ",\"wChestNo\":" + JsonNum(pSw->wChestNo) + ",\"wGiveItem\":" + JsonNum(pSw->wGiveItem) +
 					",\"szMsg\":" + JsonStr(pSw->szMsg) + ",\"szMemo\":" + JsonStr(pSw->szMemo);
+		} else if (pSw->byKind == MAPSWAPKIND_RECYCLE) {
+			out += ",\"wBoxNo\":" + JsonNum(pSw->wBoxNo) + ",\"szMemo\":" + JsonStr(pSw->szMemo);
 		} else {
 			out += ",\"wFlag\":" + JsonNum(pSw->wFlag) + ",\"byCmp\":" + JsonNum(pSw->byCmp);
 		}
@@ -2411,15 +2413,17 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataChests()
 }
 
 /*
- * リサイクルボックス（台詞が "@d" の NPC の共有の箱。docs/recycle.md）の中身と記録。読むだけ。
- *   boxes … 箱ごとの中身。npcId は NPC番号（中身はこの番号ごと）、tblId は今のキャラのテーブル番号、
- *           mapNo・mapName・x・y はその NPC の今いる所、kinds は入っている種類の数、total は個数の合計、
- *           stock は {itemId, item, count}（入れた順）。missing が true なのは、中身が残っているのに
- *           その番号の箱の NPC がいない（消した・台詞を変えた）もの
+ * リサイクルボックス（マップに置く箱。印で変わるマスの kind 2。docs/recycle.md）の中身と記録。読むだけ。
+ *   boxes … 箱番号（boxNo。全マップ通し。宝箱の番号とは別）の順。mapNo はマップの番号（map の id）、mapName はマップ名、
+ *           x・y は箱のマス、wParts は開いた絵のパーツ、memo は管理用のメモ、kinds は入っている種類の数、
+ *           total は個数の合計、stock は {itemId, item, count}（入れた順）。missing が true なのは、
+ *           中身が残っているのにその番号の箱がどのマップにも無いもの（箱を消した）
+ *   retired … 番号は使ったが今はどのマップにも無い（消した）箱の番号。使い回さない
+ *   nextNo … 次に自動で振る番号（-1=使い切り）
  *   log … 記録（新しい順。最大 RECYCLE_LOGMAX 件）。time は UNIX 秒、date は日本時間の「年-月-日 時:分」、
- *         action は "put"（入れた）か "take"（もらった）、acc はアカウント、name はキャラ名、npcId は箱の NPC番号
+ *         action は "put"（入れた）か "take"（もらった）、acc はアカウント、name はキャラ名、boxNo は箱番号
  *   today … 今日（日本時間）に 1 個以上もらったアカウントと、その個数・あと何個もらえるか（daily）
- *   limits … 決まり（種類・個数・1 日の数・記録の件数）
+ *   limits … 決まり（種類・個数・1 日の数・記録の件数・箱番号の数）
  */
 static std::string RecycleDateText(DWORD dwSec)
 {
@@ -2436,69 +2440,88 @@ static std::string RecycleItemName(WORD wItemID)
 	return JsonStr((wItemID != 0 && wItemID < g_aItemInfo.GetSize()) ? g_aItemInfo[wItemID]->szName : "");
 }
 
+static int RecycleBoxHighAll();
+static std::string RecycleStockJson(DWORD dwBoxNo, int &nKinds, int &nTotal)
+{
+	std::string strStock;
+	nKinds = 0;
+	nTotal = 0;
+	for (size_t k = 0; k < g_aRecycleStock.size(); k ++) {
+		const RECYCLESTOCK &S = g_aRecycleStock[k];
+		if (S.dwBoxNo != dwBoxNo) {
+			continue;
+		}
+		if (nKinds) strStock += ",";
+		strStock += "{\"itemId\":" + JsonNum(S.wItemID) + ",\"item\":" + RecycleItemName(S.wItemID) + ",\"count\":" + JsonNum(S.byCount) + "}";
+		nKinds ++;
+		nTotal += S.byCount;
+	}
+	return strStock;
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataRecycle()
 {
 	std::string out = "{\"boxes\":[";
-	std::vector<DWORD> aNpcID;		/* 箱の NPC がいる NPC番号 */
-	bool bFirst = true;
-	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
-		PCHARINFO pNpc = g_aCharInfo[i];
-		if (!RecycleIsBox(pNpc)) {
-			continue;
-		}
-		aNpcID.push_back(pNpc->dwNpcID);
-		int nMap = GetMapNo(pNpc->dwMapID);
-		int nKinds = 0, nTotal = 0;
-		std::string strStock;
-		for (size_t k = 0; k < g_aRecycleStock.size(); k ++) {
-			const RECYCLESTOCK &S = g_aRecycleStock[k];
-			if (S.dwNpcID != pNpc->dwNpcID) {
-				continue;
+	std::vector<std::pair<int, std::pair<int, int> > > aRow;		/* (箱番号, (マップ番号, 行の番号)) */
+	std::vector<char> abyUsed(MAX_RECYCLEBOX + 1, 0);
+	for (int i = 0; i < g_aMapInfo.GetSize(); i ++) {
+		PMAPINFO pMap = g_aMapInfo[i];
+		for (int j = 0; j < pMap->bySwapCount && j < MAX_MAPSWAP; j ++) {
+			if (pMap->aSwap[j].byKind == MAPSWAPKIND_RECYCLE && pMap->aSwap[j].wBoxNo >= 1 && pMap->aSwap[j].wBoxNo <= MAX_RECYCLEBOX) {
+				aRow.push_back(std::make_pair((int)pMap->aSwap[j].wBoxNo, std::make_pair(i, j)));
+				abyUsed[pMap->aSwap[j].wBoxNo] = 1;
 			}
-			if (nKinds) strStock += ",";
-			strStock += "{\"itemId\":" + JsonNum(S.wItemID) + ",\"item\":" + RecycleItemName(S.wItemID) + ",\"count\":" + JsonNum(S.byCount) + "}";
-			nKinds ++;
-			nTotal += S.byCount;
 		}
+	}
+	std::sort(aRow.begin(), aRow.end());
+	bool bFirst = true;
+	for (size_t r = 0; r < aRow.size(); r ++) {
+		PMAPINFO pMap = g_aMapInfo[aRow[r].second.first];
+		const MAPSWAP *pSw = &pMap->aSwap[aRow[r].second.second];
+		int nKinds = 0, nTotal = 0;
+		std::string strStock = RecycleStockJson(pSw->wBoxNo, nKinds, nTotal);
 		if (!bFirst) out += ",";
 		bFirst = false;
-		out += "{\"npcId\":" + JsonNum(pNpc->dwNpcID) + ",\"tblId\":" + JsonNum(i) + ",\"name\":" + JsonStr(pNpc->szName) +
-				",\"mapNo\":" + JsonNum(pNpc->dwMapID) + ",\"mapName\":" + ((nMap >= 0) ? TextJson(g_aMapInfo[nMap]->pszName) : std::string("\"\"")) +
-				",\"x\":" + JsonNum(pNpc->dwX) + ",\"y\":" + JsonNum(pNpc->dwY) +
+		out += "{\"boxNo\":" + JsonNum(pSw->wBoxNo) + ",\"mapNo\":" + JsonNum(aRow[r].second.first) + ",\"mapName\":" + TextJson(pMap->pszName) +
+				",\"x\":" + JsonNum(pSw->wX) + ",\"y\":" + JsonNum(pSw->wY) + ",\"wParts\":" + JsonNum(pSw->wParts) +
+				",\"memo\":" + JsonStr(pSw->szMemo) +
 				",\"kinds\":" + JsonNum(nKinds) + ",\"total\":" + JsonNum(nTotal) + ",\"missing\":false,\"stock\":[" + strStock + "]}";
 	}
-	/* 中身が残っているのに箱の NPC がいない番号 */
+	/* 中身が残っているのに箱がどのマップにも無い番号 */
 	std::vector<DWORD> aMissing;
 	for (size_t k = 0; k < g_aRecycleStock.size(); k ++) {
-		DWORD dwNpcID = g_aRecycleStock[k].dwNpcID;
-		if (std::find(aNpcID.begin(), aNpcID.end(), dwNpcID) == aNpcID.end() && std::find(aMissing.begin(), aMissing.end(), dwNpcID) == aMissing.end()) {
-			aMissing.push_back(dwNpcID);
+		DWORD dwBoxNo = g_aRecycleStock[k].dwBoxNo;
+		bool bHave = dwBoxNo <= (DWORD)MAX_RECYCLEBOX && abyUsed[dwBoxNo];
+		if (!bHave && std::find(aMissing.begin(), aMissing.end(), dwBoxNo) == aMissing.end()) {
+			aMissing.push_back(dwBoxNo);
 		}
 	}
 	for (size_t m = 0; m < aMissing.size(); m ++) {
 		int nKinds = 0, nTotal = 0;
-		std::string strStock;
-		for (size_t k = 0; k < g_aRecycleStock.size(); k ++) {
-			const RECYCLESTOCK &S = g_aRecycleStock[k];
-			if (S.dwNpcID != aMissing[m]) {
-				continue;
-			}
-			if (nKinds) strStock += ",";
-			strStock += "{\"itemId\":" + JsonNum(S.wItemID) + ",\"item\":" + RecycleItemName(S.wItemID) + ",\"count\":" + JsonNum(S.byCount) + "}";
-			nKinds ++;
-			nTotal += S.byCount;
-		}
+		std::string strStock = RecycleStockJson(aMissing[m], nKinds, nTotal);
 		if (!bFirst) out += ",";
 		bFirst = false;
-		out += "{\"npcId\":" + JsonNum(aMissing[m]) + ",\"tblId\":-1,\"name\":\"\",\"mapNo\":-1,\"mapName\":\"\",\"x\":0,\"y\":0,\"kinds\":" +
+		out += "{\"boxNo\":" + JsonNum(aMissing[m]) + ",\"mapNo\":-1,\"mapName\":\"\",\"x\":0,\"y\":0,\"wParts\":0,\"memo\":\"\",\"kinds\":" +
 				JsonNum(nKinds) + ",\"total\":" + JsonNum(nTotal) + ",\"missing\":true,\"stock\":[" + strStock + "]}";
 	}
-	out += "],\"log\":[";
+	out += "],\"retired\":[";
+	int nHigh = RecycleBoxHighAll();
+	bool bFirstRet = true;
+	for (int n = 1; n <= nHigh && n <= MAX_RECYCLEBOX; n ++) {
+		if (!abyUsed[n]) {
+			if (!bFirstRet) out += ",";
+			bFirstRet = false;
+			out += JsonNum(n);
+		}
+	}
+	out += "],\"nextNo\":" + JsonNum(nHigh < MAX_RECYCLEBOX ? nHigh + 1 : -1);
+	out += ",\"max\":" + JsonNum(MAX_RECYCLEBOX);
+	out += ",\"log\":[";
 	for (size_t k = g_aRecycleLog.size(); k > 0; k --) {
 		const RECYCLELOG &L = g_aRecycleLog[k - 1];
 		if (k != g_aRecycleLog.size()) out += ",";
 		out += "{\"time\":" + JsonNum(L.dwTime) + ",\"date\":" + JsonStr(RecycleDateText(L.dwTime).c_str()) +
-				",\"acc\":" + JsonStr(L.szAcc) + ",\"name\":" + JsonStr(L.szName) + ",\"npcId\":" + JsonNum(L.dwNpcID) +
+				",\"acc\":" + JsonStr(L.szAcc) + ",\"name\":" + JsonStr(L.szName) + ",\"boxNo\":" + JsonNum(L.dwBoxNo) +
 				",\"action\":" + JsonStr(L.byKind == RECYCLELOG_TAKE ? "take" : "put") +
 				",\"itemId\":" + JsonNum(L.wItemID) + ",\"item\":" + RecycleItemName(L.wItemID) + ",\"count\":" + JsonNum(L.byCount) + "}";
 	}
@@ -2515,7 +2538,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataRecycle()
 		out += "{\"acc\":" + JsonStr(D.szAcc) + ",\"count\":" + JsonNum(D.byCount) + ",\"left\":" + JsonNum(RecycleLeft(D.szAcc)) + "}";
 	}
 	out += "],\"limits\":{\"maxKind\":" + JsonNum(RECYCLE_MAXKIND) + ",\"maxCount\":" + JsonNum(RECYCLE_MAXCOUNT) +
-			",\"dayLimit\":" + JsonNum(RECYCLE_DAYLIMIT) + ",\"logMax\":" + JsonNum(RECYCLE_LOGMAX) + ",\"range\":" + JsonNum(RECYCLE_RANGE) + "}}";
+			",\"dayLimit\":" + JsonNum(RECYCLE_DAYLIMIT) + ",\"logMax\":" + JsonNum(RECYCLE_LOGMAX) + ",\"range\":" + JsonNum(RECYCLE_RANGE) + ",\"maxBox\":" + JsonNum(MAX_RECYCLEBOX) + "}}";
 	s_strResult = out;
 	return s_strResult.c_str();
 }
@@ -2999,10 +3022,41 @@ static int ChestHighAll()
 	return nHigh;
 }
 
-/* swaps（印で変わるマス）を w に読む。宝箱の番号は省くと空き番号を自動で振る（全マップ通しで重ならない。消した番号は使い回さない） */
+/* リサイクル箱の番号を、全マップを通して使っている行があるか（nSkipMap のマップの行は数えない） */
+static bool RecycleBoxNoUsedElsewhere(int nSkipMap, int nBoxNo)
+{
+	for (int i = 0; i < g_aMapInfo.GetSize(); i ++) {
+		PMAPINFO pMap = g_aMapInfo[i];
+		if (i == nSkipMap) continue;
+		for (int j = 0; j < pMap->bySwapCount && j < MAX_MAPSWAP; j ++) {
+			if (pMap->aSwap[j].byKind == MAPSWAPKIND_RECYCLE && pMap->aSwap[j].wBoxNo == nBoxNo) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+/* 今までに使ったリサイクル箱の番号の最大（全マップ。消した箱の番号を使い回さないための覚えを含む。0=まだ無し） */
+static int RecycleBoxHighAll()
+{
+	int nHigh = 0;
+	for (int i = 0; i < g_aMapInfo.GetSize(); i ++) {
+		PMAPINFO pMap = g_aMapInfo[i];
+		nHigh = max(nHigh, (int)pMap->wBoxHigh);
+		for (int j = 0; j < pMap->bySwapCount && j < MAX_MAPSWAP; j ++) {
+			if (pMap->aSwap[j].byKind == MAPSWAPKIND_RECYCLE && pMap->aSwap[j].wBoxNo <= MAX_RECYCLEBOX) {
+				nHigh = max(nHigh, (int)pMap->aSwap[j].wBoxNo);
+			}
+		}
+	}
+	return nHigh;
+}
+
+/* swaps（印で変わるマス）を w に読む。宝箱・リサイクル箱の番号は省くと空き番号を自動で振る（それぞれ全マップ通しで重ならない。消した番号は使い回さない） */
 static bool ParseMapSwaps(const JVal &sw, int nID, MAPINFO &w, std::string &strErr)
 {
-	static const char *apszKey[] = { "kind", "x", "y", "wParts", "wFlag", "byCmp", "wChestNo", "wGiveItem", "szMsg", "szMemo", NULL };
+	static const char *apszKey[] = { "kind", "x", "y", "wParts", "wFlag", "byCmp", "wChestNo", "wBoxNo", "wGiveItem", "szMsg", "szMemo", NULL };
 	long long n;
 
 	if (sw.t != JVal::ARR) {
@@ -3018,7 +3072,10 @@ static bool ParseMapSwaps(const JVal &sw, int nID, MAPINFO &w, std::string &strE
 	int nNext = ChestHighAll();			/* 自動で振る番号（消した番号は飛ばす） */
 	int nHighNew = (int)w.wChestHigh;
 	std::vector<char> abyUsed(MAX_CHESTNO, 0);
-	/* まず番号を指定された宝箱を確定してから、省かれた分に自動で振る */
+	int nNextBox = RecycleBoxHighAll() + 1;		/* リサイクル箱の自動で振る番号（1 から。消した番号は飛ばす） */
+	int nBoxHighNew = (int)w.wBoxHigh;
+	std::vector<char> abyBoxUsed(MAX_RECYCLEBOX + 1, 0);
+	/* まず番号を指定された宝箱・リサイクル箱を確定してから、省かれた分に自動で振る */
 	for (int pass = 0; pass < 2; pass ++) {
 		for (size_t i = 0; i < sw.a.size(); i ++) {
 			const JVal &e = sw.a[i];
@@ -3040,10 +3097,10 @@ static bool ParseMapSwaps(const JVal &sw, int nID, MAPINFO &w, std::string &strE
 				const JVal *pk = e.Get("kind"), *px = e.Get("x"), *py = e.Get("y"), *pp = e.Get("wParts");
 				p->byKind = MAPSWAPKIND_FLAG;
 				if (pk) {
-					if (pk->t == JVal::STR && (pk->s == "flag" || pk->s == "chest")) {
-						p->byKind = (pk->s == "chest") ? MAPSWAPKIND_CHEST : MAPSWAPKIND_FLAG;
+					if (pk->t == JVal::STR && (pk->s == "flag" || pk->s == "chest" || pk->s == "recycle")) {
+						p->byKind = (pk->s == "chest") ? MAPSWAPKIND_CHEST : (pk->s == "recycle") ? MAPSWAPKIND_RECYCLE : MAPSWAPKIND_FLAG;
 					} else {
-						if (!GetInt(*pk, 0, 1, n, strErr, strP + ".kind")) return false;
+						if (!GetInt(*pk, 0, 2, n, strErr, strP + ".kind")) return false;
 						p->byKind = (BYTE)n;
 					}
 				}
@@ -3057,12 +3114,15 @@ static bool ParseMapSwaps(const JVal &sw, int nID, MAPINFO &w, std::string &strE
 				p->wY = (WORD)n;
 				if (!GetInt(*pp, 0, (long long)g_wCountMapParts - 1, n, strErr, strP + ".wParts")) return false;
 				p->wParts = (WORD)n;
-				const JVal *pf = e.Get("wFlag"), *pc = e.Get("byCmp"), *pn = e.Get("wChestNo"), *pg = e.Get("wGiveItem"), *pm = e.Get("szMsg"), *pme = e.Get("szMemo");
+				const JVal *pf = e.Get("wFlag"), *pc = e.Get("byCmp"), *pn = e.Get("wChestNo"), *pb = e.Get("wBoxNo"), *pg = e.Get("wGiveItem"), *pm = e.Get("szMsg"), *pme = e.Get("szMemo");
 				p->wFlag = FLAG_NOBIT;
 				p->wChestNo = 0xFFFF;
+				if (p->byKind == MAPSWAPKIND_RECYCLE) {
+					p->wBoxNo = 0;		/* 0=まだ振っていない（番号は 1 から） */
+				}
 				if (p->byKind == MAPSWAPKIND_FLAG) {
-					if (pn || pg || pm || pme) {
-						strErr = strP + ": 印で変わる行（kind 0）に wChestNo・wGiveItem・szMsg・szMemo は使えません（宝箱は kind 1）";
+					if (pn || pb || pg || pm || pme) {
+						strErr = strP + ": 印で変わる行（kind 0）に wChestNo・wBoxNo・wGiveItem・szMsg・szMemo は使えません（宝箱は kind 1・リサイクル箱は kind 2）";
 						return false;
 					}
 					if (!pf) {
@@ -3075,9 +3135,35 @@ static bool ParseMapSwaps(const JVal &sw, int nID, MAPINFO &w, std::string &strE
 						if (!GetInt(*pc, 0, 1, n, strErr, strP + ".byCmp")) return false;
 						p->byCmp = (BYTE)n;
 					}
+				} else if (p->byKind == MAPSWAPKIND_RECYCLE) {
+					if (pf || pc || pn || pg || pm) {
+						strErr = strP + ": リサイクル箱の行（kind 2）に使えるのは x・y・wParts（開いた絵）・szMemo・wBoxNo だけです";
+						return false;
+					}
+					if (pme) {
+						if (pme->t != JVal::STR || !CheckText(pme->s, MAX_MAPSWAPMEMO, false, strErr, strP + ".szMemo")) {
+							if (strErr.empty()) strErr = strP + ".szMemo は文字列で指定してください";
+							return false;
+						}
+						CopyMemory(p->szMemo, pme->s.c_str(), pme->s.size() + 1);
+					}
+					if (pb) {
+						if (!GetInt(*pb, 1, MAX_RECYCLEBOX, n, strErr, strP + ".wBoxNo")) return false;
+						if (abyBoxUsed[(size_t)n]) {
+							strErr = strP + ".wBoxNo " + JsonNum(n) + " は、この swaps の中で重なっています";
+							return false;
+						}
+						if (RecycleBoxNoUsedElsewhere(nID, (int)n)) {
+							strErr = strP + ".wBoxNo " + JsonNum(n) + " は、ほかのマップのリサイクル箱がもう使っています（箱の番号は全マップ通しで重ならない）";
+							return false;
+						}
+						abyBoxUsed[(size_t)n] = 1;
+						p->wBoxNo = (WORD)n;
+						nBoxHighNew = max(nBoxHighNew, (int)n);
+					}
 				} else {
-					if (pf || pc) {
-						strErr = strP + ": 宝箱の行（kind 1）に wFlag・byCmp は使えません（宝箱は印ではなく開けた記録を使います）";
+					if (pf || pc || pb) {
+						strErr = strP + ": 宝箱の行（kind 1）に wFlag・byCmp・wBoxNo は使えません（宝箱は印ではなく開けた記録を使います）";
 						return false;
 					}
 					if (pg) {
@@ -3117,6 +3203,18 @@ static bool ParseMapSwaps(const JVal &sw, int nID, MAPINFO &w, std::string &strE
 						nHighNew = max(nHighNew, (int)n + 1);
 					}
 				}
+			} else if (p->byKind == MAPSWAPKIND_RECYCLE && p->wBoxNo == 0) {
+				while (nNextBox <= MAX_RECYCLEBOX && (abyBoxUsed[nNextBox] || RecycleBoxNoUsedElsewhere(nID, nNextBox))) {
+					nNextBox ++;
+				}
+				if (nNextBox > MAX_RECYCLEBOX) {
+					strErr = "リサイクル箱の番号を使い切りました（1〜" + JsonNum(MAX_RECYCLEBOX) + "）。消した箱の番号は使い回しません";
+					return false;
+				}
+				abyBoxUsed[nNextBox] = 1;
+				p->wBoxNo = (WORD)nNextBox;
+				nBoxHighNew = max(nBoxHighNew, nNextBox);
+				nNextBox ++;
 			} else if (p->byKind == MAPSWAPKIND_CHEST && p->wChestNo == 0xFFFF) {
 				while (nNext < MAX_CHESTNO && (abyUsed[nNext] || ChestNoUsedElsewhere(nID, nNext))) {
 					nNext ++;
@@ -3133,6 +3231,7 @@ static bool ParseMapSwaps(const JVal &sw, int nID, MAPINFO &w, std::string &strE
 		}
 	}
 	w.wChestHigh = (WORD)nHighNew;
+	w.wBoxHigh = (WORD)nBoxHighNew;
 	return true;
 }
 
@@ -3485,11 +3584,12 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 	pMap->byLightCount		= w.byLightCount;
 	CopyMemory(pMap->aLight, w.aLight, sizeof(pMap->aLight));
 	/* 印で変わるマスが変わったら、マップ全体の送り直しは要らず、いるプレイヤーに差し替え一覧だけ送る */
-	bool bSwapChg = pMap->bySwapCount != w.bySwapCount || pMap->wChestHigh != w.wChestHigh ||
+	bool bSwapChg = pMap->bySwapCount != w.bySwapCount || pMap->wChestHigh != w.wChestHigh || pMap->wBoxHigh != w.wBoxHigh ||
 		memcmp(pMap->aSwap, w.aSwap, sizeof(pMap->aSwap)) != 0;
 	pMap->bySwapCount		= w.bySwapCount;
 	CopyMemory(pMap->aSwap, w.aSwap, sizeof(pMap->aSwap));
 	pMap->wChestHigh		= w.wChestHigh;
+	pMap->wBoxHigh			= w.wBoxHigh;
 	SAFE_DELETE_ARRAY(pMap->pszName);
 	if (!strName.empty()) {
 		pMap->pszName = new char[strName.size() + 1];
