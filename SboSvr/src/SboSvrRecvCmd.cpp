@@ -3651,6 +3651,11 @@ BOOL IsTail(PCHARINFO pChar, PCHARINFO pCharTarget)
 		goto Exit;
 	}
 
+	/* 別のマップの相手（マップを移った直後で、画面にまだ残っている人など）にはついていけない */
+	if (pChar->dwMapID != pCharTarget->dwMapID) {
+		goto Exit;
+	}
+
 	/* 誰かを引っ張っている？（傭兵なら、傭兵がこの人の後ろへ回るのでついていける） */
 	if ((pCharTarget->dwTailBackTblID != -1) &&
 		!((pCharTarget->dwTailBackTblID < (DWORD)g_aCharInfo.GetSize ()) &&
@@ -4950,6 +4955,8 @@ void RecvDataProcEVENTCHECK(PBYTE pData, DWORD dwDataSize)
 
 	nNo = GetMapNo (pChar->dwMapID);
 	if (nNo < 0) {
+		/* クライアントは返事が来るまで歩けない（Z も効かない）ので、位置を送って待ちを解く */
+		SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
 		return;
 	}
 	/* 足元を調べた時(Sキー)、同じマスに依頼の見える宝箱などがあればそちらを先に */
@@ -4976,13 +4983,10 @@ void RecvDataProcEVENTCHECK(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pMap = g_aMapInfo[nNo];
-	pEvent = pMap->pEvent;
-	if (!pEvent) {
-		return;
-	}
-
+	/* イベントが1つも無いマップでも、下の「何も無い時」の返事まで進む
+	   （ここで黙って戻ると、クライアントは返事待ちのまま歩けず、Z も効かなくなっていた） */
 	DWORD dwX, dwY;
-	for (i = 0; i < pMap->nEventCount; i ++) {
+	for (i = 0; (pMap->pEvent != NULL) && (i < pMap->nEventCount); i ++) {
 		pEvent = &pMap->pEvent[i];
 		dwX = pChar->dwX;
 		dwY = pChar->dwY;
