@@ -54,6 +54,8 @@ extern void QuestOnPartyLeave(PCHARINFO pChar);					/* パーティを抜けた�
 extern void QuestPartyLeaveHold(BOOL bHold);					/* TRUE の間は QuestOnPartyLeave で取り消さない（切断の時） */
 extern int  QuestFlagCheck(PCHARINFO pChar, int nFlg);			/* 旗が立っているか(1〜16) */
 extern BOOL QuestIsDone(PCHARINFO pChar, WORD wQuestID);		/* クリア済みの印があるか */
+extern BOOL QuestFlagOk(PCHARINFO pChar, const QUESTINFO *pQuest);	/* 依頼を受ける条件の印（wNeedFlag・wNotFlag）に合うか */
+extern BOOL QuestGiveItemNotice(PCHARINFO pChar, WORD wItem);	/* 会話データからアイテムを 1 つ渡して知らせる（持ち物がいっぱいなら預かり所へ。渡せたら TRUE） */
 extern BOOL QuestIsQuestItem(WORD wItem);						/* 依頼の品か（預けられない・売れない・捨てられない） */
 extern int  QuestCountItemAll(PCHARINFO pChar, WORD wItem);		/* 持ち物（大事な物の欄を含む）と預かり所にある数（テスト用） */
 extern BOOL QuestTakeItemOne(PCHARINFO pChar, WORD wItem);			/* 1 個取り除く（大事な物の欄→持ち物→預かり所の順。テスト用） */

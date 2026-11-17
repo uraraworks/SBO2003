@@ -327,6 +327,8 @@ typedef struct _QUESTFILE {
 	BYTE		byDoneNumNo;							/* 完了した時に動かす数値の番号（番号+1。0=無し） */
 	BYTE		byDoneNumOp;
 	BYTE		byDoneNumVal;
+	WORD		wNeedFlag;								/* 受ける条件の印（番号+1。0=無し。古いファイルには無く、0 =無しで読める） */
+	WORD		wNotFlag;
 } QUESTFILE;
 
 /* 依頼情報のカラム */
@@ -372,6 +374,8 @@ static const COLINFO s_aQuestCol[] = {
 	COL (QUESTFILE, byDoneNumNo,	COL_U8),
 	COL (QUESTFILE, byDoneNumOp,	COL_U8),
 	COL (QUESTFILE, byDoneNumVal,	COL_U8),
+	COL (QUESTFILE, wNeedFlag,		COL_U16),
+	COL (QUESTFILE, wNotFlag,		COL_U16),
 };
 
 BOOL SaveQuestInfo(void);										/* 依頼情報保存 */
@@ -399,6 +403,8 @@ static void ToFile(QUESTFILE *p, const QUESTINFO *q)
 	}
 	p->byDoneNumNo = (q->byDoneNumNo < MAX_FLAGNUM) ? (BYTE)(q->byDoneNumNo + 1) : 0;
 	p->byDoneNumOp = q->byDoneNumOp;	p->byDoneNumVal = q->byDoneNumVal;
+	p->wNeedFlag = (q->wNeedFlag < MAX_FLAGBIT) ? (WORD)(q->wNeedFlag + 1) : 0;
+	p->wNotFlag = (q->wNotFlag < MAX_FLAGBIT) ? (WORD)(q->wNotFlag + 1) : 0;
 	for (i = 0; i < MAX_QUESTNPC; i ++) {
 		const QUESTNPCINFO *n = &q->aNpc[i];
 		p->adwNpcMapID[i] = n->dwMapID;	p->abyNpcX[i] = n->byX;	p->abyNpcY[i] = n->byY;
@@ -434,6 +440,9 @@ static void FromFile(QUESTINFO *q, const QUESTFILE *p)
 	}
 	q->byDoneNumNo = ((p->byDoneNumNo >= 1) && (p->byDoneNumNo <= MAX_FLAGNUM)) ? (BYTE)(p->byDoneNumNo - 1) : (BYTE)FLAG_NONUM;
 	q->byDoneNumOp = p->byDoneNumOp;	q->byDoneNumVal = p->byDoneNumVal;
+	/* 古いファイルは 0 のまま来るので、0 は必ず「無し」(FLAG_NOBIT) にする（0 のままだと「印 0」になってしまう） */
+	q->wNeedFlag = ((p->wNeedFlag >= 1) && (p->wNeedFlag <= MAX_FLAGBIT)) ? (WORD)(p->wNeedFlag - 1) : (WORD)FLAG_NOBIT;
+	q->wNotFlag = ((p->wNotFlag >= 1) && (p->wNotFlag <= MAX_FLAGBIT)) ? (WORD)(p->wNotFlag - 1) : (WORD)FLAG_NOBIT;
 	q->szName[MAX_QUESTNAME - 1] = 0;
 	q->szExplain[MAX_QUESTMSG - 1] = 0;
 	q->szMsgAccept[MAX_QUESTMSG - 1] = 0;

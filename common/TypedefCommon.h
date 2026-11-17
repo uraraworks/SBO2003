@@ -2912,6 +2912,8 @@ typedef struct _QUESTINFO {
 	BYTE		byDoneNumNo;										/* 完了した時に動かすキャラの数値の番号（0〜127。FLAG_NONUM=無し） */
 	BYTE		byDoneNumOp;										/* 数値の動き(TALKNUMOP_*。する/足す) */
 	BYTE		byDoneNumVal;										/* 数値の動きの値 */
+	WORD		wNeedFlag;											/* この印が立っている人だけ受けられる（FLAG_NOBIT=条件なし） */
+	WORD		wNotFlag;											/* この印が立っている人は受けられない（FLAG_NOBIT=条件なし） */
 } QUESTINFO, *PQUESTINFO;
 
 /* 討伐チャレンジの種類(QUESTINFO の byChallenge) */
@@ -3177,6 +3179,10 @@ typedef struct _TALKLINEINFO {
 	BYTE		abyActNo[MAX_TALKACT];								/* 話した後に動かす数値の番号（FLAG_NONUM=無し） */
 	BYTE		abyActOp[MAX_TALKACT];								/* 動かし方(TALKNUMOP_*) */
 	BYTE		abyActVal[MAX_TALKACT];								/* 動かす値 */
+	WORD		wGiveItem;											/* 話した後に渡すアイテム（0=渡さない。毎回渡す。一度きりにしたい時は印で組む） */
+	WORD		wQuestID;											/* 受けている依頼の条件（0=条件なし。0 以外ならその依頼を今受けている人だけ） */
+	BYTE		byQuestStepMin;										/* 依頼の段の下限（wQuestID が 0 以外の時） */
+	BYTE		byQuestStepMax;										/* 依頼の段の上限（255=どの段でも） */
 } TALKLINEINFO, *PTALKLINEINFO;
 
 /* 会話セットの状態(TALKINFO の byState) */

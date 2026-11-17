@@ -801,6 +801,40 @@ static const char *ItemName(WORD wItem)
 	return g_aItemInfo[wItem]->szName;
 }
 
+/* 会話データからアイテムを 1 つ渡して知らせる
+   持ち物へ、いっぱいなら預かり所へ（大事な物の印のある品は大事な物の欄へ入る）。渡せたら TRUE */
+BOOL QuestGiveItemNotice(PCHARINFO pChar, WORD wItem)
+{
+	BOOL bToLeave = FALSE;
+	char szTmp[256];
+
+	if (!GiveItem (pChar, wItem, &bToLeave)) {
+		SendCmdSYSMSG (pChar->pID, "持ち物がいっぱいで受け取れませんでした。", SPEECHCMD_BATTLE1);
+		return FALSE;
+	}
+	SendBagState (pChar);
+	SendCmdPLAYSOUND (pChar->pID, SOUND_PI52);
+	snprintf (szTmp, sizeof (szTmp), "%sを手に入れました。", ItemName (wItem));
+	SendCmdSYSMSG (pChar->pID, szTmp, SPEECHCMD_BATTLE1);
+	if (bToLeave) {
+		snprintf (szTmp, sizeof (szTmp), "持ちきれないので、預かり所の使い魔が%sの預かり所へ運んでいきました", pChar->szName);
+		SendCmdSYSMSG (pChar->pID, szTmp, SPEECHCMD_BATTLE1);
+	}
+	return TRUE;
+}
+
+/* 依頼を受ける条件の印に合うか（FLAG_NOBIT=条件なし） */
+BOOL QuestFlagOk(PCHARINFO pChar, const QUESTINFO *pQuest)
+{
+	if ((pQuest->wNeedFlag < MAX_FLAGBIT) && !FlagBitGet (pChar->abyFlag, pQuest->wNeedFlag)) {
+		return FALSE;
+	}
+	if ((pQuest->wNotFlag < MAX_FLAGBIT) && FlagBitGet (pChar->abyFlag, pQuest->wNotFlag)) {
+		return FALSE;
+	}
+	return TRUE;
+}
+
 /* ========================================================================= */
 /* 見えるNPC に話す															 */
 /* ========================================================================= */
@@ -1246,6 +1280,10 @@ void QuestGuildTalk(PCHARINFO pChar, PCHARINFO pNpc)
 		if (pQuest->byOnce && QuestIsDone (pChar, pQuest->wID)) {
 			continue;
 		}
+		/* 受ける条件の印に合わないものは出さない（受けている人には出す） */
+		if ((pChar->wQuestID != pQuest->wID) && !QuestFlagOk (pChar, pQuest)) {
+			continue;
+		}
 		if ((int)aList.size () >= MAX_QUESTLIST) {
 			break;
 		}
@@ -1337,6 +1375,10 @@ static void DoAccept(PCHARINFO pChar, PCHARINFO pNpc, PQUESTINFO pQuest)
 		SendResult (pChar, QUESTRESULT_NG, 0, "この依頼は、もう終わっています。");
 		return;
 	}
+	if (!QuestFlagOk (pChar, pQuest)) {
+		SendResult (pChar, QUESTRESULT_NG, 0, "この依頼は、いまは受けられません。");
+		return;
+	}
 	wParty = GetPartyQuest (pChar, pChar);
 	if ((wParty != 0) && (wParty != pQuest->wID)) {
 		SendResult (pChar, QUESTRESULT_NG, 0, "仲間が別の依頼を受けているので、同じ依頼しか受けられません。");
@@ -1363,6 +1405,14 @@ static void DoAccept(PCHARINFO pChar, PCHARINFO pNpc, PQUESTINFO pQuest)
 			snprintf (szTmp, sizeof (szTmp), "近くにいる仲間が足りません（%d 人必要です）。", nNeed);
 			SendResult (pChar, QUESTRESULT_NG, 0, szTmp);
 			return;
+		}
+		/* 仲間の中に受ける条件の印に合わない人がいたら、みんな受けられない */
+		for (i = 0; i < aMember.size (); i ++) {
+			if (!QuestFlagOk (aMember[i], pQuest)) {
+				snprintf (szTmp, sizeof (szTmp), "%sさんは、この依頼をいまは受けられません。", aMember[i]->szName);
+				SendResult (pChar, QUESTRESULT_NG, 0, szTmp);
+				return;
+			}
 		}
 		for (i = 0; i < aMember.size (); i ++) {
 			PCHARINFO pTmp = aMember[i];

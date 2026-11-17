@@ -464,6 +464,10 @@ static const DATAFIELD s_aFieldTalkLine[] = {
 	FLDA(TALKLINEINFO, abyActNo,		"話した後に動かす数値の番号",	FT_U8ARR, BYTE, FF_PADMAX, s_pszNoteTalkNoNum),
 	FLDA(TALKLINEINFO, abyActOp,		"話した後の数値の動かし方",	FT_U8ARR, BYTE, 0, "abyActNo と同じ並び。0=○にする 1=○足す（255 で止まる）"),
 	FLDA(TALKLINEINFO, abyActVal,		"話した後の数値の値",	FT_U8ARR, BYTE, 0, "abyActNo と同じ並び。0〜255"),
+	FLD (TALKLINEINFO, wGiveItem,		"話した後に渡すアイテム",	FT_U16, 0, "item の番号（0=渡さない）。この行で話すたびに 1 つ渡す（回数は数えない）。一度きりにしたい時は、同じ行の awSetOn で印を立て、awNot に同じ印を入れる。持ち物がいっぱいなら預かり所へ、大事な物の印のある品は大事な物の欄へ。台詞のあとに「○○を手に入れました。」と知らせる"),
+	FLD (TALKLINEINFO, wQuestID,		"受けている依頼の条件",	FT_U16, 0, "quest の依頼番号（wID）。0=条件なし。0 以外なら、話した人がいまその依頼を受けていて、段が byQuestStepMin〜byQuestStepMax の時だけこの行に合う"),
+	FLD (TALKLINEINFO, byQuestStepMin,	"依頼の段の下限",		FT_U8, 0, "wQuestID が 0 以外の時。段は 0 から数える（quest の見えるNPC の byStepMin と同じ）"),
+	FLD (TALKLINEINFO, byQuestStepMax,	"依頼の段の上限",		FT_U8, 0, "wQuestID が 0 以外の時。255=どの段でも（quest の見えるNPC の byStepMax と同じ）。省くと 255"),
 };
 
 /* 依頼情報（ギルドの仕事依頼。npcs・goals は項目表の外で扱う） */
@@ -489,6 +493,8 @@ static const DATAFIELD s_aFieldQuest[] = {
 	FLD (QUESTINFO, byDoneNumNo,		"完了した時に動かす数値の番号",	FT_U8, 0, "キャラのフラグの数値の番号（0〜127）。255=無し（足す時に省くと無し）"),
 	FLD (QUESTINFO, byDoneNumOp,		"完了した時の数値の動かし方",	FT_U8, 0, "0=○にする 1=○足す（255 で止まる）。番号が無しなら使わない"),
 	FLD (QUESTINFO, byDoneNumVal,		"完了した時の数値の値",	FT_U8, 0, "0〜255。番号が無しなら使わない"),
+	FLD (QUESTINFO, wNeedFlag,			"受ける条件の印",		FT_U16, 0, "キャラのフラグの印の番号（0〜1023）。この印が立っている人だけ、ギルドの一覧に出て受けられる。65535=条件なし（足す時に省くと条件なし）"),
+	FLD (QUESTINFO, wNotFlag,			"受けられなくなる印",	FT_U16, 0, "キャラのフラグの印の番号（0〜1023）。この印が立っている人は、ギルドの一覧に出ず受けられない。65535=条件なし（足す時に省くと条件なし）。すでに受けている人は続けられる"),
 };
 
 /* 依頼の見えるNPC（受けた人とそのパーティにだけ見える。話すと台詞が出る。台詞の中身はサーバーが送り、見えるNPC自体の台詞は "@q" 固定） */
@@ -967,7 +973,7 @@ static const char *s_apszKindNote[] = {
 	"番号 0 は「なし」として使われる。detail は byType ごとに項目が違う（スキーマの detailByType を参照）。szMsg は使った時のメッセージ",
 	"町の作り手NPC（料理人など）。NPC の台詞を \"@cNN\"（NN は作り手の番号 2 桁、例 @c00）にすると、その NPC に話しかけた時に作り手の画面が開く。削除は byState=0（空き枠になり、次に足す時に使い回す）。ファイルが無い時は 0 件",
 	"作り手に頼んで材料からアイテムを作ってもらうレシピ。byMaker は maker の番号、wItem・awMatItem は item の番号。材料は持ち物と預かり所の両方から使い、できた物は持ち物へ（いっぱいなら預かり所へ）。削除は byState=0",
-	"ギルドの仕事依頼（読み書き。削除なし。止めるのは byState=0）。NPC の台詞を \"@gNN\"（NN=byGuild）にするとギルドの人になり、話すと一覧が開く。受けた人とそのパーティにだけ「見えるNPC」（npcs。ポータル・宝箱・人）が出て、段（0 から）と旗（1〜16）で出し分ける。goals は段ごとの「いまの目的」（文字列の配列）、npcs は配列で丸ごと置き換え。出口は既存のマップのイベントで作る（データだけ）。足す時の依頼番号（wID）は自動。完了した時にキャラのフラグを動かせる（awDoneSetFlag・byDoneNumNo・byDoneNumOp・byDoneNumVal。古い依頼は「無し」）",
+	"ギルドの仕事依頼（読み書き。削除なし。止めるのは byState=0）。NPC の台詞を \"@gNN\"（NN=byGuild）にするとギルドの人になり、話すと一覧が開く。受けた人とそのパーティにだけ「見えるNPC」（npcs。ポータル・宝箱・人）が出て、段（0 から）と旗（1〜16）で出し分ける。goals は段ごとの「いまの目的」（文字列の配列）、npcs は配列で丸ごと置き換え。出口は既存のマップのイベントで作る（データだけ）。足す時の依頼番号（wID）は自動。完了した時にキャラのフラグを動かせる（awDoneSetFlag・byDoneNumNo・byDoneNumOp・byDoneNumVal。古い依頼は「無し」）。受ける条件の印は wNeedFlag・wNotFlag（65535=条件なし。合わない人には一覧に出ず受けられない）",
 	"キャラごとにずっと残る「フラグ」（印 1024 個=ON/OFF の 0〜1023、数値 128 個=0〜255 の 0〜127）に付ける名前の表（読み書き）。名前は管理用でプレイヤーには出ない。byKind が 0=印・1=数値、wNo が番号で、同じ組は 1 件まで。削除は byState=0（枠だけ残り、足し直す時はその枠の byState を 1 に戻す）。ファイルが無い時は 0 件。キャラのフラグの中身は char の読み出しの flags で読める（読むだけ）。番号の割り振りの目安: 印は 1〜199 本筋・200〜599 地域・600〜899 お使い・900〜1023 予備",
 	"会話データ（読み書き）。NPC の台詞を \"@tNNN\"（NNN=wID。例 @t012）にすると、話しかけた人のフラグ（印・数値）とレベルで lines（最大 16 行）から 1 行を選び、その人にだけ台詞を出す（台詞はクライアントへ送らない）。選び方: 条件（立っている必要のある印 awNeed 4・立っていてはいけない印 awNot 4・数値の条件 2・レベル下限上限）に全部合う行のうち byRank が一番小さい行、同じ順位が複数ならくじ。合う行が無ければ「……」。話した後に印を立てる・消す・数値を動かす。lines は配列で丸ごと置き換え。削除は byState=0（枠だけ残り、足し直す時はその枠の byState を 1 に戻す）。ファイルが無い時は 0 件",
 	"プレイヤーと NPC（敵・町の人・発生元など）の全キャラ。番号（id）はキャラのテーブル番号で再起動で変わることがある。NPC は npcId（変わらない番号）で指す。isPlayer でプレイヤーか分かる。書き換えられるのは保存される NPC だけ（プレイヤー・発生した敵は不可）。足す時は dwMapID・dwX・dwY が要る。消す時は変更に {\"deleted\": true}。アカウント名・パスワード・IP は出さない",
@@ -1657,6 +1663,7 @@ static void TalkLineInit(TALKLINEINFO *pLine)
 	for (int i = 0; i < MAX_TALKACT; i ++) {
 		pLine->abyActNo[i] = FLAG_NONUM;
 	}
+	pLine->byQuestStepMax = QUESTNPC_NOSTEP;		/* 依頼の段の上限は「どの段でも」から */
 }
 
 /* 会話セット 1 件（lines は使っている行だけ） */
@@ -4046,6 +4053,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 					Info.awDoneSetFlag[k] = FLAG_NOBIT;
 				}
 				Info.byDoneNumNo = FLAG_NONUM;
+				Info.wNeedFlag = FLAG_NOBIT;
+				Info.wNotFlag = FLAG_NOBIT;
 			}
 			if (!CheckKnownKeys(chg, s_aFieldQuest, COUNTOF(s_aFieldQuest), apszQuestExtra, strErr)) {
 				goto Exit;
@@ -4117,6 +4126,10 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 					strErr = "awDoneSetFlag[" + JsonNum(k) + "] は印の番号（0〜" + JsonNum(MAX_FLAGBIT - 1) + "）か 65535（無し）で指定してください";
 					goto Exit;
 				}
+			}
+			if ((Info.wNeedFlag >= MAX_FLAGBIT && Info.wNeedFlag != FLAG_NOBIT) || (Info.wNotFlag >= MAX_FLAGBIT && Info.wNotFlag != FLAG_NOBIT)) {
+				strErr = "wNeedFlag・wNotFlag は印の番号（0〜" + JsonNum(MAX_FLAGBIT - 1) + "）か 65535（条件なし）で指定してください";
+				goto Exit;
 			}
 			if (Info.byDoneNumNo >= MAX_FLAGNUM && Info.byDoneNumNo != FLAG_NONUM) {
 				strErr = "byDoneNumNo は数値の番号（0〜" + JsonNum(MAX_FLAGNUM - 1) + "）か 255（無し）で指定してください";
@@ -4365,6 +4378,14 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 				std::string strName = "lines[" + JsonNum(k) + "].";
 				if (L.byLvMin != 0 && L.byLvMax != 0 && L.byLvMin > L.byLvMax) {
 					strErr = strName + "byLvMin（レベル下限）が byLvMax（レベル上限）より大きいです";
+					goto Exit;
+				}
+				if (L.wGiveItem != 0 && L.wGiveItem >= g_aItemInfo.GetSize()) {
+					strErr = strName + "wGiveItem は item の番号（0 は渡さない）で指定してください";
+					goto Exit;
+				}
+				if (L.wQuestID != 0 && L.byQuestStepMax != QUESTNPC_NOSTEP && L.byQuestStepMin > L.byQuestStepMax) {
+					strErr = strName + "byQuestStepMin（依頼の段の下限）が byQuestStepMax（上限）より大きいです";
 					goto Exit;
 				}
 				for (int j = 0; j < MAX_TALKNEED; j ++) {
