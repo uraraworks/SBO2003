@@ -556,7 +556,10 @@ BOOL MapSwapExamine(PCHARINFO pChar)
 			continue;			/* もう開けた人は何も起きない（ほかのイベントに任せる） */
 		}
 		/* 品を渡す（宝箱・会話データと同じ渡し方と知らせ）。受け取れない時は記録を立てず、同じ知らせだけ出る */
-		if ((pSwap->wGiveItem != 0) && !QuestTalkExchange (pChar, 0, pSwap->wGiveItem)) {
+		/* 知らせの白文字は、文の窓を送った後に流す（窓が開いたまま重ならないように）。失敗の知らせは窓が無いのでその場で送る */
+		QUESTNOTICEVEC vLater;
+		if ((pSwap->wGiveItem != 0) && !QuestTalkExchange (pChar, 0, pSwap->wGiveItem, &vLater)) {
+			QuestNoticeFlush (pChar, &vLater);
 			SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
 			return TRUE;
 		}
@@ -565,8 +568,10 @@ BOOL MapSwapExamine(PCHARINFO pChar)
 			SboTextCopy (szMsg, MAX_MAPSWAPMSG + 4, pSwap->szMsg);
 			ItemMsgAddWait (szMsg, sizeof (szMsg));
 			SendCmdMAPMSG (pChar->pID, szMsg);
+			QuestNoticeFlush (pChar, &vLater);
 		} else {
-			/* クライアントは返事が来るまで歩けないので、位置を送って待ちを解く */
+			/* クライアントは返事が来るまで歩けないので、位置を送って待ちを解く（窓は無いので知らせはそのまま流す） */
+			QuestNoticeFlush (pChar, &vLater);
 			SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
 		}
 		MapSwapSend (pChar, pMap, FALSE);		/* 記録が動いたので、差し替えを本人にだけ送り直す */
@@ -1121,24 +1126,47 @@ static const char *ItemName(WORD wItem)
 	return g_aItemInfo[wItem]->szName;
 }
 
+/* 品を渡す知らせの白文字を送る。pvLater があれば送らずに溜める（窓が先に開くよう、窓を送った後でまとめて送るため） */
+static void QuestNoticeSend(PCHARINFO pChar, QUESTNOTICEVEC *pvLater, const char *pszMsg)
+{
+	if (pvLater) {
+		pvLater->push_back (pszMsg);
+		return;
+	}
+	SendCmdSYSMSG (pChar->pID, (LPSTR)pszMsg, SPEECHCMD_BATTLE1);
+}
+
+/* 溜めた知らせを、溜めた順に送って空にする */
+void QuestNoticeFlush(PCHARINFO pChar, QUESTNOTICEVEC *pvLater)
+{
+	if (pvLater == NULL) {
+		return;
+	}
+	for (size_t i = 0; i < pvLater->size (); i ++) {
+		SendCmdSYSMSG (pChar->pID, (LPSTR)(*pvLater)[i].c_str (), SPEECHCMD_BATTLE1);
+	}
+	pvLater->clear ();
+}
+
 /* 会話データからアイテムを 1 つ渡して知らせる
-   持ち物へ、いっぱいなら預かり所へ（大事な物の印のある品は大事な物の欄へ入る）。渡せたら TRUE */
-BOOL QuestGiveItemNotice(PCHARINFO pChar, WORD wItem)
+   持ち物へ、いっぱいなら預かり所へ（大事な物の印のある品は大事な物の欄へ入る）。渡せたら TRUE。
+   pvLater があれば、知らせは送らずに溜める（セリフの窓の後に流すため） */
+BOOL QuestGiveItemNotice(PCHARINFO pChar, WORD wItem, QUESTNOTICEVEC *pvLater)
 {
 	BOOL bToLeave = FALSE;
 	char szTmp[256];
 
 	if (!GiveItem (pChar, wItem, &bToLeave)) {
-		SendCmdSYSMSG (pChar->pID, "持ち物がいっぱいで受け取れませんでした。", SPEECHCMD_BATTLE1);
+		QuestNoticeSend (pChar, pvLater, "持ち物がいっぱいで受け取れませんでした。");
 		return FALSE;
 	}
 	SendBagState (pChar);
 	SendCmdPLAYSOUND (pChar->pID, SOUND_PI52);
 	snprintf (szTmp, sizeof (szTmp), "%sを手に入れました。", ItemName (wItem));
-	SendCmdSYSMSG (pChar->pID, szTmp, SPEECHCMD_BATTLE1);
+	QuestNoticeSend (pChar, pvLater, szTmp);
 	if (bToLeave) {
 		snprintf (szTmp, sizeof (szTmp), "持ちきれないので、預かり所の使い魔が%sの預かり所へ運んでいきました", pChar->szName);
-		SendCmdSYSMSG (pChar->pID, szTmp, SPEECHCMD_BATTLE1);
+		QuestNoticeSend (pChar, pvLater, szTmp);
 	}
 	return TRUE;
 }
@@ -1235,21 +1263,22 @@ BOOL QuestCanGiveAfterTake(PCHARINFO pChar, WORD wGive, int nTakeKind)
 
 /* 会話の行のアイテムの動き（取り上げる → 渡す）。印・数値を動かしてよい時 TRUE
    順番：取り上げる品を持っているか → 渡す品を受け取れるか → 両方よければ取り上げて渡す。
-   どちらかがダメなら何も変えない（持っていない時は知らせも出さない。受け取れない時は今までと同じ知らせ） */
-BOOL QuestTalkExchange(PCHARINFO pChar, WORD wTake, WORD wGive)
+   どちらかがダメなら何も変えない（持っていない時は知らせも出さない。受け取れない時は今までと同じ知らせ）。
+   pvLater があれば、白文字の知らせは送らずに溜める（呼んだ側が窓を送った後に QuestNoticeFlush で送る） */
+BOOL QuestTalkExchange(PCHARINFO pChar, WORD wTake, WORD wGive, QUESTNOTICEVEC *pvLater)
 {
 	int nKind, nIdx = 0;
 	char szTmp[256];
 
 	if (wTake == 0) {
-		return (wGive == 0) || QuestGiveItemNotice (pChar, wGive);
+		return (wGive == 0) || QuestGiveItemNotice (pChar, wGive, pvLater);
 	}
 	nKind = QuestTakeFind (pChar, wTake, &nIdx);
 	if (nKind == QUESTTAKE_NONE) {
 		return FALSE;
 	}
 	if ((wGive != 0) && !QuestCanGiveAfterTake (pChar, wGive, nKind)) {
-		SendCmdSYSMSG (pChar->pID, "持ち物がいっぱいで受け取れませんでした。", SPEECHCMD_BATTLE1);
+		QuestNoticeSend (pChar, pvLater, "持ち物がいっぱいで受け取れませんでした。");
 		return FALSE;
 	}
 	if (nKind == QUESTTAKE_BAG) {
@@ -1259,9 +1288,9 @@ BOOL QuestTalkExchange(PCHARINFO pChar, WORD wTake, WORD wGive)
 	}
 	SendBagState (pChar);
 	snprintf (szTmp, sizeof (szTmp), "%sを渡しました。", ItemName (wTake));
-	SendCmdSYSMSG (pChar->pID, szTmp, SPEECHCMD_BATTLE1);
+	QuestNoticeSend (pChar, pvLater, szTmp);
 	if (wGive != 0) {
-		QuestGiveItemNotice (pChar, wGive);
+		QuestGiveItemNotice (pChar, wGive, pvLater);
 	}
 	return TRUE;
 }

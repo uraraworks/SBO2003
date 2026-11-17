@@ -7,6 +7,12 @@
 
 #pragma once
 
+#include <string>
+#include <vector>
+
+/* 品を渡す知らせ（白文字）を、窓を送った後まで溜めておく入れ物 */
+typedef std::vector<std::string> QUESTNOTICEVEC;
+
 /* 依頼の見えるNPCか */
 inline BOOL IsQuestNpc(PCHARINFO pChar)
 {
@@ -84,11 +90,12 @@ extern BOOL QuestIsRewarded(PCHARINFO pChar, WORD wQuestID);	/* 報酬をもう�
 extern void StoryTalk(PCHARINFO pChar, PCHARINFO pNpc);			/* 語り部（台詞 "@r"）に話しかけた（思い出の本の一覧を送る） */
 extern BOOL StoryIsNpc(PCHARINFO pNpc);							/* 台詞が "@r" で始まるか */
 extern BOOL QuestFlagOk(PCHARINFO pChar, const QUESTINFO *pQuest);	/* 依頼を受ける条件の印（wNeedFlag・wNotFlag）に合うか */
-extern BOOL QuestGiveItemNotice(PCHARINFO pChar, WORD wItem);	/* 会話データからアイテムを 1 つ渡して知らせる（持ち物がいっぱいなら預かり所へ。渡せたら TRUE） */
+extern BOOL QuestGiveItemNotice(PCHARINFO pChar, WORD wItem, QUESTNOTICEVEC *pvLater = NULL);	/* 会話データからアイテムを 1 つ渡して知らせる（持ち物がいっぱいなら預かり所へ。渡せたら TRUE。pvLater があれば知らせは送らず溜める） */
+extern void QuestNoticeFlush(PCHARINFO pChar, QUESTNOTICEVEC *pvLater);	/* 溜めた知らせを、溜めた順に送って空にする（セリフの窓を送った直後に呼ぶ） */
 enum { QUESTTAKE_NONE = 0, QUESTTAKE_BAG, QUESTTAKE_IMPORTANT };	/* QuestTakeFind の戻り値（持っていない・手持ち・大事な物の欄） */
 extern int  QuestTakeFind(PCHARINFO pChar, WORD wItem, int *pnIdx);	/* 会話で取り上げる品を探す（手持ち→大事な物の欄。装備中は除く） */
 extern BOOL QuestCanGiveAfterTake(PCHARINFO pChar, WORD wGive, int nTakeKind);	/* nTakeKind の品を 1 つ取り上げた後で wGive を受け取れるか */
-extern BOOL QuestTalkExchange(PCHARINFO pChar, WORD wTake, WORD wGive);	/* 会話の行の取り上げる→渡す（印・数値を動かしてよい時 TRUE） */
+extern BOOL QuestTalkExchange(PCHARINFO pChar, WORD wTake, WORD wGive, QUESTNOTICEVEC *pvLater = NULL);	/* 会話の行の取り上げる→渡す（印・数値を動かしてよい時 TRUE。pvLater があれば知らせは送らず溜める） */
 extern BOOL QuestIsQuestItem(WORD wItem);						/* 依頼の品か（預けられない・売れない・捨てられない） */
 extern int  QuestCountItemAll(PCHARINFO pChar, WORD wItem);		/* 持ち物（大事な物の欄を含む）と預かり所にある数（テスト用） */
 extern BOOL QuestTakeItemOne(PCHARINFO pChar, WORD wItem);			/* 1 個取り除く（大事な物の欄→持ち物→預かり所の順。テスト用） */
