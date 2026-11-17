@@ -1145,7 +1145,8 @@ static void TestTownWarp(const std::vector<int> &aLogin)
 	DWORD dwMapBack = pPC->dwMapID, dwXBack = pPC->dwX, dwYBack = pPC->dwY;
 	BYTE byLevelBack = pPC->byLevel, byDirBack = pPC->byDirection, abyMagicBack[MAX_USEMAGIC];
 	memcpy(abyMagicBack, pPC->abyMagic, sizeof(abyMagicBack));
-	struct { BYTE byLevel; BYTE bySel; } aCase[] = { {15, 0}, {15, 1}, {15, 3}, {15, 4}, {10, 3}, {1, 1}, {5, 1} };
+	/* byOwner: 0=置いた人はその場 1=置いた人が先に別のマップへ行く 2=置いた人がログアウトする */
+	struct { BYTE byLevel; BYTE bySel; BYTE byOwner; } aCase[] = { {15, 0, 0}, {15, 1, 0}, {15, 3, 0}, {15, 4, 0}, {10, 3, 0}, {1, 1, 0}, {5, 1, 0}, {15, 1, 1}, {15, 1, 2} };
 	/* 始まりの町で、右に2マス・下に1マス空いている所を探す */
 	DWORD dwCastX = 0, dwCastY = 0;
 	for (DWORD y = 1; y + 2 < (DWORD)g_aMapInfo[0]->nCY && !dwCastX; y ++) {
@@ -1190,6 +1191,29 @@ static void TestTownWarp(const std::vector<int> &aLogin)
 		if (pFloor == NULL) {
 			printf("townwarp cast lv=%d sel=%d no floor map=%u\n", aCase[c].byLevel, aCase[c].bySel, pPC->dwMapID);
 			continue;
+		}
+		/* 置いた人が先に床に入って別のマップへ行った・ログアウトした */
+		DWORD pIDBack = pPC->pID;
+		if (aCase[c].byOwner == 1) {
+			DeleteTblNoPC((int)pPC->dwTblID);
+			pPC->dwMapID = 14;
+			AddTblNoPC((int)pPC->dwTblID);
+		} else if (aCase[c].byOwner == 2) {
+			pPC->pID = 0;
+		}
+		if (aCase[c].byOwner) {
+			/* 消える時は 1 秒後なので、少し長めに回す */
+			for (int k = 0; k < 6 && pFloor->pProc; k ++) {
+				s_dwFakeNow += 300;
+				g_dwTime = s_dwFakeNow;
+				((PCCharProcBase)pFloor->pProc)->Proc(s_dwFakeNow);
+			}
+			BOOL bGone = (pFloor->pProc == NULL);
+			pPC->pID = pIDBack;
+			printf("townwarp owner=%d lv=%d sel=%d floor gone=%d\n", aCase[c].byOwner, aCase[c].byLevel, aCase[c].bySel, bGone);
+			if (bGone) {
+				continue;
+			}
 		}
 		/* 仲間が床へ歩いて乗る */
 		DeleteTblNoPC((int)pFriend->dwTblID);

@@ -2317,6 +2317,7 @@ typedef struct _CHARINFO {
 	DWORD		adwTownWarpMapID[MAX_TOWNWARP];						/* 行き先帳の町のマップID */
 	BYTE		byTownWarpSel;										/* 町転送で選んだ行き先(0=復活位置。保存しない) */
 	BYTE		byTownWarpDest;										/* 町転送の床：行き先が決まっている(1)（保存しない） */
+	DWORD		dwTownWarpOwnerPID;									/* 町転送の床：置いた人のpID(サーバー。置いた人が別のマップへ行っても床を残し、ログアウトしたら消すため) */
 	char		chAttrFire;											/* 属性(火) */
 	char		chAttrWater;										/* 属性(水) */
 	char		chAttrWind;											/* 属性(風) */
