@@ -92,6 +92,7 @@ void	TailMoveChain				(PCHARINFO);									/* ついてきているキャラを�
 void	FloorDamageOnStep			(PCHARINFO);									/* ダメージ床に1歩入った時の処理 */
 BOOL	IsDamageFloor				(PMAPINFO, int, int);							/* ダメージ床のマスか */
 BOOL	IsAvoidDamageFloor			(PCHARINFO, PMAPINFO, int, int);				/* 敵・傭兵が自分からは入らないダメージ床か */
+BOOL	IsNoFloorDamageChar			(PCHARINFO);									/* ダメージ床が効かない敵か */
 BOOL	CheckCharX					(PCHARINFO pChar, DWORD dwX, DWORD dwXTarget);	/* キャラサイズに合わせた当たり判定(横) */
 int		GetCharX					(PCHARINFO, DWORD, DWORD, BOOL);				/* キャラサイズに合わせた距離を求める(横) */
 int		GetCharDistanceX			(PCHARINFO, PCHARINFO);							/* キャラサイズに合わせた距離を求める(横) */
@@ -4157,13 +4158,40 @@ BOOL IsDamageFloor(PMAPINFO pMap, int x, int y)
 }
 
 /* ========================================================================= */
+/* 関数名：IsNoFloorDamageChar												 */
+/* 内容：ダメージ床が効かない敵か（ステータステンプレートの byNoFloorDamage） */
+/*		 発生元から出た敵はテンプレートを持たないので、発生元のものを見る	 */
+/* ========================================================================= */
+BOOL IsNoFloorDamageChar(PCHARINFO pChar)
+{
+	DWORD dwStTmp;
+
+	if (pChar->byNpcType == NPCTYPE_INIT) {
+		return FALSE;
+	}
+	dwStTmp = pChar->dwStTmplateID;
+	if ((dwStTmp == (DWORD)-1) && (pChar->dwParentTblID != (DWORD)-1) &&
+		(pChar->dwParentTblID < (DWORD)g_aCharInfo.GetSize ()) && g_aCharInfo[pChar->dwParentTblID]) {
+		dwStTmp = g_aCharInfo[pChar->dwParentTblID]->dwStTmplateID;
+	}
+	if ((dwStTmp == (DWORD)-1) || (dwStTmp >= (DWORD)g_aStTmpInfo.GetSize ())) {
+		return FALSE;
+	}
+	return (g_aStTmpInfo[dwStTmp]->byNoFloorDamage != 0);
+}
+
+/* ========================================================================= */
 /* 関数名：IsAvoidDamageFloor												 */
 /* 内容：敵・傭兵が自分から歩く時に、よけるダメージ床か						 */
 /*		 もうダメージ床の上にいる時は、出られなくならないように、よけない	 */
+/*		 ダメージ床が効かない敵（ボスなど）は、よけずに素通りする			 */
 /* ========================================================================= */
 BOOL IsAvoidDamageFloor(PCHARINFO pChar, PMAPINFO pMap, int x, int y)
 {
 	if (IsDamageFloor (pMap, x, y) == FALSE) {
+		return FALSE;
+	}
+	if (IsNoFloorDamageChar (pChar)) {
 		return FALSE;
 	}
 	return (IsDamageFloor (pMap, (int)pChar->dwX, (int)pChar->dwY) == FALSE);
@@ -4195,6 +4223,10 @@ void FloorDamageOnStep(PCHARINFO pChar)
 		return;
 	}
 	if ((pChar->wHP == 0) || (pChar->byCharState == CHARSTATE_DEAD)) {
+		return;
+	}
+	/* ダメージ床が効かない敵（ボスなど）は、HPも減らず毒にもならない */
+	if (IsNoFloorDamageChar (pChar)) {
 		return;
 	}
 	nMapNo = GetMapNo (pChar->dwMapID);

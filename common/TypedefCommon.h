@@ -2564,6 +2564,7 @@ typedef struct _STATUSTEMPLATEINFO {
 	DWORD		dwGold;												/* 所持金 */
 	DWORD		dwExp;												/* 経験値 */
 	BYTE		byStatusResist;										/* 毒・眠りの効きにくさ(%、100で効かない) */
+	BYTE		byNoFloorDamage;									/* ダメージ床が効かない(1)。毒沼・溶岩でHPが減らず毒にもならず、よけずに素通りする（ボス向け） */
 } STATUSTEMPLATEINFO, *PSTATUSTEMPLATEINFO;
 
 /* キャラ追加通知 */
