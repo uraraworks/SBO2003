@@ -1972,6 +1972,9 @@ void TimerProc(void)
 		}
 	}
 
+	/* メッセージ窓が閉じていれば、窓の間に溜めた白文字を流す */
+	SysMsgPendFlush (FALSE);
+
 	/* メッセージ */
 	nCount = g_WndInfo.GetSize ();
 	if (nCount) {

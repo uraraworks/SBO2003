@@ -1175,7 +1175,7 @@ quest cond need off list=-1 accept=0 | on list=0 accept=3
 quest cond not on list=-1 accept=0 | off list=0 accept=3
 quest cond reload need=0 not=1023 q2=65535,65535
 flagtalk quest cond none=1 q2s0=1 q2s1=0 q2s2=0 q2s3=1 q3s1=1 any s200=0
-talk give first item+=1 flag=1 talkmsg=1 sysmsg=1 second item+=0 sysmsg=0 quest item+=0 flag=0 full item+=1 leave=0
+talk give first item+=1 flag=1 talkmsg=1 sysmsg=1 order_window_first=1 second item+=0 sysmsg=0 quest item+=0 flag=0 full item+=1 leave=0
 talk take ok ticket-1 prize+1 flag=1 num=1 sysmsg=2 talkmsg=1 none prize+0 flag=0 num=0 sysmsg=0 talkmsg=1 equ prize+0 ticket=1 flag=0 equ2 slot0=1 slot1=0 equ=0 order bag=0 imp=1 full ticket=1 prize=0 flag=0 num=0 sysmsg=1 talkmsg=1
 talk ask first talkmsg=1 tail=1 flag=0 num=0 item+0 pend=1 | yes flag=1 num=1 item+1 pend=0 again flag=1 num=1 item+0
 talk ask no talkmsg=1 msg=1 flag=0 num=0 item+0 pend=0 default msg=1
@@ -1603,6 +1603,7 @@ mapswap send mapinfo swapcount_in_info=0 a=1 b=0
 mapswap send adminflag a=1 b=0 flag=1
 mapswap send viewall admin=1
 mapswap send api rewrite(ids reassigned)=1 changed a=2 b=2
+mapswap open order_window_first=1
 mapswap open item+=1 bit=1 flag7=0 swap=1 msg=1 sys=1 b_swap=0 parts_a_open=1 b_closed=1
 mapswap open again item+=0 swap=0 bit=1
 mapswap open full item+=0 bit=0 sys=1 msg=0 swap=0 parts_closed=1

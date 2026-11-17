@@ -9,6 +9,7 @@
 #include "stdafx.h"
 #include "common/BowFlight.h"
 #include <string>
+#include <vector>
 #include "SboCliRecvCmd.h"
 #include "../Common/Info/InfoJob.h"
 #include "../Common/Info/SubGame/InfoSubGameBase.h"
@@ -5842,6 +5843,43 @@ void RecvDataProcMAPMSGREQ(PBYTE pData, DWORD dwDataSize)
 	}
 }
 
+/* メッセージ窓（セリフ・文の窓）が開いている間に来た戦闘関連の白文字は、ここへ溜めて、窓を閉じてから流す */
+static std::vector<std::string> s_vSysMsgPend;
+
+/* 白文字を溜めておく時か（セリフ・文の窓が開いていて、お店・作り手の窓の最中ではない） */
+static BOOL SysMsgPendNeed(void)
+{
+	if ((g_nProcShopID >= 0) || (g_nProcMakerID >= 0)) {
+		return FALSE;
+	}
+	for (int i = 0; i < g_WndInfo.GetSize (); i ++) {
+		if (g_WndInfo[i]->nType == WNDTYPE_MSG) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* 溜めた白文字を、溜めた順に流す。毎回の処理から呼ぶ（bForce=TRUE なら窓が開いていても流す）。
+   ゲーム画面でなくなった（切断・ログイン画面へ戻った）時は、流しても意味がないので捨てる */
+void SysMsgPendFlush(BOOL bForce)
+{
+	if (s_vSysMsgPend.empty ()) {
+		return;
+	}
+	if (!bForce && SysMsgPendNeed ()) {
+		return;
+	}
+	std::vector<std::string> vTmp;
+	vTmp.swap (s_vSysMsgPend);
+	if (g_byGameState < GAMESTATE_MOVE) {
+		return;
+	}
+	for (size_t i = 0; i < vTmp.size (); i ++) {
+		AddSysMsg ((LPSTR)vTmp[i].c_str (), RGB (255, 255, 255));
+	}
+}
+
 /* ========================================================================= */
 /* 関数名：RecvDataProcSYSMSG												 */
 /* 内容：受信データ処理(システムメッセージ)									 */
@@ -5861,7 +5899,12 @@ void RecvDataProcSYSMSG(PBYTE pData, DWORD dwDataSize)
 
 	switch (pPara->byType) {
 	case SPEECHCMD_BATTLE1:	/* 戦闘関連(ログ保存しない) */
-		AddSysMsg (pszTmp, RGB (255, 255, 255));
+		/* セリフ・文の窓が開いている間は、重ならないよう溜めて、窓を閉じてから流す */
+		if (SysMsgPendNeed ()) {
+			s_vSysMsgPend.push_back (pszTmp);
+		} else {
+			AddSysMsg (pszTmp, RGB (255, 255, 255));
+		}
 		break;
 
 	case SPEECHCMD_SCREEN:	/* 画面内放送 */
