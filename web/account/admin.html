@@ -12,7 +12,7 @@
 	  ・復旧の承認   … アカウント復旧の申請を承認・却下する（前の recover-admin.html と同じ）
 	  ・ご意見箱     … /feedback に届いた投稿を全部見て、返事・対応済み・隠す・消すをする
 	  ・更新履歴     … /changes に出す「何が変わったか」を足す・直す・公開/非公開・消す（API は server/node/sbosvr_changes.js）
-	  ・リサイクル   … リサイクルボックス（台詞 @d の NPC の共有の箱）の中身と、誰がいつ何を入れた・もらったかの記録を見る（読むだけ。API は /api/admin/data/recycle。仕様は docs/recycle.md）
+	  ・リサイクル   … リサイクルボックス（マップに置いた共有の箱）の中身と、誰がいつ何を入れた・もらったかの記録を見る（読むだけ。API は /api/admin/data/recycle。仕様は docs/recycle.md）
 	  ・AI連携       … AI（Claude Code など）から設定データを読み書きするキーの発行・取り消しと、変更履歴・元に戻す
 	  ・マップ資料   … マップごとの全体図と NPC・敵・お店・イベントの資料を zip で書き出す（admin-mapdoc.js）
 	  ・パーツ図鑑   … マップパーツに名前・タグ・説明を付ける・組み合わせの見本を作る（admin-design.js）
@@ -496,7 +496,7 @@
 	.mv-swaplist:empty { display: none; }
 	.mv-swrow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
 	.mv-swrow.sel { border-color: var(--accent); }
-	.mv-sw-chest[hidden], .mv-sw-flag[hidden] { display: none; }
+	.mv-sw-chest[hidden], .mv-sw-flag[hidden], .mv-sw-recycle[hidden] { display: none; }
 	.mv-snaplist { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
 	.mv-snap { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; }
 	.mv-snap b { min-width: 8em; }
@@ -807,8 +807,8 @@
 	<!-- リサイクルボックス（読むだけ。仕様は docs/recycle.md） -->
 	<section id="tab-recycle" hidden>
 		<p class="sub-text">
-			台詞が <code>@d</code> の NPC の「リサイクルボックス」（お金を取らないおすそわけの共有の箱）です。
-			箱ごとの中身と、誰がいつ何を入れた・もらったかの記録（新しいほうから最大 1000 件）を見られます。ここでは変えられません。
+			マップに置いた「リサイクルボックス」（お金を取らないおすそわけの共有の箱。「マップ確認」の「印で変わるマス・宝箱・リサイクル箱」で置きます）です。
+			箱（箱番号・マップ・メモ）ごとの中身と、誰がいつ何を入れた・もらったかの記録（新しいほうから最大 1000 件）を見られます。ここでは変えられません。
 		</p>
 		<div class="row" style="justify-content:space-between">
 			<button type="button" class="sub" id="rc-reload">読み直す</button>
@@ -1016,10 +1016,10 @@
 				</p>
 			</details>
 			<details class="mv-sizebox" id="mv-swapbox" hidden>
-				<summary>印で変わるマス・宝箱</summary>
+				<summary>印で変わるマス・宝箱・リサイクル箱</summary>
 				<div class="mv-swaplist" id="mv-swap-list"></div>
 				<div class="mv-sizerow">
-					<label>種類<select id="mv-sw-kind"><option value="1">宝箱（調べると開く）</option><option value="0">印で変わる（物語のしかけ）</option></select></label>
+					<label>種類<select id="mv-sw-kind"><option value="1">宝箱（調べると開く）</option><option value="2">リサイクル箱（調べると窓が開く）</option><option value="0">印で変わる（物語のしかけ）</option></select></label>
 					<label>X<input type="number" id="mv-sw-x" min="0" max="254" style="width:5em"></label>
 					<label>Y<input type="number" id="mv-sw-y" min="0" max="254" style="width:5em"></label>
 					<label style="display:flex;align-items:center;gap:4px;margin:0;font-weight:normal"><input type="checkbox" id="mv-sw-pick">クリックでマスを選ぶ（パーツは置かない）</label>
@@ -1034,6 +1034,10 @@
 					<label>調べた時の文<input type="text" id="mv-sw-msg" maxlength="95" style="width:18em"></label>
 					<label>管理用のメモ<input type="text" id="mv-sw-memo" maxlength="63" placeholder="例：ルシー 港の倉庫の奥" style="width:16em"></label>
 				</div>
+				<div class="mv-sizerow mv-sw-recycle" hidden>
+					<label>箱番号<input type="number" id="mv-sw-rno" min="1" max="1024" placeholder="空なら自動" style="width:7em"></label>
+					<label>管理用のメモ<input type="text" id="mv-sw-rmemo" maxlength="63" placeholder="例：ルシー 広場の噴水の横" style="width:16em"></label>
+				</div>
 				<div class="mv-sizerow mv-sw-flag" hidden>
 					<label>印の番号（0〜1023）<input type="number" id="mv-sw-flag" min="0" max="1023" value="0" style="width:6em"></label>
 					<label>差し替える時<select id="mv-sw-cmp"><option value="0">印が立っている</option><option value="1">印が立っていない</option></select></label>
@@ -1047,7 +1051,9 @@
 					1 マップ 64 行まで。足す・直す・消すはすぐゲームに反映され（その人の画面だけが変わる）、「AI連携」の履歴から元に戻せます。
 					宝箱番号は全マップ通しで重ならない番号で、空にすると空き番号が自動で振られます（消した番号は使い回しません）。
 					宝箱は、目の前を調べた（Sキー）人がまだ開けていなければ、アイテムを渡して開いた絵に変わります。マップの絵（編集モードで置くパーツ）は閉じた宝箱のままにしておき、「差し替え後のパーツ」に開いた宝箱を入れます。
-					マップの上で、宝箱の行は緑・印で変わる行はオレンジの枠が出ます。
+					リサイクル箱は、目の前を調べた（Sキー）人の画面だけ「差し替え後のパーツ」（開いた絵）になり、「入れる・もらう・やめる」の窓が開きます（窓を閉じると閉じた絵に戻ります）。マップの絵は閉じた箱のままにしておきます。
+					箱番号（1〜1024）も全マップ通しで重ならず、空にすると自動で振られます（消した番号は使い回しません。宝箱番号とは別の番号です）。中身は箱番号ごとに別々で、「リサイクル」タブで見られます。
+					マップの上で、宝箱の行は緑・リサイクル箱は水色・印で変わる行はオレンジの枠が出ます。
 				</p>
 				<div class="mv-sizerow">
 					<button type="button" class="sub" id="mv-chest-load">全マップの宝箱の一覧を出す</button>
@@ -2490,14 +2496,14 @@
 			box.appendChild(el('p', 'sub-text', aRecycleLog.length ? '当てはまる記録はありません。' : 'まだ記録はありません。'));
 			return;
 		}
-		var table = recycleTable(['日時（日本時間）', '操作', 'アカウント', 'キャラ', '箱（NPC番号）', '品', '個数']);
+		var table = recycleTable(['日時（日本時間）', '操作', 'アカウント', 'キャラ', '箱番号', '品', '個数']);
 		rows.forEach(function (l) {
 			var tr = document.createElement('tr');
 			recycleCell(tr, l.date);
 			recycleCell(tr, l.action === 'take' ? 'もらった' : '入れた', l.action === 'take' ? 'rc-take' : 'rc-put');
 			recycleCell(tr, l.acc);
 			recycleCell(tr, l.name);
-			recycleCell(tr, String(l.npcId), 'num');
+			recycleCell(tr, String(l.boxNo), 'num');
 			recycleCell(tr, l.item || ('品 ' + l.itemId));
 			recycleCell(tr, String(l.count), 'num');
 			table.appendChild(tr);
@@ -2519,17 +2525,17 @@
 			var boxes = $('rc-boxes');
 			boxes.textContent = '';
 			if (!data.boxes.length) {
-				boxes.appendChild(el('p', 'sub-text', '箱はありません（NPC の台詞を @d にすると箱になります）。'));
+				boxes.appendChild(el('p', 'sub-text', '箱はありません（「マップ確認」の「印で変わるマス・宝箱・リサイクル箱」で種類を「リサイクル箱」にして置きます）。'));
 			}
 			data.boxes.forEach(function (b) {
 				var card = el('div', 'card');
 				var head = el('div', 'head');
-				head.appendChild(el('span', 'name', 'NPC番号 ' + b.npcId + (b.name ? '　' + b.name : '')));
+				head.appendChild(el('span', 'name', '箱番号 ' + b.boxNo + (b.memo ? '　' + b.memo : '')));
 				if (b.missing) {
-					head.appendChild(el('span', 'tag disabled', '箱の NPC がいません'));
+					head.appendChild(el('span', 'tag disabled', '箱がどのマップにもありません'));
 				}
 				card.appendChild(head);
-				card.appendChild(el('div', 'sub-text', (b.missing ? '中身だけ残っています' : (b.mapName || ('マップ ' + b.mapNo)) + '（' + b.x + ', ' + b.y + '）') +
+				card.appendChild(el('div', 'sub-text', (b.missing ? '中身だけ残っています' : ('00' + b.mapNo).slice(-3) + ' ' + (b.mapName || '（名前なし）') + '（' + b.x + ', ' + b.y + '）') +
 					'　' + b.kinds + ' 種類・合計 ' + b.total + ' 個'));
 				if (b.stock.length) {
 					var table = recycleTable(['品', '個数']);
