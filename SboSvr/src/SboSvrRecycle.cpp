@@ -5,10 +5,11 @@
 /* 作成日：		2026/11/17													 */
 /* ========================================================================= */
 /*
- * 仕様は docs/recycle.md。箱は台詞が "@d" のNPC。クライアントが話しかけると画面が開き、
- * 中身・入れる・もらうをサーバーへ頼む（CMD_RECYCLE*）。取引所（SboSvrMarket.cpp）と同じ作りで、
+ * 仕様は docs/recycle.md。箱はマップに置いた「印で変わるマス」の種類 MAPSWAPKIND_RECYCLE の行。
+ * 正面で S キーで調べると、サーバーがその人の画面だけ箱を開いた絵（wParts）にして窓を開かせる。
+ * 窓の中の 中身・入れる・もらう をサーバーへ頼む（CMD_RECYCLE*）。取引所（SboSvrMarket.cpp）と同じ作りで、
  * 頼みごとのたびにサーバーが「箱の近くにいるか」「手持ち・中身・今日の残りが合うか」を確かめる。
- * 中身は箱の NPC番号（dwNpcID）ごとに持つ。1 日にもらえる数はアカウントごと（日本時間の 0 時に戻る）。
+ * 中身は箱番号（wBoxNo。全マップ通し）ごとに持つ。1 日にもらえる数はアカウントごと（日本時間の 0 時に戻る）。
  * 誰がいつ何を入れた・もらったかは記録に残す（新しい RECYCLE_LOGMAX 件）。
  * 保存は SaveLoad/SboSvrSaveLoadRecycle.cpp（SBODATA/SboDataRecycle.dat）。
  */
@@ -44,7 +45,7 @@ static BOOL SameAcc(LPCSTR pszA, LPCSTR pszB)
 }
 
 /* 結果を送る（要求の欄はそのまま返す） */
-static void SendResult(PCHARINFO pChar, BYTE byCmd, BYTE byResult, DWORD dwNpcTblID, WORD wItemID, BYTE byCount)
+static void SendResult(PCHARINFO pChar, BYTE byCmd, BYTE byResult, WORD wItemID, BYTE byCount)
 {
 	CMDPARA_RECYCLE Para;
 
@@ -55,17 +56,16 @@ static void SendResult(PCHARINFO pChar, BYTE byCmd, BYTE byResult, DWORD dwNpcTb
 	Para.byLeft		= (BYTE)RecycleLeft (pChar->szAcc);
 	Para.wItemID	= wItemID;
 	Para.dwTblID	= pChar->dwTblID;
-	Para.dwNpcTblID	= dwNpcTblID;
 	svrSock.SendTo (pChar->pID, (LPBYTE)&Para, sizeof (Para), SENDTIMEOUT);
 }
 
 /* 箱の中身の欄を探す（無ければ -1） */
-static int FindStock(DWORD dwNpcID, WORD wItemID)
+static int FindStock(DWORD dwBoxNo, WORD wItemID)
 {
 	size_t i;
 
 	for (i = 0; i < g_aRecycleStock.size (); i ++) {
-		if ((g_aRecycleStock[i].dwNpcID == dwNpcID) && (g_aRecycleStock[i].wItemID == wItemID)) {
+		if ((g_aRecycleStock[i].dwBoxNo == dwBoxNo) && (g_aRecycleStock[i].wItemID == wItemID)) {
 			return (int)i;
 		}
 	}
@@ -99,7 +99,7 @@ static int FindDaily(LPCSTR pszAcc, BOOL bAdd)
 }
 
 /* 記録を足す（RECYCLE_LOGMAX 件を超えたら古いほうから捨てる） */
-static void AddLog(PCHARINFO pChar, PCHARINFO pNpc, BYTE byKind, WORD wItemID, BYTE byCount)
+static void AddLog(PCHARINFO pChar, DWORD dwBoxNo, BYTE byKind, WORD wItemID, BYTE byCount)
 {
 	RECYCLELOG Log;
 
@@ -107,7 +107,7 @@ static void AddLog(PCHARINFO pChar, PCHARINFO pNpc, BYTE byKind, WORD wItemID, B
 	Log.dwTime = RecycleNowSec ();
 	strncpy (Log.szAcc, pChar->szAcc, MAX_ACCNAME - 1);
 	strncpy (Log.szName, pChar->szName, MAX_CHARNAMEBUF - 1);
-	Log.dwNpcID = pNpc->dwNpcID;
+	Log.dwBoxNo = dwBoxNo;
 	Log.byKind = byKind;
 	Log.wItemID = wItemID;
 	Log.byCount = byCount;
@@ -181,22 +181,22 @@ int RecycleLeft(LPCSTR pszAcc)
 /* 関数名：RecycleKindCount / RecycleStockCount								 */
 /* 内容：箱に入っている種類の数／箱にあるその品の個数						 */
 /* ========================================================================= */
-int RecycleKindCount(DWORD dwNpcID)
+int RecycleKindCount(DWORD dwBoxNo)
 {
 	size_t i;
 	int nCount = 0;
 
 	for (i = 0; i < g_aRecycleStock.size (); i ++) {
-		if (g_aRecycleStock[i].dwNpcID == dwNpcID) {
+		if (g_aRecycleStock[i].dwBoxNo == dwBoxNo) {
 			nCount ++;
 		}
 	}
 	return nCount;
 }
 
-int RecycleStockCount(DWORD dwNpcID, WORD wItemID)
+int RecycleStockCount(DWORD dwBoxNo, WORD wItemID)
 {
-	int nNo = FindStock (dwNpcID, wItemID);
+	int nNo = FindStock (dwBoxNo, wItemID);
 
 	return (nNo < 0) ? 0 : g_aRecycleStock[nNo].byCount;
 }
@@ -213,65 +213,108 @@ void RecycleTrimLog(void)
 }
 
 /* ========================================================================= */
-/* 関数名：RecycleIsBox														 */
-/* 内容：箱（台詞が "@d"・NPC番号がある保存NPC）か							 */
+/* 関数名：RecycleFindRow													 */
+/* 内容：マップ pMap にある、箱番号 dwBoxNo のリサイクル箱の行を探す（無ければ NULL）*/
 /* ========================================================================= */
-BOOL RecycleIsBox(PCHARINFO pNpc)
+PMAPSWAP RecycleFindRow(PMAPINFO pMap, DWORD dwBoxNo)
 {
-	if ((pNpc == NULL) || (pNpc->szAcc[0] != 0) || (pNpc->byNpcType == NPCTYPE_INIT) ||
-			(pNpc->pszNpcSpeech == NULL) || (pNpc->dwNpcID == 0)) {
-		return FALSE;
+	int i;
+
+	if ((pMap == NULL) || (dwBoxNo == 0)) {
+		return NULL;
 	}
-	return (pNpc->pszNpcSpeech[0] == '@') && (pNpc->pszNpcSpeech[1] == 'd');
+	for (i = 0; i < pMap->bySwapCount && i < MAX_MAPSWAP; i ++) {
+		if ((pMap->aSwap[i].byKind == MAPSWAPKIND_RECYCLE) && (pMap->aSwap[i].wBoxNo == dwBoxNo)) {
+			return &pMap->aSwap[i];
+		}
+	}
+	return NULL;
 }
 
 /* ========================================================================= */
 /* 関数名：RecycleFindBox													 */
-/* 内容：話しかけた箱を探す（箱で、同じマップ・同じ空間で RECYCLE_RANGE マス以内）*/
+/* 内容：いま窓を開いている箱の行を探す（同じマップで、箱のマスから RECYCLE_RANGE */
+/*       マス以内にいる時だけ。違えば NULL）。3 マスは箱のマスから測る		 */
 /* ========================================================================= */
-PCHARINFO RecycleFindBox(PCHARINFO pChar, DWORD dwNpcTblID)
+PMAPSWAP RecycleFindBox(PCHARINFO pChar)
 {
-	PCHARINFO pNpc;
+	PMAPSWAP pSwap;
+	int nNo;
 
-	if ((dwNpcTblID >= (DWORD)g_aCharInfo.GetSize ()) || (pChar->szAcc[0] == 0)) {
+	if ((pChar == NULL) || (pChar->szAcc[0] == 0) || (pChar->wRecycleBox == 0)) {
 		return NULL;
 	}
-	pNpc = g_aCharInfo[dwNpcTblID];
-	if (!RecycleIsBox (pNpc)) {
+	nNo = GetMapNo (pChar->dwMapID);
+	if (nNo < 0) {
 		return NULL;
 	}
-	if ((pNpc->dwMapID != pChar->dwMapID) || !IsSameSpace (pChar, pNpc)) {
+	pSwap = RecycleFindRow (g_aMapInfo[nNo], pChar->wRecycleBox);
+	if (pSwap == NULL) {
 		return NULL;
 	}
-	if ((abs ((int)pChar->dwX - (int)pNpc->dwX) > RECYCLE_RANGE) ||
-			(abs ((int)pChar->dwY - (int)pNpc->dwY) > RECYCLE_RANGE)) {
+	if ((abs ((int)pChar->dwX - (int)pSwap->wX) > RECYCLE_RANGE) ||
+			(abs ((int)pChar->dwY - (int)pSwap->wY) > RECYCLE_RANGE)) {
 		return NULL;
 	}
-	return pNpc;
+	return pSwap;
+}
+
+/* ========================================================================= */
+/* 関数名：RecycleOpen														 */
+/* 内容：正面の箱を調べた：その人の画面だけ箱を開いた絵にして、窓を開かせる	 */
+/*       （窓を開く知らせは中身の一覧に byOpen=1 を付けて送る）				 */
+/* ========================================================================= */
+void RecycleOpen(PCHARINFO pChar, PMAPINFO pMap, PMAPSWAP pSwap)
+{
+	pChar->wRecycleBox = pSwap->wBoxNo;
+	MapSwapSend (pChar, pMap, FALSE);
+	/* クライアントは返事が来るまで歩けないので、位置を送って待ちを解く（窓が開いたあとはキーが窓へ行く） */
+	SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
+	RecycleList (pChar, TRUE);
+}
+
+/* ========================================================================= */
+/* 関数名：RecycleClose														 */
+/* 内容：窓を閉じた：箱を閉じた絵に戻す（開いていなければ何もしない）		 */
+/* ========================================================================= */
+void RecycleClose(PCHARINFO pChar)
+{
+	int nNo;
+
+	if ((pChar == NULL) || (pChar->wRecycleBox == 0)) {
+		return;
+	}
+	pChar->wRecycleBox = 0;
+	nNo = GetMapNo (pChar->dwMapID);
+	if ((nNo >= 0) && (pChar->pID != 0) && (pChar->byNpcType == NPCTYPE_INIT)) {
+		MapSwapSend (pChar, g_aMapInfo[nNo], FALSE);
+	}
 }
 
 /* ========================================================================= */
 /* 関数名：RecycleList														 */
 /* 内容：箱の中身（入れた順）と、今日あと何個もらえるかを送る				 */
+/*       bOpen=TRUE は、箱が開いた知らせ（要求なしで届く）					 */
 /* ========================================================================= */
-void RecycleList(PCHARINFO pChar, DWORD dwNpcTblID)
+void RecycleList(PCHARINFO pChar, BOOL bOpen)
 {
 	CMDPARA_RECYCLELIST Send;
-	PCHARINFO pNpc = RecycleFindBox (pChar, dwNpcTblID);
+	PMAPSWAP pBox = RecycleFindBox (pChar);
 	size_t i;
 	int nCount = 0;
 	DWORD dwSize;
 
-	if (pNpc == NULL) {
+	if (pBox == NULL) {
+		RecycleClose (pChar);
 		return;
 	}
 	ZeroMemory (&Send, sizeof (Send));
 	Send.byCmd			= CMD_RECYCLELIST;
 	Send.byLeft			= (BYTE)RecycleLeft (pChar->szAcc);
+	Send.byOpen			= bOpen ? 1 : 0;
 	Send.dwTblID		= pChar->dwTblID;
-	Send.dwNpcTblID		= dwNpcTblID;
 	for (i = 0; (i < g_aRecycleStock.size ()) && (nCount < RECYCLE_MAXKIND); i ++) {
-		if (g_aRecycleStock[i].dwNpcID != pNpc->dwNpcID) {
+		if (g_aRecycleStock[i].dwBoxNo != pBox->wBoxNo) {
 			continue;
 		}
 		Send.aEntry[nCount].wItemID	= g_aRecycleStock[i].wItemID;
@@ -288,25 +331,26 @@ void RecycleList(PCHARINFO pChar, DWORD dwNpcTblID)
 /* 関数名：RecyclePut														 */
 /* 内容：入れる（手持ちの wItemID を byCount 個。装備中の分は数えない）		 */
 /* ========================================================================= */
-void RecyclePut(PCHARINFO pChar, DWORD dwNpcTblID, WORD wItemID, BYTE byCount)
+void RecyclePut(PCHARINFO pChar, WORD wItemID, BYTE byCount)
 {
-	PCHARINFO pNpc = RecycleFindBox (pChar, dwNpcTblID);
+	PMAPSWAP pBox = RecycleFindBox (pChar);
 	PITEMINFO pItem;
 	std::vector<int> aSlot;
 	int i, nStock, nNow;
 
-	if (pNpc == NULL) {
-		SendResult (pChar, CMD_RECYCLEPUT, RECYCLERES_FAR, dwNpcTblID, wItemID, byCount);
+	if (pBox == NULL) {
+		RecycleClose (pChar);
+		SendResult (pChar, CMD_RECYCLEPUT, RECYCLERES_FAR, wItemID, byCount);
 		return;
 	}
 	/* 入れられる品か（手持ちにある・装備中でない・依頼の品や大事な物でない・取引できる） */
 	if ((wItemID == 0) || (wItemID >= (WORD)g_aItemInfo.GetSize ())) {
-		SendResult (pChar, CMD_RECYCLEPUT, RECYCLERES_NGITEM, dwNpcTblID, wItemID, byCount);
+		SendResult (pChar, CMD_RECYCLEPUT, RECYCLERES_NGITEM, wItemID, byCount);
 		return;
 	}
 	pItem = g_aItemInfo[wItemID];
 	if ((pItem == NULL) || (pItem->byFlg & ITEMFLG_TRADE) || IsImportantItem (wItemID) || QuestIsQuestItem (wItemID)) {
-		SendResult (pChar, CMD_RECYCLEPUT, RECYCLERES_NGITEM, dwNpcTblID, wItemID, byCount);
+		SendResult (pChar, CMD_RECYCLEPUT, RECYCLERES_NGITEM, wItemID, byCount);
 		return;
 	}
 	for (i = 0; i < MAX_MYITEM; i ++) {
@@ -315,22 +359,22 @@ void RecyclePut(PCHARINFO pChar, DWORD dwNpcTblID, WORD wItemID, BYTE byCount)
 		}
 	}
 	if (aSlot.empty ()) {
-		SendResult (pChar, CMD_RECYCLEPUT, RECYCLERES_NGITEM, dwNpcTblID, wItemID, byCount);
+		SendResult (pChar, CMD_RECYCLEPUT, RECYCLERES_NGITEM, wItemID, byCount);
 		return;
 	}
 	if ((byCount == 0) || ((int)aSlot.size () < (int)byCount)) {
-		SendResult (pChar, CMD_RECYCLEPUT, RECYCLERES_NOHAVE, dwNpcTblID, wItemID, byCount);
+		SendResult (pChar, CMD_RECYCLEPUT, RECYCLERES_NOHAVE, wItemID, byCount);
 		return;
 	}
 	/* 箱に入るか（20 種類・1 種類 255 個まで。同じ品は個数でまとめる） */
-	nStock = FindStock (pNpc->dwNpcID, wItemID);
-	if ((nStock < 0) && (RecycleKindCount (pNpc->dwNpcID) >= RECYCLE_MAXKIND)) {
-		SendResult (pChar, CMD_RECYCLEPUT, RECYCLERES_KINDFULL, dwNpcTblID, wItemID, byCount);
+	nStock = FindStock (pBox->wBoxNo, wItemID);
+	if ((nStock < 0) && (RecycleKindCount (pBox->wBoxNo) >= RECYCLE_MAXKIND)) {
+		SendResult (pChar, CMD_RECYCLEPUT, RECYCLERES_KINDFULL, wItemID, byCount);
 		return;
 	}
 	nNow = (nStock < 0) ? 0 : (int)g_aRecycleStock[nStock].byCount;
 	if (nNow + (int)byCount > RECYCLE_MAXCOUNT) {
-		SendResult (pChar, CMD_RECYCLEPUT, RECYCLERES_COUNTFULL, dwNpcTblID, wItemID, byCount);
+		SendResult (pChar, CMD_RECYCLEPUT, RECYCLERES_COUNTFULL, wItemID, byCount);
 		return;
 	}
 
@@ -341,16 +385,16 @@ void RecyclePut(PCHARINFO pChar, DWORD dwNpcTblID, WORD wItemID, BYTE byCount)
 	if (nStock < 0) {
 		RECYCLESTOCK Stock;
 		ZeroMemory (&Stock, sizeof (Stock));
-		Stock.dwNpcID = pNpc->dwNpcID;
+		Stock.dwBoxNo = pBox->wBoxNo;
 		Stock.wItemID = wItemID;
 		Stock.byCount = byCount;
 		g_aRecycleStock.push_back (Stock);
 	} else {
 		g_aRecycleStock[nStock].byCount = (BYTE)(nNow + (int)byCount);
 	}
-	AddLog (pChar, pNpc, RECYCLELOG_PUT, wItemID, byCount);
+	AddLog (pChar, pBox->wBoxNo, RECYCLELOG_PUT, wItemID, byCount);
 
-	SendResult (pChar, CMD_RECYCLEPUT, RECYCLERES_OK, dwNpcTblID, wItemID, byCount);
+	SendResult (pChar, CMD_RECYCLEPUT, RECYCLERES_OK, wItemID, byCount);
 	SendBagState (pChar);
 }
 
@@ -359,26 +403,27 @@ void RecyclePut(PCHARINFO pChar, DWORD dwNpcTblID, WORD wItemID, BYTE byCount)
 /* 内容：もらう（1 個。1 アカウント 1 日 RECYCLE_DAYLIMIT 個まで）			 */
 /*       自分が入れた品でももらえる（個数の上限には数える）					 */
 /* ========================================================================= */
-void RecycleTake(PCHARINFO pChar, DWORD dwNpcTblID, WORD wItemID)
+void RecycleTake(PCHARINFO pChar, WORD wItemID)
 {
-	PCHARINFO pNpc = RecycleFindBox (pChar, dwNpcTblID);
+	PMAPSWAP pBox = RecycleFindBox (pChar);
 	int nStock, nDaily;
 
-	if (pNpc == NULL) {
-		SendResult (pChar, CMD_RECYCLETAKE, RECYCLERES_FAR, dwNpcTblID, wItemID, 0);
+	if (pBox == NULL) {
+		RecycleClose (pChar);
+		SendResult (pChar, CMD_RECYCLETAKE, RECYCLERES_FAR, wItemID, 0);
 		return;
 	}
-	nStock = FindStock (pNpc->dwNpcID, wItemID);
+	nStock = FindStock (pBox->wBoxNo, wItemID);
 	if (nStock < 0) {
-		SendResult (pChar, CMD_RECYCLETAKE, RECYCLERES_EMPTY, dwNpcTblID, wItemID, 0);
+		SendResult (pChar, CMD_RECYCLETAKE, RECYCLERES_EMPTY, wItemID, 0);
 		return;
 	}
 	if (RecycleLeft (pChar->szAcc) <= 0) {
-		SendResult (pChar, CMD_RECYCLETAKE, RECYCLERES_DAILY, dwNpcTblID, wItemID, 0);
+		SendResult (pChar, CMD_RECYCLETAKE, RECYCLERES_DAILY, wItemID, 0);
 		return;
 	}
 	if (!CanAddCharItem (pChar->dwTblID, wItemID)) {
-		SendResult (pChar, CMD_RECYCLETAKE, RECYCLERES_ITEMFULL, dwNpcTblID, wItemID, 0);
+		SendResult (pChar, CMD_RECYCLETAKE, RECYCLERES_ITEMFULL, wItemID, 0);
 		return;
 	}
 
@@ -390,9 +435,9 @@ void RecycleTake(PCHARINFO pChar, DWORD dwNpcTblID, WORD wItemID)
 	}
 	nDaily = FindDaily (pChar->szAcc, TRUE);
 	g_aRecycleDaily[nDaily].byCount ++;
-	AddLog (pChar, pNpc, RECYCLELOG_TAKE, wItemID, 1);
+	AddLog (pChar, pBox->wBoxNo, RECYCLELOG_TAKE, wItemID, 1);
 
-	SendResult (pChar, CMD_RECYCLETAKE, RECYCLERES_OK, dwNpcTblID, wItemID, 1);
+	SendResult (pChar, CMD_RECYCLETAKE, RECYCLERES_OK, wItemID, 1);
 	SendBagState (pChar);
 }
 

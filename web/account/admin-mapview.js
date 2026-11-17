@@ -389,10 +389,11 @@
 			ctx.lineWidth = 2;
 			ctx.strokeRect(x * S + 1, y * S + 1, S - 2, S - 2);
 		}
-		/* 印で変わるマス：宝箱は緑、印で変わるはオレンジの枠 */
+		/* 印で変わるマス：宝箱は緑、リサイクル箱は水色、印で変わるはオレンジの枠 */
 		var sw = cur.swAt && cur.swAt[x + ',' + y];
 		if (sw) {
-			ctx.strokeStyle = sw.some(function (s) { return s.kind === 1; }) ? 'rgba(60,220,90,0.95)' : 'rgba(255,150,0,0.95)';
+			ctx.strokeStyle = sw.some(function (s) { return s.kind === 1; }) ? 'rgba(60,220,90,0.95)' :
+				sw.some(function (s) { return s.kind === 2; }) ? 'rgba(120,180,255,0.95)' : 'rgba(255,150,0,0.95)';
 			ctx.lineWidth = 2;
 			ctx.strokeRect(x * S + 4, y * S + 4, S - 8, S - 8);
 		}
@@ -1296,7 +1297,7 @@
 	}
 
 	/* ---------------------------------------------------------------- */
-	/* 印で変わるマス・宝箱（map の swaps。足す・直す・消すはすぐゲームに反映）	 */
+	/* 印で変わるマス・宝箱・リサイクル箱（map の swaps。足す・直す・消すはすぐゲームに反映）	 */
 	/* ---------------------------------------------------------------- */
 	var swSel = -1;					/* 直している行の番号（-1=新しい行） */
 
@@ -1311,15 +1312,19 @@
 		if (s.kind === 1) {
 			return '宝箱 ' + s.wChestNo + '（開くとパーツ ' + s.wParts + (s.wGiveItem ? '・アイテム ' + s.wGiveItem : '') + (s.szMemo ? '・' + s.szMemo : '') + '）';
 		}
+		if (s.kind === 2) {
+			return 'リサイクル箱 ' + s.wBoxNo + '（開くとパーツ ' + s.wParts + (s.szMemo ? '・' + s.szMemo : '') + '）';
+		}
 		return '印 ' + s.wFlag + (s.byCmp === 1 ? ' が立っていない人' : ' が立っている人') + 'はパーツ ' + s.wParts;
 	}
 	function swapPickOn() {
 		return bEdit && !!$('mv-sw-pick') && $('mv-sw-pick').checked;
 	}
 	function swapKindUi() {
-		var bChest = $('mv-sw-kind').value === '1';
-		document.querySelector('.mv-sw-chest').hidden = !bChest;
-		document.querySelector('.mv-sw-flag').hidden = bChest;
+		var kind = $('mv-sw-kind').value;
+		document.querySelector('.mv-sw-chest').hidden = kind !== '1';
+		document.querySelector('.mv-sw-recycle').hidden = kind !== '2';
+		document.querySelector('.mv-sw-flag').hidden = kind !== '0';
 	}
 	/* 入力欄に行の中身を入れる（null なら空にする） */
 	function swapForm(s) {
@@ -1332,7 +1337,9 @@
 			$('mv-sw-item').value = String(s.wGiveItem || 0);
 			$('mv-sw-no').value = s.kind === 1 ? String(s.wChestNo) : '';
 			$('mv-sw-msg').value = s.szMsg || '';
-			$('mv-sw-memo').value = s.szMemo || '';
+			$('mv-sw-memo').value = s.kind === 1 ? (s.szMemo || '') : '';
+			$('mv-sw-rno').value = s.kind === 2 ? String(s.wBoxNo) : '';
+			$('mv-sw-rmemo').value = s.kind === 2 ? (s.szMemo || '') : '';
 			$('mv-sw-flag').value = String(s.wFlag || 0);
 			$('mv-sw-cmp').value = String(s.byCmp || 0);
 		} else {
@@ -1340,6 +1347,8 @@
 			$('mv-sw-no').value = '';
 			$('mv-sw-msg').value = '';
 			$('mv-sw-memo').value = '';
+			$('mv-sw-rno').value = '';
+			$('mv-sw-rmemo').value = '';
 			$('mv-sw-flag').value = '0';
 			$('mv-sw-cmp').value = '0';
 		}
@@ -1371,7 +1380,7 @@
 			});
 			box.appendChild(row);
 		});
-		if (!(cur.swaps || []).length) box.appendChild(el('div', 'sub-text', 'このマップには、印で変わるマス・宝箱はまだありません。'));
+		if (!(cur.swaps || []).length) box.appendChild(el('div', 'sub-text', 'このマップには、印で変わるマス・宝箱・リサイクル箱はまだありません。'));
 	}
 	function scrollToCell(x, y) {
 		var sc = $('mv-scroll');
@@ -1392,6 +1401,9 @@
 			row.szMsg = $('mv-sw-msg').value;
 			row.szMemo = $('mv-sw-memo').value;
 			if ($('mv-sw-no').value !== '') row.wChestNo = Math.floor(Number($('mv-sw-no').value));
+		} else if (kind === 2) {
+			row.szMemo = $('mv-sw-rmemo').value;
+			if ($('mv-sw-rno').value !== '') row.wBoxNo = Math.floor(Number($('mv-sw-rno').value));
 		} else {
 			row.wFlag = Math.floor(Number($('mv-sw-flag').value));
 			row.byCmp = Number($('mv-sw-cmp').value);
@@ -1426,11 +1438,12 @@
 		if (swSel >= 0 && swaps[swSel]) {
 			/* 直す時は宝箱番号を変えない（番号を空にしたまま送ると新しい番号になってしまう） */
 			if (row.kind === 1 && row.wChestNo == null && swaps[swSel].kind === 1) row.wChestNo = swaps[swSel].wChestNo;
+			if (row.kind === 2 && row.wBoxNo == null && swaps[swSel].kind === 2) row.wBoxNo = swaps[swSel].wBoxNo;
 			swaps[swSel] = row;
 		} else {
 			swaps.push(row);
 		}
-		swapSend(swaps, '印で変わるマス・宝箱を保存しました（すぐゲームに反映されます）。');
+		swapSend(swaps, '印で変わるマス・宝箱・リサイクル箱を保存しました（すぐゲームに反映されます）。');
 	}
 	function swapDelete() {
 		if (!cur) return;
@@ -1440,7 +1453,7 @@
 			setMsg('その座標（' + x + ', ' + y + '）には行がありません。');
 			return;
 		}
-		if (!confirm('(' + x + ', ' + y + ') の行を消します。宝箱の番号は使い回しません。よろしいですか？')) return;
+		if (!confirm('(' + x + ', ' + y + ') の行を消します。宝箱・リサイクル箱の番号は使い回しません。よろしいですか？')) return;
 		swapSend(swaps, '消しました。');
 	}
 	/* 全マップの宝箱の一覧（クリックでそのマスへ） */

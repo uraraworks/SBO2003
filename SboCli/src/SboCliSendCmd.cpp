@@ -136,7 +136,7 @@ void SendCmdREQ_ATTACK		(DWORD dwTblID, BYTE byTurnLV);			/* 攻撃要求 */
 void SendCmdREQ_GUARD		(BOOL bGuard);							/* 構え(防御)の開始・終了 */
 void SendCmdRECIPEMAKE		(BYTE, WORD);							/* レシピで作ってもらう要求 */
 void SendCmdMARKET			(BYTE, BYTE, BYTE, WORD, DWORD, DWORD);	/* 取引所の要求 */
-void SendCmdRECYCLE			(BYTE, DWORD, WORD, BYTE);				/* リサイクルボックスの要求 */
+void SendCmdRECYCLE			(BYTE, WORD, BYTE);				/* リサイクルボックスの要求 */
 void SendCmdQUEST			(BYTE, WORD, DWORD);					/* ギルドの仕事依頼 */
 
 
@@ -3139,10 +3139,11 @@ void SendCmdMARKET(BYTE byCmd, BYTE byType, BYTE byNo, WORD wItemID, DWORD dwID,
 /* ========================================================================= */
 /* 関数名：	SendCmdRECYCLE													 */
 /* 内容：	コマンド送信(リサイクルボックスの要求)							 */
-/*			byCmd=CMD_RECYCLELIST/PUT/TAKE。使う欄は						 */
-/*			LIST=無し、PUT=wItemID+byCount、TAKE=wItemID（dwNpcTblID は全部）*/
+/*			byCmd=CMD_RECYCLELIST/PUT/TAKE/CLOSE。使う欄は					 */
+/*			LIST・CLOSE=無し、PUT=wItemID+byCount、TAKE=wItemID			 */
+/*			（どの箱かは、調べて開いた箱をサーバーが覚えている）				 */
 /* ========================================================================= */
-void SendCmdRECYCLE(BYTE byCmd, DWORD dwNpcTblID, WORD wItemID, BYTE byCount)
+void SendCmdRECYCLE(BYTE byCmd, WORD wItemID, BYTE byCount)
 {
 	CMDPARA_RECYCLE SendData;
 
@@ -3151,7 +3152,6 @@ void SendCmdRECYCLE(BYTE byCmd, DWORD dwNpcTblID, WORD wItemID, BYTE byCount)
 	SendData.byCount	= byCount;
 	SendData.wItemID	= wItemID;
 	SendData.dwTblID	= g_aCharInfo[g_nMyCharID]->dwTblID;
-	SendData.dwNpcTblID	= dwNpcTblID;
 
 	cliSock.Send ((PBYTE)&SendData, sizeof (SendData));
 }
@@ -3782,6 +3782,29 @@ void SendCmdADMINCHEST(BYTE byCmdSub, DWORD dwTblID, WORD wNo, WORD wValue)
 	pPara->wNo		= wNo;
 	pPara->wValue	= wValue;
 	cliSock.Send ((PBYTE)pPara, sizeof (CMDPARA_ADMINCHEST));
+	SAFE_DELETE (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdADMINSWAP													 */
+/* 内容：コマンド送信(管理者ウィンドウの「印で変わるマス・宝箱」)			 */
+/*       byCmdSub: ADMINSWAP_GET（今いるマップの表を取得）・				 */
+/*                 ADMINSWAP_ADD（pRow を足す）・ADMINSWAP_SET（wIndex の行を pRow に直す）・*/
+/*                 ADMINSWAP_DEL（wIndex の行を消す）。dwMapID は表を取ったマップ	 */
+/* ========================================================================= */
+void SendCmdADMINSWAP(BYTE byCmdSub, DWORD dwMapID, WORD wIndex, const ADMINSWAPROW *pRow)
+{
+	PCMDPARA_ADMINSWAP pPara = new CMDPARA_ADMINSWAP;
+
+	ZeroMemory (pPara, sizeof (CMDPARA_ADMINSWAP));
+	pPara->byCmd	= CMD_ADMINSWAP;
+	pPara->byCmdSub	= byCmdSub;
+	pPara->dwMapID	= dwMapID;
+	pPara->wIndex	= wIndex;
+	if (pRow) {
+		pPara->Row = *pRow;
+	}
+	cliSock.Send ((PBYTE)pPara, sizeof (CMDPARA_ADMINSWAP));
 	SAFE_DELETE (pPara);
 }
 

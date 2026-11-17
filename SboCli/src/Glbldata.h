@@ -236,7 +236,6 @@ extern int g_nMarketSelNo;												/* 取引所：出品する手持ちの位
 extern CMDPARA_RECYCLELIST g_RecycleList;								/* リサイクルボックスの中身（サーバーから届いたもの） */
 extern int g_nRecycleWait;												/* リサイクルボックス：返事待ちの種類(RECYCLEWAIT_*) */
 extern DWORD g_dwRecycleWaitTime;										/* リサイクルボックス：返事待ちを始めた時間 */
-extern DWORD g_dwRecycleNpcTblID;										/* リサイクルボックス：話しかけた箱のテーブルID */
 extern char g_szRecycleResult[256];										/* リサイクルボックス：結果のセリフ（次の一覧のセリフの頭に付ける） */
 extern int g_nRecycleLeft;												/* リサイクルボックス：今日あと何個もらえるか */
 extern RECYCLEHAND g_aRecycleHand[MAX_MYITEM];							/* リサイクルボックス：手持ちを品ごとにまとめた一覧 */

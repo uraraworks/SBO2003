@@ -24,6 +24,7 @@
 #include "SboCliDrawScreen.h"
 #include "SboAdminWindow.h"
 #include "AdminWindowOld/AdminDlgNpcRoute.h"
+#include "AdminWindowOld/AdminDlgMapSwap.h"
 #include "AdminWindowOld/AdminDlgQuestInfo.h"
 #include "AdminWindowOld/AdminDlgStoryInfo.h"
 #include "AdminWindowOld/AdminFlagTalk.h"
@@ -177,6 +178,7 @@ void	RecvDataProcRECYCLELIST				(PBYTE, DWORD);			/* 受信データ処理(リ�
 void	RecvDataProcRECYCLEPUT				(PBYTE, DWORD);			/* 受信データ処理(リサイクルボックスに入れた結果) */
 void	RecvDataProcRECYCLETAKE				(PBYTE, DWORD);			/* 受信データ処理(リサイクルボックスからもらった結果) */
 void	RecvDataProcADMINCHEST				(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのキャラの開けた宝箱の記録) */
+void	RecvDataProcADMINSWAP				(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウの「印で変わるマス・宝箱」) */
 /* ブラウザ版のアカウント関係（web/replace/SboCliWebAccount_web.cpp） */
 void	WebAccSaveToken						(LPCSTR);				/* 端末トークンをページへ渡す */
 void	WebAccOnTokenNG						(void);					/* 端末トークンが無効だった */
@@ -444,7 +446,9 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcRECYCLELIST,			/* CMD_RECYCLELIST */
 	RecvDataProcRECYCLEPUT,				/* CMD_RECYCLEPUT */
 	RecvDataProcRECYCLETAKE,			/* CMD_RECYCLETAKE */
+	NULL,								/* CMD_RECYCLECLOSE(クライアント→サーバーのみ) */
 	RecvDataProcADMINCHEST,				/* CMD_ADMINCHEST */
+	RecvDataProcADMINSWAP,				/* CMD_ADMINSWAP */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -4057,6 +4061,22 @@ void RecvDataProcADMINCHEST(PBYTE pData, DWORD dwDataSize)
 	}
 	pPara->szMsg[sizeof (pPara->szMsg) - 1] = 0;
 	AdminChestOnRecv (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINSWAP											 */
+/* 内容：受信データ処理(管理者ウィンドウの「印で変わるマス・宝箱」)			 */
+/*       マップの差し替え表・変更の結果が届く（画面が開いていれば更新する）	 */
+/* ========================================================================= */
+void RecvDataProcADMINSWAP(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINSWAP pPara = (PCMDPARA_ADMINSWAP)pData;
+
+	if (dwDataSize < sizeof (CMDPARA_ADMINSWAP)) {
+		return;
+	}
+	pPara->szMsg[sizeof (pPara->szMsg) - 1] = 0;
+	MapSwapDlgOnRecv (pPara);
 }
 
 /* ========================================================================= */
@@ -8616,10 +8636,17 @@ static void RecycleOnResult(BYTE byCmd, PBYTE pData, DWORD dwDataSize)
 	g_nRecycleLeft = (int)pPara->byLeft;
 	RecycleResultText (byCmd, pPara, szResult, sizeof (szResult));
 
+	/* 箱から離れた：サーバーが箱を閉じているので、窓も閉じる */
+	if (pPara->byResult == RECYCLERES_FAR) {
+		wsprintf (szTmp, "%s@2", szResult);
+		RecycleClose (szTmp);
+		return;
+	}
+
 	/* もらった：近くにいない時以外は、中身を取り直して一覧に台詞を付ける */
-	if ((byCmd == CMD_RECYCLETAKE) && (pPara->byResult != RECYCLERES_FAR)) {
+	if (byCmd == CMD_RECYCLETAKE) {
 		lstrcpyn (g_szRecycleResult, szResult, sizeof (g_szRecycleResult));
-		SendCmdRECYCLE (CMD_RECYCLELIST, g_dwRecycleNpcTblID, 0, 0);
+		SendCmdRECYCLE (CMD_RECYCLELIST, 0, 0);
 		g_nRecycleWait = RECYCLEWAIT_TAKELIST;
 		g_dwRecycleWaitTime = timeGetTime ();
 		return;
@@ -8632,7 +8659,7 @@ static void RecycleOnResult(BYTE byCmd, PBYTE pData, DWORD dwDataSize)
 /* ========================================================================= */
 /* 関数名：RecvDataProcRECYCLELIST											 */
 /* 内容：受信データ処理(リサイクルボックスの中身)							 */
-/*       頼んだ画面（話しかけた時・「もらう」）に切り替える。頼んでいない中身は捨てる */
+/*       箱が開いた知らせ（byOpen=1）ならメニューの窓を開く。頼んだ画面（「もらう」）に切り替える。頼んでいない中身は捨てる */
 /* ========================================================================= */
 void RecvDataProcRECYCLELIST(PBYTE pData, DWORD dwDataSize)
 {
@@ -8642,11 +8669,15 @@ void RecvDataProcRECYCLELIST(PBYTE pData, DWORD dwDataSize)
 	if (dwDataSize < offsetof (CMDPARA_RECYCLELIST, aEntry)) {
 		return;
 	}
-	if (!RecycleIsOpen ()) {
-		return;
-	}
-	if ((nWait != RECYCLEWAIT_OPEN) && (nWait != RECYCLEWAIT_TAKELIST)) {
-		return;
+	if (pPara->byOpen) {
+		nWait = RECYCLEWAIT_OPEN;			/* 調べて開いた知らせ：窓はまだ無い */
+	} else {
+		if (!RecycleIsOpen ()) {
+			return;
+		}
+		if ((nWait != RECYCLEWAIT_OPEN) && (nWait != RECYCLEWAIT_TAKELIST)) {
+			return;
+		}
 	}
 
 	/* 届いた件数ぶんだけ写す（サイズ不足・多すぎる件数は切る） */
@@ -8657,14 +8688,16 @@ void RecvDataProcRECYCLELIST(PBYTE pData, DWORD dwDataSize)
 	g_RecycleList.byKind		= (BYTE)nCount;
 	g_RecycleList.byLeft		= pPara->byLeft;
 	g_RecycleList.dwTblID		= pPara->dwTblID;
-	g_RecycleList.dwNpcTblID	= pPara->dwNpcTblID;
+	g_RecycleList.byOpen		= pPara->byOpen;
 	for (i = 0; i < nCount; i ++) {
 		CopyMemory (&g_RecycleList.aEntry[i], &pPara->aEntry[i], sizeof (RECYCLEENTRY));
 	}
 	g_nRecycleLeft = (int)pPara->byLeft;
 
 	g_nRecycleWait = RECYCLEWAIT_NONE;
-	if (nWait == RECYCLEWAIT_OPEN) {
+	if (pPara->byOpen) {
+		RecycleOpen ();
+	} else if (nWait == RECYCLEWAIT_OPEN) {
 		RecycleShowMenu (NULL);
 	} else {
 		RecycleShowList (0);

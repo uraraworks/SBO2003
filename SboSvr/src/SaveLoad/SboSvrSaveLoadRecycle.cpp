@@ -7,9 +7,9 @@
 /*
  * 保存先は SBODATA/SboDataRecycle.dat。取引所・依頼情報と同じ「カラム単位」の形式。
  * 中身・今日もらった数・記録は 1 つの表に入れ、byKind で分ける（0=箱の中身・1=今日もらった数・2=記録）。
- *   中身 … dwNpcID・wItemID・byCount
+ *   中身 … dwBoxNo・wItemID・byCount
  *   今日もらった数 … szAcc・dwDay（日本時間の日数）・byCount。今日でない日付の行は保存しない
- *   記録 … dwTime・szAcc・szName・dwNpcID・byLogKind（0=入れた・1=もらった）・wItemID・byCount（古い順）
+ *   記録 … dwTime・szAcc・szName・dwBoxNo・byLogKind（0=入れた・1=もらった）・wItemID・byCount（古い順）
  * ファイルが無い時は 0 件で始める。知らないカラムは読み飛ばし、無いカラムは 0 のまま読める。
  */
 #include "include.h"
@@ -290,7 +290,7 @@ static BOOL LoadColumns(const char *pszFile, const COLINFO *paCol, int nColCount
 /* ファイルに書く 1 件ぶん（中身・今日もらった数・記録を 1 つの表に入れる） */
 typedef struct _RECYCLEFILE {
 	BYTE		byKind;												/* 0=箱の中身・1=今日もらった数・2=記録 */
-	DWORD		dwNpcID;											/* 箱の NPC番号（中身・記録） */
+	DWORD		dwBoxNo;											/* 箱番号（中身・記録） */
 	WORD		wItemID;											/* 品の種類ID（中身・記録） */
 	BYTE		byCount;											/* 個数（中身・今日もらった数・記録） */
 	char		szAcc[MAX_ACCNAME];									/* アカウント名（今日もらった数・記録） */
@@ -303,7 +303,7 @@ typedef struct _RECYCLEFILE {
 /* リサイクルボックスのカラム */
 static const COLINFO s_aRecycleCol[] = {
 	COL (RECYCLEFILE, byKind,		COL_U8),
-	COL (RECYCLEFILE, dwNpcID,		COL_U32),
+	COL (RECYCLEFILE, dwBoxNo,		COL_U32),
 	COL (RECYCLEFILE, wItemID,		COL_U16),
 	COL (RECYCLEFILE, byCount,		COL_U8),
 	COLS(RECYCLEFILE, szAcc,		COL_STR, MAX_ACCNAME),
@@ -354,7 +354,7 @@ BOOL SaveRecycle(void)
 	for (i = 0; i < g_aRecycleStock.size (); i ++, nPos ++) {
 		RECYCLEFILE *p = &aData[nPos];
 		p->byKind = 0;
-		p->dwNpcID = g_aRecycleStock[i].dwNpcID;
+		p->dwBoxNo = g_aRecycleStock[i].dwBoxNo;
 		p->wItemID = g_aRecycleStock[i].wItemID;
 		p->byCount = g_aRecycleStock[i].byCount;
 	}
@@ -371,7 +371,7 @@ BOOL SaveRecycle(void)
 		p->dwTime = g_aRecycleLog[i].dwTime;
 		memcpy (p->szAcc, g_aRecycleLog[i].szAcc, sizeof (p->szAcc));
 		memcpy (p->szName, g_aRecycleLog[i].szName, sizeof (p->szName));
-		p->dwNpcID = g_aRecycleLog[i].dwNpcID;
+		p->dwBoxNo = g_aRecycleLog[i].dwBoxNo;
 		p->byLogKind = g_aRecycleLog[i].byKind;
 		p->wItemID = g_aRecycleLog[i].wItemID;
 		p->byCount = g_aRecycleLog[i].byCount;
@@ -398,18 +398,18 @@ BOOL LoadRecycle(void)
 		const RECYCLEFILE *p = (const RECYCLEFILE *)&aData[sizeof (RECYCLEFILE) * i];
 		if (p->byKind == 0) {
 			RECYCLESTOCK Stock;
-			/* 個数 0・NPC番号 0・品 0 の行、同じ箱の同じ品の重なり、20 種類を超える行は読まない */
-			if ((p->byCount == 0) || (p->dwNpcID == 0) || (p->wItemID == 0)) {
+			/* 個数 0・箱番号 0・品 0 の行、同じ箱の同じ品の重なり、20 種類を超える行は読まない */
+			if ((p->byCount == 0) || (p->dwBoxNo == 0) || (p->wItemID == 0)) {
 				continue;
 			}
-			if (RecycleStockCount (p->dwNpcID, p->wItemID) > 0) {
+			if (RecycleStockCount (p->dwBoxNo, p->wItemID) > 0) {
 				continue;
 			}
-			if (RecycleKindCount (p->dwNpcID) >= RECYCLE_MAXKIND) {
+			if (RecycleKindCount (p->dwBoxNo) >= RECYCLE_MAXKIND) {
 				continue;
 			}
 			ZeroMemory (&Stock, sizeof (Stock));
-			Stock.dwNpcID = p->dwNpcID;
+			Stock.dwBoxNo = p->dwBoxNo;
 			Stock.wItemID = p->wItemID;
 			Stock.byCount = p->byCount;
 			g_aRecycleStock.push_back (Stock);
@@ -423,13 +423,17 @@ BOOL LoadRecycle(void)
 			g_aRecycleDaily.push_back (Daily);
 		} else if (p->byKind == 2) {
 			RECYCLELOG Log;
+			/* 箱番号が無い行（NPC の箱だった頃の古い形。列名が dwNpcID だったので読めない）は読み捨てる */
+			if (p->dwBoxNo == 0) {
+				continue;
+			}
 			ZeroMemory (&Log, sizeof (Log));
 			Log.dwTime = p->dwTime;
 			memcpy (Log.szAcc, p->szAcc, sizeof (Log.szAcc));
 			memcpy (Log.szName, p->szName, sizeof (Log.szName));
 			Log.szAcc[MAX_ACCNAME - 1] = 0;
 			Log.szName[MAX_CHARNAMEBUF - 1] = 0;
-			Log.dwNpcID = p->dwNpcID;
+			Log.dwBoxNo = p->dwBoxNo;
 			Log.byKind = (p->byLogKind == RECYCLELOG_TAKE) ? (BYTE)RECYCLELOG_TAKE : (BYTE)RECYCLELOG_PUT;
 			Log.wItemID = p->wItemID;
 			Log.byCount = p->byCount;

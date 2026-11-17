@@ -25,6 +25,8 @@
 #include "SboSvrNpcRoute.h"
 #include "SboSvrMarket.h"
 #include "SboSvrRecycle.h"
+#include "SboSvrQuest.h"
+#include "SboSvrMapSwapEdit.h"
 #include "CharProc/CharProcMERCENARY.h"
 #include "SboSvrMagicProc.h"
 #include <map>
@@ -92,6 +94,7 @@ void	TailMoveChain				(PCHARINFO);									/* ついてきているキャラを�
 void	FloorDamageOnStep			(PCHARINFO);									/* ダメージ床に1歩入った時の処理 */
 BOOL	IsDamageFloor				(PMAPINFO, int, int);							/* ダメージ床のマスか */
 BOOL	IsAvoidDamageFloor			(PCHARINFO, PMAPINFO, int, int);				/* 敵・傭兵が自分からは入らないダメージ床か */
+BOOL	IsNoFloorDamageChar			(PCHARINFO);									/* ダメージ床が効かない敵か */
 BOOL	CheckCharX					(PCHARINFO pChar, DWORD dwX, DWORD dwXTarget);	/* キャラサイズに合わせた当たり判定(横) */
 int		GetCharX					(PCHARINFO, DWORD, DWORD, BOOL);				/* キャラサイズに合わせた距離を求める(横) */
 int		GetCharDistanceX			(PCHARINFO, PCHARINFO);							/* キャラサイズに合わせた距離を求める(横) */
@@ -247,7 +250,9 @@ void	RecvDataProcMARKETGOLDGET				(PBYTE, DWORD);				/* 取引所の売上を受
 void	RecvDataProcRECYCLELIST					(PBYTE, DWORD);				/* リサイクルボックスの中身 */
 void	RecvDataProcRECYCLEPUT					(PBYTE, DWORD);				/* リサイクルボックスに入れる */
 void	RecvDataProcRECYCLETAKE					(PBYTE, DWORD);				/* リサイクルボックスからもらう */
+void	RecvDataProcRECYCLECLOSE				(PBYTE, DWORD);				/* リサイクルボックスの窓を閉じた */
 void	RecvDataProcADMINCHEST					(PBYTE, DWORD);				/* 管理者ウィンドウのキャラの開けた宝箱の記録 */
+void	RecvDataProcADMINSWAP					(PBYTE, DWORD);				/* 管理者ウィンドウの「印で変わるマス・宝箱」 */
 void	RecvDataProcTALKANSWER					(PBYTE, DWORD);				/* 会話データの「はい・いいえ」の答え */
 /* 端末トークン（server/web_account_svr.cpp） */
 BOOL	WebAccTokenToAccount					(LPCSTR, LPSTR, int);		/* 端末トークンからアカウント名を引く */
@@ -499,7 +504,9 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcRECYCLELIST,			/* CMD_RECYCLELIST */
 	RecvDataProcRECYCLEPUT,				/* CMD_RECYCLEPUT */
 	RecvDataProcRECYCLETAKE,			/* CMD_RECYCLETAKE */
+	RecvDataProcRECYCLECLOSE,			/* CMD_RECYCLECLOSE */
 	RecvDataProcADMINCHEST,				/* CMD_ADMINCHEST */
+	RecvDataProcADMINSWAP,				/* CMD_ADMINSWAP */
 
 	NULL
 };
@@ -2061,6 +2068,7 @@ void SetInitCharData(PCHARINFO pChar)
 	pChar->wShowFlag		= 0;				/* 見える・見えない条件の印（番号+1。0=無し） */
 	pChar->wHideFlag		= 0;
 	pChar->byViewAllNpc	= 0;
+	pChar->wRecycleBox	= 0;				/* 開いているリサイクル箱（無し） */
 	for (i = 0; i < 10; i ++) {
 		pChar->waEqu[i] = 0xFFFF;
 	}
@@ -3713,7 +3721,7 @@ void RecvDataProc(PBYTE pData, DWORD dwDataSize)
 	}
 
 	/* 管理者用のコマンド（管理者ウィンドウからしか送らないもの）は管理者だけ */
-	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && (byCmd != CMD_TALKANSWER) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET)) && ((byCmd < CMD_RECYCLELIST) || (byCmd > CMD_RECYCLETAKE))) ||
+	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && (byCmd != CMD_TALKANSWER) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET)) && ((byCmd < CMD_RECYCLELIST) || (byCmd > CMD_RECYCLECLOSE))) ||
 			(byCmd == CMD_CHARITEM)) {
 		if (!CheckAdminBan (nNo)) {
 			SAFE_DELETE_ARRAY (pData);
@@ -4157,13 +4165,40 @@ BOOL IsDamageFloor(PMAPINFO pMap, int x, int y)
 }
 
 /* ========================================================================= */
+/* 関数名：IsNoFloorDamageChar												 */
+/* 内容：ダメージ床が効かない敵か（ステータステンプレートの byNoFloorDamage） */
+/*		 発生元から出た敵はテンプレートを持たないので、発生元のものを見る	 */
+/* ========================================================================= */
+BOOL IsNoFloorDamageChar(PCHARINFO pChar)
+{
+	DWORD dwStTmp;
+
+	if (pChar->byNpcType == NPCTYPE_INIT) {
+		return FALSE;
+	}
+	dwStTmp = pChar->dwStTmplateID;
+	if ((dwStTmp == (DWORD)-1) && (pChar->dwParentTblID != (DWORD)-1) &&
+		(pChar->dwParentTblID < (DWORD)g_aCharInfo.GetSize ()) && g_aCharInfo[pChar->dwParentTblID]) {
+		dwStTmp = g_aCharInfo[pChar->dwParentTblID]->dwStTmplateID;
+	}
+	if ((dwStTmp == (DWORD)-1) || (dwStTmp >= (DWORD)g_aStTmpInfo.GetSize ())) {
+		return FALSE;
+	}
+	return (g_aStTmpInfo[dwStTmp]->byNoFloorDamage != 0);
+}
+
+/* ========================================================================= */
 /* 関数名：IsAvoidDamageFloor												 */
 /* 内容：敵・傭兵が自分から歩く時に、よけるダメージ床か						 */
 /*		 もうダメージ床の上にいる時は、出られなくならないように、よけない	 */
+/*		 ダメージ床が効かない敵（ボスなど）は、よけずに素通りする			 */
 /* ========================================================================= */
 BOOL IsAvoidDamageFloor(PCHARINFO pChar, PMAPINFO pMap, int x, int y)
 {
 	if (IsDamageFloor (pMap, x, y) == FALSE) {
+		return FALSE;
+	}
+	if (IsNoFloorDamageChar (pChar)) {
 		return FALSE;
 	}
 	return (IsDamageFloor (pMap, (int)pChar->dwX, (int)pChar->dwY) == FALSE);
@@ -4195,6 +4230,10 @@ void FloorDamageOnStep(PCHARINFO pChar)
 		return;
 	}
 	if ((pChar->wHP == 0) || (pChar->byCharState == CHARSTATE_DEAD)) {
+		return;
+	}
+	/* ダメージ床が効かない敵（ボスなど）は、HPも減らず毒にもならない */
+	if (IsNoFloorDamageChar (pChar)) {
 		return;
 	}
 	nMapNo = GetMapNo (pChar->dwMapID);
@@ -12826,6 +12865,145 @@ void RecvDataProcADMINCHEST(PBYTE pData, DWORD dwDataSize)
 }
 
 /* ========================================================================= */
+/* 関数名：SendAdminSwapInfo												 */
+/* 内容：管理者ウィンドウへマップの差し替え表を送る							 */
+/* ========================================================================= */
+static void SendAdminSwapInfo(DWORD pID, PMAPINFO pMap)
+{
+	PCMDPARA_ADMINSWAP pPara = new CMDPARA_ADMINSWAP;
+
+	ZeroMemory (pPara, sizeof (CMDPARA_ADMINSWAP));
+	pPara->byCmd		= CMD_ADMINSWAP;
+	pPara->byCmdSub		= ADMINSWAP_INFO;
+	pPara->dwMapID		= pMap->dwID;
+	pPara->byCount		= pMap->bySwapCount;
+	pPara->wNextChest	= (WORD)ChestHighAll ();
+	pPara->wNextBox		= (WORD)(RecycleBoxHighAll () + 1);
+	for (int i = 0; i < pMap->bySwapCount && i < MAX_MAPSWAP; i ++) {
+		MapSwapWireFromSwap (pMap->aSwap[i], pPara->aRow[i]);
+	}
+	svrSock.SendTo (pID, (PBYTE)pPara, sizeof (CMDPARA_ADMINSWAP));
+	SAFE_DELETE (pPara);
+}
+
+/* 管理者ウィンドウへ差し替え表の変更の結果を送る */
+static void SendAdminSwapResult(DWORD pID, DWORD dwMapID, BYTE byResult, LPCSTR pszMsg)
+{
+	PCMDPARA_ADMINSWAP pPara = new CMDPARA_ADMINSWAP;
+
+	ZeroMemory (pPara, sizeof (CMDPARA_ADMINSWAP));
+	pPara->byCmd	= CMD_ADMINSWAP;
+	pPara->byCmdSub	= ADMINSWAP_RESULT;
+	pPara->byResult	= byResult;
+	pPara->dwMapID	= dwMapID;
+	SboTextCopy (pPara->szMsg, sizeof (pPara->szMsg), pszMsg);
+	svrSock.SendTo (pID, (PBYTE)pPara, sizeof (CMDPARA_ADMINSWAP));
+	SAFE_DELETE (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINSWAP											 */
+/* 内容：受信データ処理(管理者ウィンドウの「印で変わるマス・宝箱」)			 */
+/*       管理者だけ（受信の入口で断る。ここでも確かめる）					 */
+/*       GET     : 送ってきた人のいるマップの差し替え表を INFO で返す		 */
+/*       ADD/SET/DEL : 1 行足す・直す・消す。表全体を MapSwapBuild（データ API の	 */
+/*                 swaps と同じ確かめ・番号の自動振り）に通してから反映する	 */
+/*       RESTORE : 表を丸ごと置き換える（「元に戻す」用。同じ確かめを通す）	 */
+/*       変えたら、そのマップの全員へ差し替えを送り直し、マップを保存する		 */
+/*       （データ API と同じ。ほかのマップの編集のように定期保存を待たない。	 */
+/*        番号の覚え wChestHigh・wBoxHigh を失わないため）					 */
+/* ========================================================================= */
+void RecvDataProcADMINSWAP(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINSWAP pPara = (PCMDPARA_ADMINSWAP)pData;
+	DWORD pID = s_pIDRecv;
+	PCHARINFO pChar = (s_nCharNoRecv >= 0) ? g_aCharInfo[s_nCharNoRecv] : NULL;
+	BYTE bySub;
+	int nMapNo;
+	PMAPINFO pMap;
+	MAPINFO w;
+	std::vector<MAPSWAPEDITROW> aRow;
+	std::string strErr;
+
+	if (!s_bAdminRecv || (s_dwRecvSize < sizeof (CMDPARA_ADMINSWAP))) {
+		return;
+	}
+	bySub = pPara->byCmdSub;
+	if ((bySub != ADMINSWAP_GET) && (bySub != ADMINSWAP_ADD) && (bySub != ADMINSWAP_SET) &&
+		(bySub != ADMINSWAP_DEL) && (bySub != ADMINSWAP_RESTORE)) {
+		return;
+	}
+	/* 取得は送ってきた人のいるマップ。変更は指定のマップ（人がいる時は、今いるマップと同じでなければ断る） */
+	if ((bySub == ADMINSWAP_GET) && pChar) {
+		nMapNo = GetMapNo (pChar->dwMapID);
+	} else {
+		nMapNo = GetMapNo (pPara->dwMapID);
+	}
+	if (nMapNo < 0) {
+		if (pID) SendAdminSwapResult (pID, pPara->dwMapID, 0, "マップが見つかりません。");
+		return;
+	}
+	pMap = g_aMapInfo[nMapNo];
+	if (bySub == ADMINSWAP_GET) {
+		if (pID) SendAdminSwapInfo (pID, pMap);
+		return;
+	}
+	if (pChar && (bySub != ADMINSWAP_RESTORE) && (pChar->dwMapID != pMap->dwID)) {
+		SendAdminSwapResult (pID, pPara->dwMapID, 0, "マップが変わりました。取り直してから操作してください。");
+		SendAdminSwapInfo (pID, g_aMapInfo[GetMapNo (pChar->dwMapID) >= 0 ? GetMapNo (pChar->dwMapID) : nMapNo]);
+		return;
+	}
+
+	/* 変更後の表を入力の形で作る */
+	if (bySub == ADMINSWAP_RESTORE) {
+		if (pPara->byCount > MAX_MAPSWAP) {
+			if (pID) SendAdminSwapResult (pID, pMap->dwID, 0, "行が多すぎます。");
+			return;
+		}
+		aRow.resize (pPara->byCount);
+		for (int i = 0; i < pPara->byCount; i ++) {
+			MapSwapEditFromWire (pPara->aRow[i], aRow[i]);
+		}
+	} else {
+		for (int i = 0; i < pMap->bySwapCount && i < MAX_MAPSWAP; i ++) {
+			MAPSWAPEDITROW Row;
+			MapSwapToEdit (pMap->aSwap[i], Row);
+			aRow.push_back (Row);
+		}
+		if (bySub == ADMINSWAP_ADD) {
+			MAPSWAPEDITROW Row;
+			MapSwapEditFromWire (pPara->Row, Row);
+			aRow.push_back (Row);
+		} else {
+			if (pPara->wIndex >= aRow.size ()) {
+				if (pID) SendAdminSwapResult (pID, pMap->dwID, 0, "その行はありません。取り直してから操作してください。");
+				return;
+			}
+			if (bySub == ADMINSWAP_DEL) {
+				aRow.erase (aRow.begin () + pPara->wIndex);
+			} else {
+				MapSwapEditFromWire (pPara->Row, aRow[pPara->wIndex]);
+			}
+		}
+	}
+
+	w = *pMap;
+	if (!MapSwapBuild (nMapNo, w, aRow, "行", strErr)) {
+		if (pID) SendAdminSwapResult (pID, pMap->dwID, 0, strErr.c_str ());
+		return;
+	}
+	if (MapSwapChanged (*pMap, w)) {
+		MapSwapSet (pMap, w);
+		MapSwapSendMap (pMap);
+		SaveMapInfo ();
+	}
+	if (pID) {
+		SendAdminSwapResult (pID, pMap->dwID, 1, "");
+		SendAdminSwapInfo (pID, pMap);
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：GetResurrectionEfectID											 */
 /* 内容：蘇生のエフェクト番号を特技のデータから探す							 */
 /*       効果種別が「蘇生」で相手側のエフェクトがある最初の特技のもの。	 */
@@ -13079,7 +13257,7 @@ BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, 
 	/* 管理者用のコマンドだけ（ログインや「元に戻す」自体は通さない） */
 	if ((byCmd >= CMD_MAX) || (RecvDataProcTbl[byCmd] == NULL) ||
 			((byCmd < CMD_MAPPARTSADD) && (byCmd != CMD_CHARITEM)) ||
-			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_ADMINVIEWALL) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET)) || ((byCmd >= CMD_RECYCLELIST) && (byCmd <= CMD_RECYCLETAKE))) {
+			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_ADMINVIEWALL) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET)) || ((byCmd >= CMD_RECYCLELIST) && (byCmd <= CMD_RECYCLECLOSE))) {
 		return FALSE;
 	}
 
@@ -14110,7 +14288,7 @@ void RecvDataProcRECYCLELIST(PBYTE pData, DWORD dwDataSize)
 {
 	PCHARINFO pChar = RecycleRecvChar (pData);
 	if (pChar) {
-		RecycleList (pChar, ((PCMDPARA_RECYCLE)pData)->dwNpcTblID);
+		RecycleList (pChar, FALSE);
 	}
 }
 
@@ -14119,7 +14297,7 @@ void RecvDataProcRECYCLEPUT(PBYTE pData, DWORD dwDataSize)
 	PCHARINFO pChar = RecycleRecvChar (pData);
 	if (pChar) {
 		PCMDPARA_RECYCLE pPara = (PCMDPARA_RECYCLE)pData;
-		RecyclePut (pChar, pPara->dwNpcTblID, pPara->wItemID, pPara->byCount);
+		RecyclePut (pChar, pPara->wItemID, pPara->byCount);
 	}
 }
 
@@ -14127,8 +14305,19 @@ void RecvDataProcRECYCLETAKE(PBYTE pData, DWORD dwDataSize)
 {
 	PCHARINFO pChar = RecycleRecvChar (pData);
 	if (pChar) {
-		RecycleTake (pChar, ((PCMDPARA_RECYCLE)pData)->dwNpcTblID, ((PCMDPARA_RECYCLE)pData)->wItemID);
+		RecycleTake (pChar, ((PCMDPARA_RECYCLE)pData)->wItemID);
 	}
+}
+
+/* 窓を閉じた：箱を閉じた絵に戻す（倒れていても戻す。持ち物は動かないので RecycleRecvChar の確かめは要らない） */
+void RecvDataProcRECYCLECLOSE(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_RECYCLE pPara = (PCMDPARA_RECYCLE)pData;
+
+	if ((s_dwRecvSize < sizeof (CMDPARA_RECYCLE)) || !IsRecvChar (pPara->dwTblID)) {
+		return;
+	}
+	RecycleClose (g_aCharInfo[pPara->dwTblID]);
 }
 
 /* ========================================================================= */

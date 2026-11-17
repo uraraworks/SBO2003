@@ -1199,7 +1199,8 @@ chest bit range get=1,0,1,0 set_out=1
 chest char save=1 load=1 found=1
 chest char reload bits=1,1,1,0,0 same=1
 chest old save patched=1 found=1 all_zero=1 name_ok=1
-mapswap map save=1 load=1 added=116 count=3 high=90 row0=1,2,1,1,1,77,宝箱を開けた,ルシー 港の倉庫の奥 row1=3,4,0,1023,1,2 row2=5,5,3
+mapswap map save=1 load=1 added=116 count=4 high=90 row0=1,2,1,1,1,77,宝箱を開けた,ルシー 港の倉庫の奥 row1=3,4,0,1023,1,2 row2=5,5,3
+mapswap map recycle row3=7,8,2,4,6,ルシー 広場の箱 boxhigh=12 chesthigh=90
 mapswap map old-format count=0 high=0 tiles_same=1
 == N. SortItem ==
 sortkey [アイテム] [あいてむ] same=1 len=9,9
@@ -1385,6 +1386,7 @@ floor npc type=13 hp=15 low=1
 floor npc type=100 hp=15 low=1
 floor npc type=2 hp=20 low=3
 floor avoid on=0 off=1 search_step=0 nodamage_step=1
+floor immune avoid=0 hp=20 normal_hp=15
 == V2. LowParts ==
 low wall normal=1 low=0 hit=1
 low save light=5 low=1
@@ -1477,15 +1479,28 @@ market save=1 load=1 same=1 items=1 sales=2 next_same=1 sale_a=950 other=4242
 market save empty=1 load=1 items=0 sales=0 next=1
 market end
 == AH. Recycle ==
-recycle npc=1 other=1
+recycle cells=1
 recycle picked items=24 trade=1
 recycle temp quest=1 important=1
 recycle day today=0 next=1 left=3
-recycle nospeech put=1 list=-1 items=2
-recycle nonpcid put=1 items=2
-recycle notbox other=1 outrange=1 player=1 items=2
-recycle far put=1 items=2
+recycle closed a apply=0 examine=2 parts_closed=1,1 box=0
+recycle notopened put=1 list=-1 take=1 items=2
+recycle nobox put=1 items=2 state_cleared=1
+recycle examine box=901 list_push=1 open_flag=1 kinds=0 charpos=1 swap=1 parts_a_open=1 other_box_closed=1
+recycle examine b_view closed=1 b_box=0 b_swap=0 b_list=0
+recycle examine a flags apply=1 examine=1
+recycle examine b flags apply=0 examine=2
+recycle opened list=0 left=3 size_ok=1
+recycle close box=0 parts_closed=1 swap=1 b_swap=0
+recycle close flags apply=0 examine=2
+recycle close then put=1 items=2
+recycle close again swap=0
+recycle examine wrong dir box=0
+recycle examine b box=902 parts_b_open=1 a_closed=1
+recycle other map cleared=1
+recycle far put=1 items=2 box=0 parts_closed=1
 recycle edge ok list=0 left=3 size_ok=1
+recycle far y put=1 box=0
 recycle short put=-1 items=2
 recycle put count0=3 toomany=3 item0=2 items=2
 recycle put nothave=2 badid=2 stock=0
@@ -1523,10 +1538,10 @@ recycle count 250+5=0 stock0=255 then+1=5 items=2
 recycle list 255 first_count=255
 recycle save=1 load=1 same=1 stock=3 log=4 daily_rows=1 left_b=2 left_a=3 left_old=3
 recycle after load take1=0 take2=0 take3=6 stock0=0 stock1=0 left_b=0
-recycle log 0 t=0 acc=rcyA name=入れ手 npc=70001 kind=0 item_ok=1 count=2
-recycle log 1 t=0 acc=rcyA name=入れ手 npc=70001 kind=0 item_ok=1 count=1
-recycle log 2 t=0 acc=rcyA name=入れ手 npc=70002 kind=0 item_ok=1 count=1
-recycle log 3 t=0 acc=rcyB name=もらい手 npc=70001 kind=1 item_ok=1 count=1
+recycle log 0 t=0 acc=rcyA name=入れ手 box=901 kind=0 item_ok=1 count=2
+recycle log 1 t=0 acc=rcyA name=入れ手 box=901 kind=0 item_ok=1 count=1
+recycle log 2 t=0 acc=rcyA name=入れ手 box=902 kind=0 item_ok=1 count=1
+recycle log 3 t=0 acc=rcyB name=もらい手 box=901 kind=1 item_ok=1 count=1
 recycle log count_ok=1
 recycle log trim size=1000 first_t=5 last_t=1004
 recycle log after put size=1000 first_t=6 last_acc=rcyA
@@ -1534,6 +1549,17 @@ recycle log save=1 load=1 same=1 size=1000
 recycle api box=1 stock_then_log_newest_first=1 take=1 put=1
 recycle api date=1 acc=1 name=1 missing=1 daily=1 limits=1
 recycle api kinds=1 missing_true=1 box_missing_false=1
+recycle api boxes order=1 (box1 before box2) both=1 xy_memo=1
+recycle swaps api ok=1 count=2 kinds=2,2 no_auto=1,1 high=1 memo=港の広場 memo2_empty=1
+recycle swaps api get has=1
+recycle swaps api roundtrip ok=1 same=1
+recycle swaps examine box_is_no1=1
+recycle swaps api rejected_mask=0 unchanged=1
+recycle swaps api dup other map ok=0 rewrite own no ok=1
+recycle swaps api no reuse ok=1 new_no=3 (not 2) high=3
+recycle api retired=1
+recycle swaps api other map auto ok=1 no_is_next=1
+recycle swaps api delete clears box=0 count=0
 recycle end
 == AB. Important ==
 important add bag=1 imp=3 key=2 quest=1 norm=0
@@ -1621,6 +1647,20 @@ adminchest set on bit100=1 bit101=0 bit_b=0 reply=2 swap=1 swap_b=0 parts_a_open
 adminchest set off bit100=0 swap=1 parts_a_closed=1 reply=2
 adminchest bad got=1,1,1,1 result=0,0,0,0 unchanged=1 swap=0
 adminchest clear zero=1 swap=1 reply=2 parts_a_closed=1
+== AI. AdminSwap ==
+viewflag cells=8
+adminswap user count=0 reply_a=0 reply_b=0 swap=0
+adminswap get reply=0 got=1 sub=1 map_ok=1 count=0 next_chest_ok=1 next_box_ok=1
+adminswap add flag count=1 kind=0 flag=7 cmp=1 parts_ok=1 swap_a=1 swap_b=1 swap_c=1
+adminswap add auto count=4 chest_no=0,1 (high0+0,+1) item=1 msg=宝箱を開けた memo=テスト 箱1 box_no_ok=1 high=2 boxhigh_ok=1
+adminswap set no_same=1 x_ok=1 item=0 memo=直した msg_empty=1 swap=1 count=4
+adminswap set kind=0 flag=9 cmp=0
+adminswap del count=3 row2_kind=2 swap=1
+adminswap no reuse new=2 (not 1) high=3
+adminswap explicit retired count=5 no=1
+adminswap kind mismatch tried=10 changed_mask=0 result_msgs=10
+adminswap rejected tried=8 changed_mask=0 result_msgs=8 swap_resent=0 unchanged=1
+adminswap undo ok=1 count=0 swap=9 high_kept=3
 == AD2. JobMagicKey ==
 jobkey ids=8
 jobkey A set key=1,2,0,0,0 item=0,0,77,0,0 saved=00000000

@@ -51,6 +51,7 @@ extern void		TailMoveChain				(PCHARINFO);									/* ついてきているキ�
 extern void		FloorDamageOnStep			(PCHARINFO);									/* ダメージ床に1歩入った時の処理 */
 extern BOOL		IsDamageFloor				(PMAPINFO, int, int);							/* ダメージ床のマスか */
 extern BOOL		IsAvoidDamageFloor			(PCHARINFO, PMAPINFO, int, int);				/* 敵・傭兵が自分からは入らないダメージ床か */
+extern BOOL		IsNoFloorDamageChar			(PCHARINFO);									/* ダメージ床が効かない敵か */
 extern void		CharTargetPC				(PCHARINFO, PCHARINFO, DWORD);					/* キャラのついてく設定 */
 extern BOOL		CheckCharX					(PCHARINFO pChar, DWORD dwX, DWORD dwXTarget);	/* キャラサイズに合わせた当たり判定(横) */
 extern int		GetCharX					(PCHARINFO, DWORD, DWORD, BOOL);				/* キャラサイズに合わせた距離を求める(横) */

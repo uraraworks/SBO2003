@@ -9,6 +9,7 @@
 #include "../Common/Info/InfoJob.h"
 #include "SboSvrAdminUndo.h"
 #include "SboSvrNpcRoute.h"
+#include "SboSvrMapSwapEdit.h"
 #include <map>
 #include <set>
 #include <vector>
@@ -110,6 +111,7 @@ LPCSTR AdminUndoScreenName(BYTE byScreen)
 	case ADMINSCR_MAGICUSERINFO:	return "魔法利用者情報";
 	case ADMINSCR_EQUUSERINFO:		return "装備職業情報";
 	case ADMINSCR_NPCROUTE:			return "NPCの巡回";
+	case ADMINSCR_SWAP:				return "印で変わるマス・宝箱";
 	}
 	return "（画面なし）";
 }
@@ -133,6 +135,7 @@ BYTE AdminUndoDefaultScreen(BYTE byCmd)
 	case CMD_MAGICUSERINFO:	return ADMINSCR_MAGICUSERINFO;
 	case CMD_EQUUSERINFO:	return ADMINSCR_EQUUSERINFO;
 	case CMD_NPCROUTE:		return ADMINSCR_NPCROUTE;
+	case CMD_ADMINSWAP:		return ADMINSCR_SWAP;
 	}
 	return ADMINSCR_NONE;
 }
@@ -404,6 +407,26 @@ static BOOL BuildState(const ADMINUNDO_KEY &Key, std::vector<BYTE> &aPacket, std
 		}
 		CAPTURE (SendCmdEQUUSERINFO (0, (BYTE)Key.a));
 
+	case CMD_ADMINSWAP:			/* 印で変わるマス・宝箱の表（a=マップ番号）。丸ごと置き換える RESTORE のパケットにする */
+		{
+			PMAPINFO pMap = GetMapByNo (Key.a);
+			if (pMap == NULL) {
+				return FALSE;
+			}
+			PCMDPARA_ADMINSWAP pPara = new CMDPARA_ADMINSWAP;
+			ZeroMemory (pPara, sizeof (CMDPARA_ADMINSWAP));
+			pPara->byCmd	= CMD_ADMINSWAP;
+			pPara->byCmdSub	= ADMINSWAP_RESTORE;
+			pPara->dwMapID	= pMap->dwID;
+			pPara->byCount	= pMap->bySwapCount;
+			for (int i = 0; i < pMap->bySwapCount && i < MAX_MAPSWAP; i ++) {
+				MapSwapWireFromSwap (pMap->aSwap[i], pPara->aRow[i]);
+			}
+			PutBytes (aPacket, pPara, sizeof (CMDPARA_ADMINSWAP));
+			SAFE_DELETE (pPara);
+		}
+		return TRUE;
+
 	case CMD_NPCROUTE:			/* NPCの巡回ルート（a=キャラ番号） */
 		{
 			if (Key.a >= (DWORD)g_aCharInfo.GetSize ()) {
@@ -548,6 +571,23 @@ static BOOL ParseKey(BYTE byCmd, const BYTE *pData, DWORD dwSize, ADMINUNDO_KEY 
 			return FALSE;
 		}
 		Key.a = pData[1];
+		break;
+
+	case CMD_ADMINSWAP:
+		{
+			NEED (CMDPARA_ADMINSWAP);
+			PCMDPARA_ADMINSWAP pPara = (PCMDPARA_ADMINSWAP)pData;
+			/* 変える操作（足す・直す・消す・置き換え）だけ記録する。取得・結果は記録しない */
+			if ((pPara->byCmdSub != ADMINSWAP_ADD) && (pPara->byCmdSub != ADMINSWAP_SET) &&
+				(pPara->byCmdSub != ADMINSWAP_DEL) && (pPara->byCmdSub != ADMINSWAP_RESTORE)) {
+				return FALSE;
+			}
+			int nNo = GetMapNo (pPara->dwMapID);
+			if (nNo < 0) {
+				return FALSE;
+			}
+			Key.a = (DWORD)nNo;
+		}
 		break;
 
 	case CMD_NPCROUTE:
