@@ -13,9 +13,9 @@
 /* 構造体定義																 */
 /* ========================================================================= */
 
-/* 箱の中身の 1 種類（箱は NPC番号 dwNpcID ごと） */
+/* 箱の中身の 1 種類（箱は NPC番号 dwBoxNo ごと） */
 typedef struct _RECYCLESTOCK {
-	DWORD		dwNpcID;											/* 箱の NPC番号（CHARINFO の dwNpcID。再起動しても変わらない） */
+	DWORD		dwBoxNo;											/* 箱番号（リサイクル箱の行の wBoxNo。全マップ通し） */
 	WORD		wItemID;											/* 品の種類ID */
 	BYTE		byCount;											/* 個数（1〜RECYCLE_MAXCOUNT） */
 } RECYCLESTOCK, *PRECYCLESTOCK;
@@ -38,7 +38,7 @@ typedef struct _RECYCLELOG {
 	DWORD		dwTime;												/* 時刻（time()） */
 	char		szAcc[MAX_ACCNAME];									/* アカウント名 */
 	char		szName[MAX_CHARNAMEBUF];							/* キャラ名 */
-	DWORD		dwNpcID;											/* 箱の NPC番号 */
+	DWORD		dwBoxNo;											/* 箱番号 */
 	BYTE		byKind;												/* 入れた／もらった(RECYCLELOG_*) */
 	WORD		wItemID;											/* 品の種類ID */
 	BYTE		byCount;											/* 個数 */
@@ -56,14 +56,16 @@ extern void RecycleClear(void);									/* 全部消す（終了時・読み込�
 extern DWORD RecycleNowSec(void);								/* 今の時刻（秒） */
 extern DWORD RecycleDay(DWORD dwSec);							/* 時刻から日本時間の日付（日数）を求める */
 extern int RecycleLeft(LPCSTR pszAcc);							/* アカウントが今日あと何個もらえるか */
-extern int RecycleKindCount(DWORD dwNpcID);						/* 箱に入っている種類の数 */
-extern int RecycleStockCount(DWORD dwNpcID, WORD wItemID);		/* 箱にあるその品の個数 */
+extern int RecycleKindCount(DWORD dwBoxNo);						/* 箱に入っている種類の数 */
+extern int RecycleStockCount(DWORD dwBoxNo, WORD wItemID);		/* 箱にあるその品の個数 */
 extern void RecycleTrimLog(void);								/* 記録を RECYCLE_LOGMAX 件に切る（読み込み後） */
-extern BOOL RecycleIsBox(PCHARINFO pNpc);						/* 台詞が "@d" の箱（NPC番号あり）か */
-extern PCHARINFO RecycleFindBox(PCHARINFO pChar, DWORD dwNpcTblID);	/* 話しかけた箱（近くにいる時だけ。無ければ NULL） */
+extern PMAPSWAP RecycleFindRow(PMAPINFO pMap, DWORD dwBoxNo);	/* マップにある箱番号の行（無ければ NULL） */
+extern PMAPSWAP RecycleFindBox(PCHARINFO pChar);				/* いま窓を開いている箱の行（箱から 3 マス以内の時だけ。無ければ NULL） */
+extern void RecycleOpen(PCHARINFO pChar, PMAPINFO pMap, PMAPSWAP pSwap);	/* 正面の箱を調べた（開いた絵にして窓を開かせる） */
+extern void RecycleClose(PCHARINFO pChar);						/* 窓を閉じた（閉じた絵に戻す） */
 
-extern void RecycleList(PCHARINFO pChar, DWORD dwNpcTblID);		/* 中身を送る */
-extern void RecyclePut(PCHARINFO pChar, DWORD dwNpcTblID, WORD wItemID, BYTE byCount);	/* 入れる */
-extern void RecycleTake(PCHARINFO pChar, DWORD dwNpcTblID, WORD wItemID);	/* もらう（1 個） */
+extern void RecycleList(PCHARINFO pChar, BOOL bOpen);			/* 中身を送る（bOpen=箱が開いた知らせ） */
+extern void RecyclePut(PCHARINFO pChar, WORD wItemID, BYTE byCount);	/* 入れる */
+extern void RecycleTake(PCHARINFO pChar, WORD wItemID);			/* もらう（1 個） */
 
 /* Copyright(C)URARA-works 2003-2005 */

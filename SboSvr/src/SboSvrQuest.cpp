@@ -25,6 +25,7 @@
 #include "SboSvrItemProc.h"
 #include "SboSvrEventProc.h"
 #include "SboSvrCharInfoTimerProc.h"
+#include "SboSvrRecycle.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -421,11 +422,14 @@ void ChestOpenedSet(PCHARINFO pChar, int nChestNo, BOOL bOn)
 	}
 }
 
-/* この行の差し替えが、いま効いているか（宝箱は開けた記録、印で変わるは印を見る） */
+/* この行の差し替えが、いま効いているか（宝箱は開けた記録、リサイクル箱は窓を開いている間、印で変わるは印を見る） */
 static BOOL MapSwapIsActive(const MAPSWAP *pSwap, const PCHARINFO pViewer)
 {
 	BOOL bOn;
 
+	if (pSwap->byKind == MAPSWAPKIND_RECYCLE) {
+		return (pSwap->wBoxNo != 0) && (pViewer->wRecycleBox == pSwap->wBoxNo);
+	}
 	if (pSwap->byKind == MAPSWAPKIND_CHEST) {
 		return ChestOpenedGet (pViewer, pSwap->wChestNo);
 	}
@@ -436,9 +440,13 @@ static BOOL MapSwapIsActive(const MAPSWAP *pSwap, const PCHARINFO pViewer)
 	return (pSwap->byCmp == MAPSWAPCMP_OFF) ? !bOn : bOn;
 }
 
-/* 調べると開く行か（宝箱の行。まだ開けていない人が目の前で調べると、品を渡して記録を立てて文を出す） */
+/* 調べると開く行か（宝箱の行：まだ開けていない人が目の前で調べると、品を渡して記録を立てて文を出す。
+   リサイクル箱の行：調べると、その人の画面だけ開いた絵になって窓が開く） */
 static BOOL MapSwapIsExamineRow(const MAPSWAP *pSwap)
 {
+	if (pSwap->byKind == MAPSWAPKIND_RECYCLE) {
+		return (pSwap->wBoxNo >= 1) && (pSwap->wBoxNo <= MAX_RECYCLEBOX);
+	}
 	return (pSwap->byKind == MAPSWAPKIND_CHEST) && (pSwap->wChestNo < MAX_CHESTNO);
 }
 
@@ -478,6 +486,10 @@ void MapSwapSend(PCHARINFO pChar, PMAPINFO pMap, BOOL bForce)
 
 	if ((pChar == NULL) || (pChar->pID == 0) || (pMap == NULL)) {
 		return;
+	}
+	/* 開いていたリサイクル箱がこのマップに無ければ（マップを移った・箱を消した）、開いた記憶を捨てる */
+	if ((pChar->wRecycleBox != 0) && (RecycleFindRow (pMap, pChar->wRecycleBox) == NULL)) {
+		pChar->wRecycleBox = 0;
 	}
 	pViewer = MapSwapViewer (pChar);
 	if (pViewer != NULL) {
@@ -525,7 +537,7 @@ void MapSwapSendMap(PMAPINFO pMap)
 	}
 }
 
-/* 目の前（byData=2 の調べる）のマスが「調べると開く」マスなら開ける。処理した時 TRUE。
+/* 目の前（byData=2 の調べる）のマスが「調べると開く」マス（宝箱・リサイクル箱）なら開ける。処理した時 TRUE。
    印がまだ立っていない人が調べると、品を渡して（受け取れなければ何も動かさない）印を立てて文を出す */
 BOOL MapSwapExamine(PCHARINFO pChar)
 {
@@ -551,6 +563,18 @@ BOOL MapSwapExamine(PCHARINFO pChar)
 
 		if ((pSwap->wX != x) || (pSwap->wY != y) || !MapSwapIsExamineRow (pSwap)) {
 			continue;
+		}
+		/* リサイクル箱：その人の画面だけ開いた絵にして、窓を開かせる（討伐チャレンジ中は使えないので何も起きない） */
+		if (pSwap->byKind == MAPSWAPKIND_RECYCLE) {
+			if ((pChar->szAcc[0] == 0) || QuestInChallenge (pChar)) {
+				if (QuestInChallenge (pChar)) {
+					SendCmdSYSMSG (pChar->pID, "討伐チャレンジ中はできません。", SPEECHCMD_BATTLE1);
+				}
+				SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
+			} else {
+				RecycleOpen (pChar, pMap, (PMAPSWAP)pSwap);
+			}
+			return TRUE;
 		}
 		if (ChestOpenedGet (pChar, pSwap->wChestNo)) {
 			continue;			/* もう開けた人は何も起きない（ほかのイベントに任せる） */

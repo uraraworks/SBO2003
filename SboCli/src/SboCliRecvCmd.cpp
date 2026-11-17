@@ -444,6 +444,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcRECYCLELIST,			/* CMD_RECYCLELIST */
 	RecvDataProcRECYCLEPUT,				/* CMD_RECYCLEPUT */
 	RecvDataProcRECYCLETAKE,			/* CMD_RECYCLETAKE */
+	NULL,								/* CMD_RECYCLECLOSE(クライアント→サーバーのみ) */
 	RecvDataProcADMINCHEST,				/* CMD_ADMINCHEST */
 	NULL
 };
@@ -8607,10 +8608,17 @@ static void RecycleOnResult(BYTE byCmd, PBYTE pData, DWORD dwDataSize)
 	g_nRecycleLeft = (int)pPara->byLeft;
 	RecycleResultText (byCmd, pPara, szResult, sizeof (szResult));
 
+	/* 箱から離れた：サーバーが箱を閉じているので、窓も閉じる */
+	if (pPara->byResult == RECYCLERES_FAR) {
+		wsprintf (szTmp, "%s@2", szResult);
+		RecycleClose (szTmp);
+		return;
+	}
+
 	/* もらった：近くにいない時以外は、中身を取り直して一覧に台詞を付ける */
-	if ((byCmd == CMD_RECYCLETAKE) && (pPara->byResult != RECYCLERES_FAR)) {
+	if (byCmd == CMD_RECYCLETAKE) {
 		lstrcpyn (g_szRecycleResult, szResult, sizeof (g_szRecycleResult));
-		SendCmdRECYCLE (CMD_RECYCLELIST, g_dwRecycleNpcTblID, 0, 0);
+		SendCmdRECYCLE (CMD_RECYCLELIST, 0, 0);
 		g_nRecycleWait = RECYCLEWAIT_TAKELIST;
 		g_dwRecycleWaitTime = timeGetTime ();
 		return;
@@ -8623,7 +8631,7 @@ static void RecycleOnResult(BYTE byCmd, PBYTE pData, DWORD dwDataSize)
 /* ========================================================================= */
 /* 関数名：RecvDataProcRECYCLELIST											 */
 /* 内容：受信データ処理(リサイクルボックスの中身)							 */
-/*       頼んだ画面（話しかけた時・「もらう」）に切り替える。頼んでいない中身は捨てる */
+/*       箱が開いた知らせ（byOpen=1）ならメニューの窓を開く。頼んだ画面（「もらう」）に切り替える。頼んでいない中身は捨てる */
 /* ========================================================================= */
 void RecvDataProcRECYCLELIST(PBYTE pData, DWORD dwDataSize)
 {
@@ -8633,11 +8641,15 @@ void RecvDataProcRECYCLELIST(PBYTE pData, DWORD dwDataSize)
 	if (dwDataSize < offsetof (CMDPARA_RECYCLELIST, aEntry)) {
 		return;
 	}
-	if (!RecycleIsOpen ()) {
-		return;
-	}
-	if ((nWait != RECYCLEWAIT_OPEN) && (nWait != RECYCLEWAIT_TAKELIST)) {
-		return;
+	if (pPara->byOpen) {
+		nWait = RECYCLEWAIT_OPEN;			/* 調べて開いた知らせ：窓はまだ無い */
+	} else {
+		if (!RecycleIsOpen ()) {
+			return;
+		}
+		if ((nWait != RECYCLEWAIT_OPEN) && (nWait != RECYCLEWAIT_TAKELIST)) {
+			return;
+		}
 	}
 
 	/* 届いた件数ぶんだけ写す（サイズ不足・多すぎる件数は切る） */
@@ -8648,14 +8660,16 @@ void RecvDataProcRECYCLELIST(PBYTE pData, DWORD dwDataSize)
 	g_RecycleList.byKind		= (BYTE)nCount;
 	g_RecycleList.byLeft		= pPara->byLeft;
 	g_RecycleList.dwTblID		= pPara->dwTblID;
-	g_RecycleList.dwNpcTblID	= pPara->dwNpcTblID;
+	g_RecycleList.byOpen		= pPara->byOpen;
 	for (i = 0; i < nCount; i ++) {
 		CopyMemory (&g_RecycleList.aEntry[i], &pPara->aEntry[i], sizeof (RECYCLEENTRY));
 	}
 	g_nRecycleLeft = (int)pPara->byLeft;
 
 	g_nRecycleWait = RECYCLEWAIT_NONE;
-	if (nWait == RECYCLEWAIT_OPEN) {
+	if (pPara->byOpen) {
+		RecycleOpen ();
+	} else if (nWait == RECYCLEWAIT_OPEN) {
 		RecycleShowMenu (NULL);
 	} else {
 		RecycleShowList (0);

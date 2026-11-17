@@ -37,7 +37,7 @@
  *   /api/data/list      {kind, q?, offset?, limit?, fields?} → {kind, total, offset, records:[...]}
  *   /api/data/get       {kind, id}                           → {record}
  *   /api/data/chests    {}                                   → 全マップの宝箱（印で変わるマスの kind 1）の一覧。読むだけ {chests, retired, nextNo}
- *   /api/data/recycle   {}                                   → リサイクルボックス（台詞 "@d" の NPC の共有の箱）の箱ごとの中身と、入れた・もらった記録（新しい順）。読むだけ {boxes, log, daily, limits}
+ *   /api/data/recycle   {}                                   → リサイクルボックス（マップに置く共有の箱。map の swaps の kind 2）の箱ごとの中身と、入れた・もらった記録（新しい順）。読むだけ {boxes, retired, nextNo, log, daily, limits}
  *   /api/data/tiles     {id, x?, y?, w?, h?}                 → マップのマス目（parts・flags・roof、最大 128×128）
  *   /api/data/update    {kind, updates:[{id, changes}], note?, previewId?}
  *   /api/data/add       {kind, records:[{...}], note?, previewId?}
@@ -58,7 +58,7 @@
  *   /api/admin/data/list   {session, kind, offset?, limit?}   → 上の list と同じ（マップ資料の書き出し用。読むだけ）
  *   /api/admin/data/tiles  {session, id, x?, y?, w?, h?}      → 上の tiles と同じ
  *   /api/admin/mapedit/apply {session, id, cells:[[x, y, 前, 後]], note?, force?} → マップ確認の編集を反映（履歴 1 件）
- *   /api/admin/mapedit/swaps/save {session, id, swaps:[...]} → 印で変わるマス・宝箱をそのマップの分だけ置き換える（履歴 1 件。読むのは /api/admin/data/list の fields:["swaps"]、宝箱の一覧は /api/admin/data/chests）
+ *   /api/admin/mapedit/swaps/save {session, id, swaps:[...]} → 印で変わるマス・宝箱・リサイクル箱をそのマップの分だけ置き換える（履歴 1 件。読むのは /api/admin/data/list の fields:["swaps"]、宝箱の一覧は /api/admin/data/chests）
  *   /api/admin/mapedit/draft/get・list・save {session, id?, cells?} → 編集の下書き（SboWebMapDrafts.json）
  *   /api/admin/mapedit/snap/list・save・get・delete {session, id, name?, cells?, snapId?} → 名前を付けたスナップショット（SboWebMapSnapshots.json）
  *   /api/admin/mapedit/resize {session, id, top?, bottom?, left?, right?, fill?, check?} → マップを広げる（履歴に残らない）
@@ -531,7 +531,7 @@ Module['sboData'] = (function () {
 	/* リサイクルボックスの箱ごとの中身と、入れた・もらった記録（読むだけ） */
 	function opRecycle() {
 		var r = JSON.parse(UTF8ToString(_SboWebDataRecycle()));
-		r.note = 'boxes は箱（台詞が @d の NPC）ごとの中身。npcId は NPC番号（中身はこの番号ごとに持つ）、missing が true なのは中身が残っているのに箱の NPC がいないもの。' +
+		r.note = 'boxes は箱（map の swaps の kind 2）の箱番号 boxNo の順。boxNo は全マップ通しの番号（宝箱の番号とは別。中身はこの番号ごとに持つ）で、mapNo・mapName・x・y・memo は置いてある所、missing が true なのは中身が残っているのに箱がどのマップにも無いもの。retired は消した箱の番号（使い回さない）。箱の足し方・直し方は map の swaps（kind 2）。' +
 			'log は新しい順（action は put=入れた・take=もらった、date は日本時間）。daily は今日（日本時間）に 1 個以上もらったアカウント。仕様は docs/recycle.md';
 		return r;
 	}
@@ -1549,7 +1549,7 @@ Module['sboData'] = (function () {
 			fail(400, 'invalid', r.error);
 		}
 		var aDone = applyAll('map', [{ id: id, changes: { swaps: body.swaps } }], who);
-		var e = addHistory({ op: 'update', kind: 'map', by: who.label, note: 'マップ確認：印で変わるマス・宝箱', items: aDone });
+		var e = addHistory({ op: 'update', kind: 'map', by: who.label, note: 'マップ確認：印で変わるマス・宝箱・リサイクル箱', items: aDone });
 		log(who.label + ' が map ' + id + ' の印で変わるマスを変更（履歴 ' + e.historyId + '）');
 		return { ok: true, historyId: e.historyId, swaps: (aDone[0].after && aDone[0].after.swaps) || [], before: (before && before.swaps) || [] };
 	}
@@ -1679,8 +1679,8 @@ Module['sboData'] = (function () {
 		},
 		{
 			name: 'sbo_recycle', write: false,
-			description: 'リサイクルボックス（台詞が @d の NPC の、お金を取らないおすそわけの共有の箱）の一覧。boxes=箱ごとの中身（npcId・場所・stock={itemId,item,count}）、' +
-				'log=誰（acc・name）がいつ（date・日本時間）どの箱（npcId）で何を何個入れた(put)・もらった(take)かの記録（新しい順・最大 1000 件）、daily=今日もらったアカウントの数、limits=決まり。',
+			description: 'リサイクルボックス（マップに置く、お金を取らないおすそわけの共有の箱。map の swaps の kind 2）の一覧。boxes=箱番号 boxNo ごとの中身（mapNo・mapName・x・y・memo・stock={itemId,item,count}）、retired=消した箱の番号、nextNo=次に自動で振る番号、' +
+				'log=誰（acc・name）がいつ（date・日本時間）どの箱（boxNo）で何を何個入れた(put)・もらった(take)かの記録（新しい順・最大 1000 件）、daily=今日もらったアカウントの数、limits=決まり。',
 			inputSchema: { type: 'object', properties: {} },
 			run: opRecycle
 		},

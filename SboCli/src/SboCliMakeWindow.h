@@ -144,7 +144,7 @@ extern BOOL RecycleIsOpen								(void);						/* リサイクルボックス：�
 extern void RecycleEraseAll								(void);						/* リサイクルボックス：窓を全部消す */
 extern void RecycleClose								(LPCSTR pszMsg);			/* リサイクルボックス：閉じる */
 extern void RecycleBuildHand							(void);						/* リサイクルボックス：手持ちを品ごとにまとめる */
-extern void RecycleOpen									(DWORD dwNpcTblID);			/* リサイクルボックス：話しかけた時（中身を頼む） */
+extern void RecycleOpen									(void);						/* リサイクルボックス：調べて箱が開いた時（サーバーの知らせで窓を開く） */
 extern void RecycleShowMenu								(LPCSTR pszMsg);			/* リサイクルボックス：メニューを出す（NULL なら「他に御用は？」にあたる台詞） */
 extern void RecycleShowList								(int nCursor);				/* リサイクルボックス：「もらう」の一覧を出す */
 extern void RecycleShowItem								(int nCursor);				/* リサイクルボックス：入れる品の選択を出す */

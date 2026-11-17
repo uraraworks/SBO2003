@@ -243,7 +243,6 @@ int g_nMarketSelNo = 0;												/* 取引所：出品する手持ちの位置
 CMDPARA_RECYCLELIST g_RecycleList;									/* リサイクルボックスの中身（サーバーから届いたもの） */
 int g_nRecycleWait = 0;												/* リサイクルボックス：返事待ちの種類(RECYCLEWAIT_*) */
 DWORD g_dwRecycleWaitTime = 0;										/* リサイクルボックス：返事待ちを始めた時間 */
-DWORD g_dwRecycleNpcTblID = 0;										/* リサイクルボックス：話しかけた箱のテーブルID */
 char g_szRecycleResult[256] = "";									/* リサイクルボックス：結果のセリフ（次の一覧のセリフの頭に付ける） */
 int g_nRecycleLeft = 0;												/* リサイクルボックス：今日あと何個もらえるか */
 RECYCLEHAND g_aRecycleHand[MAX_MYITEM];								/* リサイクルボックス：手持ちを品ごとにまとめた一覧 */
