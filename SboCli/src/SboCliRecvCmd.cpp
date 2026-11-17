@@ -24,6 +24,7 @@
 #include "SboCliDrawScreen.h"
 #include "SboAdminWindow.h"
 #include "AdminWindowOld/AdminDlgNpcRoute.h"
+#include "AdminWindowOld/AdminDlgMapSwap.h"
 #include "AdminWindowOld/AdminDlgQuestInfo.h"
 #include "AdminWindowOld/AdminDlgStoryInfo.h"
 #include "AdminWindowOld/AdminFlagTalk.h"
@@ -177,6 +178,7 @@ void	RecvDataProcRECYCLELIST				(PBYTE, DWORD);			/* 受信データ処理(リ�
 void	RecvDataProcRECYCLEPUT				(PBYTE, DWORD);			/* 受信データ処理(リサイクルボックスに入れた結果) */
 void	RecvDataProcRECYCLETAKE				(PBYTE, DWORD);			/* 受信データ処理(リサイクルボックスからもらった結果) */
 void	RecvDataProcADMINCHEST				(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのキャラの開けた宝箱の記録) */
+void	RecvDataProcADMINSWAP				(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウの「印で変わるマス・宝箱」) */
 /* ブラウザ版のアカウント関係（web/replace/SboCliWebAccount_web.cpp） */
 void	WebAccSaveToken						(LPCSTR);				/* 端末トークンをページへ渡す */
 void	WebAccOnTokenNG						(void);					/* 端末トークンが無効だった */
@@ -446,6 +448,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcRECYCLETAKE,			/* CMD_RECYCLETAKE */
 	NULL,								/* CMD_RECYCLECLOSE(クライアント→サーバーのみ) */
 	RecvDataProcADMINCHEST,				/* CMD_ADMINCHEST */
+	RecvDataProcADMINSWAP,				/* CMD_ADMINSWAP */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -4058,6 +4061,22 @@ void RecvDataProcADMINCHEST(PBYTE pData, DWORD dwDataSize)
 	}
 	pPara->szMsg[sizeof (pPara->szMsg) - 1] = 0;
 	AdminChestOnRecv (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINSWAP											 */
+/* 内容：受信データ処理(管理者ウィンドウの「印で変わるマス・宝箱」)			 */
+/*       マップの差し替え表・変更の結果が届く（画面が開いていれば更新する）	 */
+/* ========================================================================= */
+void RecvDataProcADMINSWAP(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINSWAP pPara = (PCMDPARA_ADMINSWAP)pData;
+
+	if (dwDataSize < sizeof (CMDPARA_ADMINSWAP)) {
+		return;
+	}
+	pPara->szMsg[sizeof (pPara->szMsg) - 1] = 0;
+	MapSwapDlgOnRecv (pPara);
 }
 
 /* ========================================================================= */

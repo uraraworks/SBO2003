@@ -119,6 +119,7 @@ extern void SendCmdADMINFLAGNAME	(BYTE, int, const FLAGNAMEINFO *);		/* 管理�
 extern void SendCmdADMINTALK		(BYTE, int, const TALKINFO *);			/* 管理者ウィンドウの会話データの編集 */
 extern void SendCmdADMINCHARFLAG	(BYTE, DWORD, BYTE, WORD, WORD);		/* 管理者ウィンドウのキャラのフラグの取得・変更 */
 extern void SendCmdADMINCHEST		(BYTE, DWORD, WORD, WORD);				/* 管理者ウィンドウのキャラの開けた宝箱の記録の取得・変更 */
+extern void SendCmdADMINSWAP		(BYTE, DWORD, WORD, const ADMINSWAPROW *);	/* 管理者ウィンドウの「印で変わるマス・宝箱」の取得・足す・直す・消す */
 extern void SendCmdADMINVIEWALL		(BOOL bOn);								/* 管理者ウィンドウの「印で隠れたNPCも表示」の切り替え */
 extern void SendCmdADMINRESURRECT	(DWORD dwTblID);						/* 管理者ウィンドウからキャラをHP満タンで蘇生 */
 extern void SendCmdMAGICKEY			(BYTE byNo, BYTE byMagicID, WORD wItemID);	/* ショートカットの登録（特技・装備品・道具） */

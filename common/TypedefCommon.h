@@ -378,6 +378,7 @@ enum {
 	CMD_RECYCLECLOSE,												/* リサイクルボックスの窓を閉じた（クライアント→サーバー。箱を閉じた絵に戻す） */
 /* 以下、管理者用（CMD_MAPPARTSADD 以上は自動で管理者専用になる。CMD_RECYCLECLOSE より後ろに足す） */
 	CMD_ADMINCHEST,													/* 管理者ウィンドウのキャラの開けた宝箱の記録（全宝箱の一覧・取得・変更。結果はサーバー→クライアント） */
+	CMD_ADMINSWAP,													/* 管理者ウィンドウの「印で変わるマス・宝箱」（いまいるマップの差し替え表の取得・足す・直す・消す。結果はサーバー→クライアント） */
 	CMD_MAX
 };
 
@@ -2797,6 +2798,7 @@ enum {
 	ADMINSCR_MAGICUSERINFO,										/* 魔法利用者情報 */
 	ADMINSCR_EQUUSERINFO,										/* 装備職業情報 */
 	ADMINSCR_NPCROUTE,											/* NPCの巡回 */
+	ADMINSCR_SWAP,												/* 印で変わるマス・宝箱 */
 	ADMINSCR_MAX
 };
 
@@ -3788,6 +3790,54 @@ typedef struct _CMDPARA_ADMINCHEST {
 	ADMINCHESTROW	aRow[ADMINCHEST_ROWMAX];						/* 宝箱の行（ROWS） */
 	char		szMsg[MAX_ADMINQUESTMSG];							/* 結果の文（RESULT。うまくいかなかった理由） */
 } CMDPARA_ADMINCHEST, *PCMDPARA_ADMINCHEST;
+
+/* 管理者ウィンドウの「印で変わるマス・宝箱」（CMD_ADMINSWAP の byCmdSub）。いまいるマップの差し替え表（MAPINFO の aSwap）を見て、1 行ずつ足す・直す・消す。
+   確かめ（範囲・重なり）と番号の自動の振り方は、データ API（map の swaps）と同じ関数（SboSvrMapSwapEdit.cpp）を通る */
+enum {
+	ADMINSWAP_GET = 0,											/* 取得（クライアント→サーバー。送ってきた人のいるマップの表を INFO で返す） */
+	ADMINSWAP_INFO,												/* 表（サーバー→クライアント。dwMapID のマップの byCount 行・次に使える番号の目安） */
+	ADMINSWAP_ADD,												/* 1 行足す（クライアント→サーバー。Row。結果は RESULT と INFO） */
+	ADMINSWAP_SET,												/* wIndex の行を Row に直す（クライアント→サーバー。結果は RESULT と INFO） */
+	ADMINSWAP_DEL,												/* wIndex の行を消す（クライアント→サーバー。結果は RESULT と INFO） */
+	ADMINSWAP_RESTORE,											/* 表を丸ごと aRow の byCount 行に置き換える（「元に戻す」用。管理者の画面からは送らない） */
+	ADMINSWAP_RESULT,											/* 変更の結果（サーバー→クライアント。byResult・szMsg） */
+};
+/* 行のうち「指定した欄」（ADMINSWAPROW の byHas）。種類に合わない欄を指定すると断る。指定しない番号はサーバーが自動で振る */
+#define ADMINSWAPHAS_FLAG		(0x01)							/* wFlag（印の番号。印の行） */
+#define ADMINSWAPHAS_CMP		(0x02)							/* byCmp（印の行） */
+#define ADMINSWAPHAS_NO			(0x04)							/* wNo（宝箱の番号・リサイクル箱の番号。種類で決まる） */
+#define ADMINSWAPHAS_GIVEITEM	(0x08)							/* wGiveItem（宝箱の行） */
+#define ADMINSWAPHAS_MSG		(0x10)							/* szMsg（宝箱の行） */
+#define ADMINSWAPHAS_MEMO		(0x20)							/* szMemo（宝箱・リサイクル箱の行） */
+typedef struct _ADMINSWAPROW {
+	BYTE		byKind;												/* MAPSWAPKIND_* */
+	BYTE		byHas;												/* 指定した欄（ADMINSWAPHAS_* の組み合わせ。INFO では、その種類で使う欄が入る） */
+	BYTE		byCmp;												/* MAPSWAPCMP_*（印の行） */
+	BYTE		byDummy;											/* 予備 */
+	WORD		wX;													/* X */
+	WORD		wY;													/* Y */
+	WORD		wParts;												/* 差し替え後のパーツ番号 */
+	WORD		wFlag;												/* 印の番号（印の行） */
+	WORD		wGiveItem;											/* 渡す品（宝箱の行。0=無し） */
+	WORD		wNo;												/* 宝箱の番号（宝箱の行）・リサイクル箱の番号（リサイクル箱の行） */
+	char		szMsg[MAX_MAPSWAPMSG];								/* 調べた時の文（宝箱の行） */
+	char		szMemo[MAX_MAPSWAPMEMO];							/* 管理用のメモ（宝箱・リサイクル箱の行） */
+} ADMINSWAPROW, *PADMINSWAPROW;
+
+/* 管理者ウィンドウの「印で変わるマス・宝箱」（送受信とも同じ形） */
+typedef struct _CMDPARA_ADMINSWAP {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byCmdSub;											/* サブコマンド(ADMINSWAP_*) */
+	BYTE		byResult;											/* 結果（RESULT: 1=変えた 0=変えられなかった） */
+	BYTE		byCount;											/* aRow の行数（INFO・RESTORE） */
+	DWORD		dwMapID;											/* マップID（INFO・ADD・SET・DEL・RESTORE。画面を開いたマップから移っていたら ADD・SET・DEL は断る） */
+	WORD		wIndex;												/* 行の番号（SET・DEL。0 から） */
+	WORD		wNextChest;											/* 次に自動で振る宝箱の番号（INFO。全マップ通し。MAX_CHESTNO 以上なら使い切り） */
+	WORD		wNextBox;											/* 次に自動で振るリサイクル箱の番号（INFO。全マップ通し。MAX_RECYCLEBOX を超えれば使い切り） */
+	ADMINSWAPROW	Row;											/* 足す・直す 1 行（ADD・SET） */
+	ADMINSWAPROW	aRow[MAX_MAPSWAP];								/* 表（INFO・RESTORE） */
+	char		szMsg[MAX_ADMINQUESTMSG];							/* 結果の文（RESULT。うまくいかなかった理由） */
+} CMDPARA_ADMINSWAP, *PCMDPARA_ADMINSWAP;
 
 /* 会話データで選ばれた台詞（サーバー→本人だけ。この後ろに wSize バイトの台詞（UTF-8・終端の 0 を含む）が続く。
    通信の可変長の文字列（CMDPARA_SPEECH など）と同じ並べ方
