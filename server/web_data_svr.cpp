@@ -394,6 +394,7 @@ static const DATAFIELD s_aFieldStTmp[] = {
 	FLD (STATUSTEMPLATEINFO, dwGold,		"所持金",			FT_U32, 0, NULL),
 	FLD (STATUSTEMPLATEINFO, dwExp,			"経験値",			FT_U32, 0, NULL),
 	FLD (STATUSTEMPLATEINFO, byStatusResist,	"毒・眠りの効きにくさ",	FT_U8, 0, "%。特技の成功率をこの分下げる。100 で効かない（ボス向け）"),
+	FLD (STATUSTEMPLATEINFO, byNoFloorDamage,	"ダメージ床が効かない",	FT_U8, 0, "1 にすると毒沼・溶岩などのダメージ床でHPが減らず毒にもならず、よけずに素通りして追いかける（ボス向け）。0=ふつう（ダメージ床をよける）"),
 };
 
 /* アイテム情報（共通の項目。使った時のメッセージ・種別ごとの詳細は別に扱う） */
