@@ -2437,6 +2437,7 @@ void TailMoveChain(PCHARINFO pParent)
 		pChar->byDirection = byDirection;
 		pChar->dwX = pParent->dwXBack;
 		pChar->dwY = pParent->dwYBack;
+		pChar->dwTimeStep = timeGetTime ();
 
 		SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 1);
 		SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
@@ -4305,6 +4306,16 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 			SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
 			return;
 		}
+		/* 町転送の床に乗って発動を待っている間は、先へ歩かせない
+		  （方向キーを押したままだと、歩き終わりを待つ間に床を通り過ぎてしまうので） */
+		if (pChar->dwTimeReturnHold) {
+			if (timeGetTime () - pChar->dwTimeReturnHold >= RETURN_HOLDTIME) {
+				pChar->dwTimeReturnHold = 0;
+			} else if ((pChar->dwX != (DWORD)pPara->byX) || (pChar->dwY != (DWORD)pPara->byY)) {
+				SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
+				return;
+			}
+		}
 		/* 向きは 0～3、座標はマップの中 */
 		int nMapNo = GetMapNo (pChar->dwMapID);
 		if ((pPara->byDirection >= 4) || (nMapNo < 0) ||
@@ -4349,6 +4360,10 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 		pChar->byDirection = pPara->byDirection;
 		pChar->dwX = (DWORD)pPara->byX;
 		pChar->dwY = (DWORD)pPara->byY;
+		if (bStep) {
+			/* 歩き始めた時刻（町転送の床は歩き終わるのを待ってから飛ばす） */
+			pChar->dwTimeStep = timeGetTime ();
+		}
 
 		/* 誰かを引っ張っている？
 		   以前は旗を立てて次のキャラ処理で動かしていたが、移動が続けて届くと
@@ -6456,6 +6471,7 @@ void TailChaseProc(PCHARINFO pChar)
 	pChar->dwX				= (DWORD)x;
 	pChar->dwY				= (DWORD)y;
 	pChar->dwLastDotMove	= dwNow;
+	pChar->dwTimeStep		= dwNow;
 	Chase.dwLastStep		= dwNow;
 	SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 1);
 	SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
