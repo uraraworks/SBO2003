@@ -26,6 +26,7 @@ extern void SendCmdCHARINFO				(DWORD, int);									/* コマンド送信(キ�
 extern void SendCmdCHARINFO2			(DWORD, DWORD, int);							/* コマンド送信(キャラ情報通知2) */
 extern void SendCmdCHARINFO3			(int);											/* コマンド送信(キャラ情報通知) */
 extern void SendCmdCHGDIRECTION			(DWORD, int);									/* コマンド送信(向き変更要求) */
+extern void SendCmdMAPSWAP				(DWORD, DWORD, const MAPSWAPSEND *, int);	/* コマンド送信(印で変わるマスの差し替え一覧) */
 extern void SendCmdCHARPOS				(DWORD, int, BYTE, BYTE);						/* コマンド送信(座標通知) */
 extern void SendCmdCHARHIDE				(DWORD, int);									/* コマンド送信(キャラを消す通知。1人にだけ。キャラ自体は消さない) */
 extern void SendCmdSPEECH				(DWORD, int, BYTE);								/* コマンド送信(発言通知) */

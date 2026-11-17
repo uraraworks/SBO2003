@@ -1194,6 +1194,13 @@ quest leave questitem=1 sell=1 gold+=0 full=1 res=2,1,0 after=0
 legacy item load patched=1 first10=10 rest0=10 equ=3,65535 name=旧持ち物
 quest old save patched=1 done=06 rewarded=06
 quest end copies=0
+== AG2. MapSwapSave ==
+chest bit range get=1,0,1,0 set_out=1
+chest char save=1 load=1 found=1
+chest char reload bits=1,1,1,0,0 same=1
+chest old save patched=1 found=1 all_zero=1 name_ok=1
+mapswap map save=1 load=1 added=116 count=3 high=90 row0=1,2,1,1,1,77,宝箱を開けた,ルシー 港の倉庫の奥 row1=3,4,0,1023,1,2 row2=5,5,3
+mapswap map old-format count=0 high=0 tiles_same=1
 == N. SortItem ==
 sortkey [アイテム] [あいてむ] same=1 len=9,9
 sortkey [アイテム] [ｱｲﾃﾑ] same=1 len=9,9
@@ -1509,6 +1516,39 @@ viewflag save=1 columns=1 helper=0,0 pipi=6,0 guard=0,6 both=6,7
 viewflag wire to=0,1,6,1024 from=65535,0,5,1023,65535
 viewflag fresh show=0 hide=0 cond=0
 viewflag zeroed npc cond=0 seen=1
+== AG. MapSwap ==
+viewflag cells=8
+mapswap api ok=1 count=3 kinds=1,0,0
+mapswap api chestno valid=1 high_ok=1 memo=テスト倉庫の奥 msg=宝箱を開けた！
+mapswap api get has=1
+mapswap api roundtrip ok=1 same=1
+mapswap api dup inside ok=0
+mapswap api dup other map ok=0
+mapswap api auto other ok=1 no_is_next=1
+mapswap api no reuse after delete=1 high=1
+mapswap api flag+chestkey ok=0
+mapswap api chest+flagkey ok=0
+mapswap api flag range ok=0
+mapswap api parts range ok=0
+mapswap api unknown key ok=0
+mapswap api over limit ok=0
+mapswap api after bad count=3
+mapswap parts none: chest a=1 f a=1 g a=1(wall)
+mapswap parts a flags: f a=1 b=1 null=1 g a_base=1 b=1
+mapswap block f a=0 b=1 npc=1 (1=passable)
+mapswap parts admin follows=1 viewall_base=1
+mapswap parts chest b_open=1 a_closed=1
+mapswap send payload map=1 count=3 apply=2 examine=1 size_ok=1
+mapswap send refresh a=1 b=0 admin=0
+mapswap send mapinfo swapcount_in_info=0 a=1 b=0
+mapswap send adminflag a=1 b=0 flag=1
+mapswap send viewall admin=1
+mapswap send api rewrite(ids reassigned)=1 changed a=2 b=2
+mapswap open item+=1 bit=1 flag7=0 swap=1 msg=1 sys=1 b_swap=0 parts_a_open=1 b_closed=1
+mapswap open again item+=0 swap=0 bit=1
+mapswap open full item+=0 bit=0 sys=1 msg=0 swap=0 parts_closed=1
+mapswap open wrongdir item+=0 bit=0
+mapswap open flags_dont_open=1 npc_examine=0
 == K2. Mercenary magic ==
 merc map=91 enemies=17 size=255x160
 merc hired dist=1

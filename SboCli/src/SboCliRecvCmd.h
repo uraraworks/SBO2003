@@ -84,5 +84,9 @@ extern int	FindFrontAttackTarget	(PCHARINFO pChar);											/* 目の前にい
 extern void	RecvDataProc			(PBYTE, DWORD);												/* 受信データ処理 */
 extern void	RecvDataHoldProc		(void);														/* 保留中の受信データを処理 */
 extern void	RecvDataHoldClear		(void);														/* 保留中の受信データを捨てる */
+extern void	MapSwapRestore			(void);														/* 印で変わるマスの差し替えを元に戻す */
+extern void	MapSwapReset			(void);														/* 印で変わるマスの差し替えの記録を捨てる */
+extern BOOL	MapSwapIsExamine		(int nX, int nY);											/* 目の前で調べると開くマスか */
+extern BOOL	MapSwapOnChg			(int nX, int nY, WORD wMap);								/* パーツが書き換わった時（差し替え中なら元のパーツだけ覚え直して TRUE） */
 
 /* Copyright(C)URARA-works 2003-2006 */

@@ -219,11 +219,13 @@
 			work.W = t.W;
 			work.H = t.H;
 			work.mapId = t.mapId;
-			return api('/api/admin/data/list', { kind: 'map', match: { id: id }, fields: ['events'], limit: 1 });
+			return api('/api/admin/data/list', { kind: 'map', match: { id: id }, fields: ['events', 'swaps'], limit: 1 });
 		}).then(function (r) {
 			if (my !== seq) throw 'stale';
 			if (!r.records) throw new Error(errText(r));
 			work.events = (r.records[0] && r.records[0].events) || [];
+			work.swaps = (r.records[0] && r.records[0].swaps) || [];
+			indexSwaps(work);
 			work.evAt = {};
 			work.events.forEach(function (e) {
 				var k = e.x + ',' + e.y;
@@ -233,6 +235,8 @@
 		}).then(function (rd) {
 			if (my !== seq) throw 'stale';
 			cur = work;
+			swSel = -1;
+			swapForm(null);
 			loadSnapList();
 			var msg = restoreDraft(rd && rd.draft);
 			drawAll();
@@ -385,6 +389,13 @@
 			ctx.lineWidth = 2;
 			ctx.strokeRect(x * S + 1, y * S + 1, S - 2, S - 2);
 		}
+		/* 印で変わるマス：宝箱は緑、印で変わるはオレンジの枠 */
+		var sw = cur.swAt && cur.swAt[x + ',' + y];
+		if (sw) {
+			ctx.strokeStyle = sw.some(function (s) { return s.kind === 1; }) ? 'rgba(60,220,90,0.95)' : 'rgba(255,150,0,0.95)';
+			ctx.lineWidth = 2;
+			ctx.strokeRect(x * S + 4, y * S + 4, S - 8, S - 8);
+		}
 	}
 	/* 1 マスの通れない赤・変えた印 */
 	function drawOverCell(x, y) {
@@ -476,6 +487,13 @@
 		/* 下の preventDefault で入力欄（パーツ一覧の検索など）から外れなくなるので、ここで外す（Ctrl+Z を効かせるため） */
 		var ae = document.activeElement;
 		if (ae && ae !== document.body && ae.blur) ae.blur();
+		if (swapPickOn() && ev.pointerType !== 'touch') {
+			if (ev.button === 0) {
+				ev.preventDefault();
+				swapPick(p);
+			}
+			return;
+		}
 		if (ev.pointerType === 'touch') {
 			/* スマホは画面を動かせるよう、動かさずに離した時だけ 1 マス置く */
 			touchTap = { id: ev.pointerId, p: p, x: ev.clientX, y: ev.clientY };
@@ -515,6 +533,10 @@
 		if (touchTap && ev.pointerId === touchTap.id) {
 			var p = touchTap.p;
 			touchTap = null;
+			if (swapPickOn()) {
+				swapPick(p);
+				return;
+			}
 			stroke = { cells: [], at: {}, last: p };
 			paintCell(p[0], p[1]);
 		}
@@ -1005,6 +1027,9 @@
 		(cur.evAt[p[0] + ',' + p[1]] || []).forEach(function (e) {
 			out.push('イベント: ' + evText(e));
 		});
+		((cur.swAt || {})[p[0] + ',' + p[1]] || []).forEach(function (s) {
+			out.push(swapText(s));
+		});
 		return out.join('・');
 	}
 
@@ -1032,6 +1057,7 @@
 		$('mv-tools').hidden = !bEdit;
 		$('mv-sizebox').hidden = !bEdit;
 		$('mv-snapbox').hidden = !bEdit;
+		$('mv-swapbox').hidden = !bEdit;
 		document.body.classList.toggle('mv-editing', bEdit);
 		if (bEdit) {
 			pin = null;
@@ -1139,6 +1165,13 @@
 			if (ev.key === 'Enter' && !ev.isComposing) saveSnap();
 		});
 		$('mv-add').addEventListener('click', addMap);
+		$('mv-sw-kind').addEventListener('change', swapKindUi);
+		$('mv-sw-sel').addEventListener('click', function () { $('mv-sw-parts').value = String(selPart); });
+		$('mv-sw-save').addEventListener('click', swapSave);
+		$('mv-sw-del').addEventListener('click', swapDelete);
+		$('mv-sw-clear').addEventListener('click', function () { swapForm(null); });
+		$('mv-sw-pick').addEventListener('change', function () { $('mv-scroll').classList.toggle('mv-picking', swapPickOn()); });
+		$('mv-chest-load').addEventListener('click', loadChests);
 		document.addEventListener('keydown', onKey);
 		window.addEventListener('pointerup', endStroke);
 		$('mv-scroll').addEventListener('wheel', onWheel, { passive: false });
@@ -1260,6 +1293,193 @@
 		}).then(null, function (err) {
 			setMsg('消せませんでした: ' + (err && err.message || err));
 		});
+	}
+
+	/* ---------------------------------------------------------------- */
+	/* 印で変わるマス・宝箱（map の swaps。足す・直す・消すはすぐゲームに反映）	 */
+	/* ---------------------------------------------------------------- */
+	var swSel = -1;					/* 直している行の番号（-1=新しい行） */
+
+	function indexSwaps(c) {
+		c.swAt = {};
+		(c.swaps || []).forEach(function (s, i) {
+			s = c.swaps[i];
+			(c.swAt[s.x + ',' + s.y] = c.swAt[s.x + ',' + s.y] || []).push(s);
+		});
+	}
+	function swapText(s) {
+		if (s.kind === 1) {
+			return '宝箱 ' + s.wChestNo + '（開くとパーツ ' + s.wParts + (s.wGiveItem ? '・アイテム ' + s.wGiveItem : '') + (s.szMemo ? '・' + s.szMemo : '') + '）';
+		}
+		return '印 ' + s.wFlag + (s.byCmp === 1 ? ' が立っていない人' : ' が立っている人') + 'はパーツ ' + s.wParts;
+	}
+	function swapPickOn() {
+		return bEdit && !!$('mv-sw-pick') && $('mv-sw-pick').checked;
+	}
+	function swapKindUi() {
+		var bChest = $('mv-sw-kind').value === '1';
+		document.querySelector('.mv-sw-chest').hidden = !bChest;
+		document.querySelector('.mv-sw-flag').hidden = bChest;
+	}
+	/* 入力欄に行の中身を入れる（null なら空にする） */
+	function swapForm(s) {
+		swSel = s ? cur.swaps.indexOf(s) : -1;
+		if (s) {
+			$('mv-sw-kind').value = String(s.kind);
+			$('mv-sw-x').value = String(s.x);
+			$('mv-sw-y').value = String(s.y);
+			$('mv-sw-parts').value = String(s.wParts);
+			$('mv-sw-item').value = String(s.wGiveItem || 0);
+			$('mv-sw-no').value = s.kind === 1 ? String(s.wChestNo) : '';
+			$('mv-sw-msg').value = s.szMsg || '';
+			$('mv-sw-memo').value = s.szMemo || '';
+			$('mv-sw-flag').value = String(s.wFlag || 0);
+			$('mv-sw-cmp').value = String(s.byCmp || 0);
+		} else {
+			$('mv-sw-item').value = '0';
+			$('mv-sw-no').value = '';
+			$('mv-sw-msg').value = '';
+			$('mv-sw-memo').value = '';
+			$('mv-sw-flag').value = '0';
+			$('mv-sw-cmp').value = '0';
+		}
+		swapKindUi();
+		drawSwapList();
+	}
+	/* マスをクリックして選んだ：そのマスに行があればそれを、無ければ座標だけ入れる */
+	function swapPick(p) {
+		var a = (cur.swAt || {})[p[0] + ',' + p[1]];
+		if (a && a.length) {
+			swapForm(a[0]);
+		} else {
+			swapForm(null);
+			$('mv-sw-x').value = String(p[0]);
+			$('mv-sw-y').value = String(p[1]);
+		}
+		pin = p;
+		placeBox(boxPin, pin);
+	}
+	function drawSwapList() {
+		var box = $('mv-swap-list');
+		box.textContent = '';
+		if (!cur) return;
+		(cur.swaps || []).forEach(function (s, i) {
+			var row = el('div', 'mv-swrow' + (i === swSel ? ' sel' : ''), '(' + s.x + ', ' + s.y + ') ' + swapText(s));
+			row.addEventListener('click', function () {
+				swapForm(s);
+				scrollToCell(s.x, s.y);
+			});
+			box.appendChild(row);
+		});
+		if (!(cur.swaps || []).length) box.appendChild(el('div', 'sub-text', 'このマップには、印で変わるマス・宝箱はまだありません。'));
+	}
+	function scrollToCell(x, y) {
+		var sc = $('mv-scroll');
+		var S = T * scale();
+		sc.scrollLeft = Math.max(0, x * S - sc.clientWidth / 2);
+		sc.scrollTop = Math.max(0, y * S - sc.clientHeight / 2);
+		pin = [x, y];
+		placeBox(boxPin, pin);
+	}
+	function swapReadForm() {
+		var kind = Number($('mv-sw-kind').value);
+		var row = { kind: kind, x: Math.floor(Number($('mv-sw-x').value)), y: Math.floor(Number($('mv-sw-y').value)),
+			wParts: Math.floor(Number($('mv-sw-parts').value)) };
+		if (!isFinite(row.x) || !isFinite(row.y) || $('mv-sw-x').value === '' || $('mv-sw-y').value === '') throw new Error('X・Y を入れてください（「クリックでマスを選ぶ」でマップから選べます）');
+		if (!isFinite(row.wParts)) throw new Error('差し替え後のパーツを入れてください');
+		if (kind === 1) {
+			row.wGiveItem = Math.floor(Number($('mv-sw-item').value)) || 0;
+			row.szMsg = $('mv-sw-msg').value;
+			row.szMemo = $('mv-sw-memo').value;
+			if ($('mv-sw-no').value !== '') row.wChestNo = Math.floor(Number($('mv-sw-no').value));
+		} else {
+			row.wFlag = Math.floor(Number($('mv-sw-flag').value));
+			row.byCmp = Number($('mv-sw-cmp').value);
+		}
+		return row;
+	}
+	function swapSend(swaps, doneMsg) {
+		var my = cur;
+		return api('/api/admin/mapedit/swaps/save', { id: my.id, swaps: swaps }).then(function (r) {
+			if (!r.ok) throw new Error(errText(r));
+			if (cur === my) {
+				var oldKeys = Object.keys(my.swAt || {});
+				my.swaps = r.swaps || [];
+				indexSwaps(my);
+				oldKeys.concat(Object.keys(my.swAt)).forEach(function (k) {
+					var a = k.split(',');
+					drawBaseCell(Number(a[0]), Number(a[1]));
+				});
+				swSel = -1;
+				drawSwapList();
+			}
+			setMsg(doneMsg, true);
+		}).then(null, function (err) {
+			setMsg('印で変わるマスを保存できませんでした: ' + (err && err.message || err));
+		});
+	}
+	function swapSave() {
+		if (!cur) return;
+		var row;
+		try { row = swapReadForm(); } catch (e) { setMsg(e.message); return; }
+		var swaps = (cur.swaps || []).map(function (s) { return Object.assign({}, s); });
+		if (swSel >= 0 && swaps[swSel]) {
+			/* 直す時は宝箱番号を変えない（番号を空にしたまま送ると新しい番号になってしまう） */
+			if (row.kind === 1 && row.wChestNo == null && swaps[swSel].kind === 1) row.wChestNo = swaps[swSel].wChestNo;
+			swaps[swSel] = row;
+		} else {
+			swaps.push(row);
+		}
+		swapSend(swaps, '印で変わるマス・宝箱を保存しました（すぐゲームに反映されます）。');
+	}
+	function swapDelete() {
+		if (!cur) return;
+		var x = Math.floor(Number($('mv-sw-x').value)), y = Math.floor(Number($('mv-sw-y').value));
+		var swaps = (cur.swaps || []).filter(function (s) { return !(s.x === x && s.y === y); });
+		if (swaps.length === (cur.swaps || []).length) {
+			setMsg('その座標（' + x + ', ' + y + '）には行がありません。');
+			return;
+		}
+		if (!confirm('(' + x + ', ' + y + ') の行を消します。宝箱の番号は使い回しません。よろしいですか？')) return;
+		swapSend(swaps, '消しました。');
+	}
+	/* 全マップの宝箱の一覧（クリックでそのマスへ） */
+	function loadChests() {
+		var box = $('mv-chest-list');
+		var st = $('mv-chest-state');
+		st.textContent = '読んでいます…';
+		api('/api/admin/data/chests', {}).then(function (r) {
+			if (!r.chests) throw new Error(errText(r));
+			box.textContent = '';
+			r.chests.forEach(function (c) {
+				var row = el('div', 'mv-swrow', '宝箱 ' + c.chestNo + '・' + pad3(c.mapNo) + ' ' + (c.mapName || '（名前なし）') + ' (' + c.x + ', ' + c.y + ')・' +
+					(c.wGiveItem ? c.item + '（' + c.wGiveItem + '）' : '中身なし') + (c.szMemo ? '・' + c.szMemo : ''));
+				row.addEventListener('click', function () { gotoChest(c); });
+				box.appendChild(row);
+			});
+			st.textContent = r.chests.length + ' 個' + (r.retired && r.retired.length ? '・消した番号 ' + r.retired.length + ' 個（使い回しません）' : '') +
+				'・次の番号 ' + (r.nextNo < 0 ? 'なし（使い切り）' : r.nextNo);
+		}).then(null, function (err) {
+			st.textContent = '読めませんでした: ' + (err && err.message || err);
+		});
+	}
+	function gotoChest(c) {
+		function pick() {
+			var s = (cur.swaps || []).filter(function (x) { return x.kind === 1 && x.wChestNo === c.chestNo; })[0];
+			if (s) swapForm(s);
+			scrollToCell(c.x, c.y);
+			showInfo();
+		}
+		if (cur && cur.id === c.mapNo) {
+			pick();
+			return;
+		}
+		if (nDirty || stroke || bApplying) {
+			alert('反映していない変更があります。先に「サーバーへ反映」するか「変更を全部やめる」を押してください。');
+			return;
+		}
+		$('mv-map').value = String(c.mapNo);
+		loadMap(c.mapNo).then(function () { if (cur && cur.id === c.mapNo) pick(); });
 	}
 
 	/* ---------------------------------------------------------------- */

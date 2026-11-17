@@ -937,7 +937,7 @@ static BOOL IsIdleStaticNPC(PCHARINFO pChar)
 	if ((pChar->dwX >= (DWORD)pMap->nCX) || (pChar->dwY >= (DWORD)pMap->nCY)) {
 		return FALSE;
 	}
-	WORD wParts = pMap->pwMap[pChar->dwX + pChar->dwY * pMap->nCX];
+	WORD wParts = MapSwapParts (pMap, pChar, (int)pChar->dwX, (int)pChar->dwY);
 	if (wParts >= g_wCountMapParts) {
 		return FALSE;
 	}
@@ -1477,6 +1477,13 @@ BOOL SaveMapInfo(void)
 		if (pMap->byLightCount) {
 			WriteData (hFile, "aLight", sizeof (MAPLIGHT) * pMap->byLightCount, (PBYTE)pMap->aLight);
 		}
+		/* 印で変わるマス（無いマップは書かない。古いデータはそのまま読める）と、使った宝箱番号の覚え */
+		if (pMap->bySwapCount) {
+			WriteData (hFile, "aSwap", sizeof (MAPSWAP) * pMap->bySwapCount, (PBYTE)pMap->aSwap);
+		}
+		if (pMap->wChestHigh) {
+			WriteData (hFile, "wChestHigh", sizeof (pMap->wChestHigh), (PBYTE)&pMap->wChestHigh);
+		}
 		/* 見える範囲（無いマップは書かない。古いサーバーでも読めるように） */
 		if (pMap->byViewRange) {
 			WriteData (hFile, "byViewRange", sizeof (pMap->byViewRange), (PBYTE)&pMap->byViewRange);
@@ -1721,6 +1728,22 @@ BOOL LoadMapInfo(void)
 				} else if (strcmp (pszTmp, "aDarkArea") == 0) {				/* 暗くする範囲 */
 					pMap->byDarkAreaCount = (BYTE)min (dwSize / sizeof (MAPDARKAREA), (DWORD)MAX_MAPDARKAREA);
 					CopyMemory (pMap->aDarkArea, &pData[dwFilePtr], sizeof (MAPDARKAREA) * pMap->byDarkAreaCount);
+					dwFilePtr += dwSize;	continue;
+				} else if (strcmp (pszTmp, "aSwap") == 0) {					/* 印で変わるマス */
+					pMap->bySwapCount = (BYTE)min (dwSize / sizeof (MAPSWAP), (DWORD)MAX_MAPSWAP);
+					CopyMemory (pMap->aSwap, &pData[dwFilePtr], sizeof (MAPSWAP) * pMap->bySwapCount);
+					for (int nSw = 0; nSw < pMap->bySwapCount; nSw ++) {
+						pMap->aSwap[nSw].szMsg[MAX_MAPSWAPMSG - 1] = 0;
+						pMap->aSwap[nSw].szMemo[MAX_MAPSWAPMEMO - 1] = 0;
+						if (pMap->aSwap[nSw].wChestNo < MAX_CHESTNO) {
+							pMap->wChestHigh = max (pMap->wChestHigh, (WORD)(pMap->aSwap[nSw].wChestNo + 1));
+						}
+					}
+					dwFilePtr += dwSize;	continue;
+				} else if (strcmp (pszTmp, "wChestHigh") == 0) {			/* 使った宝箱番号の最大+1 */
+					WORD wHighTmp = 0;
+					CopyMemory (&wHighTmp, &pData[dwFilePtr], min (dwSize, (DWORD)sizeof (wHighTmp)));
+					pMap->wChestHigh = max (pMap->wChestHigh, min (wHighTmp, (WORD)MAX_CHESTNO));
 					dwFilePtr += dwSize;	continue;
 				} else if (strcmp (pszTmp, "aLight") == 0) {					/* 光源 */
 					pMap->byLightCount = (BYTE)min (dwSize / sizeof (MAPLIGHT), (DWORD)MAX_MAPLIGHT);

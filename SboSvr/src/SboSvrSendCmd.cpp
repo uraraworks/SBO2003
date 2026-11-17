@@ -63,6 +63,7 @@ void SendCmdMAPMSGREQ			(DWORD, LPSTR);								/* コマンド送信(メッセ�
 void SendCmdSYSMSG				(DWORD, LPTSTR, BYTE);						/* コマンド送信(システムメッセージ) */
 void SendCmdSYSMSGMAP			(DWORD, LPSTR, BYTE);						/* コマンド送信(マップ内システムメッセージ) */
 void SendCmdTALKMSG				(DWORD, DWORD, LPCSTR);						/* コマンド送信(会話データで選ばれた台詞) */
+void SendCmdMAPSWAP				(DWORD, DWORD, const MAPSWAPSEND *, int);	/* コマンド送信(印で変わるマスの差し替え一覧) */
 void SendCmdEFECTCHG			(DWORD, DWORD, BYTE, BOOL);					/* コマンド送信(エフェクト変更) */
 void SendCmdCOMEFC				(PCHARINFO);								/* コマンド送信(吹き出し通知) */
 void SendCmdERR					(DWORD, BYTE);								/* コマンド送信(エラー通知) */
@@ -459,6 +460,9 @@ void SendCmdMAPINFO(DWORD pIDSend, DWORD dwID)
 	((PCMDPARA_MAPINFO)pSendData)->byCmd = CMD_MAPINFO;
 	pMapSend = &((PCMDPARA_MAPINFO)pSendData)->MapInfo;
 	CopyMemory (pMapSend, pMap, sizeof (MAPINFO));
+	/* 印で変わるマス（調べた時の文・渡す品を含む）はクライアントへ送らない。その人の分は CMD_MAPSWAP で別に送る */
+	pMapSend->bySwapCount = 0;
+	ZeroMemory (pMapSend->aSwap, sizeof (pMapSend->aSwap));
 	CopyMemory (pSendData + sizeof (CMDPARA_MAPINFO), pMap->pwMap, (pMap->nCX * pMap->nCY) * sizeof (WORD));
 
 	pSendTmp = pSendData + sizeof (CMDPARA_MAPINFO) + (pMap->nCX * pMap->nCY) * sizeof (WORD);
@@ -486,6 +490,14 @@ void SendCmdMAPINFO(DWORD pIDSend, DWORD dwID)
 
 	svrSock.SendTo (pIDSend, pSendData, dwSendSize, SENDTIMEOUT);
 	delete [] pSendData;
+
+	/* 印で変わるマスの、この人の分（マップ情報で新しく入ったクライアントの差し替えを作る） */
+	if (pMap->bySwapCount) {
+		int nChar = GetCharNo (pIDSend);
+		if (nChar >= 0) {
+			MapSwapSend (g_aCharInfo[nChar], pMap, FALSE);
+		}
+	}
 }
 
 /* ========================================================================= */
@@ -1742,6 +1754,33 @@ void SendCmdTALKMSG(DWORD pIDSend, DWORD dwNpcTblID, LPCSTR pszStr)
 	pSendData->wSize = (WORD)(nLen + 1);
 	memcpy (pData + sizeof (CMDPARA_TALKMSG), pszStr, nLen);
 
+	svrSock.SendTo (pIDSend, pData, nSize, SENDTIMEOUT);
+	delete [] pData;
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdMAPSWAP													 */
+/* 内容：コマンド送信(印で変わるマスの差し替え一覧。その人にだけ)			 */
+/* ========================================================================= */
+void SendCmdMAPSWAP(DWORD pIDSend, DWORD dwMapID, const MAPSWAPSEND *paSwap, int nCount)
+{
+	PBYTE pData;
+	PCMDPARA_MAPSWAP pSendData;
+	int nSize;
+
+	if (nCount < 0) {
+		nCount = 0;
+	}
+	nSize = (int)sizeof (CMDPARA_MAPSWAP) + nCount * (int)sizeof (MAPSWAPSEND);
+	pData = new BYTE[nSize];
+	ZeroMemory (pData, nSize);
+	pSendData = (PCMDPARA_MAPSWAP)pData;
+	pSendData->byCmd = CMD_MAPSWAP;
+	pSendData->dwMapID = dwMapID;
+	pSendData->wCount = (WORD)nCount;
+	if (nCount > 0) {
+		memcpy (pData + sizeof (CMDPARA_MAPSWAP), paSwap, nCount * sizeof (MAPSWAPSEND));
+	}
 	svrSock.SendTo (pIDSend, pData, nSize, SENDTIMEOUT);
 	delete [] pData;
 }
