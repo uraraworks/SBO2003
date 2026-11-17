@@ -9,6 +9,7 @@
 #include "include.h"
 #include "Glbldata.h"
 #include "SboSvrRecvCmd.h"
+#include "SboSvrMagicProc.h"
 #include "SboSvrBattleProc.h"
 #include "SboSvrCharInfoTimerProc.h"
 #include <vector>
@@ -1815,6 +1816,17 @@ BOOL MagicProcUse_RETURN(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTarge
 		SendCmdSYSMSG2 (pChar->pID, SYSMSG_NOUSE, 0, 0);
 		goto Exit;
 	}
+
+	/* まだ床のマスへ歩いている途中？
+	   サーバーは歩き始めに位置が変わるので、すぐ飛ばすと歩いている途中のキャラに
+	   エフェクトが重なって見えていた。クライアントは 1 マスを 280ms で歩くので、
+	   少し余裕をみて待ち、歩き終わってから発動する（床は 250ms ごとに見直す） */
+	if (pCharTarget->dwTimeStep && (timeGetTime () - pCharTarget->dwTimeStep < RETURN_WAITSTEP)) {
+		/* 発動するまでは床の上で止めておく（押しっぱなしで通り過ぎないように） */
+		pCharTarget->dwTimeReturnHold = timeGetTime ();
+		goto Exit;
+	}
+	pCharTarget->dwTimeReturnHold = 0;
 
 	pChar->dwLastDotMove = timeGetTime ();
 	/* 2秒以上止まっている？ */

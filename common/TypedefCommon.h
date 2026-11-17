@@ -2371,6 +2371,8 @@ typedef struct _CHARINFO {
 	DWORD		dwStartX;											/* 開始X座標 */
 	DWORD		dwStartY;											/* 開始Y座標 */
 	DWORD		dwLastDotMove;										/* 最後に移動した時間 */
+	DWORD		dwTimeStep;											/* 今のマスへ歩き始めた時間(サーバー。町転送の床で歩き終わりを待つ) */
+	DWORD		dwTimeReturnHold;									/* 町転送の床に捕まった時間(サーバー。発動まで先へ歩かせない) */
 	DWORD		dwLastAnime;										/* 最後にアニメーションした時間 */
 	DWORD		dwLastHartBeat;										/* 最後に生存確認を受けた時間 */
 	DWORD		dwLastSpeech;										/* 最後に発言した時間 */
