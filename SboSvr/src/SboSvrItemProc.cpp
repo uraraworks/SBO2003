@@ -85,6 +85,12 @@ static const ITEMUSE ItemUseTbl[] = {
 	ItemUse_USEMAGIC,				/* 特技発動 */
 };
 
+/* 読み物か（効果無し・使った時の文あり。使うと文の窓が出る） */
+static BOOL IsReadItem(PITEMINFO pItem)
+{
+	return (pItem->byType == ITEMTYPE_NONE) && pItem->pMsg && (pItem->pMsg[0] != 0);
+}
+
 /* ========================================================================= */
 /* 関数名：ItemProc															 */
 /* 内容：アイテム処理														 */
@@ -162,8 +168,11 @@ void ItemProc(DWORD dwTblID, BYTE byNo, DWORD dwUseTblID)
 		アイテム処理
 	*******************/
 
-	wsprintf (szTmp, "%sは %s を使いました。", pChar->szName, pItem->szName);
-	SendSysMsg (pChar, pCharUse, szTmp);
+	/* 読み物（効果無し・文あり）は文の窓が出るので「○○を使いました。」は流さない */
+	if (!IsReadItem (pItem)) {
+		wsprintf (szTmp, "%sは %s を使いました。", pChar->szName, pItem->szName);
+		SendSysMsg (pChar, pCharUse, szTmp);
+	}
 
 	bResult = ItemUse (pChar, pCharUse, pItem, szMsg);
 	/* アイテムを使用した？ */
@@ -296,7 +305,7 @@ void ItemProcImportant(DWORD dwTblID, BYTE byNo, DWORD dwItem)
 {
 	int i, n;
 	WORD wItem = 0;
-	char szMsg[ITEMMSG_BUFSIZE], szTmp[512];
+	char szMsg[ITEMMSG_BUFSIZE];
 	PCHARINFO pChar;
 	PITEMINFO pItem;
 
@@ -327,8 +336,6 @@ void ItemProcImportant(DWORD dwTblID, BYTE byNo, DWORD dwItem)
 	ZeroMemory (szMsg, sizeof (szMsg));
 	if ((pItem->byType == ITEMTYPE_NONE) && pItem->pMsg && strlen (pItem->pMsg)) {
 		PlayItemSound (pItem, pChar);
-		wsprintf (szTmp, "%sは %s を使いました。", pChar->szName, pItem->szName);
-		SendSysMsg (pChar, pChar, szTmp);
 		ItemMsgExpand (szMsg, sizeof (szMsg), pItem->pMsg, pChar->abyFlag, pChar->abyFlagNum);
 	} else {
 		strcpy (szMsg, "ここでは使えません。@2");
