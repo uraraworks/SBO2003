@@ -1621,6 +1621,27 @@ adminchest set on bit100=1 bit101=0 bit_b=0 reply=2 swap=1 swap_b=0 parts_a_open
 adminchest set off bit100=0 swap=1 parts_a_closed=1 reply=2
 adminchest bad got=1,1,1,1 result=0,0,0,0 unchanged=1 swap=0
 adminchest clear zero=1 swap=1 reply=2 parts_a_closed=1
+== AD2. JobMagicKey ==
+jobkey ids=8
+jobkey A set key=1,2,0,0,0 item=0,0,77,0,0 saved=00000000
+jobkey to B first key=0,2,0,0,0 item=0,0,77,0,0 saved=00000002
+jobkey B set key=0,2,0,4,0 item=0,0,77,0,0 saved=00000002
+jobkey back A key=1,2,0,0,0 item=0,0,77,0,0 saved=00000006
+jobkey back B key=0,2,0,4,0 item=0,0,77,0,0 saved=00000006
+jobkey same key=0,2,0,4,0 item=0,0,77,0,0 saved=00000006
+magicsort swap 0,2 (gaps packed) ret=1 list=3,2,1,4,0,0,0,0
+magicsort swap out of range ret=0 list=3,2,1,4,0,0,0,0
+magicsort swap same ret=0 list=3,2,1,4,0,0,0,0
+magicsort type ret=1 list=3,7,8,4,1,1,2,6
+magicsort type again(desc) ret=1 list=5,6,2,1,1,4,8,7
+magicsort type packed=1 zeros=7
+magicsort name ret=1 list=3,5,7,8,1,1,2,6
+magicsort name again(desc) ret=1 list=4,6,2,1,1,8,7,5
+magicsort name packed=1 zeros=7
+magicsort single ret=0 bad_mode ret=0 null ret=0
+jobkey save=1 load=1 found=1
+jobkey reload key=11,12,13 saved_same=1 key_same=1
+jobkey old save patched=1 found=1 all_zero=1 saved=0 name_ok=1
 == K2. Mercenary magic ==
 merc map=91 enemies=17 size=255x160
 merc hired dist=1
