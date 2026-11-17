@@ -8,6 +8,7 @@
 
 #include "stdafx.h"
 #include "common/BowFlight.h"
+#include <string>
 #include "SboCliRecvCmd.h"
 #include "../Common/Info/InfoJob.h"
 #include "../Common/Info/SubGame/InfoSubGameBase.h"
@@ -3716,6 +3717,92 @@ void RecvDataProcTOWNWARP(PBYTE pData, DWORD dwDataSize)
 }
 
 /* ========================================================================= */
+/* 関数名：QuestListOpen													 */
+/* 内容：依頼の一覧（ギルド・思い出の本）の窓を開く							 */
+/* ========================================================================= */
+PWNDINFO QuestListOpen(BOOL bBook)
+{
+	/* 返事を待つ間に開いたコマンドが残っていたら閉じる（一覧の下に隠れて閉じられなくなる） */
+	for (int nNo = g_WndInfo.GetSize () - 1; nNo >= 0; nNo --) {
+		PWNDINFO pWndCmd = (PWNDINFO)g_WndInfo[nNo];
+		if ((pWndCmd->nType == WNDTYPE_COMMAND) && (pWndCmd->pParent == NULL)) {
+			EraseWindow (pWndCmd);
+			nNo = min (nNo, g_WndInfo.GetSize ());
+		}
+	}
+	g_dwMsgIDCommand = 0;
+	g_dwQuestWaitTime = 0;
+	g_dwQuestStoryMsgID = 0;
+	g_szQuestMsg[0] = 0;
+	g_bQuestBook = bBook;
+	PWNDINFO pWndList = MakeWindowQUEST (QUESTWND_LIST);
+	g_WndInfo.Add (pWndList);
+	g_dwActiveMsgID = pWndList->dwID;
+	return pWndList;
+}
+
+/* ========================================================================= */
+/* 関数名：QuestStoryGreet													 */
+/* 内容：語り部の台詞をメッセージの窓で出す（思い出の本の一覧を開く前）		 */
+/*       台詞は NPC の台詞「@r」の後ろの文。空なら既定文。ボタンで送ると一覧が開く */
+/* ========================================================================= */
+void QuestStoryGreet(DWORD dwNpcTblID)
+{
+	std::string strMsg;
+	int nNo;
+
+	g_dwQuestStoryMsgID = 0;
+	nNo = GetCharNo2 (dwNpcTblID);
+	if ((nNo < 0) || (g_aCharInfo[nNo]->pszNpcSpeech == NULL) ||
+		(g_aCharInfo[nNo]->pszNpcSpeech[0] != '@') || (g_aCharInfo[nNo]->pszNpcSpeech[1] != 'r')) {
+		return;
+	}
+	strMsg = &g_aCharInfo[nNo]->pszNpcSpeech[2];
+	if (strMsg.empty ()) {
+		strMsg = "思い出の本を開いてみましょうか。";
+	}
+	/* 送るまで待つ（台詞の最後が入力待ちでなければ足す） */
+	if ((strMsg.size () < 2) || (strMsg[strMsg.size () - 2] != '@') ||
+		((strMsg[strMsg.size () - 1] != '0') && (strMsg[strMsg.size () - 1] != '2'))) {
+		strMsg += "@0";
+	}
+
+	/* 返事を待つ間に開いたコマンドが残っていたら閉じる */
+	nNo = GetWindowID (g_dwMsgIDCommand);
+	if (nNo >= 0) {
+		EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
+	}
+	g_dwMsgIDCommand = 0;
+	g_dwQuestWaitTime = 0;
+
+	PWNDINFO pWndMsg = MakeWindowMSG ((LPSTR)strMsg.c_str (), TRUE);
+	g_WndInfo.Add (pWndMsg);
+	g_dwActiveMsgID = pWndMsg->dwID;
+	g_dwQuestStoryMsgID = pWndMsg->dwID;
+	g_bDraw = TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：QuestStoryGreetEnd												 */
+/* 内容：語り部の台詞の窓が閉じられた時（台詞を送り終わった時）、一覧を開く	 */
+/* ========================================================================= */
+void QuestStoryGreetEnd(DWORD dwMsgID)
+{
+	if ((g_dwQuestStoryMsgID == 0) || (g_dwQuestStoryMsgID != dwMsgID)) {
+		return;
+	}
+	g_dwQuestStoryMsgID = 0;
+	if (QuestFindWindow (QUESTWND_LIST) == NULL) {
+		PWNDINFO pWndList = QuestListOpen (TRUE);
+		/* カーソルと表示位置を一覧の中に収める */
+		pWndList->nData1 = 0;
+		pWndList->nData2 = 0;
+		pWndList->dwTimeDrawStart = 0;
+	}
+	g_bDraw = TRUE;
+}
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcQUEST												 */
 /* 内容：受信データ処理(ギルドの仕事依頼：一覧・結果)						 */
 /* ========================================================================= */
@@ -3740,7 +3827,7 @@ void RecvDataProcQUEST(PBYTE pData, DWORD dwDataSize)
 	case QUESTCMD_LISTITEM:
 	case QUESTCMD_STORYITEM:	/* 思い出の本の一覧（語り部に話した返事）。ギルドの一覧と同じ窓に出す */
 		/* 頼んでいない（開いていない・返事待ちでもない）のに届いた一覧は捨てる */
-		if ((pWndList == NULL) &&
+		if ((pWndList == NULL) && !((g_dwQuestStoryMsgID != 0) && (GetWindowID (g_dwQuestStoryMsgID) >= 0)) &&
 			((g_dwQuestWaitTime == 0) || (timeGetTime () - g_dwQuestWaitTime > QUEST_WAITMAX))) {
 			g_dwQuestWaitTime = 0;
 			return;
@@ -3768,22 +3855,19 @@ void RecvDataProcQUEST(PBYTE pData, DWORD dwDataSize)
 			}
 		}
 		if (pWndList == NULL) {
-			/* ギルドの人に話した返事：一覧の窓を開く */
-			/* 返事を待つ間に開いたコマンドが残っていたら閉じる（一覧の下に隠れて閉じられなくなる） */
-			for (int nNo = g_WndInfo.GetSize () - 1; nNo >= 0; nNo --) {
-				PWNDINFO pWndCmd = (PWNDINFO)g_WndInfo[nNo];
-				if ((pWndCmd->nType == WNDTYPE_COMMAND) && (pWndCmd->pParent == NULL)) {
-					EraseWindow (pWndCmd);
-					nNo = min (nNo, g_WndInfo.GetSize ());
+			if (pPara->byType == QUESTCMD_STORYITEM) {
+				/* 語り部に話した最初の返事：先に語り部の台詞を出し、送ったら（閉じたら）一覧を開く。
+				   一覧の続きのデータは、台詞を出している間もここで溜めておく */
+				if ((g_dwQuestStoryMsgID == 0) || (GetWindowID (g_dwQuestStoryMsgID) < 0)) {
+					QuestStoryGreet (pPara->dwNpcTblID);
+				}
+				if (g_dwQuestStoryMsgID != 0) {
+					g_bDraw = TRUE;
+					return;
 				}
 			}
-			g_dwMsgIDCommand = 0;
-			g_dwQuestWaitTime = 0;
-			g_szQuestMsg[0] = 0;
-			g_bQuestBook = (pPara->byType == QUESTCMD_STORYITEM) ? TRUE : FALSE;
-			pWndList = MakeWindowQUEST (QUESTWND_LIST);
-			g_WndInfo.Add (pWndList);
-			g_dwActiveMsgID = pWndList->dwID;
+			/* ギルドの人に話した返事：一覧の窓を開く */
+			pWndList = QuestListOpen (pPara->byType == QUESTCMD_STORYITEM);
 		}
 		/* カーソルと表示位置を一覧の中に収める */
 		if (pWndList->nData1 >= g_nQuestListCount) {

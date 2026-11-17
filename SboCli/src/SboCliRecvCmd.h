@@ -12,6 +12,9 @@
 /* 関数プロトタイプ宣言														 */
 /* ========================================================================= */
 extern int	GetCharNo				(DWORD);													/* キャラ番号取得 */
+extern PWNDINFO	QuestListOpen			(BOOL);														/* 依頼の一覧の窓を開く */
+extern void	QuestStoryGreet			(DWORD);													/* 語り部の台詞を出す */
+extern void	QuestStoryGreetEnd		(DWORD);													/* 語り部の台詞が終わった（一覧を開く） */
 extern int	GetCharNo2				(DWORD);													/* キャラ番号取得2 */
 extern DWORD	GetCharBuffRest			(DWORD dwTblID, int nType);									/* 攻撃力(0)・守備力(1)アップの残り(ms)。0=かかっていない */
 extern int	GetEventDataSize		(BYTE);														/* イベント種別毎のデータサイズを取得 */
