@@ -138,6 +138,7 @@ void DrawWindowMAKER							(PWNDINFO);			/* 作り手（レシピ）：作れる
 void DrawWindowTOWNWARP						(PWNDINFO);			/* 町転送：行き先の選択 */
 void DrawWindowQUEST						(PWNDINFO);			/* ギルドの依頼：一覧・進み具合 */
 void DrawWindowMARKET						(PWNDINFO);			/* 取引所（商人ギルドの出張所）の受付 */
+void DrawWindowRECYCLE						(PWNDINFO);			/* リサイクルボックス */
 
 void DrawWindowSUBSUGOROKU_JOINMODE				(PWNDINFO);			/* ウィンドウの描画(すごろく：参加モード選択) */
 void DrawWindowSUBSUGOROKU_COMMAND				(PWNDINFO);			/* ウィンドウの描画(すごろく：行動選択) */
@@ -356,6 +357,7 @@ void DrawWindow(CImg32 *pDib, int x, int y)
 		case WNDTYPE_SORTMENU:				DrawWindowSORTMENU (pWnd);				break;
 		case WNDTYPE_MARKET:				DrawWindowMARKET (pWnd);				break;
 		case WNDTYPE_IMPORTANT:				DrawWindowIMPORTANT (pWnd);				break;
+		case WNDTYPE_RECYCLE:				DrawWindowRECYCLE (pWnd);				break;
 		}
 		s_bDrawingWindow = FALSE;
 		/* 一覧の横の詳細欄は、カーソルの所に品が無い時（「大事な物…」の行など）は画面に出さない（空の枠が透けて見えないように） */
@@ -5199,6 +5201,98 @@ void DrawWindowMARKET(PWNDINFO pWnd)
 	pWnd->dwTimeDrawStart = timeGetTime ();
 
 	if (pWnd->nType2 != MARKETWND_PRICE) {
+		DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
+	}
+}
+
+
+/* ========================================================================= */
+/* 関数名：DrawWindowRECYCLE												 */
+/* 内容：ウィンドウの描画(リサイクルボックス：メニュー・中身の一覧・品選び・個数) */
+/*       見た目は取引所・預かり所の一覧と同じ（白い字・カーソル・枠・▲▼）	 */
+/* ========================================================================= */
+void DrawWindowRECYCLE(PWNDINFO pWnd)
+{
+	char szTmp[160], szTmp2[160];
+	int i, nNo;
+	COLORREF clText;
+	int xCount = 32 + (RECYCLE_NAMEUNIT + 1) * 8;
+
+	/* 個数の入力は、描き終わっていればカーソルも要らない */
+	if (pWnd->dwTimeDrawStart) {
+		if (pWnd->nType2 != RECYCLEWND_COUNT) {
+			DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
+		}
+		return;
+	}
+
+	DrawWindowFrame (pWnd);
+	HDC hDC = pWnd->pDib->Lock ();
+	HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFontBasic);
+	SetBkMode (hDC, TRANSPARENT);
+	SetBkColor (hDC, RGB (40, 40, 40));
+
+	switch (pWnd->nType2) {
+	case RECYCLEWND_MENU:
+		TextOut2 (hDC, 32, 16, "入れる", RGB (255, 255, 255));
+		TextOut2 (hDC, 32, 32, "もらう", RGB (255, 255, 255));
+		TextOut2 (hDC, 32, 48, "やめる", RGB (255, 255, 255));
+		break;
+
+	case RECYCLEWND_LIST:
+		for (i = 0; i < pWnd->nData2; i ++) {
+			nNo = (int)pWnd->byData1 + i;
+			if (nNo >= (int)g_RecycleList.byKind) {
+				break;
+			}
+			const RECYCLEENTRY *pEntry = &g_RecycleList.aEntry[nNo];
+			/* 今日もう もらえない時は灰色 */
+			clText = (g_nRecycleLeft > 0) ? RGB (255, 255, 255) : RGB (150, 150, 150);
+			MarketCutText (szTmp, sizeof (szTmp), MarketItemName (pEntry->wItemID), RECYCLE_NAMEUNIT);
+			TextOut2 (hDC, 32, 16 + i * 16, szTmp, clText);
+			/* 個数は右にそろえる（左を空白で埋める） */
+			wsprintf (szTmp, "x%d", (int)pEntry->byCount);
+			int nPad = max (RECYCLE_COUNTCHAR - (int)strlen (szTmp), 0);
+			FillMemory (szTmp2, nPad, ' ');
+			lstrcpy (&szTmp2[nPad], szTmp);
+			TextOut2 (hDC, xCount, 16 + i * 16, szTmp2, clText);
+		}
+		/* 上下に続きがあれば枠に▲▼（道具・預かり所と同じ） */
+		DrawListScrollMark (hDC, pWnd->nCx, pWnd->nCy, pWnd->byData1, pWnd->nData2, (int)g_RecycleList.byKind);
+		break;
+
+	case RECYCLEWND_ITEM:
+		for (i = 0; i < pWnd->nData2; i ++) {
+			nNo = (int)pWnd->byData1 + i;
+			if (nNo >= g_nRecycleHandCount) {
+				break;
+			}
+			const RECYCLEHAND *pHand = &g_aRecycleHand[nNo];
+			/* 入れられる品が 1 つも無い（全部装備中・取り引き不可）は灰色 */
+			clText = (pHand->byOk > 0) ? RGB (255, 255, 255) : RGB (150, 150, 150);
+			MarketCutText (szTmp, sizeof (szTmp), MarketItemName (pHand->wItemID), RECYCLE_NAMEUNIT);
+			TextOut2 (hDC, 32, 16 + i * 16, szTmp, clText);
+			/* 持っている数を右にそろえる（入れられる数が違う時は入れられる数） */
+			wsprintf (szTmp, "x%d", (int)pHand->byOk);
+			int nPad = max (RECYCLE_COUNTCHAR - (int)strlen (szTmp), 0);
+			FillMemory (szTmp2, nPad, ' ');
+			lstrcpy (&szTmp2[nPad], szTmp);
+			TextOut2 (hDC, xCount, 16 + i * 16, szTmp2, clText);
+		}
+		DrawListScrollMark (hDC, pWnd->nCx, pWnd->nCy, pWnd->byData1, pWnd->nData2, g_nRecycleHandCount);
+		break;
+
+	case RECYCLEWND_COUNT:
+		wsprintf (szTmp, "%2d / %2d個", pWnd->nData1, pWnd->nData2);
+		TextOut2 (hDC, 16, 16, szTmp, RGB (255, 255, 255));
+		break;
+	}
+
+	SelectObject (hDC, hFontOld);
+	pWnd->pDib->Unlock ();
+	pWnd->dwTimeDrawStart = timeGetTime ();
+
+	if (pWnd->nType2 != RECYCLEWND_COUNT) {
 		DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
 	}
 }

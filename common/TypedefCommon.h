@@ -370,6 +370,10 @@ enum {
 	CMD_ADMINFLAGGROUP,												/* 管理者ウィンドウのフラグのグループの編集（一覧・書き込み。結果はサーバー→クライアント） */
 /* 以下、プレイヤー用（サーバー→本人だけ。サーバーは受け取らない） */
 	CMD_MAPSWAP,													/* 印で変わるマスの、その人の分の差し替え一覧（サーバー→本人だけ。CMDPARA_MAPSWAP） */
+/* 以下、プレイヤー用（リサイクルボックス。クライアント→サーバーも受ける。管理者用の判定から外すこと） */
+	CMD_RECYCLELIST,												/* リサイクルボックスの中身（要求はクライアント→サーバー、一覧はサーバー→クライアント） */
+	CMD_RECYCLEPUT,													/* リサイクルボックスに入れる（クライアント→サーバー。結果はサーバー→クライアント） */
+	CMD_RECYCLETAKE,												/* リサイクルボックスからもらう（クライアント→サーバー。結果はサーバー→クライアント） */
 	CMD_MAX
 };
 
@@ -3197,6 +3201,71 @@ typedef struct _CMDPARA_MARKETLIST {
 	DWORD		dwSale;												/* 受付に貯まっている売上（ゴールド） */
 	MARKETENTRY	aEntry[MARKET_LISTMAX];								/* 一覧（新しい順） */
 } CMDPARA_MARKETLIST, *PCMDPARA_MARKETLIST;
+#pragma pack(pop)
+
+/* ========================================================================= */
+/* リサイクルボックス（お金を取らない「おすそわけ」の共有の箱。docs/recycle.md）	 */
+/*   台詞が "@d" のNPCに話しかけると開く。受付の近く（同じマップで 3 マス以内）で */
+/*   しか使えない。中身は箱の NPC ごと（NPC番号 dwNpcID ごと）に別々。			 */
+/*   1 つの箱に 20 種類まで・1 種類 255 個まで。入れる時は同じ品の個数を選ぶ。	 */
+/*   もらうのは 1 回に 1 個。1 アカウントが 1 日（日本時間の 0 時まで）に 3 個まで。*/
+/*   装備中・依頼の品・大事な物・取り引き不可の品は入れられない。				 */
+/* ========================================================================= */
+#define RECYCLE_MAXKIND			(20)								/* 1 つの箱に入る品の種類の上限 */
+#define RECYCLE_MAXCOUNT		(255)								/* 1 種類の個数の上限 */
+#define RECYCLE_DAYLIMIT		(3)									/* 1 アカウントが 1 日にもらえる個数（日本時間の 0 時に戻る） */
+#define RECYCLE_RANGE			(3)									/* 箱からの距離（マス）。これより遠いと使えない */
+#define RECYCLE_LOGMAX			(1000)								/* 記録を残す件数（新しいほうから） */
+
+/* 結果（CMDPARA_RECYCLE の byResult。サーバー→クライアント） */
+enum {
+	RECYCLERES_OK = 0,											/* できた */
+	RECYCLERES_FAR,												/* 箱の近くにいない（全部） */
+	RECYCLERES_NGITEM,											/* 入れられない品：装備中・依頼の品・大事な物・取り引き不可・手持ちに無い（PUT） */
+	RECYCLERES_NOHAVE,											/* 手持ちが選んだ個数より少ない・個数が 0（PUT） */
+	RECYCLERES_KINDFULL,										/* 20 種類に達していて、新しい種類は入らない（PUT） */
+	RECYCLERES_COUNTFULL,										/* その品が 255 個に達している・255 を超える（PUT） */
+	RECYCLERES_EMPTY,											/* 箱にその品が無い（TAKE） */
+	RECYCLERES_ITEMFULL,										/* 手持ちがいっぱい（TAKE） */
+	RECYCLERES_DAILY,											/* 今日もらえる個数を使い切った（TAKE） */
+};
+
+#pragma pack(push, 1)
+/* リサイクルボックスの要求と結果（PUT・TAKE と、LIST の要求。要求も結果も同じ形）
+   クライアント→サーバー（byResult は 0 でよい。dwNpcTblID は話しかけた箱のテーブルID）
+     CMD_RECYCLELIST : （無し）
+     CMD_RECYCLEPUT  : wItemID=入れる品の種類ID・byCount=入れる個数（1〜255）
+     CMD_RECYCLETAKE : wItemID=もらう品の種類ID（個数は 1 個）
+   サーバー→クライアント（LIST の返事は CMDPARA_RECYCLELIST）。byResult=RECYCLERES_*
+     OK の時 byCount=入れた・もらった個数、byLeft=今日あとでもらえる個数
+     OK 以外の時も、要求の wItemID などをそのまま返す（byLeft は今日あと何個かを入れる）
+   どの結果も、返したあとに CMD_CHARITEM の更新が本人に届く */
+typedef struct _CMDPARA_RECYCLE {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byResult;											/* 結果(RECYCLERES_*。サーバー→クライアント) */
+	BYTE		byCount;											/* 個数 */
+	BYTE		byLeft;												/* 今日あとでもらえる個数（サーバー→クライアント） */
+	WORD		wItemID;											/* 品の種類ID */
+	DWORD		dwTblID;											/* 本人のテーブルID */
+	DWORD		dwNpcTblID;											/* 話しかけた箱（NPC）のテーブルID */
+} CMDPARA_RECYCLE, *PCMDPARA_RECYCLE;
+
+/* 一覧の 1 件（箱の中の 1 種類） */
+typedef struct _RECYCLEENTRY {
+	WORD		wItemID;											/* 品の種類ID */
+	BYTE		byCount;											/* 個数（1〜255） */
+} RECYCLEENTRY, *PRECYCLEENTRY;
+
+/* リサイクルボックスの中身（サーバー→クライアント。CMD_RECYCLELIST の返事）
+   届く大きさは offsetof(CMDPARA_RECYCLELIST, aEntry) + byKind * sizeof(RECYCLEENTRY) */
+typedef struct _CMDPARA_RECYCLELIST {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byKind;												/* 入っている種類の数（0〜RECYCLE_MAXKIND） */
+	BYTE		byLeft;												/* 今日あとでもらえる個数（0〜RECYCLE_DAYLIMIT） */
+	DWORD		dwTblID;											/* 本人のテーブルID */
+	DWORD		dwNpcTblID;											/* 箱（NPC）のテーブルID */
+	RECYCLEENTRY aEntry[RECYCLE_MAXKIND];							/* 中身（入れた順） */
+} CMDPARA_RECYCLELIST, *PCMDPARA_RECYCLELIST;
 #pragma pack(pop)
 
 /* 管理者ウィンドウのギルドの依頼の編集（CMD_ADMINQUEST の byCmdSub） */

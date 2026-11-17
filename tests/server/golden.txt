@@ -1476,6 +1476,65 @@ market limit after takeback listed=5 put=0
 market save=1 load=1 same=1 items=1 sales=2 next_same=1 sale_a=950 other=4242
 market save empty=1 load=1 items=0 sales=0 next=1
 market end
+== AH. Recycle ==
+recycle npc=1 other=1
+recycle picked items=24 trade=1
+recycle temp quest=1 important=1
+recycle day today=0 next=1 left=3
+recycle nospeech put=1 list=-1 items=2
+recycle nonpcid put=1 items=2
+recycle notbox other=1 outrange=1 player=1 items=2
+recycle far put=1 items=2
+recycle edge ok list=0 left=3 size_ok=1
+recycle short put=-1 items=2
+recycle put count0=3 toomany=3 item0=2 items=2
+recycle put nothave=2 badid=2 stock=0
+recycle put1 res=0 item_ok=1 count=2 left=3 items=3 first_ok=1 second_ok=1 stock0=2 kinds=1 log=1
+recycle put2 merge res=0 stock0=3 kinds=1 rows=1 items=2 log=2
+recycle equip two_of_two=3 one=0 items=2 equ_kept=1 stock2=1
+recycle equip only_equipped=2 items=2
+recycle ng trade=2 items=1
+recycle ng quest=2 items=1
+recycle ng important=2 items=1
+recycle ng stock_rows=2 kinds=2
+recycle list b kinds=2 left=3 size_ok=1 order_ok=1 counts=3,1
+recycle other box empty=0 put=0 take_other_box_item=6 kinds2=1 kinds1=2
+recycle back to box1 kinds=2
+recycle take none=6 left=3
+recycle take1 res=0 count=1 left=2 item_ok=1 items=1 first_ok=1 stock0=2 daily_left=2
+recycle take full=7 items=20 stock0=2 left=2
+recycle take2 res=0 stock0=1 left=1
+recycle take3 res=0 stock0=0 kinds=1 rows=1 left=0 items=2
+recycle take empty-item=6
+recycle take4 res=8 stock2=1 left=0 items=2 (daily limit)
+recycle list b after limit kinds=1 left=0
+recycle take own res=0 left_a=2 left_b=0
+recycle put for next day res=0 stock4=2
+recycle before midnight left_b=0
+recycle after midnight left_b=3 left_a=3
+recycle next day list_left=3 take=0 left=2 items=3 stock4=1
+recycle kinds filled ok=20 kinds=20 items=0
+recycle kinds 21st res=4 kinds=20 items=3
+recycle kinds merge-when-full res=0 stock0=3 kinds=20
+recycle list full kinds=20 size_ok=1
+recycle kinds after take take=0 put21=0 kinds=20
+recycle count 250+6=5 stock0=250 items=7
+recycle count 250+5=0 stock0=255 then+1=5 items=2
+recycle list 255 first_count=255
+recycle save=1 load=1 same=1 stock=3 log=4 daily_rows=1 left_b=2 left_a=3 left_old=3
+recycle after load take1=0 take2=0 take3=6 stock0=0 stock1=0 left_b=0
+recycle log 0 t=0 acc=rcyA name=入れ手 npc=70001 kind=0 item_ok=1 count=2
+recycle log 1 t=0 acc=rcyA name=入れ手 npc=70001 kind=0 item_ok=1 count=1
+recycle log 2 t=0 acc=rcyA name=入れ手 npc=70002 kind=0 item_ok=1 count=1
+recycle log 3 t=0 acc=rcyB name=もらい手 npc=70001 kind=1 item_ok=1 count=1
+recycle log count_ok=1
+recycle log trim size=1000 first_t=5 last_t=1004
+recycle log after put size=1000 first_t=6 last_acc=rcyA
+recycle log save=1 load=1 same=1 size=1000
+recycle api box=1 stock_then_log_newest_first=1 take=1 put=1
+recycle api date=1 acc=1 name=1 missing=1 daily=1 limits=1
+recycle api kinds=1 missing_true=1 box_missing_false=1
+recycle end
 == AB. Important ==
 important add bag=1 imp=3 key=2 quest=1 norm=0
 important count key=2 quest=1 norm=1

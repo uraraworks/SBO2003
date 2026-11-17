@@ -3204,6 +3204,18 @@ void UpdateWindowITEMINFOList(PWNDINFO pWndList)
 		if ((nNo >= 0) && (nNo < (int)g_MarketList.byCount)) {
 			nItemID = g_MarketList.aEntry[nNo].wItemID;
 		}
+	} else if ((pWndList->nType == WNDTYPE_RECYCLE) && (pWndList->nType2 == RECYCLEWND_LIST)) {
+		/* リサイクルボックスの「もらう」の一覧は箱の中身の品を出す（byData1 だけスクロールしている） */
+		nNo += pWndList->byData1;
+		if ((nNo >= 0) && (nNo < (int)g_RecycleList.byKind)) {
+			nItemID = g_RecycleList.aEntry[nNo].wItemID;
+		}
+	} else if ((pWndList->nType == WNDTYPE_RECYCLE) && (pWndList->nType2 == RECYCLEWND_ITEM)) {
+		/* 「入れる」の品選びは手持ちをまとめた一覧の品を出す */
+		nNo += pWndList->byData1;
+		if ((nNo >= 0) && (nNo < g_nRecycleHandCount)) {
+			nItemID = g_aRecycleHand[nNo].wItemID;
+		}
 	} else if ((pWndList->nType == WNDTYPE_LEAVE) && ((g_nProcShopState == LEAVESTATE_ITEMSELECTGET) || (g_nProcShopState == LEAVESTATE_ITEMSORTSWAP) || (g_nProcShopState == LEAVESTATE_ITEMSELECTDISPOSE))) {
 		/* 預かり所の引き取る一覧は byData1 だけスクロールしている */
 		nNo += pWndList->byData1;
@@ -4145,5 +4157,347 @@ void MarketShowConf(int nKind, LPCSTR pszMsg)
 	MarketSetMsg ((pWndOwner != NULL) ? pWndOwner : pWnd, pszMsg);
 	g_dwActiveMsgID = pWnd->dwID;
 	g_nMarketWait = MARKETWAIT_NONE;
+	g_bDraw = TRUE;
+}
+
+
+/* ========================================================================= */
+/* リサイクルボックス（おすそわけの共有の箱）                                */
+/* 台詞が "@d" のNPCに話しかけると、サーバーへ中身を頼み、届いたらメニュー     */
+/* （RECYCLEWND_MENU）を出す。「もらう」は一覧 RECYCLEWND_LIST（選ぶと 1 個もらう）、*/
+/* 「入れる」は手持ちを品ごとにまとめた一覧 RECYCLEWND_ITEM → 個数 RECYCLEWND_COUNT。*/
+/* 品を選ぶ画面の作りは取引所・預かり所と同じ（▲▼で続きを示す）。          */
+/* 一覧・結果はサーバーから届く（SboCliRecvCmd.cpp の RecvDataProcRECYCLE*）。 */
+/* 画面の決まり事は docs/recycle.md                                          */
+/* ========================================================================= */
+
+/* リサイクルボックスの窓を探す（種別 nType2 の窓。無ければ NULL） */
+PWNDINFO RecycleFindWindow(int nType2)
+{
+	for (int i = 0; i < g_WndInfo.GetSize (); i ++) {
+		if ((g_WndInfo[i]->nType == WNDTYPE_RECYCLE) && (g_WndInfo[i]->nType2 == nType2)) {
+			return g_WndInfo[i];
+		}
+	}
+	return NULL;
+}
+
+/* リサイクルボックスの窓が開いているか */
+BOOL RecycleIsOpen(void)
+{
+	for (int i = 0; i < g_WndInfo.GetSize (); i ++) {
+		if (g_WndInfo[i]->nType == WNDTYPE_RECYCLE) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* リサイクルボックスの窓を全部消す（台詞・横の詳細も一緒に消える） */
+void RecycleEraseAll(void)
+{
+	for (;;) {
+		PWNDINFO pWnd = NULL;
+		for (int i = 0; i < g_WndInfo.GetSize (); i ++) {
+			if (g_WndInfo[i]->nType == WNDTYPE_RECYCLE) {
+				pWnd = g_WndInfo[i];
+				break;
+			}
+		}
+		if (pWnd == NULL) {
+			break;
+		}
+		EraseWindow (pWnd);
+	}
+}
+
+/* 閉じる（窓を消して、別れの台詞を出す） */
+void RecycleClose(LPCSTR pszMsg)
+{
+	RecycleEraseAll ();
+	g_nRecycleWait = RECYCLEWAIT_NONE;
+	g_szRecycleResult[0] = 0;
+	if (pszMsg) {
+		PWNDINFO pWndMsg = MakeWindowMSG ((LPSTR)pszMsg, TRUE);
+		g_WndInfo.Add (pWndMsg);
+		g_dwActiveMsgID = pWndMsg->dwID;
+	}
+	g_bDraw = TRUE;
+}
+
+/* 「今日はあと○個もらえます」（もらえない日は「今日はもうもらえません」） */
+void RecycleLeftText(char *pszDst, int nDstSize)
+{
+	if (g_nRecycleLeft > 0) {
+		wsprintf (pszDst, "今日はあと%d個もらえます。", g_nRecycleLeft);
+	} else {
+		lstrcpyn (pszDst, "今日はもうもらえません。", nDstSize);
+	}
+}
+
+/* 手持ちを品の種類ごとにまとめる（出てきた順。入れられる数は、装備中と取り引き不可を除いた数） */
+void RecycleBuildHand(void)
+{
+	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
+	int i, j, k;
+
+	g_nRecycleHandCount = 0;
+	ZeroMemory (g_aRecycleHand, sizeof (g_aRecycleHand));
+	for (i = 0; i < MAX_MYITEM; i ++) {
+		WORD wItemID = pChar->waItem[i];
+		BOOL bOk;
+		if ((wItemID == 0) || ((int)wItemID >= g_aItemInfo.GetSize ())) {
+			continue;
+		}
+		bOk = !(g_aItemInfo[wItemID]->byFlg & ITEMFLG_TRADE);
+		for (j = 0; j < 10; j ++) {
+			if (pChar->waEqu[j] == i) {
+				bOk = FALSE;
+			}
+		}
+		for (k = 0; k < g_nRecycleHandCount; k ++) {
+			if (g_aRecycleHand[k].wItemID == wItemID) {
+				break;
+			}
+		}
+		if (k == g_nRecycleHandCount) {
+			g_aRecycleHand[k].wItemID = wItemID;
+			g_nRecycleHandCount ++;
+		}
+		g_aRecycleHand[k].byHave ++;
+		if (bOk) {
+			g_aRecycleHand[k].byOk ++;
+		}
+	}
+}
+
+/* 一覧の幅（左の枠とカーソル + 品名 + 個数 + 右の枠。画面の幅まで） */
+static int RecycleListWidth(void)
+{
+	int nCx = 32 + (RECYCLE_NAMEUNIT + 1 + RECYCLE_COUNTCHAR) * 8 + 16;
+
+	nCx = (nCx + 15) / 16 * 16;
+	return min (nCx, SCRSIZEX - 32);
+}
+
+/* ========================================================================= */
+/* 関数名：MakeWindowRECYCLE_MENU											 */
+/* 内容：ウィンドウの作成(リサイクルボックス：メニュー)						 */
+/*       nData1=カーソル（入れる・もらう・やめる）							 */
+/* ========================================================================= */
+PWNDINFO MakeWindowRECYCLE_MENU(void)
+{
+	PWNDINFO pWnd = new WNDINFO;
+	ZeroMemory (pWnd, sizeof (WNDINFO));
+	pWnd->dwID = g_dwNewID;
+	g_dwNewID ++;
+	pWnd->nData2 = 3;
+	pWnd->nX = 16 * 19;
+	pWnd->nY = 16 * 8;
+	pWnd->nCx = 16 * 6;
+	pWnd->nCy = 16 * (2 + pWnd->nData2);
+	pWnd->nType = WNDTYPE_RECYCLE;
+	pWnd->nType2 = RECYCLEWND_MENU;
+	pWnd->pDib = new CImg32;
+	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
+	pWnd->pDib->SetColorKey (RGB (40, 40, 40));
+	return pWnd;
+}
+
+/* ========================================================================= */
+/* 関数名：MakeWindowRECYCLE_LIST											 */
+/* 内容：ウィンドウの作成(リサイクルボックス：箱の中身の一覧)				 */
+/*       一覧は g_RecycleList。byData1=先頭の番号 nData1=画面内のカーソル位置 */
+/*       nData2=表示行数													 */
+/* ========================================================================= */
+PWNDINFO MakeWindowRECYCLE_LIST(void)
+{
+	PWNDINFO pWnd = new WNDINFO;
+	ZeroMemory (pWnd, sizeof (WNDINFO));
+	pWnd->dwID = g_dwNewID;
+	g_dwNewID ++;
+	pWnd->nData2 = min (max ((int)g_RecycleList.byKind, 1), MARKET_LISTROWS);
+	pWnd->nX = 16;
+	pWnd->nY = MARKET_LISTY;
+	pWnd->nCx = RecycleListWidth ();
+	pWnd->nCy = 16 * (2 + pWnd->nData2);
+	pWnd->nType = WNDTYPE_RECYCLE;
+	pWnd->nType2 = RECYCLEWND_LIST;
+	pWnd->pDib = new CImg32;
+	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
+	pWnd->pDib->SetColorKey (RGB (40, 40, 40));
+	return pWnd;
+}
+
+/* ========================================================================= */
+/* 関数名：MakeWindowRECYCLE_ITEM											 */
+/* 内容：ウィンドウの作成(リサイクルボックス：入れる品を手持ちから選ぶ)		 */
+/*       作りは取引所・預かり所の品選びと同じ（行数を超える分はスクロール）	 */
+/*       手持ちは RecycleBuildHand でまとめた g_aRecycleHand				 */
+/* ========================================================================= */
+PWNDINFO MakeWindowRECYCLE_ITEM(void)
+{
+	PWNDINFO pWnd = new WNDINFO;
+	ZeroMemory (pWnd, sizeof (WNDINFO));
+	pWnd->dwID = g_dwNewID;
+	g_dwNewID ++;
+	pWnd->nData2 = min (max (g_nRecycleHandCount, 1), MARKET_LISTROWS);
+	pWnd->nX = 16;
+	pWnd->nY = MARKET_LISTY;
+	pWnd->nCx = RecycleListWidth ();
+	pWnd->nCy = 16 * (2 + pWnd->nData2);
+	pWnd->nType = WNDTYPE_RECYCLE;
+	pWnd->nType2 = RECYCLEWND_ITEM;
+	pWnd->pDib = new CImg32;
+	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
+	pWnd->pDib->SetColorKey (RGB (40, 40, 40));
+	return pWnd;
+}
+
+/* ========================================================================= */
+/* 関数名：MakeWindowRECYCLE_COUNT											 */
+/* 内容：ウィンドウの作成(リサイクルボックス：入れる個数を選ぶ)				 */
+/*       nData1=個数（1〜nMax） nData2=入れられる最大（nMax）				 */
+/* ========================================================================= */
+PWNDINFO MakeWindowRECYCLE_COUNT(int nMax)
+{
+	PWNDINFO pWnd = new WNDINFO;
+	ZeroMemory (pWnd, sizeof (WNDINFO));
+	pWnd->dwID = g_dwNewID;
+	g_dwNewID ++;
+	pWnd->nX = 16;
+	pWnd->nY = 16 * 14;
+	pWnd->nCx = 16 * 7;
+	pWnd->nCy = 16 * 3;
+	pWnd->nType = WNDTYPE_RECYCLE;
+	pWnd->nType2 = RECYCLEWND_COUNT;
+	pWnd->nData1 = 1;
+	pWnd->nData2 = max (nMax, 1);
+	pWnd->pDib = new CImg32;
+	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
+	pWnd->pDib->SetColorKey (RGB (40, 40, 40));
+	return pWnd;
+}
+
+/* ========================================================================= */
+/* 関数名：RecycleShowMenu													 */
+/* 内容：メニューを出す（pszMsg=台詞。NULL なら今日の残りを知らせる台詞）	 */
+/* ========================================================================= */
+void RecycleShowMenu(LPCSTR pszMsg)
+{
+	char szMsg[512], szLeft[96];
+
+	RecycleEraseAll ();
+	PWNDINFO pWnd = MakeWindowRECYCLE_MENU ();
+	g_WndInfo.Add (pWnd);
+	if (pszMsg == NULL) {
+		RecycleLeftText (szLeft, sizeof (szLeft));
+		wsprintf (szMsg, "リサイクルボックスです。@1　 いらない物を入れて、ほしい人が@1　 もらっていきます。%s@2", szLeft);
+		pszMsg = szMsg;
+	}
+	MarketSetMsg (pWnd, pszMsg);
+	g_dwActiveMsgID = pWnd->dwID;
+	g_nRecycleWait = RECYCLEWAIT_NONE;
+	g_bDraw = TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：RecycleOpen														 */
+/* 内容：箱に話しかけた時：中身を頼む（届いたらメニューが出る）				 */
+/* ========================================================================= */
+void RecycleOpen(DWORD dwNpcTblID)
+{
+	g_dwRecycleNpcTblID = dwNpcTblID;
+	g_szRecycleResult[0] = 0;
+	g_nRecycleLeft = 0;
+	ZeroMemory (&g_RecycleList, sizeof (g_RecycleList));
+	/* 返事が来るまでの間も窓（台詞）を出しておく。メニューが届いたら差し替える */
+	RecycleEraseAll ();
+	PWNDINFO pWnd = MakeWindowRECYCLE_MENU ();
+	g_WndInfo.Add (pWnd);
+	MarketSetMsg (pWnd, "リサイクルボックスです。@2");
+	g_dwActiveMsgID = pWnd->dwID;
+	SendCmdRECYCLE (CMD_RECYCLELIST, dwNpcTblID, 0, 0);
+	g_nRecycleWait = RECYCLEWAIT_OPEN;
+	g_dwRecycleWaitTime = timeGetTime ();
+	g_bDraw = TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：RecycleShowList													 */
+/* 内容：「もらう」の一覧（g_RecycleList）を出す。nCursor=合わせる番号		 */
+/*       箱が空ならメニューへ戻る。g_szRecycleResult があれば台詞の頭に付ける */
+/* ========================================================================= */
+void RecycleShowList(int nCursor)
+{
+	char szMsg[640], szHead[256], szLeft[96];
+
+	/* 直前の結果のセリフ（一度出したら空にする） */
+	lstrcpyn (szHead, g_szRecycleResult, sizeof (szHead));
+	g_szRecycleResult[0] = 0;
+	RecycleLeftText (szLeft, sizeof (szLeft));
+
+	if (g_RecycleList.byKind == 0) {
+		wsprintf (szMsg, "%s%s箱の中は空っぽです。@2", szHead, szHead[0] ? "@1" : "");
+		RecycleShowMenu (szMsg);
+		return;
+	}
+
+	RecycleEraseAll ();
+	PWNDINFO pWnd = MakeWindowRECYCLE_LIST ();
+	g_WndInfo.Add (pWnd);
+	ListScrollFitMargin (pWnd, nCursor, (int)g_RecycleList.byKind, LISTSCROLL_MARGIN);
+	wsprintf (szMsg, "%s%sどれをもらいますか？（1回に1個）@1　 %s@2", szHead, szHead[0] ? "@1" : "", szLeft);
+	MarketSetMsg (pWnd, szMsg);
+	/* 一覧の横にカーソルの品の詳細を出す（一覧を登録した後で付ける） */
+	MakeWindowITEMINFOList (pWnd);
+	g_dwActiveMsgID = pWnd->dwID;
+	g_nRecycleWait = RECYCLEWAIT_NONE;
+	g_bDraw = TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：RecycleShowItem													 */
+/* 内容：入れる品を手持ちから選ぶ窓を出す（nCursor=合わせる一覧の位置）		 */
+/* ========================================================================= */
+void RecycleShowItem(int nCursor)
+{
+	RecycleBuildHand ();
+	if (g_nRecycleHandCount == 0) {
+		RecycleShowMenu ("何も持っていません。@2");
+		return;
+	}
+	RecycleEraseAll ();
+	PWNDINFO pWnd = MakeWindowRECYCLE_ITEM ();
+	g_WndInfo.Add (pWnd);
+	ListScrollFitMargin (pWnd, nCursor, g_nRecycleHandCount, LISTSCROLL_MARGIN);
+	MarketSetMsg (pWnd, "どれを入れますか？@1　 （装備中の品・取り引きできない品は入れられません）@2");
+	MakeWindowITEMINFOList (pWnd);
+	g_dwActiveMsgID = pWnd->dwID;
+	g_nRecycleWait = RECYCLEWAIT_NONE;
+	g_bDraw = TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：RecycleShowCount													 */
+/* 内容：入れる個数の選択を出す（選んだ品は g_wRecycleSelItem。入れられる最大は */
+/*       手持ちの一覧の byOk）。nCount=最初の個数							 */
+/* ========================================================================= */
+void RecycleShowCount(int nCount)
+{
+	char szMsg[256];
+	int nMax = 1;
+
+	if ((g_nRecycleSelNo >= 0) && (g_nRecycleSelNo < g_nRecycleHandCount)) {
+		nMax = max ((int)g_aRecycleHand[g_nRecycleSelNo].byOk, 1);
+	}
+	RecycleEraseAll ();
+	PWNDINFO pWnd = MakeWindowRECYCLE_COUNT (nMax);
+	g_WndInfo.Add (pWnd);
+	pWnd->nData1 = min (max (nCount, 1), nMax);
+	wsprintf (szMsg, "%sをいくつ入れますか？@1　 ↑↓で数を選びます。（最大%d個）@2", MarketItemName (g_wRecycleSelItem), nMax);
+	MarketSetMsg (pWnd, szMsg);
+	g_dwActiveMsgID = pWnd->dwID;
+	g_nRecycleWait = RECYCLEWAIT_NONE;
 	g_bDraw = TRUE;
 }

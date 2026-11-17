@@ -24,6 +24,7 @@
 #include "SboSvrAdminUndo.h"
 #include "SboSvrNpcRoute.h"
 #include "SboSvrMarket.h"
+#include "SboSvrRecycle.h"
 #include "CharProc/CharProcMERCENARY.h"
 #include "SboSvrMagicProc.h"
 #include <map>
@@ -243,6 +244,9 @@ void	RecvDataProcMARKETPUT					(PBYTE, DWORD);				/* 取引所に出品する */
 void	RecvDataProcMARKETBUY					(PBYTE, DWORD);				/* 取引所で買う */
 void	RecvDataProcMARKETTAKEBACK				(PBYTE, DWORD);				/* 取引所の出品を引き取る */
 void	RecvDataProcMARKETGOLDGET				(PBYTE, DWORD);				/* 取引所の売上を受け取る */
+void	RecvDataProcRECYCLELIST					(PBYTE, DWORD);				/* リサイクルボックスの中身 */
+void	RecvDataProcRECYCLEPUT					(PBYTE, DWORD);				/* リサイクルボックスに入れる */
+void	RecvDataProcRECYCLETAKE					(PBYTE, DWORD);				/* リサイクルボックスからもらう */
 void	RecvDataProcTALKANSWER					(PBYTE, DWORD);				/* 会話データの「はい・いいえ」の答え */
 /* 端末トークン（server/web_account_svr.cpp） */
 BOOL	WebAccTokenToAccount					(LPCSTR, LPSTR, int);		/* 端末トークンからアカウント名を引く */
@@ -303,6 +307,7 @@ extern BOOL SaveEfcInfo					(void);								/* エフェクト情報保存 */
 extern BOOL SaveStTmpInfo				(void);								/* ステータステンプレート情報保存 */
 extern BOOL SaveLeaveInfo				(void);								/* 預かり所情報保存 */
 extern BOOL SaveMarket					(void);								/* 取引所の出品・売上保存 */
+extern BOOL SaveRecycle					(void);								/* リサイクルボックスの中身・記録保存 */
 extern BOOL SaveSubGameInfo				(void);								/* サブゲーム情報保存 */
 extern BOOL SaveJobInfo					(void);								/* 職業情報情報保存 */
 extern BOOL SaveMagicUserInfo			(void);								/* 魔法利用者情報情報保存 */
@@ -490,6 +495,9 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcADMINVIEWALL,			/* CMD_ADMINVIEWALL */
 	RecvDataProcADMINFLAGGROUP,			/* CMD_ADMINFLAGGROUP */
 	NULL,								/* CMD_MAPSWAP(サーバー→クライアントのみ) */
+	RecvDataProcRECYCLELIST,			/* CMD_RECYCLELIST */
+	RecvDataProcRECYCLEPUT,				/* CMD_RECYCLEPUT */
+	RecvDataProcRECYCLETAKE,			/* CMD_RECYCLETAKE */
 
 	NULL
 };
@@ -3703,7 +3711,7 @@ void RecvDataProc(PBYTE pData, DWORD dwDataSize)
 	}
 
 	/* 管理者用のコマンド（管理者ウィンドウからしか送らないもの）は管理者だけ */
-	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && (byCmd != CMD_TALKANSWER) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET))) ||
+	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && (byCmd != CMD_TALKANSWER) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET)) && ((byCmd < CMD_RECYCLELIST) || (byCmd > CMD_RECYCLETAKE))) ||
 			(byCmd == CMD_CHARITEM)) {
 		if (!CheckAdminBan (nNo)) {
 			SAFE_DELETE_ARRAY (pData);
@@ -4698,6 +4706,7 @@ void RecvDataProcSAVEMAP(PBYTE pData, DWORD dwDataSize)
 	SaveMagicInfo ();
 	SaveEquUserInfo ();
 	SaveMarket ();
+	SaveRecycle ();
 	WebThreadRenew ();
 
 	PCHARINFO pChar = g_aCharInfo[pPara->dwTblID];
@@ -12859,7 +12868,7 @@ BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, 
 	/* 管理者用のコマンドだけ（ログインや「元に戻す」自体は通さない） */
 	if ((byCmd >= CMD_MAX) || (RecvDataProcTbl[byCmd] == NULL) ||
 			((byCmd < CMD_MAPPARTSADD) && (byCmd != CMD_CHARITEM)) ||
-			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_ADMINVIEWALL) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET))) {
+			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_ADMINVIEWALL) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET)) || ((byCmd >= CMD_RECYCLELIST) && (byCmd <= CMD_RECYCLETAKE))) {
 		return FALSE;
 	}
 
@@ -13725,6 +13734,63 @@ void RecvDataProcMARKETGOLDGET(PBYTE pData, DWORD dwDataSize)
 	PCHARINFO pChar = MarketRecvChar (pData);
 	if (pChar) {
 		MarketGoldGet (pChar);
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：RecycleRecvChar													 */
+/* 内容：リサイクルボックスのコマンドの送り主を確かめる（正しければキャラを返す）*/
+/*       取引所（MarketRecvChar）と同じ決まり。サイズ不足・別人・倒れている・ */
+/*       討伐チャレンジ中は NULL											 */
+/* ========================================================================= */
+static PCHARINFO RecycleRecvChar(PBYTE pData)
+{
+	PCMDPARA_RECYCLE pPara = (PCMDPARA_RECYCLE)pData;
+	PCHARINFO pChar;
+
+	if (s_dwRecvSize < sizeof (CMDPARA_RECYCLE)) {
+		return NULL;
+	}
+	if (!IsRecvChar (pPara->dwTblID)) {
+		return NULL;
+	}
+	pChar = g_aCharInfo[pPara->dwTblID];
+	if ((pChar == NULL) || (pChar->pID == 0) || (pChar->byNpcType != NPCTYPE_INIT)) {
+		return NULL;
+	}
+	if ((pChar->wHP == 0) || (pChar->byCharState == CHARSTATE_DEAD)) {
+		return NULL;
+	}
+	/* 討伐チャレンジ中は預かり所・取引所と同じく使わない（貸し出しの品が出入りしないように） */
+	if (QuestChallengeBlock (pChar)) {
+		return NULL;
+	}
+	return pChar;
+}
+
+/* リサイクルボックスの受信処理（中身は SboSvrRecycle.cpp） */
+void RecvDataProcRECYCLELIST(PBYTE pData, DWORD dwDataSize)
+{
+	PCHARINFO pChar = RecycleRecvChar (pData);
+	if (pChar) {
+		RecycleList (pChar, ((PCMDPARA_RECYCLE)pData)->dwNpcTblID);
+	}
+}
+
+void RecvDataProcRECYCLEPUT(PBYTE pData, DWORD dwDataSize)
+{
+	PCHARINFO pChar = RecycleRecvChar (pData);
+	if (pChar) {
+		PCMDPARA_RECYCLE pPara = (PCMDPARA_RECYCLE)pData;
+		RecyclePut (pChar, pPara->dwNpcTblID, pPara->wItemID, pPara->byCount);
+	}
+}
+
+void RecvDataProcRECYCLETAKE(PBYTE pData, DWORD dwDataSize)
+{
+	PCHARINFO pChar = RecycleRecvChar (pData);
+	if (pChar) {
+		RecycleTake (pChar, ((PCMDPARA_RECYCLE)pData)->dwNpcTblID, ((PCMDPARA_RECYCLE)pData)->wItemID);
 	}
 }
 

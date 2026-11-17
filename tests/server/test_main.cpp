@@ -35,6 +35,7 @@
 #include "SboSvrItemProc.h"
 #include "SboSvrTalk.h"
 #include "SboSvrMarket.h"
+#include "SboSvrRecycle.h"
 #include "common/crc.h"
 #include "common/Command/Command.h"
 #include <emscripten.h>
@@ -1079,6 +1080,7 @@ static void TestAdminResurrect(const std::vector<int> &aLogin);
 static void TestFlagTalk(const std::vector<int> &aLogin);
 static void TestFlagGroup(const std::vector<int> &aLogin);
 static void TestMarket(const std::vector<int> &aLogin);
+static void TestRecycle(const std::vector<int> &aLogin);
 static void TestTailItemMove(const std::vector<int> &aLogin);
 static void TestViewFlag(const std::vector<int> &aLogin);
 static void TestViewFlagTalk(const std::vector<int> &aLogin);
@@ -1543,6 +1545,8 @@ static void TestWorld(void)
 	TestFlagTalk(aLogin);
 	/* AA. 取引所（委託販売） */
 	TestMarket(aLogin);
+	/* AH. リサイクルボックス（おすそわけの共有の箱） */
+	TestRecycle(aLogin);
 	/* AB. 大事な物の欄と鍵の扉（保存の読み直しでキャラが増えるので最後に流す） */
 	TestImportant(aLogin);
 	/* AD. 印で見える・消えるNPC（乱数を使わない部分。保存の読み直しでキャラの欄が書き換わるので、AB の後・乱数を使う K2 の前に流す） */
@@ -6378,6 +6382,471 @@ static void TestMarket(const std::vector<int> &aLogin)
 	}
 	#undef MKTCOUNT
 	printf("market end\n");
+}
+
+/* ------------------------------------------------------------------------- */
+/* AH. リサイクルボックス（おすそわけの共有の箱。CMD_RECYCLE*）				 */
+/*    箱の近くでだけ使える・入れる（まとめる・20種類・255個・装備中・依頼の品・	 */
+/*    取引不可を断る）・もらう（1個ずつ・0個で消える・1日3個・日本時間の0時で戻る・ */
+/*    手持ちいっぱい）・箱ごとに別の中身・保存して読み直し・記録・データAPI		 */
+/*    時刻は g_dwRecycleNowOverride で決め打ちにする（日付の変わり目を試す）	 */
+/* ------------------------------------------------------------------------- */
+extern BOOL SaveRecycle(void);
+extern BOOL LoadRecycle(void);
+extern "C" const char *SboWebDataRecycle();
+
+/* 箱へ頼んで結果（RECYCLERES_*。届かなければ -1）を返す。届いたパケットは s_RecycleLast に入る */
+static CMDPARA_RECYCLE s_RecycleLast;
+static int RecycleAsk(PCHARINFO p, int nConn, BYTE byCmd, DWORD dwNpcTbl, WORD wItem, BYTE byCount, DWORD dwSize = sizeof(CMDPARA_RECYCLE))
+{
+	CMDPARA_RECYCLE Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = byCmd;
+	Para.wItemID = wItem;
+	Para.byCount = byCount;
+	Para.dwTblID = p->dwTblID;
+	Para.dwNpcTblID = dwNpcTbl;
+	int nBefore = MockCmdCount(nConn, byCmd);
+	TestRecv(p, &Para, dwSize);
+	if (MockCmdCount(nConn, byCmd) == nBefore) {
+		return -1;
+	}
+	std::vector<BYTE> a;
+	if (!MarketLast(nConn, byCmd, a) || a.size() < sizeof(CMDPARA_RECYCLE)) {
+		return -1;
+	}
+	memcpy(&s_RecycleLast, &a[0], sizeof(s_RecycleLast));
+	return s_RecycleLast.byResult;
+}
+
+/* 中身を頼む。届いた種類の数（届かなければ -1）。aEntry に中身、pnLeft に今日あと何個、pnSize に届いた大きさ */
+static int RecycleAskList(PCHARINFO p, int nConn, DWORD dwNpcTbl, std::vector<RECYCLEENTRY> &aEntry, int *pnLeft, size_t *pnSize)
+{
+	CMDPARA_RECYCLE Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_RECYCLELIST;
+	Para.dwTblID = p->dwTblID;
+	Para.dwNpcTblID = dwNpcTbl;
+	int nBefore = MockCmdCount(nConn, CMD_RECYCLELIST);
+	TestRecv(p, &Para, sizeof(Para));
+	aEntry.clear();
+	if (MockCmdCount(nConn, CMD_RECYCLELIST) == nBefore) {
+		return -1;
+	}
+	std::vector<BYTE> a;
+	if (!MarketLast(nConn, CMD_RECYCLELIST, a) || a.size() < offsetof(CMDPARA_RECYCLELIST, aEntry)) {
+		return -1;
+	}
+	std::vector<BYTE> aFull(sizeof(CMDPARA_RECYCLELIST), 0);
+	memcpy(&aFull[0], &a[0], a.size() < aFull.size() ? a.size() : aFull.size());
+	PCMDPARA_RECYCLELIST pList = (PCMDPARA_RECYCLELIST)&aFull[0];
+	for (int i = 0; i < pList->byKind; i ++) {
+		aEntry.push_back(pList->aEntry[i]);
+	}
+	if (pnLeft) *pnLeft = pList->byLeft;
+	if (pnSize) *pnSize = a.size();
+	return pList->byKind;
+}
+
+static void TestRecycle(const std::vector<int> &aLogin)
+{
+	printf("== AH. Recycle ==\n");
+	if (aLogin.size() < 2) {
+		return;
+	}
+	PCHARINFO pA = g_aCharInfo[aLogin[0]], pB = g_aCharInfo[aLogin[1]];
+	int nConnA = 1000, nConnB = 1001;
+	int nMap = (int)pA->dwMapID;
+	PMAPINFO pMap = g_aMapInfo[nMap];
+
+	/* 箱にする NPC（今ある NPC の台詞を一時的に "@d" にする。キャラは増やさない）と、その近くの空きマス 2 つ */
+	PCHARINFO pNpc = NULL;
+	std::vector<std::pair<int, int> > aCell;
+	for (int i = 0; i < g_aCharInfo.GetSize() && !pNpc; i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+		if (p->byNpcType == 0 || p->szAcc[0] != 0 || p->dwMapID != (DWORD)nMap || IsQuestNpc(p) || p->dwSpaceID != 0) continue;
+		aCell.clear();
+		for (int dy = -2; dy <= 2 && aCell.size() < 2; dy ++) {
+			for (int dx = -2; dx <= 2 && aCell.size() < 2; dx ++) {
+				int x = (int)p->dwX + dx, y = (int)p->dwY + dy;
+				if (dx == 0 && dy == 0) continue;
+				if (x < 3 || y < 3 || x >= pMap->nCX - 3 || y >= pMap->nCY - 3) continue;
+				if (!CheckCharBlock((DWORD)nMap, x, y) || CheckCharBlockNPC((DWORD)nMap, x, y) != (DWORD)-1 ||
+					CheckCharBlockPC((DWORD)nMap, x, y) != (DWORD)-1) continue;
+				aCell.push_back(std::make_pair(x, y));
+			}
+		}
+		if (aCell.size() == 2) pNpc = p;
+	}
+	/* 箱ではない別の NPC（箱として頼んでも断られることを見る） */
+	PCHARINFO pOther = NULL;
+	for (int i = 0; i < g_aCharInfo.GetSize() && !pOther; i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+		if (p != pNpc && p->byNpcType != 0 && p->szAcc[0] == 0 && p->dwMapID == (DWORD)nMap && p->dwNpcID != 0) pOther = p;
+	}
+	printf("recycle npc=%d other=%d\n", pNpc ? 1 : 0, pOther ? 1 : 0);
+	if (!pNpc) {
+		return;
+	}
+
+	/* 品：取り引きできる・大事な物でも依頼の品でもない品を 24 種類。取引不可・依頼の品・大事な物も探す */
+	std::vector<WORD> aItem;
+	WORD wTrade = 0;
+	for (int i = 3; i < g_aItemInfo.GetSize(); i ++) {
+		PITEMINFO pItem = g_aItemInfo[i];
+		if (pItem->szName[0] == 0) continue;
+		if (pItem->byFlg & ITEMFLG_TRADE) {
+			if (!wTrade && !IsImportantItem((WORD)i)) wTrade = (WORD)i;
+		} else if (QuestIsQuestItem((WORD)i) || (pItem->byFlg & ITEMFLG_IMPORTANT)) {
+			continue;
+		} else if (aItem.size() < 24) {
+			aItem.push_back((WORD)i);
+		}
+	}
+	printf("recycle picked items=%d trade=%d\n", (int)aItem.size(), wTrade ? 1 : 0);
+	if (aItem.size() < 24) {
+		return;
+	}
+	/* 依頼の品・大事な物は、手元のデータに無くても試せるよう、一時的に作る（終わりに戻す） */
+	WORD wQuestItem = aItem[22], wImportant = aItem[23];
+	std::vector<PQUESTINFO> aQuestBack;
+	for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) aQuestBack.push_back(g_aQuestInfo[i]);
+	g_aQuestInfo.RemoveAll();
+	PQUESTINFO pQuestTmp = new QUESTINFO;
+	ZeroMemory(pQuestTmp, sizeof(*pQuestTmp));
+	pQuestTmp->wNeedFlag = pQuestTmp->wNotFlag = FLAG_NOBIT;
+	pQuestTmp->wID = 1; pQuestTmp->byState = QUESTSTATE_ON; pQuestTmp->wQuestItem = wQuestItem;
+	g_aQuestInfo.Add(pQuestTmp);
+	BYTE byImportantFlgBack = g_aItemInfo[wImportant]->byFlg;
+	g_aItemInfo[wImportant]->byFlg |= ITEMFLG_IMPORTANT;
+	printf("recycle temp quest=%d important=%d\n", (int)QuestIsQuestItem(wQuestItem), (int)IsImportantItem(wImportant));
+
+	/* 状態を控える */
+	PCHARINFO apPC[2] = { pA, pB };
+	DWORD dwMapBack[2], dwXBack[2], dwYBack[2];
+	WORD awItemBack[2][MAX_MYITEM], awEquBack[2][MAX_EQUTYPE];
+	BYTE byAdminBack[2];
+	char szAccBack[2][sizeof(pA->szAcc)], szNameBack[2][sizeof(pA->szName)];
+	for (int i = 0; i < 2; i ++) {
+		PCHARINFO p = apPC[i];
+		dwMapBack[i] = p->dwMapID; dwXBack[i] = p->dwX; dwYBack[i] = p->dwY;
+		memcpy(awItemBack[i], p->waItem, sizeof(awItemBack[i]));
+		memcpy(awEquBack[i], p->waEqu, sizeof(awEquBack[i]));
+		byAdminBack[i] = p->byAdminLV;
+		memcpy(szAccBack[i], p->szAcc, sizeof(szAccBack[i]));
+		memcpy(szNameBack[i], p->szName, sizeof(szNameBack[i]));
+		p->byAdminLV = ADMINLV_USER;
+		ZeroMemory(p->waItem, sizeof(p->waItem));
+		for (int j = 0; j < MAX_EQUTYPE; j ++) p->waEqu[j] = 0xFFFF;
+	}
+	strcpy(pA->szAcc, "rcyA"); strcpy(pA->szName, "入れ手");
+	strcpy(pB->szAcc, "rcyB"); strcpy(pB->szName, "もらい手");
+	char *pszSpeechBack = pNpc->pszNpcSpeech;
+	DWORD dwNpcIDBack = pNpc->dwNpcID;
+	pNpc->pszNpcSpeech = new char[8];
+	strcpy(pNpc->pszNpcSpeech, "@d");
+	const DWORD dwBox = 70001, dwBox2 = 70002;
+	pNpc->dwNpcID = dwBox;
+	DWORD dwNpcTbl = pNpc->dwTblID;
+	QuestMovePC(pA, nMap, aCell[0].first, aCell[0].second);
+	QuestMovePC(pB, nMap, aCell[1].first, aCell[1].second);
+	RecycleClear();
+	MockTrace(1);
+
+	/* 時刻を決め打ちにする：日本時間 2026-11-17 の 23:59:00（この日の最後の 1 分） */
+	const DWORD dwDay0 = 20774;										/* 2026-11-17（日本時間で 1970/1/1 から数えた日数） */
+	const DWORD dwJstEnd = (dwDay0 + 1) * 86400 - 9 * 3600;		/* 日本時間 2026-11-18 の 0 時（UTC の秒） */
+	g_dwRecycleNowOverride = dwJstEnd - 60;
+	printf("recycle day today=%u next=%u left=%d\n", RecycleDay(RecycleNowSec()) - dwDay0, RecycleDay(dwJstEnd) - dwDay0, RecycleLeft("rcyA"));
+
+	#define RCYCOUNT(p) GetItemCount((p)->dwTblID)
+	#define RCYHAND(p, ...) do { int a_[] = { __VA_ARGS__ }; ZeroMemory((p)->waItem, sizeof((p)->waItem)); for (size_t k_ = 0; k_ < sizeof(a_) / sizeof(a_[0]); k_ ++) (p)->waItem[k_] = (WORD)a_[k_]; } while (0)
+	std::vector<RECYCLEENTRY> aE;
+	int nLeft = -1;
+	size_t nSize = 0;
+	int nRes, nR1, nR2, nR3;
+
+	/* 近くにいない・箱でない時は何もできない（台詞が違う・遠い・箱でない NPC・範囲外のテーブル番号・NPC番号が 0） */
+	RCYHAND(pA, aItem[0], aItem[0]);
+	pNpc->pszNpcSpeech[1] = 0x78;
+	nR1 = RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, aItem[0], 1);
+	nR2 = RecycleAskList(pA, nConnA, dwNpcTbl, aE, NULL, NULL);
+	printf("recycle nospeech put=%d list=%d items=%d\n", nR1, nR2, RCYCOUNT(pA));
+	pNpc->pszNpcSpeech[1] = 0x64;
+	pNpc->dwNpcID = 0;
+	nR1 = RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, aItem[0], 1);
+	pNpc->dwNpcID = dwBox;
+	printf("recycle nonpcid put=%d items=%d\n", nR1, RCYCOUNT(pA));
+	nR1 = pOther ? RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, pOther->dwTblID, aItem[0], 1) : -9;
+	nR2 = RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, (DWORD)g_aCharInfo.GetSize() + 5, aItem[0], 1);
+	nR3 = RecycleAsk(pA, nConnA, CMD_RECYCLETAKE, pA->dwTblID, aItem[0], 0);
+	printf("recycle notbox other=%d outrange=%d player=%d items=%d\n", nR1, nR2, nR3, RCYCOUNT(pA));
+	DWORD dwXKeep = pA->dwX;
+	pA->dwX = pNpc->dwX + RECYCLE_RANGE + 1;
+	nR1 = RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, aItem[0], 1);
+	printf("recycle far put=%d items=%d\n", nR1, RCYCOUNT(pA));
+	pA->dwX = pNpc->dwX + RECYCLE_RANGE;
+	nR1 = RecycleAskList(pA, nConnA, dwNpcTbl, aE, &nLeft, &nSize);
+	printf("recycle edge ok list=%d left=%d size_ok=%d\n", nR1, nLeft, (int)(nSize == offsetof(CMDPARA_RECYCLELIST, aEntry)));
+	pA->dwX = dwXKeep;
+	/* 短いパケットは届かない */
+	nR1 = RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, aItem[0], 1, 4);
+	printf("recycle short put=%d items=%d\n", nR1, RCYCOUNT(pA));
+
+	/* 入れる：同じ品 2 個のうち 2 個。手持ちは詰まる。個数が 0・多すぎ・品 0・持っていない品は断る */
+	nR1 = RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, aItem[0], 0);
+	nR2 = RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, aItem[0], 3);
+	nR3 = RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, 0, 1);
+	printf("recycle put count0=%d toomany=%d item0=%d items=%d\n", nR1, nR2, nR3, RCYCOUNT(pA));
+	nR1 = RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, aItem[5], 1);
+	nR2 = RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, (WORD)g_aItemInfo.GetSize(), 1);
+	printf("recycle put nothave=%d badid=%d stock=%d\n", nR1, nR2, (int)g_aRecycleStock.size());
+	RCYHAND(pA, aItem[1], aItem[0], aItem[2], aItem[0], aItem[0]);
+	nRes = RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, aItem[0], 2);
+	printf("recycle put1 res=%d item_ok=%d count=%d left=%d items=%d first_ok=%d second_ok=%d stock0=%d kinds=%d log=%d\n", nRes,
+		(int)(s_RecycleLast.wItemID == aItem[0]), s_RecycleLast.byCount, s_RecycleLast.byLeft, RCYCOUNT(pA),
+		(int)(pA->waItem[0] == aItem[1]), (int)(pA->waItem[1] == aItem[0] && pA->waItem[2] == aItem[2]),
+		RecycleStockCount(dwBox, aItem[0]), RecycleKindCount(dwBox), (int)g_aRecycleLog.size());
+	/* まとめる：同じ品は 1 行のまま個数が増える */
+	nRes = RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, aItem[0], 1);
+	printf("recycle put2 merge res=%d stock0=%d kinds=%d rows=%d items=%d log=%d\n", nRes, RecycleStockCount(dwBox, aItem[0]), RecycleKindCount(dwBox),
+		(int)g_aRecycleStock.size(), RCYCOUNT(pA), (int)g_aRecycleLog.size());
+
+	/* 装備中は入れられない。同じ品を 2 つ持っていて片方が装備中なら、装備していない分だけ */
+	RCYHAND(pA, aItem[1], aItem[2], aItem[2]);
+	pA->waEqu[0] = 1;
+	nR1 = RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, aItem[2], 2);
+	nR2 = RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, aItem[2], 1);
+	printf("recycle equip two_of_two=%d one=%d items=%d equ_kept=%d stock2=%d\n", nR1, nR2, RCYCOUNT(pA), (int)(pA->waEqu[0] < MAX_MYITEM && pA->waItem[pA->waEqu[0]] == aItem[2]), RecycleStockCount(dwBox, aItem[2]));
+	nR1 = RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, aItem[2], 1);
+	printf("recycle equip only_equipped=%d items=%d\n", nR1, RCYCOUNT(pA));
+	pA->waEqu[0] = 0xFFFF;
+	/* 取引不可・依頼の品・大事な物は入れられない */
+	if (wTrade) {
+		RCYHAND(pA, wTrade);
+		printf("recycle ng trade=%d items=%d\n", RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, wTrade, 1), RCYCOUNT(pA));
+	}
+	RCYHAND(pA, wQuestItem);
+	printf("recycle ng quest=%d items=%d\n", RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, wQuestItem, 1), RCYCOUNT(pA));
+	RCYHAND(pA, wImportant);
+	printf("recycle ng important=%d items=%d\n", RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, wImportant, 1), RCYCOUNT(pA));
+	printf("recycle ng stock_rows=%d kinds=%d\n", (int)g_aRecycleStock.size(), RecycleKindCount(dwBox));
+
+	/* 中身の一覧：入れた順・個数・今日あと何個・届く大きさ */
+	nR1 = RecycleAskList(pB, nConnB, dwNpcTbl, aE, &nLeft, &nSize);
+	printf("recycle list b kinds=%d left=%d size_ok=%d order_ok=%d counts=%d,%d\n", nR1, nLeft,
+		(int)(nSize == offsetof(CMDPARA_RECYCLELIST, aEntry) + sizeof(RECYCLEENTRY) * (nR1 > 0 ? nR1 : 0)),
+		(int)(aE.size() == 2 && aE[0].wItemID == aItem[0] && aE[1].wItemID == aItem[2]), aE.size() > 0 ? aE[0].byCount : -1, aE.size() > 1 ? aE[1].byCount : -1);
+
+	/* 別の箱（NPC番号が違う）は中身が別々 */
+	pNpc->dwNpcID = dwBox2;
+	nR1 = RecycleAskList(pB, nConnB, dwNpcTbl, aE, &nLeft, NULL);
+	RCYHAND(pA, aItem[3]);
+	nRes = RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, aItem[3], 1);
+	nR2 = RecycleAsk(pB, nConnB, CMD_RECYCLETAKE, dwNpcTbl, aItem[0], 0);
+	printf("recycle other box empty=%d put=%d take_other_box_item=%d kinds2=%d kinds1=%d\n", nR1, nRes, nR2, RecycleKindCount(dwBox2), RecycleKindCount(dwBox));
+	pNpc->dwNpcID = dwBox;
+	nR1 = RecycleAskList(pB, nConnB, dwNpcTbl, aE, &nLeft, NULL);
+	printf("recycle back to box1 kinds=%d\n", nR1);
+	/* 別の箱の品を片付ける */
+	for (size_t i = g_aRecycleStock.size(); i > 0; i --) {
+		if (g_aRecycleStock[i - 1].dwNpcID == dwBox2) g_aRecycleStock.erase(g_aRecycleStock.begin() + (i - 1));
+	}
+
+	/* もらう：1 回 1 個・箱の中身が 1 つ減る・手持ちに入る・無い品は断る */
+	ZeroMemory(pB->waItem, sizeof(pB->waItem));
+	nR1 = RecycleAsk(pB, nConnB, CMD_RECYCLETAKE, dwNpcTbl, aItem[9], 0);
+	printf("recycle take none=%d left=%d\n", nR1, RecycleLeft("rcyB"));
+	nRes = RecycleAsk(pB, nConnB, CMD_RECYCLETAKE, dwNpcTbl, aItem[0], 0);
+	printf("recycle take1 res=%d count=%d left=%d item_ok=%d items=%d first_ok=%d stock0=%d daily_left=%d\n", nRes, s_RecycleLast.byCount, s_RecycleLast.byLeft,
+		(int)(s_RecycleLast.wItemID == aItem[0]), RCYCOUNT(pB), (int)(pB->waItem[0] == aItem[0]), RecycleStockCount(dwBox, aItem[0]), RecycleLeft("rcyB"));
+	/* 手持ちがいっぱいなら断る（今日の分は減らない） */
+	for (int i = 0; i < MAX_MYITEM; i ++) pB->waItem[i] = aItem[20];
+	nR1 = RecycleAsk(pB, nConnB, CMD_RECYCLETAKE, dwNpcTbl, aItem[0], 0);
+	printf("recycle take full=%d items=%d stock0=%d left=%d\n", nR1, RCYCOUNT(pB), RecycleStockCount(dwBox, aItem[0]), RecycleLeft("rcyB"));
+	ZeroMemory(pB->waItem, sizeof(pB->waItem));
+	/* 0 個になると種類ごと消える */
+	nR1 = RecycleAsk(pB, nConnB, CMD_RECYCLETAKE, dwNpcTbl, aItem[0], 0);
+	printf("recycle take2 res=%d stock0=%d left=%d\n", nR1, RecycleStockCount(dwBox, aItem[0]), s_RecycleLast.byLeft);
+	nR1 = RecycleAsk(pB, nConnB, CMD_RECYCLETAKE, dwNpcTbl, aItem[0], 0);
+	printf("recycle take3 res=%d stock0=%d kinds=%d rows=%d left=%d items=%d\n", nR1, RecycleStockCount(dwBox, aItem[0]), RecycleKindCount(dwBox),
+		(int)g_aRecycleStock.size(), s_RecycleLast.byLeft, RCYCOUNT(pB));
+	/* 1 日 3 個まで（もらうたびに 3 個目で使い切る）。4 個目は断る。箱の中身は減らない */
+	nR1 = RecycleAsk(pB, nConnB, CMD_RECYCLETAKE, dwNpcTbl, aItem[0], 0);
+	printf("recycle take empty-item=%d\n", nR1);
+	nR1 = RecycleAsk(pB, nConnB, CMD_RECYCLETAKE, dwNpcTbl, aItem[2], 0);
+	printf("recycle take4 res=%d stock2=%d left=%d items=%d (daily limit)\n", nR1, RecycleStockCount(dwBox, aItem[2]), s_RecycleLast.byLeft, RCYCOUNT(pB));
+	nR1 = RecycleAskList(pB, nConnB, dwNpcTbl, aE, &nLeft, NULL);
+	printf("recycle list b after limit kinds=%d left=%d\n", nR1, nLeft);
+	/* アカウントごと：別のアカウントはまだもらえる。自分が入れた品ももらえる（数に数える） */
+	nR2 = RecycleAsk(pA, nConnA, CMD_RECYCLETAKE, dwNpcTbl, aItem[2], 0);
+	printf("recycle take own res=%d left_a=%d left_b=%d\n", nR2, RecycleLeft("rcyA"), RecycleLeft("rcyB"));
+	RCYHAND(pA, aItem[4], aItem[4]);
+	nR1 = RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, aItem[4], 2);
+	printf("recycle put for next day res=%d stock4=%d\n", nR1, RecycleStockCount(dwBox, aItem[4]));
+	/* 日本時間の 0 時になると戻る（23:59 → 0:00 ちょうど）。別の日の分は残らない */
+	g_dwRecycleNowOverride = dwJstEnd - 1;
+	printf("recycle before midnight left_b=%d\n", RecycleLeft("rcyB"));
+	g_dwRecycleNowOverride = dwJstEnd;
+	printf("recycle after midnight left_b=%d left_a=%d\n", RecycleLeft("rcyB"), RecycleLeft("rcyA"));
+	nR1 = RecycleAskList(pB, nConnB, dwNpcTbl, aE, &nLeft, NULL);
+	nRes = RecycleAsk(pB, nConnB, CMD_RECYCLETAKE, dwNpcTbl, aItem[4], 0);
+	printf("recycle next day list_left=%d take=%d left=%d items=%d stock4=%d\n", nLeft, nRes, s_RecycleLast.byLeft, RCYCOUNT(pB), RecycleStockCount(dwBox, aItem[4]));
+
+	/* 20 種類まで・同じ品は 255 個まで（箱を空にして、時刻を戻して試す） */
+	g_dwRecycleNowOverride = dwJstEnd - 60;
+	RecycleClear();
+	for (int i = 0; i < 20; i ++) pA->waItem[i] = aItem[i];
+	int nOk = 0;
+	for (int i = 0; i < 20; i ++) {
+		/* 先頭の品を 1 個ずつ入れる（入れるたびに手持ちが詰まる） */
+		if (RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, pA->waItem[0], 1) == RECYCLERES_OK) nOk ++;
+	}
+	printf("recycle kinds filled ok=%d kinds=%d items=%d\n", nOk, RecycleKindCount(dwBox), RCYCOUNT(pA));
+	RCYHAND(pA, aItem[20], aItem[0], aItem[0]);
+	nR1 = RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, aItem[20], 1);
+	printf("recycle kinds 21st res=%d kinds=%d items=%d\n", nR1, RecycleKindCount(dwBox), RCYCOUNT(pA));
+	nR2 = RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, aItem[0], 2);
+	printf("recycle kinds merge-when-full res=%d stock0=%d kinds=%d\n", nR2, RecycleStockCount(dwBox, aItem[0]), RecycleKindCount(dwBox));
+	nR1 = RecycleAskList(pB, nConnB, dwNpcTbl, aE, &nLeft, &nSize);
+	printf("recycle list full kinds=%d size_ok=%d\n", nR1, (int)(nSize == offsetof(CMDPARA_RECYCLELIST, aEntry) + sizeof(RECYCLEENTRY) * 20));
+	/* 20 種類の 1 つがなくなれば、新しい種類が入る */
+	nR1 = RecycleAsk(pB, nConnB, CMD_RECYCLETAKE, dwNpcTbl, aItem[19], 0);
+	RCYHAND(pA, aItem[20]);
+	nR2 = RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, aItem[20], 1);
+	printf("recycle kinds after take take=%d put21=%d kinds=%d\n", nR1, nR2, RecycleKindCount(dwBox));
+	/* 255 個まで */
+	for (size_t i = 0; i < g_aRecycleStock.size(); i ++) {
+		if (g_aRecycleStock[i].wItemID == aItem[0]) g_aRecycleStock[i].byCount = 250;
+	}
+	RCYHAND(pA, aItem[0], aItem[0], aItem[0], aItem[0], aItem[0], aItem[0], aItem[0]);
+	nR1 = RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, aItem[0], 6);
+	printf("recycle count 250+6=%d stock0=%d items=%d\n", nR1, RecycleStockCount(dwBox, aItem[0]), RCYCOUNT(pA));
+	nR2 = RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, aItem[0], 5);
+	nR3 = RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, aItem[0], 1);
+	printf("recycle count 250+5=%d stock0=%d then+1=%d items=%d\n", nR2, RecycleStockCount(dwBox, aItem[0]), nR3, RCYCOUNT(pA));
+	nRes = RecycleAskList(pB, nConnB, dwNpcTbl, aE, &nLeft, NULL);
+	printf("recycle list 255 first_count=%d\n", aE.empty() ? -1 : (int)aE[0].byCount);
+
+	/* 保存して読み直す：中身・今日もらった数・記録 */
+	{
+		RecycleClear();
+		RCYHAND(pA, aItem[0], aItem[0], aItem[1], aItem[2]);
+		RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, aItem[0], 2);
+		RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, aItem[1], 1);
+		pNpc->dwNpcID = dwBox2;
+		RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, aItem[2], 1);
+		pNpc->dwNpcID = dwBox;
+		ZeroMemory(pB->waItem, sizeof(pB->waItem));
+		RecycleAsk(pB, nConnB, CMD_RECYCLETAKE, dwNpcTbl, aItem[0], 0);
+		/* 古い日付の「もらった数」は保存しない（0 個と同じ） */
+		RECYCLEDAILY Old;
+		ZeroMemory(&Old, sizeof(Old));
+		strcpy(Old.szAcc, "rcyold"); Old.dwDay = dwDay0 - 3; Old.byCount = 3;
+		g_aRecycleDaily.push_back(Old);
+		std::vector<RECYCLESTOCK> aStockBefore = g_aRecycleStock;
+		std::vector<RECYCLELOG> aLogBefore = g_aRecycleLog;
+		BOOL bSaved = SaveRecycle();
+		RecycleClear();
+		BOOL bLoaded = LoadRecycle();
+		BOOL bSame = (aStockBefore.size() == g_aRecycleStock.size()) && (aLogBefore.size() == g_aRecycleLog.size());
+		for (size_t i = 0; bSame && i < aStockBefore.size(); i ++) bSame = (memcmp(&aStockBefore[i], &g_aRecycleStock[i], sizeof(RECYCLESTOCK)) == 0);
+		for (size_t i = 0; bSame && i < aLogBefore.size(); i ++) bSame = (memcmp(&aLogBefore[i], &g_aRecycleLog[i], sizeof(RECYCLELOG)) == 0);
+		printf("recycle save=%d load=%d same=%d stock=%d log=%d daily_rows=%d left_b=%d left_a=%d left_old=%d\n", (int)bSaved, (int)bLoaded, (int)bSame,
+			(int)g_aRecycleStock.size(), (int)g_aRecycleLog.size(), (int)g_aRecycleDaily.size(), RecycleLeft("rcyB"), RecycleLeft("rcyA"), RecycleLeft("rcyold"));
+		/* 読み直した後も続けて使える（もらうと減る・次の日に戻る） */
+		ZeroMemory(pB->waItem, sizeof(pB->waItem));
+		nR1 = RecycleAsk(pB, nConnB, CMD_RECYCLETAKE, dwNpcTbl, aItem[0], 0);
+		nR2 = RecycleAsk(pB, nConnB, CMD_RECYCLETAKE, dwNpcTbl, aItem[1], 0);
+		nR3 = RecycleAsk(pB, nConnB, CMD_RECYCLETAKE, dwNpcTbl, aItem[1], 0);
+		printf("recycle after load take1=%d take2=%d take3=%d stock0=%d stock1=%d left_b=%d\n", nR1, nR2, nR3,
+			RecycleStockCount(dwBox, aItem[0]), RecycleStockCount(dwBox, aItem[1]), RecycleLeft("rcyB"));
+
+		/* 記録：誰が・いつ・どの箱で・何を何個（時刻・アカウント・キャラ・箱・操作・品・個数） */
+		BOOL bLog = (aLogBefore.size() == 4);
+		for (size_t i = 0; i < aLogBefore.size(); i ++) {
+			const RECYCLELOG &L = aLogBefore[i];
+			printf("recycle log %d t=%d acc=%s name=%s npc=%u kind=%d item_ok=%d count=%d\n", (int)i, (int)((int)L.dwTime - (int)(dwJstEnd - 60)), L.szAcc, L.szName, L.dwNpcID,
+				(int)L.byKind, (int)(L.wItemID == aItem[0] || L.wItemID == aItem[1] || L.wItemID == aItem[2]), (int)L.byCount);
+		}
+		printf("recycle log count_ok=%d\n", (int)bLog);
+
+		/* 記録は新しい 1000 件まで（古いほうから捨てる）。保存して読み直しても 1000 件 */
+		RecycleClear();
+		for (int i = 0; i < RECYCLE_LOGMAX + 5; i ++) {
+			RECYCLELOG L;
+			ZeroMemory(&L, sizeof(L));
+			L.dwTime = dwJstEnd - 60 + (DWORD)i;
+			strcpy(L.szAcc, "rcylog"); strcpy(L.szName, "記録");
+			L.dwNpcID = dwBox; L.byKind = (BYTE)(i % 2); L.wItemID = aItem[0]; L.byCount = (BYTE)(1 + i % 3);
+			g_aRecycleLog.push_back(L);
+		}
+		RecycleTrimLog();
+		printf("recycle log trim size=%d first_t=%d last_t=%d\n", (int)g_aRecycleLog.size(), (int)(g_aRecycleLog.front().dwTime - (dwJstEnd - 60)), (int)(g_aRecycleLog.back().dwTime - (dwJstEnd - 60)));
+		RCYHAND(pA, aItem[0]);
+		RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, aItem[0], 1);
+		printf("recycle log after put size=%d first_t=%d last_acc=%s\n", (int)g_aRecycleLog.size(), (int)(g_aRecycleLog.front().dwTime - (dwJstEnd - 60)), g_aRecycleLog.back().szAcc);
+		aLogBefore = g_aRecycleLog;
+		bSaved = SaveRecycle();
+		RecycleClear();
+		bLoaded = LoadRecycle();
+		bSame = (aLogBefore.size() == g_aRecycleLog.size());
+		for (size_t i = 0; bSame && i < aLogBefore.size(); i ++) bSame = (memcmp(&aLogBefore[i], &g_aRecycleLog[i], sizeof(RECYCLELOG)) == 0);
+		printf("recycle log save=%d load=%d same=%d size=%d\n", (int)bSaved, (int)bLoaded, (int)bSame, (int)g_aRecycleLog.size());
+	}
+
+	/* データ API（管理者が読むだけの一覧）：箱ごとの中身・記録（新しい順）・今日もらった数・箱の NPC がいない中身 */
+	{
+		RecycleClear();
+		RCYHAND(pA, aItem[0], aItem[0], aItem[1]);
+		RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, aItem[0], 2);
+		RecycleAsk(pA, nConnA, CMD_RECYCLEPUT, dwNpcTbl, aItem[1], 1);
+		ZeroMemory(pB->waItem, sizeof(pB->waItem));
+		g_dwRecycleNowOverride = dwJstEnd - 30;
+		RecycleAsk(pB, nConnB, CMD_RECYCLETAKE, dwNpcTbl, aItem[0], 0);
+		RECYCLESTOCK Lost;
+		ZeroMemory(&Lost, sizeof(Lost));
+		Lost.dwNpcID = 99999; Lost.wItemID = aItem[3]; Lost.byCount = 4;
+		g_aRecycleStock.push_back(Lost);
+		std::string s = SboWebDataRecycle();
+		#define RCYHAS(sz) (int)(s.find(sz) != std::string::npos)
+		char szTmp[256];
+		snprintf(szTmp, sizeof(szTmp), "\"npcId\":%u,", dwBox);
+		int nBox = RCYHAS(szTmp);
+		snprintf(szTmp, sizeof(szTmp), "\"count\":4}]}],\"log\":[{\"time\":%u,", dwJstEnd - 30);
+		int nStockEnd = RCYHAS(szTmp);
+		printf("recycle api box=%d stock_then_log_newest_first=%d take=%d put=%d\n", nBox, nStockEnd, RCYHAS("\"action\":\"take\""), RCYHAS("\"action\":\"put\""));
+		printf("recycle api date=%d acc=%d name=%d missing=%d daily=%d limits=%d\n", RCYHAS("\"date\":\"2026-11-17 23:59\""), RCYHAS("\"acc\":\"rcyA\""), RCYHAS("\"name\":\"入れ手\""),
+			RCYHAS("\"npcId\":99999,"), RCYHAS("\"daily\":[{\"acc\":\"rcyB\",\"count\":1,\"left\":2}]"),
+			RCYHAS("\"limits\":{\"maxKind\":20,\"maxCount\":255,\"dayLimit\":3,\"logMax\":1000,\"range\":3}"));
+		printf("recycle api kinds=%d missing_true=%d box_missing_false=%d\n", RCYHAS("\"kinds\":2,\"total\":2"), RCYHAS("\"missing\":true,\"stock\":[{\"itemId\":"), RCYHAS("\"missing\":false"));
+		#undef RCYHAS
+	}
+
+	/* 片付け */
+	g_dwRecycleNowOverride = 0;
+	MockTrace(0);
+	RecycleClear();
+	SaveRecycle();
+	delete[] pNpc->pszNpcSpeech;
+	pNpc->pszNpcSpeech = pszSpeechBack;
+	pNpc->dwNpcID = dwNpcIDBack;
+	g_aItemInfo[wImportant]->byFlg = byImportantFlgBack;
+	g_aQuestInfo.RemoveAll();
+	delete pQuestTmp;
+	for (size_t i = 0; i < aQuestBack.size(); i ++) g_aQuestInfo.Add(aQuestBack[i]);
+	for (int i = 0; i < 2; i ++) {
+		PCHARINFO p = apPC[i];
+		memcpy(p->waItem, awItemBack[i], sizeof(awItemBack[i]));
+		memcpy(p->waEqu, awEquBack[i], sizeof(awEquBack[i]));
+		p->byAdminLV = byAdminBack[i];
+		memcpy(p->szAcc, szAccBack[i], sizeof(szAccBack[i]));
+		memcpy(p->szName, szNameBack[i], sizeof(szNameBack[i]));
+		QuestMovePC(p, (int)dwMapBack[i], (int)dwXBack[i], (int)dwYBack[i]);
+	}
+	#undef RCYCOUNT
+	#undef RCYHAND
+	printf("recycle end\n");
 }
 
 /* ------------------------------------------------------------------------- */

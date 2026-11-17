@@ -240,6 +240,16 @@ DWORD g_dwMarketSelID = 0;											/* 取引所：選んだ出品ID */
 WORD g_wMarketSelItem = 0;											/* 取引所：選んだ品の種類ID */
 DWORD g_dwMarketSelPrice = 0;										/* 取引所：選んだ出品の値段（出品する時は入れた値段） */
 int g_nMarketSelNo = 0;												/* 取引所：出品する手持ちの位置 */
+CMDPARA_RECYCLELIST g_RecycleList;									/* リサイクルボックスの中身（サーバーから届いたもの） */
+int g_nRecycleWait = 0;												/* リサイクルボックス：返事待ちの種類(RECYCLEWAIT_*) */
+DWORD g_dwRecycleWaitTime = 0;										/* リサイクルボックス：返事待ちを始めた時間 */
+DWORD g_dwRecycleNpcTblID = 0;										/* リサイクルボックス：話しかけた箱のテーブルID */
+char g_szRecycleResult[256] = "";									/* リサイクルボックス：結果のセリフ（次の一覧のセリフの頭に付ける） */
+int g_nRecycleLeft = 0;												/* リサイクルボックス：今日あと何個もらえるか */
+RECYCLEHAND g_aRecycleHand[MAX_MYITEM];								/* リサイクルボックス：手持ちを品ごとにまとめた一覧 */
+int g_nRecycleHandCount = 0;										/* リサイクルボックス：その行数 */
+int g_nRecycleSelNo = 0;											/* リサイクルボックス：入れる品に選んだ一覧の位置 */
+WORD g_wRecycleSelItem = 0;											/* リサイクルボックス：入れる品の種類ID */
 int g_nLeaveListPos = -1;											/* 預かり所の一覧を作り直す時に合わせる番号（-1=先頭） */
 char g_szLeaveResult[256] = "";										/* 預かり所で手放した結果（次の一覧のセリフの頭に付ける） */
 WORD g_wLeaveDisposeItem = 0;										/* 預かり所で手放すよう頼んだ品（0=頼んでいない。結果は一覧の数の差で見る） */

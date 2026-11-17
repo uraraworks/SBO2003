@@ -128,6 +128,7 @@ void KeyProcMAKER							(PWNDINFO, BYTE, BYTE);		/* 作り手（レシピ）：�
 void KeyProcTOWNWARP						(PWNDINFO, BYTE, BYTE);		/* 町転送：行き先の選択 */
 void KeyProcQUEST							(PWNDINFO, BYTE, BYTE);		/* ギルドの依頼：一覧・進み具合 */
 void KeyProcMARKET							(PWNDINFO, BYTE, BYTE);		/* 取引所（商人ギルドの出張所）の受付 */
+void KeyProcRECYCLE							(PWNDINFO, BYTE, BYTE);		/* リサイクルボックス */
 
 LRESULT CALLBACK AccWndProc					(HWND, UINT, WPARAM, LPARAM);	/* アカウント名入力用メッセージ処理 */
 LRESULT CALLBACK PasWndProc					(HWND, UINT, WPARAM, LPARAM);	/* パスワード入力用メッセージ処理 */
@@ -292,6 +293,7 @@ const KEYPROC KeyProcTbl[] = {
 	KeyProcSORTMENU,					/* WNDTYPE_SORTMENU					並べ替え：入れ替え・種類順・50音順 */
 	KeyProcMARKET,						/* WNDTYPE_MARKET					取引所（商人ギルドの出張所）の受付 */
 	KeyProcIMPORTANT,					/* WNDTYPE_IMPORTANT				大事な物の一覧（見るだけ） */
+	KeyProcRECYCLE,						/* WNDTYPE_RECYCLE					リサイクルボックス（おすそわけの共有の箱） */
 };
 
 
@@ -8839,6 +8841,20 @@ void CmdProcHanasu(PWNDINFO pWnd)
 		MarketOpen ();
 		pWndTmp = NULL;
 
+	/* リサイクルボックス（おすそわけの共有の箱）？ 台詞が "@d"。中身や結果はサーバーから届く */
+	} else if (pChar2->pszNpcSpeech[0] == '@' && pChar2->pszNpcSpeech[1] == 'd') {
+		/* コマンドウィンドウを閉じる */
+		int nNo = GetWindowID (g_dwMsgIDCommand);
+		if (nNo >= 0) {
+			EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
+			g_dwMsgIDCommand = 0;
+			g_bDraw = TRUE;
+		}
+		pChar2->byDirection = abyDirectionTbl[pChar->byDirection];
+		/* メニュー（箱の中身を頼んで、届いたら開く） */
+		RecycleOpen (pChar2->dwTblID);
+		pWndTmp = NULL;
+
 	/* 冒険者登録所？ */
 	} else if (pChar2->pszNpcSpeech[0] == '@' && pChar2->pszNpcSpeech[1] == 'a') {
 		/* コマンドウィンドウを閉じる */
@@ -10785,6 +10801,221 @@ void KeyProcMARKET(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		pWnd->byRepeate = 0;
 		g_bDraw = TRUE;
 	}
+}
+
+/* ========================================================================= */
+/* 関数名：KeyProcRECYCLE_Wait												 */
+/* 内容：リサイクルボックス：サーバーの返事を待つ（台詞を「少々お待ちください」にして */
+/*       キーを受け付けなくする。返事は RecvDataProcRECYCLE* が受ける）		 */
+/* ========================================================================= */
+static void KeyProcRECYCLE_Wait(PWNDINFO pWndOwner, int nWait)
+{
+	g_nRecycleWait = nWait;
+	g_dwRecycleWaitTime = timeGetTime ();
+	MarketSetMsg (pWndOwner, "少々お待ちください。@2");
+	g_dwActiveMsgID = pWndOwner->dwID;
+	g_bDraw = TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：KeyProcRECYCLE_Cancel											 */
+/* 内容：リサイクルボックス：取り消し（Zキー）。ひとつ前の画面へ戻る			 */
+/*       pWnd は戻る時に消えるので、呼んだ後は触らないこと					 */
+/* ========================================================================= */
+static void KeyProcRECYCLE_Cancel(PWNDINFO pWnd)
+{
+	switch (pWnd->nType2) {
+	case RECYCLEWND_MENU:
+		RecycleClose ("またどうぞ。@2");
+		break;
+
+	case RECYCLEWND_LIST:
+	case RECYCLEWND_ITEM:
+		RecycleShowMenu (NULL);
+		break;
+
+	case RECYCLEWND_COUNT:
+		RecycleShowItem (g_nRecycleSelNo);
+		break;
+	}
+	g_bDraw = TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：KeyProcRECYCLE													 */
+/* 内容：キー入力処理(リサイクルボックス)									 */
+/*       メニュー → 入れる／もらう／やめる									 */
+/*       決定=x・取消=z・↑↓・個数は ↑↓ で変える（←で1個・→で最大）		 */
+/*       サーバーへ頼んだ後は、返事（RecvDataProcRECYCLE*）が来るまで待つ		 */
+/* ========================================================================= */
+void KeyProcRECYCLE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
+{
+	DWORD dwTime = 250;
+	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
+
+	if (pWnd->byRepeate > 1) {
+		dwTime = 125;
+	}
+
+	/* サーバーの返事待ち（一定時間たったらあきらめて、メニューへ戻る） */
+	if (g_nRecycleWait != RECYCLEWAIT_NONE) {
+		if (timeGetTime () > g_dwRecycleWaitTime + RECYCLE_WAITMAX) {
+			g_nRecycleWait = RECYCLEWAIT_NONE;
+			RecycleShowMenu ("うまく伝わらなかったようです。@1　 もう一度お願いします。@2");
+		}
+		return;
+	}
+
+	if ((byEvent == KEY_UP) && (byCode == 'B')) {
+		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
+		KeyProcRECYCLE_Cancel (pWnd);
+
+	} else if ((byEvent == KEY_UP) && (byCode == 'A') && (g_bEnableMove)) {
+		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
+		pWnd->dwTimeDrawStart = 0;
+		pWnd->byAnime = 1;
+		g_bDraw = TRUE;
+
+		switch (pWnd->nType2) {
+		/* メニュー */
+		case RECYCLEWND_MENU:
+			switch (pWnd->nData1) {
+			case 0:		/* 入れる */
+				RecycleShowItem (0);
+				break;
+
+			case 1:		/* もらう（中身を取り直してから一覧を出す） */
+				SendCmdRECYCLE (CMD_RECYCLELIST, g_dwRecycleNpcTblID, 0, 0);
+				KeyProcRECYCLE_Wait (pWnd, RECYCLEWAIT_TAKELIST);
+				break;
+
+			default:	/* やめる */
+				RecycleClose ("またどうぞ。@2");
+				break;
+			}
+			break;
+
+		/* 「もらう」の一覧：選ぶと 1 個もらう */
+		case RECYCLEWND_LIST:
+			{
+				int nIndex = (int)pWnd->byData1 + pWnd->nData1;
+				if (nIndex >= (int)g_RecycleList.byKind) {
+					break;
+				}
+				const RECYCLEENTRY *pEntry = &g_RecycleList.aEntry[nIndex];
+				if (g_nRecycleLeft <= 0) {
+					char szTmp[160];
+					wsprintf (szTmp, "もらえるのは1日%d個までです。@1　 また明日（0時から）どうぞ。@2", RECYCLE_DAYLIMIT);
+					MarketSetMsg (pWnd, szTmp);
+					g_dwActiveMsgID = pWnd->dwID;
+					break;
+				}
+				if (GetItemCount (g_nMyCharID) >= MAX_MYITEM) {
+					MarketSetMsg (pWnd, "持ち物がいっぱいです。@1　 整理してからもらってください。@2");
+					g_dwActiveMsgID = pWnd->dwID;
+					break;
+				}
+				SendCmdRECYCLE (CMD_RECYCLETAKE, g_dwRecycleNpcTblID, pEntry->wItemID, 0);
+				KeyProcRECYCLE_Wait (pWnd, RECYCLEWAIT_TAKE);
+			}
+			break;
+
+		/* 入れる品を選んだ → 個数へ（装備中・取り引きできない品は選べない） */
+		case RECYCLEWND_ITEM:
+			{
+				int nNo = (int)pWnd->byData1 + pWnd->nData1;
+				if (nNo >= g_nRecycleHandCount) {
+					break;
+				}
+				if (g_aRecycleHand[nNo].byOk == 0) {
+					if (g_aItemInfo[g_aRecycleHand[nNo].wItemID]->byFlg & ITEMFLG_TRADE) {
+						MarketSetMsg (pWnd, "その品は取り引きできないので、@1　 入れられません。@2");
+					} else {
+						MarketSetMsg (pWnd, "装備中の品は入れられません。@2");
+					}
+					g_dwActiveMsgID = pWnd->dwID;
+					break;
+				}
+				g_nRecycleSelNo = nNo;
+				g_wRecycleSelItem = g_aRecycleHand[nNo].wItemID;
+				RecycleShowCount (1);
+			}
+			break;
+
+		/* 個数を決めた → 入れる */
+		case RECYCLEWND_COUNT:
+			SendCmdRECYCLE (CMD_RECYCLEPUT, g_dwRecycleNpcTblID, g_wRecycleSelItem, (BYTE)pWnd->nData1);
+			KeyProcRECYCLE_Wait (pWnd, RECYCLEWAIT_PUT);
+			break;
+		}
+
+	} else if ((byEvent == KEY_DOWN) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
+		BOOL bMove = FALSE;
+
+		switch (pWnd->nType2) {
+		case RECYCLEWND_LIST:
+			/* 行数を超える分はスクロール（余白を残す。取引所・預かり所と同じ） */
+			if (ListScrollKey (pWnd, byCode, (int)g_RecycleList.byKind)) {
+				bMove = TRUE;
+				pWnd->byAnime = 1;
+			}
+			break;
+
+		case RECYCLEWND_ITEM:
+			if (ListScrollKey (pWnd, byCode, g_nRecycleHandCount)) {
+				bMove = TRUE;
+				pWnd->byAnime = 1;
+			}
+			break;
+
+		case RECYCLEWND_COUNT:
+			/* 個数：↑で増やし、↓で減らす（1〜最大）。←で 1 個、→で最大 */
+			if ((byCode == VK_UP) && (pWnd->nData1 < pWnd->nData2)) {
+				pWnd->nData1 ++;
+				bMove = TRUE;
+			} else if ((byCode == VK_DOWN) && (pWnd->nData1 > 1)) {
+				pWnd->nData1 --;
+				bMove = TRUE;
+			} else if ((byCode == VK_LEFT) && (pWnd->nData1 != 1)) {
+				pWnd->nData1 = 1;
+				bMove = TRUE;
+			} else if ((byCode == VK_RIGHT) && (pWnd->nData1 != pWnd->nData2)) {
+				pWnd->nData1 = pWnd->nData2;
+				bMove = TRUE;
+			}
+			pWnd->byAnime = 1;
+			break;
+
+		default:	/* メニュー */
+			if ((byCode == VK_UP) && (pWnd->nData1 > 0)) {
+				pWnd->nData1 --;
+				bMove = TRUE;
+				pWnd->byAnime = 1;
+			} else if ((byCode == VK_DOWN) && (pWnd->nData1 < pWnd->nData2 - 1)) {
+				pWnd->nData1 ++;
+				bMove = TRUE;
+				pWnd->byAnime = 1;
+			}
+			break;
+		}
+
+		if (bMove) {
+			pWnd->dwTime = timeGetTime ();
+			pWnd->byRepeate ++;
+			pWnd->dwTimeKey = timeGetTime ();
+			pWnd->dwTimeDrawStart = 0;
+			g_bDraw = TRUE;
+
+			/* 一覧の横の品の詳細を出し直す（一覧・品選びの時だけ付いている） */
+			UpdateWindowITEMINFOList (pWnd);
+		}
+
+	} else if (byEvent == KEY_UP) {
+		pWnd->dwTimeKey = timeGetTime () - 250;
+		pWnd->byRepeate = 0;
+		g_bDraw = TRUE;
+	}
+	(void)pChar;
 }
 
 /* Copyright(C)URARA-works 2003-2005 */

@@ -172,6 +172,9 @@ void	RecvDataProcMARKETPUT				(PBYTE, DWORD);			/* 受信データ処理(取引�
 void	RecvDataProcMARKETBUY				(PBYTE, DWORD);			/* 受信データ処理(取引所で買った結果) */
 void	RecvDataProcMARKETTAKEBACK			(PBYTE, DWORD);			/* 受信データ処理(取引所の出品を引き取った結果) */
 void	RecvDataProcMARKETGOLDGET			(PBYTE, DWORD);			/* 受信データ処理(取引所の売上を受け取った結果) */
+void	RecvDataProcRECYCLELIST				(PBYTE, DWORD);			/* 受信データ処理(リサイクルボックスの中身) */
+void	RecvDataProcRECYCLEPUT				(PBYTE, DWORD);			/* 受信データ処理(リサイクルボックスに入れた結果) */
+void	RecvDataProcRECYCLETAKE				(PBYTE, DWORD);			/* 受信データ処理(リサイクルボックスからもらった結果) */
 /* ブラウザ版のアカウント関係（web/replace/SboCliWebAccount_web.cpp） */
 void	WebAccSaveToken						(LPCSTR);				/* 端末トークンをページへ渡す */
 void	WebAccOnTokenNG						(void);					/* 端末トークンが無効だった */
@@ -436,6 +439,9 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	NULL,								/* CMD_ADMINVIEWALL(クライアント→サーバーのみ) */
 	RecvDataProcADMINFLAGGROUP,			/* CMD_ADMINFLAGGROUP */
 	RecvDataProcMAPSWAP,				/* CMD_MAPSWAP */
+	RecvDataProcRECYCLELIST,			/* CMD_RECYCLELIST */
+	RecvDataProcRECYCLEPUT,				/* CMD_RECYCLEPUT */
+	RecvDataProcRECYCLETAKE,			/* CMD_RECYCLETAKE */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -8462,6 +8468,149 @@ void RecvDataProcMARKETTAKEBACK(PBYTE pData, DWORD dwDataSize)
 void RecvDataProcMARKETGOLDGET(PBYTE pData, DWORD dwDataSize)
 {
 	MarketOnResult (CMD_MARKETGOLDGET, pData, dwDataSize);
+}
+
+/* ========================================================================= */
+/* リサイクルボックス（おすそわけの共有の箱）の受信処理                       */
+/* 中身が届いたら、頼んだ画面（話しかけた時のメニュー・「もらう」の一覧）に切り替える。*/
+/* 結果が届いたら、結果の台詞を出す。もらった時は中身を取り直す。              */
+/* 結果の後に CMD_CHARITEM の更新が続けて届く（ここでは触らない）。           */
+/* ========================================================================= */
+
+/* ========================================================================= */
+/* 関数名：RecycleResultText												 */
+/* 内容：リサイクルボックス：結果のコード(byResult)に合わせた台詞を作る		 */
+/* ========================================================================= */
+static void RecycleResultText(BYTE byCmd, PCMDPARA_RECYCLE pPara, char *pszDst, int nDstSize)
+{
+	char szTmp[512];
+	LPCSTR pszName = MarketItemName (pPara->wItemID);
+
+	switch (pPara->byResult) {
+	case RECYCLERES_OK:
+		if (byCmd == CMD_RECYCLEPUT) {
+			wsprintf (szTmp, "%sを%d個入れました。@1　 ありがとう。", pszName, (int)pPara->byCount);
+		} else {
+			wsprintf (szTmp, "%sをもらいました。", pszName);
+		}
+		break;
+	case RECYCLERES_FAR:
+		lstrcpy (szTmp, "もう少し近くへ行ってください。");
+		break;
+	case RECYCLERES_NGITEM:
+		lstrcpy (szTmp, "その品は入れられません。@1　 （装備中・依頼の品・大事な物・@1　 取り引きできない品）");
+		break;
+	case RECYCLERES_NOHAVE:
+		lstrcpy (szTmp, "手持ちの数が足りません。");
+		break;
+	case RECYCLERES_KINDFULL:
+		wsprintf (szTmp, "この箱はいっぱいです。@1　 （%d種類まで入ります）", RECYCLE_MAXKIND);
+		break;
+	case RECYCLERES_COUNTFULL:
+		wsprintf (szTmp, "その品はこれ以上入りません。@1　 （1種類%d個まで）", RECYCLE_MAXCOUNT);
+		break;
+	case RECYCLERES_EMPTY:
+		lstrcpy (szTmp, "その品は、もうありません。");
+		break;
+	case RECYCLERES_ITEMFULL:
+		lstrcpy (szTmp, "持ち物がいっぱいです。@1　 整理してからもらってください。");
+		break;
+	case RECYCLERES_DAILY:
+		wsprintf (szTmp, "もらえるのは1日%d個までです。@1　 また明日（0時から）どうぞ。", RECYCLE_DAYLIMIT);
+		break;
+	default:
+		lstrcpy (szTmp, "うまくいきませんでした。");
+		break;
+	}
+	lstrcpyn (pszDst, szTmp, nDstSize);
+}
+
+/* ========================================================================= */
+/* 関数名：RecycleOnResult													 */
+/* 内容：リサイクルボックス：結果を受け取った時の共通処理					 */
+/*       入れた結果はメニューへ戻る。もらった結果は、台詞をとっておいて中身を取り直す */
+/* ========================================================================= */
+static void RecycleOnResult(BYTE byCmd, PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_RECYCLE pPara = (PCMDPARA_RECYCLE)pData;
+	char szTmp[640], szResult[384];
+
+	if (dwDataSize < sizeof (CMDPARA_RECYCLE)) {
+		return;
+	}
+	/* 閉じた後に届いた結果は、台詞を出さない */
+	if (!RecycleIsOpen ()) {
+		return;
+	}
+	g_nRecycleWait = RECYCLEWAIT_NONE;
+	g_nRecycleLeft = (int)pPara->byLeft;
+	RecycleResultText (byCmd, pPara, szResult, sizeof (szResult));
+
+	/* もらった：近くにいない時以外は、中身を取り直して一覧に台詞を付ける */
+	if ((byCmd == CMD_RECYCLETAKE) && (pPara->byResult != RECYCLERES_FAR)) {
+		lstrcpyn (g_szRecycleResult, szResult, sizeof (g_szRecycleResult));
+		SendCmdRECYCLE (CMD_RECYCLELIST, g_dwRecycleNpcTblID, 0, 0);
+		g_nRecycleWait = RECYCLEWAIT_TAKELIST;
+		g_dwRecycleWaitTime = timeGetTime ();
+		return;
+	}
+
+	wsprintf (szTmp, "%s@1　 他に御用は？@2", szResult);
+	RecycleShowMenu (szTmp);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcRECYCLELIST											 */
+/* 内容：受信データ処理(リサイクルボックスの中身)							 */
+/*       頼んだ画面（話しかけた時・「もらう」）に切り替える。頼んでいない中身は捨てる */
+/* ========================================================================= */
+void RecvDataProcRECYCLELIST(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_RECYCLELIST pPara = (PCMDPARA_RECYCLELIST)pData;
+	int i, nCount, nWait = g_nRecycleWait;
+
+	if (dwDataSize < offsetof (CMDPARA_RECYCLELIST, aEntry)) {
+		return;
+	}
+	if (!RecycleIsOpen ()) {
+		return;
+	}
+	if ((nWait != RECYCLEWAIT_OPEN) && (nWait != RECYCLEWAIT_TAKELIST)) {
+		return;
+	}
+
+	/* 届いた件数ぶんだけ写す（サイズ不足・多すぎる件数は切る） */
+	nCount = min ((int)pPara->byKind, RECYCLE_MAXKIND);
+	nCount = min (nCount, (int)((dwDataSize - offsetof (CMDPARA_RECYCLELIST, aEntry)) / sizeof (RECYCLEENTRY)));
+	ZeroMemory (&g_RecycleList, sizeof (g_RecycleList));
+	g_RecycleList.byCmd			= pPara->byCmd;
+	g_RecycleList.byKind		= (BYTE)nCount;
+	g_RecycleList.byLeft		= pPara->byLeft;
+	g_RecycleList.dwTblID		= pPara->dwTblID;
+	g_RecycleList.dwNpcTblID	= pPara->dwNpcTblID;
+	for (i = 0; i < nCount; i ++) {
+		CopyMemory (&g_RecycleList.aEntry[i], &pPara->aEntry[i], sizeof (RECYCLEENTRY));
+	}
+	g_nRecycleLeft = (int)pPara->byLeft;
+
+	g_nRecycleWait = RECYCLEWAIT_NONE;
+	if (nWait == RECYCLEWAIT_OPEN) {
+		RecycleShowMenu (NULL);
+	} else {
+		RecycleShowList (0);
+	}
+}
+
+/* 入れた結果 */
+void RecvDataProcRECYCLEPUT(PBYTE pData, DWORD dwDataSize)
+{
+	RecycleOnResult (CMD_RECYCLEPUT, pData, dwDataSize);
+}
+
+/* もらった結果 */
+void RecvDataProcRECYCLETAKE(PBYTE pData, DWORD dwDataSize)
+{
+	RecycleOnResult (CMD_RECYCLETAKE, pData, dwDataSize);
 }
 
 /* Copyright(C)URARA-works 2003-2006 */
