@@ -1048,6 +1048,12 @@ void RecvCmdOnDecPlayer(int nNo)
 	s_mapMsgCode.erase ((DWORD)nNo);
 	s_mapPartyInvite.erase ((DWORD)nNo);
 	TalkPendClear ((DWORD)nNo);		/* 「はい・いいえ」の保留中の問い */
+	/* 戦闘で列を離れた時の戻り先と、戦闘モードの覚えを消す。
+	   プレイヤーのキャラは切断しても消えない(DeleteChar を通らない)うえ、接続番号(pID)は
+	   空いた枠から使い回すので、残っていると入り直した時に「戦闘モード中」と見なされ、
+	   Z の「ついていく」を黙って無視→クライアントだけ「ついていく」扱いで動けなくなっていた */
+	TailReturnForget ((DWORD)nNo);
+	MercenaryClearBattleMode ((DWORD)nNo);
 }
 
 
@@ -3645,6 +3651,11 @@ BOOL IsTail(PCHARINFO pChar, PCHARINFO pCharTarget)
 		goto Exit;
 	}
 
+	/* 別のマップの相手（マップを移った直後で、画面にまだ残っている人など）にはついていけない */
+	if (pChar->dwMapID != pCharTarget->dwMapID) {
+		goto Exit;
+	}
+
 	/* 誰かを引っ張っている？（傭兵なら、傭兵がこの人の後ろへ回るのでついていける） */
 	if ((pCharTarget->dwTailBackTblID != -1) &&
 		!((pCharTarget->dwTailBackTblID < (DWORD)g_aCharInfo.GetSize ()) &&
@@ -4944,6 +4955,8 @@ void RecvDataProcEVENTCHECK(PBYTE pData, DWORD dwDataSize)
 
 	nNo = GetMapNo (pChar->dwMapID);
 	if (nNo < 0) {
+		/* クライアントは返事が来るまで歩けない（Z も効かない）ので、位置を送って待ちを解く */
+		SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
 		return;
 	}
 	/* 足元を調べた時(Sキー)、同じマスに依頼の見える宝箱などがあればそちらを先に */
@@ -4970,13 +4983,10 @@ void RecvDataProcEVENTCHECK(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pMap = g_aMapInfo[nNo];
-	pEvent = pMap->pEvent;
-	if (!pEvent) {
-		return;
-	}
-
+	/* イベントが1つも無いマップでも、下の「何も無い時」の返事まで進む
+	   （ここで黙って戻ると、クライアントは返事待ちのまま歩けず、Z も効かなくなっていた） */
 	DWORD dwX, dwY;
-	for (i = 0; i < pMap->nEventCount; i ++) {
+	for (i = 0; (pMap->pEvent != NULL) && (i < pMap->nEventCount); i ++) {
 		pEvent = &pMap->pEvent[i];
 		dwX = pChar->dwX;
 		dwY = pChar->dwY;
@@ -6386,8 +6396,9 @@ void TailChaseProc(PCHARINFO pChar)
 	nDX		= (int)pTarget->dwX - (int)pChar->dwX;
 	nDY		= (int)pTarget->dwY - (int)pChar->dwY;
 	nDist	= abs (nDX) + abs (nDY);
-	/* となりに着いた */
-	if (nDist == 1) {
+	/* となりに着いた（同じマスに重なっている時も、そのままつなぐ。
+	   重なったまま道さがしをすると行き先が無く、ワープで空いた所へ飛ばされていた） */
+	if (nDist <= 1) {
 		if (!bPending) {
 			TailChaseLink (pChar, pTarget);
 			return;
@@ -6542,8 +6553,8 @@ static void TailReturnDo(PCHARINFO pChar, const TAILRETURN &Info)
 	nDX		= (int)pTarget->dwX - (int)pChar->dwX;
 	nDY		= (int)pTarget->dwY - (int)pChar->dwY;
 	nDist	= abs (nDX) + abs (nDY);
-	/* 最後尾のとなりにいれば、すぐ列につなぐ */
-	if ((nDist == 1) && !bPending) {
+	/* 最後尾のとなり（か同じマス）にいれば、すぐ列につなぐ */
+	if ((nDist <= 1) && !bPending) {
 		TailChaseLink (pChar, pTarget);
 		return;
 	}
@@ -6557,8 +6568,8 @@ static void TailReturnDo(PCHARINFO pChar, const TAILRETURN &Info)
 	s_mapTailChase[pChar->dwTblID] = Chase;
 	TAILCHASE &Ref = s_mapTailChase[pChar->dwTblID];
 
-	/* 前の人のとなりで、その人がつながるのを待つ */
-	if (nDist == 1) {
+	/* 前の人のとなり（か同じマス）で、その人がつながるのを待つ */
+	if (nDist <= 1) {
 		TailChaseSendTarget (pChar, Ref, pTarget);
 		return;
 	}
@@ -11791,8 +11802,13 @@ void RecvDataProcMAIN_CHAR_TAIL(PBYTE pData, DWORD dwDataSize)
 		goto Exit;
 	}
 	pChar = g_aCharInfo[Packet.m_dwTblID];
-	/* 戦闘モード中のZは普通のキャンセル扱い。「ついていく」の開始・解除は通常モードの時だけ */
+	/* 戦闘モード中のZは普通のキャンセル扱い。「ついていく」の開始・解除は通常モードの時だけ。
+	   ただし黙って無視すると、送る時に「とりあえずついていっている」ことにしたクライアントが
+	   動けないままになる（サーバーにだけ古い戦闘モードの覚えが残っていた時など）ので、
+	   「ついていっていない」ことに戻す返事だけ送る（メッセージは出ない） */
 	if (IsCharBattleMode (pChar)) {
+		Packet.Make (pChar->dwTblID, (DWORD)-1, CHAR_TAIL_CHASEEND);
+		svrSock.SendTo (pChar->pID, Packet.Get (), Packet.GetSize ());
 		goto Exit;
 	}
 	/* 列に戻る途中(追いかけ中)のZは、追いかけをやめて解除 */
@@ -11816,6 +11832,9 @@ void RecvDataProcMAIN_CHAR_TAIL(PBYTE pData, DWORD dwDataSize)
 
 	if (Packet.m_dwTailTblID != -1) {
 		if (Packet.m_dwTailTblID >= (DWORD)g_aCharInfo.GetSize ()) {
+			/* 相手がいない。クライアントは送る時に「ついていっている」ことにしているので戻す */
+			Packet.Make (pChar->dwTblID, -1, CHAR_TAIL_NG2);
+			svrSock.SendTo (pChar->pID, Packet.Get (), Packet.GetSize ());
 			goto Exit;
 		}
 		pCharTarget = g_aCharInfo[Packet.m_dwTailTblID];
