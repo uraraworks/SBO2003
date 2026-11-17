@@ -35,7 +35,7 @@ static void DrawDropEffects	(void);									/* アイテムドロップ演出の
 void DrawETC			(void);										/* ゲージ等の描画 */
 static BOOL IsHideNpcPut	(PCHARINFO pChar);						/* NPC発生を描かない？ */
 static void DrawFrameRect	(int x, int y, int cx, int cy, COLORREF cl);	/* 1ドットの枠を描く */
-static void DrawGuardMark	(int x, int y);								/* 構えの盾マーク */
+static void DrawGuardMark	(int x, int y);								/* 構えの盾マーク(system.png) */
 static void DrawBuffIcons	(int x, int y, DWORD dwTblID);				/* 攻撃力・守備力アップのアイコン(system.png) */
 void DrawObj			(void);										/* オブジェクトの描画 */
 void DrawEvent			(void);										/* イベント情報の描画 */
@@ -2471,26 +2471,14 @@ static void DrawFrameRect(int x, int y, int cx, int cy, COLORREF cl)
 
 /* ========================================================================= */
 /* 関数名：DrawGuardMark													 */
-/* 内容：構えの盾マーク(幅9×高さ12。白縁の青い盾に白い線)				 */
+/* 内容：構えの盾マーク(絵は system.png の x=144,y=96 の 16×16)			 */
+/*		 盾は 16×16 の左上(1,1)から幅7×高さ10。(x,y) から 16×16 を描く	 */
 /* ========================================================================= */
+#define GUARDMARK_GRPX	144
+#define GUARDMARK_GRPY	96
 static void DrawGuardMark(int x, int y)
 {
-	/* 1行ごとの左右の幅(下に行くほど細くなる盾の形) */
-	static const int anInset[12] = {0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 3, 4};
-	int i, nL, nW;
-
-	for (i = 0; i < 12; i ++) {
-		nL = anInset[i];
-		nW = 9 - nL * 2;
-		/* 白い縁 */
-		g_pDibDrawMap->FillRect (x + nL, y + i, nW, 1, RGB (255, 255, 255));
-		/* 中の青 */
-		if ((i > 0) && (i < 11) && (nW > 2)) {
-			g_pDibDrawMap->FillRect (x + nL + 1, y + i, nW - 2, 1, RGB (60, 140, 255));
-		}
-	}
-	/* 真ん中の白い線 */
-	g_pDibDrawMap->FillRect (x + 4, y + 2, 1, 7, RGB (255, 255, 255));
+	g_pDibDrawMap->Blt (x, y, 16, 16, g_pDibSystem, GUARDMARK_GRPX, GUARDMARK_GRPY, TRUE);
 }
 
 
