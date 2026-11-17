@@ -4203,6 +4203,87 @@ static void TestQuest(const std::vector<int> &aLogin)
 		g_aTalkInfo.RemoveAt(g_aTalkInfo.GetSize() - 1);
 	}
 
+	/* 会話の行：取り上げる物（引換券 wItemR → 景品 wItemQ）。取り上げる→渡すが通る／持っていない／受け取れない */
+	{
+		PTALKINFO pTalk = new TALKINFO;
+		CHARINFO Npc;
+		char szSpeech[8];
+		WORD wFill = 0;
+		for (int i = 1; i < g_aItemInfo.GetSize(); i ++) {
+			if (g_aItemInfo[i]->szName[0] && i != wItemQ && i != wItemR) { wFill = (WORD)i; break; }
+		}
+		ZeroMemory(pTalk, sizeof(*pTalk));
+		pTalk->wID = 997; pTalk->byState = TALKSTATE_ON; pTalk->byLineCount = 1;
+		TalkTestLineInit(&pTalk->aLine[0], 1);
+		pTalk->aLine[0].wTakeItem = wItemR; pTalk->aLine[0].wGiveItem = wItemQ;
+		pTalk->aLine[0].awSetOn[0] = 503; pTalk->aLine[0].abyActNo[0] = 9; pTalk->aLine[0].abyActOp[0] = TALKNUMOP_ADD; pTalk->aLine[0].abyActVal[0] = 1;
+		g_aTalkInfo.Add(pTalk);
+		ZeroMemory((PBYTE)&Npc, sizeof(CHARINFO));
+		strcpy(szSpeech, "@t997");
+		Npc.pszNpcSpeech = szSpeech;
+		Npc.dwTblID = dwGuild;
+		ZeroMemory(pP4->waItem, sizeof(pP4->waItem));
+		ZeroMemory(pP4->waImportant, sizeof(pP4->waImportant));
+		for (int i = 0; i < MAX_EQUTYPE; i ++) pP4->waEqu[i] = 0xFFFF;
+		FlagBitSet(pP4->abyFlag, 503, FALSE);
+		FlagNumSet(pP4->abyFlagNum, 9, 0);
+		/* 券を持っている：券 -1・景品 +1・印と数値が動く・「渡しました」の知らせ（渡す知らせと合わせて 2 通） */
+		pP4->waItem[0] = wItemR;
+		int nTk = QuestCountItem(pP4, wItemR), nPz = QuestCountItem(pP4, wItemQ);
+		int nSys = MockCmdCount(anConn[3], CMD_SYSMSG), nTalk = MockCmdCount(anConn[3], CMD_TALKMSG);
+		TalkNpcTalk(pP4, &Npc);
+		printf("talk take ok ticket%+d prize%+d flag=%d num=%d sysmsg=%d talkmsg=%d", QuestCountItem(pP4, wItemR) - nTk, QuestCountItem(pP4, wItemQ) - nPz,
+			FlagBitGet(pP4->abyFlag, 503) ? 1 : 0, FlagNumGet(pP4->abyFlagNum, 9), MockCmdCount(anConn[3], CMD_SYSMSG) - nSys, MockCmdCount(anConn[3], CMD_TALKMSG) - nTalk);
+		/* 券を持っていない：何も動かない（台詞は出る） */
+		FlagBitSet(pP4->abyFlag, 503, FALSE);
+		FlagNumSet(pP4->abyFlagNum, 9, 0);
+		ZeroMemory(pP4->waItem, sizeof(pP4->waItem));
+		ZeroMemory(pP4->waImportant, sizeof(pP4->waImportant));
+		nPz = QuestCountItem(pP4, wItemQ);
+		nSys = MockCmdCount(anConn[3], CMD_SYSMSG); nTalk = MockCmdCount(anConn[3], CMD_TALKMSG);
+		TalkNpcTalk(pP4, &Npc);
+		printf(" none prize%+d flag=%d num=%d sysmsg=%d talkmsg=%d", QuestCountItem(pP4, wItemQ) - nPz, FlagBitGet(pP4->abyFlag, 503) ? 1 : 0, FlagNumGet(pP4->abyFlagNum, 9),
+			MockCmdCount(anConn[3], CMD_SYSMSG) - nSys, MockCmdCount(anConn[3], CMD_TALKMSG) - nTalk);
+		/* 装備中の券は取らない（装備していない同じ券があればそれを取る） */
+		pP4->waItem[0] = wItemR; pP4->waEqu[1] = 0;
+		nPz = QuestCountItem(pP4, wItemQ);
+		TalkNpcTalk(pP4, &Npc);
+		printf(" equ prize%+d ticket=%d flag=%d", QuestCountItem(pP4, wItemQ) - nPz, QuestCountItem(pP4, wItemR), FlagBitGet(pP4->abyFlag, 503) ? 1 : 0);
+		pP4->waItem[1] = wItemR;
+		FlagBitSet(pP4->abyFlag, 503, FALSE);
+		TalkNpcTalk(pP4, &Npc);
+		printf(" equ2 slot0=%d slot1=%d equ=%u", pP4->waItem[0] == wItemR ? 1 : 0, pP4->waItem[1] == wItemR ? 1 : 0, (unsigned)pP4->waEqu[1]);
+		pP4->waEqu[1] = 0xFFFF;
+		/* 手持ちを先に見る（手持ちと大事な物の欄の両方にあれば、手持ちの 1 つを取る） */
+		ZeroMemory(pP4->waItem, sizeof(pP4->waItem));
+		ZeroMemory(pP4->waImportant, sizeof(pP4->waImportant));
+		pP4->waItem[0] = wItemR; pP4->waImportant[0] = wItemR;
+		FlagBitSet(pP4->abyFlag, 503, FALSE);
+		TalkNpcTalk(pP4, &Npc);
+		int nBag = 0;
+		for (int i = 0; i < MAX_MYITEM; i ++) if (pP4->waItem[i] == wItemR) nBag ++;
+		printf(" order bag=%d imp=%d", nBag, CountImportantItem(pP4, wItemR));
+		/* 渡す品を受け取れない（大事な物の欄がいっぱい）：券も取られず、印も数値も動かない。今までと同じ知らせ */
+		BYTE byFlgBak = g_aItemInfo[wItemQ]->byFlg;
+		g_aItemInfo[wItemQ]->byFlg |= ITEMFLG_IMPORTANT;
+		ZeroMemory(pP4->waItem, sizeof(pP4->waItem));
+		for (int i = 0; i < MAX_IMPORTANT; i ++) pP4->waImportant[i] = wFill;
+		pP4->waItem[0] = wItemR;
+		FlagBitSet(pP4->abyFlag, 503, FALSE);
+		FlagNumSet(pP4->abyFlagNum, 9, 0);
+		nSys = MockCmdCount(anConn[3], CMD_SYSMSG); nTalk = MockCmdCount(anConn[3], CMD_TALKMSG);
+		TalkNpcTalk(pP4, &Npc);
+		printf(" full ticket=%d prize=%d flag=%d num=%d sysmsg=%d talkmsg=%d\n", QuestCountItem(pP4, wItemR), QuestCountItem(pP4, wItemQ), FlagBitGet(pP4->abyFlag, 503) ? 1 : 0,
+			FlagNumGet(pP4->abyFlagNum, 9), MockCmdCount(anConn[3], CMD_SYSMSG) - nSys, MockCmdCount(anConn[3], CMD_TALKMSG) - nTalk);
+		g_aItemInfo[wItemQ]->byFlg = byFlgBak;
+		ZeroMemory(pP4->waItem, sizeof(pP4->waItem));
+		ZeroMemory(pP4->waImportant, sizeof(pP4->waImportant));
+		FlagBitSet(pP4->abyFlag, 503, FALSE);
+		FlagNumSet(pP4->abyFlagNum, 9, 0);
+		delete g_aTalkInfo[g_aTalkInfo.GetSize() - 1];
+		g_aTalkInfo.RemoveAt(g_aTalkInfo.GetSize() - 1);
+	}
+
 	/* 保存して読み直す：依頼情報（見えるNPC もそのまま） */
 	{
 		std::vector<QUESTINFO> aBak;

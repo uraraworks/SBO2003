@@ -3269,6 +3269,7 @@ typedef struct _TALKLINEINFO {
 	BYTE		byQuestStepMin;										/* 依頼の段の下限（wQuestID が 0 以外の時） */
 	BYTE		byQuestStepMax;										/* 依頼の段の上限（255=どの段でも） */
 	WORD		wNeedItem;											/* 持っている物の条件（0=条件なし。0 以外なら、そのアイテムを手持ちか大事な物の欄に 1 つ以上持っている人だけ。預かり所は見ない） */
+	WORD		wTakeItem;											/* 話した後に取り上げるアイテム（0=取り上げない。手持ち→大事な物の欄の順に 1 つ。装備中は取らない。持っていなければ印・数値・渡すは動かさない） */
 } TALKLINEINFO, *PTALKLINEINFO;
 
 /* 会話セットの状態(TALKINFO の byState) */
