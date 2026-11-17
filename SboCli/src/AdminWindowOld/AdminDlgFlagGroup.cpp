@@ -13,6 +13,8 @@
  * 変わっていたら一覧を描き直す。
  * ・一覧：種類（印・数値）とメイン名の部分一致で絞り込める。選ぶと下の欄に出る
  * ・追加：下の欄の種類・メイン名・番号の帯・並びで足す（グループ番号は自動で振られる）
+ *   番号の帯は 4 本まで（帯 1 は必須・2〜4 は空でよい）。サブ番号は帯の順に続けて数える
+ *   （例：帯 1 が 100〜139・帯 2 が 300〜319 なら、300 はサブ 41）
  * ・更新：選んでいるグループを、下の欄の内容に直す
  * ・削除：選んでいるグループを消す（サーバー側は「削除済みの枠」として残り、帯はほかのグループが使える）
  * 書き込みはデータAPIと同じ確認（同じ種類での帯の重なり・範囲）を通り、だめならサーバーからの理由を出す。
@@ -47,8 +49,12 @@ static const struct {
 	LPCSTR	pszName;
 	int		nWidth;
 } s_aColumn[] = {
-	{"番号", 45}, {"種類", 50}, {"メイン名", 130}, {"番号の帯", 90}, {"並び", 45},
+	{"番号", 45}, {"種類", 50}, {"メイン名", 130}, {"番号の帯", 130}, {"並び", 45},
 };
+
+/* 帯の欄（帯 1〜4 の先頭・最後） */
+static const int s_aBandFromID[MAX_FLAGGROUPBAND] = { IDC_FG_FROM, IDC_FG_FROM2, IDC_FG_FROM3, IDC_FG_FROM4 };
+static const int s_aBandToID[MAX_FLAGGROUPBAND] = { IDC_FG_TO, IDC_FG_TO2, IDC_FG_TO3, IDC_FG_TO4 };
 
 /* ========================================================================= */
 /* 関数プロトタイプ宣言														 */
@@ -265,7 +271,7 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 	case IDC_DELETE:	/* 削除 */
 		{
 			const FLAGGROUPINFO *pOld = AdminFlagGroupGet (s_nSelIndex);
-			char szMsg[MAX_FLAGGROUPNAME + 128];
+			char szMsg[MAX_FLAGGROUPNAME + 256], szBands[160];
 
 			if (s_bWait) {
 				break;
@@ -274,8 +280,9 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 				MessageBox (hWnd, "消すグループを一覧から選んでください。", FLAGGROUP_TITLE, MB_OK);
 				break;
 			}
-			snprintf (szMsg, sizeof (szMsg), "%s「%s」（%u〜%u）のグループを消します。\n番号そのものは変わりません。よろしいですか？",
-					KindName (pOld->byKind), pOld->szName, (unsigned)pOld->wFrom, (unsigned)pOld->wTo);
+			AdminFlagGroupBandsText (pOld, szBands, sizeof (szBands));
+			snprintf (szMsg, sizeof (szMsg), "%s「%s」（%s）のグループを消します。\n番号そのものは変わりません。よろしいですか？",
+					KindName (pOld->byKind), pOld->szName, szBands);
 			if (MessageBox (hWnd, szMsg, "削除確認", MB_YESNO | MB_ICONQUESTION) != IDYES) {
 				break;
 			}
@@ -327,10 +334,17 @@ static void LoadFields(int nIndex)
 	}
 	SendDlgItemMessage (s_hWndDlg, IDC_FG_KIND, CB_SETCURSEL, (pInfo->byKind == FLAGKIND_NUM) ? 1 : 0, 0);
 	SetDlgItemText (s_hWndDlg, IDC_FG_NAME, pInfo->szName);
-	snprintf (szTmp, sizeof (szTmp), "%u", (unsigned)pInfo->wFrom);
-	SetDlgItemText (s_hWndDlg, IDC_FG_FROM, szTmp);
-	snprintf (szTmp, sizeof (szTmp), "%u", (unsigned)pInfo->wTo);
-	SetDlgItemText (s_hWndDlg, IDC_FG_TO, szTmp);
+	for (int b = 0; b < MAX_FLAGGROUPBAND; b ++) {
+		if (FlagGroupBandUsed (pInfo, b)) {
+			snprintf (szTmp, sizeof (szTmp), "%u", (unsigned)pInfo->awFrom[b]);
+			SetDlgItemText (s_hWndDlg, s_aBandFromID[b], szTmp);
+			snprintf (szTmp, sizeof (szTmp), "%u", (unsigned)pInfo->awTo[b]);
+			SetDlgItemText (s_hWndDlg, s_aBandToID[b], szTmp);
+		} else {
+			SetDlgItemText (s_hWndDlg, s_aBandFromID[b], "");
+			SetDlgItemText (s_hWndDlg, s_aBandToID[b], "");
+		}
+	}
 	snprintf (szTmp, sizeof (szTmp), "%u", (unsigned)pInfo->wSort);
 	SetDlgItemText (s_hWndDlg, IDC_FG_SORT, szTmp);
 }
@@ -345,9 +359,8 @@ static BOOL ReadFields(FLAGGROUPINFO *pInfo)
 {
 	char szName[MAX_FLAGGROUPNAME + 64], szMsg[200];
 	int nKind = (int)SendDlgItemMessage (s_hWndDlg, IDC_FG_KIND, CB_GETCURSEL, 0, 0);
-	unsigned long ulFrom, ulTo, ulSort;
-	BOOL bBlank;
-	int nMax;
+	unsigned long aulFrom[MAX_FLAGGROUPBAND], aulTo[MAX_FLAGGROUPBAND], ulSort;
+	int nMax, nBandCount = 0;
 
 	if (nKind < 0) {
 		nKind = FLAGKIND_BIT;
@@ -369,35 +382,67 @@ static BOOL ReadFields(FLAGGROUPINFO *pInfo)
 		return FALSE;
 	}
 
-	/* 番号の帯（端も含む）。印は 0〜1023・数値は 0〜127 */
-	bBlank = FALSE;
-	if (!AdminFlagReadNo (s_hWndDlg, IDC_FG_FROM, ulFrom, bBlank) || bBlank || (ulFrom >= (unsigned long)nMax)) {
-		snprintf (szMsg, sizeof (szMsg), "番号の帯の先頭は、%sの番号 0〜%d で入れてください。", KindName (nKind), nMax - 1);
-		MessageBox (s_hWndDlg, szMsg, FLAGGROUP_TITLE, MB_OK);
-		SetFocus (GetDlgItem (s_hWndDlg, IDC_FG_FROM));
-		return FALSE;
+	/* 番号の帯（端も含む）。印は 0〜1023・数値は 0〜127。帯 1 は必須、帯 2〜4 は先頭・最後とも空なら使わない */
+	for (int b = 0; b < MAX_FLAGGROUPBAND; b ++) {
+		BOOL bBlankFrom = FALSE, bBlankTo = FALSE;
+		unsigned long ulF = 0, ulT = 0;
+		char szBand[16];
+
+		snprintf (szBand, sizeof (szBand), "帯%d", b + 1);
+		if (!AdminFlagReadNo (s_hWndDlg, s_aBandFromID[b], ulF, bBlankFrom) || !AdminFlagReadNo (s_hWndDlg, s_aBandToID[b], ulT, bBlankTo)) {
+			snprintf (szMsg, sizeof (szMsg), "%sの番号を数字で入れてください。", szBand);
+			MessageBox (s_hWndDlg, szMsg, FLAGGROUP_TITLE, MB_OK);
+			SetFocus (GetDlgItem (s_hWndDlg, s_aBandFromID[b]));
+			return FALSE;
+		}
+		if ((b > 0) && bBlankFrom && bBlankTo) {
+			continue;		/* 使わない帯 */
+		}
+		if (bBlankFrom || (ulF >= (unsigned long)nMax)) {
+			snprintf (szMsg, sizeof (szMsg), "%sの先頭は、%sの番号 0〜%d で入れてください。%s", szBand, KindName (nKind), nMax - 1, (b > 0) ? "\n（使わない帯は先頭・最後とも空にします）" : "");
+			MessageBox (s_hWndDlg, szMsg, FLAGGROUP_TITLE, MB_OK);
+			SetFocus (GetDlgItem (s_hWndDlg, s_aBandFromID[b]));
+			return FALSE;
+		}
+		if (bBlankTo || (ulT >= (unsigned long)nMax)) {
+			snprintf (szMsg, sizeof (szMsg), "%sの最後は、%sの番号 0〜%d で入れてください。%s", szBand, KindName (nKind), nMax - 1, (b > 0) ? "\n（使わない帯は先頭・最後とも空にします）" : "");
+			MessageBox (s_hWndDlg, szMsg, FLAGGROUP_TITLE, MB_OK);
+			SetFocus (GetDlgItem (s_hWndDlg, s_aBandToID[b]));
+			return FALSE;
+		}
+		if (ulF > ulT) {
+			snprintf (szMsg, sizeof (szMsg), "%sは、先頭 <= 最後 になるように入れてください。", szBand);
+			MessageBox (s_hWndDlg, szMsg, FLAGGROUP_TITLE, MB_OK);
+			SetFocus (GetDlgItem (s_hWndDlg, s_aBandToID[b]));
+			return FALSE;
+		}
+		aulFrom[nBandCount] = ulF;
+		aulTo[nBandCount] = ulT;
+		nBandCount ++;
 	}
-	if (!AdminFlagReadNo (s_hWndDlg, IDC_FG_TO, ulTo, bBlank) || bBlank || (ulTo >= (unsigned long)nMax)) {
-		snprintf (szMsg, sizeof (szMsg), "番号の帯の最後は、%sの番号 0〜%d で入れてください。", KindName (nKind), nMax - 1);
-		MessageBox (s_hWndDlg, szMsg, FLAGGROUP_TITLE, MB_OK);
-		SetFocus (GetDlgItem (s_hWndDlg, IDC_FG_TO));
-		return FALSE;
-	}
-	if (ulFrom > ulTo) {
-		MessageBox (s_hWndDlg, "番号の帯は、先頭 <= 最後 になるように入れてください。", FLAGGROUP_TITLE, MB_OK);
-		SetFocus (GetDlgItem (s_hWndDlg, IDC_FG_TO));
-		return FALSE;
+	/* 同じグループの帯同士が重ならないこと（ほかのグループとの重なりはサーバーが確かめる） */
+	for (int b = 0; b < nBandCount; b ++) {
+		for (int c = b + 1; c < nBandCount; c ++) {
+			if (aulFrom[b] <= aulTo[c] && aulFrom[c] <= aulTo[b]) {
+				snprintf (szMsg, sizeof (szMsg), "帯が重なっています。（%lu〜%lu と %lu〜%lu）", aulFrom[b], aulTo[b], aulFrom[c], aulTo[c]);
+				MessageBox (s_hWndDlg, szMsg, FLAGGROUP_TITLE, MB_OK);
+				return FALSE;
+			}
+		}
 	}
 	if (!AdminFlagGetValue (s_hWndDlg, s_hWndDlg, IDC_FG_SORT, 65535, "並び", FLAGGROUP_TITLE, ulSort)) {
 		return FALSE;
 	}
 
 	ZeroMemory (pInfo, sizeof (FLAGGROUPINFO));
+	FlagGroupClearBands (pInfo);
 	pInfo->byState = FLAGGROUPSTATE_ON;
 	pInfo->byKind = (BYTE)nKind;
 	strncpy (pInfo->szName, szName, sizeof (pInfo->szName) - 1);
-	pInfo->wFrom = (WORD)ulFrom;
-	pInfo->wTo = (WORD)ulTo;
+	for (int b = 0; b < nBandCount; b ++) {
+		pInfo->awFrom[b] = (WORD)aulFrom[b];
+		pInfo->awTo[b] = (WORD)aulTo[b];
+	}
 	pInfo->wSort = (WORD)ulSort;
 	return TRUE;
 }
@@ -422,7 +467,7 @@ static void RenewList(void)
 {
 	HWND hWndTmp;
 	LV_ITEM item;
-	char szTmp[160], szKey[128];
+	char szTmp[200], szKey[128], szBands[160];
 	int i, nKindSel, nCount, nSelRow = -1, nBit = 0, nNum = 0;
 	std::vector<int> anAll;
 
@@ -472,7 +517,8 @@ static void RenewList(void)
 		ListView_InsertItem (hWndTmp, &item);
 		ListView_SetItemText (hWndTmp, i, 1, (LPSTR)KindName (pInfo->byKind));
 		ListView_SetItemText (hWndTmp, i, 2, (LPSTR)pInfo->szName);
-		snprintf (szTmp, sizeof (szTmp), "%u〜%u（%u 個）", (unsigned)pInfo->wFrom, (unsigned)pInfo->wTo, (unsigned)(pInfo->wTo - pInfo->wFrom + 1));
+		AdminFlagGroupBandsText (pInfo, szBands, sizeof (szBands));
+		snprintf (szTmp, sizeof (szTmp), "%s（%d 個）", szBands, FlagGroupSubCount (pInfo));
 		ListView_SetItemText (hWndTmp, i, 3, szTmp);
 		snprintf (szTmp, sizeof (szTmp), "%u", (unsigned)pInfo->wSort);
 		ListView_SetItemText (hWndTmp, i, 4, szTmp);

@@ -3255,27 +3255,108 @@ enum {
 	FLAGGROUPSTATE_ON,											/* 有効 */
 };
 
-/* フラグのグループの 1 件（同じ種類で番号の帯 wFrom〜wTo が重なる有効なグループは作れない） */
+/* 1 つのグループが持てる番号の帯の本数（サブ番号は帯の順に続けて数える。後から番号が飛んだ場所に「続きの帯」を足せる） */
+#define MAX_FLAGGROUPBAND	4
+#define FLAGGROUPBAND_NONE	0xFFFF									/* 使わない帯（awFrom に入れる） */
+
+/* フラグのグループの 1 件（同じ種類で番号の帯が重なる有効なグループは作れない。同じグループの帯同士も重ねられない） */
 typedef struct _FLAGGROUPINFO {
 	WORD		wID;												/* グループ番号（1〜255。足す時に自動で振られ、変わらない） */
 	BYTE		byState;											/* 状態(FLAGGROUPSTATE_*) */
 	BYTE		byKind;												/* 種類(FLAGKIND_*。印か数値か) */
 	char		szName[MAX_FLAGGROUPNAME];							/* メイン名（例：「ルシー」。管理用。プレイヤーには出ない） */
-	WORD		wFrom;												/* 番号の帯の先頭（その番号も含む） */
-	WORD		wTo;												/* 番号の帯の最後（その番号も含む） */
+	WORD		awFrom[MAX_FLAGGROUPBAND];							/* 番号の帯の先頭（その番号も含む。使わない帯は FLAGGROUPBAND_NONE。帯 1 は必須） */
+	WORD		awTo[MAX_FLAGGROUPBAND];							/* 番号の帯の最後（その番号も含む） */
 	WORD		wSort;												/* 並び順（一覧で小さい順。同じなら番号順） */
 } FLAGGROUPINFO, *PFLAGGROUPINFO;
+
+/* 帯をすべて空にする（memset 0 のあとに呼ぶ） */
+inline void FlagGroupClearBands(FLAGGROUPINFO *p)
+{
+	for (int i = 0; i < MAX_FLAGGROUPBAND; i ++) {
+		p->awFrom[i] = FLAGGROUPBAND_NONE;
+		p->awTo[i] = 0;
+	}
+}
+
+/* 帯 nBand（0 始まり）を使っているか */
+inline BOOL FlagGroupBandUsed(const FLAGGROUPINFO *p, int nBand)
+{
+	return (nBand >= 0) && (nBand < MAX_FLAGGROUPBAND) && (p->awFrom[nBand] != FLAGGROUPBAND_NONE);
+}
+
+/* 使っている帯の本数（先頭から詰めて使う前提だが、空の帯が間にあっても飛ばして数える） */
+inline int FlagGroupBandCount(const FLAGGROUPINFO *p)
+{
+	int n = 0;
+	for (int i = 0; i < MAX_FLAGGROUPBAND; i ++) {
+		if (FlagGroupBandUsed(p, i)) {
+			n ++;
+		}
+	}
+	return n;
+}
 
 /* 有効なグループの帯に、その種類の番号 wNo が入るか */
 inline BOOL FlagGroupHas(const FLAGGROUPINFO *p, BYTE byKind, WORD wNo)
 {
-	return (p->byState == FLAGGROUPSTATE_ON) && (p->byKind == byKind) && (wNo >= p->wFrom) && (wNo <= p->wTo);
+	if ((p->byState != FLAGGROUPSTATE_ON) || (p->byKind != byKind)) {
+		return FALSE;
+	}
+	for (int i = 0; i < MAX_FLAGGROUPBAND; i ++) {
+		if (FlagGroupBandUsed(p, i) && (wNo >= p->awFrom[i]) && (wNo <= p->awTo[i])) {
+			return TRUE;
+		}
+	}
+	return FALSE;
 }
 
-/* グループの中での番号（サブ。1 始まり）。FlagGroupHas が真の時に使う */
+/* グループの中での番号（サブ。1 始まり。帯の順に続けて数える）。FlagGroupHas が真の時に使う。入らなければ 0 */
 inline int FlagGroupSub(const FLAGGROUPINFO *p, WORD wNo)
 {
-	return (int)wNo - (int)p->wFrom + 1;
+	int nBase = 0;
+	for (int i = 0; i < MAX_FLAGGROUPBAND; i ++) {
+		if (!FlagGroupBandUsed(p, i)) {
+			continue;
+		}
+		if ((wNo >= p->awFrom[i]) && (wNo <= p->awTo[i])) {
+			return nBase + (int)wNo - (int)p->awFrom[i] + 1;
+		}
+		nBase += (int)p->awTo[i] - (int)p->awFrom[i] + 1;
+	}
+	return 0;
+}
+
+/* グループのサブの総数（すべての帯の番号の数の合計） */
+inline int FlagGroupSubCount(const FLAGGROUPINFO *p)
+{
+	int nCount = 0;
+	for (int i = 0; i < MAX_FLAGGROUPBAND; i ++) {
+		if (FlagGroupBandUsed(p, i)) {
+			nCount += (int)p->awTo[i] - (int)p->awFrom[i] + 1;
+		}
+	}
+	return nCount;
+}
+
+/* サブ nSub（1 始まり）にあたる番号。範囲外なら FALSE */
+inline BOOL FlagGroupNoOfSub(const FLAGGROUPINFO *p, int nSub, WORD &wNo)
+{
+	if (nSub < 1) {
+		return FALSE;
+	}
+	for (int i = 0; i < MAX_FLAGGROUPBAND; i ++) {
+		if (!FlagGroupBandUsed(p, i)) {
+			continue;
+		}
+		int nLen = (int)p->awTo[i] - (int)p->awFrom[i] + 1;
+		if (nSub <= nLen) {
+			wNo = (WORD)(p->awFrom[i] + nSub - 1);
+			return TRUE;
+		}
+		nSub -= nLen;
+	}
+	return FALSE;
 }
 
 /* 数値の条件の比べ方(TALKLINEINFO の abyCondCmp) */

@@ -250,8 +250,33 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 				MessageBox (hWnd, "範囲に入れる印のグループを、横の欄から選んでください。\n（グループは「その他」→「フラグのグループ」で作れます）", STORYEDIT_TITLE, MB_OK);
 				break;
 			}
-			AdminFlagSetNo (hWnd, IDC_S_FROM0, pGrp->wFrom, FALSE);
-			AdminFlagSetNo (hWnd, IDC_S_TO0, pGrp->wTo, FALSE);
+			/* 帯ごとに範囲の欄へ入れる（帯 1 → 範囲 1 …）。欄が足りなければ入るだけ入れて、残りの帯は知らせる */
+			{
+				int nField = 0;
+				char szLeft[160];
+				int nLeftLen = 0;
+
+				szLeft[0] = 0;
+				for (int b = 0; b < MAX_FLAGGROUPBAND; b ++) {
+					if (!FlagGroupBandUsed (pGrp, b)) {
+						continue;
+					}
+					if (nField < MAX_STORYFLAGRANGE) {
+						AdminFlagSetNo (hWnd, IDC_S_FROM0 + nField, pGrp->awFrom[b], FALSE);
+						AdminFlagSetNo (hWnd, IDC_S_TO0 + nField, pGrp->awTo[b], FALSE);
+						nField ++;
+					} else if (nLeftLen < (int)sizeof (szLeft) - 1) {
+						nLeftLen += snprintf (szLeft + nLeftLen, sizeof (szLeft) - nLeftLen, "%s%u〜%u", (nLeftLen > 0) ? ", " : "", (unsigned)pGrp->awFrom[b], (unsigned)pGrp->awTo[b]);
+					}
+				}
+				if (szLeft[0]) {
+					char szMsg[320];
+
+					snprintf (szMsg, sizeof (szMsg), "グループ「%s」の帯は範囲の欄（%d 個）に入りきらないので、先頭の %d 本だけ入れました。\n入れていない帯：%s\n（残りは思い出の本を分けるか、番号を直接入れてください）",
+							pGrp->szName, MAX_STORYFLAGRANGE, nField, szLeft);
+					MessageBox (hWnd, szMsg, STORYEDIT_TITLE, MB_OK);
+				}
+			}
 		}
 		break;
 
@@ -337,7 +362,10 @@ static void RenewGroupCombo(HWND hWnd)
 		const FLAGGROUPINFO *p = AdminFlagGroupGet (anIndex[i]);
 		int nIdx;
 
-		snprintf (szTmp, sizeof (szTmp), "%s（%u〜%u）", p->szName, (unsigned)p->wFrom, (unsigned)p->wTo);
+		char szBands[96];
+
+		AdminFlagGroupBandsText (p, szBands, sizeof (szBands));
+		snprintf (szTmp, sizeof (szTmp), "%s（%s）", p->szName, szBands);
 		nIdx = (int)SendMessage (hWndCombo, CB_ADDSTRING, 0, (LPARAM)szTmp);
 		SendMessage (hWndCombo, CB_SETITEMDATA, nIdx, anIndex[i]);
 		if (anIndex[i] == nSelData) {

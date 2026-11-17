@@ -44,6 +44,7 @@ extern const FLAGGROUPINFO *AdminFlagGroupGet(int nNo);					/* 届いている 1
 extern DWORD AdminFlagGroupGetSeq(void);								/* 更新番号 */
 extern void AdminFlagGroupLoadIfEmpty(void);							/* まだ一度も届いていなければ取り寄せる（画面を開く時に呼ぶ） */
 extern const FLAGGROUPINFO *AdminFlagGroupFind(BYTE byKind, WORD wNo);	/* 番号が入る有効なグループ（無ければ NULL） */
+extern void AdminFlagGroupBandsText(const FLAGGROUPINFO *pGrp, char *pszOut, int nSize);	/* 帯を「100〜139, 300〜319」の形にする */
 extern BOOL AdminFlagGroupFormat(BYTE byKind, WORD wNo, char *pszOut, int nSize);	/* 「ルシー-3」を作る（どのグループにも入らなければ FALSE で空） */
 extern BOOL AdminFlagParseNo(BYTE byKind, const char *pszText, WORD &wNo, char *pszErr, int nErrSize);	/* 番号の入力（「103」か「グループ番号-サブ」例 3-2。グループ名-サブも可）を番号にする。だめなら理由を pszErr に入れて FALSE */
 

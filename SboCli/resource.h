@@ -412,6 +412,12 @@
 #define IDC_FG_SORT                       1391
 #define IDC_FG_UPDATE                     1392
 #define IDC_FG_MSG                        1393
+#define IDC_FG_FROM2                      1403
+#define IDC_FG_TO2                        1404
+#define IDC_FG_FROM3                      1405
+#define IDC_FG_TO3                        1406
+#define IDC_FG_FROM4                      1407
+#define IDC_FG_TO4                        1408
 #define IDC_CF_BITGROUP                   1394
 #define IDC_CF_NUMGROUP                   1395
 #define IDC_TE_NEEDITEM                   1377
@@ -462,7 +468,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        242
 #define _APS_NEXT_COMMAND_VALUE         40036
-#define _APS_NEXT_CONTROL_VALUE         1403
+#define _APS_NEXT_CONTROL_VALUE         1409
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
