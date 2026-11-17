@@ -358,6 +358,10 @@ void DrawWindow(CImg32 *pDib, int x, int y)
 		case WNDTYPE_IMPORTANT:				DrawWindowIMPORTANT (pWnd);				break;
 		}
 		s_bDrawingWindow = FALSE;
+		/* 一覧の横の詳細欄は、カーソルの所に品が無い時（「大事な物…」の行など）は画面に出さない（空の枠が透けて見えないように） */
+		if ((pWnd->nType == WNDTYPE_ITEMINFO) && (pWnd->nType2 == ITEMINFOPOS_LIST) && ((pWnd->nData1 <= 0) || (pWnd->nData1 >= g_aItemInfo.GetSize ()))) {
+			continue;
+		}
 		pDib->BltAlpha2 (pWnd->nX + x, pWnd->nY + y, pWnd->nCx, pWnd->nCy, pWnd->pDib, 0, 0, 15, TRUE);
 	}
 }
@@ -1019,6 +1023,7 @@ void DrawWindowMSG(PWNDINFO pWnd)
 	int i, x, y, nCount, nPass;
 	int nScrollTotal = 0;		/* 全部描き終わった時点でずれた行数 */
 	int nDrawFrom = 0;			/* ここ（pszMsg のバイト位置）より前の文字は描いてあるので描かない */
+	int nBack = 0;				/* 入力待ちの間に読み返している行数（上へ戻した分だけ下にずらして描く） */
 	for (nPass = 0; nPass < 2; nPass ++) {
 		BOOL bDraw = (nPass == 1);
 		int nScroll = 0;		/* その文字を描く時点でずれた行数 */
@@ -1093,8 +1098,8 @@ void DrawWindowMSG(PWNDINFO pWnd)
 			}
 			if (bDraw && (i - (nChar - 1) >= nDrawFrom)) {
 				/* この後にずれる行数だけ上に描く。上へはみ出す行は描かない */
-				int yDraw = y - (nScrollTotal - nScroll) * 16;
-				if (yDraw >= 16) {
+				int yDraw = y - (nScrollTotal - nBack - nScroll) * 16;
+				if ((yDraw >= 16) && (yDraw <= pWnd->nCy - 32)) {
 					TextOut2 (hDC, x, yDraw, szTmp, RGB (255, 255, 255));
 				}
 			}
@@ -1104,11 +1109,20 @@ void DrawWindowMSG(PWNDINFO pWnd)
 		nScrollTotal = nScroll;
 
 		if (nPass == 0) {
+			/* 読み返せるのは入力待ちの間だけ。上にずれた行数より多くは戻さない */
+			pWnd->nMsgScrollMax = nScrollTotal;
+			if ((pWnd->nData2 == 1) || (pWnd->nData2 == 2)) {
+				pWnd->nMsgBackLine = min (max (pWnd->nMsgBackLine, 0), nScrollTotal);
+			} else {
+				pWnd->nMsgBackLine = 0;
+			}
+			nBack = pWnd->nMsgBackLine;
+
 			/* 1 文字ずつ流している途中で、前に描いた後ろへ文字が増えただけなら、増えた文字だけ描き足す。
 			   これまでは 1 文字増えるたびに枠から全部の文字を描き直していて、
 			   長いメッセージほど重く、スマホでは文字の流れや効果音が遅れていた */
 			nDrawFrom = 0;
-			if ((pWnd->nMsgDrawLen > 0) && (pWnd->nMsgDrawLen <= pWnd->nData1) &&
+			if ((nBack == 0) && (pWnd->nMsgDrawLen > 0) && (pWnd->nMsgDrawLen <= pWnd->nData1) &&
 					(pWnd->nData2 == 0) && (pWnd->nMsgDrawScroll == nScrollTotal) &&
 					(pWnd->dwMsgDrawHash == MsgDrawHash (pWnd->pszMsg, pWnd->nMsgDrawLen))) {
 				nDrawFrom = pWnd->nMsgDrawLen;
@@ -1127,12 +1141,19 @@ void DrawWindowMSG(PWNDINFO pWnd)
 		pWnd->nMsgDrawLen = 0;
 	}
 
+	/* 入力待ちの間は、上下キーで読み返せることを枠の▲▼で知らせる
+	   （上に隠れた行があれば▲、読み返していて下に続きがあれば▼）。
+	   「はい・いいえ」など別の窓がキーを受けている時は読み返せないので出さない */
+	if (((pWnd->nData2 == 1) || (pWnd->nData2 == 2)) && (g_dwActiveMsgID == pWnd->dwID)) {
+		DrawListScrollMark (hDC, pWnd->nCx, pWnd->nCy, nScrollTotal - nBack, 1, 1 + nScrollTotal);
+	}
+
 	SelectObject (hDC, hFontOld);
 	pWnd->pDib->Unlock ();
 	pWnd->dwTimeDrawStart = timeGetTime ();
 
-	/* 入力待ち？ */
-	if (pWnd->nData2 == 1) {
+	/* 入力待ち？（読み返している間は最後の行が見えないので印も出さない） */
+	if ((pWnd->nData2 == 1) && (nBack == 0)) {
 		if (pWnd->byAnime) {
 			pWnd->pDib->Blt (16 * 11, 16 + nCount * 16, 16, 16, g_pDibSystem, 48, 48, TRUE);
 		}

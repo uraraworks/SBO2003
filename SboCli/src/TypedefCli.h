@@ -292,6 +292,8 @@ typedef struct _WNDINFO {
 	int				nMsgDrawLen;								/* メッセージ：描いてある所まで（pszMsg のバイト数、0 なら描き直し） */
 	int				nMsgDrawScroll;								/* メッセージ：描いた時にずれていた行数 */
 	DWORD			dwMsgDrawHash;								/* メッセージ：描いてある所までの中身の目印 */
+	int				nMsgBackLine;								/* メッセージ：入力待ちの間に上キーで読み返している行数（0 なら最新） */
+	int				nMsgScrollMax;								/* メッセージ：最後に描いた時にずれていた行数（読み返せる上限） */
 	BOOL			bMsgSkip;									/* メッセージ：キャンセルで残りを飛ばして閉じてよい（アイテムを使った時の読み物だけ） */
 } WNDINFO, *PWNDINFO;
 
