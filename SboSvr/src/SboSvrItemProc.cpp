@@ -16,11 +16,15 @@
 #include "SboSvrSubGameProcSugoroku.h"
 #include "CharProc/CharProcMERCENARY.h"
 
+#define ITEMMSG_BUFSIZE	4096		/* 使った時のメッセージを組み立てる入れ物（データAPI の MAX_ITEMMSG と同じ） */
+
 /* ========================================================================= */
 /* 関数プロトタイプ宣言														 */
 /* ========================================================================= */
 void ItemProc							(DWORD, BYTE, DWORD);						/* アイテム処理 */
 void ItemMsgAddWait						(LPSTR, int);								/* 最後に入力待ちを足す */
+void ItemMsgExpand						(LPSTR, int, LPCSTR, const BYTE *, const BYTE *);	/* 文の {f番号}・{v番号} を印・数値で置き換える */
+void ItemProcImportant					(DWORD, BYTE, DWORD);						/* 大事な物の欄の品を使う */
 BOOL CheckItemSexDistinction			(PITEMINFO, PCHARINFO);						/* 性別による使えるかチェック */
 static BOOL	CheckUseTarget				(PITEMINFO, PCHARINFO);						/* 他のキャラに使えるかチェック */
 static void	PlayItemSound				(PITEMINFO, PCHARINFO);						/* 効果音の再生 */
@@ -89,7 +93,7 @@ static const ITEMUSE ItemUseTbl[] = {
 void ItemProc(DWORD dwTblID, BYTE byNo, DWORD dwUseTblID)
 {
 	BOOL bDrop, bResult;
-	char szMsg[1024], szTmp[512];
+	char szMsg[ITEMMSG_BUFSIZE], szTmp[512];
 	PITEMINFO pItem;
 	PCHARINFO pChar, pCharUse;
 
@@ -185,7 +189,7 @@ void ItemProc(DWORD dwTblID, BYTE byNo, DWORD dwUseTblID)
 		if (bResult == FALSE) {
 			if (strlen (szMsg) == 0) {
 				if (pItem->pMsg && strlen (pItem->pMsg)) {
-					strcpy (szMsg, pItem->pMsg);
+					ItemMsgExpand (szMsg, sizeof (szMsg), pItem->pMsg, pChar->abyFlag, pChar->abyFlagNum);
 				} else {
 					strcpy (szMsg, "何も起こりませんでした。@2");
 				}
@@ -194,7 +198,7 @@ void ItemProc(DWORD dwTblID, BYTE byNo, DWORD dwUseTblID)
 		} else {
 			if (strlen (szMsg) == 0) {
 				if (pItem->pMsg && strlen (pItem->pMsg)) {
-					strcpy (szMsg, pItem->pMsg);
+					ItemMsgExpand (szMsg, sizeof (szMsg), pItem->pMsg, pChar->abyFlag, pChar->abyFlagNum);
 				}
 			}
 		}
@@ -208,6 +212,129 @@ Exit:
 		SendCmdMAPMSG (pChar->pID, szMsg);
 	}
 	return;
+}
+
+/* ========================================================================= */
+/* 関数名：ItemMsgExpand													 */
+/* 内容：文の {f番号} を印（立っていれば●、無ければ○）、{v番号} を数値		 */
+/*		 （10進）に置き換えて pszDst に入れる								 */
+/*		 番号が範囲外・書式が崩れている時はそのまま残す。入りきらない時は	 */
+/*		 文字の途中で切らずにそこまでで止める（UTF-8）						 */
+/* ========================================================================= */
+void ItemMsgExpand(LPSTR pszDst, int nDstSize, LPCSTR pszSrc, const BYTE *pbyFlag, const BYTE *pbyFlagNum)
+{
+	int nLen = 0;
+	const char *p = pszSrc;
+
+	if ((pszDst == NULL) || (nDstSize <= 0)) {
+		return;
+	}
+	pszDst[0] = 0;
+	if (pszSrc == NULL) {
+		return;
+	}
+	while (*p) {
+		char szRep[16];
+		int nRepLen = 0, nCopy;
+
+		/* {f数字} / {v数字} の形か */
+		if ((p[0] == '{') && ((p[1] == 'f') || (p[1] == 'v')) && (p[2] >= '0') && (p[2] <= '9')) {
+			int nNo = 0, nDigit = 0;
+			const char *q = p + 2;
+
+			while ((*q >= '0') && (*q <= '9') && (nDigit < 5)) {
+				nNo = nNo * 10 + (*q - '0');
+				nDigit ++;
+				q ++;
+			}
+			if ((*q == '}') && (nDigit < 5)) {
+				if ((p[1] == 'f') && (nNo < MAX_FLAGBIT) && pbyFlag) {
+					strcpy (szRep, FlagBitGet (pbyFlag, nNo) ? "●" : "○");
+					nRepLen = (int)strlen (szRep);
+				} else if ((p[1] == 'v') && (nNo < MAX_FLAGNUM) && pbyFlagNum) {
+					nRepLen = snprintf (szRep, sizeof (szRep), "%d", (int)FlagNumGet (pbyFlagNum, nNo));
+				}
+				if (nRepLen > 0) {
+					if (nLen + nRepLen >= nDstSize) {
+						break;
+					}
+					memcpy (&pszDst[nLen], szRep, nRepLen);
+					nLen += nRepLen;
+					p = q + 1;
+					continue;
+				}
+			}
+		}
+		/* 1 文字（UTF-8 の先頭バイトから長さを決める）をそのまま写す */
+		{
+			unsigned char c = (unsigned char)*p;
+			nCopy = (c >= 0xF0) ? 4 : (c >= 0xE0) ? 3 : (c >= 0xC0) ? 2 : 1;
+			for (int i = 1; i < nCopy; i ++) {
+				if (((unsigned char)p[i] & 0xC0) != 0x80) {
+					nCopy = i;		/* 壊れた並びはそこまで */
+					break;
+				}
+			}
+		}
+		if (nLen + nCopy >= nDstSize) {
+			break;
+		}
+		memcpy (&pszDst[nLen], p, nCopy);
+		nLen += nCopy;
+		p += nCopy;
+	}
+	pszDst[nLen] = 0;
+}
+
+/* ========================================================================= */
+/* 関数名：ItemProcImportant												 */
+/* 内容：大事な物の欄の品を使う（byNo = 空きを飛ばして数えた番号、wItem=品）	 */
+/*		 読み物（効果無し・文あり）だけ使える。使っても減らない			 */
+/*		 欄に本当にその品があるかを確かめる									 */
+/* ========================================================================= */
+void ItemProcImportant(DWORD dwTblID, BYTE byNo, DWORD dwItem)
+{
+	int i, n;
+	WORD wItem = 0;
+	char szMsg[ITEMMSG_BUFSIZE], szTmp[512];
+	PCHARINFO pChar;
+	PITEMINFO pItem;
+
+	if (dwTblID >= (DWORD)g_aCharInfo.GetSize ()) {
+		return;
+	}
+	pChar = g_aCharInfo[dwTblID];
+	if ((pChar == NULL) || (pChar->byCharState == CHARSTATE_DEAD)) {
+		return;
+	}
+	for (i = 0, n = 0; i < MAX_IMPORTANT; i ++) {
+		if (pChar->waImportant[i] == 0) {
+			continue;
+		}
+		if (n == byNo) {
+			wItem = pChar->waImportant[i];
+			break;
+		}
+		n ++;
+	}
+	if ((wItem == 0) || (wItem != dwItem) || (wItem >= (WORD)g_aItemInfo.GetSize ())) {
+		return;
+	}
+	pItem = g_aItemInfo[wItem];
+	if (pItem == NULL) {
+		return;
+	}
+	ZeroMemory (szMsg, sizeof (szMsg));
+	if ((pItem->byType == ITEMTYPE_NONE) && pItem->pMsg && strlen (pItem->pMsg)) {
+		PlayItemSound (pItem, pChar);
+		wsprintf (szTmp, "%sは %s を使いました。", pChar->szName, pItem->szName);
+		SendSysMsg (pChar, pChar, szTmp);
+		ItemMsgExpand (szMsg, sizeof (szMsg), pItem->pMsg, pChar->abyFlag, pChar->abyFlagNum);
+	} else {
+		strcpy (szMsg, "ここでは使えません。@2");
+	}
+	ItemMsgAddWait (szMsg, sizeof (szMsg));
+	SendCmdMAPMSG (pChar->pID, szMsg);
 }
 
 /* ========================================================================= */

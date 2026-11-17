@@ -46,6 +46,7 @@
 #define MAX_MAGICEXPLAIN	512										/* 魔法説明文の欄のバイト数（終端含む） */
 #define MAX_COMEFC			99										/* 最大吹き出し種類 */
 #define MAX_MYITEM			20										/* 最大所持アイテム */
+#define IMPORTANT_USEBASE	0x80									/* CMD_USEITEM の byData がこの値以上なら「大事な物の欄の (byData - この値) 番目（空きを飛ばして数える）を使う」。dwData には品の種類IDを入れる */
 #define MAX_IMPORTANT		30										/* 大事な物の欄の大きさ（鍵・依頼の品など。手持ちとは別。1個1枠） */
 #define MAX_SHOPITEM		10										/* 最大売り物数 */
 #define MAX_SHOPMSG			12										/* メッセージ数 */
@@ -3202,6 +3203,7 @@ typedef struct _TALKLINEINFO {
 	WORD		wQuestID;											/* 受けている依頼の条件（0=条件なし。0 以外ならその依頼を今受けている人だけ） */
 	BYTE		byQuestStepMin;										/* 依頼の段の下限（wQuestID が 0 以外の時） */
 	BYTE		byQuestStepMax;										/* 依頼の段の上限（255=どの段でも） */
+	WORD		wNeedItem;											/* 持っている物の条件（0=条件なし。0 以外なら、そのアイテムを手持ちか大事な物の欄に 1 つ以上持っている人だけ。預かり所は見ない） */
 } TALKLINEINFO, *PTALKLINEINFO;
 
 /* 会話セットの状態(TALKINFO の byState) */

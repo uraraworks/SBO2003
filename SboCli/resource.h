@@ -376,6 +376,8 @@
 #define IDC_CHAR_HIDEFLAGN                1354
 #define IDC_Q_NOTFLAG                     1349
 #define IDC_Q_NOTFLAGN                    1350
+#define IDC_TE_NEEDITEM                   1355
+#define IDC_TE_NEEDITEMN                  1356
 #define IDM_MAP_PARTS                   40001
 #define IDM_MAP_INFO                    40002
 #define IDM_MAP_ADD                     40003
@@ -416,7 +418,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        239
 #define _APS_NEXT_COMMAND_VALUE         40034
-#define _APS_NEXT_CONTROL_VALUE         1355
+#define _APS_NEXT_CONTROL_VALUE         1357
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

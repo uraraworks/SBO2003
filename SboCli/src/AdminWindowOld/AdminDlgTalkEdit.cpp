@@ -98,20 +98,27 @@ static void InitLine(TALKLINEINFO *pLine)
 }
 
 /* 渡すアイテムの横の名前を出し直す（空欄・0 なら何も出さない） */
-static void UpdateItemName(void)
+static void UpdateItemNameOne(int nEdit, int nLabel)
 {
 	unsigned long ulNo;
 	BOOL bBlank;
 
-	if (!AdminFlagReadNo (s_hWndDlg, IDC_TE_GIVEITEM, ulNo, bBlank) || bBlank || (ulNo == 0)) {
-		SetDlgItemText (s_hWndDlg, IDC_TE_GIVEITEMN, "");
+	if (!AdminFlagReadNo (s_hWndDlg, nEdit, ulNo, bBlank) || bBlank || (ulNo == 0)) {
+		SetDlgItemText (s_hWndDlg, nLabel, "");
 		return;
 	}
 	if ((ulNo >= (unsigned long)g_aItemInfo.GetSize ()) || (g_aItemInfo[ulNo] == NULL)) {
-		SetDlgItemText (s_hWndDlg, IDC_TE_GIVEITEMN, "（範囲外）");
+		SetDlgItemText (s_hWndDlg, nLabel, "（範囲外）");
 		return;
 	}
-	SetDlgItemText (s_hWndDlg, IDC_TE_GIVEITEMN, g_aItemInfo[ulNo]->szName);
+	SetDlgItemText (s_hWndDlg, nLabel, g_aItemInfo[ulNo]->szName);
+}
+
+/* 渡すアイテム・持っている物の横の名前を出し直す */
+static void UpdateItemName(void)
+{
+	UpdateItemNameOne (IDC_TE_GIVEITEM, IDC_TE_GIVEITEMN);
+	UpdateItemNameOne (IDC_TE_NEEDITEM, IDC_TE_NEEDITEMN);
 }
 
 /* 一覧に出す台詞の先頭（最初の行の先頭 16 文字ほど。UTF-8 の途中で切らない） */
@@ -373,7 +380,7 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 static void EnableLine(BOOL bEnable)
 {
 	static const int s_anSingle[] = {IDC_TE_RANK, IDC_TE_LVMIN, IDC_TE_LVMAX, IDC_TE_SPEECH,
-			IDC_TE_QID, IDC_TE_QSTEPMIN, IDC_TE_QSTEPMAX, IDC_TE_GIVEITEM};
+			IDC_TE_QID, IDC_TE_QSTEPMIN, IDC_TE_QSTEPMAX, IDC_TE_GIVEITEM, IDC_TE_NEEDITEM};
 
 	for (size_t i = 0; i < sizeof (s_anSingle) / sizeof (s_anSingle[0]); i ++) {
 		EnableWindow (GetDlgItem (s_hWndDlg, s_anSingle[i]), bEnable);
@@ -402,6 +409,7 @@ static void EnableLine(BOOL bEnable)
 		AdminFlagSetNo (s_hWndDlg, IDC_TE_QSTEPMIN, 0, TRUE);
 		AdminFlagSetNo (s_hWndDlg, IDC_TE_QSTEPMAX, 0, TRUE);
 		AdminFlagSetNo (s_hWndDlg, IDC_TE_GIVEITEM, 0, TRUE);
+		AdminFlagSetNo (s_hWndDlg, IDC_TE_NEEDITEM, 0, TRUE);
 		for (size_t i = 0; i < sizeof (s_aFlagCtrl) / sizeof (s_aFlagCtrl[0]); i ++) {
 			for (int j = 0; j < s_aFlagCtrl[i].nCount; j ++) {
 				AdminFlagSetNo (s_hWndDlg, s_aFlagCtrl[i].nEdit + j, 0, TRUE);
@@ -438,7 +446,7 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 {
 	/* 番号の欄が変わったら、横の名前を出し直す */
 	if (nCodeNotify == EN_CHANGE) {
-		if (nID == IDC_TE_GIVEITEM) {
+		if ((nID == IDC_TE_GIVEITEM) || (nID == IDC_TE_NEEDITEM)) {
 			UpdateItemName ();
 			return;
 		}
@@ -695,6 +703,7 @@ static void LoadLine(int nLine)
 	AdminFlagSetNo (s_hWndDlg, IDC_TE_QSTEPMIN, pLine->byQuestStepMin, pLine->wQuestID == 0);
 	AdminFlagSetNo (s_hWndDlg, IDC_TE_QSTEPMAX, pLine->byQuestStepMax, (pLine->wQuestID == 0) || (pLine->byQuestStepMax == QUESTNPC_NOSTEP));
 	AdminFlagSetNo (s_hWndDlg, IDC_TE_GIVEITEM, pLine->wGiveItem, pLine->wGiveItem == 0);
+	AdminFlagSetNo (s_hWndDlg, IDC_TE_NEEDITEM, pLine->wNeedItem, pLine->wNeedItem == 0);
 	UpdateItemName ();
 	UpdateAllNames ();
 }
@@ -783,6 +792,8 @@ static BOOL SaveLine(int nLine)
 		}
 		if (!AdminFlagGetValue (s_hWndDlg, s_hWndDlg, IDC_TE_GIVEITEM, 65535, strName + "渡すアイテム", TALKEDIT_TITLE, ul)) return FALSE;
 		L.wGiveItem = (WORD)ul;
+		if (!AdminFlagGetValue (s_hWndDlg, s_hWndDlg, IDC_TE_NEEDITEM, 65535, strName + "持っている物", TALKEDIT_TITLE, ul)) return FALSE;
+		L.wNeedItem = (WORD)ul;
 	}
 
 	s_Info.aLine[nLine] = L;

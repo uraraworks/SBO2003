@@ -279,6 +279,7 @@ void	RecvDataProcMAIN_CHAR_TAIL				(PBYTE, DWORD);				/* キャラ系:ついて�
 extern void OnDecPlayer					(int nNo);							/* メッセージハンドラ(WM_DECPLAYER) */
 extern void EventProc					(PCHARINFO, PEVENTINFO, BYTE);		/* イベント処理 */
 extern void ItemProc					(DWORD, BYTE, DWORD);				/* アイテム処理 */
+extern void ItemProcImportant			(DWORD, BYTE, DWORD);				/* 大事な物の欄の品を使う */
 extern BOOL MagicProc					(DWORD, BYTE, DWORD);				/* 魔法処理 */
 extern void MakeMazeProc				(BYTE);								/* 迷路作成処理 */
 extern void MakeDungeonProc				(BYTE);								/* ダンジョン作成処理 */
@@ -7651,6 +7652,12 @@ void RecvDataProcUSEITEM(PBYTE pData, DWORD dwDataSize)
 	PCMDPARA_DATA4 pPara = (PCMDPARA_DATA4)pData;
 
 	if (!IsRecvChar (pPara->dwTblID)) {
+		return;
+	}
+
+	/* 大事な物の欄の品を使う（読み物だけ。欄に本当にあるかは ItemProcImportant が確かめる） */
+	if (pPara->byData >= IMPORTANT_USEBASE) {
+		ItemProcImportant (pPara->dwTblID, (BYTE)(pPara->byData - IMPORTANT_USEBASE), pPara->dwData);
 		return;
 	}
 

@@ -7,6 +7,10 @@ S itemmsg 4 same
 S itemmsg 5 @2
 S itemmsg 6 @2
 S itemmsg full abc
+S itemmsg expand 0 印●○● 数45/255/0
+S itemmsg expand 1 {f1024}{v128}{f}{f345{x3}{f99999}
+S itemmsg expand 2 あ●い
+S itemmsg expand small あい len=6
 == A. SendTo ==
 send#0 size=0 id=100000 pri=0 total=8 sha=262701071aee8da1
 send#1 size=0 id=100000 pri=1 total=16 sha=b5355f837af2651c
@@ -1400,6 +1404,7 @@ flagtalk pick none=5 flag0=0 need=1 not=5 ge=2 eq=3 nomatch=5
 flagtalk level 9=5 10=4 20=4 21=5
 flagtalk tie rand0=5 rand1=6 rand3=6
 flagtalk badcmp=-1 empty=-1
+flagtalk needitem none=1 item=0 imp=0 other=1
 flagtalk apply on=1 off=0 num=255 other=0
 == AA. Market ==
 market npc=1
