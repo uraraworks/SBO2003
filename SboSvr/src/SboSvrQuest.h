@@ -20,11 +20,29 @@ inline BOOL IsSameSpace(PCHARINFO pA, PCHARINFO pB)
 	return (pA != NULL) && (pB != NULL) && (pA->dwSpaceID == pB->dwSpaceID);
 }
 
-/* 相手が「いまの相手にしてよいキャラ」か（依頼の見えるNPCではなく、同じ空間にいる）。
+/* 印で見える・見えないが決まるNPCか（wShowFlag・wHideFlag のどちらかに印がある）。
+   人の多い所で毎回通るので、条件の無いキャラは 2 回の比べだけで返す。
+   プレイヤー（byNpcType = 0）は対象外 */
+inline BOOL CharHasViewCond(PCHARINFO pChar)
+{
+	return ((pChar->wShowFlag != 0) || (pChar->wHideFlag != 0)) && (pChar->byNpcType != 0);
+}
+
+extern BOOL CharViewCondOk(PCHARINFO pSrc, PCHARINFO pViewer);	/* 印の条件で pSrc が pViewer に見えるか（空間などは見ない） */
+
+/* pSrc が pViewer に見えるか（印の条件だけ。条件が無ければ常に TRUE）。
+   見えない人にとっては、そのNPCは居ないのと同じ（ぶつからない・話せない・攻撃できない） */
+inline BOOL IsCharSeenBy(PCHARINFO pSrc, PCHARINFO pViewer)
+{
+	return !CharHasViewCond (pSrc) || CharViewCondOk (pSrc, pViewer);
+}
+
+/* 相手が「いまの相手にしてよいキャラ」か（依頼の見えるNPCではなく、同じ空間にいて、おたがいに見える）。
    攻撃・会話・取り引き・ついていくなど、キャラ同士の働きかけの前に確かめる */
 inline BOOL IsInteractable(PCHARINFO pChar, PCHARINFO pTarget)
 {
-	return (pTarget != NULL) && !IsQuestNpc (pTarget) && IsSameSpace (pChar, pTarget);
+	return (pTarget != NULL) && !IsQuestNpc (pTarget) && IsSameSpace (pChar, pTarget) &&
+			IsCharSeenBy (pTarget, pChar) && IsCharSeenBy (pChar, pTarget);
 }
 
 /* ========================================================================= */
@@ -32,6 +50,8 @@ inline BOOL IsInteractable(PCHARINFO pChar, PCHARINFO pTarget)
 /* ========================================================================= */
 extern BOOL IsCharVisibleTo(PCHARINFO pSrc, PCHARINFO pDst);	/* pSrc の情報を pDst に送ってよいか（見えるNPC以外は常に TRUE） */
 extern BOOL IsCharVisibleToPID(PCHARINFO pSrc, DWORD pIDDst);	/* 同上（受け取る人をプレイヤーIDで指定。SENDALL など該当者なしは見えるNPCだけ FALSE） */
+extern void CharViewRefresh(PCHARINFO pChar);					/* 印が変わった時、その人がいる所の条件付きNPCの見え方を、その人にだけ送り直す */
+extern void CharViewRefreshNpc(PCHARINFO pNpc);					/* 条件付きNPCの条件を変えた時、そのマップの全員に見え直しを送る */
 extern BOOL SpaceIsArena(DWORD dwSpaceID);						/* 闘技場の空間か（ふつうの世界から観戦できる） */
 extern void QuestRemovingBegin(void);							/* 見えるNPCを消す間、送る相手の絞り込みを止める */
 extern void QuestRemovingEnd(void);

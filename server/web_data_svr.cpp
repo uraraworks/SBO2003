@@ -1395,6 +1395,8 @@ static const DATAFIELD s_aFieldChar[] = {
 	FLD (CHARINFO, bySearchCx,			"検索範囲X",			FT_U8, 0, NULL),
 	FLD (CHARINFO, bySearchCy,			"検索範囲Y",			FT_U8, 0, NULL),
 	FLD (CHARINFO, byDropProbability,	"ドロップ率",			FT_U8, 0, NULL),
+	FLD (CHARINFO, wShowFlag,			"見える条件の印",		FT_U16, 0, "キャラのフラグの印の番号（0〜1023）。この印が立っている人にだけ見える（立っていない人には居ないのと同じ）。65535=条件なし（足す時に省くと条件なし）。町の人（byNpcType=1・2）向け"),
+	FLD (CHARINFO, wHideFlag,			"見えない条件の印",		FT_U16, 0, "キャラのフラグの印の番号（0〜1023）。この印が立っている人には見えない。65535=条件なし。wShowFlag と両方ある時は、両方の条件を満たす人にだけ見える"),
 	FLD (CHARINFO, byAtackRate,			"攻撃力の割合",			FT_U8, 0, NULL),
 	FLD (CHARINFO, byJOB,				"職業",					FT_U8, RO, "job の番号"),
 	FLD (CHARINFO, byLevel,				"レベル",				FT_U8, RO, NULL),
@@ -1544,7 +1546,12 @@ static std::string TextJson(LPCSTR psz)
 /* キャラ 1 件 */
 static std::string CharJson(PCHARINFO pChar)
 {
-	std::string out = FieldsJson((const BYTE *)pChar, s_aFieldChar, COUNTOF(s_aFieldChar));
+	/* 見える・見えない条件の印は、中では「番号+1（0=無し）」。外には「番号（65535=無し）」で出す */
+	CHARINFO Tmp;
+	CopyMemory(&Tmp, pChar, sizeof(Tmp));
+	Tmp.wShowFlag = CharFlagFromWire(pChar->wShowFlag);
+	Tmp.wHideFlag = CharFlagFromWire(pChar->wHideFlag);
+	std::string out = FieldsJson((const BYTE *)&Tmp, s_aFieldChar, COUNTOF(s_aFieldChar));
 	bool bPlayer = (pChar->byNpcType == NPCTYPE_INIT) && pChar->szAcc[0];
 	out += ",\"npcId\":" + JsonNum(pChar->dwNpcID);
 	out += std::string(",\"isPlayer\":") + (bPlayer ? "true" : "false");
@@ -2354,6 +2361,8 @@ static bool CharApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::str
 		w.dwStTmplateID = (DWORD)-1;
 		w.dwParentTblID = (DWORD)-1;
 		w.byDirection = 1;
+		w.wShowFlag = FLAG_NOBIT;
+		w.wHideFlag = FLAG_NOBIT;
 		static const char *apszNeed[] = { "dwMapID", "dwX", "dwY", NULL };
 		for (int k = 0; apszNeed[k]; k ++) {
 			if (!chg.Get(apszNeed[k])) {
@@ -2363,6 +2372,8 @@ static bool CharApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::str
 		}
 	} else {
 		CopyMemory(&w, pSrc, sizeof(w));
+		w.wShowFlag = CharFlagFromWire(pSrc->wShowFlag);	/* 作業用は API の形（番号。65535=無し） */
+		w.wHideFlag = CharFlagFromWire(pSrc->wHideFlag);
 	}
 	if (!ApplyFields((BYTE *)&w, s_aFieldChar, COUNTOF(s_aFieldChar), chg, strErr, "")) {
 		return false;
@@ -2395,6 +2406,10 @@ static bool CharApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::str
 	}
 	if (w.byDirection > 7) {
 		strErr = "byDirection は 0〜7 で指定してください";
+		return false;
+	}
+	if ((w.wShowFlag >= MAX_FLAGBIT && w.wShowFlag != FLAG_NOBIT) || (w.wHideFlag >= MAX_FLAGBIT && w.wHideFlag != FLAG_NOBIT)) {
+		strErr = "wShowFlag・wHideFlag は印の番号（0〜" + JsonNum(MAX_FLAGBIT - 1) + "）か 65535（条件なし）で指定してください";
 		return false;
 	}
 	/* 台詞 */
@@ -2446,11 +2461,14 @@ static bool CharApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::str
 		if (bAdd) {
 			w.dwNpcID = dwNpcIdAdd;
 		}
+		w.wShowFlag = CharFlagToWire(w.wShowFlag);	/* CharJson は中の形（番号+1）を受け取る */
+		w.wHideFlag = CharFlagToWire(w.wHideFlag);
 		strRecord = CharJson(&w);
 		return true;
 	}
 
 	PCHARINFO pDst;
+	bool bViewChg = false;
 	if (bAdd) {
 		/* 管理者ウィンドウの「キャラ追加」と同じ作り方 */
 		PCHARINFO pNew = new CHARINFO;
@@ -2502,6 +2520,11 @@ static bool CharApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::str
 	pDst->bySearchCy		= w.bySearchCy;
 	pDst->byDropProbability	= w.byDropProbability;
 	pDst->byAtackRate		= w.byAtackRate;
+	WORD wShowIn = CharFlagToWire(w.wShowFlag);	/* 中の形（番号+1。0=無し）にして入れる */
+	WORD wHideIn = CharFlagToWire(w.wHideFlag);
+	bViewChg				= (pDst->wShowFlag != wShowIn) || (pDst->wHideFlag != wHideIn);
+	pDst->wShowFlag			= wShowIn;
+	pDst->wHideFlag			= wHideIn;
 	pDst->wGrpID			= w.wGrpID;
 	pDst->wGrpMain			= w.wGrpMain;
 	pDst->wGrpSub			= w.wGrpSub;
@@ -2528,6 +2551,10 @@ static bool CharApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::str
 	if (!bAdd) {
 		SendCmdCHARINFO(pDst->pID, -1);
 		SendCmdCHARPOS(pDst->pID, pDst->dwTblID, 0, 1);
+	}
+	/* 見える・見えない条件を変えたら、そのマップの全員に見え直しを送る */
+	if (bViewChg) {
+		CharViewRefreshNpc(pDst);
 	}
 	SaveCharInfo();
 	strRecord = CharJson(pDst);

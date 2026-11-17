@@ -370,6 +370,10 @@
 #define IDC_Q_GRP_COND                    1346
 #define IDC_Q_NEEDFLAG                    1347
 #define IDC_Q_NEEDFLAGN                   1348
+#define IDC_CHAR_SHOWFLAG                 1351
+#define IDC_CHAR_SHOWFLAGN                1352
+#define IDC_CHAR_HIDEFLAG                 1353
+#define IDC_CHAR_HIDEFLAGN                1354
 #define IDC_Q_NOTFLAG                     1349
 #define IDC_Q_NOTFLAGN                    1350
 #define IDM_MAP_PARTS                   40001
@@ -412,7 +416,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        239
 #define _APS_NEXT_COMMAND_VALUE         40034
-#define _APS_NEXT_CONTROL_VALUE         1351
+#define _APS_NEXT_CONTROL_VALUE         1355
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

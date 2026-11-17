@@ -235,6 +235,36 @@ static BOOL IsQuestNpcFor(PCHARINFO pSrc, PCHARINFO pDst)
 	return (pDst->dwPartyID != 0) && (pDst->dwPartyID == pOwner->dwPartyID);
 }
 
+extern PCHARINFO GetMercenaryOwner(PCHARINFO pMerc);			/* 傭兵の雇い主（CharProcMERCENARY.cpp） */
+
+/* 印の条件（wShowFlag・wHideFlag）で、pSrc が pViewer に見えるか。空間は見ない。
+   管理者には常に見える。プレイヤーでない相手（敵・町の人）には見える（傭兵だけは雇い主の目で見る） */
+BOOL CharViewCondOk(PCHARINFO pSrc, PCHARINFO pViewer)
+{
+	if (pViewer == NULL) {
+		return FALSE;
+	}
+	if (pViewer->byNpcType != NPCTYPE_INIT) {
+		pViewer = GetMercenaryOwner (pViewer);
+		if (pViewer == NULL) {
+			return TRUE;
+		}
+	}
+	if (pViewer->byAdminLV != ADMINLV_USER) {
+		return TRUE;
+	}
+	/* wShowFlag・wHideFlag は「番号+1（0=無し）」なので、番号に戻してから見る */
+	WORD wShow = CharFlagFromWire (pSrc->wShowFlag);
+	WORD wHide = CharFlagFromWire (pSrc->wHideFlag);
+	if ((wShow < MAX_FLAGBIT) && !FlagBitGet (pViewer->abyFlag, wShow)) {
+		return FALSE;
+	}
+	if ((wHide < MAX_FLAGBIT) && FlagBitGet (pViewer->abyFlag, wHide)) {
+		return FALSE;
+	}
+	return TRUE;
+}
+
 /* pSrc の情報を pDst に送ってよいか */
 BOOL IsCharVisibleTo(PCHARINFO pSrc, PCHARINFO pDst)
 {
@@ -254,7 +284,14 @@ BOOL IsCharVisibleTo(PCHARINFO pSrc, PCHARINFO pDst)
 		}
 	}
 	if (!IsQuestNpc (pSrc)) {
-		return TRUE;
+		/* 印で見えるNPCは、受け取る人の印で決める（受け取る人が分からない一斉送信には送らない） */
+		if (!CharHasViewCond (pSrc)) {
+			return TRUE;
+		}
+		if (pDst == NULL) {
+			return FALSE;
+		}
+		return CharViewCondOk (pSrc, pDst);
 	}
 	if (s_nRemoving) {
 		return TRUE;
@@ -297,8 +334,8 @@ BOOL IsCharVisibleToPID(PCHARINFO pSrc, DWORD pIDDst)
 {
 	int nNo;
 
-	/* ふつうの世界にいる、見えるNPC以外は誰にでも送ってよい（人の多い所で毎回通るので先に返す） */
-	if (!IsQuestNpc (pSrc) && (pSrc->dwSpaceID == 0)) {
+	/* ふつうの世界にいる、見えるNPC・印で見えるNPC以外は誰にでも送ってよい（人の多い所で毎回通るので先に返す） */
+	if (!IsQuestNpc (pSrc) && !CharHasViewCond (pSrc) && (pSrc->dwSpaceID == 0)) {
 		return TRUE;
 	}
 	if (IsQuestNpc (pSrc) && s_nRemoving) {
@@ -309,6 +346,79 @@ BOOL IsCharVisibleToPID(PCHARINFO pSrc, DWORD pIDDst)
 		return FALSE;
 	}
 	return IsCharVisibleTo (pSrc, g_aCharInfo[nNo]);
+}
+
+/* 条件付きNPC 1 体の見え方を、1 人にだけ送り直す（見えるなら CHARINFO、見えないなら消す通知）。
+   見えるものは、画面の近くにいる時だけ送る（遠くのものを送ると、クライアントが「遠いキャラ」として消してしまうため）。
+   消す通知は、遠くても送る（前に見えていたものが残らないように） */
+static void ViewRefreshOne(PCHARINFO pNpc, PCHARINFO pDst)
+{
+	if ((pDst->pID == 0) || (pDst->byGameState < GAMESTATE_MOVE) || (pNpc->byGameState < GAMESTATE_MOVE)) {
+		return;
+	}
+	if (!IsSameSpace (pNpc, pDst)) {
+		return;
+	}
+	if (IsCharVisibleTo (pNpc, pDst)) {
+		if ((abs ((int)pNpc->dwX - (int)pDst->dwX) <= DRAW_PARTS_X + 2) &&
+			(abs ((int)pNpc->dwY - (int)pDst->dwY) <= DRAW_PARTS_Y + 2)) {
+			SendCmdCHARINFO (pDst->pID, (int)pNpc->dwTblID);
+		}
+	} else {
+		SendCmdCHARHIDE (pDst->pID, (int)pNpc->dwTblID);
+	}
+}
+
+/* 印が変わった時、その人がいるマップの条件付きNPCの見え方を、その人にだけ送り直す */
+void CharViewRefresh(PCHARINFO pChar)
+{
+	PMAPINFO pMap;
+	PDWORD pData;
+	int i;
+
+	if ((pChar == NULL) || (pChar->pID == 0) || (pChar->dwMapID >= (DWORD)g_aMapInfo.GetSize ())) {
+		return;
+	}
+	pMap = g_aMapInfo[pChar->dwMapID];
+	pData = pMap->paTblNoNPC;
+	if (pData == NULL) {
+		return;
+	}
+	for (i = 0; i < (int)pMap->dwCountTblNoNPC; i ++) {
+		if (pData[i] == -1) {
+			break;
+		}
+		PCHARINFO pNpc = g_aCharInfo[pData[i]];
+		if (pNpc->byNpcType == NPCTYPE_QUESTNPC) {
+			continue;
+		}
+		if (CharHasViewCond (pNpc)) {
+			ViewRefreshOne (pNpc, pChar);
+		}
+	}
+}
+
+/* 条件付きNPCの条件を変えた時、そのマップの全員に見え直しを送る */
+void CharViewRefreshNpc(PCHARINFO pNpc)
+{
+	PMAPINFO pMap;
+	PDWORD pData;
+	int i;
+
+	if ((pNpc == NULL) || (pNpc->byNpcType == NPCTYPE_INIT) || (pNpc->dwMapID >= (DWORD)g_aMapInfo.GetSize ())) {
+		return;
+	}
+	pMap = g_aMapInfo[pNpc->dwMapID];
+	pData = pMap->paTblNoPC;
+	if (pData == NULL) {
+		return;
+	}
+	for (i = 0; i < (int)pMap->dwCountTblNoPC; i ++) {
+		if (pData[i] == -1) {
+			break;
+		}
+		ViewRefreshOne (pNpc, g_aCharInfo[pData[i]]);
+	}
 }
 
 /* 闘技場の空間か（ふつうの世界から観戦できる） */
@@ -1565,7 +1675,13 @@ static void DoHandIn(PCHARINFO pChar, PCHARINFO pNpc)
 	}
 	/* 完了した時に立てる印・数値の動き（討伐チャレンジの 2 回目からは記録だけなので動かさない） */
 	if (bReward) {
+		BYTE abyFlagBak[sizeof (pChar->abyFlag)];
+		CopyMemory (abyFlagBak, pChar->abyFlag, sizeof (abyFlagBak));
 		FlagApplyQuestDone (pChar, pQuest);
+		/* 印が動いたら、印で見える・消えるNPCを見え直す（依頼で助けた人が、助けた後に町にいる、など） */
+		if (memcmp (abyFlagBak, pChar->abyFlag, sizeof (abyFlagBak)) != 0) {
+			CharViewRefresh (pChar);
+		}
 	}
 	WORD wID = pQuest->wID;
 	char szMsgDone[MAX_QUESTMSG];

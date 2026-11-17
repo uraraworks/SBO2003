@@ -1078,6 +1078,8 @@ static void TestAdminResurrect(const std::vector<int> &aLogin);
 static void TestFlagTalk(const std::vector<int> &aLogin);
 static void TestMarket(const std::vector<int> &aLogin);
 static void TestTailItemMove(const std::vector<int> &aLogin);
+static void TestViewFlag(const std::vector<int> &aLogin);
+static void TestViewFlagTalk(const std::vector<int> &aLogin);
 extern void BattleProcCheck(PCHARINFO);
 
 static void TestTownWarp(const std::vector<int> &aLogin)
@@ -1537,10 +1539,14 @@ static void TestWorld(void)
 	TestMarket(aLogin);
 	/* AB. 大事な物の欄と鍵の扉（保存の読み直しでキャラが増えるので最後に流す） */
 	TestImportant(aLogin);
+	/* AD. 印で見える・消えるNPC（乱数を使わない部分。保存の読み直しでキャラの欄が書き換わるので、AB の後・乱数を使う K2 の前に流す） */
+	TestViewFlag(aLogin);
 	/* K2. 傭兵への回復・蘇生の特技（ゲームの乱数を使うので最後） */
 	TestMercenary(aLogin, TRUE);
 	/* AC. 移動アイテム・帰還の床で、ついていく列ごと移動する（時刻と乱数を使うので最後） */
 	TestTailItemMove(aLogin);
+	/* AE. 印で見える・消えるNPC：話して印が立つ時の見え直し（会話で乱数を使うので、いちばん最後） */
+	TestViewFlagTalk(aLogin);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -3897,6 +3903,9 @@ static void TestQuest(const std::vector<int> &aLogin)
 	strcpy(pOther->szAcc, "questtest");
 	strcpy(pOther->szName, "依頼テスト");
 	BOOL bSaved = SaveCharInfo();
+	/* 見える・見えない条件の印を、全員 1（=印 0 の条件）にしてから読み直す：保存では「無し」が 0 で入っているので、
+	   読み込みで必ず「無し」（0）に戻る */
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) g_aCharInfo[i]->wShowFlag = g_aCharInfo[i]->wHideFlag = 1;
 	BOOL bLoaded = LoadCharInfo();
 	printf("quest char save=%d load=%d\n", (int)bSaved, (int)bLoaded);
 	PCHARINFO pLoaded = NULL;
@@ -3911,6 +3920,11 @@ static void TestQuest(const std::vector<int> &aLogin)
 	} else {
 		printf("quest char reload not found\n");
 	}
+	/* 読み込んだキャラの条件は「無し」。ほかのキャラは元（無し）に戻す */
+	if (pLoaded) {
+		printf("quest char reload viewcond show=%d hide=%d\n", (int)pLoaded->wShowFlag, (int)pLoaded->wHideFlag);
+	}
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) g_aCharInfo[i]->wShowFlag = g_aCharInfo[i]->wHideFlag = 0;
 	/* 見えるNPC（保存しない）は保存データに入らない */
 	{
 		int nQuestNpcLoaded = 0;
@@ -6814,6 +6828,364 @@ static void TestCharNo(void)
 }
 
 /* S: アイテムを使った時のメッセージに入力待ち（@2）を足すか（無いと出てすぐ消える） */
+/* ------------------------------------------------------------------------- */
+/* AD. 印で見える・消えるNPC												 */
+/*    (a) 見え方：印のある人・ない人・管理者・受け取る人が分からない送信		 */
+/*    (b) 印が動いた時の見え直し（会話・管理者の印の切り替え・NPCの条件変更）	 */
+/*    (c) 見えない人はぶつからず、話せず、ついていけない					 */
+/*    (d) 保存して読み直しても条件が残り、古いデータは「無し」になる			 */
+/* ------------------------------------------------------------------------- */
+static PCHARINFO ViewNpcMake(int nMap, int nX, int nY, const char *pszName, const char *pszSpeech, WORD wShow, WORD wHide)
+{
+	PCHARINFO pNpc = new CHARINFO;
+	ZeroMemory((PBYTE)pNpc, sizeof(CHARINFO));
+	pNpc->byNpcType = NPCTYPE_NOMOVE;
+	SetInitCharData(pNpc);
+	pNpc->byGameState = GAMESTATE_NPC;
+	pNpc->byCharState = CHARSTATE_MOVE;
+	pNpc->dwMapID = nMap;
+	pNpc->dwX = pNpc->dwXBack = pNpc->dwStartX = (DWORD)nX;
+	pNpc->dwY = pNpc->dwYBack = pNpc->dwStartY = (DWORD)nY;
+	pNpc->wShowFlag = CharFlagToWire(wShow);	/* 中は「番号+1（0=無し）」 */
+	pNpc->wHideFlag = CharFlagToWire(wHide);
+	strcpy(pNpc->szName, pszName);
+	pNpc->pszNpcSpeech = new char[strlen(pszSpeech) + 1];
+	strcpy(pNpc->pszNpcSpeech, pszSpeech);
+	pNpc = AddChar(pNpc);
+	pNpc->pID = pNpc->dwTblID + 1;
+	CCharProcBase CharProcBase;
+	CharProcBase.SetProc(pNpc);
+	return pNpc;
+}
+
+static void ViewAdminFlag(PCHARINFO pAdmin, PCHARINFO pTarget, WORD wNo, WORD wValue)
+{
+	CMDPARA_ADMINCHARFLAG Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_ADMINCHARFLAG;
+	Para.byCmdSub = ADMINCHARFLAG_SET;
+	Para.byKind = FLAGKIND_BIT;
+	Para.dwTblID = pTarget->dwTblID;
+	Para.wNo = wNo;
+	Para.wValue = wValue;
+	TestRecv(pAdmin, &Para, sizeof(Para));
+}
+
+/* 共通の準備：A（印なし）・B・C（管理者）を画面内に集め、使える空きマスを 8 つ探す。足りなければ FALSE */
+static BOOL ViewSetup(const std::vector<int> &aLogin, std::vector<std::pair<int, int> > &aCell)
+{
+	if (aLogin.size() < 3) {
+		return FALSE;
+	}
+	PCHARINFO pA = g_aCharInfo[aLogin[0]], pB = g_aCharInfo[aLogin[1]], pC = g_aCharInfo[aLogin[2]];
+	PCHARINFO apPC[3] = { pA, pB, pC };
+	int nMap = (int)pA->dwMapID;
+	PMAPINFO pMap = g_aMapInfo[nMap];
+	s_pSpLogin = &aLogin;
+
+	for (int i = 0; i < 3; i ++) {
+		PCHARINFO p = apPC[i];
+		p->byAdminLV = ADMINLV_USER;
+		p->dwPartyID = 0;
+		p->dwSpaceID = SPACE_NORMAL;
+		p->dwTargetTblID = p->dwTargetTblID2 = p->dwTargetTblID3 = (DWORD)-1;
+		p->wQuestID = 0; p->byQuestStep = 0; p->wQuestFlg = 0;
+		ZeroMemory(p->abyFlag, sizeof(p->abyFlag));
+	}
+	pC->byAdminLV = ADMINLV_ADMINISTRATOR;
+
+	aCell.clear();
+	for (int r = 1; r < 12 && aCell.size() < 8; r ++) {
+		for (int dy = -r; dy <= r && aCell.size() < 8; dy ++) {
+			for (int dx = -r; dx <= r && aCell.size() < 8; dx ++) {
+				if (abs(dx) != r && abs(dy) != r) continue;
+				int x = (int)pA->dwX + dx, y = (int)pA->dwY + dy;
+				if (x < 3 || y < 3 || x >= pMap->nCX - 3 || y >= pMap->nCY - 3) continue;
+				if (!CheckCharBlock((DWORD)nMap, x, y) || CheckCharBlockNPC((DWORD)nMap, x, y) != (DWORD)-1 ||
+					CheckCharBlockPC((DWORD)nMap, x, y) != (DWORD)-1) continue;
+				aCell.push_back(std::make_pair(x, y));
+			}
+		}
+	}
+	printf("viewflag cells=%d\n", (int)aCell.size());
+	if (aCell.size() < 8) {
+		return FALSE;
+	}
+	QuestMovePC(pA, nMap, aCell[0].first, aCell[0].second);
+	QuestMovePC(pB, nMap, aCell[1].first, aCell[1].second);
+	QuestMovePC(pC, nMap, aCell[2].first, aCell[2].second);
+	return TRUE;
+}
+
+/* 話しかけ用の会話データ：901＝話すと印 5 が立つ（お礼）、902＝何も動かさない */
+static void ViewTalkAdd(void)
+{
+	for (int t = 901; t <= 902; t ++) {
+		PTALKINFO pTalk = new TALKINFO;
+		ZeroMemory(pTalk, sizeof(TALKINFO));
+		pTalk->byState = TALKSTATE_ON;
+		pTalk->wID = (WORD)t;
+		pTalk->byLineCount = 1;
+		TalkTestLineInit(&pTalk->aLine[0], 1);
+		strcpy(pTalk->aLine[0].szSpeech, (t == 901) ? "助けてくれてありがとう" : "こんにちは");
+		if (t == 901) pTalk->aLine[0].awSetOn[0] = 5;
+		g_aTalkInfo.Add(pTalk);
+	}
+}
+
+static void ViewTalkRemove(void)
+{
+	for (int i = g_aTalkInfo.GetSize() - 1; i >= 0; i --) {
+		if (g_aTalkInfo[i]->wID == 901 || g_aTalkInfo[i]->wID == 902) {
+			delete g_aTalkInfo[i];
+			g_aTalkInfo.RemoveAt(i);
+		}
+	}
+}
+
+/* (a)(b)(c)(d)：乱数を使わない部分。保存の読み直しがあるので、乱数を使う最後の部分より前に流す */
+static void TestViewFlag(const std::vector<int> &aLogin)
+{
+	printf("== AD. ViewFlag ==\n");
+	std::vector<std::pair<int, int> > aCell;
+	if (!ViewSetup(aLogin, aCell)) {
+		return;
+	}
+	PCHARINFO pA = g_aCharInfo[aLogin[0]], pB = g_aCharInfo[aLogin[1]], pC = g_aCharInfo[aLogin[2]];
+	BYTE byAdminBack = pC->byAdminLV;
+	char szAccBack[MAX_ACCNAME];
+	int nMap = (int)pA->dwMapID;
+
+	PCHARINFO pHelper = ViewNpcMake(nMap, aCell[3].first, aCell[3].second, "助けを呼ぶ人", "@t901", FLAG_NOBIT, FLAG_NOBIT);
+	PCHARINFO pPipi   = ViewNpcMake(nMap, aCell[4].first, aCell[4].second, "ピピ", "@t902", 5, FLAG_NOBIT);
+	PCHARINFO pGuard  = ViewNpcMake(nMap, aCell[5].first, aCell[5].second, "見張りの兵", "@t902", FLAG_NOBIT, 5);
+	PCHARINFO pBoth   = ViewNpcMake(nMap, aCell[6].first, aCell[6].second, "両方", "@t902", 5, 6);
+	ViewTalkAdd();
+	printf("viewflag has cond helper=%d pipi=%d guard=%d both=%d player=%d\n", (int)CharHasViewCond(pHelper), (int)CharHasViewCond(pPipi),
+		(int)CharHasViewCond(pGuard), (int)CharHasViewCond(pBoth), (int)CharHasViewCond(pA));
+
+	/* (a) 見え方：A は印なし、B は印 5 あり、C は管理者 */
+	FlagBitSet(pB->abyFlag, 5, TRUE);
+	printf("viewflag visible pipi a=%d b=%d admin=%d null=%d guard a=%d b=%d admin=%d null=%d\n",
+		(int)IsCharVisibleTo(pPipi, pA), (int)IsCharVisibleTo(pPipi, pB), (int)IsCharVisibleTo(pPipi, pC), (int)IsCharVisibleTo(pPipi, NULL),
+		(int)IsCharVisibleTo(pGuard, pA), (int)IsCharVisibleTo(pGuard, pB), (int)IsCharVisibleTo(pGuard, pC), (int)IsCharVisibleTo(pGuard, NULL));
+	FlagBitSet(pB->abyFlag, 6, TRUE);
+	printf("viewflag visible both(5 and not 6) b56=%d", (int)IsCharVisibleTo(pBoth, pB));
+	FlagBitSet(pB->abyFlag, 6, FALSE);
+	printf(" b5=%d a=%d admin=%d helper a=%d null=%d\n", (int)IsCharVisibleTo(pBoth, pB), (int)IsCharVisibleTo(pBoth, pA), (int)IsCharVisibleTo(pBoth, pC),
+		(int)IsCharVisibleTo(pHelper, pA), (int)IsCharVisibleTo(pHelper, NULL));
+	printf("viewflag visiblepid pipi a=%d b=%d admin=%d all=%d guard a=%d b=%d helper all=%d\n",
+		(int)IsCharVisibleToPID(pPipi, pA->pID), (int)IsCharVisibleToPID(pPipi, pB->pID), (int)IsCharVisibleToPID(pPipi, pC->pID),
+		(int)IsCharVisibleToPID(pPipi, URARASOCK_SENDALL), (int)IsCharVisibleToPID(pGuard, pA->pID), (int)IsCharVisibleToPID(pGuard, pB->pID),
+		(int)IsCharVisibleToPID(pHelper, URARASOCK_SENDALL));
+
+	/* 送られ方：CHARINFO（1体）・CHARINFO3（まわりの人へ）・座標 */
+	{
+		int a0 = SpCnt(pA, CMD_CHARINFO), b0 = SpCnt(pB, CMD_CHARINFO), c0 = SpCnt(pC, CMD_CHARINFO);
+		SendCmdCHARINFO(pA->pID, (int)pPipi->dwTblID);
+		SendCmdCHARINFO(pB->pID, (int)pPipi->dwTblID);
+		SendCmdCHARINFO(pC->pID, (int)pPipi->dwTblID);
+		printf("viewflag send charinfo pipi a=%d b=%d admin=%d", SpCnt(pA, CMD_CHARINFO) - a0, SpCnt(pB, CMD_CHARINFO) - b0, SpCnt(pC, CMD_CHARINFO) - c0);
+		a0 = SpCnt(pA, CMD_CHARINFO); b0 = SpCnt(pB, CMD_CHARINFO); c0 = SpCnt(pC, CMD_CHARINFO);
+		SendCmdCHARINFO3((int)pPipi->dwTblID);
+		printf(" charinfo3 a=%d b=%d admin=%d", SpCnt(pA, CMD_CHARINFO) - a0, SpCnt(pB, CMD_CHARINFO) - b0, SpCnt(pC, CMD_CHARINFO) - c0);
+		a0 = SpCnt(pA, CMD_CHARINFO); b0 = SpCnt(pB, CMD_CHARINFO); c0 = SpCnt(pC, CMD_CHARINFO);
+		SendCmdCHARINFO3((int)pGuard->dwTblID);
+		printf(" guard a=%d b=%d admin=%d", SpCnt(pA, CMD_CHARINFO) - a0, SpCnt(pB, CMD_CHARINFO) - b0, SpCnt(pC, CMD_CHARINFO) - c0);
+		a0 = SpCnt(pA, CMD_CHARPOS); b0 = SpCnt(pB, CMD_CHARPOS); c0 = SpCnt(pC, CMD_CHARPOS);
+		SendCmdCHARPOS(0, (int)pPipi->dwTblID, 0, 1);
+		SendCmdCHARPOS(URARASOCK_SENDALL, (int)pPipi->dwTblID, 0, 0);
+		printf(" charpos a=%d b=%d admin=%d\n", SpCnt(pA, CMD_CHARPOS) - a0, SpCnt(pB, CMD_CHARPOS) - b0, SpCnt(pC, CMD_CHARPOS) - c0);
+	}
+	/* マップに入った時・ログインした時と同じ全員分の送信も、同じ判定を通る（ピピ・両方 は印のある B だけ。見張りの兵 は印のない A だけ） */
+	{
+		int a0 = MockCalls(1000), b0 = MockCalls(1001);
+		SendCmdCHARINFO(pA->pID, -1);
+		SendCmdCHARINFO(pB->pID, -1);
+		int nA = MockCalls(1000) - a0, nB = MockCalls(1001) - b0;
+		printf("viewflag send all a_minus_b=%d\n", nA - nB);
+	}
+
+	/* (b) 印が動いた時の見え直し。管理者ウィンドウから A に印 5 を立てる：ピピ・両方が出て、見張りの兵が消える（A だけに届く）。
+	   管理者の印の切り替えはプレイヤーのキャラにだけできる */
+	strcpy(szAccBack, pA->szAcc);
+	strcpy(pA->szAcc, "viewtest");
+	{
+		int ai = SpCnt(pA, CMD_CHARINFO), ap = SpCnt(pA, CMD_CHARPOS), bi = SpCnt(pB, CMD_CHARINFO), bp = SpCnt(pB, CMD_CHARPOS);
+		int ci = SpCnt(pC, CMD_CHARINFO), cp = SpCnt(pC, CMD_CHARPOS);
+		ViewAdminFlag(pC, pA, 5, 1);
+		printf("viewflag admin set a_flag=%d a_charinfo=%d a_hide=%d b_charinfo=%d b_hide=%d admin_charinfo=%d admin_hide=%d\n",
+			(int)FlagBitGet(pA->abyFlag, 5), SpCnt(pA, CMD_CHARINFO) - ai, SpCnt(pA, CMD_CHARPOS) - ap, SpCnt(pB, CMD_CHARINFO) - bi,
+			SpCnt(pB, CMD_CHARPOS) - bp, SpCnt(pC, CMD_CHARINFO) - ci, SpCnt(pC, CMD_CHARPOS) - cp);
+		/* 印を消すと元に戻る：ピピ・両方が消え、見張りの兵が出る */
+		ai = SpCnt(pA, CMD_CHARINFO); ap = SpCnt(pA, CMD_CHARPOS);
+		ViewAdminFlag(pC, pA, 5, 0);
+		printf("viewflag admin clear a_flag=%d a_charinfo=%d a_hide=%d\n", (int)FlagBitGet(pA->abyFlag, 5), SpCnt(pA, CMD_CHARINFO) - ai, SpCnt(pA, CMD_CHARPOS) - ap);
+	}
+	strcpy(pA->szAcc, szAccBack);
+	/* 条件を変えた時は、そのマップの全員に見え直し：ピピの条件を外すと、見える人も見えない人も CHARINFO が届く。
+	   条件を戻すと、見えない人（A）にだけ消す通知が届く */
+	{
+		pPipi->wShowFlag = 0;
+		int ai = SpCnt(pA, CMD_CHARINFO), bi = SpCnt(pB, CMD_CHARINFO), ci = SpCnt(pC, CMD_CHARINFO);
+		CharViewRefreshNpc(pPipi);
+		printf("viewflag npc cond off a=%d b=%d admin=%d", SpCnt(pA, CMD_CHARINFO) - ai, SpCnt(pB, CMD_CHARINFO) - bi, SpCnt(pC, CMD_CHARINFO) - ci);
+		pPipi->wShowFlag = CharFlagToWire(5);
+		int ap = SpCnt(pA, CMD_CHARPOS), bp = SpCnt(pB, CMD_CHARPOS), cp = SpCnt(pC, CMD_CHARPOS);
+		CharViewRefreshNpc(pPipi);
+		printf(" on hide a=%d b=%d admin=%d\n", SpCnt(pA, CMD_CHARPOS) - ap, SpCnt(pB, CMD_CHARPOS) - bp, SpCnt(pC, CMD_CHARPOS) - cp);
+	}
+
+	/* (c) 見えない人は、ぶつからず・話せず・相手にできない（A は印なし、B は印 5 あり、C は管理者） */
+	{
+		DWORD dwX = pPipi->dwX, dwY = pPipi->dwY;
+		printf("viewflag block pipi a=%d b=%d admin=%d none=%d guard a=%d b=%d\n",
+			(int)(CheckCharBlockNPC((DWORD)nMap, dwX, dwY, 0, pA) == pPipi->dwTblID), (int)(CheckCharBlockNPC((DWORD)nMap, dwX, dwY, 0, pB) == pPipi->dwTblID),
+			(int)(CheckCharBlockNPC((DWORD)nMap, dwX, dwY, 0, pC) == pPipi->dwTblID), (int)(CheckCharBlockNPC((DWORD)nMap, dwX, dwY, 0) == pPipi->dwTblID),
+			(int)(CheckCharBlockNPC((DWORD)nMap, pGuard->dwX, pGuard->dwY, 0, pA) == pGuard->dwTblID),
+			(int)(CheckCharBlockNPC((DWORD)nMap, pGuard->dwX, pGuard->dwY, 0, pB) == pGuard->dwTblID));
+		printf("viewflag block2 pipi a=%d b=%d interact a=%d b=%d admin=%d guard a=%d b=%d admin=%d\n",
+			(int)(CheckCharBlockNPC2((DWORD)-1, (DWORD)nMap, dwX, dwY, 0, pA) == pPipi->dwTblID), (int)(CheckCharBlockNPC2((DWORD)-1, (DWORD)nMap, dwX, dwY, 0, pB) == pPipi->dwTblID),
+			(int)IsInteractable(pA, pPipi), (int)IsInteractable(pB, pPipi), (int)IsInteractable(pC, pPipi),
+			(int)IsInteractable(pA, pGuard), (int)IsInteractable(pB, pGuard), (int)IsInteractable(pC, pGuard));
+		/* 見えない人が話しかけても、何も返らない（見える人の話は最後の部分で確かめる。話すと乱数を使うため） */
+		QuestMovePC(pA, nMap, pPipi->dwX, pPipi->dwY + 1);
+		int at = SpCnt(pA, CMD_TALKMSG);
+		QuestSendTalk(pA, pPipi->dwTblID);
+		printf("viewflag talk pipi a=%d", SpCnt(pA, CMD_TALKMSG) - at);
+		QuestSendTalk(pA, pBoth->dwTblID);
+		printf(" both a=%d", SpCnt(pA, CMD_TALKMSG) - at);
+		QuestMovePC(pB, nMap, pGuard->dwX + 1, pGuard->dwY);
+		int bt = SpCnt(pB, CMD_TALKMSG);
+		QuestSendTalk(pB, pGuard->dwTblID);
+		printf(" guard b=%d\n", SpCnt(pB, CMD_TALKMSG) - bt);
+	}
+
+	/* (d) 保存：条件は「番号+1・0=無し」で書く（古い読み込みや 0 のデータが「印 0」にならないように）。
+	   保存したファイルを開いて、NPC番号で探した行の値を見る。読み込みは別の所（M. Quest）で確かめる */
+	{
+		BOOL bSaved = SaveCharInfo();
+		PCHARINFO apNpc[4] = { pHelper, pPipi, pGuard, pBoth };
+		const char *apszName[4] = { "helper", "pipi", "guard", "both" };
+		printf("viewflag save=%d", (int)bSaved);
+		FILE *fp = fopen("SBODATA/SboDataCharInfo.dat", "rb");
+		std::vector<BYTE> aFile;
+		if (fp) {
+			BYTE abyBuf[4096];
+			size_t n;
+			while ((n = fread(abyBuf, 1, sizeof(abyBuf), fp)) > 0) aFile.insert(aFile.end(), abyBuf, abyBuf + n);
+			fclose(fp);
+		}
+		DWORD dwColumn = 0, dwCount = 0, dwOffNpcID = 0, dwOffShow = 0, dwOffHide = 0;
+		if (aFile.size() > 8) {
+			memcpy(&dwColumn, &aFile[0], 4);
+			memcpy(&dwCount, &aFile[4], 4);
+			size_t nPos = 8;
+			for (DWORD c = 0; c < dwColumn && nPos < aFile.size(); c ++) {
+				const char *pszName = (const char *)&aFile[nPos];
+				nPos += strlen(pszName) + 1;
+				DWORD dwOff;
+				memcpy(&dwOff, &aFile[nPos], 4);
+				nPos += 4;
+				if (strcmp(pszName, "dwNpcID") == 0) dwOffNpcID = dwOff;
+				if (strcmp(pszName, "wShowFlag") == 0) dwOffShow = dwOff;
+				if (strcmp(pszName, "wHideFlag") == 0) dwOffHide = dwOff;
+			}
+		}
+		printf(" columns=%d", (int)(dwOffNpcID && dwOffShow && dwOffHide));
+		for (int k = 0; k < 4 && dwOffNpcID && dwOffShow && dwOffHide; k ++) {
+			int nShow = -1, nHide = -1;
+			for (DWORD r = 0; r < dwCount; r ++) {
+				DWORD dwID;
+				memcpy(&dwID, &aFile[dwOffNpcID + r * 4], 4);
+				if (dwID == apNpc[k]->dwNpcID) {
+					WORD w1, w2;
+					memcpy(&w1, &aFile[dwOffShow + r * 2], 2);
+					memcpy(&w2, &aFile[dwOffHide + r * 2], 2);
+					nShow = w1; nHide = w2;
+					break;
+				}
+			}
+			printf(" %s=%d,%d", apszName[k], nShow, nHide);
+		}
+		printf("\n");
+		/* 書く・読む：0=無し、番号は +1。範囲の外や 0（古いデータ）は必ず「無し」 */
+		printf("viewflag wire to=%d,%d,%d,%d from=%d,%d,%d,%d,%d\n", CharFlagToWire(FLAG_NOBIT), CharFlagToWire(0), CharFlagToWire(5), CharFlagToWire(1023),
+			CharFlagFromWire(0), CharFlagFromWire(1), CharFlagFromWire(6), CharFlagFromWire(1024), CharFlagFromWire(1025));
+		/* 作ったばかりのキャラ（読み込みで足されるキャラ・古いデータで列が無いキャラ）は「無し」から始まる */
+		CHARINFO Fresh;
+		ZeroMemory(&Fresh, sizeof(Fresh));
+		Fresh.byNpcType = NPCTYPE_NOMOVE;
+		SetInitCharData(&Fresh);
+		printf("viewflag fresh show=%d hide=%d cond=%d\n", (int)Fresh.wShowFlag, (int)Fresh.wHideFlag, (int)CharHasViewCond(&Fresh));
+		/* ZeroMemory しただけのNPC（SetInitCharData を通らない作り方）も、条件なしで誰にでも見える */
+		CHARINFO ZeroNpc, ZeroPc;
+		ZeroMemory(&ZeroNpc, sizeof(ZeroNpc));
+		ZeroMemory(&ZeroPc, sizeof(ZeroPc));
+		ZeroNpc.byNpcType = NPCTYPE_NOMOVE;
+		printf("viewflag zeroed npc cond=%d seen=%d\n", (int)CharHasViewCond(&ZeroNpc), (int)IsCharSeenBy(&ZeroNpc, &ZeroPc));
+		/* 後片付け：作った NPC を消す */
+		for (int k = 0; k < 4; k ++) {
+			SAFE_DELETE_ARRAY(apNpc[k]->pszNpcSpeech);
+			DeleteChar(apNpc[k]->dwTblID);
+		}
+	}
+	ViewTalkRemove();
+	for (int i = 0; i < 3; i ++) ZeroMemory(g_aCharInfo[aLogin[i]]->abyFlag, sizeof(g_aCharInfo[aLogin[i]]->abyFlag));
+	pC->byAdminLV = byAdminBack;
+}
+
+/* (e) 話して印が立つ時の見え直し・見える人の会話（会話で乱数を使うので、いちばん最後に流す） */
+static void TestViewFlagTalk(const std::vector<int> &aLogin)
+{
+	printf("== AE. ViewFlagTalk ==\n");
+	std::vector<std::pair<int, int> > aCell;
+	if (!ViewSetup(aLogin, aCell)) {
+		return;
+	}
+	PCHARINFO pA = g_aCharInfo[aLogin[0]], pB = g_aCharInfo[aLogin[1]], pC = g_aCharInfo[aLogin[2]];
+	int nMap = (int)pA->dwMapID;
+
+	PCHARINFO pHelper = ViewNpcMake(nMap, aCell[3].first, aCell[3].second, "助けを呼ぶ人2", "@t901", FLAG_NOBIT, FLAG_NOBIT);
+	PCHARINFO pPipi   = ViewNpcMake(nMap, aCell[4].first, aCell[4].second, "ピピ2", "@t902", 5, FLAG_NOBIT);
+	PCHARINFO pGuard  = ViewNpcMake(nMap, aCell[5].first, aCell[5].second, "見張りの兵2", "@t902", FLAG_NOBIT, 5);
+	ViewTalkAdd();
+	FlagBitSet(pB->abyFlag, 5, TRUE);
+
+	/* A が助けを呼ぶ人に話す：印が立ち、ピピが出て、見張りの兵が消える（A にだけ届く）。2 回目は印が変わらないので送らない */
+	QuestMovePC(pA, nMap, pHelper->dwX, pHelper->dwY + 1);
+	{
+		int ai = SpCnt(pA, CMD_CHARINFO), ap = SpCnt(pA, CMD_CHARPOS), at = SpCnt(pA, CMD_TALKMSG);
+		int bi = SpCnt(pB, CMD_CHARINFO), bp = SpCnt(pB, CMD_CHARPOS), ci = SpCnt(pC, CMD_CHARINFO), cp = SpCnt(pC, CMD_CHARPOS);
+		QuestSendTalk(pA, pHelper->dwTblID);
+		printf("viewflag talk first flag=%d talkmsg=%d a_charinfo=%d a_hide=%d b_charinfo=%d b_hide=%d admin_charinfo=%d admin_hide=%d",
+			(int)FlagBitGet(pA->abyFlag, 5), SpCnt(pA, CMD_TALKMSG) - at, SpCnt(pA, CMD_CHARINFO) - ai, SpCnt(pA, CMD_CHARPOS) - ap,
+			SpCnt(pB, CMD_CHARINFO) - bi, SpCnt(pB, CMD_CHARPOS) - bp, SpCnt(pC, CMD_CHARINFO) - ci, SpCnt(pC, CMD_CHARPOS) - cp);
+		ai = SpCnt(pA, CMD_CHARINFO); ap = SpCnt(pA, CMD_CHARPOS);
+		QuestSendTalk(pA, pHelper->dwTblID);
+		printf(" second a_charinfo=%d a_hide=%d\n", SpCnt(pA, CMD_CHARINFO) - ai, SpCnt(pA, CMD_CHARPOS) - ap);
+		printf("viewflag after talk pipi=%d guard=%d\n", (int)IsCharVisibleTo(pPipi, pA), (int)IsCharVisibleTo(pGuard, pA));
+	}
+	/* 見える人は話せる（B は印 5 あり。ピピと話せて、見張りの兵は居ないのと同じ） */
+	{
+		QuestMovePC(pB, nMap, pPipi->dwX + 1, pPipi->dwY);
+		int bt = SpCnt(pB, CMD_TALKMSG);
+		QuestSendTalk(pB, pPipi->dwTblID);
+		printf("viewflag talk visible pipi b=%d", SpCnt(pB, CMD_TALKMSG) - bt);
+		QuestMovePC(pB, nMap, pGuard->dwX + 1, pGuard->dwY);
+		bt = SpCnt(pB, CMD_TALKMSG);
+		QuestSendTalk(pB, pGuard->dwTblID);
+		printf(" guard b=%d", SpCnt(pB, CMD_TALKMSG) - bt);
+		QuestMovePC(pC, nMap, pGuard->dwX + 1, pGuard->dwY + 1);
+		int ct = SpCnt(pC, CMD_TALKMSG);
+		QuestSendTalk(pC, pGuard->dwTblID);
+		printf(" guard admin=%d\n", SpCnt(pC, CMD_TALKMSG) - ct);
+	}
+	ViewTalkRemove();
+	for (int i = 0; i < 3; i ++) ZeroMemory(g_aCharInfo[aLogin[i]]->abyFlag, sizeof(g_aCharInfo[aLogin[i]]->abyFlag));
+	pC->byAdminLV = ADMINLV_USER;
+}
+
 static void TestItemMsgWait(void)
 {
 	static const char *aMsg[] = {

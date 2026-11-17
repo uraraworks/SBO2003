@@ -26,6 +26,7 @@
 #include "AdminWindowOld/AdminDlgFlagName.h"
 #include "AdminWindowOld/AdminDlgTalk.h"
 #include "AdminWindowOld/AdminDlgCharFlag.h"
+#include "AdminWindowOld/AdminFlagUi.h"
 #include "AdminWindowOld/AdminListFilter.h"
 #include "AdminWindowOld/AdminDlgNpcRoute.h"
 
@@ -202,6 +203,7 @@ void AdminOnCommandMapInfo			(HWND, int, HWND, UINT);			/* メッセージハン
 void AdminOnCommandMapEvent			(HWND, int, HWND, UINT);			/* メッセージハンドラ(WM_COMMAND)イベント情報 */
 void AdminOnCommandAddChar			(HWND, int, HWND, UINT);			/* メッセージハンドラ(WM_COMMAND)キャラ追加 */
 void AdminOnCommandCharInfo			(HWND, int, HWND, UINT);			/* メッセージハンドラ(WM_COMMAND)キャラ情報 */
+static void AdminCharViewFlagFill	(void);								/* 見える印・見えない印の欄に出す */
 static void RecordAdminRuraEdit		(HWND);								/* 管理人ルーラの入力欄を記録して保存 */
 BOOL SaveAdminRura					(void);								/* 管理人ルーラ情報保存(SboCliMain.cpp) */
 void AdminOnCommandCharStatus		(HWND, int, HWND, UINT);			/* メッセージハンドラ(WM_COMMAND)キャラステータス情報 */
@@ -624,6 +626,11 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 				SetWindowText (m_hWndEdit20, "");
 				SetWindowText (m_hWndEdit21, "");
 				SetWindowText (m_hWndEdit22, "");
+				if (m_pParaCharInfo) {
+					m_pParaCharInfo->wShowFlagNo = 0;
+					m_pParaCharInfo->wHideFlagNo = 0;
+				}
+				AdminCharViewFlagFill ();
 				SendMessage (m_hWndCombo1, CB_SETCURSEL, 0, 0);
 				SendMessage (m_hWndCombo2, CB_SETCURSEL, 0, 0);
 				SendMessage (m_hWndCombo3, CB_SETCURSEL, 0, 0);
@@ -687,6 +694,9 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 						SetWindowText (m_hWndEdit14, szTmp);
 						wsprintf (szTmp, "%d", m_pParaCharInfo->wTimePutInterval);
 						SetWindowText (m_hWndEdit15, szTmp);
+						m_pParaCharInfo->wShowFlagNo = CharFlagWireFix (pChar->wShowFlag);
+						m_pParaCharInfo->wHideFlagNo = CharFlagWireFix (pChar->wHideFlag);
+						AdminCharViewFlagFill ();
 						wsprintf (szTmp, "%d", m_pParaCharInfo->dwStartMapID);
 						SetWindowText (m_hWndEdit16, szTmp);
 						wsprintf (szTmp, "%d", m_pParaCharInfo->dwStartX);
@@ -955,6 +965,9 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 				SetWindowText (m_hWndEdit14, szTmp);
 				wsprintf (szTmp, "%d", m_pParaCharInfo->wTimePutInterval);
 				SetWindowText (m_hWndEdit15, szTmp);
+				m_pParaCharInfo->wShowFlagNo = pPara->wShowFlagNo;
+				m_pParaCharInfo->wHideFlagNo = pPara->wHideFlagNo;
+				AdminCharViewFlagFill ();
 				wsprintf (szTmp, "%d", m_pParaCharInfo->dwStartMapID);
 				SetWindowText (m_hWndEdit16, szTmp);
 				wsprintf (szTmp, "%d", m_pParaCharInfo->dwStartX);
@@ -2487,6 +2500,25 @@ void AdminOnCommandAddChar(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 }
 
 /* ========================================================================= */
+/* 関数名：AdminCharViewFlagFill											 */
+/* 内容：見える印・見えない印の欄に、選んでいるNPCの値を出す				 */
+/* ========================================================================= */
+static void AdminCharViewFlagFill(void)
+{
+	WORD wShow = FLAG_NOBIT, wHide = FLAG_NOBIT;
+
+	if (m_pParaCharInfo) {
+		wShow = CharFlagFromWire (m_pParaCharInfo->wShowFlagNo);
+		wHide = CharFlagFromWire (m_pParaCharInfo->wHideFlagNo);
+	}
+	AdminFlagSetNo (g_hWndAdmin, IDC_CHAR_SHOWFLAG, wShow, wShow == FLAG_NOBIT);
+	AdminFlagSetNo (g_hWndAdmin, IDC_CHAR_HIDEFLAG, wHide, wHide == FLAG_NOBIT);
+	AdminFlagUpdateName (g_hWndAdmin, IDC_CHAR_SHOWFLAG, IDC_CHAR_SHOWFLAGN, FLAGKIND_BIT);
+	AdminFlagUpdateName (g_hWndAdmin, IDC_CHAR_HIDEFLAG, IDC_CHAR_HIDEFLAGN, FLAGKIND_BIT);
+}
+
+
+/* ========================================================================= */
 /* 関数名：AdminOnCommandCharInfo											 */
 /* 内容：WM_COMMAND処理(キャラ情報)											 */
 /* 日付：2003/06/09															 */
@@ -2498,6 +2530,13 @@ void AdminOnCommandCharInfo(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 	if (codeNotify == EN_CHANGE && hWndCtl &&
 		(hWndCtl == m_hWndEdit6 || hWndCtl == m_hWndEdit7 || hWndCtl == m_hWndEdit8 || hWndCtl == m_hWndEdit9)) {
 		RecordAdminRuraEdit (hWndCtl);
+		return;
+	}
+
+	/* 印の番号が書き換えられたら、横の名前を出し直す */
+	if (codeNotify == EN_CHANGE && (id == IDC_CHAR_SHOWFLAG || id == IDC_CHAR_HIDEFLAG)) {
+		AdminFlagUpdateName (hWnd, IDC_CHAR_SHOWFLAG, IDC_CHAR_SHOWFLAGN, FLAGKIND_BIT);
+		AdminFlagUpdateName (hWnd, IDC_CHAR_HIDEFLAG, IDC_CHAR_HIDEFLAGN, FLAGKIND_BIT);
 		return;
 	}
 
@@ -2680,6 +2719,19 @@ void AdminOnCommandCharInfo(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 			ZeroMemory (pszTmp, nSize);
 			GetWindowText (m_hWndEdit15, pszTmp, 6);
 			m_pParaCharInfo->wTimePutInterval = (WORD)atoi (pszTmp);
+
+			/* 見える印・見えない印（空欄=無し。おかしな値なら送らない） */
+			{
+				WORD wShow, wHide;
+				if (!AdminFlagGetBit (g_hWndAdmin, g_hWndAdmin, IDC_CHAR_SHOWFLAG, "この印が立っている人にだけ見える印", "キャラ情報", wShow)) {
+					break;
+				}
+				if (!AdminFlagGetBit (g_hWndAdmin, g_hWndAdmin, IDC_CHAR_HIDEFLAG, "この印が立っている人には見えない印", "キャラ情報", wHide)) {
+					break;
+				}
+				m_pParaCharInfo->wShowFlagNo = CharFlagToWire (wShow);
+				m_pParaCharInfo->wHideFlagNo = CharFlagToWire (wHide);
+			}
 
 			ZeroMemory (pszTmp, nSize);
 			GetWindowText (m_hWndEdit16, pszTmp, 6);
@@ -6291,6 +6343,8 @@ void AdminOnPaintCharInfo(HDC hDC)
 	MyTextOut (hDC, 0, 12 * 18, "移動範囲Y:");
 	MyTextOut (hDC, 0, 12 * 19, "発生数:");
 	MyTextOut (hDC, 0, 12 * 20, "発生周期(秒):");
+	MyTextOut (hDC, 12 * 22, 12 * 20, "見える印(のみ):");
+	MyTextOut (hDC, 12 * 22, 12 * 21 + 4, "見えない印:");
 
 	MyTextOut (hDC, 12 * 10, 12 * 16 + 8, "権限:");
 	MyTextOut (hDC, 12 * 10, 12 * 18 + 8, "色:");
@@ -8532,7 +8586,22 @@ void MakeAdminWndCharInfo(void)
 	m_hWndEdit15 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
 			12 * 7, 12 * 20, 24, 11, g_hWndAdmin, NULL, g_hInstance, NULL);
 	SendMessage (m_hWndEdit15, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
-	
+
+	/* 見える印・見えない印（NPCの出し分け。空欄=条件なし。横に印の名前を出す） */
+	static const struct { int nEdit, nName, nY; } s_aViewFlag[2] = {
+		{IDC_CHAR_SHOWFLAG, IDC_CHAR_SHOWFLAGN, 12 * 20},
+		{IDC_CHAR_HIDEFLAG, IDC_CHAR_HIDEFLAGN, 12 * 21 + 4}
+	};
+	AdminFlagNameLoadIfEmpty ();
+	for (int nView = 0; nView < 2; nView ++) {
+		HWND hWndTmp = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_NUMBER,
+				12 * 22 + 96, s_aViewFlag[nView].nY, 32, 11, g_hWndAdmin, (HMENU)(INT_PTR)s_aViewFlag[nView].nEdit, g_hInstance, NULL);
+		SendMessage (hWndTmp, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+		hWndTmp = CreateWindow ("STATIC", "", WS_CHILD | WS_VISIBLE,
+				12 * 22 + 96 + 36, s_aViewFlag[nView].nY, 140, 11, g_hWndAdmin, (HMENU)(INT_PTR)s_aViewFlag[nView].nName, g_hInstance, NULL);
+		SendMessage (hWndTmp, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+	}
+
 	m_hWndCombo5 = CreateWindow ("COMBOBOX", "", WS_CHILD | WS_VISIBLE | WS_VSCROLL | CBS_DROPDOWNLIST,
 			12 * 0, 12 * 20 + 18, 12 * 10, 12 * 10, g_hWndAdmin, (HMENU)IDC_TMPCOMBO5, g_hInstance, NULL);
 	SendMessage (m_hWndCombo5, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
@@ -8646,6 +8715,10 @@ void DeleteAdminWndCharInfo(void)
 	SAFE_DESTROYWND (m_hWndButton13);
 	SAFE_DESTROYWND (m_hWndButton14);
 	SAFE_DESTROYWND (m_hWndButtonTalk);
+	DestroyWindow (GetDlgItem (g_hWndAdmin, IDC_CHAR_SHOWFLAG));
+	DestroyWindow (GetDlgItem (g_hWndAdmin, IDC_CHAR_SHOWFLAGN));
+	DestroyWindow (GetDlgItem (g_hWndAdmin, IDC_CHAR_HIDEFLAG));
+	DestroyWindow (GetDlgItem (g_hWndAdmin, IDC_CHAR_HIDEFLAGN));
 	SAFE_DESTROYWND (m_hWndScrBar1);
 	SAFE_DESTROYWND (m_hWndCombo1);
 	SAFE_DESTROYWND (m_hWndCombo2);

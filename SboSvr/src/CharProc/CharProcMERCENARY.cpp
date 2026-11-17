@@ -991,7 +991,7 @@ BOOL CCharProcMERCENARY::CanStep(int x, int y)
 		return FALSE;
 	}
 	/* ほかのNPCと重なる？ */
-	if (CheckCharBlockNPC2 (m_pChar->dwTblID, m_pChar->dwMapID, (DWORD)x, (DWORD)y, m_pChar->dwSpaceID) != -1) {
+	if (CheckCharBlockNPC2 (m_pChar->dwTblID, m_pChar->dwMapID, (DWORD)x, (DWORD)y, m_pChar->dwSpaceID, m_pChar) != -1) {
 		return FALSE;
 	}
 	return TRUE;
@@ -1729,7 +1729,7 @@ static BOOL FindPosNearOwner(PCHARINFO pChar, PCHARINFO pOwner, int &x, int &y)
 		if (CanPutChar (pChar, pOwner->dwMapID, x, y) == FALSE) {
 			continue;
 		}
-		if (CheckCharBlockNPC2 (pChar->dwTblID, pOwner->dwMapID, (DWORD)x, (DWORD)y, pChar->dwSpaceID) != -1) {
+		if (CheckCharBlockNPC2 (pChar->dwTblID, pOwner->dwMapID, (DWORD)x, (DWORD)y, pChar->dwSpaceID, pChar) != -1) {
 			continue;
 		}
 		return TRUE;

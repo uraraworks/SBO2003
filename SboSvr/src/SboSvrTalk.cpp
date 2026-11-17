@@ -253,10 +253,12 @@ void TalkNpcTalk(PCHARINFO pChar, PCHARINFO pNpc)
 	int nLine;
 	char szSpeech[MAX_TALKMSG + 4];	/* 最後に @2 を足せるよう少し余分に */
 	WORD wGiveItem = 0;
+	BYTE abyFlagBak[sizeof (pChar->abyFlag)];
 
 	if ((pChar == NULL) || (pNpc == NULL) || (pChar->pID == 0)) {
 		return;
 	}
+	CopyMemory (abyFlagBak, pChar->abyFlag, sizeof (abyFlagBak));
 	SboTextCopy (szSpeech, sizeof (szSpeech), TALK_NOANSWER);
 	pTalk = TalkFind (TalkGetNo (pNpc));
 	if (pTalk) {
@@ -278,6 +280,10 @@ void TalkNpcTalk(PCHARINFO pChar, PCHARINFO pNpc)
 	/* 最後が入力待ちで終わっていないと、窓がすぐ閉じて読めないので @2 を足す（道具の説明文と同じ） */
 	ItemMsgAddWait (szSpeech, sizeof (szSpeech));
 	SendCmdTALKMSG (pChar->pID, pNpc->dwTblID, szSpeech);
+	/* 印が動いたら、印で見える・消えるNPCを、話した本人にだけ見え直す */
+	if (memcmp (abyFlagBak, pChar->abyFlag, sizeof (abyFlagBak)) != 0) {
+		CharViewRefresh (pChar);
+	}
 }
 
 /* Copyright(C)URARA-works 2003-2005 */

@@ -483,8 +483,8 @@ DWORD CCharProcSEARCH::FindTarget(void)
 		if ((pCharTmp->wHP == 0) || (pCharTmp->byGameState < GAMESTATE_MOVE)) {
 			continue;
 		}
-		/* 別の空間にいる人には気づかない */
-		if (!IsSameSpace (m_pChar, pCharTmp)) {
+		/* 別の空間にいる人・自分（印で見えない敵）が見えない人には気づかない */
+		if (!IsSameSpace (m_pChar, pCharTmp) || !IsCharSeenBy (m_pChar, pCharTmp)) {
 			continue;
 		}
 		nDX = abs ((int)pCharTmp->dwX - (int)m_pChar->dwX);
@@ -548,7 +548,7 @@ BOOL CCharProcSEARCH::IsTargetValid(PCHARINFO pCharTmp)
 	if (pCharTmp->byGameState == GAMESTATE_LOGOFF) {
 		return FALSE;
 	}
-	if ((pCharTmp->dwMapID != m_pChar->dwMapID) || !IsSameSpace (m_pChar, pCharTmp)) {
+	if ((pCharTmp->dwMapID != m_pChar->dwMapID) || !IsSameSpace (m_pChar, pCharTmp) || !IsCharSeenBy (m_pChar, pCharTmp)) {
 		return FALSE;
 	}
 	/* 倒れたプレイヤーは追いかけない */

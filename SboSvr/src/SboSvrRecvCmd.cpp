@@ -96,8 +96,8 @@ DWORD	GetCharXPos					(PCHARINFO, DWORD, BYTE);						/* キャラサイズに合
 BOOL	CheckCharBlock				(DWORD, DWORD, DWORD);							/* キャラのぶつかり判定 */
 BOOL	CheckCharBlock				(PCHARINFO pChar, DWORD, DWORD, DWORD);			/* キャラのぶつかり判定 */
 DWORD	CheckCharBlockPC			(DWORD, DWORD, DWORD, DWORD);					/* キャラのキャラとのぶつかり判定 */
-DWORD	CheckCharBlockNPC			(DWORD, DWORD, DWORD, DWORD);					/* キャラのキャラとのぶつかり判定(NPC) */
-DWORD	CheckCharBlockNPC2			(DWORD, DWORD, DWORD, DWORD, DWORD);			/* キャラのキャラとのぶつかり判定2(NPC) */
+DWORD	CheckCharBlockNPC			(DWORD, DWORD, DWORD, DWORD, PCHARINFO);		/* キャラのキャラとのぶつかり判定(NPC) */
+DWORD	CheckCharBlockNPC2			(DWORD, DWORD, DWORD, DWORD, DWORD, PCHARINFO);	/* キャラのキャラとのぶつかり判定2(NPC) */
 BOOL	CheckEventBlock				(DWORD, DWORD, DWORD, BYTE);					/* 指定座標にイベントがあるか判定 */
 BOOL	CheckMagicUserInfo			(BYTE, BYTE);									/* 魔法利用者情報にあるか判定 */
 BOOL	CheckEquUserInfo			(WORD, BYTE);									/* 装備職業情報にあるか判定 */
@@ -589,6 +589,10 @@ static BOOL IsNearRecvChar(PCHARINFO pCharTarget, int nRange)
 
 	/* 別の空間にいるキャラには届かない（管理者も、いま居る空間のキャラだけ） */
 	if ((s_nCharNoRecv >= 0) && !IsSameSpace (g_aCharInfo[s_nCharNoRecv], pCharTarget)) {
+		return FALSE;
+	}
+	/* 印で見えないNPCは、居ないのと同じ（話せない・押せない・調べられない。管理者には見える） */
+	if ((s_nCharNoRecv >= 0) && !IsCharSeenBy (pCharTarget, g_aCharInfo[s_nCharNoRecv])) {
 		return FALSE;
 	}
 	if (s_bAdminRecv) {
@@ -2030,6 +2034,8 @@ void SetInitCharData(PCHARINFO pChar)
 	pChar->dwTailTblID		= -1;
 	pChar->dwTailBackTblID	= -1;
 	pChar->dwStTmplateID	= -1;
+	pChar->wShowFlag		= 0;				/* 見える・見えない条件の印（番号+1。0=無し） */
+	pChar->wHideFlag		= 0;
 	for (i = 0; i < 10; i ++) {
 		pChar->waEqu[i] = 0xFFFF;
 	}
@@ -2827,7 +2833,7 @@ DWORD CheckCharBlockPC(DWORD dwMapID, DWORD dwX, DWORD dwY, DWORD dwSpaceID)
 /*       dwSpaceID と同じ空間にいるキャラとだけぶつかる						 */
 /* 日付：2004/03/14															 */
 /* ========================================================================= */
-DWORD CheckCharBlockNPC(DWORD dwMapID, DWORD dwX, DWORD dwY, DWORD dwSpaceID)
+DWORD CheckCharBlockNPC(DWORD dwMapID, DWORD dwX, DWORD dwY, DWORD dwSpaceID, PCHARINFO pViewer)
 {
 	PMAPINFO pMap = g_aMapInfo[dwMapID];
 	PDWORD pData = pMap->paTblNoNPC;
@@ -2836,8 +2842,9 @@ DWORD CheckCharBlockNPC(DWORD dwMapID, DWORD dwX, DWORD dwY, DWORD dwSpaceID)
 			break;
 		}
 		PCHARINFO pCharTmp = g_aCharInfo[pData[i]];
-		/* 依頼の見えるNPC・別の空間にいるキャラは、ぶつからない（すり抜けられる） */
-		if (IsQuestNpc (pCharTmp) || (pCharTmp->dwSpaceID != dwSpaceID)) {
+		/* 依頼の見えるNPC・別の空間にいるキャラは、ぶつからない（すり抜けられる）。
+		   動く本人（pViewer）に見えない条件付きNPCも、居ないのと同じでぶつからない */
+		if (IsQuestNpc (pCharTmp) || (pCharTmp->dwSpaceID != dwSpaceID) || ((pViewer != NULL) && !IsCharSeenBy (pCharTmp, pViewer))) {
 			continue;
 		}
 		/* キャラと重なる？ */
@@ -2861,7 +2868,7 @@ DWORD CheckCharBlockNPC(DWORD dwMapID, DWORD dwX, DWORD dwY, DWORD dwSpaceID)
 /*       dwSpaceID と同じ空間にいるキャラとだけぶつかる						 */
 /* 日付：2004/08/01															 */
 /* ========================================================================= */
-DWORD CheckCharBlockNPC2(DWORD dwTblID, DWORD dwMapID, DWORD dwX, DWORD dwY, DWORD dwSpaceID)
+DWORD CheckCharBlockNPC2(DWORD dwTblID, DWORD dwMapID, DWORD dwX, DWORD dwY, DWORD dwSpaceID, PCHARINFO pViewer)
 {
 	PMAPINFO pMap = g_aMapInfo[dwMapID];
 	PDWORD pData = pMap->paTblNoNPC;
@@ -2873,8 +2880,9 @@ DWORD CheckCharBlockNPC2(DWORD dwTblID, DWORD dwMapID, DWORD dwX, DWORD dwY, DWO
 		if (dwTblID == pCharTmp->dwTblID) {
 			continue;
 		}
-		/* 依頼の見えるNPC・別の空間にいるキャラは、ぶつからない（すり抜けられる） */
-		if (IsQuestNpc (pCharTmp) || (pCharTmp->dwSpaceID != dwSpaceID)) {
+		/* 依頼の見えるNPC・別の空間にいるキャラは、ぶつからない（すり抜けられる）。
+		   動く本人（pViewer）に見えない条件付きNPCも、居ないのと同じでぶつからない */
+		if (IsQuestNpc (pCharTmp) || (pCharTmp->dwSpaceID != dwSpaceID) || ((pViewer != NULL) && !IsCharSeenBy (pCharTmp, pViewer))) {
 			continue;
 		}
 		/* キャラと重なる？ */
@@ -5074,6 +5082,7 @@ void RecvDataProcCHARINFO(PBYTE pData, DWORD dwDataSize)
 	PCMDPARA_CHARINFO pChar = &Para;
 	PCHARINFO pCharDst;
 	PBYTE pDataNext;
+	BOOL bViewChg = FALSE;
 
 	/* 名前は可変長で届くので構造体に戻す（後ろに NPC 発言が続く） */
 	pDataNext = SboPackGetCHARINFO (&Para, pData, RecvEnd (pData));
@@ -5110,6 +5119,12 @@ void RecvDataProcCHARINFO(PBYTE pData, DWORD dwDataSize)
 		}
 		pCharDst->byNpcType = pChar->byNpcType;
 		pCharDst->dwStTmplateID = pChar->dwStTmplateID;
+		/* 見える・見えない条件の印（番号+1。0 や範囲外は「無し」）。変わったらマップの全員に見え直しを送る */
+		WORD wShowNew = CharFlagWireFix (pChar->wShowFlagNo);
+		WORD wHideNew = CharFlagWireFix (pChar->wHideFlagNo);
+		bViewChg = (pCharDst->wShowFlag != wShowNew) || (pCharDst->wHideFlag != wHideNew);
+		pCharDst->wShowFlag = wShowNew;
+		pCharDst->wHideFlag = wHideNew;
 	}
 	pCharDst->wGrpID = pChar->wGrpID;
 	pCharDst->wGrpMain = pChar->wGrpMain;
@@ -5160,6 +5175,9 @@ void RecvDataProcCHARINFO(PBYTE pData, DWORD dwDataSize)
 	SendCmdCHARINFO3 (pChar->dwTblID);
 	SendCmdCHARINFO (pChar->pID, -1);
 	SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 1);
+	if (bViewChg) {
+		CharViewRefreshNpc (pCharDst);
+	}
 
 	/* NPC発生（発生元）なら、もう出ているキャラにも名前・見た目・テンプレートを反映 */
 	RenewPutChildChar (pCharDst);
@@ -5927,7 +5945,7 @@ static BOOL TailChaseCanStep(PCHARINFO pChar, PMAPINFO pMap, int x, int y)
 	if (CheckCharBlockPC (pChar->dwMapID, (DWORD)x, (DWORD)y, pChar->dwSpaceID) != (DWORD)-1) {
 		return FALSE;
 	}
-	if (CheckCharBlockNPC2 (pChar->dwTblID, pChar->dwMapID, (DWORD)x, (DWORD)y, pChar->dwSpaceID) != (DWORD)-1) {
+	if (CheckCharBlockNPC2 (pChar->dwTblID, pChar->dwMapID, (DWORD)x, (DWORD)y, pChar->dwSpaceID, pChar) != (DWORD)-1) {
 		return FALSE;
 	}
 	return TRUE;
@@ -6936,7 +6954,7 @@ void RecvDataProcCHARPUSH(PBYTE pData, DWORD dwDataSize)
 		}
 
 		if (bUpdate) {
-			DWORD dwTmp = CheckCharBlockNPC (pCharPush->dwMapID, dwX, dwY, pCharPush->dwSpaceID);
+			DWORD dwTmp = CheckCharBlockNPC (pCharPush->dwMapID, dwX, dwY, pCharPush->dwSpaceID, pCharPush);
 			if (dwTmp != -1) {
 				PCHARINFO pCharCheck = g_aCharInfo[dwTmp];
 				if (pCharPush->dwTblID != pCharCheck->dwTblID) {
@@ -7182,8 +7200,8 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
-	/* 別の空間にいるキャラとは話せない */
-	if ((s_nCharNoRecv >= 0) && !IsSameSpace (g_aCharInfo[s_nCharNoRecv], pChar)) {
+	/* 別の空間にいるキャラ・印で見えないNPCとは話せない */
+	if ((s_nCharNoRecv >= 0) && (!IsSameSpace (g_aCharInfo[s_nCharNoRecv], pChar) || !IsCharSeenBy (pChar, g_aCharInfo[s_nCharNoRecv]))) {
 		return;
 	}
 	/* 宝箱の敵（正体前）は話しても何も起きない（調べると正体を現す） */
@@ -12387,6 +12405,8 @@ void RecvDataProcADMINCHARFLAG(PBYTE pData, DWORD dwDataSize)
 			return;
 		}
 		FlagBitSet (pChar->abyFlag, pPara->wNo, pPara->wValue ? TRUE : FALSE);
+		/* 印で見える・消えるNPCを、その人にだけ見え直す */
+		CharViewRefresh (pChar);
 	} else if (pPara->byKind == FLAGKIND_NUM) {
 		if ((pPara->wNo >= MAX_FLAGNUM) || (pPara->wValue > 255)) {
 			SendAdminCharFlagResult (pID, pPara->dwTblID, 0, "数値の番号は 0〜127、値は 0〜255 で指定してください。");

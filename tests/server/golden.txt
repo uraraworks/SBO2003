@@ -1175,6 +1175,7 @@ talk give first item+=1 flag=1 talkmsg=1 sysmsg=1 second item+=0 sysmsg=0 quest 
 quest info reload count=3 same=1
 quest char save=1 load=1
 quest char reload id=2 step=1 flg=4660 counts=1,22,333,4444 time=1700000000 done=06,80
+quest char reload viewcond show=0 hide=0
 quest npc loaded=0
 quest leave questitem=1 sell=1 gold+=0 full=1 res=2,1,0 after=0
 legacy item load patched=1 first10=10 rest0=10 equ=3,65535 name=旧持ち物
@@ -1470,6 +1471,24 @@ keydoor key open=1 mapmsg=1 sound=1 chgmap=1 keys=1
 keydoor closed=1
 keydoor bagkey open=1
 keydoor saved=1
+== AD. ViewFlag ==
+viewflag cells=8
+viewflag has cond helper=0 pipi=1 guard=1 both=1 player=0
+viewflag visible pipi a=0 b=1 admin=1 null=0 guard a=1 b=0 admin=1 null=0
+viewflag visible both(5 and not 6) b56=0 b5=1 a=0 admin=1 helper a=1 null=1
+viewflag visiblepid pipi a=0 b=1 admin=1 all=0 guard a=1 b=0 helper all=1
+viewflag send charinfo pipi a=0 b=1 admin=1 charinfo3 a=0 b=1 admin=1 guard a=1 b=0 admin=1 charpos a=0 b=1 admin=1
+viewflag send all a_minus_b=-1
+viewflag admin set a_flag=1 a_charinfo=2 a_hide=1 b_charinfo=0 b_hide=0 admin_charinfo=0 admin_hide=0
+viewflag admin clear a_flag=0 a_charinfo=1 a_hide=2
+viewflag npc cond off a=1 b=1 admin=1 on hide a=1 b=0 admin=0
+viewflag block pipi a=0 b=1 admin=1 none=1 guard a=1 b=0
+viewflag block2 pipi a=0 b=1 interact a=0 b=1 admin=1 guard a=1 b=0 admin=1
+viewflag talk pipi a=0 both a=0 guard b=0
+viewflag save=1 columns=1 helper=0,0 pipi=6,0 guard=0,6 both=6,7
+viewflag wire to=0,1,6,1024 from=65535,0,5,1023,65535
+viewflag fresh show=0 hide=0 cond=0
+viewflag zeroed npc cond=0 seen=1
 == K2. Mercenary magic ==
 merc map=91 enemies=17 size=255x160
 merc hired dist=1
@@ -1493,4 +1512,9 @@ tailitem c-tail C map=0 pos=(20,8) front=-1 back=-1 fade=[0] chgbgm=1
 tailitem b-return A map=14 pos=(9,14) front=-1 back=1 fade=[0] chgbgm=1
 tailitem b-return B map=14 pos=(9,14) front=0 back=2 fade=[0] chgbgm=1
 tailitem b-return C map=14 pos=(9,14) front=1 back=-1 fade=[0] chgbgm=1
+== AE. ViewFlagTalk ==
+viewflag cells=8
+viewflag talk first flag=1 talkmsg=1 a_charinfo=1 a_hide=1 b_charinfo=0 b_hide=0 admin_charinfo=0 admin_hide=0 second a_charinfo=0 a_hide=0
+viewflag after talk pipi=1 guard=0
+viewflag talk visible pipi b=1 guard b=0 guard admin=1
 == done ==

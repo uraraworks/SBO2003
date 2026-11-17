@@ -4461,6 +4461,8 @@ void RecvDataProcCHARINFO(PBYTE pData, DWORD dwDataSize)
 	pCharDst->dwTailTblID			= pChar->dwTailTblID;
 	pCharDst->dwTailBackTblID		= pChar->dwTailBackTblID;
 	pCharDst->dwNpcID				= pChar->dwNpcID;
+	pCharDst->wShowFlag				= CharFlagWireFix (pChar->wShowFlagNo);
+	pCharDst->wHideFlag				= CharFlagWireFix (pChar->wHideFlagNo);
 	pCharDst->byDotMove				= 0;
 	pCharDst->byAreaX				= pChar->byAreaX;
 	pCharDst->byAreaY				= pChar->byAreaY;

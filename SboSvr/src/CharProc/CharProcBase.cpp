@@ -256,7 +256,7 @@ BOOL CCharProcBase::PartsMoveProc(PCHARINFO pChar)
 		bRet = CheckCharBlock (pChar->dwMapID, dwX, dwY);
 
 		/* NPCとぶつかる？ */
-		dwTblID = CheckCharBlockNPC (pChar->dwMapID, dwX, dwY, pChar->dwSpaceID);
+		dwTblID = CheckCharBlockNPC (pChar->dwMapID, dwX, dwY, pChar->dwSpaceID, pChar);
 		if ((dwTblID != -1) && (pChar->dwTblID != dwTblID)) {
 			bRet = FALSE;
 		}
