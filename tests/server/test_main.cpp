@@ -3923,7 +3923,41 @@ static void TestFlagGroup(const std::vector<int> &aLogin)
 		printf("flaggroup multi grow-band %s\n", FlagGroupApi("flagGroup", nMulti, "{\"bands\":[{\"wFrom\":400,\"wTo\":439},{\"wFrom\":500,\"wTo\":519},{\"wFrom\":800,\"wTo\":809}]}").c_str());
 		printf("flaggroup multi grown bands=%d subcount=%d sub800=%d\n", FlagGroupBandCount(g_aFlagGroupInfo[nMulti]), FlagGroupSubCount(g_aFlagGroupInfo[nMulti]), FlagGroupSub(g_aFlagGroupInfo[nMulti], 800));
 		/* 帯の数・形・範囲・逆さ */
-		printf("flaggroup multi bands5 %s\n", FlagGroupApi("flagGroup", nMulti, "{\"bands\":[{\"wFrom\":1,\"wTo\":1},{\"wFrom\":2,\"wTo\":2},{\"wFrom\":3,\"wTo\":3},{\"wFrom\":4,\"wTo\":4},{\"wFrom\":5,\"wTo\":5}]}").c_str());
+		/* 帯の本数：16 本までは通り（保存・読み直しも）、17 本は断る。元の 3 本へ戻す */
+		{
+			std::string strMax = "{\"bands\":[{\"wFrom\":400,\"wTo\":439},{\"wFrom\":500,\"wTo\":519},{\"wFrom\":800,\"wTo\":809}", strOver;
+			for (int k = 0; k < 13; k ++) strMax += ",{\"wFrom\":" + std::to_string(900 + k * 2) + ",\"wTo\":" + std::to_string(900 + k * 2) + "}";
+			strOver = strMax + ",{\"wFrom\":990,\"wTo\":990}]}";
+			printf("flaggroup multi bands17 %s bands=%d\n", FlagGroupApi("flagGroup", nMulti, strOver.c_str()).c_str(), FlagGroupBandCount(g_aFlagGroupInfo[nMulti]));
+			printf("flaggroup multi bands16 %s bands=%d subcount=%d sub924=%d\n", FlagGroupApi("flagGroup", nMulti, (strMax + "]}").c_str()).c_str(), FlagGroupBandCount(g_aFlagGroupInfo[nMulti]),
+					FlagGroupSubCount(g_aFlagGroupInfo[nMulti]), FlagGroupSub(g_aFlagGroupInfo[nMulti], 924));
+			BOOL bSaved16 = SaveFlagGroupInfo();
+			for (int i = 0; i < g_aFlagGroupInfo.GetSize(); i ++) delete g_aFlagGroupInfo[i];
+			g_aFlagGroupInfo.RemoveAll();
+			BOOL bLoaded16 = LoadFlagGroupInfo();
+			printf("flaggroup multi bands16 reload save=%d load=%d bands=%d subcount=%d band16=%u-%u\n", (int)bSaved16, (int)bLoaded16, FlagGroupBandCount(g_aFlagGroupInfo[nMulti]),
+					FlagGroupSubCount(g_aFlagGroupInfo[nMulti]), g_aFlagGroupInfo[nMulti]->awFrom[15], g_aFlagGroupInfo[nMulti]->awTo[15]);
+			printf("flaggroup multi bands16 back %s bands=%d\n", FlagGroupApi("flagGroup", nMulti, "{\"bands\":[{\"wFrom\":400,\"wTo\":439},{\"wFrom\":500,\"wTo\":519},{\"wFrom\":800,\"wTo\":809}]}").c_str(), FlagGroupBandCount(g_aFlagGroupInfo[nMulti]));
+		}
+		/* 管理者ウィンドウの帯の入力文字（カンマ区切り）の読み取り */
+		{
+			static const struct { const char *pszText; int nMax; } aParse[] = {
+				{ "100-139, 300-319, 500-509", 1024 }, { "120", 1024 }, { "100〜139、300～319,500~509", 1024 }, { "　１００−１３９ 、 ３００〜３１９　", 1024 },
+				{ "5-5,0-0", 128 }, { "0-1023", 1024 }, { "0-127", 128 }, { "0-128", 128 }, { "1024", 1024 }, { "999999", 1024 },
+				{ "", 1024 }, { "   ", 1024 }, { "100-", 1024 }, { "-100", 1024 }, { "1-2-3", 1024 }, { "abc", 1024 }, { "100,", 1024 }, { ",100", 1024 }, { "1,,2", 1024 },
+				{ "139-100", 1024 }, { "100-139, 139-150", 1024 }, { "100-139, 110", 1024 },
+				{ "1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31", 1024 }, { "1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33", 1024 },
+			};
+			for (size_t t = 0; t < sizeof(aParse) / sizeof(aParse[0]); t ++) {
+				WORD awF[MAX_FLAGGROUPBAND], awT[MAX_FLAGGROUPBAND];
+				int nCnt = -1;
+				char szErr[300];
+				BOOL bOk = FlagGroupParseBands(aParse[t].pszText, aParse[t].nMax, awF, awT, nCnt, szErr, sizeof(szErr));
+				printf("flaggroup parse %d [%s] max=%d ok=%d count=%d", (int)t, aParse[t].pszText, aParse[t].nMax, (int)bOk, nCnt);
+				for (int k = 0; k < nCnt; k ++) printf(" %u-%u", awF[k], awT[k]);
+				printf(" err=%s\n", bOk ? "" : szErr);
+			}
+		}
 		printf("flaggroup multi bands0 %s\n", FlagGroupApi("flagGroup", nMulti, "{\"bands\":[]}").c_str());
 		printf("flaggroup multi bands-notarray %s\n", FlagGroupApi("flagGroup", nMulti, "{\"bands\":5}").c_str());
 		printf("flaggroup multi bands-badelem %s\n", FlagGroupApi("flagGroup", nMulti, "{\"bands\":[{\"wFrom\":1}]}").c_str());

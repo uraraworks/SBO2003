@@ -319,8 +319,8 @@ typedef struct _FLAGGROUPFILE {
 	WORD		wFrom;													/* 帯 1（古いファイルにある列。帯が 1 本だけでもここに入る） */
 	WORD		wTo;
 	WORD		wSort;
-	BYTE		byBandCount;											/* 帯の本数（1〜4。古いファイルには無く、0 は 1 本として読む） */
-	WORD		awFromX[MAX_FLAGGROUPBAND - 1];							/* 帯 2〜4（詰めて入れる） */
+	BYTE		byBandCount;											/* 帯の本数（1〜16。古いファイルには無く、0 は 1 本として読む） */
+	WORD		awFromX[MAX_FLAGGROUPBAND - 1];							/* 帯 2〜16（詰めて入れる） */
 	WORD		awToX[MAX_FLAGGROUPBAND - 1];
 } FLAGGROUPFILE;
 
@@ -333,7 +333,7 @@ static const COLINFO s_aFlagGroupCol[] = {
 	COL (FLAGGROUPFILE, wFrom,		COL_U16),
 	COL (FLAGGROUPFILE, wTo,		COL_U16),
 	COL (FLAGGROUPFILE, wSort,		COL_U16),
-	/* 以下は帯を 4 本まで持てるようにした時に足した列（無い古いファイルは帯 1 本として読める） */
+	/* 以下は帯を 16 本まで持てるようにした時に足した列（無い古いファイルは帯 1 本として読める） */
 	COL (FLAGGROUPFILE, byBandCount,	COL_U8),
 	COLS(FLAGGROUPFILE, awFromX,	COL_U16ARR, MAX_FLAGGROUPBAND - 1),
 	COLS(FLAGGROUPFILE, awToX,		COL_U16ARR, MAX_FLAGGROUPBAND - 1),
