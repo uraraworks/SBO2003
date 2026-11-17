@@ -150,6 +150,7 @@ enum {
 	WNDTYPE_SORTMENU,											/* 並べ替え：入れ替え・種類順・50音順（byData1=対象 SORTITEMTARGET_*） */
 	WNDTYPE_MARKET,												/* 取引所（商人ギルドの出張所）の受付 */
 	WNDTYPE_IMPORTANT,											/* 大事な物の一覧（見るだけ。道具の一覧の最後の行から開く） */
+	WNDTYPE_RECYCLE,											/* リサイクルボックス（おすそわけの共有の箱。台詞が "@d" のNPC） */
 };
 
 /* 取引所ウィンドウ(WNDTYPE_MARKET)の nType2 */
@@ -182,6 +183,31 @@ enum {
 #define MARKET_WAITMAX				(5000)										/* 返事を待つ最長時間(ms) */
 #define MARKET_LISTY				(16 * 4)									/* 一覧の上端（右上の所持金の窓の下） */
 #define MARKET_CONFY				(16 * 17)									/* 「はい／いいえ」の上端（一覧の下・台詞の上） */
+
+/* リサイクルボックスウィンドウ(WNDTYPE_RECYCLE)の nType2 */
+enum {
+	RECYCLEWND_MENU = 0,										/* メニュー（入れる・もらう・やめる） */
+	RECYCLEWND_LIST,											/* 箱の中身の一覧（もらう品を選ぶ） */
+	RECYCLEWND_ITEM,											/* 入れる品を手持ちから選ぶ（同じ品はまとめて 1 行） */
+	RECYCLEWND_COUNT,											/* 入れる個数を選ぶ（nData1=個数、nData2=入れられる最大） */
+};
+/* リサイクルボックス：返事待ちの種類 */
+enum {
+	RECYCLEWAIT_NONE = 0,										/* 待っていない */
+	RECYCLEWAIT_OPEN,											/* 話しかけた時の中身の返事（来たらメニューを出す） */
+	RECYCLEWAIT_TAKELIST,										/* 「もらう」の一覧の返事 */
+	RECYCLEWAIT_PUT,											/* 入れた結果 */
+	RECYCLEWAIT_TAKE,											/* もらった結果 */
+};
+/* 手持ちを品の種類ごとにまとめた 1 行（リサイクルボックスの「入れる」の一覧） */
+typedef struct _RECYCLEHAND {
+	WORD		wItemID;										/* 品の種類ID */
+	BYTE		byHave;											/* 持っている数（装備中も数える） */
+	BYTE		byOk;											/* 入れられる数（装備中・取り引き不可は 0） */
+} RECYCLEHAND, *PRECYCLEHAND;
+#define RECYCLE_WAITMAX				(5000)										/* 返事を待つ最長時間(ms) */
+#define RECYCLE_NAMEUNIT			(24)										/* 一覧の品名の幅（全角12字。半角=1）。中身で枠の幅が変わらないように決め打ち */
+#define RECYCLE_COUNTCHAR			(4)											/* 一覧の個数の幅（「x255」の4字） */
 
 /* 依頼ウィンドウ(WNDTYPE_QUEST)の nType2 */
 enum {

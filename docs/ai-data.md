@@ -405,6 +405,18 @@ NPC（`char`）の台詞（`szNpcSpeech`）を **`@t` + 番号**（例 `@t012`�
 - 印の番号は 0 から使えます。`awFlagFrom`・`awFlagTo` を短くすると、残りは「無し」になります（0 にはなりません）。
 - ゲームの中では、管理者ウィンドウの「その他→思い出の本」で一覧・編集・追加ができます（消せません。出したくない時は状態を「止める」に）。書き込みはこの API と同じ確認を通ります。
 
+## リサイクルボックス（読むだけ）
+
+NPC（`char`）の台詞を `@d` にすると、話した人に「リサイクルボックス」（お金を取らないおすそわけの共有の箱）が開きます。仕様は `docs/recycle.md`。
+中身と記録は**データの種類（`kind`）ではなく、読むだけの専用の一覧**で見ます。AI からは書き換えられません。
+
+- `/api/data/recycle`（MCP は `sbo_recycle`。管理ページ用は `/api/admin/data/recycle`）が `{boxes, log, daily, limits}` を返します。
+  - `boxes` … 箱（台詞が `@d` で NPC番号 `dwNpcID` がある NPC）ごとの `{npcId, tblId, name, mapNo, mapName, x, y, kinds（種類の数）, total（個数の合計）, missing, stock}`。`stock` は入れた順の `{itemId, item（アイテム名）, count}`。中身は **NPC番号ごと**に持つので、`missing: true` は「中身が残っているのに、その番号の箱の NPC がいない（消した・台詞を変えた）」という意味です（台詞を `@d` に戻せば、また使えます）。
+  - `log` … 入れた・もらった記録（**新しい順**。最大 1000 件）。`{time（UNIX 秒）, date（日本時間の「年-月-日 時:分」）, acc（アカウント）, name（キャラ名）, npcId（箱）, action（`put`=入れた・`take`=もらった）, itemId, item, count}`。
+  - `daily` … 今日（日本時間）に 1 個以上もらったアカウントの `{acc, count, left（今日あと何個もらえるか）}`。
+  - `limits` … 決まり（`maxKind` 20・`maxCount` 255・`dayLimit` 3・`logMax` 1000・`range` 3）。
+- 管理ページ（`/admin`）の「リサイクル」タブでも、箱ごとの中身・今日もらった人・記録（アカウント・キャラ名・品で絞り込める）を見られます。
+
 ## つなぎ方（Claude Code）
 
 1. 管理ページ（`/admin`）の「AI連携」タブで、キーを発行します。
@@ -456,6 +468,8 @@ NPC（`char`）の台詞（`szNpcSpeech`）を **`@t` + 番号**（例 `@t012`�
 | `/api/data/list` | `{kind, q?, match?, offset?, limit?, fields?}` | 一覧（`q` は名前の一部、`match` は `{"isPlayer": true}` のような値の一致） |
 | `/api/data/get` | `{kind, id}` | 1 件 |
 | `/api/data/tiles` | `{id, x?, y?, w?, h?}` | マップのマス目（`id` は `map` の番号） |
+| `/api/data/chests` | `{}` | 全マップの宝箱の一覧（読むだけ） |
+| `/api/data/recycle` | `{}` | リサイクルボックスの箱ごとの中身と、入れた・もらった記録（読むだけ。上の「リサイクルボックス」） |
 | `/api/data/tiles/set` | `{id, x, y, parts:[[...]], note?, previewId?}` | マス目を書き換える（下見 / 反映の結果） |
 | `/api/data/map/resize` | `{id, top?, bottom?, left?, right?, fill?, check?}` | マップを広げる（縮められない。上・左に広げると座標を持つもの全部をずらす。`check:true` で確かめるだけ。履歴に残らず元に戻せない） |
 | `/api/data/map/add` | `{cx, cy, fill?, szName?}` | マップを足す（番号はいちばん後ろ。履歴に残らず消せない） |
@@ -477,6 +491,8 @@ NPC（`char`）の台詞（`szNpcSpeech`）を **`@t` + 番号**（例 `@t012`�
 | `sbo_schema` | 種類と項目の説明 |
 | `sbo_list` / `sbo_get` | 一覧・1 件 |
 | `sbo_map_tiles` / `sbo_map_tiles_set` | マップのマス目を読む・書き換える（2 段階） |
+| `sbo_chests` | 全マップの宝箱の一覧（読むだけ） |
+| `sbo_recycle` | リサイクルボックスの箱ごとの中身と、入れた・もらった記録（読むだけ） |
 | `sbo_update` / `sbo_add` | 変更・追加（2 段階） |
 | `sbo_history` / `sbo_undo` | 変更履歴・元に戻す（2 段階） |
 | `sbo_bookmark` / `sbo_bookmarks` / `sbo_rollback` | しおりを付ける・一覧・しおりまでまとめて戻す（2 段階） |

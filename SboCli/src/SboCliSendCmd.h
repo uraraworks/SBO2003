@@ -137,6 +137,7 @@ extern void SendCmdLEAVEITEMDISPOSE	(BYTE byMode, BYTE byNo, BYTE byCount, WORD 
 
 extern void SendCmdRECIPEMAKE		(BYTE, WORD);							/* レシピで作ってもらう要求 */
 extern void SendCmdMARKET			(BYTE byCmd, BYTE byType, BYTE byNo, WORD wItemID, DWORD dwID, DWORD dwPrice);	/* 取引所の要求（一覧・出品・買う・引き取り・売上の受け取り） */
+extern void SendCmdRECYCLE			(BYTE byCmd, DWORD dwNpcTblID, WORD wItemID, BYTE byCount);	/* リサイクルボックスの要求（中身・入れる・もらう） */
 
 /* サブゲーム用コマンド送信 */
 extern void SendCmdSubSETBOMB		(void);									/* 爆弾設置 */

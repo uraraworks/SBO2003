@@ -37,6 +37,7 @@
  *   /api/data/list      {kind, q?, offset?, limit?, fields?} → {kind, total, offset, records:[...]}
  *   /api/data/get       {kind, id}                           → {record}
  *   /api/data/chests    {}                                   → 全マップの宝箱（印で変わるマスの kind 1）の一覧。読むだけ {chests, retired, nextNo}
+ *   /api/data/recycle   {}                                   → リサイクルボックス（台詞 "@d" の NPC の共有の箱）の箱ごとの中身と、入れた・もらった記録（新しい順）。読むだけ {boxes, log, daily, limits}
  *   /api/data/tiles     {id, x?, y?, w?, h?}                 → マップのマス目（parts・flags・roof、最大 128×128）
  *   /api/data/update    {kind, updates:[{id, changes}], note?, previewId?}
  *   /api/data/add       {kind, records:[{...}], note?, previewId?}
@@ -524,6 +525,14 @@ Module['sboData'] = (function () {
 	function opChests() {
 		var r = JSON.parse(UTF8ToString(_SboWebDataChests()));
 		r.note = 'chests は宝箱番号の順。mapNo は map の番号。retired は消した宝箱の番号（使い回さない）。宝箱の足し方・直し方は map の swaps（kind 1）';
+		return r;
+	}
+
+	/* リサイクルボックスの箱ごとの中身と、入れた・もらった記録（読むだけ） */
+	function opRecycle() {
+		var r = JSON.parse(UTF8ToString(_SboWebDataRecycle()));
+		r.note = 'boxes は箱（台詞が @d の NPC）ごとの中身。npcId は NPC番号（中身はこの番号ごとに持つ）、missing が true なのは中身が残っているのに箱の NPC がいないもの。' +
+			'log は新しい順（action は put=入れた・take=もらった、date は日本時間）。daily は今日（日本時間）に 1 個以上もらったアカウント。仕様は docs/recycle.md';
 		return r;
 	}
 
@@ -1669,6 +1678,13 @@ Module['sboData'] = (function () {
 			run: opChests
 		},
 		{
+			name: 'sbo_recycle', write: false,
+			description: 'リサイクルボックス（台詞が @d の NPC の、お金を取らないおすそわけの共有の箱）の一覧。boxes=箱ごとの中身（npcId・場所・stock={itemId,item,count}）、' +
+				'log=誰（acc・name）がいつ（date・日本時間）どの箱（npcId）で何を何個入れた(put)・もらった(take)かの記録（新しい順・最大 1000 件）、daily=今日もらったアカウントの数、limits=決まり。',
+			inputSchema: { type: 'object', properties: {} },
+			run: opRecycle
+		},
+		{
 			name: 'sbo_map_tiles_set', write: true,
 			description: 'マップのマス目を書き換える。id は map の番号、(x, y) が左上、parts は [[mapParts の番号,...],...]（行ごと、どの行も同じ長さ、最大 128×128）。' +
 				'マップの外にはみ出す所はエラー。履歴に残り sbo_undo・sbo_rollback で戻せる。2 段階は sbo_update と同じ。',
@@ -1934,6 +1950,7 @@ Module['sboData'] = (function () {
 		'/api/data/get': opGet,
 		'/api/data/tiles': opTiles,
 		'/api/data/chests': opChests,
+		'/api/data/recycle': opRecycle,
 		'/api/data/tiles/set': opTilesSet,
 		'/api/data/update': opUpdate,
 		'/api/data/add': opAdd,
@@ -1959,6 +1976,7 @@ Module['sboData'] = (function () {
 		'/api/admin/data/list': function (body) { adminWho(body); return opList(body); },
 		'/api/admin/data/tiles': function (body) { adminWho(body); return opTiles(body); },
 		'/api/admin/data/chests': function (body) { adminWho(body); return opChests(body); },
+		'/api/admin/data/recycle': function (body) { adminWho(body); return opRecycle(body); },
 		/* 作り手・レシピの保存（管理ページの「レシピ」）。読む方は /api/admin/data/list */
 		'/api/admin/recipe/save': apiAdminRecipeSave,
 		/* NPC の巡回ルートを決める（管理ページの「NPCの巡回」） */

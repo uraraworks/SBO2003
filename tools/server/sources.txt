@@ -35,6 +35,7 @@ SboSvr/src/SaveLoad/SboSvrSaveLoadRecipeInfo.cpp
 SboSvr/src/SaveLoad/SboSvrSaveLoadQuestInfo.cpp
 SboSvr/src/SaveLoad/SboSvrSaveLoadStoryInfo.cpp
 SboSvr/src/SaveLoad/SboSvrSaveLoadMarket.cpp
+SboSvr/src/SaveLoad/SboSvrSaveLoadRecycle.cpp
 SboSvr/src/SaveLoad/SboSvrSaveLoadTalkInfo.cpp
 SboSvr/src/SaveLoad/SboSvrSaveLoadStTmpInfo.cpp
 SboSvr/src/SaveLoad/SboSvrSaveLoadSubGameInfo.cpp
@@ -51,6 +52,7 @@ SboSvr/src/SboSvrMagicProc.cpp
 SboSvr/src/SboSvrNpcRoute.cpp
 SboSvr/src/SboSvrQuest.cpp
 SboSvr/src/SboSvrMarket.cpp
+SboSvr/src/SboSvrRecycle.cpp
 SboSvr/src/SboSvrTalk.cpp
 SboSvr/src/SboSvrRecvCmd.cpp
 SboSvr/src/SboSvrSendCmd.cpp

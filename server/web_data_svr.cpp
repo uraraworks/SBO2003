@@ -24,6 +24,7 @@
 #include "SboSvrSendCmd.h"
 #include "SboSvrAdminUndo.h"
 #include "SboSvrNpcRoute.h"
+#include "SboSvrRecycle.h"
 #include "CharProc/IncludeCharProc.h"
 
 #include <emscripten.h>
@@ -2404,6 +2405,116 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataChests()
 	}
 	int nNext = nHigh;
 	out += "],\"nextNo\":" + JsonNum(nNext < MAX_CHESTNO ? nNext : -1) + ",\"max\":" + JsonNum(MAX_CHESTNO) + "}";
+	s_strResult = out;
+	return s_strResult.c_str();
+}
+
+/*
+ * リサイクルボックス（台詞が "@d" の NPC の共有の箱。docs/recycle.md）の中身と記録。読むだけ。
+ *   boxes … 箱ごとの中身。npcId は NPC番号（中身はこの番号ごと）、tblId は今のキャラのテーブル番号、
+ *           mapNo・mapName・x・y はその NPC の今いる所、kinds は入っている種類の数、total は個数の合計、
+ *           stock は {itemId, item, count}（入れた順）。missing が true なのは、中身が残っているのに
+ *           その番号の箱の NPC がいない（消した・台詞を変えた）もの
+ *   log … 記録（新しい順。最大 RECYCLE_LOGMAX 件）。time は UNIX 秒、date は日本時間の「年-月-日 時:分」、
+ *         action は "put"（入れた）か "take"（もらった）、acc はアカウント、name はキャラ名、npcId は箱の NPC番号
+ *   today … 今日（日本時間）に 1 個以上もらったアカウントと、その個数・あと何個もらえるか（daily）
+ *   limits … 決まり（種類・個数・1 日の数・記録の件数）
+ */
+static std::string RecycleDateText(DWORD dwSec)
+{
+	time_t t = (time_t)dwSec + 9 * 60 * 60;		/* 日本時間 */
+	struct tm tmJst;
+	char sz[32];
+	gmtime_r(&t, &tmJst);
+	snprintf(sz, sizeof(sz), "%04d-%02d-%02d %02d:%02d", tmJst.tm_year + 1900, tmJst.tm_mon + 1, tmJst.tm_mday, tmJst.tm_hour, tmJst.tm_min);
+	return sz;
+}
+
+static std::string RecycleItemName(WORD wItemID)
+{
+	return JsonStr((wItemID != 0 && wItemID < g_aItemInfo.GetSize()) ? g_aItemInfo[wItemID]->szName : "");
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataRecycle()
+{
+	std::string out = "{\"boxes\":[";
+	std::vector<DWORD> aNpcID;		/* 箱の NPC がいる NPC番号 */
+	bool bFirst = true;
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		PCHARINFO pNpc = g_aCharInfo[i];
+		if (!RecycleIsBox(pNpc)) {
+			continue;
+		}
+		aNpcID.push_back(pNpc->dwNpcID);
+		int nMap = GetMapNo(pNpc->dwMapID);
+		int nKinds = 0, nTotal = 0;
+		std::string strStock;
+		for (size_t k = 0; k < g_aRecycleStock.size(); k ++) {
+			const RECYCLESTOCK &S = g_aRecycleStock[k];
+			if (S.dwNpcID != pNpc->dwNpcID) {
+				continue;
+			}
+			if (nKinds) strStock += ",";
+			strStock += "{\"itemId\":" + JsonNum(S.wItemID) + ",\"item\":" + RecycleItemName(S.wItemID) + ",\"count\":" + JsonNum(S.byCount) + "}";
+			nKinds ++;
+			nTotal += S.byCount;
+		}
+		if (!bFirst) out += ",";
+		bFirst = false;
+		out += "{\"npcId\":" + JsonNum(pNpc->dwNpcID) + ",\"tblId\":" + JsonNum(i) + ",\"name\":" + JsonStr(pNpc->szName) +
+				",\"mapNo\":" + JsonNum(pNpc->dwMapID) + ",\"mapName\":" + ((nMap >= 0) ? TextJson(g_aMapInfo[nMap]->pszName) : std::string("\"\"")) +
+				",\"x\":" + JsonNum(pNpc->dwX) + ",\"y\":" + JsonNum(pNpc->dwY) +
+				",\"kinds\":" + JsonNum(nKinds) + ",\"total\":" + JsonNum(nTotal) + ",\"missing\":false,\"stock\":[" + strStock + "]}";
+	}
+	/* 中身が残っているのに箱の NPC がいない番号 */
+	std::vector<DWORD> aMissing;
+	for (size_t k = 0; k < g_aRecycleStock.size(); k ++) {
+		DWORD dwNpcID = g_aRecycleStock[k].dwNpcID;
+		if (std::find(aNpcID.begin(), aNpcID.end(), dwNpcID) == aNpcID.end() && std::find(aMissing.begin(), aMissing.end(), dwNpcID) == aMissing.end()) {
+			aMissing.push_back(dwNpcID);
+		}
+	}
+	for (size_t m = 0; m < aMissing.size(); m ++) {
+		int nKinds = 0, nTotal = 0;
+		std::string strStock;
+		for (size_t k = 0; k < g_aRecycleStock.size(); k ++) {
+			const RECYCLESTOCK &S = g_aRecycleStock[k];
+			if (S.dwNpcID != aMissing[m]) {
+				continue;
+			}
+			if (nKinds) strStock += ",";
+			strStock += "{\"itemId\":" + JsonNum(S.wItemID) + ",\"item\":" + RecycleItemName(S.wItemID) + ",\"count\":" + JsonNum(S.byCount) + "}";
+			nKinds ++;
+			nTotal += S.byCount;
+		}
+		if (!bFirst) out += ",";
+		bFirst = false;
+		out += "{\"npcId\":" + JsonNum(aMissing[m]) + ",\"tblId\":-1,\"name\":\"\",\"mapNo\":-1,\"mapName\":\"\",\"x\":0,\"y\":0,\"kinds\":" +
+				JsonNum(nKinds) + ",\"total\":" + JsonNum(nTotal) + ",\"missing\":true,\"stock\":[" + strStock + "]}";
+	}
+	out += "],\"log\":[";
+	for (size_t k = g_aRecycleLog.size(); k > 0; k --) {
+		const RECYCLELOG &L = g_aRecycleLog[k - 1];
+		if (k != g_aRecycleLog.size()) out += ",";
+		out += "{\"time\":" + JsonNum(L.dwTime) + ",\"date\":" + JsonStr(RecycleDateText(L.dwTime).c_str()) +
+				",\"acc\":" + JsonStr(L.szAcc) + ",\"name\":" + JsonStr(L.szName) + ",\"npcId\":" + JsonNum(L.dwNpcID) +
+				",\"action\":" + JsonStr(L.byKind == RECYCLELOG_TAKE ? "take" : "put") +
+				",\"itemId\":" + JsonNum(L.wItemID) + ",\"item\":" + RecycleItemName(L.wItemID) + ",\"count\":" + JsonNum(L.byCount) + "}";
+	}
+	out += "],\"daily\":[";
+	DWORD dwToday = RecycleDay(RecycleNowSec());
+	bool bFirstDaily = true;
+	for (size_t k = 0; k < g_aRecycleDaily.size(); k ++) {
+		const RECYCLEDAILY &D = g_aRecycleDaily[k];
+		if (D.dwDay != dwToday || D.byCount == 0) {
+			continue;
+		}
+		if (!bFirstDaily) out += ",";
+		bFirstDaily = false;
+		out += "{\"acc\":" + JsonStr(D.szAcc) + ",\"count\":" + JsonNum(D.byCount) + ",\"left\":" + JsonNum(RecycleLeft(D.szAcc)) + "}";
+	}
+	out += "],\"limits\":{\"maxKind\":" + JsonNum(RECYCLE_MAXKIND) + ",\"maxCount\":" + JsonNum(RECYCLE_MAXCOUNT) +
+			",\"dayLimit\":" + JsonNum(RECYCLE_DAYLIMIT) + ",\"logMax\":" + JsonNum(RECYCLE_LOGMAX) + ",\"range\":" + JsonNum(RECYCLE_RANGE) + "}}";
 	s_strResult = out;
 	return s_strResult.c_str();
 }

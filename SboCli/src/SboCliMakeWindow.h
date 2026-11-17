@@ -135,6 +135,21 @@ extern void MarketShowList								(int nKind, int nCursor);	/* 取引所：一�
 extern void MarketShowItem								(int nCursor);				/* 取引所：出品する品の選択を出す */
 extern void MarketShowPrice								(DWORD dwPrice);			/* 取引所：値段の入力を出す */
 extern void MarketShowConf								(int nKind, LPCSTR pszMsg);	/* 取引所：はい／いいえを出す */
+extern PWNDINFO MakeWindowRECYCLE_MENU					(void);						/* リサイクルボックス：メニュー */
+extern PWNDINFO MakeWindowRECYCLE_LIST					(void);						/* リサイクルボックス：箱の中身の一覧 */
+extern PWNDINFO MakeWindowRECYCLE_ITEM					(void);						/* リサイクルボックス：入れる品を手持ちから選ぶ */
+extern PWNDINFO MakeWindowRECYCLE_COUNT					(int nMax);					/* リサイクルボックス：入れる個数を選ぶ */
+extern PWNDINFO RecycleFindWindow						(int nType2);				/* リサイクルボックス：窓を探す */
+extern BOOL RecycleIsOpen								(void);						/* リサイクルボックス：窓が開いているか */
+extern void RecycleEraseAll								(void);						/* リサイクルボックス：窓を全部消す */
+extern void RecycleClose								(LPCSTR pszMsg);			/* リサイクルボックス：閉じる */
+extern void RecycleBuildHand							(void);						/* リサイクルボックス：手持ちを品ごとにまとめる */
+extern void RecycleOpen									(DWORD dwNpcTblID);			/* リサイクルボックス：話しかけた時（中身を頼む） */
+extern void RecycleShowMenu								(LPCSTR pszMsg);			/* リサイクルボックス：メニューを出す（NULL なら「他に御用は？」にあたる台詞） */
+extern void RecycleShowList								(int nCursor);				/* リサイクルボックス：「もらう」の一覧を出す */
+extern void RecycleShowItem								(int nCursor);				/* リサイクルボックス：入れる品の選択を出す */
+extern void RecycleShowCount							(int nCount);				/* リサイクルボックス：入れる個数の選択を出す */
+extern void RecycleLeftText								(char *pszDst, int nDstSize);	/* リサイクルボックス：「今日はあと○個もらえます」 */
 extern void ListScrollFitMargin							(PWNDINFO pWndList, int nIndex, int nCount, int nMargin);	/* 一覧のカーソルとスクロールを余白付きで整える */
 extern BOOL ListScrollKey								(PWNDINFO pWndList, BYTE byCode, int nCount);	/* 一覧の上下左右キーでカーソルを動かす */
 extern int ListScrollTop								(int nTop, int nIndex, int nCount, int nRows, int nMargin);	/* 一覧の先頭位置を余白付きで決める */

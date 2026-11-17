@@ -12,6 +12,7 @@
 	  ・復旧の承認   … アカウント復旧の申請を承認・却下する（前の recover-admin.html と同じ）
 	  ・ご意見箱     … /feedback に届いた投稿を全部見て、返事・対応済み・隠す・消すをする
 	  ・更新履歴     … /changes に出す「何が変わったか」を足す・直す・公開/非公開・消す（API は server/node/sbosvr_changes.js）
+	  ・リサイクル   … リサイクルボックス（台詞 @d の NPC の共有の箱）の中身と、誰がいつ何を入れた・もらったかの記録を見る（読むだけ。API は /api/admin/data/recycle。仕様は docs/recycle.md）
 	  ・AI連携       … AI（Claude Code など）から設定データを読み書きするキーの発行・取り消しと、変更履歴・元に戻す
 	  ・マップ資料   … マップごとの全体図と NPC・敵・お店・イベントの資料を zip で書き出す（admin-mapdoc.js）
 	  ・パーツ図鑑   … マップパーツに名前・タグ・説明を付ける・組み合わせの見本を作る（admin-design.js）
@@ -445,6 +446,14 @@
 	.mv-opts select { padding: 6px 8px; font-size: 16px; }
 	.mv-opts #mv-map { max-width: 14em; }
 	#tab-mapview #mv-msg:empty { display: none; }
+	/* リサイクルボックスの記録・中身の表 */
+	#tab-recycle table { border-collapse: collapse; width: 100%; font-size: 13px; }
+	#tab-recycle th, #tab-recycle td { border-bottom: 1px solid var(--border); padding: 3px 8px; text-align: left; vertical-align: top; }
+	#tab-recycle th { color: var(--sub); font-weight: normal; white-space: nowrap; }
+	#tab-recycle td.num { text-align: right; white-space: nowrap; }
+	#tab-recycle .rc-scroll { overflow-x: auto; }
+	#tab-recycle .rc-put { color: var(--ok); }
+	#tab-recycle .rc-take { color: var(--info); }
 	.mv-opts button { margin: 0; padding: 7px 12px; }
 	.mv-help { margin-bottom: 4px; }
 	.mv-help summary { cursor: pointer; color: var(--sub); font-size: 13px; }
@@ -583,6 +592,7 @@
 		<button type="button" data-tab="plans">配置案</button>
 		<button type="button" data-tab="mapview">マップ確認</button>
 		<button type="button" data-tab="recipe">レシピ</button>
+		<button type="button" data-tab="recycle">リサイクル</button>
 		<button type="button" data-tab="kobo">ドット絵工房<span class="badge" id="kobo-count" hidden></span></button>
 		<button type="button" data-tab="dot">ドット絵</button>
 	</nav>
@@ -792,6 +802,34 @@
 			<p class="sub-text" style="margin:6px 0 0">全部のマップだと、zip は 2 倍で 90MB・等倍で 30MB くらいです（PC で数十秒）。</p>
 			<div class="msg" id="md-msg"></div>
 		</div>
+	</section>
+
+	<!-- リサイクルボックス（読むだけ。仕様は docs/recycle.md） -->
+	<section id="tab-recycle" hidden>
+		<p class="sub-text">
+			台詞が <code>@d</code> の NPC の「リサイクルボックス」（お金を取らないおすそわけの共有の箱）です。
+			箱ごとの中身と、誰がいつ何を入れた・もらったかの記録（新しいほうから最大 1000 件）を見られます。ここでは変えられません。
+		</p>
+		<div class="row" style="justify-content:space-between">
+			<button type="button" class="sub" id="rc-reload">読み直す</button>
+			<span class="sub-text" id="rc-limits"></span>
+		</div>
+		<div class="msg" id="rc-msg"></div>
+		<h3 style="margin:12px 0 4px;font-size:14px">箱の中身</h3>
+		<div id="rc-boxes"></div>
+		<h3 style="margin:12px 0 4px;font-size:14px">今日もらった人（日本時間）</h3>
+		<div id="rc-daily"></div>
+		<h3 style="margin:12px 0 4px;font-size:14px">記録</h3>
+		<div class="row" style="flex-wrap:wrap">
+			<input type="text" id="rc-filter" placeholder="アカウント・キャラ名・品の名前で絞り込む" style="flex:1 1 14em">
+			<select id="rc-action" style="flex:0 0 auto;width:auto">
+				<option value="">入れた・もらった</option>
+				<option value="put">入れたのだけ</option>
+				<option value="take">もらったのだけ</option>
+			</select>
+			<span class="sub-text" id="rc-logcount"></span>
+		</div>
+		<div id="rc-log" class="rc-scroll"></div>
 	</section>
 
 	<!-- ドット絵工房（中身は admin-kobo.js） -->
@@ -1225,6 +1263,7 @@
 		$('tab-plans').hidden = true;
 		$('tab-mapview').hidden = true;
 		$('tab-recipe').hidden = true;
+		$('tab-recycle').hidden = true;
 		$('tab-kobo').hidden = true;
 		setMsg($('login-msg'), text || '');
 	}
@@ -1236,7 +1275,7 @@
 		selectTab(location.hash === '#online' ? 'online' : location.hash === '#recover' ? 'recover' : location.hash === '#feedback' ? 'feedback' :
 			location.hash === '#changes' ? 'changes' : location.hash === '#ai' ? 'ai' : location.hash === '#mapdoc' ? 'mapdoc' :
 			location.hash === '#parts' ? 'parts' : location.hash === '#plans' ? 'plans' :
-			(location.hash === '#mapview' || location.hash === '#npcroute') ? 'mapview' : location.hash === '#recipe' ? 'recipe' : location.hash === '#dot' ? 'dot' :
+			(location.hash === '#mapview' || location.hash === '#npcroute') ? 'mapview' : location.hash === '#recipe' ? 'recipe' : location.hash === '#recycle' ? 'recycle' : location.hash === '#dot' ? 'dot' :
 			location.hash === '#kobo' ? 'kobo' : 'search');
 		if (location.hash === '#online') {
 			loadEnvStats();
@@ -1252,6 +1291,8 @@
 			openMapView();
 		} else if (location.hash === '#recipe') {
 			openRecipe();
+		} else if (location.hash === '#recycle') {
+			loadRecycle();
 		} else if (location.hash === '#kobo') {
 			openKobo();
 		}
@@ -1355,6 +1396,7 @@
 		$('tab-plans').hidden = name !== 'plans';
 		$('tab-mapview').hidden = name !== 'mapview';
 		$('tab-recipe').hidden = name !== 'recipe';
+		$('tab-recycle').hidden = name !== 'recycle';
 		$('tab-dot').hidden = name !== 'dot';
 		$('tab-kobo').hidden = name !== 'kobo';
 		document.body.classList.toggle('wide', name === 'parts' || name === 'plans' || name === 'mapview' || name === 'kobo');
@@ -1388,6 +1430,8 @@
 				openMapView();
 			} else if (b.dataset.tab === 'recipe') {
 				openRecipe();
+			} else if (b.dataset.tab === 'recycle') {
+				loadRecycle();
 			} else if (b.dataset.tab === 'kobo') {
 				openKobo();
 			}
@@ -2415,6 +2459,116 @@
 		});
 	}
 	$('ai-reload').addEventListener('click', function () { loadBookmarks(); loadAiHistory(); });
+
+	/* ---- リサイクルボックス（読むだけ。/api/admin/data/recycle） ---- */
+	var aRecycleLog = [];
+	function recycleCell(tr, text, cls) {
+		var td = el('td', cls || '', text);
+		tr.appendChild(td);
+		return td;
+	}
+	function recycleTable(heads) {
+		var table = document.createElement('table');
+		var tr = document.createElement('tr');
+		heads.forEach(function (h) { tr.appendChild(el('th', '', h)); });
+		table.appendChild(tr);
+		return table;
+	}
+	function renderRecycleLog() {
+		var box = $('rc-log');
+		var q = $('rc-filter').value.trim().toLowerCase();
+		var act = $('rc-action').value;
+		var rows = aRecycleLog.filter(function (l) {
+			if (act && l.action !== act) {
+				return false;
+			}
+			return !q || (l.acc + ' ' + l.name + ' ' + l.item).toLowerCase().indexOf(q) >= 0;
+		});
+		box.textContent = '';
+		$('rc-logcount').textContent = rows.length + ' / ' + aRecycleLog.length + ' 件';
+		if (!rows.length) {
+			box.appendChild(el('p', 'sub-text', aRecycleLog.length ? '当てはまる記録はありません。' : 'まだ記録はありません。'));
+			return;
+		}
+		var table = recycleTable(['日時（日本時間）', '操作', 'アカウント', 'キャラ', '箱（NPC番号）', '品', '個数']);
+		rows.forEach(function (l) {
+			var tr = document.createElement('tr');
+			recycleCell(tr, l.date);
+			recycleCell(tr, l.action === 'take' ? 'もらった' : '入れた', l.action === 'take' ? 'rc-take' : 'rc-put');
+			recycleCell(tr, l.acc);
+			recycleCell(tr, l.name);
+			recycleCell(tr, String(l.npcId), 'num');
+			recycleCell(tr, l.item || ('品 ' + l.itemId));
+			recycleCell(tr, String(l.count), 'num');
+			table.appendChild(tr);
+		});
+		box.appendChild(table);
+	}
+	function loadRecycle() {
+		setMsg($('rc-msg'), '取得しています...', true);
+		api('/api/admin/data/recycle', { session: session }).then(function (data) {
+			if (!data.boxes) {
+				if (data.httpStatus !== 401) {
+					setMsg($('rc-msg'), '取得できませんでした（' + (data.error || data.httpStatus) + '）');
+				}
+				return;
+			}
+			setMsg($('rc-msg'), '', true);
+			var lim = data.limits || {};
+			$('rc-limits').textContent = '1 つの箱に ' + lim.maxKind + ' 種類・1 種類 ' + lim.maxCount + ' 個まで／1 日 ' + lim.dayLimit + ' 個までもらえる';
+			var boxes = $('rc-boxes');
+			boxes.textContent = '';
+			if (!data.boxes.length) {
+				boxes.appendChild(el('p', 'sub-text', '箱はありません（NPC の台詞を @d にすると箱になります）。'));
+			}
+			data.boxes.forEach(function (b) {
+				var card = el('div', 'card');
+				var head = el('div', 'head');
+				head.appendChild(el('span', 'name', 'NPC番号 ' + b.npcId + (b.name ? '　' + b.name : '')));
+				if (b.missing) {
+					head.appendChild(el('span', 'tag disabled', '箱の NPC がいません'));
+				}
+				card.appendChild(head);
+				card.appendChild(el('div', 'sub-text', (b.missing ? '中身だけ残っています' : (b.mapName || ('マップ ' + b.mapNo)) + '（' + b.x + ', ' + b.y + '）') +
+					'　' + b.kinds + ' 種類・合計 ' + b.total + ' 個'));
+				if (b.stock.length) {
+					var table = recycleTable(['品', '個数']);
+					b.stock.forEach(function (s) {
+						var tr = document.createElement('tr');
+						recycleCell(tr, s.item || ('品 ' + s.itemId));
+						recycleCell(tr, String(s.count), 'num');
+						table.appendChild(tr);
+					});
+					card.appendChild(table);
+				} else {
+					card.appendChild(el('p', 'sub-text', '空っぽです。'));
+				}
+				boxes.appendChild(card);
+			});
+			var daily = $('rc-daily');
+			daily.textContent = '';
+			if (!data.daily.length) {
+				daily.appendChild(el('p', 'sub-text', '今日はまだだれももらっていません。'));
+			} else {
+				var dt = recycleTable(['アカウント', '今日もらった数', 'あと']);
+				data.daily.forEach(function (d) {
+					var tr = document.createElement('tr');
+					recycleCell(tr, d.acc);
+					recycleCell(tr, String(d.count), 'num');
+					recycleCell(tr, String(d.left), 'num');
+					dt.appendChild(tr);
+				});
+				daily.appendChild(dt);
+			}
+			aRecycleLog = data.log || [];
+			renderRecycleLog();
+		}).catch(function () {
+			setMsg($('rc-msg'), 'サーバーにつながりませんでした。');
+		});
+	}
+	$('rc-reload').addEventListener('click', loadRecycle);
+	$('rc-filter').addEventListener('input', renderRecycleLog);
+	$('rc-action').addEventListener('change', renderRecycleLog);
 
 	/* ---- マップ資料（admin-mapdoc.js が作る） ---- */
 	var bMapDocLoaded = false, bMapDocBusy = false;
