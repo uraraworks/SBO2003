@@ -20,11 +20,13 @@ public:
 	CCharProcPUT();										/* コンストラクタ */
 
 	BOOL Proc		(DWORD dwTime);								/* 処理 */
+	BOOL PutOne		(DWORD dwTime);								/* 1体出す（くじで選んだマスがだめなら FALSE） */
 } CCharProcPUT, *PCCharProcPUT;
 
 /* 発生元の能力（テンプレート指定中はテンプレート）を出てくるキャラへ写す */
 void PutCharSetStatus	(PCHARINFO pParent, PCHARINFO pChar);
 /* 発生元から出ているキャラへ、今の発生元の能力を反映する（管理者ウィンドウ・データ API で変えた時） */
 void RenewPutChildChar	(PCHARINFO pParent);
+void PutCharFillAll		(void);					/* 起動時に各NPC発生を発生数まで出す */
 
 /* Copyright(C)URARA-works 2006 */

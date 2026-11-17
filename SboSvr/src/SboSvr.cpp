@@ -370,6 +370,9 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 /* 日付：	2003/05/02														 */
 /* ========================================================================= */
 
+/* 起動時に NPC発生を発生数まで出すか（回帰テストだけ FALSE にする） */
+BOOL g_bPutFillOnStart = TRUE;
+
 BOOL OnCreate(HWND hWnd)
 {
 	char szBuf[MAX_PATH], szLoginLogFileName[MAX_PATH];
@@ -534,6 +537,12 @@ BOOL OnCreate(HWND hWnd)
 	SetTimer (hWnd, TIMERID_REDRAW, TIMER_REDRAW, NULL);
 	SetTimer (hWnd, TIMERID_SAVEINFO, TIMER_SAVEINFO, NULL);
 	sgenrand (timeGetTime ());
+
+	/* 敵やボス（NPC発生から出るキャラ）は保存しないので、起動時に発生数まですぐ出しておく
+	   （回帰テストは前からの出力と比べるため、止めておいて最後に別に確かめる） */
+	if (g_bPutFillOnStart) {
+		PutCharFillAll ();
+	}
 
 	WebThreadInit ();
 

@@ -1882,4 +1882,8 @@ tailoverlap off Q(front=P:1) P(back=Q:1) Q(stay=1) return=1 fade=[]
 == AL. Empty map check ==
 emptymap null charpos=1 mapmsg=0
 emptymap zero charpos=1 mapmsg=0
+== AM. Put fill ==
+putfill before parents=175 over=0 mismatch=0
+putfill after parents=175 full=175 over=0 mismatch=0 child>0=1 mimic>0=0
+putfill again added=0 over=0 mismatch=0
 == done ==

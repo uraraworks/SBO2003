@@ -28,6 +28,7 @@
 /* 傭兵の道さがしを中から確かめるため、protected も見えるようにして読み込む */
 #define protected public
 #include "CharProcMERCENARY.h"
+#include "CharProcPUT.h"
 #undef protected
 #include "SboSvrSubGameProcSugoroku.h"
 #include "SboSvrMagicProc.h"
@@ -1092,6 +1093,8 @@ static void TestJobMagicKey(const std::vector<int> &aLogin);
 static void TestTailRelogin(const std::vector<int> &aLogin);
 static void TestTailOverlap(const std::vector<int> &aLogin);
 static void TestEmptyMapCheck(const std::vector<int> &aLogin);
+static void TestPutFill(void);
+extern BOOL g_bPutFillOnStart;
 extern void RecvCmdOnDecPlayer(int);
 extern void BattleProcCheck(PCHARINFO);
 
@@ -1258,6 +1261,8 @@ static void TestWorld(void)
 	wc.lpfnWndProc = (WNDPROC)WndProc;
 	RegisterClass(&wc);
 	s_dwFakeNow = 1000000;
+	/* 起動時の NPC発生の出し切りは、前からの出力と比べるため止めておき、最後（AM）で確かめる */
+	g_bPutFillOnStart = FALSE;
 	HWND hWnd = CreateWindow("SBOSVRTEST", "t", WS_OVERLAPPEDWINDOW, 0, 0, 100, 100, NULL, NULL, NULL, NULL);
 	if (!hWnd) {
 		printf("CreateWindow failed\n");
@@ -1606,6 +1611,8 @@ static void TestWorld(void)
 	TestTailOverlap(aLogin);
 	/* AL. イベントの無いマップでマスに乗った問い合わせ(CHECKEVENT 0)にも返事が来る */
 	TestEmptyMapCheck(aLogin);
+	/* AM. 起動時に NPC発生を発生数まで出す（乱数を使うので最後） */
+	TestPutFill();
 }
 
 /* ------------------------------------------------------------------------- */
@@ -10404,4 +10411,59 @@ static void TestEmptyMapCheck(const std::vector<int> &aLogin)
 	pA->dwX = pA->dwXBack = adwBack[1];
 	pA->dwY = pA->dwYBack = adwBack[2];
 	AddTblNoPC((int)pA->dwTblID);
+}
+
+/* ------------------------------------------------------------------------- */
+/* AM. 起動時の NPC発生：発生数まですぐ出し、二度呼んでも増えない			 */
+/*     発生数より多くならないか・数えた子の数と byPutCountNow が合うか		 */
+/* ------------------------------------------------------------------------- */
+static void PutFillCount(int *pnParent, int *pnFull, int *pnOver, int *pnMismatch, int *pnChild, int *pnMimic)
+{
+	int nCount = g_aCharInfo.GetSize();
+	*pnParent = *pnFull = *pnOver = *pnMismatch = *pnChild = *pnMimic = 0;
+	for (int i = 0; i < nCount; i ++) {
+		PCHARINFO pParent = g_aCharInfo[i];
+		if ((pParent == NULL) || (pParent->byNpcType != NPCTYPE_PUT) || (pParent->pProc == NULL)) {
+			continue;
+		}
+		int nChild = 0, nMimic = 0;
+		for (int j = 0; j < nCount; j ++) {
+			PCHARINFO p = g_aCharInfo[j];
+			if ((p != NULL) && (p != pParent) && (p->dwParentTblID == pParent->dwTblID) && p->byNpcType) {
+				nChild ++;
+				if (p->byNpcType == NPCTYPE_MIMIC) {
+					nMimic ++;
+				}
+			}
+		}
+		(*pnParent) ++;
+		*pnChild += nChild;
+		*pnMimic += nMimic;
+		if (nChild > pParent->byPutCount) {
+			(*pnOver) ++;
+		}
+		if (nChild != pParent->byPutCountNow) {
+			(*pnMismatch) ++;
+		}
+		if (pParent->byPutCountNow >= pParent->byPutCount) {
+			(*pnFull) ++;
+		}
+	}
+}
+
+static void TestPutFill(void)
+{
+	printf("== AM. Put fill ==\n");
+	int nParent, nFull, nOver, nMismatch, nChild, nMimic;
+	PutFillCount(&nParent, &nFull, &nOver, &nMismatch, &nChild, &nMimic);
+	printf("putfill before parents=%d over=%d mismatch=%d\n", nParent, nOver, nMismatch);
+	PutCharFillAll();
+	PutFillCount(&nParent, &nFull, &nOver, &nMismatch, &nChild, &nMimic);
+	int nChild1 = nChild;
+	printf("putfill after parents=%d full=%d over=%d mismatch=%d child>0=%d mimic>0=%d\n",
+		nParent, nFull, nOver, nMismatch, (int)(nChild > 0), (int)(nMimic > 0));
+	/* もう一度呼んでも増えない */
+	PutCharFillAll();
+	PutFillCount(&nParent, &nFull, &nOver, &nMismatch, &nChild, &nMimic);
+	printf("putfill again added=%d over=%d mismatch=%d\n", nChild - nChild1, nOver, nMismatch);
 }
