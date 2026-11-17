@@ -3410,6 +3410,13 @@ EM_JS(int, MockCalls, (int nConn), {
 EM_JS(int, MockCmdCount, (int nConn, int nCmd), {
 	return Module['sboNet'].cmdCount(nConn, nCmd);
 });
+EM_JS(int, MockCmdLen, (int nConn), {
+	return Module['sboNet'].cmdLen(nConn);
+});
+/* nFrom 番目以降で、コマンド nA が全部 nB より前なら 1、逆なら 0、どちらかが無ければ -1 */
+EM_JS(int, MockCmdBefore, (int nConn, int nFrom, int nA, int nB), {
+	return Module['sboNet'].cmdBefore(nConn, nFrom, nA, nB);
+});
 extern BOOL SaveCharInfo(void);
 extern BOOL LoadCharInfo(void);
 extern BOOL SaveQuestInfo(void);
@@ -4499,10 +4506,12 @@ static void TestQuest(const std::vector<int> &aLogin)
 		pP4->wQuestID = 0;
 		FlagBitSet(pP4->abyFlag, 502, FALSE);
 		int nItem0 = QuestCountItem(pP4, wItemQ);
-		int nSys0 = MockCmdCount(anConn[3], CMD_SYSMSG), nTalk0 = MockCmdCount(anConn[3], CMD_TALKMSG);
+		int nSys0 = MockCmdCount(anConn[3], CMD_SYSMSG), nTalk0 = MockCmdCount(anConn[3], CMD_TALKMSG), nLen0 = MockCmdLen(anConn[3]);
 		TalkNpcTalk(pP4, &Npc);
 		printf("talk give first item+=%d flag=%d talkmsg=%d sysmsg=%d", QuestCountItem(pP4, wItemQ) - nItem0, FlagBitGet(pP4->abyFlag, 502) ? 1 : 0,
 			MockCmdCount(anConn[3], CMD_TALKMSG) - nTalk0, MockCmdCount(anConn[3], CMD_SYSMSG) - nSys0);
+		/* 送る順番：セリフの窓（TALKMSG）が先、「手に入れました」の白文字（SYSMSG）は窓の後（1=窓が先） */
+		printf(" order_window_first=%d", MockCmdBefore(anConn[3], nLen0, CMD_TALKMSG, CMD_SYSMSG));
 		nItem0 = QuestCountItem(pP4, wItemQ);
 		nSys0 = MockCmdCount(anConn[3], CMD_SYSMSG);
 		TalkNpcTalk(pP4, &Npc);
@@ -8589,8 +8598,11 @@ static void TestMapSwap(const std::vector<int> &aLogin)
 		pA->byDirection = 0;
 		int nItem0 = QuestCountItem(pA, wItem);
 		int nSwap0 = SpCnt(pA, CMD_MAPSWAP), nMsg0 = SpCnt(pA, CMD_MAPMSG), nSys0 = SpCnt(pA, CMD_SYSMSG), nB0 = SpCnt(pB, CMD_MAPSWAP);
+		int nLenA0 = MockCmdLen(1000);
 		/* 条件(1)：まだ開けていない A は、調べられるマスとして届く */
 		MimicExamine(pA);
+		/* 送る順番：文の窓（MAPMSG）が先、「手に入れました」の白文字（SYSMSG）は窓の後（1=窓が先） */
+		printf("mapswap open order_window_first=%d\n", MockCmdBefore(1000, nLenA0, CMD_MAPMSG, CMD_SYSMSG));
 		printf("mapswap open item+=%d bit=%d flag7=%d swap=%d msg=%d sys=%d b_swap=%d parts_a_open=%d b_closed=%d\n", QuestCountItem(pA, wItem) - nItem0,
 			(int)ChestOpenedGet(pA, wChestNo), (int)FlagBitGet(pA->abyFlag, 7), SpCnt(pA, CMD_MAPSWAP) - nSwap0, SpCnt(pA, CMD_MAPMSG) - nMsg0,
 			SpCnt(pA, CMD_SYSMSG) - nSys0, SpCnt(pB, CMD_MAPSWAP) - nB0, (int)(MapSwapParts(pMap, pA, ax, ay) == wWalk), (int)(MapSwapParts(pMap, pB, ax, ay) == wBaseA));

@@ -314,6 +314,7 @@ void TalkNpcTalk(PCHARINFO pChar, PCHARINFO pNpc)
 	WORD wGiveItem = 0;
 	BYTE abyFlagBak[sizeof (pChar->abyFlag)];
 	BOOL bAsk = FALSE;
+	QUESTNOTICEVEC vLater;			/* 品を渡す知らせ。窓を送った後に流す */
 
 	if ((pChar == NULL) || (pNpc == NULL) || (pChar->pID == 0)) {
 		return;
@@ -355,7 +356,7 @@ void TalkNpcTalk(PCHARINFO pChar, PCHARINFO pNpc)
 				wGiveItem = pLine->wGiveItem;
 				/* 取り上げる品（wTakeItem）があれば、先に持っているか・渡す品を受け取れるかを確かめ、両方よければ取り上げて渡す。
 				   どちらかがダメなら何も変えず印・数値も動かさない（引換券だけ取られることが無いように） */
-				if (QuestTalkExchange (pChar, pLine->wTakeItem, wGiveItem)) {
+				if (QuestTalkExchange (pChar, pLine->wTakeItem, wGiveItem, &vLater)) {
 					TalkApplyLine (pLine, pChar->abyFlag, pChar->abyFlagNum);
 				}
 			}
@@ -367,6 +368,8 @@ void TalkNpcTalk(PCHARINFO pChar, PCHARINFO pNpc)
 		ItemMsgAddWait (szSpeech, sizeof (szSpeech));
 	}
 	SendCmdTALKMSG (pChar->pID, pNpc->dwTblID, szSpeech);
+	/* 品を渡す知らせは、窓を開かせた後に送る（窓が開いたまま「手に入れました」が重ならないように） */
+	QuestNoticeFlush (pChar, &vLater);
 	/* 印が動いたら、印で見える・消えるNPCを、話した本人にだけ見え直す */
 	if (memcmp (abyFlagBak, pChar->abyFlag, sizeof (abyFlagBak)) != 0) {
 		CharViewRefresh (pChar);

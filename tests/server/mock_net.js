@@ -51,6 +51,19 @@ Module['sboNet'] = (function () {
 			if (c) { c.cmds.forEach(function (x) { if (x === cmd) k ++; }); }
 			return k;
 		},
+		/* 送ったコマンドの数（これから先の順番を調べる時の起点） */
+		cmdLen: function (n) { return aConn[n] ? aConn[n].cmds.length : 0; },
+		/* from 番目以降で、コマンド a が全部 コマンド b より前なら 1、逆なら 0、どちらかが無ければ -1 */
+		cmdBefore: function (n, from, a, b) {
+			var c = aConn[n], lastA = -1, firstB = -1;
+			if (!c) { return -1; }
+			for (var i = from; i < c.cmds.length; i ++) {
+				if (c.cmds[i] === a) { lastA = i; }
+				if (c.cmds[i] === b && firstB < 0) { firstB = i; }
+			}
+			if (lastA < 0 || firstB < 0) { return -1; }
+			return lastA < firstB ? 1 : 0;
+		},
 		firstPacket: function (n) {
 			var c = aConn[n];
 			return c && c.first ? c.first : null;
