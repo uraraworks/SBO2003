@@ -362,6 +362,16 @@
 #define IDC_Q_DONENUMN                    1336
 #define IDC_Q_DONEOP                      1337
 #define IDC_Q_DONEVAL                     1338
+#define IDC_TE_GIVEITEM                   1341
+#define IDC_TE_GIVEITEMN                  1342
+#define IDC_TE_QID                        1343
+#define IDC_TE_QSTEPMIN                   1344
+#define IDC_TE_QSTEPMAX                   1345
+#define IDC_Q_GRP_COND                    1346
+#define IDC_Q_NEEDFLAG                    1347
+#define IDC_Q_NEEDFLAGN                   1348
+#define IDC_Q_NOTFLAG                     1349
+#define IDC_Q_NOTFLAGN                    1350
 #define IDM_MAP_PARTS                   40001
 #define IDM_MAP_INFO                    40002
 #define IDM_MAP_ADD                     40003
@@ -402,7 +412,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        239
 #define _APS_NEXT_COMMAND_VALUE         40034
-#define _APS_NEXT_CONTROL_VALUE         1341
+#define _APS_NEXT_CONTROL_VALUE         1351
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

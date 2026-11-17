@@ -23,7 +23,7 @@ extern void FlagApplyQuestDone(PCHARINFO pChar, const QUESTINFO *pQuest);	/* 依
 extern BOOL TalkIsNpc(PCHARINFO pNpc);									/* 台詞が "@t" と数字で始まるか（会話データの NPC） */
 extern int  TalkGetNo(PCHARINFO pNpc);									/* 会話セット番号（"@tNNN" の NNN） */
 extern PTALKINFO TalkFind(int nNo);										/* 会話セット番号から探す（無い・削除済みは NULL） */
-extern int  TalkPickLine(const TALKINFO *pTalk, const BYTE *pbyFlag, const BYTE *pbyFlagNum, int nLevel, DWORD dwRand);	/* 条件に合う行を選ぶ（無ければ -1。dwRand は同じ順位が複数ある時のくじ） */
+extern int  TalkPickLine(const TALKINFO *pTalk, const BYTE *pbyFlag, const BYTE *pbyFlagNum, int nLevel, WORD wQuestID, BYTE byQuestStep, DWORD dwRand);	/* 条件に合う行を選ぶ（無ければ -1。wQuestID・byQuestStep は話した人が今受けている依頼と段（0=受けていない）。dwRand は同じ順位が複数ある時のくじ） */
 extern void TalkApplyLine(const TALKLINEINFO *pLine, BYTE *pbyFlag, BYTE *pbyFlagNum);	/* 話した後の印・数値の動きを反映する */
 extern void TalkNpcTalk(PCHARINFO pChar, PCHARINFO pNpc);				/* 会話データの NPC に話しかけた（行を選び、印を動かし、本人にだけ台詞を送る） */
 

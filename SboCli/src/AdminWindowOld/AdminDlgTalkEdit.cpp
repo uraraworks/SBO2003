@@ -8,7 +8,8 @@
  * 会話セット 1 件の編集画面。リソースは IDD_TALKINFO_EDIT。
  * 左が行の一覧（最大 16 行。追加・削除・上へ・下へ）、右が選んだ行 1 つの編集。
  * 行の条件（立っている必要のある印・立っていてはいけない印・数値の条件・レベル）、
- * 台詞、話した後の動き（立てる印・消す印・数値の動き）を直す。
+ * 台詞、話した後の動き（立てる印・消す印・数値の動き・渡すアイテム）を直す。
+ * 条件には「いま受けている依頼（依頼番号と段の範囲）」もある。
  * 印・数値は番号の欄に入れ、横に名前表（フラグの名前）の名前を出す。空欄は「無し」で、
  * 内部では FLAG_NOBIT / FLAG_NONUM。
  * 行を切り替える時・OK を押す時に、いま出している行を画面から読み取って覚える。
@@ -69,6 +70,7 @@ static BOOL SaveLine(int nLine);												/* 画面の行を覚える */
 static void EnableLine(BOOL bEnable);											/* 行の欄を使えるか */
 static void UpdateAllNames(void);												/* 番号の横の名前を全部作り直す */
 static void InitLine(TALKLINEINFO *pLine);										/* 行を空にする */
+static void UpdateItemName(void);												/* 渡すアイテムの横の名前を出し直す */
 
 /* ========================================================================= */
 /* 小物																		 */
@@ -92,6 +94,24 @@ static void InitLine(TALKLINEINFO *pLine)
 	for (int i = 0; i < MAX_TALKACT; i ++) {
 		pLine->abyActNo[i] = FLAG_NONUM;
 	}
+	pLine->byQuestStepMax = QUESTNPC_NOSTEP;							/* 依頼の段の上限は「どの段でも」 */
+}
+
+/* 渡すアイテムの横の名前を出し直す（空欄・0 なら何も出さない） */
+static void UpdateItemName(void)
+{
+	unsigned long ulNo;
+	BOOL bBlank;
+
+	if (!AdminFlagReadNo (s_hWndDlg, IDC_TE_GIVEITEM, ulNo, bBlank) || bBlank || (ulNo == 0)) {
+		SetDlgItemText (s_hWndDlg, IDC_TE_GIVEITEMN, "");
+		return;
+	}
+	if ((ulNo >= (unsigned long)g_aItemInfo.GetSize ()) || (g_aItemInfo[ulNo] == NULL)) {
+		SetDlgItemText (s_hWndDlg, IDC_TE_GIVEITEMN, "（範囲外）");
+		return;
+	}
+	SetDlgItemText (s_hWndDlg, IDC_TE_GIVEITEMN, g_aItemInfo[ulNo]->szName);
 }
 
 /* 一覧に出す台詞の先頭（最初の行の先頭 16 文字ほど。UTF-8 の途中で切らない） */
@@ -309,7 +329,9 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 			"行の選び方：話しかけた人の印・数値・レベルが、行の条件に全部合う行が候補になります。"
 			"候補の中で順位が一番小さい行を話します（同じ順位が複数あればくじ）。"
 			"どの行も合わなければ何も言いません。"
-			"印・数値は、話した人のキャラのフラグです。番号の横の名前は「その他→フラグの名前」で付けます。");
+			"印・数値は、話した人のキャラのフラグです。番号の横の名前は「その他→フラグの名前」で付けます。"
+			"渡すアイテムは、その行で話すたびに 1 つ渡します（回数は数えません）。"
+			"一度きりにしたい時は、「話した後に立てる印」と「立っていてはいけない印」に同じ印を入れてください。");
 
 	/* 行の一覧 */
 	hWndTmp = GetDlgItem (hWnd, IDC_TE_LINES);
@@ -350,7 +372,8 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 /* ========================================================================= */
 static void EnableLine(BOOL bEnable)
 {
-	static const int s_anSingle[] = {IDC_TE_RANK, IDC_TE_LVMIN, IDC_TE_LVMAX, IDC_TE_SPEECH};
+	static const int s_anSingle[] = {IDC_TE_RANK, IDC_TE_LVMIN, IDC_TE_LVMAX, IDC_TE_SPEECH,
+			IDC_TE_QID, IDC_TE_QSTEPMIN, IDC_TE_QSTEPMAX, IDC_TE_GIVEITEM};
 
 	for (size_t i = 0; i < sizeof (s_anSingle) / sizeof (s_anSingle[0]); i ++) {
 		EnableWindow (GetDlgItem (s_hWndDlg, s_anSingle[i]), bEnable);
@@ -375,6 +398,10 @@ static void EnableLine(BOOL bEnable)
 		AdminFlagSetNo (s_hWndDlg, IDC_TE_LVMIN, 0, TRUE);
 		AdminFlagSetNo (s_hWndDlg, IDC_TE_LVMAX, 0, TRUE);
 		SetDlgItemText (s_hWndDlg, IDC_TE_SPEECH, "");
+		AdminFlagSetNo (s_hWndDlg, IDC_TE_QID, 0, TRUE);
+		AdminFlagSetNo (s_hWndDlg, IDC_TE_QSTEPMIN, 0, TRUE);
+		AdminFlagSetNo (s_hWndDlg, IDC_TE_QSTEPMAX, 0, TRUE);
+		AdminFlagSetNo (s_hWndDlg, IDC_TE_GIVEITEM, 0, TRUE);
 		for (size_t i = 0; i < sizeof (s_aFlagCtrl) / sizeof (s_aFlagCtrl[0]); i ++) {
 			for (int j = 0; j < s_aFlagCtrl[i].nCount; j ++) {
 				AdminFlagSetNo (s_hWndDlg, s_aFlagCtrl[i].nEdit + j, 0, TRUE);
@@ -411,6 +438,10 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 {
 	/* 番号の欄が変わったら、横の名前を出し直す */
 	if (nCodeNotify == EN_CHANGE) {
+		if (nID == IDC_TE_GIVEITEM) {
+			UpdateItemName ();
+			return;
+		}
 		for (size_t i = 0; i < sizeof (s_aFlagCtrl) / sizeof (s_aFlagCtrl[0]); i ++) {
 			if ((nID >= s_aFlagCtrl[i].nEdit) && (nID < s_aFlagCtrl[i].nEdit + s_aFlagCtrl[i].nCount)) {
 				AdminFlagUpdateName (hWnd, nID, s_aFlagCtrl[i].nLabel + (nID - s_aFlagCtrl[i].nEdit), s_aFlagCtrl[i].byKind);
@@ -659,6 +690,12 @@ static void LoadLine(int nLine)
 		SendDlgItemMessage (s_hWndDlg, IDC_TE_ACTOP0 + i, CB_SETCURSEL, (pLine->abyActOp[i] < TALKNUMOP_MAX) ? pLine->abyActOp[i] : 0, 0);
 		AdminFlagSetNo (s_hWndDlg, IDC_TE_ACTVAL0 + i, pLine->abyActVal[i], bNone);
 	}
+	/* 受けている依頼の条件（依頼番号が 0・上限が 255 は空欄） */
+	AdminFlagSetNo (s_hWndDlg, IDC_TE_QID, pLine->wQuestID, pLine->wQuestID == 0);
+	AdminFlagSetNo (s_hWndDlg, IDC_TE_QSTEPMIN, pLine->byQuestStepMin, pLine->wQuestID == 0);
+	AdminFlagSetNo (s_hWndDlg, IDC_TE_QSTEPMAX, pLine->byQuestStepMax, (pLine->wQuestID == 0) || (pLine->byQuestStepMax == QUESTNPC_NOSTEP));
+	AdminFlagSetNo (s_hWndDlg, IDC_TE_GIVEITEM, pLine->wGiveItem, pLine->wGiveItem == 0);
+	UpdateItemName ();
 	UpdateAllNames ();
 }
 
@@ -723,6 +760,29 @@ static BOOL SaveLine(int nLine)
 			L.abyActOp[i] = TALKNUMOP_SET;
 			L.abyActVal[i] = 0;
 		}
+	}
+
+	/* 受けている依頼の条件（依頼番号が空欄=条件なし。上限が空欄=どの段でも） */
+	{
+		BOOL bBlank;
+
+		if (!AdminFlagGetValue (s_hWndDlg, s_hWndDlg, IDC_TE_QID, 65535, strName + "受けている依頼の依頼番号", TALKEDIT_TITLE, ul)) return FALSE;
+		L.wQuestID = (WORD)ul;
+		if (!AdminFlagGetValue (s_hWndDlg, s_hWndDlg, IDC_TE_QSTEPMIN, 254, strName + "依頼の段の下限", TALKEDIT_TITLE, ul)) return FALSE;
+		L.byQuestStepMin = (BYTE)ul;
+		if (!AdminFlagReadNo (s_hWndDlg, IDC_TE_QSTEPMAX, ul, bBlank) || (!bBlank && (ul > 254))) {
+			MessageBox (s_hWndDlg, (strName + "依頼の段の上限は 0〜254 で入れてください（空欄=どの段でも）。").c_str (), TALKEDIT_TITLE, MB_OK);
+			SetFocus (GetDlgItem (s_hWndDlg, IDC_TE_QSTEPMAX));
+			return FALSE;
+		}
+		L.byQuestStepMax = bBlank ? (BYTE)QUESTNPC_NOSTEP : (BYTE)ul;
+		if (L.wQuestID == 0) {
+			/* 条件を使わない時は、段も空にしておく */
+			L.byQuestStepMin = 0;
+			L.byQuestStepMax = QUESTNPC_NOSTEP;
+		}
+		if (!AdminFlagGetValue (s_hWndDlg, s_hWndDlg, IDC_TE_GIVEITEM, 65535, strName + "渡すアイテム", TALKEDIT_TITLE, ul)) return FALSE;
+		L.wGiveItem = (WORD)ul;
 	}
 
 	s_Info.aLine[nLine] = L;

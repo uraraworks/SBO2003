@@ -338,6 +338,8 @@ void ShowDlgQuestInfoEdit(HWND hWndParent, int nNo)
 			s_Info.awDoneSetFlag[i] = FLAG_NOBIT;
 		}
 		s_Info.byDoneNumNo = FLAG_NONUM;
+		s_Info.wNeedFlag = FLAG_NOBIT;
+		s_Info.wNotFlag = FLAG_NOBIT;
 		for (int i = 0; i < MAX_QUESTNPC; i ++) {
 			ClearNpc (&s_Info.aNpc[i]);
 		}
@@ -546,6 +548,9 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 		SendDlgItemMessage (hWnd, IDC_Q_DONEOP, CB_SETCURSEL, (s_Info.byDoneNumOp < TALKNUMOP_MAX) ? s_Info.byDoneNumOp : 0, 0);
 		AdminFlagSetNo (hWnd, IDC_Q_DONEVAL, s_Info.byDoneNumVal, bNone);
 	}
+	/* 受ける条件の印（空欄=条件なし） */
+	AdminFlagSetNo (hWnd, IDC_Q_NEEDFLAG, s_Info.wNeedFlag, s_Info.wNeedFlag == FLAG_NOBIT);
+	AdminFlagSetNo (hWnd, IDC_Q_NOTFLAG, s_Info.wNotFlag, s_Info.wNotFlag == FLAG_NOBIT);
 	UpdateDoneNames (hWnd);
 
 	/* 見えるNPC（種類の一覧は LoadNpc で依頼の種類に合わせて作る） */
@@ -569,7 +574,8 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 {
 	/* 完了時の印・数値の番号が変わったら、横の名前を出し直す */
-	if ((nCodeNotify == EN_CHANGE) && ((nID == IDC_Q_DONEBIT0) || (nID == IDC_Q_DONEBIT1) || (nID == IDC_Q_DONENUM))) {
+	if ((nCodeNotify == EN_CHANGE) && ((nID == IDC_Q_DONEBIT0) || (nID == IDC_Q_DONEBIT1) || (nID == IDC_Q_DONENUM) ||
+			(nID == IDC_Q_NEEDFLAG) || (nID == IDC_Q_NOTFLAG))) {
 		UpdateDoneNames (hWnd);
 		return;
 	}
@@ -648,6 +654,8 @@ static void UpdateDoneNames(HWND hWnd)
 	AdminFlagUpdateName (hWnd, IDC_Q_DONEBIT0, IDC_Q_DONEBITN0, FLAGKIND_BIT);
 	AdminFlagUpdateName (hWnd, IDC_Q_DONEBIT1, IDC_Q_DONEBITN1, FLAGKIND_BIT);
 	AdminFlagUpdateName (hWnd, IDC_Q_DONENUM, IDC_Q_DONENUMN, FLAGKIND_NUM);
+	AdminFlagUpdateName (hWnd, IDC_Q_NEEDFLAG, IDC_Q_NEEDFLAGN, FLAGKIND_BIT);
+	AdminFlagUpdateName (hWnd, IDC_Q_NOTFLAG, IDC_Q_NOTFLAGN, FLAGKIND_BIT);
 }
 
 /* ========================================================================= */
@@ -752,7 +760,7 @@ static void LayoutInit(HWND hWnd)
 {
 	static const int s_anGroup[] = {
 		IDC_Q_GRP_BASE, IDC_Q_GRP_SEARCH, IDC_Q_GRP_CHALLENGE, IDC_Q_GRP_GOAL,
-		IDC_Q_GRP_DONE,
+		IDC_Q_GRP_DONE, IDC_Q_GRP_COND,
 		IDC_Q_GRP_NPC, IDC_Q_GRP_NPCCOMMON, IDC_Q_GRP_NPCDEST, IDC_Q_GRP_NPCITEM, IDC_Q_GRP_NPCENEMY,
 	};
 	std::vector<HWND> ahWnd;
@@ -1125,6 +1133,9 @@ static BOOL SaveAll(HWND hWnd)
 		Info.byDoneNumOp = TALKNUMOP_SET;
 		Info.byDoneNumVal = 0;
 	}
+	/* 受ける条件の印（空欄=条件なし） */
+	if (!AdminFlagGetBit (hWnd, s_hWndDlg, IDC_Q_NEEDFLAG, "受ける条件の印（立っている人だけ）の番号", QUESTEDIT_TITLE, Info.wNeedFlag)) return FALSE;
+	if (!AdminFlagGetBit (hWnd, s_hWndDlg, IDC_Q_NOTFLAG, "受ける条件の印（立っている人は不可）の番号", QUESTEDIT_TITLE, Info.wNotFlag)) return FALSE;
 	/* 隠れている枠（この依頼の種類では使わない）は空にしておく */
 	if (!SectionVisible (IDC_Q_GRP_SEARCH, Info.byChallenge, QUESTNPCKIND_NONE)) {
 		Info.wQuestItem = 0;

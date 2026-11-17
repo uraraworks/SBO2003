@@ -139,10 +139,10 @@ PTALKINFO TalkFind(int nNo)
 
 /* ========================================================================= */
 /* 関数名：TalkLineMatch													 */
-/* 内容：行の条件に合うか（印・数値・レベル）								 */
+/* 内容：行の条件に合うか（印・数値・レベル・受けている依頼）				 */
 /*       範囲の外の番号（FLAG_NOBIT など）は「条件なし」として飛ばす			 */
 /* ========================================================================= */
-static BOOL TalkLineMatch(const TALKLINEINFO *pLine, const BYTE *pbyFlag, const BYTE *pbyFlagNum, int nLevel)
+static BOOL TalkLineMatch(const TALKLINEINFO *pLine, const BYTE *pbyFlag, const BYTE *pbyFlagNum, int nLevel, WORD wQuestID, BYTE byQuestStep)
 {
 	int i;
 
@@ -151,6 +151,18 @@ static BOOL TalkLineMatch(const TALKLINEINFO *pLine, const BYTE *pbyFlag, const 
 	}
 	if ((pLine->byLvMax != 0) && (nLevel > pLine->byLvMax)) {
 		return FALSE;
+	}
+	/* 受けている依頼の条件（段の数え方・255=どの段でも は見えるNPC の byStepMin/byStepMax と同じ） */
+	if (pLine->wQuestID != 0) {
+		if (wQuestID != pLine->wQuestID) {
+			return FALSE;
+		}
+		if (byQuestStep < pLine->byQuestStepMin) {
+			return FALSE;
+		}
+		if ((pLine->byQuestStepMax != QUESTNPC_NOSTEP) && (byQuestStep > pLine->byQuestStepMax)) {
+			return FALSE;
+		}
 	}
 	for (i = 0; i < MAX_TALKNEED; i ++) {
 		if ((pLine->awNeed[i] < MAX_FLAGBIT) && !FlagBitGet (pbyFlag, pLine->awNeed[i])) {
@@ -182,7 +194,7 @@ static BOOL TalkLineMatch(const TALKLINEINFO *pLine, const BYTE *pbyFlag, const 
 /* 内容：条件に合う行を選ぶ（順位が一番小さい行たちから、同じ順位ならくじで 1 行）*/
 /*       戻り値：行の番号（合う行が無ければ -1）							 */
 /* ========================================================================= */
-int TalkPickLine(const TALKINFO *pTalk, const BYTE *pbyFlag, const BYTE *pbyFlagNum, int nLevel, DWORD dwRand)
+int TalkPickLine(const TALKINFO *pTalk, const BYTE *pbyFlag, const BYTE *pbyFlagNum, int nLevel, WORD wQuestID, BYTE byQuestStep, DWORD dwRand)
 {
 	int i, nCount, nMatch = 0, nRank = 256, anMatch[MAX_TALKLINE];
 
@@ -190,7 +202,7 @@ int TalkPickLine(const TALKINFO *pTalk, const BYTE *pbyFlag, const BYTE *pbyFlag
 	for (i = 0; i < nCount; i ++) {
 		const TALKLINEINFO *pLine = &pTalk->aLine[i];
 
-		if (!TalkLineMatch (pLine, pbyFlag, pbyFlagNum, nLevel)) {
+		if (!TalkLineMatch (pLine, pbyFlag, pbyFlagNum, nLevel, wQuestID, byQuestStep)) {
 			continue;
 		}
 		if (pLine->byRank < nRank) {
@@ -240,6 +252,7 @@ void TalkNpcTalk(PCHARINFO pChar, PCHARINFO pNpc)
 	PTALKINFO pTalk;
 	int nLine;
 	char szSpeech[MAX_TALKMSG + 4];	/* 最後に @2 を足せるよう少し余分に */
+	WORD wGiveItem = 0;
 
 	if ((pChar == NULL) || (pNpc == NULL) || (pChar->pID == 0)) {
 		return;
@@ -247,14 +260,19 @@ void TalkNpcTalk(PCHARINFO pChar, PCHARINFO pNpc)
 	SboTextCopy (szSpeech, sizeof (szSpeech), TALK_NOANSWER);
 	pTalk = TalkFind (TalkGetNo (pNpc));
 	if (pTalk) {
-		nLine = TalkPickLine (pTalk, pChar->abyFlag, pChar->abyFlagNum, pChar->byLevel, (DWORD)genrand ());
+		nLine = TalkPickLine (pTalk, pChar->abyFlag, pChar->abyFlagNum, pChar->byLevel, pChar->wQuestID, pChar->byQuestStep, (DWORD)genrand ());
 		if (nLine >= 0) {
 			const TALKLINEINFO *pLine = &pTalk->aLine[nLine];
 
 			if (pLine->szSpeech[0]) {
 				SboTextCopy (szSpeech, sizeof (szSpeech), pLine->szSpeech);
 			}
-			TalkApplyLine (pLine, pChar->abyFlag, pChar->abyFlagNum);
+			/* アイテムを渡す（宝箱・依頼の報酬と同じ渡し方と知らせ）。
+			   受け取れなかった時は印・数値を動かさない（一度きりのお礼が消えないように。台詞はそのまま言う） */
+			wGiveItem = pLine->wGiveItem;
+			if ((wGiveItem == 0) || QuestGiveItemNotice (pChar, wGiveItem)) {
+				TalkApplyLine (pLine, pChar->abyFlag, pChar->abyFlagNum);
+			}
 		}
 	}
 	/* 最後が入力待ちで終わっていないと、窓がすぐ閉じて読めないので @2 を足す（道具の説明文と同じ） */

@@ -1811,6 +1811,7 @@ static void TestAdminQuest(const std::vector<int> &aLogin)
 	{
 		PQUESTINFO p = new QUESTINFO;
 		ZeroMemory(p, sizeof(*p));
+		p->wNeedFlag = p->wNotFlag = FLAG_NOBIT;
 		p->wID = 1; p->byState = QUESTSTATE_ON; p->byStepCount = 2;
 		strcpy(p->szName, "AdminQuest1");
 		strcpy(p->aszGoal[0], "goal0");
@@ -1907,6 +1908,7 @@ static void TalkTestLineInit(TALKLINEINFO *pLine, int nRank)
 	for (i = 0; i < MAX_TALKACT; i ++) {
 		pLine->abyActNo[i] = FLAG_NONUM;
 	}
+	pLine->byQuestStepMax = QUESTNPC_NOSTEP;
 }
 
 static void TestFlagTalk(const std::vector<int> &aLogin)
@@ -1965,34 +1967,34 @@ static void TestFlagTalk(const std::vector<int> &aLogin)
 
 	ZeroMemory(abyFlag, sizeof(abyFlag));
 	ZeroMemory(abyNum, sizeof(abyNum));
-	printf("flagtalk pick none=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0));
+	printf("flagtalk pick none=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, 0));
 	FlagBitSet(abyFlag, 0, TRUE);
-	printf(" flag0=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0));
+	printf(" flag0=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, 0));
 	FlagBitSet(abyFlag, 0, FALSE);
 	FlagBitSet(abyFlag, 10, TRUE);
-	printf(" need=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0));
+	printf(" need=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, 0));
 	FlagBitSet(abyFlag, 11, TRUE);
-	printf(" not=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0));
+	printf(" not=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, 0));
 	FlagBitSet(abyFlag, 10, FALSE);
 	FlagBitSet(abyFlag, 11, FALSE);
 	FlagNumSet(abyNum, 2, 5);
-	printf(" ge=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0));
+	printf(" ge=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, 0));
 	FlagNumSet(abyNum, 2, 2);
-	printf(" eq=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0));
+	printf(" eq=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, 0));
 	FlagNumSet(abyNum, 2, 3);
-	printf(" nomatch=%d\n", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0));
-	printf("flagtalk level 9=%d 10=%d 20=%d 21=%d\n", TalkPickLine(&Talk, abyFlag, abyNum, 9, 0), TalkPickLine(&Talk, abyFlag, abyNum, 10, 0),
-			TalkPickLine(&Talk, abyFlag, abyNum, 20, 0), TalkPickLine(&Talk, abyFlag, abyNum, 21, 0));
-	printf("flagtalk tie rand0=%d rand1=%d rand3=%d\n", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0), TalkPickLine(&Talk, abyFlag, abyNum, 1, 1),
-			TalkPickLine(&Talk, abyFlag, abyNum, 1, 3));
+	printf(" nomatch=%d\n", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, 0));
+	printf("flagtalk level 9=%d 10=%d 20=%d 21=%d\n", TalkPickLine(&Talk, abyFlag, abyNum, 9, 0, 0, 0), TalkPickLine(&Talk, abyFlag, abyNum, 10, 0, 0, 0),
+			TalkPickLine(&Talk, abyFlag, abyNum, 20, 0, 0, 0), TalkPickLine(&Talk, abyFlag, abyNum, 21, 0, 0, 0));
+	printf("flagtalk tie rand0=%d rand1=%d rand3=%d\n", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, 0), TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, 1),
+			TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, 3));
 	/* 合う行が無い・知らない比べ方は合わない */
 	Talk.byLineCount = 1;
 	TalkTestLineInit(&Talk.aLine[0], 1);
 	Talk.aLine[0].abyCondNo[0] = 2;
 	Talk.aLine[0].abyCondCmp[0] = 99;
-	printf("flagtalk badcmp=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0));
+	printf("flagtalk badcmp=%d", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, 0));
 	Talk.byLineCount = 0;
-	printf(" empty=%d\n", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0));
+	printf(" empty=%d\n", TalkPickLine(&Talk, abyFlag, abyNum, 1, 0, 0, 0));
 
 	/* 話した後の動き（立てる→消す→数値。数値は 255 で止まる） */
 	TALKLINEINFO Line;
@@ -3508,6 +3510,7 @@ static void TestQuest(const std::vector<int> &aLogin)
 	{
 		PQUESTINFO p = new QUESTINFO;
 		ZeroMemory(p, sizeof(*p));
+		p->wNeedFlag = p->wNotFlag = FLAG_NOBIT;
 		p->wID = 1; p->byState = QUESTSTATE_ON; p->byGuild = 0; p->wSort = 1; p->byOnce = 1;
 		strcpy(p->szName, "テスト依頼1");
 		strcpy(p->szExplain, "宝箱の品を持ち帰る");
@@ -3534,6 +3537,7 @@ static void TestQuest(const std::vector<int> &aLogin)
 		for (int q = 2; q <= 3; q ++) {
 			p = new QUESTINFO;
 			ZeroMemory(p, sizeof(*p));
+			p->wNeedFlag = p->wNotFlag = FLAG_NOBIT;
 			p->wID = (WORD)q; p->byState = QUESTSTATE_ON; p->byGuild = 0; p->wSort = (WORD)q; p->byStepCount = 1;
 			sprintf(p->szName, "テスト依頼%d", q);
 			g_aQuestInfo.Add(p);
@@ -3739,6 +3743,135 @@ static void TestQuest(const std::vector<int> &aLogin)
 	QuestMovePC(pOther, nMap, aCell[7].first, aCell[7].second);
 	QuestSendCmd(pOther, QUESTCMD_CANCEL, 0, dwGuild);
 	printf("quest far cancel q=%u\n", pOther->wQuestID);
+
+	/* 受ける条件の印：合わない依頼は一覧に出ず、受けられない（依頼 3 に条件を付けて確かめる） */
+	{
+		PQUESTINFO pQ3 = NULL;
+		for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) if (g_aQuestInfo[i]->wID == 3) pQ3 = g_aQuestInfo[i];
+		QuestMovePC(pOwner, nMap, aCell[4].first, aCell[4].second + 1);
+		pOwner->wQuestID = 0;
+		FlagBitSet(pOwner->abyFlag, 500, FALSE);
+		FlagBitSet(pOwner->abyFlag, 501, FALSE);
+		int nBase0 = MockCmdCount(anConn[0], CMD_QUEST);
+		QuestSendTalk(pOwner, dwGuild);
+		int nBase = MockCmdCount(anConn[0], CMD_QUEST) - nBase0;
+		if (pQ3) {
+			/* 立っている人だけ（印が無いと一覧に出ず、受けられない。立てると出て、受けられる） */
+			pQ3->wNeedFlag = 500;
+			nBase0 = MockCmdCount(anConn[0], CMD_QUEST);
+			QuestSendTalk(pOwner, dwGuild);
+			printf("quest cond need off list=%d", MockCmdCount(anConn[0], CMD_QUEST) - nBase0 - nBase);
+			QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 3, dwGuild);
+			printf(" accept=%u", pOwner->wQuestID);
+			FlagBitSet(pOwner->abyFlag, 500, TRUE);
+			nBase0 = MockCmdCount(anConn[0], CMD_QUEST);
+			QuestSendTalk(pOwner, dwGuild);
+			printf(" | on list=%d", MockCmdCount(anConn[0], CMD_QUEST) - nBase0 - nBase);
+			QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 3, dwGuild);
+			printf(" accept=%u\n", pOwner->wQuestID);
+			QuestSendCmd(pOwner, QUESTCMD_CANCEL, 0, dwGuild);
+			/* 立っている人は受けられない（立てると出なくなり、消すと戻る） */
+			pQ3->wNeedFlag = FLAG_NOBIT;
+			pQ3->wNotFlag = 501;
+			FlagBitSet(pOwner->abyFlag, 501, TRUE);
+			nBase0 = MockCmdCount(anConn[0], CMD_QUEST);
+			QuestSendTalk(pOwner, dwGuild);
+			printf("quest cond not on list=%d", MockCmdCount(anConn[0], CMD_QUEST) - nBase0 - nBase);
+			QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 3, dwGuild);
+			printf(" accept=%u", pOwner->wQuestID);
+			FlagBitSet(pOwner->abyFlag, 501, FALSE);
+			nBase0 = MockCmdCount(anConn[0], CMD_QUEST);
+			QuestSendTalk(pOwner, dwGuild);
+			printf(" | off list=%d", MockCmdCount(anConn[0], CMD_QUEST) - nBase0 - nBase);
+			QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 3, dwGuild);
+			printf(" accept=%u\n", pOwner->wQuestID);
+			QuestSendCmd(pOwner, QUESTCMD_CANCEL, 0, dwGuild);
+			/* 保存して読み直しても同じ（古いファイルで新しい項目が無い時は「無し」になる） */
+			pQ3->wNeedFlag = 0;
+			pQ3->wNotFlag = 1023;
+			SaveQuestInfo();
+			for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) delete g_aQuestInfo[i];
+			g_aQuestInfo.RemoveAll();
+			LoadQuestInfo();
+			pQ3 = NULL;
+			for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) if (g_aQuestInfo[i]->wID == 3) pQ3 = g_aQuestInfo[i];
+			printf("quest cond reload need=%u not=%u", pQ3 ? pQ3->wNeedFlag : 9999, pQ3 ? pQ3->wNotFlag : 9999);
+			for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) if (g_aQuestInfo[i]->wID == 2) printf(" q2=%u,%u", g_aQuestInfo[i]->wNeedFlag, g_aQuestInfo[i]->wNotFlag);
+			printf("\n");
+			if (pQ3) {
+				pQ3->wNeedFlag = FLAG_NOBIT;
+				pQ3->wNotFlag = FLAG_NOBIT;
+			}
+		}
+		FlagBitSet(pOwner->abyFlag, 500, FALSE);
+		FlagBitSet(pOwner->abyFlag, 501, FALSE);
+	}
+
+	/* 会話の行：受けている依頼の条件・アイテムを渡す（一度きりは「立てる印」と「いけない印」で組む） */
+	{
+		PTALKINFO pTalk = new TALKINFO;
+		CHARINFO Npc;
+		char szSpeech[8];
+		ZeroMemory(pTalk, sizeof(*pTalk));
+		pTalk->wID = 998; pTalk->byState = TALKSTATE_ON; pTalk->byLineCount = 3;
+		TalkTestLineInit(&pTalk->aLine[0], 1);
+		pTalk->aLine[0].wQuestID = 2; pTalk->aLine[0].byQuestStepMin = 1; pTalk->aLine[0].byQuestStepMax = 2;
+		TalkTestLineInit(&pTalk->aLine[1], 2);
+		pTalk->aLine[1].wGiveItem = wItemQ; pTalk->aLine[1].awSetOn[0] = 502; pTalk->aLine[1].awNot[0] = 502;
+		TalkTestLineInit(&pTalk->aLine[2], 3);
+		BYTE abyF[MAX_FLAGBITBYTE], abyN[MAX_FLAGNUM];
+		ZeroMemory(abyF, sizeof(abyF));
+		ZeroMemory(abyN, sizeof(abyN));
+		printf("flagtalk quest cond none=%d q2s0=%d q2s1=%d q2s2=%d q2s3=%d q3s1=%d", TalkPickLine(pTalk, abyF, abyN, 1, 0, 0, 0),
+			TalkPickLine(pTalk, abyF, abyN, 1, 2, 0, 0), TalkPickLine(pTalk, abyF, abyN, 1, 2, 1, 0), TalkPickLine(pTalk, abyF, abyN, 1, 2, 2, 0),
+			TalkPickLine(pTalk, abyF, abyN, 1, 2, 3, 0), TalkPickLine(pTalk, abyF, abyN, 1, 3, 1, 0));
+		pTalk->aLine[0].byQuestStepMax = QUESTNPC_NOSTEP;
+		printf(" any s200=%d\n", TalkPickLine(pTalk, abyF, abyN, 1, 2, 200, 0));
+		pTalk->aLine[0].byQuestStepMax = 2;
+		g_aTalkInfo.Add(pTalk);
+
+		ZeroMemory((PBYTE)&Npc, sizeof(CHARINFO));
+		strcpy(szSpeech, "@t998");
+		Npc.pszNpcSpeech = szSpeech;
+		Npc.dwTblID = dwGuild;
+		ZeroMemory(pP4->waItem, sizeof(pP4->waItem));
+		pP4->wQuestID = 0;
+		FlagBitSet(pP4->abyFlag, 502, FALSE);
+		int nItem0 = QuestCountItem(pP4, wItemQ);
+		int nSys0 = MockCmdCount(anConn[3], CMD_SYSMSG), nTalk0 = MockCmdCount(anConn[3], CMD_TALKMSG);
+		TalkNpcTalk(pP4, &Npc);
+		printf("talk give first item+=%d flag=%d talkmsg=%d sysmsg=%d", QuestCountItem(pP4, wItemQ) - nItem0, FlagBitGet(pP4->abyFlag, 502) ? 1 : 0,
+			MockCmdCount(anConn[3], CMD_TALKMSG) - nTalk0, MockCmdCount(anConn[3], CMD_SYSMSG) - nSys0);
+		nItem0 = QuestCountItem(pP4, wItemQ);
+		nSys0 = MockCmdCount(anConn[3], CMD_SYSMSG);
+		TalkNpcTalk(pP4, &Npc);
+		printf(" second item+=%d sysmsg=%d", QuestCountItem(pP4, wItemQ) - nItem0, MockCmdCount(anConn[3], CMD_SYSMSG) - nSys0);
+		/* 依頼を受けている間は依頼の行が選ばれ、アイテムは渡さない */
+		FlagBitSet(pP4->abyFlag, 502, FALSE);
+		pP4->wQuestID = 2; pP4->byQuestStep = 1;
+		nItem0 = QuestCountItem(pP4, wItemQ);
+		TalkNpcTalk(pP4, &Npc);
+		printf(" quest item+=%d flag=%d", QuestCountItem(pP4, wItemQ) - nItem0, FlagBitGet(pP4->abyFlag, 502) ? 1 : 0);
+		pP4->wQuestID = 0; pP4->byQuestStep = 0;
+		/* 持ち物がいっぱいなら預かり所へ */
+		for (int i = 0; i < MAX_MYITEM; i ++) pP4->waItem[i] = wItemR;
+		nItem0 = QuestCountItem(pP4, wItemQ);
+		TalkNpcTalk(pP4, &Npc);
+		int nLeaveQ = 0;
+		if (pP4->dwLeaveID && pP4->dwLeaveID < (DWORD)g_aLeaveInfo.GetSize()) {
+			PLEAVEINFO pL = g_aLeaveInfo[pP4->dwLeaveID];
+			for (int i = 0; i < pL->byCount; i ++) if (pL->waItem[i] == wItemQ) nLeaveQ += pL->byItemCount[i];
+		}
+		printf(" full item+=%d leave=%d\n", QuestCountItem(pP4, wItemQ) - nItem0, nLeaveQ);
+		ZeroMemory(pP4->waItem, sizeof(pP4->waItem));
+		if (pP4->dwLeaveID && pP4->dwLeaveID < (DWORD)g_aLeaveInfo.GetSize()) {
+			ZeroMemory(g_aLeaveInfo[pP4->dwLeaveID], sizeof(LEAVEINFO));
+			pP4->dwLeaveID = 0;
+		}
+		FlagBitSet(pP4->abyFlag, 502, FALSE);
+		delete g_aTalkInfo[g_aTalkInfo.GetSize() - 1];
+		g_aTalkInfo.RemoveAt(g_aTalkInfo.GetSize() - 1);
+	}
 
 	/* 保存して読み直す：依頼情報（見えるNPC もそのまま） */
 	{
@@ -4043,6 +4176,7 @@ static void TestChallenge(const std::vector<int> &aLogin)
 	{
 		PQUESTINFO p = new QUESTINFO;
 		ZeroMemory(p, sizeof(*p));
+		p->wNeedFlag = p->wNotFlag = FLAG_NOBIT;
 		p->wID = 20; p->byState = QUESTSTATE_ON; p->byGuild = 0; p->byStepCount = 2;
 		strcpy(p->szName, "試しの討伐");
 		p->dwGold = 100; p->dwExp = 10;
@@ -5510,14 +5644,14 @@ static void TestMimic(const std::vector<int> &aLogin)
 	DeleteChar(dwM);
 	pM = MimicMake(pPC, nX + 1, nY);
 	dwM = pM->dwTblID;
-	pM->wMaxHP = pM->wHP = 100;		/* 一撃では倒れない */
+	pM->wMaxHP = pM->wHP = 30000;	/* 一撃では倒れない（会心の一撃でも。乱数の並びで結果が変わらないように） */
 	MimicPC(pPC, nX + 2, nY, 2);
 	pPC->dwTargetTblID = pM->dwTblID;
 	pPC->dwLastBattle = 1;
 	pPC->byAtackRate = ATACKRATE_JUST;
 	BattleProcAtack(pPC, pM);
 	printf("mimic hit type=%u dir=%d target_pc=%d damaged=%d\n", pM->byNpcType, pM->byDirection,
-		(int)(pM->dwTargetTblID == pPC->dwTblID), (int)(pM->wHP < 100));
+		(int)(pM->dwTargetTblID == pPC->dwTblID), (int)(pM->wHP < 30000));
 
 	/* 一撃で倒れたら正体を現さずに普通に倒れる */
 	DeleteChar(dwM);
@@ -5763,6 +5897,7 @@ static void TestImportant(const std::vector<int> &aLogin)
 	g_aItemInfo[wKey]->byFlg |= ITEMFLG_IMPORTANT;
 	PQUESTINFO pQ = new QUESTINFO;
 	ZeroMemory(pQ, sizeof(*pQ));
+	pQ->wNeedFlag = pQ->wNotFlag = FLAG_NOBIT;
 	pQ->wID = 9999; pQ->byState = QUESTSTATE_ON; pQ->wQuestItem = wQuest;
 	g_aQuestInfo.Add(pQ);
 	AddCharItem(pPC->dwTblID, wKey);
@@ -6338,6 +6473,7 @@ static void TestSpace(const std::vector<int> &aLogin)
 		g_aStTmpInfo.Add(t);
 		PQUESTINFO p = new QUESTINFO;
 		ZeroMemory(p, sizeof(*p));
+		p->wNeedFlag = p->wNotFlag = FLAG_NOBIT;
 		p->wID = 20; p->byState = QUESTSTATE_ON; p->byGuild = 0; p->byStepCount = 2;
 		strcpy(p->szName, "試しの討伐");
 		p->dwGold = 100; p->dwExp = 10;
