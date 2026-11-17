@@ -94,6 +94,7 @@ static void	TimerProcAutoTurnGage	(PCHARINFO pChar, DWORD dwTime);	/* 目の前�
 void	TimerProcCharMagicLV		(PCHARINFO pChar);					/* タイマー処理(キャラ魔法ターンゲージ処理) */
 BOOL	MsgProc						(PWNDINFO);							/* メッセージ処理 */
 void	StartPosConfirmOpen			(PWNDINFO, int, int, int, int);		/* 復活位置の確認を出す */
+void	TalkAskOpen					(PWNDINFO);							/* 会話データの「はい・いいえ」を出す */
 int		GetWindowID					(DWORD);							/* ウィンドウ番号を取得 */
 int		GetCharID					(DWORD);							/* キャラ番号を取得 */
 void	StopBGM						();									/* BGM停止 */
@@ -3227,6 +3228,32 @@ void StartPosConfirmOpen(PWNDINFO pWnd, int nPosAt, int nMapID, int nX, int nY)
 
 
 /* ========================================================================= */
+/* 関数名：TalkAskOpen														 */
+/* 内容：会話データの「はい・いいえ」を出す（台詞の最後の「@y」まで流れた時）	 */
+/*       台詞はもう全部出ているので、そのまま答えるまで止める。				 */
+/*       答え（KeyProcCONF）はサーバーへ送る。印・数値・渡す物を動かすかは	 */
+/*       サーバーが決める（いいえの返事は、新しい台詞として届く）。			 */
+/*       話しかけた NPC のテーブルIDは会話の窓の dwData（RecvDataProcTALKMSG） */
+/* ========================================================================= */
+void TalkAskOpen(PWNDINFO pWnd)
+{
+	pWnd->nData2 = MSGSTATE_TALKASK;
+	pWnd->dwTimeDrawStart = 0;
+	/* 待っている間は dwTime を使わないので、確認を出した時刻を入れておく（出た直後の決定ボタンの連打で選ばれないように） */
+	pWnd->dwTime = timeGetTime ();
+
+	/* はい・いいえのウィンドウ（メッセージ欄の右上に出す。復活位置の確認と同じ） */
+	PWNDINFO pWndConf = MakeWindowCONF (pWnd->nX + pWnd->nCx - 16 * 6, pWnd->nY - 16 * 4, IDCONFIRMTYPE_TALKASK);
+	pWndConf->nData1 = 0;
+	pWndConf->dwData = pWnd->dwData;
+	pWndConf->pParent = pWnd;
+	pWnd->pChild = pWndConf;
+	g_WndInfo.Add (pWndConf);
+	g_dwActiveMsgID = pWndConf->dwID;
+	g_bDraw = TRUE;
+}
+
+/* ========================================================================= */
 /* 関数名：MsgProc															 */
 /* 内容：メッセージ処理														 */
 /* 日付：2003/06/11															 */
@@ -3301,6 +3328,13 @@ BOOL MsgProc(PWNDINFO pWnd)
 			pWnd->nData1 += 5;
 			bRet = FALSE;
 		}
+		break;
+
+	/* 会話データの「はい・いいえ」（行の最後。答えるまで止める） */
+	case 'y':
+		pWnd->nData1 ++;
+		TalkAskOpen (pWnd);
+		bRet = FALSE;
 		break;
 
 	/* 復活座標設定 */

@@ -243,11 +243,13 @@ enum {
 	IDCONFIRMTYPE_QUESTCANCEL,									/* 依頼を取り消す確認 */
 	IDCONFIRMTYPE_QUESTHANDIN,									/* 依頼を達成して報酬をもらう確認 */
 	IDCONFIRMTYPE_STORYRESET,									/* 思い出の本：シナリオを最初からやり直す確認 */
+	IDCONFIRMTYPE_TALKASK,										/* 会話データの「はい・いいえ」（台詞の最後の @y。pParent=会話の窓。dwData=話しかけた NPC のテーブルID） */
 };
 
 
 /* メッセージウィンドウ(WNDTYPE_MSG)の nData2 の状態 */
 #define MSGSTATE_STARTPOSCONF	(3)								/* 復活位置の「はい・いいえ」待ち */
+#define MSGSTATE_TALKASK		(4)								/* 会話データの「はい・いいえ」待ち（@y） */
 
 /* ３秒メッセージ終了後イベントID */
 enum {

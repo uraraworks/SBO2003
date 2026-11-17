@@ -1177,6 +1177,13 @@ quest cond reload need=0 not=1023 q2=65535,65535
 flagtalk quest cond none=1 q2s0=1 q2s1=0 q2s2=0 q2s3=1 q3s1=1 any s200=0
 talk give first item+=1 flag=1 talkmsg=1 sysmsg=1 second item+=0 sysmsg=0 quest item+=0 flag=0 full item+=1 leave=0
 talk take ok ticket-1 prize+1 flag=1 num=1 sysmsg=2 talkmsg=1 none prize+0 flag=0 num=0 sysmsg=0 talkmsg=1 equ prize+0 ticket=1 flag=0 equ2 slot0=1 slot1=0 equ=0 order bag=0 imp=1 full ticket=1 prize=0 flag=0 num=0 sysmsg=1 talkmsg=1
+talk ask first talkmsg=1 tail=1 flag=0 num=0 item+0 pend=1 | yes flag=1 num=1 item+1 pend=0 again flag=1 num=1 item+0
+talk ask no talkmsg=1 msg=1 flag=0 num=0 item+0 pend=0 default msg=1
+talk ask far flag=0 num=0 pend=0 near2 flag=1 othermap flag=0 otherspace flag=0
+talk ask time 59s flag=1 61s flag=0 pend=0 otherNpc flag=0 pend=1 then flag=1 talkother pend=0 flag=0 cleared flag=0
+talk ask cond gone flag=0 item+0 full flag=0 num=0 item+0 askoff flag=0
+talk ask admin far flag=0
+talk ask reload ask=1 nomsg=また今度ね。 speech=ほしいですか？ | old ask=0 nomsg=(empty) speech=ほしいですか？
 quest info reload count=3 same=1
 quest char save=1 load=1
 quest char reload id=2 step=1 flg=4660 counts=1,22,333,4444 time=1700000000 done=06,80

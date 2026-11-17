@@ -3112,7 +3112,7 @@ void KeyProcMSG(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 {
 	/* アイテムの読み物：キャンセルで残りのページを飛ばして閉じる
 	   （音・アイテム取得などの制御コードは順に処理する。復活位置の「はい・いいえ」が出たらそこで止まる） */
-	if (pWnd->bMsgSkip && (byEvent == KEY_UP) && ((byCode == 'B') || (byCode == VK_ESCAPE)) && (pWnd->nData2 != MSGSTATE_STARTPOSCONF) && pWnd->pszMsg) {
+	if (pWnd->bMsgSkip && (byEvent == KEY_UP) && ((byCode == 'B') || (byCode == VK_ESCAPE)) && (pWnd->nData2 != MSGSTATE_STARTPOSCONF) && (pWnd->nData2 != MSGSTATE_TALKASK) && pWnd->pszMsg) {
 		BYTE byBak = pWnd->byData1;
 		int nLen = (int)strlen (pWnd->pszMsg);
 
@@ -3121,7 +3121,7 @@ void KeyProcMSG(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		while (pWnd->nData1 < nLen) {
 			pWnd->nData1 += max (SboTextCharLen (&pWnd->pszMsg[pWnd->nData1]), 1);
 			MsgProc (pWnd);
-			if (pWnd->nData2 == MSGSTATE_STARTPOSCONF) {
+			if ((pWnd->nData2 == MSGSTATE_STARTPOSCONF) || (pWnd->nData2 == MSGSTATE_TALKASK)) {
 				break;
 			}
 			pWnd->nData2 = 0;
@@ -3135,8 +3135,8 @@ void KeyProcMSG(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 	if (pWnd->nData2 == 0) {
 		return;
 	}
-	/* 復活位置の「はい・いいえ」を選ぶまでは進めない */
-	if (pWnd->nData2 == MSGSTATE_STARTPOSCONF) {
+	/* 復活位置・会話データの「はい・いいえ」を選ぶまでは進めない */
+	if ((pWnd->nData2 == MSGSTATE_STARTPOSCONF) || (pWnd->nData2 == MSGSTATE_TALKASK)) {
 		return;
 	}
 
@@ -5375,6 +5375,32 @@ void KeyProcCONF(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				return;
 			}
 			StartPosConfirmEnd (pWnd, (byCode == 'A') && (pWnd->nData1 == 0));
+			return;
+		}
+	}
+
+	/* 会話データの「はい・いいえ」：答えをサーバーへ送り、会話の窓は閉じる（いいえの返事は新しい台詞として届く）。
+	   キーボードは決定（A）・キャンセル（B）、スマホは仮想パッドの同じボタン。キャンセルはいいえ */
+	if (pWnd->nType2 == IDCONFIRMTYPE_TALKASK) {
+		if ((byEvent == KEY_UP) && ((byCode == 'A') || (byCode == 'B'))) {
+			PWNDINFO pWndMsg = (PWNDINFO)pWnd->pParent;
+			DWORD dwNpcTblID = pWnd->dwData;
+			BOOL bYes = (byCode == 'A') && (pWnd->nData1 == 0);
+
+			/* セリフを読み進める決定ボタンの連打で選ばれないよう、出た直後は受け付けない */
+			if (pWndMsg && (timeGetTime () < pWndMsg->dwTime + 400)) {
+				return;
+			}
+			SendCmdTALKANSWER (dwNpcTblID, bYes);
+			DXAudio.PlaySecoundary (&aSoundTbl[bYes ? SOUND_OK : SOUND_PUSH51_C]);
+			EraseWindow (pWnd);
+			if (pWndMsg) {
+				/* 会話の窓は台詞の最後まで出ているので、待ちを解いて閉じさせる */
+				pWndMsg->nData2 = 0;
+				pWndMsg->dwTime = 0;
+				pWndMsg->dwTimeDrawStart = 0;
+			}
+			g_bDraw = TRUE;
 			return;
 		}
 	}

@@ -58,6 +58,7 @@ void SendCmdACCADD			(LPSTR, LPSTR);							/* アカウント追加要求 */
 void SendCmdGETACC			(DWORD);								/* アカウント・パスワード取得 */
 void SendCmdCHGACC			(DWORD, LPSTR, LPSTR);					/* アカウント・パスワード更新 */
 void SendCmdTALKRAND		(DWORD);								/* 話してランダム要求 */
+void SendCmdTALKANSWER		(DWORD, BOOL);							/* 会話データの「はい・いいえ」の答え */
 void SendCmdSTOPRAND		(DWORD);								/* 止まるかランダム切り替え */
 void SendCmdGETACCINFO		(DWORD);								/* アカウント情報要求 */
 void SendCmdCHGACCSTATE		(DWORD, BYTE);							/* アカウント状態更新 */
@@ -1225,6 +1226,25 @@ void SendCmdTALKRAND(DWORD dwTblID)
 	pSendData = new CMDPARA_DATA1;
 	pSendData->byCmd = CMD_TALKRAND;
 	pSendData->dwTblID = dwTblID;
+
+	cliSock.Send ((PBYTE)pSendData, sizeof (CMDPARA_DATA1));
+	delete pSendData;
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdTALKANSWER												 */
+/* 内容：コマンド送信(会話データの「はい・いいえ」の答え)					 */
+/*       台詞の最後の @y で出した「はい・いいえ」の答えを、話しかけた NPC の	 */
+/*       テーブルIDと一緒に送る。有効かどうかはサーバーが決める				 */
+/* ========================================================================= */
+void SendCmdTALKANSWER(DWORD dwNpcTblID, BOOL bYes)
+{
+	PCMDPARA_DATA1 pSendData;
+	pSendData = new CMDPARA_DATA1;
+	ZeroMemory (pSendData, sizeof (CMDPARA_DATA1));
+	pSendData->byCmd = CMD_TALKANSWER;
+	pSendData->byData = bYes ? 1 : 0;
+	pSendData->dwTblID = dwNpcTblID;
 
 	cliSock.Send ((PBYTE)pSendData, sizeof (CMDPARA_DATA1));
 	delete pSendData;

@@ -239,6 +239,7 @@ void	RecvDataProcMARKETPUT					(PBYTE, DWORD);				/* 取引所に出品する */
 void	RecvDataProcMARKETBUY					(PBYTE, DWORD);				/* 取引所で買う */
 void	RecvDataProcMARKETTAKEBACK				(PBYTE, DWORD);				/* 取引所の出品を引き取る */
 void	RecvDataProcMARKETGOLDGET				(PBYTE, DWORD);				/* 取引所の売上を受け取る */
+void	RecvDataProcTALKANSWER					(PBYTE, DWORD);				/* 会話データの「はい・いいえ」の答え */
 /* 端末トークン（server/web_account_svr.cpp） */
 BOOL	WebAccTokenToAccount					(LPCSTR, LPSTR, int);		/* 端末トークンからアカウント名を引く */
 static void	SendWebOptBgm					(PCHARINFO);				/* 音楽ON/OFFのアカウント設定を送る */
@@ -481,6 +482,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcMARKETTAKEBACK,			/* CMD_MARKETTAKEBACK */
 	RecvDataProcMARKETGOLDGET,			/* CMD_MARKETGOLDGET */
 	RecvDataProcADMINSTORY,				/* CMD_ADMINSTORY */
+	RecvDataProcTALKANSWER,				/* CMD_TALKANSWER */
 
 	NULL
 };
@@ -1021,6 +1023,7 @@ void RecvCmdOnDecPlayer(int nNo)
 	}
 	s_mapMsgCode.erase ((DWORD)nNo);
 	s_mapPartyInvite.erase ((DWORD)nNo);
+	TalkPendClear ((DWORD)nNo);		/* 「はい・いいえ」の保留中の問い */
 }
 
 
@@ -3687,7 +3690,7 @@ void RecvDataProc(PBYTE pData, DWORD dwDataSize)
 	}
 
 	/* 管理者用のコマンド（管理者ウィンドウからしか送らないもの）は管理者だけ */
-	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET))) ||
+	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && (byCmd != CMD_TALKANSWER) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET))) ||
 			(byCmd == CMD_CHARITEM)) {
 		if (!CheckAdminBan (nNo)) {
 			SAFE_DELETE_ARRAY (pData);
@@ -7204,6 +7207,10 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
+	/* 何かに話しかけたら、会話データの「はい・いいえ」の保留中の問いは消える（別の NPC に話した時） */
+	if (s_nCharNoRecv >= 0) {
+		TalkPendClear ((DWORD)s_nCharNoRecv);
+	}
 	/* 別の空間にいるキャラ・印で見えないNPCとは話せない */
 	if ((s_nCharNoRecv >= 0) && (!IsSameSpace (g_aCharInfo[s_nCharNoRecv], pChar) || !IsCharSeenBy (pChar, g_aCharInfo[s_nCharNoRecv]))) {
 		return;
@@ -12733,7 +12740,7 @@ BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, 
 	/* 管理者用のコマンドだけ（ログインや「元に戻す」自体は通さない） */
 	if ((byCmd >= CMD_MAX) || (RecvDataProcTbl[byCmd] == NULL) ||
 			((byCmd < CMD_MAPPARTSADD) && (byCmd != CMD_CHARITEM)) ||
-			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET))) {
+			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET))) {
 		return FALSE;
 	}
 
@@ -13671,4 +13678,20 @@ void RecvDataProcRECIPEMAKE(PBYTE pData, DWORD dwDataSize)
 
 Exit:
 	SendCmdRECIPEMAKE (pChar->pID, byResult, pPara->byMaker, pPara->wRecipeID);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcTALKANSWER											 */
+/* 内容：受信データ処理(会話データの「はい・いいえ」の答え)					 */
+/*       byData=1 がはい・0 がいいえ、dwTblID が話しかけた NPC。				 */
+/*       有効かどうかの確認と反映は TalkAnswer がする（無効なら黙って捨てる）	 */
+/* ========================================================================= */
+void RecvDataProcTALKANSWER(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_DATA1 pPara = (PCMDPARA_DATA1)pData;
+
+	if ((dwDataSize < sizeof (CMDPARA_DATA1)) || (s_nCharNoRecv < 0) || (s_nCharNoRecv >= g_aCharInfo.GetSize ())) {
+		return;
+	}
+	TalkAnswer (g_aCharInfo[s_nCharNoRecv], pPara->dwTblID, pPara->byData ? TRUE : FALSE);
 }

@@ -429,6 +429,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcMARKETTAKEBACK,			/* CMD_MARKETTAKEBACK */
 	RecvDataProcMARKETGOLDGET,			/* CMD_MARKETGOLDGET */
 	RecvDataProcADMINSTORY,				/* CMD_ADMINSTORY */
+	NULL,								/* CMD_TALKANSWER(クライアント→サーバーのみ) */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -3961,6 +3962,8 @@ void RecvDataProcTALKMSG(PBYTE pData, DWORD dwDataSize)
 
 	pWndTmp = MakeWindowMSG (pszTmp, TRUE);
 	SAFE_DELETE_ARRAY (pszTmp);
+	/* 台詞の最後に「@y」（はい・いいえで聞く行）があった時、答えを送る相手になる NPC を覚えておく */
+	pWndTmp->dwData = pPara->dwTblID;
 	g_WndInfo.Add (pWndTmp);
 	g_dwActiveMsgID = pWndTmp->dwID;
 	g_bDraw = TRUE;
