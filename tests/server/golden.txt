@@ -1876,4 +1876,7 @@ tailrelogin range ng2=1 front=-1
 tailoverlap area found=1
 tailoverlap on Q(front=-1)
 tailoverlap off Q(front=P:1) P(back=Q:1) Q(stay=1) return=1 fade=[]
+== AL. Empty map check ==
+emptymap null charpos=1 mapmsg=0
+emptymap zero charpos=1 mapmsg=0
 == done ==

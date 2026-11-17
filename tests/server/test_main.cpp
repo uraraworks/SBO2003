@@ -1091,6 +1091,7 @@ static void TestMapSwapSave(const std::vector<int> &aLogin);
 static void TestJobMagicKey(const std::vector<int> &aLogin);
 static void TestTailRelogin(const std::vector<int> &aLogin);
 static void TestTailOverlap(const std::vector<int> &aLogin);
+static void TestEmptyMapCheck(const std::vector<int> &aLogin);
 extern void RecvCmdOnDecPlayer(int);
 extern void BattleProcCheck(PCHARINFO);
 
@@ -1579,6 +1580,8 @@ static void TestWorld(void)
 	TestTailRelogin(aLogin);
 	/* AK. 先頭と同じマスに重なって戦闘モードを解除しても、ワープせず列につながる */
 	TestTailOverlap(aLogin);
+	/* AL. イベントの無いマップでマスに乗った問い合わせ(CHECKEVENT 0)にも返事が来る */
+	TestEmptyMapCheck(aLogin);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -10328,4 +10331,53 @@ static void TestTailOverlap(const std::vector<int> &aLogin)
 	}
 	MercenarySetBattleMode(pP, FALSE);
 	MercenarySetBattleMode(pQ, FALSE);
+}
+
+/* ------------------------------------------------------------------------- */
+/* AL. イベントが1つも無いマップで CMD_CHECKEVENT(byData=0) → CHARPOS が返る	 */
+/*     (黙って戻ると、クライアントは返事待ちのまま歩けなくなる)				 */
+/* ------------------------------------------------------------------------- */
+static void TestEmptyMapCheck(const std::vector<int> &aLogin)
+{
+	printf("== AL. Empty map check ==\n");
+	if (aLogin.empty()) {
+		return;
+	}
+	PMAPINFO pMap = g_aMapInfo[GetMapNo(14)];
+	PCHARINFO pA = g_aCharInfo[aLogin[0]];
+	DWORD adwBack[3] = { pA->dwMapID, pA->dwX, pA->dwY };
+	PEVENTINFO pEvBack = pMap->pEvent;
+	int nCountBack = pMap->nEventCount;
+	DeleteTblNoPC((int)pA->dwTblID);
+	pA->dwMapID = pMap->dwID;
+	pA->dwX = pA->dwXBack = 1;
+	pA->dwY = pA->dwYBack = 1;
+	pA->dwTargetTblID3 = (DWORD)-1;
+	AddTblNoPC((int)pA->dwTblID);
+	/* イベントを一時的に 0 件にする（NULL と 0 件の両方） */
+	for (int k = 0; k < 2; k ++) {
+		pMap->pEvent = (k == 0) ? NULL : pEvBack;
+		pMap->nEventCount = 0;
+		MockTrace(1);
+		CMDPARA_DATA1 Para;
+		ZeroMemory(&Para, sizeof(Para));
+		Para.byCmd = CMD_CHECKEVENT;
+		Para.pID = pA->pID;
+		Para.dwTblID = pA->dwTblID;
+		Para.byData = 0;
+		TestRecv(pA, &Para, sizeof(Para));
+		MockTrace(0);
+		char *psz = MockCmdData(1000, CMD_CHARPOS);
+		char *pszMsg = MockCmdData(1000, CMD_MAPMSG);
+		printf("emptymap %s charpos=%d mapmsg=%d\n", k == 0 ? "null" : "zero", psz[0] ? 1 : 0, pszMsg[0] ? 1 : 0);
+		free(psz);
+		free(pszMsg);
+	}
+	pMap->pEvent = pEvBack;
+	pMap->nEventCount = nCountBack;
+	DeleteTblNoPC((int)pA->dwTblID);
+	pA->dwMapID = adwBack[0];
+	pA->dwX = pA->dwXBack = adwBack[1];
+	pA->dwY = pA->dwYBack = adwBack[2];
+	AddTblNoPC((int)pA->dwTblID);
 }
