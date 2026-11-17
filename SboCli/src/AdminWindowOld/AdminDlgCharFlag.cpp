@@ -220,7 +220,7 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 	lvcol.cx = 60;
 	lvcol.pszText = (LPSTR)"番号";
 	ListView_InsertColumn (hWndTmp, 0, &lvcol);
-	lvcol.cx = 100;
+	lvcol.cx = 170;		/* 一覧の幅いっぱいに近く（列の境目をドラッグでも変えられる） */
 	lvcol.pszText = (LPSTR)"名前";
 	ListView_InsertColumn (hWndTmp, 1, &lvcol);
 	ListView_SetExtendedListViewStyle (hWndTmp, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_CHECKBOXES);
@@ -230,7 +230,7 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 	lvcol.cx = 36;
 	lvcol.pszText = (LPSTR)"番号";
 	ListView_InsertColumn (hWndTmp, 0, &lvcol);
-	lvcol.cx = 70;
+	lvcol.cx = 120;
 	lvcol.pszText = (LPSTR)"名前";
 	ListView_InsertColumn (hWndTmp, 1, &lvcol);
 	lvcol.cx = 30;

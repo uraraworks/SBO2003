@@ -685,6 +685,16 @@ static LRESULT ListViewProc(W32Wnd *p, HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 	return DefWindowProc(hWnd, uMsg, wParam, lParam);
 }
 
+/* JavaScript から呼ばれる：見出しをドラッグ（または自動幅）で列幅が変わった */
+extern "C" EMSCRIPTEN_KEEPALIVE void W32JsOnListColWidth(int nHtmlID, int nCol, int nWidth)
+{
+	W32Wnd *p = W32FindWndByHtmlID(nHtmlID);
+	if (p == NULL || nCol < 0 || nCol >= (int)p->aColWidth.size()) {
+		return;
+	}
+	p->aColWidth[nCol] = std::max(0, nWidth);
+}
+
 /* JavaScript から呼ばれる：リストビューの行が操作された
    nKind 0:クリック 1:チェック欄のクリック 2:ダブルクリック 3:右クリック
    （クリックには 0x10:Ctrl（Mac は command） 0x20:Shift を足して渡す） */
