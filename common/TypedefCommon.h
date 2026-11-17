@@ -365,6 +365,7 @@ enum {
 	CMD_TALKANSWER,													/* 会話データの「はい・いいえ」の答え（クライアント→サーバー。CMDPARA_DATA1 の byData=1 がはい・0 がいいえ、dwTblID=話しかけた NPC。返事はサーバー→本人の CMD_TALKMSG） */
 /* 以下、管理者用（CMD_MAPPARTSADD 以上は自動で管理者専用になる。CMD_TALKANSWER より後ろに足す） */
 	CMD_ADMINVIEWALL,												/* 管理者ウィンドウの「印で隠れたNPCも表示」の切り替え（クライアント→サーバー。CMDPARA_DATA1 の byData=1 がオン・0 がオフ。保存しない） */
+	CMD_ADMINFLAGGROUP,												/* 管理者ウィンドウのフラグのグループの編集（一覧・書き込み。結果はサーバー→クライアント） */
 	CMD_MAX
 };
 
@@ -3173,6 +3174,7 @@ enum {
 
 #define MAX_ADMINQUESTMSG	256										/* 書き込みの結果の文（UTF-8） */
 #define MAX_ADMINSTORYMSG	256										/* 思い出の本の書き込みの結果の文（UTF-8） */
+#define MAX_ADMINFLAGGROUPMSG	256									/* フラグのグループの書き込みの結果の文（UTF-8） */
 
 #pragma pack(push, 1)
 /* 管理者ウィンドウのギルドの依頼の編集（送受信とも同じ形） */
@@ -3241,6 +3243,40 @@ typedef struct _FLAGNAMEINFO {
 	WORD		wNo;												/* 番号（印は 0〜1023、数値は 0〜127） */
 	char		szName[MAX_FLAGNAME];								/* 名前（管理用。プレイヤーには出ない） */
 } FLAGNAMEINFO, *PFLAGNAMEINFO;
+
+/* フラグのグループ（印・数値の番号の帯に「メイン名」を付けて、「ルシー-3」のように メイン-サブ で扱う。
+   見せ方・入力・絞り込みだけの層で、中で使う番号（会話データ・依頼・NPC の見える条件・思い出の本など）は変わらない） */
+#define MAX_FLAGGROUP		256										/* グループの最大件数（グループ番号 wID は 1〜255。削除済みの枠も数える） */
+#define MAX_FLAGGROUPNAME	64										/* メイン名の欄のバイト数（UTF-8・終端含む。全角 20 字ほど） */
+
+/* グループの状態(FLAGGROUPINFO の byState) */
+enum {
+	FLAGGROUPSTATE_NONE = 0,									/* 削除済み（枠だけ残る。番号の帯はほかのグループが使える） */
+	FLAGGROUPSTATE_ON,											/* 有効 */
+};
+
+/* フラグのグループの 1 件（同じ種類で番号の帯 wFrom〜wTo が重なる有効なグループは作れない） */
+typedef struct _FLAGGROUPINFO {
+	WORD		wID;												/* グループ番号（1〜255。足す時に自動で振られ、変わらない） */
+	BYTE		byState;											/* 状態(FLAGGROUPSTATE_*) */
+	BYTE		byKind;												/* 種類(FLAGKIND_*。印か数値か) */
+	char		szName[MAX_FLAGGROUPNAME];							/* メイン名（例：「ルシー」。管理用。プレイヤーには出ない） */
+	WORD		wFrom;												/* 番号の帯の先頭（その番号も含む） */
+	WORD		wTo;												/* 番号の帯の最後（その番号も含む） */
+	WORD		wSort;												/* 並び順（一覧で小さい順。同じなら番号順） */
+} FLAGGROUPINFO, *PFLAGGROUPINFO;
+
+/* 有効なグループの帯に、その種類の番号 wNo が入るか */
+inline BOOL FlagGroupHas(const FLAGGROUPINFO *p, BYTE byKind, WORD wNo)
+{
+	return (p->byState == FLAGGROUPSTATE_ON) && (p->byKind == byKind) && (wNo >= p->wFrom) && (wNo <= p->wTo);
+}
+
+/* グループの中での番号（サブ。1 始まり）。FlagGroupHas が真の時に使う */
+inline int FlagGroupSub(const FLAGGROUPINFO *p, WORD wNo)
+{
+	return (int)wNo - (int)p->wFrom + 1;
+}
 
 /* 数値の条件の比べ方(TALKLINEINFO の abyCondCmp) */
 enum {
@@ -3320,6 +3356,26 @@ typedef struct _CMDPARA_ADMINFLAGNAME {
 	FLAGNAMEINFO	aInfo[MAX_ADMINFLAGNAMEBATCH];					/* 名前表（ITEM・SET） */
 	char		szMsg[MAX_ADMINQUESTMSG];							/* 結果の文（RESULT。うまくいかなかった理由） */
 } CMDPARA_ADMINFLAGNAME, *PCMDPARA_ADMINFLAGNAME;
+
+/* 管理者ウィンドウのフラグのグループの編集（CMD_ADMINFLAGGROUP の byCmdSub） */
+enum {
+	ADMINFLAGGROUP_LISTREQ = 0,									/* 一覧の問い合わせ（クライアント→サーバー） */
+	ADMINFLAGGROUP_ITEM,										/* 一覧の 1 件（サーバー→クライアント。nNo 番目・全部で wCount 件。0 件なら wCount=0 だけ届く） */
+	ADMINFLAGGROUP_SET,											/* 書き込み（クライアント→サーバー。nNo=-1 なら足す。削除は byState=0。データAPIと同じ確認を通す） */
+	ADMINFLAGGROUP_RESULT,										/* 書き込みの結果（サーバー→クライアント。byResult・szMsg。うまくいった時は続けて ITEM も届く） */
+};
+
+/* 管理者ウィンドウのフラグのグループの編集（送受信とも同じ形） */
+typedef struct _CMDPARA_ADMINFLAGGROUP {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byCmdSub;											/* サブコマンド(ADMINFLAGGROUP_*) */
+	BYTE		byResult;											/* 結果（RESULT: 1=書き込んだ 0=書き込めなかった） */
+	BYTE		byReserve;											/* 予備 */
+	WORD		wCount;												/* グループの全部の件数（ITEM・RESULT） */
+	int			nNo;												/* グループの配列の番号（ITEM・SET・RESULT。SET の -1 は足す） */
+	FLAGGROUPINFO	Info;											/* グループ（ITEM・SET） */
+	char		szMsg[MAX_ADMINFLAGGROUPMSG];						/* 結果の文（RESULT。うまくいかなかった理由） */
+} CMDPARA_ADMINFLAGGROUP, *PCMDPARA_ADMINFLAGGROUP;
 
 /* 管理者ウィンドウの会話データの編集（CMD_ADMINTALK の byCmdSub） */
 enum {

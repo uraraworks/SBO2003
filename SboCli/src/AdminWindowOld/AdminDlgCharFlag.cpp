@@ -15,6 +15,9 @@
  * ・数値：名前の付いた数値は全部、名前の無い数値は 0 でない物だけが出る。
  *         選ぶと番号と値が下の欄に入る。値を直して「設定」で変える
  * ・「立っている印・0でない数値だけ」にチェックすると、立っている物だけに絞る
+ * ・フラグのグループ（メイン-サブ）：一覧に「グループ」列（ルシー-3 の形）を出す。
+ *   一覧の上の欄でグループを選ぶと、そのグループの番号の帯の全部（名前が無くて立っていない物も）に絞れる
+ *   （すべて／各グループ／どこにも入らない）。番号の欄は、数字のほかに「グループ番号-サブ」（例 3-2）も受け付ける
  */
 #include "stdafx.h"
 #include "../../resource.h"
@@ -24,6 +27,8 @@
 #include "AdminFlagUi.h"
 #include "AdminDlgCharFlag.h"
 #include <string>
+#include <vector>
+#include <algorithm>
 
 /* ========================================================================= */
 /* グローバル変数定義														 */
@@ -39,6 +44,10 @@ static BYTE s_abyFlag[MAX_FLAGBITBYTE];							/* 届いている印 */
 static BYTE s_abyFlagNum[MAX_FLAGNUM];							/* 届いている数値 */
 static DWORD s_dwFlagSeqSeen = 0;								/* 描き直した時のキャラのフラグの更新番号 */
 static DWORD s_dwNameSeqSeen = 0;								/* 描き直した時の名前表の更新番号 */
+static DWORD s_dwGroupSeqSeen = 0;								/* グループの選択肢を作った時の更新番号 */
+
+#define CFGROUP_ALL			(-1)								/* グループの絞り込み: すべて */
+#define CFGROUP_NONE		(-2)								/* グループの絞り込み: どこにも入らない */
 static DWORD s_dwResultSeqSeen = 0;								/* 見た書き込みの結果の番号 */
 static BOOL s_bPending = FALSE;									/* 問い合わせ・変更の結果を待っている */
 
@@ -53,6 +62,9 @@ static void OnChanged(void);													/* キャラのフラグ・名前表・
 static void RenewLists(void);													/* 一覧を作り直す */
 static void LoadFlag(void);														/* 届いているフラグを覚える */
 static BOOL IsBitOn(int nNo);													/* 印が立っているか */
+static void RenewGroupCombo(int nIDCombo, BYTE byKind);							/* グループの絞り込みの選択肢を作り直す */
+static BOOL InGroupFilter(int nIDCombo, BYTE byKind, int nNo);					/* グループの絞り込みに合う番号か */
+static BOOL IsGroupPicked(int nIDCombo);										/* 特定のグループを選んでいるか */
 
 /* ========================================================================= */
 /* 関数名：ShowDlgCharFlag													 */
@@ -217,25 +229,31 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 	ZeroMemory (&lvcol, sizeof (lvcol));
 	lvcol.mask = LVCF_FMT | LVCF_WIDTH | LVCF_TEXT | LVCF_SUBITEM;
 	lvcol.fmt = LVCFMT_LEFT;
-	lvcol.cx = 60;
+	lvcol.cx = 44;
 	lvcol.pszText = (LPSTR)"番号";
 	ListView_InsertColumn (hWndTmp, 0, &lvcol);
-	lvcol.cx = 170;		/* 一覧の幅いっぱいに近く（列の境目をドラッグでも変えられる） */
-	lvcol.pszText = (LPSTR)"名前";
+	lvcol.cx = 90;
+	lvcol.pszText = (LPSTR)"グループ";
 	ListView_InsertColumn (hWndTmp, 1, &lvcol);
+	lvcol.cx = 150;		/* 一覧の幅いっぱいに近く（列の境目をドラッグでも変えられる） */
+	lvcol.pszText = (LPSTR)"名前";
+	ListView_InsertColumn (hWndTmp, 2, &lvcol);
 	ListView_SetExtendedListViewStyle (hWndTmp, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_CHECKBOXES);
 
 	/* 数値の一覧 */
 	hWndTmp = GetDlgItem (hWnd, IDC_CF_NUMS);
-	lvcol.cx = 36;
+	lvcol.cx = 40;
 	lvcol.pszText = (LPSTR)"番号";
 	ListView_InsertColumn (hWndTmp, 0, &lvcol);
-	lvcol.cx = 120;
-	lvcol.pszText = (LPSTR)"名前";
+	lvcol.cx = 80;
+	lvcol.pszText = (LPSTR)"グループ";
 	ListView_InsertColumn (hWndTmp, 1, &lvcol);
-	lvcol.cx = 30;
-	lvcol.pszText = (LPSTR)"値";
+	lvcol.cx = 90;
+	lvcol.pszText = (LPSTR)"名前";
 	ListView_InsertColumn (hWndTmp, 2, &lvcol);
+	lvcol.cx = 34;
+	lvcol.pszText = (LPSTR)"値";
+	ListView_InsertColumn (hWndTmp, 3, &lvcol);
 	ListView_SetExtendedListViewStyle (hWndTmp, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
 
 	return FALSE;
@@ -248,13 +266,22 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 {
 	unsigned long ulNo, ulVal;
+	BOOL bBlank;
 
 	switch (nID) {
 	case IDC_GET:	/* 取得（サーバーから取り直す） */
 		s_bPending = TRUE;
 		s_dwResultSeqSeen = AdminFlagTalkGetResult ()->dwSeq;
 		AdminFlagNameRequest ();
+		AdminFlagGroupRequest ();
 		AdminCharFlagRequest (s_dwTblID);
+		break;
+
+	case IDC_CF_BITGROUP:	/* 印のグループで絞り込み */
+	case IDC_CF_NUMGROUP:	/* 数値のグループで絞り込み */
+		if (nCodeNotify == CBN_SELCHANGE) {
+			RenewLists ();
+		}
 		break;
 
 	case IDC_CF_ONLY:	/* 立っている物だけ */
@@ -263,7 +290,13 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 
 	case IDC_CF_BITON:	/* 番号を指定して印を立てる */
 	case IDC_CF_BITOFF:	/* 番号を指定して印を消す */
-		if (!AdminFlagGetValue (hWnd, hWnd, IDC_CF_BITNO, MAX_FLAGBIT - 1, "印の番号", CHARFLAG_TITLE, ulNo)) {
+		/* 数字のほかに「グループ番号-サブ」（例 3-2）も受け付ける */
+		if (!AdminFlagGetNo (hWnd, hWnd, IDC_CF_BITNO, FLAGKIND_BIT, "印の番号", CHARFLAG_TITLE, ulNo, bBlank)) {
+			break;
+		}
+		if (bBlank) {
+			MessageBox (hWnd, "印の番号を入れてください。（例 103・3-2）", CHARFLAG_TITLE, MB_OK);
+			SetFocus (GetDlgItem (hWnd, IDC_CF_BITNO));
 			break;
 		}
 		s_bPending = TRUE;
@@ -272,8 +305,15 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 		break;
 
 	case IDC_CF_NUMSET:	/* 数値を変える */
-		if (!AdminFlagGetValue (hWnd, hWnd, IDC_CF_NUMNO, MAX_FLAGNUM - 1, "数値の番号", CHARFLAG_TITLE, ulNo) ||
-			!AdminFlagGetValue (hWnd, hWnd, IDC_CF_NUMVAL, 255, "値", CHARFLAG_TITLE, ulVal)) {
+		if (!AdminFlagGetNo (hWnd, hWnd, IDC_CF_NUMNO, FLAGKIND_NUM, "数値の番号", CHARFLAG_TITLE, ulNo, bBlank)) {
+			break;
+		}
+		if (bBlank) {
+			MessageBox (hWnd, "数値の番号を入れてください。（例 5・2-3）", CHARFLAG_TITLE, MB_OK);
+			SetFocus (GetDlgItem (hWnd, IDC_CF_NUMNO));
+			break;
+		}
+		if (!AdminFlagGetValue (hWnd, hWnd, IDC_CF_NUMVAL, 255, "値", CHARFLAG_TITLE, ulVal)) {
 			break;
 		}
 		s_bPending = TRUE;
@@ -330,6 +370,98 @@ static void OnNotify(HWND hWnd, LPARAM lParam)
 	}
 }
 
+/* グループの並べ方（並び順、同じなら番号順） */
+static bool GroupLess(int a, int b)
+{
+	const FLAGGROUPINFO *pA = AdminFlagGroupGet (a), *pB = AdminFlagGroupGet (b);
+
+	return (pA->wSort != pB->wSort) ? (pA->wSort < pB->wSort) : (pA->wID < pB->wID);
+}
+
+/* ========================================================================= */
+/* 関数名：RenewGroupCombo													 */
+/* 内容：グループの絞り込みの選択肢を作り直す（すべて／各グループ／どこにも入らない）*/
+/*       グループが変わった時だけ作り直し、選んでいた物は選んだままにする	 */
+/* ========================================================================= */
+static void RenewGroupCombo(int nIDCombo, BYTE byKind)
+{
+	HWND hWndCombo = GetDlgItem (s_hWndDlg, nIDCombo);
+	std::vector<int> anIndex;
+	int nSelData = CFGROUP_ALL, nSel, nIdx;
+	char szTmp[MAX_FLAGGROUPNAME + 48];
+	DWORD dwSeq = AdminFlagGroupGetSeq ();
+
+	/* 作り直しは、グループが届いた時か、まだ作っていない時だけ（選択肢が 1 つも無い時は作る） */
+	if ((s_dwGroupSeqSeen == dwSeq) && ((int)SendMessage (hWndCombo, CB_GETCOUNT, 0, 0) > 0)) {
+		return;
+	}
+	nSel = (int)SendMessage (hWndCombo, CB_GETCURSEL, 0, 0);
+	if (nSel >= 0) {
+		nSelData = (int)SendMessage (hWndCombo, CB_GETITEMDATA, nSel, 0);
+	}
+	for (int i = 0; i < AdminFlagGroupGetCount (); i ++) {
+		const FLAGGROUPINFO *p = AdminFlagGroupGet (i);
+		if (p && (p->byState == FLAGGROUPSTATE_ON) && (p->byKind == byKind)) {
+			anIndex.push_back (i);
+		}
+	}
+	std::sort (anIndex.begin (), anIndex.end (), GroupLess);
+
+	SendMessage (hWndCombo, CB_RESETCONTENT, 0, 0);
+	nSel = 0;
+	nIdx = (int)SendMessage (hWndCombo, CB_ADDSTRING, 0, (LPARAM)"すべて");
+	SendMessage (hWndCombo, CB_SETITEMDATA, nIdx, CFGROUP_ALL);
+	for (size_t i = 0; i < anIndex.size (); i ++) {
+		const FLAGGROUPINFO *p = AdminFlagGroupGet (anIndex[i]);
+
+		snprintf (szTmp, sizeof (szTmp), "%s（%u〜%u）", p->szName, (unsigned)p->wFrom, (unsigned)p->wTo);
+		nIdx = (int)SendMessage (hWndCombo, CB_ADDSTRING, 0, (LPARAM)szTmp);
+		SendMessage (hWndCombo, CB_SETITEMDATA, nIdx, anIndex[i]);
+		if (anIndex[i] == nSelData) {
+			nSel = nIdx;
+		}
+	}
+	nIdx = (int)SendMessage (hWndCombo, CB_ADDSTRING, 0, (LPARAM)"どこにも入らない");
+	SendMessage (hWndCombo, CB_SETITEMDATA, nIdx, CFGROUP_NONE);
+	if (nSelData == CFGROUP_NONE) {
+		nSel = nIdx;
+	}
+	SendMessage (hWndCombo, CB_SETCURSEL, nSel, 0);
+	/* 2 つの選択肢（印・数値）を続けて作るので、更新番号は 2 つめを作ってから覚える */
+	if (byKind == FLAGKIND_NUM) {
+		s_dwGroupSeqSeen = dwSeq;
+	}
+}
+
+/* 今選んでいる絞り込みの値（CFGROUP_ALL・CFGROUP_NONE・グループの配列の番号） */
+static int GetGroupFilter(int nIDCombo)
+{
+	HWND hWndCombo = GetDlgItem (s_hWndDlg, nIDCombo);
+	int nSel = (int)SendMessage (hWndCombo, CB_GETCURSEL, 0, 0);
+
+	return (nSel >= 0) ? (int)SendMessage (hWndCombo, CB_GETITEMDATA, nSel, 0) : CFGROUP_ALL;
+}
+
+/* 特定のグループを選んでいるか */
+static BOOL IsGroupPicked(int nIDCombo)
+{
+	return (GetGroupFilter (nIDCombo) >= 0) ? TRUE : FALSE;
+}
+
+/* グループの絞り込みに合う番号か */
+static BOOL InGroupFilter(int nIDCombo, BYTE byKind, int nNo)
+{
+	int nFilter = GetGroupFilter (nIDCombo);
+
+	if (nFilter == CFGROUP_ALL) {
+		return TRUE;
+	}
+	if (nFilter == CFGROUP_NONE) {
+		return (AdminFlagGroupFind (byKind, (WORD)nNo) == NULL) ? TRUE : FALSE;
+	}
+	return ((AdminFlagGroupGet (nFilter) != NULL) && (AdminFlagGroupFind (byKind, (WORD)nNo) == AdminFlagGroupGet (nFilter))) ? TRUE : FALSE;
+}
+
 /* ========================================================================= */
 /* 関数名：RenewLists														 */
 /* 内容：印・数値の一覧を作り直す											 */
@@ -339,7 +471,7 @@ static void RenewLists(void)
 {
 	HWND hWndBits, hWndNums;
 	LV_ITEM item;
-	char szTmp[64];
+	char szTmp[64], szGroup[MAX_FLAGGROUPNAME + 16];
 	BOOL bOnly;
 	int i, nRow, nBitOn = 0, nNumOn = 0, nSelNum = -1, nSelRow;
 
@@ -347,6 +479,8 @@ static void RenewLists(void)
 		return;
 	}
 	s_dwNameSeqSeen = AdminFlagNameGetSeq ();
+	RenewGroupCombo (IDC_CF_BITGROUP, FLAGKIND_BIT);
+	RenewGroupCombo (IDC_CF_NUMGROUP, FLAGKIND_NUM);
 	bOnly = (IsDlgButtonChecked (s_hWndDlg, IDC_CF_ONLY) == BST_CHECKED) ? TRUE : FALSE;
 	hWndBits = GetDlgItem (s_hWndDlg, IDC_CF_BITS);
 	hWndNums = GetDlgItem (s_hWndDlg, IDC_CF_NUMS);
@@ -372,8 +506,11 @@ static void RenewLists(void)
 		if (bOn) {
 			nBitOn ++;
 		}
-		if ((pszName == NULL) && !bOn) {
-			continue;		/* 名前が無くて立っていない印は出さない */
+		if (!InGroupFilter (IDC_CF_BITGROUP, FLAGKIND_BIT, i)) {
+			continue;
+		}
+		if ((pszName == NULL) && !bOn && !IsGroupPicked (IDC_CF_BITGROUP)) {
+			continue;		/* 名前が無くて立っていない印は出さない（グループを選んだ時は帯の全部を出す） */
 		}
 		if (bOnly && !bOn) {
 			continue;
@@ -386,7 +523,9 @@ static void RenewLists(void)
 		snprintf (szTmp, sizeof (szTmp), "%d", i);
 		item.pszText = szTmp;
 		ListView_InsertItem (hWndBits, &item);
-		ListView_SetItemText (hWndBits, nRow, 1, (LPSTR)(pszName ? pszName : "（名前なし）"));
+		AdminFlagGroupFormat (FLAGKIND_BIT, (WORD)i, szGroup, sizeof (szGroup));
+		ListView_SetItemText (hWndBits, nRow, 1, szGroup);
+		ListView_SetItemText (hWndBits, nRow, 2, (LPSTR)(pszName ? pszName : "（名前なし）"));
 		ListView_SetCheckState (hWndBits, nRow, bOn ? 1 : 0);
 		nRow ++;
 	}
@@ -401,7 +540,10 @@ static void RenewLists(void)
 		if (nVal != 0) {
 			nNumOn ++;
 		}
-		if ((pszName == NULL) && (nVal == 0)) {
+		if (!InGroupFilter (IDC_CF_NUMGROUP, FLAGKIND_NUM, i)) {
+			continue;
+		}
+		if ((pszName == NULL) && (nVal == 0) && !IsGroupPicked (IDC_CF_NUMGROUP)) {
 			continue;
 		}
 		if (bOnly && (nVal == 0)) {
@@ -415,9 +557,11 @@ static void RenewLists(void)
 		snprintf (szTmp, sizeof (szTmp), "%d", i);
 		item.pszText = szTmp;
 		ListView_InsertItem (hWndNums, &item);
-		ListView_SetItemText (hWndNums, nRow, 1, (LPSTR)(pszName ? pszName : "（名前なし）"));
+		AdminFlagGroupFormat (FLAGKIND_NUM, (WORD)i, szGroup, sizeof (szGroup));
+		ListView_SetItemText (hWndNums, nRow, 1, szGroup);
+		ListView_SetItemText (hWndNums, nRow, 2, (LPSTR)(pszName ? pszName : "（名前なし）"));
 		snprintf (szTmp, sizeof (szTmp), "%d", nVal);
-		ListView_SetItemText (hWndNums, nRow, 2, szTmp);
+		ListView_SetItemText (hWndNums, nRow, 3, szTmp);
 		if (i == nSelNum) {
 			ListView_SetItemState (hWndNums, nRow, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
 		}

@@ -1560,4 +1560,55 @@ adminstory self got=1 result=0 prev=0
 adminstory range got=1 result=0 from=100
 adminstory edit got=1 result=1 name=L1改 state=0 id=1
 story save=1 load=1 count=1 id=7 name=保存 clear=0 prev=0 from=0,65535 to=0,65535 num=0,255 quest=0,2 count=0
+== AF. FlagGroup ==
+flaggroup add1 {"ok":true,"id":0,"added":true,...} count=1
+flaggroup add2 {"ok":true,"id":1,"added":true,...} count=2
+flaggroup overlap-mid {"ok":false,"error":"番号の帯 130〜145 が、グループ「ルシー」（id 0・100〜139）と重なっています（同じ種類で帯は重ねられません）"} count=2
+flaggroup overlap-edge {"ok":false,"error":"番号の帯 149〜160 が、グループ「リノ」（id 1・140〜149）と重なっています（同じ種類で帯は重ねられません）"} count=2
+flaggroup overlap-in {"ok":false,"error":"番号の帯 110〜110 が、グループ「ルシー」（id 0・100〜139）と重なっています（同じ種類で帯は重ねられません）"} count=2
+flaggroup num {"ok":true,"id":2,"added":true,...} count=3
+flaggroup num-range {"ok":false,"error":"wFrom〜wTo は、印なら 0〜1023、数値なら 0〜127 の範囲で、wFrom <= wTo にしてください"}
+flaggroup bit-range {"ok":false,"error":"wFrom〜wTo は、印なら 0〜1023、数値なら 0〜127 の範囲で、wFrom <= wTo にしてください"}
+flaggroup reverse {"ok":false,"error":"wFrom〜wTo は、印なら 0〜1023、数値なら 0〜127 の範囲で、wFrom <= wTo にしてください"}
+flaggroup noname {"ok":false,"error":"szName（メイン名）は空にできません（消す時は byState を 0 にします）"}
+flaggroup noband {"ok":false,"error":"足す時は wFrom・wTo（番号の帯の先頭と最後）を指定してください"}
+flaggroup badwid {"ok":false,"error":"wID は変えられません（足す時に自動で振られます）"}
+flaggroup badkey {"ok":false,"error":"知らない項目です: zzz"}
+flaggroup shrink {"ok":true,"id":0,"added":false,...} from=100 to=138
+flaggroup grow-over {"ok":false,"error":"番号の帯 100〜140 が、グループ「リノ」（id 1・140〜149）と重なっています（同じ種類で帯は重ねられません）"} to=138
+flaggroup grow-back {"ok":true,"id":0,"added":false,...} to=139
+flaggroup name103 {"ok":true,"id":0,"added":true,...}
+flaggroup name100 {"ok":true,"id":1,"added":true,...}
+flaggroup name139 {"ok":true,"id":2,"added":true,...}
+flaggroup name140 {"ok":true,"id":3,"added":true,...}
+flaggroup name50 {"ok":true,"id":4,"added":true,...}
+flaggroup name-num15 {"ok":true,"id":5,"added":true,...}
+flaggroup name-num100 {"ok":true,"id":6,"added":true,...}
+flaggroup get flag 0 {"id":0,"byState":1,"byKind":0,"wNo":103,"szName":"港町の事件","group":"ルシー","sub":4}
+flaggroup get flag 1 {"id":1,"byState":1,"byKind":0,"wNo":100,"szName":"先頭","group":"ルシー","sub":1}
+flaggroup get flag 2 {"id":2,"byState":1,"byKind":0,"wNo":139,"szName":"最後","group":"ルシー","sub":40}
+flaggroup get flag 3 {"id":3,"byState":1,"byKind":0,"wNo":140,"szName":"次の先頭","group":"リノ","sub":1}
+flaggroup get flag 4 {"id":4,"byState":1,"byKind":0,"wNo":50,"szName":"どこにも入らない","group":"","sub":0}
+flaggroup get flag 5 {"id":5,"byState":1,"byKind":1,"wNo":15,"szName":"数値15","group":"数","sub":6}
+flaggroup ro-same {"ok":true,"id":0,"added":false,...}
+flaggroup ro-diff {"ok":false,"error":"sub は計算して出す読むだけの項目です（変えられません。番号の帯はグループ flagGroup で決めます）"}
+flaggroup ro-add {"ok":false,"error":"group は計算して出す読むだけの項目です（変えられません。番号の帯はグループ flagGroup で決めます）"}
+flaggroup del {"ok":true,"id":1,"added":false,...} count=3 state=0
+flaggroup get flag 3 after del {"id":3,"byState":1,"byKind":0,"wNo":140,"szName":"次の先頭","group":"","sub":0}
+flaggroup reuse {"ok":true,"id":3,"added":true,...} count=4 id=4
+flaggroup revive {"ok":false,"error":"番号の帯 140〜149 が、グループ「リノ2」（id 3・140〜150）と重なっています（同じ種類で帯は重ねられません）"} state=0
+flaggroup get 0 {"id":0,"wID":1,"byState":1,"byKind":0,"szName":"ルシー","wFrom":100,"wTo":139,"wSort":2}
+flaggroup get 9 null
+flaggroup save=1 load=1 before=4 after=4
+flaggroup loaded 0 id=1 state=1 kind=0 name=ルシー from=100 to=139 sort=2
+flaggroup loaded 1 id=2 state=0 kind=0 name=リノ from=140 to=149 sort=0
+flaggroup loaded 2 id=3 state=1 kind=1 name=数 from=10 to=20 sort=0
+flaggroup loaded 3 id=4 state=1 kind=0 name=リノ2 from=140 to=150 sort=0
+flaggroup get flag 0 after load {"id":0,"byState":1,"byKind":0,"wNo":103,"szName":"港町の事件2","group":"ルシー","sub":4}
+adminflaggroup list got=1 sub=1 count=4 id=1 name=ルシー
+adminflaggroup add got=1 result=1 count=5 id=5
+adminflaggroup overlap got=1 result=0 count=5 msg=番号の帯 205〜215 が、グループ「管理者」（id 4・200〜209）と重なっています（同じ種類で帯は重ねられません）
+adminflaggroup edit got=1 result=1 name=管理者改 id=5
+adminflaggroup range got=1 result=0
+adminflaggroup user got=0 count=5 same=1
 == done ==

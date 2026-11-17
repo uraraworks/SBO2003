@@ -14,6 +14,7 @@
 #include "../SboCliSendCmd.h"
 #include "AdminFlagTalk.h"
 #include <vector>
+#include <string>
 #include <algorithm>
 
 /* ========================================================================= */
@@ -22,6 +23,11 @@
 static std::vector<FLAGNAMEINFO> s_aFlagName;							/* サーバーから届いた名前表（配列の番号はサーバーと同じ） */
 static std::vector<BYTE> s_abyFlagNameHave;								/* その番号が届いているか */
 static DWORD s_dwFlagNameSeq = 0;
+
+static std::vector<FLAGGROUPINFO> s_aFlagGroup;							/* サーバーから届いたフラグのグループ（配列の番号はサーバーと同じ） */
+static std::vector<BYTE> s_abyFlagGroupHave;							/* その番号が届いているか */
+static DWORD s_dwFlagGroupSeq = 0;
+static BOOL s_bFlagGroupAsked = FALSE;									/* グループを一度取り寄せたか */
 
 static std::vector<TALKINFO> s_aTalk;									/* サーバーから届いた会話セット */
 static std::vector<BYTE> s_abyTalkHave;
@@ -184,6 +190,189 @@ void AdminFlagNameLoadIfEmpty(void)
 	if (!s_bFlagNameAsked) {
 		AdminFlagNameRequest ();
 	}
+	/* 番号の横には「メイン-サブ」も出すので、グループもいっしょに取り寄せる */
+	AdminFlagGroupLoadIfEmpty ();
+}
+
+/* ========================================================================= */
+/* フラグのグループ															 */
+/* ========================================================================= */
+void AdminFlagGroupOnRecv(const void *pData)
+{
+	const CMDPARA_ADMINFLAGGROUP *pPara = (const CMDPARA_ADMINFLAGGROUP *)pData;
+	int nCount = pPara->wCount;
+
+	if (nCount > MAX_FLAGGROUP) {
+		nCount = MAX_FLAGGROUP;
+	}
+	switch (pPara->byCmdSub) {
+	case ADMINFLAGGROUP_ITEM:
+		/* 件数が変わっていたら合わせる（増えた分はまだ届いていない） */
+		if ((int)s_aFlagGroup.size () != nCount) {
+			FLAGGROUPINFO Empty;
+			ZeroMemory (&Empty, sizeof (Empty));
+			s_aFlagGroup.resize (nCount, Empty);
+			s_abyFlagGroupHave.resize (nCount, 0);
+		}
+		if ((pPara->nNo >= 0) && (pPara->nNo < nCount)) {
+			FLAGGROUPINFO *pInfo = &s_aFlagGroup[pPara->nNo];
+			*pInfo = pPara->Info;
+			pInfo->szName[sizeof (pInfo->szName) - 1] = 0;
+			s_abyFlagGroupHave[pPara->nNo] = 1;
+		}
+		s_dwFlagGroupSeq ++;
+		s_dwFlagNameSeq ++;		/* 番号の横の名前に「メイン-サブ」も出すので、名前表を見ている画面も描き直させる */
+		break;
+
+	case ADMINFLAGGROUP_RESULT:
+		SetResult (CMD_ADMINFLAGGROUP, pPara->byResult, pPara->nNo, pPara->szMsg);
+		break;
+	}
+	Notify ();
+}
+
+void AdminFlagGroupRequest(void)
+{
+	s_bFlagGroupAsked = TRUE;
+	s_aFlagGroup.clear ();
+	s_abyFlagGroupHave.clear ();
+	s_dwFlagGroupSeq ++;
+	SendCmdADMINFLAGGROUP (ADMINFLAGGROUP_LISTREQ, 0, NULL);
+}
+
+void AdminFlagGroupSend(int nNo, const FLAGGROUPINFO *pInfo)
+{
+	SendCmdADMINFLAGGROUP (ADMINFLAGGROUP_SET, nNo, pInfo);
+}
+
+int AdminFlagGroupGetCount(void)
+{
+	return (int)s_aFlagGroup.size ();
+}
+
+const FLAGGROUPINFO *AdminFlagGroupGet(int nNo)
+{
+	if ((nNo < 0) || (nNo >= (int)s_aFlagGroup.size ()) || !s_abyFlagGroupHave[nNo]) {
+		return NULL;
+	}
+	return &s_aFlagGroup[nNo];
+}
+
+DWORD AdminFlagGroupGetSeq(void)
+{
+	return s_dwFlagGroupSeq;
+}
+
+/* まだ一度も取り寄せていなければ取り寄せる */
+void AdminFlagGroupLoadIfEmpty(void)
+{
+	if (!s_bFlagGroupAsked) {
+		AdminFlagGroupRequest ();
+	}
+}
+
+/* 番号が入る有効なグループ（無ければ NULL） */
+const FLAGGROUPINFO *AdminFlagGroupFind(BYTE byKind, WORD wNo)
+{
+	for (size_t i = 0; i < s_aFlagGroup.size (); i ++) {
+		if (s_abyFlagGroupHave[i] && FlagGroupHas (&s_aFlagGroup[i], byKind, wNo)) {
+			return &s_aFlagGroup[i];
+		}
+	}
+	return NULL;
+}
+
+/* 「ルシー-3」を作る（どのグループにも入らなければ FALSE で空） */
+BOOL AdminFlagGroupFormat(BYTE byKind, WORD wNo, char *pszOut, int nSize)
+{
+	const FLAGGROUPINFO *pGrp = AdminFlagGroupFind (byKind, wNo);
+
+	if (pGrp == NULL) {
+		pszOut[0] = 0;
+		return FALSE;
+	}
+	snprintf (pszOut, nSize, "%s-%d", pGrp->szName, FlagGroupSub (pGrp, wNo));
+	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：AdminFlagParseNo													 */
+/* 内容：番号の入力を番号にする												 */
+/*       ・「103」…そのまま番号（範囲は呼ぶ側で見る）						 */
+/*       ・「3-2」…グループ番号 3 の 2 つ目（サブ 2）。グループ名でも可（ルシー-2）*/
+/*       グループは byKind と同じ種類の有効なものから探す					 */
+/* ========================================================================= */
+BOOL AdminFlagParseNo(BYTE byKind, const char *pszText, WORD &wNo, char *pszErr, int nErrSize)
+{
+	std::string str = pszText ? pszText : "";
+	size_t nBegin = str.find_first_not_of (" ");
+	size_t nEnd = str.find_last_not_of (" ");
+	size_t nPos;
+	BOOL bDigit = TRUE;
+
+	pszErr[0] = 0;
+	str = (nBegin == std::string::npos) ? std::string () : str.substr (nBegin, nEnd - nBegin + 1);
+	if (str.empty ()) {
+		snprintf (pszErr, nErrSize, "番号が空です。");
+		return FALSE;
+	}
+	for (size_t i = 0; i < str.size (); i ++) {
+		if ((str[i] < '0') || (str[i] > '9')) {
+			bDigit = FALSE;
+			break;
+		}
+	}
+	if (bDigit) {
+		unsigned long ul = (str.size () > 9) ? 0xFFFFFFFF : strtoul (str.c_str (), NULL, 10);
+		wNo = (ul > 65535) ? (WORD)65535 : (WORD)ul;
+		return TRUE;
+	}
+
+	/* グループ-サブ（最後の「-」で分ける。グループ名に「-」があってもよい） */
+	nPos = str.rfind ('-');
+	if ((nPos == std::string::npos) || (nPos == 0) || (nPos + 1 >= str.size ())) {
+		snprintf (pszErr, nErrSize, "「%s」は番号として読めません。\n数字（例 103）か「グループ番号-サブ」（例 3-2）で入れてください。", str.c_str ());
+		return FALSE;
+	}
+	std::string strGroup = str.substr (0, nPos), strSub = str.substr (nPos + 1);
+	for (size_t i = 0; i < strSub.size (); i ++) {
+		if ((strSub[i] < '0') || (strSub[i] > '9')) {
+			snprintf (pszErr, nErrSize, "「%s」は番号として読めません。\n数字（例 103）か「グループ番号-サブ」（例 3-2）で入れてください。", str.c_str ());
+			return FALSE;
+		}
+	}
+	unsigned long ulSub = (strSub.size () > 9) ? 0xFFFFFFFF : strtoul (strSub.c_str (), NULL, 10);
+	BOOL bGroupDigit = TRUE;
+	for (size_t i = 0; i < strGroup.size (); i ++) {
+		if ((strGroup[i] < '0') || (strGroup[i] > '9')) {
+			bGroupDigit = FALSE;
+			break;
+		}
+	}
+	unsigned long ulGroup = bGroupDigit ? strtoul (strGroup.c_str (), NULL, 10) : 0;
+	const FLAGGROUPINFO *pGrp = NULL;
+	for (size_t i = 0; i < s_aFlagGroup.size (); i ++) {
+		const FLAGGROUPINFO *p = &s_aFlagGroup[i];
+		if (!s_abyFlagGroupHave[i] || (p->byState != FLAGGROUPSTATE_ON) || (p->byKind != byKind)) {
+			continue;
+		}
+		if (bGroupDigit ? (p->wID == ulGroup) : (strGroup == p->szName)) {
+			pGrp = p;
+			break;
+		}
+	}
+	if (pGrp == NULL) {
+		snprintf (pszErr, nErrSize, "%sのグループ「%s」が見つかりません。\n（「その他」→「フラグのグループ」で確認してください）",
+				(byKind == FLAGKIND_BIT) ? "印" : "数値", strGroup.c_str ());
+		return FALSE;
+	}
+	if ((ulSub < 1) || (ulSub > (unsigned long)(pGrp->wTo - pGrp->wFrom + 1))) {
+		snprintf (pszErr, nErrSize, "グループ「%s」（%u〜%u）のサブは 1〜%u で入れてください。",
+				pGrp->szName, (unsigned)pGrp->wFrom, (unsigned)pGrp->wTo, (unsigned)(pGrp->wTo - pGrp->wFrom + 1));
+		return FALSE;
+	}
+	wNo = (WORD)(pGrp->wFrom + ulSub - 1);
+	return TRUE;
 }
 
 /* ========================================================================= */

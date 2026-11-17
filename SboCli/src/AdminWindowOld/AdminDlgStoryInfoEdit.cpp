@@ -9,6 +9,8 @@
  * OK でサーバーへ送り、サーバーはデータAPIと同じ確認を通して書き込む。
  * うまくいけば閉じ、だめならサーバーからの理由を出して開いたままにする。
  * 印・数値・依頼の欄は空欄が「無し」（内部では FLAG_NOBIT / FLAG_NONUM / 0）。
+ * 印・数値の番号は数字のほかに「グループ番号-サブ」（例 3-2）でも入れられ、横にメイン-サブの名前が出る。
+ * 「グループから範囲を入れる」は、選んだ印のグループの先頭〜最後を、消す印の範囲の 1 つ目に入れる。
  */
 #include "stdafx.h"
 #include "../../resource.h"
@@ -18,6 +20,8 @@
 #include "AdminDlgStoryInfoEdit.h"
 #include "AdminFlagUi.h"
 #include <string>
+#include <vector>
+#include <algorithm>
 
 /* ========================================================================= */
 /* グローバル変数定義														 */
@@ -27,6 +31,7 @@ static HWND s_hWndParent = NULL;								/* 親ウィンドウ */
 static int s_nNo = -1;											/* シナリオの配列の番号（-1 なら追加） */
 static BOOL s_bWait = FALSE;									/* 書き込みの結果を待っている */
 static STORYINFO s_Info;										/* 編集中の内容 */
+static DWORD s_dwGroupSeqSeen = 0;								/* グループの選択肢を作った時の更新番号 */
 
 #define STORYEDIT_TITLE		"思い出の本"
 
@@ -38,6 +43,7 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam);				/* メッ
 static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify);		/* メッセージハンドラ(WM_COMMAND) */
 static void OnFlagNameChanged(void);											/* フラグの名前表が届いた */
 static void UpdateNames(HWND hWnd);												/* 番号の横の名前を作り直す */
+static void RenewGroupCombo(HWND hWnd);											/* 「グループから範囲を入れる」の選択肢（印のグループ）を作り直す */
 static BOOL SaveAll(HWND hWnd);													/* 画面の内容を覚える */
 
 /* ========================================================================= */
@@ -216,6 +222,7 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 		AdminFlagSetNo (hWnd, IDC_S_QUEST0 + i, s_Info.awQuest[i], s_Info.awQuest[i] == 0);
 	}
 	AdminFlagSetNo (hWnd, IDC_S_COUNTNUM, s_Info.byCountNum, s_Info.byCountNum == FLAG_NONUM);
+	s_dwGroupSeqSeen = AdminFlagGroupGetSeq () - 1;
 	UpdateNames (hWnd);
 	return TRUE;
 }
@@ -231,6 +238,20 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 	case IDC_S_COUNTNUM:
 		if (nCodeNotify == EN_CHANGE) {
 			UpdateNames (hWnd);
+		}
+		break;
+
+	case IDC_S_FROMGROUP:	/* グループから範囲を入れる（選んだ印のグループの先頭〜最後を、消す範囲の 1 つ目へ） */
+		{
+			int nSel = (int)SendDlgItemMessage (hWnd, IDC_S_GROUPSEL, CB_GETCURSEL, 0, 0);
+			const FLAGGROUPINFO *pGrp = (nSel >= 0) ? AdminFlagGroupGet ((int)SendDlgItemMessage (hWnd, IDC_S_GROUPSEL, CB_GETITEMDATA, nSel, 0)) : NULL;
+
+			if ((pGrp == NULL) || (pGrp->byState != FLAGGROUPSTATE_ON) || (pGrp->byKind != FLAGKIND_BIT)) {
+				MessageBox (hWnd, "範囲に入れる印のグループを、横の欄から選んでください。\n（グループは「その他」→「フラグのグループ」で作れます）", STORYEDIT_TITLE, MB_OK);
+				break;
+			}
+			AdminFlagSetNo (hWnd, IDC_S_FROM0, pGrp->wFrom, FALSE);
+			AdminFlagSetNo (hWnd, IDC_S_TO0, pGrp->wTo, FALSE);
 		}
 		break;
 
@@ -271,6 +292,59 @@ static void UpdateNames(HWND hWnd)
 {
 	AdminFlagUpdateName (hWnd, IDC_S_CLEARFLAG, IDC_S_CLEARFLAGN, FLAGKIND_BIT);
 	AdminFlagUpdateName (hWnd, IDC_S_COUNTNUM, IDC_S_COUNTNUMN, FLAGKIND_NUM);
+	RenewGroupCombo (hWnd);
+}
+
+/* グループの並べ方（並び順、同じなら番号順） */
+static bool GroupLess(int a, int b)
+{
+	const FLAGGROUPINFO *pA = AdminFlagGroupGet (a), *pB = AdminFlagGroupGet (b);
+
+	return (pA->wSort != pB->wSort) ? (pA->wSort < pB->wSort) : (pA->wID < pB->wID);
+}
+
+/* ========================================================================= */
+/* 関数名：RenewGroupCombo													 */
+/* 内容：印のグループの選択肢を作り直す（グループが変わった時だけ。選んでいた物は選んだまま）*/
+/* ========================================================================= */
+static void RenewGroupCombo(HWND hWnd)
+{
+	HWND hWndCombo = GetDlgItem (hWnd, IDC_S_GROUPSEL);
+	std::vector<int> anIndex;
+	int nSelData = -1, nSel;
+	char szTmp[MAX_FLAGGROUPNAME + 48];
+
+	if (s_dwGroupSeqSeen == AdminFlagGroupGetSeq ()) {
+		return;
+	}
+	s_dwGroupSeqSeen = AdminFlagGroupGetSeq ();
+
+	nSel = (int)SendMessage (hWndCombo, CB_GETCURSEL, 0, 0);
+	if (nSel >= 0) {
+		nSelData = (int)SendMessage (hWndCombo, CB_GETITEMDATA, nSel, 0);
+	}
+	for (int i = 0; i < AdminFlagGroupGetCount (); i ++) {
+		const FLAGGROUPINFO *p = AdminFlagGroupGet (i);
+		if (p && (p->byState == FLAGGROUPSTATE_ON) && (p->byKind == FLAGKIND_BIT)) {
+			anIndex.push_back (i);
+		}
+	}
+	/* 並び順（同じなら番号順） */
+	std::sort (anIndex.begin (), anIndex.end (), GroupLess);
+	SendMessage (hWndCombo, CB_RESETCONTENT, 0, 0);
+	nSel = -1;
+	for (size_t i = 0; i < anIndex.size (); i ++) {
+		const FLAGGROUPINFO *p = AdminFlagGroupGet (anIndex[i]);
+		int nIdx;
+
+		snprintf (szTmp, sizeof (szTmp), "%s（%u〜%u）", p->szName, (unsigned)p->wFrom, (unsigned)p->wTo);
+		nIdx = (int)SendMessage (hWndCombo, CB_ADDSTRING, 0, (LPARAM)szTmp);
+		SendMessage (hWndCombo, CB_SETITEMDATA, nIdx, anIndex[i]);
+		if (anIndex[i] == nSelData) {
+			nSel = nIdx;
+		}
+	}
+	SendMessage (hWndCombo, CB_SETCURSEL, nSel, 0);
 }
 
 /* ========================================================================= */

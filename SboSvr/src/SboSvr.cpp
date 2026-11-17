@@ -310,6 +310,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			SaveQuestInfo ();
 			SaveMarket ();
 			SaveFlagNameInfo ();
+			SaveFlagGroupInfo ();
 			SaveTalkInfo ();
 			SaveStoryInfo ();
 			SendCmdSYSMSG (URARASOCK_SENDALL, "SYSTEM:サーバー情報を保存しました。");
@@ -489,6 +490,7 @@ BOOL OnCreate(HWND hWnd)
 	LoadQuestInfo ();
 	LoadMarket ();
 	LoadFlagNameInfo ();
+	LoadFlagGroupInfo ();
 	LoadTalkInfo ();
 	LoadStoryInfo ();
 
@@ -601,6 +603,7 @@ void OnDestroy(HWND hWnd)
 	SaveQuestInfo ();			/* 依頼情報の保存 */
 	SaveMarket ();				/* 取引所の出品・売上の保存 */
 	SaveFlagNameInfo ();		/* フラグの名前表の保存 */
+	SaveFlagGroupInfo ();		/* フラグのグループの保存 */
 	SaveTalkInfo ();			/* 会話データの保存 */
 	SaveStoryInfo ();			/* 思い出の本のシナリオの保存 */
 
@@ -713,6 +716,11 @@ void OnDestroy(HWND hWnd)
 		SAFE_DELETE (g_aFlagNameInfo[i]);
 	}
 	g_aFlagNameInfo.RemoveAll ();
+
+	for (i = 0; i < g_aFlagGroupInfo.GetSize (); i ++) {
+		SAFE_DELETE (g_aFlagGroupInfo[i]);
+	}
+	g_aFlagGroupInfo.RemoveAll ();
 
 	for (i = 0; i < g_aTalkInfo.GetSize (); i ++) {
 		SAFE_DELETE (g_aTalkInfo[i]);

@@ -27,6 +27,7 @@ typedef struct _ADMINFLAGTALKRESULT {
 extern void AdminFlagNameOnRecv(const void *pPara);						/* サーバーから届いた（CMDPARA_ADMINFLAGNAME） */
 extern void AdminTalkOnRecv(const void *pPara);							/* サーバーから届いた（CMDPARA_ADMINTALK） */
 extern void AdminCharFlagOnRecv(const void *pPara);						/* サーバーから届いた（CMDPARA_ADMINCHARFLAG） */
+extern void AdminFlagGroupOnRecv(const void *pPara);					/* サーバーから届いた（CMDPARA_ADMINFLAGGROUP） */
 
 /* フラグの名前表 */
 extern void AdminFlagNameRequest(void);									/* サーバーから取り直す（届くまで空） */
@@ -34,6 +35,17 @@ extern void AdminFlagNameSend(int nNo, const FLAGNAMEINFO *pInfo);		/* nNo 番�
 extern int  AdminFlagNameGetCount(void);								/* 届いている件数 */
 extern const FLAGNAMEINFO *AdminFlagNameGet(int nNo);					/* 届いている 1 件（まだ届いていなければ NULL） */
 extern DWORD AdminFlagNameGetSeq(void);									/* 更新番号 */
+
+/* フラグのグループ（印・数値の番号の帯に付けたメイン名。番号 n が帯に入れば「メイン-サブ」になる。見せ方・入力・絞り込みだけの層） */
+extern void AdminFlagGroupRequest(void);								/* サーバーから取り直す（届くまで空） */
+extern void AdminFlagGroupSend(int nNo, const FLAGGROUPINFO *pInfo);	/* nNo 番目に書き込む（-1 は足す。削除は byState=0） */
+extern int  AdminFlagGroupGetCount(void);								/* 届いている件数 */
+extern const FLAGGROUPINFO *AdminFlagGroupGet(int nNo);					/* 届いている 1 件（まだ届いていなければ NULL） */
+extern DWORD AdminFlagGroupGetSeq(void);								/* 更新番号 */
+extern void AdminFlagGroupLoadIfEmpty(void);							/* まだ一度も届いていなければ取り寄せる（画面を開く時に呼ぶ） */
+extern const FLAGGROUPINFO *AdminFlagGroupFind(BYTE byKind, WORD wNo);	/* 番号が入る有効なグループ（無ければ NULL） */
+extern BOOL AdminFlagGroupFormat(BYTE byKind, WORD wNo, char *pszOut, int nSize);	/* 「ルシー-3」を作る（どのグループにも入らなければ FALSE で空） */
+extern BOOL AdminFlagParseNo(BYTE byKind, const char *pszText, WORD &wNo, char *pszErr, int nErrSize);	/* 番号の入力（「103」か「グループ番号-サブ」例 3-2。グループ名-サブも可）を番号にする。だめなら理由を pszErr に入れて FALSE */
 
 /* 会話データ */
 extern void AdminTalkRequest(void);										/* サーバーから取り直す（届くまで空） */

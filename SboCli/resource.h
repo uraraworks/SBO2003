@@ -44,6 +44,7 @@
 #define IDD_CHARFLAG                    238
 #define IDD_STORYINFO                   239
 #define IDD_STORYINFO_EDIT              240
+#define IDD_FLAGGROUP                   241
 #define IDC_BUTTON1                     1000
 #define IDC_BUTTON2                     1001
 #define IDC_BUTTON3                     1002
@@ -400,6 +401,19 @@
 #define IDC_S_QUEST3                      1374
 #define IDC_S_COUNTNUM                    1375
 #define IDC_S_COUNTNUMN                   1376
+#define IDC_S_GROUPSEL                    1383
+#define IDC_S_FROMGROUP                   1384
+#define IDC_FG_KINDFILTER                 1385
+#define IDC_FG_FIND                       1386
+#define IDC_FG_KIND                       1387
+#define IDC_FG_NAME                       1388
+#define IDC_FG_FROM                       1389
+#define IDC_FG_TO                         1390
+#define IDC_FG_SORT                       1391
+#define IDC_FG_UPDATE                     1392
+#define IDC_FG_MSG                        1393
+#define IDC_CF_BITGROUP                   1394
+#define IDC_CF_NUMGROUP                   1395
 #define IDC_TE_NEEDITEM                   1377
 #define IDC_TE_NEEDITEMN                  1378
 #define IDC_TE_TAKEITEM                   1379
@@ -440,14 +454,15 @@
 #define IDM_ETC_FLAGNAME                40032
 #define IDM_ETC_TALK                    40033
 #define IDM_ETC_STORY                   40034
+#define IDM_ETC_FLAGGROUP               40035
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        241
-#define _APS_NEXT_COMMAND_VALUE         40035
-#define _APS_NEXT_CONTROL_VALUE         1383
+#define _APS_NEXT_RESOURCE_VALUE        242
+#define _APS_NEXT_COMMAND_VALUE         40036
+#define _APS_NEXT_CONTROL_VALUE         1403
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

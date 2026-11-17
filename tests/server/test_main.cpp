@@ -1077,6 +1077,7 @@ static void TestEnemyDoor(const std::vector<int> &aLogin);
 static void TestImportant(const std::vector<int> &aLogin);
 static void TestAdminResurrect(const std::vector<int> &aLogin);
 static void TestFlagTalk(const std::vector<int> &aLogin);
+static void TestFlagGroup(const std::vector<int> &aLogin);
 static void TestMarket(const std::vector<int> &aLogin);
 static void TestTailItemMove(const std::vector<int> &aLogin);
 static void TestViewFlag(const std::vector<int> &aLogin);
@@ -1550,6 +1551,8 @@ static void TestWorld(void)
 	TestViewFlagTalk(aLogin);
 	/* M2. 思い出の本（保存の読み直しでキャラの欄が書き換わるので、いちばん最後） */
 	TestStory(aLogin);
+	/* AF. フラグのグループ（メイン-サブ。印の保存は触らないが、名前表・グループの保存を読み直すので最後） */
+	TestFlagGroup(aLogin);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -3780,6 +3783,163 @@ static void TestStory(const std::vector<int> &aLogin)
 	for (int n = 0; n < 2; n ++) {
 		DeleteChar(apNpc[n]->dwTblID);
 	}
+}
+
+/* ------------------------------------------------------------------------- */
+/* AF. フラグのグループ（メイン-サブ）：足す・重なりの拒否・保存と読み直し・メイン-サブの計算・データAPI・管理者ウィンドウ */
+/* ------------------------------------------------------------------------- */
+extern "C" const char *SboWebDataApply(const char *, int, const char *, int, const char *);
+extern "C" const char *SboWebDataGet(const char *, int);
+extern BOOL SaveFlagGroupInfo(void);
+extern BOOL LoadFlagGroupInfo(void);
+extern BOOL SaveFlagNameInfo(void);
+
+static BOOL AdminFlagGroupSend(PCHARINFO p, BYTE bySub, int nNo, const FLAGGROUPINFO *pInfo, CMDPARA_ADMINFLAGGROUP &Res)
+{
+	PCMDPARA_ADMINFLAGGROUP pPara = new CMDPARA_ADMINFLAGGROUP;
+	std::vector<BYTE> aCap;
+	BOOL bRet;
+
+	ZeroMemory(pPara, sizeof(*pPara));
+	pPara->byCmd = CMD_ADMINFLAGGROUP;
+	pPara->byCmdSub = bySub;
+	pPara->nNo = nNo;
+	if (pInfo) pPara->Info = *pInfo;
+	SvrSendCaptureBegin();
+	TestRecv(p, pPara, sizeof(CMDPARA_ADMINFLAGGROUP));
+	bRet = SvrSendCaptureEnd(aCap);
+	delete pPara;
+	ZeroMemory(&Res, sizeof(Res));
+	if (!bRet || aCap.size() < sizeof(CMDPARA_ADMINFLAGGROUP)) return FALSE;
+	memcpy(&Res, &aCap[0], sizeof(Res));
+	return TRUE;
+}
+
+/* データAPIで書き込み、返事の ok と（だめなら）error を 1 行にする */
+static std::string FlagGroupApi(const char *pszKind, int nID, const char *pszJson)
+{
+	const char *psz = SboWebDataApply(pszKind, nID, pszJson, 1, "テスト");
+	std::string str = psz ? psz : "(null)";
+	/* record の中身は長いので、ok と error だけ見せる */
+	size_t nPos = str.find("\"record\"");
+	if (nPos != std::string::npos) str = str.substr(0, nPos) + "...}";
+	return str;
+}
+
+static void TestFlagGroup(const std::vector<int> &aLogin)
+{
+	printf("== AF. FlagGroup ==\n");
+	if (aLogin.size() < 1) {
+		return;
+	}
+	PCHARINFO pAdmin = g_aCharInfo[aLogin[0]];
+	BYTE byAdminBack = pAdmin->byAdminLV;
+	std::vector<PFLAGGROUPINFO> aGroupBack;
+	std::vector<PFLAGNAMEINFO> aNameBack;
+	for (int i = 0; i < g_aFlagGroupInfo.GetSize(); i ++) aGroupBack.push_back(g_aFlagGroupInfo[i]);
+	for (int i = 0; i < g_aFlagNameInfo.GetSize(); i ++) aNameBack.push_back(g_aFlagNameInfo[i]);
+	g_aFlagGroupInfo.RemoveAll();
+	g_aFlagNameInfo.RemoveAll();
+
+	/* 足す：番号は 1 から自動。ルシー＝印 100〜139 */
+	printf("flaggroup add1 %s count=%d\n", FlagGroupApi("flagGroup", 0, "{\"byKind\":0,\"szName\":\"ルシー\",\"wFrom\":100,\"wTo\":139,\"wSort\":2}").c_str(), g_aFlagGroupInfo.GetSize());
+	printf("flaggroup add2 %s count=%d\n", FlagGroupApi("flagGroup", 1, "{\"szName\":\"リノ\",\"wFrom\":140,\"wTo\":149}").c_str(), g_aFlagGroupInfo.GetSize());
+	/* 同じ種類で帯が重なる・端が 1 つだけ重なる・全部を含む・中に入る */
+	printf("flaggroup overlap-mid %s count=%d\n", FlagGroupApi("flagGroup", 2, "{\"szName\":\"重\",\"wFrom\":130,\"wTo\":145}").c_str(), g_aFlagGroupInfo.GetSize());
+	printf("flaggroup overlap-edge %s count=%d\n", FlagGroupApi("flagGroup", 2, "{\"szName\":\"重\",\"wFrom\":149,\"wTo\":160}").c_str(), g_aFlagGroupInfo.GetSize());
+	printf("flaggroup overlap-in %s count=%d\n", FlagGroupApi("flagGroup", 2, "{\"szName\":\"重\",\"wFrom\":110,\"wTo\":110}").c_str(), g_aFlagGroupInfo.GetSize());
+	/* 種類が違えば同じ番号の帯でもよい（数値 100 以上は無いので 10〜20）。範囲外・逆さ・名前なし・帯なしは断る */
+	printf("flaggroup num %s count=%d\n", FlagGroupApi("flagGroup", 2, "{\"byKind\":1,\"szName\":\"数\",\"wFrom\":10,\"wTo\":20}").c_str(), g_aFlagGroupInfo.GetSize());
+	printf("flaggroup num-range %s\n", FlagGroupApi("flagGroup", 3, "{\"byKind\":1,\"szName\":\"数2\",\"wFrom\":120,\"wTo\":130}").c_str());
+	printf("flaggroup bit-range %s\n", FlagGroupApi("flagGroup", 3, "{\"szName\":\"印2\",\"wFrom\":1000,\"wTo\":1024}").c_str());
+	printf("flaggroup reverse %s\n", FlagGroupApi("flagGroup", 3, "{\"szName\":\"印2\",\"wFrom\":50,\"wTo\":40}").c_str());
+	printf("flaggroup noname %s\n", FlagGroupApi("flagGroup", 3, "{\"szName\":\"\",\"wFrom\":50,\"wTo\":60}").c_str());
+	printf("flaggroup noband %s\n", FlagGroupApi("flagGroup", 3, "{\"szName\":\"印2\"}").c_str());
+	printf("flaggroup badwid %s\n", FlagGroupApi("flagGroup", 0, "{\"wID\":9}").c_str());
+	printf("flaggroup badkey %s\n", FlagGroupApi("flagGroup", 0, "{\"zzz\":1}").c_str());
+	/* 直す：自分自身の帯は重なりに数えない（縮めてまた戻せる）。隣へはみ出すのは断る */
+	printf("flaggroup shrink %s from=%u to=%u\n", FlagGroupApi("flagGroup", 0, "{\"wTo\":138}").c_str(), g_aFlagGroupInfo[0]->wFrom, g_aFlagGroupInfo[0]->wTo);
+	printf("flaggroup grow-over %s to=%u\n", FlagGroupApi("flagGroup", 0, "{\"wTo\":140}").c_str(), g_aFlagGroupInfo[0]->wTo);
+	printf("flaggroup grow-back %s to=%u\n", FlagGroupApi("flagGroup", 0, "{\"wTo\":139}").c_str(), g_aFlagGroupInfo[0]->wTo);
+
+	/* メイン-サブの計算（kind "flag" の記録に group・sub が付く。名前表の中の番号は変わらない） */
+	printf("flaggroup name103 %s\n", FlagGroupApi("flag", 0, "{\"byKind\":0,\"wNo\":103,\"szName\":\"港町の事件\"}").c_str());
+	printf("flaggroup name100 %s\n", FlagGroupApi("flag", 1, "{\"byKind\":0,\"wNo\":100,\"szName\":\"先頭\"}").c_str());
+	printf("flaggroup name139 %s\n", FlagGroupApi("flag", 2, "{\"byKind\":0,\"wNo\":139,\"szName\":\"最後\"}").c_str());
+	printf("flaggroup name140 %s\n", FlagGroupApi("flag", 3, "{\"byKind\":0,\"wNo\":140,\"szName\":\"次の先頭\"}").c_str());
+	printf("flaggroup name50 %s\n", FlagGroupApi("flag", 4, "{\"byKind\":0,\"wNo\":50,\"szName\":\"どこにも入らない\"}").c_str());
+	printf("flaggroup name-num15 %s\n", FlagGroupApi("flag", 5, "{\"byKind\":1,\"wNo\":15,\"szName\":\"数値15\"}").c_str());
+	printf("flaggroup name-num100 %s\n", FlagGroupApi("flag", 6, "{\"byKind\":1,\"wNo\":100,\"szName\":\"範囲外\"}").c_str());
+	for (int i = 0; i < 6; i ++) {
+		printf("flaggroup get flag %d %s\n", i, SboWebDataGet("flag", i));
+	}
+	/* group・sub は読むだけ（同じ値を書き戻すのはよい。違う値・追加は断る） */
+	printf("flaggroup ro-same %s\n", FlagGroupApi("flag", 0, "{\"group\":\"ルシー\",\"sub\":4,\"szName\":\"港町の事件2\"}").c_str());
+	printf("flaggroup ro-diff %s\n", FlagGroupApi("flag", 0, "{\"sub\":9}").c_str());
+	printf("flaggroup ro-add %s\n", FlagGroupApi("flag", 7, "{\"byKind\":0,\"wNo\":60,\"szName\":\"x\",\"group\":\"ルシー\"}").c_str());
+
+	/* 削除（byState=0）：グループから外れ、帯はほかのグループが使える（枠は残る） */
+	printf("flaggroup del %s count=%d state=%d\n", FlagGroupApi("flagGroup", 1, "{\"byState\":0}").c_str(), g_aFlagGroupInfo.GetSize(), g_aFlagGroupInfo[1]->byState);
+	printf("flaggroup get flag 3 after del %s\n", SboWebDataGet("flag", 3));
+	printf("flaggroup reuse %s count=%d id=%u\n", FlagGroupApi("flagGroup", g_aFlagGroupInfo.GetSize(), "{\"szName\":\"リノ2\",\"wFrom\":140,\"wTo\":150}").c_str(),
+			g_aFlagGroupInfo.GetSize(), g_aFlagGroupInfo[g_aFlagGroupInfo.GetSize() - 1]->wID);
+	/* 削除済みの枠を戻すと、重なっていれば断る */
+	printf("flaggroup revive %s state=%d\n", FlagGroupApi("flagGroup", 1, "{\"byState\":1}").c_str(), g_aFlagGroupInfo[1]->byState);
+	printf("flaggroup get 0 %s\n", SboWebDataGet("flagGroup", 0));
+	printf("flaggroup get 9 %s\n", SboWebDataGet("flagGroup", 9));
+
+	/* 保存と読み直し */
+	{
+		BOOL bSaved = SaveFlagGroupInfo();
+		int nBefore = g_aFlagGroupInfo.GetSize();
+		for (int i = 0; i < g_aFlagGroupInfo.GetSize(); i ++) delete g_aFlagGroupInfo[i];
+		g_aFlagGroupInfo.RemoveAll();
+		BOOL bLoaded = LoadFlagGroupInfo();
+		printf("flaggroup save=%d load=%d before=%d after=%d\n", (int)bSaved, (int)bLoaded, nBefore, g_aFlagGroupInfo.GetSize());
+		for (int i = 0; i < g_aFlagGroupInfo.GetSize(); i ++) {
+			const FLAGGROUPINFO *p = g_aFlagGroupInfo[i];
+			printf("flaggroup loaded %d id=%u state=%d kind=%d name=%s from=%u to=%u sort=%u\n", i, p->wID, p->byState, p->byKind, p->szName, p->wFrom, p->wTo, p->wSort);
+		}
+		printf("flaggroup get flag 0 after load %s\n", SboWebDataGet("flag", 0));
+	}
+
+	/* 管理者ウィンドウ：一覧・足す・直す・重なりを断る・管理者でない人は弾く */
+	{
+		CMDPARA_ADMINFLAGGROUP Res;
+		FLAGGROUPINFO Info;
+		ZeroMemory(&Info, sizeof(Info));
+		pAdmin->byAdminLV = ADMINLV_ADMINISTRATOR;
+		BOOL bGot = AdminFlagGroupSend(pAdmin, ADMINFLAGGROUP_LISTREQ, 0, NULL, Res);
+		printf("adminflaggroup list got=%d sub=%d count=%d id=%u name=%s\n", bGot, Res.byCmdSub, Res.wCount, Res.Info.wID, Res.Info.szName);
+		Info.byState = FLAGGROUPSTATE_ON; Info.byKind = FLAGKIND_BIT; strcpy(Info.szName, "管理者"); Info.wFrom = 200; Info.wTo = 209;
+		bGot = AdminFlagGroupSend(pAdmin, ADMINFLAGGROUP_SET, -1, &Info, Res);
+		printf("adminflaggroup add got=%d result=%d count=%d id=%u\n", bGot, Res.byResult, g_aFlagGroupInfo.GetSize(), g_aFlagGroupInfo[g_aFlagGroupInfo.GetSize() - 1]->wID);
+		Info.wFrom = 205; Info.wTo = 215; strcpy(Info.szName, "重なる");
+		bGot = AdminFlagGroupSend(pAdmin, ADMINFLAGGROUP_SET, -1, &Info, Res);
+		printf("adminflaggroup overlap got=%d result=%d count=%d msg=%s\n", bGot, Res.byResult, g_aFlagGroupInfo.GetSize(), Res.szMsg);
+		Info = *g_aFlagGroupInfo[g_aFlagGroupInfo.GetSize() - 1];
+		Info.wID = 99; strcpy(Info.szName, "管理者改");
+		int nLast = g_aFlagGroupInfo.GetSize() - 1;
+		bGot = AdminFlagGroupSend(pAdmin, ADMINFLAGGROUP_SET, nLast, &Info, Res);
+		printf("adminflaggroup edit got=%d result=%d name=%s id=%u\n", bGot, Res.byResult, g_aFlagGroupInfo[nLast]->szName, g_aFlagGroupInfo[nLast]->wID);
+		bGot = AdminFlagGroupSend(pAdmin, ADMINFLAGGROUP_SET, 99, &Info, Res);
+		printf("adminflaggroup range got=%d result=%d\n", bGot, Res.byResult);
+		pAdmin->byAdminLV = ADMINLV_USER;
+		int nCount = g_aFlagGroupInfo.GetSize();
+		bGot = AdminFlagGroupSend(pAdmin, ADMINFLAGGROUP_SET, -1, &Info, Res);
+		printf("adminflaggroup user got=%d count=%d same=%d\n", bGot, g_aFlagGroupInfo.GetSize(), (int)(nCount == g_aFlagGroupInfo.GetSize()));
+	}
+
+	/* 片付け */
+	for (int i = 0; i < g_aFlagGroupInfo.GetSize(); i ++) delete g_aFlagGroupInfo[i];
+	g_aFlagGroupInfo.RemoveAll();
+	for (size_t i = 0; i < aGroupBack.size(); i ++) g_aFlagGroupInfo.Add(aGroupBack[i]);
+	for (int i = 0; i < g_aFlagNameInfo.GetSize(); i ++) delete g_aFlagNameInfo[i];
+	g_aFlagNameInfo.RemoveAll();
+	for (size_t i = 0; i < aNameBack.size(); i ++) g_aFlagNameInfo.Add(aNameBack[i]);
+	SaveFlagGroupInfo();
+	SaveFlagNameInfo();
+	pAdmin->byAdminLV = byAdminBack;
 }
 
 static void TestQuest(const std::vector<int> &aLogin)

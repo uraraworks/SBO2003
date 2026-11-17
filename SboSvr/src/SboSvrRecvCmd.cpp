@@ -51,6 +51,7 @@ extern void SboWebSendLoginNotice	(DWORD);	/* ログインした人に、覚え�
 extern void SboDataFlagNameApplyInfo	(int, const FLAGNAMEINFO *, int &, std::string &);	/* 管理者ウィンドウからフラグの名前表を書き込む(server/web_data_svr.cpp) */
 extern void SboDataTalkApplyInfo		(int, const TALKINFO *, int &, std::string &);		/* 管理者ウィンドウから会話データを書き込む(server/web_data_svr.cpp) */
 extern void SboDataStoryApplyInfo		(int, const STORYINFO *, int &, std::string &);		/* 管理者ウィンドウから思い出の本のシナリオを書き込む(server/web_data_svr.cpp) */
+extern void SboDataFlagGroupApplyInfo	(int, const FLAGGROUPINFO *, int &, std::string &);	/* 管理者ウィンドウからフラグのグループを書き込む(server/web_data_svr.cpp) */
 PCHARINFO AddChar					(PCHARINFO, BOOL bCheck=TRUE);					/* キャラ追加 */
 void	CharNpcIdEnsure				(PCHARINFO);									/* NPC番号がまだ無ければ振る(SboSvrSaveLoadChar.cpp) */
 void	DeleteChar					(DWORD);										/* キャラ削除 */
@@ -232,6 +233,7 @@ void	RecvDataProcADMINFLAGNAME				(PBYTE, DWORD);				/* 管理者ウィンドウ
 void	RecvDataProcADMINTALK					(PBYTE, DWORD);				/* 管理者ウィンドウの会話データの編集 */
 void	RecvDataProcADMINCHARFLAG				(PBYTE, DWORD);				/* 管理者ウィンドウのキャラのフラグの取得・変更 */
 void	RecvDataProcADMINSTORY					(PBYTE, DWORD);				/* 管理者ウィンドウの思い出の本の編集 */
+void	RecvDataProcADMINFLAGGROUP				(PBYTE, DWORD);				/* 管理者ウィンドウのフラグのグループの編集 */
 void	RecvDataProcSORTITEM					(PBYTE, DWORD);				/* 道具欄・預かり所の並べ替え */
 void	RecvDataProcLEAVEITEMDISPOSE			(PBYTE, DWORD);				/* 預かり所の品を売る・捨てる */
 void	RecvDataProcBATTLEMODE					(PBYTE, DWORD);				/* 戦闘モードの切り替え通知 */
@@ -485,6 +487,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcADMINSTORY,				/* CMD_ADMINSTORY */
 	RecvDataProcTALKANSWER,				/* CMD_TALKANSWER */
 	RecvDataProcADMINVIEWALL,			/* CMD_ADMINVIEWALL */
+	RecvDataProcADMINFLAGGROUP,			/* CMD_ADMINFLAGGROUP */
 
 	NULL
 };
@@ -12419,6 +12422,77 @@ void RecvDataProcADMINSTORY(PBYTE pData, DWORD dwDataSize)
 		SAFE_DELETE (pRes);
 		if (strErr.empty ()) {
 			SendAdminStoryItem (pID, nNoOut);
+		}
+		break;
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：SendAdminFlagGroupItem											 */
+/* 内容：管理者ウィンドウへフラグのグループ 1 件を送る（nNo が範囲外なら件数だけ）*/
+/* ========================================================================= */
+static void SendAdminFlagGroupItem(DWORD pID, int nNo)
+{
+	PCMDPARA_ADMINFLAGGROUP pPara = new CMDPARA_ADMINFLAGGROUP;
+
+	ZeroMemory (pPara, sizeof (CMDPARA_ADMINFLAGGROUP));
+	pPara->byCmd	= CMD_ADMINFLAGGROUP;
+	pPara->byCmdSub	= ADMINFLAGGROUP_ITEM;
+	pPara->wCount	= (WORD)g_aFlagGroupInfo.GetSize ();
+	pPara->nNo		= nNo;
+	if ((nNo >= 0) && (nNo < g_aFlagGroupInfo.GetSize ()) && g_aFlagGroupInfo[nNo]) {
+		pPara->Info = *g_aFlagGroupInfo[nNo];
+	} else {
+		pPara->nNo = -1;
+	}
+	svrSock.SendTo (pID, (PBYTE)pPara, sizeof (CMDPARA_ADMINFLAGGROUP));
+	SAFE_DELETE (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINFLAGGROUP										 */
+/* 内容：受信データ処理(管理者ウィンドウのフラグのグループの編集)			 */
+/*       LISTREQ : グループを 1 件ずつ ITEM で送る（0 件なら件数 0 の ITEM だけ）*/
+/*       SET     : データAPI（SboWebDataApply）と同じ確認を通して書き込み、	 */
+/*                 RESULT と、うまくいけばそのグループの ITEM を返す			 */
+/* ========================================================================= */
+void RecvDataProcADMINFLAGGROUP(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINFLAGGROUP pPara = (PCMDPARA_ADMINFLAGGROUP)pData;
+	PCMDPARA_ADMINFLAGGROUP pRes;
+	DWORD pID = s_pIDRecv;
+	int i, nNoOut = -1;
+	std::string strErr;
+
+	if (s_dwRecvSize < sizeof (CMDPARA_ADMINFLAGGROUP)) {
+		return;
+	}
+
+	switch (pPara->byCmdSub) {
+	case ADMINFLAGGROUP_LISTREQ:	/* 一覧の問い合わせ */
+		if (g_aFlagGroupInfo.GetSize () == 0) {
+			SendAdminFlagGroupItem (pID, -1);
+			break;
+		}
+		for (i = 0; i < g_aFlagGroupInfo.GetSize (); i ++) {
+			SendAdminFlagGroupItem (pID, i);
+		}
+		break;
+
+	case ADMINFLAGGROUP_SET:		/* 書き込み */
+		SboDataFlagGroupApplyInfo (pPara->nNo, &pPara->Info, nNoOut, strErr);
+		pRes = new CMDPARA_ADMINFLAGGROUP;
+		ZeroMemory (pRes, sizeof (CMDPARA_ADMINFLAGGROUP));
+		pRes->byCmd		= CMD_ADMINFLAGGROUP;
+		pRes->byCmdSub	= ADMINFLAGGROUP_RESULT;
+		pRes->byResult	= strErr.empty () ? 1 : 0;
+		pRes->wCount	= (WORD)g_aFlagGroupInfo.GetSize ();
+		pRes->nNo		= strErr.empty () ? nNoOut : pPara->nNo;
+		SboTextCopy (pRes->szMsg, sizeof (pRes->szMsg), strErr.c_str ());
+		svrSock.SendTo (pID, (PBYTE)pRes, sizeof (CMDPARA_ADMINFLAGGROUP));
+		SAFE_DELETE (pRes);
+		if (strErr.empty ()) {
+			SendAdminFlagGroupItem (pID, nNoOut);
 		}
 		break;
 	}

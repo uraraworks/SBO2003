@@ -153,6 +153,7 @@ void	RecvDataProcADMINQUEST				(PBYTE, DWORD);			/* 受信データ処理(管理
 void	RecvDataProcADMINFLAGNAME			(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのフラグの名前表の編集) */
 void	RecvDataProcADMINTALK				(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウの会話データの編集) */
 void	RecvDataProcADMINSTORY				(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウの思い出の本の編集) */
+void	RecvDataProcADMINFLAGGROUP			(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのフラグのグループの編集) */
 void	RecvDataProcADMINCHARFLAG			(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのキャラのフラグ) */
 void	RecvDataProcTALKMSG					(PBYTE, DWORD);			/* 受信データ処理(会話データで選ばれた台詞) */
 void	RecvDataProcHASTE					(PBYTE, DWORD);			/* 受信データ処理(加速の状態) */
@@ -431,6 +432,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcADMINSTORY,				/* CMD_ADMINSTORY */
 	NULL,								/* CMD_TALKANSWER(クライアント→サーバーのみ) */
 	NULL,								/* CMD_ADMINVIEWALL(クライアント→サーバーのみ) */
+	RecvDataProcADMINFLAGGROUP,			/* CMD_ADMINFLAGGROUP */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -3874,6 +3876,22 @@ void RecvDataProcADMINSTORY(PBYTE pData, DWORD dwDataSize)
 	}
 	pPara->szMsg[sizeof (pPara->szMsg) - 1] = 0;
 	AdminStoryOnRecv (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINFLAGGROUP										 */
+/* 内容：受信データ処理(管理者ウィンドウのフラグのグループの編集)			 */
+/*       一覧の 1 件・書き込みの結果が届く									 */
+/* ========================================================================= */
+void RecvDataProcADMINFLAGGROUP(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINFLAGGROUP pPara = (PCMDPARA_ADMINFLAGGROUP)pData;
+
+	if (dwDataSize < sizeof (CMDPARA_ADMINFLAGGROUP)) {
+		return;
+	}
+	pPara->szMsg[sizeof (pPara->szMsg) - 1] = 0;
+	AdminFlagGroupOnRecv (pPara);
 }
 
 /* ========================================================================= */
