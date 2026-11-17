@@ -1076,6 +1076,9 @@ townwarp cast lv=15 sel=4 floor dest=1:0 -> friend map=0 x=26 y=53
 townwarp cast lv=10 sel=3 floor dest=1:0 -> friend map=0 x=26 y=53
 townwarp cast lv=1 sel=1 floor dest=1:0 -> friend map=0 x=26 y=53
 townwarp cast lv=5 sel=1 floor dest=1:51 -> friend map=51 x=35 y=8
+townwarp owner=1 lv=15 sel=1 floor gone=0
+townwarp cast lv=15 sel=1 floor dest=1:51 -> friend map=51 x=35 y=8
+townwarp owner=2 lv=15 sel=1 floor gone=1
 == J. Ship bed ==
 ship map=40 dest=(40,9) parts=473
 shipbed range=0 friend=0 beds=1 bad=0 onfriend=0 list=(40,9)

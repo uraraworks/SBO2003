@@ -88,8 +88,15 @@ BOOL CCharProcUSEMAGIC::Proc(DWORD dwTime)
 		PCHARINFO pCharParent;
 
 		pCharParent = g_aCharInfo[m_pChar->dwParentTblID];
+		if (m_pChar->byTownWarpDest) {
+			/* 町転送の床は、置いた人が先に入って町へ移っても残す（人を送るつもりで
+			   うっかり先に乗っても、残りの時間は使える）。行き先は床が覚えている。
+			   置いた人がログアウトした時（番号が別の人に変わった時）だけ消す */
+			if ((pCharParent->pID == 0) || (pCharParent->pID != m_pChar->dwTownWarpOwnerPID)) {
+				m_pChar->dwTimeDelete = 1;
+			}
 		/* 発動者と別マップ・別の空間？ */
-		if ((m_pChar->dwMapID != pCharParent->dwMapID) || !IsSameSpace (m_pChar, pCharParent)) {
+		} else if ((m_pChar->dwMapID != pCharParent->dwMapID) || !IsSameSpace (m_pChar, pCharParent)) {
 			/* 消滅 */
 			m_pChar->dwTimeDelete = 1;
 		}

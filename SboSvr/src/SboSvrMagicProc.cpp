@@ -147,8 +147,10 @@ static BOOL MagicProcSub(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget, BOOL bIt
 	pChar = g_aCharInfo[dwTblID];
 	pInfo = g_aMagicInfo[byID];
 
-	/* 別の空間にいる相手には使えない */
-	if ((dwTblIDTarget < (DWORD)g_aCharInfo.GetSize ()) && !IsSameSpace (pChar, g_aCharInfo[dwTblIDTarget])) {
+	/* 別の空間にいる相手には使えない
+	   (町転送の床は置いた人＝相手が先に町へ移っていても、床の上の人を送れるようにする) */
+	if ((dwTblIDTarget < (DWORD)g_aCharInfo.GetSize ()) && !IsSameSpace (pChar, g_aCharInfo[dwTblIDTarget]) &&
+		!pChar->byTownWarpDest) {
 		goto Exit;
 	}
 
@@ -1757,6 +1759,7 @@ BOOL MagicProcUse_PUT(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTarget)
 		if (IsTownWarpMagicInfo (pInfo) && (pChar->byNpcType == NPCTYPE_INIT)) {
 			TownWarpGetDest (pChar, pChar->byTownWarpSel, &pCharNew->dwStartMapID, &pCharNew->dwStartX, &pCharNew->dwStartY);
 			pCharNew->byTownWarpDest = 1;
+			pCharNew->dwTownWarpOwnerPID = pChar->pID;
 		}
 		/* 移動確率が設定されている？ */
 		if (pInfo->wData4) {
@@ -1810,6 +1813,10 @@ BOOL MagicProcUse_RETURN(PMAGICINFO pInfo, PCHARINFO pChar, PCHARINFO pCharTarge
 	}
 
 	pMap = g_aMapInfo[pChar->dwMapID];
+	/* 床から発動した時は床のあるマップで見る（置いた人は先に別のマップへ行っていることがある） */
+	if (s_pCharMagicSrc && (s_pCharMagicSrc->dwMapID < (DWORD)g_aMapInfo.GetSize ())) {
+		pMap = g_aMapInfo[s_pCharMagicSrc->dwMapID];
+	}
 
 	/* 禁止されているマップ？ */
 	if (pMap->byFlg & MAPFLG_MOVE) {
