@@ -1089,6 +1089,8 @@ static void TestAdminChest(const std::vector<int> &aLogin);
 static void TestAdminSwap(const std::vector<int> &aLogin);
 static void TestMapSwapSave(const std::vector<int> &aLogin);
 static void TestJobMagicKey(const std::vector<int> &aLogin);
+static void TestTailRelogin(const std::vector<int> &aLogin);
+extern void RecvCmdOnDecPlayer(int);
 extern void BattleProcCheck(PCHARINFO);
 
 static void TestTownWarp(const std::vector<int> &aLogin)
@@ -1572,6 +1574,8 @@ static void TestWorld(void)
 	TestStory(aLogin);
 	/* AF. フラグのグループ（メイン-サブ。印の保存は触らないが、名前表・グループの保存を読み直すので最後） */
 	TestFlagGroup(aLogin);
+	/* AJ. 戦闘モードの覚えが残ったまま入り直しても「ついていく」が届く */
+	TestTailRelogin(aLogin);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -10130,4 +10134,108 @@ int main(int argc, char **argv)
 	printf("== done ==\n");
 	fflush(stdout);
 	_exit(0);
+}
+
+
+/* ------------------------------------------------------------------------- */
+/* AJ. 戦闘モードの覚え(s_mapBattleMode)が切断で消え、残っていても			 */
+/*     「ついていく」に返事が来る・範囲外の相手番号は NG2					 */
+/* ------------------------------------------------------------------------- */
+static void TestTailRelogin(const std::vector<int> &aLogin)
+{
+	printf("== AJ. Tail relogin ==\n");
+	if (aLogin.size() < 2) {
+		return;
+	}
+	PMAPINFO pPort = g_aMapInfo[GetMapNo(14)];
+	int nX0 = -1, nY0 = -1;
+	for (int y = 2; y + 2 < pPort->nCY && nX0 < 0; y ++) {
+		for (int x = 1; x + 1 < pPort->nCX && nX0 < 0; x ++) {
+			bool bOpen = true;
+			for (int dy = -1; dy <= 2 && bOpen; dy ++) {
+				for (int dx = -1; dx <= 1 && bOpen; dx ++) {
+					if (!CheckCharBlock(pPort->dwID, x + dx, y + dy) || CheckEventBlock(pPort->dwID, x + dx, y + dy)) bOpen = false;
+				}
+			}
+			if (bOpen) { nX0 = x; nY0 = y; }
+		}
+	}
+	printf("tailrelogin area found=%d\n", nX0 >= 0 ? 1 : 0);
+	if (nX0 < 0) {
+		return;
+	}
+	int nUp = 0;
+	for (int d = 0; d < 4; d ++) if (anPosAddTblX[d] == 0 && anPosAddTblY[d] == -1) nUp = d;
+	PCHARINFO pA = g_aCharInfo[aLogin[0]], pB = g_aCharInfo[aLogin[1]];
+	DWORD adwBack[2][6];
+	PCHARINFO apChar[2] = { pA, pB };
+	for (int i = 0; i < 2; i ++) {
+		PCHARINFO p = apChar[i];
+		adwBack[i][0] = p->dwMapID; adwBack[i][1] = p->dwX; adwBack[i][2] = p->dwY;
+		adwBack[i][3] = p->dwTailTblID; adwBack[i][4] = p->dwTailBackTblID; adwBack[i][5] = p->byDirection;
+	}
+	/* B が奥、A がその下(B の方を向く)。どちらも列に入っていない通常の状態 */
+	auto place = [&]() {
+		for (int i = 0; i < 2; i ++) {
+			PCHARINFO p = apChar[i];
+			DeleteTblNoPC((int)p->dwTblID);
+			p->dwMapID = pPort->dwID;
+			p->dwX = p->dwXBack = nX0;
+			p->dwY = p->dwYBack = nY0 + (i == 0 ? 1 : 0);
+			p->byCharState = CHARSTATE_MOVE;
+			if (p->wHP == 0) p->wHP = 10;
+			p->dwTailTblID = p->dwTailBackTblID = (DWORD)-1;
+			p->dwTargetTblID = p->dwTargetTblID2 = p->dwTargetTblID3 = (DWORD)-1;
+			AddTblNoPC((int)p->dwTblID);
+		}
+		pA->byDirection = (BYTE)nUp;
+	};
+	/* 最後に届いた CHAR_TAIL の種類（届かなければ -1） */
+	auto sendZ = [&](DWORD dwTarget) -> int {
+		MockTrace(1);
+		CCHAR_TAIL Z;
+		Z.Make(pA->dwTblID, dwTarget, CHAR_TAIL_REQ);
+		TestRecv(pA, Z.Get(), Z.GetSize());
+		MockTrace(0);
+		char *psz = MockLastBody(1000, CMD_MAIN_CHAR);
+		unsigned int u = 0xFFFFFFFF, uSub = 0;
+		if (strlen(psz) >= 28) { sscanf(psz + 2, "%2x", &uSub); if (uSub == CMDCHAR_TAIL) sscanf(psz + 20, "%2x", &u); }
+		free(psz);
+		return (int)u;
+	};
+
+	/* A: 戦闘モードにして切断(OnDecPlayer 相当)→同じ pID で入り直し→ B を向いて Z */
+	place();
+	TailBattleSend(pA, 1);
+	printf("tailrelogin battle before=%d\n", IsCharBattleMode(pA) ? 1 : 0);
+	RecvCmdOnDecPlayer((int)pA->dwTblID);
+	printf("tailrelogin battle after logout=%d\n", IsCharBattleMode(pA) ? 1 : 0);
+	int nRes = sendZ(pB->dwTblID);
+	printf("tailrelogin relogin on=%d front=%d\n", nRes == CHAR_TAIL_ON ? 1 : 0, pA->dwTailTblID == pB->dwTblID ? 1 : 0);
+
+	/* サーバーが戦闘モードと思っている時の Z は何もしないが、クライアントを動けるように戻す返事(CHASEEND)は来る */
+	place();
+	TailBattleSend(pA, 1);
+	nRes = sendZ(pB->dwTblID);
+	printf("tailrelogin stale chaseend=%d front=%d battle=%d\n", nRes == CHAR_TAIL_CHASEEND ? 1 : 0, (int)pA->dwTailTblID, IsCharBattleMode(pA) ? 1 : 0);
+
+	/* 範囲外の相手番号 → NG2（通常モードに戻してから） */
+	TailBattleSend(pA, 0);
+	MercenarySetBattleMode(pA, FALSE);
+	place();
+	nRes = sendZ((DWORD)g_aCharInfo.GetSize() + 5);
+	printf("tailrelogin range ng2=%d front=%d\n", nRes == CHAR_TAIL_NG2 ? 1 : 0, (int)pA->dwTailTblID);
+
+	for (int i = 0; i < 2; i ++) {
+		PCHARINFO p = apChar[i];
+		DeleteTblNoPC((int)p->dwTblID);
+		p->dwMapID = adwBack[i][0];
+		p->dwX = p->dwXBack = adwBack[i][1];
+		p->dwY = p->dwYBack = adwBack[i][2];
+		p->dwTailTblID = adwBack[i][3];
+		p->dwTailBackTblID = adwBack[i][4];
+		p->byDirection = (BYTE)adwBack[i][5];
+		AddTblNoPC((int)p->dwTblID);
+	}
+	MercenarySetBattleMode(pA, FALSE);
 }

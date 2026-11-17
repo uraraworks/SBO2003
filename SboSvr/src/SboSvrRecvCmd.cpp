@@ -1048,6 +1048,12 @@ void RecvCmdOnDecPlayer(int nNo)
 	s_mapMsgCode.erase ((DWORD)nNo);
 	s_mapPartyInvite.erase ((DWORD)nNo);
 	TalkPendClear ((DWORD)nNo);		/* 「はい・いいえ」の保留中の問い */
+	/* 戦闘で列を離れた時の戻り先と、戦闘モードの覚えを消す。
+	   プレイヤーのキャラは切断しても消えない(DeleteChar を通らない)うえ、接続番号(pID)は
+	   空いた枠から使い回すので、残っていると入り直した時に「戦闘モード中」と見なされ、
+	   Z の「ついていく」を黙って無視→クライアントだけ「ついていく」扱いで動けなくなっていた */
+	TailReturnForget ((DWORD)nNo);
+	MercenaryClearBattleMode ((DWORD)nNo);
 }
 
 
@@ -11791,8 +11797,13 @@ void RecvDataProcMAIN_CHAR_TAIL(PBYTE pData, DWORD dwDataSize)
 		goto Exit;
 	}
 	pChar = g_aCharInfo[Packet.m_dwTblID];
-	/* 戦闘モード中のZは普通のキャンセル扱い。「ついていく」の開始・解除は通常モードの時だけ */
+	/* 戦闘モード中のZは普通のキャンセル扱い。「ついていく」の開始・解除は通常モードの時だけ。
+	   ただし黙って無視すると、送る時に「とりあえずついていっている」ことにしたクライアントが
+	   動けないままになる（サーバーにだけ古い戦闘モードの覚えが残っていた時など）ので、
+	   「ついていっていない」ことに戻す返事だけ送る（メッセージは出ない） */
 	if (IsCharBattleMode (pChar)) {
+		Packet.Make (pChar->dwTblID, (DWORD)-1, CHAR_TAIL_CHASEEND);
+		svrSock.SendTo (pChar->pID, Packet.Get (), Packet.GetSize ());
 		goto Exit;
 	}
 	/* 列に戻る途中(追いかけ中)のZは、追いかけをやめて解除 */
@@ -11816,6 +11827,9 @@ void RecvDataProcMAIN_CHAR_TAIL(PBYTE pData, DWORD dwDataSize)
 
 	if (Packet.m_dwTailTblID != -1) {
 		if (Packet.m_dwTailTblID >= (DWORD)g_aCharInfo.GetSize ()) {
+			/* 相手がいない。クライアントは送る時に「ついていっている」ことにしているので戻す */
+			Packet.Make (pChar->dwTblID, -1, CHAR_TAIL_NG2);
+			svrSock.SendTo (pChar->pID, Packet.Get (), Packet.GetSize ());
 			goto Exit;
 		}
 		pCharTarget = g_aCharInfo[Packet.m_dwTailTblID];

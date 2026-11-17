@@ -3464,6 +3464,8 @@ void RecvDataProcLOGINRES(PBYTE pData, DWORD dwDataSize)
 			PWNDINFO pWnd = (PWNDINFO)g_WndInfo[nNo];
 			EraseWindow (pWnd);
 			g_dwMsgIDLogin = 0;
+			/* 入り直した時は通常モードから（サーバーもログアウトで戦闘モードの覚えを消している） */
+			g_bBattleMode = FALSE;
 
 			pWnd = MakeWindowLOGINMENU ();
 			g_WndInfo.Add (pWnd);

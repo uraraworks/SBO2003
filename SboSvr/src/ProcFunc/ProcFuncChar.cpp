@@ -29,9 +29,9 @@ void TailOn(PCHARINFO pChar, PCHARINFO pCharTarget)
 	CCHAR_TAIL Packet;
 
 	pCharTmp = pCharTarget;
-	/* 先頭が自分かもしれないのでチェック */
-	while (pCharTmp->dwTailTblID != -1) {
-		if (pCharTmp->dwTailTblID == pChar->dwTblID) {
+	/* 先頭が自分かもしれないのでチェック（列が輪になっていても止まるように回数を区切る） */
+	for (int nLoop = 0; (pCharTmp->dwTailTblID != -1) && (pCharTmp->dwTailTblID < (DWORD)g_aCharInfo.GetSize ()); nLoop ++) {
+		if ((pCharTmp->dwTailTblID == pChar->dwTblID) || (nLoop >= 100)) {
 			Packet.Make (pChar->dwTblID, pCharTarget->dwTblID, CHAR_TAIL_NG2);
 			svrSock.SendTo (pChar->pID, Packet.Get (), Packet.GetSize ());
 			return;
@@ -69,7 +69,10 @@ void TailOff(PCHARINFO pChar)
 		svrSock.SendTo (pChar->pID, Packet.Get (), Packet.GetSize ());
 
 		pChar->dwTailTblID = -1;
-		pCharTarget->dwTailBackTblID = -1;
+		/* 前の人の「後ろ」が自分の時だけ空ける（別の人を指していたら、その人が置いていかれる） */
+		if (pCharTarget->dwTailBackTblID == pChar->dwTblID) {
+			pCharTarget->dwTailBackTblID = -1;
+		}
 
 	/* 誰かがついてきている？ */
 	} else if (pChar->dwTailBackTblID != -1) {
