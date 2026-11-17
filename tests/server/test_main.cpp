@@ -1090,6 +1090,7 @@ static void TestAdminSwap(const std::vector<int> &aLogin);
 static void TestMapSwapSave(const std::vector<int> &aLogin);
 static void TestJobMagicKey(const std::vector<int> &aLogin);
 static void TestTailRelogin(const std::vector<int> &aLogin);
+static void TestTailOverlap(const std::vector<int> &aLogin);
 extern void RecvCmdOnDecPlayer(int);
 extern void BattleProcCheck(PCHARINFO);
 
@@ -1576,6 +1577,8 @@ static void TestWorld(void)
 	TestFlagGroup(aLogin);
 	/* AJ. 戦闘モードの覚えが残ったまま入り直しても「ついていく」が届く */
 	TestTailRelogin(aLogin);
+	/* AK. 先頭と同じマスに重なって戦闘モードを解除しても、ワープせず列につながる */
+	TestTailOverlap(aLogin);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -10238,4 +10241,91 @@ static void TestTailRelogin(const std::vector<int> &aLogin)
 		AddTblNoPC((int)p->dwTblID);
 	}
 	MercenarySetBattleMode(pA, FALSE);
+}
+
+
+/* ------------------------------------------------------------------------- */
+/* AK. 先頭(P)が戦闘モードON→列を離れた2人目(Q)と同じマスに重なって解除		 */
+/*     → Q はワープせずその場で列につながる(RETURN が届き FADEINOUT は無い)	 */
+/* ------------------------------------------------------------------------- */
+static void TestTailOverlap(const std::vector<int> &aLogin)
+{
+	printf("== AK. Tail overlap ==\n");
+	if (aLogin.size() < 2) {
+		return;
+	}
+	PMAPINFO pPort = g_aMapInfo[GetMapNo(14)];
+	int nX0 = -1, nY0 = -1;
+	for (int y = 2; y + 2 < pPort->nCY && nX0 < 0; y ++) {
+		for (int x = 1; x + 1 < pPort->nCX && nX0 < 0; x ++) {
+			bool bOpen = true;
+			for (int dy = -1; dy <= 2 && bOpen; dy ++) {
+				for (int dx = -1; dx <= 1 && bOpen; dx ++) {
+					if (!CheckCharBlock(pPort->dwID, x + dx, y + dy) || CheckEventBlock(pPort->dwID, x + dx, y + dy)) bOpen = false;
+				}
+			}
+			if (bOpen) { nX0 = x; nY0 = y; }
+		}
+	}
+	printf("tailoverlap area found=%d\n", nX0 >= 0 ? 1 : 0);
+	if (nX0 < 0) {
+		return;
+	}
+	PCHARINFO pP = g_aCharInfo[aLogin[0]], pQ = g_aCharInfo[aLogin[1]];
+	PCHARINFO apChar[2] = { pP, pQ };
+	DWORD adwBack[2][5];
+	for (int i = 0; i < 2; i ++) {
+		PCHARINFO p = apChar[i];
+		adwBack[i][0] = p->dwMapID; adwBack[i][1] = p->dwX; adwBack[i][2] = p->dwY;
+		adwBack[i][3] = p->dwTailTblID; adwBack[i][4] = p->dwTailBackTblID;
+		DeleteTblNoPC((int)p->dwTblID);
+		p->dwMapID = pPort->dwID;
+		p->dwX = p->dwXBack = nX0;
+		p->dwY = p->dwYBack = nY0 + i;
+		p->byCharState = CHARSTATE_MOVE;
+		if (p->wHP == 0) p->wHP = 10;
+		p->dwTargetTblID = p->dwTargetTblID2 = p->dwTargetTblID3 = (DWORD)-1;
+		AddTblNoPC((int)p->dwTblID);
+	}
+	pP->dwTailTblID = (DWORD)-1;
+	pP->dwTailBackTblID = pQ->dwTblID;
+	pQ->dwTailTblID = pP->dwTblID;
+	pQ->dwTailBackTblID = (DWORD)-1;
+	MercenarySetBattleMode(pP, FALSE);
+	MercenarySetBattleMode(pQ, FALSE);
+
+	/* P がON：Q も列を離れる。P が Q と同じマスへ重なる */
+	TailBattleSend(pP, 1);
+	printf("tailoverlap on Q(front=%d)\n", (int)pQ->dwTailTblID);
+	DeleteTblNoPC((int)pP->dwTblID);
+	pP->dwX = pP->dwXBack = pQ->dwX;
+	pP->dwY = pP->dwYBack = pQ->dwY;
+	AddTblNoPC((int)pP->dwTblID);
+	DWORD dwQX = pQ->dwX, dwQY = pQ->dwY;
+
+	MockTrace(1);
+	TailBattleSend(pP, 0);
+	MockTrace(0);
+	char *pszFade = MockCmdData(1001, CMD_FADEINOUT);
+	char *psz = MockLastBody(1001, CMD_MAIN_CHAR);
+	unsigned int u = 0xFFFFFFFF, uSub = 0;
+	if (strlen(psz) >= 28) { sscanf(psz + 2, "%2x", &uSub); if (uSub == CMDCHAR_TAIL) sscanf(psz + 20, "%2x", &u); }
+	printf("tailoverlap off Q(front=P:%d) P(back=Q:%d) Q(stay=%d) return=%d fade=[%s]\n",
+		pQ->dwTailTblID == pP->dwTblID ? 1 : 0, pP->dwTailBackTblID == pQ->dwTblID ? 1 : 0,
+		(pQ->dwX == dwQX && pQ->dwY == dwQY) ? 1 : 0, u == CHAR_TAIL_RETURN ? 1 : 0, pszFade);
+	free(pszFade);
+	free(psz);
+
+	for (int i = 0; i < 2; i ++) {
+		PCHARINFO p = apChar[i];
+		DeleteTblNoPC((int)p->dwTblID);
+		p->dwMapID = adwBack[i][0];
+		p->dwX = p->dwXBack = adwBack[i][1];
+		p->dwY = p->dwYBack = adwBack[i][2];
+		p->dwTailTblID = adwBack[i][3];
+		p->dwTailBackTblID = adwBack[i][4];
+		AddTblNoPC((int)p->dwTblID);
+	}
+	MercenarySetBattleMode(pP, FALSE);
+	MercenarySetBattleMode(pQ, FALSE);
 }

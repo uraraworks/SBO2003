@@ -6392,8 +6392,9 @@ void TailChaseProc(PCHARINFO pChar)
 	nDX		= (int)pTarget->dwX - (int)pChar->dwX;
 	nDY		= (int)pTarget->dwY - (int)pChar->dwY;
 	nDist	= abs (nDX) + abs (nDY);
-	/* となりに着いた */
-	if (nDist == 1) {
+	/* となりに着いた（同じマスに重なっている時も、そのままつなぐ。
+	   重なったまま道さがしをすると行き先が無く、ワープで空いた所へ飛ばされていた） */
+	if (nDist <= 1) {
 		if (!bPending) {
 			TailChaseLink (pChar, pTarget);
 			return;
@@ -6548,8 +6549,8 @@ static void TailReturnDo(PCHARINFO pChar, const TAILRETURN &Info)
 	nDX		= (int)pTarget->dwX - (int)pChar->dwX;
 	nDY		= (int)pTarget->dwY - (int)pChar->dwY;
 	nDist	= abs (nDX) + abs (nDY);
-	/* 最後尾のとなりにいれば、すぐ列につなぐ */
-	if ((nDist == 1) && !bPending) {
+	/* 最後尾のとなり（か同じマス）にいれば、すぐ列につなぐ */
+	if ((nDist <= 1) && !bPending) {
 		TailChaseLink (pChar, pTarget);
 		return;
 	}
@@ -6563,8 +6564,8 @@ static void TailReturnDo(PCHARINFO pChar, const TAILRETURN &Info)
 	s_mapTailChase[pChar->dwTblID] = Chase;
 	TAILCHASE &Ref = s_mapTailChase[pChar->dwTblID];
 
-	/* 前の人のとなりで、その人がつながるのを待つ */
-	if (nDist == 1) {
+	/* 前の人のとなり（か同じマス）で、その人がつながるのを待つ */
+	if (nDist <= 1) {
 		TailChaseSendTarget (pChar, Ref, pTarget);
 		return;
 	}
