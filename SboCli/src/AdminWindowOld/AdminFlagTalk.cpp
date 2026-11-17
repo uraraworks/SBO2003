@@ -282,6 +282,20 @@ const FLAGGROUPINFO *AdminFlagGroupFind(BYTE byKind, WORD wNo)
 	return NULL;
 }
 
+/* 帯を「100〜139, 300〜319」の形にする（使っている帯だけ。順番はサブの数え順） */
+void AdminFlagGroupBandsText(const FLAGGROUPINFO *pGrp, char *pszOut, int nSize)
+{
+	int nLen = 0;
+
+	pszOut[0] = 0;
+	for (int i = 0; i < MAX_FLAGGROUPBAND; i ++) {
+		if (!FlagGroupBandUsed (pGrp, i) || (nLen >= nSize - 1)) {
+			continue;
+		}
+		nLen += snprintf (pszOut + nLen, nSize - nLen, "%s%u〜%u", (nLen > 0) ? ", " : "", (unsigned)pGrp->awFrom[i], (unsigned)pGrp->awTo[i]);
+	}
+}
+
 /* 「ルシー-3」を作る（どのグループにも入らなければ FALSE で空） */
 BOOL AdminFlagGroupFormat(BYTE byKind, WORD wNo, char *pszOut, int nSize)
 {
@@ -366,12 +380,15 @@ BOOL AdminFlagParseNo(BYTE byKind, const char *pszText, WORD &wNo, char *pszErr,
 				(byKind == FLAGKIND_BIT) ? "印" : "数値", strGroup.c_str ());
 		return FALSE;
 	}
-	if ((ulSub < 1) || (ulSub > (unsigned long)(pGrp->wTo - pGrp->wFrom + 1))) {
-		snprintf (pszErr, nErrSize, "グループ「%s」（%u〜%u）のサブは 1〜%u で入れてください。",
-				pGrp->szName, (unsigned)pGrp->wFrom, (unsigned)pGrp->wTo, (unsigned)(pGrp->wTo - pGrp->wFrom + 1));
+	/* サブは帯の順に続けて数える（帯が複数ならサブの範囲は全部の帯の合計） */
+	if ((ulSub > 65535) || !FlagGroupNoOfSub (pGrp, (int)ulSub, wNo)) {
+		char szBands[160];
+
+		AdminFlagGroupBandsText (pGrp, szBands, sizeof (szBands));
+		snprintf (pszErr, nErrSize, "グループ「%s」（%s）のサブは 1〜%d で入れてください。",
+				pGrp->szName, szBands, FlagGroupSubCount (pGrp));
 		return FALSE;
 	}
-	wNo = (WORD)(pGrp->wFrom + ulSub - 1);
 	return TRUE;
 }
 

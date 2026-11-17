@@ -3858,9 +3858,9 @@ static void TestFlagGroup(const std::vector<int> &aLogin)
 	printf("flaggroup badwid %s\n", FlagGroupApi("flagGroup", 0, "{\"wID\":9}").c_str());
 	printf("flaggroup badkey %s\n", FlagGroupApi("flagGroup", 0, "{\"zzz\":1}").c_str());
 	/* 直す：自分自身の帯は重なりに数えない（縮めてまた戻せる）。隣へはみ出すのは断る */
-	printf("flaggroup shrink %s from=%u to=%u\n", FlagGroupApi("flagGroup", 0, "{\"wTo\":138}").c_str(), g_aFlagGroupInfo[0]->wFrom, g_aFlagGroupInfo[0]->wTo);
-	printf("flaggroup grow-over %s to=%u\n", FlagGroupApi("flagGroup", 0, "{\"wTo\":140}").c_str(), g_aFlagGroupInfo[0]->wTo);
-	printf("flaggroup grow-back %s to=%u\n", FlagGroupApi("flagGroup", 0, "{\"wTo\":139}").c_str(), g_aFlagGroupInfo[0]->wTo);
+	printf("flaggroup shrink %s from=%u to=%u\n", FlagGroupApi("flagGroup", 0, "{\"wTo\":138}").c_str(), g_aFlagGroupInfo[0]->awFrom[0], g_aFlagGroupInfo[0]->awTo[0]);
+	printf("flaggroup grow-over %s to=%u\n", FlagGroupApi("flagGroup", 0, "{\"wTo\":140}").c_str(), g_aFlagGroupInfo[0]->awTo[0]);
+	printf("flaggroup grow-back %s to=%u\n", FlagGroupApi("flagGroup", 0, "{\"wTo\":139}").c_str(), g_aFlagGroupInfo[0]->awTo[0]);
 
 	/* メイン-サブの計算（kind "flag" の記録に group・sub が付く。名前表の中の番号は変わらない） */
 	printf("flaggroup name103 %s\n", FlagGroupApi("flag", 0, "{\"byKind\":0,\"wNo\":103,\"szName\":\"港町の事件\"}").c_str());
@@ -3888,6 +3888,105 @@ static void TestFlagGroup(const std::vector<int> &aLogin)
 	printf("flaggroup get 0 %s\n", SboWebDataGet("flagGroup", 0));
 	printf("flaggroup get 9 %s\n", SboWebDataGet("flagGroup", 9));
 
+
+	/* 帯を 2 本以上持つグループ：サブは帯の順に続けて数える（印 400〜439=サブ 1〜40・500〜519=サブ 41〜60） */
+	printf("flaggroup multi-add %s count=%d\n", FlagGroupApi("flagGroup", g_aFlagGroupInfo.GetSize(), "{\"szName\":\"多帯\",\"bands\":[{\"wFrom\":400,\"wTo\":439},{\"wFrom\":500,\"wTo\":519}]}").c_str(), g_aFlagGroupInfo.GetSize());
+	{
+		const FLAGGROUPINFO *pM = g_aFlagGroupInfo[g_aFlagGroupInfo.GetSize() - 1];
+		WORD wNo = 0;
+		printf("flaggroup multi bands=%d subcount=%d sub400=%d sub439=%d sub500=%d sub519=%d sub440=%d sub499=%d has500=%d has520=%d\n", FlagGroupBandCount(pM), FlagGroupSubCount(pM),
+				FlagGroupSub(pM, 400), FlagGroupSub(pM, 439), FlagGroupSub(pM, 500), FlagGroupSub(pM, 519), FlagGroupSub(pM, 440), FlagGroupSub(pM, 499),
+				(int)FlagGroupHas(pM, FLAGKIND_BIT, 500), (int)FlagGroupHas(pM, FLAGKIND_BIT, 520));
+		printf("flaggroup multi nofsub1=%d/%u nofsub40=%d/%u nofsub41=%d/%u nofsub60=%d/%u nofsub61=%d nofsub0=%d\n",
+				(int)FlagGroupNoOfSub(pM, 1, wNo), wNo, (int)FlagGroupNoOfSub(pM, 40, wNo), wNo, (int)FlagGroupNoOfSub(pM, 41, wNo), wNo, (int)FlagGroupNoOfSub(pM, 60, wNo), wNo,
+				(int)FlagGroupNoOfSub(pM, 61, wNo), (int)FlagGroupNoOfSub(pM, 0, wNo));
+	}
+	printf("flaggroup multi get %s\n", SboWebDataGet("flagGroup", g_aFlagGroupInfo.GetSize() - 1));
+	/* flag の記録の group・sub も新しい数え方で */
+	printf("flaggroup multi flag439 %s\n", FlagGroupApi("flag", 0, "{\"byKind\":0,\"wNo\":439,\"szName\":\"帯1の最後\"}").c_str());
+	printf("flaggroup multi flag500 %s\n", FlagGroupApi("flag", 1, "{\"byKind\":0,\"wNo\":500,\"szName\":\"帯2の先頭\"}").c_str());
+	printf("flaggroup multi flag519 %s\n", FlagGroupApi("flag", 2, "{\"byKind\":0,\"wNo\":519,\"szName\":\"帯2の最後\"}").c_str());
+	printf("flaggroup multi flag440 %s\n", FlagGroupApi("flag", 3, "{\"byKind\":0,\"wNo\":440,\"szName\":\"帯の間\"}").c_str());
+	for (int i = 0; i < 4; i ++) {
+		printf("flaggroup multi get flag %d %s\n", i, SboWebDataGet("flag", i));
+	}
+	/* 重なり：ほかのグループの帯 2 と自分の帯 1・自分の帯同士・同じ種類のほかの全帯。種類が違えば重ならない */
+	{
+		int nNew = g_aFlagGroupInfo.GetSize();
+		int nMulti = nNew - 1;
+		printf("flaggroup multi overlap-other-band2 %s count=%d\n", FlagGroupApi("flagGroup", nNew, "{\"szName\":\"重\",\"bands\":[{\"wFrom\":700,\"wTo\":710},{\"wFrom\":519,\"wTo\":530}]}").c_str(), g_aFlagGroupInfo.GetSize());
+		printf("flaggroup multi overlap-own-bands %s count=%d\n", FlagGroupApi("flagGroup", nNew, "{\"szName\":\"重\",\"bands\":[{\"wFrom\":600,\"wTo\":610},{\"wFrom\":605,\"wTo\":620}]}").c_str(), g_aFlagGroupInfo.GetSize());
+		printf("flaggroup multi overlap-band1-vs-band1 %s count=%d\n", FlagGroupApi("flagGroup", nNew, "{\"szName\":\"重\",\"bands\":[{\"wFrom\":600,\"wTo\":610},{\"wFrom\":139,\"wTo\":139}]}").c_str(), g_aFlagGroupInfo.GetSize());
+		printf("flaggroup multi kind-differs %s count=%d\n", FlagGroupApi("flagGroup", nNew, "{\"byKind\":1,\"szName\":\"数多\",\"bands\":[{\"wFrom\":30,\"wTo\":35},{\"wFrom\":40,\"wTo\":45}]}").c_str(), g_aFlagGroupInfo.GetSize());
+		nNew = g_aFlagGroupInfo.GetSize();		/* 種類違いのグループが増えたので数え直す */
+		/* 今あるグループの続きの帯を足す（自分の帯は重なりに数えない） */
+		printf("flaggroup multi grow-band %s\n", FlagGroupApi("flagGroup", nMulti, "{\"bands\":[{\"wFrom\":400,\"wTo\":439},{\"wFrom\":500,\"wTo\":519},{\"wFrom\":800,\"wTo\":809}]}").c_str());
+		printf("flaggroup multi grown bands=%d subcount=%d sub800=%d\n", FlagGroupBandCount(g_aFlagGroupInfo[nMulti]), FlagGroupSubCount(g_aFlagGroupInfo[nMulti]), FlagGroupSub(g_aFlagGroupInfo[nMulti], 800));
+		/* 帯の数・形・範囲・逆さ */
+		/* 帯の本数：16 本までは通り（保存・読み直しも）、17 本は断る。元の 3 本へ戻す */
+		{
+			std::string strMax = "{\"bands\":[{\"wFrom\":400,\"wTo\":439},{\"wFrom\":500,\"wTo\":519},{\"wFrom\":800,\"wTo\":809}", strOver;
+			for (int k = 0; k < 13; k ++) strMax += ",{\"wFrom\":" + std::to_string(900 + k * 2) + ",\"wTo\":" + std::to_string(900 + k * 2) + "}";
+			strOver = strMax + ",{\"wFrom\":990,\"wTo\":990}]}";
+			printf("flaggroup multi bands17 %s bands=%d\n", FlagGroupApi("flagGroup", nMulti, strOver.c_str()).c_str(), FlagGroupBandCount(g_aFlagGroupInfo[nMulti]));
+			printf("flaggroup multi bands16 %s bands=%d subcount=%d sub924=%d\n", FlagGroupApi("flagGroup", nMulti, (strMax + "]}").c_str()).c_str(), FlagGroupBandCount(g_aFlagGroupInfo[nMulti]),
+					FlagGroupSubCount(g_aFlagGroupInfo[nMulti]), FlagGroupSub(g_aFlagGroupInfo[nMulti], 924));
+			BOOL bSaved16 = SaveFlagGroupInfo();
+			for (int i = 0; i < g_aFlagGroupInfo.GetSize(); i ++) delete g_aFlagGroupInfo[i];
+			g_aFlagGroupInfo.RemoveAll();
+			BOOL bLoaded16 = LoadFlagGroupInfo();
+			printf("flaggroup multi bands16 reload save=%d load=%d bands=%d subcount=%d band16=%u-%u\n", (int)bSaved16, (int)bLoaded16, FlagGroupBandCount(g_aFlagGroupInfo[nMulti]),
+					FlagGroupSubCount(g_aFlagGroupInfo[nMulti]), g_aFlagGroupInfo[nMulti]->awFrom[15], g_aFlagGroupInfo[nMulti]->awTo[15]);
+			printf("flaggroup multi bands16 back %s bands=%d\n", FlagGroupApi("flagGroup", nMulti, "{\"bands\":[{\"wFrom\":400,\"wTo\":439},{\"wFrom\":500,\"wTo\":519},{\"wFrom\":800,\"wTo\":809}]}").c_str(), FlagGroupBandCount(g_aFlagGroupInfo[nMulti]));
+		}
+		/* 管理者ウィンドウの帯の入力文字（カンマ区切り）の読み取り */
+		{
+			static const struct { const char *pszText; int nMax; } aParse[] = {
+				{ "100-139, 300-319, 500-509", 1024 }, { "120", 1024 }, { "100〜139、300～319,500~509", 1024 }, { "　１００−１３９ 、 ３００〜３１９　", 1024 },
+				{ "5-5,0-0", 128 }, { "0-1023", 1024 }, { "0-127", 128 }, { "0-128", 128 }, { "1024", 1024 }, { "999999", 1024 },
+				{ "", 1024 }, { "   ", 1024 }, { "100-", 1024 }, { "-100", 1024 }, { "1-2-3", 1024 }, { "abc", 1024 }, { "100,", 1024 }, { ",100", 1024 }, { "1,,2", 1024 },
+				{ "139-100", 1024 }, { "100-139, 139-150", 1024 }, { "100-139, 110", 1024 },
+				{ "1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31", 1024 }, { "1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33", 1024 },
+			};
+			for (size_t t = 0; t < sizeof(aParse) / sizeof(aParse[0]); t ++) {
+				WORD awF[MAX_FLAGGROUPBAND], awT[MAX_FLAGGROUPBAND];
+				int nCnt = -1;
+				char szErr[300];
+				BOOL bOk = FlagGroupParseBands(aParse[t].pszText, aParse[t].nMax, awF, awT, nCnt, szErr, sizeof(szErr));
+				printf("flaggroup parse %d [%s] max=%d ok=%d count=%d", (int)t, aParse[t].pszText, aParse[t].nMax, (int)bOk, nCnt);
+				for (int k = 0; k < nCnt; k ++) printf(" %u-%u", awF[k], awT[k]);
+				printf(" err=%s\n", bOk ? "" : szErr);
+			}
+		}
+		printf("flaggroup multi bands0 %s\n", FlagGroupApi("flagGroup", nMulti, "{\"bands\":[]}").c_str());
+		printf("flaggroup multi bands-notarray %s\n", FlagGroupApi("flagGroup", nMulti, "{\"bands\":5}").c_str());
+		printf("flaggroup multi bands-badelem %s\n", FlagGroupApi("flagGroup", nMulti, "{\"bands\":[{\"wFrom\":1}]}").c_str());
+		printf("flaggroup multi bands-range %s\n", FlagGroupApi("flagGroup", nMulti, "{\"bands\":[{\"wFrom\":400,\"wTo\":439},{\"wFrom\":1000,\"wTo\":1024}]}").c_str());
+		printf("flaggroup multi bands-reverse %s\n", FlagGroupApi("flagGroup", nMulti, "{\"bands\":[{\"wFrom\":400,\"wTo\":439},{\"wFrom\":520,\"wTo\":510}]}").c_str());
+		/* 互換の wFrom・wTo：帯 1 だけが変わり、帯 2 以降は残る。bands と一緒なら帯 1 と同じ値だけ許す */
+		printf("flaggroup multi legacy-wto %s bands=%d band1=%u-%u band2=%u-%u\n", FlagGroupApi("flagGroup", nMulti, "{\"wTo\":429}").c_str(), FlagGroupBandCount(g_aFlagGroupInfo[nMulti]),
+				g_aFlagGroupInfo[nMulti]->awFrom[0], g_aFlagGroupInfo[nMulti]->awTo[0], g_aFlagGroupInfo[nMulti]->awFrom[1], g_aFlagGroupInfo[nMulti]->awTo[1]);
+		printf("flaggroup multi both-mismatch %s\n", FlagGroupApi("flagGroup", nMulti, "{\"bands\":[{\"wFrom\":400,\"wTo\":439}],\"wFrom\":401}").c_str());
+		printf("flaggroup multi both-same %s bands=%d\n", FlagGroupApi("flagGroup", nMulti, "{\"bands\":[{\"wFrom\":400,\"wTo\":439},{\"wFrom\":500,\"wTo\":519}],\"wFrom\":400,\"wTo\":439}").c_str(), FlagGroupBandCount(g_aFlagGroupInfo[nMulti]));
+		/* 取得した記録をそのまま書き戻せる（履歴・元に戻す・しおり戻しはこの形で戻す） */
+		{
+			std::string strRec = SboWebDataGet("flagGroup", nMulti);
+			size_t nB = strRec.find("\"bands\"");
+			printf("flaggroup multi restore-ok %s\n", FlagGroupApi("flagGroup", nMulti, ("{\"szName\":\"多帯\",\"byState\":1," + strRec.substr(nB, strRec.size() - 1 - nB) + "}").c_str()).c_str());
+			/* 1 本に戻して、また帯 2 つへ */
+			printf("flaggroup multi one-band %s bands=%d\n", FlagGroupApi("flagGroup", nMulti, "{\"bands\":[{\"wFrom\":400,\"wTo\":439}]}").c_str(), FlagGroupBandCount(g_aFlagGroupInfo[nMulti]));
+			printf("flaggroup multi restore %s bands=%d subcount=%d\n", FlagGroupApi("flagGroup", nMulti, ("{" + strRec.substr(nB)).c_str()).c_str(), FlagGroupBandCount(g_aFlagGroupInfo[nMulti]), FlagGroupSubCount(g_aFlagGroupInfo[nMulti]));
+		}
+		/* 削除すると帯 2 本ぶんがほかのグループに使える。戻す時は重なれば断る */
+		printf("flaggroup multi del %s\n", FlagGroupApi("flagGroup", nMulti, "{\"byState\":0}").c_str());
+		printf("flaggroup multi reuse-band2 %s count=%d\n", FlagGroupApi("flagGroup", nNew, "{\"szName\":\"再利用\",\"wFrom\":510,\"wTo\":515}").c_str(), g_aFlagGroupInfo.GetSize());
+		printf("flaggroup multi revive-conflict %s state=%d\n", FlagGroupApi("flagGroup", nMulti, "{\"byState\":1}").c_str(), g_aFlagGroupInfo[nMulti]->byState);
+		printf("flaggroup multi get flag 2 after del %s\n", SboWebDataGet("flag", 2));
+		/* 再利用を片付けて、多帯を戻す（保存・読み直しにも帯 2 本のグループを通す） */
+		printf("flaggroup multi reuse-del %s\n", FlagGroupApi("flagGroup", nNew, "{\"byState\":0}").c_str());
+		printf("flaggroup multi revive %s state=%d\n", FlagGroupApi("flagGroup", nMulti, "{\"byState\":1}").c_str(), g_aFlagGroupInfo[nMulti]->byState);
+	}
+
 	/* 保存と読み直し */
 	{
 		BOOL bSaved = SaveFlagGroupInfo();
@@ -3898,9 +3997,66 @@ static void TestFlagGroup(const std::vector<int> &aLogin)
 		printf("flaggroup save=%d load=%d before=%d after=%d\n", (int)bSaved, (int)bLoaded, nBefore, g_aFlagGroupInfo.GetSize());
 		for (int i = 0; i < g_aFlagGroupInfo.GetSize(); i ++) {
 			const FLAGGROUPINFO *p = g_aFlagGroupInfo[i];
-			printf("flaggroup loaded %d id=%u state=%d kind=%d name=%s from=%u to=%u sort=%u\n", i, p->wID, p->byState, p->byKind, p->szName, p->wFrom, p->wTo, p->wSort);
+			printf("flaggroup loaded %d id=%u state=%d kind=%d name=%s from=%u to=%u sort=%u\n", i, p->wID, p->byState, p->byKind, p->szName, p->awFrom[0], p->awTo[0], p->wSort);
+			for (int b = 1; b < MAX_FLAGGROUPBAND; b ++) if (FlagGroupBandUsed(p, b)) printf("flaggroup loaded %d band%d=%u-%u\n", i, b + 1, p->awFrom[b], p->awTo[b]);
 		}
 		printf("flaggroup get flag 0 after load %s\n", SboWebDataGet("flag", 0));
+	}
+
+	/* 古い形のファイル（帯 1 本だけの列方式。wFrom・wTo はあるが、帯の本数の列は無い）が読める */
+	{
+		static const struct { WORD wID; BYTE byState; BYTE byKind; const char *pszName; WORD wFrom; WORD wTo; WORD wSort; } aOld[2] = {
+			{ 1, 1, 0, "ルシー", 100, 139, 1 }, { 2, 1, 1, "数値グループ", 10, 19, 2 },
+		};
+		static const char *apszCol[7] = { "wID", "byState", "byKind", "szName", "wFrom", "wTo", "wSort" };
+		std::vector<BYTE> aBody, aHead;
+		std::vector<DWORD> aOff;
+		DWORD dwTmp, dwHead = 8;
+		for (int c = 0; c < 7; c ++) dwHead += (DWORD)strlen(apszCol[c]) + 1 + 4;
+		for (int c = 0; c < 7; c ++) {
+			aOff.push_back((DWORD)aBody.size());
+			for (int r = 0; r < 2; r ++) {
+				const BYTE *pB = NULL; size_t nB = 0;
+				WORD w; BYTE by;
+				switch (c) {
+				case 0: w = aOld[r].wID; pB = (const BYTE *)&w; nB = 2; break;
+				case 1: by = aOld[r].byState; pB = &by; nB = 1; break;
+				case 2: by = aOld[r].byKind; pB = &by; nB = 1; break;
+				case 3: pB = (const BYTE *)aOld[r].pszName; nB = strlen(aOld[r].pszName) + 1; break;
+				case 4: w = aOld[r].wFrom; pB = (const BYTE *)&w; nB = 2; break;
+				case 5: w = aOld[r].wTo; pB = (const BYTE *)&w; nB = 2; break;
+				default: w = aOld[r].wSort; pB = (const BYTE *)&w; nB = 2; break;
+				}
+				aBody.insert(aBody.end(), pB, pB + nB);
+			}
+		}
+		dwTmp = 7; aHead.insert(aHead.end(), (BYTE *)&dwTmp, (BYTE *)&dwTmp + 4);
+		dwTmp = 2; aHead.insert(aHead.end(), (BYTE *)&dwTmp, (BYTE *)&dwTmp + 4);
+		for (int c = 0; c < 7; c ++) {
+			aHead.insert(aHead.end(), (const BYTE *)apszCol[c], (const BYTE *)apszCol[c] + strlen(apszCol[c]) + 1);
+			dwTmp = dwHead + aOff[c]; aHead.insert(aHead.end(), (BYTE *)&dwTmp, (BYTE *)&dwTmp + 4);
+		}
+		FILE *fp = fopen("SBODATA/SboDataFlagGroupInfo.dat", "wb");
+		if (fp) {
+			fwrite(&aHead[0], 1, aHead.size(), fp);
+			fwrite(&aBody[0], 1, aBody.size(), fp);
+			fclose(fp);
+		}
+		for (int i = 0; i < g_aFlagGroupInfo.GetSize(); i ++) delete g_aFlagGroupInfo[i];
+		g_aFlagGroupInfo.RemoveAll();
+		BOOL bLoaded = LoadFlagGroupInfo();
+		printf("flaggroup legacy-file wrote=%d load=%d count=%d\n", (int)(fp != NULL), (int)bLoaded, g_aFlagGroupInfo.GetSize());
+		for (int i = 0; i < g_aFlagGroupInfo.GetSize(); i ++) {
+			const FLAGGROUPINFO *p = g_aFlagGroupInfo[i];
+			printf("flaggroup legacy-file %d id=%u kind=%d name=%s bands=%d band1=%u-%u subcount=%d sort=%u\n", i, p->wID, p->byKind, p->szName, FlagGroupBandCount(p), p->awFrom[0], p->awTo[0], FlagGroupSubCount(p), p->wSort);
+		}
+		/* 古いファイルから読んだグループに続きの帯を足して保存し、読み直しても残る */
+		printf("flaggroup legacy-file add-band %s\n", FlagGroupApi("flagGroup", 0, "{\"bands\":[{\"wFrom\":100,\"wTo\":139},{\"wFrom\":300,\"wTo\":319}]}").c_str());
+		for (int i = 0; i < g_aFlagGroupInfo.GetSize(); i ++) delete g_aFlagGroupInfo[i];
+		g_aFlagGroupInfo.RemoveAll();
+		bLoaded = LoadFlagGroupInfo();
+		printf("flaggroup legacy-file reload load=%d count=%d bands=%d sub300=%d sub319=%d\n", (int)bLoaded, g_aFlagGroupInfo.GetSize(), FlagGroupBandCount(g_aFlagGroupInfo[0]),
+				FlagGroupSub(g_aFlagGroupInfo[0], 300), FlagGroupSub(g_aFlagGroupInfo[0], 319));
 	}
 
 	/* 管理者ウィンドウ：一覧・足す・直す・重なりを断る・管理者でない人は弾く */
@@ -3908,15 +4064,24 @@ static void TestFlagGroup(const std::vector<int> &aLogin)
 		CMDPARA_ADMINFLAGGROUP Res;
 		FLAGGROUPINFO Info;
 		ZeroMemory(&Info, sizeof(Info));
+		FlagGroupClearBands(&Info);
 		pAdmin->byAdminLV = ADMINLV_ADMINISTRATOR;
 		BOOL bGot = AdminFlagGroupSend(pAdmin, ADMINFLAGGROUP_LISTREQ, 0, NULL, Res);
 		printf("adminflaggroup list got=%d sub=%d count=%d id=%u name=%s\n", bGot, Res.byCmdSub, Res.wCount, Res.Info.wID, Res.Info.szName);
-		Info.byState = FLAGGROUPSTATE_ON; Info.byKind = FLAGKIND_BIT; strcpy(Info.szName, "管理者"); Info.wFrom = 200; Info.wTo = 209;
+		Info.byState = FLAGGROUPSTATE_ON; Info.byKind = FLAGKIND_BIT; strcpy(Info.szName, "管理者"); Info.awFrom[0] = 200; Info.awTo[0] = 209;
 		bGot = AdminFlagGroupSend(pAdmin, ADMINFLAGGROUP_SET, -1, &Info, Res);
 		printf("adminflaggroup add got=%d result=%d count=%d id=%u\n", bGot, Res.byResult, g_aFlagGroupInfo.GetSize(), g_aFlagGroupInfo[g_aFlagGroupInfo.GetSize() - 1]->wID);
-		Info.wFrom = 205; Info.wTo = 215; strcpy(Info.szName, "重なる");
+		Info.awFrom[0] = 205; Info.awTo[0] = 215; strcpy(Info.szName, "重なる");
 		bGot = AdminFlagGroupSend(pAdmin, ADMINFLAGGROUP_SET, -1, &Info, Res);
 		printf("adminflaggroup overlap got=%d result=%d count=%d msg=%s\n", bGot, Res.byResult, g_aFlagGroupInfo.GetSize(), Res.szMsg);
+		/* 帯 2 本（クライアントの構造体の帯 2 を使う）で足す。帯 2 が重なれば断る */
+		FlagGroupClearBands(&Info);
+		Info.byState = FLAGGROUPSTATE_ON; Info.byKind = FLAGKIND_BIT; strcpy(Info.szName, "二帯"); Info.awFrom[0] = 250; Info.awTo[0] = 259; Info.awFrom[1] = 350; Info.awTo[1] = 359;
+		bGot = AdminFlagGroupSend(pAdmin, ADMINFLAGGROUP_SET, -1, &Info, Res);
+		printf("adminflaggroup multi got=%d result=%d count=%d bands=%d sub350=%d\n", bGot, Res.byResult, g_aFlagGroupInfo.GetSize(), FlagGroupBandCount(g_aFlagGroupInfo[g_aFlagGroupInfo.GetSize() - 1]), FlagGroupSub(g_aFlagGroupInfo[g_aFlagGroupInfo.GetSize() - 1], 350));
+		Info.awFrom[0] = 600; Info.awTo[0] = 609; Info.awFrom[1] = 205; Info.awTo[1] = 206; strcpy(Info.szName, "二帯重");
+		bGot = AdminFlagGroupSend(pAdmin, ADMINFLAGGROUP_SET, -1, &Info, Res);
+		printf("adminflaggroup multi-overlap got=%d result=%d count=%d msg=%s\n", bGot, Res.byResult, g_aFlagGroupInfo.GetSize(), Res.szMsg);
 		Info = *g_aFlagGroupInfo[g_aFlagGroupInfo.GetSize() - 1];
 		Info.wID = 99; strcpy(Info.szName, "管理者改");
 		int nLast = g_aFlagGroupInfo.GetSize() - 1;

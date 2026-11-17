@@ -407,8 +407,7 @@
 #define IDC_FG_FIND                       1386
 #define IDC_FG_KIND                       1387
 #define IDC_FG_NAME                       1388
-#define IDC_FG_FROM                       1389
-#define IDC_FG_TO                         1390
+#define IDC_FG_BANDS                      1389
 #define IDC_FG_SORT                       1391
 #define IDC_FG_UPDATE                     1392
 #define IDC_FG_MSG                        1393

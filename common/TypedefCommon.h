@@ -3255,27 +3255,227 @@ enum {
 	FLAGGROUPSTATE_ON,											/* 有効 */
 };
 
-/* フラグのグループの 1 件（同じ種類で番号の帯 wFrom〜wTo が重なる有効なグループは作れない） */
+/* 1 つのグループが持てる番号の帯の本数（サブ番号は帯の順に続けて数える。後から番号が飛んだ場所に「続きの帯」を足せる） */
+#define MAX_FLAGGROUPBAND	16
+#define FLAGGROUPBAND_NONE	0xFFFF									/* 使わない帯（awFrom に入れる） */
+
+/* フラグのグループの 1 件（同じ種類で番号の帯が重なる有効なグループは作れない。同じグループの帯同士も重ねられない） */
 typedef struct _FLAGGROUPINFO {
 	WORD		wID;												/* グループ番号（1〜255。足す時に自動で振られ、変わらない） */
 	BYTE		byState;											/* 状態(FLAGGROUPSTATE_*) */
 	BYTE		byKind;												/* 種類(FLAGKIND_*。印か数値か) */
 	char		szName[MAX_FLAGGROUPNAME];							/* メイン名（例：「ルシー」。管理用。プレイヤーには出ない） */
-	WORD		wFrom;												/* 番号の帯の先頭（その番号も含む） */
-	WORD		wTo;												/* 番号の帯の最後（その番号も含む） */
+	WORD		awFrom[MAX_FLAGGROUPBAND];							/* 番号の帯の先頭（その番号も含む。使わない帯は FLAGGROUPBAND_NONE。帯 1 は必須） */
+	WORD		awTo[MAX_FLAGGROUPBAND];							/* 番号の帯の最後（その番号も含む） */
 	WORD		wSort;												/* 並び順（一覧で小さい順。同じなら番号順） */
 } FLAGGROUPINFO, *PFLAGGROUPINFO;
+
+/* 帯をすべて空にする（memset 0 のあとに呼ぶ） */
+inline void FlagGroupClearBands(FLAGGROUPINFO *p)
+{
+	for (int i = 0; i < MAX_FLAGGROUPBAND; i ++) {
+		p->awFrom[i] = FLAGGROUPBAND_NONE;
+		p->awTo[i] = 0;
+	}
+}
+
+/* 帯 nBand（0 始まり）を使っているか */
+inline BOOL FlagGroupBandUsed(const FLAGGROUPINFO *p, int nBand)
+{
+	return (nBand >= 0) && (nBand < MAX_FLAGGROUPBAND) && (p->awFrom[nBand] != FLAGGROUPBAND_NONE);
+}
+
+/* 使っている帯の本数（先頭から詰めて使う前提だが、空の帯が間にあっても飛ばして数える） */
+inline int FlagGroupBandCount(const FLAGGROUPINFO *p)
+{
+	int n = 0;
+	for (int i = 0; i < MAX_FLAGGROUPBAND; i ++) {
+		if (FlagGroupBandUsed(p, i)) {
+			n ++;
+		}
+	}
+	return n;
+}
 
 /* 有効なグループの帯に、その種類の番号 wNo が入るか */
 inline BOOL FlagGroupHas(const FLAGGROUPINFO *p, BYTE byKind, WORD wNo)
 {
-	return (p->byState == FLAGGROUPSTATE_ON) && (p->byKind == byKind) && (wNo >= p->wFrom) && (wNo <= p->wTo);
+	if ((p->byState != FLAGGROUPSTATE_ON) || (p->byKind != byKind)) {
+		return FALSE;
+	}
+	for (int i = 0; i < MAX_FLAGGROUPBAND; i ++) {
+		if (FlagGroupBandUsed(p, i) && (wNo >= p->awFrom[i]) && (wNo <= p->awTo[i])) {
+			return TRUE;
+		}
+	}
+	return FALSE;
 }
 
-/* グループの中での番号（サブ。1 始まり）。FlagGroupHas が真の時に使う */
+/* グループの中での番号（サブ。1 始まり。帯の順に続けて数える）。FlagGroupHas が真の時に使う。入らなければ 0 */
 inline int FlagGroupSub(const FLAGGROUPINFO *p, WORD wNo)
 {
-	return (int)wNo - (int)p->wFrom + 1;
+	int nBase = 0;
+	for (int i = 0; i < MAX_FLAGGROUPBAND; i ++) {
+		if (!FlagGroupBandUsed(p, i)) {
+			continue;
+		}
+		if ((wNo >= p->awFrom[i]) && (wNo <= p->awTo[i])) {
+			return nBase + (int)wNo - (int)p->awFrom[i] + 1;
+		}
+		nBase += (int)p->awTo[i] - (int)p->awFrom[i] + 1;
+	}
+	return 0;
+}
+
+/* グループのサブの総数（すべての帯の番号の数の合計） */
+inline int FlagGroupSubCount(const FLAGGROUPINFO *p)
+{
+	int nCount = 0;
+	for (int i = 0; i < MAX_FLAGGROUPBAND; i ++) {
+		if (FlagGroupBandUsed(p, i)) {
+			nCount += (int)p->awTo[i] - (int)p->awFrom[i] + 1;
+		}
+	}
+	return nCount;
+}
+
+/* サブ nSub（1 始まり）にあたる番号。範囲外なら FALSE */
+inline BOOL FlagGroupNoOfSub(const FLAGGROUPINFO *p, int nSub, WORD &wNo)
+{
+	if (nSub < 1) {
+		return FALSE;
+	}
+	for (int i = 0; i < MAX_FLAGGROUPBAND; i ++) {
+		if (!FlagGroupBandUsed(p, i)) {
+			continue;
+		}
+		int nLen = (int)p->awTo[i] - (int)p->awFrom[i] + 1;
+		if (nSub <= nLen) {
+			wNo = (WORD)(p->awFrom[i] + nSub - 1);
+			return TRUE;
+		}
+		nSub -= nLen;
+	}
+	return FALSE;
+}
+
+/* 帯の書き方の文字列（例「100-139, 300-319, 500-509」）を読む（管理者ウィンドウの入力・テスト用）
+ * ・帯の区切りは「,」「、」、範囲は「-」「〜」「~」。空白は無視。数字 1 つだけ（「120」）なら 120〜120
+ * ・全角の数字・記号は半角に直して読む（文字は UTF-8）
+ * ・pawFrom・pawTo は MAX_FLAGGROUPBAND 個ぶん。読めたら TRUE で nCount に本数（1〜MAX_FLAGGROUPBAND）を入れる
+ * ・番号は 0〜nMaxNo-1、先頭 <= 最後、帯同士が重ならないことまで確かめる。だめなら FALSE で pszErr に理由 */
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+inline BOOL FlagGroupParseBands(const char *pszText, int nMaxNo, WORD *pawFrom, WORD *pawTo, int &nCount, char *pszErr, int nErrSize)
+{
+	char szNorm[512];
+	int nLen = 0, nPos = 0;
+	const unsigned char *p = (const unsigned char *)pszText;
+
+	nCount = 0;
+	pszErr[0] = 0;
+	/* 全角を半角に直し、空白を除く */
+	for (int i = 0; p[i]; i ++) {
+		char c = 0;
+		if (p[i] == ' ' || p[i] == '\t' || p[i] == '\r' || p[i] == '\n') {
+			continue;
+		} else if ((p[i] >= '0' && p[i] <= '9') || p[i] == ',' || p[i] == '-') {
+			c = (char)p[i];
+		} else if (p[i] == '~') {
+			c = '-';
+		} else if ((p[i] & 0xF0) == 0xE0 && (p[i + 1] & 0xC0) == 0x80 && (p[i + 2] & 0xC0) == 0x80) {		/* 全角（UTF-8 の 3 バイト） */
+			unsigned int u = ((p[i] & 0x0F) << 12) | ((p[i + 1] & 0x3F) << 6) | (p[i + 2] & 0x3F);
+			i += 2;
+			if (u == 0x3000) {													/* 全角空白 */
+				continue;
+			} else if (u >= 0xFF10 && u <= 0xFF19) {							/* ０〜９ */
+				c = (char)('0' + (u - 0xFF10));
+			} else if (u == 0x3001 || u == 0xFF0C) {							/* 、 ， */
+				c = ',';
+			} else if (u == 0x301C || u == 0xFF5E || u == 0xFF0D || u == 0x2212 || u == 0x30FC) {	/* 〜 ～ － − ー */
+				c = '-';
+			} else {
+				snprintf (pszErr, nErrSize, "読めない文字があります。数字・「-」（または「〜」）・「,」（または「、」）だけで入れてください。\n例：100-139, 300-319");
+				return FALSE;
+			}
+		} else {
+			snprintf (pszErr, nErrSize, "読めない文字があります。数字・「-」（または「〜」）・「,」（または「、」）だけで入れてください。\n例：100-139, 300-319");
+			return FALSE;
+		}
+		if (nLen >= (int)sizeof (szNorm) - 1) {
+			snprintf (pszErr, nErrSize, "入力が長すぎます。");
+			return FALSE;
+		}
+		szNorm[nLen ++] = c;
+	}
+	szNorm[nLen] = 0;
+	if (nLen == 0) {
+		snprintf (pszErr, nErrSize, "番号の帯を入れてください。\n例：100-139, 300-319");
+		return FALSE;
+	}
+	/* 「,」で分けて 1 本ずつ読む */
+	while (nPos <= nLen) {
+		char szPart[512], szOrig[512];
+		int nEnd = nPos, nDash = -1;
+		unsigned long ulFrom, ulTo;
+
+		while (szNorm[nEnd] && szNorm[nEnd] != ',') {
+			nEnd ++;
+		}
+		memcpy (szPart, szNorm + nPos, nEnd - nPos);
+		szPart[nEnd - nPos] = 0;
+		nPos = nEnd + 1;
+		if (szPart[0] == 0) {
+			snprintf (pszErr, nErrSize, "「,」の前後に番号がありません。\n例：100-139, 300-319");
+			return FALSE;
+		}
+		strcpy (szOrig, szPart);
+		for (int i = 0; szPart[i]; i ++) {
+			if (szPart[i] == '-') {
+				if (nDash >= 0) {
+					nDash = -2;
+					break;
+				}
+				nDash = i;
+			}
+		}
+		if (nDash == -2 || nDash == 0 || (nDash > 0 && szPart[nDash + 1] == 0)) {
+			snprintf (pszErr, nErrSize, "「%s」は帯として読めません。「100-139」のように先頭と最後を「-」でつなぐか、数字 1 つで入れてください。", szOrig);
+			return FALSE;
+		}
+		if (nDash > 0) {
+			szPart[nDash] = 0;
+		}
+		if (strlen (szPart) > 5 || (nDash > 0 && strlen (szPart + nDash + 1) > 5)) {
+			snprintf (pszErr, nErrSize, "「%s」の番号が大きすぎます。番号は 0〜%d で入れてください。", szOrig, nMaxNo - 1);
+			return FALSE;
+		}
+		ulFrom = strtoul (szPart, NULL, 10);
+		ulTo = (nDash > 0) ? strtoul (szPart + nDash + 1, NULL, 10) : ulFrom;
+		if (nCount >= MAX_FLAGGROUPBAND) {
+			snprintf (pszErr, nErrSize, "帯は %d 本までです。", MAX_FLAGGROUPBAND);
+			return FALSE;
+		}
+		if (ulFrom >= (unsigned long)nMaxNo || ulTo >= (unsigned long)nMaxNo) {
+			snprintf (pszErr, nErrSize, "「%s」の番号は 0〜%d の範囲で入れてください。", szOrig, nMaxNo - 1);
+			return FALSE;
+		}
+		if (ulFrom > ulTo) {
+			snprintf (pszErr, nErrSize, "「%s」は、先頭 <= 最後 になるように入れてください。", szOrig);
+			return FALSE;
+		}
+		for (int i = 0; i < nCount; i ++) {
+			if ((unsigned long)pawFrom[i] <= ulTo && ulFrom <= (unsigned long)pawTo[i]) {
+				snprintf (pszErr, nErrSize, "帯が重なっています。（%u〜%u と %lu〜%lu）", (unsigned)pawFrom[i], (unsigned)pawTo[i], ulFrom, ulTo);
+				return FALSE;
+			}
+		}
+		pawFrom[nCount] = (WORD)ulFrom;
+		pawTo[nCount] = (WORD)ulTo;
+		nCount ++;
+	}
+	return TRUE;
 }
 
 /* 数値の条件の比べ方(TALKLINEINFO の abyCondCmp) */

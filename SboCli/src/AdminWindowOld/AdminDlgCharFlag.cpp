@@ -414,7 +414,10 @@ static void RenewGroupCombo(int nIDCombo, BYTE byKind)
 	for (size_t i = 0; i < anIndex.size (); i ++) {
 		const FLAGGROUPINFO *p = AdminFlagGroupGet (anIndex[i]);
 
-		snprintf (szTmp, sizeof (szTmp), "%s（%u〜%u）", p->szName, (unsigned)p->wFrom, (unsigned)p->wTo);
+		char szBands[96];
+
+		AdminFlagGroupBandsText (p, szBands, sizeof (szBands));
+		snprintf (szTmp, sizeof (szTmp), "%s（%s）", p->szName, szBands);
 		nIdx = (int)SendMessage (hWndCombo, CB_ADDSTRING, 0, (LPARAM)szTmp);
 		SendMessage (hWndCombo, CB_SETITEMDATA, nIdx, anIndex[i]);
 		if (anIndex[i] == nSelData) {

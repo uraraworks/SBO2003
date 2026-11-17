@@ -1571,7 +1571,7 @@ flaggroup num-range {"ok":false,"error":"wFrom〜wTo は、印なら 0〜1023、
 flaggroup bit-range {"ok":false,"error":"wFrom〜wTo は、印なら 0〜1023、数値なら 0〜127 の範囲で、wFrom <= wTo にしてください"}
 flaggroup reverse {"ok":false,"error":"wFrom〜wTo は、印なら 0〜1023、数値なら 0〜127 の範囲で、wFrom <= wTo にしてください"}
 flaggroup noname {"ok":false,"error":"szName（メイン名）は空にできません（消す時は byState を 0 にします）"}
-flaggroup noband {"ok":false,"error":"足す時は wFrom・wTo（番号の帯の先頭と最後）を指定してください"}
+flaggroup noband {"ok":false,"error":"足す時は bands（番号の帯の配列）か、wFrom・wTo（帯 1 本の先頭と最後）を指定してください"}
 flaggroup badwid {"ok":false,"error":"wID は変えられません（足す時に自動で振られます）"}
 flaggroup badkey {"ok":false,"error":"知らない項目です: zzz"}
 flaggroup shrink {"ok":true,"id":0,"added":false,...} from=100 to=138
@@ -1597,18 +1597,99 @@ flaggroup del {"ok":true,"id":1,"added":false,...} count=3 state=0
 flaggroup get flag 3 after del {"id":3,"byState":1,"byKind":0,"wNo":140,"szName":"次の先頭","group":"","sub":0}
 flaggroup reuse {"ok":true,"id":3,"added":true,...} count=4 id=4
 flaggroup revive {"ok":false,"error":"番号の帯 140〜149 が、グループ「リノ2」（id 3・140〜150）と重なっています（同じ種類で帯は重ねられません）"} state=0
-flaggroup get 0 {"id":0,"wID":1,"byState":1,"byKind":0,"szName":"ルシー","wFrom":100,"wTo":139,"wSort":2}
+flaggroup get 0 {"id":0,"wID":1,"byState":1,"byKind":0,"szName":"ルシー","wSort":2,"bands":[{"wFrom":100,"wTo":139}],"wFrom":100,"wTo":139}
 flaggroup get 9 null
-flaggroup save=1 load=1 before=4 after=4
+flaggroup multi-add {"ok":true,"id":4,"added":true,...} count=5
+flaggroup multi bands=2 subcount=60 sub400=1 sub439=40 sub500=41 sub519=60 sub440=0 sub499=0 has500=1 has520=0
+flaggroup multi nofsub1=1/400 nofsub40=1/439 nofsub41=1/500 nofsub60=1/519 nofsub61=0 nofsub0=0
+flaggroup multi get {"id":4,"wID":5,"byState":1,"byKind":0,"szName":"多帯","wSort":0,"bands":[{"wFrom":400,"wTo":439},{"wFrom":500,"wTo":519}],"wFrom":400,"wTo":439}
+flaggroup multi flag439 {"ok":true,"id":0,"added":false,...}
+flaggroup multi flag500 {"ok":true,"id":1,"added":false,...}
+flaggroup multi flag519 {"ok":true,"id":2,"added":false,...}
+flaggroup multi flag440 {"ok":true,"id":3,"added":false,...}
+flaggroup multi get flag 0 {"id":0,"byState":1,"byKind":0,"wNo":439,"szName":"帯1の最後","group":"多帯","sub":40}
+flaggroup multi get flag 1 {"id":1,"byState":1,"byKind":0,"wNo":500,"szName":"帯2の先頭","group":"多帯","sub":41}
+flaggroup multi get flag 2 {"id":2,"byState":1,"byKind":0,"wNo":519,"szName":"帯2の最後","group":"多帯","sub":60}
+flaggroup multi get flag 3 {"id":3,"byState":1,"byKind":0,"wNo":440,"szName":"帯の間","group":"","sub":0}
+flaggroup multi overlap-other-band2 {"ok":false,"error":"番号の帯 519〜530（帯 2） が、グループ「多帯」（id 4・帯 2 の 500〜519）と重なっています（同じ種類で帯は重ねられません）"} count=5
+flaggroup multi overlap-own-bands {"ok":false,"error":"帯 1（600〜610）と帯 2（605〜620）が重なっています（帯は重ねられません）"} count=5
+flaggroup multi overlap-band1-vs-band1 {"ok":false,"error":"番号の帯 139〜139（帯 2） が、グループ「ルシー」（id 0・100〜139）と重なっています（同じ種類で帯は重ねられません）"} count=5
+flaggroup multi kind-differs {"ok":true,"id":5,"added":true,...} count=6
+flaggroup multi grow-band {"ok":true,"id":4,"added":false,...}
+flaggroup multi grown bands=3 subcount=70 sub800=61
+flaggroup multi bands17 {"ok":false,"error":"bands は {wFrom, wTo} の配列で、1〜16 本で指定してください"} bands=3
+flaggroup multi bands16 {"ok":true,"id":4,"added":false,...} bands=16 subcount=83 sub924=83
+flaggroup multi bands16 reload save=1 load=1 bands=16 subcount=83 band16=924-924
+flaggroup multi bands16 back {"ok":true,"id":4,"added":false,...} bands=3
+flaggroup parse 0 [100-139, 300-319, 500-509] max=1024 ok=1 count=3 100-139 300-319 500-509 err=
+flaggroup parse 1 [120] max=1024 ok=1 count=1 120-120 err=
+flaggroup parse 2 [100〜139、300～319,500~509] max=1024 ok=1 count=3 100-139 300-319 500-509 err=
+flaggroup parse 3 [　１００−１３９ 、 ３００〜３１９　] max=1024 ok=1 count=2 100-139 300-319 err=
+flaggroup parse 4 [5-5,0-0] max=128 ok=1 count=2 5-5 0-0 err=
+flaggroup parse 5 [0-1023] max=1024 ok=1 count=1 0-1023 err=
+flaggroup parse 6 [0-127] max=128 ok=1 count=1 0-127 err=
+flaggroup parse 7 [0-128] max=128 ok=0 count=0 err=「0-128」の番号は 0〜127 の範囲で入れてください。
+flaggroup parse 8 [1024] max=1024 ok=0 count=0 err=「1024」の番号は 0〜1023 の範囲で入れてください。
+flaggroup parse 9 [999999] max=1024 ok=0 count=0 err=「999999」の番号が大きすぎます。番号は 0〜1023 で入れてください。
+flaggroup parse 10 [] max=1024 ok=0 count=0 err=番号の帯を入れてください。
+例：100-139, 300-319
+flaggroup parse 11 [   ] max=1024 ok=0 count=0 err=番号の帯を入れてください。
+例：100-139, 300-319
+flaggroup parse 12 [100-] max=1024 ok=0 count=0 err=「100-」は帯として読めません。「100-139」のように先頭と最後を「-」でつなぐか、数字 1 つで入れてください。
+flaggroup parse 13 [-100] max=1024 ok=0 count=0 err=「-100」は帯として読めません。「100-139」のように先頭と最後を「-」でつなぐか、数字 1 つで入れてください。
+flaggroup parse 14 [1-2-3] max=1024 ok=0 count=0 err=「1-2-3」は帯として読めません。「100-139」のように先頭と最後を「-」でつなぐか、数字 1 つで入れてください。
+flaggroup parse 15 [abc] max=1024 ok=0 count=0 err=読めない文字があります。数字・「-」（または「〜」）・「,」（または「、」）だけで入れてください。
+例：100-139, 300-319
+flaggroup parse 16 [100,] max=1024 ok=0 count=1 100-100 err=「,」の前後に番号がありません。
+例：100-139, 300-319
+flaggroup parse 17 [,100] max=1024 ok=0 count=0 err=「,」の前後に番号がありません。
+例：100-139, 300-319
+flaggroup parse 18 [1,,2] max=1024 ok=0 count=1 1-1 err=「,」の前後に番号がありません。
+例：100-139, 300-319
+flaggroup parse 19 [139-100] max=1024 ok=0 count=0 err=「139-100」は、先頭 <= 最後 になるように入れてください。
+flaggroup parse 20 [100-139, 139-150] max=1024 ok=0 count=1 100-139 err=帯が重なっています。（100〜139 と 139〜150）
+flaggroup parse 21 [100-139, 110] max=1024 ok=0 count=1 100-139 err=帯が重なっています。（100〜139 と 110〜110）
+flaggroup parse 22 [1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31] max=1024 ok=1 count=16 1-1 3-3 5-5 7-7 9-9 11-11 13-13 15-15 17-17 19-19 21-21 23-23 25-25 27-27 29-29 31-31 err=
+flaggroup parse 23 [1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33] max=1024 ok=0 count=16 1-1 3-3 5-5 7-7 9-9 11-11 13-13 15-15 17-17 19-19 21-21 23-23 25-25 27-27 29-29 31-31 err=帯は 16 本までです。
+flaggroup multi bands0 {"ok":false,"error":"bands は {wFrom, wTo} の配列で、1〜16 本で指定してください"}
+flaggroup multi bands-notarray {"ok":false,"error":"bands は {wFrom, wTo} の配列で、1〜16 本で指定してください"}
+flaggroup multi bands-badelem {"ok":false,"error":"bands[0] は {\"wFrom\":先頭, \"wTo\":最後}（0〜65534 の整数）で指定してください"}
+flaggroup multi bands-range {"ok":false,"error":"帯 2 の wFrom〜wTo は、印なら 0〜1023、数値なら 0〜127 の範囲で、wFrom <= wTo にしてください"}
+flaggroup multi bands-reverse {"ok":false,"error":"帯 2 の wFrom〜wTo は、印なら 0〜1023、数値なら 0〜127 の範囲で、wFrom <= wTo にしてください"}
+flaggroup multi legacy-wto {"ok":true,"id":4,"added":false,...} bands=3 band1=400-429 band2=500-519
+flaggroup multi both-mismatch {"ok":false,"error":"bands と wFrom・wTo を一緒に渡す時は、wFrom・wTo を bands[0] と同じ値にしてください（どちらか一方だけで指定できます）"}
+flaggroup multi both-same {"ok":true,"id":4,"added":false,...} bands=2
+flaggroup multi restore-ok {"ok":true,"id":4,"added":false,...}
+flaggroup multi one-band {"ok":true,"id":4,"added":false,...} bands=1
+flaggroup multi restore {"ok":true,"id":4,"added":false,...} bands=2 subcount=60
+flaggroup multi del {"ok":true,"id":4,"added":false,...}
+flaggroup multi reuse-band2 {"ok":true,"id":6,"added":true,...} count=7
+flaggroup multi revive-conflict {"ok":false,"error":"番号の帯 500〜519（帯 2） が、グループ「再利用」（id 6・510〜515）と重なっています（同じ種類で帯は重ねられません）"} state=0
+flaggroup multi get flag 2 after del {"id":2,"byState":1,"byKind":0,"wNo":519,"szName":"帯2の最後","group":"","sub":0}
+flaggroup multi reuse-del {"ok":true,"id":6,"added":false,...}
+flaggroup multi revive {"ok":true,"id":4,"added":false,...} state=1
+flaggroup save=1 load=1 before=7 after=7
 flaggroup loaded 0 id=1 state=1 kind=0 name=ルシー from=100 to=139 sort=2
 flaggroup loaded 1 id=2 state=0 kind=0 name=リノ from=140 to=149 sort=0
 flaggroup loaded 2 id=3 state=1 kind=1 name=数 from=10 to=20 sort=0
 flaggroup loaded 3 id=4 state=1 kind=0 name=リノ2 from=140 to=150 sort=0
-flaggroup get flag 0 after load {"id":0,"byState":1,"byKind":0,"wNo":103,"szName":"港町の事件2","group":"ルシー","sub":4}
-adminflaggroup list got=1 sub=1 count=4 id=1 name=ルシー
-adminflaggroup add got=1 result=1 count=5 id=5
-adminflaggroup overlap got=1 result=0 count=5 msg=番号の帯 205〜215 が、グループ「管理者」（id 4・200〜209）と重なっています（同じ種類で帯は重ねられません）
-adminflaggroup edit got=1 result=1 name=管理者改 id=5
+flaggroup loaded 4 id=5 state=1 kind=0 name=多帯 from=400 to=439 sort=0
+flaggroup loaded 4 band2=500-519
+flaggroup loaded 5 id=6 state=1 kind=1 name=数多 from=30 to=35 sort=0
+flaggroup loaded 5 band2=40-45
+flaggroup loaded 6 id=7 state=0 kind=0 name=再利用 from=510 to=515 sort=0
+flaggroup get flag 0 after load {"id":0,"byState":1,"byKind":0,"wNo":439,"szName":"帯1の最後","group":"多帯","sub":40}
+flaggroup legacy-file wrote=1 load=1 count=2
+flaggroup legacy-file 0 id=1 kind=0 name=ルシー bands=1 band1=100-139 subcount=40 sort=1
+flaggroup legacy-file 1 id=2 kind=1 name=数値グループ bands=1 band1=10-19 subcount=10 sort=2
+flaggroup legacy-file add-band {"ok":true,"id":0,"added":false,...}
+flaggroup legacy-file reload load=1 count=2 bands=2 sub300=41 sub319=60
+adminflaggroup list got=1 sub=1 count=2 id=1 name=ルシー
+adminflaggroup add got=1 result=1 count=3 id=3
+adminflaggroup overlap got=1 result=0 count=3 msg=番号の帯 205〜215 が、グループ「管理者」（id 2・200〜209）と重なっています（同じ種類で帯は重ねられません）
+adminflaggroup multi got=1 result=1 count=4 bands=2 sub350=11
+adminflaggroup multi-overlap got=1 result=0 count=4 msg=番号の帯 205〜206（帯 2） が、グループ「管理者」（id 2・200〜209）と重なっています（同じ種類で帯は重ねられません）
+adminflaggroup edit got=1 result=1 name=管理者改 id=4
 adminflaggroup range got=1 result=0
-adminflaggroup user got=0 count=5 same=1
+adminflaggroup user got=0 count=4 same=1
 == done ==

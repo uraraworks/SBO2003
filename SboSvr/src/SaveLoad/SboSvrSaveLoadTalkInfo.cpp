@@ -316,9 +316,12 @@ typedef struct _FLAGGROUPFILE {
 	BYTE		byState;
 	BYTE		byKind;
 	char		szName[MAX_FLAGGROUPNAME];
-	WORD		wFrom;
+	WORD		wFrom;													/* 帯 1（古いファイルにある列。帯が 1 本だけでもここに入る） */
 	WORD		wTo;
 	WORD		wSort;
+	BYTE		byBandCount;											/* 帯の本数（1〜16。古いファイルには無く、0 は 1 本として読む） */
+	WORD		awFromX[MAX_FLAGGROUPBAND - 1];							/* 帯 2〜16（詰めて入れる） */
+	WORD		awToX[MAX_FLAGGROUPBAND - 1];
 } FLAGGROUPFILE;
 
 /* フラグのグループのカラム */
@@ -330,6 +333,10 @@ static const COLINFO s_aFlagGroupCol[] = {
 	COL (FLAGGROUPFILE, wFrom,		COL_U16),
 	COL (FLAGGROUPFILE, wTo,		COL_U16),
 	COL (FLAGGROUPFILE, wSort,		COL_U16),
+	/* 以下は帯を 16 本まで持てるようにした時に足した列（無い古いファイルは帯 1 本として読める） */
+	COL (FLAGGROUPFILE, byBandCount,	COL_U8),
+	COLS(FLAGGROUPFILE, awFromX,	COL_U16ARR, MAX_FLAGGROUPBAND - 1),
+	COLS(FLAGGROUPFILE, awToX,		COL_U16ARR, MAX_FLAGGROUPBAND - 1),
 };
 
 /* ========================================================================= */
@@ -577,8 +584,25 @@ BOOL SaveFlagGroupInfo(void)
 		aData[i].byState = g_aFlagGroupInfo[i]->byState;
 		aData[i].byKind = g_aFlagGroupInfo[i]->byKind;
 		memcpy (aData[i].szName, g_aFlagGroupInfo[i]->szName, sizeof (aData[i].szName));
-		aData[i].wFrom = g_aFlagGroupInfo[i]->wFrom;
-		aData[i].wTo = g_aFlagGroupInfo[i]->wTo;
+		/* 使っている帯を詰めて書く（帯 1 は wFrom・wTo、残りは awFromX・awToX） */
+		{
+			const FLAGGROUPINFO *pG = g_aFlagGroupInfo[i];
+			int nBand = 0;
+			for (int b = 0; b < MAX_FLAGGROUPBAND; b ++) {
+				if (!FlagGroupBandUsed (pG, b)) {
+					continue;
+				}
+				if (nBand == 0) {
+					aData[i].wFrom = pG->awFrom[b];
+					aData[i].wTo = pG->awTo[b];
+				} else {
+					aData[i].awFromX[nBand - 1] = pG->awFrom[b];
+					aData[i].awToX[nBand - 1] = pG->awTo[b];
+				}
+				nBand ++;
+			}
+			aData[i].byBandCount = (BYTE)nBand;
+		}
 		aData[i].wSort = g_aFlagGroupInfo[i]->wSort;
 	}
 	return SaveColumns (szFile, s_aFlagGroupCol, sizeof (s_aFlagGroupCol) / sizeof (s_aFlagGroupCol[0]), (const BYTE *)&aData[0], sizeof (FLAGGROUPFILE), nCount);
@@ -607,8 +631,13 @@ BOOL LoadFlagGroupInfo(void)
 		pInfo->byKind = p->byKind;
 		memcpy (pInfo->szName, p->szName, sizeof (pInfo->szName));
 		pInfo->szName[MAX_FLAGGROUPNAME - 1] = 0;
-		pInfo->wFrom = p->wFrom;
-		pInfo->wTo = p->wTo;
+		FlagGroupClearBands (pInfo);
+		pInfo->awFrom[0] = p->wFrom;
+		pInfo->awTo[0] = p->wTo;
+		for (int b = 1; b < MAX_FLAGGROUPBAND && b < (int)p->byBandCount; b ++) {
+			pInfo->awFrom[b] = p->awFromX[b - 1];
+			pInfo->awTo[b] = p->awToX[b - 1];
+		}
 		pInfo->wSort = p->wSort;
 		g_aFlagGroupInfo.Add (pInfo);
 	}

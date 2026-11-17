@@ -448,8 +448,6 @@ static const DATAFIELD s_aFieldFlagGroup[] = {
 	FLD (FLAGGROUPINFO, byState,		"状態",					FT_U8, 0, "0=削除済み（枠だけ残る。帯はほかのグループが使える） 1=有効。足す時に省くと 1"),
 	FLD (FLAGGROUPINFO, byKind,			"種類",					FT_U8, 0, "0=印（ON/OFF） 1=数値（0〜255）。同じ種類で有効なグループの帯が重なるのは不可（足す時に省くと 0）"),
 	FLDS(FLAGGROUPINFO, szName,			"メイン名",				FT_STR, 0, "全角 20 字ほど（UTF-8 で最大 63 バイト）。例: 「ルシー」。有効なグループでは空にできない"),
-	FLD (FLAGGROUPINFO, wFrom,			"番号の帯の先頭",		FT_U16, 0, "その番号も含む。印は 0〜1023、数値は 0〜127。足す時は必ず指定。例: ルシー=印 100〜139 なら wFrom=100・wTo=139"),
-	FLD (FLAGGROUPINFO, wTo,			"番号の帯の最後",		FT_U16, 0, "その番号も含む。wFrom 以上。足す時は必ず指定"),
 	FLD (FLAGGROUPINFO, wSort,			"並び順",				FT_U16, 0, "一覧で小さい順に並ぶ（同じなら番号順）"),
 };
 
@@ -1015,7 +1013,7 @@ static const char *s_apszKindNote[] = {
 	"キャラごとにずっと残る「フラグ」（印 1024 個=ON/OFF の 0〜1023、数値 128 個=0〜255 の 0〜127）に付ける名前の表（読み書き）。名前は管理用でプレイヤーには出ない。byKind が 0=印・1=数値、wNo が番号で、同じ組は 1 件まで。削除は byState=0（枠だけ残り、足し直す時はその枠の byState を 1 に戻す）。ファイルが無い時は 0 件。キャラのフラグの中身は char の読み出しの flags で読める（読むだけ）。番号の割り振りの目安: 印は 1〜199 本筋・200〜599 地域・600〜899 お使い・900〜1023 予備",
 	"会話データ（読み書き）。NPC の台詞を \"@tNNN\"（NNN=wID。例 @t012）にすると、話しかけた人のフラグ（印・数値）とレベルで lines（最大 16 行）から 1 行を選び、その人にだけ台詞を出す（台詞はクライアントへ送らない）。選び方: 条件（立っている必要のある印 awNeed 4・立っていてはいけない印 awNot 4・数値の条件 2・レベル下限上限）に全部合う行のうち byRank が一番小さい行、同じ順位が複数ならくじ。合う行が無ければ「……」。話した後に印を立てる・消す・数値を動かす。lines は配列で丸ごと置き換え。削除は byState=0（枠だけ残り、足し直す時はその枠の byState を 1 に戻す）。ファイルが無い時は 0 件",
 	"思い出の本（読み書き。削除なし。止めるのは byState=0）。NPC の台詞を \"@r\" にすると語り部になり、話すと、そのキャラがクリアしたシナリオ（byState=1 で、クリアした印 wClearFlag が立っている）の一覧が wSort 順に開く。選んで確認すると、そのシナリオと、wPrevStory をたどってそれにつながる後のシナリオ全部について、印の範囲（awFlagFrom〜awFlagTo）を消し、数値（abyNum）を 0 に戻し、依頼（awQuest）のクリア済みの印を消して、最初からやり直せる（byCountNum の数値は選んだシナリオだけ +1）。依頼の報酬は初回だけ（もらい済みの印は消えない）。そのキャラが戻す依頼のどれかを受けている間と、語り部から離れている時は断る。足す時のシナリオ番号（wID 1〜255）は自動。印・数値の「無し」は 65535・255。ファイルが無い時は 0 件",
-	"フラグのグループ（読み書き。削除は byState=0）。キャラのフラグの印（0〜1023）・数値（0〜127）の番号の帯 wFrom〜wTo に「メイン名」szName を付けて、「メイン-サブ」で管理するための層（例: ルシー＝印 100〜139）。番号 n が有効なグループの帯に入る時、メイン=そのグループ・サブ=n-wFrom+1（1 始まり）で、「ルシー-3（103）」のように呼べる（flag の一覧にも計算した group・sub が出る。読むだけ）。見せ方・入力・絞り込みだけの層で、会話データ・依頼・NPC の見える条件・思い出の本などが覚えている番号は一切変わらない。同じ種類で有効なグループの帯が重なるのは不可。足す時のグループ番号（wID 1〜255）は自動。ファイルが無い時は 0 件",
+	"フラグのグループ（読み書き。削除は byState=0）。キャラのフラグの印（0〜1023）・数値（0〜127）の番号の帯（bands。1 グループ 16 本まで。互換で帯 1 は wFrom・wTo でも読み書きできる）に「メイン名」szName を付けて、「メイン-サブ」で管理するための層（例: ルシー＝印 100〜139。後から番号が飛んだ場所に続きの帯 300〜319 を足せる）。番号 n が有効なグループのどれかの帯に入る時、メイン=そのグループ・サブ=帯の順に続けて数えた番号（1 始まり。ルシー=100〜139＋300〜319 なら 100〜139 がサブ 1〜40・300〜319 がサブ 41〜60）で、「ルシー-3（103）」のように呼べる（flag の一覧にも計算した group・sub が出る。読むだけ）。見せ方・入力・絞り込みだけの層で、会話データ・依頼・NPC の見える条件・思い出の本などが覚えている番号は一切変わらない。同じ種類で有効なグループのすべての帯（同じグループの帯同士も）が重なるのは不可。足す時のグループ番号（wID 1〜255）は自動。ファイルが無い時は 0 件",
 	"プレイヤーと NPC（敵・町の人・発生元など）の全キャラ。番号（id）はキャラのテーブル番号で再起動で変わることがある。NPC は npcId（変わらない番号）で指す。isPlayer でプレイヤーか分かる。書き換えられるのは保存される NPC だけ（プレイヤー・発生した敵は不可）。足す時は dwMapID・dwX・dwY が要る。消す時は変更に {\"deleted\": true}。アカウント名・パスワード・IP は出さない",
 	"マップの情報・イベント・店・メッセージ・アイテム配置。番号は配列の番号（dwID はマップID で、キャラの dwMapID はこちら）。events・shops・messages は配列で丸ごと置き換え。マス目のパーツは sbo_map_tiles で読み、sbo_map_tiles_set で書く。大きさの変更・マップの追加はできない",
 	"マップパーツ（マス目の parts に入る番号）の表示・当たり判定。byHitType 0 なら通れる。anime は配列で丸ごと置き換え（コマ数 byAnimeCount も変わる）。追加できる（消せない）",
@@ -1073,6 +1071,27 @@ static const FLAGGROUPINFO *FlagGroupOf(BYTE byKind, WORD wNo)
 		}
 	}
 	return NULL;
+}
+
+/* kind "flagGroup" の記録（項目表の分 + bands と、互換の wFrom・wTo（帯 1）） */
+static std::string FlagGroupJson(const FLAGGROUPINFO *p)
+{
+	std::string out = FieldsJson((const BYTE *)p, s_aFieldFlagGroup, COUNTOF(s_aFieldFlagGroup)) + ",\"bands\":[";
+	int nBand = 0;
+	WORD wFirstFrom = 0, wFirstTo = 0;
+
+	for (int i = 0; i < MAX_FLAGGROUPBAND; i ++) {
+		if (!FlagGroupBandUsed(p, i)) {
+			continue;
+		}
+		if (nBand == 0) {
+			wFirstFrom = p->awFrom[i];
+			wFirstTo = p->awTo[i];
+		}
+		out += std::string(nBand ? "," : "") + "{\"wFrom\":" + JsonNum(p->awFrom[i]) + ",\"wTo\":" + JsonNum(p->awTo[i]) + "}";
+		nBand ++;
+	}
+	return out + "],\"wFrom\":" + JsonNum(wFirstFrom) + ",\"wTo\":" + JsonNum(wFirstTo);
 }
 
 /* kind "flag" の記録に付ける、計算した group（メイン名）・sub（サブ。1 始まり）。どのグループにも入らなければ "" と 0 */
@@ -2111,10 +2130,16 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataSchema(void)
 		case KIND_FLAG:
 			out += FieldSchemaJson(s_aFieldFlagName, COUNTOF(s_aFieldFlagName));
 			out.insert(out.size() - 1, ",{\"name\":\"group\",\"type\":\"string\",\"label\":\"グループ（メイン名）\",\"readonly\":true,\"note\":\"この番号が入る有効なグループ（flagGroup）のメイン名。どのグループにも入らなければ空。計算して出すだけで、書き込みはできない\"}"
-					",{\"name\":\"sub\",\"type\":\"u16\",\"label\":\"グループの中の番号（サブ）\",\"readonly\":true,\"note\":\"番号 - グループの wFrom + 1（1 始まり）。「ルシー-3」の 3。グループに入らなければ 0。読むだけ\"}");
+					",{\"name\":\"sub\",\"type\":\"u16\",\"label\":\"グループの中の番号（サブ）\",\"readonly\":true,\"note\":\"帯の順に続けて数えた番号（1 始まり。ルシー=100〜139＋300〜319 の 300 はサブ 41）。「ルシー-3」の 3。グループに入らなければ 0。読むだけ\"}");
 			break;
 		case KIND_FLAGGROUP:
 			out += FieldSchemaJson(s_aFieldFlagGroup, COUNTOF(s_aFieldFlagGroup));
+			out.insert(out.size() - 1, ",{\"name\":\"bands\",\"type\":\"object[]\",\"label\":\"番号の帯\",\"minCount\":1,\"maxCount\":" + JsonNum(MAX_FLAGGROUPBAND) + ",\"fields\":"
+					"[{\"name\":\"wFrom\",\"type\":\"u16\",\"label\":\"帯の先頭\",\"note\":\"その番号も含む。印は 0〜1023、数値は 0〜127\"},"
+					"{\"name\":\"wTo\",\"type\":\"u16\",\"label\":\"帯の最後\",\"note\":\"その番号も含む。wFrom 以上\"}]"
+					",\"note\":\"配列で丸ごと置き換え。1〜16 本で、順番がサブの数え順（帯 1 の続きが帯 2）。例: ルシー=[{wFrom:100,wTo:139},{wFrom:300,wTo:319}] なら 100〜139 がサブ 1〜40・300〜319 がサブ 41〜60。足す時は bands か wFrom・wTo のどちらかが必須。同じ種類のすべての有効なグループのすべての帯（同じグループの帯同士も）と重ねられない\"}"
+					",{\"name\":\"wFrom\",\"type\":\"u16\",\"label\":\"帯 1 の先頭（互換）\",\"note\":\"bands[0].wFrom と同じ。bands を使わずこれと wTo だけを渡すと帯 1 本のグループになる（直す時は帯 1 だけが変わり、帯 2 以降は残る）\"}"
+					",{\"name\":\"wTo\",\"type\":\"u16\",\"label\":\"帯 1 の最後（互換）\",\"note\":\"bands[0].wTo と同じ\"}");
 			break;
 		case KIND_TALK:
 			out += FieldSchemaJson(s_aFieldTalk, COUNTOF(s_aFieldTalk));
@@ -2258,7 +2283,7 @@ static std::string RecordJson(int nKind, int nID)
 				FlagGroupExtraJson(g_aFlagNameInfo[nID]->byKind, g_aFlagNameInfo[nID]->wNo);
 		break;
 	case KIND_FLAGGROUP:
-		out += FieldsJson((const BYTE *)g_aFlagGroupInfo[nID], s_aFieldFlagGroup, COUNTOF(s_aFieldFlagGroup));
+		out += FlagGroupJson(g_aFlagGroupInfo[nID]);
 		break;
 	case KIND_TALK:
 		out += TalkJson(g_aTalkInfo[nID]);
@@ -4746,19 +4771,25 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 
 	case KIND_FLAGGROUP:
 		{
+			static const char *apszGroupExtra[] = { "bands", "wFrom", "wTo", NULL };
 			FLAGGROUPINFO Info;
 			memset(&Info, 0, sizeof(Info));
+			FlagGroupClearBands(&Info);
 			if (!bAdd) {
 				Info = *g_aFlagGroupInfo[nID];
 			} else {
 				Info.byState = FLAGGROUPSTATE_ON;
 			}
-			if (!CheckKnownKeys(chg, s_aFieldFlagGroup, COUNTOF(s_aFieldFlagGroup), NULL, strErr)) {
+			if (!CheckKnownKeys(chg, s_aFieldFlagGroup, COUNTOF(s_aFieldFlagGroup), apszGroupExtra, strErr)) {
 				goto Exit;
 			}
 			/* wID は読むだけ（自動で振る）。同じ値を書き戻すのは許す（取得した記録をそのまま渡せるように） */
 			{
 				JVal chg2 = chg;
+				const JVal *pBands = chg.Get("bands");
+				const JVal *pFrom = chg.Get("wFrom");
+				const JVal *pTo = chg.Get("wTo");
+
 				for (size_t k = 0; k < chg2.o.size(); k ++) {
 					if (chg2.o[k].first == "wID") {
 						if (!(chg2.o[k].second.t == JVal::NUM && !bAdd && chg2.o[k].second.n == Info.wID)) {
@@ -4769,12 +4800,55 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 						break;
 					}
 				}
-				if (bAdd && (chg2.Get("wFrom") == NULL || chg2.Get("wTo") == NULL)) {
-					strErr = "足す時は wFrom・wTo（番号の帯の先頭と最後）を指定してください";
-					goto Exit;
-				}
 				if (!ApplyFields((BYTE *)&Info, s_aFieldFlagGroup, COUNTOF(s_aFieldFlagGroup), chg2, strErr, "")) {
 					goto Exit;
+				}
+				/* 番号の帯（bands は丸ごと置き換え。wFrom・wTo だけなら帯 1 の互換の書き方） */
+				if (bAdd && pBands == NULL && (pFrom == NULL || pTo == NULL)) {
+					strErr = "足す時は bands（番号の帯の配列）か、wFrom・wTo（帯 1 本の先頭と最後）を指定してください";
+					goto Exit;
+				}
+				if (pFrom != NULL && (pFrom->t != JVal::NUM || pFrom->n < 0 || pFrom->n > 65534 || pFrom->n != (double)(long long)pFrom->n)) {
+					strErr = "wFrom は 0〜65534 の整数で指定してください";
+					goto Exit;
+				}
+				if (pTo != NULL && (pTo->t != JVal::NUM || pTo->n < 0 || pTo->n > 65535 || pTo->n != (double)(long long)pTo->n)) {
+					strErr = "wTo は 0〜65535 の整数で指定してください";
+					goto Exit;
+				}
+				if (pBands != NULL) {
+					if (pBands->t != JVal::ARR || pBands->a.size() < 1 || pBands->a.size() > (size_t)MAX_FLAGGROUPBAND) {
+						strErr = "bands は {wFrom, wTo} の配列で、1〜" + JsonNum(MAX_FLAGGROUPBAND) + " 本で指定してください";
+						goto Exit;
+					}
+					FlagGroupClearBands(&Info);
+					for (size_t k = 0; k < pBands->a.size(); k ++) {
+						const JVal &bd = pBands->a[k];
+						std::string strName = "bands[" + JsonNum((long long)k) + "]";
+						const JVal *pBF = (bd.t == JVal::OBJ) ? bd.Get("wFrom") : NULL;
+						const JVal *pBT = (bd.t == JVal::OBJ) ? bd.Get("wTo") : NULL;
+						if (bd.t != JVal::OBJ || pBF == NULL || pBT == NULL || bd.o.size() != 2 ||
+								pBF->t != JVal::NUM || pBT->t != JVal::NUM ||
+								pBF->n < 0 || pBF->n > 65534 || pBT->n < 0 || pBT->n > 65535 ||
+								pBF->n != (double)(long long)pBF->n || pBT->n != (double)(long long)pBT->n) {
+							strErr = strName + " は {\"wFrom\":先頭, \"wTo\":最後}（0〜65534 の整数）で指定してください";
+							goto Exit;
+						}
+						Info.awFrom[k] = (WORD)pBF->n;
+						Info.awTo[k] = (WORD)pBT->n;
+					}
+					if ((pFrom != NULL && (WORD)pFrom->n != Info.awFrom[0]) || (pTo != NULL && (WORD)pTo->n != Info.awTo[0])) {
+						strErr = "bands と wFrom・wTo を一緒に渡す時は、wFrom・wTo を bands[0] と同じ値にしてください（どちらか一方だけで指定できます）";
+						goto Exit;
+					}
+				} else {
+					/* 互換: wFrom・wTo は帯 1 だけを変える（帯 2 以降は今のまま） */
+					if (pFrom != NULL) {
+						Info.awFrom[0] = (WORD)pFrom->n;
+					}
+					if (pTo != NULL) {
+						Info.awTo[0] = (WORD)pTo->n;
+					}
 				}
 			}
 			/* 内容の確認 */
@@ -4792,20 +4866,61 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 			}
 			{
 				WORD wMax = (Info.byKind == FLAGKIND_BIT) ? MAX_FLAGBIT : MAX_FLAGNUM;
-				if (Info.wFrom >= wMax || Info.wTo >= wMax || Info.wFrom > Info.wTo) {
-					strErr = "wFrom〜wTo は、印なら 0〜" + JsonNum(MAX_FLAGBIT - 1) + "、数値なら 0〜" + JsonNum(MAX_FLAGNUM - 1) + " の範囲で、wFrom <= wTo にしてください";
-					goto Exit;
+				/* 帯は詰めて使う（途中が空なら前へ詰める。順番がサブの数え順なので順序は変えない） */
+				{
+					int nTo = 0;
+					for (int k = 0; k < MAX_FLAGGROUPBAND; k ++) {
+						if (FlagGroupBandUsed(&Info, k)) {
+							Info.awFrom[nTo] = Info.awFrom[k];
+							Info.awTo[nTo] = Info.awTo[k];
+							nTo ++;
+						}
+					}
+					for (int k = nTo; k < MAX_FLAGGROUPBAND; k ++) {
+						Info.awFrom[k] = FLAGGROUPBAND_NONE;
+						Info.awTo[k] = 0;
+					}
+					if (nTo == 0) {
+						strErr = "番号の帯は 1 本以上必要です";
+						goto Exit;
+					}
+				}
+				for (int k = 0; k < MAX_FLAGGROUPBAND; k ++) {
+					if (!FlagGroupBandUsed(&Info, k)) {
+						continue;
+					}
+					if (Info.awFrom[k] >= wMax || Info.awTo[k] >= wMax || Info.awFrom[k] > Info.awTo[k]) {
+						strErr = std::string(FlagGroupBandCount(&Info) > 1 ? "帯 " + JsonNum(k + 1) + " の " : "") + "wFrom〜wTo は、印なら 0〜" + JsonNum(MAX_FLAGBIT - 1) + "、数値なら 0〜" + JsonNum(MAX_FLAGNUM - 1) + " の範囲で、wFrom <= wTo にしてください";
+						goto Exit;
+					}
 				}
 			}
-			/* 同じ種類で、有効なグループの帯が重なるのは不可（削除済みの枠の帯は数えない） */
+			/* 帯同士が重ならないこと（同じグループの中も）。同じ種類で、有効なグループのすべての帯とも重ならないこと（削除済みの枠の帯は数えない） */
+			for (int k = 0; k < MAX_FLAGGROUPBAND; k ++) {
+				for (int m = k + 1; m < MAX_FLAGGROUPBAND; m ++) {
+					if (FlagGroupBandUsed(&Info, k) && FlagGroupBandUsed(&Info, m) &&
+							Info.awFrom[k] <= Info.awTo[m] && Info.awFrom[m] <= Info.awTo[k]) {
+						strErr = "帯 " + JsonNum(k + 1) + "（" + JsonNum(Info.awFrom[k]) + "〜" + JsonNum(Info.awTo[k]) + "）と帯 " + JsonNum(m + 1) + "（" +
+								JsonNum(Info.awFrom[m]) + "〜" + JsonNum(Info.awTo[m]) + "）が重なっています（帯は重ねられません）";
+						goto Exit;
+					}
+				}
+			}
 			if (Info.byState == FLAGGROUPSTATE_ON) {
 				for (int k = 0; k < g_aFlagGroupInfo.GetSize(); k ++) {
 					const FLAGGROUPINFO *pO = g_aFlagGroupInfo[k];
-					if ((bAdd || k != nID) && pO->byState == FLAGGROUPSTATE_ON && pO->byKind == Info.byKind &&
-							Info.wFrom <= pO->wTo && pO->wFrom <= Info.wTo) {
-						strErr = "番号の帯 " + JsonNum(Info.wFrom) + "〜" + JsonNum(Info.wTo) + " が、グループ「" + pO->szName + "」（id " + JsonNum(k) +
-								"・" + JsonNum(pO->wFrom) + "〜" + JsonNum(pO->wTo) + "）と重なっています（同じ種類で帯は重ねられません）";
-						goto Exit;
+					if (!((bAdd || k != nID) && pO->byState == FLAGGROUPSTATE_ON && pO->byKind == Info.byKind)) {
+						continue;
+					}
+					for (int b = 0; b < MAX_FLAGGROUPBAND; b ++) {
+						for (int c = 0; c < MAX_FLAGGROUPBAND; c ++) {
+							if (FlagGroupBandUsed(&Info, b) && FlagGroupBandUsed(pO, c) &&
+									Info.awFrom[b] <= pO->awTo[c] && pO->awFrom[c] <= Info.awTo[b]) {
+								strErr = "番号の帯 " + JsonNum(Info.awFrom[b]) + "〜" + JsonNum(Info.awTo[b]) + (FlagGroupBandCount(&Info) > 1 ? "（帯 " + JsonNum(b + 1) + "）" : "") + " が、グループ「" + pO->szName + "」（id " + JsonNum(k) +
+										"・" + (FlagGroupBandCount(pO) > 1 ? "帯 " + JsonNum(c + 1) + " の " : "") + JsonNum(pO->awFrom[c]) + "〜" + JsonNum(pO->awTo[c]) + "）と重なっています（同じ種類で帯は重ねられません）";
+								goto Exit;
+							}
+						}
 					}
 				}
 			}
@@ -4830,7 +4945,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 				}
 				Info.wID = wNew;
 			}
-			strRecord = FieldsJson((const BYTE *)&Info, s_aFieldFlagGroup, COUNTOF(s_aFieldFlagGroup));
+			strRecord = FlagGroupJson(&Info);
 			if (bApply) {
 				if (bAdd) {
 					PFLAGGROUPINFO pNew = new FLAGGROUPINFO;
@@ -5021,8 +5136,19 @@ void SboDataFlagGroupApplyInfo(int nNo, const FLAGGROUPINFO *pInfo, int &nNoOut,
 	if (!bAdd) {
 		Info.wID = g_aFlagGroupInfo[nNo]->wID;
 	}
+	/* 帯は bands で渡す（wFrom・wTo は帯 1 の互換なので付けない） */
 	std::string strJson = "{" + (bAdd ? FieldsJson((const BYTE *)&Info, s_aFieldFlagGroup + 1, COUNTOF(s_aFieldFlagGroup) - 1) :
-			FieldsJson((const BYTE *)&Info, s_aFieldFlagGroup, COUNTOF(s_aFieldFlagGroup))) + "}";
+			FieldsJson((const BYTE *)&Info, s_aFieldFlagGroup, COUNTOF(s_aFieldFlagGroup))) + ",\"bands\":[";
+	{
+		int nBand = 0;
+		for (int i = 0; i < MAX_FLAGGROUPBAND; i ++) {
+			if (FlagGroupBandUsed(&Info, i)) {
+				strJson += std::string(nBand ? "," : "") + "{\"wFrom\":" + JsonNum(Info.awFrom[i]) + ",\"wTo\":" + JsonNum(Info.awTo[i]) + "}";
+				nBand ++;
+			}
+		}
+	}
+	strJson += "]}";
 	const char *pszRes = SboWebDataApply("flagGroup", bAdd ? g_aFlagGroupInfo.GetSize() : nNo, strJson.c_str(), 1, "管理者ウィンドウ");
 	ApplyResultToErr(pszRes, bAdd ? g_aFlagGroupInfo.GetSize() - 1 : nNo, nNoOut, strErr);
 }
