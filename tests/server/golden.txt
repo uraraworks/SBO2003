@@ -1865,4 +1865,18 @@ adminflaggroup multi-overlap got=1 result=0 count=4 msg=番号の帯 205〜206�
 adminflaggroup edit got=1 result=1 name=管理者改 id=4
 adminflaggroup range got=1 result=0
 adminflaggroup user got=0 count=4 same=1
+== AJ. Tail relogin ==
+tailrelogin area found=1
+tailrelogin battle before=1
+tailrelogin battle after logout=0
+tailrelogin relogin on=1 front=1
+tailrelogin stale chaseend=1 front=-1 battle=1
+tailrelogin range ng2=1 front=-1
+== AK. Tail overlap ==
+tailoverlap area found=1
+tailoverlap on Q(front=-1)
+tailoverlap off Q(front=P:1) P(back=Q:1) Q(stay=1) return=1 fade=[]
+== AL. Empty map check ==
+emptymap null charpos=1 mapmsg=0
+emptymap zero charpos=1 mapmsg=0
 == done ==
