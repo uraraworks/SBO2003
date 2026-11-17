@@ -3464,6 +3464,8 @@ void RecvDataProcLOGINRES(PBYTE pData, DWORD dwDataSize)
 			PWNDINFO pWnd = (PWNDINFO)g_WndInfo[nNo];
 			EraseWindow (pWnd);
 			g_dwMsgIDLogin = 0;
+			/* 入り直した時は通常モードから（サーバーもログアウトで戦闘モードの覚えを消している） */
+			g_bBattleMode = FALSE;
 
 			pWnd = MakeWindowLOGINMENU ();
 			g_WndInfo.Add (pWnd);
@@ -4242,6 +4244,18 @@ void RecvDataProcCHGSTATE(PBYTE pData, DWORD dwDataSize)
 /* 内容：受信データ処理(マップ情報通知)										 */
 /* 日付：2003/05/04															 */
 /* ========================================================================= */
+/* マップ情報を受け取ったら、自分のキャラ情報が届いた時に戦闘モードをサーバーへ知らせ直す。
+   サーバーとクライアントで戦闘モードの覚えが食い違うと、Z の「ついていく」が効かなくなるので、
+   マップを移るたびにクライアントの状態に合わせ直す */
+static BOOL s_bBattleModeResync = FALSE;
+static void BattleModeResync(void)
+{
+	if (s_bBattleModeResync && (g_nMyCharID >= 0)) {
+		s_bBattleModeResync = FALSE;
+		SendCmdBATTLEMODE (g_bBattleMode);
+	}
+}
+
 void RecvDataProcMAPINFO(PBYTE pData, DWORD dwDataSize)
 {
 	/* 取り引き中？ */
@@ -4264,6 +4278,7 @@ void RecvDataProcMAPINFO(PBYTE pData, DWORD dwDataSize)
 	}
 	g_aCharInfo.RemoveAll ();
 	g_nMyCharID = -1;
+	s_bBattleModeResync = TRUE;
 	g_wLastProcSecond = 0xFFFF;
 	/* 参加中のサブゲーム情報をクリア */
 	if (g_pSubGameInfoPlay) {
@@ -4698,6 +4713,7 @@ void RecvDataProcCHARINFO(PBYTE pData, DWORD dwDataSize)
 	}
 
 	g_nMyCharID = GetCharID (g_pMyID);
+	BattleModeResync ();
 
 	if (g_nMyCharID >= 0) {
 		/* 画面内にいるキャラ情報のチェック */
@@ -4857,6 +4873,7 @@ void RecvDataProcCHARINFO2(PBYTE pData, DWORD dwDataSize)
 	}
 
 	g_nMyCharID = GetCharID (g_pMyID);
+	BattleModeResync ();
 
 	if (g_nMyCharID >= 0) {
 		/* 画面内にいるキャラ情報のチェック */

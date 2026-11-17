@@ -273,6 +273,8 @@ void EventProc_MSG(PCHARINFO pChar, PEVENTINFO pEvent, BYTE byData)
 		{
 			PMAPINFO pMap = g_aMapInfo[GetMapNo (pChar->dwMapID)];
 			if (pMap->nMsgCount <= (int)pMsg->dwNo) {
+				/* メッセージが無い。クライアントは返事待ちで歩けないので位置を送って解く */
+				SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
 				break;
 			}
 			DWORD dwNo = pMsg->dwNo;
