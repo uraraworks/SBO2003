@@ -42,6 +42,8 @@
 #define IDD_TALKINFO                    236
 #define IDD_TALKINFO_EDIT               237
 #define IDD_CHARFLAG                    238
+#define IDD_STORYINFO                   239
+#define IDD_STORYINFO_EDIT              240
 #define IDC_BUTTON1                     1000
 #define IDC_BUTTON2                     1001
 #define IDC_BUTTON3                     1002
@@ -376,8 +378,30 @@
 #define IDC_CHAR_HIDEFLAGN                1354
 #define IDC_Q_NOTFLAG                     1349
 #define IDC_Q_NOTFLAGN                    1350
-#define IDC_TE_NEEDITEM                   1355
-#define IDC_TE_NEEDITEMN                  1356
+#define IDC_S_ID                          1355
+#define IDC_S_NAME                        1356
+#define IDC_S_STATE                       1357
+#define IDC_S_SORT                        1358
+#define IDC_S_EXPLAIN                     1359
+#define IDC_S_CLEARFLAG                   1360
+#define IDC_S_CLEARFLAGN                  1361
+#define IDC_S_PREV                        1362
+#define IDC_S_FROM0                       1363
+#define IDC_S_FROM1                       1364
+#define IDC_S_TO0                         1365
+#define IDC_S_TO1                         1366
+#define IDC_S_NUM0                        1367
+#define IDC_S_NUM1                        1368
+#define IDC_S_NUM2                        1369
+#define IDC_S_NUM3                        1370
+#define IDC_S_QUEST0                      1371
+#define IDC_S_QUEST1                      1372
+#define IDC_S_QUEST2                      1373
+#define IDC_S_QUEST3                      1374
+#define IDC_S_COUNTNUM                    1375
+#define IDC_S_COUNTNUMN                   1376
+#define IDC_TE_NEEDITEM                   1377
+#define IDC_TE_NEEDITEMN                  1378
 #define IDM_MAP_PARTS                   40001
 #define IDM_MAP_INFO                    40002
 #define IDM_MAP_ADD                     40003
@@ -411,14 +435,15 @@
 #define IDM_ETC_QUEST                   40031
 #define IDM_ETC_FLAGNAME                40032
 #define IDM_ETC_TALK                    40033
+#define IDM_ETC_STORY                   40034
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        239
-#define _APS_NEXT_COMMAND_VALUE         40034
-#define _APS_NEXT_CONTROL_VALUE         1357
+#define _APS_NEXT_RESOURCE_VALUE        241
+#define _APS_NEXT_COMMAND_VALUE         40035
+#define _APS_NEXT_CONTROL_VALUE         1379
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

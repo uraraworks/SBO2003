@@ -81,6 +81,10 @@
 #define MAX_QUESTLIST		16										/* ギルドの一覧に出す依頼の最大数 */
 #define MAX_QUESTDONEBYTE	(MAX_QUEST / 8)							/* 一度きり依頼のクリア済みの印の大きさ（バイト） */
 #define MAX_QUESTDONESET	2										/* 依頼を完了した時に立てる印の数（QUESTINFO の awDoneSetFlag） */
+#define MAX_STORY			256										/* 最大思い出の本のシナリオ数（シナリオ番号 wID は 1〜255） */
+#define MAX_STORYFLAGRANGE	2										/* シナリオをやり直す時に消す印の範囲の数（STORYINFO の awFlagFrom・awFlagTo） */
+#define MAX_STORYNUM		4										/* シナリオをやり直す時に 0 に戻す数値の数（STORYINFO の abyNum） */
+#define MAX_STORYQUEST		4										/* シナリオをやり直す時に受け直せるようにする依頼の数（STORYINFO の awQuest） */
 #define QUESTNPC_NOSTEP		(0xFF)									/* 見えるNPCで「段を変えない」を表す値（byNextStep）、「どの段でも」を表す値（byStepMax） */
 
 /* キャラのフラグ（ずっと残る印と数値）と、フラグで台詞を出し分ける会話データ。番号の割り振りは目安で、コードでは強制しない
@@ -351,6 +355,8 @@ enum {
 	CMD_MARKETBUY,													/* 取引所で買う（クライアント→サーバー。結果はサーバー→クライアント） */
 	CMD_MARKETTAKEBACK,												/* 取引所の自分の出品を引き取る（クライアント→サーバー。結果はサーバー→クライアント） */
 	CMD_MARKETGOLDGET,												/* 取引所に貯まった売上を受け取る（クライアント→サーバー。結果はサーバー→クライアント） */
+/* 以下、管理者用（CMD_MAPPARTSADD 以上は自動で管理者専用になる。CMD_MARKETGOLDGET より後ろに足す） */
+	CMD_ADMINSTORY,													/* 管理者ウィンドウの思い出の本の編集（一覧・書き込み。結果はサーバー→クライアント） */
 	CMD_MAX
 };
 
@@ -2239,6 +2245,7 @@ typedef struct _CHARINFO {
 	WORD		awQuestCount[MAX_QUESTCOUNT];						/* 依頼の数（倒した数など。ステップ2で使う。保存する） */
 	DWORD		dwQuestAcceptTime;									/* 依頼を受けた時刻（time_t の秒。保存する） */
 	BYTE		abyQuestDone[MAX_QUESTDONEBYTE];					/* 一度きりの依頼のクリア済みの印（依頼番号のビット。保存する） */
+	BYTE		abyQuestRewarded[MAX_QUESTDONEBYTE];				/* 依頼の報酬をもうもらっている印（依頼番号のビット。保存する。思い出の本でやり直しても消えない。報酬は初回だけ） */
 	BYTE		abyFlag[MAX_FLAGBITBYTE];							/* キャラのフラグ（印。ビット番号=印の番号。保存する。サーバーだけが持ち、クライアントへは送らない） */
 	BYTE		abyFlagNum[MAX_FLAGNUM];							/* キャラのフラグ（数値 0〜255。保存する。サーバーだけが持つ） */
 	BYTE		abyTownWarpX[MAX_TOWNWARP];							/* 行き先帳の町の座標(X)（新しく記録した順） */
@@ -2944,6 +2951,37 @@ enum {
 	QUESTCHALLENGE_MAX
 };
 
+/* ========================================================================= */
+/* 思い出の本（クリア済みのミニシナリオをキャラごとにやり直す）				 */
+/*   NPC の台詞 "@r" の語り部に話すと、そのキャラがクリアしたシナリオの		 */
+/*   一覧が開く。選ぶと、そのシナリオ（とそれにつながる後のシナリオ）の		 */
+/*   印・数値・依頼のクリア済みの印を消して、最初からやり直せる。			 */
+/*   シナリオのデータはサーバーだけが持つ（SBODATA/SboDataStoryInfo.dat）。	 */
+/*   報酬は初回だけ（abyQuestRewarded は消さない）。						 */
+/* ========================================================================= */
+
+/* シナリオの状態(STORYINFO の byState) */
+enum {
+	STORYSTATE_OFF = 0,											/* 止める（本の一覧に出ない。やり直しの巻き込みには入る） */
+	STORYSTATE_ON,												/* 出す */
+};
+
+/* 思い出の本のシナリオ（サーバーだけが持つ。印・数値の「無し」は 0 ではなく FLAG_NOBIT・FLAG_NONUM にする） */
+typedef struct _STORYINFO {
+	WORD		wID;												/* シナリオ番号（1〜255。足す時に自動で振られ、変えられない） */
+	BYTE		byState;											/* 状態(STORYSTATE_*) */
+	WORD		wSort;												/* 一覧の並び順（小さい順。同じなら番号順） */
+	char		szName[MAX_QUESTNAME];								/* 名前 */
+	char		szExplain[MAX_QUESTMSG];							/* 本に出す一行説明 */
+	WORD		wClearFlag;											/* この印が立っている人の本に出る＝クリアした印（0〜1023） */
+	WORD		wPrevStory;											/* 前のお話のシナリオ番号（0=無し。このお話をやり直すと、これにつながる後のお話も最初に戻る） */
+	WORD		awFlagFrom[MAX_STORYFLAGRANGE];						/* やり直す時に消す印の範囲の先頭（FLAG_NOBIT=無し。0 で埋めたままだと「印 0」になるので、足す時は FLAG_NOBIT で埋める） */
+	WORD		awFlagTo[MAX_STORYFLAGRANGE];						/* 同じく範囲の最後（その印も含む。FLAG_NOBIT=無し） */
+	BYTE		abyNum[MAX_STORYNUM];								/* やり直す時に 0 に戻す数値の番号（FLAG_NONUM=無し） */
+	WORD		awQuest[MAX_STORYQUEST];							/* やり直す時にクリア済みの印を消す依頼の番号（QUESTINFO の wID。0=無し） */
+	BYTE		byCountNum;											/* やり直した回数を数える数値の番号（選んだシナリオだけ +1。255 で止まる。FLAG_NONUM=数えない） */
+} STORYINFO, *PSTORYINFO;
+
 /* CMD_QUEST のサブコマンド(byType) */
 enum {
 	QUESTCMD_LISTREQ = 0,										/* 一覧の要求（クライアント→サーバー。dwNpcTblID=話したギルドの人） */
@@ -2952,6 +2990,9 @@ enum {
 	QUESTCMD_CANCEL,											/* 取り消す（クライアント→サーバー） */
 	QUESTCMD_HANDIN,											/* 渡す（クライアント→サーバー） */
 	QUESTCMD_RESULT,											/* 結果（サーバー→クライアント。byResult と szMsg） */
+	QUESTCMD_STORYREQ,											/* 思い出の本の一覧の要求（クライアント→サーバー。dwNpcTblID=話した語り部） */
+	QUESTCMD_STORYITEM,											/* 思い出の本の一覧の1件（サーバー→クライアント。byIndex 番目・全部で byCount 件。0 件なら byCount=0 だけ届く。wQuestID=シナリオ番号・szName・szExplain・szGoal=いっしょに最初に戻る後のお話の名前） */
+	QUESTCMD_STORYRESET,										/* 思い出をやり直す（クライアント→サーバー。wQuestID=シナリオ番号・dwNpcTblID=語り部。結果は RESULT） */
 };
 
 /* 一覧の印(CMDPARA_QUEST の byMark) */
@@ -2968,6 +3009,7 @@ enum {
 	QUESTRESULT_ACCEPT,											/* 受けた */
 	QUESTRESULT_CANCEL,											/* 取り消した */
 	QUESTRESULT_DONE,											/* 達成した（報酬を渡した） */
+	QUESTRESULT_STORY,											/* 思い出をやり直せるようにした */
 };
 
 #pragma pack(push, 1)
@@ -3121,6 +3163,7 @@ enum {
 };
 
 #define MAX_ADMINQUESTMSG	256										/* 書き込みの結果の文（UTF-8） */
+#define MAX_ADMINSTORYMSG	256										/* 思い出の本の書き込みの結果の文（UTF-8） */
 
 #pragma pack(push, 1)
 /* 管理者ウィンドウのギルドの依頼の編集（送受信とも同じ形） */
@@ -3134,6 +3177,28 @@ typedef struct _CMDPARA_ADMINQUEST {
 	QUESTINFO	Info;												/* 依頼（ITEM・SET） */
 	char		szMsg[MAX_ADMINQUESTMSG];							/* 結果の文（RESULT。うまくいかなかった理由） */
 } CMDPARA_ADMINQUEST, *PCMDPARA_ADMINQUEST;
+#pragma pack(pop)
+
+/* 管理者ウィンドウの思い出の本の編集（CMD_ADMINSTORY の byCmdSub） */
+enum {
+	ADMINSTORY_LISTREQ = 0,										/* 一覧の問い合わせ（クライアント→サーバー） */
+	ADMINSTORY_ITEM,											/* 一覧の 1 件（サーバー→クライアント。nNo 番目・全部で wCount 件。0 件なら wCount=0 だけ届く） */
+	ADMINSTORY_SET,												/* 書き込み（クライアント→サーバー。nNo=-1 なら足す。データAPIと同じ確認を通す） */
+	ADMINSTORY_RESULT,											/* 書き込みの結果（サーバー→クライアント。byResult・szMsg。うまくいった時は続けて ITEM も届く） */
+};
+
+#pragma pack(push, 1)
+/* 管理者ウィンドウの思い出の本の編集（送受信とも同じ形） */
+typedef struct _CMDPARA_ADMINSTORY {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byCmdSub;											/* サブコマンド(ADMINSTORY_*) */
+	BYTE		byResult;											/* 結果（RESULT: 1=書き込んだ 0=書き込めなかった） */
+	BYTE		byReserve;											/* 予備 */
+	WORD		wCount;												/* シナリオの全部の件数（ITEM） */
+	int			nNo;												/* シナリオの配列の番号（ITEM・SET・RESULT。SET の -1 は足す） */
+	STORYINFO	Info;												/* シナリオ（ITEM・SET） */
+	char		szMsg[MAX_ADMINSTORYMSG];							/* 結果の文（RESULT。うまくいかなかった理由） */
+} CMDPARA_ADMINSTORY, *PCMDPARA_ADMINSTORY;
 #pragma pack(pop)
 
 /* ========================================================================= */

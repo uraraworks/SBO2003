@@ -50,6 +50,7 @@ extern void SboDataQuestApplyInfo	(int, const QUESTINFO *, int &, std::string &)
 extern void SboWebSendLoginNotice	(DWORD);	/* ログインした人に、覚えている再起動の予告を見せる(server/web_account_svr.cpp) */
 extern void SboDataFlagNameApplyInfo	(int, const FLAGNAMEINFO *, int &, std::string &);	/* 管理者ウィンドウからフラグの名前表を書き込む(server/web_data_svr.cpp) */
 extern void SboDataTalkApplyInfo		(int, const TALKINFO *, int &, std::string &);		/* 管理者ウィンドウから会話データを書き込む(server/web_data_svr.cpp) */
+extern void SboDataStoryApplyInfo		(int, const STORYINFO *, int &, std::string &);		/* 管理者ウィンドウから思い出の本のシナリオを書き込む(server/web_data_svr.cpp) */
 PCHARINFO AddChar					(PCHARINFO, BOOL bCheck=TRUE);					/* キャラ追加 */
 void	CharNpcIdEnsure				(PCHARINFO);									/* NPC番号がまだ無ければ振る(SboSvrSaveLoadChar.cpp) */
 void	DeleteChar					(DWORD);										/* キャラ削除 */
@@ -229,6 +230,7 @@ void	RecvDataProcMAGICKEY					(PBYTE, DWORD);				/* 特技ショートカット�
 void	RecvDataProcADMINFLAGNAME				(PBYTE, DWORD);				/* 管理者ウィンドウのフラグの名前表の編集 */
 void	RecvDataProcADMINTALK					(PBYTE, DWORD);				/* 管理者ウィンドウの会話データの編集 */
 void	RecvDataProcADMINCHARFLAG				(PBYTE, DWORD);				/* 管理者ウィンドウのキャラのフラグの取得・変更 */
+void	RecvDataProcADMINSTORY					(PBYTE, DWORD);				/* 管理者ウィンドウの思い出の本の編集 */
 void	RecvDataProcSORTITEM					(PBYTE, DWORD);				/* 道具欄・預かり所の並べ替え */
 void	RecvDataProcLEAVEITEMDISPOSE			(PBYTE, DWORD);				/* 預かり所の品を売る・捨てる */
 void	RecvDataProcBATTLEMODE					(PBYTE, DWORD);				/* 戦闘モードの切り替え通知 */
@@ -478,6 +480,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcMARKETBUY,				/* CMD_MARKETBUY */
 	RecvDataProcMARKETTAKEBACK,			/* CMD_MARKETTAKEBACK */
 	RecvDataProcMARKETGOLDGET,			/* CMD_MARKETGOLDGET */
+	RecvDataProcADMINSTORY,				/* CMD_ADMINSTORY */
 
 	NULL
 };
@@ -7230,6 +7233,13 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 		}
 		return;
 	}
+	/* 語り部のNPC（台詞が「@r」）？ 思い出の本の一覧を送る */
+	if (StoryIsNpc (pChar)) {
+		if ((s_nCharNoRecv >= 0) && IsNearRecvChar (pChar, 2)) {
+			StoryTalk (g_aCharInfo[s_nCharNoRecv], pChar);
+		}
+		return;
+	}
 	/* 傭兵所のNPC（台詞が「@m」で始まる）？ 雇う・お別れする */
 	if ((pChar->byNpcType != NPCTYPE_INIT) && pChar->pszNpcSpeech &&
 		(pChar->pszNpcSpeech[0] == '@') && (pChar->pszNpcSpeech[1] == 'm')) {
@@ -12328,6 +12338,77 @@ void RecvDataProcADMINTALK(PBYTE pData, DWORD dwDataSize)
 		SAFE_DELETE (pRes);
 		if (strErr.empty ()) {
 			SendAdminTalkItem (pID, nNoOut);
+		}
+		break;
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：SendAdminStoryItem												 */
+/* 内容：管理者ウィンドウへシナリオ 1 件を送る（nNo が範囲外なら件数だけ）	 */
+/* ========================================================================= */
+static void SendAdminStoryItem(DWORD pID, int nNo)
+{
+	PCMDPARA_ADMINSTORY pPara = new CMDPARA_ADMINSTORY;
+
+	ZeroMemory (pPara, sizeof (CMDPARA_ADMINSTORY));
+	pPara->byCmd	= CMD_ADMINSTORY;
+	pPara->byCmdSub	= ADMINSTORY_ITEM;
+	pPara->wCount	= (WORD)g_aStoryInfo.GetSize ();
+	pPara->nNo		= nNo;
+	if ((nNo >= 0) && (nNo < g_aStoryInfo.GetSize ()) && g_aStoryInfo[nNo]) {
+		pPara->Info = *g_aStoryInfo[nNo];
+	} else {
+		pPara->nNo = -1;
+	}
+	svrSock.SendTo (pID, (PBYTE)pPara, sizeof (CMDPARA_ADMINSTORY));
+	SAFE_DELETE (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINSTORY											 */
+/* 内容：受信データ処理(管理者ウィンドウの思い出の本の編集)					 */
+/*       LISTREQ : シナリオを 1 件ずつ ITEM で送る（0 件なら件数 0 の ITEM だけ）*/
+/*       SET     : データAPI（SboWebDataApply）と同じ確認を通して書き込み、	 */
+/*                 RESULT と、うまくいけばそのシナリオの ITEM を返す			 */
+/* ========================================================================= */
+void RecvDataProcADMINSTORY(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINSTORY pPara = (PCMDPARA_ADMINSTORY)pData;
+	PCMDPARA_ADMINSTORY pRes;
+	DWORD pID = s_pIDRecv;
+	int i, nNoOut = -1;
+	std::string strErr;
+
+	if (s_dwRecvSize < sizeof (CMDPARA_ADMINSTORY)) {
+		return;
+	}
+
+	switch (pPara->byCmdSub) {
+	case ADMINSTORY_LISTREQ:	/* 一覧の問い合わせ */
+		if (g_aStoryInfo.GetSize () == 0) {
+			SendAdminStoryItem (pID, -1);
+			break;
+		}
+		for (i = 0; i < g_aStoryInfo.GetSize (); i ++) {
+			SendAdminStoryItem (pID, i);
+		}
+		break;
+
+	case ADMINSTORY_SET:		/* 書き込み */
+		SboDataStoryApplyInfo (pPara->nNo, &pPara->Info, nNoOut, strErr);
+		pRes = new CMDPARA_ADMINSTORY;
+		ZeroMemory (pRes, sizeof (CMDPARA_ADMINSTORY));
+		pRes->byCmd		= CMD_ADMINSTORY;
+		pRes->byCmdSub	= ADMINSTORY_RESULT;
+		pRes->byResult	= strErr.empty () ? 1 : 0;
+		pRes->wCount	= (WORD)g_aStoryInfo.GetSize ();
+		pRes->nNo		= strErr.empty () ? nNoOut : pPara->nNo;
+		SboTextCopy (pRes->szMsg, sizeof (pRes->szMsg), strErr.c_str ());
+		svrSock.SendTo (pID, (PBYTE)pRes, sizeof (CMDPARA_ADMINSTORY));
+		SAFE_DELETE (pRes);
+		if (strErr.empty ()) {
+			SendAdminStoryItem (pID, nNoOut);
 		}
 		break;
 	}

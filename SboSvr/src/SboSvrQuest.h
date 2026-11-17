@@ -74,6 +74,9 @@ extern void QuestOnPartyLeave(PCHARINFO pChar);					/* パーティを抜けた�
 extern void QuestPartyLeaveHold(BOOL bHold);					/* TRUE の間は QuestOnPartyLeave で取り消さない（切断の時） */
 extern int  QuestFlagCheck(PCHARINFO pChar, int nFlg);			/* 旗が立っているか(1〜16) */
 extern BOOL QuestIsDone(PCHARINFO pChar, WORD wQuestID);		/* クリア済みの印があるか */
+extern BOOL QuestIsRewarded(PCHARINFO pChar, WORD wQuestID);	/* 報酬をもうもらっているか（思い出の本でやり直してもクリア済みの印と違って消えない） */
+extern void StoryTalk(PCHARINFO pChar, PCHARINFO pNpc);			/* 語り部（台詞 "@r"）に話しかけた（思い出の本の一覧を送る） */
+extern BOOL StoryIsNpc(PCHARINFO pNpc);							/* 台詞が "@r" で始まるか */
 extern BOOL QuestFlagOk(PCHARINFO pChar, const QUESTINFO *pQuest);	/* 依頼を受ける条件の印（wNeedFlag・wNotFlag）に合うか */
 extern BOOL QuestGiveItemNotice(PCHARINFO pChar, WORD wItem);	/* 会話データからアイテムを 1 つ渡して知らせる（持ち物がいっぱいなら預かり所へ。渡せたら TRUE） */
 extern BOOL QuestIsQuestItem(WORD wItem);						/* 依頼の品か（預けられない・売れない・捨てられない） */

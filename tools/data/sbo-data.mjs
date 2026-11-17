@@ -21,7 +21,7 @@
 //   - leave（預かり所）以外は全部取り込める。char は保存される NPC だけで、npcId で突き合わせる
 //     （npcId の無い記録は新しい NPC として足す。サーバーに無い npcId はその番号で足し直す）。
 //   - それ以外は番号（id）で突き合わせ、違う項目だけを update で送る。サーバーより大きい番号は add で足す（番号は続きで）。
-//   - ファイルから消した記録は、サーバーからは消さない（maker・recipe・flag・talk の削除は byState を 0 に、NPC は API の deleted で）。
+//   - ファイルから消した記録は、サーバーからは消さない（maker・recipe・flag・talk・story の削除は byState を 0 に、NPC は API の deleted で）。
 //   - 反映は AI 連携の変更履歴に残り、管理ページ「AI連携」や /api/data/undo から元に戻せる
 //     （追加は NPC・作り手・レシピだけ戻せる）。マップのマス目はこのツールでは扱わない（API の tiles/set で）。
 // ===========================================================================
@@ -43,7 +43,7 @@ const TARGETS = {
  * 書き出す種類。leave（プレイヤーの預かり所）は出さない。
  * char は保存される NPC だけ（プレイヤー・発生した敵は出さない）。番号（id）は再起動で動くので、npcId で突き合わせる。
  */
-const EXPORT_KINDS = ['magic', 'magicUser', 'equUser', 'job', 'stTmp', 'item', 'maker', 'recipe', 'quest', 'flag', 'talk', 'char', 'map',
+const EXPORT_KINDS = ['magic', 'magicUser', 'equUser', 'job', 'stTmp', 'item', 'maker', 'recipe', 'quest', 'flag', 'talk', 'story', 'char', 'map',
  'mapParts', 'efc', 'comEfc', 'subGame'];
 const SKIP_KINDS = { leave: 'プレイヤーの預かり所なので書き出しません' };
 /* NPC で書き出さない項目（遊んでいる間に変わる・読むだけ）。歩き回る NPC は今の位置 dwX・dwY も出さない */

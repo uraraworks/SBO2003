@@ -223,7 +223,8 @@ CMDPARA_TOWNWARP g_TownWarpInfo = {0};								/* 町転送の行き先一覧（�
 BYTE g_byTownWarpSel = 0;											/* 町転送で選んだ行き先の番号（0=復活位置） */
 QUESTLISTITEM g_aQuestList[MAX_QUESTLIST];							/* 依頼一覧（ギルドの人に話した時にサーバーから届いたもの） */
 int g_nQuestListCount = 0;											/* 依頼一覧の件数 */
-DWORD g_dwQuestGuildTblID = 0;										/* 一覧を出したギルドの人のテーブルID */
+DWORD g_dwQuestGuildTblID = 0;										/* 一覧を出したギルドの人（思い出の本の時は語り部）のテーブルID */
+BOOL g_bQuestBook = FALSE;											/* 依頼の一覧の窓が、思い出の本（語り部に話した時）の一覧か */
 DWORD g_dwQuestWaitTime = 0;										/* 一覧の返事待ちを始めた時間（0=待っていない） */
 CMDPARA_QUESTSTATE g_QuestState = {0};								/* 自分と仲間の依頼の進み具合（byCount=0 なら無し） */
 char g_szQuestMsg[MAX_QUESTMSG] = {0};								/* 依頼の窓の詳細欄に出す「お知らせ」「確認の文」（空なら選んだ依頼の説明） */
@@ -929,9 +930,14 @@ int QuestMakeDetailLines(PWNDINFO pWnd, char (*pszOut)[QUESTWRAP_LINEBYTES], int
 			_snprintf (szText, sizeof (szText) - 1, "%s", g_szQuestMsg);
 		} else if ((pWnd->nData1 >= 0) && (pWnd->nData1 < g_nQuestListCount)) {
 			PQUESTLISTITEM pItem = &g_aQuestList[pWnd->nData1];
-			_snprintf (szText, sizeof (szText) - 1, "%s\n報酬：%s%s%s",
-				pItem->szExplain, pItem->szReward,
-				pItem->szGoal[0] ? "\n目的：" : "", pItem->szGoal);
+			if (g_bQuestBook) {
+				/* 思い出の本は説明だけ（報酬・目的は無い） */
+				_snprintf (szText, sizeof (szText) - 1, "%s", pItem->szExplain);
+			} else {
+				_snprintf (szText, sizeof (szText) - 1, "%s\n報酬：%s%s%s",
+					pItem->szExplain, pItem->szReward,
+					pItem->szGoal[0] ? "\n目的：" : "", pItem->szGoal);
+			}
 		}
 		szText[sizeof (szText) - 1] = 0;
 		return QuestWrapText (szText, nWidth, pszOut, nMaxLines);

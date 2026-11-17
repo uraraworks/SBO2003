@@ -185,7 +185,7 @@ enum {
 
 /* 依頼ウィンドウ(WNDTYPE_QUEST)の nType2 */
 enum {
-	QUESTWND_LIST = 0,											/* ギルドの人に話した時の依頼一覧 */
+	QUESTWND_LIST = 0,											/* ギルドの人に話した時の依頼一覧（g_bQuestBook が TRUE なら、語り部に話した時の思い出の本の一覧） */
 	QUESTWND_STATE,												/* コマンドの「依頼」：自分と仲間の進み具合 */
 };
 #define QUEST_WINCX					(16 * 21)									/* 窓の幅（右上の所持金の窓に重ならない広さ） */
@@ -242,6 +242,7 @@ enum {
 	IDCONFIRMTYPE_QUESTACCEPT,									/* 依頼を受ける確認 */
 	IDCONFIRMTYPE_QUESTCANCEL,									/* 依頼を取り消す確認 */
 	IDCONFIRMTYPE_QUESTHANDIN,									/* 依頼を達成して報酬をもらう確認 */
+	IDCONFIRMTYPE_STORYRESET,									/* 思い出の本：シナリオを最初からやり直す確認 */
 };
 
 

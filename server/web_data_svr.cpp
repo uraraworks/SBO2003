@@ -41,6 +41,7 @@ extern BOOL SaveRecipeInfo(void);
 extern BOOL SaveQuestInfo(void);
 extern BOOL SaveFlagNameInfo(void);
 extern BOOL SaveTalkInfo(void);
+extern BOOL SaveStoryInfo(void);
 extern int GetMapNo(DWORD);
 extern BOOL SaveCharInfo(void);
 extern BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, BYTE byScreen);	/* SboSvrRecvCmd.cpp */
@@ -498,6 +499,24 @@ static const DATAFIELD s_aFieldQuest[] = {
 	FLD (QUESTINFO, wNotFlag,			"受けられなくなる印",	FT_U16, 0, "キャラのフラグの印の番号（0〜1023）。この印が立っている人は、ギルドの一覧に出ず受けられない。65535=条件なし（足す時に省くと条件なし）。すでに受けている人は続けられる"),
 };
 
+/* 思い出の本のシナリオ（クリア済みのミニシナリオをキャラごとにやり直す。NPC の台詞を "@r" にした語り部に話すと、そのキャラがクリアしたシナリオの一覧が開く）。
+   印・数値の「無し」は 0 ではなく 65535・255（0 のままだと印 0・数値 0 になる） */
+static const char *s_pszNoteStoryNoBit = "キャラのフラグの印の番号（0〜1023）。65535=無し";
+static const DATAFIELD s_aFieldStory[] = {
+	FLD (STORYINFO, wID,				"シナリオ番号",			FT_U16, FF_READONLY, "足す時に自動で振られる（1〜255。ほかのシナリオと重ならない）。後ろのお話の wPrevStory がこの番号で指すので変わらない。id（配列の番号）とは別"),
+	FLD (STORYINFO, byState,			"状態",					FT_U8, 0, "0=止める（本の一覧に出ない。前のお話をやり直す時の「つながる後のお話」としては、止めていても巻き込まれる） 1=出す。足す時に省くと 1"),
+	FLD (STORYINFO, wSort,				"並び順",				FT_U16, 0, "本の一覧で小さい順に並ぶ（同じなら番号順）"),
+	FLDS(STORYINFO, szName,				"名前",					FT_STR, 0, "本の一覧に出るお話の名前（最大 63 バイト）"),
+	FLDS(STORYINFO, szExplain,			"説明",					FT_STR, 0, "本の一覧で選んだ時に出る一行説明（最大 255 バイト）"),
+	FLD (STORYINFO, wClearFlag,			"クリアした印",			FT_U16, 0, "キャラのフラグの印の番号（0〜1023。必ず指定）。この印が立っている人の本に出る。やり直しで消えるよう、通常は awFlagFrom・awFlagTo の範囲に含める"),
+	FLD (STORYINFO, wPrevStory,			"前のお話",				FT_U16, 0, "前のお話の wID（0=無し）。このお話をやり直すと、wPrevStory をたどってこのお話につながる後のお話（子・孫…）もいっしょに最初に戻る。自分や後のお話は指せない（ループ不可）"),
+	FLDA(STORYINFO, awFlagFrom,			"消す印の範囲の先頭",	FT_U16ARR, WORD, FF_PADMAX, "最大 2 つ。awFlagTo と同じ並びで、先頭〜最後（その印も含む）の印をやり直す時に消す。65535=無し（短い配列は残りが無しになる）。先頭と最後は両方入れるか両方無しにし、先頭 <= 最後。もらった印などやり直しても残したい印は範囲の外に置く"),
+	FLDA(STORYINFO, awFlagTo,			"消す印の範囲の最後",	FT_U16ARR, WORD, FF_PADMAX, s_pszNoteStoryNoBit),
+	FLDA(STORYINFO, abyNum,				"0 に戻す数値",			FT_U8ARR, BYTE, FF_PADMAX, "最大 4 つ。キャラのフラグの数値の番号（0〜127）。やり直す時に 0 にする。255=無し（短い配列は残りが無しになる）"),
+	FLDA(STORYINFO, awQuest,			"受け直せるようにする依頼", FT_U16ARR, WORD, 0, "最大 4 つ。quest の依頼番号（wID）。やり直す時にクリア済みの印を消し、一度きりの依頼でもまた受けられる。0=無し。報酬は初回だけ（もらい済みの印は残る）。やり直す人がこの依頼を受けている間はやり直せない"),
+	FLD (STORYINFO, byCountNum,			"やり直した回数の数値",	FT_U8, 0, "キャラのフラグの数値の番号（0〜127）。やり直すたびにこの数値が +1 される（選んだお話だけ。255 で止まる。0 に戻す数値と重なっても最後に +1）。255=数えない（足す時に省くと数えない）。話の中で「2 周目」の台詞を出し分けるのに使える"),
+};
+
 /* 依頼の見えるNPC（受けた人とそのパーティにだけ見える。話すと台詞が出る。台詞の中身はサーバーが送り、見えるNPC自体の台詞は "@q" 固定） */
 static const DATAFIELD s_aFieldQuestNpc[] = {
 	FLD (QUESTNPCINFO, dwMapID,			"出るマップID",			FT_U32, 0, "マップ情報の dwID（配列の番号ではなくマップID）"),
@@ -941,6 +960,7 @@ enum {
 	KIND_QUEST,
 	KIND_FLAG,
 	KIND_TALK,
+	KIND_STORY,
 	/* ここから下は読むだけ */
 	KIND_CHAR,
 	KIND_MAP,
@@ -960,9 +980,9 @@ static bool KindWritable(int nKind)
 	return (nKind < KIND_MAX) && (nKind != KIND_LEAVE);
 }
 
-static const char *s_apszKindName[] = { "magic", "magicUser", "equUser", "job", "stTmp", "item", "maker", "recipe", "quest", "flag", "talk", "char", "map", "mapParts", "efc", "comEfc", "leave", "subGame" };
+static const char *s_apszKindName[] = { "magic", "magicUser", "equUser", "job", "stTmp", "item", "maker", "recipe", "quest", "flag", "talk", "story", "char", "map", "mapParts", "efc", "comEfc", "leave", "subGame" };
 static const char *s_apszKindLabel[] = {
-	"特技（魔法）情報", "特技を使える職業", "装備できる職業", "職業情報とレベルアップ情報", "ステータステンプレート（NPC・敵のひな形）", "アイテム情報", "作り手（料理人など）", "レシピ（作り手に頼んで作ってもらう物）", "ギルドの仕事依頼", "フラグの名前表（印・数値に付ける名前）", "会話データ（フラグで台詞を出し分ける）",
+	"特技（魔法）情報", "特技を使える職業", "装備できる職業", "職業情報とレベルアップ情報", "ステータステンプレート（NPC・敵のひな形）", "アイテム情報", "作り手（料理人など）", "レシピ（作り手に頼んで作ってもらう物）", "ギルドの仕事依頼", "フラグの名前表（印・数値に付ける名前）", "会話データ（フラグで台詞を出し分ける）", "思い出の本のシナリオ（クリア済みのミニシナリオをやり直す）",
 	"キャラ情報（プレイヤー・NPC）", "マップ情報", "マップパーツ", "エフェクト情報", "吹き出し情報", "預かり所", "サブゲーム情報"
 };
 static const char *s_apszKindNote[] = {
@@ -977,6 +997,7 @@ static const char *s_apszKindNote[] = {
 	"ギルドの仕事依頼（読み書き。削除なし。止めるのは byState=0）。NPC の台詞を \"@gNN\"（NN=byGuild）にするとギルドの人になり、話すと一覧が開く。受けた人とそのパーティにだけ「見えるNPC」（npcs。ポータル・宝箱・人）が出て、段（0 から）と旗（1〜16）で出し分ける。goals は段ごとの「いまの目的」（文字列の配列）、npcs は配列で丸ごと置き換え。出口は既存のマップのイベントで作る（データだけ）。足す時の依頼番号（wID）は自動。完了した時にキャラのフラグを動かせる（awDoneSetFlag・byDoneNumNo・byDoneNumOp・byDoneNumVal。古い依頼は「無し」）。受ける条件の印は wNeedFlag・wNotFlag（65535=条件なし。合わない人には一覧に出ず受けられない）",
 	"キャラごとにずっと残る「フラグ」（印 1024 個=ON/OFF の 0〜1023、数値 128 個=0〜255 の 0〜127）に付ける名前の表（読み書き）。名前は管理用でプレイヤーには出ない。byKind が 0=印・1=数値、wNo が番号で、同じ組は 1 件まで。削除は byState=0（枠だけ残り、足し直す時はその枠の byState を 1 に戻す）。ファイルが無い時は 0 件。キャラのフラグの中身は char の読み出しの flags で読める（読むだけ）。番号の割り振りの目安: 印は 1〜199 本筋・200〜599 地域・600〜899 お使い・900〜1023 予備",
 	"会話データ（読み書き）。NPC の台詞を \"@tNNN\"（NNN=wID。例 @t012）にすると、話しかけた人のフラグ（印・数値）とレベルで lines（最大 16 行）から 1 行を選び、その人にだけ台詞を出す（台詞はクライアントへ送らない）。選び方: 条件（立っている必要のある印 awNeed 4・立っていてはいけない印 awNot 4・数値の条件 2・レベル下限上限）に全部合う行のうち byRank が一番小さい行、同じ順位が複数ならくじ。合う行が無ければ「……」。話した後に印を立てる・消す・数値を動かす。lines は配列で丸ごと置き換え。削除は byState=0（枠だけ残り、足し直す時はその枠の byState を 1 に戻す）。ファイルが無い時は 0 件",
+	"思い出の本（読み書き。削除なし。止めるのは byState=0）。NPC の台詞を \"@r\" にすると語り部になり、話すと、そのキャラがクリアしたシナリオ（byState=1 で、クリアした印 wClearFlag が立っている）の一覧が wSort 順に開く。選んで確認すると、そのシナリオと、wPrevStory をたどってそれにつながる後のシナリオ全部について、印の範囲（awFlagFrom〜awFlagTo）を消し、数値（abyNum）を 0 に戻し、依頼（awQuest）のクリア済みの印を消して、最初からやり直せる（byCountNum の数値は選んだシナリオだけ +1）。依頼の報酬は初回だけ（もらい済みの印は消えない）。そのキャラが戻す依頼のどれかを受けている間と、語り部から離れている時は断る。足す時のシナリオ番号（wID 1〜255）は自動。印・数値の「無し」は 65535・255。ファイルが無い時は 0 件",
 	"プレイヤーと NPC（敵・町の人・発生元など）の全キャラ。番号（id）はキャラのテーブル番号で再起動で変わることがある。NPC は npcId（変わらない番号）で指す。isPlayer でプレイヤーか分かる。書き換えられるのは保存される NPC だけ（プレイヤー・発生した敵は不可）。足す時は dwMapID・dwX・dwY が要る。消す時は変更に {\"deleted\": true}。アカウント名・パスワード・IP は出さない",
 	"マップの情報・イベント・店・メッセージ・アイテム配置。番号は配列の番号（dwID はマップID で、キャラの dwMapID はこちら）。events・shops・messages は配列で丸ごと置き換え。マス目のパーツは sbo_map_tiles で読み、sbo_map_tiles_set で書く。大きさの変更・マップの追加はできない",
 	"マップパーツ（マス目の parts に入る番号）の表示・当たり判定。byHitType 0 なら通れる。anime は配列で丸ごと置き換え（コマ数 byAnimeCount も変わる）。追加できる（消せない）",
@@ -985,7 +1006,7 @@ static const char *s_apszKindNote[] = {
 	"読むだけ。プレイヤーごとの預かり所（キャラの dwLeaveID がこの番号）。items は item の番号と個数",
 	"爆弾ゲーム・迷路・ダンジョン・戦場ゲーム・すごろくの設定。detail は byType ごとに項目が違う（省いた項目は前の値のまま）。種別（byType）の変更・追加・すごろくのマス（events・parts）は管理者ウィンドウで"
 };
-static const int s_anKindMax[] = { 256, 256, 256, 256, 65535, 65535, MAX_MAKER, MAX_RECIPE, MAX_QUEST - 1, MAX_FLAGNAMEINFO, MAX_TALK - 1, 0, 0, 65535, 255, MAX_COMEFC, 0, 0 };
+static const int s_anKindMax[] = { 256, 256, 256, 256, 65535, 65535, MAX_MAKER, MAX_RECIPE, MAX_QUEST - 1, MAX_FLAGNAMEINFO, MAX_TALK - 1, MAX_STORY - 1, 0, 0, 65535, 255, MAX_COMEFC, 0, 0 };
 
 static int KindFromName(const char *pszKind)
 {
@@ -1011,6 +1032,7 @@ static int KindCount(int nKind)
 	case KIND_QUEST:		return g_aQuestInfo.GetSize();
 	case KIND_FLAG:			return g_aFlagNameInfo.GetSize();
 	case KIND_TALK:			return g_aTalkInfo.GetSize();
+	case KIND_STORY:		return g_aStoryInfo.GetSize();
 	case KIND_CHAR:			return g_aCharInfo.GetSize();
 	case KIND_MAP:			return g_aMapInfo.GetSize();
 	case KIND_MAPPARTS:		return g_wCountMapParts;
@@ -1599,7 +1621,23 @@ static std::string CharJson(PCHARINFO pChar)
 		if (i) out += ",";
 		out += JsonNum(pChar->awQuestCount[i]);
 	}
-	out += "]}";
+	out += "]";
+	/* クリア済みの依頼の番号（abyQuestDone）と、報酬をもうもらっている依頼の番号（abyQuestRewarded。思い出の本でやり直しても消えない） */
+	for (int nKind = 0; nKind < 2; nKind ++) {
+		const BYTE *pbyBits = nKind ? pChar->abyQuestRewarded : pChar->abyQuestDone;
+		bool bFirstQ = true;
+
+		out += nKind ? ",\"questRewarded\":[" : ",\"questDone\":[";
+		for (int i = 0; i < MAX_QUEST; i ++) {
+			if (pbyBits[i / 8] & (1 << (i % 8))) {
+				if (!bFirstQ) out += ",";
+				bFirstQ = false;
+				out += JsonNum(i);
+			}
+		}
+		out += "]";
+	}
+	out += "}";
 	/* キャラのフラグ（読むだけ。立っている印の番号と、0 でない数値。プレイヤーだけ） */
 	if (bPlayer) {
 		out += ",\"flags\":{\"bits\":[";
@@ -2038,6 +2076,9 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataSchema(void)
 			out += FieldSchemaJson(s_aFieldTalk, COUNTOF(s_aFieldTalk));
 			out.insert(out.size() - 1, ",{\"name\":\"lines\",\"type\":\"object[]\",\"label\":\"行\",\"maxCount\":" + JsonNum(MAX_TALKLINE) + ",\"fields\":" + FieldSchemaJson(s_aFieldTalkLine, COUNTOF(s_aFieldTalkLine)) + ",\"note\":\"配列で丸ごと置き換え。省いた項目は、印・数値の番号が無し（65535・255）・それ以外は 0。台詞が空の行は「……」と言う。1 行ごとに順位・条件・台詞・話した後の動きを持つ\"}");
 			break;
+		case KIND_STORY:
+			out += FieldSchemaJson(s_aFieldStory, COUNTOF(s_aFieldStory));
+			break;
 		case KIND_CHAR:
 			out += FieldSchemaJson(s_aFieldChar, COUNTOF(s_aFieldChar));
 			out.insert(out.size() - 1, ",{\"name\":\"npcId\",\"type\":\"u32\",\"label\":\"NPC番号\",\"readonly\":true,\"note\":\"保存される NPC ごとに決まった番号（再起動しても変わらない）。id（テーブル番号）は再起動で変わることがあるので、NPC を指す時はこちら。プレイヤー・発生した敵は 0\"}"
@@ -2046,7 +2087,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataSchema(void)
 					",{\"name\":\"jobMagic\",\"type\":\"object\",\"label\":\"転職前の職業で覚えていた特技\",\"readonly\":true}"
 					",{\"name\":\"townWarp\",\"type\":\"object\",\"label\":\"町転送の行き先帳\",\"readonly\":true,\"note\":\"教会で復活位置を記録した町（新しい順）。[マップID, 横, 縦]\"}"
 					",{\"name\":\"flags\",\"type\":\"object\",\"label\":\"キャラのフラグ\",\"readonly\":true,\"note\":\"{bits: 立っている印の番号の並び, nums: {数値の番号: 値}（0 でないものだけ）}。プレイヤーだけ。書き込みはできない（管理者ウィンドウで変える）\"}"
-					",{\"name\":\"quest\",\"type\":\"object\",\"label\":\"受けているギルドの依頼\",\"readonly\":true,\"note\":\"{questId: 依頼番号（0=受けていない）, step: 段, flags: 旗（ビット 0=旗1 …）, counts: 数 4 つ}。プレイヤーだけ\"}"
+					",{\"name\":\"quest\",\"type\":\"object\",\"label\":\"受けているギルドの依頼\",\"readonly\":true,\"note\":\"{questId: 依頼番号（0=受けていない）, step: 段, flags: 旗（ビット 0=旗1 …）, counts: 数 4 つ, questDone: クリア済みの依頼番号の並び, questRewarded: 報酬をもうもらっている依頼番号の並び（思い出の本でやり直しても消えない）}。プレイヤーだけ\"}"
 					",{\"name\":\"route\",\"type\":\"object\",\"label\":\"巡回ルート\",\"note\":\"{mode: 0=折り返す 1=最初に戻る, wait: 止まる秒数 0〜60, points: [[x,y],...] 2〜16 個（巡回をやめる時は []）}。動かない・ランダム移動の NPC だけ\"}"
 					",{\"name\":\"deleted\",\"type\":\"bool\",\"label\":\"消す\",\"note\":\"変更に {\\\"deleted\\\": true} を入れるとその NPC を消す（記録は残り、元に戻すと足し直す）\"}");
 			break;
@@ -2173,6 +2214,9 @@ static std::string RecordJson(int nKind, int nID)
 		break;
 	case KIND_TALK:
 		out += TalkJson(g_aTalkInfo[nID]);
+		break;
+	case KIND_STORY:
+		out += FieldsJson((const BYTE *)g_aStoryInfo[nID], s_aFieldStory, COUNTOF(s_aFieldStory));
 		break;
 	case KIND_CHAR:
 		if (CharIsEmpty(g_aCharInfo[nID])) {
@@ -4467,6 +4511,159 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 		}
 		break;
 
+	case KIND_STORY:
+		{
+			STORYINFO Info;
+			memset(&Info, 0, sizeof(Info));
+			if (!bAdd) {
+				Info = *g_aStoryInfo[nID];
+			} else {
+				Info.byState = STORYSTATE_ON;
+				/* 印・数値は「無し」から（0 のままだと印 0・数値 0 になる） */
+				Info.wClearFlag = FLAG_NOBIT;
+				for (int k = 0; k < MAX_STORYFLAGRANGE; k ++) {
+					Info.awFlagFrom[k] = FLAG_NOBIT;
+					Info.awFlagTo[k] = FLAG_NOBIT;
+				}
+				for (int k = 0; k < MAX_STORYNUM; k ++) {
+					Info.abyNum[k] = FLAG_NONUM;
+				}
+				Info.byCountNum = FLAG_NONUM;
+			}
+			if (!CheckKnownKeys(chg, s_aFieldStory, COUNTOF(s_aFieldStory), NULL, strErr)) {
+				goto Exit;
+			}
+			/* wID は読むだけ（自動で振る）。同じ値を書き戻すのは許す（取得した記録をそのまま渡せるように） */
+			{
+				JVal chg2 = chg;
+				for (size_t k = 0; k < chg2.o.size(); k ++) {
+					if (chg2.o[k].first == "wID") {
+						if (!(chg2.o[k].second.t == JVal::NUM && !bAdd && chg2.o[k].second.n == Info.wID)) {
+							strErr = "wID は変えられません（足す時に自動で振られます）";
+							goto Exit;
+						}
+						chg2.o.erase(chg2.o.begin() + k);
+						break;
+					}
+				}
+				if (!ApplyFields((BYTE *)&Info, s_aFieldStory, COUNTOF(s_aFieldStory), chg2, strErr, "")) {
+					goto Exit;
+				}
+			}
+			/* 内容の確認 */
+			if (Info.byState > STORYSTATE_ON) {
+				strErr = "byState は 0（止める）か 1（出す）で指定してください";
+				goto Exit;
+			}
+			if (Info.szName[0] == 0) {
+				strErr = "szName（名前）は空にできません";
+				goto Exit;
+			}
+			if (Info.wClearFlag >= MAX_FLAGBIT) {
+				strErr = "wClearFlag（クリアした印）は印の番号（0〜" + JsonNum(MAX_FLAGBIT - 1) + "）で指定してください";
+				goto Exit;
+			}
+			for (int k = 0; k < MAX_STORYFLAGRANGE; k ++) {
+				bool bFrom = (Info.awFlagFrom[k] != FLAG_NOBIT), bTo = (Info.awFlagTo[k] != FLAG_NOBIT);
+				if ((bFrom && Info.awFlagFrom[k] >= MAX_FLAGBIT) || (bTo && Info.awFlagTo[k] >= MAX_FLAGBIT)) {
+					strErr = "awFlagFrom・awFlagTo は印の番号（0〜" + JsonNum(MAX_FLAGBIT - 1) + "）か 65535（無し）で指定してください";
+					goto Exit;
+				}
+				if (bFrom != bTo) {
+					strErr = "awFlagFrom[" + JsonNum(k) + "] と awFlagTo[" + JsonNum(k) + "] は、両方入れるか両方 65535（無し）にしてください";
+					goto Exit;
+				}
+				if (bFrom && Info.awFlagFrom[k] > Info.awFlagTo[k]) {
+					strErr = "awFlagFrom[" + JsonNum(k) + "]（範囲の先頭）が awFlagTo[" + JsonNum(k) + "]（範囲の最後）より大きいです";
+					goto Exit;
+				}
+			}
+			for (int k = 0; k < MAX_STORYNUM; k ++) {
+				if (Info.abyNum[k] >= MAX_FLAGNUM && Info.abyNum[k] != FLAG_NONUM) {
+					strErr = "abyNum は数値の番号（0〜" + JsonNum(MAX_FLAGNUM - 1) + "）か 255（無し）で指定してください";
+					goto Exit;
+				}
+			}
+			if (Info.byCountNum >= MAX_FLAGNUM && Info.byCountNum != FLAG_NONUM) {
+				strErr = "byCountNum は数値の番号（0〜" + JsonNum(MAX_FLAGNUM - 1) + "）か 255（数えない）で指定してください";
+				goto Exit;
+			}
+			for (int k = 0; k < MAX_STORYQUEST; k ++) {
+				if (Info.awQuest[k] == 0) {
+					continue;
+				}
+				bool bFound = false;
+				for (int m = 0; m < g_aQuestInfo.GetSize(); m ++) {
+					if (g_aQuestInfo[m]->wID == Info.awQuest[k]) {
+						bFound = true;
+						break;
+					}
+				}
+				if (!bFound) {
+					strErr = "awQuest[" + JsonNum(k) + "] の依頼番号 " + JsonNum(Info.awQuest[k]) + " の依頼（quest の wID）がありません（0 は無し）";
+					goto Exit;
+				}
+			}
+			/* 前のお話は、あるシナリオで、自分や自分につながる後のお話ではないこと（ループしない） */
+			if (Info.wPrevStory != 0) {
+				WORD w = Info.wPrevStory;
+				for (int n = 0; n <= MAX_STORY; n ++) {
+					PSTORYINFO pPrev = NULL;
+					for (int m = 0; m < g_aStoryInfo.GetSize(); m ++) {
+						if (g_aStoryInfo[m]->wID == w) {
+							pPrev = g_aStoryInfo[m];
+							break;
+						}
+					}
+					if (pPrev == NULL) {
+						strErr = "wPrevStory の " + JsonNum(w) + " のシナリオ（wID）がありません（0 は無し）";
+						goto Exit;
+					}
+					if (!bAdd && w == Info.wID) {
+						strErr = "wPrevStory が自分自身か、自分につながる後のお話を指しています（つながりがループします）";
+						goto Exit;
+					}
+					w = pPrev->wPrevStory;
+					if (w == 0) {
+						break;
+					}
+				}
+			}
+			/* シナリオ番号を振る（1〜MAX_STORY-1 で使われていない一番小さい番号） */
+			if (bAdd) {
+				WORD wNew = 0;
+				for (WORD w = 1; w < MAX_STORY && wNew == 0; w ++) {
+					bool bUsed = false;
+					for (int k = 0; k < g_aStoryInfo.GetSize(); k ++) {
+						if (g_aStoryInfo[k]->wID == w) {
+							bUsed = true;
+							break;
+						}
+					}
+					if (!bUsed) {
+						wNew = w;
+					}
+				}
+				if (wNew == 0) {
+					strErr = "シナリオがいっぱいで足せません";
+					goto Exit;
+				}
+				Info.wID = wNew;
+			}
+			strRecord = FieldsJson((const BYTE *)&Info, s_aFieldStory, COUNTOF(s_aFieldStory));
+			if (bApply) {
+				if (bAdd) {
+					PSTORYINFO pNew = new STORYINFO;
+					*pNew = Info;
+					g_aStoryInfo.Add(pNew);
+				} else {
+					*g_aStoryInfo[nID] = Info;
+				}
+				SaveStoryInfo();
+			}
+		}
+		break;
+
 	}
 
 Exit:
@@ -4587,6 +4784,37 @@ void SboDataFlagNameApplyInfo(int nNo, const FLAGNAMEINFO *pInfo, int &nNoOut, s
 	std::string strJson = "{" + FieldsJson((const BYTE *)&Info, s_aFieldFlagName, COUNTOF(s_aFieldFlagName)) + "}";
 	const char *pszRes = SboWebDataApply("flag", bAdd ? g_aFlagNameInfo.GetSize() : nNo, strJson.c_str(), 1, "管理者ウィンドウ");
 	ApplyResultToErr(pszRes, bAdd ? g_aFlagNameInfo.GetSize() - 1 : nNo, nNoOut, strErr);
+}
+
+/*
+ * 管理者ウィンドウから思い出の本のシナリオを書き込む（依頼と同じ作り）。
+ *   nNo: シナリオの配列の番号（-1 なら足す）。届いた STORYINFO を JSON にして
+ *   SboWebDataApply を通すので、確認（印の範囲・依頼の番号・前のお話のループ）・番号の振り方・保存はデータAPIと同じ。
+ *   シナリオ番号（wID）は足す時に自動で振り、直す時は今の番号を書き戻す（変えられない）。
+ *   結果: strErr が空ならうまくいった（nNoOut に書き込んだ番号）
+ */
+void SboDataStoryApplyInfo(int nNo, const STORYINFO *pInfo, int &nNoOut, std::string &strErr)
+{
+	STORYINFO Info;
+	bool bAdd = (nNo < 0);
+
+	nNoOut = -1;
+	strErr.clear();
+	if (!bAdd && nNo >= g_aStoryInfo.GetSize()) {
+		strErr = "シナリオの番号が範囲外です（ほかの人が変えたかもしれません。取得し直してください）";
+		return;
+	}
+	Info = *pInfo;
+	/* 文字の欄は必ず終端させる */
+	Info.szName[sizeof(Info.szName) - 1] = 0;
+	Info.szExplain[sizeof(Info.szExplain) - 1] = 0;
+	if (!bAdd) {
+		Info.wID = g_aStoryInfo[nNo]->wID;
+	}
+	std::string strJson = "{" + (bAdd ? FieldsJson((const BYTE *)&Info, s_aFieldStory + 1, COUNTOF(s_aFieldStory) - 1) :
+			FieldsJson((const BYTE *)&Info, s_aFieldStory, COUNTOF(s_aFieldStory))) + "}";
+	const char *pszRes = SboWebDataApply("story", bAdd ? g_aStoryInfo.GetSize() : nNo, strJson.c_str(), 1, "管理者ウィンドウ");
+	ApplyResultToErr(pszRes, bAdd ? g_aStoryInfo.GetSize() - 1 : nNo, nNoOut, strErr);
 }
 
 /*

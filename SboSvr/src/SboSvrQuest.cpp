@@ -32,6 +32,7 @@
 #include <algorithm>
 #include <tuple>
 #include <set>
+#include <string>
 
 extern void SendCmdMAPCHARINFO(DWORD);
 
@@ -185,6 +186,15 @@ BOOL QuestIsDone(PCHARINFO pChar, WORD wQuestID)
 		return FALSE;
 	}
 	return (pChar->abyQuestDone[wQuestID / 8] & (1 << (wQuestID % 8))) ? TRUE : FALSE;
+}
+
+/* 報酬をもうもらっている印（思い出の本でやり直してクリア済みの印が消えても残る。報酬は初回だけ） */
+BOOL QuestIsRewarded(PCHARINFO pChar, WORD wQuestID)
+{
+	if (wQuestID >= MAX_QUEST) {
+		return FALSE;
+	}
+	return (pChar->abyQuestRewarded[wQuestID / 8] & (1 << (wQuestID % 8))) ? TRUE : FALSE;
 }
 
 /* 受けている依頼を空にする（クリア済みの印は残す） */
@@ -1348,7 +1358,7 @@ static BOOL IsLastStep(PCHARINFO pChar, PQUESTINFO pQuest)
 }
 
 /* 報酬の文 */
-static void MakeRewardText(PQUESTINFO pQuest, char *pszOut, size_t nSize)
+static void MakeRewardText(PCHARINFO pChar, PQUESTINFO pQuest, char *pszOut, size_t nSize)
 {
 	char szTmp[128] = "";
 
@@ -1363,7 +1373,8 @@ static void MakeRewardText(PQUESTINFO pQuest, char *pszOut, size_t nSize)
 	}
 	if (szTmp[0] == 0) {
 		strcpy (szTmp, "なし");
-	} else if (pQuest->byChallenge != QUESTCHALLENGE_NONE) {
+	} else if ((pQuest->byChallenge != QUESTCHALLENGE_NONE) || (pQuest->byOnce && QuestIsRewarded (pChar, pQuest->wID))) {
+		/* 討伐チャレンジは毎回。一度きりの依頼は、思い出の本でやり直す時（もうもらっている時）に出す */
 		snprintf (szTmp + strlen (szTmp), sizeof (szTmp) - strlen (szTmp), "（初回のみ）");
 	}
 	CopyStr (pszOut, nSize, szTmp);
@@ -1427,7 +1438,7 @@ void QuestGuildTalk(PCHARINFO pChar, PCHARINFO pNpc)
 		CopyStr (Para.szName, sizeof (Para.szName), pQuest->szName);
 		CopyStr (Para.szExplain, sizeof (Para.szExplain), pQuest->szExplain);
 		CopyStr (Para.szGoal, sizeof (Para.szGoal), (pChar->wQuestID == pQuest->wID) ? GetGoal (pQuest, pChar->byQuestStep) : "");
-		MakeRewardText (pQuest, Para.szReward, sizeof (Para.szReward));
+		MakeRewardText (pChar, pQuest, Para.szReward, sizeof (Para.szReward));
 		svrSock.SendTo (pChar->pID, (LPBYTE)&Para, sizeof (Para), SENDTIMEOUT);
 	}
 }
@@ -1647,8 +1658,13 @@ static void DoHandIn(PCHARINFO pChar, PCHARINFO pNpc)
 		LeaveBak = *pLeave;
 	}
 
-	/* 討伐チャレンジの報酬は初めてクリアした時だけ（2 回目からは記録だけ） */
-	BOOL bReward = !((pQuest->byChallenge != QUESTCHALLENGE_NONE) && QuestIsDone (pChar, pQuest->wID));
+	/* 一度きりの依頼・討伐チャレンジの報酬は初めてクリアした時だけ（思い出の本でやり直した 2 回目からは、
+	   クリア済みの印が消えていても「もらい済みの印」で分かる）。何度でも受けられる依頼は毎回報酬 */
+	BOOL bRewarded = QuestIsRewarded (pChar, pQuest->wID);
+	BOOL bReward = !((pQuest->byOnce || (pQuest->byChallenge != QUESTCHALLENGE_NONE)) && bRewarded);
+	/* 完了した時の印・数値の動きは、ふつうの依頼なら 2 回目も必ず動かす（物語が進むように）。
+	   討伐チャレンジの 2 回目は今まで通り動かさない */
+	BOOL bFlagMove = (pQuest->byChallenge == QUESTCHALLENGE_NONE) ? TRUE : bReward;
 
 	if (pQuest->wQuestItem) {
 		TakeItem (pChar, pQuest->wQuestItem);
@@ -1673,8 +1689,12 @@ static void DoHandIn(PCHARINFO pChar, PCHARINFO pNpc)
 	if ((pQuest->byOnce || (pQuest->byChallenge != QUESTCHALLENGE_NONE)) && (pQuest->wID < MAX_QUEST)) {
 		pChar->abyQuestDone[pQuest->wID / 8] |= (BYTE)(1 << (pQuest->wID % 8));
 	}
+	/* 報酬を渡したら、もうもらっている印を立てる（思い出の本でやり直しても消えない） */
+	if (bReward && (pQuest->wID < MAX_QUEST)) {
+		pChar->abyQuestRewarded[pQuest->wID / 8] |= (BYTE)(1 << (pQuest->wID % 8));
+	}
 	/* 完了した時に立てる印・数値の動き（討伐チャレンジの 2 回目からは記録だけなので動かさない） */
-	if (bReward) {
+	if (bFlagMove) {
 		BYTE abyFlagBak[sizeof (pChar->abyFlag)];
 		CopyMemory (abyFlagBak, pChar->abyFlag, sizeof (abyFlagBak));
 		FlagApplyQuestDone (pChar, pQuest);
@@ -1705,6 +1725,229 @@ static void DoHandIn(PCHARINFO pChar, PCHARINFO pNpc)
 	QuestSyncAll ();
 }
 
+/* ========================================================================= */
+/* 思い出の本（語り部。台詞が "@r"）										 */
+/* ========================================================================= */
+
+/* 台詞が "@r" で始まるか（語り部。思い出の本の窓口） */
+BOOL StoryIsNpc(PCHARINFO pNpc)
+{
+	return pNpc && (pNpc->byNpcType != NPCTYPE_INIT) && pNpc->pszNpcSpeech &&
+		(pNpc->pszNpcSpeech[0] == '@') && (pNpc->pszNpcSpeech[1] == 'r');
+}
+
+/* シナリオを番号から探す（止めているものも探す） */
+static PSTORYINFO FindStory(WORD wID)
+{
+	int i;
+	if (wID == 0) {
+		return NULL;
+	}
+	for (i = 0; i < g_aStoryInfo.GetSize (); i ++) {
+		if (g_aStoryInfo[i]->wID == wID) {
+			return g_aStoryInfo[i];
+		}
+	}
+	return NULL;
+}
+
+/* 本に出るシナリオか（出す状態で、クリアした印が立っている） */
+static BOOL StoryIsShown(PCHARINFO pChar, const STORYINFO *pStory)
+{
+	return (pStory->byState == STORYSTATE_ON) && (pStory->wClearFlag < MAX_FLAGBIT) && FlagBitGet (pChar->abyFlag, pStory->wClearFlag);
+}
+
+/* 一覧の並べ替え */
+static bool StoryLess(PSTORYINFO pA, PSTORYINFO pB)
+{
+	if (pA->wSort != pB->wSort) {
+		return pA->wSort < pB->wSort;
+	}
+	return pA->wID < pB->wID;
+}
+
+/* wID のシナリオと、wPrevStory をたどってそれにつながる後のシナリオ（子・孫…）を集める。
+   先頭は wID。つながりがループしていても、同じシナリオは 1 回しか入れない */
+static void StoryCollect(WORD wID, std::vector<PSTORYINFO> &aOut)
+{
+	size_t nPos;
+	int i;
+	PSTORYINFO pFirst = FindStory (wID);
+
+	aOut.clear ();
+	if (pFirst == NULL) {
+		return;
+	}
+	aOut.push_back (pFirst);
+	for (nPos = 0; nPos < aOut.size (); nPos ++) {
+		for (i = 0; i < g_aStoryInfo.GetSize (); i ++) {
+			PSTORYINFO pTmp = g_aStoryInfo[i];
+			if ((pTmp->wPrevStory != aOut[nPos]->wID) || (pTmp->wPrevStory == 0)) {
+				continue;
+			}
+			if (std::find (aOut.begin (), aOut.end (), pTmp) == aOut.end ()) {
+				aOut.push_back (pTmp);
+			}
+		}
+	}
+}
+
+/* aTree（先頭は選んだシナリオ）の、続きのお話のうち本に出ているものを『名前』の並びにする（nMaxByte に収まる分だけ） */
+static std::string StoryNextNames(PCHARINFO pChar, const std::vector<PSTORYINFO> &aTree, size_t nMaxByte)
+{
+	std::string strNext;
+	size_t i;
+
+	for (i = 1; i < aTree.size (); i ++) {
+		if (!StoryIsShown (pChar, aTree[i])) {
+			continue;
+		}
+		if (strNext.size () + strlen (aTree[i]->szName) + 6 >= nMaxByte) {
+			break;
+		}
+		strNext += "『";
+		strNext += aTree[i]->szName;
+		strNext += "』";
+	}
+	return strNext;
+}
+
+/* 近くに、語り部がいるか */
+static PCHARINFO FindNearStoryNpc(PCHARINFO pChar, DWORD dwNpcTblID)
+{
+	PCHARINFO pNpc;
+
+	if (dwNpcTblID >= (DWORD)g_aCharInfo.GetSize ()) {
+		return NULL;
+	}
+	pNpc = g_aCharInfo[dwNpcTblID];
+	if (!StoryIsNpc (pNpc) || (pNpc->dwMapID != pChar->dwMapID) || !IsSameSpace (pChar, pNpc)) {
+		return NULL;
+	}
+	if ((abs ((int)pChar->dwX - (int)pNpc->dwX) > 2) || (abs ((int)pChar->dwY - (int)pNpc->dwY) > 2)) {
+		return NULL;
+	}
+	return pNpc;
+}
+
+/* 思い出の本の一覧を送る（語り部に話した時）。本に出るシナリオだけ、並び順で。
+   szGoal には、やり直すといっしょに最初に戻る「続きのお話」（本に出ているもの）の名前を入れる */
+void StoryTalk(PCHARINFO pChar, PCHARINFO pNpc)
+{
+	std::vector<PSTORYINFO> aList, aTree;
+	CMDPARA_QUEST Para;
+	int i;
+
+	for (i = 0; i < g_aStoryInfo.GetSize (); i ++) {
+		PSTORYINFO pStory = g_aStoryInfo[i];
+		if (!StoryIsShown (pChar, pStory)) {
+			continue;
+		}
+		if ((int)aList.size () >= MAX_QUESTLIST) {
+			break;
+		}
+		aList.push_back (pStory);
+	}
+	std::sort (aList.begin (), aList.end (), StoryLess);
+
+	ZeroMemory (&Para, sizeof (Para));
+	Para.byCmd = CMD_QUEST;
+	Para.byType = QUESTCMD_STORYITEM;
+	Para.dwTblID = pChar->dwTblID;
+	Para.dwNpcTblID = pNpc->dwTblID;
+	Para.byCount = (BYTE)aList.size ();
+	if (aList.empty ()) {
+		svrSock.SendTo (pChar->pID, (LPBYTE)&Para, sizeof (Para), SENDTIMEOUT);
+		return;
+	}
+	for (i = 0; i < (int)aList.size (); i ++) {
+		PSTORYINFO pStory = aList[i];
+		Para.byIndex = (BYTE)i;
+		Para.wQuestID = pStory->wID;
+		CopyStr (Para.szName, sizeof (Para.szName), pStory->szName);
+		CopyStr (Para.szExplain, sizeof (Para.szExplain), pStory->szExplain);
+		/* いっしょに最初に戻る続きのお話（まだ本に出ていないお話は教えない） */
+		StoryCollect (pStory->wID, aTree);
+		SboTextCopy (Para.szGoal, sizeof (Para.szGoal), StoryNextNames (pChar, aTree, sizeof (Para.szGoal) - 1).c_str ());
+		svrSock.SendTo (pChar->pID, (LPBYTE)&Para, sizeof (Para), SENDTIMEOUT);
+	}
+}
+
+/* 思い出をやり直す（選んだシナリオと、それにつながる後のシナリオの印・数値・依頼のクリア済みの印を戻す） */
+static void DoStoryReset(PCHARINFO pChar, WORD wStoryID)
+{
+	std::vector<PSTORYINFO> aTree;
+	PSTORYINFO pStory = FindStory (wStoryID);
+	BYTE abyFlagBak[sizeof (pChar->abyFlag)];
+	char szMsg[MAX_QUESTMSG];
+	std::string strNext;
+	size_t i;
+	int j, k;
+
+	if ((pStory == NULL) || !StoryIsShown (pChar, pStory)) {
+		SendResult (pChar, QUESTRESULT_NG, 0, "その思い出は、いまは開けません。");
+		return;
+	}
+	StoryCollect (wStoryID, aTree);
+
+	/* 受けている依頼が戻す依頼に入っている間は断る（受けたまま印だけ戻ると、話がつながらなくなる） */
+	if (pChar->wQuestID != 0) {
+		for (i = 0; i < aTree.size (); i ++) {
+			for (j = 0; j < MAX_STORYQUEST; j ++) {
+				if (aTree[i]->awQuest[j] == pChar->wQuestID) {
+					SendResult (pChar, QUESTRESULT_NG, wStoryID, "いま受けている依頼を終えるか取り消してから、思い出をやり直してください。");
+					return;
+				}
+			}
+		}
+	}
+
+	/* 巻き込む続きのお話の名前（印を消す前の、本に出ているもの） */
+	strNext = StoryNextNames (pChar, aTree, MAX_QUESTMSG / 2);
+
+	CopyMemory (abyFlagBak, pChar->abyFlag, sizeof (abyFlagBak));
+	for (i = 0; i < aTree.size (); i ++) {
+		const STORYINFO *p = aTree[i];
+
+		/* 印の範囲（先頭〜最後。どちらも印の番号で、先頭が最後より大きい範囲は使わない） */
+		for (j = 0; j < MAX_STORYFLAGRANGE; j ++) {
+			if ((p->awFlagFrom[j] >= MAX_FLAGBIT) || (p->awFlagTo[j] >= MAX_FLAGBIT) || (p->awFlagFrom[j] > p->awFlagTo[j])) {
+				continue;
+			}
+			for (k = p->awFlagFrom[j]; k <= p->awFlagTo[j]; k ++) {
+				FlagBitSet (pChar->abyFlag, k, FALSE);
+			}
+		}
+		/* 数値は 0 に */
+		for (j = 0; j < MAX_STORYNUM; j ++) {
+			if (p->abyNum[j] < MAX_FLAGNUM) {
+				FlagNumSet (pChar->abyFlagNum, p->abyNum[j], 0);
+			}
+		}
+		/* 依頼のクリア済みの印を消す（報酬をもらい済みの印は残す＝報酬は初回だけ） */
+		for (j = 0; j < MAX_STORYQUEST; j ++) {
+			WORD wQuest = p->awQuest[j];
+			if ((wQuest >= 1) && (wQuest < MAX_QUEST)) {
+				pChar->abyQuestDone[wQuest / 8] &= (BYTE)~(1 << (wQuest % 8));
+			}
+		}
+	}
+	/* やり直した回数（選んだシナリオだけ。消す数値と重なっても最後に +1） */
+	if (pStory->byCountNum < MAX_FLAGNUM) {
+		FlagNumAdd (pChar->abyFlagNum, pStory->byCountNum, 1);
+	}
+	/* 印が動いたら、印で見える・消えるNPCを見え直す */
+	if (memcmp (abyFlagBak, pChar->abyFlag, sizeof (abyFlagBak)) != 0) {
+		CharViewRefresh (pChar);
+	}
+
+	snprintf (szMsg, sizeof (szMsg), "「%s」を最初からやり直せるようになりました。", pStory->szName);
+	if (!strNext.empty ()) {
+		snprintf (szMsg + strlen (szMsg), sizeof (szMsg) - strlen (szMsg), "%sもいっしょに最初に戻りました。", strNext.c_str ());
+	}
+	SendResult (pChar, QUESTRESULT_STORY, wStoryID, szMsg);
+}
+
 /* CMD_QUEST の受信 */
 void QuestRecv(PCHARINFO pChar, PCMDPARA_QUEST pPara)
 {
@@ -1714,7 +1957,7 @@ void QuestRecv(PCHARINFO pChar, PCMDPARA_QUEST pPara)
 	if ((pChar->wHP == 0) || (pChar->byCharState == CHARSTATE_DEAD)) {
 		return;
 	}
-	if (QuestInChallenge (pChar) && (pPara->byType != QUESTCMD_LISTREQ)) {
+	if (QuestInChallenge (pChar) && (pPara->byType != QUESTCMD_LISTREQ) && (pPara->byType != QUESTCMD_STORYREQ)) {
 		SendResult (pChar, QUESTRESULT_NG, 0, "討伐チャレンジ中はできません。");
 		return;
 	}
@@ -1724,6 +1967,25 @@ void QuestRecv(PCHARINFO pChar, PCMDPARA_QUEST pPara)
 		if (pNpc) {
 			QuestGuildTalk (pChar, pNpc);
 		}
+		break;
+
+	case QUESTCMD_STORYREQ:
+		pNpc = FindNearStoryNpc (pChar, pPara->dwNpcTblID);
+		if (pNpc) {
+			if (QuestInChallenge (pChar)) {
+				SendResult (pChar, QUESTRESULT_NG, 0, "討伐チャレンジ中はできません。");
+			} else {
+				StoryTalk (pChar, pNpc);
+			}
+		}
+		break;
+
+	case QUESTCMD_STORYRESET:
+		if (FindNearStoryNpc (pChar, pPara->dwNpcTblID) == NULL) {
+			SendResult (pChar, QUESTRESULT_NG, 0, "語り部の近くで頼んでください。");
+			break;
+		}
+		DoStoryReset (pChar, pPara->wQuestID);
 		break;
 
 	case QUESTCMD_ACCEPT:

@@ -19,6 +19,7 @@
 #include "SboSvrSaveLoadItemInfo.h"
 #include "SboSvrSaveLoadRecipeInfo.h"
 #include "SboSvrSaveLoadQuestInfo.h"
+#include "SboSvrSaveLoadStoryInfo.h"
 #include "SboSvrSaveLoadTalkInfo.h"
 #include "SboSvrSaveLoadMarket.h"
 
