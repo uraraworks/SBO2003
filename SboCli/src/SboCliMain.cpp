@@ -570,6 +570,14 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			switch (g_WndInfo[nNo]->nData1) {
 			case MSG3SEC_ACC:
 				EnableWindow (g_hWndCon, TRUE);
+				/* 入力待ちに戻るので、隠していたログイン窓を出す */
+				if (g_bLoginHide) {
+					g_bLoginHide = FALSE;
+					int nLogin = GetWindowID (g_dwMsgIDLogin);
+					if (nLogin >= 0) {
+						g_WndInfo[nLogin]->dwTimeDrawStart = 0;
+					}
+				}
 				break;
 			}
 			EraseWindow (g_WndInfo[nNo]);
@@ -1080,6 +1088,7 @@ void OnCommand(HWND hWnd, int nID)
 		}
 		/* ID・パスワードで入るので、端末トークンは使わない */
 		ZeroMemory (g_szWebToken, sizeof (g_szWebToken));
+		g_bLoginHide = FALSE;
 		{
 			char szAccTmp[MAX_ACCNAME];
 			ZeroMemory (szAccTmp, sizeof (szAccTmp));
@@ -1132,6 +1141,8 @@ void OnCommand(HWND hWnd, int nID)
 			break;
 		}
 		EnableWindow (g_hWndCon, FALSE);
+		/* ボタンで入る時は、空のアカウント名・パスワードの窓を見せない（失敗して入力待ちに戻ったら出す） */
+		g_bLoginHide = TRUE;
 		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
 		pWnd = MakeWindowMSGVIEW ("サーバーに接続中です...");
 		g_WndInfo.Add (pWnd);

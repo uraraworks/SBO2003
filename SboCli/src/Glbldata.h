@@ -141,6 +141,7 @@ extern WORD g_wPort,												/* 接続ポート番号 */
 			g_wCountObjGrp,											/* 使用オブジェクト(32x32)グラフィック数 */
 			g_wLastProcSecond;										/* 自キャラ最終処理秒 */
 
+extern BOOL g_bLoginHide;											/* ボタンでログインして接続中なので、ログイン窓（アカウント名・パスワード）を隠す（ブラウザ版） */
 extern char g_szWebToken[MAX_WEBTOKEN + 1];							/* 端末トークン（ブラウザ版：web/replace/SboCliWebAccount_web.cpp） */
 extern char g_szAcc[MAX_ACCNAME],									/* アカウント名 */
 			g_szPas[MAX_ACCNAME],									/* パスワード */

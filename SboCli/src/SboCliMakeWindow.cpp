@@ -236,6 +236,7 @@ PWNDINFO MakeWindowLOGIN(void)
 	pWnd->nCy	= 16 * 6;
 	pWnd->nType	= WNDTYPE_LOGIN;
 	g_dwMsgIDLogin = pWnd->dwID;
+	g_bLoginHide = FALSE;
 	pWnd->pDib = new CImg32;
 	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
 
