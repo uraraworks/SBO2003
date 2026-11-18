@@ -1921,6 +1921,7 @@ static void RenewMapDarkLightFlood(int mx, int my, int nRange)
 /* ========================================================================= */
 /* 関数名：GetMapPosLight													 */
 /* 内容：マス(mx,my)の灯りの範囲(光るパーツとマップの光源の大きい方。0=無し) */
+/*       光るパーツの範囲はマップの上書き表(aPartsLight)があればそちらを使う */
 /*       pbyPower・pbyFlg に強さ(%)とフラグ(マップの光源のもの)を返す		 */
 /* ========================================================================= */
 int GetMapPosLight(int mx, int my, BYTE *pbyPower, BYTE *pbyFlg)
@@ -1941,6 +1942,13 @@ int GetMapPosLight(int mx, int my, BYTE *pbyPower, BYTE *pbyFlg)
 		WORD wMap = g_pMapInfo->pwMap[mx + my * g_pMapInfo->nCX];
 		if (wMap < g_wCountMapParts) {
 			nRange = g_pMapPartsInfo[wMap].byLight;
+			/* このマップだけの上書き（0=このマップでは光らない） */
+			for (i = 0; (i < g_pMapInfo->byPartsLightCount) && (i < MAX_MAPPARTSLIGHT); i ++) {
+				if (g_pMapInfo->aPartsLight[i].wParts == wMap) {
+					nRange = min ((int)g_pMapInfo->aPartsLight[i].byLight, (int)MAPLIGHT_RANGE_MAX);
+					break;
+				}
+			}
 		}
 	}
 	for (i = 0; (i < g_pMapInfo->byLightCount) && (i < MAX_MAPLIGHT); i ++) {

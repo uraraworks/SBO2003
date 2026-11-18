@@ -1089,6 +1089,7 @@ static void TestMapSwap(const std::vector<int> &aLogin);
 static void TestAdminChest(const std::vector<int> &aLogin);
 static void TestAdminSwap(const std::vector<int> &aLogin);
 static void TestMapSwapSave(const std::vector<int> &aLogin);
+static void TestMapPartsLight(void);
 static void TestJobMagicKey(const std::vector<int> &aLogin);
 static void TestTailRelogin(const std::vector<int> &aLogin);
 static void TestTailOverlap(const std::vector<int> &aLogin);
@@ -1552,6 +1553,7 @@ static void TestWorld(void)
 	TestQuest(aLogin);
 	/* AG2. 印で変わるマス・宝箱の保存と読み直し（キャラ・マップの保存を読み直すので、ギルドの依頼の読み直しの直後に流す） */
 	TestMapSwapSave(aLogin);
+	TestMapPartsLight();
 	/* N. 道具欄・預かり所の並べ替え */
 	TestSortItem(aLogin);
 	/* O. 押せるNPCを押す向き */
@@ -10016,6 +10018,87 @@ static void TestJobMagicKey(const std::vector<int> &aLogin)
 	memcpy(pA->abyMagic, abyMagicBak, sizeof(abyMagicBak)); memcpy(pA->abyMagicKey, abyKeyBak, sizeof(abyKeyBak));
 	memcpy(pA->abyJobMagicKey, abyJobKeyBak0, sizeof(abyJobKeyBak0)); memcpy(pA->awKeyItem, awKeyItemBak, sizeof(awKeyItemBak));
 	memcpy(pA->awJobKeyItem, awJobKeyItemBak, sizeof(awJobKeyItemBak));
+}
+
+/* ------------------------------------------------------------------------- */
+/* AG3. マップごとのパーツの灯りの上書き（partsLights）						 */
+/*    データAPI の入出力・拒否、保存して読み直す（無いマップは書かない）		 */
+/* ------------------------------------------------------------------------- */
+static void TestMapPartsLight(void)
+{
+	printf("== AG3. MapPartsLight ==\n");
+	if (g_aMapInfo.GetSize() < 1 || g_wCountMapParts < 2) {
+		printf("partslight no map/parts\n");
+		return;
+	}
+	int nMaps = g_aMapInfo.GetSize();
+	PMAPINFO pMap = g_aMapInfo[0];
+	BYTE byCountBak = pMap->byPartsLightCount;
+	MAPPARTSLIGHT aBak[MAX_MAPPARTSLIGHT];
+	memcpy(aBak, pMap->aPartsLight, sizeof(aBak));
+	auto ok = [](const std::string &s) { return (int)(s.find("\"ok\":true") != std::string::npos); };
+	char sz[512];
+
+	/* 書く→取り出すと同じ形で出る */
+	snprintf(sz, sizeof(sz), "{\"partsLights\":[{\"wParts\":%d,\"byLight\":2},{\"wParts\":1,\"byLight\":0}]}", (int)g_wCountMapParts - 1);
+	std::string strRes = SwapApi(0, sz);
+	printf("partslight api ok=%d count=%d row0=%d,%d row1=%d,%d\n", ok(strRes), (int)pMap->byPartsLightCount,
+		(int)pMap->aPartsLight[0].wParts, (int)pMap->aPartsLight[0].byLight, (int)pMap->aPartsLight[1].wParts, (int)pMap->aPartsLight[1].byLight);
+	std::string strGet = SboWebDataGet("map", 0);
+	snprintf(sz, sizeof(sz), "\"partsLights\":[{\"wParts\":%d,\"byLight\":2},{\"wParts\":1,\"byLight\":0}]", (int)g_wCountMapParts - 1);
+	printf("partslight api get has=%d\n", (int)(strGet.find(sz) != std::string::npos));
+
+	/* 拒否：重複・範囲・上限・知らない項目・足りない項目 */
+	MAPPARTSLIGHT aSaved[MAX_MAPPARTSLIGHT];
+	memcpy(aSaved, pMap->aPartsLight, sizeof(aSaved));
+	printf("partslight api dup ok=%d\n", ok(SwapApi(0, "{\"partsLights\":[{\"wParts\":1,\"byLight\":1},{\"wParts\":1,\"byLight\":2}]}")));
+	printf("partslight api light range ok=%d\n", ok(SwapApi(0, "{\"partsLights\":[{\"wParts\":1,\"byLight\":8}]}")));
+	snprintf(sz, sizeof(sz), "{\"partsLights\":[{\"wParts\":%d,\"byLight\":1}]}", (int)g_wCountMapParts);
+	printf("partslight api parts range ok=%d\n", ok(SwapApi(0, sz)));
+	printf("partslight api unknown key ok=%d\n", ok(SwapApi(0, "{\"partsLights\":[{\"wParts\":1,\"byLight\":1,\"x\":1}]}")));
+	printf("partslight api missing key ok=%d\n", ok(SwapApi(0, "{\"partsLights\":[{\"wParts\":1}]}")));
+	{
+		std::string strMany = "{\"partsLights\":[";
+		for (int i = 0; i <= MAX_MAPPARTSLIGHT; i ++) {
+			char szOne[64];
+			snprintf(szOne, sizeof(szOne), "%s{\"wParts\":%d,\"byLight\":1}", i ? "," : "", i % (int)g_wCountMapParts);
+			strMany += szOne;
+		}
+		strMany += "]}";
+		printf("partslight api over limit ok=%d\n", ok(SwapApi(0, strMany.c_str())));
+	}
+	printf("partslight api after bad same=%d\n", (int)(pMap->byPartsLightCount == 2 && memcmp(aSaved, pMap->aPartsLight, sizeof(aSaved)) == 0));
+
+	/* 保存して読み直す（足された分のマップで確かめる） */
+	extern BOOL SaveMapInfo(void);
+	extern BOOL LoadMapInfo(void);
+	DWORD dwNewMapIDBak = g_dwNewMapID;
+	BOOL bSaved = SaveMapInfo();
+	BOOL bLoaded = LoadMapInfo();
+	int nAdded = g_aMapInfo.GetSize() - nMaps;
+	if (nAdded >= 1) {
+		PMAPINFO pL = g_aMapInfo[nMaps];
+		printf("partslight map save=%d load=%d count=%d row0=%d,%d row1=%d,%d\n", (int)bSaved, (int)bLoaded, (int)pL->byPartsLightCount,
+			(int)pL->aPartsLight[0].wParts, (int)pL->aPartsLight[0].byLight, (int)pL->aPartsLight[1].wParts, (int)pL->aPartsLight[1].byLight);
+	} else {
+		printf("partslight map save=%d load=%d added=%d\n", (int)bSaved, (int)bLoaded, nAdded);
+	}
+	/* 0 件なら書かない（古いデータと同じ形で、読み直しても 0 件） */
+	SwapApi(0, "{\"partsLights\":[]}");
+	for (int i = g_aMapInfo.GetSize() - 1; i >= nMaps; i --) {
+		g_aMapInfo.RemoveAt(i);
+	}
+	int nMaps2 = g_aMapInfo.GetSize();
+	SaveMapInfo();
+	LoadMapInfo();
+	printf("partslight map empty count=%d\n", (nMaps2 < g_aMapInfo.GetSize()) ? (int)g_aMapInfo[nMaps2]->byPartsLightCount : -1);
+	for (int i = g_aMapInfo.GetSize() - 1; i >= nMaps2; i --) {
+		g_aMapInfo.RemoveAt(i);
+	}
+	g_dwNewMapID = dwNewMapIDBak;
+
+	pMap->byPartsLightCount = byCountBak;
+	memcpy(pMap->aPartsLight, aBak, sizeof(aBak));
 }
 
 static void TestMapSwapSave(const std::vector<int> &aLogin)

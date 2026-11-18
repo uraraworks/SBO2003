@@ -2027,6 +2027,15 @@ typedef struct _MAPLIGHT {
 #define MAPLIGHTFLG_NOFLICKER	(0x01)								/* ゆらめかない */
 #define MAPLIGHTFLG_WARM		(0x02)								/* 暖色(炎のような橙色) */
 
+/* マップごとのパーツの灯りの上書き（パーツの灯りの範囲 byLight は全マップ共通なので、
+   このマップだけ別の範囲にしたいパーツを並べる。0 にするとこのマップでは光らない） */
+#define MAX_MAPPARTSLIGHT	8										/* 1マップに置けるパーツの灯りの上書きの数 */
+typedef struct _MAPPARTSLIGHT {
+	WORD			wParts;											/* パーツ番号 */
+	BYTE			byLight;										/* このマップでの灯りの範囲(マス。0〜7。0=光らない) */
+	BYTE			byReserve;										/* 予備 */
+} MAPPARTSLIGHT, *PMAPPARTSLIGHT;
+
 /* 印で変わるマス（その人の記録を見て、マスのパーツをその人の画面だけ別のパーツに差し替える。サーバーだけが持つ。
    差し替えるのはパーツの 1 層（pwMap）だけ）。種類が 3 つある。
    (a) MAPSWAPKIND_FLAG 印で変わる（物語のしかけ用。依頼を終えた人にだけ橋がかかる、崩れた壁が通れる、など）：
@@ -2097,6 +2106,8 @@ typedef struct _MAPINFO {
 	MAPDARKAREA		aDarkArea[MAX_MAPDARKAREA];						/* 暗くする・暗くしない範囲 */
 	BYTE			byLightCount;									/* 光源の数 */
 	MAPLIGHT		aLight[MAX_MAPLIGHT];							/* 光源 */
+	BYTE			byPartsLightCount;								/* パーツの灯りの上書きの数 */
+	MAPPARTSLIGHT	aPartsLight[MAX_MAPPARTSLIGHT];					/* パーツの灯りの上書き（このマップだけ） */
 	BYTE			byViewRange;									/* 見える範囲(マス。0=制限なし。壁の向こうと範囲の外は見えない) */
 	WORD			wViewHideParts;									/* 見えない所に描くパーツ(0=黒) */
 	BYTE			bySwapCount;									/* 印で変わるマスの数（サーバーだけ。クライアントへは 0 で送る） */
@@ -4077,6 +4088,8 @@ typedef struct _CMDPARA_CHGMAPINFO {
 	MAPDARKAREA	aDarkArea[MAX_MAPDARKAREA];							/* 暗くする・暗くしない範囲 */
 	BYTE		byLightCount;										/* 光源の数 */
 	MAPLIGHT	aLight[MAX_MAPLIGHT];								/* 光源 */
+	BYTE		byPartsLightCount;									/* パーツの灯りの上書きの数 */
+	MAPPARTSLIGHT	aPartsLight[MAX_MAPPARTSLIGHT];					/* パーツの灯りの上書き（このマップだけ） */
 	BYTE		byViewRange;										/* 見える範囲(マス。0=制限なし) */
 	WORD		wViewHideParts;										/* 見えない所に描くパーツ(0=黒) */
 } CMDPARA_CHGMAPINFO, *PCMDPARA_CHGMAPINFO;

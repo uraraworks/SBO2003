@@ -398,9 +398,41 @@ static void BenchmarkBatch(int count, int level, bool walls, int lights)
 		count, level, walls, lights, oldTimes[2], newTimes[2]);
 }
 
+/* マップごとのパーツの灯りの上書き（GetMapPosLight） */
+static void CheckPartsLightOverride()
+{
+	Prepare(0, 0, false, 0);
+	tiles[5 + 5 * 64] = 2;
+	parts[2].byLight = 3;
+	auto check = [](int expect, const char *msg) {
+		int got = GetMapPosLight(5, 5, nullptr, nullptr);
+		if (got != expect) {
+			std::printf("GetMapPosLight 不一致 (%s): 期待 %d 実際 %d\n", msg, expect, got);
+			std::exit(1);
+		}
+	};
+	check(3, "上書き無しはパーツ共通の値");
+	mapInfo.byPartsLightCount = 1;
+	mapInfo.aPartsLight[0].wParts = 2;
+	mapInfo.aPartsLight[0].byLight = 6;
+	check(6, "上書きで広げる");
+	mapInfo.aPartsLight[0].byLight = 0;
+	check(0, "0 でこのマップでは光らない");
+	mapInfo.aPartsLight[0].wParts = 1;
+	mapInfo.aPartsLight[0].byLight = 6;
+	check(3, "別パーツの行は効かない");
+	mapInfo.byPartsLightCount = 0;
+	mapInfo.aPartsLight[0].wParts = 2;
+	check(3, "件数 0 なら表は無視");
+	parts[2].byLight = 0;
+	Prepare(0, 0, false, 0);
+	std::printf("パーツの灯りの上書き: 一致\n");
+}
+
 int main()
 {
 	setvbuf(stdout, nullptr, _IOLBF, 0);
+	CheckPartsLightOverride();
 	if (!std::getenv("SBO_CHECK_ONLY")) for (int count : {50, 100, 200}) {
 		Benchmark(count, 0, false, 0);
 		Benchmark(count, 20, false, 0);

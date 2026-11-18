@@ -1491,6 +1491,10 @@ BOOL SaveMapInfo(void)
 		if (pMap->byLightCount) {
 			WriteData (hFile, "aLight", sizeof (MAPLIGHT) * pMap->byLightCount, (PBYTE)pMap->aLight);
 		}
+		/* パーツの灯りの上書き（無いマップは書かない） */
+		if (pMap->byPartsLightCount) {
+			WriteData (hFile, "aPartsLight", sizeof (MAPPARTSLIGHT) * pMap->byPartsLightCount, (PBYTE)pMap->aPartsLight);
+		}
 		/* 印で変わるマス（無いマップは書かない。古いデータはそのまま読める）と、使った宝箱番号の覚え */
 		if (pMap->bySwapCount) {
 			WriteData (hFile, "aSwap", sizeof (MAPSWAP) * pMap->bySwapCount, (PBYTE)pMap->aSwap);
@@ -1773,6 +1777,10 @@ BOOL LoadMapInfo(void)
 				} else if (strcmp (pszTmp, "aLight") == 0) {					/* 光源 */
 					pMap->byLightCount = (BYTE)min (dwSize / sizeof (MAPLIGHT), (DWORD)MAX_MAPLIGHT);
 					CopyMemory (pMap->aLight, &pData[dwFilePtr], sizeof (MAPLIGHT) * pMap->byLightCount);
+					dwFilePtr += dwSize;	continue;
+				} else if (strcmp (pszTmp, "aPartsLight") == 0) {			/* パーツの灯りの上書き */
+					pMap->byPartsLightCount = (BYTE)min (dwSize / sizeof (MAPPARTSLIGHT), (DWORD)MAX_MAPPARTSLIGHT);
+					CopyMemory (pMap->aPartsLight, &pData[dwFilePtr], sizeof (MAPPARTSLIGHT) * pMap->byPartsLightCount);
 					dwFilePtr += dwSize;	continue;
 				} else if (strcmp (pszTmp, "pszName") == 0) {				/* マップ名 */
 					pszTmp = (LPCTSTR)&pData[dwFilePtr];

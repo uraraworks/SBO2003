@@ -1205,6 +1205,18 @@ chest old save patched=1 found=1 all_zero=1 name_ok=1
 mapswap map save=1 load=1 added=116 count=4 high=90 row0=1,2,1,1,1,77,宝箱を開けた,ルシー 港の倉庫の奥 row1=3,4,0,1023,1,2 row2=5,5,3
 mapswap map recycle row3=7,8,2,4,6,ルシー 広場の箱 boxhigh=12 chesthigh=90
 mapswap map old-format count=0 high=0 tiles_same=1
+== AG3. MapPartsLight ==
+partslight api ok=1 count=2 row0=1783,2 row1=1,0
+partslight api get has=1
+partslight api dup ok=0
+partslight api light range ok=0
+partslight api parts range ok=0
+partslight api unknown key ok=0
+partslight api missing key ok=0
+partslight api over limit ok=0
+partslight api after bad same=1
+partslight map save=1 load=1 count=2 row0=1783,2 row1=1,0
+partslight map empty count=0
 == N. SortItem ==
 sortkey [アイテム] [あいてむ] same=1 len=9,9
 sortkey [アイテム] [ｱｲﾃﾑ] same=1 len=9,9
