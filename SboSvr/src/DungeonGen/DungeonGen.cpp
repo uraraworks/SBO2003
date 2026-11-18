@@ -26,7 +26,7 @@ Err Generate(Params p, const Theme *pTheme, Skeleton &sk, std::vector<int> &part
 	Rng rng;
 	rng.Seed(seed);
 	sk = Skeleton();
-	Err e = algo == 1 ? GenerateCathedralL1(p, rng, sk) : GenerateCaveL3(p, rng, sk);
+	Err e = algo == 1 ? GenerateCathedralL1(p, rng, sk, pTheme) : GenerateCaveL3(p, rng, sk, pTheme);
 	if (e != ERR_NONE) return e;
 	sk.seed = seed;
 	if (pTheme) ApplyTheme(*pTheme, sk, rng, parts);
@@ -95,6 +95,9 @@ void ReadTheme(const JVal &j, Theme &t)
 			tr.cutX[1] = ReadPair(r.Get("cutX"), 1, tr.w);
 			tr.cutY[0] = ReadPair(r.Get("cutY"), 0, 0);
 			tr.cutY[1] = ReadPair(r.Get("cutY"), 1, tr.h);
+			tr.fixed = r.Int("fixed", 0) != 0;
+			tr.entryX = r.Int("entryX", -1);
+			tr.entryY = r.Int("entryY", -1);
 			t.rooms.push_back(tr);
 		}
 	const JVal *decos = j.Get("decos");
@@ -170,6 +173,7 @@ Err RunJson(const char *pszJson, std::string &out)
 		out += ",\"h\":"; Num(out, r.h);
 		out += ",\"kind\":"; Num(out, r.kind);
 		out += ",\"tpl\":"; Num(out, r.tpl);
+		out += ",\"fixed\":"; Num(out, r.fixed ? 1 : 0);
 		out += '}';
 	}
 	out += "],\"links\":[";

@@ -139,6 +139,63 @@ bool TryGrow(Ctx &c, int parent)
 	return true;
 }
 
+// 大きさ・種類が決まった部屋 n を、親の辺のどこかに置く（向きと位置を総当たり）。置けたら true
+bool TryAttach(Ctx &c, int parent, Room n)
+{
+	const Room p = c.rooms[parent];
+	n.id = (int)c.rooms.size();
+	const int dir0 = c.rng->Int(0, 3);
+	for (int di = 0; di < 4; ++di)
+	{
+		int dir = (dir0 + di) % 4;  // 0 下 / 1 上 / 2 右 / 3 左
+		int lo, hi;
+		if (dir < 2)
+		{
+			n.y = dir == 0 ? p.y + p.h - 1 : p.y - n.h + 1;
+			lo = p.x - n.w + 1; hi = p.x + p.w - 1;
+		}
+		else
+		{
+			n.x = dir == 2 ? p.x + p.w - 1 : p.x - n.w + 1;
+			lo = p.y - n.h + 1; hi = p.y + p.h - 1;
+		}
+		const int span = hi - lo + 1, off0 = c.rng->Int(0, span - 1);
+		for (int k = 0; k < span; ++k)
+		{
+			int v = lo + (off0 + k) % span;
+			if (dir < 2) n.x = v; else n.y = v;
+			if (!CanPlace(c, n)) continue;
+			bool horiz;
+			int s, e, line;
+			c.rooms.push_back(n);
+			int need = std::max(1, std::min(c.aMin, std::min(std::min(p.w, n.w) - 2, std::min(p.h, n.h) - 3)));
+			if (!Shared(c, c.rooms[parent], c.rooms.back(), horiz, s, e, line) || e - s + 1 < need)
+			{
+				c.rooms.pop_back();
+				continue;
+			}
+			MakeLink(c, parent, n.id);
+			return true;
+		}
+	}
+	return false;
+}
+
+// 入口・ボス用の固定パターン（kind が合い、fixed で、地図に収まるもの）の番号一覧
+std::vector<int> FixedCands(const Theme *th, int kind, int W, int H)
+{
+	std::vector<int> v;
+	if (!th) return v;
+	for (size_t i = 0; i < th->rooms.size(); ++i)
+	{
+		const TplRoom &t = th->rooms[i];
+		if (t.kind != kind || !t.fixed) continue;
+		if (t.w < 4 || t.h < 4 || t.w > W || t.h > H || (int)t.cells.size() != t.w * t.h) continue;
+		v.push_back((int)i);
+	}
+	return v;
+}
+
 // 部屋と出入口から格子を作る
 void BuildCells(const Ctx &c, std::vector<int> &cells)
 {
@@ -173,7 +230,16 @@ void BuildCells(const Ctx &c, std::vector<int> &cells)
 			for (int x = IX0(r); x <= IX1(r); ++x)
 				cells[y * W + x] = CELL_FLOOR;
 	}
-	// 出入口
+	// 固定パターンの部屋（範囲ぜんぶをパターンのマスにする）
+	for (size_t i = 0; i < c.rooms.size(); ++i)
+	{
+		const Room &r = c.rooms[i];
+		if (!r.fixed) continue;
+		for (int y = r.y; y < r.y + r.h; ++y)
+			for (int x = r.x; x < r.x + r.w; ++x)
+				cells[y * W + x] = CELL_PATTERN;
+	}
+	// 出入口（固定パターンの壁にも穴を開ける）
 	for (size_t i = 0; i < c.links.size(); ++i)
 	{
 		const Link &l = c.links[i];
@@ -184,10 +250,10 @@ void BuildCells(const Ctx &c, std::vector<int> &cells)
 }
 
 // 歩ける所がすべてつながっているか
-bool AllConnected(const std::vector<int> &cells, int W, int H, int sx, int sy, int &walkCount)
+bool AllConnected(const std::vector<int> &cells, const std::vector<Room> &rooms, int W, int H, int sx, int sy, int &walkCount)
 {
 	walkCount = 0;
-	for (size_t i = 0; i < cells.size(); ++i) if (IsWalkable(cells[i])) ++walkCount;
+	for (int i = 0; i < W * H; ++i) if (WalkableAt(cells, W, H, rooms, i % W, i / W)) ++walkCount;
 	std::vector<char> seen(W * H, 0);
 	std::vector<int> st;
 	st.push_back(sy * W + sx);
@@ -204,7 +270,7 @@ bool AllConnected(const std::vector<int> &cells, int W, int H, int sx, int sy, i
 			int nx = x + nb[k][0], ny = y + nb[k][1];
 			if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
 			int ni = ny * W + nx;
-			if (!seen[ni] && IsWalkable(cells[ni])) { seen[ni] = 1; st.push_back(ni); }
+			if (!seen[ni] && WalkableAt(cells, W, H, rooms, nx, ny)) { seen[ni] = 1; st.push_back(ni); }
 		}
 	}
 	return n == walkCount;
@@ -212,7 +278,7 @@ bool AllConnected(const std::vector<int> &cells, int W, int H, int sx, int sy, i
 
 } // namespace
 
-Err GenerateCathedralL1(const Params &p0, Rng &rng, Skeleton &sk)
+Err GenerateCathedralL1(const Params &p0, Rng &rng, Skeleton &sk, const Theme *pTheme)
 {
 	Params p = p0;
 	if (p.w < 8 || p.w > 128 || p.h < 8 || p.h > 128) return ERR_PARAM;
@@ -228,6 +294,8 @@ Err GenerateCathedralL1(const Params &p0, Rng &rng, Skeleton &sk)
 
 	const int W = p.w, H = p.h;
 	const int maxTries = 300;
+	const std::vector<int> entryCands = FixedCands(pTheme, 2, W, H);
+	const std::vector<int> bossCands = FixedCands(pTheme, 1, W, H);
 	for (int tries = 1; tries <= maxTries; ++tries)
 	{
 		Ctx c;
@@ -238,6 +306,14 @@ Err GenerateCathedralL1(const Params &p0, Rng &rng, Skeleton &sk)
 		r0.id = 0; r0.kind = 2; r0.tpl = -1;
 		r0.w = rng.Int(p.roomMin, p.roomMax);
 		r0.h = rng.Int(p.roomMin, p.roomMax);
+		if (!entryCands.empty())
+		{
+			// 入口の固定パターン: パターンの大きさちょうどで作る
+			r0.tpl = entryCands[rng.Int(0, (int)entryCands.size() - 1)];
+			r0.fixed = 1;
+			r0.w = pTheme->rooms[r0.tpl].w;
+			r0.h = pTheme->rooms[r0.tpl].h;
+		}
 		r0.x = (W - r0.w) / 2 + rng.Int(-2, 2);
 		r0.y = (H - r0.h) / 2 + rng.Int(-2, 2);
 		r0.x = std::max(0, std::min(W - r0.w, r0.x));
@@ -272,21 +348,36 @@ Err GenerateCathedralL1(const Params &p0, Rng &rng, Skeleton &sk)
 			}
 
 		// 入口 = 最初の部屋、ボス部屋 = つながりで一番遠い部屋
-		const int n = (int)c.rooms.size();
-		std::vector<int> dist(n, -1), q;
-		q.push_back(0); dist[0] = 0;
 		int boss = 0;
-		for (size_t qi = 0; qi < q.size(); ++qi)
+		for (int pass = 0; pass < 2; ++pass)
 		{
-			int a = q[qi];
-			if (dist[a] > dist[boss]) boss = a;
-			for (size_t k = 0; k < c.links.size(); ++k)
+			const int n = (int)c.rooms.size();
+			std::vector<int> dist(n, -1), q;
+			q.push_back(0); dist[0] = 0;
+			boss = 0;
+			for (size_t qi = 0; qi < q.size(); ++qi)
 			{
-				int b = -1;
-				if (c.links[k].a == a) b = c.links[k].b;
-				else if (c.links[k].b == a) b = c.links[k].a;
-				if (b >= 0 && dist[b] < 0) { dist[b] = dist[a] + 1; q.push_back(b); }
+				int a = q[qi];
+				if (dist[a] > dist[boss]) boss = a;
+				for (size_t k = 0; k < c.links.size(); ++k)
+				{
+					int b = -1;
+					if (c.links[k].a == a) b = c.links[k].b;
+					else if (c.links[k].b == a) b = c.links[k].a;
+					if (b >= 0 && dist[b] < 0) { dist[b] = dist[a] + 1; q.push_back(b); }
+				}
 			}
+			if (pass == 0 && !bossCands.empty())
+			{
+				// ボスの固定パターンを、入口から一番遠い部屋に隣接させて生やしてみる。置けなければ今までどおり
+				Room bn;
+				bn.kind = 1; bn.fixed = 1;
+				bn.tpl = bossCands[rng.Int(0, (int)bossCands.size() - 1)];
+				bn.w = pTheme->rooms[bn.tpl].w;
+				bn.h = pTheme->rooms[bn.tpl].h;
+				if (TryAttach(c, boss, bn)) continue;  // 置けたので、遠さを測り直す（新しい部屋が一番遠くなる）
+			}
+			break;
 		}
 		if (boss != 0) c.rooms[boss].kind = 1;
 
@@ -294,9 +385,14 @@ Err GenerateCathedralL1(const Params &p0, Rng &rng, Skeleton &sk)
 		BuildCells(c, cells);
 		const Room &e = c.rooms[0], &g = c.rooms[boss];
 		int sx = e.x + e.w / 2, sy = e.y + 2 + (e.h - 3) / 2;
+		if (e.fixed)
+		{
+			const TplRoom &t = pTheme->rooms[e.tpl];
+			if (t.entryX >= 0 && t.entryX < t.w && t.entryY >= 0 && t.entryY < t.h) { sx = e.x + t.entryX; sy = e.y + t.entryY; }
+		}
 		int gx = g.x + g.w / 2, gy = g.y + 2 + (g.h - 3) / 2;
 		int walk = 0;
-		if (!AllConnected(cells, W, H, sx, sy, walk)) continue;
+		if (!AllConnected(cells, c.rooms, W, H, sx, sy, walk)) continue;
 		if ((long)walk * 100 < (long)W * H * p.floorMin) continue;
 
 		sk.w = W; sk.h = H; sk.algo = 1; sk.tries = tries;

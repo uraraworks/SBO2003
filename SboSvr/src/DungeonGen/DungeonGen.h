@@ -23,7 +23,8 @@ enum Cell
 	CELL_FACE = 3,   // 壁の側面
 	CELL_WALL = 4,   // 壁（その他）
 	CELL_ARCH = 5,   // 出入口の床
-	CELL_DOOR = 6    // 扉
+	CELL_DOOR = 6,   // 扉
+	CELL_PATTERN = 7 // 固定パターンの部屋の中（床か壁かは分からない。theme がある時だけ）
 };
 
 inline bool IsWalkable(int c) { return c == CELL_FLOOR || c == CELL_ARCH || c == CELL_DOOR; }
@@ -51,8 +52,40 @@ struct Room
 {
 	int id, x, y, w, h;
 	int kind;  // 0 ふつう / 1 ボス部屋 / 2 入口の部屋
-	int tpl;   // 使った 9分割の部屋の番号（-1 = 素の絵）
+	int tpl;   // 使った 9分割の部屋の番号（-1 = 素の絵）。fixed の時は置いた固定パターンの番号
+	int fixed; // 0 = ふつう / 1 = 固定パターン（L1。外周は通れない扱い） / 2 = 固定パターン（L3。外周は隣が床なら出入口）
+	Room() : id(0), x(0), y(0), w(0), h(0), kind(0), tpl(-1), fixed(0) {}
 };
+
+
+
+// 固定パターン（rooms[].fixed）の範囲のセルが歩けるか。
+//   パターンの中（外周を除く）は 1 つの床のかたまりとみなして歩ける。
+//   外周は、fixed == 2（L3）の時だけ、外側の隣が歩ける床なら出入口として歩ける。
+inline bool WalkableAt(const std::vector<int> &cells, int W, int H, const std::vector<Room> &rooms, int x, int y)
+{
+	int c = cells[y * W + x];
+	if (IsWalkable(c)) return true;
+	if (c != CELL_PATTERN) return false;
+	for (size_t i = 0; i < rooms.size(); ++i)
+	{
+		const Room &r = rooms[i];
+		if (!r.fixed || x < r.x || x >= r.x + r.w || y < r.y || y >= r.y + r.h) continue;
+		bool ring = x == r.x || x == r.x + r.w - 1 || y == r.y || y == r.y + r.h - 1;
+		if (!ring) return true;
+		if (r.fixed != 2) return false;
+		static const int nb[4][2] = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };
+		for (int k = 0; k < 4; ++k)
+		{
+			int nx = x + nb[k][0], ny = y + nb[k][1];
+			if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
+			if (nx >= r.x && nx < r.x + r.w && ny >= r.y && ny < r.y + r.h) continue;
+			if (IsWalkable(cells[ny * W + nx])) return true;
+		}
+		return false;
+	}
+	return false;
+}
 
 struct Link
 {
@@ -80,7 +113,9 @@ struct TplRoom
 	int kind, w, h;
 	std::vector<int> cells;
 	int cutX[2], cutY[2];
-	TplRoom() : kind(0), w(0), h(0) { cutX[0] = cutX[1] = cutY[0] = cutY[1] = 0; }
+	bool fixed;           // true なら 9分割で伸ばさず cells をそのまま置く
+	int entryX, entryY;   // パターン内の出てくる位置（-1 = 無し）
+	TplRoom() : kind(0), w(0), h(0), fixed(false), entryX(-1), entryY(-1) { cutX[0] = cutX[1] = cutY[0] = cutY[1] = 0; }
 };
 
 struct Deco
@@ -113,8 +148,9 @@ enum Err
 };
 
 // 骨組み。rng は呼び出し側で seed 済みのもの
-Err GenerateCathedralL1(const Params &p, Rng &rng, Skeleton &sk);
-Err GenerateCaveL3(const Params &p, Rng &rng, Skeleton &sk);
+// pTheme があれば、kind が 2（入口）・1（ボス）で fixed の部屋パターンを置く
+Err GenerateCathedralL1(const Params &p, Rng &rng, Skeleton &sk, const Theme *pTheme = 0);
+Err GenerateCaveL3(const Params &p, Rng &rng, Skeleton &sk, const Theme *pTheme = 0);
 
 // 絵を当てる。parts は w*h 個
 void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts);

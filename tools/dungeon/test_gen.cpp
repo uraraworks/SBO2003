@@ -17,7 +17,7 @@ static void Show(const Skeleton &sk)
 	{
 		for (int x = 0; x < sk.w; ++x)
 		{
-			char c = " .TF#AD"[sk.cells[y * sk.w + x]];
+			char c = " .TF#ADP"[sk.cells[y * sk.w + x]];
 			if (x == sk.startX && y == sk.startY) c = 'S';
 			if (x == sk.goalX && y == sk.goalY) c = 'G';
 			putchar(c);
@@ -30,7 +30,7 @@ static void Show(const Skeleton &sk)
 static bool Connected(const Skeleton &sk)
 {
 	int W = sk.w, H = sk.h, total = 0;
-	for (int c : sk.cells) if (IsWalkable(c)) ++total;
+	for (int i = 0; i < W * H; ++i) if (WalkableAt(sk.cells, W, H, sk.rooms, i % W, i / W)) ++total;
 	std::vector<char> seen(W * H, 0);
 	std::vector<int> st(1, sk.startY * W + sk.startX);
 	seen[st[0]] = 1;
@@ -44,7 +44,7 @@ static bool Connected(const Skeleton &sk)
 			int x = i % W + k[0], y = i / W + k[1];
 			if (x < 0 || y < 0 || x >= W || y >= H) continue;
 			int j = y * W + x;
-			if (!seen[j] && IsWalkable(sk.cells[j])) { seen[j] = 1; st.push_back(j); }
+			if (!seen[j] && WalkableAt(sk.cells, W, H, sk.rooms, x, y)) { seen[j] = 1; st.push_back(j); }
 		}
 	}
 	return n == total && seen[sk.goalY * W + sk.goalX];
@@ -67,6 +67,29 @@ static Theme MakeTheme(int algo)
 	Deco d1; d1.name = "pillar"; d1.w = 1; d1.h = 1; d1.cells = { 300 }; d1.on = 1; d1.rate = 5; d1.max = 6;
 	Deco d2; d2.name = "torch"; d2.w = 1; d2.h = 1; d2.cells = { 824 }; d2.on = 3; d2.rate = 20; d2.max = 8;
 	t.decos = { d1, d2 };
+	return t;
+}
+
+// 固定パターン（入口 7x6・ボス 6x6）付きのテーマ。外周は壁（7）、中は床（101）
+static Theme MakeFixedTheme(int algo)
+{
+	Theme t = MakeTheme(algo);
+	const int dims[2][3] = { { 2, 7, 6 }, { 1, 6, 6 } };  // kind, w, h
+	for (auto &d : dims)
+	{
+		TplRoom r;
+		r.name = d[0] == 2 ? "fixedEntry" : "fixedBoss"; r.kind = d[0]; r.w = d[1]; r.h = d[2];
+		r.fixed = true;
+		r.cutX[0] = 1; r.cutX[1] = r.w - 1; r.cutY[0] = 2; r.cutY[1] = r.h - 1;
+		for (int y = 0; y < r.h; ++y)
+			for (int x = 0; x < r.w; ++x)
+			{
+				bool edge = x == 0 || y == 0 || x == r.w - 1 || y == r.h - 1;
+				r.cells.push_back(edge ? 7 : (d[0] == 2 ? 401 : 402));
+			}
+		if (d[0] == 2) { r.entryX = 3; r.entryY = 3; r.cells[3 * r.w + 0] = 101; }
+		t.rooms.push_back(r);
+	}
 	return t;
 }
 
@@ -120,6 +143,50 @@ int main(int argc, char **argv)
 					Show(a);
 				}
 			}
+
+	// 固定パターンの入口・ボス
+	for (int algo = 1; algo <= 3; algo += 2)
+		for (int seed : seeds)
+		{
+			Params p; p.algo = algo; p.w = 48; p.h = 48; p.seed = seed;
+			Theme th = MakeFixedTheme(algo);
+			Skeleton a, b; std::vector<int> pa, pb;
+			Err e = Generate(p, &th, a, pa);
+			if (e != ERR_NONE) { CHECK(0, "fixed algo %d seed %d: error %d", algo, seed, e); continue; }
+			Generate(p, &th, b, pb);
+			CHECK(a.cells == b.cells && pa == pb, "fixed algo %d seed %d: not reproducible", algo, seed);
+			CHECK(Connected(a), "fixed algo %d seed %d: not connected", algo, seed);
+			CHECK(a.floorCount * 100 >= a.w * a.h * p.floorMin, "fixed algo %d seed %d: floor small", algo, seed);
+			const Room *ent = 0, *boss = 0;
+			for (auto &r : a.rooms) { if (r.kind == 2 && r.fixed) ent = &r; if (r.kind == 1 && r.fixed) boss = &r; }
+			CHECK(ent && ent->w == 7 && ent->h == 6, "fixed algo %d seed %d: entry pattern missing", algo, seed);
+			if (ent)
+			{
+				CHECK(a.startX == ent->x + 3 && a.startY == ent->y + 3, "start != entry");
+				CHECK(a.cells[a.startY * a.w + a.startX] == CELL_PATTERN, "start not pattern");
+				// 範囲内の絵: 穴でないマスはパターンの値
+				int cnt401 = 0;
+				for (int y = ent->y; y < ent->y + ent->h; ++y)
+					for (int x = ent->x; x < ent->x + ent->w; ++x) if (pa[y * a.w + x] == 401) ++cnt401;
+				CHECK(cnt401 >= 10 && cnt401 <= 20, "entry pattern not placed as is (%d)", cnt401);  // 穴の所だけ出入口の絵で上書き
+			}
+			if (algo == 1)
+			{
+				CHECK(boss != 0 || a.rooms.size() > 1, "fixed boss missing");
+				if (boss)
+				{
+					int far = 0;
+					for (size_t i = 0; i < a.rooms.size(); ++i) if (&a.rooms[i] == boss) far = (int)i;
+					CHECK(far == (int)a.rooms.size() - 1, "boss not last");
+				}
+				CHECK(ent && a.rooms[0].fixed == 1 && a.rooms[0].tpl >= 0, "room0 not fixed");
+			}
+			else
+				for (int y = ent ? ent->y : 0; ent && y < ent->y + ent->h; ++y)
+					for (int x = ent->x; x < ent->x + ent->w; ++x)
+						CHECK(a.cells[y * a.w + x] == CELL_PATTERN, "L3 pattern cell");
+			if (verbose && seed == 1) { printf("--- fixed algo %d seed %d\n", algo, seed); Show(a); }
+		}
 
 	// JSON 入口
 	{

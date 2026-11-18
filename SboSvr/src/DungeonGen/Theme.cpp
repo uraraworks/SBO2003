@@ -63,6 +63,7 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 		case CELL_FACE: parts[i] = Pick(th.wallFace, rng); break;
 		case CELL_WALL: parts[i] = Pick(th.wallFill, rng); break;
 		case CELL_NONE: parts[i] = th.voidPart; break;
+		case CELL_PATTERN: parts[i] = th.voidPart; break;  // 固定パターンで上書きする
 		default: break;  // 出入口・扉はあとで
 		}
 	}
@@ -73,9 +74,10 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 		for (size_t ri = 0; ri < sk.rooms.size(); ++ri)
 		{
 			Room &r = sk.rooms[ri];
+			if (r.fixed) continue;  // 固定パターンは下で置く
 			std::vector<int> cand;
 			for (size_t k = 0; k < th.rooms.size(); ++k)
-				if (th.rooms[k].kind == r.kind && TplValid(th.rooms[k])) cand.push_back((int)k);
+				if (th.rooms[k].kind == r.kind && !th.rooms[k].fixed && TplValid(th.rooms[k])) cand.push_back((int)k);
 			if (cand.empty()) continue;
 			int ti = cand[rng.Int(0, (int)cand.size() - 1)];
 			const TplRoom &t = th.rooms[ti];
@@ -92,6 +94,21 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 				}
 			}
 		}
+	}
+
+	// 2b. 固定パターン（L1・L3 とも。伸ばさず、そのまま置く）
+	for (size_t ri = 0; ri < sk.rooms.size(); ++ri)
+	{
+		const Room &r = sk.rooms[ri];
+		if (!r.fixed || r.tpl < 0 || r.tpl >= (int)th.rooms.size()) continue;
+		const TplRoom &t = th.rooms[r.tpl];
+		if (t.w != r.w || t.h != r.h || (int)t.cells.size() != t.w * t.h) continue;
+		for (int j = 0; j < r.h; ++j)
+			for (int i = 0; i < r.w; ++i)
+			{
+				int v = t.cells[j * t.w + i];
+				if (v != 0) parts[(r.y + j) * W + r.x + i] = v;
+			}
 	}
 
 	// 3. 出入口・扉

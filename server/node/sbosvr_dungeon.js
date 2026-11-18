@@ -130,8 +130,14 @@ Module['sboDungeon'] = (function () {
 				w: w, h: h,
 				cells: cellList(r.cells, w, h, nParts, lb),
 				cutX: cuts(r.cutX, w, lb + ' の cutX'),
-				cutY: cuts(r.cutY, h, lb + ' の cutY')
+				cutY: cuts(r.cutY, h, lb + ' の cutY'),
+				fixed: r.fixed === true,
+				entryX: r.entryX == null ? -1 : int(r.entryX, -1, w - 1, lb + ' の entryX'),
+				entryY: r.entryY == null ? -1 : int(r.entryY, -1, h - 1, lb + ' の entryY')
 			};
+			if (r.fixed != null && typeof r.fixed !== 'boolean') {
+				bad(lb + ' の fixed', ' は true か false にしてください');
+			}
 			if (r.src && typeof r.src === 'object') {
 				room.src = {
 					map: int(r.src.map, 0, 99999, lb + ' の src.map'),
