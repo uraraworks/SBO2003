@@ -1035,6 +1035,12 @@ function inField(e) {
 	return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
 }
 window.addEventListener('keydown', function (e) {
+	if (!$('imp-dlg').hidden) {
+		if (e.key === 'Escape') {
+			impClose();
+		}
+		return;
+	}
 	if (!$('submit-dlg').hidden) {
 		/* 確認の窓を開いている間は、描く画面のキー操作は効かせない */
 		if (e.key === 'Escape') {
@@ -2063,6 +2069,289 @@ function setupUi() {
 	$('grid').classList.toggle('active', S.grid);
 	updateUndoButtons();
 }
+
+/* ============ 管理人：画像を読み込む ============
+ * 管理ページのドット絵エディタで直した PNG（シートまるごとでもよい）を読み、
+ * お題の大きさ（w×h）の範囲を切り出して今の絵に入れる。管理人モードだけで使う。 */
+const IMP = { img: null, x: 0, y: 0, z: 1, drag: null, notes: [] };
+const IMP_ZOOMS = [1, 2, 3, 4, 6, 8, 12];
+
+/* 読んだ画像のパレット色を、お題のパレットの番号にそろえる。{ map, near（寄せた色の数）} */
+function impMapPalette(src) {
+	const tp = S.task.palette, tr = S.task.transparent;
+	const used = new Set();
+	src.indices.forEach(function (v) { used.add(v); });
+	const map = new Uint8Array(256).fill(tr);
+	let near = 0;
+	used.forEach(function (i) {
+		const c = src.palette[i];
+		if (!c) {
+			return;
+		}
+		/* 黒（と、完全に透けている色）は透明 */
+		if ((c.r === 0 && c.g === 0 && c.b === 0) || c.a === 0) {
+			map[i] = tr;
+			return;
+		}
+		let best = -1, bd = Infinity;
+		tp.forEach(function (pc, k) {
+			if (k === tr) {
+				return;
+			}
+			const d = (pc[0] - c.r) * (pc[0] - c.r) + (pc[1] - c.g) * (pc[1] - c.g) + (pc[2] - c.b) * (pc[2] - c.b);
+			if (d < bd) {
+				bd = d;
+				best = k;
+			}
+		});
+		map[i] = best < 0 ? tr : best;
+		if (bd > 0) {
+			near++;
+		}
+	});
+	return { map: map, near: near };
+}
+
+async function impLoadFile(file) {
+	if (!S.admin || !file) {
+		return;
+	}
+	let buf;
+	try {
+		buf = new Uint8Array(await file.arrayBuffer());
+	} catch (e) {
+		toast('ファイルを読めませんでした。');
+		return;
+	}
+	const notes = [];
+	let img = null;
+	try {
+		const src = await decodeIndexedPng(buf);
+		const m = impMapPalette(src);
+		const out = new Uint8Array(src.indices.length);
+		for (let k = 0; k < out.length; k++) {
+			out[k] = m.map[src.indices[k]];
+		}
+		img = { width: src.width, height: src.height, indices: out };
+		if (m.near > 0) {
+			notes.push('パレットにない色が ' + m.near + ' 色あったので、近い色に寄せました。');
+		}
+	} catch (e) {
+		/* パレット PNG でない時は、色を見て近い色に寄せて取り込む */
+		try {
+			img = await rgbaToIndexed(buf, S.task.palette, S.task.transparent);
+			notes.push('色がパレットと違うので近い色に寄せました。');
+		} catch (e2) {
+			toast('PNG として読めませんでした。');
+			return;
+		}
+	}
+	if (!img || !img.width) {
+		toast('PNG として読めませんでした。');
+		return;
+	}
+	if (img.width < S.w || img.height < S.h) {
+		toast('お題（' + S.w + '×' + S.h + '）より小さい画像です（' + img.width + '×' + img.height + '）。');
+		return;
+	}
+	if (img.width === S.w && img.height === S.h) {
+		impApply(img, 0, 0, notes);
+		return;
+	}
+	impOpen(img, notes);
+}
+
+/* 切り出して今の絵に入れる（元に戻せる） */
+function impApply(img, x0, y0, notes) {
+	commitFloat();
+	const out = new Uint8Array(S.w * S.h);
+	for (let y = 0; y < S.h; y++) {
+		for (let x = 0; x < S.w; x++) {
+			out[y * S.w + x] = img.indices[(y0 + y) * img.width + x0 + x];
+		}
+	}
+	pushHistory();
+	S.data = out;
+	S.sel = null;
+	onChange();
+	toast('画像を読み込みました。' + (notes && notes.length ? notes.join('') : ''));
+}
+
+function impSnapOn() {
+	return $('imp-snap').checked;
+}
+/* 四角の位置をそろえて、はみ出さないようにする */
+function impClamp(x, y) {
+	const img = IMP.img;
+	const mx = img.width - S.w, my = img.height - S.h;
+	if (impSnapOn()) {
+		const cw = Math.max(1, S.task.cw || S.w), ch = Math.max(1, S.task.ch || S.h);
+		x = Math.round(x / cw) * cw;
+		y = Math.round(y / ch) * ch;
+		x = Math.min(x, Math.floor(mx / cw) * cw);
+		y = Math.min(y, Math.floor(my / ch) * ch);
+	}
+	return { x: clamp(Math.round(x), 0, mx), y: clamp(Math.round(y), 0, my) };
+}
+
+function impOpen(img, notes) {
+	IMP.img = img;
+	IMP.notes = notes;
+	const t = S.task;
+	const p = (!t.fresh && t.x + S.w <= img.width && t.y + S.h <= img.height) ? { x: t.x || 0, y: t.y || 0 } : { x: 0, y: 0 };
+	$('imp-snap').checked = true;
+	$('imp-snap-t').textContent = '1コマ（' + (t.cw || S.w) + '×' + (t.ch || S.h) + '）単位で動かす';
+	$('imp-info').textContent = '画像の大きさ ' + img.width + '×' + img.height + '。お題（' + S.w + '×' + S.h + '）の範囲を赤い四角で選びます。';
+	$('imp-warn').textContent = notes.join('');
+	const c = $('imp-img');
+	c.width = img.width;
+	c.height = img.height;
+	const cx = c.getContext('2d');
+	cx.putImageData(indicesToImageData(img.indices, img.width, img.height, pal), 0, 0);
+	$('imp-dlg').hidden = false;
+	IMP.x = p.x;
+	IMP.y = p.y;
+	impFit();
+}
+
+function impRender() {
+	const z = IMP.z, img = IMP.img;
+	const c = $('imp-img');
+	c.style.width = img.width * z + 'px';
+	c.style.height = img.height * z + 'px';
+	const b = $('imp-box');
+	b.style.left = IMP.x * z + 'px';
+	b.style.top = IMP.y * z + 'px';
+	b.style.width = S.w * z + 'px';
+	b.style.height = S.h * z + 'px';
+	$('imp-x').value = IMP.x;
+	$('imp-y').value = IMP.y;
+	$('imp-x').max = img.width - S.w;
+	$('imp-y').max = img.height - S.h;
+	$('imp-zt').textContent = z + '倍';
+	/* 四角が見えるところまで画像をスクロールする */
+	const wrap = $('imp-wrap');
+	const bw = S.w * z, bh = S.h * z;
+	if (IMP.x * z < wrap.scrollLeft || IMP.x * z + bw > wrap.scrollLeft + wrap.clientWidth) {
+		wrap.scrollLeft = IMP.x * z - Math.max(0, (wrap.clientWidth - bw) / 2);
+	}
+	if (IMP.y * z < wrap.scrollTop || IMP.y * z + bh > wrap.scrollTop + wrap.clientHeight) {
+		wrap.scrollTop = IMP.y * z - Math.max(0, (wrap.clientHeight - bh) / 2);
+	}
+	/* 四角の中のプレビュー（2倍） */
+	const pv = $('imp-pv');
+	pv.width = S.w;
+	pv.height = S.h;
+	pv.style.width = S.w * 2 + 'px';
+	pv.style.height = S.h * 2 + 'px';
+	const sub = new Uint8Array(S.w * S.h);
+	for (let y = 0; y < S.h; y++) {
+		for (let x = 0; x < S.w; x++) {
+			sub[y * S.w + x] = img.indices[(IMP.y + y) * img.width + IMP.x + x];
+		}
+	}
+	pv.getContext('2d').putImageData(indicesToImageData(sub, S.w, S.h, pal), 0, 0);
+}
+function impSetZoom(z) {
+	IMP.z = z;
+	impRender();
+}
+function impFit() {
+	const wrapW = Math.max(100, $('imp-wrap').clientWidth || 700);
+	let z = 1;
+	IMP_ZOOMS.forEach(function (v) {
+		if (IMP.img.width * v <= wrapW) {
+			z = v;
+		}
+	});
+	impSetZoom(z);
+}
+function impZoomStep(d) {
+	const i = IMP_ZOOMS.indexOf(IMP.z);
+	impSetZoom(IMP_ZOOMS[clamp(i + d, 0, IMP_ZOOMS.length - 1)]);
+}
+function impClose() {
+	$('imp-dlg').hidden = true;
+	IMP.img = null;
+}
+function impMove(x, y) {
+	const p = impClamp(x, y);
+	IMP.x = p.x;
+	IMP.y = p.y;
+	impRender();
+}
+
+/* 四角のドラッグ（画像の上を押すと、そこへ四角を持ってくる） */
+$('imp-stage').addEventListener('pointerdown', function (e) {
+	if (!IMP.img) {
+		return;
+	}
+	e.preventDefault();
+	const r = $('imp-stage').getBoundingClientRect();
+	const px = (e.clientX - r.left) / IMP.z, py = (e.clientY - r.top) / IMP.z;
+	const inside = px >= IMP.x && px < IMP.x + S.w && py >= IMP.y && py < IMP.y + S.h;
+	IMP.drag = inside ? { dx: px - IMP.x, dy: py - IMP.y } : { dx: S.w / 2, dy: S.h / 2 };
+	$('imp-stage').setPointerCapture(e.pointerId);
+	if (!inside) {
+		impMove(px - IMP.drag.dx, py - IMP.drag.dy);
+	}
+});
+$('imp-stage').addEventListener('pointermove', function (e) {
+	if (!IMP.drag || !IMP.img) {
+		return;
+	}
+	const r = $('imp-stage').getBoundingClientRect();
+	impMove((e.clientX - r.left) / IMP.z - IMP.drag.dx, (e.clientY - r.top) / IMP.z - IMP.drag.dy);
+});
+function impDragEnd() {
+	IMP.drag = null;
+}
+$('imp-stage').addEventListener('pointerup', impDragEnd);
+$('imp-stage').addEventListener('pointercancel', impDragEnd);
+['imp-x', 'imp-y'].forEach(function (id) {
+	$(id).addEventListener('change', function () {
+		impMove(Number($('imp-x').value) || 0, Number($('imp-y').value) || 0);
+	});
+});
+$('imp-snap').addEventListener('change', function () { impMove(IMP.x, IMP.y); });
+$('imp-zin').addEventListener('click', function () { impZoomStep(1); });
+$('imp-zout').addEventListener('click', function () { impZoomStep(-1); });
+$('imp-zfit').addEventListener('click', impFit);
+$('imp-cancel').addEventListener('click', impClose);
+$('imp-ok').addEventListener('click', function () {
+	const img = IMP.img;
+	if (!img) {
+		return;
+	}
+	const x = IMP.x, y = IMP.y, n = IMP.notes;
+	impClose();
+	impApply(img, x, y, n);
+});
+$('imp-open').addEventListener('click', function () { $('imp-file').click(); });
+$('imp-file').addEventListener('change', function () {
+	const f = $('imp-file').files[0];
+	$('imp-file').value = '';
+	impLoadFile(f);
+});
+/* 描くところへのドラッグ＆ドロップ（管理人モードだけ） */
+$('stage').addEventListener('dragover', function (e) {
+	if (S.admin) {
+		e.preventDefault();
+		$('stage').classList.add('drop');
+	}
+});
+$('stage').addEventListener('dragleave', function () { $('stage').classList.remove('drop'); });
+$('stage').addEventListener('drop', function (e) {
+	$('stage').classList.remove('drop');
+	if (!S.admin) {
+		return;
+	}
+	e.preventDefault();
+	const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+	if (f) {
+		impLoadFile(f);
+	}
+});
 
 /* ---- ボタン ---- */
 Array.prototype.forEach.call(document.querySelectorAll('#tools button'), function (b) {
