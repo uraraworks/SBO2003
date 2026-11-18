@@ -974,6 +974,31 @@ Exit:
 }
 
 /* ========================================================================= */
+/* 関数名：BombDetachOwner													 */
+/* 内容：同じマップに残っている自分の爆弾を持ち主なしにする					 */
+/* ========================================================================= */
+static void BombDetachOwner(PCHARINFO pChar)
+{
+	PMAPINFO pMap = g_aMapInfo[pChar->dwMapID];
+	PDWORD pIDTbl = pMap->paTblNoNPC;
+
+	for (int i = 0; i < (int)pMap->dwCountTblNoNPC; i ++) {
+		if (pIDTbl[i] == -1) {
+			break;
+		}
+		PCHARINFO pCharTmp = g_aCharInfo[pIDTbl[i]];
+		if (pCharTmp->byNpcType != NPCTYPE_BOMB) {
+			continue;
+		}
+		if (pCharTmp->dwParentTblID != pChar->dwTblID) {
+			continue;
+		}
+		pCharTmp->dwParentTblID = (DWORD)-1;
+	}
+}
+
+
+/* ========================================================================= */
 /* 関数名：ItemUse_SUBGAME_BOMB												 */
 /* 内容：アイテム処理(サブゲーム参加：爆弾ゲーム)							 */
 /* 日付：2004/07/15															 */
@@ -1039,10 +1064,14 @@ static int ItemUse_SUBGAME_BOMB(PCHARINFO pChar, BYTE byNo, LPSTR pszMsg)
 	}
 
 	pSubStatus->byID = byNo;
+	/* 前に置いた爆弾がまだ残っていても、置いた数には数えない。
+	   残った爆弾は持ち主なしにして、爆発しても今の置いた数を減らさないようにする
+	   （置いた数を 0 に戻したあとで減らされると 255 になり、もう置けなくなっていた） */
+	BombDetachOwner (pChar);
+	pSubStatus->byCount = 0;
 	/* 試合中？ */
 	if (pBomb->byFlgGameNow) {
 		pSubStatus->byFlgEntry = 1;
-		pSubStatus->byCount = 0;
 	}
 
 	pSubStatus->byType = SUBGAMEID_BOMB;

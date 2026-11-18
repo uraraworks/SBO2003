@@ -417,7 +417,12 @@ BOOL CCharProcBOMB::Proc(DWORD dwTime)
 			if (m_pChar->dwParentTblID != -1) {
 				PCHARINFO pCharParent = g_aCharInfo[m_pChar->dwParentTblID];
 				PSUBSTATUS_BOMB pSubStatus = (PSUBSTATUS_BOMB)pCharParent->abySubStatus;
-				pSubStatus->byCount --;
+				PSUBSTATUS_BOMB pSubStatusBomb = (PSUBSTATUS_BOMB)m_pChar->abySubStatus;
+				/* 置いた人がまだ同じ爆弾ゲームにいる時だけ減らす（抜けた後や 0 の時に減らすと 255 になる） */
+				if ((pSubStatus->byType == SUBGAMEID_BOMB) && (pSubStatus->byID == pSubStatusBomb->byID) &&
+					(pSubStatus->byCount > 0)) {
+					pSubStatus->byCount --;
+				}
 			}
 			/* 消滅 */
 			DeleteChar (m_pChar->dwTblID);
