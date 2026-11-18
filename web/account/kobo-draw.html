@@ -281,6 +281,21 @@
 	}
 	/* 管理人が直す時（?admin=…）は、プレイヤー向けの欄を出さない */
 	.admin-mode .player-only { display: none !important; }
+	/* 管理人モードの時だけ出す欄（画像を読み込む） */
+	.admin-only { display: none !important; }
+	.admin-mode .admin-only { display: grid !important; }
+	body.admin-mode #stage.drop { outline: 3px dashed var(--accent, #6af); outline-offset: -6px; }
+	/* 画像を読み込む窓（範囲の指定） */
+	#imp-dlg .dlg { width: 760px; }
+	#imp-bar { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin: 6px 0; font-size: 13px; }
+	#imp-bar input[type=number] { width: 5.5em; padding: 4px; }
+	#imp-bar button { padding: 4px 10px; }
+	#imp-wrap { overflow: auto; max-height: 46vh; border: 1px solid var(--border); border-radius: 4px; background: #222; }
+	#imp-stage { position: relative; display: inline-block; touch-action: none; }
+	#imp-img { display: block; image-rendering: pixelated; }
+	#imp-box { position: absolute; border: 2px solid #f33; box-shadow: 0 0 0 1px #fff inset; cursor: move; box-sizing: border-box; background: rgba(255, 60, 60, 0.12); }
+	#imp-pv-row { display: flex; gap: 10px; align-items: flex-start; margin-top: 8px; font-size: 13px; }
+	#imp-pv { image-rendering: pixelated; border: 1px solid var(--border); max-width: 100%; }
 	#reply { width: 100%; box-sizing: border-box; min-height: 5em; font: inherit; }
 </style>
 </head>
@@ -333,6 +348,11 @@
 				<h5>表示</h5>
 				<button type="button" id="grid" title="グリッド（G）"><svg class="ic" aria-hidden="true"><use href="#ic-grid"/></svg>グリッド<small>(G)</small></button>
 				<button type="button" id="fit" title="全体を表示"><svg class="ic" aria-hidden="true"><use href="#ic-fit"/></svg>全体表示</button>
+			</div>
+			<div class="group admin-only" id="adminops">
+				<h5 style="grid-column:1/-1">管理人</h5>
+				<button type="button" id="imp-open" style="grid-column:1/-1" title="管理ページのドット絵エディタで直した画像（PNG）を読み込みます"><svg class="ic" aria-hidden="true"><use href="#ic-paste"/></svg>画像を読み込む</button>
+				<input type="file" id="imp-file" accept="image/png" hidden>
 			</div>
 			<div id="cur"><span id="cur-sw"></span><span id="cur-text"></span></div>
 			<div id="palette"></div>
@@ -393,6 +413,25 @@
 		<div class="dlg-btns">
 			<button type="button" id="dlg-cancel">やめる</button>
 			<button type="button" id="dlg-submit" class="primary" disabled>出す</button>
+		</div>
+	</div>
+</div>
+<!-- 画像を読み込む窓（管理人モードだけ） -->
+<div id="imp-dlg" class="dlg-back" hidden>
+	<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="imp-title">
+		<h3 id="imp-title">画像から使う範囲を選ぶ</h3>
+		<p class="note" id="imp-info"></p>
+		<div id="imp-bar">
+			<span>X <input type="number" id="imp-x" min="0" step="1"></span>
+			<span>Y <input type="number" id="imp-y" min="0" step="1"></span>
+			<label class="check"><input type="checkbox" id="imp-snap" checked><span id="imp-snap-t">1コマ単位で動かす</span></label>
+			<button type="button" id="imp-zout" title="小さく">−</button><span id="imp-zt"></span><button type="button" id="imp-zin" title="大きく">＋</button><button type="button" id="imp-zfit">幅に合わせる</button>
+		</div>
+		<div id="imp-wrap"><div id="imp-stage"><canvas id="imp-img"></canvas><div id="imp-box"></div></div></div>
+		<div id="imp-pv-row"><div>四角の中（2倍）<br><div class="checker" style="display:inline-block;padding:2px"><canvas id="imp-pv"></canvas></div></div><p class="note" id="imp-warn"></p></div>
+		<div class="dlg-btns">
+			<button type="button" id="imp-cancel">やめる</button>
+			<button type="button" id="imp-ok" class="primary">この範囲を使う</button>
 		</div>
 	</div>
 </div>
