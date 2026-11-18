@@ -8354,6 +8354,7 @@ void ApplyStTmpToChars(DWORD dwID)
 		pChar->wDFMagic		= pInfo->wDFMagic;
 		pChar->dwGold		= pInfo->dwGold;
 		pChar->dwExp		= pInfo->dwExp;
+		pChar->byGhost		= pInfo->byGhost;
 		CopyMemory (pChar->waItem, pInfo->waItem, sizeof (pChar->waItem));
 	}
 }

@@ -44,6 +44,7 @@ void PutCharSetStatus(PCHARINFO pParent, PCHARINFO pChar)
 	pChar->byLK				= pParent->byLK;
 	pChar->byJOB			= pParent->byJOB;
 	pChar->byDropProbability	= pParent->byDropProbability;
+	pChar->byGhost				= pParent->byGhost;
 	pChar->wAT				= pParent->wAT;
 	pChar->wDF				= pParent->wDF;
 	pChar->wMaxHP			= pParent->wMaxHP;
@@ -86,6 +87,7 @@ void PutCharSetStatus(PCHARINFO pParent, PCHARINFO pChar)
 		pChar->dwGold				= pTmp->dwGold;
 		pChar->dwExp				= pTmp->dwExp;
 		pChar->byDropProbability	= pTmp->byDropProbability;
+		pChar->byGhost				= pTmp->byGhost;	/* 霊（半透明）はテンプレートの設定にする */
 		pChar->byMoveProbabilityX	= pTmp->byMoveProbabilityX;
 		pChar->byMoveProbabilityY	= pTmp->byMoveProbabilityY;
 		pChar->bySearchCx			= pTmp->bySearchCx;
