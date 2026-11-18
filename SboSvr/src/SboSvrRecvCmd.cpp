@@ -25,6 +25,7 @@
 #include "SboSvrNpcRoute.h"
 #include "SboSvrMarket.h"
 #include "SboSvrRecycle.h"
+#include "SboSvrAffix.h"
 #include "SboSvrQuest.h"
 #include "SboSvrMapSwapEdit.h"
 #include "CharProc/CharProcMERCENARY.h"
@@ -229,6 +230,7 @@ void	RecvDataProcADMINUNDO					(PBYTE, DWORD);				/* 管理者画面の「元に
 void	RecvDataProcADMINSPACE					(PBYTE, DWORD);				/* 管理者の空間の切り替え */
 void	RecvDataProcNPCROUTE					(PBYTE, DWORD);				/* NPCの巡回ルート */
 void	RecvDataProcRECIPEMAKE					(PBYTE, DWORD);				/* レシピで作ってもらう */
+void	RecvDataProcAPPRAISE					(PBYTE, DWORD);				/* 鑑定屋で鑑定してもらう */
 void	RecvDataProcQUEST						(PBYTE, DWORD);				/* ギルドの仕事依頼（一覧・受ける・取り消す・渡す） */
 void	RecvDataProcADMINQUEST					(PBYTE, DWORD);				/* 管理者ウィンドウのギルドの依頼の編集 */
 void	RecvDataProcADMINRESURRECT				(PBYTE, DWORD);				/* 管理者ウィンドウからキャラを蘇生 */
@@ -507,6 +509,9 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcRECYCLECLOSE,			/* CMD_RECYCLECLOSE */
 	RecvDataProcADMINCHEST,				/* CMD_ADMINCHEST */
 	RecvDataProcADMINSWAP,				/* CMD_ADMINSWAP */
+	NULL,								/* CMD_AFFIXINFO(サーバー→クライアントのみ) */
+	NULL,								/* CMD_ITEMDERIVE(サーバー→クライアントのみ) */
+	RecvDataProcAPPRAISE,				/* CMD_APPRAISE */
 
 	NULL
 };
@@ -912,7 +917,7 @@ static BOOL TradeCheckItem(PCHARINFO pChar, const WORD *pwaItem)
 			return FALSE;
 		}
 		if (abUse[pwaItem[i]] || (pChar->waItem[pwaItem[i]] == 0) ||
-				(pChar->waItem[pwaItem[i]] >= g_aItemInfo.GetSize ())) {
+				!ItemIDValid (pChar->waItem[pwaItem[i]])) {
 			return FALSE;
 		}
 		/* 大事な物・依頼の品は取り引きに出せない（古いキャラで手持ちに残っていた場合の抜け道ふさぎ） */
@@ -944,7 +949,7 @@ static void TradeMercenaryReply(DWORD dwOwner, DWORD dwMerc)
 
 	FillMemory (pStateMerc->waItem, sizeof (pStateMerc->waItem), 0xFF);
 	for (i = 0, n = 0; i < MAX_MYITEM; i ++) {
-		if (pMerc->waItem[i] && (pMerc->waItem[i] < g_aItemInfo.GetSize ())) {
+		if (pMerc->waItem[i] && ItemIDValid (pMerc->waItem[i])) {
 			pStateMerc->waItem[n ++] = (WORD)i;
 		}
 	}
@@ -1412,7 +1417,7 @@ int GetItemCount(DWORD dwID)
 
 BOOL IsImportantItem(WORD wItem)
 {
-	if ((wItem == 0) || (wItem >= (WORD)g_aItemInfo.GetSize ())) {
+	if ((wItem == 0) || !ItemIDValid (wItem)) {
 		return FALSE;
 	}
 	if (g_aItemInfo[wItem]->byFlg & ITEMFLG_IMPORTANT) {
@@ -1602,8 +1607,8 @@ void AddCharItem(DWORD dwCharID, DWORD dwItemID)
 
 	pChar = g_aCharInfo[dwCharID];
 
-	/* 存在しないアイテムを追加しようとした？ */
-	if (dwItemID >= (DWORD)g_aItemInfo.GetSize ()) {
+	/* 存在しないアイテムを追加しようとした？（派生アイテムの番号も通す） */
+	if ((dwItemID > 0xFFFF) || !ItemIDValid ((WORD)dwItemID)) {
 		PostMessage (g_hWndMain, WM_DECPLAYER, pChar->pID, (LPARAM)pChar->dwTblID);
 		return;
 	}
@@ -3072,7 +3077,7 @@ void CheckCharEqu(PCHARINFO pChar)
 			nNo = pChar->waItem[pChar->waEqu[i]];
 		}
 
-		if (nNo >= g_aItemInfo.GetSize ()) {
+		if (!ItemIDValid ((WORD)nNo)) {
 			bCheck = FALSE;
 
 		} else {
@@ -3199,6 +3204,7 @@ void RenewATDF(DWORD dwTblID)
 	PCHARINFO pChar = g_aCharInfo[dwTblID];
 	PITEMINFO pItem;
 	BOOL bResult;
+	int nAffixDFMagic;
 
 	/* 攻撃力 */
 	pChar->wAT = pChar->byPW;
@@ -3206,8 +3212,8 @@ void RenewATDF(DWORD dwTblID)
 
 	/* 武器を装備している？ */
 	if (pChar->waEqu[0] != 0xFFFF) {
-		pItem = g_aItemInfo[pChar->waItem[pChar->waEqu[0]]];
-		pChar->wAT += pItem->byData;
+		/* 強さは付与込み（未鑑定の派生アイテムは元のまま） */
+		pChar->wAT += ItemValueOf (pChar->waItem[pChar->waEqu[0]]);
 	}
 
 	if (pChar->byNpcType == 0) {
@@ -3218,10 +3224,14 @@ void RenewATDF(DWORD dwTblID)
 
 	/* 守備力 */
 	pChar->wDF = pChar->byST / 2;
+	nAffixDFMagic = 0;
 
 	for (int i = 0; i < MAX_EQUTYPE; i ++) {
 		if (pChar->waEqu[i] != 0xFFFF) {
-			pItem = g_aItemInfo[pChar->waItem[pChar->waEqu[i]]];
+			WORD wEquItem = pChar->waItem[pChar->waEqu[i]];
+			int nValue = ItemValueOf (wEquItem);
+			pItem = g_aItemInfo[wEquItem];
+			nAffixDFMagic += ItemAffixDFMagic (wEquItem);
 			switch (pItem->byType) {
 //			case ITEMTYPE_WEAPON:		/* 武器 */
 //				break;
@@ -3231,17 +3241,17 @@ void RenewATDF(DWORD dwTblID)
 			case ITEMTYPE_SEED:			/* 種 */
 			case ITEMTYPE_EQU_HAND:		/* 装備(小手) */
 			case ITEMTYPE_EQU_LEG:		/* 装備(靴) */
-				pChar->wDF += pItem->byData;
+				pChar->wDF += nValue;
 				break;
 			case ITEMTYPE_EQU_ACC1:		/* 装備(首飾り) */
 				{
 					PITEMINFO_EQU_ACC1 pInfo = (PITEMINFO_EQU_ACC1)pItem->pData;
 					switch (pInfo->byEquType) {
 					case EQUTYPE_DF:
-						pChar->wDF += pItem->byData;
+						pChar->wDF += nValue;
 						break;
 					case EQUTYPE_DFMAGIC:
-						pChar->wDFMagic += pItem->byData;
+						pChar->wDFMagic += nValue;
 						break;
 					}
 				}
@@ -3251,10 +3261,10 @@ void RenewATDF(DWORD dwTblID)
 					PITEMINFO_EQU_ACC2 pInfo = (PITEMINFO_EQU_ACC2)pItem->pData;
 					switch (pInfo->byEquType) {
 					case EQUTYPE_DF:
-						pChar->wDF += pItem->byData;
+						pChar->wDF += nValue;
 						break;
 					case EQUTYPE_DFMAGIC:
-						pChar->wDFMagic += pItem->byData;
+						pChar->wDFMagic += nValue;
 						break;
 					}
 				}
@@ -3264,10 +3274,10 @@ void RenewATDF(DWORD dwTblID)
 					PITEMINFO_EQU_ACC3 pInfo = (PITEMINFO_EQU_ACC3)pItem->pData;
 					switch (pInfo->byEquType) {
 					case EQUTYPE_DF:
-						pChar->wDF += pItem->byData;
+						pChar->wDF += nValue;
 						break;
 					case EQUTYPE_DFMAGIC:
-						pChar->wDFMagic += pItem->byData;
+						pChar->wDFMagic += nValue;
 						break;
 					}
 				}
@@ -3275,8 +3285,7 @@ void RenewATDF(DWORD dwTblID)
 			}
 		}
 	}
-
-	/* 攻撃力・守備力アップ(僧侶の補助特技など) */
+/* 攻撃力・守備力アップ(僧侶の補助特技など) */
 	if (pChar->byNpcType == NPCTYPE_INIT) {
 		pChar->wAT = (WORD)min (65535, (int)pChar->wAT + GetStatusUpBonus (pChar, CHARINFOTIMEREVENT_ATUP, (int)pChar->wAT));
 		pChar->wDF = (WORD)min (65535, (int)pChar->wDF + GetStatusUpBonus (pChar, CHARINFOTIMEREVENT_DFUP, (int)pChar->wDF));
@@ -3733,7 +3742,7 @@ void RecvDataProc(PBYTE pData, DWORD dwDataSize)
 	}
 
 	/* 管理者用のコマンド（管理者ウィンドウからしか送らないもの）は管理者だけ */
-	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && (byCmd != CMD_TALKANSWER) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET)) && ((byCmd < CMD_RECYCLELIST) || (byCmd > CMD_RECYCLECLOSE))) ||
+	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_APPRAISE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && (byCmd != CMD_TALKANSWER) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET)) && ((byCmd < CMD_RECYCLELIST) || (byCmd > CMD_RECYCLECLOSE))) ||
 			(byCmd == CMD_CHARITEM)) {
 		if (!CheckAdminBan (nNo)) {
 			SAFE_DELETE_ARRAY (pData);
@@ -4040,6 +4049,8 @@ void RecvDataProcCHGSTATE(PBYTE pData, DWORD dwDataSize)
 	}
 	/* アイテム情報を送信 */
 	SendCmdITEMINFO (pPara->pID);
+	/* 付与表と派生アイテム表を送信 */
+	SendCmdAFFIXALL (pPara->pID);
 	/* 作り手とレシピを送信 */
 	SendCmdRECIPEINFOALL (pPara->pID);
 	/* 町転送の行き先一覧を送信 */
@@ -6834,7 +6845,7 @@ void RecvDataProcREQ_ATTACK(PBYTE pData, DWORD dwDataSize)
 	}
 	/* 殴ったら構えは解ける */
 	SetGuard (pChar, FALSE);
-    if (pChar->waEqu[0] < MAX_MYITEM && pChar->waItem[pChar->waEqu[0]] < g_aItemInfo.GetSize()) {
+    if (pChar->waEqu[0] < MAX_MYITEM && ItemIDValid (pChar->waItem[pChar->waEqu[0]])) {
         PITEMINFO_WEAPON bow = BowWeapon(pChar, g_aItemInfo[pChar->waItem[pChar->waEqu[0]]]);
         if (bow) {
             if (pPara->dwData >= (DWORD)g_aCharInfo.GetSize()) return;
@@ -7684,7 +7695,7 @@ void RecvDataProcDROPITEM(PBYTE pData, DWORD dwDataSize)
 	if (!IsRecvChar (pPara->dwTblID)) {
 		return;
 	}
-	if ((pPara->byData >= MAX_MYITEM) || (pPara->dwData2 >= (DWORD)g_aItemInfo.GetSize ())) {
+	if ((pPara->byData >= MAX_MYITEM) || (pPara->dwData2 > 0xFFFF) || !ItemIDValid ((WORD)pPara->dwData2)) {
 		return;
 	}
 	pItem = g_aItemInfo[pPara->dwData2];
@@ -7715,7 +7726,7 @@ void RecvDataProcDROPITEM(PBYTE pData, DWORD dwDataSize)
 
 		/* 売った？（売値はクライアントの申告ではなく、クライアントと同じ式でサーバーが決める） */
 		if (pPara->dwData1 > 0) {
-			DWORD dwSell = max (pItem->dwGold / 4, (DWORD)1);
+			DWORD dwSell = max (ItemGoldOf ((WORD)pPara->dwData2) / 4, (DWORD)1);
 			pChar->dwGold = min (pChar->dwGold + dwSell, (DWORD)999999);
 			SendCmdCHARSTATUSGOLDEXP (pChar->pID, pPara->dwTblID);
 		}
@@ -7800,7 +7811,7 @@ void RecvDataProcUSEITEM(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	WORD wItem = g_aCharInfo[pPara->dwTblID]->waItem[pPara->byData];
-	if ((wItem == 0) || (wItem >= g_aItemInfo.GetSize ())) {
+	if ((wItem == 0) || !ItemIDValid (wItem)) {
 		return;
 	}
 	ItemProc (pPara->dwTblID, pPara->byData, pPara->dwData);
@@ -10086,7 +10097,7 @@ void RecvDataProcTRADEPROC(PBYTE pData, DWORD dwDataSize)
 				if (pItem->byFlg & ITEMFLG_TRADE) {
 					AddCharItem (pChar1->dwTblID, waItemTmp1[pRecv->waItem1[i]]);
 					bMax = TRUE;
-					wsprintf (szTmp, "[%s]は渡せません。", pItem->szName);
+					wsprintf (szTmp, "[%s]は渡せません。", ItemNameOf (waItemTmp1[pRecv->waItem1[i]]));
 					SendCmdSYSMSG (pChar1->pID, szTmp, SPEECHCMD_BATTLE1);
 				} else {
 					AddCharItem (pChar2->dwTblID, waItemTmp1[pRecv->waItem1[i]]);
@@ -10104,7 +10115,7 @@ void RecvDataProcTRADEPROC(PBYTE pData, DWORD dwDataSize)
 				if (pItem->byFlg & ITEMFLG_TRADE) {
 					AddCharItem (pChar2->dwTblID, waItemTmp2[pRecv->waItem2[i]]);
 					bMax = TRUE;
-					wsprintf (szTmp, "[%s]は渡せません。", pItem->szName);
+					wsprintf (szTmp, "[%s]は渡せません。", ItemNameOf (waItemTmp2[pRecv->waItem2[i]]));
 					SendCmdSYSMSG (pChar2->pID, szTmp, SPEECHCMD_BATTLE1);
 				} else {
 					AddCharItem (pChar1->dwTblID, waItemTmp2[pRecv->waItem2[i]]);
@@ -12131,7 +12142,7 @@ void RecvDataProcMAGICKEY(PBYTE pData, DWORD dwDataSize)
 	if (pPara->wItemID != 0) {
 		PITEMINFO pItem;
 
-		if (pPara->wItemID >= g_aItemInfo.GetSize ()) {
+		if (!ItemIDValid (pPara->wItemID)) {
 			return;
 		}
 		pItem = g_aItemInfo[pPara->wItemID];
@@ -13315,7 +13326,7 @@ BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, 
 	/* 管理者用のコマンドだけ（ログインや「元に戻す」自体は通さない） */
 	if ((byCmd >= CMD_MAX) || (RecvDataProcTbl[byCmd] == NULL) ||
 			((byCmd < CMD_MAPPARTSADD) && (byCmd != CMD_CHARITEM)) ||
-			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_ADMINVIEWALL) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET)) || ((byCmd >= CMD_RECYCLELIST) && (byCmd <= CMD_RECYCLECLOSE))) {
+			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_ADMINVIEWALL) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_APPRAISE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET)) || ((byCmd >= CMD_RECYCLELIST) && (byCmd <= CMD_RECYCLECLOSE))) {
 		return FALSE;
 	}
 
@@ -13374,7 +13385,7 @@ static BOOL RecipeIsUsableItem(PCHARINFO pChar, int nNo)
 	int i;
 	WORD wItem = pChar->waItem[nNo];
 
-	if ((wItem == 0) || (wItem >= (WORD)g_aItemInfo.GetSize ())) {
+	if ((wItem == 0) || !ItemIDValid (wItem)) {
 		return FALSE;
 	}
 	for (i = 0; i < 10; i ++) {
@@ -13888,7 +13899,7 @@ void SortItemList(WORD *pwaItem, BYTE *pbyCount, int nCount, BYTE byMode, int *p
 		aEntry[i].nOld		= i;
 		aEntry[i].wItemID	= pwaItem[i];
 		aEntry[i].nGroup	= 14;
-		if (pwaItem[i] < (WORD)g_aItemInfo.GetSize ()) {
+		if (ItemIDValid (pwaItem[i])) {
 			pItem = g_aItemInfo[pwaItem[i]];
 		}
 		if (pItem) {
@@ -14187,7 +14198,7 @@ void RecvDataProcLEAVEITEMDISPOSE(PBYTE pData, DWORD dwDataSize)
 	/* 番号・品・個数が預かり所の中身と合っているか */
 	if ((pPara->byNo >= pInfo->byCount) || (pPara->byNo >= MAX_LEAVEITEM) ||
 			(pInfo->waItem[pPara->byNo] != pPara->wItemID) ||
-			(pPara->wItemID == 0) || (pPara->wItemID >= (WORD)g_aItemInfo.GetSize ()) ||
+			(pPara->wItemID == 0) || !ItemIDValid (pPara->wItemID) ||
 			(pPara->byCount == 0) || (pPara->byCount > pInfo->byItemCount[pPara->byNo])) {
 		SendCmdLEAVEITEMGET (pChar->dwTblID);
 		return;
@@ -14202,11 +14213,11 @@ void RecvDataProcLEAVEITEMDISPOSE(PBYTE pData, DWORD dwDataSize)
 	nCount = pPara->byCount;
 	if (pPara->byMode == LEAVEDISPOSE_SELL) {
 		/* 価値の無い品は買い取らない */
-		if (pItem->dwGold == 0) {
+		if (ItemGoldOf (pPara->wItemID) == 0) {
 			SendCmdLEAVEITEMGET (pChar->dwTblID);
 			return;
 		}
-		DWORD dwSell = max (pItem->dwGold / 4, (DWORD)1);
+		DWORD dwSell = max (ItemGoldOf (pPara->wItemID) / 4, (DWORD)1);
 		/* 所持金が 999999 を超える分は売らない */
 		DWORD dwRoom = (pChar->dwGold >= 999999) ? 0 : (999999 - pChar->dwGold);
 		if ((DWORD)nCount > dwRoom / dwSell) {
@@ -14447,6 +14458,97 @@ void RecvDataProcRECIPEMAKE(PBYTE pData, DWORD dwDataSize)
 
 Exit:
 	SendCmdRECIPEMAKE (pChar->pID, byResult, pPara->byMaker, pPara->wRecipeID);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcAPPRAISE												 */
+/* 内容：受信データ処理(鑑定屋で鑑定してもらう)								 */
+/*       近くに種類が鑑定の作り手NPCがいて、手持ちの byNo が未鑑定の派生アイテム	 */
+/*       で、代金（AffixAppraiseCost）が払える時だけ、代金を引いて鑑定済みの		 */
+/*       番号に置き換える。装備中なら装備したまま強さを更新する。				 */
+/*       断る時は何も変えず、結果だけ返す。									 */
+/* ========================================================================= */
+void RecvDataProcAPPRAISE(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_APPRAISE pPara = (PCMDPARA_APPRAISE)pData;
+	PCHARINFO pChar;
+	BYTE byResult = APPRAISERESULT_INVALID;
+	DWORD dwCost = 0;
+	WORD wOld, wNew;
+
+	if (s_dwRecvSize < sizeof (CMDPARA_APPRAISE)) {
+		return;
+	}
+	if (!IsRecvChar (pPara->dwTblID)) {
+		return;
+	}
+	pChar = g_aCharInfo[pPara->dwTblID];
+	/* 討伐チャレンジ中は貸し出しの品が入れ替わらないよう使わせない */
+	if (QuestChallengeBlock (pChar)) {
+		return;
+	}
+	if ((pChar == NULL) || (pChar->pID == 0) || (pChar->byNpcType != NPCTYPE_INIT)) {
+		return;
+	}
+
+	if ((pPara->byMaker >= (BYTE)g_aMakerInfo.GetSize ()) || (pPara->byNo >= MAX_MYITEM)) {
+		goto Exit;
+	}
+	if ((g_aMakerInfo[pPara->byMaker]->byState != RECIPESTATE_ON) || (g_aMakerInfo[pPara->byMaker]->byKind != MAKERKIND_APPRAISE)) {
+		goto Exit;
+	}
+	if ((pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0)) {
+		goto Exit;
+	}
+	if (!RecipeCheckMakerNear (pChar, pPara->byMaker)) {
+		goto Exit;
+	}
+	wOld = pChar->waItem[pPara->byNo];
+	if (!ItemIsUnknown (wOld) || !ItemIDValid (wOld)) {
+		goto Exit;
+	}
+	dwCost = AffixAppraiseCost (wOld);
+	if (pChar->dwGold < dwCost) {
+		byResult = APPRAISERESULT_LACKGOLD;
+		goto Exit;
+	}
+	wNew = AffixAppraise (wOld);
+	if (wNew == wOld) {
+		goto Exit;
+	}
+
+	pChar->dwGold -= dwCost;
+	pChar->waItem[pPara->byNo] = wNew;
+	/* ショートカットに登録していた未鑑定品は、手持ちに同じ番号が残らなければ鑑定済みの番号へ付け替える */
+	{
+		int k;
+		BOOL bRemain = FALSE, bKey = FALSE;
+
+		for (k = 0; k < MAX_MYITEM; k ++) {
+			if (pChar->waItem[k] == wOld) {
+				bRemain = TRUE;
+			}
+		}
+		for (k = 0; (k < MAX_MAGICKEY) && !bRemain; k ++) {
+			if (pChar->awKeyItem[k] == wOld) {
+				pChar->awKeyItem[k] = wNew;
+				bKey = TRUE;
+			}
+		}
+		if (bKey) {
+			SendMagicKeySetting (pChar);
+		}
+	}
+	/* 装備中なら waEqu は手持ちの添字なので、そのまま装備したまま。強さを更新する */
+	RenewATDF (pChar->dwTblID);
+	SendCmdCHARITEM (pChar->pID, pChar->dwTblID);
+	SendCmdCHARSTATUS (pChar->pID, pChar->dwTblID);
+	SendCmdCHARSTATUSGOLDEXP (pChar->pID, pChar->dwTblID);
+	SendCmdPLAYSOUND (pChar->pID, SOUND_PI52);
+	byResult = APPRAISERESULT_OK;
+
+Exit:
+	SendCmdAPPRAISE (pChar->pID, byResult, pPara->byMaker, pPara->byNo, dwCost);
 }
 
 /* ========================================================================= */

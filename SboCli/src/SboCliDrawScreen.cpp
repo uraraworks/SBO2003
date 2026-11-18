@@ -2176,7 +2176,7 @@ static void DrawDropEffects(void)
 			p->bUse = FALSE;
 			continue;
 		}
-		if ((p->dwMapID != pMy->dwMapID) || (p->dwItemNo >= (DWORD)g_aItemInfo.GetSize ())) {
+		if ((p->dwMapID != pMy->dwMapID) || (p->dwItemNo > 0xFFFF) || !ItemIDValid ((WORD)p->dwItemNo)) {
 			continue;
 		}
 		g_bDraw = TRUE;

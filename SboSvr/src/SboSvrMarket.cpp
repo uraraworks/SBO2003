@@ -59,9 +59,9 @@ static DWORD CalcFee(DWORD dwPrice)
 }
 
 /* 値段の下限（品の元の売値。店と同じ「価値の 1/4・最低 1」） */
-static DWORD CalcPriceMin(PITEMINFO pItem)
+static DWORD CalcPriceMin(WORD wItemID)
 {
-	return max (pItem->dwGold / 4, (DWORD)1);
+	return max (ItemGoldOf (wItemID) / 4, (DWORD)1);
 }
 
 /* 結果を送る（要求の欄はそのまま返す） */
@@ -302,7 +302,7 @@ void MarketPut(PCHARINFO pChar, BYTE byNo, DWORD dwPrice)
 	}
 	/* 出せる品か（手持ちにある・装備中でない・取引できる・依頼の品でない） */
 	if ((byNo >= MAX_MYITEM) || (pChar->waItem[byNo] == 0) ||
-			(pChar->waItem[byNo] >= (WORD)g_aItemInfo.GetSize ())) {
+			!ItemIDValid (pChar->waItem[byNo])) {
 		SendResult (pChar, CMD_MARKETPUT, MARKETRES_NGITEM, 0, 0, dwPrice, 0);
 		return;
 	}
@@ -322,7 +322,7 @@ void MarketPut(PCHARINFO pChar, BYTE byNo, DWORD dwPrice)
 		SendResult (pChar, CMD_MARKETPUT, MARKETRES_LIMIT, 0, wItemID, dwPrice, 0);
 		return;
 	}
-	if ((dwPrice < CalcPriceMin (pItem)) || (dwPrice > MARKET_PRICEMAX)) {
+	if ((dwPrice < CalcPriceMin (wItemID)) || (dwPrice > MARKET_PRICEMAX)) {
 		SendResult (pChar, CMD_MARKETPUT, MARKETRES_PRICE, 0, wItemID, dwPrice, 0);
 		return;
 	}

@@ -23,6 +23,8 @@ NPC の台詞を **`@c` + 作り手の番号 2 桁**（例 `@c00`）にします
 アイテムは名前で選べます。保存するとログイン中のプレイヤー全員にすぐ反映され、「AI連携」の変更履歴から元に戻せます。
 AI（データ API）からも `maker`・`recipe` として読み書きできます（`docs/ai-data.md`）。
 
+作り手の種類（`byKind`）を「鑑定」にすると、レシピではなく鑑定屋になります（`docs/item-affix.md`）。
+
 ## データの置き場所
 
 `SBODATA/SboDataMakerInfo.dat`・`SboDataRecipeInfo.dat`（ほかの `SboData*.dat` と同じカラム形式）。

@@ -410,7 +410,7 @@ BOOL ItemUseMercenary(PCHARINFO pChar, BYTE byNo, PCHARINFO pCharUse)
 	PITEMINFO pItem;
 
 	if ((byNo >= MAX_MYITEM) || (pChar->waItem[byNo] == 0) ||
-		(pChar->waItem[byNo] >= (WORD)g_aItemInfo.GetSize ())) {
+		!ItemIDValid (pChar->waItem[byNo])) {
 		return FALSE;
 	}
 	pItem = g_aItemInfo[pChar->waItem[byNo]];

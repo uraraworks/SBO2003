@@ -1878,6 +1878,16 @@ void ReleaseData(void)
 	}
 	g_aItemInfo.RemoveAll ();
 
+	/* 付与表・派生アイテム表を開放 */
+	for (i = 0; i < g_aAffixInfo.GetSize (); i ++) {
+		SAFE_DELETE (g_aAffixInfo[i]);
+	}
+	g_aAffixInfo.RemoveAll ();
+	for (i = 0; i < g_aItemDerive.GetSize (); i ++) {
+		SAFE_DELETE (g_aItemDerive[i]);
+	}
+	g_aItemDerive.RemoveAll ();
+
 	/* 吹き出し情報を開放 */
 	for (i = 0; i < 99; i ++) {
 		PCOMEFCINFO pComefc = &g_pComEfcInfo[i];

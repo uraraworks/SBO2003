@@ -91,6 +91,9 @@ Module['sboData'] = (function () {
 		/* 作り手とレシピ（ファイルが無い時は 0 件。初めて保存した時に作られる） */
 		maker: 'SboDataMakerInfo.dat',
 		recipe: 'SboDataRecipeInfo.dat',
+		/* 付与（接頭辞・接尾辞）と派生アイテム表（ファイルが無い時は 0 件。派生表は読むだけで、ドロップ・鑑定で増える） */
+		affix: 'SboDataAffixInfo.dat',
+		itemDerive: 'SboDataItemDerive.dat',
 		/* ギルドの仕事依頼（ファイルが無い時は 0 件。初めて保存した時に作られる） */
 		quest: 'SboDataQuestInfo.dat',
 		/* キャラのフラグの名前表と会話データ（どちらもファイルが無い時は 0 件。初めて保存した時に作られる） */
@@ -1996,7 +1999,7 @@ Module['sboData'] = (function () {
 	};
 
 	/*
-	 * 作り手（maker）・レシピ（recipe）の保存（管理ページの「レシピ」タブ）。
+	 * 作り手（maker）・レシピ（recipe）・付与（affix）の保存（管理ページの「レシピ」「付与」タブ）。
 	 * {session, kind, id?, changes}。id を省くか件数と同じにすると追加、それ以外は変更。
 	 * 削除は changes に {byState: 0} を入れる（空き枠になる）。
 	 * 管理ページでは下見の画面が別にあるので 2 段階にせず、AI 用の変更履歴（元に戻せる）に残して即反映する。
@@ -2004,8 +2007,8 @@ Module['sboData'] = (function () {
 	function apiAdminRecipeSave(body) {
 		var who = adminWho(body);
 		var kind = body.kind;
-		if (kind !== 'maker' && kind !== 'recipe') {
-			fail(400, 'kind', 'kind は maker か recipe を指定してください');
+		if (kind !== 'maker' && kind !== 'recipe' && kind !== 'affix') {
+			fail(400, 'kind', 'kind は maker・recipe・affix のどれかを指定してください');
 		}
 		var total = count(kind);
 		var id = (body.id == null) ? total : checkId(body.id);

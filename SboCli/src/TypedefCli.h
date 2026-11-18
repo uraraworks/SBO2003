@@ -239,6 +239,8 @@ typedef struct _QUESTLISTITEM {
 enum {
 	MAKERWND_LIST = 0,											/* 作れる物の一覧 */
 	MAKERWND_CONF,												/* 「作ってもらいますか？」のはい/いいえ */
+	MAKERWND_APPRAISE,											/* 鑑定屋：未鑑定の持ち物の一覧 */
+	MAKERWND_APPRAISE_CONF,										/* 鑑定屋：「鑑定してもらいますか？」のはい/いいえ（dwData=持ち物の位置） */
 };
 #define MAKER_LISTCX				(16 * 12)									/* 作れる物の一覧の幅 */
 #define MAKER_LISTROWS				(10)										/* 一覧に一度に出す行数 */

@@ -295,7 +295,7 @@ BOOL CCharProcMERCENARY::ProcUseItem(PCHARINFO pOwner, DWORD dwTime)
 
 	for (i = 0; i < MAX_MYITEM; i ++) {
 		WORD wItemID = m_pChar->waItem[i];
-		if ((wItemID == 0) || (wItemID >= (WORD)g_aItemInfo.GetSize ())) {
+		if ((wItemID == 0) || !ItemIDValid (wItemID)) {
 			continue;
 		}
 		PITEMINFO pItem = g_aItemInfo[wItemID];
@@ -1909,7 +1909,7 @@ BOOL MercenaryTradeCheck(PCHARINFO pOwner, PCHARINFO pMerc, const WORD *pwaItem,
 		if (wNo == 0xFFFF) {
 			continue;
 		}
-		if ((wNo >= MAX_MYITEM) || (pOwner->waItem[wNo] == 0) || (pOwner->waItem[wNo] >= (WORD)g_aItemInfo.GetSize ())) {
+		if ((wNo >= MAX_MYITEM) || (pOwner->waItem[wNo] == 0) || !ItemIDValid (pOwner->waItem[wNo])) {
 			return FALSE;
 		}
 		PITEMINFO pItem = g_aItemInfo[pOwner->waItem[wNo]];
@@ -1944,7 +1944,7 @@ static void MercenaryReturnItems(PCHARINFO pMerc, PCHARINFO pOwner, BOOL bOnline
 		if (wItemID == 0) {
 			continue;
 		}
-		if ((pOwner == NULL) || (wItemID >= (WORD)g_aItemInfo.GetSize ())) {
+		if ((pOwner == NULL) || !ItemIDValid (wItemID)) {
 			nLost ++;
 		} else if (CanAddCharItem (pOwner->dwTblID, wItemID)) {
 			AddCharItem (pOwner->dwTblID, wItemID);
@@ -1998,13 +1998,13 @@ void MercenaryTellItems(PCHARINFO pOwner, PCHARINFO pMerc)
 	snprintf (szTmp, sizeof (szTmp), "%sの持ち物：", pMerc->szName);
 	for (i = 0; i < MAX_MYITEM; i ++) {
 		WORD wItemID = pMerc->waItem[i];
-		if ((wItemID == 0) || (wItemID >= (WORD)g_aItemInfo.GetSize ())) {
+		if ((wItemID == 0) || !ItemIDValid (wItemID)) {
 			continue;
 		}
 		if (nCount) {
 			strncat (szTmp, "、", sizeof (szTmp) - strlen (szTmp) - 1);
 		}
-		strncat (szTmp, g_aItemInfo[wItemID]->szName, sizeof (szTmp) - strlen (szTmp) - 1);
+		strncat (szTmp, ItemNameOf (wItemID), sizeof (szTmp) - strlen (szTmp) - 1);
 		nCount ++;
 	}
 	if (nCount == 0) {

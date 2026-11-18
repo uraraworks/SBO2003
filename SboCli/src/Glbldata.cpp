@@ -271,7 +271,9 @@ CmyArray<PWNDINFO, PWNDINFO> g_WndInfo;								/* ウィンドウ情報 */
 CmyArray<PCHARINFO, PCHARINFO> g_aCharInfo;							/* キャラ情報 */
 CmyArray<PSYSMSGINFO, PSYSMSGINFO> g_SysMsgInfo;					/* システムメッセージ情報 */
 CmyArray<PADMINRURAINFO, PADMINRURAINFO> g_AdminRuraInfo;			/* 管理人ルーラ情報 */
-CmyArray<PITEMINFO, PITEMINFO> g_aItemInfo;							/* アイテム情報 */
+CItemInfoArray g_aItemInfo;											/* アイテム情報 */
+CmyArray<PITEMAFFIXINFO, PITEMAFFIXINFO> g_aAffixInfo;				/* 付与表 */
+CmyArray<PITEMDERIVEINFO, PITEMDERIVEINFO> g_aItemDerive;			/* 派生アイテム表 */
 CmyArray<DWORD, DWORD> g_aRecTbl;									/* キャラ情報要求してますテーブル */
 CmyArray<PSTATUSTEMPLATEINFO, PSTATUSTEMPLATEINFO> g_aStTmpInfo;	/* ステータステンプレート情報 */
 CmyArray<BYTE, BYTE> g_aFadeInOutTbl;								/* フェードイン・アウト予約テーブル */

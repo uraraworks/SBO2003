@@ -14,7 +14,9 @@
 | `job` | 職業情報とレベルアップ情報（`levelUp`） |
 | `stTmp` | ステータステンプレート（NPC・敵の能力のひな形） |
 | `item` | アイテム情報（種別ごとの詳細は `detail`） |
-| `maker` | 作り手（料理人・鍛冶屋など）。名前と台詞 3 つ（`szMsgTalk`・`szMsgDone`・`szMsgLack`）。NPC の台詞を `@c` + 番号 2 桁にすると開く |
+| `maker` | 作り手（料理人・鍛冶屋など）。名前と台詞 3 つ（`szMsgTalk`・`szMsgDone`・`szMsgLack`）と種類（`byKind` 0=レシピ・1=鑑定屋）。NPC の台詞を `@c` + 番号 2 桁にすると開く |
+| `affix` | 付与（接頭辞・接尾辞）の表（`docs/item-affix.md`）。名前・位置（`byPos`）・付く装備種別・割合/固定値/魔法防御・ランク・重み・売値の割合。`wID` は自動で振る |
+| `itemDerive` | 付与の付いた派生アイテムの表（読むだけ）。`itemId`（16384+行）・`wBase`・`wPre`・`wSuf`・`byUnknown` |
 | `recipe` | レシピ。作り手（`byMaker`）・できる物（`wItem`）と個数（`byCount`）・材料 4 種まで（`awMatItem`・`abyMatCount`）・手数料（`dwGold`）・並び順（`wSort`） |
 | `quest` | ギルドの仕事依頼。名前・説明・報酬・段の数（`byStepCount`）・段ごとの目的（`goals`）・依頼を受けた人とパーティにだけ見えるNPC（`npcs`）。NPC の台詞を `@g` + ギルド番号 2 桁にすると、その人に話すと一覧が開く |
 | `flag` | キャラのフラグ（ずっと残る印 1024 個と数値 128 個）に付ける名前の表。名前・種類（`byKind` 0=印・1=数値）・番号（`wNo`）。管理用でプレイヤーには出ない |
