@@ -1081,6 +1081,7 @@ static void TestImportant(const std::vector<int> &aLogin);
 static void TestAdminResurrect(const std::vector<int> &aLogin);
 static void TestFlagTalk(const std::vector<int> &aLogin);
 static void TestFlagGroup(const std::vector<int> &aLogin);
+static void TestStoryGoal(const std::vector<int> &aLogin);
 static void TestMarket(const std::vector<int> &aLogin);
 static void TestRecycle(const std::vector<int> &aLogin);
 static void TestTailItemMove(const std::vector<int> &aLogin);
@@ -1616,6 +1617,7 @@ static void TestWorld(void)
 	TestStory(aLogin);
 	/* AF. フラグのグループ（メイン-サブ。印の保存は触らないが、名前表・グループの保存を読み直すので最後） */
 	TestFlagGroup(aLogin);
+	TestStoryGoal(aLogin);
 	/* AJ. 戦闘モードの覚えが残ったまま入り直しても「ついていく」が届く */
 	TestTailRelogin(aLogin);
 	/* AK. 先頭と同じマスに重なって戦闘モードを解除しても、ワープせず列につながる */
@@ -3906,6 +3908,230 @@ static std::string FlagGroupApi(const char *pszKind, int nID, const char *pszJso
 	size_t nPos = str.find("\"record\"");
 	if (nPos != std::string::npos) str = str.substr(0, nPos) + "...}";
 	return str;
+}
+
+/* ------------------------------------------------------------------------- */
+/* AG. 物語の「いまの目的」：行の選び方・コマンド窓への送信・データAPIの読み書き・保存と読み直し */
+/* ------------------------------------------------------------------------- */
+static void StoryGoalRow(STORYGOAL *g, LPCSTR pszGoal)
+{
+	memset(g, 0, sizeof(*g));
+	for (int i = 0; i < MAX_TALKNEED; i ++) g->awNeed[i] = g->awNot[i] = FLAG_NOBIT;
+	for (int i = 0; i < MAX_TALKCOND; i ++) g->abyCondNo[i] = FLAG_NONUM;
+	strcpy(g->szGoal, pszGoal);
+}
+
+static void StoryGoalClear(STORYINFO *p)
+{
+	for (int i = 0; i < MAX_STORYGOAL; i ++) StoryGoalRow(&p->aGoal[i], "");
+}
+
+/* そのキャラへ届く CMD_QUESTSTATE の物語の目的を 1 行にする */
+static std::string StoryGoalSent(PCHARINFO p)
+{
+	std::vector<BYTE> aCap;
+	std::string str;
+
+	SvrSendCaptureBegin();
+	QuestSendStateSelf(p);
+	if (!SvrSendCaptureEnd(aCap) || aCap.size() < offsetof(CMDPARA_QUESTSTATE, aStory)) return "(none)";
+	CMDPARA_QUESTSTATE Para;
+	memset(&Para, 0, sizeof(Para));
+	memcpy(&Para, &aCap[0], (aCap.size() < sizeof(Para)) ? aCap.size() : sizeof(Para));
+	char sz[64];
+	snprintf(sz, sizeof(sz), "size=%u count=%u [", (unsigned)aCap.size(), (unsigned)Para.byStoryCount);
+	str = sz;
+	for (int i = 0; i < Para.byStoryCount && i < MAX_STORYGOAL; i ++) {
+		str += std::string(i ? "," : "") + Para.aStory[i].szName + ":" + Para.aStory[i].szGoal;
+	}
+	return str + "]";
+}
+
+static void TestStoryGoal(const std::vector<int> &aLogin)
+{
+	printf("== AG. StoryGoal ==\n");
+	if (aLogin.size() < 1) {
+		return;
+	}
+	PCHARINFO pPC = g_aCharInfo[aLogin[0]];
+	std::vector<PSTORYINFO> aStoryBack;
+	BYTE abyFlagBack[sizeof(pPC->abyFlag)], abyNumBack[sizeof(pPC->abyFlagNum)];
+	memcpy(abyFlagBack, pPC->abyFlag, sizeof(abyFlagBack));
+	memcpy(abyNumBack, pPC->abyFlagNum, sizeof(abyNumBack));
+	for (int i = 0; i < g_aStoryInfo.GetSize(); i ++) aStoryBack.push_back(g_aStoryInfo[i]);
+	g_aStoryInfo.RemoveAll();
+	ZeroMemory(pPC->abyFlag, sizeof(pPC->abyFlag));
+	ZeroMemory(pPC->abyFlagNum, sizeof(pPC->abyFlagNum));
+
+	/* 行の選び方：飛ばす行（文が空）・印と数値の条件・上から最初に合う行 */
+	PSTORYINFO pA = StoryTestNew(11, "港の話", 200, 0, 200, 200, 0, FLAG_NONUM);
+	StoryGoalClear(pA);
+	StoryGoalRow(&pA->aGoal[0], "");									/* 文が空の行は条件に合っても飛ばす */
+	pA->aGoal[0].awNeed[0] = 1;
+	StoryGoalRow(&pA->aGoal[1], "ねらい1");							/* 印 1 が立っていて、数値 3 がちょうど 2 */
+	pA->aGoal[1].awNeed[0] = 1; pA->aGoal[1].abyCondNo[0] = 3; pA->aGoal[1].abyCondCmp[0] = TALKCMP_EQ; pA->aGoal[1].abyCondVal[0] = 2;
+	StoryGoalRow(&pA->aGoal[2], "ねらい2");							/* 印 1 が立っていて、印 9 が立っていない */
+	pA->aGoal[2].awNeed[0] = 1; pA->aGoal[2].awNot[0] = 9;
+	StoryGoalRow(&pA->aGoal[3], "ねらい3");							/* 数値 4 が 2 以下（比べ方 LE）。印 0 を使う行 */
+	pA->aGoal[3].abyCondNo[0] = 4; pA->aGoal[3].abyCondCmp[0] = TALKCMP_LE; pA->aGoal[3].abyCondVal[0] = 2; pA->aGoal[3].awNot[0] = 0;
+	g_aStoryInfo.Add(pA);
+	BYTE *pF = pPC->abyFlag, *pN = pPC->abyFlagNum;
+	printf("storygoal pick none=%d", StoryGoalPick(pA, pF, pN));			/* 数値 4=0 なので LE に合う → 3 */
+	FlagBitSet(pF, 0, TRUE);
+	printf(" flag0=%d", StoryGoalPick(pA, pF, pN));						/* 印 0 が立つと行 3 は外れる → -1 */
+	FlagBitSet(pF, 1, TRUE);
+	printf(" flag1=%d", StoryGoalPick(pA, pF, pN));						/* → 2 */
+	FlagNumSet(pN, 3, 2);
+	printf(" num3eq2=%d", StoryGoalPick(pA, pF, pN));						/* → 1 */
+	FlagNumSet(pN, 3, 3);
+	FlagBitSet(pF, 9, TRUE);
+	printf(" flag9=%d", StoryGoalPick(pA, pF, pN));						/* 行 2 は外れ、行 3 も印 0 で外れる → -1 */
+	FlagBitSet(pF, 0, FALSE);
+	FlagNumSet(pN, 4, 3);
+	printf(" num4=3 => %d", StoryGoalPick(pA, pF, pN));
+	FlagNumSet(pN, 4, 2);
+	printf(" num4=2 => %d\n", StoryGoalPick(pA, pF, pN));
+	StoryGoalClear(pA);
+	printf("storygoal empty=%d\n", StoryGoalPick(pA, pF, pN));
+
+	/* 送信：クリア前のシナリオだけ・wSort 順・止めたシナリオと合う行が無いシナリオは出ない */
+	ZeroMemory(pPC->abyFlag, sizeof(pPC->abyFlag));
+	ZeroMemory(pPC->abyFlagNum, sizeof(pPC->abyFlagNum));
+	StoryGoalClear(pA);
+	StoryGoalRow(&pA->aGoal[0], "ルシーに話す");
+	pA->aGoal[0].awNot[0] = 100;
+	StoryGoalRow(&pA->aGoal[1], "灯台へ行く");
+	pA->aGoal[1].awNeed[0] = 100;
+	pA->wSort = 20;
+	PSTORYINFO pB = StoryTestNew(12, "森の話", 201, 0, 201, 201, 0, FLAG_NONUM);
+	StoryGoalClear(pB);
+	StoryGoalRow(&pB->aGoal[0], "木を切る");
+	pB->wSort = 10;
+	PSTORYINFO pC = StoryTestNew(13, "止めた話", 202, 0, 202, 202, 0, FLAG_NONUM);
+	StoryGoalClear(pC);
+	StoryGoalRow(&pC->aGoal[0], "出ない");
+	pC->byState = STORYSTATE_OFF;
+	PSTORYINFO pD = StoryTestNew(14, "目的なし", 203, 0, 203, 203, 0, FLAG_NONUM);
+	StoryGoalClear(pD);
+	PSTORYINFO pE = StoryTestNew(15, "合わない話", 204, 0, 204, 204, 0, FLAG_NONUM);
+	StoryGoalClear(pE);
+	StoryGoalRow(&pE->aGoal[0], "合わない");
+	pE->aGoal[0].awNeed[0] = 500;
+	g_aStoryInfo.RemoveAll();											/* 最初の確認で足した pA を外して、並びを作り直す */
+	g_aStoryInfo.Add(pA); g_aStoryInfo.Add(pB); g_aStoryInfo.Add(pC); g_aStoryInfo.Add(pD); g_aStoryInfo.Add(pE);
+	printf("storygoal sent start %s\n", StoryGoalSent(pPC).c_str());
+	FlagBitSet(pPC->abyFlag, 100, TRUE);
+	printf("storygoal sent flag100 %s\n", StoryGoalSent(pPC).c_str());
+	FlagBitSet(pPC->abyFlag, 201, TRUE);									/* 森の話をクリア → 出ない */
+	printf("storygoal sent clear-B %s\n", StoryGoalSent(pPC).c_str());
+	FlagBitSet(pPC->abyFlag, 200, TRUE);
+	printf("storygoal sent clear-A %s\n", StoryGoalSent(pPC).c_str());
+
+	/* 印・数値が動いた時の送り直し：会話データで話した後（動いた時だけ。同じ話をもう一度しても動かなければ送らない） */
+	{
+		ZeroMemory(pPC->abyFlag, sizeof(pPC->abyFlag));
+		ZeroMemory(pPC->abyFlagNum, sizeof(pPC->abyFlagNum));
+		g_aStoryInfo.RemoveAll();
+		PSTORYINFO pS = StoryTestNew(21, "再送", 230, 0, 230, 230, 0, FLAG_NONUM);
+		StoryGoalClear(pS);
+		StoryGoalRow(&pS->aGoal[0], "次へ");
+		pS->aGoal[0].awNeed[0] = 231;
+		g_aStoryInfo.Add(pS);
+		PTALKINFO pTalk = new TALKINFO;
+		ZeroMemory(pTalk, sizeof(*pTalk));
+		pTalk->wID = 997; pTalk->byState = TALKSTATE_ON; pTalk->byLineCount = 1;
+		TALKLINEINFO *pLine = &pTalk->aLine[0];
+		for (int i = 0; i < MAX_TALKNEED; i ++) pLine->awNeed[i] = pLine->awNot[i] = FLAG_NOBIT;
+		for (int i = 0; i < MAX_TALKCOND; i ++) pLine->abyCondNo[i] = FLAG_NONUM;
+		for (int i = 0; i < MAX_TALKSET; i ++) pLine->awSetOn[i] = pLine->awSetOff[i] = FLAG_NOBIT;
+		for (int i = 0; i < MAX_TALKACT; i ++) pLine->abyActNo[i] = FLAG_NONUM;
+		pLine->byQuestStepMax = QUESTNPC_NOSTEP;
+		pLine->awSetOn[0] = 231;
+		strcpy(pLine->szSpeech, "進んだ");
+		g_aTalkInfo.Add(pTalk);
+		CHARINFO Npc;
+		char szSpeech[8];
+		ZeroMemory((PBYTE)&Npc, sizeof(CHARINFO));
+		strcpy(szSpeech, "@t997");
+		Npc.pszNpcSpeech = szSpeech;
+		Npc.dwTblID = 1;
+		int nState0 = MockCmdCount(1000, CMD_QUESTSTATE);
+		TalkNpcTalk(pPC, &Npc);
+		int nState1 = MockCmdCount(1000, CMD_QUESTSTATE);
+		TalkNpcTalk(pPC, &Npc);
+		int nState2 = MockCmdCount(1000, CMD_QUESTSTATE);
+		printf("storygoal resend talk=%d again=%d flag231=%d %s\n", nState1 - nState0, nState2 - nState1, FlagBitGet(pPC->abyFlag, 231) ? 1 : 0, StoryGoalSent(pPC).c_str());
+		g_aTalkInfo.RemoveAt(g_aTalkInfo.GetSize() - 1);
+		delete pTalk;
+	}
+
+	/* データAPI：goals の読み書き（丸ごと置き換え・省くと今のまま・短い配列は残りが無し・おかしい値は断る） */
+	g_aStoryInfo.RemoveAll();
+	printf("storygoal api add %s\n", FlagGroupApi("story", 0, "{\"szName\":\"API\",\"wClearFlag\":300,\"goals\":[{\"awNeed\":[5],\"abyCondNo\":[7],\"abyCondCmp\":[2],\"abyCondVal\":[3],\"szGoal\":\"一つめ\"},{\"szGoal\":\"二つめ\"}]}").c_str());
+	printf("storygoal api get %s\n", SboWebDataGet("story", 0));
+	printf("storygoal api internal need=%u,%u not=%u no=%u,%u cmp=%u,%u val=%u row1need=%u row1no=%u row2=[%s] pick=%d\n", g_aStoryInfo[0]->aGoal[0].awNeed[0], g_aStoryInfo[0]->aGoal[0].awNeed[1],
+		g_aStoryInfo[0]->aGoal[0].awNot[0], g_aStoryInfo[0]->aGoal[0].abyCondNo[0], g_aStoryInfo[0]->aGoal[0].abyCondNo[1], g_aStoryInfo[0]->aGoal[0].abyCondCmp[0],
+		g_aStoryInfo[0]->aGoal[0].abyCondCmp[1], g_aStoryInfo[0]->aGoal[0].abyCondVal[0], g_aStoryInfo[0]->aGoal[1].awNeed[0], g_aStoryInfo[0]->aGoal[1].abyCondNo[0],
+		g_aStoryInfo[0]->aGoal[2].szGoal, StoryGoalPick(g_aStoryInfo[0], pPC->abyFlag, pPC->abyFlagNum));
+	printf("storygoal api keep %s goals=[%s]\n", FlagGroupApi("story", 0, "{\"szName\":\"API改\"}").c_str(), g_aStoryInfo[0]->aGoal[0].szGoal);
+	printf("storygoal api replace %s row0=[%s] row1=[%s]\n", FlagGroupApi("story", 0, "{\"goals\":[{\"szGoal\":\"置換\"}]}").c_str(), g_aStoryInfo[0]->aGoal[0].szGoal, g_aStoryInfo[0]->aGoal[1].szGoal);
+	printf("storygoal api get2 %s\n", SboWebDataGet("story", 0));
+	printf("storygoal api toomany %s\n", FlagGroupApi("story", 0, "{\"goals\":[{},{},{},{},{},{},{},{},{}]}").c_str());
+	printf("storygoal api badflag %s\n", FlagGroupApi("story", 0, "{\"goals\":[{\"awNeed\":[2000],\"szGoal\":\"x\"}]}").c_str());
+	printf("storygoal api badnum %s\n", FlagGroupApi("story", 0, "{\"goals\":[{\"abyCondNo\":[200],\"szGoal\":\"x\"}]}").c_str());
+	printf("storygoal api badcmp %s\n", FlagGroupApi("story", 0, "{\"goals\":[{\"abyCondNo\":[1],\"abyCondCmp\":[3],\"szGoal\":\"x\"}]}").c_str());
+	printf("storygoal api badkey %s\n", FlagGroupApi("story", 0, "{\"goals\":[{\"zzz\":1}]}").c_str());
+	printf("storygoal api kept after-error row0=[%s]\n", g_aStoryInfo[0]->aGoal[0].szGoal);
+	printf("storygoal api clear %s get=%s\n", FlagGroupApi("story", 0, "{\"goals\":[]}").c_str(), SboWebDataGet("story", 0));
+
+	/* 管理者ウィンドウの書き込み（目的の欄は無い）：保存しても目的が消えない・足す時は目的なし */
+	{
+		PCHARINFO pAdmin = pPC;
+		BYTE byAdminBack = pAdmin->byAdminLV;
+		CMDPARA_ADMINSTORY Res;
+		FlagGroupApi("story", 0, "{\"goals\":[{\"awNeed\":[5],\"szGoal\":\"残る目的\"}]}");
+		pAdmin->byAdminLV = ADMINLV_ADMINISTRATOR;
+		STORYINFO Info = *g_aStoryInfo[0];
+		memset(Info.aGoal, 0, sizeof(Info.aGoal));						/* 目的の欄を知らない（0 で埋まった）通信 */
+		strcpy(Info.szName, "管理者改");
+		BOOL bGot = AdminStorySend(pAdmin, ADMINSTORY_SET, 0, &Info, Res);
+		printf("storygoal admin edit got=%d result=%d name=%s goal=[%s] need=%u\n", bGot, Res.byResult, g_aStoryInfo[0]->szName,
+			g_aStoryInfo[0]->aGoal[0].szGoal, g_aStoryInfo[0]->aGoal[0].awNeed[0]);
+		Info.wID = 0; strcpy(Info.szName, "管理者新");
+		bGot = AdminStorySend(pAdmin, ADMINSTORY_SET, -1, &Info, Res);
+		printf("storygoal admin add got=%d result=%d count=%d goal=[%s]\n", bGot, Res.byResult, g_aStoryInfo.GetSize(),
+			(g_aStoryInfo.GetSize() > 1) ? g_aStoryInfo[1]->aGoal[0].szGoal : "(none)");
+		pAdmin->byAdminLV = byAdminBack;
+	}
+
+	/* 保存と読み直し：目的が残る・印 0・数値 0 の条件が崩れない */
+	{
+		g_aStoryInfo.RemoveAll();
+		PSTORYINFO pS = StoryTestNew(31, "保存", 0, 0, 0, 0, 0, FLAG_NONUM);
+		StoryGoalClear(pS);
+		StoryGoalRow(&pS->aGoal[0], "ゼロの条件");
+		pS->aGoal[0].awNeed[0] = 0; pS->aGoal[0].awNot[1] = 1023; pS->aGoal[0].abyCondNo[0] = 0; pS->aGoal[0].abyCondCmp[0] = TALKCMP_LE; pS->aGoal[0].abyCondVal[0] = 9;
+		StoryGoalRow(&pS->aGoal[7], "最後の行");
+		g_aStoryInfo.Add(pS);
+		BOOL bSaved = SaveStoryInfo();
+		g_aStoryInfo.RemoveAll();
+		BOOL bLoaded = LoadStoryInfo();
+		PSTORYINFO p = (g_aStoryInfo.GetSize() > 0) ? g_aStoryInfo[0] : NULL;
+		if (p) {
+			printf("storygoal save=%d load=%d row0=[%s] need=%u,%u not=%u,%u no=%u,%u cmp=%u val=%u row1=[%s] row7=[%s] row7need=%u row7no=%u\n", (int)bSaved, (int)bLoaded,
+				p->aGoal[0].szGoal, p->aGoal[0].awNeed[0], p->aGoal[0].awNeed[1], p->aGoal[0].awNot[0], p->aGoal[0].awNot[1], p->aGoal[0].abyCondNo[0],
+				p->aGoal[0].abyCondNo[1], p->aGoal[0].abyCondCmp[0], p->aGoal[0].abyCondVal[0], p->aGoal[1].szGoal, p->aGoal[7].szGoal, p->aGoal[7].awNeed[0], p->aGoal[7].abyCondNo[0]);
+		} else {
+			printf("storygoal save=%d load=%d not found\n", (int)bSaved, (int)bLoaded);
+		}
+	}
+
+	/* 片付け */
+	g_aStoryInfo.RemoveAll();
+	for (size_t i = 0; i < aStoryBack.size(); i ++) g_aStoryInfo.Add(aStoryBack[i]);
+	SaveStoryInfo();
+	memcpy(pPC->abyFlag, abyFlagBack, sizeof(abyFlagBack));
+	memcpy(pPC->abyFlagNum, abyNumBack, sizeof(abyNumBack));
 }
 
 static void TestFlagGroup(const std::vector<int> &aLogin)

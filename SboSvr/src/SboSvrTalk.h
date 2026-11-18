@@ -19,6 +19,8 @@ extern void FlagNumAdd(BYTE *pbyFlagNum, int nNo, int nVal);			/* 数値に ○�
 extern void FlagNumAct(BYTE *pbyFlagNum, int nNo, BYTE byOp, BYTE byVal);	/* 数値を動かす（byOp は TALKNUMOP_*。番号が「無し」なら何もしない） */
 extern void FlagApplyQuestDone(PCHARINFO pChar, const QUESTINFO *pQuest);	/* 依頼を完了した時の印・数値の動きを反映する */
 
+extern BOOL FlagCondMatch(const WORD *pawNeed, const WORD *pawNot, const BYTE *pbyCondNo, const BYTE *pbyCondCmp, const BYTE *pbyCondVal, const BYTE *pbyFlag, const BYTE *pbyFlagNum);	/* 印・数値の条件（会話データの行と物語の目的で共通）に全部合うか */
+
 /* 会話データ */
 extern BOOL TalkIsNpc(PCHARINFO pNpc);									/* 台詞が "@t" と数字で始まるか（会話データの NPC） */
 extern int  TalkGetNo(PCHARINFO pNpc);									/* 会話セット番号（"@tNNN" の NNN） */

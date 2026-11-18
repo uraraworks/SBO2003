@@ -139,6 +139,41 @@ PTALKINFO TalkFind(int nNo)
 }
 
 /* ========================================================================= */
+/* 関数名：FlagCondMatch													 */
+/* 内容：印・数値の条件に全部合うか（会話データの行・物語の「いまの目的」で共通）	 */
+/*       awNeed・awNot は MAX_TALKNEED 個、abyCond* は MAX_TALKCOND 個。		 */
+/*       範囲の外の番号（FLAG_NOBIT・FLAG_NONUM など）は「条件なし」として飛ばす	 */
+/* ========================================================================= */
+BOOL FlagCondMatch(const WORD *pawNeed, const WORD *pawNot, const BYTE *pbyCondNo, const BYTE *pbyCondCmp, const BYTE *pbyCondVal, const BYTE *pbyFlag, const BYTE *pbyFlagNum)
+{
+	int i;
+
+	for (i = 0; i < MAX_TALKNEED; i ++) {
+		if ((pawNeed[i] < MAX_FLAGBIT) && !FlagBitGet (pbyFlag, pawNeed[i])) {
+			return FALSE;
+		}
+		if ((pawNot[i] < MAX_FLAGBIT) && FlagBitGet (pbyFlag, pawNot[i])) {
+			return FALSE;
+		}
+	}
+	for (i = 0; i < MAX_TALKCOND; i ++) {
+		int nVal;
+
+		if (pbyCondNo[i] >= MAX_FLAGNUM) {
+			continue;
+		}
+		nVal = FlagNumGet (pbyFlagNum, pbyCondNo[i]);
+		switch (pbyCondCmp[i]) {
+		case TALKCMP_GE:	if (nVal < pbyCondVal[i])	return FALSE;	break;
+		case TALKCMP_EQ:	if (nVal != pbyCondVal[i])	return FALSE;	break;
+		case TALKCMP_LE:	if (nVal > pbyCondVal[i])	return FALSE;	break;
+		default:			return FALSE;		/* 知らない比べ方は合わないことにする */
+		}
+	}
+	return TRUE;
+}
+
+/* ========================================================================= */
 /* 関数名：TalkLineMatch													 */
 /* 内容：行の条件に合うか（印・数値・レベル・受けている依頼・持っている物）				 */
 /*       範囲の外の番号（FLAG_NOBIT など）は「条件なし」として飛ばす			 */
@@ -179,29 +214,7 @@ static BOOL TalkLineMatch(const TALKLINEINFO *pLine, const BYTE *pbyFlag, const 
 			return FALSE;
 		}
 	}
-	for (i = 0; i < MAX_TALKNEED; i ++) {
-		if ((pLine->awNeed[i] < MAX_FLAGBIT) && !FlagBitGet (pbyFlag, pLine->awNeed[i])) {
-			return FALSE;
-		}
-		if ((pLine->awNot[i] < MAX_FLAGBIT) && FlagBitGet (pbyFlag, pLine->awNot[i])) {
-			return FALSE;
-		}
-	}
-	for (i = 0; i < MAX_TALKCOND; i ++) {
-		int nVal;
-
-		if (pLine->abyCondNo[i] >= MAX_FLAGNUM) {
-			continue;
-		}
-		nVal = FlagNumGet (pbyFlagNum, pLine->abyCondNo[i]);
-		switch (pLine->abyCondCmp[i]) {
-		case TALKCMP_GE:	if (nVal < pLine->abyCondVal[i])	return FALSE;	break;
-		case TALKCMP_EQ:	if (nVal != pLine->abyCondVal[i])	return FALSE;	break;
-		case TALKCMP_LE:	if (nVal > pLine->abyCondVal[i])	return FALSE;	break;
-		default:			return FALSE;		/* 知らない比べ方は合わないことにする */
-		}
-	}
-	return TRUE;
+	return FlagCondMatch (pLine->awNeed, pLine->awNot, pLine->abyCondNo, pLine->abyCondCmp, pLine->abyCondVal, pbyFlag, pbyFlagNum);
 }
 
 /* ========================================================================= */
@@ -289,13 +302,19 @@ void TalkPendClear(DWORD dwTblID)
 static void TalkLineApply(PCHARINFO pChar, const TALKLINEINFO *pLine)
 {
 	BYTE abyFlagBak[sizeof (pChar->abyFlag)];
+	BYTE abyNumBak[sizeof (pChar->abyFlagNum)];
 
 	CopyMemory (abyFlagBak, pChar->abyFlag, sizeof (abyFlagBak));
+	CopyMemory (abyNumBak, pChar->abyFlagNum, sizeof (abyNumBak));
 	if (QuestTalkExchange (pChar, pLine->wTakeItem, pLine->wGiveItem)) {
 		TalkApplyLine (pLine, pChar->abyFlag, pChar->abyFlagNum);
 	}
 	if (memcmp (abyFlagBak, pChar->abyFlag, sizeof (abyFlagBak)) != 0) {
 		CharViewRefresh (pChar);
+	}
+	/* 印・数値が動いたら、物語の「いまの目的」も送り直す */
+	if ((memcmp (abyFlagBak, pChar->abyFlag, sizeof (abyFlagBak)) != 0) || (memcmp (abyNumBak, pChar->abyFlagNum, sizeof (abyNumBak)) != 0)) {
+		QuestSendStateSelf (pChar);
 	}
 }
 
@@ -313,6 +332,7 @@ void TalkNpcTalk(PCHARINFO pChar, PCHARINFO pNpc)
 	char szSpeech[MAX_TALKMSG + 4];	/* 最後に @2 を足せるよう少し余分に */
 	WORD wGiveItem = 0;
 	BYTE abyFlagBak[sizeof (pChar->abyFlag)];
+	BYTE abyNumBak[sizeof (pChar->abyFlagNum)];
 	BOOL bAsk = FALSE;
 	QUESTNOTICEVEC vLater;			/* 品を渡す知らせ。窓を送った後に流す */
 
@@ -322,6 +342,7 @@ void TalkNpcTalk(PCHARINFO pChar, PCHARINFO pNpc)
 	/* 別の NPC（や同じ NPC）にもう一度話したら、前の問いは消える */
 	TalkPendClear (pChar->dwTblID);
 	CopyMemory (abyFlagBak, pChar->abyFlag, sizeof (abyFlagBak));
+	CopyMemory (abyNumBak, pChar->abyFlagNum, sizeof (abyNumBak));
 	SboTextCopy (szSpeech, sizeof (szSpeech), TALK_NOANSWER);
 	pTalk = TalkFind (TalkGetNo (pNpc));
 	if (pTalk) {
@@ -373,6 +394,10 @@ void TalkNpcTalk(PCHARINFO pChar, PCHARINFO pNpc)
 	/* 印が動いたら、印で見える・消えるNPCを、話した本人にだけ見え直す */
 	if (memcmp (abyFlagBak, pChar->abyFlag, sizeof (abyFlagBak)) != 0) {
 		CharViewRefresh (pChar);
+	}
+	/* 印・数値が動いたら、物語の「いまの目的」も送り直す */
+	if ((memcmp (abyFlagBak, pChar->abyFlag, sizeof (abyFlagBak)) != 0) || (memcmp (abyNumBak, pChar->abyFlagNum, sizeof (abyNumBak)) != 0)) {
+		QuestSendStateSelf (pChar);
 	}
 }
 

@@ -73,6 +73,8 @@ extern void QuestSyncAll(void);									/* 今すぐ見えるNPCを作る・消�
 extern void QuestOnDecPlayer(PCHARINFO pChar);					/* キャラが消える・ログオフする時 */
 extern void QuestOnLogin(PCHARINFO pChar);						/* ログインした時（保存データの確認と進み具合の通知） */
 extern void QuestSendState(PCHARINFO pChar);					/* 本人とパーティに依頼の進み具合を送る */
+extern void QuestSendStateSelf(PCHARINFO pChar);				/* 本人だけに依頼と物語の「いまの目的」を送り直す（印・数値が動いた時） */
+extern int  StoryGoalPick(const STORYINFO *pStory, const BYTE *pbyFlag, const BYTE *pbyFlagNum);	/* シナリオの「いまの目的」の行を選ぶ（合う行が無ければ -1） */
 extern void QuestSendStateParty(DWORD dwPartyID, PCHARINFO pExtra);	/* パーティ全員（と pExtra）に進み具合を送る */
 extern void QuestNpcTalk(PCHARINFO pChar, PCHARINFO pNpc);		/* 見えるNPC に話しかけた */
 extern void QuestOnStep(PCHARINFO pChar);						/* 歩いて見えるポータルに乗ったら移す */
