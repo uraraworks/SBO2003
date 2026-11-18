@@ -1156,7 +1156,29 @@
 				</div>
 				<div class="card rc-card" id="rc-rc-card" hidden>
 					<div class="name" id="rc-rc-title"></div>
-					<div class="rc-grid">
+					<label for="rc-rc-kind">種類</label>
+					<select id="rc-rc-kind">
+						<option value="0">普通（材料からアイテムを作る）</option>
+						<option value="1">鍛える（手持ちの装備の後ろの付与を 1 段進める）</option>
+						<option value="2">付け替える（手持ちの装備の付与を置き換える）</option>
+					</select>
+					<div id="rc-forge-box" hidden>
+						<label for="rc-rc-affix">付ける付与（鍛える：後ろの付与がまだ無い装備に付ける付与。付け替える：置き換え先）</label>
+						<select id="rc-rc-affix"></select>
+						<label><input type="checkbox" id="rc-rc-plain"> 普通の装備（付与の無い物）も対象にしてよい</label>
+						<div class="sub-text" style="margin-top:10px">対象の装備（全部外すと、付与の「付く装備」に従う）</div>
+						<div>
+							<label><input type="checkbox" id="rc-rc-equ0"> 武器</label>
+							<label><input type="checkbox" id="rc-rc-equ1"> 鎧</label>
+							<label><input type="checkbox" id="rc-rc-equ2"> 盾</label>
+							<label><input type="checkbox" id="rc-rc-equ3"> 兜</label>
+							<label><input type="checkbox" id="rc-rc-equ4"> 小手</label>
+							<label><input type="checkbox" id="rc-rc-equ5"> 靴</label>
+							<label><input type="checkbox" id="rc-rc-equ6"> 首飾り</label>
+							<label><input type="checkbox" id="rc-rc-equ7"> 指輪</label>
+						</div>
+					</div>
+					<div class="rc-grid" id="rc-normal-box">
 						<label for="rc-rc-item">できるアイテム（名前で探せます）</label>
 						<label for="rc-rc-count">できる個数</label>
 						<input type="text" id="rc-rc-item" list="rc-items" autocomplete="off">
@@ -1210,6 +1232,8 @@
 					<input type="text" id="af-name" maxlength="20">
 					<label for="af-pos">位置</label>
 					<select id="af-pos"><option value="0">名前の前に付く（鋭い黒曜石の剣）</option><option value="1">名前の後ろに付く（黒曜石の剣の加護）</option></select>
+					<label for="af-next">鍛えた時の次の段（＋1→＋2→＋3 のように、位置が同じ付与を選ぶ。なしなら「これ以上は鍛えられない」）</label>
+					<select id="af-next"></select>
 					<div class="sub-text" style="margin-top:10px">付く装備</div>
 					<div>
 						<label><input type="checkbox" id="af-equ0"> 武器</label>

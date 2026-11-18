@@ -7,6 +7,7 @@
  *   ・一覧から選んで直す／「付与を足す」で足す。保存すると /api/admin/recipe/save（kind=affix）に送る。
  *     ログイン中のプレイヤー全員にすぐ反映され、「AI連携」の変更履歴に残る。
  *   ・付与は消せない（派生アイテムが番号で指しているため）。出したくない時は「出やすさ」を 0 にする。
+ *   ・「次の段」を決めると、鍛冶屋で鍛えた時に次の段（＋1→＋2→＋3）の付与に置き換わる（レシピの種類「鍛える」。docs/recipe.md）。
  *   ・強さ = 主の値（武器は攻撃力、防具・首飾り・指輪は守備力か魔防。アイテムの付加データ）+ 主の値×合計%/100 + 合計の固定加算（0〜255）。
  *   ・敵ごとの付く確率（byAffixRate）と格の上限（byAffixRank）は、ステータステンプレート（stTmp）の項目。
  *   仕様は docs/item-affix.md
@@ -43,6 +44,30 @@
 	function maskText(m) {
 		if (m === 255) return '全部';
 		return EQU.filter(function (e) { return m & e[1]; }).map(function (e) { return e[0]; }).join('・') || '（なし）';
+	}
+	function nameByWID(wID) {
+		for (var i = 0; i < affixes.length; i++) {
+			if (affixes[i] && affixes[i].wID === wID) return affixes[i].szName;
+		}
+		return '';
+	}
+	/* 「次の段」の選択肢：位置が pos で、自分（selfID）以外の付与。wSel を選んでおく */
+	function fillNextSelect(pos, selfID, wSel) {
+		var s = $('af-next');
+		s.textContent = '';
+		var o = document.createElement('option');
+		o.value = '0';
+		o.textContent = 'なし（これ以上は鍛えられない）';
+		s.appendChild(o);
+		affixes.forEach(function (a) {
+			if (!a || a.byPos !== pos || a.wID === selfID) return;
+			var o2 = document.createElement('option');
+			o2.value = String(a.wID);
+			o2.textContent = a.szName + '（#' + a.wID + '）';
+			s.appendChild(o2);
+		});
+		s.value = String(wSel || 0);
+		if (s.value !== String(wSel || 0)) s.value = '0';
 	}
 	function effectText(a) {
 		var s = [];
@@ -94,7 +119,8 @@
 				(a.byPos ? '〜' : '') + a.szName + (a.byPos ? '' : '〜') + (a.byBad ? '　（ハズレ）' : ''));
 			b.type = 'button';
 			b.appendChild(el('span', 'sub-text', (a.byPos ? '後ろ' : '前') + '・格' + a.byRank + '・' + effectText(a) +
-				'・' + maskText(a.wEquMask) + '・出やすさ ' + a.wWeight + '・売値 ' + a.wGoldRate + '%'));
+				'・' + maskText(a.wEquMask) + '・出やすさ ' + a.wWeight + '・売値 ' + a.wGoldRate + '%' +
+				(a.wNext ? '・次の段 ' + (nameByWID(a.wNext) || '#' + a.wNext) : '')));
 			b.addEventListener('click', function () {
 				sel = id;
 				setMsg('');
@@ -123,6 +149,7 @@
 		$('af-weight').value = String(v.wWeight);
 		$('af-gold').value = String(v.wGoldRate);
 		$('af-bad').checked = !!v.byBad;
+		fillNextSelect(v.byPos, a ? a.wID : 0, v.wNext || 0);
 		EQU.forEach(function (e, i) {
 			$('af-equ' + i).checked = !!(v.wEquMask & e[1]);
 		});
@@ -155,7 +182,8 @@
 				byRank: intVal('af-rank', 1, 3, '格'),
 				wWeight: intVal('af-weight', 0, 65535, '出やすさ'),
 				wGoldRate: intVal('af-gold', 0, 65535, '売値の倍率'),
-				byBad: $('af-bad').checked ? 1 : 0
+				byBad: $('af-bad').checked ? 1 : 0,
+				wNext: Number($('af-next').value) || 0
 			};
 		} catch (e) {
 			setMsg(e.message);
@@ -187,6 +215,11 @@
 			sel = -2;
 			setMsg('');
 			render();
+		});
+		$('af-pos').addEventListener('change', function () {
+			/* 位置が変わったら、次の段の候補（同じ位置の付与）を作り直す */
+			var a = sel >= 0 ? affixes[sel] : null;
+			fillNextSelect(Number($('af-pos').value), a ? a.wID : 0, 0);
 		});
 		$('af-save').addEventListener('click', save);
 	}

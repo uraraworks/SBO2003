@@ -3768,6 +3768,15 @@ void RecvDataProcRECIPEMAKE(PBYTE pData, DWORD dwDataSize)
 	case RECIPERESULT_NOROOM:
 		pszMsg = "持ち物も預かり所もいっぱいで、お渡しできません。@2";
 		break;
+	case RECIPERESULT_UNKNOWN:
+		pszMsg = "まだ鑑定されていません。@1先に鑑定をお願いします。@2";
+		break;
+	case RECIPERESULT_MAXED:
+		pszMsg = "これ以上は鍛えられません。@2";
+		break;
+	case RECIPERESULT_SAME:
+		pszMsg = "もう同じ付与が付いています。@2";
+		break;
 	default:
 		pszMsg = "それは作れないようです。@2";
 		break;

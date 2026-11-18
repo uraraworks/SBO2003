@@ -74,6 +74,10 @@ static const COLINFO s_aRecipeCol[] = {
 	COLS(RECIPEINFO, awMatItem,		COL_U16ARR, MAX_RECIPEMAT),
 	COLS(RECIPEINFO, abyMatCount,	COL_U8ARR, MAX_RECIPEMAT),
 	COL (RECIPEINFO, dwGold,		COL_U32),
+	COL (RECIPEINFO, byKind,		COL_U8),		/* 古いデータには無い列（0=普通） */
+	COL (RECIPEINFO, wAffix,		COL_U16),
+	COL (RECIPEINFO, wEquMask,		COL_U16),
+	COL (RECIPEINFO, byAllowPlain,	COL_U8),
 };
 
 /* ========================================================================= */
