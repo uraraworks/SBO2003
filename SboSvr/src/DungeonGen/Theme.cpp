@@ -111,6 +111,53 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 			}
 	}
 
+	// 2c. 部屋どうしが重なった壁（つなぎ目）の絵をそろえる（L1 のみ）
+	//   部屋は順に上書きで描くので、重なった所には後の部屋の「側面」や「上の縁」が残り、
+	//   下が床でないのに側面の絵になったり、縦に続く壁なのに横の縁の絵になったりする。
+	//   重なったマスだけ、まわりを見て描き直す:
+	//     - 下が歩ける（床・出入口）→ 側面（wallFace）。すでに側面の絵ならそのまま
+	//     - 下が歩けず、側面の絵か上下とも壁（縦に続く壁）→ 天井（wallTop）。すでに天井の絵ならそのまま
+	if (sk.algo == 1 && !th.wallTop.empty())
+	{
+		std::vector<unsigned char> cover(W * H, 0);
+		for (size_t ri = 0; ri < sk.rooms.size(); ++ri)
+		{
+			const Room &r = sk.rooms[ri];
+			for (int j = 0; j < r.h; ++j)
+				for (int i = 0; i < r.w; ++i)
+				{
+					int x = r.x + i, y = r.y + j;
+					if (x < 0 || y < 0 || x >= W || y >= H) continue;
+					if (cover[y * W + x] < 255) ++cover[y * W + x];
+				}
+		}
+		auto inList = [](const std::vector<int> &v, int n) {
+			for (size_t k = 0; k < v.size(); ++k) if (v[k] == n) return true;
+			return false;
+		};
+		auto walk = [&](int x, int y) {
+			if (x < 0 || y < 0 || x >= W || y >= H) return false;
+			int c = sk.cells[y * W + x];
+			return IsWalkable(c);
+		};
+		for (int y = 0; y < H; ++y)
+			for (int x = 0; x < W; ++x)
+			{
+				int idx = y * W + x, c = sk.cells[idx];
+				if (cover[idx] < 2 || (c != CELL_TOP && c != CELL_FACE && c != CELL_WALL)) continue;
+				const bool below = walk(x, y + 1), above = walk(x, y - 1);
+				const int v = parts[idx];
+				if (below && !above)
+				{
+					if (!th.wallFace.empty() && !inList(th.wallFace, v)) parts[idx] = Pick(th.wallFace, rng);
+				}
+				else if (!below && !inList(th.wallTop, v) && (inList(th.wallFace, v) || !above))
+				{
+					parts[idx] = Pick(th.wallTop, rng);
+				}
+			}
+	}
+
 	// 3. 出入口・扉
 	for (size_t k = 0; k < sk.links.size(); ++k)
 	{
