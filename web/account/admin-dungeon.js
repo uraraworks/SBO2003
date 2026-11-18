@@ -113,6 +113,8 @@
 			'<div class="dg-row"><label><input type="checkbox" id="dg-usetheme" checked> 編集中のテーマを使う</label>' +
 			'<button type="button" id="dg-gen">作る</button><button type="button" id="dg-gen2" class="sub">別のシード</button>' +
 			'<label>表示 <select id="dg-view"><option value="parts">パーツの絵</option><option value="meaning">意味の色</option></select></label>' +
+			'<label>暗さ <select id="dg-dark"><option value="0">なし</option><option value="25">25</option><option value="50">50</option><option value="75">75</option><option value="100">100</option></select></label>' +
+			'<label><input type="checkbox" id="dg-dchar"> 入口に人（灯り）</label>' +
 			'<label>拡大 <select id="dg-zoom"><option value="0.5">1/2倍</option><option value="1" selected>1倍</option><option value="2">2倍</option><option value="4">4倍</option></select></label></div>' +
 			'<div class="sub-text" id="dg-info"></div><div class="dg-legend" id="dg-legend" hidden></div>' +
 			'<div class="dg-scroll"><canvas class="dg-cv" id="dg-out"></canvas></div></div>';
@@ -582,6 +584,82 @@
 		});
 	}
 
+	/* ---------------------------------------------------------------- */
+	/* 暗くして見る（ゲームの DrawMapLight・RenewMapDarkWork の簡易版）		 */
+	/* ---------------------------------------------------------------- */
+	/* 灯りの中心(sx,sy)から床を伝って広がり、壁は照らして止まる。返す値は w*h の 0/1 */
+	function lightMask(r, sx, sy, range) {
+		var w = r.w, h = r.h, m = new Uint8Array(w * h), q = [sx + sy * w], qi = 0, k = Math.ceil(range);
+		m[q[0]] = 1;
+		while (qi < q.length) {
+			var c = q[qi++], cx = c % w, cy = (c - cx) / w;
+			var v = r.cells[c];
+			if (c !== q[0] && !(v === 1 || v === 5 || v === 6)) continue;	/* 壁などは照らすだけで先へ進まない */
+			for (var dy = -1; dy <= 1; dy++) {
+				for (var dx = -1; dx <= 1; dx++) {
+					var nx = cx + dx, ny = cy + dy;
+					if ((!dx && !dy) || nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+					if (Math.abs(nx - sx) > k || Math.abs(ny - sy) > k) continue;
+					var n = nx + ny * w;
+					if (m[n] || r.cells[n] === 0) continue;
+					m[n] = 1;
+					q.push(n);
+				}
+			}
+		}
+		return m;
+	}
+
+	function darken(ctx, r, tile) {
+		var L = num($('dg-dark').value, 0);
+		if (!L) return;
+		var w = r.w, h = r.h, lights = [], i, x, y;
+		for (y = 0; y < h; y++) {
+			for (x = 0; x < w; x++) {
+				var pt = parts[r.parts[y * w + x]], bl = pt && pt.byLight ? Math.min(7, pt.byLight) : 0;
+				if (bl > 0 && r.cells[y * w + x] !== 0) {
+					lights.push({ x: x, y: y, R: bl + 1.2, pow: 1, warm: 1, mask: lightMask(r, x, y, bl + 1) });
+				}
+			}
+		}
+		if ($('dg-dchar').checked && r.start) {
+			/* キャラの灯り(明かりの道具あり)の半径: GetCharLightTiles と同じ式。暗さ - 明かりの強さ(20) */
+			var lv = L - 20, rr = lv <= 0 ? 0 : Math.max(100 / lv + 0.2, 100 / L + 0.2 + 2.5);
+			var rc = rr || 99;
+			lights.push({ x: r.start.x, y: r.start.y, R: rc, pow: 1.6, warm: 0.5, mask: lightMask(r, r.start.x, r.start.y, rc) });
+		}
+		var W = r.w * tile, H = r.h * tile, img = ctx.getImageData(0, 0, W, H), d = img.data;
+		var lt = new Float32Array(W * H), wm = new Float32Array(W * H);
+		lights.forEach(function (l) {
+			var cx = (l.x + 0.5) * tile, cy = (l.y + 0.5) * tile, R = l.R * tile, R2 = R * R;
+			var x0 = Math.max(0, Math.floor(cx - R)), x1 = Math.min(W - 1, Math.ceil(cx + R));
+			var y0 = Math.max(0, Math.floor(cy - R)), y1 = Math.min(H - 1, Math.ceil(cy + R));
+			function mv(mx, my) { return mx < 0 || my < 0 || mx >= w || my >= h ? 0 : l.mask[mx + my * w]; }
+			for (var py = y0; py <= y1; py++) {
+				var ddy = py + 0.5 - cy, fy = (py + 0.5) / tile - 0.5, iy = Math.floor(fy), ty = fy - iy;
+				for (var px = x0; px <= x1; px++) {
+					var ddx = px + 0.5 - cx, dd = ddx * ddx + ddy * ddy;
+					if (dd >= R2) continue;
+					var fx = (px + 0.5) / tile - 0.5, ix = Math.floor(fx), tx = fx - ix;
+					var a = mv(ix, iy) + (mv(ix + 1, iy) - mv(ix, iy)) * tx;
+					var b = mv(ix, iy + 1) + (mv(ix + 1, iy + 1) - mv(ix, iy + 1)) * tx;
+					var vis = Math.min(1, (a + (b - a) * ty) * 1.6);
+					if (vis <= 0) continue;
+					var add = (1 - Math.sqrt(dd) / R) * l.pow * vis;
+					lt[px + py * W] += add;
+					wm[px + py * W] += add * l.warm;
+				}
+			}
+		});
+		for (i = 0; i < W * H; i++) {
+			var f = Math.min(1, lt[i]), wr = lt[i] > 0 ? Math.min(1, wm[i] / lt[i]) : 0, o = i * 4;
+			d[o] = Math.min(255, d[o] * f * (1 + 0.25 * wr));
+			d[o + 1] = d[o + 1] * f * (1 + 0.02 * wr);
+			d[o + 2] = d[o + 2] * f * (1 - 0.25 * wr);
+		}
+		ctx.putImageData(img, 0, 0);
+	}
+
 	function drawOut() {
 		var r = last, cv = $('dg-out'), lg = $('dg-legend');
 		if (!r) return;
@@ -596,6 +674,7 @@
 		}
 		if (view === 'parts') {
 			ctx = drawGrid(cv, r.w, r.h, function (x, y) { return r.parts[y * r.w + x]; }, tile);
+			darken(ctx, r, tile);
 			return;
 		}
 		cv.width = r.w * tile;
@@ -731,6 +810,8 @@
 		$('dg-gen2').addEventListener('click', function () { generate(true); });
 		$('dg-view').addEventListener('change', drawOut);
 		$('dg-zoom').addEventListener('change', drawOut);
+		$('dg-dark').addEventListener('change', drawOut);
+		$('dg-dchar').addEventListener('change', drawOut);
 	}
 
 	function open(fn) {
