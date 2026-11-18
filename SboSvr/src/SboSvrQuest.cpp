@@ -2739,6 +2739,7 @@ static void ChallengeCreateEnemy(DWORD dwSession, CHALLENGE *pCh, PQUESTNPCINFO 
 	pNew->byMoveProbabilityY	= t->byMoveProbabilityY;
 	pNew->bySearchCx	= t->bySearchCx;
 	pNew->bySearchCy	= t->bySearchCy;
+	pNew->byGhost		= t->byGhost;
 	memcpy (pNew->abyMagic, t->abyMagic, sizeof (pNew->abyMagic));
 	/* 経験値・お金・落とす物は無し（貸し出しの状態で増えても戻すので、はじめから出さない） */
 	pNew->dwGold = 0;

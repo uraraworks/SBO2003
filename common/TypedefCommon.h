@@ -2275,6 +2275,7 @@ typedef struct _CHARINFO {
 	BYTE		byLightLevel;										/* 明るさレベル */
 	BYTE		byLightLevelBack;									/* 明るさレベル（最初） */
 	BYTE		byHide;												/* 隠れている(0以外。敵に見つかりにくく、画面では半透明) */
+	BYTE		byGhost;											/* 半透明（霊）で描く(0以外。見た目だけ。他人にも送る。隠れると違い、敵に見つかりにくくはならない) */
 	BYTE		byAtackRate;										/* 攻撃力の割合 */
 
 	BYTE		abySubStatus[MAX_SUBSTATUS];						/* 保存しないサブステータス */
@@ -2445,6 +2446,7 @@ typedef struct _CMDPARA_CHARINFO {
 	BYTE		bySearchCy;											/* 検索範囲Y */
 	BYTE		byLightLevel;										/* 明るさレベル */
 	BYTE		byHide;												/* 隠れている(0以外。他人にも送る) */
+	BYTE		byGhost;											/* 半透明（霊）で描く(0以外。見た目だけ。他人にも送る。隠れると違い、敵に見つかりにくくはならない) */
 	WORD		wGrpID;												/* グラフィックID */
 	WORD		wGrpMain;											/* グラフィック種別(メイン) */
 	WORD		wGrpSub;											/* グラフィック種別(サブ) */
@@ -2498,6 +2500,7 @@ typedef struct _CMDPARA_CHARINFO2 {
 	BYTE		byNpcType;											/* NPC移動種別 */
 	BYTE		byLightLevel;										/* 明るさレベル */
 	BYTE		byHide;												/* 隠れている(0以外。他人にも送る) */
+	BYTE		byGhost;											/* 半透明（霊）で描く(0以外。見た目だけ。他人にも送る。隠れると違い、敵に見つかりにくくはならない) */
 	WORD		wGrpID;												/* グラフィックID */
 	WORD		wGrpMain;											/* グラフィック種別(メイン) */
 	WORD		wGrpSub;											/* グラフィック種別(サブ) */
@@ -2583,6 +2586,7 @@ typedef struct _STATUSTEMPLATEINFO {
 	DWORD		dwExp;												/* 経験値 */
 	BYTE		byStatusResist;										/* 毒・眠りの効きにくさ(%、100で効かない) */
 	BYTE		byNoFloorDamage;									/* ダメージ床が効かない(1)。毒沼・溶岩でHPが減らず毒にもならず、よけずに素通りする（ボス向け） */
+	BYTE		byGhost;											/* 半透明（霊）で描く(1)。見た目だけ。湧いた敵にコピーする */
 } STATUSTEMPLATEINFO, *PSTATUSTEMPLATEINFO;
 
 /* キャラ追加通知 */

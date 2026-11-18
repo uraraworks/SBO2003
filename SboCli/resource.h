@@ -85,6 +85,7 @@
 #define IDC_REGMAGIC                    1035
 #define IDC_STRESIST                    1141
 #define IDC_NOFLOORDMG                  1412
+#define IDC_GHOST                       1440
 #define IDC_DATA1                       1036
 #define IDC_LV                          1037
 #define IDC_DATA2                       1038
@@ -501,7 +502,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        244
 #define _APS_NEXT_COMMAND_VALUE         40037
-#define _APS_NEXT_CONTROL_VALUE         1440
+#define _APS_NEXT_CONTROL_VALUE         1441
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

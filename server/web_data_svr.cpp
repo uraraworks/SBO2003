@@ -395,6 +395,7 @@ static const DATAFIELD s_aFieldStTmp[] = {
 	FLD (STATUSTEMPLATEINFO, dwGold,		"所持金",			FT_U32, 0, NULL),
 	FLD (STATUSTEMPLATEINFO, dwExp,			"経験値",			FT_U32, 0, NULL),
 	FLD (STATUSTEMPLATEINFO, byStatusResist,	"毒・眠りの効きにくさ",	FT_U8, 0, "%。特技の成功率をこの分下げる。100 で効かない（ボス向け）"),
+	FLD (STATUSTEMPLATEINFO, byGhost,		"半透明（霊）",		FT_U8, 0, "1 にすると、この元から出る敵（NPC発生・依頼の敵）が半透明（霊）で描かれる。見た目だけで、敵に見つかりにくくなるなどはしない。0=ふつう"),
 	FLD (STATUSTEMPLATEINFO, byNoFloorDamage,	"ダメージ床が効かない",	FT_U8, 0, "1 にすると毒沼・溶岩などのダメージ床でHPが減らず毒にもならず、よけずに素通りして追いかける（ボス向け）。0=ふつう（ダメージ床をよける）"),
 };
 
@@ -1480,6 +1481,7 @@ static const DATAFIELD s_aFieldChar[] = {
 	FLD (CHARINFO, bySearchCx,			"検索範囲X",			FT_U8, 0, NULL),
 	FLD (CHARINFO, bySearchCy,			"検索範囲Y",			FT_U8, 0, NULL),
 	FLD (CHARINFO, byDropProbability,	"ドロップ率",			FT_U8, 0, NULL),
+	FLD (CHARINFO, byGhost,			"半透明（霊）",			FT_U8, 0, "1 にすると半透明（霊）で描かれる（見た目だけ。ふつうの NPC・敵どちらにも付けられる）。0=ふつう。NPC発生で出る敵は、発生元の NPC かステータステンプレート（stTmp の byGhost）の設定になる"),
 	FLD (CHARINFO, wShowFlag,			"見える条件の印",		FT_U16, 0, "キャラのフラグの印の番号（0〜1023）。この印が立っている人にだけ見える（立っていない人には居ないのと同じ）。65535=条件なし（足す時に省くと条件なし）。町の人（byNpcType=1・2）向け"),
 	FLD (CHARINFO, wHideFlag,			"見えない条件の印",		FT_U16, 0, "キャラのフラグの印の番号（0〜1023）。この印が立っている人には見えない。65535=条件なし。wShowFlag と両方ある時は、両方の条件を満たす人にだけ見える"),
 	FLD (CHARINFO, byAtackRate,			"攻撃力の割合",			FT_U8, 0, NULL),
@@ -2849,6 +2851,7 @@ static bool CharApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::str
 	pDst->bySearchCy		= w.bySearchCy;
 	pDst->byDropProbability	= w.byDropProbability;
 	pDst->byAtackRate		= w.byAtackRate;
+	pDst->byGhost			= w.byGhost;
 	WORD wShowIn = CharFlagToWire(w.wShowFlag);	/* 中の形（番号+1。0=無し）にして入れる */
 	WORD wHideIn = CharFlagToWire(w.wHideFlag);
 	bViewChg				= (pDst->wShowFlag != wShowIn) || (pDst->wHideFlag != wHideIn);

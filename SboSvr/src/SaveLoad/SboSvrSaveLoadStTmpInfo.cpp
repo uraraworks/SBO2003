@@ -13,7 +13,7 @@
 /* 定数定義																	 */
 /* ========================================================================= */
 
-#define DATACOUNT		(28)									/* 保存データ数 */
+#define DATACOUNT		(29)									/* 保存データ数 */
 
 /* ========================================================================= */
 /* 構造体定義																 */
@@ -61,6 +61,7 @@ static const char *s_aszName[] = {
 	"dwExp",				/* 経験値 */
 	"byStatusResist",		/* 毒・眠りの効きにくさ(%) */
 	"byNoFloorDamage",		/* ダメージ床が効かない */
+	"byGhost",				/* 半透明（霊）で描く */
 	"z"
 };
 
@@ -179,6 +180,7 @@ BOOL SaveStTmpInfo(void)
 			case 25:	dwDataSizeTmp += sizeof (pInfo->dwExp);					break;	/* 経験値 */
 			case 26:	dwDataSizeTmp += sizeof (pInfo->byStatusResist);		break;	/* 毒・眠りの効きにくさ */
 			case 27:	dwDataSizeTmp += sizeof (pInfo->byNoFloorDamage);		break;	/* ダメージ床が効かない */
+			case 28:	dwDataSizeTmp += sizeof (pInfo->byGhost);				break;	/* 半透明（霊）で描く */
 			}
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
@@ -334,6 +336,10 @@ BOOL SaveStTmpInfo(void)
 			case 27:	/* ダメージ床が効かない */
 				CopyMemory (&pData[dwOffset], &pInfo->byNoFloorDamage, sizeof (pInfo->byNoFloorDamage));
 				dwOffset += sizeof (pInfo->byNoFloorDamage);
+				break;
+			case 28:	/* 半透明（霊）で描く */
+				CopyMemory (&pData[dwOffset], &pInfo->byGhost, sizeof (pInfo->byGhost));
+				dwOffset += sizeof (pInfo->byGhost);
 				break;
 			}
 		}
@@ -607,6 +613,10 @@ BOOL LoadStTmpInfo(void)
 			} else if (strcmp (aHeaderInfo[i].szName, s_aszName[27]) == 0) {			/* ダメージ床が効かない(古いデータには無い) */
 				CopyMemory (&pInfo->byNoFloorDamage, &pData[dwOffsetTmp], sizeof (pInfo->byNoFloorDamage));
 				dwOffsetTmp += sizeof (pInfo->byNoFloorDamage);
+
+			} else if (strcmp (aHeaderInfo[i].szName, s_aszName[28]) == 0) {			/* 半透明（霊）で描く(古いデータには無い) */
+				CopyMemory (&pInfo->byGhost, &pData[dwOffsetTmp], sizeof (pInfo->byGhost));
+				dwOffsetTmp += sizeof (pInfo->byGhost);
 			}
 		}
 	}
