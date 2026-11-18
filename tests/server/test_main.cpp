@@ -3994,7 +3994,7 @@ static void TestStoryGoal(const std::vector<int> &aLogin)
 	StoryGoalClear(pA);
 	printf("storygoal empty=%d\n", StoryGoalPick(pA, pF, pN));
 
-	/* 送信：クリア前のシナリオだけ・wSort 順・止めたシナリオと合う行が無いシナリオは出ない */
+	/* 送信：wSort 順（クリアの印は見ない。消すのは行の条件で）・止めたシナリオと合う行が無いシナリオは出ない */
 	ZeroMemory(pPC->abyFlag, sizeof(pPC->abyFlag));
 	ZeroMemory(pPC->abyFlagNum, sizeof(pPC->abyFlagNum));
 	StoryGoalClear(pA);
@@ -4006,6 +4006,7 @@ static void TestStoryGoal(const std::vector<int> &aLogin)
 	PSTORYINFO pB = StoryTestNew(12, "森の話", 201, 0, 201, 201, 0, FLAG_NONUM);
 	StoryGoalClear(pB);
 	StoryGoalRow(&pB->aGoal[0], "木を切る");
+	pB->aGoal[0].awNot[0] = 201;										/* クリアで消したい時はクリアの印を awNot に */
 	pB->wSort = 10;
 	PSTORYINFO pC = StoryTestNew(13, "止めた話", 202, 0, 202, 202, 0, FLAG_NONUM);
 	StoryGoalClear(pC);
@@ -4022,9 +4023,9 @@ static void TestStoryGoal(const std::vector<int> &aLogin)
 	printf("storygoal sent start %s\n", StoryGoalSent(pPC).c_str());
 	FlagBitSet(pPC->abyFlag, 100, TRUE);
 	printf("storygoal sent flag100 %s\n", StoryGoalSent(pPC).c_str());
-	FlagBitSet(pPC->abyFlag, 201, TRUE);									/* 森の話をクリア → 出ない */
+	FlagBitSet(pPC->abyFlag, 201, TRUE);									/* 森の話をクリア → awNot で出ない */
 	printf("storygoal sent clear-B %s\n", StoryGoalSent(pPC).c_str());
-	FlagBitSet(pPC->abyFlag, 200, TRUE);
+	FlagBitSet(pPC->abyFlag, 200, TRUE);									/* 港の話をクリア → 条件が合うので出たまま */
 	printf("storygoal sent clear-A %s\n", StoryGoalSent(pPC).c_str());
 
 	/* 印・数値が動いた時の送り直し：会話データで話した後（動いた時だけ。同じ話をもう一度しても動かなければ送らない） */
