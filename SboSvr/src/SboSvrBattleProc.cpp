@@ -12,6 +12,7 @@
 #include "../../Common/Info/InfoJob.h"
 #include "ProcFunc/ProcFunc.h"
 #include "SboSvrRecvCmd.h"
+#include "SboSvrAffix.h"
 #include "SboSvrMagicProc.h"
 #include "SboSvrCharInfoTimerProc.h"
 #include "CharProc/CharProcMERCENARY.h"
@@ -474,6 +475,10 @@ BOOL DamageAfterProcNPC(PCHARINFO pChar, PCHARINFO pCharTarget)
 		int nCount = GetItemCount (pCharTarget->dwTblID);
 		if (nCount && ((genrand () % 100) + pCharTarget->byDropProbability >= 100)) {
 			nGetItemNo = pCharTarget->waItem[genrand () % nCount];
+			/* 装備なら付与がつくことがある（未鑑定の派生番号になる。付与表が 0 件なら何も変わらない） */
+			if (AffixCanDrop ((WORD)nGetItemNo)) {
+				nGetItemNo = AffixDropItem (pCharTarget, (WORD)nGetItemNo);
+			}
 
 			/* 誰がもらうかは、与えたダメージが多い人ほど当たりやすいくじ引き */
 			DWORD dwTotal = 0;
@@ -1285,7 +1290,7 @@ static int GetWeponMin(PCHARINFO pChar)
 	nItemID = pChar->waItem[nTmp];
 	nTmp = 0;
 	/* 存在しないアイテム？ */
-	if (nItemID >= g_aItemInfo.GetSize ()) {
+	if ((nItemID > 0xFFFF) || !ItemIDValid ((WORD)nItemID)) {
 		goto Exit;
 	}
 

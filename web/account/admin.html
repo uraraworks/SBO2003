@@ -22,6 +22,7 @@
 	                   戻す時は、このタブを入れたコミットの前の admin.html から tab-npcroute の部分を持ってきて、admin-npcroute.js を読み込む
 	                   （API /api/admin/npcroute/set はサーバーに残してある）。
 	  ・レシピ       … 町の作り手（料理人など）と、作ってもらえるレシピ（できる物・材料・手数料）を決める（admin-recipe.js。API は sbosvr_data.js の /api/admin/recipe/save）
+	  ・付与         … 装備に付く「鋭い」「の加護」などの接頭辞・接尾辞の表を決める（admin-affix.js。API は /api/admin/recipe/save の kind=affix。仕様は docs/item-affix.md）
 	  ・ドット絵工房 … みんなでゲームのドット絵を描き合う仕組み（/kobo）の管理。お題を出す・案の系譜とコメントを見る・採用して
 	                   ゲーム画像に貼って保存する・提案を見る（admin-kobo.js。仕様は docs/kobo.md。API は server/node/sbosvr_kobo.js の /api/admin/kobo/*）
 	  ・ドット絵     … ゲームの画像（SboGrpData/grp の PNG）を手元のフォルダで直接描き直すエディタ（/dot。dot.html）を開く
@@ -592,6 +593,7 @@
 		<button type="button" data-tab="plans">配置案</button>
 		<button type="button" data-tab="mapview">マップ確認</button>
 		<button type="button" data-tab="recipe">レシピ</button>
+		<button type="button" data-tab="affix">付与</button>
 		<button type="button" data-tab="recycle">リサイクル</button>
 		<button type="button" data-tab="kobo">ドット絵工房<span class="badge" id="kobo-count" hidden></span></button>
 		<button type="button" data-tab="dot">ドット絵</button>
@@ -1132,6 +1134,8 @@
 					<div class="sub-text" id="rc-mk-call"></div>
 					<label for="rc-mk-name">名前（例：料理人）</label>
 					<input type="text" id="rc-mk-name" maxlength="30">
+					<label for="rc-mk-kind">種類</label>
+					<select id="rc-mk-kind"><option value="0">レシピで作る（料理人・鍛冶屋など）</option><option value="1">鑑定屋（手持ちの未鑑定の装備を鑑定する）</option></select>
 					<label for="rc-mk-talk">話しかけた時の台詞（@1 で改行、@2 で文の終わり）</label>
 					<textarea id="rc-mk-talk" rows="2"></textarea>
 					<label for="rc-mk-done">作ってあげた時の台詞</label>
@@ -1182,6 +1186,64 @@
 		</div>
 	</section>
 
+	<!-- 付与（装備に付く接頭辞・接尾辞） -->
+	<section id="tab-affix" hidden>
+		<p class="sub-text">
+			装備に付く「鋭い」「腐った」「＋1」「の加護」などの付与（接頭辞・接尾辞）を決めます。
+			敵が装備を落とした時に、敵ごとの確率（ステータステンプレートの「付与が付く確率」）で付き、付いた物は<b>未鑑定</b>で落ちます。
+			未鑑定でも装備できますが、効果（強さ・売値）は出ません。鑑定屋（レシピの作り手の種類を「鑑定屋」にして、NPC の台詞を <code>@c</code>＋番号にする）に払うと鑑定済みになります。
+			強さ ＝ 主の値＋主の値×合計%÷100＋合計の固定加算（0〜255）。主の値は武器なら攻撃力、防具・首飾り・指輪なら守備力か魔防（アイテムの付加データ）で、前と後ろの付与は合算します。
+			付与は消せません（派生アイテムが番号で指しているため）。出したくない時は「出やすさ」を 0 にしてください。0 件の間は付与は付きません。
+			保存するとログイン中のプレイヤー全員にすぐ反映されます（変更は「AI連携」の履歴から元に戻せます）。
+		</p>
+		<div class="msg" id="af-msg"></div>
+		<div class="rc-layout">
+			<div class="rc-left">
+				<div class="rc-list" id="af-list"></div>
+				<button type="button" id="af-add">付与を足す</button>
+				<button type="button" class="sub" id="af-reload">読み直す</button>
+			</div>
+			<div class="rc-right">
+				<div class="card rc-card" id="af-card" hidden>
+					<div class="name" id="af-title"></div>
+					<label for="af-name">名前（例：鋭い・腐った・＋1・の加護）</label>
+					<input type="text" id="af-name" maxlength="20">
+					<label for="af-pos">位置</label>
+					<select id="af-pos"><option value="0">名前の前に付く（鋭い黒曜石の剣）</option><option value="1">名前の後ろに付く（黒曜石の剣の加護）</option></select>
+					<div class="sub-text" style="margin-top:10px">付く装備</div>
+					<div>
+						<label><input type="checkbox" id="af-equ0"> 武器</label>
+						<label><input type="checkbox" id="af-equ1"> 鎧</label>
+						<label><input type="checkbox" id="af-equ2"> 盾</label>
+						<label><input type="checkbox" id="af-equ3"> 兜</label>
+						<label><input type="checkbox" id="af-equ4"> 小手</label>
+						<label><input type="checkbox" id="af-equ5"> 靴</label>
+						<label><input type="checkbox" id="af-equ6"> 首飾り</label>
+						<label><input type="checkbox" id="af-equ7"> 指輪</label>
+					</div>
+					<div class="rc-grid" style="margin-top:10px">
+						<label for="af-rate">主の値への％（負も可）</label>
+						<input type="text" id="af-rate" inputmode="numeric" value="0">
+						<label for="af-add">主の値への固定加算（負も可）</label>
+						<input type="text" id="af-add" inputmode="numeric" value="0">
+						<label for="af-dfm">魔防の加算（負も可）</label>
+						<input type="text" id="af-dfm" inputmode="numeric" value="0">
+						<label for="af-rank">格（1〜3。敵の「付与の格の最大」以下だけ出る）</label>
+						<input type="text" id="af-rank" inputmode="numeric" value="1">
+						<label for="af-weight">出やすさ（重み。0 なら出ない）</label>
+						<input type="text" id="af-weight" inputmode="numeric" value="100">
+						<label for="af-gold">売値の倍率％（100＝そのまま）</label>
+						<input type="text" id="af-gold" inputmode="numeric" value="100">
+					</div>
+					<label><input type="checkbox" id="af-bad"> ハズレ印（表示用）</label>
+					<div>
+						<button type="button" id="af-save">保存</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	</section>
+
 	<!-- ログイン中の端末（どのタブでも下に出す） -->
 	<details class="card" id="devices" hidden>
 		<summary>ログイン中の端末</summary>
@@ -1195,6 +1257,7 @@
 <script src="admin-design.js"></script>
 <script src="admin-mapview.js"></script>
 <script src="admin-recipe.js"></script>
+<script src="admin-affix.js"></script>
 <script>
 (function () {
 	/*
@@ -1269,6 +1332,7 @@
 		$('tab-plans').hidden = true;
 		$('tab-mapview').hidden = true;
 		$('tab-recipe').hidden = true;
+		$('tab-affix').hidden = true;
 		$('tab-recycle').hidden = true;
 		$('tab-kobo').hidden = true;
 		setMsg($('login-msg'), text || '');
@@ -1281,7 +1345,7 @@
 		selectTab(location.hash === '#online' ? 'online' : location.hash === '#recover' ? 'recover' : location.hash === '#feedback' ? 'feedback' :
 			location.hash === '#changes' ? 'changes' : location.hash === '#ai' ? 'ai' : location.hash === '#mapdoc' ? 'mapdoc' :
 			location.hash === '#parts' ? 'parts' : location.hash === '#plans' ? 'plans' :
-			(location.hash === '#mapview' || location.hash === '#npcroute') ? 'mapview' : location.hash === '#recipe' ? 'recipe' : location.hash === '#recycle' ? 'recycle' : location.hash === '#dot' ? 'dot' :
+			(location.hash === '#mapview' || location.hash === '#npcroute') ? 'mapview' : location.hash === '#recipe' ? 'recipe' : location.hash === '#affix' ? 'affix' : location.hash === '#recycle' ? 'recycle' : location.hash === '#dot' ? 'dot' :
 			location.hash === '#kobo' ? 'kobo' : 'search');
 		if (location.hash === '#online') {
 			loadEnvStats();
@@ -1297,6 +1361,8 @@
 			openMapView();
 		} else if (location.hash === '#recipe') {
 			openRecipe();
+		} else if (location.hash === '#affix') {
+			openAffix();
 		} else if (location.hash === '#recycle') {
 			loadRecycle();
 		} else if (location.hash === '#kobo') {
@@ -1402,6 +1468,7 @@
 		$('tab-plans').hidden = name !== 'plans';
 		$('tab-mapview').hidden = name !== 'mapview';
 		$('tab-recipe').hidden = name !== 'recipe';
+		$('tab-affix').hidden = name !== 'affix';
 		$('tab-recycle').hidden = name !== 'recycle';
 		$('tab-dot').hidden = name !== 'dot';
 		$('tab-kobo').hidden = name !== 'kobo';
@@ -1436,6 +1503,8 @@
 				openMapView();
 			} else if (b.dataset.tab === 'recipe') {
 				openRecipe();
+			} else if (b.dataset.tab === 'affix') {
+				openAffix();
 			} else if (b.dataset.tab === 'recycle') {
 				loadRecycle();
 			} else if (b.dataset.tab === 'kobo') {
@@ -2125,7 +2194,7 @@
 	/* ---- AI連携 ---- */
 	var AI_KIND = {
 		magic: '特技', magicUser: '特技を使える職業', equUser: '装備できる職業',
-		job: '職業', stTmp: 'ステータステンプレート', item: 'アイテム', maker: '作り手', recipe: 'レシピ', quest: 'ギルドの依頼', flag: 'フラグの名前', talk: '会話データ',
+		job: '職業', stTmp: 'ステータステンプレート', item: 'アイテム', maker: '作り手', recipe: 'レシピ', affix: '付与', quest: 'ギルドの依頼', flag: 'フラグの名前', talk: '会話データ',
 
 		char: 'NPC', map: 'マップ', tiles: 'マス目', mapParts: 'マップパーツ', efc: 'エフェクト', comEfc: '吹き出し', subGame: 'サブゲーム'
 	};
@@ -2670,6 +2739,18 @@
 			return;
 		}
 		window.SboRecipe.open(function (url, body) {
+			body.session = session;
+			return api(url, body);
+		});
+	}
+
+	/* ---- 付与（admin-affix.js が作る） ---- */
+	function openAffix() {
+		if (!window.SboAffix) {
+			setMsg($('af-msg'), '付与のファイル（admin-affix.js）が読めませんでした。');
+			return;
+		}
+		window.SboAffix.open(function (url, body) {
 			body.session = session;
 			return api(url, body);
 		});

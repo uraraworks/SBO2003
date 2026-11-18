@@ -66,7 +66,9 @@ CProcSubGame g_ProcSubGame;											/* サブゲーム処理 */
 CLibInfoItem g_LibInfoItem;											/* アイテム情報 */
 CmyArray<PCHARINFO, PCHARINFO> g_aCharInfo;							/* キャラ情報 */
 CmyArray<PMAPINFO, PMAPINFO> g_aMapInfo;							/* マップ情報 */
-CmyArray<PITEMINFO, PITEMINFO> g_aItemInfo;							/* アイテム情報 */
+CItemInfoArray g_aItemInfo;											/* アイテム情報 */
+CmyArray<PITEMAFFIXINFO, PITEMAFFIXINFO> g_aAffixInfo;				/* 付与表 */
+CmyArray<PITEMDERIVEINFO, PITEMDERIVEINFO> g_aItemDerive;			/* 派生アイテム表 */
 CmyArray<PSTATUSTEMPLATEINFO, PSTATUSTEMPLATEINFO> g_aStTmpInfo;	/* ステータステンプレート情報 */
 CmyArray<PLEAVEINFO, PLEAVEINFO> g_aLeaveInfo;						/* 預かり所情報 */
 CmyArray<PSUBGAMEINFO, PSUBGAMEINFO> g_aSubaGameInfo;				/* サブゲーム情報 */

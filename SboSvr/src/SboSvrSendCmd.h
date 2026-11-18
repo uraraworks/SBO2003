@@ -101,6 +101,10 @@ extern void SendCmdMAKERINFO			(DWORD, WORD);									/* コマンド送信(作�
 extern void SendCmdRECIPEINFO			(DWORD, WORD);									/* コマンド送信(レシピ情報) */
 extern void SendCmdRECIPEINFOALL		(DWORD);										/* コマンド送信(作り手とレシピを全部) */
 extern void SendCmdRECIPEMAKE			(DWORD, BYTE, BYTE, WORD);						/* コマンド送信(作ってもらった結果) */
+extern void SendCmdAFFIXINFO			(DWORD, WORD);									/* コマンド送信(付与表の1行。DWORD は URARASOCK_SENDALL でも可) */
+extern void SendCmdITEMDERIVE			(DWORD, WORD, WORD);							/* コマンド送信(派生表の行。開始の添字・行数) */
+extern void SendCmdAFFIXALL				(DWORD);										/* コマンド送信(付与表と派生表を全部。ログイン時) */
+extern void SendCmdAPPRAISE				(DWORD, BYTE, BYTE, BYTE, DWORD);				/* コマンド送信(鑑定の結果) */
 extern void SendCmdTOWNWARP			(DWORD);										/* コマンド送信(町転送の行き先一覧を本人へ) */
 extern void SendCmdSubBombTime			(BYTE, PSUBGAME_BOMBINFO);						/* サブゲーム用コマンド送信(爆弾ゲーム：残り時間通知) */
 extern void SendCmdSubBOMBINFO			(DWORD, BYTE, PSUBGAME_BOMBINFO);				/* サブゲーム用コマンド送信(爆弾ゲーム：設定) */

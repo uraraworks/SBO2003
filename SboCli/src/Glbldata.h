@@ -263,7 +263,7 @@ extern CmyArray<PWNDINFO, PWNDINFO> g_WndInfo;							/* ウィンドウ情報 */
 extern CmyArray<PCHARINFO, PCHARINFO> g_aCharInfo;						/* キャラ情報 */
 extern CmyArray<PSYSMSGINFO, PSYSMSGINFO> g_SysMsgInfo;					/* システムメッセージ情報 */
 extern CmyArray<PADMINRURAINFO, PADMINRURAINFO> g_AdminRuraInfo;		/* 管理人ルーラ情報 */
-extern CmyArray<PITEMINFO, PITEMINFO> g_aItemInfo;						/* アイテム情報 */
+extern CItemInfoArray g_aItemInfo;										/* アイテム情報（[] は派生番号なら元の番号で引く。common/ItemAffix.h） */
 extern CmyArray<DWORD, DWORD> g_aRecTbl;								/* キャラ情報要求してますテーブル */
 extern CmyArray<PSTATUSTEMPLATEINFO, PSTATUSTEMPLATEINFO> g_aStTmpInfo;	/* ステータステンプレート情報 */
 extern CmyArray<BYTE, BYTE> g_aFadeInOutTbl;							/* フェードイン・アウト予約テーブル */

@@ -344,7 +344,7 @@ void RecyclePut(PCHARINFO pChar, WORD wItemID, BYTE byCount)
 		return;
 	}
 	/* 入れられる品か（手持ちにある・装備中でない・依頼の品や大事な物でない・取引できる） */
-	if ((wItemID == 0) || (wItemID >= (WORD)g_aItemInfo.GetSize ())) {
+	if ((wItemID == 0) || !ItemIDValid (wItemID)) {
 		SendResult (pChar, CMD_RECYCLEPUT, RECYCLERES_NGITEM, wItemID, byCount);
 		return;
 	}

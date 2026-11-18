@@ -2181,7 +2181,7 @@ void KeyProcCOMMANDITEMPROC(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				}
 				/* 捨てられる判定 */
 				if (pItem->byFlg & ITEMFLG_DROP) {
-					wsprintf (szTmp, "%sを捨てるなんてとんでもない！@2", pItem->szName);
+					wsprintf (szTmp, "%sを捨てるなんてとんでもない！@2", ItemNameOf (pChar->waItem[byNo]));
 					pWndTmp = MakeWindowMSG (szTmp, FALSE);
 
 				} else {
@@ -2194,7 +2194,7 @@ void KeyProcCOMMANDITEMPROC(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 					g_WndInfo.Add (pWndTmp);
 					g_dwActiveMsgID = pWndTmp->dwID;
 
-					wsprintf (szTmp, "%sを捨てますか？@2", pItem->szName);
+					wsprintf (szTmp, "%sを捨てますか？@2", ItemNameOf (pChar->waItem[byNo]));
 					pWndTmp2 = MakeWindowMSG (szTmp, FALSE);
 					pWndTmp2->pParent = pWndTmp;
 					pWndTmp->pChild = pWndTmp2;
@@ -2886,6 +2886,155 @@ void KeyProcCOMMANDSTATUS(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 }
 
 /* ========================================================================= */
+/* 関数名：	KeyProcAPPRAISE													 */
+/* 内容：	キー入力処理(鑑定屋：未鑑定の持ち物の一覧・確認)				 */
+/*			一覧：上下で選び、決定で確認へ、取消で閉じる					 */
+/*			確認：はい→鑑定要求を出す、いいえ・取消→一覧へ戻る				 */
+/* ========================================================================= */
+static void KeyProcAPPRAISE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
+{
+	DWORD dwTime = 250;
+	PWNDINFO pWndList = NULL;
+	int i, anList[MAX_MYITEM], nCount;
+
+	if (pWnd->byRepeate > 1) {
+		dwTime = 125;
+	}
+	if ((g_nProcMakerID < 0) || (g_nProcMakerID >= MAX_MAKER)) {
+		EraseWindow (pWnd);
+		g_bDraw = TRUE;
+		return;
+	}
+	for (i = 0; i < g_WndInfo.GetSize (); i ++) {
+		if ((g_WndInfo[i]->nType == WNDTYPE_MAKER) && (g_WndInfo[i]->nType2 == MAKERWND_APPRAISE)) {
+			pWndList = g_WndInfo[i];
+			break;
+		}
+	}
+	if (pWndList == NULL) {
+		EraseWindow (pWnd);
+		g_bDraw = TRUE;
+		return;
+	}
+	nCount = AppraiseGetList (anList, MAX_MYITEM);
+
+	/* 鑑定要求の返事待ち（一定時間たったらあきらめる） */
+	if (g_bProcMakerWait) {
+		if (timeGetTime () > g_dwProcMakerWaitTime + MAKER_WAITMAX) {
+			g_bProcMakerWait = FALSE;
+			MakerSetMsg (pWndList, "うまく伝わらなかったようです。もう一度お願いします。@2");
+			g_dwActiveMsgID = pWndList->dwID;
+			g_bDraw = TRUE;
+		}
+		return;
+	}
+
+	if ((byEvent == KEY_UP) && (byCode == 'B')) {
+		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
+		if (pWnd->nType2 == MAKERWND_APPRAISE_CONF) {
+			EraseWindow (pWnd);
+			MakerSetMsg (pWndList, "どれを鑑定しましょうか？@2");
+			g_dwActiveMsgID = pWndList->dwID;
+			pWndList->dwTimeDrawStart = 0;
+		} else {
+			EraseWindow (pWnd);
+		}
+		g_bDraw = TRUE;
+
+	} else if ((byEvent == KEY_UP) && (byCode == 'A') && (g_bEnableMove)) {
+		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
+		pWnd->dwTimeDrawStart = 0;
+		pWnd->byAnime = 1;
+
+		if (pWnd->nType2 == MAKERWND_APPRAISE) {
+			int nIndex = (int)pWnd->byData1 + pWnd->nData1;
+			if ((nIndex < 0) || (nIndex >= nCount)) {
+				return;
+			}
+			WORD wID = g_aCharInfo[g_nMyCharID]->waItem[anList[nIndex]];
+			DWORD dwCost = AppraiseCost (wID);
+			char szTmp[256];
+
+			if (g_aCharInfo[g_nMyCharID]->dwGold < dwCost) {
+				MakerSetMsg (pWnd, "代金が足りないようです。@2");
+				g_dwActiveMsgID = pWnd->dwID;
+				g_bDraw = TRUE;
+				return;
+			}
+			wsprintf (szTmp, "%sを鑑定してもらいますか？@1代金は%dGです。@2", ItemNameOf (wID), (int)dwCost);
+			MakerSetMsg (pWnd, szTmp);
+
+			PWNDINFO pWndConf = MakeWindowMAKER_CONF (-1);
+			pWndConf->nType2 = MAKERWND_APPRAISE_CONF;
+			pWndConf->dwData = (DWORD)anList[nIndex];
+			g_WndInfo.Add (pWndConf);
+			g_dwActiveMsgID = pWndConf->dwID;
+
+		} else {
+			int nNo = (int)pWnd->dwData;
+			BOOL bYes = (pWnd->nData1 == 0);
+
+			EraseWindow (pWnd);
+			g_dwActiveMsgID = pWndList->dwID;
+			if (bYes && (nNo >= 0) && (nNo < MAX_MYITEM)) {
+				SendCmdAPPRAISE ((BYTE)g_nProcMakerID, (BYTE)nNo);
+				g_bProcMakerWait = TRUE;
+				g_dwProcMakerWaitTime = timeGetTime ();
+				MakerSetMsg (pWndList, "少々お待ちください。@2");
+			} else {
+				MakerSetMsg (pWndList, "どれを鑑定しましょうか？@2");
+			}
+			pWndList->dwTimeDrawStart = 0;
+		}
+		g_bDraw = TRUE;
+
+	} else if ((byEvent == KEY_DOWN) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
+		BOOL bMove = FALSE;
+
+		if (pWnd->nType2 == MAKERWND_APPRAISE_CONF) {
+			if ((byCode == VK_UP) && (pWnd->nData1 > 0)) {
+				pWnd->nData1 --;
+				bMove = TRUE;
+			} else if ((byCode == VK_DOWN) && (pWnd->nData1 < pWnd->nData2 - 1)) {
+				pWnd->nData1 ++;
+				bMove = TRUE;
+			}
+		} else {
+			int nIndex = (int)pWnd->byData1 + pWnd->nData1;
+			int nIndexNew = nIndex;
+
+			if ((byCode == VK_UP) && (nIndex > 0)) {
+				nIndexNew = nIndex - 1;
+			} else if ((byCode == VK_DOWN) && (nIndex < nCount - 1)) {
+				nIndexNew = nIndex + 1;
+			} else if (byCode == VK_LEFT) {
+				nIndexNew = 0;
+			} else if (byCode == VK_RIGHT) {
+				nIndexNew = max (nCount - 1, 0);
+			}
+			if (nIndexNew != nIndex) {
+				MakerScrollFit (pWnd, nIndexNew, nCount);
+				bMove = TRUE;
+			}
+		}
+
+		if (bMove) {
+			pWnd->dwTime = timeGetTime ();
+			pWnd->byAnime = 1;
+			pWnd->byRepeate ++;
+			pWnd->dwTimeKey = timeGetTime ();
+			pWnd->dwTimeDrawStart = 0;
+			g_bDraw = TRUE;
+		}
+
+	} else if (byEvent == KEY_UP) {
+		pWnd->dwTimeKey = timeGetTime () - 250;
+		pWnd->byRepeate = 0;
+		g_bDraw = TRUE;
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：	KeyProcMAKER													 */
 /* 内容：	キー入力処理(作り手（レシピ）：作れる物の一覧・確認)			 */
 /*			一覧：上下で選び、決定で確認へ、取消で閉じる					 */
@@ -2893,6 +3042,11 @@ void KeyProcCOMMANDSTATUS(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 /* ========================================================================= */
 void KeyProcMAKER(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 {
+	if ((pWnd->nType2 == MAKERWND_APPRAISE) || (pWnd->nType2 == MAKERWND_APPRAISE_CONF)) {
+		KeyProcAPPRAISE (pWnd, byEvent, byCode);
+		return;
+	}
+
 	DWORD dwTime = 250;
 	PWNDINFO pWndList = NULL;
 	int i, nNo;
@@ -2977,9 +3131,9 @@ void KeyProcMAKER(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			}
 
 			if (pRecipe->byCount > 1) {
-				wsprintf (szTmp, "%sを%d個、作ってもらいますか？@1手数料は%dGです。@2", pItem->szName, (int)pRecipe->byCount, (int)pRecipe->dwGold);
+				wsprintf (szTmp, "%sを%d個、作ってもらいますか？@1手数料は%dGです。@2", ItemNameOf (pRecipe->wItem), (int)pRecipe->byCount, (int)pRecipe->dwGold);
 			} else {
-				wsprintf (szTmp, "%sを作ってもらいますか？@1手数料は%dGです。@2", pItem->szName, (int)pRecipe->dwGold);
+				wsprintf (szTmp, "%sを作ってもらいますか？@1手数料は%dGです。@2", ItemNameOf (pRecipe->wItem), (int)pRecipe->dwGold);
 			}
 			MakerSetMsg (pWnd, szTmp);
 
@@ -3587,7 +3741,7 @@ void KeyProcSHOP(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 
 				char szMsgTmp[2048];
 				PITEMINFO pItem = g_aItemInfo[pShop->awItem[nTmp]];
-				wsprintf (szMsgTmp, pShop->apMsg[SHOPMSG_BUYCONF], pItem->szName, pItem->dwGold);
+				wsprintf (szMsgTmp, pShop->apMsg[SHOPMSG_BUYCONF], ItemNameOf (pShop->awItem[nTmp]), pItem->dwGold);
 				ShopAddEquWarn (szMsgTmp, sizeof (szMsgTmp), pItem, pChar);
 				pWndNew = MakeWindowMSG (szMsgTmp, TRUE);
 				pWndNew->pParent = pWndTmp;
@@ -3638,7 +3792,7 @@ void KeyProcSHOP(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			/* 初回表示？ */
 			if (g_bProcShopConfirm == FALSE) {
 				PITEMINFO pItem = g_aItemInfo[pChar->waItem[nTmp]];
-				DWORD dwTmp = pItem->dwGold / 4;
+				DWORD dwTmp = ItemGoldOf (pChar->waItem[nTmp]) / 4;
 				int i;
 
 				/* 装備しているかチェック */
@@ -3648,7 +3802,7 @@ void KeyProcSHOP(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 					}
 				}
 				/* 価値が無い？ */
-				if ((pItem->dwGold == 0) ||
+				if ((ItemGoldOf (pChar->waItem[nTmp]) == 0) ||
 				/* 捨てられない */
 					(pItem->byFlg & ITEMFLG_DROP)) {
 					pWndTmp = MakeWindowSHOP (g_nProcShopID, SHOPMSG_SELLNO);
@@ -3663,7 +3817,7 @@ void KeyProcSHOP(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 					g_nProcShopSelect = nTmp;
 
 					dwTmp = max (dwTmp, 1);
-					wsprintf (szMsgTmp, pShop->apMsg[SHOPMSG_SELLCONF], pItem->szName, dwTmp);
+					wsprintf (szMsgTmp, pShop->apMsg[SHOPMSG_SELLCONF], ItemNameOf (pChar->waItem[nTmp]), dwTmp);
 					pWndNew = MakeWindowMSG (szMsgTmp, TRUE);
 					pWndNew->pParent = pWndTmp;
 					pWndTmp->pChild = pWndNew;
@@ -3680,7 +3834,7 @@ void KeyProcSHOP(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				PITEMINFO pItem = g_aItemInfo[pChar->waItem[g_nProcShopSelect]];
 				/* はい */
 				if (nTmp == 0) {
-					DWORD dwTmp = pItem->dwGold / 4;
+					DWORD dwTmp = ItemGoldOf (pChar->waItem[g_nProcShopSelect]) / 4;
 					dwTmp = max (dwTmp, 1);
 					SendCmdDROPITEM (g_nProcShopSelect, dwTmp, pChar->waItem[g_nProcShopSelect]);
 					pWndTmp = MakeWindowSHOP (g_nProcShopID, SHOPMSG_SELLCLOSE);
@@ -3799,7 +3953,7 @@ void KeyProcSHOPSELL(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 
 				char szMsgTmp[2048];
 				PITEMINFO pItem = g_aItemInfo[pShop->awItem[nTmp]];
-				wsprintf (szMsgTmp, pShop->apMsg[SHOPMSG_BUYCONF], pItem->szName, pItem->dwGold);
+				wsprintf (szMsgTmp, pShop->apMsg[SHOPMSG_BUYCONF], ItemNameOf (pShop->awItem[nTmp]), pItem->dwGold);
 				ShopAddEquWarn (szMsgTmp, sizeof (szMsgTmp), pItem, pChar);
 				pWndNew = MakeWindowMSG (szMsgTmp, TRUE);
 				pWndNew->pParent = pWndTmp;
@@ -4392,7 +4546,7 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			{
 				int nNo = pWnd->nData1 + pWnd->byData1;
 				if ((nNo >= g_pLeaveInfo->byCount) || (nNo >= MAX_LEAVEITEM) ||
-						(g_pLeaveInfo->waItem[nNo] >= g_aItemInfo.GetSize ())) {
+						!ItemIDValid (g_pLeaveInfo->waItem[nNo])) {
 					break;
 				}
 				EraseWindow (pWnd);
@@ -4416,12 +4570,12 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				switch (pWnd->nData1) {
 				case 0:		/* 売る */
 					/* 値打ちの無い品は売れない（灰色の時は何もしない） */
-					if (pItem->dwGold == 0) {
+					if (ItemGoldOf (g_pLeaveInfo->waItem[g_nProcShopSelect]) == 0) {
 						break;
 					}
 					EraseWindow (pWnd);
 					/* もうお金を持てない？ */
-					if (pChar->dwGold + max (pItem->dwGold / 4, (DWORD)1) > 999999) {
+					if (pChar->dwGold + max (ItemGoldOf (g_pLeaveInfo->waItem[g_nProcShopSelect]) / 4, (DWORD)1) > 999999) {
 						pWndTmp = MakeWindowLEAVE (9);
 						break;
 					}
@@ -5590,7 +5744,7 @@ void KeyProcCONF(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				case IDCONFIRMTYPE_DROP:		/* 捨てる確認 */
 					EraseWindow ((PWNDINFO)g_WndInfo[GetWindowID (g_dwMsgIDCommand)]);
 
-					wsprintf (szTmp, "%sは%sを捨てました。@2", pChar->szName, pItem->szName);
+					wsprintf (szTmp, "%sは%sを捨てました。@2", pChar->szName, ItemNameOf (pChar->waItem[pWnd->byData1]));
 					SendCmdDROPITEM (pWnd->byData1, 0, pChar->waItem[pWnd->byData1]);
 
 					pWndTmp = MakeWindowMSG (szTmp, FALSE);
@@ -8837,6 +8991,21 @@ void CmdProcHanasu(PWNDINFO pWnd)
 			/* 作り手が登録されていない */
 			pWndTmp = MakeWindowMSG ("返事がないようです。@2", FALSE);
 
+		} else if (g_aMakerInfo[nMaker].byKind == MAKERKIND_APPRAISE) {
+			/* 鑑定屋：手持ちの未鑑定の物を選ぶ */
+			int anAppr[MAX_MYITEM];
+			if (AppraiseGetList (anAppr, MAX_MYITEM) == 0) {
+				pWndTmp = MakeWindowMSG ("鑑定してほしい物がないようです。@2", TRUE);
+			} else {
+				g_WndInfo.Add (MakeWindowGOLD ());
+				PWNDINFO pWndList = MakeWindowAPPRAISE (nMaker);
+				g_WndInfo.Add (pWndList);
+				MakerSetMsg (pWndList, g_aMakerInfo[nMaker].szMsgTalk[0] ? g_aMakerInfo[nMaker].szMsgTalk : "どれを鑑定しましょうか？@2");
+				g_dwActiveMsgID = pWndList->dwID;
+				g_bDraw = TRUE;
+				pWndTmp = NULL;
+			}
+
 		} else if (MakerGetRecipeList (nMaker, anList, MAX_RECIPE) == 0) {
 			/* 作れる物が無い */
 			pWndTmp = MakeWindowMSG ("今は作れる物がないようです。@2", TRUE);
@@ -10054,14 +10223,14 @@ BOOL GetMagicKeySlotLabel(PCHARINFO pChar, int nNo, LPSTR pszName, int nSize, in
 		PITEMINFO pItem;
 		int nEqu;
 
-		if (wItemID >= g_aItemInfo.GetSize ()) {
+		if (!ItemIDValid (wItemID)) {
 			return FALSE;
 		}
 		pItem = g_aItemInfo[wItemID];
 		nEqu = GetItemEquSlot (pItem);
-		nLen = SboTextFitWidth (pItem->szName, 4);		/* 全角2文字 */
+		nLen = SboTextFitWidth (ItemNameOf (wItemID), 4);		/* 全角2文字 */
 		nLen = min (nLen, nSize - 1);
-		CopyMemory (pszName, pItem->szName, nLen);
+		CopyMemory (pszName, ItemNameOf (wItemID), nLen);
 		pszName[nLen] = 0;
 		*pnKind = (nEqu >= 0) ? 3 : 4;
 		*pbDark = (FindItemInHand (pChar, wItemID) < 0);
@@ -10363,7 +10532,7 @@ void RegisterItemKey(int nNo, WORD wItemID)
 	int i;
 	PITEMINFO pItem;
 
-	if ((nNo < 0) || (nNo >= MAX_MAGICKEY) || (wItemID == 0) || (wItemID >= g_aItemInfo.GetSize ())) {
+	if ((nNo < 0) || (nNo >= MAX_MAGICKEY) || (wItemID == 0) || !ItemIDValid (wItemID)) {
 		return;
 	}
 	pItem = g_aItemInfo[wItemID];
@@ -10375,7 +10544,7 @@ void RegisterItemKey(int nNo, WORD wItemID)
 	if (g_awKeyItem[nNo] == wItemID) {
 		g_awKeyItem[nNo] = 0;
 		SendCmdMAGICKEY ((BYTE)nNo, 0, 0);
-		_snprintf (szMsg, sizeof (szMsg) - 1, "%d から %s を外しました。", nNo + 1, pItem->szName);
+		_snprintf (szMsg, sizeof (szMsg) - 1, "%d から %s を外しました。", nNo + 1, ItemNameOf (wItemID));
 	} else {
 		for (i = 0; i < MAX_MAGICKEY; i ++) {
 			if (g_awKeyItem[i] == wItemID) {
@@ -10385,7 +10554,7 @@ void RegisterItemKey(int nNo, WORD wItemID)
 		g_abyMagicKey[nNo] = 0;		/* 特技が入っていた枠は置き換え */
 		g_awKeyItem[nNo] = wItemID;
 		SendCmdMAGICKEY ((BYTE)nNo, 0, wItemID);
-		_snprintf (szMsg, sizeof (szMsg) - 1, "%d に %s を登録しました。", nNo + 1, pItem->szName);
+		_snprintf (szMsg, sizeof (szMsg) - 1, "%d に %s を登録しました。", nNo + 1, ItemNameOf (wItemID));
 	}
 	szMsg[sizeof (szMsg) - 1] = 0;
 	AddSysMsg (szMsg, RGB (255, 255, 255));
@@ -10432,7 +10601,7 @@ void PruneItemKeys(PCHARINFO pChar)
 	for (i = 0; i < MAX_MAGICKEY; i ++) {
 		if ((g_awKeyItem[i] != 0) && (FindItemInHand (pChar, g_awKeyItem[i]) < 0)) {
 			char szMsg[128];
-			LPCSTR pszName = (g_awKeyItem[i] < g_aItemInfo.GetSize ()) ? g_aItemInfo[g_awKeyItem[i]]->szName : "";
+			LPCSTR pszName = ItemIDValid (g_awKeyItem[i]) ? ItemNameOf (g_awKeyItem[i]) : "";
 
 			_snprintf (szMsg, sizeof (szMsg) - 1, "%s が無くなったので %d から外しました。", pszName, i + 1);
 			szMsg[sizeof (szMsg) - 1] = 0;
@@ -10465,7 +10634,7 @@ void UseItemKey(PCHARINFO pChar, int nNo)
 		return;
 	}
 	wItemID = g_awKeyItem[nNo];
-	if ((wItemID == 0) || (wItemID >= g_aItemInfo.GetSize ())) {
+	if ((wItemID == 0) || !ItemIDValid (wItemID)) {
 		return;
 	}
 	pItem = g_aItemInfo[wItemID];
@@ -10481,13 +10650,13 @@ void UseItemKey(PCHARINFO pChar, int nNo)
 		WORD wNow = pChar->waEqu[nEqu];
 
 		if ((wNow < MAX_MYITEM) && (pChar->waItem[wNow] == wItemID)) {
-			_snprintf (szMsg, sizeof (szMsg) - 1, "%s はすでに装備しています。", pItem->szName);
+			_snprintf (szMsg, sizeof (szMsg) - 1, "%s はすでに装備しています。", ItemNameOf (wItemID));
 			szMsg[sizeof (szMsg) - 1] = 0;
 			AddSysMsg (szMsg, RGB (255, 255, 255));
 			return;
 		}
 		if (!CanEquipItem (pChar, pItem)) {
-			_snprintf (szMsg, sizeof (szMsg) - 1, "%s は今は装備できません。", pItem->szName);
+			_snprintf (szMsg, sizeof (szMsg) - 1, "%s は今は装備できません。", ItemNameOf (wItemID));
 			szMsg[sizeof (szMsg) - 1] = 0;
 			AddSysMsg (szMsg, RGB (255, 255, 255));
 			return;
@@ -10499,7 +10668,7 @@ void UseItemKey(PCHARINFO pChar, int nNo)
 		pChar->waEqu[nEqu] = (WORD)nHand;
 		RenewATDF (g_nMyCharID);
 		SendCmdCHGEQU (g_nMyCharID, (BYTE)nEqu);
-		_snprintf (szMsg, sizeof (szMsg) - 1, "%s に持ち替えました。", pItem->szName);
+		_snprintf (szMsg, sizeof (szMsg) - 1, "%s に持ち替えました。", ItemNameOf (wItemID));
 		szMsg[sizeof (szMsg) - 1] = 0;
 		AddSysMsg (szMsg, RGB (255, 255, 255));
 		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);

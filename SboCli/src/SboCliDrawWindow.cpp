@@ -1308,7 +1308,7 @@ void DrawWindowCOMMANDITEM(PWNDINFO pWnd)
 			break;
 		}
 		PITEMINFO pItem = g_aItemInfo[pChar->waItem[nNo]];
-		wsprintf (szTmp, "%s", pItem->szName);
+		wsprintf (szTmp, "%s", ItemNameOf (pChar->waItem[nNo]));
 		TextOut2 (hDC, 32, 16 + i * 16, szTmp,
 				((pWnd->dwData != 0) && ((int)pWnd->dwData - 1 == nNo)) ? RGB (255, 255, 0) : RGB (255, 255, 255));
 
@@ -1540,7 +1540,7 @@ void DrawWindowSHOP_BUY(PWNDINFO pWnd)
 	char szTmp[128];
 	for (int i = 0; i < pShop->byCountItem; i ++) {
 		PITEMINFO pItem = g_aItemInfo[pShop->awItem[i]];
-		wsprintf (szTmp, "%s", pItem->szName);
+		wsprintf (szTmp, "%s", ItemNameOf (pShop->awItem[i]));
 		TextOut2 (hDC, 32, 16 + i * 16, szTmp, clText);
 
 		wsprintf (szTmp, "%6dG", pItem->dwGold);
@@ -1583,7 +1583,7 @@ void DrawWindowSHOP_SELL(PWNDINFO pWnd)
 			break;
 		}
 		PITEMINFO pItem = g_aItemInfo[pChar->waItem[nNo]];
-		wsprintf (szTmp, "%s", pItem->szName);
+		wsprintf (szTmp, "%s", ItemNameOf (pChar->waItem[nNo]));
 		TextOut2 (hDC, 32, 16 + i * 16, szTmp, RGB (255, 255, 255));
 
 		for (int j = 0; j < 10; j ++) {
@@ -1837,8 +1837,9 @@ void DrawWindowCOMMANDEQU(PWNDINFO pWnd)
 		if (pWndSub->nData1 == pWndSub->nData2 - 1) {
 			wsprintf (szTmp, "%3d", pChar->byPW);
 		} else {
-			pItem = g_aItemInfo[pChar->waItem[GetItemCountTypeNoEqu (g_nMyCharID, ITEMTYPE_WEAPON, pWndSub->nData1)]];
-			wsprintf (szTmp, "%3d", pChar->byPW + pItem->byData);
+			WORD wWeapon = pChar->waItem[GetItemCountTypeNoEqu (g_nMyCharID, ITEMTYPE_WEAPON, pWndSub->nData1)];
+			pItem = g_aItemInfo[wWeapon];
+			wsprintf (szTmp, "%3d", pChar->byPW + ItemValueOf (wWeapon));
 		}
 		TextOut2 (hDC, 124 + 2, 16 + 16 * 2, szTmp, RGB (255, 255, 255));
 
@@ -1875,7 +1876,7 @@ void DrawWindowCOMMANDEQU(PWNDINFO pWnd)
 				continue;
 			}
 			if (i == GetItemCountTypeNoEqu (g_nMyCharID, byType, pWndSub->nData1)) {
-				nTmp += pItem->byData;
+				nTmp += ItemValueOf (pChar->waItem[i]);
 				continue;
 			}
 			if (byType == pItem->byType) {
@@ -1884,7 +1885,7 @@ void DrawWindowCOMMANDEQU(PWNDINFO pWnd)
 			for (int j = 0; j < 9; j ++) {
 				if (i == pChar->waEqu[j]) {
 					if (byType != pItem->byType) {
-						nTmp += pItem->byData;
+						nTmp += ItemValueOf (pChar->waItem[i]);
 						break;
 					}
 				}
@@ -1898,7 +1899,7 @@ void DrawWindowCOMMANDEQU(PWNDINFO pWnd)
 	for (i = 0; i < 9; i ++) {
 		if (pChar->waEqu[i] != 0xFFFF) {
 			pItem = g_aItemInfo[pChar->waItem[pChar->waEqu[i]]];
-			wsprintf (szTmp, "%s", pItem->szName);
+			wsprintf (szTmp, "%s", ItemNameOf (pChar->waItem[pChar->waEqu[i]]));
 			TextOut2 (hDC, 32, 16 * (9 + i), szTmp, RGB (255, 255, 255));
 
 			RECT rect;
@@ -2108,7 +2109,7 @@ void DrawWindowCOMMANDEQUSUB(PWNDINFO pWnd)
 			continue;
 		}
 
-		wsprintf (szTmp, "%s", pItem->szName);
+		wsprintf (szTmp, "%s", ItemNameOf (pChar->waItem[i]));
 		TextOut2 (hDC, 32, nY, szTmp, RGB (255, 255, 255));
 
 		if (pChar->waEqu[pWnd->byData1] == i) {
@@ -2331,7 +2332,7 @@ void DrawWindowCOMMANDEQUSELECT(PWNDINFO pWnd)
 			continue;
 		}
 
-		wsprintf (szTmp, "%s", pItem->szName);
+		wsprintf (szTmp, "%s", ItemNameOf (pChar->waItem[i]));
 		TextOut2 (hDC, 32, nY, szTmp, RGB (255, 255, 255));
 
 		BYTE byTmp;
@@ -2422,7 +2423,7 @@ void DrawWindowCOMMANDEQU2(PWNDINFO pWnd)
 		}
 		if (pChar->waEqu[i] != 0xFFFF) {
 			pItem = g_aItemInfo[pChar->waItem[pChar->waEqu[i]]];
-			wsprintf (szTmp2, "%s%s", szTmp, pItem->szName);
+			wsprintf (szTmp2, "%s%s", szTmp, ItemNameOf (pChar->waItem[pChar->waEqu[i]]));
 		} else {
 			strcpy (szTmp2, szTmp);
 		}
@@ -2615,7 +2616,7 @@ void DrawWindowLEAVE_ITEM(PWNDINFO pWnd)
 			break;
 		}
 		PITEMINFO pItem = g_aItemInfo[pChar->waItem[nNo]];
-		wsprintf (szTmp, "%s", pItem->szName);
+		wsprintf (szTmp, "%s", ItemNameOf (pChar->waItem[nNo]));
 		TextOut2 (hDC, 32, 16 + i * 16, szTmp, RGB (255, 255, 255));
 
 		for (int j = 0; j < 10; j ++) {
@@ -2653,14 +2654,14 @@ void DrawWindowLEAVE_ITEMGET(PWNDINFO pWnd)
 	/* 窓の幅は預かっている全部の品の中で一番長い名前に合わせる */
 	/* （見えている行だけで決めるとスクロールのたびに幅が変わってガタガタするため） */
 	for (i = 0; (i < (int)g_pLeaveInfo->byCount) && (i < MAX_LEAVEITEM); i ++) {
-		if (g_pLeaveInfo->waItem[i] >= g_aItemInfo.GetSize ()) {
+		if (!ItemIDValid (g_pLeaveInfo->waItem[i])) {
 			continue;
 		}
 		PITEMINFO pItem = g_aItemInfo[g_pLeaveInfo->waItem[i]];
 		if (g_pLeaveInfo->byItemCount[i] > 1) {
-			wsprintf (szTmp, "%s(%d)", pItem->szName, g_pLeaveInfo->byItemCount[i]);
+			wsprintf (szTmp, "%s(%d)", ItemNameOf (g_pLeaveInfo->waItem[i]), g_pLeaveInfo->byItemCount[i]);
 		} else {
-			wsprintf (szTmp, "%s", pItem->szName);
+			wsprintf (szTmp, "%s", ItemNameOf (g_pLeaveInfo->waItem[i]));
 		}
 		if (SboTextWidth (szTmp) > nLen) {
 			nLen = SboTextWidth (szTmp);
@@ -2671,7 +2672,7 @@ void DrawWindowLEAVE_ITEMGET(PWNDINFO pWnd)
 		if (i + nNo >= g_pLeaveInfo->byCount) {
 			break;
 		}
-		if (g_pLeaveInfo->waItem[i + nNo] >= g_aItemInfo.GetSize ()) {
+		if (!ItemIDValid (g_pLeaveInfo->waItem[i + nNo])) {
 			break;
 		}
 	}
@@ -2705,9 +2706,9 @@ void DrawWindowLEAVE_ITEMGET(PWNDINFO pWnd)
 		}
 		PITEMINFO pItem = g_aItemInfo[g_pLeaveInfo->waItem[i + nNo]];
 		if (g_pLeaveInfo->byItemCount[i + nNo] > 1) {
-			wsprintf (szTmp, "%s(%d)", pItem->szName, g_pLeaveInfo->byItemCount[i + nNo]);
+			wsprintf (szTmp, "%s(%d)", ItemNameOf (g_pLeaveInfo->waItem[i + nNo]), g_pLeaveInfo->byItemCount[i + nNo]);
 		} else {
-			wsprintf (szTmp, "%s", pItem->szName);
+			wsprintf (szTmp, "%s", ItemNameOf (g_pLeaveInfo->waItem[i + nNo]));
 		}
 		if (SboTextWidth (szTmp) > nLen) {
 			nLen = SboTextWidth (szTmp);
@@ -2783,7 +2784,7 @@ void DrawWindowLEAVE_DISPOSEMENU(PWNDINFO pWnd)
 	BOOL bSell = TRUE;
 	if (g_pLeaveInfo && (g_nProcShopSelect >= 0) && (g_nProcShopSelect < g_pLeaveInfo->byCount)) {
 		WORD wItem = g_pLeaveInfo->waItem[g_nProcShopSelect];
-		if ((wItem < g_aItemInfo.GetSize ()) && (g_aItemInfo[wItem]->dwGold == 0)) {
+		if (ItemIDValid (wItem) && (ItemGoldOf (wItem) == 0)) {
 			bSell = FALSE;
 		}
 	}
@@ -2822,8 +2823,8 @@ void DrawWindowLEAVE_DISPOSECOUNT(PWNDINFO pWnd)
 		DWORD dwSell = 1;
 		if (g_pLeaveInfo && (g_nProcShopSelect >= 0) && (g_nProcShopSelect < g_pLeaveInfo->byCount)) {
 			WORD wItem = g_pLeaveInfo->waItem[g_nProcShopSelect];
-			if (wItem < g_aItemInfo.GetSize ()) {
-				dwSell = max (g_aItemInfo[wItem]->dwGold / 4, (DWORD)1);
+			if (ItemIDValid (wItem)) {
+				dwSell = max (ItemGoldOf (wItem) / 4, (DWORD)1);
 			}
 		}
 		wsprintf (szTmp, "%7uG", dwSell * pWnd->nData1);
@@ -2925,7 +2926,7 @@ void DrawWindowTRADE(PWNDINFO pWnd)
 			break;
 		}
 		PITEMINFO pItem = g_aItemInfo[pChar->waItem[g_pTradeInfo->waItem1[i]]];
-		wsprintf (szTmp, "%s", pItem->szName);
+		wsprintf (szTmp, "%s", ItemNameOf (pChar->waItem[g_pTradeInfo->waItem1[i]]));
 		TextOut2 (hDC, 32, 80 + i * 16, szTmp, RGB (255, 255, 255));
 	}
 	if (i < MAX_MYITEM) {
@@ -2948,7 +2949,7 @@ void DrawWindowTRADE(PWNDINFO pWnd)
 			break;
 		}
 		PITEMINFO pItem = g_aItemInfo[pCharTrade->waItem[g_pTradeInfo->waItem2[i]]];
-		wsprintf (szTmp, "%s", pItem->szName);
+		wsprintf (szTmp, "%s", ItemNameOf (pCharTrade->waItem[g_pTradeInfo->waItem2[i]]));
 		TextOut2 (hDC, 32 + 16 * 12, 80 + i * 16, szTmp, RGB (255, 255, 255));
 	}
 
@@ -2994,7 +2995,7 @@ void DrawWindowTRADEITEM(PWNDINFO pWnd)
 			break;
 		}
 		PITEMINFO pItem = g_aItemInfo[pChar->waItem[nNo]];
-		wsprintf (szTmp, "%s", pItem->szName);
+		wsprintf (szTmp, "%s", ItemNameOf (pChar->waItem[nNo]));
 		COLORREF cl = RGB (255, 255, 255);
 		for (j = 0; j < MAX_MYITEM; j ++) {
 			if (nNo == g_pTradeInfo->waItem1[j]) {
@@ -4167,7 +4168,7 @@ void DrawWindowITEMEQU(PWNDINFO pWnd)
 			continue;
 		}
 		PITEMINFO pItem = g_aItemInfo[pChar->waItem[pChar->waEqu[i]]];
-		nLenTmp = SboTextWidth (pItem->szName);
+		nLenTmp = SboTextWidth (ItemNameOf (pChar->waItem[pChar->waEqu[i]]));
 		nLen = max (nLen, nLenTmp);
 	}
 	if (nLen % 2) {
@@ -4191,7 +4192,7 @@ void DrawWindowITEMEQU(PWNDINFO pWnd)
 	for (i = 0; i < MAX_EQUTYPE; i ++) {
 		if (pChar->waEqu[i] != 0xFFFF) {
 			pItem = g_aItemInfo[pChar->waItem[pChar->waEqu[i]]];
-			wsprintf (szTmp, "%s", pItem->szName);
+			wsprintf (szTmp, "%s", ItemNameOf (pChar->waItem[pChar->waEqu[i]]));
 			TextOut2 (hDC, 32, 16 * (1 + i), szTmp, RGB (255, 255, 255));
 
 			GetSystemGrpRect (pItem->byType, &rect);
@@ -4449,6 +4450,49 @@ void DrawWindowSUBSUGOROKU_IDLE(PWNDINFO pWnd)
 }
 
 /* ========================================================================= */
+/* 関数名：DrawWindowAPPRAISE												 */
+/* 内容：ウィンドウの描画(鑑定屋：未鑑定の持ち物の一覧と代金)				 */
+/* ========================================================================= */
+static void DrawWindowAPPRAISE(PWNDINFO pWnd)
+{
+	int anList[MAX_MYITEM], nCount, i, nIndex;
+	char szTmp[128];
+
+	if ((g_nProcMakerID < 0) || (g_nProcMakerID >= MAX_MAKER)) {
+		return;
+	}
+	nCount = AppraiseGetList (anList, MAX_MYITEM);
+
+	if (pWnd->dwTimeDrawStart) {
+		DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
+		return;
+	}
+
+	DrawWindowFrame (pWnd);
+	HDC hDC = pWnd->pDib->Lock ();
+	HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFontBasic);
+	SetBkMode (hDC, TRANSPARENT);
+
+	for (i = 0; i < pWnd->nData2; i ++) {
+		nIndex = (int)pWnd->byData1 + i;
+		if (nIndex >= nCount) {
+			break;
+		}
+		WORD wID = g_aCharInfo[g_nMyCharID]->waItem[anList[nIndex]];
+		COLORREF clText = (g_aCharInfo[g_nMyCharID]->dwGold >= AppraiseCost (wID)) ? RGB (255, 255, 255) : RGB (150, 150, 150);
+		TextOut2 (hDC, 32, 16 + i * 16, (char *)ItemNameOf (wID), clText);
+		wsprintf (szTmp, "%dG", (int)AppraiseCost (wID));
+		TextOut2 (hDC, pWnd->nCx - 16 - SboTextWidth (szTmp) * 8, 16 + i * 16, szTmp, clText);
+	}
+
+	SelectObject (hDC, hFontOld);
+	pWnd->pDib->Unlock ();
+	pWnd->dwTimeDrawStart = timeGetTime ();
+
+	DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
+}
+
+/* ========================================================================= */
 /* 関数名：DrawWindowMAKER													 */
 /* 内容：ウィンドウの描画(作り手（レシピ）：作れる物の一覧・確認)			 */
 /*		 一覧：できる物の名前（材料と手数料が足りない物は灰色）				 */
@@ -4460,8 +4504,14 @@ void DrawWindowMAKER(PWNDINFO pWnd)
 	char szTmp[128];
 	COLORREF clText;
 
+	/* 鑑定屋の一覧 */
+	if (pWnd->nType2 == MAKERWND_APPRAISE) {
+		DrawWindowAPPRAISE (pWnd);
+		return;
+	}
+
 	/* 確認（はい／いいえ） */
-	if (pWnd->nType2 == MAKERWND_CONF) {
+	if ((pWnd->nType2 == MAKERWND_CONF) || (pWnd->nType2 == MAKERWND_APPRAISE_CONF)) {
 		if (pWnd->dwTimeDrawStart) {
 			DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
 			return;
@@ -4514,9 +4564,9 @@ void DrawWindowMAKER(PWNDINFO pWnd)
 		PRECIPEINFO pRecipe = &g_aRecipeInfo[anList[nIndex]];
 		PITEMINFO pItem = g_aItemInfo[pRecipe->wItem];
 		if (pRecipe->byCount > 1) {
-			wsprintf (szTmp, "%s x%d", pItem->szName, (int)pRecipe->byCount);
+			wsprintf (szTmp, "%s x%d", ItemNameOf (pRecipe->wItem), (int)pRecipe->byCount);
 		} else {
-			wsprintf (szTmp, "%s", pItem->szName);
+			wsprintf (szTmp, "%s", ItemNameOf (pRecipe->wItem));
 		}
 		clText = MakerCanMake (anList[nIndex]) ? RGB (255, 255, 255) : RGB (150, 150, 150);
 		TextOut2 (hDC, 32, 16 + i * 16, szTmp, clText);
@@ -4591,7 +4641,7 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 		return;
 	}
 
-	if ((pWnd->nData1 <= 0) || (pWnd->nData1 >= g_aItemInfo.GetSize ())) {
+	if ((pWnd->nData1 <= 0) || (pWnd->nData1 > 0xFFFF) || !ItemIDValid ((WORD)pWnd->nData1)) {
 		if (pWnd->nType2 == ITEMINFOPOS_LIST) {
 			/* 一覧の横に出す時：アイテムが無い所ではウィンドウを消しておく */
 			pWnd->pDib->FillRect (0, 0, pWnd->pDib->Width (), pWnd->pDib->Height (), RGB (40, 40, 40));
@@ -4662,6 +4712,33 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 		nCyNew += ITEMINFO_LINE;
 		nCyNew = (nCyNew + 15) / 16 * 16;
 	}
+	/* 付与付きの装備（派生アイテム）は「付与：」の行を足す（鑑定済みは付与の名前、未鑑定は「未鑑定」） */
+	BOOL bAffixLine = FALSE, bAffixBad = FALSE, bAffixUnknown = FALSE;
+	int nAffixRow = 0;
+	char szAffix[128];
+	szAffix[0] = 0;
+	if (ItemDeriveGet ((WORD)pWnd->nData1)) {
+		PITEMDERIVEINFO pDerive = ItemDeriveGet ((WORD)pWnd->nData1);
+		PITEMAFFIXINFO pPre = ItemAffixFind (pDerive->wPre), pSuf = ItemAffixFind (pDerive->wSuf);
+
+		bAffixLine = TRUE;
+		nAffixRow = bSexLine ? 5 : 4;
+		if (pDerive->byUnknown) {
+			bAffixUnknown = TRUE;
+			strcpy (szAffix, "未鑑定（効果は鑑定後）");
+		} else {
+			int nDFMagic = ItemAffixDFMagic ((WORD)pWnd->nData1);
+
+			snprintf (szAffix, sizeof (szAffix), "%s%s%s", pPre ? pPre->szName : "", (pPre && pSuf) ? "・" : "", pSuf ? pSuf->szName : "");
+			if (nDFMagic) {
+				snprintf (szAffix + strlen (szAffix), sizeof (szAffix) - strlen (szAffix), "（魔防%+d）", nDFMagic);
+			}
+			bAffixBad = ((pPre && pPre->byBad) || (pSuf && pSuf->byBad)) ? TRUE : FALSE;
+		}
+		nCyNew += ITEMINFO_LINE;
+		nCyNew = (nCyNew + 15) / 16 * 16;
+		nCxNew = max (nCxNew, 16 + ITEMINFO_LINE * 3 + SboTextWidth (szAffix) * 8 + 16);
+	}
 	/* お店の買う一覧から出ている時は、手持ち・預かり所の数の行を本体の一番下に足す */
 	BOOL bShopLine = FALSE;
 	int nShopRow = 0, nHaveHand = 0, nHaveLeave = 0;
@@ -4709,7 +4786,7 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 		}
 	}
 	/* 長いアイテム名でも切れない幅にする（画面の幅まで） */
-	nCxNew = max (nCxNew, 16 + SboTextWidth (pItem->szName) * 8 + 16);
+	nCxNew = max (nCxNew, 16 + SboTextWidth (ItemNameOf (pWnd->nData1)) * 8 + 16);
 	nCxNew = (nCxNew + 15) / 16 * 16;
 	nCxNew = min (nCxNew, SCRSIZEX);
 	if ((pWnd->nCx != nCxNew) || (pWnd->nCy != nCyNew)) {
@@ -4794,7 +4871,7 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 	HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFontBasic);
 
 	SetBkColor (hDC, RGB (40, 40, 40));
-	wsprintf (szTmp, "%s", pItem->szName);
+	wsprintf (szTmp, "%s", ItemNameOf (pWnd->nData1));
 	TextOut2 (hDC, 16, 0, szTmp, RGB (255, 255, 255));
 	SetBkMode (hDC, TRANSPARENT);
 
@@ -4804,7 +4881,7 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 	TextOut2 (hDC, 16 + ITEMINFO_LINE * 3, 16, szTmp, RGB (150, 255, 200));
 
 	TextOut2 (hDC, 16, 16 + ITEMINFO_LINE * 1, "価値：", RGB (200, 200, 200));
-	wsprintf (szTmp, "%d", pItem->dwGold);
+	wsprintf (szTmp, "%d", ItemGoldOf ((WORD)pWnd->nData1));
 	TextOut2 (hDC, 16 + ITEMINFO_LINE * 3, 16 + ITEMINFO_LINE * 1, szTmp, RGB (150, 255, 200));
 
 	wEqu = 0xFFFF;
@@ -4868,7 +4945,12 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 	if (wEqu != 0xFFFF) {
 		nLen = SboTextWidth (szTmp) / 2;
 		TextOut2 (hDC, 16, 16 + ITEMINFO_LINE * 2, szTmp, RGB (200, 200, 200));
-		wsprintf (szTmp, "%d", pItem->byData);
+		/* 鑑定済みの付与付きは「12（+2）」のように付与分も出す */
+		if (ItemIsAppraised ((WORD)pWnd->nData1)) {
+			wsprintf (szTmp, "%d（%+d）", ItemValueOf ((WORD)pWnd->nData1), ItemValueOf ((WORD)pWnd->nData1) - (int)pItem->byData);
+		} else {
+			wsprintf (szTmp, "%d", pItem->byData);
+		}
 		TextOut2 (hDC, 16 + ITEMINFO_LINE * nLen, 16 + ITEMINFO_LINE * 2, szTmp, RGB (150, 255, 200));
 		TextOut2 (hDC, 16, 16 + ITEMINFO_LINE * 3, "装備：", RGB (200, 200, 200));
 		wsprintf (szTmp, "%s", g_aEquUserInfo[wEqu]);
@@ -4884,6 +4966,13 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 			TextOut2 (hDC, 16 + ITEMINFO_LINE * 3, 16 + ITEMINFO_LINE * 4, szTmp,
 				bOk ? RGB (150, 255, 200) : RGB (255, 130, 130));
 		}
+	}
+
+	/* 付与付きの装備：付与の名前（ハズレは赤、未鑑定は黄色） */
+	if (bAffixLine) {
+		TextOut2 (hDC, 16, 16 + ITEMINFO_LINE * nAffixRow, "付与：", RGB (200, 200, 200));
+		TextOut2 (hDC, 16 + ITEMINFO_LINE * 3, 16 + ITEMINFO_LINE * nAffixRow, szAffix,
+			bAffixUnknown ? RGB (255, 230, 100) : bAffixBad ? RGB (255, 130, 130) : RGB (150, 255, 200));
 	}
 
 	/* お店の買う一覧：持っている数（手持ち・預かり所。預かり所は届くまで「?」） */
@@ -5176,7 +5265,7 @@ void DrawWindowMARKET(PWNDINFO pWnd)
 				PITEMINFO pItem = g_aItemInfo[pChar->waItem[nNo]];
 				/* 取引できない品は灰色（装備中の印は預かり所と同じ） */
 				clText = (pItem->byFlg & ITEMFLG_TRADE) ? RGB (150, 150, 150) : RGB (255, 255, 255);
-				TextOut2 (hDC, 32, 16 + i * 16, pItem->szName, clText);
+				TextOut2 (hDC, 32, 16 + i * 16, (char *)ItemNameOf (pChar->waItem[nNo]), clText);
 				for (int j = 0; j < 10; j ++) {
 					if (pChar->waEqu[j] == nNo) {
 						pWnd->pDib->Blt (16, 16 + i * 16, 8, 16, g_pDibSystem, 64, 16, TRUE);
@@ -5410,7 +5499,7 @@ void EraseWindow(PWNDINFO pWnd)
 	case WNDTYPE_MAKER:
 		/* 一覧を閉じたら作り手の画面は終わり（確認ウィンドウだけでは終わらない） */
 
-		if (pWnd->nType2 == MAKERWND_LIST) {
+		if ((pWnd->nType2 == MAKERWND_LIST) || (pWnd->nType2 == MAKERWND_APPRAISE)) {
 			g_nProcMakerID = -1;
 			g_bProcMakerLeaveOK = FALSE;
 			g_bProcMakerWait = FALSE;

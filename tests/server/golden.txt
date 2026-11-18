@@ -1898,4 +1898,29 @@ emptymap zero charpos=1 mapmsg=0
 putfill before parents=175 over=0 mismatch=0
 putfill after parents=175 full=175 over=0 mismatch=0 child>0=1 mimic>0=0
 putfill again added=0 over=0 mismatch=0
+== AH. Affix ==
+affix weapon found=1
+affix derive u=16384 same=1 known=16385 none=1 rows=2 base=1 valid=1
+affix id invalid=0 out=1
+affix value base=11 unknown=11 known=16 expect=16
+affix gold base=1200 unknown=1200 known=2160 expect=2160
+affix name unknown=レイピア？ known=鋭いレイピア＋1 plain=レイピア
+affix mask armor=11 same=1
+appraise lack gold item=16384 gold=5
+appraise ok item=16385(known=1) paid=120 equ=0 at=12->17
+appraise cost=120
+appraise again item=16385 gold=1000
+appraise plain item=33 gold=1000
+appraise no maker item=16384
+appraise far item=16384
+appraise wrong kind item=16384
+affix load affix=3/3 derive=3/3
+affix load row0 id=1 pos=0 name=鋭い mask=255 rate=20 add=2 rank=1 gold=150
+affix load derive0 base=1 pre=1 suf=2 unknown=1 / derive1 unknown=0
+affix load value=16
+affix roll rank1 plain=0 pre=78 suf=72 both=150 rank2=0 unknown=300
+affix roll rank2 has=1
+affix roll rate0=1 armorOnly=1
+affix roll rate10 hit=100/1000
+affix roll empty=1
 == done ==

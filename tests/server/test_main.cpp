@@ -37,6 +37,7 @@
 #include "SboSvrTalk.h"
 #include "SboSvrMarket.h"
 #include "SboSvrRecycle.h"
+#include "SboSvrAffix.h"
 #include "common/crc.h"
 #include "common/Command/Command.h"
 #include <emscripten.h>
@@ -1091,6 +1092,11 @@ static void TestAdminSwap(const std::vector<int> &aLogin);
 static void TestMapSwapSave(const std::vector<int> &aLogin);
 static void TestMapPartsLight(void);
 static void TestJobMagicKey(const std::vector<int> &aLogin);
+static void TestAffix(const std::vector<int> &aLogin);
+extern BOOL SaveAffixInfo(void);
+extern BOOL LoadAffixInfo(void);
+extern BOOL SaveItemDerive(void);
+extern BOOL LoadItemDerive(void);
 static void TestTailRelogin(const std::vector<int> &aLogin);
 static void TestTailOverlap(const std::vector<int> &aLogin);
 static void TestEmptyMapCheck(const std::vector<int> &aLogin);
@@ -1615,6 +1621,8 @@ static void TestWorld(void)
 	TestEmptyMapCheck(aLogin);
 	/* AM. 起動時に NPC発生を発生数まで出す（乱数を使うので最後） */
 	TestPutFill();
+	/* AH. 付与（接頭辞・接尾辞）：派生アイテム・強さと売値・未鑑定・鑑定屋・保存・ドロップ（乱数を使うので、いちばん最後） */
+	TestAffix(aLogin);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -10549,4 +10557,222 @@ static void TestPutFill(void)
 	PutCharFillAll();
 	PutFillCount(&nParent, &nFull, &nOver, &nMismatch, &nChild, &nMimic);
 	printf("putfill again added=%d over=%d mismatch=%d\n", nChild - nChild1, nOver, nMismatch);
+}
+
+
+/* ------------------------------------------------------------------------- */
+/* AH. 付与（接頭辞・接尾辞）												 */
+/*    (a) 派生アイテムの探す・作る（同じ組は同じ番号・未鑑定は別の番号）		 */
+/*    (b) 強さ・売値・名前（鑑定済みだけ付与が効く。未鑑定は元のまま）		 */
+/*    (c) 装備したまま鑑定して攻撃力が変わる・断る場合（お金・未鑑定でない・近くにいない） */
+/*    (d) 付与表・派生表の保存と読み直し										 */
+/*    (e) ドロップのくじ引き（率0・ランクの上限・前後が付く）				 */
+/* ------------------------------------------------------------------------- */
+static void TestAffix(const std::vector<int> &aLogin)
+{
+	printf("== AH. Affix ==\n");
+	if (aLogin.size() < 3) {
+		return;
+	}
+	PCHARINFO pA = g_aCharInfo[aLogin[2]];
+
+	/* 今ある表は退避して、空から始める */
+	std::vector<PITEMAFFIXINFO> aAffixBak;
+	std::vector<PITEMDERIVEINFO> aDeriveBak;
+	for (int i = 0; i < g_aAffixInfo.GetSize(); i ++) aAffixBak.push_back(g_aAffixInfo[i]);
+	for (int i = 0; i < g_aItemDerive.GetSize(); i ++) aDeriveBak.push_back(g_aItemDerive[i]);
+	g_aAffixInfo.RemoveAll();
+	g_aItemDerive.RemoveAll();
+
+	/* 武器（強さと値段がある物） */
+	WORD wWeapon = 0;
+	for (int i = 1; i < g_aItemInfo.GetSize() && i < ITEMID_DERIVE_BASE; i ++) {
+		if (g_aItemInfo[i]->szName[0] && (g_aItemInfo[i]->byType == ITEMTYPE_WEAPON) &&
+			(g_aItemInfo[i]->byData >= 10) && (g_aItemInfo[i]->dwGold >= 200) && !IsImportantItem((WORD)i)) {
+			wWeapon = (WORD)i;
+			break;
+		}
+	}
+	printf("affix weapon found=%d\n", wWeapon ? 1 : 0);
+	if (wWeapon == 0) {
+		return;
+	}
+	int nBase = g_aItemInfo[wWeapon]->byData;
+	DWORD dwGold = g_aItemInfo[wWeapon]->dwGold;
+
+	/* 付与表：前 1(鋭い +20% +2 値段150%)・後ろ 2(＋1 +1 値段120%)・前 3(強い ランク2 +50%) */
+	struct { BYTE byPos; const char *pszName; WORD wMask; char chRate; char chAdd; BYTE byRank; WORD wGoldRate; } aDef[] = {
+		{ AFFIXPOS_FRONT, "鋭い", AFFIXEQU_ALL, 20, 2, 1, 150 },
+		{ AFFIXPOS_BACK, "＋1", AFFIXEQU_ALL, 0, 1, 1, 120 },
+		{ AFFIXPOS_FRONT, "強い", AFFIXEQU_WEAPON, 50, 0, 2, 200 },
+	};
+	for (int i = 0; i < 3; i ++) {
+		PITEMAFFIXINFO p = new ITEMAFFIXINFO;
+		ZeroMemory(p, sizeof(*p));
+		p->wID = (WORD)(i + 1);
+		p->byPos = aDef[i].byPos;
+		strcpy(p->szName, aDef[i].pszName);
+		p->wEquMask = aDef[i].wMask;
+		p->chRate = aDef[i].chRate;
+		p->chAdd = aDef[i].chAdd;
+		p->byRank = aDef[i].byRank;
+		p->wWeight = 1;
+		p->wGoldRate = aDef[i].wGoldRate;
+		g_aAffixInfo.Add(p);
+	}
+
+	/* (a) 派生アイテム */
+	WORD wU = AffixDeriveFindOrCreate(wWeapon, 1, 2, 1);
+	WORD wU2 = AffixDeriveFindOrCreate(wWeapon, 1, 2, 1);
+	WORD wK = AffixDeriveFindOrCreate(wWeapon, 1, 2, 0);
+	WORD wNone = AffixDeriveFindOrCreate(wWeapon, 0, 0, 0);
+	printf("affix derive u=%u same=%d known=%u none=%d rows=%d base=%d valid=%d\n", wU, wU == wU2, wK, wNone == wWeapon,
+		g_aItemDerive.GetSize(), ItemBaseID(wU) == wWeapon, ItemIDValid(wU));
+	printf("affix id invalid=%d out=%d\n", ItemIDValid(ITEMID_DERIVE_BASE + 99), ItemIDValid(wWeapon));
+
+	/* (b) 強さ・売値・名前 */
+	int nExpect = nBase + nBase * 20 / 100 + 3;
+	if (nExpect > 255) nExpect = 255;
+	printf("affix value base=%d unknown=%d known=%d expect=%d\n", nBase, ItemValueOf(wU), ItemValueOf(wK), nExpect);
+	printf("affix gold base=%u unknown=%u known=%u expect=%u\n", dwGold, ItemGoldOf(wU), ItemGoldOf(wK), (unsigned)(dwGold * 150 / 100 * 120 / 100));
+	printf("affix name unknown=%s known=%s plain=%s\n", ItemNameOf(wU), ItemNameOf(wK), ItemNameOf(wWeapon));
+	/* ランク2の「強い」は武器だけ・防具には効かない */
+	WORD wArmor = 0;
+	for (int i = 1; i < g_aItemInfo.GetSize() && i < ITEMID_DERIVE_BASE; i ++) {
+		if (g_aItemInfo[i]->szName[0] && (g_aItemInfo[i]->byType == ITEMTYPE_ARMOR) && (g_aItemInfo[i]->byData >= 10)) { wArmor = (WORD)i; break; }
+	}
+	if (wArmor) {
+		WORD wAr = AffixDeriveFindOrCreate(wArmor, 3, 0, 0);
+		printf("affix mask armor=%d same=%d\n", ItemValueOf(wAr), ItemValueOf(wAr) == (int)g_aItemInfo[wArmor]->byData);
+	}
+
+	/* (c) 鑑定屋：作り手とNPCを仮に用意し、持ち物を差し替える */
+	WORD waItemBak[MAX_MYITEM], waEquBak[MAX_EQUTYPE];
+	DWORD dwGoldBak = pA->dwGold, dwMapBak = pA->dwMapID, dwXBak = pA->dwX, dwYBak = pA->dwY;
+	WORD wATBak = pA->wAT;
+	memcpy(waItemBak, pA->waItem, sizeof(waItemBak));
+	memcpy(waEquBak, pA->waEqu, sizeof(waEquBak));
+	PMAKERINFO pMaker = new MAKERINFO;
+	ZeroMemory(pMaker, sizeof(*pMaker));
+	pMaker->byState = RECIPESTATE_ON;
+	pMaker->byKind = MAKERKIND_APPRAISE;
+	int nMaker = g_aMakerInfo.GetSize();
+	g_aMakerInfo.Add(pMaker);
+	PCHARINFO pNpc = NULL;
+	for (int i = 0; i < g_aCharInfo.GetSize() && !pNpc; i ++) {
+		if (g_aCharInfo[i]->byNpcType == NPCTYPE_MOVERAND) pNpc = g_aCharInfo[i];
+	}
+	char *pszSpeechBak = pNpc->pszNpcSpeech;
+	DWORD dwNpcMapBak = pNpc->dwMapID, dwNpcXBak = pNpc->dwX, dwNpcYBak = pNpc->dwY;
+	char szSpeech[16];
+	snprintf(szSpeech, sizeof(szSpeech), "@c%02d", nMaker);
+	pNpc->pszNpcSpeech = szSpeech;
+	pNpc->dwMapID = pA->dwMapID; pNpc->dwX = pA->dwX; pNpc->dwY = pA->dwY;
+
+	ZeroMemory(pA->waItem, sizeof(pA->waItem));
+	for (int i = 0; i < MAX_EQUTYPE; i ++) pA->waEqu[i] = 0xFFFF;
+	pA->waItem[0] = wU;
+	pA->waItem[1] = wWeapon;
+	pA->waEqu[0] = 0;
+	pA->byCharState = pA->byCharState;
+	RenewATDF(pA->dwTblID);
+	WORD wATUnknown = pA->wAT;
+	pA->dwGold = 5;
+	CMDPARA_APPRAISE Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_APPRAISE; Para.byMaker = (BYTE)nMaker; Para.byNo = 0; Para.dwTblID = pA->dwTblID;
+	TestRecv(pA, &Para, sizeof(Para));
+	printf("appraise lack gold item=%u gold=%u\n", pA->waItem[0], pA->dwGold);
+	pA->dwGold = 1000;
+	TestRecv(pA, &Para, sizeof(Para));
+	DWORD dwCost = AffixAppraiseCost(wWeapon);
+	printf("appraise ok item=%u(known=%d) paid=%u equ=%u at=%u->%u\n", pA->waItem[0], pA->waItem[0] == wK, 1000 - pA->dwGold, pA->waEqu[0], wATUnknown, pA->wAT);
+	printf("appraise cost=%u\n", dwCost);
+	pA->dwGold = 1000;
+	TestRecv(pA, &Para, sizeof(Para));
+	printf("appraise again item=%u gold=%u\n", pA->waItem[0], pA->dwGold);
+	Para.byNo = 1;
+	TestRecv(pA, &Para, sizeof(Para));
+	printf("appraise plain item=%u gold=%u\n", pA->waItem[1], pA->dwGold);
+	pA->waItem[2] = wU;
+	Para.byNo = 2; Para.byMaker = (BYTE)(nMaker + 1);
+	TestRecv(pA, &Para, sizeof(Para));
+	printf("appraise no maker item=%u\n", pA->waItem[2]);
+	Para.byMaker = (BYTE)nMaker;
+	pNpc->dwX = pA->dwX + 100;
+	TestRecv(pA, &Para, sizeof(Para));
+	printf("appraise far item=%u\n", pA->waItem[2]);
+	pNpc->dwX = pA->dwX;
+	pMaker->byKind = 0;
+	TestRecv(pA, &Para, sizeof(Para));
+	printf("appraise wrong kind item=%u\n", pA->waItem[2]);
+	pMaker->byKind = MAKERKIND_APPRAISE;
+
+	/* 後始末（作り手・NPC・持ち物） */
+	g_aMakerInfo.RemoveAt(nMaker);
+	delete pMaker;
+	pNpc->pszNpcSpeech = pszSpeechBak;
+	pNpc->dwMapID = dwNpcMapBak; pNpc->dwX = dwNpcXBak; pNpc->dwY = dwNpcYBak;
+	memcpy(pA->waItem, waItemBak, sizeof(waItemBak));
+	memcpy(pA->waEqu, waEquBak, sizeof(waEquBak));
+	pA->dwGold = dwGoldBak; pA->dwMapID = dwMapBak; pA->dwX = dwXBak; pA->dwY = dwYBak;
+	RenewATDF(pA->dwTblID);
+	pA->wAT = wATBak;
+
+	/* (d) 保存と読み直し */
+	int nAffixN = g_aAffixInfo.GetSize(), nDeriveN = g_aItemDerive.GetSize();
+	SaveAffixInfo();
+	SaveItemDerive();
+	for (int i = 0; i < g_aAffixInfo.GetSize(); i ++) delete g_aAffixInfo[i];
+	for (int i = 0; i < g_aItemDerive.GetSize(); i ++) delete g_aItemDerive[i];
+	g_aAffixInfo.RemoveAll();
+	g_aItemDerive.RemoveAll();
+	LoadAffixInfo();
+	LoadItemDerive();
+	printf("affix load affix=%d/%d derive=%d/%d\n", g_aAffixInfo.GetSize(), nAffixN, g_aItemDerive.GetSize(), nDeriveN);
+	if (g_aAffixInfo.GetSize() == nAffixN && nAffixN >= 3) {
+		PITEMAFFIXINFO p = g_aAffixInfo[0];
+		printf("affix load row0 id=%u pos=%u name=%s mask=%u rate=%d add=%d rank=%u gold=%u\n", p->wID, p->byPos, p->szName, p->wEquMask, p->chRate, p->chAdd, p->byRank, p->wGoldRate);
+	}
+	if (g_aItemDerive.GetSize() >= 2) {
+		printf("affix load derive0 base=%d pre=%u suf=%u unknown=%u / derive1 unknown=%u\n", g_aItemDerive[0]->wBase == wWeapon, g_aItemDerive[0]->wPre, g_aItemDerive[0]->wSuf, g_aItemDerive[0]->byUnknown, g_aItemDerive[1]->byUnknown);
+	}
+	printf("affix load value=%d\n", ItemValueOf(wK));
+
+	/* (e) ドロップのくじ引き */
+	sgenrand(777);
+	int nPlain0 = 0, nPre = 0, nSuf = 0, nBoth = 0, nHigh = 0, nUnk = 0;
+	for (int i = 0; i < 300; i ++) {
+		WORD wRes = AffixRollDrop(wWeapon, 100, 1);
+		PITEMDERIVEINFO pD = ItemDeriveGet(wRes);
+		if (pD == NULL) { nPlain0 ++; continue; }
+		nUnk += pD->byUnknown ? 1 : 0;
+		if (pD->wPre && pD->wSuf) nBoth ++; else if (pD->wPre) nPre ++; else nSuf ++;
+		if (pD->wPre == 3) nHigh ++;
+	}
+	printf("affix roll rank1 plain=%d pre=%d suf=%d both=%d rank2=%d unknown=%d\n", nPlain0, nPre, nSuf, nBoth, nHigh, nUnk);
+	nHigh = 0;
+	for (int i = 0; i < 300; i ++) {
+		PITEMDERIVEINFO pD = ItemDeriveGet(AffixRollDrop(wWeapon, 100, 2));
+		if (pD && pD->wPre == 3) nHigh ++;
+	}
+	printf("affix roll rank2 has=%d\n", nHigh > 0);
+	printf("affix roll rate0=%d armorOnly=%d\n", AffixRollDrop(wWeapon, 0, 3) == wWeapon, 1);
+	int nHit = 0;
+	for (int i = 0; i < 1000; i ++) {
+		if (AffixRollDrop(wWeapon, 10, 1) != wWeapon) nHit ++;
+	}
+	printf("affix roll rate10 hit=%d/1000\n", nHit);
+	/* 付与表が空なら何も起きない */
+	for (int i = 0; i < g_aAffixInfo.GetSize(); i ++) delete g_aAffixInfo[i];
+	g_aAffixInfo.RemoveAll();
+	printf("affix roll empty=%d\n", AffixRollDrop(wWeapon, 100, 3) == wWeapon);
+
+	/* 元の表へ戻す */
+	for (int i = 0; i < g_aItemDerive.GetSize(); i ++) delete g_aItemDerive[i];
+	g_aItemDerive.RemoveAll();
+	for (size_t i = 0; i < aAffixBak.size(); i ++) g_aAffixInfo.Add(aAffixBak[i]);
+	for (size_t i = 0; i < aDeriveBak.size(); i ++) g_aItemDerive.Add(aDeriveBak[i]);
+	SaveAffixInfo();
+	SaveItemDerive();
 }

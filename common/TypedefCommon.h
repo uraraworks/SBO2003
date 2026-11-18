@@ -70,6 +70,10 @@
 #define MAX_RECIPEMAT		4										/* レシピの材料の種類 */
 #define MAX_MAKERNAME		64										/* 作り手の名前の欄のバイト数（終端含む） */
 #define MAX_MAKERMSG		256										/* 作り手の台詞の欄のバイト数（終端含む） */
+#define MAX_AFFIX			1000									/* 付与（接頭辞・接尾辞）の最大数 */
+#define MAX_AFFIXNAME		32										/* 付与の名前の欄のバイト数（終端含む） */
+#define MAX_ITEMDERIVE		(65535 - 16384)							/* 派生アイテムの最大数（番号は 16384 から） */
+#define ITEMID_DERIVE_BASE	16384									/* アイテム番号がこれ以上なら派生アイテム（付与付き・未鑑定）の番号 */
 #define MAX_JOBMAGIC		32										/* 職業別に呪文を覚えておける職業数（職業IDがこれ未満の職業が対象） */
 #define MAX_QUEST			512										/* 最大依頼数（依頼番号 wID は 1〜511。一度きり依頼のクリア済みの印が 512 ビットなのでこれ未満） */
 #define MAX_QUESTNPC		8										/* 1つの依頼に付けられる「見えるNPC」の数 */
@@ -379,6 +383,10 @@ enum {
 /* 以下、管理者用（CMD_MAPPARTSADD 以上は自動で管理者専用になる。CMD_RECYCLECLOSE より後ろに足す） */
 	CMD_ADMINCHEST,													/* 管理者ウィンドウのキャラの開けた宝箱の記録（全宝箱の一覧・取得・変更。結果はサーバー→クライアント） */
 	CMD_ADMINSWAP,													/* 管理者ウィンドウの「印で変わるマス・宝箱」（いまいるマップの差し替え表の取得・足す・直す・消す。結果はサーバー→クライアント） */
+/* 以下、プレイヤー用（付与。管理者用の判定から外すこと） */
+	CMD_AFFIXINFO,													/* 付与表の1行(サーバー→クライアント。ログイン時と変更時) */
+	CMD_ITEMDERIVE,													/* 派生アイテム表の行(サーバー→クライアント。ログイン時と新しく振った時) */
+	CMD_APPRAISE,													/* 鑑定屋で鑑定してもらう(クライアント→サーバー。結果はサーバー→クライアント) */
 	CMD_MAX
 };
 
@@ -2598,6 +2606,8 @@ typedef struct _STATUSTEMPLATEINFO {
 	BYTE		byStatusResist;										/* 毒・眠りの効きにくさ(%、100で効かない) */
 	BYTE		byNoFloorDamage;									/* ダメージ床が効かない(1)。毒沼・溶岩でHPが減らず毒にもならず、よけずに素通りする（ボス向け） */
 	BYTE		byGhost;											/* 半透明（霊）で描く(1)。見た目だけ。湧いた敵にコピーする */
+	BYTE		byAffixRate;										/* 装備を落とす時に付与が付く確率(%。古いデータは 10) */
+	BYTE		byAffixRank;										/* 付く付与の格の最大(1〜3。古いデータは 1) */
 } STATUSTEMPLATEINFO, *PSTATUSTEMPLATEINFO;
 
 /* キャラ追加通知 */
@@ -2884,9 +2894,16 @@ enum {
 	RECIPESTATE_OFF,											/* 停止中（一覧に出ない） */
 };
 
+/* 作り手の種類 */
+enum {
+	MAKERKIND_RECIPE = 0,										/* レシピで作る（今までの作り手） */
+	MAKERKIND_APPRAISE,											/* 鑑定屋（手持ちの未鑑定の装備を、お金を払って鑑定する） */
+};
+
 /* 作り手情報 */
 typedef struct _MAKERINFO {
 	BYTE		byState;											/* 状態(RECIPESTATE_*) */
+	BYTE		byKind;												/* 種類(MAKERKIND_*。古いデータは 0=レシピ) */
 	char		szName[MAX_MAKERNAME];								/* 名前（例：料理人） */
 	char		szMsgTalk[MAX_MAKERMSG];							/* 話しかけた時の台詞 */
 	char		szMsgDone[MAX_MAKERMSG];							/* 作った時の台詞 */
@@ -2948,6 +2965,99 @@ typedef struct _CMDPARA_RECIPEMAKE {
 	DWORD		pID;												/* プレイヤーID */
 	DWORD		dwTblID;											/* テーブルID */
 } CMDPARA_RECIPEMAKE, *PCMDPARA_RECIPEMAKE;
+#pragma pack(pop)
+
+/* ========================================================================= */
+/* 付与（ディアブロ式の接頭辞・接尾辞）										 */
+/*   装備に「鋭い」「の加護」などが付き、強さと売値が変わる。				 */
+/*   アイテムの番号は WORD のまま：0〜16383 は今までの普通のアイテム、		 */
+/*   16384 以降は派生表（ITEMDERIVEINFO）の行番号 + 16384 で、				 */
+/*   元のアイテム・前の付与・後ろの付与・未鑑定かどうかを表す。				 */
+/*   同じ組み合わせは同じ番号になる（サーバーが探して、無ければ作る）。		 */
+/*   付与表・派生表はサーバーが持ち、SBODATA に保存してログイン時に全部送る。 */
+/*   詳しくは docs/item-affix.md												 */
+/* ========================================================================= */
+
+/* 付与が付く装備種別のビット(ITEMAFFIXINFO の wEquMask) */
+enum {
+	AFFIXEQU_WEAPON = 0x01,										/* 武器 */
+	AFFIXEQU_ARMOR	= 0x02,										/* 鎧 */
+	AFFIXEQU_SHILD	= 0x04,										/* 盾 */
+	AFFIXEQU_HELMET	= 0x08,										/* 兜 */
+	AFFIXEQU_HAND	= 0x10,										/* 小手 */
+	AFFIXEQU_LEG	= 0x20,										/* 靴 */
+	AFFIXEQU_NECK	= 0x40,										/* 首飾り */
+	AFFIXEQU_RING	= 0x80,										/* 指輪（1・2とも） */
+	AFFIXEQU_ALL	= 0xFF,
+};
+
+/* 付与の位置 */
+enum {
+	AFFIXPOS_FRONT = 0,											/* 名前の前に付く（鋭い） */
+	AFFIXPOS_BACK,												/* 名前の後ろに付く（の加護） */
+};
+
+/* 付与情報（1行。wID が 1 以上の通し番号で、0 は「付与なし」） */
+typedef struct _ITEMAFFIXINFO {
+	WORD		wID;												/* 付与の番号（1〜。派生表から参照される。変えない・使い回さない） */
+	BYTE		byPos;												/* 位置(AFFIXPOS_*) */
+	char		szName[MAX_AFFIXNAME];								/* 名前（鋭い・腐った・＋1・の加護 など） */
+	WORD		wEquMask;											/* 付く装備種別(AFFIXEQU_* のビット) */
+	char		chRate;												/* 主の値（byData）に対する%（負も可） */
+	char		chAdd;												/* 主の値への固定加算（負も可） */
+	char		chDFMagic;											/* 魔法防御の加算（負も可） */
+	BYTE		byRank;												/* 格(1〜3。敵の byAffixRank 以下だけ出る) */
+	WORD		wWeight;											/* 出やすさ（重み。0 なら出ない） */
+	WORD		wGoldRate;											/* 売値の倍率%（100=そのまま） */
+	BYTE		byBad;												/* ハズレ印（1。表示用） */
+} ITEMAFFIXINFO, *PITEMAFFIXINFO;
+
+/* 派生アイテム情報（1行。番号は ITEMID_DERIVE_BASE + 行番号） */
+typedef struct _ITEMDERIVEINFO {
+	WORD		wBase;												/* 元のアイテム番号 */
+	WORD		wPre;												/* 前の付与の番号（0=なし） */
+	WORD		wSuf;												/* 後ろの付与の番号（0=なし） */
+	BYTE		byUnknown;											/* 未鑑定(1)。付与の効果（強さ・売値）は出ない */
+} ITEMDERIVEINFO, *PITEMDERIVEINFO;
+
+#pragma pack(push, 1)
+/* 派生表の1回の通知に入れる行数 */
+#define ITEMDERIVE_PERPACKET	64
+
+/* 付与表の1行の通知（サーバー→クライアント。ログイン時と変更時） */
+typedef struct _CMDPARA_AFFIXINFO {
+	BYTE			byCmd;											/* コマンドID */
+	WORD			wIndex;											/* 付与表の添字 */
+	WORD			wCount;											/* 付与表の総数 */
+	ITEMAFFIXINFO	Info;											/* 付与情報 */
+} CMDPARA_AFFIXINFO, *PCMDPARA_AFFIXINFO;
+
+/* 派生表の通知（サーバー→クライアント。ログイン時はまとめて、新しく振った時は1行）。
+   送る大きさは offsetof(aInfo) + byCount * sizeof(ITEMDERIVEINFO) */
+typedef struct _CMDPARA_ITEMDERIVE {
+	BYTE			byCmd;											/* コマンドID */
+	WORD			wStart;											/* aInfo[0] の派生表の添字 */
+	BYTE			byCount;										/* 行数 */
+	ITEMDERIVEINFO	aInfo[ITEMDERIVE_PERPACKET];					/* 派生情報 */
+} CMDPARA_ITEMDERIVE, *PCMDPARA_ITEMDERIVE;
+
+/* 鑑定の結果(CMDPARA_APPRAISE の byResult) */
+enum {
+	APPRAISERESULT_OK = 0,										/* 鑑定できた */
+	APPRAISERESULT_LACKGOLD,									/* お金が足りない */
+	APPRAISERESULT_INVALID,										/* 鑑定できない（未鑑定ではない・作り手が近くにいない など） */
+};
+
+/* 鑑定してもらう要求（クライアント→サーバー）と結果（サーバー→クライアント） */
+typedef struct _CMDPARA_APPRAISE {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byResult;											/* 結果(APPRAISERESULT_*。要求の時は使わない) */
+	BYTE		byMaker;											/* 作り手（鑑定屋）の番号 */
+	BYTE		byNo;												/* 手持ちの位置(0〜MAX_MYITEM-1) */
+	DWORD		dwGold;												/* 払ったお金（結果のみ） */
+	DWORD		pID;												/* プレイヤーID */
+	DWORD		dwTblID;											/* テーブルID */
+} CMDPARA_APPRAISE, *PCMDPARA_APPRAISE;
 #pragma pack(pop)
 
 /* ========================================================================= */
@@ -4491,3 +4601,6 @@ typedef struct _CMDPARA_WARSELECTMAGICTARGET {
 
 /* 音声ファイルで鳴る BGM の番号表（WORD・BOOL などの型が決まった後に読み込む） */
 #include "BgmAudio.h"
+
+/* 付与（接頭辞・接尾辞）と派生アイテムの引き方（ITEMINFO・ITEMAFFIXINFO が決まった後に読み込む） */
+#include "ItemAffix.h"

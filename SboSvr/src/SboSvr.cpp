@@ -308,6 +308,8 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			SaveEquUserInfo ();
 			SaveMakerInfo ();
 			SaveRecipeInfo ();
+			SaveAffixInfo ();
+			SaveItemDerive ();
 			SaveQuestInfo ();
 			SaveMarket ();
 			SaveRecycle ();
@@ -492,6 +494,8 @@ BOOL OnCreate(HWND hWnd)
 	LoadSubGameInfo ();
 	LoadMakerInfo ();
 	LoadRecipeInfo ();
+	LoadAffixInfo ();
+	LoadItemDerive ();
 	LoadQuestInfo ();
 	LoadMarket ();
 	LoadRecycle ();
@@ -612,6 +616,8 @@ void OnDestroy(HWND hWnd)
 	SaveEquUserInfo ();			/* 装備職業情報の保存 */
 	SaveMakerInfo ();			/* 作り手情報の保存 */
 	SaveRecipeInfo ();			/* レシピ情報の保存 */
+	SaveAffixInfo ();			/* 付与表の保存 */
+	SaveItemDerive ();			/* 派生アイテム表の保存 */
 	SaveQuestInfo ();			/* 依頼情報の保存 */
 	SaveMarket ();				/* 取引所の出品・売上の保存 */
 	SaveRecycle ();				/* リサイクルボックスの中身・記録の保存 */
@@ -708,6 +714,16 @@ void OnDestroy(HWND hWnd)
 		}
 	}
 	g_aEquUserInfo.RemoveAll ();
+
+	for (i = 0; i < g_aAffixInfo.GetSize (); i ++) {
+		SAFE_DELETE (g_aAffixInfo[i]);
+	}
+	g_aAffixInfo.RemoveAll ();
+
+	for (i = 0; i < g_aItemDerive.GetSize (); i ++) {
+		SAFE_DELETE (g_aItemDerive[i]);
+	}
+	g_aItemDerive.RemoveAll ();
 
 	for (i = 0; i < g_aMakerInfo.GetSize (); i ++) {
 		SAFE_DELETE (g_aMakerInfo[i]);

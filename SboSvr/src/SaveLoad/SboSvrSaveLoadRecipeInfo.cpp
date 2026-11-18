@@ -57,6 +57,7 @@ typedef struct _COLINFO {
 /* 作り手情報のカラム */
 static const COLINFO s_aMakerCol[] = {
 	COL (MAKERINFO, byState,	COL_U8),
+	COL (MAKERINFO, byKind,		COL_U8),
 	COLS(MAKERINFO, szName,		COL_STR, MAX_MAKERNAME),
 	COLS(MAKERINFO, szMsgTalk,	COL_STR, MAX_MAKERMSG),
 	COLS(MAKERINFO, szMsgDone,	COL_STR, MAX_MAKERMSG),

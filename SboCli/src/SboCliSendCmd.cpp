@@ -135,6 +135,7 @@ void SendCmdRESURRECTION	(void);									/* 蘇生 */
 void SendCmdREQ_ATTACK		(DWORD dwTblID, BYTE byTurnLV);			/* 攻撃要求 */
 void SendCmdREQ_GUARD		(BOOL bGuard);							/* 構え(防御)の開始・終了 */
 void SendCmdRECIPEMAKE		(BYTE, WORD);							/* レシピで作ってもらう要求 */
+void SendCmdAPPRAISE		(BYTE, BYTE);							/* 鑑定してもらう要求 */
 void SendCmdMARKET			(BYTE, BYTE, BYTE, WORD, DWORD, DWORD);	/* 取引所の要求 */
 void SendCmdRECYCLE			(BYTE, WORD, BYTE);				/* リサイクルボックスの要求 */
 void SendCmdQUEST			(BYTE, WORD, DWORD);					/* ギルドの仕事依頼 */
@@ -3109,6 +3110,28 @@ void SendCmdRECIPEMAKE(
 	SendData.byCmd		= CMD_RECIPEMAKE;
 	SendData.byMaker	= byMaker;
 	SendData.wRecipeID	= wRecipeID;
+	SendData.pID		= g_pMyID;
+	SendData.dwTblID	= g_aCharInfo[g_nMyCharID]->dwTblID;
+
+	cliSock.Send ((PBYTE)&SendData, sizeof (SendData));
+}
+
+/* ========================================================================= */
+/* 関数名：	SendCmdAPPRAISE													 */
+/* 内容：	コマンド送信(鑑定してもらう要求)								 */
+/*			結果は CMD_APPRAISE で返ってくる								 */
+/* ========================================================================= */
+
+void SendCmdAPPRAISE(
+	BYTE byMaker,		/* [in] 作り手（鑑定屋）の番号 */
+	BYTE byNo)			/* [in] 持ち物の位置 */
+{
+	CMDPARA_APPRAISE SendData;
+
+	ZeroMemory (&SendData, sizeof (SendData));
+	SendData.byCmd		= CMD_APPRAISE;
+	SendData.byMaker	= byMaker;
+	SendData.byNo		= byNo;
 	SendData.pID		= g_pMyID;
 	SendData.dwTblID	= g_aCharInfo[g_nMyCharID]->dwTblID;
 

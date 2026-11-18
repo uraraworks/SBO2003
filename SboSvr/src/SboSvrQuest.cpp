@@ -2836,10 +2836,10 @@ static void ChallengeStart(PCHARINFO pChar, PQUESTINFO pQuest, PQUESTNPCINFO pDe
 			max ((int)t->byLevel, 1), t->byPW, t->byDEX, t->byST, t->byIT, t->byLK, max ((int)t->wMaxHP, 1), t->wMaxMana);
 		for (i = 0; i < MAX_MYITEM; i ++) {
 			WORD wItem = t->waItem[i];
-			if ((wItem == 0) || (wItem >= (WORD)g_aItemInfo.GetSize ())) {
+			if ((wItem == 0) || !ItemIDValid (wItem)) {
 				continue;
 			}
-			snprintf (szEqu + strlen (szEqu), sizeof (szEqu) - strlen (szEqu), "%s%s", szEqu[0] ? "、" : "持ち物：", g_aItemInfo[wItem]->szName);
+			snprintf (szEqu + strlen (szEqu), sizeof (szEqu) - strlen (szEqu), "%s%s", szEqu[0] ? "、" : "持ち物：", ItemNameOf (wItem));
 		}
 		for (i = 0; i < (int)aMember.size (); i ++) {
 			SendCmdSYSMSG (aMember[i]->pID, szTmp, SPEECHCMD_BATTLE1);

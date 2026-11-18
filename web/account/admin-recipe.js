@@ -9,6 +9,7 @@
  *   3. 保存すると /api/admin/recipe/save に送る（サーバーは server/node/sbosvr_data.js）。
  *      ログイン中のプレイヤー全員にすぐ反映され、「AI連携」の変更履歴に残る（元に戻せる）。
  * アイテムは名前で選ぶ（入力欄に名前を打つと候補が出る）。一覧は /api/admin/data/list の item から作る。
+ * 作り手の「種類」を「鑑定屋」にすると、レシピは使わず、手持ちの未鑑定の装備を鑑定する（docs/item-affix.md）。
  * 作り手を呼び出すには NPC の台詞を「@cNN」（NN は作り手の番号 2 桁。例 @c00）にする。
  * 消すのは byState=0（空き枠）にすること。空き枠は次に足す時に使い回される。
  */
@@ -178,7 +179,7 @@
 		var card = $('rc-mk-card');
 		var m = selMaker >= 0 ? makers[selMaker] : null;
 		card.hidden = !(selMaker === -2 || m);
-		$('rc-recipes-card').hidden = !m;
+		$('rc-recipes-card').hidden = !m || m.byKind === 1;		/* 鑑定屋はレシピを使わない */
 		if (card.hidden) return;
 		if (selMaker === -2) {
 			$('rc-mk-title').textContent = '作り手を足す';
@@ -187,6 +188,7 @@
 			$('rc-mk-done').value = 'はい、できました。@2';
 			$('rc-mk-lack').value = '材料が足りないようです。@2';
 			$('rc-mk-state').value = String(ST_ON);
+			$('rc-mk-kind').value = '0';
 			$('rc-mk-del').hidden = true;
 			$('rc-mk-call').textContent = '足すと番号が決まります（NPC の台詞に @c + 番号 2 桁を書くと開きます）。';
 		} else {
@@ -196,6 +198,7 @@
 			$('rc-mk-done').value = m.szMsgDone;
 			$('rc-mk-lack').value = m.szMsgLack;
 			$('rc-mk-state').value = String(m.byState);
+			$('rc-mk-kind').value = String(m.byKind || 0);
 			$('rc-mk-del').hidden = false;
 			$('rc-mk-call').textContent = 'NPC の台詞を「@c' + pad2(selMaker) + '」にすると、この作り手の画面が開きます（話しかけても S キーでも）。';
 		}
@@ -315,6 +318,7 @@
 		}
 		var ch = {
 			byState: Number($('rc-mk-state').value),
+			byKind: Number($('rc-mk-kind').value),
 			szName: name,
 			szMsgTalk: $('rc-mk-talk').value,
 			szMsgDone: $('rc-mk-done').value,
