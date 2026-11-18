@@ -10186,6 +10186,10 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebGetMagicKeyState(void)
 		return strRet.c_str ();
 	}
 	pChar = g_aCharInfo[g_nMyCharID];
+	/* ミニゲームに参加中は登録の列もショートカットのボタンも出さない */
+	if (pChar->abySubStatus[0] != 0) {
+		return strRet.c_str ();
+	}
 	if (IsMagicListOpen ()) {
 		nReg = 1;
 	} else if (!g_dwActiveMsgID && IsMagicBandShown (pChar)) {
@@ -10797,7 +10801,8 @@ void RegisterItemKeyAtCursor(PWNDINFO pWnd, int nSlot)
 	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
 	int nNo = (int)pWnd->byData1 + pWnd->nData1;
 
-	if (pWnd->dwData) {
+	/* 入れ替えを選んでいる間・ミニゲームに参加中（爆弾ゲームの試合前など）は登録しない */
+	if (pWnd->dwData || (pChar->abySubStatus[0] != 0)) {
 		return;
 	}
 	if ((nNo < 0) || (nNo >= MAX_MYITEM) || (pChar->waItem[nNo] == 0)) {
