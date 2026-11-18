@@ -1093,9 +1093,12 @@ static void TestMapSwapSave(const std::vector<int> &aLogin);
 static void TestMapPartsLight(void);
 static void TestJobMagicKey(const std::vector<int> &aLogin);
 static void TestAffix(const std::vector<int> &aLogin);
+static void TestAffixForge(const std::vector<int> &aLogin);
 extern BOOL SaveAffixInfo(void);
 extern BOOL LoadAffixInfo(void);
 extern BOOL SaveItemDerive(void);
+extern BOOL SaveRecipeInfo(void);
+extern BOOL LoadRecipeInfo(void);
 extern BOOL LoadItemDerive(void);
 static void TestTailRelogin(const std::vector<int> &aLogin);
 static void TestTailOverlap(const std::vector<int> &aLogin);
@@ -1623,6 +1626,8 @@ static void TestWorld(void)
 	TestPutFill();
 	/* AH. 付与（接頭辞・接尾辞）：派生アイテム・強さと売値・未鑑定・鑑定屋・保存・ドロップ（乱数を使うので、いちばん最後） */
 	TestAffix(aLogin);
+	/* AH2. 付与の段階2：鍛冶屋で鍛える・付け替える（TestAffix の後ろ。乱数は使わない） */
+	TestAffixForge(aLogin);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -10769,6 +10774,272 @@ static void TestAffix(const std::vector<int> &aLogin)
 	printf("affix roll empty=%d\n", AffixRollDrop(wWeapon, 100, 3) == wWeapon);
 
 	/* 元の表へ戻す */
+	for (int i = 0; i < g_aItemDerive.GetSize(); i ++) delete g_aItemDerive[i];
+	g_aItemDerive.RemoveAll();
+	for (size_t i = 0; i < aAffixBak.size(); i ++) g_aAffixInfo.Add(aAffixBak[i]);
+	for (size_t i = 0; i < aDeriveBak.size(); i ++) g_aItemDerive.Add(aDeriveBak[i]);
+	SaveAffixInfo();
+	SaveItemDerive();
+}
+
+/* ------------------------------------------------------------------------- */
+/* AH2. 付与の段階2：鍛冶屋で鍛える・付け替える								 */
+/*    (a) 鍛える＋1→＋2→＋3・これ以上は鍛えられない（wNext 0）				 */
+/*    (b) 普通の装備は byAllowPlain=0 なら断る・1 なら＋1					 */
+/*    (c) 付け替える（前の付与を置き換え・同じ付与は断る）					 */
+/*    (d) 未鑑定・種別違いは断る												 */
+/*    (e) 装備中のまま強さが変わる・材料と手数料の消費・対象は材料に数えない	 */
+/*    (f) 材料不足・手数料不足は何も減らない									 */
+/*    (g) レシピ・付与表（wNext）の保存と読み直し								 */
+/* ------------------------------------------------------------------------- */
+static void TestAffixForge(const std::vector<int> &aLogin)
+{
+	printf("== AH2. Forge ==\n");
+	if (aLogin.size() < 3) {
+		return;
+	}
+	PCHARINFO pA = g_aCharInfo[aLogin[2]];
+
+	std::vector<PITEMAFFIXINFO> aAffixBak;
+	std::vector<PITEMDERIVEINFO> aDeriveBak;
+	for (int i = 0; i < g_aAffixInfo.GetSize(); i ++) aAffixBak.push_back(g_aAffixInfo[i]);
+	for (int i = 0; i < g_aItemDerive.GetSize(); i ++) aDeriveBak.push_back(g_aItemDerive[i]);
+	g_aAffixInfo.RemoveAll();
+	g_aItemDerive.RemoveAll();
+
+	WORD wWeapon = 0, wArmor = 0, wMat1 = 0, wMat2 = 0;
+	for (int i = 1; i < g_aItemInfo.GetSize() && i < ITEMID_DERIVE_BASE; i ++) {
+		PITEMINFO p = g_aItemInfo[i];
+		if (!p->szName[0] || IsImportantItem((WORD)i) || (p->byFlg & ITEMFLG_DROP)) continue;
+		if (!wWeapon && (p->byType == ITEMTYPE_WEAPON) && (p->byData >= 10) && (p->dwGold >= 200)) wWeapon = (WORD)i;
+		else if (!wArmor && (p->byType == ITEMTYPE_ARMOR) && (p->byData >= 10)) wArmor = (WORD)i;
+		else if (ItemAffixEquBit(p->byType) == 0) {
+			if (!wMat1) wMat1 = (WORD)i; else if (!wMat2 && (WORD)i != wMat1) wMat2 = (WORD)i;
+		}
+	}
+	printf("forge found weapon=%d armor=%d mat=%d\n", wWeapon ? 1 : 0, wArmor ? 1 : 0, (wMat1 && wMat2) ? 1 : 0);
+	if (!wWeapon || !wMat1 || !wMat2) {
+		return;
+	}
+
+	/* 付与表：1 鋭い(前) 2 ＋1(後ろ→3) 3 ＋2(後ろ→4) 4 ＋3(後ろ。次なし) 5 堅い(前・鎧だけ) */
+	struct { BYTE byPos; const char *pszName; WORD wMask; char chAdd; WORD wNext; } aDef[] = {
+		{ AFFIXPOS_FRONT, "鋭い", AFFIXEQU_ALL, 2, 0 },
+		{ AFFIXPOS_BACK, "＋1", AFFIXEQU_ALL, 1, 3 },
+		{ AFFIXPOS_BACK, "＋2", AFFIXEQU_ALL, 2, 4 },
+		{ AFFIXPOS_BACK, "＋3", AFFIXEQU_ALL, 3, 0 },
+		{ AFFIXPOS_FRONT, "堅い", AFFIXEQU_ARMOR, 0, 0 },
+	};
+	for (int i = 0; i < 5; i ++) {
+		PITEMAFFIXINFO p = new ITEMAFFIXINFO;
+		ZeroMemory(p, sizeof(*p));
+		p->wID = (WORD)(i + 1);
+		p->byPos = aDef[i].byPos;
+		strcpy(p->szName, aDef[i].pszName);
+		p->wEquMask = aDef[i].wMask;
+		p->chAdd = aDef[i].chAdd;
+		p->byRank = 1;
+		p->wWeight = 1;
+		p->wGoldRate = 100;
+		p->wNext = aDef[i].wNext;
+		g_aAffixInfo.Add(p);
+	}
+
+	/* 作り手・NPC・レシピを仮に用意する */
+	WORD waItemBak[MAX_MYITEM], waEquBak[MAX_EQUTYPE];
+	DWORD dwGoldBak = pA->dwGold, dwMapBak = pA->dwMapID, dwXBak = pA->dwX, dwYBak = pA->dwY;
+	WORD wATBak = pA->wAT;
+	memcpy(waItemBak, pA->waItem, sizeof(waItemBak));
+	memcpy(waEquBak, pA->waEqu, sizeof(waEquBak));
+	PMAKERINFO pMaker = new MAKERINFO;
+	ZeroMemory(pMaker, sizeof(*pMaker));
+	pMaker->byState = RECIPESTATE_ON;
+	int nMaker = g_aMakerInfo.GetSize();
+	g_aMakerInfo.Add(pMaker);
+	PCHARINFO pNpc = NULL;
+	for (int i = 0; i < g_aCharInfo.GetSize() && !pNpc; i ++) {
+		if (g_aCharInfo[i]->byNpcType == NPCTYPE_MOVERAND) pNpc = g_aCharInfo[i];
+	}
+	char *pszSpeechBak = pNpc->pszNpcSpeech;
+	DWORD dwNpcMapBak = pNpc->dwMapID, dwNpcXBak = pNpc->dwX, dwNpcYBak = pNpc->dwY;
+	char szSpeech[16];
+	snprintf(szSpeech, sizeof(szSpeech), "@c%02d", nMaker);
+	pNpc->pszNpcSpeech = szSpeech;
+	pNpc->dwMapID = pA->dwMapID; pNpc->dwX = pA->dwX; pNpc->dwY = pA->dwY;
+
+	std::vector<PRECIPEINFO> aRecipe;
+	int nRecipeBase = g_aRecipeInfo.GetSize();
+	struct { BYTE byKind; WORD wAffix; BYTE byAllowPlain; WORD wEquMask; WORD wMat; BYTE byMatCount; DWORD dwGold; } aRDef[] = {
+		{ RECIPEKIND_FORGE, 2, 1, 0, wMat1, 1, 50 },			/* 0: 鍛える（＋1）。普通の装備も可 */
+		{ RECIPEKIND_FORGE, 2, 0, 0, wMat1, 1, 0 },			/* 1: 鍛える（＋1）。派生装備だけ */
+		{ RECIPEKIND_SWAP, 1, 0, 0, wMat2, 1, 0 },				/* 2: 付け替える：鋭い */
+		{ RECIPEKIND_SWAP, 5, 1, 0, wMat2, 1, 0 },				/* 3: 付け替える：堅い（鎧だけ） */
+		{ RECIPEKIND_FORGE, 2, 1, 0, wWeapon, 1, 0 },			/* 4: 鍛える。材料が対象と同じ品 */
+		{ RECIPEKIND_FORGE, 2, 1, AFFIXEQU_ARMOR, wMat1, 1, 0 },/* 5: 鍛える。レシピ側で鎧だけ */
+	};
+	for (int i = 0; i < 6; i ++) {
+		PRECIPEINFO p = new RECIPEINFO;
+		ZeroMemory(p, sizeof(*p));
+		p->byState = RECIPESTATE_ON;
+		p->byMaker = (BYTE)nMaker;
+		p->byCount = 1;
+		p->byKind = aRDef[i].byKind;
+		p->wAffix = aRDef[i].wAffix;
+		p->byAllowPlain = aRDef[i].byAllowPlain;
+		p->wEquMask = aRDef[i].wEquMask;
+		p->awMatItem[0] = aRDef[i].wMat;
+		p->abyMatCount[0] = aRDef[i].byMatCount;
+		p->dwGold = aRDef[i].dwGold;
+		g_aRecipeInfo.Add(p);
+		aRecipe.push_back(p);
+	}
+
+	auto Reset = [&]() {
+		ZeroMemory(pA->waItem, sizeof(pA->waItem));
+		for (int i = 0; i < MAX_EQUTYPE; i ++) pA->waEqu[i] = 0xFFFF;
+		pA->dwGold = 1000;
+	};
+	auto Forge = [&](int nRecipe, int nNo) {
+		CMDPARA_RECIPEMAKE Para;
+		ZeroMemory(&Para, sizeof(Para));
+		Para.byCmd = CMD_RECIPEMAKE; Para.byMaker = (BYTE)nMaker; Para.wRecipeID = (WORD)(nRecipeBase + nRecipe);
+		Para.byNo = (BYTE)nNo; Para.dwTblID = pA->dwTblID;
+		TestRecv(pA, &Para, sizeof(Para));
+	};
+	auto Show = [&](const char *pszTag) {
+		printf("forge %s items=", pszTag);
+		for (int i = 0; i < 4; i ++) printf("%s%s", i ? "," : "", pA->waItem[i] ? ItemNameOf(pA->waItem[i]) : "-");
+		printf(" gold=%u equ=%u\n", pA->dwGold, (unsigned)pA->waEqu[0]);
+	};
+	auto Code = [&](int nRecipe, WORD wItem) {
+		WORD wB, wP, wS;
+		return ItemForgeCalc(aRecipe[nRecipe], wItem, &wB, &wP, &wS);
+	};
+
+	/* (b) 普通の装備：byAllowPlain=0 のレシピは断る（一覧にも出ない）・1 なら＋1 */
+	Reset();
+	pA->waItem[0] = wWeapon; pA->waItem[1] = wMat1;
+	printf("forge plain calc allow0=%d allow1=%d\n", Code(1, wWeapon), Code(0, wWeapon));
+	Forge(1, 0);
+	Show("plain allow0");
+	Forge(0, 0);
+	Show("plain allow1");
+
+	/* (a) ＋1→＋2→＋3→これ以上は鍛えられない。材料は手前の枠・対象は装備中で、材料が消えて詰まっても装備したまま強さが変わる */
+	Reset();
+	pA->waItem[0] = wMat1; pA->waItem[1] = wWeapon; pA->waEqu[0] = 1;
+	RenewATDF(pA->dwTblID);
+	WORD wAT0 = pA->wAT;
+	Forge(0, 1);
+	Show("equipped +1");
+	WORD wAT1 = pA->wAT;
+	pA->waItem[1] = wMat1;
+	Forge(0, 0);
+	Show("+2");
+	pA->waItem[1] = wMat1;
+	Forge(0, 0);
+	Show("+3");
+	printf("forge at %u->%u->%u expect=%d\n", wAT0, wAT1, pA->wAT, (int)wAT0 + 3);
+	pA->waItem[1] = wMat1;
+	printf("forge maxed calc=%d\n", Code(0, pA->waItem[0]));
+	Forge(0, 0);
+	Show("maxed");
+
+	/* (c) 付け替える：後ろの付与を残したまま前を置き換え・同じ付与は断る */
+	Reset();
+	pA->waItem[0] = AffixDeriveFindOrCreate(wWeapon, 0, 2, 0);
+	pA->waItem[1] = wMat2; pA->waItem[2] = wMat2;
+	Forge(2, 0);
+	Show("swap front");
+	printf("forge swap same calc=%d\n", Code(2, pA->waItem[0]));
+	Forge(2, 0);
+	Show("swap same");
+
+	/* (d) 未鑑定・種別違い・近くに作り手がいない */
+	Reset();
+	WORD wUnk = AffixDeriveFindOrCreate(wWeapon, 0, 2, 1);
+	pA->waItem[0] = wUnk; pA->waItem[1] = wMat2;
+	printf("forge unknown calc=%d\n", Code(2, wUnk));
+	Forge(2, 0);
+	printf("forge unknown item=%u(unknown=%d) mat=%u gold=%u\n", pA->waItem[0], pA->waItem[0] == wUnk, pA->waItem[1], pA->dwGold);
+	pA->waItem[0] = AffixDeriveFindOrCreate(wWeapon, 0, 2, 0);
+	printf("forge armor-only calc affix=%d recipeMask=%d\n", Code(3, pA->waItem[0]), Code(5, pA->waItem[0]));
+	Forge(3, 0);
+	Show("armor-only");
+	pA->waItem[2] = wMat2;
+	Forge(2, 5);
+	printf("forge empty slot item=%u\n", pA->waItem[5]);
+	pNpc->dwX = pA->dwX + 100;
+	pA->waItem[3] = wMat2;
+	Forge(2, 0);
+	Show("far");
+	pNpc->dwX = pA->dwX;
+	if (wArmor) {
+		pA->waItem[0] = wArmor;
+		printf("forge armor calc forge=%d swapPlainOK=%d recipeMask=%d\n", Code(0, wArmor), Code(3, wArmor), Code(5, wArmor));
+	}
+
+	/* (f) 材料不足・手数料不足は何も減らない */
+	Reset();
+	pA->waItem[0] = wWeapon;
+	Forge(0, 0);
+	Show("lack mat");
+	pA->waItem[1] = wMat1;
+	pA->dwGold = 49;
+	Forge(0, 0);
+	Show("lack gold");
+	/* (e) 材料が対象と同じ品でも、対象そのものは材料に数えない */
+	Reset();
+	pA->waItem[0] = wWeapon;
+	Forge(4, 0);
+	Show("self material");
+	pA->waItem[1] = wWeapon;
+	Forge(4, 0);
+	Show("self material 2");
+	/* 手数料と材料の消費 */
+	Reset();
+	pA->waItem[0] = wWeapon; pA->waItem[1] = wMat1; pA->waItem[2] = wMat1;
+	Forge(0, 0);
+	Show("consume");
+
+	/* (g) レシピ・付与表の保存と読み直し */
+	pA->wAT = wATBak;
+	g_aMakerInfo.RemoveAt(nMaker);
+	delete pMaker;
+	pNpc->pszNpcSpeech = pszSpeechBak;
+	pNpc->dwMapID = dwNpcMapBak; pNpc->dwX = dwNpcXBak; pNpc->dwY = dwNpcYBak;
+	memcpy(pA->waItem, waItemBak, sizeof(waItemBak));
+	memcpy(pA->waEqu, waEquBak, sizeof(waEquBak));
+	pA->dwGold = dwGoldBak; pA->dwMapID = dwMapBak; pA->dwX = dwXBak; pA->dwY = dwYBak;
+	RenewATDF(pA->dwTblID);
+	pA->wAT = wATBak;
+
+	std::vector<PRECIPEINFO> aRecipeBak;
+	for (int i = 0; i < nRecipeBase; i ++) aRecipeBak.push_back(g_aRecipeInfo[i]);
+	SaveAffixInfo();
+	SaveRecipeInfo();
+	g_aAffixInfo.RemoveAll();
+	g_aRecipeInfo.RemoveAll();
+	LoadAffixInfo();
+	LoadRecipeInfo();
+	printf("forge load affix=%d recipes=%d\n", g_aAffixInfo.GetSize(), g_aRecipeInfo.GetSize());
+	if (g_aAffixInfo.GetSize() == 5) {
+		printf("forge load next=%u,%u,%u,%u\n", g_aAffixInfo[1]->wNext, g_aAffixInfo[2]->wNext, g_aAffixInfo[3]->wNext, g_aAffixInfo[0]->wNext);
+	}
+	if (g_aRecipeInfo.GetSize() == nRecipeBase + 6) {
+		for (int i = 0; i < 6; i ++) {
+			PRECIPEINFO p = g_aRecipeInfo[nRecipeBase + i];
+			printf("forge load recipe%d kind=%u affix=%u plain=%u mask=%u mat=%d gold=%u\n", i, p->byKind, p->wAffix, p->byAllowPlain, p->wEquMask, p->awMatItem[0] == aRDef[i].wMat, p->dwGold);
+		}
+	}
+
+	/* 元の表へ戻す */
+	for (int i = nRecipeBase; i < g_aRecipeInfo.GetSize(); i ++) delete g_aRecipeInfo[i];
+	g_aRecipeInfo.RemoveAll();
+	for (size_t i = 0; i < aRecipeBak.size(); i ++) g_aRecipeInfo.Add(aRecipeBak[i]);
+	SaveRecipeInfo();
+	for (int i = 0; i < g_aAffixInfo.GetSize(); i ++) delete g_aAffixInfo[i];
+	g_aAffixInfo.RemoveAll();
 	for (int i = 0; i < g_aItemDerive.GetSize(); i ++) delete g_aItemDerive[i];
 	g_aItemDerive.RemoveAll();
 	for (size_t i = 0; i < aAffixBak.size(); i ++) g_aAffixInfo.Add(aAffixBak[i]);

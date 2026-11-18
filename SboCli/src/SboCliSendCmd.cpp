@@ -134,7 +134,7 @@ void SendCmdEFECTCHG		(BYTE, BOOL);							/* エフェクト変更 */
 void SendCmdRESURRECTION	(void);									/* 蘇生 */
 void SendCmdREQ_ATTACK		(DWORD dwTblID, BYTE byTurnLV);			/* 攻撃要求 */
 void SendCmdREQ_GUARD		(BOOL bGuard);							/* 構え(防御)の開始・終了 */
-void SendCmdRECIPEMAKE		(BYTE, WORD);							/* レシピで作ってもらう要求 */
+void SendCmdRECIPEMAKE		(BYTE, WORD, BYTE);						/* レシピで作ってもらう要求 */
 void SendCmdAPPRAISE		(BYTE, BYTE);							/* 鑑定してもらう要求 */
 void SendCmdMARKET			(BYTE, BYTE, BYTE, WORD, DWORD, DWORD);	/* 取引所の要求 */
 void SendCmdRECYCLE			(BYTE, WORD, BYTE);				/* リサイクルボックスの要求 */
@@ -3102,7 +3102,8 @@ void SendCmdLEAVEITEMDISPOSE(BYTE byMode, BYTE byNo, BYTE byCount, WORD wItemID)
 
 void SendCmdRECIPEMAKE(
 	BYTE byMaker,		/* [in] 作り手の番号 */
-	WORD wRecipeID)		/* [in] レシピの番号 */
+	WORD wRecipeID,		/* [in] レシピの番号 */
+	BYTE byNo)			/* [in] 鍛える・付け替える時の対象の手持ちの位置（普通のレシピは 0） */
 {
 	CMDPARA_RECIPEMAKE SendData;
 
@@ -3110,6 +3111,7 @@ void SendCmdRECIPEMAKE(
 	SendData.byCmd		= CMD_RECIPEMAKE;
 	SendData.byMaker	= byMaker;
 	SendData.wRecipeID	= wRecipeID;
+	SendData.byNo		= byNo;
 	SendData.pID		= g_pMyID;
 	SendData.dwTblID	= g_aCharInfo[g_nMyCharID]->dwTblID;
 

@@ -67,6 +67,7 @@ static const COLINFO s_aAffixCol[] = {
 	COL (ITEMAFFIXINFO, wWeight,	COL_U16),
 	COL (ITEMAFFIXINFO, wGoldRate,	COL_U16),
 	COL (ITEMAFFIXINFO, byBad,		COL_U8),
+	COL (ITEMAFFIXINFO, wNext,		COL_U16),		/* 古いデータには無い列（0=これ以上は鍛えられない） */
 };
 
 /* 派生アイテム表のカラム */

@@ -25,6 +25,36 @@ AI（データ API）からも `maker`・`recipe` として読み書きできま
 
 作り手の種類（`byKind`）を「鑑定」にすると、レシピではなく鑑定屋になります（`docs/item-affix.md`）。
 
+## 鍛冶屋：鍛える・付け替える（付与の第 2 段階）
+
+レシピの種類（`byKind`）が **1=鍛える・2=付け替える** のものは、材料から物を作る代わりに、**手持ちの装備 1 つの付与を変えます**（`docs/item-affix.md`）。
+できるアイテム（`wItem`）と個数は使いません（できる個数は 1 固定）。レシピの欄は次のとおりです（古いデータは 0 =普通）。
+
+| 欄 | 内容 |
+| --- | --- |
+| `byKind` | 0=普通 1=鍛える 2=付け替える |
+| `wAffix` | 付ける付与の番号（付与表の `wID`）。鍛えるは位置が後ろの付与にする |
+| `byAllowPlain` | 1=付与の無い普通の装備も対象にしてよい |
+| `wEquMask` | 対象の装備種別ビット（武器 1・鎧 2・盾 4・兜 8・小手 16・靴 32・首飾り 64・指輪 128）。0=付与の `wEquMask` に従う（どちらにも合わない種別は対象外） |
+
+- **鍛える**：対象に後ろの付与があれば、その付与の `wNext`（次の段）に置き換えます。`wNext` が 0 なら「これ以上は鍛えられません」と断ります。後ろの付与が無ければ `wAffix` を付けます。前の付与はそのまま。失敗はありません。
+- **付け替える**：`wAffix` の位置（前／後ろ）の付与を `wAffix` に置き換えます（無ければ付けます）。同じ付与が付いていれば断ります。
+- 対象は手持ちの鑑定済みの派生装備（装備中でもよい）。`byAllowPlain=1` なら普通の装備も対象です。**未鑑定は不可**（「先に鑑定を」）。付与や装備種別が合わない装備は一覧に出ません。
+- 材料と手数料は普通のレシピと同じです（持ち物→預かり所の順に使う。**対象の装備そのものは材料に数えません**）。
+- 結果は鑑定済みの派生番号（同じ組は同じ番号）で**同じ手持ちの枠を置き換え**ます。装備中なら装備したまま強さが変わります。
+
+遊び方：作り手の一覧に「鍛える（＋1→＋2）」「付け替える：堅い」のような名前で出ます。選ぶと手持ちの対象の一覧が開き、選ぶと
+「◯◯ → △△ にします。材料…、手数料…G」の確認が出て、「はい」で実行します。サーバーも条件（作り手が近く・鑑定済み・種別・材料・手数料）をすべて確かめます。
+
+想定するデータの例（データそのものはこのリポジトリに入れません）：
+
+- 付与表：後ろの付与を `＋1`（`wNext`=＋2）・`＋2`（`wNext`=＋3）・`＋3`（`wNext`=0）で作り、前の付与「堅い」などを足す。
+- 鍛冶の秘石（お金で買えない珍しい素材）＋普通の装備 → ＋1：種類「鍛える」・`wAffix`=＋1・`byAllowPlain`=1。
+- 付与付きの装備＋素材 → ＋2、＋3：種類「鍛える」で、素材（と手数料）を段ごとに変えたレシピを足す（装備の今の段から次の段へ上がる）。
+- 黒曜石 → 前に「堅い」へ付け替え：種類「付け替える」・`wAffix`=堅い。
+
+管理ページの「レシピ」タブで種類・付ける付与・普通も可・対象種別を編集でき、「付与」タブで `wNext`（次の段）を決めます。データ API の `recipe`・`affix` からも同じ欄を読み書きできます。
+
 ## データの置き場所
 
 `SBODATA/SboDataMakerInfo.dat`・`SboDataRecipeInfo.dat`（ほかの `SboData*.dat` と同じカラム形式）。
@@ -34,8 +64,10 @@ AI（データ API）からも `maker`・`recipe` として読み書きできま
 
 | 場所 | 内容 |
 | --- | --- |
-| `common/TypedefCommon.h` | `CMD_MAKERINFO`・`CMD_RECIPEINFO`・`CMD_RECIPEMAKE` と構造体 |
+| `common/TypedefCommon.h` | `CMD_MAKERINFO`・`CMD_RECIPEINFO`・`CMD_RECIPEMAKE` と構造体（`RECIPEKIND_*`・鍛える・付け替えるの欄） |
+| `common/ItemAffix.h` | 鍛える・付け替えるの判定（`ItemForgeCalc`。サーバーとクライアント共通）とレシピの表示名（`RecipeKindName`） |
 | `SboSvr/src/SaveLoad/SboSvrSaveLoadRecipeInfo.cpp` | 保存・読み込み |
 | `SboSvr/src/SboSvrRecvCmd.cpp` | 作成の処理（`RecipeMake`。作り手が近くにいるか・材料・手数料・置き場所を確かめ、失敗したら元に戻す） |
-| `SboCli/src/SboCliMakeWindow.cpp`・`SboCliKeyProc.cpp`・`SboCliDrawWindow.cpp` | 作り手の画面（`WNDTYPE_MAKER`） |
+| `SboCli/src/SboCliMakeWindow.cpp`・`SboCliKeyProc.cpp`・`SboCliDrawWindow.cpp` | 作り手の画面（`WNDTYPE_MAKER`。鍛冶屋の対象一覧は `MAKERWND_FORGE`・`KeyProcFORGE`） |
+| `web/account/admin-recipe.js`・`admin-affix.js` | 管理ページの「レシピ」「付与」タブ |
 | `server/web_data_svr.cpp`・`server/node/sbosvr_data.js` | データ API・管理ページ用の保存 |
