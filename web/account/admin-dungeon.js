@@ -22,6 +22,7 @@
 	var selRoom = -1, selDeco = -1, selOp = -1;
 	var last = null, lastTheme = null;					/* 最後のお試し作成の結果 */
 	var $root = null;
+	var dex = null, dexLoading = null, palBuilt = false, palCb = null;	/* パーツ一覧のポップアップ */
 
 	/* 部分ごとの名前（テーマの項目） */
 	var LISTS = [
@@ -68,6 +69,21 @@
 		'.dg-cap{font-size:12px;color:var(--sub);margin:2px 0}' +
 		'.dg-legend span{display:inline-flex;align-items:center;gap:3px;margin-right:8px;font-size:12px}' +
 		'.dg-legend i{display:inline-block;width:12px;height:12px;border:1px solid var(--border)}' +
+		'.dg-pf{display:flex;flex-wrap:wrap;gap:4px;align-items:flex-start}' +
+		'.dg-chipw{position:relative;display:inline-block}' +
+		'.dg-chip{display:flex!important;flex-direction:column;align-items:center;margin:0!important;padding:2px!important;min-width:40px;background:#000;border:2px solid var(--border);border-radius:4px;color:#ddd;font-size:11px;cursor:pointer}' +
+		'.dg-chip canvas{width:32px;height:32px;image-rendering:pixelated;display:block}' +
+		'.dg-chip:hover{border-color:var(--accent)}' +
+		'.dg-chipx{position:absolute;top:-6px;right:-6px;margin:0!important;padding:0!important;width:20px;height:20px;line-height:18px;border-radius:50%;font-size:13px;text-align:center}' +
+		'.dg-pf .dg-add{margin:0!important;align-self:center}' +
+		'.dg-sm{width:4em!important;padding:3px 5px!important;font-size:12px!important;margin-left:4px}' +
+		'.dg-dgrid{display:grid;gap:2px;width:max-content}' +
+		'.dg-palbg{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center}' +
+		'.dg-palbg[hidden]{display:none}' +
+		'.dg-palbg .mv-pal{position:relative;right:auto;top:auto;width:min(560px,calc(100vw - 16px));height:min(600px,calc(100vh - 16px));resize:none}' +
+		'.dg-palbg .mv-pal-head{cursor:default}' +
+		'.dg-palbg .mv-pal-tools button{margin:0;padding:6px 10px}' +
+		'.dg-guide{margin:14px 0;padding:14px;border:1px dashed var(--border);border-radius:8px;color:var(--sub)}' +
 		'@media(max-width:700px){.dg-parts{grid-template-columns:1fr}}';
 
 	function build() {
@@ -85,39 +101,40 @@
 			'<label><input type="radio" name="dg-impmode" value="add" checked> 追加として入れる（id を振り直す）</label>' +
 			'<label><input type="radio" name="dg-impmode" value="replace"> 同じ id を上書き</label>' +
 			'<button type="button" id="dg-impgo">入れる</button><button type="button" class="sub" id="dg-impcancel">やめる</button></div></div>' +
+			'<div class="dg-guide" id="dg-guide" hidden>左の一覧でテーマを選ぶか、「追加」で新しいテーマを作ってください。テーマを選ぶと、パーツ・9分割の部屋・出入口・灯り・飾りの欄が出ます。</div>' +
 			'<div id="dg-edit" hidden>' +
 			'<div class="dg-row"><label>名前 <input type="text" id="dg-name" maxlength="40"></label>' +
 			'<label>作り方 <select id="dg-algo"><option value="1">1 = L1 聖堂</option><option value="3">3 = L3 洞窟</option></select></label></div>' +
-			'<div class="dg-cap">パーツ番号はカンマ区切りで複数（床はくじで均等に混ぜます）。</div><div class="dg-parts" id="dg-lists"></div></div></div>';
+			'<div class="dg-cap">絵を押すとパーツ一覧から選べます。複数可の欄は「＋追加」と絵の×で増減（床はくじで均等に混ぜます）。数字の欄は上級者用です。</div><div class="dg-parts" id="dg-lists"></div></div></div>';
 		h += '<div class="dg-sec" id="dg-rooms-sec" hidden><h3>9分割の部屋（L1 用）</h3>' +
-			'<div class="dg-row"><select id="dg-rsel"></select><button type="button" id="dg-rdel" class="sub">この部屋を削除</button></div>' +
-			'<div class="dg-row"><label>マップ <input type="text" class="dg-n" id="dg-rm" inputmode="numeric" value="0"></label>' +
-			'<label>x <input type="text" class="dg-n" id="dg-rx" inputmode="numeric" value="0"></label><label>y <input type="text" class="dg-n" id="dg-ry" inputmode="numeric" value="0"></label>' +
-			'<label>w <input type="text" class="dg-n" id="dg-rw" inputmode="numeric" value="9"></label><label>h <input type="text" class="dg-n" id="dg-rh" inputmode="numeric" value="8"></label>' +
-			'<button type="button" id="dg-rimp">マップから取り込む</button></div>' +
+			'<div class="dg-row"><label>大きさ w <input type="text" class="dg-n" id="dg-rw" inputmode="numeric" value="9"></label>' +
+			'<label>h <input type="text" class="dg-n" id="dg-rh" inputmode="numeric" value="8"></label>' +
+			'<button type="button" id="dg-radd">＋部屋を追加</button></div>' +
+			'<div class="dg-row"><select id="dg-rsel"></select><button type="button" id="dg-rdup" class="sub">この部屋を複製</button><button type="button" id="dg-rdel" class="sub">この部屋を削除</button></div>' +
 			'<div id="dg-redit" hidden><div class="dg-row"><label>名前 <input type="text" id="dg-rname" maxlength="40"></label>' +
 			'<label>種類 <select id="dg-rkind"><option value="0">ふつう</option><option value="1">ボス</option><option value="2">入口</option></select></label>' +
 			'<span class="sub-text" id="dg-rinfo"></span></div>' +
 			'<div class="dg-row"><label><input type="checkbox" id="dg-rfixed"> 伸ばさずそのまま置く（固定パターン）</label>' +
 			'<button type="button" class="sub" id="dg-rentclr">入口の位置を消す</button><span class="sub-text" id="dg-rentinfo"></span></div>' +
+			'<div class="dg-row" id="dg-tb-r"></div><div class="dg-row" id="dg-rb-r"></div>' +
 			'<div class="dg-cap" id="dg-rcap"></div>' +
-			'<div class="dg-cols"><div><div class="dg-cap">元の部屋</div><div class="dg-scroll"><canvas class="dg-cv" id="dg-rcv"></canvas></div></div>' +
+			'<div class="dg-cols"><div><div class="dg-cap">部屋の絵</div><div class="dg-scroll"><canvas class="dg-cv" id="dg-rcv"></canvas></div></div>' +
 			'<div id="dg-samples" class="dg-cols"><div><div class="dg-cap" id="dg-s1c"></div><div class="dg-scroll"><canvas class="dg-cv" id="dg-s1"></canvas></div></div>' +
 			'<div><div class="dg-cap" id="dg-s2c"></div><div class="dg-scroll"><canvas class="dg-cv" id="dg-s2"></canvas></div></div></div></div></div></div>';
 		h += '<div class="dg-sec" id="dg-ops-sec" hidden><h3>出入口パターン（最大50件）</h3>' +
-			'<div class="dg-row"><select id="dg-osel"></select><button type="button" id="dg-odel" class="sub">このパターンを削除</button></div>' +
-			'<div class="dg-row"><label>マップ <input type="text" class="dg-n" id="dg-om" inputmode="numeric" value="0"></label>' +
-			'<label>x <input type="text" class="dg-n" id="dg-ox" inputmode="numeric" value="0"></label><label>y <input type="text" class="dg-n" id="dg-oy" inputmode="numeric" value="0"></label>' +
-			'<label>w <input type="text" class="dg-n" id="dg-ow" inputmode="numeric" value="4"></label><label>h <input type="text" class="dg-n" id="dg-oh" inputmode="numeric" value="2"></label>' +
-			'<label>壁の向き <select id="dg-oidir"><option value="0">0 = 横の壁（h は 2）</option><option value="1">1 = 縦の壁（w は 1）</option></select></label>' +
+			'<div class="dg-row"><label>壁の向き <select id="dg-oidir"><option value="0">0 = 横の壁（h は 2）</option><option value="1">1 = 縦の壁（w は 1）</option></select></label>' +
 			'<label>種類 <select id="dg-oitype"><option value="1">1 = アーチ</option><option value="2">2 = 扉</option><option value="3">3 = 壁ごと抜く</option></select></label>' +
-			'<button type="button" id="dg-oimp">マップから取り込む（新しいパターン）</button></div>' +
+			'<label>大きさ w <input type="text" class="dg-n" id="dg-ow" inputmode="numeric" value="4"></label>' +
+			'<label>h <input type="text" class="dg-n" id="dg-oh" inputmode="numeric" value="2"></label>' +
+			'<button type="button" id="dg-oadd">＋パターンを追加</button></div>' +
+			'<div class="dg-row"><select id="dg-osel"></select><button type="button" id="dg-odup" class="sub">このパターンを複製</button><button type="button" id="dg-odel" class="sub">このパターンを削除</button></div>' +
 			'<div id="dg-oedit" hidden><div class="dg-row"><label>名前 <input type="text" id="dg-oname" maxlength="40"></label>' +
 			'<label>壁の向き <select id="dg-odir"><option value="0">0 = 横の壁</option><option value="1">1 = 縦の壁</option></select></label>' +
 			'<label>種類 <select id="dg-otype"><option value="1">1 = アーチ</option><option value="2">2 = 扉</option><option value="3">3 = 壁ごと抜く</option></select></label>' +
 			'<span class="sub-text" id="dg-oinfo"></span></div>' +
-			'<div class="dg-row" id="dg-oopenrow" hidden><button type="button" id="dg-oimpopen">上のマップ範囲を「開いた絵」として取り込む</button>' +
+			'<div class="dg-row" id="dg-oopenrow" hidden><button type="button" id="dg-oaddopen">開いた絵を作る（閉まった絵をコピー）</button>' +
 			'<button type="button" class="sub" id="dg-oclropen">開いた絵を消す</button></div>' +
+			'<div class="dg-row" id="dg-tb-o"></div><div class="dg-row" id="dg-rb-o"></div>' +
 			'<div class="dg-cap" id="dg-ocap"></div>' +
 			'<div class="dg-cols"><div><div class="dg-cap">閉まった絵（通常の絵）</div><div class="dg-scroll"><canvas class="dg-cv" id="dg-ocv"></canvas></div></div>' +
 			'<div id="dg-oopenbox"><div class="dg-cap">開いた絵</div><div class="dg-scroll"><canvas class="dg-cv" id="dg-ocv2"></canvas></div></div></div></div></div>';
@@ -125,12 +142,13 @@
 			'<div class="dg-cap">パーツ番号ごとの「灯りの範囲」（0〜7）を、このテーマだけ上書きします。お試し作成の「暗くして見る」では、パーツ本来の値より先にこの表を使います。</div>' +
 			'<div id="dg-lrows"></div><div class="dg-row"><button type="button" id="dg-ladd">行を足す</button></div></div>';
 		h += '<div class="dg-sec" id="dg-decos-sec" hidden><h3>飾り</h3>' +
-			'<div class="dg-row"><select id="dg-dsel"></select><button type="button" id="dg-dadd">飾りを追加</button><button type="button" id="dg-ddel" class="sub">削除</button></div>' +
+			'<div class="dg-row"><select id="dg-dsel"></select><button type="button" id="dg-dadd">＋飾りを追加</button><button type="button" id="dg-ddup" class="sub">複製</button><button type="button" id="dg-ddel" class="sub">削除</button></div>' +
 			'<div id="dg-dedit" hidden><div class="dg-row"><label>名前 <input type="text" id="dg-dname" maxlength="40"></label>' +
 			'<label>w <input type="text" class="dg-n" id="dg-dw" inputmode="numeric"></label><label>h <input type="text" class="dg-n" id="dg-dh" inputmode="numeric"></label>' +
 			'<label>置く所 <select id="dg-don"><option value="1">部屋の床</option><option value="3">壁の側面</option></select></label>' +
 			'<label>rate % <input type="text" class="dg-n" id="dg-drate" inputmode="numeric"></label><label>max <input type="text" class="dg-n" id="dg-dmax" inputmode="numeric"></label></div>' +
-			'<div class="dg-row"><label>cells（w*h 個。左上から行ごと、カンマ区切り） <input type="text" class="dg-w" id="dg-dcells"></label><span class="dg-thumbs" id="dg-dth"></span></div></div></div>';
+			'<div class="dg-row" id="dg-tb-d"></div><div class="dg-row" id="dg-rb-d"></div>' +
+			'<div class="dg-scroll" style="max-height:60vh"><canvas class="dg-cv" id="dg-dcv"></canvas></div></div></div>';
 		h += '<div class="dg-sec"><h3>お試し作成</h3><div class="dg-row" id="dg-params"></div>' +
 			'<div class="dg-row"><label><input type="checkbox" id="dg-usetheme" checked> 編集中のテーマを使う</label>' +
 			'<button type="button" id="dg-gen">作る</button><button type="button" id="dg-gen2" class="sub">別のシード</button>' +
@@ -148,18 +166,28 @@
 		$('dg-params').innerHTML = ps;
 		var ls = '';
 		LISTS.forEach(function (l) {
-			ls += '<span>' + l[1] + '</span><input type="text" id="dg-l-' + l[0] + '" inputmode="numeric" autocomplete="off"><span class="dg-thumbs" id="dg-t-' + l[0] + '"></span>';
+			ls += '<span>' + l[1] + '</span><input type="text" class="dg-sm" id="dg-l-' + l[0] + '" inputmode="numeric" autocomplete="off" style="width:min(100%,9em)!important"><span class="dg-pf" id="dg-t-' + l[0] + '"></span>';
 		});
 		$('dg-lists').innerHTML = ls;
+		var pg = document.createElement('div');
+		pg.className = 'dg-palbg';
+		pg.id = 'dg-pal';
+		pg.hidden = true;
+		pg.innerHTML = '<div class="mv-pal"><div class="mv-pal-head"><span id="dg-pal-title">パーツ一覧</span><button type="button" class="sub" id="dg-pal-close">閉じる</button></div>' +
+			'<div class="mv-pal-tools"><input type="search" id="dg-pal-q" placeholder="番号・名前・タグで探す"><button type="button" class="sub" id="dg-pal-zero">0（なし）にする</button></div>' +
+			'<div class="mv-pal-grid" id="dg-pal-grid"></div><div class="mv-pal-info" id="dg-pal-info"></div></div>';
+		$root.appendChild(pg);
 	}
 
 	/* ---------------------------------------------------------------- */
 	/* 絵																		 */
 	/* ---------------------------------------------------------------- */
-	function listAll(kind) {
+	function listAll(kind, extra) {
 		var out = [];
 		function next(offset) {
-			return api('/api/admin/data/list', { kind: kind, offset: offset, limit: 500 }).then(function (r) {
+			var body = { kind: kind, offset: offset, limit: 500 };
+			if (extra) for (var k in extra) body[k] = extra[k];
+			return api('/api/admin/data/list', body).then(function (r) {
 				if (!r.records) throw new Error(errText(r));
 				out = out.concat(r.records);
 				return r.more ? next(offset + r.records.length) : out;
@@ -223,6 +251,165 @@
 	}
 
 	/* ---------------------------------------------------------------- */
+	/* パーツ一覧のポップアップ（絵の並び・検索・選択の見せ方は「マップ確認」の編集モードのパーツ一覧と同じ。class も共用）	 */
+	/* ---------------------------------------------------------------- */
+	function ensureDex() {
+		if (dex || dexLoading) return dexLoading || Promise.resolve();
+		var all = [];
+		function more(offset) {
+			return api('/api/admin/parts/dex', { limit: 500, offset: offset }).then(function (r) {
+				if (!r.parts) throw new Error(errText(r));
+				all = all.concat(r.parts);
+				return (r.parts.length && all.length < r.matched) ? more(all.length) : all;
+			});
+		}
+		dexLoading = more(0).then(function (a) {
+			dex = {};
+			a.forEach(function (e) { dex[e.id] = { name: e.name || '', tags: e.tags || [] }; });
+			dexLoading = null;
+			filterPal();
+		}, function () { dexLoading = null; });
+		return dexLoading;
+	}
+	function partLabel(no) {
+		var d = dex && dex[no];
+		return 'パーツ ' + no + (d && d.name ? '「' + d.name + '」' : '') + (d && d.tags && d.tags.length ? '・' + d.tags.join(' ') : '');
+	}
+	function filterPal() {
+		if (!palBuilt) return;
+		var q = $('dg-pal-q').value.trim();
+		Array.prototype.forEach.call($('dg-pal-grid').children, function (b) {
+			var no = Number(b.dataset.no), d = dex && dex[no], bShow = true;
+			if (q) bShow = String(no) === q || (!!d && (d.name.indexOf(q) >= 0 || d.tags.some(function (t) { return t.indexOf(q) >= 0; })));
+			b.style.display = bShow ? '' : 'none';
+		});
+	}
+	function closePal() { $('dg-pal').hidden = true; palCb = null; }
+	function pickNo(no) { var f = palCb; closePal(); if (f) f(no); }
+	function buildPal() {
+		if (palBuilt) return;
+		palBuilt = true;
+		var grid = $('dg-pal-grid');
+		for (var i = 0; i < parts.length; i++) {
+			if (!parts[i]) continue;
+			var b = document.createElement('button'), cv = document.createElement('canvas');
+			b.type = 'button';
+			b.className = 'mv-pal-cell';
+			b.dataset.no = String(i);
+			b.title = String(i);
+			cv.width = cv.height = T;
+			var im = pimg(i);
+			if (im) cv.getContext('2d').drawImage(im, 0, 0, T, T, 0, 0, T, T);
+			b.appendChild(cv);
+			grid.appendChild(b);
+		}
+		grid.addEventListener('click', function (ev) {
+			var b = ev.target.closest && ev.target.closest('.mv-pal-cell');
+			if (b) pickNo(Number(b.dataset.no));
+		});
+		grid.addEventListener('mouseover', function (ev) {
+			var b = ev.target.closest && ev.target.closest('.mv-pal-cell');
+			if (b) $('dg-pal-info').textContent = partLabel(Number(b.dataset.no));
+		});
+		$('dg-pal-q').addEventListener('input', filterPal);
+		$('dg-pal-close').addEventListener('click', closePal);
+		$('dg-pal-zero').addEventListener('click', function () { pickNo(0); });
+		$('dg-pal').addEventListener('click', function (ev) { if (ev.target === $('dg-pal')) closePal(); });
+		document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && !$('dg-pal').hidden) closePal(); });
+	}
+	/* 一覧を開いて 1 つ選ばせる（cb(番号)。cur は今の番号） */
+	function openPal(title, curNo, cb) {
+		ensureBase().then(function () {
+			buildPal();
+			palCb = cb;
+			$('dg-pal-title').textContent = title + ' のパーツを選ぶ';
+			$('dg-pal').hidden = false;
+			Array.prototype.forEach.call($('dg-pal-grid').children, function (b) {
+				b.classList.toggle('sel', Number(b.dataset.no) === curNo);
+			});
+			var s = $('dg-pal-grid').querySelector('.sel');
+			$('dg-pal-info').textContent = curNo == null ? '' : '今：' + partLabel(curNo);
+			if (s && s.scrollIntoView) s.scrollIntoView({ block: 'nearest' });
+			ensureDex();
+		}, function (e) { setMsg('パーツ一覧を開けません: ' + (e && e.message || e)); });
+	}
+	/* 今のパーツの絵のボタン（押すと一覧が開く） */
+	function chipBtn(no, onClick) {
+		var b = document.createElement('button'), cv = document.createElement('canvas'), n = document.createElement('span');
+		b.type = 'button';
+		b.className = 'dg-chip';
+		b.title = partLabel(no);
+		cv.width = cv.height = T;
+		var im = pimg(no);
+		if (im) cv.getContext('2d').drawImage(im, 0, 0);
+		n.textContent = String(no);
+		b.appendChild(cv);
+		b.appendChild(n);
+		b.addEventListener('click', onClick);
+		return b;
+	}
+	/* 絵の並び＋追加＋×。o = { title, multi, get(): 配列, set(配列), clearable } */
+	function partsField(box, o) {
+		box.textContent = '';
+		var arr = o.get();
+		arr.forEach(function (no, i) {
+			var w = document.createElement('span');
+			w.className = 'dg-chipw';
+			w.appendChild(chipBtn(no, function () {
+				openPal(o.title, no, function (n) { var a = o.get().slice(); a[i] = n; o.set(a); });
+			}));
+			if (o.multi || o.clearable) {
+				var x = document.createElement('button');
+				x.type = 'button';
+				x.className = 'dg-chipx sub';
+				x.textContent = '×';
+				x.title = '外す';
+				x.addEventListener('click', function () { var a = o.get().slice(); a.splice(i, 1); o.set(a); });
+				w.appendChild(x);
+			}
+			box.appendChild(w);
+		});
+		if (o.multi || !arr.length) {
+			var ad = document.createElement('button');
+			ad.type = 'button';
+			ad.className = 'dg-add sub';
+			ad.textContent = o.multi ? '＋追加' : '選ぶ';
+			ad.addEventListener('click', function () {
+				openPal(o.title, null, function (n) { var a = o.get().slice(); a.push(n); o.set(a); });
+			});
+			box.appendChild(ad);
+		}
+	}
+	function renderList(key, bKeepInput) {
+		var l = LISTS.filter(function (x) { return x[0] === key; })[0], v = cur[key];
+		if (!bKeepInput) $('dg-l-' + key).value = SCALAR[key] ? String(v) : v.join(',');
+		partsField($('dg-t-' + key), {
+			title: l[1].replace(/（.*$/, ''), multi: !SCALAR[key], clearable: !!SCALAR[key],
+			get: function () { var x = cur[key]; return SCALAR[key] ? (x ? [x] : []) : x; },
+			set: function (a) { cur[key] = SCALAR[key] ? (a[0] || 0) : a; markDirty(); renderList(key); }
+		});
+	}
+	function renderLight(l, box) {
+		partsField(box, {
+			title: '灯りを上書きするパーツ', multi: false, clearable: false,
+			get: function () { return [l.wParts]; },
+			set: function (a) { l.wParts = Math.max(0, a[0] || 0); markDirty(); showLights(); }
+		});
+	}
+	var DTILE = 32;
+	function renderDecoGrid() {
+		var d = cur.decos[selDeco];
+		if (!d) return;
+		var ctx = drawGrid($('dg-dcv'), d.w, d.h, function (x, y) { return d.cells[y * d.w + x]; }, DTILE);
+		ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+		ctx.lineWidth = 1;
+		ctx.beginPath();
+		for (var x = 1; x < d.w; x++) { ctx.moveTo(x * DTILE + 0.5, 0); ctx.lineTo(x * DTILE + 0.5, d.h * DTILE); }
+		for (var y = 1; y < d.h; y++) { ctx.moveTo(0, y * DTILE + 0.5); ctx.lineTo(d.w * DTILE, y * DTILE + 0.5); }
+		ctx.stroke();
+	}
+
+	/* ---------------------------------------------------------------- */
 	/* 9分割																	 */
 	/* ---------------------------------------------------------------- */
 	/* 部屋 r を W×H に当てる。四隅が入らない大きさなら null。返す値は [y][x] のパーツ番号 */
@@ -257,9 +444,9 @@
 		$('dg-samples').hidden = r.fixed;
 		$('dg-rfixed').checked = r.fixed;
 		$('dg-rcap').textContent = r.fixed ?
-			'固定パターン: 9分割せず、このまま置きます。絵をクリックすると、出てくる位置（入口）の印を付けます（同じ所をもう一度クリックで消えます）。' :
-			'青い線（縦2本・横2本）をドラッグして切れ目を動かします。四隅はそのまま、辺は繰り返し、真ん中は縦横に繰り返します。' +
-			'線から離れた所をクリックすると、入口の位置の印を付けます（もう一度クリックで消えます）。';
+(tools.r === 'mark' ? '固定パターン: 9分割せず、このまま置きます。絵をクリックすると、出てくる位置（入口）の印を付けます（同じ所をもう一度クリックで消えます）。' : '道具が「' + (TOOL_NAME[tools.r] || '') + '」です。絵をクリック／なぞって描きます。') :
+			(tools.r === 'mark' ? '青い線（縦2本・横2本）をドラッグして切れ目を動かします。四隅はそのまま、辺は繰り返し、真ん中は縦横に繰り返します。' +
+			'線から離れた所をクリックすると、入口の位置の印を付けます（もう一度クリックで消えます）。' : '道具が「' + (TOOL_NAME[tools.r] || '') + '」です。絵をクリック／なぞって描きます（切れ目を動かすには「切れ目・入口の印」を選びます）。');
 		var hasE = r.entryX >= 0 && r.entryY >= 0;
 		$('dg-rentinfo').textContent = hasE ? '入口の位置: (' + r.entryX + ',' + r.entryY + ')' : '入口の位置: 無し';
 		$('dg-rentclr').disabled = !hasE;
@@ -318,7 +505,7 @@
 		}
 		cv.addEventListener('pointerdown', function (ev) {
 			var r = cur && cur.rooms[selRoom];
-			if (!r) return;
+			if (!r || tools.r !== 'mark' || ev.button === 2) return;
 			var p = pos(ev), t = tileSize(), best = null, bd = 10 * (cv.width / cv.getBoundingClientRect().width);
 			[0, 1].forEach(function (i) {
 				if (r.fixed) return;
@@ -387,11 +574,13 @@
 	function show() {
 		fillSelect();
 		$('dg-edit').hidden = !cur;
+		$('dg-guide').hidden = !!cur;
 		$('dg-rooms-sec').hidden = !cur;
 		$('dg-ops-sec').hidden = !cur;
 		$('dg-lights-sec').hidden = !cur;
 		$('dg-decos-sec').hidden = !cur;
 		if (!cur) return;
+		refreshTools();
 		$('dg-name').value = cur.name;
 		$('dg-algo').value = String(cur.algo);
 		LISTS.forEach(function (l) {
@@ -408,10 +597,9 @@
 		showDecos();
 	}
 
-	function showThumbs() {
+	function showThumbs(bKeep) {
 		LISTS.forEach(function (l) {
-			var v = cur[l[0]];
-			thumbs($('dg-t-' + l[0]), SCALAR[l[0]] ? (v ? [v] : []) : v);
+			renderList(l[0], bKeep);
 		});
 	}
 
@@ -566,33 +754,200 @@
 		drawRoom();
 	}
 
-	function importRoom() {
-		var map = num($('dg-rm').value, 0), x = num($('dg-rx').value, 0), y = num($('dg-ry').value, 0);
-		var w = num($('dg-rw').value, 0), h = num($('dg-rh').value, 0);
-		if (w < 2 || h < 2 || w > 64 || h > 64 || x < 0 || y < 0) {
-			setMsg('範囲は w・h が 2〜64、x・y が 0 以上にしてください。');
-			return;
-		}
-		if (cur.rooms.length >= 50) {
-			setMsg('部屋は 50 件までです。');
-			return;
-		}
-		setMsg('マップを読んでいます…', true);
-		api('/api/admin/data/tiles', { id: map, x: x, y: y, w: w, h: h }).then(function (r) {
-			if (!r.parts) throw new Error(errText(r));
-			var rows = r.parts, rh = rows.length, rw = rows[0] ? rows[0].length : 0;
-			if (!rw) throw new Error('範囲がマップの外です');
-			var cells = [];
-			rows.forEach(function (row) { row.forEach(function (v) { cells.push(v); }); });
-			cur.rooms.push({
-				name: '部屋' + (cur.rooms.length + 1), kind: 0, w: rw, h: rh, cells: cells,
-				cutX: rw >= 3 ? [1, rw - 1] : [1, 2], cutY: rh >= 3 ? [1, rh - 1] : [1, 2], fixed: false, entryX: -1, entryY: -1, src: { map: map, x: x, y: y }
+	/* ---------------------------------------------------------------- */
+	/* 格子に絵を描く道具（部屋・出入口・飾りで共通）						 */
+	/* ---------------------------------------------------------------- */
+	var brush = 1;						/* 描くパーツ */
+	var tools = { r: 'mark', o: 'mark', d: 'paint' };		/* 区画ごとの道具: mark（切れ目・印）/ paint / erase / pick */
+	var TOOL_NAME = { paint: '描く', erase: '消しゴム（0）', pick: 'スポイト' };
+	var MARK_NAME = { r: '切れ目・入口の印', o: '通れる範囲' };
+	function target(k) {
+		return k === 'r' ? cur.rooms[selRoom] : k === 'o' ? cur.openings[selOp] : cur.decos[selDeco];
+	}
+	function refreshTools() {
+		['r', 'o', 'd'].forEach(function (k) {
+			var box = $('dg-tb-' + k);
+			if (!box) return;
+			box.textContent = '';
+			var names = MARK_NAME[k] ? [['mark', MARK_NAME[k]]] : [];
+			['paint', 'erase', 'pick'].forEach(function (t) { names.push([t, TOOL_NAME[t]]); });
+			names.forEach(function (n) {
+				var b = document.createElement('button');
+				b.type = 'button';
+				b.className = tools[k] === n[0] ? '' : 'sub';
+				b.textContent = n[1];
+				b.addEventListener('click', function () { tools[k] = n[0]; refreshTools(); });
+				box.appendChild(b);
 			});
-			selRoom = cur.rooms.length - 1;
+			var lab = document.createElement('span');
+			lab.className = 'sub-text';
+			lab.textContent = ' 筆：';
+			box.appendChild(lab);
+			box.appendChild(chipBtn(brush, function () {
+				openPal('筆', brush, function (n) { brush = n; if (tools[k] === 'erase' || tools[k] === 'pick') tools[k] = 'paint'; refreshTools(); });
+			}));
+			var hint = document.createElement('span');
+			hint.className = 'dg-cap';
+			hint.textContent = '右クリックで 0 に戻す';
+			box.appendChild(hint);
+			/* 大きさの変更（端に行・列を足す／削る） */
+			var rb = $('dg-rb-' + k);
+			rb.textContent = '';
+			var l = document.createElement('span');
+			l.className = 'sub-text';
+			l.textContent = '大きさを変える：';
+			rb.appendChild(l);
+			[['t', '上'], ['b', '下'], ['l', '左'], ['r', '右']].forEach(function (sd) {
+				[[1, '＋'], [-1, '－']].forEach(function (dd) {
+					var b = document.createElement('button');
+					b.type = 'button';
+					b.className = 'sub';
+					b.textContent = sd[1] + dd[1];
+					b.title = sd[1] + 'の端に' + (sd[0] === 't' || sd[0] === 'b' ? '行' : '列') + (dd[0] > 0 ? 'を足す' : 'を削る');
+					b.addEventListener('click', function () { resizeEdge(k, sd[0], dd[0]); });
+					rb.appendChild(b);
+				});
+			});
+		});
+	}
+	var LIMIT = { r: [2, 64], o: [1, 16], d: [1, 16] };
+	function resizeEdge(k, side, d) {
+		var o = target(k);
+		if (!o) return;
+		var horiz = side === 'l' || side === 'r';
+		var nw = o.w + (horiz ? d : 0), nh = o.h + (horiz ? 0 : d), lim = LIMIT[k];
+		if (nw < lim[0] || nh < lim[0] || nw > lim[1] || nh > lim[1]) { setMsg('大きさは ' + lim[0] + '〜' + lim[1] + ' の間にしてください。'); return; }
+		if (k === 'o') { var er = checkOpSize(o.dir, nw, nh); if (er) { setMsg(er); return; } }
+		var sx = side === 'l' ? d : 0, sy = side === 't' ? d : 0;
+		function re(cells) {
+			var out = [];
+			for (var y = 0; y < nh; y++) for (var x = 0; x < nw; x++) {
+				var ox = x - sx, oy = y - sy;
+				out.push(ox >= 0 && oy >= 0 && ox < o.w && oy < o.h ? cells[oy * o.w + ox] : 0);
+			}
+			return out;
+		}
+		o.cells = re(o.cells);
+		if (o.cellsOpen && o.cellsOpen.length === o.w * o.h) o.cellsOpen = re(o.cellsOpen);
+		o.w = nw;
+		o.h = nh;
+		if (k === 'r') fixRoom(o, sx, sy);
+		if (k === 'o') fixOp(o, o.dir === 0 ? sx : sy);
+		markDirty();
+		if (k === 'r') showRooms(); else if (k === 'o') showOps(); else showDecos();
+	}
+	function fixRoom(r, sx, sy) {
+		r.cutX = r.cutX.map(function (v) { return v + sx; });
+		r.cutY = r.cutY.map(function (v) { return v + sy; });
+		if (!(r.cutX[0] > 0 && r.cutX[0] < r.cutX[1] && r.cutX[1] <= r.w)) r.cutX = r.w >= 3 ? [1, r.w - 1] : [1, 2];
+		if (!(r.cutY[0] > 0 && r.cutY[0] < r.cutY[1] && r.cutY[1] <= r.h)) r.cutY = r.h >= 3 ? [1, r.h - 1] : [1, 2];
+		if (r.entryX >= 0) {
+			r.entryX += sx;
+			r.entryY += sy;
+			if (r.entryX < 0 || r.entryY < 0 || r.entryX >= r.w || r.entryY >= r.h) r.entryX = r.entryY = -1;
+		}
+	}
+	function fixOp(o, shift) {
+		var len = opLen(o);
+		o.hole0 += shift;
+		o.hole1 += shift;
+		if (!(o.hole0 >= 0 && o.hole0 < o.hole1 && o.hole1 <= len)) { var hl = defHole(len); o.hole0 = hl[0]; o.hole1 = hl[1]; }
+	}
+	/* 格子の canvas に絵を描く操作。get() は { w, h, cells, tile, redraw } を返す（k = 区画） */
+	function attachPaint(cv, k, get, bMarkIsPaint) {
+		var down = false, once = null;
+		function tl() { var t = tools[k]; return once || (t === 'mark' && bMarkIsPaint ? 'paint' : t); }
+		function apply(ev) {
+			var g = get();
+			if (!g) return;
+			var r = cv.getBoundingClientRect();
+			var x = Math.floor((ev.clientX - r.left) * (cv.width / r.width) / g.tile), y = Math.floor((ev.clientY - r.top) * (cv.height / r.height) / g.tile);
+			if (x < 0 || y < 0 || x >= g.w || y >= g.h) return;
+			var t = tl(), i = y * g.w + x;
+			if (t === 'pick') { brush = g.cells[i]; tools[k] = 'paint'; down = false; refreshTools(); return; }
+			var v = t === 'erase' ? 0 : brush;
+			if (g.cells[i] === v) return;
+			g.cells[i] = v;
 			markDirty();
-			showRooms();
-			setMsg(rw === w && rh === h ? '取り込みました。' : 'マップの端までの ' + rw + '×' + rh + ' を取り込みました。', true);
-		}).then(null, function (e) { setMsg('取り込めません: ' + (e && e.message || e)); });
+			g.redraw();
+		}
+		cv.addEventListener('contextmenu', function (ev) { ev.preventDefault(); });
+		cv.addEventListener('pointerdown', function (ev) {
+			var t = tools[k];
+			once = ev.button === 2 ? 'erase' : null;
+			if (!once && t === 'mark' && !bMarkIsPaint) return;
+			down = true;
+			try { cv.setPointerCapture(ev.pointerId); } catch (e) { /* 無くても動く */ }
+			ev.preventDefault();
+			apply(ev);
+		});
+		cv.addEventListener('pointermove', function (ev) { if (down) apply(ev); });
+		function end() { down = false; once = null; }
+		cv.addEventListener('pointerup', end);
+		cv.addEventListener('pointercancel', end);
+	}
+	function blank(n) { var a = []; for (var i = 0; i < n; i++) a.push(0); return a; }
+	function addRoom() {
+		var w = num($('dg-rw').value, 0), h = num($('dg-rh').value, 0);
+		if (w < 2 || h < 2 || w > 64 || h > 64) { setMsg('部屋の大きさは w・h とも 2〜64 にしてください。'); return; }
+		if (cur.rooms.length >= 50) { setMsg('部屋は 50 件までです。'); return; }
+		cur.rooms.push({
+			name: '部屋' + (cur.rooms.length + 1), kind: 0, w: w, h: h, cells: blank(w * h),
+			cutX: w >= 3 ? [1, w - 1] : [1, 2], cutY: h >= 3 ? [1, h - 1] : [1, 2], fixed: false, entryX: -1, entryY: -1
+		});
+		selRoom = cur.rooms.length - 1;
+		tools.r = 'paint';
+		markDirty();
+		showRooms();
+		refreshTools();
+		setMsg('空の部屋を足しました。筆のパーツを選んで、絵をなぞって描いてください。', true);
+	}
+	function addOpening() {
+		if (cur.openings.length >= 50) { setMsg('出入口パターンは 50 件までです。'); return; }
+		var dir = num($('dg-oidir').value, 0), type = num($('dg-oitype').value, 1), w = num($('dg-ow').value, 0), h = num($('dg-oh').value, 0);
+		var er = checkOpSize(dir, w, h);
+		if (!er && (w < 1 || h < 1 || w > 16 || h > 16)) er = '大きさは 1〜16 にしてください。';
+		if (er) { setMsg(er); return; }
+		var hl = defHole(dir === 0 ? w : h);
+		cur.openings.push({ name: '出入口' + (cur.openings.length + 1), dir: dir, type: type, w: w, h: h, cells: blank(w * h), cellsOpen: [], hole0: hl[0], hole1: hl[1] });
+		selOp = cur.openings.length - 1;
+		tools.o = 'paint';
+		markDirty();
+		showOps();
+		refreshTools();
+	}
+	function dupOpening() {
+		var o = cur.openings[selOp];
+		if (!o) return;
+		if (cur.openings.length >= 50) { setMsg('出入口パターンは 50 件までです。'); return; }
+		var c = JSON.parse(JSON.stringify(o));
+		c.name = o.name + '(コピー)';
+		cur.openings.push(c);
+		selOp = cur.openings.length - 1;
+		markDirty();
+		showOps();
+	}
+	function dupDeco() {
+		var d = cur.decos[selDeco];
+		if (!d) return;
+		if (cur.decos.length >= 50) { setMsg('飾りは 50 件までです。'); return; }
+		var c = JSON.parse(JSON.stringify(d));
+		c.name = d.name + '(コピー)';
+		cur.decos.push(c);
+		selDeco = cur.decos.length - 1;
+		markDirty();
+		showDecos();
+	}
+	function dupRoom() {
+		var r = cur.rooms[selRoom];
+		if (!r) return;
+		if (cur.rooms.length >= 50) { setMsg('部屋は 50 件までです。'); return; }
+		var c = JSON.parse(JSON.stringify(r));
+		c.name = r.name + '(コピー)';
+		cur.rooms.push(c);
+		selRoom = cur.rooms.length - 1;
+		markDirty();
+		showRooms();
 	}
 
 	/* ---------------------------------------------------------------- */
@@ -627,11 +982,12 @@
 		var isDoor = o.type === 2, hasOpen = o.cellsOpen && o.cellsOpen.length === o.w * o.h;
 		$('dg-oopenrow').hidden = !isDoor;
 		$('dg-oclropen').disabled = !hasOpen;
+		$('dg-oaddopen').disabled = hasOpen;
 		$('dg-oopenbox').hidden = !(isDoor && hasOpen);
 		$('dg-oinfo').textContent = o.w + '×' + o.h + '・通れる範囲 ' + o.hole0 + '〜' + o.hole1 + '（' + (o.dir === 0 ? '列' : '行') + '）' +
 			(isDoor ? (hasOpen ? '・開いた絵あり' : '・開いた絵なし') : '');
 		$('dg-ocap').textContent = '青い線（2本）をドラッグして通れる範囲（緑）を決めます。' + (o.dir === 0 ? '横の壁: 列で数えます。' : '縦の壁: 行で数えます。') +
-			'線の外は両脇の柱や枠です。' + (isDoor ? '扉は、上の「マップ」「x」「y」「w」「h」で開いた絵の範囲を指定して「開いた絵として取り込む」。' : '');
+			'線の外は両脇の柱や枠です。上の道具で「描く」にすると絵を描けます。' + (isDoor ? '扉は「開いた絵を作る」で同じ大きさの絵をもう 1 枚描きます。' : '');
 		drawOpCanvas($('dg-ocv'), o, o.cells);
 		if (isDoor && hasOpen) drawOpCanvas($('dg-ocv2'), o, o.cellsOpen);
 	}
@@ -643,7 +999,7 @@
 		}
 		cv.addEventListener('pointerdown', function (ev) {
 			var o = cur && cur.openings[selOp];
-			if (!o) return;
+			if (!o || tools.o !== 'mark' || ev.button === 2) return;
 			var p = pos(ev)[o.dir === 0 ? 0 : 1], t = opTile(o);
 			var d0 = Math.abs(p - o.hole0 * t), d1 = Math.abs(p - o.hole1 * t);
 			dragHole = d0 <= d1 ? 0 : 1;
@@ -685,22 +1041,6 @@
 		drawOp();
 	}
 
-	function fetchTiles(prefix) {
-		var map = num($(prefix + 'm').value, 0), x = num($(prefix + 'x').value, 0), y = num($(prefix + 'y').value, 0);
-		var w = num($(prefix + 'w').value, 0), h = num($(prefix + 'h').value, 0);
-		if (w < 1 || h < 1 || w > 16 || h > 16 || x < 0 || y < 0) {
-			return Promise.reject(new Error('範囲は w・h が 1〜16、x・y が 0 以上にしてください'));
-		}
-		return api('/api/admin/data/tiles', { id: map, x: x, y: y, w: w, h: h }).then(function (r) {
-			if (!r.parts) throw new Error(errText(r));
-			var rows = r.parts, rh = rows.length, rw = rows[0] ? rows[0].length : 0;
-			if (!rw) throw new Error('範囲がマップの外です');
-			if (rw !== w || rh !== h) throw new Error('範囲がマップの端を越えています（' + rw + '×' + rh + ' しか取れません）');
-			var cells = [];
-			rows.forEach(function (row) { row.forEach(function (v) { cells.push(v); }); });
-			return { map: map, w: rw, h: rh, cells: cells };
-		});
-	}
 
 	function checkOpSize(dir, w, h) {
 		if (dir === 0 && h !== 2) return '横の壁（dir 0）は高さ h を 2 にしてください。';
@@ -708,37 +1048,7 @@
 		return '';
 	}
 
-	function importOpening() {
-		if (cur.openings.length >= 50) { setMsg('出入口パターンは 50 件までです。'); return; }
-		var dir = num($('dg-oidir').value, 0), type = num($('dg-oitype').value, 1);
-		var er = checkOpSize(dir, num($('dg-ow').value, 0), num($('dg-oh').value, 0));
-		if (er) { setMsg(er); return; }
-		setMsg('マップを読んでいます…', true);
-		fetchTiles('dg-o').then(function (t) {
-			var hl = defHole(dir === 0 ? t.w : t.h);
-			cur.openings.push({
-				name: '出入口' + (cur.openings.length + 1), dir: dir, type: type, w: t.w, h: t.h,
-				cells: t.cells, cellsOpen: [], hole0: hl[0], hole1: hl[1]
-			});
-			selOp = cur.openings.length - 1;
-			markDirty();
-			showOps();
-			setMsg('取り込みました。' + (type === 2 ? '開いた絵は、同じ大きさの範囲を指定して「開いた絵として取り込む」で足せます。' : ''), true);
-		}).then(null, function (e) { setMsg('取り込めません: ' + (e && e.message || e)); });
-	}
 
-	function importOpenPic() {
-		var o = cur.openings[selOp];
-		if (!o || o.type !== 2) return;
-		setMsg('マップを読んでいます…', true);
-		fetchTiles('dg-o').then(function (t) {
-			if (t.w !== o.w || t.h !== o.h) throw new Error('閉まった絵と同じ大きさ（' + o.w + '×' + o.h + '）にしてください');
-			o.cellsOpen = t.cells;
-			markDirty();
-			showOps();
-			setMsg('開いた絵を取り込みました。', true);
-		}).then(null, function (e) { setMsg('取り込めません: ' + (e && e.message || e)); });
-	}
 
 	/* ---------------------------------------------------------------- */
 	/* 灯りの上書き表															 */
@@ -750,18 +1060,18 @@
 			var row = document.createElement('div');
 			row.className = 'dg-row';
 			var lab = document.createElement('label');
-			lab.appendChild(document.createTextNode('パーツ番号 '));
+			lab.appendChild(document.createTextNode('パーツ '));
 			var inp = document.createElement('input');
 			inp.type = 'text';
-			inp.className = 'dg-n';
+			inp.className = 'dg-n dg-sm';
 			inp.value = l.wParts;
 			inp.setAttribute('inputmode', 'numeric');
 			lab.appendChild(inp);
 			row.appendChild(lab);
 			var th = document.createElement('span');
-			th.className = 'dg-thumbs';
+			th.className = 'dg-pf';
 			row.appendChild(th);
-			thumbs(th, [l.wParts]);
+			renderLight(l, th);
 			var lab2 = document.createElement('label');
 			lab2.appendChild(document.createTextNode('灯りの範囲 '));
 			var sel = document.createElement('select');
@@ -800,15 +1110,16 @@
 		$('dg-don').value = String(d.on);
 		$('dg-drate').value = d.rate;
 		$('dg-dmax').value = d.max;
-		$('dg-dcells').value = d.cells.join(',');
-		thumbs($('dg-dth'), d.cells);
+		renderDecoGrid();
 	}
 
 	/* w・h が変わったら cells の長さを合わせる（足りない所は 0） */
-	function fitDecoCells(d) {
-		var n = d.w * d.h;
-		while (d.cells.length < n) d.cells.push(0);
-		d.cells.length = n;
+	function fitDecoCells(d, nw, nh) {
+		var out = [];
+		for (var y = 0; y < nh; y++) for (var x = 0; x < nw; x++) out.push(x < d.w && y < d.h ? d.cells[y * d.w + x] : 0);
+		d.cells = out;
+		d.w = nw;
+		d.h = nh;
 	}
 
 	/* ---------------------------------------------------------------- */
@@ -987,7 +1298,23 @@
 		bBound = true;
 		bindRoomCanvas();
 		bindOpCanvas($('dg-ocv'));
-		bindOpCanvas($('dg-ocv2'));
+		attachPaint($('dg-rcv'), 'r', function () {
+			var r = cur && cur.rooms[selRoom];
+			return r && { w: r.w, h: r.h, cells: r.cells, tile: $('dg-rcv').width / r.w, redraw: drawRoom };
+		});
+		attachPaint($('dg-ocv'), 'o', function () {
+			var o = cur && cur.openings[selOp];
+			return o && { w: o.w, h: o.h, cells: o.cells, tile: opTile(o), redraw: drawOp };
+		});
+		attachPaint($('dg-ocv2'), 'o', function () {
+			var o = cur && cur.openings[selOp];
+			return o && o.cellsOpen && o.cellsOpen.length === o.w * o.h && { w: o.w, h: o.h, cells: o.cellsOpen, tile: opTile(o), redraw: drawOp };
+		}, true);
+		attachPaint($('dg-dcv'), 'd', function () {
+			var d = cur && cur.decos[selDeco];
+			return d && { w: d.w, h: d.h, cells: d.cells, tile: DTILE, redraw: renderDecoGrid };
+		});
+		refreshTools();
 		$('dg-out').addEventListener('mousemove', function (ev) {
 			var cv = $('dg-out');
 			if (!last || $('dg-view').value !== 'meaning' || !last.links) { cv.title = ''; return; }
@@ -1024,8 +1351,6 @@
 			markDirty();
 			showOps();
 		});
-		$('dg-oimp').addEventListener('click', importOpening);
-		$('dg-oimpopen').addEventListener('click', importOpenPic);
 		$('dg-oclropen').addEventListener('click', function () {
 			if (selOp < 0) return;
 			cur.openings[selOp].cellsOpen = [];
@@ -1096,7 +1421,7 @@
 				var a = parseList($('dg-l-' + l[0]).value);
 				cur[l[0]] = SCALAR[l[0]] ? (a[0] || 0) : a;
 				markDirty();
-				showThumbs();
+				showThumbs(true);
 			});
 		});
 		$('dg-rsel').addEventListener('change', function () { selRoom = num($('dg-rsel').value, -1); showRooms(); });
@@ -1107,10 +1432,20 @@
 			markDirty();
 			showRooms();
 		});
-		$('dg-rimp').addEventListener('click', importRoom);
-		$('dg-rname').addEventListener('input', function () { cur.rooms[selRoom].name = $('dg-rname').value; markDirty(); });
-		$('dg-rname').addEventListener('change', showRooms);
-		$('dg-rkind').addEventListener('change', function () { cur.rooms[selRoom].kind = num($('dg-rkind').value, 0); markDirty(); showRooms(); });
+		$('dg-radd').addEventListener('click', addRoom);
+		$('dg-rdup').addEventListener('click', dupRoom);
+		$('dg-oadd').addEventListener('click', addOpening);
+		$('dg-odup').addEventListener('click', dupOpening);
+		$('dg-oaddopen').addEventListener('click', function () {
+			var o = cur.openings[selOp];
+			if (!o || o.type !== 2) return;
+			o.cellsOpen = o.cells.slice();
+			tools.o = 'paint';
+			markDirty();
+			showOps();
+			refreshTools();
+		});
+		$('dg-ddup').addEventListener('click', dupDeco);
 		$('dg-dsel').addEventListener('change', function () { selDeco = num($('dg-dsel').value, -1); showDecos(); });
 		$('dg-dadd').addEventListener('click', function () {
 			if (cur.decos.length >= 50) { setMsg('飾りは 50 件までです。'); return; }
@@ -1136,15 +1471,11 @@
 			});
 		}
 		decoField('dg-dname', function (d, v) { d.name = v; });
-		decoField('dg-dw', function (d, v) { d.w = Math.max(1, Math.min(16, num(v, 1))); fitDecoCells(d); });
-		decoField('dg-dh', function (d, v) { d.h = Math.max(1, Math.min(16, num(v, 1))); fitDecoCells(d); });
+		decoField('dg-dw', function (d, v) { fitDecoCells(d, Math.max(1, Math.min(16, num(v, 1))), d.h); });
+		decoField('dg-dh', function (d, v) { fitDecoCells(d, d.w, Math.max(1, Math.min(16, num(v, 1)))); });
 		decoField('dg-don', function (d, v) { d.on = num(v, 1); });
 		decoField('dg-drate', function (d, v) { d.rate = Math.max(0, Math.min(100, num(v, 0))); });
 		decoField('dg-dmax', function (d, v) { d.max = Math.max(0, Math.min(999, num(v, 0))); });
-		decoField('dg-dcells', function (d, v) {
-			d.cells = parseList(v);
-			fitDecoCells(d);
-		});
 		$('dg-gen').addEventListener('click', function () { generate(false); });
 		$('dg-gen2').addEventListener('click', function () { generate(true); });
 		$('dg-view').addEventListener('change', drawOut);
