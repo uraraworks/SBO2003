@@ -139,6 +139,7 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 	SetNum (hWnd, IDC_EXP,		(long)stInfo.dwExp);
 	SetNum (hWnd, IDC_STRESIST,	stInfo.byStatusResist);
 	CheckDlgButton (hWnd, IDC_NOFLOORDMG, stInfo.byNoFloorDamage ? BST_CHECKED : BST_UNCHECKED);
+	CheckDlgButton (hWnd, IDC_GHOST, stInfo.byGhost ? BST_CHECKED : BST_UNCHECKED);
 	SetNum (hWnd, IDC_FIRE,		stInfo.chAttrFire);
 	SetNum (hWnd, IDC_WATER,	stInfo.chAttrWater);
 	SetNum (hWnd, IDC_WIND,		stInfo.chAttrWind);
@@ -197,6 +198,7 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 			pInfo->dwExp				= (DWORD)GetNum (hWnd, IDC_EXP);
 			pInfo->byStatusResist		= (BYTE)min (100, max (0, (int)GetNum (hWnd, IDC_STRESIST)));
 			pInfo->byNoFloorDamage		= (IsDlgButtonChecked (hWnd, IDC_NOFLOORDMG) == BST_CHECKED) ? 1 : 0;
+			pInfo->byGhost				= (IsDlgButtonChecked (hWnd, IDC_GHOST) == BST_CHECKED) ? 1 : 0;
 			pInfo->chAttrFire			= (char)GetNum (hWnd, IDC_FIRE);
 			pInfo->chAttrWater			= (char)GetNum (hWnd, IDC_WATER);
 			pInfo->chAttrWind			= (char)GetNum (hWnd, IDC_WIND);
