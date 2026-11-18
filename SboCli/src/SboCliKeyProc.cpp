@@ -10449,8 +10449,10 @@ void PruneItemKeys(PCHARINFO pChar)
 /* 内容：	nNo 番目の枠を使う												 */
 /*			装備品＝その装備に持ち替える（すでに装備中なら何もせず知らせるだけ。	 */
 /*			外しはしない）。弓の溜め中は取り消してから替える				 */
-/*			道具＝使う。目の前に相手がいればその相手、いなければ自分に使う	 */
-/*			（道具コマンドの「使う」と同じ決め方。選ぶ窓は出さない）			 */
+/*			道具＝使う。ふだんは自分に使う（回復の道具を目の前の人に		 */
+/*			取られないように）。蘇生・HP減少・特技発動の道具だけは			 */
+/*			目の前に相手がいればその相手、いなければ自分に使う				 */
+/*			（選ぶ窓は出さない）											 */
 /* ========================================================================= */
 void UseItemKey(PCHARINFO pChar, int nNo)
 {
@@ -10505,14 +10507,28 @@ void UseItemKey(PCHARINFO pChar, int nNo)
 		return;
 	}
 
-	/* 道具：使う（目の前の相手がいればその相手、いなければ自分） */
+	/* 道具：使う（ふだんは自分。相手に使うための道具だけ目の前の相手） */
 	{
 		DWORD dwTarget = pChar->dwTblID;
 		DWORD dwX = pChar->dwX + anPosAddTblX[pChar->byDirection],
 			  dwY = pChar->dwY + anPosAddTblY[pChar->byDirection];
+		BOOL bFront;
 		int i;
 
-		for (i = 0; i < g_aCharInfo.GetSize (); i ++) {
+		/* 回復などは目の前に人がいても自分に使う。生き返らせる・傷つける・	*/
+		/* 特技を出す道具は、目の前の相手に使うのが自然なのでそちらを優先		*/
+		switch (pItem->byType) {
+		case ITEMTYPE_RESURRECTION:		/* 蘇生 */
+		case ITEMTYPE_HPDOWN:			/* HP減少 */
+		case ITEMTYPE_USEMAGIC:			/* 特技発動 */
+			bFront = TRUE;
+			break;
+		default:
+			bFront = FALSE;
+			break;
+		}
+
+		for (i = 0; bFront && (i < g_aCharInfo.GetSize ()); i ++) {
 			PCHARINFO pCharTmp = g_aCharInfo[i];
 
 			if (pCharTmp == pChar) {
