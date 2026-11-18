@@ -126,11 +126,36 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 				}
 				else parts[idx] = th.arch.empty() ? Pick(th.floor, rng) : Pick(th.arch, rng);
 			}
+		// 出入口パターン: 両脇の柱・枠も含めて cells で上書き（扉の開いた絵 cellsOpen は使わない）
+		if (l.tpl >= 0 && l.tpl < (int)th.openings.size() && th.openings[l.tpl].Valid())
+		{
+			const Opening &o = th.openings[l.tpl];
+			const int ox = o.dir == 0 ? l.x - o.hole0 : l.x;
+			const int oy = o.dir == 0 ? l.y : l.y - o.hole0;
+			if (ox < 0 || oy < 0 || ox + o.w > W || oy + o.h > H) continue;
+			for (int j = 0; j < o.h; ++j)
+				for (int i = 0; i < o.w; ++i)
+				{
+					int v = o.cells[j * o.w + i];
+					if (v != 0) parts[(oy + j) * W + ox + i] = v;
+				}
+		}
 	}
 
 	// 4. 飾り（L3 洞窟は素の絵だけ）
 	if (sk.algo != 1) return;
 	std::vector<char> used(W * H, 0);
+	// 出入口パターンの範囲（柱・枠）には飾りを置かない
+	for (size_t k = 0; k < sk.links.size(); ++k)
+	{
+		const Link &l = sk.links[k];
+		if (l.tpl < 0 || l.tpl >= (int)th.openings.size() || !th.openings[l.tpl].Valid()) continue;
+		const Opening &o = th.openings[l.tpl];
+		const int ox = o.dir == 0 ? l.x - o.hole0 : l.x, oy = o.dir == 0 ? l.y : l.y - o.hole0;
+		for (int j = 0; j < o.h; ++j)
+			for (int i = 0; i < o.w; ++i)
+				if (ox + i >= 0 && ox + i < W && oy + j >= 0 && oy + j < H) used[(oy + j) * W + ox + i] = 1;
+	}
 	for (size_t di = 0; di < th.decos.size(); ++di)
 	{
 		const Deco &d = th.decos[di];

@@ -13,6 +13,7 @@ namespace
 struct Ctx
 {
 	const Params *p;
+	const Theme *th;
 	Rng *rng;
 	int W, H, aMin, aMax;
 	std::vector<Room> rooms;
@@ -85,14 +86,35 @@ void MakeLink(Ctx &c, int ia, int ib)
 	Link l;
 	l.a = ia; l.b = ib;
 	int len = e - s + 1;
-	int aw;
-	if (c.rng->Chance(c.p->openRate)) { l.type = 3; aw = len; }
-	else
+	int aw = 0;
+	if (c.rng->Chance(c.p->openRate)) l.type = 3;
+	else l.type = c.rng->Chance(c.p->doorRate) ? 2 : 1;
+	// 向きと type が合う出入口パターンで、両脇まで共有壁に収まるものからくじで選ぶ
+	int pos = 0;
+	if (c.th)
 	{
-		l.type = c.rng->Chance(c.p->doorRate) ? 2 : 1;
-		aw = std::min(len, c.rng->Int(c.aMin, c.aMax));
+		std::vector<int> cand;
+		for (size_t k = 0; k < c.th->openings.size(); ++k)
+		{
+			const Opening &o = c.th->openings[k];
+			if (!o.Valid() || o.dir != (horiz ? 0 : 1) || o.type != l.type) continue;
+			if ((horiz ? o.w : o.h) <= len) cand.push_back((int)k);
+		}
+		if (!cand.empty())
+		{
+			l.tpl = cand[c.rng->Int(0, (int)cand.size() - 1)];
+			const Opening &o = c.th->openings[l.tpl];
+			aw = o.hole1 - o.hole0;
+			int span = horiz ? o.w : o.h;
+			pos = s + c.rng->Int(0, len - span) + o.hole0;
+		}
 	}
-	int pos = s + c.rng->Int(0, len - aw);
+	if (l.tpl < 0)
+	{
+		if (l.type == 3) aw = len;
+		else aw = std::min(len, c.rng->Int(c.aMin, c.aMax));
+		pos = s + c.rng->Int(0, len - aw);
+	}
 	if (horiz) { l.x = pos; l.y = line; l.w = aw; l.h = 2; }
 	else { l.x = line; l.y = pos; l.w = 1; l.h = aw; }
 	c.links.push_back(l);
@@ -299,7 +321,7 @@ Err GenerateCathedralL1(const Params &p0, Rng &rng, Skeleton &sk, const Theme *p
 	for (int tries = 1; tries <= maxTries; ++tries)
 	{
 		Ctx c;
-		c.p = &p; c.rng = &rng; c.W = W; c.H = H; c.aMin = p.archMin; c.aMax = p.archMax;
+		c.p = &p; c.th = pTheme; c.rng = &rng; c.W = W; c.H = H; c.aMin = p.archMin; c.aMax = p.archMax;
 
 		// 最初の部屋は中央付近
 		Room r0;

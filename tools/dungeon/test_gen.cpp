@@ -93,6 +93,34 @@ static Theme MakeFixedTheme(int algo)
 	return t;
 }
 
+// 出入口パターン付きのテーマ（dir0/dir1 × アーチ/扉/壁ごと抜く）。柱・枠は 8xx、穴は 9xx
+static Theme MakeOpeningTheme()
+{
+	Theme t = MakeTheme(1);
+	struct D { int dir, type, w, h, h0, h1; };
+	const D ds[] = { { 0, 1, 6, 2, 2, 4 }, { 0, 2, 5, 2, 1, 4 }, { 0, 3, 4, 2, 1, 3 }, { 0, 1, 2, 2, 0, 2 },
+		{ 1, 1, 5, 1, 1, 3 }, { 1, 2, 4, 1, 0, 2 }, { 1, 3, 3, 1, 1, 2 } };
+	for (auto &d : ds)
+	{
+		Opening o;
+		o.name = "op"; o.dir = d.dir; o.type = d.type; o.w = d.dir == 0 ? d.w : 1; o.h = d.dir == 0 ? 2 : d.h;
+		o.hole0 = d.h0; o.hole1 = d.h1;
+		int len = d.dir == 0 ? o.w : o.h;
+		for (int j = 0; j < o.h; ++j)
+			for (int i = 0; i < o.w; ++i)
+			{
+				int k = d.dir == 0 ? i : j;
+				bool hole = k >= o.hole0 && k < o.hole1;
+				o.cells.push_back(hole ? 900 + d.type * 10 + j : 800 + d.type * 10 + j);
+			}
+		if (d.type == 2) o.cellsOpen.assign(len * (d.dir == 0 ? 2 : 1), 950);
+		t.openings.push_back(o);
+	}
+	Opening bad; bad.dir = 0; bad.type = 1; bad.w = 3; bad.h = 3; bad.cells.assign(9, 1); bad.hole0 = 0; bad.hole1 = 1;  // h != 2 は無効
+	t.openings.push_back(bad);
+	return t;
+}
+
 int main(int argc, char **argv)
 {
 	bool verbose = argc > 1 && !strcmp(argv[1], "-v");
@@ -188,6 +216,49 @@ int main(int argc, char **argv)
 			if (verbose && seed == 1) { printf("--- fixed algo %d seed %d\n", algo, seed); Show(a); }
 		}
 
+	// 出入口パターン
+	{
+		int used = 0;
+		for (int seed : seeds)
+			for (int sz : { 40, 64 })
+			{
+				Params p; p.algo = 1; p.w = sz; p.h = sz; p.seed = seed; p.doorRate = 40; p.openRate = 20;
+				Theme th = MakeOpeningTheme();
+				Skeleton a, b; std::vector<int> pa, pb;
+				Err e = Generate(p, &th, a, pa);
+				if (e != ERR_NONE) { CHECK(0, "opening seed %d: error %d", seed, e); continue; }
+				Generate(p, &th, b, pb);
+				CHECK(a.cells == b.cells && pa == pb, "opening seed %d: not reproducible", seed);
+				CHECK(Connected(a), "opening seed %d: not connected", seed);
+				for (auto &l : a.links)
+				{
+					CHECK(l.tpl < (int)th.openings.size() - 1, "invalid opening used");
+					if (l.tpl < 0) continue;
+					++used;
+					const Opening &o = th.openings[l.tpl];
+					const Room &ra = a.rooms[l.a], &rb = a.rooms[l.b];
+					CHECK(o.dir == (l.h == 2 && l.w != 1 ? 0 : (l.w == 1 ? 1 : 0)) && o.type == l.type, "opening dir/type mismatch");
+					int hole = o.hole1 - o.hole0;
+					int ox = o.dir == 0 ? l.x - o.hole0 : l.x, oy = o.dir == 0 ? l.y : l.y - o.hole0;
+					CHECK((o.dir == 0 ? l.w : l.h) == hole, "hole width %d != %d", o.dir == 0 ? l.w : l.h, hole);
+					if (o.dir == 0)
+						CHECK(ox >= std::max(ra.x, rb.x) + 1 && ox + o.w <= std::min(ra.x + ra.w, rb.x + rb.w) - 1, "opening out of shared wall");
+					else
+						CHECK(oy >= std::max(ra.y + 2, rb.y + 2) && oy + o.h <= std::min(ra.y + ra.h, rb.y + rb.h) - 1, "opening out of shared wall (v)");
+					for (int j = 0; j < o.h; ++j)
+						for (int i = 0; i < o.w; ++i)
+						{
+							int idx = (oy + j) * a.w + ox + i;
+							CHECK(pa[idx] == o.cells[j * o.w + i], "opening part mismatch %d vs %d", pa[idx], o.cells[j * o.w + i]);
+							bool inHole = (o.dir == 0 ? i : j) >= o.hole0 && (o.dir == 0 ? i : j) < o.hole1;
+							int c = a.cells[idx];
+							CHECK(inHole ? (c == CELL_ARCH || c == CELL_DOOR) : (c == CELL_TOP || c == CELL_FACE || c == CELL_WALL || c == CELL_PATTERN), "opening cell kind");
+						}
+				}
+			}
+		CHECK(used > 20, "openings rarely used (%d)", used);
+	}
+
 	// JSON 入口
 	{
 		std::string out;
@@ -196,6 +267,7 @@ int main(int argc, char **argv)
 		CHECK(RunJson("{bad", out) == ERR_JSON, "bad json");
 		CHECK(RunJson("{\"params\":{\"w\":4}}", out) == ERR_PARAM, "bad param");
 		CHECK(RunJson("{\"params\":{\"w\":40,\"h\":40,\"seed\":5,\"algo\":3}}", out) == ERR_NONE && out.find("\"parts\":[]") != std::string::npos, "no theme");
+		CHECK(RunJson("{\"params\":{\"w\":30,\"h\":30,\"seed\":42},\"theme\":{\"algo\":1,\"floor\":[1],\"openings\":[{\"dir\":0,\"type\":1,\"w\":3,\"h\":2,\"cells\":[1,2,3,4,5,6],\"hole0\":1,\"hole1\":2}]}}", out) == ERR_NONE && out.find("\"tpl\":0") != std::string::npos, "json openings");
 	}
 
 	printf(g_fail ? "FAILED: %d\n" : "ALL OK\n", g_fail);

@@ -91,6 +91,8 @@ struct Link
 {
 	int a, b, x, y, w, h;
 	int type;  // 1 アーチ / 2 扉 / 3 壁ごと抜いた
+	int tpl;   // 使った出入口パターンの番号（-1 = 無し）。x,y,w,h は穴の範囲
+	Link() : a(0), b(0), x(0), y(0), w(0), h(0), type(1), tpl(-1) {}
 };
 
 struct Skeleton
@@ -127,6 +129,29 @@ struct Deco
 	Deco() : w(1), h(1), on(1), rate(10), max(0) {}
 };
 
+// 出入口パターン（theme.openings。最大 50 件）
+const int MAX_OPENINGS = 50;
+struct Opening
+{
+	std::string name;
+	int dir;    // 0 = 横の壁（天井＋側面の 2 行） / 1 = 縦の壁（1 列）
+	int type;   // 1 アーチ / 2 扉 / 3 壁ごと抜く
+	int w, h;
+	std::vector<int> cells, cellsOpen;  // cellsOpen は扉だけ（無ければ空）
+	int hole0, hole1;  // 通れる範囲。dir0 なら列 hole0..hole1-1、dir1 なら行 hole0..hole1-1
+	Opening() : dir(0), type(1), w(0), h(0), hole0(0), hole1(0) {}
+	bool Valid() const
+	{
+		if (dir != 0 && dir != 1) return false;
+		if (type < 1 || type > 3) return false;
+		if (dir == 0 ? h != 2 : w != 1) return false;
+		if (w <= 0 || h <= 0 || (int)cells.size() != w * h) return false;
+		if (!cellsOpen.empty() && (type != 2 || (int)cellsOpen.size() != w * h)) return false;
+		int len = dir == 0 ? w : h;
+		return hole0 >= 0 && hole0 < hole1 && hole1 <= len;
+	}
+};
+
 struct Theme
 {
 	int algo;
@@ -134,6 +159,7 @@ struct Theme
 	int voidPart, door;
 	std::vector<TplRoom> rooms;
 	std::vector<Deco> decos;
+	std::vector<Opening> openings;
 	Theme() : algo(0), voidPart(0), door(0) {}
 };
 

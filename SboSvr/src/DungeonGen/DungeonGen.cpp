@@ -100,6 +100,24 @@ void ReadTheme(const JVal &j, Theme &t)
 			tr.entryY = r.Int("entryY", -1);
 			t.rooms.push_back(tr);
 		}
+	const JVal *ops = j.Get("openings");
+	if (ops && ops->t == JVal::ARR)
+		for (size_t i = 0; i < ops->a.size() && (int)t.openings.size() < MAX_OPENINGS; ++i)
+		{
+			const JVal &o = ops->a[i];
+			Opening op;
+			const JVal *nm = o.Get("name");
+			if (nm && nm->t == JVal::STR) op.name = nm->s;
+			op.dir = o.Int("dir", 0);
+			op.type = o.Int("type", 1);
+			op.w = o.Int("w", 0);
+			op.h = o.Int("h", 0);
+			ReadInts(o.Get("cells"), op.cells);
+			ReadInts(o.Get("cellsOpen"), op.cellsOpen);
+			op.hole0 = o.Int("hole0", 0);
+			op.hole1 = o.Int("hole1", 0);
+			t.openings.push_back(op);
+		}
 	const JVal *decos = j.Get("decos");
 	if (decos && decos->t == JVal::ARR)
 		for (size_t i = 0; i < decos->a.size(); ++i)
@@ -188,6 +206,7 @@ Err RunJson(const char *pszJson, std::string &out)
 		out += ",\"w\":"; Num(out, l.w);
 		out += ",\"h\":"; Num(out, l.h);
 		out += ",\"type\":"; Num(out, l.type);
+		out += ",\"tpl\":"; Num(out, l.tpl);
 		out += '}';
 	}
 	out += "],\"start\":{\"x\":"; Num(out, sk.startX);

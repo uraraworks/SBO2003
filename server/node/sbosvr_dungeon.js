@@ -22,6 +22,9 @@ Module['sboDungeon'] = (function () {
 	var MAX_THEMES = 50;
 	var MAX_ROOMS = 50;
 	var MAX_DECOS = 50;
+	var MAX_OPENINGS = 50;
+	var MAX_LIGHTS = 8;
+	var MAX_OPENING_SIDE = 16;
 	var MAX_LIST = 64;				/* 床などのパーツ番号の並びの長さ */
 	var MAX_ROOM_SIDE = 64;
 	var MAX_DECO_SIDE = 16;
@@ -106,7 +109,9 @@ Module['sboDungeon'] = (function () {
 			arch: partList(t.arch == null ? [] : t.arch, nParts, 'arch', true),
 			door: partNo(t.door == null ? 0 : t.door, nParts, 'door'),
 			rooms: [],
-			decos: []
+			decos: [],
+			openings: [],
+			lights: []
 		};
 		if (ALGOS.indexOf(o.algo) < 0) {
 			bad('algo', ' は ' + ALGOS.join(' か ') + ' にしてください');
@@ -118,6 +123,14 @@ Module['sboDungeon'] = (function () {
 		}
 		if (!Array.isArray(decos) || decos.length > MAX_DECOS) {
 			bad('decos', ' は ' + MAX_DECOS + ' 件までの配列にしてください');
+		}
+		var openings = t.openings == null ? [] : t.openings;
+		var lights = t.lights == null ? [] : t.lights;
+		if (!Array.isArray(openings) || openings.length > MAX_OPENINGS) {
+			bad('openings', ' は ' + MAX_OPENINGS + ' 件までの配列にしてください');
+		}
+		if (!Array.isArray(lights) || lights.length > MAX_LIGHTS) {
+			bad('lights', ' は ' + MAX_LIGHTS + ' 件までの配列にしてください');
 		}
 		rooms.forEach(function (r, i) {
 			var lb = '部屋 ' + (i + 1);
@@ -163,6 +176,45 @@ Module['sboDungeon'] = (function () {
 				on: on,
 				rate: int(d.rate, 0, 100, lb + ' の rate'),
 				max: int(d.max, 0, 999, lb + ' の max')
+			});
+		});
+		openings.forEach(function (op, i) {
+			var lb = '出入口パターン ' + (i + 1);
+			op = op || {};
+			var dir = int(op.dir, 0, 1, lb + ' の dir');
+			var type = int(op.type, 1, 3, lb + ' の type');
+			var w = int(op.w, 1, MAX_OPENING_SIDE, lb + ' の w');
+			var h = int(op.h, 1, MAX_OPENING_SIDE, lb + ' の h');
+			if (dir === 0 && h !== 2) {
+				bad(lb, ' は横の壁（dir 0）なので h は 2 にしてください');
+			}
+			if (dir === 1 && w !== 1) {
+				bad(lb, ' は縦の壁（dir 1）なので w は 1 にしてください');
+			}
+			var len = dir === 0 ? w : h;
+			var hole0 = int(op.hole0, 0, len, lb + ' の hole0');
+			var hole1 = int(op.hole1, 0, len, lb + ' の hole1');
+			if (!(hole0 < hole1)) {
+				bad(lb, ' は 0 <= hole0 < hole1 <= ' + len + ' にしてください');
+			}
+			var cellsOpen = op.cellsOpen == null ? [] : op.cellsOpen;
+			if (!Array.isArray(cellsOpen) || (cellsOpen.length !== 0 && cellsOpen.length !== w * h)) {
+				bad(lb, ' の cellsOpen は空か w*h = ' + (w * h) + ' 個にしてください');
+			}
+			o.openings.push({
+				name: str(op.name, 40).trim() || '出入口',
+				dir: dir, type: type, w: w, h: h,
+				cells: cellList(op.cells, w, h, nParts, lb),
+				cellsOpen: type === 2 ? cellList(cellsOpen, cellsOpen.length ? w : 0, cellsOpen.length ? h : 0, nParts, lb + ' の cellsOpen') : [],
+				hole0: hole0, hole1: hole1
+			});
+		});
+		lights.forEach(function (l, i) {
+			var lb = '灯り ' + (i + 1);
+			l = l || {};
+			o.lights.push({
+				wParts: partNo(l.wParts, nParts, lb + ' の wParts'),
+				byLight: int(l.byLight, 0, 7, lb + ' の byLight')
 			});
 		});
 		return o;
