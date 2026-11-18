@@ -4926,6 +4926,17 @@ void RecvDataProcMAPINFOCHG(PBYTE pData, DWORD dwDataSize)
 	CopyMemory (pMap->aDarkArea, pPara->aDarkArea, sizeof (pMap->aDarkArea));
 	pMap->byLightCount = min (pPara->byLightCount, MAX_MAPLIGHT);
 	CopyMemory (pMap->aLight, pPara->aLight, sizeof (pMap->aLight));
+	/* パーツの灯りの上書き（範囲外のパーツの行は捨て、範囲は 0〜MAPLIGHT_RANGE_MAX に丸める） */
+	ZeroMemory (pMap->aPartsLight, sizeof (pMap->aPartsLight));
+	pMap->byPartsLightCount = 0;
+	for (int nPL = 0; nPL < (int)pPara->byPartsLightCount && nPL < MAX_MAPPARTSLIGHT; nPL ++) {
+		if (pPara->aPartsLight[nPL].wParts >= g_wCountMapParts) {
+			continue;
+		}
+		PMAPPARTSLIGHT pPL = &pMap->aPartsLight[pMap->byPartsLightCount ++];
+		pPL->wParts = pPara->aPartsLight[nPL].wParts;
+		pPL->byLight = min (pPara->aPartsLight[nPL].byLight, (BYTE)MAPLIGHT_RANGE_MAX);
+	}
 
 	/* BGMが変更された？ */
 	if (wBGMOld != pPara->wBGM) {

@@ -1832,6 +1832,15 @@ static std::string MapJson(PMAPINFO pMap)
 	}
 	out += "]";
 
+	/* パーツの灯りの上書き（全マップ共通のパーツの byLight を、このマップだけ変える。0=光らない） */
+	out += ",\"partsLights\":[";
+	for (i = 0; i < pMap->byPartsLightCount && i < MAX_MAPPARTSLIGHT; i ++) {
+		const MAPPARTSLIGHT *pPL = &pMap->aPartsLight[i];
+		if (i) out += ",";
+		out += "{\"wParts\":" + JsonNum(pPL->wParts) + ",\"byLight\":" + JsonNum(pPL->byLight) + "}";
+	}
+	out += "]";
+
 	/* 印で変わるマス（kind 0=印で変わる・1=宝箱・2=リサイクル箱。見た目と通れるかを、その人の印・開けた宝箱の記録・開いているリサイクル箱で差し替える） */
 	out += ",\"swaps\":[";
 	for (i = 0; i < pMap->bySwapCount && i < MAX_MAPSWAP; i ++) {
@@ -3072,7 +3081,7 @@ static bool ParseMapSwaps(const JVal &sw, int nID, MAPINFO &w, std::string &strE
 /* マップの変更（設定・イベント・店・メッセージ。配列は丸ごと置き換え） */
 static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr, std::string &strRecord)
 {
-	static const char *apszExtra[] = { "szName", "darkAreas", "lights", "swaps", "events", "shops", "messages", "items", NULL };
+	static const char *apszExtra[] = { "szName", "darkAreas", "lights", "partsLights", "swaps", "events", "shops", "messages", "items", NULL };
 	PMAPINFO pMap = g_aMapInfo[nID];
 	long long n;
 
@@ -3216,6 +3225,57 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 			if (pw) {
 				if (!GetInt(*pw, 0, 1, n, strErr, strP + ".warm")) return false;
 				if (n) pLight->byFlg |= MAPLIGHTFLG_WARM;
+			}
+		}
+	}
+
+	/* パーツの灯りの上書き（丸ごと置き換え） */
+	const JVal *pPartsLights = chg.Get("partsLights");
+	if (pPartsLights) {
+		static const char *apszPLKey[] = { "wParts", "byLight", NULL };
+		if (pPartsLights->t != JVal::ARR) {
+			strErr = "partsLights は配列で指定してください";
+			return false;
+		}
+		if (pPartsLights->a.size() > MAX_MAPPARTSLIGHT) {
+			strErr = "partsLights は " + JsonNum(MAX_MAPPARTSLIGHT) + " 件までです";
+			return false;
+		}
+		ZeroMemory(w.aPartsLight, sizeof(w.aPartsLight));
+		w.byPartsLightCount = (BYTE)pPartsLights->a.size();
+		for (size_t i = 0; i < pPartsLights->a.size(); i ++) {
+			const JVal &e = pPartsLights->a[i];
+			std::string strP = "partsLights[" + JsonNum((long long)i) + "]";
+			if (e.t != JVal::OBJ) {
+				strErr = strP + " はオブジェクトで指定してください";
+				return false;
+			}
+			for (size_t k = 0; k < e.o.size(); k ++) {
+				bool bOk = false;
+				for (int m = 0; apszPLKey[m]; m ++) if (e.o[k].first == apszPLKey[m]) bOk = true;
+				if (!bOk) {
+					strErr = strP + ": 知らない項目です: " + e.o[k].first;
+					return false;
+				}
+			}
+			const JVal *pwp = e.Get("wParts"), *pbl = e.Get("byLight");
+			if (!pwp || !pbl) {
+				strErr = strP + " には wParts・byLight が要ります";
+				return false;
+			}
+			if (g_wCountMapParts <= 0) {
+				strErr = "パーツがありません";
+				return false;
+			}
+			if (!GetInt(*pwp, 0, g_wCountMapParts - 1, n, strErr, strP + ".wParts")) return false;
+			w.aPartsLight[i].wParts = (WORD)n;
+			if (!GetInt(*pbl, 0, 7, n, strErr, strP + ".byLight")) return false;
+			w.aPartsLight[i].byLight = (BYTE)n;
+			for (size_t j = 0; j < i; j ++) {
+				if (w.aPartsLight[j].wParts == w.aPartsLight[i].wParts) {
+					strErr = strP + ".wParts: パーツ " + JsonNum(w.aPartsLight[i].wParts) + " が重複しています";
+					return false;
+				}
 			}
 		}
 	}
@@ -3398,6 +3458,8 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 		memcmp(pMap->aDarkArea, w.aDarkArea, sizeof(pMap->aDarkArea)) != 0 ||
 		pMap->byLightCount != w.byLightCount ||
 		memcmp(pMap->aLight, w.aLight, sizeof(pMap->aLight)) != 0 ||
+		pMap->byPartsLightCount != w.byPartsLightCount ||
+		memcmp(pMap->aPartsLight, w.aPartsLight, sizeof(pMap->aPartsLight)) != 0 ||
 		strName != std::string(pMap->pszName ? (const char *)pMap->pszName : "");
 	/* 店が減る時はクライアントの店の数を減らす手段が無いので、マップ情報ごと送り直す */
 	if (pShops && aShop.size() < (size_t)pMap->byCountShop) {
@@ -3417,6 +3479,8 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 	CopyMemory(pMap->aDarkArea, w.aDarkArea, sizeof(pMap->aDarkArea));
 	pMap->byLightCount		= w.byLightCount;
 	CopyMemory(pMap->aLight, w.aLight, sizeof(pMap->aLight));
+	pMap->byPartsLightCount	= w.byPartsLightCount;
+	CopyMemory(pMap->aPartsLight, w.aPartsLight, sizeof(pMap->aPartsLight));
 	/* 印で変わるマスが変わったら、マップ全体の送り直しは要らず、いるプレイヤーに差し替え一覧だけ送る */
 	bool bSwapChg = MapSwapChanged(*pMap, w) ? true : false;
 	MapSwapSet(pMap, w);

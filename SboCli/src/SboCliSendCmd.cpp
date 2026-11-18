@@ -801,6 +801,8 @@ void SendCmdCHGMAPINFO(void)
 	CopyMemory (pSendData->aDarkArea, g_pMapInfo->aDarkArea, sizeof (pSendData->aDarkArea));
 	pSendData->byLightCount = g_pMapInfo->byLightCount;
 	CopyMemory (pSendData->aLight, g_pMapInfo->aLight, sizeof (pSendData->aLight));
+	pSendData->byPartsLightCount = g_pMapInfo->byPartsLightCount;
+	CopyMemory (pSendData->aPartsLight, g_pMapInfo->aPartsLight, sizeof (pSendData->aPartsLight));
 
 	pSendData ++;
 	strcat ((LPSTR)pSendData, (LPSTR)g_pMapInfo->pszName);

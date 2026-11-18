@@ -6175,7 +6175,10 @@ void AdminOnPaintMapInfo(HDC hDC)
 		}
 		if (g_pMapInfo->byLightCount == 0) {
 			MyTextOut (hDC, 12, y, "なし", clNone);
+			y += 12;
 		}
+		wsprintf (szTmp, "パーツ灯り上書き %d件", g_pMapInfo->byPartsLightCount);
+		MyTextOut (hDC, 0, y, szTmp, clHead);
 	}
 
 	MyTextOut (hDC, 12 * 23, 0, "赤:");
