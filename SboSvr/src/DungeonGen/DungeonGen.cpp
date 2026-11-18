@@ -104,6 +104,9 @@ void ReadTheme(const JVal &j, Theme &t)
 			tr.entryX = r.Int("entryX", -1);
 			tr.entryY = r.Int("entryY", -1);
 			t.rooms.push_back(tr);
+			// 9分割の部屋の下の切れ目から下が 2 行以上なら、下の壁は 2 行（天井＋側面）として作る。
+			// 1 行のままだと上下の部屋の重なりが 1 行になり、つなぎ目の壁が途切れるため。
+			if (!tr.fixed && tr.h - tr.cutY[1] >= 2) t.bottomRows = 2;
 		}
 	const JVal *ops = j.Get("openings");
 	if (ops && ops->t == JVal::ARR)

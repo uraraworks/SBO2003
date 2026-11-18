@@ -464,6 +464,8 @@
 			(tools.r === 'mark' ? '青い線（縦2本・横2本）をドラッグして切れ目を動かします。四隅はそのまま、辺は繰り返し、真ん中は縦横に繰り返します。' +
 			'線から離れた所をクリックすると、入口の位置の印を付けます（もう一度クリックで消えます）。' : '道具が「' + (TOOL_NAME[tools.r] || '') + '」です。絵をクリック／なぞって描きます（切れ目を動かすには「切れ目・入口の印」を選びます）。');
 		$('dg-rcap').textContent += ' 部屋の外枠は、上2行（天井＋側面）・下' + (cur.bottomRows === 2 ? '2行（天井＋側面）' : '1行（天井だけ）') + '・左右1列が壁です。';
+		if (!r.fixed && cur.bottomRows !== 2 && r.h - r.cutY[1] >= 2)
+			$('dg-rcap').textContent += ' ※この部屋は下の切れ目から下が' + (r.h - r.cutY[1]) + '行あるので、作る時は「下の壁」を2行（天井＋側面）として扱います。';
 		var hasE = r.entryX >= 0 && r.entryY >= 0;
 		$('dg-rentinfo').textContent = hasE ? '入口の位置: (' + r.entryX + ',' + r.entryY + ')' : '入口の位置: 無し';
 		$('dg-rentclr').disabled = !hasE;
