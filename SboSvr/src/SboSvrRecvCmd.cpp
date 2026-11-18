@@ -7792,11 +7792,37 @@ void RecvDataProcPLAYSOUNDALL(PBYTE pData, DWORD dwDataSize)
 /* 内容：受信データ処理(アイテム使う)										 */
 /* 日付：2003/09/15															 */
 /* ========================================================================= */
+/* 関数名：IsSubGameItemMagicLocked											 */
+/* 内容：ミニゲームに参加中で、道具・装備の持ち替え・特技を受け付けない状態か */
+/*       （ショートカットの 1〜5 キー・スマホのボタンから送られても弾く。	 */
+/*        戦場ゲーム・すごろくは参加中ずっと、爆弾ゲームは試合中だけ。		 */
+/*        爆弾ゲームの試合前はふだんのコマンドで道具を使えるので今まで通り）	 */
+/* ========================================================================= */
+static BOOL IsSubGameItemMagicLocked(PCHARINFO pChar)
+{
+	if (pChar->byNpcType != NPCTYPE_INIT) {
+		return FALSE;
+	}
+	switch (pChar->abySubStatus[0]) {
+	case SUBGAMEID_WAR:
+	case SUBGAMEID_SUGOROKU:
+		return TRUE;
+	case SUBGAMEID_BOMB:
+		return (((PSUBSTATUS_BOMB)pChar->abySubStatus)->byFlgEntry) ? TRUE : FALSE;
+	}
+	return FALSE;
+}
+
+/* ========================================================================= */
 void RecvDataProcUSEITEM(PBYTE pData, DWORD dwDataSize)
 {
 	PCMDPARA_DATA4 pPara = (PCMDPARA_DATA4)pData;
 
 	if (!IsRecvChar (pPara->dwTblID)) {
+		return;
+	}
+	/* ミニゲームの最中は道具を使えない（ショートカットから送られても弾く） */
+	if (IsSubGameItemMagicLocked (g_aCharInfo[pPara->dwTblID])) {
 		return;
 	}
 
@@ -8306,6 +8332,10 @@ void RecvDataProcCHGEQU(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
+	/* ミニゲームの最中は装備を持ち替えない（ショートカットから送られても弾く） */
+	if (IsSubGameItemMagicLocked (pChar)) {
+		return;
+	}
 	/* 装備の場所は MAX_EQUTYPE 未満、中身は持ち物の番号（0xFFFF は外す） */
 	if ((pPara->byData >= MAX_EQUTYPE) ||
 			((pPara->dwData != 0xFFFF) && (pPara->dwData >= MAX_MYITEM))) {
@@ -9460,6 +9490,10 @@ void RecvDataProcUSEMAGIC(PBYTE pData, DWORD dwDataSize)
 	/* 死んでいる？(詠唱中に倒れた後の特技は受け付けない) */
 	if ((pChar->byNpcType == NPCTYPE_INIT) &&
 		((pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0))) {
+		return;
+	}
+	/* ミニゲームの最中は特技を使えない（ショートカットから送られても弾く） */
+	if (IsSubGameItemMagicLocked (pChar)) {
 		return;
 	}
 	if (pChar->dwTargetTblID != -1) {
