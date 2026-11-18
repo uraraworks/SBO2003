@@ -722,6 +722,27 @@ function currentRegion(tab) {
   return C.cellRect(tab.lastCell, tab.w, tab.h, tab.cell.w, tab.cell.h);
 }
 
+// ---- タイル確認・アニメ確認の表示倍率（等倍・2倍・4倍） ----
+// キャンバスの中身は等倍のまま、見た目の大きさだけ CSS で広げる（image-rendering: pixelated でにじまない）
+const VIEW_SCALE_KEY = 'sbo-dot-view-scale';
+const viewScale = { tile: 1, anim: 1 };
+try { Object.assign(viewScale, JSON.parse(localStorage.getItem(VIEW_SCALE_KEY) || '{}')); } catch (_) { /* 保存できない時は等倍 */ }
+function applyViewScale(c, key) {
+  const k = [1, 2, 4].includes(Number(viewScale[key])) ? Number(viewScale[key]) : 1;
+  c.style.width = c.width * k + 'px';
+  c.style.height = c.height * k + 'px';
+}
+function setupViewScale(selId, key, draw) {
+  const sel = $(selId);
+  if (!sel) return;
+  sel.value = String([1, 2, 4].includes(Number(viewScale[key])) ? Number(viewScale[key]) : 1);
+  sel.addEventListener('change', () => {
+    viewScale[key] = Number(sel.value) || 1;
+    try { localStorage.setItem(VIEW_SCALE_KEY, JSON.stringify(viewScale)); } catch (_) { /* 無視 */ }
+    draw();
+  });
+}
+
 function drawTile() {
   const tab = S.active;
   const c = $('tile');
@@ -733,6 +754,7 @@ function drawTile() {
   const w = r.w * 3 * gs;
   const h = r.h * 3 * gs;
   if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+  applyViewScale(c, 'tile');
   const g = c.getContext('2d');
   g.imageSmoothingEnabled = false;
   g.clearRect(0, 0, w, h);
@@ -757,6 +779,7 @@ function drawAnim() {
   const w = tab.cell.w * gs;
   const h = tab.cell.h * gs;
   if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+  applyViewScale(c, 'anim');
   const g = c.getContext('2d');
   g.imageSmoothingEnabled = false;
   g.clearRect(0, 0, w, h);
@@ -2266,6 +2289,8 @@ function init() {
     drawAnim();
   });
   for (const id of ['tile', 'animCv']) $(id).closest('details').addEventListener('toggle', () => requestDraw());
+  setupViewScale('tileScale', 'tile', drawTile);
+  setupViewScale('animScale', 'anim', drawAnim);
 
   renderPreviewList();
   refreshDraftIndex().then(() => { renderFileList(); renderDrafts(); });
