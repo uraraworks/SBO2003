@@ -27,9 +27,9 @@
 	/* 部分ごとの名前（テーマの項目） */
 	var LISTS = [
 		['floor', '床'], ['wallTop', '壁の天井（上段）'], ['wallFace', '壁の側面'], ['wallFill', 'その他の壁'],
-		['arch', '出入口の床'], ['door', '扉（0 = 出入口と同じ）'], ['void', '何もない所（0 = 塗らない）']
+		['arch', '出入口の床'], ['door', '扉（0 = 出入口と同じ）'], ['entry', '入口の絵（出てくる位置に1枚。0 = 置かない）'], ['goal', 'ゴールの絵（ボス部屋の真ん中に1枚。0 = 置かない）'], ['void', '何もない所（0 = 塗らない）']
 	];
-	var SCALAR = { door: 1, 'void': 1 };
+	var SCALAR = { door: 1, entry: 1, goal: 1, 'void': 1 };
 	var KIND = ['ふつう', 'ボス', '入口'];
 	var CELL_COLOR = ['#14161a', '#b9a87a', '#6b5a48', '#8f7c60', '#4d4136', '#e6d9a8', '#c06a2b'];
 	var CELL_NAME = ['何もない', '床', '壁の天井', '壁の側面', '壁（その他）', '出入口の床', '扉'];
@@ -649,7 +649,7 @@
 	}
 
 	function blankTheme() {
-		return { name: '新しいテーマ', algo: 1, floor: [1], wallTop: [1], wallFace: [1], wallFill: [1], 'void': 0, arch: [1], door: 0, bottomRows: 1, rooms: [], decos: [], openings: [], lights: [] };
+		return { name: '新しいテーマ', algo: 1, floor: [1], wallTop: [1], wallFace: [1], wallFill: [1], 'void': 0, arch: [1], door: 0, entry: 0, goal: 0, bottomRows: 1, rooms: [], decos: [], openings: [], lights: [] };
 	}
 
 	function fillSelect() {
@@ -706,6 +706,8 @@
 		t.lights = t.lights || [];
 		t.rooms = t.rooms || [];
 		t.decos = t.decos || [];
+		if (t.entry == null) t.entry = 0;
+		if (t.goal == null) t.goal = 0;
 		t.rooms.forEach(function (r) {
 			r.fixed = r.fixed === true;
 			if (r.entryX == null) r.entryX = -1;

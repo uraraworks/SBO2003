@@ -229,9 +229,17 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 		}
 	}
 
+	// 3b. 入口・ゴールの絵（start・goal のマスに 1 枚だけ）
+	const bool hasS = sk.startX >= 0 && sk.startY >= 0 && sk.startX < W && sk.startY < H;
+	const bool hasG = sk.goalX >= 0 && sk.goalY >= 0 && sk.goalX < W && sk.goalY < H;
+	if (th.entryPart > 0 && hasS) parts[sk.startY * W + sk.startX] = th.entryPart;
+	if (th.goalPart > 0 && hasG) parts[sk.goalY * W + sk.goalX] = th.goalPart;
+
 	// 4. 飾り（L3 洞窟は素の絵だけ）
 	if (sk.algo != 1) return;
 	std::vector<char> used(W * H, 0);
+	if (hasS) used[sk.startY * W + sk.startX] = 1;  // 入口・ゴールには飾りを置かない
+	if (hasG) used[sk.goalY * W + sk.goalX] = 1;
 	// 出入口パターンの範囲（柱・枠）には飾りを置かない
 	for (size_t k = 0; k < sk.links.size(); ++k)
 	{

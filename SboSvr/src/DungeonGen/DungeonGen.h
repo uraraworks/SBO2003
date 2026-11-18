@@ -160,11 +160,12 @@ struct Theme
 	int algo;
 	std::vector<int> floor, wallTop, wallFace, wallFill, arch;
 	int voidPart, door;
+	int entryPart, goalPart;  // start・goal のマスに置く絵（0 = 置かない）
 	int bottomRows;  // L1: 部屋の外枠の下の壁の行数（1 = 天井だけ / 2 = 天井＋側面）
 	std::vector<TplRoom> rooms;
 	std::vector<Deco> decos;
 	std::vector<Opening> openings;
-	Theme() : algo(0), voidPart(0), door(0), bottomRows(1) {}
+	Theme() : algo(0), voidPart(0), door(0), entryPart(0), goalPart(0), bottomRows(1) {}
 };
 
 // エラーコード（0 = 成功）
