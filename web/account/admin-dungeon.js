@@ -49,6 +49,7 @@
 		if (!e) return;
 		e.textContent = text || '';
 		e.classList.toggle('ok', !!bOk);
+		if (text && !bOk && e.scrollIntoView) { try { e.scrollIntoView({ block: 'nearest' }); } catch (x) { /* 何もしない */ } }
 	}
 
 	/* ---------------------------------------------------------------- */
@@ -67,6 +68,10 @@
 		'.dg-cols{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start}' +
 		'.dg-scroll{overflow:auto;max-width:100%;max-height:75vh;border:1px solid var(--border)}' +
 		'.dg-cv{display:block;image-rendering:pixelated;touch-action:none}' +
+		'.dg-unsaved{background:var(--ng);color:#fff;font-weight:bold;padding:2px 8px;border-radius:10px;font-size:13px}' +
+		'button.dg-hot{outline:3px solid var(--ng);font-weight:bold}' +
+		'.dg-draft{margin:6px 0;padding:8px;border:2px solid var(--ng);border-radius:8px}' +
+		'.dg-draft button{margin:0 6px 0 0;padding:6px 12px}' +
 		'.dg-cap{font-size:12px;color:var(--sub);margin:2px 0}' +
 		'.dg-legend span{display:inline-flex;align-items:center;gap:3px;margin-right:8px;font-size:12px}' +
 		'.dg-legend i{display:inline-block;width:12px;height:12px;border:1px solid var(--border)}' +
@@ -91,7 +96,7 @@
 		var h = '<style>' + CSS + '</style>';
 		h += '<details class="mv-help"><summary>使い方</summary><p class="sub-text">ディアブロ1式のランダムダンジョンのテーマ（床・壁のパーツ、9分割の部屋、飾り）を登録し、' +
 			'「お試し作成」で作った結果を見ます。お試し作成は、保存していない編集中のテーマでも試せます。ゲームの中にはまだつながっていません（仕様は docs/dungeon-gen.md）。</p></details>';
-		h += '<div class="msg" id="dg-msg"></div>';
+		h += '<div class="msg" id="dg-msg"></div><div id="dg-drafts"></div>';
 		h += '<div class="dg-sec"><h3>テーマ</h3><div class="dg-row"><select id="dg-sel"></select>' +
 			'<button type="button" id="dg-new">追加</button><button type="button" id="dg-dup" class="sub">複製</button>' +
 			'<button type="button" id="dg-del" class="sub">削除</button><button type="button" id="dg-save">保存</button>' +
@@ -559,13 +564,86 @@
 	/* ---------------------------------------------------------------- */
 	/* テーマの一覧と編集欄														 */
 	/* ---------------------------------------------------------------- */
+	/* 保存前の編集は localStorage に控える（保存し忘れて消えないように）。キーはテーマ id ごと・新規は 'new' */
+	var DRAFT_PREFIX = 'sbo.dungeon.draft.', draftTimer = 0;
+	function draftKey(t) { return DRAFT_PREFIX + (t && t.id ? t.id : 'new'); }
+	function draftDrop(t) { try { localStorage.removeItem(draftKey(t)); } catch (e) { /* 控えが使えなくても動く */ } }
+	function draftWrite() {
+		draftTimer = 0;
+		if (!cur || !dirty) return;
+		try { localStorage.setItem(draftKey(cur), JSON.stringify({ at: Date.now(), theme: cur })); } catch (e) { /* 保存できなくても動く */ }
+	}
+	function draftSoon() {
+		if (!draftTimer) draftTimer = setTimeout(draftWrite, 600);	/* 変更のたびではなく少し間引く */
+	}
+	function draftFlush() {
+		if (draftTimer) { clearTimeout(draftTimer); draftWrite(); }
+	}
+	function fmtAt(ms) {
+		var d = new Date(ms), z = function (n) { return (n < 10 ? '0' : '') + n; };
+		return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate()) + ' ' + z(d.getHours()) + ':' + z(d.getMinutes());
+	}
+	/* サーバーの内容と違う控えを探して、「戻す／捨てる」を出す */
+	function checkDrafts() {
+		var box = $('dg-drafts'), keys = [], i;
+		if (!box) return;
+		box.innerHTML = '';
+		try {
+			for (i = 0; i < localStorage.length; i++) {
+				var k = localStorage.key(i);
+				if (k && k.indexOf(DRAFT_PREFIX) === 0) keys.push(k);
+			}
+		} catch (e) { return; }
+		keys.forEach(function (k) {
+			var d = null, t;
+			try { d = JSON.parse(localStorage.getItem(k)); } catch (e) { d = null; }
+			if (!d || !d.theme || typeof d.theme !== 'object') { try { localStorage.removeItem(k); } catch (e) { /* 何もしない */ } return; }
+			t = norm(d.theme);
+			var srv = t.id ? themes.filter(function (x) { return x.id === t.id; })[0] : null;
+			if (t.id && !srv) { try { localStorage.removeItem(k); } catch (e) { /* 消えたテーマの控え */ } return; }
+			if (srv && JSON.stringify(norm(JSON.parse(JSON.stringify(srv)))) === JSON.stringify(t)) { try { localStorage.removeItem(k); } catch (e) { /* 同じなら控えは要らない */ } return; }
+			if (dirty && cur && draftKey(cur) === k) return;		/* 今まさに編集中のものは出さない */
+			var row = document.createElement('div');
+			row.className = 'dg-draft';
+			row.innerHTML = '<b>保存していない変更があります</b>（' + esc(fmtAt(d.at || 0)) + '）テーマ ' + (t.id ? t.id + ': ' : '（新規）') + esc(t.name || '') + ' ';
+			var b1 = document.createElement('button'), b2 = document.createElement('button');
+			b1.type = b2.type = 'button';
+			b1.textContent = '戻す';
+			b2.textContent = '捨てる';
+			b2.className = 'sub';
+			b1.addEventListener('click', function () {
+				if (dirty && !confirm('今の編集を捨てて、控えの内容に戻しますか。')) return;
+				cur = t;
+				selRoom = selDeco = selOp = -1;
+				show();
+				markDirty();
+				checkDrafts();
+				setMsg('控えの内容に戻しました。保存はまだです。', true);
+			});
+			b2.addEventListener('click', function () {
+				if (!confirm('この控えを捨てますか。元には戻せません。')) return;
+				try { localStorage.removeItem(k); } catch (e) { /* 何もしない */ }
+				checkDrafts();
+			});
+			row.appendChild(b1);
+			row.appendChild(b2);
+			box.appendChild(row);
+		});
+	}
 	function markDirty() {
 		dirty = true;
-		$('dg-dirty').textContent = '（未保存の変更あり）';
+		var e = $('dg-dirty');
+		e.textContent = '未保存';
+		e.className = 'dg-unsaved';
+		$('dg-save').classList.add('dg-hot');
+		draftSoon();
 	}
 	function clean() {
 		dirty = false;
+		if (draftTimer) { clearTimeout(draftTimer); draftTimer = 0; }
 		$('dg-dirty').textContent = '';
+		$('dg-dirty').className = 'sub-text';
+		$('dg-save').classList.remove('dg-hot');
 	}
 
 	function blankTheme() {
@@ -649,6 +727,7 @@
 			if (!r.themes) throw new Error(errText(r));
 			themes = r.themes;
 			setMsg('');
+			setTimeout(checkDrafts, 0);
 			if (!cur || (cur.id && !themes.some(function (t) { return t.id === cur.id; }))) {
 				pickTheme(themes[0] || null);
 			} else {
@@ -662,22 +741,27 @@
 	function saveTheme() {
 		if (!cur) return;
 		setMsg('保存しています…', true);
+		var saving = cur;
 		api('/api/admin/dungeon/theme/save', { theme: cur }).then(function (r) {
-			if (!r.ok) {
-				setMsg('保存できません: ' + errText(r));
+			if (!r || !r.ok || !r.theme) {
+				setMsg('保存できません（まだサーバーに届いていません）: ' + errText(r));
 				return;
 			}
+			draftDrop(saving);
+			draftDrop(r.theme);
 			var i = -1;
 			themes.forEach(function (t, k) { if (t.id === r.theme.id) i = k; });
 			if (i >= 0) themes[i] = r.theme; else themes.push(r.theme);
 			pickTheme(r.theme);
 			setMsg('保存しました（テーマ ' + r.theme.id + '）。', true);
-		}, function (e) { setMsg('保存できません: ' + (e && e.message || e)); });
+		}).then(null, function (e) { setMsg('保存できません（まだサーバーに届いていません）: ' + (e && e.message || e)); });
 	}
 
 	function delTheme() {
 		if (!cur) return;
 		if (!cur.id) {
+			if (dirty && !confirm('保存していない新しいテーマを捨てますか。')) return;
+			draftDrop(cur);
 			pickTheme(themes[0] || null);
 			return;
 		}
@@ -687,10 +771,11 @@
 				setMsg('消せません: ' + errText(r));
 				return;
 			}
+			draftDrop(cur);
 			themes = themes.filter(function (t) { return t.id !== cur.id; });
 			pickTheme(themes[0] || null);
 			setMsg('消しました。', true);
-		}, function (e) { setMsg('消せません: ' + (e && e.message || e)); });
+		}).then(null, function (e) { setMsg('消せません: ' + (e && e.message || e)); });
 	}
 
 	/* ---------------------------------------------------------------- */
@@ -746,7 +831,7 @@
 			$('dg-file').value = '';
 			pickTheme(themes[0] || null);
 			setMsg('入れました（追加 ' + r.added + '・上書き ' + r.replaced + '）。', true);
-		}, function (e) { setMsg('入れられません: ' + (e && e.message || e)); });
+		}).then(null, function (e) { setMsg('入れられません: ' + (e && e.message || e)); });
 	}
 
 	/* ---------------------------------------------------------------- */
@@ -1397,11 +1482,13 @@
 		});
 		$('dg-sel').addEventListener('change', function () {
 			if (dirty && !confirm('保存していない変更があります。捨てて切り替えますか。')) { fillSelect(); return; }
+			if (dirty) draftDrop(cur);
 			var id = num($('dg-sel').value, 0);
 			pickTheme(themes.filter(function (t) { return t.id === id; })[0] || null);
 		});
 		$('dg-new').addEventListener('click', function () {
 			if (dirty && !confirm('保存していない変更があります。捨てて新しく作りますか。')) return;
+			if (dirty) draftDrop(cur);
 			pickTheme(blankTheme());
 			markDirty();
 		});
@@ -1490,6 +1577,13 @@
 		decoField('dg-don', function (d, v) { d.on = num(v, 1); });
 		decoField('dg-drate', function (d, v) { d.rate = Math.max(0, Math.min(100, num(v, 0))); });
 		decoField('dg-dmax', function (d, v) { d.max = Math.max(0, Math.min(999, num(v, 0))); });
+		window.addEventListener('beforeunload', function (ev) {
+			if (!dirty) return;
+			draftFlush();
+			ev.preventDefault();
+			ev.returnValue = '';
+		});
+		window.addEventListener('pagehide', draftFlush);
 		$('dg-gen').addEventListener('click', function () { generate(false); });
 		$('dg-gen2').addEventListener('click', function () { generate(true); });
 		$('dg-view').addEventListener('change', drawOut);
