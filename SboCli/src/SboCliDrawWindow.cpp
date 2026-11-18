@@ -4493,6 +4493,57 @@ static void DrawWindowAPPRAISE(PWNDINFO pWnd)
 }
 
 /* ========================================================================= */
+/* 関数名：DrawWindowFORGE													 */
+/* 内容：ウィンドウの描画(鍛冶屋：鍛える・付け替えの対象になる持ち物の一覧)	 */
+/*		 名前の右に装備中の印。できない物（未鑑定・これ以上鍛えられない・同じ付与・ */
+/*		 材料か手数料が足りない）は灰色											 */
+/* ========================================================================= */
+static void DrawWindowFORGE(PWNDINFO pWnd)
+{
+	int anList[MAX_MYITEM], nCount, i, j, nIndex, nRecipe = (int)pWnd->dwData;
+	WORD wBase, wPre, wSuf;
+
+	if ((g_nProcMakerID < 0) || (g_nProcMakerID >= MAX_MAKER) || (nRecipe < 0) || (nRecipe >= MAX_RECIPE)) {
+		return;
+	}
+	nCount = ForgeGetList (nRecipe, anList, MAX_MYITEM);
+
+	if (pWnd->dwTimeDrawStart) {
+		DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
+		return;
+	}
+
+	DrawWindowFrame (pWnd);
+	HDC hDC = pWnd->pDib->Lock ();
+	HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFontBasic);
+	SetBkMode (hDC, TRANSPARENT);
+
+	for (i = 0; i < pWnd->nData2; i ++) {
+		nIndex = (int)pWnd->byData1 + i;
+		if (nIndex >= nCount) {
+			break;
+		}
+		PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
+		WORD wID = pChar->waItem[anList[nIndex]];
+		BOOL bOK = (ItemForgeCalc (&g_aRecipeInfo[nRecipe], wID, &wBase, &wPre, &wSuf) == FORGE_OK) && MakerCanMake (nRecipe, anList[nIndex]);
+		COLORREF clText = bOK ? RGB (255, 255, 255) : RGB (150, 150, 150);
+		TextOut2 (hDC, 32, 16 + i * 16, (char *)ItemNameOf (wID), clText);
+		for (j = 0; j < 10; j ++) {
+			if (pChar->waEqu[j] == anList[nIndex]) {
+				TextOut2 (hDC, pWnd->nCx - 16 - SboTextWidth ("装備中") * 8, 16 + i * 16, "装備中", clText);
+				break;
+			}
+		}
+	}
+
+	SelectObject (hDC, hFontOld);
+	pWnd->pDib->Unlock ();
+	pWnd->dwTimeDrawStart = timeGetTime ();
+
+	DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
+}
+
+/* ========================================================================= */
 /* 関数名：DrawWindowMAKER													 */
 /* 内容：ウィンドウの描画(作り手（レシピ）：作れる物の一覧・確認)			 */
 /*		 一覧：できる物の名前（材料と手数料が足りない物は灰色）				 */
@@ -4509,9 +4560,14 @@ void DrawWindowMAKER(PWNDINFO pWnd)
 		DrawWindowAPPRAISE (pWnd);
 		return;
 	}
+	/* 鍛冶屋の対象の一覧 */
+	if (pWnd->nType2 == MAKERWND_FORGE) {
+		DrawWindowFORGE (pWnd);
+		return;
+	}
 
 	/* 確認（はい／いいえ） */
-	if ((pWnd->nType2 == MAKERWND_CONF) || (pWnd->nType2 == MAKERWND_APPRAISE_CONF)) {
+	if ((pWnd->nType2 == MAKERWND_CONF) || (pWnd->nType2 == MAKERWND_APPRAISE_CONF) || (pWnd->nType2 == MAKERWND_FORGE_CONF)) {
 		if (pWnd->dwTimeDrawStart) {
 			DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
 			return;
@@ -4562,13 +4618,17 @@ void DrawWindowMAKER(PWNDINFO pWnd)
 			break;
 		}
 		PRECIPEINFO pRecipe = &g_aRecipeInfo[anList[nIndex]];
-		PITEMINFO pItem = g_aItemInfo[pRecipe->wItem];
-		if (pRecipe->byCount > 1) {
+		if ((pRecipe->byKind == RECIPEKIND_NORMAL) && (pRecipe->byCount > 1)) {
 			wsprintf (szTmp, "%s x%d", ItemNameOf (pRecipe->wItem), (int)pRecipe->byCount);
 		} else {
-			wsprintf (szTmp, "%s", ItemNameOf (pRecipe->wItem));
+			MakerRecipeTitle (anList[nIndex], szTmp, sizeof (szTmp));
 		}
-		clText = MakerCanMake (anList[nIndex]) ? RGB (255, 255, 255) : RGB (150, 150, 150);
+		/* 鍛える・付け替えるは、対象を選んでから材料を調べる（対象は材料に数えないため）ので、ここでは手数料だけで灰色にする */
+		if (pRecipe->byKind == RECIPEKIND_NORMAL) {
+			clText = MakerCanMake (anList[nIndex]) ? RGB (255, 255, 255) : RGB (150, 150, 150);
+		} else {
+			clText = (g_aCharInfo[g_nMyCharID]->dwGold >= pRecipe->dwGold) ? RGB (255, 255, 255) : RGB (150, 150, 150);
+		}
 		TextOut2 (hDC, 32, 16 + i * 16, szTmp, clText);
 	}
 

@@ -3035,6 +3035,209 @@ static void KeyProcAPPRAISE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 }
 
 /* ========================================================================= */
+/* 関数名：	KeyProcFORGE													 */
+/* 内容：	キー入力処理(鍛冶屋：鍛える・付け替えの対象になる持ち物の一覧・確認)	 */
+/*			一覧：上下で選び、決定で確認へ（未鑑定・これ以上鍛えられない・同じ付与・ */
+/*			材料か手数料が足りない時は断る）、取消でレシピの一覧へ戻る			 */
+/*			確認：はい→要求を出す（レシピの一覧へ戻って返事を待つ）、いいえ→一覧へ */
+/* ========================================================================= */
+static void KeyProcFORGE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
+{
+	DWORD dwTime = 250;
+	PWNDINFO pWndRecipe = NULL, pWndForge = NULL;
+	int i, anList[MAX_MYITEM], nCount, nRecipe;
+
+	if (pWnd->byRepeate > 1) {
+		dwTime = 125;
+	}
+	if ((g_nProcMakerID < 0) || (g_nProcMakerID >= MAX_MAKER)) {
+		EraseWindow (pWnd);
+		g_bDraw = TRUE;
+		return;
+	}
+	for (i = 0; i < g_WndInfo.GetSize (); i ++) {
+		if (g_WndInfo[i]->nType != WNDTYPE_MAKER) {
+			continue;
+		}
+		if (g_WndInfo[i]->nType2 == MAKERWND_LIST) {
+			pWndRecipe = g_WndInfo[i];
+		} else if (g_WndInfo[i]->nType2 == MAKERWND_FORGE) {
+			pWndForge = g_WndInfo[i];
+		}
+	}
+	if ((pWndRecipe == NULL) || (pWndForge == NULL)) {
+		EraseWindow (pWnd);
+		g_bDraw = TRUE;
+		return;
+	}
+	nRecipe = (int)pWndForge->dwData;
+	if ((nRecipe < 0) || (nRecipe >= MAX_RECIPE) || (g_aRecipeInfo[nRecipe].byState != RECIPESTATE_ON)) {
+		/* レシピが無くなった */
+		EraseWindow (pWndForge);
+		g_dwActiveMsgID = pWndRecipe->dwID;
+		g_bDraw = TRUE;
+		return;
+	}
+	nCount = ForgeGetList (nRecipe, anList, MAX_MYITEM);
+
+	if ((byEvent == KEY_UP) && (byCode == 'B')) {
+		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
+		if (pWnd->nType2 == MAKERWND_FORGE_CONF) {
+			EraseWindow (pWnd);
+			MakerSetMsg (pWndForge, "どの装備にしますか？@2");
+			g_dwActiveMsgID = pWndForge->dwID;
+			pWndForge->dwTimeDrawStart = 0;
+		} else {
+			/* レシピの一覧へ戻る */
+			EraseWindow (pWnd);
+			MakerSetTalkMsg (pWndRecipe);
+			g_dwActiveMsgID = pWndRecipe->dwID;
+			pWndRecipe->dwTimeDrawStart = 0;
+		}
+		g_bDraw = TRUE;
+
+	} else if ((byEvent == KEY_UP) && (byCode == 'A') && (g_bEnableMove)) {
+		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
+		pWnd->dwTimeDrawStart = 0;
+		pWnd->byAnime = 1;
+
+		if (pWnd->nType2 == MAKERWND_FORGE) {
+			int nIndex = (int)pWnd->byData1 + pWnd->nData1;
+			if ((nIndex < 0) || (nIndex >= nCount)) {
+				return;
+			}
+			PRECIPEINFO pRecipe = &g_aRecipeInfo[nRecipe];
+			int nNo = anList[nIndex];
+			WORD wID = g_aCharInfo[g_nMyCharID]->waItem[nNo], wBase, wPre, wSuf;
+			char szTmp[512], szNew[MAX_ITEMNAME + MAX_AFFIXNAME * 2 + 8], szMat[256];
+
+			switch (ItemForgeCalc (pRecipe, wID, &wBase, &wPre, &wSuf)) {
+			case FORGE_OK:
+				break;
+			case FORGE_UNKNOWN:
+				MakerSetMsg (pWnd, "まだ鑑定されていません。@1先に鑑定をお願いします。@2");
+				g_dwActiveMsgID = pWnd->dwID;
+				g_bDraw = TRUE;
+				return;
+			case FORGE_MAXED:
+				MakerSetMsg (pWnd, "これ以上は鍛えられません。@2");
+				g_dwActiveMsgID = pWnd->dwID;
+				g_bDraw = TRUE;
+				return;
+			case FORGE_SAME:
+				MakerSetMsg (pWnd, "もう同じ付与が付いています。@2");
+				g_dwActiveMsgID = pWnd->dwID;
+				g_bDraw = TRUE;
+				return;
+			default:
+				MakerSetMsg (pWnd, "それはできないようです。@2");
+				g_dwActiveMsgID = pWnd->dwID;
+				g_bDraw = TRUE;
+				return;
+			}
+			/* 材料・手数料が足りない時は、確認せずに断る（預かり所の中身が届く前は待ってもらう） */
+			if (!MakerCanMake (nRecipe, nNo)) {
+				if (!g_bProcMakerLeaveOK && (g_aCharInfo[g_nMyCharID]->dwGold >= pRecipe->dwGold)) {
+					MakerSetMsg (pWnd, "預かり所を確かめています。@1少々お待ちください。@2");
+				} else if (g_aCharInfo[g_nMyCharID]->dwGold < pRecipe->dwGold) {
+					MakerSetMsg (pWnd, "手数料が足りないようです。@2");
+				} else if (g_aMakerInfo[g_nProcMakerID].szMsgLack[0]) {
+					MakerSetMsg (pWnd, g_aMakerInfo[g_nProcMakerID].szMsgLack);
+				} else {
+					MakerSetMsg (pWnd, "材料が足りないようです。@2");
+				}
+				g_dwActiveMsgID = pWnd->dwID;
+				g_bDraw = TRUE;
+				return;
+			}
+			/* 「◯◯ → △△ にします。材料…、手数料…G」 */
+			szMat[0] = 0;
+			for (i = 0; i < MAX_RECIPEMAT; i ++) {
+				if ((pRecipe->awMatItem[i] == 0) || (pRecipe->abyMatCount[i] == 0) || ((int)pRecipe->awMatItem[i] >= g_aItemInfo.GetSize ())) {
+					continue;
+				}
+				size_t nLen = strlen (szMat);
+				snprintf (szMat + nLen, sizeof (szMat) - nLen, "%s%sx%d", nLen ? "、" : "", g_aItemInfo[pRecipe->awMatItem[i]]->szName, (int)pRecipe->abyMatCount[i]);
+			}
+			ItemNameParts (wBase, wPre, wSuf, szNew, sizeof (szNew));
+			snprintf (szTmp, sizeof (szTmp), "%s → %s にします。@1材料：%s@1手数料は%dGです。@2", ItemNameOf (wID), szNew, szMat, (int)pRecipe->dwGold);
+			MakerSetMsg (pWnd, szTmp);
+
+			PWNDINFO pWndConf = MakeWindowMAKER_CONF (-1);
+			pWndConf->nType2 = MAKERWND_FORGE_CONF;
+			pWndConf->dwData = ((DWORD)nRecipe << 16) | (DWORD)nNo;
+			g_WndInfo.Add (pWndConf);
+			g_dwActiveMsgID = pWndConf->dwID;
+
+		} else {
+			int nNo = (int)(pWnd->dwData & 0xFFFF);
+			BOOL bYes = (pWnd->nData1 == 0);
+
+			EraseWindow (pWnd);
+			if (bYes && (nNo >= 0) && (nNo < MAX_MYITEM)) {
+				/* 一覧を閉じてレシピの一覧へ戻り、返事（RecvDataProcRECIPEMAKE）を待つ */
+				EraseWindow (pWndForge);
+				g_dwActiveMsgID = pWndRecipe->dwID;
+				SendCmdRECIPEMAKE ((BYTE)g_nProcMakerID, (WORD)nRecipe, (BYTE)nNo);
+				g_bProcMakerWait = TRUE;
+				g_dwProcMakerWaitTime = timeGetTime ();
+				MakerSetMsg (pWndRecipe, "少々お待ちください。@2");
+				pWndRecipe->dwTimeDrawStart = 0;
+			} else {
+				g_dwActiveMsgID = pWndForge->dwID;
+				MakerSetMsg (pWndForge, "どの装備にしますか？@2");
+				pWndForge->dwTimeDrawStart = 0;
+			}
+		}
+		g_bDraw = TRUE;
+
+	} else if ((byEvent == KEY_DOWN) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
+		BOOL bMove = FALSE;
+
+		if (pWnd->nType2 == MAKERWND_FORGE_CONF) {
+			if ((byCode == VK_UP) && (pWnd->nData1 > 0)) {
+				pWnd->nData1 --;
+				bMove = TRUE;
+			} else if ((byCode == VK_DOWN) && (pWnd->nData1 < pWnd->nData2 - 1)) {
+				pWnd->nData1 ++;
+				bMove = TRUE;
+			}
+		} else {
+			int nIndex = (int)pWnd->byData1 + pWnd->nData1;
+			int nIndexNew = nIndex;
+
+			if ((byCode == VK_UP) && (nIndex > 0)) {
+				nIndexNew = nIndex - 1;
+			} else if ((byCode == VK_DOWN) && (nIndex < nCount - 1)) {
+				nIndexNew = nIndex + 1;
+			} else if (byCode == VK_LEFT) {
+				nIndexNew = 0;
+			} else if (byCode == VK_RIGHT) {
+				nIndexNew = max (nCount - 1, 0);
+			}
+			if (nIndexNew != nIndex) {
+				MakerScrollFit (pWnd, nIndexNew, nCount);
+				bMove = TRUE;
+			}
+		}
+
+		if (bMove) {
+			pWnd->dwTime = timeGetTime ();
+			pWnd->byAnime = 1;
+			pWnd->byRepeate ++;
+			pWnd->dwTimeKey = timeGetTime ();
+			pWnd->dwTimeDrawStart = 0;
+			g_bDraw = TRUE;
+		}
+
+	} else if (byEvent == KEY_UP) {
+		pWnd->dwTimeKey = timeGetTime () - 250;
+		pWnd->byRepeate = 0;
+		g_bDraw = TRUE;
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：	KeyProcMAKER													 */
 /* 内容：	キー入力処理(作り手（レシピ）：作れる物の一覧・確認)			 */
 /*			一覧：上下で選び、決定で確認へ、取消で閉じる					 */
@@ -3044,6 +3247,10 @@ void KeyProcMAKER(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 {
 	if ((pWnd->nType2 == MAKERWND_APPRAISE) || (pWnd->nType2 == MAKERWND_APPRAISE_CONF)) {
 		KeyProcAPPRAISE (pWnd, byEvent, byCode);
+		return;
+	}
+	if ((pWnd->nType2 == MAKERWND_FORGE) || (pWnd->nType2 == MAKERWND_FORGE_CONF)) {
+		KeyProcFORGE (pWnd, byEvent, byCode);
 		return;
 	}
 
@@ -3110,8 +3317,28 @@ void KeyProcMAKER(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				return;
 			}
 			PRECIPEINFO pRecipe = &g_aRecipeInfo[nRecipe];
-			PITEMINFO pItem = g_aItemInfo[pRecipe->wItem];
 			char szTmp[256];
+
+			/* 鍛える・付け替える：対象の装備を持ち物から選ぶ画面へ（材料は対象を選んでから調べる） */
+			if (pRecipe->byKind != RECIPEKIND_NORMAL) {
+				int anTarget[MAX_MYITEM];
+
+				if (g_aCharInfo[g_nMyCharID]->dwGold < pRecipe->dwGold) {
+					MakerSetMsg (pWnd, "手数料が足りないようです。@2");
+				} else if (ForgeGetList (nRecipe, anTarget, MAX_MYITEM) == 0) {
+					MakerSetMsg (pWnd, "対象になる装備がないようです。@2");
+				} else {
+					PWNDINFO pWndForge = MakeWindowFORGE (nRecipe);
+					g_WndInfo.Add (pWndForge);
+					MakerSetMsg (pWndForge, "どの装備にしますか？@2");
+					g_dwActiveMsgID = pWndForge->dwID;
+					g_bDraw = TRUE;
+					return;
+				}
+				g_dwActiveMsgID = pWnd->dwID;
+				g_bDraw = TRUE;
+				return;
+			}
 
 			/* 足りない時は、確認せずに断る。持ち物だけで足りず預かり所の中身がまだ届いていない時は、
 			   届くまで確認を出さない（通信が遅い時に決定キーを連打すると、材料が無いのに確認が出ていた） */
@@ -3149,7 +3376,7 @@ void KeyProcMAKER(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			EraseWindow (pWnd);
 			g_dwActiveMsgID = pWndList->dwID;
 			if (bYes && (nRecipe >= 0) && (nRecipe < MAX_RECIPE) && (g_aRecipeInfo[nRecipe].byState == RECIPESTATE_ON)) {
-				SendCmdRECIPEMAKE ((BYTE)g_nProcMakerID, (WORD)nRecipe);
+				SendCmdRECIPEMAKE ((BYTE)g_nProcMakerID, (WORD)nRecipe, 0);
 				g_bProcMakerWait = TRUE;
 				g_dwProcMakerWaitTime = timeGetTime ();
 				MakerSetMsg (pWndList, "少々お待ちください。@2");

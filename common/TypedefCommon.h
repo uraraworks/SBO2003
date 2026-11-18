@@ -2918,11 +2918,21 @@ typedef struct _RECIPEINFO {
 	WORD		wSort;												/* 並び順（小さい順。同じなら番号順） */
 	WORD		wItem;												/* できるアイテムID */
 	BYTE		byCount;											/* できる個数（1〜） */
-	BYTE		byReserved;											/* 予備 */
+	BYTE		byKind;												/* 種類(RECIPEKIND_*。古いデータは 0=普通) */
 	WORD		awMatItem[MAX_RECIPEMAT];							/* 材料のアイテムID（0なら使わない欄） */
 	BYTE		abyMatCount[MAX_RECIPEMAT];							/* 材料の個数 */
 	DWORD		dwGold;												/* 手数料（ゴールド） */
+	WORD		wAffix;												/* 鍛える・付け替える：付ける付与の番号（ITEMAFFIXINFO の wID） */
+	WORD		wEquMask;											/* 鍛える・付け替える：対象の装備種別ビット（AFFIXEQU_*。0=付与側の wEquMask に従う） */
+	BYTE		byAllowPlain;										/* 鍛える・付け替える：1=普通の装備（付与の無い物）も対象にしてよい */
 } RECIPEINFO, *PRECIPEINFO;
+
+/* レシピの種類（RECIPEINFO の byKind）。鍛える・付け替えるは 手持ちの装備 1 つが対象で、wItem・byCount は使わない（付与の定義は後ろの付与の節） */
+enum {
+	RECIPEKIND_NORMAL = 0,										/* 普通（材料から wItem を byCount 個作る） */
+	RECIPEKIND_FORGE,											/* 鍛える（対象の後ろの付与を wNext の段へ進める。無ければ wAffix を付ける） */
+	RECIPEKIND_SWAP,											/* 付け替える（wAffix の位置の付与を wAffix に置き換える） */
+};
 
 /* 作り手の台詞を選ぶ番号 */
 enum {
@@ -2938,6 +2948,9 @@ enum {
 	RECIPERESULT_LACKGOLD,										/* 手数料が足りない */
 	RECIPERESULT_NOROOM,										/* 持ち物も預かり所もいっぱいで渡せない */
 	RECIPERESULT_INVALID,										/* 作れない（無いレシピ・作り手が近くにいない など） */
+	RECIPERESULT_UNKNOWN,										/* 鍛える・付け替える：対象が未鑑定（先に鑑定を） */
+	RECIPERESULT_MAXED,											/* 鍛える：これ以上は鍛えられない（wNext が無い） */
+	RECIPERESULT_SAME,											/* 付け替える：もう同じ付与が付いている */
 };
 
 #pragma pack(push, 1)
@@ -2965,6 +2978,7 @@ typedef struct _CMDPARA_RECIPEMAKE {
 	WORD		wRecipeID;											/* レシピの番号 */
 	DWORD		pID;												/* プレイヤーID */
 	DWORD		dwTblID;											/* テーブルID */
+	BYTE		byNo;												/* 鍛える・付け替える：対象の手持ちの位置(0〜MAX_MYITEM-1)。普通のレシピでは 0（要求のみ） */
 } CMDPARA_RECIPEMAKE, *PCMDPARA_RECIPEMAKE;
 #pragma pack(pop)
 
@@ -3011,6 +3025,7 @@ typedef struct _ITEMAFFIXINFO {
 	WORD		wWeight;											/* 出やすさ（重み。0 なら出ない） */
 	WORD		wGoldRate;											/* 売値の倍率%（100=そのまま） */
 	BYTE		byBad;												/* ハズレ印（1。表示用） */
+	WORD		wNext;												/* 鍛えた時の次の段の付与の番号（0=これ以上は鍛えられない。＋1→＋2→＋3 など） */
 } ITEMAFFIXINFO, *PITEMAFFIXINFO;
 
 /* 派生アイテム情報（1行。番号は ITEMID_DERIVE_BASE + 行番号） */

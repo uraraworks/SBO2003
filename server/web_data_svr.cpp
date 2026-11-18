@@ -443,6 +443,7 @@ static const DATAFIELD s_aFieldAffix[] = {
 	FLD (ITEMAFFIXINFO, wWeight,		"出やすさ",				FT_U16, 0, "くじの重み。0 なら出ない"),
 	FLD (ITEMAFFIXINFO, wGoldRate,		"売値の倍率(%)",		FT_U16, 0, "100=そのまま。鑑定済みの売値 = 元の値段 × 前後の倍率の積"),
 	FLD (ITEMAFFIXINFO, byBad,			"ハズレ印",				FT_U8, 0, "1 なら表示でハズレと分かる印を付ける（表示用）"),
+	FLD (ITEMAFFIXINFO, wNext,			"次の段",				FT_U16, 0, "鍛えた時に置き換わる次の段の付与（affix の wID。0=これ以上は鍛えられない）。＋1→＋2→＋3 のように、位置が同じ（後ろ）の付与を指す"),
 };
 
 /* 派生アイテム情報（読むだけ。アイテム番号 16384 以降 = 行番号 + 16384） */
@@ -463,6 +464,10 @@ static const DATAFIELD s_aFieldRecipe[] = {
 	FLDA(RECIPEINFO, awMatItem,			"材料のアイテム",		FT_U16ARR, WORD, 0, "item の番号を最大 4 種（0 は使わない欄）。1 種以上必要。持ち物（装備中・捨てられない物を除く）を先に、足りない分を預かり所から使う"),
 	FLDA(RECIPEINFO, abyMatCount,		"材料の個数",			FT_U8ARR, BYTE, 0, "awMatItem と同じ並びの個数（アイテムが 0 の欄は 0 にする）"),
 	FLD (RECIPEINFO, dwGold,			"手数料",				FT_U32, 0, "作ってもらう時に払うゴールド"),
+	FLD (RECIPEINFO, byKind,			"種類",					FT_U8, 0, "0=普通（材料から wItem を byCount 個作る） 1=鍛える（手持ちの装備 1 つの後ろの付与を、あれば付与の wNext の段へ進める。無ければ wAffix を付ける。wAffix は位置が後ろ（byPos=1）の付与。wNext が 0 なら「これ以上は鍛えられない」） 2=付け替える（対象の wAffix の位置（前/後ろ）の付与を wAffix に置き換える。無ければ付ける。同じなら断る）。1・2 は wItem・byCount を使わない（できる個数は 1 固定）。対象は鑑定済みの派生装備（未鑑定は断る）。材料と手数料は普通と同じ。詳しくは docs/recipe.md"),
+	FLD (RECIPEINFO, wAffix,			"付ける付与",			FT_U16, 0, "種類が 1・2 の時に付ける付与（affix の wID）。種類 0 では 0"),
+	FLD (RECIPEINFO, byAllowPlain,		"普通の装備も対象",		FT_U8, 0, "1=付与の無い普通の装備も対象にしてよい（例: 普通の剣→剣＋1）。0=鑑定済みの派生装備だけ"),
+	FLD (RECIPEINFO, wEquMask,			"対象の装備種別",		FT_U16, 0, "対象にする装備種別のビット（1=武器 2=鎧 4=盾 8=兜 16=小手 32=靴 64=首飾り 128=指輪）。0=付与側（affix の wEquMask）に従う。付与の wEquMask に無い種別は常に対象外"),
 };
 
 /* フラグの名前表（印・数値の番号に付ける名前。管理用でプレイヤーには出ない） */
@@ -4628,11 +4633,43 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 					strErr = "byMaker は maker の番号（0〜" + JsonNum(g_aMakerInfo.GetSize() - 1) + "）で指定してください。先に maker を足してください";
 					goto Exit;
 				}
-				if (Info.wItem == 0 || Info.wItem >= g_aItemInfo.GetSize()) {
+				if (Info.byKind == RECIPEKIND_NORMAL && (Info.wItem == 0 || Info.wItem >= g_aItemInfo.GetSize())) {
 					strErr = "wItem は item の番号（1〜" + JsonNum(g_aItemInfo.GetSize() - 1) + "）で指定してください";
 					goto Exit;
 				}
-				if (Info.byCount < 1) {
+				if (Info.byKind > RECIPEKIND_SWAP) {
+					strErr = "byKind は 0（普通）・1（鍛える）・2（付け替える）のどれかで指定してください";
+					goto Exit;
+				}
+				if (Info.byKind != RECIPEKIND_NORMAL) {
+					/* 鍛える・付け替える：できる物は無く（個数は 1 固定）、付与と対象の装備を決める */
+					PITEMAFFIXINFO pAffix = NULL;
+					for (int k = 0; k < g_aAffixInfo.GetSize(); k ++) {
+						if (Info.wAffix != 0 && g_aAffixInfo[k]->wID == Info.wAffix) {
+							pAffix = g_aAffixInfo[k];
+						}
+					}
+					if (pAffix == NULL) {
+						strErr = "wAffix は affix の wID（付与番号）で指定してください。先に affix を足してください";
+						goto Exit;
+					}
+					if (Info.byKind == RECIPEKIND_FORGE && pAffix->byPos != AFFIXPOS_BACK) {
+						strErr = "鍛えるレシピの wAffix は位置が後ろ（byPos=1）の付与にしてください";
+						goto Exit;
+					}
+					if (Info.wEquMask & ~(WORD)AFFIXEQU_ALL) {
+						strErr = "wEquMask は 0〜255（0=付与側に従う。武器=1・鎧=2・盾=4・兜=8・小手=16・靴=32・首飾り=64・指輪=128 のビットの和）で指定してください";
+						goto Exit;
+					}
+					Info.wItem = 0;
+					Info.byCount = 1;
+					Info.byAllowPlain = Info.byAllowPlain ? 1 : 0;
+				} else {
+					Info.wAffix = 0;
+					Info.wEquMask = 0;
+					Info.byAllowPlain = 0;
+				}
+				if (Info.byKind == RECIPEKIND_NORMAL && Info.byCount < 1) {
 					strErr = "byCount（できる個数）は 1 以上にしてください";
 					goto Exit;
 				}
@@ -4702,6 +4739,23 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 			if (Info.byRank < 1 || Info.byRank > 3) {
 				strErr = "byRank（格）は 1〜3 で指定してください";
 				goto Exit;
+			}
+			if (Info.wNext != 0) {
+				/* 次の段は、表にある別の付与で、位置が同じもの（＋1→＋2→＋3 の鎖が自分に戻らないように、自分は指せない） */
+				PITEMAFFIXINFO pNext = NULL;
+				for (int k = 0; k < g_aAffixInfo.GetSize(); k ++) {
+					if (g_aAffixInfo[k]->wID == Info.wNext) {
+						pNext = g_aAffixInfo[k];
+					}
+				}
+				if (pNext == NULL || (!bAdd && Info.wNext == Info.wID)) {
+					strErr = "wNext は表にある別の付与の wID で指定してください（0 ならこれ以上は鍛えられない）";
+					goto Exit;
+				}
+				if (pNext->byPos != Info.byPos) {
+					strErr = "wNext は位置（byPos）が同じ付与にしてください";
+					goto Exit;
+				}
 			}
 			/* 付与番号を振る（今ある一番大きい番号 + 1。使い回さない） */
 			if (bAdd) {

@@ -13408,8 +13408,11 @@ static BOOL RecipeIsUsableItem(PCHARINFO pChar, int nNo)
 /*       できた物は持ち物へ、いっぱいなら預かり所へ。預かり所も満杯なら		 */
 /*       何も変えずに RECIPERESULT_NOROOM を返す。							 */
 /*       成功したら *pnToInv・*pnToLeave に持ち物・預かり所へ渡した個数を入れる */
+/*       pnTarget が NULL でない時（鍛える・付け替える）は、手持ちの *pnTarget 番目が */
+/*       対象の装備なので材料に数えず、できた物は渡さない。材料を消して持ち物が詰まった */
+/*       後の対象の位置を *pnTarget に入れて返す（装備中の添字も DelCharItem が直す）	 */
 /* ========================================================================= */
-static BYTE RecipeMake(PCHARINFO pChar, PRECIPEINFO pRecipe, int *pnToInv, int *pnToLeave)
+static BYTE RecipeMake(PCHARINFO pChar, PRECIPEINFO pRecipe, int *pnToInv, int *pnToLeave, int *pnTarget = NULL)
 {
 	PLEAVEINFO pLeave = NULL;
 	BOOL abyInvUsed[MAX_MYITEM], abyImpUsed[MAX_IMPORTANT];
@@ -13444,7 +13447,7 @@ static BYTE RecipeMake(PCHARINFO pChar, PRECIPEINFO pRecipe, int *pnToInv, int *
 			continue;
 		}
 		for (i = 0; (i < MAX_MYITEM) && (nNeed > 0); i ++) {
-			if (!abyInvUsed[i] && (pChar->waItem[i] == wMat) && RecipeIsUsableItem (pChar, i)) {
+			if (!abyInvUsed[i] && (pChar->waItem[i] == wMat) && RecipeIsUsableItem (pChar, i) && (!pnTarget || (i != *pnTarget))) {
 				abyInvUsed[i] = TRUE;
 				nNeed --;
 			}
@@ -13492,6 +13495,9 @@ static BYTE RecipeMake(PCHARINFO pChar, PRECIPEINFO pRecipe, int *pnToInv, int *
 	for (i = MAX_MYITEM - 1; i >= 0; i --) {
 		if (abyInvUsed[i]) {
 			DelCharItem (pChar->dwTblID, (BYTE)i);
+			if (pnTarget && (i < *pnTarget)) {
+				(*pnTarget) --;
+			}
 		}
 	}
 	/* 材料を使う：預かり所（0 個になった枠は詰める） */
@@ -13513,8 +13519,8 @@ static BYTE RecipeMake(PCHARINFO pChar, PRECIPEINFO pRecipe, int *pnToInv, int *
 		pLeave->byCount = (BYTE)n;
 	}
 
-	/* できた物を渡す：持ち物へ、いっぱいなら預かり所へ */
-	for (i = 0; i < pRecipe->byCount; i ++) {
+	/* できた物を渡す：持ち物へ、いっぱいなら預かり所へ（鍛える・付け替えるは対象の装備を置き換えるので渡さない） */
+	for (i = 0; !pnTarget && (i < pRecipe->byCount); i ++) {
 		/* 大事な物の欄に入る品は、欄に空きがなければ作れない（預かり所へは送らない） */
 		if (CanAddCharItem (pChar->dwTblID, pRecipe->wItem)) {
 			AddCharItem (pChar->dwTblID, pRecipe->wItem);
@@ -14392,11 +14398,40 @@ void RecvDataProcRECYCLECLOSE(PBYTE pData, DWORD dwDataSize)
 }
 
 /* ========================================================================= */
+/* 関数名：RenameItemKeys													 */
+/* 内容：ショートカットに登録していた wOld を、手持ちに同じ番号が残らなければ wNew へ付け替える */
+/*       （鑑定・鍛える・付け替えるで番号が変わった時）						 */
+/* ========================================================================= */
+static void RenameItemKeys(PCHARINFO pChar, WORD wOld, WORD wNew)
+{
+	int k;
+	BOOL bRemain = FALSE, bKey = FALSE;
+
+	for (k = 0; k < MAX_MYITEM; k ++) {
+		if (pChar->waItem[k] == wOld) {
+			bRemain = TRUE;
+		}
+	}
+	for (k = 0; (k < MAX_MAGICKEY) && !bRemain; k ++) {
+		if (pChar->awKeyItem[k] == wOld) {
+			pChar->awKeyItem[k] = wNew;
+			bKey = TRUE;
+		}
+	}
+	if (bKey) {
+		SendMagicKeySetting (pChar);
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcRECIPEMAKE											 */
 
 /* 内容：受信データ処理(レシピで作ってもらう)								 */
 /*       存在しないレシピ・停止中のレシピ・作り手の番号が違う・近くに作り手が	 */
 /*       いない要求は RECIPERESULT_INVALID で断る。							 */
+/*       鍛える・付け替えるレシピは、手持ちの byNo の装備が対象（装備中でもよい）。*/
+/*       条件（鑑定済み・種別・これ以上鍛えられない・同じ付与）はここで全部確かめ、 */
+/*       材料と手数料を消して、同じ枠を鑑定済みの派生番号に置き換える（失敗なし）。 */
 /* ========================================================================= */
 void RecvDataProcRECIPEMAKE(PBYTE pData, DWORD dwDataSize)
 {
@@ -14430,13 +14465,63 @@ void RecvDataProcRECIPEMAKE(PBYTE pData, DWORD dwDataSize)
 			(pRecipe->byMaker != pPara->byMaker)) {
 		goto Exit;
 	}
-	if ((pRecipe->wItem == 0) || (pRecipe->wItem >= (WORD)g_aItemInfo.GetSize ()) || (pRecipe->byCount == 0)) {
+	if (pRecipe->byKind == RECIPEKIND_NORMAL) {
+		if ((pRecipe->wItem == 0) || (pRecipe->wItem >= (WORD)g_aItemInfo.GetSize ()) || (pRecipe->byCount == 0)) {
+			goto Exit;
+		}
+	} else if ((pRecipe->byKind != RECIPEKIND_FORGE) && (pRecipe->byKind != RECIPEKIND_SWAP)) {
 		goto Exit;
 	}
 	if ((pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0)) {
 		goto Exit;
 	}
 	if (!RecipeCheckMakerNear (pChar, pPara->byMaker)) {
+		goto Exit;
+	}
+
+	if (pRecipe->byKind != RECIPEKIND_NORMAL) {
+		/* 鍛える・付け替える */
+		WORD wOld, wBase, wPre, wSuf, wNew;
+		int nTarget = pPara->byNo;
+
+		if (nTarget >= MAX_MYITEM) {
+			goto Exit;
+		}
+		wOld = pChar->waItem[nTarget];
+		switch (ItemForgeCalc (pRecipe, wOld, &wBase, &wPre, &wSuf)) {
+		case FORGE_OK:
+			break;
+		case FORGE_UNKNOWN:
+			byResult = RECIPERESULT_UNKNOWN;
+			goto Exit;
+		case FORGE_MAXED:
+			byResult = RECIPERESULT_MAXED;
+			goto Exit;
+		case FORGE_SAME:
+			byResult = RECIPERESULT_SAME;
+			goto Exit;
+		default:
+			goto Exit;
+		}
+		wNew = AffixDeriveFindOrCreate (wBase, wPre, wSuf, 0);
+		if ((wNew == wOld) || !ItemIsAppraised (wNew)) {
+			/* 派生表がいっぱいで作れない */
+			goto Exit;
+		}
+		byResult = RecipeMake (pChar, pRecipe, &nToInv, &nToLeave, &nTarget);
+		if (byResult == RECIPERESULT_OK) {
+			/* 材料を消して持ち物が詰まった後の位置 nTarget の枠を置き換える。装備中なら waEqu は枠の添字なのでそのまま装備したまま、強さを更新する */
+			pChar->waItem[nTarget] = wNew;
+			RenameItemKeys (pChar, wOld, wNew);
+			RenewATDF (pChar->dwTblID);
+			SendCmdCHARITEM (pChar->pID, pChar->dwTblID);
+			SendCmdCHARSTATUS (pChar->pID, pChar->dwTblID);
+			SendCmdCHARSTATUSGOLDEXP (pChar->pID, pChar->dwTblID);
+			if ((pChar->dwLeaveID != 0) && (pChar->dwLeaveID < (DWORD)g_aLeaveInfo.GetSize ())) {
+				SendCmdLEAVEITEMGET (pChar->dwTblID);
+			}
+			SendCmdPLAYSOUND (pChar->pID, SOUND_PI52);
+		}
 		goto Exit;
 	}
 
@@ -14522,25 +14607,7 @@ void RecvDataProcAPPRAISE(PBYTE pData, DWORD dwDataSize)
 	pChar->dwGold -= dwCost;
 	pChar->waItem[pPara->byNo] = wNew;
 	/* ショートカットに登録していた未鑑定品は、手持ちに同じ番号が残らなければ鑑定済みの番号へ付け替える */
-	{
-		int k;
-		BOOL bRemain = FALSE, bKey = FALSE;
-
-		for (k = 0; k < MAX_MYITEM; k ++) {
-			if (pChar->waItem[k] == wOld) {
-				bRemain = TRUE;
-			}
-		}
-		for (k = 0; (k < MAX_MAGICKEY) && !bRemain; k ++) {
-			if (pChar->awKeyItem[k] == wOld) {
-				pChar->awKeyItem[k] = wNew;
-				bKey = TRUE;
-			}
-		}
-		if (bKey) {
-			SendMagicKeySetting (pChar);
-		}
-	}
+	RenameItemKeys (pChar, wOld, wNew);
 	/* 装備中なら waEqu は手持ちの添字なので、そのまま装備したまま。強さを更新する */
 	RenewATDF (pChar->dwTblID);
 	SendCmdCHARITEM (pChar->pID, pChar->dwTblID);

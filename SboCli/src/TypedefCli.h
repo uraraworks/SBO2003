@@ -241,6 +241,8 @@ enum {
 	MAKERWND_CONF,												/* 「作ってもらいますか？」のはい/いいえ */
 	MAKERWND_APPRAISE,											/* 鑑定屋：未鑑定の持ち物の一覧 */
 	MAKERWND_APPRAISE_CONF,										/* 鑑定屋：「鑑定してもらいますか？」のはい/いいえ（dwData=持ち物の位置） */
+	MAKERWND_FORGE,												/* 鍛冶屋：鍛える・付け替えるの対象になる持ち物の一覧（dwData=レシピの番号） */
+	MAKERWND_FORGE_CONF,										/* 鍛冶屋：「◯◯ → △△ にします」のはい/いいえ（dwData=レシピの番号<<8 | 持ち物の位置） */
 };
 #define MAKER_LISTCX				(16 * 12)									/* 作れる物の一覧の幅 */
 #define MAKER_LISTROWS				(10)										/* 一覧に一度に出す行数 */

@@ -121,8 +121,11 @@ PWNDINFO MakeWindowTOWNWARP					(int nMode);				/* 町転送：行き先の選�
 PWNDINFO MakeWindowQUEST					(int nMode);				/* ギルドの依頼：一覧・進み具合 */
 int MakerGetRecipeList							(int, int *, int);	/* 作り手の一覧に出すレシピの番号を並び順で取得 */
 int MakerGetCursorRecipe						(PWNDINFO);			/* 一覧のカーソル位置のレシピの番号 */
-int MakerCountHave								(WORD);				/* 材料として使える数（持ち物+預かり所） */
-BOOL MakerCanMake								(int);				/* 材料と手数料が足りているか */
+int MakerCountHave								(WORD, int);		/* 材料として使える数（持ち物+預かり所） */
+BOOL MakerCanMake								(int, int);			/* 材料と手数料が足りているか */
+PWNDINFO MakeWindowFORGE						(int);				/* 鍛冶屋：対象になる持ち物の一覧 */
+int ForgeGetList								(int, int *, int);	/* 鍛える・付け替えるレシピの対象になる持ち物の位置を取得 */
+void MakerRecipeTitle							(int, char *, int);	/* 作り手の一覧に出すレシピの名前 */
 DWORD MakerStateHash							(int);				/* 画面に出ている内容が変わったか調べる値 */
 void MakerSetMsg								(PWNDINFO, LPCSTR);	/* 作り手の画面のメッセージを差し替える */
 void MakerSetTalkMsg							(PWNDINFO);			/* 作り手の話しかけた時の台詞を出す */
@@ -3204,6 +3207,16 @@ void UpdateWindowITEMINFOList(PWNDINFO pWndList)
 		int nRecipe = MakerGetCursorRecipe (pWndList);
 		if (nRecipe >= 0) {
 			nItemID = g_aRecipeInfo[nRecipe].wItem;
+			if (g_aRecipeInfo[nRecipe].byKind != RECIPEKIND_NORMAL) {
+				/* 鍛える・付け替えるにはできる物が無いので、最初の材料の詳細を出し、その下に材料と手数料を出す */
+				nItemID = 0;
+				for (int k = 0; k < MAX_RECIPEMAT; k ++) {
+					if (g_aRecipeInfo[nRecipe].awMatItem[k] != 0) {
+						nItemID = g_aRecipeInfo[nRecipe].awMatItem[k];
+						break;
+					}
+				}
+			}
 		}
 	} else if ((pWndList->nType == WNDTYPE_MARKET) && (pWndList->nType2 == MARKETWND_LIST)) {
 		/* 取引所の一覧は出品の品を出す（byData1 だけスクロールしている） */
@@ -3347,7 +3360,12 @@ int MakerGetRecipeList(int nMaker, int *pnList, int nMax)
 		if ((pRecipe->byState != RECIPESTATE_ON) || ((int)pRecipe->byMaker != nMaker)) {
 			continue;
 		}
-		if ((pRecipe->wItem == 0) || ((int)pRecipe->wItem >= g_aItemInfo.GetSize ())) {
+		if (pRecipe->byKind == RECIPEKIND_NORMAL) {
+			if ((pRecipe->wItem == 0) || ((int)pRecipe->wItem >= g_aItemInfo.GetSize ())) {
+				continue;
+			}
+		} else if ((pRecipe->byKind > RECIPEKIND_SWAP) || (ItemAffixFind (pRecipe->wAffix) == NULL)) {
+			/* 鍛える・付け替えるは、付ける付与が付与表にあるものだけ */
 			continue;
 		}
 		if (nCount >= nMax) {
@@ -3389,7 +3407,7 @@ int MakerGetCursorRecipe(PWNDINFO pWndList)
 /* 内容：材料として使える数（持ち物のうち装備中・捨てられない物を除いたもの）	 */
 /*		 + 預かり所に預けてある数。サーバーの数え方と同じにしておく			 */
 /* ========================================================================= */
-int MakerCountHave(WORD wItem)
+int MakerCountHave(WORD wItem, int nExclude)
 {
 	PCHARINFO pChar;
 	BOOL bEqu;
@@ -3405,7 +3423,7 @@ int MakerCountHave(WORD wItem)
 	pChar = g_aCharInfo[g_nMyCharID];
 	if (!(g_aItemInfo[wItem]->byFlg & ITEMFLG_DROP)) {
 		for (i = 0; i < MAX_MYITEM; i ++) {
-			if (pChar->waItem[i] != wItem) {
+			if ((pChar->waItem[i] != wItem) || (i == nExclude)) {
 				continue;
 			}
 			bEqu = FALSE;
@@ -3433,7 +3451,7 @@ int MakerCountHave(WORD wItem)
 /* 関数名：MakerCanMake														 */
 /* 内容：材料と手数料が足りているか（置き場所はサーバーが決める）			 */
 /* ========================================================================= */
-BOOL MakerCanMake(int nRecipe)
+BOOL MakerCanMake(int nRecipe, int nExclude)
 {
 	PRECIPEINFO pRecipe;
 	int i;
@@ -3452,7 +3470,7 @@ BOOL MakerCanMake(int nRecipe)
 		if ((pRecipe->awMatItem[i] == 0) || (pRecipe->abyMatCount[i] == 0)) {
 			continue;
 		}
-		if (MakerCountHave (pRecipe->awMatItem[i]) < (int)pRecipe->abyMatCount[i]) {
+		if (MakerCountHave (pRecipe->awMatItem[i], nExclude) < (int)pRecipe->abyMatCount[i]) {
 			return FALSE;
 		}
 	}
@@ -3476,6 +3494,8 @@ DWORD MakerStateHash(int nMaker)
 		pRecipe = &g_aRecipeInfo[anList[i]];
 		MAKER_MIX (anList[i]);
 		MAKER_MIX (pRecipe->wItem);
+		MAKER_MIX (pRecipe->byKind);
+		MAKER_MIX (pRecipe->wAffix);
 		MAKER_MIX (pRecipe->byCount);
 		MAKER_MIX (pRecipe->dwGold);
 		for (j = 0; j < MAX_RECIPEMAT; j ++) {
@@ -3669,11 +3689,10 @@ PWNDINFO MakeWindowMAKER(int nMaker)
 	int nCx = MAKER_LISTCX;
 	for (int i = 0; i < nCount; i ++) {
 		PRECIPEINFO pRecipe = &g_aRecipeInfo[anList[i]];
-		if (pRecipe->wItem >= g_aItemInfo.GetSize ()) {
-			continue;
-		}
-		int nW = SboTextWidth (g_aItemInfo[pRecipe->wItem]->szName);
-		if (pRecipe->byCount > 1) {
+		char szTitle[MAX_ITEMNAME + MAX_AFFIXNAME * 3 + 32];
+		MakerRecipeTitle (anList[i], szTitle, sizeof (szTitle));
+		int nW = SboTextWidth (szTitle);
+		if ((pRecipe->byKind == RECIPEKIND_NORMAL) && (pRecipe->byCount > 1)) {
 			nW += (pRecipe->byCount >= 10) ? 4 : 3;	/* " x3" の分 */
 		}
 		nCx = max (nCx, 32 + nW * 8 + 16);
@@ -3784,6 +3803,84 @@ PWNDINFO MakeWindowAPPRAISE(int nMaker)
 	g_nProcMakerID = nMaker;
 	g_bProcMakerLeaveOK = FALSE;
 	g_bProcMakerWait = FALSE;
+	return pWnd;
+}
+
+/* ========================================================================= */
+/* 関数名：MakerRecipeTitle													 */
+/* 内容：作り手の一覧に出すレシピの名前（普通は できる物の名前、鍛える・付け替えるは */
+/*		 「鍛える（＋1→＋2）」「付け替える：堅い」）						 */
+/* ========================================================================= */
+void MakerRecipeTitle(int nRecipe, char *pszOut, int nSize)
+{
+	PRECIPEINFO pRecipe = &g_aRecipeInfo[nRecipe];
+
+	if (pRecipe->byKind == RECIPEKIND_NORMAL) {
+		snprintf (pszOut, nSize, "%s", ((int)pRecipe->wItem < g_aItemInfo.GetSize ()) ? ItemNameOf (pRecipe->wItem) : "");
+		return;
+	}
+	RecipeKindName (pRecipe, pszOut, nSize);
+}
+
+/* ========================================================================= */
+/* 関数名：ForgeGetList														 */
+/* 内容：鍛える・付け替えるレシピの対象になる持ち物の位置を並び順で取得する		 */
+/*		 付与と装備の種別が合わない物・普通の装備（byAllowPlain=0）は出さない。	 */
+/*		 未鑑定・これ以上鍛えられない・同じ付与の物は出し、選ぶと断る。装備中も含む */
+/* ========================================================================= */
+int ForgeGetList(int nRecipe, int *pnList, int nMax)
+{
+	int i, nCount = 0;
+	WORD wBase, wPre, wSuf;
+
+	if ((nRecipe < 0) || (nRecipe >= MAX_RECIPE) || (g_nMyCharID < 0) || (g_aCharInfo[g_nMyCharID] == NULL)) {
+		return 0;
+	}
+	for (i = 0; i < MAX_MYITEM; i ++) {
+		WORD wID = g_aCharInfo[g_nMyCharID]->waItem[i];
+		if ((wID == 0) || !ItemIDValid (wID)) {
+			continue;
+		}
+		if (ItemForgeCalc (&g_aRecipeInfo[nRecipe], wID, &wBase, &wPre, &wSuf) == FORGE_NOTARGET) {
+			continue;
+		}
+		if (nCount >= nMax) {
+			break;
+		}
+		pnList[nCount] = i;
+		nCount ++;
+	}
+	return nCount;
+}
+
+/* ========================================================================= */
+/* 関数名：MakeWindowFORGE													 */
+/* 内容：ウィンドウの作成(鍛冶屋：対象になる持ち物の一覧)					 */
+/*		 dwData=レシピの番号 nData1=画面内のカーソル位置 byData1=先頭の番号	 */
+/*		 nData2=表示行数。作り手の番号（g_nProcMakerID）は一覧のまま変えない	 */
+/* ========================================================================= */
+PWNDINFO MakeWindowFORGE(int nRecipe)
+{
+	int anList[MAX_MYITEM], nCount;
+	PWNDINFO pWnd;
+
+	nCount = ForgeGetList (nRecipe, anList, MAX_MYITEM);
+
+	pWnd = new WNDINFO;
+	ZeroMemory (pWnd, sizeof (WNDINFO));
+	pWnd->dwID = g_dwNewID;
+	g_dwNewID ++;
+	pWnd->nData2 = min (max (nCount, 1), MAKER_LISTROWS);
+	pWnd->nX = 16;
+	pWnd->nY = 16;
+	pWnd->nCx = 16 * 22;
+	pWnd->nCy = 16 * (2 + pWnd->nData2);
+	pWnd->nType = WNDTYPE_MAKER;
+	pWnd->nType2 = MAKERWND_FORGE;
+	pWnd->dwData = (DWORD)nRecipe;
+	pWnd->pDib = new CImg32;
+	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
+	pWnd->pDib->SetColorKey (RGB (40, 40, 40));
 	return pWnd;
 }
 

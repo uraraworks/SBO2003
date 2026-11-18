@@ -110,8 +110,11 @@ extern PWNDINFO MakeWindowQUEST						(int nMode);						/* ギルドの依頼：�
 
 extern int MakerGetRecipeList							(int nMaker, int *pnList, int nMax);	/* 作り手の一覧に出すレシピの番号を並び順で取得 */
 extern int MakerGetCursorRecipe							(PWNDINFO pWndList);		/* 一覧のカーソル位置のレシピの番号 */
-extern int MakerCountHave								(WORD wItem);				/* 材料として使える数（持ち物+預かり所） */
-extern BOOL MakerCanMake								(int nRecipe);				/* 材料と手数料が足りているか */
+extern int MakerCountHave								(WORD wItem, int nExclude = -1);	/* 材料として使える数（持ち物+預かり所。nExclude は数えない持ち物の位置） */
+extern BOOL MakerCanMake								(int nRecipe, int nExclude = -1);	/* 材料と手数料が足りているか（nExclude は鍛える・付け替える時の対象の位置） */
+extern PWNDINFO MakeWindowFORGE							(int nRecipe);				/* 鍛冶屋：対象になる持ち物の一覧 */
+extern int ForgeGetList									(int nRecipe, int *pnList, int nMax);	/* 鍛える・付け替えるレシピの対象になる持ち物の位置を取得（装備中も含む） */
+extern void MakerRecipeTitle							(int nRecipe, char *pszOut, int nSize);	/* 作り手の一覧に出すレシピの名前 */
 extern DWORD MakerStateHash								(int nMaker);				/* 画面に出ている内容が変わったか調べる値 */
 extern void MakerSetMsg									(PWNDINFO pWndList, LPCSTR pszMsg);	/* 作り手の画面のメッセージを差し替える */
 extern void MakerSetTalkMsg								(PWNDINFO pWndList);		/* 作り手の話しかけた時の台詞を出す */

@@ -236,6 +236,18 @@ inline char *ItemNameCopy(WORD wID, char *pszOut, int nSize)
 	return pszOut;
 }
 
+/* 名前を部品から作る（元・前・後ろ。鑑定済みの名前。「◯◯ → △△ にします」の確認の表示に使う） */
+inline char *ItemNameParts(WORD wBase, WORD wPre, WORD wSuf, char *pszOut, int nSize)
+{
+	PITEMAFFIXINFO pPre = ItemAffixFind (wPre), pSuf = ItemAffixFind (wSuf);
+
+	if (nSize <= 0) {
+		return pszOut;
+	}
+	snprintf (pszOut, nSize, "%s%s%s", pPre ? pPre->szName : "", g_aItemInfo[wBase]->szName, pSuf ? pSuf->szName : "");
+	return pszOut;
+}
+
 /* 名前（8 つまで同時に使える持ち回りの置き場。wsprintf の引数にそのまま渡せる） */
 inline LPCSTR ItemNameOf(WORD wID)
 {
@@ -245,6 +257,124 @@ inline LPCSTR ItemNameOf(WORD wID)
 
 	s_nNext = (s_nNext + 1) % 8;
 	return ItemNameCopy (wID, psz, sizeof (s_aszName[0]));
+}
+
+/* ========================================================================= */
+/* 鍛える・付け替える（鍛冶屋。レシピの種類 RECIPEKIND_FORGE・RECIPEKIND_SWAP）	 */
+/* ========================================================================= */
+
+/* 鍛える・付け替えるの判定の結果 */
+enum {
+	FORGE_OK = 0,												/* できる */
+	FORGE_NOTARGET,												/* 対象にならない（装備ではない・種別が合わない・普通の装備で byAllowPlain=0 など。一覧に出さない） */
+	FORGE_UNKNOWN,												/* 未鑑定（先に鑑定を） */
+	FORGE_MAXED,												/* 鍛える：これ以上は鍛えられない */
+	FORGE_SAME,													/* 付け替える：同じ付与が付いている */
+};
+
+/* 手持ちの wItem にレシピ pRecipe（鍛える・付け替える）を使うとどうなるか。
+   できる時は結果の {元・前・後ろ}（鑑定済み）を *pwBase・*pwPre・*pwSuf に入れる。
+   サーバーもクライアントも同じこの関数で決める（番号の find-or-create だけがサーバー） */
+inline int ItemForgeCalc(const RECIPEINFO *pRecipe, WORD wItem, WORD *pwBase, WORD *pwPre, WORD *pwSuf)
+{
+	PITEMDERIVEINFO pDerive;
+	PITEMAFFIXINFO pAffix, pCur, pNext;
+	WORD wBit, wBase, wPre = 0, wSuf = 0;
+
+	if ((pRecipe->byKind != RECIPEKIND_FORGE) && (pRecipe->byKind != RECIPEKIND_SWAP)) {
+		return FORGE_NOTARGET;
+	}
+	if ((wItem == 0) || !ItemIDValid (wItem)) {
+		return FORGE_NOTARGET;
+	}
+	/* 装備にならない物・大事な物は対象外。種別は付与の種別ビットで見る（元のアイテムの種別） */
+	wBit = ItemAffixEquBit (g_aItemInfo[wItem]->byType);
+	if ((wBit == 0) || (g_aItemInfo[wItem]->byFlg & ITEMFLG_IMPORTANT)) {
+		return FORGE_NOTARGET;
+	}
+	if (pRecipe->wEquMask && !(pRecipe->wEquMask & wBit)) {
+		return FORGE_NOTARGET;
+	}
+	pAffix = ItemAffixFind (pRecipe->wAffix);
+	if ((pAffix == NULL) || !(pAffix->wEquMask & wBit)) {
+		return FORGE_NOTARGET;
+	}
+	if (ItemIsDerived (wItem)) {
+		pDerive = ItemDeriveGet (wItem);
+		if (pDerive == NULL) {
+			return FORGE_NOTARGET;
+		}
+		if (pDerive->byUnknown) {
+			return FORGE_UNKNOWN;
+		}
+		wBase = pDerive->wBase;
+		wPre = pDerive->wPre;
+		wSuf = pDerive->wSuf;
+	} else {
+		if (!pRecipe->byAllowPlain) {
+			return FORGE_NOTARGET;
+		}
+		wBase = wItem;
+	}
+
+	if (pRecipe->byKind == RECIPEKIND_FORGE) {
+		/* 後ろの付与を進める（付与は後ろの位置のものだけ）。前の付与はそのまま */
+		if (pAffix->byPos != AFFIXPOS_BACK) {
+			return FORGE_NOTARGET;
+		}
+		if (wSuf) {
+			pCur = ItemAffixFind (wSuf);
+			pNext = pCur ? ItemAffixFind (pCur->wNext) : NULL;
+			if ((pNext == NULL) || (pNext->byPos != AFFIXPOS_BACK) || !(pNext->wEquMask & wBit)) {
+				return FORGE_MAXED;
+			}
+			wSuf = pNext->wID;
+		} else {
+			wSuf = pAffix->wID;
+		}
+	} else {
+		/* wAffix の位置の付与を置き換える（無ければ付ける） */
+		if (pAffix->byPos == AFFIXPOS_FRONT) {
+			if (wPre == pAffix->wID) {
+				return FORGE_SAME;
+			}
+			wPre = pAffix->wID;
+		} else {
+			if (wSuf == pAffix->wID) {
+				return FORGE_SAME;
+			}
+			wSuf = pAffix->wID;
+		}
+	}
+	*pwBase = wBase;
+	*pwPre = wPre;
+	*pwSuf = wSuf;
+	return FORGE_OK;
+}
+
+/* 作り手の一覧に出すレシピの名前（鍛える（＋1→＋2）・付け替える：堅い）。普通のレシピ・付与が無いものは空にする */
+inline char *RecipeKindName(const RECIPEINFO *pRecipe, char *pszOut, int nSize)
+{
+	PITEMAFFIXINFO pAffix = ItemAffixFind (pRecipe->wAffix), pNext;
+
+	if (nSize <= 0) {
+		return pszOut;
+	}
+	pszOut[0] = 0;
+	if (pAffix == NULL) {
+		return pszOut;
+	}
+	if (pRecipe->byKind == RECIPEKIND_FORGE) {
+		pNext = ItemAffixFind (pAffix->wNext);
+		if (pNext) {
+			snprintf (pszOut, nSize, "鍛える（%s→%s）", pAffix->szName, pNext->szName);
+		} else {
+			snprintf (pszOut, nSize, "鍛える：%s", pAffix->szName);
+		}
+	} else if (pRecipe->byKind == RECIPEKIND_SWAP) {
+		snprintf (pszOut, nSize, "付け替える：%s", pAffix->szName);
+	}
+	return pszOut;
 }
 
 /* Copyright(C)URARA-works 2003-2026 */

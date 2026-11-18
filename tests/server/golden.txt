@@ -1947,4 +1947,38 @@ affix roll rank2 has=1
 affix roll rate0=1 armorOnly=1
 affix roll rate10 hit=100/1000
 affix roll empty=1
+== AH2. Forge ==
+forge found weapon=1 armor=1 mat=1
+forge plain calc allow0=1 allow1=0
+forge plain allow0 items=レイピア,帰還の巻物(始まりの町),-,- gold=1000 equ=65535
+forge plain allow1 items=レイピア＋1,-,-,- gold=950 equ=65535
+forge equipped +1 items=レイピア＋1,-,-,- gold=950 equ=0
+forge +2 items=レイピア＋2,-,-,- gold=900 equ=0
+forge +3 items=レイピア＋3,-,-,- gold=850 equ=0
+forge at 12->13->15 expect=15
+forge maxed calc=3
+forge maxed items=レイピア＋3,帰還の巻物(始まりの町),-,- gold=850 equ=0
+forge swap front items=鋭いレイピア＋1,馬糞,-,- gold=1000 equ=65535
+forge swap same calc=4
+forge swap same items=鋭いレイピア＋1,馬糞,-,- gold=1000 equ=65535
+forge unknown calc=2
+forge unknown item=16388(unknown=1) mat=3 gold=1000
+forge armor-only calc affix=1 recipeMask=1
+forge armor-only items=レイピア＋1,馬糞,-,- gold=1000 equ=65535
+forge empty slot item=0
+forge far items=レイピア＋1,馬糞,馬糞,馬糞 gold=1000 equ=65535
+forge armor calc forge=0 swapPlainOK=0 recipeMask=0
+forge lack mat items=レイピア,-,-,- gold=1000 equ=65535
+forge lack gold items=レイピア,帰還の巻物(始まりの町),-,- gold=49 equ=65535
+forge self material items=レイピア,-,-,- gold=1000 equ=65535
+forge self material 2 items=レイピア＋1,-,-,- gold=1000 equ=65535
+forge consume items=レイピア＋1,帰還の巻物(始まりの町),-,- gold=950 equ=65535
+forge load affix=5 recipes=6
+forge load next=3,4,0,0
+forge load recipe0 kind=1 affix=2 plain=1 mask=0 mat=1 gold=50
+forge load recipe1 kind=1 affix=2 plain=0 mask=0 mat=1 gold=0
+forge load recipe2 kind=2 affix=1 plain=0 mask=0 mat=1 gold=0
+forge load recipe3 kind=2 affix=5 plain=1 mask=0 mat=1 gold=0
+forge load recipe4 kind=1 affix=2 plain=1 mask=0 mat=1 gold=0
+forge load recipe5 kind=1 affix=2 plain=1 mask=2 mat=1 gold=0
 == done ==
