@@ -2181,7 +2181,9 @@ static int FillStoryGoals(PCHARINFO pChar, STORYGOALENTRY *paOut, int nMax)
 	for (i = 0; i < (size_t)g_aStoryInfo.GetSize (); i ++) {
 		PSTORYINFO pStory = g_aStoryInfo[i];
 
-		if ((pStory->byState != STORYSTATE_ON) || FlagBitGet (pChar->abyFlag, pStory->wClearFlag)) {
+		/* クリアの印は見ない（第1話の最後の行き先のように、クリアした後も出したい目的があるため。
+		   クリアで消したい時は、目的の行の awNot にクリアの印を入れる） */
+		if (pStory->byState != STORYSTATE_ON) {
 			continue;
 		}
 		aList.push_back (pStory);

@@ -1886,7 +1886,7 @@ storygoal empty=-1
 storygoal sent start size=2013 count=2 [森の話:木を切る,港の話:ルシーに話す]
 storygoal sent flag100 size=2013 count=2 [森の話:木を切る,港の話:灯台へ行く]
 storygoal sent clear-B size=1821 count=1 [港の話:灯台へ行く]
-storygoal sent clear-A size=1629 count=0 []
+storygoal sent clear-A size=1821 count=1 [港の話:灯台へ行く]
 storygoal resend talk=1 again=0 flag231=1 size=1821 count=1 [再送:次へ]
 storygoal api add {"ok":true,"id":0,"added":true,...}
 storygoal api get {"id":0,"wID":1,"byState":1,"wSort":0,"szName":"API","szExplain":"","wClearFlag":300,"wPrevStory":0,"awFlagFrom":[65535,65535],"awFlagTo":[65535,65535],"abyNum":[255,255,255,255],"awQuest":[0,0,0,0],"byCountNum":255,"goals":[{"awNeed":[5,65535,65535,65535],"awNot":[65535,65535,65535,65535],"abyCondNo":[7,255],"abyCondCmp":[2,0],"abyCondVal":[3,0],"szGoal":"一つめ"},{"awNeed":[65535,65535,65535,65535],"awNot":[65535,65535,65535,65535],"abyCondNo":[255,255],"abyCondCmp":[0,0],"abyCondVal":[0,0],"szGoal":"二つめ"}]}
