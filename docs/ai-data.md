@@ -438,6 +438,16 @@ NPC（`char`）の台詞（`szNpcSpeech`）を **`@t` + 番号**（例 `@t012`�
 ```
 - ゲームの中では、管理者ウィンドウの「その他→思い出の本」で一覧・編集・追加ができます（消せません。出したくない時は状態を「止める」に）。書き込みはこの API と同じ確認を通ります。
 
+## 取引所（読むだけ）
+
+受付に品を預けてゴールドで売る「取引所」（委託販売。仕様は `docs/market.md`）の今の状況を見る、読むだけの一覧です。AI からは書き換えられません。
+
+- `/api/data/market`（MCP は `sbo_market`。管理ページ用は `/api/admin/data/market`）が `{items, accounts, total, limits}` を返します。
+  - `items` … 出品（**新しい順**）。`{id（出品ID）, acc（出品者のアカウント）, seller（出品したキャラ名）, charId, itemId, item, price, fee（売れた時の手数料）, net（手取り）, time, date（出品した日時・日本時間）, limit, limitDate（期限）, state, leftSec}`。`state` は `on`（出品中）か `expired`（期限切れ。引き取り待ち）。売れた出品はその場で消えるので出ません。
+  - `accounts` … アカウントごとの `{acc, on（出品中の数）, expired（期限切れの数）, gold（受付に貯まっていて受け取っていない売上）}`。
+  - `total` … `{on, expired, onPrice（出品中の値段の合計）, gold（売上の合計）}`。`limits` … 決まり（`maxPut` 5・`days` 7・`feePercent` 5・`priceMax`・`range` 3・`listMax` 100）。
+- 管理ページ（`/admin`）の「取引所」タブでも、アカウントごとの出品数・売上と、出品の一覧（アカウント・キャラ名・品で絞り込める）を見られます。
+
 ## リサイクルボックス（読むだけ）
 
 マップに置いた「リサイクルボックス」（お金を取らないおすそわけの共有の箱。`map` の `swaps` の `kind` 2。置き方は上の「印で変わるマス・宝箱・リサイクル箱」）を、正面で調べる（Sキー）と開きます。仕様は `docs/recycle.md`。
@@ -503,6 +513,7 @@ NPC（`char`）の台詞（`szNpcSpeech`）を **`@t` + 番号**（例 `@t012`�
 | `/api/data/get` | `{kind, id}` | 1 件 |
 | `/api/data/tiles` | `{id, x?, y?, w?, h?}` | マップのマス目（`id` は `map` の番号） |
 | `/api/data/chests` | `{}` | 全マップの宝箱の一覧（読むだけ） |
+| `/api/data/market` | `{}` | 取引所の出品（出品中・期限切れ）とアカウントごとの出品数・売上（読むだけ。下の「取引所」） |
 | `/api/data/recycle` | `{}` | リサイクルボックスの箱ごとの中身と、入れた・もらった記録（読むだけ。上の「リサイクルボックス」） |
 | `/api/data/tiles/set` | `{id, x, y, parts:[[...]], note?, previewId?}` | マス目を書き換える（下見 / 反映の結果） |
 | `/api/data/map/resize` | `{id, top?, bottom?, left?, right?, fill?, check?}` | マップを広げる（縮められない。上・左に広げると座標を持つもの全部をずらす。`check:true` で確かめるだけ。履歴に残らず元に戻せない） |
@@ -526,6 +537,7 @@ NPC（`char`）の台詞（`szNpcSpeech`）を **`@t` + 番号**（例 `@t012`�
 | `sbo_list` / `sbo_get` | 一覧・1 件 |
 | `sbo_map_tiles` / `sbo_map_tiles_set` | マップのマス目を読む・書き換える（2 段階） |
 | `sbo_chests` | 全マップの宝箱の一覧（読むだけ） |
+| `sbo_market` | 取引所の出品とアカウントごとの出品数・売上（読むだけ） |
 | `sbo_recycle` | リサイクルボックスの箱ごとの中身と、入れた・もらった記録（読むだけ） |
 | `sbo_update` / `sbo_add` | 変更・追加（2 段階） |
 | `sbo_history` / `sbo_undo` | 変更履歴・元に戻す（2 段階） |

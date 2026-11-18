@@ -12,6 +12,7 @@
 	  ・復旧の承認   … アカウント復旧の申請を承認・却下する（前の recover-admin.html と同じ）
 	  ・ご意見箱     … /feedback に届いた投稿を全部見て、返事・対応済み・隠す・消すをする
 	  ・更新履歴     … /changes に出す「何が変わったか」を足す・直す・公開/非公開・消す（API は server/node/sbosvr_changes.js）
+	  ・取引所       … 取引所（委託販売）の出品（出品中・期限切れ）と、アカウントごとの出品数・受付に貯まっている売上を見る（読むだけ。API は /api/admin/data/market。仕様は docs/market.md）
 	  ・リサイクル   … リサイクルボックス（マップに置いた共有の箱）の中身と、誰がいつ何を入れた・もらったかの記録を見る（読むだけ。API は /api/admin/data/recycle。仕様は docs/recycle.md）
 	  ・AI連携       … AI（Claude Code など）から設定データを読み書きするキーの発行・取り消しと、変更履歴・元に戻す
 	  ・マップ資料   … マップごとの全体図と NPC・敵・お店・イベントの資料を zip で書き出す（admin-mapdoc.js）
@@ -455,6 +456,13 @@
 	#tab-recycle .rc-scroll { overflow-x: auto; }
 	#tab-recycle .rc-put { color: var(--ok); }
 	#tab-recycle .rc-take { color: var(--info); }
+	#tab-market table { border-collapse: collapse; width: 100%; font-size: 13px; }
+	#tab-market th, #tab-market td { border-bottom: 1px solid var(--border); padding: 3px 8px; text-align: left; vertical-align: top; white-space: nowrap; }
+	#tab-market th { color: var(--sub); font-weight: normal; white-space: nowrap; }
+	#tab-market td.num { text-align: right; white-space: nowrap; }
+	#tab-market .mk-scroll { overflow-x: auto; }
+	#tab-market .mk-on { color: var(--ok); }
+	#tab-market .mk-expired { color: var(--sub); }
 	.mv-opts button { margin: 0; padding: 7px 12px; }
 	.mv-help { margin-bottom: 4px; }
 	.mv-help summary { cursor: pointer; color: var(--sub); font-size: 13px; }
@@ -594,6 +602,7 @@
 		<button type="button" data-tab="mapview">マップ確認</button>
 		<button type="button" data-tab="recipe">レシピ</button>
 		<button type="button" data-tab="affix">付与</button>
+		<button type="button" data-tab="market">取引所</button>
 		<button type="button" data-tab="recycle">リサイクル</button>
 		<button type="button" data-tab="kobo">ドット絵工房<span class="badge" id="kobo-count" hidden></span></button>
 		<button type="button" data-tab="dot">ドット絵</button>
@@ -804,6 +813,33 @@
 			<p class="sub-text" style="margin:6px 0 0">全部のマップだと、zip は 2 倍で 90MB・等倍で 30MB くらいです（PC で数十秒）。</p>
 			<div class="msg" id="md-msg"></div>
 		</div>
+	</section>
+
+	<!-- 取引所（読むだけ。仕様は docs/market.md） -->
+	<section id="tab-market" hidden>
+		<p class="sub-text">
+			取引所（受付「商人ギルドの出張所」に品を預けてゴールドで売る委託販売）の今の出品と、アカウントごとの出品数・受付に貯まっている売上です。
+			売れた出品はその場で消えるので、ここには出ません。ここでは変えられません。
+		</p>
+		<div class="row" style="justify-content:space-between">
+			<button type="button" class="sub" id="mk-reload">読み直す</button>
+			<span class="sub-text" id="mk-limits"></span>
+		</div>
+		<div class="msg" id="mk-msg"></div>
+		<p class="sub-text" id="mk-total"></p>
+		<h3 style="margin:12px 0 4px;font-size:14px">アカウントごと</h3>
+		<div id="mk-accounts" class="mk-scroll"></div>
+		<h3 style="margin:12px 0 4px;font-size:14px">出品</h3>
+		<div class="row" style="flex-wrap:wrap">
+			<input type="text" id="mk-filter" placeholder="アカウント・キャラ名・品の名前で絞り込む" style="flex:1 1 14em">
+			<select id="mk-state" style="flex:0 0 auto;width:auto">
+				<option value="">出品中・期限切れ</option>
+				<option value="on">出品中だけ</option>
+				<option value="expired">期限切れだけ</option>
+			</select>
+			<span class="sub-text" id="mk-count"></span>
+		</div>
+		<div id="mk-items" class="mk-scroll"></div>
 	</section>
 
 	<!-- リサイクルボックス（読むだけ。仕様は docs/recycle.md） -->
@@ -1358,6 +1394,7 @@
 		$('tab-recipe').hidden = true;
 		$('tab-affix').hidden = true;
 		$('tab-recycle').hidden = true;
+		$('tab-market').hidden = true;
 		$('tab-kobo').hidden = true;
 		setMsg($('login-msg'), text || '');
 	}
@@ -1369,7 +1406,7 @@
 		selectTab(location.hash === '#online' ? 'online' : location.hash === '#recover' ? 'recover' : location.hash === '#feedback' ? 'feedback' :
 			location.hash === '#changes' ? 'changes' : location.hash === '#ai' ? 'ai' : location.hash === '#mapdoc' ? 'mapdoc' :
 			location.hash === '#parts' ? 'parts' : location.hash === '#plans' ? 'plans' :
-			(location.hash === '#mapview' || location.hash === '#npcroute') ? 'mapview' : location.hash === '#recipe' ? 'recipe' : location.hash === '#affix' ? 'affix' : location.hash === '#recycle' ? 'recycle' : location.hash === '#dot' ? 'dot' :
+			(location.hash === '#mapview' || location.hash === '#npcroute') ? 'mapview' : location.hash === '#recipe' ? 'recipe' : location.hash === '#affix' ? 'affix' : location.hash === '#recycle' ? 'recycle' : location.hash === '#market' ? 'market' : location.hash === '#dot' ? 'dot' :
 			location.hash === '#kobo' ? 'kobo' : 'search');
 		if (location.hash === '#online') {
 			loadEnvStats();
@@ -1389,6 +1426,8 @@
 			openAffix();
 		} else if (location.hash === '#recycle') {
 			loadRecycle();
+		} else if (location.hash === '#market') {
+			loadMarket();
 		} else if (location.hash === '#kobo') {
 			openKobo();
 		}
@@ -1494,6 +1533,7 @@
 		$('tab-recipe').hidden = name !== 'recipe';
 		$('tab-affix').hidden = name !== 'affix';
 		$('tab-recycle').hidden = name !== 'recycle';
+		$('tab-market').hidden = name !== 'market';
 		$('tab-dot').hidden = name !== 'dot';
 		$('tab-kobo').hidden = name !== 'kobo';
 		document.body.classList.toggle('wide', name === 'parts' || name === 'plans' || name === 'mapview' || name === 'kobo');
@@ -1531,6 +1571,8 @@
 				openAffix();
 			} else if (b.dataset.tab === 'recycle') {
 				loadRecycle();
+			} else if (b.dataset.tab === 'market') {
+				loadMarket();
 			} else if (b.dataset.tab === 'kobo') {
 				openKobo();
 			}
@@ -2668,6 +2710,86 @@
 	$('rc-reload').addEventListener('click', loadRecycle);
 	$('rc-filter').addEventListener('input', renderRecycleLog);
 	$('rc-action').addEventListener('change', renderRecycleLog);
+
+	/* ---- 取引所（読むだけ。/api/admin/data/market） ---- */
+	var aMarketItem = [];
+	function marketLeft(sec) {
+		var d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600);
+		return d > 0 ? 'あと ' + d + ' 日 ' + h + ' 時間' : 'あと ' + h + ' 時間 ' + Math.floor(sec % 3600 / 60) + ' 分';
+	}
+	function renderMarketItems() {
+		var box = $('mk-items');
+		var q = $('mk-filter').value.trim().toLowerCase();
+		var st = $('mk-state').value;
+		var rows = aMarketItem.filter(function (m) {
+			if (st && m.state !== st) {
+				return false;
+			}
+			return !q || (m.acc + ' ' + m.seller + ' ' + m.item).toLowerCase().indexOf(q) >= 0;
+		});
+		box.textContent = '';
+		$('mk-count').textContent = rows.length + ' / ' + aMarketItem.length + ' 件';
+		if (!rows.length) {
+			box.appendChild(el('p', 'sub-text', aMarketItem.length ? '当てはまる出品はありません。' : 'いまは出品がありません。'));
+			return;
+		}
+		var table = recycleTable(['出品ID', '状態', '品', '値段', '手取り', 'アカウント', 'キャラ', '出品した日時（日本時間）', '期限']);
+		rows.forEach(function (m) {
+			var tr = document.createElement('tr');
+			recycleCell(tr, String(m.id), 'num');
+			recycleCell(tr, m.state === 'on' ? '出品中' : '期限切れ', m.state === 'on' ? 'mk-on' : 'mk-expired');
+			recycleCell(tr, m.item || ('品 ' + m.itemId));
+			recycleCell(tr, m.price.toLocaleString() + ' G', 'num');
+			recycleCell(tr, m.net.toLocaleString() + ' G', 'num');
+			recycleCell(tr, m.acc);
+			recycleCell(tr, m.seller);
+			recycleCell(tr, m.date);
+			recycleCell(tr, m.limitDate + (m.state === 'on' ? '（' + marketLeft(m.leftSec) + '）' : '（引き取り待ち）'));
+			table.appendChild(tr);
+		});
+		box.appendChild(table);
+	}
+	function loadMarket() {
+		setMsg($('mk-msg'), '取得しています...', true);
+		api('/api/admin/data/market', { session: session }).then(function (data) {
+			if (!data.items) {
+				if (data.httpStatus !== 401) {
+					setMsg($('mk-msg'), '取得できませんでした（' + (data.error || data.httpStatus) + '）');
+				}
+				return;
+			}
+			setMsg($('mk-msg'), '', true);
+			var lim = data.limits || {};
+			$('mk-limits').textContent = '1 アカウント ' + lim.maxPut + ' 件・' + lim.days + ' 日まで／手数料 ' + lim.feePercent + '%';
+			var t = data.total || {};
+			$('mk-total').textContent = '出品中 ' + t.on + ' 件（値段の合計 ' + Number(t.onPrice || 0).toLocaleString() + ' G）・期限切れ ' + t.expired +
+				' 件／受付に貯まっている売上の合計 ' + Number(t.gold || 0).toLocaleString() + ' G';
+			var acc = $('mk-accounts');
+			acc.textContent = '';
+			if (!data.accounts.length) {
+				acc.appendChild(el('p', 'sub-text', '出品も売上もあるアカウントはありません。'));
+			} else {
+				var at = recycleTable(['アカウント', '出品中', '期限切れ', 'あと出せる', '受け取っていない売上']);
+				data.accounts.forEach(function (a) {
+					var tr = document.createElement('tr');
+					recycleCell(tr, a.acc);
+					recycleCell(tr, String(a.on), 'num');
+					recycleCell(tr, String(a.expired), 'num');
+					recycleCell(tr, String(Math.max(0, lim.maxPut - a.on - a.expired)), 'num');
+					recycleCell(tr, a.gold.toLocaleString() + ' G', 'num');
+					at.appendChild(tr);
+				});
+				acc.appendChild(at);
+			}
+			aMarketItem = data.items || [];
+			renderMarketItems();
+		}).catch(function () {
+			setMsg($('mk-msg'), 'サーバーにつながりませんでした。');
+		});
+	}
+	$('mk-reload').addEventListener('click', loadMarket);
+	$('mk-filter').addEventListener('input', renderMarketItems);
+	$('mk-state').addEventListener('change', renderMarketItems);
 
 	/* ---- マップ資料（admin-mapdoc.js が作る） ---- */
 	var bMapDocLoaded = false, bMapDocBusy = false;

@@ -37,6 +37,7 @@
  *   /api/data/list      {kind, q?, offset?, limit?, fields?} → {kind, total, offset, records:[...]}
  *   /api/data/get       {kind, id}                           → {record}
  *   /api/data/chests    {}                                   → 全マップの宝箱（印で変わるマスの kind 1）の一覧。読むだけ {chests, retired, nextNo}
+ *   /api/data/market    {}                                   → 取引所の出品（新しい順・出品中/期限切れ）とアカウントごとの出品数・売上。読むだけ {items, accounts, total, limits}
  *   /api/data/recycle   {}                                   → リサイクルボックス（マップに置く共有の箱。map の swaps の kind 2）の箱ごとの中身と、入れた・もらった記録（新しい順）。読むだけ {boxes, retired, nextNo, log, daily, limits}
  *   /api/data/tiles     {id, x?, y?, w?, h?}                 → マップのマス目（parts・flags・roof、最大 128×128）
  *   /api/data/update    {kind, updates:[{id, changes}], note?, previewId?}
@@ -536,6 +537,14 @@ Module['sboData'] = (function () {
 		var r = JSON.parse(UTF8ToString(_SboWebDataRecycle()));
 		r.note = 'boxes は箱（map の swaps の kind 2）の箱番号 boxNo の順。boxNo は全マップ通しの番号（宝箱の番号とは別。中身はこの番号ごとに持つ）で、mapNo・mapName・x・y・memo は置いてある所、missing が true なのは中身が残っているのに箱がどのマップにも無いもの。retired は消した箱の番号（使い回さない）。箱の足し方・直し方は map の swaps（kind 2）。' +
 			'log は新しい順（action は put=入れた・take=もらった、date は日本時間）。daily は今日（日本時間）に 1 個以上もらったアカウント。仕様は docs/recycle.md';
+		return r;
+	}
+
+	/* 取引所の出品と売上の状況（読むだけ） */
+	function opMarket() {
+		var r = JSON.parse(UTF8ToString(_SboWebDataMarket()));
+		r.note = 'items は出品（新しい順）。state は on=出品中・expired=期限切れ（引き取り待ち）、date・limitDate は日本時間、fee・net は売れた時の手数料と手取り。' +
+			'accounts はアカウントごとの出品数（on・expired）と受付に貯まっている売上 gold。売れた出品は消えるので、ここには出ない。仕様は docs/market.md';
 		return r;
 	}
 
@@ -1688,6 +1697,13 @@ Module['sboData'] = (function () {
 			run: opRecycle
 		},
 		{
+			name: 'sbo_market', write: false,
+			description: '取引所（受付に品を預けてゴールドで売る委託販売）の状況。items=出品（新しい順。id・acc（出品者のアカウント）・seller（キャラ名）・item・price・fee・net・date・limitDate・state=on/expired・leftSec）、' +
+				'accounts=アカウントごとの出品数（on・expired）と受付に貯まっている売上 gold、total=合計、limits=決まり。売れた出品は残らない。',
+			inputSchema: { type: 'object', properties: {} },
+			run: opMarket
+		},
+		{
 			name: 'sbo_map_tiles_set', write: true,
 			description: 'マップのマス目を書き換える。id は map の番号、(x, y) が左上、parts は [[mapParts の番号,...],...]（行ごと、どの行も同じ長さ、最大 128×128）。' +
 				'マップの外にはみ出す所はエラー。履歴に残り sbo_undo・sbo_rollback で戻せる。2 段階は sbo_update と同じ。',
@@ -1954,6 +1970,7 @@ Module['sboData'] = (function () {
 		'/api/data/tiles': opTiles,
 		'/api/data/chests': opChests,
 		'/api/data/recycle': opRecycle,
+		'/api/data/market': opMarket,
 		'/api/data/tiles/set': opTilesSet,
 		'/api/data/update': opUpdate,
 		'/api/data/add': opAdd,
@@ -1980,6 +1997,7 @@ Module['sboData'] = (function () {
 		'/api/admin/data/tiles': function (body) { adminWho(body); return opTiles(body); },
 		'/api/admin/data/chests': function (body) { adminWho(body); return opChests(body); },
 		'/api/admin/data/recycle': function (body) { adminWho(body); return opRecycle(body); },
+		'/api/admin/data/market': function (body) { adminWho(body); return opMarket(body); },
 		/* 作り手・レシピの保存（管理ページの「レシピ」）。読む方は /api/admin/data/list */
 		'/api/admin/recipe/save': apiAdminRecipeSave,
 		/* NPC の巡回ルートを決める（管理ページの「NPCの巡回」） */
