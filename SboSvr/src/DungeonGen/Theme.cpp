@@ -193,7 +193,9 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 				int idx = y * W + x;
 				if (sk.cells[idx] == CELL_DOOR)
 				{
-					if (th.door) parts[idx] = th.door;
+					// 横の壁の扉は 2 行（天井＋側面）を抜くが、扉の絵は下の側面の行だけ。上の天井の行は出入口の床
+					if (th.door && l.h == 2 && y == l.y && l.tpl < 0) parts[idx] = th.arch.empty() ? Pick(th.floor, rng) : Pick(th.arch, rng);
+					else if (th.door) parts[idx] = th.door;
 					else parts[idx] = th.arch.empty() ? Pick(th.floor, rng) : Pick(th.arch, rng);
 				}
 				else parts[idx] = th.arch.empty() ? Pick(th.floor, rng) : Pick(th.arch, rng);

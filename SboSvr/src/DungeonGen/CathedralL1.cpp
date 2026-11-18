@@ -130,6 +130,7 @@ void MakeLink(Ctx &c, int ia, int ib)
 	if (l.tpl < 0)
 	{
 		if (l.type == 3) aw = len;
+		else if (l.type == 2) aw = 1;  // 扉は 1 マス分の絵なので幅 1（並べると不自然）
 		else aw = std::min(len, c.rng->Int(aMin, aMax));
 		pos = s + c.rng->Int(0, len - aw);
 	}
