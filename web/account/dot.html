@@ -459,6 +459,7 @@
 			<summary>タイル確認</summary>
 			<div class="body">
 				<div class="sub-text">選択範囲（なければ最後にクリックしたマス）を 3×3 にならべます。マップチップのつなぎ目の確認用です。</div>
+				<div class="row" style="margin-top:6px"><label class="sub-text">表示 <select id="tileScale" title="ドットはにじませずに拡大します"><option value="1">等倍</option><option value="2">2倍</option><option value="4">4倍</option></select></label></div>
 				<div style="margin-top:6px; overflow:auto"><canvas id="tile" class="checker"></canvas></div>
 			</div>
 		</details>
@@ -474,6 +475,7 @@
 					<button class="mini" id="animPlay">再生</button>
 					<span class="sub-text" id="animInfo"></span>
 				</div>
+				<div class="row" style="margin:0 0 6px"><label class="sub-text">表示 <select id="animScale" title="ドットはにじませずに拡大します"><option value="1">等倍</option><option value="2">2倍</option><option value="4">4倍</option></select></label></div>
 				<div style="overflow:auto"><canvas id="animCv" class="checker"></canvas></div>
 			</div>
 		</details>
