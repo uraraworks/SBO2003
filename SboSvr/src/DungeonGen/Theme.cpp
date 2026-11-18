@@ -119,10 +119,10 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 	//   2 部屋以上が重なった壁のマスは、どの部屋の床に面しているか（役目）で持ち主を決め、
 	//   その部屋の 9分割の絵の同じ位置を描き直す。役目は強い順に:
 	//     1. 側面   : 下が床        → 下の床の部屋の上から 2 行目（側面の行）
+	//     1a. 下が出入口 → 側面（wallFace。縦の壁をくり抜いた出入口の上）
 	//     1b. 縦の壁 : どれかの部屋の左右の列 → その部屋の列（角・柱が横の壁で途切れないように）
 	//     2. 上の縁 : 2 つ下が床    → 2 つ下の床の部屋の 1 行目（天井の縁）
 	//     3. 横の壁 : 左か右が床    → その床の部屋の左右の列
-	//     4. 下が出入口 → 側面（wallFace）
 	//     5. 下の縁 : 上か 2 つ上が床 → その床の部屋の下の壁の行
 	//   どれでもない（壁の角・壁どうしが接する所）は天井（wallTop）。
 	if (sk.algo == 1 && !th.wallTop.empty())
@@ -173,9 +173,9 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 				int ri = -1, v = -1;
 				bool face = false;
 				if ((ri = own(x, y + 1)) >= 0) face = true;
+				else if (y + 1 < H && IsWalkable(sk.cells[(y + 1) * W + x])) face = true;  // 下が出入口（縦の壁をくり抜いた上は側面）
 				else if ((ri = sideRoom(x, y)) >= 0) {}
 				else if ((ri = own(x, y + 2)) >= 0 || (ri = own(x - 1, y)) >= 0 || (ri = own(x + 1, y)) >= 0) {}
-				else if (y + 1 < H && IsWalkable(sk.cells[(y + 1) * W + x])) face = true;  // 下が出入口
 				else if ((ri = own(x, y - 1)) >= 0 || (ri = own(x, y - 2)) >= 0) {}
 				if (ri >= 0) v = tplAt(ri, x, y);
 				if (v <= 0) v = (face && !th.wallFace.empty()) ? Pick(th.wallFace, rng) : Pick(th.wallTop, rng);  // 素の絵の部屋
