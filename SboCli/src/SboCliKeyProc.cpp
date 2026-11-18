@@ -9610,6 +9610,50 @@ static BOOL IsFrontMimic(PCHARINFO pChar)
 }
 
 /* ========================================================================= */
+/* 関数名：IsSnowPickupPos													 */
+/* 内容：その場所で雪をつかめるか											 */
+/*		 足跡(雪)のマスに加えて、雪原に生えた木の上など「隠れる」マスでも、	 */
+/*		 2 マス以内に足跡(雪)のマスがあれば雪の上とみなす。					 */
+/*		 パーツの当たり判定は 1 つしか持てず、隠れるマスは足跡(雪)にできない	 */
+/*		 ため（以前は木の下に入ると雪がつかめなかった）						 */
+/* 日付：2026/11/18															 */
+/* ========================================================================= */
+static BOOL IsSnowPickupPos(DWORD dwX, DWORD dwY)
+{
+	int x, y, nCX, nCY;
+	BYTE byHitType;
+
+	nCX = g_pMapInfo->nCX;
+	nCY = g_pMapInfo->nCY;
+	if ((int)dwX < 0 || (int)dwX >= nCX || (int)dwY < 0 || (int)dwY >= nCY) {
+		return FALSE;
+	}
+	byHitType = g_pMapPartsInfo[g_pMapInfo->pwMap[dwX + dwY * nCX]].byHitType;
+	if (byHitType == PARTSHIT_FOOTMARK_SNOW) {
+		return TRUE;
+	}
+	/* 上を歩ける「隠れる」マスだけ、周りを見る */
+	if ((byHitType != PARTSHIT_HIDE1) && (byHitType != PARTSHIT_HIDE3) &&
+		(byHitType != PARTSHIT_HIDE5) && (byHitType != PARTSHIT_HIDE7)) {
+		return FALSE;
+	}
+	for (y = (int)dwY - 2; y <= (int)dwY + 2; y ++) {
+		for (x = (int)dwX - 2; x <= (int)dwX + 2; x ++) {
+			if (abs (x - (int)dwX) + abs (y - (int)dwY) > 2) {
+				continue;
+			}
+			if (x < 0 || x >= nCX || y < 0 || y >= nCY) {
+				continue;
+			}
+			if (g_pMapPartsInfo[g_pMapInfo->pwMap[x + y * nCX]].byHitType == PARTSHIT_FOOTMARK_SNOW) {
+				return TRUE;
+			}
+		}
+	}
+	return FALSE;
+}
+
+/* ========================================================================= */
 /* 関数名：CmdProcSiraberu													 */
 /* 内容：コマンド処理(調べる)												 */
 /* 日付：2003/07/12															 */
@@ -9680,13 +9724,8 @@ BOOL CmdProcSiraberu(PWNDINFO pWnd)
 	}
 
 	if (byFlg == 0) {
-		PMAPPARTSINFO pInfo;
-		int nPartsID;
-
-		nPartsID = g_pMapInfo->pwMap[pChar->dwX + pChar->dwY * g_pMapInfo->nCX];
-		pInfo = &g_pMapPartsInfo[nPartsID];
-		/* 雪の上？ */
-		if (pInfo->byHitType == PARTSHIT_FOOTMARK_SNOW) {
+		/* 雪の上？（雪原の木の下など、隠れるマスでも周りが雪ならつかめる） */
+		if (IsSnowPickupPos (pChar->dwX, pChar->dwY)) {
 			DWORD dwTime = timeGetTime ();
 			if (abs (g_dwTimeLastThrow - dwTime) > 2000) {
 				g_dwTimeLastThrow = dwTime;
