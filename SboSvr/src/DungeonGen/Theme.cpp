@@ -78,6 +78,9 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 			std::vector<int> cand;
 			for (size_t k = 0; k < th.rooms.size(); ++k)
 				if (th.rooms[k].kind == r.kind && !th.rooms[k].fixed && TplValid(th.rooms[k])) cand.push_back((int)k);
+			if (cand.empty() && r.kind != 0)  // 入口・ボス用の 9分割が無ければ、ふつうの部屋の絵を使う
+				for (size_t k = 0; k < th.rooms.size(); ++k)
+					if (th.rooms[k].kind == 0 && !th.rooms[k].fixed && TplValid(th.rooms[k])) cand.push_back((int)k);
 			if (cand.empty()) continue;
 			int ti = cand[rng.Int(0, (int)cand.size() - 1)];
 			const TplRoom &t = th.rooms[ti];
@@ -112,14 +115,19 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 	}
 
 	// 2c. 部屋どうしが重なった壁（つなぎ目）の絵をそろえる（L1 のみ）
-	//   部屋は順に上書きで描くので、重なった所には後の部屋の「側面」や「上の縁」が残り、
-	//   下が床でないのに側面の絵になったり、縦に続く壁なのに横の縁の絵になったりする。
-	//   重なったマスだけ、まわりを見て描き直す:
-	//     - 下が歩ける（床・出入口）→ 側面（wallFace）。すでに側面の絵ならそのまま
-	//     - 下が歩けず、側面の絵か上下とも壁（縦に続く壁）→ 天井（wallTop）。すでに天井の絵ならそのまま
+	//   部屋は順に上書きで描くので、重なった所には後の部屋の縁が残り、絵がちぐはぐになる。
+	//   2 部屋以上が重なった壁のマスは、どの部屋の床に面しているか（役目）で持ち主を決め、
+	//   その部屋の 9分割の絵の同じ位置を描き直す。役目は強い順に:
+	//     1. 側面   : 下が床        → 下の床の部屋の上から 2 行目（側面の行）
+	//     2. 上の縁 : 2 つ下が床    → 2 つ下の床の部屋の 1 行目（天井の縁）
+	//     3. 横の壁 : 左か右が床    → その床の部屋の左右の列
+	//     4. 下が出入口 → 側面（wallFace）
+	//     5. 下の縁 : 上か 2 つ上が床 → その床の部屋の下の壁の行
+	//   どれでもない（壁の角・壁どうしが接する所）は天井（wallTop）。
 	if (sk.algo == 1 && !th.wallTop.empty())
 	{
 		std::vector<unsigned char> cover(W * H, 0);
+		std::vector<int> owner(W * H, -1);  // 床のマス → その床を中に持つ部屋
 		for (size_t ri = 0; ri < sk.rooms.size(); ++ri)
 		{
 			const Room &r = sk.rooms[ri];
@@ -129,32 +137,35 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 					int x = r.x + i, y = r.y + j;
 					if (x < 0 || y < 0 || x >= W || y >= H) continue;
 					if (cover[y * W + x] < 255) ++cover[y * W + x];
+					if (i >= 1 && i <= r.w - 2 && j >= 2 && j <= r.h - 1 - r.bot && sk.cells[y * W + x] == CELL_FLOOR)
+						owner[y * W + x] = (int)ri;
 				}
 		}
-		auto inList = [](const std::vector<int> &v, int n) {
-			for (size_t k = 0; k < v.size(); ++k) if (v[k] == n) return true;
-			return false;
-		};
-		auto walk = [&](int x, int y) {
-			if (x < 0 || y < 0 || x >= W || y >= H) return false;
-			int c = sk.cells[y * W + x];
-			return IsWalkable(c);
+		auto own = [&](int x, int y) { return (x < 0 || y < 0 || x >= W || y >= H) ? -1 : owner[y * W + x]; };
+		// 部屋 ri の 9分割の絵で、マップの (x,y) に当たる絵（範囲外・素の絵の部屋は -1）
+		auto tplAt = [&](int ri, int x, int y) {
+			const Room &r = sk.rooms[ri];
+			if (r.fixed || r.tpl < 0 || r.tpl >= (int)th.rooms.size()) return -1;
+			const TplRoom &t = th.rooms[r.tpl];
+			int i = x - r.x, j = y - r.y;
+			if (i < 0 || j < 0 || i >= r.w || j >= r.h) return -1;
+			int v = t.cells[MapAxis(j, r.h, t.h, t.cutY[0], t.cutY[1]) * t.w + MapAxis(i, r.w, t.w, t.cutX[0], t.cutX[1])];
+			return v != 0 ? v : -1;
 		};
 		for (int y = 0; y < H; ++y)
 			for (int x = 0; x < W; ++x)
 			{
 				int idx = y * W + x, c = sk.cells[idx];
 				if (cover[idx] < 2 || (c != CELL_TOP && c != CELL_FACE && c != CELL_WALL)) continue;
-				const bool below = walk(x, y + 1), above = walk(x, y - 1);
-				const int v = parts[idx];
-				if (below && !above)
-				{
-					if (!th.wallFace.empty() && !inList(th.wallFace, v)) parts[idx] = Pick(th.wallFace, rng);
-				}
-				else if (!below && !inList(th.wallTop, v) && (inList(th.wallFace, v) || !above))
-				{
-					parts[idx] = Pick(th.wallTop, rng);
-				}
+				int ri = -1, v = -1;
+				bool face = false;
+				if ((ri = own(x, y + 1)) >= 0) face = true;
+				else if ((ri = own(x, y + 2)) >= 0 || (ri = own(x - 1, y)) >= 0 || (ri = own(x + 1, y)) >= 0) {}
+				else if (y + 1 < H && IsWalkable(sk.cells[(y + 1) * W + x])) face = true;  // 下が出入口
+				else if ((ri = own(x, y - 1)) >= 0 || (ri = own(x, y - 2)) >= 0) {}
+				if (ri >= 0) v = tplAt(ri, x, y);
+				if (v <= 0) v = (face && !th.wallFace.empty()) ? Pick(th.wallFace, rng) : Pick(th.wallTop, rng);  // 素の絵の部屋
+				if (v > 0) parts[idx] = v;
 			}
 	}
 
