@@ -973,7 +973,7 @@ int QuestMakeDetailLines(PWNDINFO pWnd, char (*pszOut)[QUESTWRAP_LINEBYTES], int
 		nAdd = QuestWrapText (szTmp, nWidth, &pszOut[nLines], nMaxLines - nLines);
 		nLines += nAdd;
 		if (pEntry->szGoal[0] && (nLines < nMaxLines)) {
-			_snprintf (szTmp, sizeof (szTmp) - 1, "　目的：%s", pEntry->szGoal);
+			_snprintf (szTmp, sizeof (szTmp) - 1, "目的：%s", pEntry->szGoal);
 			szTmp[sizeof (szTmp) - 1] = 0;
 			nAdd = QuestWrapText (szTmp, nWidth, &pszOut[nLines], nMaxLines - nLines);
 			nLines += nAdd;
@@ -993,7 +993,7 @@ int QuestMakeDetailLines(PWNDINFO pWnd, char (*pszOut)[QUESTWRAP_LINEBYTES], int
 		nAdd = QuestWrapText (szTmp, nWidth, &pszOut[nLines], nMaxLines - nLines);
 		nLines += nAdd;
 		if (nLines < nMaxLines) {
-			_snprintf (szTmp, sizeof (szTmp) - 1, "　目的：%s", pStory->szGoal);
+			_snprintf (szTmp, sizeof (szTmp) - 1, "目的：%s", pStory->szGoal);
 			szTmp[sizeof (szTmp) - 1] = 0;
 			nAdd = QuestWrapText (szTmp, nWidth, &pszOut[nLines], nMaxLines - nLines);
 			nLines += nAdd;
