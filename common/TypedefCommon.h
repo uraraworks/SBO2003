@@ -89,6 +89,7 @@
 #define MAX_STORYFLAGRANGE	2										/* シナリオをやり直す時に消す印の範囲の数（STORYINFO の awFlagFrom・awFlagTo） */
 #define MAX_STORYNUM		4										/* シナリオをやり直す時に 0 に戻す数値の数（STORYINFO の abyNum） */
 #define MAX_STORYQUEST		4										/* シナリオをやり直す時に受け直せるようにする依頼の数（STORYINFO の awQuest） */
+#define MAX_STORYGOAL		8										/* シナリオの「いまの目的」の行の数（STORYINFO の aGoal。コマンド窓の「目的」に出る） */
 #define QUESTNPC_NOSTEP		(0xFF)									/* 見えるNPCで「段を変えない」を表す値（byNextStep）、「どの段でも」を表す値（byStepMax） */
 
 /* キャラのフラグ（ずっと残る印と数値）と、フラグで台詞を出し分ける会話データ。番号の割り振りは目安で、コードでは強制しない
@@ -345,7 +346,7 @@ enum {
 	CMD_TOWNWARP,													/* 町転送の行き先一覧(サーバー→本人) */
 /* 以下、プレイヤー用（ギルドの仕事依頼。CMD_QUEST はクライアント→サーバーも受ける。管理者用の判定から外すこと） */
 	CMD_QUEST,														/* ギルドの仕事依頼（一覧・受ける・取り消す・渡す。結果はサーバー→クライアント） */
-	CMD_QUESTSTATE,													/* 依頼の進み具合(サーバー→本人。自分と仲間の分) */
+	CMD_QUESTSTATE,													/* 依頼の進み具合(サーバー→本人。自分と仲間の依頼と、自分の物語の目的) */
 	CMD_SORTITEM,													/* 道具欄・預かり所の並べ替え（クライアント→サーバー。結果は CMD_CHARITEM・CMD_LEAVEITEMGET で返る） */
 	CMD_LEAVEITEMDISPOSE,											/* 預かり所の品を引き取らずに売る・捨てる（クライアント→サーバー。結果は CMD_LEAVEITEMGET で返る） */
 	CMD_CHARBUFF,													/* 攻撃力・守備力アップの残り時間(サーバー→本人とパーティの仲間。サーバーは受け取らない) */
@@ -3177,6 +3178,17 @@ enum {
 	STORYSTATE_ON,												/* 出す */
 };
 
+/* シナリオの「いまの目的」の 1 行（条件は会話データの行と同じ形・同じ判定。上から見て最初に全部合った行の szGoal を出す）。
+   印・数値の「無し」は 0 ではなく FLAG_NOBIT・FLAG_NONUM にする */
+typedef struct _STORYGOAL {
+	WORD		awNeed[MAX_TALKNEED];								/* 立っている必要のある印（FLAG_NOBIT=無し） */
+	WORD		awNot[MAX_TALKNEED];								/* 立っていてはいけない印（FLAG_NOBIT=無し） */
+	BYTE		abyCondNo[MAX_TALKCOND];							/* 数値の条件の数値番号（FLAG_NONUM=無し） */
+	BYTE		abyCondCmp[MAX_TALKCOND];							/* 比べ方(TALKCMP_*) */
+	BYTE		abyCondVal[MAX_TALKCOND];							/* 比べる値 */
+	char		szGoal[MAX_QUESTGOAL];								/* いまの目的の文（空の行は飛ばす） */
+} STORYGOAL, *PSTORYGOAL;
+
 /* 思い出の本のシナリオ（サーバーだけが持つ。印・数値の「無し」は 0 ではなく FLAG_NOBIT・FLAG_NONUM にする） */
 typedef struct _STORYINFO {
 	WORD		wID;												/* シナリオ番号（1〜255。足す時に自動で振られ、変えられない） */
@@ -3191,6 +3203,7 @@ typedef struct _STORYINFO {
 	BYTE		abyNum[MAX_STORYNUM];								/* やり直す時に 0 に戻す数値の番号（FLAG_NONUM=無し） */
 	WORD		awQuest[MAX_STORYQUEST];							/* やり直す時にクリア済みの印を消す依頼の番号（QUESTINFO の wID。0=無し） */
 	BYTE		byCountNum;											/* やり直した回数を数える数値の番号（選んだシナリオだけ +1。255 で止まる。FLAG_NONUM=数えない） */
+	STORYGOAL	aGoal[MAX_STORYGOAL];								/* 「いまの目的」の行（クリアしていない人に、上から見て最初に合う行をコマンド窓の「目的」に出す。合う行が無ければ出さない） */
 } STORYINFO, *PSTORYINFO;
 
 /* CMD_QUEST のサブコマンド(byType) */
@@ -3253,12 +3266,22 @@ typedef struct _QUESTSTATEENTRY {
 	WORD		awCount[MAX_QUESTCOUNT];							/* 数 */
 } QUESTSTATEENTRY, *PQUESTSTATEENTRY;
 
+/* 物語の「いまの目的」の1件（自分の分だけ。STORYINFO の aGoal から選んだ行） */
+typedef struct _STORYGOALENTRY {
+	char		szName[MAX_QUESTNAME];								/* シナリオの名前 */
+	char		szGoal[MAX_QUESTGOAL];								/* いまの目的 */
+} STORYGOALENTRY, *PSTORYGOALENTRY;
+
 /* 依頼の進み具合（サーバー→本人。ログイン時・変わった時・パーティが変わった時）
-   0 番目は本人。続けて、同じパーティの仲間（オンラインの人。依頼を受けている人だけ） */
+   0 番目は本人。続けて、同じパーティの仲間（オンラインの人。依頼を受けている人だけ）。
+   byStoryCount 以降は後から足した部分（可変長）。サーバーは byStoryCount 件ぶんだけ送る。
+   古いサーバーからは byStoryCount の手前までしか届かない（その時は物語の目的は無し） */
 typedef struct _CMDPARA_QUESTSTATE {
 	BYTE		byCmd;												/* コマンドID */
 	BYTE		byCount;											/* 人数 */
 	QUESTSTATEENTRY	aEntry[MAX_PARTYMEMBER];						/* 本人と仲間 */
+	BYTE		byStoryCount;										/* 物語の目的の件数（0〜MAX_STORYGOAL。wSort 順。本人の分だけ） */
+	STORYGOALENTRY	aStory[MAX_STORYGOAL];							/* 物語の目的（byStoryCount 件ぶんだけ届く） */
 } CMDPARA_QUESTSTATE, *PCMDPARA_QUESTSTATE;
 
 /* 攻撃力・守備力アップの残り時間（サーバー→本人とパーティの仲間。かかった時・切れた時・パーティに入った時）

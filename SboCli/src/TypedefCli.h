@@ -212,7 +212,7 @@ typedef struct _RECYCLEHAND {
 /* 依頼ウィンドウ(WNDTYPE_QUEST)の nType2 */
 enum {
 	QUESTWND_LIST = 0,											/* ギルドの人に話した時の依頼一覧（g_bQuestBook が TRUE なら、語り部に話した時の思い出の本の一覧） */
-	QUESTWND_STATE,												/* コマンドの「依頼」：自分と仲間の進み具合 */
+	QUESTWND_STATE,												/* コマンドの「目的」：自分と仲間の依頼の進み具合と、自分の物語の目的 */
 };
 #define QUEST_WINCX					(16 * 21)									/* 窓の幅（右上の所持金の窓に重ならない広さ） */
 #define QUEST_LISTROWS				(5)											/* 一覧に一度に出す行数 */

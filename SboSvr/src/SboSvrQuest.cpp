@@ -697,7 +697,9 @@ static void FillEntry(QUESTSTATEENTRY *pEntry, PCHARINFO pChar)
 	}
 }
 
-/* 1 人に、その人とパーティの進み具合を送る */
+static int FillStoryGoals(PCHARINFO pChar, STORYGOALENTRY *paOut, int nMax);	/* 物語の「いまの目的」を集める（思い出の本の節で定義） */
+
+/* 1 人に、その人とパーティの進み具合を送る（物語の目的は本人の分だけ） */
 static void SendStateTo(PCHARINFO pTo)
 {
 	CMDPARA_QUESTSTATE Para;
@@ -718,7 +720,15 @@ static void SendStateTo(PCHARINFO pTo)
 		FillEntry (&Para.aEntry[Para.byCount], aMember[i]);
 		Para.byCount ++;
 	}
-	svrSock.SendTo (pTo->pID, (LPBYTE)&Para, sizeof (Para), SENDTIMEOUT);
+	Para.byStoryCount = (BYTE)FillStoryGoals (pTo, Para.aStory, MAX_STORYGOAL);
+	/* 物語の目的は byStoryCount 件ぶんだけ送る（可変長。目的が無ければ byStoryCount の 1 バイトまで） */
+	svrSock.SendTo (pTo->pID, (LPBYTE)&Para, (DWORD)(offsetof (CMDPARA_QUESTSTATE, aStory) + sizeof (STORYGOALENTRY) * Para.byStoryCount), SENDTIMEOUT);
+}
+
+/* 本人だけに、依頼と物語の「いまの目的」を送り直す（印・数値が動いた時） */
+void QuestSendStateSelf(PCHARINFO pChar)
+{
+	SendStateTo (pChar);
 }
 
 /* 本人とパーティに送る */
@@ -2142,6 +2152,55 @@ static bool StoryLess(PSTORYINFO pA, PSTORYINFO pB)
 	return pA->wID < pB->wID;
 }
 
+/* 「いまの目的」の行を選ぶ：aGoal を上から見て、szGoal が空でなく、条件（会話データの行と同じ判定）に全部合う最初の行。無ければ -1 */
+int StoryGoalPick(const STORYINFO *pStory, const BYTE *pbyFlag, const BYTE *pbyFlagNum)
+{
+	int i;
+
+	for (i = 0; i < MAX_STORYGOAL; i ++) {
+		const STORYGOAL *pGoal = &pStory->aGoal[i];
+
+		if (pGoal->szGoal[0] == 0) {
+			continue;
+		}
+		if (FlagCondMatch (pGoal->awNeed, pGoal->awNot, pGoal->abyCondNo, pGoal->abyCondCmp, pGoal->abyCondVal, pbyFlag, pbyFlagNum)) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+/* そのキャラの物語の「いまの目的」を集める（出す状態で、クリアの印が立っていないシナリオのうち、合う行があるもの。wSort 順）。
+   戻り値は件数（nMax まで） */
+static int FillStoryGoals(PCHARINFO pChar, STORYGOALENTRY *paOut, int nMax)
+{
+	std::vector<PSTORYINFO> aList;
+	size_t i;
+	int nCount = 0;
+
+	for (i = 0; i < (size_t)g_aStoryInfo.GetSize (); i ++) {
+		PSTORYINFO pStory = g_aStoryInfo[i];
+
+		if ((pStory->byState != STORYSTATE_ON) || FlagBitGet (pChar->abyFlag, pStory->wClearFlag)) {
+			continue;
+		}
+		aList.push_back (pStory);
+	}
+	std::stable_sort (aList.begin (), aList.end (), StoryLess);
+	for (i = 0; (i < aList.size ()) && (nCount < nMax); i ++) {
+		int nGoal = StoryGoalPick (aList[i], pChar->abyFlag, pChar->abyFlagNum);
+
+		if (nGoal < 0) {
+			continue;
+		}
+		ZeroMemory (&paOut[nCount], sizeof (STORYGOALENTRY));
+		CopyStr (paOut[nCount].szName, sizeof (paOut[nCount].szName), aList[i]->szName);
+		CopyStr (paOut[nCount].szGoal, sizeof (paOut[nCount].szGoal), aList[i]->aGoal[nGoal].szGoal);
+		nCount ++;
+	}
+	return nCount;
+}
+
 /* wID のシナリオと、wPrevStory をたどってそれにつながる後のシナリオ（子・孫…）を集める。
    先頭は wID。つながりがループしていても、同じシナリオは 1 回しか入れない */
 static void StoryCollect(WORD wID, std::vector<PSTORYINFO> &aOut)
@@ -2322,6 +2381,8 @@ static void DoStoryReset(PCHARINFO pChar, WORD wStoryID)
 		snprintf (szMsg + strlen (szMsg), sizeof (szMsg) - strlen (szMsg), "%sもいっしょに最初に戻りました。", strNext.c_str ());
 	}
 	SendResult (pChar, QUESTRESULT_STORY, wStoryID, szMsg);
+	/* 印・数値が戻ったので、物語の「いまの目的」も送り直す */
+	QuestSendStateSelf (pChar);
 }
 
 /* CMD_QUEST の受信 */
