@@ -1539,7 +1539,7 @@ void KeyProcCOMMAND(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			}
 			break;
 
-		/* 依頼（自分と仲間の依頼の進み具合） */
+		/* 目的（自分と仲間の依頼の進み具合と、自分の物語の「いまの目的」） */
 		case 10:
 			if (pWnd->nData2) {
 				PWNDINFO pWndNew = MakeWindowQUEST (QUESTWND_STATE);

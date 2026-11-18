@@ -897,7 +897,8 @@ int QuestWrapText(LPCSTR pszSrc, int nMaxWidth, char (*pszOut)[QUESTWRAP_LINEBYT
 
 /* ========================================================================= */
 /* 関数名：QuestHasAny														 */
-/* 内容：自分か仲間が依頼を受けているか（コマンドに「依頼」を出すか）		 */
+/* 内容：自分か仲間が依頼を受けているか、物語の「いまの目的」があるか		 */
+/*       （コマンドに「目的」を出すか）										 */
 /* ========================================================================= */
 BOOL QuestHasAny(void)
 {
@@ -908,7 +909,7 @@ BOOL QuestHasAny(void)
 			return TRUE;
 		}
 	}
-	return FALSE;
+	return g_QuestState.byStoryCount > 0;
 }
 
 /* ========================================================================= */
@@ -978,8 +979,28 @@ int QuestMakeDetailLines(PWNDINFO pWnd, char (*pszOut)[QUESTWRAP_LINEBYTES], int
 			nLines += nAdd;
 		}
 	}
+	/* 物語の「いまの目的」（自分の分だけ。シナリオ名＋目的文） */
+	for (i = 0; (i < (int)g_QuestState.byStoryCount) && (i < MAX_STORYGOAL); i ++) {
+		PSTORYGOALENTRY pStory = &g_QuestState.aStory[i];
+		char szTmp[MAX_QUESTGOAL + MAX_QUESTNAME + 32];
+
+		if ((pStory->szGoal[0] == 0) || (nLines >= nMaxLines)) {
+			continue;
+		}
+		bAny = TRUE;
+		_snprintf (szTmp, sizeof (szTmp) - 1, "物語：%s", pStory->szName);
+		szTmp[sizeof (szTmp) - 1] = 0;
+		nAdd = QuestWrapText (szTmp, nWidth, &pszOut[nLines], nMaxLines - nLines);
+		nLines += nAdd;
+		if (nLines < nMaxLines) {
+			_snprintf (szTmp, sizeof (szTmp) - 1, "　目的：%s", pStory->szGoal);
+			szTmp[sizeof (szTmp) - 1] = 0;
+			nAdd = QuestWrapText (szTmp, nWidth, &pszOut[nLines], nMaxLines - nLines);
+			nLines += nAdd;
+		}
+	}
 	if (!bAny) {
-		nLines = QuestWrapText ("受けている依頼はありません。", nWidth, pszOut, nMaxLines);
+		nLines = QuestWrapText ("いまの目的はありません。", nWidth, pszOut, nMaxLines);
 	}
 	return nLines;
 }

@@ -1880,6 +1880,30 @@ adminflaggroup multi-overlap got=1 result=0 count=4 msg=番号の帯 205〜206�
 adminflaggroup edit got=1 result=1 name=管理者改 id=4
 adminflaggroup range got=1 result=0
 adminflaggroup user got=0 count=4 same=1
+== AG. StoryGoal ==
+storygoal pick none=3 flag0=-1 flag1=2 num3eq2=1 flag9=-1 num4=3 => -1 num4=2 => 3
+storygoal empty=-1
+storygoal sent start size=2013 count=2 [森の話:木を切る,港の話:ルシーに話す]
+storygoal sent flag100 size=2013 count=2 [森の話:木を切る,港の話:灯台へ行く]
+storygoal sent clear-B size=1821 count=1 [港の話:灯台へ行く]
+storygoal sent clear-A size=1629 count=0 []
+storygoal resend talk=1 again=0 flag231=1 size=1821 count=1 [再送:次へ]
+storygoal api add {"ok":true,"id":0,"added":true,...}
+storygoal api get {"id":0,"wID":1,"byState":1,"wSort":0,"szName":"API","szExplain":"","wClearFlag":300,"wPrevStory":0,"awFlagFrom":[65535,65535],"awFlagTo":[65535,65535],"abyNum":[255,255,255,255],"awQuest":[0,0,0,0],"byCountNum":255,"goals":[{"awNeed":[5,65535,65535,65535],"awNot":[65535,65535,65535,65535],"abyCondNo":[7,255],"abyCondCmp":[2,0],"abyCondVal":[3,0],"szGoal":"一つめ"},{"awNeed":[65535,65535,65535,65535],"awNot":[65535,65535,65535,65535],"abyCondNo":[255,255],"abyCondCmp":[0,0],"abyCondVal":[0,0],"szGoal":"二つめ"}]}
+storygoal api internal need=5,65535 not=65535 no=7,255 cmp=2,0 val=3 row1need=65535 row1no=255 row2=[] pick=1
+storygoal api keep {"ok":true,"id":0,"added":false,...} goals=[一つめ]
+storygoal api replace {"ok":true,"id":0,"added":false,...} row0=[置換] row1=[]
+storygoal api get2 {"id":0,"wID":1,"byState":1,"wSort":0,"szName":"API改","szExplain":"","wClearFlag":300,"wPrevStory":0,"awFlagFrom":[65535,65535],"awFlagTo":[65535,65535],"abyNum":[255,255,255,255],"awQuest":[0,0,0,0],"byCountNum":255,"goals":[{"awNeed":[65535,65535,65535,65535],"awNot":[65535,65535,65535,65535],"abyCondNo":[255,255],"abyCondCmp":[0,0],"abyCondVal":[0,0],"szGoal":"置換"}]}
+storygoal api toomany {"ok":false,"error":"goals はオブジェクトの配列で、8 行までです"}
+storygoal api badflag {"ok":false,"error":"goals[0].awNeed・awNot は印の番号（0〜1023）か 65535（無し）で指定してください"}
+storygoal api badnum {"ok":false,"error":"goals[0].abyCondNo は数値の番号（0〜127）か 255（無し）で指定してください"}
+storygoal api badcmp {"ok":false,"error":"goals[0].abyCondCmp は 0（以上）・1（ちょうど）・2（以下）のどれかで指定してください"}
+storygoal api badkey {"ok":false,"error":"知らない項目です: zzz"}
+storygoal api kept after-error row0=[置換]
+storygoal api clear {"ok":true,"id":0,"added":false,...} get={"id":0,"wID":1,"byState":1,"wSort":0,"szName":"API改","szExplain":"","wClearFlag":300,"wPrevStory":0,"awFlagFrom":[65535,65535],"awFlagTo":[65535,65535],"abyNum":[255,255,255,255],"awQuest":[0,0,0,0],"byCountNum":255,"goals":[]}
+storygoal admin edit got=1 result=1 name=管理者改 goal=[残る目的] need=5
+storygoal admin add got=1 result=1 count=2 goal=[]
+storygoal save=1 load=1 row0=[ゼロの条件] need=0,65535 not=65535,1023 no=0,255 cmp=2 val=9 row1=[] row7=[最後の行] row7need=65535 row7no=255
 == AJ. Tail relogin ==
 tailrelogin area found=1
 tailrelogin battle before=1

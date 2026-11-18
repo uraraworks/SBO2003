@@ -563,6 +563,17 @@ static const DATAFIELD s_aFieldStory[] = {
 	FLD (STORYINFO, byCountNum,			"やり直した回数の数値",	FT_U8, 0, "キャラのフラグの数値の番号（0〜127）。やり直すたびにこの数値が +1 される（選んだお話だけ。255 で止まる。0 に戻す数値と重なっても最後に +1）。255=数えない（足す時に省くと数えない）。話の中で「2 周目」の台詞を出し分けるのに使える"),
 };
 
+/* 思い出の本のシナリオの「いまの目的」の 1 行（条件は会話データの行と同じ形・同じ判定）。
+   クリアの印（wClearFlag）が立っていない人に、上から見て最初に全部合う行の szGoal をコマンド窓の「目的」に出す */
+static const DATAFIELD s_aFieldStoryGoal[] = {
+	FLDA(STORYGOAL, awNeed,				"立っている必要のある印",	FT_U16ARR, WORD, FF_PADMAX, s_pszNoteTalkNoBit),
+	FLDA(STORYGOAL, awNot,				"立っていてはいけない印",	FT_U16ARR, WORD, FF_PADMAX, s_pszNoteTalkNoBit),
+	FLDA(STORYGOAL, abyCondNo,			"数値の条件の数値番号",	FT_U8ARR, BYTE, FF_PADMAX, s_pszNoteTalkNoNum),
+	FLDA(STORYGOAL, abyCondCmp,			"数値の条件の比べ方",	FT_U8ARR, BYTE, 0, "abyCondNo と同じ並び。0=以上 1=ちょうど 2=以下"),
+	FLDA(STORYGOAL, abyCondVal,			"数値の条件の値",		FT_U8ARR, BYTE, 0, "abyCondNo と同じ並び。0〜255"),
+	FLDS(STORYGOAL, szGoal,				"いまの目的",			FT_STR, 0, "コマンド窓の「目的」に「シナリオ名」と並べて出す文（最大 127 バイト）。空の行は飛ばす"),
+};
+
 /* 依頼の見えるNPC（受けた人とそのパーティにだけ見える。話すと台詞が出る。台詞の中身はサーバーが送り、見えるNPC自体の台詞は "@q" 固定） */
 static const DATAFIELD s_aFieldQuestNpc[] = {
 	FLD (QUESTNPCINFO, dwMapID,			"出るマップID",			FT_U32, 0, "マップ情報の dwID（配列の番号ではなくマップID）"),
@@ -1046,7 +1057,7 @@ static const char *s_apszKindNote[] = {
 	"ギルドの仕事依頼（読み書き。削除なし。止めるのは byState=0）。NPC の台詞を \"@gNN\"（NN=byGuild）にするとギルドの人になり、話すと一覧が開く。受けた人とそのパーティにだけ「見えるNPC」（npcs。ポータル・宝箱・人）が出て、段（0 から）と旗（1〜16）で出し分ける。goals は段ごとの「いまの目的」（文字列の配列）、npcs は配列で丸ごと置き換え。出口は既存のマップのイベントで作る（データだけ）。足す時の依頼番号（wID）は自動。完了した時にキャラのフラグを動かせる（awDoneSetFlag・byDoneNumNo・byDoneNumOp・byDoneNumVal。古い依頼は「無し」）。受ける条件の印は wNeedFlag・wNotFlag（65535=条件なし。合わない人には一覧に出ず受けられない）",
 	"キャラごとにずっと残る「フラグ」（印 1024 個=ON/OFF の 0〜1023、数値 128 個=0〜255 の 0〜127）に付ける名前の表（読み書き）。名前は管理用でプレイヤーには出ない。byKind が 0=印・1=数値、wNo が番号で、同じ組は 1 件まで。削除は byState=0（枠だけ残り、足し直す時はその枠の byState を 1 に戻す）。ファイルが無い時は 0 件。キャラのフラグの中身は char の読み出しの flags で読める（読むだけ）。番号の割り振りの目安: 印は 1〜199 本筋・200〜599 地域・600〜899 お使い・900〜1023 予備",
 	"会話データ（読み書き）。NPC の台詞を \"@tNNN\"（NNN=wID。例 @t012）にすると、話しかけた人のフラグ（印・数値）とレベルで lines（最大 16 行）から 1 行を選び、その人にだけ台詞を出す（台詞はクライアントへ送らない）。選び方: 条件（立っている必要のある印 awNeed 4・立っていてはいけない印 awNot 4・数値の条件 2・レベル下限上限）に全部合う行のうち byRank が一番小さい行、同じ順位が複数ならくじ。合う行が無ければ「……」。話した後に印を立てる・消す・数値を動かす。lines は配列で丸ごと置き換え。削除は byState=0（枠だけ残り、足し直す時はその枠の byState を 1 に戻す）。ファイルが無い時は 0 件",
-	"思い出の本（読み書き。削除なし。止めるのは byState=0）。NPC の台詞を \"@r\" にすると語り部になり、話すと、そのキャラがクリアしたシナリオ（byState=1 で、クリアした印 wClearFlag が立っている）の一覧が wSort 順に開く。選んで確認すると、そのシナリオと、wPrevStory をたどってそれにつながる後のシナリオ全部について、印の範囲（awFlagFrom〜awFlagTo）を消し、数値（abyNum）を 0 に戻し、依頼（awQuest）のクリア済みの印を消して、最初からやり直せる（byCountNum の数値は選んだシナリオだけ +1）。依頼の報酬は初回だけ（もらい済みの印は消えない）。そのキャラが戻す依頼のどれかを受けている間と、語り部から離れている時は断る。足す時のシナリオ番号（wID 1〜255）は自動。印・数値の「無し」は 65535・255。ファイルが無い時は 0 件",
+	"思い出の本（読み書き。削除なし。止めるのは byState=0）。goals（いまの目的。クリアの印が立っていない人に、条件に合う最初の行の文をコマンド窓の「目的」に出す）も持つ。NPC の台詞を \"@r\" にすると語り部になり、話すと、そのキャラがクリアしたシナリオ（byState=1 で、クリアした印 wClearFlag が立っている）の一覧が wSort 順に開く。選んで確認すると、そのシナリオと、wPrevStory をたどってそれにつながる後のシナリオ全部について、印の範囲（awFlagFrom〜awFlagTo）を消し、数値（abyNum）を 0 に戻し、依頼（awQuest）のクリア済みの印を消して、最初からやり直せる（byCountNum の数値は選んだシナリオだけ +1）。依頼の報酬は初回だけ（もらい済みの印は消えない）。そのキャラが戻す依頼のどれかを受けている間と、語り部から離れている時は断る。足す時のシナリオ番号（wID 1〜255）は自動。印・数値の「無し」は 65535・255。ファイルが無い時は 0 件",
 	"フラグのグループ（読み書き。削除は byState=0）。キャラのフラグの印（0〜1023）・数値（0〜127）の番号の帯（bands。1 グループ 16 本まで。互換で帯 1 は wFrom・wTo でも読み書きできる）に「メイン名」szName を付けて、「メイン-サブ」で管理するための層（例: ルシー＝印 100〜139。後から番号が飛んだ場所に続きの帯 300〜319 を足せる）。番号 n が有効なグループのどれかの帯に入る時、メイン=そのグループ・サブ=帯の順に続けて数えた番号（1 始まり。ルシー=100〜139＋300〜319 なら 100〜139 がサブ 1〜40・300〜319 がサブ 41〜60）で、「ルシー-3（103）」のように呼べる（flag の一覧にも計算した group・sub が出る。読むだけ）。見せ方・入力・絞り込みだけの層で、会話データ・依頼・NPC の見える条件・思い出の本などが覚えている番号は一切変わらない。同じ種類で有効なグループのすべての帯（同じグループの帯同士も）が重なるのは不可。足す時のグループ番号（wID 1〜255）は自動。ファイルが無い時は 0 件",
 	"装備に付く「鋭い」「の加護」などの付与表（読み書き。足す・直すだけで消せない）。位置 byPos（0=前・1=後ろ）・名前 szName・付く装備種別 wEquMask（ビット）・主の値（item の byData）への% chRate と固定加算 chAdd・魔防加算 chDFMagic・格 byRank（1〜3）・出やすさ wWeight（0 なら出ない）・売値の倍率 wGoldRate（100=そのまま）・ハズレ印 byBad。足す時の付与番号（wID。1〜）は自動で、派生アイテムがこの番号で指すので変わらない・使い回さない。敵（stTmp）の byAffixRate・byAffixRank で、ドロップした装備に付く。ファイルが無い時は 0 件（0 件なら付与は付かない）。詳しくは docs/item-affix.md",
 	"プレイヤーと NPC（敵・町の人・発生元など）の全キャラ。番号（id）はキャラのテーブル番号で再起動で変わることがある。NPC は npcId（変わらない番号）で指す。isPlayer でプレイヤーか分かる。書き換えられるのは保存される NPC だけ（プレイヤー・発生した敵は不可）。足す時は dwMapID・dwX・dwY が要る。消す時は変更に {\"deleted\": true}。アカウント名・パスワード・IP は出さない",
@@ -1834,6 +1845,58 @@ static std::string TalkJson(const TALKINFO *pTalk)
 	return out;
 }
 
+/* 思い出の本の「いまの目的」の 1 行を「無し」で埋めた姿にする（0 で埋めると印 0・数値 0 を指す条件になるので） */
+static void StoryGoalInit(STORYGOAL *pGoal)
+{
+	memset(pGoal, 0, sizeof(*pGoal));
+	for (int i = 0; i < MAX_TALKNEED; i ++) {
+		pGoal->awNeed[i] = FLAG_NOBIT;
+		pGoal->awNot[i] = FLAG_NOBIT;
+	}
+	for (int i = 0; i < MAX_TALKCOND; i ++) {
+		pGoal->abyCondNo[i] = FLAG_NONUM;
+	}
+}
+
+/* 「いまの目的」の行が使われているか（文があるか、「無し」でない条件がある） */
+static bool StoryGoalUsed(const STORYGOAL *pGoal)
+{
+	if (pGoal->szGoal[0]) {
+		return true;
+	}
+	for (int i = 0; i < MAX_TALKNEED; i ++) {
+		if (pGoal->awNeed[i] != FLAG_NOBIT || pGoal->awNot[i] != FLAG_NOBIT) {
+			return true;
+		}
+	}
+	for (int i = 0; i < MAX_TALKCOND; i ++) {
+		if (pGoal->abyCondNo[i] != FLAG_NONUM) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/* シナリオ 1 件（goals は使っている最後の行まで） */
+static std::string StoryJson(const STORYINFO *pStory)
+{
+	std::string out = FieldsJson((const BYTE *)pStory, s_aFieldStory, COUNTOF(s_aFieldStory));
+	int nLast = 0;
+
+	for (int i = 0; i < MAX_STORYGOAL; i ++) {
+		if (StoryGoalUsed(&pStory->aGoal[i])) {
+			nLast = i + 1;
+		}
+	}
+	out += ",\"goals\":[";
+	for (int i = 0; i < nLast; i ++) {
+		if (i) out += ",";
+		out += "{" + FieldsJson((const BYTE *)&pStory->aGoal[i], s_aFieldStoryGoal, COUNTOF(s_aFieldStoryGoal)) + "}";
+	}
+	out += "]";
+	return out;
+}
+
 /* マップ 1 件（マス目は入れない。SboWebDataMapTiles で読む） */
 static std::string MapJson(PMAPINFO pMap)
 {
@@ -2232,6 +2295,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataSchema(void)
 			break;
 		case KIND_STORY:
 			out += FieldSchemaJson(s_aFieldStory, COUNTOF(s_aFieldStory));
+			out.insert(out.size() - 1, ",{\"name\":\"goals\",\"type\":\"object[]\",\"label\":\"いまの目的\",\"maxCount\":" + JsonNum(MAX_STORYGOAL) + ",\"fields\":" + FieldSchemaJson(s_aFieldStoryGoal, COUNTOF(s_aFieldStoryGoal)) + ",\"note\":\"配列で丸ごと置き換え（省くと今のまま。足す時に省くと無し）。クリアの印（wClearFlag）がまだ立っていない人に、上から見て条件（印・数値。会話データの行と同じ判定）に全部合う最初の行の szGoal を、コマンド窓の「目的」に「シナリオ名」と並べて出す。szGoal が空の行は飛ばし、合う行が無ければそのシナリオは出さない。省いた条件は無し（印 65535・数値 255）、短い配列は残りの行が無し\"}");
 			break;
 		case KIND_CHAR:
 			out += FieldSchemaJson(s_aFieldChar, COUNTOF(s_aFieldChar));
@@ -2381,7 +2445,7 @@ static std::string RecordJson(int nKind, int nID)
 		out += TalkJson(g_aTalkInfo[nID]);
 		break;
 	case KIND_STORY:
-		out += FieldsJson((const BYTE *)g_aStoryInfo[nID], s_aFieldStory, COUNTOF(s_aFieldStory));
+		out += StoryJson(g_aStoryInfo[nID]);
 		break;
 	case KIND_CHAR:
 		if (CharIsEmpty(g_aCharInfo[nID])) {
@@ -5107,8 +5171,12 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 
 	case KIND_STORY:
 		{
+			static const char *apszStoryExtra[] = { "goals", NULL };
 			STORYINFO Info;
 			memset(&Info, 0, sizeof(Info));
+			for (int k = 0; k < MAX_STORYGOAL; k ++) {
+				StoryGoalInit(&Info.aGoal[k]);
+			}
 			if (!bAdd) {
 				Info = *g_aStoryInfo[nID];
 			} else {
@@ -5124,7 +5192,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 				}
 				Info.byCountNum = FLAG_NONUM;
 			}
-			if (!CheckKnownKeys(chg, s_aFieldStory, COUNTOF(s_aFieldStory), NULL, strErr)) {
+			if (!CheckKnownKeys(chg, s_aFieldStory, COUNTOF(s_aFieldStory), apszStoryExtra, strErr)) {
 				goto Exit;
 			}
 			/* wID は読むだけ（自動で振る）。同じ値を書き戻すのは許す（取得した記録をそのまま渡せるように） */
@@ -5142,6 +5210,28 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 				}
 				if (!ApplyFields((BYTE *)&Info, s_aFieldStory, COUNTOF(s_aFieldStory), chg2, strErr, "")) {
 					goto Exit;
+				}
+			}
+			/* いまの目的の行（丸ごと置き換え。省くと今のまま） */
+			if (const JVal *pGoals = chg.Get("goals")) {
+				if (pGoals->t != JVal::ARR || pGoals->a.size() > (size_t)MAX_STORYGOAL) {
+					strErr = "goals はオブジェクトの配列で、" + JsonNum(MAX_STORYGOAL) + " 行までです";
+					goto Exit;
+				}
+				for (int k = 0; k < MAX_STORYGOAL; k ++) {
+					StoryGoalInit(&Info.aGoal[k]);
+				}
+				for (size_t k = 0; k < pGoals->a.size(); k ++) {
+					const JVal &l = pGoals->a[k];
+					std::string strName = "goals[" + JsonNum((long long)k) + "].";
+					if (l.t != JVal::OBJ) {
+						strErr = "goals の要素はオブジェクトで指定してください";
+						goto Exit;
+					}
+					if (!CheckKnownKeys(l, s_aFieldStoryGoal, COUNTOF(s_aFieldStoryGoal), NULL, strErr) ||
+							!ApplyFields((BYTE *)&Info.aGoal[k], s_aFieldStoryGoal, COUNTOF(s_aFieldStoryGoal), l, strErr, strName)) {
+						goto Exit;
+					}
 				}
 			}
 			/* 内容の確認 */
@@ -5181,6 +5271,26 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 			if (Info.byCountNum >= MAX_FLAGNUM && Info.byCountNum != FLAG_NONUM) {
 				strErr = "byCountNum は数値の番号（0〜" + JsonNum(MAX_FLAGNUM - 1) + "）か 255（数えない）で指定してください";
 				goto Exit;
+			}
+			for (int k = 0; k < MAX_STORYGOAL; k ++) {
+				const STORYGOAL &G = Info.aGoal[k];
+				std::string strName = "goals[" + JsonNum(k) + "].";
+				for (int j = 0; j < MAX_TALKNEED; j ++) {
+					if ((G.awNeed[j] >= MAX_FLAGBIT && G.awNeed[j] != FLAG_NOBIT) || (G.awNot[j] >= MAX_FLAGBIT && G.awNot[j] != FLAG_NOBIT)) {
+						strErr = strName + "awNeed・awNot は印の番号（0〜" + JsonNum(MAX_FLAGBIT - 1) + "）か 65535（無し）で指定してください";
+						goto Exit;
+					}
+				}
+				for (int j = 0; j < MAX_TALKCOND; j ++) {
+					if (G.abyCondNo[j] >= MAX_FLAGNUM && G.abyCondNo[j] != FLAG_NONUM) {
+						strErr = strName + "abyCondNo は数値の番号（0〜" + JsonNum(MAX_FLAGNUM - 1) + "）か 255（無し）で指定してください";
+						goto Exit;
+					}
+					if (G.abyCondCmp[j] >= TALKCMP_MAX) {
+						strErr = strName + "abyCondCmp は 0（以上）・1（ちょうど）・2（以下）のどれかで指定してください";
+						goto Exit;
+					}
+				}
 			}
 			for (int k = 0; k < MAX_STORYQUEST; k ++) {
 				if (Info.awQuest[k] == 0) {
@@ -5244,7 +5354,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 				}
 				Info.wID = wNew;
 			}
-			strRecord = FieldsJson((const BYTE *)&Info, s_aFieldStory, COUNTOF(s_aFieldStory));
+			strRecord = StoryJson(&Info);
 			if (bApply) {
 				if (bAdd) {
 					PSTORYINFO pNew = new STORYINFO;
@@ -5595,6 +5705,8 @@ void SboDataStoryApplyInfo(int nNo, const STORYINFO *pInfo, int &nNoOut, std::st
 	if (!bAdd) {
 		Info.wID = g_aStoryInfo[nNo]->wID;
 	}
+	/* 「いまの目的」（goals）は管理者ウィンドウでは編集しないので JSON に含めない（含めないと今の値が残る。足す時は無し）。
+	   届いた STORYINFO に目的が入っていても、それは使わない */
 	std::string strJson = "{" + (bAdd ? FieldsJson((const BYTE *)&Info, s_aFieldStory + 1, COUNTOF(s_aFieldStory) - 1) :
 			FieldsJson((const BYTE *)&Info, s_aFieldStory, COUNTOF(s_aFieldStory))) + "}";
 	const char *pszRes = SboWebDataApply("story", bAdd ? g_aStoryInfo.GetSize() : nNo, strJson.c_str(), 1, "管理者ウィンドウ");

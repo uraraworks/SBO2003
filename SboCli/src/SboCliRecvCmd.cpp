@@ -4062,18 +4062,34 @@ void RecvDataProcQUESTSTATE(PBYTE pData, DWORD dwDataSize)
 	PWNDINFO pWnd;
 	int i;
 
-	if (dwDataSize < sizeof (CMDPARA_QUESTSTATE)) {
+	/* 依頼の分（byStoryCount の手前まで）は必ず届く。物語の分は可変長（古いサーバーからは届かない） */
+	if (dwDataSize < offsetof (CMDPARA_QUESTSTATE, byStoryCount)) {
 		return;
 	}
-	CopyMemory (&g_QuestState, pPara, sizeof (CMDPARA_QUESTSTATE));
+	ZeroMemory (&g_QuestState, sizeof (CMDPARA_QUESTSTATE));
+	CopyMemory (&g_QuestState, pPara, min (dwDataSize, (DWORD)sizeof (CMDPARA_QUESTSTATE)));
 	if (g_QuestState.byCount > MAX_PARTYMEMBER) {
 		g_QuestState.byCount = MAX_PARTYMEMBER;
+	}
+	/* 物語の目的は、届いたバイト数に収まる件数だけ使う */
+	if (dwDataSize < offsetof (CMDPARA_QUESTSTATE, aStory)) {
+		g_QuestState.byStoryCount = 0;
+	}
+	if (g_QuestState.byStoryCount > MAX_STORYGOAL) {
+		g_QuestState.byStoryCount = MAX_STORYGOAL;
+	}
+	if (offsetof (CMDPARA_QUESTSTATE, aStory) + sizeof (STORYGOALENTRY) * g_QuestState.byStoryCount > dwDataSize) {
+		g_QuestState.byStoryCount = (BYTE)((dwDataSize - offsetof (CMDPARA_QUESTSTATE, aStory)) / sizeof (STORYGOALENTRY));
 	}
 	/* 文字列は必ず終端させる */
 	for (i = 0; i < MAX_PARTYMEMBER; i ++) {
 		g_QuestState.aEntry[i].szCharName[MAX_CHARNAMEBUF - 1] = 0;
 		g_QuestState.aEntry[i].szQuestName[MAX_QUESTNAME - 1] = 0;
 		g_QuestState.aEntry[i].szGoal[MAX_QUESTGOAL - 1] = 0;
+	}
+	for (i = 0; i < MAX_STORYGOAL; i ++) {
+		g_QuestState.aStory[i].szName[MAX_QUESTNAME - 1] = 0;
+		g_QuestState.aStory[i].szGoal[MAX_QUESTGOAL - 1] = 0;
 	}
 	pWnd = QuestFindWindow (QUESTWND_STATE);
 	if (pWnd) {

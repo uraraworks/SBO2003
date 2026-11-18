@@ -374,7 +374,7 @@ PWNDINFO MakeWindowCOMMAND(void)
 	pWnd->nY = 50;
 	pWnd->nCx = 16 * 10;
 	pWnd->nCy = 16 * 7;
-	/* 自分か仲間が依頼を受けている時だけ「依頼」の段を出す（nData2=1）。1 行ぶん高くする */
+	/* 自分か仲間が依頼を受けている時か、物語の「いまの目的」がある時だけ「目的」の段を出す（nData2=1）。1 行ぶん高くする */
 	if (QuestHasAny ()) {
 		pWnd->nData2 = 1;
 		pWnd->nCy = 16 * 8;

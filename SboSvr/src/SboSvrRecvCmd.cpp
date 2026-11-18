@@ -12757,12 +12757,14 @@ void RecvDataProcADMINCHARFLAG(PBYTE pData, DWORD dwDataSize)
 		FlagBitSet (pChar->abyFlag, pPara->wNo, pPara->wValue ? TRUE : FALSE);
 		/* 印で見える・消えるNPCを、その人にだけ見え直す */
 		CharViewRefresh (pChar);
+		QuestSendStateSelf (pChar);		/* 物語の「いまの目的」も送り直す */
 	} else if (pPara->byKind == FLAGKIND_NUM) {
 		if ((pPara->wNo >= MAX_FLAGNUM) || (pPara->wValue > 255)) {
 			SendAdminCharFlagResult (pID, pPara->dwTblID, 0, "数値の番号は 0〜127、値は 0〜255 で指定してください。");
 			return;
 		}
 		FlagNumSet (pChar->abyFlagNum, pPara->wNo, pPara->wValue);
+		QuestSendStateSelf (pChar);		/* 物語の「いまの目的」も送り直す */
 	} else {
 		SendAdminCharFlagResult (pID, pPara->dwTblID, 0, "種類は 0（印）か 1（数値）で指定してください。");
 		return;
