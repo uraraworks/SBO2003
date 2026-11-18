@@ -86,6 +86,19 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 			const TplRoom &t = th.rooms[ti];
 			if (!TplFits(t, r.w, r.h)) continue;  // 小さい部屋は素の絵のまま
 			r.tpl = ti;
+			// 入口の部屋の 9分割に入口の印があれば、伸ばした部屋の同じ所を start にする（床の時だけ）
+			if (r.kind == 2 && t.entryX >= 0 && t.entryY >= 0 && t.entryX < t.w && t.entryY < t.h)
+			{
+				auto place = [](int e, int rw, int tw, int c0, int c1) {
+					if (e < c0) return e;
+					if (e >= c1) return rw - (tw - e);
+					int mid = rw - c0 - (tw - c1);  // 伸ばした真ん中の長さ
+					return c0 + (int)((long)(e - c0) * mid / (c1 - c0)) + (mid > (c1 - c0) ? (mid - (c1 - c0)) / 2 : 0);
+				};
+				int ex = r.x + place(t.entryX, r.w, t.w, t.cutX[0], t.cutX[1]);
+				int ey = r.y + place(t.entryY, r.h, t.h, t.cutY[0], t.cutY[1]);
+				if (ex >= 0 && ey >= 0 && ex < W && ey < H && sk.cells[ey * W + ex] == CELL_FLOOR) { sk.startX = ex; sk.startY = ey; }
+			}
 			for (int j = 0; j < r.h; ++j)
 			{
 				int tj = MapAxis(j, r.h, t.h, t.cutY[0], t.cutY[1]);
