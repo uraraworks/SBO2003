@@ -164,7 +164,7 @@ Module['sboDungeon'] = (function () {
 
 	/* お試し作成の設定。数は範囲に収める（C++ 側でも確かめる） */
 	var PARAM_RANGE = {
-		w: [8, 128], h: [8, 128], seed: [0, 2147483647], roomMin: [3, 64], roomMax: [3, 64], floorMin: [0, 100],
+		w: [8, 128], h: [8, 128], seed: [0, 4294967295], roomMin: [3, 64], roomMax: [3, 64], floorMin: [0, 100],
 		archMin: [1, 16], archMax: [1, 16], doorRate: [0, 100], openRate: [0, 100], loopRate: [0, 100], cutoff: [0, 100]
 	};
 

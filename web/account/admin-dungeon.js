@@ -59,7 +59,7 @@
 		'.dg-row button,.dg-sec button{margin:4px 6px 0 0;padding:8px 12px;font-size:13px}' +
 		'.dg-sec select,.dg-sec input[type=text]{width:auto;max-width:100%;box-sizing:border-box;background:var(--field);color:var(--fg);' +
 		'border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:16px}' +
-		'.dg-n{width:5em!important}.dg-w{width:min(100%,22em)!important}' +
+		'.dg-n{width:5em!important}#dg-p-seed{width:9em!important}.dg-w{width:min(100%,22em)!important}' +
 		'.dg-parts{display:grid;grid-template-columns:minmax(8em,12em) minmax(6em,16em) 1fr;gap:6px 8px;align-items:center}' +
 		'.dg-thumbs{display:flex;flex-wrap:wrap;gap:2px}.dg-thumbs canvas{width:24px;height:24px;image-rendering:pixelated;border:1px solid var(--border)}' +
 		'.dg-cols{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start}' +
