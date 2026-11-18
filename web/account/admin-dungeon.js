@@ -284,7 +284,14 @@
 			b.style.display = bShow ? '' : 'none';
 		});
 	}
-	function closePal() { $('dg-pal').hidden = true; palCb = null; }
+	/* 一覧のスクロール位置は閉じる時に覚えておき、次に開いた時に戻す（ブラウザを閉じても残す） */
+	var PAL_SCROLL_KEY = 'sbo_dungeon_pal_scroll';
+	var palScroll = (function () { try { return Number(localStorage.getItem(PAL_SCROLL_KEY)) || 0; } catch (e) { return 0; } })();
+	function savePalScroll() {
+		palScroll = $('dg-pal-grid').scrollTop;
+		try { localStorage.setItem(PAL_SCROLL_KEY, String(palScroll)); } catch (e) { /* 保存できなくても動く */ }
+	}
+	function closePal() { if (!$('dg-pal').hidden) savePalScroll(); $('dg-pal').hidden = true; palCb = null; }
 	function pickNo(no) { var f = palCb; closePal(); if (f) f(no); }
 	function buildPal() {
 		if (palBuilt) return;
@@ -329,6 +336,8 @@
 			});
 			var s = $('dg-pal-grid').querySelector('.sel');
 			$('dg-pal-info').textContent = curNo == null ? '' : '今：' + partLabel(curNo);
+			/* まず前回の位置へ。今のパーツがあれば、見えていない時だけそこまで動かす */
+			$('dg-pal-grid').scrollTop = palScroll;
 			if (s && s.scrollIntoView) s.scrollIntoView({ block: 'nearest' });
 			ensureDex();
 		}, function (e) { setMsg('パーツ一覧を開けません: ' + (e && e.message || e)); });
