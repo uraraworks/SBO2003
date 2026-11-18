@@ -119,6 +119,7 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 	//   2 部屋以上が重なった壁のマスは、どの部屋の床に面しているか（役目）で持ち主を決め、
 	//   その部屋の 9分割の絵の同じ位置を描き直す。役目は強い順に:
 	//     1. 側面   : 下が床        → 下の床の部屋の上から 2 行目（側面の行）
+	//     1b. 縦の壁 : どれかの部屋の左右の列 → その部屋の列（角・柱が横の壁で途切れないように）
 	//     2. 上の縁 : 2 つ下が床    → 2 つ下の床の部屋の 1 行目（天井の縁）
 	//     3. 横の壁 : 左か右が床    → その床の部屋の左右の列
 	//     4. 下が出入口 → 側面（wallFace）
@@ -152,6 +153,18 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 			int v = t.cells[MapAxis(j, r.h, t.h, t.cutY[0], t.cutY[1]) * t.w + MapAxis(i, r.w, t.w, t.cutX[0], t.cutX[1])];
 			return v != 0 ? v : -1;
 		};
+		// (x,y) が左右の列（縦の壁）に当たる部屋。9分割の絵がある部屋を優先
+		auto sideRoom = [&](int x, int y) {
+			int found = -1;
+			for (size_t k = 0; k < sk.rooms.size(); ++k)
+			{
+				const Room &r = sk.rooms[k];
+				if (y < r.y || y >= r.y + r.h - r.bot || (x != r.x && x != r.x + r.w - 1)) continue;  // 下の壁の行は横の壁なので除く
+				if (tplAt((int)k, x, y) > 0) return (int)k;
+				if (found < 0) found = (int)k;
+			}
+			return found;
+		};
 		for (int y = 0; y < H; ++y)
 			for (int x = 0; x < W; ++x)
 			{
@@ -160,6 +173,7 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 				int ri = -1, v = -1;
 				bool face = false;
 				if ((ri = own(x, y + 1)) >= 0) face = true;
+				else if ((ri = sideRoom(x, y)) >= 0) {}
 				else if ((ri = own(x, y + 2)) >= 0 || (ri = own(x - 1, y)) >= 0 || (ri = own(x + 1, y)) >= 0) {}
 				else if (y + 1 < H && IsWalkable(sk.cells[(y + 1) * W + x])) face = true;  // 下が出入口
 				else if ((ri = own(x, y - 1)) >= 0 || (ri = own(x, y - 2)) >= 0) {}
