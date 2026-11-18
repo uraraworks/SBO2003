@@ -81,6 +81,7 @@ void ReadTheme(const JVal &j, Theme &t)
 	ReadInts(j.Get("wallFace"), t.wallFace);
 	ReadInts(j.Get("wallFill"), t.wallFill);
 	ReadInts(j.Get("arch"), t.arch);
+	ReadInts(j.Get("archV"), t.archV);
 	t.voidPart = j.Int("void", 0);
 	t.door = j.Int("door", 0);
 	t.entryPart = j.Int("entry", 0);
@@ -126,6 +127,9 @@ void ReadTheme(const JVal &j, Theme &t)
 			ReadInts(o.Get("cellsOpen"), op.cellsOpen);
 			op.hole0 = o.Int("hole0", 0);
 			op.hole1 = o.Int("hole1", 0);
+			op.cut0 = o.Int("cut0", -1);
+			op.cut1 = o.Int("cut1", -1);
+			op.off = o.Int("off", 0);
 			t.openings.push_back(op);
 		}
 	const JVal *decos = j.Get("decos");
@@ -217,6 +221,11 @@ Err RunJson(const char *pszJson, std::string &out)
 		out += ",\"h\":"; Num(out, l.h);
 		out += ",\"type\":"; Num(out, l.type);
 		out += ",\"tpl\":"; Num(out, l.tpl);
+		out += ",\"vert\":"; Num(out, l.vert);
+		out += ",\"px\":"; Num(out, l.px);
+		out += ",\"py\":"; Num(out, l.py);
+		out += ",\"pw\":"; Num(out, l.pw);
+		out += ",\"ph\":"; Num(out, l.ph);
 		out += '}';
 	}
 	out += "],\"start\":{\"x\":"; Num(out, sk.startX);

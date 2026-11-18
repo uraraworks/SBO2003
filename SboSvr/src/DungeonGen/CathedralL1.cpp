@@ -108,6 +108,8 @@ void MakeLink(Ctx &c, int ia, int ib)
 	if (c.rng->Chance(c.p->openRate)) l.type = 3;
 	else l.type = c.rng->Chance(doorRate) ? 2 : 1;
 	// 向きと type が合う出入口パターンで、両脇まで共有壁に収まるものからくじで選ぶ
+	//   cut0/cut1 のあるパターンは穴の幅を伸び縮みさせる（最小の幅でも収まれば候補）。
+	//   共有壁と直交する向きは、マップの外にはみ出すものを選ばない
 	int pos = 0;
 	if (c.th)
 	{
@@ -116,15 +118,32 @@ void MakeLink(Ctx &c, int ia, int ib)
 		{
 			const Opening &o = c.th->openings[k];
 			if (!o.Valid() || o.dir != (horiz ? 0 : 1) || o.type != l.type) continue;
-			if ((horiz ? o.w : o.h) <= len) cand.push_back((int)k);
+			const int holeW = o.hole1 - o.hole0;
+			const int minLen = o.Len() + (o.Stretch() ? (holeW - (o.cut1 - o.cut0) + 1) - holeW : 0);
+			if (minLen > len) continue;
+			const int perp = horiz ? o.h : o.w, from = line - o.off;
+			if (from < 0 || from + perp > (horiz ? c.H : c.W)) continue;
+			cand.push_back((int)k);
 		}
 		if (!cand.empty())
 		{
 			l.tpl = cand[c.rng->Int(0, (int)cand.size() - 1)];
 			const Opening &o = c.th->openings[l.tpl];
-			aw = o.hole1 - o.hole0;
-			int span = horiz ? o.w : o.h;
-			pos = s + c.rng->Int(0, len - span) + o.hole0;
+			const int holeW = o.hole1 - o.hole0;
+			aw = holeW;
+			if (o.Stretch())
+			{
+				const int minAw = holeW - (o.cut1 - o.cut0) + 1;
+				const int maxAw = len - o.Len() + holeW;  // 共有壁に収まる最大の穴の幅
+				const int lo = std::min(maxAw, std::max(aMin, minAw));
+				const int hi = std::max(lo, std::min(aMax, maxAw));
+				aw = c.rng->Int(lo, hi);
+			}
+			const int plen = o.Len() + (aw - holeW);  // パターンの向きに沿った長さ
+			const int p0 = s + c.rng->Int(0, len - plen);
+			pos = p0 + o.hole0;
+			if (horiz) { l.px = p0; l.py = line - o.off; l.pw = plen; l.ph = o.h; }
+			else { l.px = line - o.off; l.py = p0; l.pw = o.w; l.ph = plen; }
 		}
 	}
 	if (l.tpl < 0)
@@ -134,6 +153,7 @@ void MakeLink(Ctx &c, int ia, int ib)
 		else aw = std::min(len, c.rng->Int(aMin, aMax));
 		pos = s + c.rng->Int(0, len - aw);
 	}
+	l.vert = horiz ? 0 : 1;
 	if (horiz) { l.x = pos; l.y = line; l.w = aw; l.h = 2; }
 	else { l.x = line; l.y = pos; l.w = 1; l.h = aw; }
 	c.links.push_back(l);

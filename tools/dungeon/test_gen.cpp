@@ -124,8 +124,29 @@ static Theme MakeOpeningTheme()
 		if (d.type == 2) o.cellsOpen.assign(len * (d.dir == 0 ? 2 : 1), 950);
 		t.openings.push_back(o);
 	}
-	Opening bad; bad.dir = 0; bad.type = 1; bad.w = 3; bad.h = 3; bad.cells.assign(9, 1); bad.hole0 = 0; bad.hole1 = 1;  // h != 2 は無効
+	Opening bad; bad.dir = 0; bad.type = 1; bad.w = 3; bad.h = 3; bad.cells.assign(9, 1); bad.hole0 = 0; bad.hole1 = 5;  // 穴が長さを超える（無効）
 	t.openings.push_back(bad);
+	return t;
+}
+
+// 伸ばす出入口パターン（cut0/cut1・off あり）のテーマ。絵は 1000 + 行*100 + 列（テンプレート内の位置）
+static Theme MakeStretchTheme()
+{
+	Theme t = MakeTheme(1);
+	t.openings.clear();
+	// dir0: 幅 7・高さ 4。off=1（行 1 が天井、行 2 が側面）。穴は列 2..4、切れ目 3..4（真ん中は列 3）
+	// dir1: 幅 3・高さ 6。off=1（列 1 が共有壁）。穴は行 1..3、切れ目 2..3
+	for (int dir = 0; dir < 2; ++dir)
+	{
+		Opening o;
+		o.name = "st"; o.dir = dir; o.type = 1; o.off = 1;
+		o.w = dir == 0 ? 7 : 3; o.h = dir == 0 ? 4 : 6;
+		o.hole0 = dir == 0 ? 2 : 1; o.hole1 = dir == 0 ? 5 : 4;
+		o.cut0 = dir == 0 ? 3 : 2; o.cut1 = dir == 0 ? 4 : 3;
+		for (int j = 0; j < o.h; ++j)
+			for (int i = 0; i < o.w; ++i) o.cells.push_back(1000 + j * 100 + i);
+		t.openings.push_back(o);
+	}
 	return t;
 }
 
@@ -265,6 +286,83 @@ int main(int argc, char **argv)
 				}
 			}
 		CHECK(used > 20, "openings rarely used (%d)", used);
+	}
+
+	// 伸ばす出入口パターン（cut0/cut1・off）と縦の出入口の床 archV
+	{
+		int used = 0, wMin = 99, wMax = 0, hMin = 99, hMax = 0, overflow = 0;
+		for (int seed : seeds)
+			for (int sz : { 40, 64 })
+			{
+				Params p; p.algo = 1; p.w = sz; p.h = sz; p.seed = seed; p.doorRate = 0; p.openRate = 0; p.archMin = 2; p.archMax = 6;
+				Theme th = MakeStretchTheme();
+				Skeleton a, b; std::vector<int> pa, pb;
+				Err e = Generate(p, &th, a, pa);
+				if (e != ERR_NONE) { CHECK(0, "stretch seed %d: error %d", seed, e); continue; }
+				Generate(p, &th, b, pb);
+				CHECK(a.cells == b.cells && pa == pb, "stretch seed %d: not reproducible", seed);
+				CHECK(Connected(a), "stretch seed %d: not connected", seed);
+				for (auto &l : a.links)
+				{
+					if (l.tpl < 0) { CHECK(l.px == -1 && l.pw == -1, "no pattern but px set"); continue; }
+					++used;
+					const Opening &o = th.openings[l.tpl];
+					CHECK(o.dir == l.vert, "stretch dir mismatch");
+					const int len = o.Len(), holeW = o.hole1 - o.hole0;
+					const int L = o.dir == 0 ? l.pw : l.ph;
+					const int aw = o.dir == 0 ? l.w : l.h;
+					CHECK(aw >= holeW - (o.cut1 - o.cut0) + 1 && aw <= 6 && L == len + aw - holeW, "stretch aw %d L %d", aw, L);
+					if (o.dir == 0) { wMin = std::min(wMin, aw); wMax = std::max(wMax, aw); }
+					else { hMin = std::min(hMin, aw); hMax = std::max(hMax, aw); }
+					const Room &ra = a.rooms[l.a], &rb = a.rooms[l.b];
+					if (o.dir == 0)
+					{
+						CHECK(l.ph == o.h && l.py == l.y - o.off && l.px + l.pw <= std::min(ra.x + ra.w, rb.x + rb.w) - 1 && l.px >= std::max(ra.x, rb.x) + 1, "stretch range (h)");
+						CHECK(l.x == l.px + o.hole0 && l.h == 2, "stretch hole pos (h)");
+					}
+					else
+					{
+						CHECK(l.pw == o.w && l.px == l.x - o.off && l.py + l.ph <= std::min(ra.y + ra.h, rb.y + rb.h) - 1 && l.py >= std::max(ra.y + 2, rb.y + 2), "stretch range (v)");
+						CHECK(l.y == l.py + o.hole0 && l.w == 1, "stretch hole pos (v)");
+					}
+					for (int j = 0; j < l.ph; ++j)
+						for (int i = 0; i < l.pw; ++i)
+						{
+							int k = o.dir == 0 ? i : j, Lk = L;
+							int tk = k < o.cut0 ? k : (k >= Lk - (len - o.cut1) ? o.cut1 + k - (Lk - (len - o.cut1)) : o.cut0 + (k - o.cut0) % (o.cut1 - o.cut0));
+							int ti = o.dir == 0 ? tk : i, tj = o.dir == 0 ? j : tk;
+							int idx = (l.py + j) * a.w + l.px + i;
+							CHECK(pa[idx] == 1000 + tj * 100 + ti, "stretch part (%d,%d) %d vs %d", i, j, pa[idx], 1000 + tj * 100 + ti);
+							// 壁の行・列の外（はみ出した行）も描かれ、骨組みは変わらない
+							bool outside = o.dir == 0 ? (j < o.off || j > o.off + 1) : i != o.off;
+							if (outside) { ++overflow; CHECK(a.cells[idx] != CELL_ARCH && a.cells[idx] != CELL_DOOR, "overflow cell is hole"); }
+						}
+				}
+			}
+		CHECK(used > 10, "stretch rarely used (%d)", used);
+		CHECK(wMax > wMin && wMax <= 6 && wMin >= 2, "dir0 hole width does not vary (%d..%d)", wMin, wMax);
+		CHECK(hMax > hMin || hMin == 99, "dir1 hole width does not vary (%d..%d)", hMin, hMax);
+		CHECK(overflow > 0, "no overflow cells checked");
+		// archV: 縦の出入口の床。無ければ arch と同じ
+		for (int variant = 0; variant < 2; ++variant)
+		{
+			Params p; p.algo = 1; p.w = 64; p.h = 64; p.seed = 777; p.doorRate = 0; p.openRate = 0;
+			Theme th = MakeTheme(1);
+			th.arch = { 103 };
+			if (variant == 0) th.archV = { 777 };
+			Skeleton a; std::vector<int> pa;
+			CHECK(Generate(p, &th, a, pa) == ERR_NONE, "archV generate");
+			int nv = 0;
+			for (auto &l : a.links)
+				for (int y = l.y; y < l.y + l.h; ++y)
+					for (int x = l.x; x < l.x + l.w; ++x)
+					{
+						int v = pa[y * a.w + x];
+						CHECK(v == (l.vert && variant == 0 ? 777 : 103), "archV part %d (vert %d variant %d)", v, l.vert, variant);
+						nv += l.vert;
+					}
+			CHECK(nv > 0, "no vertical links for archV test");
+		}
 	}
 
 	// 縦の壁の出入口（vertRate / vertDoorRate）

@@ -95,7 +95,9 @@ struct Link
 	int a, b, x, y, w, h;
 	int type;  // 1 アーチ / 2 扉 / 3 壁ごと抜いた
 	int tpl;   // 使った出入口パターンの番号（-1 = 無し）。x,y,w,h は穴の範囲
-	Link() : a(0), b(0), x(0), y(0), w(0), h(0), type(1), tpl(-1) {}
+	int vert;  // 1 = 縦の壁（左右に並ぶ部屋の共有壁）の出入口 / 0 = 横の壁
+	int px, py, pw, ph;  // 出入口パターンを置いた範囲（無しは -1）。穴の外の柱・枠・はみ出した行も含む
+	Link() : a(0), b(0), x(0), y(0), w(0), h(0), type(1), tpl(-1), vert(0), px(-1), py(-1), pw(-1), ph(-1) {}
 };
 
 struct Skeleton
@@ -137,28 +139,34 @@ const int MAX_OPENINGS = 50;
 struct Opening
 {
 	std::string name;
-	int dir;    // 0 = 横の壁（天井＋側面の 2 行） / 1 = 縦の壁（1 列）
+	int dir;    // 0 = 横の壁（天井＋側面の 2 行が共有壁） / 1 = 縦の壁（1 列が共有壁）
 	int type;   // 1 アーチ / 2 扉 / 3 壁ごと抜く
 	int w, h;
 	std::vector<int> cells, cellsOpen;  // cellsOpen は扉だけ（無ければ空）
 	int hole0, hole1;  // 通れる範囲。dir0 なら列 hole0..hole1-1、dir1 なら行 hole0..hole1-1
-	Opening() : dir(0), type(1), w(0), h(0), hole0(0), hole1(0) {}
+	int cut0, cut1;    // 3分割の伸び縮みの切れ目（向きに沿った軸。dir0 は列、dir1 は行）。-1 = 伸ばさない。hole0 <= cut0 < cut1 <= hole1
+	int off;           // dir0: 共有壁の上の行（天井の行）に当たるパターンの行 / dir1: 共有壁の列に当たるパターンの列（既定 0）
+	Opening() : dir(0), type(1), w(0), h(0), hole0(0), hole1(0), cut0(-1), cut1(-1), off(0) {}
+	bool Stretch() const { return cut0 >= 0 && cut1 > cut0; }
+	int Len() const { return dir == 0 ? w : h; }  // 向きに沿った長さ
 	bool Valid() const
 	{
 		if (dir != 0 && dir != 1) return false;
 		if (type < 1 || type > 3) return false;
-		if (dir == 0 ? h != 2 : w != 1) return false;
+		if (off < 0 || (dir == 0 ? h < off + 2 : w < off + 1)) return false;
 		if (w <= 0 || h <= 0 || (int)cells.size() != w * h) return false;
 		if (!cellsOpen.empty() && (type != 2 || (int)cellsOpen.size() != w * h)) return false;
 		int len = dir == 0 ? w : h;
-		return hole0 >= 0 && hole0 < hole1 && hole1 <= len;
+		if (!(hole0 >= 0 && hole0 < hole1 && hole1 <= len)) return false;
+		if (cut0 >= 0 || cut1 >= 0) return cut0 >= hole0 && cut0 < cut1 && cut1 <= hole1;
+		return true;
 	}
 };
 
 struct Theme
 {
 	int algo;
-	std::vector<int> floor, wallTop, wallFace, wallFill, arch;
+	std::vector<int> floor, wallTop, wallFace, wallFill, arch, archV;  // archV: 縦の出入口の床（空 = arch と同じ）
 	int voidPart, door;
 	int entryPart, goalPart;  // start・goal のマスに置く絵（0 = 置かない）
 	int bottomRows;  // L1: 部屋の外枠の下の壁の行数（1 = 天井だけ / 2 = 天井＋側面）

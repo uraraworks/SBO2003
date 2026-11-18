@@ -197,9 +197,11 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 	}
 
 	// 3. 出入口・扉
+	const std::vector<int> &archVParts = th.archV.empty() ? th.arch : th.archV;  // 縦の出入口の床
 	for (size_t k = 0; k < sk.links.size(); ++k)
 	{
 		const Link &l = sk.links[k];
+		const std::vector<int> &archP = l.vert ? archVParts : th.arch;
 		for (int y = l.y; y < l.y + l.h; ++y)
 			for (int x = l.x; x < l.x + l.w; ++x)
 			{
@@ -207,24 +209,30 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 				if (sk.cells[idx] == CELL_DOOR)
 				{
 					// 横の壁の扉は 2 行（天井＋側面）を抜くが、扉の絵は下の側面の行だけ。上の天井の行は出入口の床
-					if (th.door && l.h == 2 && y == l.y && l.tpl < 0) parts[idx] = th.arch.empty() ? Pick(th.floor, rng) : Pick(th.arch, rng);
+					if (th.door && !l.vert && l.h == 2 && y == l.y && l.tpl < 0) parts[idx] = archP.empty() ? Pick(th.floor, rng) : Pick(archP, rng);
 					else if (th.door) parts[idx] = th.door;
-					else parts[idx] = th.arch.empty() ? Pick(th.floor, rng) : Pick(th.arch, rng);
+					else parts[idx] = archP.empty() ? Pick(th.floor, rng) : Pick(archP, rng);
 				}
-				else parts[idx] = th.arch.empty() ? Pick(th.floor, rng) : Pick(th.arch, rng);
+				else parts[idx] = archP.empty() ? Pick(th.floor, rng) : Pick(archP, rng);
 			}
 		// 出入口パターン: 両脇の柱・枠も含めて cells で上書き（扉の開いた絵 cellsOpen は使わない）
+		//   伸ばすパターン（cut0/cut1）は、置いた範囲 px,py,pw,ph の向きに沿った軸を部屋の 9分割と同じ対応づけで写す。
+		//   壁の行・列の外にはみ出した部分も絵だけ描く（骨組みは変えない）
 		if (l.tpl >= 0 && l.tpl < (int)th.openings.size() && th.openings[l.tpl].Valid())
 		{
 			const Opening &o = th.openings[l.tpl];
-			const int ox = o.dir == 0 ? l.x - o.hole0 : l.x;
-			const int oy = o.dir == 0 ? l.y : l.y - o.hole0;
-			if (ox < 0 || oy < 0 || ox + o.w > W || oy + o.h > H) continue;
-			for (int j = 0; j < o.h; ++j)
-				for (int i = 0; i < o.w; ++i)
+			if (l.px < 0 || l.py < 0 || l.px + l.pw > W || l.py + l.ph > H) continue;
+			for (int j = 0; j < l.ph; ++j)
+				for (int i = 0; i < l.pw; ++i)
 				{
-					int v = o.cells[j * o.w + i];
-					if (v != 0) parts[(oy + j) * W + ox + i] = v;
+					int ti = i, tj = j;
+					if (o.Stretch())
+					{
+						if (o.dir == 0) ti = MapAxis(i, l.pw, o.w, o.cut0, o.cut1);
+						else tj = MapAxis(j, l.ph, o.h, o.cut0, o.cut1);
+					}
+					int v = o.cells[tj * o.w + ti];
+					if (v != 0) parts[(l.py + j) * W + l.px + i] = v;
 				}
 		}
 	}
@@ -245,11 +253,9 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 	{
 		const Link &l = sk.links[k];
 		if (l.tpl < 0 || l.tpl >= (int)th.openings.size() || !th.openings[l.tpl].Valid()) continue;
-		const Opening &o = th.openings[l.tpl];
-		const int ox = o.dir == 0 ? l.x - o.hole0 : l.x, oy = o.dir == 0 ? l.y : l.y - o.hole0;
-		for (int j = 0; j < o.h; ++j)
-			for (int i = 0; i < o.w; ++i)
-				if (ox + i >= 0 && ox + i < W && oy + j >= 0 && oy + j < H) used[(oy + j) * W + ox + i] = 1;
+		for (int j = 0; j < l.ph; ++j)
+			for (int i = 0; i < l.pw; ++i)
+				if (l.px + i >= 0 && l.px + i < W && l.py + j >= 0 && l.py + j < H) used[(l.py + j) * W + l.px + i] = 1;
 	}
 	for (size_t di = 0; di < th.decos.size(); ++di)
 	{

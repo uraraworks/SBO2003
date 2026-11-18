@@ -27,7 +27,7 @@
 	/* 部分ごとの名前（テーマの項目） */
 	var LISTS = [
 		['floor', '床'], ['wallTop', '壁の天井（上段）'], ['wallFace', '壁の側面'], ['wallFill', 'その他の壁'],
-		['arch', '出入口の床'], ['door', '扉（0 = 出入口と同じ）'], ['entry', '入口の絵（出てくる位置に1枚。0 = 置かない）'], ['goal', 'ゴールの絵（ボス部屋の真ん中に1枚。0 = 置かない）'], ['void', '何もない所（0 = 塗らない）']
+		['arch', '出入口の床'], ['archV', '縦の出入口の床（空 = 出入口の床と同じ）'], ['door', '扉（0 = 出入口と同じ）'], ['entry', '入口の絵（出てくる位置に1枚。0 = 置かない）'], ['goal', 'ゴールの絵（ボス部屋の真ん中に1枚。0 = 置かない）'], ['void', '何もない所（0 = 塗らない）']
 	];
 	var SCALAR = { door: 1, entry: 1, goal: 1, 'void': 1 };
 	var KIND = ['ふつう', 'ボス', '入口'];
@@ -129,16 +129,19 @@
 			'<div id="dg-samples" class="dg-cols"><div><div class="dg-cap" id="dg-s1c"></div><div class="dg-scroll"><canvas class="dg-cv" id="dg-s1"></canvas></div></div>' +
 			'<div><div class="dg-cap" id="dg-s2c"></div><div class="dg-scroll"><canvas class="dg-cv" id="dg-s2"></canvas></div></div></div></div></div></div>';
 		h += '<div class="dg-sec" id="dg-ops-sec" hidden><h3>出入口パターン（最大50件）</h3>' +
-			'<div class="dg-row"><label>壁の向き <select id="dg-oidir"><option value="0">0 = 横の壁（h は 2）</option><option value="1">1 = 縦の壁（w は 1）</option></select></label>' +
+			'<div class="dg-row"><label>壁の向き <select id="dg-oidir"><option value="0">0 = 横の壁（共有壁は天井＋側面の2行）</option><option value="1">1 = 縦の壁（共有壁は1列）</option></select></label>' +
 			'<label>種類 <select id="dg-oitype"><option value="1">1 = アーチ</option><option value="2">2 = 扉</option><option value="3">3 = 壁ごと抜く</option></select></label>' +
 			'<label>大きさ w <input type="text" class="dg-n" id="dg-ow" inputmode="numeric" value="4"></label>' +
 			'<label>h <input type="text" class="dg-n" id="dg-oh" inputmode="numeric" value="2"></label>' +
+			'<label>共有壁の位置 off <input type="text" class="dg-n" id="dg-oioff" inputmode="numeric" value="0"></label>' +
 			'<button type="button" id="dg-oadd">＋パターンを追加</button></div>' +
 			'<div class="dg-row"><select id="dg-osel"></select><button type="button" id="dg-odup" class="sub">このパターンを複製</button><button type="button" id="dg-odel" class="sub">このパターンを削除</button></div>' +
 			'<div id="dg-oedit" hidden><div class="dg-row"><label>名前 <input type="text" id="dg-oname" maxlength="40"></label>' +
 			'<label>壁の向き <select id="dg-odir"><option value="0">0 = 横の壁</option><option value="1">1 = 縦の壁</option></select></label>' +
 			'<label>種類 <select id="dg-otype"><option value="1">1 = アーチ</option><option value="2">2 = 扉</option><option value="3">3 = 壁ごと抜く</option></select></label>' +
 			'<span class="sub-text" id="dg-oinfo"></span></div>' +
+			'<div class="dg-row"><label>共有壁の位置 off <input type="text" class="dg-n" id="dg-ooff" inputmode="numeric"></label>' +
+			'<label><input type="checkbox" id="dg-ostretch"> 3分割で穴の幅を伸び縮みさせる（切れ目の青い線）</label></div>' +
 			'<div class="dg-row" id="dg-oopenrow" hidden><button type="button" id="dg-oaddopen">開いた絵を作る（閉まった絵をコピー）</button>' +
 			'<button type="button" class="sub" id="dg-oclropen">開いた絵を消す</button></div>' +
 			'<div class="dg-row" id="dg-tb-o"></div><div class="dg-row" id="dg-rb-o"></div>' +
@@ -649,7 +652,7 @@
 	}
 
 	function blankTheme() {
-		return { name: '新しいテーマ', algo: 1, floor: [1], wallTop: [1], wallFace: [1], wallFill: [1], 'void': 0, arch: [1], door: 0, entry: 0, goal: 0, bottomRows: 1, rooms: [], decos: [], openings: [], lights: [] };
+		return { name: '新しいテーマ', algo: 1, floor: [1], wallTop: [1], wallFace: [1], wallFill: [1], 'void': 0, arch: [1], archV: [], door: 0, entry: 0, goal: 0, bottomRows: 1, rooms: [], decos: [], openings: [], lights: [] };
 	}
 
 	function fillSelect() {
@@ -706,6 +709,11 @@
 		t.lights = t.lights || [];
 		t.rooms = t.rooms || [];
 		t.decos = t.decos || [];
+		t.archV = t.archV || [];
+		t.openings.forEach(function (o) {
+			if (o.cut0 == null || o.cut1 == null) { o.cut0 = -1; o.cut1 = -1; }
+			if (o.off == null) o.off = 0;
+		});
 		if (t.entry == null) t.entry = 0;
 		if (t.goal == null) t.goal = 0;
 		t.rooms.forEach(function (r) {
@@ -919,8 +927,8 @@
 		var horiz = side === 'l' || side === 'r';
 		var nw = o.w + (horiz ? d : 0), nh = o.h + (horiz ? 0 : d), lim = LIMIT[k];
 		if (nw < lim[0] || nh < lim[0] || nw > lim[1] || nh > lim[1]) { setMsg('大きさは ' + lim[0] + '〜' + lim[1] + ' の間にしてください。'); return; }
-		if (k === 'o') { var er = checkOpSize(o.dir, nw, nh); if (er) { setMsg(er); return; } }
 		var sx = side === 'l' ? d : 0, sy = side === 't' ? d : 0;
+		if (k === 'o') { var er = checkOpSize(o.dir, nw, nh, o.off + (o.dir === 0 ? sy : sx)); if (er) { setMsg(er); return; } }
 		function re(cells) {
 			var out = [];
 			for (var y = 0; y < nh; y++) for (var x = 0; x < nw; x++) {
@@ -934,7 +942,7 @@
 		o.w = nw;
 		o.h = nh;
 		if (k === 'r') fixRoom(o, sx, sy);
-		if (k === 'o') fixOp(o, o.dir === 0 ? sx : sy);
+		if (k === 'o') fixOp(o, o.dir === 0 ? sx : sy, o.dir === 0 ? sy : sx);
 		markDirty();
 		if (k === 'r') showRooms(); else if (k === 'o') showOps(); else showDecos();
 	}
@@ -949,11 +957,16 @@
 			if (r.entryX < 0 || r.entryY < 0 || r.entryX >= r.w || r.entryY >= r.h) r.entryX = r.entryY = -1;
 		}
 	}
-	function fixOp(o, shift) {
-		var len = opLen(o);
+	/* 端に行・列を足し引きした後の直し。shift = 向きに沿った軸のずれ、perp = 共有壁と直交する向きのずれ（off がずれる） */
+	function fixOp(o, shift, perp) {
+		var len = opLen(o), st = o.cut0 >= 0;
 		o.hole0 += shift;
 		o.hole1 += shift;
-		if (!(o.hole0 >= 0 && o.hole0 < o.hole1 && o.hole1 <= len)) { var hl = defHole(len); o.hole0 = hl[0]; o.hole1 = hl[1]; }
+		o.off += perp;
+		if (st) { o.cut0 += shift; o.cut1 += shift; }
+		if (!(o.hole0 >= 0 && o.hole0 < o.hole1 && o.hole1 <= len)) { var hl = defHole(len); o.hole0 = hl[0]; o.hole1 = hl[1]; st = false; }
+		if (st && !(o.cut0 >= o.hole0 && o.cut0 < o.cut1 && o.cut1 <= o.hole1)) st = false;
+		if (!st) o.cut0 = o.cut1 = -1;
 	}
 	/* 格子の canvas に絵を描く操作。get() は { w, h, cells, tile, redraw } を返す（k = 区画） */
 	function attachPaint(cv, k, get, bMarkIsPaint) {
@@ -1007,11 +1020,11 @@
 	function addOpening() {
 		if (cur.openings.length >= 50) { setMsg('出入口パターンは 50 件までです。'); return; }
 		var dir = num($('dg-oidir').value, 0), type = num($('dg-oitype').value, 1), w = num($('dg-ow').value, 0), h = num($('dg-oh').value, 0);
-		var er = checkOpSize(dir, w, h);
+		var off = num($('dg-oioff').value, 0), er = checkOpSize(dir, w, h, off);
 		if (!er && (w < 1 || h < 1 || w > 16 || h > 16)) er = '大きさは 1〜16 にしてください。';
 		if (er) { setMsg(er); return; }
 		var hl = defHole(dir === 0 ? w : h);
-		cur.openings.push({ name: '出入口' + (cur.openings.length + 1), dir: dir, type: type, w: w, h: h, cells: blank(w * h), cellsOpen: [], hole0: hl[0], hole1: hl[1] });
+		cur.openings.push({ name: '出入口' + (cur.openings.length + 1), dir: dir, type: type, w: w, h: h, cells: blank(w * h), cellsOpen: [], hole0: hl[0], hole1: hl[1], cut0: -1, cut1: -1, off: off });
 		selOp = cur.openings.length - 1;
 		tools.o = 'paint';
 		markDirty();
@@ -1056,44 +1069,79 @@
 	/* 出入口パターン															 */
 	/* ---------------------------------------------------------------- */
 	var OP_TYPE = ['', 'アーチ', '扉', '壁ごと抜く'], OP_DIR = ['横の壁', '縦の壁'];
-	var dragHole = -1;			/* 0 = hole0, 1 = hole1 */
+	var dragHole = '';			/* ドラッグ中の線（空 = なし） */
 
 	function opLen(o) { return o.dir === 0 ? o.w : o.h; }
 	function defHole(len) { return len >= 3 ? [1, len - 1] : [0, len]; }
 	function opTile(o) { return Math.max(8, Math.min(32, Math.floor(480 / Math.max(o.w, o.h)))); }
 
+	/* 切れ目の既定（穴が 3 マス以上なら両端を 1 マスずつ残した真ん中、それ以外は穴全体） */
+	function defCut(o) { return o.hole1 - o.hole0 >= 3 ? [o.hole0 + 1, o.hole1 - 1] : [o.hole0, o.hole1]; }
+
 	function drawOpCanvas(cv, o, cells) {
-		var tile = opTile(o), len = opLen(o);
+		var tile = opTile(o), len = opLen(o), v0 = o.dir === 0;
 		var ctx = drawGrid(cv, o.w, o.h, function (x, y) { return cells[y * o.w + x]; }, tile);
-		var a = o.hole0 * tile, b = o.hole1 * tile;
+		var a = o.hole0 * tile, b = o.hole1 * tile, ww = o.w * tile, hh = o.h * tile;
+		/* 共有壁に当たる行（横の壁は off と次の行）／列（縦の壁は off）を薄い橙の帯で示す */
+		var bandN = v0 ? 2 : 1;
+		ctx.fillStyle = 'rgba(255,170,40,0.22)';
+		if (v0) ctx.fillRect(0, o.off * tile, ww, bandN * tile); else ctx.fillRect(o.off * tile, 0, bandN * tile, hh);
 		ctx.fillStyle = 'rgba(60,220,120,0.28)';
-		if (o.dir === 0) ctx.fillRect(a, 0, b - a, o.h * tile); else ctx.fillRect(0, a, o.w * tile, b - a);
+		if (v0) ctx.fillRect(a, o.off * tile, b - a, bandN * tile); else ctx.fillRect(o.off * tile, a, bandN * tile, b - a);
+		/* 穴の範囲（緑の線） */
 		ctx.lineWidth = 2;
-		ctx.strokeStyle = '#3aa0ff';
+		ctx.strokeStyle = '#1fa75a';
 		ctx.beginPath();
 		[a, b].forEach(function (v) {
-			if (o.dir === 0) { ctx.moveTo(v, 0); ctx.lineTo(v, o.h * tile); } else { ctx.moveTo(0, v); ctx.lineTo(o.w * tile, v); }
+			if (v0) { ctx.moveTo(v, 0); ctx.lineTo(v, hh); } else { ctx.moveTo(0, v); ctx.lineTo(ww, v); }
 		});
 		ctx.stroke();
+		/* 3分割の切れ目（青い線。部屋の切れ目と同じ） */
+		if (o.cut0 >= 0) {
+			ctx.strokeStyle = '#3aa0ff';
+			ctx.beginPath();
+			[o.cut0 * tile, o.cut1 * tile].forEach(function (v) {
+				if (v0) { ctx.moveTo(v, 0); ctx.lineTo(v, hh); } else { ctx.moveTo(0, v); ctx.lineTo(ww, v); }
+			});
+			ctx.stroke();
+		}
+		/* 共有壁の位置の線（橙の破線。これをドラッグで off を動かす） */
+		ctx.strokeStyle = '#ff9a1f';
+		ctx.setLineDash([5, 3]);
+		ctx.beginPath();
+		var e = o.off * tile;
+		if (v0) { ctx.moveTo(0, e); ctx.lineTo(ww, e); } else { ctx.moveTo(e, 0); ctx.lineTo(e, hh); }
+		ctx.stroke();
+		ctx.setLineDash([]);
 		return len;
 	}
 
 	function drawOp() {
 		var o = cur && cur.openings[selOp];
 		if (!o) return;
-		var isDoor = o.type === 2, hasOpen = o.cellsOpen && o.cellsOpen.length === o.w * o.h;
+		var isDoor = o.type === 2, hasOpen = o.cellsOpen && o.cellsOpen.length === o.w * o.h, st = o.cut0 >= 0;
 		$('dg-oopenrow').hidden = !isDoor;
 		$('dg-oclropen').disabled = !hasOpen;
 		$('dg-oaddopen').disabled = hasOpen;
 		$('dg-oopenbox').hidden = !(isDoor && hasOpen);
+		$('dg-ostretch').checked = st;
+		if (document.activeElement !== $('dg-ooff')) $('dg-ooff').value = String(o.off);
+		var minAw = o.hole1 - o.hole0 - (st ? o.cut1 - o.cut0 : 0) + 1;
 		$('dg-oinfo').textContent = o.w + '×' + o.h + '・通れる範囲 ' + o.hole0 + '〜' + o.hole1 + '（' + (o.dir === 0 ? '列' : '行') + '）' +
+			'・共有壁は ' + (o.dir === 0 ? o.off + '〜' + (o.off + 1) + ' 行目' : o.off + ' 列目') +
+			(st ? '・伸ばす（切れ目 ' + o.cut0 + '〜' + o.cut1 + '・穴の幅は ' + minAw + ' 以上）' : '') +
 			(isDoor ? (hasOpen ? '・開いた絵あり' : '・開いた絵なし') : '');
-		$('dg-ocap').textContent = '青い線（2本）をドラッグして通れる範囲（緑）を決めます。' + (o.dir === 0 ? '横の壁: 列で数えます。' : '縦の壁: 行で数えます。') +
-			'線の外は両脇の柱や枠です。上の道具で「描く」にすると絵を描けます。' + (isDoor ? '扉は「開いた絵を作る」で同じ大きさの絵をもう 1 枚描きます。' : '');
+		$('dg-ocap').textContent = '緑の線（2本）をドラッグして通れる範囲（緑）を決めます。' + (o.dir === 0 ? '横の壁: 列で数えます。' : '縦の壁: 行で数えます。') +
+			'線の外は両脇の柱や枠です。' +
+			(st ? '青い線（切れ目2本・穴の中）の間が、穴の幅に合わせて繰り返し／縮みます。' : '「3分割で…伸び縮み」にチェックすると、青い切れ目の線が出ます。') +
+			'橙の帯は共有壁に当たる' + (o.dir === 0 ? '行（天井の行とその下の側面の行）' : '列') + 'で、橙の破線をドラッグするか off の数値で動かします。' +
+			'帯の外の' + (o.dir === 0 ? '行' : '列') + 'は絵だけを上書きします（歩ける所は変わりません。0 は透明）。' +
+			'上の道具で「描く」にすると絵を描けます。' + (isDoor ? '扉は「開いた絵を作る」で同じ大きさの絵をもう 1 枚描きます。' : '');
 		drawOpCanvas($('dg-ocv'), o, o.cells);
 		if (isDoor && hasOpen) drawOpCanvas($('dg-ocv2'), o, o.cellsOpen);
 	}
 
+	/* ドラッグ中の線: 'hole0' | 'hole1' | 'cut0' | 'cut1' | 'off' */
 	function bindOpCanvas(cv) {
 		function pos(ev) {
 			var r = cv.getBoundingClientRect(), k = cv.width / r.width;
@@ -1102,26 +1150,48 @@
 		cv.addEventListener('pointerdown', function (ev) {
 			var o = cur && cur.openings[selOp];
 			if (!o || tools.o !== 'mark' || ev.button === 2) return;
-			var p = pos(ev)[o.dir === 0 ? 0 : 1], t = opTile(o);
-			var d0 = Math.abs(p - o.hole0 * t), d1 = Math.abs(p - o.hole1 * t);
-			dragHole = d0 <= d1 ? 0 : 1;
-			if (o.hole0 === o.hole1 - 1 && p > (o.hole0 + 0.5) * t) dragHole = 1;
+			var pp = pos(ev), v0 = o.dir === 0, t = opTile(o);
+			var p = pp[v0 ? 0 : 1], q = pp[v0 ? 1 : 0];
+			/* 共有壁の位置の線の近く（直交する向きで 0.35 マス以内）なら off を動かす */
+			if (Math.abs(q - o.off * t) < t * 0.35) {
+				dragHole = 'off';
+			} else {
+				var c = [['hole0', o.hole0, 1], ['hole1', o.hole1, -1]];
+				if (o.cut0 >= 0) c.push(['cut0', o.cut0, 1], ['cut1', o.cut1, -1]);
+				var best = null, bd = 1e9;
+				c.forEach(function (x) {
+					var d = Math.abs(p - x[1] * t);
+					/* 重なった線は、内側（穴の中心側）にいる時だけ切れ目を選ぶ */
+					if (Math.abs(d - bd) < 1e-6 && best && x[0].charAt(0) === 'c' && (p - x[1] * t) * x[2] > 0) best = x;
+					else if (d < bd - 1e-6) { bd = d; best = x; }
+				});
+				dragHole = best[0];
+			}
 			cv.setPointerCapture(ev.pointerId);
 			ev.preventDefault();
 		});
 		cv.addEventListener('pointermove', function (ev) {
 			var o = cur && cur.openings[selOp];
-			if (dragHole < 0 || !o) return;
-			var v = Math.round(pos(ev)[o.dir === 0 ? 0 : 1] / opTile(o)), len = opLen(o);
-			v = dragHole === 0 ? Math.max(0, Math.min(o.hole1 - 1, v)) : Math.max(o.hole0 + 1, Math.min(len, v));
-			var key = dragHole === 0 ? 'hole0' : 'hole1';
+			if (!dragHole || !o) return;
+			var pp = pos(ev), v0 = o.dir === 0, t = opTile(o), len = opLen(o), key = dragHole, v;
+			if (key === 'off') {
+				v = Math.round(pp[v0 ? 1 : 0] / t);
+				v = Math.max(0, Math.min((v0 ? o.h - 2 : o.w - 1), v));
+			} else {
+				v = Math.round(pp[v0 ? 0 : 1] / t);
+				var st = o.cut0 >= 0;
+				if (key === 'hole0') v = Math.max(0, Math.min(st ? o.cut0 : o.hole1 - 1, v));
+				else if (key === 'hole1') v = Math.max(st ? o.cut1 : o.hole0 + 1, Math.min(len, v));
+				else if (key === 'cut0') v = Math.max(o.hole0, Math.min(o.cut1 - 1, v));
+				else v = Math.max(o.cut0 + 1, Math.min(o.hole1, v));
+			}
 			if (v !== o[key]) {
 				o[key] = v;
 				markDirty();
 				drawOp();
 			}
 		});
-		function end() { dragHole = -1; }
+		function end() { dragHole = ''; }
 		cv.addEventListener('pointerup', end);
 		cv.addEventListener('pointercancel', end);
 	}
@@ -1144,9 +1214,12 @@
 	}
 
 
-	function checkOpSize(dir, w, h) {
-		if (dir === 0 && h !== 2) return '横の壁（dir 0）は高さ h を 2 にしてください。';
-		if (dir === 1 && w !== 1) return '縦の壁（dir 1）は幅 w を 1 にしてください。';
+	/* off = 共有壁に当たる行（横の壁。次の行も壁）／列（縦の壁） */
+	function checkOpSize(dir, w, h, off) {
+		off = off || 0;
+		if (off < 0) return '共有壁の位置 off は 0 以上にしてください（共有壁の行・列は削れません）。';
+		if (dir === 0 && h < off + 2) return '横の壁（dir 0）は高さ h を off + 2 以上にしてください（天井の行とその下の側面の行が共有壁です）。';
+		if (dir === 1 && w < off + 1) return '縦の壁（dir 1）は幅 w を off + 1 以上にしてください（共有壁の列が必要です）。';
 		return '';
 	}
 
@@ -1373,6 +1446,13 @@
 		(r.rooms || []).forEach(function (m) { ctx.strokeRect(m.x * tile + 0.5, m.y * tile + 0.5, m.w * tile - 1, m.h * tile - 1); });
 		ctx.strokeStyle = '#ff4d8d';
 		(r.links || []).forEach(function (l) { ctx.strokeRect(l.x * tile + 0.5, l.y * tile + 0.5, l.w * tile - 1, l.h * tile - 1); });
+		/* 出入口パターンを置いた範囲（穴の外の柱・枠・はみ出した行も含む）は橙の破線 */
+		ctx.strokeStyle = '#ff9a1f';
+		ctx.setLineDash([4, 3]);
+		(r.links || []).forEach(function (l) {
+			if (l.pw > 0 && l.ph > 0) ctx.strokeRect(l.px * tile + 0.5, l.py * tile + 0.5, l.pw * tile - 1, l.ph * tile - 1);
+		});
+		ctx.setLineDash([]);
 		function mark(p, ch, col) {
 			if (!p) return;
 			ctx.fillStyle = col;
@@ -1387,7 +1467,7 @@
 		mark(r.goal, 'G', '#ff5a4d');
 		var lh = '';
 		CELL_NAME.forEach(function (n, i) { lh += '<span><i style="background:' + CELL_COLOR[i] + '"></i>' + i + ' ' + n + '</span>'; });
-		lh += '<span><i style="border-color:#3aa0ff"></i>部屋の枠</span><span><i style="border-color:#ff4d8d"></i>出入口</span>' +
+		lh += '<span><i style="border-color:#3aa0ff"></i>部屋の枠</span><span><i style="border-color:#ff4d8d"></i>出入口</span><span><i style="border-color:#ff9a1f"></i>出入口パターンの範囲</span>' +
 			'<span><i style="background:#4cd964"></i>S 入口</span><span><i style="background:#ff5a4d"></i>G ボス</span>';
 		lg.innerHTML = lh;
 	}
@@ -1423,10 +1503,12 @@
 			var b = cv.getBoundingClientRect(), k = cv.width / b.width, tile = Math.max(2, Math.round(T * Number($('dg-zoom').value)));
 			var x = Math.floor((ev.clientX - b.left) * k / tile), y = Math.floor((ev.clientY - b.top) * k / tile), t = '';
 			last.links.forEach(function (l) {
-				if (x >= l.x && x < l.x + l.w && y >= l.y && y < l.y + l.h) {
+				var inPat = l.pw > 0 && l.ph > 0 && x >= l.px && x < l.px + l.pw && y >= l.py && y < l.py + l.ph;
+				if (inPat || (x >= l.x && x < l.x + l.w && y >= l.y && y < l.y + l.h)) {
 					var ops = (lastTheme && lastTheme.openings) || [], op = l.tpl != null && l.tpl >= 0 ? ops[l.tpl] : null;
 					t = '出入口 ' + (OP_TYPE[l.type] || l.type) + '（部屋 ' + l.a + ' - ' + l.b + '）' +
-						(l.tpl != null && l.tpl >= 0 ? '・パターン ' + (l.tpl + 1) + (op ? '「' + op.name + '」' : '') : '・パターンなし');
+						(l.tpl != null && l.tpl >= 0 ? '・パターン ' + (l.tpl + 1) + (op ? '「' + op.name + '」' : '') : '・パターンなし') +
+						(l.pw > 0 ? '・パターンの範囲 ' + l.pw + '×' + l.ph : '');
 				}
 			});
 			cv.title = t;
@@ -1462,12 +1544,30 @@
 		$('dg-oname').addEventListener('input', function () { cur.openings[selOp].name = $('dg-oname').value; markDirty(); });
 		$('dg-oname').addEventListener('change', showOps);
 		$('dg-odir').addEventListener('change', function () {
-			var o = cur.openings[selOp], d = num($('dg-odir').value, 0), er = checkOpSize(d, o.w, o.h);
+			var o = cur.openings[selOp], d = num($('dg-odir').value, 0), er = checkOpSize(d, o.w, o.h, 0);
 			if (er) { setMsg('向きを変えられません: ' + er); showOps(); return; }
 			o.dir = d;
+			o.off = 0;
+			o.cut0 = o.cut1 = -1;
 			var hl = defHole(opLen(o));
 			o.hole0 = hl[0];
 			o.hole1 = hl[1];
+			markDirty();
+			showOps();
+		});
+		$('dg-ooff').addEventListener('change', function () {
+			var o = cur.openings[selOp];
+			if (!o) return;
+			var v = num($('dg-ooff').value, -1), er = checkOpSize(o.dir, o.w, o.h, v);
+			if (er) { setMsg(er); showOps(); return; }
+			o.off = v;
+			markDirty();
+			showOps();
+		});
+		$('dg-ostretch').addEventListener('change', function () {
+			var o = cur.openings[selOp];
+			if (!o) return;
+			if ($('dg-ostretch').checked) { var c = defCut(o); o.cut0 = c[0]; o.cut1 = c[1]; } else { o.cut0 = o.cut1 = -1; }
 			markDirty();
 			showOps();
 		});

@@ -107,6 +107,7 @@ Module['sboDungeon'] = (function () {
 			wallFill: partList(t.wallFill, nParts, 'wallFill', false),
 			'void': partNo(t['void'] == null ? 0 : t['void'], nParts, 'void'),
 			arch: partList(t.arch == null ? [] : t.arch, nParts, 'arch', true),
+			archV: partList(t.archV == null ? [] : t.archV, nParts, 'archV', true),
 			door: partNo(t.door == null ? 0 : t.door, nParts, 'door'),
 			entry: partNo(t.entry == null ? 0 : t.entry, nParts, 'entry'),
 			goal: partNo(t.goal == null ? 0 : t.goal, nParts, 'goal'),
@@ -188,17 +189,23 @@ Module['sboDungeon'] = (function () {
 			var type = int(op.type, 1, 3, lb + ' の type');
 			var w = int(op.w, 1, MAX_OPENING_SIDE, lb + ' の w');
 			var h = int(op.h, 1, MAX_OPENING_SIDE, lb + ' の h');
-			if (dir === 0 && h !== 2) {
-				bad(lb, ' は横の壁（dir 0）なので h は 2 にしてください');
+			var off = int(op.off == null ? 0 : op.off, 0, MAX_OPENING_SIDE, lb + ' の off');
+			if (dir === 0 && h < off + 2) {
+				bad(lb, ' は横の壁（dir 0）なので h は off + 2 以上にしてください（共有壁は off 行目と次の行）');
 			}
-			if (dir === 1 && w !== 1) {
-				bad(lb, ' は縦の壁（dir 1）なので w は 1 にしてください');
+			if (dir === 1 && w < off + 1) {
+				bad(lb, ' は縦の壁（dir 1）なので w は off + 1 以上にしてください（共有壁は off 列目）');
 			}
 			var len = dir === 0 ? w : h;
 			var hole0 = int(op.hole0, 0, len, lb + ' の hole0');
 			var hole1 = int(op.hole1, 0, len, lb + ' の hole1');
 			if (!(hole0 < hole1)) {
 				bad(lb, ' は 0 <= hole0 < hole1 <= ' + len + ' にしてください');
+			}
+			var cut0 = int(op.cut0 == null ? -1 : op.cut0, -1, len, lb + ' の cut0');
+			var cut1 = int(op.cut1 == null ? -1 : op.cut1, -1, len, lb + ' の cut1');
+			if ((cut0 >= 0 || cut1 >= 0) && !(cut0 >= hole0 && cut0 < cut1 && cut1 <= hole1)) {
+				bad(lb, ' は hole0 <= cut0 < cut1 <= hole1 にしてください（伸ばさない時は cut0・cut1 とも -1）');
 			}
 			var cellsOpen = op.cellsOpen == null ? [] : op.cellsOpen;
 			if (!Array.isArray(cellsOpen) || (cellsOpen.length !== 0 && cellsOpen.length !== w * h)) {
@@ -209,7 +216,8 @@ Module['sboDungeon'] = (function () {
 				dir: dir, type: type, w: w, h: h,
 				cells: cellList(op.cells, w, h, nParts, lb),
 				cellsOpen: type === 2 ? cellList(cellsOpen, cellsOpen.length ? w : 0, cellsOpen.length ? h : 0, nParts, lb + ' の cellsOpen') : [],
-				hole0: hole0, hole1: hole1
+				hole0: hole0, hole1: hole1,
+				cut0: cut0, cut1: cut1, off: off
 			});
 		});
 		lights.forEach(function (l, i) {
