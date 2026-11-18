@@ -20,6 +20,14 @@ struct Ctx
 	std::vector<Link> links;
 };
 
+// 縦の壁に出入口を開けてよいか（100 以上・0 以下は乱数を使わない）
+bool VertOk(const Ctx &c)
+{
+	if (c.p->vertRate >= 100) return true;
+	if (c.p->vertRate <= 0) return false;
+	return c.rng->Chance(c.p->vertRate);
+}
+
 inline int IX0(const Room &r) { return r.x + 1; }
 inline int IX1(const Room &r) { return r.x + r.w - 2; }
 inline int IY0(const Room &r) { return r.y + 2; }
@@ -87,8 +95,16 @@ void MakeLink(Ctx &c, int ia, int ib)
 	l.a = ia; l.b = ib;
 	int len = e - s + 1;
 	int aw = 0;
+	const int doorRate = (!horiz && c.p->vertDoorRate >= 0) ? c.p->vertDoorRate : c.p->doorRate;
+	int aMin = c.aMin, aMax = c.aMax;
+	if (!horiz)
+	{
+		if (c.p->vertArchMin > 0) aMin = c.p->vertArchMin;
+		if (c.p->vertArchMax > 0) aMax = c.p->vertArchMax;
+		aMax = std::max(aMin, aMax);
+	}
 	if (c.rng->Chance(c.p->openRate)) l.type = 3;
-	else l.type = c.rng->Chance(c.p->doorRate) ? 2 : 1;
+	else l.type = c.rng->Chance(doorRate) ? 2 : 1;
 	// 向きと type が合う出入口パターンで、両脇まで共有壁に収まるものからくじで選ぶ
 	int pos = 0;
 	if (c.th)
@@ -112,7 +128,7 @@ void MakeLink(Ctx &c, int ia, int ib)
 	if (l.tpl < 0)
 	{
 		if (l.type == 3) aw = len;
-		else aw = std::min(len, c.rng->Int(c.aMin, c.aMax));
+		else aw = std::min(len, c.rng->Int(aMin, aMax));
 		pos = s + c.rng->Int(0, len - aw);
 	}
 	if (horiz) { l.x = pos; l.y = line; l.w = aw; l.h = 2; }
@@ -136,6 +152,7 @@ bool TryGrow(Ctx &c, int parent)
 	n.w = c.rng->Int(c.p->roomMin, c.p->roomMax);
 	n.h = c.rng->Int(c.p->roomMin, c.p->roomMax);
 	int dir = c.rng->Int(0, 3);  // 0 下 / 1 上 / 2 右 / 3 左
+	if (dir >= 2 && !VertOk(c)) dir = c.rng->Int(0, 1);  // 縦の壁が外れたら上下を選び直す
 	int need = std::max(1, std::min(c.aMin, std::min(std::min(p.w, n.w) - 2, std::min(p.h, n.h) - 3)));
 	if (dir < 2)
 	{
@@ -170,6 +187,7 @@ bool TryAttach(Ctx &c, int parent, Room n)
 	for (int di = 0; di < 4; ++di)
 	{
 		int dir = (dir0 + di) % 4;  // 0 下 / 1 上 / 2 右 / 3 左
+		if (dir >= 2 && !VertOk(c)) continue;
 		int lo, hi;
 		if (dir < 2)
 		{
@@ -313,6 +331,10 @@ Err GenerateCathedralL1(const Params &p0, Rng &rng, Skeleton &sk, const Theme *p
 	p.doorRate = std::max(0, std::min(100, p.doorRate));
 	p.openRate = std::max(0, std::min(100, p.openRate));
 	p.loopRate = std::max(0, std::min(100, p.loopRate));
+	p.vertRate = std::max(0, std::min(100, p.vertRate));
+	p.vertDoorRate = std::max(-1, std::min(100, p.vertDoorRate));
+	p.vertArchMin = std::max(0, p.vertArchMin);
+	p.vertArchMax = std::max(0, p.vertArchMax);
 
 	const int W = p.w, H = p.h;
 	const int maxTries = 300;
@@ -366,7 +388,7 @@ Err GenerateCathedralL1(const Params &p0, Rng &rng, Skeleton &sk, const Theme *p
 				int s, e, line;
 				if (Linked(c, (int)i, (int)j)) continue;
 				if (!Shared(c, c.rooms[i], c.rooms[j], horiz, s, e, line)) continue;
-				if (rng.Chance(p.loopRate)) MakeLink(c, (int)i, (int)j);
+				if (rng.Chance(p.loopRate) && (horiz || VertOk(c))) MakeLink(c, (int)i, (int)j);
 			}
 
 		// 入口 = 最初の部屋、ボス部屋 = つながりで一番遠い部屋

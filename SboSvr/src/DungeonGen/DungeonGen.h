@@ -44,8 +44,10 @@ struct Params
 	int w, h;
 	uint32_t seed;  // 0 = ランダム
 	int roomMin, roomMax, floorMin, archMin, archMax, doorRate, openRate, loopRate, cutoff;
+	int vertRate, vertDoorRate, vertArchMin, vertArchMax;  // L1 縦の壁（左右に並ぶ部屋の共有壁）の出入口。vertDoorRate -1・vertArchMin/Max 0 = 横と同じ
 	Params() : algo(1), w(40), h(40), seed(0), roomMin(6), roomMax(12), floorMin(35),
-		archMin(2), archMax(4), doorRate(20), openRate(8), loopRate(30), cutoff(25) {}
+		archMin(2), archMax(4), doorRate(20), openRate(8), loopRate(30), cutoff(25),
+		vertRate(100), vertDoorRate(-1), vertArchMin(0), vertArchMax(0) {}
 };
 
 struct Room

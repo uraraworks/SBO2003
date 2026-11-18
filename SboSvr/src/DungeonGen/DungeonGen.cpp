@@ -67,6 +67,10 @@ void ReadParams(const JVal *j, Params &p)
 	p.openRate = j->Int("openRate", p.openRate);
 	p.loopRate = j->Int("loopRate", p.loopRate);
 	p.cutoff = j->Int("cutoff", p.cutoff);
+	p.vertRate = j->Int("vertRate", p.vertRate);
+	p.vertDoorRate = j->Int("vertDoorRate", p.vertDoorRate);
+	p.vertArchMin = j->Int("vertArchMin", p.vertArchMin);
+	p.vertArchMax = j->Int("vertArchMax", p.vertArchMax);
 }
 
 void ReadTheme(const JVal &j, Theme &t)

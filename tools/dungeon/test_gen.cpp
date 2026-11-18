@@ -27,6 +27,13 @@ static void Show(const Skeleton &sk)
 	(void)ch;
 }
 
+// 縦の壁の出入口か（横の出入口の x は部屋の内側、縦は部屋の左右の壁の列）
+static bool IsVertLink(const Skeleton &sk, const Link &l)
+{
+	const Room &r = sk.rooms[l.a];
+	return l.x == r.x || l.x == r.x + r.w - 1;
+}
+
 static bool Connected(const Skeleton &sk)
 {
 	int W = sk.w, H = sk.h, total = 0;
@@ -257,6 +264,42 @@ int main(int argc, char **argv)
 				}
 			}
 		CHECK(used > 20, "openings rarely used (%d)", used);
+	}
+
+	// 縦の壁の出入口（vertRate / vertDoorRate）
+	{
+		int vertLinks = 0, vertDoors = 0;
+		for (int seed : seeds)
+			for (auto &sz : sizes)
+			{
+				// vertRate=0: 縦の壁には穴を開けず、上下だけでつながる
+				Params p; p.algo = 1; p.w = sz[0]; p.h = sz[1]; p.seed = seed; p.vertRate = 0; p.loopRate = 100;
+				Skeleton a; std::vector<int> pa;
+				Err e = Generate(p, nullptr, a, pa);
+				if (e != ERR_NONE) { CHECK(0, "vertRate0 %dx%d seed %d: error %d", sz[0], sz[1], seed, e); continue; }
+				CHECK(Connected(a), "vertRate0 %dx%d seed %d: not connected", sz[0], sz[1], seed);
+				for (auto &l : a.links) CHECK(!IsVertLink(a, l), "vertRate0: vertical link exists");
+				for (auto &r : a.rooms)
+					for (int y = r.y + 2; y <= r.y + r.h - 2; ++y)
+						for (int x : { r.x, r.x + r.w - 1 })
+						{
+							int c = a.cells[y * a.w + x];
+							CHECK(c != CELL_ARCH && c != CELL_DOOR, "vertRate0: hole in vertical wall (%d,%d)", x, y);
+						}
+				// vertDoorRate=100: 縦の出入口はぜんぶ扉、横は doorRate=0 でアーチだけ
+				Params q; q.algo = 1; q.w = sz[0]; q.h = sz[1]; q.seed = seed; q.doorRate = 0; q.openRate = 0; q.vertDoorRate = 100; q.loopRate = 100;
+				Skeleton b; std::vector<int> pb;
+				e = Generate(q, nullptr, b, pb);
+				if (e != ERR_NONE) { CHECK(0, "vertDoor %dx%d seed %d: error %d", sz[0], sz[1], seed, e); continue; }
+				CHECK(Connected(b), "vertDoor %dx%d seed %d: not connected", sz[0], sz[1], seed);
+				for (auto &l : b.links)
+				{
+					bool vert = IsVertLink(b, l);
+					if (vert) { ++vertLinks; vertDoors += l.type == 2; }
+					else CHECK(l.type == 1, "vertDoor: horizontal link type %d", l.type);
+				}
+			}
+		CHECK(vertLinks > 20 && vertDoors == vertLinks, "vertDoorRate=100: %d/%d doors", vertDoors, vertLinks);
 	}
 
 	// JSON 入口
