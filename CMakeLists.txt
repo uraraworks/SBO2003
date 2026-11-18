@@ -69,7 +69,8 @@ set(SBOSVR_PLATFORM_SOURCES
 	server/SvrStub.cpp
 	server/web_account_svr.cpp
 	server/web_status_svr.cpp
-	server/web_data_svr.cpp)
+	server/web_data_svr.cpp
+	server/web_dungeon_svr.cpp)
 
 add_executable(SboSvr
 	${SBOSVR_GAME_SOURCES}
@@ -97,6 +98,7 @@ set(SBO_PREJS_CHANGES "${CMAKE_SOURCE_DIR}/server/node/sbosvr_changes.js")
 set(SBO_PREJS_STATS "${CMAKE_SOURCE_DIR}/server/node/sbosvr_stats.js")
 set(SBO_PREJS_DATA "${CMAKE_SOURCE_DIR}/server/node/sbosvr_data.js")
 set(SBO_PREJS_MAPDESIGN "${CMAKE_SOURCE_DIR}/server/node/sbosvr_mapdesign.js")
+set(SBO_PREJS_DUNGEON "${CMAKE_SOURCE_DIR}/server/node/sbosvr_dungeon.js")
 set(SBO_PREJS_DOTDRAFT "${CMAKE_SOURCE_DIR}/server/node/sbosvr_dotdraft.js")
 target_compile_options(SboSvr PRIVATE -sUSE_ZLIB=1)
 target_link_options(SboSvr PRIVATE
@@ -119,8 +121,9 @@ target_link_options(SboSvr PRIVATE
 	"--pre-js=${SBO_PREJS_STATS}"
 	"--pre-js=${SBO_PREJS_DATA}"
 	"--pre-js=${SBO_PREJS_MAPDESIGN}"
+	"--pre-js=${SBO_PREJS_DUNGEON}"
 	"--pre-js=${SBO_PREJS_DOTDRAFT}")
-set_property(TARGET SboSvr APPEND PROPERTY LINK_DEPENDS "${SBO_PREJS}" "${SBO_PREJS_ACCOUNT}" "${SBO_PREJS_STATUS}" "${SBO_PREJS_FEEDBACK}" "${SBO_PREJS_KOBO}" "${SBO_PREJS_CHANGES}" "${SBO_PREJS_STATS}" "${SBO_PREJS_DATA}" "${SBO_PREJS_MAPDESIGN}" "${SBO_PREJS_DOTDRAFT}")
+set_property(TARGET SboSvr APPEND PROPERTY LINK_DEPENDS "${SBO_PREJS}" "${SBO_PREJS_ACCOUNT}" "${SBO_PREJS_STATUS}" "${SBO_PREJS_FEEDBACK}" "${SBO_PREJS_KOBO}" "${SBO_PREJS_CHANGES}" "${SBO_PREJS_STATS}" "${SBO_PREJS_DATA}" "${SBO_PREJS_MAPDESIGN}" "${SBO_PREJS_DUNGEON}" "${SBO_PREJS_DOTDRAFT}")
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
 	# C++ のソースでブレークポイントを使えるよう DWARF を残す（VSCode の WebAssembly DWARF Debugging 拡張で見られる）
 	target_link_options(SboSvr PRIVATE -g -sASSERTIONS=1)
@@ -171,6 +174,7 @@ target_link_options(SboSvrTests PRIVATE
 	"--pre-js=${SBO_PREJS_STATS}"
 	"--pre-js=${SBO_PREJS_DATA}"
 	"--pre-js=${SBO_PREJS_MAPDESIGN}"
+	"--pre-js=${SBO_PREJS_DUNGEON}"
 	"--pre-js=${SBO_PREJS_DOTDRAFT}")
 set_property(TARGET SboSvrTests APPEND PROPERTY LINK_DEPENDS "${SBO_PREJS_MOCK}")
 set_target_properties(SboSvrTests PROPERTIES SUFFIX ".js")

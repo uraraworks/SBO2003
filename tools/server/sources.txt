@@ -51,6 +51,11 @@ SboSvr/src/SboSvrItemProc.cpp
 SboSvr/src/SboSvrMagicProc.cpp
 SboSvr/src/SboSvrNpcRoute.cpp
 SboSvr/src/SboSvrQuest.cpp
+SboSvr/src/DungeonGen/CaveL3.cpp
+SboSvr/src/DungeonGen/CathedralL1.cpp
+SboSvr/src/DungeonGen/DungeonGen.cpp
+SboSvr/src/DungeonGen/MiniJson.cpp
+SboSvr/src/DungeonGen/Theme.cpp
 SboSvr/src/SboSvrMapSwapEdit.cpp
 SboSvr/src/SboSvrMarket.cpp
 SboSvr/src/SboSvrRecycle.cpp

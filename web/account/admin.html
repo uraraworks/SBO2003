@@ -21,6 +21,7 @@
 	                   前の「NPCの巡回」（admin-npcroute.js）はゲーム内の管理者ウィンドウに移ったので外した。
 	                   戻す時は、このタブを入れたコミットの前の admin.html から tab-npcroute の部分を持ってきて、admin-npcroute.js を読み込む
 	                   （API /api/admin/npcroute/set はサーバーに残してある）。
+	  ・ダンジョン生成 … ランダムダンジョンのテーマ（床・壁・9分割の部屋・飾り）を登録し、お試し作成で見る（admin-dungeon.js。仕様は docs/dungeon-gen.md。API は server/node/sbosvr_dungeon.js）
 	  ・レシピ       … 町の作り手（料理人など）と、作ってもらえるレシピ（できる物・材料・手数料）を決める（admin-recipe.js。API は sbosvr_data.js の /api/admin/recipe/save）
 	  ・ドット絵工房 … みんなでゲームのドット絵を描き合う仕組み（/kobo）の管理。お題を出す・案の系譜とコメントを見る・採用して
 	                   ゲーム画像に貼って保存する・提案を見る（admin-kobo.js。仕様は docs/kobo.md。API は server/node/sbosvr_kobo.js の /api/admin/kobo/*）
@@ -592,6 +593,7 @@
 		<button type="button" data-tab="plans">配置案</button>
 		<button type="button" data-tab="mapview">マップ確認</button>
 		<button type="button" data-tab="recipe">レシピ</button>
+		<button type="button" data-tab="dungeon">ダンジョン生成</button>
 		<button type="button" data-tab="recycle">リサイクル</button>
 		<button type="button" data-tab="kobo">ドット絵工房<span class="badge" id="kobo-count" hidden></span></button>
 		<button type="button" data-tab="dot">ドット絵</button>
@@ -1111,6 +1113,11 @@
 	</section>
 
 	<!-- レシピ（町の作り手と、作ってもらえる物） -->
+	<!-- ダンジョン生成（テーマの登録とお試し作成。admin-dungeon.js が中身を作る） -->
+	<section id="tab-dungeon" hidden>
+		<div id="dg-root"></div>
+	</section>
+
 	<section id="tab-recipe" hidden>
 		<p class="sub-text">
 			町の作り手（料理人・鍛冶屋など）に頼んで、材料から物を作ってもらう仕組みを決めます。
@@ -1195,6 +1202,7 @@
 <script src="admin-design.js"></script>
 <script src="admin-mapview.js"></script>
 <script src="admin-recipe.js"></script>
+<script src="admin-dungeon.js"></script>
 <script>
 (function () {
 	/*
@@ -1281,7 +1289,7 @@
 		selectTab(location.hash === '#online' ? 'online' : location.hash === '#recover' ? 'recover' : location.hash === '#feedback' ? 'feedback' :
 			location.hash === '#changes' ? 'changes' : location.hash === '#ai' ? 'ai' : location.hash === '#mapdoc' ? 'mapdoc' :
 			location.hash === '#parts' ? 'parts' : location.hash === '#plans' ? 'plans' :
-			(location.hash === '#mapview' || location.hash === '#npcroute') ? 'mapview' : location.hash === '#recipe' ? 'recipe' : location.hash === '#recycle' ? 'recycle' : location.hash === '#dot' ? 'dot' :
+			(location.hash === '#mapview' || location.hash === '#npcroute') ? 'mapview' : location.hash === '#recipe' ? 'recipe' : location.hash === '#dungeon' ? 'dungeon' : location.hash === '#recycle' ? 'recycle' : location.hash === '#dot' ? 'dot' :
 			location.hash === '#kobo' ? 'kobo' : 'search');
 		if (location.hash === '#online') {
 			loadEnvStats();
@@ -1297,6 +1305,8 @@
 			openMapView();
 		} else if (location.hash === '#recipe') {
 			openRecipe();
+		} else if (location.hash === '#dungeon') {
+			openDungeon();
 		} else if (location.hash === '#recycle') {
 			loadRecycle();
 		} else if (location.hash === '#kobo') {
@@ -1402,10 +1412,11 @@
 		$('tab-plans').hidden = name !== 'plans';
 		$('tab-mapview').hidden = name !== 'mapview';
 		$('tab-recipe').hidden = name !== 'recipe';
+		$('tab-dungeon').hidden = name !== 'dungeon';
 		$('tab-recycle').hidden = name !== 'recycle';
 		$('tab-dot').hidden = name !== 'dot';
 		$('tab-kobo').hidden = name !== 'kobo';
-		document.body.classList.toggle('wide', name === 'parts' || name === 'plans' || name === 'mapview' || name === 'kobo');
+		document.body.classList.toggle('wide', name === 'parts' || name === 'plans' || name === 'mapview' || name === 'kobo' || name === 'dungeon');
 		/* マップ確認はページを動かさず、マップの欄が残りの高さを使う（admin-mapview.js の fitScroll） */
 		document.body.classList.toggle('mv-fit', name === 'mapview');
 		if (history.replaceState) {
@@ -1436,6 +1447,8 @@
 				openMapView();
 			} else if (b.dataset.tab === 'recipe') {
 				openRecipe();
+			} else if (b.dataset.tab === 'dungeon') {
+				openDungeon();
 			} else if (b.dataset.tab === 'recycle') {
 				loadRecycle();
 			} else if (b.dataset.tab === 'kobo') {
@@ -2658,6 +2671,18 @@
 			return;
 		}
 		window.SboMapView.open(function (url, body) {
+			body.session = session;
+			return api(url, body);
+		});
+	}
+
+	/* ---- ダンジョン生成（admin-dungeon.js が作る） ---- */
+	function openDungeon() {
+		if (!window.SboDungeon) {
+			$('dg-root').textContent = 'ダンジョン生成のファイル（admin-dungeon.js）が読めませんでした。';
+			return;
+		}
+		window.SboDungeon.open(function (url, body) {
 			body.session = session;
 			return api(url, body);
 		});
