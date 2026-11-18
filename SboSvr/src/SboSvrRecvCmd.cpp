@@ -10758,6 +10758,8 @@ void RecvDataProcSubGameBOMB_GETITEM(PBYTE pData, DWORD dwDataSize)
 
 				/* 爆発 */
 				pCharTmp->dwLastDotMove = timeGetTime ();
+				/* 爆風の見える時間（800ms）をここから数える。3 秒ごとに更新していた時刻のままだと早く消えていた */
+				pCharTmp->dwLastAnime = timeGetTime ();
 				pCharTmp->byEfect ++;
 				SendCmdCHARSTATUSHP (URARASOCK_SENDALL, pCharTmp->dwTblID);
 				SendCmdEFECTCHG (pCharTmp->pID, pCharTmp->dwTblID, pCharTmp->byEfect);
@@ -10838,6 +10840,8 @@ void RecvDataProcSubGameBOMB_REMOCON(PBYTE pData, DWORD dwDataSize)
 		}
 		/* 爆発 */
 		pCharTmp->dwLastDotMove = timeGetTime ();
+		/* 爆風の見える時間（800ms）をここから数える。3 秒ごとに更新していた時刻のままだと早く消えていた */
+		pCharTmp->dwLastAnime = timeGetTime ();
 		pCharTmp->byEfect ++;
 		SendCmdCHARSTATUSHP (URARASOCK_SENDALL, pCharTmp->dwTblID);
 		SendCmdEFECTCHG (pCharTmp->pID, pCharTmp->dwTblID, pCharTmp->byEfect);
