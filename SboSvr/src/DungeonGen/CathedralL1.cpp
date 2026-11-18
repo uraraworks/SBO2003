@@ -1,6 +1,7 @@
 // L1 聖堂（通路なし。部屋の辺にそのまま次の部屋をくっつけて生やす）
-//   部屋の外枠 [x,y,w,h] は壁を含む。上の壁は 2 行（天井＋側面）、下の壁は 1 行、左右の壁は 1 列。
-//   上下に並ぶ部屋は 1 行、左右に並ぶ部屋は 1 列を重ねる（共有した壁）。
+//   部屋の外枠 [x,y,w,h] は壁を含む。上の壁は 2 行（天井＋側面）、下の壁は 1 行（テーマの bottomRows が 2 なら
+//   天井＋側面の 2 行）、左右の壁は 1 列。
+//   上下に並ぶ部屋は下の壁の行数ぶん（1 か 2 行）、左右に並ぶ部屋は 1 列を重ねる（共有した壁）。
 //   共有した壁に出入口（アーチ・扉・壁ごと抜く）を開ける。
 #include "DungeonGen.h"
 #include <algorithm>
@@ -16,6 +17,7 @@ struct Ctx
 	const Theme *th;
 	Rng *rng;
 	int W, H, aMin, aMax;
+	int B;  // 下の壁の行数（1 か 2）
 	std::vector<Room> rooms;
 	std::vector<Link> links;
 };
@@ -31,7 +33,7 @@ bool VertOk(const Ctx &c)
 inline int IX0(const Room &r) { return r.x + 1; }
 inline int IX1(const Room &r) { return r.x + r.w - 2; }
 inline int IY0(const Room &r) { return r.y + 2; }
-inline int IY1(const Room &r) { return r.y + r.h - 2; }
+inline int IY1(const Room &r) { return r.y + r.h - 1 - r.bot; }
 
 // 2 つの外枠の重なり（幅・高さ）。重ならなければ 0
 void Inter(const Room &a, const Room &b, int &iw, int &ih)
@@ -42,7 +44,7 @@ void Inter(const Room &a, const Room &b, int &iw, int &ih)
 	if (ih < 0) ih = 0;
 }
 
-// 置いてよいか（他の部屋と重なるのは、ちょうど 1 行か 1 列の共有壁だけ）
+// 置いてよいか（他の部屋と重なるのは、ちょうど下の壁の行数ぶん（1 か 2 行）か 1 列の共有壁だけ）
 bool CanPlace(const Ctx &c, const Room &n)
 {
 	if (n.x < 0 || n.y < 0 || n.x + n.w > c.W || n.y + n.h > c.H) return false;
@@ -50,7 +52,7 @@ bool CanPlace(const Ctx &c, const Room &n)
 	{
 		int iw, ih;
 		Inter(c.rooms[i], n, iw, ih);
-		if (iw > 0 && ih > 0 && iw != 1 && ih != 1) return false;
+		if (iw > 0 && ih > 0 && iw != 1 && ih != c.B) return false;
 	}
 	return true;
 }
@@ -63,8 +65,8 @@ bool Shared(const Ctx &c, const Room &a, const Room &b, bool &horiz, int &start,
 	int iw, ih;
 	Inter(a, b, iw, ih);
 	if (iw <= 0 || ih <= 0) return false;
-	int need = std::max(1, std::min(c.aMin, std::min(std::min(a.w, b.w) - 2, std::min(a.h, b.h) - 3)));
-	if (ih == 1 && iw > 1)
+	int need = std::max(1, std::min(c.aMin, std::min(std::min(a.w, b.w) - 2, std::min(a.h, b.h) - 2 - c.B)));
+	if (ih == c.B && iw > 1)
 	{
 		start = std::max(IX0(a), IX0(b));
 		end = std::min(IX1(a), IX1(b));
@@ -148,15 +150,15 @@ bool TryGrow(Ctx &c, int parent)
 {
 	const Room p = c.rooms[parent];
 	Room n;
-	n.id = (int)c.rooms.size(); n.kind = 0; n.tpl = -1;
+	n.id = (int)c.rooms.size(); n.kind = 0; n.tpl = -1; n.bot = c.B;
 	n.w = c.rng->Int(c.p->roomMin, c.p->roomMax);
 	n.h = c.rng->Int(c.p->roomMin, c.p->roomMax);
 	int dir = c.rng->Int(0, 3);  // 0 下 / 1 上 / 2 右 / 3 左
 	if (dir >= 2 && !VertOk(c)) dir = c.rng->Int(0, 1);  // 縦の壁が外れたら上下を選び直す
-	int need = std::max(1, std::min(c.aMin, std::min(std::min(p.w, n.w) - 2, std::min(p.h, n.h) - 3)));
+	int need = std::max(1, std::min(c.aMin, std::min(std::min(p.w, n.w) - 2, std::min(p.h, n.h) - 2 - c.B)));
 	if (dir < 2)
 	{
-		n.y = dir == 0 ? p.y + p.h - 1 : p.y - n.h + 1;
+		n.y = dir == 0 ? p.y + p.h - c.B : p.y - n.h + c.B;
 		n.x = c.rng->Int(p.x - n.w + 1, p.x + p.w - 1);
 	}
 	else
@@ -183,6 +185,7 @@ bool TryAttach(Ctx &c, int parent, Room n)
 {
 	const Room p = c.rooms[parent];
 	n.id = (int)c.rooms.size();
+	n.bot = c.B;
 	const int dir0 = c.rng->Int(0, 3);
 	for (int di = 0; di < 4; ++di)
 	{
@@ -191,7 +194,7 @@ bool TryAttach(Ctx &c, int parent, Room n)
 		int lo, hi;
 		if (dir < 2)
 		{
-			n.y = dir == 0 ? p.y + p.h - 1 : p.y - n.h + 1;
+			n.y = dir == 0 ? p.y + p.h - c.B : p.y - n.h + c.B;
 			lo = p.x - n.w + 1; hi = p.x + p.w - 1;
 		}
 		else
@@ -208,7 +211,7 @@ bool TryAttach(Ctx &c, int parent, Room n)
 			bool horiz;
 			int s, e, line;
 			c.rooms.push_back(n);
-			int need = std::max(1, std::min(c.aMin, std::min(std::min(p.w, n.w) - 2, std::min(p.h, n.h) - 3)));
+			int need = std::max(1, std::min(c.aMin, std::min(std::min(p.w, n.w) - 2, std::min(p.h, n.h) - 2 - c.B)));
 			if (!Shared(c, c.rooms[parent], c.rooms.back(), horiz, s, e, line) || e - s + 1 < need)
 			{
 				c.rooms.pop_back();
@@ -222,7 +225,7 @@ bool TryAttach(Ctx &c, int parent, Room n)
 }
 
 // 入口・ボス用の固定パターン（kind が合い、fixed で、地図に収まるもの）の番号一覧
-std::vector<int> FixedCands(const Theme *th, int kind, int W, int H)
+std::vector<int> FixedCands(const Theme *th, int kind, int W, int H, int B)
 {
 	std::vector<int> v;
 	if (!th) return v;
@@ -230,7 +233,7 @@ std::vector<int> FixedCands(const Theme *th, int kind, int W, int H)
 	{
 		const TplRoom &t = th->rooms[i];
 		if (t.kind != kind || !t.fixed) continue;
-		if (t.w < 4 || t.h < 4 || t.w > W || t.h > H || (int)t.cells.size() != t.w * t.h) continue;
+		if (t.w < 4 || t.h < 3 + B || t.w > W || t.h > H || (int)t.cells.size() != t.w * t.h) continue;
 		v.push_back((int)i);
 	}
 	return v;
@@ -260,6 +263,12 @@ void BuildCells(const Ctx &c, std::vector<int> &cells)
 		{
 			cells[r.y * W + x] = CELL_TOP;
 			cells[(r.y + 1) * W + x] = CELL_FACE;
+			if (r.bot == 2)
+			{
+				// 下の壁が 2 行の時は、下の 2 行も天井＋側面（下に重なる部屋の上 2 行と同じ）
+				cells[(r.y + r.h - 2) * W + x] = CELL_TOP;
+				cells[(r.y + r.h - 1) * W + x] = CELL_FACE;
+			}
 		}
 	}
 	// 床
@@ -322,7 +331,8 @@ Err GenerateCathedralL1(const Params &p0, Rng &rng, Skeleton &sk, const Theme *p
 {
 	Params p = p0;
 	if (p.w < 8 || p.w > 128 || p.h < 8 || p.h > 128) return ERR_PARAM;
-	p.roomMin = std::max(4, p.roomMin);
+	const int B = (pTheme && pTheme->bottomRows == 2) ? 2 : 1;  // 下の壁の行数
+	p.roomMin = std::max(3 + B, p.roomMin);
 	p.roomMax = std::min(std::max(p.roomMin, p.roomMax), std::min(p.w, p.h));
 	if (p.roomMin > p.roomMax) return ERR_PARAM;
 	p.archMin = std::max(1, p.archMin);
@@ -338,16 +348,16 @@ Err GenerateCathedralL1(const Params &p0, Rng &rng, Skeleton &sk, const Theme *p
 
 	const int W = p.w, H = p.h;
 	const int maxTries = 300;
-	const std::vector<int> entryCands = FixedCands(pTheme, 2, W, H);
-	const std::vector<int> bossCands = FixedCands(pTheme, 1, W, H);
+	const std::vector<int> entryCands = FixedCands(pTheme, 2, W, H, B);
+	const std::vector<int> bossCands = FixedCands(pTheme, 1, W, H, B);
 	for (int tries = 1; tries <= maxTries; ++tries)
 	{
 		Ctx c;
-		c.p = &p; c.th = pTheme; c.rng = &rng; c.W = W; c.H = H; c.aMin = p.archMin; c.aMax = p.archMax;
+		c.p = &p; c.th = pTheme; c.rng = &rng; c.W = W; c.H = H; c.aMin = p.archMin; c.aMax = p.archMax; c.B = B;
 
 		// 最初の部屋は中央付近
 		Room r0;
-		r0.id = 0; r0.kind = 2; r0.tpl = -1;
+		r0.id = 0; r0.kind = 2; r0.tpl = -1; r0.bot = B;
 		r0.w = rng.Int(p.roomMin, p.roomMax);
 		r0.h = rng.Int(p.roomMin, p.roomMax);
 		if (!entryCands.empty())
@@ -366,7 +376,7 @@ Err GenerateCathedralL1(const Params &p0, Rng &rng, Skeleton &sk, const Theme *p
 
 		// 生やす（床が目標に届くか、置けなくなるまで）
 		const int target = std::min(100, p.floorMin + rng.Int(0, 10));
-		long area = (long)(r0.w - 2) * (r0.h - 3);
+		long area = (long)(r0.w - 2) * (r0.h - 2 - B);
 		int fails = 0;
 		while (area * 100 < (long)W * H * target && fails < 300)
 		{
@@ -375,7 +385,7 @@ Err GenerateCathedralL1(const Params &p0, Rng &rng, Skeleton &sk, const Theme *p
 			{
 				fails = 0;
 				const Room &n = c.rooms.back();
-				area += (long)(n.w - 2) * (n.h - 3);
+				area += (long)(n.w - 2) * (n.h - 2 - B);
 			}
 			else ++fails;
 		}
@@ -415,7 +425,7 @@ Err GenerateCathedralL1(const Params &p0, Rng &rng, Skeleton &sk, const Theme *p
 			{
 				// ボスの固定パターンを、入口から一番遠い部屋に隣接させて生やしてみる。置けなければ今までどおり
 				Room bn;
-				bn.kind = 1; bn.fixed = 1;
+				bn.kind = 1; bn.fixed = 1; bn.bot = B;
 				bn.tpl = bossCands[rng.Int(0, (int)bossCands.size() - 1)];
 				bn.w = pTheme->rooms[bn.tpl].w;
 				bn.h = pTheme->rooms[bn.tpl].h;
@@ -428,13 +438,13 @@ Err GenerateCathedralL1(const Params &p0, Rng &rng, Skeleton &sk, const Theme *p
 		std::vector<int> cells;
 		BuildCells(c, cells);
 		const Room &e = c.rooms[0], &g = c.rooms[boss];
-		int sx = e.x + e.w / 2, sy = e.y + 2 + (e.h - 3) / 2;
+		int sx = e.x + e.w / 2, sy = e.y + 2 + (e.h - 2 - B) / 2;
 		if (e.fixed)
 		{
 			const TplRoom &t = pTheme->rooms[e.tpl];
 			if (t.entryX >= 0 && t.entryX < t.w && t.entryY >= 0 && t.entryY < t.h) { sx = e.x + t.entryX; sy = e.y + t.entryY; }
 		}
-		int gx = g.x + g.w / 2, gy = g.y + 2 + (g.h - 3) / 2;
+		int gx = g.x + g.w / 2, gy = g.y + 2 + (g.h - 2 - B) / 2;
 		int walk = 0;
 		if (!AllConnected(cells, c.rooms, W, H, sx, sy, walk)) continue;
 		if ((long)walk * 100 < (long)W * H * p.floorMin) continue;

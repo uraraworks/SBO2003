@@ -108,6 +108,7 @@ Module['sboDungeon'] = (function () {
 			'void': partNo(t['void'] == null ? 0 : t['void'], nParts, 'void'),
 			arch: partList(t.arch == null ? [] : t.arch, nParts, 'arch', true),
 			door: partNo(t.door == null ? 0 : t.door, nParts, 'door'),
+			bottomRows: int(t.bottomRows == null ? 1 : t.bottomRows, 1, 2, 'bottomRows'),
 			rooms: [],
 			decos: [],
 			openings: [],

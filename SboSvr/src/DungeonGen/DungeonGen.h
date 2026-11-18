@@ -55,8 +55,9 @@ struct Room
 	int id, x, y, w, h;
 	int kind;  // 0 ふつう / 1 ボス部屋 / 2 入口の部屋
 	int tpl;   // 使った 9分割の部屋の番号（-1 = 素の絵）。fixed の時は置いた固定パターンの番号
+	int bot;   // 下の壁の行数（1 か 2。L1 のテーマの bottomRows）。L3 は 1
 	int fixed; // 0 = ふつう / 1 = 固定パターン（L1。外周は通れない扱い） / 2 = 固定パターン（L3。外周は隣が床なら出入口）
-	Room() : id(0), x(0), y(0), w(0), h(0), kind(0), tpl(-1), fixed(0) {}
+	Room() : id(0), x(0), y(0), w(0), h(0), kind(0), tpl(-1), bot(1), fixed(0) {}
 };
 
 
@@ -73,7 +74,7 @@ inline bool WalkableAt(const std::vector<int> &cells, int W, int H, const std::v
 	{
 		const Room &r = rooms[i];
 		if (!r.fixed || x < r.x || x >= r.x + r.w || y < r.y || y >= r.y + r.h) continue;
-		bool ring = x == r.x || x == r.x + r.w - 1 || y == r.y || y == r.y + r.h - 1;
+		bool ring = x == r.x || x == r.x + r.w - 1 || y == r.y || y >= r.y + r.h - r.bot;
 		if (!ring) return true;
 		if (r.fixed != 2) return false;
 		static const int nb[4][2] = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };
@@ -159,10 +160,11 @@ struct Theme
 	int algo;
 	std::vector<int> floor, wallTop, wallFace, wallFill, arch;
 	int voidPart, door;
+	int bottomRows;  // L1: 部屋の外枠の下の壁の行数（1 = 天井だけ / 2 = 天井＋側面）
 	std::vector<TplRoom> rooms;
 	std::vector<Deco> decos;
 	std::vector<Opening> openings;
-	Theme() : algo(0), voidPart(0), door(0) {}
+	Theme() : algo(0), voidPart(0), door(0), bottomRows(1) {}
 };
 
 // エラーコード（0 = 成功）

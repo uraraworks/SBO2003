@@ -2,6 +2,7 @@
 //   使い方: tools/dungeon/test_gen.sh   （-v を付けると格子を文字で表示）
 #include "SboSvr/src/DungeonGen/DungeonGen.h"
 #include "SboSvr/src/DungeonGen/MiniJson.h"
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
@@ -300,6 +301,83 @@ int main(int argc, char **argv)
 				}
 			}
 		CHECK(vertLinks > 20 && vertDoors == vertLinks, "vertDoorRate=100: %d/%d doors", vertDoors, vertLinks);
+	}
+
+	// 下の壁 2 行（theme.bottomRows = 2）: 上下の部屋は 2 行重なり、重なった 2 行は天井＋側面、出入口は 2 行とも抜ける
+	{
+		int stacked = 0, linksH = 0;
+		for (int variant = 0; variant < 3; ++variant)
+			for (int seed : seeds)
+				for (auto &sz : sizes)
+				{
+					Theme th = variant == 1 ? MakeFixedTheme(1) : (variant == 2 ? MakeOpeningTheme() : MakeTheme(1));
+					if (variant != 1) th.rooms.clear();  // 素の絵で壁の天井・側面を確かめる
+					th.bottomRows = 2;
+					Params p; p.algo = 1; p.w = sz[0]; p.h = sz[1]; p.seed = seed; p.doorRate = 40; p.openRate = 20; p.loopRate = 60;
+					Skeleton a, b; std::vector<int> pa, pb;
+					Err e = Generate(p, &th, a, pa);
+					if (e != ERR_NONE) { CHECK(0, "bottom2 v%d %dx%d seed %d: error %d", variant, sz[0], sz[1], seed, e); continue; }
+					Generate(p, &th, b, pb);
+					CHECK(a.cells == b.cells && pa == pb, "bottom2 not reproducible");
+					CHECK(Connected(a), "bottom2 v%d %dx%d seed %d: not connected", variant, sz[0], sz[1], seed);
+					CHECK(a.floorCount * 100 >= a.w * a.h * p.floorMin, "bottom2 floor %d too few", a.floorCount);
+					const int W = a.w;
+					// 部屋の大きさ・重なり判定: 重なるのは 2 行（上下）か 1 列（左右）だけ
+					for (size_t i = 0; i < a.rooms.size(); ++i)
+					{
+						const Room &r = a.rooms[i];
+						CHECK(r.bot == 2 && r.h >= 5 && r.w >= 4, "bottom2 room size %dx%d bot %d", r.w, r.h, r.bot);
+						CHECK(r.x >= 0 && r.y >= 0 && r.x + r.w <= a.w && r.y + r.h <= a.h, "bottom2 room out of map");
+						for (size_t j = i + 1; j < a.rooms.size(); ++j)
+						{
+							const Room &q = a.rooms[j];
+							int iw = std::min(r.x + r.w, q.x + q.w) - std::max(r.x, q.x);
+							int ih = std::min(r.y + r.h, q.y + q.h) - std::max(r.y, q.y);
+							if (iw > 0 && ih > 0) CHECK(iw == 1 || ih == 2, "bottom2 bad overlap %dx%d", iw, ih);
+							if (iw > 1 && ih == 2)
+							{
+								++stacked;
+								const Room &up = r.y < q.y ? r : q, &dn = r.y < q.y ? q : r;
+								CHECK(up.y + up.h - 2 == dn.y, "bottom2 stacked rows not shared");
+								// 共有した 2 行: 出入口以外は 天井(2) / 側面(3)（部屋の外枠の左右の角は除く）
+								for (int x = std::max(r.x, q.x) + 1; x < std::min(r.x + r.w, q.x + q.w) - 1; ++x)
+								{
+									int c0 = a.cells[dn.y * W + x], c1 = a.cells[(dn.y + 1) * W + x];
+									bool hole0 = c0 == CELL_ARCH || c0 == CELL_DOOR, hole1 = c1 == CELL_ARCH || c1 == CELL_DOOR;
+									CHECK(hole0 == hole1, "bottom2 hole must cover both rows (x=%d)", x);
+									if (variant == 1 || variant == 2) continue;  // 固定パターン・パターン絵は別の絵
+									CHECK(hole0 || (c0 == CELL_TOP && c1 == CELL_FACE), "bottom2 shared rows %d/%d at x=%d", c0, c1, x);
+									if (!hole0) CHECK(pa[dn.y * W + x] == 7 && (pa[(dn.y + 1) * W + x] == 6 || pa[(dn.y + 1) * W + x] == 824), "bottom2 shared parts");
+								}
+							}
+						}
+						if (r.fixed) continue;
+						// 外側に面した下の 2 行も 天井＋側面（左右の角の列は隣の部屋の壁と共有するので除く）。中は床
+						for (int x = r.x + 1; x < r.x + r.w - 1; ++x)
+						{
+							int c0 = a.cells[(r.y + r.h - 2) * W + x], c1 = a.cells[(r.y + r.h - 1) * W + x];
+							if (c0 == CELL_PATTERN || c1 == CELL_PATTERN) continue;  // 重なった固定パターン
+							bool hole = c0 == CELL_ARCH || c0 == CELL_DOOR;
+							CHECK(hole ? (c1 == CELL_ARCH || c1 == CELL_DOOR) : (c0 == CELL_TOP && c1 == CELL_FACE), "bottom2 bottom rows %d/%d", c0, c1);
+						}
+						for (int y = r.y + 2; y <= r.y + r.h - 3; ++y)
+							for (int x = r.x + 1; x <= r.x + r.w - 2; ++x)
+								CHECK(a.cells[y * W + x] == CELL_FLOOR, "bottom2 interior not floor (%d,%d)", x, y);
+					}
+					for (auto &l : a.links)
+					{
+						bool vert = IsVertLink(a, l);
+						if (!vert) ++linksH;
+						for (int y = l.y; y < l.y + l.h; ++y)
+							for (int x = l.x; x < l.x + l.w; ++x)
+							{
+								int c = a.cells[y * W + x];
+								CHECK(c == CELL_ARCH || c == CELL_DOOR, "bottom2 link cell %d", c);
+							}
+						CHECK(vert || l.h == 2, "bottom2 horizontal link h=%d", l.h);
+					}
+				}
+		CHECK(stacked > 50 && linksH > 50, "bottom2 stacked %d links %d", stacked, linksH);
 	}
 
 	// JSON 入口

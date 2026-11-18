@@ -105,7 +105,8 @@
 			'<div class="dg-guide" id="dg-guide" hidden>左の一覧でテーマを選ぶか、「追加」で新しいテーマを作ってください。テーマを選ぶと、パーツ・9分割の部屋・出入口・灯り・飾りの欄が出ます。</div>' +
 			'<div id="dg-edit" hidden>' +
 			'<div class="dg-row"><label>名前 <input type="text" id="dg-name" maxlength="40"></label>' +
-			'<label>作り方 <select id="dg-algo"><option value="1">1 = L1 聖堂</option><option value="3">3 = L3 洞窟</option></select></label></div>' +
+			'<label>作り方 <select id="dg-algo"><option value="1">1 = L1 聖堂</option><option value="3">3 = L3 洞窟</option></select></label>' +
+			'<label>下の壁の厚さ（L1） <select id="dg-bottom"><option value="1">1行（天井だけ）</option><option value="2">2行（天井＋側面）</option></select></label></div>' +
 			'<div class="dg-cap">絵を押すとパーツ一覧から選べます。複数可の欄は「＋追加」と絵の×で増減（床はくじで均等に混ぜます）。数字の欄は上級者用です。</div><div class="dg-parts" id="dg-lists"></div></div></div>';
 		h += '<div class="dg-sec" id="dg-rooms-sec" hidden><h3>9分割の部屋（L1 用）</h3>' +
 			'<div class="dg-row"><label>大きさ w <input type="text" class="dg-n" id="dg-rw" inputmode="numeric" value="9"></label>' +
@@ -457,6 +458,7 @@
 (tools.r === 'mark' ? '固定パターン: 9分割せず、このまま置きます。絵をクリックすると、出てくる位置（入口）の印を付けます（同じ所をもう一度クリックで消えます）。' : '道具が「' + (TOOL_NAME[tools.r] || '') + '」です。絵をクリック／なぞって描きます。') :
 			(tools.r === 'mark' ? '青い線（縦2本・横2本）をドラッグして切れ目を動かします。四隅はそのまま、辺は繰り返し、真ん中は縦横に繰り返します。' +
 			'線から離れた所をクリックすると、入口の位置の印を付けます（もう一度クリックで消えます）。' : '道具が「' + (TOOL_NAME[tools.r] || '') + '」です。絵をクリック／なぞって描きます（切れ目を動かすには「切れ目・入口の印」を選びます）。');
+		$('dg-rcap').textContent += ' 部屋の外枠は、上2行（天井＋側面）・下' + (cur.bottomRows === 2 ? '2行（天井＋側面）' : '1行（天井だけ）') + '・左右1列が壁です。';
 		var hasE = r.entryX >= 0 && r.entryY >= 0;
 		$('dg-rentinfo').textContent = hasE ? '入口の位置: (' + r.entryX + ',' + r.entryY + ')' : '入口の位置: 無し';
 		$('dg-rentclr').disabled = !hasE;
@@ -567,7 +569,7 @@
 	}
 
 	function blankTheme() {
-		return { name: '新しいテーマ', algo: 1, floor: [1], wallTop: [1], wallFace: [1], wallFill: [1], 'void': 0, arch: [1], door: 0, rooms: [], decos: [], openings: [], lights: [] };
+		return { name: '新しいテーマ', algo: 1, floor: [1], wallTop: [1], wallFace: [1], wallFill: [1], 'void': 0, arch: [1], door: 0, bottomRows: 1, rooms: [], decos: [], openings: [], lights: [] };
 	}
 
 	function fillSelect() {
@@ -593,6 +595,7 @@
 		refreshTools();
 		$('dg-name').value = cur.name;
 		$('dg-algo').value = String(cur.algo);
+		$('dg-bottom').value = cur.bottomRows === 2 ? '2' : '1';
 		LISTS.forEach(function (l) {
 			var v = cur[l[0]];
 			$('dg-l-' + l[0]).value = SCALAR[l[0]] ? String(v) : v.join(',');
@@ -1425,6 +1428,7 @@
 		$('dg-save').addEventListener('click', saveTheme);
 		$('dg-name').addEventListener('input', function () { cur.name = $('dg-name').value; markDirty(); });
 		$('dg-name').addEventListener('change', fillSelect);
+		$('dg-bottom').addEventListener('change', function () { cur.bottomRows = num($('dg-bottom').value, 1) === 2 ? 2 : 1; markDirty(); drawRoom(); });
 		$('dg-algo').addEventListener('change', function () { cur.algo = num($('dg-algo').value, 1); markDirty(); });
 		LISTS.forEach(function (l) {
 			$('dg-l-' + l[0]).addEventListener('input', function () {
