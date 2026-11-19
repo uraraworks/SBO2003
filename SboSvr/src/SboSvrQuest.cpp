@@ -2705,7 +2705,7 @@ enum {
 	CHALLENGELEAVE_QUEST,			/* 依頼が無くなった */
 	CHALLENGELEAVE_LOGOUT,			/* 切断した */
 	CHALLENGELEAVE_BUILD,			/* 番外編ダンジョンが作り直された */
-	CHALLENGELEAVE_RETIRE,			/* 番外編ダンジョン：「敵を全部倒す」条件の途中でゴールのワープから帰った（記録なし） */
+	CHALLENGELEAVE_RETIRE,			/* 番外編ダンジョン：中の入口・「敵を全部倒す」条件のゴールのワープから途中で帰った（記録なし） */
 };
 
 /* 挑戦から外して元の状態に戻す */
@@ -3918,6 +3918,11 @@ BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
 	if (pRun) {
 		pDungeon = DgInfo (pRun->byDungeonID);
 		if (pDungeon && (pMapChg->dwMapID == pDungeon->dwMapID) && (pMapChg->dwX == (DWORD)pDungeon->byStartX) && (pMapChg->dwY == (DWORD)pDungeon->byStartY)) {
+			/* 中の入口（入った時に立つ所）は途中で帰る出口（記録なし） */
+			if ((pEvent->dwX == (DWORD)pDungeon->byGoalX) && (pEvent->dwY == (DWORD)pDungeon->byGoalY)) {
+				ChallengeLeave (pChar, CHALLENGELEAVE_RETIRE);
+				return TRUE;
+			}
 			/* 「敵を全部倒す」条件のゴールは途中で帰る出口（記録なし） */
 			if (pRun->bKillAll) {
 				ChallengeLeave (pChar, CHALLENGELEAVE_RETIRE);

@@ -12532,7 +12532,7 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 		PEVENTINFO pE = &pMap->pEvent[i];
 		if (pE->byType != EVENTTYPE_MAPCHG) continue;
 		if (pE->dwX == 3 && pE->dwY == 4) pEntry = pE;
-		else if (pE->dwX >= 12 && pE->dwX <= 51 && pE->dwY >= 10 && pE->dwY <= 49) pGoal = pE;
+		else if (pE->dwX >= 12 && pE->dwX <= 51 && pE->dwY >= 10 && pE->dwY <= 49 && !(pE->dwX == (DWORD)Info.byGoalX && pE->dwY == (DWORD)Info.byGoalY)) pGoal = pE;
 	}
 	printf("dungeonbonus build ready=%d entry=%d goal=%d\n", (int)(Info.pwGenParts != NULL && Info.pMapTmp == NULL), (int)(pEntry != NULL), (int)(pGoal != NULL));
 	if (!pEntry || !pGoal) {
@@ -12671,6 +12671,27 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 	pA->wHP = 100;
 	pA->byCharState = CHARSTATE_MOVE;
 
+	/* 8. 中の入口（入った時に立つ所）に乗ると途中で帰る（記録なし・元の姿） */
+	{
+		PEVENTINFO pRetire = NULL;
+		for (int i = 0; i < pMap->nEventCount; i ++) {
+			PEVENTINFO pE = &pMap->pEvent[i];
+			if (pE->byType == EVENTTYPE_MAPCHG && pE->dwX == (DWORD)Info.byGoalX && pE->dwY == (DWORD)Info.byGoalY) pRetire = pE;
+		}
+		for (int i = 0; i < pMap->nEventCount; i ++) {
+			PEVENTINFO pE = &pMap->pEvent[i];
+			if (pE->byType == EVENTTYPE_MAPCHG && pE->dwX == 3 && pE->dwY == 4) pEntry = pE;
+		}
+		QuestMovePC(pC, nMapNo, 3, 5);
+		DungeonEventStep(pC, pEntry);
+		DgTestSelPick(pC, 0);
+		int nIn = (int)QuestInChallenge(pC);
+		if (pRetire) DungeonEventStep(pC, pRetire);
+		s_dwFakeNow += 1000;
+		DungeonProcNow(s_dwFakeNow);
+		printf("dungeonbonus retire event=%d in-before=%d in=%d space=%u lv=%d runs=%d\n", (int)(pRetire != NULL), nIn, (int)QuestInChallenge(pC),
+			pC->dwSpaceID, (int)pC->byLevel, DungeonRunCount());
+	}
 	/* 7. 作り直し：中にいる人は全員出て（袋はなくなる）、組の空間は空きになる */
 	pB->waItem[8] = awItem[3];
 	MakeDungeonProc(byID);
@@ -12930,7 +12951,7 @@ static void TestDungeonDaily(const std::vector<int> &aLogin)
 		PEVENTINFO pEv = &pMap->pEvent[i];
 		if (pEv->byType != EVENTTYPE_MAPCHG) continue;
 		if (pEv->dwX == 3 && pEv->dwY == 4) pEntry = pEv;
-		else if (pEv->dwX >= 12 && pEv->dwX <= 51 && pEv->dwY >= 10 && pEv->dwY <= 49) pGoal = pEv;
+		else if (pEv->dwX >= 12 && pEv->dwX <= 51 && pEv->dwY >= 10 && pEv->dwY <= 49 && !(pEv->dwX == (DWORD)Info.byGoalX && pEv->dwY == (DWORD)Info.byGoalY)) pGoal = pEv;
 	}
 	if (!pEntry || !pGoal) {
 		printf("dungeondaily no entry/goal\n");
@@ -13101,7 +13122,7 @@ static void TestDungeonDaily(const std::vector<int> &aLogin)
 		PEVENTINFO pEv = &pMap->pEvent[i];
 		if (pEv->byType != EVENTTYPE_MAPCHG) continue;
 		if (pEv->dwX == 3 && pEv->dwY == 4) pEntry = pEv;
-		else if (pEv->dwX >= 12 && pEv->dwX <= 51 && pEv->dwY >= 10 && pEv->dwY <= 49) pGoal = pEv;
+		else if (pEv->dwX >= 12 && pEv->dwX <= 51 && pEv->dwY >= 10 && pEv->dwY <= 49 && !(pEv->dwX == (DWORD)Info.byGoalX && pEv->dwY == (DWORD)Info.byGoalY)) pGoal = pEv;
 	}
 	pPut->byPutDone = 0;
 	for (int i = 0; i < 5; i ++) QuestMovePC(apPC[i], nMapNo, 3 + (i % 3), 5 + (i / 3));
@@ -13175,7 +13196,7 @@ static void TestDungeonDaily(const std::vector<int> &aLogin)
 			PEVENTINFO pEv = &pMap->pEvent[i];
 			if (pEv->byType != EVENTTYPE_MAPCHG) continue;
 			if (pEv->dwX == 3 && pEv->dwY == 4) pEntry = pEv;
-			else if (pEv->dwX >= 12 && pEv->dwX <= 51 && pEv->dwY >= 10 && pEv->dwY <= 49) pGoal = pEv;
+			else if (pEv->dwX >= 12 && pEv->dwX <= 51 && pEv->dwY >= 10 && pEv->dwY <= 49 && !(pEv->dwX == (DWORD)Info.byGoalX && pEv->dwY == (DWORD)Info.byGoalY)) pGoal = pEv;
 		}
 		QuestSendParty(pA, pA, CMDPARTY_BREAKUP);
 		for (int i = 0; i < 5; i ++) QuestMovePC(apPC[i], nMapNo, 3 + (i % 3), 5 + (i / 3));
@@ -13239,7 +13260,7 @@ static void TestDungeonDaily(const std::vector<int> &aLogin)
 			PEVENTINFO pEv = &pMap->pEvent[i];
 			if (pEv->byType != EVENTTYPE_MAPCHG) continue;
 			if (pEv->dwX == 3 && pEv->dwY == 4) pEntry = pEv;
-			else if (pEv->dwX >= 12 && pEv->dwX <= 51 && pEv->dwY >= 10 && pEv->dwY <= 49) pGoal = pEv;
+			else if (pEv->dwX >= 12 && pEv->dwX <= 51 && pEv->dwY >= 10 && pEv->dwY <= 49 && !(pEv->dwX == (DWORD)Info.byGoalX && pEv->dwY == (DWORD)Info.byGoalY)) pGoal = pEv;
 		}
 		printf("dungeondaily oneshot rebuilt new-version=%d tried-d=%d\n", (int)(dwNV != dwOV), (int)DungeonDailyTried(byID, dwNV, pD->dwTblID));
 		for (int i = 0; i < 5; i ++) QuestMovePC(apPC[i], nMapNo, 3 + (i % 3), 5 + (i / 3));

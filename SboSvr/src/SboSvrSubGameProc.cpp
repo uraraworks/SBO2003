@@ -1831,6 +1831,23 @@ static BOOL MakeDungeonByTheme(int nID, PSUBGAME_DUNGEONINFO pDungeon, PMAPINFO 
 		pMapChg->dwY = (DWORD)pDungeon->byStartY;
 		pMapChg->byEfect = EVENTMOVEEFECT_SILENT;
 	}
+	/* 中の入口（生成の start）→ 外の入口。番外編では「途中で帰る」出口（記録なし）。
+	   入った時はこのマスに立つが、ワープで着いただけでは乗ったことにならないので、一度離れて戻ると帰れる */
+	{
+		int nNo = AddEvent (pMap->dwID);
+		PEVENTINFO pEvent = &pMap->pEvent[nNo];
+		pEvent->dwX = (DWORD)nInX;
+		pEvent->dwY = (DWORD)nInY;
+		pEvent->byType = EVENTTYPE_MAPCHG;
+		int nSize = GetEventDataSize (EVENTTYPE_MAPCHG);
+		pEvent->pData = new BYTE[nSize];
+		ZeroMemory (pEvent->pData, nSize);
+		PEVENTINFO_MAPCHG pMapChg = (PEVENTINFO_MAPCHG)pEvent->pData;
+		pMapChg->dwMapID = pMap->dwID;
+		pMapChg->dwX = (DWORD)pDungeon->byStartX;
+		pMapChg->dwY = (DWORD)pDungeon->byStartY;
+		pMapChg->byEfect = EVENTMOVEEFECT_SILENT;
+	}
 	/* 扉（テーマの doorOpen があるときだけ。閉じた絵 = マスの絵、開いた絵 = 生成が決めた開いた絵） */
 	for (y = 0; y < cy; y ++) {
 		for (x = 0; x < cx; x ++) {
