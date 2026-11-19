@@ -12,6 +12,12 @@ namespace DungeonGen
 namespace
 {
 
+bool inPartList(const std::vector<int> &v, int n)
+{
+	for (size_t k = 0; k < v.size(); ++k) if (v[k] == n) return true;
+	return false;
+}
+
 int Pick(const std::vector<int> &v, Rng &rng)
 {
 	if (v.empty()) return 0;
@@ -293,6 +299,13 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 						{
 							int c = sk.cells[yy * W + xx];
 							if (c != CELL_TOP && c != CELL_FACE) { ok = false; break; }
+						}
+					// 9分割の部屋の絵で床・出入口の床に描かれたマス（壁が 1 行の部屋の 2 行目など）には置かない
+					for (int yy = y - d.h + 1; yy <= y && ok; ++yy)
+						for (int xx = x; xx < x + d.w; ++xx)
+						{
+							int v = parts[yy * W + xx];
+							if (inPartList(th.floor, v) || inPartList(th.arch, v) || inPartList(th.archV, v)) { ok = false; break; }
 						}
 					for (int yy = y - d.h + 1; yy <= y && ok; ++yy)
 						for (int xx = x; xx < x + d.w; ++xx)
