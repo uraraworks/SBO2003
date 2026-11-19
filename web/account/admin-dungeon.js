@@ -121,6 +121,7 @@
 			'<div class="dg-row"><select id="dg-rsel"></select><button type="button" id="dg-rdup" class="sub">この部屋を複製</button><button type="button" id="dg-rdel" class="sub">この部屋を削除</button></div>' +
 			'<div id="dg-redit" hidden><div class="dg-row"><label>名前 <input type="text" id="dg-rname" maxlength="40"></label>' +
 			'<label>種類 <select id="dg-rkind"><option value="0">ふつう</option><option value="1">ボス</option><option value="2">入口</option></select></label>' +
+			'<label title="1 回のダンジョンでこの部屋の絵を使う回数の上限。0 は無制限">登場の上限 <input type="number" id="dg-rmax" min="0" max="99" style="width:4em"> 回（0=無制限）</label>' +
 			'<span class="sub-text" id="dg-rinfo"></span></div>' +
 			'<div class="dg-row"><label><input type="checkbox" id="dg-rfixed"> 伸ばさずそのまま置く（固定パターン）</label>' +
 			'<button type="button" class="sub" id="dg-rentclr">入口の位置を消す</button><span class="sub-text" id="dg-rentinfo"></span></div>' +
@@ -731,6 +732,11 @@
 				if (bad.length) msg.push('注意: 「' + name(k) + '」に通れるパーツ（' + bad.join('・') + '）があります。壁は当たり判定が「ぶつかる」のパーツにしてください（すり抜けてしまいます）。');
 			});
 		}
+		if (cur && cur.rooms) {
+			var normal = cur.rooms.filter(function (r) { return r.kind === 0 && !r.fixed; });
+			if (normal.length && normal.every(function (r) { return (r.maxUse || 0) > 0; }))
+				msg.push('注意: ふつうの9分割の部屋がすべて「登場の上限」付きです。上限を使い切った後の部屋は素の絵になるので、上限0（無制限）の部屋を1つ以上入れてください。');
+		}
 		e.textContent = msg.join(' ');
 	}
 
@@ -933,6 +939,7 @@
 		var r = cur.rooms[selRoom];
 		$('dg-rname').value = r.name;
 		$('dg-rkind').value = String(r.kind);
+		$('dg-rmax').value = String(r.maxUse || 0);
 		$('dg-rinfo').textContent = r.src ? 'マップ ' + r.src.map + ' の (' + r.src.x + ',' + r.src.y + ') から' : '';
 		drawRoom();
 	}
@@ -1585,6 +1592,29 @@
 				}
 			});
 			cv.title = t;
+		});
+		$('dg-rname').addEventListener('input', function () {
+			var r = cur.rooms[selRoom];
+			if (!r) return;
+			r.name = $('dg-rname').value;
+			markDirty();
+		});
+		$('dg-rname').addEventListener('change', function () { showRooms(); });
+		$('dg-rkind').addEventListener('change', function () {
+			var r = cur.rooms[selRoom];
+			if (!r) return;
+			r.kind = num($('dg-rkind').value, 0);
+			markDirty();
+			showRooms();
+			showWarn();
+		});
+		$('dg-rmax').addEventListener('change', function () {
+			var r = cur.rooms[selRoom];
+			if (!r) return;
+			r.maxUse = Math.max(0, Math.min(99, num($('dg-rmax').value, 0)));
+			$('dg-rmax').value = String(r.maxUse);
+			markDirty();
+			showWarn();
 		});
 		$('dg-rfixed').addEventListener('change', function () {
 			var r = cur.rooms[selRoom];

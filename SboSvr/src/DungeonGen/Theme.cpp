@@ -78,21 +78,25 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 	// 2. 9分割の部屋
 	if (sk.algo == 1)
 	{
+		std::vector<int> used(th.rooms.size(), 0);  // 部屋の絵ごとの使った回数（登場の上限 maxUse 用）
 		for (size_t ri = 0; ri < sk.rooms.size(); ++ri)
 		{
 			Room &r = sk.rooms[ri];
 			if (r.fixed) continue;  // 固定パターンは下で置く
 			std::vector<int> cand;
 			for (size_t k = 0; k < th.rooms.size(); ++k)
-				if (th.rooms[k].kind == r.kind && !th.rooms[k].fixed && TplValid(th.rooms[k])) cand.push_back((int)k);
-			if (cand.empty() && r.kind != 0)  // 入口・ボス用の 9分割が無ければ、ふつうの部屋の絵を使う
+				if (th.rooms[k].kind == r.kind && !th.rooms[k].fixed && TplValid(th.rooms[k]) &&
+					(th.rooms[k].maxUse <= 0 || used[k] < th.rooms[k].maxUse)) cand.push_back((int)k);
+			if (cand.empty() && r.kind != 0)  // 入口・ボス用の 9分割が無ければ（使い切ったら）、ふつうの部屋の絵を使う
 				for (size_t k = 0; k < th.rooms.size(); ++k)
-					if (th.rooms[k].kind == 0 && !th.rooms[k].fixed && TplValid(th.rooms[k])) cand.push_back((int)k);
-			if (cand.empty()) continue;
+					if (th.rooms[k].kind == 0 && !th.rooms[k].fixed && TplValid(th.rooms[k]) &&
+						(th.rooms[k].maxUse <= 0 || used[k] < th.rooms[k].maxUse)) cand.push_back((int)k);
+			if (cand.empty()) continue;  // 上限を使い切った時は素の絵のまま
 			int ti = cand[rng.Int(0, (int)cand.size() - 1)];
 			const TplRoom &t = th.rooms[ti];
 			if (!TplFits(t, r.w, r.h)) continue;  // 小さい部屋は素の絵のまま
 			r.tpl = ti;
+			used[ti]++;
 			// 入口の部屋の 9分割に入口の印があれば、伸ばした部屋の同じ所を start にする（床の時だけ）
 			if (r.kind == 2 && t.entryX >= 0 && t.entryY >= 0 && t.entryX < t.w && t.entryY < t.h)
 			{

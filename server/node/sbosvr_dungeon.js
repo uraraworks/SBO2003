@@ -176,7 +176,8 @@ Module['sboDungeon'] = (function () {
 				cutY: cuts(r.cutY, h, lb + ' の cutY'),
 				fixed: r.fixed === true,
 				entryX: r.entryX == null ? -1 : int(r.entryX, -1, w - 1, lb + ' の entryX'),
-				entryY: r.entryY == null ? -1 : int(r.entryY, -1, h - 1, lb + ' の entryY')
+				entryY: r.entryY == null ? -1 : int(r.entryY, -1, h - 1, lb + ' の entryY'),
+				maxUse: r.maxUse == null ? 0 : int(r.maxUse, 0, 99, lb + ' の maxUse')
 			};
 			if (r.fixed != null && typeof r.fixed !== 'boolean') {
 				bad(lb + ' の fixed', ' は true か false にしてください');

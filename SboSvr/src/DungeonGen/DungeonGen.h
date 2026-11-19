@@ -124,7 +124,8 @@ struct TplRoom
 	int cutX[2], cutY[2];
 	bool fixed;           // true なら 9分割で伸ばさず cells をそのまま置く
 	int entryX, entryY;   // パターン内の出てくる位置（-1 = 無し）
-	TplRoom() : kind(0), w(0), h(0), fixed(false), entryX(-1), entryY(-1) { cutX[0] = cutX[1] = cutY[0] = cutY[1] = 0; }
+	int maxUse;           // 1 回の生成でこの部屋の絵を使う回数の上限（0 = 無制限、9分割だけ）
+	TplRoom() : kind(0), w(0), h(0), fixed(false), entryX(-1), entryY(-1), maxUse(0) { cutX[0] = cutX[1] = cutY[0] = cutY[1] = 0; }
 };
 
 struct Deco
