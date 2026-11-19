@@ -12396,7 +12396,7 @@ static void TestDungeonTheme(void)
 /* AO. 番外編ダンジョン（段階1）											 */
 /*     ソロは選んですぐ入る・パーティは全員の選択後にそろって入る・締め切りで	 */
 /*     選ばなかった人は置いていく・組ごとに別の空間と敵・補充しない印・		 */
-/*     持ち帰り袋（ゴールで本物・倒れると消える）・作り直しで全員出る・保存	 */
+/*     中で拾った物は持ち帰らない（ゴールでも）・作り直しで全員出る・保存	 */
 /* ------------------------------------------------------------------------- */
 static int DgTestCountEnemy(DWORD dwParent, DWORD dwSpace)
 {
@@ -12634,7 +12634,7 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 	printf("dungeonbonus once new-group in e=%d new space=%d enemies=%d full=%d runs=%d\n", (int)QuestInChallenge(pE), (int)(dwS4 != SPACE_NORMAL && dwS4 != dwS3 && dwS4 != dwS1 && dwS4 != dwS2),
 		DgTestCountEnemy(dwPut, dwS4), (int)(DgTestCountEnemy(dwPut, dwS4) == nFull), DungeonRunCount());
 
-	/* 5. 持ち帰り袋：入った時のテンプレートの持ち物は袋でない。拾った物だけが袋。ゴールで本物になる */
+	/* 5. 中で増えた物：入った時のテンプレートの持ち物は数えない。ゴールで出ても持ち帰らない（got=0） */
 	int nBag0 = DungeonBagCount(pC);
 	pC->waItem[5] = awItem[2];
 	pC->waItem[6] = awItem[2];

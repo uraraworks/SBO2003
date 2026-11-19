@@ -80,7 +80,7 @@ typedef struct _LOANBAK {
 	char		chAttrFire, chAttrWater, chAttrWind, chAttrEarth, chAttrLight, chAttrDark;
 	DWORD		dwMapID, dwX, dwY;									/* 入る前にいた場所（戻る場所・保存する場所） */
 	BYTE		byDirection;
-	WORD		wDgTmpl;											/* 番外編ダンジョン：入った時のステータステンプレートの番号（持ち帰り袋の計算に使う） */
+	WORD		wDgTmpl;											/* 番外編ダンジョン：入った時のステータステンプレートの番号（中で増えた物を数えるのに使う） */
 } LOANBAK;
 
 /* 空間の種類（CHALLENGE::byKind） */
@@ -134,8 +134,7 @@ static void ChallengeClearMember(PCHARINFO p, struct _CHALLENGE *pCh, int nReaso
 static void ChallengeStart(PCHARINFO pChar, PQUESTINFO pQuest, PQUESTNPCINFO pDef);
 static void GetChallengeMembers(PCHARINFO pChar, WORD wQuestID, std::vector<PCHARINFO> &aOut);
 static void DgBagCollect(PCHARINFO p, WORD wTmpl, std::vector<WORD> &aBag);
-static void DgBagGive(PCHARINFO p, const std::vector<WORD> &aBag);
-static void DgLeaveMsg(PCHARINFO p, int nReason, size_t nBag);
+static void DgLeaveMsg(PCHARINFO p, int nReason);
 static void DgProc(DWORD dwNow);
 static void DgSelOnDec(PCHARINFO pChar);
 static BOOL HasMercenary(PCHARINFO pChar);
@@ -2705,7 +2704,6 @@ static void ChallengeLeave(PCHARINFO p, int nReason)
 	std::map<DWORD, LOANBAK>::iterator it = s_mapLoan.find (p->dwTblID);
 	LOANBAK Bak;
 	BOOL bMove, bDungeon = FALSE;
-	std::vector<WORD> aBag;
 
 	if (it == s_mapLoan.end ()) {
 		return;
@@ -2720,10 +2718,7 @@ static void ChallengeLeave(PCHARINFO p, int nReason)
 			bDungeon = (itC->second.byKind == CHALLENGEKIND_DUNGEON);
 		}
 	}
-	/* 番外編：ゴールで出た時だけ、持ち帰り袋（貸し出しの持ち物のうち増えた分）を本物にする。それ以外は全部なくなる */
-	if (bDungeon && (nReason == CHALLENGELEAVE_CLEAR)) {
-		DgBagCollect (p, Bak.wDgTmpl, aBag);
-	}
+	/* 番外編：中で手に入れた物は中だけの物。どの出方でも持ち帰らず、元の持ち物に戻すだけ（2026-11-19 方針） */
 
 	LoanXfer (p, &Bak, TRUE);
 	if (p->byCharState == CHARSTATE_DEAD) {
@@ -2748,7 +2743,7 @@ static void ChallengeLeave(PCHARINFO p, int nReason)
 
 	LoanSendAll (p);
 	if (bDungeon) {
-		DgLeaveMsg (p, nReason, aBag.size ());
+		DgLeaveMsg (p, nReason);
 	}
 	switch (bDungeon ? -1 : nReason) {
 	case CHALLENGELEAVE_DEAD:
@@ -2778,10 +2773,6 @@ static void ChallengeLeave(PCHARINFO p, int nReason)
 		SubProcMapMove (p, Bak.dwMapID, Bak.dwX, Bak.dwY);
 		/* 移動で届くマップ情報は扉が閉じたままなので、ふつうの世界の扉などの状態を送る */
 		SpaceSendMapState (p);
-	}
-	/* 持ち帰り袋の品を本物の持ち物へ（いっぱいなら預かり所へ） */
-	if (!aBag.empty ()) {
-		DgBagGive (p, aBag);
 	}
 }
 
@@ -3243,8 +3234,8 @@ void QuestChallengeSaveSwap(BOOL bBegin)
  * 中は討伐チャレンジと同じ貸し出しの姿（s_mapLoan。経験値・お金は戻る・預かり所などは使えない）。
  * ダンジョンの形（マップ）は 1 つを共有し、組ごとに空間番号を割り当てる（s_mapChallenge の byKind が 1 の組）。
  * 敵（NPC発生の出し分）・扉の開閉は空間ごと。一緒に入った全員が出たら、その空間を空きにする。
- * 持ち帰り袋：中で増えた物（今の持ち物 − 入った時のテンプレートの持ち物）。ゴールのワープで出た時だけ本物の持ち物へ。
- * 倒れた・抜けた・切断・パーティ外れ・作り直しで出た時は、袋の中身は全部なくなる。袋は保存しない。
+ * 中で手に入れた物は中だけの物。どの出方でも持ち帰らず、元の持ち物に戻す（持ち帰り袋は 2026-11-19 にやめた）。
+ * DgBagCollect は「中で増えた物」を数えるだけ（テスト用 DungeonBagCount）。
  */
 #define DGSEL_WAIT				30000								/* 姿を選ぶ締め切り（ミリ秒） */
 
@@ -3369,7 +3360,7 @@ BOOL QuestInDungeon(PCHARINFO pChar)
 	return DgRunOf (pChar) != NULL;
 }
 
-/* 持ち帰り袋に入るはずの品（今の持ち物のうち、入った時のテンプレートの持ち物より増えた分）を集める */
+/* 中で増えた品（今の持ち物のうち、入った時のテンプレートの持ち物より増えた分）を集める */
 static void DgBagCollect(PCHARINFO p, WORD wTmpl, std::vector<WORD> &aBag)
 {
 	std::map<WORD, int> mapNow, mapTmpl;
@@ -3399,52 +3390,29 @@ static void DgBagCollect(PCHARINFO p, WORD wTmpl, std::vector<WORD> &aBag)
 	}
 }
 
-/* 持ち帰り袋の品を本物の持ち物へ渡す（持ち物がいっぱいなら預かり所へ、預かり所もいっぱいならあきらめる） */
-static void DgBagGive(PCHARINFO p, const std::vector<WORD> &aBag)
-{
-	size_t i;
-	int nLost = 0;
-	char szTmp[256];
-
-	for (i = 0; i < aBag.size (); i ++) {
-		BOOL bToLeave = FALSE;
-		if (!GiveItem (p, aBag[i], &bToLeave)) {
-			nLost ++;
-			continue;
-		}
-		snprintf (szTmp, sizeof (szTmp), "持ち帰り袋から%sを受け取りました。%s", ItemName (aBag[i]), bToLeave ? "（持ちきれないので預かり所へ運びました）" : "");
-		SendCmdSYSMSG (p->pID, szTmp, SPEECHCMD_BATTLE1);
-	}
-	if (nLost > 0) {
-		snprintf (szTmp, sizeof (szTmp), "持ちきれない品が%d個ありました。預かり所もいっぱいなので、あきらめました。", nLost);
-		SendCmdSYSMSG (p->pID, szTmp, SPEECHCMD_BATTLE1);
-	}
-	SendBagState (p);
-}
-
 /* 出た理由の知らせ（番外編） */
-static void DgLeaveMsg(PCHARINFO p, int nReason, size_t nBag)
+static void DgLeaveMsg(PCHARINFO p, int nReason)
 {
 	const char *psz = NULL;
 
 	switch (nReason) {
 	case CHALLENGELEAVE_CLEAR:
-		psz = (nBag > 0) ? "ゴールに着きました！ 元の姿に戻ります。" : "ゴールに着きました。元の姿に戻ります。";
+		psz = "ゴールに着きました！ 元の姿に戻ります。";
 		break;
 	case CHALLENGELEAVE_DEAD:
-		psz = "力尽きてしまった…。持ち帰り袋の中身はなくなり、元の姿に戻りました。";
+		psz = "力尽きてしまった…。元の姿に戻りました。";
 		break;
 	case CHALLENGELEAVE_PARTY:
-		psz = "パーティを抜けたので、ダンジョンから出ました。持ち帰り袋の中身はなくなり、元の姿に戻りました。";
+		psz = "パーティを抜けたので、ダンジョンから出ました。元の姿に戻りました。";
 		break;
 	case CHALLENGELEAVE_OUT:
-		psz = "ダンジョンの外へ出たので、持ち帰り袋の中身はなくなり、元の姿に戻りました。";
+		psz = "ダンジョンの外へ出たので、元の姿に戻りました。";
 		break;
 	case CHALLENGELEAVE_BUILD:
-		psz = "ダンジョンが作り直されたので外へ出ました。持ち帰り袋の中身はなくなり、元の姿に戻りました。";
+		psz = "ダンジョンが作り直されたので外へ出ました。元の姿に戻りました。";
 		break;
 	case CHALLENGELEAVE_QUEST:
-		psz = "ダンジョンの挑戦が終わりました。持ち帰り袋の中身はなくなり、元の姿に戻りました。";
+		psz = "ダンジョンの挑戦が終わりました。元の姿に戻りました。";
 		break;
 	}
 	if (psz) {
@@ -3631,9 +3599,8 @@ static void DgStart(int nDungeonID, const DGSEL &Sel, const std::vector<std::pai
 		/* 移動で届くマップ情報は扉が閉じたままなので、この空間の扉などの状態を送る */
 		SpaceSendMapState (pTmp);
 
-		snprintf (szTmp, sizeof (szTmp), "ダンジョンに入りました（%s）。経験値・お金は入りません。拾った物は持ち帰り袋に入り、ゴールのワープで出た時だけ持ち帰れます。", t->szName);
+		snprintf (szTmp, sizeof (szTmp), "ダンジョンに入りました（%s）。経験値・お金は入りません。拾った物は中で使えますが、外へは持ち帰れません。", t->szName);
 		SendCmdSYSMSG (pTmp->pID, szTmp, SPEECHCMD_BATTLE1);
-		SendCmdSYSMSG (pTmp->pID, "倒れる・パーティを抜ける・切断すると、持ち帰り袋の中身はなくなります。", SPEECHCMD_BATTLE1);
 	}
 	/* この組の敵を、決めた数まで一度に出す */
 	DgPutProc (pCh, timeGetTime (), TRUE);
@@ -3725,7 +3692,7 @@ BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
 	}
 	pMapChg = (PEVENTINFO_MAPCHG)pEvent->pData;
 
-	/* ゴール：番外編の中の人が、外の入口へ戻るワープに乗った。袋の中身を本物にして外へ出す */
+	/* ゴール：番外編の中の人が、外の入口へ戻るワープに乗った。元の姿に戻して外へ出す */
 	pRun = DgRunOf (pChar);
 	if (pRun) {
 		pDungeon = DgInfo (pRun->byDungeonID);
@@ -3938,7 +3905,7 @@ BOOL DungeonPutOnChildDec(PCHARINFO pChild)
 	return TRUE;
 }
 
-/* 番外編の中の持ち帰り袋に入っている品の数（今の持ち物 − 入った時のテンプレートの持ち物。テスト用） */
+/* 番外編の中で増えた品の数（今の持ち物 − 入った時のテンプレートの持ち物。テスト用） */
 int DungeonBagCount(PCHARINFO pChar)
 {
 	std::map<DWORD, LOANBAK>::iterator itL;
