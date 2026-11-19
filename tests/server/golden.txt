@@ -1407,6 +1407,18 @@ floor npc type=100 hp=15 low=1
 floor npc type=2 hp=20 low=3
 floor avoid on=0 off=1 search_step=0 nodamage_step=1
 floor immune avoid=0 hp=20 normal_hp=15
+== MoveGuard ==
+moveguard wall stay=1
+moveguard normal walked=7
+moveguard burst walked=4 x=4
+moveguard after wait x=5
+moveguard admin x=5
+moveguard far x=0
+moveguard dead x=0
+moveguard alive x=1
+moveguard servermove walked=3
+moveguard door closed stay=1
+moveguard door open in=1
 == V2. LowParts ==
 low wall normal=1 low=0 hit=1
 low save light=5 low=1

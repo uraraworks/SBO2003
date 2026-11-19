@@ -149,6 +149,7 @@ void	RecvDataProcMAPMSGREQ					(PBYTE, DWORD);				/* メッセージ要求 */
 void	RecvDataProcCHGMSG						(PBYTE, DWORD);				/* メッセージ更新 */
 void	RecvDataProcOPENDOOR					(PBYTE, DWORD);				/* 扉開け要求 */
 static BOOL OpenDoorFront						(PCHARINFO);				/* 目の前の扉を開ける */
+static void MoveGuardClear					(DWORD);					/* 移動の見張りを忘れる */
 static PCHARINFO FindFrontMimic					(PCHARINFO);				/* 目の前の宝箱の敵(正体前)を探す */
 static BOOL IsEventExamine						(PEVENTINFO, BYTE);			/* 調べた時に何か起きるイベントか */
 void	RecvDataProcCHGCHARGRP					(PBYTE, DWORD);				/* 着せ替え要求 */
@@ -1081,6 +1082,7 @@ void RecvCmdOnDecPlayer(int nNo)
 		return;
 	}
 	TradeClear ((DWORD)nNo);
+	MoveGuardClear ((DWORD)nNo);
 	if (nNo < g_aCharInfo.GetSize ()) {
 		AdminUndoOnDisconnect (g_aCharInfo[nNo]->pID);
 	}
@@ -4552,6 +4554,193 @@ void FloorDamageOnStep(PCHARINFO pChar)
 	}
 }
 
+/* ------------------------------------------------------------------------- */
+/* 移動の見張り（クライアントの申告した移動先をそのまま信じない）			 */
+/*   ・壁・閉まった扉・動かないNPCの上へは歩けない							 */
+/*   ・歩く速さは公式クライアント(1マス約280ms)に少しゆとりを持たせた上限	 */
+/*     (ラグで続けて届く分は、数歩ぶん貯めておけるバケツで受ける)			 */
+/*   ・倒れている間・取り引き中は歩けない									 */
+/*   サーバーが位置を変えた時(押される・ついていく・マップ移動など)は、	 */
+/*   バケツを満たして基準を取り直す											 */
+/* ------------------------------------------------------------------------- */
+#define MOVEGUARD_STEPMS		(280)		/* 公式クライアントの 1 マスの時間(ms) */
+#define MOVEGUARD_RATEPERCENT	(130)		/* 公式の速さに足すゆとり(%)。130 なら 1.3 倍まで */
+#define MOVEGUARD_BURSTSTEPS	(4)			/* ラグで続けて届いてもよい歩数(バケツの大きさ) */
+#define MOVEGUARD_LOGCOUNT		(10)		/* この回数戻したらログに残す(10 秒以内) */
+#define MOVEGUARD_LOGWINDOW		(10000)		/* 戻した回数を数える時間(ms) */
+
+typedef struct _MOVEGUARD {
+	DWORD	dwMapID;						/* 最後に受け付けた時のマップ */
+	DWORD	dwX, dwY;						/* 最後に受け付けた位置(サーバーが動かしたかの判定に使う) */
+	DWORD	dwTime;							/* バケツを数えた時刻 */
+	int		nTokenMs;						/* バケツの中身(ms。1 歩の代金は 1 歩にかかる時間) */
+	DWORD	dwWindowStart;					/* 戻した回数を数え始めた時刻 */
+	DWORD	dwWindowCount;					/* その間に戻した回数 */
+} MOVEGUARD;
+
+static std::map<DWORD, MOVEGUARD> s_mapMoveGuard;
+
+/* 1 歩にかかる時間(ms)。公式の 1 マスの時間をゆとりの分だけ縮める */
+static int MoveGuardStepMs(void)
+{
+	return MOVEGUARD_STEPMS * 100 / MOVEGUARD_RATEPERCENT;
+}
+
+/* 見張りを忘れる(ログアウトした時) */
+static void MoveGuardClear(DWORD dwTblID)
+{
+	s_mapMoveGuard.erase (dwTblID);
+}
+
+/* 動かない NPC（壁と同じにぶつかる相手）か。クライアントの歩き判定と同じ種類だけ。
+   動き回る NPC はラグですれ違うので見ない */
+static BOOL MoveGuardIsStaticNpc(PCHARINFO pNpc)
+{
+	switch (pNpc->byNpcType) {
+	case NPCTYPE_NOMOVE:
+	case NPCTYPE_BLOCK:
+	case NPCTYPE_BLOCK2:
+	case NPCTYPE_BLOCK3:
+	case NPCTYPE_BLOCK4:
+	case NPCTYPE_CHGPUSH:
+	case NPCTYPE_SCORE:
+	case NPCTYPE_TALKRAND:
+	case NPCTYPE_MIMIC:
+		return TRUE;
+	}
+	return FALSE;
+}
+
+/* (x,y) へ歩いて入れるか（クライアントの歩き判定と同じ意味）。向きは今回の要求の向きで見る */
+static BOOL MoveGuardCanEnter(PCHARINFO pChar, DWORD dwX, DWORD dwY, BYTE byDirection)
+{
+	PMAPINFO pMap;
+	PEVENTINFO pEvent;
+	BYTE byDirectionBack;
+	BOOL bFree;
+	int i;
+
+	pMap = g_aMapInfo[pChar->dwMapID];
+
+	/* 壁・木・岩・隠れるマス・印で変わるマス */
+	byDirectionBack = pChar->byDirection;
+	pChar->byDirection = byDirection;
+	bFree = CheckCharBlock (pChar, pChar->dwMapID, dwX, dwY);
+	pChar->byDirection = byDirectionBack;
+	if (!bFree) {
+		/* 扉のマス？（サーバーのマップは扉の絵のままなので、開いているかは扉の情報で見る） */
+		for (i = 0; i < pMap->nEventCount; i ++) {
+			pEvent = &pMap->pEvent[i];
+			if ((pEvent->dwX != dwX) || (pEvent->dwY != dwY) || (pEvent->byType != EVENTTYPE_DOOR)) {
+				continue;
+			}
+			if (SpaceDoorIsOpen (pChar->dwMapID, pEvent, (PEVENTINFO_DOOR)pEvent->pData, pChar->dwSpaceID)) {
+				bFree = TRUE;
+			}
+			break;
+		}
+		if (!bFree) {
+			return FALSE;
+		}
+	}
+
+	/* 動かない NPC（押せる物を含む。押す時は別の要求で動かす） */
+	for (i = 0; i < (int)pMap->dwCountTblNoNPC; i ++) {
+		if (pMap->paTblNoNPC[i] == -1) {
+			break;
+		}
+		PCHARINFO pNpc = g_aCharInfo[pMap->paTblNoNPC[i]];
+		if (!MoveGuardIsStaticNpc (pNpc) || IsQuestNpc (pNpc) || (pNpc->dwSpaceID != pChar->dwSpaceID) || !IsCharSeenBy (pNpc, pChar)) {
+			continue;
+		}
+		if (CheckCharX (pNpc, pNpc->dwX, dwX) && (pNpc->dwY == dwY)) {
+			return FALSE;
+		}
+	}
+	/* 他のプレイヤーとは、クライアントも重なって歩けるのでぶつからない（ラグですれ違うため） */
+	return TRUE;
+}
+
+/* 戻した回数を数え、多い時だけサーバーログに残す（切断まではしない） */
+static void MoveGuardReject(PCHARINFO pChar, MOVEGUARD *pGuard, const char *pszReason)
+{
+	DWORD dwNow = timeGetTime ();
+
+	if ((pGuard->dwWindowCount == 0) || (dwNow - pGuard->dwWindowStart > MOVEGUARD_LOGWINDOW)) {
+		pGuard->dwWindowStart = dwNow;
+		pGuard->dwWindowCount = 0;
+	}
+	pGuard->dwWindowCount ++;
+	if (pGuard->dwWindowCount == MOVEGUARD_LOGCOUNT) {
+		MyOutputDebugString ("移動を何度も戻した：[%s] TblID:%ld 理由:%s\n", pChar->szAcc, pChar->dwTblID, pszReason);
+	}
+	SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
+}
+
+/* 移動要求(別のマスへ歩く)を受け付けてよいか。だめなら位置を送り直して FALSE */
+static BOOL MoveGuardCheck(PCHARINFO pChar, PCMDPARA_CHARPOS pPara)
+{
+	std::map<DWORD, MOVEGUARD>::iterator it;
+	MOVEGUARD *pGuard;
+	DWORD dwNow;
+	int nCost, nCap;
+
+	dwNow = timeGetTime ();
+	it = s_mapMoveGuard.find (pChar->dwTblID);
+	if (it == s_mapMoveGuard.end ()) {
+		MOVEGUARD Init;
+		ZeroMemory (&Init, sizeof (Init));
+		Init.dwMapID	= pChar->dwMapID + 1;	/* 次の比べで「サーバーが動かした」扱いにする */
+		it = s_mapMoveGuard.insert (std::make_pair (pChar->dwTblID, Init)).first;
+	}
+	pGuard = &it->second;
+
+	/* 管理者は壁抜け・瞬間移動の機能があるので見ない */
+	if (pChar->byAdminLV != ADMINLV_USER) {
+		pGuard->dwMapID = pChar->dwMapID;
+		pGuard->dwX = pChar->dwX;
+		pGuard->dwY = pChar->dwY;
+		return TRUE;
+	}
+
+	/* 最後に受け付けた位置と違う = サーバーが動かした（押された・ついていく・マップ移動・ワープなど）。
+	   次の一歩が遠すぎる・早すぎると誤って判定しないよう、バケツを満たす */
+	nCap = MoveGuardStepMs () * MOVEGUARD_BURSTSTEPS;
+	if ((pGuard->dwMapID != pChar->dwMapID) || (pGuard->dwX != pChar->dwX) || (pGuard->dwY != pChar->dwY)) {
+		pGuard->nTokenMs = nCap;
+		pGuard->dwTime = dwNow;
+	}
+
+	/* 倒れている間・取り引き中は歩けない */
+	if ((pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0)) {
+		MoveGuardReject (pChar, pGuard, "dead");
+		return FALSE;
+	}
+	if (RecvCmdIsTrading (pChar->dwTblID)) {
+		MoveGuardReject (pChar, pGuard, "trading");
+		return FALSE;
+	}
+	/* 歩いて入れるマスか */
+	if (!MoveGuardCanEnter (pChar, (DWORD)pPara->byX, (DWORD)pPara->byY, pPara->byDirection)) {
+		MoveGuardReject (pChar, pGuard, "blocked");
+		return FALSE;
+	}
+	/* 歩く速さ。時間で貯まる量（上限は数歩ぶん）から歩数ぶん使う */
+	pGuard->nTokenMs += (int)min (dwNow - pGuard->dwTime, (DWORD)nCap);
+	pGuard->nTokenMs = min (pGuard->nTokenMs, nCap);
+	pGuard->dwTime = dwNow;
+	nCost = (abs ((int)pPara->byX - (int)pChar->dwX) + abs ((int)pPara->byY - (int)pChar->dwY)) * MoveGuardStepMs ();
+	if (pGuard->nTokenMs < nCost) {
+		MoveGuardReject (pChar, pGuard, "speed");
+		return FALSE;
+	}
+	pGuard->nTokenMs -= nCost;
+	pGuard->dwMapID	= pChar->dwMapID;
+	pGuard->dwX		= (DWORD)pPara->byX;
+	pGuard->dwY		= (DWORD)pPara->byY;
+	return TRUE;
+}
+
 /* ========================================================================= */
 /* 関数名：RecvDataProcCHARPOS												 */
 /* 内容：受信データ処理(移動要求)											 */
@@ -4613,6 +4802,11 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 			return;
 		}
 #endif
+		/* 別のマスへ歩く時は、壁・速さ・倒れている間などを確かめる（クライアントの申告を信じない）。
+		   だめなら、サーバーの知っている位置をクライアントに送り直す */
+		if (((pChar->dwX != (DWORD)pPara->byX) || (pChar->dwY != (DWORD)pPara->byY)) && !MoveGuardCheck (pChar, pPara)) {
+			return;
+		}
 		if ((pChar->dwXBack != pChar->dwX) || (pChar->dwYBack != pChar->dwY)) {
 			pChar->dwLastDotMove = timeGetTime ();
 		}
@@ -5302,6 +5496,12 @@ void RecvDataProcEVENTCHECK(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	pChar = g_aCharInfo[pPara->dwTblID];
+	/* 倒れている間はイベントに触れない（公式クライアントは倒れている間は歩けない）。
+	   クライアントは返事が来るまで待つので、位置を送って待ちを解く */
+	if ((pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0)) {
+		SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
+		return;
+	}
 	/* 誰かについていってる？ */
 	if (pChar->dwTargetTblID3 != -1) {
 		SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);

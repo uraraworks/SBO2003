@@ -312,6 +312,11 @@ void EventProc_HPMANA(PCHARINFO pChar, PEVENTINFO pEvent, BYTE byData)
 		SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
 		return;
 	}
+	/* 倒れている間は回復しない（起き上がりは復活の処理で行う） */
+	if ((pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0)) {
+		SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
+		return;
+	}
 	int nTmp = 0;
 	char szTmp[64];
 
