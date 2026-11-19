@@ -1102,6 +1102,7 @@ extern BOOL SaveRecipeInfo(void);
 extern BOOL LoadRecipeInfo(void);
 extern BOOL LoadItemDerive(void);
 static void TestTailRelogin(const std::vector<int> &aLogin);
+static void TestAttackRate(const std::vector<int> &aLogin);
 static void TestTailOverlap(const std::vector<int> &aLogin);
 static void TestEmptyMapCheck(const std::vector<int> &aLogin);
 static void TestPutFill(void);
@@ -1623,6 +1624,8 @@ static void TestWorld(void)
 	TestStoryGoal(aLogin);
 	/* AJ. 戦闘モードの覚えが残ったまま入り直しても「ついていく」が届く */
 	TestTailRelogin(aLogin);
+	/* 攻撃の威力は、前の攻撃からの経過時間で切り詰める */
+	TestAttackRate(aLogin);
 	/* AK. 先頭と同じマスに重なって戦闘モードを解除しても、ワープせず列につながる */
 	TestTailOverlap(aLogin);
 	/* AL. イベントの無いマップでマスに乗った問い合わせ(CHECKEVENT 0)にも返事が来る */
@@ -3059,6 +3062,9 @@ static void TestTailMapChg(const std::vector<int> &aLogin)
 static void TailBattleSend(PCHARINFO p, BYTE byOn)
 {
 	CMDPARA_DATA1 Para;
+	/* 戦闘モードの切り替えは 0.2 秒未満の連打を無視するので、時刻を少し進めてから送る */
+	s_dwFakeNow += 250;
+	g_dwTime = s_dwFakeNow;
 	ZeroMemory(&Para, sizeof(Para));
 	Para.byCmd = CMD_BATTLEMODE;
 	Para.pID = p->pID;
@@ -10578,6 +10584,49 @@ int main(int argc, char **argv)
 	_exit(0);
 }
 
+
+/* ------------------------------------------------------------------------- */
+/* AK. 攻撃要求の威力欄は、前の攻撃からの経過時間から出せる上限で切り詰める	 */
+/*     (最初と十分待った時は満額・早撃ちは周ごとに 20%・ジャストは満タン後だけ) */
+/* ------------------------------------------------------------------------- */
+static BYTE TestAttackSend(PCHARINFO p, BYTE byData, DWORD dwAdvance)
+{
+	CMDPARA_DATA4 Para;
+	s_dwFakeNow += dwAdvance;
+	g_dwTime = s_dwFakeNow;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_REQ_ATTACK;
+	Para.pID = p->pID;
+	Para.dwTblID = p->dwTblID;
+	Para.byData = byData;
+	Para.dwData = (DWORD)-1;
+	p->byAtackRate = 0;
+	TestRecv(p, &Para, sizeof(Para));
+	return p->byAtackRate;
+}
+
+static void TestAttackRate(const std::vector<int> &aLogin)
+{
+	printf("== AK. Attack rate ==\n");
+	if (aLogin.size() < 1) {
+		return;
+	}
+	PCHARINFO p = g_aCharInfo[aLogin[0]];
+	BYTE byDEX = p->byDEX, byState = p->byCharState;
+	WORD wHP = p->wHP, wEqu = p->waEqu[0];
+	p->byDEX = 0;			/* ゲージは約 3 秒で満タン */
+	p->wHP = max(p->wHP, (WORD)10);
+	p->byCharState = CHARSTATE_MOVE;
+	p->waEqu[0] = 0xFFFF;
+	printf("attackrate first(255)=%d\n", (int)TestAttackSend(p, 255, 20000));
+	printf("attackrate fast(255)=%d\n", (int)TestAttackSend(p, 255, 100));
+	printf("attackrate mid(100)=%d\n", (int)TestAttackSend(p, 100, 1500));
+	printf("attackrate full(255)=%d\n", (int)TestAttackSend(p, 255, 3000));
+	printf("attackrate just=%d\n", (int)TestAttackSend(p, ATACKRATE_JUST, 3000));
+	printf("attackrate just early=%d\n", (int)TestAttackSend(p, ATACKRATE_JUST, 100));
+	printf("attackrate normal(40) waited=%d\n", (int)TestAttackSend(p, 40, 3000));
+	p->byDEX = byDEX; p->wHP = wHP; p->byCharState = byState; p->waEqu[0] = wEqu;
+}
 
 /* ------------------------------------------------------------------------- */
 /* AJ. 戦闘モードの覚え(s_mapBattleMode)が切断で消え、残っていても			 */

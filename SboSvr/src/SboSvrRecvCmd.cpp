@@ -6155,9 +6155,6 @@ static BYTE GetAtackRateReq(PCHARINFO pChar, BYTE byData)
 	s_mapLastReq[pChar->dwTblID] = dwNow;
 
 	byRet = GetAtackRateLap (byData);
-	if (byData != ATACKRATE_JUST) {
-		return byRet;
-	}
 	/* ゲージが満タンになるまでの時間（クライアントと同じ計算。素早さ 0 で 3 秒～255 で 1 秒） */
 	nTmp = pChar->byDEX;
 	nTmp = nTmp * 100 / 255;
@@ -6165,9 +6162,25 @@ static BYTE GetAtackRateReq(PCHARINFO pChar, BYTE byData)
 	dwGage = 1000 + (2000 - ((2000 * nTmp) / 100));
 	/* 加速していれば満タンまでの時間も短い */
 	dwGage = dwGage * 100 / (100 + GetHasteRate (pChar));
-	/* 初めての攻撃か、満タンになる時間が経っている（通信のずれは 0.25 秒まで見る） */
-	if ((dwLast == 0) || (dwNow - dwLast + 250 >= dwGage)) {
-		byRet = ATACKRATE_JUST;
+	dwGage = max (dwGage, (DWORD)1);
+	if (dwLast == 0) {
+		/* 初めての攻撃は満額まで認める */
+		return (byData == ATACKRATE_JUST) ? (BYTE)ATACKRATE_JUST : byRet;
+	}
+	/* 前の攻撃からの経過時間で溜まっているはずのゲージ（通信のずれは 0.25 秒まで見る）。
+	   クライアントの申告は信じず、これを超える威力は切り詰める（弾きはしない） */
+	{
+		DWORD dwElapse = dwNow - dwLast + 250;
+		DWORD dwLv = (DWORD)((unsigned long long)dwElapse * 100 / dwGage);
+		BYTE byMax = GetAtackRateLap ((BYTE)min (dwLv, (DWORD)100));
+
+		if (byRet > byMax) {
+			byRet = byMax;
+		}
+		/* ジャストは満タンになる時間が経っている時だけ */
+		if ((byData == ATACKRATE_JUST) && (dwElapse >= dwGage)) {
+			byRet = ATACKRATE_JUST;
+		}
 	}
 	return byRet;
 }
@@ -6184,6 +6197,17 @@ void RecvDataProcBATTLEMODE(PBYTE pData, DWORD dwDataSize)
 
 	if (!IsRecvChar (pPara->dwTblID)) {
 		return;
+	}
+	/* 切り替えの連打は無視する（列の入れ替え・追いかけ処理が走り続けないように） */
+	{
+		static std::map<DWORD, DWORD> s_mapLastMode;
+		DWORD dwNow = timeGetTime ();
+		std::map<DWORD, DWORD>::iterator it = s_mapLastMode.find (pPara->dwTblID);
+
+		if ((it != s_mapLastMode.end ()) && (dwNow - it->second < 200)) {
+			return;
+		}
+		s_mapLastMode[pPara->dwTblID] = dwNow;
 	}
 	MercenarySetBattleMode (g_aCharInfo[pPara->dwTblID], pPara->byData != 0);
 	/* ついていっているプレイヤーは、戦闘モードの間だけ列から抜ける */
@@ -7129,6 +7153,17 @@ void RecvDataProcREQ_GUARD(PBYTE pData, DWORD dwDataSize)
 	pMap = g_aMapInfo[pChar->dwMapID];
 	if ((pMap->byFlg & MAPFLG_BATTLE) == 0) {
 		return;
+	}
+	/* 構え直しの連打は無視する（公式は構え始めまで 0.3 秒押し続けるので、それより短い間隔は来ない） */
+	{
+		static std::map<DWORD, DWORD> s_mapLastGuard;
+		DWORD dwNow = timeGetTime ();
+		std::map<DWORD, DWORD>::iterator it = s_mapLastGuard.find (pChar->dwTblID);
+
+		if ((it != s_mapLastGuard.end ()) && (dwNow - it->second < 200)) {
+			return;
+		}
+		s_mapLastGuard[pChar->dwTblID] = dwNow;
 	}
 	SetGuard (pChar, TRUE);
 	/* 構えたことは盾の吹き出しで知らせる */
@@ -9796,6 +9831,103 @@ void RecvDataProcJOBCHG(PBYTE pData, DWORD dwDataSize)
 }
 
 /* ========================================================================= */
+/* 関数名：CheckUseMagicTarget												 */
+/* 内容：相手を選ぶ特技の対象が、公式クライアントで選べる相手か確かめる		 */
+/*		 (同じマップ・範囲内・種類が合う・見えている・生きている)			 */
+/*		 戻り値：使ってよければ TRUE										 */
+/* ========================================================================= */
+static BOOL CheckUseMagicTarget(PCHARINFO pChar, BYTE byID, DWORD dwTarget)
+{
+	PMAGICINFO pInfo;
+	PCHARINFO pCharTarget;
+	BOOL bAdmin;
+	int nArea;
+
+	if (byID >= g_aMagicInfo.GetSize ()) {
+		return TRUE;				/* 覚えていない特技は MagicProc 側で扱う */
+	}
+	pInfo = g_aMagicInfo[byID];
+	if ((pInfo->byType == MAGICTYPE_PUT) || (pInfo->byType == MAGICTYPE_PUTSELF) ||
+		((pInfo->byTargetType != MAGICTARGETTYPE_SELECT) && (pInfo->byTargetType != MAGICTARGETTYPE_SELECT2))) {
+		return TRUE;
+	}
+	if ((dwTarget == pChar->dwTblID) || (dwTarget >= (DWORD)g_aCharInfo.GetSize ())) {
+		return TRUE;				/* 自分(相手を決めなかった時)。範囲外は MagicProc 側で何もしない */
+	}
+	pCharTarget = g_aCharInfo[dwTarget];
+	if (pCharTarget->pID == 0 && pCharTarget->byNpcType == NPCTYPE_INIT) {
+		return FALSE;
+	}
+	bAdmin = s_bAdminRecv;
+	/* 同じマップ・同じ空間で、おたがいに見えている */
+	if ((pChar->dwMapID != pCharTarget->dwMapID) || !IsInteractable (pChar, pCharTarget)) {
+		return bAdmin;
+	}
+	/* 範囲(公式は発動範囲までの道のりの中から選ぶ。目の前の敵だけ選ぶ場合は 1 マス。ずれの分を少し足す) */
+	nArea = max ((int)pInfo->byTargetArea, 1) + 2;
+	if ((abs ((int)pChar->dwX - (int)pCharTarget->dwX) + abs ((int)pChar->dwY - (int)pCharTarget->dwY)) > nArea) {
+		return bAdmin;
+	}
+	/* 相手の種類(公式は byTarget に合う相手だけを一覧に出す) */
+	switch (pCharTarget->byNpcType) {
+	case NPCTYPE_INIT:
+		if (pInfo->byTarget == MAGICTARGET_NPC) {
+			return bAdmin;
+		}
+		break;
+	case NPCTYPE_BATTLE1:
+	case NPCTYPE_BATTLE2:
+	case NPCTYPE_MIMIC:
+		if (pInfo->byTarget == MAGICTARGET_PC) {
+			return bAdmin;
+		}
+		break;
+	case NPCTYPE_MERCENARY:			/* 傭兵は回復・蘇生の特技だけ */
+		if (((pInfo->byType != MAGICTYPE_HPUP) && (pInfo->byType != MAGICTYPE_RESURRECTION)) ||
+			(pInfo->byTarget == MAGICTARGET_NPC)) {
+			return bAdmin;
+		}
+		break;
+	default:
+		return bAdmin;
+	}
+	/* 倒れた相手に使えるのは蘇生だけ(敵は倒れたら選べない) */
+	if (((pCharTarget->byCharState == CHARSTATE_DEAD) || (pCharTarget->wHP == 0)) &&
+		(pInfo->byType != MAGICTYPE_RESURRECTION)) {
+		return bAdmin;
+	}
+	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：CheckUseMagicInterval											 */
+/* 内容：特技の使う間隔を確かめる											 */
+/*		 公式は詠唱時間(1 秒＋詠唱時間 byTime×約 1 秒)かけてから送るので、	 */
+/*		 それより短い間隔(ずれの 0.4 秒を引く。最低 0.3 秒)は受け付けない	 */
+/* ========================================================================= */
+static BOOL CheckUseMagicInterval(PCHARINFO pChar, BYTE byID)
+{
+	static std::map<DWORD, DWORD> s_mapLastMagic;
+	PMAGICINFO pInfo;
+	DWORD dwNow, dwMin;
+	std::map<DWORD, DWORD>::iterator it;
+
+	if (s_bAdminRecv || (pChar->byNpcType != NPCTYPE_INIT) || (byID >= g_aMagicInfo.GetSize ())) {
+		return TRUE;
+	}
+	pInfo = g_aMagicInfo[byID];
+	dwMin = 1000 + (DWORD)pInfo->byTime * 990;
+	dwMin = (dwMin > 400 + 300) ? (dwMin - 400) : 300;
+	dwNow = timeGetTime ();
+	it = s_mapLastMagic.find (pChar->dwTblID);
+	if ((it != s_mapLastMagic.end ()) && (dwNow - it->second < dwMin)) {
+		return FALSE;
+	}
+	s_mapLastMagic[pChar->dwTblID] = dwNow;
+	return TRUE;
+}
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcUSEMAGIC												 */
 /* 内容：受信データ処理(魔法使用)											 */
 /* 日付：2004/07/12															 */
@@ -9820,6 +9952,17 @@ void RecvDataProcUSEMAGIC(PBYTE pData, DWORD dwDataSize)
 	}
 	/* ミニゲームの最中は特技を使えない（ショートカットから送られても弾く） */
 	if (IsSubGameItemMagicLocked (pChar)) {
+		return;
+	}
+	/* 空き枠(0)は特技ではない */
+	if ((BYTE)pPara->dwData1 == 0) {
+		return;
+	}
+	/* 対象と使う間隔は、クライアントの申告を信じずにサーバーで確かめる */
+	if (!CheckUseMagicTarget (pChar, (BYTE)pPara->dwData1, pPara->dwData2)) {
+		return;
+	}
+	if (!CheckUseMagicInterval (pChar, (BYTE)pPara->dwData1)) {
 		return;
 	}
 	if (pChar->dwTargetTblID != -1) {
@@ -9857,6 +10000,15 @@ void RecvDataProcTARGETCHG(PBYTE pData, DWORD dwDataSize)
 
 	pChar		= g_aCharInfo[pPara->dwTblID];
 	pCharTarget	= g_aCharInfo[nNo];
+
+	/* 公式が送るのは、目の前で話しかけた「ついていく検索型」のNPCだけ。
+	   別のマップ・遠く・ほかの種類のキャラの狙いは変えない */
+	if ((pChar->byNpcType != NPCTYPE_SEARCH) && (pChar->byNpcType != NPCTYPE_SEARCH2)) {
+		return;
+	}
+	if (!IsNearRecvChar (pChar, 2)) {
+		return;
+	}
 
 	pProc = (PCCharProcBase)pChar->pProc;
 	if (pProc) {
@@ -10717,37 +10869,9 @@ void RecvDataProcCHGPASSWORD(PBYTE pData, DWORD dwDataSize)
 /* ========================================================================= */
 void RecvDataProcDIFENCE(PBYTE pData, DWORD dwDataSize)
 {
-	PCMDPARA_DATA1 pPara = (PCMDPARA_DATA1)pData;
-	PCHARINFOTIMEREVENT pInfoTmp;
-	PCHARINFO pChar;
-	BOOL bResult;
-	DWORD dwTmp;
-
-	if (!IsRecvChar (pPara->dwTblID)) {
-		return;
-	}
-
-	pChar = g_aCharInfo[pPara->dwTblID];
-	/* 防御力に補正がかかっているかチェック */
-	bResult = CheckCharInfoTimer (pPara->dwTblID, CHARINFOTIMEREVENT_DIFENCE);
-	if (bResult) {
-		return;
-	}
-
-	dwTmp = (DWORD)pChar->byDEX * 100 / 255;
-	dwTmp = max (dwTmp, 1);
-	dwTmp = 1000 + (4000 - ((4000 * dwTmp) / 100));
-
-	pInfoTmp = new CHARINFOTIMEREVENT;
-	ZeroMemory (pInfoTmp, sizeof (CHARINFOTIMEREVENT));
-	pInfoTmp->byType		= CHARINFOTIMEREVENT_DIFENCE;
-	pInfoTmp->byData		= pChar->byST;
-	pInfoTmp->dwTimeStart	= timeGetTime ();
-	pInfoTmp->dwTimeValid	= dwTmp;
-
-	pChar->aTimerEvent.Add (pInfoTmp);
-
-	RenewATDF (pChar->dwTblID);
+	/* 公式クライアントは送らないコマンド。クライアントの申告で防御力を変えられないように何もしない */
+	(void)pData;
+	(void)dwDataSize;
 }
 
 /* ========================================================================= */
