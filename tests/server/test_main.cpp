@@ -13144,6 +13144,99 @@ static void TestDungeonDaily(const std::vector<int> &aLogin)
 		printf("dungeondaily random-mode records-versions=%d->%d\n", nBefore, DungeonDailyVersionCount(byID0));
 	}
 
+	/* 10. 一発勝負：順位に入るのは、その版で初めて挑戦した人だけの組。2 回目の人が混ざると入らない。作り直しでまた 1 回目 */
+	{
+		Info.byClearMode = DGCLEAR_GOAL;
+		pPut->byPutOnce = 0;
+		std::string strE1;
+		DungeonDailyRebuildNow(byID, strE1);
+		DungeonProcNow(s_dwFakeNow + 1000);
+		s_dwFakeNow += 1000;
+		DWORD dwOV = Info.dwDailyVer;
+		pMap = g_aMapInfo[nMapNo];
+		pEntry = pGoal = NULL;
+		for (int i = 0; i < pMap->nEventCount; i ++) {
+			PEVENTINFO pEv = &pMap->pEvent[i];
+			if (pEv->byType != EVENTTYPE_MAPCHG) continue;
+			if (pEv->dwX == 3 && pEv->dwY == 4) pEntry = pEv;
+			else if (pEv->dwX >= 12 && pEv->dwX <= 51 && pEv->dwY >= 10 && pEv->dwY <= 49) pGoal = pEv;
+		}
+		QuestSendParty(pA, pA, CMDPARTY_BREAKUP);
+		for (int i = 0; i < 5; i ++) QuestMovePC(apPC[i], nMapNo, 3 + (i % 3), 5 + (i / 3));
+		DGDAILYVER vO;
+		/* D が 1 人で初めて挑戦してクリア → 順位に入る */
+		DungeonEventStep(pD, pEntry);
+		DgTestSelPick(pD, 0);
+		s_dwFakeNow += 5000;
+		DungeonEventStep(pD, pGoal);
+		DungeonDailyFind(byID, dwOV, vO);
+		int nR1 = (int)vO.aRec.size();
+		printf("dungeondaily oneshot first ranked records=%d tried-d=%d tried-c=%d\n", nR1, (int)DungeonDailyTried(byID, dwOV, pD->dwTblID), (int)DungeonDailyTried(byID, dwOV, pC->dwTblID));
+		/* D がもう 1 回 → タイムだけ（記録は増えない） */
+		QuestMovePC(pD, nMapNo, 3, 6);
+		DungeonEventStep(pD, pEntry);
+		DgTestSelPick(pD, 0);
+		s_dwFakeNow += 5000;
+		DungeonEventStep(pD, pGoal);
+		DungeonDailyFind(byID, dwOV, vO);
+		printf("dungeondaily oneshot second not-ranked out=%d records=%d\n", (int)!QuestInChallenge(pD), (int)vO.aRec.size());
+		/* 初めての C と 2 回目の D の組 → 順位に入らない */
+		QuestMovePC(pD, nMapNo, 3, 6);
+		QuestSendParty(pC, pD, CMDPARTY_JOIN);
+		QuestSendParty(pD, pC, CMDPARTY_JOINOK);
+		DungeonEventStep(pC, pEntry);
+		DgTestSelPick(pC, 0);
+		DgTestSelPick(pD, 0);
+		int nIn = (int)QuestInChallenge(pC) * 10 + (int)QuestInChallenge(pD);
+		s_dwFakeNow += 5000;
+		DungeonEventStep(pC, pGoal);
+		DungeonEventStep(pD, pGoal);
+		DungeonDailyFind(byID, dwOV, vO);
+		printf("dungeondaily oneshot mixed party in=%02d out=%d%d records=%d tried-c=%d\n", nIn, (int)!QuestInChallenge(pC), (int)!QuestInChallenge(pD), (int)vO.aRec.size(),
+			(int)DungeonDailyTried(byID, dwOV, pC->dwTblID));
+		DungeonProcNow(s_dwFakeNow + 1000);
+		s_dwFakeNow += 1000;
+		QuestSendParty(pC, pC, CMDPARTY_BREAKUP);
+		/* 初めての E が 1 人 → 入る */
+		for (int i = 0; i < 5; i ++) QuestMovePC(apPC[i], nMapNo, 3 + (i % 3), 5 + (i / 3));
+		DungeonEventStep(pE, pEntry);
+		DgTestSelPick(pE, 0);
+		s_dwFakeNow += 5000;
+		DungeonEventStep(pE, pGoal);
+		DungeonDailyFind(byID, dwOV, vO);
+		printf("dungeondaily oneshot another first ranked records=%d\n", (int)vO.aRec.size());
+		/* 保存・読み直しでも「挑戦済み」が残る */
+		DungeonDailyReload();
+		DungeonDailyFind(byID, dwOV, vO);
+		printf("dungeondaily oneshot reload tried=%d d=%d c=%d e=%d a=%d\n", (int)vO.aTried.size(), (int)DungeonDailyTried(byID, dwOV, pD->dwTblID), (int)DungeonDailyTried(byID, dwOV, pC->dwTblID),
+			(int)DungeonDailyTried(byID, dwOV, pE->dwTblID), (int)DungeonDailyTried(byID, dwOV, pA->dwTblID));
+		/* 管理者の作り直しで版が変わると、また 1 回目 */
+		DungeonProcNow(s_dwFakeNow + 1000);
+		s_dwFakeNow += 1000;
+		DungeonDailyRebuildNow(byID, strE1);
+		DungeonProcNow(s_dwFakeNow + 1000);
+		s_dwFakeNow += 1000;
+		DWORD dwNV = Info.dwDailyVer;
+		pMap = g_aMapInfo[nMapNo];
+		pEntry = pGoal = NULL;
+		for (int i = 0; i < pMap->nEventCount; i ++) {
+			PEVENTINFO pEv = &pMap->pEvent[i];
+			if (pEv->byType != EVENTTYPE_MAPCHG) continue;
+			if (pEv->dwX == 3 && pEv->dwY == 4) pEntry = pEv;
+			else if (pEv->dwX >= 12 && pEv->dwX <= 51 && pEv->dwY >= 10 && pEv->dwY <= 49) pGoal = pEv;
+		}
+		printf("dungeondaily oneshot rebuilt new-version=%d tried-d=%d\n", (int)(dwNV != dwOV), (int)DungeonDailyTried(byID, dwNV, pD->dwTblID));
+		for (int i = 0; i < 5; i ++) QuestMovePC(apPC[i], nMapNo, 3 + (i % 3), 5 + (i / 3));
+		DungeonEventStep(pD, pEntry);
+		DgTestSelPick(pD, 0);
+		s_dwFakeNow += 5000;
+		DungeonEventStep(pD, pGoal);
+		DungeonDailyFind(byID, dwNV, vO);
+		DGDAILYVER vOld2;
+		DungeonDailyFind(byID, dwOV, vOld2);
+		printf("dungeondaily oneshot new-version first again ranked records=%d old-version-records=%d\n", (int)vO.aRec.size(), (int)vOld2.aRec.size());
+	}
+
 	/* 後始末 */
 	DungeonProcNow(s_dwFakeNow + 1000);
 	s_dwFakeNow += 1000;

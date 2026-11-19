@@ -38,6 +38,7 @@ typedef struct _DGDAILYVER {
 	int			nThemeRef;											/* テーマの写しの番号（DungeonDailyThemeText） */
 	std::string	strCreated;											/* 版を作った日時（日本時間） */
 	std::vector<DGDAILYREC>	aRec;									/* 最短記録（時間の短い順。DGDAILY_RECMAX 件まで） */
+	std::vector<DWORD>	aTried;										/* この版に挑戦した（入った）キャラのテーブルID（一発勝負：順位に入るのは版ごとの最初の 1 回だけ） */
 	_DGDAILYVER() : dwNo(0), nRebuild(0), dwSeed(0), nGenVer(0), dwThemeID(0), nW(0), nH(0), nThemeRef(-1) {}
 } DGDAILYVER;
 
@@ -68,6 +69,8 @@ extern BOOL DungeonDailyFind(int nDungeon, DWORD dwNo, DGDAILYVER &out);		/* 版
 extern std::string DungeonDailyThemeText(int nRef);					/* テーマの写し（正規化した JSON。無ければ ""） */
 extern BOOL DungeonDailyStale(int nDungeon, DWORD dwVerNo, DWORD dwThemeID, int nW, int nH);	/* 今の版を作り直す必要があるか（版が無い・日付が変わった・生成器の版/テーマ番号/大きさが違う） */
 extern int DungeonDailyAddRecord(int nDungeon, DWORD dwVerNo, const DGDAILYREC &Rec, BOOL *pbBetter = NULL);	/* 記録を足す。順位（1〜DGDAILY_RECMAX）か、入らなければ 0。同じ顔ぶれ（aTbl が同じ）の組が同じ版で記録済みなら、速い方だけ残す（遅い・同じ時間なら足さず、今ある記録の順位を返して *pbBetter を FALSE に） */
+extern BOOL DungeonDailyTried(int nDungeon, DWORD dwVerNo, DWORD dwTblID);	/* そのキャラは、この版にもう挑戦したか */
+extern void DungeonDailyMarkTried(int nDungeon, DWORD dwVerNo, const std::vector<DWORD> &aTbl);	/* この版に挑戦したことを覚える（入った時点。保存する） */
 extern std::string DungeonDailyTopText(int nDungeon, DWORD dwVerNo);	/* 入口で知らせる「今日の 1〜3 位」の文（版が無ければ ""） */
 extern std::string DungeonDailyTimeText(DWORD dwMs);				/* "X分Y秒" */
 extern std::string DungeonDailyVersionsJson(int nDungeon, DWORD dwVerNo, BOOL bTheme);	/* 版の配列の JSON（dwVerNo が 0 以外ならその版だけ。bTheme ならテーマの写しも入れる） */

@@ -104,6 +104,7 @@ typedef struct _CHALLENGE {
 	DWORD		dwBuildNo;											/* 番外編：入った時のダンジョンの作り直し番号（変わったら全員出す） */
 	std::map<DWORD, DGPUT>	mapPut;									/* 番外編：NPC発生の発生元のテーブルID → この組の数 */
 	BOOL		bDaily;												/* 番外編：日替わりのダンジョンに入った（記録をつける・敵の位置を版のシードで決める） */
+	BOOL		bRanked;											/* 番外編：全員がその版で初めての挑戦（クリアしたら順位の記録に入れる。一発勝負） */
 	DWORD		dwDailyVer;											/* 番外編：入った時の版の通し番号 */
 	DWORD		dwDailySeed;										/* 番外編：その版のシード */
 	std::map<DWORD, std::pair<std::string, std::string> >	mapWho;	/* 番外編：組の人のテーブルID → (キャラ名, 選んだ姿の名前)。記録には、クリアした時まで残っていた人だけを残す */
@@ -120,7 +121,7 @@ typedef struct _CHALLENGE {
 	DWORD		dwClearTime;										/* かかった時間（ミリ秒） */
 	std::vector<DWORD>	aMember;									/* 挑戦中の人（テーブルID） */
 	std::vector<DWORD>	aEnemy;										/* 残っている敵（テーブルID） */
-	_CHALLENGE() : byKind(0), byDungeonID(0), dwBuildNo(0), bDaily(FALSE), dwDailyVer(0), dwDailySeed(0), bKillAll(FALSE), byCountDown(4), wQuestID(0), dwMapNo(0), dwSpaceID(0), bArena(FALSE), dwPartyID(0), dwStart(0), bCleared(FALSE), dwClear(0), dwClearTime(0) {}
+	_CHALLENGE() : byKind(0), byDungeonID(0), dwBuildNo(0), bDaily(FALSE), bRanked(FALSE), dwDailyVer(0), dwDailySeed(0), bKillAll(FALSE), byCountDown(4), wQuestID(0), dwMapNo(0), dwSpaceID(0), bArena(FALSE), dwPartyID(0), dwStart(0), bCleared(FALSE), dwClear(0), dwClearTime(0) {}
 } CHALLENGE;
 
 /* 戻す場所（切断した人は、マップの表から外れてから動かす） */
@@ -3593,6 +3594,20 @@ static void DgStart(int nDungeonID, const DGSEL &Sel, const std::vector<std::pai
 			Ch.bDaily = TRUE;
 			Ch.dwDailyVer = Ver.dwNo;
 			Ch.dwDailySeed = Ver.dwSeed;
+			/* 一発勝負：全員がこの版で初めての挑戦の時だけ順位に入る。入った時点で、全員「挑戦した」ことにする（倒れても帰っても使ったことになる） */
+			Ch.bRanked = TRUE;
+			for (i = 0; i < aPart.size (); i ++) {
+				if (DungeonDailyTried (nDungeonID, Ver.dwNo, aPart[i].first->dwTblID)) {
+					Ch.bRanked = FALSE;
+				}
+			}
+			{
+				std::vector<DWORD> aTbl;
+				for (i = 0; i < aPart.size (); i ++) {
+					aTbl.push_back (aPart[i].first->dwTblID);
+				}
+				DungeonDailyMarkTried (nDungeonID, Ver.dwNo, aTbl);
+			}
 		}
 	}
 	for (i = 0; i < aPart.size (); i ++) {
@@ -3761,7 +3776,7 @@ static std::string DgRecordClear(CHALLENGE *pRun, BOOL bAlways)
 	if (!pRun->bDaily && !bAlways) {
 		return std::string ();
 	}
-	if (pRun->bDaily) {
+	if (pRun->bDaily && pRun->bRanked) {
 		for (i = 0; i < pRun->aMember.size (); i ++) {
 			std::map<DWORD, std::pair<std::string, std::string> >::iterator it = pRun->mapWho.find (pRun->aMember[i]);
 			if (it != pRun->mapWho.end ()) {
@@ -3779,7 +3794,9 @@ static std::string DgRecordClear(CHALLENGE *pRun, BOOL bAlways)
 	strMsg = "クリア時間 " + DungeonDailyTimeText (pRun->dwClearTime);
 	if (pRun->bDaily) {
 		char szTmp[64];
-		if ((nRank > 0) && bBetter) {
+		if (!pRun->bRanked) {
+			snprintf (szTmp, sizeof (szTmp), "（今日の挑戦は2回目以降の人がいるので、順位には入りません）");
+		} else if ((nRank > 0) && bBetter) {
 			snprintf (szTmp, sizeof (szTmp), "（今日の%d位）", nRank);
 		} else if (nRank > 0) {
 			snprintf (szTmp, sizeof (szTmp), "（この顔ぶれの今日の最高は%d位。記録は更新されませんでした）", nRank);
@@ -3916,6 +3933,8 @@ BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
 	if ((pDungeon->byRebuildMode == DGREBUILD_DAILY) && pDungeon->dwDailyVer) {
 		DGDAILYVER Ver;
 		std::string strTop = DungeonDailyTopText (nID, pDungeon->dwDailyVer);
+		static const char *pszFirst = "今日1回目の挑戦です。クリアすると順位に入ります。";
+		static const char *pszAgain = "今日はもう挑戦したので、今回はタイムだけです（順位には入りません）。";
 		BOOL bOld = DungeonDailyFind (nID, pDungeon->dwDailyVer, Ver) && (Ver.strDate != DungeonDailyDate (DungeonDailyNow ()));
 		for (i = 0; i < aMember.size (); i ++) {
 			if (bOld) {
@@ -3924,6 +3943,7 @@ BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
 			if (!strTop.empty ()) {
 				SendCmdSYSMSG (aMember[i]->pID, (LPSTR)strTop.c_str (), SPEECHCMD_BATTLE1);
 			}
+			SendCmdSYSMSG (aMember[i]->pID, (LPSTR)(DungeonDailyTried (nID, pDungeon->dwDailyVer, aMember[i]->dwTblID) ? pszAgain : pszFirst), SPEECHCMD_BATTLE1);
 		}
 	}
 	for (i = 0; i < aMember.size (); i ++) {

@@ -2121,5 +2121,12 @@ dungeondaily killall countdown 3s in=11
 dungeondaily killall after10s in=00 b-hp>0=1 runs=0
 dungeondaily killall no-once-enemy acts-as-goal out=1 records=2
 dungeondaily random-mode records-versions=0->0
+dungeondaily oneshot first ranked records=1 tried-d=1 tried-c=0
+dungeondaily oneshot second not-ranked out=1 records=1
+dungeondaily oneshot mixed party in=11 out=11 records=1 tried-c=1
+dungeondaily oneshot another first ranked records=2
+dungeondaily oneshot reload tried=3 d=1 c=1 e=1 a=0
+dungeondaily oneshot rebuilt new-version=1 tried-d=0
+dungeondaily oneshot new-version first again ranked records=1 old-version-records=2
 dungeondaily end runs=0 sel=0
 == done ==

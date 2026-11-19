@@ -155,6 +155,11 @@ static void VerJson(std::string &out, int nDungeon, const DGDAILYVER &v, BOOL bT
 		JsonStr (out, r.strAt);
 		out += '}';
 	}
+	out += "],\"tried\":[";
+	for (i = 0; i < v.aTried.size (); i ++) {
+		snprintf (szTmp, sizeof (szTmp), i ? ",%u" : "%u", (unsigned)v.aTried[i]);
+		out += szTmp;
+	}
 	out += "]}";
 	(void)nDungeon;
 }
@@ -337,6 +342,16 @@ static void LoadAll(void)
 					r.dwMs = GetU32 (jr, "ms");
 					r.strAt = GetStr (jr, "at");
 					v.aRec.push_back (r);
+				}
+			}
+			{
+				const DungeonGen::JVal *pTried = jv.Get ("tried");
+				if (pTried && (pTried->t == DungeonGen::JVal::ARR)) {
+					for (size_t m = 0; m < pTried->a.size (); m ++) {
+						if ((pTried->a[m].t == DungeonGen::JVal::NUM) && (pTried->a[m].n >= 0)) {
+							v.aTried.push_back ((DWORD)(unsigned long long)pTried->a[m].n);
+						}
+					}
 				}
 			}
 			aVer.push_back (v);
@@ -584,6 +599,45 @@ int DungeonDailyAddRecord(int nDungeon, DWORD dwVerNo, const DGDAILYREC &Rec, BO
 		return (int)nPos + 1;
 	}
 	return 0;
+}
+
+BOOL DungeonDailyTried(int nDungeon, DWORD dwVerNo, DWORD dwTblID)
+{
+	DGDAILYVER v;
+
+	if (!DungeonDailyFind (nDungeon, dwVerNo, v)) {
+		return FALSE;
+	}
+	return std::find (v.aTried.begin (), v.aTried.end (), dwTblID) != v.aTried.end ();
+}
+
+void DungeonDailyMarkTried(int nDungeon, DWORD dwVerNo, const std::vector<DWORD> &aTbl)
+{
+	std::map<int, std::vector<DGDAILYVER> >::iterator it;
+	size_t i, m;
+	BOOL bChanged = FALSE;
+
+	Ensure ();
+	it = s_mapVer.find (nDungeon);
+	if (it == s_mapVer.end ()) {
+		return;
+	}
+	for (i = 0; i < it->second.size (); i ++) {
+		if (it->second[i].dwNo != dwVerNo) {
+			continue;
+		}
+		std::vector<DWORD> &aTried = it->second[i].aTried;
+		for (m = 0; m < aTbl.size (); m ++) {
+			if (std::find (aTried.begin (), aTried.end (), aTbl[m]) == aTried.end ()) {
+				aTried.push_back (aTbl[m]);
+				bChanged = TRUE;
+			}
+		}
+		if (bChanged) {
+			SaveAll ();
+		}
+		return;
+	}
 }
 
 std::string DungeonDailyTimeText(DWORD dwMs)
