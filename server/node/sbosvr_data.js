@@ -329,7 +329,7 @@ Module['sboData'] = (function () {
 	function withoutSubGameVolatile(detail) {
 		var o = {};
 		Object.keys(detail).forEach(function (k) {
-			if (k !== 'byGoalFromX' && k !== 'byGoalFromY') {
+			if (k !== 'byGoalFromX' && k !== 'byGoalFromY' && k !== 'dwBuildNo') {
 				o[k] = detail[k];
 			}
 		});

@@ -489,6 +489,44 @@ int main(int argc, char **argv)
 		CHECK(RunJson("{\"params\":{\"w\":30,\"h\":30,\"seed\":42},\"theme\":{\"algo\":1,\"floor\":[1],\"openings\":[{\"dir\":0,\"type\":1,\"w\":3,\"h\":2,\"cells\":[1,2,3,4,5,6],\"hole0\":1,\"hole1\":2}]}}", out) == ERR_NONE && out.find("\"tpl\":0") != std::string::npos, "json openings");
 	}
 
+	// 扉の開いた絵（doorOpen）: 0 なら扉イベント用の表は空、設定があれば扉のマスだけに入る
+	{
+		int doors = 0, withOpen = 0;
+		for (int seed : seeds)
+		{
+			Params p; p.algo = 1; p.w = 48; p.h = 48; p.seed = seed; p.doorRate = 60;
+			Theme th = MakeTheme(1);
+			Skeleton a, b; std::vector<int> pa, pb;
+			CHECK(Generate(p, &th, a, pa) == ERR_NONE, "doorOpen 0: error");
+			for (int v : a.doorOpen) CHECK(v == 0, "doorOpen 0 but table has %d", v);
+			th.doorOpen = 105;
+			CHECK(Generate(p, &th, b, pb) == ERR_NONE, "doorOpen: error");
+			CHECK(a.cells == b.cells && pa == pb, "doorOpen must not change the layout");
+			CHECK((int)b.doorOpen.size() == 48 * 48, "doorOpen size");
+			for (int i = 0; i < 48 * 48; ++i)
+			{
+				if (b.doorOpen[i] == 0) continue;
+				++withOpen;
+				CHECK(b.cells[i] == CELL_DOOR && b.doorOpen[i] == 105 && pb[i] == 104, "doorOpen cell %d: cell %d open %d part %d", i, b.cells[i], b.doorOpen[i], pb[i]);
+			}
+			for (int i = 0; i < 48 * 48; ++i) if (b.cells[i] == CELL_DOOR) ++doors;
+		}
+		CHECK(doors > 10 && withOpen > 0 && withOpen <= doors, "doorOpen doors %d withOpen %d", doors, withOpen);
+	}
+
+	// テーマファイル（{"seq":..,"themes":[..]}）から id で探す。params（w,h,seed 以外）と doorOpen・lights も読む
+	{
+		const char *js = "{\"seq\":3,\"themes\":[{\"id\":1,\"algo\":1,\"floor\":[1]},"
+			"{\"id\":3,\"algo\":3,\"floor\":[5],\"doorOpen\":9,\"lights\":[{\"wParts\":824,\"byLight\":4},{\"wParts\":0,\"byLight\":1}],"
+			"\"params\":{\"roomMin\":7,\"doorRate\":55,\"cutoff\":10}}]}";
+		Theme th; Params p;
+		CHECK(FindThemeInFile(js, 3, th, p), "FindThemeInFile 3");
+		CHECK(th.algo == 3 && th.floor.size() == 1 && th.doorOpen == 9 && th.lights.size() == 1 && th.lights[0].first == 824 && th.lights[0].second == 4, "theme fields");
+		CHECK(p.roomMin == 7 && p.doorRate == 55 && p.cutoff == 10 && p.roomMax == 12 && p.floorMin == 35, "theme params %d %d", p.roomMin, p.roomMax);
+		CHECK(FindThemeInFile(js, 1, th, p) && th.doorOpen == 0 && p.roomMin == 6, "theme 1 defaults");
+		CHECK(!FindThemeInFile(js, 2, th, p) && !FindThemeInFile("{bad", 1, th, p) && !FindThemeInFile("{}", 1, th, p), "FindThemeInFile misses");
+	}
+
 	printf(g_fail ? "FAILED: %d\n" : "ALL OK\n", g_fail);
 	return g_fail ? 1 : 0;
 }

@@ -2002,6 +2002,8 @@ static const DATAFIELD s_aFieldSgDungeon[] = {
 	FLD (SUBGAME_DUNGEONINFO, wChipIDGoal,"ゴールのパーツ",		FT_U16, 0, "mapParts の番号"),
 	FLD (SUBGAME_DUNGEONINFO, wChipIDRoad,"道のパーツ",			FT_U16, 0, "mapParts の番号"),
 	FLD (SUBGAME_DUNGEONINFO, wChipIDBlock,"壁のパーツ",		FT_U16, 0, "mapParts の番号"),
+	FLD (SUBGAME_DUNGEONINFO, dwThemeID,"テーマ番号",			FT_U32, 0, "ダンジョン生成のテーマ（SboWebDungeonThemes.json の id）。0=今までの作り方。0 以外でテーマが見つかれば、作り直しのたびにエリアの大きさで生成してマス目・扉・入口を置く（見つからなければ今までの作り方）"),
+	FLD (SUBGAME_DUNGEONINFO, dwBuildNo,"作り直し番号",			FT_U32, FF_READONLY, "テーマで作り直すたびに増える番号（実行中だけ。保存しない・読むだけ）"),
 };
 static const DATAFIELD s_aFieldSgWar[] = {
 	FLD (SUBGAME_WARINFO, dwMapID,		"マップID",				FT_U32, 0, "map の dwID"),
@@ -2965,30 +2967,7 @@ static std::string MapWorkJson(PMAPINFO pBase, const std::string &strName, const
 	return MapJson(&m);
 }
 
-/*
- * マップにいるプレイヤーへ、マップに入った時と同じ順で情報を送り直す
- * （SubProcMapMove と同じ: マップ情報→イベント→キャラ→自分の位置・ステータス・持ち物）。
- * クライアントはマップ情報を受け取るとキャラ情報を全部消すので、キャラも必ず送る。
- */
-static void ResendMapToPlayers(PMAPINFO pMap, int nID)
-{
-	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
-		PCHARINFO pChar = g_aCharInfo[i];
-		if (pChar && pChar->pID && pChar->szAcc[0] && pChar->dwMapID == pMap->dwID && pChar->byNpcType == NPCTYPE_INIT) {
-			SendCmdMAPINFO(pChar->pID, pMap->dwID);
-			SendCmdEVENTCOUNT(pChar->pID, (DWORD)nID);
-			for (int j = 0; j < pMap->nEventCount; j ++) {
-				SendCmdEVENTINFO(pChar->pID, nID, j);
-			}
-			SendCmdEVENTPOS(pChar->pID, (DWORD)nID);
-			SendCmdCHARINFO(pChar->pID, -1);
-			SendCmdCHARPOS(pChar->pID, pChar->dwTblID, 0, 2);
-			SendCmdCHARSTATUS(pChar->pID, pChar->dwTblID);
-			SendCmdCHARITEM(pChar->pID, pChar->dwTblID);
-			SendCmdSYSMSG(pChar->pID, "SYSTEM:マップの情報が更新されたので読み込み直しました。");
-		}
-	}
-}
+/* マップにいるプレイヤーへの送り直し（ResendMapToPlayers）は SboSvrQuest.cpp。ダンジョンの作り直しと共用 */
 
 /* swaps（印で変わるマス）を w に読む。JSON を MAPSWAPEDITROW に直すだけで、範囲・種類違いの欄・重なり・番号の自動振りは
    ゲーム内の管理者ウィンドウと同じ MapSwapBuild（SboSvrMapSwapEdit.cpp）が行う */

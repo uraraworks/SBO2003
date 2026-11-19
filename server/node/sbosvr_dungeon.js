@@ -92,6 +92,27 @@ Module['sboDungeon'] = (function () {
 		return a.map(function (v) { return partNo(v, nParts, label + ' の cells'); });
 	}
 
+	/* ゲームで使う生成の設定（theme.params）。w・h・seed 以外。省いた項目は既定値（無ければ undefined を返す） */
+	var THEME_PARAM_KEYS = ['roomMin', 'roomMax', 'floorMin', 'archMin', 'archMax', 'doorRate', 'openRate', 'loopRate', 'cutoff',
+		'vertRate', 'vertDoorRate', 'vertArchMin', 'vertArchMax'];
+	function checkThemeParams(p) {
+		if (p == null) {
+			return undefined;
+		}
+		if (typeof p !== 'object' || Array.isArray(p)) {
+			bad('params', ' はオブジェクトにしてください');
+		}
+		var o = {};
+		THEME_PARAM_KEYS.forEach(function (k) {
+			if (p[k] == null) {
+				return;
+			}
+			var r = PARAM_RANGE[k];
+			o[k] = int(p[k], r[0], r[1], 'params.' + k);
+		});
+		return Object.keys(o).length ? o : undefined;
+	}
+
 	/* テーマを確かめて、きれいな形にして返す（id は呼ぶ側で決める） */
 	function checkTheme(t) {
 		if (!t || typeof t !== 'object') {
@@ -109,6 +130,7 @@ Module['sboDungeon'] = (function () {
 			arch: partList(t.arch == null ? [] : t.arch, nParts, 'arch', true),
 			archV: partList(t.archV == null ? [] : t.archV, nParts, 'archV', true),
 			door: partNo(t.door == null ? 0 : t.door, nParts, 'door'),
+			doorOpen: partNo(t.doorOpen == null ? 0 : t.doorOpen, nParts, 'doorOpen'),
 			entry: partNo(t.entry == null ? 0 : t.entry, nParts, 'entry'),
 			goal: partNo(t.goal == null ? 0 : t.goal, nParts, 'goal'),
 			bottomRows: int(t.bottomRows == null ? 1 : t.bottomRows, 1, 2, 'bottomRows'),
@@ -117,6 +139,10 @@ Module['sboDungeon'] = (function () {
 			openings: [],
 			lights: []
 		};
+		var params = checkThemeParams(t.params);
+		if (params) {
+			o.params = params;
+		}
 		if (ALGOS.indexOf(o.algo) < 0) {
 			bad('algo', ' は ' + ALGOS.join(' か ') + ' にしてください');
 		}

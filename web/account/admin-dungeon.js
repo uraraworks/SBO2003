@@ -27,9 +27,9 @@
 	/* 部分ごとの名前（テーマの項目） */
 	var LISTS = [
 		['floor', '床'], ['wallTop', '壁の天井（上段）'], ['wallFace', '壁の側面'], ['wallFill', 'その他の壁'],
-		['arch', '出入口の床'], ['archV', '縦の出入口の床（空 = 出入口の床と同じ）'], ['door', '扉（0 = 出入口と同じ）'], ['entry', '入口の絵（出てくる位置に1枚。0 = 置かない）'], ['goal', 'ゴールの絵（ボス部屋の真ん中に1枚。0 = 置かない）'], ['void', '何もない所（0 = 塗らない）']
+		['arch', '出入口の床'], ['archV', '縦の出入口の床（空 = 出入口の床と同じ）'], ['door', '扉（閉じた絵。0 = 出入口と同じ）'], ['doorOpen', '開いた扉の絵（ゲームの扉イベント用。0 = 扉イベントを置かない＝通れる出入口のまま）'], ['entry', '入口の絵（出てくる位置に1枚。0 = 置かない）'], ['goal', 'ゴールの絵（ボス部屋の真ん中に1枚。0 = 置かない）'], ['void', '何もない所（0 = 塗らない）']
 	];
-	var SCALAR = { door: 1, entry: 1, goal: 1, 'void': 1 };
+	var SCALAR = { door: 1, doorOpen: 1, entry: 1, goal: 1, 'void': 1 };
 	var KIND = ['ふつう', 'ボス', '入口'];
 	var CELL_COLOR = ['#14161a', '#b9a87a', '#6b5a48', '#8f7c60', '#4d4136', '#e6d9a8', '#c06a2b'];
 	var CELL_NAME = ['何もない', '床', '壁の天井', '壁の側面', '壁（その他）', '出入口の床', '扉'];
@@ -95,7 +95,7 @@
 	function build() {
 		var h = '<style>' + CSS + '</style>';
 		h += '<details class="mv-help"><summary>使い方</summary><p class="sub-text">ディアブロ1式のランダムダンジョンのテーマ（床・壁のパーツ、9分割の部屋、飾り）を登録し、' +
-			'「お試し作成」で作った結果を見ます。お試し作成は、保存していない編集中のテーマでも試せます。ゲームの中にはまだつながっていません（仕様は docs/dungeon-gen.md）。</p></details>';
+			'「お試し作成」で作った結果を見ます。お試し作成は、保存していない編集中のテーマでも試せます。サブゲーム「ダンジョン」にテーマ番号（dwThemeID）を入れると、作り直しのたびにこのテーマで作ります（仕様は docs/dungeon-gen.md）。</p></details>';
 		h += '<div class="msg" id="dg-msg"></div><div id="dg-drafts"></div>';
 		h += '<div class="dg-sec"><h3>テーマ</h3><div class="dg-row"><select id="dg-sel"></select>' +
 			'<button type="button" id="dg-new">追加</button><button type="button" id="dg-dup" class="sub">複製</button>' +
@@ -112,7 +112,8 @@
 			'<div class="dg-row"><label>名前 <input type="text" id="dg-name" maxlength="40"></label>' +
 			'<label>作り方 <select id="dg-algo"><option value="1">1 = L1 聖堂</option><option value="3">3 = L3 洞窟</option></select></label>' +
 			'<label>下の壁の厚さ（L1） <select id="dg-bottom"><option value="1">1行（天井だけ）</option><option value="2">2行（天井＋側面）</option></select></label></div>' +
-			'<div class="dg-cap">絵を押すとパーツ一覧から選べます。複数可の欄は「＋追加」と絵の×で増減（床はくじで均等に混ぜます）。数字の欄は上級者用です。</div><div class="dg-parts" id="dg-lists"></div></div></div>';
+			'<div class="dg-cap">絵を押すとパーツ一覧から選べます。複数可の欄は「＋追加」と絵の×で増減（床はくじで均等に混ぜます）。数字の欄は上級者用です。</div><div class="dg-parts" id="dg-lists"></div>' +
+			'<div class="dg-cap" id="dg-warn" style="color:var(--ng)"></div></div></div>';
 		h += '<div class="dg-sec" id="dg-rooms-sec" hidden><h3>9分割の部屋（L1 用）</h3>' +
 			'<div class="dg-row"><label>大きさ w <input type="text" class="dg-n" id="dg-rw" inputmode="numeric" value="9"></label>' +
 			'<label>h <input type="text" class="dg-n" id="dg-rh" inputmode="numeric" value="8"></label>' +
@@ -160,6 +161,10 @@
 			'<div class="dg-row" id="dg-tb-d"></div><div class="dg-row" id="dg-rb-d"></div>' +
 			'<div class="dg-scroll" style="max-height:60vh"><canvas class="dg-cv" id="dg-dcv"></canvas></div></div></div>';
 		h += '<div class="dg-sec"><h3>お試し作成</h3><div class="dg-row" id="dg-params"></div>' +
+			'<div class="dg-row"><button type="button" class="sub" id="dg-pkeep">今のお試し作成の設定をテーマに覚える</button>' +
+			'<button type="button" class="sub" id="dg-pclr">覚えた設定を消す</button>' +
+			'<span class="sub-text" id="dg-pinfo"></span></div>' +
+			'<div class="dg-cap">ゲーム（サブゲーム「ダンジョン」）で作る時は、テーマが覚えた設定（幅・高さ・シード以外）を使います。幅・高さはサブゲームのエリアの大きさ、シードは作るたびに変わります。覚えていない項目は既定値です。保存するまで反映されません。</div>' +
 			'<div class="dg-row"><label><input type="checkbox" id="dg-usetheme" checked> 編集中のテーマを使う</label>' +
 			'<button type="button" id="dg-gen">作る</button><button type="button" id="dg-gen2" class="sub">別のシード</button>' +
 			'<label>表示 <select id="dg-view"><option value="parts">パーツの絵</option><option value="meaning">意味の色</option></select></label>' +
@@ -638,6 +643,7 @@
 		});
 	}
 	function markDirty() {
+		showWarn();
 		dirty = true;
 		var e = $('dg-dirty');
 		e.textContent = '未保存';
@@ -654,7 +660,7 @@
 	}
 
 	function blankTheme() {
-		return { name: '新しいテーマ', algo: 1, floor: [1], wallTop: [1], wallFace: [1], wallFill: [1], 'void': 0, arch: [1], archV: [], door: 0, entry: 0, goal: 0, bottomRows: 1, rooms: [], decos: [], openings: [], lights: [] };
+		return { name: '新しいテーマ', algo: 1, floor: [1], wallTop: [1], wallFace: [1], wallFill: [1], 'void': 0, arch: [1], archV: [], door: 0, entry: 0, goal: 0, bottomRows: 1, rooms: [], decos: [], openings: [], lights: [], doorOpen: 0 };
 	}
 
 	function fillSelect() {
@@ -693,6 +699,69 @@
 		showOps();
 		showLights();
 		showDecos();
+		showWarn();
+		showParamsInfo();
+	}
+
+	/* ---------------------------------------------------------------- */
+	/* 通れるパーツの確認（保存は止めない）										 */
+	/* ---------------------------------------------------------------- */
+	/* 当たり判定でぶつかるもの（サーバーの CheckCharBlockFor と同じ: ぶつかる(音付き/音無し)・隠れる(ぶつかる)・隠れる4・隠れる6・カウンター） */
+	var HIT_BLOCK = [1, 2, 4, 5, 9, 11];
+	function partBlocks(no) {
+		var p = parts[no];
+		if (!p) return null;			/* パーツの記録が無い（読めていない・番号違い）時は判定しない */
+		return HIT_BLOCK.indexOf(Number(p.byHitType) || 0) >= 0;
+	}
+	var NEED_PASS = ['floor', 'arch', 'archV', 'door', 'doorOpen', 'entry', 'goal'];
+	var NEED_BLOCK = ['wallTop', 'wallFace', 'wallFill'];
+	function showWarn() {
+		var e = $('dg-warn');
+		if (!e) return;
+		var msg = [];
+		if (cur && bReady) {
+			function vals(k) { var v = cur[k]; return SCALAR[k] ? (v ? [v] : []) : (v || []); }
+			function name(k) { var l = LISTS.filter(function (x) { return x[0] === k; })[0]; return l ? l[1].replace(/（.*$/, '') : k; }
+			NEED_PASS.forEach(function (k) {
+				var bad = vals(k).filter(function (no) { return partBlocks(no) === true; });
+				if (bad.length) msg.push('注意: 「' + name(k) + '」に通れないパーツ（' + bad.join('・') + '）があります。歩く所は当たり判定が「ぶつからない」のパーツにしてください。');
+			});
+			NEED_BLOCK.forEach(function (k) {
+				var bad = vals(k).filter(function (no) { return partBlocks(no) === false; });
+				if (bad.length) msg.push('注意: 「' + name(k) + '」に通れるパーツ（' + bad.join('・') + '）があります。壁は当たり判定が「ぶつかる」のパーツにしてください（すり抜けてしまいます）。');
+			});
+		}
+		e.textContent = msg.join(' ');
+	}
+
+	/* ---------------------------------------------------------------- */
+	/* ゲームで使う生成の設定（theme.params）									 */
+	/* ---------------------------------------------------------------- */
+	var KEEP_KEYS = PARAMS.map(function (p) { return p[0]; }).filter(function (k) { return k !== 'w' && k !== 'h' && k !== 'seed'; });
+	function showParamsInfo() {
+		var e = $('dg-pinfo');
+		if (!e) return;
+		var p = cur && cur.params, ks = p ? Object.keys(p) : [];
+		e.textContent = ks.length ? '覚えている設定: ' + ks.map(function (k) { return k + '=' + p[k]; }).join(', ') : (cur ? '（覚えている設定はありません）' : '');
+		$('dg-pkeep').disabled = !cur;
+		$('dg-pclr').disabled = !cur || !ks.length;
+	}
+	/* テーマの params をお試し作成の欄へ入れる（w・h・シードは触らない。覚えていない項目は既定値に戻す） */
+	function loadParamsToFields(t) {
+		if (!t || !t.params) return;
+		PARAMS.forEach(function (q) {
+			if (KEEP_KEYS.indexOf(q[0]) < 0) return;
+			$('dg-p-' + q[0]).value = String(t.params[q[0]] != null ? t.params[q[0]] : q[2]);
+		});
+	}
+	function keepParams() {
+		if (!cur) return;
+		var all = readParams(false), p = {};
+		KEEP_KEYS.forEach(function (k) { if (all[k] != null) p[k] = all[k]; });
+		cur.params = p;
+		markDirty();
+		showParamsInfo();
+		setMsg('今のお試し作成の設定をテーマに覚えました（保存するとゲームで使われます）。', true);
 	}
 
 	function showThumbs(bKeep) {
@@ -717,6 +786,7 @@
 			if (o.off == null) o.off = 0;
 		});
 		if (t.entry == null) t.entry = 0;
+		if (t.doorOpen == null) t.doorOpen = 0;
 		if (t.goal == null) t.goal = 0;
 		t.rooms.forEach(function (r) {
 			r.fixed = r.fixed === true;
@@ -731,6 +801,7 @@
 		selRoom = selDeco = selOp = -1;
 		clean();
 		show();
+		loadParamsToFields(cur);		/* 覚えた設定があればお試し作成の欄へ入れる */
 	}
 
 	function load() {
@@ -1579,6 +1650,13 @@
 			if (o.type !== 2) o.cellsOpen = [];
 			markDirty();
 			showOps();
+		});
+		$('dg-pkeep').addEventListener('click', keepParams);
+		$('dg-pclr').addEventListener('click', function () {
+			if (!cur || !cur.params) return;
+			delete cur.params;
+			markDirty();
+			showParamsInfo();
 		});
 		$('dg-ladd').addEventListener('click', function () {
 			if (cur.lights.length >= 8) { setMsg('灯りの上書きは 8 件までです。'); return; }

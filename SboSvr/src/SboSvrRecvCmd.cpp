@@ -8720,6 +8720,20 @@ void RecvDataProcSUBGAMEINFO(PBYTE pData, DWORD dwDataSize)
 			pDungeonInfo->wChipIDGoal = pDungeon->wChipIDGoal;
 			pDungeonInfo->wChipIDRoad = pDungeon->wChipIDRoad;
 			pDungeonInfo->wChipIDBlock = pDungeon->wChipIDBlock;
+			pDungeonInfo->dwThemeID = pDungeon->dwThemeID;
+			/* 管理者ウィンドウから直した時も、作り直し番号と生成結果は引き継ぐ */
+			if (pInfoBack && (byTypeBack == SUBGAMEID_DUNGEON)) {
+				PSUBGAME_DUNGEONINFO pBack = (PSUBGAME_DUNGEONINFO)pInfoBack;
+				pDungeonInfo->dwBuildNo = pBack->dwBuildNo;
+				pDungeonInfo->pwGenParts = pBack->pwGenParts;
+				pDungeonInfo->wGenCX = pBack->wGenCX;
+				pDungeonInfo->wGenCY = pBack->wGenCY;
+				pDungeonInfo->wGenStartX = pBack->wGenStartX;
+				pDungeonInfo->wGenStartY = pBack->wGenStartY;
+				pDungeonInfo->wGenGoalX = pBack->wGenGoalX;
+				pDungeonInfo->wGenGoalY = pBack->wGenGoalY;
+				pBack->pwGenParts = NULL;
+			}
 		}		
 		break;
 

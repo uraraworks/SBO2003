@@ -7253,6 +7253,7 @@ void RecvDataProcSUBGAMEINFO(BYTE *pData, DWORD dwDataSize)
 				pDungeonInfo->wChipIDGoal = pDungeon->wChipIDGoal;
 				pDungeonInfo->wChipIDRoad = pDungeon->wChipIDRoad;
 				pDungeonInfo->wChipIDBlock = pDungeon->wChipIDBlock;
+				pDungeonInfo->dwThemeID = pDungeon->dwThemeID;
 			}		
 			break;
 

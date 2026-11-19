@@ -2841,6 +2841,7 @@ void SendCmdSUBGAMEINFO(DWORD pIDSend, int nNo)
 			pDungeon->wChipIDGoal = pDungeonInfo->wChipIDGoal;
 			pDungeon->wChipIDRoad = pDungeonInfo->wChipIDRoad;
 			pDungeon->wChipIDBlock = pDungeonInfo->wChipIDBlock;
+			pDungeon->dwThemeID = pDungeonInfo->dwThemeID;
 		}		
 		break;
 

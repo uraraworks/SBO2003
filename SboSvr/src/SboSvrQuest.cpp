@@ -537,6 +537,34 @@ void MapSwapSendMap(PMAPINFO pMap)
 	}
 }
 
+/*
+ * マップにいるプレイヤーへ、マップに入った時と同じ順で情報を送り直す
+ * （SubProcMapMove と同じ: マップ情報→イベント→キャラ→自分の位置・ステータス・持ち物）。
+ * クライアントはマップ情報を受け取るとキャラ情報を全部消すので、キャラも必ず送る。
+ * データ API のマス目書き込み（tiles/set）とダンジョンの作り直しで使う（MAPINFO だけ送るとクライアントが固まる）
+ */
+void ResendMapToPlayers(PMAPINFO pMap, int nID)
+{
+	int i, j;
+
+	for (i = 0; i < g_aCharInfo.GetSize (); i ++) {
+		PCHARINFO pChar = g_aCharInfo[i];
+		if (pChar && pChar->pID && pChar->szAcc[0] && pChar->dwMapID == pMap->dwID && pChar->byNpcType == NPCTYPE_INIT) {
+			SendCmdMAPINFO (pChar->pID, pMap->dwID);
+			SendCmdEVENTCOUNT (pChar->pID, (DWORD)nID);
+			for (j = 0; j < pMap->nEventCount; j ++) {
+				SendCmdEVENTINFO (pChar->pID, nID, j);
+			}
+			SendCmdEVENTPOS (pChar->pID, (DWORD)nID);
+			SendCmdCHARINFO (pChar->pID, -1);
+			SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 2);
+			SendCmdCHARSTATUS (pChar->pID, pChar->dwTblID);
+			SendCmdCHARITEM (pChar->pID, pChar->dwTblID);
+			SendCmdSYSMSG (pChar->pID, "SYSTEM:マップの情報が更新されたので読み込み直しました。");
+		}
+	}
+}
+
 /* 目の前（byData=2 の調べる）のマスが「調べると開く」マス（宝箱・リサイクル箱）なら開ける。処理した時 TRUE。
    印がまだ立っていない人が調べると、品を渡して（受け取れなければ何も動かさない）印を立てて文を出す */
 BOOL MapSwapExamine(PCHARINFO pChar)

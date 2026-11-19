@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <random>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace DungeonGen
@@ -110,6 +111,7 @@ struct Skeleton
 	std::vector<Link> links;
 	int startX, startY, goalX, goalY;
 	int floorCount;
+	std::vector<int> doorOpen;  // ApplyTheme が埋める。扉のマス（閉じた絵は parts）の開いた絵（w*h 個。0 = 扉イベントを置かない）
 	Skeleton() : w(0), h(0), algo(0), seed(0), tries(0), startX(0), startY(0), goalX(0), goalY(0), floorCount(0) {}
 };
 
@@ -168,12 +170,14 @@ struct Theme
 	int algo;
 	std::vector<int> floor, wallTop, wallFace, wallFill, arch, archV;  // archV: 縦の出入口の床（空 = arch と同じ）
 	int voidPart, door;
+	int doorOpen;  // 開いた扉の絵（0 = 扉イベントを置かない＝通れる出入口のまま。ゲームの扉イベント用。お試し作成では使わない）
 	int entryPart, goalPart;  // start・goal のマスに置く絵（0 = 置かない）
 	int bottomRows;  // L1: 部屋の外枠の下の壁の行数（1 = 天井だけ / 2 = 天井＋側面）
 	std::vector<TplRoom> rooms;
 	std::vector<Deco> decos;
 	std::vector<Opening> openings;
-	Theme() : algo(0), voidPart(0), door(0), entryPart(0), goalPart(0), bottomRows(1) {}
+	std::vector<std::pair<int, int> > lights;  // 灯りの上書き表 {パーツ番号, 灯りの範囲 0〜7}（最大 8 件）
+	Theme() : algo(0), voidPart(0), door(0), doorOpen(0), entryPart(0), goalPart(0), bottomRows(1) {}
 };
 
 // エラーコード（0 = 成功）
@@ -197,6 +201,10 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 // 設定を確かめて骨組みを作る（seed が 0 ならランダムに決め、sk.seed に入れる）。
 // pTheme があれば絵も当てる（parts が空でなくなる）
 Err Generate(Params p, const Theme *pTheme, Skeleton &sk, std::vector<int> &parts);
+
+// テーマ JSON（SBODATA/SboWebDungeonThemes.json の {"seq":..,"themes":[..]}）から id のテーマを探して読む。
+// th にテーマ、p にテーマの params（w,h,seed 以外。省略は既定値）を入れる。見つからない・読めない時は false
+bool FindThemeInFile(const char *pszJson, int id, Theme &th, Params &p);
 
 // 入力 JSON {"params":{...},"theme":{...}} から結果の JSON を作る。失敗時は out は空で Err を返す
 Err RunJson(const char *pszJson, std::string &out);

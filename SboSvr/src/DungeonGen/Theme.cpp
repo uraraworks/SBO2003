@@ -58,6 +58,7 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 {
 	const int W = sk.w, H = sk.h;
 	parts.assign(W * H, 0);
+	sk.doorOpen.assign(W * H, 0);
 
 	// 1. 素の絵
 	for (int i = 0; i < W * H; ++i)
@@ -216,7 +217,11 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 				{
 					// 横の壁の扉は 2 行（天井＋側面）を抜くが、扉の絵は下の側面の行だけ。上の天井の行は出入口の床
 					if (th.door && !l.vert && l.h == 2 && y == l.y && l.tpl < 0) parts[idx] = archP.empty() ? Pick(th.floor, rng) : Pick(archP, rng);
-					else if (th.door) parts[idx] = th.door;
+					else if (th.door)
+					{
+						parts[idx] = th.door;
+						if (th.doorOpen > 0) sk.doorOpen[idx] = th.doorOpen;  // ゲームの扉イベント: 閉じた絵 = door、開いた絵 = doorOpen
+					}
 					else parts[idx] = archP.empty() ? Pick(th.floor, rng) : Pick(archP, rng);
 				}
 				else parts[idx] = archP.empty() ? Pick(th.floor, rng) : Pick(archP, rng);
@@ -239,6 +244,16 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 					}
 					int v = o.cells[tj * o.w + ti];
 					if (v != 0) parts[(l.py + j) * W + l.px + i] = v;
+					// 扉のマスの開いた絵（扉イベント用）。パターンの cellsOpen があればそれ、無ければ doorOpen。
+					// 横の壁の上の行（天井の行）は、cellsOpen で絵が変わる時だけ扉にする
+					int di = (l.py + j) * W + l.px + i;
+					if (sk.cells[di] == CELL_DOOR && th.doorOpen > 0)
+					{
+						int vo = o.cellsOpen.empty() ? 0 : o.cellsOpen[tj * o.w + ti];
+						bool upper = !l.vert && l.h == 2 && l.py + j == l.y;
+						if (vo != 0 && vo != parts[di]) sk.doorOpen[di] = vo;
+						else sk.doorOpen[di] = upper ? 0 : th.doorOpen;
+					}
 				}
 		}
 	}

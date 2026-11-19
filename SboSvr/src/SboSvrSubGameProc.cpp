@@ -9,8 +9,17 @@
 #include "Glbldata.h"
 #include "SboSvrRecvCmd.h"
 #include "SboSvrSubGameProcSugoroku.h"
+/* DungeonGen のメンバー名 max が、互換層の max マクロとぶつかるので、読み込む間だけ外す */
+#pragma push_macro("min")
+#pragma push_macro("max")
+#undef min
+#undef max
+#include "DungeonGen/DungeonGen.h"
+#pragma pop_macro("max")
+#pragma pop_macro("min")
 #include <vector>
 #include <algorithm>
+#include <string>
 
 /* ========================================================================= */
 /* 関数プロトタイプ宣言														 */
@@ -33,6 +42,7 @@ static WORD GetMazeTileParts(int, BOOL, WORD, WORD, BYTE, WORD, WORD, BYTE, WORD
 static void MakeMazeWeave(PBYTE, int, int, PSUBGAME_MAZEINFO);			/* 立体交差のある迷路の設計図 */
 void MakeDungeonProc(BYTE);												/* ダンジョン作成処理 */
 static BOOL MakeDungeonProcTmp(PBYTE, int, int, int, int, int);			/* ダンジョン作成処理(メイン) */
+static BOOL MakeDungeonByTheme(PSUBGAME_DUNGEONINFO, PMAPINFO);			/* ダンジョン作成処理(テーマで生成) */
 static BOOL CheckMakeDungeon(PBYTE, int, int, int, int, int, int);		/* 進行方向のチェック */
 
 extern void sgenrand(unsigned long);									/* 乱数初期化 */
@@ -1456,6 +1466,232 @@ void MakeMazeProc(BYTE byID)
 }
 
 /* ========================================================================= */
+/* 関数名：LoadDungeonThemes												 */
+/* 内容：ダンジョン生成のテーマファイル（SBODATA/SboWebDungeonThemes.json）を読む */
+/* 備考：作り直しのたびに読み直す（管理画面で直したテーマがすぐ効く）。無ければ空 */
+/* ========================================================================= */
+static BOOL LoadDungeonThemes(std::string &strJson)
+{
+	char szFileName[MAX_PATH + 1];
+	HANDLE hFile;
+	DWORD dwSize, dwBytes = 0;
+	int k;
+
+	strJson.clear ();
+	GetModuleFileName (NULL, szFileName, MAX_PATH);
+	for (k = (int)strlen (szFileName) - 1; k > 0; k --) {
+		if (szFileName[k] == '\\') {
+			szFileName[k + 1] = 0;
+			break;
+		}
+	}
+	strcat (szFileName, "SBODATA\\SboWebDungeonThemes.json");
+
+	hFile = CreateFile (szFileName, GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+	if (hFile == INVALID_HANDLE_VALUE) {
+		return FALSE;
+	}
+	dwSize = GetFileSize (hFile, NULL);
+	if ((dwSize == 0) || (dwSize > 64 * 1024 * 1024)) {
+		CloseHandle (hFile);
+		return FALSE;
+	}
+	strJson.resize (dwSize);
+	ReadFile (hFile, &strJson[0], dwSize, &dwBytes, NULL);
+	CloseHandle (hFile);
+	strJson.resize (dwBytes);
+	return (dwBytes > 0);
+}
+
+/* ========================================================================= */
+/* 関数名：MakeDungeonByTheme												 */
+/* 内容：ダンジョン作成処理(テーマで生成)									 */
+/* 備考：範囲の大きさで DungeonGen::Generate し、マス目・イベント（入口・出口・扉）を一度に置く。 */
+/*       テーマが見つからない・生成に失敗した時は何も変えずに FALSE（呼び出し側が今までの作り方で作る） */
+/* ========================================================================= */
+static BOOL MakeDungeonByTheme(PSUBGAME_DUNGEONINFO pDungeon, PMAPINFO pMap)
+{
+	std::string strJson;
+	DungeonGen::Theme theme;
+	DungeonGen::Params param;
+	DungeonGen::Skeleton sk;
+	std::vector<int> aParts;
+	int i, x, y, x1, y1, cx, cy, nAreaCX, nAreaCY;
+
+	/* 範囲（BYTE 座標）がマップに収まっているか。生成の大きさは 8〜128 に収める */
+	if ((pDungeon->byX2 <= pDungeon->byX1) || (pDungeon->byY2 <= pDungeon->byY1)) {
+		return FALSE;
+	}
+	if (((int)pDungeon->byX2 >= pMap->nCX) || ((int)pDungeon->byY2 >= pMap->nCY)) {
+		return FALSE;
+	}
+	if (((int)pDungeon->byStartX >= pMap->nCX) || ((int)pDungeon->byStartY >= pMap->nCY)) {
+		return FALSE;
+	}
+	x1 = (int)pDungeon->byX1;
+	y1 = (int)pDungeon->byY1;
+	nAreaCX = (int)pDungeon->byX2 - x1 + 1;
+	nAreaCY = (int)pDungeon->byY2 - y1 + 1;
+	cx = min (nAreaCX, 128);
+	cy = min (nAreaCY, 128);
+	if ((cx < 8) || (cy < 8)) {
+		return FALSE;
+	}
+
+	/* テーマを探す */
+	if (!LoadDungeonThemes (strJson) || !DungeonGen::FindThemeInFile (strJson.c_str (), (int)pDungeon->dwThemeID, theme, param)) {
+		return FALSE;
+	}
+	param.w = cx;
+	param.h = cy;
+	param.seed = (uint32_t)timeGetTime ();
+	if (param.seed == 0) {
+		param.seed = 1;
+	}
+	if (DungeonGen::Generate (param, &theme, sk, aParts) != DungeonGen::ERR_NONE) {
+		return FALSE;
+	}
+	if (((int)aParts.size () != cx * cy) || (sk.w != cx) || (sk.h != cy) || ((int)sk.doorOpen.size () != cx * cy)) {
+		return FALSE;
+	}
+
+	/* ここから先は作る。範囲内の古いイベント（扉・出口など）を全部消す */
+	{
+		int nKeep = 0;
+		std::vector<EVENTINFO> aKeep;
+		for (i = 0; i < pMap->nEventCount; i ++) {
+			PEVENTINFO pEvent = &pMap->pEvent[i];
+			if ((pEvent->dwX >= (DWORD)pDungeon->byX1) && (pEvent->dwX <= (DWORD)pDungeon->byX2) &&
+				(pEvent->dwY >= (DWORD)pDungeon->byY1) && (pEvent->dwY <= (DWORD)pDungeon->byY2)) {
+				SAFE_DELETE_ARRAY (pEvent->pData);
+				continue;
+			}
+			aKeep.push_back (*pEvent);
+			nKeep ++;
+		}
+		if (nKeep != pMap->nEventCount) {
+			SAFE_DELETE_ARRAY (pMap->pEvent);
+			pMap->pEvent = NULL;
+			if (nKeep > 0) {
+				/* AddEvent・DeleteEvent と同じく BYTE の配列で持つ */
+				pMap->pEvent = (PEVENTINFO)new BYTE[nKeep * sizeof (EVENTINFO)];
+				ZeroMemory (pMap->pEvent, nKeep * sizeof (EVENTINFO));
+				for (i = 0; i < nKeep; i ++) {
+					pMap->pEvent[i] = aKeep[i];
+				}
+			}
+			pMap->nEventCount = nKeep;
+			pMap->nProcEvent = 0;
+			g_nProcMap = 0;
+		}
+	}
+
+	/* 範囲を塗る（生成の外・0 のマスは、テーマの何もない所。0 なら壁の先頭） */
+	WORD wFill = (WORD)theme.voidPart;
+	if (wFill == 0) {
+		wFill = theme.wallFill.empty () ? pDungeon->wChipIDBlock : (WORD)theme.wallFill[0];
+	}
+	for (y = 0; y < nAreaCY; y ++) {
+		for (x = 0; x < nAreaCX; x ++) {
+			WORD wParts = wFill;
+			if ((x < cx) && (y < cy) && aParts[x + y * cx] > 0) {
+				wParts = (WORD)aParts[x + y * cx];
+			}
+			pMap->pwMap[(x1 + x) + (y1 + y) * pMap->nCX] = wParts;
+		}
+	}
+
+	/* 生成結果を保持（実行中だけ） */
+	SAFE_DELETE_ARRAY (pDungeon->pwGenParts);
+	pDungeon->pwGenParts = new WORD[cx * cy];
+	for (i = 0; i < cx * cy; i ++) {
+		pDungeon->pwGenParts[i] = (WORD)max (0, aParts[i]);
+	}
+	pDungeon->wGenCX = (WORD)cx;
+	pDungeon->wGenCY = (WORD)cy;
+	pDungeon->wGenStartX = (WORD)sk.startX;
+	pDungeon->wGenStartY = (WORD)sk.startY;
+	pDungeon->wGenGoalX = (WORD)sk.goalX;
+	pDungeon->wGenGoalY = (WORD)sk.goalY;
+
+	int nInX = x1 + sk.startX, nInY = y1 + sk.startY;		/* 中の入口（生成の start） */
+	int nOutX = x1 + sk.goalX, nOutY = y1 + sk.goalY;		/* 出口（生成の goal） */
+	pDungeon->byGoalX = (BYTE)nInX;
+	pDungeon->byGoalY = (BYTE)nInY;
+
+	/* ゴールの絵はテーマの goal（生成が置く）。無ければ wChipIDGoal */
+	if ((theme.goalPart <= 0) && pDungeon->wChipIDGoal) {
+		pMap->pwMap[nOutX + nOutY * pMap->nCX] = pDungeon->wChipIDGoal;
+	}
+	/* 外の入口マス */
+	pMap->pwMap[pDungeon->byStartX + pDungeon->byStartY * pMap->nCX] = pDungeon->wChipIDStart;
+
+	/* 外の入口 → 中の入口（生成の start） */
+	{
+		int nNo = AddEvent (pMap->dwID);
+		PEVENTINFO pEvent = &pMap->pEvent[nNo];
+		pEvent->dwX = (DWORD)pDungeon->byStartX;
+		pEvent->dwY = (DWORD)pDungeon->byStartY;
+		pEvent->byType = EVENTTYPE_MAPCHG;
+		int nSize = GetEventDataSize (EVENTTYPE_MAPCHG);
+		pEvent->pData = new BYTE[nSize];
+		ZeroMemory (pEvent->pData, nSize);
+		PEVENTINFO_MAPCHG pMapChg = (PEVENTINFO_MAPCHG)pEvent->pData;
+		pMapChg->dwMapID = pMap->dwID;
+		pMapChg->dwX = (DWORD)nInX;
+		pMapChg->dwY = (DWORD)nInY;
+		pMapChg->byEfect = EVENTMOVEEFECT_SILENT;
+	}
+	/* 出口（生成の goal）→ 外の入口 */
+	{
+		int nNo = AddEvent (pMap->dwID);
+		PEVENTINFO pEvent = &pMap->pEvent[nNo];
+		pEvent->dwX = (DWORD)nOutX;
+		pEvent->dwY = (DWORD)nOutY;
+		pEvent->byType = EVENTTYPE_MAPCHG;
+		int nSize = GetEventDataSize (EVENTTYPE_MAPCHG);
+		pEvent->pData = new BYTE[nSize];
+		ZeroMemory (pEvent->pData, nSize);
+		PEVENTINFO_MAPCHG pMapChg = (PEVENTINFO_MAPCHG)pEvent->pData;
+		pMapChg->dwMapID = pMap->dwID;
+		pMapChg->dwX = (DWORD)pDungeon->byStartX;
+		pMapChg->dwY = (DWORD)pDungeon->byStartY;
+		pMapChg->byEfect = EVENTMOVEEFECT_SILENT;
+	}
+	/* 扉（テーマの doorOpen があるときだけ。閉じた絵 = マスの絵、開いた絵 = 生成が決めた開いた絵） */
+	for (y = 0; y < cy; y ++) {
+		for (x = 0; x < cx; x ++) {
+			int nOpen = sk.doorOpen[x + y * cx], nClose = aParts[x + y * cx];
+			if ((nOpen <= 0) || (nClose <= 0) || ((x1 + x) == (int)pDungeon->byStartX && (y1 + y) == (int)pDungeon->byStartY)) {
+				continue;
+			}
+			int nNo = AddEvent (pMap->dwID);
+			PEVENTINFO pEvent = &pMap->pEvent[nNo];
+			pEvent->dwX = (DWORD)(x1 + x);
+			pEvent->dwY = (DWORD)(y1 + y);
+			pEvent->byType = EVENTTYPE_DOOR;
+			pEvent->pData = new BYTE[sizeof (EVENTINFO_DOOR)];
+			ZeroMemory (pEvent->pData, sizeof (EVENTINFO_DOOR));
+			PEVENTINFO_DOOR pDoor = (PEVENTINFO_DOOR)pEvent->pData;
+			pDoor->wGrpID = (WORD)nClose;
+			pDoor->wBackGrpID = (WORD)nOpen;
+			pDoor->byTimeClose = 30;							/* 3秒で閉まる */
+			pDoor->byType = EVENTDOOTTYPE_NONE;
+		}
+	}
+
+	/* 作り直し番号を進めて、マップにいる全員へマップを送り直す（tiles/set と同じ関数） */
+	pDungeon->dwBuildNo ++;
+	pDungeon->byTmpX = 0;
+	pDungeon->byTmpY = 0;
+	pDungeon->dwTimeCheck = 0;									/* 人がいなくなるまで作り直さない（今までの作り方の終わりと同じ） */
+	pDungeon->dwTblIDCheck = 0;
+	ResendMapToPlayers (pMap, (int)pMap->dwID);
+	SendCmdSYSMSGMAP (pMap->dwID, "SYSTEM:ダンジョン作成完了しました。");
+	return TRUE;
+}
+
+/* ========================================================================= */
 /* 関数名：MakeDungeonProc													 */
 /* 内容：ダンジョン作成処理													 */
 /* 日付：2004/02/28															 */
@@ -1526,6 +1762,11 @@ void MakeDungeonProc(BYTE byID)
 			i = -1;
 			bFlg = FALSE;
 		}
+	}
+
+	/* テーマ（ダンジョン生成）で作る。作れなければ今までの作り方 */
+	if (pDungeon->dwThemeID && MakeDungeonByTheme (pDungeon, pMap)) {
+		return;
 	}
 
 	/* マップ設計図作成 */

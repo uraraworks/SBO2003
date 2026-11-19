@@ -1886,4 +1886,11 @@ emptymap zero charpos=1 mapmsg=0
 putfill before parents=175 over=0 mismatch=0
 putfill after parents=175 full=175 over=0 mismatch=0 child>0=1 mimic>0=0
 putfill again added=0 over=0 mismatch=0
+== AN. Dungeon theme ==
+dungeontheme missing old=1 buildNo=0 events=2
+dungeontheme theme5 old=0 buildNo=1 entry=1 mapchg=2 doors>0=1 doorsOk=1 oldEvent=0 keepEvent=1 eventOutside=0 badParts=0 outChanged=1(entrance=1) goal=1 genSize=40x40
+dungeontheme rebuild buildNo=2 doors>0=1 eventsBounded=1 keepEvent=1
+dungeontheme theme6 doors=0 buildNo=3 goalPart=1
+dungeontheme narrow buildNo+=0 mapTmp=0
+dungeontheme save theme0=0 theme7=7 fields=11 extraBytes=18
 == done ==

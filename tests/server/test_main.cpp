@@ -42,6 +42,7 @@
 #include <emscripten.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include <string.h>
 #include <string>
 #include <set>
@@ -1094,6 +1095,10 @@ static void TestTailRelogin(const std::vector<int> &aLogin);
 static void TestTailOverlap(const std::vector<int> &aLogin);
 static void TestEmptyMapCheck(const std::vector<int> &aLogin);
 static void TestPutFill(void);
+static void TestDungeonTheme(void);
+extern void MakeDungeonProc(BYTE);
+extern BOOL SaveSubGameInfo(void);
+extern BOOL LoadSubGameInfo(void);
 extern BOOL g_bPutFillOnStart;
 extern void RecvCmdOnDecPlayer(int);
 extern void BattleProcCheck(PCHARINFO);
@@ -1613,6 +1618,8 @@ static void TestWorld(void)
 	TestEmptyMapCheck(aLogin);
 	/* AM. 起動時に NPC発生を発生数まで出す（乱数を使うので最後） */
 	TestPutFill();
+	/* AN. ダンジョンのテーマ生成（サブゲーム「ダンジョン」の作り直し。マップの中身を一時的に差し替えて、終わったら戻す） */
+	TestDungeonTheme();
 }
 
 /* ------------------------------------------------------------------------- */
@@ -10466,4 +10473,195 @@ static void TestPutFill(void)
 	PutCharFillAll();
 	PutFillCount(&nParent, &nFull, &nOver, &nMismatch, &nChild, &nMimic);
 	printf("putfill again added=%d over=%d mismatch=%d\n", nChild - nChild1, nOver, nMismatch);
+}
+
+
+/* ------------------------------------------------------------------------- */
+/* AN. ダンジョンのテーマ生成												 */
+/*     テーマ番号 0・見つからない番号は今までの作り方（作成中の設計図が付く）	 */
+/*     テーマがあれば、範囲に絵が入り・入口と出口のワープ・扉イベントが置かれ・	 */
+/*     範囲内の古いイベントは消え・作り直し番号が進み・保存の列が増える		 */
+/* ------------------------------------------------------------------------- */
+static void TestDungeonTheme(void)
+{
+	printf("== AN. Dungeon theme ==\n");
+	int nMapNo = -1;
+	for (int i = 0; i < g_aMapInfo.GetSize(); i ++) {
+		if (g_aMapInfo[i] && g_aMapInfo[i]->nCX >= 60 && g_aMapInfo[i]->nCY >= 60 && g_aMapInfo[i]->pwMap) {
+			nMapNo = i;
+			break;
+		}
+	}
+	if (nMapNo < 0) {
+		printf("dungeontheme no map\n");
+		return;
+	}
+	PMAPINFO pMap = g_aMapInfo[nMapNo];
+	/* マップの中身を控える（終わったら戻す）。イベントは空にして始める */
+	std::vector<WORD> aMapBack(pMap->pwMap, pMap->pwMap + pMap->nCX * pMap->nCY);
+	PEVENTINFO pEventBack = pMap->pEvent;
+	int nEventBack = pMap->nEventCount;
+	pMap->pEvent = NULL;
+	pMap->nEventCount = 0;
+
+	/* テーマ（床 1・2、天井 3、側面 4、その他の壁 5、出入口 6、扉 7→開いた 8、入口の絵 9、ゴールの絵 10。扉を多めに） */
+	{
+		FILE *fp = fopen("SBODATA/SboWebDungeonThemes.json", "wb");
+		if (fp) {
+			const char *psz = "{\"seq\":5,\"themes\":[{\"id\":5,\"name\":\"test\",\"algo\":1,\"floor\":[1,2],\"wallTop\":[3],\"wallFace\":[4],\"wallFill\":[5],"
+				"\"void\":0,\"arch\":[6],\"door\":7,\"doorOpen\":8,\"entry\":9,\"goal\":10,\"bottomRows\":1,\"rooms\":[],\"decos\":[],"
+				"\"params\":{\"doorRate\":100,\"openRate\":0,\"floorMin\":30}},"
+				"{\"id\":6,\"name\":\"nodoor\",\"algo\":1,\"floor\":[1],\"wallTop\":[3],\"wallFace\":[4],\"wallFill\":[5],\"arch\":[6],\"door\":7,\"goal\":10,\"rooms\":[],\"decos\":[]}]}";
+			fwrite(psz, 1, strlen(psz), fp);
+			fclose(fp);
+		}
+	}
+
+	SUBGAME_DUNGEONINFO Info;
+	ZeroMemory(&Info, sizeof(Info));
+	Info.dwMapID = pMap->dwID;
+	Info.byX1 = 12; Info.byY1 = 10; Info.byX2 = 51; Info.byY2 = 49;		/* 40×40 */
+	Info.byStartX = 3; Info.byStartY = 4;
+	Info.wChipIDStart = 21; Info.wChipIDGoal = 22; Info.wChipIDRoad = 23; Info.wChipIDBlock = 24;
+	Info.dwTblID = (DWORD)-1;
+	SUBGAMEINFO Sub;
+	ZeroMemory(&Sub, sizeof(Sub));
+	Sub.byType = SUBGAMEID_DUNGEON;
+	Sub.pInfo = &Info;
+	g_aSubaGameInfo.Add(&Sub);
+	BYTE byID = (BYTE)(g_aSubaGameInfo.GetSize() - 1);
+	/* 古いイベント: 範囲の中（消える）・外（残る） */
+	PMAPINFO pm = pMap;
+	for (int k = 0; k < 2; k ++) {
+		int nNo = AddEvent(pm->dwID);
+		pm->pEvent[nNo].dwX = (DWORD)(k == 0 ? 20 : 60);
+		pm->pEvent[nNo].dwY = (DWORD)(k == 0 ? 20 : 55);
+		pm->pEvent[nNo].byType = EVENTTYPE_STATUSINIT;
+		pm->pEvent[nNo].pData = NULL;
+	}
+
+	/* 1. 見つからない番号 → 今までの作り方（設計図が付き、イベントは触らない） */
+	Info.dwThemeID = 99;
+	MakeDungeonProc(byID);
+	printf("dungeontheme missing old=%d buildNo=%lu events=%d\n", (int)(Info.pMapTmp != NULL), (unsigned long)Info.dwBuildNo, pMap->nEventCount);
+	SAFE_DELETE_ARRAY(Info.pMapTmp);
+
+	/* 2. テーマ 5 */
+	Info.dwThemeID = 5;
+	MakeDungeonProc(byID);
+	int nTop = 0, nMapChg = 0, nDoor = 0, nDoorOk = 0, nOld = 0, nKeep = 0, nOutside = 0, nBadParts = 0;
+	for (int i = 0; i < pMap->nEventCount; i ++) {
+		PEVENTINFO pE = &pMap->pEvent[i];
+		bool bIn = pE->dwX >= 12 && pE->dwX <= 51 && pE->dwY >= 10 && pE->dwY <= 49;
+		if (pE->byType == EVENTTYPE_STATUSINIT) {
+			if (pE->dwX == 20) nOld ++;
+			if (pE->dwX == 60) nKeep ++;
+		} else if (pE->byType == EVENTTYPE_MAPCHG) {
+			nMapChg ++;
+			PEVENTINFO_MAPCHG pC = (PEVENTINFO_MAPCHG)pE->pData;
+			if (pE->dwX == 3 && pE->dwY == 4) {
+				/* 外の入口 → 中の入口（生成の start = byGoalX/Y）。エリアの中 */
+				if (pC->dwX == Info.byGoalX && pC->dwY == Info.byGoalY && pC->dwX >= 12 && pC->dwX <= 51 && pC->dwY >= 10 && pC->dwY <= 49) nTop ++;
+			} else if (bIn) {
+				/* 出口（生成の goal）→ 外の入口 */
+				if (pC->dwX == 3 && pC->dwY == 4 && pMap->pwMap[pE->dwX + pE->dwY * pMap->nCX] == 10) nTop += 10;
+			}
+		} else if (pE->byType == EVENTTYPE_DOOR) {
+			nDoor ++;
+			PEVENTINFO_DOOR pD = (PEVENTINFO_DOOR)pE->pData;
+			if (bIn && pD->wGrpID == 7 && pD->wBackGrpID == 8 && pMap->pwMap[pE->dwX + pE->dwY * pMap->nCX] == 7) nDoorOk ++;
+		}
+		if (!bIn && pE->byType != EVENTTYPE_STATUSINIT && !(pE->dwX == 3 && pE->dwY == 4)) nOutside ++;
+	}
+	/* 範囲のマスは、テーマの絵（1〜10）だけ。外は触らない */
+	for (int y = 10; y <= 49; y ++) {
+		for (int x = 12; x <= 51; x ++) {
+			WORD w = pMap->pwMap[x + y * pMap->nCX];
+			if (w < 1 || w > 10) nBadParts ++;
+		}
+	}
+	int nOutChg = 0;
+	for (int y = 0; y < pMap->nCY; y ++) {
+		for (int x = 0; x < pMap->nCX; x ++) {
+			bool bIn = x >= 12 && x <= 51 && y >= 10 && y <= 49;
+			if (!bIn && pMap->pwMap[x + y * pMap->nCX] != aMapBack[x + y * pMap->nCX]) nOutChg ++;
+		}
+	}
+	printf("dungeontheme theme5 old=%d buildNo=%lu entry=%d mapchg=%d doors>0=%d doorsOk=%d oldEvent=%d keepEvent=%d eventOutside=%d badParts=%d outChanged=%d(entrance=%d) goal=%d genSize=%dx%d\n",
+		(int)(Info.pMapTmp != NULL), (unsigned long)Info.dwBuildNo, (int)(nTop % 10 == 1), nMapChg, (int)(nDoor > 0), (int)(nDoor == nDoorOk), nOld, nKeep, nOutside, nBadParts,
+		nOutChg, (int)(pMap->pwMap[3 + 4 * pMap->nCX] == 21), (int)(nTop >= 10), (int)Info.wGenCX, (int)Info.wGenCY);
+
+	/* 3. 作り直すと番号が進み、古い扉は消えて置き直し（扉の数は前後で 0 でない・events が積み上がらない） */
+	int nEvents1 = pMap->nEventCount;
+	MakeDungeonProc(byID);
+	int nDoor2 = 0;
+	for (int i = 0; i < pMap->nEventCount; i ++) if (pMap->pEvent[i].byType == EVENTTYPE_DOOR) nDoor2 ++;
+	printf("dungeontheme rebuild buildNo=%lu doors>0=%d eventsBounded=%d keepEvent=%d\n", (unsigned long)Info.dwBuildNo, (int)(nDoor2 > 0),
+		(int)(pMap->nEventCount < nEvents1 + 400 && pMap->nEventCount > 2), nKeep);
+
+	/* 4. doorOpen の無いテーマ 6 は扉イベントを置かない */
+	Info.dwThemeID = 6;
+	MakeDungeonProc(byID);
+	int nDoor3 = 0;
+	for (int i = 0; i < pMap->nEventCount; i ++) if (pMap->pEvent[i].byType == EVENTTYPE_DOOR) nDoor3 ++;
+	printf("dungeontheme theme6 doors=%d buildNo=%lu goalPart=%d\n", nDoor3, (unsigned long)Info.dwBuildNo,
+		(int)(pMap->pwMap[(int)Info.wGenGoalX + 12 + ((int)Info.wGenGoalY + 10) * pMap->nCX] == 10));
+
+	/* 5. 範囲が狭い（8 未満）なら今までの作り方 */
+	Info.dwThemeID = 5;
+	Info.byX2 = Info.byX1 + 5;
+	DWORD dwBuild = Info.dwBuildNo;
+	MakeDungeonProc(byID);
+	printf("dungeontheme narrow buildNo+=%lu mapTmp=%d\n", (unsigned long)(Info.dwBuildNo - dwBuild), (int)(Info.pMapTmp != NULL));
+	SAFE_DELETE_ARRAY(Info.pMapTmp);
+
+	/* 6. 保存の列（テーマ番号 0 の時は列を増やさない）→ 読み直しで戻る */
+	Info.byX2 = 51;
+	{
+		struct stat st;
+		long nSize[2] = { 0, 0 };
+		DWORD dwTheme[2] = { 0, 0 };
+		int nOk[2] = { 0, 0 };
+		const DWORD adwSave[2] = { 0, 7 };
+		for (int k = 0; k < 2; k ++) {
+			Info.dwThemeID = adwSave[k];
+			SaveSubGameInfo();
+			if (stat("SBODATA/SboDataSubGameInfo.dat", &st) == 0) nSize[k] = (long)st.st_size;
+			/* 読み込みは空の表に入れる作りなので、今の表を退避して空にしてから読む（最後が今のダンジョン） */
+			std::vector<PSUBGAMEINFO> aOrig;
+			for (int i = 0; i < g_aSubaGameInfo.GetSize(); i ++) aOrig.push_back(g_aSubaGameInfo[i]);
+			int nBase = (int)aOrig.size();
+			g_aSubaGameInfo.RemoveAll();
+			LoadSubGameInfo();
+			PSUBGAMEINFO pLoad = g_aSubaGameInfo.GetSize() ? g_aSubaGameInfo[g_aSubaGameInfo.GetSize() - 1] : NULL;
+			if (g_aSubaGameInfo.GetSize() == nBase && pLoad && pLoad->byType == SUBGAMEID_DUNGEON && pLoad->pInfo) {
+				PSUBGAME_DUNGEONINFO pL = (PSUBGAME_DUNGEONINFO)pLoad->pInfo;
+				dwTheme[k] = pL->dwThemeID;
+				nOk[k] = (int)(pL->byX1 == 12 && pL->byY2 == 49 && pL->wChipIDBlock == 24 && pL->byStartY == 4);
+			}
+			/* 読んだ写しを片づけて、元の表に戻す */
+			for (int i = 0; i < g_aSubaGameInfo.GetSize(); i ++) {
+				PSUBGAMEINFO pDel = g_aSubaGameInfo[i];
+				SAFE_DELETE_ARRAY(pDel->pInfo);
+				delete pDel;
+			}
+			g_aSubaGameInfo.RemoveAll();
+			for (int i = 0; i < nBase; i ++) g_aSubaGameInfo.Add(aOrig[i]);
+		}
+		printf("dungeontheme save theme0=%lu theme7=%lu fields=%d%d extraBytes=%ld\n", (unsigned long)dwTheme[0], (unsigned long)dwTheme[1], nOk[0], nOk[1], nSize[1] - nSize[0]);
+	}
+
+	/* 後始末 */
+	SAFE_DELETE_ARRAY(Info.pwGenParts);
+	for (int i = 0; i < pMap->nEventCount; i ++) {
+		SAFE_DELETE_ARRAY(pMap->pEvent[i].pData);
+	}
+	SAFE_DELETE_ARRAY(pMap->pEvent);
+	pMap->pEvent = pEventBack;
+	pMap->nEventCount = nEventBack;
+	pMap->nProcEvent = 0;
+	g_nProcMap = 0;
+	memcpy(pMap->pwMap, &aMapBack[0], sizeof(WORD) * aMapBack.size());
+	g_aSubaGameInfo.RemoveAt(byID);
+	unlink("SBODATA/SboWebDungeonThemes.json");
 }

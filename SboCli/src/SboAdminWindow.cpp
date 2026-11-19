@@ -5742,6 +5742,8 @@ void AdminOnCommandSubGameInfo(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 					pDungeon->wChipIDRoad = (WORD)atoi (szTmp);
 					GetWindowText (m_hWndEdit13, szTmp, 5);
 					pDungeon->wChipIDBlock = (WORD)atoi (szTmp);
+					GetWindowText (m_hWndEdit14, szTmp, 8);
+					pDungeon->dwThemeID = (DWORD)atoi (szTmp);
 				}
 				break;
 			}
@@ -7023,6 +7025,8 @@ void AdminOnPaintSubGame(HDC hDC)
 		MyTextOut (hDC, 0, 64 + 16 * 5, "ｺﾞｰﾙ地点ﾁｯﾌﾟ:");
 		MyTextOut (hDC, 0, 64 + 16 * 6, "道ﾁｯﾌﾟ:");
 		MyTextOut (hDC, 0, 64 + 16 * 7, "壁ﾁｯﾌﾟ:");
+		MyTextOut (hDC, 0, 64 + 16 * 8, "ﾃｰﾏ番号:");
+		MyTextOut (hDC, 12 * 10, 64 + 16 * 8, "(0=従来)");
 
 		MyTextOut (hDC, 12 * 13, 64 + 16 * 3, "座標チェックがONの場合、");
 		MyTextOut (hDC, 12 * 13, 64 + 16 * 4, "左クリックで開始座標");
@@ -10923,6 +10927,9 @@ void MakeAdminWndSubGameInfoType(void)
 			m_hWndEdit12 = CreateWindowEdit (12 * 7, 64 + 16 * 6, 24, 14, ES_NUMBER);
 			m_hWndEdit13 = CreateWindowEdit (12 * 7, 64 + 16 * 7, 24, 14, ES_NUMBER);
 
+			/* ダンジョン生成のテーマ番号 */
+			m_hWndEdit14 = CreateWindowEdit (12 * 7, 64 + 16 * 8, 36, 14, ES_NUMBER);
+
 			wsprintf (szTmp, "%ld", pDungeon->dwMapID);
 			SetWindowText (m_hWndEdit1, szTmp);
 			wsprintf (szTmp, "%d", pDungeon->byX1);
@@ -10949,6 +10956,8 @@ void MakeAdminWndSubGameInfoType(void)
 			SetWindowText (m_hWndEdit12, szTmp);
 			wsprintf (szTmp, "%d", pDungeon->wChipIDBlock);
 			SetWindowText (m_hWndEdit13, szTmp);
+			wsprintf (szTmp, "%lu", pDungeon->dwThemeID);
+			SetWindowText (m_hWndEdit14, szTmp);
 		}
 		break;
 	}
@@ -10975,6 +10984,7 @@ void DeleteAdminWndSubGameInfoType(void)
 	SAFE_DESTROYWND (m_hWndEdit11);
 	SAFE_DESTROYWND (m_hWndEdit12);
 	SAFE_DESTROYWND (m_hWndEdit13);
+	SAFE_DESTROYWND (m_hWndEdit14);
 }
 
 /* Copyright(C)URARA-works 2003-2005 */

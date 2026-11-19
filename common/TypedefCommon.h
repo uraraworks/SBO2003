@@ -1357,11 +1357,20 @@ typedef struct _SUBGAME_DUNGEONINFO {
 	WORD		wChipIDGoal;										/* ゴール地点のマップチップID */
 	WORD		wChipIDRoad;										/* 道のマップチップID */
 	WORD		wChipIDBlock;										/* 壁のマップチップID */
+	DWORD		dwThemeID;											/* ダンジョン生成のテーマ番号（0=今までの作り方。SboWebDungeonThemes.json の id） */
 	BYTE		*pMapTmp;											/* 作成するマップ */
 	DWORD		dwTblID;											/* 管理人キャラのテーブルID */
 	DWORD		dwCountTmp;											/* 参加人数カウント用 */
 	DWORD		dwTimeCheck;										/* 最後に人数チェックした時間 */
 	DWORD		dwTblIDCheck;										/* 最後に人数チェックしたテーブルID */
+	DWORD		dwBuildNo;											/* 作り直し番号（テーマで作るたびに進む。実行中だけ・保存しない） */
+	WORD		*pwGenParts;										/* テーマで作った結果のパーツ（範囲の大きさ。実行中だけ・保存しない） */
+	WORD		wGenCX;												/* 生成結果の横サイズ */
+	WORD		wGenCY;												/* 生成結果の縦サイズ */
+	WORD		wGenStartX;											/* 生成の start（範囲の左上からの座標） */
+	WORD		wGenStartY;
+	WORD		wGenGoalX;											/* 生成の goal（範囲の左上からの座標） */
+	WORD		wGenGoalY;
 } SUBGAME_DUNGEONINFO, *PSUBGAME_DUNGEONINFO;
 
 /* サブゲーム：ダンジョン情報(保存データ) */
@@ -1381,6 +1390,7 @@ typedef struct _SUBGAME_DUNGEONINFOSAVE {
 	WORD		wChipIDGoal;										/* ゴール地点のマップチップID */
 	WORD		wChipIDRoad;										/* 道のマップチップID */
 	WORD		wChipIDBlock;										/* 壁のマップチップID */
+	DWORD		dwThemeID;											/* ダンジョン生成のテーマ番号（0=今までの作り方） */
 } SUBGAME_DUNGEONINFOSAVE, *PSUBGAME_DUNGEONINFOSAVE;
 
 /* サブゲーム：迷路情報 */

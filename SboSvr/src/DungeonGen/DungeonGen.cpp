@@ -84,6 +84,7 @@ void ReadTheme(const JVal &j, Theme &t)
 	ReadInts(j.Get("archV"), t.archV);
 	t.voidPart = j.Int("void", 0);
 	t.door = j.Int("door", 0);
+	t.doorOpen = j.Int("doorOpen", 0);
 	t.entryPart = j.Int("entry", 0);
 	t.goalPart = j.Int("goal", 0);
 	t.bottomRows = j.Int("bottomRows", 1) == 2 ? 2 : 1;
@@ -132,6 +133,13 @@ void ReadTheme(const JVal &j, Theme &t)
 			op.off = o.Int("off", 0);
 			t.openings.push_back(op);
 		}
+	const JVal *lts = j.Get("lights");
+	if (lts && lts->t == JVal::ARR)
+		for (size_t i = 0; i < lts->a.size() && t.lights.size() < 8; ++i)
+		{
+			int wp = lts->a[i].Int("wParts", 0), bl = lts->a[i].Int("byLight", 0);
+			if (wp > 0 && bl >= 0 && bl <= 7) t.lights.push_back(std::make_pair(wp, bl));
+		}
 	const JVal *decos = j.Get("decos");
 	if (decos && decos->t == JVal::ARR)
 		for (size_t i = 0; i < decos->a.size(); ++i)
@@ -167,6 +175,25 @@ void IntArray(std::string &s, const std::vector<int> &v)
 }
 
 } // namespace
+
+bool FindThemeInFile(const char *pszJson, int id, Theme &th, Params &p)
+{
+	JVal root;
+	if (!pszJson || !ParseJson(pszJson, root) || root.t != JVal::OBJ) return false;
+	const JVal *themes = root.Get("themes");
+	if (!themes || themes->t != JVal::ARR) return false;
+	for (size_t i = 0; i < themes->a.size(); ++i)
+	{
+		const JVal &jt = themes->a[i];
+		if (jt.t != JVal::OBJ || jt.Int("id", 0) != id) continue;
+		th = Theme();
+		p = Params();
+		ReadTheme(jt, th);
+		ReadParams(jt.Get("params"), p);  // w,h,seed も読まれるが、ゲーム側が範囲の大きさと時刻で上書きする
+		return true;
+	}
+	return false;
+}
 
 Err RunJson(const char *pszJson, std::string &out)
 {

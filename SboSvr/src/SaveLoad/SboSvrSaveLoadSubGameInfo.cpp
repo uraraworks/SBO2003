@@ -14,7 +14,7 @@
 /* 定数定義																	 */
 /* ========================================================================= */
 #define DATACOUNT			(1)										/* 保存データ数 */
-#define DATACOUNT_DUNGEON	(15)									/* 保存データ数(ダンジョン) */
+#define DATACOUNT_DUNGEON	(16)									/* 保存データ数(ダンジョン) */
 #define DATACOUNT_MAZE		(26)									/* 保存データ数(迷路) */
 #define DATACOUNT_BOMB		(9)										/* 保存データ数(爆弾ゲーム) */
 #define DATACOUNT_WAR		(22)									/* 保存データ数(戦場ゲーム) */
@@ -56,6 +56,7 @@ static const char *s_aszNameDUNGEON[] = {
 	"wChipIDGoal",		/* ゴール地点のマップチップID */
 	"wChipIDRoad",		/* 道のマップチップID */
 	"wChipIDBlock",		/* 壁のマップチップID */
+	"dwThemeID",		/* ダンジョン生成のテーマ番号 */
 	"z"
 };
 
@@ -576,6 +577,10 @@ static PBYTE GetInfoDungeon(PSUBGAME_DUNGEONINFO pInfo, PDWORD pdwSize)
 		if (s_aszNameDUNGEON[i][0] == 'z') {
 			break;
 		}
+		/* 足した項目（16番目から）は使っている時だけ書く（前の版のサーバーでも読めるように） */
+		if ((i >= 15) && !pInfo->dwThemeID) {
+			break;
+		}
 		strcpy (Info.szName, s_aszNameDUNGEON[i]);
 
 		dwHeaderSize += (strlen (Info.szName) + 1);
@@ -619,6 +624,7 @@ static PBYTE GetInfoDungeon(PSUBGAME_DUNGEONINFO pInfo, PDWORD pdwSize)
 		case 12:	dwDataSizeTmp = sizeof (WORD);			break;	/* ゴール地点のマップチップID */
 		case 13:	dwDataSizeTmp = sizeof (WORD);			break;	/* 道のマップチップID */
 		case 14:	dwDataSizeTmp = sizeof (WORD);			break;	/* 壁のマップチップID */
+		case 15:	dwDataSizeTmp = sizeof (DWORD);			break;	/* ダンジョン生成のテーマ番号 */
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
 		dwDataSize += dwDataSizeTmp;
@@ -715,6 +721,10 @@ static PBYTE GetInfoDungeon(PSUBGAME_DUNGEONINFO pInfo, PDWORD pdwSize)
 		case 14:	/* 壁のマップチップID */
 			CopyMemory (&pData[dwOffset], &pInfo->wChipIDBlock, sizeof (WORD));
 			dwOffset += sizeof (WORD);
+			break;
+		case 15:	/* ダンジョン生成のテーマ番号 */
+			CopyMemory (&pData[dwOffset], &pInfo->dwThemeID, sizeof (DWORD));
+			dwOffset += sizeof (DWORD);
 			break;
 		}
 	}
@@ -1624,6 +1634,9 @@ static PBYTE PetInfoDungeon(PBYTE pData, PDWORD pdwSize)
 		} else if (strcmp (aHeaderInfo[i].szName, "wChipIDBlock") == 0) {			/* 壁のマップチップID */
 			CopyMemory (&pInfo->wChipIDBlock, &pData[dwOffsetTmp], sizeof (WORD));
 			dwOffsetTmp += sizeof (WORD);
+		} else if (strcmp (aHeaderInfo[i].szName, "dwThemeID") == 0) {				/* ダンジョン生成のテーマ番号 */
+			CopyMemory (&pInfo->dwThemeID, &pData[dwOffsetTmp], sizeof (DWORD));
+			dwOffsetTmp += sizeof (DWORD);
 		}
 		dwOffset = dwOffsetTmp;
 	}

@@ -61,6 +61,7 @@ extern WORD MapSwapParts(PMAPINFO pMap, PCHARINFO pViewer, int x, int y);	/* (x,
 extern void MapSwapSend(PCHARINFO pChar, PMAPINFO pMap, BOOL bForce);	/* 印で変わるマスの差し替え一覧を本人にだけ送る（bForce=FALSE は送るものが無ければ送らない） */
 extern BOOL ChestOpenedGet(const PCHARINFO pChar, int nChestNo);	/* 開けた宝箱の記録を見る（番号 0〜2047） */
 extern void ChestOpenedSet(PCHARINFO pChar, int nChestNo, BOOL bOn);	/* 開けた宝箱の記録を立てる・消す */
+extern void ResendMapToPlayers(PMAPINFO pMap, int nID);			/* そのマップにいるプレイヤー全員へ、マップ情報・イベント・キャラ等をマップに入った時と同じ順で送り直す */
 extern void MapSwapSendMap(PMAPINFO pMap);						/* そのマップにいるプレイヤー全員に差し替え一覧を送り直す */
 extern BOOL MapSwapExamine(PCHARINFO pChar);					/* 目の前の「調べると開く」マスを調べた（品を渡して印を立てて文を出す）。処理した時 TRUE */
 extern void CharViewRefreshNpc(PCHARINFO pNpc);					/* 条件付きNPCの条件を変えた時、そのマップの全員に見え直しを送る */
