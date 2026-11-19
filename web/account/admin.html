@@ -325,6 +325,8 @@
 		font-size: 13px;
 		word-break: break-all;
 	}
+	.online-ip { color: var(--sub); font-size: 13px; margin-top: 2px; word-break: break-all; }
+	.ip-link { color: var(--info); word-break: break-all; }
 	.online-env {
 		color: var(--info);
 		font-size: 12px;
@@ -614,12 +616,12 @@
 	<!-- キャラを探す -->
 	<section id="tab-search" hidden>
 		<div class="card">
-			<label for="q" style="margin-top:0">キャラ名・アカウント名（一部でも OK）</label>
+			<label for="q" style="margin-top:0">キャラ名・アカウント名（一部でも OK）・IP アドレス</label>
 			<div class="row">
 				<input id="q" type="search" enterkeyhint="search" autocapitalize="off" autocorrect="off">
 				<button type="button" id="search-btn">探す</button>
 			</div>
-			<p class="sub-text" style="margin:6px 0 0">前に使っていたキャラ名からも探せます。</p>
+			<p class="sub-text" style="margin:6px 0 0">前に使っていたキャラ名からも探せます。IP アドレスは完全一致、末尾を省く（例 203.0.113.）と前方一致で探せます。</p>
 		</div>
 		<div class="msg" id="search-msg"></div>
 		<div id="results"></div>
@@ -1579,6 +1581,9 @@
 					head.appendChild(el('span', 'online-env', envLabel('osBrowser', p.env.os + '+' + p.env.browser)));
 				}
 				row.appendChild(head);
+				var ipLine = el('div', 'online-ip', 'IP ');
+				ipLine.appendChild(ipLink(p.ip));
+				row.appendChild(ipLine);
 				row.appendChild(el('div', 'online-map', p.mapID + '：' + (p.mapName || '（名前の無いマップ）') +
 					'　(' + p.x + ', ' + p.y + ')'));
 				card.appendChild(row);
@@ -1736,10 +1741,27 @@
 		notfound: 'このアカウントにはまだキャラがいません。'
 	};
 
+	/* IP アドレスの表示。押すとその IP で「キャラを探す」（IPv6 などで分からない時は「不明」） */
+	function ipLink(ip) {
+		if (!ip) {
+			return el('span', 'sub-text', '不明');
+		}
+		var a = el('a', 'ip-link', ip);
+		a.href = '#';
+		a.title = 'この IP アドレスのキャラを探す';
+		a.addEventListener('click', function (ev) {
+			ev.preventDefault();
+			$('q').value = ip;
+			selectTab('search');
+			search();
+		});
+		return a;
+	}
+
 	function search() {
 		var q = $('q').value.trim();
 		if (!q) {
-			setMsg($('search-msg'), 'キャラ名かアカウント名を入れてください。');
+			setMsg($('search-msg'), 'キャラ名・アカウント名・IP アドレスのどれかを入れてください。');
 			return;
 		}
 		$('q').blur();
@@ -1793,13 +1815,20 @@
 		var dl = el('dl');
 		function item(k, v) {
 			dl.appendChild(el('dt', '', k));
-			dl.appendChild(el('dd', '', v));
+			var dd = el('dd');
+			if (typeof v === 'string') {
+				dd.textContent = v;
+			} else {
+				dd.appendChild(v);
+			}
+			dl.appendChild(dd);
 		}
 		item('アカウント', c.account);
 		item('レベル', 'Lv ' + c.level);
 		item('作成日', c.made);
 		item('プレイ', playTimeText(c.playMinutes) + ' ／ ログイン ' + c.loginCount + ' 回');
 		item('場所', 'マップ ' + c.mapID + '（' + c.x + ', ' + c.y + '）');
+		item('最終IPアドレス', ipLink(c.lastIp));
 		item('ブラウザ版', c.devices ? c.devices + ' 台の端末' + (c.lastWebLogin ? '（最後 ' + dateText(c.lastWebLogin) + '）' : '') : 'まだ使っていない');
 		item('復旧キー', c.hasCode ? 'あり' : 'なし');
 		card.appendChild(dl);

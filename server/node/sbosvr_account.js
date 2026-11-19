@@ -56,9 +56,10 @@
  *   /api/admin/recover/decide {session, id, approve}       → {ok}
  *   /api/device/rename        {token, name, check}         → {result:"ok", from, to} / {result:<理由>, ...}
  *                               check が true なら確かめるだけ（変えない）
- *   /api/admin/search         {session, q}                 → {results:[...], more}
+ *   /api/admin/search         {session, q}                 → {results:[...（lastIp＝最終IPアドレス）], more}
+ *                               q が数字とドットだけなら最終IPアドレスでも探す（完全一致。末尾が "." か "*" なら前方一致）
  *   /api/admin/rename         {session, account, name, check} → {result:"ok", from, to} / {result:<理由>}
- *   /api/admin/online         {session}                    → {players:[{name, account, level, mapID, mapName, x, y, ...}], online}
+ *   /api/admin/online         {session}                    → {players:[{name, account, level, mapID, mapName, x, y, ip, ...}], online}
  *
  * 5. 管理ページのログイン
  *    ログインすると、ランダムな値を HttpOnly・SameSite=Strict の Cookie（sbo_admin、https なら Secure）
@@ -873,6 +874,10 @@ Module['sboAccount'] = (function () {
 		info.renames = store.renames.filter(function (r) { return r.account === info.account; })
 			.slice(-10).reverse().map(function (r) { return { from: r.from, to: r.to, by: r.by, at: r.at }; });
 		info.renameAfter = renameAfter(info.account);
+		/* 最終IPアドレス（個人情報なので管理者 API だけで返す。検索結果には C 側が付けてくる） */
+		if (info.lastIp === undefined) {
+			info.lastIp = callStr(_SboWebAdminLastIp, [info.account]);
+		}
 		return info;
 	}
 
@@ -935,6 +940,10 @@ Module['sboAccount'] = (function () {
 		var net = Module['sboNet'];
 		(r.players || []).forEach(function (p) {
 			p.env = net && net.envOfSlot ? net.envOfSlot(p.slot) : null;
+			/* 今の接続の IP。Node が接続の IP 文字列を覚えていればそれ（IPv6 も分かる）、
+			   なければ C 側が保存している IPv4（IPv6 だと空） */
+			var strIp = net && net.ipOfSlot ? net.ipOfSlot(p.slot) : '';
+			p.ip = strIp || p.ip || '';
 			delete p.slot;
 		});
 		reply(res, 200, r);
