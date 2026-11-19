@@ -848,6 +848,7 @@ typedef struct _TRADESTATE {
 	DWORD	dwPartner;						/* 取り引き相手のキャラ番号 */
 	BYTE	byMode;							/* 1 なら決定済み */
 	WORD	waItem[MAX_MYITEM];				/* 出す持ち物の番号（0xFFFF は無し） */
+	WORD	waItemID[MAX_MYITEM];			/* 出す持ち物の品物ID（出すと決めた時点のもの。成立時に照合する） */
 	DWORD	dwGold;							/* 出す金額 */
 } TRADESTATE;
 
@@ -924,7 +925,39 @@ static BOOL TradeCheckItem(PCHARINFO pChar, const WORD *pwaItem)
 		if (IsImportantItem (pChar->waItem[pwaItem[i]])) {
 			return FALSE;
 		}
+		/* 装備中の品は取り引きに出せない */
+		for (int k = 0; k < 10; k ++) {
+			if (pChar->waEqu[k] == pwaItem[i]) {
+				return FALSE;
+			}
+		}
 		abUse[pwaItem[i]] = TRUE;
+	}
+	return TRUE;
+}
+
+/* 出す持ち物の位置にある品物IDを控える（取り引きの中身を後で照合するため） */
+static void TradeMemoItemID(PCHARINFO pChar, TRADESTATE *pState)
+{
+	int i;
+
+	for (i = 0; i < MAX_MYITEM; i ++) {
+		pState->waItemID[i] = (pState->waItem[i] < MAX_MYITEM) ? pChar->waItem[pState->waItem[i]] : 0;
+	}
+}
+
+/* 出すと決めた時の品物IDと、今その位置にある品物IDが同じか */
+static BOOL TradeCheckItemID(PCHARINFO pChar, const TRADESTATE *pState)
+{
+	int i;
+
+	for (i = 0; i < MAX_MYITEM; i ++) {
+		if (pState->waItem[i] == 0xFFFF) {
+			continue;
+		}
+		if ((pState->waItem[i] >= MAX_MYITEM) || (pChar->waItem[pState->waItem[i]] != pState->waItemID[i])) {
+			return FALSE;
+		}
 	}
 	return TRUE;
 }
@@ -953,6 +986,7 @@ static void TradeMercenaryReply(DWORD dwOwner, DWORD dwMerc)
 			pStateMerc->waItem[n ++] = (WORD)i;
 		}
 	}
+	TradeMemoItemID (pMerc, pStateMerc);
 	pStateMerc->dwGold	= 0;
 	pStateMerc->byMode	= 0;
 	if (pStateOwner->byMode == 1) {
@@ -1673,20 +1707,20 @@ void DelCharItem(DWORD dwCharID, BYTE byNo)
 	/* 削除してスペースをつめる */
 	for (i = byNo; i < MAX_MYITEM - 1; i ++) {
 		pChar->waItem[i] = pChar->waItem[i + 1];
-		for (j = 0; j < 10; j ++) {
-			if (pChar->waEqu[j] == i) {
-				pChar->waEqu[j] --;
-			}
-		}
 	}
+	pChar->waItem[i] = 0;
 
-	/* 装備品のスペースをつめる */
+	/* 装備欄：消した品自身が装備中なら外し、後ろの品を指していた欄だけ 1 つ前へ */
 	for (j = 0; j < 10; j ++) {
-		if (pChar->waEqu[j] == i) {
+		if (pChar->waEqu[j] == 0xFFFF) {
+			continue;
+		}
+		if (pChar->waEqu[j] == byNo) {
+			pChar->waEqu[j] = 0xFFFF;
+		} else if (pChar->waEqu[j] > byNo) {
 			pChar->waEqu[j] --;
 		}
 	}
-	pChar->waItem[i] = 0;
 }
 
 
@@ -3704,6 +3738,33 @@ Exit:
 }
 
 
+/* 取り引き中に受け付けない（持ち物・お金が動く）コマンドか */
+static BOOL IsTradeBlockedCmd(BYTE byCmd)
+{
+	switch (byCmd) {
+	case CMD_DROPITEM:
+	case CMD_USEITEM:
+	case CMD_CHGEQU:
+	case CMD_LEAVEITEM:
+	case CMD_LEAVEITEMGET:
+	case CMD_LEAVEGOLD:
+	case CMD_LEAVEGOLDGET:
+	case CMD_LEAVEITEMDISPOSE:
+	case CMD_JOBCHG:
+	case CMD_SHOPBUY:
+	case CMD_MARKETPUT:
+	case CMD_MARKETBUY:
+	case CMD_MARKETTAKEBACK:
+	case CMD_MARKETGOLDGET:
+	case CMD_RECYCLEPUT:
+	case CMD_RECYCLETAKE:
+	case CMD_RECIPEMAKE:
+	case CMD_APPRAISE:
+		return TRUE;
+	}
+	return FALSE;
+}
+
 /* ========================================================================= */
 /* 関数名：RecvDataProc														 */
 /* 内容：データ受信処理														 */
@@ -3741,6 +3802,16 @@ void RecvDataProc(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 
+	/* 取り引き中は、持ち物・お金が動くコマンドを受け付けない（公式のクライアントは取り引き窓を開いている間は送らない） */
+	if ((nNo >= 0) && RecvCmdIsTrading ((DWORD)nNo) && IsTradeBlockedCmd (byCmd)) {
+		SAFE_DELETE_ARRAY (pData);
+		s_pIDRecv		= 0;
+		s_nCharNoRecv	= -1;
+		s_bAdminRecv	= FALSE;
+		s_dwRecvSize	= 0;
+		s_pRecvData		= NULL;
+		return;
+	}
 	/* 管理者用のコマンド（管理者ウィンドウからしか送らないもの）は管理者だけ */
 	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_APPRAISE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && (byCmd != CMD_TALKANSWER) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET)) && ((byCmd < CMD_RECYCLELIST) || (byCmd > CMD_RECYCLECLOSE))) ||
 			(byCmd == CMD_CHARITEM)) {
@@ -7701,6 +7772,14 @@ void RecvDataProcDROPITEM(PBYTE pData, DWORD dwDataSize)
 	pItem = g_aItemInfo[pPara->dwData2];
 
 	pChar = g_aCharInfo[pPara->dwTblID];
+	/* 装備中の品は売れない・捨てられない（持ち物を送り直して元に戻す） */
+	for (int nEqu = 0; nEqu < 10; nEqu ++) {
+		if (pChar->waEqu[nEqu] == pPara->byData) {
+			SendCmdSYSMSG (pChar->pID, "装備中の品は、売ったり捨てたりできません。", SPEECHCMD_BATTLE1);
+			SendCmdCHARITEM (pChar->pID, pPara->dwTblID);
+			return;
+		}
+	}
 	if (pPara->dwData2) {
 		/* 持ってないアイテム？ */
 		if (CheckCharItem (pPara->dwTblID, pPara->dwData2, pPara->byData) == FALSE) {
@@ -9935,6 +10014,8 @@ void RecvDataProcTRADEINFO(PBYTE pData, DWORD dwDataSize)
 	pState->byMode	= pRecv->byMode;
 	pState->dwGold	= pRecv->dwGold;
 	CopyMemory (pState->waItem, pRecv->waItem, sizeof (pState->waItem));
+	/* 出す位置の品物IDを控える（成立する時に今の持ち物と照合する） */
+	TradeMemoItemID (g_aCharInfo[s_nCharNoRecv], pState);
 
 	/* 相手が傭兵なら、傭兵の返事をサーバーが送る */
 	if (IsMercenary (g_aCharInfo[pRecv->dwTblID])) {
@@ -10024,6 +10105,16 @@ void RecvDataProcTRADEPROC(PBYTE pData, DWORD dwDataSize)
 			SendCmdTRADE (pChar2->pID, pChar2->dwTblID, CMDTRADE_OUT);
 			return;
 		}
+		/* 出すと決めた時と持ち物の中身が変わっていたら、取り引きを取り消して双方に知らせる */
+		if (!TradeCheckItemID (pChar1, pState1) || !TradeCheckItemID (pChar2, pState2)) {
+			TradeClear (pRecv->dwTblID1);
+			SendCmdTRADE (pChar1->pID, pChar1->dwTblID, CMDTRADE_OUT);
+			SendCmdTRADE (pChar2->pID, pChar2->dwTblID, CMDTRADE_OUT);
+			wsprintf (szTmp, "持ち物の中身が変わったので、取り引きを取り消しました。");
+			SendCmdSYSMSG (pChar1->pID, szTmp, SPEECHCMD_BATTLE1);
+			SendCmdSYSMSG (pChar2->pID, szTmp, SPEECHCMD_BATTLE1);
+			return;
+		}
 		CopyMemory (pRecv->waItem1, pState1->waItem, sizeof (pRecv->waItem1));
 		CopyMemory (pRecv->waItem2, pState2->waItem, sizeof (pRecv->waItem2));
 		pRecv->dwGold1 = pState1->dwGold;
@@ -10056,12 +10147,12 @@ void RecvDataProcTRADEPROC(PBYTE pData, DWORD dwDataSize)
 
 	dwGold1 = pRecv->dwGold1;
 	if (pChar2->dwGold + dwGold1 > 999999) {
-		dwGold1 = 999999 - pChar2->dwGold;
+		dwGold1 = (pChar2->dwGold >= 999999) ? 0 : (999999 - pChar2->dwGold);
 		bMax = TRUE;
 	}
 	dwGold2 = pRecv->dwGold2;
 	if (pChar1->dwGold + dwGold2 > 999999) {
-		dwGold2 = 999999 - pChar1->dwGold;
+		dwGold2 = (pChar1->dwGold >= 999999) ? 0 : (999999 - pChar1->dwGold);
 		bMax = TRUE;
 	}
 
@@ -10089,14 +10180,17 @@ void RecvDataProcTRADEPROC(PBYTE pData, DWORD dwDataSize)
 		if (j == MAX_MYITEM) {
 			AddCharItemBag (pChar1->dwTblID, waItemTmp1[i]);
 		} else {
+			/* 渡した品より後ろの装備は 1 つ前へ（装備中の品は渡せないが、念のため渡した品自身の欄は外す） */
 			for (k = 0; k < 10; k ++) {
-				if (pChar1->waEqu[k] != 0xFFFF) {
-					if (waEquTmp1[k] >= i) {
-						pChar1->waEqu[k] --;
-					}
+				if (waEquTmp1[k] == 0xFFFF) {
+					continue;
+				}
+				if (waEquTmp1[k] == i) {
+					pChar1->waEqu[k] = 0xFFFF;
+				} else if ((waEquTmp1[k] > i) && (pChar1->waEqu[k] != 0xFFFF)) {
+					pChar1->waEqu[k] --;
 				}
 			}
-			pChar1->waEqu[9] = 0xFFFF;
 		}
 
 		for (j = 0; j < MAX_MYITEM; j ++) {
@@ -10107,14 +10201,17 @@ void RecvDataProcTRADEPROC(PBYTE pData, DWORD dwDataSize)
 		if (j == MAX_MYITEM) {
 			AddCharItemBag (pChar2->dwTblID, waItemTmp2[i]);
 		} else {
+			/* 渡した品より後ろの装備は 1 つ前へ（装備中の品は渡せないが、念のため渡した品自身の欄は外す） */
 			for (k = 0; k < 10; k ++) {
-				if (pChar2->waEqu[k] != 0xFFFF) {
-					if (waEquTmp2[k] >= i) {
-						pChar2->waEqu[k] --;
-					}
+				if (waEquTmp2[k] == 0xFFFF) {
+					continue;
+				}
+				if (waEquTmp2[k] == i) {
+					pChar2->waEqu[k] = 0xFFFF;
+				} else if ((waEquTmp2[k] > i) && (pChar2->waEqu[k] != 0xFFFF)) {
+					pChar2->waEqu[k] --;
 				}
 			}
-			pChar2->waEqu[9] = 0xFFFF;
 		}
 	}
 
@@ -10294,8 +10391,11 @@ void RecvDataProcLEAVEGOLDGET(PBYTE pData, DWORD dwDataSize)
 	}
 
 	if (pInfo && (pInfo->dwGold >= pRecv->dwData)) {
-		pInfo->dwGold -= pRecv->dwData;
-		pChar->dwGold += pRecv->dwData;
+		/* 所持金は 999999 まで。入りきらない分は預かり所に残す */
+		DWORD dwRoom = (pChar->dwGold >= 999999) ? 0 : (999999 - pChar->dwGold);
+		DWORD dwTake = min (pRecv->dwData, dwRoom);
+		pInfo->dwGold -= dwTake;
+		pChar->dwGold += dwTake;
 		SendCmdCHARSTATUSGOLDEXP (pRecv->pID, pRecv->dwTblID);
 	}
 }
