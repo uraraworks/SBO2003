@@ -3504,6 +3504,81 @@ static PCHARINFO DgLeaderOf(PCHARINFO pChar)
 	return pLeader;
 }
 
+/* 同じパーティの誰かが姿を選んでいる最中なら、その組の鍵（選び始めた人のテーブルID）。無ければ 0 */
+static DWORD DgSelOfParty(PCHARINFO pChar)
+{
+	std::map<DWORD, DGSEL>::iterator it;
+
+	if ((pChar->dwPartyID == 0) || (pChar->dwPartyID >= (DWORD)g_aPartyInfo.GetSize ())) {
+		return 0;
+	}
+	for (it = s_mapDgSel.begin (); it != s_mapDgSel.end (); it ++) {
+		PCHARINFO pKey = (it->first < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[it->first] : NULL;
+		if (pKey && (pKey != pChar) && (pKey->dwPartyID == pChar->dwPartyID)) {
+			return it->first;
+		}
+	}
+	return 0;
+}
+
+/* 選んでいる最中の組に、遅れて来た仲間を足して窓を出す（締め切りは延ばさない。残り 10 秒を切っていたら 10 秒までだけ延ばす）。
+   足せたら TRUE。bTell は足せない理由を本人に知らせる（入口に乗った時） */
+static BOOL DgSelJoin(DWORD dwKey, PCHARINFO pChar, DWORD dwNow, BOOL bTell)
+{
+	std::map<DWORD, DGSEL>::iterator it = s_mapDgSel.find (dwKey);
+	PCHARINFO pKey;
+	DWORD dwPass, dwRest;
+	size_t i;
+	char szTmp[256];
+
+	if ((it == s_mapDgSel.end ()) || (pChar == NULL) || !IsPlayerOnline (pChar)) {
+		return FALSE;
+	}
+	DGSEL &Sel = it->second;
+	if ((Sel.mapPick.find (pChar->dwTblID) != Sel.mapPick.end ()) || (s_mapDgSelOf.find (pChar->dwTblID) != s_mapDgSelOf.end ())) {
+		return FALSE;
+	}
+	if ((pChar->wHP == 0) || (pChar->byCharState == CHARSTATE_DEAD) || QuestInChallenge (pChar) || (pChar->dwMapID != Sel.dwMapID) ||
+		(pChar->dwSpaceID != SPACE_NORMAL) || (abs ((int)pChar->dwX - (int)Sel.dwX) > CHALLENGE_NEAR) || (abs ((int)pChar->dwY - (int)Sel.dwY) > CHALLENGE_NEAR)) {
+		return FALSE;
+	}
+	if (HasMercenary (pChar)) {
+		if (bTell) {
+			SendCmdSYSMSG (pChar->pID, "傭兵は一緒に入れません。別れてから来てください。", SPEECHCMD_BATTLE1);
+		}
+		return FALSE;
+	}
+	pKey = (dwKey < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[dwKey] : NULL;
+	dwPass = dwNow - Sel.dwStart;
+	if (dwPass + 10000 > DGSEL_WAIT) {
+		/* 残りが少ない：10 秒までだけ延ばし、まだ選んでいない人の窓の残り時間もそろえる */
+		Sel.dwStart = dwNow + 10000 - DGSEL_WAIT;
+		for (i = 0; i < Sel.aMember.size (); i ++) {
+			PCHARINFO p = (Sel.aMember[i] < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[Sel.aMember[i]] : NULL;
+			if (p && IsPlayerOnline (p) && (Sel.mapPick[Sel.aMember[i]] == -1)) {
+				DgSendSel (p, DUNGEONSEL_OPEN, &Sel, 10000);
+			}
+		}
+		dwRest = 10000;
+	} else {
+		dwRest = DGSEL_WAIT - dwPass;
+	}
+	Sel.aMember.push_back (pChar->dwTblID);
+	Sel.mapPick[pChar->dwTblID] = -1;
+	s_mapDgSelOf[pChar->dwTblID] = dwKey;
+	snprintf (szTmp, sizeof (szTmp), "%sさんの組に加わりました。残り%d秒で姿を選んでください。", pKey ? pKey->szName : "", (int)((dwRest + 999) / 1000));
+	SendCmdSYSMSG (pChar->pID, szTmp, SPEECHCMD_BATTLE1);
+	for (i = 0; i + 1 < Sel.aMember.size (); i ++) {
+		PCHARINFO p = (Sel.aMember[i] < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[Sel.aMember[i]] : NULL;
+		if (p && IsPlayerOnline (p)) {
+			snprintf (szTmp, sizeof (szTmp), "%sさんが組に加わりました。", pChar->szName);
+			SendCmdSYSMSG (p->pID, szTmp, SPEECHCMD_BATTLE1);
+		}
+	}
+	DgSendSel (pChar, DUNGEONSEL_OPEN, &Sel, dwRest);
+	return TRUE;
+}
+
 /* 空間の中の敵（NPC発生から出たもの）をその組の分だけ出す・補充する。bFirst は入った時に一度にそろえる */
 static void DgPutProc(CHALLENGE *pCh, DWORD dwNow, BOOL bFirst)
 {
@@ -3886,6 +3961,18 @@ BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
 		SendCmdSYSMSG (pChar->pID, "このダンジョンは準備中です。", SPEECHCMD_BATTLE1);
 		return TRUE;
 	}
+	/* 同じパーティの組が姿を選んでいる最中なら、その組に加わる（リーダーより遅れて来た仲間・代わりに始めた組へ遅れて来たリーダー） */
+	{
+		DWORD dwKey = DgSelOfParty (pChar);
+		if (dwKey != 0) {
+			if (!DgSelJoin (dwKey, pChar, timeGetTime (), TRUE)) {
+				PCHARINFO pKey = (dwKey < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[dwKey] : NULL;
+				snprintf (szTmp, sizeof (szTmp), "今%sさんの組が姿を選んでいます。", pKey ? pKey->szName : "");
+				SendCmdSYSMSG (pChar->pID, szTmp, SPEECHCMD_BATTLE1);
+			}
+			return TRUE;
+		}
+	}
 	/* パーティのリーダー（ソロならその人）が乗った時に始める */
 	if (DgLeaderOf (pChar) != pChar) {
 		SendCmdSYSMSG (pChar->pID, "パーティのリーダーが入口に乗ると、みんなで入れます。", SPEECHCMD_BATTLE1);
@@ -3944,6 +4031,27 @@ BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
 				SendCmdSYSMSG (aMember[i]->pID, (LPSTR)strTop.c_str (), SPEECHCMD_BATTLE1);
 			}
 			SendCmdSYSMSG (aMember[i]->pID, (LPSTR)(DungeonDailyTried (nID, pDungeon->dwDailyVer, aMember[i]->dwTblID) ? pszAgain : pszFirst), SPEECHCMD_BATTLE1);
+		}
+	}
+	/* 近くにいない仲間を知らせる（締め切りまでに入口へ来れば組に加わる） */
+	{
+		std::vector<PCHARINFO> aParty;
+		std::string strFar;
+		GetPartyMembers (pChar, aParty);
+		for (i = 0; i < aParty.size (); i ++) {
+			if ((Sel.mapPick.find (aParty[i]->dwTblID) == Sel.mapPick.end ()) && !QuestInChallenge (aParty[i])) {
+				if (!strFar.empty ()) {
+					strFar += "、";
+				}
+				strFar += aParty[i]->szName;
+				strFar += "さん";
+			}
+		}
+		if (!strFar.empty ()) {
+			strFar = "近くにいない仲間：" + strFar + "（締め切りまでに入口へ来れば一緒に入れます）";
+			for (i = 0; i < aMember.size (); i ++) {
+				SendCmdSYSMSG (aMember[i]->pID, (LPSTR)strFar.c_str (), SPEECHCMD_BATTLE1);
+			}
 		}
 	}
 	for (i = 0; i < aMember.size (); i ++) {
@@ -4012,6 +4120,18 @@ static void DgProc(DWORD dwNow)
 	std::map<DWORD, CHALLENGE>::iterator itC;
 	size_t i, j;
 
+	/* 選んでいる最中の組に、入口の近くへ来た同じパーティの仲間を足す */
+	for (itS = s_mapDgSel.begin (); itS != s_mapDgSel.end (); itS ++) {
+		PCHARINFO pKey = (itS->first < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[itS->first] : NULL;
+		std::vector<PCHARINFO> aParty;
+		if ((pKey == NULL) || (dwNow - itS->second.dwStart >= DGSEL_WAIT)) {
+			continue;
+		}
+		GetPartyMembers (pKey, aParty);
+		for (i = 0; i < aParty.size (); i ++) {
+			DgSelJoin (itS->first, aParty[i], dwNow, FALSE);
+		}
+	}
 	/* 姿を選ぶ締め切り（選ばなかった人は置いていく） */
 	for (itS = s_mapDgSel.begin (); itS != s_mapDgSel.end (); itS ++) {
 		if (dwNow - itS->second.dwStart >= DGSEL_WAIT) {
@@ -4171,6 +4291,19 @@ int DungeonRunCount(void)
 int DungeonSelCount(void)
 {
 	return (int)s_mapDgSel.size ();
+}
+
+/* 姿を選んでいる組の人数（pChar がいる組。いなければ 0。テスト用） */
+int DungeonSelMemberCount(PCHARINFO pChar)
+{
+	std::map<DWORD, DWORD>::iterator itOf = s_mapDgSelOf.find (pChar->dwTblID);
+	std::map<DWORD, DGSEL>::iterator itS;
+
+	if (itOf == s_mapDgSelOf.end ()) {
+		return 0;
+	}
+	itS = s_mapDgSel.find (itOf->second);
+	return (itS == s_mapDgSel.end ()) ? 0 : (int)itS->second.aMember.size ();
 }
 
 /* そのダンジョンの中の組の全員に知らせて、外へ戻す（管理者の作り直し。CHALLENGELEAVE_BUILD）。戻した人数 */

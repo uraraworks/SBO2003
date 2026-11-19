@@ -12590,6 +12590,13 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 	/* 2. パーティ（A がリーダー）：リーダー以外が乗っても始まらない。リーダーが乗ると全員に一覧。全員が選ぶとそろって入る */
 	DungeonEventStep(pB, pEntry);
 	printf("dungeonbonus party member-step sel=%d\n", DungeonSelCount());
+	/* 2b. 遅れて来た仲間：B が遠くにいる間に A が乗ると A だけ。選んでいる間に B が入口に乗ると組に加わる */
+	QuestMovePC(pB, nMapNo, 30, 30);
+	DungeonEventStep(pA, pEntry);
+	printf("dungeonbonus late leader-only sel=%d members=%d b=%d\n", DungeonSelCount(), DungeonSelMemberCount(pA), DungeonSelMemberCount(pB));
+	QuestMovePC(pB, nMapNo, 4, 5);
+	DungeonEventStep(pB, pEntry);
+	printf("dungeonbonus late b-joined sel=%d members=%d b=%d\n", DungeonSelCount(), DungeonSelMemberCount(pA), DungeonSelMemberCount(pB));
 	DungeonEventStep(pA, pEntry);
 	printf("dungeonbonus party leader-step sel=%d\n", DungeonSelCount());
 	DgTestSelPick(pA, 0);

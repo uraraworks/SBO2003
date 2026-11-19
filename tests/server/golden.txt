@@ -2073,6 +2073,8 @@ dungeonbonus put normal=0 spaced=1
 dungeonbonus solo open sel=1 in=0
 dungeonbonus solo picked sel=0 in=1 indungeon=1 space>0=1 lv=8 runs=1
 dungeonbonus party member-step sel=0
+dungeonbonus late leader-only sel=1 members=1 b=0
+dungeonbonus late b-joined sel=1 members=2 b=2
 dungeonbonus party leader-step sel=1
 dungeonbonus party a-picked in a=0 b=0 sel=1
 dungeonbonus party both-in a=1 b=1 same=1 differs=1 lv=7 sel=0 runs=2

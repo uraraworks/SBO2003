@@ -119,6 +119,7 @@ extern void DungeonProcNow(DWORD dwNow);						/* 番外編ダンジョンの周�
 extern int  DungeonBagCount(PCHARINFO pChar);					/* 持ち帰り袋に入っている品の数（テスト用） */
 extern int  DungeonRunCount(void);								/* 番外編ダンジョンの空間（組）の数（テスト用） */
 extern int  DungeonSelCount(void);								/* 姿を選んでいる組の数（テスト用） */
+extern int  DungeonSelMemberCount(PCHARINFO pChar);				/* その人がいる選び中の組の人数（テスト用） */
 extern int  DungeonRunLeaveAll(int nDungeonID, const char *pszMsg);	/* そのダンジョンの中の組の全員に pszMsg を知らせて、外へ戻す（作り直し）。戻した人数 */
 
 /* 空間（同じマップの同じ場所でも、別の空間の人とは出会わない。討伐チャレンジの組ごとに 1 つ作る） */
