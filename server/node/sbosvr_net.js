@@ -184,7 +184,13 @@ Module['sboNet'] = (function () {
 		sock.write(lines.join('\r\n') + '\r\n\r\n');
 		sock.setNoDelay(true);
 
-		var addr = req.headers['x-forwarded-for'] ? String(req.headers['x-forwarded-for']).split(',')[0].trim() : sock.remoteAddress;
+		/* 手前のプロキシが最後に足したものを使う（先頭は利用者が書き換えられる。API 側の clientIp と同じ）。
+		   ログイン回数の制限もこの値の接続元ごとに数える */
+		var addr = sock.remoteAddress;
+		if (req.headers['x-forwarded-for']) {
+			var aXff = String(req.headers['x-forwarded-for']).split(',');
+			addr = aXff[aXff.length - 1].trim() || addr;
+		}
 
 		/* 古い版のブラウザ版は入れない。デプロイ前から開いたままのタブでログインし直すと、
 		   古いクライアントが新しいサーバーのデータを読むことになり、マップ情報などの

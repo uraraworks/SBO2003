@@ -151,9 +151,24 @@ Module['sboAccount'] = (function () {
 	/* ------------------------------------------------------------------ */
 	/* 端末トークン															 */
 	/* ------------------------------------------------------------------ */
+	/* 1 アカウントが持てる端末トークンの数（超えたら最後に使った日の古いものから消す） */
+	var TOKEN_MAX_PER_ACCOUNT = 20;
+	/* 最後に使った日時の保存は、前回からこれだけ空けてから（毎回ファイルを書かないため） */
+	var TOKEN_LASTUSED_SAVE_MS = 5 * MINUTE;
+
 	function issueToken(acc) {
 		load();
 		var token = randomHex(32);
+		/* 上限を超えないよう、古いトークンを消してから足す */
+		var aOwn = Object.keys(store.tokens).filter(function (h) {
+			return store.tokens[h].account === acc;
+		}).sort(function (a, b) {
+			var ta = store.tokens[a], tb = store.tokens[b];
+			return (ta.lastUsed || ta.created || 0) - (tb.lastUsed || tb.created || 0);
+		});
+		while (aOwn.length >= TOKEN_MAX_PER_ACCOUNT) {
+			delete store.tokens[aOwn.shift()];
+		}
 		store.tokens[sha256(token)] = { account: acc, created: Date.now(), lastUsed: 0 };
 		save();
 		return token;
@@ -175,8 +190,11 @@ Module['sboAccount'] = (function () {
 		if (!t) {
 			return '';
 		}
-		t.info.lastUsed = Date.now();
-		save();
+		var now = Date.now();
+		if (!t.info.lastUsed || now - t.info.lastUsed >= TOKEN_LASTUSED_SAVE_MS) {
+			t.info.lastUsed = now;
+			save();
+		}
 		return t.info.account;
 	}
 
