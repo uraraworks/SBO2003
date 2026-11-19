@@ -54,6 +54,28 @@ static void ShopAddEquWarn(LPSTR pszMsg, int nSize, PITEMINFO pItem, PCHARINFO p
 }
 
 /* ========================================================================= */
+/* 関数名：ViewModeNext														 */
+/* 内容：Tab の表示切り替え（なし→名前→HP→名前とHP→［地図］→なし）		 */
+/*       地図は探索マップが使える場所だけ。地図の間は名前とHPも出したまま	 */
+/* ========================================================================= */
+static void ViewModeNext(void)
+{
+	if (AutoMapIsShown ()) {
+		AutoMapToggleKey ();			/* 地図を閉じて最初へ */
+		g_byViewMode = 0;
+	} else if ((g_byViewMode >= 3) && AutoMapIsAvailable ()) {
+		AutoMapToggleKey ();			/* 名前とHPの次は地図 */
+		g_byViewMode = 3;
+	} else {
+		g_byViewMode ++;
+		if (g_byViewMode >= 4) {
+			g_byViewMode = 0;
+		}
+	}
+	SaveIniOption ();
+}
+
+/* ========================================================================= */
 /* 関数プロトタイプ宣言														 */
 /* ========================================================================= */
 /* キー入力処理 */
@@ -1191,18 +1213,13 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 		}
 	}
 
-	/* 探索マップ（テーマで作ったダンジョンの範囲の中）では Tab・M で地図を出し入れする。
-	   そこでは Tab の表示切り替えは使わない（範囲の外では今までどおり） */
-	BOOL bAutoMap = FALSE;
-	if ((byEvent == KEY_UP) && ((byCode == VK_TAB) || (byCode == 'M'))) {
-		bAutoMap = AutoMapToggleKey ();
+	/* Tab は表示切り替え。探索マップが使える場所（テーマで作ったダンジョンの範囲の中）では、
+	   いつもの 4 つの後ろに「地図」を足す。M は地図だけを出し入れする */
+	if ((byEvent == KEY_UP) && (byCode == 'M')) {
+		AutoMapToggleKey ();
 	}
-	if ((byEvent == KEY_UP) && (byCode == VK_TAB) && !bAutoMap) {
-		g_byViewMode ++;
-		if (g_byViewMode >= 4) {
-			g_byViewMode = 0;
-		}
-		SaveIniOption ();
+	if ((byEvent == KEY_UP) && (byCode == VK_TAB)) {
+		ViewModeNext ();
 	}
 	if ((byEvent == KEY_UP) && (byCode == VK_CONTROL)) {
 		/* 戦闘マップ？ */
@@ -1272,18 +1289,13 @@ void KeyProcDead(BYTE byEvent, BYTE byCode)
 		g_dwActiveMsgID = pWnd->dwID;
 	}
 
-	/* 探索マップ（テーマで作ったダンジョンの範囲の中）では Tab・M で地図を出し入れする。
-	   そこでは Tab の表示切り替えは使わない（範囲の外では今までどおり） */
-	BOOL bAutoMap = FALSE;
-	if ((byEvent == KEY_UP) && ((byCode == VK_TAB) || (byCode == 'M'))) {
-		bAutoMap = AutoMapToggleKey ();
+	/* Tab は表示切り替え。探索マップが使える場所（テーマで作ったダンジョンの範囲の中）では、
+	   いつもの 4 つの後ろに「地図」を足す。M は地図だけを出し入れする */
+	if ((byEvent == KEY_UP) && (byCode == 'M')) {
+		AutoMapToggleKey ();
 	}
-	if ((byEvent == KEY_UP) && (byCode == VK_TAB) && !bAutoMap) {
-		g_byViewMode ++;
-		if (g_byViewMode >= 4) {
-			g_byViewMode = 0;
-		}
-		SaveIniOption ();
+	if ((byEvent == KEY_UP) && (byCode == VK_TAB)) {
+		ViewModeNext ();
 	}
 }
 

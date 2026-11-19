@@ -242,7 +242,7 @@ C++ の入口は `extern "C" const char *SboWebDungeonGen(const char *pszJson)`�
 
 ### 表示
 
-- PC は Tab（または M）キーで出し入れ。ダンジョンの範囲の中でだけ Tab が地図になる（範囲の外では今までどおり「表示」の切り替え）。スマホは仮想パッドの「地図」ボタン（M キー。範囲の中にいる時だけ出る。`SboWebGetPadState` の 64）。ブラウザ版は Tab のフォーカス移動をゲーム中の canvas で止めている（`blockKeys` に Tab がある）ので、そのまま使える。
+- PC は M キーで出し入れ。Tab の「表示」の切り替え（なし→名前→HP→名前とHP）は、ダンジョンの範囲の中では最後に「地図（名前とHPも出したまま）」が足され、もう一度で「なし」へ戻る（範囲の外では今までどおり 4 つ）。スマホは仮想パッドの「地図」ボタン（M キー。範囲の中にいる時だけ出る。`SboWebGetPadState` の 64）。ブラウザ版は Tab のフォーカス移動をゲーム中の canvas で止めている（`blockKeys` に Tab がある）ので、そのまま使える。
 - 画面の真ん中に、範囲が画面の約 75% に収まる倍率で重ねる（ウィンドウより下）。背景を少し暗くし、壁は半透明の線（歩ける記録済みマスと歩けないマスの境目。出入口として出したマスは歩ける扱い）、出入口（アーチ）は緑、扉はだいだい色、自分は赤い点。壁ごと抜いた所は広間なので印は出さない。
 - 実装: 記録と線の作り方は `SboCli/src/SboCliAutoMapCore.h`（標準 C++ だけ。単体確認は `tests/client-native/automap.cpp`）、受信・描画・キーは `SboCli/src/SboCliAutoMap.cpp`。サーバーは `SboSvrSubGameProc.cpp`（`MakeDungeonByTheme`）と `SboSvrSendCmd.cpp`（`SendCmdDUNGEONMAP`）。
 
