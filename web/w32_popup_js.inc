@@ -50,6 +50,9 @@ EM_JS(void, W32JsPopInit, (void), {
 		'.w32-static{white-space:pre;overflow:visible;pointer-events:none;line-height:1.2}',
 		'.w32-static[class*="w32-frame"]{overflow:hidden}',
 		'.w32-static.w32-notify{pointer-events:auto}',
+		/* 静的テキストやグループ枠の中に入れ子にした子ウィンドウ（サブゲーム情報の編集の種類別の欄など）は、
+		   pointer-events:none を受け継がないようにしてクリックできるようにする */
+		'.w32-static .w32c:not(.w32-static):not(.w32-group),.w32-group .w32c:not(.w32-static):not(.w32-group){pointer-events:auto}',
 		'.w32-frame-black{border:1px solid #000}',
 		'.w32-frame-gray{border:1px solid #a0a0a0}',
 		'.w32-frame-etched{border:1px solid #a0a0a0;box-shadow:1px 1px 0 #fff}',
