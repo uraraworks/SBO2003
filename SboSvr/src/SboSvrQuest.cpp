@@ -4180,6 +4180,16 @@ static void DgProc(DWORD dwNow)
 			}
 			continue;
 		}
+		/* 倒れた人は、ふつうの世界と同じく「このまま待つ／帰る」を選べる（帰るは蘇生の受信で外へ）。
+		   中の全員が倒れたら、もう誰も起こせないので全員まとめて外へ（全滅） */
+		BOOL bAllDead = TRUE;
+		for (j = 0; j < aMember.size (); j ++) {
+			PCHARINFO p = g_aCharInfo[aMember[j]];
+			if ((s_mapLoan.find (aMember[j]) != s_mapLoan.end ()) && (p->wHP > 0) && (p->byCharState != CHARSTATE_DEAD)) {
+				bAllDead = FALSE;
+				break;
+			}
+		}
 		for (j = 0; j < aMember.size (); j ++) {
 			PCHARINFO p = g_aCharInfo[aMember[j]];
 			int nReason = -1;
@@ -4188,7 +4198,9 @@ static void DgProc(DWORD dwNow)
 				continue;
 			}
 			if ((p->wHP == 0) || (p->byCharState == CHARSTATE_DEAD)) {
-				nReason = CHALLENGELEAVE_DEAD;
+				if (bAllDead) {
+					nReason = CHALLENGELEAVE_DEAD;
+				}
 			} else if (p->dwPartyID != Ch.dwPartyID) {
 				nReason = CHALLENGELEAVE_PARTY;
 			} else if ((pDungeon == NULL) || (pDungeon->dwBuildNo != Ch.dwBuildNo)) {

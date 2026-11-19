@@ -2090,6 +2090,7 @@ dungeonbonus bag in c bag0=0 bag=2 real-item-visible=1
 dungeonbonus goal c in=0 space=0 got=0 kept=1 lv=30
 dungeonbonus goal freed runs=3 enemies-s1=0
 dungeonbonus dead a bag=1
+dungeonbonus dead a waits in=1 b-still=1
 dungeonbonus dead a in=0 got=0 kept=1 b-still=1
 dungeonbonus retire event=1 in-before=1 in=0 space=0 lv=30 runs=3
 dungeonbonus rebuild b in=0 got=0 kept=1 d in=0 e in=0

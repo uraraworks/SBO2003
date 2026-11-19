@@ -12667,6 +12667,9 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 	pA->byCharState = CHARSTATE_DEAD;
 	s_dwFakeNow += 1000;
 	DungeonProcNow(s_dwFakeNow);
+	/* 仲間（B）が中で元気なら、倒れても中に残る（蘇生を待てる）。「帰る」（蘇生の受信）で外へ */
+	printf("dungeonbonus dead a waits in=%d b-still=%d\n", (int)QuestInChallenge(pA), (int)QuestInChallenge(pB));
+	QuestChallengeResurrection(pA);
 	printf("dungeonbonus dead a in=%d got=%d kept=%d b-still=%d\n", (int)QuestInChallenge(pA), QuestCountItem(pA, awItem[3]), QuestCountItem(pA, awItem[4]), (int)QuestInChallenge(pB));
 	pA->wHP = 100;
 	pA->byCharState = CHARSTATE_MOVE;
