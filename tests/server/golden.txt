@@ -1916,6 +1916,14 @@ tailrelogin battle after logout=0
 tailrelogin relogin on=1 front=1
 tailrelogin stale chaseend=1 front=-1 battle=1
 tailrelogin range ng2=1 front=-1
+== AK. Attack rate ==
+attackrate first(255)=100
+attackrate fast(255)=20
+attackrate mid(100)=40
+attackrate full(255)=100
+attackrate just=101
+attackrate just early=20
+attackrate normal(40) waited=40
 == AK. Tail overlap ==
 tailoverlap area found=1
 tailoverlap on Q(front=-1)
