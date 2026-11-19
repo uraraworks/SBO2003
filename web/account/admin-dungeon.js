@@ -732,6 +732,8 @@
 				if (bad.length) msg.push('注意: 「' + name(k) + '」に通れるパーツ（' + bad.join('・') + '）があります。壁・閉じた扉は当たり判定が「ぶつかる」のパーツにしてください（すり抜けてしまいます）。');
 			});
 		}
+		if (cur && cur.door && !cur.doorOpen)
+			msg.push('注意: 「扉」があるのに「開いた扉」の絵がありません。このままだとゲームで扉が開かず、扉の先へ進めません。通れる開いた扉のパーツを入れてください。');
 		if (cur && cur.rooms) {
 			var normal = cur.rooms.filter(function (r) { return r.kind === 0 && !r.fixed; });
 			if (normal.length && normal.every(function (r) { return (r.maxUse || 0) > 0; }))
