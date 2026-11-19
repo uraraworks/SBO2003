@@ -870,8 +870,8 @@
 	/* 格子に絵を描く道具（部屋・出入口・飾りで共通）						 */
 	/* ---------------------------------------------------------------- */
 	var brush = 1;						/* 描くパーツ */
-	var tools = { r: 'mark', o: 'mark', d: 'paint' };		/* 区画ごとの道具: mark（切れ目・印）/ paint / erase / pick */
-	var TOOL_NAME = { paint: '描く', erase: '消しゴム（0）', pick: 'スポイト' };
+	var tools = { r: 'mark', o: 'mark', d: 'paint' };		/* 区画ごとの道具: mark（切れ目・印）/ paint / erase。右クリックはスポイト */
+	var TOOL_NAME = { paint: '描く', erase: '消しゴム（0）' };
 	var MARK_NAME = { r: '切れ目・入口の印', o: '通れる範囲' };
 	function target(k) {
 		return k === 'r' ? cur.rooms[selRoom] : k === 'o' ? cur.openings[selOp] : cur.decos[selDeco];
@@ -882,7 +882,7 @@
 			if (!box) return;
 			box.textContent = '';
 			var names = MARK_NAME[k] ? [['mark', MARK_NAME[k]]] : [];
-			['paint', 'erase', 'pick'].forEach(function (t) { names.push([t, TOOL_NAME[t]]); });
+			['paint', 'erase'].forEach(function (t) { names.push([t, TOOL_NAME[t]]); });
 			names.forEach(function (n) {
 				var b = document.createElement('button');
 				b.type = 'button';
@@ -896,11 +896,11 @@
 			lab.textContent = ' 筆：';
 			box.appendChild(lab);
 			box.appendChild(chipBtn(brush, function () {
-				openPal('筆', brush, function (n) { brush = n; if (tools[k] === 'erase' || tools[k] === 'pick') tools[k] = 'paint'; refreshTools(); });
+				openPal('筆', brush, function (n) { brush = n; if (tools[k] === 'erase') tools[k] = 'paint'; refreshTools(); });
 			}));
 			var hint = document.createElement('span');
 			hint.className = 'dg-cap';
-			hint.textContent = '右クリックで 0 に戻す';
+			hint.textContent = '右クリックでスポイト（そのマスのパーツを筆にする）';
 			box.appendChild(hint);
 			/* 大きさの変更（端に行・列を足す／削る） */
 			var rb = $('dg-rb-' + k);
@@ -981,7 +981,7 @@
 			var x = Math.floor((ev.clientX - r.left) * (cv.width / r.width) / g.tile), y = Math.floor((ev.clientY - r.top) * (cv.height / r.height) / g.tile);
 			if (x < 0 || y < 0 || x >= g.w || y >= g.h) return;
 			var t = tl(), i = y * g.w + x;
-			if (t === 'pick') { brush = g.cells[i]; tools[k] = 'paint'; down = false; refreshTools(); return; }
+			if (t === 'pick') { brush = g.cells[i]; if (tools[k] === 'erase') tools[k] = 'paint'; down = false; once = null; refreshTools(); return; }
 			var v = t === 'erase' ? 0 : brush;
 			if (g.cells[i] === v) return;
 			g.cells[i] = v;
@@ -991,7 +991,7 @@
 		cv.addEventListener('contextmenu', function (ev) { ev.preventDefault(); });
 		cv.addEventListener('pointerdown', function (ev) {
 			var t = tools[k];
-			once = ev.button === 2 ? 'erase' : null;
+			once = ev.button === 2 ? 'pick' : null;
 			if (!once && t === 'mark' && !bMarkIsPaint) return;
 			down = true;
 			try { cv.setPointerCapture(ev.pointerId); } catch (e) { /* 無くても動く */ }
