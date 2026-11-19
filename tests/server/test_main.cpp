@@ -12420,7 +12420,7 @@ static void TestDungeonTheme(void)
 
 /* ------------------------------------------------------------------------- */
 /* AO. 番外編ダンジョン（段階1）											 */
-/*     ソロは選んですぐ入る・パーティは全員の選択後にそろって入る・締め切りで	 */
+/*     ソロもパーティも選択後に受付済みになり、入口でそろって入る・締め切りで	 */
 /*     選ばなかった人は置いていく・組ごとに別の空間と敵・補充しない印・		 */
 /*     中で拾った物は持ち帰らない（ゴールでも）・作り直しで全員出る・保存	 */
 /* ------------------------------------------------------------------------- */
@@ -12473,6 +12473,21 @@ static void DgTestTalk(PCHARINFO p, DWORD dwNpc)
     QuestSendTalk(p, dwNpc);
     DgTestBegin(p);
     MockTrace(0);
+}
+
+/* 実際の移動と同じく外の入口へ移ってからイベントを踏む。作り直し後も検索し直す。 */
+static void DgTestEnter(PCHARINFO p)
+{
+    int mapNo = GetMapNo(p->dwMapID);
+    PMAPINFO map = g_aMapInfo[mapNo];
+    for (int i = 0; i < map->nEventCount; i ++) {
+        PEVENTINFO e = &map->pEvent[i];
+        if (e->byType == EVENTTYPE_MAPCHG && e->dwX == 3 && e->dwY == 4) {
+            QuestMovePC(p, mapNo, 3, 4);
+            DungeonEventStep(p, e);
+            return;
+        }
+    }
 }
 
 /* 届いた文の本文を調べる。 */
@@ -12667,7 +12682,7 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 	printf("dungeonbonus entrance-only sel=%d open=%d notice=%d in=%d\n", DungeonSelCount(), SpCnt(pC, CMD_DUNGEONSEL) - nSel0,
 		SpCnt(pC, CMD_TALKMSG) - nMsg0, (int)QuestInChallenge(pC));
 	int nLen0 = MockCmdLen(1002);
-	/* 1. ソロ（C）：受付に話すと一覧が開き、選ぶとすぐ入る */
+	/* 1. ソロ（C）：受付に話すと一覧が開き、選ぶと受付済みになり入口で入る */
 	MockTrace(1);
 	int nTalk0 = SpCnt(pC, CMD_TALKMSG);
 	QuestSendTalk(pC, dwReception);
@@ -12681,12 +12696,19 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 		(int)(aSelect.size() >= sizeof(CMDPARA_DUNGEONSEL) && ((PCMDPARA_DUNGEONSEL)&aSelect[0])->dwWait == 30000));
 	printf("dungeonbonus reception explain-before-open=%d\n", MockCmdBefore(1002, nLen0, CMD_TALKMSG, CMD_DUNGEONSEL));
 	MockTrace(0);
+    strcpy(Info.szMessages, "ready=");
+    MockTrace(1);
 	DgTestSelPick(pC, 1);
+    printf("dungeonbonus ready solo outside=%d talk=%d\n", (int)!QuestInChallenge(pC),
+        (int)DgTestText(pC, CMD_TALKMSG, "準備ができました。そこの入口に入ると開始です。いってらっしゃいませ。@2"));
+    Info.szMessages[0] = 0;
+    MockTrace(0);
+    DgTestEnter(pC);
 	DWORD dwS1 = pC->dwSpaceID;
 	printf("dungeonbonus solo picked sel=%d in=%d indungeon=%d space>0=%d lv=%d runs=%d\n", DungeonSelCount(), (int)QuestInChallenge(pC),
 		(int)QuestInDungeon(pC), (int)(dwS1 != SPACE_NORMAL), (int)pC->byLevel, DungeonRunCount());
 
-	/* 2. パーティ（A がリーダー）：リーダー以外が話しても始まらない。リーダーが話すと全員に一覧。全員が選ぶとそろって入る */
+	/* 2. パーティ（A がリーダー）：リーダー以外が話しても始まらない。リーダーが話すと全員に一覧。全員が選んだ後に入口でそろって入る */
 	DgTestTalk(pB, dwReception);
 	printf("dungeonbonus party member-talk sel=%d\n", DungeonSelCount());
 	/* 2b. 遅れて来た仲間：B が遠くにいる間に A が話すと A だけ。選んでいる間に B が同じ受付に話すと組に加わる */
@@ -12701,12 +12723,24 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 	printf("dungeonbonus party leader-talk sel=%d\n", DungeonSelCount());
 	DgTestSelPick(pA, 0);
 	printf("dungeonbonus party a-picked in a=%d b=%d sel=%d\n", (int)QuestInChallenge(pA), (int)QuestInChallenge(pB), DungeonSelCount());
+    strcpy(Info.szMessages, "ready=全員の準備ができました。");
+    MockTrace(1);
 	DgTestSelPick(pB, 0);
+    printf("dungeonbonus ready party outside=%d%d talk=%d%d\n", (int)!QuestInChallenge(pA), (int)!QuestInChallenge(pB),
+        (int)DgTestText(pA, CMD_TALKMSG, "全員の準備ができました。@2"), (int)DgTestText(pB, CMD_TALKMSG, "全員の準備ができました。@2"));
+    Info.szMessages[0] = 0;
+    QuestMovePC(pA, nMapNo, 3, 13);
+    DgTestEnter(pB);
+    printf("dungeonbonus ready gather waiting=%d%d notice=%d\n", (int)!QuestInChallenge(pA), (int)!QuestInChallenge(pB),
+        (int)DgTestText(pB, CMD_SYSMSG, "全員そろってから入口に入ってください。"));
+    QuestMovePC(pA, nMapNo, 3, 5);
+    MockTrace(0);
+    DgTestEnter(pB);
 	DWORD dwS2 = pA->dwSpaceID;
 	printf("dungeonbonus party both-in a=%d b=%d same=%d differs=%d lv=%d sel=%d runs=%d\n", (int)QuestInChallenge(pA), (int)QuestInChallenge(pB),
 		(int)(pB->dwSpaceID == dwS2), (int)(dwS2 != dwS1 && dwS2 != SPACE_NORMAL), (int)pA->byLevel, DungeonSelCount(), DungeonRunCount());
 
-	/* 3. 締め切り：D が選び、E は選ばない → 30 秒後に D だけ入り、E は置いていかれる */
+	/* 3. 締め切り：D が選び、E は選ばない → 30 秒後に D だけ受付済みになり入口で入り、E は置いていかれる */
 	int nDOpen0 = SpCnt(pD, CMD_DUNGEONSEL), nEOpen0 = SpCnt(pE, CMD_DUNGEONSEL);
 	DgTestTalk(pD, dwReception);
 	printf("dungeonbonus deadline open sel=%d members=%d d-open=%d e-open=%d\n", DungeonSelCount(), DungeonSelMemberCount(pD),
@@ -12723,6 +12757,10 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 	printf("dungeonbonus messages timeout=%d\n", (int)DgTestText(pE, CMD_SYSMSG, "締め切りになりました。"));
 	Info.szMessages[0] = 0;
 	MockTrace(0);
+    printf("dungeonbonus ready deadline outside=%d%d\n", (int)!QuestInChallenge(pD), (int)!QuestInChallenge(pE));
+    DgTestEnter(pE);
+    printf("dungeonbonus ready unselected blocked=%d\n", (int)!QuestInChallenge(pE));
+    DgTestEnter(pD);
 	DWORD dwS3 = pD->dwSpaceID;
 	printf("dungeonbonus deadline 31s in d=%d e=%d sel=%d runs=%d\n", (int)QuestInChallenge(pD), (int)QuestInChallenge(pE), DungeonSelCount(), DungeonRunCount());
 
@@ -12752,6 +12790,7 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 	printf("dungeonbonus once killed after=%d (full=%d) s1=%d s2=%d\n", DgTestCountEnemy(dwPut, dwS3), nFull, DgTestCountEnemy(dwPut, dwS1), DgTestCountEnemy(dwPut, dwS2));
 	DgTestTalk(pE, dwReception);
 	DgTestSelPick(pE, 1);
+    DgTestEnter(pE);
 	DWORD dwS4 = pE->dwSpaceID;
 	printf("dungeonbonus once new-group in e=%d new space=%d enemies=%d full=%d runs=%d\n", (int)QuestInChallenge(pE), (int)(dwS4 != SPACE_NORMAL && dwS4 != dwS3 && dwS4 != dwS1 && dwS4 != dwS2),
 		DgTestCountEnemy(dwPut, dwS4), (int)(DgTestCountEnemy(dwPut, dwS4) == nFull), DungeonRunCount());
@@ -12795,6 +12834,7 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 		QuestMovePC(pC, nMapNo, 3, 5);
 		DgTestTalk(pC, dwReception);
 		DgTestSelPick(pC, 0);
+    DgTestEnter(pC);
 		int nIn = (int)QuestInChallenge(pC);
 		if (pRetire) DungeonEventStep(pC, pRetire);
 		s_dwFakeNow += 1000;
@@ -12858,6 +12898,7 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 	int nOutX = Info.byX1 + Info.wGenGoalX, nOutY = Info.byY1 + Info.wGenGoalY;
 	int nInEvent = SearchEvent(Info.dwMapID, nInX, nInY), nOutEvent = SearchEvent(Info.dwMapID, nOutX, nOutY);
 	DgTestTalk(pC, dwReception); DgTestSelPick(pC, 0);
+    DgTestEnter(pC);
 	printf("dungeonbonus moved-build entry=%d goal=%d in-area=%d floor=%d warp=%d automap=%d\n",
 		(int)(nInEvent >= 0 && Info.byGoalX == nInX && Info.byGoalY == nInY), (int)(nOutEvent >= 0),
 		(int)(nInX >= 3 && nInX <= 42 && nInY >= 12 && nInY <= 51 && nOutX >= 3 && nOutX <= 42 && nOutY >= 12 && nOutY <= 51),
@@ -12876,6 +12917,37 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 		(int)(pPut->dwX >= 3 && pPut->dwX <= 42 && pPut->dwY >= 12 && pPut->dwY <= 51), (int)(nEnemies > 0), nOutside);
 	DungeonRunLeaveAll(byID, "テスト終了");
 	s_dwFakeNow += 1000; DungeonProcNow(s_dwFakeNow);
+
+    /* 受付済みは2分で失効。移動・離脱・切断でも取り消される。 */
+    QuestMovePC(pC, nMapNo, 3, 5);
+    DgTestTalk(pC, dwReception); DgTestSelPick(pC, 0);
+    MockTrace(1);
+    s_dwFakeNow += 119000; DungeonProcNow(s_dwFakeNow);
+    int alive = !DgTestText(pC, CMD_SYSMSG, "準備完了から2分が過ぎたので") && !QuestInChallenge(pC);
+    s_dwFakeNow += 1000; DungeonProcNow(s_dwFakeNow);
+    int expired = DgTestText(pC, CMD_SYSMSG, "準備完了から2分が過ぎたので");
+    DgTestEnter(pC);
+    printf("dungeonbonus ready expiry waiting=%d notice=%d blocked=%d\n", alive, expired, (int)!QuestInChallenge(pC));
+    DgTestTalk(pC, dwReception); DgTestSelPick(pC, 0);
+    MockTrace(1);
+    QuestMovePC(pC, nMapNo, 30, 30);
+    s_dwFakeNow += 1000; DungeonProcNow(s_dwFakeNow);
+    int moved = DgTestText(pC, CMD_SYSMSG, "組の受付を取り消しました。");
+    QuestMovePC(pC, nMapNo, 3, 5); DgTestEnter(pC);
+    printf("dungeonbonus ready moved notice=%d blocked=%d\n", moved, (int)!QuestInChallenge(pC));
+    DgTestTalk(pC, dwReception); DgTestSelPick(pC, 0);
+    MockTrace(1);
+    QuestOnPartyLeave(pC);
+    DgTestEnter(pC);
+    printf("dungeonbonus ready party-leave notice=%d blocked=%d\n",
+        (int)DgTestText(pC, CMD_SYSMSG, "組の受付を取り消しました。"), (int)!QuestInChallenge(pC));
+    DgTestTalk(pC, dwReception); DgTestSelPick(pC, 0);
+    MockTrace(1);
+    QuestOnDecPlayer(pC);
+    DgTestEnter(pC);
+    printf("dungeonbonus ready disconnect notice=%d blocked=%d\n",
+        (int)DgTestText(pC, CMD_SYSMSG, "組の受付を取り消しました。"), (int)!QuestInChallenge(pC));
+    MockTrace(0);
 
 	/* 番号の後ろの独自説明にも入力待ちと続行指示が付く */
 	{
@@ -12913,6 +12985,7 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
             (int)DgTestText(pC, CMD_SYSMSG, "今回はやめました。"));
         DgTestTalk(pC, dwReception);
         MockTrace(1); DgTestSelPick(pC, 0);
+    DgTestEnter(pC);
         printf("dungeonbonus messages entered=%d\n", (int)DgTestText(pC, CMD_SYSMSG, "で出発！"));
         pC->wHP = 0; pC->byCharState = CHARSTATE_DEAD;
         s_dwFakeNow += 1000; DungeonProcNow(s_dwFakeNow);
@@ -13291,9 +13364,11 @@ static void TestDungeonDaily(const std::vector<int> &aLogin)
 	DgTestTalk(pC, dwReception);
 	printf("dungeondaily reception open sel=%d members=%d in=%d\n", DungeonSelCount(), DungeonSelMemberCount(pC), (int)QuestInChallenge(pC));
 	DgTestSelPick(pC, 0);
+    DgTestEnter(pC);
 	DWORD dwS1 = pC->dwSpaceID;
 	DgTestTalk(pD, dwReception);
 	DgTestSelPick(pD, 0);
+    DgTestEnter(pD);
 	DWORD dwS2 = pD->dwSpaceID;
 	std::vector<std::pair<DWORD, DWORD> > aPos1 = DpEnemyPos(dwPut, dwS1), aPos2 = DpEnemyPos(dwPut, dwS2);
 	printf("dungeondaily enemies s1=%d s2=%d same-positions=%d\n", (int)aPos1.size(), (int)aPos2.size(), (int)(aPos1 == aPos2 && !aPos1.empty()));
@@ -13316,6 +13391,7 @@ static void TestDungeonDaily(const std::vector<int> &aLogin)
 	printf("dungeondaily date-change occupied rebuilt=%d stale=%d\n", (int)(Info.dwBuildNo != dwBuild1), (int)DungeonDailyStale(byID, Info.dwDailyVer, 5, 40, 40));
 	DgTestTalk(pE, dwReception);
 	DgTestSelPick(pE, 0);
+    DgTestEnter(pE);
 	DWORD dwS3 = pE->dwSpaceID;
 	printf("dungeondaily date-change new group in=%d same-version=%d positions-same=%d\n", (int)QuestInChallenge(pE), (int)(Info.dwBuildNo == dwBuild1), (int)(DpEnemyPos(dwPut, dwS3) == aPos1));
 
@@ -13358,6 +13434,7 @@ static void TestDungeonDaily(const std::vector<int> &aLogin)
 	DWORD dwSeedBefore = vNew.dwSeed;
 	DgTestTalk(pC, dwReception);
 	DgTestSelPick(pC, 0);
+    DgTestEnter(pC);
 	printf("dungeondaily admin before in=%d\n", (int)QuestInChallenge(pC));
 	std::string strErr;
 	BOOL bOk = DungeonDailyRebuildNow(byID, strErr);
@@ -13458,6 +13535,7 @@ static void TestDungeonDaily(const std::vector<int> &aLogin)
 	/* 中の入口は途中で帰る出口（記録なし） */
 	DgTestTalk(pC, dwReception);
 	DgTestSelPick(pC, 0);
+    DgTestEnter(pC);
 	DWORD dwK1 = pC->dwSpaceID;
 	s_dwFakeNow += 5000;
 	DungeonEventStep(pC, pRetire);
@@ -13469,6 +13547,7 @@ static void TestDungeonDaily(const std::vector<int> &aLogin)
 	DgTestTalk(pA, dwReception);
 	DgTestSelPick(pA, 0);
 	DgTestSelPick(pB, 0);
+    DgTestEnter(pB);
 	DWORD dwK2 = pA->dwSpaceID;
 	int nEn = DgTestCountEnemy(dwPut, dwK2);
 	DWORD dwStartMs = s_dwFakeNow;
@@ -13503,6 +13582,7 @@ static void TestDungeonDaily(const std::vector<int> &aLogin)
 	pB->wHP = 300; pB->byCharState = CHARSTATE_MOVE;
 	DgTestTalk(pD, dwReception);
 	DgTestSelPick(pD, 0);
+    DgTestEnter(pD);
 	s_dwFakeNow += 7000;
 	DungeonEventStep(pD, pGoal);
 	DungeonDailyFind(byID, dwKVer, vK);
@@ -13540,6 +13620,7 @@ static void TestDungeonDaily(const std::vector<int> &aLogin)
 		/* D が 1 人で初めて挑戦してクリア → 順位に入る */
 		DgTestTalk(pD, dwReception);
 		DgTestSelPick(pD, 0);
+    DgTestEnter(pD);
 		s_dwFakeNow += 5000;
 		DungeonEventStep(pD, pGoal);
 		DungeonDailyFind(byID, dwOV, vO);
@@ -13549,6 +13630,7 @@ static void TestDungeonDaily(const std::vector<int> &aLogin)
 		QuestMovePC(pD, nMapNo, 3, 6);
 		DgTestTalk(pD, dwReception);
 		DgTestSelPick(pD, 0);
+    DgTestEnter(pD);
 		s_dwFakeNow += 5000;
 		DungeonEventStep(pD, pGoal);
 		DungeonDailyFind(byID, dwOV, vO);
@@ -13560,6 +13642,7 @@ static void TestDungeonDaily(const std::vector<int> &aLogin)
 		DgTestTalk(pC, dwReception);
 		DgTestSelPick(pC, 0);
 		DgTestSelPick(pD, 0);
+    DgTestEnter(pD);
 		int nIn = (int)QuestInChallenge(pC) * 10 + (int)QuestInChallenge(pD);
 		s_dwFakeNow += 5000;
 		DungeonEventStep(pC, pGoal);
@@ -13574,6 +13657,7 @@ static void TestDungeonDaily(const std::vector<int> &aLogin)
 		for (int i = 0; i < 5; i ++) QuestMovePC(apPC[i], nMapNo, 3 + (i % 3), 5 + (i / 3));
 		DgTestTalk(pE, dwReception);
 		DgTestSelPick(pE, 0);
+    DgTestEnter(pE);
 		s_dwFakeNow += 5000;
 		DungeonEventStep(pE, pGoal);
 		DungeonDailyFind(byID, dwOV, vO);
@@ -13602,6 +13686,7 @@ static void TestDungeonDaily(const std::vector<int> &aLogin)
 		for (int i = 0; i < 5; i ++) QuestMovePC(apPC[i], nMapNo, 3 + (i % 3), 5 + (i / 3));
 		DgTestTalk(pD, dwReception);
 		DgTestSelPick(pD, 0);
+    DgTestEnter(pD);
 		s_dwFakeNow += 5000;
 		DungeonEventStep(pD, pGoal);
 		DungeonDailyFind(byID, dwNV, vO);
