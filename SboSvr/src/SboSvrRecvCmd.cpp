@@ -3776,6 +3776,166 @@ void RecvDataProc(PBYTE pData, DWORD dwDataSize)
 }
 
 /* ========================================================================= */
+/* ログイン試行・アカウント作成の回数制限									 */
+/* ========================================================================= */
+/* テストなど、同じ接続元から何度もログインする場合は FALSE にして制限を止める */
+BOOL g_bLoginLimit = TRUE;
+/* 自動作成する新規アカウントの上限（接続元IPごと。0 なら無制限。INI の [Setting] で変えられる） */
+int g_nFreeAcountPerHour = 5;
+int g_nFreeAcountPerDay = 20;
+
+#define LOGINLIMIT_CONN_MAX			5				/* 1 つの接続で失敗できる回数（超えたら切断） */
+#define LOGINLIMIT_IP_MAX			20				/* 同じIPで失敗できる回数 */
+#define LOGINLIMIT_IP_WINDOW		(15 * 60 * 1000)	/* その数える期間 */
+#define LOGINLIMIT_IP_BLOCK			(15 * 60 * 1000)	/* 超えた時に拒否する時間 */
+#define LOGINLIMIT_ADMIN_MAX		5				/* 管理者アカウントへの失敗（IPごと。別に厳しく） */
+#define LOGINLIMIT_ADMIN_WINDOW		(15 * 60 * 1000)
+#define LOGINLIMIT_ADMIN_BLOCK		(15 * 60 * 1000)
+#define LOGINLIMIT_TABLE_MAX		2000			/* 表がこれより増えたら古いものを捨てる */
+
+typedef struct _LOGINLIMIT {
+	DWORD	dwStart;			/* 数え始めた時刻 */
+	int		nCount;				/* 回数 */
+	BOOL	bBlock;				/* 拒否中？ */
+	DWORD	dwBlockStart;		/* 拒否し始めた時刻 */
+} LOGINLIMIT, *PLOGINLIMIT;
+
+typedef struct _CREATELIMIT {
+	DWORD	dwHourStart, dwDayStart;
+	int		nHour, nDay;
+} CREATELIMIT;
+
+typedef struct _CONNLOGIN {
+	int		nFail;				/* この接続のログイン失敗回数 */
+	BOOL	bTokenIssued;		/* この接続で端末トークンを発行した？ */
+} CONNLOGIN;
+
+static std::map<DWORD, LOGINLIMIT>	s_mapLoginFailIP;		/* IP → 失敗 */
+static std::map<DWORD, LOGINLIMIT>	s_mapLoginFailAdminIP;	/* IP → 管理者アカウントへの失敗 */
+static std::map<DWORD, CREATELIMIT>	s_mapCreateIP;			/* IP → 自動作成 */
+static std::map<DWORD, CONNLOGIN>	s_mapConnLogin;			/* 接続ID → ログイン状況 */
+
+/* 接続元IPが拒否中？ */
+static BOOL LoginLimitIsBlocked(std::map<DWORD, LOGINLIMIT> &map, DWORD dwIP, DWORD dwBlockMs)
+{
+	std::map<DWORD, LOGINLIMIT>::iterator it;
+
+	if (!g_bLoginLimit || (dwIP == 0)) {
+		return FALSE;
+	}
+	it = map.find (dwIP);
+	if ((it == map.end ()) || (!it->second.bBlock)) {
+		return FALSE;
+	}
+	if ((DWORD)(GetTickCount () - it->second.dwBlockStart) < dwBlockMs) {
+		return TRUE;
+	}
+	map.erase (it);
+	return FALSE;
+}
+
+/* 失敗を 1 回数える。今回で拒否に入ったら TRUE */
+static BOOL LoginLimitFail(std::map<DWORD, LOGINLIMIT> &map, DWORD dwIP, int nMax, DWORD dwWindowMs)
+{
+	DWORD dwNow = GetTickCount ();
+	PLOGINLIMIT pInfo;
+
+	if (!g_bLoginLimit || (dwIP == 0)) {
+		return FALSE;
+	}
+	if (map.size () > LOGINLIMIT_TABLE_MAX) {
+		std::map<DWORD, LOGINLIMIT>::iterator it = map.begin ();
+		while (it != map.end ()) {
+			if ((DWORD)(dwNow - it->second.dwStart) > dwWindowMs * 2) {
+				map.erase (it ++);
+			} else {
+				++ it;
+			}
+		}
+	}
+	pInfo = &map[dwIP];
+	if ((pInfo->nCount == 0) || ((DWORD)(dwNow - pInfo->dwStart) > dwWindowMs)) {
+		pInfo->dwStart = dwNow;
+		pInfo->nCount = 0;
+	}
+	pInfo->nCount ++;
+	if (!pInfo->bBlock && (pInfo->nCount >= nMax)) {
+		pInfo->bBlock = TRUE;
+		pInfo->dwBlockStart = dwNow;
+		return TRUE;
+	}
+	return FALSE;
+}
+
+/* 新しい接続が来た（接続ごとの数えを初めから） */
+void LoginLimitOnConnect(DWORD pID)
+{
+	s_mapConnLogin.erase (pID);
+}
+
+/* ログインの失敗を数える（応答を返した後に呼ぶ）。bAdmin: 管理者アカウントへの試行 */
+static void LoginLimitRecordFail(DWORD pID, BOOL bAdmin)
+{
+	DWORD dwIP = svrSock.GetIPAddress (pID);
+	IN_ADDR Addr;
+
+	if (!g_bLoginLimit) {
+		return;
+	}
+	Addr.S_un.S_addr = dwIP;
+	if (LoginLimitFail (s_mapLoginFailIP, dwIP, LOGINLIMIT_IP_MAX, LOGINLIMIT_IP_WINDOW)) {
+		g_LogLogin.Write ("警告\tログイン失敗が多いため、しばらくこの接続元からのログインを断ります[%d.%d.%d.%d]",
+				Addr.S_un.S_un_b.s_b1, Addr.S_un.S_un_b.s_b2, Addr.S_un.S_un_b.s_b3, Addr.S_un.S_un_b.s_b4);
+	}
+	if (bAdmin && LoginLimitFail (s_mapLoginFailAdminIP, dwIP, LOGINLIMIT_ADMIN_MAX, LOGINLIMIT_ADMIN_WINDOW)) {
+		g_LogLogin.Write ("警告\t管理者アカウントへのログイン失敗が多いため、しばらく断ります[%d.%d.%d.%d]",
+				Addr.S_un.S_un_b.s_b1, Addr.S_un.S_un_b.s_b2, Addr.S_un.S_un_b.s_b3, Addr.S_un.S_un_b.s_b4);
+	}
+	/* 接続ごとの回数。超えたら切る */
+	if (++ s_mapConnLogin[pID].nFail >= LOGINLIMIT_CONN_MAX) {
+		svrSock.DeleteClient (pID);
+	}
+}
+
+/* 自動作成を許す？（許すなら数える）。FALSE なら上限超え */
+static BOOL LoginLimitCheckCreate(DWORD pID)
+{
+	DWORD dwIP = svrSock.GetIPAddress (pID);
+	DWORD dwNow = GetTickCount ();
+	CREATELIMIT *pInfo;
+
+	if (!g_bLoginLimit || (dwIP == 0)) {
+		return TRUE;
+	}
+	if (s_mapCreateIP.size () > LOGINLIMIT_TABLE_MAX) {
+		std::map<DWORD, CREATELIMIT>::iterator it = s_mapCreateIP.begin ();
+		while (it != s_mapCreateIP.end ()) {
+			if ((DWORD)(dwNow - it->second.dwDayStart) > 24 * 60 * 60 * 1000) {
+				s_mapCreateIP.erase (it ++);
+			} else {
+				++ it;
+			}
+		}
+	}
+	pInfo = &s_mapCreateIP[dwIP];
+	if ((pInfo->nDay == 0) || ((DWORD)(dwNow - pInfo->dwDayStart) > 24 * 60 * 60 * 1000)) {
+		pInfo->dwDayStart = dwNow;
+		pInfo->nDay = 0;
+	}
+	if ((pInfo->nHour == 0) || ((DWORD)(dwNow - pInfo->dwHourStart) > 60 * 60 * 1000)) {
+		pInfo->dwHourStart = dwNow;
+		pInfo->nHour = 0;
+	}
+	if (((g_nFreeAcountPerHour > 0) && (pInfo->nHour >= g_nFreeAcountPerHour)) ||
+		((g_nFreeAcountPerDay > 0) && (pInfo->nDay >= g_nFreeAcountPerDay))) {
+		return FALSE;
+	}
+	pInfo->nHour ++;
+	pInfo->nDay ++;
+	return TRUE;
+}
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcLOGINREQ												 */
 /* 内容：受信データ処理(ログイン要求)										 */
 /* 日付：2003/05/02															 */
@@ -3787,6 +3947,7 @@ void RecvDataProcLOGINREQ(PBYTE pData, DWORD dwDataSize)
 	int i, nCount = g_aCharInfo.GetSize ();
 	BYTE byCode = 0;
 	IN_ADDR AddrTmp;
+	BOOL bAdminTry = FALSE;		/* 管理者アカウントへの試行？ */
 
 	/* プレイヤーIDはクライアントの申告ではなく、受信した接続のものを使う */
 	pPara->pID = dwDataSize;
@@ -3802,6 +3963,11 @@ void RecvDataProcLOGINREQ(PBYTE pData, DWORD dwDataSize)
 		SendCmdLOGINRES (pPara->pID, 0, 0);
 		return;
 	}
+	/* 失敗が多い接続元は、中身を調べずに断る（試行回数を制限する） */
+	if (LoginLimitIsBlocked (s_mapLoginFailIP, svrSock.GetIPAddress (pPara->pID), LOGINLIMIT_IP_BLOCK)) {
+		SendCmdLOGINRES (pPara->pID, 0, 6);
+		return;
+	}
 
 	for (i = 0; i < nCount; i ++) {
 		pCharTmp = g_aCharInfo[i];
@@ -3809,6 +3975,7 @@ void RecvDataProcLOGINREQ(PBYTE pData, DWORD dwDataSize)
 		if ((strlen (pPara->szAcc) == strlen (pCharTmp->szAcc)) &&
 				(!strcmp (pPara->szAcc, pCharTmp->szAcc))) {
 			byCode = 1;
+			bAdminTry = (pCharTmp->byAdminLV != ADMINLV_USER);
 			LPCSTR pszPas = pCharTmp->szPas;
 			/* 管理者のキャラでパスワードが空なら、INI の管理者パスワードで確かめる。
 			   それも空ならログインさせない（誰でも管理者になれてしまうので） */
@@ -3836,6 +4003,7 @@ void RecvDataProcLOGINREQ(PBYTE pData, DWORD dwDataSize)
 		if ((strlen (pPara->szAcc) == strlen (g_szAdminAcc)) &&
 				(!strcmp (pPara->szAcc, g_szAdminAcc))) {
 			byCode = 1;
+			bAdminTry = TRUE;
 			/* パスワード一致？（パスワードが空の設定では管理者ログインさせない） */
 			if ((g_szAdminPas[0] != 0) &&
 					(strlen (pPara->szPas) == strlen (g_szAdminPas)) &&
@@ -3846,16 +4014,24 @@ void RecvDataProcLOGINREQ(PBYTE pData, DWORD dwDataSize)
 		}
 	}
 
-	/* 見つからなかった？ */
+	/* 管理者アカウントは別枠で厳しく制限する（成功する場合も、拒否中の接続元からは通さない） */
+	if (bAdminTry && LoginLimitIsBlocked (s_mapLoginFailAdminIP, svrSock.GetIPAddress (pPara->pID), LOGINLIMIT_ADMIN_BLOCK)) {
+		SendCmdLOGINRES (pPara->pID, 0, 6);
+		return;
+	}
+
+	/* 見つからなかった？（アカウントの有無が分からないよう、パスワード違いと同じ応答にする） */
 	if (!byCode && !g_bFreeAcount) {
-		SendCmdLOGINRES (pPara->pID, 0, 0);
+		SendCmdLOGINRES (pPara->pID, 0, 1);
 		MyOutputDebugString ("アカウント見つからず[%s]", pPara->szAcc);
+		LoginLimitRecordFail (pPara->pID, FALSE);
 		return;
 
 	/* パスワード間違い？ */
 	} else if (byCode == 1) {
 		SendCmdLOGINRES (pPara->pID, 0, 1);
 		MyOutputDebugString ("パスワード間違い[%s]", pPara->szAcc);
+		LoginLimitRecordFail (pPara->pID, bAdminTry);
 		return;
 
 	/* キャラが見つかった？ */
@@ -3922,6 +4098,13 @@ void RecvDataProcLOGINREQ(PBYTE pData, DWORD dwDataSize)
 				return;
 			}
 		}
+	}
+
+	/* 同じ接続元からの自動作成が多すぎる？（管理者アカウントでの作成は数えない） */
+	if ((byCode != 4) && !LoginLimitCheckCreate (pPara->pID)) {
+		SendCmdLOGINRES (pPara->pID, 0, 5);
+		g_LogLogin.Write ("警告\tアカウントの自動作成が多いため断りました[%s]", pPara->szAcc);
+		return;
 	}
 
 	PCHARINFO pChar = new CHARINFO;
@@ -10349,6 +10532,11 @@ void RecvDataProcCHGPASSWORD(PBYTE pData, DWORD dwDataSize)
 	if (pPara->szPas[0] == 0) {
 		return;
 	}
+	/* 短すぎるパスワードは断る */
+	if (strlen (pPara->szPas) < 4) {
+		SendCmdSYSMSG (g_aCharInfo[pPara->dwTblID]->pID, "SYSTEM:パスワードは4文字以上にしてください。", SPEECHCMD_BATTLE1);
+		return;
+	}
 	pChar = g_aCharInfo[pPara->dwTblID];
 	ZeroMemory ((PBYTE)pChar->szPas, sizeof (pChar->szPas));
 	strcat (pChar->szPas, pPara->szPas);
@@ -12021,6 +12209,11 @@ void RecvDataProcWEBACCOUNT(PBYTE pData, DWORD dwDataSize)
 		{
 			CMDPARA_LOGINREQ LoginReq;
 
+			/* 失敗が多い接続元は断る */
+			if (LoginLimitIsBlocked (s_mapLoginFailIP, svrSock.GetIPAddress (pID), LOGINLIMIT_IP_BLOCK)) {
+				SendCmdLOGINRES (pID, 0, 6);
+				return;
+			}
 			ZeroMemory (szAcc, sizeof (szAcc));
 			i = -1;
 			if (WebAccTokenToAccount (pPara->szToken, szAcc, sizeof (szAcc))) {
@@ -12030,6 +12223,7 @@ void RecvDataProcWEBACCOUNT(PBYTE pData, DWORD dwDataSize)
 				/* 端末トークンが無効 */
 				SendCmdLOGINRES (pID, 0, 7);
 				MyOutputDebugString ("端末トークンが無効\n");
+				LoginLimitRecordFail (pID, FALSE);
 				return;
 			}
 			/* ID とパスワードでのログインと同じ処理に任せる */
@@ -12056,6 +12250,13 @@ void RecvDataProcWEBACCOUNT(PBYTE pData, DWORD dwDataSize)
 			/* ログインしていない接続には出さない */
 			if (i >= nCount) {
 				return;
+			}
+			/* 1 つの接続で発行するのは 1 回まで */
+			if (g_bLoginLimit) {
+				if (s_mapConnLogin[pID].bTokenIssued) {
+					return;
+				}
+				s_mapConnLogin[pID].bTokenIssued = TRUE;
 			}
 			ZeroMemory (&SendData, sizeof (SendData));
 			SendData.byCmd = CMD_WEBACCOUNT;

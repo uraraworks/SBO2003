@@ -1106,6 +1106,7 @@ static void TestTailOverlap(const std::vector<int> &aLogin);
 static void TestEmptyMapCheck(const std::vector<int> &aLogin);
 static void TestPutFill(void);
 extern BOOL g_bPutFillOnStart;
+extern BOOL g_bLoginLimit;
 extern void RecvCmdOnDecPlayer(int);
 extern void BattleProcCheck(PCHARINFO);
 
@@ -1274,6 +1275,8 @@ static void TestWorld(void)
 	s_dwFakeNow = 1000000;
 	/* 起動時の NPC発生の出し切りは、前からの出力と比べるため止めておき、最後（AM）で確かめる */
 	g_bPutFillOnStart = FALSE;
+	/* 同じ接続元から何度もログインするので、ログイン回数の制限は止める */
+	g_bLoginLimit = FALSE;
 	HWND hWnd = CreateWindow("SBOSVRTEST", "t", WS_OVERLAPPEDWINDOW, 0, 0, 100, 100, NULL, NULL, NULL, NULL);
 	if (!hWnd) {
 		printf("CreateWindow failed\n");
