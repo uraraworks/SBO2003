@@ -88,6 +88,9 @@ void ReadTheme(const JVal &j, Theme &t)
 	t.entryPart = j.Int("entry", 0);
 	t.goalPart = j.Int("goal", 0);
 	t.bottomRows = j.Int("bottomRows", 1) == 2 ? 2 : 1;
+	t.dark = j.Int("dark", 0);
+	if (t.dark < 0) t.dark = 0;
+	if (t.dark > 100) t.dark = 100;
 	const JVal *rooms = j.Get("rooms");
 	if (rooms && rooms->t == JVal::ARR)
 		for (size_t i = 0; i < rooms->a.size(); ++i)

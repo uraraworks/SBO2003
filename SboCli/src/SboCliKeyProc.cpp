@@ -223,6 +223,7 @@ BYTE m_byKeyOnX = 0,
 	 m_byKeyOnZ = 0,
 	 m_byKeyOnS = 0,
 	 m_byKeyOnC = 0,
+	 m_byKeyOnM = 0,
 	 m_byKeyOnReturn = 0,
 	 m_byKeyOnUp = 0,
 	 m_byKeyOnDown = 0,
@@ -547,6 +548,19 @@ void KeyProc(void)
 		m_byKeyOnC = 0;
 		byEvent = KEY_UP;
 		byCode = 'C';
+		KeyEvPush (byEvent, byCode);
+	}
+
+	/* Mキー（探索マップの出し入れ） */
+	if ((g_abyKeyState['M'] & 0x80) && (m_byKeyOnM == 0)) {
+		m_byKeyOnM = 1;
+		byEvent = KEY_DOWN;
+		byCode = 'M';
+		KeyEvPush (byEvent, byCode);
+	} else if (((g_abyKeyState['M'] & 0x80) == 0) && (m_byKeyOnM == 1)) {
+		m_byKeyOnM = 0;
+		byEvent = KEY_UP;
+		byCode = 'M';
 		KeyEvPush (byEvent, byCode);
 	}
 

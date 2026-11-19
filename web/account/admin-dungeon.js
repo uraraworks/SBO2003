@@ -111,7 +111,8 @@
 			'<div id="dg-edit" hidden>' +
 			'<div class="dg-row"><label>名前 <input type="text" id="dg-name" maxlength="40"></label>' +
 			'<label>作り方 <select id="dg-algo"><option value="1">1 = L1 聖堂</option><option value="3">3 = L3 洞窟</option></select></label>' +
-			'<label>下の壁の厚さ（L1） <select id="dg-bottom"><option value="1">1行（天井だけ）</option><option value="2">2行（天井＋側面）</option></select></label></div>' +
+			'<label>下の壁の厚さ（L1） <select id="dg-bottom"><option value="1">1行（天井だけ）</option><option value="2">2行（天井＋側面）</option></select></label>' +
+			'<label title="ゲームで作る時、ダンジョンの範囲だけをこの暗さにします（マップの明るさレベル。大きいほど暗い）。範囲の外（外の入口のあたり）は明るくなります。0 ならマップの設定のまま">暗さ（0=マップのまま） <input type="number" id="dg-dark" min="0" max="100" style="width:5em"></label></div>' +
 			'<div class="dg-cap">絵を押すとパーツ一覧から選べます。複数可の欄は「＋追加」と絵の×で増減（床はくじで均等に混ぜます）。数字の欄は上級者用です。</div><div class="dg-parts" id="dg-lists"></div>' +
 			'<div class="dg-cap" id="dg-warn" style="color:var(--ng)"></div></div></div>';
 		h += '<div class="dg-sec" id="dg-rooms-sec" hidden><h3>9分割の部屋（L1 用）</h3>' +
@@ -689,6 +690,7 @@
 		$('dg-name').value = cur.name;
 		$('dg-algo').value = String(cur.algo);
 		$('dg-bottom').value = cur.bottomRows === 2 ? '2' : '1';
+		$('dg-dark').value = String(cur.dark || 0);
 		LISTS.forEach(function (l) {
 			var v = cur[l[0]];
 			$('dg-l-' + l[0]).value = SCALAR[l[0]] ? String(v) : v.join(',');
@@ -1738,6 +1740,7 @@
 		$('dg-name').addEventListener('input', function () { cur.name = $('dg-name').value; markDirty(); });
 		$('dg-name').addEventListener('change', fillSelect);
 		$('dg-bottom').addEventListener('change', function () { cur.bottomRows = num($('dg-bottom').value, 1) === 2 ? 2 : 1; markDirty(); drawRoom(); });
+		$('dg-dark').addEventListener('change', function () { cur.dark = Math.max(0, Math.min(100, num($('dg-dark').value, 0))); $('dg-dark').value = String(cur.dark); markDirty(); });
 		$('dg-algo').addEventListener('change', function () { cur.algo = num($('dg-algo').value, 1); markDirty(); });
 		LISTS.forEach(function (l) {
 			$('dg-l-' + l[0]).addEventListener('input', function () {

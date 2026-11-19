@@ -76,6 +76,9 @@ static BOOL IsMapHasHideArea				(void);												/* 明るく壁で隠す範�
 BOOL	IsLightOtherRoom					(int x, int y);										/* 自分と違う部屋(隠す範囲)にある灯りか */
 static void RenewMapViewLights			(void);												/* 見える範囲のマップで光源の所も見せる */
 static void RenewMapDarkLightFlood		(int mx, int my, int nRange);							/* 灯りの位置から照らす */
+static void RenewMySight					(void);												/* 自分から見えるマスを作る */
+static void LightBeginSight				(void);												/* ほかの灯りで照らす前の明るさを覚える */
+static void LightEndSight				(void);												/* 自分から見えないマスに足した明るさを戻す */
 int	GetMapPosLight						(int mx, int my, BYTE *pbyPower, BYTE *pbyFlg);										/* マスの灯りの範囲(パーツ・光源) */
 
 /* 光るマップパーツの灯り(GetMapDarkLevel に pChar=NULL で渡した時に使う) */
@@ -94,6 +97,12 @@ typedef struct _LIGHTMASK {
 } LIGHTMASK, *PLIGHTMASK;
 static LIGHTMASK	s_aLightMask[LIGHTMASK_MAX];
 static int			s_nLightMaskCount = 0;
+
+/* 自分から見えるマス(1=見える)。壁の向こうの部屋のたいまつ・人の灯りで、
+   見えないはずの部屋がぼんやり見えていたので、ほかの灯りはここだけ照らす */
+static BYTE			s_abyMySight[SCRMARTSSIZE];
+static BOOL			s_bMySight = FALSE;						/* s_abyMySight を使う */
+static char			s_acLightSave[SCRMARTSSIZE];			/* ほかの灯りで照らす前の明るさ */
 
 static void SaveLightMask(const void *pKey, int x, int y)
 {
@@ -1176,6 +1185,7 @@ void RenewCharPosInfo(void)
 
 	ZeroMemory (g_pMapDarkTmp, SCRMARTSSIZE);
 	s_nLightMaskCount = 0;
+	RenewMySight ();
 
 	for (i = 0; i < nCount; i ++) {
 		PCHARINFO pChar;
@@ -1768,9 +1778,141 @@ void RenewMapDark(PCHARINFO pChar)
 	}
 	ZeroMemory (g_pMapDarkTmpPos, SCRMARTSSIZE);
 
+	/* ほかの人の灯りは、自分から見えるマスだけ照らす */
+	if (pChar != g_aCharInfo[g_nMyCharID]) {
+		LightBeginSight ();
+	}
 	RenewMapDarkWork (pChar, pChar->dwX, pChar->dwY, DRAW_PARTS_X);
 	RenewMapDarkCorner (pChar);
+	if (pChar != g_aCharInfo[g_nMyCharID]) {
+		LightEndSight ();
+	}
 	SaveLightMask (pChar, 0, 0);
+}
+
+/* ========================================================================= */
+/* 関数名：RenewMySight														 */
+/* 内容：自分から見えるマスを作る											 */
+/*       自分の位置から通れるマスを伝って画面いっぱいまで広げる(明るさは	 */
+/*       見ない)。壁・閉まった扉・隠す範囲の境目で止まる(そのマス自体は		 */
+/*       見える)。壁は自分の側から見えるので、見える床の近く(2マス)の壁も	 */
+/*       見えるマスにする(壁の天井・角の壁を照らせるように)					 */
+/* ========================================================================= */
+static void RenewMySight(void)
+{
+	enum { W = DRAW_PARTS_X * 2 + 3, H = DRAW_PARTS_Y * 2 + 3 };
+	BYTE abyFloor[SCRMARTSSIZE];
+	int anQ[SCRMARTSSIZE], nHead, nTail, i, x, y, mx, my, nPos, bx, by;
+	PCHARINFO pMyChar;
+	static const int anDX[4] = { 0, 0, -1, 1 }, anDY[4] = { -1, 1, 0, 0 };
+
+	s_bMySight = FALSE;
+	if (g_nMyCharID < 0) {
+		return;
+	}
+	/* 壁で灯りが止まらないマップは全部見える。見える範囲(視界)のマップは別の作り */
+	if (!IsSightBlock () || IsMapViewMode ()) {
+		return;
+	}
+	pMyChar = g_aCharInfo[g_nMyCharID];
+	ZeroMemory (s_abyMySight, sizeof (s_abyMySight));
+	ZeroMemory (abyFloor, sizeof (abyFloor));
+
+	nHead = nTail = 0;
+	nPos = (1 + DRAW_PARTS_X) + W * (1 + DRAW_PARTS_Y);
+	anQ[nTail ++] = nPos;
+	s_abyMySight[nPos] = 1;
+	while (nHead < nTail) {
+		nPos = anQ[nHead ++];
+		x = nPos % W;
+		y = nPos / W;
+		mx = (int)pMyChar->dwX + x - (1 + DRAW_PARTS_X);
+		my = (int)pMyChar->dwY + y - (1 + DRAW_PARTS_Y);
+		/* 自分の足元は壁でも先へ広げる */
+		if (nHead > 1) {
+			if (IsSightWall (mx, my)) {
+				continue;
+			}
+			if (IsHideAreaCross ((int)pMyChar->dwX, (int)pMyChar->dwY, mx, my)) {
+				continue;
+			}
+		}
+		abyFloor[nPos] = 1;
+		for (i = 0; i < 4; i ++) {
+			bx = x + anDX[i];
+			by = y + anDY[i];
+			if ((bx < 0) || (by < 0) || (bx >= W) || (by >= H)) {
+				continue;
+			}
+			if (s_abyMySight[bx + W * by]) {
+				continue;
+			}
+			s_abyMySight[bx + W * by] = 1;
+			anQ[nTail ++] = bx + W * by;
+		}
+	}
+
+	/* 見える床の近く(2マス)の壁も見える */
+	for (y = 0; y < H; y ++) {
+		for (x = 0; x < W; x ++) {
+			int dx, dy;
+			BOOL bNear;
+
+			nPos = x + W * y;
+			if (s_abyMySight[nPos]) {
+				continue;
+			}
+			mx = (int)pMyChar->dwX + x - (1 + DRAW_PARTS_X);
+			my = (int)pMyChar->dwY + y - (1 + DRAW_PARTS_Y);
+			if (!IsSightWall (mx, my)) {
+				continue;
+			}
+			bNear = FALSE;
+			for (dy = -2; (dy <= 2) && !bNear; dy ++) {
+				for (dx = -2; dx <= 2; dx ++) {
+					bx = x + dx;
+					by = y + dy;
+					if ((bx < 0) || (by < 0) || (bx >= W) || (by >= H)) {
+						continue;
+					}
+					if (abyFloor[bx + W * by]) {
+						bNear = TRUE;
+						break;
+					}
+				}
+			}
+			if (bNear) {
+				s_abyMySight[nPos] = 2;
+			}
+		}
+	}
+	s_bMySight = TRUE;
+}
+
+/* ほかの灯り(パーツ・光源・ほかの人)で照らす前の明るさを覚える */
+static void LightBeginSight(void)
+{
+	if (!s_bMySight) {
+		return;
+	}
+	CopyMemory (s_acLightSave, g_pMapDarkTmp, SCRMARTSSIZE);
+}
+
+/* 自分から見えないマスに足した明るさを戻し、照らせたマスからも外す */
+static void LightEndSight(void)
+{
+	int i;
+
+	if (!s_bMySight) {
+		return;
+	}
+	for (i = 0; i < SCRMARTSSIZE; i ++) {
+		if (s_abyMySight[i]) {
+			continue;
+		}
+		g_pMapDarkTmp[i] = s_acLightSave[i];
+		g_pMapDarkTmpPos[i] = 0;
+	}
 }
 
 /* ========================================================================= */
@@ -1824,8 +1966,12 @@ void RenewMapDarkParts(void)
 				continue;
 			}
 			ZeroMemory (g_pMapDarkTmpPos, SCRMARTSSIZE);
+			/* 壁の向こうの部屋の灯りは見えない(照らしたマスのうち自分から見えるマスだけ明るくする。
+			   灯りの位置で決めると、出入口の1歩外のたいまつの光がもれてこなくなる) */
+			LightBeginSight ();
 			RenewMapDarkLightFlood (mx, my, nRange);
 			RenewMapDarkCorner (NULL);
+			LightEndSight ();
 			SaveLightMask (NULL, mx, my);
 		}
 	}

@@ -1886,6 +1886,19 @@ static BOOL MakeDungeonByTheme(int nID, PSUBGAME_DUNGEONINFO pDungeon, PMAPINFO 
 		}
 	}
 
+	/* テーマの暗さ（dark）：マップの明るさレベルをその値にし、暗くする範囲をダンジョンの範囲だけにする
+	   （範囲の外＝外の入口のあたりは明るいまま）。0 ならマップの設定のまま */
+	if (theme.dark > 0) {
+		pMap->byLightLevel = (BYTE)theme.dark;
+		ZeroMemory (pMap->aDarkArea, sizeof (pMap->aDarkArea));
+		pMap->byDarkAreaCount = 1;
+		pMap->aDarkArea[0].wX1 = (WORD)pDungeon->byX1;
+		pMap->aDarkArea[0].wY1 = (WORD)pDungeon->byY1;
+		pMap->aDarkArea[0].wX2 = (WORD)pDungeon->byX2;
+		pMap->aDarkArea[0].wY2 = (WORD)pDungeon->byY2;
+		pMap->aDarkArea[0].byDark = MAPDARK_DARK;
+	}
+
 	/* 作り直し番号を進めて、マップにいる全員へマップを送り直す（tiles/set と同じ関数） */
 	pDungeon->dwBuildNo ++;
 	pDungeon->dwDailyVer = bDaily ? daily.dwNo : 0;

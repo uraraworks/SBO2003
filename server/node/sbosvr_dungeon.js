@@ -134,6 +134,7 @@ Module['sboDungeon'] = (function () {
 			entry: partNo(t.entry == null ? 0 : t.entry, nParts, 'entry'),
 			goal: partNo(t.goal == null ? 0 : t.goal, nParts, 'goal'),
 			bottomRows: int(t.bottomRows == null ? 1 : t.bottomRows, 1, 2, 'bottomRows'),
+			dark: int(t.dark == null ? 0 : t.dark, 0, 100, 'dark'),
 			rooms: [],
 			decos: [],
 			openings: [],
