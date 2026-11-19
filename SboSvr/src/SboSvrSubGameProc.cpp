@@ -462,6 +462,16 @@ static void SubGameProc_DUNGEON(PSUBGAMEINFO pInfo)
 			SubGameProc_DUNGEON_DAILY (g_nProcSubGame, pDungeon);
 			return;
 		}
+		/* テーマで作るダンジョンがまだ一度も作られていない（サーバーを起動した直後など）：無人を待たずに作る。
+		   作れなかった時は 60 秒おきに試し直す（旧方式に落ちた時も dwBuildNo は 0 のまま） */
+		if (pDungeon->dwThemeID && (pDungeon->dwBuildNo == 0)) {
+			DWORD dwNowT = timeGetTime ();
+			if ((pDungeon->dwDailyRetry == 0) || ((int)(dwNowT - pDungeon->dwDailyRetry) >= 0)) {
+				pDungeon->dwDailyRetry = (dwNowT + 60000) ? (dwNowT + 60000) : 1;
+				MakeDungeonProc (g_nProcSubGame);
+				return;
+			}
+		}
 		PCHARINFO pChar = g_aCharInfo[pDungeon->dwTblIDCheck];
 		if (pDungeon->dwTblIDCheck == 0) {
 			/* 誰もいないかもしれない？ */
