@@ -59,6 +59,21 @@ EM_JS(int, W32JsWebAccIssueToken, (const char *pszAcc, char *pszOut, int nSize),
 	return 1;
 });
 
+/* キャラ名に使えない言葉（管理人・運営など）が入っているか。判定は Node.js 側の
+   NG_WORDS（SBO_RENAME_NG_WORDS）と同じものを使う（全角半角を畳んで比べる）。名前は UTF-8 */
+EM_JS(int, W32JsWebAccHasNgWord, (const char *pszNameUtf8), {
+	var acc = Module['sboAccount'];
+	return (acc && acc.hasNgWord && acc.hasNgWord(UTF8ToString(pszNameUtf8))) ? 1 : 0;
+});
+
+BOOL WebAccHasNgWord(LPCSTR pszName)
+{
+	if ((pszName == NULL) || (pszName[0] == 0)) {
+		return FALSE;
+	}
+	return W32JsWebAccHasNgWord(W32TextToUtf8Str(pszName).c_str()) ? TRUE : FALSE;
+}
+
 /* 端末トークンからアカウント名を引く */
 BOOL WebAccTokenToAccount(LPCSTR pszToken, LPSTR pszAcc, int nSize)
 {
