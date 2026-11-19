@@ -3748,6 +3748,25 @@ BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
 		Sel.mapPick[aMember[i]->dwTblID] = -1;
 	}
 	s_mapDgSel[pChar->dwTblID] = Sel;
+	/* 今このダンジョンに入っている組の数を知らせる（入っている組がいれば同じ形、いなければ新しい形） */
+	{
+		std::map<DWORD, CHALLENGE>::iterator itC;
+		int nRun = 0;
+		char szRun[128];
+		for (itC = s_mapChallenge.begin (); itC != s_mapChallenge.end (); itC ++) {
+			if ((itC->second.byKind == CHALLENGEKIND_DUNGEON) && (itC->second.byDungeonID == (BYTE)nID)) {
+				nRun ++;
+			}
+		}
+		if (nRun > 0) {
+			snprintf (szRun, sizeof (szRun), "今%d組が挑戦中です。その組と同じ形のダンジョンに入ります。", nRun);
+		} else {
+			snprintf (szRun, sizeof (szRun), "今は誰も入っていません。");
+		}
+		for (i = 0; i < aMember.size (); i ++) {
+			SendCmdSYSMSG (aMember[i]->pID, szRun, SPEECHCMD_BATTLE1);
+		}
+	}
 	for (i = 0; i < aMember.size (); i ++) {
 		s_mapDgSelOf[aMember[i]->dwTblID] = pChar->dwTblID;
 		DgSendSel (aMember[i], DUNGEONSEL_OPEN, &Sel, DGSEL_WAIT);
