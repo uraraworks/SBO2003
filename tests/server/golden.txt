@@ -2098,6 +2098,9 @@ dungeonbonus ready party outside=11 talk=11
 dungeonbonus ready gather waiting=11 notice=1
 dungeonbonus regular-entry no-cancel=1
 dungeonbonus party both-in a=1 b=1 same=1 differs=1 lv=7 sel=0 runs=2
+dungeonbonus map client terrain=1 sent=1
+dungeonbonus map client diff compressed=0 reflected=1
+dungeonbonus map client diff compressed=1 reflected=1
 dungeonbonus map shared=1 cells=1 positions=1 isolated=1 solo=1
 dungeonbonus map duplicate=0
 dungeonbonus map invalid=0

@@ -12,6 +12,7 @@
  *     WM_URARASOCK_CONNECT を通知する（Windows 版と同じ）。
  *  4. 以降は CRC を確かめ、圧縮されていれば展開して WM_URARASOCK_RECV で渡す。
  *     wParam は new[] で確保したデータ（受け取った側が delete[] する）。
+ *     lParam は展開後のデータ長（クライアントの受信処理へ渡す）。
  */
 #include "StdAfx.h"
 #include "common/CUraraSockTCP.h"
@@ -290,6 +291,7 @@ void CUraraSockTCP::OnWsMessage(const BYTE *pData, DWORD dwSize)
 		}
 
 		PBYTE pRecv = NULL;
+		DWORD dwRecvSize = Info.dwSize;
 		if (Info.dwSize >= 5 && pBody[0] == 0xFF) {
 			/* 圧縮されている：[0xFF][元のサイズ(4)][圧縮データ] */
 			DWORD dwSourceSize;
@@ -303,12 +305,13 @@ void CUraraSockTCP::OnWsMessage(const BYTE *pData, DWORD dwSize)
 				SAFE_DELETE_ARRAY(pRecv);
 				continue;
 			}
+			dwRecvSize = dwRet;
 		} else {
 			pRecv = new BYTE[Info.dwSize ? Info.dwSize : 1];
 			CopyMemory(pRecv, pBody, Info.dwSize);
 		}
 		if (m_hWndParent) {
-			PostMessage(m_hWndParent, WM_URARASOCK_RECV, (WPARAM)pRecv, (LPARAM)URARASOCK_IDBASE);
+			PostMessage(m_hWndParent, WM_URARASOCK_RECV, (WPARAM)pRecv, (LPARAM)dwRecvSize);
 		} else {
 			SAFE_DELETE_ARRAY(pRecv);
 		}

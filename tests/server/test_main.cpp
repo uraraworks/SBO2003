@@ -12448,6 +12448,14 @@ static void DgTestSelPick(PCHARINFO p, BYTE byIndex)
 	TestRecv(p, &Para, DungeonSelectionCommandSize());
 }
 
+#include "client-automap-test.inc"
+EM_JS(char *, MockMapBody, (int conn, int cmd, int valid), {
+    return stringToNewUTF8(Module['sboNet'].lastBody(conn, cmd, valid));
+});
+EM_JS(char *, MockMapCells, (int conn, int cmd, int offset), {
+    return stringToNewUTF8(Module['sboNet'].lastBody(conn, cmd, 2, offset));
+});
+
 /* 通信の検査先と、旧クライアントの続行通知。通常の受付では BEGIN を送らない。 */
 static int DgTestConn(PCHARINFO p)
 {
@@ -12791,7 +12799,59 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 
 	/* 共有地図：実際の受信経路で見たマスが仲間へ届き、同じ報告は再送しない。 */
 	{
-		MockTrace(1);
+        std::vector<BYTE> terrain;
+        char *hex = MockMapBody(DgTestConn(pA), CMD_DUNGEONMAP, 3);
+        for (size_t i = 0; i < strlen(hex); i += 2) {
+            unsigned v; sscanf(hex + i, "%2x", &v); terrain.push_back((BYTE)v);
+        }
+        free(hex);
+        if (terrain.empty()) abort();
+        MockTrace(1);
+        // 地形受信→現在地と可視範囲の記録→200ms後の送信を本体で実行する。
+        DWORD clientTime = s_dwFakeNow;
+        ClientAutoMapTest::Begin(pA, pMap);
+        ClientAutoMapTest::g_nMyCharID = -1;
+        ClientAutoMapTest::Receive(terrain, TRUE);
+        if (!ClientAutoMapTest::outgoing.empty()) abort();
+        ClientAutoMapTest::g_nMyCharID = 0;
+        s_dwFakeNow += 200;
+        ClientAutoMapTest::AutoMapUpdate();
+        BOOL clientSent = ClientAutoMapTest::deliveredSize == terrain.size() &&
+            ClientAutoMapTest::s_dwSpace == dwS2 && !ClientAutoMapTest::outgoing.empty();
+        printf("dungeonbonus map client terrain=%d sent=%d\n", (int)(ClientAutoMapTest::s_dwSpace == dwS2), (int)clientSent);
+        fflush(stdout);
+        if (!clientSent) abort();
+        size_t initialCount = 0;
+        for (size_t i = 0; i < ClientAutoMapTest::outgoing.size(); i ++)
+            initialCount += ((PCMDPARA_DUNGEONMAPDIFF)&ClientAutoMapTest::outgoing[i][0])->wCount;
+        int clientBefore = SpCnt(pB, CMD_DUNGEONMAP);
+        for (size_t i = 0; i < ClientAutoMapTest::outgoing.size(); i ++) {
+            std::vector<BYTE> &packet = ClientAutoMapTest::outgoing[i];
+            TestRecv(pA, &packet[0], packet.size());
+        }
+        std::vector<BYTE> diff;
+        hex = MockMapCells(DgTestConn(pB), CMD_DUNGEONMAP, offsetof(CMDPARA_DUNGEONMAPDIFF, wCount));
+        for (size_t i = 0; i < strlen(hex); i += 2) {
+            unsigned v; sscanf(hex + i, "%2x", &v); diff.push_back((BYTE)v);
+        }
+        free(hex);
+        if (diff.empty() || SpCnt(pB, CMD_DUNGEONMAP) == clientBefore) abort();
+        ClientAutoMapTest::Begin(pB, pMap);
+        // 入場直後は地形→累積差分→自分のキャラ情報の順に届く。
+        ClientAutoMapTest::g_nMyCharID = -1;
+        ClientAutoMapTest::Receive(terrain, FALSE);
+        // 圧縮あり・なしの差分をどちらも検査する。
+        for (int zipped = 0; zipped < 2; zipped ++) {
+            ClientAutoMapTest::s_Map.ClearRecord();
+            ClientAutoMapTest::s_members.clear();
+            ClientAutoMapTest::Receive(diff, zipped);
+            BOOL reflected = ClientAutoMapTest::deliveredSize == diff.size() &&
+                ClientAutoMapTest::s_members.size() == 2 && ClientAutoMapTest::s_Map.IsRecorded(pA->dwX, pA->dwY);
+            printf("dungeonbonus map client diff compressed=%d reflected=%d\n", zipped, (int)reflected);
+            if (!reflected) abort();
+        }
+        s_dwFakeNow = clientTime;
+        // 続く不正報告・再送の検査には未報告のマスを使う。
 		CMDPARA_DUNGEONMAPDIFF h;
 		ZeroMemory(&h, sizeof(h));
 		h.byCmd = CMD_DUNGEONMAP; h.byValid = 2;
@@ -12830,7 +12890,7 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 		/* 地形再送時は組の累積記録、位置のみの更新はマスを付けずに届く。 */
 		DungeonMapSend(pB);
 		got = MarketLast(DgTestConn(pB), CMD_DUNGEONMAP, body);
-		printf("dungeonbonus map snapshot=%d\n", (int)(got && ((PCMDPARA_DUNGEONMAPDIFF)&body[0])->wCount == 2));
+		printf("dungeonbonus map snapshot=%d\n", (int)(got && ((PCMDPARA_DUNGEONMAPDIFF)&body[0])->wCount == initialCount + 2));
 		DungeonProcNow(s_dwFakeNow);
 		pA->dwX ++;
 		before = SpCnt(pB, CMD_DUNGEONMAP);
