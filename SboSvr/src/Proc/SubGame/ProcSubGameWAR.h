@@ -57,6 +57,8 @@ public:
 	void	MakeTargetFire			(PCMDPARA_WARSELECTMAGICTARGET pTarget);				/* 魔法対象者一覧作成(炎) */
 	void	MakeTargetQure			(PCMDPARA_WARSELECTMAGICTARGET pTarget);				/* 魔法対象者一覧作成(回復) */
 	void	MakeTargetResuscitation	(PCMDPARA_WARSELECTMAGICTARGET pTarget);				/* 魔法対象者一覧作成(蘇生) */
+	BOOL	IsTurnNoOK				(BYTE byTeam, BYTE byNo);								/* 順番の指定が範囲内か */
+	BOOL	IsMagicTargetOK			(BYTE byMagic, BYTE byNo);								/* 魔法の対象が実在するか */
 	void	UseMagicFire			(BYTE byNo);											/* 魔法使用(炎) */
 	void	UseMagicQure			(BYTE byNo);											/* 魔法使用(回復) */
 	void	UseMagicResuscitation	(BYTE byNo);											/* 魔法使用(蘇生) */

@@ -3379,7 +3379,7 @@ void SubProcMapMove(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY)
 	/* マップ移動したら隠れるが解ける(この後のキャラ情報で周りに伝わる) */
 	HideBreak (pChar, FALSE);
 
-	pChar->dwLastHartBeat = 0;
+	pChar->dwLastHartBeat = timeGetTime ();
 	pChar->byDirection = 99;
 	SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 4);
 	pChar->byDirection = 1;
@@ -3968,6 +3968,11 @@ void RecvDataProcCHGSTATE(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 
+	/* ログイン後の状態遷移は 1 回だけ（すでに歩ける状態なら何もしない） */
+	if (g_aCharInfo[nNo]->byGameState >= GAMESTATE_MOVE) {
+		return;
+	}
+
 	PCHARINFO pChar = g_aCharInfo[nNo];
 	MyOutputDebugString ("ログイン：[%s] pID:%ld TblID:%ld\n",
 			pChar->szName, pChar->pID, pChar->dwTblID);
@@ -4015,18 +4020,18 @@ void RecvDataProcCHGSTATE(PBYTE pData, DWORD dwDataSize)
 		}
 	}
 
-	pChar->dwLastHartBeat	= 0;
+	pChar->dwLastHartBeat	= timeGetTime ();
 	pChar->byGameState		= GAMESTATE_MOVE;
 	pChar->byCharState		= CHARSTATE_MOVE;
 	pChar->dwTimeLogin		= timeGetTime ();
 
 	SendCmdSTTMPLATE (pChar->dwTblID, CMDSTTMPLATETYPE_ALL);
 	/* マップパーツ情報を送信 */
-	SendCmdMAPPARTSINFO (pPara->pID);
+	SendCmdMAPPARTSINFO (s_pIDRecv);
 	/* 吹き出し情報を送信 */
-	SendCmdCEFINFO (pPara->pID);
+	SendCmdCEFINFO (s_pIDRecv);
 	/* エフェクト情報を送信 */
-	SendCmdEFCINFO (pPara->pID);
+	SendCmdEFCINFO (s_pIDRecv);
 	/* 職業情報を送信 */
 	nCount = g_JobInfo.GetCount ();
 	for (i = 0; i < nCount; i ++) {
@@ -4048,11 +4053,11 @@ void RecvDataProcCHGSTATE(PBYTE pData, DWORD dwDataSize)
 		SendCmdMAGICINFO (pChar->pID, i);
 	}
 	/* アイテム情報を送信 */
-	SendCmdITEMINFO (pPara->pID);
+	SendCmdITEMINFO (s_pIDRecv);
 	/* 付与表と派生アイテム表を送信 */
-	SendCmdAFFIXALL (pPara->pID);
+	SendCmdAFFIXALL (s_pIDRecv);
 	/* 作り手とレシピを送信 */
-	SendCmdRECIPEINFOALL (pPara->pID);
+	SendCmdRECIPEINFOALL (s_pIDRecv);
 	/* 町転送の行き先一覧を送信 */
 	SendCmdTOWNWARP (pChar->dwTblID);
 	/* 受けている依頼の確認と、本人・仲間の進み具合を送信 */
@@ -4060,19 +4065,19 @@ void RecvDataProcCHGSTATE(PBYTE pData, DWORD dwDataSize)
 	MoveImportantItems (pChar);
 	QuestOnLogin (pChar);
 	/* マップデータを送信 */
-	SendCmdMAPINFO (pPara->pID, GetMapNo (pChar->dwMapID));
+	SendCmdMAPINFO (s_pIDRecv, GetMapNo (pChar->dwMapID));
 	/* イベント座標を送信 */
-	SendCmdEVENTPOS (pPara->pID, GetMapNo (pChar->dwMapID));
+	SendCmdEVENTPOS (s_pIDRecv, GetMapNo (pChar->dwMapID));
 	/* キャラデータを送信 */
-	SendCmdCHARINFO (pPara->pID, -1);
+	SendCmdCHARINFO (s_pIDRecv, -1);
 	SendCmdCHARINFO3 (nNo);
-	SendCmdCHARITEM (pPara->pID, pChar->dwTblID);
-	SendCmdCHARSTATUS (pPara->pID, nNo);
+	SendCmdCHARITEM (s_pIDRecv, pChar->dwTblID);
+	SendCmdCHARSTATUS (s_pIDRecv, nNo);
 
-	SendCmdCHGSTATE (pPara->pID, pPara->dwTblID, GAMESTATE_MOVE);
+	SendCmdCHGSTATE (s_pIDRecv, (DWORD)s_nCharNoRecv, GAMESTATE_MOVE);
 	if (pChar->byAdminLV == ADMINLV_ADMINISTRATOR) {
-		SendCmdADMINWINDOW (pPara->pID, 1);
-		SendCmdSUBGAMEINFOALL (pPara->pID);
+		SendCmdADMINWINDOW (s_pIDRecv, 1);
+		SendCmdSUBGAMEINFOALL (s_pIDRecv);
 	}
 
 	g_dwOnline ++;
@@ -4093,19 +4098,19 @@ void RecvDataProcCHGSTATE(PBYTE pData, DWORD dwDataSize)
 	AddTblNoPC (nNo);
 	SendCmdONLINE (URARASOCK_SENDALL);
 
-	SendCmdSYSMSG (pPara->pID, "SYSTEM:ｽｸﾗｯﾌﾟﾌﾞｯｸｵﾝﾗｲﾝの世界へようこそ♪");
+	SendCmdSYSMSG (s_pIDRecv, "SYSTEM:ｽｸﾗｯﾌﾟﾌﾞｯｸｵﾝﾗｲﾝの世界へようこそ♪");
 	wsprintf (szBuf, "SYSTEM:現在のｵﾝﾗｲﾝ数:%ld人", g_dwOnline);
-	SendCmdSYSMSG (pPara->pID, szBuf);
+	SendCmdSYSMSG (s_pIDRecv, szBuf);
 	wsprintf (szBuf, "SYSTEM:最新ｸﾗｲｱﾝﾄﾊﾞｰｼﾞｮﾝ:%s", g_szCliVer);
-	SendCmdSYSMSG (pPara->pID, szBuf);
+	SendCmdSYSMSG (s_pIDRecv, szBuf);
 
 	if (g_dwOnline % 10 == 0) {
 		wsprintf (szBuf, "SYSTEM:オンライン数が%d人になりました。", g_dwOnline);
 		SendCmdSYSMSG (URARASOCK_SENDALL, szBuf);
 	}
-	SendMsgMostCrowdedMap (pPara->pID);
+	SendMsgMostCrowdedMap (s_pIDRecv);
 	/* 再起動の予告の後にログインした人にも、もうすぐ再起動することを知らせる */
-	SboWebSendLoginNotice (pPara->pID);
+	SboWebSendLoginNotice (s_pIDRecv);
 }
 
 /* ========================================================================= */
@@ -4402,6 +4407,57 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 }
 
 /* ========================================================================= */
+/* 関数名：IsCharInfoReqAllowed												 */
+/* 内容：キャラ情報要求で、相手の情報を返してよいか（本人・同じ画面の周り・	 */
+/*       仲間・自分の傭兵・ついていくつながり）							 */
+/* ========================================================================= */
+static BOOL IsCharInfoReqAllowed(PCHARINFO pChar, PCHARINFO pTarget)
+{
+	int i, nCount = g_aCharInfo.GetSize ();
+	DWORD dwTblID;
+
+	if (pChar == pTarget) {
+		return TRUE;
+	}
+	/* 同じマップ・同じ空間で、画面に入りうる範囲（動き回る分のゆとりを持たせる） */
+	if ((pChar->dwMapID == pTarget->dwMapID) && IsSameSpace (pChar, pTarget) &&
+		(abs ((int)pChar->dwX - (int)pTarget->dwX) <= DRAW_PARTS_X + 6) &&
+		(abs ((int)pChar->dwY - (int)pTarget->dwY) <= DRAW_PARTS_Y + 6)) {
+		return TRUE;
+	}
+	/* 自分のパーティの仲間 */
+	if ((pChar->dwPartyID != 0) && (pChar->dwPartyID == pTarget->dwPartyID)) {
+		return TRUE;
+	}
+	/* 自分の傭兵 */
+	if (pTarget->dwParentTblID == pChar->dwTblID) {
+		return TRUE;
+	}
+	/* 「ついていく」でつながっている列（前へたどる・後ろへたどる） */
+	dwTblID = pChar->dwTblID;
+	for (i = 0; i < nCount; i ++) {
+		if (dwTblID >= (DWORD)nCount) {
+			break;
+		}
+		if (dwTblID == pTarget->dwTblID) {
+			return TRUE;
+		}
+		dwTblID = g_aCharInfo[dwTblID]->dwTailTblID;
+	}
+	dwTblID = pChar->dwTblID;
+	for (i = 0; i < nCount; i ++) {
+		if (dwTblID >= (DWORD)nCount) {
+			break;
+		}
+		if (dwTblID == pTarget->dwTblID) {
+			return TRUE;
+		}
+		dwTblID = g_aCharInfo[dwTblID]->dwTailBackTblID;
+	}
+	return FALSE;
+}
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcCHARINFOREQ											 */
 /* 内容：受信データ処理(キャラ情報要求)										 */
 /* 日付：2003/05/21															 */
@@ -4413,7 +4469,15 @@ void RecvDataProcCHARINFOREQ(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 
-	SendCmdCHARINFO2 (pPara->pID, pPara->dwTblID, pPara->dwTblIDReq);
+	/* 管理者以外は、関わりのあるキャラの情報だけ返す（画面に入りうる範囲・仲間・傭兵・ついていく相手） */
+	if (!s_bAdminRecv && (pPara->dwTblIDReq >= 0)) {
+		if (((DWORD)pPara->dwTblIDReq >= (DWORD)g_aCharInfo.GetSize ()) ||
+			!IsCharInfoReqAllowed (g_aCharInfo[pPara->dwTblID], g_aCharInfo[pPara->dwTblIDReq])) {
+			return;
+		}
+	}
+
+	SendCmdCHARINFO2 (s_pIDRecv, pPara->dwTblID, pPara->dwTblIDReq);
 }
 
 /* ========================================================================= */
@@ -5687,7 +5751,7 @@ void RecvDataProcCHGNAMESEX(PBYTE pData, DWORD dwDataSize)
 	}
 
 	if (bName) {
-		SendCmdCHARINFO (pPara->pID, pPara->dwTblID);
+		SendCmdCHARINFO (s_pIDRecv, pPara->dwTblID);
 
 	/* 同名がすでにある？ */
 	} else {
@@ -5740,7 +5804,7 @@ void RecvDataProcGMCALL(PBYTE pData, DWORD dwDataSize)
 		}
 	}
 	if (nGMCount == 0) {
-		SendCmdSYSMSG (pPara->pID, "SYSTEM:管理人は現在不在の為応答できません。");
+		SendCmdSYSMSG (s_pIDRecv, "SYSTEM:管理人は現在不在の為応答できません。");
 	}
 	delete [] szTmp;
 	delete [] szTmp2;
@@ -8503,7 +8567,7 @@ void RecvDataProcLEAVEITEM(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	DelCharItem (pPara->dwTblID, pPara->byData);
-	SendCmdCHARITEM (pPara->pID, pPara->dwTblID);
+	SendCmdCHARITEM (s_pIDRecv, pPara->dwTblID);
 	SendLeaveItemResult (pChar, LEAVEITEMRES_OK);
 }
 
@@ -8625,7 +8689,7 @@ void RecvDataProcLEAVEITEMGET(PBYTE pData, DWORD dwDataSize)
 	}
 
 	AddCharItem (pChar->dwTblID, pInfo->waItem[pPara->dwData]);
-	SendCmdCHARITEM (pPara->pID, pPara->dwTblID);
+	SendCmdCHARITEM (s_pIDRecv, pPara->dwTblID);
 
 	if (pInfo->byItemCount[pPara->dwData] >= 1) {
 		pInfo->byItemCount[pPara->dwData] --;
@@ -8640,7 +8704,7 @@ void RecvDataProcLEAVEITEMGET(PBYTE pData, DWORD dwDataSize)
 		pInfo->byItemCount[i] = 0;
 		pInfo->byCount --;
 	}
-	SendCmdCHARITEM (pPara->pID, pPara->dwTblID);
+	SendCmdCHARITEM (s_pIDRecv, pPara->dwTblID);
 }
 
 /* ========================================================================= */
@@ -9587,7 +9651,7 @@ void RecvDataProcSHOPBUY(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar->dwGold -= pItem->dwGold;
-	SendCmdCHARSTATUSGOLDEXP (pPara->pID, pPara->dwTblID);
+	SendCmdCHARSTATUSGOLDEXP (s_pIDRecv, pPara->dwTblID);
 
 	AddCharItem (pChar->dwTblID, dwItemID);
 	SendCmdCHARITEM (pChar->pID, pChar->dwTblID);
@@ -10253,7 +10317,7 @@ void RecvDataProcLEAVEGOLD(PBYTE pData, DWORD dwDataSize)
 	if (pRecv->dwData <= pChar->dwGold) {
 		pInfo->dwGold += pRecv->dwData;
 		pChar->dwGold -= pRecv->dwData;
-		SendCmdCHARSTATUSGOLDEXP (pRecv->pID, pRecv->dwTblID);
+		SendCmdCHARSTATUSGOLDEXP (s_pIDRecv, pRecv->dwTblID);
 	}
 }
 
@@ -10296,7 +10360,7 @@ void RecvDataProcLEAVEGOLDGET(PBYTE pData, DWORD dwDataSize)
 	if (pInfo && (pInfo->dwGold >= pRecv->dwData)) {
 		pInfo->dwGold -= pRecv->dwData;
 		pChar->dwGold += pRecv->dwData;
-		SendCmdCHARSTATUSGOLDEXP (pRecv->pID, pRecv->dwTblID);
+		SendCmdCHARSTATUSGOLDEXP (s_pIDRecv, pRecv->dwTblID);
 	}
 }
 
@@ -10399,6 +10463,53 @@ void RecvDataProcDIFENCE(PBYTE pData, DWORD dwDataSize)
 }
 
 /* ========================================================================= */
+/* 関数名：IsSnowFloorServer												 */
+/* 内容：その場所で雪をつかめるか（クライアントの IsSnowPickupPos と同じ判定） */
+/* ========================================================================= */
+static BOOL IsSnowFloorServer(DWORD dwMapID, DWORD dwX, DWORD dwY)
+{
+	int x, y, nCX, nCY;
+	BYTE byHitType;
+	PMAPINFO pMap;
+
+	if (dwMapID >= (DWORD)g_aMapInfo.GetSize ()) {
+		return FALSE;
+	}
+	pMap = g_aMapInfo[dwMapID];
+	if ((pMap == NULL) || (pMap->pwMap == NULL)) {
+		return FALSE;
+	}
+	nCX = pMap->nCX;
+	nCY = pMap->nCY;
+	if (((int)dwX < 0) || ((int)dwX >= nCX) || ((int)dwY < 0) || ((int)dwY >= nCY)) {
+		return FALSE;
+	}
+	byHitType = g_aMapPartsInfo[pMap->pwMap[dwX + dwY * nCX]].byHitType;
+	if (byHitType == PARTSHIT_FOOTMARK_SNOW) {
+		return TRUE;
+	}
+	/* 上を歩ける「隠れる」マスだけ、周りを見る */
+	if ((byHitType != PARTSHIT_HIDE1) && (byHitType != PARTSHIT_HIDE3) &&
+		(byHitType != PARTSHIT_HIDE5) && (byHitType != PARTSHIT_HIDE7)) {
+		return FALSE;
+	}
+	for (y = (int)dwY - 2; y <= (int)dwY + 2; y ++) {
+		for (x = (int)dwX - 2; x <= (int)dwX + 2; x ++) {
+			if (abs (x - (int)dwX) + abs (y - (int)dwY) > 2) {
+				continue;
+			}
+			if ((x < 0) || (x >= nCX) || (y < 0) || (y >= nCY)) {
+				continue;
+			}
+			if (g_aMapPartsInfo[pMap->pwMap[x + y * nCX]].byHitType == PARTSHIT_FOOTMARK_SNOW) {
+				return TRUE;
+			}
+		}
+	}
+	return FALSE;
+}
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcTHROWSNOW											 */
 /* 内容：受信データ処理(雪を投げる)											 */
 /* 日付：2004/10/30															 */
@@ -10413,6 +10524,43 @@ void RecvDataProcTHROWSNOW(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
+
+	/* 死亡中は投げられない */
+	if ((pChar->wHP == 0) || (pChar->byCharState == CHARSTATE_DEAD)) {
+		return;
+	}
+	if (pChar->dwMapID >= (DWORD)g_aMapInfo.GetSize ()) {
+		return;
+	}
+	/* 雪の上でだけ投げられる（足もとか、1 つ前に歩いたマスが雪なら通す） */
+	if (!IsSnowFloorServer (pChar->dwMapID, pChar->dwX, pChar->dwY) &&
+		!IsSnowFloorServer (pChar->dwMapID, pChar->dwXBack, pChar->dwYBack)) {
+		return;
+	}
+	/* 前回から間隔が短すぎる投げは無視する（公式は 2 秒ごと） */
+	{
+		DWORD dwNow = timeGetTime ();
+		static std::unordered_map<DWORD, DWORD> s_mapLastSnow;
+		std::unordered_map<DWORD, DWORD>::iterator it = s_mapLastSnow.find (pChar->dwTblID);
+		if ((it != s_mapLastSnow.end ()) && ((DWORD)(dwNow - it->second) < 1500)) {
+			return;
+		}
+		s_mapLastSnow[pChar->dwTblID] = dwNow;
+	}
+	/* 同じ人の雪玉が同時に出ている数にも上限を設ける */
+	{
+		int i, nSnow = 0, nCount = g_aCharInfo.GetSize ();
+		for (i = 0; i < nCount; i ++) {
+			PCHARINFO pTmp = g_aCharInfo[i];
+			if ((pTmp->byNpcType == NPCTYPE_ATACK) && (pTmp->dwParentTblID == pChar->dwTblID) &&
+				(pTmp->wGrpID == 213)) {
+				nSnow ++;
+			}
+		}
+		if (nSnow >= 5) {
+			return;
+		}
+	}
 
 	PCHARINFO pCharNew = new CHARINFO;
 	ZeroMemory ((PBYTE)pCharNew, sizeof (CHARINFO));
@@ -10502,15 +10650,18 @@ void RecvDataProcSubGameBOMB_SETBOMB(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pRecv->dwTblID];
-	pMap = g_aMapInfo[pChar->dwMapID];
 	pSubStatus = (PSUBSTATUS_BOMB)pChar->abySubStatus;
-	pInfo = g_aSubaGameInfo[pSubStatus->byID];
-	pBomb = (PSUBGAME_BOMBINFO)pInfo->pInfo;
 
 	/* 爆弾ゲームに参加していない？ */
 	if (pSubStatus->byType != SUBGAMEID_BOMB) {
 		return;
 	}
+	if (pSubStatus->byID >= g_aSubaGameInfo.GetSize ()) {
+		return;
+	}
+	pMap = g_aMapInfo[pChar->dwMapID];
+	pInfo = g_aSubaGameInfo[pSubStatus->byID];
+	pBomb = (PSUBGAME_BOMBINFO)pInfo->pInfo;
 
 	/* エリア外に設置しようとしてる？ */
 	if (!((pChar->dwX >= pBomb->byX1) && (pChar->dwX <= pBomb->byX2) &&
@@ -10928,7 +11079,7 @@ void RecvDataProcSubGameWAR_SELECTTEAM(PBYTE pData, DWORD dwDataSize)
 	char szMsg[256], szTmp[256];
 	int nTmp, nState;
 	DWORD dwX, dwY;
-	POINT ptStart;
+	POINT ptStart = {0, 0};
 	PSUBCMDPARA_DATA1 pRecv = (PSUBCMDPARA_DATA1)pData;
 	PCHARINFO pChar;
 	PMAPINFO pMap;
@@ -10952,6 +11103,11 @@ void RecvDataProcSubGameWAR_SELECTTEAM(PBYTE pData, DWORD dwDataSize)
 
 	pProcSubGameWAR = (PCProcSubGameWAR)g_ProcSubGame.Get (pSubStatus->byID);
 	if (pProcSubGameWAR == NULL) {
+		goto Exit;
+	}
+
+	/* チーム番号は 0/1 だけ（チーム情報が無い番号は受け付けない） */
+	if ((pRecv->byData >= 2) || (pProcSubGameWAR->GetInfo ()->GetTeamInfo (pRecv->byData) == NULL)) {
 		goto Exit;
 	}
 
@@ -11251,6 +11407,11 @@ void RecvDataProcSubGameWAR_SELECTTURN(PBYTE pData, DWORD dwDataSize)
 		goto Exit;
 	}
 
+	/* 実際のメンバー数の範囲内だけ受け付ける */
+	if (!pProcSubGameWAR->IsTurnNoOK ((BYTE)nTmp, pRecv->byData)) {
+		goto Exit;
+	}
+
 	/* 順番変更 */
 	pProcSubGameWAR->UpTurn ((BYTE)nTmp, pRecv->byData);
 	SendCmdSubWarSELECTTURN (pInfoSubGameWAR, (BYTE)nTmp);
@@ -11400,6 +11561,11 @@ void RecvDataProcSubGameWAR_ATACK(PBYTE pData, DWORD dwDataSize)
 		goto Exit;
 	}
 
+	/* 向きは 0〜3 だけ */
+	if (pRecv->byData >= 4) {
+		goto Exit;
+	}
+
 	bCheck = TRUE;
 	dwTblID = CheckCharBlockPC (pChar->dwMapID,
 					pChar->dwX + anPosAddTblX[pRecv->byData],
@@ -11544,6 +11710,19 @@ void RecvDataProcSubGameWAR_MAGIC(PBYTE pData, DWORD dwDataSize)
 
 	/* 受付状態ではない？ */
 	if (pSubStatus->byState != SUBGAME_WAR_STATE_TURN) {
+		goto Exit;
+	}
+
+	/* 行動中のキャラ本人だけ、職業に合った魔法を、実在する対象にだけ使える */
+	if (pInfoSubGameWAR->GetTurnTblID (pInfoSubGameWAR->m_byTurn) != pChar->dwTblID) {
+		goto Exit;
+	}
+	if (!(((pRecv->byData1 == SUBGAME_WAR_MAGIC_FIRE) && (pSubStatus->byJob == SUBGAME_WAR_JOB_WITCH)) ||
+		  (((pRecv->byData1 == SUBGAME_WAR_MAGIC_QURE) || (pRecv->byData1 == SUBGAME_WAR_MAGIC_RESUSCITATION)) &&
+		   (pSubStatus->byJob == SUBGAME_WAR_JOB_PRIEST)))) {
+		goto Exit;
+	}
+	if (!pProcSubGameWAR->IsMagicTargetOK (pRecv->byData1, pRecv->byData2)) {
 		goto Exit;
 	}
 
