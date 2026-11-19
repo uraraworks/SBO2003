@@ -1106,6 +1106,7 @@ static void TestTailOverlap(const std::vector<int> &aLogin);
 static void TestEmptyMapCheck(const std::vector<int> &aLogin);
 static void TestPutFill(void);
 extern BOOL g_bPutFillOnStart;
+extern BOOL g_bLoginLimit;
 extern void RecvCmdOnDecPlayer(int);
 extern void BattleProcCheck(PCHARINFO);
 
@@ -1274,6 +1275,8 @@ static void TestWorld(void)
 	s_dwFakeNow = 1000000;
 	/* 起動時の NPC発生の出し切りは、前からの出力と比べるため止めておき、最後（AM）で確かめる */
 	g_bPutFillOnStart = FALSE;
+	/* 同じ接続元から何度もログインするので、ログイン回数の制限は止める */
+	g_bLoginLimit = FALSE;
 	HWND hWnd = CreateWindow("SBOSVRTEST", "t", WS_OVERLAPPEDWINDOW, 0, 0, 100, 100, NULL, NULL, NULL, NULL);
 	if (!hWnd) {
 		printf("CreateWindow failed\n");
@@ -5945,6 +5948,8 @@ static void TestSortItem(const std::vector<int> &aLogin)
 		}
 		ItemNameSortKey(NULL, a);
 		printf("sortkey null len=%d\n", (int)a.size());
+		/* メッセージに埋め込む名前の半角 @ は全角にする・新しい名前に半角 @ は使えない */
+		printf("msgsafe [%s] namesafe at=%d plain=%d\n", SboTextMsgSafe("ab@400100c@8").c_str(), (int)SboTextIsNameSafe("ab@1"), (int)SboTextIsNameSafe("abc"));
 	}
 	if (aLogin.size() < 2) {
 		return;
@@ -6052,6 +6057,83 @@ static void TestSortItem(const std::vector<int> &aLogin)
 		printf("sort trading cleared=%d\n", (int)RecvCmdIsTrading(p->dwTblID));
 		SortSend(p, SORTITEMTARGET_MYITEM, SORTITEMMODE_SWAP, 2, 3);
 		SortPrintMy("sort my after trade", p);
+	}
+
+	/* 取り引きのすり替え防止・取り引き中の持ち物コマンド停止・装備中の品を売らない・装備欄のずれ */
+	{
+		DWORD dwMapBack = pL->dwMapID, dwXBack = pL->dwX, dwYBack = pL->dwY;
+		char szAccBack[sizeof(pL->szAcc)];
+		memcpy(szAccBack, pL->szAcc, sizeof(szAccBack));
+		pL->dwMapID = p->dwMapID; pL->dwX = p->dwX; pL->dwY = p->dwY;
+		if (pL->szAcc[0] == 0) strcpy(pL->szAcc, "sorttest");
+		ZeroMemory(p->waItem, sizeof(p->waItem));
+		for (int i = 0; i < 10; i ++) p->waEqu[i] = 0xFFFF;
+		p->waItem[0] = aPick[0];
+		p->waItem[1] = aPick[1];
+		p->waItem[2] = aPick[2];
+		p->waItem[3] = aPick[3];
+		p->waEqu[0] = 2;
+		p->waEqu[9] = 3;
+
+		/* 装備中の品は売れない。装備していない品を売ると、後ろの装備の欄だけ 1 つ前へ */
+		CMDPARA_DATA5 Drop;
+		ZeroMemory(&Drop, sizeof(Drop));
+		Drop.byCmd = CMD_DROPITEM;
+		Drop.pID = p->pID;
+		Drop.dwTblID = p->dwTblID;
+		Drop.byData = 2;
+		Drop.dwData1 = 1;
+		Drop.dwData2 = aPick[2];
+		TestRecv(p, &Drop, sizeof(Drop));
+		SortPrintMy("drop equipped", p);
+		Drop.byData = 0;
+		Drop.dwData2 = aPick[0];
+		TestRecv(p, &Drop, sizeof(Drop));
+		SortPrintMy("drop before equipped", p);
+
+		/* 取り引き：出す位置の品が入れ替わったら成立しない */
+		CMDPARA_DATA3 Trade;
+		ZeroMemory(&Trade, sizeof(Trade));
+		Trade.byCmd = CMD_TRADE;
+		Trade.pID = p->pID;
+		Trade.dwTblID = p->dwTblID;
+		Trade.dwData = pL->dwTblID;
+		TestRecv(p, &Trade, sizeof(Trade));
+		CMDPARA_TRADEINFO Info;
+		ZeroMemory(&Info, sizeof(Info));
+		Info.byCmd = CMD_TRADEINFO;
+		Info.byMode = 1;
+		Info.dwTblID = pL->dwTblID;
+		for (int i = 0; i < MAX_MYITEM; i ++) Info.waItem[i] = 0xFFFF;
+		Info.waItem[0] = 0;
+		Info.bySum = ItemSum(p);
+		TestRecv(p, &Info, sizeof(Info));
+		Info.dwTblID = p->dwTblID;
+		Info.waItem[0] = 0xFFFF;
+		TestRecv(pL, &Info, sizeof(Info));
+		/* 取り引き中は持ち物を動かすコマンドを受け付けない */
+		Drop.byData = 0;
+		Drop.dwData2 = p->waItem[0];
+		TestRecv(p, &Drop, sizeof(Drop));
+		SortPrintMy("drop while trading", p);
+		/* すり替え（改造クライアントが別の経路で持ち物を動かしたことにする） */
+		WORD wSwap = p->waItem[0];
+		p->waItem[0] = aPick[4];
+		CMDPARA_TRADEPROC Proc;
+		ZeroMemory(&Proc, sizeof(Proc));
+		Proc.byCmd = CMD_TRADEPROC;
+		Proc.bySum1 = ItemSum(p);
+		Proc.bySum2 = ItemSum(pL);
+		Proc.dwTblID1 = p->dwTblID;
+		Proc.dwTblID2 = pL->dwTblID;
+		for (int i = 0; i < MAX_MYITEM; i ++) { Proc.waItem1[i] = 0xFFFF; Proc.waItem2[i] = 0xFFFF; }
+		Proc.waItem1[0] = 0;
+		TestRecv(p, &Proc, sizeof(Proc));
+		printf("trade swap trading=%d first=%u (was %u)\n", (int)RecvCmdIsTrading(p->dwTblID), p->waItem[0], wSwap);
+		RecvCmdTradeClear(p->dwTblID);
+		RecvCmdTradeClear(pL->dwTblID);
+		pL->dwMapID = dwMapBack; pL->dwX = dwXBack; pL->dwY = dwYBack;
+		memcpy(pL->szAcc, szAccBack, sizeof(szAccBack));
 	}
 
 	/* 預かり所：口座が無い人は何も起きない・あれば 個数ごと動く */

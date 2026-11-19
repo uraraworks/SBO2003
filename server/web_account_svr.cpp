@@ -189,6 +189,48 @@ static std::string CharInfoJson(PCHARINFO pChar)
 	return out;
 }
 
+/* IPv4（ネットワークバイト順の DWORD）を "1.2.3.4" にする。0（未記録・IPv6 だった）なら空 */
+static std::string IpToStr(DWORD dwAddr)
+{
+	char sz[32];
+	const unsigned char *p = (const unsigned char *)&dwAddr;
+	/* 240.0.0.0/4 は IPv6 の /64 をハッシュした仮の値（Node 側が本当の文字列を覚えている）なので不明扱い */
+	if (dwAddr == 0 || p[0] >= 240) {
+		return "";
+	}
+	snprintf(sz, sizeof(sz), "%u.%u.%u.%u", p[0], p[1], p[2], p[3]);
+	return sz;
+}
+
+/* IP アドレスで探す検索語か（数字とドットだけでドットを含む。例 "203.0.113.5" "203.0.113."） */
+static BOOL IsIpKey(const std::string &strKey)
+{
+	if (strKey.find('.') == std::string::npos) {
+		return FALSE;
+	}
+	return (strKey.find_first_not_of("0123456789.*") == std::string::npos) ? TRUE : FALSE;
+}
+
+/* IP の検索語に合うか。末尾が "." か "*" なら前方一致（"203.0.113." "203.0.113.*"）、それ以外は完全一致 */
+static BOOL MatchIpKey(DWORD dwAddr, const std::string &strKey)
+{
+	std::string strIp = IpToStr(dwAddr);
+	if (strIp.empty()) {
+		return FALSE;
+	}
+	if (strKey.back() == '*' || strKey.back() == '.') {
+		std::string strPre = (strKey.back() == '*') ? strKey.substr(0, strKey.size() - 1) : strKey;
+		return (strIp.compare(0, strPre.size(), strPre) == 0) ? TRUE : FALSE;
+	}
+	return (strIp == strKey) ? TRUE : FALSE;
+}
+
+/* 管理ページ用のキャラ情報（CharInfoJson に最終IPアドレスを足したもの。IP は管理者 API だけで使う） */
+static std::string AdminCharJson(PCHARINFO pChar)
+{
+	return "{" + CharInfoJson(pChar) + ",\"lastIp\":" + JsonStr(IpToStr(pChar->dwLastIPAddress)) + "}";
+}
+
 /*
  * パスワードの一部が合っているか
  *   連続した 3 文字以上で、かつパスワードの半分以上の長さがあること
@@ -416,16 +458,26 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebAccRename(const char *pszAcc, 
 	return s_strResult.c_str();
 }
 
+/* アカウントの最終IPアドレス（"1.2.3.4"。未記録・IPv6 なら空）。管理者 API 専用 */
+extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebAdminLastIp(const char *pszAcc)
+{
+	PCHARINFO pChar = FindPlayerByAcc(pszAcc ? pszAcc : "");
+	s_strResult = pChar ? IpToStr(pChar->dwLastIPAddress) : "";
+	return s_strResult.c_str();
+}
+
 /*
  * 管理ページのキャラ検索
  *   キャラ名（一部でよい）かアカウント名（一部でよい・大文字小文字は区別しない）で探す。
+ *   数字とドットだけの検索語は最終IPアドレスでも探す（完全一致。末尾が "." か "*" なら前方一致）。
+ *   結果の各キャラに "lastIp" が付く。
  *   結果: {"results":[{...}],"more":bool}（nMax 件まで）
  */
 extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebAdminSearch(const char *pszKey, int nMax)
 {
 	std::string strKey = Trim(pszKey), strKeyLower = Lower(strKey), strOut;
 	int i, nCount = g_aCharInfo.GetSize(), nHit = 0;
-	BOOL bMore = FALSE;
+	BOOL bMore = FALSE, bIpKey = IsIpKey(strKey);
 
 	for (i = 0; i < nCount && !strKey.empty(); i ++) {
 		PCHARINFO pChar = g_aCharInfo[i];
@@ -435,6 +487,9 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebAdminSearch(const char *pszKey
 		BOOL bHit = (Lower(pChar->szAcc).find(strKeyLower) != std::string::npos) ? TRUE : FALSE;
 		if (!bHit && pChar->szName[0]) {
 			bHit = (W32TextToUtf8Str(pChar->szName).find(strKey) != std::string::npos) ? TRUE : FALSE;
+		}
+		if (!bHit && bIpKey) {
+			bHit = MatchIpKey(pChar->dwLastIPAddress, strKey);
 		}
 		if (!bHit) {
 			continue;
@@ -446,7 +501,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebAdminSearch(const char *pszKey
 		if (nHit) {
 			strOut += ",";
 		}
-		strOut += "{" + CharInfoJson(pChar) + "}";
+		strOut += AdminCharJson(pChar);
 		nHit ++;
 	}
 	s_strResult = "{\"results\":[" + strOut + "],\"more\":" + (bMore ? "true" : "false") + "}";
@@ -456,7 +511,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebAdminSearch(const char *pszKey
 /*
  * 管理ページの「ログイン中のプレイヤー」一覧
  *   オンライン数（g_dwOnline）と同じ数え方で、ゲームに入っている人だけを出す。
- *   結果: {"players":[{"account","name","slot"（接続の番号。Node.js 側で利用環境を引く）,"level","admin","mapID","mapName","x","y","playMinutes","loginMs"}],"online":N}
+ *   結果: {"players":[{"account","name","slot"（接続の番号。Node.js 側で利用環境を引く）,"ip"（今の接続の IPv4。IPv6 などで分からなければ空）,"level","admin","mapID","mapName","x","y","playMinutes","loginMs"}],"online":N}
  *   並びはマップ ID 順、同じマップの中はキャラ名順。
  */
 extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebAdminOnline(void)
@@ -500,7 +555,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebAdminOnline(void)
 				(unsigned)pChar->dwMapID, (unsigned)pChar->dwX, (unsigned)pChar->dwY,
 				(unsigned)dwPlayMinutes, (unsigned)dwLoginMs);
 		info.strJson += sz;
-		info.strJson += ",\"mapName\":" + JsonStr(strMapName) + "}";
+		info.strJson += ",\"mapName\":" + JsonStr(strMapName);
+		info.strJson += ",\"ip\":" + JsonStr(IpToStr(pChar->dwLastIPAddress)) + "}";
 		aInfo.push_back(info);
 	}
 	std::sort(aInfo.begin(), aInfo.end(), [](const ONLINEINFO &a, const ONLINEINFO &b) {

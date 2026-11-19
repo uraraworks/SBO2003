@@ -308,7 +308,7 @@ PSUBGAME_WAR_TEAMINFO CInfoSubGameWAR::GetTeamInfo(
 	PSUBGAME_WAR_TEAMINFO pRet;
 
 	pRet = NULL;
-	if (nTeamNo >= GetTeamCount ()) {
+	if ((nTeamNo < 0) || (nTeamNo >= GetTeamCount ())) {
 		goto Exit;
 	}
 

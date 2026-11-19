@@ -56,9 +56,10 @@
  *   /api/admin/recover/decide {session, id, approve}       → {ok}
  *   /api/device/rename        {token, name, check}         → {result:"ok", from, to} / {result:<理由>, ...}
  *                               check が true なら確かめるだけ（変えない）
- *   /api/admin/search         {session, q}                 → {results:[...], more}
+ *   /api/admin/search         {session, q}                 → {results:[...（lastIp＝最終IPアドレス）], more}
+ *                               q が数字とドットだけなら最終IPアドレスでも探す（完全一致。末尾が "." か "*" なら前方一致）
  *   /api/admin/rename         {session, account, name, check} → {result:"ok", from, to} / {result:<理由>}
- *   /api/admin/online         {session}                    → {players:[{name, account, level, mapID, mapName, x, y, ...}], online}
+ *   /api/admin/online         {session}                    → {players:[{name, account, level, mapID, mapName, x, y, ip, ...}], online}
  *
  * 5. 管理ページのログイン
  *    ログインすると、ランダムな値を HttpOnly・SameSite=Strict の Cookie（sbo_admin、https なら Secure）
@@ -130,6 +131,7 @@ Module['sboAccount'] = (function () {
 		store.requests = store.requests || [];
 		store.codes = store.codes || {};
 		store.renames = store.renames || [];
+		store.lastIps = store.lastIps || {};	/* アカウント → {ip, at}。IPv6 でログインした時の最終IP（IPv4 は C 側が覚える） */
 		store.adminSessions = store.adminSessions || {};
 		if (!store.adminSalt) {
 			store.adminSalt = randomHex(16);
@@ -151,9 +153,24 @@ Module['sboAccount'] = (function () {
 	/* ------------------------------------------------------------------ */
 	/* 端末トークン															 */
 	/* ------------------------------------------------------------------ */
+	/* 1 アカウントが持てる端末トークンの数（超えたら最後に使った日の古いものから消す） */
+	var TOKEN_MAX_PER_ACCOUNT = 20;
+	/* 最後に使った日時の保存は、前回からこれだけ空けてから（毎回ファイルを書かないため） */
+	var TOKEN_LASTUSED_SAVE_MS = 5 * MINUTE;
+
 	function issueToken(acc) {
 		load();
 		var token = randomHex(32);
+		/* 上限を超えないよう、古いトークンを消してから足す */
+		var aOwn = Object.keys(store.tokens).filter(function (h) {
+			return store.tokens[h].account === acc;
+		}).sort(function (a, b) {
+			var ta = store.tokens[a], tb = store.tokens[b];
+			return (ta.lastUsed || ta.created || 0) - (tb.lastUsed || tb.created || 0);
+		});
+		while (aOwn.length >= TOKEN_MAX_PER_ACCOUNT) {
+			delete store.tokens[aOwn.shift()];
+		}
 		store.tokens[sha256(token)] = { account: acc, created: Date.now(), lastUsed: 0 };
 		save();
 		return token;
@@ -175,8 +192,11 @@ Module['sboAccount'] = (function () {
 		if (!t) {
 			return '';
 		}
-		t.info.lastUsed = Date.now();
-		save();
+		var now = Date.now();
+		if (!t.info.lastUsed || now - t.info.lastUsed >= TOKEN_LASTUSED_SAVE_MS) {
+			t.info.lastUsed = now;
+			save();
+		}
 		return t.info.account;
 	}
 
@@ -856,6 +876,47 @@ Module['sboAccount'] = (function () {
 		reply(res, 200, { ok: true });
 	}
 
+	/* ログイン成功時に呼ばれる（sbosvr_stats.js の noteLogin から）。IPv6 の接続なら最終IPの文字列を覚える。
+	   IPv4 でのログインなら、古い IPv6 の記録は消す（C 側の IPv4 が最新になるため）。
+	   書き込みは、IP が変わった時と、前回から 1 日以上空いた時だけ（ファイルを肥大させない） */
+	function noteLoginIp(nSlot, acc) {
+		var net = Module['sboNet'];
+		var ip = net && net.ipOfSlot ? net.ipOfSlot(nSlot) : '';
+		if (!acc || !ip || ip === '127.0.0.1' || ip === '::1') {
+			return;
+		}
+		load();
+		var e = store.lastIps[acc], now = Date.now();
+		if (ip.indexOf(':') < 0) {
+			if (e) {
+				delete store.lastIps[acc];
+				save();
+			}
+			return;
+		}
+		if (e && e.ip === ip && now - e.at < DAY) {
+			return;
+		}
+		store.lastIps[acc] = { ip: ip, at: now };
+		save();
+	}
+
+	/* IP の検索語（IPv6 の完全一致・前方一致。末尾が "*" か ":" か "." なら前方一致）に合う、記録済みのアカウント */
+	function accountsByIp(q) {
+		load();
+		var key = q.toLowerCase(), bPre = /[*:.]$/.test(key);
+		if (key.charAt(key.length - 1) === '*') {
+			key = key.slice(0, -1);
+		}
+		if (!/^[0-9a-f:.]+$/.test(key) || key.indexOf(':') < 0) {
+			return [];
+		}
+		return Object.keys(store.lastIps).filter(function (a) {
+			var ip = String(store.lastIps[a].ip).toLowerCase();
+			return bPre ? ip.indexOf(key) === 0 : ip === key;
+		});
+	}
+
 	/* 管理ページの表示用に、端末トークン・復旧キー・名前の変更の記録を足す */
 	function adminCharDetail(info) {
 		load();
@@ -873,6 +934,14 @@ Module['sboAccount'] = (function () {
 		info.renames = store.renames.filter(function (r) { return r.account === info.account; })
 			.slice(-10).reverse().map(function (r) { return { from: r.from, to: r.to, by: r.by, at: r.at }; });
 		info.renameAfter = renameAfter(info.account);
+		/* 最終IPアドレス（個人情報なので管理者 API だけで返す。検索結果には C 側が付けてくる） */
+		/* Node が覚えている IPv6 の文字列を優先。無ければ C 側の IPv4（C 側は 240.0.0.0/4 を「不明」で返す） */
+		var rec = store.lastIps[info.account];
+		if (rec && rec.ip) {
+			info.lastIp = rec.ip;
+		} else if (info.lastIp === undefined) {
+			info.lastIp = callStr(_SboWebAdminLastIp, [info.account]);
+		}
 		return info;
 	}
 
@@ -902,6 +971,17 @@ Module['sboAccount'] = (function () {
 					r.results.push(info);
 					aSeen[rn.account] = true;
 				}
+			}
+		});
+		/* IPv6 の最終IPでも探す */
+		accountsByIp(q).forEach(function (a) {
+			if (r.results.length >= MAX || aSeen[a]) {
+				return;
+			}
+			var info = accInfo(a);
+			if (info) {
+				r.results.push(info);
+				aSeen[a] = true;
 			}
 		});
 		r.results = r.results.map(adminCharDetail);
@@ -935,6 +1015,10 @@ Module['sboAccount'] = (function () {
 		var net = Module['sboNet'];
 		(r.players || []).forEach(function (p) {
 			p.env = net && net.envOfSlot ? net.envOfSlot(p.slot) : null;
+			/* 今の接続の IP。Node が接続の IP 文字列を覚えていればそれ（IPv6 も分かる）、
+			   なければ C 側が保存している IPv4（IPv6 だと空） */
+			var strIp = net && net.ipOfSlot ? net.ipOfSlot(p.slot) : '';
+			p.ip = strIp || p.ip || '';
 			delete p.slot;
 		});
 		reply(res, 200, r);
@@ -1014,6 +1098,7 @@ Module['sboAccount'] = (function () {
 		issueToken: issueToken,
 		/* sbosvr_feedback.js などから使う */
 		tokenInfo: tokenInfo,
+		noteLoginIp: noteLoginIp,
 		accInfo: accInfo,
 		isAdminSession: isAdminSession,
 		withAdminCookie: withAdminCookie,

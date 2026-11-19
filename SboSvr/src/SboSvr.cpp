@@ -252,6 +252,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		{
 			DWORD pID = (DWORD)wParam;
 
+			LoginLimitOnConnect (pID);
 			/* 接続応答 */
 			SendCmdCONNECT (pID, VERSIONVAL);
 		}
@@ -374,6 +375,8 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 /* 起動時に NPC発生を発生数まで出すか（回帰テストだけ FALSE にする） */
 BOOL g_bPutFillOnStart = TRUE;
+extern BOOL g_bLoginLimit;
+extern int g_nFreeAcountPerHour, g_nFreeAcountPerDay;
 
 BOOL OnCreate(HWND hWnd)
 {
@@ -413,6 +416,9 @@ BOOL OnCreate(HWND hWnd)
 	g_wPort = GetPrivateProfileInt ("Port", "PortNo", 2004, szBuf);
 	/* アカウント自動追加モードの読み込み */
 	g_bFreeAcount = GetPrivateProfileInt ("Setting", "FreeAcount", TRUE, szBuf);
+	/* 自動追加するアカウント数の上限（接続元IPごと。0 なら無制限） */
+	g_nFreeAcountPerHour = GetPrivateProfileInt ("Setting", "FreeAcountPerHour", g_nFreeAcountPerHour, szBuf);
+	g_nFreeAcountPerDay = GetPrivateProfileInt ("Setting", "FreeAcountPerDay", g_nFreeAcountPerDay, szBuf);
 
 	/* 管理者アカウント名/パスワード読み込み */
 	ZeroMemory (g_szAdminAcc, sizeof (g_szAdminAcc));
@@ -1107,8 +1113,11 @@ BOOL TimerProcChar(PCHARINFO pChar)
 	}
 	if (pChar->byGameState != GAMESTATE_NPC) {
 		if (pChar->byGameState >= GAMESTATE_MOVE) {
-			/* 生存確認チェック */
-			if (pChar->dwLastHartBeat && (abs (g_dwTime - pChar->dwLastHartBeat) > 90000)) {
+			/* 生存確認チェック（一度も届いていない接続も、ログインした時刻から数えて切る） */
+			if (pChar->dwLastHartBeat == 0) {
+				pChar->dwLastHartBeat = g_dwTime;
+			}
+			if (abs (g_dwTime - pChar->dwLastHartBeat) > 90000) {
 				/* 90秒以上通知がなかったので切断する */
 				PostMessage (g_hWndMain, WM_DECPLAYER, (WPARAM)pChar->pID, pChar->dwTblID);
 			}
