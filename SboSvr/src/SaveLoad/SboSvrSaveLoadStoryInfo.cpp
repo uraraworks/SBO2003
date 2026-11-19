@@ -297,6 +297,13 @@ typedef struct _STORYFILE {
 	BYTE		abyNum[MAX_STORYNUM];					/* 0 に戻す数値の番号（番号+1。0=無し） */
 	WORD		awQuest[MAX_STORYQUEST];				/* クリア済みの印を消す依頼の番号（0=無し） */
 	BYTE		byCountNum;								/* やり直した回数を数える数値の番号（番号+1。0=数えない） */
+	/* 「いまの目的」（古いファイルには無く、目的なしで読める）。行ごとの項目は MAX_STORYGOAL 行まとめた配列のカラムにする */
+	WORD		awGoalNeed[MAX_STORYGOAL * MAX_TALKNEED];	/* 立っている必要のある印（番号+1。0=無し） */
+	WORD		awGoalNot[MAX_STORYGOAL * MAX_TALKNEED];	/* 立っていてはいけない印（番号+1。0=無し） */
+	BYTE		abyGoalCondNo[MAX_STORYGOAL * MAX_TALKCOND];	/* 数値の条件の数値番号（番号+1。0=無し） */
+	BYTE		abyGoalCondCmp[MAX_STORYGOAL * MAX_TALKCOND];	/* 比べ方 */
+	BYTE		abyGoalCondVal[MAX_STORYGOAL * MAX_TALKCOND];	/* 比べる値 */
+	char		aszGoal[MAX_STORYGOAL][MAX_QUESTGOAL];	/* 目的の文（カラムは行ごとに szGoal0〜） */
 } STORYFILE;
 
 /* シナリオ情報のカラム */
@@ -313,6 +320,20 @@ static const COLINFO s_aStoryCol[] = {
 	COLS(STORYFILE, abyNum,			COL_U8ARR, MAX_STORYNUM),
 	COLS(STORYFILE, awQuest,		COL_U16ARR, MAX_STORYQUEST),
 	COL (STORYFILE, byCountNum,		COL_U8),
+	COLS(STORYFILE, awGoalNeed,		COL_U16ARR, MAX_STORYGOAL * MAX_TALKNEED),
+	COLS(STORYFILE, awGoalNot,		COL_U16ARR, MAX_STORYGOAL * MAX_TALKNEED),
+	COLS(STORYFILE, abyGoalCondNo,	COL_U8ARR, MAX_STORYGOAL * MAX_TALKCOND),
+	COLS(STORYFILE, abyGoalCondCmp,	COL_U8ARR, MAX_STORYGOAL * MAX_TALKCOND),
+	COLS(STORYFILE, abyGoalCondVal,	COL_U8ARR, MAX_STORYGOAL * MAX_TALKCOND),
+	/* 目的の文は 1 行 1 カラム（8 行ぶん） */
+	{ "szGoal0", COL_STR, offsetof (STORYFILE, aszGoal[0]), MAX_QUESTGOAL },
+	{ "szGoal1", COL_STR, offsetof (STORYFILE, aszGoal[1]), MAX_QUESTGOAL },
+	{ "szGoal2", COL_STR, offsetof (STORYFILE, aszGoal[2]), MAX_QUESTGOAL },
+	{ "szGoal3", COL_STR, offsetof (STORYFILE, aszGoal[3]), MAX_QUESTGOAL },
+	{ "szGoal4", COL_STR, offsetof (STORYFILE, aszGoal[4]), MAX_QUESTGOAL },
+	{ "szGoal5", COL_STR, offsetof (STORYFILE, aszGoal[5]), MAX_QUESTGOAL },
+	{ "szGoal6", COL_STR, offsetof (STORYFILE, aszGoal[6]), MAX_QUESTGOAL },
+	{ "szGoal7", COL_STR, offsetof (STORYFILE, aszGoal[7]), MAX_QUESTGOAL },
 };
 
 BOOL SaveStoryInfo(void);										/* シナリオ情報保存 */
@@ -339,6 +360,21 @@ static void ToFile(STORYFILE *p, const STORYINFO *q)
 		p->awQuest[i] = q->awQuest[i];
 	}
 	p->byCountNum = (q->byCountNum < MAX_FLAGNUM) ? (BYTE)(q->byCountNum + 1) : 0;
+	for (i = 0; i < MAX_STORYGOAL; i ++) {
+		const STORYGOAL *g = &q->aGoal[i];
+		int j;
+
+		for (j = 0; j < MAX_TALKNEED; j ++) {
+			p->awGoalNeed[i * MAX_TALKNEED + j] = (g->awNeed[j] < MAX_FLAGBIT) ? (WORD)(g->awNeed[j] + 1) : 0;
+			p->awGoalNot[i * MAX_TALKNEED + j] = (g->awNot[j] < MAX_FLAGBIT) ? (WORD)(g->awNot[j] + 1) : 0;
+		}
+		for (j = 0; j < MAX_TALKCOND; j ++) {
+			p->abyGoalCondNo[i * MAX_TALKCOND + j] = (g->abyCondNo[j] < MAX_FLAGNUM) ? (BYTE)(g->abyCondNo[j] + 1) : 0;
+			p->abyGoalCondCmp[i * MAX_TALKCOND + j] = g->abyCondCmp[j];
+			p->abyGoalCondVal[i * MAX_TALKCOND + j] = g->abyCondVal[j];
+		}
+		memcpy (p->aszGoal[i], g->szGoal, sizeof (p->aszGoal[i]));
+	}
 }
 
 /* ファイル用 → STORYINFO（文字列の終端は必ず付ける。0・範囲外の番号は必ず「無し」にする） */
@@ -364,6 +400,25 @@ static void FromFile(STORYINFO *q, const STORYFILE *p)
 		q->awQuest[i] = p->awQuest[i];
 	}
 	q->byCountNum = ((p->byCountNum >= 1) && (p->byCountNum <= MAX_FLAGNUM)) ? (BYTE)(p->byCountNum - 1) : (BYTE)FLAG_NONUM;
+	/* 目的：古いファイルには無く 0 で読めるので、印・数値は「無し」、文は空になる */
+	for (i = 0; i < MAX_STORYGOAL; i ++) {
+		STORYGOAL *g = &q->aGoal[i];
+		int j;
+
+		for (j = 0; j < MAX_TALKNEED; j ++) {
+			g->awNeed[j] = CharFlagFromWire (p->awGoalNeed[i * MAX_TALKNEED + j]);
+			g->awNot[j] = CharFlagFromWire (p->awGoalNot[i * MAX_TALKNEED + j]);
+		}
+		for (j = 0; j < MAX_TALKCOND; j ++) {
+			BYTE byNo = p->abyGoalCondNo[i * MAX_TALKCOND + j];
+
+			g->abyCondNo[j] = ((byNo >= 1) && (byNo <= MAX_FLAGNUM)) ? (BYTE)(byNo - 1) : (BYTE)FLAG_NONUM;
+			g->abyCondCmp[j] = (p->abyGoalCondCmp[i * MAX_TALKCOND + j] < TALKCMP_MAX) ? p->abyGoalCondCmp[i * MAX_TALKCOND + j] : (BYTE)TALKCMP_GE;
+			g->abyCondVal[j] = p->abyGoalCondVal[i * MAX_TALKCOND + j];
+		}
+		memcpy (g->szGoal, p->aszGoal[i], sizeof (g->szGoal));
+		g->szGoal[MAX_QUESTGOAL - 1] = 0;
+	}
 }
 
 /* ========================================================================= */

@@ -14,7 +14,7 @@
 /* ========================================================================= */
 /* 定数定義																	 */
 /* ========================================================================= */
-#define DATACOUNTCOLUMN		(89)									/* 保存データ数 */
+#define DATACOUNTCOLUMN		(90)									/* 保存データ数 */
 
 /* ========================================================================= */
 /* 構造体定義																 */
@@ -123,6 +123,7 @@ static const char *s_aszName[] = {
 	"abyQuestRewarded",			/* 依頼の報酬をもうもらっている印（依頼番号のビット。思い出の本でやり直しても消えない） */
 	"abyChestOpened",			/* 開けた宝箱の記録（宝箱の番号 2048 個のビット。思い出の本でやり直しても消えない） */
 	"abyJobMagicKey",			/* 転職前の職業で使っていた特技ショートカット（職業ID別） */
+	"byGhost",				/* 半透明（霊）で描く（0=ふつう 1=半透明。見た目だけ） */
 	"z"
 };
 
@@ -564,6 +565,7 @@ static BOOL SaveCharInfoMain(void)
 			case 88:	/* 転職前の職業で使っていた特技ショートカット */
 				dwDataSizeTmp += 2 + GetJobMagicKeySaveCount (pInfo) * (1 + MAX_MAGICKEY + MAX_MAGICKEY * sizeof (WORD));
 				break;
+			case 89:	dwDataSizeTmp += sizeof (BYTE);							break;	/* 半透明（霊）で描く */
 			}
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
@@ -1038,6 +1040,10 @@ static BOOL SaveCharInfoMain(void)
 						dwOffset += MAX_MAGICKEY * sizeof (WORD);
 					}
 				}
+				break;
+			case 89:	/* 半透明（霊）で描く */
+				CopyMemory (&pData[dwOffset], &pInfo->byGhost, sizeof (BYTE));
+				dwOffset += sizeof (BYTE);
 				break;
 			}
 		}
@@ -1813,6 +1819,11 @@ BOOL LoadCharInfo(void)
 					}
 					dwOffsetTmp += dwKeyCount + dwKeyCount * sizeof (WORD);
 				}
+			}
+
+			/* 半透明（霊）で描く（無い古いデータは 0=ふつうのまま） */
+			if (strcmp (aHeaderInfo[i].szName, s_aszName[89]) == 0) {
+				pInfo->byGhost = pData[dwOffsetTmp ++];
 			}
 		}
 	}

@@ -134,7 +134,7 @@ void ItemProc(DWORD dwTblID, BYTE byNo, DWORD dwUseTblID)
 
 		/* 目の前にはいないらしい */
 		if (bCheck == FALSE) {
-			wsprintf (szMsg, "%sは前にいないので使えません。@2", pCharUse->szName);
+			wsprintf (szMsg, "%sは前にいないので使えません。@2", SboTextMsgSafe (pCharUse->szName).c_str ());
 			goto Exit;
 		}
 
@@ -145,7 +145,7 @@ void ItemProc(DWORD dwTblID, BYTE byNo, DWORD dwUseTblID)
 		}
 		/* 傭兵に使えるのは回復・蘇生の道具だけ */
 		if (MercenaryItemCheck (pCharUse, pItem->byType) == FALSE) {
-			wsprintf (szMsg, "%sには使えません。@2", pCharUse->szName);
+			wsprintf (szMsg, "%sには使えません。@2", SboTextMsgSafe (pCharUse->szName).c_str ());
 			goto Exit;
 		}
 	}
@@ -159,7 +159,7 @@ void ItemProc(DWORD dwTblID, BYTE byNo, DWORD dwUseTblID)
 
 	/* 使用不可？ */
 	if (bResult == FALSE) {
-		wsprintf (szMsg, "%sには使用できないようです。@2", pCharUse->szName);
+		wsprintf (szMsg, "%sには使用できないようです。@2", SboTextMsgSafe (pCharUse->szName).c_str ());
 		goto Exit;
 	}
 
@@ -170,7 +170,7 @@ void ItemProc(DWORD dwTblID, BYTE byNo, DWORD dwUseTblID)
 
 	/* 読み物（効果無し・文あり）は文の窓が出るので「○○を使いました。」は流さない */
 	if (!IsReadItem (pItem)) {
-		wsprintf (szTmp, "%sは %s を使いました。", pChar->szName, pItem->szName);
+		wsprintf (szTmp, "%sは %s を使いました。", SboTextMsgSafe (pChar->szName).c_str (), pItem->szName);
 		SendSysMsg (pChar, pCharUse, szTmp);
 	}
 
@@ -410,7 +410,7 @@ BOOL ItemUseMercenary(PCHARINFO pChar, BYTE byNo, PCHARINFO pCharUse)
 	PITEMINFO pItem;
 
 	if ((byNo >= MAX_MYITEM) || (pChar->waItem[byNo] == 0) ||
-		(pChar->waItem[byNo] >= (WORD)g_aItemInfo.GetSize ())) {
+		!ItemIDValid (pChar->waItem[byNo])) {
 		return FALSE;
 	}
 	pItem = g_aItemInfo[pChar->waItem[byNo]];
@@ -624,7 +624,7 @@ static BOOL ItemUse_HPUP(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pItem
 	int nTmp;
 	BOOL bRet;
 	WORD wTmp;
-	char szTmp[64], szTmp2[16];
+	char szTmp[256], szTmp2[16];
 	PITEMINFO_HPUP pInfo;
 
 	bRet = FALSE;
@@ -670,10 +670,10 @@ static BOOL ItemUse_HPUP(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pItem
 
 	/* 満たんになった？ */
 	if (pCharTarget->wHP == pCharTarget->wMaxHP) {
-		wsprintf (szTmp, "%sのHPは完全に回復しました。", pCharTarget->szName);
+		wsprintf (szTmp, "%sのHPは完全に回復しました。", SboTextMsgSafe (pCharTarget->szName).c_str ());
 
 	} else {
-		wsprintf (szTmp, "%sのHPが%dポイント回復しました。", pCharTarget->szName, wTmp);
+		wsprintf (szTmp, "%sのHPが%dポイント回復しました。", SboTextMsgSafe (pCharTarget->szName).c_str (), wTmp);
 	}
 
 	/* 回復メッセージ表示 */
@@ -723,7 +723,7 @@ static BOOL ItemUse_SEED(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pItem
 			nTmp = pInfo->wMax - pCharTarget->byPW;
 		}
 		pCharTarget->byPW += nTmp;
-		wsprintf (pszMsg, "%sの力が%dポイント増えました！@2", pCharTarget->szName, nTmp);
+		wsprintf (pszMsg, "%sの力が%dポイント増えました！@2", SboTextMsgSafe (pCharTarget->szName).c_str (), nTmp);
 		break;
 
 	case STATUSTYPE_DEX:	/* 素早さ */
@@ -734,7 +734,7 @@ static BOOL ItemUse_SEED(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pItem
 			nTmp = pInfo->wMax - pCharTarget->byDEX;
 		}
 		pCharTarget->byDEX += nTmp;
-		wsprintf (pszMsg, "%sの素早さが%dポイント増えました！@2", pCharTarget->szName, nTmp);
+		wsprintf (pszMsg, "%sの素早さが%dポイント増えました！@2", SboTextMsgSafe (pCharTarget->szName).c_str (), nTmp);
 		break;
 
 	case STATUSTYPE_ST:	/* 体力 */
@@ -745,7 +745,7 @@ static BOOL ItemUse_SEED(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pItem
 			nTmp = pInfo->wMax - pCharTarget->byST;
 		}
 		pCharTarget->byST += nTmp;
-		wsprintf (pszMsg, "%sの体力が%dポイント増えました！@2", pCharTarget->szName, nTmp);
+		wsprintf (pszMsg, "%sの体力が%dポイント増えました！@2", SboTextMsgSafe (pCharTarget->szName).c_str (), nTmp);
 		break;
 
 	case STATUSTYPE_IT:	/* 賢さ */
@@ -756,7 +756,7 @@ static BOOL ItemUse_SEED(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pItem
 			nTmp = pInfo->wMax - pCharTarget->byIT;
 		}
 		pCharTarget->byIT += nTmp;
-		wsprintf (pszMsg, "%sの賢さが%dポイント増えました！@2", pCharTarget->szName, nTmp);
+		wsprintf (pszMsg, "%sの賢さが%dポイント増えました！@2", SboTextMsgSafe (pCharTarget->szName).c_str (), nTmp);
 		break;
 
 	case STATUSTYPE_LK:	/* 運のよさ */
@@ -767,7 +767,7 @@ static BOOL ItemUse_SEED(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pItem
 			nTmp = pInfo->wMax - pCharTarget->byLK;
 		}
 		pCharTarget->byLK += nTmp;
-		wsprintf (pszMsg, "%sの運のよさが%dポイント増えました！@2", pCharTarget->szName, nTmp);
+		wsprintf (pszMsg, "%sの運のよさが%dポイント増えました！@2", SboTextMsgSafe (pCharTarget->szName).c_str (), nTmp);
 		break;
 
 	case STATUSTYPE_MAXHP:	/* 最大HP */
@@ -778,7 +778,7 @@ static BOOL ItemUse_SEED(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pItem
 			nTmp = pInfo->wMax - pCharTarget->wMaxHP;
 		}
 		pCharTarget->wMaxHP += nTmp;
-		wsprintf (pszMsg, "%sの最大HPが%dポイント増えました！@2", pCharTarget->szName, nTmp);
+		wsprintf (pszMsg, "%sの最大HPが%dポイント増えました！@2", SboTextMsgSafe (pCharTarget->szName).c_str (), nTmp);
 		break;
 
 	case STATUSTYPE_MAXMANA:	/* 最大Mana */
@@ -789,7 +789,7 @@ static BOOL ItemUse_SEED(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pItem
 			nTmp = pInfo->wMax - pCharTarget->wMaxMana;
 		}
 		pCharTarget->wMaxMana += nTmp;
-		wsprintf (pszMsg, "%sの最大Manaが%dポイント増えました！@2", pCharTarget->szName, nTmp);
+		wsprintf (pszMsg, "%sの最大Manaが%dポイント増えました！@2", SboTextMsgSafe (pCharTarget->szName).c_str (), nTmp);
 		break;
 
 	case STATUSTYPE_PW2:		/* 力減少 */
@@ -797,7 +797,7 @@ static BOOL ItemUse_SEED(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pItem
 			goto Exit;
 		}
 		pCharTarget->byPW -= nTmp;
-		wsprintf (pszMsg, "%sの力が%dポイント減ってしまいました！@2", pCharTarget->szName, nTmp);
+		wsprintf (pszMsg, "%sの力が%dポイント減ってしまいました！@2", SboTextMsgSafe (pCharTarget->szName).c_str (), nTmp);
 		break;
 
 	case STATUSTYPE_DEX2:		/* 素早さ減少 */
@@ -805,7 +805,7 @@ static BOOL ItemUse_SEED(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pItem
 			goto Exit;
 		}
 		pCharTarget->byDEX -= nTmp;
-		wsprintf (pszMsg, "%sの素早さが%dポイント減ってしまいました！@2", pCharTarget->szName, nTmp);
+		wsprintf (pszMsg, "%sの素早さが%dポイント減ってしまいました！@2", SboTextMsgSafe (pCharTarget->szName).c_str (), nTmp);
 		break;
 
 	case STATUSTYPE_ST2:		/* 体力減少 */
@@ -813,7 +813,7 @@ static BOOL ItemUse_SEED(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pItem
 			goto Exit;
 		}
 		pCharTarget->byST -= nTmp;
-		wsprintf (pszMsg, "%sの体力が%dポイント減ってしまいました！@2", pCharTarget->szName, nTmp);
+		wsprintf (pszMsg, "%sの体力が%dポイント減ってしまいました！@2", SboTextMsgSafe (pCharTarget->szName).c_str (), nTmp);
 		break;
 
 	case STATUSTYPE_IT2:		/* 賢さ減少 */
@@ -821,7 +821,7 @@ static BOOL ItemUse_SEED(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pItem
 			goto Exit;
 		}
 		pCharTarget->byIT -= nTmp;
-		wsprintf (pszMsg, "%sの賢さが%dポイント減ってしまいました！@2", pCharTarget->szName, nTmp);
+		wsprintf (pszMsg, "%sの賢さが%dポイント減ってしまいました！@2", SboTextMsgSafe (pCharTarget->szName).c_str (), nTmp);
 		break;
 
 	case STATUSTYPE_LK2:		/* 運のよさ減少 */
@@ -829,7 +829,7 @@ static BOOL ItemUse_SEED(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pItem
 			goto Exit;
 		}
 		pCharTarget->byLK -= nTmp;
-		wsprintf (pszMsg, "%sの運のよさが%dポイント減ってしまいました！@2", pCharTarget->szName, nTmp);
+		wsprintf (pszMsg, "%sの運のよさが%dポイント減ってしまいました！@2", SboTextMsgSafe (pCharTarget->szName).c_str (), nTmp);
 		break;
 
 	case STATUSTYPE_MAXHP2:		/* 最大HP減少 */
@@ -840,7 +840,7 @@ static BOOL ItemUse_SEED(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pItem
 		if (pCharTarget->wHP > pCharTarget->wMaxHP) {
 			pCharTarget->wHP = pCharTarget->wMaxHP;
 		}
-		wsprintf (pszMsg, "%sの最大HPが%dポイント減ってしまいました！@2", pCharTarget->szName, nTmp);
+		wsprintf (pszMsg, "%sの最大HPが%dポイント減ってしまいました！@2", SboTextMsgSafe (pCharTarget->szName).c_str (), nTmp);
 		break;
 
 	case STATUSTYPE_MAXMANA2:	/* 最大Mana減少 */
@@ -851,7 +851,7 @@ static BOOL ItemUse_SEED(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pItem
 		if (pCharTarget->wMana > pCharTarget->wMaxMana) {
 			pCharTarget->wMana = pCharTarget->wMaxMana;
 		}
-		wsprintf (pszMsg, "%sの最大Manaが%dポイント減ってしまいました！@2", pCharTarget->szName, nTmp);
+		wsprintf (pszMsg, "%sの最大Manaが%dポイント減ってしまいました！@2", SboTextMsgSafe (pCharTarget->szName).c_str (), nTmp);
 		break;
 	}
 
@@ -872,7 +872,7 @@ static BOOL ItemUse_SEED(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pItem
 Exit:
 	if (bRet == FALSE) {
 		if (strlen (pszMsg) == 0) {
-			wsprintf (pszMsg, "今の%sには効果がないようです。@2", pCharTarget->szName);
+			wsprintf (pszMsg, "今の%sには効果がないようです。@2", SboTextMsgSafe (pCharTarget->szName).c_str ());
 		}
 	}
 	return bRet;
@@ -974,6 +974,31 @@ Exit:
 }
 
 /* ========================================================================= */
+/* 関数名：BombDetachOwner													 */
+/* 内容：同じマップに残っている自分の爆弾を持ち主なしにする					 */
+/* ========================================================================= */
+static void BombDetachOwner(PCHARINFO pChar)
+{
+	PMAPINFO pMap = g_aMapInfo[pChar->dwMapID];
+	PDWORD pIDTbl = pMap->paTblNoNPC;
+
+	for (int i = 0; i < (int)pMap->dwCountTblNoNPC; i ++) {
+		if (pIDTbl[i] == -1) {
+			break;
+		}
+		PCHARINFO pCharTmp = g_aCharInfo[pIDTbl[i]];
+		if (pCharTmp->byNpcType != NPCTYPE_BOMB) {
+			continue;
+		}
+		if (pCharTmp->dwParentTblID != pChar->dwTblID) {
+			continue;
+		}
+		pCharTmp->dwParentTblID = (DWORD)-1;
+	}
+}
+
+
+/* ========================================================================= */
 /* 関数名：ItemUse_SUBGAME_BOMB												 */
 /* 内容：アイテム処理(サブゲーム参加：爆弾ゲーム)							 */
 /* 日付：2004/07/15															 */
@@ -1039,10 +1064,14 @@ static int ItemUse_SUBGAME_BOMB(PCHARINFO pChar, BYTE byNo, LPSTR pszMsg)
 	}
 
 	pSubStatus->byID = byNo;
+	/* 前に置いた爆弾がまだ残っていても、置いた数には数えない。
+	   残った爆弾は持ち主なしにして、爆発しても今の置いた数を減らさないようにする
+	   （置いた数を 0 に戻したあとで減らされると 255 になり、もう置けなくなっていた） */
+	BombDetachOwner (pChar);
+	pSubStatus->byCount = 0;
 	/* 試合中？ */
 	if (pBomb->byFlgGameNow) {
 		pSubStatus->byFlgEntry = 1;
-		pSubStatus->byCount = 0;
 	}
 
 	pSubStatus->byType = SUBGAMEID_BOMB;
@@ -1330,10 +1359,10 @@ static BOOL ItemUse_SAKE(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pItem
 	/* 結果メッセージの設定 */
 	if (pInfo->chPoint > 0) {
 		wsprintf (pszMsg, "「ごくっごくっ。」@1%sは%sを飲みほしました。",
-				pCharTarget->szName, pItem->szName);
+				SboTextMsgSafe (pCharTarget->szName).c_str (), pItem->szName);
 	} else {
 		wsprintf (pszMsg, "%sは%sを飲みました。",
-				pCharTarget->szName, pItem->szName);
+				SboTextMsgSafe (pCharTarget->szName).c_str (), pItem->szName);
 	}
 
 	/* 酔っている？ */
@@ -1402,7 +1431,7 @@ static BOOL ItemUse_MSG(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pItem,
 	PlayItemSound (pItem, pCharTarget);
 
 	if (pInfo->pMsgTo) {
-		wsprintf (szTmp, "%sに%s", pCharTarget->szName, pInfo->pMsgTo);
+		wsprintf (szTmp, "%sに%s", SboTextMsgSafe (pCharTarget->szName).c_str (), pInfo->pMsgTo);
 		if (pInfo->byType) {
 			strcpy (pszMsg, szTmp);
 		} else {
@@ -1411,7 +1440,7 @@ static BOOL ItemUse_MSG(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pItem,
 	}
 
 	if (pInfo->pMsgMe) {
-		wsprintf (szTmp, "%sに%s", pChar->szName, pInfo->pMsgMe);
+		wsprintf (szTmp, "%sに%s", SboTextMsgSafe (pChar->szName).c_str (), pInfo->pMsgMe);
 		if (pInfo->byType) {
 			SendCmdMAPMSG (pCharTarget->pID, szTmp);
 
@@ -1550,7 +1579,7 @@ static BOOL ItemUse_HPDOWN(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pIt
 	int nTmp;
 	BOOL bRet;
 	WORD wTmp;
-	char szTmp[128], szTmp2[16];
+	char szTmp[256], szTmp2[16];
 	PITEMINFO_HPDOWN pInfo;
 
 	bRet = FALSE;
@@ -1592,7 +1621,7 @@ static BOOL ItemUse_HPDOWN(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pIt
 	nTmp -= wTmp;
 	pCharTarget->wHP = max (nTmp, 0);
 
-	wsprintf (szTmp, "%sに%dのダメージ！", pCharTarget->szName, wTmp);
+	wsprintf (szTmp, "%sに%dのダメージ！", SboTextMsgSafe (pCharTarget->szName).c_str (), wTmp);
 
 	wsprintf (szTmp2, "%d", wTmp);
 	SendCmdADDCHAREFC (pCharTarget->dwTblID, RGB (250, 60, 4), szTmp2);
@@ -1691,7 +1720,7 @@ static BOOL ItemUse_MAGIC(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pIte
 	SendCmdCHARSTATUS (pCharTarget->pID, pCharTarget->dwTblID);
 
 	wsprintf (pszMsg, "%sは[%s]を習得しました。@2",
-			pCharTarget->szName, pMagicInfo->szName);
+			SboTextMsgSafe (pCharTarget->szName).c_str (), pMagicInfo->szName);
 
 	bRet = TRUE;
 Exit:
@@ -1708,7 +1737,7 @@ static BOOL ItemUse_MANAUP(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pIt
 	int nTmp;
 	BOOL bRet;
 	WORD wTmp;
-	char szTmp[128], szTmp2[16];
+	char szTmp[256], szTmp2[16];
 	PITEMINFO_MANAUP pInfo;
 
 	bRet = FALSE;
@@ -1748,9 +1777,9 @@ static BOOL ItemUse_MANAUP(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO pIt
 
 	/* 満たんになった？ */
 	if (pCharTarget->wMana == pCharTarget->wMaxMana) {
-		wsprintf (szTmp, "%sのManaは完全に回復しました。", pCharTarget->szName);
+		wsprintf (szTmp, "%sのManaは完全に回復しました。", SboTextMsgSafe (pCharTarget->szName).c_str ());
 	} else {
-		wsprintf (szTmp, "%sのManaが%dポイント回復しました。", pCharTarget->szName, wTmp);
+		wsprintf (szTmp, "%sのManaが%dポイント回復しました。", SboTextMsgSafe (pCharTarget->szName).c_str (), wTmp);
 	}
 	SendSysMsg (pChar, pCharTarget, szTmp);
 
@@ -1779,7 +1808,7 @@ static BOOL ItemUse_HPMANAUP(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO p
 	int nTmp;
 	BOOL bRet, bSend;
 	WORD wTmp;
-	char szTmp[128], szTmp2[16];
+	char szTmp[256], szTmp2[16];
 	PITEMINFO_HPMANAUP pInfo;
 
 	bSend = FALSE;
@@ -1823,9 +1852,9 @@ static BOOL ItemUse_HPMANAUP(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO p
 
 		/* 満たんになった？ */
 		if (pCharTarget->wHP == pCharTarget->wMaxHP) {
-			wsprintf (szTmp, "%sのHPは完全に回復しました。", pCharTarget->szName);
+			wsprintf (szTmp, "%sのHPは完全に回復しました。", SboTextMsgSafe (pCharTarget->szName).c_str ());
 		} else {
-			wsprintf (szTmp, "%sのHPが%dポイント回復しました。", pCharTarget->szName, wTmp);
+			wsprintf (szTmp, "%sのHPが%dポイント回復しました。", SboTextMsgSafe (pCharTarget->szName).c_str (), wTmp);
 		}
 
 		/* 文字エフェクト発動 */
@@ -1854,9 +1883,9 @@ static BOOL ItemUse_HPMANAUP(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMINFO p
 
 		/* 満たんになった？ */
 		if (pCharTarget->wMana == pCharTarget->wMaxMana) {
-			wsprintf (szTmp, "%sのManaは完全に回復しました。", pCharTarget->szName);
+			wsprintf (szTmp, "%sのManaは完全に回復しました。", SboTextMsgSafe (pCharTarget->szName).c_str ());
 		} else {
-			wsprintf (szTmp, "%sのManaが%dポイント回復しました。", pCharTarget->szName, wTmp);
+			wsprintf (szTmp, "%sのManaが%dポイント回復しました。", SboTextMsgSafe (pCharTarget->szName).c_str (), wTmp);
 		}
 
 		/* 文字エフェクト発動 */
@@ -1891,7 +1920,7 @@ static BOOL ItemUse_RESURRECTION(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMIN
 {
 	long lTmp;
 	BOOL bRet;
-	char szTmp[64], szTmp2[16];
+	char szTmp[256], szTmp2[16];
 	PITEMINFO_RESURRECTION pInfo;
 
 	bRet = FALSE;
@@ -1923,7 +1952,7 @@ static BOOL ItemUse_RESURRECTION(PCHARINFO pChar, PCHARINFO pCharTarget, PITEMIN
 	wsprintf (szTmp2, "%d", lTmp);
 	SendCmdADDCHAREFC (pCharTarget->dwTblID, RGB (139, 213, 255), szTmp2);
 
-	wsprintf (szTmp, "%sは生き返りました。", pCharTarget->szName);
+	wsprintf (szTmp, "%sは生き返りました。", SboTextMsgSafe (pCharTarget->szName).c_str ());
 
 	/* 回復メッセージ表示 */
 	SendSysMsg (pChar, pCharTarget, szTmp);

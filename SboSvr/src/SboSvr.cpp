@@ -252,6 +252,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		{
 			DWORD pID = (DWORD)wParam;
 
+			LoginLimitOnConnect (pID);
 			/* 接続応答 */
 			SendCmdCONNECT (pID, VERSIONVAL);
 		}
@@ -308,6 +309,8 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			SaveEquUserInfo ();
 			SaveMakerInfo ();
 			SaveRecipeInfo ();
+			SaveAffixInfo ();
+			SaveItemDerive ();
 			SaveQuestInfo ();
 			SaveMarket ();
 			SaveRecycle ();
@@ -372,6 +375,8 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 /* 起動時に NPC発生を発生数まで出すか（回帰テストだけ FALSE にする） */
 BOOL g_bPutFillOnStart = TRUE;
+extern BOOL g_bLoginLimit;
+extern int g_nFreeAcountPerHour, g_nFreeAcountPerDay;
 
 BOOL OnCreate(HWND hWnd)
 {
@@ -411,6 +416,9 @@ BOOL OnCreate(HWND hWnd)
 	g_wPort = GetPrivateProfileInt ("Port", "PortNo", 2004, szBuf);
 	/* アカウント自動追加モードの読み込み */
 	g_bFreeAcount = GetPrivateProfileInt ("Setting", "FreeAcount", TRUE, szBuf);
+	/* 自動追加するアカウント数の上限（接続元IPごと。0 なら無制限） */
+	g_nFreeAcountPerHour = GetPrivateProfileInt ("Setting", "FreeAcountPerHour", g_nFreeAcountPerHour, szBuf);
+	g_nFreeAcountPerDay = GetPrivateProfileInt ("Setting", "FreeAcountPerDay", g_nFreeAcountPerDay, szBuf);
 
 	/* 管理者アカウント名/パスワード読み込み */
 	ZeroMemory (g_szAdminAcc, sizeof (g_szAdminAcc));
@@ -492,6 +500,8 @@ BOOL OnCreate(HWND hWnd)
 	LoadSubGameInfo ();
 	LoadMakerInfo ();
 	LoadRecipeInfo ();
+	LoadAffixInfo ();
+	LoadItemDerive ();
 	LoadQuestInfo ();
 	LoadMarket ();
 	LoadRecycle ();
@@ -612,6 +622,8 @@ void OnDestroy(HWND hWnd)
 	SaveEquUserInfo ();			/* 装備職業情報の保存 */
 	SaveMakerInfo ();			/* 作り手情報の保存 */
 	SaveRecipeInfo ();			/* レシピ情報の保存 */
+	SaveAffixInfo ();			/* 付与表の保存 */
+	SaveItemDerive ();			/* 派生アイテム表の保存 */
 	SaveQuestInfo ();			/* 依頼情報の保存 */
 	SaveMarket ();				/* 取引所の出品・売上の保存 */
 	SaveRecycle ();				/* リサイクルボックスの中身・記録の保存 */
@@ -708,6 +720,16 @@ void OnDestroy(HWND hWnd)
 		}
 	}
 	g_aEquUserInfo.RemoveAll ();
+
+	for (i = 0; i < g_aAffixInfo.GetSize (); i ++) {
+		SAFE_DELETE (g_aAffixInfo[i]);
+	}
+	g_aAffixInfo.RemoveAll ();
+
+	for (i = 0; i < g_aItemDerive.GetSize (); i ++) {
+		SAFE_DELETE (g_aItemDerive[i]);
+	}
+	g_aItemDerive.RemoveAll ();
 
 	for (i = 0; i < g_aMakerInfo.GetSize (); i ++) {
 		SAFE_DELETE (g_aMakerInfo[i]);
@@ -1091,8 +1113,11 @@ BOOL TimerProcChar(PCHARINFO pChar)
 	}
 	if (pChar->byGameState != GAMESTATE_NPC) {
 		if (pChar->byGameState >= GAMESTATE_MOVE) {
-			/* 生存確認チェック */
-			if (pChar->dwLastHartBeat && (abs (g_dwTime - pChar->dwLastHartBeat) > 90000)) {
+			/* 生存確認チェック（一度も届いていない接続も、ログインした時刻から数えて切る） */
+			if (pChar->dwLastHartBeat == 0) {
+				pChar->dwLastHartBeat = g_dwTime;
+			}
+			if (abs (g_dwTime - pChar->dwLastHartBeat) > 90000) {
 				/* 90秒以上通知がなかったので切断する */
 				PostMessage (g_hWndMain, WM_DECPLAYER, (WPARAM)pChar->pID, pChar->dwTblID);
 			}
@@ -1491,6 +1516,10 @@ BOOL SaveMapInfo(void)
 		if (pMap->byLightCount) {
 			WriteData (hFile, "aLight", sizeof (MAPLIGHT) * pMap->byLightCount, (PBYTE)pMap->aLight);
 		}
+		/* パーツの灯りの上書き（無いマップは書かない） */
+		if (pMap->byPartsLightCount) {
+			WriteData (hFile, "aPartsLight", sizeof (MAPPARTSLIGHT) * pMap->byPartsLightCount, (PBYTE)pMap->aPartsLight);
+		}
 		/* 印で変わるマス（無いマップは書かない。古いデータはそのまま読める）と、使った宝箱番号の覚え */
 		if (pMap->bySwapCount) {
 			WriteData (hFile, "aSwap", sizeof (MAPSWAP) * pMap->bySwapCount, (PBYTE)pMap->aSwap);
@@ -1773,6 +1802,10 @@ BOOL LoadMapInfo(void)
 				} else if (strcmp (pszTmp, "aLight") == 0) {					/* 光源 */
 					pMap->byLightCount = (BYTE)min (dwSize / sizeof (MAPLIGHT), (DWORD)MAX_MAPLIGHT);
 					CopyMemory (pMap->aLight, &pData[dwFilePtr], sizeof (MAPLIGHT) * pMap->byLightCount);
+					dwFilePtr += dwSize;	continue;
+				} else if (strcmp (pszTmp, "aPartsLight") == 0) {			/* パーツの灯りの上書き */
+					pMap->byPartsLightCount = (BYTE)min (dwSize / sizeof (MAPPARTSLIGHT), (DWORD)MAX_MAPPARTSLIGHT);
+					CopyMemory (pMap->aPartsLight, &pData[dwFilePtr], sizeof (MAPPARTSLIGHT) * pMap->byPartsLightCount);
 					dwFilePtr += dwSize;	continue;
 				} else if (strcmp (pszTmp, "pszName") == 0) {				/* マップ名 */
 					pszTmp = (LPCTSTR)&pData[dwFilePtr];

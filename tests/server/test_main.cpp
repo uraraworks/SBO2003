@@ -37,7 +37,9 @@
 #include "SboSvrTalk.h"
 #include "SboSvrMarket.h"
 #include "SboSvrRecycle.h"
+#include "SboSvrAffix.h"
 #include "common/crc.h"
+#include "common/Info/InfoJob.h"
 #include "common/Command/Command.h"
 #include <emscripten.h>
 #include <stdio.h>
@@ -1067,13 +1069,16 @@ static void TestQuest(const std::vector<int> &aLogin);
 static void TestStory(const std::vector<int> &aLogin);
 static void TestSortItem(const std::vector<int> &aLogin);
 static void TestCharPush(const std::vector<int> &aLogin);
+static void TestSpamLimit(const std::vector<int> &aLogin);
 static void TestLeaveDispose(const std::vector<int> &aLogin);
+static void TestNpcNear(const std::vector<int> &aLogin);
 static void TestChallenge(const std::vector<int> &aLogin);
 static void TestStatusUp(const std::vector<int> &aLogin);
 static void TestMagicWall(const std::vector<int> &aLogin);
 static void TestSpace(const std::vector<int> &aLogin);
 static void TestAdminQuest(const std::vector<int> &aLogin);
 static void TestFloorDamage(const std::vector<int> &aLogin);
+static void TestMoveGuard(const std::vector<int> &aLogin);
 static void TestLowParts(const std::vector<int> &aLogin);
 static void TestMimic(const std::vector<int> &aLogin);
 static void TestEnemyDoor(const std::vector<int> &aLogin);
@@ -1081,6 +1086,7 @@ static void TestImportant(const std::vector<int> &aLogin);
 static void TestAdminResurrect(const std::vector<int> &aLogin);
 static void TestFlagTalk(const std::vector<int> &aLogin);
 static void TestFlagGroup(const std::vector<int> &aLogin);
+static void TestStoryGoal(const std::vector<int> &aLogin);
 static void TestMarket(const std::vector<int> &aLogin);
 static void TestRecycle(const std::vector<int> &aLogin);
 static void TestTailItemMove(const std::vector<int> &aLogin);
@@ -1090,8 +1096,18 @@ static void TestMapSwap(const std::vector<int> &aLogin);
 static void TestAdminChest(const std::vector<int> &aLogin);
 static void TestAdminSwap(const std::vector<int> &aLogin);
 static void TestMapSwapSave(const std::vector<int> &aLogin);
+static void TestMapPartsLight(void);
 static void TestJobMagicKey(const std::vector<int> &aLogin);
+static void TestAffix(const std::vector<int> &aLogin);
+static void TestAffixForge(const std::vector<int> &aLogin);
+extern BOOL SaveAffixInfo(void);
+extern BOOL LoadAffixInfo(void);
+extern BOOL SaveItemDerive(void);
+extern BOOL SaveRecipeInfo(void);
+extern BOOL LoadRecipeInfo(void);
+extern BOOL LoadItemDerive(void);
 static void TestTailRelogin(const std::vector<int> &aLogin);
+static void TestAttackRate(const std::vector<int> &aLogin);
 static void TestTailOverlap(const std::vector<int> &aLogin);
 static void TestEmptyMapCheck(const std::vector<int> &aLogin);
 static void TestPutFill(void);
@@ -1100,6 +1116,7 @@ extern void MakeDungeonProc(BYTE);
 extern BOOL SaveSubGameInfo(void);
 extern BOOL LoadSubGameInfo(void);
 extern BOOL g_bPutFillOnStart;
+extern BOOL g_bLoginLimit;
 extern void RecvCmdOnDecPlayer(int);
 extern void BattleProcCheck(PCHARINFO);
 
@@ -1268,6 +1285,8 @@ static void TestWorld(void)
 	s_dwFakeNow = 1000000;
 	/* 起動時の NPC発生の出し切りは、前からの出力と比べるため止めておき、最後（AM）で確かめる */
 	g_bPutFillOnStart = FALSE;
+	/* 同じ接続元から何度もログインするので、ログイン回数の制限は止める */
+	g_bLoginLimit = FALSE;
 	HWND hWnd = CreateWindow("SBOSVRTEST", "t", WS_OVERLAPPEDWINDOW, 0, 0, 100, 100, NULL, NULL, NULL, NULL);
 	if (!hWnd) {
 		printf("CreateWindow failed\n");
@@ -1557,12 +1576,17 @@ static void TestWorld(void)
 	TestQuest(aLogin);
 	/* AG2. 印で変わるマス・宝箱の保存と読み直し（キャラ・マップの保存を読み直すので、ギルドの依頼の読み直しの直後に流す） */
 	TestMapSwapSave(aLogin);
+	TestMapPartsLight();
 	/* N. 道具欄・預かり所の並べ替え */
 	TestSortItem(aLogin);
 	/* O. 押せるNPCを押す向き */
 	TestCharPush(aLogin);
+	/* AN. 発言の長さ・連投、コマンドの連打、取り引きの割り込み */
+	TestSpamLimit(aLogin);
 	/* P. 預かり所の品を引き取らずに売る・捨てる */
 	TestLeaveDispose(aLogin);
+	/* AN. 店・売る・預かり所・転職・着せ替え・名前の色が、公式クライアントと同じ場面だけ通る */
+	TestNpcNear(aLogin);
 	/* Q. 討伐チャレンジ */
 	TestChallenge(aLogin);
 	/* R. 攻撃力・守備力アップ */
@@ -1575,6 +1599,8 @@ static void TestWorld(void)
 	TestAdminQuest(aLogin);
 	/* V. ダメージ床（毒沼・溶岩など） */
 	TestFloorDamage(aLogin);
+	/* 移動の見張り（壁・速さ・倒れている間） */
+	TestMoveGuard(aLogin);
 	/* 低いパーツ（灯り・矢・特技が越える） */
 	TestLowParts(aLogin);
 	/* W. 宝箱の敵（調べる・叩くと正体を現す） */
@@ -1610,14 +1636,21 @@ static void TestWorld(void)
 	TestStory(aLogin);
 	/* AF. フラグのグループ（メイン-サブ。印の保存は触らないが、名前表・グループの保存を読み直すので最後） */
 	TestFlagGroup(aLogin);
+	TestStoryGoal(aLogin);
 	/* AJ. 戦闘モードの覚えが残ったまま入り直しても「ついていく」が届く */
 	TestTailRelogin(aLogin);
+	/* 攻撃の威力は、前の攻撃からの経過時間で切り詰める */
+	TestAttackRate(aLogin);
 	/* AK. 先頭と同じマスに重なって戦闘モードを解除しても、ワープせず列につながる */
 	TestTailOverlap(aLogin);
 	/* AL. イベントの無いマップでマスに乗った問い合わせ(CHECKEVENT 0)にも返事が来る */
 	TestEmptyMapCheck(aLogin);
 	/* AM. 起動時に NPC発生を発生数まで出す（乱数を使うので最後） */
 	TestPutFill();
+	/* AH. 付与（接頭辞・接尾辞）：派生アイテム・強さと売値・未鑑定・鑑定屋・保存・ドロップ（乱数を使うので、いちばん最後） */
+	TestAffix(aLogin);
+	/* AH2. 付与の段階2：鍛冶屋で鍛える・付け替える（TestAffix の後ろ。乱数は使わない） */
+	TestAffixForge(aLogin);
 	/* AN. ダンジョンのテーマ生成（サブゲーム「ダンジョン」の作り直し。マップの中身を一時的に差し替えて、終わったら戻す） */
 	TestDungeonTheme();
 }
@@ -2467,9 +2500,16 @@ static int RefPathDir(CCharProcMERCENARY *pProc, PCHARINFO pChar, int nX, int nY
 	return -1;
 }
 
+/* 連打の間隔・発言の数えを、受信のたびに空にするか（既存のテストは時刻が固定で、続けて送るため。連打のテストだけ FALSE にする） */
+static BOOL s_bTestRateReset = TRUE;
+
 /* 受信したことにして処理する（送ってきた接続のキャラとして） */
 static void TestRecv(PCHARINFO pChar, const void *pData, DWORD dwSize)
 {
+	if (s_bTestRateReset) {
+		ZeroMemory(pChar->adwRateLast, sizeof(pChar->adwRateLast));
+		pChar->bySpeechWinCount = 0;
+	}
 	CCRC Crc;
 	URARASOCK_PACKETINFO Info;
 	Info.dwSize = dwSize;
@@ -2481,6 +2521,48 @@ static void TestRecv(PCHARINFO pChar, const void *pData, DWORD dwSize)
 	MSG msg;
 	while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
 		DispatchMessage(&msg);
+	}
+}
+
+/* 店・預かり所・転職所・着せ替えの人（台詞の印 "@6" "@7" "@5" "@a" "@"）を、p と同じ場所に置く／片付ける。
+   サーバーは、これらの人が近くにいる時だけ買う・売る・預ける・転職・着せ替えを受ける */
+static std::vector<PCHARINFO> s_aNearNpc;
+static void NearNpcOpen(PCHARINFO p, const char *pszSpeech, WORD wGrp = 0)
+{
+	PCHARINFO pNpc = new CHARINFO;
+	ZeroMemory((PBYTE)pNpc, sizeof(CHARINFO));
+	pNpc->byNpcType = NPCTYPE_NOMOVE;
+	SetInitCharData(pNpc);
+	pNpc->byGameState = GAMESTATE_NPC;
+	pNpc->byCharState = CHARSTATE_MOVE;
+	pNpc->dwMapID = p->dwMapID;
+	pNpc->dwX = pNpc->dwXBack = pNpc->dwStartX = p->dwX;
+	pNpc->dwY = pNpc->dwYBack = pNpc->dwStartY = p->dwY;
+	pNpc->dwSpaceID = p->dwSpaceID;
+	pNpc->wGrpID = wGrp;
+	strcpy(pNpc->szName, "窓口");
+	pNpc->pszNpcSpeech = new char[strlen(pszSpeech) + 1];
+	strcpy(pNpc->pszNpcSpeech, pszSpeech);
+	pNpc = AddChar(pNpc);
+	s_aNearNpc.push_back(pNpc);
+}
+static void NearNpcOpen(PCHARINFO p)
+{
+	NearNpcOpen(p, "@6");
+	NearNpcOpen(p, "@5");
+}
+static void NearNpcClose(void)
+{
+	/* 後から作った順に消す（番号がずれないように最後の要素だけ） */
+	while (!s_aNearNpc.empty()) {
+		PCHARINFO pNpc = s_aNearNpc.back();
+		if (g_aCharInfo.GetSize() == 0 || g_aCharInfo[g_aCharInfo.GetSize() - 1] != pNpc) {
+			break;
+		}
+		g_aCharInfo.RemoveAt(g_aCharInfo.GetSize() - 1);
+		delete [] pNpc->pszNpcSpeech;
+		delete pNpc;
+		s_aNearNpc.pop_back();
 	}
 }
 
@@ -3046,6 +3128,9 @@ static void TestTailMapChg(const std::vector<int> &aLogin)
 static void TailBattleSend(PCHARINFO p, BYTE byOn)
 {
 	CMDPARA_DATA1 Para;
+	/* 戦闘モードの切り替えは 0.2 秒未満の連打を無視するので、時刻を少し進めてから送る */
+	s_dwFakeNow += 250;
+	g_dwTime = s_dwFakeNow;
 	ZeroMemory(&Para, sizeof(Para));
 	Para.byCmd = CMD_BATTLEMODE;
 	Para.pID = p->pID;
@@ -3898,6 +3983,231 @@ static std::string FlagGroupApi(const char *pszKind, int nID, const char *pszJso
 	size_t nPos = str.find("\"record\"");
 	if (nPos != std::string::npos) str = str.substr(0, nPos) + "...}";
 	return str;
+}
+
+/* ------------------------------------------------------------------------- */
+/* AG. 物語の「いまの目的」：行の選び方・コマンド窓への送信・データAPIの読み書き・保存と読み直し */
+/* ------------------------------------------------------------------------- */
+static void StoryGoalRow(STORYGOAL *g, LPCSTR pszGoal)
+{
+	memset(g, 0, sizeof(*g));
+	for (int i = 0; i < MAX_TALKNEED; i ++) g->awNeed[i] = g->awNot[i] = FLAG_NOBIT;
+	for (int i = 0; i < MAX_TALKCOND; i ++) g->abyCondNo[i] = FLAG_NONUM;
+	strcpy(g->szGoal, pszGoal);
+}
+
+static void StoryGoalClear(STORYINFO *p)
+{
+	for (int i = 0; i < MAX_STORYGOAL; i ++) StoryGoalRow(&p->aGoal[i], "");
+}
+
+/* そのキャラへ届く CMD_QUESTSTATE の物語の目的を 1 行にする */
+static std::string StoryGoalSent(PCHARINFO p)
+{
+	std::vector<BYTE> aCap;
+	std::string str;
+
+	SvrSendCaptureBegin();
+	QuestSendStateSelf(p);
+	if (!SvrSendCaptureEnd(aCap) || aCap.size() < offsetof(CMDPARA_QUESTSTATE, aStory)) return "(none)";
+	CMDPARA_QUESTSTATE Para;
+	memset(&Para, 0, sizeof(Para));
+	memcpy(&Para, &aCap[0], (aCap.size() < sizeof(Para)) ? aCap.size() : sizeof(Para));
+	char sz[64];
+	snprintf(sz, sizeof(sz), "size=%u count=%u [", (unsigned)aCap.size(), (unsigned)Para.byStoryCount);
+	str = sz;
+	for (int i = 0; i < Para.byStoryCount && i < MAX_STORYGOAL; i ++) {
+		str += std::string(i ? "," : "") + Para.aStory[i].szName + ":" + Para.aStory[i].szGoal;
+	}
+	return str + "]";
+}
+
+static void TestStoryGoal(const std::vector<int> &aLogin)
+{
+	printf("== AG. StoryGoal ==\n");
+	if (aLogin.size() < 1) {
+		return;
+	}
+	PCHARINFO pPC = g_aCharInfo[aLogin[0]];
+	std::vector<PSTORYINFO> aStoryBack;
+	BYTE abyFlagBack[sizeof(pPC->abyFlag)], abyNumBack[sizeof(pPC->abyFlagNum)];
+	memcpy(abyFlagBack, pPC->abyFlag, sizeof(abyFlagBack));
+	memcpy(abyNumBack, pPC->abyFlagNum, sizeof(abyNumBack));
+	for (int i = 0; i < g_aStoryInfo.GetSize(); i ++) aStoryBack.push_back(g_aStoryInfo[i]);
+	g_aStoryInfo.RemoveAll();
+	ZeroMemory(pPC->abyFlag, sizeof(pPC->abyFlag));
+	ZeroMemory(pPC->abyFlagNum, sizeof(pPC->abyFlagNum));
+
+	/* 行の選び方：飛ばす行（文が空）・印と数値の条件・上から最初に合う行 */
+	PSTORYINFO pA = StoryTestNew(11, "港の話", 200, 0, 200, 200, 0, FLAG_NONUM);
+	StoryGoalClear(pA);
+	StoryGoalRow(&pA->aGoal[0], "");									/* 文が空の行は条件に合っても飛ばす */
+	pA->aGoal[0].awNeed[0] = 1;
+	StoryGoalRow(&pA->aGoal[1], "ねらい1");							/* 印 1 が立っていて、数値 3 がちょうど 2 */
+	pA->aGoal[1].awNeed[0] = 1; pA->aGoal[1].abyCondNo[0] = 3; pA->aGoal[1].abyCondCmp[0] = TALKCMP_EQ; pA->aGoal[1].abyCondVal[0] = 2;
+	StoryGoalRow(&pA->aGoal[2], "ねらい2");							/* 印 1 が立っていて、印 9 が立っていない */
+	pA->aGoal[2].awNeed[0] = 1; pA->aGoal[2].awNot[0] = 9;
+	StoryGoalRow(&pA->aGoal[3], "ねらい3");							/* 数値 4 が 2 以下（比べ方 LE）。印 0 を使う行 */
+	pA->aGoal[3].abyCondNo[0] = 4; pA->aGoal[3].abyCondCmp[0] = TALKCMP_LE; pA->aGoal[3].abyCondVal[0] = 2; pA->aGoal[3].awNot[0] = 0;
+	g_aStoryInfo.Add(pA);
+	BYTE *pF = pPC->abyFlag, *pN = pPC->abyFlagNum;
+	printf("storygoal pick none=%d", StoryGoalPick(pA, pF, pN));			/* 数値 4=0 なので LE に合う → 3 */
+	FlagBitSet(pF, 0, TRUE);
+	printf(" flag0=%d", StoryGoalPick(pA, pF, pN));						/* 印 0 が立つと行 3 は外れる → -1 */
+	FlagBitSet(pF, 1, TRUE);
+	printf(" flag1=%d", StoryGoalPick(pA, pF, pN));						/* → 2 */
+	FlagNumSet(pN, 3, 2);
+	printf(" num3eq2=%d", StoryGoalPick(pA, pF, pN));						/* → 1 */
+	FlagNumSet(pN, 3, 3);
+	FlagBitSet(pF, 9, TRUE);
+	printf(" flag9=%d", StoryGoalPick(pA, pF, pN));						/* 行 2 は外れ、行 3 も印 0 で外れる → -1 */
+	FlagBitSet(pF, 0, FALSE);
+	FlagNumSet(pN, 4, 3);
+	printf(" num4=3 => %d", StoryGoalPick(pA, pF, pN));
+	FlagNumSet(pN, 4, 2);
+	printf(" num4=2 => %d\n", StoryGoalPick(pA, pF, pN));
+	StoryGoalClear(pA);
+	printf("storygoal empty=%d\n", StoryGoalPick(pA, pF, pN));
+
+	/* 送信：wSort 順（クリアの印は見ない。消すのは行の条件で）・止めたシナリオと合う行が無いシナリオは出ない */
+	ZeroMemory(pPC->abyFlag, sizeof(pPC->abyFlag));
+	ZeroMemory(pPC->abyFlagNum, sizeof(pPC->abyFlagNum));
+	StoryGoalClear(pA);
+	StoryGoalRow(&pA->aGoal[0], "ルシーに話す");
+	pA->aGoal[0].awNot[0] = 100;
+	StoryGoalRow(&pA->aGoal[1], "灯台へ行く");
+	pA->aGoal[1].awNeed[0] = 100;
+	pA->wSort = 20;
+	PSTORYINFO pB = StoryTestNew(12, "森の話", 201, 0, 201, 201, 0, FLAG_NONUM);
+	StoryGoalClear(pB);
+	StoryGoalRow(&pB->aGoal[0], "木を切る");
+	pB->aGoal[0].awNot[0] = 201;										/* クリアで消したい時はクリアの印を awNot に */
+	pB->wSort = 10;
+	PSTORYINFO pC = StoryTestNew(13, "止めた話", 202, 0, 202, 202, 0, FLAG_NONUM);
+	StoryGoalClear(pC);
+	StoryGoalRow(&pC->aGoal[0], "出ない");
+	pC->byState = STORYSTATE_OFF;
+	PSTORYINFO pD = StoryTestNew(14, "目的なし", 203, 0, 203, 203, 0, FLAG_NONUM);
+	StoryGoalClear(pD);
+	PSTORYINFO pE = StoryTestNew(15, "合わない話", 204, 0, 204, 204, 0, FLAG_NONUM);
+	StoryGoalClear(pE);
+	StoryGoalRow(&pE->aGoal[0], "合わない");
+	pE->aGoal[0].awNeed[0] = 500;
+	g_aStoryInfo.RemoveAll();											/* 最初の確認で足した pA を外して、並びを作り直す */
+	g_aStoryInfo.Add(pA); g_aStoryInfo.Add(pB); g_aStoryInfo.Add(pC); g_aStoryInfo.Add(pD); g_aStoryInfo.Add(pE);
+	printf("storygoal sent start %s\n", StoryGoalSent(pPC).c_str());
+	FlagBitSet(pPC->abyFlag, 100, TRUE);
+	printf("storygoal sent flag100 %s\n", StoryGoalSent(pPC).c_str());
+	FlagBitSet(pPC->abyFlag, 201, TRUE);									/* 森の話をクリア → awNot で出ない */
+	printf("storygoal sent clear-B %s\n", StoryGoalSent(pPC).c_str());
+	FlagBitSet(pPC->abyFlag, 200, TRUE);									/* 港の話をクリア → 条件が合うので出たまま */
+	printf("storygoal sent clear-A %s\n", StoryGoalSent(pPC).c_str());
+
+	/* 印・数値が動いた時の送り直し：会話データで話した後（動いた時だけ。同じ話をもう一度しても動かなければ送らない） */
+	{
+		ZeroMemory(pPC->abyFlag, sizeof(pPC->abyFlag));
+		ZeroMemory(pPC->abyFlagNum, sizeof(pPC->abyFlagNum));
+		g_aStoryInfo.RemoveAll();
+		PSTORYINFO pS = StoryTestNew(21, "再送", 230, 0, 230, 230, 0, FLAG_NONUM);
+		StoryGoalClear(pS);
+		StoryGoalRow(&pS->aGoal[0], "次へ");
+		pS->aGoal[0].awNeed[0] = 231;
+		g_aStoryInfo.Add(pS);
+		PTALKINFO pTalk = new TALKINFO;
+		ZeroMemory(pTalk, sizeof(*pTalk));
+		pTalk->wID = 997; pTalk->byState = TALKSTATE_ON; pTalk->byLineCount = 1;
+		TALKLINEINFO *pLine = &pTalk->aLine[0];
+		for (int i = 0; i < MAX_TALKNEED; i ++) pLine->awNeed[i] = pLine->awNot[i] = FLAG_NOBIT;
+		for (int i = 0; i < MAX_TALKCOND; i ++) pLine->abyCondNo[i] = FLAG_NONUM;
+		for (int i = 0; i < MAX_TALKSET; i ++) pLine->awSetOn[i] = pLine->awSetOff[i] = FLAG_NOBIT;
+		for (int i = 0; i < MAX_TALKACT; i ++) pLine->abyActNo[i] = FLAG_NONUM;
+		pLine->byQuestStepMax = QUESTNPC_NOSTEP;
+		pLine->awSetOn[0] = 231;
+		strcpy(pLine->szSpeech, "進んだ");
+		g_aTalkInfo.Add(pTalk);
+		CHARINFO Npc;
+		char szSpeech[8];
+		ZeroMemory((PBYTE)&Npc, sizeof(CHARINFO));
+		strcpy(szSpeech, "@t997");
+		Npc.pszNpcSpeech = szSpeech;
+		Npc.dwTblID = 1;
+		int nState0 = MockCmdCount(1000, CMD_QUESTSTATE);
+		TalkNpcTalk(pPC, &Npc);
+		int nState1 = MockCmdCount(1000, CMD_QUESTSTATE);
+		TalkNpcTalk(pPC, &Npc);
+		int nState2 = MockCmdCount(1000, CMD_QUESTSTATE);
+		printf("storygoal resend talk=%d again=%d flag231=%d %s\n", nState1 - nState0, nState2 - nState1, FlagBitGet(pPC->abyFlag, 231) ? 1 : 0, StoryGoalSent(pPC).c_str());
+		g_aTalkInfo.RemoveAt(g_aTalkInfo.GetSize() - 1);
+		delete pTalk;
+	}
+
+	/* データAPI：goals の読み書き（丸ごと置き換え・省くと今のまま・短い配列は残りが無し・おかしい値は断る） */
+	g_aStoryInfo.RemoveAll();
+	printf("storygoal api add %s\n", FlagGroupApi("story", 0, "{\"szName\":\"API\",\"wClearFlag\":300,\"goals\":[{\"awNeed\":[5],\"abyCondNo\":[7],\"abyCondCmp\":[2],\"abyCondVal\":[3],\"szGoal\":\"一つめ\"},{\"szGoal\":\"二つめ\"}]}").c_str());
+	printf("storygoal api get %s\n", SboWebDataGet("story", 0));
+	printf("storygoal api internal need=%u,%u not=%u no=%u,%u cmp=%u,%u val=%u row1need=%u row1no=%u row2=[%s] pick=%d\n", g_aStoryInfo[0]->aGoal[0].awNeed[0], g_aStoryInfo[0]->aGoal[0].awNeed[1],
+		g_aStoryInfo[0]->aGoal[0].awNot[0], g_aStoryInfo[0]->aGoal[0].abyCondNo[0], g_aStoryInfo[0]->aGoal[0].abyCondNo[1], g_aStoryInfo[0]->aGoal[0].abyCondCmp[0],
+		g_aStoryInfo[0]->aGoal[0].abyCondCmp[1], g_aStoryInfo[0]->aGoal[0].abyCondVal[0], g_aStoryInfo[0]->aGoal[1].awNeed[0], g_aStoryInfo[0]->aGoal[1].abyCondNo[0],
+		g_aStoryInfo[0]->aGoal[2].szGoal, StoryGoalPick(g_aStoryInfo[0], pPC->abyFlag, pPC->abyFlagNum));
+	printf("storygoal api keep %s goals=[%s]\n", FlagGroupApi("story", 0, "{\"szName\":\"API改\"}").c_str(), g_aStoryInfo[0]->aGoal[0].szGoal);
+	printf("storygoal api replace %s row0=[%s] row1=[%s]\n", FlagGroupApi("story", 0, "{\"goals\":[{\"szGoal\":\"置換\"}]}").c_str(), g_aStoryInfo[0]->aGoal[0].szGoal, g_aStoryInfo[0]->aGoal[1].szGoal);
+	printf("storygoal api get2 %s\n", SboWebDataGet("story", 0));
+	printf("storygoal api toomany %s\n", FlagGroupApi("story", 0, "{\"goals\":[{},{},{},{},{},{},{},{},{}]}").c_str());
+	printf("storygoal api badflag %s\n", FlagGroupApi("story", 0, "{\"goals\":[{\"awNeed\":[2000],\"szGoal\":\"x\"}]}").c_str());
+	printf("storygoal api badnum %s\n", FlagGroupApi("story", 0, "{\"goals\":[{\"abyCondNo\":[200],\"szGoal\":\"x\"}]}").c_str());
+	printf("storygoal api badcmp %s\n", FlagGroupApi("story", 0, "{\"goals\":[{\"abyCondNo\":[1],\"abyCondCmp\":[3],\"szGoal\":\"x\"}]}").c_str());
+	printf("storygoal api badkey %s\n", FlagGroupApi("story", 0, "{\"goals\":[{\"zzz\":1}]}").c_str());
+	printf("storygoal api kept after-error row0=[%s]\n", g_aStoryInfo[0]->aGoal[0].szGoal);
+	printf("storygoal api clear %s get=%s\n", FlagGroupApi("story", 0, "{\"goals\":[]}").c_str(), SboWebDataGet("story", 0));
+
+	/* 管理者ウィンドウの書き込み（目的の欄は無い）：保存しても目的が消えない・足す時は目的なし */
+	{
+		PCHARINFO pAdmin = pPC;
+		BYTE byAdminBack = pAdmin->byAdminLV;
+		CMDPARA_ADMINSTORY Res;
+		FlagGroupApi("story", 0, "{\"goals\":[{\"awNeed\":[5],\"szGoal\":\"残る目的\"}]}");
+		pAdmin->byAdminLV = ADMINLV_ADMINISTRATOR;
+		STORYINFO Info = *g_aStoryInfo[0];
+		memset(Info.aGoal, 0, sizeof(Info.aGoal));						/* 目的の欄を知らない（0 で埋まった）通信 */
+		strcpy(Info.szName, "管理者改");
+		BOOL bGot = AdminStorySend(pAdmin, ADMINSTORY_SET, 0, &Info, Res);
+		printf("storygoal admin edit got=%d result=%d name=%s goal=[%s] need=%u\n", bGot, Res.byResult, g_aStoryInfo[0]->szName,
+			g_aStoryInfo[0]->aGoal[0].szGoal, g_aStoryInfo[0]->aGoal[0].awNeed[0]);
+		Info.wID = 0; strcpy(Info.szName, "管理者新");
+		bGot = AdminStorySend(pAdmin, ADMINSTORY_SET, -1, &Info, Res);
+		printf("storygoal admin add got=%d result=%d count=%d goal=[%s]\n", bGot, Res.byResult, g_aStoryInfo.GetSize(),
+			(g_aStoryInfo.GetSize() > 1) ? g_aStoryInfo[1]->aGoal[0].szGoal : "(none)");
+		pAdmin->byAdminLV = byAdminBack;
+	}
+
+	/* 保存と読み直し：目的が残る・印 0・数値 0 の条件が崩れない */
+	{
+		g_aStoryInfo.RemoveAll();
+		PSTORYINFO pS = StoryTestNew(31, "保存", 0, 0, 0, 0, 0, FLAG_NONUM);
+		StoryGoalClear(pS);
+		StoryGoalRow(&pS->aGoal[0], "ゼロの条件");
+		pS->aGoal[0].awNeed[0] = 0; pS->aGoal[0].awNot[1] = 1023; pS->aGoal[0].abyCondNo[0] = 0; pS->aGoal[0].abyCondCmp[0] = TALKCMP_LE; pS->aGoal[0].abyCondVal[0] = 9;
+		StoryGoalRow(&pS->aGoal[7], "最後の行");
+		g_aStoryInfo.Add(pS);
+		BOOL bSaved = SaveStoryInfo();
+		g_aStoryInfo.RemoveAll();
+		BOOL bLoaded = LoadStoryInfo();
+		PSTORYINFO p = (g_aStoryInfo.GetSize() > 0) ? g_aStoryInfo[0] : NULL;
+		if (p) {
+			printf("storygoal save=%d load=%d row0=[%s] need=%u,%u not=%u,%u no=%u,%u cmp=%u val=%u row1=[%s] row7=[%s] row7need=%u row7no=%u\n", (int)bSaved, (int)bLoaded,
+				p->aGoal[0].szGoal, p->aGoal[0].awNeed[0], p->aGoal[0].awNeed[1], p->aGoal[0].awNot[0], p->aGoal[0].awNot[1], p->aGoal[0].abyCondNo[0],
+				p->aGoal[0].abyCondNo[1], p->aGoal[0].abyCondCmp[0], p->aGoal[0].abyCondVal[0], p->aGoal[1].szGoal, p->aGoal[7].szGoal, p->aGoal[7].awNeed[0], p->aGoal[7].abyCondNo[0]);
+		} else {
+			printf("storygoal save=%d load=%d not found\n", (int)bSaved, (int)bLoaded);
+		}
+	}
+
+	/* 片付け */
+	g_aStoryInfo.RemoveAll();
+	for (size_t i = 0; i < aStoryBack.size(); i ++) g_aStoryInfo.Add(aStoryBack[i]);
+	SaveStoryInfo();
+	memcpy(pPC->abyFlag, abyFlagBack, sizeof(abyFlagBack));
+	memcpy(pPC->abyFlagNum, abyNumBack, sizeof(abyNumBack));
 }
 
 static void TestFlagGroup(const std::vector<int> &aLogin)
@@ -5018,6 +5328,7 @@ static void TestQuest(const std::vector<int> &aLogin)
 
 	/* 依頼の品は預けられない・売れない。預かり所が100種類なら断られる（どちらも結果が返る） */
 	{
+		NearNpcOpen(pOther);	/* 預かり所・店の人が近くにいる時だけ使える */
 		ZeroMemory(pOther->waItem, sizeof(pOther->waItem));
 		pOther->waItem[0] = wItemQ;
 		pOther->waItem[1] = wItemR;
@@ -5057,6 +5368,7 @@ static void TestQuest(const std::vector<int> &aLogin)
 		char *psz = MockCmdData(anConn[2], CMD_LEAVEITEM);
 		printf("quest leave questitem=%d sell=%d gold+=%d full=%d res=%s after=%d\n", nQ, nQSell, (int)(pOther->dwGold - dwGold0), nR, psz, QuestCountItem(pOther, wItemR));
 		free(psz);
+		NearNpcClose();
 	}
 
 	/* 古い形式（持ち物 10 個）のキャラを読むと、11〜20 枠は空のままで、後ろの列もずれない。
@@ -5710,6 +6022,8 @@ static void TestSortItem(const std::vector<int> &aLogin)
 		}
 		ItemNameSortKey(NULL, a);
 		printf("sortkey null len=%d\n", (int)a.size());
+		/* メッセージに埋め込む名前の半角 @ は全角にする・新しい名前に半角 @ は使えない */
+		printf("msgsafe [%s] namesafe at=%d plain=%d\n", SboTextMsgSafe("ab@400100c@8").c_str(), (int)SboTextIsNameSafe("ab@1"), (int)SboTextIsNameSafe("abc"));
 	}
 	if (aLogin.size() < 2) {
 		return;
@@ -5740,6 +6054,8 @@ static void TestSortItem(const std::vector<int> &aLogin)
 	memcpy(awEquBack, p->waEqu, sizeof(awEquBack));
 	p->byAdminLV = ADMINLV_USER;
 	pL->byAdminLV = ADMINLV_USER;
+	NearNpcOpen(p);		/* 預かり所・店の人が近くにいる時だけ使える */
+	NearNpcOpen(pL, "@6");
 
 	/* 手持ち：6 つ（同じものが 2 つ）。1 番目と 4 番目を装備 */
 	ZeroMemory(p->waItem, sizeof(p->waItem));
@@ -5819,6 +6135,83 @@ static void TestSortItem(const std::vector<int> &aLogin)
 		SortPrintMy("sort my after trade", p);
 	}
 
+	/* 取り引きのすり替え防止・取り引き中の持ち物コマンド停止・装備中の品を売らない・装備欄のずれ */
+	{
+		DWORD dwMapBack = pL->dwMapID, dwXBack = pL->dwX, dwYBack = pL->dwY;
+		char szAccBack[sizeof(pL->szAcc)];
+		memcpy(szAccBack, pL->szAcc, sizeof(szAccBack));
+		pL->dwMapID = p->dwMapID; pL->dwX = p->dwX; pL->dwY = p->dwY;
+		if (pL->szAcc[0] == 0) strcpy(pL->szAcc, "sorttest");
+		ZeroMemory(p->waItem, sizeof(p->waItem));
+		for (int i = 0; i < 10; i ++) p->waEqu[i] = 0xFFFF;
+		p->waItem[0] = aPick[0];
+		p->waItem[1] = aPick[1];
+		p->waItem[2] = aPick[2];
+		p->waItem[3] = aPick[3];
+		p->waEqu[0] = 2;
+		p->waEqu[9] = 3;
+
+		/* 装備中の品は売れない。装備していない品を売ると、後ろの装備の欄だけ 1 つ前へ */
+		CMDPARA_DATA5 Drop;
+		ZeroMemory(&Drop, sizeof(Drop));
+		Drop.byCmd = CMD_DROPITEM;
+		Drop.pID = p->pID;
+		Drop.dwTblID = p->dwTblID;
+		Drop.byData = 2;
+		Drop.dwData1 = 1;
+		Drop.dwData2 = aPick[2];
+		TestRecv(p, &Drop, sizeof(Drop));
+		SortPrintMy("drop equipped", p);
+		Drop.byData = 0;
+		Drop.dwData2 = aPick[0];
+		TestRecv(p, &Drop, sizeof(Drop));
+		SortPrintMy("drop before equipped", p);
+
+		/* 取り引き：出す位置の品が入れ替わったら成立しない */
+		CMDPARA_DATA3 Trade;
+		ZeroMemory(&Trade, sizeof(Trade));
+		Trade.byCmd = CMD_TRADE;
+		Trade.pID = p->pID;
+		Trade.dwTblID = p->dwTblID;
+		Trade.dwData = pL->dwTblID;
+		TestRecv(p, &Trade, sizeof(Trade));
+		CMDPARA_TRADEINFO Info;
+		ZeroMemory(&Info, sizeof(Info));
+		Info.byCmd = CMD_TRADEINFO;
+		Info.byMode = 1;
+		Info.dwTblID = pL->dwTblID;
+		for (int i = 0; i < MAX_MYITEM; i ++) Info.waItem[i] = 0xFFFF;
+		Info.waItem[0] = 0;
+		Info.bySum = ItemSum(p);
+		TestRecv(p, &Info, sizeof(Info));
+		Info.dwTblID = p->dwTblID;
+		Info.waItem[0] = 0xFFFF;
+		TestRecv(pL, &Info, sizeof(Info));
+		/* 取り引き中は持ち物を動かすコマンドを受け付けない */
+		Drop.byData = 0;
+		Drop.dwData2 = p->waItem[0];
+		TestRecv(p, &Drop, sizeof(Drop));
+		SortPrintMy("drop while trading", p);
+		/* すり替え（改造クライアントが別の経路で持ち物を動かしたことにする） */
+		WORD wSwap = p->waItem[0];
+		p->waItem[0] = aPick[4];
+		CMDPARA_TRADEPROC Proc;
+		ZeroMemory(&Proc, sizeof(Proc));
+		Proc.byCmd = CMD_TRADEPROC;
+		Proc.bySum1 = ItemSum(p);
+		Proc.bySum2 = ItemSum(pL);
+		Proc.dwTblID1 = p->dwTblID;
+		Proc.dwTblID2 = pL->dwTblID;
+		for (int i = 0; i < MAX_MYITEM; i ++) { Proc.waItem1[i] = 0xFFFF; Proc.waItem2[i] = 0xFFFF; }
+		Proc.waItem1[0] = 0;
+		TestRecv(p, &Proc, sizeof(Proc));
+		printf("trade swap trading=%d first=%u (was %u)\n", (int)RecvCmdIsTrading(p->dwTblID), p->waItem[0], wSwap);
+		RecvCmdTradeClear(p->dwTblID);
+		RecvCmdTradeClear(pL->dwTblID);
+		pL->dwMapID = dwMapBack; pL->dwX = dwXBack; pL->dwY = dwYBack;
+		memcpy(pL->szAcc, szAccBack, sizeof(szAccBack));
+	}
+
 	/* 預かり所：口座が無い人は何も起きない・あれば 個数ごと動く */
 	{
 		DWORD dwLeaveBack = pL->dwLeaveID;
@@ -5869,6 +6262,7 @@ static void TestSortItem(const std::vector<int> &aLogin)
 	memcpy(p->waEqu, awEquBack, sizeof(awEquBack));
 	p->byAdminLV = byAdminBack;
 	pL->byAdminLV = byAdminBackL;
+	NearNpcClose();
 }
 
 /* ------------------------------------------------------------------------- */
@@ -5924,6 +6318,7 @@ static void TestLeaveDispose(const std::vector<int> &aLogin)
 	BYTE byAdminBack = p->byAdminLV;
 	DWORD dwGoldBack = p->dwGold;
 	DWORD dwLeaveBack = p->dwLeaveID;
+	NearNpcOpen(p);		/* 預かり所の人が近くにいる時だけ使える */
 	LEAVEINFO LeaveBack;
 	ZeroMemory(&LeaveBack, sizeof(LeaveBack));
 	if (dwLeaveBack && dwLeaveBack < (DWORD)g_aLeaveInfo.GetSize()) LeaveBack = *g_aLeaveInfo[dwLeaveBack];
@@ -6006,6 +6401,301 @@ static void TestLeaveDispose(const std::vector<int> &aLogin)
 	}
 	p->dwGold = dwGoldBack;
 	p->byAdminLV = byAdminBack;
+	NearNpcClose();
+}
+
+/* ------------------------------------------------------------------------- */
+/* AN. 店・売る・預かり所・転職・着せ替え・名前の色が、公式クライアントと同じ場面だけ通る	 */
+/*    店の人（"@5NN"）・預かり所の人（"@6"）・転職所の人（"@a"）が近くにいる時だけ	 */
+/*    着せ替えは男女(2・3)か、着せ替えの人（"@"）の画像だけ。名前の色は 7 色だけ	 */
+/*    価値の無い品・捨てられない品は売れない・dwData2 が 0 の捨て方は受けない		 */
+/* ------------------------------------------------------------------------- */
+static void NpcNearSendDrop(PCHARINFO p, BYTE byNo, DWORD dwSell, DWORD dwItem)
+{
+	CMDPARA_DATA5 Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_DROPITEM;
+	Para.byData = byNo;
+	Para.pID = p->pID;
+	Para.dwTblID = p->dwTblID;
+	Para.dwData1 = dwSell;
+	Para.dwData2 = dwItem;
+	TestRecv(p, &Para, sizeof(Para));
+}
+
+static void TestNpcNear(const std::vector<int> &aLogin)
+{
+	printf("== AN. NpcNear ==\n");
+	if (aLogin.empty()) {
+		return;
+	}
+	/* 値打ちのある品・値打ちの無い品・捨てられない品・買う品（安い）を探す */
+	WORD wSell = 0, wNoGold = 0, wNoDrop = 0, wBuy = 0;
+	for (int i = 1; i < g_aItemInfo.GetSize(); i ++) {
+		PITEMINFO pItem = g_aItemInfo[i];
+		if (pItem->szName[0] == 0 || IsImportantItem((WORD)i)) continue;
+		if (pItem->byFlg & ITEMFLG_DROP) {
+			if (wNoDrop == 0) wNoDrop = (WORD)i;
+			continue;
+		}
+		if (pItem->dwGold == 0) {
+			if (wNoGold == 0) wNoGold = (WORD)i;
+		} else if (wSell == 0 && pItem->dwGold >= 8) {
+			wSell = (WORD)i;
+		} else if (wBuy == 0 && pItem->dwGold < 1000) {
+			wBuy = (WORD)i;
+		}
+	}
+	if (wSell == 0 || wNoGold == 0 || wNoDrop == 0 || wBuy == 0) {
+		printf("npcnear skipped\n");
+		return;
+	}
+
+	PCHARINFO p = g_aCharInfo[aLogin[0]];
+	WORD awItemBack[MAX_MYITEM], awEquBack[10];
+	memcpy(awItemBack, p->waItem, sizeof(awItemBack));
+	memcpy(awEquBack, p->waEqu, sizeof(awEquBack));
+	BYTE byAdminBack = p->byAdminLV, byJobBack = p->byJOB;
+	DWORD dwGoldBack = p->dwGold, dwLeaveBack = p->dwLeaveID;
+	WORD wGrpBack = p->wGrpID;
+	COLORREF clNameBack = p->clName, clSpeechBack = p->clSpeech;
+	LEAVEINFO LeaveBack;
+	ZeroMemory(&LeaveBack, sizeof(LeaveBack));
+	if (dwLeaveBack && dwLeaveBack < (DWORD)g_aLeaveInfo.GetSize()) LeaveBack = *g_aLeaveInfo[dwLeaveBack];
+	p->byAdminLV = ADMINLV_USER;
+	ZeroMemory(p->waItem, sizeof(p->waItem));
+	for (int i = 0; i < 10; i ++) p->waEqu[i] = 0xFFFF;
+	/* 実データの店・預かり所などの人が近くにいると結果が変わるので、この間だけ台詞を外しておく */
+	std::vector<std::pair<PCHARINFO, char *> > aSpeechBack;
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		PCHARINFO pNpc = g_aCharInfo[i];
+		if (pNpc != p && pNpc->szAcc[0] == 0 && pNpc->pszNpcSpeech != NULL && pNpc->dwMapID == p->dwMapID) {
+			aSpeechBack.push_back(std::make_pair(pNpc, pNpc->pszNpcSpeech));
+			pNpc->pszNpcSpeech = NULL;
+		}
+	}
+
+	/* 店：店の人（"@500"）が近くにいる時だけ買える。違う番号の店・遠い人ではだめ */
+	PMAPINFO pMap = g_aMapInfo[p->dwMapID];
+	PSHOPINFO pShopBack = pMap->pShopInfo;
+	BYTE byCountShopBack = pMap->byCountShop;
+	pMap->pShopInfo = new SHOPINFO[1];
+	ZeroMemory(pMap->pShopInfo, sizeof(SHOPINFO));
+	pMap->byCountShop = 1;
+	pMap->pShopInfo[0].byCountItem = 1;
+	pMap->pShopInfo[0].awItem[0] = wBuy;
+	CMDPARA_DATA5 Buy;
+	ZeroMemory(&Buy, sizeof(Buy));
+	Buy.byCmd = CMD_SHOPBUY;
+	Buy.pID = p->pID;
+	Buy.dwTblID = p->dwTblID;
+	Buy.dwData1 = 0;
+	Buy.dwData2 = 0;
+	p->dwGold = 5000;
+	TestRecv(p, &Buy, sizeof(Buy));
+	printf("npcnear buy none item=%u gold=%u\n", p->waItem[0], p->dwGold);
+	NearNpcOpen(p, "@501");
+	TestRecv(p, &Buy, sizeof(Buy));
+	printf("npcnear buy othershop item=%u gold=%u\n", p->waItem[0], p->dwGold);
+	NearNpcClose();
+	NearNpcOpen(p, "@500");
+	TestRecv(p, &Buy, sizeof(Buy));
+	printf("npcnear buy ok item=%u gold=%u (price %u)\n", p->waItem[0], p->dwGold, g_aItemInfo[wBuy]->dwGold);
+	NearNpcClose();
+	{
+		/* 4 マス離れた人は遠い・3 マスなら近い */
+		ZeroMemory(p->waItem, sizeof(p->waItem));
+		p->dwGold = 5000;
+		DWORD dwXBack = p->dwX;
+		p->dwX += 4;
+		NearNpcOpen(p, "@500");
+		p->dwX = dwXBack;
+		TestRecv(p, &Buy, sizeof(Buy));
+		printf("npcnear buy far item=%u\n", p->waItem[0]);
+		NearNpcClose();
+		p->dwX += 3;
+		NearNpcOpen(p, "@500");
+		p->dwX = dwXBack;
+		TestRecv(p, &Buy, sizeof(Buy));
+		printf("npcnear buy 3cells item=%u\n", p->waItem[0]);
+		NearNpcClose();
+	}
+	delete [] pMap->pShopInfo;
+	pMap->pShopInfo = pShopBack;
+	pMap->byCountShop = byCountShopBack;
+
+	/* 売る：店の人が近くにいる時だけ。価値の無い品・捨てられない品・dwData2 が 0 は受けない */
+	ZeroMemory(p->waItem, sizeof(p->waItem));
+	p->waItem[0] = wSell;
+	p->waItem[1] = wNoGold;
+	p->waItem[2] = wNoDrop;
+	p->dwGold = 0;
+	NpcNearSendDrop(p, 0, 1, wSell);
+	printf("npcnear sell none item0=%u gold=%u\n", p->waItem[0], p->dwGold);
+	NearNpcOpen(p, "@700");
+	NpcNearSendDrop(p, 1, 1, wNoGold);
+	printf("npcnear sell nogold item1=%u gold=%u\n", p->waItem[1], p->dwGold);
+	NpcNearSendDrop(p, 2, 1, wNoDrop);
+	printf("npcnear sell nodrop item2=%u gold=%u\n", p->waItem[2], p->dwGold);
+	NpcNearSendDrop(p, 0, 0, 0);
+	printf("npcnear drop zero-id item0=%u\n", p->waItem[0]);
+	NpcNearSendDrop(p, 2, 0, wNoDrop);
+	printf("npcnear drop nodrop item2=%u\n", p->waItem[2]);
+	NpcNearSendDrop(p, 1, 0, wNoGold);
+	printf("npcnear drop nogold item1=%u\n", p->waItem[1]);
+	NpcNearSendDrop(p, 0, 1, wSell);
+	printf("npcnear sell ok item0=%u gold=%u (expect %u)\n", p->waItem[0], p->dwGold, g_aItemInfo[wSell]->dwGold / 4);
+	NearNpcClose();
+	/* 捨てるのは店の人がいなくてもよい */
+	p->waItem[0] = wSell;
+	NpcNearSendDrop(p, 0, 0, wSell);
+	printf("npcnear drop free item0=%u\n", p->waItem[0]);
+
+	/* 預かり所：預かり所の人（"@6"）が近くにいる時だけ */
+	ZeroMemory(p->waItem, sizeof(p->waItem));
+	p->waItem[0] = wSell;
+	CMDPARA_DATA1 Leave;
+	ZeroMemory(&Leave, sizeof(Leave));
+	Leave.byCmd = CMD_LEAVEITEM;
+	Leave.pID = p->pID;
+	Leave.dwTblID = p->dwTblID;
+	Leave.byData = 0;
+	TestRecv(p, &Leave, sizeof(Leave));
+	printf("npcnear leave none item0=%u\n", p->waItem[0]);
+	NearNpcOpen(p, "@500");
+	TestRecv(p, &Leave, sizeof(Leave));
+	printf("npcnear leave shopman item0=%u\n", p->waItem[0]);
+	NearNpcClose();
+	NearNpcOpen(p, "@6");
+	TestRecv(p, &Leave, sizeof(Leave));
+	printf("npcnear leave ok item0=%u\n", p->waItem[0]);
+	NearNpcClose();
+	/* 引き出し・お金の預け引き出しも同じ */
+	CMDPARA_DATA3 Get;
+	ZeroMemory(&Get, sizeof(Get));
+	Get.byCmd = CMD_LEAVEITEMGET;
+	Get.pID = p->pID;
+	Get.dwTblID = p->dwTblID;
+	Get.dwData = 0;
+	TestRecv(p, &Get, sizeof(Get));
+	printf("npcnear get none item0=%u\n", p->waItem[0]);
+	CMDPARA_DATA3 Gold;
+	ZeroMemory(&Gold, sizeof(Gold));
+	Gold.byCmd = CMD_LEAVEGOLD;
+	Gold.pID = p->pID;
+	Gold.dwTblID = p->dwTblID;
+	Gold.dwData = 10;
+	p->dwGold = 100;
+	TestRecv(p, &Gold, sizeof(Gold));
+	printf("npcnear goldleave none gold=%u\n", p->dwGold);
+	NearNpcOpen(p, "@6");
+	TestRecv(p, &Gold, sizeof(Gold));
+	printf("npcnear goldleave ok gold=%u\n", p->dwGold);
+	NearNpcClose();
+	TestRecv(p, &Get, sizeof(Get));
+	printf("npcnear get none2 item0=%u\n", p->waItem[0]);
+	NearNpcOpen(p, "@6");
+	TestRecv(p, &Get, sizeof(Get));
+	printf("npcnear get ok item0=%u\n", p->waItem[0]);
+	NearNpcClose();
+
+	/* 転職：転職所の人（"@a"）が近くにいる時だけ */
+	{
+		int nJobNew = -1;
+		for (int i = 0; i < 16; i ++) {
+			if (i != p->byJOB && g_JobInfo.GetPtr(i) != NULL) { nJobNew = i; break; }
+		}
+		if (nJobNew >= 0) {
+			CMDPARA_DATA1 Job;
+			ZeroMemory(&Job, sizeof(Job));
+			Job.byCmd = CMD_JOBCHG;
+			Job.pID = p->pID;
+			Job.dwTblID = p->dwTblID;
+			Job.byData = (BYTE)nJobNew;
+			BYTE byJobOld = p->byJOB;
+			TestRecv(p, &Job, sizeof(Job));
+			printf("npcnear job none changed=%d\n", (int)(p->byJOB != byJobOld));
+			NearNpcOpen(p, "@6");
+			TestRecv(p, &Job, sizeof(Job));
+			printf("npcnear job wrongnpc changed=%d\n", (int)(p->byJOB != byJobOld));
+			NearNpcClose();
+			NearNpcOpen(p, "@a");
+			TestRecv(p, &Job, sizeof(Job));
+			printf("npcnear job ok changed=%d\n", (int)(p->byJOB == nJobNew));
+			NearNpcClose();
+		}
+	}
+
+	/* 着せ替え：男女(2・3)か、着せ替えの人（台詞が "@"）の画像だけ */
+	{
+		CMDPARA_DATA3 Grp;
+		ZeroMemory(&Grp, sizeof(Grp));
+		Grp.byCmd = CMD_CHGCHARGRP;
+		Grp.pID = p->pID;
+		Grp.dwTblID = p->dwTblID;
+		p->wGrpID = 5;
+		Grp.dwData = 16;
+		TestRecv(p, &Grp, sizeof(Grp));
+		printf("npcnear grp admin16 grp=%u\n", p->wGrpID);
+		Grp.dwData = 70000;
+		TestRecv(p, &Grp, sizeof(Grp));
+		printf("npcnear grp huge grp=%u\n", p->wGrpID);
+		Grp.dwData = 3;
+		TestRecv(p, &Grp, sizeof(Grp));
+		printf("npcnear grp female grp=%u\n", p->wGrpID);
+		NearNpcOpen(p, "@", 40);
+		Grp.dwData = 40;
+		TestRecv(p, &Grp, sizeof(Grp));
+		printf("npcnear grp dressnpc grp=%u\n", p->wGrpID);
+		Grp.dwData = 41;
+		TestRecv(p, &Grp, sizeof(Grp));
+		printf("npcnear grp otherimage grp=%u\n", p->wGrpID);
+		NearNpcClose();
+		Grp.dwData = 40;
+		p->wGrpID = 2;
+		TestRecv(p, &Grp, sizeof(Grp));
+		printf("npcnear grp nonpc grp=%u\n", p->wGrpID);
+	}
+
+	/* 名前の色：色の表の 7 色（名前と発言が同じ）だけ */
+	{
+		CMDPARA_NAMECOLOR Col;
+		ZeroMemory(&Col, sizeof(Col));
+		Col.byCmd = CMD_NAMECOLOR;
+		Col.pID = p->pID;
+		Col.dwTblID = p->dwTblID;
+		p->clName = p->clSpeech = RGB(255, 255, 255);
+		Col.clName = Col.clSpeech = RGB(1, 2, 3);
+		TestRecv(p, &Col, sizeof(Col));
+		printf("npcnear color random=%u\n", (unsigned)p->clName);
+		Col.clName = Col.clSpeech = RGB(255, 150, 150);
+		TestRecv(p, &Col, sizeof(Col));
+		printf("npcnear color admin=%u\n", (unsigned)p->clName);
+		Col.clName = RGB(255, 200, 200);
+		Col.clSpeech = RGB(255, 255, 200);
+		TestRecv(p, &Col, sizeof(Col));
+		printf("npcnear color mismatch=%u\n", (unsigned)p->clName);
+		Col.clName = Col.clSpeech = RGB(200, 255, 255);
+		TestRecv(p, &Col, sizeof(Col));
+		printf("npcnear color ok=%u\n", (unsigned)p->clName);
+	}
+
+	/* 片付け */
+	for (size_t i = 0; i < aSpeechBack.size(); i ++) aSpeechBack[i].first->pszNpcSpeech = aSpeechBack[i].second;
+	if (dwLeaveBack) {
+		*g_aLeaveInfo[dwLeaveBack] = LeaveBack;
+	} else if (p->dwLeaveID && p->dwLeaveID < (DWORD)g_aLeaveInfo.GetSize()) {
+		ZeroMemory(g_aLeaveInfo[p->dwLeaveID], sizeof(LEAVEINFO));
+		p->dwLeaveID = 0;
+	}
+	memcpy(p->waItem, awItemBack, sizeof(awItemBack));
+	memcpy(p->waEqu, awEquBack, sizeof(awEquBack));
+	p->byAdminLV = byAdminBack;
+	p->byJOB = byJobBack;
+	p->dwGold = dwGoldBack;
+	p->wGrpID = wGrpBack;
+	p->clName = clNameBack;
+	p->clSpeech = clSpeechBack;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -7347,6 +8037,215 @@ static void TestFloorDamage(const std::vector<int> &aLogin)
 	pPC->dwY = pPC->dwYBack = dwYBack;
 	AddTblNoPC((int)pPC->dwTblID);
 	pPC->byDirection = byDirBack;
+	pPC->wHP = wHPBack;
+}
+
+/* ------------------------------------------------------------------------- */
+/* 移動の見張り：壁へは入れない・速すぎる歩きは戻される・ふつうの速さは通る	 */
+/*    倒れている間と取り引き中は歩けない・サーバーが動かした後は戻されない	 */
+/* ------------------------------------------------------------------------- */
+static void MoveGuardPlace(PCHARINFO pPC, int x, int y)
+{
+	DeleteTblNoPC((int)pPC->dwTblID);
+	pPC->dwX = pPC->dwXBack = (DWORD)x;
+	pPC->dwY = pPC->dwYBack = (DWORD)y;
+	AddTblNoPC((int)pPC->dwTblID);
+}
+
+static void TestMoveGuard(const std::vector<int> &aLogin)
+{
+	printf("== MoveGuard ==\n");
+	if (aLogin.size() < 1) {
+		return;
+	}
+	PCHARINFO pPC = g_aCharInfo[aLogin[0]];
+	int nMapNo = GetMapNo(pPC->dwMapID);
+	if (nMapNo < 0) {
+		printf("no map\n");
+		return;
+	}
+	PMAPINFO pMap = g_aMapInfo[nMapNo];
+	DWORD dwXBack = pPC->dwX, dwYBack = pPC->dwY;
+	BYTE byDirBack = pPC->byDirection, byAdminBack = pPC->byAdminLV;
+	WORD wHPBack = pPC->wHP;
+	pPC->byAdminLV = ADMINLV_USER;
+
+	/* 横に 8 マス続けて歩ける所（歩ける: ぶつからない・NPC がいない）と、その隣のぶつかるマス */
+	int nX = -1, nY = -1, nWallX = -1, nWallY = -1;
+	for (int y = 0; y < pMap->nCY && nX < 0; y ++) {
+		for (int x = 0; x + 8 < pMap->nCX; x ++) {
+			int i;
+			for (i = 0; i < 8; i ++) {
+				if (!PushIsFree(pMap, x + i, y)) {
+					break;
+				}
+			}
+			if (i == 8) {
+				nX = x;
+				nY = y;
+				break;
+			}
+		}
+	}
+	for (int y = 0; y < pMap->nCY && nWallX < 0; y ++) {
+		for (int x = 1; x < pMap->nCX; x ++) {
+			if (PushIsFree(pMap, x - 1, y) && !CheckCharBlock(pMap->dwID, x, y) && (CheckCharBlockNPC(pMap->dwID, x, y) == (DWORD)-1)) {
+				BOOL bDoor = FALSE;
+				for (int e = 0; e < pMap->nEventCount; e ++) {
+					if ((pMap->pEvent[e].dwX == (DWORD)x) && (pMap->pEvent[e].dwY == (DWORD)y)) {
+						bDoor = TRUE;
+					}
+				}
+				if (!bDoor) {
+					nWallX = x;
+					nWallY = y;
+					break;
+				}
+			}
+		}
+	}
+	if (nX < 0) {
+		printf("no floor\n");
+		pPC->byAdminLV = byAdminBack;
+		return;
+	}
+
+	/* 壁へは入れない（位置が変わらない） */
+	if (nWallX >= 0) {
+		MoveGuardPlace(pPC, nWallX - 1, nWallY);
+		s_dwFakeNow += 10000;
+		FloorStep(pPC, nWallX, nWallY, 3);
+		printf("moveguard wall stay=%d\n", (int)(pPC->dwX == (DWORD)(nWallX - 1)));
+	} else {
+		printf("moveguard wall none\n");
+	}
+
+	/* ふつうの速さ（280ms ごと）で 7 歩歩ける */
+	MoveGuardPlace(pPC, nX, nY);
+	int nWalked = 0;
+	for (int i = 1; i <= 7; i ++) {
+		s_dwFakeNow += 280;
+		FloorStep(pPC, nX + i, nY, 3);
+		if (pPC->dwX == (DWORD)(nX + i)) {
+			nWalked ++;
+		}
+	}
+	printf("moveguard normal walked=%d\n", nWalked);
+
+	/* 間隔なしで続けて送る：ラグ分の数歩は通るが、すぐ戻される */
+	MoveGuardPlace(pPC, nX, nY);
+	s_dwFakeNow += 10000;
+	nWalked = 0;
+	for (int i = 1; i <= 8; i ++) {
+		FloorStep(pPC, nX + i, nY, 3);
+		if (pPC->dwX == (DWORD)(nX + i)) {
+			nWalked ++;
+		} else {
+			break;
+		}
+	}
+	printf("moveguard burst walked=%d x=%d\n", nWalked, (int)(pPC->dwX - (DWORD)nX));
+	/* 戻された後、少し待てばまた歩ける */
+	s_dwFakeNow += 300;
+	FloorStep(pPC, pPC->dwX + 1, nY, 3);
+	printf("moveguard after wait x=%d\n", (int)(pPC->dwX - (DWORD)nX));
+
+	/* 管理者は見ない */
+	MoveGuardPlace(pPC, nX, nY);
+	pPC->byAdminLV = ADMINLV_USER + 1;
+	for (int i = 1; i <= 8; i ++) {
+		FloorStep(pPC, nX + (i % 2), nY, 3);
+	}
+	FloorStep(pPC, nX + 1, nY, 3);
+	FloorStep(pPC, nX + 2, nY, 3);
+	FloorStep(pPC, nX + 3, nY, 3);
+	FloorStep(pPC, nX + 4, nY, 3);
+	FloorStep(pPC, nX + 5, nY, 3);
+	printf("moveguard admin x=%d\n", (int)(pPC->dwX - (DWORD)nX));
+	pPC->byAdminLV = ADMINLV_USER;
+
+	/* 一度に 3 マスは今までどおり戻される */
+	MoveGuardPlace(pPC, nX, nY);
+	s_dwFakeNow += 10000;
+	FloorStep(pPC, nX + 3, nY, 3);
+	printf("moveguard far x=%d\n", (int)(pPC->dwX - (DWORD)nX));
+
+	/* 倒れている間は歩けない */
+	MoveGuardPlace(pPC, nX, nY);
+	s_dwFakeNow += 10000;
+	pPC->wHP = 0;
+	FloorStep(pPC, nX + 1, nY, 3);
+	printf("moveguard dead x=%d\n", (int)(pPC->dwX - (DWORD)nX));
+	pPC->wHP = 20;
+	FloorStep(pPC, nX + 1, nY, 3);
+	printf("moveguard alive x=%d\n", (int)(pPC->dwX - (DWORD)nX));
+
+	/* サーバーが動かした後（マップ移動・押されるなど）は、続けて歩いても戻されない */
+	MoveGuardPlace(pPC, nX, nY);
+	s_dwFakeNow += 10000;
+	for (int i = 1; i <= 4; i ++) {
+		FloorStep(pPC, nX + i, nY, 3);
+	}
+	MoveGuardPlace(pPC, nX + 2, nY);
+	nWalked = 0;
+	for (int i = 1; i <= 3; i ++) {
+		FloorStep(pPC, nX + 2 + i, nY, 3);
+		if (pPC->dwX == (DWORD)(nX + 2 + i)) {
+			nWalked ++;
+		}
+	}
+	printf("moveguard servermove walked=%d\n", nWalked);
+
+	/* 扉：閉まっている間は入れず、開けると入れる（扉の絵がぶつかる絵の時。扉のあるマップへ移して試す） */
+	{
+		DWORD dwMapBack = pPC->dwMapID;
+		int nDoorX = -1, nDoorY = -1, nFromX = -1;
+		PEVENTINFO_DOOR pDoor = NULL;
+		PMAPINFO pMapDoor = NULL;
+		for (int m = 0; m < g_aMapInfo.GetSize() && nDoorX < 0; m ++) {
+			PMAPINFO pM = g_aMapInfo[m];
+			for (int e = 0; e < pM->nEventCount && nDoorX < 0; e ++) {
+				PEVENTINFO pEv = &pM->pEvent[e];
+				if ((pEv->byType != EVENTTYPE_DOOR) || (pEv->pData == NULL) || (pEv->dwX == 0) || CheckCharBlock(pM->dwID, pEv->dwX, pEv->dwY)) {
+					continue;
+				}
+				if (PushIsFree(pM, (int)pEv->dwX - 1, (int)pEv->dwY)) {
+					pMapDoor = pM;
+					nDoorX = (int)pEv->dwX;
+					nDoorY = (int)pEv->dwY;
+					nFromX = nDoorX - 1;
+					pDoor = (PEVENTINFO_DOOR)pEv->pData;
+				}
+			}
+		}
+		if (nDoorX < 0) {
+			printf("moveguard door none\n");
+		} else {
+			DWORD dwTimeOpenBack = pDoor->dwTimeOpen;
+			DeleteTblNoPC((int)pPC->dwTblID);
+			pPC->dwMapID = pMapDoor->dwID;
+			AddTblNoPC((int)pPC->dwTblID);
+			pDoor->dwTimeOpen = 0;
+			MoveGuardPlace(pPC, nFromX, nDoorY);
+			s_dwFakeNow += 10000;
+			FloorStep(pPC, nDoorX, nDoorY, 3);
+			printf("moveguard door closed stay=%d\n", (int)(pPC->dwX == (DWORD)nFromX));
+			pDoor->dwTimeOpen = s_dwFakeNow;
+			FloorStep(pPC, nDoorX, nDoorY, 3);
+			printf("moveguard door open in=%d\n", (int)(pPC->dwX == (DWORD)nDoorX));
+			pDoor->dwTimeOpen = dwTimeOpenBack;
+			DeleteTblNoPC((int)pPC->dwTblID);
+			pPC->dwMapID = dwMapBack;
+			AddTblNoPC((int)pPC->dwTblID);
+		}
+	}
+
+	DeleteTblNoPC((int)pPC->dwTblID);
+	pPC->dwX = pPC->dwXBack = dwXBack;
+	pPC->dwY = pPC->dwYBack = dwYBack;
+	AddTblNoPC((int)pPC->dwTblID);
+	pPC->byDirection = byDirBack;
+	pPC->byAdminLV = byAdminBack;
 	pPC->wHP = wHPBack;
 }
 
@@ -10025,6 +10924,87 @@ static void TestJobMagicKey(const std::vector<int> &aLogin)
 	memcpy(pA->awJobKeyItem, awJobKeyItemBak, sizeof(awJobKeyItemBak));
 }
 
+/* ------------------------------------------------------------------------- */
+/* AG3. マップごとのパーツの灯りの上書き（partsLights）						 */
+/*    データAPI の入出力・拒否、保存して読み直す（無いマップは書かない）		 */
+/* ------------------------------------------------------------------------- */
+static void TestMapPartsLight(void)
+{
+	printf("== AG3. MapPartsLight ==\n");
+	if (g_aMapInfo.GetSize() < 1 || g_wCountMapParts < 2) {
+		printf("partslight no map/parts\n");
+		return;
+	}
+	int nMaps = g_aMapInfo.GetSize();
+	PMAPINFO pMap = g_aMapInfo[0];
+	BYTE byCountBak = pMap->byPartsLightCount;
+	MAPPARTSLIGHT aBak[MAX_MAPPARTSLIGHT];
+	memcpy(aBak, pMap->aPartsLight, sizeof(aBak));
+	auto ok = [](const std::string &s) { return (int)(s.find("\"ok\":true") != std::string::npos); };
+	char sz[512];
+
+	/* 書く→取り出すと同じ形で出る */
+	snprintf(sz, sizeof(sz), "{\"partsLights\":[{\"wParts\":%d,\"byLight\":2},{\"wParts\":1,\"byLight\":0}]}", (int)g_wCountMapParts - 1);
+	std::string strRes = SwapApi(0, sz);
+	printf("partslight api ok=%d count=%d row0=%d,%d row1=%d,%d\n", ok(strRes), (int)pMap->byPartsLightCount,
+		(int)pMap->aPartsLight[0].wParts, (int)pMap->aPartsLight[0].byLight, (int)pMap->aPartsLight[1].wParts, (int)pMap->aPartsLight[1].byLight);
+	std::string strGet = SboWebDataGet("map", 0);
+	snprintf(sz, sizeof(sz), "\"partsLights\":[{\"wParts\":%d,\"byLight\":2},{\"wParts\":1,\"byLight\":0}]", (int)g_wCountMapParts - 1);
+	printf("partslight api get has=%d\n", (int)(strGet.find(sz) != std::string::npos));
+
+	/* 拒否：重複・範囲・上限・知らない項目・足りない項目 */
+	MAPPARTSLIGHT aSaved[MAX_MAPPARTSLIGHT];
+	memcpy(aSaved, pMap->aPartsLight, sizeof(aSaved));
+	printf("partslight api dup ok=%d\n", ok(SwapApi(0, "{\"partsLights\":[{\"wParts\":1,\"byLight\":1},{\"wParts\":1,\"byLight\":2}]}")));
+	printf("partslight api light range ok=%d\n", ok(SwapApi(0, "{\"partsLights\":[{\"wParts\":1,\"byLight\":8}]}")));
+	snprintf(sz, sizeof(sz), "{\"partsLights\":[{\"wParts\":%d,\"byLight\":1}]}", (int)g_wCountMapParts);
+	printf("partslight api parts range ok=%d\n", ok(SwapApi(0, sz)));
+	printf("partslight api unknown key ok=%d\n", ok(SwapApi(0, "{\"partsLights\":[{\"wParts\":1,\"byLight\":1,\"x\":1}]}")));
+	printf("partslight api missing key ok=%d\n", ok(SwapApi(0, "{\"partsLights\":[{\"wParts\":1}]}")));
+	{
+		std::string strMany = "{\"partsLights\":[";
+		for (int i = 0; i <= MAX_MAPPARTSLIGHT; i ++) {
+			char szOne[64];
+			snprintf(szOne, sizeof(szOne), "%s{\"wParts\":%d,\"byLight\":1}", i ? "," : "", i % (int)g_wCountMapParts);
+			strMany += szOne;
+		}
+		strMany += "]}";
+		printf("partslight api over limit ok=%d\n", ok(SwapApi(0, strMany.c_str())));
+	}
+	printf("partslight api after bad same=%d\n", (int)(pMap->byPartsLightCount == 2 && memcmp(aSaved, pMap->aPartsLight, sizeof(aSaved)) == 0));
+
+	/* 保存して読み直す（足された分のマップで確かめる） */
+	extern BOOL SaveMapInfo(void);
+	extern BOOL LoadMapInfo(void);
+	DWORD dwNewMapIDBak = g_dwNewMapID;
+	BOOL bSaved = SaveMapInfo();
+	BOOL bLoaded = LoadMapInfo();
+	int nAdded = g_aMapInfo.GetSize() - nMaps;
+	if (nAdded >= 1) {
+		PMAPINFO pL = g_aMapInfo[nMaps];
+		printf("partslight map save=%d load=%d count=%d row0=%d,%d row1=%d,%d\n", (int)bSaved, (int)bLoaded, (int)pL->byPartsLightCount,
+			(int)pL->aPartsLight[0].wParts, (int)pL->aPartsLight[0].byLight, (int)pL->aPartsLight[1].wParts, (int)pL->aPartsLight[1].byLight);
+	} else {
+		printf("partslight map save=%d load=%d added=%d\n", (int)bSaved, (int)bLoaded, nAdded);
+	}
+	/* 0 件なら書かない（古いデータと同じ形で、読み直しても 0 件） */
+	SwapApi(0, "{\"partsLights\":[]}");
+	for (int i = g_aMapInfo.GetSize() - 1; i >= nMaps; i --) {
+		g_aMapInfo.RemoveAt(i);
+	}
+	int nMaps2 = g_aMapInfo.GetSize();
+	SaveMapInfo();
+	LoadMapInfo();
+	printf("partslight map empty count=%d\n", (nMaps2 < g_aMapInfo.GetSize()) ? (int)g_aMapInfo[nMaps2]->byPartsLightCount : -1);
+	for (int i = g_aMapInfo.GetSize() - 1; i >= nMaps2; i --) {
+		g_aMapInfo.RemoveAt(i);
+	}
+	g_dwNewMapID = dwNewMapIDBak;
+
+	pMap->byPartsLightCount = byCountBak;
+	memcpy(pMap->aPartsLight, aBak, sizeof(aBak));
+}
+
 static void TestMapSwapSave(const std::vector<int> &aLogin)
 {
 	printf("== AG2. MapSwapSave ==\n");
@@ -10180,6 +11160,49 @@ int main(int argc, char **argv)
 	_exit(0);
 }
 
+
+/* ------------------------------------------------------------------------- */
+/* AK. 攻撃要求の威力欄は、前の攻撃からの経過時間から出せる上限で切り詰める	 */
+/*     (最初と十分待った時は満額・早撃ちは周ごとに 20%・ジャストは満タン後だけ) */
+/* ------------------------------------------------------------------------- */
+static BYTE TestAttackSend(PCHARINFO p, BYTE byData, DWORD dwAdvance)
+{
+	CMDPARA_DATA4 Para;
+	s_dwFakeNow += dwAdvance;
+	g_dwTime = s_dwFakeNow;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_REQ_ATTACK;
+	Para.pID = p->pID;
+	Para.dwTblID = p->dwTblID;
+	Para.byData = byData;
+	Para.dwData = (DWORD)-1;
+	p->byAtackRate = 0;
+	TestRecv(p, &Para, sizeof(Para));
+	return p->byAtackRate;
+}
+
+static void TestAttackRate(const std::vector<int> &aLogin)
+{
+	printf("== AK. Attack rate ==\n");
+	if (aLogin.size() < 1) {
+		return;
+	}
+	PCHARINFO p = g_aCharInfo[aLogin[0]];
+	BYTE byDEX = p->byDEX, byState = p->byCharState;
+	WORD wHP = p->wHP, wEqu = p->waEqu[0];
+	p->byDEX = 0;			/* ゲージは約 3 秒で満タン */
+	p->wHP = max(p->wHP, (WORD)10);
+	p->byCharState = CHARSTATE_MOVE;
+	p->waEqu[0] = 0xFFFF;
+	printf("attackrate first(255)=%d\n", (int)TestAttackSend(p, 255, 20000));
+	printf("attackrate fast(255)=%d\n", (int)TestAttackSend(p, 255, 100));
+	printf("attackrate mid(100)=%d\n", (int)TestAttackSend(p, 100, 1500));
+	printf("attackrate full(255)=%d\n", (int)TestAttackSend(p, 255, 3000));
+	printf("attackrate just=%d\n", (int)TestAttackSend(p, ATACKRATE_JUST, 3000));
+	printf("attackrate just early=%d\n", (int)TestAttackSend(p, ATACKRATE_JUST, 100));
+	printf("attackrate normal(40) waited=%d\n", (int)TestAttackSend(p, 40, 3000));
+	p->byDEX = byDEX; p->wHP = wHP; p->byCharState = byState; p->waEqu[0] = wEqu;
+}
 
 /* ------------------------------------------------------------------------- */
 /* AJ. 戦闘モードの覚え(s_mapBattleMode)が切断で消え、残っていても			 */
@@ -10477,6 +11500,642 @@ static void TestPutFill(void)
 
 
 /* ------------------------------------------------------------------------- */
+/* AH. 付与（接頭辞・接尾辞）												 */
+/*    (a) 派生アイテムの探す・作る（同じ組は同じ番号・未鑑定は別の番号）		 */
+/*    (b) 強さ・売値・名前（鑑定済みだけ付与が効く。未鑑定は元のまま）		 */
+/*    (c) 装備したまま鑑定して攻撃力が変わる・断る場合（お金・未鑑定でない・近くにいない） */
+/*    (d) 付与表・派生表の保存と読み直し										 */
+/*    (e) ドロップのくじ引き（率0・ランクの上限・前後が付く）				 */
+/* ------------------------------------------------------------------------- */
+static void TestAffix(const std::vector<int> &aLogin)
+{
+	printf("== AH. Affix ==\n");
+	if (aLogin.size() < 3) {
+		return;
+	}
+	PCHARINFO pA = g_aCharInfo[aLogin[2]];
+
+	/* 今ある表は退避して、空から始める */
+	std::vector<PITEMAFFIXINFO> aAffixBak;
+	std::vector<PITEMDERIVEINFO> aDeriveBak;
+	for (int i = 0; i < g_aAffixInfo.GetSize(); i ++) aAffixBak.push_back(g_aAffixInfo[i]);
+	for (int i = 0; i < g_aItemDerive.GetSize(); i ++) aDeriveBak.push_back(g_aItemDerive[i]);
+	g_aAffixInfo.RemoveAll();
+	g_aItemDerive.RemoveAll();
+
+	/* 武器（強さと値段がある物） */
+	WORD wWeapon = 0;
+	for (int i = 1; i < g_aItemInfo.GetSize() && i < ITEMID_DERIVE_BASE; i ++) {
+		if (g_aItemInfo[i]->szName[0] && (g_aItemInfo[i]->byType == ITEMTYPE_WEAPON) &&
+			(g_aItemInfo[i]->byData >= 10) && (g_aItemInfo[i]->dwGold >= 200) && !IsImportantItem((WORD)i)) {
+			wWeapon = (WORD)i;
+			break;
+		}
+	}
+	printf("affix weapon found=%d\n", wWeapon ? 1 : 0);
+	if (wWeapon == 0) {
+		return;
+	}
+	int nBase = g_aItemInfo[wWeapon]->byData;
+	DWORD dwGold = g_aItemInfo[wWeapon]->dwGold;
+
+	/* 付与表：前 1(鋭い +20% +2 値段150%)・後ろ 2(＋1 +1 値段120%)・前 3(強い ランク2 +50%) */
+	struct { BYTE byPos; const char *pszName; WORD wMask; char chRate; char chAdd; BYTE byRank; WORD wGoldRate; } aDef[] = {
+		{ AFFIXPOS_FRONT, "鋭い", AFFIXEQU_ALL, 20, 2, 1, 150 },
+		{ AFFIXPOS_BACK, "＋1", AFFIXEQU_ALL, 0, 1, 1, 120 },
+		{ AFFIXPOS_FRONT, "強い", AFFIXEQU_WEAPON, 50, 0, 2, 200 },
+	};
+	for (int i = 0; i < 3; i ++) {
+		PITEMAFFIXINFO p = new ITEMAFFIXINFO;
+		ZeroMemory(p, sizeof(*p));
+		p->wID = (WORD)(i + 1);
+		p->byPos = aDef[i].byPos;
+		strcpy(p->szName, aDef[i].pszName);
+		p->wEquMask = aDef[i].wMask;
+		p->chRate = aDef[i].chRate;
+		p->chAdd = aDef[i].chAdd;
+		p->byRank = aDef[i].byRank;
+		p->wWeight = 1;
+		p->wGoldRate = aDef[i].wGoldRate;
+		g_aAffixInfo.Add(p);
+	}
+
+	/* (a) 派生アイテム */
+	WORD wU = AffixDeriveFindOrCreate(wWeapon, 1, 2, 1);
+	WORD wU2 = AffixDeriveFindOrCreate(wWeapon, 1, 2, 1);
+	WORD wK = AffixDeriveFindOrCreate(wWeapon, 1, 2, 0);
+	WORD wNone = AffixDeriveFindOrCreate(wWeapon, 0, 0, 0);
+	printf("affix derive u=%u same=%d known=%u none=%d rows=%d base=%d valid=%d\n", wU, wU == wU2, wK, wNone == wWeapon,
+		g_aItemDerive.GetSize(), ItemBaseID(wU) == wWeapon, ItemIDValid(wU));
+	printf("affix id invalid=%d out=%d\n", ItemIDValid(ITEMID_DERIVE_BASE + 99), ItemIDValid(wWeapon));
+
+	/* (b) 強さ・売値・名前 */
+	int nExpect = nBase + nBase * 20 / 100 + 3;
+	if (nExpect > 255) nExpect = 255;
+	printf("affix value base=%d unknown=%d known=%d expect=%d\n", nBase, ItemValueOf(wU), ItemValueOf(wK), nExpect);
+	printf("affix gold base=%u unknown=%u known=%u expect=%u\n", dwGold, ItemGoldOf(wU), ItemGoldOf(wK), (unsigned)(dwGold * 150 / 100 * 120 / 100));
+	printf("affix name unknown=%s known=%s plain=%s\n", ItemNameOf(wU), ItemNameOf(wK), ItemNameOf(wWeapon));
+	/* ランク2の「強い」は武器だけ・防具には効かない */
+	WORD wArmor = 0;
+	for (int i = 1; i < g_aItemInfo.GetSize() && i < ITEMID_DERIVE_BASE; i ++) {
+		if (g_aItemInfo[i]->szName[0] && (g_aItemInfo[i]->byType == ITEMTYPE_ARMOR) && (g_aItemInfo[i]->byData >= 10)) { wArmor = (WORD)i; break; }
+	}
+	if (wArmor) {
+		WORD wAr = AffixDeriveFindOrCreate(wArmor, 3, 0, 0);
+		printf("affix mask armor=%d same=%d\n", ItemValueOf(wAr), ItemValueOf(wAr) == (int)g_aItemInfo[wArmor]->byData);
+	}
+
+	/* (c) 鑑定屋：作り手とNPCを仮に用意し、持ち物を差し替える */
+	WORD waItemBak[MAX_MYITEM], waEquBak[MAX_EQUTYPE];
+	DWORD dwGoldBak = pA->dwGold, dwMapBak = pA->dwMapID, dwXBak = pA->dwX, dwYBak = pA->dwY;
+	WORD wATBak = pA->wAT;
+	memcpy(waItemBak, pA->waItem, sizeof(waItemBak));
+	memcpy(waEquBak, pA->waEqu, sizeof(waEquBak));
+	PMAKERINFO pMaker = new MAKERINFO;
+	ZeroMemory(pMaker, sizeof(*pMaker));
+	pMaker->byState = RECIPESTATE_ON;
+	pMaker->byKind = MAKERKIND_APPRAISE;
+	int nMaker = g_aMakerInfo.GetSize();
+	g_aMakerInfo.Add(pMaker);
+	PCHARINFO pNpc = NULL;
+	for (int i = 0; i < g_aCharInfo.GetSize() && !pNpc; i ++) {
+		if (g_aCharInfo[i]->byNpcType == NPCTYPE_MOVERAND) pNpc = g_aCharInfo[i];
+	}
+	char *pszSpeechBak = pNpc->pszNpcSpeech;
+	DWORD dwNpcMapBak = pNpc->dwMapID, dwNpcXBak = pNpc->dwX, dwNpcYBak = pNpc->dwY;
+	char szSpeech[16];
+	snprintf(szSpeech, sizeof(szSpeech), "@c%02d", nMaker);
+	pNpc->pszNpcSpeech = szSpeech;
+	pNpc->dwMapID = pA->dwMapID; pNpc->dwX = pA->dwX; pNpc->dwY = pA->dwY;
+
+	ZeroMemory(pA->waItem, sizeof(pA->waItem));
+	for (int i = 0; i < MAX_EQUTYPE; i ++) pA->waEqu[i] = 0xFFFF;
+	pA->waItem[0] = wU;
+	pA->waItem[1] = wWeapon;
+	pA->waEqu[0] = 0;
+	pA->byCharState = pA->byCharState;
+	RenewATDF(pA->dwTblID);
+	WORD wATUnknown = pA->wAT;
+	pA->dwGold = 5;
+	CMDPARA_APPRAISE Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_APPRAISE; Para.byMaker = (BYTE)nMaker; Para.byNo = 0; Para.dwTblID = pA->dwTblID;
+	TestRecv(pA, &Para, sizeof(Para));
+	printf("appraise lack gold item=%u gold=%u\n", pA->waItem[0], pA->dwGold);
+	pA->dwGold = 1000;
+	TestRecv(pA, &Para, sizeof(Para));
+	DWORD dwCost = AffixAppraiseCost(wWeapon);
+	printf("appraise ok item=%u(known=%d) paid=%u equ=%u at=%u->%u\n", pA->waItem[0], pA->waItem[0] == wK, 1000 - pA->dwGold, pA->waEqu[0], wATUnknown, pA->wAT);
+	printf("appraise cost=%u\n", dwCost);
+	pA->dwGold = 1000;
+	TestRecv(pA, &Para, sizeof(Para));
+	printf("appraise again item=%u gold=%u\n", pA->waItem[0], pA->dwGold);
+	Para.byNo = 1;
+	TestRecv(pA, &Para, sizeof(Para));
+	printf("appraise plain item=%u gold=%u\n", pA->waItem[1], pA->dwGold);
+	pA->waItem[2] = wU;
+	Para.byNo = 2; Para.byMaker = (BYTE)(nMaker + 1);
+	TestRecv(pA, &Para, sizeof(Para));
+	printf("appraise no maker item=%u\n", pA->waItem[2]);
+	Para.byMaker = (BYTE)nMaker;
+	pNpc->dwX = pA->dwX + 100;
+	TestRecv(pA, &Para, sizeof(Para));
+	printf("appraise far item=%u\n", pA->waItem[2]);
+	pNpc->dwX = pA->dwX;
+	pMaker->byKind = 0;
+	TestRecv(pA, &Para, sizeof(Para));
+	printf("appraise wrong kind item=%u\n", pA->waItem[2]);
+	pMaker->byKind = MAKERKIND_APPRAISE;
+
+	/* 後始末（作り手・NPC・持ち物） */
+	g_aMakerInfo.RemoveAt(nMaker);
+	delete pMaker;
+	pNpc->pszNpcSpeech = pszSpeechBak;
+	pNpc->dwMapID = dwNpcMapBak; pNpc->dwX = dwNpcXBak; pNpc->dwY = dwNpcYBak;
+	memcpy(pA->waItem, waItemBak, sizeof(waItemBak));
+	memcpy(pA->waEqu, waEquBak, sizeof(waEquBak));
+	pA->dwGold = dwGoldBak; pA->dwMapID = dwMapBak; pA->dwX = dwXBak; pA->dwY = dwYBak;
+	RenewATDF(pA->dwTblID);
+	pA->wAT = wATBak;
+
+	/* (d) 保存と読み直し */
+	int nAffixN = g_aAffixInfo.GetSize(), nDeriveN = g_aItemDerive.GetSize();
+	SaveAffixInfo();
+	SaveItemDerive();
+	for (int i = 0; i < g_aAffixInfo.GetSize(); i ++) delete g_aAffixInfo[i];
+	for (int i = 0; i < g_aItemDerive.GetSize(); i ++) delete g_aItemDerive[i];
+	g_aAffixInfo.RemoveAll();
+	g_aItemDerive.RemoveAll();
+	LoadAffixInfo();
+	LoadItemDerive();
+	printf("affix load affix=%d/%d derive=%d/%d\n", g_aAffixInfo.GetSize(), nAffixN, g_aItemDerive.GetSize(), nDeriveN);
+	if (g_aAffixInfo.GetSize() == nAffixN && nAffixN >= 3) {
+		PITEMAFFIXINFO p = g_aAffixInfo[0];
+		printf("affix load row0 id=%u pos=%u name=%s mask=%u rate=%d add=%d rank=%u gold=%u\n", p->wID, p->byPos, p->szName, p->wEquMask, p->chRate, p->chAdd, p->byRank, p->wGoldRate);
+	}
+	if (g_aItemDerive.GetSize() >= 2) {
+		printf("affix load derive0 base=%d pre=%u suf=%u unknown=%u / derive1 unknown=%u\n", g_aItemDerive[0]->wBase == wWeapon, g_aItemDerive[0]->wPre, g_aItemDerive[0]->wSuf, g_aItemDerive[0]->byUnknown, g_aItemDerive[1]->byUnknown);
+	}
+	printf("affix load value=%d\n", ItemValueOf(wK));
+
+	/* (e) ドロップのくじ引き */
+	sgenrand(777);
+	int nPlain0 = 0, nPre = 0, nSuf = 0, nBoth = 0, nHigh = 0, nUnk = 0;
+	for (int i = 0; i < 300; i ++) {
+		WORD wRes = AffixRollDrop(wWeapon, 100, 1);
+		PITEMDERIVEINFO pD = ItemDeriveGet(wRes);
+		if (pD == NULL) { nPlain0 ++; continue; }
+		nUnk += pD->byUnknown ? 1 : 0;
+		if (pD->wPre && pD->wSuf) nBoth ++; else if (pD->wPre) nPre ++; else nSuf ++;
+		if (pD->wPre == 3) nHigh ++;
+	}
+	printf("affix roll rank1 plain=%d pre=%d suf=%d both=%d rank2=%d unknown=%d\n", nPlain0, nPre, nSuf, nBoth, nHigh, nUnk);
+	nHigh = 0;
+	for (int i = 0; i < 300; i ++) {
+		PITEMDERIVEINFO pD = ItemDeriveGet(AffixRollDrop(wWeapon, 100, 2));
+		if (pD && pD->wPre == 3) nHigh ++;
+	}
+	printf("affix roll rank2 has=%d\n", nHigh > 0);
+	printf("affix roll rate0=%d armorOnly=%d\n", AffixRollDrop(wWeapon, 0, 3) == wWeapon, 1);
+	int nHit = 0;
+	for (int i = 0; i < 1000; i ++) {
+		if (AffixRollDrop(wWeapon, 10, 1) != wWeapon) nHit ++;
+	}
+	printf("affix roll rate10 hit=%d/1000\n", nHit);
+	/* 付与表が空なら何も起きない */
+	for (int i = 0; i < g_aAffixInfo.GetSize(); i ++) delete g_aAffixInfo[i];
+	g_aAffixInfo.RemoveAll();
+	printf("affix roll empty=%d\n", AffixRollDrop(wWeapon, 100, 3) == wWeapon);
+
+	/* 元の表へ戻す */
+	for (int i = 0; i < g_aItemDerive.GetSize(); i ++) delete g_aItemDerive[i];
+	g_aItemDerive.RemoveAll();
+	for (size_t i = 0; i < aAffixBak.size(); i ++) g_aAffixInfo.Add(aAffixBak[i]);
+	for (size_t i = 0; i < aDeriveBak.size(); i ++) g_aItemDerive.Add(aDeriveBak[i]);
+	SaveAffixInfo();
+	SaveItemDerive();
+}
+
+/* ------------------------------------------------------------------------- */
+/* AH2. 付与の段階2：鍛冶屋で鍛える・付け替える								 */
+/*    (a) 鍛える＋1→＋2→＋3・これ以上は鍛えられない（wNext 0）				 */
+/*    (b) 普通の装備は byAllowPlain=0 なら断る・1 なら＋1					 */
+/*    (c) 付け替える（前の付与を置き換え・同じ付与は断る）					 */
+/*    (d) 未鑑定・種別違いは断る												 */
+/*    (e) 装備中のまま強さが変わる・材料と手数料の消費・対象は材料に数えない	 */
+/*    (f) 材料不足・手数料不足は何も減らない									 */
+/*    (g) レシピ・付与表（wNext）の保存と読み直し								 */
+/* ------------------------------------------------------------------------- */
+static void TestAffixForge(const std::vector<int> &aLogin)
+{
+	printf("== AH2. Forge ==\n");
+	if (aLogin.size() < 3) {
+		return;
+	}
+	PCHARINFO pA = g_aCharInfo[aLogin[2]];
+
+	std::vector<PITEMAFFIXINFO> aAffixBak;
+	std::vector<PITEMDERIVEINFO> aDeriveBak;
+	for (int i = 0; i < g_aAffixInfo.GetSize(); i ++) aAffixBak.push_back(g_aAffixInfo[i]);
+	for (int i = 0; i < g_aItemDerive.GetSize(); i ++) aDeriveBak.push_back(g_aItemDerive[i]);
+	g_aAffixInfo.RemoveAll();
+	g_aItemDerive.RemoveAll();
+
+	WORD wWeapon = 0, wArmor = 0, wMat1 = 0, wMat2 = 0;
+	for (int i = 1; i < g_aItemInfo.GetSize() && i < ITEMID_DERIVE_BASE; i ++) {
+		PITEMINFO p = g_aItemInfo[i];
+		if (!p->szName[0] || IsImportantItem((WORD)i) || (p->byFlg & ITEMFLG_DROP)) continue;
+		if (!wWeapon && (p->byType == ITEMTYPE_WEAPON) && (p->byData >= 10) && (p->dwGold >= 200)) wWeapon = (WORD)i;
+		else if (!wArmor && (p->byType == ITEMTYPE_ARMOR) && (p->byData >= 10)) wArmor = (WORD)i;
+		else if (ItemAffixEquBit(p->byType) == 0) {
+			if (!wMat1) wMat1 = (WORD)i; else if (!wMat2 && (WORD)i != wMat1) wMat2 = (WORD)i;
+		}
+	}
+	printf("forge found weapon=%d armor=%d mat=%d\n", wWeapon ? 1 : 0, wArmor ? 1 : 0, (wMat1 && wMat2) ? 1 : 0);
+	if (!wWeapon || !wMat1 || !wMat2) {
+		return;
+	}
+
+	/* 付与表：1 鋭い(前) 2 ＋1(後ろ→3) 3 ＋2(後ろ→4) 4 ＋3(後ろ。次なし) 5 堅い(前・鎧だけ) */
+	struct { BYTE byPos; const char *pszName; WORD wMask; char chAdd; WORD wNext; } aDef[] = {
+		{ AFFIXPOS_FRONT, "鋭い", AFFIXEQU_ALL, 2, 0 },
+		{ AFFIXPOS_BACK, "＋1", AFFIXEQU_ALL, 1, 3 },
+		{ AFFIXPOS_BACK, "＋2", AFFIXEQU_ALL, 2, 4 },
+		{ AFFIXPOS_BACK, "＋3", AFFIXEQU_ALL, 3, 0 },
+		{ AFFIXPOS_FRONT, "堅い", AFFIXEQU_ARMOR, 0, 0 },
+	};
+	for (int i = 0; i < 5; i ++) {
+		PITEMAFFIXINFO p = new ITEMAFFIXINFO;
+		ZeroMemory(p, sizeof(*p));
+		p->wID = (WORD)(i + 1);
+		p->byPos = aDef[i].byPos;
+		strcpy(p->szName, aDef[i].pszName);
+		p->wEquMask = aDef[i].wMask;
+		p->chAdd = aDef[i].chAdd;
+		p->byRank = 1;
+		p->wWeight = 1;
+		p->wGoldRate = 100;
+		p->wNext = aDef[i].wNext;
+		g_aAffixInfo.Add(p);
+	}
+
+	/* 作り手・NPC・レシピを仮に用意する */
+	WORD waItemBak[MAX_MYITEM], waEquBak[MAX_EQUTYPE];
+	DWORD dwGoldBak = pA->dwGold, dwMapBak = pA->dwMapID, dwXBak = pA->dwX, dwYBak = pA->dwY;
+	WORD wATBak = pA->wAT;
+	memcpy(waItemBak, pA->waItem, sizeof(waItemBak));
+	memcpy(waEquBak, pA->waEqu, sizeof(waEquBak));
+	PMAKERINFO pMaker = new MAKERINFO;
+	ZeroMemory(pMaker, sizeof(*pMaker));
+	pMaker->byState = RECIPESTATE_ON;
+	int nMaker = g_aMakerInfo.GetSize();
+	g_aMakerInfo.Add(pMaker);
+	PCHARINFO pNpc = NULL;
+	for (int i = 0; i < g_aCharInfo.GetSize() && !pNpc; i ++) {
+		if (g_aCharInfo[i]->byNpcType == NPCTYPE_MOVERAND) pNpc = g_aCharInfo[i];
+	}
+	char *pszSpeechBak = pNpc->pszNpcSpeech;
+	DWORD dwNpcMapBak = pNpc->dwMapID, dwNpcXBak = pNpc->dwX, dwNpcYBak = pNpc->dwY;
+	char szSpeech[16];
+	snprintf(szSpeech, sizeof(szSpeech), "@c%02d", nMaker);
+	pNpc->pszNpcSpeech = szSpeech;
+	pNpc->dwMapID = pA->dwMapID; pNpc->dwX = pA->dwX; pNpc->dwY = pA->dwY;
+
+	std::vector<PRECIPEINFO> aRecipe;
+	int nRecipeBase = g_aRecipeInfo.GetSize();
+	struct { BYTE byKind; WORD wAffix; BYTE byAllowPlain; WORD wEquMask; WORD wMat; BYTE byMatCount; DWORD dwGold; } aRDef[] = {
+		{ RECIPEKIND_FORGE, 2, 1, 0, wMat1, 1, 50 },			/* 0: 鍛える（＋1）。普通の装備も可 */
+		{ RECIPEKIND_FORGE, 2, 0, 0, wMat1, 1, 0 },			/* 1: 鍛える（＋1）。派生装備だけ */
+		{ RECIPEKIND_SWAP, 1, 0, 0, wMat2, 1, 0 },				/* 2: 付け替える：鋭い */
+		{ RECIPEKIND_SWAP, 5, 1, 0, wMat2, 1, 0 },				/* 3: 付け替える：堅い（鎧だけ） */
+		{ RECIPEKIND_FORGE, 2, 1, 0, wWeapon, 1, 0 },			/* 4: 鍛える。材料が対象と同じ品 */
+		{ RECIPEKIND_FORGE, 2, 1, AFFIXEQU_ARMOR, wMat1, 1, 0 },/* 5: 鍛える。レシピ側で鎧だけ */
+	};
+	for (int i = 0; i < 6; i ++) {
+		PRECIPEINFO p = new RECIPEINFO;
+		ZeroMemory(p, sizeof(*p));
+		p->byState = RECIPESTATE_ON;
+		p->byMaker = (BYTE)nMaker;
+		p->byCount = 1;
+		p->byKind = aRDef[i].byKind;
+		p->wAffix = aRDef[i].wAffix;
+		p->byAllowPlain = aRDef[i].byAllowPlain;
+		p->wEquMask = aRDef[i].wEquMask;
+		p->awMatItem[0] = aRDef[i].wMat;
+		p->abyMatCount[0] = aRDef[i].byMatCount;
+		p->dwGold = aRDef[i].dwGold;
+		g_aRecipeInfo.Add(p);
+		aRecipe.push_back(p);
+	}
+
+	auto Reset = [&]() {
+		ZeroMemory(pA->waItem, sizeof(pA->waItem));
+		for (int i = 0; i < MAX_EQUTYPE; i ++) pA->waEqu[i] = 0xFFFF;
+		pA->dwGold = 1000;
+	};
+	auto Forge = [&](int nRecipe, int nNo) {
+		CMDPARA_RECIPEMAKE Para;
+		ZeroMemory(&Para, sizeof(Para));
+		Para.byCmd = CMD_RECIPEMAKE; Para.byMaker = (BYTE)nMaker; Para.wRecipeID = (WORD)(nRecipeBase + nRecipe);
+		Para.byNo = (BYTE)nNo; Para.dwTblID = pA->dwTblID;
+		TestRecv(pA, &Para, sizeof(Para));
+	};
+	auto Show = [&](const char *pszTag) {
+		printf("forge %s items=", pszTag);
+		for (int i = 0; i < 4; i ++) printf("%s%s", i ? "," : "", pA->waItem[i] ? ItemNameOf(pA->waItem[i]) : "-");
+		printf(" gold=%u equ=%u\n", pA->dwGold, (unsigned)pA->waEqu[0]);
+	};
+	auto Code = [&](int nRecipe, WORD wItem) {
+		WORD wB, wP, wS;
+		return ItemForgeCalc(aRecipe[nRecipe], wItem, &wB, &wP, &wS);
+	};
+
+	/* (b) 普通の装備：byAllowPlain=0 のレシピは断る（一覧にも出ない）・1 なら＋1 */
+	Reset();
+	pA->waItem[0] = wWeapon; pA->waItem[1] = wMat1;
+	printf("forge plain calc allow0=%d allow1=%d\n", Code(1, wWeapon), Code(0, wWeapon));
+	Forge(1, 0);
+	Show("plain allow0");
+	Forge(0, 0);
+	Show("plain allow1");
+
+	/* (a) ＋1→＋2→＋3→これ以上は鍛えられない。材料は手前の枠・対象は装備中で、材料が消えて詰まっても装備したまま強さが変わる */
+	Reset();
+	pA->waItem[0] = wMat1; pA->waItem[1] = wWeapon; pA->waEqu[0] = 1;
+	RenewATDF(pA->dwTblID);
+	WORD wAT0 = pA->wAT;
+	Forge(0, 1);
+	Show("equipped +1");
+	WORD wAT1 = pA->wAT;
+	pA->waItem[1] = wMat1;
+	Forge(0, 0);
+	Show("+2");
+	pA->waItem[1] = wMat1;
+	Forge(0, 0);
+	Show("+3");
+	printf("forge at %u->%u->%u expect=%d\n", wAT0, wAT1, pA->wAT, (int)wAT0 + 3);
+	pA->waItem[1] = wMat1;
+	printf("forge maxed calc=%d\n", Code(0, pA->waItem[0]));
+	Forge(0, 0);
+	Show("maxed");
+
+	/* (c) 付け替える：後ろの付与を残したまま前を置き換え・同じ付与は断る */
+	Reset();
+	pA->waItem[0] = AffixDeriveFindOrCreate(wWeapon, 0, 2, 0);
+	pA->waItem[1] = wMat2; pA->waItem[2] = wMat2;
+	Forge(2, 0);
+	Show("swap front");
+	printf("forge swap same calc=%d\n", Code(2, pA->waItem[0]));
+	Forge(2, 0);
+	Show("swap same");
+
+	/* (d) 未鑑定・種別違い・近くに作り手がいない */
+	Reset();
+	WORD wUnk = AffixDeriveFindOrCreate(wWeapon, 0, 2, 1);
+	pA->waItem[0] = wUnk; pA->waItem[1] = wMat2;
+	printf("forge unknown calc=%d\n", Code(2, wUnk));
+	Forge(2, 0);
+	printf("forge unknown item=%u(unknown=%d) mat=%u gold=%u\n", pA->waItem[0], pA->waItem[0] == wUnk, pA->waItem[1], pA->dwGold);
+	pA->waItem[0] = AffixDeriveFindOrCreate(wWeapon, 0, 2, 0);
+	printf("forge armor-only calc affix=%d recipeMask=%d\n", Code(3, pA->waItem[0]), Code(5, pA->waItem[0]));
+	Forge(3, 0);
+	Show("armor-only");
+	pA->waItem[2] = wMat2;
+	Forge(2, 5);
+	printf("forge empty slot item=%u\n", pA->waItem[5]);
+	pNpc->dwX = pA->dwX + 100;
+	pA->waItem[3] = wMat2;
+	Forge(2, 0);
+	Show("far");
+	pNpc->dwX = pA->dwX;
+	if (wArmor) {
+		pA->waItem[0] = wArmor;
+		printf("forge armor calc forge=%d swapPlainOK=%d recipeMask=%d\n", Code(0, wArmor), Code(3, wArmor), Code(5, wArmor));
+	}
+
+	/* (f) 材料不足・手数料不足は何も減らない */
+	Reset();
+	pA->waItem[0] = wWeapon;
+	Forge(0, 0);
+	Show("lack mat");
+	pA->waItem[1] = wMat1;
+	pA->dwGold = 49;
+	Forge(0, 0);
+	Show("lack gold");
+	/* (e) 材料が対象と同じ品でも、対象そのものは材料に数えない */
+	Reset();
+	pA->waItem[0] = wWeapon;
+	Forge(4, 0);
+	Show("self material");
+	pA->waItem[1] = wWeapon;
+	Forge(4, 0);
+	Show("self material 2");
+	/* 手数料と材料の消費 */
+	Reset();
+	pA->waItem[0] = wWeapon; pA->waItem[1] = wMat1; pA->waItem[2] = wMat1;
+	Forge(0, 0);
+	Show("consume");
+
+	/* (g) レシピ・付与表の保存と読み直し */
+	pA->wAT = wATBak;
+	g_aMakerInfo.RemoveAt(nMaker);
+	delete pMaker;
+	pNpc->pszNpcSpeech = pszSpeechBak;
+	pNpc->dwMapID = dwNpcMapBak; pNpc->dwX = dwNpcXBak; pNpc->dwY = dwNpcYBak;
+	memcpy(pA->waItem, waItemBak, sizeof(waItemBak));
+	memcpy(pA->waEqu, waEquBak, sizeof(waEquBak));
+	pA->dwGold = dwGoldBak; pA->dwMapID = dwMapBak; pA->dwX = dwXBak; pA->dwY = dwYBak;
+	RenewATDF(pA->dwTblID);
+	pA->wAT = wATBak;
+
+	std::vector<PRECIPEINFO> aRecipeBak;
+	for (int i = 0; i < nRecipeBase; i ++) aRecipeBak.push_back(g_aRecipeInfo[i]);
+	SaveAffixInfo();
+	SaveRecipeInfo();
+	g_aAffixInfo.RemoveAll();
+	g_aRecipeInfo.RemoveAll();
+	LoadAffixInfo();
+	LoadRecipeInfo();
+	printf("forge load affix=%d recipes=%d\n", g_aAffixInfo.GetSize(), g_aRecipeInfo.GetSize());
+	if (g_aAffixInfo.GetSize() == 5) {
+		printf("forge load next=%u,%u,%u,%u\n", g_aAffixInfo[1]->wNext, g_aAffixInfo[2]->wNext, g_aAffixInfo[3]->wNext, g_aAffixInfo[0]->wNext);
+	}
+	if (g_aRecipeInfo.GetSize() == nRecipeBase + 6) {
+		for (int i = 0; i < 6; i ++) {
+			PRECIPEINFO p = g_aRecipeInfo[nRecipeBase + i];
+			printf("forge load recipe%d kind=%u affix=%u plain=%u mask=%u mat=%d gold=%u\n", i, p->byKind, p->wAffix, p->byAllowPlain, p->wEquMask, p->awMatItem[0] == aRDef[i].wMat, p->dwGold);
+		}
+	}
+
+	/* 元の表へ戻す */
+	for (int i = nRecipeBase; i < g_aRecipeInfo.GetSize(); i ++) delete g_aRecipeInfo[i];
+	g_aRecipeInfo.RemoveAll();
+	for (size_t i = 0; i < aRecipeBak.size(); i ++) g_aRecipeInfo.Add(aRecipeBak[i]);
+	SaveRecipeInfo();
+	for (int i = 0; i < g_aAffixInfo.GetSize(); i ++) delete g_aAffixInfo[i];
+	g_aAffixInfo.RemoveAll();
+	for (int i = 0; i < g_aItemDerive.GetSize(); i ++) delete g_aItemDerive[i];
+	g_aItemDerive.RemoveAll();
+	for (size_t i = 0; i < aAffixBak.size(); i ++) g_aAffixInfo.Add(aAffixBak[i]);
+	for (size_t i = 0; i < aDeriveBak.size(); i ++) g_aItemDerive.Add(aDeriveBak[i]);
+	SaveAffixInfo();
+	SaveItemDerive();
+}
+
+/* ------------------------------------------------------------------------- */
+/* AN. 発言の長さ・連投、コマンドの連打、取り引きの割り込み					 */
+/*     公式のクライアントでは起きない送り方だけを止め、ふつうの発言は通すか	 */
+/* ------------------------------------------------------------------------- */
+static void SpamSpeech(PCHARINFO p, const char *psz, BYTE byType)
+{
+	std::vector<BYTE> a(sizeof(CMDPARA_SPEECH) + strlen(psz) + 1);
+	PCMDPARA_SPEECH pPara = (PCMDPARA_SPEECH)&a[0];
+	ZeroMemory(pPara, sizeof(CMDPARA_SPEECH));
+	pPara->byCmd = CMD_SPEECH;
+	pPara->pID = p->pID;
+	pPara->dwTblID = p->dwTblID;
+	pPara->wSize = (WORD)(strlen(psz) + 1);
+	pPara->byType = byType;
+	memcpy(&a[sizeof(CMDPARA_SPEECH)], psz, strlen(psz) + 1);
+	TestRecv(p, &a[0], (DWORD)a.size());
+}
+
+static void TestSpamLimit(const std::vector<int> &aLogin)
+{
+	printf("== AN. SpamLimit ==\n");
+	if (aLogin.size() < 3) {
+		return;
+	}
+	PCHARINFO pA = g_aCharInfo[aLogin[0]], pB = g_aCharInfo[aLogin[1]], pC = g_aCharInfo[aLogin[2]];
+	BYTE byAdminBack = pA->byAdminLV;
+	DWORD dwNowBack = s_dwFakeNow;
+	pA->byAdminLV = ADMINLV_USER;
+
+	/* 長さ：ふつうの発言は 256 バイトまで・URL を含む発言は長いまま・自己紹介は 600 バイトまで */
+	{
+		std::string sLong(1000, 'a'), sUrl = "https://example.com/" + std::string(1000, 'b'), sEdit(2000, 'c');
+		SpamSpeech(pA, "hello", SPEECHCMD_AROUND);
+		printf("speech normal len=%d\n", (int)strlen(pA->pszSpeech));
+		SpamSpeech(pA, sLong.c_str(), SPEECHCMD_AROUND);
+		printf("speech long len=%d\n", (int)strlen(pA->pszSpeech));
+		SpamSpeech(pA, sUrl.c_str(), SPEECHCMD_AROUND);
+		printf("speech url len=%d\n", (int)strlen(pA->pszSpeech));
+		SpamSpeech(pA, sEdit.c_str(), SPEECHCMD_SPEECHEDIT);
+		printf("speech edit len=%d\n", (int)strlen(pA->pszNpcSpeech));
+	}
+
+	/* 連投：5 秒に 8 回まで。1.2 秒おきの自動分割は通る */
+	s_bTestRateReset = FALSE;
+	{
+		int nOK = 0;
+		ZeroMemory(pA->adwRateLast, sizeof(pA->adwRateLast));
+		pA->bySpeechWinCount = 0;
+		for (int i = 0; i < 12; i ++) {
+			pA->byFlg &= ~CHARINFOFLG_SPEECH;
+			SpamSpeech(pA, "x", SPEECHCMD_AROUND);
+			if (pA->byFlg & CHARINFOFLG_SPEECH) nOK ++;
+		}
+		printf("speech burst accepted=%d of 12\n", nOK);
+		s_dwFakeNow += 5001;
+		pA->byFlg &= ~CHARINFOFLG_SPEECH;
+		SpamSpeech(pA, "x", SPEECHCMD_AROUND);
+		printf("speech after window accepted=%d\n", (pA->byFlg & CHARINFOFLG_SPEECH) ? 1 : 0);
+		nOK = 0;
+		for (int i = 0; i < 20; i ++) {
+			s_dwFakeNow += 1200;
+			pA->byFlg &= ~CHARINFOFLG_SPEECH;
+			SpamSpeech(pA, "x", SPEECHCMD_AROUND);
+			if (pA->byFlg & CHARINFOFLG_SPEECH) nOK ++;
+		}
+		printf("speech every 1.2s accepted=%d of 20\n", nOK);
+	}
+
+	/* 最小間隔：吹き出し 0.5 秒・管理人呼び出し 30 秒 */
+	{
+		int nOK = 0;
+		ZeroMemory(pA->adwRateLast, sizeof(pA->adwRateLast));
+		for (int i = 0; i < 4; i ++) {
+			CMDPARA_DATA1 Para;
+			ZeroMemory(&Para, sizeof(Para));
+			Para.byCmd = CMD_COMEFC;
+			Para.pID = pA->pID;
+			Para.dwTblID = pA->dwTblID;
+			Para.byData = 1;
+			pA->byFlg &= ~CHARINFOFLG_COMEFC;
+			TestRecv(pA, &Para, sizeof(Para));
+			if (pA->byFlg & CHARINFOFLG_COMEFC) nOK ++;
+			s_dwFakeNow += (i == 1) ? 600 : 100;
+		}
+		printf("comefc accepted=%d of 4\n", nOK);
+
+		DWORD adwLast[3];
+		for (int i = 0; i < 3; i ++) {
+			CMDPARA_DATA1 Para;
+			ZeroMemory(&Para, sizeof(Para));
+			Para.byCmd = CMD_GMCALL;
+			Para.pID = pA->pID;
+			Para.dwTblID = pA->dwTblID;
+			TestRecv(pA, &Para, sizeof(Para));
+			adwLast[i] = pA->adwRateLast[RATE_GMCALL];
+			s_dwFakeNow += (i == 0) ? 1000 : 30000;
+		}
+		printf("gmcall first_kept=%d second_renewed=%d\n", adwLast[1] == adwLast[0], adwLast[2] != adwLast[1]);
+	}
+	s_bTestRateReset = TRUE;
+
+	/* 取り引き：相手が別の人と取り引き中なら割り込めない。自分が別の人と取り引き中なら元の相手に終了を知らせる */
+	{
+		DWORD adwBack[3][3];
+		PCHARINFO apTmp[3] = { pA, pB, pC };
+		for (int i = 0; i < 3; i ++) {
+			adwBack[i][0] = apTmp[i]->dwMapID; adwBack[i][1] = apTmp[i]->dwX; adwBack[i][2] = apTmp[i]->dwY;
+		}
+		for (int i = 1; i < 3; i ++) {
+			DeleteTblNoPC((int)apTmp[i]->dwTblID);
+			apTmp[i]->dwMapID = pA->dwMapID;
+			apTmp[i]->dwX = apTmp[i]->dwXBack = pA->dwX;
+			apTmp[i]->dwY = apTmp[i]->dwYBack = pA->dwY;
+			AddTblNoPC((int)apTmp[i]->dwTblID);
+		}
+		RecvCmdTradeClear(pA->dwTblID);
+		RecvCmdTradeClear(pB->dwTblID);
+		RecvCmdTradeClear(pC->dwTblID);
+		/* 申し込める相手はログイン中のプレイヤーだけ（このテストのキャラは名前だけ空なので仮に付ける） */
+		char cAccBack = pB->szAcc[0];
+		pB->szAcc[0] = 'b';
+
+		CMDPARA_DATA3 Para;
+		ZeroMemory(&Para, sizeof(Para));
+		Para.byCmd = CMD_TRADE;
+		Para.pID = pA->pID;
+		Para.dwTblID = pA->dwTblID;
+		Para.dwData = pB->dwTblID;
+		TestRecv(pA, &Para, sizeof(Para));
+		printf("trade a->b trading a=%d b=%d\n", RecvCmdIsTrading(pA->dwTblID) ? 1 : 0, RecvCmdIsTrading(pB->dwTblID) ? 1 : 0);
+
+		Para.pID = pC->pID;
+		Para.dwTblID = pC->dwTblID;
+		Para.dwData = pB->dwTblID;
+		int nOut0 = MockCmdCount(1000 + 2, CMD_TRADE);
+		TestRecv(pC, &Para, sizeof(Para));
+		printf("trade c->b (b busy) c_trading=%d a_still=%d c_got_out=%d\n", RecvCmdIsTrading(pC->dwTblID) ? 1 : 0,
+				RecvCmdIsTrading(pA->dwTblID) ? 1 : 0, MockCmdCount(1000 + 2, CMD_TRADE) - nOut0);
+
+		pB->szAcc[0] = cAccBack;
+		for (int i = 0; i < 3; i ++) {
+			DeleteTblNoPC((int)apTmp[i]->dwTblID);
+			apTmp[i]->dwMapID = adwBack[i][0];
+			apTmp[i]->dwX = apTmp[i]->dwXBack = adwBack[i][1];
+			apTmp[i]->dwY = apTmp[i]->dwYBack = adwBack[i][2];
+			AddTblNoPC((int)apTmp[i]->dwTblID);
+		}
+		RecvCmdTradeClear(pA->dwTblID);
+		RecvCmdTradeClear(pB->dwTblID);
+		RecvCmdTradeClear(pC->dwTblID);
+	}
+
+	pA->byAdminLV = byAdminBack;
+	s_dwFakeNow = dwNowBack;
 /* AN. ダンジョンのテーマ生成												 */
 /*     テーマ番号 0・見つからない番号は今までの作り方（作成中の設計図が付く）	 */
 /*     テーマがあれば、範囲に絵が入り・入口と出口のワープ・扉イベントが置かれ・	 */

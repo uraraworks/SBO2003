@@ -9,6 +9,7 @@
  * マップ情報のうち、次の3つを一覧で編集する。
  *   ・明るさの範囲（暗くする／暗くしない／明るく壁で隠す。最大 MAX_MAPDARKAREA 個、下ほど優先）
  *   ・光源（最大 MAX_MAPLIGHT 個）
+ *   ・パーツの灯りの上書き（このマップだけ、パーツ番号→灯りの範囲。0 で光らない。最大 MAX_MAPPARTSLIGHT 件）
  *   ・見える範囲・見えない所のパーツ
  *
  * ・編集した内容はすぐ g_pMapInfo に入れるので、ゲーム画面でそのまま見た目を確かめられる。
@@ -37,6 +38,8 @@ struct MAPLIGHT_BACKUP {
 	MAPDARKAREA		aDarkArea[MAX_MAPDARKAREA];
 	BYTE			byLightCount;
 	MAPLIGHT		aLight[MAX_MAPLIGHT];
+	BYTE			byPartsLightCount;
+	MAPPARTSLIGHT	aPartsLight[MAX_MAPPARTSLIGHT];
 	BYTE			byViewRange;
 	WORD			wViewHideParts;
 };
@@ -74,6 +77,10 @@ static void Finish(BOOL bSend);												/* 閉じる(bSend なら送る、で
 static void RenewMap(void);													/* 内容が変わったので見た目を直す */
 static void RenewAreaList(void);											/* 範囲の一覧を作り直す */
 static void RenewLightList(void);											/* 光源の一覧を作り直す */
+static void RenewPartsLightList(void);										/* パーツの灯りの一覧を作り直す */
+static void LoadPartsLightEdit(void);										/* 選んだパーツの灯りを入力欄へ */
+static void OnPartsLightEdit(int nID);										/* パーツの灯りの追加・変更・削除 */
+static int GetSelPartsLight(void);											/* 選んでいるパーツの灯り(無ければ -1) */
 static void LoadAreaEdit(void);												/* 選んだ範囲を入力欄へ */
 static void LoadLightEdit(void);											/* 選んだ光源を入力欄へ */
 static void SaveAreaEdit(void);												/* 入力欄を選んだ範囲へ */
@@ -349,6 +356,11 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 
 	RenewAreaList ();
 	RenewLightList ();
+	RenewPartsLightList ();
+	if (g_pMapInfo->byPartsLightCount > 0) {
+		SendDlgItemMessage (hWnd, IDC_ML_PLLIST, LB_SETCURSEL, 0, 0);
+	}
+	LoadPartsLightEdit ();
 	if (g_pMapInfo->byDarkAreaCount > 0) {
 		SendDlgItemMessage (hWnd, IDC_ML_AREALIST, LB_SETCURSEL, 0, 0);
 	}
@@ -546,6 +558,19 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 		}
 		break;
 
+	/* ---- パーツの灯り（このマップだけ） ---- */
+	case IDC_ML_PLLIST:
+		if (nCodeNotify == LBN_SELCHANGE) {
+			LoadPartsLightEdit ();
+		}
+		break;
+
+	case IDC_ML_PLADD:
+	case IDC_ML_PLSET:
+	case IDC_ML_PLDEL:
+		OnPartsLightEdit (nID);
+		break;
+
 	/* ---- 見え方 ---- */
 	case IDC_ML_VIEWRANGE:
 	case IDC_ML_HIDEPARTS:
@@ -570,6 +595,8 @@ static void SaveBackup(void)
 	CopyMemory (s_stBackup.aDarkArea, g_pMapInfo->aDarkArea, sizeof (s_stBackup.aDarkArea));
 	s_stBackup.byLightCount		= g_pMapInfo->byLightCount;
 	CopyMemory (s_stBackup.aLight, g_pMapInfo->aLight, sizeof (s_stBackup.aLight));
+	s_stBackup.byPartsLightCount	= g_pMapInfo->byPartsLightCount;
+	CopyMemory (s_stBackup.aPartsLight, g_pMapInfo->aPartsLight, sizeof (s_stBackup.aPartsLight));
 	s_stBackup.byViewRange		= g_pMapInfo->byViewRange;
 	s_stBackup.wViewHideParts	= g_pMapInfo->wViewHideParts;
 }
@@ -583,6 +610,8 @@ static void LoadBackup(void)
 	CopyMemory (g_pMapInfo->aDarkArea, s_stBackup.aDarkArea, sizeof (s_stBackup.aDarkArea));
 	g_pMapInfo->byLightCount	= s_stBackup.byLightCount;
 	CopyMemory (g_pMapInfo->aLight, s_stBackup.aLight, sizeof (s_stBackup.aLight));
+	g_pMapInfo->byPartsLightCount	= s_stBackup.byPartsLightCount;
+	CopyMemory (g_pMapInfo->aPartsLight, s_stBackup.aPartsLight, sizeof (s_stBackup.aPartsLight));
 	g_pMapInfo->byViewRange		= s_stBackup.byViewRange;
 	g_pMapInfo->wViewHideParts	= s_stBackup.wViewHideParts;
 }
@@ -594,6 +623,7 @@ static BOOL IsChanged(void)
 	}
 	if ((g_pMapInfo->byDarkAreaCount != s_stBackup.byDarkAreaCount) ||
 		(g_pMapInfo->byLightCount != s_stBackup.byLightCount) ||
+		(g_pMapInfo->byPartsLightCount != s_stBackup.byPartsLightCount) ||
 		(g_pMapInfo->byViewRange != s_stBackup.byViewRange) ||
 		(g_pMapInfo->wViewHideParts != s_stBackup.wViewHideParts)) {
 		return TRUE;
@@ -602,6 +632,9 @@ static BOOL IsChanged(void)
 		return TRUE;
 	}
 	if (memcmp (g_pMapInfo->aLight, s_stBackup.aLight, sizeof (s_stBackup.aLight)) != 0) {
+		return TRUE;
+	}
+	if (memcmp (g_pMapInfo->aPartsLight, s_stBackup.aPartsLight, sizeof (s_stBackup.aPartsLight)) != 0) {
 		return TRUE;
 	}
 	return FALSE;
@@ -687,6 +720,123 @@ static void RenewLightList(void)
 	_snprintf (szTmp, sizeof (szTmp), "%d / %d 個", g_pMapInfo->byLightCount, MAX_MAPLIGHT);
 	szTmp[sizeof (szTmp) - 1] = 0;
 	SetDlgItemText (s_hWndDlg, IDC_ML_LIGHTINFO, szTmp);
+}
+
+/* ========================================================================= */
+/* 関数名：RenewPartsLightList / LoadPartsLightEdit / OnPartsLightEdit		 */
+/* 内容：パーツの灯り（このマップだけの上書き）の一覧・入力欄・追加変更削除	 */
+/* ========================================================================= */
+static void RenewPartsLightList(void)
+{
+	int i, nSel;
+	char szTmp[128];
+	HWND hWndList = GetDlgItem (s_hWndDlg, IDC_ML_PLLIST);
+
+	nSel = GetSelPartsLight ();
+	SendMessage (hWndList, LB_RESETCONTENT, 0, 0);
+	for (i = 0; i < g_pMapInfo->byPartsLightCount && i < MAX_MAPPARTSLIGHT; i ++) {
+		if (g_pMapInfo->aPartsLight[i].byLight == 0) {
+			_snprintf (szTmp, sizeof (szTmp), "%d: 光らない", g_pMapInfo->aPartsLight[i].wParts);
+		} else {
+			_snprintf (szTmp, sizeof (szTmp), "%d: %dマス", g_pMapInfo->aPartsLight[i].wParts, g_pMapInfo->aPartsLight[i].byLight);
+		}
+		szTmp[sizeof (szTmp) - 1] = 0;
+		SendMessage (hWndList, LB_ADDSTRING, 0, (LPARAM)szTmp);
+	}
+	if (nSel >= 0 && nSel < g_pMapInfo->byPartsLightCount) {
+		SendMessage (hWndList, LB_SETCURSEL, nSel, 0);
+	}
+
+	_snprintf (szTmp, sizeof (szTmp), "%d / %d 件（全マップ共通の範囲をこのマップだけ変える）", g_pMapInfo->byPartsLightCount, MAX_MAPPARTSLIGHT);
+	szTmp[sizeof (szTmp) - 1] = 0;
+	SetDlgItemText (s_hWndDlg, IDC_ML_PLINFO, szTmp);
+}
+
+static void LoadPartsLightEdit(void)
+{
+	int nNo = GetSelPartsLight ();
+	BOOL bSel = (nNo >= 0) ? TRUE : FALSE;
+
+	EnableWindow (GetDlgItem (s_hWndDlg, IDC_ML_PLSET), bSel);
+	EnableWindow (GetDlgItem (s_hWndDlg, IDC_ML_PLDEL), bSel);
+	if (bSel) {
+		s_bLoading = TRUE;
+		SetNum (IDC_ML_PLPARTS, g_pMapInfo->aPartsLight[nNo].wParts);
+		SetNum (IDC_ML_PLRANGE, g_pMapInfo->aPartsLight[nNo].byLight);
+		s_bLoading = FALSE;
+	}
+}
+
+static void OnPartsLightEdit(int nID)
+{
+	int i, nNo, nParts, nRange;
+	PMAPINFO pMap = g_pMapInfo;
+
+	if (nID == IDC_ML_PLDEL) {
+		nNo = GetSelPartsLight ();
+		if (nNo < 0) {
+			return;
+		}
+		if (nNo < pMap->byPartsLightCount - 1) {
+			MoveMemory (&pMap->aPartsLight[nNo], &pMap->aPartsLight[nNo + 1],
+					sizeof (MAPPARTSLIGHT) * (pMap->byPartsLightCount - 1 - nNo));
+		}
+		pMap->byPartsLightCount --;
+		ZeroMemory (&pMap->aPartsLight[pMap->byPartsLightCount], sizeof (MAPPARTSLIGHT));
+		RenewPartsLightList ();
+		SendDlgItemMessage (s_hWndDlg, IDC_ML_PLLIST, LB_SETCURSEL, min (nNo, (int)pMap->byPartsLightCount - 1), 0);
+		LoadPartsLightEdit ();
+		RenewMap ();
+		return;
+	}
+
+	nParts = GetNum (IDC_ML_PLPARTS, 0, 0xFFFF);
+	nRange = GetNum (IDC_ML_PLRANGE, 0, MAPLIGHT_RANGE_MAX);
+	if (nParts >= g_wCountMapParts) {
+		MessageBox (s_hWndDlg, "そのパーツ番号はありません。", "明るさ・灯り・見え方の設定", MB_OK);
+		return;
+	}
+	/* 同じパーツの行があればそこを直す（変更の時は選んでいる行。他の行と重なるならやめる） */
+	nNo = -1;
+	for (i = 0; i < pMap->byPartsLightCount && i < MAX_MAPPARTSLIGHT; i ++) {
+		if (pMap->aPartsLight[i].wParts == nParts) {
+			nNo = i;
+			break;
+		}
+	}
+	if (nID == IDC_ML_PLSET) {
+		int nSel = GetSelPartsLight ();
+		if (nSel < 0) {
+			return;
+		}
+		if (nNo >= 0 && nNo != nSel) {
+			MessageBox (s_hWndDlg, "そのパーツはもう一覧にあります。", "明るさ・灯り・見え方の設定", MB_OK);
+			return;
+		}
+		nNo = nSel;
+	} else if (nNo < 0) {
+		if (pMap->byPartsLightCount >= MAX_MAPPARTSLIGHT) {
+			MessageBox (s_hWndDlg, "パーツの灯りはこれ以上足せません。", "明るさ・灯り・見え方の設定", MB_OK);
+			return;
+		}
+		nNo = pMap->byPartsLightCount ++;
+	}
+	ZeroMemory (&pMap->aPartsLight[nNo], sizeof (MAPPARTSLIGHT));
+	pMap->aPartsLight[nNo].wParts = (WORD)nParts;
+	pMap->aPartsLight[nNo].byLight = (BYTE)nRange;
+	RenewPartsLightList ();
+	SendDlgItemMessage (s_hWndDlg, IDC_ML_PLLIST, LB_SETCURSEL, nNo, 0);
+	LoadPartsLightEdit ();
+	RenewMap ();
+}
+
+static int GetSelPartsLight(void)
+{
+	int nSel = (int)SendDlgItemMessage (s_hWndDlg, IDC_ML_PLLIST, LB_GETCURSEL, 0, 0);
+	if (nSel < 0 || nSel >= g_pMapInfo->byPartsLightCount) {
+		return -1;
+	}
+	return nSel;
 }
 
 /* ========================================================================= */

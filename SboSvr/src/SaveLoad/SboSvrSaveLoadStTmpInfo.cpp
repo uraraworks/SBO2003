@@ -13,7 +13,7 @@
 /* 定数定義																	 */
 /* ========================================================================= */
 
-#define DATACOUNT		(28)									/* 保存データ数 */
+#define DATACOUNT		(31)									/* 保存データ数 */
 
 /* ========================================================================= */
 /* 構造体定義																 */
@@ -61,6 +61,9 @@ static const char *s_aszName[] = {
 	"dwExp",				/* 経験値 */
 	"byStatusResist",		/* 毒・眠りの効きにくさ(%) */
 	"byNoFloorDamage",		/* ダメージ床が効かない */
+	"byGhost",				/* 半透明（霊）で描く */
+	"byAffixRate",			/* 装備に付与が付く確率(%) */
+	"byAffixRank",			/* 付く付与の格の最大 */
 	"z"
 };
 
@@ -179,6 +182,9 @@ BOOL SaveStTmpInfo(void)
 			case 25:	dwDataSizeTmp += sizeof (pInfo->dwExp);					break;	/* 経験値 */
 			case 26:	dwDataSizeTmp += sizeof (pInfo->byStatusResist);		break;	/* 毒・眠りの効きにくさ */
 			case 27:	dwDataSizeTmp += sizeof (pInfo->byNoFloorDamage);		break;	/* ダメージ床が効かない */
+			case 28:	dwDataSizeTmp += sizeof (pInfo->byGhost);				break;	/* 半透明（霊）で描く */
+			case 29:	dwDataSizeTmp += sizeof (pInfo->byAffixRate);			break;	/* 装備に付与が付く確率 */
+			case 30:	dwDataSizeTmp += sizeof (pInfo->byAffixRank);			break;	/* 付く付与の格の最大 */
 			}
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
@@ -335,6 +341,18 @@ BOOL SaveStTmpInfo(void)
 				CopyMemory (&pData[dwOffset], &pInfo->byNoFloorDamage, sizeof (pInfo->byNoFloorDamage));
 				dwOffset += sizeof (pInfo->byNoFloorDamage);
 				break;
+			case 28:	/* 半透明（霊）で描く */
+				CopyMemory (&pData[dwOffset], &pInfo->byGhost, sizeof (pInfo->byGhost));
+				dwOffset += sizeof (pInfo->byGhost);
+				break;
+			case 29:	/* 装備に付与が付く確率 */
+				CopyMemory (&pData[dwOffset], &pInfo->byAffixRate, sizeof (pInfo->byAffixRate));
+				dwOffset += sizeof (pInfo->byAffixRate);
+				break;
+			case 30:	/* 付く付与の格の最大 */
+				CopyMemory (&pData[dwOffset], &pInfo->byAffixRank, sizeof (pInfo->byAffixRank));
+				dwOffset += sizeof (pInfo->byAffixRank);
+				break;
 			}
 		}
 	}
@@ -470,6 +488,8 @@ BOOL LoadStTmpInfo(void)
 
 		pInfo = new STATUSTEMPLATEINFO;
 		ZeroMemory (pInfo, sizeof (STATUSTEMPLATEINFO));
+		pInfo->byAffixRate = 10;		/* 古いデータ（この列が無い）は付与が付く確率 10%・格 1 */
+		pInfo->byAffixRank = 1;
 		g_aStTmpInfo.Add (pInfo);
 	}
 
@@ -607,6 +627,18 @@ BOOL LoadStTmpInfo(void)
 			} else if (strcmp (aHeaderInfo[i].szName, s_aszName[27]) == 0) {			/* ダメージ床が効かない(古いデータには無い) */
 				CopyMemory (&pInfo->byNoFloorDamage, &pData[dwOffsetTmp], sizeof (pInfo->byNoFloorDamage));
 				dwOffsetTmp += sizeof (pInfo->byNoFloorDamage);
+
+			} else if (strcmp (aHeaderInfo[i].szName, s_aszName[28]) == 0) {			/* 半透明（霊）で描く(古いデータには無い) */
+				CopyMemory (&pInfo->byGhost, &pData[dwOffsetTmp], sizeof (pInfo->byGhost));
+				dwOffsetTmp += sizeof (pInfo->byGhost);
+
+			} else if (strcmp (aHeaderInfo[i].szName, s_aszName[29]) == 0) {			/* 装備に付与が付く確率(古いデータには無い) */
+				CopyMemory (&pInfo->byAffixRate, &pData[dwOffsetTmp], sizeof (pInfo->byAffixRate));
+				dwOffsetTmp += sizeof (pInfo->byAffixRate);
+
+			} else if (strcmp (aHeaderInfo[i].szName, s_aszName[30]) == 0) {			/* 付く付与の格の最大(古いデータには無い) */
+				CopyMemory (&pInfo->byAffixRank, &pData[dwOffsetTmp], sizeof (pInfo->byAffixRank));
+				dwOffsetTmp += sizeof (pInfo->byAffixRank);
 			}
 		}
 	}

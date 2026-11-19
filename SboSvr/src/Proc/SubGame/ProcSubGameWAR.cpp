@@ -488,6 +488,57 @@ void CProcSubGameWAR::AllChgStateAndQuit(BYTE byState, BYTE byCheckState)
 
 
 /* ========================================================================= */
+/* 関数名：	CProcSubGameWAR::IsTurnNoOK										 */
+/* 内容：	順番の指定が、実際のメンバー数の範囲に収まっているか			 */
+/* ========================================================================= */
+
+BOOL CProcSubGameWAR::IsTurnNoOK(BYTE byTeam, BYTE byNo)
+{
+	PSUBGAME_WAR_TEAMINFO pTeamInfo;
+
+	pTeamInfo = m_pInfo->GetTeamInfo (byTeam);
+	if (pTeamInfo == NULL) {
+		return FALSE;
+	}
+	return (byNo < pTeamInfo->aMemberInfo.GetSize ());
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CProcSubGameWAR::IsMagicTargetOK								 */
+/* 内容：	魔法の対象のメンバー番号が、実在するメンバーを指しているか		 */
+/* ========================================================================= */
+
+BOOL CProcSubGameWAR::IsMagicTargetOK(BYTE byMagic, BYTE byNo)
+{
+	int nTeam;
+	PSUBGAME_WAR_TEAMINFO pTeamInfo;
+	PSUBGAME_WAR_MEMBERINFO pMemberInfo;
+
+	if (m_pInfo->GetTeamInfo (m_pInfo->m_byTurn) == NULL) {
+		return FALSE;
+	}
+	/* 炎は相手チーム、回復・蘇生は自チーム */
+	nTeam = m_pInfo->m_byTurn;
+	if (byMagic == SUBGAME_WAR_MAGIC_FIRE) {
+		nTeam = (nTeam == 0) ? 1 : 0;
+	}
+	pTeamInfo = m_pInfo->GetTeamInfo (nTeam);
+	if (pTeamInfo == NULL) {
+		return FALSE;
+	}
+	if (byNo >= pTeamInfo->aMemberInfo.GetSize ()) {
+		return FALSE;
+	}
+	pMemberInfo = pTeamInfo->aMemberInfo[byNo];
+	if ((pMemberInfo == NULL) || (pMemberInfo->dwTblID >= (DWORD)g_aCharInfo.GetSize ())) {
+		return FALSE;
+	}
+	return TRUE;
+}
+
+
+/* ========================================================================= */
 /* 関数名：	CProcSubGameWAR::UpTurn											 */
 /* 内容：	順番を一つ手前にずらす											 */
 /* 日付：	2004/08/10														 */
@@ -505,6 +556,10 @@ void CProcSubGameWAR::UpTurn(BYTE byTeam, BYTE byNo)
 
 	pTeamInfo = m_pInfo->GetTeamInfo (byTeam);
 	if (pTeamInfo == NULL) {
+		return;
+	}
+	/* メンバー数の範囲の外は触らない */
+	if (byNo >= pTeamInfo->aMemberInfo.GetSize ()) {
 		return;
 	}
 

@@ -271,7 +271,9 @@ CmyArray<PWNDINFO, PWNDINFO> g_WndInfo;								/* ウィンドウ情報 */
 CmyArray<PCHARINFO, PCHARINFO> g_aCharInfo;							/* キャラ情報 */
 CmyArray<PSYSMSGINFO, PSYSMSGINFO> g_SysMsgInfo;					/* システムメッセージ情報 */
 CmyArray<PADMINRURAINFO, PADMINRURAINFO> g_AdminRuraInfo;			/* 管理人ルーラ情報 */
-CmyArray<PITEMINFO, PITEMINFO> g_aItemInfo;							/* アイテム情報 */
+CItemInfoArray g_aItemInfo;											/* アイテム情報 */
+CmyArray<PITEMAFFIXINFO, PITEMAFFIXINFO> g_aAffixInfo;				/* 付与表 */
+CmyArray<PITEMDERIVEINFO, PITEMDERIVEINFO> g_aItemDerive;			/* 派生アイテム表 */
 CmyArray<DWORD, DWORD> g_aRecTbl;									/* キャラ情報要求してますテーブル */
 CmyArray<PSTATUSTEMPLATEINFO, PSTATUSTEMPLATEINFO> g_aStTmpInfo;	/* ステータステンプレート情報 */
 CmyArray<BYTE, BYTE> g_aFadeInOutTbl;								/* フェードイン・アウト予約テーブル */
@@ -895,7 +897,8 @@ int QuestWrapText(LPCSTR pszSrc, int nMaxWidth, char (*pszOut)[QUESTWRAP_LINEBYT
 
 /* ========================================================================= */
 /* 関数名：QuestHasAny														 */
-/* 内容：自分か仲間が依頼を受けているか（コマンドに「依頼」を出すか）		 */
+/* 内容：自分か仲間が依頼を受けているか、物語の「いまの目的」があるか		 */
+/*       （コマンドに「目的」を出すか）										 */
 /* ========================================================================= */
 BOOL QuestHasAny(void)
 {
@@ -906,7 +909,7 @@ BOOL QuestHasAny(void)
 			return TRUE;
 		}
 	}
-	return FALSE;
+	return g_QuestState.byStoryCount > 0;
 }
 
 /* ========================================================================= */
@@ -970,14 +973,34 @@ int QuestMakeDetailLines(PWNDINFO pWnd, char (*pszOut)[QUESTWRAP_LINEBYTES], int
 		nAdd = QuestWrapText (szTmp, nWidth, &pszOut[nLines], nMaxLines - nLines);
 		nLines += nAdd;
 		if (pEntry->szGoal[0] && (nLines < nMaxLines)) {
-			_snprintf (szTmp, sizeof (szTmp) - 1, "　目的：%s", pEntry->szGoal);
+			_snprintf (szTmp, sizeof (szTmp) - 1, "目的：%s", pEntry->szGoal);
+			szTmp[sizeof (szTmp) - 1] = 0;
+			nAdd = QuestWrapText (szTmp, nWidth, &pszOut[nLines], nMaxLines - nLines);
+			nLines += nAdd;
+		}
+	}
+	/* 物語の「いまの目的」（自分の分だけ。シナリオ名＋目的文） */
+	for (i = 0; (i < (int)g_QuestState.byStoryCount) && (i < MAX_STORYGOAL); i ++) {
+		PSTORYGOALENTRY pStory = &g_QuestState.aStory[i];
+		char szTmp[MAX_QUESTGOAL + MAX_QUESTNAME + 32];
+
+		if ((pStory->szGoal[0] == 0) || (nLines >= nMaxLines)) {
+			continue;
+		}
+		bAny = TRUE;
+		_snprintf (szTmp, sizeof (szTmp) - 1, "物語：%s", pStory->szName);
+		szTmp[sizeof (szTmp) - 1] = 0;
+		nAdd = QuestWrapText (szTmp, nWidth, &pszOut[nLines], nMaxLines - nLines);
+		nLines += nAdd;
+		if (nLines < nMaxLines) {
+			_snprintf (szTmp, sizeof (szTmp) - 1, "目的：%s", pStory->szGoal);
 			szTmp[sizeof (szTmp) - 1] = 0;
 			nAdd = QuestWrapText (szTmp, nWidth, &pszOut[nLines], nMaxLines - nLines);
 			nLines += nAdd;
 		}
 	}
 	if (!bAny) {
-		nLines = QuestWrapText ("受けている依頼はありません。", nWidth, pszOut, nMaxLines);
+		nLines = QuestWrapText ("いまの目的はありません。", nWidth, pszOut, nMaxLines);
 	}
 	return nLines;
 }

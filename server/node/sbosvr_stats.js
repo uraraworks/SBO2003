@@ -252,6 +252,14 @@ Module['sboStats'] = (function () {
 		} catch (e) {
 			console.error('[stats] 記録に失敗: ' + (e && e.stack || e));
 		}
+		/* 最終IP（IPv6 の文字列）の記録。管理ページ用 */
+		try {
+			if (Module['sboAccount'] && Module['sboAccount'].noteLoginIp) {
+				Module['sboAccount'].noteLoginIp(nSlot, strAcc);
+			}
+		} catch (e2) {
+			console.error('[account] 最終IPの記録に失敗: ' + (e2 && e2.stack || e2));
+		}
 	}
 
 	/* ------------------------------------------------------------------ */

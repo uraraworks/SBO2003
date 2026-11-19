@@ -1627,8 +1627,8 @@ void DrawCharLine(int nLine)
 				if (pChar->byFadeLevel) {
 					g_pDibDrawMap->BltAlpha (x, y, nGrpSizeX, nGrpSizeY, pDib, xx, yy, pChar->byFadeLevel, TRUE);
 
-				} else if (pChar->byHide) {
-					/* 隠れている間は半透明(BltAlpha は大きいほど透明。明るい所は半分、暗い所ほど薄く) */
+				} else if (pChar->byHide || pChar->byGhost) {
+					/* 隠れている間・霊(byGhost)は半透明(BltAlpha は大きいほど透明。明るい所は半分、暗い所ほど薄く) */
 					g_pDibDrawMap->BltAlpha (x, y, nGrpSizeX, nGrpSizeY, pDib, xx, yy, (BYTE)(100 - byLevel / 2), TRUE);
 
 				} else {
@@ -2176,7 +2176,7 @@ static void DrawDropEffects(void)
 			p->bUse = FALSE;
 			continue;
 		}
-		if ((p->dwMapID != pMy->dwMapID) || (p->dwItemNo >= (DWORD)g_aItemInfo.GetSize ())) {
+		if ((p->dwMapID != pMy->dwMapID) || (p->dwItemNo > 0xFFFF) || !ItemIDValid ((WORD)p->dwItemNo)) {
 			continue;
 		}
 		g_bDraw = TRUE;

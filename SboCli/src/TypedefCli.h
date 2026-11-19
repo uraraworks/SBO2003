@@ -212,7 +212,7 @@ typedef struct _RECYCLEHAND {
 /* 依頼ウィンドウ(WNDTYPE_QUEST)の nType2 */
 enum {
 	QUESTWND_LIST = 0,											/* ギルドの人に話した時の依頼一覧（g_bQuestBook が TRUE なら、語り部に話した時の思い出の本の一覧） */
-	QUESTWND_STATE,												/* コマンドの「依頼」：自分と仲間の進み具合 */
+	QUESTWND_STATE,												/* コマンドの「目的」：自分と仲間の依頼の進み具合と、自分の物語の目的 */
 };
 #define QUEST_WINCX					(16 * 21)									/* 窓の幅（右上の所持金の窓に重ならない広さ） */
 #define QUEST_LISTROWS				(5)											/* 一覧に一度に出す行数 */
@@ -239,6 +239,10 @@ typedef struct _QUESTLISTITEM {
 enum {
 	MAKERWND_LIST = 0,											/* 作れる物の一覧 */
 	MAKERWND_CONF,												/* 「作ってもらいますか？」のはい/いいえ */
+	MAKERWND_APPRAISE,											/* 鑑定屋：未鑑定の持ち物の一覧 */
+	MAKERWND_APPRAISE_CONF,										/* 鑑定屋：「鑑定してもらいますか？」のはい/いいえ（dwData=持ち物の位置） */
+	MAKERWND_FORGE,												/* 鍛冶屋：鍛える・付け替えるの対象になる持ち物の一覧（dwData=レシピの番号） */
+	MAKERWND_FORGE_CONF,										/* 鍛冶屋：「◯◯ → △△ にします」のはい/いいえ（dwData=レシピの番号<<8 | 持ち物の位置） */
 };
 #define MAKER_LISTCX				(16 * 12)									/* 作れる物の一覧の幅 */
 #define MAKER_LISTROWS				(10)										/* 一覧に一度に出す行数 */

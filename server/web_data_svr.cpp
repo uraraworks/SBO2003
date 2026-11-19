@@ -25,6 +25,7 @@
 #include "SboSvrAdminUndo.h"
 #include "SboSvrNpcRoute.h"
 #include "SboSvrRecycle.h"
+#include "SboSvrMarket.h"
 #include "SboSvrMapSwapEdit.h"
 #include "CharProc/IncludeCharProc.h"
 
@@ -32,6 +33,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <map>
 
 extern BOOL SaveItemInfo(void);
 extern BOOL SaveStTmpInfo(void);
@@ -40,6 +42,7 @@ extern BOOL SaveMagicInfo(void);
 extern BOOL SaveMagicUserInfo(void);
 extern BOOL SaveEquUserInfo(void);
 extern BOOL SaveMakerInfo(void);
+extern BOOL SaveAffixInfo(void);
 extern BOOL SaveRecipeInfo(void);
 extern BOOL SaveQuestInfo(void);
 extern BOOL SaveFlagNameInfo(void);
@@ -395,6 +398,9 @@ static const DATAFIELD s_aFieldStTmp[] = {
 	FLD (STATUSTEMPLATEINFO, dwGold,		"所持金",			FT_U32, 0, NULL),
 	FLD (STATUSTEMPLATEINFO, dwExp,			"経験値",			FT_U32, 0, NULL),
 	FLD (STATUSTEMPLATEINFO, byStatusResist,	"毒・眠りの効きにくさ",	FT_U8, 0, "%。特技の成功率をこの分下げる。100 で効かない（ボス向け）"),
+	FLD (STATUSTEMPLATEINFO, byGhost,		"半透明（霊）",		FT_U8, 0, "1 にすると、この元から出る敵（NPC発生・依頼の敵）が半透明（霊）で描かれる。見た目だけで、敵に見つかりにくくなるなどはしない。0=ふつう"),
+	FLD (STATUSTEMPLATEINFO, byAffixRate,	"付与が付く確率(%)",	FT_U8, 0, "この敵が装備（武器〜指輪）を落とした時に、付与（接頭辞・接尾辞）が付く確率。付いた物は未鑑定で落ちる。0〜100。古いデータは 10。付与表（affix）が 0 件なら付かない"),
+	FLD (STATUSTEMPLATEINFO, byAffixRank,	"付与の格の最大",	FT_U8, 0, "付く付与の格（affix の byRank）の上限。1〜3。古いデータは 1"),
 	FLD (STATUSTEMPLATEINFO, byNoFloorDamage,	"ダメージ床が効かない",	FT_U8, 0, "1 にすると毒沼・溶岩などのダメージ床でHPが減らず毒にもならず、よけずに素通りして追いかける（ボス向け）。0=ふつう（ダメージ床をよける）"),
 };
 
@@ -419,10 +425,35 @@ static const DATAFIELD s_aFieldItem[] = {
 static const char *s_pszNoteRecipeState = "0=削除済み（空き枠。新しく足す時はここを使い回す） 1=有効 2=停止中（一覧に出ない）";
 static const DATAFIELD s_aFieldMaker[] = {
 	FLD (MAKERINFO, byState,			"状態",					FT_U8, 0, s_pszNoteRecipeState),
+	FLD (MAKERINFO, byKind,				"種類",					FT_U8, 0, "0=レシピで作る（今までの作り手） 1=鑑定屋（手持ちの未鑑定の装備を、max(10, 元の値段/10) ゴールドで鑑定する。台詞は szMsgTalk=話しかけた時・szMsgDone=鑑定できた時・szMsgLack=鑑定する物が無い時。レシピは使わない）"),
 	FLDS(MAKERINFO, szName,				"名前",					FT_STR, 0, "例: 料理人"),
 	FLDS(MAKERINFO, szMsgTalk,			"話しかけた時の台詞",	FT_STR, FF_MULTILINE, "NPC の台詞と同じ制御コード（@0 入力待ち・@1 改行・@2 点滅無しで入力待ち）が使える"),
 	FLDS(MAKERINFO, szMsgDone,			"作った時の台詞",		FT_STR, FF_MULTILINE, NULL),
 	FLDS(MAKERINFO, szMsgLack,			"材料が足りない時の台詞",	FT_STR, FF_MULTILINE, NULL),
+};
+
+/* 付与情報（装備に付く接頭辞・接尾辞。docs/item-affix.md） */
+static const DATAFIELD s_aFieldAffix[] = {
+	FLD (ITEMAFFIXINFO, wID,			"付与番号",				FT_U16, FF_READONLY, "足す時に自動で振られる（1〜。派生アイテムの wPre・wSuf がこの番号で指すので変わらない・使い回さない）。id（配列の番号）とは別。消せない（出さないなら wWeight=0）"),
+	FLD (ITEMAFFIXINFO, byPos,			"位置",					FT_U8, 0, "0=名前の前に付く（鋭い） 1=名前の後ろに付く（の加護）"),
+	FLDS(ITEMAFFIXINFO, szName,			"名前",					FT_STR, 0, "例: 鋭い・腐った・＋1・の加護"),
+	FLD (ITEMAFFIXINFO, wEquMask,		"付く装備種別",			FT_U16, 0, "ビット: 1=武器 2=鎧 4=盾 8=兜 16=小手 32=靴 64=首飾り 128=指輪"),
+	FLD (ITEMAFFIXINFO, chRate,			"主の値への%",			FT_S8, 0, "主の値（武器は攻撃力、防具・首飾り・指輪は守備力か魔防＝item の byData）に対する%。負も可。前と後ろは合算"),
+	FLD (ITEMAFFIXINFO, chAdd,			"主の値への固定加算",	FT_S8, 0, "主の値への固定加算。負も可。最終値 = byData + byData×合計Rate/100 + 合計Add を 0〜255 に収める"),
+	FLD (ITEMAFFIXINFO, chDFMagic,		"魔防加算",				FT_S8, 0, "プレイヤーの魔法防御への加算（負も可）"),
+	FLD (ITEMAFFIXINFO, byRank,			"格",					FT_U8, 0, "1〜3。敵の byAffixRank 以下の格だけ出る"),
+	FLD (ITEMAFFIXINFO, wWeight,		"出やすさ",				FT_U16, 0, "くじの重み。0 なら出ない"),
+	FLD (ITEMAFFIXINFO, wGoldRate,		"売値の倍率(%)",		FT_U16, 0, "100=そのまま。鑑定済みの売値 = 元の値段 × 前後の倍率の積"),
+	FLD (ITEMAFFIXINFO, byBad,			"ハズレ印",				FT_U8, 0, "1 なら表示でハズレと分かる印を付ける（表示用）"),
+	FLD (ITEMAFFIXINFO, wNext,			"次の段",				FT_U16, 0, "鍛えた時に置き換わる次の段の付与（affix の wID。0=これ以上は鍛えられない）。＋1→＋2→＋3 のように、位置が同じ（後ろ）の付与を指す"),
+};
+
+/* 派生アイテム情報（読むだけ。アイテム番号 16384 以降 = 行番号 + 16384） */
+static const DATAFIELD s_aFieldItemDerive[] = {
+	FLD (ITEMDERIVEINFO, wBase,			"元のアイテム",			FT_U16, FF_READONLY, "item の番号"),
+	FLD (ITEMDERIVEINFO, wPre,			"前の付与",				FT_U16, FF_READONLY, "affix の wID（0=なし）"),
+	FLD (ITEMDERIVEINFO, wSuf,			"後ろの付与",			FT_U16, FF_READONLY, "affix の wID（0=なし）"),
+	FLD (ITEMDERIVEINFO, byUnknown,		"未鑑定",				FT_U8, FF_READONLY, "1=未鑑定（付与の効果は出ない）"),
 };
 
 /* レシピ情報（作り手に頼んで、材料からアイテムを作ってもらう） */
@@ -435,6 +466,10 @@ static const DATAFIELD s_aFieldRecipe[] = {
 	FLDA(RECIPEINFO, awMatItem,			"材料のアイテム",		FT_U16ARR, WORD, 0, "item の番号を最大 4 種（0 は使わない欄）。1 種以上必要。持ち物（装備中・捨てられない物を除く）を先に、足りない分を預かり所から使う"),
 	FLDA(RECIPEINFO, abyMatCount,		"材料の個数",			FT_U8ARR, BYTE, 0, "awMatItem と同じ並びの個数（アイテムが 0 の欄は 0 にする）"),
 	FLD (RECIPEINFO, dwGold,			"手数料",				FT_U32, 0, "作ってもらう時に払うゴールド"),
+	FLD (RECIPEINFO, byKind,			"種類",					FT_U8, 0, "0=普通（材料から wItem を byCount 個作る） 1=鍛える（手持ちの装備 1 つの後ろの付与を、あれば付与の wNext の段へ進める。無ければ wAffix を付ける。wAffix は位置が後ろ（byPos=1）の付与。wNext が 0 なら「これ以上は鍛えられない」） 2=付け替える（対象の wAffix の位置（前/後ろ）の付与を wAffix に置き換える。無ければ付ける。同じなら断る）。1・2 は wItem・byCount を使わない（できる個数は 1 固定）。対象は鑑定済みの派生装備（未鑑定は断る）。材料と手数料は普通と同じ。詳しくは docs/recipe.md"),
+	FLD (RECIPEINFO, wAffix,			"付ける付与",			FT_U16, 0, "種類が 1・2 の時に付ける付与（affix の wID）。種類 0 では 0"),
+	FLD (RECIPEINFO, byAllowPlain,		"普通の装備も対象",		FT_U8, 0, "1=付与の無い普通の装備も対象にしてよい（例: 普通の剣→剣＋1）。0=鑑定済みの派生装備だけ"),
+	FLD (RECIPEINFO, wEquMask,			"対象の装備種別",		FT_U16, 0, "対象にする装備種別のビット（1=武器 2=鎧 4=盾 8=兜 16=小手 32=靴 64=首飾り 128=指輪）。0=付与側（affix の wEquMask）に従う。付与の wEquMask に無い種別は常に対象外"),
 };
 
 /* フラグの名前表（印・数値の番号に付ける名前。管理用でプレイヤーには出ない） */
@@ -533,6 +568,17 @@ static const DATAFIELD s_aFieldStory[] = {
 	FLDA(STORYINFO, abyNum,				"0 に戻す数値",			FT_U8ARR, BYTE, FF_PADMAX, "最大 4 つ。キャラのフラグの数値の番号（0〜127）。やり直す時に 0 にする。255=無し（短い配列は残りが無しになる）"),
 	FLDA(STORYINFO, awQuest,			"受け直せるようにする依頼", FT_U16ARR, WORD, 0, "最大 4 つ。quest の依頼番号（wID）。やり直す時にクリア済みの印を消し、一度きりの依頼でもまた受けられる。0=無し。報酬は初回だけ（もらい済みの印は残る）。やり直す人がこの依頼を受けている間はやり直せない"),
 	FLD (STORYINFO, byCountNum,			"やり直した回数の数値",	FT_U8, 0, "キャラのフラグの数値の番号（0〜127）。やり直すたびにこの数値が +1 される（選んだお話だけ。255 で止まる。0 に戻す数値と重なっても最後に +1）。255=数えない（足す時に省くと数えない）。話の中で「2 周目」の台詞を出し分けるのに使える"),
+};
+
+/* 思い出の本のシナリオの「いまの目的」の 1 行（条件は会話データの行と同じ形・同じ判定）。
+   （クリアの印 wClearFlag は見ない）上から見て最初に全部合う行の szGoal をコマンド窓の「目的」に出す */
+static const DATAFIELD s_aFieldStoryGoal[] = {
+	FLDA(STORYGOAL, awNeed,				"立っている必要のある印",	FT_U16ARR, WORD, FF_PADMAX, s_pszNoteTalkNoBit),
+	FLDA(STORYGOAL, awNot,				"立っていてはいけない印",	FT_U16ARR, WORD, FF_PADMAX, s_pszNoteTalkNoBit),
+	FLDA(STORYGOAL, abyCondNo,			"数値の条件の数値番号",	FT_U8ARR, BYTE, FF_PADMAX, s_pszNoteTalkNoNum),
+	FLDA(STORYGOAL, abyCondCmp,			"数値の条件の比べ方",	FT_U8ARR, BYTE, 0, "abyCondNo と同じ並び。0=以上 1=ちょうど 2=以下"),
+	FLDA(STORYGOAL, abyCondVal,			"数値の条件の値",		FT_U8ARR, BYTE, 0, "abyCondNo と同じ並び。0〜255"),
+	FLDS(STORYGOAL, szGoal,				"いまの目的",			FT_STR, 0, "コマンド窓の「目的」に「シナリオ名」と並べて出す文（最大 127 バイト）。空の行は飛ばす"),
 };
 
 /* 依頼の見えるNPC（受けた人とそのパーティにだけ見える。話すと台詞が出る。台詞の中身はサーバーが送り、見えるNPC自体の台詞は "@q" 固定） */
@@ -980,6 +1026,7 @@ enum {
 	KIND_TALK,
 	KIND_STORY,
 	KIND_FLAGGROUP,
+	KIND_AFFIX,
 	/* ここから下は読むだけ */
 	KIND_CHAR,
 	KIND_MAP,
@@ -988,6 +1035,7 @@ enum {
 	KIND_COMEFC,
 	KIND_LEAVE,
 	KIND_SUBGAME,
+	KIND_ITEMDERIVE,
 	KIND_MAX
 };
 #define KIND_FIRST_READONLY	KIND_CHAR
@@ -996,13 +1044,13 @@ enum {
 static bool KindWritable(int nKind)
 {
 	/* 預かり所（プレイヤーの持ち物）だけは書き込めない */
-	return (nKind < KIND_MAX) && (nKind != KIND_LEAVE);
+	return (nKind < KIND_MAX) && (nKind != KIND_LEAVE) && (nKind != KIND_ITEMDERIVE);
 }
 
-static const char *s_apszKindName[] = { "magic", "magicUser", "equUser", "job", "stTmp", "item", "maker", "recipe", "quest", "flag", "talk", "story", "flagGroup", "char", "map", "mapParts", "efc", "comEfc", "leave", "subGame" };
+static const char *s_apszKindName[] = { "magic", "magicUser", "equUser", "job", "stTmp", "item", "maker", "recipe", "quest", "flag", "talk", "story", "flagGroup", "affix", "char", "map", "mapParts", "efc", "comEfc", "leave", "subGame", "itemDerive" };
 static const char *s_apszKindLabel[] = {
-	"特技（魔法）情報", "特技を使える職業", "装備できる職業", "職業情報とレベルアップ情報", "ステータステンプレート（NPC・敵のひな形）", "アイテム情報", "作り手（料理人など）", "レシピ（作り手に頼んで作ってもらう物）", "ギルドの仕事依頼", "フラグの名前表（印・数値に付ける名前）", "会話データ（フラグで台詞を出し分ける）", "思い出の本のシナリオ（クリア済みのミニシナリオをやり直す）", "フラグのグループ（印・数値の番号の帯に「メイン-サブ」の名前を付ける）",
-	"キャラ情報（プレイヤー・NPC）", "マップ情報", "マップパーツ", "エフェクト情報", "吹き出し情報", "預かり所", "サブゲーム情報"
+	"特技（魔法）情報", "特技を使える職業", "装備できる職業", "職業情報とレベルアップ情報", "ステータステンプレート（NPC・敵のひな形）", "アイテム情報", "作り手（料理人など）", "レシピ（作り手に頼んで作ってもらう物）", "ギルドの仕事依頼", "フラグの名前表（印・数値に付ける名前）", "会話データ（フラグで台詞を出し分ける）", "思い出の本のシナリオ（クリア済みのミニシナリオをやり直す）", "フラグのグループ（印・数値の番号の帯に「メイン-サブ」の名前を付ける）", "付与（装備に付く接頭辞・接尾辞）",
+	"キャラ情報（プレイヤー・NPC）", "マップ情報", "マップパーツ", "エフェクト情報", "吹き出し情報", "預かり所", "サブゲーム情報", "派生アイテム（付与付き・未鑑定の番号）"
 };
 static const char *s_apszKindNote[] = {
 	"番号は 0 から。item の detail.byID（特技の書）や stTmp の abyMagic から参照される",
@@ -1016,17 +1064,19 @@ static const char *s_apszKindNote[] = {
 	"ギルドの仕事依頼（読み書き。削除なし。止めるのは byState=0）。NPC の台詞を \"@gNN\"（NN=byGuild）にするとギルドの人になり、話すと一覧が開く。受けた人とそのパーティにだけ「見えるNPC」（npcs。ポータル・宝箱・人）が出て、段（0 から）と旗（1〜16）で出し分ける。goals は段ごとの「いまの目的」（文字列の配列）、npcs は配列で丸ごと置き換え。出口は既存のマップのイベントで作る（データだけ）。足す時の依頼番号（wID）は自動。完了した時にキャラのフラグを動かせる（awDoneSetFlag・byDoneNumNo・byDoneNumOp・byDoneNumVal。古い依頼は「無し」）。受ける条件の印は wNeedFlag・wNotFlag（65535=条件なし。合わない人には一覧に出ず受けられない）",
 	"キャラごとにずっと残る「フラグ」（印 1024 個=ON/OFF の 0〜1023、数値 128 個=0〜255 の 0〜127）に付ける名前の表（読み書き）。名前は管理用でプレイヤーには出ない。byKind が 0=印・1=数値、wNo が番号で、同じ組は 1 件まで。削除は byState=0（枠だけ残り、足し直す時はその枠の byState を 1 に戻す）。ファイルが無い時は 0 件。キャラのフラグの中身は char の読み出しの flags で読める（読むだけ）。番号の割り振りの目安: 印は 1〜199 本筋・200〜599 地域・600〜899 お使い・900〜1023 予備",
 	"会話データ（読み書き）。NPC の台詞を \"@tNNN\"（NNN=wID。例 @t012）にすると、話しかけた人のフラグ（印・数値）とレベルで lines（最大 16 行）から 1 行を選び、その人にだけ台詞を出す（台詞はクライアントへ送らない）。選び方: 条件（立っている必要のある印 awNeed 4・立っていてはいけない印 awNot 4・数値の条件 2・レベル下限上限）に全部合う行のうち byRank が一番小さい行、同じ順位が複数ならくじ。合う行が無ければ「……」。話した後に印を立てる・消す・数値を動かす。lines は配列で丸ごと置き換え。削除は byState=0（枠だけ残り、足し直す時はその枠の byState を 1 に戻す）。ファイルが無い時は 0 件",
-	"思い出の本（読み書き。削除なし。止めるのは byState=0）。NPC の台詞を \"@r\" にすると語り部になり、話すと、そのキャラがクリアしたシナリオ（byState=1 で、クリアした印 wClearFlag が立っている）の一覧が wSort 順に開く。選んで確認すると、そのシナリオと、wPrevStory をたどってそれにつながる後のシナリオ全部について、印の範囲（awFlagFrom〜awFlagTo）を消し、数値（abyNum）を 0 に戻し、依頼（awQuest）のクリア済みの印を消して、最初からやり直せる（byCountNum の数値は選んだシナリオだけ +1）。依頼の報酬は初回だけ（もらい済みの印は消えない）。そのキャラが戻す依頼のどれかを受けている間と、語り部から離れている時は断る。足す時のシナリオ番号（wID 1〜255）は自動。印・数値の「無し」は 65535・255。ファイルが無い時は 0 件",
+	"思い出の本（読み書き。削除なし。止めるのは byState=0）。goals（いまの目的。条件に合う最初の行の文をコマンド窓の「目的」に出す）も持つ。NPC の台詞を \"@r\" にすると語り部になり、話すと、そのキャラがクリアしたシナリオ（byState=1 で、クリアした印 wClearFlag が立っている）の一覧が wSort 順に開く。選んで確認すると、そのシナリオと、wPrevStory をたどってそれにつながる後のシナリオ全部について、印の範囲（awFlagFrom〜awFlagTo）を消し、数値（abyNum）を 0 に戻し、依頼（awQuest）のクリア済みの印を消して、最初からやり直せる（byCountNum の数値は選んだシナリオだけ +1）。依頼の報酬は初回だけ（もらい済みの印は消えない）。そのキャラが戻す依頼のどれかを受けている間と、語り部から離れている時は断る。足す時のシナリオ番号（wID 1〜255）は自動。印・数値の「無し」は 65535・255。ファイルが無い時は 0 件",
 	"フラグのグループ（読み書き。削除は byState=0）。キャラのフラグの印（0〜1023）・数値（0〜127）の番号の帯（bands。1 グループ 16 本まで。互換で帯 1 は wFrom・wTo でも読み書きできる）に「メイン名」szName を付けて、「メイン-サブ」で管理するための層（例: ルシー＝印 100〜139。後から番号が飛んだ場所に続きの帯 300〜319 を足せる）。番号 n が有効なグループのどれかの帯に入る時、メイン=そのグループ・サブ=帯の順に続けて数えた番号（1 始まり。ルシー=100〜139＋300〜319 なら 100〜139 がサブ 1〜40・300〜319 がサブ 41〜60）で、「ルシー-3（103）」のように呼べる（flag の一覧にも計算した group・sub が出る。読むだけ）。見せ方・入力・絞り込みだけの層で、会話データ・依頼・NPC の見える条件・思い出の本などが覚えている番号は一切変わらない。同じ種類で有効なグループのすべての帯（同じグループの帯同士も）が重なるのは不可。足す時のグループ番号（wID 1〜255）は自動。ファイルが無い時は 0 件",
+	"装備に付く「鋭い」「の加護」などの付与表（読み書き。足す・直すだけで消せない）。位置 byPos（0=前・1=後ろ）・名前 szName・付く装備種別 wEquMask（ビット）・主の値（item の byData）への% chRate と固定加算 chAdd・魔防加算 chDFMagic・格 byRank（1〜3）・出やすさ wWeight（0 なら出ない）・売値の倍率 wGoldRate（100=そのまま）・ハズレ印 byBad。足す時の付与番号（wID。1〜）は自動で、派生アイテムがこの番号で指すので変わらない・使い回さない。敵（stTmp）の byAffixRate・byAffixRank で、ドロップした装備に付く。ファイルが無い時は 0 件（0 件なら付与は付かない）。詳しくは docs/item-affix.md",
 	"プレイヤーと NPC（敵・町の人・発生元など）の全キャラ。番号（id）はキャラのテーブル番号で再起動で変わることがある。NPC は npcId（変わらない番号）で指す。isPlayer でプレイヤーか分かる。書き換えられるのは保存される NPC だけ（プレイヤー・発生した敵は不可）。足す時は dwMapID・dwX・dwY が要る。消す時は変更に {\"deleted\": true}。アカウント名・パスワード・IP は出さない",
 	"マップの情報・イベント・店・メッセージ・アイテム配置。番号は配列の番号（dwID はマップID で、キャラの dwMapID はこちら）。events・shops・messages は配列で丸ごと置き換え。マス目のパーツは sbo_map_tiles で読み、sbo_map_tiles_set で書く。大きさの変更・マップの追加はできない",
 	"マップパーツ（マス目の parts に入る番号）の表示・当たり判定。byHitType 0 なら通れる。anime は配列で丸ごと置き換え（コマ数 byAnimeCount も変わる）。追加できる（消せない）",
 	"エフェクト情報（特技の byTargetEfectID などから参照される）。anime は配列で丸ごと置き換え。追加できる（消せない・255 番まで）",
 	"吹き出しの種類（番号 0 から、ゲーム内の吹き出し番号は 1 から。99 個で固定）。anime はコマごとの待ち時間（×10ミリ秒）と画像ID で、配列で丸ごと置き換え",
 	"読むだけ。プレイヤーごとの預かり所（キャラの dwLeaveID がこの番号）。items は item の番号と個数",
-	"爆弾ゲーム・迷路・ダンジョン・戦場ゲーム・すごろくの設定。detail は byType ごとに項目が違う（省いた項目は前の値のまま）。種別（byType）の変更・追加・すごろくのマス（events・parts）は管理者ウィンドウで"
+	"爆弾ゲーム・迷路・ダンジョン・戦場ゲーム・すごろくの設定。detail は byType ごとに項目が違う（省いた項目は前の値のまま）。種別（byType）の変更・追加・すごろくのマス（events・parts）は管理者ウィンドウで",
+	"読むだけ。付与が付いた装備のアイテム番号の表（番号 = 16384 + id）。{元のアイテム wBase・前の付与 wPre・後ろの付与 wSuf（affix の wID。0=なし）・未鑑定 byUnknown}。同じ組み合わせは同じ番号で、ドロップや鑑定で初めて出た組み合わせが自動で足される（SBODATA/SboDataItemDerive.dat）。プレイヤーの持ち物・預かり所・取引所などはこの番号で持つ"
 };
-static const int s_anKindMax[] = { 256, 256, 256, 256, 65535, 65535, MAX_MAKER, MAX_RECIPE, MAX_QUEST - 1, MAX_FLAGNAMEINFO, MAX_TALK - 1, MAX_STORY - 1, MAX_FLAGGROUP - 1, 0, 0, 65535, 255, MAX_COMEFC, 0, 0 };
+static const int s_anKindMax[] = { 256, 256, 256, 256, 65535, 65535, MAX_MAKER, MAX_RECIPE, MAX_QUEST - 1, MAX_FLAGNAMEINFO, MAX_TALK - 1, MAX_STORY - 1, MAX_FLAGGROUP - 1, MAX_AFFIX, 0, 0, 65535, 255, MAX_COMEFC, 0, 0, MAX_ITEMDERIVE };
 
 static int KindFromName(const char *pszKind)
 {
@@ -1054,6 +1104,8 @@ static int KindCount(int nKind)
 	case KIND_TALK:			return g_aTalkInfo.GetSize();
 	case KIND_STORY:		return g_aStoryInfo.GetSize();
 	case KIND_FLAGGROUP:	return g_aFlagGroupInfo.GetSize();
+	case KIND_AFFIX:		return g_aAffixInfo.GetSize();
+	case KIND_ITEMDERIVE:	return g_aItemDerive.GetSize();
 	case KIND_CHAR:			return g_aCharInfo.GetSize();
 	case KIND_MAP:			return g_aMapInfo.GetSize();
 	case KIND_MAPPARTS:		return g_wCountMapParts;
@@ -1480,6 +1532,7 @@ static const DATAFIELD s_aFieldChar[] = {
 	FLD (CHARINFO, bySearchCx,			"検索範囲X",			FT_U8, 0, NULL),
 	FLD (CHARINFO, bySearchCy,			"検索範囲Y",			FT_U8, 0, NULL),
 	FLD (CHARINFO, byDropProbability,	"ドロップ率",			FT_U8, 0, NULL),
+	FLD (CHARINFO, byGhost,			"半透明（霊）",			FT_U8, 0, "1 にすると半透明（霊）で描かれる（見た目だけ。ふつうの NPC・敵どちらにも付けられる）。0=ふつう。NPC発生で出る敵は、発生元の NPC かステータステンプレート（stTmp の byGhost）の設定になる"),
 	FLD (CHARINFO, wShowFlag,			"見える条件の印",		FT_U16, 0, "キャラのフラグの印の番号（0〜1023）。この印が立っている人にだけ見える（立っていない人には居ないのと同じ）。65535=条件なし（足す時に省くと条件なし）。町の人（byNpcType=1・2）向け"),
 	FLD (CHARINFO, wHideFlag,			"見えない条件の印",		FT_U16, 0, "キャラのフラグの印の番号（0〜1023）。この印が立っている人には見えない。65535=条件なし。wShowFlag と両方ある時は、両方の条件を満たす人にだけ見える"),
 	FLD (CHARINFO, byAtackRate,			"攻撃力の割合",			FT_U8, 0, NULL),
@@ -1799,6 +1852,58 @@ static std::string TalkJson(const TALKINFO *pTalk)
 	return out;
 }
 
+/* 思い出の本の「いまの目的」の 1 行を「無し」で埋めた姿にする（0 で埋めると印 0・数値 0 を指す条件になるので） */
+static void StoryGoalInit(STORYGOAL *pGoal)
+{
+	memset(pGoal, 0, sizeof(*pGoal));
+	for (int i = 0; i < MAX_TALKNEED; i ++) {
+		pGoal->awNeed[i] = FLAG_NOBIT;
+		pGoal->awNot[i] = FLAG_NOBIT;
+	}
+	for (int i = 0; i < MAX_TALKCOND; i ++) {
+		pGoal->abyCondNo[i] = FLAG_NONUM;
+	}
+}
+
+/* 「いまの目的」の行が使われているか（文があるか、「無し」でない条件がある） */
+static bool StoryGoalUsed(const STORYGOAL *pGoal)
+{
+	if (pGoal->szGoal[0]) {
+		return true;
+	}
+	for (int i = 0; i < MAX_TALKNEED; i ++) {
+		if (pGoal->awNeed[i] != FLAG_NOBIT || pGoal->awNot[i] != FLAG_NOBIT) {
+			return true;
+		}
+	}
+	for (int i = 0; i < MAX_TALKCOND; i ++) {
+		if (pGoal->abyCondNo[i] != FLAG_NONUM) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/* シナリオ 1 件（goals は使っている最後の行まで） */
+static std::string StoryJson(const STORYINFO *pStory)
+{
+	std::string out = FieldsJson((const BYTE *)pStory, s_aFieldStory, COUNTOF(s_aFieldStory));
+	int nLast = 0;
+
+	for (int i = 0; i < MAX_STORYGOAL; i ++) {
+		if (StoryGoalUsed(&pStory->aGoal[i])) {
+			nLast = i + 1;
+		}
+	}
+	out += ",\"goals\":[";
+	for (int i = 0; i < nLast; i ++) {
+		if (i) out += ",";
+		out += "{" + FieldsJson((const BYTE *)&pStory->aGoal[i], s_aFieldStoryGoal, COUNTOF(s_aFieldStoryGoal)) + "}";
+	}
+	out += "]";
+	return out;
+}
+
 /* マップ 1 件（マス目は入れない。SboWebDataMapTiles で読む） */
 static std::string MapJson(PMAPINFO pMap)
 {
@@ -1827,6 +1932,15 @@ static std::string MapJson(PMAPINFO pMap)
 				",\"power\":" + JsonNum(pLight->byPower ? pLight->byPower : 100) +
 				",\"flicker\":" + JsonNum((pLight->byFlg & MAPLIGHTFLG_NOFLICKER) ? 0 : 1) +
 				",\"warm\":" + JsonNum((pLight->byFlg & MAPLIGHTFLG_WARM) ? 1 : 0) + "}";
+	}
+	out += "]";
+
+	/* パーツの灯りの上書き（全マップ共通のパーツの byLight を、このマップだけ変える。0=光らない） */
+	out += ",\"partsLights\":[";
+	for (i = 0; i < pMap->byPartsLightCount && i < MAX_MAPPARTSLIGHT; i ++) {
+		const MAPPARTSLIGHT *pPL = &pMap->aPartsLight[i];
+		if (i) out += ",";
+		out += "{\"wParts\":" + JsonNum(pPL->wParts) + ",\"byLight\":" + JsonNum(pPL->byLight) + "}";
 	}
 	out += "]";
 
@@ -2177,12 +2291,20 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataSchema(void)
 					",{\"name\":\"wFrom\",\"type\":\"u16\",\"label\":\"帯 1 の先頭（互換）\",\"note\":\"bands[0].wFrom と同じ。bands を使わずこれと wTo だけを渡すと帯 1 本のグループになる（直す時は帯 1 だけが変わり、帯 2 以降は残る）\"}"
 					",{\"name\":\"wTo\",\"type\":\"u16\",\"label\":\"帯 1 の最後（互換）\",\"note\":\"bands[0].wTo と同じ\"}");
 			break;
+		case KIND_AFFIX:
+			out += FieldSchemaJson(s_aFieldAffix, COUNTOF(s_aFieldAffix));
+			break;
+		case KIND_ITEMDERIVE:
+			out += FieldSchemaJson(s_aFieldItemDerive, COUNTOF(s_aFieldItemDerive));
+			out.insert(out.size() - 1, ",{\"name\":\"itemId\",\"type\":\"u16\",\"label\":\"アイテム番号\",\"readonly\":true,\"note\":\"この派生アイテムの番号（16384 + id）。持ち物・預かり所などはこの番号で持つ\"}");
+			break;
 		case KIND_TALK:
 			out += FieldSchemaJson(s_aFieldTalk, COUNTOF(s_aFieldTalk));
 			out.insert(out.size() - 1, ",{\"name\":\"lines\",\"type\":\"object[]\",\"label\":\"行\",\"maxCount\":" + JsonNum(MAX_TALKLINE) + ",\"fields\":" + FieldSchemaJson(s_aFieldTalkLine, COUNTOF(s_aFieldTalkLine)) + ",\"note\":\"配列で丸ごと置き換え。省いた項目は、印・数値の番号が無し（65535・255）・それ以外は 0。台詞が空の行は「……」と言う。1 行ごとに順位・条件・台詞・話した後の動きを持つ\"}");
 			break;
 		case KIND_STORY:
 			out += FieldSchemaJson(s_aFieldStory, COUNTOF(s_aFieldStory));
+			out.insert(out.size() - 1, ",{\"name\":\"goals\",\"type\":\"object[]\",\"label\":\"いまの目的\",\"maxCount\":" + JsonNum(MAX_STORYGOAL) + ",\"fields\":" + FieldSchemaJson(s_aFieldStoryGoal, COUNTOF(s_aFieldStoryGoal)) + ",\"note\":\"配列で丸ごと置き換え（省くと今のまま。足す時に省くと無し）。クリアの印（wClearFlag）は見ず（クリアで消したい時は行の awNot にクリアの印を入れる）、上から見て条件（印・数値。会話データの行と同じ判定）に全部合う最初の行の szGoal を、コマンド窓の「目的」に「シナリオ名」と並べて出す。szGoal が空の行は飛ばし、合う行が無ければそのシナリオは出さない。省いた条件は無し（印 65535・数値 255）、短い配列は残りの行が無し\"}");
 			break;
 		case KIND_CHAR:
 			out += FieldSchemaJson(s_aFieldChar, COUNTOF(s_aFieldChar));
@@ -2321,11 +2443,18 @@ static std::string RecordJson(int nKind, int nID)
 	case KIND_FLAGGROUP:
 		out += FlagGroupJson(g_aFlagGroupInfo[nID]);
 		break;
+	case KIND_AFFIX:
+		out += FieldsJson((const BYTE *)g_aAffixInfo[nID], s_aFieldAffix, COUNTOF(s_aFieldAffix));
+		break;
+	case KIND_ITEMDERIVE:
+		out += FieldsJson((const BYTE *)g_aItemDerive[nID], s_aFieldItemDerive, COUNTOF(s_aFieldItemDerive)) +
+				",\"itemId\":" + JsonNum(ITEMID_DERIVE_BASE + nID);
+		break;
 	case KIND_TALK:
 		out += TalkJson(g_aTalkInfo[nID]);
 		break;
 	case KIND_STORY:
-		out += FieldsJson((const BYTE *)g_aStoryInfo[nID], s_aFieldStory, COUNTOF(s_aFieldStory));
+		out += StoryJson(g_aStoryInfo[nID]);
 		break;
 	case KIND_CHAR:
 		if (CharIsEmpty(g_aCharInfo[nID])) {
@@ -2540,6 +2669,83 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataRecycle()
 	}
 	out += "],\"limits\":{\"maxKind\":" + JsonNum(RECYCLE_MAXKIND) + ",\"maxCount\":" + JsonNum(RECYCLE_MAXCOUNT) +
 			",\"dayLimit\":" + JsonNum(RECYCLE_DAYLIMIT) + ",\"logMax\":" + JsonNum(RECYCLE_LOGMAX) + ",\"range\":" + JsonNum(RECYCLE_RANGE) + ",\"maxBox\":" + JsonNum(MAX_RECYCLEBOX) + "}}";
+	s_strResult = out;
+	return s_strResult.c_str();
+}
+
+/*
+ * 取引所（委託販売。docs/market.md）の出品と売上の状況。読むだけ（期限切れへの切り替えもしない）。
+ *   items … 出品（新しい順＝出品IDの大きい順）。id は出品ID、acc は出品者のアカウント、seller は出品したキャラ名、
+ *           charId はそのキャラのテーブルID、itemId・item は品、price は値段、fee は売れた時の手数料、net は手取り、
+ *           time・date は出品した時刻（UNIX 秒・日本時間の「年-月-日 時:分」）、limit・limitDate は期限、
+ *           state は "on"（出品中）か "expired"（期限切れ。保存上はまだ出品中でも期限を過ぎていれば expired）、
+ *           leftSec は期限までの残り秒（期限切れは 0）
+ *   accounts … アカウントごとの出品数（出品中・期限切れ）と、受付に貯まっている売上 gold（出品か売上のあるアカウントだけ。アカウント名の順）
+ *   total … 出品中・期限切れの件数、出品中の値段の合計、売上の合計
+ *   limits … 決まり（1 アカウントの出品数・期限の日数・手数料%・値段の上限・受付からの距離・買う一覧の件数）
+ */
+extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataMarket()
+{
+	DWORD dwNow = (DWORD)time(NULL);
+	std::vector<size_t> aIdx;
+	for (size_t k = 0; k < g_aMarketItem.size(); k ++) {
+		aIdx.push_back(k);
+	}
+	std::sort(aIdx.begin(), aIdx.end(), [](size_t a, size_t b) { return g_aMarketItem[a].dwID > g_aMarketItem[b].dwID; });
+
+	/* アカウントごとの集計（アカウント名 → 出品中・期限切れ・売上） */
+	struct ACCSUM { int nOn; int nExpired; DWORD dwGold; };
+	std::map<std::string, ACCSUM> mapAcc;
+	int nOn = 0, nExpired = 0;
+	unsigned long long qwOnPrice = 0, qwGold = 0;
+
+	std::string out = "{\"items\":[";
+	for (size_t r = 0; r < aIdx.size(); r ++) {
+		const MARKETITEM &M = g_aMarketItem[aIdx[r]];
+		DWORD dwLimit = M.dwTime + MARKET_LIMITSEC;
+		bool bExpired = (M.byState != MARKETSTATE_ON) || (dwNow >= M.dwTime && dwNow - M.dwTime >= MARKET_LIMITSEC);
+		DWORD dwFee = (DWORD)((unsigned long long)M.dwPrice * MARKET_FEE_PERCENT / 100);
+		std::string strAcc(M.szAcc, strnlen(M.szAcc, MAX_ACCNAME));
+		ACCSUM &S = mapAcc[strAcc];
+		if (bExpired) {
+			S.nExpired ++;
+			nExpired ++;
+		} else {
+			S.nOn ++;
+			nOn ++;
+			qwOnPrice += M.dwPrice;
+		}
+		if (r) out += ",";
+		out += "{\"id\":" + JsonNum(M.dwID) + ",\"acc\":" + JsonStr(strAcc.c_str()) +
+				",\"seller\":" + JsonStr(std::string(M.szSeller, strnlen(M.szSeller, MAX_CHARNAMEBUF)).c_str()) +
+				",\"charId\":" + JsonNum(M.dwCharID) + ",\"itemId\":" + JsonNum(M.wItemID) + ",\"item\":" + RecycleItemName(M.wItemID) +
+				",\"price\":" + JsonNum(M.dwPrice) + ",\"fee\":" + JsonNum(dwFee) + ",\"net\":" + JsonNum(M.dwPrice - dwFee) +
+				",\"time\":" + JsonNum(M.dwTime) + ",\"date\":" + JsonStr(RecycleDateText(M.dwTime).c_str()) +
+				",\"limit\":" + JsonNum(dwLimit) + ",\"limitDate\":" + JsonStr(RecycleDateText(dwLimit).c_str()) +
+				",\"state\":" + JsonStr(bExpired ? "expired" : "on") +
+				",\"leftSec\":" + JsonNum(bExpired ? 0 : (dwLimit > dwNow ? dwLimit - dwNow : 0)) + "}";
+	}
+	for (size_t k = 0; k < g_aMarketSale.size(); k ++) {
+		const MARKETSALE &Sale = g_aMarketSale[k];
+		if (Sale.szAcc[0] == 0 || Sale.dwGold == 0) {
+			continue;
+		}
+		std::string strAcc(Sale.szAcc, strnlen(Sale.szAcc, MAX_ACCNAME));
+		mapAcc[strAcc].dwGold += Sale.dwGold;
+		qwGold += Sale.dwGold;
+	}
+	out += "],\"accounts\":[";
+	bool bFirst = true;
+	for (std::map<std::string, ACCSUM>::const_iterator it = mapAcc.begin(); it != mapAcc.end(); ++ it) {
+		if (!bFirst) out += ",";
+		bFirst = false;
+		out += "{\"acc\":" + JsonStr(it->first.c_str()) + ",\"on\":" + JsonNum(it->second.nOn) + ",\"expired\":" + JsonNum(it->second.nExpired) +
+				",\"gold\":" + JsonNum(it->second.dwGold) + "}";
+	}
+	out += "],\"total\":{\"on\":" + JsonNum(nOn) + ",\"expired\":" + JsonNum(nExpired) +
+			",\"onPrice\":" + JsonNum((long long)qwOnPrice) + ",\"gold\":" + JsonNum((long long)qwGold) + "}";
+	out += ",\"limits\":{\"maxPut\":" + JsonNum(MARKET_MAXPUT) + ",\"days\":" + JsonNum(MARKET_DAYS) + ",\"feePercent\":" + JsonNum(MARKET_FEE_PERCENT) +
+			",\"priceMax\":" + JsonNum(MARKET_PRICEMAX) + ",\"range\":" + JsonNum(MARKET_RANGE) + ",\"listMax\":" + JsonNum(MARKET_LISTMAX) + "}}";
 	s_strResult = out;
 	return s_strResult.c_str();
 }
@@ -2851,6 +3057,7 @@ static bool CharApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::str
 	pDst->bySearchCy		= w.bySearchCy;
 	pDst->byDropProbability	= w.byDropProbability;
 	pDst->byAtackRate		= w.byAtackRate;
+	pDst->byGhost			= w.byGhost;
 	WORD wShowIn = CharFlagToWire(w.wShowFlag);	/* 中の形（番号+1。0=無し）にして入れる */
 	WORD wHideIn = CharFlagToWire(w.wHideFlag);
 	bViewChg				= (pDst->wShowFlag != wShowIn) || (pDst->wHideFlag != wHideIn);
@@ -3048,7 +3255,7 @@ static bool ParseMapSwaps(const JVal &sw, int nID, MAPINFO &w, std::string &strE
 /* マップの変更（設定・イベント・店・メッセージ。配列は丸ごと置き換え） */
 static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr, std::string &strRecord)
 {
-	static const char *apszExtra[] = { "szName", "darkAreas", "lights", "swaps", "events", "shops", "messages", "items", NULL };
+	static const char *apszExtra[] = { "szName", "darkAreas", "lights", "partsLights", "swaps", "events", "shops", "messages", "items", NULL };
 	PMAPINFO pMap = g_aMapInfo[nID];
 	long long n;
 
@@ -3192,6 +3399,57 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 			if (pw) {
 				if (!GetInt(*pw, 0, 1, n, strErr, strP + ".warm")) return false;
 				if (n) pLight->byFlg |= MAPLIGHTFLG_WARM;
+			}
+		}
+	}
+
+	/* パーツの灯りの上書き（丸ごと置き換え） */
+	const JVal *pPartsLights = chg.Get("partsLights");
+	if (pPartsLights) {
+		static const char *apszPLKey[] = { "wParts", "byLight", NULL };
+		if (pPartsLights->t != JVal::ARR) {
+			strErr = "partsLights は配列で指定してください";
+			return false;
+		}
+		if (pPartsLights->a.size() > MAX_MAPPARTSLIGHT) {
+			strErr = "partsLights は " + JsonNum(MAX_MAPPARTSLIGHT) + " 件までです";
+			return false;
+		}
+		ZeroMemory(w.aPartsLight, sizeof(w.aPartsLight));
+		w.byPartsLightCount = (BYTE)pPartsLights->a.size();
+		for (size_t i = 0; i < pPartsLights->a.size(); i ++) {
+			const JVal &e = pPartsLights->a[i];
+			std::string strP = "partsLights[" + JsonNum((long long)i) + "]";
+			if (e.t != JVal::OBJ) {
+				strErr = strP + " はオブジェクトで指定してください";
+				return false;
+			}
+			for (size_t k = 0; k < e.o.size(); k ++) {
+				bool bOk = false;
+				for (int m = 0; apszPLKey[m]; m ++) if (e.o[k].first == apszPLKey[m]) bOk = true;
+				if (!bOk) {
+					strErr = strP + ": 知らない項目です: " + e.o[k].first;
+					return false;
+				}
+			}
+			const JVal *pwp = e.Get("wParts"), *pbl = e.Get("byLight");
+			if (!pwp || !pbl) {
+				strErr = strP + " には wParts・byLight が要ります";
+				return false;
+			}
+			if (g_wCountMapParts <= 0) {
+				strErr = "パーツがありません";
+				return false;
+			}
+			if (!GetInt(*pwp, 0, g_wCountMapParts - 1, n, strErr, strP + ".wParts")) return false;
+			w.aPartsLight[i].wParts = (WORD)n;
+			if (!GetInt(*pbl, 0, 7, n, strErr, strP + ".byLight")) return false;
+			w.aPartsLight[i].byLight = (BYTE)n;
+			for (size_t j = 0; j < i; j ++) {
+				if (w.aPartsLight[j].wParts == w.aPartsLight[i].wParts) {
+					strErr = strP + ".wParts: パーツ " + JsonNum(w.aPartsLight[i].wParts) + " が重複しています";
+					return false;
+				}
 			}
 		}
 	}
@@ -3374,6 +3632,8 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 		memcmp(pMap->aDarkArea, w.aDarkArea, sizeof(pMap->aDarkArea)) != 0 ||
 		pMap->byLightCount != w.byLightCount ||
 		memcmp(pMap->aLight, w.aLight, sizeof(pMap->aLight)) != 0 ||
+		pMap->byPartsLightCount != w.byPartsLightCount ||
+		memcmp(pMap->aPartsLight, w.aPartsLight, sizeof(pMap->aPartsLight)) != 0 ||
 		strName != std::string(pMap->pszName ? (const char *)pMap->pszName : "");
 	/* 店が減る時はクライアントの店の数を減らす手段が無いので、マップ情報ごと送り直す */
 	if (pShops && aShop.size() < (size_t)pMap->byCountShop) {
@@ -3393,6 +3653,8 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 	CopyMemory(pMap->aDarkArea, w.aDarkArea, sizeof(pMap->aDarkArea));
 	pMap->byLightCount		= w.byLightCount;
 	CopyMemory(pMap->aLight, w.aLight, sizeof(pMap->aLight));
+	pMap->byPartsLightCount	= w.byPartsLightCount;
+	CopyMemory(pMap->aPartsLight, w.aPartsLight, sizeof(pMap->aPartsLight));
 	/* 印で変わるマスが変わったら、マップ全体の送り直しは要らず、いるプレイヤーに差し替え一覧だけ送る */
 	bool bSwapChg = MapSwapChanged(*pMap, w) ? true : false;
 	MapSwapSet(pMap, w);
@@ -4302,9 +4564,20 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 			memset(&Info, 0, sizeof(Info));
 			if (!bAdd) {
 				Info = *g_aStTmpInfo[nID];
+			} else {
+				Info.byAffixRate = 10;		/* 足す時に省いたら古いデータと同じ（10%・格 1） */
+				Info.byAffixRank = 1;
 			}
 			if (!CheckKnownKeys(chg, s_aFieldStTmp, COUNTOF(s_aFieldStTmp), NULL, strErr) ||
 					!ApplyFields((BYTE *)&Info, s_aFieldStTmp, COUNTOF(s_aFieldStTmp), chg, strErr, "")) {
+				goto Exit;
+			}
+			if (Info.byAffixRate > 100) {
+				strErr = "byAffixRate は 0〜100 で指定してください";
+				goto Exit;
+			}
+			if (Info.byAffixRank > 3) {
+				strErr = "byAffixRank は 0〜3 で指定してください";
 				goto Exit;
 			}
 			strRecord = FieldsJson((const BYTE *)&Info, s_aFieldStTmp, COUNTOF(s_aFieldStTmp));
@@ -4371,6 +4644,10 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 				strErr = "byState は 0（削除済み）・1（有効）・2（停止中）のどれかで指定してください";
 				goto Exit;
 			}
+			if (Info.byKind > MAKERKIND_APPRAISE) {
+				strErr = "byKind は 0（レシピで作る）か 1（鑑定屋）で指定してください";
+				goto Exit;
+			}
 			if (Info.byState != RECIPESTATE_NONE && Info.szName[0] == 0) {
 				strErr = "szName（名前）は空にできません";
 				goto Exit;
@@ -4414,11 +4691,43 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 					strErr = "byMaker は maker の番号（0〜" + JsonNum(g_aMakerInfo.GetSize() - 1) + "）で指定してください。先に maker を足してください";
 					goto Exit;
 				}
-				if (Info.wItem == 0 || Info.wItem >= g_aItemInfo.GetSize()) {
+				if (Info.byKind == RECIPEKIND_NORMAL && (Info.wItem == 0 || Info.wItem >= g_aItemInfo.GetSize())) {
 					strErr = "wItem は item の番号（1〜" + JsonNum(g_aItemInfo.GetSize() - 1) + "）で指定してください";
 					goto Exit;
 				}
-				if (Info.byCount < 1) {
+				if (Info.byKind > RECIPEKIND_SWAP) {
+					strErr = "byKind は 0（普通）・1（鍛える）・2（付け替える）のどれかで指定してください";
+					goto Exit;
+				}
+				if (Info.byKind != RECIPEKIND_NORMAL) {
+					/* 鍛える・付け替える：できる物は無く（個数は 1 固定）、付与と対象の装備を決める */
+					PITEMAFFIXINFO pAffix = NULL;
+					for (int k = 0; k < g_aAffixInfo.GetSize(); k ++) {
+						if (Info.wAffix != 0 && g_aAffixInfo[k]->wID == Info.wAffix) {
+							pAffix = g_aAffixInfo[k];
+						}
+					}
+					if (pAffix == NULL) {
+						strErr = "wAffix は affix の wID（付与番号）で指定してください。先に affix を足してください";
+						goto Exit;
+					}
+					if (Info.byKind == RECIPEKIND_FORGE && pAffix->byPos != AFFIXPOS_BACK) {
+						strErr = "鍛えるレシピの wAffix は位置が後ろ（byPos=1）の付与にしてください";
+						goto Exit;
+					}
+					if (Info.wEquMask & ~(WORD)AFFIXEQU_ALL) {
+						strErr = "wEquMask は 0〜255（0=付与側に従う。武器=1・鎧=2・盾=4・兜=8・小手=16・靴=32・首飾り=64・指輪=128 のビットの和）で指定してください";
+						goto Exit;
+					}
+					Info.wItem = 0;
+					Info.byCount = 1;
+					Info.byAllowPlain = Info.byAllowPlain ? 1 : 0;
+				} else {
+					Info.wAffix = 0;
+					Info.wEquMask = 0;
+					Info.byAllowPlain = 0;
+				}
+				if (Info.byKind == RECIPEKIND_NORMAL && Info.byCount < 1) {
 					strErr = "byCount（できる個数）は 1 以上にしてください";
 					goto Exit;
 				}
@@ -4453,6 +4762,84 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 				}
 				SendCmdRECIPEINFO(URARASOCK_SENDALL, (WORD)nID);
 				SaveRecipeInfo();
+			}
+		}
+		break;
+
+	case KIND_AFFIX:
+		{
+			ITEMAFFIXINFO Info;
+			memset(&Info, 0, sizeof(Info));
+			if (!bAdd) {
+				Info = *g_aAffixInfo[nID];
+			} else {
+				Info.byRank = 1;
+				Info.wEquMask = AFFIXEQU_ALL;
+				Info.wWeight = 100;
+				Info.wGoldRate = 100;
+			}
+			if (!CheckKnownKeys(chg, s_aFieldAffix, COUNTOF(s_aFieldAffix), NULL, strErr) ||
+					!ApplyFields((BYTE *)&Info, s_aFieldAffix, COUNTOF(s_aFieldAffix), chg, strErr, "")) {
+				goto Exit;
+			}
+			if (Info.byPos > AFFIXPOS_BACK) {
+				strErr = "byPos は 0（前に付く）か 1（後ろに付く）で指定してください";
+				goto Exit;
+			}
+			if (Info.szName[0] == 0) {
+				strErr = "szName（名前）は空にできません";
+				goto Exit;
+			}
+			if (Info.wEquMask == 0 || (Info.wEquMask & ~(WORD)AFFIXEQU_ALL)) {
+				strErr = "wEquMask は 1〜255（武器=1・鎧=2・盾=4・兜=8・小手=16・靴=32・首飾り=64・指輪=128 のビットの和）で指定してください";
+				goto Exit;
+			}
+			if (Info.byRank < 1 || Info.byRank > 3) {
+				strErr = "byRank（格）は 1〜3 で指定してください";
+				goto Exit;
+			}
+			if (Info.wNext != 0) {
+				/* 次の段は、表にある別の付与で、位置が同じもの（＋1→＋2→＋3 の鎖が自分に戻らないように、自分は指せない） */
+				PITEMAFFIXINFO pNext = NULL;
+				for (int k = 0; k < g_aAffixInfo.GetSize(); k ++) {
+					if (g_aAffixInfo[k]->wID == Info.wNext) {
+						pNext = g_aAffixInfo[k];
+					}
+				}
+				if (pNext == NULL || (!bAdd && Info.wNext == Info.wID)) {
+					strErr = "wNext は表にある別の付与の wID で指定してください（0 ならこれ以上は鍛えられない）";
+					goto Exit;
+				}
+				if (pNext->byPos != Info.byPos) {
+					strErr = "wNext は位置（byPos）が同じ付与にしてください";
+					goto Exit;
+				}
+			}
+			/* 付与番号を振る（今ある一番大きい番号 + 1。使い回さない） */
+			if (bAdd) {
+				DWORD dwNew = 1;
+				for (int k = 0; k < g_aAffixInfo.GetSize(); k ++) {
+					if ((DWORD)g_aAffixInfo[k]->wID >= dwNew) {
+						dwNew = (DWORD)g_aAffixInfo[k]->wID + 1;
+					}
+				}
+				if (dwNew > 65535) {
+					strErr = "付与がいっぱいで足せません";
+					goto Exit;
+				}
+				Info.wID = (WORD)dwNew;
+			}
+			strRecord = FieldsJson((const BYTE *)&Info, s_aFieldAffix, COUNTOF(s_aFieldAffix));
+			if (bApply) {
+				if (bAdd) {
+					PITEMAFFIXINFO pNew = new ITEMAFFIXINFO;
+					*pNew = Info;
+					g_aAffixInfo.Add(pNew);
+				} else {
+					*g_aAffixInfo[nID] = Info;
+				}
+				SendCmdAFFIXINFO(URARASOCK_SENDALL, (WORD)nID);
+				SaveAffixInfo();
 			}
 		}
 		break;
@@ -4896,8 +5283,12 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 
 	case KIND_STORY:
 		{
+			static const char *apszStoryExtra[] = { "goals", NULL };
 			STORYINFO Info;
 			memset(&Info, 0, sizeof(Info));
+			for (int k = 0; k < MAX_STORYGOAL; k ++) {
+				StoryGoalInit(&Info.aGoal[k]);
+			}
 			if (!bAdd) {
 				Info = *g_aStoryInfo[nID];
 			} else {
@@ -4913,7 +5304,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 				}
 				Info.byCountNum = FLAG_NONUM;
 			}
-			if (!CheckKnownKeys(chg, s_aFieldStory, COUNTOF(s_aFieldStory), NULL, strErr)) {
+			if (!CheckKnownKeys(chg, s_aFieldStory, COUNTOF(s_aFieldStory), apszStoryExtra, strErr)) {
 				goto Exit;
 			}
 			/* wID は読むだけ（自動で振る）。同じ値を書き戻すのは許す（取得した記録をそのまま渡せるように） */
@@ -4931,6 +5322,28 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 				}
 				if (!ApplyFields((BYTE *)&Info, s_aFieldStory, COUNTOF(s_aFieldStory), chg2, strErr, "")) {
 					goto Exit;
+				}
+			}
+			/* いまの目的の行（丸ごと置き換え。省くと今のまま） */
+			if (const JVal *pGoals = chg.Get("goals")) {
+				if (pGoals->t != JVal::ARR || pGoals->a.size() > (size_t)MAX_STORYGOAL) {
+					strErr = "goals はオブジェクトの配列で、" + JsonNum(MAX_STORYGOAL) + " 行までです";
+					goto Exit;
+				}
+				for (int k = 0; k < MAX_STORYGOAL; k ++) {
+					StoryGoalInit(&Info.aGoal[k]);
+				}
+				for (size_t k = 0; k < pGoals->a.size(); k ++) {
+					const JVal &l = pGoals->a[k];
+					std::string strName = "goals[" + JsonNum((long long)k) + "].";
+					if (l.t != JVal::OBJ) {
+						strErr = "goals の要素はオブジェクトで指定してください";
+						goto Exit;
+					}
+					if (!CheckKnownKeys(l, s_aFieldStoryGoal, COUNTOF(s_aFieldStoryGoal), NULL, strErr) ||
+							!ApplyFields((BYTE *)&Info.aGoal[k], s_aFieldStoryGoal, COUNTOF(s_aFieldStoryGoal), l, strErr, strName)) {
+						goto Exit;
+					}
 				}
 			}
 			/* 内容の確認 */
@@ -4970,6 +5383,26 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 			if (Info.byCountNum >= MAX_FLAGNUM && Info.byCountNum != FLAG_NONUM) {
 				strErr = "byCountNum は数値の番号（0〜" + JsonNum(MAX_FLAGNUM - 1) + "）か 255（数えない）で指定してください";
 				goto Exit;
+			}
+			for (int k = 0; k < MAX_STORYGOAL; k ++) {
+				const STORYGOAL &G = Info.aGoal[k];
+				std::string strName = "goals[" + JsonNum(k) + "].";
+				for (int j = 0; j < MAX_TALKNEED; j ++) {
+					if ((G.awNeed[j] >= MAX_FLAGBIT && G.awNeed[j] != FLAG_NOBIT) || (G.awNot[j] >= MAX_FLAGBIT && G.awNot[j] != FLAG_NOBIT)) {
+						strErr = strName + "awNeed・awNot は印の番号（0〜" + JsonNum(MAX_FLAGBIT - 1) + "）か 65535（無し）で指定してください";
+						goto Exit;
+					}
+				}
+				for (int j = 0; j < MAX_TALKCOND; j ++) {
+					if (G.abyCondNo[j] >= MAX_FLAGNUM && G.abyCondNo[j] != FLAG_NONUM) {
+						strErr = strName + "abyCondNo は数値の番号（0〜" + JsonNum(MAX_FLAGNUM - 1) + "）か 255（無し）で指定してください";
+						goto Exit;
+					}
+					if (G.abyCondCmp[j] >= TALKCMP_MAX) {
+						strErr = strName + "abyCondCmp は 0（以上）・1（ちょうど）・2（以下）のどれかで指定してください";
+						goto Exit;
+					}
+				}
 			}
 			for (int k = 0; k < MAX_STORYQUEST; k ++) {
 				if (Info.awQuest[k] == 0) {
@@ -5033,7 +5466,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 				}
 				Info.wID = wNew;
 			}
-			strRecord = FieldsJson((const BYTE *)&Info, s_aFieldStory, COUNTOF(s_aFieldStory));
+			strRecord = StoryJson(&Info);
 			if (bApply) {
 				if (bAdd) {
 					PSTORYINFO pNew = new STORYINFO;
@@ -5384,6 +5817,8 @@ void SboDataStoryApplyInfo(int nNo, const STORYINFO *pInfo, int &nNoOut, std::st
 	if (!bAdd) {
 		Info.wID = g_aStoryInfo[nNo]->wID;
 	}
+	/* 「いまの目的」（goals）は管理者ウィンドウでは編集しないので JSON に含めない（含めないと今の値が残る。足す時は無し）。
+	   届いた STORYINFO に目的が入っていても、それは使わない */
 	std::string strJson = "{" + (bAdd ? FieldsJson((const BYTE *)&Info, s_aFieldStory + 1, COUNTOF(s_aFieldStory) - 1) :
 			FieldsJson((const BYTE *)&Info, s_aFieldStory, COUNTOF(s_aFieldStory))) + "}";
 	const char *pszRes = SboWebDataApply("story", bAdd ? g_aStoryInfo.GetSize() : nNo, strJson.c_str(), 1, "管理者ウィンドウ");

@@ -70,6 +70,10 @@
 #define MAX_RECIPEMAT		4										/* レシピの材料の種類 */
 #define MAX_MAKERNAME		64										/* 作り手の名前の欄のバイト数（終端含む） */
 #define MAX_MAKERMSG		256										/* 作り手の台詞の欄のバイト数（終端含む） */
+#define MAX_AFFIX			1000									/* 付与（接頭辞・接尾辞）の最大数 */
+#define MAX_AFFIXNAME		32										/* 付与の名前の欄のバイト数（終端含む） */
+#define MAX_ITEMDERIVE		(65535 - 16384)							/* 派生アイテムの最大数（番号は 16384 から） */
+#define ITEMID_DERIVE_BASE	16384									/* アイテム番号がこれ以上なら派生アイテム（付与付き・未鑑定）の番号 */
 #define MAX_JOBMAGIC		32										/* 職業別に呪文を覚えておける職業数（職業IDがこれ未満の職業が対象） */
 #define MAX_QUEST			512										/* 最大依頼数（依頼番号 wID は 1〜511。一度きり依頼のクリア済みの印が 512 ビットなのでこれ未満） */
 #define MAX_QUESTNPC		8										/* 1つの依頼に付けられる「見えるNPC」の数 */
@@ -85,6 +89,7 @@
 #define MAX_STORYFLAGRANGE	2										/* シナリオをやり直す時に消す印の範囲の数（STORYINFO の awFlagFrom・awFlagTo） */
 #define MAX_STORYNUM		4										/* シナリオをやり直す時に 0 に戻す数値の数（STORYINFO の abyNum） */
 #define MAX_STORYQUEST		4										/* シナリオをやり直す時に受け直せるようにする依頼の数（STORYINFO の awQuest） */
+#define MAX_STORYGOAL		8										/* シナリオの「いまの目的」の行の数（STORYINFO の aGoal。コマンド窓の「目的」に出る） */
 #define QUESTNPC_NOSTEP		(0xFF)									/* 見えるNPCで「段を変えない」を表す値（byNextStep）、「どの段でも」を表す値（byStepMax） */
 
 /* キャラのフラグ（ずっと残る印と数値）と、フラグで台詞を出し分ける会話データ。番号の割り振りは目安で、コードでは強制しない
@@ -341,7 +346,7 @@ enum {
 	CMD_TOWNWARP,													/* 町転送の行き先一覧(サーバー→本人) */
 /* 以下、プレイヤー用（ギルドの仕事依頼。CMD_QUEST はクライアント→サーバーも受ける。管理者用の判定から外すこと） */
 	CMD_QUEST,														/* ギルドの仕事依頼（一覧・受ける・取り消す・渡す。結果はサーバー→クライアント） */
-	CMD_QUESTSTATE,													/* 依頼の進み具合(サーバー→本人。自分と仲間の分) */
+	CMD_QUESTSTATE,													/* 依頼の進み具合(サーバー→本人。自分と仲間の依頼と、自分の物語の目的) */
 	CMD_SORTITEM,													/* 道具欄・預かり所の並べ替え（クライアント→サーバー。結果は CMD_CHARITEM・CMD_LEAVEITEMGET で返る） */
 	CMD_LEAVEITEMDISPOSE,											/* 預かり所の品を引き取らずに売る・捨てる（クライアント→サーバー。結果は CMD_LEAVEITEMGET で返る） */
 	CMD_CHARBUFF,													/* 攻撃力・守備力アップの残り時間(サーバー→本人とパーティの仲間。サーバーは受け取らない) */
@@ -379,6 +384,10 @@ enum {
 /* 以下、管理者用（CMD_MAPPARTSADD 以上は自動で管理者専用になる。CMD_RECYCLECLOSE より後ろに足す） */
 	CMD_ADMINCHEST,													/* 管理者ウィンドウのキャラの開けた宝箱の記録（全宝箱の一覧・取得・変更。結果はサーバー→クライアント） */
 	CMD_ADMINSWAP,													/* 管理者ウィンドウの「印で変わるマス・宝箱」（いまいるマップの差し替え表の取得・足す・直す・消す。結果はサーバー→クライアント） */
+/* 以下、プレイヤー用（付与。管理者用の判定から外すこと） */
+	CMD_AFFIXINFO,													/* 付与表の1行(サーバー→クライアント。ログイン時と変更時) */
+	CMD_ITEMDERIVE,													/* 派生アイテム表の行(サーバー→クライアント。ログイン時と新しく振った時) */
+	CMD_APPRAISE,													/* 鑑定屋で鑑定してもらう(クライアント→サーバー。結果はサーバー→クライアント) */
 	CMD_MAX
 };
 
@@ -2037,6 +2046,15 @@ typedef struct _MAPLIGHT {
 #define MAPLIGHTFLG_NOFLICKER	(0x01)								/* ゆらめかない */
 #define MAPLIGHTFLG_WARM		(0x02)								/* 暖色(炎のような橙色) */
 
+/* マップごとのパーツの灯りの上書き（パーツの灯りの範囲 byLight は全マップ共通なので、
+   このマップだけ別の範囲にしたいパーツを並べる。0 にするとこのマップでは光らない） */
+#define MAX_MAPPARTSLIGHT	8										/* 1マップに置けるパーツの灯りの上書きの数 */
+typedef struct _MAPPARTSLIGHT {
+	WORD			wParts;											/* パーツ番号 */
+	BYTE			byLight;										/* このマップでの灯りの範囲(マス。0〜7。0=光らない) */
+	BYTE			byReserve;										/* 予備 */
+} MAPPARTSLIGHT, *PMAPPARTSLIGHT;
+
 /* 印で変わるマス（その人の記録を見て、マスのパーツをその人の画面だけ別のパーツに差し替える。サーバーだけが持つ。
    差し替えるのはパーツの 1 層（pwMap）だけ）。種類が 3 つある。
    (a) MAPSWAPKIND_FLAG 印で変わる（物語のしかけ用。依頼を終えた人にだけ橋がかかる、崩れた壁が通れる、など）：
@@ -2107,6 +2125,8 @@ typedef struct _MAPINFO {
 	MAPDARKAREA		aDarkArea[MAX_MAPDARKAREA];						/* 暗くする・暗くしない範囲 */
 	BYTE			byLightCount;									/* 光源の数 */
 	MAPLIGHT		aLight[MAX_MAPLIGHT];							/* 光源 */
+	BYTE			byPartsLightCount;								/* パーツの灯りの上書きの数 */
+	MAPPARTSLIGHT	aPartsLight[MAX_MAPPARTSLIGHT];					/* パーツの灯りの上書き（このマップだけ） */
 	BYTE			byViewRange;									/* 見える範囲(マス。0=制限なし。壁の向こうと範囲の外は見えない) */
 	WORD			wViewHideParts;									/* 見えない所に描くパーツ(0=黒) */
 	BYTE			bySwapCount;									/* 印で変わるマスの数（サーバーだけ。クライアントへは 0 で送る） */
@@ -2242,6 +2262,19 @@ typedef struct _MAPINFOSAVE {
 } MAPINFOSAVE, *PMAPINFOSAVE;
 
 /* キャラ情報 */
+/* コマンドの連打を止める間隔の種別（サーバーだけ。CHARINFO::adwRateLast の添字） */
+enum {
+	RATE_GMCALL = 0,											/* 管理人呼び出し */
+	RATE_PARTYJOIN,												/* 仲間の誘い */
+	RATE_TRADE,													/* 取り引きの申し込み */
+	RATE_MSGCMD,												/* メッセージコマンド(サイコロ類) */
+	RATE_COMEFC,												/* 吹き出し */
+	RATE_CHGCHARGRP,											/* 着せ替え */
+	RATE_NAMECOLOR,												/* 名前の色 */
+	RATE_ADDSCORE,												/* 得点板 */
+	RATE_MAX
+};
+
 typedef struct _CHARINFO {
 	DWORD		pID;												/* プレイヤーID */
 	BYTE		byAdminLV;											/* 管理権限レベル */
@@ -2285,6 +2318,7 @@ typedef struct _CHARINFO {
 	BYTE		byLightLevel;										/* 明るさレベル */
 	BYTE		byLightLevelBack;									/* 明るさレベル（最初） */
 	BYTE		byHide;												/* 隠れている(0以外。敵に見つかりにくく、画面では半透明) */
+	BYTE		byGhost;											/* 半透明（霊）で描く(0以外。見た目だけ。他人にも送る。隠れると違い、敵に見つかりにくくはならない) */
 	BYTE		byAtackRate;										/* 攻撃力の割合 */
 
 	BYTE		abySubStatus[MAX_SUBSTATUS];						/* 保存しないサブステータス */
@@ -2430,6 +2464,9 @@ typedef struct _CHARINFO {
 	WORD		wHideFlag;											/* NPC：この印が立っている人には見えない（番号+1。0=条件なし。両方ある時は両方を満たす人にだけ見える） */
 	WORD		wRecycleBox;										/* いま窓を開いているリサイクル箱の番号（0=開いていない。サーバーだけ。保存しない） */
 	BYTE		byViewAllNpc;										/* 管理者：印で隠れたNPCも全部見る(1)（CMD_ADMINVIEWALL。サーバーだけ。保存しない。ログインし直すと 0） */
+	DWORD		adwRateLast[RATE_MAX];								/* コマンド種別ごとに最後に受け付けた時間（0=まだ。サーバーだけ。保存しない） */
+	DWORD		dwSpeechWinStart;									/* 発言の数え始めの時間（サーバーだけ。保存しない） */
+	BYTE		bySpeechWinCount;									/* その間に受け付けた発言の数 */
 } CHARINFO, *PCHARINFO;
 
 /* キャラ情報通知 */
@@ -2455,6 +2492,7 @@ typedef struct _CMDPARA_CHARINFO {
 	BYTE		bySearchCy;											/* 検索範囲Y */
 	BYTE		byLightLevel;										/* 明るさレベル */
 	BYTE		byHide;												/* 隠れている(0以外。他人にも送る) */
+	BYTE		byGhost;											/* 半透明（霊）で描く(0以外。見た目だけ。他人にも送る。隠れると違い、敵に見つかりにくくはならない) */
 	WORD		wGrpID;												/* グラフィックID */
 	WORD		wGrpMain;											/* グラフィック種別(メイン) */
 	WORD		wGrpSub;											/* グラフィック種別(サブ) */
@@ -2508,6 +2546,7 @@ typedef struct _CMDPARA_CHARINFO2 {
 	BYTE		byNpcType;											/* NPC移動種別 */
 	BYTE		byLightLevel;										/* 明るさレベル */
 	BYTE		byHide;												/* 隠れている(0以外。他人にも送る) */
+	BYTE		byGhost;											/* 半透明（霊）で描く(0以外。見た目だけ。他人にも送る。隠れると違い、敵に見つかりにくくはならない) */
 	WORD		wGrpID;												/* グラフィックID */
 	WORD		wGrpMain;											/* グラフィック種別(メイン) */
 	WORD		wGrpSub;											/* グラフィック種別(サブ) */
@@ -2593,6 +2632,9 @@ typedef struct _STATUSTEMPLATEINFO {
 	DWORD		dwExp;												/* 経験値 */
 	BYTE		byStatusResist;										/* 毒・眠りの効きにくさ(%、100で効かない) */
 	BYTE		byNoFloorDamage;									/* ダメージ床が効かない(1)。毒沼・溶岩でHPが減らず毒にもならず、よけずに素通りする（ボス向け） */
+	BYTE		byGhost;											/* 半透明（霊）で描く(1)。見た目だけ。湧いた敵にコピーする */
+	BYTE		byAffixRate;										/* 装備を落とす時に付与が付く確率(%。古いデータは 10) */
+	BYTE		byAffixRank;										/* 付く付与の格の最大(1〜3。古いデータは 1) */
 } STATUSTEMPLATEINFO, *PSTATUSTEMPLATEINFO;
 
 /* キャラ追加通知 */
@@ -2879,9 +2921,16 @@ enum {
 	RECIPESTATE_OFF,											/* 停止中（一覧に出ない） */
 };
 
+/* 作り手の種類 */
+enum {
+	MAKERKIND_RECIPE = 0,										/* レシピで作る（今までの作り手） */
+	MAKERKIND_APPRAISE,											/* 鑑定屋（手持ちの未鑑定の装備を、お金を払って鑑定する） */
+};
+
 /* 作り手情報 */
 typedef struct _MAKERINFO {
 	BYTE		byState;											/* 状態(RECIPESTATE_*) */
+	BYTE		byKind;												/* 種類(MAKERKIND_*。古いデータは 0=レシピ) */
 	char		szName[MAX_MAKERNAME];								/* 名前（例：料理人） */
 	char		szMsgTalk[MAX_MAKERMSG];							/* 話しかけた時の台詞 */
 	char		szMsgDone[MAX_MAKERMSG];							/* 作った時の台詞 */
@@ -2895,11 +2944,21 @@ typedef struct _RECIPEINFO {
 	WORD		wSort;												/* 並び順（小さい順。同じなら番号順） */
 	WORD		wItem;												/* できるアイテムID */
 	BYTE		byCount;											/* できる個数（1〜） */
-	BYTE		byReserved;											/* 予備 */
+	BYTE		byKind;												/* 種類(RECIPEKIND_*。古いデータは 0=普通) */
 	WORD		awMatItem[MAX_RECIPEMAT];							/* 材料のアイテムID（0なら使わない欄） */
 	BYTE		abyMatCount[MAX_RECIPEMAT];							/* 材料の個数 */
 	DWORD		dwGold;												/* 手数料（ゴールド） */
+	WORD		wAffix;												/* 鍛える・付け替える：付ける付与の番号（ITEMAFFIXINFO の wID） */
+	WORD		wEquMask;											/* 鍛える・付け替える：対象の装備種別ビット（AFFIXEQU_*。0=付与側の wEquMask に従う） */
+	BYTE		byAllowPlain;										/* 鍛える・付け替える：1=普通の装備（付与の無い物）も対象にしてよい */
 } RECIPEINFO, *PRECIPEINFO;
+
+/* レシピの種類（RECIPEINFO の byKind）。鍛える・付け替えるは 手持ちの装備 1 つが対象で、wItem・byCount は使わない（付与の定義は後ろの付与の節） */
+enum {
+	RECIPEKIND_NORMAL = 0,										/* 普通（材料から wItem を byCount 個作る） */
+	RECIPEKIND_FORGE,											/* 鍛える（対象の後ろの付与を wNext の段へ進める。無ければ wAffix を付ける） */
+	RECIPEKIND_SWAP,											/* 付け替える（wAffix の位置の付与を wAffix に置き換える） */
+};
 
 /* 作り手の台詞を選ぶ番号 */
 enum {
@@ -2915,6 +2974,9 @@ enum {
 	RECIPERESULT_LACKGOLD,										/* 手数料が足りない */
 	RECIPERESULT_NOROOM,										/* 持ち物も預かり所もいっぱいで渡せない */
 	RECIPERESULT_INVALID,										/* 作れない（無いレシピ・作り手が近くにいない など） */
+	RECIPERESULT_UNKNOWN,										/* 鍛える・付け替える：対象が未鑑定（先に鑑定を） */
+	RECIPERESULT_MAXED,											/* 鍛える：これ以上は鍛えられない（wNext が無い） */
+	RECIPERESULT_SAME,											/* 付け替える：もう同じ付与が付いている */
 };
 
 #pragma pack(push, 1)
@@ -2942,7 +3004,102 @@ typedef struct _CMDPARA_RECIPEMAKE {
 	WORD		wRecipeID;											/* レシピの番号 */
 	DWORD		pID;												/* プレイヤーID */
 	DWORD		dwTblID;											/* テーブルID */
+	BYTE		byNo;												/* 鍛える・付け替える：対象の手持ちの位置(0〜MAX_MYITEM-1)。普通のレシピでは 0（要求のみ） */
 } CMDPARA_RECIPEMAKE, *PCMDPARA_RECIPEMAKE;
+#pragma pack(pop)
+
+/* ========================================================================= */
+/* 付与（ディアブロ式の接頭辞・接尾辞）										 */
+/*   装備に「鋭い」「の加護」などが付き、強さと売値が変わる。				 */
+/*   アイテムの番号は WORD のまま：0〜16383 は今までの普通のアイテム、		 */
+/*   16384 以降は派生表（ITEMDERIVEINFO）の行番号 + 16384 で、				 */
+/*   元のアイテム・前の付与・後ろの付与・未鑑定かどうかを表す。				 */
+/*   同じ組み合わせは同じ番号になる（サーバーが探して、無ければ作る）。		 */
+/*   付与表・派生表はサーバーが持ち、SBODATA に保存してログイン時に全部送る。 */
+/*   詳しくは docs/item-affix.md												 */
+/* ========================================================================= */
+
+/* 付与が付く装備種別のビット(ITEMAFFIXINFO の wEquMask) */
+enum {
+	AFFIXEQU_WEAPON = 0x01,										/* 武器 */
+	AFFIXEQU_ARMOR	= 0x02,										/* 鎧 */
+	AFFIXEQU_SHILD	= 0x04,										/* 盾 */
+	AFFIXEQU_HELMET	= 0x08,										/* 兜 */
+	AFFIXEQU_HAND	= 0x10,										/* 小手 */
+	AFFIXEQU_LEG	= 0x20,										/* 靴 */
+	AFFIXEQU_NECK	= 0x40,										/* 首飾り */
+	AFFIXEQU_RING	= 0x80,										/* 指輪（1・2とも） */
+	AFFIXEQU_ALL	= 0xFF,
+};
+
+/* 付与の位置 */
+enum {
+	AFFIXPOS_FRONT = 0,											/* 名前の前に付く（鋭い） */
+	AFFIXPOS_BACK,												/* 名前の後ろに付く（の加護） */
+};
+
+/* 付与情報（1行。wID が 1 以上の通し番号で、0 は「付与なし」） */
+typedef struct _ITEMAFFIXINFO {
+	WORD		wID;												/* 付与の番号（1〜。派生表から参照される。変えない・使い回さない） */
+	BYTE		byPos;												/* 位置(AFFIXPOS_*) */
+	char		szName[MAX_AFFIXNAME];								/* 名前（鋭い・腐った・＋1・の加護 など） */
+	WORD		wEquMask;											/* 付く装備種別(AFFIXEQU_* のビット) */
+	char		chRate;												/* 主の値（byData）に対する%（負も可） */
+	char		chAdd;												/* 主の値への固定加算（負も可） */
+	char		chDFMagic;											/* 魔法防御の加算（負も可） */
+	BYTE		byRank;												/* 格(1〜3。敵の byAffixRank 以下だけ出る) */
+	WORD		wWeight;											/* 出やすさ（重み。0 なら出ない） */
+	WORD		wGoldRate;											/* 売値の倍率%（100=そのまま） */
+	BYTE		byBad;												/* ハズレ印（1。表示用） */
+	WORD		wNext;												/* 鍛えた時の次の段の付与の番号（0=これ以上は鍛えられない。＋1→＋2→＋3 など） */
+} ITEMAFFIXINFO, *PITEMAFFIXINFO;
+
+/* 派生アイテム情報（1行。番号は ITEMID_DERIVE_BASE + 行番号） */
+typedef struct _ITEMDERIVEINFO {
+	WORD		wBase;												/* 元のアイテム番号 */
+	WORD		wPre;												/* 前の付与の番号（0=なし） */
+	WORD		wSuf;												/* 後ろの付与の番号（0=なし） */
+	BYTE		byUnknown;											/* 未鑑定(1)。付与の効果（強さ・売値）は出ない */
+} ITEMDERIVEINFO, *PITEMDERIVEINFO;
+
+#pragma pack(push, 1)
+/* 派生表の1回の通知に入れる行数 */
+#define ITEMDERIVE_PERPACKET	64
+
+/* 付与表の1行の通知（サーバー→クライアント。ログイン時と変更時） */
+typedef struct _CMDPARA_AFFIXINFO {
+	BYTE			byCmd;											/* コマンドID */
+	WORD			wIndex;											/* 付与表の添字 */
+	WORD			wCount;											/* 付与表の総数 */
+	ITEMAFFIXINFO	Info;											/* 付与情報 */
+} CMDPARA_AFFIXINFO, *PCMDPARA_AFFIXINFO;
+
+/* 派生表の通知（サーバー→クライアント。ログイン時はまとめて、新しく振った時は1行）。
+   送る大きさは offsetof(aInfo) + byCount * sizeof(ITEMDERIVEINFO) */
+typedef struct _CMDPARA_ITEMDERIVE {
+	BYTE			byCmd;											/* コマンドID */
+	WORD			wStart;											/* aInfo[0] の派生表の添字 */
+	BYTE			byCount;										/* 行数 */
+	ITEMDERIVEINFO	aInfo[ITEMDERIVE_PERPACKET];					/* 派生情報 */
+} CMDPARA_ITEMDERIVE, *PCMDPARA_ITEMDERIVE;
+
+/* 鑑定の結果(CMDPARA_APPRAISE の byResult) */
+enum {
+	APPRAISERESULT_OK = 0,										/* 鑑定できた */
+	APPRAISERESULT_LACKGOLD,									/* お金が足りない */
+	APPRAISERESULT_INVALID,										/* 鑑定できない（未鑑定ではない・作り手が近くにいない など） */
+};
+
+/* 鑑定してもらう要求（クライアント→サーバー）と結果（サーバー→クライアント） */
+typedef struct _CMDPARA_APPRAISE {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byResult;											/* 結果(APPRAISERESULT_*。要求の時は使わない) */
+	BYTE		byMaker;											/* 作り手（鑑定屋）の番号 */
+	BYTE		byNo;												/* 手持ちの位置(0〜MAX_MYITEM-1) */
+	DWORD		dwGold;												/* 払ったお金（結果のみ） */
+	DWORD		pID;												/* プレイヤーID */
+	DWORD		dwTblID;											/* テーブルID */
+} CMDPARA_APPRAISE, *PCMDPARA_APPRAISE;
 #pragma pack(pop)
 
 /* ========================================================================= */
@@ -3047,6 +3204,17 @@ enum {
 	STORYSTATE_ON,												/* 出す */
 };
 
+/* シナリオの「いまの目的」の 1 行（条件は会話データの行と同じ形・同じ判定。上から見て最初に全部合った行の szGoal を出す）。
+   印・数値の「無し」は 0 ではなく FLAG_NOBIT・FLAG_NONUM にする */
+typedef struct _STORYGOAL {
+	WORD		awNeed[MAX_TALKNEED];								/* 立っている必要のある印（FLAG_NOBIT=無し） */
+	WORD		awNot[MAX_TALKNEED];								/* 立っていてはいけない印（FLAG_NOBIT=無し） */
+	BYTE		abyCondNo[MAX_TALKCOND];							/* 数値の条件の数値番号（FLAG_NONUM=無し） */
+	BYTE		abyCondCmp[MAX_TALKCOND];							/* 比べ方(TALKCMP_*) */
+	BYTE		abyCondVal[MAX_TALKCOND];							/* 比べる値 */
+	char		szGoal[MAX_QUESTGOAL];								/* いまの目的の文（空の行は飛ばす） */
+} STORYGOAL, *PSTORYGOAL;
+
 /* 思い出の本のシナリオ（サーバーだけが持つ。印・数値の「無し」は 0 ではなく FLAG_NOBIT・FLAG_NONUM にする） */
 typedef struct _STORYINFO {
 	WORD		wID;												/* シナリオ番号（1〜255。足す時に自動で振られ、変えられない） */
@@ -3061,6 +3229,7 @@ typedef struct _STORYINFO {
 	BYTE		abyNum[MAX_STORYNUM];								/* やり直す時に 0 に戻す数値の番号（FLAG_NONUM=無し） */
 	WORD		awQuest[MAX_STORYQUEST];							/* やり直す時にクリア済みの印を消す依頼の番号（QUESTINFO の wID。0=無し） */
 	BYTE		byCountNum;											/* やり直した回数を数える数値の番号（選んだシナリオだけ +1。255 で止まる。FLAG_NONUM=数えない） */
+	STORYGOAL	aGoal[MAX_STORYGOAL];								/* 「いまの目的」の行（クリアしていない人に、上から見て最初に合う行をコマンド窓の「目的」に出す。合う行が無ければ出さない） */
 } STORYINFO, *PSTORYINFO;
 
 /* CMD_QUEST のサブコマンド(byType) */
@@ -3123,12 +3292,22 @@ typedef struct _QUESTSTATEENTRY {
 	WORD		awCount[MAX_QUESTCOUNT];							/* 数 */
 } QUESTSTATEENTRY, *PQUESTSTATEENTRY;
 
+/* 物語の「いまの目的」の1件（自分の分だけ。STORYINFO の aGoal から選んだ行） */
+typedef struct _STORYGOALENTRY {
+	char		szName[MAX_QUESTNAME];								/* シナリオの名前 */
+	char		szGoal[MAX_QUESTGOAL];								/* いまの目的 */
+} STORYGOALENTRY, *PSTORYGOALENTRY;
+
 /* 依頼の進み具合（サーバー→本人。ログイン時・変わった時・パーティが変わった時）
-   0 番目は本人。続けて、同じパーティの仲間（オンラインの人。依頼を受けている人だけ） */
+   0 番目は本人。続けて、同じパーティの仲間（オンラインの人。依頼を受けている人だけ）。
+   byStoryCount 以降は後から足した部分（可変長）。サーバーは byStoryCount 件ぶんだけ送る。
+   古いサーバーからは byStoryCount の手前までしか届かない（その時は物語の目的は無し） */
 typedef struct _CMDPARA_QUESTSTATE {
 	BYTE		byCmd;												/* コマンドID */
 	BYTE		byCount;											/* 人数 */
 	QUESTSTATEENTRY	aEntry[MAX_PARTYMEMBER];						/* 本人と仲間 */
+	BYTE		byStoryCount;										/* 物語の目的の件数（0〜MAX_STORYGOAL。wSort 順。本人の分だけ） */
+	STORYGOALENTRY	aStory[MAX_STORYGOAL];							/* 物語の目的（byStoryCount 件ぶんだけ届く） */
 } CMDPARA_QUESTSTATE, *PCMDPARA_QUESTSTATE;
 
 /* 攻撃力・守備力アップの残り時間（サーバー→本人とパーティの仲間。かかった時・切れた時・パーティに入った時）
@@ -4087,6 +4266,8 @@ typedef struct _CMDPARA_CHGMAPINFO {
 	MAPDARKAREA	aDarkArea[MAX_MAPDARKAREA];							/* 暗くする・暗くしない範囲 */
 	BYTE		byLightCount;										/* 光源の数 */
 	MAPLIGHT	aLight[MAX_MAPLIGHT];								/* 光源 */
+	BYTE		byPartsLightCount;									/* パーツの灯りの上書きの数 */
+	MAPPARTSLIGHT	aPartsLight[MAX_MAPPARTSLIGHT];					/* パーツの灯りの上書き（このマップだけ） */
 	BYTE		byViewRange;										/* 見える範囲(マス。0=制限なし) */
 	WORD		wViewHideParts;										/* 見えない所に描くパーツ(0=黒) */
 } CMDPARA_CHGMAPINFO, *PCMDPARA_CHGMAPINFO;
@@ -4484,3 +4665,6 @@ typedef struct _CMDPARA_WARSELECTMAGICTARGET {
 
 /* 音声ファイルで鳴る BGM の番号表（WORD・BOOL などの型が決まった後に読み込む） */
 #include "BgmAudio.h"
+
+/* 付与（接頭辞・接尾辞）と派生アイテムの引き方（ITEMINFO・ITEMAFFIXINFO が決まった後に読み込む） */
+#include "ItemAffix.h"

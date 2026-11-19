@@ -137,7 +137,8 @@ extern void SendCmdQUEST			(BYTE byType, WORD wQuestID, DWORD dwNpcTblID);	/* �
 extern void SendCmdSORTITEM			(BYTE byTarget, BYTE byMode, BYTE byNo1, BYTE byNo2);	/* 道具欄・預かり所の並べ替え */
 extern void SendCmdLEAVEITEMDISPOSE	(BYTE byMode, BYTE byNo, BYTE byCount, WORD wItemID);	/* 預かり所の品を売る・捨てる */
 
-extern void SendCmdRECIPEMAKE		(BYTE, WORD);							/* レシピで作ってもらう要求 */
+extern void SendCmdRECIPEMAKE		(BYTE, WORD, BYTE);						/* レシピで作ってもらう要求（3つ目は鍛える・付け替える時の対象の手持ちの位置） */
+extern void SendCmdAPPRAISE		(BYTE, BYTE);							/* 鑑定してもらう要求 */
 extern void SendCmdMARKET			(BYTE byCmd, BYTE byType, BYTE byNo, WORD wItemID, DWORD dwID, DWORD dwPrice);	/* 取引所の要求（一覧・出品・買う・引き取り・売上の受け取り） */
 extern void SendCmdRECYCLE			(BYTE byCmd, WORD wItemID, BYTE byCount);	/* リサイクルボックスの要求（中身・入れる・もらう・窓を閉じた） */
 

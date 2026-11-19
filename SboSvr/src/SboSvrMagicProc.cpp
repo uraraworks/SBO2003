@@ -164,6 +164,10 @@ static BOOL MagicProcSub(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget, BOOL bIt
 		不正チェック
 	*******************/
 
+	/* 0 は空き枠。覚えている特技としては通さない */
+	if ((byID == 0) && !bItem) {
+		goto Exit;
+	}
 	for (i = 0; i < MAX_USEMAGIC; i ++) {
 		if (bItem || (pChar->abyMagic[i] == byID)) {
 			break;

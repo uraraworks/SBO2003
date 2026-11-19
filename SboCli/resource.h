@@ -85,6 +85,7 @@
 #define IDC_REGMAGIC                    1035
 #define IDC_STRESIST                    1141
 #define IDC_NOFLOORDMG                  1412
+#define IDC_GHOST                       1440
 #define IDC_DATA1                       1036
 #define IDC_LV                          1037
 #define IDC_DATA2                       1038
@@ -231,6 +232,13 @@
 #define IDC_ML_CLICK                    1177
 #define IDC_ML_AREAINFO                 1178
 #define IDC_ML_LIGHTINFO                1179
+#define IDC_ML_PLLIST                   1441
+#define IDC_ML_PLINFO                   1442
+#define IDC_ML_PLPARTS                  1443
+#define IDC_ML_PLRANGE                  1444
+#define IDC_ML_PLADD                    1445
+#define IDC_ML_PLSET                    1446
+#define IDC_ML_PLDEL                    1447
 #define IDC_Q_ID                          1180
 #define IDC_Q_NAME                        1181
 #define IDC_Q_GUILD                       1182
@@ -501,7 +509,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        244
 #define _APS_NEXT_COMMAND_VALUE         40037
-#define _APS_NEXT_CONTROL_VALUE         1440
+#define _APS_NEXT_CONTROL_VALUE         1448
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

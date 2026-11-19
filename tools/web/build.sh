@@ -194,6 +194,7 @@ cp "$ROOT/web/account/admin.html" \
 	"$ROOT/web/account/admin-mapview.js" \
 	"$ROOT/web/account/admin-recipe.js" \
 	"$ROOT/web/account/admin-dungeon.js" \
+	"$ROOT/web/account/admin-affix.js" \
 	"$ROOT/web/account/admin-kobo.js" \
 	"$ROOT"/web/account/dot.html \
 	"$ROOT"/web/account/dot-*.js \

@@ -9,6 +9,9 @@
  *   3. 保存すると /api/admin/recipe/save に送る（サーバーは server/node/sbosvr_data.js）。
  *      ログイン中のプレイヤー全員にすぐ反映され、「AI連携」の変更履歴に残る（元に戻せる）。
  * アイテムは名前で選ぶ（入力欄に名前を打つと候補が出る）。一覧は /api/admin/data/list の item から作る。
+ * 作り手の「種類」を「鑑定屋」にすると、レシピは使わず、手持ちの未鑑定の装備を鑑定する（docs/item-affix.md）。
+ * レシピの「種類」は 普通／鍛える／付け替える。鍛える・付け替えるは手持ちの装備 1 つが対象で、
+ * できるアイテムは使わず、付ける付与・普通の装備も対象にするか・対象の装備種別を決める（docs/recipe.md）。
  * 作り手を呼び出すには NPC の台詞を「@cNN」（NN は作り手の番号 2 桁。例 @c00）にする。
  * 消すのは byState=0（空き枠）にすること。空き枠は次に足す時に使い回される。
  */
@@ -25,6 +28,8 @@
 	var itemLabel = {};				/* 「名前（#id）」→ id */
 	var makers = [];				/* 作り手のレコード（空き枠を含む。添字が番号） */
 	var recipes = [];				/* レシピのレコード（空き枠を含む。添字が番号） */
+	var affixes = [];				/* 付与のレコード（鍛える・付け替えるの「付ける付与」の選択肢。添字は id、番号は wID） */
+	var EQU = [['武器', 1], ['鎧', 2], ['盾', 4], ['兜', 8], ['小手', 16], ['靴', 32], ['首飾り', 64], ['指輪', 128]];
 	var selMaker = -1;				/* 選んでいる作り手の番号（-1: なし、-2: 新しく足す） */
 	var selRecipe = -1;				/* 選んでいるレシピの番号（-1: なし、-2: 新しく足す） */
 
@@ -50,6 +55,21 @@
 	}
 	function stateText(n) {
 		return n === ST_ON ? '有効' : n === ST_OFF ? '停止中' : '削除済み';
+	}
+	/* 付与の番号（wID）から名前（位置つき）。無ければ空 */
+	function affixText(wID) {
+		for (var i = 0; i < affixes.length; i++) {
+			if (affixes[i] && affixes[i].wID === wID) return affixes[i].szName;
+		}
+		return '';
+	}
+	/* 一覧に出すレシピの名前 */
+	function recipeTitle(r) {
+		if (r.byKind === 1 || r.byKind === 2) {
+			var a = affixText(r.wAffix) || '（付与が見つかりません #' + r.wAffix + '）';
+			return (r.byKind === 1 ? '鍛える：' : '付け替える：') + a + (r.byAllowPlain ? '（普通の装備も可）' : '');
+		}
+		return nameOf(r.wItem) + (r.byCount > 1 ? '×' + r.byCount : '');
 	}
 	function nameOf(id) {
 		return itemName[id] != null ? itemName[id] : (id ? '（不明 #' + id + '）' : '');
@@ -79,10 +99,12 @@
 		return Promise.all([
 			loadAll('maker'),
 			loadAll('recipe'),
-			items.length ? Promise.resolve(null) : loadAll('item', ['szName'])
+			items.length ? Promise.resolve(null) : loadAll('item', ['szName']),
+			loadAll('affix')
 		]).then(function (r) {
 			makers = fill(r[0]);
 			recipes = fill(r[1]);
+			affixes = fill(r[3]);
 			if (r[2]) {
 				items = [];
 				itemName = {};
@@ -178,7 +200,7 @@
 		var card = $('rc-mk-card');
 		var m = selMaker >= 0 ? makers[selMaker] : null;
 		card.hidden = !(selMaker === -2 || m);
-		$('rc-recipes-card').hidden = !m;
+		$('rc-recipes-card').hidden = !m || m.byKind === 1;		/* 鑑定屋はレシピを使わない */
 		if (card.hidden) return;
 		if (selMaker === -2) {
 			$('rc-mk-title').textContent = '作り手を足す';
@@ -187,6 +209,7 @@
 			$('rc-mk-done').value = 'はい、できました。@2';
 			$('rc-mk-lack').value = '材料が足りないようです。@2';
 			$('rc-mk-state').value = String(ST_ON);
+			$('rc-mk-kind').value = '0';
 			$('rc-mk-del').hidden = true;
 			$('rc-mk-call').textContent = '足すと番号が決まります（NPC の台詞に @c + 番号 2 桁を書くと開きます）。';
 		} else {
@@ -196,6 +219,7 @@
 			$('rc-mk-done').value = m.szMsgDone;
 			$('rc-mk-lack').value = m.szMsgLack;
 			$('rc-mk-state').value = String(m.byState);
+			$('rc-mk-kind').value = String(m.byKind || 0);
 			$('rc-mk-del').hidden = false;
 			$('rc-mk-call').textContent = 'NPC の台詞を「@c' + pad2(selMaker) + '」にすると、この作り手の画面が開きます（話しかけても S キーでも）。';
 		}
@@ -217,8 +241,7 @@
 			for (var k = 0; k < MAX_MAT; k++) {
 				if (r.awMatItem[k]) mats.push(nameOf(r.awMatItem[k]) + '×' + r.abyMatCount[k]);
 			}
-			var b = el('button', 'rc-item' + (x.id === selRecipe ? ' sel' : ''),
-				nameOf(r.wItem) + (r.byCount > 1 ? '×' + r.byCount : ''));
+			var b = el('button', 'rc-item' + (x.id === selRecipe ? ' sel' : ''), recipeTitle(r));
 			b.type = 'button';
 			b.appendChild(el('span', 'sub-text', mats.join('、') + '　手数料 ' + r.dwGold + 'G　並び順 ' + r.wSort +
 				(r.byState === ST_OFF ? '　（停止中）' : '')));
@@ -241,8 +264,11 @@
 		card.hidden = !(selMaker >= 0 && (selRecipe === -2 || r));
 		if (card.hidden) return;
 		var i;
+		fillAffixSelect(r ? r.wAffix : 0);
 		if (selRecipe === -2) {
 			$('rc-rc-title').textContent = 'レシピを足す';
+			$('rc-rc-kind').value = '0';
+			setForgeBox(0, 0, 0);
 			$('rc-rc-item').value = '';
 			$('rc-rc-count').value = '1';
 			for (i = 0; i < MAX_MAT; i++) {
@@ -254,7 +280,9 @@
 			$('rc-rc-state').value = String(ST_ON);
 			$('rc-rc-del').hidden = true;
 		} else {
-			$('rc-rc-title').textContent = 'レシピ ' + selRecipe + '：' + nameOf(r.wItem);
+			$('rc-rc-title').textContent = 'レシピ ' + selRecipe + '：' + recipeTitle(r);
+			$('rc-rc-kind').value = String(r.byKind || 0);
+			setForgeBox(r.byKind || 0, r.wEquMask || 0, r.byAllowPlain || 0);
 			$('rc-rc-item').value = itemText(r.wItem);
 			$('rc-rc-count').value = String(r.byCount);
 			for (i = 0; i < MAX_MAT; i++) {
@@ -266,6 +294,28 @@
 			$('rc-rc-state').value = String(r.byState);
 			$('rc-rc-del').hidden = false;
 		}
+	}
+
+	/* 「付ける付与」の選択肢を付与表から作る（wSel を選んでおく） */
+	function fillAffixSelect(wSel) {
+		var s = $('rc-rc-affix');
+		s.textContent = '';
+		affixes.forEach(function (a) {
+			if (!a) return;
+			var o = document.createElement('option');
+			o.value = String(a.wID);
+			o.textContent = a.szName + '（' + (a.byPos ? '後ろ' : '前') + '・#' + a.wID + (a.wNext ? '・次の段あり' : '') + '）';
+			s.appendChild(o);
+		});
+		if (wSel) s.value = String(wSel);
+	}
+
+	/* 種類に合わせて、鍛える・付け替える用の欄と、普通のレシピ用の欄（できるアイテム・個数）を出し分ける */
+	function setForgeBox(kind, mask, plain) {
+		$('rc-forge-box').hidden = !kind;
+		$('rc-normal-box').hidden = !!kind;
+		$('rc-rc-plain').checked = !!plain;
+		EQU.forEach(function (e, i) { $('rc-rc-equ' + i).checked = !!(mask & e[1]); });
 	}
 
 	/* 新しいレシピの並び順の初期値（今の最大 + 10） */
@@ -315,6 +365,7 @@
 		}
 		var ch = {
 			byState: Number($('rc-mk-state').value),
+			byKind: Number($('rc-mk-kind').value),
 			szName: name,
 			szMsgTalk: $('rc-mk-talk').value,
 			szMsgDone: $('rc-mk-done').value,
@@ -349,9 +400,16 @@
 
 	function saveRecipe() {
 		var ch, i, mi = [], mc = [], nMat = 0;
+		var kind = Number($('rc-rc-kind').value);
 		try {
-			var item = resolveItem($('rc-rc-item').value);
-			if (!item) throw new Error('できるアイテムを、候補から選んでください');
+			var item = 0, mask = 0;
+			if (kind === 0) {
+				item = resolveItem($('rc-rc-item').value);
+				if (!item) throw new Error('できるアイテムを、候補から選んでください');
+			} else {
+				if (!Number($('rc-rc-affix').value)) throw new Error('付ける付与を選んでください（先に「付与」タブで付与を足してください）');
+				EQU.forEach(function (e, j) { if ($('rc-rc-equ' + j).checked) mask |= e[1]; });
+			}
 			for (i = 0; i < MAX_MAT; i++) {
 				var t = $('rc-mat' + i).value.trim();
 				if (!t) {
@@ -370,8 +428,12 @@
 				byState: Number($('rc-rc-state').value),
 				byMaker: selMaker,
 				wSort: intVal('rc-rc-sort', 0, 65535, '並び順'),
+				byKind: kind,
 				wItem: item,
-				byCount: intVal('rc-rc-count', 1, 255, 'できる個数'),
+				byCount: kind === 0 ? intVal('rc-rc-count', 1, 255, 'できる個数') : 1,
+				wAffix: kind === 0 ? 0 : Number($('rc-rc-affix').value),
+				byAllowPlain: kind !== 0 && $('rc-rc-plain').checked ? 1 : 0,
+				wEquMask: mask,
 				awMatItem: mi,
 				abyMatCount: mc,
 				dwGold: intVal('rc-rc-gold', 0, 999999, '手数料')
@@ -392,7 +454,7 @@
 	function delRecipe() {
 		var r = recipes[selRecipe];
 		if (!r) return;
-		if (!window.confirm('レシピ「' + nameOf(r.wItem) + '」を消しますか？\n（「AI連携」の変更履歴から元に戻せます）')) {
+		if (!window.confirm('レシピ「' + recipeTitle(r) + '」を消しますか？\n（「AI連携」の変更履歴から元に戻せます）')) {
 			return;
 		}
 		save('recipe', selRecipe, { byState: ST_NONE }, 'レシピを消しました').then(function (res) {
@@ -420,6 +482,9 @@
 			setMsg('');
 			renderRecipes();
 			renderRecipeForm();
+		});
+		$('rc-rc-kind').addEventListener('change', function () {
+			setForgeBox(Number($('rc-rc-kind').value), 0, $('rc-rc-plain').checked);
 		});
 		$('rc-rc-save').addEventListener('click', saveRecipe);
 		$('rc-rc-del').addEventListener('click', delRecipe);

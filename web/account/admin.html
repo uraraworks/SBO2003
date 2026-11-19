@@ -12,6 +12,7 @@
 	  ・復旧の承認   … アカウント復旧の申請を承認・却下する（前の recover-admin.html と同じ）
 	  ・ご意見箱     … /feedback に届いた投稿を全部見て、返事・対応済み・隠す・消すをする
 	  ・更新履歴     … /changes に出す「何が変わったか」を足す・直す・公開/非公開・消す（API は server/node/sbosvr_changes.js）
+	  ・取引所       … 取引所（委託販売）の出品（出品中・期限切れ）と、アカウントごとの出品数・受付に貯まっている売上を見る（読むだけ。API は /api/admin/data/market。仕様は docs/market.md）
 	  ・リサイクル   … リサイクルボックス（マップに置いた共有の箱）の中身と、誰がいつ何を入れた・もらったかの記録を見る（読むだけ。API は /api/admin/data/recycle。仕様は docs/recycle.md）
 	  ・AI連携       … AI（Claude Code など）から設定データを読み書きするキーの発行・取り消しと、変更履歴・元に戻す
 	  ・マップ資料   … マップごとの全体図と NPC・敵・お店・イベントの資料を zip で書き出す（admin-mapdoc.js）
@@ -23,6 +24,7 @@
 	                   （API /api/admin/npcroute/set はサーバーに残してある）。
 	  ・ダンジョン生成 … ランダムダンジョンのテーマ（床・壁・9分割の部屋・飾り）を登録し、お試し作成で見る（admin-dungeon.js。仕様は docs/dungeon-gen.md。API は server/node/sbosvr_dungeon.js）
 	  ・レシピ       … 町の作り手（料理人など）と、作ってもらえるレシピ（できる物・材料・手数料）を決める（admin-recipe.js。API は sbosvr_data.js の /api/admin/recipe/save）
+	  ・付与         … 装備に付く「鋭い」「の加護」などの接頭辞・接尾辞の表を決める（admin-affix.js。API は /api/admin/recipe/save の kind=affix。仕様は docs/item-affix.md）
 	  ・ドット絵工房 … みんなでゲームのドット絵を描き合う仕組み（/kobo）の管理。お題を出す・案の系譜とコメントを見る・採用して
 	                   ゲーム画像に貼って保存する・提案を見る（admin-kobo.js。仕様は docs/kobo.md。API は server/node/sbosvr_kobo.js の /api/admin/kobo/*）
 	  ・ドット絵     … ゲームの画像（SboGrpData/grp の PNG）を手元のフォルダで直接描き直すエディタ（/dot。dot.html）を開く
@@ -325,6 +327,8 @@
 		font-size: 13px;
 		word-break: break-all;
 	}
+	.online-ip { color: var(--sub); font-size: 13px; margin-top: 2px; word-break: break-all; }
+	.ip-link { color: var(--info); word-break: break-all; }
 	.online-env {
 		color: var(--info);
 		font-size: 12px;
@@ -455,6 +459,13 @@
 	#tab-recycle .rc-scroll { overflow-x: auto; }
 	#tab-recycle .rc-put { color: var(--ok); }
 	#tab-recycle .rc-take { color: var(--info); }
+	#tab-market table { border-collapse: collapse; width: 100%; font-size: 13px; }
+	#tab-market th, #tab-market td { border-bottom: 1px solid var(--border); padding: 3px 8px; text-align: left; vertical-align: top; white-space: nowrap; }
+	#tab-market th { color: var(--sub); font-weight: normal; white-space: nowrap; }
+	#tab-market td.num { text-align: right; white-space: nowrap; }
+	#tab-market .mk-scroll { overflow-x: auto; }
+	#tab-market .mk-on { color: var(--ok); }
+	#tab-market .mk-expired { color: var(--sub); }
 	.mv-opts button { margin: 0; padding: 7px 12px; }
 	.mv-help { margin-bottom: 4px; }
 	.mv-help summary { cursor: pointer; color: var(--sub); font-size: 13px; }
@@ -594,6 +605,8 @@
 		<button type="button" data-tab="mapview">マップ確認</button>
 		<button type="button" data-tab="recipe">レシピ</button>
 		<button type="button" data-tab="dungeon">ダンジョン生成</button>
+		<button type="button" data-tab="affix">付与</button>
+		<button type="button" data-tab="market">取引所</button>
 		<button type="button" data-tab="recycle">リサイクル</button>
 		<button type="button" data-tab="kobo">ドット絵工房<span class="badge" id="kobo-count" hidden></span></button>
 		<button type="button" data-tab="dot">ドット絵</button>
@@ -614,12 +627,12 @@
 	<!-- キャラを探す -->
 	<section id="tab-search" hidden>
 		<div class="card">
-			<label for="q" style="margin-top:0">キャラ名・アカウント名（一部でも OK）</label>
+			<label for="q" style="margin-top:0">キャラ名・アカウント名（一部でも OK）・IP アドレス</label>
 			<div class="row">
 				<input id="q" type="search" enterkeyhint="search" autocapitalize="off" autocorrect="off">
 				<button type="button" id="search-btn">探す</button>
 			</div>
-			<p class="sub-text" style="margin:6px 0 0">前に使っていたキャラ名からも探せます。</p>
+			<p class="sub-text" style="margin:6px 0 0">前に使っていたキャラ名からも探せます。IP アドレスは完全一致、末尾を省く（例 203.0.113.）と前方一致で探せます。</p>
 		</div>
 		<div class="msg" id="search-msg"></div>
 		<div id="results"></div>
@@ -804,6 +817,33 @@
 			<p class="sub-text" style="margin:6px 0 0">全部のマップだと、zip は 2 倍で 90MB・等倍で 30MB くらいです（PC で数十秒）。</p>
 			<div class="msg" id="md-msg"></div>
 		</div>
+	</section>
+
+	<!-- 取引所（読むだけ。仕様は docs/market.md） -->
+	<section id="tab-market" hidden>
+		<p class="sub-text">
+			取引所（受付「商人ギルドの出張所」に品を預けてゴールドで売る委託販売）の今の出品と、アカウントごとの出品数・受付に貯まっている売上です。
+			売れた出品はその場で消えるので、ここには出ません。ここでは変えられません。
+		</p>
+		<div class="row" style="justify-content:space-between">
+			<button type="button" class="sub" id="mk-reload">読み直す</button>
+			<span class="sub-text" id="mk-limits"></span>
+		</div>
+		<div class="msg" id="mk-msg"></div>
+		<p class="sub-text" id="mk-total"></p>
+		<h3 style="margin:12px 0 4px;font-size:14px">アカウントごと</h3>
+		<div id="mk-accounts" class="mk-scroll"></div>
+		<h3 style="margin:12px 0 4px;font-size:14px">出品</h3>
+		<div class="row" style="flex-wrap:wrap">
+			<input type="text" id="mk-filter" placeholder="アカウント・キャラ名・品の名前で絞り込む" style="flex:1 1 14em">
+			<select id="mk-state" style="flex:0 0 auto;width:auto">
+				<option value="">出品中・期限切れ</option>
+				<option value="on">出品中だけ</option>
+				<option value="expired">期限切れだけ</option>
+			</select>
+			<span class="sub-text" id="mk-count"></span>
+		</div>
+		<div id="mk-items" class="mk-scroll"></div>
 	</section>
 
 	<!-- リサイクルボックス（読むだけ。仕様は docs/recycle.md） -->
@@ -1139,6 +1179,8 @@
 					<div class="sub-text" id="rc-mk-call"></div>
 					<label for="rc-mk-name">名前（例：料理人）</label>
 					<input type="text" id="rc-mk-name" maxlength="30">
+					<label for="rc-mk-kind">種類</label>
+					<select id="rc-mk-kind"><option value="0">レシピで作る（料理人・鍛冶屋など）</option><option value="1">鑑定屋（手持ちの未鑑定の装備を鑑定する）</option></select>
 					<label for="rc-mk-talk">話しかけた時の台詞（@1 で改行、@2 で文の終わり）</label>
 					<textarea id="rc-mk-talk" rows="2"></textarea>
 					<label for="rc-mk-done">作ってあげた時の台詞</label>
@@ -1159,7 +1201,29 @@
 				</div>
 				<div class="card rc-card" id="rc-rc-card" hidden>
 					<div class="name" id="rc-rc-title"></div>
-					<div class="rc-grid">
+					<label for="rc-rc-kind">種類</label>
+					<select id="rc-rc-kind">
+						<option value="0">普通（材料からアイテムを作る）</option>
+						<option value="1">鍛える（手持ちの装備の後ろの付与を 1 段進める）</option>
+						<option value="2">付け替える（手持ちの装備の付与を置き換える）</option>
+					</select>
+					<div id="rc-forge-box" hidden>
+						<label for="rc-rc-affix">付ける付与（鍛える：後ろの付与がまだ無い装備に付ける付与。付け替える：置き換え先）</label>
+						<select id="rc-rc-affix"></select>
+						<label><input type="checkbox" id="rc-rc-plain"> 普通の装備（付与の無い物）も対象にしてよい</label>
+						<div class="sub-text" style="margin-top:10px">対象の装備（全部外すと、付与の「付く装備」に従う）</div>
+						<div>
+							<label><input type="checkbox" id="rc-rc-equ0"> 武器</label>
+							<label><input type="checkbox" id="rc-rc-equ1"> 鎧</label>
+							<label><input type="checkbox" id="rc-rc-equ2"> 盾</label>
+							<label><input type="checkbox" id="rc-rc-equ3"> 兜</label>
+							<label><input type="checkbox" id="rc-rc-equ4"> 小手</label>
+							<label><input type="checkbox" id="rc-rc-equ5"> 靴</label>
+							<label><input type="checkbox" id="rc-rc-equ6"> 首飾り</label>
+							<label><input type="checkbox" id="rc-rc-equ7"> 指輪</label>
+						</div>
+					</div>
+					<div class="rc-grid" id="rc-normal-box">
 						<label for="rc-rc-item">できるアイテム（名前で探せます）</label>
 						<label for="rc-rc-count">できる個数</label>
 						<input type="text" id="rc-rc-item" list="rc-items" autocomplete="off">
@@ -1189,6 +1253,66 @@
 		</div>
 	</section>
 
+	<!-- 付与（装備に付く接頭辞・接尾辞） -->
+	<section id="tab-affix" hidden>
+		<p class="sub-text">
+			装備に付く「鋭い」「腐った」「＋1」「の加護」などの付与（接頭辞・接尾辞）を決めます。
+			敵が装備を落とした時に、敵ごとの確率（ステータステンプレートの「付与が付く確率」）で付き、付いた物は<b>未鑑定</b>で落ちます。
+			未鑑定でも装備できますが、効果（強さ・売値）は出ません。鑑定屋（レシピの作り手の種類を「鑑定屋」にして、NPC の台詞を <code>@c</code>＋番号にする）に払うと鑑定済みになります。
+			強さ ＝ 主の値＋主の値×合計%÷100＋合計の固定加算（0〜255）。主の値は武器なら攻撃力、防具・首飾り・指輪なら守備力か魔防（アイテムの付加データ）で、前と後ろの付与は合算します。
+			付与は消せません（派生アイテムが番号で指しているため）。出したくない時は「出やすさ」を 0 にしてください。0 件の間は付与は付きません。
+			保存するとログイン中のプレイヤー全員にすぐ反映されます（変更は「AI連携」の履歴から元に戻せます）。
+		</p>
+		<div class="msg" id="af-msg"></div>
+		<div class="rc-layout">
+			<div class="rc-left">
+				<div class="rc-list" id="af-list"></div>
+				<button type="button" id="af-add">付与を足す</button>
+				<button type="button" class="sub" id="af-reload">読み直す</button>
+			</div>
+			<div class="rc-right">
+				<div class="card rc-card" id="af-card" hidden>
+					<div class="name" id="af-title"></div>
+					<label for="af-name">名前（例：鋭い・腐った・＋1・の加護）</label>
+					<input type="text" id="af-name" maxlength="20">
+					<label for="af-pos">位置</label>
+					<select id="af-pos"><option value="0">名前の前に付く（鋭い黒曜石の剣）</option><option value="1">名前の後ろに付く（黒曜石の剣の加護）</option></select>
+					<label for="af-next">鍛えた時の次の段（＋1→＋2→＋3 のように、位置が同じ付与を選ぶ。なしなら「これ以上は鍛えられない」）</label>
+					<select id="af-next"></select>
+					<div class="sub-text" style="margin-top:10px">付く装備</div>
+					<div>
+						<label><input type="checkbox" id="af-equ0"> 武器</label>
+						<label><input type="checkbox" id="af-equ1"> 鎧</label>
+						<label><input type="checkbox" id="af-equ2"> 盾</label>
+						<label><input type="checkbox" id="af-equ3"> 兜</label>
+						<label><input type="checkbox" id="af-equ4"> 小手</label>
+						<label><input type="checkbox" id="af-equ5"> 靴</label>
+						<label><input type="checkbox" id="af-equ6"> 首飾り</label>
+						<label><input type="checkbox" id="af-equ7"> 指輪</label>
+					</div>
+					<div class="rc-grid" style="margin-top:10px">
+						<label for="af-rate">主の値への％（負も可）</label>
+						<input type="text" id="af-rate" inputmode="numeric" value="0">
+						<label for="af-add">主の値への固定加算（負も可）</label>
+						<input type="text" id="af-add" inputmode="numeric" value="0">
+						<label for="af-dfm">魔防の加算（負も可）</label>
+						<input type="text" id="af-dfm" inputmode="numeric" value="0">
+						<label for="af-rank">格（1〜3。敵の「付与の格の最大」以下だけ出る）</label>
+						<input type="text" id="af-rank" inputmode="numeric" value="1">
+						<label for="af-weight">出やすさ（重み。0 なら出ない）</label>
+						<input type="text" id="af-weight" inputmode="numeric" value="100">
+						<label for="af-gold">売値の倍率％（100＝そのまま）</label>
+						<input type="text" id="af-gold" inputmode="numeric" value="100">
+					</div>
+					<label><input type="checkbox" id="af-bad"> ハズレ印（表示用）</label>
+					<div>
+						<button type="button" id="af-save">保存</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	</section>
+
 	<!-- ログイン中の端末（どのタブでも下に出す） -->
 	<details class="card" id="devices" hidden>
 		<summary>ログイン中の端末</summary>
@@ -1203,6 +1327,7 @@
 <script src="admin-mapview.js"></script>
 <script src="admin-recipe.js"></script>
 <script src="admin-dungeon.js"></script>
+<script src="admin-affix.js"></script>
 <script>
 (function () {
 	/*
@@ -1277,7 +1402,9 @@
 		$('tab-plans').hidden = true;
 		$('tab-mapview').hidden = true;
 		$('tab-recipe').hidden = true;
+		$('tab-affix').hidden = true;
 		$('tab-recycle').hidden = true;
+		$('tab-market').hidden = true;
 		$('tab-kobo').hidden = true;
 		setMsg($('login-msg'), text || '');
 	}
@@ -1289,7 +1416,7 @@
 		selectTab(location.hash === '#online' ? 'online' : location.hash === '#recover' ? 'recover' : location.hash === '#feedback' ? 'feedback' :
 			location.hash === '#changes' ? 'changes' : location.hash === '#ai' ? 'ai' : location.hash === '#mapdoc' ? 'mapdoc' :
 			location.hash === '#parts' ? 'parts' : location.hash === '#plans' ? 'plans' :
-			(location.hash === '#mapview' || location.hash === '#npcroute') ? 'mapview' : location.hash === '#recipe' ? 'recipe' : location.hash === '#dungeon' ? 'dungeon' : location.hash === '#recycle' ? 'recycle' : location.hash === '#dot' ? 'dot' :
+			(location.hash === '#mapview' || location.hash === '#npcroute') ? 'mapview' : location.hash === '#recipe' ? 'recipe' : location.hash === '#dungeon' ? 'dungeon' : location.hash === '#affix' ? 'affix' : location.hash === '#recycle' ? 'recycle' : location.hash === '#market' ? 'market' : location.hash === '#dot' ? 'dot' :
 			location.hash === '#kobo' ? 'kobo' : 'search');
 		if (location.hash === '#online') {
 			loadEnvStats();
@@ -1307,8 +1434,12 @@
 			openRecipe();
 		} else if (location.hash === '#dungeon') {
 			openDungeon();
+		} else if (location.hash === '#affix') {
+			openAffix();
 		} else if (location.hash === '#recycle') {
 			loadRecycle();
+		} else if (location.hash === '#market') {
+			loadMarket();
 		} else if (location.hash === '#kobo') {
 			openKobo();
 		}
@@ -1413,7 +1544,9 @@
 		$('tab-mapview').hidden = name !== 'mapview';
 		$('tab-recipe').hidden = name !== 'recipe';
 		$('tab-dungeon').hidden = name !== 'dungeon';
+		$('tab-affix').hidden = name !== 'affix';
 		$('tab-recycle').hidden = name !== 'recycle';
+		$('tab-market').hidden = name !== 'market';
 		$('tab-dot').hidden = name !== 'dot';
 		$('tab-kobo').hidden = name !== 'kobo';
 		document.body.classList.toggle('wide', name === 'parts' || name === 'plans' || name === 'mapview' || name === 'kobo' || name === 'dungeon');
@@ -1449,8 +1582,12 @@
 				openRecipe();
 			} else if (b.dataset.tab === 'dungeon') {
 				openDungeon();
+			} else if (b.dataset.tab === 'affix') {
+				openAffix();
 			} else if (b.dataset.tab === 'recycle') {
 				loadRecycle();
+			} else if (b.dataset.tab === 'market') {
+				loadMarket();
 			} else if (b.dataset.tab === 'kobo') {
 				openKobo();
 			}
@@ -1499,6 +1636,9 @@
 					head.appendChild(el('span', 'online-env', envLabel('osBrowser', p.env.os + '+' + p.env.browser)));
 				}
 				row.appendChild(head);
+				var ipLine = el('div', 'online-ip', 'IP ');
+				ipLine.appendChild(ipLink(p.ip));
+				row.appendChild(ipLine);
 				row.appendChild(el('div', 'online-map', p.mapID + '：' + (p.mapName || '（名前の無いマップ）') +
 					'　(' + p.x + ', ' + p.y + ')'));
 				card.appendChild(row);
@@ -1656,10 +1796,27 @@
 		notfound: 'このアカウントにはまだキャラがいません。'
 	};
 
+	/* IP アドレスの表示。押すとその IP で「キャラを探す」（IPv6 などで分からない時は「不明」） */
+	function ipLink(ip) {
+		if (!ip) {
+			return el('span', 'sub-text', '不明');
+		}
+		var a = el('a', 'ip-link', ip);
+		a.href = '#';
+		a.title = 'この IP アドレスのキャラを探す';
+		a.addEventListener('click', function (ev) {
+			ev.preventDefault();
+			$('q').value = ip;
+			selectTab('search');
+			search();
+		});
+		return a;
+	}
+
 	function search() {
 		var q = $('q').value.trim();
 		if (!q) {
-			setMsg($('search-msg'), 'キャラ名かアカウント名を入れてください。');
+			setMsg($('search-msg'), 'キャラ名・アカウント名・IP アドレスのどれかを入れてください。');
 			return;
 		}
 		$('q').blur();
@@ -1713,13 +1870,20 @@
 		var dl = el('dl');
 		function item(k, v) {
 			dl.appendChild(el('dt', '', k));
-			dl.appendChild(el('dd', '', v));
+			var dd = el('dd');
+			if (typeof v === 'string') {
+				dd.textContent = v;
+			} else {
+				dd.appendChild(v);
+			}
+			dl.appendChild(dd);
 		}
 		item('アカウント', c.account);
 		item('レベル', 'Lv ' + c.level);
 		item('作成日', c.made);
 		item('プレイ', playTimeText(c.playMinutes) + ' ／ ログイン ' + c.loginCount + ' 回');
 		item('場所', 'マップ ' + c.mapID + '（' + c.x + ', ' + c.y + '）');
+		item('最終IPアドレス', ipLink(c.lastIp));
 		item('ブラウザ版', c.devices ? c.devices + ' 台の端末' + (c.lastWebLogin ? '（最後 ' + dateText(c.lastWebLogin) + '）' : '') : 'まだ使っていない');
 		item('復旧キー', c.hasCode ? 'あり' : 'なし');
 		card.appendChild(dl);
@@ -2138,7 +2302,7 @@
 	/* ---- AI連携 ---- */
 	var AI_KIND = {
 		magic: '特技', magicUser: '特技を使える職業', equUser: '装備できる職業',
-		job: '職業', stTmp: 'ステータステンプレート', item: 'アイテム', maker: '作り手', recipe: 'レシピ', quest: 'ギルドの依頼', flag: 'フラグの名前', talk: '会話データ',
+		job: '職業', stTmp: 'ステータステンプレート', item: 'アイテム', maker: '作り手', recipe: 'レシピ', affix: '付与', quest: 'ギルドの依頼', flag: 'フラグの名前', talk: '会話データ',
 
 		char: 'NPC', map: 'マップ', tiles: 'マス目', mapParts: 'マップパーツ', efc: 'エフェクト', comEfc: '吹き出し', subGame: 'サブゲーム'
 	};
@@ -2589,6 +2753,86 @@
 	$('rc-filter').addEventListener('input', renderRecycleLog);
 	$('rc-action').addEventListener('change', renderRecycleLog);
 
+	/* ---- 取引所（読むだけ。/api/admin/data/market） ---- */
+	var aMarketItem = [];
+	function marketLeft(sec) {
+		var d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600);
+		return d > 0 ? 'あと ' + d + ' 日 ' + h + ' 時間' : 'あと ' + h + ' 時間 ' + Math.floor(sec % 3600 / 60) + ' 分';
+	}
+	function renderMarketItems() {
+		var box = $('mk-items');
+		var q = $('mk-filter').value.trim().toLowerCase();
+		var st = $('mk-state').value;
+		var rows = aMarketItem.filter(function (m) {
+			if (st && m.state !== st) {
+				return false;
+			}
+			return !q || (m.acc + ' ' + m.seller + ' ' + m.item).toLowerCase().indexOf(q) >= 0;
+		});
+		box.textContent = '';
+		$('mk-count').textContent = rows.length + ' / ' + aMarketItem.length + ' 件';
+		if (!rows.length) {
+			box.appendChild(el('p', 'sub-text', aMarketItem.length ? '当てはまる出品はありません。' : 'いまは出品がありません。'));
+			return;
+		}
+		var table = recycleTable(['出品ID', '状態', '品', '値段', '手取り', 'アカウント', 'キャラ', '出品した日時（日本時間）', '期限']);
+		rows.forEach(function (m) {
+			var tr = document.createElement('tr');
+			recycleCell(tr, String(m.id), 'num');
+			recycleCell(tr, m.state === 'on' ? '出品中' : '期限切れ', m.state === 'on' ? 'mk-on' : 'mk-expired');
+			recycleCell(tr, m.item || ('品 ' + m.itemId));
+			recycleCell(tr, m.price.toLocaleString() + ' G', 'num');
+			recycleCell(tr, m.net.toLocaleString() + ' G', 'num');
+			recycleCell(tr, m.acc);
+			recycleCell(tr, m.seller);
+			recycleCell(tr, m.date);
+			recycleCell(tr, m.limitDate + (m.state === 'on' ? '（' + marketLeft(m.leftSec) + '）' : '（引き取り待ち）'));
+			table.appendChild(tr);
+		});
+		box.appendChild(table);
+	}
+	function loadMarket() {
+		setMsg($('mk-msg'), '取得しています...', true);
+		api('/api/admin/data/market', { session: session }).then(function (data) {
+			if (!data.items) {
+				if (data.httpStatus !== 401) {
+					setMsg($('mk-msg'), '取得できませんでした（' + (data.error || data.httpStatus) + '）');
+				}
+				return;
+			}
+			setMsg($('mk-msg'), '', true);
+			var lim = data.limits || {};
+			$('mk-limits').textContent = '1 アカウント ' + lim.maxPut + ' 件・' + lim.days + ' 日まで／手数料 ' + lim.feePercent + '%';
+			var t = data.total || {};
+			$('mk-total').textContent = '出品中 ' + t.on + ' 件（値段の合計 ' + Number(t.onPrice || 0).toLocaleString() + ' G）・期限切れ ' + t.expired +
+				' 件／受付に貯まっている売上の合計 ' + Number(t.gold || 0).toLocaleString() + ' G';
+			var acc = $('mk-accounts');
+			acc.textContent = '';
+			if (!data.accounts.length) {
+				acc.appendChild(el('p', 'sub-text', '出品も売上もあるアカウントはありません。'));
+			} else {
+				var at = recycleTable(['アカウント', '出品中', '期限切れ', 'あと出せる', '受け取っていない売上']);
+				data.accounts.forEach(function (a) {
+					var tr = document.createElement('tr');
+					recycleCell(tr, a.acc);
+					recycleCell(tr, String(a.on), 'num');
+					recycleCell(tr, String(a.expired), 'num');
+					recycleCell(tr, String(Math.max(0, lim.maxPut - a.on - a.expired)), 'num');
+					recycleCell(tr, a.gold.toLocaleString() + ' G', 'num');
+					at.appendChild(tr);
+				});
+				acc.appendChild(at);
+			}
+			aMarketItem = data.items || [];
+			renderMarketItems();
+		}).catch(function () {
+			setMsg($('mk-msg'), 'サーバーにつながりませんでした。');
+		});
+	}
+	$('mk-reload').addEventListener('click', loadMarket);
+	$('mk-filter').addEventListener('input', renderMarketItems);
+	$('mk-state').addEventListener('change', renderMarketItems);
+
 	/* ---- マップ資料（admin-mapdoc.js が作る） ---- */
 	var bMapDocLoaded = false, bMapDocBusy = false;
 	function loadMapDoc() {
@@ -2695,6 +2939,18 @@
 			return;
 		}
 		window.SboRecipe.open(function (url, body) {
+			body.session = session;
+			return api(url, body);
+		});
+	}
+
+	/* ---- 付与（admin-affix.js が作る） ---- */
+	function openAffix() {
+		if (!window.SboAffix) {
+			setMsg($('af-msg'), '付与のファイル（admin-affix.js）が読めませんでした。');
+			return;
+		}
+		window.SboAffix.open(function (url, body) {
 			body.session = session;
 			return api(url, body);
 		});

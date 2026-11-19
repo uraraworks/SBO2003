@@ -74,6 +74,7 @@ extern void		TailChaseProc				(PCHARINFO);									/* 列に戻る途中のプ�
 extern BOOL		TailChaseIsActive			(PCHARINFO);									/* 列に戻る途中(追いかけ中)か */
 extern void		SubProcMove					(PCHARINFO, DWORD, DWORD);						/* 同マップ内移動処理 */
 extern void		DeleteEvent					(DWORD, int);									/* イベント情報を削除 */
+extern void		LoginLimitOnConnect			(DWORD);										/* 新しい接続（ログイン失敗数の数え直し） */
 extern void		RecvDataProc				(BYTE *, DWORD);								/* 受信データ処理 */
 extern int		AddEvent					(DWORD);										/* イベント情報を追加 */
 extern void		ProcBreakParty				(PCHARINFO);									/* パーティから抜ける */

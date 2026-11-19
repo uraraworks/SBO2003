@@ -165,6 +165,9 @@ void	RecvDataProcCHARBUFF				(PBYTE, DWORD);			/* 受信データ処理(攻撃�
 void	RecvDataProcMAKERINFO				(PBYTE, DWORD);			/* 受信データ処理(作り手情報) */
 void	RecvDataProcRECIPEINFO				(PBYTE, DWORD);			/* 受信データ処理(レシピ情報) */
 void	RecvDataProcRECIPEMAKE				(PBYTE, DWORD);			/* 受信データ処理(作ってもらった結果) */
+void	RecvDataProcAFFIXINFO				(PBYTE, DWORD);			/* 受信データ処理(付与表の1行) */
+void	RecvDataProcITEMDERIVE				(PBYTE, DWORD);			/* 受信データ処理(派生アイテム表の行) */
+void	RecvDataProcAPPRAISE				(PBYTE, DWORD);			/* 受信データ処理(鑑定の結果) */
 void	RecvDataProcNPCROUTE				(PBYTE, DWORD);			/* 受信データ処理(NPCの巡回ルート) */
 void	RecvDataProcTOWNWARP				(PBYTE, DWORD);			/* 受信データ処理(町転送の行き先一覧) */
 void	RecvDataProcQUEST					(PBYTE, DWORD);			/* 受信データ処理(ギルドの仕事依頼：一覧・結果) */
@@ -449,6 +452,9 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	NULL,								/* CMD_RECYCLECLOSE(クライアント→サーバーのみ) */
 	RecvDataProcADMINCHEST,				/* CMD_ADMINCHEST */
 	RecvDataProcADMINSWAP,				/* CMD_ADMINSWAP */
+	RecvDataProcAFFIXINFO,				/* CMD_AFFIXINFO */
+	RecvDataProcITEMDERIVE,				/* CMD_ITEMDERIVE */
+	RecvDataProcAPPRAISE,				/* CMD_APPRAISE */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -1056,19 +1062,24 @@ void RenewATDF(DWORD dwID)
 {
 	PCHARINFO pChar = g_aCharInfo[dwID];
 	PITEMINFO pItem;
+	int nAffixDFMagic;
 	pChar->wAT = pChar->byPW;
 	if (pChar->waEqu[0] != 0xFFFF) {
-		pItem = g_aItemInfo[pChar->waItem[pChar->waEqu[0]]];
-		pChar->wAT += pItem->byData;
+		/* 強さは付与込み（未鑑定の派生アイテムは元のまま） */
+		pChar->wAT += ItemValueOf (pChar->waItem[pChar->waEqu[0]]);
 	}
 
 	if (pChar->byNpcType == 0) {
 		pChar->wDFMagic = 0;
 	}
 	pChar->wDF = pChar->byST / 2;
+	nAffixDFMagic = 0;
 	for (int i = 0; i < MAX_EQUTYPE; i ++) {
 		if (pChar->waEqu[i] != 0xFFFF) {
-			pItem = g_aItemInfo[pChar->waItem[pChar->waEqu[i]]];
+			WORD wEquItem = pChar->waItem[pChar->waEqu[i]];
+			int nValue = ItemValueOf (wEquItem);
+			pItem = g_aItemInfo[wEquItem];
+			nAffixDFMagic += ItemAffixDFMagic (wEquItem);
 			switch (pItem->byType) {
 //			case ITEMTYPE_WEAPON:		/* 武器 */
 //				break;
@@ -1078,17 +1089,17 @@ void RenewATDF(DWORD dwID)
 			case ITEMTYPE_SEED:			/* 種 */
 			case ITEMTYPE_EQU_HAND:		/* 装備(小手) */
 			case ITEMTYPE_EQU_LEG:		/* 装備(靴) */
-				pChar->wDF += pItem->byData;
+				pChar->wDF += nValue;
 				break;
 			case ITEMTYPE_EQU_ACC1:		/* 装備(首飾り) */
 				{
 					PITEMINFO_EQU_ACC1 pInfo = (PITEMINFO_EQU_ACC1)pItem->pData;
 					switch (pInfo->byEquType) {
 					case EQUTYPE_DF:
-						pChar->wDF += pItem->byData;
+						pChar->wDF += nValue;
 						break;
 					case EQUTYPE_DFMAGIC:
-						pChar->wDFMagic += pItem->byData;
+						pChar->wDFMagic += nValue;
 						break;
 					}
 				}
@@ -1098,10 +1109,10 @@ void RenewATDF(DWORD dwID)
 					PITEMINFO_EQU_ACC2 pInfo = (PITEMINFO_EQU_ACC2)pItem->pData;
 					switch (pInfo->byEquType) {
 					case EQUTYPE_DF:
-						pChar->wDF += pItem->byData;
+						pChar->wDF += nValue;
 						break;
 					case EQUTYPE_DFMAGIC:
-						pChar->wDFMagic += pItem->byData;
+						pChar->wDFMagic += nValue;
 						break;
 					}
 				}
@@ -1111,16 +1122,21 @@ void RenewATDF(DWORD dwID)
 					PITEMINFO_EQU_ACC3 pInfo = (PITEMINFO_EQU_ACC3)pItem->pData;
 					switch (pInfo->byEquType) {
 					case EQUTYPE_DF:
-						pChar->wDF += pItem->byData;
+						pChar->wDF += nValue;
 						break;
 					case EQUTYPE_DFMAGIC:
-						pChar->wDFMagic += pItem->byData;
+						pChar->wDFMagic += nValue;
 						break;
 					}
 				}
 				break;
 			}
 		}
+	}
+
+	/* 付与による魔法防御の加算（プレイヤーだけ） */
+	if (pChar->byNpcType == 0) {
+		pChar->wDFMagic = (WORD)max (0, min (65535, (int)pChar->wDFMagic + nAffixDFMagic));
 	}
 
 	/* 酔いレベルの調整 */
@@ -1921,6 +1937,7 @@ static void RenewMapDarkLightFlood(int mx, int my, int nRange)
 /* ========================================================================= */
 /* 関数名：GetMapPosLight													 */
 /* 内容：マス(mx,my)の灯りの範囲(光るパーツとマップの光源の大きい方。0=無し) */
+/*       光るパーツの範囲はマップの上書き表(aPartsLight)があればそちらを使う */
 /*       pbyPower・pbyFlg に強さ(%)とフラグ(マップの光源のもの)を返す		 */
 /* ========================================================================= */
 int GetMapPosLight(int mx, int my, BYTE *pbyPower, BYTE *pbyFlg)
@@ -1941,6 +1958,13 @@ int GetMapPosLight(int mx, int my, BYTE *pbyPower, BYTE *pbyFlg)
 		WORD wMap = g_pMapInfo->pwMap[mx + my * g_pMapInfo->nCX];
 		if (wMap < g_wCountMapParts) {
 			nRange = g_pMapPartsInfo[wMap].byLight;
+			/* このマップだけの上書き（0=このマップでは光らない） */
+			for (i = 0; (i < g_pMapInfo->byPartsLightCount) && (i < MAX_MAPPARTSLIGHT); i ++) {
+				if (g_pMapInfo->aPartsLight[i].wParts == wMap) {
+					nRange = min ((int)g_pMapInfo->aPartsLight[i].byLight, (int)MAPLIGHT_RANGE_MAX);
+					break;
+				}
+			}
 		}
 	}
 	for (i = 0; (i < g_pMapInfo->byLightCount) && (i < MAX_MAPLIGHT); i ++) {
@@ -3046,7 +3070,7 @@ PITEMINFO_WEAPON GetBowWeapon(PCHARINFO c)
 {
     if (c->waEqu[0] >= MAX_MYITEM) return NULL;
     int id = c->waItem[c->waEqu[0]];
-    if (id < 0 || id >= g_aItemInfo.GetSize()) return NULL;
+    if (id < 0 || id > 0xFFFF || !ItemIDValid((WORD)id)) return NULL;
     return BowWeapon(c, g_aItemInfo[id]);
 }
 
@@ -3641,6 +3665,62 @@ void RecvDataProcRECIPEINFO(PBYTE pData, DWORD dwDataSize)
 
 
 /* ========================================================================= */
+/* 関数名：RecvDataProcAFFIXINFO											 */
+/* 内容：受信データ処理(付与表の1行。ログイン時と管理画面での変更時)		 */
+/* ========================================================================= */
+void RecvDataProcAFFIXINFO(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_AFFIXINFO pPara = (PCMDPARA_AFFIXINFO)pData;
+	PITEMAFFIXINFO pInfo;
+
+	if (dwDataSize < sizeof (CMDPARA_AFFIXINFO)) {
+		return;
+	}
+	if ((pPara->wIndex >= MAX_AFFIX) || (pPara->wCount > MAX_AFFIX) || (pPara->wIndex >= pPara->wCount)) {
+		return;
+	}
+	while (g_aAffixInfo.GetSize () < (int)pPara->wCount) {
+		pInfo = new ITEMAFFIXINFO;
+		ZeroMemory (pInfo, sizeof (ITEMAFFIXINFO));
+		g_aAffixInfo.Add (pInfo);
+	}
+	*g_aAffixInfo[pPara->wIndex] = pPara->Info;
+	g_bDraw = TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcITEMDERIVE											 */
+/* 内容：受信データ処理(派生アイテム表の行。ログイン時はまとめて、新しく振った時は1行)	 */
+/* ========================================================================= */
+void RecvDataProcITEMDERIVE(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ITEMDERIVE pPara = (PCMDPARA_ITEMDERIVE)pData;
+	PITEMDERIVEINFO pInfo;
+	int i, nIndex;
+
+	if (dwDataSize < offsetof (CMDPARA_ITEMDERIVE, aInfo)) {
+		return;
+	}
+	if ((pPara->byCount > ITEMDERIVE_PERPACKET) ||
+		(dwDataSize < offsetof (CMDPARA_ITEMDERIVE, aInfo) + sizeof (ITEMDERIVEINFO) * pPara->byCount)) {
+		return;
+	}
+	for (i = 0; i < (int)pPara->byCount; i ++) {
+		nIndex = (int)pPara->wStart + i;
+		if (nIndex >= MAX_ITEMDERIVE) {
+			return;
+		}
+		while (g_aItemDerive.GetSize () <= nIndex) {
+			pInfo = new ITEMDERIVEINFO;
+			ZeroMemory (pInfo, sizeof (ITEMDERIVEINFO));
+			g_aItemDerive.Add (pInfo);
+		}
+		*g_aItemDerive[nIndex] = pPara->aInfo[i];
+	}
+	g_bDraw = TRUE;
+}
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcRECIPEMAKE											 */
 /* 内容：受信データ処理(作ってもらった結果)									 */
 /*		 作り手の画面を開いていれば、結果に合わせた台詞を出す				 */
@@ -3688,11 +3768,75 @@ void RecvDataProcRECIPEMAKE(PBYTE pData, DWORD dwDataSize)
 	case RECIPERESULT_NOROOM:
 		pszMsg = "持ち物も預かり所もいっぱいで、お渡しできません。@2";
 		break;
+	case RECIPERESULT_UNKNOWN:
+		pszMsg = "まだ鑑定されていません。@1先に鑑定をお願いします。@2";
+		break;
+	case RECIPERESULT_MAXED:
+		pszMsg = "これ以上は鍛えられません。@2";
+		break;
+	case RECIPERESULT_SAME:
+		pszMsg = "もう同じ付与が付いています。@2";
+		break;
 	default:
 		pszMsg = "それは作れないようです。@2";
 		break;
 	}
 	MakerSetMsg (pWndList, pszMsg);
+	g_dwActiveMsgID = pWndList->dwID;
+	pWndList->dwTimeDrawStart = 0;
+	g_bDraw = TRUE;
+}
+
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcAPPRAISE												 */
+/* 内容：受信データ処理(鑑定の結果)											 */
+/* ========================================================================= */
+void RecvDataProcAPPRAISE(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_APPRAISE pPara = (PCMDPARA_APPRAISE)pData;
+	PWNDINFO pWndList = NULL;
+	LPCSTR pszMsg;
+	int i;
+
+	if (dwDataSize < sizeof (CMDPARA_APPRAISE)) {
+		return;
+	}
+	g_bProcMakerWait = FALSE;
+	if ((g_nProcMakerID < 0) || (g_nProcMakerID >= MAX_MAKER)) {
+		return;
+	}
+	for (i = 0; i < g_WndInfo.GetSize (); i ++) {
+		if ((g_WndInfo[i]->nType == WNDTYPE_MAKER) && (g_WndInfo[i]->nType2 == MAKERWND_APPRAISE)) {
+			pWndList = g_WndInfo[i];
+			break;
+		}
+	}
+	if (pWndList == NULL) {
+		return;
+	}
+
+	switch (pPara->byResult) {
+	case APPRAISERESULT_OK:
+		pszMsg = g_aMakerInfo[g_nProcMakerID].szMsgDone;
+		if (pszMsg[0] == 0) {
+			pszMsg = "鑑定できました。@2";
+		}
+		break;
+	case APPRAISERESULT_LACKGOLD:
+		pszMsg = "代金が足りないようです。@2";
+		break;
+	default:
+		pszMsg = "それは鑑定できないようです。@2";
+		break;
+	}
+	MakerSetMsg (pWndList, pszMsg);
+	/* 鑑定済みになった分、一覧から減る */
+	{
+		int anList[MAX_MYITEM];
+		int nCount = AppraiseGetList (anList, MAX_MYITEM);
+		MakerScrollFit (pWndList, (int)pWndList->byData1 + pWndList->nData1, nCount);
+	}
 	g_dwActiveMsgID = pWndList->dwID;
 	pWndList->dwTimeDrawStart = 0;
 	g_bDraw = TRUE;
@@ -3927,18 +4071,34 @@ void RecvDataProcQUESTSTATE(PBYTE pData, DWORD dwDataSize)
 	PWNDINFO pWnd;
 	int i;
 
-	if (dwDataSize < sizeof (CMDPARA_QUESTSTATE)) {
+	/* 依頼の分（byStoryCount の手前まで）は必ず届く。物語の分は可変長（古いサーバーからは届かない） */
+	if (dwDataSize < offsetof (CMDPARA_QUESTSTATE, byStoryCount)) {
 		return;
 	}
-	CopyMemory (&g_QuestState, pPara, sizeof (CMDPARA_QUESTSTATE));
+	ZeroMemory (&g_QuestState, sizeof (CMDPARA_QUESTSTATE));
+	CopyMemory (&g_QuestState, pPara, min (dwDataSize, (DWORD)sizeof (CMDPARA_QUESTSTATE)));
 	if (g_QuestState.byCount > MAX_PARTYMEMBER) {
 		g_QuestState.byCount = MAX_PARTYMEMBER;
+	}
+	/* 物語の目的は、届いたバイト数に収まる件数だけ使う */
+	if (dwDataSize < offsetof (CMDPARA_QUESTSTATE, aStory)) {
+		g_QuestState.byStoryCount = 0;
+	}
+	if (g_QuestState.byStoryCount > MAX_STORYGOAL) {
+		g_QuestState.byStoryCount = MAX_STORYGOAL;
+	}
+	if (offsetof (CMDPARA_QUESTSTATE, aStory) + sizeof (STORYGOALENTRY) * g_QuestState.byStoryCount > dwDataSize) {
+		g_QuestState.byStoryCount = (BYTE)((dwDataSize - offsetof (CMDPARA_QUESTSTATE, aStory)) / sizeof (STORYGOALENTRY));
 	}
 	/* 文字列は必ず終端させる */
 	for (i = 0; i < MAX_PARTYMEMBER; i ++) {
 		g_QuestState.aEntry[i].szCharName[MAX_CHARNAMEBUF - 1] = 0;
 		g_QuestState.aEntry[i].szQuestName[MAX_QUESTNAME - 1] = 0;
 		g_QuestState.aEntry[i].szGoal[MAX_QUESTGOAL - 1] = 0;
+	}
+	for (i = 0; i < MAX_STORYGOAL; i ++) {
+		g_QuestState.aStory[i].szName[MAX_QUESTNAME - 1] = 0;
+		g_QuestState.aStory[i].szGoal[MAX_QUESTGOAL - 1] = 0;
 	}
 	pWnd = QuestFindWindow (QUESTWND_STATE);
 	if (pWnd) {
@@ -4663,6 +4823,7 @@ void RecvDataProcCHARINFO(PBYTE pData, DWORD dwDataSize)
 	pCharDst->byMoveProbabilityY	= pChar->byMoveProbabilityY;
 	pCharDst->byLightLevel			= pChar->byLightLevel;
 	pCharDst->byHide				= pChar->byHide;
+	pCharDst->byGhost				= pChar->byGhost;
 	pCharDst->bySearchCx			= pChar->bySearchCx;
 	pCharDst->bySearchCy			= pChar->bySearchCy;
 	pCharDst->wTimePutInterval		= pChar->wTimePutInterval;
@@ -4816,6 +4977,7 @@ void RecvDataProcCHARINFO2(PBYTE pData, DWORD dwDataSize)
 	pCharDst->byNpcType		= pChar->byNpcType;
 	pCharDst->byLightLevel	= pChar->byLightLevel;
 	pCharDst->byHide		= pChar->byHide;
+	pCharDst->byGhost		= pChar->byGhost;
 	pCharDst->wGrpID		= pChar->wGrpID;
 	pCharDst->wGrpMain		= pChar->wGrpMain;
 	pCharDst->wGrpSub		= pChar->wGrpSub;
@@ -7091,7 +7253,7 @@ void RecvDataProcLEAVEITEMGET(BYTE *pData, DWORD dwDataSize)
 			}
 		}
 		nDone = g_nLeaveDisposeBefore - nAfter;
-		LPCSTR pszName = (g_wLeaveDisposeItem < g_aItemInfo.GetSize ()) ? g_aItemInfo[g_wLeaveDisposeItem]->szName : "";
+		LPCSTR pszName = ItemIDValid (g_wLeaveDisposeItem) ? ItemNameOf (g_wLeaveDisposeItem) : "";
 		if (nDone <= 0) {
 			if (g_byLeaveDisposeMode == LEAVEDISPOSE_SELL) {
 				wsprintf (g_szLeaveResult, "＊｢申し訳ありませんが、%sは@1　 お引き取りできないお品です。", pszName);
@@ -7100,8 +7262,8 @@ void RecvDataProcLEAVEITEMGET(BYTE *pData, DWORD dwDataSize)
 			}
 		} else if (g_byLeaveDisposeMode == LEAVEDISPOSE_SELL) {
 			DWORD dwSell = 1;
-			if (g_wLeaveDisposeItem < g_aItemInfo.GetSize ()) {
-				dwSell = max (g_aItemInfo[g_wLeaveDisposeItem]->dwGold / 4, (DWORD)1);
+			if (ItemIDValid (g_wLeaveDisposeItem)) {
+				dwSell = max (ItemGoldOf (g_wLeaveDisposeItem) / 4, (DWORD)1);
 			}
 			wsprintf (g_szLeaveResult, "＊｢%sを%d個、%uゴールドで@1　 買い取りました。", pszName, nDone, dwSell * nDone);
 		} else {
@@ -7536,12 +7698,12 @@ void RecvDataProcSYSMSG2(BYTE *pData, DWORD dwDataSize)
 			/* 敵の今の位置を覚えて、アイテムの絵が飛び出す演出を始める(敵はまだ消えていない) */
 			AddDropEffect (pChar->dwMapID, (int)pChar->dwX * 32 - BowOffsetX (pChar),
 					(int)pChar->dwY * 32 - BowOffsetY (pChar), pRecv->dwData2);
-			wsprintf (szTmp, aSysMsgTbl[pRecv->pID], pChar->szName, g_aItemInfo[pRecv->dwData2]->szName);
+			wsprintf (szTmp, aSysMsgTbl[pRecv->pID], pChar->szName, ItemNameOf ((WORD)pRecv->dwData2));
 		} else {
 			/* もらった人が分かったので、その人の頭上へ移す */
 			SetDropEffectOwner (pRecv->dwData2, pRecv->dwData1);
 			strcpy (szTmp, "★");
-			wsprintf (szTmp + strlen (szTmp), aSysMsgTbl[pRecv->pID], pChar->szName, g_aItemInfo[pRecv->dwData2]->szName);
+			wsprintf (szTmp + strlen (szTmp), aSysMsgTbl[pRecv->pID], pChar->szName, ItemNameOf ((WORD)pRecv->dwData2));
 		}
 		AddSysMsg (szTmp, RGB (255, 215, 64));	/* ドロップは目立つように金色 */
 		return;

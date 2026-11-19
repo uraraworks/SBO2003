@@ -114,12 +114,18 @@ PWNDINFO MakeWindowSUBSUGOROKU_IDLE				(void);				/* すごろく：平常状態
 
 PWNDINFO MakeWindowMAKER						(int);				/* 作り手：作れる物の一覧 */
 PWNDINFO MakeWindowMAKER_CONF					(int);				/* 作り手：確認 */
+PWNDINFO MakeWindowAPPRAISE					(int);				/* 鑑定屋：未鑑定の持ち物の一覧 */
+int AppraiseGetList							(int *, int);		/* 未鑑定の持ち物の位置を取得 */
+DWORD AppraiseCost							(WORD);				/* 鑑定の代金 */
 PWNDINFO MakeWindowTOWNWARP					(int nMode);				/* 町転送：行き先の選択 */
 PWNDINFO MakeWindowQUEST					(int nMode);				/* ギルドの依頼：一覧・進み具合 */
 int MakerGetRecipeList							(int, int *, int);	/* 作り手の一覧に出すレシピの番号を並び順で取得 */
 int MakerGetCursorRecipe						(PWNDINFO);			/* 一覧のカーソル位置のレシピの番号 */
-int MakerCountHave								(WORD);				/* 材料として使える数（持ち物+預かり所） */
-BOOL MakerCanMake								(int);				/* 材料と手数料が足りているか */
+int MakerCountHave								(WORD, int);		/* 材料として使える数（持ち物+預かり所） */
+BOOL MakerCanMake								(int, int);			/* 材料と手数料が足りているか */
+PWNDINFO MakeWindowFORGE						(int);				/* 鍛冶屋：対象になる持ち物の一覧 */
+int ForgeGetList								(int, int *, int);	/* 鍛える・付け替えるレシピの対象になる持ち物の位置を取得 */
+void MakerRecipeTitle							(int, char *, int);	/* 作り手の一覧に出すレシピの名前 */
 DWORD MakerStateHash							(int);				/* 画面に出ている内容が変わったか調べる値 */
 void MakerSetMsg								(PWNDINFO, LPCSTR);	/* 作り手の画面のメッセージを差し替える */
 void MakerSetTalkMsg							(PWNDINFO);			/* 作り手の話しかけた時の台詞を出す */
@@ -371,7 +377,7 @@ PWNDINFO MakeWindowCOMMAND(void)
 	pWnd->nY = 50;
 	pWnd->nCx = 16 * 10;
 	pWnd->nCy = 16 * 7;
-	/* 自分か仲間が依頼を受けている時だけ「依頼」の段を出す（nData2=1）。1 行ぶん高くする */
+	/* 自分か仲間が依頼を受けている時か、物語の「いまの目的」がある時だけ「目的」の段を出す（nData2=1）。1 行ぶん高くする */
 	if (QuestHasAny ()) {
 		pWnd->nData2 = 1;
 		pWnd->nCy = 16 * 8;
@@ -581,7 +587,7 @@ PWNDINFO MakeWindowCOMMANDITEM(void)
 	int i, nCount = GetItemCount (g_nMyCharID), nRows = GetItemListRows (g_nMyCharID), nLen = 0, nLenTmp;
 	for (i = 0; i < nCount; i ++) {
 		PITEMINFO pItem = g_aItemInfo[pChar->waItem[i]];
-		nLenTmp = SboTextWidth (pItem->szName);
+		nLenTmp = SboTextWidth (ItemNameOf (pChar->waItem[i]));
 		nLen = max (nLen, nLenTmp);
 	}
 	/* 大事な物を持っている時は、最後の行に「大事な物…」を出す */
@@ -665,7 +671,7 @@ PWNDINFO MakeWindowCOMMANDITEMBATTLE(void)
 	int i, nCount = GetItemCount (g_nMyCharID), nLen = 0, nLenTmp;
 	for (i = 0; i < nCount; i ++) {
 		PITEMINFO pItem = g_aItemInfo[pChar->waItem[i]];
-		nLenTmp = SboTextWidth (pItem->szName);
+		nLenTmp = SboTextWidth (ItemNameOf (pChar->waItem[i]));
 		nLen = max (nLen, nLenTmp);
 	}
 	if (nLen % 2) {
@@ -956,7 +962,7 @@ PWNDINFO MakeWindowSHOP_SELL(void)
 	int i, nCount = GetItemCount (g_nMyCharID), nLen = 0, nLenTmp;
 	for (i = 0; i < nCount; i ++) {
 		PITEMINFO pItem = g_aItemInfo[pChar->waItem[i]];
-		nLenTmp = SboTextWidth (pItem->szName);
+		nLenTmp = SboTextWidth (ItemNameOf (pChar->waItem[i]));
 		nLen = max (nLen, nLenTmp);
 	}
 	if (nLen % 2) {
@@ -1503,7 +1509,7 @@ PWNDINFO MakeWindowLEAVE_ITEM(void)
 	int i, nCount = GetItemCount (g_nMyCharID), nLen = 0, nLenTmp;
 	for (i = 0; i < nCount; i ++) {
 		PITEMINFO pItem = g_aItemInfo[pChar->waItem[i]];
-		nLenTmp = SboTextWidth (pItem->szName);
+		nLenTmp = SboTextWidth (ItemNameOf (pChar->waItem[i]));
 		nLen = max (nLen, nLenTmp);
 	}
 	if (nLen % 2) {
@@ -1653,10 +1659,10 @@ PWNDINFO MakeWindowLEAVE_DISPOSEMENU(void)
 	char szTmp[512];
 	PITEMINFO pItem = g_aItemInfo[g_pLeaveInfo->waItem[g_nProcShopSelect]];
 	int nCount = g_pLeaveInfo->byItemCount[g_nProcShopSelect];
-	if (pItem->dwGold == 0) {
-		wsprintf (szTmp, "＊｢%s（%d個）ですね。@1　 値打ちが無いので買い取れませんが、@1　 捨てることはできますよ。@2", pItem->szName, nCount);
+	if (ItemGoldOf (g_pLeaveInfo->waItem[g_nProcShopSelect]) == 0) {
+		wsprintf (szTmp, "＊｢%s（%d個）ですね。@1　 値打ちが無いので買い取れませんが、@1　 捨てることはできますよ。@2", ItemNameOf (g_pLeaveInfo->waItem[g_nProcShopSelect]), nCount);
 	} else {
-		wsprintf (szTmp, "＊｢%s（%d個）ですね。@1　 売るなら1個%dゴールドで@1　 買い取りますよ。@2", pItem->szName, nCount, max (pItem->dwGold / 4, (DWORD)1));
+		wsprintf (szTmp, "＊｢%s（%d個）ですね。@1　 売るなら1個%dゴールドで@1　 買い取りますよ。@2", ItemNameOf (g_pLeaveInfo->waItem[g_nProcShopSelect]), nCount, max (ItemGoldOf (g_pLeaveInfo->waItem[g_nProcShopSelect]) / 4, (DWORD)1));
 	}
 	PWNDINFO pWndNew = MakeWindowMSG (szTmp, TRUE);
 	pWndNew->pParent = pWnd;
@@ -1686,7 +1692,7 @@ PWNDINFO MakeWindowLEAVE_DISPOSECOUNT(BYTE byMode)
 	if (byMode == LEAVEDISPOSE_SELL) {
 		/* 所持金が 999999 を超えない分まで */
 		PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
-		DWORD dwSell = max (pItem->dwGold / 4, (DWORD)1);
+		DWORD dwSell = max (ItemGoldOf (g_pLeaveInfo->waItem[g_nProcShopSelect]) / 4, (DWORD)1);
 		DWORD dwRoom = (pChar->dwGold >= 999999) ? 0 : (999999 - pChar->dwGold);
 		nMax = min (nMax, (int)(dwRoom / dwSell));
 	}
@@ -1705,7 +1711,7 @@ PWNDINFO MakeWindowLEAVE_DISPOSECOUNT(BYTE byMode)
 	g_bProcShopConfirm = FALSE;
 
 	char szTmp[512];
-	wsprintf (szTmp, "＊｢%sをいくつ%s？@1　 ↑↓で1個ずつ、←→で10個ずつ@1　 変えられます。@2", pItem->szName,
+	wsprintf (szTmp, "＊｢%sをいくつ%s？@1　 ↑↓で1個ずつ、←→で10個ずつ@1　 変えられます。@2", ItemNameOf (g_pLeaveInfo->waItem[g_nProcShopSelect]),
 			(byMode == LEAVEDISPOSE_SELL) ? "売りますか" : "捨てますか");
 	PWNDINFO pWndNew = MakeWindowMSG (szTmp, TRUE);
 	pWndNew->pParent = pWnd;
@@ -2019,7 +2025,7 @@ PWNDINFO MakeWindowTRADEITEM(void)
 	int i, nCount = GetItemCount (g_nMyCharID), nLen = 0, nLenTmp;
 	for (i = 0; i < nCount; i ++) {
 		PITEMINFO pItem = g_aItemInfo[pChar->waItem[i]];
-		nLenTmp = SboTextWidth (pItem->szName);
+		nLenTmp = SboTextWidth (ItemNameOf (pChar->waItem[i]));
 		nLen = max (nLen, nLenTmp);
 	}
 	if (nLen % 2) {
@@ -2932,7 +2938,7 @@ PWNDINFO MakeWindowITEMEQU(void)
 			continue;
 		}
 		PITEMINFO pItem = g_aItemInfo[pChar->waItem[pChar->waEqu[i]]];
-		nLenTmp = SboTextWidth (pItem->szName);
+		nLenTmp = SboTextWidth (ItemNameOf (pChar->waItem[pChar->waEqu[i]]));
 		nLen = max (nLen, nLenTmp);
 	}
 	if (nLen % 2) {
@@ -3201,6 +3207,16 @@ void UpdateWindowITEMINFOList(PWNDINFO pWndList)
 		int nRecipe = MakerGetCursorRecipe (pWndList);
 		if (nRecipe >= 0) {
 			nItemID = g_aRecipeInfo[nRecipe].wItem;
+			if (g_aRecipeInfo[nRecipe].byKind != RECIPEKIND_NORMAL) {
+				/* 鍛える・付け替えるにはできる物が無いので、最初の材料の詳細を出し、その下に材料と手数料を出す */
+				nItemID = 0;
+				for (int k = 0; k < MAX_RECIPEMAT; k ++) {
+					if (g_aRecipeInfo[nRecipe].awMatItem[k] != 0) {
+						nItemID = g_aRecipeInfo[nRecipe].awMatItem[k];
+						break;
+					}
+				}
+			}
 		}
 	} else if ((pWndList->nType == WNDTYPE_MARKET) && (pWndList->nType2 == MARKETWND_LIST)) {
 		/* 取引所の一覧は出品の品を出す（byData1 だけスクロールしている） */
@@ -3240,7 +3256,7 @@ void UpdateWindowITEMINFOList(PWNDINFO pWndList)
 			nItemID = pChar->waItem[nNo];
 		}
 	}
-	if ((nItemID < 0) || (nItemID >= g_aItemInfo.GetSize ())) {
+	if ((nItemID < 0) || (nItemID > 0xFFFF) || !ItemIDValid ((WORD)nItemID)) {
 		nItemID = 0;
 	}
 
@@ -3344,7 +3360,12 @@ int MakerGetRecipeList(int nMaker, int *pnList, int nMax)
 		if ((pRecipe->byState != RECIPESTATE_ON) || ((int)pRecipe->byMaker != nMaker)) {
 			continue;
 		}
-		if ((pRecipe->wItem == 0) || ((int)pRecipe->wItem >= g_aItemInfo.GetSize ())) {
+		if (pRecipe->byKind == RECIPEKIND_NORMAL) {
+			if ((pRecipe->wItem == 0) || ((int)pRecipe->wItem >= g_aItemInfo.GetSize ())) {
+				continue;
+			}
+		} else if ((pRecipe->byKind > RECIPEKIND_SWAP) || (ItemAffixFind (pRecipe->wAffix) == NULL)) {
+			/* 鍛える・付け替えるは、付ける付与が付与表にあるものだけ */
 			continue;
 		}
 		if (nCount >= nMax) {
@@ -3386,7 +3407,7 @@ int MakerGetCursorRecipe(PWNDINFO pWndList)
 /* 内容：材料として使える数（持ち物のうち装備中・捨てられない物を除いたもの）	 */
 /*		 + 預かり所に預けてある数。サーバーの数え方と同じにしておく			 */
 /* ========================================================================= */
-int MakerCountHave(WORD wItem)
+int MakerCountHave(WORD wItem, int nExclude)
 {
 	PCHARINFO pChar;
 	BOOL bEqu;
@@ -3402,7 +3423,7 @@ int MakerCountHave(WORD wItem)
 	pChar = g_aCharInfo[g_nMyCharID];
 	if (!(g_aItemInfo[wItem]->byFlg & ITEMFLG_DROP)) {
 		for (i = 0; i < MAX_MYITEM; i ++) {
-			if (pChar->waItem[i] != wItem) {
+			if ((pChar->waItem[i] != wItem) || (i == nExclude)) {
 				continue;
 			}
 			bEqu = FALSE;
@@ -3430,7 +3451,7 @@ int MakerCountHave(WORD wItem)
 /* 関数名：MakerCanMake														 */
 /* 内容：材料と手数料が足りているか（置き場所はサーバーが決める）			 */
 /* ========================================================================= */
-BOOL MakerCanMake(int nRecipe)
+BOOL MakerCanMake(int nRecipe, int nExclude)
 {
 	PRECIPEINFO pRecipe;
 	int i;
@@ -3449,7 +3470,7 @@ BOOL MakerCanMake(int nRecipe)
 		if ((pRecipe->awMatItem[i] == 0) || (pRecipe->abyMatCount[i] == 0)) {
 			continue;
 		}
-		if (MakerCountHave (pRecipe->awMatItem[i]) < (int)pRecipe->abyMatCount[i]) {
+		if (MakerCountHave (pRecipe->awMatItem[i], nExclude) < (int)pRecipe->abyMatCount[i]) {
 			return FALSE;
 		}
 	}
@@ -3473,6 +3494,8 @@ DWORD MakerStateHash(int nMaker)
 		pRecipe = &g_aRecipeInfo[anList[i]];
 		MAKER_MIX (anList[i]);
 		MAKER_MIX (pRecipe->wItem);
+		MAKER_MIX (pRecipe->byKind);
+		MAKER_MIX (pRecipe->wAffix);
 		MAKER_MIX (pRecipe->byCount);
 		MAKER_MIX (pRecipe->dwGold);
 		for (j = 0; j < MAX_RECIPEMAT; j ++) {
@@ -3666,11 +3689,10 @@ PWNDINFO MakeWindowMAKER(int nMaker)
 	int nCx = MAKER_LISTCX;
 	for (int i = 0; i < nCount; i ++) {
 		PRECIPEINFO pRecipe = &g_aRecipeInfo[anList[i]];
-		if (pRecipe->wItem >= g_aItemInfo.GetSize ()) {
-			continue;
-		}
-		int nW = SboTextWidth (g_aItemInfo[pRecipe->wItem]->szName);
-		if (pRecipe->byCount > 1) {
+		char szTitle[MAX_ITEMNAME + MAX_AFFIXNAME * 3 + 32];
+		MakerRecipeTitle (anList[i], szTitle, sizeof (szTitle));
+		int nW = SboTextWidth (szTitle);
+		if ((pRecipe->byKind == RECIPEKIND_NORMAL) && (pRecipe->byCount > 1)) {
 			nW += (pRecipe->byCount >= 10) ? 4 : 3;	/* " x3" の分 */
 		}
 		nCx = max (nCx, 32 + nW * 8 + 16);
@@ -3719,6 +3741,150 @@ PWNDINFO MakeWindowMAKER_CONF(int nRecipe)
 }
 
 /* ========================================================================= */
+/* 関数名：AppraiseGetList													 */
+/* 内容：持ち物のうち、未鑑定の物の位置を並び順で取得する（件数を返す）		 */
+/* ========================================================================= */
+int AppraiseGetList(int *pnList, int nMax)
+{
+	int i, nCount = 0;
+
+	if ((g_nMyCharID < 0) || (g_aCharInfo[g_nMyCharID] == NULL)) {
+		return 0;
+	}
+	for (i = 0; i < MAX_MYITEM; i ++) {
+		WORD wID = g_aCharInfo[g_nMyCharID]->waItem[i];
+		if ((wID == 0) || !ItemIDValid (wID) || !ItemIsUnknown (wID)) {
+			continue;
+		}
+		if (nCount >= nMax) {
+			break;
+		}
+		pnList[nCount] = i;
+		nCount ++;
+	}
+	return nCount;
+}
+
+/* 鑑定の代金（元の値段の 1/10。最低 10 ゴールド） */
+DWORD AppraiseCost(WORD wItemID)
+{
+	DWORD dwGold = g_aItemInfo[wItemID]->dwGold / 10;
+
+	return (dwGold < 10) ? 10 : dwGold;
+}
+
+/* ========================================================================= */
+/* 関数名：MakeWindowAPPRAISE												 */
+/* 内容：ウィンドウの作成(鑑定屋：未鑑定の持ち物の一覧)						 */
+/*		 nData1=画面内のカーソル位置 byData1=先頭の番号 nData2=表示行数		 */
+/* ========================================================================= */
+PWNDINFO MakeWindowAPPRAISE(int nMaker)
+{
+	int anList[MAX_MYITEM], nCount;
+	PWNDINFO pWnd;
+
+	nCount = AppraiseGetList (anList, MAX_MYITEM);
+
+	pWnd = new WNDINFO;
+	ZeroMemory (pWnd, sizeof (WNDINFO));
+	pWnd->dwID = g_dwNewID;
+	g_dwNewID ++;
+	pWnd->nData2 = min (max (nCount, 1), MAKER_LISTROWS);
+	pWnd->nX = 16;
+	pWnd->nY = 16;
+	pWnd->nCx = 16 * 22;
+	pWnd->nCy = 16 * (2 + pWnd->nData2);
+	pWnd->nType = WNDTYPE_MAKER;
+	pWnd->nType2 = MAKERWND_APPRAISE;
+	pWnd->pDib = new CImg32;
+	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
+	pWnd->pDib->SetColorKey (RGB (40, 40, 40));
+
+	g_nProcMakerID = nMaker;
+	g_bProcMakerLeaveOK = FALSE;
+	g_bProcMakerWait = FALSE;
+	return pWnd;
+}
+
+/* ========================================================================= */
+/* 関数名：MakerRecipeTitle													 */
+/* 内容：作り手の一覧に出すレシピの名前（普通は できる物の名前、鍛える・付け替えるは */
+/*		 「鍛える（＋1→＋2）」「付け替える：堅い」）						 */
+/* ========================================================================= */
+void MakerRecipeTitle(int nRecipe, char *pszOut, int nSize)
+{
+	PRECIPEINFO pRecipe = &g_aRecipeInfo[nRecipe];
+
+	if (pRecipe->byKind == RECIPEKIND_NORMAL) {
+		snprintf (pszOut, nSize, "%s", ((int)pRecipe->wItem < g_aItemInfo.GetSize ()) ? ItemNameOf (pRecipe->wItem) : "");
+		return;
+	}
+	RecipeKindName (pRecipe, pszOut, nSize);
+}
+
+/* ========================================================================= */
+/* 関数名：ForgeGetList														 */
+/* 内容：鍛える・付け替えるレシピの対象になる持ち物の位置を並び順で取得する		 */
+/*		 付与と装備の種別が合わない物・普通の装備（byAllowPlain=0）は出さない。	 */
+/*		 未鑑定・これ以上鍛えられない・同じ付与の物は出し、選ぶと断る。装備中も含む */
+/* ========================================================================= */
+int ForgeGetList(int nRecipe, int *pnList, int nMax)
+{
+	int i, nCount = 0;
+	WORD wBase, wPre, wSuf;
+
+	if ((nRecipe < 0) || (nRecipe >= MAX_RECIPE) || (g_nMyCharID < 0) || (g_aCharInfo[g_nMyCharID] == NULL)) {
+		return 0;
+	}
+	for (i = 0; i < MAX_MYITEM; i ++) {
+		WORD wID = g_aCharInfo[g_nMyCharID]->waItem[i];
+		if ((wID == 0) || !ItemIDValid (wID)) {
+			continue;
+		}
+		if (ItemForgeCalc (&g_aRecipeInfo[nRecipe], wID, &wBase, &wPre, &wSuf) == FORGE_NOTARGET) {
+			continue;
+		}
+		if (nCount >= nMax) {
+			break;
+		}
+		pnList[nCount] = i;
+		nCount ++;
+	}
+	return nCount;
+}
+
+/* ========================================================================= */
+/* 関数名：MakeWindowFORGE													 */
+/* 内容：ウィンドウの作成(鍛冶屋：対象になる持ち物の一覧)					 */
+/*		 dwData=レシピの番号 nData1=画面内のカーソル位置 byData1=先頭の番号	 */
+/*		 nData2=表示行数。作り手の番号（g_nProcMakerID）は一覧のまま変えない	 */
+/* ========================================================================= */
+PWNDINFO MakeWindowFORGE(int nRecipe)
+{
+	int anList[MAX_MYITEM], nCount;
+	PWNDINFO pWnd;
+
+	nCount = ForgeGetList (nRecipe, anList, MAX_MYITEM);
+
+	pWnd = new WNDINFO;
+	ZeroMemory (pWnd, sizeof (WNDINFO));
+	pWnd->dwID = g_dwNewID;
+	g_dwNewID ++;
+	pWnd->nData2 = min (max (nCount, 1), MAKER_LISTROWS);
+	pWnd->nX = 16;
+	pWnd->nY = 16;
+	pWnd->nCx = 16 * 22;
+	pWnd->nCy = 16 * (2 + pWnd->nData2);
+	pWnd->nType = WNDTYPE_MAKER;
+	pWnd->nType2 = MAKERWND_FORGE;
+	pWnd->dwData = (DWORD)nRecipe;
+	pWnd->pDib = new CImg32;
+	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
+	pWnd->pDib->SetColorKey (RGB (40, 40, 40));
+	return pWnd;
+}
+
+/* ========================================================================= */
 /* 取引所（商人ギルドの出張所）の受付                                        */
 /* 台詞が "@b" のNPCに話しかけると、メニュー（MARKETWND_MENU）が出る。        */
 /* 買う・自分の出品の一覧は MARKETWND_LIST、出品する品選びは MARKETWND_ITEM、 */
@@ -3730,19 +3896,19 @@ PWNDINFO MakeWindowMAKER_CONF(int nRecipe)
 /* 品の名前（種類IDが範囲外でも落ちないように） */
 LPCSTR MarketItemName(WORD wItemID)
 {
-	if ((wItemID == 0) || ((int)wItemID >= g_aItemInfo.GetSize ())) {
+	if ((wItemID == 0) || !ItemIDValid (wItemID)) {
 		return "品物";
 	}
-	return g_aItemInfo[wItemID]->szName;
+	return ItemNameOf (wItemID);
 }
 
 /* 値段の下限（品の元の売値。サーバーと同じ「価値の 1/4・最低 1」） */
 DWORD MarketPriceMin(WORD wItemID)
 {
-	if ((wItemID == 0) || ((int)wItemID >= g_aItemInfo.GetSize ())) {
+	if ((wItemID == 0) || !ItemIDValid (wItemID)) {
 		return 1;
 	}
-	return max (g_aItemInfo[wItemID]->dwGold / 4, (DWORD)1);
+	return max (ItemGoldOf (wItemID) / 4, (DWORD)1);
 }
 
 /* 手数料（値段の 5%。切り捨て） */
@@ -3941,7 +4107,7 @@ PWNDINFO MakeWindowMARKET_ITEM(void)
 	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
 	int i, nCount = GetItemCount (g_nMyCharID), nLen = 0;
 	for (i = 0; i < nCount; i ++) {
-		nLen = max (nLen, SboTextWidth (g_aItemInfo[pChar->waItem[i]]->szName));
+		nLen = max (nLen, SboTextWidth (ItemNameOf (pChar->waItem[i])));
 	}
 	if (nLen % 2) {
 		nLen ++;
@@ -4254,7 +4420,7 @@ void RecycleBuildHand(void)
 	for (i = 0; i < MAX_MYITEM; i ++) {
 		WORD wItemID = pChar->waItem[i];
 		BOOL bOk;
-		if ((wItemID == 0) || ((int)wItemID >= g_aItemInfo.GetSize ())) {
+		if ((wItemID == 0) || !ItemIDValid (wItemID)) {
 			continue;
 		}
 		bOk = !(g_aItemInfo[wItemID]->byFlg & ITEMFLG_TRADE);

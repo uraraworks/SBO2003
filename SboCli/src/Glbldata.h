@@ -220,7 +220,7 @@ extern DWORD g_dwQuestGuildTblID;										/* 一覧を出したギルドの人�
 extern BOOL g_bQuestBook;												/* 依頼の一覧の窓が、思い出の本（語り部に話した時）の一覧か */
 extern DWORD g_dwQuestStoryMsgID;										/* 語り部の台詞の窓の番号（0=出していない。閉じたら思い出の本の一覧を開く） */
 extern DWORD g_dwQuestWaitTime;											/* 一覧の返事待ちを始めた時間（0=待っていない） */
-extern BOOL QuestHasAny			(void);				/* 自分か仲間が依頼を受けているか（コマンドに「依頼」を出すか） */
+extern BOOL QuestHasAny			(void);				/* 自分か仲間が依頼を受けているか、物語の「いまの目的」があるか（コマンドに「目的」を出すか） */
 extern CMDPARA_QUESTSTATE g_QuestState;									/* 自分と仲間の依頼の進み具合（byCount=0 なら無し） */
 extern char g_szQuestMsg[MAX_QUESTMSG];									/* 依頼の窓の詳細欄に出す「お知らせ」「確認の文」（空なら選んだ依頼の説明） */
 
@@ -263,7 +263,7 @@ extern CmyArray<PWNDINFO, PWNDINFO> g_WndInfo;							/* ウィンドウ情報 */
 extern CmyArray<PCHARINFO, PCHARINFO> g_aCharInfo;						/* キャラ情報 */
 extern CmyArray<PSYSMSGINFO, PSYSMSGINFO> g_SysMsgInfo;					/* システムメッセージ情報 */
 extern CmyArray<PADMINRURAINFO, PADMINRURAINFO> g_AdminRuraInfo;		/* 管理人ルーラ情報 */
-extern CmyArray<PITEMINFO, PITEMINFO> g_aItemInfo;						/* アイテム情報 */
+extern CItemInfoArray g_aItemInfo;										/* アイテム情報（[] は派生番号なら元の番号で引く。common/ItemAffix.h） */
 extern CmyArray<DWORD, DWORD> g_aRecTbl;								/* キャラ情報要求してますテーブル */
 extern CmyArray<PSTATUSTEMPLATEINFO, PSTATUSTEMPLATEINFO> g_aStTmpInfo;	/* ステータステンプレート情報 */
 extern CmyArray<BYTE, BYTE> g_aFadeInOutTbl;							/* フェードイン・アウト予約テーブル */

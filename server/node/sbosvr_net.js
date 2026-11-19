@@ -33,6 +33,20 @@ Module['sboNet'] = (function () {
 	/* WebSocket の 1 メッセージの上限（ゲーム側のパケット上限 4MB＋ヘッダに余裕を持たせた値） */
 	var WS_MAX_MESSAGE = 4 * 1024 * 1024 + 1024;
 
+	/* 接続の上限（改造クライアント・BOT 対策）。環境変数で変えられる。0 以下は「制限しない」 */
+	function envNum(name, def) {
+		var v = parseInt(process.env[name], 10);
+		return isNaN(v) ? def : v;
+	}
+	var LIM_IP_CONN = envNum('SBO2003_MAX_CONN_PER_IP', 8);				/* 同じ IP からの同時接続数 */
+	var LIM_FIRST_SEC = envNum('SBO2003_FIRST_DATA_SEC', 60);			/* つないでから最初のデータまで */
+	var LIM_IDLE_SEC = envNum('SBO2003_IDLE_SEC', 180);					/* 最後に受け取ってから（裏タブの間引きを考えて長め） */
+	var LIM_RECV_PKTS = envNum('SBO2003_MAX_RECV_PKTS', 200);			/* 1 秒あたりの受信パケット数 */
+	var LIM_RECV_BYTES = envNum('SBO2003_MAX_RECV_BYTES', 256 * 1024);	/* 1 秒あたりの受信バイト数 */
+	var LIM_RECV_SECS = 3;												/* 上の上限を何秒続けて超えたら切るか */
+	var LIM_SEND_QUEUE = envNum('SBO2003_MAX_SEND_QUEUE', 8 * 1024 * 1024);	/* 送信待ちのバイト数 */
+	var aIpCount = {};		/* IP → 同時接続数 */
+
 	var MIME = {
 		'.html': 'text/html; charset=utf-8',
 		'.js': 'text/javascript; charset=utf-8',
@@ -51,17 +65,80 @@ Module['sboNet'] = (function () {
 		console.log('[net] ' + msg);
 	}
 
-	/* "1.2.3.4" → in_addr.s_addr と同じ並び（リトルエンディアンの DWORD） */
+	/* IPv6 アドレス文字列を 16 バイトにする（::ffff:a.b.c.d や末尾 IPv4 表記も扱う）。読めなければ null */
+	function ipv6Bytes(addr) {
+		addr = String(addr).replace(/%.*$/, '').toLowerCase();
+		if (!net.isIPv6(addr)) {
+			return null;
+		}
+		var m = /^(.*:)(\d+\.\d+\.\d+\.\d+)$/.exec(addr);
+		if (m) {
+			var q = m[2].split('.').map(Number);
+			addr = m[1] + ((q[0] << 8) | q[1]).toString(16) + ':' + ((q[2] << 8) | q[3]).toString(16);
+		}
+		var halves = addr.split('::');
+		var head = halves[0] ? halves[0].split(':') : [];
+		var tail = halves.length > 1 && halves[1] ? halves[1].split(':') : [];
+		var groups = head;
+		if (halves.length > 1) {
+			var nZero = 8 - head.length - tail.length;
+			groups = head.slice();
+			for (var i = 0; i < nZero; i++) {
+				groups.push('0');
+			}
+			groups = groups.concat(tail);
+		}
+		if (groups.length !== 8) {
+			return null;
+		}
+		var b = Buffer.alloc(16);
+		for (var j = 0; j < 8; j++) {
+			b.writeUInt16BE(parseInt(groups[j], 16) & 0xffff, j * 2);
+		}
+		return b;
+	}
+
+	/* IP 文字列 → in_addr.s_addr と同じ並び（リトルエンディアンの DWORD）。
+	   ・IPv4（::ffff: 付きも）はそのまま
+	   ・それ以外の IPv6 は、上位 64 ビット（/64＝同じ家庭・端末の回線単位）をハッシュして
+	     240.0.0.0/4（クラスE。実在しない範囲）に入れる。C++ 側の IP ごとの制限が /64 単位で効く
+	   ・読めなければ 0 */
 	function addrToDword(addr) {
-		addr = String(addr || '').replace(/^::ffff:/, '');
+		addr = String(addr || '');
 		if (addr === '::1') {
 			addr = '127.0.0.1';
 		}
+		var b = ipv6Bytes(addr);
+		if (b) {
+			var bMapped = true;
+			for (var i = 0; i < 10; i++) {
+				if (b[i] !== 0) {
+					bMapped = false;
+				}
+			}
+			if (bMapped && b[10] === 255 && b[11] === 255) {
+				addr = b[12] + '.' + b[13] + '.' + b[14] + '.' + b[15];
+			} else {
+				var h = crypto.createHash('sha256').update(b.slice(0, 8)).digest();
+				return (((h[0] & 15) | 240) | (h[1] << 8) | (h[2] << 16) | (h[3] << 24)) >>> 0;
+			}
+		}
+		addr = addr.replace(/^::ffff:/i, '');
 		var a = addr.split('.');
 		if (a.length !== 4) {
 			return 0;
 		}
 		return ((a[0] & 255) | ((a[1] & 255) << 8) | ((a[2] & 255) << 16) | ((a[3] & 255) << 24)) >>> 0;
+	}
+
+	/* 接続スロット番号の接続の IP 文字列（::ffff: は外す）。見つからなければ空。管理者 API だけで使う */
+	function ipOfSlot(slot) {
+		for (var id in aConn) {
+			if (aConn[id].slot === slot) {
+				return String(aConn[id].addr || '').replace(/^::ffff:(?=\d+\.)/i, '');
+			}
+		}
+		return '';
 	}
 
 	/* 接続の利用環境 {os, browser, device}（統計用。sbosvr_stats.js が User-Agent を分類する。
@@ -86,6 +163,19 @@ Module['sboNet'] = (function () {
 
 	/* 新しい接続を C 側に知らせる。満員なら閉じる */
 	function accept(conn) {
+		/* 同じ IP からの同時接続数に上限を設ける（自分のマシン宛ての接続は手前のプロキシ経由なので数えない） */
+		var ip = conn.addr;
+		if (!/^(127\.|::1$)/.test(ip)) {
+			if (LIM_IP_CONN > 0 && (aIpCount[ip] || 0) >= LIM_IP_CONN) {
+				log('同じ IP からの接続が多いため切断: ' + ip);
+				conn.kill();
+				return false;
+			}
+			aIpCount[ip] = (aIpCount[ip] || 0) + 1;
+			conn.ipCounted = true;
+		}
+		conn.tConnect = conn.tLast = Date.now();
+		conn.nPkts = conn.nBytes = conn.nOver = 0;
 		var id = nNextConn++;
 		aConn[id] = conn;
 		conn.id = id;
@@ -100,6 +190,48 @@ Module['sboNet'] = (function () {
 		log('接続: ' + conn.addr + ' (' + conn.kind + ', ID:' + (100000 + slot) + ')');
 		return true;
 	}
+
+	/* 接続ごとの受信量を数える（上限は watchdog が見る） */
+	function countRecv(conn, nBytes, nPkts) {
+		conn.nBytes += nBytes;
+		conn.nPkts += nPkts;
+		conn.tLast = Date.now();
+		conn.gotData = true;
+	}
+
+	/* 1 秒ごとに全接続を見て、上限を超えた接続を切る */
+	function watchdog() {
+		var now = Date.now();
+		for (var id in aConn) {
+			var c = aConn[id];
+			var why = '';
+			if (c.closing || !c.tConnect) {
+				continue;
+			}
+			if ((LIM_RECV_PKTS > 0 && c.nPkts > LIM_RECV_PKTS) || (LIM_RECV_BYTES > 0 && c.nBytes > LIM_RECV_BYTES)) {
+				if (++c.nOver >= LIM_RECV_SECS) {
+					why = '受信が多すぎる';
+				}
+			} else {
+				c.nOver = 0;
+			}
+			c.nPkts = c.nBytes = 0;
+			if (!why && LIM_FIRST_SEC > 0 && !c.gotData && now - c.tConnect > LIM_FIRST_SEC * 1000) {
+				why = '最初のデータが来ない';
+			}
+			if (!why && LIM_IDLE_SEC > 0 && now - c.tLast > LIM_IDLE_SEC * 1000) {
+				why = '長い間何も届かない';
+			}
+			if (!why && LIM_SEND_QUEUE > 0 && c.sock && c.sock.writableLength > LIM_SEND_QUEUE) {
+				why = '送信待ちが溜まっている';
+			}
+			if (why) {
+				log('切断（' + why + '）: ' + c.addr + ' (ID:' + (100000 + c.slot) + ')');
+				c.kill();
+			}
+		}
+	}
+	setInterval(watchdog, 1000).unref();
 
 	function onData(conn, buf) {
 		if (conn.slot < 0 || conn.closing || buf.length === 0) {
@@ -116,6 +248,12 @@ Module['sboNet'] = (function () {
 
 	/* 相手から切られた */
 	function onClose(conn) {
+		if (conn.ipCounted) {
+			conn.ipCounted = false;
+			if (--aIpCount[conn.addr] <= 0) {
+				delete aIpCount[conn.addr];
+			}
+		}
 		if (aConn[conn.id] !== conn) {
 			return;
 		}
@@ -132,13 +270,13 @@ Module['sboNet'] = (function () {
 	function onTcp(sock) {
 		sock.setNoDelay(true);
 		var conn = {
-			kind: 'TCP', addr: sock.remoteAddress, slot: -1, closing: false,
+			kind: 'TCP', sock: sock, addr: String(sock.remoteAddress || '').replace(/^::ffff:/, ''), slot: -1, closing: false,
 			env: statsEnv(null, false),		/* Windows 版ソフト */
 			send: function (u8) { sock.write(u8); },
 			end: function () { sock.end(); },
 			kill: function () { sock.destroy(); }
 		};
-		sock.on('data', function (buf) { onData(conn, buf); });
+		sock.on('data', function (buf) { countRecv(conn, buf.length, 1); onData(conn, buf); });
 		sock.on('error', function () {});
 		sock.on('close', function () { onClose(conn); });
 		accept(conn);
@@ -184,7 +322,9 @@ Module['sboNet'] = (function () {
 		sock.write(lines.join('\r\n') + '\r\n\r\n');
 		sock.setNoDelay(true);
 
-		var addr = req.headers['x-forwarded-for'] ? String(req.headers['x-forwarded-for']).split(',')[0].trim() : sock.remoteAddress;
+		/* 接続元 IP は HTTP の API と同じ取り方にする（手前のプロキシが最後に足したもの。先頭は利用者が書き換えられる） */
+		var acc = Module['sboAccount'];
+		var addr = acc && acc.clientIp ? acc.clientIp(req) : String(sock.remoteAddress || '').replace(/^::ffff:/, '');
 
 		/* 古い版のブラウザ版は入れない。デプロイ前から開いたままのタブでログインし直すと、
 		   古いクライアントが新しいサーバーのデータを読むことになり、マップ情報などの
@@ -207,7 +347,7 @@ Module['sboNet'] = (function () {
 		}
 
 		var conn = {
-			kind: 'WebSocket', addr: addr, slot: -1, closing: false,
+			kind: 'WebSocket', sock: sock, addr: addr, slot: -1, closing: false,
 			env: statsEnv(req.headers['user-agent'], new URLSearchParams(String(req.url || '').split('?').slice(1).join('?')).get('tp') === '1'),
 			send: function (u8) { sock.write(wsFrame(2, u8)); },
 			end: function () {
@@ -219,6 +359,7 @@ Module['sboNet'] = (function () {
 		var rest = head && head.length ? Buffer.from(head) : Buffer.alloc(0);
 		var aFrag = [], nFragSize = 0;
 		sock.on('data', function (buf) {
+			countRecv(conn, buf.length, 0);
 			rest = rest.length ? Buffer.concat([rest, buf]) : buf;
 			while (rest.length >= 2) {
 				var fin = rest[0] & 0x80, op = rest[0] & 0x0F;
@@ -237,6 +378,11 @@ Module['sboNet'] = (function () {
 					conn.kill();
 					return;
 				}
+				/* 制御フレーム（ping・close など）は 125 バイトまで、細切れにもできない */
+				if (op >= 8 && (len > 125 || !fin)) {
+					conn.kill();
+					return;
+				}
 				var mask = null;
 				if (masked) {
 					if (rest.length < pos + 4) { return; }
@@ -246,6 +392,7 @@ Module['sboNet'] = (function () {
 				if (rest.length < pos + len) {
 					return;
 				}
+				conn.nPkts++;
 				var payload = Buffer.from(rest.slice(pos, pos + len));
 				rest = rest.slice(pos + len);
 				if (mask) {
@@ -259,6 +406,11 @@ Module['sboNet'] = (function () {
 				} else if (op === 9) {	/* ping → pong */
 					sock.write(wsFrame(10, payload));
 				} else if (op === 0 || op === 1 || op === 2) {
+					/* 細切れの数にも上限を付ける（0 バイトの断片を溜め込ませない） */
+					if (aFrag.length >= 4096) {
+						conn.kill();
+						return;
+					}
 					aFrag.push(payload);
 					nFragSize += payload.length;
 					if (fin) {
@@ -530,7 +682,9 @@ Module['sboNet'] = (function () {
 			url = '/sbocli.html';
 		}
 		var file = path.normalize(path.join(strWwwDir, url));
-		if (!strWwwDir || file.indexOf(path.normalize(strWwwDir)) !== 0) {
+		/* 配信フォルダの外に出ていないか（前方一致だと www-old のような兄弟フォルダに出られるので、相対パスで確かめる） */
+		var strRel = strWwwDir ? path.relative(path.resolve(strWwwDir), path.resolve(file)) : '..';
+		if (!strWwwDir || strRel === '..' || strRel.indexOf('..' + path.sep) === 0 || path.isAbsolute(strRel)) {
 			res.writeHead(403);
 			res.end();
 			return;
@@ -669,6 +823,8 @@ Module['sboNet'] = (function () {
 		},
 		/* 接続スロット番号の接続の利用環境（sbosvr_stats.js・sbosvr_account.js が使う） */
 		envOfSlot: envOfSlot,
+		/* 接続スロット番号の接続の IP 文字列（sbosvr_account.js の管理ページ用。IPv6 も分かる） */
+		ipOfSlot: ipOfSlot,
 		listen: function (port) {
 			var tcp = net.createServer(onTcp);
 			tcp.on('error', function (e) {

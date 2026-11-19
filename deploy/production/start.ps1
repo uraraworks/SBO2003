@@ -37,6 +37,11 @@ if (Test-Path $EnvFile) {
 	Write-StartLog '注意: sbo2003.env がありません（sbo2003.env.example をコピーして作成してください）'
 }
 
+# 接続の上限（SBO2003_MAX_*・SBO2003_FIRST_DATA_SEC・SBO2003_IDLE_SEC）は、書かれていればサーバーの環境変数として渡す
+foreach ($k in @($Conf.Keys)) {
+	if ($k -match '^SBO2003_(MAX_|FIRST_DATA_SEC$|IDLE_SEC$)') { Set-Item -Path "Env:$k" -Value $Conf[$k] }
+}
+
 # すでに動いていたら二重に起動しない
 if (Test-Path $PidFile) {
 	$old = Get-Process -Id ([int](Get-Content $PidFile -Raw)) -ErrorAction SilentlyContinue

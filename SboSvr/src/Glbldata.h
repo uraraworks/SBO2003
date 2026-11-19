@@ -60,7 +60,7 @@ extern CProcSubGame g_ProcSubGame;											/* サブゲーム処理 */
 extern CLibInfoItem g_LibInfoItem;											/* アイテム情報 */
 extern CmyArray<PCHARINFO, PCHARINFO> g_aCharInfo;							/* キャラ情報 */
 extern CmyArray<PMAPINFO, PMAPINFO> g_aMapInfo;								/* マップ情報 */
-extern CmyArray<PITEMINFO, PITEMINFO> g_aItemInfo;							/* アイテム情報 */
+extern CItemInfoArray g_aItemInfo;											/* アイテム情報（[] は派生番号なら元の番号で引く。common/ItemAffix.h） */
 extern CmyArray<PSTATUSTEMPLATEINFO, PSTATUSTEMPLATEINFO> g_aStTmpInfo;		/* ステータステンプレート情報 */
 extern CmyArray<PLEAVEINFO, PLEAVEINFO> g_aLeaveInfo;						/* 預かり所情報 */
 extern CmyArray<PSUBGAMEINFO, PSUBGAMEINFO> g_aSubaGameInfo;				/* サブゲーム情報 */

@@ -680,6 +680,7 @@ void SendCmdCHARINFO(DWORD pIDSend, int nNo)
 					pSendData->bySearchCy			= pChar->bySearchCy;
 					pSendData->byLightLevel			= pChar->byLightLevel;
 					pSendData->byHide				= pChar->byHide;
+					pSendData->byGhost				= pChar->byGhost;
 					pSendData->wGrpID				= pChar->wGrpID;
 					pSendData->wGrpMain				= pChar->wGrpMain;
 					pSendData->wGrpSub				= pChar->wGrpSub;
@@ -806,6 +807,7 @@ void SendCmdCHARINFO2(DWORD pIDSend, DWORD dwID, int nNo)
 					pSendData->byNpcType		= pChar->byNpcType;
 					pSendData->byLightLevel		= pChar->byLightLevel;
 					pSendData->byHide			= pChar->byHide;
+					pSendData->byGhost			= pChar->byGhost;
 					pSendData->wGrpID			= pChar->wGrpID;
 					pSendData->wGrpMain			= pChar->wGrpMain;
 					pSendData->wGrpSub			= pChar->wGrpSub;
@@ -927,6 +929,7 @@ void SendCmdCHARINFO3(int nNo)
 	pSendData->bySearchCy			= pChar->bySearchCy;
 	pSendData->byLightLevel			= pChar->byLightLevel;
 	pSendData->byHide				= pChar->byHide;
+	pSendData->byGhost				= pChar->byGhost;
 	pSendData->wGrpID				= pChar->wGrpID;
 	pSendData->wGrpMain				= pChar->wGrpMain;
 	pSendData->wGrpSub				= pChar->wGrpSub;
@@ -3748,6 +3751,83 @@ void SendCmdRECIPEMAKE(DWORD pIDSend, BYTE byResult, BYTE byMaker, WORD wRecipeI
 	Para.byResult	= byResult;
 	Para.byMaker	= byMaker;
 	Para.wRecipeID	= wRecipeID;
+	Para.pID		= pIDSend;
+
+	svrSock.SendTo (pIDSend, (LPBYTE)&Para, sizeof (Para), SENDTIMEOUT);
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdAFFIXINFO													 */
+/* 内容：コマンド送信(付与表の1行。pIDSend は URARASOCK_SENDALL でも可)		 */
+/* ========================================================================= */
+void SendCmdAFFIXINFO(DWORD pIDSend, WORD wIndex)
+{
+	CMDPARA_AFFIXINFO Para;
+
+	if (wIndex >= (WORD)g_aAffixInfo.GetSize ()) {
+		return;
+	}
+	ZeroMemory (&Para, sizeof (Para));
+	Para.byCmd	= CMD_AFFIXINFO;
+	Para.wIndex	= wIndex;
+	Para.wCount	= (WORD)g_aAffixInfo.GetSize ();
+	Para.Info	= *g_aAffixInfo[wIndex];
+
+	svrSock.SendTo (pIDSend, (LPBYTE)&Para, sizeof (Para), SENDTIMEOUT);
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdITEMDERIVE												 */
+/* 内容：コマンド送信(派生表の wStart 番目から wCount 行。pIDSend は URARASOCK_SENDALL でも可) */
+/*		 1回に ITEMDERIVE_PERPACKET 行まで。多ければ分けて送る				 */
+/* ========================================================================= */
+void SendCmdITEMDERIVE(DWORD pIDSend, WORD wStart, WORD wCount)
+{
+	CMDPARA_ITEMDERIVE Para;
+	int nEnd = min ((int)wStart + (int)wCount, g_aItemDerive.GetSize ());
+	int nPos, nNum, i;
+
+	for (nPos = wStart; nPos < nEnd; nPos += nNum) {
+		nNum = min (nEnd - nPos, ITEMDERIVE_PERPACKET);
+		ZeroMemory (&Para, sizeof (Para));
+		Para.byCmd		= CMD_ITEMDERIVE;
+		Para.wStart		= (WORD)nPos;
+		Para.byCount	= (BYTE)nNum;
+		for (i = 0; i < nNum; i ++) {
+			Para.aInfo[i] = *g_aItemDerive[nPos + i];
+		}
+		svrSock.SendTo (pIDSend, (LPBYTE)&Para, (DWORD)(offsetof (CMDPARA_ITEMDERIVE, aInfo) + sizeof (ITEMDERIVEINFO) * nNum), SENDTIMEOUT);
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdAFFIXALL													 */
+/* 内容：コマンド送信(付与表と派生表を全部。ログイン時。アイテム情報より後に送る) */
+/* ========================================================================= */
+void SendCmdAFFIXALL(DWORD pIDSend)
+{
+	int i;
+
+	for (i = 0; i < g_aAffixInfo.GetSize (); i ++) {
+		SendCmdAFFIXINFO (pIDSend, (WORD)i);
+	}
+	SendCmdITEMDERIVE (pIDSend, 0, (WORD)g_aItemDerive.GetSize ());
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdAPPRAISE													 */
+/* 内容：コマンド送信(鑑定の結果を本人へ)									 */
+/* ========================================================================= */
+void SendCmdAPPRAISE(DWORD pIDSend, BYTE byResult, BYTE byMaker, BYTE byNo, DWORD dwGold)
+{
+	CMDPARA_APPRAISE Para;
+
+	ZeroMemory (&Para, sizeof (Para));
+	Para.byCmd		= CMD_APPRAISE;
+	Para.byResult	= byResult;
+	Para.byMaker	= byMaker;
+	Para.byNo		= byNo;
+	Para.dwGold		= dwGold;
 	Para.pID		= pIDSend;
 
 	svrSock.SendTo (pIDSend, (LPBYTE)&Para, sizeof (Para), SENDTIMEOUT);
