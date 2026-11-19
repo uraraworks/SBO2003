@@ -112,7 +112,7 @@
 			'<div class="dg-row"><label>名前 <input type="text" id="dg-name" maxlength="40"></label>' +
 			'<label>作り方 <select id="dg-algo"><option value="1">1 = L1 聖堂</option><option value="3">3 = L3 洞窟</option></select></label>' +
 			'<label>下の壁の厚さ（L1） <select id="dg-bottom"><option value="1">1行（天井だけ）</option><option value="2">2行（天井＋側面）</option></select></label>' +
-			'<label title="ゲームで作る時、ダンジョンの範囲だけをこの暗さにします（マップの明るさレベル。大きいほど暗い）。範囲の外（外の入口のあたり）は明るくなります。0 ならマップの設定のまま">暗さ（0=マップのまま） <input type="number" id="dg-dark" min="0" max="100" style="width:5em"></label></div>' +
+			'<label title="ゲームで作る時、ダンジョンの範囲だけをこの暗さにします（マップの明るさレベル。大きいほど暗い）。範囲の外（外の入口のあたり）は明るくなります。0 ならマップの設定のまま">暗さ（0=マップのまま） <input type="number" id="dg-tdark" min="0" max="100" style="width:5em"></label></div>' +
 			'<div class="dg-cap">絵を押すとパーツ一覧から選べます。複数可の欄は「＋追加」と絵の×で増減（床はくじで均等に混ぜます）。数字の欄は上級者用です。</div><div class="dg-parts" id="dg-lists"></div>' +
 			'<div class="dg-cap" id="dg-warn" style="color:var(--ng)"></div></div></div>';
 		h += '<div class="dg-sec" id="dg-rooms-sec" hidden><h3>9分割の部屋（L1 用）</h3>' +
@@ -171,8 +171,8 @@
 			'<div class="dg-row"><label><input type="checkbox" id="dg-usetheme" checked> 編集中のテーマを使う</label>' +
 			'<button type="button" id="dg-gen">作る</button><button type="button" id="dg-gen2" class="sub">別のシード</button>' +
 			'<label>表示 <select id="dg-view"><option value="parts">パーツの絵</option><option value="meaning">意味の色</option></select></label>' +
-			'<label>暗さ <select id="dg-dark"><option value="0">なし</option><option value="25">25</option><option value="50">50</option><option value="75">75</option><option value="100">100</option></select></label>' +
-			'<label><input type="checkbox" id="dg-dchar"> 入口に人（灯り）</label>' +
+			'<label>暗さ <select id="dg-dark"><option value="t">テーマの暗さ</option><option value="0">なし</option><option value="25">25</option><option value="50">50</option><option value="75">75</option><option value="100">100</option></select></label>' +
+			'<label><input type="checkbox" id="dg-dchar" checked> 入口に人（灯り）</label>' +
 			'<label>拡大 <select id="dg-zoom"><option value="0.5">1/2倍</option><option value="1" selected>1倍</option><option value="2">2倍</option><option value="4">4倍</option></select></label></div>' +
 			'<div class="sub-text" id="dg-info"></div><div class="dg-legend" id="dg-legend" hidden></div>' +
 			'<div class="dg-scroll"><canvas class="dg-cv" id="dg-out"></canvas></div></div>';
@@ -690,7 +690,7 @@
 		$('dg-name').value = cur.name;
 		$('dg-algo').value = String(cur.algo);
 		$('dg-bottom').value = cur.bottomRows === 2 ? '2' : '1';
-		$('dg-dark').value = String(cur.dark || 0);
+		$('dg-tdark').value = String(cur.dark || 0);
 		LISTS.forEach(function (l) {
 			var v = cur[l[0]];
 			$('dg-l-' + l[0]).value = SCALAR[l[0]] ? String(v) : v.join(',');
@@ -1413,7 +1413,7 @@
 				return;
 			}
 			last = r;
-			lastTheme = body.theme ? JSON.parse(JSON.stringify({ openings: body.theme.openings || [], lights: body.theme.lights || [] })) : null;
+			lastTheme = body.theme ? JSON.parse(JSON.stringify({ openings: body.theme.openings || [], lights: body.theme.lights || [], dark: body.theme.dark || 0 })) : null;
 			$('dg-p-seed').value = r.seed;		/* 同じ形をもう一度出せるよう、使ったシードを入れる */
 			setMsg('');
 			$('dg-info').textContent = 'シード ' + r.seed + '・作り直し ' + r.tries + ' 回・床 ' + r.floorCount + ' マス・部屋 ' + (r.rooms || []).length + ' 個・' + r.w + '×' + r.h;
@@ -1452,7 +1452,8 @@
 	}
 
 	function darken(ctx, r, tile) {
-		var L = num($('dg-dark').value, 0);
+		/* 「テーマの暗さ」はゲームで作る時と同じ暗さ（テーマの暗さ。お試しの「編集中のテーマを使う」を外した時は暗くしない） */
+		var L = $('dg-dark').value === 't' ? num(lastTheme && lastTheme.dark, 0) : num($('dg-dark').value, 0);
 		if (!L) return;
 		var w = r.w, h = r.h, lights = [], i, x, y, ovr = {};
 		((lastTheme && lastTheme.lights) || []).forEach(function (l) { ovr[l.wParts] = Math.min(7, l.byLight); });	/* テーマの上書き表を先に使う */
@@ -1466,10 +1467,9 @@
 			}
 		}
 		if ($('dg-dchar').checked && r.start) {
-			/* キャラの灯り(明かりの道具あり)の半径: GetCharLightTiles と同じ式。暗さ - 明かりの強さ(20) */
-			var lv = L - 20, rr = lv <= 0 ? 0 : Math.max(100 / lv + 0.2, 100 / L + 0.2 + 2.5);
-			var rc = rr || 99;
-			lights.push({ x: r.start.x, y: r.start.y, R: rc, pow: 1.6, warm: 0.5, mask: lightMask(r, r.start.x, r.start.y, rc) });
+			/* キャラの灯り(明かりの道具なし)の半径: GetCharLightTiles と同じ式（100/暗さ+0.2 から 1 マス引く。最小 1.2） */
+			var rc = Math.max(1.2, 100 / L + 0.2 - 1);
+			lights.push({ x: r.start.x, y: r.start.y, R: rc, pow: 1, warm: 0, mask: lightMask(r, r.start.x, r.start.y, rc) });
 		}
 		var W = r.w * tile, H = r.h * tile, img = ctx.getImageData(0, 0, W, H), d = img.data;
 		var lt = new Float32Array(W * H), wm = new Float32Array(W * H);
@@ -1740,7 +1740,7 @@
 		$('dg-name').addEventListener('input', function () { cur.name = $('dg-name').value; markDirty(); });
 		$('dg-name').addEventListener('change', fillSelect);
 		$('dg-bottom').addEventListener('change', function () { cur.bottomRows = num($('dg-bottom').value, 1) === 2 ? 2 : 1; markDirty(); drawRoom(); });
-		$('dg-dark').addEventListener('change', function () { cur.dark = Math.max(0, Math.min(100, num($('dg-dark').value, 0))); $('dg-dark').value = String(cur.dark); markDirty(); });
+		$('dg-tdark').addEventListener('change', function () { cur.dark = Math.max(0, Math.min(100, num($('dg-tdark').value, 0))); $('dg-tdark').value = String(cur.dark); markDirty(); });
 		$('dg-algo').addEventListener('change', function () { cur.algo = num($('dg-algo').value, 1); markDirty(); });
 		LISTS.forEach(function (l) {
 			$('dg-l-' + l[0]).addEventListener('input', function () {
