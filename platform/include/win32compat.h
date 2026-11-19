@@ -636,6 +636,7 @@ char	*_ultoa(unsigned long value, char *str, int radix);
 #define GWL_USERDATA		(-21)
 #define GWLP_WNDPROC		GWL_WNDPROC
 #define GWLP_USERDATA		GWL_USERDATA
+#define GWLP_ID			GWL_ID
 #define GCL_STYLE			(-26)
 #define GCL_WNDPROC			(-24)
 
