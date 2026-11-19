@@ -121,6 +121,9 @@ typedef struct _CHALLENGE {
 	DWORD		dwClear;											/* 全部倒したと知らせた時刻（0=まだ） */
 	DWORD		dwClearTime;										/* かかった時間（ミリ秒） */
 	std::vector<DWORD>	aMember;									/* 挑戦中の人（テーブルID） */
+	BOOL bMapShared = FALSE;
+	std::set<WORD> setMapRecord;
+	std::vector<BYTE> aMapPositions;
 	std::vector<DWORD>	aEnemy;										/* 残っている敵（テーブルID） */
 	_CHALLENGE() : byKind(0), byDungeonID(0), dwBuildNo(0), bDaily(FALSE), bRanked(FALSE), dwDailyVer(0), dwDailySeed(0), bKillAll(FALSE), byCountDown(4), wQuestID(0), dwMapNo(0), dwSpaceID(0), bArena(FALSE), dwPartyID(0), dwStart(0), bCleared(FALSE), dwClear(0), dwClearTime(0) {}
 } CHALLENGE;
@@ -147,7 +150,7 @@ static void DgBagCollect(PCHARINFO p, WORD wTmpl, std::vector<WORD> &aBag);
 static void DgLeaveMsg(PCHARINFO p, int nReason, int nDungeonID);
 static void DgProc(DWORD dwNow);
 static void DgSelOnDec(PCHARINFO pChar);
-static void DgPreparedForget(PCHARINFO pChar);
+static void DgReceptionForget(PCHARINFO pChar);
 static BOOL HasMercenary(PCHARINFO pChar);
 static void ChallengeLeave(PCHARINFO p, int nReason);
 
@@ -2049,7 +2052,7 @@ void QuestPartyLeaveHold(BOOL bHold)
 
 void QuestOnPartyLeave(PCHARINFO pChar)
 {
-	DgPreparedForget (pChar);
+	DgReceptionForget (pChar);
 	PQUESTINFO pQuest;
 
 	/* 切断した人・それで解散した仲間は取り消さない（つなぎ直したらまた組めるように） */
@@ -3390,6 +3393,88 @@ static CHALLENGE *DgRunOf(PCHARINFO p)
 	return &itC->second;
 }
 
+/* 組の地図は空間に所属する間だけ有効。ソロは従来どおり通信しない。 */
+DWORD DungeonMapSpace(PCHARINFO p)
+{
+	CHALLENGE *c = DgRunOf (p);
+	PSUBGAME_DUNGEONINFO d = c ? DgInfo (c->byDungeonID) : NULL;
+	return c && c->bMapShared && d && d->pbyAutoMap && d->dwAutoMapSize && d->dwBuildNo == c->dwBuildNo &&
+		p->dwSpaceID == c->dwSpaceID && p->dwMapID == c->dwMapNo ? c->dwSpaceID : 0;
+}
+
+static std::vector<BYTE> DgMapPositions(CHALLENGE *c)
+{
+	std::vector<BYTE> out;
+	for (size_t i = 0; i < c->aMember.size (); i ++) {
+		PCHARINFO p = g_aCharInfo[c->aMember[i]];
+		if (!p || !p->pID || p->dwSpaceID != c->dwSpaceID || p->dwMapID != c->dwMapNo) continue;
+		DUNGEONMAPPOS pos;
+		ZeroMemory (&pos, sizeof (pos));
+		pos.dwTblID = p->dwTblID; pos.wX = (WORD)p->dwX; pos.wY = (WORD)p->dwY;
+		out.insert (out.end (), (PBYTE)&pos, (PBYTE)(&pos + 1));
+	}
+	return out;
+}
+
+static void DgMapSend(CHALLENGE *c, PCHARINFO to, const std::vector<WORD> &cells)
+{
+	if (cells.size () > 512) {
+		for (size_t i = 0; i < cells.size (); i += 512) {
+			std::vector<WORD> part (cells.begin () + i, cells.begin () + min (i + 512, cells.size ()));
+			DgMapSend (c, to, part);
+		}
+		return;
+	}
+	CMDPARA_DUNGEONMAPDIFF h;
+	ZeroMemory (&h, sizeof (h));
+	h.byCmd = CMD_DUNGEONMAP; h.byValid = 2;
+	h.dwMapID = c->dwMapNo; h.dwBuildNo = c->dwBuildNo; h.dwSpaceID = c->dwSpaceID;
+	h.wCount = (WORD)cells.size ();
+	std::vector<BYTE> pos = DgMapPositions (c);
+	h.byMember = (BYTE)(pos.size () / sizeof (DUNGEONMAPPOS));
+	std::vector<BYTE> buf (sizeof (h) + cells.size () * sizeof (WORD) + pos.size ());
+	CopyMemory (&buf[0], &h, sizeof (h));
+	if (!cells.empty ()) CopyMemory (&buf[sizeof (h)], &cells[0], cells.size () * sizeof (WORD));
+	if (!pos.empty ()) CopyMemory (&buf[sizeof (h) + cells.size () * sizeof (WORD)], &pos[0], pos.size ());
+	if (to) {
+		svrSock.SendTo (to->pID, &buf[0], (DWORD)buf.size (), SENDTIMEOUT);
+	} else {
+		for (size_t i = 0; i < c->aMember.size (); i ++) {
+			PCHARINFO p = g_aCharInfo[c->aMember[i]];
+			if (p && p->pID && DungeonMapSpace (p) == c->dwSpaceID)
+				svrSock.SendTo (p->pID, &buf[0], (DWORD)buf.size (), SENDTIMEOUT);
+		}
+	}
+}
+
+/* 地形の再送直後だけ全記録を返す。通常は新しく増えたマスだけ。 */
+void DungeonMapSend(PCHARINFO p)
+{
+	if (!DungeonMapSpace (p)) return;
+	CHALLENGE *c = DgRunOf (p);
+	std::vector<WORD> cells (c->setMapRecord.begin (), c->setMapRecord.end ());
+	DgMapSend (c, p, cells);
+}
+
+void DungeonMapRecv(PCHARINFO p, PCMDPARA_DUNGEONMAPDIFF h, DWORD size)
+{
+	if (!DungeonMapSpace (p)) return;
+	CHALLENGE *c = DgRunOf (p);
+	PSUBGAME_DUNGEONINFO d = DgInfo (c->byDungeonID);
+	if (!d || !d->pbyAutoMap || h->byValid != 2 || h->byMember || h->wCount > 512 ||
+		h->dwSpaceID != c->dwSpaceID || h->dwMapID != c->dwMapNo || h->dwBuildNo != c->dwBuildNo ||
+		size != sizeof (*h) + h->wCount * sizeof (WORD)) return;
+	PCMDPARA_DUNGEONMAP m = (PCMDPARA_DUNGEONMAP)d->pbyAutoMap;
+	DWORD count = (m->wX2 - m->wX1 + 1) * (m->wY2 - m->wY1 + 1);
+	PWORD cells = (PWORD)(h + 1);
+	for (int i = 0; i < h->wCount; i ++) if ((cells[i] & 0x7fff) >= count) return;
+	std::vector<WORD> added;
+	for (int i = 0; i < h->wCount; i ++) {
+		if (c->setMapRecord.insert (cells[i]).second) added.push_back (cells[i]);
+	}
+	if (!added.empty ()) DgMapSend (c, NULL, added);
+}
+
 /* 番外編ダンジョンの中か */
 BOOL QuestInDungeon(PCHARINFO pChar)
 {
@@ -3440,26 +3525,51 @@ static void DgMessage(PCHARINFO p, int id, const char *key, BOOL talk = FALSE,
     else SendCmdSYSMSG (p->pID, (LPSTR)msg.c_str (), SPEECHCMD_BATTLE1);
 }
 
-/* 組の受付を全員分取り消す。切断した本人以外にも理由を知らせる。 */
-static void DgPreparedCancel(DWORD key, const char *reason)
+static void DgSendSel(PCHARINFO p, BYTE byType, const DGSEL *pSel, DWORD dwWait);
+
+/* 選択中・受付済みとも組全員を取り消し、切断した本人以外にも同じ理由を知らせる。 */
+static void DgReceptionCancel(DWORD key, const char *reason, BOOL selecting = FALSE)
 {
-    std::map<DWORD, DGSEL>::iterator it = s_mapDgPrepared.find (key);
-    if (it == s_mapDgPrepared.end ()) return;
+    std::map<DWORD, DGSEL> &groups = selecting ? s_mapDgSel : s_mapDgPrepared;
+    std::map<DWORD, DWORD> &members = selecting ? s_mapDgSelOf : s_mapDgPreparedOf;
+    std::map<DWORD, DGSEL>::iterator it = groups.find (key);
+    if (it == groups.end ()) return;
     DGSEL sel = it->second;
-    s_mapDgPrepared.erase (it);
+    groups.erase (it);
     for (size_t i = 0; i < sel.aMember.size (); i ++) {
         DWORD id = sel.aMember[i];
-        s_mapDgPreparedOf.erase (id);
+        members.erase (id);
         PCHARINFO p = id < (DWORD)g_aCharInfo.GetSize () ? g_aCharInfo[id] : NULL;
-        if (p && IsPlayerOnline (p)) DgMessage (p, sel.nDungeonID, reason);
+        if (p && IsPlayerOnline (p)) {
+            if (selecting) DgSendSel (p, DUNGEONSEL_CLOSE, NULL, 0);
+            DgMessage (p, sel.nDungeonID, reason);
+        }
     }
 }
 
-static void DgPreparedForget(PCHARINFO pChar)
+static void DgReceptionForget(PCHARINFO pChar)
 {
     if (!pChar) return;
     std::map<DWORD, DWORD>::iterator it = s_mapDgPreparedOf.find (pChar->dwTblID);
-    if (it != s_mapDgPreparedOf.end ()) DgPreparedCancel (it->second, "ready_cancelled");
+    if (it != s_mapDgPreparedOf.end ()) DgReceptionCancel (it->second, "ready_cancelled");
+    it = s_mapDgSelOf.find (pChar->dwTblID);
+    if (it != s_mapDgSelOf.end ()) DgReceptionCancel (it->second, "ready_cancelled", TRUE);
+}
+
+/* マップへの登録時と周期処理で受付場所を確認する。正規入場は先に受付を消費する。 */
+void DungeonReceptionCheck(PCHARINFO p)
+{
+    if (!p) return;
+    for (int selecting = 0; selecting < 2; selecting ++) {
+        std::map<DWORD, DWORD> &members = selecting ? s_mapDgSelOf : s_mapDgPreparedOf;
+        std::map<DWORD, DGSEL> &groups = selecting ? s_mapDgSel : s_mapDgPrepared;
+        std::map<DWORD, DWORD>::iterator member = members.find (p->dwTblID);
+        if (member == members.end ()) continue;
+        std::map<DWORD, DGSEL>::iterator group = groups.find (member->second);
+        if (group != groups.end () && (!IsPlayerOnline (p) ||
+            p->dwMapID != group->second.dwMapID || p->dwSpaceID != SPACE_NORMAL))
+            DgReceptionCancel (member->second, "ready_cancelled", selecting);
+    }
 }
 
 /* 周期処理と入場直前の両方で確認し、期限や離脱の判定をすり抜けさせない。 */
@@ -3481,7 +3591,7 @@ static BOOL DgPreparedValid(DWORD key, DWORD now)
             abs ((int)p->dwX - (int)sel.dwX) > CHALLENGE_NEAR ||
             abs ((int)p->dwY - (int)sel.dwY) > CHALLENGE_NEAR) reason = "ready_cancelled";
     }
-    if (reason) { DgPreparedCancel (key, reason); return FALSE; }
+    if (reason) { DgReceptionCancel (key, reason); return FALSE; }
     return TRUE;
 }
 
@@ -3773,6 +3883,7 @@ static void DgStart(int nDungeonID, const DGSEL &Sel, const std::vector<std::pai
 	Ch.bArena = FALSE;
 	Ch.dwMapNo = pDungeon->dwMapID;
 	Ch.dwPartyID = aPart[0].first->dwPartyID;
+	Ch.bMapShared = aPart.size () > 1;
 	Ch.dwStart = timeGetTime ();
 	Ch.bCleared = FALSE;
 	/* 日替わり：入った時の版を覚える（記録は版ごと。敵の位置の乱数にも使う）。組のキャラ名・姿の名前も記録用に控える */
@@ -4282,22 +4393,7 @@ void DungeonSelRecv(PCHARINFO pChar, PCMDPARA_DUNGEONSEL pPara)
 /* 選んでいる最中の人が切断した */
 static void DgSelOnDec(PCHARINFO pChar)
 {
-	DgPreparedForget (pChar);
-	std::map<DWORD, DWORD>::iterator itOf = s_mapDgSelOf.find (pChar->dwTblID);
-	std::map<DWORD, DGSEL>::iterator itS;
-	DWORD dwLeader;
-
-	if (itOf == s_mapDgSelOf.end ()) {
-		return;
-	}
-	dwLeader = itOf->second;
-	itS = s_mapDgSel.find (dwLeader);
-	s_mapDgSelOf.erase (itOf);
-	if (itS == s_mapDgSel.end ()) {
-		return;
-	}
-	itS->second.mapPick[pChar->dwTblID] = -2;
-	DgSelCheck (dwLeader);
+	DgReceptionForget (pChar);
 }
 
 /* 周期処理（約 1 秒ごと）：選ぶ締め切り・中の人が出た判定・空間ごとの敵の補充・空になった空間を空きにする */
@@ -4307,6 +4403,15 @@ static void DgProc(DWORD dwNow)
 	std::map<DWORD, DGSEL>::iterator itS;
 	std::map<DWORD, CHALLENGE>::iterator itC;
 	size_t i, j;
+
+    /* マップ登録を通らない状態変更・切断も、締め切りの確定より先に取り消す。 */
+    std::vector<DWORD> selectingMembers;
+    for (std::map<DWORD, DWORD>::iterator it = s_mapDgSelOf.begin (); it != s_mapDgSelOf.end (); it ++)
+        selectingMembers.push_back (it->first);
+    for (size_t k = 0; k < selectingMembers.size (); k ++) {
+        DWORD id = selectingMembers[k];
+        DungeonReceptionCheck (id < (DWORD)g_aCharInfo.GetSize () ? g_aCharInfo[id] : NULL);
+    }
 
 	/* 選んでいる最中の組に、入口の近くへ来た同じパーティの仲間を足す */
 	for (itS = s_mapDgSel.begin (); itS != s_mapDgSel.end (); itS ++) {
@@ -4404,6 +4509,13 @@ static void DgProc(DWORD dwNow)
 			aEnd.push_back (itC->first);
 		} else {
 			DgPutProc (&Ch, dwNow, FALSE);
+			if (Ch.bMapShared) {
+				std::vector<BYTE> pos = DgMapPositions (&Ch);
+				if (pos != Ch.aMapPositions) {
+					Ch.aMapPositions = pos;
+					DgMapSend (&Ch, NULL, std::vector<WORD> ());
+				}
+			}
 		}
 	}
 	for (i = 0; i < aEnd.size (); i ++) {

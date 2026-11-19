@@ -1832,7 +1832,18 @@ void SendCmdDUNGEONMAP(DWORD pIDSend, DWORD dwMapID)
 		return;
 	}
 	if (pFound->dwThemeID && pFound->pbyAutoMap && pFound->dwAutoMapSize) {
-		svrSock.SendTo (pIDSend, pFound->pbyAutoMap, pFound->dwAutoMapSize, SENDTIMEOUT);
+		int nChar = GetCharNo (pIDSend);
+		PCHARINFO p = nChar >= 0 ? g_aCharInfo[nChar] : NULL;
+		DWORD space = p ? DungeonMapSpace (p) : 0;
+		if (space) {
+			std::vector<BYTE> buf (pFound->pbyAutoMap, pFound->pbyAutoMap + pFound->dwAutoMapSize);
+			((PCMDPARA_DUNGEONMAP)&buf[0])->byValid = 3;
+			buf.insert (buf.end (), (PBYTE)&space, (PBYTE)(&space + 1));
+			svrSock.SendTo (pIDSend, &buf[0], (DWORD)buf.size (), SENDTIMEOUT);
+			DungeonMapSend (p);
+		} else {
+			svrSock.SendTo (pIDSend, pFound->pbyAutoMap, pFound->dwAutoMapSize, SENDTIMEOUT);
+		}
 		return;
 	}
 	CMDPARA_DUNGEONMAP Para;

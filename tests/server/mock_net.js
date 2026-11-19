@@ -101,8 +101,8 @@ Module['sboNet'] = (function () {
 			}
 			return a.join(',');
 		},
-		/* 覚えたパケットのうち、先頭がコマンド nCmd の最後の 1 つの中身を 16 進で返す（無ければ空） */
-		lastBody: function (n, nCmd) {
+		/* 最後のコマンドを16進で返す。地形・差分の種類と、マスを含む差分に絞ることもできる。 */
+		lastBody: function (n, nCmd, nValid, countOffset) {
 			var c = aConn[n];
 			if (!c) {
 				return '';
@@ -115,7 +115,8 @@ Module['sboNet'] = (function () {
 				if (body.length > 5 && body[0] === 0xFF) {
 					try { body = zlib.inflateSync(Buffer.from(body.subarray(5))); } catch (e) { body = Buffer.alloc(0); }
 				}
-				if (body.length >= 1 && body[0] === nCmd) {
+				if (body.length >= 1 && body[0] === nCmd && (nValid === undefined || body[1] === nValid) &&
+                    (countOffset === undefined || body.readUInt16LE(countOffset) > 0)) {
 					s = body.toString('hex');
 				}
 				nPos += 8 + nSize;

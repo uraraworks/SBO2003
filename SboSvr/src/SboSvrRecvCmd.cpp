@@ -235,6 +235,7 @@ void	RecvDataProcNPCROUTE					(PBYTE, DWORD);				/* NPCの巡回ルート */
 void	RecvDataProcRECIPEMAKE					(PBYTE, DWORD);				/* レシピで作ってもらう */
 void	RecvDataProcAPPRAISE					(PBYTE, DWORD);				/* 鑑定屋で鑑定してもらう */
 void	RecvDataProcQUEST						(PBYTE, DWORD);				/* ギルドの仕事依頼（一覧・受ける・取り消す・渡す） */
+void RecvDataProcDUNGEONMAP(PBYTE, DWORD);
 void	RecvDataProcDUNGEONSEL					(PBYTE, DWORD);				/* 番外編ダンジョン：入る姿を選ぶ・やめる */
 void	RecvDataProcADMINQUEST					(PBYTE, DWORD);				/* 管理者ウィンドウのギルドの依頼の編集 */
 void	RecvDataProcADMINRESURRECT				(PBYTE, DWORD);				/* 管理者ウィンドウからキャラを蘇生 */
@@ -519,7 +520,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	NULL,								/* CMD_AFFIXINFO(サーバー→クライアントのみ) */
 	NULL,								/* CMD_ITEMDERIVE(サーバー→クライアントのみ) */
 	RecvDataProcAPPRAISE,				/* CMD_APPRAISE */
-	NULL,								/* CMD_DUNGEONMAP(サーバー→クライアントのみ) */
+	RecvDataProcDUNGEONMAP,			/* CMD_DUNGEONMAP */
 	RecvDataProcDUNGEONSEL,				/* CMD_DUNGEONSEL */
 
 	NULL
@@ -2040,6 +2041,8 @@ void AddTblNoPC(int nNo)
 {
 	int i, nCount = 0;
 	PCHARINFO pChar = g_aCharInfo[nNo];
+	/* どの移動経路でも、新しいマップへ登録する時に受付の離脱を確認する。 */
+	DungeonReceptionCheck (pChar);
 	PMAPINFO pMap = g_aMapInfo[pChar->dwMapID];
 	PDWORD *ppData = &pMap->paTblNoPC, pData, pCount = &pMap->dwCountTblNoPC;
 	/* NPC？ */
@@ -3887,7 +3890,7 @@ void RecvDataProc(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	/* 管理者用のコマンド（管理者ウィンドウからしか送らないもの）は管理者だけ */
-	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_APPRAISE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_DUNGEONSEL) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && (byCmd != CMD_TALKANSWER) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET)) && ((byCmd < CMD_RECYCLELIST) || (byCmd > CMD_RECYCLECLOSE))) ||
+	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_APPRAISE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_DUNGEONSEL) && (byCmd != CMD_DUNGEONMAP) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && (byCmd != CMD_TALKANSWER) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET)) && ((byCmd < CMD_RECYCLELIST) || (byCmd > CMD_RECYCLECLOSE))) ||
 			(byCmd == CMD_CHARITEM)) {
 		if (!CheckAdminBan (nNo)) {
 			SAFE_DELETE_ARRAY (pData);
@@ -14667,7 +14670,7 @@ BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, 
 	/* 管理者用のコマンドだけ（ログインや「元に戻す」自体は通さない） */
 	if ((byCmd >= CMD_MAX) || (RecvDataProcTbl[byCmd] == NULL) ||
 			((byCmd < CMD_MAPPARTSADD) && (byCmd != CMD_CHARITEM)) ||
-			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_ADMINVIEWALL) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_APPRAISE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_DUNGEONSEL) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET)) || ((byCmd >= CMD_RECYCLELIST) && (byCmd <= CMD_RECYCLECLOSE))) {
+			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_ADMINVIEWALL) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_APPRAISE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_DUNGEONSEL) || (byCmd == CMD_DUNGEONMAP) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET)) || ((byCmd >= CMD_RECYCLELIST) && (byCmd <= CMD_RECYCLECLOSE))) {
 		return FALSE;
 	}
 
@@ -14914,6 +14917,16 @@ void RecvDataProcQUEST(PBYTE pData, DWORD dwDataSize)
 /* 関数名：RecvDataProcDUNGEONSEL											 */
 /* 内容：受信データ処理(番外編ダンジョン：入る姿を選ぶ・やめる)				 */
 /* ========================================================================= */
+void RecvDataProcDUNGEONMAP(PBYTE pData, DWORD dwDataSize)
+{
+	if (s_dwRecvSize < sizeof (CMDPARA_DUNGEONMAPDIFF)) return;
+	PCMDPARA_DUNGEONMAPDIFF p = (PCMDPARA_DUNGEONMAPDIFF)pData;
+	if (!IsRecvChar (p->dwTblID)) return;
+	PCHARINFO c = g_aCharInfo[p->dwTblID];
+	if (!c || !c->pID || c->byNpcType != NPCTYPE_INIT) return;
+	DungeonMapRecv (c, p, s_dwRecvSize);
+}
+
 void RecvDataProcDUNGEONSEL(PBYTE pData, DWORD dwDataSize)
 {
 	PCMDPARA_DUNGEONSEL pPara = (PCMDPARA_DUNGEONSEL)pData;

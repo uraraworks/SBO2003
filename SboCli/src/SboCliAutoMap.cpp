@@ -4,22 +4,26 @@
 /* 内容：		探索マップ（オートマップ）									 */
 /* 備考：		テーマで作った気まぐれダンジョンのマップ範囲だけで使う。	 */
 /*				サーバー（CMD_DUNGEONMAP）が部屋・出入口の一覧を送る。		 */
-/*				記録（開けた部屋・見えたマス）はクライアントの中だけで持ち、 */
-/*				サーバーへは何も送らない・保存もしない。					 */
 /*				消す時: 作り直し番号が違う・ダンジョンの範囲から出た・		 */
 /*				別のマップへ移った・ログイン画面へ戻った。					 */
 /*				記録の作り方は SboCliAutoMapCore.h						 */
 /* ========================================================================= */
 
+/* 組で参加中は見たマスと入った部屋を共有し、ソロは手元だけに記録する。 */
 #include "stdafx.h"
 #include "Glbldata.h"
 #include "SboCliRecvCmd.h"
 #include "SboCliAutoMap.h"
 #include "SboCliAutoMapCore.h"
 #include <string>
+#include <set>
 
 extern BOOL CheckCharBlock (DWORD, DWORD);						/* キャラのぶつかり判定（TRUE=通れる。SboCliRecvCmd.cpp） */
 
+static DWORD s_dwSpace = 0, s_dwLastSend = 0;
+static std::set<WORD> s_sent;
+static std::vector<WORD> s_pendingVisit;
+static std::vector<DUNGEONMAPPOS> s_members;
 static AutoMapCore::Map s_Map;									/* サーバーからの情報と記録 */
 static BOOL s_bShown = FALSE;									/* 地図を出している */
 static BOOL s_bInRange = FALSE;									/* 自分がダンジョンの範囲の中にいる */
@@ -40,6 +44,11 @@ struct AutoMapWalk {
 /* ========================================================================= */
 void AutoMapReset(void)
 {
+	s_dwSpace = 0;
+	s_dwLastSend = 0;
+	s_sent.clear ();
+	s_pendingVisit.clear ();
+	s_members.clear ();
 	s_Map.Clear ();
 	s_aSeg.clear ();
 	s_strName.clear ();
@@ -67,6 +76,27 @@ void AutoMapOnMapInfo(DWORD dwMapID)
 /* ========================================================================= */
 void RecvDataProcDUNGEONMAP(PBYTE pData, DWORD dwDataSize)
 {
+	/* 差分には地形を付けない。別空間・古い生成の記録は受け付けない。 */
+	if (dwDataSize >= sizeof (CMDPARA_DUNGEONMAPDIFF) && pData[1] == 2) {
+		PCMDPARA_DUNGEONMAPDIFF h = (PCMDPARA_DUNGEONMAPDIFF)pData;
+		if (!s_dwSpace || h->dwSpaceID != s_dwSpace || h->dwMapID != s_Map.GetMapID () || h->dwBuildNo != s_Map.GetBuildNo () ||
+			dwDataSize != sizeof (*h) + h->wCount * sizeof (WORD) + h->byMember * sizeof (DUNGEONMAPPOS)) return;
+		PWORD cells = (PWORD)(h + 1);
+		for (int i = 0; i < h->wCount; i ++) {
+			int idx = cells[i] & 0x7fff;
+			if (idx >= s_Map.GetW () * s_Map.GetH ()) return;
+		}
+		for (int i = 0; i < h->wCount; i ++) {
+			int idx = cells[i] & 0x7fff;
+			int x = s_Map.GetX1 () + idx % s_Map.GetW (), y = s_Map.GetY1 () + idx / s_Map.GetW ();
+			if (cells[i] & 0x8000) s_Map.Visit (x, y); else s_Map.Seen (x, y);
+			s_sent.insert (cells[i]);
+		}
+		DUNGEONMAPPOS *pos = (DUNGEONMAPPOS *)(cells + h->wCount);
+		s_members.assign (pos, pos + h->byMember);
+		g_bDraw = TRUE;
+		return;
+	}
 	PCMDPARA_DUNGEONMAP pPara = (PCMDPARA_DUNGEONMAP)pData;
 
 	if (dwDataSize < sizeof (CMDPARA_DUNGEONMAP)) {
@@ -80,6 +110,14 @@ void RecvDataProcDUNGEONMAP(PBYTE pData, DWORD dwDataSize)
 	if ((DWORD)(dwRoom * sizeof (DUNGEONMAPROOM) + dwLink * sizeof (DUNGEONMAPLINK)) > dwDataSize - sizeof (CMDPARA_DUNGEONMAP)) {
 		return;
 	}
+	DWORD space = 0;
+	if (pPara->byValid == 3) {
+		DWORD offset = sizeof (*pPara) + dwRoom * sizeof (DUNGEONMAPROOM) + dwLink * sizeof (DUNGEONMAPLINK);
+		if (dwDataSize != offset + sizeof (DWORD)) return;
+		CopyMemory (&space, pData + offset, sizeof (space));
+	}
+	if (space != s_dwSpace || (space && pPara->dwBuildNo != s_Map.GetBuildNo ())) AutoMapReset ();
+	s_dwSpace = space;
 	std::vector<AutoMapCore::Room> aRoom (dwRoom);
 	std::vector<AutoMapCore::Link> aLink (dwLink);
 	PDUNGEONMAPROOM pRoom = (PDUNGEONMAPROOM)(pPara + 1);
@@ -153,6 +191,10 @@ void AutoMapUpdate(void)
 	s_bInRange = TRUE;
 
 	s_Map.Visit ((int)pChar->dwX, (int)pChar->dwY);
+	if (s_dwSpace) {
+		WORD visit = (WORD)(((int)pChar->dwY - s_Map.GetY1 ()) * s_Map.GetW () + (int)pChar->dwX - s_Map.GetX1 ()) | 0x8000;
+		if (s_sent.insert (visit).second) s_pendingVisit.push_back (visit);
+	}
 
 	nWidth = DRAW_PARTS_X * 2 + 3;
 	if (IsMapViewMode () || GetMapLightLevel () || IsMapDarkFlg ()) {
@@ -172,6 +214,30 @@ void AutoMapUpdate(void)
 			for (x = -DRAW_PARTS_X; x <= DRAW_PARTS_X; x ++) {
 				s_Map.Seen ((int)pChar->dwX + x, (int)pChar->dwY + y);
 			}
+		}
+	}
+	/* 見えたマスと入った部屋を200msごとにまとめ、既知の記録は再送しない。 */
+	if (s_dwSpace && (DWORD)(timeGetTime () - s_dwLastSend) >= 200) {
+		s_dwLastSend = timeGetTime ();
+		std::vector<WORD> cells;
+		cells.swap (s_pendingVisit);
+		for (int yy = 0; yy < s_Map.GetH (); yy ++) {
+			for (int xx = 0; xx < s_Map.GetW (); xx ++) {
+				WORD idx = (WORD)(yy * s_Map.GetW () + xx);
+				if (s_Map.IsRecorded (xx + s_Map.GetX1 (), yy + s_Map.GetY1 ()) && s_sent.insert (idx).second) cells.push_back (idx);
+			}
+		}
+		for (size_t start = 0; start < cells.size (); start += 512) {
+			size_t count = min ((size_t)512, cells.size () - start);
+			CMDPARA_DUNGEONMAPDIFF h;
+			ZeroMemory (&h, sizeof (h));
+			h.byCmd = CMD_DUNGEONMAP; h.byValid = 2;
+			h.dwMapID = s_Map.GetMapID (); h.dwBuildNo = s_Map.GetBuildNo ();
+			h.dwSpaceID = s_dwSpace; h.dwTblID = pChar->dwTblID; h.wCount = (WORD)count;
+			std::vector<BYTE> buf (sizeof (h) + count * sizeof (WORD));
+			CopyMemory (&buf[0], &h, sizeof (h));
+			CopyMemory (&buf[sizeof (h)], &cells[start], count * sizeof (WORD));
+			cliSock.Send (&buf[0], (DWORD)buf.size ());
 		}
 	}
 	if (s_bShown && s_Map.IsDirty ()) {
@@ -299,6 +365,12 @@ void AutoMapDraw(int nX, int nY)
 			bx1 = min (bx1, lk.x - s_Map.GetX1 ()); by1 = min (by1, lk.y - s_Map.GetY1 ());
 			bx2 = max (bx2, lk.x + lk.w - s_Map.GetX1 ()); by2 = max (by2, lk.y + lk.h - s_Map.GetY1 ());
 		}
+		for (i = 0; i < (int)s_members.size (); i ++) {
+			if (!s_Map.InRange (s_members[i].wX, s_members[i].wY)) continue;
+			int x = s_members[i].wX - s_Map.GetX1 (), y = s_members[i].wY - s_Map.GetY1 ();
+			bx1 = min (bx1, x); by1 = min (by1, y);
+			bx2 = max (bx2, x + 1); by2 = max (by2, y + 1);
+		}
 		/* まわりに 2 マスの余白。小さすぎる時は 16 マス分は見せる */
 		bx1 -= 2; by1 -= 2; bx2 += 2; by2 += 2;
 		int nBW = max (bx2 - bx1, 16), nBH = max (by2 - by1, 16);
@@ -311,7 +383,7 @@ void AutoMapDraw(int nX, int nY)
 	nThick = (fScale >= 6.0f) ? 2 : 1;
 
 	/* 背景を少し暗くして、線を見やすくする */
-	BlendRect (pBits, nW, nH, nL, nT, nR, nB, nL, nT, SCRSIZEX, SCRSIZEY, 0, 0, 0, 110);
+	BlendRect (pBits, nW, nH, nL, nT, nR, nB, nL, nT, SCRSIZEX, SCRSIZEY, 0, 0, 0, 65);
 
 	/* 出入口（アーチ・扉）。壁ごと抜いた所は広間なので印は出さない */
 	for (i = 0; i < (int)s_Map.GetLinkCount (); i ++) {
@@ -347,6 +419,15 @@ void AutoMapDraw(int nX, int nY)
 		}
 	}
 
+	/* 仲間は水色の十字。画面の外にいる仲間もサーバーの位置一覧から描く。 */
+	for (i = 0; i < (int)s_members.size (); i ++) {
+		const DUNGEONMAPPOS &p = s_members[i];
+		if (p.dwTblID == pChar->dwTblID || !s_Map.InRange (p.wX, p.wY)) continue;
+		int x = nOX + (int)((p.wX - s_Map.GetX1 () + 0.5f) * fScale);
+		int y = nOY + (int)((p.wY - s_Map.GetY1 () + 0.5f) * fScale);
+		BlendRect (pBits, nW, nH, nL, nT, nR, nB, x - 3, y - 1, 7, 3, 60, 230, 255, 255);
+		BlendRect (pBits, nW, nH, nL, nT, nR, nB, x - 1, y - 3, 3, 7, 60, 230, 255, 255);
+	}
 	/* 自分の位置 */
 	{
 		int x1 = nOX + (int)(((int)pChar->dwX - s_Map.GetX1 () + 0.5f) * fScale);

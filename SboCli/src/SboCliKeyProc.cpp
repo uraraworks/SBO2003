@@ -3719,12 +3719,11 @@ void KeyProcMALEFAMALE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			pChar->bySaveFlg |= CHARINFOSAVEFLG_FEMALE;
 			break;
 		}
+		/* 入力先は窓の ID。閉じた後の親への復帰は EraseWindow に任せる。 */
 		int nNo = GetWindowID (g_dwActiveMsgID);
-		g_dwActiveMsgID = GetWindowID (((PWNDINFO)(g_WndInfo[nNo]->pParent))->dwID);
 		EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
 
 		nNo = GetWindowID (g_dwActiveMsgID);
-		g_dwActiveMsgID = GetWindowID (((PWNDINFO)(g_WndInfo[nNo]->pParent))->dwID);
 		EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
 
 		nNo = GetWindowID (g_dwMsgIDMENUCHARINFO);

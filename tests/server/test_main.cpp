@@ -12448,6 +12448,14 @@ static void DgTestSelPick(PCHARINFO p, BYTE byIndex)
 	TestRecv(p, &Para, DungeonSelectionCommandSize());
 }
 
+#include "client-automap-test.inc"
+EM_JS(char *, MockMapBody, (int conn, int cmd, int valid), {
+    return stringToNewUTF8(Module['sboNet'].lastBody(conn, cmd, valid));
+});
+EM_JS(char *, MockMapCells, (int conn, int cmd, int offset), {
+    return stringToNewUTF8(Module['sboNet'].lastBody(conn, cmd, 2, offset));
+});
+
 /* 通信の検査先と、旧クライアントの続行通知。通常の受付では BEGIN を送らない。 */
 static int DgTestConn(PCHARINFO p)
 {
@@ -12675,6 +12683,47 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 	DungeonEventStep(pC, pEntry);
 	printf("dungeonbonus entrance-only sel=%d open=%d notice=%d in=%d\n", DungeonSelCount(), SpCnt(pC, CMD_DUNGEONSEL) - nSel0,
 		SpCnt(pC, CMD_TALKMSG) - nMsg0, (int)QuestInChallenge(pC));
+	/* 受付後のマップ離脱：移動の共通処理で即時取消し、短時間で戻っても復活しない。 */
+	{
+		DWORD otherMap = (DWORD)(nMapNo == 0 ? 1 : 0);
+		strcpy(Info.szMessages, "ready_cancelled=受付取消の通知");
+		for (int mode = 0; mode < 5; mode ++) {
+			DgTestTalk(pA, dwReception);
+			if (mode > 0) DgTestSelPick(pA, 0);
+			if (mode == 2 || mode == 4) DgTestSelPick(pB, 0);
+			MockTrace(1);
+			int noticeA = SpCnt(pA, CMD_SYSMSG), noticeB = SpCnt(pB, CMD_SYSMSG);
+			int closeB = SpCnt(pB, CMD_DUNGEONSEL);
+			if (mode < 3) SubProcMapMove(pB, otherMap, 1, 1);
+			else {
+				/* 登録処理を通らない変更でも、周期処理で選択確定前に取り消す。 */
+				DeleteTblNoPC((int)pB->dwTblID);
+				pB->dwMapID = otherMap;
+				DungeonProcNow(s_dwFakeNow);
+				AddTblNoPC((int)pB->dwTblID);
+			}
+			BOOL cancelled = DungeonSelMemberCount(pA) == 0 && DungeonSelMemberCount(pB) == 0;
+			BOOL told = SpCnt(pA, CMD_SYSMSG) == noticeA + 1 && SpCnt(pB, CMD_SYSMSG) == noticeB + 1 &&
+				DgTestText(pA, CMD_SYSMSG, "受付取消の通知") && DgTestText(pB, CMD_SYSMSG, "受付取消の通知");
+			BOOL closed = mode == 2 || mode == 4 || SpCnt(pB, CMD_DUNGEONSEL) == closeB + 1;
+			SubProcMapMove(pB, pMap->dwID, 4, 5);
+			DgTestEnter(pB);
+			BOOL blocked = !QuestInChallenge(pA) && !QuestInChallenge(pB);
+			if (!cancelled || !told || !closed || !blocked) abort();
+			printf("dungeonbonus map-leave mode=%d cancelled=%d notice=%d closed=%d blocked=%d\n", mode, cancelled, told, closed, blocked);
+			QuestMovePC(pB, nMapNo, 4, 5);
+			MockTrace(0);
+		}
+		/* 選択中のログアウトも、残る仲間へ同じ取消通知と閉じる指示を出す。 */
+		DgTestTalk(pA, dwReception);
+		MockTrace(1);
+		QuestOnDecPlayer(pB);
+		BOOL logout = DungeonSelMemberCount(pA) == 0 && DgTestText(pA, CMD_SYSMSG, "受付取消の通知");
+		if (!logout) abort();
+		printf("dungeonbonus selecting logout cancelled-notice=%d\n", logout);
+		MockTrace(0);
+		Info.szMessages[0] = 0;
+	}
 	int nLen0 = MockCmdLen(1002);
 	/* 1. ソロ（C）：受付に話すと一覧が開き、選ぶと受付済みになり入口で入る */
 	MockTrace(1);
@@ -12735,11 +12784,128 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
     printf("dungeonbonus ready gather waiting=%d%d notice=%d\n", (int)!QuestInChallenge(pA), (int)!QuestInChallenge(pB),
         (int)DgTestText(pB, CMD_SYSMSG, "全員そろってから入口に入ってください。"));
     QuestMovePC(pA, nMapNo, 3, 5);
-    MockTrace(0);
+    int cancelBeforeA = SpCnt(pA, CMD_SYSMSG), cancelBeforeB = SpCnt(pB, CMD_SYSMSG);
     DgTestEnter(pB);
+    DungeonProcNow(s_dwFakeNow);
+    BOOL regularEntry = QuestInChallenge(pA) && QuestInChallenge(pB) &&
+        SpCnt(pA, CMD_SYSMSG) == cancelBeforeA + 1 && SpCnt(pB, CMD_SYSMSG) == cancelBeforeB + 1 &&
+        !DgTestText(pA, CMD_SYSMSG, "組の受付を取り消しました") && !DgTestText(pB, CMD_SYSMSG, "組の受付を取り消しました");
+    if (!regularEntry) abort();
+    printf("dungeonbonus regular-entry no-cancel=%d\n", regularEntry);
+    MockTrace(0);
 	DWORD dwS2 = pA->dwSpaceID;
 	printf("dungeonbonus party both-in a=%d b=%d same=%d differs=%d lv=%d sel=%d runs=%d\n", (int)QuestInChallenge(pA), (int)QuestInChallenge(pB),
 		(int)(pB->dwSpaceID == dwS2), (int)(dwS2 != dwS1 && dwS2 != SPACE_NORMAL), (int)pA->byLevel, DungeonSelCount(), DungeonRunCount());
+
+	/* 共有地図：実際の受信経路で見たマスが仲間へ届き、同じ報告は再送しない。 */
+	{
+        std::vector<BYTE> terrain;
+        char *hex = MockMapBody(DgTestConn(pA), CMD_DUNGEONMAP, 3);
+        for (size_t i = 0; i < strlen(hex); i += 2) {
+            unsigned v; sscanf(hex + i, "%2x", &v); terrain.push_back((BYTE)v);
+        }
+        free(hex);
+        if (terrain.empty()) abort();
+        MockTrace(1);
+        // 地形受信→現在地と可視範囲の記録→200ms後の送信を本体で実行する。
+        DWORD clientTime = s_dwFakeNow;
+        ClientAutoMapTest::Begin(pA, pMap);
+        ClientAutoMapTest::g_nMyCharID = -1;
+        ClientAutoMapTest::Receive(terrain, TRUE);
+        if (!ClientAutoMapTest::outgoing.empty()) abort();
+        ClientAutoMapTest::g_nMyCharID = 0;
+        s_dwFakeNow += 200;
+        ClientAutoMapTest::AutoMapUpdate();
+        BOOL clientSent = ClientAutoMapTest::deliveredSize == terrain.size() &&
+            ClientAutoMapTest::s_dwSpace == dwS2 && !ClientAutoMapTest::outgoing.empty();
+        printf("dungeonbonus map client terrain=%d sent=%d\n", (int)(ClientAutoMapTest::s_dwSpace == dwS2), (int)clientSent);
+        fflush(stdout);
+        if (!clientSent) abort();
+        size_t initialCount = 0;
+        for (size_t i = 0; i < ClientAutoMapTest::outgoing.size(); i ++)
+            initialCount += ((PCMDPARA_DUNGEONMAPDIFF)&ClientAutoMapTest::outgoing[i][0])->wCount;
+        int clientBefore = SpCnt(pB, CMD_DUNGEONMAP);
+        for (size_t i = 0; i < ClientAutoMapTest::outgoing.size(); i ++) {
+            std::vector<BYTE> &packet = ClientAutoMapTest::outgoing[i];
+            TestRecv(pA, &packet[0], packet.size());
+        }
+        std::vector<BYTE> diff;
+        hex = MockMapCells(DgTestConn(pB), CMD_DUNGEONMAP, offsetof(CMDPARA_DUNGEONMAPDIFF, wCount));
+        for (size_t i = 0; i < strlen(hex); i += 2) {
+            unsigned v; sscanf(hex + i, "%2x", &v); diff.push_back((BYTE)v);
+        }
+        free(hex);
+        if (diff.empty() || SpCnt(pB, CMD_DUNGEONMAP) == clientBefore) abort();
+        ClientAutoMapTest::Begin(pB, pMap);
+        // 入場直後は地形→累積差分→自分のキャラ情報の順に届く。
+        ClientAutoMapTest::g_nMyCharID = -1;
+        ClientAutoMapTest::Receive(terrain, FALSE);
+        // 圧縮あり・なしの差分をどちらも検査する。
+        for (int zipped = 0; zipped < 2; zipped ++) {
+            ClientAutoMapTest::s_Map.ClearRecord();
+            ClientAutoMapTest::s_members.clear();
+            ClientAutoMapTest::Receive(diff, zipped);
+            BOOL reflected = ClientAutoMapTest::deliveredSize == diff.size() &&
+                ClientAutoMapTest::s_members.size() == 2 && ClientAutoMapTest::s_Map.IsRecorded(pA->dwX, pA->dwY);
+            printf("dungeonbonus map client diff compressed=%d reflected=%d\n", zipped, (int)reflected);
+            if (!reflected) abort();
+        }
+        s_dwFakeNow = clientTime;
+        // 続く不正報告・再送の検査には未報告のマスを使う。
+		CMDPARA_DUNGEONMAPDIFF h;
+		ZeroMemory(&h, sizeof(h));
+		h.byCmd = CMD_DUNGEONMAP; h.byValid = 2;
+		h.dwTblID = pA->dwTblID; h.dwSpaceID = dwS2; h.dwMapID = pA->dwMapID; h.dwBuildNo = Info.dwBuildNo;
+		h.wCount = 2;
+		WORD cells[2] = { 7, (WORD)(0x8000 | 8) };
+		std::vector<BYTE> packet(sizeof(h) + sizeof(cells));
+		memcpy(&packet[0], &h, sizeof(h)); memcpy(&packet[sizeof(h)], cells, sizeof(cells));
+		int before = SpCnt(pB, CMD_DUNGEONMAP), other = SpCnt(pC, CMD_DUNGEONMAP);
+		TestRecv(pA, &packet[0], packet.size());
+		std::vector<BYTE> body;
+		BOOL got = MarketLast(DgTestConn(pB), CMD_DUNGEONMAP, body);
+		BOOL same = got && body.size() == sizeof(h) + sizeof(cells) + 2 * sizeof(DUNGEONMAPPOS);
+		BOOL positions = FALSE;
+		if (same) {
+			PCMDPARA_DUNGEONMAPDIFF r = (PCMDPARA_DUNGEONMAPDIFF)&body[0];
+			same = r->byValid == 2 && r->wCount == 2 && r->dwSpaceID == dwS2 && !memcmp(r + 1, cells, sizeof(cells));
+			DUNGEONMAPPOS *pos = (DUNGEONMAPPOS *)(&body[sizeof(h) + sizeof(cells)]);
+			positions = r->byMember == 2 && pos[0].dwTblID == pA->dwTblID && pos[1].dwTblID == pB->dwTblID &&
+				pos[0].wX == pA->dwX && pos[0].wY == pA->dwY && pos[1].wX == pB->dwX && pos[1].wY == pB->dwY;
+		}
+		if (!same || !positions || SpCnt(pB, CMD_DUNGEONMAP) - before != 1 || SpCnt(pC, CMD_DUNGEONMAP) != other || DungeonMapSpace(pC)) abort();
+		printf("dungeonbonus map shared=%d cells=%d positions=%d isolated=%d solo=%d\n", SpCnt(pB, CMD_DUNGEONMAP) - before,
+			(int)same, (int)positions, (int)(SpCnt(pC, CMD_DUNGEONMAP) == other), (int)(DungeonMapSpace(pC) == 0));
+		before = SpCnt(pB, CMD_DUNGEONMAP);
+		TestRecv(pA, &packet[0], packet.size());
+		printf("dungeonbonus map duplicate=%d\n", SpCnt(pB, CMD_DUNGEONMAP) - before);
+		/* 本人以外・別空間・古い生成・短いパケット・範囲外は記録も配信もしない。 */
+		PCMDPARA_DUNGEONMAPDIFF bad = (PCMDPARA_DUNGEONMAPDIFF)&packet[0];
+		bad->dwTblID = pB->dwTblID; TestRecv(pA, &packet[0], packet.size()); bad->dwTblID = pA->dwTblID;
+		bad->dwSpaceID = dwS1; TestRecv(pA, &packet[0], packet.size()); bad->dwSpaceID = dwS2;
+		bad->dwBuildNo ++; TestRecv(pA, &packet[0], packet.size()); bad->dwBuildNo --;
+		TestRecv(pA, &packet[0], sizeof(h) - 1);
+		((WORD *)(bad + 1))[0] = 0x7fff; TestRecv(pA, &packet[0], packet.size());
+		printf("dungeonbonus map invalid=%d\n", SpCnt(pB, CMD_DUNGEONMAP) - before);
+		/* 地形再送時は組の累積記録、位置のみの更新はマスを付けずに届く。 */
+		DungeonMapSend(pB);
+		got = MarketLast(DgTestConn(pB), CMD_DUNGEONMAP, body);
+		printf("dungeonbonus map snapshot=%d\n", (int)(got && ((PCMDPARA_DUNGEONMAPDIFF)&body[0])->wCount == initialCount + 2));
+		DungeonProcNow(s_dwFakeNow);
+		pA->dwX ++;
+		before = SpCnt(pB, CMD_DUNGEONMAP);
+		DungeonProcNow(s_dwFakeNow);
+		got = MarketLast(DgTestConn(pB), CMD_DUNGEONMAP, body);
+		BOOL moved = got && ((PCMDPARA_DUNGEONMAPDIFF)&body[0])->wCount == 0 &&
+			((DUNGEONMAPPOS *)(&body[sizeof(h)]))[0].wX == pA->dwX;
+		if (!moved || SpCnt(pB, CMD_DUNGEONMAP) - before != 1) abort();
+		printf("dungeonbonus map moved=%d position-only=%d\n", SpCnt(pB, CMD_DUNGEONMAP) - before, (int)moved);
+		before = SpCnt(pB, CMD_DUNGEONMAP);
+		DungeonProcNow(s_dwFakeNow);
+		printf("dungeonbonus map stationary=%d\n", SpCnt(pB, CMD_DUNGEONMAP) - before);
+		pA->dwX --;
+		MockTrace(0);
+	}
 
 	/* 3. 締め切り：D が選び、E は選ばない → 30 秒後に D だけ受付済みになり入口で入り、E は置いていかれる */
 	int nDOpen0 = SpCnt(pD, CMD_DUNGEONSEL), nEOpen0 = SpCnt(pE, CMD_DUNGEONSEL);

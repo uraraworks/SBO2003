@@ -135,12 +135,20 @@ set_target_properties(SboSvr PROPERTIES SUFFIX ".js")
 #   cmake --build --preset mac-release --target SboSvrTests
 #   出力: SboSvrTests.js（通信は tests/server/mock_net.js で置き換え、時刻は固定にする）
 # ---------------------------------------------------------------------------
+# AO は実クライアントの受信と探索送信を本体から抽出して検証する。
+set(SBO_CLIENT_AUTOMAP_TEST "${SBO_GEN}/client-automap-test.inc")
+add_custom_target(sbosvr_client_automap_test
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/server/prepare-client-automap.py"
+        "${CMAKE_SOURCE_DIR}" "${SBO_CLIENT_AUTOMAP_TEST}"
+    BYPRODUCTS "${SBO_CLIENT_AUTOMAP_TEST}"
+    VERBATIM)
 add_executable(SboSvrTests EXCLUDE_FROM_ALL
 	${SBOSVR_GAME_SOURCES}
 	${SBOSVR_PLATFORM_SOURCES}
 	tests/server/test_main.cpp)
-add_dependencies(SboSvrTests sbosvr_prepare)
+add_dependencies(SboSvrTests sbosvr_prepare sbosvr_client_automap_test)
 target_include_directories(SboSvrTests PRIVATE
+    "${SBO_GEN}"
 	"${CMAKE_SOURCE_DIR}/platform/include"
 	"${SBO_SRC}"
 	"${SBO_SRC}/SboSvr"

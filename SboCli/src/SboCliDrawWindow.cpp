@@ -5561,6 +5561,7 @@ void EraseWindow(PWNDINFO pWnd)
 			DestroyWindow (g_hWndSpeech);
 			g_hWndSpeech = NULL;
 			g_bSpeech = FALSE;
+			SetFocus (g_hWndMain);
 		}
 		break;
 
@@ -5606,12 +5607,17 @@ void EraseWindow(PWNDINFO pWnd)
 		break;
 	}
 
-	/* アクティブウィンドウの設定 */
-	g_dwActiveMsgID = 0;
+	/* 別の窓（発言欄など）を閉じても、後から開いた一覧の入力先は残す。 */
+	BOOL bActive = (g_dwActiveMsgID == pWnd->dwID);
+	if (bActive) {
+		g_dwActiveMsgID = 0;
+	}
 	if (pWnd->pParent) {
 		PWNDINFO pWndParent = (PWNDINFO)pWnd->pParent;
 		pWndParent->pChild = NULL;
-		g_dwActiveMsgID = pWndParent->dwID;
+		if (bActive) {
+			g_dwActiveMsgID = pWndParent->dwID;
+		}
 	}
 
 	int nCount = g_WndInfo.GetSize ();

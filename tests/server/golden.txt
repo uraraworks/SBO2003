@@ -2074,6 +2074,12 @@ dungeontheme save theme0=0 theme7=7 fields=11 extraBytes=18
 dungeonbonus build ready=1 entry=1 goal=1
 dungeonbonus put normal=0 spaced=1
 dungeonbonus entrance-only sel=0 open=0 notice=1 in=0
+dungeonbonus map-leave mode=0 cancelled=1 notice=1 closed=1 blocked=1
+dungeonbonus map-leave mode=1 cancelled=1 notice=1 closed=1 blocked=1
+dungeonbonus map-leave mode=2 cancelled=1 notice=1 closed=1 blocked=1
+dungeonbonus map-leave mode=3 cancelled=1 notice=1 closed=1 blocked=1
+dungeonbonus map-leave mode=4 cancelled=1 notice=1 closed=1 blocked=1
+dungeonbonus selecting logout cancelled-notice=1
 dungeonbonus reception explain-before-open=1
 dungeonbonus reception simultaneous talk=1 sel=1
 dungeonbonus legacy-begin active sel=1 resend=0
@@ -2090,7 +2096,17 @@ dungeonbonus party leader-talk sel=1
 dungeonbonus party a-picked in a=0 b=0 sel=1
 dungeonbonus ready party outside=11 talk=11
 dungeonbonus ready gather waiting=11 notice=1
+dungeonbonus regular-entry no-cancel=1
 dungeonbonus party both-in a=1 b=1 same=1 differs=1 lv=7 sel=0 runs=2
+dungeonbonus map client terrain=1 sent=1
+dungeonbonus map client diff compressed=0 reflected=1
+dungeonbonus map client diff compressed=1 reflected=1
+dungeonbonus map shared=1 cells=1 positions=1 isolated=1 solo=1
+dungeonbonus map duplicate=0
+dungeonbonus map invalid=0
+dungeonbonus map snapshot=1
+dungeonbonus map moved=1 position-only=1
+dungeonbonus map stationary=0
 dungeonbonus party explanation leader=1 member=1
 dungeonbonus deadline open sel=1 members=2 d-open=1 e-open=1
 dungeonbonus deadline d-picked in d=0 sel=1
