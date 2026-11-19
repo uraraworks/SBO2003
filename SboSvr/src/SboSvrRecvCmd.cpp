@@ -6064,6 +6064,78 @@ static BOOL OpenDoorFront(PCHARINFO pChar)
 }
 
 /* ========================================================================= */
+/* 店・預かり所・転職所・着せ替えの人が近くにいるか							 */
+/* 公式クライアントは、話しかけた NPC の台詞の先頭の印で窓を開く				 */
+/*   "@5NN"=店  "@6"=預かり所  "@7NN"=店(売る・買う)  "@a"=転職所			 */
+/*   "@" だけ(動くNPC以上)=着せ替え											 */
+/* サーバーでも同じ印の NPC が数マス以内（カウンター越しでもよいよう余裕を持つ）にいる時だけ通す */
+/* ========================================================================= */
+#define NPCNEAR_RANGE		(3)
+
+/* 印の種類 pszKinds（例 "57"）のどれかの NPC が近くにいるか。nShopNo>=0 なら店の番号 NN も合うこと */
+static BOOL NpcNearSpeech(PCHARINFO pChar, const char *pszKinds, int nShopNo)
+{
+	int i, nCount = g_aCharInfo.GetSize ();
+
+	for (i = 0; i < nCount; i ++) {
+		PCHARINFO pNpc = g_aCharInfo[i];
+
+		if ((pNpc == NULL) || (pNpc == pChar) || (pNpc->szAcc[0] != 0) || (pNpc->byNpcType == NPCTYPE_INIT) ||
+				(pNpc->pszNpcSpeech == NULL)) {
+			continue;
+		}
+		if ((pNpc->pszNpcSpeech[0] != '@') || (pNpc->pszNpcSpeech[1] == 0) ||
+				(strchr (pszKinds, pNpc->pszNpcSpeech[1]) == NULL)) {
+			continue;
+		}
+		if ((pNpc->dwMapID != pChar->dwMapID) || !IsSameSpace (pChar, pNpc)) {
+			continue;
+		}
+		if (nShopNo >= 0) {
+			/* クライアントと同じく、台詞の 3・4 文字目の 2 桁を店の番号にする */
+			char szTmp[3];
+			szTmp[0] = pNpc->pszNpcSpeech[2];
+			szTmp[1] = (szTmp[0] != 0) ? pNpc->pszNpcSpeech[3] : 0;
+			szTmp[2] = 0;
+			if (atoi (szTmp) != nShopNo) {
+				continue;
+			}
+		}
+		if ((abs ((int)pNpc->dwX - (int)pChar->dwX) <= NPCNEAR_RANGE) &&
+			(abs ((int)pNpc->dwY - (int)pChar->dwY) <= NPCNEAR_RANGE)) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* 着せ替えの人（台詞が "@" だけで動くNPC以上）が近くにいて、その人の画像が wGrp か */
+static BOOL NpcNearDress(PCHARINFO pChar, WORD wGrp)
+{
+	int i, nCount = g_aCharInfo.GetSize ();
+
+	for (i = 0; i < nCount; i ++) {
+		PCHARINFO pNpc = g_aCharInfo[i];
+
+		if ((pNpc == NULL) || (pNpc == pChar) || (pNpc->szAcc[0] != 0) || (pNpc->byNpcType < NPCTYPE_NOMOVE) ||
+				(pNpc->pszNpcSpeech == NULL)) {
+			continue;
+		}
+		if ((strcmp (pNpc->pszNpcSpeech, "@") != 0) || (pNpc->wGrpID != wGrp)) {
+			continue;
+		}
+		if ((pNpc->dwMapID != pChar->dwMapID) || !IsSameSpace (pChar, pNpc)) {
+			continue;
+		}
+		if ((abs ((int)pNpc->dwX - (int)pChar->dwX) <= NPCNEAR_RANGE) &&
+			(abs ((int)pNpc->dwY - (int)pChar->dwY) <= NPCNEAR_RANGE)) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcCHGCHARGRP											 */
 /* 内容：受信データ処理(着せ替え要求)										 */
 /* 日付：2003/07/24															 */
@@ -6083,6 +6155,12 @@ void RecvDataProcCHGCHARGRP(PBYTE pData, DWORD dwDataSize)
 	if (pPara->dwData == 0) {
 		/* 何かおかしいので強制ログアウト */
 		PostMessage (g_hWndMain, WM_DECPLAYER, pChar->pID, pPara->dwTblID);
+		return;
+	}
+
+	/* 公式クライアントが送るのは、キャラ作成の男(2)・女(3)と、着せ替えの人に話しかけて選んだ画像だけ */
+	if ((pChar->byAdminLV == ADMINLV_USER) && (pPara->dwData != 2) && (pPara->dwData != 3) &&
+			((pPara->dwData > 0xFFFF) || !NpcNearDress (pChar, (WORD)pPara->dwData))) {
 		return;
 	}
 
@@ -6157,6 +6235,13 @@ void RecvDataProcCHGNAMESEX(PBYTE pData, DWORD dwDataSize)
 		}
 		return;
 	}
+	/* 公式の「冒険の書をけす」はログイン画面からだけ。遊んでいる最中（歩き中）の削除は、
+	   取引・パーティ・ついていく・討伐チャレンジなどの後始末が済まないので受けず、つなぎ直させる */
+	if ((pPara->szName[0] == 0) && bName && (pChar->szName[0] != 0) &&
+			(pChar->byGameState >= GAMESTATE_MOVE) && (pChar->pID != 0)) {
+		PostMessage (g_hWndMain, WM_DECPLAYER, pChar->pID, pPara->dwTblID);
+		return;
+	}
 	pChar->bySaveFlg &= ~CHARINFOSAVEFLG_FEMALE;
 	if (pPara->bySex) {
 		pChar->bySaveFlg |= CHARINFOSAVEFLG_FEMALE;
@@ -6183,6 +6268,8 @@ void RecvDataProcCHGNAMESEX(PBYTE pData, DWORD dwDataSize)
 
 	/* キャラ削除？ */
 	if (pChar->szName[0] == 0 && bName) {
+		/* 受信処理で覚えている状態（取引・移動の見張り・メッセージ制御コードなど）を消してから置き換える */
+		RecvCmdOnDecPlayer ((int)pChar->dwTblID);
 		PCHARINFO pCharNew = new CHARINFO;
 		ZeroMemory (pCharNew, sizeof (CHARINFO));
 		SetInitCharData (pCharNew);
@@ -8262,7 +8349,17 @@ void RecvDataProcDROPITEM(PBYTE pData, DWORD dwDataSize)
 			return;
 		}
 	}
-	if (pPara->dwData2) {
+	/* 品物の番号を申告しない送り方は受けない（公式クライアントは必ず持ち物の品の番号を付ける） */
+	if (pPara->dwData2 == 0) {
+		SendCmdCHARITEM (pChar->pID, pPara->dwTblID);
+		return;
+	}
+	/* 売る時は、店の人（"@5"・"@7"）の近くにいること */
+	if ((pPara->dwData1 > 0) && !NpcNearSpeech (pChar, "57", -1)) {
+		SendCmdCHARITEM (pChar->pID, pPara->dwTblID);
+		return;
+	}
+	{
 		/* 持ってないアイテム？ */
 		if (CheckCharItem (pPara->dwTblID, pPara->dwData2, pPara->byData) == FALSE) {
 			PostMessage (g_hWndMain, WM_DECPLAYER, pChar->pID, (LPARAM)pPara->dwTblID);
@@ -8285,8 +8382,20 @@ void RecvDataProcDROPITEM(PBYTE pData, DWORD dwDataSize)
 			return;
 		}
 
+		/* 捨てられない品の印がある品は、売れない・捨てられない（クライアントと同じ） */
+		if (pItem->byFlg & ITEMFLG_DROP) {
+			SendCmdSYSMSG (pChar->pID, "その品は、売ったり捨てたりできません。", SPEECHCMD_BATTLE1);
+			SendCmdCHARITEM (pChar->pID, pPara->dwTblID);
+			return;
+		}
+
 		/* 売った？（売値はクライアントの申告ではなく、クライアントと同じ式でサーバーが決める） */
 		if (pPara->dwData1 > 0) {
+			/* 価値の無い品は買い取らない（クライアントも売れない品として扱う） */
+			if (ItemGoldOf ((WORD)pPara->dwData2) == 0) {
+				SendCmdCHARITEM (pChar->pID, pPara->dwTblID);
+				return;
+			}
 			DWORD dwSell = max (ItemGoldOf ((WORD)pPara->dwData2) / 4, (DWORD)1);
 			pChar->dwGold = min (pChar->dwGold + dwSell, (DWORD)999999);
 			SendCmdCHARSTATUSGOLDEXP (pChar->pID, pPara->dwTblID);
@@ -8431,6 +8540,22 @@ void RecvDataProcNAMECOLOR(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
+	/* 公式クライアントで選べるのは、色の表の先頭 7 色（名前と発言は同じ色）だけ。濃い目の色は管理人・NPC 用 */
+	if (pChar->byAdminLV == ADMINLV_USER) {
+		static const COLORREF s_aclName[7] = {
+			RGB (255, 200, 200), RGB (255, 255, 200), RGB (200, 255, 200), RGB (200, 255, 255),
+			RGB (200, 200, 255), RGB (255, 200, 255), RGB (255, 255, 255)
+		};
+		int i;
+		for (i = 0; i < 7; i ++) {
+			if ((pPara->clName == s_aclName[i]) && (pPara->clSpeech == s_aclName[i])) {
+				break;
+			}
+		}
+		if (i >= 7) {
+			return;
+		}
+	}
 	pChar->clName = pPara->clName;
 	pChar->clSpeech = pPara->clSpeech;
 	SendCmdNAMECOLOR (pPara->dwTblID);
@@ -9037,6 +9162,10 @@ void RecvDataProcLEAVEITEM(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
+	/* 預かり所の人（台詞が "@6"）の近くにいなければ使えない */
+	if (!NpcNearSpeech (pChar, "6", -1)) {
+		return;
+	}
 	/* 討伐チャレンジ中は預かり所・取り引き・作ってもらうを使わない（貸し出しの品が出入りしないように） */
 	if (QuestChallengeBlock (pChar)) {
 		return;
@@ -9155,6 +9284,10 @@ void RecvDataProcLEAVEITEMGET(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
+	/* 預かり所の人（"@6"）の近くにいること。中身の一覧だけは、店（"@5"・"@7"）・作り手（"@c"）の窓も頼む */
+	if (!NpcNearSpeech (pChar, (pPara->dwData == (DWORD)-1) ? "567c" : "6", -1)) {
+		return;
+	}
 	/* 討伐チャレンジ中は預かり所・取り引き・作ってもらうを使わない（貸し出しの品が出入りしないように） */
 	if (QuestChallengeBlock (pChar)) {
 		return;
@@ -9960,12 +10093,20 @@ void RecvDataProcJOBCHG(PBYTE pData, DWORD dwDataSize)
 	if (nNo < 0) {
 		return;
 	}
-/* Todo:ここでなれるかチェック */
-	/* 少なくとも存在する職業だけ */
+	/* 存在する職業だけ（公式の窓は、登録されている職業を全部並べる。条件は無い） */
 	if (g_JobInfo.GetPtr ((int)pPara->byData) == NULL) {
 		return;
 	}
 	pChar = g_aCharInfo[nNo];
+	/* 公式の転職は、冒険者登録所の人（台詞が "@a"）に話しかけた時だけ。
+	   戦闘中・取り引き中・討伐チャレンジ中・ミニゲーム中は使えない（管理者は別） */
+	if (pChar->byAdminLV == ADMINLV_USER) {
+		if (!NpcNearSpeech (pChar, "a", -1) || IsCharBattleMode (pChar) ||
+				(s_mapTrade.find (pChar->dwTblID) != s_mapTrade.end ()) ||
+				(pChar->abySubStatus[0] != 0) || QuestInChallenge (pChar)) {
+			return;
+		}
+	}
 	byJobOld = pChar->byJOB;
 	byJobNew = pPara->byData;
 
@@ -10241,6 +10382,10 @@ void RecvDataProcSHOPBUY(PBYTE pData, DWORD dwDataSize)
 	pMap = g_aMapInfo[pChar->dwMapID];
 
 	if (pPara->dwData1 >= (DWORD)pMap->byCountShop) {
+		return;
+	}
+	/* その店の人（台詞が "@5NN"・"@7NN"）の近くにいなければ買えない */
+	if (!NpcNearSpeech (pChar, "57", (int)pPara->dwData1)) {
 		return;
 	}
 	pShop = &pMap->pShopInfo[pPara->dwData1];
@@ -10901,6 +11046,10 @@ void RecvDataProcLEAVEGOLD(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pRecv->dwTblID];
+	/* 預かり所の人（台詞が "@6"）の近くにいなければ使えない */
+	if (!NpcNearSpeech (pChar, "6", -1)) {
+		return;
+	}
 	/* 討伐チャレンジ中は預かり所・取り引き・作ってもらうを使わない（貸し出しの品が出入りしないように） */
 	if (QuestChallengeBlock (pChar)) {
 		return;
@@ -10969,6 +11118,10 @@ void RecvDataProcLEAVEGOLDGET(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pRecv->dwTblID];
+	/* 預かり所の人（台詞が "@6"）の近くにいなければ使えない */
+	if (!NpcNearSpeech (pChar, "6", -1)) {
+		return;
+	}
 	/* 討伐チャレンジ中は預かり所・取り引き・作ってもらうを使わない（貸し出しの品が出入りしないように） */
 	if (QuestChallengeBlock (pChar)) {
 		return;
@@ -14972,6 +15125,11 @@ void RecvDataProcSORTITEM(PBYTE pData, DWORD dwDataSize)
 	} else if (pPara->byTarget == SORTITEMTARGET_LEAVE) {
 		PLEAVEINFO pInfo = NULL;
 
+		/* 預かり所の人（台詞が "@6"）の近くにいなければ使えない */
+		if (!NpcNearSpeech (pChar, "6", -1)) {
+			return;
+		}
+
 		if (g_aLeaveInfo.GetSize () == 0) {
 		} else if (g_aLeaveInfo.GetSize () == 1) {
 		} else if (pChar->dwLeaveID >= (DWORD)g_aLeaveInfo.GetSize ()) {
@@ -15031,6 +15189,10 @@ void RecvDataProcLEAVEITEMDISPOSE(PBYTE pData, DWORD dwDataSize)
 	}
 	pChar = g_aCharInfo[pPara->dwTblID];
 	if ((pChar == NULL) || (pChar->pID == 0) || (pChar->byNpcType != NPCTYPE_INIT)) {
+		return;
+	}
+	/* 預かり所の人（台詞が "@6"）の近くにいなければ使えない */
+	if (!NpcNearSpeech (pChar, "6", -1)) {
 		return;
 	}
 
