@@ -1116,6 +1116,7 @@ extern BOOL LoadItemDerive(void);
 static void TestTailRelogin(const std::vector<int> &aLogin);
 static void TestAttackRate(const std::vector<int> &aLogin);
 static void TestTailOverlap(const std::vector<int> &aLogin);
+static void TestTailBattleMapMove(const std::vector<int> &aLogin);
 static void TestEmptyMapCheck(const std::vector<int> &aLogin);
 static void TestPutFill(void);
 static void TestDungeonTheme(void);
@@ -1670,6 +1671,8 @@ static void TestWorld(void)
 	TestDungeonBonus(aLogin);
 	/* AP. 番外編ダンジョン（段階2。日替わり・最短記録・クリア条件。AO の後ろ） */
 	TestDungeonDaily(aLogin);
+	/* L3. 戦闘でばらけた列は、マップ移動後も戻り先を覚えている */
+	TestTailBattleMapMove(aLogin);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -13754,4 +13757,186 @@ static void TestDungeonDaily(const std::vector<int> &aLogin)
 	g_nProcSubGame = 0;
 	s_dwFakeNow = dwNowBack + 400000;
 	printf("dungeondaily end runs=%d sel=%d\n", DungeonRunCount(), DungeonSelCount());
+}
+
+/* ------------------------------------------------------------------------- */
+/* L3. 戦闘中・復帰中のマップ移動：別マップでは待ち、そろったら列へ戻る */
+/* ------------------------------------------------------------------------- */
+static void TestTailBattleMapMove(const std::vector<int> &aLogin)
+{
+	printf("== L3. Tail battle mapmove ==\n");
+	if (aLogin.size() < 3) return;
+	PMAPINFO pPort = g_aMapInfo[GetMapNo(14)];
+	PEVENTINFO pEvent = NULL;
+	for (int i = 0; i < pPort->nEventCount; i ++) {
+		PEVENTINFO p = &pPort->pEvent[i];
+		if (p->byType == EVENTTYPE_MAPCHG && p->pData && p->dwX == 40 && p->dwY == 54) pEvent = p;
+	}
+	int nX = -1, nY = -1;
+	for (int y = 1; y + 7 < pPort->nCY && nX < 0; y ++) {
+		for (int x = 1; x + 1 < pPort->nCX && nX < 0; x ++) {
+			bool bOpen = true;
+			for (int dy = -1; dy <= 6 && bOpen; dy ++) {
+				for (int dx = -1; dx <= 1 && bOpen; dx ++) {
+					if (!CheckCharBlock(pPort->dwID, x + dx, y + dy) || CheckEventBlock(pPort->dwID, x + dx, y + dy)) bOpen = false;
+				}
+			}
+			if (bOpen) { nX = x; nY = y; }
+		}
+	}
+	printf("tailbattlemap setup=%d\n", pEvent && nX >= 0 ? 1 : 0);
+	if (!pEvent || nX < 0) return;
+	PEVENTINFO_MAPCHG pInfo = (PEVENTINFO_MAPCHG)pEvent->pData;
+	BYTE byRangeBack = pInfo->byRandomRange;
+	pInfo->byRandomRange = 0;
+	PCHARINFO apChar[3] = { g_aCharInfo[aLogin[0]], g_aCharInfo[aLogin[1]], g_aCharInfo[aLogin[2]] };
+	PCHARINFO pA = apChar[0], pB = apChar[1], pC = apChar[2];
+	/* 配列などを所有する CHARINFO 全体は複製せず、変更する欄だけを保存する */
+	struct {
+		DWORD dwMapID, dwX, dwY, dwTailTblID, dwTailBackTblID, dwSpaceID;
+		DWORD dwTargetTblID, dwTargetTblID2, dwTargetTblID3;
+		BYTE byCharState, byDirection;
+		WORD wHP;
+	} aBack[3];
+	for (int i = 0; i < 3; i ++) {
+		PCHARINFO p = apChar[i];
+		aBack[i] = { p->dwMapID, p->dwX, p->dwY, p->dwTailTblID, p->dwTailBackTblID, p->dwSpaceID,
+			p->dwTargetTblID, p->dwTargetTblID2, p->dwTargetTblID3, p->byCharState, p->byDirection, p->wHP };
+	}
+	auto place = [&](PCHARINFO p, DWORD dwMap, DWORD x, DWORD y) {
+		DeleteTblNoPC((int)p->dwTblID);
+		p->dwMapID = dwMap;
+		p->dwX = p->dwXBack = x;
+		p->dwY = p->dwYBack = y;
+		AddTblNoPC((int)p->dwTblID);
+	};
+	auto reset = [&]() {
+		for (int i = 0; i < 3; i ++) TailReturnForget(apChar[i]->dwTblID);
+		for (int i = 0; i < 3; i ++) {
+			PCHARINFO p = apChar[i];
+			MercenarySetBattleMode(p, FALSE);
+			p->byCharState = CHARSTATE_MOVE;
+			p->wHP = max(p->wHP, (WORD)10);
+			p->dwSpaceID = pA->dwSpaceID;
+			p->dwTargetTblID = p->dwTargetTblID2 = p->dwTargetTblID3 = (DWORD)-1;
+			p->dwTailTblID = i ? apChar[i - 1]->dwTblID : (DWORD)-1;
+			p->dwTailBackTblID = i < 2 ? apChar[i + 1]->dwTblID : (DWORD)-1;
+			place(p, pPort->dwID, nX, nY + i);
+		}
+	};
+	auto move = [&](PCHARINFO p) { EventProc(p, pEvent, 0); };
+	auto linked = [&]() {
+		return pA->dwTailBackTblID == pB->dwTblID && pB->dwTailTblID == pA->dwTblID &&
+			pB->dwTailBackTblID == pC->dwTblID && pC->dwTailTblID == pB->dwTblID;
+	};
+
+	/* 全員が戦闘中のまま出口を通り、MAPINFO 後の同じモードの再通知も受ける */
+	reset();
+	TailBattleSend(pA, 1);
+	TailBattleSend(pB, 1);
+	TailBattleSend(pC, 1);
+	move(pA); move(pB); move(pC);
+	for (int i = 0; i < 3; i ++) TailBattleSend(apChar[i], 1);
+	TailBattleSend(pB, 0); TailBattleSend(pC, 0);
+	TailChaseAdvance(apChar, 3, 1000);
+	printf("tailbattlemap battle preserved=%d wait=%d\n", IsCharBattleMode(pA) ? 1 : 0,
+		pB->dwTailTblID == (DWORD)-1 && pC->dwTailTblID == (DWORD)-1);
+	TailBattleSend(pA, 0);
+	printf("tailbattlemap all arrived ordered=%d\n", linked() ? 1 : 0);
+
+	/* 先頭が先に解除。別マップの人をワープさせず、30秒を超えても到着を待つ */
+	reset();
+	TailBattleSend(pA, 1);
+	move(pA);
+	TailBattleSend(pA, 0);
+	TailChaseAdvance(apChar, 3, 31000);
+	printf("tailbattlemap late waiting=%d active=%d\n", pB->dwMapID == pPort->dwID && pC->dwMapID == pPort->dwID,
+		TailChaseIsActive(pB) || TailChaseIsActive(pC));
+	move(pB); move(pC);
+	/* タイマーが後ろの人から巡回しても、元の順番で復帰を始める */
+	PCHARINFO apReverse[3] = { pC, pB, pA };
+	TailChaseAdvance(apReverse, 3, 1000);
+	printf("tailbattlemap late arrived ordered=%d\n", linked() ? 1 : 0);
+
+	/* 真ん中の人だけ戦闘中。通常の列 A→C は出口で外れず、B は後から最後尾へ戻る */
+	reset();
+	TailBattleSend(pB, 1);
+	move(pA);
+	printf("tailbattlemap normal chain=%d same=%d\n", pC->dwTailTblID == pA->dwTblID && pA->dwTailBackTblID == pC->dwTblID,
+		pA->dwMapID == pC->dwMapID);
+	TailBattleSend(pB, 0);
+	move(pB);
+	TailChaseAdvance(apChar, 3, 1000);
+	printf("tailbattlemap member arrived end=%d\n", pB->dwTailTblID == pC->dwTblID && pC->dwTailBackTblID == pB->dwTblID);
+
+	/* 後ろの人が先に別マップで解除しても、先頭が来るまで自由に動ける */
+	reset();
+	TailBattleSend(pA, 1);
+	TailBattleSend(pB, 1);
+	move(pB);
+	TailBattleSend(pB, 0);
+	TailBattleSend(pA, 0);
+	TailChaseAdvance(apChar, 3, 3000);
+	printf("tailbattlemap member first waiting=%d\n", pB->dwTailTblID == (DWORD)-1 && !TailChaseIsActive(pB));
+	move(pA);
+	TailChaseAdvance(apChar, 3, 2000);
+	printf("tailbattlemap member first returned=%d\n", pB->dwTailTblID == pC->dwTblID);
+
+	/* 歩いて復帰中に先頭が移動。追跡を止めて自由に出口へ向かい、到着後は復帰する */
+	for (int nWho = 0; nWho < 2; nWho ++) {
+		reset();
+		TailBattleSend(pB, 1);
+		place(pB, pPort->dwID, nX, nY + 6);
+		TailBattleSend(pB, 0);
+		printf("tailbattlemap chase%d start=%d\n", nWho, TailChaseIsActive(pB) ? 1 : 0);
+		move(nWho == 0 ? pA : pB);
+		TailChaseAdvance(apChar, 3, 31000);
+		printf("tailbattlemap chase%d paused=%d separate=%d\n", nWho, !TailChaseIsActive(pB), pB->dwMapID != pA->dwMapID);
+		move(nWho == 0 ? pB : pA);
+		TailChaseAdvance(apChar, 3, 2000);
+		printf("tailbattlemap chase%d returned=%d\n", nWho, pB->dwTailTblID == pC->dwTblID);
+	}
+
+	/* 画面外へのフェード中に先頭が移動しても、姿と操作を戻して待てる */
+	reset();
+	TailBattleSend(pB, 1);
+	place(pB, pPort->dwID, pPort->nCX - 1, pPort->nCY - 1);
+	TailBattleSend(pB, 0);
+	move(pA);
+	MockTrace(1);
+	TailChaseAdvance(apChar, 3, 100);
+	MockTrace(0);
+	char *pszFade = MockCmdData(1001, CMD_FADEINOUT);
+	printf("tailbattlemap fading paused=%d fade=[%s]\n", !TailChaseIsActive(pB), pszFade);
+	free(pszFade);
+	move(pB);
+	TailChaseAdvance(apChar, 3, 2000);
+	printf("tailbattlemap fading returned=%d\n", pB->dwTailTblID == pC->dwTblID);
+
+	/* 先頭が切断された場合は覚えを消し、後から同じマップへ来ても復帰しない */
+	reset();
+	TailBattleSend(pA, 1);
+	move(pA);
+	TailBattleSend(pA, 0);
+	TailReturnForget(pA->dwTblID);
+	move(pB); move(pC);
+	TailChaseAdvance(apChar, 3, 2000);
+	printf("tailbattlemap forgotten detached=%d\n", pB->dwTailTblID == (DWORD)-1 && pC->dwTailTblID == (DWORD)-1);
+
+	pInfo->byRandomRange = byRangeBack;
+	for (int i = 0; i < 3; i ++) {
+		PCHARINFO p = apChar[i];
+		TailReturnForget(p->dwTblID);
+		MercenarySetBattleMode(p, FALSE);
+		p->dwTailTblID = aBack[i].dwTailTblID;
+		p->dwTailBackTblID = aBack[i].dwTailBackTblID;
+		p->dwSpaceID = aBack[i].dwSpaceID;
+		p->byCharState = aBack[i].byCharState;
+		p->wHP = aBack[i].wHP;
+		p->byDirection = aBack[i].byDirection;
+		p->dwTargetTblID = aBack[i].dwTargetTblID;
+		p->dwTargetTblID2 = aBack[i].dwTargetTblID2;
+		p->dwTargetTblID3 = aBack[i].dwTargetTblID3;
+		place(p, aBack[i].dwMapID, aBack[i].dwX, aBack[i].dwY);
+	}
 }

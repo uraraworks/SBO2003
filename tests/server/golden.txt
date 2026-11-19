@@ -2185,4 +2185,23 @@ dungeondaily oneshot reload tried=3 d=1 c=1 e=1 a=0
 dungeondaily oneshot rebuilt new-version=1 tried-d=0
 dungeondaily oneshot new-version first again ranked records=1 old-version-records=2
 dungeondaily end runs=0 sel=0
+== L3. Tail battle mapmove ==
+tailbattlemap setup=1
+tailbattlemap battle preserved=1 wait=1
+tailbattlemap all arrived ordered=1
+tailbattlemap late waiting=1 active=0
+tailbattlemap late arrived ordered=1
+tailbattlemap normal chain=1 same=1
+tailbattlemap member arrived end=1
+tailbattlemap member first waiting=1
+tailbattlemap member first returned=1
+tailbattlemap chase0 start=1
+tailbattlemap chase0 paused=1 separate=1
+tailbattlemap chase0 returned=1
+tailbattlemap chase1 start=1
+tailbattlemap chase1 paused=1 separate=1
+tailbattlemap chase1 returned=1
+tailbattlemap fading paused=1 fade=[1]
+tailbattlemap fading returned=1
+tailbattlemap forgotten detached=1
 == done ==

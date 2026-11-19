@@ -112,6 +112,7 @@ BOOL	CheckMagicUserInfo			(BYTE, BYTE);									/* 魔法利用者情報にあ�
 BOOL	CheckEquUserInfo			(WORD, BYTE);									/* 装備職業情報にあるか判定 */
 void	CheckCharEqu				(PCHARINFO);									/* 装備状況をチェックして正しくなければ解除する */
 void	RenewATDF					(DWORD);										/* 攻撃力・守備力の更新 */
+static void TailReturnMapMove(PCHARINFO pChar);
 void	SubProcMapMove				(PCHARINFO, DWORD, DWORD, DWORD);				/* マップ移動処理 */
 void	SubProcMove					(PCHARINFO, DWORD, DWORD);						/* 同マップ内移動処理 */
 void	DeleteEvent					(DWORD, int);									/* イベント情報を削除 */
@@ -3436,9 +3437,9 @@ void SubProcMapMove(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY)
 		return;
 	}
 
-	/* マップ移動したら、戦闘で列を離れた時の戻り先は忘れる
-	   (戦闘モードの覚えは消さない。クライアントもマップ移動で戦闘モードを解除しないので合わせる) */
-	TailReturnForget (pChar->dwTblID);
+	/* マップ移動では戻り先と戦闘モードを残す。追いかけ中なら一旦止め、
+	   同じマップにそろって戦闘モードが解除された後に再開する */
+	TailReturnMapMove (pChar);
 
 	pMap = g_aMapInfo[dwMapID];
 
@@ -6669,12 +6670,13 @@ typedef struct _TAILCHASE {
 } TAILCHASE;
 static std::map<DWORD, TAILCHASE> s_mapTailChase;
 static void TailChaseCancel(PCHARINFO pChar, LPTSTR pszMsg, BOOL bRestore);
+static void TailReturnResume(PCHARINFO pChar);
 
 
 /* ========================================================================= */
 /* 関数名：	TailReturnForget												 */
 /* 内容：	覚えている戻り先の先頭を消す									 */
-/*			(Zで別の人についていく・解除・マップ移動・ログアウト・倒れた時)	 */
+/*			(Zで別の人についていく・解除・ログアウト・倒れた時)	 */
 /*			この人を先頭として覚えている人も全員忘れさせ、戻れないと知らせる	 */
 /*			(先頭が戦闘モードを解除できないので、覚えたままにならないように)	 */
 /*			列に戻る途中(追いかけ中)の人も同じ(本人の追いかけもやめる)		 */
@@ -6729,6 +6731,21 @@ void TailReturnForget(DWORD dwTblID)
 }
 
 
+/* マップが違っていても、覚えた先頭が同じ人で生きていれば戻り先を残す */
+static PCHARINFO TailReturnHead(PCHARINFO pChar, const TAILRETURN &Info)
+{
+	if (Info.dwHeadTblID >= (DWORD)g_aCharInfo.GetSize ()) {
+		return NULL;
+	}
+	PCHARINFO pHead = g_aCharInfo[Info.dwHeadTblID];
+	if ((pHead == pChar) || (pHead->pID == 0) || (pHead->pID != Info.dwHeadPID) ||
+		(strcmp (pHead->szName, Info.szHeadName) != 0) ||
+		(pHead->byCharState == CHARSTATE_DEAD) || (pHead->wHP == 0)) {
+		return NULL;
+	}
+	return pHead;
+}
+
 /* ========================================================================= */
 /* 関数名：	TailReturnFindEnd												 */
 /* 内容：	覚えた先頭の列の最後尾を探す(戻れない時は NULL)					 */
@@ -6740,15 +6757,9 @@ static PCHARINFO TailReturnFindEnd(PCHARINFO pChar, const TAILRETURN &Info)
 	DWORD dwCount = (DWORD)g_aCharInfo.GetSize ();
 	PCHARINFO pHead, pCur, pNext;
 
-	if (Info.dwHeadTblID >= dwCount) {
-		return NULL;
-	}
-	pHead = g_aCharInfo[Info.dwHeadTblID];
-	/* 先頭がまだ同じ人で、同じマップ・同じ空間にいて、倒れていない？ */
-	if ((pHead == pChar) || (pHead->pID == 0) || (pHead->pID != Info.dwHeadPID) ||
-		(strcmp (pHead->szName, Info.szHeadName) != 0) ||
-		(pHead->dwMapID != pChar->dwMapID) || !IsInteractable (pChar, pHead) ||
-		(pHead->byCharState == CHARSTATE_DEAD) || (pHead->wHP == 0)) {
+	pHead = TailReturnHead (pChar, Info);
+	/* 同じマップ・同じ空間にそろうまでは列につながない */
+	if ((pHead == NULL) || (pHead->dwMapID != pChar->dwMapID) || !IsInteractable (pChar, pHead)) {
 		return NULL;
 	}
 	/* 最後尾までたどる(輪になっていても止まるように回数を区切る) */
@@ -7037,6 +7048,24 @@ static void TailChaseCancel(PCHARINFO pChar, LPTSTR pszMsg, BOOL bRestore)
 }
 
 
+/* 追いかけを保留して戻り先へ戻す。本人のマップ移動では後続のマップ情報で表示を戻す */
+static void TailChasePause(PCHARINFO pChar, BOOL bRestore)
+{
+	std::map<DWORD, TAILCHASE>::iterator it = s_mapTailChase.find (pChar->dwTblID);
+	if (it != s_mapTailChase.end ()) {
+		TAILRETURN Info = it->second.Info;
+		TailChaseCancel (pChar, NULL, bRestore);
+		if ((pChar->pID != 0) && (pChar->pID == Info.dwPID)) {
+			s_mapTailReturn[pChar->dwTblID] = Info;
+		}
+	}
+}
+
+static void TailReturnMapMove(PCHARINFO pChar)
+{
+	TailChasePause (pChar, FALSE);
+}
+
 /* ========================================================================= */
 /* 関数名：	TailChaseSendTarget												 */
 /* 内容：	本人に「○○を追いかけています。」を知らせる(動けなくもする)		 */
@@ -7153,6 +7182,8 @@ void TailChaseProc(PCHARINFO pChar)
 	BOOL bPending = FALSE;
 	int nDX, nDY, nDist, nDir, nPathDist;
 
+	/* 別マップで保留していた人も、そろったら通知の再送に頼らず復帰する */
+	TailReturnResume (pChar);
 	if (s_mapTailChase.empty ()) {
 		return;
 	}
@@ -7170,6 +7201,12 @@ void TailChaseProc(PCHARINFO pChar)
 	/* 倒れた */
 	if ((pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0)) {
 		TailChaseCancel (pChar, NULL, TRUE);
+		return;
+	}
+	/* 先頭が移動した時は追跡時間を数えず、自由に出口へ向かえるようにする */
+	PCHARINFO pHead = TailReturnHead (pChar, Chase.Info);
+	if ((pHead != NULL) && (pHead->dwMapID != pChar->dwMapID)) {
+		TailChasePause (pChar, TRUE);
 		return;
 	}
 	/* 先頭がいなくなった */
@@ -7347,6 +7384,12 @@ static void TailReturnDo(PCHARINFO pChar, const TAILRETURN &Info)
 	MercenaryTailOffBack (pChar);
 	if ((pChar->dwTailTblID == (DWORD)-1) && (pChar->dwTailBackTblID == (DWORD)-1) &&
 		(pChar->byCharState != CHARSTATE_DEAD) && (pChar->wHP != 0) && !TailChaseIsActive (pChar)) {
+		PCHARINFO pHead = TailReturnHead (pChar, Info);
+		if ((pHead != NULL) && (pHead->dwMapID != pChar->dwMapID)) {
+			/* 解除時にまだ別マップなら、到着後に戻れるよう覚えを残す */
+			s_mapTailReturn[pChar->dwTblID] = Info;
+			return;
+		}
 		bTarget = TailChaseTarget (pChar, Info, pTarget, bPending);
 	}
 	if (!bTarget) {
@@ -7393,6 +7436,31 @@ static void TailReturnDo(PCHARINFO pChar, const TAILRETURN &Info)
 	}
 }
 
+
+/* 自分と先頭が通常モードで同じマップにそろったら、保留した復帰を再開する */
+static void TailReturnResume(PCHARINFO pChar)
+{
+	std::map<DWORD, TAILRETURN>::iterator it = s_mapTailReturn.find (pChar->dwTblID);
+	if ((it == s_mapTailReturn.end ()) || IsCharBattleMode (pChar)) {
+		return;
+	}
+	TAILRETURN Info = it->second;
+	if ((pChar->pID == 0) || (pChar->pID != Info.dwPID)) {
+		s_mapTailReturn.erase (it);
+		return;
+	}
+	PCHARINFO pHead = TailReturnHead (pChar, Info);
+	if ((pHead != NULL) && (IsCharBattleMode (pHead) || (pHead->dwMapID != pChar->dwMapID))) {
+		return;
+	}
+	if (pHead != NULL) {
+		/* 同時にそろった仲間も、先頭の解除時と同じ並び順で戻す */
+		TailBattleMode (pHead, FALSE);
+		return;
+	}
+	s_mapTailReturn.erase (it);
+	TailReturnDo (pChar, Info);
+}
 
 /* ========================================================================= */
 /* 関数名：	TailBattleMode													 */
