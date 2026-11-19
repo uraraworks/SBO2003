@@ -12,6 +12,7 @@
 #include "SboSvrSendCmd.h"
 #include "SboSvrSubGameProcSugoroku.h"
 #include "SboSvrDungeonDaily.h"
+#include "SboSvrQuest.h"
 /* DungeonGen のメンバー名 max が、互換層の max マクロとぶつかるので、読み込む間だけ外す */
 #pragma push_macro("min")
 #pragma push_macro("max")
@@ -415,7 +416,10 @@ static void SubGameProc_DUNGEON(PSUBGAMEINFO pInfo)
 				/* スタート地点とゴール地点のイベント・マップを設置 */
 				pMap->pwMap[pDungeon->byStartX + pDungeon->byStartY * pMap->nCX] = pDungeon->wChipIDStart;
 				SendCmdCHGMAP (pMap->dwID, pDungeon->wChipIDStart, pDungeon->byStartX, pDungeon->byStartY);
-				pMap->pwMap[pDungeon->byGoalX + (pDungeon->byGoalY * pMap->nCX)] = pDungeon->wChipIDGoal;
+				BOOL bPlaceGoal = !DungeonUsesKillAll (pDungeon);
+				if (bPlaceGoal) {
+					pMap->pwMap[pDungeon->byGoalX + (pDungeon->byGoalY * pMap->nCX)] = pDungeon->wChipIDGoal;
+				}
 
 				/* スタート地点へ */
 				int nNo = AddEvent (pMap->dwID);
@@ -435,22 +439,25 @@ static void SubGameProc_DUNGEON(PSUBGAMEINFO pInfo)
 				pMapChg->byEfect = EVENTMOVEEFECT_SILENT;
 
 
-				/* ゴールから脱出 */
-				nNo = AddEvent (pMap->dwID);
-				pEvent = &pMap->pEvent[nNo];
-				pEvent->dwX = (DWORD)pDungeon->byGoalX;
-				pEvent->dwY = (DWORD)pDungeon->byGoalY;
-				pEvent->byType = EVENTTYPE_MAPCHG;
-				pEvent->pData = NULL;
+				if (bPlaceGoal) {
+					/* ゴールから脱出 */
+					nNo = AddEvent (pMap->dwID);
+					pEvent = &pMap->pEvent[nNo];
+					pEvent->dwX = (DWORD)pDungeon->byGoalX;
+					pEvent->dwY = (DWORD)pDungeon->byGoalY;
+					pEvent->byType = EVENTTYPE_MAPCHG;
+					pEvent->pData = NULL;
 
-				nSize = GetEventDataSize (EVENTTYPE_MAPCHG);
-				pEvent->pData = new BYTE[nSize];
-				ZeroMemory (pEvent->pData, nSize);
-				pMapChg = (PEVENTINFO_MAPCHG)pEvent->pData;
-				pMapChg->dwMapID = pDungeon->dwMapID;
-				pMapChg->dwX = (DWORD)pDungeon->byStartX;
-				pMapChg->dwY = (DWORD)pDungeon->byStartY;
-				pMapChg->byEfect = EVENTMOVEEFECT_SILENT;
+					nSize = GetEventDataSize (EVENTTYPE_MAPCHG);
+					pEvent->pData = new BYTE[nSize];
+					ZeroMemory (pEvent->pData, nSize);
+					pMapChg = (PEVENTINFO_MAPCHG)pEvent->pData;
+					pMapChg->dwMapID = pDungeon->dwMapID;
+					pMapChg->dwX = (DWORD)pDungeon->byStartX;
+					pMapChg->dwY = (DWORD)pDungeon->byStartY;
+					pMapChg->byEfect = EVENTMOVEEFECT_SILENT;
+
+				}
 
 				SendCmdEVENTPOS (URARASOCK_SENDALL, pMap->dwID);
 				SendCmdSYSMSGMAP (pMap->dwID, "SYSTEM:ダンジョン作成完了しました。");
@@ -1723,7 +1730,10 @@ static BOOL MakeDungeonByTheme(int nID, PSUBGAME_DUNGEONINFO pDungeon, PMAPINFO 
 	if (param.seed == 0) {
 		param.seed = 1;
 	}
-	if (DungeonGen::Generate (param, &theme, sk, aParts) != DungeonGen::ERR_NONE) {
+	/* ゴールの絵は、発生元の移動後にクリア条件を確認してから置く。座標と床の絵は残す。 */
+	DungeonGen::Theme genTheme = theme;
+	genTheme.goalPart = 0;
+	if (DungeonGen::Generate (param, &genTheme, sk, aParts) != DungeonGen::ERR_NONE) {
 		return FALSE;
 	}
 	if (((int)aParts.size () != cx * cy) || (sk.w != cx) || (sk.h != cy) || ((int)sk.doorOpen.size () != cx * cy)) {
@@ -1747,6 +1757,9 @@ static BOOL MakeDungeonByTheme(int nID, PSUBGAME_DUNGEONINFO pDungeon, PMAPINFO 
 			SendCmdCHARINFO (URARASOCK_SENDALL, pPut->dwTblID);
 		}
 	}
+
+	BOOL bPlaceGoal = !DungeonUsesKillAll (pDungeon);
+	if (bPlaceGoal && theme.goalPart > 0) aParts[sk.goalX + sk.goalY * cx] = theme.goalPart;
 
 	/* ここから先は作る。範囲内の古いイベント（扉・出口など）を全部消す */
 	{
@@ -1818,8 +1831,8 @@ static BOOL MakeDungeonByTheme(int nID, PSUBGAME_DUNGEONINFO pDungeon, PMAPINFO 
 	pDungeon->byGoalX = (BYTE)nInX;
 	pDungeon->byGoalY = (BYTE)nInY;
 
-	/* ゴールの絵はテーマの goal（生成が置く）。無ければ wChipIDGoal */
-	if ((theme.goalPart <= 0) && pDungeon->wChipIDGoal) {
+	/* ゴールを置く場合はテーマの goal を優先。無ければ wChipIDGoal */
+	if (bPlaceGoal && (theme.goalPart <= 0) && pDungeon->wChipIDGoal) {
 		pMap->pwMap[nOutX + nOutY * pMap->nCX] = pDungeon->wChipIDGoal;
 	}
 	/* 外の入口マス */
@@ -1841,8 +1854,8 @@ static BOOL MakeDungeonByTheme(int nID, PSUBGAME_DUNGEONINFO pDungeon, PMAPINFO 
 		pMapChg->dwY = pDungeon->byTmplCount ? (DWORD)pDungeon->byStartY : (DWORD)nInY;
 		pMapChg->byEfect = EVENTMOVEEFECT_SILENT;
 	}
-	/* 出口（生成の goal）→ 外の入口 */
-	{
+	/* 出口（生成の goal）→ 外の入口。全敵撃破では置かない */
+	if (bPlaceGoal) {
 		int nNo = AddEvent (pMap->dwID);
 		PEVENTINFO pEvent = &pMap->pEvent[nNo];
 		pEvent->dwX = (DWORD)nOutX;

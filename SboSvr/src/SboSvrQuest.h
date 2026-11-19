@@ -112,6 +112,7 @@ extern void QuestChallengeOnWarp(PCHARINFO pChar);				/* マップの中のワ�
 /* 番外編ダンジョン（気まぐれダンジョンのミニゲーム。入口で姿＝テンプレートを選び、組ごとの空間へ入る） */
 extern BOOL DungeonIsReceptionNpc(PCHARINFO pNpc);             /* ダンジョン受付（台詞「@d番号」）か */
 extern void DungeonReceptionTalk(PCHARINFO pChar, PCHARINFO pNpc); /* 受付から姿選びを始める */
+extern BOOL DungeonUsesKillAll(PSUBGAME_DUNGEONINFO pDungeon); /* 補充しない発生元が範囲内にある全敵撃破モードか */
 extern BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent);	/* マップ間移動のイベントに乗った時の最初に呼ぶ（外の入口なら受付へ案内・中の出口なら元の姿で出す）。処理したら TRUE */
 extern void DungeonSelRecv(PCHARINFO pChar, PCMDPARA_DUNGEONSEL pPara);	/* CMD_DUNGEONSEL の受信（姿を選ぶ・やめる） */
 extern BOOL QuestInDungeon(PCHARINFO pChar);					/* 番外編ダンジョンの中か（貸し出しの姿になっているか） */

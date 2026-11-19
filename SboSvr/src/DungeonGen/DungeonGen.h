@@ -17,7 +17,7 @@ namespace DungeonGen
 
 // 生成器の版番号。形や絵の再現結果（同じシード・テーマ・設定で出る形・絵）を変えた時に上げる。
 // 日替わりダンジョンの版（SboDungeonDaily.json）に残し、同じ版の記録どうしだけを比べられるようにする
-const int GEN_VERSION = 2;
+const int GEN_VERSION = 3;
 
 // セルの値
 enum Cell

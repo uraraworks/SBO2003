@@ -12172,7 +12172,7 @@ static void TestDungeonTheme(void)
 	printf("== AN. Dungeon theme ==\n");
 	DungeonThemeChecks checks = CheckDungeonTheme();
 	printf("dungeontheme deco global=%d perRoom=%d limits=%d\n", checks.global, checks.perRoom, checks.failures == 0);
-	printf("dungeontheme plain bottom=1,2 walls=%d faces=%d verticalDoors=%d errors=%d\n", checks.walls, checks.faces, checks.verticalDoors, checks.failures);
+	printf("dungeontheme plain bottom=1,2 walls=%d faces=%d verticalDoors=%d exposed=%d non-face=%d errors=%d\n", checks.walls, checks.faces, checks.verticalDoors, checks.exposedWalls, checks.nonFaceWalls, checks.failures);
 	int nMapNo = -1;
 	for (int i = 0; i < g_aMapInfo.GetSize(); i ++) {
 		if (g_aMapInfo[i] && g_aMapInfo[i]->nCX >= 60 && g_aMapInfo[i]->nCY >= 60 && g_aMapInfo[i]->pwMap) {
@@ -12512,7 +12512,7 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 		if (fp) {
 			const char *psz = "{\"seq\":5,\"themes\":[{\"id\":5,\"name\":\"test\",\"algo\":1,\"floor\":[1,2],\"wallTop\":[3],\"wallFace\":[4],\"wallFill\":[5],"
 				"\"void\":0,\"arch\":[6],\"door\":7,\"doorOpen\":8,\"entry\":9,\"goal\":10,\"bottomRows\":1,\"rooms\":[],\"decos\":[],\"lights\":[],"
-				"\"params\":{\"doorRate\":0,\"openRate\":0,\"floorMin\":30}}]}";
+				"\"params\":{\"doorRate\":0,\"openRate\":0,\"floorMin\":30}},{\"id\":6,\"algo\":1,\"floor\":[1,2],\"wallTop\":[3],\"wallFace\":[4],\"goal\":0,\"params\":{\"floorMin\":30}}]}";
 			fwrite(psz, 1, strlen(psz), fp);
 			fclose(fp);
 		}
@@ -12787,6 +12787,32 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 	DungeonProcNow(s_dwFakeNow);
 	printf("dungeonbonus rebuild freed runs=%d enemies=%d/%d/%d/%d\n", DungeonRunCount(), DgTestCountEnemy(dwPut, dwS1), DgTestCountEnemy(dwPut, dwS2),
 		DgTestCountEnemy(dwPut, dwS3), DgTestCountEnemy(dwPut, dwS4));
+
+	/* 全敵撃破ではテーマの絵・サブゲームの絵・旧方式ともゴールを置かない。
+	   発生元が無ければゴールに戻る。入口と、テーマ方式の途中帰還は残る。 */
+	for (int themeID : {5, 6, 0}) {
+		for (int once : {1, 0}) {
+			Info.dwThemeID = themeID;
+			Info.byClearMode = DGCLEAR_KILLALL;
+			pPut->byPutOnce = (BYTE)once;
+			MakeDungeonProc(byID);
+			for (int n = 0; Info.pMapTmp && n < 10000; n ++) SubGameProc(byID);
+			int gx = themeID ? Info.byX1 + Info.wGenGoalX : Info.byGoalX;
+			int gy = themeID ? Info.byY1 + Info.wGenGoalY : Info.byGoalY;
+			int chip = pMap->pwMap[gx + gy * pMap->nCX];
+			int goalChip = themeID == 5 ? 10 : Info.wChipIDGoal;
+			int picture = chip == goalChip;
+			int event = SearchEvent(Info.dwMapID, gx, gy) >= 0;
+			int savedPicture = themeID ? Info.pwGenParts[Info.wGenGoalX + Info.wGenGoalY * Info.wGenCX] == 10 : 0;
+			printf("dungeonbonus killall theme=%d once=%d goal-event=%d picture=%d saved-picture=%d entrance=%d ready=%d\n",
+				themeID, once, event, picture, savedPicture,
+				(int)(SearchEvent(Info.dwMapID, Info.byStartX, Info.byStartY) >= 0), (int)(Info.pMapTmp == NULL));
+		}
+	}
+	Info.dwThemeID = 5;
+	Info.byClearMode = DGCLEAR_GOAL;
+	pPut->byPutOnce = 1;
+	MakeDungeonProc(byID);
 
 	/* 左上を変えた直後は古い結果に入れず、作り直し後は新しい範囲に揃う */
 	Info.byX1 = 3; Info.byY1 = 12; Info.byX2 = 42; Info.byY2 = 51;
@@ -13286,7 +13312,7 @@ static void TestDungeonDaily(const std::vector<int> &aLogin)
 		printf("dungeondaily reload same-json=%d len>0=%d\n", (int)(sBefore == sAfter), (int)(sAfter.size() > 100));
 	}
 
-	/* 8. クリア条件「敵を全部倒す」：残り・クリアの瞬間・ゴールは途中帰り（記録なし）・10 秒後に全員（倒れた人も）戻る */
+	/* 8. クリア条件「敵を全部倒す」：残り・クリアの瞬間・中の入口で途中帰り（記録なし）・10 秒後に全員（倒れた人も）戻る */
 	Info.byClearMode = DGCLEAR_KILLALL;
 	MakeDungeonProc(byID);
 	DGDAILYVER vK;
@@ -13301,16 +13327,23 @@ static void TestDungeonDaily(const std::vector<int> &aLogin)
 		if (pEv->dwX == 3 && pEv->dwY == 4) pEntry = pEv;
 		else if (pEv->dwX >= 12 && pEv->dwX <= 51 && pEv->dwY >= 10 && pEv->dwY <= 49 && !(pEv->dwX == (DWORD)Info.byGoalX && pEv->dwY == (DWORD)Info.byGoalY)) pGoal = pEv;
 	}
+	int gx = Info.byX1 + Info.wGenGoalX, gy = Info.byY1 + Info.wGenGoalY;
+	printf("dungeondaily killall once goal-event=%d picture=%d saved-picture=%d\n", (int)(pGoal != NULL),
+		(int)(pMap->pwMap[gx + gy * pMap->nCX] == 10 || pMap->pwMap[gx + gy * pMap->nCX] == Info.wChipIDGoal),
+		(int)(Info.pwGenParts[Info.wGenGoalX + Info.wGenGoalY * Info.wGenCX] == 10));
+	PEVENTINFO pRetire = NULL;
+	int nRetire = SearchEvent(Info.dwMapID, Info.byGoalX, Info.byGoalY);
+	if (nRetire >= 0) pRetire = &pMap->pEvent[nRetire];
 	pPut->byPutDone = 0;
 	for (int i = 0; i < 5; i ++) QuestMovePC(apPC[i], nMapNo, 3 + (i % 3), 5 + (i / 3));
-	/* ゴールは途中で帰る出口（記録なし） */
+	/* 中の入口は途中で帰る出口（記録なし） */
 	DgTestTalk(pC, dwReception);
 	DgTestSelPick(pC, 0);
 	DWORD dwK1 = pC->dwSpaceID;
 	s_dwFakeNow += 5000;
-	DungeonEventStep(pC, pGoal);
+	DungeonEventStep(pC, pRetire);
 	DungeonDailyFind(byID, dwKVer, vK);
-	printf("dungeondaily killall goal-retire out=%d records=%d\n", (int)!QuestInChallenge(pC), (int)vK.aRec.size());
+	printf("dungeondaily killall entrance-retire out=%d records=%d\n", (int)!QuestInChallenge(pC), (int)vK.aRec.size());
 	DungeonProcNow(s_dwFakeNow + 1000);
 	s_dwFakeNow += 1000;
 	/* パーティ（A・B）で入る。敵は 3 体 */
@@ -13340,6 +13373,13 @@ static void TestDungeonDaily(const std::vector<int> &aLogin)
 	s_dwFakeNow += 1000; DungeonProcNow(s_dwFakeNow);
 	/* 補充しない印の敵が 1 体もいない設定なら、ゴールと同じ動き（ゴールで記録される） */
 	pPut->byPutOnce = 0;
+	MakeDungeonProc(byID);
+	gx = Info.byX1 + Info.wGenGoalX; gy = Info.byY1 + Info.wGenGoalY;
+	int nGoal = SearchEvent(Info.dwMapID, gx, gy);
+	pGoal = nGoal >= 0 ? &pMap->pEvent[nGoal] : NULL;
+	printf("dungeondaily killall no-once goal-event=%d picture=%d saved-picture=%d\n", (int)(pGoal != NULL),
+		(int)(pMap->pwMap[gx + gy * pMap->nCX] == 10),
+		(int)(Info.pwGenParts[Info.wGenGoalX + Info.wGenGoalY * Info.wGenCX] == 10));
 	for (int i = 0; i < 5; i ++) QuestMovePC(apPC[i], nMapNo, 3 + (i % 3), 5 + (i / 3));
 	pB->wHP = 300; pB->byCharState = CHARSTATE_MOVE;
 	DgTestTalk(pD, dwReception);

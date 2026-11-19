@@ -153,6 +153,7 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 	{
 		std::vector<unsigned char> cover(W * H, 0);
 		std::vector<unsigned char> plainSide(W * H, 0);
+		std::vector<unsigned char> plainBottomFace(W * H, 0);
 		std::vector<int> owner(W * H, -1);  // 床のマス → その床を中に持つ部屋
 		for (size_t ri = 0; ri < sk.rooms.size(); ++ri)
 		{
@@ -163,6 +164,7 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 					int x = r.x + i, y = r.y + j;
 					if (x < 0 || y < 0 || x >= W || y >= H) continue;
 					if (i == 0 || i == r.w - 1) plainSide[y * W + x] = 1;
+					if (r.bot == 2 && j == r.h - 1) plainBottomFace[y * W + x] = 1;
 					if (cover[y * W + x] < 255) ++cover[y * W + x];
 					if (i >= 1 && i <= r.w - 2 && j >= 2 && j <= r.h - 1 - r.bot && sk.cells[y * W + x] == CELL_FLOOR)
 						owner[y * W + x] = (int)ri;
@@ -196,13 +198,16 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 			{
 				int idx = y * W + x, c = sk.cells[idx];
 				if (c != CELL_TOP && c != CELL_FACE && c != CELL_WALL) continue;
-				// 素の絵は共有範囲の外まで縦の柱をつなぐ。横の側面が柱に食い込まないよう柱を優先する。
-				// 縦の出入口（扉も含む）の上下は床に面した横壁ではないので、側面を付けない。
-				if (th.rooms.empty() && (plainSide[idx] || cover[idx] >= 2))
+				// 素の絵は共有範囲の外まで縦の柱をつなぐ。ただし下壁の側面行は角も含めて側面を優先する。
+				// 2行で通れるマスに接する面は、出入口の絵を描いた後で側面を優先する。
+				if (th.rooms.empty() && (plainSide[idx] || plainBottomFace[idx] || cover[idx] >= 2))
 				{
-					bool face = !plainSide[idx] && y > 0 && y + 1 < H &&
+					// 直下にも壁が続く所は、下壁の最下段でも天井のままつなぐ。
+					int below = y + 1 < H ? sk.cells[(y + 1) * W + x] : CELL_NONE;
+					bool belowWall = below == CELL_TOP || below == CELL_FACE || below == CELL_WALL;
+					bool face = (plainBottomFace[idx] && !belowWall) || (!plainSide[idx] && y > 0 && y + 1 < H &&
 						sk.cells[(y + 1) * W + x] == CELL_FLOOR &&
-						(sk.cells[(y - 1) * W + x] == CELL_TOP || sk.cells[(y - 1) * W + x] == CELL_WALL || sk.cells[(y - 1) * W + x] == CELL_FACE);
+						(sk.cells[(y - 1) * W + x] == CELL_TOP || sk.cells[(y - 1) * W + x] == CELL_WALL || sk.cells[(y - 1) * W + x] == CELL_FACE));
 					// 意味の色と側面の飾りの候補も、描き直した壁の役目に合わせる。
 					sk.cells[idx] = face ? CELL_FACE : CELL_TOP;
 					parts[idx] = Pick(face && !th.wallFace.empty() ? th.wallFace : th.wallTop, rng);
@@ -221,6 +226,7 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 				if (v > 0) parts[idx] = v;
 			}
 	}
+
 
 	// 3. 出入口・扉
 	const std::vector<int> &archVParts = th.archV.empty() ? th.arch : th.archV;  // 縦の出入口の床
@@ -276,6 +282,23 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 				}
 		}
 	}
+
+	// 素の絵の下壁が2行なら、通れるマスに接する面を角・縦壁・共有壁でも優先する。
+	if (sk.algo == 1 && th.rooms.empty() && th.bottomRows == 2 && !th.wallFace.empty() && !th.wallTop.empty())
+		for (int y = 0; y + 1 < H; ++y)
+			for (int x = 0; x < W; ++x)
+			{
+				int i = y * W + x, c = sk.cells[i];
+				if ((c != CELL_TOP && c != CELL_FACE && c != CELL_WALL) || !IsWalkable(sk.cells[i + W])) continue;
+				if (c != CELL_FACE || !inPartList(th.wallFace, parts[i])) { sk.cells[i] = CELL_FACE; parts[i] = Pick(th.wallFace, rng); }
+				if (y == 0) continue;
+				int above = sk.cells[i - W];
+				if (above == CELL_TOP || above == CELL_FACE || above == CELL_WALL)
+				{
+					if (above != CELL_TOP || !inPartList(th.wallTop, parts[i - W])) { sk.cells[i - W] = CELL_TOP; parts[i - W] = Pick(th.wallTop, rng); }
+				}
+			}
+
 
 	// 3b. 入口・ゴールの絵（start・goal のマスに 1 枚だけ）
 	const bool hasS = sk.startX >= 0 && sk.startY >= 0 && sk.startX < W && sk.startY < H;

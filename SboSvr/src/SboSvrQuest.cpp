@@ -3299,6 +3299,18 @@ static BOOL DgInArea(PSUBGAME_DUNGEONINFO p, DWORD dwMapID, DWORD dwX, DWORD dwY
 	return (dwMapID == p->dwMapID) && (dwX >= (DWORD)p->byX1) && (dwX <= (DWORD)p->byX2) && (dwY >= (DWORD)p->byY1) && (dwY <= (DWORD)p->byY2);
 }
 
+/* 生成時と入場時で、全敵撃破として扱う条件をそろえる。発生済みの数は問わない。 */
+BOOL DungeonUsesKillAll(PSUBGAME_DUNGEONINFO pDungeon)
+{
+	if (!pDungeon || pDungeon->byClearMode != DGCLEAR_KILLALL) return FALSE;
+	for (int k = 0; k < g_aCharInfo.GetSize (); k ++) {
+		PCHARINFO pPut = g_aCharInfo[k];
+		if (pPut && pPut->byNpcType == NPCTYPE_PUT && pPut->byPutOnce && pPut->byPutCount > 0 && pPut->dwSpaceID == SPACE_NORMAL &&
+			DgInArea (pDungeon, pPut->dwMapID, pPut->dwX, pPut->dwY)) return TRUE;
+	}
+	return FALSE;
+}
+
 /* その場所を範囲に含む番外編のダンジョンの番号（無ければ -1） */
 static int DgFindByArea(DWORD dwMapID, DWORD dwX, DWORD dwY)
 {
@@ -3696,16 +3708,8 @@ static void DgStart(int nDungeonID, const DGSEL &Sel, const std::vector<std::pai
 		Ch.mapWho[aPart[i].first->dwTblID] = std::make_pair (std::string (aPart[i].first->szName), (i < aForm.size ()) ? aForm[i] : std::string ());
 	}
 	/* クリア条件「敵を全部倒す」：補充しない印の敵（範囲の中の NPC発生）がいる時だけ。いなければゴールと同じ */
-	if (pDungeon->byClearMode == DGCLEAR_KILLALL) {
-		for (int k = 0; k < g_aCharInfo.GetSize (); k ++) {
-			PCHARINFO pPut = g_aCharInfo[k];
-			if ((pPut != NULL) && (pPut->byNpcType == NPCTYPE_PUT) && pPut->byPutOnce && (pPut->byPutCount > 0) && (pPut->dwSpaceID == SPACE_NORMAL) &&
-				DgInArea (pDungeon, pPut->dwMapID, pPut->dwX, pPut->dwY)) {
-				Ch.bKillAll = TRUE;
-				break;
-			}
-		}
-	}
+	Ch.bKillAll = DungeonUsesKillAll (pDungeon);
+
 	s_mapChallenge[dwSession] = Ch;
 	CHALLENGE *pCh = &s_mapChallenge[dwSession];
 
@@ -4117,7 +4121,7 @@ BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
 				ChallengeLeave (pChar, CHALLENGELEAVE_RETIRE);
 				return TRUE;
 			}
-			/* 「敵を全部倒す」条件のゴールは途中で帰る出口（記録なし） */
+			/* 設定変更前から残ったワープでも、全敵撃破では途中帰還として扱う（記録なし） */
 			if (pRun->bKillAll) {
 				ChallengeLeave (pChar, CHALLENGELEAVE_RETIRE);
 				return TRUE;

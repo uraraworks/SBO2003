@@ -155,6 +155,7 @@ int main(int argc, char **argv)
 {
 	bool verbose = argc > 1 && !strcmp(argv[1], "-v");
 	DungeonThemeChecks themeChecks = CheckDungeonTheme(verbose);
+	printf("通れるマスの直上の壁: %d マス、側面でない壁: %d マス\n", themeChecks.exposedWalls, themeChecks.nonFaceWalls);
 	CHECK(themeChecks.failures == 0, "theme checks: %d failures", themeChecks.failures);
 	const int seeds[] = { 1, 2, 3, 12345, 777, 20031, 99999 };
 	const int sizes[][2] = { { 40, 40 }, { 64, 48 }, { 24, 24 }, { 128, 128 } };
@@ -447,9 +448,9 @@ int main(int argc, char **argv)
 									bool hole0 = c0 == CELL_ARCH || c0 == CELL_DOOR, hole1 = c1 == CELL_ARCH || c1 == CELL_DOOR;
 									CHECK(hole0 == hole1, "bottom2 hole must cover both rows (x=%d)", x);
 									if (variant == 1 || variant == 2) continue;  // 固定パターン・パターン絵は別の絵
-									bool pillar = false;
-									for (const Room &side : a.rooms)
-										if ((x == side.x || x == side.x + side.w - 1) && dn.y + 1 >= side.y && dn.y + 1 < side.y + side.h) pillar = true;
+									// 下の行の直下にも壁がある所だけ天井でつなぐ。
+									int below = dn.y + 2 < a.h ? a.cells[(dn.y + 2) * W + x] : CELL_NONE;
+									bool pillar = below == CELL_TOP || below == CELL_FACE || below == CELL_WALL;
 									CHECK(hole0 || (c0 == CELL_TOP && c1 == (pillar ? CELL_TOP : CELL_FACE)), "bottom2 shared rows %d/%d at x=%d", c0, c1, x);
 									if (!hole0) CHECK(pa[dn.y * W + x] == 7 && (pa[(dn.y + 1) * W + x] == (c1 == CELL_TOP ? 7 : 6) || pa[(dn.y + 1) * W + x] == 824), "bottom2 shared parts");
 								}
@@ -462,10 +463,8 @@ int main(int argc, char **argv)
 							int c0 = a.cells[(r.y + r.h - 2) * W + x], c1 = a.cells[(r.y + r.h - 1) * W + x];
 							if (c0 == CELL_PATTERN || c1 == CELL_PATTERN) continue;  // 重なった固定パターン
 							bool hole = c0 == CELL_ARCH || c0 == CELL_DOOR;
-							bool pillar = false;
-							if (th.rooms.empty())
-								for (const Room &side : a.rooms)
-									if ((x == side.x || x == side.x + side.w - 1) && r.y + r.h - 1 >= side.y && r.y + r.h - 1 < side.y + side.h) pillar = true;
+							int below = r.y + r.h < a.h ? a.cells[(r.y + r.h) * W + x] : CELL_NONE;
+							bool pillar = th.rooms.empty() && (below == CELL_TOP || below == CELL_FACE || below == CELL_WALL);
 							CHECK(hole ? (c1 == CELL_ARCH || c1 == CELL_DOOR) : (c0 == CELL_TOP && c1 == (pillar ? CELL_TOP : CELL_FACE)), "bottom2 bottom rows %d/%d", c0, c1);
 						}
 						for (int y = r.y + 2; y <= r.y + r.h - 3; ++y)
