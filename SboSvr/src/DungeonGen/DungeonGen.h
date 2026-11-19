@@ -15,6 +15,10 @@
 namespace DungeonGen
 {
 
+// 生成器の版番号。形の作り方（同じシード・テーマ・設定で出る形）を変えた時に上げる。
+// 日替わりダンジョンの版（SboDungeonDaily.json）に残し、同じ版の記録どうしだけを比べられるようにする
+const int GEN_VERSION = 1;
+
 // セルの値
 enum Cell
 {
@@ -207,6 +211,13 @@ Err Generate(Params p, const Theme *pTheme, Skeleton &sk, std::vector<int> &part
 // テーマ JSON（SBODATA/SboWebDungeonThemes.json の {"seq":..,"themes":[..]}）から id のテーマを探して読む。
 // th にテーマ、p にテーマの params（w,h,seed 以外。省略は既定値）を入れる。見つからない・読めない時は false
 bool FindThemeInFile(const char *pszJson, int id, Theme &th, Params &p);
+
+// テーマ JSON から id のテーマの 1 件分（{"id":..,..,"params":{..}}）を探して、正規化した JSON（WriteJson）で out に入れる。
+// 日替わりダンジョンの版に「その時のテーマの中身の写し」として残す。見つからない・読めない時は false
+bool FindThemeJson(const char *pszJson, int id, std::string &out);
+
+// FindThemeJson で作った写し（テーマ 1 件分）から、FindThemeInFile と同じようにテーマと params を読む
+bool ReadThemeEntry(const char *pszEntryJson, Theme &th, Params &p);
 
 // 入力 JSON {"params":{...},"theme":{...}} から結果の JSON を作る。失敗時は out は空で Err を返す
 Err RunJson(const char *pszJson, std::string &out);

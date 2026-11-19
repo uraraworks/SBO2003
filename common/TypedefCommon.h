@@ -422,6 +422,7 @@ enum {
 /* サブゲーム[ダンジョン]用コマンド */
 enum {
 	CMDSUBBOMB_DUNGEONRENEW = 1,									/* ダンジョン作成 */
+	CMDSUBBOMB_DUNGEONREBUILDNOW,									/* 日替わりダンジョンを今すぐ作り直す（中の組は外へ戻し、新しいランダムなシードで作る） */
 };
 
 /* サブゲーム[戦場ゲーム]用コマンド */
@@ -1374,6 +1375,8 @@ typedef struct _SUBGAME_DUNGEONINFO {
 	BYTE		byTmplCount;										/* 番外編：選べるテンプレートの数（0=番外編にしない。今までどおり誰でも入れる。最大 MAX_DGTMPL） */
 	WORD		wTmplID[MAX_DGTMPL];								/* 番外編：テンプレート番号（ステータステンプレートの番号） */
 	char		szTmplName[MAX_DGTMPL][MAX_DGTMPLNAME];				/* 番外編：選ぶ窓に出す表示名（空ならテンプレートの名前） */
+	BYTE		byRebuildMode;										/* 作り直しの方式（DGREBUILD_*。0=今まで通り・無人5秒で新しいシードで作り直す／1=日替わり。0 以外の時だけ保存の列が増える） */
+	BYTE		byClearMode;										/* クリア条件（DGCLEAR_*。0=ゴールのワープに着く／1=補充しない印の敵を全部倒す。0 以外の時だけ保存の列が増える） */
 	BYTE		*pMapTmp;											/* 作成するマップ */
 	DWORD		dwTblID;											/* 管理人キャラのテーブルID */
 	DWORD		dwCountTmp;											/* 参加人数カウント用 */
@@ -1389,7 +1392,18 @@ typedef struct _SUBGAME_DUNGEONINFO {
 	WORD		wGenGoalY;
 	BYTE		*pbyAutoMap;										/* 探索マップ用の情報（CMDPARA_DUNGEONMAP の送るままの中身。実行中だけ・保存しない） */
 	DWORD		dwAutoMapSize;										/* その大きさ */
+	DWORD		dwDailyVer;											/* 日替わり：今の形の版の通し番号（SboDungeonDaily.json の no。0=まだ。実行中だけ・保存しない） */
+	DWORD		dwDailyCheck;										/* 日替わり：最後に日付・人数を見た時刻（約1秒ごと。実行中だけ） */
+	DWORD		dwDailyEmpty;										/* 日替わり：範囲が無人になった時刻（0=誰かいる／まだ戻していない。実行中だけ） */
+	DWORD		dwDailyRetry;										/* 日替わり：作れなかった時の次に試す時刻（0=すぐ。実行中だけ） */
+	BYTE		byDailyUsed;										/* 日替わり：最後に戻してから誰かが入った（実行中だけ） */
 } SUBGAME_DUNGEONINFO, *PSUBGAME_DUNGEONINFO;
+
+/* 番外編ダンジョンの作り直しの方式（SUBGAME_DUNGEONINFO::byRebuildMode） */
+#define DGREBUILD_RANDOM	0										/* 今まで通り（無人5秒で、そのつど新しいシードで作り直す＝気まぐれ） */
+#define DGCLEAR_GOAL		0										/* クリア条件：ゴールのワープに着く（今まで通り） */
+#define DGCLEAR_KILLALL		1										/* クリア条件：その組の空間の、補充しない印の敵を全部倒す（そういう敵がいない設定ならゴールと同じ） */
+#define DGREBUILD_DAILY		1										/* 日替わり（日付とダンジョン番号からシードを決める＝その日は同じ形。日付が変わったら無人の時に作り直す） */
 
 /* サブゲーム：ダンジョン情報(保存データ) */
 typedef struct _SUBGAME_DUNGEONINFOSAVE {
@@ -1412,6 +1426,8 @@ typedef struct _SUBGAME_DUNGEONINFOSAVE {
 	BYTE		byTmplCount;										/* 番外編：選べるテンプレートの数（0=番外編にしない） */
 	WORD		wTmplID[MAX_DGTMPL];								/* 番外編：テンプレート番号 */
 	char		szTmplName[MAX_DGTMPL][MAX_DGTMPLNAME];				/* 番外編：表示名 */
+	BYTE		byRebuildMode;										/* 作り直しの方式（DGREBUILD_*） */
+	BYTE		byClearMode;										/* クリア条件（DGCLEAR_*） */
 } SUBGAME_DUNGEONINFOSAVE, *PSUBGAME_DUNGEONINFOSAVE;
 
 /* サブゲーム：迷路情報 */

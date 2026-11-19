@@ -26,6 +26,7 @@
 #include "SboSvrEventProc.h"
 #include "SboSvrCharInfoTimerProc.h"
 #include "SboSvrRecycle.h"
+#include "SboSvrDungeonDaily.h"
 #include "CharProc/CharProcPUT.h"
 #include <stdio.h>
 #include <string.h>
@@ -92,7 +93,8 @@ typedef struct _DGPUT {
 	int			nNow;												/* いま生きている数 */
 	int			nTotal;												/* この組で出した数（補充しない印の数え用） */
 	DWORD		dwLast;												/* 最後に出した・倒された時刻 */
-	_DGPUT() : nNow(0), nTotal(0), dwLast(0) {}
+	DWORD		dwTry;												/* 出そうとした回数（日替わりの位置の乱数に混ぜる。出せなかった試しも数える） */
+	_DGPUT() : nNow(0), nTotal(0), dwLast(0), dwTry(0) {}
 } DGPUT;
 
 /* 1 回の挑戦（一緒に入った組） */
@@ -101,6 +103,12 @@ typedef struct _CHALLENGE {
 	BYTE		byDungeonID;										/* 番外編：サブゲームの番号 */
 	DWORD		dwBuildNo;											/* 番外編：入った時のダンジョンの作り直し番号（変わったら全員出す） */
 	std::map<DWORD, DGPUT>	mapPut;									/* 番外編：NPC発生の発生元のテーブルID → この組の数 */
+	BOOL		bDaily;												/* 番外編：日替わりのダンジョンに入った（記録をつける・敵の位置を版のシードで決める） */
+	DWORD		dwDailyVer;											/* 番外編：入った時の版の通し番号 */
+	DWORD		dwDailySeed;										/* 番外編：その版のシード */
+	std::map<DWORD, std::pair<std::string, std::string> >	mapWho;	/* 番外編：組の人のテーブルID → (キャラ名, 選んだ姿の名前)。記録には、クリアした時まで残っていた人だけを残す */
+	BOOL		bKillAll;											/* 番外編：クリア条件が「敵を全部倒す」（補充しない印の敵がいる時だけ） */
+	BYTE		byCountDown;										/* 番外編：戻る前の 3・2・1 の数えで、最後に知らせた数（4=まだ） */
 	WORD		wQuestID;											/* 依頼番号 */
 	DWORD		dwMapNo;											/* 戦う場所のマップ番号 */
 	DWORD		dwSpaceID;											/* この挑戦の空間番号（挑戦の番号と同じ。0 にはならない。組ごとに別の空間で戦う） */
@@ -112,7 +120,7 @@ typedef struct _CHALLENGE {
 	DWORD		dwClearTime;										/* かかった時間（ミリ秒） */
 	std::vector<DWORD>	aMember;									/* 挑戦中の人（テーブルID） */
 	std::vector<DWORD>	aEnemy;										/* 残っている敵（テーブルID） */
-	_CHALLENGE() : byKind(0), byDungeonID(0), dwBuildNo(0), wQuestID(0), dwMapNo(0), dwSpaceID(0), bArena(FALSE), dwPartyID(0), dwStart(0), bCleared(FALSE), dwClear(0), dwClearTime(0) {}
+	_CHALLENGE() : byKind(0), byDungeonID(0), dwBuildNo(0), bDaily(FALSE), dwDailyVer(0), dwDailySeed(0), bKillAll(FALSE), byCountDown(4), wQuestID(0), dwMapNo(0), dwSpaceID(0), bArena(FALSE), dwPartyID(0), dwStart(0), bCleared(FALSE), dwClear(0), dwClearTime(0) {}
 } CHALLENGE;
 
 /* 戻す場所（切断した人は、マップの表から外れてから動かす） */
@@ -2696,6 +2704,7 @@ enum {
 	CHALLENGELEAVE_QUEST,			/* 依頼が無くなった */
 	CHALLENGELEAVE_LOGOUT,			/* 切断した */
 	CHALLENGELEAVE_BUILD,			/* 番外編ダンジョンが作り直された */
+	CHALLENGELEAVE_RETIRE,			/* 番外編ダンジョン：「敵を全部倒す」条件の途中でゴールのワープから帰った（記録なし） */
 };
 
 /* 挑戦から外して元の状態に戻す */
@@ -3397,7 +3406,7 @@ static void DgLeaveMsg(PCHARINFO p, int nReason)
 
 	switch (nReason) {
 	case CHALLENGELEAVE_CLEAR:
-		psz = "ゴールに着きました！ 元の姿に戻ります。";
+		psz = "クリアしました！ 元の姿に戻ります。";
 		break;
 	case CHALLENGELEAVE_DEAD:
 		psz = "力尽きてしまった…。元の姿に戻りました。";
@@ -3407,6 +3416,9 @@ static void DgLeaveMsg(PCHARINFO p, int nReason)
 		break;
 	case CHALLENGELEAVE_OUT:
 		psz = "ダンジョンの外へ出たので、元の姿に戻りました。";
+		break;
+	case CHALLENGELEAVE_RETIRE:
+		psz = "途中で帰りました（記録なし）。元の姿に戻りました。";
 		break;
 	case CHALLENGELEAVE_BUILD:
 		psz = "ダンジョンが作り直されたので外へ出ました。元の姿に戻りました。";
@@ -3497,7 +3509,7 @@ static void DgPutProc(CHALLENGE *pCh, DWORD dwNow, BOOL bFirst)
 	PSUBGAME_DUNGEONINFO pDungeon = DgInfo (pCh->byDungeonID);
 	int i, nCount = g_aCharInfo.GetSize ();
 
-	if (pDungeon == NULL) {
+	if ((pDungeon == NULL) || pCh->bCleared) {
 		return;
 	}
 	for (i = 0; i < nCount; i ++) {
@@ -3519,7 +3531,15 @@ static void DgPutProc(CHALLENGE *pCh, DWORD dwNow, BOOL bFirst)
 				break;
 			}
 			nTry ++;
-			if (((CCharProcPUT *)pParent->pProc)->PutOneSpace (dwNow, pCh->dwSpaceID)) {
+			/* 日替わりは、位置を版のシード・発生元の番号・何回目の試しかで決める（どの組も同じ位置） */
+			DWORD dwSeed = 0;
+			const DWORD *pdwSeed = NULL;
+			if (pCh->bDaily) {
+				dwSeed = DungeonDailyPutSeed (pCh->dwDailySeed, pParent->dwTblID, d.dwTry);
+				pdwSeed = &dwSeed;
+			}
+			d.dwTry ++;
+			if (((CCharProcPUT *)pParent->pProc)->PutOneSpace (dwNow, pCh->dwSpaceID, pdwSeed)) {
 				d.nNow ++;
 				d.nTotal ++;
 				d.dwLast = dwNow;
@@ -3547,7 +3567,7 @@ static void DgEnd(DWORD dwSession)
 }
 
 /* 選んだ人だけで、新しい空間へ入る */
-static void DgStart(int nDungeonID, const DGSEL &Sel, const std::vector<std::pair<PCHARINFO, WORD> > &aPart)
+static void DgStart(int nDungeonID, const DGSEL &Sel, const std::vector<std::pair<PCHARINFO, WORD> > &aPart, const std::vector<std::string> &aForm)
 {
 	PSUBGAME_DUNGEONINFO pDungeon = DgInfo (nDungeonID);
 	CHALLENGE Ch;
@@ -3566,6 +3586,29 @@ static void DgStart(int nDungeonID, const DGSEL &Sel, const std::vector<std::pai
 	Ch.dwPartyID = aPart[0].first->dwPartyID;
 	Ch.dwStart = timeGetTime ();
 	Ch.bCleared = FALSE;
+	/* 日替わり：入った時の版を覚える（記録は版ごと。敵の位置の乱数にも使う）。組のキャラ名・姿の名前も記録用に控える */
+	if ((pDungeon->byRebuildMode == DGREBUILD_DAILY) && pDungeon->dwDailyVer) {
+		DGDAILYVER Ver;
+		if (DungeonDailyFind (nDungeonID, pDungeon->dwDailyVer, Ver)) {
+			Ch.bDaily = TRUE;
+			Ch.dwDailyVer = Ver.dwNo;
+			Ch.dwDailySeed = Ver.dwSeed;
+		}
+	}
+	for (i = 0; i < aPart.size (); i ++) {
+		Ch.mapWho[aPart[i].first->dwTblID] = std::make_pair (std::string (aPart[i].first->szName), (i < aForm.size ()) ? aForm[i] : std::string ());
+	}
+	/* クリア条件「敵を全部倒す」：補充しない印の敵（範囲の中の NPC発生）がいる時だけ。いなければゴールと同じ */
+	if (pDungeon->byClearMode == DGCLEAR_KILLALL) {
+		for (int k = 0; k < g_aCharInfo.GetSize (); k ++) {
+			PCHARINFO pPut = g_aCharInfo[k];
+			if ((pPut != NULL) && (pPut->byNpcType == NPCTYPE_PUT) && pPut->byPutOnce && (pPut->byPutCount > 0) && (pPut->dwSpaceID == SPACE_NORMAL) &&
+				DgInArea (pDungeon, pPut->dwMapID, pPut->dwX, pPut->dwY)) {
+				Ch.bKillAll = TRUE;
+				break;
+			}
+		}
+	}
 	s_mapChallenge[dwSession] = Ch;
 	CHALLENGE *pCh = &s_mapChallenge[dwSession];
 
@@ -3611,6 +3654,7 @@ static void DgSelFinish(DWORD dwLeader)
 {
 	std::map<DWORD, DGSEL>::iterator it = s_mapDgSel.find (dwLeader);
 	std::vector<std::pair<PCHARINFO, WORD> > aPart;
+	std::vector<std::string> aForm;
 	PSUBGAME_DUNGEONINFO pDungeon;
 	DGSEL Sel;
 	size_t i;
@@ -3645,6 +3689,7 @@ static void DgSelFinish(DWORD dwLeader)
 			continue;
 		}
 		aPart.push_back (std::make_pair (p, Sel.aTmpl[nPick]));
+		aForm.push_back ((nPick < (int)Sel.aName.size ()) ? Sel.aName[nPick] : std::string ());
 	}
 	if (aPart.empty ()) {
 		return;
@@ -3655,7 +3700,7 @@ static void DgSelFinish(DWORD dwLeader)
 		}
 		return;
 	}
-	DgStart (Sel.nDungeonID, Sel, aPart);
+	DgStart (Sel.nDungeonID, Sel, aPart, aForm);
 }
 
 /* 決めていない人がいなければ、始める */
@@ -3673,6 +3718,90 @@ static void DgSelCheck(DWORD dwLeader)
 		}
 	}
 	DgSelFinish (dwLeader);
+}
+
+/* 組の敵（補充しない印）の残りの数。出す前の分も数える */
+static int DgRemain(CHALLENGE *pCh)
+{
+	PSUBGAME_DUNGEONINFO pDungeon = DgInfo (pCh->byDungeonID);
+	int i, nRemain = 0, nCount = g_aCharInfo.GetSize ();
+
+	if (pDungeon == NULL) {
+		return 0;
+	}
+	for (i = 0; i < nCount; i ++) {
+		PCHARINFO pParent = g_aCharInfo[i];
+		if ((pParent == NULL) || (pParent->byNpcType != NPCTYPE_PUT) || !pParent->byPutOnce || (pParent->byPutCount == 0) ||
+			(pParent->dwSpaceID != SPACE_NORMAL) || !DgInArea (pDungeon, pParent->dwMapID, pParent->dwX, pParent->dwY)) {
+			continue;
+		}
+		std::map<DWORD, DGPUT>::iterator it = pCh->mapPut.find (pParent->dwTblID);
+		int nKilled = (it == pCh->mapPut.end ()) ? 0 : (it->second.nTotal - it->second.nNow);
+		nRemain += max ((int)pParent->byPutCount - nKilled, 0);
+	}
+	return nRemain;
+}
+
+/* クリア時間を決める（最初の 1 回だけ）。日替わりだけ、その版の最短記録に足す。記録には、今も組に残っている人だけを残す。
+   組に知らせる「クリア時間 X分Y秒（今日の○位）」を返す。日替わりでなく bAlways も偽なら空 */
+static std::string DgRecordClear(CHALLENGE *pRun, BOOL bAlways)
+{
+	DGDAILYREC Rec;
+	std::string strMsg;
+	size_t i;
+	int nRank = 0;
+	BOOL bBetter = TRUE;
+
+	if (pRun->bCleared) {
+		return std::string ();
+	}
+	pRun->bCleared = TRUE;
+	pRun->dwClear = timeGetTime ();
+	pRun->dwClearTime = pRun->dwClear - pRun->dwStart;
+	if (!pRun->bDaily && !bAlways) {
+		return std::string ();
+	}
+	if (pRun->bDaily) {
+		for (i = 0; i < pRun->aMember.size (); i ++) {
+			std::map<DWORD, std::pair<std::string, std::string> >::iterator it = pRun->mapWho.find (pRun->aMember[i]);
+			if (it != pRun->mapWho.end ()) {
+				Rec.aName.push_back (it->second.first);
+				Rec.aForm.push_back (it->second.second);
+			}
+		}
+		Rec.aTbl = pRun->aMember;
+		std::sort (Rec.aTbl.begin (), Rec.aTbl.end ());
+		Rec.nCount = (int)Rec.aName.size ();
+		Rec.dwMs = pRun->dwClearTime;
+		Rec.strAt = DungeonDailyDateTime (DungeonDailyNow ());
+		nRank = DungeonDailyAddRecord ((int)pRun->byDungeonID, pRun->dwDailyVer, Rec, &bBetter);
+	}
+	strMsg = "クリア時間 " + DungeonDailyTimeText (pRun->dwClearTime);
+	if (pRun->bDaily) {
+		char szTmp[64];
+		if ((nRank > 0) && bBetter) {
+			snprintf (szTmp, sizeof (szTmp), "（今日の%d位）", nRank);
+		} else if (nRank > 0) {
+			snprintf (szTmp, sizeof (szTmp), "（この顔ぶれの今日の最高は%d位。記録は更新されませんでした）", nRank);
+		} else {
+			snprintf (szTmp, sizeof (szTmp), "（今日の記録の%d位には入れませんでした）", DGDAILY_RECMAX);
+		}
+		strMsg += szTmp;
+	}
+	return strMsg;
+}
+
+/* 組の全員に知らせる */
+static void DgNoticeMembers(CHALLENGE *pCh, const char *pszMsg)
+{
+	size_t k;
+
+	for (k = 0; k < pCh->aMember.size (); k ++) {
+		PCHARINFO pTmp = (pCh->aMember[k] < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[pCh->aMember[k]] : NULL;
+		if (pTmp && IsPlayerOnline (pTmp)) {
+			SendCmdSYSMSG (pTmp->pID, (LPSTR)pszMsg, SPEECHCMD_BATTLE1);
+		}
+	}
 }
 
 /* 入口に乗った時（EventProc_MAPCHG の最初）：番外編のダンジョンの入口なら姿を選ぶ組を作る。出口なら出す。処理したら TRUE */
@@ -3697,7 +3826,23 @@ BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
 	if (pRun) {
 		pDungeon = DgInfo (pRun->byDungeonID);
 		if (pDungeon && (pMapChg->dwMapID == pDungeon->dwMapID) && (pMapChg->dwX == (DWORD)pDungeon->byStartX) && (pMapChg->dwY == (DWORD)pDungeon->byStartY)) {
+			/* 「敵を全部倒す」条件のゴールは途中で帰る出口（記録なし） */
+			if (pRun->bKillAll) {
+				ChallengeLeave (pChar, CHALLENGELEAVE_RETIRE);
+				return TRUE;
+			}
+			/* 組の誰かが最初にゴールした：クリア時間を記録する（まだ中にいる全員に知らせる文は、出した後に送る） */
+			std::string strClear = DgRecordClear (pRun, TRUE);
+			std::vector<DWORD> aNotice = pRun->aMember;
 			ChallengeLeave (pChar, CHALLENGELEAVE_CLEAR);
+			if (!strClear.empty ()) {
+				for (size_t k = 0; k < aNotice.size (); k ++) {
+					PCHARINFO pTmp = (aNotice[k] < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[aNotice[k]] : NULL;
+					if (pTmp && IsPlayerOnline (pTmp)) {
+						SendCmdSYSMSG (pTmp->pID, (LPSTR)strClear.c_str (), SPEECHCMD_BATTLE1);
+					}
+				}
+			}
 			return TRUE;
 		}
 		return FALSE;
@@ -3765,6 +3910,20 @@ BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
 		}
 		for (i = 0; i < aMember.size (); i ++) {
 			SendCmdSYSMSG (aMember[i]->pID, szRun, SPEECHCMD_BATTLE1);
+		}
+	}
+	/* 日替わり：日付が変わっていたら知らせる。今日の 1〜3 位も知らせる */
+	if ((pDungeon->byRebuildMode == DGREBUILD_DAILY) && pDungeon->dwDailyVer) {
+		DGDAILYVER Ver;
+		std::string strTop = DungeonDailyTopText (nID, pDungeon->dwDailyVer);
+		BOOL bOld = DungeonDailyFind (nID, pDungeon->dwDailyVer, Ver) && (Ver.strDate != DungeonDailyDate (DungeonDailyNow ()));
+		for (i = 0; i < aMember.size (); i ++) {
+			if (bOld) {
+				SendCmdSYSMSG (aMember[i]->pID, "日付が変わったので、今の組が出たら新しいダンジョンに作り直します。", SPEECHCMD_BATTLE1);
+			}
+			if (!strTop.empty ()) {
+				SendCmdSYSMSG (aMember[i]->pID, (LPSTR)strTop.c_str (), SPEECHCMD_BATTLE1);
+			}
 		}
 	}
 	for (i = 0; i < aMember.size (); i ++) {
@@ -3854,6 +4013,28 @@ static void DgProc(DWORD dwNow)
 		}
 		pDungeon = DgInfo (Ch.byDungeonID);
 		aMember = Ch.aMember;
+		/* クリア済み（敵を全部倒した）：3・2・1 を数えて、10 秒後に全員（倒れている人も）戻す。それまで途中の判定はしない */
+		if (Ch.bKillAll && Ch.bCleared) {
+			DWORD dwEl = dwNow - Ch.dwClear;
+			int nLeft = 10 - (int)(dwEl / 1000);
+			if (dwEl >= 10000) {
+				for (j = 0; j < aMember.size (); j ++) {
+					PCHARINFO p = g_aCharInfo[aMember[j]];
+					if (s_mapLoan.find (aMember[j]) != s_mapLoan.end ()) {
+						ChallengeLeave (p, CHALLENGELEAVE_CLEAR);
+					}
+				}
+			} else if ((nLeft <= 3) && (nLeft >= 1) && (nLeft < (int)Ch.byCountDown)) {
+				char szCnt[16];
+				Ch.byCountDown = (BYTE)nLeft;
+				snprintf (szCnt, sizeof (szCnt), "%d", nLeft);
+				DgNoticeMembers (&Ch, szCnt);
+			}
+			if (Ch.aMember.empty ()) {
+				aEnd.push_back (itC->first);
+			}
+			continue;
+		}
 		for (j = 0; j < aMember.size (); j ++) {
 			PCHARINFO p = g_aCharInfo[aMember[j]];
 			int nReason = -1;
@@ -3920,6 +4101,21 @@ BOOL DungeonPutOnChildDec(PCHARINFO pChild)
 			}
 			itP->second.dwLast = timeGetTime ();
 		}
+		/* クリア条件「敵を全部倒す」：1 体倒すたびに残りを知らせる。0 になったらクリア（その瞬間にクリア時間を決める） */
+		CHALLENGE &Ch = itC->second;
+		if (Ch.bKillAll && !Ch.bCleared && pParent->byPutOnce && !Ch.aMember.empty ()) {
+			int nRemain = DgRemain (&Ch);
+			char szTmp[256];
+			if (nRemain > 0) {
+				snprintf (szTmp, sizeof (szTmp), "残り %d 体", nRemain);
+				DgNoticeMembers (&Ch, szTmp);
+			} else {
+				std::string strClear = DgRecordClear (&Ch, TRUE);
+				Ch.byCountDown = 4;
+				snprintf (szTmp, sizeof (szTmp), "全部倒しました！ %s。10秒後に全員戻ります。", strClear.c_str ());
+				DgNoticeMembers (&Ch, szTmp);
+			}
+		}
 	}
 	return TRUE;
 }
@@ -3955,6 +4151,33 @@ int DungeonRunCount(void)
 int DungeonSelCount(void)
 {
 	return (int)s_mapDgSel.size ();
+}
+
+/* そのダンジョンの中の組の全員に知らせて、外へ戻す（管理者の作り直し。CHALLENGELEAVE_BUILD）。戻した人数 */
+int DungeonRunLeaveAll(int nDungeonID, const char *pszMsg)
+{
+	std::map<DWORD, CHALLENGE>::iterator itC;
+	std::vector<DWORD> aTbl;
+	size_t i;
+	int nCount = 0;
+
+	for (itC = s_mapChallenge.begin (); itC != s_mapChallenge.end (); itC ++) {
+		if ((itC->second.byKind == CHALLENGEKIND_DUNGEON) && (itC->second.byDungeonID == (BYTE)nDungeonID)) {
+			aTbl.insert (aTbl.end (), itC->second.aMember.begin (), itC->second.aMember.end ());
+		}
+	}
+	for (i = 0; i < aTbl.size (); i ++) {
+		PCHARINFO p = (aTbl[i] < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[aTbl[i]] : NULL;
+		if ((p == NULL) || (s_mapLoan.find (aTbl[i]) == s_mapLoan.end ())) {
+			continue;
+		}
+		if (pszMsg && pszMsg[0] && IsPlayerOnline (p)) {
+			SendCmdSYSMSG (p->pID, (LPSTR)pszMsg, SPEECHCMD_BATTLE1);
+		}
+		ChallengeLeave (p, CHALLENGELEAVE_BUILD);
+		nCount ++;
+	}
+	return nCount;
 }
 
 /* ========================================================================= */

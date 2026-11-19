@@ -27,6 +27,7 @@
 #include "SboSvrRecycle.h"
 #include "SboSvrMarket.h"
 #include "SboSvrMapSwapEdit.h"
+#include "SboSvrDungeonDaily.h"
 #include "CharProc/IncludeCharProc.h"
 
 #include <emscripten.h>
@@ -2129,6 +2130,9 @@ static const DATAFIELD s_aFieldSgDungeon[] = {
 	{ "szTmplName6", "番外編の表示名6", FT_STR, offsetof(SUBGAME_DUNGEONINFO, szTmplName[5]), MAX_DGTMPLNAME, 0, NULL },
 	{ "szTmplName7", "番外編の表示名7", FT_STR, offsetof(SUBGAME_DUNGEONINFO, szTmplName[6]), MAX_DGTMPLNAME, 0, NULL },
 	{ "szTmplName8", "番外編の表示名8", FT_STR, offsetof(SUBGAME_DUNGEONINFO, szTmplName[7]), MAX_DGTMPLNAME, 0, NULL },
+	FLD (SUBGAME_DUNGEONINFO, byRebuildMode,"作り直しの方式",	FT_U8, 0, "0=今まで通り（誰もいなくなって 5 秒たつと、そのつど新しいシードで作り直す＝気まぐれ）。1=日替わり（その日のシードは日付（日本時間）とダンジョン番号＝このサブゲームの番号から決まり、同じ日なら何度作っても・サーバーを再起動しても同じ形。日付が変わったら、範囲に誰もいない時に作り直す。誰かいる間は作り直さず、新しく入る組は前の日の形に入る。無人 5 秒の作り直しはしない。テーマ番号（dwThemeID）が 0 でない時だけ有効）。日替わりだと、番外編（byTmplCount 1 以上）の敵の出る位置が版のシードで決まりどの組も同じになり、最短記録がつく（読むのは /api/data/dungeon/records、今すぐ作り直すのは /api/data/dungeon/rebuild）"),
+	FLD (SUBGAME_DUNGEONINFO, byClearMode,"クリア条件",		FT_U8, 0, "0=ゴールのワープに着く（今まで通り）。1=敵を全部倒す（その組の空間の、NPC発生の「補充しない」印の敵を全部倒した時。そういう発生元が範囲に無ければ 0 と同じ）。クリアの瞬間にクリア時間が決まり、組の全員に知らせて 10 秒後に全員（倒れている人も）外へ戻る。記録は 0 と同じ扱い。番外編（byTmplCount 1 以上）で使う"),
+	FLD (SUBGAME_DUNGEONINFO, dwDailyVer,	"日替わりの版番号",		FT_U32, FF_READONLY, "今の形の版の通し番号（SboDungeonDaily.json の no。0=まだ作っていない。実行中だけ・読むだけ）"),
 };
 static const DATAFIELD s_aFieldSgWar[] = {
 	FLD (SUBGAME_WARINFO, dwMapID,		"マップID",				FT_U32, 0, "map の dwID"),
@@ -4164,6 +4168,14 @@ static bool CheckDungeonDetail(const SUBGAME_DUNGEONINFO *p, std::string &strErr
 {
 	if (p->byTmplCount > MAX_DGTMPL) {
 		strErr = "detail.byTmplCount は 0〜" + JsonNum(MAX_DGTMPL) + " にしてください";
+		return false;
+	}
+	if (p->byClearMode > DGCLEAR_KILLALL) {
+		strErr = "detail.byClearMode は 0（ゴール）か 1（敵を全部倒す）にしてください";
+		return false;
+	}
+	if (p->byRebuildMode > DGREBUILD_DAILY) {
+		strErr = "detail.byRebuildMode は 0（今まで通り）か 1（日替わり）にしてください";
 		return false;
 	}
 	return true;
@@ -6355,6 +6367,63 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataMapResize(int nID, int nTo
 	s_strResult = "{\"ok\":true,\"mapId\":" + JsonNum(pMap->dwID) + ",\"cx\":" + JsonNum(nNewCX) + ",\"cy\":" + JsonNum(nNewCY) +
 			",\"oldCx\":" + JsonNum(nCX) + ",\"oldCy\":" + JsonNum(nCY) +
 			",\"shiftX\":" + JsonNum(nLeft) + ",\"shiftY\":" + JsonNum(nTop) + "}";
+	return s_strResult.c_str();
+}
+
+extern BOOL DungeonDailyRebuildNow(int nID, std::string &strErr);		/* SboSvrSubGameProc.cpp */
+
+/*
+ * 日替わりダンジョンの版と最短記録（読むだけ。docs/dungeon-gen.md の「番外編 段階2」）。
+ *   nID … サブゲームの番号（-1 ならすべて）。nVerNo … 版の通し番号（0 ならすべての版）。bTheme … 版にテーマの写しも入れる
+ *   結果: {"ok":true,"genVersion":生成器の版,"today":"日付","dungeons":[{"id","byRebuildMode","dwThemeID","dwBuildNo","nowVersion",
+ *         "versions":[{"no","date","rebuild","seed","genVer","themeId","w","h","themeRef","created","records":[{"names","forms","count","ms","at"}]}]}]}
+ *   版は古い順。records は時間の短い順（上位 20 件）。ダンジョンは「日替わりになっている」か「保存した版がある」ものだけ
+ */
+extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataDungeonRecords(int nID, int nVerNo, int bTheme)
+{
+	std::string out = "{\"ok\":true,\"genVersion\":" + JsonNum(DungeonDailyGenVersion()) + ",\"today\":" + JsonStr(DungeonDailyDate(DungeonDailyNow()).c_str()) + ",\"dungeons\":[";
+	bool bFirst = true;
+	for (int i = 0; i < g_aSubaGameInfo.GetSize(); i ++) {
+		PSUBGAMEINFO pInfo = g_aSubaGameInfo[i];
+		if (nID >= 0 && i != nID) {
+			continue;
+		}
+		if (pInfo == NULL || pInfo->byType != SUBGAMEID_DUNGEON || pInfo->pInfo == NULL) {
+			continue;
+		}
+		PSUBGAME_DUNGEONINFO p = (PSUBGAME_DUNGEONINFO)pInfo->pInfo;
+		if (p->byRebuildMode != DGREBUILD_DAILY && DungeonDailyVersionCount(i) == 0) {
+			continue;
+		}
+		if (!bFirst) out += ",";
+		bFirst = false;
+		out += "{\"id\":" + JsonNum(i) + ",\"byRebuildMode\":" + JsonNum(p->byRebuildMode) + ",\"dwThemeID\":" + JsonNum(p->dwThemeID) +
+				",\"dwBuildNo\":" + JsonNum(p->dwBuildNo) + ",\"nowVersion\":" + JsonNum(p->dwDailyVer) +
+				",\"versions\":" + DungeonDailyVersionsJson(i, (DWORD)max(nVerNo, 0), bTheme != 0) + "}";
+	}
+	out += "]}";
+	if (bFirst && nID >= 0) {
+		out = "{\"ok\":false,\"error\":\"そのサブゲームは日替わりのダンジョンではありません（byRebuildMode が 1 のダンジョンか、保存した版があるものだけ）\"}";
+	}
+	s_strResult = out;
+	return s_strResult.c_str();
+}
+
+/*
+ * 日替わりダンジョンを今すぐ作り直す（管理者の「今すぐ作り直す」と同じ）。中の組には知らせてから外へ戻し、新しいランダムなシードで作る。
+ *   結果: {"ok":true,"id":..,"version":{新しい版（テーマの写しなし）}} / {"ok":false,"error":"理由"}
+ */
+extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataDungeonRebuild(int nID)
+{
+	std::string strErr;
+	if (!DungeonDailyRebuildNow(nID, strErr)) {
+		s_strResult = "{\"ok\":false,\"error\":" + JsonStr(strErr.c_str()) + "}";
+		return s_strResult.c_str();
+	}
+	PSUBGAME_DUNGEONINFO p = (PSUBGAME_DUNGEONINFO)g_aSubaGameInfo[nID]->pInfo;
+	std::string strVer = DungeonDailyVersionsJson(nID, p->dwDailyVer, false);
+	s_strResult = "{\"ok\":true,\"id\":" + JsonNum(nID) + ",\"dwBuildNo\":" + JsonNum(p->dwBuildNo) + ",\"version\":" +
+			((strVer.size() > 2) ? strVer.substr(1, strVer.size() - 2) : std::string("null")) + "}";
 	return s_strResult.c_str();
 }
 

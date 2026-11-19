@@ -278,6 +278,7 @@ void	RecvDataProcSubGameBOMB_REMOCON			(PBYTE, DWORD);				/* リモコン使用 
 void	RecvDataProcSubGameMAZE_MAZERENEW		(PBYTE, DWORD);				/* 迷路作成 */
 /* 受信データ処理(ダンジョン) */
 void	RecvDataProcSubGameDUNGEON_DUNGEONRENEW	(PBYTE, DWORD);				/* ダンジョン作成 */
+void	RecvDataProcSubGameDUNGEON_REBUILDNOW	(PBYTE, DWORD);				/* 日替わりダンジョンを今すぐ作り直す */
 /* 受信データ処理(戦場ゲーム) */
 void	RecvDataProcSubGameWAR_SELECTTEAM		(PBYTE, DWORD);				/* 戦場ゲーム：チーム選択 */
 void	RecvDataProcSubGameWAR_QUIT				(PBYTE, DWORD);				/* 戦場ゲーム：ゲームから抜ける */
@@ -305,6 +306,7 @@ extern void ItemProcImportant			(DWORD, BYTE, DWORD);				/* 大事な物の欄�
 extern BOOL MagicProc					(DWORD, BYTE, DWORD);				/* 魔法処理 */
 extern void MakeMazeProc				(BYTE);								/* 迷路作成処理 */
 extern void MakeDungeonProc				(BYTE);								/* ダンジョン作成処理 */
+extern BOOL DungeonDailyRebuildNow		(int, std::string &);				/* 日替わりダンジョンを今すぐ作り直す（SboSvrSubGameProc.cpp） */
 extern void SubGameProcBombQuit			(BYTE);								/* 爆弾ゲーム試合終了処理 */
 extern void SubGameProcBombQuitMsg		(BYTE, LPCSTR);						/* 爆弾ゲーム試合終了処理(終わった理由を表示) */
 extern void SubGameProcBombMakeBlock	(BYTE);								/* 爆弾ゲーム壁作成処理 */
@@ -547,6 +549,7 @@ const RECVDATAPROC RecvDataProcSubGameTblMaze[] = {
 const RECVDATAPROC RecvDataProcSubGameTblDungeon[] = {
 	NULL,
 	RecvDataProcSubGameDUNGEON_DUNGEONRENEW,	/* CMDSUBBOMB_DUNGEONRENEW */
+	RecvDataProcSubGameDUNGEON_REBUILDNOW,		/* CMDSUBBOMB_DUNGEONREBUILDNOW */
 	NULL
 };
 
@@ -9601,6 +9604,8 @@ void RecvDataProcSUBGAMEINFO(PBYTE pData, DWORD dwDataSize)
 			pDungeonInfo->byTmplCount = pDungeon->byTmplCount;
 			CopyMemory (pDungeonInfo->wTmplID, pDungeon->wTmplID, sizeof (pDungeonInfo->wTmplID));
 			CopyMemory (pDungeonInfo->szTmplName, pDungeon->szTmplName, sizeof (pDungeonInfo->szTmplName));
+			pDungeonInfo->byRebuildMode = min (pDungeon->byRebuildMode, (BYTE)DGREBUILD_DAILY);
+			pDungeonInfo->byClearMode = min (pDungeon->byClearMode, (BYTE)DGCLEAR_KILLALL);
 			/* 管理者ウィンドウから直した時も、作り直し番号と生成結果は引き継ぐ */
 			if (pInfoBack && (byTypeBack == SUBGAMEID_DUNGEON)) {
 				PSUBGAME_DUNGEONINFO pBack = (PSUBGAME_DUNGEONINFO)pInfoBack;
@@ -9614,6 +9619,11 @@ void RecvDataProcSUBGAMEINFO(PBYTE pData, DWORD dwDataSize)
 				pDungeonInfo->wGenGoalY = pBack->wGenGoalY;
 				pDungeonInfo->pbyAutoMap = pBack->pbyAutoMap;
 				pDungeonInfo->dwAutoMapSize = pBack->dwAutoMapSize;
+				pDungeonInfo->dwDailyVer = pBack->dwDailyVer;
+				pDungeonInfo->dwDailyCheck = pBack->dwDailyCheck;
+				pDungeonInfo->dwDailyEmpty = pBack->dwDailyEmpty;
+				pDungeonInfo->dwDailyRetry = pBack->dwDailyRetry;
+				pDungeonInfo->byDailyUsed = pBack->byDailyUsed;
 				pBack->pwGenParts = NULL;
 				pBack->pbyAutoMap = NULL;
 			}
@@ -12027,6 +12037,25 @@ void RecvDataProcSubGameDUNGEON_DUNGEONRENEW(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	MakeDungeonProc (pRecv->byData);
+}
+
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcSubGameDUNGEON_REBUILDNOW							 */
+/* 内容：受信データ処理(日替わりダンジョンを今すぐ作り直す)					 */
+/* ========================================================================= */
+void RecvDataProcSubGameDUNGEON_REBUILDNOW(PBYTE pData, DWORD dwDataSize)
+{
+	PSUBCMDPARA_DATA1 pRecv = (PSUBCMDPARA_DATA1)pData;
+	std::string strErr;
+
+	/* 管理者ウィンドウから送るものなので管理者だけ */
+	if (!s_bAdminRecv || (pRecv->byData >= g_aSubaGameInfo.GetSize ())) {
+		return;
+	}
+	if (!DungeonDailyRebuildNow (pRecv->byData, strErr)) {
+		SendCmdSYSMSG (pRecv->pID, (LPSTR)strErr.c_str (), SPEECHCMD_BATTLE1);
+	}
 }
 
 

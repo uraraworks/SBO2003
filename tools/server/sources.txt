@@ -61,6 +61,7 @@ SboSvr/src/DungeonGen/Theme.cpp
 SboSvr/src/SboSvrMapSwapEdit.cpp
 SboSvr/src/SboSvrMarket.cpp
 SboSvr/src/SboSvrRecycle.cpp
+SboSvr/src/SboSvrDungeonDaily.cpp
 SboSvr/src/SboSvrTalk.cpp
 SboSvr/src/SboSvrRecvCmd.cpp
 SboSvr/src/SboSvrSendCmd.cpp

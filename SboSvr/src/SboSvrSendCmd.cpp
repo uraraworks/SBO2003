@@ -2937,6 +2937,8 @@ void SendCmdSUBGAMEINFO(DWORD pIDSend, int nNo)
 			pDungeon->byTmplCount = pDungeonInfo->byTmplCount;
 			CopyMemory (pDungeon->wTmplID, pDungeonInfo->wTmplID, sizeof (pDungeon->wTmplID));
 			CopyMemory (pDungeon->szTmplName, pDungeonInfo->szTmplName, sizeof (pDungeon->szTmplName));
+			pDungeon->byRebuildMode = pDungeonInfo->byRebuildMode;
+			pDungeon->byClearMode = pDungeonInfo->byClearMode;
 		}		
 		break;
 

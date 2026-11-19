@@ -2093,4 +2093,33 @@ dungeonbonus rebuild b in=0 got=0 kept=1 d in=0 e in=0
 dungeonbonus rebuild freed runs=0 enemies=0/0/0/0
 dungeonbonus save roundtrip=1 extra>0=1
 dungeonbonus end runs=0 sel=0
+== AP. Dungeon daily ==
+dungeondaily first auto ready=1 build=1 ver=1 found=1 date=2026-11-20 rebuild=0 seed=date genVer=1 themeId=5 size=40x40
+dungeondaily same-day rebuild same=1 build=2 versions=1
+dungeondaily after-reload same=1 versions=1 themeSaved=1
+dungeondaily seed differs-by-dungeon=1 differs-by-date=1
+dungeondaily random-mode versions=0 daily-ver=0
+dungeondaily enemies s1=3 s2=3 same-positions=1
+dungeondaily date-change occupied rebuilt=0 stale=1
+dungeondaily date-change new group in=1 same-version=1 positions-same=1
+dungeondaily goal c in=0 records=1 ms-ok=1 count=1 form=戦士
+dungeondaily goal d records=2 ordered=1
+dungeondaily date-change empty rebuilt=1 versions=2 new-date=2026-11-21 new-seed=date shape-changed=1 old-records-kept=1
+dungeondaily no-more-rebuild=1
+dungeondaily admin before in=1
+dungeondaily admin rebuild ok=1 c-out=1 runs=0 seed-changed=1 rebuild-no=1 versions=3 shape-changed=1
+dungeondaily admin persisted found=1 seed-kept=1 no-auto-rebuild=1 same-shape-after-restart=1 versions=3
+dungeondaily api random-rebuild=0 records-ok=1 has-theme=1 has-records=1 rebuild-ok=1 bad-error=1 versions-after=4
+dungeondaily records count=20 last-rank=4 sorted=1
+dungeondaily records same-party slower rank=4 better=0 faster rank=1 better=1 same-party-count=1 count=20
+dungeondaily top-text first=1 time=2分5秒
+dungeondaily reload same-json=1 len>0=1
+dungeondaily killall goal-retire out=1 records=0
+dungeondaily killall start in=11 enemies=3 after2=1 cleared-yet=0
+dungeondaily killall cleared records=1 ms=42345 count=2 in=11
+dungeondaily killall countdown 3s in=11
+dungeondaily killall after10s in=00 b-hp>0=1 runs=0
+dungeondaily killall no-once-enemy acts-as-goal out=1 records=2
+dungeondaily random-mode records-versions=0->0
+dungeondaily end runs=0 sel=0
 == done ==

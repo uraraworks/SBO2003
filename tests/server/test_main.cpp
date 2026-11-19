@@ -38,6 +38,7 @@
 #include "SboSvrMarket.h"
 #include "SboSvrRecycle.h"
 #include "SboSvrAffix.h"
+#include "SboSvrDungeonDaily.h"
 #include "common/crc.h"
 #include "common/Info/InfoJob.h"
 #include "common/Command/Command.h"
@@ -1113,6 +1114,11 @@ static void TestEmptyMapCheck(const std::vector<int> &aLogin);
 static void TestPutFill(void);
 static void TestDungeonTheme(void);
 static void TestDungeonBonus(const std::vector<int> &aLogin);
+static void TestDungeonDaily(const std::vector<int> &aLogin);
+extern void SubGameProc(DWORD);
+extern BOOL DungeonDailyRebuildNow(int, std::string &);
+extern "C" const char *SboWebDataDungeonRecords(int nID, int nVerNo, int bTheme);
+extern "C" const char *SboWebDataDungeonRebuild(int nID);
 extern void MakeDungeonProc(BYTE);
 extern BOOL SaveSubGameInfo(void);
 extern BOOL LoadSubGameInfo(void);
@@ -1656,6 +1662,8 @@ static void TestWorld(void)
 	TestDungeonTheme();
 	/* AO. 番外編ダンジョン（段階1。ダンジョンのテーマ生成の後ろ。乱数を使うので最後のほう） */
 	TestDungeonBonus(aLogin);
+	/* AP. 番外編ダンジョン（段階2。日替わり・最短記録・クリア条件。AO の後ろ） */
+	TestDungeonDaily(aLogin);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -12745,4 +12753,446 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 	unlink("SBODATA/SboWebDungeonThemes.json");
 	s_dwFakeNow = dwNowBack + 200000;
 	printf("dungeonbonus end runs=%d sel=%d\n", DungeonRunCount(), DungeonSelCount());
+}
+
+/* ------------------------------------------------------------------------- */
+/* AP. 番外編ダンジョン（段階2）											 */
+/*     日替わり（同じ日は同じ形・再起動しても同じ・日付が変わったら無人の時だけ	 */
+/*     作り直す）・同じ敵の位置・管理者の作り直し・版の保存と読み直し・		 */
+/*     最短記録（順位・上位20件・同じ顔ぶれは速い方だけ）・クリア条件			 */
+/*     「敵を全部倒す」（残り・クリアの瞬間・10秒後に全員戻る・ゴールは途中帰り）	 */
+/* ------------------------------------------------------------------------- */
+static unsigned DpAreaHash(PMAPINFO pMap, int x1, int y1, int x2, int y2)
+{
+	unsigned h = 2166136261u;
+	for (int y = y1; y <= y2; y ++) for (int x = x1; x <= x2; x ++) h = (h ^ pMap->pwMap[x + y * pMap->nCX]) * 16777619u;
+	return h;
+}
+
+static std::vector<std::pair<DWORD, DWORD> > DpEnemyPos(DWORD dwParent, DWORD dwSpace)
+{
+	std::vector<std::pair<DWORD, DWORD> > a;
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+		if (p && p->byGameState == GAMESTATE_NPC && p->dwParentTblID == dwParent && p->dwSpaceID == dwSpace && p->byNpcType != NPCTYPE_PUT && p->byNpcType != NPCTYPE_INIT) a.push_back(std::make_pair(p->dwX, p->dwY));
+	}
+	std::sort(a.begin(), a.end());
+	return a;
+}
+
+static void DpKillEnemy(DWORD dwParent, DWORD dwSpace)
+{
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+		if (p && p->byGameState == GAMESTATE_NPC && p->dwParentTblID == dwParent && p->dwSpaceID == dwSpace && p->byNpcType != NPCTYPE_PUT && p->byNpcType != NPCTYPE_INIT) {
+			DeleteChar(p->dwTblID);
+			return;
+		}
+	}
+}
+
+static void TestDungeonDaily(const std::vector<int> &aLogin)
+{
+	printf("== AP. Dungeon daily ==\n");
+	if (aLogin.size() < 5) {
+		return;
+	}
+	int nMapNo = -1;
+	for (int i = 0; i < g_aMapInfo.GetSize(); i ++) {
+		if (g_aMapInfo[i] && g_aMapInfo[i]->nCX >= 60 && g_aMapInfo[i]->nCY >= 60 && g_aMapInfo[i]->pwMap) {
+			nMapNo = i;
+			break;
+		}
+	}
+	if (nMapNo < 0) {
+		printf("dungeondaily no map\n");
+		return;
+	}
+	PMAPINFO pMap = g_aMapInfo[nMapNo];
+	std::vector<WORD> aMapBack(pMap->pwMap, pMap->pwMap + pMap->nCX * pMap->nCY);
+	PEVENTINFO pEventBack = pMap->pEvent;
+	int nEventBack = pMap->nEventCount;
+	pMap->pEvent = NULL;
+	pMap->nEventCount = 0;
+	BYTE byPLCBack = pMap->byPartsLightCount;
+	MAPPARTSLIGHT aPLBack[MAX_MAPPARTSLIGHT];
+	memcpy(aPLBack, pMap->aPartsLight, sizeof(aPLBack));
+	DWORD dwNowBack = s_dwFakeNow;
+	const time_t T0 = 1795111200;			/* 2026-11-20 03:00 日本時間 */
+	g_tDungeonDailyNow = T0;
+	DungeonDailyReset(TRUE);
+
+	{
+		FILE *fp = fopen("SBODATA/SboWebDungeonThemes.json", "wb");
+		if (fp) {
+			const char *psz = "{\"seq\":5,\"themes\":[{\"id\":5,\"name\":\"test\",\"algo\":1,\"floor\":[1,2],\"wallTop\":[3],\"wallFace\":[4],\"wallFill\":[5],\"void\":0,\"arch\":[6],\"door\":7,"
+				"\"doorOpen\":8,\"entry\":9,\"goal\":10,\"bottomRows\":1,\"rooms\":[],\"decos\":[],\"lights\":[],\"params\":{\"doorRate\":0,\"openRate\":0,\"floorMin\":30}}]}";
+			fwrite(psz, 1, strlen(psz), fp);
+			fclose(fp);
+		}
+	}
+
+	PCHARINFO apPC[5];
+	CHARINFO aBack[5];
+	for (int i = 0; i < 5; i ++) {
+		apPC[i] = g_aCharInfo[aLogin[i]];
+		PCHARINFO p = apPC[i];
+		aBack[i] = *p;
+		p->byAdminLV = ADMINLV_USER;
+		p->dwPartyID = 0;
+		p->dwSpaceID = SPACE_NORMAL;
+		p->dwTargetTblID = (DWORD)-1;
+		p->wQuestID = 0; p->byQuestStep = 0; p->wQuestFlg = 0;
+		p->byLevel = 30; p->byPW = 99; p->wMaxHP = 500; p->wHP = 480; p->wMaxMana = 90; p->wMana = 80; p->dwGold = 5000;
+		ZeroMemory(p->waItem, sizeof(p->waItem));
+		for (int k = 0; k < MAX_EQUTYPE; k ++) p->waEqu[k] = 0xFFFF;
+	}
+	PCHARINFO pA = apPC[0], pB = apPC[1], pC = apPC[2], pD = apPC[3], pE = apPC[4];
+
+	int nSt1 = g_aStTmpInfo.GetSize();
+	{
+		PSTATUSTEMPLATEINFO t = new STATUSTEMPLATEINFO;
+		ZeroMemory(t, sizeof(*t));
+		strcpy(t->szName, "戦士の姿");
+		t->byLevel = 7; t->byPW = 11; t->byDEX = 12; t->byST = 13; t->byIT = 14; t->byLK = 15;
+		t->wMaxHP = 60; t->wMaxMana = 20;
+		g_aStTmpInfo.Add(t);
+	}
+
+	/* 日替わり（方式 1）のダンジョンと、気まぐれ（方式 0）のダンジョン（別の場所・別のサブゲーム） */
+	SUBGAME_DUNGEONINFO Info, Info0;
+	ZeroMemory(&Info, sizeof(Info));
+	Info.dwMapID = pMap->dwID;
+	Info.byX1 = 12; Info.byY1 = 10; Info.byX2 = 51; Info.byY2 = 49;
+	Info.byStartX = 3; Info.byStartY = 4;
+	Info.wChipIDStart = 21; Info.wChipIDGoal = 22; Info.wChipIDRoad = 23; Info.wChipIDBlock = 24;
+	Info.dwTblID = (DWORD)-1;
+	Info.dwThemeID = 5;
+	Info.byTmplCount = 1;
+	Info.wTmplID[0] = (WORD)nSt1; strcpy(Info.szTmplName[0], "戦士");
+	Info.byRebuildMode = DGREBUILD_DAILY;
+	Info0 = Info;
+	Info0.byRebuildMode = DGREBUILD_RANDOM;
+	SUBGAMEINFO Sub, Sub0;
+	ZeroMemory(&Sub, sizeof(Sub));
+	Sub.byType = SUBGAMEID_DUNGEON;
+	Sub.pInfo = &Info;
+	Sub0 = Sub;
+	Sub0.pInfo = &Info0;
+	g_aSubaGameInfo.Add(&Sub);
+	BYTE byID = (BYTE)(g_aSubaGameInfo.GetSize() - 1);
+	g_aSubaGameInfo.Add(&Sub0);
+	BYTE byID0 = (BYTE)(g_aSubaGameInfo.GetSize() - 1);
+
+	/* 1. 起動後の最初：日替わりは自動で作る。同じ日なら何度作っても同じ形。再起動（読み直し）しても同じ */
+	g_nProcSubGame = byID;
+	SubGameProc(byID);
+	unsigned h1 = DpAreaHash(pMap, 12, 10, 51, 49);
+	DGDAILYVER v1;
+	BOOL bV1 = DungeonDailyFind(byID, Info.dwDailyVer, v1);
+	printf("dungeondaily first auto ready=%d build=%u ver=%u found=%d date=%s rebuild=%d seed=%s genVer=%d themeId=%u size=%dx%d\n", (int)(Info.pwGenParts != NULL && Info.pMapTmp == NULL),
+		(unsigned)Info.dwBuildNo, (unsigned)Info.dwDailyVer, (int)bV1, v1.strDate.c_str(), v1.nRebuild, (v1.dwSeed == DungeonDailySeed("2026-11-20", byID)) ? "date" : "other",
+		v1.nGenVer, (unsigned)v1.dwThemeID, v1.nW, v1.nH);
+	MakeDungeonProc(byID);
+	printf("dungeondaily same-day rebuild same=%d build=%u versions=%d\n", (int)(DpAreaHash(pMap, 12, 10, 51, 49) == h1), (unsigned)Info.dwBuildNo, DungeonDailyVersionCount(byID));
+	DungeonDailyReload();
+	MakeDungeonProc(byID);
+	printf("dungeondaily after-reload same=%d versions=%d themeSaved=%d\n", (int)(DpAreaHash(pMap, 12, 10, 51, 49) == h1), DungeonDailyVersionCount(byID), (int)(!DungeonDailyThemeText(v1.nThemeRef).empty()));
+	/* 別のダンジョン番号は別のシード */
+	printf("dungeondaily seed differs-by-dungeon=%d differs-by-date=%d\n", (int)(DungeonDailySeed("2026-11-20", byID) != DungeonDailySeed("2026-11-20", byID0)),
+		(int)(DungeonDailySeed("2026-11-20", byID) != DungeonDailySeed("2026-11-21", byID)));
+	/* 気まぐれ（方式 0）は日替わりの版を作らない */
+	MakeDungeonProc(byID0);
+	printf("dungeondaily random-mode versions=%d daily-ver=%u\n", DungeonDailyVersionCount(byID0), (unsigned)Info0.dwDailyVer);
+	/* 作ったばかりの形はもう気まぐれのほうの場所に上書きされているので、日替わりをもう一度作る */
+	MakeDungeonProc(byID);
+	h1 = DpAreaHash(pMap, 12, 10, 51, 49);
+
+	/* 外の入口・ゴール */
+	PEVENTINFO pEntry = NULL, pGoal = NULL;
+	for (int i = 0; i < pMap->nEventCount; i ++) {
+		PEVENTINFO pEv = &pMap->pEvent[i];
+		if (pEv->byType != EVENTTYPE_MAPCHG) continue;
+		if (pEv->dwX == 3 && pEv->dwY == 4) pEntry = pEv;
+		else if (pEv->dwX >= 12 && pEv->dwX <= 51 && pEv->dwY >= 10 && pEv->dwY <= 49) pGoal = pEv;
+	}
+	if (!pEntry || !pGoal) {
+		printf("dungeondaily no entry/goal\n");
+		return;
+	}
+
+	/* 敵の発生元（補充しない印つき 3 体） */
+	PCHARINFO pPut = new CHARINFO;
+	ZeroMemory((PBYTE)pPut, sizeof(CHARINFO));
+	pPut->byNpcType = NPCTYPE_PUT;
+	SetInitCharData(pPut);
+	pPut->byGameState = GAMESTATE_NPC;
+	pPut->byCharState = CHARSTATE_MOVE;
+	pPut->dwMapID = pMap->dwID;
+	pPut->dwX = pPut->dwXBack = pPut->dwStartX = (DWORD)Info.byGoalX + 1;
+	pPut->dwY = pPut->dwYBack = pPut->dwStartY = (DWORD)Info.byGoalY + 1;
+	pPut->byAreaX = 6; pPut->byAreaY = 6;
+	pPut->byPutCount = 3;
+	pPut->byPutOnce = 1;
+	pPut->wTimePutInterval = 0;
+	pPut->wGrpID = 5;
+	pPut->wMaxHP = pPut->wHP = 30;
+	pPut->dwStTmplateID = (DWORD)-1;
+	strcpy(pPut->szName, "試しの魔物");
+	pPut = AddChar(pPut);
+	pPut->pID = pPut->dwTblID + 1;
+	{
+		CCharProcBase CharProcBase;
+		CharProcBase.SetProc(pPut);
+	}
+	DWORD dwPut = pPut->dwTblID;
+	for (int i = 0; i < 5; i ++) QuestMovePC(apPC[i], nMapNo, 3 + (i % 3), 5 + (i / 3));
+	QuestSendParty(pA, pB, CMDPARTY_JOIN);
+	QuestSendParty(pB, pA, CMDPARTY_JOINOK);
+
+	/* 2. 敵の出る位置：どの組も同じ（日替わり）。気まぐれは今までどおり乱数 */
+	DungeonEventStep(pC, pEntry);
+	DgTestSelPick(pC, 0);
+	DWORD dwS1 = pC->dwSpaceID;
+	DungeonEventStep(pD, pEntry);
+	DgTestSelPick(pD, 0);
+	DWORD dwS2 = pD->dwSpaceID;
+	std::vector<std::pair<DWORD, DWORD> > aPos1 = DpEnemyPos(dwPut, dwS1), aPos2 = DpEnemyPos(dwPut, dwS2);
+	printf("dungeondaily enemies s1=%d s2=%d same-positions=%d\n", (int)aPos1.size(), (int)aPos2.size(), (int)(aPos1 == aPos2 && !aPos1.empty()));
+
+	/* 3. 日付が変わっても、中に人がいる間は作り直さない（入口で知らせる。新しく入る組は前の日の形） */
+	g_tDungeonDailyNow = T0 + 24 * 3600;
+	s_dwFakeNow += 2000; g_dwTime = s_dwFakeNow;
+	DWORD dwBuild1 = Info.dwBuildNo;
+	SubGameProc(byID);
+	printf("dungeondaily date-change occupied rebuilt=%d stale=%d\n", (int)(Info.dwBuildNo != dwBuild1), (int)DungeonDailyStale(byID, Info.dwDailyVer, 5, 40, 40));
+	DungeonEventStep(pE, pEntry);
+	DgTestSelPick(pE, 0);
+	DWORD dwS3 = pE->dwSpaceID;
+	printf("dungeondaily date-change new group in=%d same-version=%d positions-same=%d\n", (int)QuestInChallenge(pE), (int)(Info.dwBuildNo == dwBuild1), (int)(DpEnemyPos(dwPut, dwS3) == aPos1));
+
+	/* 4. ゴールの記録：入った時刻からゴールまで。日替わりは版ごとの記録に残る（前の日の版へ）。順位 */
+	s_dwFakeNow += 83000;
+	DungeonEventStep(pC, pGoal);
+	DGDAILYVER vOld;
+	DungeonDailyFind(byID, v1.dwNo, vOld);
+	printf("dungeondaily goal c in=%d records=%d ms-ok=%d count=%d form=%s\n", (int)QuestInChallenge(pC), (int)vOld.aRec.size(),
+		(int)(!vOld.aRec.empty() && vOld.aRec[0].dwMs >= 83000 && vOld.aRec[0].dwMs < 100000), vOld.aRec.empty() ? 0 : vOld.aRec[0].nCount,
+		vOld.aRec.empty() || vOld.aRec[0].aForm.empty() ? "-" : vOld.aRec[0].aForm[0].c_str());
+	s_dwFakeNow += 20000;
+	DungeonEventStep(pD, pGoal);
+	DungeonDailyFind(byID, v1.dwNo, vOld);
+	printf("dungeondaily goal d records=%d ordered=%d\n", (int)vOld.aRec.size(), (int)(vOld.aRec.size() == 2 && vOld.aRec[0].dwMs <= vOld.aRec[1].dwMs));
+	/* 2 人目が同じ組の中で先にゴールしても、記録は 1 回だけ（C と D は別の組なので 2 件。同じ組の 2 人目は増えない）*/
+	/* 5. 全員出たら（E も出す）日付が変わっていて無人 → 作り直す（新しい版・新しい日のシード） */
+	s_dwFakeNow += 1000;
+	DungeonEventStep(pE, pGoal);
+	DungeonProcNow(s_dwFakeNow);
+	s_dwFakeNow += 2000; g_dwTime = s_dwFakeNow;
+	SubGameProc(byID);
+	DGDAILYVER vNew;
+	DungeonDailyFind(byID, Info.dwDailyVer, vNew);
+	printf("dungeondaily date-change empty rebuilt=%d versions=%d new-date=%s new-seed=%s shape-changed=%d old-records-kept=%d\n", (int)(Info.dwBuildNo != dwBuild1 + 0 && Info.dwDailyVer != v1.dwNo),
+		DungeonDailyVersionCount(byID), vNew.strDate.c_str(), (vNew.dwSeed == DungeonDailySeed("2026-11-21", byID)) ? "date" : "other",
+		(int)(DpAreaHash(pMap, 12, 10, 51, 49) != h1), (int)(DungeonDailyFind(byID, v1.dwNo, vOld) && vOld.aRec.size() == 3));
+	DWORD dwBuild2 = Info.dwBuildNo;
+	s_dwFakeNow += 2000; g_dwTime = s_dwFakeNow;
+	SubGameProc(byID);
+	printf("dungeondaily no-more-rebuild=%d\n", (int)(Info.dwBuildNo == dwBuild2));
+
+	/* 6. 管理者の作り直し：中の人は出て、シードが変わって保存される。その後は再起動してもそのシード */
+	unsigned h2 = DpAreaHash(pMap, 12, 10, 51, 49);
+	DWORD dwSeedBefore = vNew.dwSeed;
+	DungeonEventStep(pC, pEntry);
+	DgTestSelPick(pC, 0);
+	printf("dungeondaily admin before in=%d\n", (int)QuestInChallenge(pC));
+	std::string strErr;
+	BOOL bOk = DungeonDailyRebuildNow(byID, strErr);
+	DungeonProcNow(s_dwFakeNow + 1000);
+	s_dwFakeNow += 1000;
+	DGDAILYVER vAdm;
+	DungeonDailyFind(byID, Info.dwDailyVer, vAdm);
+	unsigned h3 = DpAreaHash(pMap, 12, 10, 51, 49);
+	printf("dungeondaily admin rebuild ok=%d c-out=%d runs=%d seed-changed=%d rebuild-no=%d versions=%d shape-changed=%d\n", (int)bOk, (int)!QuestInChallenge(pC), DungeonRunCount(),
+		(int)(vAdm.dwSeed != dwSeedBefore), vAdm.nRebuild, DungeonDailyVersionCount(byID), (int)(h3 != h2));
+	DungeonDailyReload();
+	DWORD dwBuild3 = Info.dwBuildNo;
+	s_dwFakeNow += 2000; g_dwTime = s_dwFakeNow;
+	SubGameProc(byID);
+	DGDAILYVER vAdm2;
+	BOOL bF = DungeonDailyFind(byID, Info.dwDailyVer, vAdm2);
+	BOOL bNoAuto = (Info.dwBuildNo == dwBuild3);
+	MakeDungeonProc(byID);
+	printf("dungeondaily admin persisted found=%d seed-kept=%d no-auto-rebuild=%d same-shape-after-restart=%d versions=%d\n", (int)bF, (int)(vAdm2.dwSeed == vAdm.dwSeed), (int)bNoAuto,
+		(int)(DpAreaHash(pMap, 12, 10, 51, 49) == h3), DungeonDailyVersionCount(byID));
+	/* 気まぐれのダンジョンは今すぐ作り直せない。データ API */
+	{
+		std::string e2;
+		BOOL b0 = DungeonDailyRebuildNow(byID0, e2);
+		std::string sR = SboWebDataDungeonRecords(byID, 0, 1);
+		std::string sB = SboWebDataDungeonRebuild(byID);
+		std::string sBad = SboWebDataDungeonRebuild(byID0);
+		printf("dungeondaily api random-rebuild=%d records-ok=%d has-theme=%d has-records=%d rebuild-ok=%d bad-error=%d versions-after=%d\n", (int)b0, (int)(sR.find("\"ok\":true") != std::string::npos),
+			(int)(sR.find("\"theme\":{") != std::string::npos), (int)(sR.find("\"records\":[{") != std::string::npos), (int)(sB.find("\"ok\":true") != std::string::npos),
+			(int)(sBad.find("\"ok\":false") != std::string::npos), DungeonDailyVersionCount(byID));
+	}
+
+	/* 7. 記録の並び・上位 20 件・同じ顔ぶれは速い方だけ（版 1 に直接足す） */
+	{
+		DWORD dwV = v1.dwNo;
+		DGDAILYREC R;
+		R.aName.push_back("x"); R.aForm.push_back("f"); R.nCount = 1;
+		/* 版 1 は C・D の 2 件。さらに 22 件（顔ぶれは別々、時間は 200 秒から 1 秒ずつ短く） */
+		int nLast = 0;
+		for (int k = 0; k < 22; k ++) {
+			R.aTbl.clear(); R.aTbl.push_back(1000 + k);
+			R.dwMs = 200000 - k * 1000;
+			nLast = DungeonDailyAddRecord(byID, dwV, R);
+		}
+		DGDAILYVER v;
+		DungeonDailyFind(byID, dwV, v);
+		printf("dungeondaily records count=%d last-rank=%d sorted=%d\n", (int)v.aRec.size(), nLast, (int)std::is_sorted(v.aRec.begin(), v.aRec.end(), [](const DGDAILYREC &a, const DGDAILYREC &b) { return a.dwMs < b.dwMs; }));
+		R.aTbl.clear(); R.aTbl.push_back(1021);			/* 一番速い顔ぶれ（179 秒）より遅い・同じ顔ぶれ */
+		R.dwMs = 300000;
+		BOOL bBetter = TRUE;
+		int nR1 = DungeonDailyAddRecord(byID, dwV, R, &bBetter);
+		BOOL bB1 = bBetter;
+		R.dwMs = 100;
+		int nR2 = DungeonDailyAddRecord(byID, dwV, R, &bBetter);
+		DungeonDailyFind(byID, dwV, v);
+		int nSame = 0;
+		for (size_t k = 0; k < v.aRec.size(); k ++) if (v.aRec[k].aTbl.size() == 1 && v.aRec[k].aTbl[0] == 1021) nSame ++;
+		printf("dungeondaily records same-party slower rank=%d better=%d faster rank=%d better=%d same-party-count=%d count=%d\n", nR1, (int)bB1, nR2, (int)bBetter, nSame, (int)v.aRec.size());
+		std::string strTop = DungeonDailyTopText(byID, dwV);
+		printf("dungeondaily top-text first=%d time=%s\n", (int)(strTop.find("1位 0分0秒") != std::string::npos), DungeonDailyTimeText(125000).c_str());
+		/* 保存と読み直し */
+		std::string sBefore = DungeonDailyVersionsJson(byID, 0, FALSE);
+		DungeonDailyReload();
+		std::string sAfter = DungeonDailyVersionsJson(byID, 0, FALSE);
+		printf("dungeondaily reload same-json=%d len>0=%d\n", (int)(sBefore == sAfter), (int)(sAfter.size() > 100));
+	}
+
+	/* 8. クリア条件「敵を全部倒す」：残り・クリアの瞬間・ゴールは途中帰り（記録なし）・10 秒後に全員（倒れた人も）戻る */
+	Info.byClearMode = DGCLEAR_KILLALL;
+	MakeDungeonProc(byID);
+	DGDAILYVER vK;
+	DungeonDailyFind(byID, Info.dwDailyVer, vK);
+	DWORD dwKVer = vK.dwNo;
+	pMap = g_aMapInfo[nMapNo];
+	/* ゴール・入口が作り直しで新しくなっているので探し直す */
+	pEntry = pGoal = NULL;
+	for (int i = 0; i < pMap->nEventCount; i ++) {
+		PEVENTINFO pEv = &pMap->pEvent[i];
+		if (pEv->byType != EVENTTYPE_MAPCHG) continue;
+		if (pEv->dwX == 3 && pEv->dwY == 4) pEntry = pEv;
+		else if (pEv->dwX >= 12 && pEv->dwX <= 51 && pEv->dwY >= 10 && pEv->dwY <= 49) pGoal = pEv;
+	}
+	pPut->byPutDone = 0;
+	for (int i = 0; i < 5; i ++) QuestMovePC(apPC[i], nMapNo, 3 + (i % 3), 5 + (i / 3));
+	/* ゴールは途中で帰る出口（記録なし） */
+	DungeonEventStep(pC, pEntry);
+	DgTestSelPick(pC, 0);
+	DWORD dwK1 = pC->dwSpaceID;
+	s_dwFakeNow += 5000;
+	DungeonEventStep(pC, pGoal);
+	DungeonDailyFind(byID, dwKVer, vK);
+	printf("dungeondaily killall goal-retire out=%d records=%d\n", (int)!QuestInChallenge(pC), (int)vK.aRec.size());
+	DungeonProcNow(s_dwFakeNow + 1000);
+	s_dwFakeNow += 1000;
+	/* パーティ（A・B）で入る。敵は 3 体 */
+	DungeonEventStep(pA, pEntry);
+	DgTestSelPick(pA, 0);
+	DgTestSelPick(pB, 0);
+	DWORD dwK2 = pA->dwSpaceID;
+	int nEn = DgTestCountEnemy(dwPut, dwK2);
+	DWORD dwStartMs = s_dwFakeNow;
+	s_dwFakeNow += 30000;
+	DpKillEnemy(dwPut, dwK2);
+	DpKillEnemy(dwPut, dwK2);
+	printf("dungeondaily killall start in=%d%d enemies=%d after2=%d cleared-yet=%d\n", (int)QuestInChallenge(pA), (int)QuestInChallenge(pB), nEn, DgTestCountEnemy(dwPut, dwK2),
+		(int)(DungeonDailyFind(byID, dwKVer, vK) && vK.aRec.size() > 0));
+	s_dwFakeNow += 12345;
+	DpKillEnemy(dwPut, dwK2);
+	DungeonDailyFind(byID, dwKVer, vK);
+	printf("dungeondaily killall cleared records=%d ms=%u count=%d in=%d%d\n", (int)vK.aRec.size(), vK.aRec.empty() ? 0u : (unsigned)vK.aRec[0].dwMs, vK.aRec.empty() ? 0 : vK.aRec[0].nCount,
+		(int)QuestInChallenge(pA), (int)QuestInChallenge(pB));
+	(void)dwStartMs;
+	/* B が倒れても、10 秒たつまで残り、いっしょに戻る */
+	pB->wHP = 0; pB->byCharState = CHARSTATE_DEAD;
+	s_dwFakeNow += 3000; DungeonProcNow(s_dwFakeNow);
+	printf("dungeondaily killall countdown 3s in=%d%d\n", (int)QuestInChallenge(pA), (int)QuestInChallenge(pB));
+	s_dwFakeNow += 8000; DungeonProcNow(s_dwFakeNow);
+	printf("dungeondaily killall after10s in=%d%d b-hp>0=%d runs=%d\n", (int)QuestInChallenge(pA), (int)QuestInChallenge(pB), (int)(pB->wHP > 0), DungeonRunCount());
+	s_dwFakeNow += 1000; DungeonProcNow(s_dwFakeNow);
+	/* 補充しない印の敵が 1 体もいない設定なら、ゴールと同じ動き（ゴールで記録される） */
+	pPut->byPutOnce = 0;
+	for (int i = 0; i < 5; i ++) QuestMovePC(apPC[i], nMapNo, 3 + (i % 3), 5 + (i / 3));
+	pB->wHP = 300; pB->byCharState = CHARSTATE_MOVE;
+	DungeonEventStep(pD, pEntry);
+	DgTestSelPick(pD, 0);
+	s_dwFakeNow += 7000;
+	DungeonEventStep(pD, pGoal);
+	DungeonDailyFind(byID, dwKVer, vK);
+	printf("dungeondaily killall no-once-enemy acts-as-goal out=%d records=%d\n", (int)!QuestInChallenge(pD), (int)vK.aRec.size());
+	(void)dwK1;
+
+	/* 9. 気まぐれ（方式 0）のダンジョンでゴールしても、記録は保存しない */
+	{
+		int nBefore = DungeonDailyVersionCount(byID0);
+		Info0.byClearMode = DGCLEAR_GOAL;
+		MakeDungeonProc(byID0);
+		printf("dungeondaily random-mode records-versions=%d->%d\n", nBefore, DungeonDailyVersionCount(byID0));
+	}
+
+	/* 後始末 */
+	DungeonProcNow(s_dwFakeNow + 1000);
+	s_dwFakeNow += 1000;
+	for (int i = 0; i < 5; i ++) {
+		CHARINFO *pBk = &aBack[i];
+		PCHARINFO p = apPC[i];
+		QuestSendParty(p, p, CMDPARTY_BREAKUP);
+		SpaceSet(p, SPACE_NORMAL);
+		p->dwSpaceID = SPACE_NORMAL;
+		p->dwTargetTblID = (DWORD)-1;
+		p->dwPartyID = 0;
+		p->byLevel = pBk->byLevel; p->byPW = pBk->byPW; p->wMaxHP = pBk->wMaxHP; p->wHP = pBk->wHP;
+		p->wMaxMana = pBk->wMaxMana; p->wMana = pBk->wMana; p->dwGold = pBk->dwGold; p->dwExp = pBk->dwExp;
+		p->byCharState = pBk->byCharState; p->byAdminLV = pBk->byAdminLV;
+		memcpy(p->waItem, pBk->waItem, sizeof(p->waItem));
+		memcpy(p->waEqu, pBk->waEqu, sizeof(p->waEqu));
+		QuestMovePC(p, (int)pBk->dwMapID, (int)pBk->dwX, (int)pBk->dwY);
+	}
+	QuestSyncAll();
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+		if (p && p->dwParentTblID == dwPut && p->byGameState == GAMESTATE_NPC && p->byNpcType != NPCTYPE_INIT) DeleteChar(p->dwTblID);
+	}
+	DeleteChar(dwPut);
+	for (int i = g_aStTmpInfo.GetSize() - 1; i >= nSt1; i --) {
+		delete g_aStTmpInfo[i];
+		g_aStTmpInfo.RemoveAt(i);
+	}
+	SAFE_DELETE_ARRAY(Info.pwGenParts);
+	SAFE_DELETE_ARRAY(Info.pbyAutoMap);
+	SAFE_DELETE_ARRAY(Info0.pwGenParts);
+	SAFE_DELETE_ARRAY(Info0.pbyAutoMap);
+	for (int i = 0; i < pMap->nEventCount; i ++) {
+		SAFE_DELETE_ARRAY(pMap->pEvent[i].pData);
+	}
+	SAFE_DELETE_ARRAY(pMap->pEvent);
+	pMap->pEvent = pEventBack;
+	pMap->nEventCount = nEventBack;
+	pMap->nProcEvent = 0;
+	g_nProcMap = 0;
+	pMap->byPartsLightCount = byPLCBack;
+	memcpy(pMap->aPartsLight, aPLBack, sizeof(aPLBack));
+	memcpy(pMap->pwMap, &aMapBack[0], sizeof(WORD) * aMapBack.size());
+	g_aSubaGameInfo.RemoveAt(byID0);
+	g_aSubaGameInfo.RemoveAt(byID);
+	unlink("SBODATA/SboWebDungeonThemes.json");
+	DungeonDailyReset(TRUE);
+	g_tDungeonDailyNow = 0;
+	g_nProcSubGame = 0;
+	s_dwFakeNow = dwNowBack + 400000;
+	printf("dungeondaily end runs=%d sel=%d\n", DungeonRunCount(), DungeonSelCount());
 }

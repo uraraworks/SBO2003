@@ -7467,6 +7467,8 @@ void RecvDataProcSUBGAMEINFO(BYTE *pData, DWORD dwDataSize)
 				pDungeonInfo->byTmplCount = pDungeon->byTmplCount;
 				CopyMemory (pDungeonInfo->wTmplID, pDungeon->wTmplID, sizeof (pDungeonInfo->wTmplID));
 				CopyMemory (pDungeonInfo->szTmplName, pDungeon->szTmplName, sizeof (pDungeonInfo->szTmplName));
+				pDungeonInfo->byRebuildMode = pDungeon->byRebuildMode;
+				pDungeonInfo->byClearMode = pDungeon->byClearMode;
 			}		
 			break;
 

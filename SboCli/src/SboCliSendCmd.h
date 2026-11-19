@@ -151,6 +151,7 @@ extern void SendCmdSubBOMBSTOP		(void);									/* 試合中止 */
 extern void SendCmdSubBOMBREMOCON	(void);									/* リモコン使用 */
 extern void SendCmdSubMAZERENEW		(BYTE);									/* 迷路作成 */
 extern void SendCmdSubDUNGEONRENEW	(BYTE);									/* ダンジョン作成 */
+extern void SendCmdSubDUNGEONREBUILDNOW	(BYTE);							/* 日替わりダンジョンを今すぐ作り直す */
 extern void SendCmdSubWARSELECTTEAM	(BYTE);									/* 戦場ゲーム：チーム選択 */
 extern void SendCmdSubWARQUIT		(void);									/* 戦場ゲーム：ゲームから抜ける */
 extern void SendCmdSubWARSELECTRULE	(BYTE);									/* 戦場ゲーム：ルール選択 */

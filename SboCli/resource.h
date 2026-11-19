@@ -506,6 +506,9 @@
 #define IDC_DGTMPL_COUNT                  1449
 #define IDC_DGTMPL_ID1                    1450
 #define IDC_DGTMPL_NAME1                  1458
+#define IDC_DGREBUILD_MODE                1466
+#define IDC_DGCLEAR_MODE                  1467
+#define IDC_DGREBUILD_NOW                 1468
 
 // Next default values for new objects
 // 
@@ -513,7 +516,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        244
 #define _APS_NEXT_COMMAND_VALUE         40037
-#define _APS_NEXT_CONTROL_VALUE         1466
+#define _APS_NEXT_CONTROL_VALUE         1469
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

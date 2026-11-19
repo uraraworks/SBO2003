@@ -527,6 +527,38 @@ int main(int argc, char **argv)
 		CHECK(!FindThemeInFile(js, 2, th, p) && !FindThemeInFile("{bad", 1, th, p) && !FindThemeInFile("{}", 1, th, p), "FindThemeInFile misses");
 	}
 
+	// テーマの写し（日替わりダンジョンの版に残す）: FindThemeJson → ReadThemeEntry で、ファイルから読んだ時と同じテーマ・同じ形になる。
+	// 同じ中身は同じ文字列（使い回しの比べ）、書き直して読み直しても変わらない
+	{
+		const char *js = "{\"seq\":3,\"themes\":[{\"id\":1,\"algo\":1,\"floor\":[1]},"
+			"{\"id\":3,\"name\":\"\xe3\x83\x86\xe3\x82\xb9\xe3\x83\x88\\\"q\\\\\\n\",\"algo\":1,\"floor\":[1,2],\"wallTop\":[3],\"wallFace\":[4],\"wallFill\":[5],\"arch\":[6],"
+			"\"door\":7,\"doorOpen\":8,\"entry\":9,\"goal\":10,\"bottomRows\":1,\"rooms\":[],\"decos\":[],\"lights\":[{\"wParts\":824,\"byLight\":4}],"
+			"\"params\":{\"roomMin\":7,\"doorRate\":55,\"cutoff\":10}}]}";
+		std::string copy, copy2;
+		CHECK(FindThemeJson(js, 3, copy) && !copy.empty() && copy[0] == '{', "FindThemeJson 3");
+		CHECK(FindThemeJson(js, 3, copy2) && copy == copy2, "copy is stable");
+		CHECK(!FindThemeJson(js, 2, copy2) && copy2.empty() && !FindThemeJson("{bad", 1, copy2), "FindThemeJson misses");
+		// 書き直し（読み直した JSON を書く）しても同じ文字列
+		{
+			JVal v; std::string again;
+			CHECK(ParseJson(copy.c_str(), v), "copy parses");
+			WriteJson(v, again);
+			CHECK(again == copy, "write is canonical");
+		}
+		Theme thA, thB; Params pA, pB;
+		CHECK(FindThemeInFile(js, 3, thA, pA) && ReadThemeEntry(copy.c_str(), thB, pB), "read both");
+		CHECK(thB.doorOpen == 8 && thB.lights.size() == 1 && pB.roomMin == 7 && pB.doorRate == 55 && pB.cutoff == 10 && pB.roomMax == pA.roomMax, "copy fields");
+		CHECK(!ReadThemeEntry("[1]", thB, pB) && !ReadThemeEntry("{bad", thB, pB) && !ReadThemeEntry(0, thB, pB), "ReadThemeEntry misses");
+		for (int seed : seeds)
+		{
+			Params a = pA, b = pB; a.w = b.w = 40; a.h = b.h = 40; a.seed = b.seed = (uint32_t)seed;
+			Skeleton sa, sb; std::vector<int> qa, qb;
+			CHECK(Generate(a, &thA, sa, qa) == ERR_NONE && Generate(b, &thB, sb, qb) == ERR_NONE, "generate from copy");
+			CHECK(sa.cells == sb.cells && qa == qb && sa.doorOpen == sb.doorOpen && sa.rooms.size() == sb.rooms.size() && sa.links.size() == sb.links.size(), "copy gives the same layout (seed %d)", seed);
+		}
+		CHECK(GEN_VERSION >= 1, "GEN_VERSION");
+	}
+
 	printf(g_fail ? "FAILED: %d\n" : "ALL OK\n", g_fail);
 	return g_fail ? 1 : 0;
 }

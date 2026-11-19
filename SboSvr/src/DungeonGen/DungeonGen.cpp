@@ -178,23 +178,60 @@ void IntArray(std::string &s, const std::vector<int> &v)
 
 } // namespace
 
-bool FindThemeInFile(const char *pszJson, int id, Theme &th, Params &p)
+namespace
 {
-	JVal root;
-	if (!pszJson || !ParseJson(pszJson, root) || root.t != JVal::OBJ) return false;
+
+// テーマファイルの中から id のテーマ 1 件を探す（無ければ 0）
+const JVal *FindEntry(const JVal &root, int id)
+{
+	if (root.t != JVal::OBJ) return 0;
 	const JVal *themes = root.Get("themes");
-	if (!themes || themes->t != JVal::ARR) return false;
+	if (!themes || themes->t != JVal::ARR) return 0;
 	for (size_t i = 0; i < themes->a.size(); ++i)
 	{
 		const JVal &jt = themes->a[i];
-		if (jt.t != JVal::OBJ || jt.Int("id", 0) != id) continue;
-		th = Theme();
-		p = Params();
-		ReadTheme(jt, th);
-		ReadParams(jt.Get("params"), p);  // w,h,seed も読まれるが、ゲーム側が範囲の大きさと時刻で上書きする
-		return true;
+		if (jt.t == JVal::OBJ && jt.Int("id", 0) == id) return &jt;
 	}
-	return false;
+	return 0;
+}
+
+void ReadEntry(const JVal &jt, Theme &th, Params &p)
+{
+	th = Theme();
+	p = Params();
+	ReadTheme(jt, th);
+	ReadParams(jt.Get("params"), p);  // w,h,seed も読まれるが、ゲーム側が範囲の大きさと時刻で上書きする
+}
+
+} // namespace
+
+bool FindThemeInFile(const char *pszJson, int id, Theme &th, Params &p)
+{
+	JVal root;
+	if (!pszJson || !ParseJson(pszJson, root)) return false;
+	const JVal *jt = FindEntry(root, id);
+	if (!jt) return false;
+	ReadEntry(*jt, th, p);
+	return true;
+}
+
+bool FindThemeJson(const char *pszJson, int id, std::string &out)
+{
+	out.clear();
+	JVal root;
+	if (!pszJson || !ParseJson(pszJson, root)) return false;
+	const JVal *jt = FindEntry(root, id);
+	if (!jt) return false;
+	WriteJson(*jt, out);
+	return true;
+}
+
+bool ReadThemeEntry(const char *pszEntryJson, Theme &th, Params &p)
+{
+	JVal jt;
+	if (!pszEntryJson || !ParseJson(pszEntryJson, jt) || jt.t != JVal::OBJ) return false;
+	ReadEntry(jt, th, p);
+	return true;
 }
 
 Err RunJson(const char *pszJson, std::string &out)

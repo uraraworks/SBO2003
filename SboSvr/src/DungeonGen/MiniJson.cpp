@@ -1,4 +1,5 @@
 #include "MiniJson.h"
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
@@ -156,6 +157,75 @@ bool ParseJson(const char *psz, JVal &out)
 	if (*r.p) return false;
 	out = v;
 	return true;
+}
+
+namespace
+{
+
+void WriteStr(const std::string &s, std::string &out)
+{
+	out += '"';
+	for (size_t i = 0; i < s.size(); ++i)
+	{
+		unsigned char c = (unsigned char)s[i];
+		switch (c)
+		{
+		case '"': out += "\\\""; break;
+		case '\\': out += "\\\\"; break;
+		case '\n': out += "\\n"; break;
+		case '\r': out += "\\r"; break;
+		case '\t': out += "\\t"; break;
+		default:
+			if (c < 0x20)
+			{
+				char buf[8];
+				snprintf(buf, sizeof(buf), "\\u%04x", (unsigned)c);
+				out += buf;
+			}
+			else out += (char)c;  // 0x80 以上（UTF-8）はそのまま
+		}
+	}
+	out += '"';
+}
+
+} // namespace
+
+void WriteJson(const JVal &v, std::string &out)
+{
+	switch (v.t)
+	{
+	case JVal::NUL: out += "null"; break;
+	case JVal::BOOL_: out += v.b ? "true" : "false"; break;
+	case JVal::NUM:
+	{
+		char buf[40];
+		if (v.n == (double)(long long)v.n && v.n > -1e15 && v.n < 1e15) snprintf(buf, sizeof(buf), "%lld", (long long)v.n);
+		else snprintf(buf, sizeof(buf), "%.17g", v.n);
+		out += buf;
+		break;
+	}
+	case JVal::STR: WriteStr(v.s, out); break;
+	case JVal::ARR:
+		out += '[';
+		for (size_t i = 0; i < v.a.size(); ++i)
+		{
+			if (i) out += ',';
+			WriteJson(v.a[i], out);
+		}
+		out += ']';
+		break;
+	case JVal::OBJ:
+		out += '{';
+		for (size_t i = 0; i < v.o.size(); ++i)
+		{
+			if (i) out += ',';
+			WriteStr(v.o[i].first, out);
+			out += ':';
+			WriteJson(v.o[i].second, out);
+		}
+		out += '}';
+		break;
+	}
 }
 
 } // namespace DungeonGen

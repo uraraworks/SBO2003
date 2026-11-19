@@ -6,6 +6,7 @@
 /* 作成開始日：	2006/01/17													 */
 /* ========================================================================= */
 
+#include <random>
 #include "stdafx.h"
 #include "SboSvrRecvCmd.h"
 #include "CharProcPUT.h"
@@ -197,7 +198,7 @@ Exit:
 /* 日付：	2026/11/17（Proc から切り出し）									 */
 /* ========================================================================= */
 
-BOOL CCharProcPUT::PutOne(DWORD dwTime, BOOL bSpaced)
+BOOL CCharProcPUT::PutOne(DWORD dwTime, BOOL bSpaced, const DWORD *pdwSeed)
 {
 	BOOL bRet, bResult;
 	DWORD dwTmpX, dwTmpY, dwX, dwY;
@@ -206,21 +207,35 @@ BOOL CCharProcPUT::PutOne(DWORD dwTime, BOOL bSpaced)
 
 	bRet = FALSE;
 	dwTmpX = 0, dwTmpY = 0, dwX = m_pChar->dwX, dwY = m_pChar->dwY;
-	if (m_pChar->byAreaX) {
-		dwTmpX = genrand () % m_pChar->byAreaX;
-	}
-	if (m_pChar->byAreaY) {
-		dwTmpY = genrand () % m_pChar->byAreaY;
-	}
-	if (genrand () % 2 != 0) {
-		dwX += dwTmpX;
+	if (pdwSeed) {
+		/* 日替わりダンジョン：位置は渡されたシードの乱数で決める（どの組も同じ位置。いつも 4 つ引く） */
+		std::mt19937 eng (*pdwSeed);
+		DWORD dwR1 = (DWORD)eng (), dwR2 = (DWORD)eng (), dwR3 = (DWORD)eng (), dwR4 = (DWORD)eng ();
+		if (m_pChar->byAreaX) {
+			dwTmpX = dwR1 % m_pChar->byAreaX;
+		}
+		if (m_pChar->byAreaY) {
+			dwTmpY = dwR2 % m_pChar->byAreaY;
+		}
+		dwX = (dwR3 % 2 != 0) ? dwX + dwTmpX : dwX - dwTmpX;
+		dwY = (dwR4 % 2 != 0) ? dwY + dwTmpY : dwY - dwTmpY;
 	} else {
-		dwX -= dwTmpX;
-	}
-	if (genrand () % 2 != 0) {
-		dwY += dwTmpY;
-	} else {
-		dwY -= dwTmpY;
+		if (m_pChar->byAreaX) {
+			dwTmpX = genrand () % m_pChar->byAreaX;
+		}
+		if (m_pChar->byAreaY) {
+			dwTmpY = genrand () % m_pChar->byAreaY;
+		}
+		if (genrand () % 2 != 0) {
+			dwX += dwTmpX;
+		} else {
+			dwX -= dwTmpX;
+		}
+		if (genrand () % 2 != 0) {
+			dwY += dwTmpY;
+		} else {
+			dwY -= dwTmpY;
+		}
 	}
 
 	pMap = g_aMapInfo[GetMapNo (m_pChar->dwMapID)];
@@ -304,13 +319,13 @@ Exit:
 /* 日付：	2026/11/19														 */
 /* ========================================================================= */
 
-BOOL CCharProcPUT::PutOneSpace(DWORD dwTime, DWORD dwSpaceID)
+BOOL CCharProcPUT::PutOneSpace(DWORD dwTime, DWORD dwSpaceID, const DWORD *pdwSeed)
 {
 	DWORD dwBak = m_pChar->dwSpaceID;
 	BOOL bRet;
 
 	m_pChar->dwSpaceID = dwSpaceID;
-	bRet = PutOne (dwTime, TRUE);
+	bRet = PutOne (dwTime, TRUE, pdwSeed);
 	m_pChar->dwSpaceID = dwBak;
 	return bRet;
 }

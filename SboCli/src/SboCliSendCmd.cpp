@@ -151,6 +151,7 @@ void SendCmdSubBOMBGETITEM	(DWORD);								/* アイテム取得 */
 void SendCmdSubBOMBREMOCON	(void);									/* リモコン使用 */
 void SendCmdSubMAZERENEW	(BYTE);									/* 迷路作成 */
 void SendCmdSubDUNGEONRENEW	(BYTE);									/* ダンジョン作成 */
+void SendCmdSubDUNGEONREBUILDNOW	(BYTE);								/* 日替わりダンジョンを今すぐ作り直す */
 void SendCmdSubWARSELECTTEAM	(BYTE);								/* 戦場ゲーム：チーム選択 */
 void SendCmdSubWARQUIT			(void);								/* 戦場ゲーム：ゲームから抜ける */
 void SendCmdSubWARSELECTRULE	(BYTE);								/* 戦場ゲーム：ルール選択 */
@@ -2172,6 +2173,8 @@ void SendCmdSUBGAMEINFO(int nNo)
 			pDungeon->byTmplCount = pDungeonInfo->byTmplCount;
 			CopyMemory (pDungeon->wTmplID, pDungeonInfo->wTmplID, sizeof (pDungeon->wTmplID));
 			CopyMemory (pDungeon->szTmplName, pDungeonInfo->szTmplName, sizeof (pDungeon->szTmplName));
+			pDungeon->byRebuildMode = pDungeonInfo->byRebuildMode;
+			pDungeon->byClearMode = pDungeonInfo->byClearMode;
 		}		
 		break;
 
@@ -3379,6 +3382,25 @@ void SendCmdSubDUNGEONRENEW(BYTE byData)
 	delete pSendData;
 }
 
+
+/* ========================================================================= */
+/* 関数名：SendCmdSubDUNGEONREBUILDNOW										 */
+/* 内容：サブゲーム用コマンド送信(日替わりダンジョンを今すぐ作り直す)		 */
+/* ========================================================================= */
+void SendCmdSubDUNGEONREBUILDNOW(BYTE byData)
+{
+	PSUBCMDPARA_DATA1 pSendData;
+	pSendData = new SUBCMDPARA_DATA1;
+	pSendData->byCmd = CMD_SUBGAME;
+	pSendData->bySubGameID = SUBGAMEID_DUNGEON;
+	pSendData->byCmdSub = CMDSUBBOMB_DUNGEONREBUILDNOW;
+	pSendData->pID = g_pMyID;
+	pSendData->dwTblID = g_aCharInfo[g_nMyCharID]->dwTblID;
+	pSendData->byData = byData;
+
+	cliSock.Send ((PBYTE)pSendData, sizeof (SUBCMDPARA_DATA1));
+	delete pSendData;
+}
 
 /* ========================================================================= */
 /* 関数名：SendCmdSubWARSELECTTEAM											 */

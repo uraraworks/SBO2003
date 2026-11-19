@@ -39,4 +39,8 @@ struct JVal
 // 読めたら true。深さ 64 まで
 bool ParseJson(const char *psz, JVal &out);
 
+// JSON の文字列にして out の後ろへ足す（空白なし・キーの順はそのまま。数は整数なら整数、そうでなければ %.17g）。
+// ParseJson で読み直すと同じ中身になる。同じ中身なら同じ文字列になるので、写しの比べ・使い回しに使える
+void WriteJson(const JVal &v, std::string &out);
+
 } // namespace DungeonGen

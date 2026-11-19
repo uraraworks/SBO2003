@@ -60,6 +60,8 @@ static const char *s_aszNameDUNGEON[] = {
 	"byTmplCount",		/* 番外編：選べるテンプレートの数 */
 	"wTmplID",			/* 番外編：テンプレート番号（MAX_DGTMPL 個） */
 	"szTmplName",		/* 番外編：表示名（MAX_DGTMPL 個） */
+	"byRebuildMode",	/* 作り直しの方式（0=今まで通り・1=日替わり） */
+	"byClearMode",		/* クリア条件（0=ゴールのワープ・1=敵を全部倒す） */
 	"z"
 };
 
@@ -581,11 +583,18 @@ static PBYTE GetInfoDungeon(PSUBGAME_DUNGEONINFO pInfo, PDWORD pdwSize)
 			break;
 		}
 		/* 足した項目（16番目から）は使っている時だけ書く（前の版のサーバーでも読めるように）。
-		   テーマ番号（16番目）はテーマ番号を使っている時か番外編の時、番外編の項目（17番目から）は番外編の時だけ */
-		if ((i >= 15) && !pInfo->dwThemeID && !pInfo->byTmplCount) {
+		   テーマ番号（16番目）はテーマ番号を使っている時か番外編の時か日替わりの時、番外編の項目（17番目から）は番外編の時か日替わりの時、
+		   作り直しの方式（20番目）は 0 以外の時だけ */
+		if ((i >= 15) && !pInfo->dwThemeID && !pInfo->byTmplCount && !pInfo->byRebuildMode && !pInfo->byClearMode) {
 			break;
 		}
-		if ((i >= 16) && !pInfo->byTmplCount) {
+		if ((i >= 16) && !pInfo->byTmplCount && !pInfo->byRebuildMode && !pInfo->byClearMode) {
+			break;
+		}
+		if ((i >= 19) && !pInfo->byRebuildMode && !pInfo->byClearMode) {
+			break;
+		}
+		if ((i >= 20) && !pInfo->byClearMode) {
 			break;
 		}
 		strcpy (Info.szName, s_aszNameDUNGEON[i]);
@@ -635,6 +644,8 @@ static PBYTE GetInfoDungeon(PSUBGAME_DUNGEONINFO pInfo, PDWORD pdwSize)
 		case 16:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 番外編：テンプレートの数 */
 		case 17:	dwDataSizeTmp = sizeof (pInfo->wTmplID);	break;	/* 番外編：テンプレート番号 */
 		case 18:	dwDataSizeTmp = sizeof (pInfo->szTmplName);	break;	/* 番外編：表示名 */
+		case 19:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 作り直しの方式 */
+		case 20:	dwDataSizeTmp = sizeof (BYTE);			break;	/* クリア条件 */
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
 		dwDataSize += dwDataSizeTmp;
@@ -747,6 +758,14 @@ static PBYTE GetInfoDungeon(PSUBGAME_DUNGEONINFO pInfo, PDWORD pdwSize)
 		case 18:	/* 番外編：表示名 */
 			CopyMemory (&pData[dwOffset], pInfo->szTmplName, sizeof (pInfo->szTmplName));
 			dwOffset += sizeof (pInfo->szTmplName);
+			break;
+		case 19:	/* 作り直しの方式 */
+			CopyMemory (&pData[dwOffset], &pInfo->byRebuildMode, sizeof (BYTE));
+			dwOffset += sizeof (BYTE);
+			break;
+		case 20:	/* クリア条件 */
+			CopyMemory (&pData[dwOffset], &pInfo->byClearMode, sizeof (BYTE));
+			dwOffset += sizeof (BYTE);
 			break;
 		}
 	}
@@ -1672,6 +1691,14 @@ static PBYTE PetInfoDungeon(PBYTE pData, PDWORD pdwSize)
 			for (j = 0; j < MAX_DGTMPL; j ++) {
 				pInfo->szTmplName[j][MAX_DGTMPLNAME - 1] = 0;
 			}
+		} else if (strcmp (aHeaderInfo[i].szName, "byRebuildMode") == 0) {		/* 作り直しの方式 */
+			CopyMemory (&pInfo->byRebuildMode, &pData[dwOffsetTmp], sizeof (BYTE));
+			dwOffsetTmp += sizeof (BYTE);
+			pInfo->byRebuildMode = min (pInfo->byRebuildMode, (BYTE)DGREBUILD_DAILY);
+		} else if (strcmp (aHeaderInfo[i].szName, "byClearMode") == 0) {			/* クリア条件 */
+			CopyMemory (&pInfo->byClearMode, &pData[dwOffsetTmp], sizeof (BYTE));
+			dwOffsetTmp += sizeof (BYTE);
+			pInfo->byClearMode = min (pInfo->byClearMode, (BYTE)DGCLEAR_KILLALL);
 		}
 		dwOffset = dwOffsetTmp;
 	}
