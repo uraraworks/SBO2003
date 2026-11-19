@@ -31,6 +31,7 @@
 #include "SboCliDebugWindow.h"
 #include "SboCliMsgLogWindow.h"
 #include "SboCliBalloonWindow.h"
+#include "SboCliAutoMap.h"
 extern void PruneItemKeys (PCHARINFO pChar);					/* 手持ちから無くなった装備品・道具をショートカットの枠から外す（SboCliKeyProc.cpp） */
 #ifdef __EMSCRIPTEN__
 extern void SboWebChatNotify(void);								/* 発言が来たことをシェルに知らせる（タブの題名で新着を知らせる） */
@@ -455,6 +456,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcAFFIXINFO,				/* CMD_AFFIXINFO */
 	RecvDataProcITEMDERIVE,				/* CMD_ITEMDERIVE */
 	RecvDataProcAPPRAISE,				/* CMD_APPRAISE */
+	RecvDataProcDUNGEONMAP,				/* CMD_DUNGEONMAP */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -1197,6 +1199,9 @@ void RenewCharPosInfo(void)
 	RenewMapDark (NULL);
 	RenewMapDarkParts ();
 	RenewMapDarkHideArea ();
+
+	/* 探索マップ：自分の位置の部屋を開け、見えたマスを記録する */
+	AutoMapUpdate ();
 }
 
 /* ========================================================================= */
@@ -4383,6 +4388,9 @@ void RecvDataProcCHGSTATE(PBYTE pData, DWORD dwDataSize)
 	PCMDPARA_DATA1 pPara = (PCMDPARA_DATA1)pData;
 
 	g_byGameState = pPara->byData;
+	if (g_byGameState != GAMESTATE_MOVE) {
+		AutoMapReset ();		/* 探索マップ：ゲームの中でなくなったら（ログアウトなど）全部消す */
+	}
 	if (g_byGameState == GAMESTATE_MOVE) {
 		MakeMsgLogWindow ();
 		MakeDebugWindow ();
@@ -4502,6 +4510,7 @@ void RecvDataProcMAPINFO(PBYTE pData, DWORD dwDataSize)
 	g_pMapInfo->pszName = NULL;
 	g_pMapInfo->pbyRoofLV = NULL;
 	g_pMapInfo->bySwapCount = 0;		/* サーバーは 0 で送ってくる。念のため */
+	AutoMapOnMapInfo (g_pMapInfo->dwID);	/* 探索マップ：別のマップへ移ったら消す */
 
 	g_pMapInfo->pwMap = new WORD[pMap->nCX * pMap->nCY];
 	CopyMemory ((PBYTE)g_pMapInfo->pwMap, (PBYTE)pData + sizeof (CMDPARA_MAPINFO),

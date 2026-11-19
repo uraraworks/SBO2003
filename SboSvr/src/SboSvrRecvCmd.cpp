@@ -514,6 +514,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	NULL,								/* CMD_AFFIXINFO(サーバー→クライアントのみ) */
 	NULL,								/* CMD_ITEMDERIVE(サーバー→クライアントのみ) */
 	RecvDataProcAPPRAISE,				/* CMD_APPRAISE */
+	NULL,								/* CMD_DUNGEONMAP(サーバー→クライアントのみ) */
 
 	NULL
 };
@@ -9605,7 +9606,10 @@ void RecvDataProcSUBGAMEINFO(PBYTE pData, DWORD dwDataSize)
 				pDungeonInfo->wGenStartY = pBack->wGenStartY;
 				pDungeonInfo->wGenGoalX = pBack->wGenGoalX;
 				pDungeonInfo->wGenGoalY = pBack->wGenGoalY;
+				pDungeonInfo->pbyAutoMap = pBack->pbyAutoMap;
+				pDungeonInfo->dwAutoMapSize = pBack->dwAutoMapSize;
 				pBack->pwGenParts = NULL;
+				pBack->pbyAutoMap = NULL;
 			}
 		}		
 		break;

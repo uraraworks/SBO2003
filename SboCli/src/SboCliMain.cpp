@@ -8,6 +8,7 @@
 
 #include "stdafx.h"
 #include "common/BowFlight.h"
+#include "SboCliAutoMap.h"
 #include <time.h>
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -1263,6 +1264,7 @@ void ChgState(int nState)
 
 	case GAMESTATE_LOGIN:			/* ログイン画面 */
 		g_byGameState = GAMESTATE_LOGIN;
+		AutoMapReset ();			/* 探索マップ：全部消す */
 		pWnd = MakeWindowLOGIN ();
 		g_WndInfo.Add (pWnd);
 		DXAudio.SetLoopPoints (&aSoundTbl[SOUND_MIDI_W0081], DMUS_SEG_REPEAT_INFINITE);
@@ -1279,6 +1281,7 @@ void ChgState(int nState)
 
 	case GAMESTATE_CONNECTLOST:		/* 切断 */
 		g_byGameState = GAMESTATE_CONNECTLOST;
+		AutoMapReset ();			/* 探索マップ：全部消す */
 		SaveMsgLog ();
 		/* 表示中のウィンドウを全部閉じる */
 		while (1) {

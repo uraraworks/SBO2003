@@ -63,6 +63,7 @@ SboCli/src/SboCliDebugWindow.cpp
 SboCli/src/SboCliDrawScreen.cpp
 SboCli/src/SboCliDrawWindow.cpp
 SboCli/src/SboCliKeyProc.cpp
+SboCli/src/SboCliAutoMap.cpp
 SboCli/src/SboCliMain.cpp
 SboCli/src/SboCliMagicExplain.cpp
 SboCli/src/SboCliMakeWindow.cpp

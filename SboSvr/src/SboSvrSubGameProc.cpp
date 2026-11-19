@@ -1698,6 +1698,66 @@ static BOOL MakeDungeonByTheme(PSUBGAME_DUNGEONINFO pDungeon, PMAPINFO pMap)
 
 	/* 作り直し番号を進めて、マップにいる全員へマップを送り直す（tiles/set と同じ関数） */
 	pDungeon->dwBuildNo ++;
+
+	/* 探索マップ用の情報（部屋・出入口）を、送るままの形で持つ（実行中だけ・保存しない）。
+	   マップを送り直す（ResendMapToPlayers → SendCmdMAPINFO）時に、マップ情報の直後に全員へ送る。
+	   type 3（壁ごと抜いた＝広間）でつながった部屋は同じグループ番号にして、いっしょに開ける */
+	{
+		int nRoom = (int)sk.rooms.size (), nLink = (int)sk.links.size ();
+		std::vector<int> aGroup (nRoom);
+		for (i = 0; i < nRoom; i ++) {
+			aGroup[i] = i;
+		}
+		for (bool bChg = true; bChg; ) {
+			bChg = false;
+			for (i = 0; i < nLink; i ++) {
+				const DungeonGen::Link &lk = sk.links[i];
+				if ((lk.type != 3) || (lk.a < 0) || (lk.b < 0) || (lk.a >= nRoom) || (lk.b >= nRoom)) {
+					continue;
+				}
+				int nMin = min (aGroup[lk.a], aGroup[lk.b]);
+				if ((aGroup[lk.a] != nMin) || (aGroup[lk.b] != nMin)) {
+					aGroup[lk.a] = aGroup[lk.b] = nMin;
+					bChg = true;
+				}
+			}
+		}
+		DWORD dwSize = (DWORD)(sizeof (CMDPARA_DUNGEONMAP) + nRoom * sizeof (DUNGEONMAPROOM) + nLink * sizeof (DUNGEONMAPLINK));
+		SAFE_DELETE_ARRAY (pDungeon->pbyAutoMap);
+		pDungeon->pbyAutoMap = new BYTE[dwSize];
+		ZeroMemory (pDungeon->pbyAutoMap, dwSize);
+		pDungeon->dwAutoMapSize = dwSize;
+		PCMDPARA_DUNGEONMAP pPara = (PCMDPARA_DUNGEONMAP)pDungeon->pbyAutoMap;
+		pPara->byCmd = CMD_DUNGEONMAP;
+		pPara->byValid = 1;
+		pPara->dwMapID = pDungeon->dwMapID;
+		pPara->dwBuildNo = pDungeon->dwBuildNo;
+		pPara->wX1 = (WORD)pDungeon->byX1;
+		pPara->wY1 = (WORD)pDungeon->byY1;
+		pPara->wX2 = (WORD)pDungeon->byX2;
+		pPara->wY2 = (WORD)pDungeon->byY2;
+		pPara->wRoomCount = (WORD)nRoom;
+		pPara->wLinkCount = (WORD)nLink;
+		PDUNGEONMAPROOM pRoom = (PDUNGEONMAPROOM)(pPara + 1);
+		for (i = 0; i < nRoom; i ++) {
+			pRoom[i].wX = (WORD)(x1 + sk.rooms[i].x);
+			pRoom[i].wY = (WORD)(y1 + sk.rooms[i].y);
+			pRoom[i].wW = (WORD)sk.rooms[i].w;
+			pRoom[i].wH = (WORD)sk.rooms[i].h;
+			pRoom[i].wGroup = (WORD)aGroup[i];
+		}
+		PDUNGEONMAPLINK pLink = (PDUNGEONMAPLINK)(pRoom + nRoom);
+		for (i = 0; i < nLink; i ++) {
+			const DungeonGen::Link &lk = sk.links[i];
+			pLink[i].wRoomA = (WORD)lk.a;
+			pLink[i].wRoomB = (WORD)lk.b;
+			pLink[i].wX = (WORD)(x1 + lk.x);
+			pLink[i].wY = (WORD)(y1 + lk.y);
+			pLink[i].wW = (WORD)lk.w;
+			pLink[i].wH = (WORD)lk.h;
+			pLink[i].byType = (BYTE)lk.type;
+		}
+	}
 	pDungeon->byTmpX = 0;
 	pDungeon->byTmpY = 0;
 	pDungeon->dwTimeCheck = 0;									/* 人がいなくなるまで作り直さない（今までの作り方の終わりと同じ） */
@@ -1783,6 +1843,12 @@ void MakeDungeonProc(BYTE byID)
 	/* テーマ（ダンジョン生成）で作る。作れなければ今までの作り方 */
 	if (pDungeon->dwThemeID && MakeDungeonByTheme (pDungeon, pMap)) {
 		return;
+	}
+	/* 今までの作り方になる時は、前のテーマの探索マップ用の情報を捨てて、マップの全員の地図を消す */
+	if (pDungeon->pbyAutoMap) {
+		SAFE_DELETE_ARRAY (pDungeon->pbyAutoMap);
+		pDungeon->dwAutoMapSize = 0;
+		SendCmdDUNGEONMAPMAP (pDungeon->dwMapID);
 	}
 
 	/* マップ設計図作成 */

@@ -15,6 +15,7 @@
 #include "SboCliRecvCmd.h"
 #include "SboCliMsgLogWindow.h"
 #include "SboCliDrawScreen.h"
+#include "SboCliAutoMap.h"
 
 /* 装備品の装備職業情報の番号を返す（装備品でなければ 0xFFFF） */
 static WORD ShopGetItemEquNo(PITEMINFO pItem)
@@ -1188,7 +1189,13 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 		}
 	}
 
-	if ((byEvent == KEY_UP) && (byCode == VK_TAB)) {
+	/* 探索マップ（テーマで作ったダンジョンの範囲の中）では Tab・M で地図を出し入れする。
+	   そこでは Tab の表示切り替えは使わない（範囲の外では今までどおり） */
+	BOOL bAutoMap = FALSE;
+	if ((byEvent == KEY_UP) && ((byCode == VK_TAB) || (byCode == 'M'))) {
+		bAutoMap = AutoMapToggleKey ();
+	}
+	if ((byEvent == KEY_UP) && (byCode == VK_TAB) && !bAutoMap) {
 		g_byViewMode ++;
 		if (g_byViewMode >= 4) {
 			g_byViewMode = 0;
@@ -1263,7 +1270,13 @@ void KeyProcDead(BYTE byEvent, BYTE byCode)
 		g_dwActiveMsgID = pWnd->dwID;
 	}
 
-	if ((byEvent == KEY_UP) && (byCode == VK_TAB)) {
+	/* 探索マップ（テーマで作ったダンジョンの範囲の中）では Tab・M で地図を出し入れする。
+	   そこでは Tab の表示切り替えは使わない（範囲の外では今までどおり） */
+	BOOL bAutoMap = FALSE;
+	if ((byEvent == KEY_UP) && ((byCode == VK_TAB) || (byCode == 'M'))) {
+		bAutoMap = AutoMapToggleKey ();
+	}
+	if ((byEvent == KEY_UP) && (byCode == VK_TAB) && !bAutoMap) {
 		g_byViewMode ++;
 		if (g_byViewMode >= 4) {
 			g_byViewMode = 0;
@@ -10100,8 +10113,9 @@ std::string W32TextToUtf8Str(const char *psz, int nLen);		/* ゲーム内の文�
 #define PADSTATE_HANASU		(0x08)	/* 目の前に話せる相手がいる（「調べる」ボタンを「話す」と表示） */
 #define PADSTATE_BATTLEMODE	(0x10)	/* 戦闘モード中（「決定」を「攻撃」、「キャンセル」を「構え」と表示） */
 #define PADSTATE_SCORE		(0x20)	/* 目の前に得点板がある（「キャンセル」を「名前」と表示。Z で名前を付ける） */
+#define PADSTATE_MAP		(0x40)	/* 探索マップが使える場所（テーマで作ったダンジョンの範囲の中。「地図」ボタンを出す） */
 
-extern "C" EMSCRIPTEN_KEEPALIVE int SboWebGetPadState(void)
+static int SboWebGetPadStateBase(void)
 {
 	PCHARINFO pChar;
 	int nRet, nBattle;
@@ -10174,6 +10188,17 @@ extern "C" EMSCRIPTEN_KEEPALIVE int SboWebGetPadState(void)
 		nRet |= PADSTATE_BATTLE;
 	}
 	return nRet | nBattle;
+}
+
+/* 本体は SboWebGetPadStateBase。探索マップが使える場所で、歩ける状態（「表示」が効く時）なら「地図」ボタンも出す */
+extern "C" EMSCRIPTEN_KEEPALIVE int SboWebGetPadState(void)
+{
+	int nRet = SboWebGetPadStateBase ();
+
+	if ((nRet & PADSTATE_VIEW) && AutoMapIsAvailable ()) {
+		nRet |= PADSTATE_MAP;
+	}
+	return nRet;
 }
 
 /* ========================================================================= */

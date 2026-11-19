@@ -12268,6 +12268,55 @@ static void TestDungeonTheme(void)
 	printf("dungeontheme rebuild buildNo=%lu doors>0=%d eventsBounded=%d keepEvent=%d\n", (unsigned long)Info.dwBuildNo, (int)(nDoor2 > 0),
 		(int)(pMap->nEventCount < nEvents1 + 400 && pMap->nEventCount > 2), nKeep);
 
+	/* 3b. 探索マップ用の情報（CMD_DUNGEONMAP）：作り直した直後の内容が、送るままの形で持たれ、
+	   部屋・出入口・グループが範囲の中に収まり、type 3 でつながった部屋は同じグループ番号になる */
+	{
+		int nValid = 0, nBuildOk = 0, nRooms = 0, nLinks = 0, nRoomIn = 0, nLinkIn = 0, nGroupOk = 0, nSizeOk = 0, nType3Same = 0, nType3 = 0;
+		if (Info.pbyAutoMap && Info.dwAutoMapSize >= sizeof(CMDPARA_DUNGEONMAP)) {
+			PCMDPARA_DUNGEONMAP pDM = (PCMDPARA_DUNGEONMAP)Info.pbyAutoMap;
+			nValid = (pDM->byCmd == CMD_DUNGEONMAP && pDM->byValid == 1 && pDM->dwMapID == pMap->dwID);
+			nBuildOk = (pDM->dwBuildNo == Info.dwBuildNo && pDM->wX1 == 12 && pDM->wY1 == 10 && pDM->wX2 == 51 && pDM->wY2 == 49);
+			nRooms = pDM->wRoomCount;
+			nLinks = pDM->wLinkCount;
+			nSizeOk = (Info.dwAutoMapSize == sizeof(CMDPARA_DUNGEONMAP) + nRooms * sizeof(DUNGEONMAPROOM) + nLinks * sizeof(DUNGEONMAPLINK));
+			PDUNGEONMAPROOM pR = (PDUNGEONMAPROOM)(pDM + 1);
+			PDUNGEONMAPLINK pL = (PDUNGEONMAPLINK)(pR + nRooms);
+			nRoomIn = nLinkIn = nGroupOk = 1;
+			for (int i = 0; i < nRooms; i ++) {
+				if (pR[i].wX < 12 || pR[i].wY < 10 || pR[i].wX + pR[i].wW - 1 > 51 || pR[i].wY + pR[i].wH - 1 > 49) nRoomIn = 0;
+				if (pR[i].wGroup > i) nGroupOk = 0;
+			}
+			for (int i = 0; i < nLinks; i ++) {
+				if (pL[i].wX < 12 || pL[i].wY < 10 || pL[i].wX + pL[i].wW - 1 > 51 || pL[i].wY + pL[i].wH - 1 > 49 || pL[i].wRoomA >= nRooms || pL[i].wRoomB >= nRooms) nLinkIn = 0;
+				if (pL[i].byType == DUNGEONMAPLINK_OPEN) {
+					nType3 ++;
+					if (pR[pL[i].wRoomA].wGroup == pR[pL[i].wRoomB].wGroup) nType3Same ++;
+				}
+			}
+		}
+		printf("dungeontheme automap valid=%d build=%d rooms>1=%d links>0=%d roomsIn=%d linksIn=%d group=%d size=%d type3same=%d\n",
+			nValid, nBuildOk, (int)(nRooms > 1), (int)(nLinks > 0), nRoomIn, nLinkIn, nGroupOk, nSizeOk, (int)(nType3Same == nType3));
+		/* マップ情報を送る時（SendCmdMAPINFO）に、直後に同じ内容が届く。ダンジョンの無いマップには何も送らない */
+		std::vector<BYTE> aCap;
+		SvrSendCaptureBegin();
+		SendCmdDUNGEONMAP(7777, pMap->dwID);
+		BOOL bSent = SvrSendCaptureEnd(aCap);
+		printf("dungeontheme automap send=%d same=%d\n", (int)bSent, (int)(bSent && aCap.size() == Info.dwAutoMapSize && memcmp(&aCap[0], Info.pbyAutoMap, aCap.size()) == 0));
+		int nMax = 0;
+		for (int i = 0; i < g_aMapInfo.GetSize(); i ++) if (g_aMapInfo[i] && (int)g_aMapInfo[i]->dwID > nMax) nMax = (int)g_aMapInfo[i]->dwID;
+		int nCnt0 = MockCmdCount(7778, CMD_DUNGEONMAP);
+		SendCmdDUNGEONMAP(7778, (DWORD)(nMax + 1));
+		printf("dungeontheme automap other map sent=%d\n", MockCmdCount(7778, CMD_DUNGEONMAP) - nCnt0);
+		/* テーマ番号を外すと「使わない」を送る */
+		DWORD dwThemeBack = Info.dwThemeID;
+		Info.dwThemeID = 0;
+		SvrSendCaptureBegin();
+		SendCmdDUNGEONMAP(7777, pMap->dwID);
+		bSent = SvrSendCaptureEnd(aCap);
+		printf("dungeontheme automap off send=%d valid=%d\n", (int)bSent, (int)(bSent && aCap.size() == sizeof(CMDPARA_DUNGEONMAP) && ((PCMDPARA_DUNGEONMAP)&aCap[0])->byValid == 0 && aCap[0] == CMD_DUNGEONMAP));
+		Info.dwThemeID = dwThemeBack;
+	}
+
 	/* 4. doorOpen の無いテーマ 6 は扉イベントを置かない（lights が空なので灯りの表は触らない） */
 	Info.dwThemeID = 6;
 	MakeDungeonProc(byID);
@@ -12284,6 +12333,7 @@ static void TestDungeonTheme(void)
 	MakeDungeonProc(byID);
 	printf("dungeontheme narrow buildNo+=%lu mapTmp=%d\n", (unsigned long)(Info.dwBuildNo - dwBuild), (int)(Info.pMapTmp != NULL));
 	SAFE_DELETE_ARRAY(Info.pMapTmp);
+	printf("dungeontheme narrow automap dropped=%d\n", (int)(Info.pbyAutoMap == NULL && Info.dwAutoMapSize == 0));
 
 	/* 6. 保存の列（テーマ番号 0 の時は列を増やさない）→ 読み直しで戻る */
 	Info.byX2 = 51;
@@ -12323,6 +12373,7 @@ static void TestDungeonTheme(void)
 
 	/* 後始末 */
 	SAFE_DELETE_ARRAY(Info.pwGenParts);
+	SAFE_DELETE_ARRAY(Info.pbyAutoMap);
 	for (int i = 0; i < pMap->nEventCount; i ++) {
 		SAFE_DELETE_ARRAY(pMap->pEvent[i].pData);
 	}

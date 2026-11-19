@@ -376,6 +376,10 @@
 	body.sbo-pad #sbo-chat-open.sbo-pad-battle-off {
 		visibility: hidden;
 	}
+	/* 「地図」は場所を取らずに消す（横持ちは 3 行目を空ける） */
+	body.sbo-pad #sbo-pad button.sbo-b-map.sbo-pad-off {
+		display: none;
+	}
 	/* 縦持ちのチャットログ（ゲーム画面とパッドの間の残り全部） */
 	body.sbo-pad #sbo-chat-box {
 		display: block;
@@ -631,6 +635,8 @@
 	.sbo-b-c { grid-area: s; }
 	.sbo-b-tab { grid-area: tab; }
 	.sbo-b-ctrl { grid-area: ctrl; }
+	/* 「地図」は探索マップが使える場所だけ。ふだんは場所を取らないよう、3 行目に置いて消す */
+	.sbo-b-map { grid-column: 1; grid-row: 3; }
 	.sbo-b-z { grid-area: z; }
 	.sbo-b-x { grid-area: x; }
 	.sbo-buttons button {
@@ -743,7 +749,8 @@
 			gap: 2px;
 		}
 		/* 上の小さな横長ボタン */
-		body.sbo-pad #sbo-pad .sbo-b-tab {
+		body.sbo-pad #sbo-pad .sbo-b-tab,
+		body.sbo-pad #sbo-pad .sbo-b-map {
 			top: 4px;
 			width: 56px;
 			min-width: 0;
@@ -754,6 +761,7 @@
 			font: bold 10px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
 		}
 		body.sbo-pad #sbo-pad .sbo-b-tab { left: calc(12px + env(safe-area-inset-left)); }
+		body.sbo-pad #sbo-pad .sbo-b-map { left: calc(74px + env(safe-area-inset-left)); }
 		body.sbo-pad #sbo-pad .sbo-btn-svg {
 			width: 16px;
 			height: 16px;
@@ -1981,6 +1989,8 @@
 			<button type="button" class="sbo-b-s" data-vk="83" data-pad-need="1" data-pad-hide-battle="1"><svg class="sbo-btn-svg" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="M14.5 14.5L20 20"/></svg><span id="sbo-pad-s-label">調べる</span><span class="sbo-btn-key">S</span></button>
 			<button type="button" class="sbo-b-c sbo-pad-battle-off" data-vk="67" data-pad-show-battle="1"><svg class="sbo-btn-svg" viewBox="0 0 24 24"><path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6-4.5-4.1 6-.7z"/></svg><span>特技</span><span class="sbo-btn-key">C</span></button>
 			<button type="button" class="sbo-b-tab" data-vk="9" data-pad-need="2" data-pad-hide-battle="1"><svg class="sbo-btn-svg" viewBox="0 0 24 24"><path d="M5 6h14M5 12h14M5 18h14"/></svg><span>表示</span><span class="sbo-btn-key">Tab</span></button>
+			<!-- 探索マップ（テーマで作った気まぐれダンジョンの範囲にいる時だけ出る。キーは M。PC の Tab も同じ） -->
+			<button type="button" class="sbo-b-map sbo-pad-off" data-vk="77" data-pad-need="64" data-pad-hide-battle="1"><svg class="sbo-btn-svg" viewBox="0 0 24 24"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2zM9 4v14M15 6v14"/></svg><span>地図</span><span class="sbo-btn-key">M</span></button>
 			<button type="button" class="sbo-b-ctrl" data-vk="17" data-pad-need="4"><svg class="sbo-btn-svg" viewBox="0 0 24 24"><path d="M18 3h3v3L9 18l-3-3zM5 14l5 5M4 20l2-2"/></svg><span>戦闘</span><span class="sbo-btn-key">Ctrl</span></button>
 			<button type="button" class="sbo-b-z" data-vk="90"><svg class="sbo-btn-svg" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg><span class="sbo-btn-label" id="sbo-pad-z-label">キャンセル</span><span class="sbo-btn-key">Z</span></button>
 			<button type="button" class="sbo-b-x sbo-main" data-vk="88"><svg class="sbo-btn-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/></svg><span id="sbo-pad-x-label">決定</span><span class="sbo-btn-key">X</span></button>
@@ -4172,6 +4182,7 @@
 	   1=調べる 2=表示 4=戦闘 のビットで返す。
 	   8 は目の前に話せる相手がいる時で、S（調べる）ボタンの名前を「話す」にする。
 	   32 は目の前に得点板（雪合戦場の HP パネル）がある時で、Z（キャンセル）ボタンの名前を「名前」にする。
+	   64 は探索マップが使える場所（テーマで作った気まぐれダンジョンの範囲）で、「地図」（M キー）を出す。
 	   16 は戦闘モード中で、決定を「攻撃」、キャンセルを「構え」（長押しで構える）と出し、
 	   チャット・表示・調べるは戦闘に集中できるよう隠す（戦闘モードを解除すれば出る）。
 	   代わりに「特技」（C キー：殴らずに戦闘コマンドを特技に合わせて開く）を出す */

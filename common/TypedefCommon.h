@@ -388,6 +388,7 @@ enum {
 	CMD_AFFIXINFO,													/* 付与表の1行(サーバー→クライアント。ログイン時と変更時) */
 	CMD_ITEMDERIVE,													/* 派生アイテム表の行(サーバー→クライアント。ログイン時と新しく振った時) */
 	CMD_APPRAISE,													/* 鑑定屋で鑑定してもらう(クライアント→サーバー。結果はサーバー→クライアント) */
+	CMD_DUNGEONMAP,													/* テーマで作った気まぐれダンジョンの探索マップ用の情報(サーバー→クライアントのみ。CMDPARA_DUNGEONMAP。マップ情報の直後と作り直した直後に送る) */
 	CMD_MAX
 };
 
@@ -1380,6 +1381,8 @@ typedef struct _SUBGAME_DUNGEONINFO {
 	WORD		wGenStartY;
 	WORD		wGenGoalX;											/* 生成の goal（範囲の左上からの座標） */
 	WORD		wGenGoalY;
+	BYTE		*pbyAutoMap;										/* 探索マップ用の情報（CMDPARA_DUNGEONMAP の送るままの中身。実行中だけ・保存しない） */
+	DWORD		dwAutoMapSize;										/* その大きさ */
 } SUBGAME_DUNGEONINFO, *PSUBGAME_DUNGEONINFO;
 
 /* サブゲーム：ダンジョン情報(保存データ) */
@@ -4058,6 +4061,42 @@ typedef struct _CMDPARA_MAPSWAP {
 	DWORD		dwMapID;											/* マップID */
 	WORD		wCount;												/* 件数 */
 } CMDPARA_MAPSWAP, *PCMDPARA_MAPSWAP;
+
+/* 探索マップ（テーマで作った気まぐれダンジョン）用の情報（サーバー→クライアント。保存しない・実行中だけ）。
+   この後ろに wRoomCount 件の DUNGEONMAPROOM、続けて wLinkCount 件の DUNGEONMAPLINK が続く。座標は全部マップ座標。
+   byValid が 0 なら「探索マップを使わない」（クライアントは覚えている地図を全部消す）。
+   dwBuildNo（作り直し番号）がクライアントの覚えているものと違えば、記録を全部消す */
+typedef struct _DUNGEONMAPROOM {
+	WORD		wX;													/* 部屋の外枠(壁を含む)の左上X */
+	WORD		wY;													/* 左上Y */
+	WORD		wW;													/* 幅 */
+	WORD		wH;													/* 高さ */
+	WORD		wGroup;												/* グループ番号（壁ごと抜いた(type 3)出入口でつながった部屋は同じ番号。いっしょに開ける） */
+} DUNGEONMAPROOM, *PDUNGEONMAPROOM;
+#define DUNGEONMAPLINK_ARCH		(1)									/* 出入口（アーチ） */
+#define DUNGEONMAPLINK_DOOR		(2)									/* 扉 */
+#define DUNGEONMAPLINK_OPEN		(3)									/* 壁ごと抜いた（広間） */
+typedef struct _DUNGEONMAPLINK {
+	WORD		wRoomA;												/* つながる部屋（部屋の一覧の番号） */
+	WORD		wRoomB;
+	WORD		wX;													/* 出入口の穴の範囲 左上X */
+	WORD		wY;													/* 左上Y */
+	WORD		wW;													/* 幅 */
+	WORD		wH;													/* 高さ */
+	BYTE		byType;												/* DUNGEONMAPLINK_* */
+} DUNGEONMAPLINK, *PDUNGEONMAPLINK;
+typedef struct _CMDPARA_DUNGEONMAP {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byValid;											/* 1=探索マップを使う / 0=使わない（以下は無視） */
+	DWORD		dwMapID;											/* マップID */
+	DWORD		dwBuildNo;											/* 作り直し番号 */
+	WORD		wX1;												/* ダンジョンの範囲（マップ座標） */
+	WORD		wY1;
+	WORD		wX2;
+	WORD		wY2;
+	WORD		wRoomCount;											/* 部屋の数 */
+	WORD		wLinkCount;											/* 出入口の数 */
+} CMDPARA_DUNGEONMAP, *PCMDPARA_DUNGEONMAP;
 #pragma pack(pop)
 
 /* 並べ替えの対象(CMDPARA_SORTITEM の byTarget) */

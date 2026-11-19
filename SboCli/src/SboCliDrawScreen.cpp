@@ -12,6 +12,7 @@
 #include "SboCliDrawWindow.h"
 #include "SboCliRecvCmd.h"
 #include "SboCliKeyProc.h"
+#include "SboCliAutoMap.h"
 #include "AdminWindowOld/AdminDlgNpcRoute.h"
 #include "AdminWindowOld/AdminDlgMapLight.h"
 #include "AdminWindowOld/AdminDlgMapSwap.h"
@@ -268,6 +269,9 @@ void DrawScreen(HWND hWnd, HDC hDC)
 
 				/* 特技ショートカットの帯（ウィンドウの下に敷く） */
 				DrawMagicKeyBand (pChar, 32 - x, 32 - y);
+
+				/* 探索マップ（ウィンドウの下に重ねる） */
+				AutoMapDraw (32 - x, 32 - y);
 
 				/* ウィンドウを表示 */
 				DrawWindow (g_pDibDrawMap, 32 - x, 32 - y);
