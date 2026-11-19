@@ -4141,7 +4141,7 @@ enum {
 	DUNGEONSEL_CLOSE,												/* 選ぶ窓を閉じる（サーバー→クライアント） */
 	DUNGEONSEL_PICK,												/* 選ぶ（クライアント→サーバー。byIndex=一覧の何番目か） */
 	DUNGEONSEL_CANCEL,												/* 入るのをやめる（クライアント→サーバー） */
-	DUNGEONSEL_BEGIN,											/* 受付の説明を読み終えた（クライアント→サーバー） */
+	DUNGEONSEL_BEGIN,											/* 旧クライアントの読み終えた通知（サーバーでは無視） */
 };
 typedef struct _CMDPARA_DUNGEONSEL {
 	BYTE		byCmd;												/* コマンドID */

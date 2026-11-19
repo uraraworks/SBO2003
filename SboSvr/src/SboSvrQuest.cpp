@@ -3049,7 +3049,6 @@ static void ChallengeOnDecPlayer(PCHARINFO pChar)
 	std::map<DWORD, DWORD>::iterator itE = s_mapEnemy.find (pChar->dwTblID);
 
 	/* 番外編ダンジョンの姿を選んでいる最中の切断 */
-	DungeonReceptionForget (pChar);
 	DgSelOnDec (pChar);
 	/* 敵が倒された */
 	if (itE != s_mapEnemy.end ()) {
@@ -3619,6 +3618,23 @@ static DWORD DgSelOfParty(PCHARINFO pChar)
 	return 0;
 }
 
+/* 姿の一覧と同時に出す説明。受付の独自台詞、設定、既定文の順に選ぶ。 */
+static void DgSendReception(PCHARINFO pChar, int nID, DWORD dwNpcTblID)
+{
+	PCHARINFO pNpc = (dwNpcTblID < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[dwNpcTblID] : NULL;
+	const char *p = DungeonIsReceptionNpc (pNpc) ? pNpc->pszNpcSpeech + 2 : "";
+	while (*p >= '0' && *p <= '9') p ++;
+	while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p ++;
+	std::string strMsg = *p ? p : DungeonText (DgInfo (nID), "reception");
+	/* 旧クライアント用の入力待ちと、説明を識別する印を通信上限内に収める。 */
+	char szMsg[MAX_TALKMSG - 4];
+	SboTextCopy (szMsg, sizeof (szMsg), strMsg.c_str ());
+	strMsg = szMsg;
+	while (strMsg.size () >= 2 && (strMsg.substr (strMsg.size () - 2) == "@2" || strMsg.substr (strMsg.size () - 2) == "@0")) strMsg.resize (strMsg.size () - 2);
+	strMsg += "@2@D";
+	SendCmdTALKMSG (pChar->pID, dwNpcTblID, (LPSTR)strMsg.c_str ());
+}
+
 /* 選んでいる最中の組に、遅れて来た仲間を足して窓を出す（締め切りは延ばさない。残り 10 秒を切っていたら 10 秒までだけ延ばす）。
    足せたら TRUE。bTell は足せない理由を本人に知らせる（受付に話した時） */
 static BOOL DgSelJoin(DWORD dwKey, PCHARINFO pChar, DWORD dwNow, BOOL bTell)
@@ -3671,6 +3687,7 @@ static BOOL DgSelJoin(DWORD dwKey, PCHARINFO pChar, DWORD dwNow, BOOL bTell)
 			DgMessage (p, Sel.nDungeonID, "member_joined", FALSE, "name", pChar->szName);
 		}
 	}
+	DgSendReception (pChar, Sel.nDungeonID, Sel.dwNpcTblID);
 	DgSendSel (pChar, DUNGEONSEL_OPEN, &Sel, dwRest);
 	return TRUE;
 }
@@ -4106,13 +4123,11 @@ static BOOL DgSelStart(PCHARINFO pChar, int nID, DWORD dwNpcTblID)
 	}
 	for (i = 0; i < aMember.size (); i ++) {
 		s_mapDgSelOf[aMember[i]->dwTblID] = pChar->dwTblID;
+		DgSendReception (aMember[i], nID, dwNpcTblID);
 		DgSendSel (aMember[i], DUNGEONSEL_OPEN, &Sel, DGSEL_WAIT);
 	}
 	return TRUE;
 }
-
-/* 説明を読み終えた本人だけが受付を続けられる。切断・別の会話では捨てる */
-static std::map<DWORD, DWORD> s_mapDgReception;
 
 /* 台詞が「@d番号」のダンジョン受付か */
 BOOL DungeonIsReceptionNpc(PCHARINFO pNpc)
@@ -4122,7 +4137,7 @@ BOOL DungeonIsReceptionNpc(PCHARINFO pNpc)
 }
 
 /* 受付の番号はサブゲーム番号（0 から）。設定違いの受付では始めない */
-static void DgReceptionTalk(PCHARINFO pChar, PCHARINFO pNpc, BOOL bBegin)
+static void DgReceptionTalk(PCHARINFO pChar, PCHARINFO pNpc)
 {
 	if (!pChar || !DungeonIsReceptionNpc (pNpc)) {
 		return;
@@ -4141,31 +4156,12 @@ static void DgReceptionTalk(PCHARINFO pChar, PCHARINFO pNpc, BOOL bBegin)
 		DgMessage (pChar, nID, "invalid_reception", TRUE);
 		return;
 	}
-	if (bBegin) {
-		DgSelStart (pChar, nID, pNpc->dwTblID);
-	} else {
-		/* ほかの受付と同じく番号の後ろを台詞に使う。入力待ちの後で姿選びへ進む */
-		while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p ++;
-		std::string strMsg = *p ? p : DungeonText (pDungeon, "reception");
-		/* 通信の上限で末尾の続行指示が切れないようにする */
-		char szMsg[MAX_TALKMSG - 4];
-		SboTextCopy (szMsg, sizeof (szMsg), strMsg.c_str ());
-		strMsg = szMsg;
-		while (strMsg.size () >= 2 && (strMsg.substr (strMsg.size () - 2) == "@2" || strMsg.substr (strMsg.size () - 2) == "@0")) strMsg.resize (strMsg.size () - 2);
-		strMsg += "@2@D";
-		s_mapDgReception[pChar->dwTblID] = pNpc->dwTblID;
-		SendCmdTALKMSG (pChar->pID, pNpc->dwTblID, (LPSTR)strMsg.c_str ());
-	}
+	DgSelStart (pChar, nID, pNpc->dwTblID);
 }
 
 void DungeonReceptionTalk(PCHARINFO pChar, PCHARINFO pNpc)
 {
-	DgReceptionTalk (pChar, pNpc, FALSE);
-}
-
-void DungeonReceptionForget(PCHARINFO pChar)
-{
-	if (pChar) s_mapDgReception.erase (pChar->dwTblID);
+	DgReceptionTalk (pChar, pNpc);
 }
 
 /* 入口に乗った時（EventProc_MAPCHG の最初）：番外編の外の入口なら受付済みの組を入れる。出口なら出す。処理したら TRUE */
@@ -4252,14 +4248,9 @@ BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
 /* 姿を選ぶ・やめる（CMD_DUNGEONSEL の受信） */
 void DungeonSelRecv(PCHARINFO pChar, PCMDPARA_DUNGEONSEL pPara)
 {
-	if (pPara->byType == DUNGEONSEL_BEGIN) {
-		std::map<DWORD, DWORD>::iterator it = s_mapDgReception.find (pChar->dwTblID);
-		if (it == s_mapDgReception.end ()) return;
-		DWORD dwNpc = it->second;
-		s_mapDgReception.erase (it);
-		if (dwNpc < (DWORD)g_aCharInfo.GetSize ()) DgReceptionTalk (pChar, g_aCharInfo[dwNpc], TRUE);
-		return;
-	}
+	/* 旧クライアントの読み終えた通知では再開・再送・締め切り延長をしない。 */
+	if (pPara->byType == DUNGEONSEL_BEGIN) return;
+
 	std::map<DWORD, DWORD>::iterator itOf = s_mapDgSelOf.find (pChar->dwTblID);
 	std::map<DWORD, DGSEL>::iterator itS;
 	DWORD dwLeader;

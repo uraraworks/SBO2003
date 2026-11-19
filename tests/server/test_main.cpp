@@ -12445,7 +12445,7 @@ static void DgTestSelPick(PCHARINFO p, BYTE byIndex)
 	TestRecv(p, &Para, DungeonSelectionCommandSize());
 }
 
-/* 会話の決定でクライアントが送る続きを再現する */
+/* 通信の検査先と、旧クライアントの続行通知。通常の受付では BEGIN を送らない。 */
 static int DgTestConn(PCHARINFO p)
 {
     for (size_t i = 0; i < s_pSpLogin->size(); i ++)
@@ -12453,25 +12453,16 @@ static int DgTestConn(PCHARINFO p)
     return -1;
 }
 
-static BOOL DgTestBegin(PCHARINFO p)
+static void DgTestLegacyBegin(PCHARINFO p)
 {
-    std::vector<BYTE> body;
-    int conn = DgTestConn(p);
-    if (!MarketLast(conn, CMD_TALKMSG, body) || body.size() <= sizeof(CMDPARA_TALKMSG)) return FALSE;
-    std::vector<char> msg(body.begin() + sizeof(CMDPARA_TALKMSG), body.end());
-    msg.push_back(0);
-    /* 実クライアントと同じく、受付の印が付いた会話を閉じた場合にだけ送信する。 */
-    if (!DungeonReceptionMessage(&msg[0])) return FALSE;
     CMDPARA_DUNGEONSEL para;
     DungeonSelectionCommand(para, p->dwTblID, DUNGEONSEL_BEGIN, 0);
     TestRecv(p, &para, DungeonSelectionCommandSize());
-    return TRUE;
 }
 static void DgTestTalk(PCHARINFO p, DWORD dwNpc)
 {
     MockTrace(1);
     QuestSendTalk(p, dwNpc);
-    DgTestBegin(p);
     MockTrace(0);
 }
 
@@ -12686,15 +12677,21 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 	MockTrace(1);
 	int nTalk0 = SpCnt(pC, CMD_TALKMSG);
 	QuestSendTalk(pC, dwReception);
-	printf("dungeonbonus explaining talk=%d sel=%d\n", SpCnt(pC, CMD_TALKMSG) - nTalk0, DungeonSelCount());
-	s_dwFakeNow += 31000;
-	DungeonProcNow(s_dwFakeNow);
-	printf("dungeonbonus explaining after31s sel=%d in=%d\n", DungeonSelCount(), (int)QuestInChallenge(pC));
-	DgTestBegin(pC);
+	printf("dungeonbonus reception explain-before-open=%d\n", MockCmdBefore(1002, nLen0, CMD_TALKMSG, CMD_DUNGEONSEL));
+	printf("dungeonbonus reception simultaneous talk=%d sel=%d\n", SpCnt(pC, CMD_TALKMSG) - nTalk0, DungeonSelCount());
+	int nOpen0 = SpCnt(pC, CMD_DUNGEONSEL);
+	s_dwFakeNow += 29000;
+	DgTestLegacyBegin(pC);
+	printf("dungeonbonus legacy-begin active sel=%d resend=%d\n", DungeonSelCount(), SpCnt(pC, CMD_DUNGEONSEL) - nOpen0);
+	s_dwFakeNow += 999; DungeonProcNow(s_dwFakeNow);
+	printf("dungeonbonus reception after29999ms sel=%d\n", DungeonSelCount());
+	s_dwFakeNow += 1; DungeonProcNow(s_dwFakeNow);
+	DgTestLegacyBegin(pC);
+	printf("dungeonbonus reception after30s sel=%d in=%d\n", DungeonSelCount(), (int)QuestInChallenge(pC));
+	QuestSendTalk(pC, dwReception);
 	std::vector<BYTE> aSelect; MarketLast(1002, CMD_DUNGEONSEL, aSelect);
 	printf("dungeonbonus solo open sel=%d in=%d wait30=%d\n", DungeonSelCount(), (int)QuestInChallenge(pC),
 		(int)(aSelect.size() >= sizeof(CMDPARA_DUNGEONSEL) && ((PCMDPARA_DUNGEONSEL)&aSelect[0])->dwWait == 30000));
-	printf("dungeonbonus reception explain-before-open=%d\n", MockCmdBefore(1002, nLen0, CMD_TALKMSG, CMD_DUNGEONSEL));
 	MockTrace(0);
     strcpy(Info.szMessages, "ready=");
     MockTrace(1);
@@ -12716,8 +12713,9 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 	DgTestTalk(pA, dwReception);
 	printf("dungeonbonus late leader-only sel=%d members=%d b=%d\n", DungeonSelCount(), DungeonSelMemberCount(pA), DungeonSelMemberCount(pB));
 	QuestMovePC(pB, nMapNo, 4, 5);
-	int nBOpen0 = SpCnt(pB, CMD_DUNGEONSEL);
+	int nBOpen0 = SpCnt(pB, CMD_DUNGEONSEL), nBTalk0 = SpCnt(pB, CMD_TALKMSG);
 	DgTestTalk(pB, dwReception);
+	printf("dungeonbonus late explanation=%d\n", SpCnt(pB, CMD_TALKMSG) - nBTalk0);
 	printf("dungeonbonus late b-joined sel=%d members=%d b=%d open=%d\n", DungeonSelCount(), DungeonSelMemberCount(pA), DungeonSelMemberCount(pB), SpCnt(pB, CMD_DUNGEONSEL) - nBOpen0);
 	DgTestTalk(pA, dwReception);
 	printf("dungeonbonus party leader-talk sel=%d\n", DungeonSelCount());
@@ -12742,7 +12740,9 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 
 	/* 3. 締め切り：D が選び、E は選ばない → 30 秒後に D だけ受付済みになり入口で入り、E は置いていかれる */
 	int nDOpen0 = SpCnt(pD, CMD_DUNGEONSEL), nEOpen0 = SpCnt(pE, CMD_DUNGEONSEL);
+	int nDTalk0 = SpCnt(pD, CMD_TALKMSG), nETalk0 = SpCnt(pE, CMD_TALKMSG);
 	DgTestTalk(pD, dwReception);
+	printf("dungeonbonus party explanation leader=%d member=%d\n", SpCnt(pD, CMD_TALKMSG) - nDTalk0, SpCnt(pE, CMD_TALKMSG) - nETalk0);
 	printf("dungeonbonus deadline open sel=%d members=%d d-open=%d e-open=%d\n", DungeonSelCount(), DungeonSelMemberCount(pD),
 		SpCnt(pD, CMD_DUNGEONSEL) - nDOpen0, SpCnt(pE, CMD_DUNGEONSEL) - nEOpen0);
 	DgTestSelPick(pD, 0);
@@ -12949,7 +12949,7 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
         (int)DgTestText(pC, CMD_SYSMSG, "組の受付を取り消しました。"), (int)!QuestInChallenge(pC));
     MockTrace(0);
 
-	/* 番号の後ろの独自説明にも入力待ちと続行指示が付く */
+	/* 独自説明の末尾は、新クライアントでは入力待ち無しになる。 */
 	{
 		PCHARINFO pNpc = g_aCharInfo[dwReception];
 		LPSTR pszBack = pNpc->pszNpcSpeech;
@@ -12959,9 +12959,14 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 		QuestMovePC(pC, nMapNo, 3, 5); QuestSendTalk(pC, dwReception);
 		std::vector<BYTE> aBody; MarketLast(1002, CMD_TALKMSG, aBody);
 		const char *psz = aBody.size() > sizeof(CMDPARA_TALKMSG) ? (const char *)&aBody[sizeof(CMDPARA_TALKMSG)] : "";
-		printf("dungeonbonus custom-talk text=%d continue=%d sel=%d\n", (int)(strstr(psz, "受付の独自説明です。") != NULL),
-			(int)(strstr(psz, "@2@D") != NULL && strstr(psz, "@2@2") == NULL), DungeonSelCount());
-		DungeonReceptionForget(pC); pNpc->pszNpcSpeech = pszBack;
+		std::vector<char> msg(psz, psz + strlen(psz) + 1);
+		BOOL reception = DungeonReceptionMessage(&msg[0]);
+		printf("dungeonbonus custom-talk text=%d no-wait=%d sel=%d\n", (int)(strstr(psz, "受付の独自説明です。") != NULL),
+			(int)(reception && strcmp(&msg[0], "受付の独自説明です。") == 0), DungeonSelCount());
+		CMDPARA_DUNGEONSEL para;
+		DungeonSelectionCommand(para, pC->dwTblID, DUNGEONSEL_CANCEL, 0);
+		TestRecv(pC, &para, DungeonSelectionCommandSize());
+		pNpc->pszNpcSpeech = pszBack;
 		MockTrace(0);
 	}
 
@@ -12973,7 +12978,9 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
         QuestSendTalk(pC, dwReception);
         int custom = DgTestText(pC, CMD_TALKMSG, "設定した説明です。");
         int before = DungeonSelCount();
-        BOOL sent = DgTestBegin(pC);
+        int nOpen = SpCnt(pC, CMD_DUNGEONSEL);
+        DgTestLegacyBegin(pC);
+        int unchanged = SpCnt(pC, CMD_DUNGEONSEL) == nOpen && DungeonSelCount() == before;
         std::vector<BYTE> body;
         MarketLast(DgTestConn(pC), CMD_DUNGEONSEL, body);
         int title = body.size() >= sizeof(CMDPARA_DUNGEONSEL) &&
@@ -12981,7 +12988,7 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
         CMDPARA_DUNGEONSEL para;
         DungeonSelectionCommand(para, pC->dwTblID, DUNGEONSEL_CANCEL, 0);
         TestRecv(pC, &para, DungeonSelectionCommandSize());
-        printf("dungeonbonus messages custom=%d before=%d sent=%d title=%d cancel=%d\n", custom, before, (int)sent, title,
+        printf("dungeonbonus messages custom=%d immediate=%d legacy-ignored=%d title=%d cancel=%d\n", custom, before, unchanged, title,
             (int)DgTestText(pC, CMD_SYSMSG, "今回はやめました。"));
         DgTestTalk(pC, dwReception);
         MockTrace(1); DgTestSelPick(pC, 0);
@@ -12994,7 +13001,7 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
         strcpy(Info.szMessages, "reception=\nselect_title=");
         MockTrace(1); QuestSendTalk(pC, dwReception);
         int fallback = DgTestText(pC, CMD_TALKMSG, "経験値・お金は入りません。");
-        DgTestBegin(pC); MarketLast(DgTestConn(pC), CMD_DUNGEONSEL, body);
+        MarketLast(DgTestConn(pC), CMD_DUNGEONSEL, body);
         title = body.size() >= sizeof(CMDPARA_DUNGEONSEL) &&
             strcmp(((PCMDPARA_DUNGEONSEL)&body[0])->szTitle, "どの姿で入る？") == 0;
         TestRecv(pC, &para, DungeonSelectionCommandSize());
@@ -13007,13 +13014,12 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
         npc->pszNpcSpeech = speech;
         MockTrace(1); QuestSendTalk(pC, dwReception);
         printf("dungeonbonus messages npc-priority=%d\n", (int)DgTestText(pC, CMD_TALKMSG, "NPCを優先します。"));
-        DungeonReceptionForget(pC); npc->pszNpcSpeech = back;
-        QuestSendTalk(pC, dwReception);
-        QuestMovePC(pC, nMapNo, 30, 30); DgTestBegin(pC);
+        TestRecv(pC, &para, DungeonSelectionCommandSize());
+        npc->pszNpcSpeech = back;
+        QuestMovePC(pC, nMapNo, 30, 30); DgTestLegacyBegin(pC);
         printf("dungeonbonus messages begin-moved sel=%d\n", DungeonSelCount());
         QuestMovePC(pC, nMapNo, 3, 5);
-        DungeonSelectionCommand(para, pC->dwTblID, DUNGEONSEL_BEGIN, 0);
-        TestRecv(pC, &para, DungeonSelectionCommandSize());
+        DgTestLegacyBegin(pC);
         printf("dungeonbonus messages begin-replay sel=%d\n", DungeonSelCount());
         Info.szMessages[0] = 0;
         MockTrace(0);
@@ -13362,6 +13368,7 @@ static void TestDungeonDaily(const std::vector<int> &aLogin)
 		SpCnt(pC, CMD_TALKMSG) - nMsg0, (int)QuestInChallenge(pC));
 	/* 2. 敵の出る位置：どの組も同じ（日替わり）。気まぐれは今までどおり乱数 */
 	DgTestTalk(pC, dwReception);
+	printf("dungeondaily reception explanation=%d\n", (int)DgTestText(pC, CMD_TALKMSG, "@2@D"));
 	printf("dungeondaily reception open sel=%d members=%d in=%d\n", DungeonSelCount(), DungeonSelMemberCount(pC), (int)QuestInChallenge(pC));
 	DgTestSelPick(pC, 0);
     DgTestEnter(pC);

@@ -2021,13 +2021,11 @@ void TimerProc(void)
 								}
 
 							/* 最後まで処理した */
-							} else if ((g_nProcShopID < 0) && (g_nProcMakerID < 0)) {
-								BOOL bDungeonBegin = pWnd->bDungeonBegin;
+							} else if ((g_nProcShopID < 0) && (g_nProcMakerID < 0) && !pWnd->bDungeonReception) {
 								DWORD dwMsgID = pWnd->dwID;
 								EraseWindow (pWnd);
 								/* 語り部の台詞を送り終わったら、思い出の本の一覧を開く */
 								QuestStoryGreetEnd (dwMsgID);
-								if (bDungeonBegin) SendCmdDUNGEONSEL (DUNGEONSEL_BEGIN, 0);
 
 								/* コマンドウィンドウを閉じる */
 								int nNo = GetWindowID (g_dwMsgIDCommand);

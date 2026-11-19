@@ -2074,20 +2074,24 @@ dungeontheme save theme0=0 theme7=7 fields=11 extraBytes=18
 dungeonbonus build ready=1 entry=1 goal=1
 dungeonbonus put normal=0 spaced=1
 dungeonbonus entrance-only sel=0 open=0 notice=1 in=0
-dungeonbonus explaining talk=1 sel=0
-dungeonbonus explaining after31s sel=0 in=0
-dungeonbonus solo open sel=1 in=0 wait30=1
 dungeonbonus reception explain-before-open=1
+dungeonbonus reception simultaneous talk=1 sel=1
+dungeonbonus legacy-begin active sel=1 resend=0
+dungeonbonus reception after29999ms sel=1
+dungeonbonus reception after30s sel=0 in=0
+dungeonbonus solo open sel=1 in=0 wait30=1
 dungeonbonus ready solo outside=1 talk=1
 dungeonbonus solo picked sel=0 in=1 indungeon=1 space>0=1 lv=8 runs=1
 dungeonbonus party member-talk sel=0
 dungeonbonus late leader-only sel=1 members=1 b=0
+dungeonbonus late explanation=1
 dungeonbonus late b-joined sel=1 members=2 b=2 open=1
 dungeonbonus party leader-talk sel=1
 dungeonbonus party a-picked in a=0 b=0 sel=1
 dungeonbonus ready party outside=11 talk=11
 dungeonbonus ready gather waiting=11 notice=1
 dungeonbonus party both-in a=1 b=1 same=1 differs=1 lv=7 sel=0 runs=2
+dungeonbonus party explanation leader=1 member=1
 dungeonbonus deadline open sel=1 members=2 d-open=1 e-open=1
 dungeonbonus deadline d-picked in d=0 sel=1
 dungeonbonus deadline 10s in d=0 sel=1
@@ -2122,8 +2126,8 @@ dungeonbonus ready expiry waiting=1 notice=1 blocked=1
 dungeonbonus ready moved notice=1 blocked=1
 dungeonbonus ready party-leave notice=1 blocked=1
 dungeonbonus ready disconnect notice=1 blocked=1
-dungeonbonus custom-talk text=1 continue=1 sel=0
-dungeonbonus messages custom=1 before=0 sent=1 title=1 cancel=1
+dungeonbonus custom-talk text=1 no-wait=1 sel=1
+dungeonbonus messages custom=1 immediate=1 legacy-ignored=1 title=1 cancel=1
 dungeonbonus messages entered=1
 dungeonbonus messages all-dead=1 out=1
 dungeonbonus messages empty-default=1 title-default=1 packet-small=1
@@ -2143,6 +2147,7 @@ dungeondaily after-reload same=1 versions=1 themeSaved=1
 dungeondaily seed differs-by-dungeon=1 differs-by-date=1
 dungeondaily random-mode versions=0 daily-ver=0
 dungeondaily entrance-only sel=0 open=0 notice=1 in=0
+dungeondaily reception explanation=1
 dungeondaily reception open sel=1 members=1 in=0
 dungeondaily enemies s1=3 s2=3 same-positions=1
 dungeondaily messages empty=1 format=1 literal-name=1

@@ -4021,6 +4021,19 @@ void RecvDataProcDUNGEONSEL(PBYTE pData, DWORD dwDataSize)
 	if (dwDataSize < offsetof (CMDPARA_DUNGEONSEL, szTitle)) {
 		return;
 	}
+	/* 台詞はお店と同じく一覧の子にする。残り時間の更新では前の台詞を引き継ぐ。 */
+	PWNDINFO pReception = NULL;
+	if (pPara->byType == DUNGEONSEL_OPEN) {
+		for (i = 0; i < g_WndInfo.GetSize (); i ++) {
+			PWNDINFO pMsg = g_WndInfo[i];
+			if ((pMsg->nType == WNDTYPE_MSG) && pMsg->bDungeonReception) {
+				pReception = pMsg;
+				if (pMsg->pParent) ((PWNDINFO)pMsg->pParent)->pChild = NULL;
+				pMsg->pParent = NULL;
+				break;
+			}
+		}
+	}
 	/* 開いている選択窓は一度閉じる */
 	for (i = g_WndInfo.GetSize () - 1; i >= 0; i --) {
 		if (((PWNDINFO)g_WndInfo[i])->nType == WNDTYPE_DUNGEONSEL) {
@@ -4042,10 +4055,15 @@ void RecvDataProcDUNGEONSEL(PBYTE pData, DWORD dwDataSize)
 		}
 		if (g_DungeonSelInfo.byCount > 0) {
 			PWNDINFO pWnd = MakeWindowDUNGEONSEL ();
+			if (pReception) {
+				pReception->pParent = pWnd;
+				pWnd->pChild = pReception;
+			}
 			g_WndInfo.Add (pWnd);
 			g_dwActiveMsgID = pWnd->dwID;
 		}
 	}
+	if (pReception && !pReception->pParent) EraseWindow (pReception);
 	g_bDraw = TRUE;
 }
 
@@ -4466,9 +4484,9 @@ void RecvDataProcTALKMSG(PBYTE pData, DWORD dwDataSize)
 	ZeroMemory (pszTmp, dwSize + 1);
 	memcpy (pszTmp, pData + sizeof (CMDPARA_TALKMSG), dwSize);
 
-	BOOL bDungeonBegin = DungeonReceptionMessage (pszTmp);
+	BOOL bDungeonReception = DungeonReceptionMessage (pszTmp);
 	pWndTmp = MakeWindowMSG (pszTmp, TRUE);
-	pWndTmp->bDungeonBegin = bDungeonBegin;
+	pWndTmp->bDungeonReception = bDungeonReception;
 	SAFE_DELETE_ARRAY (pszTmp);
 	/* 台詞の最後に「@y」（はい・いいえで聞く行）があった時、答えを送る相手になる NPC を覚えておく */
 	pWndTmp->dwData = pPara->dwTblID;

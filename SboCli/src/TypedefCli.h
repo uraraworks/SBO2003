@@ -325,7 +325,7 @@ typedef struct _WNDINFO {
 	DWORD			dwMsgDrawHash;								/* メッセージ：描いてある所までの中身の目印 */
 	int				nMsgBackLine;								/* メッセージ：入力待ちの間に上キーで読み返している行数（0 なら最新） */
 	int				nMsgScrollMax;								/* メッセージ：最後に描いた時にずれていた行数（読み返せる上限） */
-	BOOL			bDungeonBegin;							/* 受付の説明を閉じた後に姿選びを申し込む */
+	BOOL			bDungeonReception;							/* 姿の一覧と一緒に表示する受付の説明 */
 	BOOL			bMsgSkip;									/* メッセージ：キャンセルで残りを飛ばして閉じてよい（アイテムを使った時の読み物だけ） */
 } WNDINFO, *PWNDINFO;
 

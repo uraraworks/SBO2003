@@ -8128,7 +8128,6 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 	/* 何かに話しかけたら、会話データの「はい・いいえ」の保留中の問いは消える（別の NPC に話した時） */
 	if (s_nCharNoRecv >= 0) {
 		TalkPendClear ((DWORD)s_nCharNoRecv);
-		DungeonReceptionForget (g_aCharInfo[s_nCharNoRecv]);
 	}
 	/* 別の空間にいるキャラ・印で見えないNPCとは話せない */
 	if ((s_nCharNoRecv >= 0) && (!IsSameSpace (g_aCharInfo[s_nCharNoRecv], pChar) || !IsCharSeenBy (pChar, g_aCharInfo[s_nCharNoRecv]))) {

@@ -141,7 +141,6 @@ extern void SpaceOnCharMapProc(PMAPINFO pMap, PEVENTINFO pEvent, PEVENTINFO_ONCH
 
 /* Copyright(C)URARA-works 2003-2005 */
 
-extern void DungeonReceptionForget(PCHARINFO pChar);
 
 extern BOOL DungeonPutPositionAllowed(PCHARINFO pParent, DWORD dwX, DWORD dwY); /* 組の敵は生成エリア内にだけ出す */
 
