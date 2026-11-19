@@ -65,17 +65,80 @@ Module['sboNet'] = (function () {
 		console.log('[net] ' + msg);
 	}
 
-	/* "1.2.3.4" → in_addr.s_addr と同じ並び（リトルエンディアンの DWORD） */
+	/* IPv6 アドレス文字列を 16 バイトにする（::ffff:a.b.c.d や末尾 IPv4 表記も扱う）。読めなければ null */
+	function ipv6Bytes(addr) {
+		addr = String(addr).replace(/%.*$/, '').toLowerCase();
+		if (!net.isIPv6(addr)) {
+			return null;
+		}
+		var m = /^(.*:)(\d+\.\d+\.\d+\.\d+)$/.exec(addr);
+		if (m) {
+			var q = m[2].split('.').map(Number);
+			addr = m[1] + ((q[0] << 8) | q[1]).toString(16) + ':' + ((q[2] << 8) | q[3]).toString(16);
+		}
+		var halves = addr.split('::');
+		var head = halves[0] ? halves[0].split(':') : [];
+		var tail = halves.length > 1 && halves[1] ? halves[1].split(':') : [];
+		var groups = head;
+		if (halves.length > 1) {
+			var nZero = 8 - head.length - tail.length;
+			groups = head.slice();
+			for (var i = 0; i < nZero; i++) {
+				groups.push('0');
+			}
+			groups = groups.concat(tail);
+		}
+		if (groups.length !== 8) {
+			return null;
+		}
+		var b = Buffer.alloc(16);
+		for (var j = 0; j < 8; j++) {
+			b.writeUInt16BE(parseInt(groups[j], 16) & 0xffff, j * 2);
+		}
+		return b;
+	}
+
+	/* IP 文字列 → in_addr.s_addr と同じ並び（リトルエンディアンの DWORD）。
+	   ・IPv4（::ffff: 付きも）はそのまま
+	   ・それ以外の IPv6 は、上位 64 ビット（/64＝同じ家庭・端末の回線単位）をハッシュして
+	     240.0.0.0/4（クラスE。実在しない範囲）に入れる。C++ 側の IP ごとの制限が /64 単位で効く
+	   ・読めなければ 0 */
 	function addrToDword(addr) {
-		addr = String(addr || '').replace(/^::ffff:/, '');
+		addr = String(addr || '');
 		if (addr === '::1') {
 			addr = '127.0.0.1';
 		}
+		var b = ipv6Bytes(addr);
+		if (b) {
+			var bMapped = true;
+			for (var i = 0; i < 10; i++) {
+				if (b[i] !== 0) {
+					bMapped = false;
+				}
+			}
+			if (bMapped && b[10] === 255 && b[11] === 255) {
+				addr = b[12] + '.' + b[13] + '.' + b[14] + '.' + b[15];
+			} else {
+				var h = crypto.createHash('sha256').update(b.slice(0, 8)).digest();
+				return (((h[0] & 15) | 240) | (h[1] << 8) | (h[2] << 16) | (h[3] << 24)) >>> 0;
+			}
+		}
+		addr = addr.replace(/^::ffff:/i, '');
 		var a = addr.split('.');
 		if (a.length !== 4) {
 			return 0;
 		}
 		return ((a[0] & 255) | ((a[1] & 255) << 8) | ((a[2] & 255) << 16) | ((a[3] & 255) << 24)) >>> 0;
+	}
+
+	/* 接続スロット番号の接続の IP 文字列（::ffff: は外す）。見つからなければ空。管理者 API だけで使う */
+	function ipOfSlot(slot) {
+		for (var id in aConn) {
+			if (aConn[id].slot === slot) {
+				return String(aConn[id].addr || '').replace(/^::ffff:(?=\d+\.)/i, '');
+			}
+		}
+		return '';
 	}
 
 	/* 接続の利用環境 {os, browser, device}（統計用。sbosvr_stats.js が User-Agent を分類する。
@@ -748,6 +811,8 @@ Module['sboNet'] = (function () {
 		},
 		/* 接続スロット番号の接続の利用環境（sbosvr_stats.js・sbosvr_account.js が使う） */
 		envOfSlot: envOfSlot,
+		/* 接続スロット番号の接続の IP 文字列（sbosvr_account.js の管理ページ用。IPv6 も分かる） */
+		ipOfSlot: ipOfSlot,
 		listen: function (port) {
 			var tcp = net.createServer(onTcp);
 			tcp.on('error', function (e) {

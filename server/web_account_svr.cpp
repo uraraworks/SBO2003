@@ -194,7 +194,8 @@ static std::string IpToStr(DWORD dwAddr)
 {
 	char sz[32];
 	const unsigned char *p = (const unsigned char *)&dwAddr;
-	if (dwAddr == 0) {
+	/* 240.0.0.0/4 は IPv6 の /64 をハッシュした仮の値（Node 側が本当の文字列を覚えている）なので不明扱い */
+	if (dwAddr == 0 || p[0] >= 240) {
 		return "";
 	}
 	snprintf(sz, sizeof(sz), "%u.%u.%u.%u", p[0], p[1], p[2], p[3]);

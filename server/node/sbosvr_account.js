@@ -131,6 +131,7 @@ Module['sboAccount'] = (function () {
 		store.requests = store.requests || [];
 		store.codes = store.codes || {};
 		store.renames = store.renames || [];
+		store.lastIps = store.lastIps || {};	/* アカウント → {ip, at}。IPv6 でログインした時の最終IP（IPv4 は C 側が覚える） */
 		store.adminSessions = store.adminSessions || {};
 		if (!store.adminSalt) {
 			store.adminSalt = randomHex(16);
@@ -875,6 +876,47 @@ Module['sboAccount'] = (function () {
 		reply(res, 200, { ok: true });
 	}
 
+	/* ログイン成功時に呼ばれる（sbosvr_stats.js の noteLogin から）。IPv6 の接続なら最終IPの文字列を覚える。
+	   IPv4 でのログインなら、古い IPv6 の記録は消す（C 側の IPv4 が最新になるため）。
+	   書き込みは、IP が変わった時と、前回から 1 日以上空いた時だけ（ファイルを肥大させない） */
+	function noteLoginIp(nSlot, acc) {
+		var net = Module['sboNet'];
+		var ip = net && net.ipOfSlot ? net.ipOfSlot(nSlot) : '';
+		if (!acc || !ip || ip === '127.0.0.1' || ip === '::1') {
+			return;
+		}
+		load();
+		var e = store.lastIps[acc], now = Date.now();
+		if (ip.indexOf(':') < 0) {
+			if (e) {
+				delete store.lastIps[acc];
+				save();
+			}
+			return;
+		}
+		if (e && e.ip === ip && now - e.at < DAY) {
+			return;
+		}
+		store.lastIps[acc] = { ip: ip, at: now };
+		save();
+	}
+
+	/* IP の検索語（IPv6 の完全一致・前方一致。末尾が "*" か ":" か "." なら前方一致）に合う、記録済みのアカウント */
+	function accountsByIp(q) {
+		load();
+		var key = q.toLowerCase(), bPre = /[*:.]$/.test(key);
+		if (key.charAt(key.length - 1) === '*') {
+			key = key.slice(0, -1);
+		}
+		if (!/^[0-9a-f:.]+$/.test(key) || key.indexOf(':') < 0) {
+			return [];
+		}
+		return Object.keys(store.lastIps).filter(function (a) {
+			var ip = String(store.lastIps[a].ip).toLowerCase();
+			return bPre ? ip.indexOf(key) === 0 : ip === key;
+		});
+	}
+
 	/* 管理ページの表示用に、端末トークン・復旧キー・名前の変更の記録を足す */
 	function adminCharDetail(info) {
 		load();
@@ -893,7 +935,11 @@ Module['sboAccount'] = (function () {
 			.slice(-10).reverse().map(function (r) { return { from: r.from, to: r.to, by: r.by, at: r.at }; });
 		info.renameAfter = renameAfter(info.account);
 		/* 最終IPアドレス（個人情報なので管理者 API だけで返す。検索結果には C 側が付けてくる） */
-		if (info.lastIp === undefined) {
+		/* Node が覚えている IPv6 の文字列を優先。無ければ C 側の IPv4（C 側は 240.0.0.0/4 を「不明」で返す） */
+		var rec = store.lastIps[info.account];
+		if (rec && rec.ip) {
+			info.lastIp = rec.ip;
+		} else if (info.lastIp === undefined) {
 			info.lastIp = callStr(_SboWebAdminLastIp, [info.account]);
 		}
 		return info;
@@ -925,6 +971,17 @@ Module['sboAccount'] = (function () {
 					r.results.push(info);
 					aSeen[rn.account] = true;
 				}
+			}
+		});
+		/* IPv6 の最終IPでも探す */
+		accountsByIp(q).forEach(function (a) {
+			if (r.results.length >= MAX || aSeen[a]) {
+				return;
+			}
+			var info = accInfo(a);
+			if (info) {
+				r.results.push(info);
+				aSeen[a] = true;
 			}
 		});
 		r.results = r.results.map(adminCharDetail);
@@ -1041,6 +1098,7 @@ Module['sboAccount'] = (function () {
 		issueToken: issueToken,
 		/* sbosvr_feedback.js などから使う */
 		tokenInfo: tokenInfo,
+		noteLoginIp: noteLoginIp,
 		accInfo: accInfo,
 		isAdminSession: isAdminSession,
 		withAdminCookie: withAdminCookie,
