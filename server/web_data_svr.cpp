@@ -27,6 +27,8 @@
 #include "SboSvrRecycle.h"
 #include "SboSvrMarket.h"
 #include "SboSvrMapSwapEdit.h"
+#include "SboSvrDungeonDaily.h"
+#include "SboSvrSubGameProc.h"
 #include "CharProc/IncludeCharProc.h"
 
 #include <emscripten.h>
@@ -1524,6 +1526,7 @@ static const DATAFIELD s_aFieldChar[] = {
 	FLD (CHARINFO, dwStTmplateID,		"ステータステンプレート",	FT_U32, 0, "stTmp の番号。4294967295 は無し"),
 	FLD (CHARINFO, dwParentTblID,		"発生元のキャラ",		FT_U32, RO, "NPC発生で出てきたキャラの発生元（char の番号）"),
 	FLD (CHARINFO, byPutCount,			"最大発生数",			FT_U8, 0, "NPC発生（発生元）の時"),
+	FLD (CHARINFO, byPutOnce,			"補充しない",			FT_U8, 0, "NPC発生（発生元）の時。1 にすると、最大発生数まで出したらそれ以上は出さない（倒されても出し直さない。数えるのはダンジョンの空間ごと。ダンジョンを作り直すと数が戻る）。0=今までどおり倒されたら出し直す"),
 	FLD (CHARINFO, wTimePutInterval,	"発生周期",				FT_U16, 0, NULL),
 	FLD (CHARINFO, byAreaX,				"移動範囲(横)",			FT_U8, 0, NULL),
 	FLD (CHARINFO, byAreaY,				"移動範囲(縦)",			FT_U8, 0, NULL),
@@ -2116,6 +2119,22 @@ static const DATAFIELD s_aFieldSgDungeon[] = {
 	FLD (SUBGAME_DUNGEONINFO, wChipIDGoal,"ゴールのパーツ",		FT_U16, 0, "mapParts の番号"),
 	FLD (SUBGAME_DUNGEONINFO, wChipIDRoad,"道のパーツ",			FT_U16, 0, "mapParts の番号"),
 	FLD (SUBGAME_DUNGEONINFO, wChipIDBlock,"壁のパーツ",		FT_U16, 0, "mapParts の番号"),
+	FLD (SUBGAME_DUNGEONINFO, dwThemeID,"テーマ番号",			FT_U32, 0, "ダンジョン生成のテーマ（SboWebDungeonThemes.json の id）。0=今までの作り方。0 以外でテーマが見つかれば、作り直しのたびにエリアの大きさで生成してマス目・扉・入口を置く（見つからなければ今までの作り方）"),
+	FLD (SUBGAME_DUNGEONINFO, dwBuildNo,"作り直し番号",			FT_U32, FF_READONLY, "テーマで作り直すたびに増える番号（実行中だけ。保存しない・読むだけ）"),
+	FLD (SUBGAME_DUNGEONINFO, byTmplCount,"番外編のテンプレート数",	FT_U8, 0, "0〜8。0=番外編にしない（今までどおり、入口に乗れば誰でも自分の姿で入れる）。1 以上だと番外編のミニゲームになる: 入口にパーティのリーダー（ソロならその人）が乗ると、組の全員に wTmplID・szTmplName1〜8 の先頭 byTmplCount 件を一覧に出し、全員が選び終えたら（30秒で締め切り）一緒に新しい空間へ入る。中ではステータステンプレートの姿になり、経験値・お金は入らない。拾った物・ドロップは中で使えるが、外へは持ち帰れない（どの出方でも元の持ち物に戻る）。テーマ番号（dwThemeID）が 0 でない時だけ使える"),
+	FLDA(SUBGAME_DUNGEONINFO, wTmplID,	"番外編のテンプレート番号",	FT_U16ARR, WORD, 0, "stTmp の番号（8 個。先頭 byTmplCount 件を使う）。存在しない番号は一覧から外す"),
+	{ "szTmplName1", "番外編の表示名1", FT_STR, offsetof(SUBGAME_DUNGEONINFO, szTmplName[0]), MAX_DGTMPLNAME, 0, "wTmplID の先頭から数えて同じ番号のテンプレートの、選ぶ窓に出す名前（空ならテンプレートの名前）" },
+	{ "szTmplName2", "番外編の表示名2", FT_STR, offsetof(SUBGAME_DUNGEONINFO, szTmplName[1]), MAX_DGTMPLNAME, 0, NULL },
+	{ "szTmplName3", "番外編の表示名3", FT_STR, offsetof(SUBGAME_DUNGEONINFO, szTmplName[2]), MAX_DGTMPLNAME, 0, NULL },
+	{ "szTmplName4", "番外編の表示名4", FT_STR, offsetof(SUBGAME_DUNGEONINFO, szTmplName[3]), MAX_DGTMPLNAME, 0, NULL },
+	{ "szTmplName5", "番外編の表示名5", FT_STR, offsetof(SUBGAME_DUNGEONINFO, szTmplName[4]), MAX_DGTMPLNAME, 0, NULL },
+	{ "szTmplName6", "番外編の表示名6", FT_STR, offsetof(SUBGAME_DUNGEONINFO, szTmplName[5]), MAX_DGTMPLNAME, 0, NULL },
+	{ "szTmplName7", "番外編の表示名7", FT_STR, offsetof(SUBGAME_DUNGEONINFO, szTmplName[6]), MAX_DGTMPLNAME, 0, NULL },
+	{ "szTmplName8", "番外編の表示名8", FT_STR, offsetof(SUBGAME_DUNGEONINFO, szTmplName[7]), MAX_DGTMPLNAME, 0, NULL },
+	FLD (SUBGAME_DUNGEONINFO, byRebuildMode,"作り直しの方式",	FT_U8, 0, "0=今まで通り（誰もいなくなって 5 秒たつと、そのつど新しいシードで作り直す＝気まぐれ）。1=日替わり（その日のシードは日付（日本時間）とダンジョン番号＝このサブゲームの番号から決まり、同じ日なら何度作っても・サーバーを再起動しても同じ形。日付が変わったら、範囲に誰もいない時に作り直す。誰かいる間は作り直さず、新しく入る組は前の日の形に入る。無人 5 秒の作り直しはしない。テーマ番号（dwThemeID）が 0 でない時だけ有効）。日替わりだと、番外編（byTmplCount 1 以上）の敵の出る位置が版のシードで決まりどの組も同じになり、最短記録がつく（読むのは /api/data/dungeon/records、今すぐ作り直すのは /api/data/dungeon/rebuild）"),
+	FLD (SUBGAME_DUNGEONINFO, byClearMode,"クリア条件",		FT_U8, 0, "0=ゴールのワープに着く（今まで通り）。1=敵を全部倒す（その組の空間の、NPC発生の「補充しない」印の敵を全部倒した時。そういう発生元が範囲に無ければ 0 と同じ）。クリアの瞬間にクリア時間が決まり、組の全員に知らせて 10 秒後に全員（倒れている人も）外へ戻る。記録は 0 と同じ扱い。番外編（byTmplCount 1 以上）で使う"),
+	FLDS(SUBGAME_DUNGEONINFO, szMessages, "番外編の文言一覧", FT_STR, FF_MULTILINE, "1行に key=文。空なら既定文。差し込みは {name}・{time}・{rank} 等。キー一覧は docs/dungeon-gen.md"),
+	FLD (SUBGAME_DUNGEONINFO, dwDailyVer,	"日替わりの版番号",		FT_U32, FF_READONLY, "今の形の版の通し番号（SboDungeonDaily.json の no。0=まだ作っていない。実行中だけ・読むだけ）"),
 };
 static const DATAFIELD s_aFieldSgWar[] = {
 	FLD (SUBGAME_WARINFO, dwMapID,		"マップID",				FT_U32, 0, "map の dwID"),
@@ -3046,6 +3065,7 @@ static bool CharApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::str
 	}
 	pDst->dwStTmplateID		= w.dwStTmplateID;
 	pDst->byPutCount		= w.byPutCount;
+	pDst->byPutOnce			= w.byPutOnce;
 	pDst->wTimePutInterval	= w.wTimePutInterval;
 	pDst->byAreaX			= w.byAreaX;
 	pDst->byAreaY			= w.byAreaY;
@@ -3172,30 +3192,7 @@ static std::string MapWorkJson(PMAPINFO pBase, const std::string &strName, const
 	return MapJson(&m);
 }
 
-/*
- * マップにいるプレイヤーへ、マップに入った時と同じ順で情報を送り直す
- * （SubProcMapMove と同じ: マップ情報→イベント→キャラ→自分の位置・ステータス・持ち物）。
- * クライアントはマップ情報を受け取るとキャラ情報を全部消すので、キャラも必ず送る。
- */
-static void ResendMapToPlayers(PMAPINFO pMap, int nID)
-{
-	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
-		PCHARINFO pChar = g_aCharInfo[i];
-		if (pChar && pChar->pID && pChar->szAcc[0] && pChar->dwMapID == pMap->dwID && pChar->byNpcType == NPCTYPE_INIT) {
-			SendCmdMAPINFO(pChar->pID, pMap->dwID);
-			SendCmdEVENTCOUNT(pChar->pID, (DWORD)nID);
-			for (int j = 0; j < pMap->nEventCount; j ++) {
-				SendCmdEVENTINFO(pChar->pID, nID, j);
-			}
-			SendCmdEVENTPOS(pChar->pID, (DWORD)nID);
-			SendCmdCHARINFO(pChar->pID, -1);
-			SendCmdCHARPOS(pChar->pID, pChar->dwTblID, 0, 2);
-			SendCmdCHARSTATUS(pChar->pID, pChar->dwTblID);
-			SendCmdCHARITEM(pChar->pID, pChar->dwTblID);
-			SendCmdSYSMSG(pChar->pID, "SYSTEM:マップの情報が更新されたので読み込み直しました。");
-		}
-	}
-}
+/* マップにいるプレイヤーへの送り直し（ResendMapToPlayers）は SboSvrQuest.cpp。ダンジョンの作り直しと共用 */
 
 /* swaps（印で変わるマス）を w に読む。JSON を MAPSWAPEDITROW に直すだけで、範囲・種類違いの欄・重なり・番号の自動振りは
    ゲーム内の管理者ウィンドウと同じ MapSwapBuild（SboSvrMapSwapEdit.cpp）が行う */
@@ -4168,6 +4165,24 @@ static void SubGameRenewIfEmpty(int nID)
 	MakeMazeProc((BYTE)nID);
 }
 
+/* 番外編ダンジョンの設定の確かめ（テンプレートの数は 0〜MAX_DGTMPL） */
+static bool CheckDungeonDetail(const SUBGAME_DUNGEONINFO *p, std::string &strErr)
+{
+	if (p->byTmplCount > MAX_DGTMPL) {
+		strErr = "detail.byTmplCount は 0〜" + JsonNum(MAX_DGTMPL) + " にしてください";
+		return false;
+	}
+	if (p->byClearMode > DGCLEAR_KILLALL) {
+		strErr = "detail.byClearMode は 0（ゴール）か 1（敵を全部倒す）にしてください";
+		return false;
+	}
+	if (p->byRebuildMode > DGREBUILD_DAILY) {
+		strErr = "detail.byRebuildMode は 0（今まで通り）か 1（日替わり）にしてください";
+		return false;
+	}
+	return true;
+}
+
 /* 迷路の設定がマップに収まっているか確かめる */
 static bool CheckMazeDetail(const SUBGAME_MAZEINFO *p, std::string &strErr)
 {
@@ -4330,6 +4345,9 @@ static bool SubGameApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::
 	if (nTypeNew == SUBGAMEID_MAZE && pDetail && !CheckMazeDetail((const SUBGAME_MAZEINFO *)&aWork[0], strErr)) {
 		return false;
 	}
+	if (nTypeNew == SUBGAMEID_DUNGEON && pDetail && !CheckDungeonDetail((const SUBGAME_DUNGEONINFO *)&aWork[0], strErr)) {
+		return false;
+	}
 
 	/* 結果の JSON（作業用の値で作る） */
 	{
@@ -4378,10 +4396,23 @@ static bool SubGameApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::
 			pInfo->pInfo = pNew;
 		}
 	} else if (pDetail && nSize > 0) {
+		/* 元のマップ番号で通知してから設定を書き戻す（下見では捨てない） */
+		if (nTypeNew == SUBGAMEID_DUNGEON) {
+			InvalidateDungeonAutoMap((PSUBGAME_DUNGEONINFO)pInfo->pInfo);
+		}
 		/* 項目表にある所だけを書き戻す（作成中の設計図などのポインタは触らない） */
 		BYTE *pDst = (BYTE *)pInfo->pInfo;
 		for (int i = 0; i < nCount; i ++) {
-			size_t n = (paField[i].nType == FT_U32) ? 4 : (paField[i].nType == FT_U16) ? 2 : 1;
+			/* 文字・配列は項目表の大きさの分だけ写す（以前は先頭 1 バイトしか書き戻していなかった） */
+			size_t n;
+			switch (paField[i].nType) {
+			case FT_U32:	n = 4;								break;
+			case FT_U16:	n = 2;								break;
+			case FT_STR:	n = paField[i].nSize;				break;
+			case FT_U8ARR:	n = paField[i].nSize;				break;
+			case FT_U16ARR:	n = paField[i].nSize * sizeof(WORD);	break;
+			default:		n = 1;								break;
+			}
 			CopyMemory(pDst + paField[i].nOffset, &aWork[paField[i].nOffset], n);
 		}
 	}
@@ -6351,6 +6382,63 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataMapResize(int nID, int nTo
 	s_strResult = "{\"ok\":true,\"mapId\":" + JsonNum(pMap->dwID) + ",\"cx\":" + JsonNum(nNewCX) + ",\"cy\":" + JsonNum(nNewCY) +
 			",\"oldCx\":" + JsonNum(nCX) + ",\"oldCy\":" + JsonNum(nCY) +
 			",\"shiftX\":" + JsonNum(nLeft) + ",\"shiftY\":" + JsonNum(nTop) + "}";
+	return s_strResult.c_str();
+}
+
+extern BOOL DungeonDailyRebuildNow(int nID, std::string &strErr);		/* SboSvrSubGameProc.cpp */
+
+/*
+ * 日替わりダンジョンの版と最短記録（読むだけ。docs/dungeon-gen.md の「番外編 段階2」）。
+ *   nID … サブゲームの番号（-1 ならすべて）。nVerNo … 版の通し番号（0 ならすべての版）。bTheme … 版にテーマの写しも入れる
+ *   結果: {"ok":true,"genVersion":生成器の版,"today":"日付","dungeons":[{"id","byRebuildMode","dwThemeID","dwBuildNo","nowVersion",
+ *         "versions":[{"no","date","rebuild","seed","genVer","themeId","w","h","themeRef","created","records":[{"names","forms","count","ms","at"}]}]}]}
+ *   版は古い順。records は時間の短い順（上位 20 件）。ダンジョンは「日替わりになっている」か「保存した版がある」ものだけ
+ */
+extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataDungeonRecords(int nID, int nVerNo, int bTheme)
+{
+	std::string out = "{\"ok\":true,\"genVersion\":" + JsonNum(DungeonDailyGenVersion()) + ",\"today\":" + JsonStr(DungeonDailyDate(DungeonDailyNow()).c_str()) + ",\"dungeons\":[";
+	bool bFirst = true;
+	for (int i = 0; i < g_aSubaGameInfo.GetSize(); i ++) {
+		PSUBGAMEINFO pInfo = g_aSubaGameInfo[i];
+		if (nID >= 0 && i != nID) {
+			continue;
+		}
+		if (pInfo == NULL || pInfo->byType != SUBGAMEID_DUNGEON || pInfo->pInfo == NULL) {
+			continue;
+		}
+		PSUBGAME_DUNGEONINFO p = (PSUBGAME_DUNGEONINFO)pInfo->pInfo;
+		if (p->byRebuildMode != DGREBUILD_DAILY && DungeonDailyVersionCount(i) == 0) {
+			continue;
+		}
+		if (!bFirst) out += ",";
+		bFirst = false;
+		out += "{\"id\":" + JsonNum(i) + ",\"byRebuildMode\":" + JsonNum(p->byRebuildMode) + ",\"dwThemeID\":" + JsonNum(p->dwThemeID) +
+				",\"dwBuildNo\":" + JsonNum(p->dwBuildNo) + ",\"nowVersion\":" + JsonNum(p->dwDailyVer) +
+				",\"versions\":" + DungeonDailyVersionsJson(i, (DWORD)max(nVerNo, 0), bTheme != 0) + "}";
+	}
+	out += "]}";
+	if (bFirst && nID >= 0) {
+		out = "{\"ok\":false,\"error\":\"そのサブゲームは日替わりのダンジョンではありません（byRebuildMode が 1 のダンジョンか、保存した版があるものだけ）\"}";
+	}
+	s_strResult = out;
+	return s_strResult.c_str();
+}
+
+/*
+ * 日替わりダンジョンを今すぐ作り直す（管理者の「今すぐ作り直す」と同じ）。中の組には知らせてから外へ戻し、新しいランダムなシードで作る。
+ *   結果: {"ok":true,"id":..,"version":{新しい版（テーマの写しなし）}} / {"ok":false,"error":"理由"}
+ */
+extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataDungeonRebuild(int nID)
+{
+	std::string strErr;
+	if (!DungeonDailyRebuildNow(nID, strErr)) {
+		s_strResult = "{\"ok\":false,\"error\":" + JsonStr(strErr.c_str()) + "}";
+		return s_strResult.c_str();
+	}
+	PSUBGAME_DUNGEONINFO p = (PSUBGAME_DUNGEONINFO)g_aSubaGameInfo[nID]->pInfo;
+	std::string strVer = DungeonDailyVersionsJson(nID, p->dwDailyVer, false);
+	s_strResult = "{\"ok\":true,\"id\":" + JsonNum(nID) + ",\"dwBuildNo\":" + JsonNum(p->dwBuildNo) + ",\"version\":" +
+			((strVer.size() > 2) ? strVer.substr(1, strVer.size() - 2) : std::string("null")) + "}";
 	return s_strResult.c_str();
 }
 

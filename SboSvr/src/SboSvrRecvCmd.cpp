@@ -21,6 +21,7 @@
 #include "SboSvrBattleProc.h"
 #include "SboSvrCharInfoTimerProc.h"
 #include "SboSvrSubGameProcSugoroku.h"
+#include "SboSvrSubGameProc.h"
 #include "SboSvrAdminUndo.h"
 #include "SboSvrNpcRoute.h"
 #include "SboSvrMarket.h"
@@ -234,6 +235,7 @@ void	RecvDataProcNPCROUTE					(PBYTE, DWORD);				/* NPCの巡回ルート */
 void	RecvDataProcRECIPEMAKE					(PBYTE, DWORD);				/* レシピで作ってもらう */
 void	RecvDataProcAPPRAISE					(PBYTE, DWORD);				/* 鑑定屋で鑑定してもらう */
 void	RecvDataProcQUEST						(PBYTE, DWORD);				/* ギルドの仕事依頼（一覧・受ける・取り消す・渡す） */
+void	RecvDataProcDUNGEONSEL					(PBYTE, DWORD);				/* 番外編ダンジョン：入る姿を選ぶ・やめる */
 void	RecvDataProcADMINQUEST					(PBYTE, DWORD);				/* 管理者ウィンドウのギルドの依頼の編集 */
 void	RecvDataProcADMINRESURRECT				(PBYTE, DWORD);				/* 管理者ウィンドウからキャラを蘇生 */
 void	RecvDataProcADMINVIEWALL				(PBYTE, DWORD);				/* 管理者ウィンドウの「印で隠れたNPCも表示」の切り替え */
@@ -278,6 +280,7 @@ void	RecvDataProcSubGameBOMB_REMOCON			(PBYTE, DWORD);				/* リモコン使用 
 void	RecvDataProcSubGameMAZE_MAZERENEW		(PBYTE, DWORD);				/* 迷路作成 */
 /* 受信データ処理(ダンジョン) */
 void	RecvDataProcSubGameDUNGEON_DUNGEONRENEW	(PBYTE, DWORD);				/* ダンジョン作成 */
+void	RecvDataProcSubGameDUNGEON_REBUILDNOW	(PBYTE, DWORD);				/* 日替わりダンジョンを今すぐ作り直す */
 /* 受信データ処理(戦場ゲーム) */
 void	RecvDataProcSubGameWAR_SELECTTEAM		(PBYTE, DWORD);				/* 戦場ゲーム：チーム選択 */
 void	RecvDataProcSubGameWAR_QUIT				(PBYTE, DWORD);				/* 戦場ゲーム：ゲームから抜ける */
@@ -305,6 +308,7 @@ extern void ItemProcImportant			(DWORD, BYTE, DWORD);				/* 大事な物の欄�
 extern BOOL MagicProc					(DWORD, BYTE, DWORD);				/* 魔法処理 */
 extern void MakeMazeProc				(BYTE);								/* 迷路作成処理 */
 extern void MakeDungeonProc				(BYTE);								/* ダンジョン作成処理 */
+extern BOOL DungeonDailyRebuildNow		(int, std::string &);				/* 日替わりダンジョンを今すぐ作り直す（SboSvrSubGameProc.cpp） */
 extern void SubGameProcBombQuit			(BYTE);								/* 爆弾ゲーム試合終了処理 */
 extern void SubGameProcBombQuitMsg		(BYTE, LPCSTR);						/* 爆弾ゲーム試合終了処理(終わった理由を表示) */
 extern void SubGameProcBombMakeBlock	(BYTE);								/* 爆弾ゲーム壁作成処理 */
@@ -515,6 +519,8 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	NULL,								/* CMD_AFFIXINFO(サーバー→クライアントのみ) */
 	NULL,								/* CMD_ITEMDERIVE(サーバー→クライアントのみ) */
 	RecvDataProcAPPRAISE,				/* CMD_APPRAISE */
+	NULL,								/* CMD_DUNGEONMAP(サーバー→クライアントのみ) */
+	RecvDataProcDUNGEONSEL,				/* CMD_DUNGEONSEL */
 
 	NULL
 };
@@ -545,6 +551,7 @@ const RECVDATAPROC RecvDataProcSubGameTblMaze[] = {
 const RECVDATAPROC RecvDataProcSubGameTblDungeon[] = {
 	NULL,
 	RecvDataProcSubGameDUNGEON_DUNGEONRENEW,	/* CMDSUBBOMB_DUNGEONRENEW */
+	RecvDataProcSubGameDUNGEON_REBUILDNOW,		/* CMDSUBBOMB_DUNGEONREBUILDNOW */
 	NULL
 };
 
@@ -3880,7 +3887,7 @@ void RecvDataProc(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	/* 管理者用のコマンド（管理者ウィンドウからしか送らないもの）は管理者だけ */
-	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_APPRAISE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && (byCmd != CMD_TALKANSWER) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET)) && ((byCmd < CMD_RECYCLELIST) || (byCmd > CMD_RECYCLECLOSE))) ||
+	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_APPRAISE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_DUNGEONSEL) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && (byCmd != CMD_TALKANSWER) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET)) && ((byCmd < CMD_RECYCLELIST) || (byCmd > CMD_RECYCLECLOSE))) ||
 			(byCmd == CMD_CHARITEM)) {
 		if (!CheckAdminBan (nNo)) {
 			SAFE_DELETE_ARRAY (pData);
@@ -5231,6 +5238,7 @@ void RecvDataProcADDDELMAP(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 
+	int nCXBack = g_aMapInfo[nNo]->nCX, nCYBack = g_aMapInfo[nNo]->nCY;
 	switch (pMap->byType) {
 	case 0:	/* 上 */
 		if (g_aMapInfo[nNo]->nCY + pMap->byCount >= 256) {
@@ -5355,6 +5363,18 @@ void RecvDataProcADDDELMAP(PBYTE pData, DWORD dwDataSize)
 		SendCmdADDDELMAP (pMap->dwID, pMap->byType, pMap->byCount);
 		break;
 	}
+	/* 追加・削除が成立した時だけ、そのマップの探索結果を捨てる */
+	if ((nCXBack != g_aMapInfo[nNo]->nCX) || (nCYBack != g_aMapInfo[nNo]->nCY)) {
+		for (int j = 0; j < g_aSubaGameInfo.GetSize (); j ++) {
+			PSUBGAMEINFO pInfo = g_aSubaGameInfo[j];
+			if (pInfo && (pInfo->byType == SUBGAMEID_DUNGEON) && pInfo->pInfo) {
+				PSUBGAME_DUNGEONINFO pDungeon = (PSUBGAME_DUNGEONINFO)pInfo->pInfo;
+				if (pDungeon->dwMapID == pMap->dwID) {
+					InvalidateDungeonAutoMap (pDungeon);
+				}
+			}
+		}
+	}
 }
 
 /* ========================================================================= */
@@ -5431,7 +5451,14 @@ void RecvDataProcEVENTGET(PBYTE pData, DWORD dwDataSize)
 	}
 
 	if (pEvent->nData < 0) {
-		pEvent->nData = SearchEvent (pEvent->dwID, pEvent->dwX, pEvent->dwY);
+		/* -1 は先頭から、それ以下は前回選んだ番号の次から同じ座標を循環検索 */
+		PMAPINFO pMap = g_aMapInfo[nNo];
+		int nStart = (pEvent->nData == -1) ? 0 : (int)(-(long long)pEvent->nData - 1);
+		pEvent->nData = -1;
+		for (int i = 0; i < pMap->nEventCount; i ++) {
+			int n = (int)(((long long)nStart + i) % pMap->nEventCount);
+			if ((pMap->pEvent[n].dwX == pEvent->dwX) && (pMap->pEvent[n].dwY == pEvent->dwY)) { pEvent->nData = n; break; }
+		}
 		if (pEvent->nData < 0) {
 			return;
 		}
@@ -5442,7 +5469,7 @@ void RecvDataProcEVENTGET(PBYTE pData, DWORD dwDataSize)
 	SendCmdEVENTCOUNT (pEvent->pID, pEvent->dwID);
 
 	if ((g_aMapInfo[nNo]->nEventCount == 0) ||
-		(g_aMapInfo[nNo]->nEventCount < pEvent->nData)) {
+		(g_aMapInfo[nNo]->nEventCount <= pEvent->nData)) {
 		return;
 	}
 	SendCmdEVENTINFO (pEvent->pID, nNo, pEvent->nData);
@@ -5875,6 +5902,7 @@ void RecvDataProcCHARINFO(PBYTE pData, DWORD dwDataSize)
 	pCharDst->byAreaX = pChar->byAreaX;
 	pCharDst->byAreaY = pChar->byAreaY;
 	pCharDst->byPutCount = pChar->byPutCount;
+	pCharDst->byPutOnce = pChar->byPutOnce;
 	pCharDst->byMoveProbabilityX = pChar->byMoveProbabilityX;
 	pCharDst->byMoveProbabilityY = pChar->byMoveProbabilityY;
 	pCharDst->bySearchCx = pChar->bySearchCx;
@@ -8191,6 +8219,13 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 		}
 		return;
 	}
+	/* ダンジョンの受付（台詞が「@d番号」）？ 姿選びを始める */
+	if (DungeonIsReceptionNpc (pChar)) {
+		if ((s_nCharNoRecv >= 0) && IsNearRecvChar (pChar, 2)) {
+			DungeonReceptionTalk (g_aCharInfo[s_nCharNoRecv], pChar);
+		}
+		return;
+	}
 	/* ギルドのNPC（台詞が「@gNN」）？ 依頼の一覧を送る */
 	if (QuestIsGuildNpc (pChar)) {
 		if ((s_nCharNoRecv >= 0) && IsNearRecvChar (pChar, 2)) {
@@ -9336,7 +9371,7 @@ static BOOL QuestChallengeBlock(PCHARINFO pChar)
 	if (!QuestInChallenge (pChar)) {
 		return FALSE;
 	}
-	SendCmdSYSMSG (pChar->pID, "討伐チャレンジ中はできません。", SPEECHCMD_BATTLE1);
+	SendCmdSYSMSG (pChar->pID, QuestInDungeon (pChar) ? (LPSTR)DungeonBlockedText (pChar).c_str () : "討伐チャレンジ中はできません。", SPEECHCMD_BATTLE1);
 	return TRUE;
 }
 
@@ -9581,6 +9616,10 @@ void RecvDataProcSUBGAMEINFO(PBYTE pData, DWORD dwDataSize)
 	PSUBGAMEINFO pInfo = g_aSubaGameInfo[pRecv->dwTblID];
 	pInfoBack = pInfo->pInfo;
 	byTypeBack = pInfo->byType;
+	/* マップ番号を変える前に、元のマップにいる人の探索マップも消す */
+	if (pInfoBack && (byTypeBack == SUBGAMEID_DUNGEON)) {
+		InvalidateDungeonAutoMap ((PSUBGAME_DUNGEONINFO)pInfoBack);
+	}
 	int nSize = GetSubGameDataSize (pRecv->byData);
 	if (nSize == 0) {
 		ZeroMemory (pInfo, sizeof (SUBGAMEINFO));
@@ -9661,6 +9700,43 @@ void RecvDataProcSUBGAMEINFO(PBYTE pData, DWORD dwDataSize)
 			pDungeonInfo->wChipIDGoal = pDungeon->wChipIDGoal;
 			pDungeonInfo->wChipIDRoad = pDungeon->wChipIDRoad;
 			pDungeonInfo->wChipIDBlock = pDungeon->wChipIDBlock;
+			pDungeonInfo->dwThemeID = pDungeon->dwThemeID;
+			pDungeonInfo->byTmplCount = pDungeon->byTmplCount;
+			CopyMemory (pDungeonInfo->wTmplID, pDungeon->wTmplID, sizeof (pDungeonInfo->wTmplID));
+			CopyMemory (pDungeonInfo->szTmplName, pDungeon->szTmplName, sizeof (pDungeonInfo->szTmplName));
+			pDungeonInfo->byRebuildMode = min (pDungeon->byRebuildMode, (BYTE)DGREBUILD_DAILY);
+			pDungeonInfo->byClearMode = min (pDungeon->byClearMode, (BYTE)DGCLEAR_KILLALL);
+			if (s_dwRecvSize >= sizeof (CMDPARA_DATA1) + sizeof (SUBGAME_DUNGEONINFOSAVE)) {
+				CopyMemory (pDungeonInfo->szMessages, pDungeon->szMessages, sizeof (pDungeonInfo->szMessages));
+			}
+			pDungeonInfo->szMessages[MAX_DGTEXT - 1] = 0;
+			/* 作り直し番号と生成結果は引き継ぐ（探索マップは設定変更時に捨てる） */
+			if (pInfoBack && (byTypeBack == SUBGAMEID_DUNGEON)) {
+				PSUBGAME_DUNGEONINFO pBack = (PSUBGAME_DUNGEONINFO)pInfoBack;
+				BOOL bSameArea = (pDungeonInfo->dwMapID == pBack->dwMapID) && (pDungeonInfo->byX1 == pBack->byX1) && (pDungeonInfo->byY1 == pBack->byY1) && (pDungeonInfo->byX2 == pBack->byX2) && (pDungeonInfo->byY2 == pBack->byY2) && (pDungeonInfo->dwThemeID == pBack->dwThemeID);
+				pDungeonInfo->dwBuildNo = bSameArea ? pBack->dwBuildNo : 0;
+				if (bSameArea && pBack->pwGenParts) {
+					pDungeonInfo->byGoalX = pBack->byGoalX;
+					pDungeonInfo->byGoalY = pBack->byGoalY;
+				}
+				pDungeonInfo->pwGenParts = pBack->pwGenParts;
+				pDungeonInfo->dwGenMapID = pBack->dwGenMapID;
+				pDungeonInfo->byGenX1 = pBack->byGenX1; pDungeonInfo->byGenY1 = pBack->byGenY1;
+				pDungeonInfo->byGenX2 = pBack->byGenX2; pDungeonInfo->byGenY2 = pBack->byGenY2;
+				pDungeonInfo->wGenCX = pBack->wGenCX;
+				pDungeonInfo->wGenCY = pBack->wGenCY;
+				pDungeonInfo->wGenStartX = pBack->wGenStartX;
+				pDungeonInfo->wGenStartY = pBack->wGenStartY;
+				pDungeonInfo->wGenGoalX = pBack->wGenGoalX;
+				pDungeonInfo->wGenGoalY = pBack->wGenGoalY;
+				pDungeonInfo->dwDailyVer = pBack->dwDailyVer;
+				pDungeonInfo->dwDailyCheck = pBack->dwDailyCheck;
+				pDungeonInfo->dwDailyEmpty = pBack->dwDailyEmpty;
+				pDungeonInfo->dwDailyRetry = pBack->dwDailyRetry;
+				pDungeonInfo->byDailyUsed = pBack->byDailyUsed;
+				pBack->pwGenParts = NULL;
+				pBack->pbyAutoMap = NULL;
+			}
 		}		
 		break;
 
@@ -10877,7 +10953,7 @@ void RecvDataProcTRADE(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	if (QuestInChallenge (g_aCharInfo[pRecv->dwData])) {
-		SendCmdSYSMSG (g_aCharInfo[pRecv->dwTblID]->pID, "相手は討伐チャレンジ中なので取り引きできません。", SPEECHCMD_BATTLE1);
+		SendCmdSYSMSG (g_aCharInfo[pRecv->dwTblID]->pID, QuestInDungeon (g_aCharInfo[pRecv->dwData]) ? "相手はダンジョンの中なので取り引きできません。" : "相手は討伐チャレンジ中なので取り引きできません。", SPEECHCMD_BATTLE1);
 		TradeRefuse (g_aCharInfo[pRecv->dwTblID]);
 		return;
 	}
@@ -12071,6 +12147,25 @@ void RecvDataProcSubGameDUNGEON_DUNGEONRENEW(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	MakeDungeonProc (pRecv->byData);
+}
+
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcSubGameDUNGEON_REBUILDNOW							 */
+/* 内容：受信データ処理(日替わりダンジョンを今すぐ作り直す)					 */
+/* ========================================================================= */
+void RecvDataProcSubGameDUNGEON_REBUILDNOW(PBYTE pData, DWORD dwDataSize)
+{
+	PSUBCMDPARA_DATA1 pRecv = (PSUBCMDPARA_DATA1)pData;
+	std::string strErr;
+
+	/* 管理者ウィンドウから送るものなので管理者だけ */
+	if (!s_bAdminRecv || (pRecv->byData >= g_aSubaGameInfo.GetSize ())) {
+		return;
+	}
+	if (!DungeonDailyRebuildNow (pRecv->byData, strErr)) {
+		SendCmdSYSMSG (pRecv->pID, (LPSTR)strErr.c_str (), SPEECHCMD_BATTLE1);
+	}
 }
 
 
@@ -14572,7 +14667,7 @@ BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, 
 	/* 管理者用のコマンドだけ（ログインや「元に戻す」自体は通さない） */
 	if ((byCmd >= CMD_MAX) || (RecvDataProcTbl[byCmd] == NULL) ||
 			((byCmd < CMD_MAPPARTSADD) && (byCmd != CMD_CHARITEM)) ||
-			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_ADMINVIEWALL) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_APPRAISE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET)) || ((byCmd >= CMD_RECYCLELIST) && (byCmd <= CMD_RECYCLECLOSE))) {
+			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_ADMINVIEWALL) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_APPRAISE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_DUNGEONSEL) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET)) || ((byCmd >= CMD_RECYCLELIST) && (byCmd <= CMD_RECYCLECLOSE))) {
 		return FALSE;
 	}
 
@@ -14813,6 +14908,28 @@ void RecvDataProcQUEST(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	QuestRecv (pChar, pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcDUNGEONSEL											 */
+/* 内容：受信データ処理(番外編ダンジョン：入る姿を選ぶ・やめる)				 */
+/* ========================================================================= */
+void RecvDataProcDUNGEONSEL(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_DUNGEONSEL pPara = (PCMDPARA_DUNGEONSEL)pData;
+	PCHARINFO pChar;
+
+	if (s_dwRecvSize < offsetof (CMDPARA_DUNGEONSEL, szTitle)) {
+		return;
+	}
+	if (!IsRecvChar (pPara->dwTblID)) {
+		return;
+	}
+	pChar = g_aCharInfo[pPara->dwTblID];
+	if ((pChar == NULL) || (pChar->pID == 0) || (pChar->byNpcType != NPCTYPE_INIT)) {
+		return;
+	}
+	DungeonSelRecv (pChar, pPara);
 }
 
 /* ========================================================================= */

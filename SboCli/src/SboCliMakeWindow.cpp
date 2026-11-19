@@ -117,6 +117,7 @@ PWNDINFO MakeWindowMAKER_CONF					(int);				/* 作り手：確認 */
 PWNDINFO MakeWindowAPPRAISE					(int);				/* 鑑定屋：未鑑定の持ち物の一覧 */
 int AppraiseGetList							(int *, int);		/* 未鑑定の持ち物の位置を取得 */
 DWORD AppraiseCost							(WORD);				/* 鑑定の代金 */
+PWNDINFO MakeWindowDUNGEONSEL				(void);						/* 番外編ダンジョン：入る姿の選択 */
 PWNDINFO MakeWindowTOWNWARP					(int nMode);				/* 町転送：行き先の選択 */
 PWNDINFO MakeWindowQUEST					(int nMode);				/* ギルドの依頼：一覧・進み具合 */
 int MakerGetRecipeList							(int, int *, int);	/* 作り手の一覧に出すレシピの番号を並び順で取得 */
@@ -2351,6 +2352,41 @@ PWNDINFO MakeWindowTOWNWARP(int nMode)
 	pWnd->nCy = 16 * (2 + max (1, pWnd->nData2));
 	pWnd->nType = WNDTYPE_TOWNWARP;
 	pWnd->nType2 = nMode;
+	pWnd->pDib = new CImg32;
+	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
+	pWnd->pDib->SetColorKey (RGB (40, 40, 40));
+
+	return pWnd;
+}
+
+/* ========================================================================= */
+/* 関数名：MakeWindowDUNGEONSEL												 */
+/* 内容：ウィンドウの作成(番外編ダンジョン：入る姿の選択)					 */
+/* ========================================================================= */
+PWNDINFO MakeWindowDUNGEONSEL(void)
+{
+	PWNDINFO pWnd = new WNDINFO;
+	ZeroMemory (pWnd, sizeof (WNDINFO));
+	pWnd->dwID = g_dwNewID;
+	g_dwNewID ++;
+
+	int i, nCount = min ((int)g_DungeonSelInfo.byCount, MAX_DGTMPL);
+	int nLen = SboTextWidth ((g_DungeonSelInfo.szTitle[0] ? g_DungeonSelInfo.szTitle : "どの姿で入る？")), nLenTmp;
+	for (i = 0; i < nCount; i ++) {
+		nLenTmp = SboTextWidth (g_DungeonSelInfo.aszName[i]);
+		nLen = max (nLen, nLenTmp);
+	}
+	if (nLen % 2) {
+		nLen ++;
+	}
+	pWnd->nData1 = 0;
+	pWnd->nData2 = nCount;
+	pWnd->nX = 32 + 16 * 4;
+	pWnd->nY = 50 + 16 * 2;
+	pWnd->nCx = (16 * 4) + (nLen * 8);
+	pWnd->nCx = min (pWnd->nCx, SCRSIZEX - pWnd->nX);
+	pWnd->nCy = 16 * (2 + max (1, pWnd->nData2));
+	pWnd->nType = WNDTYPE_DUNGEONSEL;
 	pWnd->pDib = new CImg32;
 	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
 	pWnd->pDib->SetColorKey (RGB (40, 40, 40));

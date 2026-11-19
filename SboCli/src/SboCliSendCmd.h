@@ -133,6 +133,7 @@ extern void SendCmdRESURRECTION		(void);									/* 蘇生 */
 extern void SendCmdREQ_ATTACK		(DWORD dwTblID, BYTE byTurnLV);			/* 攻撃要求 */
 extern void SendCmdREQ_GUARD		(BOOL bGuard);							/* 構え(防御)の開始・終了 */
 extern void SendCmdBATTLEMODE		(BOOL bBattle);							/* 戦闘モードの切り替え通知 */
+extern void SendCmdDUNGEONSEL		(BYTE byType, BYTE byIndex);							/* 番外編ダンジョンの入る姿の選択（選ぶ・やめる） */
 extern void SendCmdQUEST			(BYTE byType, WORD wQuestID, DWORD dwNpcTblID);	/* ギルドの仕事依頼（一覧・受ける・取り消す・渡す） */
 extern void SendCmdSORTITEM			(BYTE byTarget, BYTE byMode, BYTE byNo1, BYTE byNo2);	/* 道具欄・預かり所の並べ替え */
 extern void SendCmdLEAVEITEMDISPOSE	(BYTE byMode, BYTE byNo, BYTE byCount, WORD wItemID);	/* 預かり所の品を売る・捨てる */
@@ -150,6 +151,7 @@ extern void SendCmdSubBOMBSTOP		(void);									/* 試合中止 */
 extern void SendCmdSubBOMBREMOCON	(void);									/* リモコン使用 */
 extern void SendCmdSubMAZERENEW		(BYTE);									/* 迷路作成 */
 extern void SendCmdSubDUNGEONRENEW	(BYTE);									/* ダンジョン作成 */
+extern void SendCmdSubDUNGEONREBUILDNOW	(BYTE);							/* 日替わりダンジョンを今すぐ作り直す */
 extern void SendCmdSubWARSELECTTEAM	(BYTE);									/* 戦場ゲーム：チーム選択 */
 extern void SendCmdSubWARQUIT		(void);									/* 戦場ゲーム：ゲームから抜ける */
 extern void SendCmdSubWARSELECTRULE	(BYTE);									/* 戦場ゲーム：ルール選択 */

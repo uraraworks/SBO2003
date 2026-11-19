@@ -12,6 +12,7 @@
 #include "SboCliDrawWindow.h"
 #include "SboCliRecvCmd.h"
 #include "SboCliKeyProc.h"
+#include "SboCliAutoMap.h"
 #include "AdminWindowOld/AdminDlgNpcRoute.h"
 #include "AdminWindowOld/AdminDlgMapLight.h"
 #include "AdminWindowOld/AdminDlgMapSwap.h"
@@ -269,6 +270,9 @@ void DrawScreen(HWND hWnd, HDC hDC)
 				/* 特技ショートカットの帯（ウィンドウの下に敷く） */
 				DrawMagicKeyBand (pChar, 32 - x, 32 - y);
 
+				/* 探索マップ（ウィンドウの下に重ねる） */
+				AutoMapDraw (32 - x, 32 - y);
+
 				/* ウィンドウを表示 */
 				DrawWindow (g_pDibDrawMap, 32 - x, 32 - y);
 
@@ -300,7 +304,12 @@ void DrawScreen(HWND hWnd, HDC hDC)
 
 			/* マップ名表示？ */
 			if (g_byTextFadeInOut && byLV == 0 && g_pMapInfo) {
-				if (g_pMapInfo->pszName) {
+				/* 気まぐれダンジョンの中ではテーマの名前を出す */
+				LPCSTR pszMapName = AutoMapGetName ();
+				if (pszMapName == NULL) {
+					pszMapName = (LPCSTR)g_pMapInfo->pszName;
+				}
+				if (pszMapName) {
 					pChar = g_aCharInfo[g_nMyCharID];
 					BYTE byLv = 0;
 					if (g_byTextFadeInOut < 10) {
@@ -313,20 +322,20 @@ void DrawScreen(HWND hWnd, HDC hDC)
 						byLv = 100;
 					}
 
-					pDibDrawTmp.FillRect (0, 0, (SboTextWidth ((LPSTR)g_pMapInfo->pszName) + 1) * 16, 66, RGB (0, 0, 0));
+					pDibDrawTmp.FillRect (0, 0, (SboTextWidth ((LPSTR)pszMapName) + 1) * 16, 66, RGB (0, 0, 0));
 
 					HDC hDC = pDibDrawTmp.Lock ();
 					HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFont32);
 					SetBkMode (hDC, TRANSPARENT);
 
-					TextOut2 (hDC, 0, 0, (LPSTR)g_pMapInfo->pszName, RGB (255, 255, 255));
+					TextOut2 (hDC, 0, 0, (LPSTR)pszMapName, RGB (255, 255, 255));
 
 					SelectObject (hDC, hFontOld);
 					pDibDrawTmp.Unlock ();
-					int xTmp = (SCRSIZEX / 2) - (SboTextWidth ((LPSTR)g_pMapInfo->pszName) * 8);
+					int xTmp = (SCRSIZEX / 2) - (SboTextWidth ((LPSTR)pszMapName) * 8);
 					xTmp = max (xTmp, 0);
 					g_pDibDrawMap->BltAlpha (32 - x + xTmp,
-								32 - y + 5 * 32, (SboTextWidth ((LPSTR)g_pMapInfo->pszName) + 1) * 16, 64, &pDibDrawTmp, 0, 0, byLv, TRUE);
+								32 - y + 5 * 32, (SboTextWidth ((LPSTR)pszMapName) + 1) * 16, 64, &pDibDrawTmp, 0, 0, byLv, TRUE);
 				}
 			}
 

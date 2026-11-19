@@ -2053,6 +2053,138 @@ forge load recipe2 kind=2 affix=1 plain=0 mask=0 mat=1 gold=0
 forge load recipe3 kind=2 affix=5 plain=1 mask=0 mat=1 gold=0
 forge load recipe4 kind=1 affix=2 plain=1 mask=0 mat=1 gold=0
 forge load recipe5 kind=1 affix=2 plain=1 mask=2 mat=1 gold=0
+== AN. Dungeon theme ==
+dungeontheme deco global=2 perRoom=32 limits=1
+dungeontheme plain bottom=1,2 walls=9725 faces=5384 verticalDoors=297 exposed=2080 non-face=0 errors=0
+dungeontheme missing old=1 buildNo=0 events=2
+dungeontheme theme5 old=0 buildNo=1 entry=1 mapchg=3 doors>0=1 doorsOk=1 oldEvent=0 keepEvent=1 eventOutside=0 badParts=0 outChanged=1(entrance=1) goal=1 genSize=40x40
+dungeontheme lights count=2 p0=3/4 p1=1/7
+dungeontheme rebuild buildNo=2 doors>0=1 eventsBounded=1 keepEvent=1
+dungeontheme automap name=test
+dungeontheme automap valid=1 build=1 rooms>1=1 links>0=1 roomsIn=1 linksIn=1 group=1 size=1 type3same=1
+dungeontheme automap send=1 same=1
+dungeontheme automap other map sent=0
+dungeontheme automap off send=1 valid=1
+dungeontheme theme6 lights untouched=1
+dungeontheme theme6 doors=0 buildNo=3 goalPart=1
+dungeontheme narrow buildNo+=0 mapTmp=0
+dungeontheme narrow automap dropped=1
+dungeontheme save theme0=0 theme7=7 fields=11 extraBytes=18
+== AO. Dungeon bonus-game ==
+dungeonbonus build ready=1 entry=1 goal=1
+dungeonbonus put normal=0 spaced=1
+dungeonbonus entrance-only sel=0 open=0 notice=1 in=0
+dungeonbonus reception explain-before-open=1
+dungeonbonus reception simultaneous talk=1 sel=1
+dungeonbonus legacy-begin active sel=1 resend=0
+dungeonbonus reception after29999ms sel=1
+dungeonbonus reception after30s sel=0 in=0
+dungeonbonus solo open sel=1 in=0 wait30=1
+dungeonbonus ready solo outside=1 talk=1
+dungeonbonus solo picked sel=0 in=1 indungeon=1 space>0=1 lv=8 runs=1
+dungeonbonus party member-talk sel=0
+dungeonbonus late leader-only sel=1 members=1 b=0
+dungeonbonus late explanation=1
+dungeonbonus late b-joined sel=1 members=2 b=2 open=1
+dungeonbonus party leader-talk sel=1
+dungeonbonus party a-picked in a=0 b=0 sel=1
+dungeonbonus ready party outside=11 talk=11
+dungeonbonus ready gather waiting=11 notice=1
+dungeonbonus party both-in a=1 b=1 same=1 differs=1 lv=7 sel=0 runs=2
+dungeonbonus party explanation leader=1 member=1
+dungeonbonus deadline open sel=1 members=2 d-open=1 e-open=1
+dungeonbonus deadline d-picked in d=0 sel=1
+dungeonbonus deadline 10s in d=0 sel=1
+dungeonbonus messages timeout=1
+dungeonbonus ready deadline outside=11
+dungeonbonus ready unselected blocked=1
+dungeonbonus deadline 31s in d=1 e=0 sel=0 runs=3
+dungeonbonus enemies s1=3 s2=3 s3=3 normal=0
+dungeonbonus refill killed=2 after=3 full=1
+dungeonbonus once killed after=2 (full=3) s1=3 s2=3
+dungeonbonus once new-group in e=1 new space=1 enemies=3 full=1 runs=4
+dungeonbonus bag in c bag0=0 bag=2 real-item-visible=1
+dungeonbonus goal c in=0 space=0 got=0 kept=1 lv=30
+dungeonbonus goal freed runs=3 enemies-s1=0
+dungeonbonus dead a bag=1
+dungeonbonus dead a waits in=1 b-still=1
+dungeonbonus dead a in=0 got=0 kept=1 b-still=1
+dungeonbonus retire event=1 in-before=1 in=0 space=0 lv=30 runs=3
+dungeonbonus return-entrance outside=1 normal=1 in=0 open=0
+dungeonbonus rebuild b in=0 got=0 kept=1 d in=0 e in=0
+dungeonbonus rebuild freed runs=0 enemies=0/0/0/0
+dungeonbonus killall theme=5 once=1 goal-event=0 picture=0 saved-picture=0 entrance=1 ready=1
+dungeonbonus killall theme=5 once=0 goal-event=1 picture=1 saved-picture=1 entrance=1 ready=1
+dungeonbonus killall theme=6 once=1 goal-event=0 picture=0 saved-picture=0 entrance=1 ready=1
+dungeonbonus killall theme=6 once=0 goal-event=1 picture=1 saved-picture=0 entrance=1 ready=1
+dungeonbonus killall theme=0 once=1 goal-event=0 picture=0 saved-picture=0 entrance=1 ready=1
+dungeonbonus killall theme=0 once=0 goal-event=1 picture=1 saved-picture=0 entrance=1 ready=1
+dungeonbonus moved-before-build sel=0 in=0
+dungeonbonus moved-build entry=1 goal=1 in-area=1 floor=1 warp=1 automap=1
+dungeonbonus moved-enemies source=1 spawned=1 outside=0
+dungeonbonus ready expiry waiting=1 notice=1 blocked=1
+dungeonbonus ready moved notice=1 blocked=1
+dungeonbonus ready party-leave notice=1 blocked=1
+dungeonbonus ready disconnect notice=1 blocked=1
+dungeonbonus custom-talk text=1 no-wait=1 sel=1
+dungeonbonus messages custom=1 immediate=1 legacy-ignored=1 title=1 cancel=1
+dungeonbonus messages entered=1
+dungeonbonus messages all-dead=1 out=1
+dungeonbonus messages empty-default=1 title-default=1 packet-small=1
+dungeonbonus messages npc-priority=1
+dungeonbonus messages begin-moved sel=0
+dungeonbonus messages begin-replay sel=0
+dungeonbonus event-select cycle=1 empty-kept=1
+dungeonbonus save roundtrip=1 extra>0=1 messages=1 old-empty=1
+dungeonbonus area automap dropped=1 off=1 preview-kept=1
+dungeonbonus api ok=1 tmpl=1,1 name2=魔法使い name1=戦士
+dungeonbonus messages api=1 admin-send=1
+dungeonbonus end runs=0 sel=0
+== AP. Dungeon daily ==
+dungeondaily first auto ready=1 build=1 ver=1 found=1 date=2026-11-20 rebuild=0 seed=date genVer=3 themeId=5 size=40x40
+dungeondaily same-day rebuild same=1 build=2 versions=1
+dungeondaily after-reload same=1 versions=1 themeSaved=1
+dungeondaily seed differs-by-dungeon=1 differs-by-date=1
+dungeondaily random-mode versions=0 daily-ver=0
+dungeondaily entrance-only sel=0 open=0 notice=1 in=0
+dungeondaily reception explanation=1
+dungeondaily reception open sel=1 members=1 in=0
+dungeondaily enemies s1=3 s2=3 same-positions=1
+dungeondaily messages empty=1 format=1 literal-name=1
+dungeondaily messages default=1
+dungeondaily date-change occupied rebuilt=0 stale=1
+dungeondaily date-change new group in=1 same-version=1 positions-same=1
+dungeondaily messages clear-notice=1 rank-notice=1
+dungeondaily goal c in=0 records=1 ms-ok=1 count=1 form=戦士
+dungeondaily goal d records=2 ordered=1
+dungeondaily date-change empty rebuilt=1 versions=2 new-date=2026-11-21 new-seed=date shape-changed=1 old-records-kept=1
+dungeondaily no-more-rebuild=1
+dungeondaily admin before in=1
+dungeondaily admin rebuild ok=1 c-out=1 runs=0 seed-changed=1 rebuild-no=1 versions=3 shape-changed=1
+dungeondaily admin persisted found=1 seed-kept=1 no-auto-rebuild=1 same-shape-after-restart=1 versions=3
+dungeondaily api random-rebuild=0 records-ok=1 has-theme=1 has-records=1 rebuild-ok=1 bad-error=1 versions-after=4
+dungeondaily records count=20 last-rank=4 sorted=1
+dungeondaily records same-party slower rank=4 better=0 faster rank=1 better=1 same-party-count=1 count=20
+dungeondaily top-text first=1 time=2分5秒
+dungeondaily messages actual-rank=1 default-rank=1
+dungeondaily reload same-json=1 len>0=1
+dungeondaily killall once goal-event=0 picture=0 saved-picture=0
+dungeondaily killall entrance-retire out=1 records=0
+dungeondaily killall start in=11 enemies=3 after2=1 cleared-yet=0
+dungeondaily killall cleared records=1 ms=42345 count=2 in=11
+dungeondaily killall countdown 3s in=11
+dungeondaily killall after10s in=00 b-hp>0=1 runs=0
+dungeondaily killall no-once goal-event=1 picture=1 saved-picture=1
+dungeondaily killall no-once-enemy acts-as-goal out=1 records=2
+dungeondaily random-mode records-versions=0->0
+dungeondaily oneshot first ranked records=1 tried-d=1 tried-c=0
+dungeondaily oneshot second not-ranked out=1 records=1
+dungeondaily oneshot mixed party in=11 out=11 records=1 tried-c=1
+dungeondaily oneshot another first ranked records=2
+dungeondaily oneshot reload tried=3 d=1 c=1 e=1 a=0
+dungeondaily oneshot rebuilt new-version=1 tried-d=0
+dungeondaily oneshot new-version first again ranked records=1 old-version-records=2
+dungeondaily end runs=0 sel=0
 == L3. Tail battle mapmove ==
 tailbattlemap setup=1
 tailbattlemap battle preserved=1 wait=1

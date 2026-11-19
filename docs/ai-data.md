@@ -513,6 +513,8 @@ NPC（`char`）の台詞（`szNpcSpeech`）を **`@t` + 番号**（例 `@t012`�
 | `/api/data/get` | `{kind, id}` | 1 件 |
 | `/api/data/tiles` | `{id, x?, y?, w?, h?}` | マップのマス目（`id` は `map` の番号） |
 | `/api/data/chests` | `{}` | 全マップの宝箱の一覧（読むだけ） |
+| `/api/data/dungeon/records` | `{id?, versionNo?, theme?}` | 日替わりダンジョンの版と最短記録（読むだけ。版ごとに上位 20 件。`seed`・`genVer`・`themeRef`（`theme: true` で写しの中身）が同じなら同じ形。仕様は `docs/dungeon-gen.md` の「番外編 段階2」） |
+| `/api/data/dungeon/rebuild` | `{id}` | 日替わりダンジョン（`subGame` の `detail.byRebuildMode` が 1）を今すぐ作り直す（書き込みキーだけ。中の組は外へ戻り、新しいランダムなシードの版になる） |
 | `/api/data/market` | `{}` | 取引所の出品（出品中・期限切れ）とアカウントごとの出品数・売上（読むだけ。下の「取引所」） |
 | `/api/data/recycle` | `{}` | リサイクルボックスの箱ごとの中身と、入れた・もらった記録（読むだけ。上の「リサイクルボックス」） |
 | `/api/data/tiles/set` | `{id, x, y, parts:[[...]], note?, previewId?}` | マス目を書き換える（下見 / 反映の結果） |
@@ -537,6 +539,8 @@ NPC（`char`）の台詞（`szNpcSpeech`）を **`@t` + 番号**（例 `@t012`�
 | `sbo_list` / `sbo_get` | 一覧・1 件 |
 | `sbo_map_tiles` / `sbo_map_tiles_set` | マップのマス目を読む・書き換える（2 段階） |
 | `sbo_chests` | 全マップの宝箱の一覧（読むだけ） |
+| `sbo_dungeon_records` | 日替わりダンジョンの版と最短記録（読むだけ） |
+| `sbo_dungeon_rebuild` | 日替わりダンジョンを今すぐ作り直す（書き込みキーだけ。すぐ動く） |
 | `sbo_market` | 取引所の出品とアカウントごとの出品数・売上（読むだけ） |
 | `sbo_recycle` | リサイクルボックスの箱ごとの中身と、入れた・もらった記録（読むだけ） |
 | `sbo_update` / `sbo_add` | 変更・追加（2 段階） |

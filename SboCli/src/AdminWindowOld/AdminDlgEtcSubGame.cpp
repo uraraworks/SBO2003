@@ -86,6 +86,8 @@ void EtcSubGameRenewInfo(void)
 	}
 	SendMessage(hWndTmp, CB_SETCURSEL, (WPARAM)g_nSelectSubGameID, 0);
 
+	EnableWindow (GetDlgItem (s_hWndDlg, IDC_DGREBUILD_NOW),
+		(g_nSubGameCount > 0) && g_pSubGameInfo && (g_pSubGameInfo->byType == SUBGAMEID_DUNGEON));
 	MakeInfo (szTmp);
 
 	hWndTmp = GetDlgItem (s_hWndDlg, IDC_INFO);
@@ -146,6 +148,7 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 	g_nSubGameCount = 0;
 	g_nSelectSubGameID = 0;
 
+	EnableWindow (GetDlgItem (hWnd, IDC_DGREBUILD_NOW), FALSE);
 	/* 最初の情報を取得 */
 	SendCmdSUBGAMEINFOGET (0);
 	return FALSE;
@@ -183,6 +186,12 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 				g_nSelectSubGameID = (int)atoi (szTmp);
 				break;
 			}
+		}
+		break;
+
+	case IDC_DGREBUILD_NOW:
+		if ((g_nSubGameCount > 0) && g_pSubGameInfo && (g_pSubGameInfo->byType == SUBGAMEID_DUNGEON)) {
+			SendCmdSubDUNGEONREBUILDNOW ((BYTE)g_nSelectSubGameID);
 		}
 		break;
 

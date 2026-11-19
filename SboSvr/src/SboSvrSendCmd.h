@@ -27,6 +27,9 @@ extern void SendCmdCHARINFO2			(DWORD, DWORD, int);							/* コマンド送信(
 extern void SendCmdCHARINFO3			(int);											/* コマンド送信(キャラ情報通知) */
 extern void SendCmdCHGDIRECTION			(DWORD, int);									/* コマンド送信(向き変更要求) */
 extern void SendCmdMAPSWAP				(DWORD, DWORD, const MAPSWAPSEND *, int);	/* コマンド送信(印で変わるマスの差し替え一覧) */
+extern void SendCmdDUNGEONMAP			(DWORD, DWORD);									/* コマンド送信(探索マップ用の情報。そのマップのダンジョンの分) */
+extern void SendCmdDUNGEONMAPMAP		(DWORD);										/* コマンド送信(探索マップ用の情報をマップにいる全員へ) */
+extern void SendCmdDUNGEONSEL			(DWORD, PCMDPARA_DUNGEONSEL);					/* コマンド送信(番外編ダンジョン：入る姿を選ぶ窓を開く・閉じる。その人にだけ) */
 extern void SendCmdCHARPOS				(DWORD, int, BYTE, BYTE);						/* コマンド送信(座標通知) */
 extern void SendCmdCHARHIDE				(DWORD, int);									/* コマンド送信(キャラを消す通知。1人にだけ。キャラ自体は消さない) */
 extern void SendCmdSPEECH				(DWORD, int, BYTE);								/* コマンド送信(発言通知) */

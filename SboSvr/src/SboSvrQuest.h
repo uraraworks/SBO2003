@@ -61,6 +61,7 @@ extern WORD MapSwapParts(PMAPINFO pMap, PCHARINFO pViewer, int x, int y);	/* (x,
 extern void MapSwapSend(PCHARINFO pChar, PMAPINFO pMap, BOOL bForce);	/* 印で変わるマスの差し替え一覧を本人にだけ送る（bForce=FALSE は送るものが無ければ送らない） */
 extern BOOL ChestOpenedGet(const PCHARINFO pChar, int nChestNo);	/* 開けた宝箱の記録を見る（番号 0〜2047） */
 extern void ChestOpenedSet(PCHARINFO pChar, int nChestNo, BOOL bOn);	/* 開けた宝箱の記録を立てる・消す */
+extern void ResendMapToPlayers(PMAPINFO pMap, int nID);			/* そのマップにいるプレイヤー全員へ、マップ情報・イベント・キャラ等をマップに入った時と同じ順で送り直す */
 extern void MapSwapSendMap(PMAPINFO pMap);						/* そのマップにいるプレイヤー全員に差し替え一覧を送り直す */
 extern BOOL MapSwapExamine(PCHARINFO pChar);					/* 目の前の「調べると開く」マスを調べた（品を渡して印を立てて文を出す）。処理した時 TRUE */
 extern void CharViewRefreshNpc(PCHARINFO pNpc);					/* 条件付きNPCの条件を変えた時、そのマップの全員に見え直しを送る */
@@ -108,6 +109,22 @@ extern void QuestChallengeSaveSwap(BOOL bBegin);				/* キャラ情報を保存�
 extern void QuestChallengeProcNow(void);						/* 討伐チャレンジの周期処理を今すぐ（テスト用） */
 extern void QuestChallengeOnWarp(PCHARINFO pChar);				/* マップの中のワープで動いた時（挑戦中で着いた後なら部屋を出たとして中断） */
 
+/* 番外編ダンジョン（気まぐれダンジョンのミニゲーム。入口で姿＝テンプレートを選び、組ごとの空間へ入る） */
+extern BOOL DungeonIsReceptionNpc(PCHARINFO pNpc);             /* ダンジョン受付（台詞「@d番号」）か */
+extern void DungeonReceptionTalk(PCHARINFO pChar, PCHARINFO pNpc); /* 受付から姿選びを始める */
+extern BOOL DungeonUsesKillAll(PSUBGAME_DUNGEONINFO pDungeon); /* 補充しない発生元が範囲内にある全敵撃破モードか */
+extern BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent);	/* マップ間移動のイベントに乗った時の最初に呼ぶ（外の入口なら受付へ案内・中の出口なら元の姿で出す）。処理したら TRUE */
+extern void DungeonSelRecv(PCHARINFO pChar, PCMDPARA_DUNGEONSEL pPara);	/* CMD_DUNGEONSEL の受信（姿を選ぶ・やめる） */
+extern BOOL QuestInDungeon(PCHARINFO pChar);					/* 番外編ダンジョンの中か（貸し出しの姿になっているか） */
+extern BOOL DungeonPutIsSpaced(PCHARINFO pParent);				/* NPC発生の発生元が番外編ダンジョンの範囲の中か（ふつうの世界には出さず、組の空間ごとに出す） */
+extern BOOL DungeonPutOnChildDec(PCHARINFO pChild);				/* 空間の中で発生した敵が消えた。空間の敵なら TRUE（発生元の数は動かさない） */
+extern void DungeonProcNow(DWORD dwNow);						/* 番外編ダンジョンの周期処理を今すぐ（テスト用。時刻を指定） */
+extern int  DungeonBagCount(PCHARINFO pChar);					/* 持ち帰り袋に入っている品の数（テスト用） */
+extern int  DungeonRunCount(void);								/* 番外編ダンジョンの空間（組）の数（テスト用） */
+extern int  DungeonSelCount(void);								/* 姿を選んでいる組の数（テスト用） */
+extern int  DungeonSelMemberCount(PCHARINFO pChar);				/* その人がいる選び中の組の人数（テスト用） */
+extern int  DungeonRunLeaveAll(int nDungeonID, const char *pszMsg);	/* そのダンジョンの中の組の全員に pszMsg を知らせて、外へ戻す（作り直し）。戻した人数 */
+
 /* 空間（同じマップの同じ場所でも、別の空間の人とは出会わない。討伐チャレンジの組ごとに 1 つ作る） */
 extern void SpaceSet(PCHARINFO pChar, DWORD dwSpaceID, BOOL bRefresh = TRUE);	/* 空間を移す（遊んでいる人は、前の空間の人から消える。bRefresh なら新しい空間の見え方を作り直して送る。この後マップ移動をするなら FALSE で、移動の後に SpaceSendMapState を呼ぶ） */
 extern void SpaceSetQuiet(PCHARINFO pChar, DWORD dwSpaceID);	/* 空間番号だけ書き換える（まだ誰にも見えていない作りたてのキャラ・マップ移動の途中用） */
@@ -123,3 +140,9 @@ extern void SpaceEnemyDoorCheckMap(DWORD dwMapID);				/* そのマップの「�
 extern void SpaceOnCharMapProc(PMAPINFO pMap, PEVENTINFO pEvent, PEVENTINFO_ONCHARMAP pInfo);	/* 「乗っている間変わるマス」の処理（ふつうの世界と、ほかの空間の分） */
 
 /* Copyright(C)URARA-works 2003-2005 */
+
+
+extern BOOL DungeonPutPositionAllowed(PCHARINFO pParent, DWORD dwX, DWORD dwY); /* 組の敵は生成エリア内にだけ出す */
+
+/* 番外編の操作制限の文（サブゲームの設定を使う） */
+extern std::string DungeonBlockedText(PCHARINFO);

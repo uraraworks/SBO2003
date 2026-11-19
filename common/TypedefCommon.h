@@ -63,6 +63,8 @@
 #define MAX_MAGICKEY		5										/* 特技ショートカットの枠数（1〜5 キー） */
 #define MAX_TOWNWARP		4										/* 町転送の行き先帳に覚えておける町の数 */
 #define MAX_TOWNWARPNAME	64										/* 町転送の行き先の名前の大きさ（UTF-8） */
+#define MAX_DGTMPL			8										/* 番外編ダンジョンで選べるテンプレート（職業）の数 */
+#define MAX_DGTMPLNAME		24										/* その表示名の大きさ（UTF-8。終端含む） */
 /* 町転送で選べる行き先の数（復活位置を含む）。Lv1～4:1 Lv5～9:2 Lv10～14:3 Lv15～:4 */
 #define TOWNWARP_SLOT(byLevel)	(1 + (((byLevel) / 5 < 3) ? ((byLevel) / 5) : 3))
 #define MAX_MAKER			100										/* 最大作り手数（NPCの台詞 "@cNN" の NN が 2 桁なので 100 まで） */
@@ -388,6 +390,8 @@ enum {
 	CMD_AFFIXINFO,													/* 付与表の1行(サーバー→クライアント。ログイン時と変更時) */
 	CMD_ITEMDERIVE,													/* 派生アイテム表の行(サーバー→クライアント。ログイン時と新しく振った時) */
 	CMD_APPRAISE,													/* 鑑定屋で鑑定してもらう(クライアント→サーバー。結果はサーバー→クライアント) */
+	CMD_DUNGEONMAP,													/* テーマで作った気まぐれダンジョンの探索マップ用の情報(サーバー→クライアントのみ。CMDPARA_DUNGEONMAP。マップ情報の直後と作り直した直後に送る) */
+	CMD_DUNGEONSEL,													/* 番外編ダンジョンの入口で入る姿（テンプレート）を選ぶ(CMDPARA_DUNGEONSEL。一覧を開く・閉じるはサーバー→クライアント、選ぶ・やめるはクライアント→サーバー。プレイヤー用) */
 	CMD_MAX
 };
 
@@ -418,6 +422,7 @@ enum {
 /* サブゲーム[ダンジョン]用コマンド */
 enum {
 	CMDSUBBOMB_DUNGEONRENEW = 1,									/* ダンジョン作成 */
+	CMDSUBBOMB_DUNGEONREBUILDNOW,									/* 日替わりダンジョンを今すぐ作り直す（中の組は外へ戻し、新しいランダムなシードで作る） */
 };
 
 /* サブゲーム[戦場ゲーム]用コマンド */
@@ -1347,6 +1352,8 @@ typedef struct _SUBGAMEINFO {
 	PVOID		pInfo;												/* 詳細情報 */
 } SUBGAMEINFO, *PSUBGAMEINFO;
 
+#define MAX_DGTEXT 16384									/* 番外編の文言一覧（終端込みのバイト数） */
+
 /* サブゲーム：ダンジョン情報 */
 typedef struct _SUBGAME_DUNGEONINFO {
 	DWORD		dwMapID;											/* マップID */
@@ -1366,12 +1373,42 @@ typedef struct _SUBGAME_DUNGEONINFO {
 	WORD		wChipIDGoal;										/* ゴール地点のマップチップID */
 	WORD		wChipIDRoad;										/* 道のマップチップID */
 	WORD		wChipIDBlock;										/* 壁のマップチップID */
+	DWORD		dwThemeID;											/* ダンジョン生成のテーマ番号（0=今までの作り方。SboWebDungeonThemes.json の id） */
+	BYTE		byTmplCount;										/* 番外編：選べるテンプレートの数（0=番外編にしない。今までどおり誰でも入れる。最大 MAX_DGTMPL） */
+	WORD		wTmplID[MAX_DGTMPL];								/* 番外編：テンプレート番号（ステータステンプレートの番号） */
+	char		szTmplName[MAX_DGTMPL][MAX_DGTMPLNAME];				/* 番外編：選ぶ窓に出す表示名（空ならテンプレートの名前） */
+	BYTE		byRebuildMode;										/* 作り直しの方式（DGREBUILD_*。0=今まで通り・無人5秒で新しいシードで作り直す／1=日替わり。0 以外の時だけ保存の列が増える） */
+	BYTE		byClearMode;										/* クリア条件（DGCLEAR_*。0=ゴールのワープに着く／1=補充しない印の敵を全部倒す。0 以外の時だけ保存の列が増える） */
 	BYTE		*pMapTmp;											/* 作成するマップ */
 	DWORD		dwTblID;											/* 管理人キャラのテーブルID */
 	DWORD		dwCountTmp;											/* 参加人数カウント用 */
 	DWORD		dwTimeCheck;										/* 最後に人数チェックした時間 */
 	DWORD		dwTblIDCheck;										/* 最後に人数チェックしたテーブルID */
+	DWORD		dwBuildNo;											/* 作り直し番号（テーマで作るたびに進む。実行中だけ・保存しない） */
+	WORD		*pwGenParts;										/* テーマで作った結果のパーツ（範囲の大きさ。実行中だけ・保存しない） */
+	DWORD		dwGenMapID;										/* 生成時のマップと範囲（設定変更後の古い生成結果への入場を防ぐ） */
+	BYTE		byGenX1, byGenY1, byGenX2, byGenY2;
+	WORD		wGenCX;												/* 生成結果の横サイズ */
+	WORD		wGenCY;												/* 生成結果の縦サイズ */
+	WORD		wGenStartX;											/* 生成の start（範囲の左上からの座標） */
+	WORD		wGenStartY;
+	WORD		wGenGoalX;											/* 生成の goal（範囲の左上からの座標） */
+	WORD		wGenGoalY;
+	BYTE		*pbyAutoMap;										/* 探索マップ用の情報（CMDPARA_DUNGEONMAP の送るままの中身。実行中だけ・保存しない） */
+	DWORD		dwAutoMapSize;										/* その大きさ */
+	DWORD		dwDailyVer;											/* 日替わり：今の形の版の通し番号（SboDungeonDaily.json の no。0=まだ。実行中だけ・保存しない） */
+	DWORD		dwDailyCheck;										/* 日替わり：最後に日付・人数を見た時刻（約1秒ごと。実行中だけ） */
+	DWORD		dwDailyEmpty;										/* 日替わり：範囲が無人になった時刻（0=誰かいる／まだ戻していない。実行中だけ） */
+	DWORD		dwDailyRetry;										/* 日替わり：作れなかった時の次に試す時刻（0=すぐ。実行中だけ） */
+	BYTE		byDailyUsed;										/* 日替わり：最後に戻してから誰かが入った（実行中だけ） */
+	char szMessages[MAX_DGTEXT];							/* キー＝文を1行ずつ。空欄は既定文 */
 } SUBGAME_DUNGEONINFO, *PSUBGAME_DUNGEONINFO;
+
+/* 番外編ダンジョンの作り直しの方式（SUBGAME_DUNGEONINFO::byRebuildMode） */
+#define DGREBUILD_RANDOM	0										/* 今まで通り（無人5秒で、そのつど新しいシードで作り直す＝気まぐれ） */
+#define DGCLEAR_GOAL		0										/* クリア条件：ゴールのワープに着く（今まで通り） */
+#define DGCLEAR_KILLALL		1										/* クリア条件：その組の空間の、補充しない印の敵を全部倒す（そういう敵がいない設定ならゴールと同じ） */
+#define DGREBUILD_DAILY		1										/* 日替わり（日付とダンジョン番号からシードを決める＝その日は同じ形。日付が変わったら無人の時に作り直す） */
 
 /* サブゲーム：ダンジョン情報(保存データ) */
 typedef struct _SUBGAME_DUNGEONINFOSAVE {
@@ -1390,6 +1427,13 @@ typedef struct _SUBGAME_DUNGEONINFOSAVE {
 	WORD		wChipIDGoal;										/* ゴール地点のマップチップID */
 	WORD		wChipIDRoad;										/* 道のマップチップID */
 	WORD		wChipIDBlock;										/* 壁のマップチップID */
+	DWORD		dwThemeID;											/* ダンジョン生成のテーマ番号（0=今までの作り方） */
+	BYTE		byTmplCount;										/* 番外編：選べるテンプレートの数（0=番外編にしない） */
+	WORD		wTmplID[MAX_DGTMPL];								/* 番外編：テンプレート番号 */
+	char		szTmplName[MAX_DGTMPL][MAX_DGTMPLNAME];				/* 番外編：表示名 */
+	BYTE		byRebuildMode;										/* 作り直しの方式（DGREBUILD_*） */
+	BYTE		byClearMode;										/* クリア条件（DGCLEAR_*） */
+	char szMessages[MAX_DGTEXT];							/* 番外編の文言一覧 */
 } SUBGAME_DUNGEONINFOSAVE, *PSUBGAME_DUNGEONINFOSAVE;
 
 /* サブゲーム：迷路情報 */
@@ -2295,6 +2339,8 @@ typedef struct _CHARINFO {
 	BYTE		byAreaY;											/* 移動範囲（縦） */
 	BYTE		byPutCount;											/* 最大NPC発生数 */
 	BYTE		byPutCountNow;										/* 現在のNPC発生数 */
+	BYTE		byPutOnce;											/* NPC発生：1=補充しない（決めた数を出したら、それ以上は出さない。倒されても出し直さない） */
+	BYTE		byPutDone;											/* NPC発生：補充しない印の時に、これまでに出した数（実行中だけ・保存しない。ダンジョンの作り直しで 0 に戻す） */
 	BYTE		byCharEfcProc;										/* 処理中の文字エフェクト番号 */
 	BYTE		byDrunkPoint;										/* 酔いポイント */
 	BYTE		byDrunkLV;											/* 酔いレベル */
@@ -2475,6 +2521,7 @@ typedef struct _CMDPARA_CHARINFO {
 	BYTE		byAreaX;											/* 移動範囲（横） */
 	BYTE		byAreaY;											/* 移動範囲（縦） */
 	BYTE		byPutCount;											/* 最大NPC発生数 */
+	BYTE		byPutOnce;											/* NPC発生：1=補充しない */
 	BYTE		byDropProbability;									/* ドロップ率 */
 	BYTE		byMoveProbabilityX;									/* 移動確率X(NPC) */
 	BYTE		byMoveProbabilityY;									/* 移動確率Y(NPC) */
@@ -4048,6 +4095,64 @@ typedef struct _CMDPARA_MAPSWAP {
 	DWORD		dwMapID;											/* マップID */
 	WORD		wCount;												/* 件数 */
 } CMDPARA_MAPSWAP, *PCMDPARA_MAPSWAP;
+
+/* 探索マップ（テーマで作った気まぐれダンジョン）用の情報（サーバー→クライアント。保存しない・実行中だけ）。
+   この後ろに wRoomCount 件の DUNGEONMAPROOM、続けて wLinkCount 件の DUNGEONMAPLINK が続く。座標は全部マップ座標。
+   byValid が 0 なら「探索マップを使わない」（クライアントは覚えている地図を全部消す）。
+   dwBuildNo（作り直し番号）がクライアントの覚えているものと違えば、記録を全部消す */
+typedef struct _DUNGEONMAPROOM {
+	WORD		wX;													/* 部屋の外枠(壁を含む)の左上X */
+	WORD		wY;													/* 左上Y */
+	WORD		wW;													/* 幅 */
+	WORD		wH;													/* 高さ */
+	WORD		wGroup;												/* グループ番号（壁ごと抜いた(type 3)出入口でつながった部屋は同じ番号。いっしょに開ける） */
+} DUNGEONMAPROOM, *PDUNGEONMAPROOM;
+#define DUNGEONMAPLINK_ARCH		(1)									/* 出入口（アーチ） */
+#define DUNGEONMAPLINK_DOOR		(2)									/* 扉 */
+#define DUNGEONMAPLINK_OPEN		(3)									/* 壁ごと抜いた（広間） */
+typedef struct _DUNGEONMAPLINK {
+	WORD		wRoomA;												/* つながる部屋（部屋の一覧の番号） */
+	WORD		wRoomB;
+	WORD		wX;													/* 出入口の穴の範囲 左上X */
+	WORD		wY;													/* 左上Y */
+	WORD		wW;													/* 幅 */
+	WORD		wH;													/* 高さ */
+	BYTE		byType;												/* DUNGEONMAPLINK_* */
+} DUNGEONMAPLINK, *PDUNGEONMAPLINK;
+typedef struct _CMDPARA_DUNGEONMAP {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byValid;											/* 1=探索マップを使う / 0=使わない（以下は無視） */
+	DWORD		dwMapID;											/* マップID */
+	DWORD		dwBuildNo;											/* 作り直し番号 */
+	WORD		wX1;												/* ダンジョンの範囲（マップ座標） */
+	WORD		wY1;
+	WORD		wX2;
+	WORD		wY2;
+	WORD		wRoomCount;											/* 部屋の数 */
+	WORD		wLinkCount;											/* 出入口の数 */
+	char		szName[160];										/* 中にいる間に出すマップ名（テーマの名前。日替わりは「（今日のダンジョン）」付き。空ならマップの名前のまま） */
+} CMDPARA_DUNGEONMAP, *PCMDPARA_DUNGEONMAP;
+
+/* 番外編ダンジョンの入口で、入る姿（テンプレート）を選ぶ（CMD_DUNGEONSEL）。
+   サーバー→クライアント：DUNGEONSEL_OPEN で選ぶ窓を開く（byCount 件の名前・dwWait は締め切りまでのミリ秒）、DUNGEONSEL_CLOSE で閉じる。
+   クライアント→サーバー：DUNGEONSEL_PICK で byIndex 番目を選ぶ、DUNGEONSEL_CANCEL でやめる（dwTblID は本人のテーブルID） */
+enum {
+	DUNGEONSEL_OPEN = 1,											/* 選ぶ窓を開く（サーバー→クライアント） */
+	DUNGEONSEL_CLOSE,												/* 選ぶ窓を閉じる（サーバー→クライアント） */
+	DUNGEONSEL_PICK,												/* 選ぶ（クライアント→サーバー。byIndex=一覧の何番目か） */
+	DUNGEONSEL_CANCEL,												/* 入るのをやめる（クライアント→サーバー） */
+	DUNGEONSEL_BEGIN,											/* 旧クライアントの読み終えた通知（サーバーでは無視） */
+};
+typedef struct _CMDPARA_DUNGEONSEL {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byType;												/* DUNGEONSEL_* */
+	BYTE		byCount;											/* 一覧の件数（OPEN） */
+	BYTE		byIndex;											/* 選んだ番号（PICK） */
+	DWORD		dwTblID;											/* 本人のテーブルID（クライアント→サーバー） */
+	DWORD		dwWait;												/* 締め切りまでの残り時間（ミリ秒。OPEN） */
+	char		aszName[MAX_DGTMPL][MAX_DGTMPLNAME];				/* 表示名（UTF-8。OPEN） */
+	char szTitle[128];									/* 姿選びの題名（空なら既定文） */
+} CMDPARA_DUNGEONSEL, *PCMDPARA_DUNGEONSEL;
 #pragma pack(pop)
 
 /* 並べ替えの対象(CMDPARA_SORTITEM の byTarget) */

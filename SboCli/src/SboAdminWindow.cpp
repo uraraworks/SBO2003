@@ -33,6 +33,22 @@
 #include "AdminWindowOld/AdminDlgNpcRoute.h"
 #include "AdminWindowOld/AdminDlgMapSwap.h"
 
+/* 座標によるイベント問い合わせ。返事が無くても次の操作・画面切り替え・時間切れで捨てる */
+static BOOL s_bEventQuery = FALSE;
+static DWORD s_dwEventQueryX, s_dwEventQueryY, s_dwEventQueryMap, s_dwEventQueryTime;
+void AdminEventCancelQuery(void) { s_bEventQuery = FALSE; }
+BOOL AdminEventAcceptReply(DWORD dwID, DWORD dwX, DWORD dwY)
+{
+	if (g_nAdminWindowType != IDM_MAP_EVENT) return FALSE;
+	if (s_bEventQuery && (timeGetTime () - s_dwEventQueryTime > 3000)) AdminEventCancelQuery ();
+	if (s_bEventQuery && g_pMapInfo && (s_dwEventQueryMap == g_pMapInfo->dwID) && (dwX == s_dwEventQueryX) && (dwY == s_dwEventQueryY)) {
+		AdminEventCancelQuery ();
+		g_nSelectEventID = (int)dwID;
+		return TRUE;
+	}
+	return (int)dwID == g_nSelectEventID;
+}
+
 /* ========================================================================= */
 /* 定数定義																	 */
 /* ========================================================================= */
@@ -505,11 +521,16 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 			break;
 
 		case IDM_MAP_EVENT:
+			AdminEventCancelQuery ();
+			if (!g_pMapInfo || !g_pEventInfo || (wParam >= (WPARAM)g_pMapInfo->nCX) || (lParam < 0) || (lParam >= g_pMapInfo->nCY)) break;
 			if ((SendMessage (m_hWndCheck1, BM_GETCHECK, 0, 0) & BST_CHECKED) == 0) {
-				if (g_pMapInfo->pbyFlg[g_pEventInfo->dwX + g_pMapInfo->nCX *
-							g_pEventInfo->dwY] & MAPFLG_EVENT) {
-					/* クリックされた座標のイベントを取得 */
-					SendCmdEVENTGET (-1, (DWORD)wParam, (DWORD)lParam);
+				if (g_pMapInfo->pbyFlg && (g_pMapInfo->pbyFlg[(int)wParam + g_pMapInfo->nCX * (int)lParam] & MAPFLG_EVENT)) {
+					/* 同じマスは現在の番号の次から探す。負数に検索開始番号を入れる */
+					int nAfter = (g_pEventInfo->dwX == (DWORD)wParam && g_pEventInfo->dwY == (DWORD)lParam) ? g_nSelectEventID : -1;
+					s_bEventQuery = TRUE;
+					s_dwEventQueryX = (DWORD)wParam; s_dwEventQueryY = (DWORD)lParam;
+					s_dwEventQueryMap = g_pMapInfo->dwID; s_dwEventQueryTime = timeGetTime ();
+					SendCmdEVENTGET (-2 - nAfter, (DWORD)wParam, (DWORD)lParam);
 				}
 				break;
 			}
@@ -668,6 +689,7 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 						m_pParaCharInfo->clName = pChar->clName;
 						m_pParaCharInfo->byAreaY = pChar->byAreaY;
 						m_pParaCharInfo->byPutCount = pChar->byPutCount;
+						m_pParaCharInfo->byPutOnce = pChar->byPutOnce;
 						m_pParaCharInfo->byDropProbability = pChar->byDropProbability;
 						m_pParaCharInfo->byMoveProbabilityX = pChar->byMoveProbabilityX;
 						m_pParaCharInfo->byMoveProbabilityY = pChar->byMoveProbabilityY;
@@ -700,6 +722,7 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 						SetWindowText (m_hWndEdit13, szTmp);
 						wsprintf (szTmp, "%d", m_pParaCharInfo->byPutCount);
 						SetWindowText (m_hWndEdit14, szTmp);
+						CheckDlgButton (g_hWndAdmin, IDC_CHAR_PUTONCE, m_pParaCharInfo->byPutOnce ? BST_CHECKED : BST_UNCHECKED);
 						wsprintf (szTmp, "%d", m_pParaCharInfo->wTimePutInterval);
 						SetWindowText (m_hWndEdit15, szTmp);
 						m_pParaCharInfo->wShowFlagNo = CharFlagWireFix (pChar->wShowFlag);
@@ -864,6 +887,10 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 		break;
 
 	case WM_ADMINCHGEVENT:
+		/* 受信後、通知を処理するまでに画面や選択が変わることもある */
+		if ((g_nAdminWindowType != IDM_MAP_EVENT) || ((int)wParam != g_nSelectEventID) || !g_pEventInfo) {
+			break;
+		}
 		g_nSelectEventID = (int)wParam;
 		SendMessage (m_hWndEventList, CB_SETCURSEL, g_pEventInfo->byType, 0);
 		AdminOnCommandMapEvent (NULL, IDC_RENEW, NULL, 0);
@@ -879,11 +906,10 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 	/* マップメッセージ受信 */
 	case WM_ADMINMSGREQ:
 		{
-			if (g_nAdminWindowType != IDM_MAP_MSG) {
-				break;
-			}
 			LPSTR pMsg = (LPSTR)wParam;
-			SetWindowText (m_hWndEdit1, pMsg);
+			if (g_nAdminWindowType == IDM_MAP_MSG) {
+				SetWindowText (m_hWndEdit1, pMsg);
+			}
 			delete [] pMsg;
 		}
 		break;
@@ -909,7 +935,7 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 	case WM_ADMINGETACCINFO:
 		{
 			PCMDPARA_CHARINFO pPara = (PCMDPARA_CHARINFO)wParam;
-			if (!m_pParaCharInfo) {
+			if (((g_nAdminWindowType != IDM_ACC_INFO) && (g_nAdminWindowType != IDM_CHAR_INFO)) || !m_pParaCharInfo) {
 				delete pPara;
 				break;
 			}
@@ -927,6 +953,7 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 			m_pParaCharInfo->byAreaX = pPara->byAreaX;
 			m_pParaCharInfo->byAreaY = pPara->byAreaY;
 			m_pParaCharInfo->byPutCount = pPara->byPutCount;
+			m_pParaCharInfo->byPutOnce = pPara->byPutOnce;
 			m_pParaCharInfo->byDropProbability = pPara->byDropProbability;
 			m_pParaCharInfo->byMoveProbabilityX = pPara->byMoveProbabilityX;
 			m_pParaCharInfo->byMoveProbabilityY = pPara->byMoveProbabilityY;
@@ -971,6 +998,7 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 				SetWindowText (m_hWndEdit13, szTmp);
 				wsprintf (szTmp, "%d", m_pParaCharInfo->byPutCount);
 				SetWindowText (m_hWndEdit14, szTmp);
+				CheckDlgButton (g_hWndAdmin, IDC_CHAR_PUTONCE, m_pParaCharInfo->byPutOnce ? BST_CHECKED : BST_UNCHECKED);
 				wsprintf (szTmp, "%d", m_pParaCharInfo->wTimePutInterval);
 				SetWindowText (m_hWndEdit15, szTmp);
 				m_pParaCharInfo->wShowFlagNo = pPara->wShowFlagNo;
@@ -1426,6 +1454,9 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 
 	/* 預かり所情報更新 */
 	case WM_ADMINLEAVEINFO:
+		if ((g_nAdminWindowType != IDM_CHAR_LEAVE) || !g_pLeaveInfo) {
+			break;
+		}
 		{
 			LV_ITEM item;
 			ZeroMemory (&item, sizeof (item));
@@ -2235,6 +2266,7 @@ void AdminOnCommandMapInfo(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 /* ========================================================================= */
 void AdminOnCommandMapEvent(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 {
+	if (id != IDC_RENEW) AdminEventCancelQuery ();
 	switch (id) {
 	/* 取得 */
 	case IDC_GETEVENT:
@@ -2745,6 +2777,8 @@ void AdminOnCommandCharInfo(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 			ZeroMemory (pszTmp, nSize);
 			GetWindowText (m_hWndEdit14, pszTmp, 4);
 			m_pParaCharInfo->byPutCount = (BYTE)atoi (pszTmp);
+			/* 補充しない（出し切り）：数だけ出したらあとは補充しない */
+			m_pParaCharInfo->byPutOnce = (IsDlgButtonChecked (g_hWndAdmin, IDC_CHAR_PUTONCE) == BST_CHECKED) ? 1 : 0;
 
 			ZeroMemory (pszTmp, nSize);
 			GetWindowText (m_hWndEdit15, pszTmp, 6);
@@ -5742,6 +5776,8 @@ void AdminOnCommandSubGameInfo(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 					pDungeon->wChipIDRoad = (WORD)atoi (szTmp);
 					GetWindowText (m_hWndEdit13, szTmp, 5);
 					pDungeon->wChipIDBlock = (WORD)atoi (szTmp);
+					GetWindowText (m_hWndEdit14, szTmp, 8);
+					pDungeon->dwThemeID = (DWORD)atoi (szTmp);
 				}
 				break;
 			}
@@ -5823,6 +5859,14 @@ void AdminOnCommandSubGameInfo(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 				break;
 			}
 		}
+		break;
+
+	/* 日替わりダンジョンを今すぐ作り直す（中の組は外へ戻る） */
+	case IDC_DGREBUILD_NOW:
+		if ((g_nSubGameCount == 0) || (g_pSubGameInfo == NULL) || (g_pSubGameInfo->byType != SUBGAMEID_DUNGEON)) {
+			break;
+		}
+		SendCmdSubDUNGEONREBUILDNOW ((BYTE)g_nSelectSubGameID);
 		break;
 	}
 }
@@ -7026,6 +7070,8 @@ void AdminOnPaintSubGame(HDC hDC)
 		MyTextOut (hDC, 0, 64 + 16 * 5, "ｺﾞｰﾙ地点ﾁｯﾌﾟ:");
 		MyTextOut (hDC, 0, 64 + 16 * 6, "道ﾁｯﾌﾟ:");
 		MyTextOut (hDC, 0, 64 + 16 * 7, "壁ﾁｯﾌﾟ:");
+		MyTextOut (hDC, 0, 64 + 16 * 8, "ﾃｰﾏ番号:");
+		MyTextOut (hDC, 12 * 10, 64 + 16 * 8, "(0=従来)");
 
 		MyTextOut (hDC, 12 * 13, 64 + 16 * 3, "座標チェックがONの場合、");
 		MyTextOut (hDC, 12 * 13, 64 + 16 * 4, "左クリックで開始座標");
@@ -7669,6 +7715,7 @@ void MakeAdminWnd(int nType)
 /* ========================================================================= */
 void DeleteAdminWnd(void)
 {
+	AdminEventCancelQuery ();
 	SAFE_DESTROYWND (m_hWndDialog);
 	DeleteAdminWndMapParts ();
 	DeleteAdminWndMapInfo ();
@@ -7998,6 +8045,22 @@ void AdminMapInfoRefresh(void)
 	}
 	AdminAutoLayoutSetContentHeight (g_hWndAdmin, AdminMapInfoContentHeight ());
 	InvalidateRect (g_hWndAdmin, NULL, TRUE);
+}
+
+/* ========================================================================= */
+/* 関数名：AdminMapInfoOnRecv												 */
+/* 内容：マップ情報を受け取った時、マップ情報画面を新しい中身で作り直す		 */
+/*       （明るさ・灯り・見え方の設定を開いている時はそちらに任せる）		 */
+/* ========================================================================= */
+void AdminMapInfoOnRecv(void)
+{
+	if ((g_hWndAdmin == NULL) || (g_nAdminWindowType != IDM_MAP_INFO) || IsDlgMapLightOpen ()) {
+		return;
+	}
+	g_bAdminPos = FALSE;
+	DeleteAdminWnd ();
+	AdminAutoLayoutResetScroll (g_hWndAdmin);
+	MakeAdminWndMapInfo ();
 }
 
 /* ========================================================================= */
@@ -8624,6 +8687,13 @@ void MakeAdminWndCharInfo(void)
 			12 * 7, 12 * 19, 24, 11, g_hWndAdmin, NULL, g_hInstance, NULL);
 	SendMessage (m_hWndEdit14, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
+	/* 補充しない（出し切り） */
+	{
+		HWND hWndOnce = CreateWindow ("BUTTON", "補充しない", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+				12 * 10, 12 * 20, 12 * 11, 12, g_hWndAdmin, (HMENU)(INT_PTR)IDC_CHAR_PUTONCE, g_hInstance, NULL);
+		SendMessage (hWndOnce, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+	}
+
 	/* 発生周期 */
 	m_hWndEdit15 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
 			12 * 7, 12 * 20, 24, 11, g_hWndAdmin, NULL, g_hInstance, NULL);
@@ -8757,6 +8827,7 @@ void DeleteAdminWndCharInfo(void)
 	SAFE_DESTROYWND (m_hWndButton13);
 	SAFE_DESTROYWND (m_hWndButton14);
 	SAFE_DESTROYWND (m_hWndButtonTalk);
+	DestroyWindow (GetDlgItem (g_hWndAdmin, IDC_CHAR_PUTONCE));
 	DestroyWindow (GetDlgItem (g_hWndAdmin, IDC_CHAR_SHOWFLAG));
 	DestroyWindow (GetDlgItem (g_hWndAdmin, IDC_CHAR_SHOWFLAGN));
 	DestroyWindow (GetDlgItem (g_hWndAdmin, IDC_CHAR_HIDEFLAG));
@@ -10727,6 +10798,8 @@ void MakeAdminWndSubGameInfo(void)
 /* ========================================================================= */
 void DeleteAdminWndSubGameInfo(void)
 {
+	/* メンバーに保持しないダンジョンの追加欄も画面切り替え時に消す */
+	DeleteAdminWndSubGameInfoType ();
 	SAFE_DESTROYWND (m_hWndCombo1);
 	SAFE_DESTROYWND (m_hWndCheck1);
 	SAFE_DESTROYWND (m_hWndButton1);
@@ -10749,6 +10822,9 @@ void DeleteAdminWndSubGameInfo(void)
 /* ========================================================================= */
 void MakeAdminWndSubGameInfoType(void)
 {
+	if ((g_nAdminWindowType != IDM_ETC_SUBGAME) || !m_hWndCombo1) {
+		return;
+	}
 	if (g_nSubGameCount == 0) {
 		return;
 	}
@@ -10926,6 +11002,9 @@ void MakeAdminWndSubGameInfoType(void)
 			m_hWndEdit12 = CreateWindowEdit (12 * 7, 64 + 16 * 6, 24, 14, ES_NUMBER);
 			m_hWndEdit13 = CreateWindowEdit (12 * 7, 64 + 16 * 7, 24, 14, ES_NUMBER);
 
+			/* ダンジョン生成のテーマ番号 */
+			m_hWndEdit14 = CreateWindowEdit (12 * 7, 64 + 16 * 8, 36, 14, ES_NUMBER);
+
 			wsprintf (szTmp, "%ld", pDungeon->dwMapID);
 			SetWindowText (m_hWndEdit1, szTmp);
 			wsprintf (szTmp, "%d", pDungeon->byX1);
@@ -10952,6 +11031,8 @@ void MakeAdminWndSubGameInfoType(void)
 			SetWindowText (m_hWndEdit12, szTmp);
 			wsprintf (szTmp, "%d", pDungeon->wChipIDBlock);
 			SetWindowText (m_hWndEdit13, szTmp);
+			wsprintf (szTmp, "%lu", pDungeon->dwThemeID);
+			SetWindowText (m_hWndEdit14, szTmp);
 		}
 		break;
 	}
@@ -10978,6 +11059,15 @@ void DeleteAdminWndSubGameInfoType(void)
 	SAFE_DESTROYWND (m_hWndEdit11);
 	SAFE_DESTROYWND (m_hWndEdit12);
 	SAFE_DESTROYWND (m_hWndEdit13);
+	SAFE_DESTROYWND (m_hWndEdit14);
+	DestroyWindow (GetDlgItem (g_hWndAdmin, IDC_DGREBUILD_MODE));
+	DestroyWindow (GetDlgItem (g_hWndAdmin, IDC_DGCLEAR_MODE));
+	DestroyWindow (GetDlgItem (g_hWndAdmin, IDC_DGREBUILD_NOW));
+	DestroyWindow (GetDlgItem (g_hWndAdmin, IDC_DGTMPL_COUNT));
+	for (int k = 0; k < MAX_DGTMPL; k ++) {
+		DestroyWindow (GetDlgItem (g_hWndAdmin, IDC_DGTMPL_ID1 + k));
+		DestroyWindow (GetDlgItem (g_hWndAdmin, IDC_DGTMPL_NAME1 + k));
+	}
 }
 
 /* Copyright(C)URARA-works 2003-2005 */

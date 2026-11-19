@@ -1,0 +1,1839 @@
+/* ========================================================================= */
+/* admin-dungeon.js															 */
+/* 管理ページ（/admin）の「ダンジョン生成」									 */
+/* ========================================================================= */
+/*
+ * 仕様は docs/dungeon-gen.md。テーマ（9分割の部屋・床や壁のパーツ・飾り）を登録し、お試し作成で結果を見る。
+ *   API: /api/admin/dungeon/themes・theme/save・theme/delete・preview（server/node/sbosvr_dungeon.js）
+ *   マス目の取り込み: /api/admin/data/tiles（admin-mapview.js と同じ）
+ *   パーツの絵: admin-mapdoc.js の SboMapDoc.loadSheets / partCanvas（/admin-grp/）
+ * お試し作成は、保存前の編集中のテーマをそのまま送って試せる。
+ */
+(function (root) {
+	'use strict';
+
+	var T = 16;							/* パーツの絵の大きさ */
+	var api = null;						/* function (url, body) → Promise（session は呼ぶ側で付ける） */
+	var bBound = false, loading = null, bReady = false;
+	var sheets = null, parts = [], pcache = {};
+	var themes = [];					/* 保存済み（サーバーの内容） */
+	var cur = null;						/* 編集中のテーマ（id が無ければ未保存の新規） */
+	var dirty = false;
+	var selRoom = -1, selDeco = -1, selOp = -1;
+	var last = null, lastTheme = null;					/* 最後のお試し作成の結果 */
+	var $root = null;
+	var dex = null, dexLoading = null, palBuilt = false, palCb = null;	/* パーツ一覧のポップアップ */
+
+	/* 部分ごとの名前（テーマの項目） */
+	var LISTS = [
+		['floor', '床'], ['wallTop', '壁の天井（上段）'], ['wallFace', '壁の側面'], ['wallFill', 'その他の壁'],
+		['arch', '出入口の床'], ['archV', '縦の出入口の床（空 = 出入口の床と同じ）'], ['door', '扉（閉じた絵。0 = 出入口と同じ）'], ['doorOpen', '開いた扉の絵（ゲームの扉イベント用。0 = 扉イベントを置かない＝通れる出入口のまま）'], ['entry', '入口の絵（出てくる位置に1枚。0 = 置かない）'], ['goal', 'ゴールの絵（ボス部屋の真ん中に1枚。0 = 置かない）'], ['void', '何もない所（0 = 塗らない）']
+	];
+	var SCALAR = { door: 1, doorOpen: 1, entry: 1, goal: 1, 'void': 1 };
+	var KIND = ['ふつう', 'ボス', '入口'];
+	var CELL_COLOR = ['#14161a', '#b9a87a', '#6b5a48', '#8f7c60', '#4d4136', '#e6d9a8', '#c06a2b'];
+	var CELL_NAME = ['何もない', '床', '壁の天井', '壁の側面', '壁（その他）', '出入口の床', '扉'];
+	var PARAMS = [
+		['w', '幅', 40], ['h', '高さ', 40], ['seed', 'シード(0=ランダム)', 0], ['roomMin', '部屋の最小', 6], ['roomMax', '部屋の最大', 12],
+		['floorMin', '床の最低 %', 35], ['archMin', '出入口の幅 最小', 2], ['archMax', '出入口の幅 最大', 4], ['doorRate', '扉 %', 20],
+		['vertRate', '縦の出入口 %', 100], ['vertDoorRate', '縦の扉 %（-1=横と同じ）', -1], ['vertArchMin', '縦の幅 最小（0=横と同じ）', 0], ['vertArchMax', '縦の幅 最大（0=横と同じ）', 0],
+		['openRate', '広間 %', 8], ['loopRate', '輪にする %', 30], ['cutoff', '洞窟のやめる %', 25]
+	];
+
+	function $(id) { return document.getElementById(id); }
+	function errText(r) { return (r && (r.message || r.error)) || ('HTTP ' + (r && r.httpStatus)); }
+	function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+	function num(v, def) { v = Math.floor(Number(v)); return isFinite(v) ? v : def; }
+	function setMsg(text, bOk) {
+		var e = $('dg-msg');
+		if (!e) return;
+		e.textContent = text || '';
+		e.classList.toggle('ok', !!bOk);
+		if (text && !bOk && e.scrollIntoView) { try { e.scrollIntoView({ block: 'nearest' }); } catch (x) { /* 何もしない */ } }
+	}
+
+	/* ---------------------------------------------------------------- */
+	/* 画面の部品																 */
+	/* ---------------------------------------------------------------- */
+	var CSS = '.dg-sec{margin:14px 0;padding:10px;border:1px solid var(--border);border-radius:8px}' +
+		'.dg-sec h3{margin:0 0 6px;font-size:15px}' +
+		'.dg-row{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;margin:6px 0}' +
+		'.dg-row label{display:inline-flex;align-items:center;gap:4px;margin:0}' +
+		'.dg-row button,.dg-sec button{margin:4px 6px 0 0;padding:8px 12px;font-size:13px}' +
+		'.dg-sec select,.dg-sec input[type=text]{width:auto;max-width:100%;box-sizing:border-box;background:var(--field);color:var(--fg);' +
+		'border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:16px}' +
+		'.dg-n{width:5em!important}#dg-p-seed{width:9em!important}.dg-w{width:min(100%,22em)!important}' +
+		'.dg-parts{display:grid;grid-template-columns:minmax(8em,12em) minmax(6em,16em) 1fr;gap:6px 8px;align-items:center}' +
+		'.dg-thumbs{display:flex;flex-wrap:wrap;gap:2px}.dg-thumbs canvas{width:24px;height:24px;image-rendering:pixelated;border:1px solid var(--border)}' +
+		'.dg-cols{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start}' +
+		'.dg-scroll{overflow:auto;max-width:100%;max-height:75vh;border:1px solid var(--border)}' +
+		'.dg-cv{display:block;image-rendering:pixelated;touch-action:none}' +
+		'.dg-unsaved{background:var(--ng);color:#fff;font-weight:bold;padding:2px 8px;border-radius:10px;font-size:13px}' +
+		'button.dg-hot{outline:3px solid var(--ng);font-weight:bold}' +
+		'.dg-draft{margin:6px 0;padding:8px;border:2px solid var(--ng);border-radius:8px}' +
+		'.dg-draft button{margin:0 6px 0 0;padding:6px 12px}' +
+		'.dg-cap{font-size:12px;color:var(--sub);margin:2px 0}' +
+		'.dg-legend span{display:inline-flex;align-items:center;gap:3px;margin-right:8px;font-size:12px}' +
+		'.dg-legend i{display:inline-block;width:12px;height:12px;border:1px solid var(--border)}' +
+		'.dg-pf{display:flex;flex-wrap:wrap;gap:4px;align-items:flex-start}' +
+		'.dg-chipw{position:relative;display:inline-block}' +
+		'.dg-chip{display:flex!important;flex-direction:column;align-items:center;margin:0!important;padding:2px!important;min-width:40px;background:#000;border:2px solid var(--border);border-radius:4px;color:#ddd;font-size:11px;cursor:pointer}' +
+		'.dg-chip canvas{width:32px;height:32px;image-rendering:pixelated;display:block}' +
+		'.dg-chip:hover{border-color:var(--accent)}' +
+		'.dg-chipx{position:absolute;top:-6px;right:-6px;margin:0!important;padding:0!important;width:20px;height:20px;line-height:18px;border-radius:50%;font-size:13px;text-align:center}' +
+		'.dg-pf .dg-add{margin:0!important;align-self:center}' +
+		'.dg-sm{width:4em!important;padding:3px 5px!important;font-size:12px!important;margin-left:4px}' +
+		'.dg-dgrid{display:grid;gap:2px;width:max-content}' +
+		'.dg-palbg{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center}' +
+		'.dg-palbg[hidden]{display:none}' +
+		'.dg-palbg .mv-pal{position:relative;right:auto;top:auto;width:min(560px,calc(100vw - 16px));height:min(600px,calc(100vh - 16px));resize:none}' +
+		'.dg-palbg .mv-pal-head{cursor:default}' +
+		'.dg-palbg .mv-pal-tools button{margin:0;padding:6px 10px}' +
+		'.dg-guide{margin:14px 0;padding:14px;border:1px dashed var(--border);border-radius:8px;color:var(--sub)}' +
+		'@media(max-width:700px){.dg-parts{grid-template-columns:1fr}}';
+
+	function build() {
+		var h = '<style>' + CSS + '</style>';
+		h += '<details class="mv-help"><summary>使い方</summary><p class="sub-text">ディアブロ1式のランダムダンジョンのテーマ（床・壁のパーツ、9分割の部屋、飾り）を登録し、' +
+			'「お試し作成」で作った結果を見ます。お試し作成は、保存していない編集中のテーマでも試せます。サブゲーム「ダンジョン」にテーマ番号（dwThemeID）を入れると、作り直しのたびにこのテーマで作ります（仕様は docs/dungeon-gen.md）。</p></details>';
+		h += '<div class="msg" id="dg-msg"></div><div id="dg-drafts"></div>';
+		h += '<div class="dg-sec"><h3>テーマ</h3><div class="dg-row"><select id="dg-sel"></select>' +
+			'<button type="button" id="dg-new">追加</button><button type="button" id="dg-dup" class="sub">複製</button>' +
+			'<button type="button" id="dg-del" class="sub">削除</button><button type="button" id="dg-save">保存</button>' +
+			'<span class="sub-text" id="dg-dirty"></span></div>' +
+			'<div class="dg-row"><button type="button" class="sub" id="dg-exp-all">全部を書き出す</button><button type="button" class="sub" id="dg-exp-one">選んだ1つを書き出す</button>' +
+			'<label>読み込み <input type="file" id="dg-file" accept=".json,application/json"></label></div>' +
+			'<div id="dg-imp" hidden><div class="dg-cap" id="dg-implist"></div><div class="dg-row">' +
+			'<label><input type="radio" name="dg-impmode" value="add" checked> 追加として入れる（id を振り直す）</label>' +
+			'<label><input type="radio" name="dg-impmode" value="replace"> 同じ id を上書き</label>' +
+			'<button type="button" id="dg-impgo">入れる</button><button type="button" class="sub" id="dg-impcancel">やめる</button></div></div>' +
+			'<div class="dg-guide" id="dg-guide" hidden>左の一覧でテーマを選ぶか、「追加」で新しいテーマを作ってください。テーマを選ぶと、パーツ・9分割の部屋・出入口・灯り・飾りの欄が出ます。</div>' +
+			'<div id="dg-edit" hidden>' +
+			'<div class="dg-row"><label>名前 <input type="text" id="dg-name" maxlength="40"></label>' +
+			'<label>作り方 <select id="dg-algo"><option value="1">1 = L1 聖堂</option><option value="3">3 = L3 洞窟</option></select></label>' +
+			'<label>下の壁の厚さ（L1） <select id="dg-bottom"><option value="1">1行（天井だけ）</option><option value="2">2行（天井＋側面）</option></select></label>' +
+			'<label title="ゲームで作る時、ダンジョンの範囲だけをこの暗さにします（マップの明るさレベル。大きいほど暗い）。範囲の外（外の入口のあたり）は明るくなります。0 ならマップの設定のまま">暗さ（0=マップのまま） <input type="number" id="dg-tdark" min="0" max="100" style="width:5em"></label></div>' +
+			'<div class="dg-cap">絵を押すとパーツ一覧から選べます。複数可の欄は「＋追加」と絵の×で増減（床はくじで均等に混ぜます）。数字の欄は上級者用です。</div><div class="dg-parts" id="dg-lists"></div>' +
+			'<div class="dg-cap" id="dg-warn" style="color:var(--ng)"></div></div></div>';
+		h += '<div class="dg-sec" id="dg-rooms-sec" hidden><h3>9分割の部屋（L1 用）</h3>' +
+			'<div class="dg-row"><label>大きさ w <input type="text" class="dg-n" id="dg-rw" inputmode="numeric" value="9"></label>' +
+			'<label>h <input type="text" class="dg-n" id="dg-rh" inputmode="numeric" value="8"></label>' +
+			'<button type="button" id="dg-radd">＋部屋を追加</button></div>' +
+			'<div class="dg-row"><select id="dg-rsel"></select><button type="button" id="dg-rdup" class="sub">この部屋を複製</button><button type="button" id="dg-rdel" class="sub">この部屋を削除</button></div>' +
+			'<div id="dg-redit" hidden><div class="dg-row"><label>名前 <input type="text" id="dg-rname" maxlength="40"></label>' +
+			'<label>種類 <select id="dg-rkind"><option value="0">ふつう</option><option value="1">ボス</option><option value="2">入口</option></select></label>' +
+			'<label title="1 回のダンジョンでこの部屋の絵を使う回数の上限。0 は無制限">登場の上限 <input type="number" id="dg-rmax" min="0" max="99" style="width:4em"> 回（0=無制限）</label>' +
+			'<span class="sub-text" id="dg-rinfo"></span></div>' +
+			'<div class="dg-row"><label><input type="checkbox" id="dg-rfixed"> 伸ばさずそのまま置く（固定パターン）</label>' +
+			'<button type="button" class="sub" id="dg-rentclr">入口の位置を消す</button><span class="sub-text" id="dg-rentinfo"></span></div>' +
+			'<div class="dg-row" id="dg-tb-r"></div><div class="dg-row" id="dg-rb-r"></div>' +
+			'<div class="dg-cap" id="dg-rcap"></div>' +
+			'<div class="dg-cols"><div><div class="dg-cap">部屋の絵</div><div class="dg-scroll"><canvas class="dg-cv" id="dg-rcv"></canvas></div></div>' +
+			'<div id="dg-samples" class="dg-cols"><div><div class="dg-cap" id="dg-s1c"></div><div class="dg-scroll"><canvas class="dg-cv" id="dg-s1"></canvas></div></div>' +
+			'<div><div class="dg-cap" id="dg-s2c"></div><div class="dg-scroll"><canvas class="dg-cv" id="dg-s2"></canvas></div></div></div></div></div></div>';
+		h += '<div class="dg-sec" id="dg-ops-sec" hidden><h3>出入口パターン（最大50件）</h3>' +
+			'<div class="dg-row"><label>壁の向き <select id="dg-oidir"><option value="0">0 = 横の壁（共有壁は天井＋側面の2行）</option><option value="1">1 = 縦の壁（共有壁は1列）</option></select></label>' +
+			'<label>種類 <select id="dg-oitype"><option value="1">1 = アーチ</option><option value="2">2 = 扉</option><option value="3">3 = 壁ごと抜く</option></select></label>' +
+			'<label>大きさ w <input type="text" class="dg-n" id="dg-ow" inputmode="numeric" value="4"></label>' +
+			'<label>h <input type="text" class="dg-n" id="dg-oh" inputmode="numeric" value="2"></label>' +
+			'<label>共有壁の位置 off <input type="text" class="dg-n" id="dg-oioff" inputmode="numeric" value="0"></label>' +
+			'<button type="button" id="dg-oadd">＋パターンを追加</button></div>' +
+			'<div class="dg-row"><select id="dg-osel"></select><button type="button" id="dg-odup" class="sub">このパターンを複製</button><button type="button" id="dg-odel" class="sub">このパターンを削除</button></div>' +
+			'<div id="dg-oedit" hidden><div class="dg-row"><label>名前 <input type="text" id="dg-oname" maxlength="40"></label>' +
+			'<label>壁の向き <select id="dg-odir"><option value="0">0 = 横の壁</option><option value="1">1 = 縦の壁</option></select></label>' +
+			'<label>種類 <select id="dg-otype"><option value="1">1 = アーチ</option><option value="2">2 = 扉</option><option value="3">3 = 壁ごと抜く</option></select></label>' +
+			'<span class="sub-text" id="dg-oinfo"></span></div>' +
+			'<div class="dg-row"><label>共有壁の位置 off <input type="text" class="dg-n" id="dg-ooff" inputmode="numeric"></label>' +
+			'<label><input type="checkbox" id="dg-ostretch"> 3分割で穴の幅を伸び縮みさせる（切れ目の青い線）</label></div>' +
+			'<div class="dg-row" id="dg-oopenrow" hidden><button type="button" id="dg-oaddopen">開いた絵を作る（閉まった絵をコピー）</button>' +
+			'<button type="button" class="sub" id="dg-oclropen">開いた絵を消す</button></div>' +
+			'<div class="dg-row" id="dg-tb-o"></div><div class="dg-row" id="dg-rb-o"></div>' +
+			'<div class="dg-cap" id="dg-ocap"></div>' +
+			'<div class="dg-cols"><div><div class="dg-cap">閉まった絵（通常の絵）</div><div class="dg-scroll"><canvas class="dg-cv" id="dg-ocv"></canvas></div></div>' +
+			'<div id="dg-oopenbox"><div class="dg-cap">開いた絵</div><div class="dg-scroll"><canvas class="dg-cv" id="dg-ocv2"></canvas></div></div></div></div></div>';
+		h += '<div class="dg-sec" id="dg-lights-sec" hidden><h3>灯りの上書き表（最大8件）</h3>' +
+			'<div class="dg-cap">パーツ番号ごとの「灯りの範囲」（0〜7）を、このテーマだけ上書きします。お試し作成の「暗くして見る」では、パーツ本来の値より先にこの表を使います。</div>' +
+			'<div id="dg-lrows"></div><div class="dg-row"><button type="button" id="dg-ladd">行を足す</button></div></div>';
+		h += '<div class="dg-sec" id="dg-decos-sec" hidden><h3>飾り</h3>' +
+			'<div class="dg-row"><select id="dg-dsel"></select><button type="button" id="dg-dadd">＋飾りを追加</button><button type="button" id="dg-ddup" class="sub">複製</button><button type="button" id="dg-ddel" class="sub">削除</button></div>' +
+			'<div id="dg-dedit" hidden><div class="dg-row"><label>名前 <input type="text" id="dg-dname" maxlength="40"></label>' +
+			'<label>w <input type="text" class="dg-n" id="dg-dw" inputmode="numeric"></label><label>h <input type="text" class="dg-n" id="dg-dh" inputmode="numeric"></label>' +
+			'<label>置く所 <select id="dg-don"><option value="1">部屋の床</option><option value="3">壁の側面</option></select></label>' +
+			'<label>rate % <input type="text" class="dg-n" id="dg-drate" inputmode="numeric"></label><label>max <input type="text" class="dg-n" id="dg-dmax" inputmode="numeric"></label>' +
+			'<label title="部屋を選ぶと、その9分割の絵を使った部屋の中だけに置きます">置く部屋 <select id="dg-droom"></select></label>' +
+			'<label title="全体は対象全体で max まで、部屋ごとは各部屋で max まで。候補ごとに rate % で置きます（max 0 は無制限）">数え方: <select id="dg-dper"><option value="0">全体</option><option value="1">部屋ごと</option></select></label></div>' +
+			'<div class="dg-row" id="dg-tb-d"></div><div class="dg-row" id="dg-rb-d"></div>' +
+			'<div class="dg-scroll" style="max-height:60vh"><canvas class="dg-cv" id="dg-dcv"></canvas></div></div></div>';
+		h += '<div class="dg-sec"><h3>お試し作成</h3><div class="dg-row" id="dg-params"></div>' +
+			'<div class="dg-row"><button type="button" class="sub" id="dg-pkeep">今のお試し作成の設定をテーマに覚える</button>' +
+			'<button type="button" class="sub" id="dg-pclr">覚えた設定を消す</button>' +
+			'<span class="sub-text" id="dg-pinfo"></span></div>' +
+			'<div class="dg-cap">ゲーム（サブゲーム「ダンジョン」）で作る時は、テーマが覚えた設定（幅・高さ・シード以外）を使います。幅・高さはサブゲームのエリアの大きさ、シードは作るたびに変わります。覚えていない項目は既定値です。保存するまで反映されません。</div>' +
+			'<div class="dg-row"><label><input type="checkbox" id="dg-usetheme" checked> 編集中のテーマを使う</label>' +
+			'<button type="button" id="dg-gen">作る</button><button type="button" id="dg-gen2" class="sub">別のシード</button>' +
+			'<label>表示 <select id="dg-view"><option value="parts">パーツの絵</option><option value="meaning">意味の色</option></select></label>' +
+			'<label>暗さ <select id="dg-dark"><option value="t">テーマの暗さ</option><option value="0">なし</option><option value="25">25</option><option value="50">50</option><option value="75">75</option><option value="100">100</option></select></label>' +
+			'<label><input type="checkbox" id="dg-dchar" checked> 入口に人（灯り）</label>' +
+			'<label>拡大 <select id="dg-zoom"><option value="0.5">1/2倍</option><option value="1" selected>1倍</option><option value="2">2倍</option><option value="4">4倍</option></select></label></div>' +
+			'<div class="sub-text" id="dg-info"></div><div class="dg-legend" id="dg-legend" hidden></div>' +
+			'<div class="dg-scroll"><canvas class="dg-cv" id="dg-out"></canvas></div></div>';
+		$root.innerHTML = h;
+		var ps = '';
+		PARAMS.forEach(function (p) {
+			ps += '<label>' + p[1] + ' <input type="text" class="dg-n" inputmode="numeric" id="dg-p-' + p[0] + '" value="' + p[2] + '"></label>';
+		});
+		$('dg-params').innerHTML = ps;
+		var ls = '';
+		LISTS.forEach(function (l) {
+			ls += '<span>' + l[1] + '</span><input type="text" class="dg-sm" id="dg-l-' + l[0] + '" inputmode="numeric" autocomplete="off" style="width:min(100%,9em)!important"><span class="dg-pf" id="dg-t-' + l[0] + '"></span>';
+		});
+		$('dg-lists').innerHTML = ls;
+		var pg = document.createElement('div');
+		pg.className = 'dg-palbg';
+		pg.id = 'dg-pal';
+		pg.hidden = true;
+		pg.innerHTML = '<div class="mv-pal"><div class="mv-pal-head"><span id="dg-pal-title">パーツ一覧</span><button type="button" class="sub" id="dg-pal-close">閉じる</button></div>' +
+			'<div class="mv-pal-tools"><input type="search" id="dg-pal-q" placeholder="番号・名前・タグで探す"><button type="button" class="sub" id="dg-pal-zero">0（なし）にする</button></div>' +
+			'<div class="mv-pal-grid" id="dg-pal-grid"></div><div class="mv-pal-info" id="dg-pal-info"></div></div>';
+		$root.appendChild(pg);
+	}
+
+	/* ---------------------------------------------------------------- */
+	/* 絵																		 */
+	/* ---------------------------------------------------------------- */
+	function listAll(kind, extra) {
+		var out = [];
+		function next(offset) {
+			var body = { kind: kind, offset: offset, limit: 500 };
+			if (extra) for (var k in extra) body[k] = extra[k];
+			return api('/api/admin/data/list', body).then(function (r) {
+				if (!r.records) throw new Error(errText(r));
+				out = out.concat(r.records);
+				return r.more ? next(offset + r.records.length) : out;
+			});
+		}
+		return next(0);
+	}
+
+	function ensureBase() {
+		if (bReady) return Promise.resolve();
+		if (loading) return loading;
+		if (!root.SboMapDoc || !root.SboMapDoc.loadSheets) {
+			return Promise.reject(new Error('admin-mapdoc.js が読めませんでした'));
+		}
+		loading = root.SboMapDoc.loadSheets('/admin-grp/').then(function (s) {
+			sheets = s;
+			return listAll('mapParts');
+		}).then(function (a) {
+			parts = [];
+			a.forEach(function (p) { parts[p.id] = p; });
+			bReady = true;
+		});
+		loading.then(null, function () { loading = null; });
+		return loading;
+	}
+
+	function pimg(no) {
+		if (!bReady || !parts[no]) return null;
+		return root.SboMapDoc.partCanvas(parts, sheets, pcache, no);
+	}
+
+	/* マス目（grid[y][x] のパーツ番号の配列 or 平らな配列）を canvas に描く */
+	function drawGrid(cv, w, h, get, tile) {
+		cv.width = w * tile;
+		cv.height = h * tile;
+		var ctx = cv.getContext('2d');
+		ctx.imageSmoothingEnabled = false;
+		ctx.fillStyle = '#000';
+		ctx.fillRect(0, 0, cv.width, cv.height);
+		for (var y = 0; y < h; y++) {
+			for (var x = 0; x < w; x++) {
+				var v = get(x, y);
+				var im = v == null ? null : pimg(v);
+				if (im) ctx.drawImage(im, 0, 0, T, T, x * tile, y * tile, tile, tile);
+			}
+		}
+		return ctx;
+	}
+
+	function thumbs(box, list) {
+		box.textContent = '';
+		list.slice(0, 24).forEach(function (no) {
+			var im = pimg(no);
+			if (!im) return;
+			var c = document.createElement('canvas');
+			c.width = c.height = T;
+			c.title = String(no);
+			c.getContext('2d').drawImage(im, 0, 0);
+			box.appendChild(c);
+		});
+	}
+
+	/* ---------------------------------------------------------------- */
+	/* パーツ一覧のポップアップ（絵の並び・検索・選択の見せ方は「マップ確認」の編集モードのパーツ一覧と同じ。class も共用）	 */
+	/* ---------------------------------------------------------------- */
+	function ensureDex() {
+		if (dex || dexLoading) return dexLoading || Promise.resolve();
+		var all = [];
+		function more(offset) {
+			return api('/api/admin/parts/dex', { limit: 500, offset: offset }).then(function (r) {
+				if (!r.parts) throw new Error(errText(r));
+				all = all.concat(r.parts);
+				return (r.parts.length && all.length < r.matched) ? more(all.length) : all;
+			});
+		}
+		dexLoading = more(0).then(function (a) {
+			dex = {};
+			a.forEach(function (e) { dex[e.id] = { name: e.name || '', tags: e.tags || [] }; });
+			dexLoading = null;
+			filterPal();
+		}, function () { dexLoading = null; });
+		return dexLoading;
+	}
+	function partLabel(no) {
+		var d = dex && dex[no];
+		return 'パーツ ' + no + (d && d.name ? '「' + d.name + '」' : '') + (d && d.tags && d.tags.length ? '・' + d.tags.join(' ') : '');
+	}
+	function filterPal() {
+		if (!palBuilt) return;
+		var q = $('dg-pal-q').value.trim();
+		Array.prototype.forEach.call($('dg-pal-grid').children, function (b) {
+			var no = Number(b.dataset.no), d = dex && dex[no], bShow = true;
+			if (q) bShow = String(no) === q || (!!d && (d.name.indexOf(q) >= 0 || d.tags.some(function (t) { return t.indexOf(q) >= 0; })));
+			b.style.display = bShow ? '' : 'none';
+		});
+	}
+	/* 一覧のスクロール位置は閉じる時に覚えておき、次に開いた時に戻す（ブラウザを閉じても残す） */
+	var PAL_SCROLL_KEY = 'sbo_dungeon_pal_scroll';
+	var palScroll = (function () { try { return Number(localStorage.getItem(PAL_SCROLL_KEY)) || 0; } catch (e) { return 0; } })();
+	function savePalScroll() {
+		palScroll = $('dg-pal-grid').scrollTop;
+		try { localStorage.setItem(PAL_SCROLL_KEY, String(palScroll)); } catch (e) { /* 保存できなくても動く */ }
+	}
+	function closePal() { if (!$('dg-pal').hidden) savePalScroll(); $('dg-pal').hidden = true; palCb = null; }
+	function pickNo(no) { var f = palCb; closePal(); if (f) f(no); }
+	function buildPal() {
+		if (palBuilt) return;
+		palBuilt = true;
+		var grid = $('dg-pal-grid');
+		for (var i = 0; i < parts.length; i++) {
+			if (!parts[i]) continue;
+			var b = document.createElement('button'), cv = document.createElement('canvas');
+			b.type = 'button';
+			b.className = 'mv-pal-cell';
+			b.dataset.no = String(i);
+			b.title = String(i);
+			cv.width = cv.height = T;
+			var im = pimg(i);
+			if (im) cv.getContext('2d').drawImage(im, 0, 0, T, T, 0, 0, T, T);
+			b.appendChild(cv);
+			grid.appendChild(b);
+		}
+		grid.addEventListener('click', function (ev) {
+			var b = ev.target.closest && ev.target.closest('.mv-pal-cell');
+			if (b) pickNo(Number(b.dataset.no));
+		});
+		grid.addEventListener('mouseover', function (ev) {
+			var b = ev.target.closest && ev.target.closest('.mv-pal-cell');
+			if (b) $('dg-pal-info').textContent = partLabel(Number(b.dataset.no));
+		});
+		$('dg-pal-q').addEventListener('input', filterPal);
+		$('dg-pal-close').addEventListener('click', closePal);
+		$('dg-pal-zero').addEventListener('click', function () { pickNo(0); });
+		$('dg-pal').addEventListener('click', function (ev) { if (ev.target === $('dg-pal')) closePal(); });
+		document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && !$('dg-pal').hidden) closePal(); });
+	}
+	/* 一覧を開いて 1 つ選ばせる（cb(番号)。cur は今の番号） */
+	function openPal(title, curNo, cb) {
+		ensureBase().then(function () {
+			buildPal();
+			palCb = cb;
+			$('dg-pal-title').textContent = title + ' のパーツを選ぶ';
+			$('dg-pal').hidden = false;
+			Array.prototype.forEach.call($('dg-pal-grid').children, function (b) {
+				b.classList.toggle('sel', Number(b.dataset.no) === curNo);
+			});
+			var s = $('dg-pal-grid').querySelector('.sel');
+			$('dg-pal-info').textContent = curNo == null ? '' : '今：' + partLabel(curNo);
+			/* まず前回の位置へ。今のパーツがあれば、見えていない時だけそこまで動かす */
+			$('dg-pal-grid').scrollTop = palScroll;
+			if (s && s.scrollIntoView) s.scrollIntoView({ block: 'nearest' });
+			ensureDex();
+		}, function (e) { setMsg('パーツ一覧を開けません: ' + (e && e.message || e)); });
+	}
+	/* 今のパーツの絵のボタン（押すと一覧が開く） */
+	function chipBtn(no, onClick) {
+		var b = document.createElement('button'), cv = document.createElement('canvas'), n = document.createElement('span');
+		b.type = 'button';
+		b.className = 'dg-chip';
+		b.title = partLabel(no);
+		cv.width = cv.height = T;
+		var im = pimg(no);
+		if (im) cv.getContext('2d').drawImage(im, 0, 0);
+		n.textContent = String(no);
+		b.appendChild(cv);
+		b.appendChild(n);
+		b.addEventListener('click', onClick);
+		return b;
+	}
+	/* 絵の並び＋追加＋×。o = { title, multi, get(): 配列, set(配列), clearable } */
+	function partsField(box, o) {
+		box.textContent = '';
+		var arr = o.get();
+		arr.forEach(function (no, i) {
+			var w = document.createElement('span');
+			w.className = 'dg-chipw';
+			w.appendChild(chipBtn(no, function () {
+				openPal(o.title, no, function (n) { var a = o.get().slice(); a[i] = n; o.set(a); });
+			}));
+			if (o.multi || o.clearable) {
+				var x = document.createElement('button');
+				x.type = 'button';
+				x.className = 'dg-chipx sub';
+				x.textContent = '×';
+				x.title = '外す';
+				x.addEventListener('click', function () { var a = o.get().slice(); a.splice(i, 1); o.set(a); });
+				w.appendChild(x);
+			}
+			box.appendChild(w);
+		});
+		if (o.multi || !arr.length) {
+			var ad = document.createElement('button');
+			ad.type = 'button';
+			ad.className = 'dg-add sub';
+			ad.textContent = o.multi ? '＋追加' : '選ぶ';
+			ad.addEventListener('click', function () {
+				openPal(o.title, null, function (n) { var a = o.get().slice(); a.push(n); o.set(a); });
+			});
+			box.appendChild(ad);
+		}
+	}
+	function renderList(key, bKeepInput) {
+		var l = LISTS.filter(function (x) { return x[0] === key; })[0], v = cur[key];
+		if (!bKeepInput) $('dg-l-' + key).value = SCALAR[key] ? String(v) : v.join(',');
+		partsField($('dg-t-' + key), {
+			title: l[1].replace(/（.*$/, ''), multi: !SCALAR[key], clearable: !!SCALAR[key],
+			get: function () { var x = cur[key]; return SCALAR[key] ? (x ? [x] : []) : x; },
+			set: function (a) { cur[key] = SCALAR[key] ? (a[0] || 0) : a; markDirty(); renderList(key); }
+		});
+	}
+	function renderLight(l, box) {
+		partsField(box, {
+			title: '灯りを上書きするパーツ', multi: false, clearable: false,
+			get: function () { return [l.wParts]; },
+			set: function (a) { l.wParts = Math.max(0, a[0] || 0); markDirty(); showLights(); }
+		});
+	}
+	var DTILE = 32;
+	function renderDecoGrid() {
+		var d = cur.decos[selDeco];
+		if (!d) return;
+		var ctx = drawGrid($('dg-dcv'), d.w, d.h, function (x, y) { return d.cells[y * d.w + x]; }, DTILE);
+		ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+		ctx.lineWidth = 1;
+		ctx.beginPath();
+		for (var x = 1; x < d.w; x++) { ctx.moveTo(x * DTILE + 0.5, 0); ctx.lineTo(x * DTILE + 0.5, d.h * DTILE); }
+		for (var y = 1; y < d.h; y++) { ctx.moveTo(0, y * DTILE + 0.5); ctx.lineTo(d.w * DTILE, y * DTILE + 0.5); }
+		ctx.stroke();
+	}
+
+	/* ---------------------------------------------------------------- */
+	/* 9分割																	 */
+	/* ---------------------------------------------------------------- */
+	/* 部屋 r を W×H に当てる。四隅が入らない大きさなら null。返す値は [y][x] のパーツ番号 */
+	function nineSlice(r, W, H) {
+		var a = r.cutX[0], b = r.cutX[1], c = r.cutY[0], d = r.cutY[1];
+		var rw = r.w - b, bh = r.h - d;
+		if (W < a + rw || H < c + bh) return null;
+		var mw = b - a, mh = d - c;
+		function sx(x) {
+			if (x < a) return x;
+			if (x >= W - rw) return b + (x - (W - rw));
+			return a + ((x - a) % mw);
+		}
+		function sy(y) {
+			if (y < c) return y;
+			if (y >= H - bh) return d + (y - (H - bh));
+			return c + ((y - c) % mh);
+		}
+		var g = [];
+		for (var y = 0; y < H; y++) {
+			g[y] = [];
+			for (var x = 0; x < W; x++) g[y][x] = r.cells[sy(y) * r.w + sx(x)];
+		}
+		return g;
+	}
+
+	function drawRoom() {
+		var r = cur && cur.rooms[selRoom];
+		if (!r) return;
+		var tile = r.w * 24 > 480 ? Math.max(8, Math.floor(480 / r.w)) : 24;
+		var ctx = drawGrid($('dg-rcv'), r.w, r.h, function (x, y) { return r.cells[y * r.w + x]; }, tile);
+		$('dg-samples').hidden = r.fixed;
+		$('dg-rfixed').checked = r.fixed;
+		$('dg-rcap').textContent = r.fixed ?
+(tools.r === 'mark' ? '固定パターン: 9分割せず、このまま置きます。絵をクリックすると、出てくる位置（入口）の印を付けます（同じ所をもう一度クリックで消えます）。' : '道具が「' + (TOOL_NAME[tools.r] || '') + '」です。絵をクリック／なぞって描きます。') :
+			(tools.r === 'mark' ? '青い線（縦2本・横2本）をドラッグして切れ目を動かします。四隅はそのまま、辺は繰り返し、真ん中は縦横に繰り返します。' +
+			'線から離れた所をクリックすると、入口の位置の印を付けます（もう一度クリックで消えます）。' : '道具が「' + (TOOL_NAME[tools.r] || '') + '」です。絵をクリック／なぞって描きます（切れ目を動かすには「切れ目・入口の印」を選びます）。');
+		$('dg-rcap').textContent += ' 部屋の外枠は、上2行（天井＋側面）・下' + (cur.bottomRows === 2 ? '2行（天井＋側面）' : '1行（天井だけ）') + '・左右1列が壁です。';
+		if (!r.fixed && r.cutY[0] !== 2)
+			$('dg-rcap').textContent += ' ※上の切れ目より上が' + r.cutY[0] + '行です。上の壁は2行（天井＋側面）として作るので、2行にそろえてください（1行だと2行目が床の絵でも通れない壁になります）。';
+		if (!r.fixed && cur.bottomRows !== 2 && r.h - r.cutY[1] >= 2)
+			$('dg-rcap').textContent += ' ※この部屋は下の切れ目から下が' + (r.h - r.cutY[1]) + '行あるので、作る時は「下の壁」を2行（天井＋側面）として扱います。';
+		var hasE = r.entryX >= 0 && r.entryY >= 0;
+		$('dg-rentinfo').textContent = hasE ? '入口の位置: (' + r.entryX + ',' + r.entryY + ')' : '入口の位置: 無し';
+		$('dg-rentclr').disabled = !hasE;
+		if (!r.fixed) {
+			ctx.strokeStyle = '#3aa0ff';
+			ctx.lineWidth = 2;
+			ctx.beginPath();
+			r.cutX.forEach(function (x) { ctx.moveTo(x * tile, 0); ctx.lineTo(x * tile, r.h * tile); });
+			r.cutY.forEach(function (y) { ctx.moveTo(0, y * tile); ctx.lineTo(r.w * tile, y * tile); });
+			ctx.stroke();
+		}
+		if (hasE) {
+			var ex = (r.entryX + 0.5) * tile, ey = (r.entryY + 0.5) * tile, rad = tile * 0.42;
+			ctx.fillStyle = 'rgba(255,230,0,0.35)';
+			ctx.fillRect(r.entryX * tile, r.entryY * tile, tile, tile);
+			[['#000', 5], ['#ffe600', 2.5]].forEach(function (st) {
+				ctx.strokeStyle = st[0];
+				ctx.lineWidth = st[1];
+				ctx.beginPath();
+				ctx.arc(ex, ey, rad, 0, Math.PI * 2);
+				ctx.moveTo(ex - rad * 1.5, ey);
+				ctx.lineTo(ex + rad * 1.5, ey);
+				ctx.moveTo(ex, ey - rad * 1.5);
+				ctx.lineTo(ex, ey + rad * 1.5);
+				ctx.stroke();
+			});
+		}
+		if (r.fixed) return;
+		var minW = r.cutX[0] + (r.w - r.cutX[1]), minH = r.cutY[0] + (r.h - r.cutY[1]);
+		sample('dg-s1', r, r.w + 5, r.h + 4, Math.min(tile, 16));
+		sample('dg-s2', r, Math.max(minW, r.w - 3), Math.max(minH, r.h - 2), Math.min(tile, 16));
+	}
+
+	function sample(id, r, W, H, tile) {
+		var g = nineSlice(r, W, H);
+		var cap = $(id + 'c');
+		cap.textContent = '見本 ' + W + '×' + H + '（幅' + (W - r.w >= 0 ? '+' : '') + (W - r.w) + '・高さ' + (H - r.h >= 0 ? '+' : '') + (H - r.h) + '）';
+		if (!g) {
+			$(id).width = $(id).height = 1;
+			return;
+		}
+		drawGrid($(id), W, H, function (x, y) { return g[y][x]; }, tile);
+	}
+
+	var dragCut = null;			/* {axis:'x'|'y', i:0|1} */
+	function bindRoomCanvas() {
+		var cv = $('dg-rcv');
+		function pos(ev) {
+			var r = cv.getBoundingClientRect();
+			var k = cv.width / r.width;
+			return [(ev.clientX - r.left) * k, (ev.clientY - r.top) * k];
+		}
+		function tileSize() {
+			var r = cur.rooms[selRoom];
+			return cv.width / r.w;
+		}
+		cv.addEventListener('pointerdown', function (ev) {
+			var r = cur && cur.rooms[selRoom];
+			if (!r || tools.r !== 'mark' || ev.button === 2) return;
+			var p = pos(ev), t = tileSize(), best = null, bd = 10 * (cv.width / cv.getBoundingClientRect().width);
+			[0, 1].forEach(function (i) {
+				if (r.fixed) return;
+				var dx = Math.abs(p[0] - r.cutX[i] * t), dy = Math.abs(p[1] - r.cutY[i] * t);
+				if (dx < bd) { bd = dx; best = { axis: 'x', i: i }; }
+				if (dy < bd) { bd = dy; best = { axis: 'y', i: i }; }
+			});
+			dragCut = best;
+			if (best) {
+				cv.setPointerCapture(ev.pointerId);
+				ev.preventDefault();
+			} else {
+				var cx = Math.floor(p[0] / t), cy = Math.floor(p[1] / t);
+				if (cx >= 0 && cy >= 0 && cx < r.w && cy < r.h) {
+					if (r.entryX === cx && r.entryY === cy) { r.entryX = r.entryY = -1; } else { r.entryX = cx; r.entryY = cy; }
+					markDirty();
+					drawRoom();
+				}
+			}
+		});
+		cv.addEventListener('pointermove', function (ev) {
+			var r = cur && cur.rooms[selRoom];
+			if (!dragCut || !r) return;
+			var p = pos(ev), t = tileSize();
+			var key = dragCut.axis === 'x' ? 'cutX' : 'cutY', len = dragCut.axis === 'x' ? r.w : r.h;
+			var v = Math.round(p[dragCut.axis === 'x' ? 0 : 1] / t), c = r[key];
+			v = dragCut.i === 0 ? Math.max(1, Math.min(c[1] - 1, v)) : Math.max(c[0] + 1, Math.min(len, v));
+			if (v !== c[dragCut.i]) {
+				c[dragCut.i] = v;
+				markDirty();
+				drawRoom();
+			}
+		});
+		function end() { dragCut = null; }
+		cv.addEventListener('pointerup', end);
+		cv.addEventListener('pointercancel', end);
+	}
+
+	/* ---------------------------------------------------------------- */
+	/* テーマの一覧と編集欄														 */
+	/* ---------------------------------------------------------------- */
+	/* 保存前の編集は localStorage に控える（保存し忘れて消えないように）。キーはテーマ id ごと・新規は 'new' */
+	var DRAFT_PREFIX = 'sbo.dungeon.draft.', draftTimer = 0;
+	function draftKey(t) { return DRAFT_PREFIX + (t && t.id ? t.id : 'new'); }
+	function draftDrop(t) { try { localStorage.removeItem(draftKey(t)); } catch (e) { /* 控えが使えなくても動く */ } }
+	function draftWrite() {
+		draftTimer = 0;
+		if (!cur || !dirty) return;
+		try { localStorage.setItem(draftKey(cur), JSON.stringify({ at: Date.now(), theme: cur })); } catch (e) { /* 保存できなくても動く */ }
+	}
+	function draftSoon() {
+		if (!draftTimer) draftTimer = setTimeout(draftWrite, 600);	/* 変更のたびではなく少し間引く */
+	}
+	function draftFlush() {
+		if (draftTimer) { clearTimeout(draftTimer); draftWrite(); }
+	}
+	function fmtAt(ms) {
+		var d = new Date(ms), z = function (n) { return (n < 10 ? '0' : '') + n; };
+		return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate()) + ' ' + z(d.getHours()) + ':' + z(d.getMinutes());
+	}
+	/* サーバーの内容と違う控えを探して、「戻す／捨てる」を出す */
+	function checkDrafts() {
+		var box = $('dg-drafts'), keys = [], i;
+		if (!box) return;
+		box.innerHTML = '';
+		try {
+			for (i = 0; i < localStorage.length; i++) {
+				var k = localStorage.key(i);
+				if (k && k.indexOf(DRAFT_PREFIX) === 0) keys.push(k);
+			}
+		} catch (e) { return; }
+		keys.forEach(function (k) {
+			var d = null, t;
+			try { d = JSON.parse(localStorage.getItem(k)); } catch (e) { d = null; }
+			if (!d || !d.theme || typeof d.theme !== 'object') { try { localStorage.removeItem(k); } catch (e) { /* 何もしない */ } return; }
+			t = norm(d.theme);
+			var srv = t.id ? themes.filter(function (x) { return x.id === t.id; })[0] : null;
+			if (t.id && !srv) { try { localStorage.removeItem(k); } catch (e) { /* 消えたテーマの控え */ } return; }
+			if (srv && JSON.stringify(norm(JSON.parse(JSON.stringify(srv)))) === JSON.stringify(t)) { try { localStorage.removeItem(k); } catch (e) { /* 同じなら控えは要らない */ } return; }
+			if (dirty && cur && draftKey(cur) === k) return;		/* 今まさに編集中のものは出さない */
+			var row = document.createElement('div');
+			row.className = 'dg-draft';
+			row.innerHTML = '<b>保存していない変更があります</b>（' + esc(fmtAt(d.at || 0)) + '）テーマ ' + (t.id ? t.id + ': ' : '（新規）') + esc(t.name || '') + ' ';
+			var b1 = document.createElement('button'), b2 = document.createElement('button');
+			b1.type = b2.type = 'button';
+			b1.textContent = '戻す';
+			b2.textContent = '捨てる';
+			b2.className = 'sub';
+			b1.addEventListener('click', function () {
+				if (dirty && !confirm('今の編集を捨てて、控えの内容に戻しますか。')) return;
+				cur = t;
+				selRoom = selDeco = selOp = -1;
+				show();
+				markDirty();
+				checkDrafts();
+				setMsg('控えの内容に戻しました。保存はまだです。', true);
+			});
+			b2.addEventListener('click', function () {
+				if (!confirm('この控えを捨てますか。元には戻せません。')) return;
+				try { localStorage.removeItem(k); } catch (e) { /* 何もしない */ }
+				checkDrafts();
+			});
+			row.appendChild(b1);
+			row.appendChild(b2);
+			box.appendChild(row);
+		});
+	}
+	function markDirty() {
+		showWarn();
+		dirty = true;
+		var e = $('dg-dirty');
+		e.textContent = '未保存';
+		e.className = 'dg-unsaved';
+		$('dg-save').classList.add('dg-hot');
+		draftSoon();
+	}
+	function clean() {
+		dirty = false;
+		if (draftTimer) { clearTimeout(draftTimer); draftTimer = 0; }
+		$('dg-dirty').textContent = '';
+		$('dg-dirty').className = 'sub-text';
+		$('dg-save').classList.remove('dg-hot');
+	}
+
+	function blankTheme() {
+		return { name: '新しいテーマ', algo: 1, floor: [1], wallTop: [1], wallFace: [1], wallFill: [1], 'void': 0, arch: [1], archV: [], door: 0, entry: 0, goal: 0, bottomRows: 1, rooms: [], decos: [], openings: [], lights: [], doorOpen: 0 };
+	}
+
+	function fillSelect() {
+		var s = $('dg-sel'), h = '';
+		themes.forEach(function (t) { h += '<option value="' + t.id + '">' + t.id + ': ' + esc(t.name) + '</option>'; });
+		if (cur && !cur.id) h += '<option value="new" selected>（未保存）' + esc(cur.name) + '</option>';
+		s.innerHTML = h;
+		if (cur && cur.id) s.value = String(cur.id);
+		$('dg-del').disabled = !cur;
+		$('dg-dup').disabled = !cur;
+		$('dg-save').disabled = !cur;
+	}
+
+	function show() {
+		fillSelect();
+		$('dg-edit').hidden = !cur;
+		$('dg-guide').hidden = !!cur;
+		$('dg-rooms-sec').hidden = !cur;
+		$('dg-ops-sec').hidden = !cur;
+		$('dg-lights-sec').hidden = !cur;
+		$('dg-decos-sec').hidden = !cur;
+		if (!cur) return;
+		refreshTools();
+		$('dg-name').value = cur.name;
+		$('dg-algo').value = String(cur.algo);
+		$('dg-bottom').value = cur.bottomRows === 2 ? '2' : '1';
+		$('dg-tdark').value = String(cur.dark || 0);
+		LISTS.forEach(function (l) {
+			var v = cur[l[0]];
+			$('dg-l-' + l[0]).value = SCALAR[l[0]] ? String(v) : v.join(',');
+		});
+		showThumbs();
+		selRoom = cur.rooms.length ? Math.min(Math.max(selRoom, 0), cur.rooms.length - 1) : -1;
+		selDeco = cur.decos.length ? Math.min(Math.max(selDeco, 0), cur.decos.length - 1) : -1;
+		selOp = cur.openings.length ? Math.min(Math.max(selOp, 0), cur.openings.length - 1) : -1;
+		showRooms();
+		showOps();
+		showLights();
+		showDecos();
+		showWarn();
+		showParamsInfo();
+	}
+
+	/* ---------------------------------------------------------------- */
+	/* 通れるパーツの確認（保存は止めない）										 */
+	/* ---------------------------------------------------------------- */
+	/* 当たり判定でぶつかるもの（サーバーの CheckCharBlockFor と同じ: ぶつかる(音付き/音無し)・隠れる(ぶつかる)・隠れる4・隠れる6・カウンター） */
+	var HIT_BLOCK = [1, 2, 4, 5, 9, 11];
+	function partBlocks(no) {
+		var p = parts[no];
+		if (!p) return null;			/* パーツの記録が無い（読めていない・番号違い）時は判定しない */
+		return HIT_BLOCK.indexOf(Number(p.byHitType) || 0) >= 0;
+	}
+	var NEED_PASS = ['floor', 'arch', 'archV', 'doorOpen', 'entry', 'goal'];
+	var NEED_BLOCK = ['wallTop', 'wallFace', 'wallFill', 'door'];	/* 扉（閉じた絵）は通れないのが正しい。開いた扉の絵 doorOpen は通れること */
+	function showWarn() {
+		var e = $('dg-warn');
+		if (!e) return;
+		var msg = [];
+		if (cur && bReady) {
+			function vals(k) { var v = cur[k]; return SCALAR[k] ? (v ? [v] : []) : (v || []); }
+			function name(k) { var l = LISTS.filter(function (x) { return x[0] === k; })[0]; return l ? l[1].replace(/（.*$/, '') : k; }
+			NEED_PASS.forEach(function (k) {
+				var bad = vals(k).filter(function (no) { return partBlocks(no) === true; });
+				if (bad.length) msg.push('注意: 「' + name(k) + '」に通れないパーツ（' + bad.join('・') + '）があります。歩く所は当たり判定が「ぶつからない」のパーツにしてください。');
+			});
+			NEED_BLOCK.forEach(function (k) {
+				var bad = vals(k).filter(function (no) { return partBlocks(no) === false; });
+				if (bad.length) msg.push('注意: 「' + name(k) + '」に通れるパーツ（' + bad.join('・') + '）があります。壁・閉じた扉は当たり判定が「ぶつかる」のパーツにしてください（すり抜けてしまいます）。');
+			});
+		}
+		if (cur && cur.door && !cur.doorOpen)
+			msg.push('注意: 「扉」があるのに「開いた扉」の絵がありません。このままだとゲームで扉が開かず、扉の先へ進めません。通れる開いた扉のパーツを入れてください。');
+		if (cur && cur.rooms) {
+			var normal = cur.rooms.filter(function (r) { return r.kind === 0 && !r.fixed; });
+			if (normal.length && normal.every(function (r) { return (r.maxUse || 0) > 0; }))
+				msg.push('注意: ふつうの9分割の部屋がすべて「登場の上限」付きです。上限を使い切った後の部屋は素の絵になるので、上限0（無制限）の部屋を1つ以上入れてください。');
+		}
+		e.textContent = msg.join(' ');
+	}
+
+	/* ---------------------------------------------------------------- */
+	/* ゲームで使う生成の設定（theme.params）									 */
+	/* ---------------------------------------------------------------- */
+	var KEEP_KEYS = PARAMS.map(function (p) { return p[0]; }).filter(function (k) { return k !== 'w' && k !== 'h' && k !== 'seed'; });
+	function showParamsInfo() {
+		var e = $('dg-pinfo');
+		if (!e) return;
+		var p = cur && cur.params, ks = p ? Object.keys(p) : [];
+		e.textContent = ks.length ? '覚えている設定: ' + ks.map(function (k) { return k + '=' + p[k]; }).join(', ') : (cur ? '（覚えている設定はありません）' : '');
+		$('dg-pkeep').disabled = !cur;
+		$('dg-pclr').disabled = !cur || !ks.length;
+	}
+	/* テーマの params をお試し作成の欄へ入れる（w・h・シードは触らない。覚えていない項目は既定値に戻す） */
+	function loadParamsToFields(t) {
+		if (!t || !t.params) return;
+		PARAMS.forEach(function (q) {
+			if (KEEP_KEYS.indexOf(q[0]) < 0) return;
+			$('dg-p-' + q[0]).value = String(t.params[q[0]] != null ? t.params[q[0]] : q[2]);
+		});
+	}
+	function keepParams() {
+		if (!cur) return;
+		var all = readParams(false), p = {};
+		KEEP_KEYS.forEach(function (k) { if (all[k] != null) p[k] = all[k]; });
+		cur.params = p;
+		markDirty();
+		showParamsInfo();
+		setMsg('今のお試し作成の設定をテーマに覚えました（保存するとゲームで使われます）。', true);
+	}
+
+	function showThumbs(bKeep) {
+		LISTS.forEach(function (l) {
+			renderList(l[0], bKeep);
+		});
+	}
+
+	function parseList(s) {
+		return String(s).split(/[,、，\s]+/).filter(function (x) { return x !== ''; }).map(Number).filter(function (n) { return isFinite(n) && n >= 0; }).map(Math.floor);
+	}
+
+	function norm(t) {
+		if (!t) return t;
+		t.openings = t.openings || [];
+		t.lights = t.lights || [];
+		t.rooms = t.rooms || [];
+		t.decos = t.decos || [];
+		t.archV = t.archV || [];
+		t.openings.forEach(function (o) {
+			if (o.cut0 == null || o.cut1 == null) { o.cut0 = -1; o.cut1 = -1; }
+			if (o.off == null) o.off = 0;
+		});
+		if (t.entry == null) t.entry = 0;
+		if (t.doorOpen == null) t.doorOpen = 0;
+		if (t.goal == null) t.goal = 0;
+		t.rooms.forEach(function (r) {
+			r.fixed = r.fixed === true;
+			if (r.entryX == null) r.entryX = -1;
+			if (r.entryY == null) r.entryY = -1;
+		});
+		return t;
+	}
+
+	function pickTheme(t) {
+		cur = t ? norm(JSON.parse(JSON.stringify(t))) : null;
+		selRoom = selDeco = selOp = -1;
+		clean();
+		show();
+		loadParamsToFields(cur);		/* 覚えた設定があればお試し作成の欄へ入れる */
+	}
+
+	function load() {
+		setMsg('読んでいます…', true);
+		return ensureBase().then(function () {
+			return api('/api/admin/dungeon/themes', {});
+		}).then(function (r) {
+			if (!r.themes) throw new Error(errText(r));
+			themes = r.themes;
+			setMsg('');
+			setTimeout(checkDrafts, 0);
+			if (!cur || (cur.id && !themes.some(function (t) { return t.id === cur.id; }))) {
+				pickTheme(themes[0] || null);
+			} else {
+				show();
+			}
+		}).then(null, function (e) {
+			setMsg('読めませんでした: ' + (e && e.message || e));
+		});
+	}
+
+	function saveTheme() {
+		if (!cur) return;
+		setMsg('保存しています…', true);
+		var saving = cur;
+		api('/api/admin/dungeon/theme/save', { theme: cur }).then(function (r) {
+			if (!r || !r.ok || !r.theme) {
+				setMsg('保存できません（まだサーバーに届いていません）: ' + errText(r));
+				return;
+			}
+			draftDrop(saving);
+			draftDrop(r.theme);
+			var i = -1;
+			themes.forEach(function (t, k) { if (t.id === r.theme.id) i = k; });
+			if (i >= 0) themes[i] = r.theme; else themes.push(r.theme);
+			pickTheme(r.theme);
+			setMsg('保存しました（テーマ ' + r.theme.id + '）。', true);
+		}).then(null, function (e) { setMsg('保存できません（まだサーバーに届いていません）: ' + (e && e.message || e)); });
+	}
+
+	function delTheme() {
+		if (!cur) return;
+		if (!cur.id) {
+			if (dirty && !confirm('保存していない新しいテーマを捨てますか。')) return;
+			draftDrop(cur);
+			pickTheme(themes[0] || null);
+			return;
+		}
+		if (!confirm('テーマ「' + cur.name + '」を消しますか。')) return;
+		api('/api/admin/dungeon/theme/delete', { id: cur.id }).then(function (r) {
+			if (!r.ok) {
+				setMsg('消せません: ' + errText(r));
+				return;
+			}
+			draftDrop(cur);
+			themes = themes.filter(function (t) { return t.id !== cur.id; });
+			pickTheme(themes[0] || null);
+			setMsg('消しました。', true);
+		}).then(null, function (e) { setMsg('消せません: ' + (e && e.message || e)); });
+	}
+
+	/* ---------------------------------------------------------------- */
+	/* 書き出し・読み込み														 */
+	/* ---------------------------------------------------------------- */
+	var impThemes = null;
+	function download(name, obj) {
+		var a = document.createElement('a');
+		a.href = URL.createObjectURL(new Blob([JSON.stringify(obj, null, '\t')], { type: 'application/json' }));
+		a.download = name;
+		document.body.appendChild(a);
+		a.click();
+		setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+	}
+	function readImportFile(f) {
+		var fr = new FileReader();
+		fr.onload = function () {
+			try {
+				var o = JSON.parse(fr.result);
+				var a = Array.isArray(o) ? o : (o && Array.isArray(o.themes) ? o.themes : (o && o.floor ? [o] : null));
+				if (!a || !a.length) throw new Error('テーマが見つかりません');
+				a.forEach(function (t, i) {
+					if (!t || typeof t !== 'object' || !Array.isArray(t.floor) || !Array.isArray(t.wallTop) || !Array.isArray(t.rooms || [])) {
+						throw new Error((i + 1) + ' 件目がテーマの形ではありません');
+					}
+				});
+				impThemes = a;
+				$('dg-implist').textContent = a.length + ' 件: ' + a.map(function (t) {
+					return (t.id ? t.id + ':' : '') + (t.name || '無題') + '（部屋' + (t.rooms || []).length + '・飾り' + (t.decos || []).length + '）';
+				}).join(' / ');
+				$('dg-imp').hidden = false;
+				setMsg('');
+			} catch (e) {
+				impThemes = null;
+				$('dg-imp').hidden = true;
+				setMsg('読み込めません: ' + (e && e.message || e));
+			}
+		};
+		fr.readAsText(f);
+	}
+	function doImport() {
+		if (!impThemes) return;
+		var mode = document.querySelector('input[name=dg-impmode]:checked').value;
+		if (mode === 'replace' && !confirm('同じ id のテーマを上書きします。よいですか。')) return;
+		api('/api/admin/dungeon/themes/import', { themes: impThemes, mode: mode }).then(function (r) {
+			if (!r.ok) {
+				setMsg('入れられません（何も変えていません）: ' + errText(r));
+				return;
+			}
+			themes = r.themes;
+			impThemes = null;
+			$('dg-imp').hidden = true;
+			$('dg-file').value = '';
+			pickTheme(themes[0] || null);
+			setMsg('入れました（追加 ' + r.added + '・上書き ' + r.replaced + '）。', true);
+		}).then(null, function (e) { setMsg('入れられません: ' + (e && e.message || e)); });
+	}
+
+	/* ---------------------------------------------------------------- */
+	/* 部屋																	 */
+	/* ---------------------------------------------------------------- */
+	function showRooms() {
+		var s = $('dg-rsel'), h = '';
+		cur.rooms.forEach(function (r, i) { h += '<option value="' + i + '">' + (i + 1) + ': ' + esc(r.name) + '（' + KIND[r.kind] + ' ' + r.w + '×' + r.h + '）</option>'; });
+		s.innerHTML = h || '<option value="-1">（部屋はまだありません）</option>';
+		if (selRoom >= 0) s.value = String(selRoom);
+		$('dg-rdel').disabled = selRoom < 0;
+		$('dg-redit').hidden = selRoom < 0;
+		if (selRoom < 0) return;
+		var r = cur.rooms[selRoom];
+		$('dg-rname').value = r.name;
+		$('dg-rkind').value = String(r.kind);
+		$('dg-rmax').value = String(r.maxUse || 0);
+		$('dg-rinfo').textContent = r.src ? 'マップ ' + r.src.map + ' の (' + r.src.x + ',' + r.src.y + ') から' : '';
+		drawRoom();
+	}
+
+	/* ---------------------------------------------------------------- */
+	/* 格子に絵を描く道具（部屋・出入口・飾りで共通）						 */
+	/* ---------------------------------------------------------------- */
+	var brush = 1;						/* 描くパーツ */
+	var tools = { r: 'mark', o: 'mark', d: 'paint' };		/* 区画ごとの道具: mark（切れ目・印）/ paint / erase。右クリックはスポイト */
+	var TOOL_NAME = { paint: '描く', erase: '消しゴム（0）' };
+	var MARK_NAME = { r: '切れ目・入口の印', o: '通れる範囲' };
+	function target(k) {
+		return k === 'r' ? cur.rooms[selRoom] : k === 'o' ? cur.openings[selOp] : cur.decos[selDeco];
+	}
+	function refreshTools() {
+		['r', 'o', 'd'].forEach(function (k) {
+			var box = $('dg-tb-' + k);
+			if (!box) return;
+			box.textContent = '';
+			var names = MARK_NAME[k] ? [['mark', MARK_NAME[k]]] : [];
+			['paint', 'erase'].forEach(function (t) { names.push([t, TOOL_NAME[t]]); });
+			names.forEach(function (n) {
+				var b = document.createElement('button');
+				b.type = 'button';
+				b.className = tools[k] === n[0] ? '' : 'sub';
+				b.textContent = n[1];
+				b.addEventListener('click', function () { tools[k] = n[0]; refreshTools(); });
+				box.appendChild(b);
+			});
+			var lab = document.createElement('span');
+			lab.className = 'sub-text';
+			lab.textContent = ' 筆：';
+			box.appendChild(lab);
+			box.appendChild(chipBtn(brush, function () {
+				openPal('筆', brush, function (n) { brush = n; if (tools[k] === 'erase') tools[k] = 'paint'; refreshTools(); });
+			}));
+			var hint = document.createElement('span');
+			hint.className = 'dg-cap';
+			hint.textContent = '右クリックでスポイト（そのマスのパーツを筆にする）';
+			box.appendChild(hint);
+			/* 大きさの変更（端に行・列を足す／削る） */
+			var rb = $('dg-rb-' + k);
+			rb.textContent = '';
+			var l = document.createElement('span');
+			l.className = 'sub-text';
+			l.textContent = '大きさを変える：';
+			rb.appendChild(l);
+			[['t', '上'], ['b', '下'], ['l', '左'], ['r', '右']].forEach(function (sd) {
+				[[1, '＋'], [-1, '－']].forEach(function (dd) {
+					var b = document.createElement('button');
+					b.type = 'button';
+					b.className = 'sub';
+					b.textContent = sd[1] + dd[1];
+					b.title = sd[1] + 'の端に' + (sd[0] === 't' || sd[0] === 'b' ? '行' : '列') + (dd[0] > 0 ? 'を足す' : 'を削る');
+					b.addEventListener('click', function () { resizeEdge(k, sd[0], dd[0]); });
+					rb.appendChild(b);
+				});
+			});
+		});
+	}
+	var LIMIT = { r: [2, 64], o: [1, 16], d: [1, 16] };
+	function resizeEdge(k, side, d) {
+		var o = target(k);
+		if (!o) return;
+		var horiz = side === 'l' || side === 'r';
+		var nw = o.w + (horiz ? d : 0), nh = o.h + (horiz ? 0 : d), lim = LIMIT[k];
+		if (nw < lim[0] || nh < lim[0] || nw > lim[1] || nh > lim[1]) { setMsg('大きさは ' + lim[0] + '〜' + lim[1] + ' の間にしてください。'); return; }
+		var sx = side === 'l' ? d : 0, sy = side === 't' ? d : 0;
+		if (k === 'o') { var er = checkOpSize(o.dir, nw, nh, o.off + (o.dir === 0 ? sy : sx)); if (er) { setMsg(er); return; } }
+		function re(cells) {
+			var out = [];
+			for (var y = 0; y < nh; y++) for (var x = 0; x < nw; x++) {
+				var ox = x - sx, oy = y - sy;
+				out.push(ox >= 0 && oy >= 0 && ox < o.w && oy < o.h ? cells[oy * o.w + ox] : 0);
+			}
+			return out;
+		}
+		o.cells = re(o.cells);
+		if (o.cellsOpen && o.cellsOpen.length === o.w * o.h) o.cellsOpen = re(o.cellsOpen);
+		o.w = nw;
+		o.h = nh;
+		if (k === 'r') fixRoom(o, sx, sy);
+		if (k === 'o') fixOp(o, o.dir === 0 ? sx : sy, o.dir === 0 ? sy : sx);
+		markDirty();
+		if (k === 'r') showRooms(); else if (k === 'o') showOps(); else showDecos();
+	}
+	function fixRoom(r, sx, sy) {
+		r.cutX = r.cutX.map(function (v) { return v + sx; });
+		r.cutY = r.cutY.map(function (v) { return v + sy; });
+		if (!(r.cutX[0] > 0 && r.cutX[0] < r.cutX[1] && r.cutX[1] <= r.w)) r.cutX = r.w >= 3 ? [1, r.w - 1] : [1, 2];
+		if (!(r.cutY[0] > 0 && r.cutY[0] < r.cutY[1] && r.cutY[1] <= r.h)) r.cutY = r.h >= 3 ? [1, r.h - 1] : [1, 2];
+		if (r.entryX >= 0) {
+			r.entryX += sx;
+			r.entryY += sy;
+			if (r.entryX < 0 || r.entryY < 0 || r.entryX >= r.w || r.entryY >= r.h) r.entryX = r.entryY = -1;
+		}
+	}
+	/* 端に行・列を足し引きした後の直し。shift = 向きに沿った軸のずれ、perp = 共有壁と直交する向きのずれ（off がずれる） */
+	function fixOp(o, shift, perp) {
+		var len = opLen(o), st = o.cut0 >= 0;
+		o.hole0 += shift;
+		o.hole1 += shift;
+		o.off += perp;
+		if (st) { o.cut0 += shift; o.cut1 += shift; }
+		if (!(o.hole0 >= 0 && o.hole0 < o.hole1 && o.hole1 <= len)) { var hl = defHole(len); o.hole0 = hl[0]; o.hole1 = hl[1]; st = false; }
+		if (st && !(o.cut0 >= o.hole0 && o.cut0 < o.cut1 && o.cut1 <= o.hole1)) st = false;
+		if (!st) o.cut0 = o.cut1 = -1;
+	}
+	/* 格子の canvas に絵を描く操作。get() は { w, h, cells, tile, redraw } を返す（k = 区画） */
+	function attachPaint(cv, k, get, bMarkIsPaint) {
+		var down = false, once = null;
+		function tl() { var t = tools[k]; return once || (t === 'mark' && bMarkIsPaint ? 'paint' : t); }
+		function apply(ev) {
+			var g = get();
+			if (!g) return;
+			var r = cv.getBoundingClientRect();
+			var x = Math.floor((ev.clientX - r.left) * (cv.width / r.width) / g.tile), y = Math.floor((ev.clientY - r.top) * (cv.height / r.height) / g.tile);
+			if (x < 0 || y < 0 || x >= g.w || y >= g.h) return;
+			var t = tl(), i = y * g.w + x;
+			if (t === 'pick') { brush = g.cells[i]; if (tools[k] === 'erase') tools[k] = 'paint'; down = false; once = null; refreshTools(); return; }
+			var v = t === 'erase' ? 0 : brush;
+			if (g.cells[i] === v) return;
+			g.cells[i] = v;
+			markDirty();
+			g.redraw();
+		}
+		cv.addEventListener('contextmenu', function (ev) { ev.preventDefault(); });
+		cv.addEventListener('pointerdown', function (ev) {
+			var t = tools[k];
+			once = ev.button === 2 ? 'pick' : null;
+			if (!once && t === 'mark' && !bMarkIsPaint) return;
+			down = true;
+			try { cv.setPointerCapture(ev.pointerId); } catch (e) { /* 無くても動く */ }
+			ev.preventDefault();
+			apply(ev);
+		});
+		cv.addEventListener('pointermove', function (ev) { if (down) apply(ev); });
+		function end() { down = false; once = null; }
+		cv.addEventListener('pointerup', end);
+		cv.addEventListener('pointercancel', end);
+	}
+	function blank(n) { var a = []; for (var i = 0; i < n; i++) a.push(0); return a; }
+	function addRoom() {
+		var w = num($('dg-rw').value, 0), h = num($('dg-rh').value, 0);
+		if (w < 2 || h < 2 || w > 64 || h > 64) { setMsg('部屋の大きさは w・h とも 2〜64 にしてください。'); return; }
+		if (cur.rooms.length >= 50) { setMsg('部屋は 50 件までです。'); return; }
+		cur.rooms.push({
+			name: '部屋' + (cur.rooms.length + 1), kind: 0, w: w, h: h, cells: blank(w * h),
+			cutX: w >= 3 ? [1, w - 1] : [1, 2], cutY: h >= 3 ? [1, h - 1] : [1, 2], fixed: false, entryX: -1, entryY: -1
+		});
+		selRoom = cur.rooms.length - 1;
+		tools.r = 'paint';
+		markDirty();
+		showRooms();
+		refreshTools();
+		setMsg('空の部屋を足しました。筆のパーツを選んで、絵をなぞって描いてください。', true);
+	}
+	function addOpening() {
+		if (cur.openings.length >= 50) { setMsg('出入口パターンは 50 件までです。'); return; }
+		var dir = num($('dg-oidir').value, 0), type = num($('dg-oitype').value, 1), w = num($('dg-ow').value, 0), h = num($('dg-oh').value, 0);
+		var off = num($('dg-oioff').value, 0), er = checkOpSize(dir, w, h, off);
+		if (!er && (w < 1 || h < 1 || w > 16 || h > 16)) er = '大きさは 1〜16 にしてください。';
+		if (er) { setMsg(er); return; }
+		var hl = defHole(dir === 0 ? w : h);
+		cur.openings.push({ name: '出入口' + (cur.openings.length + 1), dir: dir, type: type, w: w, h: h, cells: blank(w * h), cellsOpen: [], hole0: hl[0], hole1: hl[1], cut0: -1, cut1: -1, off: off });
+		selOp = cur.openings.length - 1;
+		tools.o = 'paint';
+		markDirty();
+		showOps();
+		refreshTools();
+	}
+	function dupOpening() {
+		var o = cur.openings[selOp];
+		if (!o) return;
+		if (cur.openings.length >= 50) { setMsg('出入口パターンは 50 件までです。'); return; }
+		var c = JSON.parse(JSON.stringify(o));
+		c.name = o.name + '(コピー)';
+		cur.openings.push(c);
+		selOp = cur.openings.length - 1;
+		markDirty();
+		showOps();
+	}
+	function dupDeco() {
+		var d = cur.decos[selDeco];
+		if (!d) return;
+		if (cur.decos.length >= 50) { setMsg('飾りは 50 件までです。'); return; }
+		var c = JSON.parse(JSON.stringify(d));
+		c.name = d.name + '(コピー)';
+		cur.decos.push(c);
+		selDeco = cur.decos.length - 1;
+		markDirty();
+		showDecos();
+	}
+	function dupRoom() {
+		var r = cur.rooms[selRoom];
+		if (!r) return;
+		if (cur.rooms.length >= 50) { setMsg('部屋は 50 件までです。'); return; }
+		var c = JSON.parse(JSON.stringify(r));
+		c.name = r.name + '(コピー)';
+		cur.rooms.push(c);
+		selRoom = cur.rooms.length - 1;
+		markDirty();
+		showRooms();
+	}
+
+	/* ---------------------------------------------------------------- */
+	/* 出入口パターン															 */
+	/* ---------------------------------------------------------------- */
+	var OP_TYPE = ['', 'アーチ', '扉', '壁ごと抜く'], OP_DIR = ['横の壁', '縦の壁'];
+	var dragHole = '';			/* ドラッグ中の線（空 = なし） */
+
+	function opLen(o) { return o.dir === 0 ? o.w : o.h; }
+	function defHole(len) { return len >= 3 ? [1, len - 1] : [0, len]; }
+	function opTile(o) { return Math.max(8, Math.min(32, Math.floor(480 / Math.max(o.w, o.h)))); }
+
+	/* 切れ目の既定（穴が 3 マス以上なら両端を 1 マスずつ残した真ん中、それ以外は穴全体） */
+	function defCut(o) { return o.hole1 - o.hole0 >= 3 ? [o.hole0 + 1, o.hole1 - 1] : [o.hole0, o.hole1]; }
+
+	function drawOpCanvas(cv, o, cells) {
+		var tile = opTile(o), len = opLen(o), v0 = o.dir === 0;
+		var ctx = drawGrid(cv, o.w, o.h, function (x, y) { return cells[y * o.w + x]; }, tile);
+		var a = o.hole0 * tile, b = o.hole1 * tile, ww = o.w * tile, hh = o.h * tile;
+		/* 共有壁に当たる行（横の壁は off と次の行）／列（縦の壁は off）を薄い橙の帯で示す */
+		var bandN = v0 ? 2 : 1;
+		ctx.fillStyle = 'rgba(255,170,40,0.22)';
+		if (v0) ctx.fillRect(0, o.off * tile, ww, bandN * tile); else ctx.fillRect(o.off * tile, 0, bandN * tile, hh);
+		ctx.fillStyle = 'rgba(60,220,120,0.28)';
+		if (v0) ctx.fillRect(a, o.off * tile, b - a, bandN * tile); else ctx.fillRect(o.off * tile, a, bandN * tile, b - a);
+		/* 穴の範囲（緑の線） */
+		ctx.lineWidth = 2;
+		ctx.strokeStyle = '#1fa75a';
+		ctx.beginPath();
+		[a, b].forEach(function (v) {
+			if (v0) { ctx.moveTo(v, 0); ctx.lineTo(v, hh); } else { ctx.moveTo(0, v); ctx.lineTo(ww, v); }
+		});
+		ctx.stroke();
+		/* 3分割の切れ目（青い線。部屋の切れ目と同じ） */
+		if (o.cut0 >= 0) {
+			ctx.strokeStyle = '#3aa0ff';
+			ctx.beginPath();
+			[o.cut0 * tile, o.cut1 * tile].forEach(function (v) {
+				if (v0) { ctx.moveTo(v, 0); ctx.lineTo(v, hh); } else { ctx.moveTo(0, v); ctx.lineTo(ww, v); }
+			});
+			ctx.stroke();
+		}
+		/* 共有壁の位置の線（橙の破線。これをドラッグで off を動かす） */
+		ctx.strokeStyle = '#ff9a1f';
+		ctx.setLineDash([5, 3]);
+		ctx.beginPath();
+		var e = o.off * tile;
+		if (v0) { ctx.moveTo(0, e); ctx.lineTo(ww, e); } else { ctx.moveTo(e, 0); ctx.lineTo(e, hh); }
+		ctx.stroke();
+		ctx.setLineDash([]);
+		return len;
+	}
+
+	function drawOp() {
+		var o = cur && cur.openings[selOp];
+		if (!o) return;
+		var isDoor = o.type === 2, hasOpen = o.cellsOpen && o.cellsOpen.length === o.w * o.h, st = o.cut0 >= 0;
+		$('dg-oopenrow').hidden = !isDoor;
+		$('dg-oclropen').disabled = !hasOpen;
+		$('dg-oaddopen').disabled = hasOpen;
+		$('dg-oopenbox').hidden = !(isDoor && hasOpen);
+		$('dg-ostretch').checked = st;
+		if (document.activeElement !== $('dg-ooff')) $('dg-ooff').value = String(o.off);
+		var minAw = o.hole1 - o.hole0 - (st ? o.cut1 - o.cut0 : 0) + 1;
+		$('dg-oinfo').textContent = o.w + '×' + o.h + '・通れる範囲 ' + o.hole0 + '〜' + o.hole1 + '（' + (o.dir === 0 ? '列' : '行') + '）' +
+			'・共有壁は ' + (o.dir === 0 ? o.off + '〜' + (o.off + 1) + ' 行目' : o.off + ' 列目') +
+			(st ? '・伸ばす（切れ目 ' + o.cut0 + '〜' + o.cut1 + '・穴の幅は ' + minAw + ' 以上）' : '') +
+			(isDoor ? (hasOpen ? '・開いた絵あり' : '・開いた絵なし') : '');
+		$('dg-ocap').textContent = '緑の線（2本）をドラッグして通れる範囲（緑）を決めます。' + (o.dir === 0 ? '横の壁: 列で数えます。' : '縦の壁: 行で数えます。') +
+			'線の外は両脇の柱や枠です。' +
+			(st ? '青い線（切れ目2本・穴の中）の間が、穴の幅に合わせて繰り返し／縮みます。' : '「3分割で…伸び縮み」にチェックすると、青い切れ目の線が出ます。') +
+			'橙の帯は共有壁に当たる' + (o.dir === 0 ? '行（天井の行とその下の側面の行）' : '列') + 'で、橙の破線をドラッグするか off の数値で動かします。' +
+			'帯の外の' + (o.dir === 0 ? '行' : '列') + 'は絵だけを上書きします（歩ける所は変わりません。0 は透明）。' +
+			'上の道具で「描く」にすると絵を描けます。' + (isDoor ? '扉は「開いた絵を作る」で同じ大きさの絵をもう 1 枚描きます。' : '');
+		drawOpCanvas($('dg-ocv'), o, o.cells);
+		if (isDoor && hasOpen) drawOpCanvas($('dg-ocv2'), o, o.cellsOpen);
+	}
+
+	/* ドラッグ中の線: 'hole0' | 'hole1' | 'cut0' | 'cut1' | 'off' */
+	function bindOpCanvas(cv) {
+		function pos(ev) {
+			var r = cv.getBoundingClientRect(), k = cv.width / r.width;
+			return [(ev.clientX - r.left) * k, (ev.clientY - r.top) * k];
+		}
+		cv.addEventListener('pointerdown', function (ev) {
+			var o = cur && cur.openings[selOp];
+			if (!o || tools.o !== 'mark' || ev.button === 2) return;
+			var pp = pos(ev), v0 = o.dir === 0, t = opTile(o);
+			var p = pp[v0 ? 0 : 1], q = pp[v0 ? 1 : 0];
+			/* 共有壁の位置の線の近く（直交する向きで 0.35 マス以内）なら off を動かす */
+			if (Math.abs(q - o.off * t) < t * 0.35) {
+				dragHole = 'off';
+			} else {
+				var c = [['hole0', o.hole0, 1], ['hole1', o.hole1, -1]];
+				if (o.cut0 >= 0) c.push(['cut0', o.cut0, 1], ['cut1', o.cut1, -1]);
+				var best = null, bd = 1e9;
+				c.forEach(function (x) {
+					var d = Math.abs(p - x[1] * t);
+					/* 重なった線は、内側（穴の中心側）にいる時だけ切れ目を選ぶ */
+					if (Math.abs(d - bd) < 1e-6 && best && x[0].charAt(0) === 'c' && (p - x[1] * t) * x[2] > 0) best = x;
+					else if (d < bd - 1e-6) { bd = d; best = x; }
+				});
+				dragHole = best[0];
+			}
+			cv.setPointerCapture(ev.pointerId);
+			ev.preventDefault();
+		});
+		cv.addEventListener('pointermove', function (ev) {
+			var o = cur && cur.openings[selOp];
+			if (!dragHole || !o) return;
+			var pp = pos(ev), v0 = o.dir === 0, t = opTile(o), len = opLen(o), key = dragHole, v;
+			if (key === 'off') {
+				v = Math.round(pp[v0 ? 1 : 0] / t);
+				v = Math.max(0, Math.min((v0 ? o.h - 2 : o.w - 1), v));
+			} else {
+				v = Math.round(pp[v0 ? 0 : 1] / t);
+				var st = o.cut0 >= 0;
+				if (key === 'hole0') v = Math.max(0, Math.min(st ? o.cut0 : o.hole1 - 1, v));
+				else if (key === 'hole1') v = Math.max(st ? o.cut1 : o.hole0 + 1, Math.min(len, v));
+				else if (key === 'cut0') v = Math.max(o.hole0, Math.min(o.cut1 - 1, v));
+				else v = Math.max(o.cut0 + 1, Math.min(o.hole1, v));
+			}
+			if (v !== o[key]) {
+				o[key] = v;
+				markDirty();
+				drawOp();
+			}
+		});
+		function end() { dragHole = ''; }
+		cv.addEventListener('pointerup', end);
+		cv.addEventListener('pointercancel', end);
+	}
+
+	function showOps() {
+		var s = $('dg-osel'), h = '';
+		cur.openings.forEach(function (o, i) {
+			h += '<option value="' + i + '">' + (i + 1) + ': ' + esc(o.name) + '（' + OP_DIR[o.dir] + '・' + OP_TYPE[o.type] + ' ' + o.w + '×' + o.h + '）</option>';
+		});
+		s.innerHTML = h || '<option value="-1">（出入口パターンはまだありません）</option>';
+		if (selOp >= 0) s.value = String(selOp);
+		$('dg-odel').disabled = selOp < 0;
+		$('dg-oedit').hidden = selOp < 0;
+		if (selOp < 0) return;
+		var o = cur.openings[selOp];
+		$('dg-oname').value = o.name;
+		$('dg-odir').value = String(o.dir);
+		$('dg-otype').value = String(o.type);
+		drawOp();
+	}
+
+
+	/* off = 共有壁に当たる行（横の壁。次の行も壁）／列（縦の壁） */
+	function checkOpSize(dir, w, h, off) {
+		off = off || 0;
+		if (off < 0) return '共有壁の位置 off は 0 以上にしてください（共有壁の行・列は削れません）。';
+		if (dir === 0 && h < off + 2) return '横の壁（dir 0）は高さ h を off + 2 以上にしてください（天井の行とその下の側面の行が共有壁です）。';
+		if (dir === 1 && w < off + 1) return '縦の壁（dir 1）は幅 w を off + 1 以上にしてください（共有壁の列が必要です）。';
+		return '';
+	}
+
+
+
+	/* ---------------------------------------------------------------- */
+	/* 灯りの上書き表															 */
+	/* ---------------------------------------------------------------- */
+	function showLights() {
+		var box = $('dg-lrows');
+		box.textContent = '';
+		cur.lights.forEach(function (l, i) {
+			var row = document.createElement('div');
+			row.className = 'dg-row';
+			var lab = document.createElement('label');
+			lab.appendChild(document.createTextNode('パーツ '));
+			var inp = document.createElement('input');
+			inp.type = 'text';
+			inp.className = 'dg-n dg-sm';
+			inp.value = l.wParts;
+			inp.setAttribute('inputmode', 'numeric');
+			lab.appendChild(inp);
+			row.appendChild(lab);
+			var th = document.createElement('span');
+			th.className = 'dg-pf';
+			row.appendChild(th);
+			renderLight(l, th);
+			var lab2 = document.createElement('label');
+			lab2.appendChild(document.createTextNode('灯りの範囲 '));
+			var sel = document.createElement('select');
+			for (var k = 0; k <= 7; k++) sel.innerHTML += '<option value="' + k + '">' + k + '</option>';
+			sel.value = String(l.byLight);
+			lab2.appendChild(sel);
+			row.appendChild(lab2);
+			var del = document.createElement('button');
+			del.type = 'button';
+			del.className = 'sub';
+			del.textContent = '削除';
+			row.appendChild(del);
+			inp.addEventListener('change', function () { l.wParts = Math.max(0, num(inp.value, 0)); markDirty(); showLights(); });
+			sel.addEventListener('change', function () { l.byLight = Math.max(0, Math.min(7, num(sel.value, 0))); markDirty(); });
+			del.addEventListener('click', function () { cur.lights.splice(i, 1); markDirty(); showLights(); });
+			box.appendChild(row);
+		});
+		$('dg-ladd').disabled = cur.lights.length >= 8;
+	}
+
+	/* ---------------------------------------------------------------- */
+	/* 飾り																	 */
+	/* ---------------------------------------------------------------- */
+	function showDecos() {
+		var s = $('dg-dsel'), h = '';
+		cur.decos.forEach(function (d, i) { h += '<option value="' + i + '">' + (i + 1) + ': ' + esc(d.name) + '</option>'; });
+		s.innerHTML = h || '<option value="-1">（飾りはまだありません）</option>';
+		if (selDeco >= 0) s.value = String(selDeco);
+		$('dg-ddel').disabled = selDeco < 0;
+		$('dg-dedit').hidden = selDeco < 0;
+		if (selDeco < 0) return;
+		var d = cur.decos[selDeco];
+		$('dg-dname').value = d.name;
+		$('dg-dw').value = d.w;
+		$('dg-dh').value = d.h;
+		$('dg-don').value = String(d.on);
+		$('dg-drate').value = d.rate;
+		$('dg-dmax').value = d.max;
+		var ro = '<option value="0">どこでも</option>';
+		cur.rooms.forEach(function (r, i) { if (!r.fixed) ro += '<option value="' + (i + 1) + '">' + (i + 1) + ': ' + esc(r.name) + 'の中だけ</option>'; });
+		$('dg-dper').value = String(d.per == null ? (d.room > 0 ? 1 : 0) : d.per);
+		$('dg-droom').innerHTML = ro;
+		$('dg-droom').value = String(d.room || 0);
+		if ($('dg-droom').value !== String(d.room || 0)) $('dg-droom').value = '0';
+		renderDecoGrid();
+	}
+
+	/* w・h が変わったら cells の長さを合わせる（足りない所は 0） */
+	function fitDecoCells(d, nw, nh) {
+		var out = [];
+		for (var y = 0; y < nh; y++) for (var x = 0; x < nw; x++) out.push(x < d.w && y < d.h ? d.cells[y * d.w + x] : 0);
+		d.cells = out;
+		d.w = nw;
+		d.h = nh;
+	}
+
+	/* ---------------------------------------------------------------- */
+	/* お試し作成																 */
+	/* ---------------------------------------------------------------- */
+	function readParams(bNewSeed) {
+		var p = {};
+		PARAMS.forEach(function (q) {
+			var v = $('dg-p-' + q[0]).value.trim();
+			if (v !== '') p[q[0]] = num(v, q[2]);
+		});
+		if (bNewSeed) p.seed = 0;
+		return p;
+	}
+
+	function generate(bNewSeed) {
+		var body = { params: readParams(bNewSeed) };
+		if ($('dg-usetheme').checked && cur) body.theme = cur;
+		setMsg('作っています…', true);
+		$('dg-gen').disabled = $('dg-gen2').disabled = true;
+		ensureBase().then(function () {
+			return api('/api/admin/dungeon/preview', body);
+		}).then(function (r) {
+			if (!r.ok) {
+				setMsg('作れませんでした: ' + errText(r));
+				return;
+			}
+			last = r;
+			lastTheme = body.theme ? JSON.parse(JSON.stringify({ openings: body.theme.openings || [], lights: body.theme.lights || [], dark: body.theme.dark || 0 })) : null;
+			$('dg-p-seed').value = r.seed;		/* 同じ形をもう一度出せるよう、使ったシードを入れる */
+			setMsg('');
+			$('dg-info').textContent = 'シード ' + r.seed + '・作り直し ' + r.tries + ' 回・床 ' + r.floorCount + ' マス・部屋 ' + (r.rooms || []).length + ' 個・' + r.w + '×' + r.h;
+			drawOut();
+		}).then(null, function (e) {
+			setMsg('作れませんでした: ' + (e && e.message || e));
+		}).then(function () {
+			$('dg-gen').disabled = $('dg-gen2').disabled = false;
+		});
+	}
+
+	/* ---------------------------------------------------------------- */
+	/* 暗くして見る（ゲームの DrawMapLight・RenewMapDarkWork の簡易版）		 */
+	/* ---------------------------------------------------------------- */
+	/* 灯りの中心(sx,sy)から床を伝って広がり、壁は照らして止まる。返す値は w*h の 0/1 */
+	function lightMask(r, sx, sy, range) {
+		var w = r.w, h = r.h, m = new Uint8Array(w * h), q = [sx + sy * w], qi = 0, k = Math.ceil(range);
+		m[q[0]] = 1;
+		while (qi < q.length) {
+			var c = q[qi++], cx = c % w, cy = (c - cx) / w;
+			var v = r.cells[c];
+			if (c !== q[0] && !(v === 1 || v === 5 || v === 6)) continue;	/* 壁などは照らすだけで先へ進まない */
+			for (var dy = -1; dy <= 1; dy++) {
+				for (var dx = -1; dx <= 1; dx++) {
+					var nx = cx + dx, ny = cy + dy;
+					if ((!dx && !dy) || nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+					if (Math.abs(nx - sx) > k || Math.abs(ny - sy) > k) continue;
+					var n = nx + ny * w;
+					if (m[n] || r.cells[n] === 0) continue;
+					m[n] = 1;
+					q.push(n);
+				}
+			}
+		}
+		return m;
+	}
+
+	function darken(ctx, r, tile) {
+		/* 「テーマの暗さ」はゲームで作る時と同じ暗さ（テーマの暗さ。お試しの「編集中のテーマを使う」を外した時は暗くしない） */
+		var L = $('dg-dark').value === 't' ? num(lastTheme && lastTheme.dark, 0) : num($('dg-dark').value, 0);
+		if (!L) return;
+		var w = r.w, h = r.h, lights = [], i, x, y, ovr = {};
+		((lastTheme && lastTheme.lights) || []).forEach(function (l) { ovr[l.wParts] = Math.min(7, l.byLight); });	/* テーマの上書き表を先に使う */
+		for (y = 0; y < h; y++) {
+			for (x = 0; x < w; x++) {
+				var no = r.parts[y * w + x], pt = parts[no];
+				var bl = ovr.hasOwnProperty(no) ? ovr[no] : (pt && pt.byLight ? Math.min(7, pt.byLight) : 0);
+				if (bl > 0 && r.cells[y * w + x] !== 0) {
+					lights.push({ x: x, y: y, R: bl + 1.2, pow: 1, warm: 1, mask: lightMask(r, x, y, bl + 1) });
+				}
+			}
+		}
+		if ($('dg-dchar').checked && r.start) {
+			/* キャラの灯り(明かりの道具なし)の半径: GetCharLightTiles と同じ式（100/暗さ+0.2 から 1 マス引く。最小 1.2） */
+			var rc = Math.max(1.2, 100 / L + 0.2 - 1);
+			lights.push({ x: r.start.x, y: r.start.y, R: rc, pow: 1, warm: 0, mask: lightMask(r, r.start.x, r.start.y, rc) });
+		}
+		var W = r.w * tile, H = r.h * tile, img = ctx.getImageData(0, 0, W, H), d = img.data;
+		var lt = new Float32Array(W * H), wm = new Float32Array(W * H);
+		lights.forEach(function (l) {
+			var cx = (l.x + 0.5) * tile, cy = (l.y + 0.5) * tile, R = l.R * tile, R2 = R * R;
+			var x0 = Math.max(0, Math.floor(cx - R)), x1 = Math.min(W - 1, Math.ceil(cx + R));
+			var y0 = Math.max(0, Math.floor(cy - R)), y1 = Math.min(H - 1, Math.ceil(cy + R));
+			function mv(mx, my) { return mx < 0 || my < 0 || mx >= w || my >= h ? 0 : l.mask[mx + my * w]; }
+			for (var py = y0; py <= y1; py++) {
+				var ddy = py + 0.5 - cy, fy = (py + 0.5) / tile - 0.5, iy = Math.floor(fy), ty = fy - iy;
+				for (var px = x0; px <= x1; px++) {
+					var ddx = px + 0.5 - cx, dd = ddx * ddx + ddy * ddy;
+					if (dd >= R2) continue;
+					var fx = (px + 0.5) / tile - 0.5, ix = Math.floor(fx), tx = fx - ix;
+					var a = mv(ix, iy) + (mv(ix + 1, iy) - mv(ix, iy)) * tx;
+					var b = mv(ix, iy + 1) + (mv(ix + 1, iy + 1) - mv(ix, iy + 1)) * tx;
+					var vis = Math.min(1, (a + (b - a) * ty) * 1.6);
+					if (vis <= 0) continue;
+					var add = (1 - Math.sqrt(dd) / R) * l.pow * vis;
+					lt[px + py * W] += add;
+					wm[px + py * W] += add * l.warm;
+				}
+			}
+		});
+		for (i = 0; i < W * H; i++) {
+			var f = Math.min(1, lt[i]), wr = lt[i] > 0 ? Math.min(1, wm[i] / lt[i]) : 0, o = i * 4;
+			d[o] = Math.min(255, d[o] * f * (1 + 0.25 * wr));
+			d[o + 1] = d[o + 1] * f * (1 + 0.02 * wr);
+			d[o + 2] = d[o + 2] * f * (1 - 0.25 * wr);
+		}
+		ctx.putImageData(img, 0, 0);
+	}
+
+	function drawOut() {
+		var r = last, cv = $('dg-out'), lg = $('dg-legend');
+		if (!r) return;
+		var view = $('dg-view').value, tile = Math.max(2, Math.round(T * Number($('dg-zoom').value)));
+		var ctx;
+		lg.hidden = view !== 'meaning';
+		cv.title = '';
+		if (view === 'parts') {
+			if (!r.parts || !r.parts.length) {
+				setMsg('パーツの絵がありません（テーマを使っていないか、テーマが空です）。「意味の色」で見てください。');
+				view = 'meaning';
+			}
+		}
+		if (view === 'parts') {
+			ctx = drawGrid(cv, r.w, r.h, function (x, y) { return r.parts[y * r.w + x]; }, tile);
+			darken(ctx, r, tile);
+			return;
+		}
+		cv.width = r.w * tile;
+		cv.height = r.h * tile;
+		ctx = cv.getContext('2d');
+		var x, y;
+		for (y = 0; y < r.h; y++) {
+			for (x = 0; x < r.w; x++) {
+				ctx.fillStyle = CELL_COLOR[r.cells[y * r.w + x]] || '#f0f';
+				ctx.fillRect(x * tile, y * tile, tile, tile);
+			}
+		}
+		ctx.lineWidth = Math.max(1, tile / 8);
+		ctx.strokeStyle = '#3aa0ff';
+		(r.rooms || []).forEach(function (m) { ctx.strokeRect(m.x * tile + 0.5, m.y * tile + 0.5, m.w * tile - 1, m.h * tile - 1); });
+		ctx.strokeStyle = '#ff4d8d';
+		(r.links || []).forEach(function (l) { ctx.strokeRect(l.x * tile + 0.5, l.y * tile + 0.5, l.w * tile - 1, l.h * tile - 1); });
+		/* 出入口パターンを置いた範囲（穴の外の柱・枠・はみ出した行も含む）は橙の破線 */
+		ctx.strokeStyle = '#ff9a1f';
+		ctx.setLineDash([4, 3]);
+		(r.links || []).forEach(function (l) {
+			if (l.pw > 0 && l.ph > 0) ctx.strokeRect(l.px * tile + 0.5, l.py * tile + 0.5, l.pw * tile - 1, l.ph * tile - 1);
+		});
+		ctx.setLineDash([]);
+		function mark(p, ch, col) {
+			if (!p) return;
+			ctx.fillStyle = col;
+			ctx.fillRect(p.x * tile, p.y * tile, tile, tile);
+			ctx.fillStyle = '#000';
+			ctx.font = 'bold ' + Math.max(8, tile) + 'px sans-serif';
+			ctx.textAlign = 'center';
+			ctx.textBaseline = 'middle';
+			ctx.fillText(ch, (p.x + 0.5) * tile, (p.y + 0.55) * tile);
+		}
+		mark(r.start, 'S', '#4cd964');
+		mark(r.goal, 'G', '#ff5a4d');
+		var lh = '';
+		CELL_NAME.forEach(function (n, i) { lh += '<span><i style="background:' + CELL_COLOR[i] + '"></i>' + i + ' ' + n + '</span>'; });
+		lh += '<span><i style="border-color:#3aa0ff"></i>部屋の枠</span><span><i style="border-color:#ff4d8d"></i>出入口</span><span><i style="border-color:#ff9a1f"></i>出入口パターンの範囲</span>' +
+			'<span><i style="background:#4cd964"></i>S 入口</span><span><i style="background:#ff5a4d"></i>G ボス</span>';
+		lg.innerHTML = lh;
+	}
+
+	/* ---------------------------------------------------------------- */
+	/* 割り当て																	 */
+	/* ---------------------------------------------------------------- */
+	function bind() {
+		if (bBound) return;
+		bBound = true;
+		bindRoomCanvas();
+		bindOpCanvas($('dg-ocv'));
+		attachPaint($('dg-rcv'), 'r', function () {
+			var r = cur && cur.rooms[selRoom];
+			return r && { w: r.w, h: r.h, cells: r.cells, tile: $('dg-rcv').width / r.w, redraw: drawRoom };
+		});
+		attachPaint($('dg-ocv'), 'o', function () {
+			var o = cur && cur.openings[selOp];
+			return o && { w: o.w, h: o.h, cells: o.cells, tile: opTile(o), redraw: drawOp };
+		});
+		attachPaint($('dg-ocv2'), 'o', function () {
+			var o = cur && cur.openings[selOp];
+			return o && o.cellsOpen && o.cellsOpen.length === o.w * o.h && { w: o.w, h: o.h, cells: o.cellsOpen, tile: opTile(o), redraw: drawOp };
+		}, true);
+		attachPaint($('dg-dcv'), 'd', function () {
+			var d = cur && cur.decos[selDeco];
+			return d && { w: d.w, h: d.h, cells: d.cells, tile: DTILE, redraw: renderDecoGrid };
+		});
+		refreshTools();
+		$('dg-out').addEventListener('mousemove', function (ev) {
+			var cv = $('dg-out');
+			if (!last || $('dg-view').value !== 'meaning' || !last.links) { cv.title = ''; return; }
+			var b = cv.getBoundingClientRect(), k = cv.width / b.width, tile = Math.max(2, Math.round(T * Number($('dg-zoom').value)));
+			var x = Math.floor((ev.clientX - b.left) * k / tile), y = Math.floor((ev.clientY - b.top) * k / tile), t = '';
+			last.links.forEach(function (l) {
+				var inPat = l.pw > 0 && l.ph > 0 && x >= l.px && x < l.px + l.pw && y >= l.py && y < l.py + l.ph;
+				if (inPat || (x >= l.x && x < l.x + l.w && y >= l.y && y < l.y + l.h)) {
+					var ops = (lastTheme && lastTheme.openings) || [], op = l.tpl != null && l.tpl >= 0 ? ops[l.tpl] : null;
+					t = '出入口 ' + (OP_TYPE[l.type] || l.type) + '（部屋 ' + l.a + ' - ' + l.b + '）' +
+						(l.tpl != null && l.tpl >= 0 ? '・パターン ' + (l.tpl + 1) + (op ? '「' + op.name + '」' : '') : '・パターンなし') +
+						(l.pw > 0 ? '・パターンの範囲 ' + l.pw + '×' + l.ph : '');
+				}
+			});
+			cv.title = t;
+		});
+		$('dg-rname').addEventListener('input', function () {
+			var r = cur.rooms[selRoom];
+			if (!r) return;
+			r.name = $('dg-rname').value;
+			markDirty();
+		});
+		$('dg-rname').addEventListener('change', function () { showRooms(); });
+		$('dg-rkind').addEventListener('change', function () {
+			var r = cur.rooms[selRoom];
+			if (!r) return;
+			r.kind = num($('dg-rkind').value, 0);
+			markDirty();
+			showRooms();
+			showWarn();
+		});
+		$('dg-rmax').addEventListener('change', function () {
+			var r = cur.rooms[selRoom];
+			if (!r) return;
+			r.maxUse = Math.max(0, Math.min(99, num($('dg-rmax').value, 0)));
+			$('dg-rmax').value = String(r.maxUse);
+			markDirty();
+			showWarn();
+		});
+		$('dg-rfixed').addEventListener('change', function () {
+			var r = cur.rooms[selRoom];
+			if (!r) return;
+			r.fixed = $('dg-rfixed').checked;
+			markDirty();
+			drawRoom();
+		});
+		$('dg-rentclr').addEventListener('click', function () {
+			var r = cur.rooms[selRoom];
+			if (!r) return;
+			r.entryX = r.entryY = -1;
+			markDirty();
+			drawRoom();
+		});
+		$('dg-osel').addEventListener('change', function () { selOp = num($('dg-osel').value, -1); showOps(); });
+		$('dg-odel').addEventListener('click', function () {
+			if (selOp < 0 || !confirm('この出入口パターンを削除しますか。')) return;
+			cur.openings.splice(selOp, 1);
+			selOp = Math.min(selOp, cur.openings.length - 1);
+			markDirty();
+			showOps();
+		});
+		$('dg-oclropen').addEventListener('click', function () {
+			if (selOp < 0) return;
+			cur.openings[selOp].cellsOpen = [];
+			markDirty();
+			showOps();
+		});
+		$('dg-oname').addEventListener('input', function () { cur.openings[selOp].name = $('dg-oname').value; markDirty(); });
+		$('dg-oname').addEventListener('change', showOps);
+		$('dg-odir').addEventListener('change', function () {
+			var o = cur.openings[selOp], d = num($('dg-odir').value, 0), er = checkOpSize(d, o.w, o.h, 0);
+			if (er) { setMsg('向きを変えられません: ' + er); showOps(); return; }
+			o.dir = d;
+			o.off = 0;
+			o.cut0 = o.cut1 = -1;
+			var hl = defHole(opLen(o));
+			o.hole0 = hl[0];
+			o.hole1 = hl[1];
+			markDirty();
+			showOps();
+		});
+		$('dg-ooff').addEventListener('change', function () {
+			var o = cur.openings[selOp];
+			if (!o) return;
+			var v = num($('dg-ooff').value, -1), er = checkOpSize(o.dir, o.w, o.h, v);
+			if (er) { setMsg(er); showOps(); return; }
+			o.off = v;
+			markDirty();
+			showOps();
+		});
+		$('dg-ostretch').addEventListener('change', function () {
+			var o = cur.openings[selOp];
+			if (!o) return;
+			if ($('dg-ostretch').checked) { var c = defCut(o); o.cut0 = c[0]; o.cut1 = c[1]; } else { o.cut0 = o.cut1 = -1; }
+			markDirty();
+			showOps();
+		});
+		$('dg-otype').addEventListener('change', function () {
+			var o = cur.openings[selOp];
+			o.type = num($('dg-otype').value, 1);
+			if (o.type !== 2) o.cellsOpen = [];
+			markDirty();
+			showOps();
+		});
+		$('dg-pkeep').addEventListener('click', keepParams);
+		$('dg-pclr').addEventListener('click', function () {
+			if (!cur || !cur.params) return;
+			delete cur.params;
+			markDirty();
+			showParamsInfo();
+		});
+		$('dg-ladd').addEventListener('click', function () {
+			if (cur.lights.length >= 8) { setMsg('灯りの上書きは 8 件までです。'); return; }
+			cur.lights.push({ wParts: 0, byLight: 1 });
+			markDirty();
+			showLights();
+		});
+		$('dg-sel').addEventListener('change', function () {
+			if (dirty && !confirm('保存していない変更があります。捨てて切り替えますか。')) { fillSelect(); return; }
+			if (dirty) draftDrop(cur);
+			var id = num($('dg-sel').value, 0);
+			pickTheme(themes.filter(function (t) { return t.id === id; })[0] || null);
+		});
+		$('dg-new').addEventListener('click', function () {
+			if (dirty && !confirm('保存していない変更があります。捨てて新しく作りますか。')) return;
+			if (dirty) draftDrop(cur);
+			pickTheme(blankTheme());
+			markDirty();
+		});
+		$('dg-dup').addEventListener('click', function () {
+			if (!cur) return;
+			var c = JSON.parse(JSON.stringify(cur));
+			delete c.id;
+			c.name = c.name + '（複製）';
+			cur = norm(c);
+			selRoom = selDeco = selOp = -1;
+			show();
+			markDirty();
+		});
+		$('dg-del').addEventListener('click', delTheme);
+		$('dg-exp-all').addEventListener('click', function () { download('dungeon-themes.json', { themes: themes }); });
+		$('dg-exp-one').addEventListener('click', function () {
+			var id = num($('dg-sel').value, 0), t = themes.filter(function (x) { return x.id === id; })[0];
+			if (!t) { setMsg('保存済みのテーマを選んでください。'); return; }
+			download('dungeon-theme-' + t.id + '.json', { themes: [t] });
+		});
+		$('dg-file').addEventListener('change', function () { if ($('dg-file').files[0]) readImportFile($('dg-file').files[0]); });
+		$('dg-impgo').addEventListener('click', doImport);
+		$('dg-impcancel').addEventListener('click', function () { impThemes = null; $('dg-imp').hidden = true; $('dg-file').value = ''; });
+		$('dg-save').addEventListener('click', saveTheme);
+		$('dg-name').addEventListener('input', function () { cur.name = $('dg-name').value; markDirty(); });
+		$('dg-name').addEventListener('change', fillSelect);
+		$('dg-bottom').addEventListener('change', function () { cur.bottomRows = num($('dg-bottom').value, 1) === 2 ? 2 : 1; markDirty(); drawRoom(); });
+		$('dg-tdark').addEventListener('change', function () { cur.dark = Math.max(0, Math.min(100, num($('dg-tdark').value, 0))); $('dg-tdark').value = String(cur.dark); markDirty(); });
+		$('dg-algo').addEventListener('change', function () { cur.algo = num($('dg-algo').value, 1); markDirty(); });
+		LISTS.forEach(function (l) {
+			$('dg-l-' + l[0]).addEventListener('input', function () {
+				var a = parseList($('dg-l-' + l[0]).value);
+				cur[l[0]] = SCALAR[l[0]] ? (a[0] || 0) : a;
+				markDirty();
+				showThumbs(true);
+			});
+		});
+		$('dg-rsel').addEventListener('change', function () { selRoom = num($('dg-rsel').value, -1); showRooms(); });
+		$('dg-rdel').addEventListener('click', function () {
+			if (selRoom < 0 || !confirm('この部屋を削除しますか。')) return;
+			cur.rooms.splice(selRoom, 1);
+			selRoom = Math.min(selRoom, cur.rooms.length - 1);
+			markDirty();
+			showRooms();
+		});
+		$('dg-radd').addEventListener('click', addRoom);
+		$('dg-rdup').addEventListener('click', dupRoom);
+		$('dg-oadd').addEventListener('click', addOpening);
+		$('dg-odup').addEventListener('click', dupOpening);
+		$('dg-oaddopen').addEventListener('click', function () {
+			var o = cur.openings[selOp];
+			if (!o || o.type !== 2) return;
+			o.cellsOpen = o.cells.slice();
+			tools.o = 'paint';
+			markDirty();
+			showOps();
+			refreshTools();
+		});
+		$('dg-ddup').addEventListener('click', dupDeco);
+		$('dg-dsel').addEventListener('change', function () { selDeco = num($('dg-dsel').value, -1); showDecos(); });
+		$('dg-dadd').addEventListener('click', function () {
+			if (cur.decos.length >= 50) { setMsg('飾りは 50 件までです。'); return; }
+			cur.decos.push({ name: '飾り' + (cur.decos.length + 1), w: 1, h: 1, cells: [0], on: 1, rate: 10, max: 8, per: 0 });
+			selDeco = cur.decos.length - 1;
+			markDirty();
+			showDecos();
+		});
+		$('dg-ddel').addEventListener('click', function () {
+			if (selDeco < 0) return;
+			cur.decos.splice(selDeco, 1);
+			selDeco = Math.min(selDeco, cur.decos.length - 1);
+			markDirty();
+			showDecos();
+		});
+		function decoField(id, fn, bRedraw) {
+			$(id).addEventListener('change', function () {
+				var d = cur.decos[selDeco];
+				if (!d) return;
+				fn(d, $(id).value);
+				markDirty();
+				showDecos();
+			});
+		}
+		decoField('dg-dname', function (d, v) { d.name = v; });
+		decoField('dg-dw', function (d, v) { fitDecoCells(d, Math.max(1, Math.min(16, num(v, 1))), d.h); });
+		decoField('dg-dh', function (d, v) { fitDecoCells(d, d.w, Math.max(1, Math.min(16, num(v, 1)))); });
+		decoField('dg-don', function (d, v) { d.on = num(v, 1); });
+		decoField('dg-drate', function (d, v) { d.rate = Math.max(0, Math.min(100, num(v, 0))); });
+		decoField('dg-dmax', function (d, v) { d.max = Math.max(0, Math.min(999, num(v, 0))); });
+		decoField('dg-droom', function (d, v) {
+			if (d.per == null) d.per = d.room > 0 ? 1 : 0;
+			d.room = Math.max(0, num(v, 0));
+		});
+		decoField('dg-dper', function (d, v) { d.per = num(v, 0) === 1 ? 1 : 0; });
+		window.addEventListener('beforeunload', function (ev) {
+			if (!dirty) return;
+			draftFlush();
+			ev.preventDefault();
+			ev.returnValue = '';
+		});
+		window.addEventListener('pagehide', draftFlush);
+		$('dg-gen').addEventListener('click', function () { generate(false); });
+		$('dg-gen2').addEventListener('click', function () { generate(true); });
+		$('dg-view').addEventListener('change', drawOut);
+		$('dg-zoom').addEventListener('change', drawOut);
+		$('dg-dark').addEventListener('change', drawOut);
+		$('dg-dchar').addEventListener('change', drawOut);
+	}
+
+	function open(fn) {
+		api = fn;
+		$root = $('dg-root');
+		if (!$root) return;
+		if (!bBound) {
+			build();
+			bind();
+		}
+		load();
+	}
+
+	root.SboDungeon = { open: open };
+})(window);

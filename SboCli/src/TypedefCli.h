@@ -151,6 +151,7 @@ enum {
 	WNDTYPE_MARKET,												/* 取引所（商人ギルドの出張所）の受付 */
 	WNDTYPE_IMPORTANT,											/* 大事な物の一覧（見るだけ。道具の一覧の最後の行から開く） */
 	WNDTYPE_RECYCLE,											/* リサイクルボックス（おすそわけの共有の箱。マップに置いた箱を調べると開く） */
+	WNDTYPE_DUNGEONSEL,											/* 番外編ダンジョン：入る姿（テンプレート）の選択 */
 };
 
 /* 取引所ウィンドウ(WNDTYPE_MARKET)の nType2 */
@@ -324,6 +325,7 @@ typedef struct _WNDINFO {
 	DWORD			dwMsgDrawHash;								/* メッセージ：描いてある所までの中身の目印 */
 	int				nMsgBackLine;								/* メッセージ：入力待ちの間に上キーで読み返している行数（0 なら最新） */
 	int				nMsgScrollMax;								/* メッセージ：最後に描いた時にずれていた行数（読み返せる上限） */
+	BOOL			bDungeonReception;							/* 姿の一覧と一緒に表示する受付の説明 */
 	BOOL			bMsgSkip;									/* メッセージ：キャンセルで残りを飛ばして閉じてよい（アイテムを使った時の読み物だけ） */
 } WNDINFO, *PWNDINFO;
 

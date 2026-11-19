@@ -20,7 +20,8 @@ public:
 	CCharProcPUT();										/* コンストラクタ */
 
 	BOOL Proc		(DWORD dwTime);								/* 処理 */
-	BOOL PutOne		(DWORD dwTime);								/* 1体出す（くじで選んだマスがだめなら FALSE） */
+	BOOL PutOne		(DWORD dwTime, BOOL bSpaced = FALSE, const DWORD *pdwSeed = NULL);		/* 1体出す（くじで選んだマスがだめなら FALSE）。bSpaced は番外編ダンジョンの空間ごとの発生（数・時刻は呼ぶ側が数える）。pdwSeed があれば、位置のくじはそのシードの std::mt19937 で引く（日替わりダンジョン。どの組も同じ位置になる） */
+	BOOL PutOneSpace	(DWORD dwTime, DWORD dwSpaceID, const DWORD *pdwSeed = NULL);			/* 指定した空間に 1体出す（番外編ダンジョン。発生元の数・時刻は動かさない。pdwSeed は PutOne と同じ） */
 } CCharProcPUT, *PCCharProcPUT;
 
 /* 発生元の能力（テンプレート指定中はテンプレート）を出てくるキャラへ写す */

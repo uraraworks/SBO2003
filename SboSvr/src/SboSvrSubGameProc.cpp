@@ -7,10 +7,24 @@
 /* ========================================================================= */
 #include "include.h"
 #include "Glbldata.h"
+#include "../../common/DungeonText.h"
 #include "SboSvrRecvCmd.h"
+#include "SboSvrSubGameProc.h"
+#include "SboSvrSendCmd.h"
 #include "SboSvrSubGameProcSugoroku.h"
+#include "SboSvrDungeonDaily.h"
+#include "SboSvrQuest.h"
+/* DungeonGen のメンバー名 max が、互換層の max マクロとぶつかるので、読み込む間だけ外す */
+#pragma push_macro("min")
+#pragma push_macro("max")
+#undef min
+#undef max
+#include "DungeonGen/DungeonGen.h"
+#pragma pop_macro("max")
+#pragma pop_macro("min")
 #include <vector>
 #include <algorithm>
+#include <string>
 
 /* ========================================================================= */
 /* 関数プロトタイプ宣言														 */
@@ -32,7 +46,12 @@ static int GetMazePathWidth(PSUBGAME_MAZEINFO);							/* 迷路の通路の太�
 static WORD GetMazeTileParts(int, BOOL, WORD, WORD, BYTE, WORD, WORD, BYTE, WORD);	/* 迷路のマスのパーツ */
 static void MakeMazeWeave(PBYTE, int, int, PSUBGAME_MAZEINFO);			/* 立体交差のある迷路の設計図 */
 void MakeDungeonProc(BYTE);												/* ダンジョン作成処理 */
+void MakeDungeonProcEx(BYTE, int);										/* ダンジョン作成処理(日替わりの版の決め方を指定。DGDAILY_*) */
+BOOL DungeonDailyRebuildNow(int, std::string &);						/* 日替わりダンジョンを今すぐ作り直す（管理者。中の組は外へ戻す） */
+static void SubGameProc_DUNGEON_DAILY(int, PSUBGAME_DUNGEONINFO);		/* 日替わりダンジョンの周期処理 */
+static BOOL DungeonGenSize(PSUBGAME_DUNGEONINFO, int *, int *);			/* 生成の大きさ（範囲の大きさ。8〜128 に収まらなければ FALSE） */
 static BOOL MakeDungeonProcTmp(PBYTE, int, int, int, int, int);			/* ダンジョン作成処理(メイン) */
+static BOOL MakeDungeonByTheme(int, PSUBGAME_DUNGEONINFO, PMAPINFO, int);	/* ダンジョン作成処理(テーマで生成) */
 static BOOL CheckMakeDungeon(PBYTE, int, int, int, int, int, int);		/* 進行方向のチェック */
 
 extern void sgenrand(unsigned long);									/* 乱数初期化 */
@@ -398,7 +417,10 @@ static void SubGameProc_DUNGEON(PSUBGAMEINFO pInfo)
 				/* スタート地点とゴール地点のイベント・マップを設置 */
 				pMap->pwMap[pDungeon->byStartX + pDungeon->byStartY * pMap->nCX] = pDungeon->wChipIDStart;
 				SendCmdCHGMAP (pMap->dwID, pDungeon->wChipIDStart, pDungeon->byStartX, pDungeon->byStartY);
-				pMap->pwMap[pDungeon->byGoalX + (pDungeon->byGoalY * pMap->nCX)] = pDungeon->wChipIDGoal;
+				BOOL bPlaceGoal = !DungeonUsesKillAll (pDungeon);
+				if (bPlaceGoal) {
+					pMap->pwMap[pDungeon->byGoalX + (pDungeon->byGoalY * pMap->nCX)] = pDungeon->wChipIDGoal;
+				}
 
 				/* スタート地点へ */
 				int nNo = AddEvent (pMap->dwID);
@@ -418,22 +440,25 @@ static void SubGameProc_DUNGEON(PSUBGAMEINFO pInfo)
 				pMapChg->byEfect = EVENTMOVEEFECT_SILENT;
 
 
-				/* ゴールから脱出 */
-				nNo = AddEvent (pMap->dwID);
-				pEvent = &pMap->pEvent[nNo];
-				pEvent->dwX = (DWORD)pDungeon->byGoalX;
-				pEvent->dwY = (DWORD)pDungeon->byGoalY;
-				pEvent->byType = EVENTTYPE_MAPCHG;
-				pEvent->pData = NULL;
+				if (bPlaceGoal) {
+					/* ゴールから脱出 */
+					nNo = AddEvent (pMap->dwID);
+					pEvent = &pMap->pEvent[nNo];
+					pEvent->dwX = (DWORD)pDungeon->byGoalX;
+					pEvent->dwY = (DWORD)pDungeon->byGoalY;
+					pEvent->byType = EVENTTYPE_MAPCHG;
+					pEvent->pData = NULL;
 
-				nSize = GetEventDataSize (EVENTTYPE_MAPCHG);
-				pEvent->pData = new BYTE[nSize];
-				ZeroMemory (pEvent->pData, nSize);
-				pMapChg = (PEVENTINFO_MAPCHG)pEvent->pData;
-				pMapChg->dwMapID = pDungeon->dwMapID;
-				pMapChg->dwX = (DWORD)pDungeon->byStartX;
-				pMapChg->dwY = (DWORD)pDungeon->byStartY;
-				pMapChg->byEfect = EVENTMOVEEFECT_SILENT;
+					nSize = GetEventDataSize (EVENTTYPE_MAPCHG);
+					pEvent->pData = new BYTE[nSize];
+					ZeroMemory (pEvent->pData, nSize);
+					pMapChg = (PEVENTINFO_MAPCHG)pEvent->pData;
+					pMapChg->dwMapID = pDungeon->dwMapID;
+					pMapChg->dwX = (DWORD)pDungeon->byStartX;
+					pMapChg->dwY = (DWORD)pDungeon->byStartY;
+					pMapChg->byEfect = EVENTMOVEEFECT_SILENT;
+
+				}
 
 				SendCmdEVENTPOS (URARASOCK_SENDALL, pMap->dwID);
 				SendCmdSYSMSGMAP (pMap->dwID, "SYSTEM:ダンジョン作成完了しました。");
@@ -442,6 +467,21 @@ static void SubGameProc_DUNGEON(PSUBGAMEINFO pInfo)
 
 	/* 作成中ではない */
 	} else {
+		/* 日替わり：日付が変わっていて無人の時だけ作り直す。無人 5 秒の作り直しはしない（形は変わらない） */
+		if ((pDungeon->byRebuildMode == DGREBUILD_DAILY) && pDungeon->dwThemeID) {
+			SubGameProc_DUNGEON_DAILY (g_nProcSubGame, pDungeon);
+			return;
+		}
+		/* テーマで作るダンジョンがまだ一度も作られていない（サーバーを起動した直後など）：無人を待たずに作る。
+		   作れなかった時は 60 秒おきに試し直す（旧方式に落ちた時も dwBuildNo は 0 のまま） */
+		if (pDungeon->dwThemeID && (pDungeon->dwBuildNo == 0)) {
+			DWORD dwNowT = timeGetTime ();
+			if ((pDungeon->dwDailyRetry == 0) || ((int)(dwNowT - pDungeon->dwDailyRetry) >= 0)) {
+				pDungeon->dwDailyRetry = (dwNowT + 60000) ? (dwNowT + 60000) : 1;
+				MakeDungeonProc (g_nProcSubGame);
+				return;
+			}
+		}
 		PCHARINFO pChar = g_aCharInfo[pDungeon->dwTblIDCheck];
 		if (pDungeon->dwTblIDCheck == 0) {
 			/* 誰もいないかもしれない？ */
@@ -462,8 +502,8 @@ static void SubGameProc_DUNGEON(PSUBGAMEINFO pInfo)
 				pDungeon->dwCountTmp = 0;
 			}
 		}
-		/* エリア内にいる？ */
-		if ((pChar->dwMapID == pDungeon->dwMapID) &&
+		/* エリア内にいる？（NPC・敵は数えない。中に敵が残っていても無人として作り直せるように） */
+		if (pChar && (pChar->byGameState != GAMESTATE_NPC) && (pChar->dwMapID == pDungeon->dwMapID) &&
 			(pChar->dwX >= (DWORD)pDungeon->byX1) && (pChar->dwX <= (DWORD)pDungeon->byX2) &&
 			(pChar->dwY >= (DWORD)pDungeon->byY1) && (pChar->dwY <= (DWORD)pDungeon->byY2)) {
 			/* オフライン中？ */
@@ -484,6 +524,142 @@ static void SubGameProc_DUNGEON(PSUBGAMEINFO pInfo)
 		pDungeon->dwTblIDCheck ++;
 		pDungeon->dwTblIDCheck = (pDungeon->dwTblIDCheck >= (DWORD)g_aCharInfo.GetSize ()) ? 0 : pDungeon->dwTblIDCheck;
 	}
+}
+
+/* ========================================================================= */
+/* 関数名：DungeonGenSize													 */
+/* 内容：生成の大きさ（範囲の大きさ。128 まで）。8 未満・範囲がおかしい時は FALSE */
+/* ========================================================================= */
+static BOOL DungeonGenSize(PSUBGAME_DUNGEONINFO pDungeon, int *pnCX, int *pnCY)
+{
+	if ((pDungeon->byX2 <= pDungeon->byX1) || (pDungeon->byY2 <= pDungeon->byY1)) {
+		return FALSE;
+	}
+	*pnCX = min ((int)pDungeon->byX2 - (int)pDungeon->byX1 + 1, 128);
+	*pnCY = min ((int)pDungeon->byY2 - (int)pDungeon->byY1 + 1, 128);
+	return (*pnCX >= 8) && (*pnCY >= 8);
+}
+
+/* ========================================================================= */
+/* 関数名：SubGameProc_DUNGEON_DAILY										 */
+/* 内容：日替わりダンジョンの周期処理（約 1 秒ごとに見る）					 */
+/* 備考：・まだ作っていない（起動後の最初・作れなかった後）なら作る			 */
+/*       ・遊んでいる人（組の空間の中も含む）が範囲に誰もいなくて、日付が変わった（版が古い）なら作り直す */
+/*       ・誰かいる間は作り直さない（新しく入る組は前の日の形にそのまま入れる） */
+/*       ・無人で 5 秒たったら、ふつうの世界の NPC発生の「補充しない」の数だけ戻す（形は変えない） */
+/* ========================================================================= */
+static void SubGameProc_DUNGEON_DAILY(int nID, PSUBGAME_DUNGEONINFO pDungeon)
+{
+	DWORD dwNow = timeGetTime ();
+	int i, nCount, nPlayer = 0, nCX, nCY;
+
+	if (pDungeon->dwDailyCheck && (dwNow - pDungeon->dwDailyCheck < 1000)) {
+		return;
+	}
+	pDungeon->dwDailyCheck = dwNow ? dwNow : 1;
+	if (!DungeonGenSize (pDungeon, &nCX, &nCY) || (pDungeon->dwMapID >= (DWORD)g_aMapInfo.GetSize ()) || (g_aMapInfo[pDungeon->dwMapID] == NULL)) {
+		return;
+	}
+	/* 作れなかった後は、しばらく待つ */
+	if (pDungeon->dwDailyRetry && ((int)(dwNow - pDungeon->dwDailyRetry) < 0)) {
+		return;
+	}
+	pDungeon->dwDailyRetry = 0;
+
+	/* まだ作っていない：すぐ作る（日替わりは「作成」ボタンを待たない） */
+	if ((pDungeon->pwGenParts == NULL) || (pDungeon->dwBuildNo == 0)) {
+		MakeDungeonProc ((BYTE)nID);
+		return;
+	}
+
+	/* 範囲にいる人（遊んでいる人だけ。組の空間の中の人も含む） */
+	nCount = g_aCharInfo.GetSize ();
+	for (i = 0; i < nCount; i ++) {
+		PCHARINFO pChar = g_aCharInfo[i];
+		if ((pChar == NULL) || (pChar->byGameState == GAMESTATE_NPC) || (pChar->byGameState < GAMESTATE_MOVE)) {
+			continue;
+		}
+		if ((pChar->dwMapID == pDungeon->dwMapID) &&
+			(pChar->dwX >= (DWORD)pDungeon->byX1) && (pChar->dwX <= (DWORD)pDungeon->byX2) &&
+			(pChar->dwY >= (DWORD)pDungeon->byY1) && (pChar->dwY <= (DWORD)pDungeon->byY2)) {
+			nPlayer ++;
+			break;
+		}
+	}
+	if (nPlayer > 0) {
+		pDungeon->byDailyUsed = 1;
+		pDungeon->dwDailyEmpty = 0;
+		return;
+	}
+	if (pDungeon->dwDailyEmpty == 0) {
+		pDungeon->dwDailyEmpty = dwNow ? dwNow : 1;
+	}
+	/* 日付が変わった（生成器の版・テーマ番号・大きさが変わった）：作り直す */
+	if (DungeonDailyStale (nID, pDungeon->dwDailyVer, pDungeon->dwThemeID, nCX, nCY)) {
+		MakeDungeonProc ((BYTE)nID);
+		return;
+	}
+	/* 無人で 5 秒：ふつうの世界の NPC発生の「補充しない」の数を戻す（番外編の組の空間は組ごとに数えるので関係しない） */
+	if (pDungeon->byDailyUsed && (dwNow - pDungeon->dwDailyEmpty >= 5000)) {
+		pDungeon->byDailyUsed = 0;
+		for (i = 0; i < nCount; i ++) {
+			PCHARINFO pPut = g_aCharInfo[i];
+			if ((pPut != NULL) && (pPut->byNpcType == NPCTYPE_PUT) && (pPut->dwMapID == pDungeon->dwMapID) &&
+				(pPut->dwX >= (DWORD)pDungeon->byX1) && (pPut->dwX <= (DWORD)pDungeon->byX2) &&
+				(pPut->dwY >= (DWORD)pDungeon->byY1) && (pPut->dwY <= (DWORD)pDungeon->byY2)) {
+				pPut->byPutDone = 0;
+			}
+		}
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：DungeonDailyRebuildNow											 */
+/* 内容：日替わりダンジョンを今すぐ作り直す（管理者）						 */
+/* 備考：中の組には知らせてから外へ戻し、新しいランダムなシードで作り直す。	 */
+/*       その日のその後（再起動を含む）はそのシードを使う（版として保存する）。 */
+/*       日替わりのダンジョンだけ。作り直せたら TRUE、できなければ理由を strErr に入れて FALSE */
+/* ========================================================================= */
+BOOL DungeonDailyRebuildNow(int nID, std::string &strErr)
+{
+	PSUBGAMEINFO pInfo;
+	PSUBGAME_DUNGEONINFO pDungeon;
+	DWORD dwBuildBack;
+	int nCX, nCY;
+
+	strErr.clear ();
+	if ((nID < 0) || (nID >= g_aSubaGameInfo.GetSize ()) || (nID > 255)) {
+		strErr = "サブゲームが見つかりません";
+		return FALSE;
+	}
+	pInfo = g_aSubaGameInfo[nID];
+	if ((pInfo == NULL) || (pInfo->byType != SUBGAMEID_DUNGEON) || (pInfo->pInfo == NULL)) {
+		strErr = "ダンジョンではありません";
+		return FALSE;
+	}
+	pDungeon = (PSUBGAME_DUNGEONINFO)pInfo->pInfo;
+	if ((pDungeon->byRebuildMode != DGREBUILD_DAILY) || (pDungeon->dwThemeID == 0)) {
+		strErr = "日替わり（作り直しの方式 1・テーマ番号あり）のダンジョンだけ今すぐ作り直せます";
+		return FALSE;
+	}
+	if ((pDungeon->dwMapID >= (DWORD)g_aMapInfo.GetSize ()) || (g_aMapInfo[pDungeon->dwMapID] == NULL) || !DungeonGenSize (pDungeon, &nCX, &nCY)) {
+		strErr = "ダンジョンの範囲がマップに収まっていません";
+		return FALSE;
+	}
+	if (pDungeon->pMapTmp) {
+		strErr = "作成中です";
+		return FALSE;
+	}
+	/* 中の組には知らせてから、外へ戻す（CHALLENGELEAVE_BUILD） */
+	DungeonRunLeaveAll (nID, DungeonText (pDungeon, "rebuild_notice").c_str ());
+	dwBuildBack = pDungeon->dwBuildNo;
+	pDungeon->dwDailyRetry = 0;
+	MakeDungeonProcEx ((BYTE)nID, DGDAILY_ADMIN);
+	if (pDungeon->dwBuildNo == dwBuildBack) {
+		strErr = "作れませんでした（テーマ番号・範囲を確かめてください）";
+		return FALSE;
+	}
+	return TRUE;
 }
 
 /* ========================================================================= */
@@ -1456,11 +1632,404 @@ void MakeMazeProc(BYTE byID)
 }
 
 /* ========================================================================= */
+/* 関数名：LoadDungeonThemes												 */
+/* 内容：ダンジョン生成のテーマファイル（SBODATA/SboWebDungeonThemes.json）を読む */
+/* 備考：作り直しのたびに読み直す（管理画面で直したテーマがすぐ効く）。無ければ空 */
+/* ========================================================================= */
+static BOOL LoadDungeonThemes(std::string &strJson)
+{
+	char szFileName[MAX_PATH + 1];
+	HANDLE hFile;
+	DWORD dwSize, dwBytes = 0;
+	int k;
+
+	strJson.clear ();
+	GetModuleFileName (NULL, szFileName, MAX_PATH);
+	for (k = (int)strlen (szFileName) - 1; k > 0; k --) {
+		if (szFileName[k] == '\\') {
+			szFileName[k + 1] = 0;
+			break;
+		}
+	}
+	strcat (szFileName, "SBODATA\\SboWebDungeonThemes.json");
+
+	hFile = CreateFile (szFileName, GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+	if (hFile == INVALID_HANDLE_VALUE) {
+		return FALSE;
+	}
+	dwSize = GetFileSize (hFile, NULL);
+	if ((dwSize == 0) || (dwSize > 64 * 1024 * 1024)) {
+		CloseHandle (hFile);
+		return FALSE;
+	}
+	strJson.resize (dwSize);
+	ReadFile (hFile, &strJson[0], dwSize, &dwBytes, NULL);
+	CloseHandle (hFile);
+	strJson.resize (dwBytes);
+	return (dwBytes > 0);
+}
+
+/* ========================================================================= */
+/* 関数名：MakeDungeonByTheme												 */
+/* 内容：ダンジョン作成処理(テーマで生成)									 */
+/* 備考：範囲の大きさで DungeonGen::Generate し、マス目・イベント（入口・出口・扉）を一度に置く。 */
+/*       テーマが見つからない・生成に失敗した時は何も変えずに FALSE（呼び出し側が今までの作り方で作る） */
+/* ========================================================================= */
+static BOOL MakeDungeonByTheme(int nID, PSUBGAME_DUNGEONINFO pDungeon, PMAPINFO pMap, int nHow)
+{
+	std::string strJson;
+	DungeonGen::Theme theme;
+	DungeonGen::Params param;
+	DungeonGen::Skeleton sk;
+	DGDAILYVER daily;
+	BOOL bDaily = (pDungeon->byRebuildMode == DGREBUILD_DAILY);
+	std::vector<int> aParts;
+	int i, x, y, x1, y1, cx, cy, nAreaCX, nAreaCY;
+
+	/* 範囲（BYTE 座標）がマップに収まっているか。生成の大きさは 8〜128 に収める */
+	if ((pDungeon->byX2 <= pDungeon->byX1) || (pDungeon->byY2 <= pDungeon->byY1)) {
+		return FALSE;
+	}
+	if (((int)pDungeon->byX2 >= pMap->nCX) || ((int)pDungeon->byY2 >= pMap->nCY)) {
+		return FALSE;
+	}
+	if (((int)pDungeon->byStartX >= pMap->nCX) || ((int)pDungeon->byStartY >= pMap->nCY)) {
+		return FALSE;
+	}
+	x1 = (int)pDungeon->byX1;
+	y1 = (int)pDungeon->byY1;
+	nAreaCX = (int)pDungeon->byX2 - x1 + 1;
+	nAreaCY = (int)pDungeon->byY2 - y1 + 1;
+	cx = min (nAreaCX, 128);
+	cy = min (nAreaCY, 128);
+	if ((cx < 8) || (cy < 8)) {
+		return FALSE;
+	}
+
+	/* テーマを探す */
+	if (bDaily) {
+		/* 日替わり：その日の版（シード・テーマの写し）で作る。版が無ければ今のテーマファイルの中身を写して足す */
+		std::string strEntry;
+		BOOL bFound = LoadDungeonThemes (strJson) && DungeonGen::FindThemeJson (strJson.c_str (), (int)pDungeon->dwThemeID, strEntry);
+		if (!DungeonDailyAcquire (nID, pDungeon->dwThemeID, cx, cy, nHow, bFound ? strEntry.c_str () : NULL, daily)) {
+			return FALSE;
+		}
+		if (!DungeonGen::ReadThemeEntry (DungeonDailyThemeText (daily.nThemeRef).c_str (), theme, param)) {
+			return FALSE;
+		}
+		param.w = cx;
+		param.h = cy;
+		param.seed = (uint32_t)daily.dwSeed;
+	} else {
+		if (!LoadDungeonThemes (strJson) || !DungeonGen::FindThemeInFile (strJson.c_str (), (int)pDungeon->dwThemeID, theme, param)) {
+			return FALSE;
+		}
+		param.w = cx;
+		param.h = cy;
+		param.seed = (uint32_t)timeGetTime ();
+	}
+	if (param.seed == 0) {
+		param.seed = 1;
+	}
+	/* ゴールの絵は、発生元の移動後にクリア条件を確認してから置く。座標と床の絵は残す。 */
+	DungeonGen::Theme genTheme = theme;
+	genTheme.goalPart = 0;
+	if (DungeonGen::Generate (param, &genTheme, sk, aParts) != DungeonGen::ERR_NONE) {
+		return FALSE;
+	}
+	if (((int)aParts.size () != cx * cy) || (sk.w != cx) || (sk.h != cy) || ((int)sk.doorOpen.size () != cx * cy)) {
+		return FALSE;
+	}
+
+	/* エリア移動時は、前の生成範囲に属する発生元も同じだけ移す（発生範囲は絶対座標の中心からの距離） */
+	if (pDungeon->pwGenParts && (pDungeon->dwGenMapID == pMap->dwID) &&
+		((pDungeon->byGenX1 != x1) || (pDungeon->byGenY1 != y1))) {
+		int dx = x1 - pDungeon->byGenX1, dy = y1 - pDungeon->byGenY1;
+		for (int k = 0; k < g_aCharInfo.GetSize (); k ++) {
+			PCHARINFO pPut = g_aCharInfo[k];
+			if (!pPut || (pPut->byNpcType != NPCTYPE_PUT) || (pPut->dwMapID != pMap->dwID) ||
+				(pPut->dwX < pDungeon->byGenX1) || (pPut->dwX > pDungeon->byGenX2) ||
+				(pPut->dwY < pDungeon->byGenY1) || (pPut->dwY > pDungeon->byGenY2)) continue;
+			DeleteTblNoPC (pPut->dwTblID);
+			pPut->dwX = pPut->dwXBack = pPut->dwStartX = min (max ((int)pPut->dwX + dx, x1), x1 + nAreaCX - 1);
+			pPut->dwY = pPut->dwYBack = pPut->dwStartY = min (max ((int)pPut->dwY + dy, y1), y1 + nAreaCY - 1);
+			pPut->byPutDone = 0;
+			AddTblNoPC (pPut->dwTblID);
+			SendCmdCHARINFO (URARASOCK_SENDALL, pPut->dwTblID);
+		}
+	}
+
+	BOOL bPlaceGoal = !DungeonUsesKillAll (pDungeon);
+	if (bPlaceGoal && theme.goalPart > 0) aParts[sk.goalX + sk.goalY * cx] = theme.goalPart;
+
+	/* ここから先は作る。範囲内の古いイベント（扉・出口など）を全部消す */
+	{
+		int nKeep = 0;
+		std::vector<EVENTINFO> aKeep;
+		for (i = 0; i < pMap->nEventCount; i ++) {
+			PEVENTINFO pEvent = &pMap->pEvent[i];
+			if (((pEvent->dwX >= (DWORD)pDungeon->byX1) && (pEvent->dwX <= (DWORD)pDungeon->byX2) &&
+				(pEvent->dwY >= (DWORD)pDungeon->byY1) && (pEvent->dwY <= (DWORD)pDungeon->byY2)) ||
+				(pDungeon->pwGenParts && (pDungeon->dwGenMapID == pMap->dwID) &&
+				(pEvent->dwX >= pDungeon->byGenX1) && (pEvent->dwX <= pDungeon->byGenX2) &&
+				(pEvent->dwY >= pDungeon->byGenY1) && (pEvent->dwY <= pDungeon->byGenY2))) {
+				SAFE_DELETE_ARRAY (pEvent->pData);
+				continue;
+			}
+			aKeep.push_back (*pEvent);
+			nKeep ++;
+		}
+		if (nKeep != pMap->nEventCount) {
+			SAFE_DELETE_ARRAY (pMap->pEvent);
+			pMap->pEvent = NULL;
+			if (nKeep > 0) {
+				/* AddEvent・DeleteEvent と同じく BYTE の配列で持つ */
+				pMap->pEvent = (PEVENTINFO)new BYTE[nKeep * sizeof (EVENTINFO)];
+				ZeroMemory (pMap->pEvent, nKeep * sizeof (EVENTINFO));
+				for (i = 0; i < nKeep; i ++) {
+					pMap->pEvent[i] = aKeep[i];
+				}
+			}
+			pMap->nEventCount = nKeep;
+			pMap->nProcEvent = 0;
+			g_nProcMap = 0;
+		}
+	}
+
+	/* 範囲を塗る（生成の外・0 のマスは、テーマの何もない所。0 なら壁の先頭） */
+	WORD wFill = (WORD)theme.voidPart;
+	if (wFill == 0) {
+		wFill = theme.wallFill.empty () ? pDungeon->wChipIDBlock : (WORD)theme.wallFill[0];
+	}
+	for (y = 0; y < nAreaCY; y ++) {
+		for (x = 0; x < nAreaCX; x ++) {
+			WORD wParts = wFill;
+			if ((x < cx) && (y < cy) && aParts[x + y * cx] > 0) {
+				wParts = (WORD)aParts[x + y * cx];
+			}
+			pMap->pwMap[(x1 + x) + (y1 + y) * pMap->nCX] = wParts;
+		}
+	}
+
+	/* 生成結果を保持（実行中だけ） */
+	SAFE_DELETE_ARRAY (pDungeon->pwGenParts);
+	pDungeon->pwGenParts = new WORD[cx * cy];
+	for (i = 0; i < cx * cy; i ++) {
+		pDungeon->pwGenParts[i] = (WORD)max (0, aParts[i]);
+	}
+	pDungeon->dwGenMapID = pDungeon->dwMapID;
+	pDungeon->byGenX1 = pDungeon->byX1; pDungeon->byGenY1 = pDungeon->byY1;
+	pDungeon->byGenX2 = pDungeon->byX2; pDungeon->byGenY2 = pDungeon->byY2;
+	pDungeon->wGenCX = (WORD)cx;
+	pDungeon->wGenCY = (WORD)cy;
+	pDungeon->wGenStartX = (WORD)sk.startX;
+	pDungeon->wGenStartY = (WORD)sk.startY;
+	pDungeon->wGenGoalX = (WORD)sk.goalX;
+	pDungeon->wGenGoalY = (WORD)sk.goalY;
+
+	int nInX = x1 + sk.startX, nInY = y1 + sk.startY;		/* 中の入口（生成の start） */
+	int nOutX = x1 + sk.goalX, nOutY = y1 + sk.goalY;		/* 出口（生成の goal） */
+	pDungeon->byGoalX = (BYTE)nInX;
+	pDungeon->byGoalY = (BYTE)nInY;
+
+	/* ゴールを置く場合はテーマの goal を優先。無ければ wChipIDGoal */
+	if (bPlaceGoal && (theme.goalPart <= 0) && pDungeon->wChipIDGoal) {
+		pMap->pwMap[nOutX + nOutY * pMap->nCX] = pDungeon->wChipIDGoal;
+	}
+	/* 外の入口マス */
+	pMap->pwMap[pDungeon->byStartX + pDungeon->byStartY * pMap->nCX] = pDungeon->wChipIDStart;
+
+	/* 外の入口 → 中の入口（生成の start） */
+	{
+		int nNo = AddEvent (pMap->dwID);
+		PEVENTINFO pEvent = &pMap->pEvent[nNo];
+		pEvent->dwX = (DWORD)pDungeon->byStartX;
+		pEvent->dwY = (DWORD)pDungeon->byStartY;
+		pEvent->byType = EVENTTYPE_MAPCHG;
+		int nSize = GetEventDataSize (EVENTTYPE_MAPCHG);
+		pEvent->pData = new BYTE[nSize];
+		ZeroMemory (pEvent->pData, nSize);
+		PEVENTINFO_MAPCHG pMapChg = (PEVENTINFO_MAPCHG)pEvent->pData;
+		pMapChg->dwMapID = pMap->dwID;
+		pMapChg->dwX = pDungeon->byTmplCount ? (DWORD)pDungeon->byStartX : (DWORD)nInX;
+		pMapChg->dwY = pDungeon->byTmplCount ? (DWORD)pDungeon->byStartY : (DWORD)nInY;
+		pMapChg->byEfect = EVENTMOVEEFECT_SILENT;
+	}
+	/* 出口（生成の goal）→ 外の入口。全敵撃破では置かない */
+	if (bPlaceGoal) {
+		int nNo = AddEvent (pMap->dwID);
+		PEVENTINFO pEvent = &pMap->pEvent[nNo];
+		pEvent->dwX = (DWORD)nOutX;
+		pEvent->dwY = (DWORD)nOutY;
+		pEvent->byType = EVENTTYPE_MAPCHG;
+		int nSize = GetEventDataSize (EVENTTYPE_MAPCHG);
+		pEvent->pData = new BYTE[nSize];
+		ZeroMemory (pEvent->pData, nSize);
+		PEVENTINFO_MAPCHG pMapChg = (PEVENTINFO_MAPCHG)pEvent->pData;
+		pMapChg->dwMapID = pMap->dwID;
+		pMapChg->dwX = (DWORD)pDungeon->byStartX;
+		pMapChg->dwY = (DWORD)pDungeon->byStartY;
+		pMapChg->byEfect = EVENTMOVEEFECT_SILENT;
+	}
+	/* 中の入口（生成の start）→ 外の入口。番外編では「途中で帰る」出口（記録なし）。
+	   入った時はこのマスに立つが、ワープで着いただけでは乗ったことにならないので、一度離れて戻ると帰れる */
+	{
+		int nNo = AddEvent (pMap->dwID);
+		PEVENTINFO pEvent = &pMap->pEvent[nNo];
+		pEvent->dwX = (DWORD)nInX;
+		pEvent->dwY = (DWORD)nInY;
+		pEvent->byType = EVENTTYPE_MAPCHG;
+		int nSize = GetEventDataSize (EVENTTYPE_MAPCHG);
+		pEvent->pData = new BYTE[nSize];
+		ZeroMemory (pEvent->pData, nSize);
+		PEVENTINFO_MAPCHG pMapChg = (PEVENTINFO_MAPCHG)pEvent->pData;
+		pMapChg->dwMapID = pMap->dwID;
+		pMapChg->dwX = (DWORD)pDungeon->byStartX;
+		pMapChg->dwY = (DWORD)pDungeon->byStartY;
+		pMapChg->byEfect = EVENTMOVEEFECT_SILENT;
+	}
+	/* 扉（テーマの doorOpen があるときだけ。閉じた絵 = マスの絵、開いた絵 = 生成が決めた開いた絵） */
+	for (y = 0; y < cy; y ++) {
+		for (x = 0; x < cx; x ++) {
+			int nOpen = sk.doorOpen[x + y * cx], nClose = aParts[x + y * cx];
+			if ((nOpen <= 0) || (nClose <= 0) || ((x1 + x) == (int)pDungeon->byStartX && (y1 + y) == (int)pDungeon->byStartY)) {
+				continue;
+			}
+			int nNo = AddEvent (pMap->dwID);
+			PEVENTINFO pEvent = &pMap->pEvent[nNo];
+			pEvent->dwX = (DWORD)(x1 + x);
+			pEvent->dwY = (DWORD)(y1 + y);
+			pEvent->byType = EVENTTYPE_DOOR;
+			pEvent->pData = new BYTE[sizeof (EVENTINFO_DOOR)];
+			ZeroMemory (pEvent->pData, sizeof (EVENTINFO_DOOR));
+			PEVENTINFO_DOOR pDoor = (PEVENTINFO_DOOR)pEvent->pData;
+			pDoor->wGrpID = (WORD)nClose;
+			pDoor->wBackGrpID = (WORD)nOpen;
+			pDoor->byTimeClose = 30;							/* 3秒で閉まる */
+			pDoor->byType = EVENTDOOTTYPE_NONE;
+		}
+	}
+
+	/* テーマの灯りの上書き表（lights）を、そのマップのパーツの灯りの上書き表へ書く（マップ全体の表なので、
+	   ダンジョン専用のマップの前提。lights が空なら触らない）。送り直しでクライアントへ届く */
+	if (!theme.lights.empty ()) {
+		ZeroMemory (pMap->aPartsLight, sizeof (pMap->aPartsLight));
+		pMap->byPartsLightCount = 0;
+		for (i = 0; i < (int)theme.lights.size () && pMap->byPartsLightCount < MAX_MAPPARTSLIGHT; i ++) {
+			int nParts = theme.lights[i].first, nLight = theme.lights[i].second;
+			if ((nParts <= 0) || (nParts >= (int)g_wCountMapParts)) {
+				continue;
+			}
+			PMAPPARTSLIGHT pPL = &pMap->aPartsLight[pMap->byPartsLightCount ++];
+			pPL->wParts = (WORD)nParts;
+			pPL->byLight = (BYTE)min (nLight, (int)MAPLIGHT_RANGE_MAX);
+		}
+	}
+
+	/* テーマの暗さ（dark）：マップの明るさレベルをその値にし、暗くする範囲をダンジョンの範囲だけにする
+	   （範囲の外＝外の入口のあたりは明るいまま）。0 ならマップの設定のまま */
+	if (theme.dark > 0) {
+		pMap->byLightLevel = (BYTE)theme.dark;
+		ZeroMemory (pMap->aDarkArea, sizeof (pMap->aDarkArea));
+		pMap->byDarkAreaCount = 1;
+		pMap->aDarkArea[0].wX1 = (WORD)pDungeon->byX1;
+		pMap->aDarkArea[0].wY1 = (WORD)pDungeon->byY1;
+		pMap->aDarkArea[0].wX2 = (WORD)pDungeon->byX2;
+		pMap->aDarkArea[0].wY2 = (WORD)pDungeon->byY2;
+		pMap->aDarkArea[0].byDark = MAPDARK_DARK;
+	}
+
+	/* 作り直し番号を進めて、マップにいる全員へマップを送り直す（tiles/set と同じ関数） */
+	pDungeon->dwBuildNo ++;
+	pDungeon->dwDailyVer = bDaily ? daily.dwNo : 0;
+
+	/* 探索マップ用の情報（部屋・出入口）を、送るままの形で持つ（実行中だけ・保存しない）。
+	   マップを送り直す（ResendMapToPlayers → SendCmdMAPINFO）時に、マップ情報の直後に全員へ送る。
+	   type 3（壁ごと抜いた＝広間）でつながった部屋は同じグループ番号にして、いっしょに開ける */
+	{
+		int nRoom = (int)sk.rooms.size (), nLink = (int)sk.links.size ();
+		std::vector<int> aGroup (nRoom);
+		for (i = 0; i < nRoom; i ++) {
+			aGroup[i] = i;
+		}
+		for (bool bChg = true; bChg; ) {
+			bChg = false;
+			for (i = 0; i < nLink; i ++) {
+				const DungeonGen::Link &lk = sk.links[i];
+				if ((lk.type != 3) || (lk.a < 0) || (lk.b < 0) || (lk.a >= nRoom) || (lk.b >= nRoom)) {
+					continue;
+				}
+				int nMin = min (aGroup[lk.a], aGroup[lk.b]);
+				if ((aGroup[lk.a] != nMin) || (aGroup[lk.b] != nMin)) {
+					aGroup[lk.a] = aGroup[lk.b] = nMin;
+					bChg = true;
+				}
+			}
+		}
+		DWORD dwSize = (DWORD)(sizeof (CMDPARA_DUNGEONMAP) + nRoom * sizeof (DUNGEONMAPROOM) + nLink * sizeof (DUNGEONMAPLINK));
+		SAFE_DELETE_ARRAY (pDungeon->pbyAutoMap);
+		pDungeon->pbyAutoMap = new BYTE[dwSize];
+		ZeroMemory (pDungeon->pbyAutoMap, dwSize);
+		pDungeon->dwAutoMapSize = dwSize;
+		PCMDPARA_DUNGEONMAP pPara = (PCMDPARA_DUNGEONMAP)pDungeon->pbyAutoMap;
+		pPara->byCmd = CMD_DUNGEONMAP;
+		pPara->byValid = 1;
+		pPara->dwMapID = pDungeon->dwMapID;
+		pPara->dwBuildNo = pDungeon->dwBuildNo;
+		pPara->wX1 = (WORD)pDungeon->byX1;
+		pPara->wY1 = (WORD)pDungeon->byY1;
+		pPara->wX2 = (WORD)pDungeon->byX2;
+		pPara->wY2 = (WORD)pDungeon->byY2;
+		pPara->wRoomCount = (WORD)nRoom;
+		pPara->wLinkCount = (WORD)nLink;
+		{
+			std::string strName = theme.name;
+			if (bDaily && !strName.empty ()) {
+				strName += "（今日のダンジョン）";
+			}
+			strncpy (pPara->szName, strName.c_str (), sizeof (pPara->szName) - 1);
+		}
+		PDUNGEONMAPROOM pRoom = (PDUNGEONMAPROOM)(pPara + 1);
+		for (i = 0; i < nRoom; i ++) {
+			pRoom[i].wX = (WORD)(x1 + sk.rooms[i].x);
+			pRoom[i].wY = (WORD)(y1 + sk.rooms[i].y);
+			pRoom[i].wW = (WORD)sk.rooms[i].w;
+			pRoom[i].wH = (WORD)sk.rooms[i].h;
+			pRoom[i].wGroup = (WORD)aGroup[i];
+		}
+		PDUNGEONMAPLINK pLink = (PDUNGEONMAPLINK)(pRoom + nRoom);
+		for (i = 0; i < nLink; i ++) {
+			const DungeonGen::Link &lk = sk.links[i];
+			pLink[i].wRoomA = (WORD)lk.a;
+			pLink[i].wRoomB = (WORD)lk.b;
+			pLink[i].wX = (WORD)(x1 + lk.x);
+			pLink[i].wY = (WORD)(y1 + lk.y);
+			pLink[i].wW = (WORD)lk.w;
+			pLink[i].wH = (WORD)lk.h;
+			pLink[i].byType = (BYTE)lk.type;
+		}
+	}
+	pDungeon->byTmpX = 0;
+	pDungeon->byTmpY = 0;
+	pDungeon->dwTimeCheck = 0;									/* 人がいなくなるまで作り直さない（今までの作り方の終わりと同じ） */
+	pDungeon->dwTblIDCheck = 0;
+	ResendMapToPlayers (pMap, (int)pMap->dwID);
+	SendCmdSYSMSGMAP (pMap->dwID, "SYSTEM:ダンジョン作成完了しました。");
+	return TRUE;
+}
+
+/* ========================================================================= */
 /* 関数名：MakeDungeonProc													 */
 /* 内容：ダンジョン作成処理													 */
 /* 日付：2004/02/28															 */
 /* ========================================================================= */
 void MakeDungeonProc(BYTE byID)
+{
+	MakeDungeonProcEx (byID, DGDAILY_NORMAL);
+}
+
+/* nHow：日替わりの版の決め方（DGDAILY_NORMAL=今日の版があればそれ／DGDAILY_ADMIN=新しいランダムなシードの版を足す） */
+void MakeDungeonProcEx(BYTE byID, int nHow)
 {
 	PSUBGAMEINFO pInfo = g_aSubaGameInfo[byID];
 	PSUBGAME_DUNGEONINFO pDungeon = (PSUBGAME_DUNGEONINFO)pInfo->pInfo;
@@ -1469,6 +2038,19 @@ void MakeDungeonProc(BYTE byID)
 	/* 現在作成中？ */
 	if (pDungeon->pMapTmp) {
 		return;
+	}
+
+	/* 作り直しで、範囲の中の NPC発生の「補充しない」の数を戻す（組の空間ごとの数は、組が入る時に最初から数える） */
+	{
+		int k, nChars = g_aCharInfo.GetSize ();
+		for (k = 0; k < nChars; k ++) {
+			PCHARINFO pPut = g_aCharInfo[k];
+			if ((pPut != NULL) && (pPut->byNpcType == NPCTYPE_PUT) && (pPut->dwMapID == pDungeon->dwMapID) &&
+				(pPut->dwX >= (DWORD)pDungeon->byX1) && (pPut->dwX <= (DWORD)pDungeon->byX2) &&
+				(pPut->dwY >= (DWORD)pDungeon->byY1) && (pPut->dwY <= (DWORD)pDungeon->byY2)) {
+				pPut->byPutDone = 0;
+			}
+		}
 	}
 
 	SendCmdSYSMSGMAP (pDungeon->dwMapID, "SYSTEM:ダンジョン作成開始します。");
@@ -1528,6 +2110,23 @@ void MakeDungeonProc(BYTE byID)
 		}
 	}
 
+	/* テーマ（ダンジョン生成）で作る。作れなければ今までの作り方 */
+	if (pDungeon->dwThemeID && MakeDungeonByTheme (byID, pDungeon, pMap, nHow)) {
+		return;
+	}
+	/* 日替わりは、作れなくても今までの作り方（気まぐれ）にはしない。しばらくしてからもう一度試す */
+	if ((pDungeon->byRebuildMode == DGREBUILD_DAILY) && pDungeon->dwThemeID) {
+		pDungeon->dwDailyRetry = timeGetTime () + 60000;
+		SendCmdSYSMSGMAP (pDungeon->dwMapID, "SYSTEM:日替わりダンジョンを作れませんでした（テーマ番号・範囲を確かめてください）。");
+		return;
+	}
+	/* 今までの作り方になる時は、前のテーマの探索マップ用の情報を捨てて、マップの全員の地図を消す */
+	if (pDungeon->pbyAutoMap) {
+		SAFE_DELETE_ARRAY (pDungeon->pbyAutoMap);
+		pDungeon->dwAutoMapSize = 0;
+		SendCmdDUNGEONMAPMAP (pDungeon->dwMapID);
+	}
+
 	/* マップ設計図作成 */
 	int cx, cy, xx, yy,
 		nTmpX[] = {1, 1, 0, 2},
@@ -1577,8 +2176,8 @@ void MakeDungeonProc(BYTE byID)
 	/* その他準備 */
 	pDungeon->byTmpX = 0;
 	pDungeon->byTmpY = 0;
-	pDungeon->byGoalX = pDungeon->byStartX + (BYTE)((sx + 1) * 2);
-	pDungeon->byGoalY = pDungeon->byStartY + (BYTE)((sy + 1) * 2) + 1;
+	pDungeon->byGoalX = pDungeon->byX1 + (BYTE)((sx + 1) * 2);
+	pDungeon->byGoalY = pDungeon->byY1 + (BYTE)((sy + 1) * 2) + 1;
 	pDungeon->dwTimeCheck = 0;
 	pDungeon->dwTblIDCheck = 0;
 }
@@ -1876,3 +2475,11 @@ static BOOL CheckMakeDungeon(PBYTE pMaze, int x, int y, int nDirection, int nSiz
 }
 
 /* Copyright(C)URARA-works 2003-2005 */
+
+/* 設定やマップの大きさを変えた時は、次の生成まで古い探索範囲を使わない */
+void InvalidateDungeonAutoMap(PSUBGAME_DUNGEONINFO pDungeon)
+{
+	SAFE_DELETE_ARRAY (pDungeon->pbyAutoMap);
+	pDungeon->dwAutoMapSize = 0;
+	SendCmdDUNGEONMAPMAP (pDungeon->dwMapID);
+}

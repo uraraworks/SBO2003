@@ -220,6 +220,7 @@ MAKERINFO g_aMakerInfo[MAX_MAKER];									/* 作り手情報（番号がその�
 RECIPEINFO g_aRecipeInfo[MAX_RECIPE];								/* レシピ情報（番号がそのまま添字） */
 int g_nMakerCount = 0;												/* 作り手の総数（空き枠を含む） */
 int g_nRecipeCount = 0;												/* レシピの総数（空き枠を含む） */
+CMDPARA_DUNGEONSEL g_DungeonSelInfo = {0};								/* 番外編ダンジョンの入る姿の一覧（サーバーから届いたもの） */
 CMDPARA_TOWNWARP g_TownWarpInfo = {0};								/* 町転送の行き先一覧（サーバーから届いたもの。byCount=0 なら無し） */
 BYTE g_byTownWarpSel = 0;											/* 町転送で選んだ行き先の番号（0=復活位置） */
 QUESTLISTITEM g_aQuestList[MAX_QUESTLIST];							/* 依頼一覧（ギルドの人に話した時にサーバーから届いたもの） */

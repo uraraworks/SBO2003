@@ -8,6 +8,7 @@
 
 #include "stdafx.h"
 #include "common/BowFlight.h"
+#include "SboCliAutoMap.h"
 #include <time.h>
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -1263,6 +1264,7 @@ void ChgState(int nState)
 
 	case GAMESTATE_LOGIN:			/* ログイン画面 */
 		g_byGameState = GAMESTATE_LOGIN;
+		AutoMapReset ();			/* 探索マップ：全部消す */
 		pWnd = MakeWindowLOGIN ();
 		g_WndInfo.Add (pWnd);
 		DXAudio.SetLoopPoints (&aSoundTbl[SOUND_MIDI_W0081], DMUS_SEG_REPEAT_INFINITE);
@@ -1279,6 +1281,7 @@ void ChgState(int nState)
 
 	case GAMESTATE_CONNECTLOST:		/* 切断 */
 		g_byGameState = GAMESTATE_CONNECTLOST;
+		AutoMapReset ();			/* 探索マップ：全部消す */
 		SaveMsgLog ();
 		/* 表示中のウィンドウを全部閉じる */
 		while (1) {
@@ -2018,7 +2021,7 @@ void TimerProc(void)
 								}
 
 							/* 最後まで処理した */
-							} else if ((g_nProcShopID < 0) && (g_nProcMakerID < 0)) {
+							} else if ((g_nProcShopID < 0) && (g_nProcMakerID < 0) && !pWnd->bDungeonReception) {
 								DWORD dwMsgID = pWnd->dwID;
 								EraseWindow (pWnd);
 								/* 語り部の台詞を送り終わったら、思い出の本の一覧を開く */
@@ -2117,6 +2120,7 @@ void TimerProc(void)
 		case WNDTYPE_SORTMENU:
 		case WNDTYPE_MARKET:
 		case WNDTYPE_RECYCLE:
+		case WNDTYPE_DUNGEONSEL:
 		case WNDTYPE_IMPORTANT:
 			if (dwTime > pWnd->dwTime + 250) {
 				pWnd->dwTime = dwTime;

@@ -15,6 +15,7 @@
 #include "SboCliRecvCmd.h"
 #include "SboCliMsgLogWindow.h"
 #include "SboCliDrawScreen.h"
+#include "SboCliAutoMap.h"
 
 /* 装備品の装備職業情報の番号を返す（装備品でなければ 0xFFFF） */
 static WORD ShopGetItemEquNo(PITEMINFO pItem)
@@ -50,6 +51,28 @@ static void ShopAddEquWarn(LPSTR pszMsg, int nSize, PITEMINFO pItem, PCHARINFO p
 		strcat (pszMsg, "@1※今の職業では装備できません。");
 	}
 	pszMsg[nSize - 1] = 0;
+}
+
+/* ========================================================================= */
+/* 関数名：ViewModeNext														 */
+/* 内容：Tab の表示切り替え（なし→名前→HP→名前とHP→［地図］→なし）		 */
+/*       地図は探索マップが使える場所だけ。地図の間は名前とHPも出したまま	 */
+/* ========================================================================= */
+static void ViewModeNext(void)
+{
+	if (AutoMapIsShown ()) {
+		AutoMapToggleKey ();			/* 地図を閉じて最初へ */
+		g_byViewMode = 0;
+	} else if ((g_byViewMode >= 3) && AutoMapIsAvailable ()) {
+		AutoMapToggleKey ();			/* 名前とHPの次は地図 */
+		g_byViewMode = 3;
+	} else {
+		g_byViewMode ++;
+		if (g_byViewMode >= 4) {
+			g_byViewMode = 0;
+		}
+	}
+	SaveIniOption ();
 }
 
 /* ========================================================================= */
@@ -125,6 +148,7 @@ void KeyProcSUBSUGOROKU_IDLE				(PWNDINFO, BYTE, BYTE);		/* すごろく：平�
 void KeyProcDEAD_COMMAND					(PWNDINFO, BYTE, BYTE);		/* 死亡中：コマンド */
 void KeyProcSTATUSMAGIC					(PWNDINFO, BYTE, BYTE);		/* 強さ：覚えている特技 */
 void KeyProcMAKER							(PWNDINFO, BYTE, BYTE);		/* 作り手（レシピ）：作れる物の一覧・確認 */
+void KeyProcDUNGEONSEL					(PWNDINFO, BYTE, BYTE);		/* 番外編ダンジョン：入る姿の選択 */
 void KeyProcTOWNWARP						(PWNDINFO, BYTE, BYTE);		/* 町転送：行き先の選択 */
 void KeyProcQUEST							(PWNDINFO, BYTE, BYTE);		/* ギルドの依頼：一覧・進み具合 */
 void KeyProcMARKET							(PWNDINFO, BYTE, BYTE);		/* 取引所（商人ギルドの出張所）の受付 */
@@ -199,6 +223,7 @@ BYTE m_byKeyOnX = 0,
 	 m_byKeyOnZ = 0,
 	 m_byKeyOnS = 0,
 	 m_byKeyOnC = 0,
+	 m_byKeyOnM = 0,
 	 m_byKeyOnReturn = 0,
 	 m_byKeyOnUp = 0,
 	 m_byKeyOnDown = 0,
@@ -294,6 +319,7 @@ const KEYPROC KeyProcTbl[] = {
 	KeyProcMARKET,						/* WNDTYPE_MARKET					取引所（商人ギルドの出張所）の受付 */
 	KeyProcIMPORTANT,					/* WNDTYPE_IMPORTANT				大事な物の一覧（見るだけ） */
 	KeyProcRECYCLE,						/* WNDTYPE_RECYCLE					リサイクルボックス（おすそわけの共有の箱） */
+	KeyProcDUNGEONSEL,					/* WNDTYPE_DUNGEONSEL				番外編ダンジョン：入る姿の選択 */
 };
 
 
@@ -522,6 +548,19 @@ void KeyProc(void)
 		m_byKeyOnC = 0;
 		byEvent = KEY_UP;
 		byCode = 'C';
+		KeyEvPush (byEvent, byCode);
+	}
+
+	/* Mキー（探索マップの出し入れ） */
+	if ((g_abyKeyState['M'] & 0x80) && (m_byKeyOnM == 0)) {
+		m_byKeyOnM = 1;
+		byEvent = KEY_DOWN;
+		byCode = 'M';
+		KeyEvPush (byEvent, byCode);
+	} else if (((g_abyKeyState['M'] & 0x80) == 0) && (m_byKeyOnM == 1)) {
+		m_byKeyOnM = 0;
+		byEvent = KEY_UP;
+		byCode = 'M';
 		KeyEvPush (byEvent, byCode);
 	}
 
@@ -1188,12 +1227,13 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 		}
 	}
 
+	/* Tab は表示切り替え。探索マップが使える場所（テーマで作ったダンジョンの範囲の中）では、
+	   いつもの 4 つの後ろに「地図」を足す。M は地図だけを出し入れする */
+	if ((byEvent == KEY_UP) && (byCode == 'M')) {
+		AutoMapToggleKey ();
+	}
 	if ((byEvent == KEY_UP) && (byCode == VK_TAB)) {
-		g_byViewMode ++;
-		if (g_byViewMode >= 4) {
-			g_byViewMode = 0;
-		}
-		SaveIniOption ();
+		ViewModeNext ();
 	}
 	if ((byEvent == KEY_UP) && (byCode == VK_CONTROL)) {
 		/* 戦闘マップ？ */
@@ -1263,12 +1303,13 @@ void KeyProcDead(BYTE byEvent, BYTE byCode)
 		g_dwActiveMsgID = pWnd->dwID;
 	}
 
+	/* Tab は表示切り替え。探索マップが使える場所（テーマで作ったダンジョンの範囲の中）では、
+	   いつもの 4 つの後ろに「地図」を足す。M は地図だけを出し入れする */
+	if ((byEvent == KEY_UP) && (byCode == 'M')) {
+		AutoMapToggleKey ();
+	}
 	if ((byEvent == KEY_UP) && (byCode == VK_TAB)) {
-		g_byViewMode ++;
-		if (g_byViewMode >= 4) {
-			g_byViewMode = 0;
-		}
-		SaveIniOption ();
+		ViewModeNext ();
 	}
 }
 
@@ -8265,6 +8306,58 @@ void KeyProcTOWNWARP(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 }
 
 /* ========================================================================= */
+/* 関数名：KeyProcDUNGEONSEL												 */
+/* 内容：キー入力処理(番外編ダンジョン：入る姿の選択)						 */
+/* ========================================================================= */
+void KeyProcDUNGEONSEL(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
+{
+	DWORD dwTime = 250;
+	if (pWnd->byRepeate > 1) {
+		dwTime = 125;
+	}
+
+	if ((byEvent == KEY_UP) && (byCode == 'B')) {
+		/* やめる（窓はサーバーからの閉じる通知でも消える） */
+		SendCmdDUNGEONSEL (DUNGEONSEL_CANCEL, 0);
+		EraseWindow (pWnd);
+		g_bDraw = TRUE;
+		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
+
+	} else if ((byEvent == KEY_UP) && (byCode == 'A')) {
+		if ((pWnd->nData1 >= 0) && (pWnd->nData1 < pWnd->nData2)) {
+			SendCmdDUNGEONSEL (DUNGEONSEL_PICK, (BYTE)pWnd->nData1);
+			EraseWindow (pWnd);
+			g_bDraw = TRUE;
+			DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
+		}
+
+	} else if ((byEvent == KEY_DOWN) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
+		BOOL bMove = FALSE;
+
+		if ((byCode == VK_UP) && (pWnd->nData1 > 0)) {
+			pWnd->nData1 --;
+			bMove = TRUE;
+		} else if ((byCode == VK_DOWN) && (pWnd->nData1 + 1 < pWnd->nData2)) {
+			pWnd->nData1 ++;
+			bMove = TRUE;
+		}
+		if (bMove) {
+			pWnd->dwTime = timeGetTime ();
+			pWnd->byAnime = 1;
+			pWnd->byRepeate ++;
+			pWnd->dwTimeKey = timeGetTime ();
+			pWnd->dwTimeDrawStart = 0;
+			g_bDraw = TRUE;
+		}
+
+	} else if (byEvent == KEY_UP) {
+		pWnd->dwTimeKey = timeGetTime () - 250;
+		pWnd->byRepeate = 0;
+		g_bDraw = TRUE;
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：KeyProcSUBSUGOROKU_JOINMODE										 */
 /* 内容：キー入力処理(すごろく：参加モード選択)								 */
 /* 日付：2004/12/23															 */
@@ -9251,9 +9344,9 @@ void CmdProcHanasu(PWNDINFO pWnd)
 			pWndTmp = NULL;
 		}
 
-	/* ギルドの依頼の受付(@g)・依頼の見える人(@q)・思い出の本の語り部(@r)？ 返事（一覧・お知らせ）はサーバーから届く */
+	/* ギルドの依頼の受付(@g)・依頼の見える人(@q)・思い出の本の語り部(@r)・ダンジョン受付(@d)？ 返事（一覧・お知らせ）はサーバーから届く */
 	} else if (pChar2->pszNpcSpeech[0] == '@' &&
-		((pChar2->pszNpcSpeech[1] == 'g') || (pChar2->pszNpcSpeech[1] == 'q') || (pChar2->pszNpcSpeech[1] == 'r'))) {
+		((pChar2->pszNpcSpeech[1] == 'g') || (pChar2->pszNpcSpeech[1] == 'q') || (pChar2->pszNpcSpeech[1] == 'r') || (pChar2->pszNpcSpeech[1] == 'd'))) {
 		if ((pChar2->pszNpcSpeech[1] == 'g') || (pChar2->pszNpcSpeech[1] == 'r')) {
 			/* 一覧を開くのは、返事が届いてから */
 			g_dwQuestWaitTime = timeGetTime ();
@@ -9262,9 +9355,9 @@ void CmdProcHanasu(PWNDINFO pWnd)
 			}
 		}
 		SendCmdTALKRAND (pChar2->dwTblID);
-		/* ギルドの人・語り部はこちらを向く。依頼の見える物(@q)は宝箱や光もあるので向きを変えない
+		/* ギルドの人・語り部・ダンジョン受付はこちらを向く。依頼の見える物(@q)は宝箱や光もあるので向きを変えない
 		   （宝箱の絵は向きによって別の絵（化け箱）になっている） */
-		if ((pChar2->pszNpcSpeech[1] == 'g') || (pChar2->pszNpcSpeech[1] == 'r')) {
+		if ((pChar2->pszNpcSpeech[1] == 'g') || (pChar2->pszNpcSpeech[1] == 'r') || (pChar2->pszNpcSpeech[1] == 'd')) {
 			pChar2->byDirection = abyDirectionTbl[pChar->byDirection];
 		}
 		int nNo = GetWindowID (g_dwMsgIDCommand);
@@ -10100,8 +10193,9 @@ std::string W32TextToUtf8Str(const char *psz, int nLen);		/* ゲーム内の文�
 #define PADSTATE_HANASU		(0x08)	/* 目の前に話せる相手がいる（「調べる」ボタンを「話す」と表示） */
 #define PADSTATE_BATTLEMODE	(0x10)	/* 戦闘モード中（「決定」を「攻撃」、「キャンセル」を「構え」と表示） */
 #define PADSTATE_SCORE		(0x20)	/* 目の前に得点板がある（「キャンセル」を「名前」と表示。Z で名前を付ける） */
+#define PADSTATE_MAP		(0x40)	/* 探索マップが使える場所（テーマで作ったダンジョンの範囲の中。「地図」ボタンを出す） */
 
-extern "C" EMSCRIPTEN_KEEPALIVE int SboWebGetPadState(void)
+static int SboWebGetPadStateBase(void)
 {
 	PCHARINFO pChar;
 	int nRet, nBattle;
@@ -10174,6 +10268,17 @@ extern "C" EMSCRIPTEN_KEEPALIVE int SboWebGetPadState(void)
 		nRet |= PADSTATE_BATTLE;
 	}
 	return nRet | nBattle;
+}
+
+/* 本体は SboWebGetPadStateBase。探索マップが使える場所で、歩ける状態（「表示」が効く時）なら「地図」ボタンも出す */
+extern "C" EMSCRIPTEN_KEEPALIVE int SboWebGetPadState(void)
+{
+	int nRet = SboWebGetPadStateBase ();
+
+	if ((nRet & PADSTATE_VIEW) && AutoMapIsAvailable ()) {
+		nRet |= PADSTATE_MAP;
+	}
+	return nRet;
 }
 
 /* ========================================================================= */

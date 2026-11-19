@@ -7,6 +7,7 @@
 /* ========================================================================= */
 
 #include "stdafx.h"
+#include "../../common/DungeonReception.h"
 #include "common/BowFlight.h"
 #include <string>
 #include <vector>
@@ -31,6 +32,7 @@
 #include "SboCliDebugWindow.h"
 #include "SboCliMsgLogWindow.h"
 #include "SboCliBalloonWindow.h"
+#include "SboCliAutoMap.h"
 extern void PruneItemKeys (PCHARINFO pChar);					/* 手持ちから無くなった装備品・道具をショートカットの枠から外す（SboCliKeyProc.cpp） */
 #ifdef __EMSCRIPTEN__
 extern void SboWebChatNotify(void);								/* 発言が来たことをシェルに知らせる（タブの題名で新着を知らせる） */
@@ -75,6 +77,9 @@ static BOOL IsMapHasHideArea				(void);												/* 明るく壁で隠す範�
 BOOL	IsLightOtherRoom					(int x, int y);										/* 自分と違う部屋(隠す範囲)にある灯りか */
 static void RenewMapViewLights			(void);												/* 見える範囲のマップで光源の所も見せる */
 static void RenewMapDarkLightFlood		(int mx, int my, int nRange);							/* 灯りの位置から照らす */
+static void RenewMySight					(void);												/* 自分から見えるマスを作る */
+static void LightBeginSight				(void);												/* ほかの灯りで照らす前の明るさを覚える */
+static void LightEndSight				(void);												/* 自分から見えないマスに足した明るさを戻す */
 int	GetMapPosLight						(int mx, int my, BYTE *pbyPower, BYTE *pbyFlg);										/* マスの灯りの範囲(パーツ・光源) */
 
 /* 光るマップパーツの灯り(GetMapDarkLevel に pChar=NULL で渡した時に使う) */
@@ -93,6 +98,12 @@ typedef struct _LIGHTMASK {
 } LIGHTMASK, *PLIGHTMASK;
 static LIGHTMASK	s_aLightMask[LIGHTMASK_MAX];
 static int			s_nLightMaskCount = 0;
+
+/* 自分から見えるマス(1=見える)。壁の向こうの部屋のたいまつ・人の灯りで、
+   見えないはずの部屋がぼんやり見えていたので、ほかの灯りはここだけ照らす */
+static BYTE			s_abyMySight[SCRMARTSSIZE];
+static BOOL			s_bMySight = FALSE;						/* s_abyMySight を使う */
+static char			s_acLightSave[SCRMARTSSIZE];			/* ほかの灯りで照らす前の明るさ */
 
 static void SaveLightMask(const void *pKey, int x, int y)
 {
@@ -169,6 +180,7 @@ void	RecvDataProcAFFIXINFO				(PBYTE, DWORD);			/* 受信データ処理(付与�
 void	RecvDataProcITEMDERIVE				(PBYTE, DWORD);			/* 受信データ処理(派生アイテム表の行) */
 void	RecvDataProcAPPRAISE				(PBYTE, DWORD);			/* 受信データ処理(鑑定の結果) */
 void	RecvDataProcNPCROUTE				(PBYTE, DWORD);			/* 受信データ処理(NPCの巡回ルート) */
+void	RecvDataProcDUNGEONSEL				(PBYTE, DWORD);			/* 受信データ処理(番外編ダンジョンの入る姿の一覧) */
 void	RecvDataProcTOWNWARP				(PBYTE, DWORD);			/* 受信データ処理(町転送の行き先一覧) */
 void	RecvDataProcQUEST					(PBYTE, DWORD);			/* 受信データ処理(ギルドの仕事依頼：一覧・結果) */
 void	RecvDataProcQUESTSTATE				(PBYTE, DWORD);			/* 受信データ処理(依頼の進み具合) */
@@ -455,6 +467,8 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcAFFIXINFO,				/* CMD_AFFIXINFO */
 	RecvDataProcITEMDERIVE,				/* CMD_ITEMDERIVE */
 	RecvDataProcAPPRAISE,				/* CMD_APPRAISE */
+	RecvDataProcDUNGEONMAP,				/* CMD_DUNGEONMAP */
+	RecvDataProcDUNGEONSEL,				/* CMD_DUNGEONSEL */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -1172,6 +1186,7 @@ void RenewCharPosInfo(void)
 
 	ZeroMemory (g_pMapDarkTmp, SCRMARTSSIZE);
 	s_nLightMaskCount = 0;
+	RenewMySight ();
 
 	for (i = 0; i < nCount; i ++) {
 		PCHARINFO pChar;
@@ -1197,6 +1212,9 @@ void RenewCharPosInfo(void)
 	RenewMapDark (NULL);
 	RenewMapDarkParts ();
 	RenewMapDarkHideArea ();
+
+	/* 探索マップ：自分の位置の部屋を開け、見えたマスを記録する */
+	AutoMapUpdate ();
 }
 
 /* ========================================================================= */
@@ -1761,9 +1779,141 @@ void RenewMapDark(PCHARINFO pChar)
 	}
 	ZeroMemory (g_pMapDarkTmpPos, SCRMARTSSIZE);
 
+	/* ほかの人の灯りは、自分から見えるマスだけ照らす */
+	if (pChar != g_aCharInfo[g_nMyCharID]) {
+		LightBeginSight ();
+	}
 	RenewMapDarkWork (pChar, pChar->dwX, pChar->dwY, DRAW_PARTS_X);
 	RenewMapDarkCorner (pChar);
+	if (pChar != g_aCharInfo[g_nMyCharID]) {
+		LightEndSight ();
+	}
 	SaveLightMask (pChar, 0, 0);
+}
+
+/* ========================================================================= */
+/* 関数名：RenewMySight														 */
+/* 内容：自分から見えるマスを作る											 */
+/*       自分の位置から通れるマスを伝って画面いっぱいまで広げる(明るさは	 */
+/*       見ない)。壁・閉まった扉・隠す範囲の境目で止まる(そのマス自体は		 */
+/*       見える)。壁は自分の側から見えるので、見える床の近く(2マス)の壁も	 */
+/*       見えるマスにする(壁の天井・角の壁を照らせるように)					 */
+/* ========================================================================= */
+static void RenewMySight(void)
+{
+	enum { W = DRAW_PARTS_X * 2 + 3, H = DRAW_PARTS_Y * 2 + 3 };
+	BYTE abyFloor[SCRMARTSSIZE];
+	int anQ[SCRMARTSSIZE], nHead, nTail, i, x, y, mx, my, nPos, bx, by;
+	PCHARINFO pMyChar;
+	static const int anDX[4] = { 0, 0, -1, 1 }, anDY[4] = { -1, 1, 0, 0 };
+
+	s_bMySight = FALSE;
+	if (g_nMyCharID < 0) {
+		return;
+	}
+	/* 壁で灯りが止まらないマップは全部見える。見える範囲(視界)のマップは別の作り */
+	if (!IsSightBlock () || IsMapViewMode ()) {
+		return;
+	}
+	pMyChar = g_aCharInfo[g_nMyCharID];
+	ZeroMemory (s_abyMySight, sizeof (s_abyMySight));
+	ZeroMemory (abyFloor, sizeof (abyFloor));
+
+	nHead = nTail = 0;
+	nPos = (1 + DRAW_PARTS_X) + W * (1 + DRAW_PARTS_Y);
+	anQ[nTail ++] = nPos;
+	s_abyMySight[nPos] = 1;
+	while (nHead < nTail) {
+		nPos = anQ[nHead ++];
+		x = nPos % W;
+		y = nPos / W;
+		mx = (int)pMyChar->dwX + x - (1 + DRAW_PARTS_X);
+		my = (int)pMyChar->dwY + y - (1 + DRAW_PARTS_Y);
+		/* 自分の足元は壁でも先へ広げる */
+		if (nHead > 1) {
+			if (IsSightWall (mx, my)) {
+				continue;
+			}
+			if (IsHideAreaCross ((int)pMyChar->dwX, (int)pMyChar->dwY, mx, my)) {
+				continue;
+			}
+		}
+		abyFloor[nPos] = 1;
+		for (i = 0; i < 4; i ++) {
+			bx = x + anDX[i];
+			by = y + anDY[i];
+			if ((bx < 0) || (by < 0) || (bx >= W) || (by >= H)) {
+				continue;
+			}
+			if (s_abyMySight[bx + W * by]) {
+				continue;
+			}
+			s_abyMySight[bx + W * by] = 1;
+			anQ[nTail ++] = bx + W * by;
+		}
+	}
+
+	/* 見える床の近く(2マス)の壁も見える */
+	for (y = 0; y < H; y ++) {
+		for (x = 0; x < W; x ++) {
+			int dx, dy;
+			BOOL bNear;
+
+			nPos = x + W * y;
+			if (s_abyMySight[nPos]) {
+				continue;
+			}
+			mx = (int)pMyChar->dwX + x - (1 + DRAW_PARTS_X);
+			my = (int)pMyChar->dwY + y - (1 + DRAW_PARTS_Y);
+			if (!IsSightWall (mx, my)) {
+				continue;
+			}
+			bNear = FALSE;
+			for (dy = -2; (dy <= 2) && !bNear; dy ++) {
+				for (dx = -2; dx <= 2; dx ++) {
+					bx = x + dx;
+					by = y + dy;
+					if ((bx < 0) || (by < 0) || (bx >= W) || (by >= H)) {
+						continue;
+					}
+					if (abyFloor[bx + W * by]) {
+						bNear = TRUE;
+						break;
+					}
+				}
+			}
+			if (bNear) {
+				s_abyMySight[nPos] = 2;
+			}
+		}
+	}
+	s_bMySight = TRUE;
+}
+
+/* ほかの灯り(パーツ・光源・ほかの人)で照らす前の明るさを覚える */
+static void LightBeginSight(void)
+{
+	if (!s_bMySight) {
+		return;
+	}
+	CopyMemory (s_acLightSave, g_pMapDarkTmp, SCRMARTSSIZE);
+}
+
+/* 自分から見えないマスに足した明るさを戻し、照らせたマスからも外す */
+static void LightEndSight(void)
+{
+	int i;
+
+	if (!s_bMySight) {
+		return;
+	}
+	for (i = 0; i < SCRMARTSSIZE; i ++) {
+		if (s_abyMySight[i]) {
+			continue;
+		}
+		g_pMapDarkTmp[i] = s_acLightSave[i];
+		g_pMapDarkTmpPos[i] = 0;
+	}
 }
 
 /* ========================================================================= */
@@ -1817,8 +1967,12 @@ void RenewMapDarkParts(void)
 				continue;
 			}
 			ZeroMemory (g_pMapDarkTmpPos, SCRMARTSSIZE);
+			/* 壁の向こうの部屋の灯りは見えない(照らしたマスのうち自分から見えるマスだけ明るくする。
+			   灯りの位置で決めると、出入口の1歩外のたいまつの光がもれてこなくなる) */
+			LightBeginSight ();
 			RenewMapDarkLightFlood (mx, my, nRange);
 			RenewMapDarkCorner (NULL);
+			LightEndSight ();
 			SaveLightMask (NULL, mx, my);
 		}
 	}
@@ -3856,6 +4010,64 @@ void RecvDataProcNPCROUTE(PBYTE pData, DWORD dwDataSize)
 }
 
 /* ========================================================================= */
+/* 関数名：RecvDataProcDUNGEONSEL											 */
+/* 内容：受信データ処理(番外編ダンジョンの入る姿の一覧を開く・閉じる)		 */
+/* ========================================================================= */
+void RecvDataProcDUNGEONSEL(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_DUNGEONSEL pPara = (PCMDPARA_DUNGEONSEL)pData;
+	int i;
+
+	if (dwDataSize < offsetof (CMDPARA_DUNGEONSEL, szTitle)) {
+		return;
+	}
+	/* 台詞はお店と同じく一覧の子にする。残り時間の更新では前の台詞を引き継ぐ。 */
+	PWNDINFO pReception = NULL;
+	if (pPara->byType == DUNGEONSEL_OPEN) {
+		for (i = 0; i < g_WndInfo.GetSize (); i ++) {
+			PWNDINFO pMsg = g_WndInfo[i];
+			if ((pMsg->nType == WNDTYPE_MSG) && pMsg->bDungeonReception) {
+				pReception = pMsg;
+				if (pMsg->pParent) ((PWNDINFO)pMsg->pParent)->pChild = NULL;
+				pMsg->pParent = NULL;
+				break;
+			}
+		}
+	}
+	/* 開いている選択窓は一度閉じる */
+	for (i = g_WndInfo.GetSize () - 1; i >= 0; i --) {
+		if (((PWNDINFO)g_WndInfo[i])->nType == WNDTYPE_DUNGEONSEL) {
+			EraseWindow ((PWNDINFO)g_WndInfo[i]);
+			i = min (i, g_WndInfo.GetSize ());
+		}
+	}
+	/* 入口のワープの返事待ちで歩けなくなっているのを解く（選んでいる間は入口の近くにいれば歩いてもよい） */
+	g_bEnableMove = TRUE;
+	if (pPara->byType == DUNGEONSEL_OPEN) {
+		ZeroMemory (&g_DungeonSelInfo, sizeof (g_DungeonSelInfo));
+		CopyMemory (&g_DungeonSelInfo, pPara, min (dwDataSize, (DWORD)sizeof (CMDPARA_DUNGEONSEL)));
+		g_DungeonSelInfo.szTitle[sizeof (g_DungeonSelInfo.szTitle) - 1] = 0;
+		if (g_DungeonSelInfo.byCount > MAX_DGTMPL) {
+			g_DungeonSelInfo.byCount = MAX_DGTMPL;
+		}
+		for (i = 0; i < MAX_DGTMPL; i ++) {
+			g_DungeonSelInfo.aszName[i][MAX_DGTMPLNAME - 1] = 0;
+		}
+		if (g_DungeonSelInfo.byCount > 0) {
+			PWNDINFO pWnd = MakeWindowDUNGEONSEL ();
+			if (pReception) {
+				pReception->pParent = pWnd;
+				pWnd->pChild = pReception;
+			}
+			g_WndInfo.Add (pWnd);
+			g_dwActiveMsgID = pWnd->dwID;
+		}
+	}
+	if (pReception && !pReception->pParent) EraseWindow (pReception);
+	g_bDraw = TRUE;
+}
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcTOWNWARP												 */
 /* 内容：受信データ処理(町転送の行き先一覧)									 */
 /* ========================================================================= */
@@ -4272,7 +4484,9 @@ void RecvDataProcTALKMSG(PBYTE pData, DWORD dwDataSize)
 	ZeroMemory (pszTmp, dwSize + 1);
 	memcpy (pszTmp, pData + sizeof (CMDPARA_TALKMSG), dwSize);
 
+	BOOL bDungeonReception = DungeonReceptionMessage (pszTmp);
 	pWndTmp = MakeWindowMSG (pszTmp, TRUE);
+	pWndTmp->bDungeonReception = bDungeonReception;
 	SAFE_DELETE_ARRAY (pszTmp);
 	/* 台詞の最後に「@y」（はい・いいえで聞く行）があった時、答えを送る相手になる NPC を覚えておく */
 	pWndTmp->dwData = pPara->dwTblID;
@@ -4383,6 +4597,9 @@ void RecvDataProcCHGSTATE(PBYTE pData, DWORD dwDataSize)
 	PCMDPARA_DATA1 pPara = (PCMDPARA_DATA1)pData;
 
 	g_byGameState = pPara->byData;
+	if (g_byGameState != GAMESTATE_MOVE) {
+		AutoMapReset ();		/* 探索マップ：ゲームの中でなくなったら（ログアウトなど）全部消す */
+	}
 	if (g_byGameState == GAMESTATE_MOVE) {
 		MakeMsgLogWindow ();
 		MakeDebugWindow ();
@@ -4502,6 +4719,7 @@ void RecvDataProcMAPINFO(PBYTE pData, DWORD dwDataSize)
 	g_pMapInfo->pszName = NULL;
 	g_pMapInfo->pbyRoofLV = NULL;
 	g_pMapInfo->bySwapCount = 0;		/* サーバーは 0 で送ってくる。念のため */
+	AutoMapOnMapInfo (g_pMapInfo->dwID);	/* 探索マップ：別のマップへ移ったら消す */
 
 	g_pMapInfo->pwMap = new WORD[pMap->nCX * pMap->nCY];
 	CopyMemory ((PBYTE)g_pMapInfo->pwMap, (PBYTE)pData + sizeof (CMDPARA_MAPINFO),
@@ -4631,6 +4849,9 @@ void RecvDataProcMAPINFO(PBYTE pData, DWORD dwDataSize)
 	g_byTextFadeInOut = 1;
 	g_dwTimeTextFadeInOut = 0;
 	g_FadeInOutInfo.dwLastTime = timeGetTime ();
+
+	/* 管理者ウィンドウのマップ情報画面を新しい中身で作り直す（古いまま送ると作り直した暗さなどを戻してしまう） */
+	AdminMapInfoOnRecv ();
 }
 
 /* ========================================================================= */
@@ -4818,6 +5039,7 @@ void RecvDataProcCHARINFO(PBYTE pData, DWORD dwDataSize)
 	pCharDst->byAreaX				= pChar->byAreaX;
 	pCharDst->byAreaY				= pChar->byAreaY;
 	pCharDst->byPutCount			= pChar->byPutCount;
+	pCharDst->byPutOnce				= pChar->byPutOnce;
 	pCharDst->byDropProbability		= pChar->byDropProbability;
 	pCharDst->byMoveProbabilityX	= pChar->byMoveProbabilityX;
 	pCharDst->byMoveProbabilityY	= pChar->byMoveProbabilityY;
@@ -5858,8 +6080,15 @@ void RecvDataProcCHGEVENT(PBYTE pData, DWORD dwDataSize)
 {
 	PCMDPARA_CHGEVENT pEvent = (PCMDPARA_CHGEVENT)pData;
 	int nSize;
+	if (dwDataSize < sizeof (*pEvent)) return;
 
 	if (g_hWndAdmin == NULL) {
+		return;
+	}
+	/* イベント画面で選んでいるイベントの返事だけ受け取る。
+	   マップを送り直す時（気まぐれダンジョンの作り直しなど）は全部のイベントが届くので、
+	   ほかの画面（マップ情報など）の上にイベントの入力欄が作られて重なっていた */
+	if (!AdminEventAcceptReply (pEvent->dwDataID, pEvent->dwX, pEvent->dwY)) {
 		return;
 	}
 
@@ -7330,7 +7559,7 @@ void RecvDataProcCOUNTSUBGAME(PBYTE pData, DWORD dwDataSize)
 
 	g_nSubGameCount = pRecv->nData;
 
-	if (g_hWndAdmin) {
+	if (g_hWndAdmin && (g_nAdminWindowType == IDM_ETC_SUBGAME)) {
 		PostMessage (g_hWndAdmin, WM_ADMINSUBGAMEINFO, 0, 0);
 	}
 }
@@ -7344,7 +7573,9 @@ void RecvDataProcSUBGAMEINFO(BYTE *pData, DWORD dwDataSize)
 {
 	PCMDPARA_DATA1 pRecv = (PCMDPARA_DATA1)pData;
 
-	if (g_pSubGameInfo == NULL) {
+	/* 選択中のサブゲーム画面だけに反映する（マップ更新でも届く） */
+	if ((g_nAdminWindowType != IDM_ETC_SUBGAME) || (g_pSubGameInfo == NULL) ||
+			((int)pRecv->dwTblID != g_nSelectSubGameID)) {
 		return;
 	}
 
@@ -7415,6 +7646,16 @@ void RecvDataProcSUBGAMEINFO(BYTE *pData, DWORD dwDataSize)
 				pDungeonInfo->wChipIDGoal = pDungeon->wChipIDGoal;
 				pDungeonInfo->wChipIDRoad = pDungeon->wChipIDRoad;
 				pDungeonInfo->wChipIDBlock = pDungeon->wChipIDBlock;
+				pDungeonInfo->dwThemeID = pDungeon->dwThemeID;
+				pDungeonInfo->byTmplCount = pDungeon->byTmplCount;
+				CopyMemory (pDungeonInfo->wTmplID, pDungeon->wTmplID, sizeof (pDungeonInfo->wTmplID));
+				CopyMemory (pDungeonInfo->szTmplName, pDungeon->szTmplName, sizeof (pDungeonInfo->szTmplName));
+				pDungeonInfo->byRebuildMode = pDungeon->byRebuildMode;
+				pDungeonInfo->byClearMode = pDungeon->byClearMode;
+				if (dwDataSize >= sizeof (CMDPARA_DATA1) + sizeof (SUBGAME_DUNGEONINFOSAVE)) {
+					CopyMemory (pDungeonInfo->szMessages, pDungeon->szMessages, sizeof (pDungeonInfo->szMessages));
+				}
+				pDungeonInfo->szMessages[MAX_DGTEXT - 1] = 0;
 			}		
 			break;
 
@@ -7467,7 +7708,7 @@ void RecvDataProcSUBGAMEINFO(BYTE *pData, DWORD dwDataSize)
 			break;
 		}
 	}
-	if (g_hWndAdmin) {
+	if (g_hWndAdmin && (g_nAdminWindowType == IDM_ETC_SUBGAME)) {
 		PostMessage (g_hWndAdmin, WM_ADMINSUBGAMEINFO, 0, 0);
 	}
 }

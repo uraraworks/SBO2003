@@ -502,6 +502,39 @@
 #define IDC_AS_L_ITEM                     1437
 #define IDC_AS_L_MSG                      1438
 #define IDC_AS_L_MEMO                     1439
+#define IDC_CHAR_PUTONCE                  1448
+#define IDC_DGTMPL_COUNT                  1449
+#define IDC_DGTMPL_ID1                    1450
+#define IDC_DGTMPL_NAME1                  1458
+#define IDC_DGREBUILD_MODE                1466
+#define IDC_DGMESSAGES                    1480
+#define IDC_DGCLEAR_MODE                  1467
+#define IDC_DGREBUILD_NOW                 1468
+#define IDC_DGTMPL_ID2            1451
+#define IDC_DGTMPL_ID3            1452
+#define IDC_DGTMPL_ID4            1453
+#define IDC_DGTMPL_ID5            1454
+#define IDC_DGTMPL_ID6            1455
+#define IDC_DGTMPL_ID7            1456
+#define IDC_DGTMPL_ID8            1457
+#define IDC_DGTMPL_NAME2          1459
+#define IDC_DGTMPL_NAME3          1460
+#define IDC_DGTMPL_NAME4          1461
+#define IDC_DGTMPL_NAME5          1462
+#define IDC_DGTMPL_NAME6          1463
+#define IDC_DGTMPL_NAME7          1464
+#define IDC_DGTMPL_NAME8          1465
+#define IDC_DGTHEME                       1469
+#define IDC_STT_ITEMLIST                    1470
+#define IDC_STT_ITEMID                      1471
+#define IDC_STT_ITEMSET                     1472
+#define IDC_STT_ITEMCLR                     1473
+#define IDC_STT_ITEMNAME                    1474
+#define IDC_STT_MAGICLIST                   1475
+#define IDC_STT_MAGICID                     1476
+#define IDC_STT_MAGICSET                    1477
+#define IDC_STT_MAGICCLR                    1478
+#define IDC_STT_MAGICNAME                   1479
 
 // Next default values for new objects
 // 
@@ -509,7 +542,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        244
 #define _APS_NEXT_COMMAND_VALUE         40037
-#define _APS_NEXT_CONTROL_VALUE         1448
+#define _APS_NEXT_CONTROL_VALUE         1480
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

@@ -39,6 +39,8 @@
  *   /api/data/chests    {}                                   → 全マップの宝箱（印で変わるマスの kind 1）の一覧。読むだけ {chests, retired, nextNo}
  *   /api/data/market    {}                                   → 取引所の出品（新しい順・出品中/期限切れ）とアカウントごとの出品数・売上。読むだけ {items, accounts, total, limits}
  *   /api/data/recycle   {}                                   → リサイクルボックス（マップに置く共有の箱。map の swaps の kind 2）の箱ごとの中身と、入れた・もらった記録（新しい順）。読むだけ {boxes, retired, nextNo, log, daily, limits}
+ *   /api/data/dungeon/records {id?, versionNo?, theme?}      → 日替わりダンジョンの版と最短記録（版ごと・上位 20 件）。読むだけ {genVersion, today, dungeons:[{id, byRebuildMode, nowVersion, versions:[...]}]}
+ *   /api/data/dungeon/rebuild {id}                           → 日替わりダンジョンを今すぐ作り直す（中の組は外へ戻る・新しいランダムなシード）。書き込みキーだけ
  *   /api/data/tiles     {id, x?, y?, w?, h?}                 → マップのマス目（parts・flags・roof、最大 128×128）
  *   /api/data/update    {kind, updates:[{id, changes}], note?, previewId?}
  *   /api/data/add       {kind, records:[{...}], note?, previewId?}
@@ -333,7 +335,7 @@ Module['sboData'] = (function () {
 	function withoutSubGameVolatile(detail) {
 		var o = {};
 		Object.keys(detail).forEach(function (k) {
-			if (k !== 'byGoalFromX' && k !== 'byGoalFromY') {
+			if (k !== 'byGoalFromX' && k !== 'byGoalFromY' && k !== 'dwBuildNo') {
 				o[k] = detail[k];
 			}
 		});
@@ -529,6 +531,31 @@ Module['sboData'] = (function () {
 	function opChests() {
 		var r = JSON.parse(UTF8ToString(_SboWebDataChests()));
 		r.note = 'chests は宝箱番号の順。mapNo は map の番号。retired は消した宝箱の番号（使い回さない）。宝箱の足し方・直し方は map の swaps（kind 1）';
+		return r;
+	}
+
+	/* 日替わりダンジョンの版と最短記録（読むだけ。{id?: サブゲームの番号, versionNo?: 版の通し番号, theme?: テーマの写しも入れる}） */
+	function opDungeonRecords(a) {
+		a = a || {};
+		var n = function (v, d) { return (typeof v === 'number' && isFinite(v)) ? Math.floor(v) : d; };
+		var r = JSON.parse(UTF8ToString(_SboWebDataDungeonRecords(n(a.id, -1), n(a.versionNo, 0), a.theme ? 1 : 0)));
+		if (!r.ok) {
+			fail(404, 'not_found', r.error);
+		}
+		r.note = 'dungeons[].versions[] は古い順。records は時間の短い順（上位 20 件。同じ顔ぶれの組は速い方だけ）で、names=キャラ名・forms=選んだ姿・count=人数・ms=クリア時間（ミリ秒）・at=日時（日本時間）。' +
+			'seed・genVer（生成器の版）・themeRef（テーマの写しの番号。theme:true で theme に中身）が同じなら同じ形。nowVersion は今の形の版の no。仕様は docs/dungeon-gen.md';
+		return r;
+	}
+
+	/* 日替わりダンジョンを今すぐ作り直す（{id: サブゲームの番号}。書き込みキーだけ） */
+	function opDungeonRebuild(a, who) {
+		requireWrite(who);
+		var id = checkId(a.id);
+		var r = JSON.parse(UTF8ToString(_SboWebDataDungeonRebuild(id)));
+		if (!r.ok) {
+			fail(400, 'invalid', r.error);
+		}
+		log(who.label + ' が日替わりダンジョン ' + id + ' を今すぐ作り直した（版 ' + (r.version && r.version.no) + '）');
 		return r;
 	}
 
@@ -1697,6 +1724,19 @@ Module['sboData'] = (function () {
 			run: opRecycle
 		},
 		{
+			name: 'sbo_dungeon_records', write: false,
+			description: '日替わりダンジョン（サブゲームの detail.byRebuildMode が 1）の版と最短記録。版ごとに date・rebuild（その日の作り直し番号）・seed・genVer（生成器の版）・themeId・w,h・themeRef（theme:true でテーマの写し）と、records（上位 20 件。names・forms・count・ms・at）。' +
+				'id（サブゲームの番号）・versionNo（版の通し番号 no）で絞れる。nowVersion は今の形の版。',
+			inputSchema: { type: 'object', properties: { id: { type: 'integer', minimum: 0 }, versionNo: { type: 'integer', minimum: 1 }, theme: { type: 'boolean' } } },
+			run: opDungeonRecords
+		},
+		{
+			name: 'sbo_dungeon_rebuild', write: true,
+			description: '日替わりダンジョンを今すぐ作り直す（管理者ウィンドウの「今すぐ作り直す」と同じ。2 段階ではなく、呼ぶとすぐ動く）。中にいる組には知らせて外へ戻し、新しいランダムなシードの版を足す。その日のその後はそのシードを使う。id はサブゲームの番号。',
+			inputSchema: { type: 'object', required: ['id'], properties: { id: { type: 'integer', minimum: 0 } } },
+			run: opDungeonRebuild
+		},
+		{
 			name: 'sbo_market', write: false,
 			description: '取引所（受付に品を預けてゴールドで売る委託販売）の状況。items=出品（新しい順。id・acc（出品者のアカウント）・seller（キャラ名）・item・price・fee・net・date・limitDate・state=on/expired・leftSec）、' +
 				'accounts=アカウントごとの出品数（on・expired）と受付に貯まっている売上 gold、total=合計、limits=決まり。売れた出品は残らない。',
@@ -1969,6 +2009,8 @@ Module['sboData'] = (function () {
 		'/api/data/get': opGet,
 		'/api/data/tiles': opTiles,
 		'/api/data/chests': opChests,
+		'/api/data/dungeon/records': opDungeonRecords,
+		'/api/data/dungeon/rebuild': opDungeonRebuild,
 		'/api/data/recycle': opRecycle,
 		'/api/data/market': opMarket,
 		'/api/data/tiles/set': opTilesSet,
@@ -1996,6 +2038,7 @@ Module['sboData'] = (function () {
 		'/api/admin/data/list': function (body) { adminWho(body); return opList(body); },
 		'/api/admin/data/tiles': function (body) { adminWho(body); return opTiles(body); },
 		'/api/admin/data/chests': function (body) { adminWho(body); return opChests(body); },
+		'/api/admin/data/dungeon/records': function (body) { adminWho(body); return opDungeonRecords(body); },
 		'/api/admin/data/recycle': function (body) { adminWho(body); return opRecycle(body); },
 		'/api/admin/data/market': function (body) { adminWho(body); return opMarket(body); },
 		/* 作り手・レシピの保存（管理ページの「レシピ」）。読む方は /api/admin/data/list */
