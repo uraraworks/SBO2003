@@ -12806,6 +12806,22 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 	}
 	DeleteChar(dwReception);
 	DeleteChar(dwPut);
+	/* エリア変更は古い探索マップを捨てる（下見の間は保持する） */
+	{
+		PBYTE pAutoBack = Info.pbyAutoMap;
+		DWORD dwSizeBack = Info.dwAutoMapSize;
+		std::string strPreview = SboWebDataApply("subGame", byID, "{\"detail\":{\"byY1\":11}}", 0, "test");
+		BOOL bPreview = pAutoBack && dwSizeBack && Info.pbyAutoMap == pAutoBack && Info.dwAutoMapSize == dwSizeBack;
+		std::string strR = FlagGroupApi("subGame", byID, "{\"detail\":{\"byY1\":11}}");
+		std::vector<BYTE> aCap;
+		SvrSendCaptureBegin();
+		SendCmdDUNGEONMAP(7777, pMap->dwID);
+		BOOL bSent = SvrSendCaptureEnd(aCap);
+		printf("dungeonbonus area automap dropped=%d off=%d preview-kept=%d\n",
+			(int)(strR.find("\"ok\":true") != std::string::npos && Info.byY1 == 11 && Info.pbyAutoMap == NULL && Info.dwAutoMapSize == 0),
+			(int)(bSent && aCap.size() == sizeof(CMDPARA_DUNGEONMAP) && ((PCMDPARA_DUNGEONMAP)&aCap[0])->byValid == 0), (int)bPreview);
+		Info.byY1 = 10;
+	}
 	/* データAPIで配列・文字の項目を書き換えると全部が書き戻されるか（以前は先頭 1 バイトだけだった） */
 	{
 		char szJson[256];

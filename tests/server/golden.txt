@@ -2099,6 +2099,7 @@ dungeonbonus retire event=1 in-before=1 in=0 space=0 lv=30 runs=3
 dungeonbonus rebuild b in=0 got=0 kept=1 d in=0 e in=0
 dungeonbonus rebuild freed runs=0 enemies=0/0/0/0
 dungeonbonus save roundtrip=1 extra>0=1
+dungeonbonus area automap dropped=1 off=1 preview-kept=1
 dungeonbonus api ok=1 tmpl=1,1 name2=魔法使い name1=戦士
 dungeonbonus end runs=0 sel=0
 == AP. Dungeon daily ==

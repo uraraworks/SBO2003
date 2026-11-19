@@ -28,6 +28,7 @@
 #include "SboSvrMarket.h"
 #include "SboSvrMapSwapEdit.h"
 #include "SboSvrDungeonDaily.h"
+#include "SboSvrSubGameProc.h"
 #include "CharProc/IncludeCharProc.h"
 
 #include <emscripten.h>
@@ -4394,6 +4395,10 @@ static bool SubGameApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::
 			pInfo->pInfo = pNew;
 		}
 	} else if (pDetail && nSize > 0) {
+		/* 元のマップ番号で通知してから設定を書き戻す（下見では捨てない） */
+		if (nTypeNew == SUBGAMEID_DUNGEON) {
+			InvalidateDungeonAutoMap((PSUBGAME_DUNGEONINFO)pInfo->pInfo);
+		}
 		/* 項目表にある所だけを書き戻す（作成中の設計図などのポインタは触らない） */
 		BYTE *pDst = (BYTE *)pInfo->pInfo;
 		for (int i = 0; i < nCount; i ++) {

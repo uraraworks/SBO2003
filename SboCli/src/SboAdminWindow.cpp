@@ -866,6 +866,10 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 		break;
 
 	case WM_ADMINCHGEVENT:
+		/* 受信後、通知を処理するまでに画面や選択が変わることもある */
+		if ((g_nAdminWindowType != IDM_MAP_EVENT) || ((int)wParam != g_nSelectEventID) || !g_pEventInfo) {
+			break;
+		}
 		g_nSelectEventID = (int)wParam;
 		SendMessage (m_hWndEventList, CB_SETCURSEL, g_pEventInfo->byType, 0);
 		AdminOnCommandMapEvent (NULL, IDC_RENEW, NULL, 0);
@@ -881,11 +885,10 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 	/* マップメッセージ受信 */
 	case WM_ADMINMSGREQ:
 		{
-			if (g_nAdminWindowType != IDM_MAP_MSG) {
-				break;
-			}
 			LPSTR pMsg = (LPSTR)wParam;
-			SetWindowText (m_hWndEdit1, pMsg);
+			if (g_nAdminWindowType == IDM_MAP_MSG) {
+				SetWindowText (m_hWndEdit1, pMsg);
+			}
 			delete [] pMsg;
 		}
 		break;
@@ -911,7 +914,7 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 	case WM_ADMINGETACCINFO:
 		{
 			PCMDPARA_CHARINFO pPara = (PCMDPARA_CHARINFO)wParam;
-			if (!m_pParaCharInfo) {
+			if (((g_nAdminWindowType != IDM_ACC_INFO) && (g_nAdminWindowType != IDM_CHAR_INFO)) || !m_pParaCharInfo) {
 				delete pPara;
 				break;
 			}
@@ -1430,6 +1433,9 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 
 	/* 預かり所情報更新 */
 	case WM_ADMINLEAVEINFO:
+		if ((g_nAdminWindowType != IDM_CHAR_LEAVE) || !g_pLeaveInfo) {
+			break;
+		}
 		{
 			LV_ITEM item;
 			ZeroMemory (&item, sizeof (item));
@@ -10802,6 +10808,8 @@ void MakeAdminWndSubGameInfo(void)
 /* ========================================================================= */
 void DeleteAdminWndSubGameInfo(void)
 {
+	/* メンバーに保持しないダンジョンの追加欄も画面切り替え時に消す */
+	DeleteAdminWndSubGameInfoType ();
 	SAFE_DESTROYWND (m_hWndCombo1);
 	SAFE_DESTROYWND (m_hWndCheck1);
 	SAFE_DESTROYWND (m_hWndButton1);
@@ -10824,6 +10832,9 @@ void DeleteAdminWndSubGameInfo(void)
 /* ========================================================================= */
 void MakeAdminWndSubGameInfoType(void)
 {
+	if (g_nAdminWindowType != IDM_ETC_SUBGAME) {
+		return;
+	}
 	if (g_nSubGameCount == 0) {
 		return;
 	}

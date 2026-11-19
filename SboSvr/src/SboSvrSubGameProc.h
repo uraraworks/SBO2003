@@ -13,3 +13,5 @@ extern void SubGameProc(DWORD dwID);								/* サブゲーム処理 */
 extern void SubGameProcBombQuit(BYTE);								/* 爆弾ゲーム試合終了処理 */
 extern void SubGameProcBombQuitMsg(BYTE, LPCSTR);					/* 爆弾ゲーム試合終了処理(終わった理由を表示) */
 /* Copyright(C)URARA-works 2003-2005 */
+
+extern void InvalidateDungeonAutoMap(PSUBGAME_DUNGEONINFO);	/* 設定変更時に探索マップを捨てて通知 */

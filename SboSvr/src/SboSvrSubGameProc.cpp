@@ -8,6 +8,8 @@
 #include "include.h"
 #include "Glbldata.h"
 #include "SboSvrRecvCmd.h"
+#include "SboSvrSubGameProc.h"
+#include "SboSvrSendCmd.h"
 #include "SboSvrSubGameProcSugoroku.h"
 #include "SboSvrDungeonDaily.h"
 /* DungeonGen のメンバー名 max が、互換層の max マクロとぶつかるので、読み込む間だけ外す */
@@ -2435,3 +2437,11 @@ static BOOL CheckMakeDungeon(PBYTE pMaze, int x, int y, int nDirection, int nSiz
 }
 
 /* Copyright(C)URARA-works 2003-2005 */
+
+/* 設定やマップの大きさを変えた時は、次の生成まで古い探索範囲を使わない */
+void InvalidateDungeonAutoMap(PSUBGAME_DUNGEONINFO pDungeon)
+{
+	SAFE_DELETE_ARRAY (pDungeon->pbyAutoMap);
+	pDungeon->dwAutoMapSize = 0;
+	SendCmdDUNGEONMAPMAP (pDungeon->dwMapID);
+}

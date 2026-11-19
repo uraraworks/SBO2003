@@ -21,6 +21,7 @@
 #include "SboSvrBattleProc.h"
 #include "SboSvrCharInfoTimerProc.h"
 #include "SboSvrSubGameProcSugoroku.h"
+#include "SboSvrSubGameProc.h"
 #include "SboSvrAdminUndo.h"
 #include "SboSvrNpcRoute.h"
 #include "SboSvrMarket.h"
@@ -5236,6 +5237,7 @@ void RecvDataProcADDDELMAP(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 
+	int nCXBack = g_aMapInfo[nNo]->nCX, nCYBack = g_aMapInfo[nNo]->nCY;
 	switch (pMap->byType) {
 	case 0:	/* 上 */
 		if (g_aMapInfo[nNo]->nCY + pMap->byCount >= 256) {
@@ -5359,6 +5361,18 @@ void RecvDataProcADDDELMAP(PBYTE pData, DWORD dwDataSize)
 		g_aMapInfo[nNo]->nCX += pMap->byCount;
 		SendCmdADDDELMAP (pMap->dwID, pMap->byType, pMap->byCount);
 		break;
+	}
+	/* 追加・削除が成立した時だけ、そのマップの探索結果を捨てる */
+	if ((nCXBack != g_aMapInfo[nNo]->nCX) || (nCYBack != g_aMapInfo[nNo]->nCY)) {
+		for (int j = 0; j < g_aSubaGameInfo.GetSize (); j ++) {
+			PSUBGAMEINFO pInfo = g_aSubaGameInfo[j];
+			if (pInfo && (pInfo->byType == SUBGAMEID_DUNGEON) && pInfo->pInfo) {
+				PSUBGAME_DUNGEONINFO pDungeon = (PSUBGAME_DUNGEONINFO)pInfo->pInfo;
+				if (pDungeon->dwMapID == pMap->dwID) {
+					InvalidateDungeonAutoMap (pDungeon);
+				}
+			}
+		}
 	}
 }
 
@@ -9527,6 +9541,10 @@ void RecvDataProcSUBGAMEINFO(PBYTE pData, DWORD dwDataSize)
 	PSUBGAMEINFO pInfo = g_aSubaGameInfo[pRecv->dwTblID];
 	pInfoBack = pInfo->pInfo;
 	byTypeBack = pInfo->byType;
+	/* マップ番号を変える前に、元のマップにいる人の探索マップも消す */
+	if (pInfoBack && (byTypeBack == SUBGAMEID_DUNGEON)) {
+		InvalidateDungeonAutoMap ((PSUBGAME_DUNGEONINFO)pInfoBack);
+	}
 	int nSize = GetSubGameDataSize (pRecv->byData);
 	if (nSize == 0) {
 		ZeroMemory (pInfo, sizeof (SUBGAMEINFO));
@@ -9613,7 +9631,7 @@ void RecvDataProcSUBGAMEINFO(PBYTE pData, DWORD dwDataSize)
 			CopyMemory (pDungeonInfo->szTmplName, pDungeon->szTmplName, sizeof (pDungeonInfo->szTmplName));
 			pDungeonInfo->byRebuildMode = min (pDungeon->byRebuildMode, (BYTE)DGREBUILD_DAILY);
 			pDungeonInfo->byClearMode = min (pDungeon->byClearMode, (BYTE)DGCLEAR_KILLALL);
-			/* 管理者ウィンドウから直した時も、作り直し番号と生成結果は引き継ぐ */
+			/* 作り直し番号と生成結果は引き継ぐ（探索マップは設定変更時に捨てる） */
 			if (pInfoBack && (byTypeBack == SUBGAMEID_DUNGEON)) {
 				PSUBGAME_DUNGEONINFO pBack = (PSUBGAME_DUNGEONINFO)pInfoBack;
 				pDungeonInfo->dwBuildNo = pBack->dwBuildNo;
@@ -9624,8 +9642,6 @@ void RecvDataProcSUBGAMEINFO(PBYTE pData, DWORD dwDataSize)
 				pDungeonInfo->wGenStartY = pBack->wGenStartY;
 				pDungeonInfo->wGenGoalX = pBack->wGenGoalX;
 				pDungeonInfo->wGenGoalY = pBack->wGenGoalY;
-				pDungeonInfo->pbyAutoMap = pBack->pbyAutoMap;
-				pDungeonInfo->dwAutoMapSize = pBack->dwAutoMapSize;
 				pDungeonInfo->dwDailyVer = pBack->dwDailyVer;
 				pDungeonInfo->dwDailyCheck = pBack->dwDailyCheck;
 				pDungeonInfo->dwDailyEmpty = pBack->dwDailyEmpty;

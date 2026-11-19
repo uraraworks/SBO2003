@@ -7535,7 +7535,7 @@ void RecvDataProcCOUNTSUBGAME(PBYTE pData, DWORD dwDataSize)
 
 	g_nSubGameCount = pRecv->nData;
 
-	if (g_hWndAdmin) {
+	if (g_hWndAdmin && (g_nAdminWindowType == IDM_ETC_SUBGAME)) {
 		PostMessage (g_hWndAdmin, WM_ADMINSUBGAMEINFO, 0, 0);
 	}
 }
@@ -7549,7 +7549,9 @@ void RecvDataProcSUBGAMEINFO(BYTE *pData, DWORD dwDataSize)
 {
 	PCMDPARA_DATA1 pRecv = (PCMDPARA_DATA1)pData;
 
-	if (g_pSubGameInfo == NULL) {
+	/* 選択中のサブゲーム画面だけに反映する（マップ更新でも届く） */
+	if ((g_nAdminWindowType != IDM_ETC_SUBGAME) || (g_pSubGameInfo == NULL) ||
+			((int)pRecv->dwTblID != g_nSelectSubGameID)) {
 		return;
 	}
 
@@ -7678,7 +7680,7 @@ void RecvDataProcSUBGAMEINFO(BYTE *pData, DWORD dwDataSize)
 			break;
 		}
 	}
-	if (g_hWndAdmin) {
+	if (g_hWndAdmin && (g_nAdminWindowType == IDM_ETC_SUBGAME)) {
 		PostMessage (g_hWndAdmin, WM_ADMINSUBGAMEINFO, 0, 0);
 	}
 }
