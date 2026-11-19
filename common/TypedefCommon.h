@@ -2252,6 +2252,19 @@ typedef struct _MAPINFOSAVE {
 } MAPINFOSAVE, *PMAPINFOSAVE;
 
 /* キャラ情報 */
+/* コマンドの連打を止める間隔の種別（サーバーだけ。CHARINFO::adwRateLast の添字） */
+enum {
+	RATE_GMCALL = 0,											/* 管理人呼び出し */
+	RATE_PARTYJOIN,												/* 仲間の誘い */
+	RATE_TRADE,													/* 取り引きの申し込み */
+	RATE_MSGCMD,												/* メッセージコマンド(サイコロ類) */
+	RATE_COMEFC,												/* 吹き出し */
+	RATE_CHGCHARGRP,											/* 着せ替え */
+	RATE_NAMECOLOR,												/* 名前の色 */
+	RATE_ADDSCORE,												/* 得点板 */
+	RATE_MAX
+};
+
 typedef struct _CHARINFO {
 	DWORD		pID;												/* プレイヤーID */
 	BYTE		byAdminLV;											/* 管理権限レベル */
@@ -2441,6 +2454,9 @@ typedef struct _CHARINFO {
 	WORD		wHideFlag;											/* NPC：この印が立っている人には見えない（番号+1。0=条件なし。両方ある時は両方を満たす人にだけ見える） */
 	WORD		wRecycleBox;										/* いま窓を開いているリサイクル箱の番号（0=開いていない。サーバーだけ。保存しない） */
 	BYTE		byViewAllNpc;										/* 管理者：印で隠れたNPCも全部見る(1)（CMD_ADMINVIEWALL。サーバーだけ。保存しない。ログインし直すと 0） */
+	DWORD		adwRateLast[RATE_MAX];								/* コマンド種別ごとに最後に受け付けた時間（0=まだ。サーバーだけ。保存しない） */
+	DWORD		dwSpeechWinStart;									/* 発言の数え始めの時間（サーバーだけ。保存しない） */
+	BYTE		bySpeechWinCount;									/* その間に受け付けた発言の数 */
 } CHARINFO, *PCHARINFO;
 
 /* キャラ情報通知 */

@@ -656,6 +656,69 @@ static BOOL IsRecvSizeOK(DWORD dwHead, DWORD dwBody)
 }
 
 /* ========================================================================= */
+/* 関数名：	RecvRateOK														 */
+/* 内容：	コマンドの連打を止める（前に受け付けてから dwMinMs 未満なら FALSE）	 */
+/*			管理者は対象外													 */
+/* ========================================================================= */
+
+static BOOL RecvRateOK(PCHARINFO pChar, int nKind, DWORD dwMinMs)
+{
+	DWORD dwNow = GetTickCount ();
+
+	if (pChar->byAdminLV > ADMINLV_USER) {
+		return TRUE;
+	}
+	if (pChar->adwRateLast[nKind] && ((DWORD)(dwNow - pChar->adwRateLast[nKind]) < dwMinMs)) {
+		return FALSE;
+	}
+	pChar->adwRateLast[nKind] = dwNow ? dwNow : 1;
+	return TRUE;
+}
+
+/* 発言の連投の上限（公式の自動分割は 1.2 秒おきなので、これにはかからない） */
+#define SPEECH_RATE_WINDOW		5000	/* 数える間隔(ミリ秒) */
+#define SPEECH_RATE_MAX			8		/* その間に受け付ける数 */
+/* 発言のバイト数の上限（表示幅 40 を超えない公式の発言に十分な値。URL を含む発言は表示幅 1000 まで） */
+#define SPEECH_MAX_NORMAL		256
+#define SPEECH_MAX_URL			3000
+/* 自己紹介のバイト数の上限（公式の入力欄は 600） */
+#define SPEECH_MAX_EDIT			600
+
+/* 発言を 1 つ受け付けてよいか（超えた分は捨てる）。管理者は対象外 */
+static BOOL RecvSpeechRateOK(PCHARINFO pChar)
+{
+	DWORD dwNow = GetTickCount ();
+
+	if (pChar->byAdminLV > ADMINLV_USER) {
+		return TRUE;
+	}
+	if ((pChar->bySpeechWinCount == 0) || ((DWORD)(dwNow - pChar->dwSpeechWinStart) >= SPEECH_RATE_WINDOW)) {
+		pChar->dwSpeechWinStart = dwNow;
+		pChar->bySpeechWinCount = 0;
+	}
+	if (pChar->bySpeechWinCount >= SPEECH_RATE_MAX) {
+		return FALSE;
+	}
+	pChar->bySpeechWinCount ++;
+	return TRUE;
+}
+
+/* 文字列を nMax バイト以内に切る（文字の途中では切らない） */
+static void RecvCutStr(LPSTR psz, int nMax)
+{
+	int i = 0, nLen;
+
+	while (psz[i]) {
+		nLen = SboTextCharLen (&psz[i]);
+		if ((nLen <= 0) || (i + nLen > nMax)) {
+			break;
+		}
+		i += nLen;
+	}
+	psz[i] = 0;
+}
+
+/* ========================================================================= */
 /* 関数名：	TermRecvStr														 */
 /* 内容：	パケット内の固定長文字列を必ず終端させる						 */
 /* ========================================================================= */
@@ -4948,21 +5011,40 @@ void RecvDataProcSPEECH(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 
+	/* 連投？（超えた分は捨てて、本人にだけ知らせる） */
+	if (!RecvSpeechRateOK (pChar)) {
+		SendCmdSYSMSG (s_pIDRecv, "SYSTEM:発言が早すぎます。", SPEECHCMD_BATTLE1);
+		return;
+	}
+
+	/* 長すぎる分は切る（公式の入力欄より長い発言は届かない） */
+	DWORD dwSize = pPara->wSize;
+	if (dwSize > SPEECH_MAX_URL) {
+		dwSize = SPEECH_MAX_URL;
+	}
+	LPSTR pszTmp = (LPSTR)new BYTE[dwSize + 1];
+	ZeroMemory ((PBYTE)pszTmp, dwSize + 1);
+	CopyMemory ((PBYTE)pszTmp, (PBYTE)pData + sizeof (CMDPARA_SPEECH), dwSize);
+	SboTextSanitize (pszTmp);		/* UTF-8 として正しくないバイトは「?」に */
+
+	if (pPara->byType == SPEECHCMD_SPEECHEDIT) {
+		/* 自己紹介 */
+		RecvCutStr (pszTmp, SPEECH_MAX_EDIT);
+	} else if ((pChar->byAdminLV <= ADMINLV_USER) && (strlen (pszTmp) > SPEECH_MAX_NORMAL) &&
+			(strstr (pszTmp, "http://") == NULL) && (strstr (pszTmp, "https://") == NULL)) {
+		RecvCutStr (pszTmp, SPEECH_MAX_NORMAL);
+	}
+
 	SAFE_DELETE_ARRAY (pChar->pszSpeech);
-	pChar->pszSpeech = (LPSTR)new BYTE[pPara->wSize + 1];
-	ZeroMemory ((PBYTE)pChar->pszSpeech, pPara->wSize + 1);
-	CopyMemory ((PBYTE)pChar->pszSpeech, (PBYTE)pData + sizeof (CMDPARA_SPEECH), pPara->wSize);
-	SboTextSanitize (pChar->pszSpeech);		/* UTF-8 として正しくないバイトは「?」に */
+	pChar->pszSpeech = pszTmp;
 	pChar->byFlg |= CHARINFOFLG_SPEECH;
 	pChar->bySpeechFlg = pPara->byType;
 
 	/* 発言内容の設定？ */
 	if (pPara->byType == SPEECHCMD_SPEECHEDIT) {
 		SAFE_DELETE_ARRAY (pChar->pszNpcSpeech);
-		pChar->pszNpcSpeech = (LPSTR)new BYTE[pPara->wSize + 1];
-		ZeroMemory ((PBYTE)pChar->pszNpcSpeech, pPara->wSize + 1);
-		CopyMemory ((PBYTE)pChar->pszNpcSpeech, (PBYTE)pData + sizeof (CMDPARA_SPEECH), pPara->wSize);
-		SboTextSanitize (pChar->pszNpcSpeech);
+		pChar->pszNpcSpeech = (LPSTR)new BYTE[strlen (pszTmp) + 1];
+		strcpy (pChar->pszNpcSpeech, pszTmp);
 	}
 }
 
@@ -6064,6 +6146,78 @@ static BOOL OpenDoorFront(PCHARINFO pChar)
 }
 
 /* ========================================================================= */
+/* 店・預かり所・転職所・着せ替えの人が近くにいるか							 */
+/* 公式クライアントは、話しかけた NPC の台詞の先頭の印で窓を開く				 */
+/*   "@5NN"=店  "@6"=預かり所  "@7NN"=店(売る・買う)  "@a"=転職所			 */
+/*   "@" だけ(動くNPC以上)=着せ替え											 */
+/* サーバーでも同じ印の NPC が数マス以内（カウンター越しでもよいよう余裕を持つ）にいる時だけ通す */
+/* ========================================================================= */
+#define NPCNEAR_RANGE		(3)
+
+/* 印の種類 pszKinds（例 "57"）のどれかの NPC が近くにいるか。nShopNo>=0 なら店の番号 NN も合うこと */
+static BOOL NpcNearSpeech(PCHARINFO pChar, const char *pszKinds, int nShopNo)
+{
+	int i, nCount = g_aCharInfo.GetSize ();
+
+	for (i = 0; i < nCount; i ++) {
+		PCHARINFO pNpc = g_aCharInfo[i];
+
+		if ((pNpc == NULL) || (pNpc == pChar) || (pNpc->szAcc[0] != 0) || (pNpc->byNpcType == NPCTYPE_INIT) ||
+				(pNpc->pszNpcSpeech == NULL)) {
+			continue;
+		}
+		if ((pNpc->pszNpcSpeech[0] != '@') || (pNpc->pszNpcSpeech[1] == 0) ||
+				(strchr (pszKinds, pNpc->pszNpcSpeech[1]) == NULL)) {
+			continue;
+		}
+		if ((pNpc->dwMapID != pChar->dwMapID) || !IsSameSpace (pChar, pNpc)) {
+			continue;
+		}
+		if (nShopNo >= 0) {
+			/* クライアントと同じく、台詞の 3・4 文字目の 2 桁を店の番号にする */
+			char szTmp[3];
+			szTmp[0] = pNpc->pszNpcSpeech[2];
+			szTmp[1] = (szTmp[0] != 0) ? pNpc->pszNpcSpeech[3] : 0;
+			szTmp[2] = 0;
+			if (atoi (szTmp) != nShopNo) {
+				continue;
+			}
+		}
+		if ((abs ((int)pNpc->dwX - (int)pChar->dwX) <= NPCNEAR_RANGE) &&
+			(abs ((int)pNpc->dwY - (int)pChar->dwY) <= NPCNEAR_RANGE)) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* 着せ替えの人（台詞が "@" だけで動くNPC以上）が近くにいて、その人の画像が wGrp か */
+static BOOL NpcNearDress(PCHARINFO pChar, WORD wGrp)
+{
+	int i, nCount = g_aCharInfo.GetSize ();
+
+	for (i = 0; i < nCount; i ++) {
+		PCHARINFO pNpc = g_aCharInfo[i];
+
+		if ((pNpc == NULL) || (pNpc == pChar) || (pNpc->szAcc[0] != 0) || (pNpc->byNpcType < NPCTYPE_NOMOVE) ||
+				(pNpc->pszNpcSpeech == NULL)) {
+			continue;
+		}
+		if ((strcmp (pNpc->pszNpcSpeech, "@") != 0) || (pNpc->wGrpID != wGrp)) {
+			continue;
+		}
+		if ((pNpc->dwMapID != pChar->dwMapID) || !IsSameSpace (pChar, pNpc)) {
+			continue;
+		}
+		if ((abs ((int)pNpc->dwX - (int)pChar->dwX) <= NPCNEAR_RANGE) &&
+			(abs ((int)pNpc->dwY - (int)pChar->dwY) <= NPCNEAR_RANGE)) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcCHGCHARGRP											 */
 /* 内容：受信データ処理(着せ替え要求)										 */
 /* 日付：2003/07/24															 */
@@ -6076,6 +6230,10 @@ void RecvDataProcCHGCHARGRP(PBYTE pData, DWORD dwDataSize)
 	if (!IsRecvChar (pPara->dwTblID)) {
 		return;
 	}
+	/* 連打は受け付けない */
+	if (!RecvRateOK (g_aCharInfo[pPara->dwTblID], RATE_CHGCHARGRP, 500)) {
+		return;
+	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
 
@@ -6083,6 +6241,12 @@ void RecvDataProcCHGCHARGRP(PBYTE pData, DWORD dwDataSize)
 	if (pPara->dwData == 0) {
 		/* 何かおかしいので強制ログアウト */
 		PostMessage (g_hWndMain, WM_DECPLAYER, pChar->pID, pPara->dwTblID);
+		return;
+	}
+
+	/* 公式クライアントが送るのは、キャラ作成の男(2)・女(3)と、着せ替えの人に話しかけて選んだ画像だけ */
+	if ((pChar->byAdminLV == ADMINLV_USER) && (pPara->dwData != 2) && (pPara->dwData != 3) &&
+			((pPara->dwData > 0xFFFF) || !NpcNearDress (pChar, (WORD)pPara->dwData))) {
 		return;
 	}
 
@@ -6157,6 +6321,13 @@ void RecvDataProcCHGNAMESEX(PBYTE pData, DWORD dwDataSize)
 		}
 		return;
 	}
+	/* 公式の「冒険の書をけす」はログイン画面からだけ。遊んでいる最中（歩き中）の削除は、
+	   取引・パーティ・ついていく・討伐チャレンジなどの後始末が済まないので受けず、つなぎ直させる */
+	if ((pPara->szName[0] == 0) && bName && (pChar->szName[0] != 0) &&
+			(pChar->byGameState >= GAMESTATE_MOVE) && (pChar->pID != 0)) {
+		PostMessage (g_hWndMain, WM_DECPLAYER, pChar->pID, pPara->dwTblID);
+		return;
+	}
 	pChar->bySaveFlg &= ~CHARINFOSAVEFLG_FEMALE;
 	if (pPara->bySex) {
 		pChar->bySaveFlg |= CHARINFOSAVEFLG_FEMALE;
@@ -6183,6 +6354,8 @@ void RecvDataProcCHGNAMESEX(PBYTE pData, DWORD dwDataSize)
 
 	/* キャラ削除？ */
 	if (pChar->szName[0] == 0 && bName) {
+		/* 受信処理で覚えている状態（取引・移動の見張り・メッセージ制御コードなど）を消してから置き換える */
+		RecvCmdOnDecPlayer ((int)pChar->dwTblID);
 		PCHARINFO pCharNew = new CHARINFO;
 		ZeroMemory (pCharNew, sizeof (CHARINFO));
 		SetInitCharData (pCharNew);
@@ -6231,6 +6404,12 @@ void RecvDataProcGMCALL(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
+
+	/* 連打は受け付けない（管理者の画面を埋めさせない） */
+	if (!RecvRateOK (pChar, RATE_GMCALL, 30000)) {
+		SendCmdSYSMSG (s_pIDRecv, "SYSTEM:管理人の呼び出しは30秒に1回までです。");
+		return;
+	}
 
 	SYSTEMTIME sysTime;
 	LPSTR szTmp = new char[256], szTmp2 = new char[256];
@@ -7517,6 +7696,15 @@ void RecvDataProcMAPMOVE(PBYTE pData, DWORD dwDataSize)
 	SubProcMapMove (pChar, pPara->dwMapID, pPara->dwX, pPara->dwY);
 }
 
+/* 押した先のマスの当たり判定の種別（マップの外は壁扱い） */
+static BYTE PushGetHitType(PMAPINFO pMap, int x, int y)
+{
+	if ((x < 0) || (x >= (int)pMap->nCX) || (y < 0) || (y >= (int)pMap->nCY)) {
+		return PARTSHIT_BLOCK1;
+	}
+	return (&g_aMapPartsInfo[pMap->pwMap[x + y * pMap->nCX]])->byHitType;
+}
+
 /* ========================================================================= */
 /* 関数名：RecvDataProcCHARPUSH												 */
 /* 内容：受信データ処理(キャラ押して要求)									 */
@@ -7552,6 +7740,14 @@ void RecvDataProcCHARPUSH(PBYTE pData, DWORD dwDataSize)
 	/* 離れたところのものは押せない */
 	if (!IsNearRecvChar (pCharPush, 2) || (GetMapNo (pCharPush->dwMapID) < 0)) {
 		return;
+	}
+	/* 公式は押すものの隣でしか押せない。大きいキャラは左端の座標で、右へ 2 マスまで広がっている */
+	{
+		int nDX = (int)pCharPush->dwX - (int)pChar->dwX;
+		int nDY = (int)pCharPush->dwY - (int)pChar->dwY;
+		if ((nDX > 1) || (nDX < -2) || (nDY > 1) || (nDY < -1) || ((nDY != 0) && (nDX > 0))) {
+			return;
+		}
 	}
 
 	if (timeGetTime () < pCharPush->dwLastDotMove + 300) {
@@ -7620,7 +7816,7 @@ void RecvDataProcCHARPUSH(PBYTE pData, DWORD dwDataSize)
 			pCharPush->byDirection = abyDirectionTbl[pCharPush->byDirection];
 			x = dwX + anPosAddTblX[pCharPush->byDirection];
 			y = dwY + anPosAddTblY[pCharPush->byDirection];
-			byHitType = (&g_aMapPartsInfo[pMap->pwMap[x + y * pMap->nCX]])->byHitType;
+			byHitType = PushGetHitType (pMap, x, y);
 
 			if ((byHitType == PARTSHIT_NONE) ||
 				(byHitType == PARTSHIT_HIDE1) ||
@@ -7651,7 +7847,7 @@ void RecvDataProcCHARPUSH(PBYTE pData, DWORD dwDataSize)
 						pCharPush->byDirection = abyDirectionTbl[pCharPush->byDirection];
 						x = pCharPush->dwX + anPosAddTblX[pCharPush->byDirection];
 						y = pCharPush->dwY + anPosAddTblY[pCharPush->byDirection];
-						byHitType = (&g_aMapPartsInfo[pMap->pwMap[x + y * pMap->nCX]])->byHitType;
+						byHitType = PushGetHitType (pMap, x, y);
 
 						if ((byHitType == PARTSHIT_NONE) ||
 							(byHitType == PARTSHIT_HIDE1) ||
@@ -7683,7 +7879,7 @@ void RecvDataProcCHARPUSH(PBYTE pData, DWORD dwDataSize)
 				pCharPush->byDirection = abyDirectionTbl[pCharPush->byDirection];
 				x = pCharPush->dwX + anPosAddTblX[pCharPush->byDirection];
 				y = pCharPush->dwY + anPosAddTblY[pCharPush->byDirection];
-				byHitType = (&g_aMapPartsInfo[pMap->pwMap[x + y * pMap->nCX]])->byHitType;
+				byHitType = PushGetHitType (pMap, x, y);
 
 				if ((byHitType == PARTSHIT_NONE) ||
 					(byHitType == PARTSHIT_HIDE1) ||
@@ -7751,6 +7947,9 @@ void RecvDataProcCOMEFC(PBYTE pData, DWORD dwDataSize)
 	if (!pPara->byData || (pPara->byData > MAX_COMEFC)) {
 		return;
 	}
+	if (!RecvRateOK (pChar, RATE_COMEFC, 500)) {
+		return;
+	}
 	pChar->byComEfc = pPara->byData;
 	pChar->byFlg |= CHARINFOFLG_COMEFC;
 }
@@ -7772,6 +7971,10 @@ void RecvDataProcADDSCORE(PBYTE pData, DWORD dwDataSize)
 	pChar = g_aCharInfo[pPara->dwTblID];
 	/* 話しかけた相手（目の前の NPC）だけ。種類が違うキャラや離れたキャラは変えない */
 	if (((pChar->byNpcType != NPCTYPE_SCORE) && (pChar->byNpcType != NPCTYPE_CHGPUSH)) || !IsNearRecvChar (pChar, 2)) {
+		return;
+	}
+	/* 連打は受け付けない */
+	if ((s_nCharNoRecv >= 0) && !RecvRateOK (g_aCharInfo[s_nCharNoRecv], RATE_ADDSCORE, 300)) {
 		return;
 	}
 	pChar->byEfect ++;
@@ -8262,7 +8465,17 @@ void RecvDataProcDROPITEM(PBYTE pData, DWORD dwDataSize)
 			return;
 		}
 	}
-	if (pPara->dwData2) {
+	/* 品物の番号を申告しない送り方は受けない（公式クライアントは必ず持ち物の品の番号を付ける） */
+	if (pPara->dwData2 == 0) {
+		SendCmdCHARITEM (pChar->pID, pPara->dwTblID);
+		return;
+	}
+	/* 売る時は、店の人（"@5"・"@7"）の近くにいること */
+	if ((pPara->dwData1 > 0) && !NpcNearSpeech (pChar, "57", -1)) {
+		SendCmdCHARITEM (pChar->pID, pPara->dwTblID);
+		return;
+	}
+	{
 		/* 持ってないアイテム？ */
 		if (CheckCharItem (pPara->dwTblID, pPara->dwData2, pPara->byData) == FALSE) {
 			PostMessage (g_hWndMain, WM_DECPLAYER, pChar->pID, (LPARAM)pPara->dwTblID);
@@ -8285,8 +8498,20 @@ void RecvDataProcDROPITEM(PBYTE pData, DWORD dwDataSize)
 			return;
 		}
 
+		/* 捨てられない品の印がある品は、売れない・捨てられない（クライアントと同じ） */
+		if (pItem->byFlg & ITEMFLG_DROP) {
+			SendCmdSYSMSG (pChar->pID, "その品は、売ったり捨てたりできません。", SPEECHCMD_BATTLE1);
+			SendCmdCHARITEM (pChar->pID, pPara->dwTblID);
+			return;
+		}
+
 		/* 売った？（売値はクライアントの申告ではなく、クライアントと同じ式でサーバーが決める） */
 		if (pPara->dwData1 > 0) {
+			/* 価値の無い品は買い取らない（クライアントも売れない品として扱う） */
+			if (ItemGoldOf ((WORD)pPara->dwData2) == 0) {
+				SendCmdCHARITEM (pChar->pID, pPara->dwTblID);
+				return;
+			}
 			DWORD dwSell = max (ItemGoldOf ((WORD)pPara->dwData2) / 4, (DWORD)1);
 			pChar->dwGold = min (pChar->dwGold + dwSell, (DWORD)999999);
 			SendCmdCHARSTATUSGOLDEXP (pChar->pID, pPara->dwTblID);
@@ -8431,6 +8656,26 @@ void RecvDataProcNAMECOLOR(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
+	/* 連打は受け付けない */
+	if (!RecvRateOK (pChar, RATE_NAMECOLOR, 500)) {
+		return;
+	}
+	/* 公式クライアントで選べるのは、色の表の先頭 7 色（名前と発言は同じ色）だけ。濃い目の色は管理人・NPC 用 */
+	if (pChar->byAdminLV == ADMINLV_USER) {
+		static const COLORREF s_aclName[7] = {
+			RGB (255, 200, 200), RGB (255, 255, 200), RGB (200, 255, 200), RGB (200, 255, 255),
+			RGB (200, 200, 255), RGB (255, 200, 255), RGB (255, 255, 255)
+		};
+		int i;
+		for (i = 0; i < 7; i ++) {
+			if ((pPara->clName == s_aclName[i]) && (pPara->clSpeech == s_aclName[i])) {
+				break;
+			}
+		}
+		if (i >= 7) {
+			return;
+		}
+	}
 	pChar->clName = pPara->clName;
 	pChar->clSpeech = pPara->clSpeech;
 	SendCmdNAMECOLOR (pPara->dwTblID);
@@ -9037,6 +9282,10 @@ void RecvDataProcLEAVEITEM(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
+	/* 預かり所の人（台詞が "@6"）の近くにいなければ使えない */
+	if (!NpcNearSpeech (pChar, "6", -1)) {
+		return;
+	}
 	/* 討伐チャレンジ中は預かり所・取り引き・作ってもらうを使わない（貸し出しの品が出入りしないように） */
 	if (QuestChallengeBlock (pChar)) {
 		return;
@@ -9155,6 +9404,10 @@ void RecvDataProcLEAVEITEMGET(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
+	/* 預かり所の人（"@6"）の近くにいること。中身の一覧だけは、店（"@5"・"@7"）・作り手（"@c"）の窓も頼む */
+	if (!NpcNearSpeech (pChar, (pPara->dwData == (DWORD)-1) ? "567c" : "6", -1)) {
+		return;
+	}
 	/* 討伐チャレンジ中は預かり所・取り引き・作ってもらうを使わない（貸し出しの品が出入りしないように） */
 	if (QuestChallengeBlock (pChar)) {
 		return;
@@ -9515,6 +9768,10 @@ void RecvDataProcMSGCMD(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
+	/* 連打は受け付けない（結果が画面内の人のログを埋めるため） */
+	if (!RecvRateOK (pChar, RATE_MSGCMD, 1000)) {
+		return;
+	}
 	/* サイコロは 20 個まで（多すぎると文字列があふれる） */
 	if (pPara->nData1 > 20) {
 		pPara->nData1 = 20;
@@ -9685,6 +9942,11 @@ void RecvDataProcPARTY(PBYTE pData, DWORD dwDataSize)
 		if (pPartyInfo->adwTblID[MAX_PARTYMEMBER - 1]) {
 			wsprintf (szTmp, "これ以上パーティに参加できません。");
 			SendCmdSYSMSG (pCharFrom->pID, szTmp, SPEECHCMD_BATTLE1);
+			break;
+		}
+
+		/* 誘いの連打は受け付けない */
+		if (!RecvRateOK (pCharFrom, RATE_PARTYJOIN, 3000)) {
 			break;
 		}
 
@@ -9960,12 +10222,20 @@ void RecvDataProcJOBCHG(PBYTE pData, DWORD dwDataSize)
 	if (nNo < 0) {
 		return;
 	}
-/* Todo:ここでなれるかチェック */
-	/* 少なくとも存在する職業だけ */
+	/* 存在する職業だけ（公式の窓は、登録されている職業を全部並べる。条件は無い） */
 	if (g_JobInfo.GetPtr ((int)pPara->byData) == NULL) {
 		return;
 	}
 	pChar = g_aCharInfo[nNo];
+	/* 公式の転職は、冒険者登録所の人（台詞が "@a"）に話しかけた時だけ。
+	   戦闘中・取り引き中・討伐チャレンジ中・ミニゲーム中は使えない（管理者は別） */
+	if (pChar->byAdminLV == ADMINLV_USER) {
+		if (!NpcNearSpeech (pChar, "a", -1) || IsCharBattleMode (pChar) ||
+				(s_mapTrade.find (pChar->dwTblID) != s_mapTrade.end ()) ||
+				(pChar->abySubStatus[0] != 0) || QuestInChallenge (pChar)) {
+			return;
+		}
+	}
 	byJobOld = pChar->byJOB;
 	byJobNew = pPara->byData;
 
@@ -10241,6 +10511,10 @@ void RecvDataProcSHOPBUY(PBYTE pData, DWORD dwDataSize)
 	pMap = g_aMapInfo[pChar->dwMapID];
 
 	if (pPara->dwData1 >= (DWORD)pMap->byCountShop) {
+		return;
+	}
+	/* その店の人（台詞が "@5NN"・"@7NN"）の近くにいなければ買えない */
+	if (!NpcNearSpeech (pChar, "57", (int)pPara->dwData1)) {
 		return;
 	}
 	pShop = &pMap->pShopInfo[pPara->dwData1];
@@ -10577,6 +10851,31 @@ void RecvDataProcTRADE(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 
+	/* 相手が別の人と取り引き中・サブゲーム中なら断る（相手の取り引きを乗っ取らない） */
+	{
+		std::map<DWORD, TRADESTATE>::iterator it = s_mapTrade.find (pRecv->dwData);
+		if (((it != s_mapTrade.end ()) && (it->second.dwPartner != pRecv->dwTblID)) ||
+				(g_aCharInfo[pRecv->dwData]->abySubStatus[0] != SUBGAMEID_NONE)) {
+			SendCmdSYSMSG (g_aCharInfo[pRecv->dwTblID]->pID, "相手は取り引きできる状態ではありません。", SPEECHCMD_BATTLE1);
+			TradeRefuse (g_aCharInfo[pRecv->dwTblID]);
+			return;
+		}
+	}
+	/* 申し込みの連打は受け付けない */
+	if (!RecvRateOK (g_aCharInfo[pRecv->dwTblID], RATE_TRADE, 3000)) {
+		TradeRefuse (g_aCharInfo[pRecv->dwTblID]);
+		return;
+	}
+	/* 自分が別の人と取り引き中だった場合は、元の相手に終了を知らせる */
+	{
+		std::map<DWORD, TRADESTATE>::iterator it = s_mapTrade.find (pRecv->dwTblID);
+		if ((it != s_mapTrade.end ()) && (it->second.dwPartner != pRecv->dwData) &&
+				(it->second.dwPartner < (DWORD)g_aCharInfo.GetSize ()) &&
+				(g_aCharInfo[it->second.dwPartner]->pID != 0)) {
+			SendCmdTRADE (g_aCharInfo[it->second.dwPartner]->pID, pRecv->dwTblID, CMDTRADE_OUT);
+		}
+	}
+
 	/* サーバーでも取り引きの状態を覚える */
 	TradeStart (pRecv->dwTblID, pRecv->dwData);
 
@@ -10901,6 +11200,10 @@ void RecvDataProcLEAVEGOLD(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pRecv->dwTblID];
+	/* 預かり所の人（台詞が "@6"）の近くにいなければ使えない */
+	if (!NpcNearSpeech (pChar, "6", -1)) {
+		return;
+	}
 	/* 討伐チャレンジ中は預かり所・取り引き・作ってもらうを使わない（貸し出しの品が出入りしないように） */
 	if (QuestChallengeBlock (pChar)) {
 		return;
@@ -10969,6 +11272,10 @@ void RecvDataProcLEAVEGOLDGET(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pRecv->dwTblID];
+	/* 預かり所の人（台詞が "@6"）の近くにいなければ使えない */
+	if (!NpcNearSpeech (pChar, "6", -1)) {
+		return;
+	}
 	/* 討伐チャレンジ中は預かり所・取り引き・作ってもらうを使わない（貸し出しの品が出入りしないように） */
 	if (QuestChallengeBlock (pChar)) {
 		return;
@@ -11368,9 +11675,10 @@ void RecvDataProcSubGameBOMB_INFO(PBYTE pData, DWORD dwDataSize)
 		SubGameProcBombDeleteBlock (pRecv->byID);
 	}
 
-	pBomb->byGameTime = pRecv->byGameTime;
-	pBomb->byMaxBomb = pRecv->byMaxBomb;
-	pBomb->byMaxFire = pRecv->byMaxFire;
+	/* 公式の設定画面で選べる範囲に収める（制限時間 0～240 秒、爆弾 1～5 個、火力 0～10） */
+	pBomb->byGameTime = (pRecv->byGameTime > 240) ? 240 : pRecv->byGameTime;
+	pBomb->byMaxBomb = (pRecv->byMaxBomb < 1) ? 1 : ((pRecv->byMaxBomb > 5) ? 5 : pRecv->byMaxBomb);
+	pBomb->byMaxFire = (pRecv->byMaxFire > 10) ? 10 : pRecv->byMaxFire;
 	pBomb->byFlgUseBlock = pRecv->byFlgUseBlock;
 	pBomb->byFlgUseItem = pRecv->byFlgUseItem;
 	pBomb->byFlgProgress = pRecv->byFlgProgress;
@@ -11616,8 +11924,20 @@ void RecvDataProcSubGameBOMB_REMOCON(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 
+	/* リモコンを取っていない？（公式はリモコン中だけ送る） */
+	if (!pSubStatus->byFlgRemocon) {
+		return;
+	}
+	if (pSubStatus->byID >= g_aSubaGameInfo.GetSize ()) {
+		return;
+	}
 	PSUBGAMEINFO pInfo = g_aSubaGameInfo[pSubStatus->byID];
 	PSUBGAME_BOMBINFO pBomb = (PSUBGAME_BOMBINFO)pInfo->pInfo;
+
+	/* 試合中ではない？ */
+	if (!pBomb->byFlgGameNow) {
+		return;
+	}
 
 	pIDTbl = pMap->paTblNoNPC;
 	for (int i = 0; i < (int)pMap->dwCountTblNoNPC; i ++) {
@@ -11883,6 +12203,14 @@ void RecvDataProcSubGameWAR_SELECTRULE(PBYTE pData, DWORD dwDataSize)
 
 	/* 受付状態ではない？ */
 	if (pProcSubGameWAR->GetState () != SUBGAME_WAR_STATE_SELECTRULE) {
+		goto Exit;
+	}
+	/* 本人がルール選択の状態ではない？（公式は選択の窓が開いている参加者だけ送る） */
+	if (pSubStatus->byState != SUBGAME_WAR_STATE_SELECTRULE) {
+		goto Exit;
+	}
+	/* 選べるルールは 0 と 1 だけ */
+	if (pRecv->byData > 1) {
 		goto Exit;
 	}
 
@@ -14972,6 +15300,11 @@ void RecvDataProcSORTITEM(PBYTE pData, DWORD dwDataSize)
 	} else if (pPara->byTarget == SORTITEMTARGET_LEAVE) {
 		PLEAVEINFO pInfo = NULL;
 
+		/* 預かり所の人（台詞が "@6"）の近くにいなければ使えない */
+		if (!NpcNearSpeech (pChar, "6", -1)) {
+			return;
+		}
+
 		if (g_aLeaveInfo.GetSize () == 0) {
 		} else if (g_aLeaveInfo.GetSize () == 1) {
 		} else if (pChar->dwLeaveID >= (DWORD)g_aLeaveInfo.GetSize ()) {
@@ -15031,6 +15364,10 @@ void RecvDataProcLEAVEITEMDISPOSE(PBYTE pData, DWORD dwDataSize)
 	}
 	pChar = g_aCharInfo[pPara->dwTblID];
 	if ((pChar == NULL) || (pChar->pID == 0) || (pChar->byNpcType != NPCTYPE_INIT)) {
+		return;
+	}
+	/* 預かり所の人（台詞が "@6"）の近くにいなければ使えない */
+	if (!NpcNearSpeech (pChar, "6", -1)) {
 		return;
 	}
 

@@ -39,6 +39,7 @@
 #include "SboSvrRecycle.h"
 #include "SboSvrAffix.h"
 #include "common/crc.h"
+#include "common/Info/InfoJob.h"
 #include "common/Command/Command.h"
 #include <emscripten.h>
 #include <stdio.h>
@@ -1067,7 +1068,9 @@ static void TestQuest(const std::vector<int> &aLogin);
 static void TestStory(const std::vector<int> &aLogin);
 static void TestSortItem(const std::vector<int> &aLogin);
 static void TestCharPush(const std::vector<int> &aLogin);
+static void TestSpamLimit(const std::vector<int> &aLogin);
 static void TestLeaveDispose(const std::vector<int> &aLogin);
+static void TestNpcNear(const std::vector<int> &aLogin);
 static void TestChallenge(const std::vector<int> &aLogin);
 static void TestStatusUp(const std::vector<int> &aLogin);
 static void TestMagicWall(const std::vector<int> &aLogin);
@@ -1573,8 +1576,12 @@ static void TestWorld(void)
 	TestSortItem(aLogin);
 	/* O. 押せるNPCを押す向き */
 	TestCharPush(aLogin);
+	/* AN. 発言の長さ・連投、コマンドの連打、取り引きの割り込み */
+	TestSpamLimit(aLogin);
 	/* P. 預かり所の品を引き取らずに売る・捨てる */
 	TestLeaveDispose(aLogin);
+	/* AN. 店・売る・預かり所・転職・着せ替え・名前の色が、公式クライアントと同じ場面だけ通る */
+	TestNpcNear(aLogin);
 	/* Q. 討伐チャレンジ */
 	TestChallenge(aLogin);
 	/* R. 攻撃力・守備力アップ */
@@ -2486,9 +2493,16 @@ static int RefPathDir(CCharProcMERCENARY *pProc, PCHARINFO pChar, int nX, int nY
 	return -1;
 }
 
+/* 連打の間隔・発言の数えを、受信のたびに空にするか（既存のテストは時刻が固定で、続けて送るため。連打のテストだけ FALSE にする） */
+static BOOL s_bTestRateReset = TRUE;
+
 /* 受信したことにして処理する（送ってきた接続のキャラとして） */
 static void TestRecv(PCHARINFO pChar, const void *pData, DWORD dwSize)
 {
+	if (s_bTestRateReset) {
+		ZeroMemory(pChar->adwRateLast, sizeof(pChar->adwRateLast));
+		pChar->bySpeechWinCount = 0;
+	}
 	CCRC Crc;
 	URARASOCK_PACKETINFO Info;
 	Info.dwSize = dwSize;
@@ -2500,6 +2514,48 @@ static void TestRecv(PCHARINFO pChar, const void *pData, DWORD dwSize)
 	MSG msg;
 	while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
 		DispatchMessage(&msg);
+	}
+}
+
+/* 店・預かり所・転職所・着せ替えの人（台詞の印 "@6" "@7" "@5" "@a" "@"）を、p と同じ場所に置く／片付ける。
+   サーバーは、これらの人が近くにいる時だけ買う・売る・預ける・転職・着せ替えを受ける */
+static std::vector<PCHARINFO> s_aNearNpc;
+static void NearNpcOpen(PCHARINFO p, const char *pszSpeech, WORD wGrp = 0)
+{
+	PCHARINFO pNpc = new CHARINFO;
+	ZeroMemory((PBYTE)pNpc, sizeof(CHARINFO));
+	pNpc->byNpcType = NPCTYPE_NOMOVE;
+	SetInitCharData(pNpc);
+	pNpc->byGameState = GAMESTATE_NPC;
+	pNpc->byCharState = CHARSTATE_MOVE;
+	pNpc->dwMapID = p->dwMapID;
+	pNpc->dwX = pNpc->dwXBack = pNpc->dwStartX = p->dwX;
+	pNpc->dwY = pNpc->dwYBack = pNpc->dwStartY = p->dwY;
+	pNpc->dwSpaceID = p->dwSpaceID;
+	pNpc->wGrpID = wGrp;
+	strcpy(pNpc->szName, "窓口");
+	pNpc->pszNpcSpeech = new char[strlen(pszSpeech) + 1];
+	strcpy(pNpc->pszNpcSpeech, pszSpeech);
+	pNpc = AddChar(pNpc);
+	s_aNearNpc.push_back(pNpc);
+}
+static void NearNpcOpen(PCHARINFO p)
+{
+	NearNpcOpen(p, "@6");
+	NearNpcOpen(p, "@5");
+}
+static void NearNpcClose(void)
+{
+	/* 後から作った順に消す（番号がずれないように最後の要素だけ） */
+	while (!s_aNearNpc.empty()) {
+		PCHARINFO pNpc = s_aNearNpc.back();
+		if (g_aCharInfo.GetSize() == 0 || g_aCharInfo[g_aCharInfo.GetSize() - 1] != pNpc) {
+			break;
+		}
+		g_aCharInfo.RemoveAt(g_aCharInfo.GetSize() - 1);
+		delete [] pNpc->pszNpcSpeech;
+		delete pNpc;
+		s_aNearNpc.pop_back();
 	}
 }
 
@@ -5265,6 +5321,7 @@ static void TestQuest(const std::vector<int> &aLogin)
 
 	/* 依頼の品は預けられない・売れない。預かり所が100種類なら断られる（どちらも結果が返る） */
 	{
+		NearNpcOpen(pOther);	/* 預かり所・店の人が近くにいる時だけ使える */
 		ZeroMemory(pOther->waItem, sizeof(pOther->waItem));
 		pOther->waItem[0] = wItemQ;
 		pOther->waItem[1] = wItemR;
@@ -5304,6 +5361,7 @@ static void TestQuest(const std::vector<int> &aLogin)
 		char *psz = MockCmdData(anConn[2], CMD_LEAVEITEM);
 		printf("quest leave questitem=%d sell=%d gold+=%d full=%d res=%s after=%d\n", nQ, nQSell, (int)(pOther->dwGold - dwGold0), nR, psz, QuestCountItem(pOther, wItemR));
 		free(psz);
+		NearNpcClose();
 	}
 
 	/* 古い形式（持ち物 10 個）のキャラを読むと、11〜20 枠は空のままで、後ろの列もずれない。
@@ -5989,6 +6047,8 @@ static void TestSortItem(const std::vector<int> &aLogin)
 	memcpy(awEquBack, p->waEqu, sizeof(awEquBack));
 	p->byAdminLV = ADMINLV_USER;
 	pL->byAdminLV = ADMINLV_USER;
+	NearNpcOpen(p);		/* 預かり所・店の人が近くにいる時だけ使える */
+	NearNpcOpen(pL, "@6");
 
 	/* 手持ち：6 つ（同じものが 2 つ）。1 番目と 4 番目を装備 */
 	ZeroMemory(p->waItem, sizeof(p->waItem));
@@ -6195,6 +6255,7 @@ static void TestSortItem(const std::vector<int> &aLogin)
 	memcpy(p->waEqu, awEquBack, sizeof(awEquBack));
 	p->byAdminLV = byAdminBack;
 	pL->byAdminLV = byAdminBackL;
+	NearNpcClose();
 }
 
 /* ------------------------------------------------------------------------- */
@@ -6250,6 +6311,7 @@ static void TestLeaveDispose(const std::vector<int> &aLogin)
 	BYTE byAdminBack = p->byAdminLV;
 	DWORD dwGoldBack = p->dwGold;
 	DWORD dwLeaveBack = p->dwLeaveID;
+	NearNpcOpen(p);		/* 預かり所の人が近くにいる時だけ使える */
 	LEAVEINFO LeaveBack;
 	ZeroMemory(&LeaveBack, sizeof(LeaveBack));
 	if (dwLeaveBack && dwLeaveBack < (DWORD)g_aLeaveInfo.GetSize()) LeaveBack = *g_aLeaveInfo[dwLeaveBack];
@@ -6332,6 +6394,301 @@ static void TestLeaveDispose(const std::vector<int> &aLogin)
 	}
 	p->dwGold = dwGoldBack;
 	p->byAdminLV = byAdminBack;
+	NearNpcClose();
+}
+
+/* ------------------------------------------------------------------------- */
+/* AN. 店・売る・預かり所・転職・着せ替え・名前の色が、公式クライアントと同じ場面だけ通る	 */
+/*    店の人（"@5NN"）・預かり所の人（"@6"）・転職所の人（"@a"）が近くにいる時だけ	 */
+/*    着せ替えは男女(2・3)か、着せ替えの人（"@"）の画像だけ。名前の色は 7 色だけ	 */
+/*    価値の無い品・捨てられない品は売れない・dwData2 が 0 の捨て方は受けない		 */
+/* ------------------------------------------------------------------------- */
+static void NpcNearSendDrop(PCHARINFO p, BYTE byNo, DWORD dwSell, DWORD dwItem)
+{
+	CMDPARA_DATA5 Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_DROPITEM;
+	Para.byData = byNo;
+	Para.pID = p->pID;
+	Para.dwTblID = p->dwTblID;
+	Para.dwData1 = dwSell;
+	Para.dwData2 = dwItem;
+	TestRecv(p, &Para, sizeof(Para));
+}
+
+static void TestNpcNear(const std::vector<int> &aLogin)
+{
+	printf("== AN. NpcNear ==\n");
+	if (aLogin.empty()) {
+		return;
+	}
+	/* 値打ちのある品・値打ちの無い品・捨てられない品・買う品（安い）を探す */
+	WORD wSell = 0, wNoGold = 0, wNoDrop = 0, wBuy = 0;
+	for (int i = 1; i < g_aItemInfo.GetSize(); i ++) {
+		PITEMINFO pItem = g_aItemInfo[i];
+		if (pItem->szName[0] == 0 || IsImportantItem((WORD)i)) continue;
+		if (pItem->byFlg & ITEMFLG_DROP) {
+			if (wNoDrop == 0) wNoDrop = (WORD)i;
+			continue;
+		}
+		if (pItem->dwGold == 0) {
+			if (wNoGold == 0) wNoGold = (WORD)i;
+		} else if (wSell == 0 && pItem->dwGold >= 8) {
+			wSell = (WORD)i;
+		} else if (wBuy == 0 && pItem->dwGold < 1000) {
+			wBuy = (WORD)i;
+		}
+	}
+	if (wSell == 0 || wNoGold == 0 || wNoDrop == 0 || wBuy == 0) {
+		printf("npcnear skipped\n");
+		return;
+	}
+
+	PCHARINFO p = g_aCharInfo[aLogin[0]];
+	WORD awItemBack[MAX_MYITEM], awEquBack[10];
+	memcpy(awItemBack, p->waItem, sizeof(awItemBack));
+	memcpy(awEquBack, p->waEqu, sizeof(awEquBack));
+	BYTE byAdminBack = p->byAdminLV, byJobBack = p->byJOB;
+	DWORD dwGoldBack = p->dwGold, dwLeaveBack = p->dwLeaveID;
+	WORD wGrpBack = p->wGrpID;
+	COLORREF clNameBack = p->clName, clSpeechBack = p->clSpeech;
+	LEAVEINFO LeaveBack;
+	ZeroMemory(&LeaveBack, sizeof(LeaveBack));
+	if (dwLeaveBack && dwLeaveBack < (DWORD)g_aLeaveInfo.GetSize()) LeaveBack = *g_aLeaveInfo[dwLeaveBack];
+	p->byAdminLV = ADMINLV_USER;
+	ZeroMemory(p->waItem, sizeof(p->waItem));
+	for (int i = 0; i < 10; i ++) p->waEqu[i] = 0xFFFF;
+	/* 実データの店・預かり所などの人が近くにいると結果が変わるので、この間だけ台詞を外しておく */
+	std::vector<std::pair<PCHARINFO, char *> > aSpeechBack;
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		PCHARINFO pNpc = g_aCharInfo[i];
+		if (pNpc != p && pNpc->szAcc[0] == 0 && pNpc->pszNpcSpeech != NULL && pNpc->dwMapID == p->dwMapID) {
+			aSpeechBack.push_back(std::make_pair(pNpc, pNpc->pszNpcSpeech));
+			pNpc->pszNpcSpeech = NULL;
+		}
+	}
+
+	/* 店：店の人（"@500"）が近くにいる時だけ買える。違う番号の店・遠い人ではだめ */
+	PMAPINFO pMap = g_aMapInfo[p->dwMapID];
+	PSHOPINFO pShopBack = pMap->pShopInfo;
+	BYTE byCountShopBack = pMap->byCountShop;
+	pMap->pShopInfo = new SHOPINFO[1];
+	ZeroMemory(pMap->pShopInfo, sizeof(SHOPINFO));
+	pMap->byCountShop = 1;
+	pMap->pShopInfo[0].byCountItem = 1;
+	pMap->pShopInfo[0].awItem[0] = wBuy;
+	CMDPARA_DATA5 Buy;
+	ZeroMemory(&Buy, sizeof(Buy));
+	Buy.byCmd = CMD_SHOPBUY;
+	Buy.pID = p->pID;
+	Buy.dwTblID = p->dwTblID;
+	Buy.dwData1 = 0;
+	Buy.dwData2 = 0;
+	p->dwGold = 5000;
+	TestRecv(p, &Buy, sizeof(Buy));
+	printf("npcnear buy none item=%u gold=%u\n", p->waItem[0], p->dwGold);
+	NearNpcOpen(p, "@501");
+	TestRecv(p, &Buy, sizeof(Buy));
+	printf("npcnear buy othershop item=%u gold=%u\n", p->waItem[0], p->dwGold);
+	NearNpcClose();
+	NearNpcOpen(p, "@500");
+	TestRecv(p, &Buy, sizeof(Buy));
+	printf("npcnear buy ok item=%u gold=%u (price %u)\n", p->waItem[0], p->dwGold, g_aItemInfo[wBuy]->dwGold);
+	NearNpcClose();
+	{
+		/* 4 マス離れた人は遠い・3 マスなら近い */
+		ZeroMemory(p->waItem, sizeof(p->waItem));
+		p->dwGold = 5000;
+		DWORD dwXBack = p->dwX;
+		p->dwX += 4;
+		NearNpcOpen(p, "@500");
+		p->dwX = dwXBack;
+		TestRecv(p, &Buy, sizeof(Buy));
+		printf("npcnear buy far item=%u\n", p->waItem[0]);
+		NearNpcClose();
+		p->dwX += 3;
+		NearNpcOpen(p, "@500");
+		p->dwX = dwXBack;
+		TestRecv(p, &Buy, sizeof(Buy));
+		printf("npcnear buy 3cells item=%u\n", p->waItem[0]);
+		NearNpcClose();
+	}
+	delete [] pMap->pShopInfo;
+	pMap->pShopInfo = pShopBack;
+	pMap->byCountShop = byCountShopBack;
+
+	/* 売る：店の人が近くにいる時だけ。価値の無い品・捨てられない品・dwData2 が 0 は受けない */
+	ZeroMemory(p->waItem, sizeof(p->waItem));
+	p->waItem[0] = wSell;
+	p->waItem[1] = wNoGold;
+	p->waItem[2] = wNoDrop;
+	p->dwGold = 0;
+	NpcNearSendDrop(p, 0, 1, wSell);
+	printf("npcnear sell none item0=%u gold=%u\n", p->waItem[0], p->dwGold);
+	NearNpcOpen(p, "@700");
+	NpcNearSendDrop(p, 1, 1, wNoGold);
+	printf("npcnear sell nogold item1=%u gold=%u\n", p->waItem[1], p->dwGold);
+	NpcNearSendDrop(p, 2, 1, wNoDrop);
+	printf("npcnear sell nodrop item2=%u gold=%u\n", p->waItem[2], p->dwGold);
+	NpcNearSendDrop(p, 0, 0, 0);
+	printf("npcnear drop zero-id item0=%u\n", p->waItem[0]);
+	NpcNearSendDrop(p, 2, 0, wNoDrop);
+	printf("npcnear drop nodrop item2=%u\n", p->waItem[2]);
+	NpcNearSendDrop(p, 1, 0, wNoGold);
+	printf("npcnear drop nogold item1=%u\n", p->waItem[1]);
+	NpcNearSendDrop(p, 0, 1, wSell);
+	printf("npcnear sell ok item0=%u gold=%u (expect %u)\n", p->waItem[0], p->dwGold, g_aItemInfo[wSell]->dwGold / 4);
+	NearNpcClose();
+	/* 捨てるのは店の人がいなくてもよい */
+	p->waItem[0] = wSell;
+	NpcNearSendDrop(p, 0, 0, wSell);
+	printf("npcnear drop free item0=%u\n", p->waItem[0]);
+
+	/* 預かり所：預かり所の人（"@6"）が近くにいる時だけ */
+	ZeroMemory(p->waItem, sizeof(p->waItem));
+	p->waItem[0] = wSell;
+	CMDPARA_DATA1 Leave;
+	ZeroMemory(&Leave, sizeof(Leave));
+	Leave.byCmd = CMD_LEAVEITEM;
+	Leave.pID = p->pID;
+	Leave.dwTblID = p->dwTblID;
+	Leave.byData = 0;
+	TestRecv(p, &Leave, sizeof(Leave));
+	printf("npcnear leave none item0=%u\n", p->waItem[0]);
+	NearNpcOpen(p, "@500");
+	TestRecv(p, &Leave, sizeof(Leave));
+	printf("npcnear leave shopman item0=%u\n", p->waItem[0]);
+	NearNpcClose();
+	NearNpcOpen(p, "@6");
+	TestRecv(p, &Leave, sizeof(Leave));
+	printf("npcnear leave ok item0=%u\n", p->waItem[0]);
+	NearNpcClose();
+	/* 引き出し・お金の預け引き出しも同じ */
+	CMDPARA_DATA3 Get;
+	ZeroMemory(&Get, sizeof(Get));
+	Get.byCmd = CMD_LEAVEITEMGET;
+	Get.pID = p->pID;
+	Get.dwTblID = p->dwTblID;
+	Get.dwData = 0;
+	TestRecv(p, &Get, sizeof(Get));
+	printf("npcnear get none item0=%u\n", p->waItem[0]);
+	CMDPARA_DATA3 Gold;
+	ZeroMemory(&Gold, sizeof(Gold));
+	Gold.byCmd = CMD_LEAVEGOLD;
+	Gold.pID = p->pID;
+	Gold.dwTblID = p->dwTblID;
+	Gold.dwData = 10;
+	p->dwGold = 100;
+	TestRecv(p, &Gold, sizeof(Gold));
+	printf("npcnear goldleave none gold=%u\n", p->dwGold);
+	NearNpcOpen(p, "@6");
+	TestRecv(p, &Gold, sizeof(Gold));
+	printf("npcnear goldleave ok gold=%u\n", p->dwGold);
+	NearNpcClose();
+	TestRecv(p, &Get, sizeof(Get));
+	printf("npcnear get none2 item0=%u\n", p->waItem[0]);
+	NearNpcOpen(p, "@6");
+	TestRecv(p, &Get, sizeof(Get));
+	printf("npcnear get ok item0=%u\n", p->waItem[0]);
+	NearNpcClose();
+
+	/* 転職：転職所の人（"@a"）が近くにいる時だけ */
+	{
+		int nJobNew = -1;
+		for (int i = 0; i < 16; i ++) {
+			if (i != p->byJOB && g_JobInfo.GetPtr(i) != NULL) { nJobNew = i; break; }
+		}
+		if (nJobNew >= 0) {
+			CMDPARA_DATA1 Job;
+			ZeroMemory(&Job, sizeof(Job));
+			Job.byCmd = CMD_JOBCHG;
+			Job.pID = p->pID;
+			Job.dwTblID = p->dwTblID;
+			Job.byData = (BYTE)nJobNew;
+			BYTE byJobOld = p->byJOB;
+			TestRecv(p, &Job, sizeof(Job));
+			printf("npcnear job none changed=%d\n", (int)(p->byJOB != byJobOld));
+			NearNpcOpen(p, "@6");
+			TestRecv(p, &Job, sizeof(Job));
+			printf("npcnear job wrongnpc changed=%d\n", (int)(p->byJOB != byJobOld));
+			NearNpcClose();
+			NearNpcOpen(p, "@a");
+			TestRecv(p, &Job, sizeof(Job));
+			printf("npcnear job ok changed=%d\n", (int)(p->byJOB == nJobNew));
+			NearNpcClose();
+		}
+	}
+
+	/* 着せ替え：男女(2・3)か、着せ替えの人（台詞が "@"）の画像だけ */
+	{
+		CMDPARA_DATA3 Grp;
+		ZeroMemory(&Grp, sizeof(Grp));
+		Grp.byCmd = CMD_CHGCHARGRP;
+		Grp.pID = p->pID;
+		Grp.dwTblID = p->dwTblID;
+		p->wGrpID = 5;
+		Grp.dwData = 16;
+		TestRecv(p, &Grp, sizeof(Grp));
+		printf("npcnear grp admin16 grp=%u\n", p->wGrpID);
+		Grp.dwData = 70000;
+		TestRecv(p, &Grp, sizeof(Grp));
+		printf("npcnear grp huge grp=%u\n", p->wGrpID);
+		Grp.dwData = 3;
+		TestRecv(p, &Grp, sizeof(Grp));
+		printf("npcnear grp female grp=%u\n", p->wGrpID);
+		NearNpcOpen(p, "@", 40);
+		Grp.dwData = 40;
+		TestRecv(p, &Grp, sizeof(Grp));
+		printf("npcnear grp dressnpc grp=%u\n", p->wGrpID);
+		Grp.dwData = 41;
+		TestRecv(p, &Grp, sizeof(Grp));
+		printf("npcnear grp otherimage grp=%u\n", p->wGrpID);
+		NearNpcClose();
+		Grp.dwData = 40;
+		p->wGrpID = 2;
+		TestRecv(p, &Grp, sizeof(Grp));
+		printf("npcnear grp nonpc grp=%u\n", p->wGrpID);
+	}
+
+	/* 名前の色：色の表の 7 色（名前と発言が同じ）だけ */
+	{
+		CMDPARA_NAMECOLOR Col;
+		ZeroMemory(&Col, sizeof(Col));
+		Col.byCmd = CMD_NAMECOLOR;
+		Col.pID = p->pID;
+		Col.dwTblID = p->dwTblID;
+		p->clName = p->clSpeech = RGB(255, 255, 255);
+		Col.clName = Col.clSpeech = RGB(1, 2, 3);
+		TestRecv(p, &Col, sizeof(Col));
+		printf("npcnear color random=%u\n", (unsigned)p->clName);
+		Col.clName = Col.clSpeech = RGB(255, 150, 150);
+		TestRecv(p, &Col, sizeof(Col));
+		printf("npcnear color admin=%u\n", (unsigned)p->clName);
+		Col.clName = RGB(255, 200, 200);
+		Col.clSpeech = RGB(255, 255, 200);
+		TestRecv(p, &Col, sizeof(Col));
+		printf("npcnear color mismatch=%u\n", (unsigned)p->clName);
+		Col.clName = Col.clSpeech = RGB(200, 255, 255);
+		TestRecv(p, &Col, sizeof(Col));
+		printf("npcnear color ok=%u\n", (unsigned)p->clName);
+	}
+
+	/* 片付け */
+	for (size_t i = 0; i < aSpeechBack.size(); i ++) aSpeechBack[i].first->pszNpcSpeech = aSpeechBack[i].second;
+	if (dwLeaveBack) {
+		*g_aLeaveInfo[dwLeaveBack] = LeaveBack;
+	} else if (p->dwLeaveID && p->dwLeaveID < (DWORD)g_aLeaveInfo.GetSize()) {
+		ZeroMemory(g_aLeaveInfo[p->dwLeaveID], sizeof(LEAVEINFO));
+		p->dwLeaveID = 0;
+	}
+	memcpy(p->waItem, awItemBack, sizeof(awItemBack));
+	memcpy(p->waEqu, awEquBack, sizeof(awEquBack));
+	p->byAdminLV = byAdminBack;
+	p->byJOB = byJobBack;
+	p->dwGold = dwGoldBack;
+	p->wGrpID = wGrpBack;
+	p->clName = clNameBack;
+	p->clSpeech = clSpeechBack;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -11616,4 +11973,160 @@ static void TestAffixForge(const std::vector<int> &aLogin)
 	for (size_t i = 0; i < aDeriveBak.size(); i ++) g_aItemDerive.Add(aDeriveBak[i]);
 	SaveAffixInfo();
 	SaveItemDerive();
+}
+
+/* ------------------------------------------------------------------------- */
+/* AN. 発言の長さ・連投、コマンドの連打、取り引きの割り込み					 */
+/*     公式のクライアントでは起きない送り方だけを止め、ふつうの発言は通すか	 */
+/* ------------------------------------------------------------------------- */
+static void SpamSpeech(PCHARINFO p, const char *psz, BYTE byType)
+{
+	std::vector<BYTE> a(sizeof(CMDPARA_SPEECH) + strlen(psz) + 1);
+	PCMDPARA_SPEECH pPara = (PCMDPARA_SPEECH)&a[0];
+	ZeroMemory(pPara, sizeof(CMDPARA_SPEECH));
+	pPara->byCmd = CMD_SPEECH;
+	pPara->pID = p->pID;
+	pPara->dwTblID = p->dwTblID;
+	pPara->wSize = (WORD)(strlen(psz) + 1);
+	pPara->byType = byType;
+	memcpy(&a[sizeof(CMDPARA_SPEECH)], psz, strlen(psz) + 1);
+	TestRecv(p, &a[0], (DWORD)a.size());
+}
+
+static void TestSpamLimit(const std::vector<int> &aLogin)
+{
+	printf("== AN. SpamLimit ==\n");
+	if (aLogin.size() < 3) {
+		return;
+	}
+	PCHARINFO pA = g_aCharInfo[aLogin[0]], pB = g_aCharInfo[aLogin[1]], pC = g_aCharInfo[aLogin[2]];
+	BYTE byAdminBack = pA->byAdminLV;
+	DWORD dwNowBack = s_dwFakeNow;
+	pA->byAdminLV = ADMINLV_USER;
+
+	/* 長さ：ふつうの発言は 256 バイトまで・URL を含む発言は長いまま・自己紹介は 600 バイトまで */
+	{
+		std::string sLong(1000, 'a'), sUrl = "https://example.com/" + std::string(1000, 'b'), sEdit(2000, 'c');
+		SpamSpeech(pA, "hello", SPEECHCMD_AROUND);
+		printf("speech normal len=%d\n", (int)strlen(pA->pszSpeech));
+		SpamSpeech(pA, sLong.c_str(), SPEECHCMD_AROUND);
+		printf("speech long len=%d\n", (int)strlen(pA->pszSpeech));
+		SpamSpeech(pA, sUrl.c_str(), SPEECHCMD_AROUND);
+		printf("speech url len=%d\n", (int)strlen(pA->pszSpeech));
+		SpamSpeech(pA, sEdit.c_str(), SPEECHCMD_SPEECHEDIT);
+		printf("speech edit len=%d\n", (int)strlen(pA->pszNpcSpeech));
+	}
+
+	/* 連投：5 秒に 8 回まで。1.2 秒おきの自動分割は通る */
+	s_bTestRateReset = FALSE;
+	{
+		int nOK = 0;
+		ZeroMemory(pA->adwRateLast, sizeof(pA->adwRateLast));
+		pA->bySpeechWinCount = 0;
+		for (int i = 0; i < 12; i ++) {
+			pA->byFlg &= ~CHARINFOFLG_SPEECH;
+			SpamSpeech(pA, "x", SPEECHCMD_AROUND);
+			if (pA->byFlg & CHARINFOFLG_SPEECH) nOK ++;
+		}
+		printf("speech burst accepted=%d of 12\n", nOK);
+		s_dwFakeNow += 5001;
+		pA->byFlg &= ~CHARINFOFLG_SPEECH;
+		SpamSpeech(pA, "x", SPEECHCMD_AROUND);
+		printf("speech after window accepted=%d\n", (pA->byFlg & CHARINFOFLG_SPEECH) ? 1 : 0);
+		nOK = 0;
+		for (int i = 0; i < 20; i ++) {
+			s_dwFakeNow += 1200;
+			pA->byFlg &= ~CHARINFOFLG_SPEECH;
+			SpamSpeech(pA, "x", SPEECHCMD_AROUND);
+			if (pA->byFlg & CHARINFOFLG_SPEECH) nOK ++;
+		}
+		printf("speech every 1.2s accepted=%d of 20\n", nOK);
+	}
+
+	/* 最小間隔：吹き出し 0.5 秒・管理人呼び出し 30 秒 */
+	{
+		int nOK = 0;
+		ZeroMemory(pA->adwRateLast, sizeof(pA->adwRateLast));
+		for (int i = 0; i < 4; i ++) {
+			CMDPARA_DATA1 Para;
+			ZeroMemory(&Para, sizeof(Para));
+			Para.byCmd = CMD_COMEFC;
+			Para.pID = pA->pID;
+			Para.dwTblID = pA->dwTblID;
+			Para.byData = 1;
+			pA->byFlg &= ~CHARINFOFLG_COMEFC;
+			TestRecv(pA, &Para, sizeof(Para));
+			if (pA->byFlg & CHARINFOFLG_COMEFC) nOK ++;
+			s_dwFakeNow += (i == 1) ? 600 : 100;
+		}
+		printf("comefc accepted=%d of 4\n", nOK);
+
+		DWORD adwLast[3];
+		for (int i = 0; i < 3; i ++) {
+			CMDPARA_DATA1 Para;
+			ZeroMemory(&Para, sizeof(Para));
+			Para.byCmd = CMD_GMCALL;
+			Para.pID = pA->pID;
+			Para.dwTblID = pA->dwTblID;
+			TestRecv(pA, &Para, sizeof(Para));
+			adwLast[i] = pA->adwRateLast[RATE_GMCALL];
+			s_dwFakeNow += (i == 0) ? 1000 : 30000;
+		}
+		printf("gmcall first_kept=%d second_renewed=%d\n", adwLast[1] == adwLast[0], adwLast[2] != adwLast[1]);
+	}
+	s_bTestRateReset = TRUE;
+
+	/* 取り引き：相手が別の人と取り引き中なら割り込めない。自分が別の人と取り引き中なら元の相手に終了を知らせる */
+	{
+		DWORD adwBack[3][3];
+		PCHARINFO apTmp[3] = { pA, pB, pC };
+		for (int i = 0; i < 3; i ++) {
+			adwBack[i][0] = apTmp[i]->dwMapID; adwBack[i][1] = apTmp[i]->dwX; adwBack[i][2] = apTmp[i]->dwY;
+		}
+		for (int i = 1; i < 3; i ++) {
+			DeleteTblNoPC((int)apTmp[i]->dwTblID);
+			apTmp[i]->dwMapID = pA->dwMapID;
+			apTmp[i]->dwX = apTmp[i]->dwXBack = pA->dwX;
+			apTmp[i]->dwY = apTmp[i]->dwYBack = pA->dwY;
+			AddTblNoPC((int)apTmp[i]->dwTblID);
+		}
+		RecvCmdTradeClear(pA->dwTblID);
+		RecvCmdTradeClear(pB->dwTblID);
+		RecvCmdTradeClear(pC->dwTblID);
+		/* 申し込める相手はログイン中のプレイヤーだけ（このテストのキャラは名前だけ空なので仮に付ける） */
+		char cAccBack = pB->szAcc[0];
+		pB->szAcc[0] = 'b';
+
+		CMDPARA_DATA3 Para;
+		ZeroMemory(&Para, sizeof(Para));
+		Para.byCmd = CMD_TRADE;
+		Para.pID = pA->pID;
+		Para.dwTblID = pA->dwTblID;
+		Para.dwData = pB->dwTblID;
+		TestRecv(pA, &Para, sizeof(Para));
+		printf("trade a->b trading a=%d b=%d\n", RecvCmdIsTrading(pA->dwTblID) ? 1 : 0, RecvCmdIsTrading(pB->dwTblID) ? 1 : 0);
+
+		Para.pID = pC->pID;
+		Para.dwTblID = pC->dwTblID;
+		Para.dwData = pB->dwTblID;
+		int nOut0 = MockCmdCount(1000 + 2, CMD_TRADE);
+		TestRecv(pC, &Para, sizeof(Para));
+		printf("trade c->b (b busy) c_trading=%d a_still=%d c_got_out=%d\n", RecvCmdIsTrading(pC->dwTblID) ? 1 : 0,
+				RecvCmdIsTrading(pA->dwTblID) ? 1 : 0, MockCmdCount(1000 + 2, CMD_TRADE) - nOut0);
+
+		pB->szAcc[0] = cAccBack;
+		for (int i = 0; i < 3; i ++) {
+			DeleteTblNoPC((int)apTmp[i]->dwTblID);
+			apTmp[i]->dwMapID = adwBack[i][0];
+			apTmp[i]->dwX = apTmp[i]->dwXBack = adwBack[i][1];
+			apTmp[i]->dwY = apTmp[i]->dwYBack = adwBack[i][2];
+			AddTblNoPC((int)apTmp[i]->dwTblID);
+		}
+		RecvCmdTradeClear(pA->dwTblID);
+		RecvCmdTradeClear(pB->dwTblID);
+		RecvCmdTradeClear(pC->dwTblID);
+	}
+
+	pA->byAdminLV = byAdminBack;
+	s_dwFakeNow = dwNowBack;
 }

@@ -1271,6 +1271,18 @@ charpush want=2 old=0 -> move=(-1,0) pcdir=2 blockdir=2
 charpush want=0 old=2 -> move=(0,-1) pcdir=0 blockdir=0
 charpush want=1 old=3 -> move=(0,1) pcdir=1 blockdir=1
 charpush want=3 old=3 -> move=(1,0) pcdir=3 blockdir=3
+== AN. SpamLimit ==
+speech normal len=5
+speech long len=256
+speech url len=1020
+speech edit len=600
+speech burst accepted=8 of 12
+speech after window accepted=1
+speech every 1.2s accepted=20 of 20
+comefc accepted=2 of 4
+gmcall first_kept=1 second_renewed=1
+trade a->b trading a=1 b=1
+trade c->b (b busy) c_trading=0 a_still=1 c_got_out=1
 == P. LeaveDispose ==
 dispose picked sell1=1(20) sell2=7(10) nogold=3 nodrop=2
 dispose init leave: n=4 7*5 1*1 3*1 2*1
@@ -1288,6 +1300,41 @@ dispose sell full leave: n=3 7*2 1*1 2*1
 dispose sell full gold=999998
 dispose drop all leave: n=2 1*1 2*1
 dispose drop all gold=999998
+== AN. NpcNear ==
+npcnear buy none item=0 gold=5000
+npcnear buy othershop item=0 gold=5000
+npcnear buy ok item=6 gold=4998 (price 2)
+npcnear buy far item=0
+npcnear buy 3cells item=6
+npcnear sell none item0=7 gold=0
+npcnear sell nogold item1=3 gold=0
+npcnear sell nodrop item2=2 gold=0
+npcnear drop zero-id item0=7
+npcnear drop nodrop item2=2
+npcnear drop nogold item1=2
+npcnear sell ok item0=2 gold=2 (expect 2)
+npcnear drop free item0=0
+npcnear leave none item0=7
+npcnear leave shopman item0=7
+npcnear leave ok item0=0
+npcnear get none item0=0
+npcnear goldleave none gold=100
+npcnear goldleave ok gold=90
+npcnear get none2 item0=0
+npcnear get ok item0=7
+npcnear job none changed=0
+npcnear job wrongnpc changed=0
+npcnear job ok changed=1
+npcnear grp admin16 grp=5
+npcnear grp huge grp=5
+npcnear grp female grp=3
+npcnear grp dressnpc grp=40
+npcnear grp otherimage grp=40
+npcnear grp nonpc grp=2
+npcnear color random=16777215
+npcnear color admin=16777215
+npcnear color mismatch=16777215
+npcnear color ok=16777160
 == Q. Challenge ==
 challenge cells=8
 challenge solo accept=0
