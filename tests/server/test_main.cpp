@@ -1074,6 +1074,7 @@ static void TestMagicWall(const std::vector<int> &aLogin);
 static void TestSpace(const std::vector<int> &aLogin);
 static void TestAdminQuest(const std::vector<int> &aLogin);
 static void TestFloorDamage(const std::vector<int> &aLogin);
+static void TestMoveGuard(const std::vector<int> &aLogin);
 static void TestLowParts(const std::vector<int> &aLogin);
 static void TestMimic(const std::vector<int> &aLogin);
 static void TestEnemyDoor(const std::vector<int> &aLogin);
@@ -1586,6 +1587,8 @@ static void TestWorld(void)
 	TestAdminQuest(aLogin);
 	/* V. ダメージ床（毒沼・溶岩など） */
 	TestFloorDamage(aLogin);
+	/* 移動の見張り（壁・速さ・倒れている間） */
+	TestMoveGuard(aLogin);
 	/* 低いパーツ（灯り・矢・特技が越える） */
 	TestLowParts(aLogin);
 	/* W. 宝箱の敵（調べる・叩くと正体を現す） */
@@ -7670,6 +7673,215 @@ static void TestFloorDamage(const std::vector<int> &aLogin)
 	pPC->dwY = pPC->dwYBack = dwYBack;
 	AddTblNoPC((int)pPC->dwTblID);
 	pPC->byDirection = byDirBack;
+	pPC->wHP = wHPBack;
+}
+
+/* ------------------------------------------------------------------------- */
+/* 移動の見張り：壁へは入れない・速すぎる歩きは戻される・ふつうの速さは通る	 */
+/*    倒れている間と取り引き中は歩けない・サーバーが動かした後は戻されない	 */
+/* ------------------------------------------------------------------------- */
+static void MoveGuardPlace(PCHARINFO pPC, int x, int y)
+{
+	DeleteTblNoPC((int)pPC->dwTblID);
+	pPC->dwX = pPC->dwXBack = (DWORD)x;
+	pPC->dwY = pPC->dwYBack = (DWORD)y;
+	AddTblNoPC((int)pPC->dwTblID);
+}
+
+static void TestMoveGuard(const std::vector<int> &aLogin)
+{
+	printf("== MoveGuard ==\n");
+	if (aLogin.size() < 1) {
+		return;
+	}
+	PCHARINFO pPC = g_aCharInfo[aLogin[0]];
+	int nMapNo = GetMapNo(pPC->dwMapID);
+	if (nMapNo < 0) {
+		printf("no map\n");
+		return;
+	}
+	PMAPINFO pMap = g_aMapInfo[nMapNo];
+	DWORD dwXBack = pPC->dwX, dwYBack = pPC->dwY;
+	BYTE byDirBack = pPC->byDirection, byAdminBack = pPC->byAdminLV;
+	WORD wHPBack = pPC->wHP;
+	pPC->byAdminLV = ADMINLV_USER;
+
+	/* 横に 8 マス続けて歩ける所（歩ける: ぶつからない・NPC がいない）と、その隣のぶつかるマス */
+	int nX = -1, nY = -1, nWallX = -1, nWallY = -1;
+	for (int y = 0; y < pMap->nCY && nX < 0; y ++) {
+		for (int x = 0; x + 8 < pMap->nCX; x ++) {
+			int i;
+			for (i = 0; i < 8; i ++) {
+				if (!PushIsFree(pMap, x + i, y)) {
+					break;
+				}
+			}
+			if (i == 8) {
+				nX = x;
+				nY = y;
+				break;
+			}
+		}
+	}
+	for (int y = 0; y < pMap->nCY && nWallX < 0; y ++) {
+		for (int x = 1; x < pMap->nCX; x ++) {
+			if (PushIsFree(pMap, x - 1, y) && !CheckCharBlock(pMap->dwID, x, y) && (CheckCharBlockNPC(pMap->dwID, x, y) == (DWORD)-1)) {
+				BOOL bDoor = FALSE;
+				for (int e = 0; e < pMap->nEventCount; e ++) {
+					if ((pMap->pEvent[e].dwX == (DWORD)x) && (pMap->pEvent[e].dwY == (DWORD)y)) {
+						bDoor = TRUE;
+					}
+				}
+				if (!bDoor) {
+					nWallX = x;
+					nWallY = y;
+					break;
+				}
+			}
+		}
+	}
+	if (nX < 0) {
+		printf("no floor\n");
+		pPC->byAdminLV = byAdminBack;
+		return;
+	}
+
+	/* 壁へは入れない（位置が変わらない） */
+	if (nWallX >= 0) {
+		MoveGuardPlace(pPC, nWallX - 1, nWallY);
+		s_dwFakeNow += 10000;
+		FloorStep(pPC, nWallX, nWallY, 3);
+		printf("moveguard wall stay=%d\n", (int)(pPC->dwX == (DWORD)(nWallX - 1)));
+	} else {
+		printf("moveguard wall none\n");
+	}
+
+	/* ふつうの速さ（280ms ごと）で 7 歩歩ける */
+	MoveGuardPlace(pPC, nX, nY);
+	int nWalked = 0;
+	for (int i = 1; i <= 7; i ++) {
+		s_dwFakeNow += 280;
+		FloorStep(pPC, nX + i, nY, 3);
+		if (pPC->dwX == (DWORD)(nX + i)) {
+			nWalked ++;
+		}
+	}
+	printf("moveguard normal walked=%d\n", nWalked);
+
+	/* 間隔なしで続けて送る：ラグ分の数歩は通るが、すぐ戻される */
+	MoveGuardPlace(pPC, nX, nY);
+	s_dwFakeNow += 10000;
+	nWalked = 0;
+	for (int i = 1; i <= 8; i ++) {
+		FloorStep(pPC, nX + i, nY, 3);
+		if (pPC->dwX == (DWORD)(nX + i)) {
+			nWalked ++;
+		} else {
+			break;
+		}
+	}
+	printf("moveguard burst walked=%d x=%d\n", nWalked, (int)(pPC->dwX - (DWORD)nX));
+	/* 戻された後、少し待てばまた歩ける */
+	s_dwFakeNow += 300;
+	FloorStep(pPC, pPC->dwX + 1, nY, 3);
+	printf("moveguard after wait x=%d\n", (int)(pPC->dwX - (DWORD)nX));
+
+	/* 管理者は見ない */
+	MoveGuardPlace(pPC, nX, nY);
+	pPC->byAdminLV = ADMINLV_USER + 1;
+	for (int i = 1; i <= 8; i ++) {
+		FloorStep(pPC, nX + (i % 2), nY, 3);
+	}
+	FloorStep(pPC, nX + 1, nY, 3);
+	FloorStep(pPC, nX + 2, nY, 3);
+	FloorStep(pPC, nX + 3, nY, 3);
+	FloorStep(pPC, nX + 4, nY, 3);
+	FloorStep(pPC, nX + 5, nY, 3);
+	printf("moveguard admin x=%d\n", (int)(pPC->dwX - (DWORD)nX));
+	pPC->byAdminLV = ADMINLV_USER;
+
+	/* 一度に 3 マスは今までどおり戻される */
+	MoveGuardPlace(pPC, nX, nY);
+	s_dwFakeNow += 10000;
+	FloorStep(pPC, nX + 3, nY, 3);
+	printf("moveguard far x=%d\n", (int)(pPC->dwX - (DWORD)nX));
+
+	/* 倒れている間は歩けない */
+	MoveGuardPlace(pPC, nX, nY);
+	s_dwFakeNow += 10000;
+	pPC->wHP = 0;
+	FloorStep(pPC, nX + 1, nY, 3);
+	printf("moveguard dead x=%d\n", (int)(pPC->dwX - (DWORD)nX));
+	pPC->wHP = 20;
+	FloorStep(pPC, nX + 1, nY, 3);
+	printf("moveguard alive x=%d\n", (int)(pPC->dwX - (DWORD)nX));
+
+	/* サーバーが動かした後（マップ移動・押されるなど）は、続けて歩いても戻されない */
+	MoveGuardPlace(pPC, nX, nY);
+	s_dwFakeNow += 10000;
+	for (int i = 1; i <= 4; i ++) {
+		FloorStep(pPC, nX + i, nY, 3);
+	}
+	MoveGuardPlace(pPC, nX + 2, nY);
+	nWalked = 0;
+	for (int i = 1; i <= 3; i ++) {
+		FloorStep(pPC, nX + 2 + i, nY, 3);
+		if (pPC->dwX == (DWORD)(nX + 2 + i)) {
+			nWalked ++;
+		}
+	}
+	printf("moveguard servermove walked=%d\n", nWalked);
+
+	/* 扉：閉まっている間は入れず、開けると入れる（扉の絵がぶつかる絵の時。扉のあるマップへ移して試す） */
+	{
+		DWORD dwMapBack = pPC->dwMapID;
+		int nDoorX = -1, nDoorY = -1, nFromX = -1;
+		PEVENTINFO_DOOR pDoor = NULL;
+		PMAPINFO pMapDoor = NULL;
+		for (int m = 0; m < g_aMapInfo.GetSize() && nDoorX < 0; m ++) {
+			PMAPINFO pM = g_aMapInfo[m];
+			for (int e = 0; e < pM->nEventCount && nDoorX < 0; e ++) {
+				PEVENTINFO pEv = &pM->pEvent[e];
+				if ((pEv->byType != EVENTTYPE_DOOR) || (pEv->pData == NULL) || (pEv->dwX == 0) || CheckCharBlock(pM->dwID, pEv->dwX, pEv->dwY)) {
+					continue;
+				}
+				if (PushIsFree(pM, (int)pEv->dwX - 1, (int)pEv->dwY)) {
+					pMapDoor = pM;
+					nDoorX = (int)pEv->dwX;
+					nDoorY = (int)pEv->dwY;
+					nFromX = nDoorX - 1;
+					pDoor = (PEVENTINFO_DOOR)pEv->pData;
+				}
+			}
+		}
+		if (nDoorX < 0) {
+			printf("moveguard door none\n");
+		} else {
+			DWORD dwTimeOpenBack = pDoor->dwTimeOpen;
+			DeleteTblNoPC((int)pPC->dwTblID);
+			pPC->dwMapID = pMapDoor->dwID;
+			AddTblNoPC((int)pPC->dwTblID);
+			pDoor->dwTimeOpen = 0;
+			MoveGuardPlace(pPC, nFromX, nDoorY);
+			s_dwFakeNow += 10000;
+			FloorStep(pPC, nDoorX, nDoorY, 3);
+			printf("moveguard door closed stay=%d\n", (int)(pPC->dwX == (DWORD)nFromX));
+			pDoor->dwTimeOpen = s_dwFakeNow;
+			FloorStep(pPC, nDoorX, nDoorY, 3);
+			printf("moveguard door open in=%d\n", (int)(pPC->dwX == (DWORD)nDoorX));
+			pDoor->dwTimeOpen = dwTimeOpenBack;
+			DeleteTblNoPC((int)pPC->dwTblID);
+			pPC->dwMapID = dwMapBack;
+			AddTblNoPC((int)pPC->dwTblID);
+		}
+	}
+
+	DeleteTblNoPC((int)pPC->dwTblID);
+	pPC->dwX = pPC->dwXBack = dwXBack;
+	pPC->dwY = pPC->dwYBack = dwYBack;
+	AddTblNoPC((int)pPC->dwTblID);
+	pPC->byDirection = byDirBack;
+	pPC->byAdminLV = byAdminBack;
 	pPC->wHP = wHPBack;
 }
 
