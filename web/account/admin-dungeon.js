@@ -714,8 +714,8 @@
 		if (!p) return null;			/* パーツの記録が無い（読めていない・番号違い）時は判定しない */
 		return HIT_BLOCK.indexOf(Number(p.byHitType) || 0) >= 0;
 	}
-	var NEED_PASS = ['floor', 'arch', 'archV', 'door', 'doorOpen', 'entry', 'goal'];
-	var NEED_BLOCK = ['wallTop', 'wallFace', 'wallFill'];
+	var NEED_PASS = ['floor', 'arch', 'archV', 'doorOpen', 'entry', 'goal'];
+	var NEED_BLOCK = ['wallTop', 'wallFace', 'wallFill', 'door'];	/* 扉（閉じた絵）は通れないのが正しい。開いた扉の絵 doorOpen は通れること */
 	function showWarn() {
 		var e = $('dg-warn');
 		if (!e) return;
@@ -729,7 +729,7 @@
 			});
 			NEED_BLOCK.forEach(function (k) {
 				var bad = vals(k).filter(function (no) { return partBlocks(no) === false; });
-				if (bad.length) msg.push('注意: 「' + name(k) + '」に通れるパーツ（' + bad.join('・') + '）があります。壁は当たり判定が「ぶつかる」のパーツにしてください（すり抜けてしまいます）。');
+				if (bad.length) msg.push('注意: 「' + name(k) + '」に通れるパーツ（' + bad.join('・') + '）があります。壁・閉じた扉は当たり判定が「ぶつかる」のパーツにしてください（すり抜けてしまいます）。');
 			});
 		}
 		if (cur && cur.rooms) {
