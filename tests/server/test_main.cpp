@@ -1067,6 +1067,7 @@ static void TestQuest(const std::vector<int> &aLogin);
 static void TestStory(const std::vector<int> &aLogin);
 static void TestSortItem(const std::vector<int> &aLogin);
 static void TestCharPush(const std::vector<int> &aLogin);
+static void TestSpamLimit(const std::vector<int> &aLogin);
 static void TestLeaveDispose(const std::vector<int> &aLogin);
 static void TestChallenge(const std::vector<int> &aLogin);
 static void TestStatusUp(const std::vector<int> &aLogin);
@@ -1573,6 +1574,8 @@ static void TestWorld(void)
 	TestSortItem(aLogin);
 	/* O. 押せるNPCを押す向き */
 	TestCharPush(aLogin);
+	/* AN. 発言の長さ・連投、コマンドの連打、取り引きの割り込み */
+	TestSpamLimit(aLogin);
 	/* P. 預かり所の品を引き取らずに売る・捨てる */
 	TestLeaveDispose(aLogin);
 	/* Q. 討伐チャレンジ */
@@ -2486,9 +2489,16 @@ static int RefPathDir(CCharProcMERCENARY *pProc, PCHARINFO pChar, int nX, int nY
 	return -1;
 }
 
+/* 連打の間隔・発言の数えを、受信のたびに空にするか（既存のテストは時刻が固定で、続けて送るため。連打のテストだけ FALSE にする） */
+static BOOL s_bTestRateReset = TRUE;
+
 /* 受信したことにして処理する（送ってきた接続のキャラとして） */
 static void TestRecv(PCHARINFO pChar, const void *pData, DWORD dwSize)
 {
+	if (s_bTestRateReset) {
+		ZeroMemory(pChar->adwRateLast, sizeof(pChar->adwRateLast));
+		pChar->bySpeechWinCount = 0;
+	}
 	CCRC Crc;
 	URARASOCK_PACKETINFO Info;
 	Info.dwSize = dwSize;
@@ -11616,4 +11626,160 @@ static void TestAffixForge(const std::vector<int> &aLogin)
 	for (size_t i = 0; i < aDeriveBak.size(); i ++) g_aItemDerive.Add(aDeriveBak[i]);
 	SaveAffixInfo();
 	SaveItemDerive();
+}
+
+/* ------------------------------------------------------------------------- */
+/* AN. 発言の長さ・連投、コマンドの連打、取り引きの割り込み					 */
+/*     公式のクライアントでは起きない送り方だけを止め、ふつうの発言は通すか	 */
+/* ------------------------------------------------------------------------- */
+static void SpamSpeech(PCHARINFO p, const char *psz, BYTE byType)
+{
+	std::vector<BYTE> a(sizeof(CMDPARA_SPEECH) + strlen(psz) + 1);
+	PCMDPARA_SPEECH pPara = (PCMDPARA_SPEECH)&a[0];
+	ZeroMemory(pPara, sizeof(CMDPARA_SPEECH));
+	pPara->byCmd = CMD_SPEECH;
+	pPara->pID = p->pID;
+	pPara->dwTblID = p->dwTblID;
+	pPara->wSize = (WORD)(strlen(psz) + 1);
+	pPara->byType = byType;
+	memcpy(&a[sizeof(CMDPARA_SPEECH)], psz, strlen(psz) + 1);
+	TestRecv(p, &a[0], (DWORD)a.size());
+}
+
+static void TestSpamLimit(const std::vector<int> &aLogin)
+{
+	printf("== AN. SpamLimit ==\n");
+	if (aLogin.size() < 3) {
+		return;
+	}
+	PCHARINFO pA = g_aCharInfo[aLogin[0]], pB = g_aCharInfo[aLogin[1]], pC = g_aCharInfo[aLogin[2]];
+	BYTE byAdminBack = pA->byAdminLV;
+	DWORD dwNowBack = s_dwFakeNow;
+	pA->byAdminLV = ADMINLV_USER;
+
+	/* 長さ：ふつうの発言は 256 バイトまで・URL を含む発言は長いまま・自己紹介は 600 バイトまで */
+	{
+		std::string sLong(1000, 'a'), sUrl = "https://example.com/" + std::string(1000, 'b'), sEdit(2000, 'c');
+		SpamSpeech(pA, "hello", SPEECHCMD_AROUND);
+		printf("speech normal len=%d\n", (int)strlen(pA->pszSpeech));
+		SpamSpeech(pA, sLong.c_str(), SPEECHCMD_AROUND);
+		printf("speech long len=%d\n", (int)strlen(pA->pszSpeech));
+		SpamSpeech(pA, sUrl.c_str(), SPEECHCMD_AROUND);
+		printf("speech url len=%d\n", (int)strlen(pA->pszSpeech));
+		SpamSpeech(pA, sEdit.c_str(), SPEECHCMD_SPEECHEDIT);
+		printf("speech edit len=%d\n", (int)strlen(pA->pszNpcSpeech));
+	}
+
+	/* 連投：5 秒に 8 回まで。1.2 秒おきの自動分割は通る */
+	s_bTestRateReset = FALSE;
+	{
+		int nOK = 0;
+		ZeroMemory(pA->adwRateLast, sizeof(pA->adwRateLast));
+		pA->bySpeechWinCount = 0;
+		for (int i = 0; i < 12; i ++) {
+			pA->byFlg &= ~CHARINFOFLG_SPEECH;
+			SpamSpeech(pA, "x", SPEECHCMD_AROUND);
+			if (pA->byFlg & CHARINFOFLG_SPEECH) nOK ++;
+		}
+		printf("speech burst accepted=%d of 12\n", nOK);
+		s_dwFakeNow += 5001;
+		pA->byFlg &= ~CHARINFOFLG_SPEECH;
+		SpamSpeech(pA, "x", SPEECHCMD_AROUND);
+		printf("speech after window accepted=%d\n", (pA->byFlg & CHARINFOFLG_SPEECH) ? 1 : 0);
+		nOK = 0;
+		for (int i = 0; i < 20; i ++) {
+			s_dwFakeNow += 1200;
+			pA->byFlg &= ~CHARINFOFLG_SPEECH;
+			SpamSpeech(pA, "x", SPEECHCMD_AROUND);
+			if (pA->byFlg & CHARINFOFLG_SPEECH) nOK ++;
+		}
+		printf("speech every 1.2s accepted=%d of 20\n", nOK);
+	}
+
+	/* 最小間隔：吹き出し 0.5 秒・管理人呼び出し 30 秒 */
+	{
+		int nOK = 0;
+		ZeroMemory(pA->adwRateLast, sizeof(pA->adwRateLast));
+		for (int i = 0; i < 4; i ++) {
+			CMDPARA_DATA1 Para;
+			ZeroMemory(&Para, sizeof(Para));
+			Para.byCmd = CMD_COMEFC;
+			Para.pID = pA->pID;
+			Para.dwTblID = pA->dwTblID;
+			Para.byData = 1;
+			pA->byFlg &= ~CHARINFOFLG_COMEFC;
+			TestRecv(pA, &Para, sizeof(Para));
+			if (pA->byFlg & CHARINFOFLG_COMEFC) nOK ++;
+			s_dwFakeNow += (i == 1) ? 600 : 100;
+		}
+		printf("comefc accepted=%d of 4\n", nOK);
+
+		DWORD adwLast[3];
+		for (int i = 0; i < 3; i ++) {
+			CMDPARA_DATA1 Para;
+			ZeroMemory(&Para, sizeof(Para));
+			Para.byCmd = CMD_GMCALL;
+			Para.pID = pA->pID;
+			Para.dwTblID = pA->dwTblID;
+			TestRecv(pA, &Para, sizeof(Para));
+			adwLast[i] = pA->adwRateLast[RATE_GMCALL];
+			s_dwFakeNow += (i == 0) ? 1000 : 30000;
+		}
+		printf("gmcall first_kept=%d second_renewed=%d\n", adwLast[1] == adwLast[0], adwLast[2] != adwLast[1]);
+	}
+	s_bTestRateReset = TRUE;
+
+	/* 取り引き：相手が別の人と取り引き中なら割り込めない。自分が別の人と取り引き中なら元の相手に終了を知らせる */
+	{
+		DWORD adwBack[3][3];
+		PCHARINFO apTmp[3] = { pA, pB, pC };
+		for (int i = 0; i < 3; i ++) {
+			adwBack[i][0] = apTmp[i]->dwMapID; adwBack[i][1] = apTmp[i]->dwX; adwBack[i][2] = apTmp[i]->dwY;
+		}
+		for (int i = 1; i < 3; i ++) {
+			DeleteTblNoPC((int)apTmp[i]->dwTblID);
+			apTmp[i]->dwMapID = pA->dwMapID;
+			apTmp[i]->dwX = apTmp[i]->dwXBack = pA->dwX;
+			apTmp[i]->dwY = apTmp[i]->dwYBack = pA->dwY;
+			AddTblNoPC((int)apTmp[i]->dwTblID);
+		}
+		RecvCmdTradeClear(pA->dwTblID);
+		RecvCmdTradeClear(pB->dwTblID);
+		RecvCmdTradeClear(pC->dwTblID);
+		/* 申し込める相手はログイン中のプレイヤーだけ（このテストのキャラは名前だけ空なので仮に付ける） */
+		char cAccBack = pB->szAcc[0];
+		pB->szAcc[0] = 'b';
+
+		CMDPARA_DATA3 Para;
+		ZeroMemory(&Para, sizeof(Para));
+		Para.byCmd = CMD_TRADE;
+		Para.pID = pA->pID;
+		Para.dwTblID = pA->dwTblID;
+		Para.dwData = pB->dwTblID;
+		TestRecv(pA, &Para, sizeof(Para));
+		printf("trade a->b trading a=%d b=%d\n", RecvCmdIsTrading(pA->dwTblID) ? 1 : 0, RecvCmdIsTrading(pB->dwTblID) ? 1 : 0);
+
+		Para.pID = pC->pID;
+		Para.dwTblID = pC->dwTblID;
+		Para.dwData = pB->dwTblID;
+		int nOut0 = MockCmdCount(1000 + 2, CMD_TRADE);
+		TestRecv(pC, &Para, sizeof(Para));
+		printf("trade c->b (b busy) c_trading=%d a_still=%d c_got_out=%d\n", RecvCmdIsTrading(pC->dwTblID) ? 1 : 0,
+				RecvCmdIsTrading(pA->dwTblID) ? 1 : 0, MockCmdCount(1000 + 2, CMD_TRADE) - nOut0);
+
+		pB->szAcc[0] = cAccBack;
+		for (int i = 0; i < 3; i ++) {
+			DeleteTblNoPC((int)apTmp[i]->dwTblID);
+			apTmp[i]->dwMapID = adwBack[i][0];
+			apTmp[i]->dwX = apTmp[i]->dwXBack = adwBack[i][1];
+			apTmp[i]->dwY = apTmp[i]->dwYBack = adwBack[i][2];
+			AddTblNoPC((int)apTmp[i]->dwTblID);
+		}
+		RecvCmdTradeClear(pA->dwTblID);
+		RecvCmdTradeClear(pB->dwTblID);
+		RecvCmdTradeClear(pC->dwTblID);
+	}
+
+	pA->byAdminLV = byAdminBack;
+	s_dwFakeNow = dwNowBack;
 }

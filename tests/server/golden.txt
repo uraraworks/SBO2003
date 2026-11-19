@@ -1271,6 +1271,18 @@ charpush want=2 old=0 -> move=(-1,0) pcdir=2 blockdir=2
 charpush want=0 old=2 -> move=(0,-1) pcdir=0 blockdir=0
 charpush want=1 old=3 -> move=(0,1) pcdir=1 blockdir=1
 charpush want=3 old=3 -> move=(1,0) pcdir=3 blockdir=3
+== AN. SpamLimit ==
+speech normal len=5
+speech long len=256
+speech url len=1020
+speech edit len=600
+speech burst accepted=8 of 12
+speech after window accepted=1
+speech every 1.2s accepted=20 of 20
+comefc accepted=2 of 4
+gmcall first_kept=1 second_renewed=1
+trade a->b trading a=1 b=1
+trade c->b (b busy) c_trading=0 a_still=1 c_got_out=1
 == P. LeaveDispose ==
 dispose picked sell1=1(20) sell2=7(10) nogold=3 nodrop=2
 dispose init leave: n=4 7*5 1*1 3*1 2*1
