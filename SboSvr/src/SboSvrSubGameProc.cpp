@@ -482,8 +482,8 @@ static void SubGameProc_DUNGEON(PSUBGAMEINFO pInfo)
 				pDungeon->dwCountTmp = 0;
 			}
 		}
-		/* エリア内にいる？ */
-		if ((pChar->dwMapID == pDungeon->dwMapID) &&
+		/* エリア内にいる？（NPC・敵は数えない。中に敵が残っていても無人として作り直せるように） */
+		if (pChar && (pChar->byGameState != GAMESTATE_NPC) && (pChar->dwMapID == pDungeon->dwMapID) &&
 			(pChar->dwX >= (DWORD)pDungeon->byX1) && (pChar->dwX <= (DWORD)pDungeon->byX2) &&
 			(pChar->dwY >= (DWORD)pDungeon->byY1) && (pChar->dwY <= (DWORD)pDungeon->byY2)) {
 			/* オフライン中？ */

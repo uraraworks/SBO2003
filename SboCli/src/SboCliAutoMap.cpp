@@ -231,7 +231,7 @@ static void BlendRect(LPBYTE pBits, int nW, int nH, int nL, int nT, int nR, int 
 /* ========================================================================= */
 /* 関数名：AutoMapDraw														 */
 /* 内容：地図を描く															 */
-/* 備考：画面の真ん中に、ダンジョンの範囲が画面の約 75% に収まる倍率で、	 */
+/* 備考：画面の真ん中に、歩いた所が画面の約 75% に収まる倍率（1マス12ドットまで）で、 */
 /*       半透明の線で重ねる。壁は線・アーチは緑・扉は橙・自分は赤い点		 */
 /*       (nX, nY) は画面の左上のドット位置（g_pDibDrawMap の中）			 */
 /* ========================================================================= */
@@ -254,16 +254,41 @@ void AutoMapDraw(int nX, int nY)
 	nH = g_pDibDrawMap->Height ();
 	nCX = s_Map.GetW ();
 	nCY = s_Map.GetH ();
-	fScale = (float)(min (SCRSIZEX, SCRSIZEY) * 3 / 4) / (float)max (nCX, nCY);
-	nOX = nX + (SCRSIZEX - (int)(nCX * fScale + 0.5f)) / 2;
-	nOY = nY + (SCRSIZEY - (int)(nCY * fScale + 0.5f)) / 2;
+	pChar = g_aCharInfo[g_nMyCharID];
+
+	/* 扉・差し替えで歩けるかが変わることがあるので、描くたびに作り直す（最大 128×128 マス） */
+	s_Map.BuildSegments (AutoMapWalk (), s_aSeg);
+
+	/* 歩いた所（線・出入口・自分）だけが入る四角に寄せて拡大する。全体だと 1 マスが数ドットで読みにくいため */
+	{
+		int bx1 = (int)pChar->dwX - s_Map.GetX1 (), by1 = (int)pChar->dwY - s_Map.GetY1 ();
+		int bx2 = bx1 + 1, by2 = by1 + 1;
+		for (i = 0; i < (int)s_aSeg.size (); i ++) {
+			const AutoMapCore::Seg &sg = s_aSeg[i];
+			bx1 = min (bx1, min (sg.x1, sg.x2)); by1 = min (by1, min (sg.y1, sg.y2));
+			bx2 = max (bx2, max (sg.x1, sg.x2)); by2 = max (by2, max (sg.y1, sg.y2));
+		}
+		for (i = 0; i < (int)s_Map.GetLinkCount (); i ++) {
+			const AutoMapCore::Link &lk = s_Map.GetLink (i);
+			if (!s_Map.IsLinkShown (i)) {
+				continue;
+			}
+			bx1 = min (bx1, lk.x - s_Map.GetX1 ()); by1 = min (by1, lk.y - s_Map.GetY1 ());
+			bx2 = max (bx2, lk.x + lk.w - s_Map.GetX1 ()); by2 = max (by2, lk.y + lk.h - s_Map.GetY1 ());
+		}
+		/* まわりに 2 マスの余白。小さすぎる時は 16 マス分は見せる */
+		bx1 -= 2; by1 -= 2; bx2 += 2; by2 += 2;
+		int nBW = max (bx2 - bx1, 16), nBH = max (by2 - by1, 16);
+		fScale = (float)(min (SCRSIZEX, SCRSIZEY) * 3 / 4) / (float)max (nBW, nBH);
+		fScale = min (fScale, 12.0f);	/* 大きくしすぎない（1 マス 12 ドットまで） */
+		fScale = max (fScale, (float)(min (SCRSIZEX, SCRSIZEY) * 3 / 4) / (float)max (nCX, nCY));
+		nOX = nX + SCRSIZEX / 2 - (int)((bx1 + bx2) * 0.5f * fScale + 0.5f);
+		nOY = nY + SCRSIZEY / 2 - (int)((by1 + by2) * 0.5f * fScale + 0.5f);
+	}
 	nThick = (fScale >= 6.0f) ? 2 : 1;
 
 	/* 背景を少し暗くして、線を見やすくする */
 	BlendRect (pBits, nW, nH, nL, nT, nR, nB, nL, nT, SCRSIZEX, SCRSIZEY, 0, 0, 0, 110);
-
-	/* 扉・差し替えで歩けるかが変わることがあるので、描くたびに作り直す（最大 128×128 マス） */
-	s_Map.BuildSegments (AutoMapWalk (), s_aSeg);
 
 	/* 出入口（アーチ・扉）。壁ごと抜いた所は広間なので印は出さない */
 	for (i = 0; i < (int)s_Map.GetLinkCount (); i ++) {
@@ -300,7 +325,6 @@ void AutoMapDraw(int nX, int nY)
 	}
 
 	/* 自分の位置 */
-	pChar = g_aCharInfo[g_nMyCharID];
 	{
 		int x1 = nOX + (int)(((int)pChar->dwX - s_Map.GetX1 () + 0.5f) * fScale);
 		int y1 = nOY + (int)(((int)pChar->dwY - s_Map.GetY1 () + 0.5f) * fScale);
