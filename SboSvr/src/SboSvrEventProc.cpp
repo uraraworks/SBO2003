@@ -239,9 +239,17 @@ void EventProc_MAPCHG(PCHARINFO pChar, PEVENTINFO pEvent, BYTE byData)
 		return;
 	}
 
-	/* 番外編ダンジョンの入口（姿を選ぶ）・ゴール（持ち帰り袋を本物にして出る）は、ふつうのワープにしない */
-	if (DungeonEventStep (pChar, pEvent)) {
-		return;
+	/* 番外編ダンジョンの入口（姿を選ぶ）・ゴール（元の姿に戻して出る）は、ふつうのワープにしない */
+	{
+		DWORD dwMapBack = pChar->dwMapID, dwXBack = pChar->dwX, dwYBack = pChar->dwY;
+		if (DungeonEventStep (pChar, pEvent)) {
+			/* その場に残った（姿を選ぶ窓を出しただけ・知らせただけ）なら、クライアントは
+			   ワープの返事待ちで歩けないので、位置を送って解く（入る・出るはその時に送る） */
+			if ((pChar->dwMapID == dwMapBack) && (pChar->dwX == dwXBack) && (pChar->dwY == dwYBack)) {
+				SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
+			}
+			return;
+		}
 	}
 
 	/* 移動先は先頭のキャラで1回だけ決め、ついてきているキャラも同じ場所へ */

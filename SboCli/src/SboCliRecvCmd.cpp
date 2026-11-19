@@ -3881,6 +3881,8 @@ void RecvDataProcDUNGEONSEL(PBYTE pData, DWORD dwDataSize)
 			i = min (i, g_WndInfo.GetSize ());
 		}
 	}
+	/* 入口のワープの返事待ちで歩けなくなっているのを解く（選んでいる間は入口の近くにいれば歩いてもよい） */
+	g_bEnableMove = TRUE;
 	if (pPara->byType == DUNGEONSEL_OPEN) {
 		CopyMemory (&g_DungeonSelInfo, pPara, sizeof (CMDPARA_DUNGEONSEL));
 		if (g_DungeonSelInfo.byCount > MAX_DGTMPL) {

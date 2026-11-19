@@ -111,6 +111,22 @@ void GetDataDlgEtcSubGameEditDungeon(void)
 	pInfo->wChipIDRoad = s_wRoad;
 	/* 壁 */
 	pInfo->wChipIDBlock = s_wBlock;
+	/* ダンジョン生成のテーマ番号（0=従来） */
+	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGTHEME), szTmp, sizeof (szTmp));
+	pInfo->dwThemeID = (DWORD)atoi (szTmp);
+	/* 番外編：入る姿の数・番号・表示名 */
+	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGTMPL_COUNT), szTmp, sizeof (szTmp));
+	pInfo->byTmplCount = (BYTE)max (0, min (atoi (szTmp), MAX_DGTMPL));
+	for (int k = 0; k < MAX_DGTMPL; k ++) {
+		GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGTMPL_ID1 + k), szTmp, sizeof (szTmp));
+		pInfo->wTmplID[k] = (WORD)atoi (szTmp);
+		GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGTMPL_NAME1 + k), pInfo->szTmplName[k], sizeof (pInfo->szTmplName[k]));
+	}
+	/* 作り直しの方式（0=気まぐれ 1=日替わり）・クリア条件（0=ゴール 1=敵を全部倒す） */
+	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGREBUILD_MODE), szTmp, sizeof (szTmp));
+	pInfo->byRebuildMode = (BYTE)atoi (szTmp);
+	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGCLEAR_MODE), szTmp, sizeof (szTmp));
+	pInfo->byClearMode = (BYTE)atoi (szTmp);
 }
 
 /* ========================================================================= */
@@ -204,6 +220,20 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 	s_wRoad = pInfo->wChipIDRoad;
 	/* 壁 */
 	s_wBlock = pInfo->wChipIDBlock;
+	/* ダンジョン生成のテーマ番号・番外編の設定 */
+	wsprintf (szTmp, "%lu", pInfo->dwThemeID);
+	SetWindowText (GetDlgItem (hWnd, IDC_DGTHEME), szTmp);
+	wsprintf (szTmp, "%d", pInfo->byTmplCount);
+	SetWindowText (GetDlgItem (hWnd, IDC_DGTMPL_COUNT), szTmp);
+	for (int k = 0; k < MAX_DGTMPL; k ++) {
+		wsprintf (szTmp, "%d", pInfo->wTmplID[k]);
+		SetWindowText (GetDlgItem (hWnd, IDC_DGTMPL_ID1 + k), szTmp);
+		SetWindowText (GetDlgItem (hWnd, IDC_DGTMPL_NAME1 + k), pInfo->szTmplName[k]);
+	}
+	wsprintf (szTmp, "%d", pInfo->byRebuildMode);
+	SetWindowText (GetDlgItem (hWnd, IDC_DGREBUILD_MODE), szTmp);
+	wsprintf (szTmp, "%d", pInfo->byClearMode);
+	SetWindowText (GetDlgItem (hWnd, IDC_DGCLEAR_MODE), szTmp);
 
 	return FALSE;
 }

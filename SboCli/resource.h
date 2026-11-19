@@ -509,6 +509,21 @@
 #define IDC_DGREBUILD_MODE                1466
 #define IDC_DGCLEAR_MODE                  1467
 #define IDC_DGREBUILD_NOW                 1468
+#define IDC_DGTMPL_ID2            1451
+#define IDC_DGTMPL_ID3            1452
+#define IDC_DGTMPL_ID4            1453
+#define IDC_DGTMPL_ID5            1454
+#define IDC_DGTMPL_ID6            1455
+#define IDC_DGTMPL_ID7            1456
+#define IDC_DGTMPL_ID8            1457
+#define IDC_DGTMPL_NAME2          1459
+#define IDC_DGTMPL_NAME3          1460
+#define IDC_DGTMPL_NAME4          1461
+#define IDC_DGTMPL_NAME5          1462
+#define IDC_DGTMPL_NAME6          1463
+#define IDC_DGTMPL_NAME7          1464
+#define IDC_DGTMPL_NAME8          1465
+#define IDC_DGTHEME                       1469
 
 // Next default values for new objects
 // 
@@ -516,7 +531,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        244
 #define _APS_NEXT_COMMAND_VALUE         40037
-#define _APS_NEXT_CONTROL_VALUE         1469
+#define _APS_NEXT_CONTROL_VALUE         1470
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

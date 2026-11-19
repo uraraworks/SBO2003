@@ -7067,15 +7067,16 @@ void AdminOnPaintSubGame(HDC hDC)
 		MyTextOut (hDC, 0, 64 + 16 * 8, "ﾃｰﾏ番号:");
 		MyTextOut (hDC, 12 * 10, 64 + 16 * 8, "(0=従来)");
 		MyTextOut (hDC, 0, 64 + 16 * 9, "番外編の数:");
-		MyTextOut (hDC, 12 * 10, 64 + 16 * 9, "(0=無し 最大8。番号と名前を下へ)");
+		MyTextOut (hDC, 12 * 10, 64 + 16 * 9, "(最大8)");
+		/* 姿（番号と表示名）は 2 列に 4 つずつ */
 		for (int k = 0; k < MAX_DGTMPL; k ++) {
 			wsprintf (szBuf, "姿%d:", k + 1);
-			MyTextOut (hDC, 0, 64 + 16 * (10 + k), szBuf);
+			MyTextOut (hDC, (k / 4) * 200, 64 + 16 * (10 + (k % 4)), szBuf);
 		}
-		MyTextOut (hDC, 0, 64 + 16 * (10 + MAX_DGTMPL), "作り直し:");
-		MyTextOut (hDC, 12 * 10, 64 + 16 * (10 + MAX_DGTMPL), "(0=気まぐれ 1=日替わり)");
-		MyTextOut (hDC, 0, 64 + 16 * (11 + MAX_DGTMPL), "ｸﾘｱ条件:");
-		MyTextOut (hDC, 12 * 10, 64 + 16 * (11 + MAX_DGTMPL), "(0=ｺﾞｰﾙ 1=敵を全部倒す)");
+		MyTextOut (hDC, 0, 64 + 16 * 14, "作り直し:");
+		MyTextOut (hDC, 88, 64 + 16 * 14, "0:気まぐれ 1:日替");
+		MyTextOut (hDC, 200, 64 + 16 * 14, "ｸﾘｱ条件:");
+		MyTextOut (hDC, 200 + 80, 64 + 16 * 14, "0:ｺﾞｰﾙ 1:全滅");
 
 		MyTextOut (hDC, 12 * 13, 64 + 16 * 3, "座標チェックがONの場合、");
 		MyTextOut (hDC, 12 * 13, 64 + 16 * 4, "左クリックで開始座標");
@@ -10993,12 +10994,14 @@ void MakeAdminWndSubGameInfoType(void)
 				SetWindowLongPtr (hWndTmp, GWLP_ID, IDC_DGTMPL_COUNT);
 				wsprintf (szTmp, "%d", pDungeon->byTmplCount);
 				SetWindowText (hWndTmp, szTmp);
+				/* 姿は 2 列に 4 つずつ（元の大きさのウィンドウに収まるように） */
 				for (int k = 0; k < MAX_DGTMPL; k ++) {
-					hWndTmp = CreateWindowEdit (12 * 7, 64 + 16 * (10 + k), 36, 14, ES_NUMBER);
+					int nCol = (k / 4) * 200, nRow = 10 + (k % 4);
+					hWndTmp = CreateWindowEdit (nCol + 28, 64 + 16 * nRow, 30, 14, ES_NUMBER);
 					SetWindowLongPtr (hWndTmp, GWLP_ID, IDC_DGTMPL_ID1 + k);
 					wsprintf (szTmp, "%d", pDungeon->wTmplID[k]);
 					SetWindowText (hWndTmp, szTmp);
-					hWndTmp = CreateWindowEdit (12 * 7 + 44, 64 + 16 * (10 + k), 12 * 12, 14, ES_AUTOHSCROLL);
+					hWndTmp = CreateWindowEdit (nCol + 62, 64 + 16 * nRow, 130, 14, ES_AUTOHSCROLL);
 					SetWindowLongPtr (hWndTmp, GWLP_ID, IDC_DGTMPL_NAME1 + k);
 					SetWindowText (hWndTmp, pDungeon->szTmplName[k]);
 				}
@@ -11006,16 +11009,16 @@ void MakeAdminWndSubGameInfoType(void)
 
 			/* 作り直しの方式（0=気まぐれ・1=日替わり）・クリア条件（0=ゴール・1=敵を全部倒す）・今すぐ作り直す */
 			{
-				HWND hWndTmp = CreateWindowEdit (12 * 7, 64 + 16 * (10 + MAX_DGTMPL), 24, 14, ES_NUMBER);
+				HWND hWndTmp = CreateWindowEdit (60, 64 + 16 * 14, 24, 14, ES_NUMBER);
 				SetWindowLongPtr (hWndTmp, GWLP_ID, IDC_DGREBUILD_MODE);
 				wsprintf (szTmp, "%d", pDungeon->byRebuildMode);
 				SetWindowText (hWndTmp, szTmp);
-				hWndTmp = CreateWindowEdit (12 * 7, 64 + 16 * (11 + MAX_DGTMPL), 24, 14, ES_NUMBER);
+				hWndTmp = CreateWindowEdit (200 + 52, 64 + 16 * 14, 24, 14, ES_NUMBER);
 				SetWindowLongPtr (hWndTmp, GWLP_ID, IDC_DGCLEAR_MODE);
 				wsprintf (szTmp, "%d", pDungeon->byClearMode);
 				SetWindowText (hWndTmp, szTmp);
 				hWndTmp = CreateWindow ("BUTTON", "今すぐ作り直す", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-						12 * 7, 64 + 16 * (12 + MAX_DGTMPL), 12 * 9, 16, g_hWndAdmin, (HMENU)IDC_DGREBUILD_NOW, g_hInstance, NULL);
+						200, 64 + 16 * 9, 12 * 9, 16, g_hWndAdmin, (HMENU)IDC_DGREBUILD_NOW, g_hInstance, NULL);
 				SendMessage (hWndTmp, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 			}
 
