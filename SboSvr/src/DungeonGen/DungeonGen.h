@@ -183,6 +183,7 @@ struct Theme
 	std::vector<Deco> decos;
 	std::vector<Opening> openings;
 	std::vector<std::pair<int, int> > lights;  // 灯りの上書き表 {パーツ番号, 灯りの範囲 0〜7}（最大 8 件）
+	std::string name;  // テーマの名前（ゲームでは中にいる間のマップ名として出す）
 	int dark;  // ダンジョンの範囲の暗さ（マップの明るさレベル 1〜100。0 = マップの設定のまま）。ゲームで作る時だけ使う
 	Theme() : algo(0), voidPart(0), door(0), doorOpen(0), entryPart(0), goalPart(0), bottomRows(1), dark(0) {}
 };

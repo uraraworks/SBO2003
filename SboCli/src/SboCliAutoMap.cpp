@@ -16,6 +16,7 @@
 #include "SboCliRecvCmd.h"
 #include "SboCliAutoMap.h"
 #include "SboCliAutoMapCore.h"
+#include <string>
 
 extern BOOL CheckCharBlock (DWORD, DWORD);						/* キャラのぶつかり判定（TRUE=通れる。SboCliRecvCmd.cpp） */
 
@@ -23,6 +24,7 @@ static AutoMapCore::Map s_Map;									/* サーバーからの情報と記録 *
 static BOOL s_bShown = FALSE;									/* 地図を出している */
 static BOOL s_bInRange = FALSE;									/* 自分がダンジョンの範囲の中にいる */
 static std::vector<AutoMapCore::Seg> s_aSeg;					/* 壁の線 */
+static std::string s_strName;									/* 中にいる間に出すマップ名（テーマの名前） */
 
 /* 歩けるマスか（マップのパーツのぶつかり判定） */
 struct AutoMapWalk {
@@ -40,6 +42,7 @@ void AutoMapReset(void)
 {
 	s_Map.Clear ();
 	s_aSeg.clear ();
+	s_strName.clear ();
 	s_bShown = FALSE;
 	s_bInRange = FALSE;
 	g_bDraw = TRUE;
@@ -98,6 +101,12 @@ void RecvDataProcDUNGEONMAP(PBYTE pData, DWORD dwDataSize)
 		aLink[i].h = pLink[i].wH;
 		aLink[i].type = pLink[i].byType;
 	}
+	{
+		char szName[sizeof (pPara->szName) + 1];
+		CopyMemory (szName, pPara->szName, sizeof (pPara->szName));
+		szName[sizeof (pPara->szName)] = 0;
+		s_strName = szName;
+	}
 	s_Map.Set (pPara->dwMapID, pPara->dwBuildNo, pPara->wX1, pPara->wY1, pPara->wX2, pPara->wY2, aRoom, aLink);
 	s_aSeg.clear ();
 	g_bDraw = TRUE;
@@ -136,6 +145,11 @@ void AutoMapUpdate(void)
 		s_bInRange = FALSE;
 		return;
 	}
+	/* ダンジョンの範囲に入った時は、テーマの名前をマップ名のように出す */
+	if (!s_bInRange && !s_strName.empty () && (g_byTextFadeInOut == 0)) {
+		g_byTextFadeInOut = 1;
+		g_dwTimeTextFadeInOut = timeGetTime ();
+	}
 	s_bInRange = TRUE;
 
 	s_Map.Visit ((int)pChar->dwX, (int)pChar->dwY);
@@ -172,6 +186,15 @@ void AutoMapUpdate(void)
 BOOL AutoMapIsAvailable(void)
 {
 	return (s_Map.IsValid () && s_bInRange) ? TRUE : FALSE;
+}
+
+/* 中にいる間に出すマップ名（範囲の外・テーマの名前が無い時は NULL） */
+LPCSTR AutoMapGetName(void)
+{
+	if (!AutoMapIsAvailable () || s_strName.empty ()) {
+		return NULL;
+	}
+	return s_strName.c_str ();
 }
 
 BOOL AutoMapIsShown(void)

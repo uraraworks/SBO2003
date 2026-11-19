@@ -12289,6 +12289,7 @@ static void TestDungeonTheme(void)
 			nBuildOk = (pDM->dwBuildNo == Info.dwBuildNo && pDM->wX1 == 12 && pDM->wY1 == 10 && pDM->wX2 == 51 && pDM->wY2 == 49);
 			nRooms = pDM->wRoomCount;
 			nLinks = pDM->wLinkCount;
+			printf("dungeontheme automap name=%s\n", pDM->szName);
 			nSizeOk = (Info.dwAutoMapSize == sizeof(CMDPARA_DUNGEONMAP) + nRooms * sizeof(DUNGEONMAPROOM) + nLinks * sizeof(DUNGEONMAPLINK));
 			PDUNGEONMAPROOM pR = (PDUNGEONMAPROOM)(pDM + 1);
 			PDUNGEONMAPLINK pL = (PDUNGEONMAPLINK)(pR + nRooms);

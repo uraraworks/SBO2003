@@ -2058,6 +2058,7 @@ dungeontheme missing old=1 buildNo=0 events=2
 dungeontheme theme5 old=0 buildNo=1 entry=1 mapchg=3 doors>0=1 doorsOk=1 oldEvent=0 keepEvent=1 eventOutside=0 badParts=0 outChanged=1(entrance=1) goal=1 genSize=40x40
 dungeontheme lights count=2 p0=3/4 p1=1/7
 dungeontheme rebuild buildNo=2 doors>0=1 eventsBounded=1 keepEvent=1
+dungeontheme automap name=test
 dungeontheme automap valid=1 build=1 rooms>1=1 links>0=1 roomsIn=1 linksIn=1 group=1 size=1 type3same=1
 dungeontheme automap send=1 same=1
 dungeontheme automap other map sent=0

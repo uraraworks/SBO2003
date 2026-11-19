@@ -4124,6 +4124,7 @@ typedef struct _CMDPARA_DUNGEONMAP {
 	WORD		wY2;
 	WORD		wRoomCount;											/* 部屋の数 */
 	WORD		wLinkCount;											/* 出入口の数 */
+	char		szName[160];										/* 中にいる間に出すマップ名（テーマの名前。日替わりは「（今日のダンジョン）」付き。空ならマップの名前のまま） */
 } CMDPARA_DUNGEONMAP, *PCMDPARA_DUNGEONMAP;
 
 /* 番外編ダンジョンの入口で、入る姿（テンプレート）を選ぶ（CMD_DUNGEONSEL）。

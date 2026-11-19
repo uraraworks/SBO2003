@@ -1942,6 +1942,13 @@ static BOOL MakeDungeonByTheme(int nID, PSUBGAME_DUNGEONINFO pDungeon, PMAPINFO 
 		pPara->wY2 = (WORD)pDungeon->byY2;
 		pPara->wRoomCount = (WORD)nRoom;
 		pPara->wLinkCount = (WORD)nLink;
+		{
+			std::string strName = theme.name;
+			if (bDaily && !strName.empty ()) {
+				strName += "（今日のダンジョン）";
+			}
+			strncpy (pPara->szName, strName.c_str (), sizeof (pPara->szName) - 1);
+		}
 		PDUNGEONMAPROOM pRoom = (PDUNGEONMAPROOM)(pPara + 1);
 		for (i = 0; i < nRoom; i ++) {
 			pRoom[i].wX = (WORD)(x1 + sk.rooms[i].x);

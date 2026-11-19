@@ -88,6 +88,10 @@ void ReadTheme(const JVal &j, Theme &t)
 	t.entryPart = j.Int("entry", 0);
 	t.goalPart = j.Int("goal", 0);
 	t.bottomRows = j.Int("bottomRows", 1) == 2 ? 2 : 1;
+	{
+		const JVal *tn = j.Get("name");
+		if (tn && tn->t == JVal::STR) t.name = tn->s;
+	}
 	t.dark = j.Int("dark", 0);
 	if (t.dark < 0) t.dark = 0;
 	if (t.dark > 100) t.dark = 100;

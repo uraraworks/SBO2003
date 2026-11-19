@@ -8052,6 +8052,22 @@ void AdminMapInfoRefresh(void)
 }
 
 /* ========================================================================= */
+/* 関数名：AdminMapInfoOnRecv												 */
+/* 内容：マップ情報を受け取った時、マップ情報画面を新しい中身で作り直す		 */
+/*       （明るさ・灯り・見え方の設定を開いている時はそちらに任せる）		 */
+/* ========================================================================= */
+void AdminMapInfoOnRecv(void)
+{
+	if ((g_hWndAdmin == NULL) || (g_nAdminWindowType != IDM_MAP_INFO) || IsDlgMapLightOpen ()) {
+		return;
+	}
+	g_bAdminPos = FALSE;
+	DeleteAdminWnd ();
+	AdminAutoLayoutResetScroll (g_hWndAdmin);
+	MakeAdminWndMapInfo ();
+}
+
+/* ========================================================================= */
 /* 関数名：DeleteAdminWndMapInfo											 */
 /* 内容：マップ情報ウィンドウ消去											 */
 /* 日付：2003/05/31															 */

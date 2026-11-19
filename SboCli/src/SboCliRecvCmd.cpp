@@ -4826,6 +4826,9 @@ void RecvDataProcMAPINFO(PBYTE pData, DWORD dwDataSize)
 	g_byTextFadeInOut = 1;
 	g_dwTimeTextFadeInOut = 0;
 	g_FadeInOutInfo.dwLastTime = timeGetTime ();
+
+	/* 管理者ウィンドウのマップ情報画面を新しい中身で作り直す（古いまま送ると作り直した暗さなどを戻してしまう） */
+	AdminMapInfoOnRecv ();
 }
 
 /* ========================================================================= */
@@ -6056,6 +6059,12 @@ void RecvDataProcCHGEVENT(PBYTE pData, DWORD dwDataSize)
 	int nSize;
 
 	if (g_hWndAdmin == NULL) {
+		return;
+	}
+	/* イベント画面で選んでいるイベントの返事だけ受け取る。
+	   マップを送り直す時（気まぐれダンジョンの作り直しなど）は全部のイベントが届くので、
+	   ほかの画面（マップ情報など）の上にイベントの入力欄が作られて重なっていた */
+	if ((g_nAdminWindowType != IDM_MAP_EVENT) || ((int)pEvent->dwDataID != g_nSelectEventID)) {
 		return;
 	}
 
