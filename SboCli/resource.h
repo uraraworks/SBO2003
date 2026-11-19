@@ -507,6 +507,7 @@
 #define IDC_DGTMPL_ID1                    1450
 #define IDC_DGTMPL_NAME1                  1458
 #define IDC_DGREBUILD_MODE                1466
+#define IDC_DGMESSAGES                    1480
 #define IDC_DGCLEAR_MODE                  1467
 #define IDC_DGREBUILD_NOW                 1468
 #define IDC_DGTMPL_ID2            1451

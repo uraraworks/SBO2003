@@ -7,6 +7,7 @@
 /* ========================================================================= */
 
 #include "stdafx.h"
+#include "../../common/DungeonReception.h"
 #include "common/BowFlight.h"
 #include <string>
 #include <vector>
@@ -4017,7 +4018,7 @@ void RecvDataProcDUNGEONSEL(PBYTE pData, DWORD dwDataSize)
 	PCMDPARA_DUNGEONSEL pPara = (PCMDPARA_DUNGEONSEL)pData;
 	int i;
 
-	if (dwDataSize < sizeof (CMDPARA_DUNGEONSEL)) {
+	if (dwDataSize < offsetof (CMDPARA_DUNGEONSEL, szTitle)) {
 		return;
 	}
 	/* 開いている選択窓は一度閉じる */
@@ -4030,7 +4031,9 @@ void RecvDataProcDUNGEONSEL(PBYTE pData, DWORD dwDataSize)
 	/* 入口のワープの返事待ちで歩けなくなっているのを解く（選んでいる間は入口の近くにいれば歩いてもよい） */
 	g_bEnableMove = TRUE;
 	if (pPara->byType == DUNGEONSEL_OPEN) {
-		CopyMemory (&g_DungeonSelInfo, pPara, sizeof (CMDPARA_DUNGEONSEL));
+		ZeroMemory (&g_DungeonSelInfo, sizeof (g_DungeonSelInfo));
+		CopyMemory (&g_DungeonSelInfo, pPara, min (dwDataSize, (DWORD)sizeof (CMDPARA_DUNGEONSEL)));
+		g_DungeonSelInfo.szTitle[sizeof (g_DungeonSelInfo.szTitle) - 1] = 0;
 		if (g_DungeonSelInfo.byCount > MAX_DGTMPL) {
 			g_DungeonSelInfo.byCount = MAX_DGTMPL;
 		}
@@ -4463,7 +4466,9 @@ void RecvDataProcTALKMSG(PBYTE pData, DWORD dwDataSize)
 	ZeroMemory (pszTmp, dwSize + 1);
 	memcpy (pszTmp, pData + sizeof (CMDPARA_TALKMSG), dwSize);
 
+	BOOL bDungeonBegin = DungeonReceptionMessage (pszTmp);
 	pWndTmp = MakeWindowMSG (pszTmp, TRUE);
+	pWndTmp->bDungeonBegin = bDungeonBegin;
 	SAFE_DELETE_ARRAY (pszTmp);
 	/* 台詞の最後に「@y」（はい・いいえで聞く行）があった時、答えを送る相手になる NPC を覚えておく */
 	pWndTmp->dwData = pPara->dwTblID;
@@ -7629,6 +7634,10 @@ void RecvDataProcSUBGAMEINFO(BYTE *pData, DWORD dwDataSize)
 				CopyMemory (pDungeonInfo->szTmplName, pDungeon->szTmplName, sizeof (pDungeonInfo->szTmplName));
 				pDungeonInfo->byRebuildMode = pDungeon->byRebuildMode;
 				pDungeonInfo->byClearMode = pDungeon->byClearMode;
+				if (dwDataSize >= sizeof (CMDPARA_DATA1) + sizeof (SUBGAME_DUNGEONINFOSAVE)) {
+					CopyMemory (pDungeonInfo->szMessages, pDungeon->szMessages, sizeof (pDungeonInfo->szMessages));
+				}
+				pDungeonInfo->szMessages[MAX_DGTEXT - 1] = 0;
 			}		
 			break;
 

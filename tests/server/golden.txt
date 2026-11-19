@@ -2088,6 +2088,7 @@ dungeonbonus party both-in a=1 b=1 same=1 differs=1 lv=7 sel=0 runs=2
 dungeonbonus deadline open sel=1 members=2 d-open=1 e-open=1
 dungeonbonus deadline d-picked in d=0 sel=1
 dungeonbonus deadline 10s in d=0 sel=1
+dungeonbonus messages timeout=1
 dungeonbonus deadline 31s in d=1 e=0 sel=0 runs=3
 dungeonbonus enemies s1=3 s2=3 s3=3 normal=0
 dungeonbonus refill killed=2 after=3 full=1
@@ -2113,10 +2114,18 @@ dungeonbonus moved-before-build sel=0 in=0
 dungeonbonus moved-build entry=1 goal=1 in-area=1 floor=1 warp=1 automap=1
 dungeonbonus moved-enemies source=1 spawned=1 outside=0
 dungeonbonus custom-talk text=1 continue=1 sel=0
+dungeonbonus messages custom=1 before=0 sent=1 title=1 cancel=1
+dungeonbonus messages entered=1
+dungeonbonus messages all-dead=1 out=1
+dungeonbonus messages empty-default=1 title-default=1 packet-small=1
+dungeonbonus messages npc-priority=1
+dungeonbonus messages begin-moved sel=0
+dungeonbonus messages begin-replay sel=0
 dungeonbonus event-select cycle=1 empty-kept=1
-dungeonbonus save roundtrip=1 extra>0=1
+dungeonbonus save roundtrip=1 extra>0=1 messages=1 old-empty=1
 dungeonbonus area automap dropped=1 off=1 preview-kept=1
 dungeonbonus api ok=1 tmpl=1,1 name2=魔法使い name1=戦士
+dungeonbonus messages api=1 admin-send=1
 dungeonbonus end runs=0 sel=0
 == AP. Dungeon daily ==
 dungeondaily first auto ready=1 build=1 ver=1 found=1 date=2026-11-20 rebuild=0 seed=date genVer=3 themeId=5 size=40x40
@@ -2127,8 +2136,11 @@ dungeondaily random-mode versions=0 daily-ver=0
 dungeondaily entrance-only sel=0 open=0 notice=1 in=0
 dungeondaily reception open sel=1 members=1 in=0
 dungeondaily enemies s1=3 s2=3 same-positions=1
+dungeondaily messages empty=1 format=1 literal-name=1
+dungeondaily messages default=1
 dungeondaily date-change occupied rebuilt=0 stale=1
 dungeondaily date-change new group in=1 same-version=1 positions-same=1
+dungeondaily messages clear-notice=1 rank-notice=1
 dungeondaily goal c in=0 records=1 ms-ok=1 count=1 form=戦士
 dungeondaily goal d records=2 ordered=1
 dungeondaily date-change empty rebuilt=1 versions=2 new-date=2026-11-21 new-seed=date shape-changed=1 old-records-kept=1
@@ -2140,6 +2152,7 @@ dungeondaily api random-rebuild=0 records-ok=1 has-theme=1 has-records=1 rebuild
 dungeondaily records count=20 last-rank=4 sorted=1
 dungeondaily records same-party slower rank=4 better=0 faster rank=1 better=1 same-party-count=1 count=20
 dungeondaily top-text first=1 time=2分5秒
+dungeondaily messages actual-rank=1 default-rank=1
 dungeondaily reload same-json=1 len>0=1
 dungeondaily killall once goal-event=0 picture=0 saved-picture=0
 dungeondaily killall entrance-retire out=1 records=0

@@ -21,6 +21,7 @@
 #include <algorithm>
 #include "include.h"
 #include "Glbldata.h"
+#include "../../common/DungeonText.h"
 /* DungeonGen のメンバー名 max が、互換層の max マクロとぶつかるので、読み込む間だけ外す */
 #pragma push_macro("min")
 #pragma push_macro("max")
@@ -659,30 +660,22 @@ std::string DungeonDailyTopText(int nDungeon, DWORD dwVerNo)
 	if (!DungeonDailyFind (nDungeon, dwVerNo, v)) {
 		return std::string ();
 	}
-	if (v.aRec.empty ()) {
-		return "今日の記録はまだありません。";
-	}
-	strOut = "今日の記録 ";
-	for (i = 0; (i < v.aRec.size ()) && (i < 3); i ++) {
-		const DGDAILYREC &r = v.aRec[i];
-		char szTmp[32];
-
-		if (i) {
-			strOut += " / ";
-		}
-		snprintf (szTmp, sizeof (szTmp), "%d位 ", (int)i + 1);
-		strOut += szTmp;
-		strOut += DungeonDailyTimeText (r.dwMs);
-		if (!r.aName.empty ()) {
-			strOut += "（";
-			strOut += r.aName[0];
-			if (r.nCount > 1) {
-				snprintf (szTmp, sizeof (szTmp), "ほか%d人", r.nCount - 1);
-				strOut += szTmp;
-			}
-			strOut += "）";
-		}
-	}
+    const SUBGAME_DUNGEONINFO *p = NULL;
+    if (nDungeon >= 0 && nDungeon < g_aSubaGameInfo.GetSize () && g_aSubaGameInfo[nDungeon]->byType == SUBGAMEID_DUNGEON)
+        p = (PSUBGAME_DUNGEONINFO)g_aSubaGameInfo[nDungeon]->pInfo;
+    if (v.aRec.empty ()) return DungeonText (p, "records_empty");
+    strOut = DungeonText (p, "records_title");
+    for (i = 0; i < v.aRec.size () && i < 3; i ++) {
+        const DGDAILYREC &r = v.aRec[i];
+        if (i) strOut += DungeonText (p, "record_separator");
+        std::string names;
+        if (!r.aName.empty ()) {
+            std::string others = r.nCount > 1 ? DungeonText (p, "record_others", "count", std::to_string (r.nCount - 1)) : "";
+            names = DungeonText (p, "record_names", "name", r.aName[0], "others", others);
+        }
+        strOut += DungeonText (p, "record_entry", "rank", std::to_string (i + 1),
+            "time", DungeonDailyTimeText (r.dwMs), "names", names);
+    }
 	return strOut;
 }
 

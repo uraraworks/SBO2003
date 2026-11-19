@@ -2371,7 +2371,7 @@ PWNDINFO MakeWindowDUNGEONSEL(void)
 	g_dwNewID ++;
 
 	int i, nCount = min ((int)g_DungeonSelInfo.byCount, MAX_DGTMPL);
-	int nLen = SboTextWidth ("どの姿で入る？"), nLenTmp;
+	int nLen = SboTextWidth ((g_DungeonSelInfo.szTitle[0] ? g_DungeonSelInfo.szTitle : "どの姿で入る？")), nLenTmp;
 	for (i = 0; i < nCount; i ++) {
 		nLenTmp = SboTextWidth (g_DungeonSelInfo.aszName[i]);
 		nLen = max (nLen, nLenTmp);

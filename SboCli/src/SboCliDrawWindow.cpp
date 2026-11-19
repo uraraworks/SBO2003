@@ -3461,9 +3461,9 @@ void DrawWindowDUNGEONSEL(PWNDINFO pWnd)
 	HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFontBasic);
 
 	SetBkColor (hDC, RGB (40, 40, 40));
-	TextOut2 (hDC, 48, 0, (LPSTR)"どの姿で入る？", RGB (255, 255, 255));
+	TextOut2 (hDC, 48, 0, (LPSTR)(g_DungeonSelInfo.szTitle[0] ? g_DungeonSelInfo.szTitle : "どの姿で入る？"), RGB (255, 255, 255));
 	SetBkMode (hDC, TRANSPARENT);
-	TextOut2 (hDC, 48, 0, (LPSTR)"どの姿で入る？", RGB (255, 255, 255));
+	TextOut2 (hDC, 48, 0, (LPSTR)(g_DungeonSelInfo.szTitle[0] ? g_DungeonSelInfo.szTitle : "どの姿で入る？"), RGB (255, 255, 255));
 
 	for (int i = 0; i < pWnd->nData2; i ++) {
 		TextOut2 (hDC, 32, 16 + i * 16, g_DungeonSelInfo.aszName[i], RGB (255, 255, 255));

@@ -7,6 +7,7 @@
 /* ========================================================================= */
 
 #include "stdafx.h"
+#include "../../common/DungeonReception.h"
 #include "common/BowFlight.h"
 #include "../Common/Info/InfoJob.h"
 #include "../Common/Command/Command.h"
@@ -2175,6 +2176,7 @@ void SendCmdSUBGAMEINFO(int nNo)
 			CopyMemory (pDungeon->szTmplName, pDungeonInfo->szTmplName, sizeof (pDungeon->szTmplName));
 			pDungeon->byRebuildMode = pDungeonInfo->byRebuildMode;
 			pDungeon->byClearMode = pDungeonInfo->byClearMode;
+			CopyMemory (pDungeon->szMessages, pDungeonInfo->szMessages, sizeof (pDungeon->szMessages));
 		}		
 		break;
 
@@ -3044,13 +3046,9 @@ void SendCmdDUNGEONSEL(BYTE byType, BYTE byIndex)
 	if (g_nMyCharID < 0) {
 		return;
 	}
-	ZeroMemory (&SendData, sizeof (SendData));
-	SendData.byCmd		= CMD_DUNGEONSEL;
-	SendData.byType		= byType;
-	SendData.byIndex	= byIndex;
-	SendData.dwTblID	= g_aCharInfo[g_nMyCharID]->dwTblID;
+	DungeonSelectionCommand (SendData, g_aCharInfo[g_nMyCharID]->dwTblID, byType, byIndex);
 
-	cliSock.Send ((PBYTE)&SendData, sizeof (SendData));
+	cliSock.Send ((PBYTE)&SendData, DungeonSelectionCommandSize ());
 }
 
 /* ========================================================================= */

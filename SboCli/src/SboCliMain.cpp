@@ -2022,10 +2022,12 @@ void TimerProc(void)
 
 							/* 最後まで処理した */
 							} else if ((g_nProcShopID < 0) && (g_nProcMakerID < 0)) {
+								BOOL bDungeonBegin = pWnd->bDungeonBegin;
 								DWORD dwMsgID = pWnd->dwID;
 								EraseWindow (pWnd);
 								/* 語り部の台詞を送り終わったら、思い出の本の一覧を開く */
 								QuestStoryGreetEnd (dwMsgID);
+								if (bDungeonBegin) SendCmdDUNGEONSEL (DUNGEONSEL_BEGIN, 0);
 
 								/* コマンドウィンドウを閉じる */
 								int nNo = GetWindowID (g_dwMsgIDCommand);
@@ -3361,13 +3363,6 @@ BOOL MsgProc(PWNDINFO pWnd)
 			pWnd->nData1 += 5;
 			bRet = FALSE;
 		}
-		break;
-
-	/* 受付の説明を読み終えたので姿選びを申し込む（締め切りはここから） */
-	case 'D':
-		pWnd->nData1 ++;
-		SendCmdDUNGEONSEL (DUNGEONSEL_BEGIN, 0);
-		bRet = FALSE;
 		break;
 
 	/* 会話データの「はい・いいえ」（行の最後。答えるまで止める） */

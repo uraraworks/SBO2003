@@ -19,6 +19,7 @@
  */
 #include "include.h"
 #include "Glbldata.h"
+#include "../../common/DungeonText.h"
 #include "CharProc/IncludeCharProc.h"
 #include "SboSvrRecvCmd.h"
 #include "SboSvrBattleProc.h"
@@ -143,7 +144,7 @@ static void ChallengeClearMember(PCHARINFO p, struct _CHALLENGE *pCh, int nReaso
 static void ChallengeStart(PCHARINFO pChar, PQUESTINFO pQuest, PQUESTNPCINFO pDef);
 static void GetChallengeMembers(PCHARINFO pChar, WORD wQuestID, std::vector<PCHARINFO> &aOut);
 static void DgBagCollect(PCHARINFO p, WORD wTmpl, std::vector<WORD> &aBag);
-static void DgLeaveMsg(PCHARINFO p, int nReason);
+static void DgLeaveMsg(PCHARINFO p, int nReason, int nDungeonID);
 static void DgProc(DWORD dwNow);
 static void DgSelOnDec(PCHARINFO pChar);
 static BOOL HasMercenary(PCHARINFO pChar);
@@ -630,7 +631,7 @@ BOOL MapSwapExamine(PCHARINFO pChar)
 		if (pSwap->byKind == MAPSWAPKIND_RECYCLE) {
 			if ((pChar->szAcc[0] == 0) || QuestInChallenge (pChar)) {
 				if (QuestInChallenge (pChar)) {
-					SendCmdSYSMSG (pChar->pID, "討伐チャレンジ中はできません。", SPEECHCMD_BATTLE1);
+					SendCmdSYSMSG (pChar->pID, QuestInDungeon (pChar) ? DungeonBlockedText (pChar).c_str () : "討伐チャレンジ中はできません。", SPEECHCMD_BATTLE1);
 				}
 				SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
 			} else {
@@ -2459,7 +2460,7 @@ void QuestRecv(PCHARINFO pChar, PCMDPARA_QUEST pPara)
 		return;
 	}
 	if (QuestInChallenge (pChar) && (pPara->byType != QUESTCMD_LISTREQ) && (pPara->byType != QUESTCMD_STORYREQ)) {
-		SendResult (pChar, QUESTRESULT_NG, 0, "討伐チャレンジ中はできません。");
+		SendResult (pChar, QUESTRESULT_NG, 0, QuestInDungeon (pChar) ? DungeonBlockedText (pChar).c_str () : "討伐チャレンジ中はできません。");
 		return;
 	}
 	switch (pPara->byType) {
@@ -2474,7 +2475,7 @@ void QuestRecv(PCHARINFO pChar, PCMDPARA_QUEST pPara)
 		pNpc = FindNearStoryNpc (pChar, pPara->dwNpcTblID);
 		if (pNpc) {
 			if (QuestInChallenge (pChar)) {
-				SendResult (pChar, QUESTRESULT_NG, 0, "討伐チャレンジ中はできません。");
+				SendResult (pChar, QUESTRESULT_NG, 0, QuestInDungeon (pChar) ? DungeonBlockedText (pChar).c_str () : "討伐チャレンジ中はできません。");
 			} else {
 				StoryTalk (pChar, pNpc);
 			}
@@ -2706,6 +2707,7 @@ enum {
 	CHALLENGELEAVE_LOGOUT,			/* 切断した */
 	CHALLENGELEAVE_BUILD,			/* 番外編ダンジョンが作り直された */
 	CHALLENGELEAVE_RETIRE,			/* 番外編ダンジョン：中の入口・「敵を全部倒す」条件のゴールのワープから途中で帰った（記録なし） */
+	CHALLENGELEAVE_ALLDEAD,		/* 番外編の全滅 */
 };
 
 /* 挑戦から外して元の状態に戻す */
@@ -2714,6 +2716,7 @@ static void ChallengeLeave(PCHARINFO p, int nReason)
 	std::map<DWORD, LOANBAK>::iterator it = s_mapLoan.find (p->dwTblID);
 	LOANBAK Bak;
 	BOOL bMove, bDungeon = FALSE;
+	int nDungeonID = -1;
 
 	if (it == s_mapLoan.end ()) {
 		return;
@@ -2726,6 +2729,7 @@ static void ChallengeLeave(PCHARINFO p, int nReason)
 			std::vector<DWORD> &aM = itC->second.aMember;
 			aM.erase (std::remove (aM.begin (), aM.end (), p->dwTblID), aM.end ());
 			bDungeon = (itC->second.byKind == CHALLENGEKIND_DUNGEON);
+			nDungeonID = itC->second.byDungeonID;
 		}
 	}
 	/* 番外編：中で手に入れた物は中だけの物。どの出方でも持ち帰らず、元の持ち物に戻すだけ（2026-11-19 方針） */
@@ -2753,7 +2757,7 @@ static void ChallengeLeave(PCHARINFO p, int nReason)
 
 	LoanSendAll (p);
 	if (bDungeon) {
-		DgLeaveMsg (p, nReason);
+		DgLeaveMsg (p, nReason, nDungeonID);
 	}
 	switch (bDungeon ? -1 : nReason) {
 	case CHALLENGELEAVE_DEAD:
@@ -3415,36 +3419,57 @@ static void DgBagCollect(PCHARINFO p, WORD wTmpl, std::vector<WORD> &aBag)
 	}
 }
 
-/* 出た理由の知らせ（番外編） */
-static void DgLeaveMsg(PCHARINFO p, int nReason)
+/* 進行中の通知は白文字、受付への返答は会話窓に出す。 */
+static void DgMessage(PCHARINFO p, int id, const char *key, BOOL talk = FALSE,
+    const char *k1 = "", const std::string &v1 = "", const char *k2 = "", const std::string &v2 = "")
 {
-	const char *psz = NULL;
+    std::string msg = DungeonText (DgInfo (id), key, k1, v1, k2, v2);
+    if (talk) {
+        char bounded[MAX_TALKMSG - 2];
+        SboTextCopy (bounded, sizeof (bounded), msg.c_str ());
+        msg = bounded; msg += "@2";
+        SendCmdTALKMSG (p->pID, 0, msg.c_str ());
+    }
+    else SendCmdSYSMSG (p->pID, (LPSTR)msg.c_str (), SPEECHCMD_BATTLE1);
+}
+
+std::string DungeonBlockedText(PCHARINFO p)
+{
+    CHALLENGE *run = DgRunOf (p);
+    return DungeonText (run ? DgInfo (run->byDungeonID) : NULL, "blocked");
+}
+
+/* 出た理由の知らせ（番外編） */
+static void DgLeaveMsg(PCHARINFO p, int nReason, int nDungeonID)
+{
+	std::string strMsg;
 
 	switch (nReason) {
 	case CHALLENGELEAVE_CLEAR:
-		psz = "クリアしました！ 元の姿に戻ります。";
+		strMsg = DungeonText (DgInfo (nDungeonID), "leave_clear");
 		break;
 	case CHALLENGELEAVE_DEAD:
-		psz = "力尽きてしまった…。元の姿に戻りました。";
+		strMsg = DungeonText (DgInfo (nDungeonID), "leave_dead");
 		break;
 	case CHALLENGELEAVE_PARTY:
-		psz = "パーティを抜けたので、ダンジョンから出ました。元の姿に戻りました。";
+		strMsg = DungeonText (DgInfo (nDungeonID), "leave_party");
 		break;
 	case CHALLENGELEAVE_OUT:
-		psz = "ダンジョンの外へ出たので、元の姿に戻りました。";
+		strMsg = DungeonText (DgInfo (nDungeonID), "leave_out");
 		break;
 	case CHALLENGELEAVE_RETIRE:
-		psz = "途中で帰りました（記録なし）。元の姿に戻りました。";
+		strMsg = DungeonText (DgInfo (nDungeonID), "leave_retire");
 		break;
 	case CHALLENGELEAVE_BUILD:
-		psz = "ダンジョンが作り直されたので外へ出ました。元の姿に戻りました。";
+		strMsg = DungeonText (DgInfo (nDungeonID), "leave_build");
 		break;
 	case CHALLENGELEAVE_QUEST:
-		psz = "ダンジョンの挑戦が終わりました。元の姿に戻りました。";
+		strMsg = DungeonText (DgInfo (nDungeonID), "leave_end");
 		break;
 	}
-	if (psz) {
-		SendCmdSYSMSG (p->pID, (LPSTR)psz, SPEECHCMD_BATTLE1);
+	if (nReason == CHALLENGELEAVE_ALLDEAD) strMsg = DungeonText (DgInfo (nDungeonID), "all_dead");
+	if (!strMsg.empty ()) {
+		SendCmdSYSMSG (p->pID, (LPSTR)strMsg.c_str (), SPEECHCMD_BATTLE1);
 	}
 }
 
@@ -3463,10 +3488,11 @@ static void DgSendSel(PCHARINFO p, BYTE byType, const DGSEL *pSel, DWORD dwWait)
 	if ((byType == DUNGEONSEL_OPEN) && pSel) {
 		/* 仲間には選択窓と同時に要点を通知する。申し込んだ本人は受付の会話で読んでいる */
 		if (!pSel->aMember.empty () && (p->dwTblID != pSel->aMember[0])) {
-			SendCmdSYSMSG (p->pID, "経験値・お金は入りません。拾った物は中で使えますが、外へは持ち帰れません。姿を選んでお入りください。", SPEECHCMD_BATTLE1);
+			DgMessage (p, pSel->nDungeonID, "member_guide", FALSE);
 		}
 		Para.byCount = (BYTE)min (pSel->aName.size (), (size_t)MAX_DGTMPL);
 		Para.dwWait = dwWait;
+		SboTextCopy (Para.szTitle, sizeof (Para.szTitle), DungeonText (DgInfo (pSel->nDungeonID), "select_title").c_str ());
 		for (i = 0; i < (size_t)Para.byCount; i ++) {
 			CopyStr (Para.aszName[i], sizeof (Para.aszName[i]), pSel->aName[i].c_str ());
 		}
@@ -3563,7 +3589,7 @@ static BOOL DgSelJoin(DWORD dwKey, PCHARINFO pChar, DWORD dwNow, BOOL bTell)
 	}
 	if (HasMercenary (pChar)) {
 		if (bTell) {
-			SendCmdSYSMSG (pChar->pID, "傭兵は一緒に入れません。別れてから来てください。", SPEECHCMD_BATTLE1);
+			DgMessage (pChar, Sel.nDungeonID, "mercenary_self", TRUE);
 		}
 		return FALSE;
 	}
@@ -3585,13 +3611,11 @@ static BOOL DgSelJoin(DWORD dwKey, PCHARINFO pChar, DWORD dwNow, BOOL bTell)
 	Sel.aMember.push_back (pChar->dwTblID);
 	Sel.mapPick[pChar->dwTblID] = -1;
 	s_mapDgSelOf[pChar->dwTblID] = dwKey;
-	snprintf (szTmp, sizeof (szTmp), "%sさんの組に加わりました。残り%d秒で姿を選んでください。", pKey ? pKey->szName : "", (int)((dwRest + 999) / 1000));
-	SendCmdSYSMSG (pChar->pID, szTmp, SPEECHCMD_BATTLE1);
+	DgMessage (pChar, Sel.nDungeonID, "joined", FALSE, "name", pKey ? pKey->szName : "", "seconds", std::to_string ((dwRest + 999) / 1000));
 	for (i = 0; i + 1 < Sel.aMember.size (); i ++) {
 		PCHARINFO p = (Sel.aMember[i] < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[Sel.aMember[i]] : NULL;
 		if (p && IsPlayerOnline (p)) {
-			snprintf (szTmp, sizeof (szTmp), "%sさんが組に加わりました。", pChar->szName);
-			SendCmdSYSMSG (p->pID, szTmp, SPEECHCMD_BATTLE1);
+			DgMessage (p, Sel.nDungeonID, "member_joined", FALSE, "name", pChar->szName);
 		}
 	}
 	DgSendSel (pChar, DUNGEONSEL_OPEN, &Sel, dwRest);
@@ -3743,8 +3767,7 @@ static void DgStart(int nDungeonID, const DGSEL &Sel, const std::vector<std::pai
 		/* 移動で届くマップ情報は扉が閉じたままなので、この空間の扉などの状態を送る */
 		SpaceSendMapState (pTmp);
 
-		snprintf (szTmp, sizeof (szTmp), "ダンジョンに入りました（%s）。経験値・お金は入りません。拾った物は中で使えますが、外へは持ち帰れません。", t->szName);
-		SendCmdSYSMSG (pTmp->pID, szTmp, SPEECHCMD_BATTLE1);
+		DgMessage (pTmp, nDungeonID, "entered", FALSE, "name", t->szName);
 	}
 	/* この組の敵を、決めた数まで一度に出す */
 	DgPutProc (pCh, timeGetTime (), TRUE);
@@ -3778,7 +3801,7 @@ static void DgSelFinish(DWORD dwLeader)
 		/* まだ開いたままの窓は閉じる（選ばなかった人は置いていく） */
 		if (p && IsPlayerOnline (p) && (nPick == -1)) {
 			DgSendSel (p, DUNGEONSEL_CLOSE, NULL, 0);
-			SendCmdSYSMSG (p->pID, "時間内に姿を選ばなかったので、置いていかれました。", SPEECHCMD_BATTLE1);
+			DgMessage (p, Sel.nDungeonID, "selection_timeout", FALSE);
 		}
 		if ((nPick < 0) || (nPick >= (int)Sel.aTmpl.size ()) || (p == NULL) || !IsPlayerOnline (p)) {
 			continue;
@@ -3786,7 +3809,7 @@ static void DgSelFinish(DWORD dwLeader)
 		/* まだ入口の近くにいて、倒れておらず、ほかで挑戦中でない人だけ */
 		if ((p->wHP == 0) || (p->byCharState == CHARSTATE_DEAD) || QuestInChallenge (p) || (p->dwMapID != Sel.dwMapID) || (p->dwSpaceID != SPACE_NORMAL) ||
 			(abs ((int)p->dwX - (int)Sel.dwX) > CHALLENGE_NEAR) || (abs ((int)p->dwY - (int)Sel.dwY) > CHALLENGE_NEAR)) {
-			SendCmdSYSMSG (p->pID, "入口から離れたので、ダンジョンには入れませんでした。", SPEECHCMD_BATTLE1);
+			DgMessage (p, Sel.nDungeonID, "moved_away", FALSE);
 			continue;
 		}
 		aPart.push_back (std::make_pair (p, Sel.aTmpl[nPick]));
@@ -3797,7 +3820,7 @@ static void DgSelFinish(DWORD dwLeader)
 	}
 	if ((pDungeon == NULL) || !DgIsGame (pDungeon) || !DgReady (pDungeon)) {
 		for (i = 0; i < aPart.size (); i ++) {
-			SendCmdSYSMSG (aPart[i].first->pID, "このダンジョンは準備中です。しばらくしてからもう一度どうぞ。", SPEECHCMD_BATTLE1);
+			DgMessage (aPart[i].first, Sel.nDungeonID, "not_ready", FALSE);
 		}
 		return;
 	}
@@ -3877,20 +3900,13 @@ static std::string DgRecordClear(CHALLENGE *pRun, BOOL bAlways)
 		Rec.strAt = DungeonDailyDateTime (DungeonDailyNow ());
 		nRank = DungeonDailyAddRecord ((int)pRun->byDungeonID, pRun->dwDailyVer, Rec, &bBetter);
 	}
-	strMsg = "クリア時間 " + DungeonDailyTimeText (pRun->dwClearTime);
-	if (pRun->bDaily) {
-		char szTmp[64];
-		if (!pRun->bRanked) {
-			snprintf (szTmp, sizeof (szTmp), "（今日の挑戦は2回目以降の人がいるので、順位には入りません）");
-		} else if ((nRank > 0) && bBetter) {
-			snprintf (szTmp, sizeof (szTmp), "（今日の%d位）", nRank);
-		} else if (nRank > 0) {
-			snprintf (szTmp, sizeof (szTmp), "（この顔ぶれの今日の最高は%d位。記録は更新されませんでした）", nRank);
-		} else {
-			snprintf (szTmp, sizeof (szTmp), "（今日の記録の%d位には入れませんでした）", DGDAILY_RECMAX);
-		}
-		strMsg += szTmp;
-	}
+    PSUBGAME_DUNGEONINFO pDungeon = DgInfo (pRun->byDungeonID);
+    strMsg = DungeonText (pDungeon, "clear_time", "time", DungeonDailyTimeText (pRun->dwClearTime));
+    if (pRun->bDaily) {
+        strMsg += DungeonText (pDungeon, !pRun->bRanked ? "unranked" :
+            (nRank > 0 ? (bBetter ? "rank_best" : "rank_unchanged") : "rank_out"),
+            "rank", std::to_string (nRank), "limit", std::to_string (DGDAILY_RECMAX));
+    }
 	return strMsg;
 }
 
@@ -3924,12 +3940,12 @@ static BOOL DgSelStart(PCHARINFO pChar, int nID, DWORD dwNpcTblID)
 		return TRUE;
 	}
 	if (!DgReady (pDungeon)) {
-		SendCmdSYSMSG (pChar->pID, "このダンジョンは準備中です。しばらくしてからもう一度どうぞ。", SPEECHCMD_BATTLE1);
+		DgMessage (pChar, nID, "not_ready", TRUE);
 		return TRUE;
 	}
 	DgMakeList (pDungeon, Sel.aTmpl, Sel.aName);
 	if (Sel.aTmpl.empty ()) {
-		SendCmdSYSMSG (pChar->pID, "このダンジョンは準備中です。", SPEECHCMD_BATTLE1);
+		DgMessage (pChar, nID, "no_forms", TRUE);
 		return TRUE;
 	}
 	/* 同じパーティの組が姿を選んでいる最中なら、その組に加わる（リーダーより遅れて来た仲間・代わりに始めた組へ遅れて来たリーダー） */
@@ -3939,22 +3955,20 @@ static BOOL DgSelStart(PCHARINFO pChar, int nID, DWORD dwNpcTblID)
 			if ((s_mapDgSel[dwKey].nDungeonID != nID) || (s_mapDgSel[dwKey].dwNpcTblID != dwNpcTblID) ||
 				!DgSelJoin (dwKey, pChar, timeGetTime (), TRUE)) {
 				PCHARINFO pKey = (dwKey < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[dwKey] : NULL;
-				snprintf (szTmp, sizeof (szTmp), "今%sさんの組が姿を選んでいます。", pKey ? pKey->szName : "");
-				SendCmdSYSMSG (pChar->pID, szTmp, SPEECHCMD_BATTLE1);
+				DgMessage (pChar, nID, "party_selecting", TRUE, "name", pKey ? pKey->szName : "");
 			}
 			return TRUE;
 		}
 	}
 	/* パーティのリーダー（ソロならその人）が申し込んだ時に始める */
 	if (DgLeaderOf (pChar) != pChar) {
-		SendCmdSYSMSG (pChar->pID, "パーティのリーダーが受付の人に話しかけると、みんなで入れます。", SPEECHCMD_BATTLE1);
+		DgMessage (pChar, nID, "leader_only", TRUE);
 		return TRUE;
 	}
 	DgGetMembers (pChar, aMember);
 	for (i = 0; i < aMember.size (); i ++) {
 		if (HasMercenary (aMember[i])) {
-			snprintf (szTmp, sizeof (szTmp), "%sさんの傭兵は一緒に入れません。別れてから来てください。", aMember[i]->szName);
-			SendCmdSYSMSG (pChar->pID, szTmp, SPEECHCMD_BATTLE1);
+			DgMessage (pChar, nID, "mercenary", TRUE, "name", aMember[i]->szName);
 			return TRUE;
 		}
 	}
@@ -3980,30 +3994,25 @@ static BOOL DgSelStart(PCHARINFO pChar, int nID, DWORD dwNpcTblID)
 				nRun ++;
 			}
 		}
-		if (nRun > 0) {
-			snprintf (szRun, sizeof (szRun), "今%d組が挑戦中です。その組と同じ形のダンジョンに入ります。", nRun);
-		} else {
-			snprintf (szRun, sizeof (szRun), "今は誰も入っていません。");
-		}
-		for (i = 0; i < aMember.size (); i ++) {
-			SendCmdSYSMSG (aMember[i]->pID, szRun, SPEECHCMD_BATTLE1);
-		}
+        for (i = 0; i < aMember.size (); i ++) {
+            DgMessage (aMember[i], nID, nRun > 0 ? "running" : "empty", FALSE, "count", std::to_string (nRun));
+        }
 	}
 	/* 日替わり：日付が変わっていたら知らせる。今日の 1〜3 位も知らせる */
 	if ((pDungeon->byRebuildMode == DGREBUILD_DAILY) && pDungeon->dwDailyVer) {
 		DGDAILYVER Ver;
 		std::string strTop = DungeonDailyTopText (nID, pDungeon->dwDailyVer);
-		static const char *pszFirst = "今日1回目の挑戦です。クリアすると順位に入ります。";
-		static const char *pszAgain = "今日はもう挑戦したので、今回はタイムだけです（順位には入りません）。";
+		std::string strFirst = DungeonText (pDungeon, "daily_first");
+		std::string strAgain = DungeonText (pDungeon, "daily_again");
 		BOOL bOld = DungeonDailyFind (nID, pDungeon->dwDailyVer, Ver) && (Ver.strDate != DungeonDailyDate (DungeonDailyNow ()));
 		for (i = 0; i < aMember.size (); i ++) {
 			if (bOld) {
-				SendCmdSYSMSG (aMember[i]->pID, "日付が変わったので、今の組が出たら新しいダンジョンに作り直します。", SPEECHCMD_BATTLE1);
+				DgMessage (aMember[i], nID, "daily_changed", FALSE);
 			}
 			if (!strTop.empty ()) {
 				SendCmdSYSMSG (aMember[i]->pID, (LPSTR)strTop.c_str (), SPEECHCMD_BATTLE1);
 			}
-			SendCmdSYSMSG (aMember[i]->pID, (LPSTR)(DungeonDailyTried (nID, pDungeon->dwDailyVer, aMember[i]->dwTblID) ? pszAgain : pszFirst), SPEECHCMD_BATTLE1);
+			SendCmdSYSMSG (aMember[i]->pID, (LPSTR)(DungeonDailyTried (nID, pDungeon->dwDailyVer, aMember[i]->dwTblID) ? strAgain.c_str () : strFirst.c_str ()), SPEECHCMD_BATTLE1);
 		}
 	}
 	/* 近くにいない仲間を知らせる（締め切りまでに受付の近くへ来れば組に加わる） */
@@ -4014,14 +4023,13 @@ static BOOL DgSelStart(PCHARINFO pChar, int nID, DWORD dwNpcTblID)
 		for (i = 0; i < aParty.size (); i ++) {
 			if ((Sel.mapPick.find (aParty[i]->dwTblID) == Sel.mapPick.end ()) && !QuestInChallenge (aParty[i])) {
 				if (!strFar.empty ()) {
-					strFar += "、";
+					strFar += DungeonText (pDungeon, "name_separator");
 				}
-				strFar += aParty[i]->szName;
-				strFar += "さん";
+				strFar += DungeonText (pDungeon, "far_name", "name", aParty[i]->szName);
 			}
 		}
 		if (!strFar.empty ()) {
-			strFar = "近くにいない仲間：" + strFar + "（締め切りまでに受付の近くへ来れば一緒に入れます）";
+			strFar = DungeonText (pDungeon, "far_members", "names", strFar);
 			for (i = 0; i < aMember.size (); i ++) {
 				SendCmdSYSMSG (aMember[i]->pID, (LPSTR)strFar.c_str (), SPEECHCMD_BATTLE1);
 			}
@@ -4061,7 +4069,7 @@ static void DgReceptionTalk(PCHARINFO pChar, PCHARINFO pNpc, BOOL bBegin)
 		(pChar->dwMapID != pNpc->dwMapID) || !IsSameSpace (pChar, pNpc) ||
 		DgInArea (pDungeon, pNpc->dwMapID, pNpc->dwX, pNpc->dwY) ||
 		(abs ((int)pChar->dwX - (int)pNpc->dwX) > 2) || (abs ((int)pChar->dwY - (int)pNpc->dwY) > 2)) {
-		SendCmdSYSMSG (pChar->pID, "この受付では申し込めません。", SPEECHCMD_BATTLE1);
+		DgMessage (pChar, nID, "invalid_reception", TRUE);
 		return;
 	}
 	if (bBegin) {
@@ -4069,7 +4077,7 @@ static void DgReceptionTalk(PCHARINFO pChar, PCHARINFO pNpc, BOOL bBegin)
 	} else {
 		/* ほかの受付と同じく番号の後ろを台詞に使う。入力待ちの後で姿選びへ進む */
 		while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p ++;
-		std::string strMsg = *p ? p : "経験値・お金は入りません。拾った物は中で使えますが、外へは持ち帰れません。姿を選んでお入りください。";
+		std::string strMsg = *p ? p : DungeonText (pDungeon, "reception");
 		/* 通信の上限で末尾の続行指示が切れないようにする */
 		char szMsg[MAX_TALKMSG - 4];
 		SboTextCopy (szMsg, sizeof (szMsg), strMsg.c_str ());
@@ -4107,7 +4115,7 @@ BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
 	/* 外の入口は、以前の挑戦・空間の状態によらず必ず受付へ案内する */
 	nID = DgFindByEntrance (pChar->dwMapID, pEvent->dwX, pEvent->dwY);
 	if (nID >= 0) {
-		SendCmdSYSMSG (pChar->pID, "受付で申し込んでください。", SPEECHCMD_BATTLE1);
+		DgMessage (pChar, nID, "entrance", TRUE);
 		return TRUE;
 	}
 
@@ -4177,7 +4185,7 @@ void DungeonSelRecv(PCHARINFO pChar, PCMDPARA_DUNGEONSEL pPara)
 		itS->second.mapPick[pChar->dwTblID] = (int)pPara->byIndex;
 	} else if (pPara->byType == DUNGEONSEL_CANCEL) {
 		itS->second.mapPick[pChar->dwTblID] = -2;
-		SendCmdSYSMSG (pChar->pID, "ダンジョンに入るのをやめました。", SPEECHCMD_BATTLE1);
+		DgMessage (pChar, itS->second.nDungeonID, "cancel", FALSE);
 	} else {
 		return;
 	}
@@ -4260,8 +4268,7 @@ static void DgProc(DWORD dwNow)
 			} else if ((nLeft <= 3) && (nLeft >= 1) && (nLeft < (int)Ch.byCountDown)) {
 				char szCnt[16];
 				Ch.byCountDown = (BYTE)nLeft;
-				snprintf (szCnt, sizeof (szCnt), "%d", nLeft);
-				DgNoticeMembers (&Ch, szCnt);
+				DgNoticeMembers (&Ch, DungeonText (pDungeon, "countdown", "seconds", std::to_string (nLeft)).c_str ());
 			}
 			if (Ch.aMember.empty ()) {
 				aEnd.push_back (itC->first);
@@ -4287,7 +4294,7 @@ static void DgProc(DWORD dwNow)
 			}
 			if ((p->wHP == 0) || (p->byCharState == CHARSTATE_DEAD)) {
 				if (bAllDead) {
-					nReason = CHALLENGELEAVE_DEAD;
+					nReason = CHALLENGELEAVE_ALLDEAD;
 				}
 			} else if (p->dwPartyID != Ch.dwPartyID) {
 				nReason = CHALLENGELEAVE_PARTY;
@@ -4361,13 +4368,11 @@ BOOL DungeonPutOnChildDec(PCHARINFO pChild)
 			int nRemain = DgRemain (&Ch);
 			char szTmp[256];
 			if (nRemain > 0) {
-				snprintf (szTmp, sizeof (szTmp), "残り %d 体", nRemain);
-				DgNoticeMembers (&Ch, szTmp);
+				DgNoticeMembers (&Ch, DungeonText (DgInfo (Ch.byDungeonID), "remaining", "count", std::to_string (nRemain)).c_str ());
 			} else {
 				std::string strClear = DgRecordClear (&Ch, TRUE);
 				Ch.byCountDown = 4;
-				snprintf (szTmp, sizeof (szTmp), "全部倒しました！ %s。10秒後に全員戻ります。", strClear.c_str ());
-				DgNoticeMembers (&Ch, szTmp);
+				DgNoticeMembers (&Ch, DungeonText (DgInfo (Ch.byDungeonID), "killall_clear", "result", strClear).c_str ());
 			}
 		}
 	}

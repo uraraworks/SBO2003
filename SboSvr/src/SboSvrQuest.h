@@ -144,3 +144,6 @@ extern void SpaceOnCharMapProc(PMAPINFO pMap, PEVENTINFO pEvent, PEVENTINFO_ONCH
 extern void DungeonReceptionForget(PCHARINFO pChar);
 
 extern BOOL DungeonPutPositionAllowed(PCHARINFO pParent, DWORD dwX, DWORD dwY); /* 組の敵は生成エリア内にだけ出す */
+
+/* 番外編の操作制限の文（サブゲームの設定を使う） */
+extern std::string DungeonBlockedText(PCHARINFO);

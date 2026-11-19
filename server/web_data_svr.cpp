@@ -2133,6 +2133,7 @@ static const DATAFIELD s_aFieldSgDungeon[] = {
 	{ "szTmplName8", "番外編の表示名8", FT_STR, offsetof(SUBGAME_DUNGEONINFO, szTmplName[7]), MAX_DGTMPLNAME, 0, NULL },
 	FLD (SUBGAME_DUNGEONINFO, byRebuildMode,"作り直しの方式",	FT_U8, 0, "0=今まで通り（誰もいなくなって 5 秒たつと、そのつど新しいシードで作り直す＝気まぐれ）。1=日替わり（その日のシードは日付（日本時間）とダンジョン番号＝このサブゲームの番号から決まり、同じ日なら何度作っても・サーバーを再起動しても同じ形。日付が変わったら、範囲に誰もいない時に作り直す。誰かいる間は作り直さず、新しく入る組は前の日の形に入る。無人 5 秒の作り直しはしない。テーマ番号（dwThemeID）が 0 でない時だけ有効）。日替わりだと、番外編（byTmplCount 1 以上）の敵の出る位置が版のシードで決まりどの組も同じになり、最短記録がつく（読むのは /api/data/dungeon/records、今すぐ作り直すのは /api/data/dungeon/rebuild）"),
 	FLD (SUBGAME_DUNGEONINFO, byClearMode,"クリア条件",		FT_U8, 0, "0=ゴールのワープに着く（今まで通り）。1=敵を全部倒す（その組の空間の、NPC発生の「補充しない」印の敵を全部倒した時。そういう発生元が範囲に無ければ 0 と同じ）。クリアの瞬間にクリア時間が決まり、組の全員に知らせて 10 秒後に全員（倒れている人も）外へ戻る。記録は 0 と同じ扱い。番外編（byTmplCount 1 以上）で使う"),
+	FLDS(SUBGAME_DUNGEONINFO, szMessages, "番外編の文言一覧", FT_STR, FF_MULTILINE, "1行に key=文。空なら既定文。差し込みは {name}・{time}・{rank} 等。キー一覧は docs/dungeon-gen.md"),
 	FLD (SUBGAME_DUNGEONINFO, dwDailyVer,	"日替わりの版番号",		FT_U32, FF_READONLY, "今の形の版の通し番号（SboDungeonDaily.json の no。0=まだ作っていない。実行中だけ・読むだけ）"),
 };
 static const DATAFIELD s_aFieldSgWar[] = {

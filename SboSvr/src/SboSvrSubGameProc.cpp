@@ -7,6 +7,7 @@
 /* ========================================================================= */
 #include "include.h"
 #include "Glbldata.h"
+#include "../../common/DungeonText.h"
 #include "SboSvrRecvCmd.h"
 #include "SboSvrSubGameProc.h"
 #include "SboSvrSendCmd.h"
@@ -650,7 +651,7 @@ BOOL DungeonDailyRebuildNow(int nID, std::string &strErr)
 		return FALSE;
 	}
 	/* 中の組には知らせてから、外へ戻す（CHALLENGELEAVE_BUILD） */
-	DungeonRunLeaveAll (nID, "管理者がダンジョンを作り直します。外へ戻ります。");
+	DungeonRunLeaveAll (nID, DungeonText (pDungeon, "rebuild_notice").c_str ());
 	dwBuildBack = pDungeon->dwBuildNo;
 	pDungeon->dwDailyRetry = 0;
 	MakeDungeonProcEx ((BYTE)nID, DGDAILY_ADMIN);

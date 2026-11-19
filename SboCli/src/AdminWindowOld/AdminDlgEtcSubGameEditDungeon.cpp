@@ -127,6 +127,7 @@ void GetDataDlgEtcSubGameEditDungeon(void)
 	pInfo->byRebuildMode = (BYTE)atoi (szTmp);
 	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGCLEAR_MODE), szTmp, sizeof (szTmp));
 	pInfo->byClearMode = (BYTE)atoi (szTmp);
+	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGMESSAGES), pInfo->szMessages, sizeof (pInfo->szMessages));
 }
 
 /* ========================================================================= */
@@ -234,6 +235,8 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 	SetWindowText (GetDlgItem (hWnd, IDC_DGREBUILD_MODE), szTmp);
 	wsprintf (szTmp, "%d", pInfo->byClearMode);
 	SetWindowText (GetDlgItem (hWnd, IDC_DGCLEAR_MODE), szTmp);
+	SendMessage (GetDlgItem (hWnd, IDC_DGMESSAGES), EM_LIMITTEXT, MAX_DGTEXT - 1, 0);
+	SetWindowText (GetDlgItem (hWnd, IDC_DGMESSAGES), pInfo->szMessages);
 
 	return FALSE;
 }

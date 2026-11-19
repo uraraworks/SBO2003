@@ -9304,7 +9304,7 @@ static BOOL QuestChallengeBlock(PCHARINFO pChar)
 	if (!QuestInChallenge (pChar)) {
 		return FALSE;
 	}
-	SendCmdSYSMSG (pChar->pID, QuestInDungeon (pChar) ? "ダンジョンの中ではできません。" : "討伐チャレンジ中はできません。", SPEECHCMD_BATTLE1);
+	SendCmdSYSMSG (pChar->pID, QuestInDungeon (pChar) ? (LPSTR)DungeonBlockedText (pChar).c_str () : "討伐チャレンジ中はできません。", SPEECHCMD_BATTLE1);
 	return TRUE;
 }
 
@@ -9639,6 +9639,10 @@ void RecvDataProcSUBGAMEINFO(PBYTE pData, DWORD dwDataSize)
 			CopyMemory (pDungeonInfo->szTmplName, pDungeon->szTmplName, sizeof (pDungeonInfo->szTmplName));
 			pDungeonInfo->byRebuildMode = min (pDungeon->byRebuildMode, (BYTE)DGREBUILD_DAILY);
 			pDungeonInfo->byClearMode = min (pDungeon->byClearMode, (BYTE)DGCLEAR_KILLALL);
+			if (s_dwRecvSize >= sizeof (CMDPARA_DATA1) + sizeof (SUBGAME_DUNGEONINFOSAVE)) {
+				CopyMemory (pDungeonInfo->szMessages, pDungeon->szMessages, sizeof (pDungeonInfo->szMessages));
+			}
+			pDungeonInfo->szMessages[MAX_DGTEXT - 1] = 0;
 			/* 作り直し番号と生成結果は引き継ぐ（探索マップは設定変更時に捨てる） */
 			if (pInfoBack && (byTypeBack == SUBGAMEID_DUNGEON)) {
 				PSUBGAME_DUNGEONINFO pBack = (PSUBGAME_DUNGEONINFO)pInfoBack;
@@ -14848,7 +14852,7 @@ void RecvDataProcDUNGEONSEL(PBYTE pData, DWORD dwDataSize)
 	PCMDPARA_DUNGEONSEL pPara = (PCMDPARA_DUNGEONSEL)pData;
 	PCHARINFO pChar;
 
-	if (s_dwRecvSize < sizeof (CMDPARA_DUNGEONSEL)) {
+	if (s_dwRecvSize < offsetof (CMDPARA_DUNGEONSEL, szTitle)) {
 		return;
 	}
 	if (!IsRecvChar (pPara->dwTblID)) {

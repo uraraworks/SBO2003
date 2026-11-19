@@ -62,6 +62,7 @@ static const char *s_aszNameDUNGEON[] = {
 	"szTmplName",		/* 番外編：表示名（MAX_DGTMPL 個） */
 	"byRebuildMode",	/* 作り直しの方式（0=今まで通り・1=日替わり） */
 	"byClearMode",		/* クリア条件（0=ゴールのワープ・1=敵を全部倒す） */
+	"szMessages",		/* 番外編の文言一覧 */
 	"z"
 };
 
@@ -585,18 +586,19 @@ static PBYTE GetInfoDungeon(PSUBGAME_DUNGEONINFO pInfo, PDWORD pdwSize)
 		/* 足した項目（16番目から）は使っている時だけ書く（前の版のサーバーでも読めるように）。
 		   テーマ番号（16番目）はテーマ番号を使っている時か番外編の時か日替わりの時、番外編の項目（17番目から）は番外編の時か日替わりの時、
 		   作り直しの方式（20番目）は 0 以外の時だけ */
-		if ((i >= 15) && !pInfo->dwThemeID && !pInfo->byTmplCount && !pInfo->byRebuildMode && !pInfo->byClearMode) {
+		if ((i >= 15) && !pInfo->dwThemeID && !pInfo->byTmplCount && !pInfo->byRebuildMode && !pInfo->byClearMode && !pInfo->szMessages[0]) {
 			break;
 		}
-		if ((i >= 16) && !pInfo->byTmplCount && !pInfo->byRebuildMode && !pInfo->byClearMode) {
+		if ((i >= 16) && !pInfo->byTmplCount && !pInfo->byRebuildMode && !pInfo->byClearMode && !pInfo->szMessages[0]) {
 			break;
 		}
-		if ((i >= 19) && !pInfo->byRebuildMode && !pInfo->byClearMode) {
+		if ((i >= 19) && !pInfo->byRebuildMode && !pInfo->byClearMode && !pInfo->szMessages[0]) {
 			break;
 		}
-		if ((i >= 20) && !pInfo->byClearMode) {
+		if ((i >= 20) && !pInfo->byClearMode && !pInfo->szMessages[0]) {
 			break;
 		}
+		if ((i >= 21) && !pInfo->szMessages[0]) break;
 		strcpy (Info.szName, s_aszNameDUNGEON[i]);
 
 		dwHeaderSize += (strlen (Info.szName) + 1);
@@ -646,6 +648,7 @@ static PBYTE GetInfoDungeon(PSUBGAME_DUNGEONINFO pInfo, PDWORD pdwSize)
 		case 18:	dwDataSizeTmp = sizeof (pInfo->szTmplName);	break;	/* 番外編：表示名 */
 		case 19:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 作り直しの方式 */
 		case 20:	dwDataSizeTmp = sizeof (BYTE);			break;	/* クリア条件 */
+		case 21:	dwDataSizeTmp = sizeof (pInfo->szMessages); break; /* 番外編の文言一覧 */
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
 		dwDataSize += dwDataSizeTmp;
@@ -767,6 +770,11 @@ static PBYTE GetInfoDungeon(PSUBGAME_DUNGEONINFO pInfo, PDWORD pdwSize)
 			CopyMemory (&pData[dwOffset], &pInfo->byClearMode, sizeof (BYTE));
 			dwOffset += sizeof (BYTE);
 			break;
+		case 21:		/* 番外編の文言一覧 */
+			CopyMemory (&pData[dwOffset], pInfo->szMessages, sizeof (pInfo->szMessages));
+			dwOffset += sizeof (pInfo->szMessages);
+			break;
+
 		}
 	}
 
@@ -1695,6 +1703,10 @@ static PBYTE PetInfoDungeon(PBYTE pData, PDWORD pdwSize)
 			CopyMemory (&pInfo->byRebuildMode, &pData[dwOffsetTmp], sizeof (BYTE));
 			dwOffsetTmp += sizeof (BYTE);
 			pInfo->byRebuildMode = min (pInfo->byRebuildMode, (BYTE)DGREBUILD_DAILY);
+		} else if (strcmp (aHeaderInfo[i].szName, "szMessages") == 0) {
+			CopyMemory (pInfo->szMessages, &pData[dwOffsetTmp], sizeof (pInfo->szMessages));
+			dwOffsetTmp += sizeof (pInfo->szMessages);
+			pInfo->szMessages[MAX_DGTEXT - 1] = 0;
 		} else if (strcmp (aHeaderInfo[i].szName, "byClearMode") == 0) {			/* クリア条件 */
 			CopyMemory (&pInfo->byClearMode, &pData[dwOffsetTmp], sizeof (BYTE));
 			dwOffsetTmp += sizeof (BYTE);

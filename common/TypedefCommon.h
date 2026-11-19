@@ -1352,6 +1352,8 @@ typedef struct _SUBGAMEINFO {
 	PVOID		pInfo;												/* 詳細情報 */
 } SUBGAMEINFO, *PSUBGAMEINFO;
 
+#define MAX_DGTEXT 16384									/* 番外編の文言一覧（終端込みのバイト数） */
+
 /* サブゲーム：ダンジョン情報 */
 typedef struct _SUBGAME_DUNGEONINFO {
 	DWORD		dwMapID;											/* マップID */
@@ -1399,6 +1401,7 @@ typedef struct _SUBGAME_DUNGEONINFO {
 	DWORD		dwDailyEmpty;										/* 日替わり：範囲が無人になった時刻（0=誰かいる／まだ戻していない。実行中だけ） */
 	DWORD		dwDailyRetry;										/* 日替わり：作れなかった時の次に試す時刻（0=すぐ。実行中だけ） */
 	BYTE		byDailyUsed;										/* 日替わり：最後に戻してから誰かが入った（実行中だけ） */
+	char szMessages[MAX_DGTEXT];							/* キー＝文を1行ずつ。空欄は既定文 */
 } SUBGAME_DUNGEONINFO, *PSUBGAME_DUNGEONINFO;
 
 /* 番外編ダンジョンの作り直しの方式（SUBGAME_DUNGEONINFO::byRebuildMode） */
@@ -1430,6 +1433,7 @@ typedef struct _SUBGAME_DUNGEONINFOSAVE {
 	char		szTmplName[MAX_DGTMPL][MAX_DGTMPLNAME];				/* 番外編：表示名 */
 	BYTE		byRebuildMode;										/* 作り直しの方式（DGREBUILD_*） */
 	BYTE		byClearMode;										/* クリア条件（DGCLEAR_*） */
+	char szMessages[MAX_DGTEXT];							/* 番外編の文言一覧 */
 } SUBGAME_DUNGEONINFOSAVE, *PSUBGAME_DUNGEONINFOSAVE;
 
 /* サブゲーム：迷路情報 */
@@ -4147,6 +4151,7 @@ typedef struct _CMDPARA_DUNGEONSEL {
 	DWORD		dwTblID;											/* 本人のテーブルID（クライアント→サーバー） */
 	DWORD		dwWait;												/* 締め切りまでの残り時間（ミリ秒。OPEN） */
 	char		aszName[MAX_DGTMPL][MAX_DGTMPLNAME];				/* 表示名（UTF-8。OPEN） */
+	char szTitle[128];									/* 姿選びの題名（空なら既定文） */
 } CMDPARA_DUNGEONSEL, *PCMDPARA_DUNGEONSEL;
 #pragma pack(pop)
 

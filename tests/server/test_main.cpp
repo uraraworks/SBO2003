@@ -20,6 +20,8 @@
  *   O. 接続ID検索                … 配列・ID変更後も先頭の一致を返すことと、多数キャラでの速さ
  */
 #include "stdafx.h"
+#include "../../common/DungeonReception.h"
+#include "../../common/DungeonText.h"
 #include <algorithm>
 #pragma push_macro("max")
 #undef max
@@ -12440,21 +12442,48 @@ static void DgTestSelPick(PCHARINFO p, BYTE byIndex)
 	Para.byType = DUNGEONSEL_PICK;
 	Para.byIndex = byIndex;
 	Para.dwTblID = p->dwTblID;
-	TestRecv(p, &Para, sizeof(Para));
+	TestRecv(p, &Para, DungeonSelectionCommandSize());
 }
 
 /* 会話の決定でクライアントが送る続きを再現する */
-static void DgTestBegin(PCHARINFO p)
+static int DgTestConn(PCHARINFO p)
 {
-	CMDPARA_DUNGEONSEL Para;
-	ZeroMemory(&Para, sizeof(Para));
-	Para.byCmd = CMD_DUNGEONSEL; Para.byType = DUNGEONSEL_BEGIN; Para.dwTblID = p->dwTblID;
-	TestRecv(p, &Para, sizeof(Para));
+    for (size_t i = 0; i < s_pSpLogin->size(); i ++)
+        if (g_aCharInfo[(*s_pSpLogin)[i]] == p) return 1000 + (int)i;
+    return -1;
+}
+
+static BOOL DgTestBegin(PCHARINFO p)
+{
+    std::vector<BYTE> body;
+    int conn = DgTestConn(p);
+    if (!MarketLast(conn, CMD_TALKMSG, body) || body.size() <= sizeof(CMDPARA_TALKMSG)) return FALSE;
+    std::vector<char> msg(body.begin() + sizeof(CMDPARA_TALKMSG), body.end());
+    msg.push_back(0);
+    /* 実クライアントと同じく、受付の印が付いた会話を閉じた場合にだけ送信する。 */
+    if (!DungeonReceptionMessage(&msg[0])) return FALSE;
+    CMDPARA_DUNGEONSEL para;
+    DungeonSelectionCommand(para, p->dwTblID, DUNGEONSEL_BEGIN, 0);
+    TestRecv(p, &para, DungeonSelectionCommandSize());
+    return TRUE;
 }
 static void DgTestTalk(PCHARINFO p, DWORD dwNpc)
 {
-	QuestSendTalk(p, dwNpc);
-	DgTestBegin(p);
+    MockTrace(1);
+    QuestSendTalk(p, dwNpc);
+    DgTestBegin(p);
+    MockTrace(0);
+}
+
+/* 届いた文の本文を調べる。 */
+static BOOL DgTestText(PCHARINFO p, BYTE cmd, const char *text)
+{
+    std::vector<BYTE> body;
+    if (!MarketLast(DgTestConn(p), cmd, body)) return FALSE;
+    size_t offset = cmd == CMD_TALKMSG ? sizeof(CMDPARA_TALKMSG) : sizeof(CMDPARA_SPEECH);
+    if (body.size() <= offset) return FALSE;
+    std::string msg((const char *)&body[offset], body.size() - offset);
+    return msg.find(text) != std::string::npos;
 }
 
 /* 受付の会話は実際の受信経路（距離・空間・可視性の確認込み）で試す */
@@ -12633,10 +12662,10 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 	QuestSendParty(pE, pD, CMDPARTY_JOINOK);
 
 	/* 外の入口に乗るだけでは姿選びもワープも始まらない */
-	int nSel0 = SpCnt(pC, CMD_DUNGEONSEL), nMsg0 = SpCnt(pC, CMD_SYSMSG);
+	int nSel0 = SpCnt(pC, CMD_DUNGEONSEL), nMsg0 = SpCnt(pC, CMD_TALKMSG);
 	DungeonEventStep(pC, pEntry);
 	printf("dungeonbonus entrance-only sel=%d open=%d notice=%d in=%d\n", DungeonSelCount(), SpCnt(pC, CMD_DUNGEONSEL) - nSel0,
-		SpCnt(pC, CMD_SYSMSG) - nMsg0, (int)QuestInChallenge(pC));
+		SpCnt(pC, CMD_TALKMSG) - nMsg0, (int)QuestInChallenge(pC));
 	int nLen0 = MockCmdLen(1002);
 	/* 1. ソロ（C）：受付に話すと一覧が開き、選ぶとすぐ入る */
 	MockTrace(1);
@@ -12687,8 +12716,13 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 	s_dwFakeNow += 10000;
 	DungeonProcNow(s_dwFakeNow);
 	printf("dungeonbonus deadline 10s in d=%d sel=%d\n", (int)QuestInChallenge(pD), DungeonSelCount());
+	strcpy(Info.szMessages, "selection_timeout=締め切りになりました。");
+	MockTrace(1);
 	s_dwFakeNow += 21000;
 	DungeonProcNow(s_dwFakeNow);
+	printf("dungeonbonus messages timeout=%d\n", (int)DgTestText(pE, CMD_SYSMSG, "締め切りになりました。"));
+	Info.szMessages[0] = 0;
+	MockTrace(0);
 	DWORD dwS3 = pD->dwSpaceID;
 	printf("dungeonbonus deadline 31s in d=%d e=%d sel=%d runs=%d\n", (int)QuestInChallenge(pD), (int)QuestInChallenge(pE), DungeonSelCount(), DungeonRunCount());
 
@@ -12859,6 +12893,59 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 		MockTrace(0);
 	}
 
+    /* 設定した文と空欄の既定文を、実際に届く会話・選択パケットで確かめる。 */
+    {
+        strcpy(Info.szMessages, "reception=設定した説明です。\nselect_title=姿を選択してください\nentrance=窓口へどうぞ。\ncancel=今回はやめました。\nentered={name}で出発！\nall_dead=全員倒れました。");
+        MockTrace(1);
+        QuestMovePC(pC, nMapNo, 3, 5);
+        QuestSendTalk(pC, dwReception);
+        int custom = DgTestText(pC, CMD_TALKMSG, "設定した説明です。");
+        int before = DungeonSelCount();
+        BOOL sent = DgTestBegin(pC);
+        std::vector<BYTE> body;
+        MarketLast(DgTestConn(pC), CMD_DUNGEONSEL, body);
+        int title = body.size() >= sizeof(CMDPARA_DUNGEONSEL) &&
+            strcmp(((PCMDPARA_DUNGEONSEL)&body[0])->szTitle, "姿を選択してください") == 0;
+        CMDPARA_DUNGEONSEL para;
+        DungeonSelectionCommand(para, pC->dwTblID, DUNGEONSEL_CANCEL, 0);
+        TestRecv(pC, &para, DungeonSelectionCommandSize());
+        printf("dungeonbonus messages custom=%d before=%d sent=%d title=%d cancel=%d\n", custom, before, (int)sent, title,
+            (int)DgTestText(pC, CMD_SYSMSG, "今回はやめました。"));
+        DgTestTalk(pC, dwReception);
+        MockTrace(1); DgTestSelPick(pC, 0);
+        printf("dungeonbonus messages entered=%d\n", (int)DgTestText(pC, CMD_SYSMSG, "で出発！"));
+        pC->wHP = 0; pC->byCharState = CHARSTATE_DEAD;
+        s_dwFakeNow += 1000; DungeonProcNow(s_dwFakeNow);
+        printf("dungeonbonus messages all-dead=%d out=%d\n", (int)DgTestText(pC, CMD_SYSMSG, "全員倒れました。"), (int)!QuestInChallenge(pC));
+        QuestMovePC(pC, nMapNo, 3, 5);
+        strcpy(Info.szMessages, "reception=\nselect_title=");
+        MockTrace(1); QuestSendTalk(pC, dwReception);
+        int fallback = DgTestText(pC, CMD_TALKMSG, "経験値・お金は入りません。");
+        DgTestBegin(pC); MarketLast(DgTestConn(pC), CMD_DUNGEONSEL, body);
+        title = body.size() >= sizeof(CMDPARA_DUNGEONSEL) &&
+            strcmp(((PCMDPARA_DUNGEONSEL)&body[0])->szTitle, "どの姿で入る？") == 0;
+        TestRecv(pC, &para, DungeonSelectionCommandSize());
+        printf("dungeonbonus messages empty-default=%d title-default=%d packet-small=%d\n", fallback, title,
+            (int)(sizeof(CMDPARA_DATA1) + sizeof(SUBGAME_DUNGEONINFO) + 8 < 65536));
+        strcpy(Info.szMessages, "reception=設定した説明です。");
+        PCHARINFO npc = g_aCharInfo[dwReception];
+        LPSTR back = npc->pszNpcSpeech;
+        char speech[128]; snprintf(speech, sizeof(speech), "@d%d NPCを優先します。", byID);
+        npc->pszNpcSpeech = speech;
+        MockTrace(1); QuestSendTalk(pC, dwReception);
+        printf("dungeonbonus messages npc-priority=%d\n", (int)DgTestText(pC, CMD_TALKMSG, "NPCを優先します。"));
+        DungeonReceptionForget(pC); npc->pszNpcSpeech = back;
+        QuestSendTalk(pC, dwReception);
+        QuestMovePC(pC, nMapNo, 30, 30); DgTestBegin(pC);
+        printf("dungeonbonus messages begin-moved sel=%d\n", DungeonSelCount());
+        QuestMovePC(pC, nMapNo, 3, 5);
+        DungeonSelectionCommand(para, pC->dwTblID, DUNGEONSEL_BEGIN, 0);
+        TestRecv(pC, &para, DungeonSelectionCommandSize());
+        printf("dungeonbonus messages begin-replay sel=%d\n", DungeonSelCount());
+        Info.szMessages[0] = 0;
+        MockTrace(0);
+    }
+
 	/* 座標検索は同じマスのイベントを順に選び、番号指定も従来どおり */
 	{
 		int nFirst = SearchEvent(Info.dwMapID, nInX, nInY);
@@ -12888,13 +12975,14 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 	{
 		struct stat st;
 		long nSize[2] = { 0, 0 };
-		int nOk = 0;
+		int nOk = 0, nOld = 0, nMessages = 0;
 		for (int k = 0; k < 2; k ++) {
 			BYTE byBack = Info.byTmplCount;
 			if (k == 0) Info.byTmplCount = 0;
+			if (k == 1) strcpy(Info.szMessages, "reception=保存した説明\nselect_title=保存した題名");
 			SaveSubGameInfo();
 			if (stat("SBODATA/SboDataSubGameInfo.dat", &st) == 0) nSize[k] = (long)st.st_size;
-			if (k == 1) {
+			{
 				std::vector<PSUBGAMEINFO> aOrig;
 				for (int i = 0; i < g_aSubaGameInfo.GetSize(); i ++) aOrig.push_back(g_aSubaGameInfo[i]);
 				int nBase = (int)aOrig.size();
@@ -12903,7 +12991,9 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 				PSUBGAMEINFO pLoad = g_aSubaGameInfo.GetSize() ? g_aSubaGameInfo[g_aSubaGameInfo.GetSize() - 1] : NULL;
 				if (g_aSubaGameInfo.GetSize() == nBase && pLoad && pLoad->byType == SUBGAMEID_DUNGEON && pLoad->pInfo) {
 					PSUBGAME_DUNGEONINFO pL = (PSUBGAME_DUNGEONINFO)pLoad->pInfo;
-					nOk = (int)(pL->byTmplCount == 2 && pL->wTmplID[0] == (WORD)nSt1 && pL->wTmplID[1] == (WORD)nSt2 && strcmp(pL->szTmplName[0], "戦士") == 0 && pL->szTmplName[1][0] == 0);
+					if (k == 0) nOld = pL->szMessages[0] == 0;
+					if (k == 1) nMessages = strcmp(pL->szMessages, Info.szMessages) == 0;
+					if (k == 1) nOk = (int)(pL->byTmplCount == 2 && pL->wTmplID[0] == (WORD)nSt1 && pL->wTmplID[1] == (WORD)nSt2 && strcmp(pL->szTmplName[0], "戦士") == 0 && pL->szTmplName[1][0] == 0);
 				}
 				for (int i = 0; i < g_aSubaGameInfo.GetSize(); i ++) {
 					PSUBGAMEINFO pDel = g_aSubaGameInfo[i];
@@ -12914,8 +13004,9 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 				for (int i = 0; i < nBase; i ++) g_aSubaGameInfo.Add(aOrig[i]);
 			}
 			Info.byTmplCount = byBack;
+			Info.szMessages[0] = 0;
 		}
-		printf("dungeonbonus save roundtrip=%d extra>0=%d\n", nOk, (int)(nSize[1] > nSize[0]));
+		printf("dungeonbonus save roundtrip=%d extra>0=%d messages=%d old-empty=%d\n", nOk, (int)(nSize[1] > nSize[0]), nMessages, nOld);
 	}
 
 	/* 後始末 */
@@ -12960,11 +13051,18 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 	/* データAPIで配列・文字の項目を書き換えると全部が書き戻されるか（以前は先頭 1 バイトだけだった） */
 	{
 		char szJson[256];
-		snprintf(szJson, sizeof(szJson), "{\"detail\":{\"wTmplID\":[%d,%d],\"szTmplName2\":\"魔法使い\"}}", nSt2, nSt1);
+		snprintf(szJson, sizeof(szJson), "{\"detail\":{\"wTmplID\":[%d,%d],\"szTmplName2\":\"魔法使い\",\"szMessages\":\"reception=APIの説明\\nselect_title=APIの題名\"}}", nSt2, nSt1);
 		std::string strR = FlagGroupApi("subGame", byID, szJson);
 		if (strR.find("\"ok\":true") == std::string::npos) printf("dungeonbonus api err %s\n", strR.c_str());
 		printf("dungeonbonus api ok=%d tmpl=%d,%d name2=%s name1=%s\n", (int)(strR.find("\"ok\":true") != std::string::npos),
 			(int)(Info.wTmplID[0] == (WORD)nSt2), (int)(Info.wTmplID[1] == (WORD)nSt1), Info.szTmplName[1], Info.szTmplName[0]);
+        std::vector<BYTE> captured;
+        SvrSendCaptureBegin();
+        SendCmdSUBGAMEINFO(7777, byID);
+        BOOL sent = SvrSendCaptureEnd(captured);
+        int adminText = sent && captured.size() >= sizeof(CMDPARA_DATA1) + sizeof(SUBGAME_DUNGEONINFOSAVE) &&
+            strcmp(((PSUBGAME_DUNGEONINFOSAVE)(&captured[0] + sizeof(CMDPARA_DATA1)))->szMessages, Info.szMessages) == 0;
+        printf("dungeonbonus messages api=%d admin-send=%d\n", (int)(DungeonText(&Info, "reception") == "APIの説明"), adminText);
 	}
 	for (int i = g_aStTmpInfo.GetSize() - 1; i >= nSt1; i --) {
 		delete g_aStTmpInfo[i];
@@ -13185,10 +13283,10 @@ static void TestDungeonDaily(const std::vector<int> &aLogin)
 	QuestSendParty(pA, pB, CMDPARTY_JOIN);
 	QuestSendParty(pB, pA, CMDPARTY_JOINOK);
 
-	int nSel0 = SpCnt(pC, CMD_DUNGEONSEL), nMsg0 = SpCnt(pC, CMD_SYSMSG);
+	int nSel0 = SpCnt(pC, CMD_DUNGEONSEL), nMsg0 = SpCnt(pC, CMD_TALKMSG);
 	DungeonEventStep(pC, pEntry);
 	printf("dungeondaily entrance-only sel=%d open=%d notice=%d in=%d\n", DungeonSelCount(), SpCnt(pC, CMD_DUNGEONSEL) - nSel0,
-		SpCnt(pC, CMD_SYSMSG) - nMsg0, (int)QuestInChallenge(pC));
+		SpCnt(pC, CMD_TALKMSG) - nMsg0, (int)QuestInChallenge(pC));
 	/* 2. 敵の出る位置：どの組も同じ（日替わり）。気まぐれは今までどおり乱数 */
 	DgTestTalk(pC, dwReception);
 	printf("dungeondaily reception open sel=%d members=%d in=%d\n", DungeonSelCount(), DungeonSelMemberCount(pC), (int)QuestInChallenge(pC));
@@ -13199,6 +13297,16 @@ static void TestDungeonDaily(const std::vector<int> &aLogin)
 	DWORD dwS2 = pD->dwSpaceID;
 	std::vector<std::pair<DWORD, DWORD> > aPos1 = DpEnemyPos(dwPut, dwS1), aPos2 = DpEnemyPos(dwPut, dwS2);
 	printf("dungeondaily enemies s1=%d s2=%d same-positions=%d\n", (int)aPos1.size(), (int)aPos2.size(), (int)(aPos1 == aPos2 && !aPos1.empty()));
+
+    {
+        strcpy(Info.szMessages, "records_empty=まだ記録なし\nrecords_title=本日の順位 \nrecord_entry={rank}番 {time}{names}\nrecord_names=[{name}{others}]\nrecord_others=と{count}名\nrecord_separator= / ");
+        std::string top = DungeonDailyTopText(byID, Info.dwDailyVer);
+        printf("dungeondaily messages empty=%d format=%d literal-name=%d\n", (int)(top == "まだ記録なし"),
+            (int)(DungeonText(&Info, "record_entry", "rank", "2", "time", "1分", "names", "[仲間]") == "2番 1分[仲間]"),
+            (int)(DungeonText(&Info, "record_names", "name", "{others}", "others", "と1名") == "[{others}と1名]"));
+        Info.szMessages[0] = 0;
+        printf("dungeondaily messages default=%d\n", (int)(DungeonDailyTopText(byID, Info.dwDailyVer) == "今日の記録はまだありません。"));
+    }
 
 	/* 3. 日付が変わっても、中に人がいる間は作り直さない（入口で知らせる。新しく入る組は前の日の形） */
 	g_tDungeonDailyNow = T0 + 24 * 3600;
@@ -13212,8 +13320,13 @@ static void TestDungeonDaily(const std::vector<int> &aLogin)
 	printf("dungeondaily date-change new group in=%d same-version=%d positions-same=%d\n", (int)QuestInChallenge(pE), (int)(Info.dwBuildNo == dwBuild1), (int)(DpEnemyPos(dwPut, dwS3) == aPos1));
 
 	/* 4. ゴールの記録：入った時刻からゴールまで。日替わりは版ごとの記録に残る（前の日の版へ）。順位 */
+	strcpy(Info.szMessages, "clear_time=所要時間 {time}\nrank_best=（本日{rank}番）");
+	MockTrace(1);
 	s_dwFakeNow += 83000;
 	DungeonEventStep(pC, pGoal);
+	printf("dungeondaily messages clear-notice=%d rank-notice=%d\n", (int)DgTestText(pC, CMD_SYSMSG, "所要時間 "), (int)DgTestText(pC, CMD_SYSMSG, "（本日1番）"));
+	Info.szMessages[0] = 0;
+	MockTrace(0);
 	DGDAILYVER vOld;
 	DungeonDailyFind(byID, v1.dwNo, vOld);
 	printf("dungeondaily goal c in=%d records=%d ms-ok=%d count=%d form=%s\n", (int)QuestInChallenge(pC), (int)vOld.aRec.size(),
@@ -13305,6 +13418,12 @@ static void TestDungeonDaily(const std::vector<int> &aLogin)
 		printf("dungeondaily records same-party slower rank=%d better=%d faster rank=%d better=%d same-party-count=%d count=%d\n", nR1, (int)bB1, nR2, (int)bBetter, nSame, (int)v.aRec.size());
 		std::string strTop = DungeonDailyTopText(byID, dwV);
 		printf("dungeondaily top-text first=%d time=%s\n", (int)(strTop.find("1位 0分0秒") != std::string::npos), DungeonDailyTimeText(125000).c_str());
+    strcpy(Info.szMessages, "records_title=順位表 \nrecord_entry={rank}番:{time}{names}\nrecord_names=[{name}{others}]\nrecord_others=と{count}人");
+    std::string customTop = DungeonDailyTopText(byID, dwV);
+    printf("dungeondaily messages actual-rank=%d default-rank=%d\n", (int)(customTop.find("順位表 1番:") == 0),
+        (int)(DungeonText(&Info, "rank_best", "rank", "3") == "（今日の3位）"));
+    Info.szMessages[0] = 0;
+
 		/* 保存と読み直し */
 		std::string sBefore = DungeonDailyVersionsJson(byID, 0, FALSE);
 		DungeonDailyReload();
