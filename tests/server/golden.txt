@@ -2071,15 +2071,17 @@ dungeontheme save theme0=0 theme7=7 fields=11 extraBytes=18
 == AO. Dungeon bonus-game ==
 dungeonbonus build ready=1 entry=1 goal=1
 dungeonbonus put normal=0 spaced=1
+dungeonbonus entrance-only sel=0 open=0 notice=1 in=0
 dungeonbonus solo open sel=1 in=0
+dungeonbonus reception explain-before-open=1
 dungeonbonus solo picked sel=0 in=1 indungeon=1 space>0=1 lv=8 runs=1
-dungeonbonus party member-step sel=0
+dungeonbonus party member-talk sel=0
 dungeonbonus late leader-only sel=1 members=1 b=0
-dungeonbonus late b-joined sel=1 members=2 b=2
-dungeonbonus party leader-step sel=1
+dungeonbonus late b-joined sel=1 members=2 b=2 open=1
+dungeonbonus party leader-talk sel=1
 dungeonbonus party a-picked in a=0 b=0 sel=1
 dungeonbonus party both-in a=1 b=1 same=1 differs=1 lv=7 sel=0 runs=2
-dungeonbonus deadline open sel=1
+dungeonbonus deadline open sel=1 members=2 d-open=1 e-open=1
 dungeonbonus deadline d-picked in d=0 sel=1
 dungeonbonus deadline 10s in d=0 sel=1
 dungeonbonus deadline 31s in d=1 e=0 sel=0 runs=3
@@ -2105,6 +2107,8 @@ dungeondaily same-day rebuild same=1 build=2 versions=1
 dungeondaily after-reload same=1 versions=1 themeSaved=1
 dungeondaily seed differs-by-dungeon=1 differs-by-date=1
 dungeondaily random-mode versions=0 daily-ver=0
+dungeondaily entrance-only sel=0 open=0 notice=1 in=0
+dungeondaily reception open sel=1 members=1 in=0
 dungeondaily enemies s1=3 s2=3 same-positions=1
 dungeondaily date-change occupied rebuilt=0 stale=1
 dungeondaily date-change new group in=1 same-version=1 positions-same=1

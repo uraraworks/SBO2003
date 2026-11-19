@@ -8130,6 +8130,13 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 		}
 		return;
 	}
+	/* ダンジョンの受付（台詞が「@d番号」）？ 姿選びを始める */
+	if (DungeonIsReceptionNpc (pChar)) {
+		if ((s_nCharNoRecv >= 0) && IsNearRecvChar (pChar, 2)) {
+			DungeonReceptionTalk (g_aCharInfo[s_nCharNoRecv], pChar);
+		}
+		return;
+	}
 	/* ギルドのNPC（台詞が「@gNN」）？ 依頼の一覧を送る */
 	if (QuestIsGuildNpc (pChar)) {
 		if ((s_nCharNoRecv >= 0) && IsNearRecvChar (pChar, 2)) {

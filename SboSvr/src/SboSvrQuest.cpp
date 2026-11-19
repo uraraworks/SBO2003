@@ -3249,11 +3249,12 @@ void QuestChallengeSaveSwap(BOOL bBegin)
  */
 #define DGSEL_WAIT				30000								/* 姿を選ぶ締め切り（ミリ秒） */
 
-/* 姿を選んでいる組（入口に乗った人＝リーダーのテーブルIDが鍵） */
+/* 姿を選んでいる組（申し込んだ人＝リーダーのテーブルIDが鍵） */
 typedef struct _DGSEL {
+	DWORD		dwNpcTblID;										/* 申し込んだ受付 */
 	int			nDungeonID;											/* サブゲームの番号 */
-	DWORD		dwStart;											/* 入口に乗った時刻 */
-	DWORD		dwMapID, dwX, dwY;									/* 入口の場所（戻る場所） */
+	DWORD		dwStart;											/* 申し込んだ時刻 */
+	DWORD		dwMapID, dwX, dwY;									/* 申し込んだ場所（仲間との距離の基準） */
 	BYTE		byDirection;
 	std::vector<DWORD>		aMember;								/* 選ぶ人（テーブルID。リーダーが先頭） */
 	std::map<DWORD, int>	mapPick;								/* テーブルID → 選んだ番号（-1=まだ -2=やめた） */
@@ -3446,6 +3447,7 @@ static void DgSendSel(PCHARINFO p, BYTE byType, const DGSEL *pSel, DWORD dwWait)
 	Para.byType = byType;
 	Para.dwTblID = p->dwTblID;
 	if ((byType == DUNGEONSEL_OPEN) && pSel) {
+		SendCmdSYSMSG (p->pID, "経験値・お金は入りません。拾った物は中で使えますが、外へは持ち帰れません。姿を選んでお入りください。", SPEECHCMD_BATTLE1);
 		Para.byCount = (BYTE)min (pSel->aName.size (), (size_t)MAX_DGTMPL);
 		Para.dwWait = dwWait;
 		for (i = 0; i < (size_t)Para.byCount; i ++) {
@@ -3522,7 +3524,7 @@ static DWORD DgSelOfParty(PCHARINFO pChar)
 }
 
 /* 選んでいる最中の組に、遅れて来た仲間を足して窓を出す（締め切りは延ばさない。残り 10 秒を切っていたら 10 秒までだけ延ばす）。
-   足せたら TRUE。bTell は足せない理由を本人に知らせる（入口に乗った時） */
+   足せたら TRUE。bTell は足せない理由を本人に知らせる（受付に話した時） */
 static BOOL DgSelJoin(DWORD dwKey, PCHARINFO pChar, DWORD dwNow, BOOL bTell)
 {
 	std::map<DWORD, DGSEL>::iterator it = s_mapDgSel.find (dwKey);
@@ -3715,7 +3717,7 @@ static void DgStart(int nDungeonID, const DGSEL &Sel, const std::vector<std::pai
 		Bak.dwSession = dwSession;
 		Bak.bArrived = TRUE;
 		Bak.wDgTmpl = aPart[i].second;
-		/* 戻る場所は、仲間も全員、入口に乗った人の場所 */
+		/* 戻る場所は、仲間も全員、受付に申し込んだ人の場所 */
 		Bak.dwMapID = Sel.dwMapID;
 		Bak.dwX = Sel.dwX;
 		Bak.dwY = Sel.dwY;
@@ -3896,64 +3898,19 @@ static void DgNoticeMembers(CHALLENGE *pCh, const char *pszMsg)
 	}
 }
 
-/* 入口に乗った時（EventProc_MAPCHG の最初）：番外編のダンジョンの入口なら姿を選ぶ組を作る。出口なら出す。処理したら TRUE */
-BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
+/* 受付から姿選びを始める（パーティの確認・遅れて来た仲間の参加も共通） */
+static BOOL DgSelStart(PCHARINFO pChar, int nID, DWORD dwNpcTblID)
 {
-	PEVENTINFO_MAPCHG pMapChg;
-	PSUBGAME_DUNGEONINFO pDungeon;
-	CHALLENGE *pRun;
+	PSUBGAME_DUNGEONINFO pDungeon = DgInfo (nID);
 	DGSEL Sel;
 	std::vector<PCHARINFO> aMember;
 	size_t i;
-	int nID;
 	char szTmp[256];
 
-	if ((pChar == NULL) || (pEvent == NULL) || (pEvent->byType != EVENTTYPE_MAPCHG) || (pEvent->pData == NULL) || (pChar->byNpcType != NPCTYPE_INIT)) {
-		return FALSE;
+	if (!pChar || !DgIsGame (pDungeon) || (pChar->byNpcType != NPCTYPE_INIT) ||
+		(pChar->dwSpaceID != SPACE_NORMAL) || QuestInChallenge (pChar)) {
+		return TRUE;
 	}
-	pMapChg = (PEVENTINFO_MAPCHG)pEvent->pData;
-
-	/* ゴール：番外編の中の人が、外の入口へ戻るワープに乗った。元の姿に戻して外へ出す */
-	pRun = DgRunOf (pChar);
-	if (pRun) {
-		pDungeon = DgInfo (pRun->byDungeonID);
-		if (pDungeon && (pMapChg->dwMapID == pDungeon->dwMapID) && (pMapChg->dwX == (DWORD)pDungeon->byStartX) && (pMapChg->dwY == (DWORD)pDungeon->byStartY)) {
-			/* 中の入口（入った時に立つ所）は途中で帰る出口（記録なし） */
-			if ((pEvent->dwX == (DWORD)pDungeon->byGoalX) && (pEvent->dwY == (DWORD)pDungeon->byGoalY)) {
-				ChallengeLeave (pChar, CHALLENGELEAVE_RETIRE);
-				return TRUE;
-			}
-			/* 「敵を全部倒す」条件のゴールは途中で帰る出口（記録なし） */
-			if (pRun->bKillAll) {
-				ChallengeLeave (pChar, CHALLENGELEAVE_RETIRE);
-				return TRUE;
-			}
-			/* 組の誰かが最初にゴールした：クリア時間を記録する（まだ中にいる全員に知らせる文は、出した後に送る） */
-			std::string strClear = DgRecordClear (pRun, TRUE);
-			std::vector<DWORD> aNotice = pRun->aMember;
-			ChallengeLeave (pChar, CHALLENGELEAVE_CLEAR);
-			if (!strClear.empty ()) {
-				for (size_t k = 0; k < aNotice.size (); k ++) {
-					PCHARINFO pTmp = (aNotice[k] < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[aNotice[k]] : NULL;
-					if (pTmp && IsPlayerOnline (pTmp)) {
-						SendCmdSYSMSG (pTmp->pID, (LPSTR)strClear.c_str (), SPEECHCMD_BATTLE1);
-					}
-				}
-			}
-			return TRUE;
-		}
-		return FALSE;
-	}
-
-	/* 入口 */
-	if (pChar->dwSpaceID != SPACE_NORMAL) {
-		return FALSE;
-	}
-	nID = DgFindByEntrance (pChar->dwMapID, pEvent->dwX, pEvent->dwY);
-	if (nID < 0) {
-		return FALSE;
-	}
-	pDungeon = DgInfo (nID);
 	if ((pChar->wHP == 0) || (pChar->byCharState == CHARSTATE_DEAD) || (s_mapDgSelOf.find (pChar->dwTblID) != s_mapDgSelOf.end ())) {
 		return TRUE;
 	}
@@ -3970,7 +3927,8 @@ BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
 	{
 		DWORD dwKey = DgSelOfParty (pChar);
 		if (dwKey != 0) {
-			if (!DgSelJoin (dwKey, pChar, timeGetTime (), TRUE)) {
+			if ((s_mapDgSel[dwKey].nDungeonID != nID) || (s_mapDgSel[dwKey].dwNpcTblID != dwNpcTblID) ||
+				!DgSelJoin (dwKey, pChar, timeGetTime (), TRUE)) {
 				PCHARINFO pKey = (dwKey < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[dwKey] : NULL;
 				snprintf (szTmp, sizeof (szTmp), "今%sさんの組が姿を選んでいます。", pKey ? pKey->szName : "");
 				SendCmdSYSMSG (pChar->pID, szTmp, SPEECHCMD_BATTLE1);
@@ -3978,9 +3936,9 @@ BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
 			return TRUE;
 		}
 	}
-	/* パーティのリーダー（ソロならその人）が乗った時に始める */
+	/* パーティのリーダー（ソロならその人）が申し込んだ時に始める */
 	if (DgLeaderOf (pChar) != pChar) {
-		SendCmdSYSMSG (pChar->pID, "パーティのリーダーが入口に乗ると、みんなで入れます。", SPEECHCMD_BATTLE1);
+		SendCmdSYSMSG (pChar->pID, "パーティのリーダーが受付の人に話しかけると、みんなで入れます。", SPEECHCMD_BATTLE1);
 		return TRUE;
 	}
 	DgGetMembers (pChar, aMember);
@@ -3992,6 +3950,7 @@ BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
 		}
 	}
 	Sel.nDungeonID = nID;
+	Sel.dwNpcTblID = dwNpcTblID;
 	Sel.dwStart = timeGetTime ();
 	Sel.dwMapID = pChar->dwMapID;
 	Sel.dwX = pChar->dwX;
@@ -4038,7 +3997,7 @@ BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
 			SendCmdSYSMSG (aMember[i]->pID, (LPSTR)(DungeonDailyTried (nID, pDungeon->dwDailyVer, aMember[i]->dwTblID) ? pszAgain : pszFirst), SPEECHCMD_BATTLE1);
 		}
 	}
-	/* 近くにいない仲間を知らせる（締め切りまでに入口へ来れば組に加わる） */
+	/* 近くにいない仲間を知らせる（締め切りまでに受付の近くへ来れば組に加わる） */
 	{
 		std::vector<PCHARINFO> aParty;
 		std::string strFar;
@@ -4053,7 +4012,7 @@ BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
 			}
 		}
 		if (!strFar.empty ()) {
-			strFar = "近くにいない仲間：" + strFar + "（締め切りまでに入口へ来れば一緒に入れます）";
+			strFar = "近くにいない仲間：" + strFar + "（締め切りまでに受付の近くへ来れば一緒に入れます）";
 			for (i = 0; i < aMember.size (); i ++) {
 				SendCmdSYSMSG (aMember[i]->pID, (LPSTR)strFar.c_str (), SPEECHCMD_BATTLE1);
 			}
@@ -4063,6 +4022,93 @@ BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
 		s_mapDgSelOf[aMember[i]->dwTblID] = pChar->dwTblID;
 		DgSendSel (aMember[i], DUNGEONSEL_OPEN, &Sel, DGSEL_WAIT);
 	}
+	return TRUE;
+}
+
+/* 台詞が「@d番号」のダンジョン受付か */
+BOOL DungeonIsReceptionNpc(PCHARINFO pNpc)
+{
+	return pNpc && (pNpc->byNpcType != NPCTYPE_INIT) && pNpc->pszNpcSpeech &&
+		(pNpc->pszNpcSpeech[0] == '@') && (pNpc->pszNpcSpeech[1] == 'd');
+}
+
+/* 受付の番号はサブゲーム番号（0 から）。設定違いの受付では始めない */
+void DungeonReceptionTalk(PCHARINFO pChar, PCHARINFO pNpc)
+{
+	if (!pChar || !DungeonIsReceptionNpc (pNpc)) {
+		return;
+	}
+	const char *p = pNpc->pszNpcSpeech + 2;
+	int nID = 0;
+	BOOL bDigit = (*p >= '0') && (*p <= '9');
+	while ((*p >= '0') && (*p <= '9') && (nID < 1000)) {
+		nID = nID * 10 + (*p ++ - '0');
+	}
+	PSUBGAME_DUNGEONINFO pDungeon = DgInfo (nID);
+	if (!bDigit || *p || !DgIsGame (pDungeon) || (pNpc->dwMapID != pDungeon->dwMapID) ||
+		(pChar->dwMapID != pNpc->dwMapID) || !IsSameSpace (pChar, pNpc) ||
+		DgInArea (pDungeon, pNpc->dwMapID, pNpc->dwX, pNpc->dwY) ||
+		(abs ((int)pChar->dwX - (int)pNpc->dwX) > 2) || (abs ((int)pChar->dwY - (int)pNpc->dwY) > 2)) {
+		SendCmdSYSMSG (pChar->pID, "この受付では申し込めません。", SPEECHCMD_BATTLE1);
+		return;
+	}
+	DgSelStart (pChar, nID, pNpc->dwTblID);
+}
+
+/* 入口に乗った時（EventProc_MAPCHG の最初）：番外編の外の入口なら受付へ案内する。出口なら出す。処理したら TRUE */
+BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
+{
+	PEVENTINFO_MAPCHG pMapChg;
+	PSUBGAME_DUNGEONINFO pDungeon;
+	CHALLENGE *pRun;
+	int nID;
+
+	if ((pChar == NULL) || (pEvent == NULL) || (pEvent->byType != EVENTTYPE_MAPCHG) || (pEvent->pData == NULL) || (pChar->byNpcType != NPCTYPE_INIT)) {
+		return FALSE;
+	}
+	pMapChg = (PEVENTINFO_MAPCHG)pEvent->pData;
+
+	/* ゴール：番外編の中の人が、外の入口へ戻るワープに乗った。元の姿に戻して外へ出す */
+	pRun = DgRunOf (pChar);
+	if (pRun) {
+		pDungeon = DgInfo (pRun->byDungeonID);
+		if (pDungeon && (pMapChg->dwMapID == pDungeon->dwMapID) && (pMapChg->dwX == (DWORD)pDungeon->byStartX) && (pMapChg->dwY == (DWORD)pDungeon->byStartY)) {
+			/* 中の入口（入った時に立つ所）は途中で帰る出口（記録なし） */
+			if ((pEvent->dwX == (DWORD)pDungeon->byGoalX) && (pEvent->dwY == (DWORD)pDungeon->byGoalY)) {
+				ChallengeLeave (pChar, CHALLENGELEAVE_RETIRE);
+				return TRUE;
+			}
+			/* 「敵を全部倒す」条件のゴールは途中で帰る出口（記録なし） */
+			if (pRun->bKillAll) {
+				ChallengeLeave (pChar, CHALLENGELEAVE_RETIRE);
+				return TRUE;
+			}
+			/* 組の誰かが最初にゴールした：クリア時間を記録する（まだ中にいる全員に知らせる文は、出した後に送る） */
+			std::string strClear = DgRecordClear (pRun, TRUE);
+			std::vector<DWORD> aNotice = pRun->aMember;
+			ChallengeLeave (pChar, CHALLENGELEAVE_CLEAR);
+			if (!strClear.empty ()) {
+				for (size_t k = 0; k < aNotice.size (); k ++) {
+					PCHARINFO pTmp = (aNotice[k] < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[aNotice[k]] : NULL;
+					if (pTmp && IsPlayerOnline (pTmp)) {
+						SendCmdSYSMSG (pTmp->pID, (LPSTR)strClear.c_str (), SPEECHCMD_BATTLE1);
+					}
+				}
+			}
+			return TRUE;
+		}
+		return FALSE;
+	}
+
+	/* 入口 */
+	if (pChar->dwSpaceID != SPACE_NORMAL) {
+		return FALSE;
+	}
+	nID = DgFindByEntrance (pChar->dwMapID, pEvent->dwX, pEvent->dwY);
+	if (nID < 0) {
+		return FALSE;
+	}
+	SendCmdSYSMSG (pChar->pID, "受付で申し込んでください。", SPEECHCMD_BATTLE1);
 	return TRUE;
 }
 
