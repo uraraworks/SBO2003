@@ -2072,7 +2072,9 @@ dungeontheme save theme0=0 theme7=7 fields=11 extraBytes=18
 dungeonbonus build ready=1 entry=1 goal=1
 dungeonbonus put normal=0 spaced=1
 dungeonbonus entrance-only sel=0 open=0 notice=1 in=0
-dungeonbonus solo open sel=1 in=0
+dungeonbonus explaining talk=1 sel=0
+dungeonbonus explaining after31s sel=0 in=0
+dungeonbonus solo open sel=1 in=0 wait30=1
 dungeonbonus reception explain-before-open=1
 dungeonbonus solo picked sel=0 in=1 indungeon=1 space>0=1 lv=8 runs=1
 dungeonbonus party member-talk sel=0
@@ -2096,8 +2098,14 @@ dungeonbonus dead a bag=1
 dungeonbonus dead a waits in=1 b-still=1
 dungeonbonus dead a in=0 got=0 kept=1 b-still=1
 dungeonbonus retire event=1 in-before=1 in=0 space=0 lv=30 runs=3
+dungeonbonus return-entrance outside=1 normal=1 in=0 open=0
 dungeonbonus rebuild b in=0 got=0 kept=1 d in=0 e in=0
 dungeonbonus rebuild freed runs=0 enemies=0/0/0/0
+dungeonbonus moved-before-build sel=0 in=0
+dungeonbonus moved-build entry=1 goal=1 in-area=1 floor=1 warp=1 automap=1
+dungeonbonus moved-enemies source=1 spawned=1 outside=0
+dungeonbonus custom-talk text=1 continue=1 sel=0
+dungeonbonus event-select cycle=1 empty-kept=1
 dungeonbonus save roundtrip=1 extra>0=1
 dungeonbonus area automap dropped=1 off=1 preview-kept=1
 dungeonbonus api ok=1 tmpl=1,1 name2=魔法使い name1=戦士

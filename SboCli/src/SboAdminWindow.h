@@ -14,3 +14,6 @@ extern void AdminMapInfoOnRecv(void);								/* マップ情報を受け取っ�
 extern void AdminUndoOnRecv(const void *pPara);						/* 「元に戻す」の応答（CMDPARA_ADMINUNDO） */
 extern void AdminSpaceOnRecv(const void *pPara);					/* 空間の一覧・切り替えの応答（CMDPARA_ADMINSPACE） */
 /* Copyright(C)URARA-works 2003-2005 */
+
+extern void AdminEventCancelQuery(void);
+extern BOOL AdminEventAcceptReply(DWORD dwID, DWORD dwX, DWORD dwY);

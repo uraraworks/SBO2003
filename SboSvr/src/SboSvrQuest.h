@@ -139,3 +139,7 @@ extern void SpaceEnemyDoorCheckMap(DWORD dwMapID);				/* そのマップの「�
 extern void SpaceOnCharMapProc(PMAPINFO pMap, PEVENTINFO pEvent, PEVENTINFO_ONCHARMAP pInfo);	/* 「乗っている間変わるマス」の処理（ふつうの世界と、ほかの空間の分） */
 
 /* Copyright(C)URARA-works 2003-2005 */
+
+extern void DungeonReceptionForget(PCHARINFO pChar);
+
+extern BOOL DungeonPutPositionAllowed(PCHARINFO pParent, DWORD dwX, DWORD dwY); /* 組の敵は生成エリア内にだけ出す */

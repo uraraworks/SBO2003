@@ -1384,6 +1384,8 @@ typedef struct _SUBGAME_DUNGEONINFO {
 	DWORD		dwTblIDCheck;										/* 最後に人数チェックしたテーブルID */
 	DWORD		dwBuildNo;											/* 作り直し番号（テーマで作るたびに進む。実行中だけ・保存しない） */
 	WORD		*pwGenParts;										/* テーマで作った結果のパーツ（範囲の大きさ。実行中だけ・保存しない） */
+	DWORD		dwGenMapID;										/* 生成時のマップと範囲（設定変更後の古い生成結果への入場を防ぐ） */
+	BYTE		byGenX1, byGenY1, byGenX2, byGenY2;
 	WORD		wGenCX;												/* 生成結果の横サイズ */
 	WORD		wGenCY;												/* 生成結果の縦サイズ */
 	WORD		wGenStartX;											/* 生成の start（範囲の左上からの座標） */
@@ -4135,6 +4137,7 @@ enum {
 	DUNGEONSEL_CLOSE,												/* 選ぶ窓を閉じる（サーバー→クライアント） */
 	DUNGEONSEL_PICK,												/* 選ぶ（クライアント→サーバー。byIndex=一覧の何番目か） */
 	DUNGEONSEL_CANCEL,												/* 入るのをやめる（クライアント→サーバー） */
+	DUNGEONSEL_BEGIN,											/* 受付の説明を読み終えた（クライアント→サーバー） */
 };
 typedef struct _CMDPARA_DUNGEONSEL {
 	BYTE		byCmd;												/* コマンドID */

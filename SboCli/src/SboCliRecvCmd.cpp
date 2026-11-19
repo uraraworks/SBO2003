@@ -6057,6 +6057,7 @@ void RecvDataProcCHGEVENT(PBYTE pData, DWORD dwDataSize)
 {
 	PCMDPARA_CHGEVENT pEvent = (PCMDPARA_CHGEVENT)pData;
 	int nSize;
+	if (dwDataSize < sizeof (*pEvent)) return;
 
 	if (g_hWndAdmin == NULL) {
 		return;
@@ -6064,7 +6065,7 @@ void RecvDataProcCHGEVENT(PBYTE pData, DWORD dwDataSize)
 	/* イベント画面で選んでいるイベントの返事だけ受け取る。
 	   マップを送り直す時（気まぐれダンジョンの作り直しなど）は全部のイベントが届くので、
 	   ほかの画面（マップ情報など）の上にイベントの入力欄が作られて重なっていた */
-	if ((g_nAdminWindowType != IDM_MAP_EVENT) || ((int)pEvent->dwDataID != g_nSelectEventID)) {
+	if (!AdminEventAcceptReply (pEvent->dwDataID, pEvent->dwX, pEvent->dwY)) {
 		return;
 	}
 

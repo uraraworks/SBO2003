@@ -1730,14 +1730,35 @@ static BOOL MakeDungeonByTheme(int nID, PSUBGAME_DUNGEONINFO pDungeon, PMAPINFO 
 		return FALSE;
 	}
 
+	/* エリア移動時は、前の生成範囲に属する発生元も同じだけ移す（発生範囲は絶対座標の中心からの距離） */
+	if (pDungeon->pwGenParts && (pDungeon->dwGenMapID == pMap->dwID) &&
+		((pDungeon->byGenX1 != x1) || (pDungeon->byGenY1 != y1))) {
+		int dx = x1 - pDungeon->byGenX1, dy = y1 - pDungeon->byGenY1;
+		for (int k = 0; k < g_aCharInfo.GetSize (); k ++) {
+			PCHARINFO pPut = g_aCharInfo[k];
+			if (!pPut || (pPut->byNpcType != NPCTYPE_PUT) || (pPut->dwMapID != pMap->dwID) ||
+				(pPut->dwX < pDungeon->byGenX1) || (pPut->dwX > pDungeon->byGenX2) ||
+				(pPut->dwY < pDungeon->byGenY1) || (pPut->dwY > pDungeon->byGenY2)) continue;
+			DeleteTblNoPC (pPut->dwTblID);
+			pPut->dwX = pPut->dwXBack = pPut->dwStartX = min (max ((int)pPut->dwX + dx, x1), x1 + nAreaCX - 1);
+			pPut->dwY = pPut->dwYBack = pPut->dwStartY = min (max ((int)pPut->dwY + dy, y1), y1 + nAreaCY - 1);
+			pPut->byPutDone = 0;
+			AddTblNoPC (pPut->dwTblID);
+			SendCmdCHARINFO (URARASOCK_SENDALL, pPut->dwTblID);
+		}
+	}
+
 	/* ここから先は作る。範囲内の古いイベント（扉・出口など）を全部消す */
 	{
 		int nKeep = 0;
 		std::vector<EVENTINFO> aKeep;
 		for (i = 0; i < pMap->nEventCount; i ++) {
 			PEVENTINFO pEvent = &pMap->pEvent[i];
-			if ((pEvent->dwX >= (DWORD)pDungeon->byX1) && (pEvent->dwX <= (DWORD)pDungeon->byX2) &&
-				(pEvent->dwY >= (DWORD)pDungeon->byY1) && (pEvent->dwY <= (DWORD)pDungeon->byY2)) {
+			if (((pEvent->dwX >= (DWORD)pDungeon->byX1) && (pEvent->dwX <= (DWORD)pDungeon->byX2) &&
+				(pEvent->dwY >= (DWORD)pDungeon->byY1) && (pEvent->dwY <= (DWORD)pDungeon->byY2)) ||
+				(pDungeon->pwGenParts && (pDungeon->dwGenMapID == pMap->dwID) &&
+				(pEvent->dwX >= pDungeon->byGenX1) && (pEvent->dwX <= pDungeon->byGenX2) &&
+				(pEvent->dwY >= pDungeon->byGenY1) && (pEvent->dwY <= pDungeon->byGenY2))) {
 				SAFE_DELETE_ARRAY (pEvent->pData);
 				continue;
 			}
@@ -1782,6 +1803,9 @@ static BOOL MakeDungeonByTheme(int nID, PSUBGAME_DUNGEONINFO pDungeon, PMAPINFO 
 	for (i = 0; i < cx * cy; i ++) {
 		pDungeon->pwGenParts[i] = (WORD)max (0, aParts[i]);
 	}
+	pDungeon->dwGenMapID = pDungeon->dwMapID;
+	pDungeon->byGenX1 = pDungeon->byX1; pDungeon->byGenY1 = pDungeon->byY1;
+	pDungeon->byGenX2 = pDungeon->byX2; pDungeon->byGenY2 = pDungeon->byY2;
 	pDungeon->wGenCX = (WORD)cx;
 	pDungeon->wGenCY = (WORD)cy;
 	pDungeon->wGenStartX = (WORD)sk.startX;
@@ -1813,8 +1837,8 @@ static BOOL MakeDungeonByTheme(int nID, PSUBGAME_DUNGEONINFO pDungeon, PMAPINFO 
 		ZeroMemory (pEvent->pData, nSize);
 		PEVENTINFO_MAPCHG pMapChg = (PEVENTINFO_MAPCHG)pEvent->pData;
 		pMapChg->dwMapID = pMap->dwID;
-		pMapChg->dwX = (DWORD)nInX;
-		pMapChg->dwY = (DWORD)nInY;
+		pMapChg->dwX = pDungeon->byTmplCount ? (DWORD)pDungeon->byStartX : (DWORD)nInX;
+		pMapChg->dwY = pDungeon->byTmplCount ? (DWORD)pDungeon->byStartY : (DWORD)nInY;
 		pMapChg->byEfect = EVENTMOVEEFECT_SILENT;
 	}
 	/* 出口（生成の goal）→ 外の入口 */
@@ -2138,8 +2162,8 @@ void MakeDungeonProcEx(BYTE byID, int nHow)
 	/* その他準備 */
 	pDungeon->byTmpX = 0;
 	pDungeon->byTmpY = 0;
-	pDungeon->byGoalX = pDungeon->byStartX + (BYTE)((sx + 1) * 2);
-	pDungeon->byGoalY = pDungeon->byStartY + (BYTE)((sy + 1) * 2) + 1;
+	pDungeon->byGoalX = pDungeon->byX1 + (BYTE)((sx + 1) * 2);
+	pDungeon->byGoalY = pDungeon->byY1 + (BYTE)((sy + 1) * 2) + 1;
 	pDungeon->dwTimeCheck = 0;
 	pDungeon->dwTblIDCheck = 0;
 }

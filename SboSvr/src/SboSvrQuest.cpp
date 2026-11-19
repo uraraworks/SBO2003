@@ -3043,6 +3043,7 @@ static void ChallengeOnDecPlayer(PCHARINFO pChar)
 	std::map<DWORD, DWORD>::iterator itE = s_mapEnemy.find (pChar->dwTblID);
 
 	/* 番外編ダンジョンの姿を選んでいる最中の切断 */
+	DungeonReceptionForget (pChar);
 	DgSelOnDec (pChar);
 	/* 敵が倒された */
 	if (itE != s_mapEnemy.end ()) {
@@ -3289,7 +3290,8 @@ static BOOL DgIsGame(PSUBGAME_DUNGEONINFO p)
 /* 遊べる状態か（作り終えている） */
 static BOOL DgReady(PSUBGAME_DUNGEONINFO p)
 {
-	return (p->pwGenParts != NULL) && (p->dwBuildNo > 0) && (p->pMapTmp == NULL) && (p->wGenCX > 0);
+	return (p->dwGenMapID == p->dwMapID) && (p->byGenX1 == p->byX1) && (p->byGenY1 == p->byY1) &&
+		(p->byGenX2 == p->byX2) && (p->byGenY2 == p->byY2) && (p->pwGenParts != NULL) && (p->dwBuildNo > 0) && (p->pMapTmp == NULL) && (p->wGenCX > 0);
 }
 
 static BOOL DgInArea(PSUBGAME_DUNGEONINFO p, DWORD dwMapID, DWORD dwX, DWORD dwY)
@@ -3447,7 +3449,10 @@ static void DgSendSel(PCHARINFO p, BYTE byType, const DGSEL *pSel, DWORD dwWait)
 	Para.byType = byType;
 	Para.dwTblID = p->dwTblID;
 	if ((byType == DUNGEONSEL_OPEN) && pSel) {
-		SendCmdSYSMSG (p->pID, "経験値・お金は入りません。拾った物は中で使えますが、外へは持ち帰れません。姿を選んでお入りください。", SPEECHCMD_BATTLE1);
+		/* 仲間には選択窓と同時に要点を通知する。申し込んだ本人は受付の会話で読んでいる */
+		if (!pSel->aMember.empty () && (p->dwTblID != pSel->aMember[0])) {
+			SendCmdSYSMSG (p->pID, "経験値・お金は入りません。拾った物は中で使えますが、外へは持ち帰れません。姿を選んでお入りください。", SPEECHCMD_BATTLE1);
+		}
 		Para.byCount = (BYTE)min (pSel->aName.size (), (size_t)MAX_DGTMPL);
 		Para.dwWait = dwWait;
 		for (i = 0; i < (size_t)Para.byCount; i ++) {
@@ -3730,7 +3735,7 @@ static void DgStart(int nDungeonID, const DGSEL &Sel, const std::vector<std::pai
 
 		SendCmdPLAYSOUND (pTmp->pID, SOUND_MOVE);
 		SendCmdFADEINOUT (pTmp->pID, 0);
-		SubProcMapMove (pTmp, pDungeon->dwMapID, (DWORD)pDungeon->byGoalX, (DWORD)pDungeon->byGoalY);
+		SubProcMapMove (pTmp, pDungeon->dwMapID, (DWORD)pDungeon->byGenX1 + pDungeon->wGenStartX, (DWORD)pDungeon->byGenY1 + pDungeon->wGenStartY);
 		/* 移動で届くマップ情報は扉が閉じたままなので、この空間の扉などの状態を送る */
 		SpaceSendMapState (pTmp);
 
@@ -4025,6 +4030,9 @@ static BOOL DgSelStart(PCHARINFO pChar, int nID, DWORD dwNpcTblID)
 	return TRUE;
 }
 
+/* 説明を読み終えた本人だけが受付を続けられる。切断・別の会話では捨てる */
+static std::map<DWORD, DWORD> s_mapDgReception;
+
 /* 台詞が「@d番号」のダンジョン受付か */
 BOOL DungeonIsReceptionNpc(PCHARINFO pNpc)
 {
@@ -4033,7 +4041,7 @@ BOOL DungeonIsReceptionNpc(PCHARINFO pNpc)
 }
 
 /* 受付の番号はサブゲーム番号（0 から）。設定違いの受付では始めない */
-void DungeonReceptionTalk(PCHARINFO pChar, PCHARINFO pNpc)
+static void DgReceptionTalk(PCHARINFO pChar, PCHARINFO pNpc, BOOL bBegin)
 {
 	if (!pChar || !DungeonIsReceptionNpc (pNpc)) {
 		return;
@@ -4045,14 +4053,38 @@ void DungeonReceptionTalk(PCHARINFO pChar, PCHARINFO pNpc)
 		nID = nID * 10 + (*p ++ - '0');
 	}
 	PSUBGAME_DUNGEONINFO pDungeon = DgInfo (nID);
-	if (!bDigit || *p || !DgIsGame (pDungeon) || (pNpc->dwMapID != pDungeon->dwMapID) ||
+	if (!bDigit || !DgIsGame (pDungeon) || (pNpc->dwMapID != pDungeon->dwMapID) ||
 		(pChar->dwMapID != pNpc->dwMapID) || !IsSameSpace (pChar, pNpc) ||
 		DgInArea (pDungeon, pNpc->dwMapID, pNpc->dwX, pNpc->dwY) ||
 		(abs ((int)pChar->dwX - (int)pNpc->dwX) > 2) || (abs ((int)pChar->dwY - (int)pNpc->dwY) > 2)) {
 		SendCmdSYSMSG (pChar->pID, "この受付では申し込めません。", SPEECHCMD_BATTLE1);
 		return;
 	}
-	DgSelStart (pChar, nID, pNpc->dwTblID);
+	if (bBegin) {
+		DgSelStart (pChar, nID, pNpc->dwTblID);
+	} else {
+		/* ほかの受付と同じく番号の後ろを台詞に使う。入力待ちの後で姿選びへ進む */
+		while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p ++;
+		std::string strMsg = *p ? p : "経験値・お金は入りません。拾った物は中で使えますが、外へは持ち帰れません。姿を選んでお入りください。";
+		/* 通信の上限で末尾の続行指示が切れないようにする */
+		char szMsg[MAX_TALKMSG - 4];
+		SboTextCopy (szMsg, sizeof (szMsg), strMsg.c_str ());
+		strMsg = szMsg;
+		while (strMsg.size () >= 2 && (strMsg.substr (strMsg.size () - 2) == "@2" || strMsg.substr (strMsg.size () - 2) == "@0")) strMsg.resize (strMsg.size () - 2);
+		strMsg += "@2@D";
+		s_mapDgReception[pChar->dwTblID] = pNpc->dwTblID;
+		SendCmdTALKMSG (pChar->pID, pNpc->dwTblID, (LPSTR)strMsg.c_str ());
+	}
+}
+
+void DungeonReceptionTalk(PCHARINFO pChar, PCHARINFO pNpc)
+{
+	DgReceptionTalk (pChar, pNpc, FALSE);
+}
+
+void DungeonReceptionForget(PCHARINFO pChar)
+{
+	if (pChar) s_mapDgReception.erase (pChar->dwTblID);
 }
 
 /* 入口に乗った時（EventProc_MAPCHG の最初）：番外編の外の入口なら受付へ案内する。出口なら出す。処理したら TRUE */
@@ -4068,13 +4100,20 @@ BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
 	}
 	pMapChg = (PEVENTINFO_MAPCHG)pEvent->pData;
 
+	/* 外の入口は、以前の挑戦・空間の状態によらず必ず受付へ案内する */
+	nID = DgFindByEntrance (pChar->dwMapID, pEvent->dwX, pEvent->dwY);
+	if (nID >= 0) {
+		SendCmdSYSMSG (pChar->pID, "受付で申し込んでください。", SPEECHCMD_BATTLE1);
+		return TRUE;
+	}
+
 	/* ゴール：番外編の中の人が、外の入口へ戻るワープに乗った。元の姿に戻して外へ出す */
 	pRun = DgRunOf (pChar);
 	if (pRun) {
 		pDungeon = DgInfo (pRun->byDungeonID);
 		if (pDungeon && (pMapChg->dwMapID == pDungeon->dwMapID) && (pMapChg->dwX == (DWORD)pDungeon->byStartX) && (pMapChg->dwY == (DWORD)pDungeon->byStartY)) {
 			/* 中の入口（入った時に立つ所）は途中で帰る出口（記録なし） */
-			if ((pEvent->dwX == (DWORD)pDungeon->byGoalX) && (pEvent->dwY == (DWORD)pDungeon->byGoalY)) {
+			if ((pEvent->dwX == (DWORD)pDungeon->byGenX1 + pDungeon->wGenStartX) && (pEvent->dwY == (DWORD)pDungeon->byGenY1 + pDungeon->wGenStartY)) {
 				ChallengeLeave (pChar, CHALLENGELEAVE_RETIRE);
 				return TRUE;
 			}
@@ -4100,21 +4139,20 @@ BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
 		return FALSE;
 	}
 
-	/* 入口 */
-	if (pChar->dwSpaceID != SPACE_NORMAL) {
-		return FALSE;
-	}
-	nID = DgFindByEntrance (pChar->dwMapID, pEvent->dwX, pEvent->dwY);
-	if (nID < 0) {
-		return FALSE;
-	}
-	SendCmdSYSMSG (pChar->pID, "受付で申し込んでください。", SPEECHCMD_BATTLE1);
-	return TRUE;
+	return FALSE;
 }
 
 /* 姿を選ぶ・やめる（CMD_DUNGEONSEL の受信） */
 void DungeonSelRecv(PCHARINFO pChar, PCMDPARA_DUNGEONSEL pPara)
 {
+	if (pPara->byType == DUNGEONSEL_BEGIN) {
+		std::map<DWORD, DWORD>::iterator it = s_mapDgReception.find (pChar->dwTblID);
+		if (it == s_mapDgReception.end ()) return;
+		DWORD dwNpc = it->second;
+		s_mapDgReception.erase (it);
+		if (dwNpc < (DWORD)g_aCharInfo.GetSize ()) DgReceptionTalk (pChar, g_aCharInfo[dwNpc], TRUE);
+		return;
+	}
 	std::map<DWORD, DWORD>::iterator itOf = s_mapDgSelOf.find (pChar->dwTblID);
 	std::map<DWORD, DGSEL>::iterator itS;
 	DWORD dwLeader;
@@ -4273,6 +4311,15 @@ static void DgProc(DWORD dwNow)
 void DungeonProcNow(DWORD dwNow)
 {
 	DgProc (dwNow);
+}
+
+/* 組の敵が発生できる範囲。生成前・範囲変更後の古い地形には出さない */
+BOOL DungeonPutPositionAllowed(PCHARINFO pParent, DWORD dwX, DWORD dwY)
+{
+	std::map<DWORD, CHALLENGE>::iterator it = s_mapChallenge.find (pParent->dwSpaceID);
+	if ((it == s_mapChallenge.end ()) || (it->second.byKind != CHALLENGEKIND_DUNGEON)) return TRUE;
+	PSUBGAME_DUNGEONINFO p = DgInfo (it->second.byDungeonID);
+	return p && DgReady (p) && DgInArea (p, pParent->dwMapID, dwX, dwY);
 }
 
 /* NPC発生の発生元が、番外編ダンジョンの範囲の中にあるか（ふつうの世界には出さず、組の空間ごとに出す） */

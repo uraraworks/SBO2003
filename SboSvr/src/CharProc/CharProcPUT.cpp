@@ -244,6 +244,8 @@ BOOL CCharProcPUT::PutOne(DWORD dwTime, BOOL bSpaced, const DWORD *pdwSeed)
 	dwY = max (dwY, 0);
 	dwY = min (dwY, (DWORD)pMap->nCY - 1);
 
+	if (bSpaced && !DungeonPutPositionAllowed (m_pChar, dwX, dwY)) return FALSE;
+
 	/* 通れない場所に発生する？ */
 	bResult = CheckCharBlock (m_pChar, m_pChar->dwMapID, dwX, dwY);
 	if (bResult == FALSE) {

@@ -3363,6 +3363,13 @@ BOOL MsgProc(PWNDINFO pWnd)
 		}
 		break;
 
+	/* 受付の説明を読み終えたので姿選びを申し込む（締め切りはここから） */
+	case 'D':
+		pWnd->nData1 ++;
+		SendCmdDUNGEONSEL (DUNGEONSEL_BEGIN, 0);
+		bRet = FALSE;
+		break;
+
 	/* 会話データの「はい・いいえ」（行の最後。答えるまで止める） */
 	case 'y':
 		pWnd->nData1 ++;

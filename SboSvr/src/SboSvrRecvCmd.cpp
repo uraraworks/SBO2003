@@ -5450,7 +5450,14 @@ void RecvDataProcEVENTGET(PBYTE pData, DWORD dwDataSize)
 	}
 
 	if (pEvent->nData < 0) {
-		pEvent->nData = SearchEvent (pEvent->dwID, pEvent->dwX, pEvent->dwY);
+		/* -1 は先頭から、それ以下は前回選んだ番号の次から同じ座標を循環検索 */
+		PMAPINFO pMap = g_aMapInfo[nNo];
+		int nStart = (pEvent->nData == -1) ? 0 : (int)(-(long long)pEvent->nData - 1);
+		pEvent->nData = -1;
+		for (int i = 0; i < pMap->nEventCount; i ++) {
+			int n = (int)(((long long)nStart + i) % pMap->nEventCount);
+			if ((pMap->pEvent[n].dwX == pEvent->dwX) && (pMap->pEvent[n].dwY == pEvent->dwY)) { pEvent->nData = n; break; }
+		}
 		if (pEvent->nData < 0) {
 			return;
 		}
@@ -5461,7 +5468,7 @@ void RecvDataProcEVENTGET(PBYTE pData, DWORD dwDataSize)
 	SendCmdEVENTCOUNT (pEvent->pID, pEvent->dwID);
 
 	if ((g_aMapInfo[nNo]->nEventCount == 0) ||
-		(g_aMapInfo[nNo]->nEventCount < pEvent->nData)) {
+		(g_aMapInfo[nNo]->nEventCount <= pEvent->nData)) {
 		return;
 	}
 	SendCmdEVENTINFO (pEvent->pID, nNo, pEvent->nData);
@@ -8121,6 +8128,7 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 	/* 何かに話しかけたら、会話データの「はい・いいえ」の保留中の問いは消える（別の NPC に話した時） */
 	if (s_nCharNoRecv >= 0) {
 		TalkPendClear ((DWORD)s_nCharNoRecv);
+		DungeonReceptionForget (g_aCharInfo[s_nCharNoRecv]);
 	}
 	/* 別の空間にいるキャラ・印で見えないNPCとは話せない */
 	if ((s_nCharNoRecv >= 0) && (!IsSameSpace (g_aCharInfo[s_nCharNoRecv], pChar) || !IsCharSeenBy (pChar, g_aCharInfo[s_nCharNoRecv]))) {
@@ -9634,8 +9642,16 @@ void RecvDataProcSUBGAMEINFO(PBYTE pData, DWORD dwDataSize)
 			/* 作り直し番号と生成結果は引き継ぐ（探索マップは設定変更時に捨てる） */
 			if (pInfoBack && (byTypeBack == SUBGAMEID_DUNGEON)) {
 				PSUBGAME_DUNGEONINFO pBack = (PSUBGAME_DUNGEONINFO)pInfoBack;
-				pDungeonInfo->dwBuildNo = pBack->dwBuildNo;
+				BOOL bSameArea = (pDungeonInfo->dwMapID == pBack->dwMapID) && (pDungeonInfo->byX1 == pBack->byX1) && (pDungeonInfo->byY1 == pBack->byY1) && (pDungeonInfo->byX2 == pBack->byX2) && (pDungeonInfo->byY2 == pBack->byY2) && (pDungeonInfo->dwThemeID == pBack->dwThemeID);
+				pDungeonInfo->dwBuildNo = bSameArea ? pBack->dwBuildNo : 0;
+				if (bSameArea && pBack->pwGenParts) {
+					pDungeonInfo->byGoalX = pBack->byGoalX;
+					pDungeonInfo->byGoalY = pBack->byGoalY;
+				}
 				pDungeonInfo->pwGenParts = pBack->pwGenParts;
+				pDungeonInfo->dwGenMapID = pBack->dwGenMapID;
+				pDungeonInfo->byGenX1 = pBack->byGenX1; pDungeonInfo->byGenY1 = pBack->byGenY1;
+				pDungeonInfo->byGenX2 = pBack->byGenX2; pDungeonInfo->byGenY2 = pBack->byGenY2;
 				pDungeonInfo->wGenCX = pBack->wGenCX;
 				pDungeonInfo->wGenCY = pBack->wGenCY;
 				pDungeonInfo->wGenStartX = pBack->wGenStartX;
