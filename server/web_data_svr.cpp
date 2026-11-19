@@ -25,6 +25,7 @@
 #include "SboSvrAdminUndo.h"
 #include "SboSvrNpcRoute.h"
 #include "SboSvrRecycle.h"
+#include "SboSvrMarket.h"
 #include "SboSvrMapSwapEdit.h"
 #include "CharProc/IncludeCharProc.h"
 
@@ -32,6 +33,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <map>
 
 extern BOOL SaveItemInfo(void);
 extern BOOL SaveStTmpInfo(void);
@@ -2665,6 +2667,83 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataRecycle()
 	}
 	out += "],\"limits\":{\"maxKind\":" + JsonNum(RECYCLE_MAXKIND) + ",\"maxCount\":" + JsonNum(RECYCLE_MAXCOUNT) +
 			",\"dayLimit\":" + JsonNum(RECYCLE_DAYLIMIT) + ",\"logMax\":" + JsonNum(RECYCLE_LOGMAX) + ",\"range\":" + JsonNum(RECYCLE_RANGE) + ",\"maxBox\":" + JsonNum(MAX_RECYCLEBOX) + "}}";
+	s_strResult = out;
+	return s_strResult.c_str();
+}
+
+/*
+ * 取引所（委託販売。docs/market.md）の出品と売上の状況。読むだけ（期限切れへの切り替えもしない）。
+ *   items … 出品（新しい順＝出品IDの大きい順）。id は出品ID、acc は出品者のアカウント、seller は出品したキャラ名、
+ *           charId はそのキャラのテーブルID、itemId・item は品、price は値段、fee は売れた時の手数料、net は手取り、
+ *           time・date は出品した時刻（UNIX 秒・日本時間の「年-月-日 時:分」）、limit・limitDate は期限、
+ *           state は "on"（出品中）か "expired"（期限切れ。保存上はまだ出品中でも期限を過ぎていれば expired）、
+ *           leftSec は期限までの残り秒（期限切れは 0）
+ *   accounts … アカウントごとの出品数（出品中・期限切れ）と、受付に貯まっている売上 gold（出品か売上のあるアカウントだけ。アカウント名の順）
+ *   total … 出品中・期限切れの件数、出品中の値段の合計、売上の合計
+ *   limits … 決まり（1 アカウントの出品数・期限の日数・手数料%・値段の上限・受付からの距離・買う一覧の件数）
+ */
+extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataMarket()
+{
+	DWORD dwNow = (DWORD)time(NULL);
+	std::vector<size_t> aIdx;
+	for (size_t k = 0; k < g_aMarketItem.size(); k ++) {
+		aIdx.push_back(k);
+	}
+	std::sort(aIdx.begin(), aIdx.end(), [](size_t a, size_t b) { return g_aMarketItem[a].dwID > g_aMarketItem[b].dwID; });
+
+	/* アカウントごとの集計（アカウント名 → 出品中・期限切れ・売上） */
+	struct ACCSUM { int nOn; int nExpired; DWORD dwGold; };
+	std::map<std::string, ACCSUM> mapAcc;
+	int nOn = 0, nExpired = 0;
+	unsigned long long qwOnPrice = 0, qwGold = 0;
+
+	std::string out = "{\"items\":[";
+	for (size_t r = 0; r < aIdx.size(); r ++) {
+		const MARKETITEM &M = g_aMarketItem[aIdx[r]];
+		DWORD dwLimit = M.dwTime + MARKET_LIMITSEC;
+		bool bExpired = (M.byState != MARKETSTATE_ON) || (dwNow >= M.dwTime && dwNow - M.dwTime >= MARKET_LIMITSEC);
+		DWORD dwFee = (DWORD)((unsigned long long)M.dwPrice * MARKET_FEE_PERCENT / 100);
+		std::string strAcc(M.szAcc, strnlen(M.szAcc, MAX_ACCNAME));
+		ACCSUM &S = mapAcc[strAcc];
+		if (bExpired) {
+			S.nExpired ++;
+			nExpired ++;
+		} else {
+			S.nOn ++;
+			nOn ++;
+			qwOnPrice += M.dwPrice;
+		}
+		if (r) out += ",";
+		out += "{\"id\":" + JsonNum(M.dwID) + ",\"acc\":" + JsonStr(strAcc.c_str()) +
+				",\"seller\":" + JsonStr(std::string(M.szSeller, strnlen(M.szSeller, MAX_CHARNAMEBUF)).c_str()) +
+				",\"charId\":" + JsonNum(M.dwCharID) + ",\"itemId\":" + JsonNum(M.wItemID) + ",\"item\":" + RecycleItemName(M.wItemID) +
+				",\"price\":" + JsonNum(M.dwPrice) + ",\"fee\":" + JsonNum(dwFee) + ",\"net\":" + JsonNum(M.dwPrice - dwFee) +
+				",\"time\":" + JsonNum(M.dwTime) + ",\"date\":" + JsonStr(RecycleDateText(M.dwTime).c_str()) +
+				",\"limit\":" + JsonNum(dwLimit) + ",\"limitDate\":" + JsonStr(RecycleDateText(dwLimit).c_str()) +
+				",\"state\":" + JsonStr(bExpired ? "expired" : "on") +
+				",\"leftSec\":" + JsonNum(bExpired ? 0 : (dwLimit > dwNow ? dwLimit - dwNow : 0)) + "}";
+	}
+	for (size_t k = 0; k < g_aMarketSale.size(); k ++) {
+		const MARKETSALE &Sale = g_aMarketSale[k];
+		if (Sale.szAcc[0] == 0 || Sale.dwGold == 0) {
+			continue;
+		}
+		std::string strAcc(Sale.szAcc, strnlen(Sale.szAcc, MAX_ACCNAME));
+		mapAcc[strAcc].dwGold += Sale.dwGold;
+		qwGold += Sale.dwGold;
+	}
+	out += "],\"accounts\":[";
+	bool bFirst = true;
+	for (std::map<std::string, ACCSUM>::const_iterator it = mapAcc.begin(); it != mapAcc.end(); ++ it) {
+		if (!bFirst) out += ",";
+		bFirst = false;
+		out += "{\"acc\":" + JsonStr(it->first.c_str()) + ",\"on\":" + JsonNum(it->second.nOn) + ",\"expired\":" + JsonNum(it->second.nExpired) +
+				",\"gold\":" + JsonNum(it->second.dwGold) + "}";
+	}
+	out += "],\"total\":{\"on\":" + JsonNum(nOn) + ",\"expired\":" + JsonNum(nExpired) +
+			",\"onPrice\":" + JsonNum((long long)qwOnPrice) + ",\"gold\":" + JsonNum((long long)qwGold) + "}";
+	out += ",\"limits\":{\"maxPut\":" + JsonNum(MARKET_MAXPUT) + ",\"days\":" + JsonNum(MARKET_DAYS) + ",\"feePercent\":" + JsonNum(MARKET_FEE_PERCENT) +
+			",\"priceMax\":" + JsonNum(MARKET_PRICEMAX) + ",\"range\":" + JsonNum(MARKET_RANGE) + ",\"listMax\":" + JsonNum(MARKET_LISTMAX) + "}}";
 	s_strResult = out;
 	return s_strResult.c_str();
 }
