@@ -253,6 +253,15 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 	if (sk.algo != 1) return;
 	std::vector<char> used(W * H, 0);
 	if (hasS) used[sk.startY * W + sk.startX] = 1;  // 入口・ゴールには飾りを置かない
+	// 固定パターンの部屋（外枠も含む）には飾りを置かない（絵は描いた人が決めたとおりにする）
+	for (size_t ri = 0; ri < sk.rooms.size(); ++ri)
+	{
+		const Room &r = sk.rooms[ri];
+		if (!r.fixed) continue;
+		for (int j = 0; j < r.h; ++j)
+			for (int i = 0; i < r.w; ++i)
+				if (r.x + i >= 0 && r.y + j >= 0 && r.x + i < W && r.y + j < H) used[(r.y + j) * W + r.x + i] = 1;
+	}
 	if (hasG) used[sk.goalY * W + sk.goalX] = 1;
 	// 出入口パターンの範囲（柱・枠）には飾りを置かない
 	for (size_t k = 0; k < sk.links.size(); ++k)
