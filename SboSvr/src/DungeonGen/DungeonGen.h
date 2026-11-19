@@ -134,7 +134,8 @@ struct Deco
 	int w, h;
 	std::vector<int> cells;
 	int on, rate, max;
-	Deco() : w(1), h(1), on(1), rate(10), max(0) {}
+	int room;   // 0 = どこでも / 1〜 = その番号の 9分割の絵を使った部屋の中だけ（max は部屋ごと）
+	Deco() : w(1), h(1), on(1), rate(10), max(0), room(0) {}
 };
 
 // 出入口パターン（theme.openings。最大 50 件）

@@ -155,6 +155,7 @@ void ReadTheme(const JVal &j, Theme &t)
 			dc.on = d.Int("on", 1);
 			dc.rate = d.Int("rate", 10);
 			dc.max = d.Int("max", 0);
+			dc.room = d.Int("room", 0);
 			t.decos.push_back(dc);
 		}
 }

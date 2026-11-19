@@ -158,7 +158,8 @@
 			'<div id="dg-dedit" hidden><div class="dg-row"><label>名前 <input type="text" id="dg-dname" maxlength="40"></label>' +
 			'<label>w <input type="text" class="dg-n" id="dg-dw" inputmode="numeric"></label><label>h <input type="text" class="dg-n" id="dg-dh" inputmode="numeric"></label>' +
 			'<label>置く所 <select id="dg-don"><option value="1">部屋の床</option><option value="3">壁の側面</option></select></label>' +
-			'<label>rate % <input type="text" class="dg-n" id="dg-drate" inputmode="numeric"></label><label>max <input type="text" class="dg-n" id="dg-dmax" inputmode="numeric"></label></div>' +
+			'<label>rate % <input type="text" class="dg-n" id="dg-drate" inputmode="numeric"></label><label>max <input type="text" class="dg-n" id="dg-dmax" inputmode="numeric"></label>' +
+			'<label title="部屋を選ぶと、その9分割の絵を使った部屋の中だけに置きます（max は部屋ごと）">置く部屋 <select id="dg-droom"></select></label></div>' +
 			'<div class="dg-row" id="dg-tb-d"></div><div class="dg-row" id="dg-rb-d"></div>' +
 			'<div class="dg-scroll" style="max-height:60vh"><canvas class="dg-cv" id="dg-dcv"></canvas></div></div></div>';
 		h += '<div class="dg-sec"><h3>お試し作成</h3><div class="dg-row" id="dg-params"></div>' +
@@ -1367,6 +1368,11 @@
 		$('dg-don').value = String(d.on);
 		$('dg-drate').value = d.rate;
 		$('dg-dmax').value = d.max;
+		var ro = '<option value="0">どこでも</option>';
+		cur.rooms.forEach(function (r, i) { if (!r.fixed) ro += '<option value="' + (i + 1) + '">' + (i + 1) + ': ' + esc(r.name) + 'の中だけ</option>'; });
+		$('dg-droom').innerHTML = ro;
+		$('dg-droom').value = String(d.room || 0);
+		if ($('dg-droom').value !== String(d.room || 0)) $('dg-droom').value = '0';
 		renderDecoGrid();
 	}
 
@@ -1793,6 +1799,7 @@
 		decoField('dg-don', function (d, v) { d.on = num(v, 1); });
 		decoField('dg-drate', function (d, v) { d.rate = Math.max(0, Math.min(100, num(v, 0))); });
 		decoField('dg-dmax', function (d, v) { d.max = Math.max(0, Math.min(999, num(v, 0))); });
+		decoField('dg-droom', function (d, v) { d.room = Math.max(0, num(v, 0)); });
 		window.addEventListener('beforeunload', function (ev) {
 			if (!dirty) return;
 			draftFlush();

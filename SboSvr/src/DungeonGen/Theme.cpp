@@ -296,12 +296,30 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 		const Deco &d = th.decos[di];
 		if (d.w <= 0 || d.h <= 0 || (int)d.cells.size() != d.w * d.h) continue;
 		if (d.on != 1 && d.on != 3) continue;
+		// 置く範囲の四角（x0,y0 から x1,y1 の手前まで）。部屋の指定があれば、その 9分割の絵を使った部屋ごとに置く
+		std::vector<int> rects;
+		if (d.room > 0)
+		{
+			for (size_t ri = 0; ri < sk.rooms.size(); ++ri)
+			{
+				const Room &r = sk.rooms[ri];
+				if (r.fixed || r.tpl != d.room - 1) continue;
+				rects.push_back(r.x); rects.push_back(r.y); rects.push_back(r.x + r.w); rects.push_back(r.y + r.h);
+			}
+		}
+		else
+		{
+			rects.push_back(0); rects.push_back(0); rects.push_back(W); rects.push_back(H);
+		}
+		for (size_t q = 0; q + 3 < rects.size(); q += 4)
+		{
+			const int x0 = rects[q], y0 = rects[q + 1], x1 = rects[q + 2], y1 = rects[q + 3];
 		std::vector<int> cand;  // 左上の位置
 		if (d.on == 1)
 		{
 			// 部屋の床。まわり 1 マスも床（壁から 1 マス離す）。L1 だけでなく L3 でも床のセルを見る
-			for (int y = 1; y + d.h < H; ++y)
-				for (int x = 1; x + d.w < W; ++x)
+			for (int y = std::max(1, y0); y + d.h < H && y + d.h <= y1; ++y)
+				for (int x = std::max(1, x0); x + d.w < W && x + d.w <= x1; ++x)
 				{
 					bool ok = true;
 					for (int yy = y - 1; yy <= y + d.h && ok; ++yy)
@@ -316,8 +334,8 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 		else
 		{
 			// 壁の側面。いちばん下の行が側面で、その下が床。上の行は壁
-			for (int y = d.h - 1; y + 1 < H; ++y)
-				for (int x = 0; x + d.w <= W; ++x)
+			for (int y = std::max(d.h - 1, y0 + d.h - 1); y + 1 < H && y < y1; ++y)
+				for (int x = std::max(0, x0); x + d.w <= W && x + d.w <= x1; ++x)
 				{
 					bool ok = true;
 					for (int xx = x; xx < x + d.w && ok; ++xx)
@@ -362,6 +380,7 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 					if (v != 0) parts[(y + yy) * W + x + xx] = v;
 				}
 			++placed;
+		}
 		}
 	}
 }

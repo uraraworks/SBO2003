@@ -206,7 +206,8 @@ Module['sboDungeon'] = (function () {
 				cells: cellList(d.cells, w, h, nParts, lb),
 				on: on,
 				rate: int(d.rate, 0, 100, lb + ' の rate'),
-				max: int(d.max, 0, 999, lb + ' の max')
+				max: int(d.max, 0, 999, lb + ' の max'),
+				room: d.room == null ? 0 : int(d.room, 0, 999, lb + ' の room')
 			});
 		});
 		openings.forEach(function (op, i) {
