@@ -2120,7 +2120,7 @@ static const DATAFIELD s_aFieldSgDungeon[] = {
 	FLD (SUBGAME_DUNGEONINFO, wChipIDBlock,"壁のパーツ",		FT_U16, 0, "mapParts の番号"),
 	FLD (SUBGAME_DUNGEONINFO, dwThemeID,"テーマ番号",			FT_U32, 0, "ダンジョン生成のテーマ（SboWebDungeonThemes.json の id）。0=今までの作り方。0 以外でテーマが見つかれば、作り直しのたびにエリアの大きさで生成してマス目・扉・入口を置く（見つからなければ今までの作り方）"),
 	FLD (SUBGAME_DUNGEONINFO, dwBuildNo,"作り直し番号",			FT_U32, FF_READONLY, "テーマで作り直すたびに増える番号（実行中だけ。保存しない・読むだけ）"),
-	FLD (SUBGAME_DUNGEONINFO, byTmplCount,"番外編のテンプレート数",	FT_U8, 0, "0〜8。0=番外編にしない（今までどおり、入口に乗れば誰でも自分の姿で入れる）。1 以上だと番外編のミニゲームになる: 入口にパーティのリーダー（ソロならその人）が乗ると、組の全員に wTmplID・szTmplName1〜8 の先頭 byTmplCount 件を一覧に出し、全員が選び終えたら（30秒で締め切り）一緒に新しい空間へ入る。中ではステータステンプレートの姿になり、経験値・お金は入らない。拾った物・ドロップは持ち帰り袋に入り、ゴールのワープで出た時だけ本物の持ち物になる（倒れる・抜ける・切断では全部なくなる）。テーマ番号（dwThemeID）が 0 でない時だけ使える"),
+	FLD (SUBGAME_DUNGEONINFO, byTmplCount,"番外編のテンプレート数",	FT_U8, 0, "0〜8。0=番外編にしない（今までどおり、入口に乗れば誰でも自分の姿で入れる）。1 以上だと番外編のミニゲームになる: 入口にパーティのリーダー（ソロならその人）が乗ると、組の全員に wTmplID・szTmplName1〜8 の先頭 byTmplCount 件を一覧に出し、全員が選び終えたら（30秒で締め切り）一緒に新しい空間へ入る。中ではステータステンプレートの姿になり、経験値・お金は入らない。拾った物・ドロップは中で使えるが、外へは持ち帰れない（どの出方でも元の持ち物に戻る）。テーマ番号（dwThemeID）が 0 でない時だけ使える"),
 	FLDA(SUBGAME_DUNGEONINFO, wTmplID,	"番外編のテンプレート番号",	FT_U16ARR, WORD, 0, "stTmp の番号（8 個。先頭 byTmplCount 件を使う）。存在しない番号は一覧から外す"),
 	{ "szTmplName1", "番外編の表示名1", FT_STR, offsetof(SUBGAME_DUNGEONINFO, szTmplName[0]), MAX_DGTMPLNAME, 0, "wTmplID の先頭から数えて同じ番号のテンプレートの、選ぶ窓に出す名前（空ならテンプレートの名前）" },
 	{ "szTmplName2", "番外編の表示名2", FT_STR, offsetof(SUBGAME_DUNGEONINFO, szTmplName[1]), MAX_DGTMPLNAME, 0, NULL },
@@ -4397,7 +4397,16 @@ static bool SubGameApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::
 		/* 項目表にある所だけを書き戻す（作成中の設計図などのポインタは触らない） */
 		BYTE *pDst = (BYTE *)pInfo->pInfo;
 		for (int i = 0; i < nCount; i ++) {
-			size_t n = (paField[i].nType == FT_U32) ? 4 : (paField[i].nType == FT_U16) ? 2 : 1;
+			/* 文字・配列は項目表の大きさの分だけ写す（以前は先頭 1 バイトしか書き戻していなかった） */
+			size_t n;
+			switch (paField[i].nType) {
+			case FT_U32:	n = 4;								break;
+			case FT_U16:	n = 2;								break;
+			case FT_STR:	n = paField[i].nSize;				break;
+			case FT_U8ARR:	n = paField[i].nSize;				break;
+			case FT_U16ARR:	n = paField[i].nSize * sizeof(WORD);	break;
+			default:		n = 1;								break;
+			}
 			CopyMemory(pDst + paField[i].nOffset, &aWork[paField[i].nOffset], n);
 		}
 	}

@@ -12732,6 +12732,15 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 		if (p && p->dwParentTblID == dwPut && p->byGameState == GAMESTATE_NPC && p->byNpcType != NPCTYPE_INIT) DeleteChar(p->dwTblID);
 	}
 	DeleteChar(dwPut);
+	/* データAPIで配列・文字の項目を書き換えると全部が書き戻されるか（以前は先頭 1 バイトだけだった） */
+	{
+		char szJson[256];
+		snprintf(szJson, sizeof(szJson), "{\"detail\":{\"wTmplID\":[%d,%d],\"szTmplName2\":\"魔法使い\"}}", nSt2, nSt1);
+		std::string strR = FlagGroupApi("subGame", byID, szJson);
+		if (strR.find("\"ok\":true") == std::string::npos) printf("dungeonbonus api err %s\n", strR.c_str());
+		printf("dungeonbonus api ok=%d tmpl=%d,%d name2=%s name1=%s\n", (int)(strR.find("\"ok\":true") != std::string::npos),
+			(int)(Info.wTmplID[0] == (WORD)nSt2), (int)(Info.wTmplID[1] == (WORD)nSt1), Info.szTmplName[1], Info.szTmplName[0]);
+	}
 	for (int i = g_aStTmpInfo.GetSize() - 1; i >= nSt1; i --) {
 		delete g_aStTmpInfo[i];
 		g_aStTmpInfo.RemoveAt(i);

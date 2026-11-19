@@ -2092,6 +2092,7 @@ dungeonbonus dead a in=0 got=0 kept=1 b-still=1
 dungeonbonus rebuild b in=0 got=0 kept=1 d in=0 e in=0
 dungeonbonus rebuild freed runs=0 enemies=0/0/0/0
 dungeonbonus save roundtrip=1 extra>0=1
+dungeonbonus api ok=1 tmpl=1,1 name2=魔法使い name1=戦士
 dungeonbonus end runs=0 sel=0
 == AP. Dungeon daily ==
 dungeondaily first auto ready=1 build=1 ver=1 found=1 date=2026-11-20 rebuild=0 seed=date genVer=1 themeId=5 size=40x40
