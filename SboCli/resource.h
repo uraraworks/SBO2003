@@ -524,6 +524,16 @@
 #define IDC_DGTMPL_NAME7          1464
 #define IDC_DGTMPL_NAME8          1465
 #define IDC_DGTHEME                       1469
+#define IDC_STT_ITEMLIST                    1470
+#define IDC_STT_ITEMID                      1471
+#define IDC_STT_ITEMSET                     1472
+#define IDC_STT_ITEMCLR                     1473
+#define IDC_STT_ITEMNAME                    1474
+#define IDC_STT_MAGICLIST                   1475
+#define IDC_STT_MAGICID                     1476
+#define IDC_STT_MAGICSET                    1477
+#define IDC_STT_MAGICCLR                    1478
+#define IDC_STT_MAGICNAME                   1479
 
 // Next default values for new objects
 // 
@@ -531,7 +541,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        244
 #define _APS_NEXT_COMMAND_VALUE         40037
-#define _APS_NEXT_CONTROL_VALUE         1470
+#define _APS_NEXT_CONTROL_VALUE         1480
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
