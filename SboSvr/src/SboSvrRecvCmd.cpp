@@ -656,6 +656,69 @@ static BOOL IsRecvSizeOK(DWORD dwHead, DWORD dwBody)
 }
 
 /* ========================================================================= */
+/* 関数名：	RecvRateOK														 */
+/* 内容：	コマンドの連打を止める（前に受け付けてから dwMinMs 未満なら FALSE）	 */
+/*			管理者は対象外													 */
+/* ========================================================================= */
+
+static BOOL RecvRateOK(PCHARINFO pChar, int nKind, DWORD dwMinMs)
+{
+	DWORD dwNow = GetTickCount ();
+
+	if (pChar->byAdminLV > ADMINLV_USER) {
+		return TRUE;
+	}
+	if (pChar->adwRateLast[nKind] && ((DWORD)(dwNow - pChar->adwRateLast[nKind]) < dwMinMs)) {
+		return FALSE;
+	}
+	pChar->adwRateLast[nKind] = dwNow ? dwNow : 1;
+	return TRUE;
+}
+
+/* 発言の連投の上限（公式の自動分割は 1.2 秒おきなので、これにはかからない） */
+#define SPEECH_RATE_WINDOW		5000	/* 数える間隔(ミリ秒) */
+#define SPEECH_RATE_MAX			8		/* その間に受け付ける数 */
+/* 発言のバイト数の上限（表示幅 40 を超えない公式の発言に十分な値。URL を含む発言は表示幅 1000 まで） */
+#define SPEECH_MAX_NORMAL		256
+#define SPEECH_MAX_URL			3000
+/* 自己紹介のバイト数の上限（公式の入力欄は 600） */
+#define SPEECH_MAX_EDIT			600
+
+/* 発言を 1 つ受け付けてよいか（超えた分は捨てる）。管理者は対象外 */
+static BOOL RecvSpeechRateOK(PCHARINFO pChar)
+{
+	DWORD dwNow = GetTickCount ();
+
+	if (pChar->byAdminLV > ADMINLV_USER) {
+		return TRUE;
+	}
+	if ((pChar->bySpeechWinCount == 0) || ((DWORD)(dwNow - pChar->dwSpeechWinStart) >= SPEECH_RATE_WINDOW)) {
+		pChar->dwSpeechWinStart = dwNow;
+		pChar->bySpeechWinCount = 0;
+	}
+	if (pChar->bySpeechWinCount >= SPEECH_RATE_MAX) {
+		return FALSE;
+	}
+	pChar->bySpeechWinCount ++;
+	return TRUE;
+}
+
+/* 文字列を nMax バイト以内に切る（文字の途中では切らない） */
+static void RecvCutStr(LPSTR psz, int nMax)
+{
+	int i = 0, nLen;
+
+	while (psz[i]) {
+		nLen = SboTextCharLen (&psz[i]);
+		if ((nLen <= 0) || (i + nLen > nMax)) {
+			break;
+		}
+		i += nLen;
+	}
+	psz[i] = 0;
+}
+
+/* ========================================================================= */
 /* 関数名：	TermRecvStr														 */
 /* 内容：	パケット内の固定長文字列を必ず終端させる						 */
 /* ========================================================================= */
@@ -4948,21 +5011,40 @@ void RecvDataProcSPEECH(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 
+	/* 連投？（超えた分は捨てて、本人にだけ知らせる） */
+	if (!RecvSpeechRateOK (pChar)) {
+		SendCmdSYSMSG (s_pIDRecv, "SYSTEM:発言が早すぎます。", SPEECHCMD_BATTLE1);
+		return;
+	}
+
+	/* 長すぎる分は切る（公式の入力欄より長い発言は届かない） */
+	DWORD dwSize = pPara->wSize;
+	if (dwSize > SPEECH_MAX_URL) {
+		dwSize = SPEECH_MAX_URL;
+	}
+	LPSTR pszTmp = (LPSTR)new BYTE[dwSize + 1];
+	ZeroMemory ((PBYTE)pszTmp, dwSize + 1);
+	CopyMemory ((PBYTE)pszTmp, (PBYTE)pData + sizeof (CMDPARA_SPEECH), dwSize);
+	SboTextSanitize (pszTmp);		/* UTF-8 として正しくないバイトは「?」に */
+
+	if (pPara->byType == SPEECHCMD_SPEECHEDIT) {
+		/* 自己紹介 */
+		RecvCutStr (pszTmp, SPEECH_MAX_EDIT);
+	} else if ((pChar->byAdminLV <= ADMINLV_USER) && (strlen (pszTmp) > SPEECH_MAX_NORMAL) &&
+			(strstr (pszTmp, "http://") == NULL) && (strstr (pszTmp, "https://") == NULL)) {
+		RecvCutStr (pszTmp, SPEECH_MAX_NORMAL);
+	}
+
 	SAFE_DELETE_ARRAY (pChar->pszSpeech);
-	pChar->pszSpeech = (LPSTR)new BYTE[pPara->wSize + 1];
-	ZeroMemory ((PBYTE)pChar->pszSpeech, pPara->wSize + 1);
-	CopyMemory ((PBYTE)pChar->pszSpeech, (PBYTE)pData + sizeof (CMDPARA_SPEECH), pPara->wSize);
-	SboTextSanitize (pChar->pszSpeech);		/* UTF-8 として正しくないバイトは「?」に */
+	pChar->pszSpeech = pszTmp;
 	pChar->byFlg |= CHARINFOFLG_SPEECH;
 	pChar->bySpeechFlg = pPara->byType;
 
 	/* 発言内容の設定？ */
 	if (pPara->byType == SPEECHCMD_SPEECHEDIT) {
 		SAFE_DELETE_ARRAY (pChar->pszNpcSpeech);
-		pChar->pszNpcSpeech = (LPSTR)new BYTE[pPara->wSize + 1];
-		ZeroMemory ((PBYTE)pChar->pszNpcSpeech, pPara->wSize + 1);
-		CopyMemory ((PBYTE)pChar->pszNpcSpeech, (PBYTE)pData + sizeof (CMDPARA_SPEECH), pPara->wSize);
-		SboTextSanitize (pChar->pszNpcSpeech);
+		pChar->pszNpcSpeech = (LPSTR)new BYTE[strlen (pszTmp) + 1];
+		strcpy (pChar->pszNpcSpeech, pszTmp);
 	}
 }
 
@@ -6148,6 +6230,10 @@ void RecvDataProcCHGCHARGRP(PBYTE pData, DWORD dwDataSize)
 	if (!IsRecvChar (pPara->dwTblID)) {
 		return;
 	}
+	/* 連打は受け付けない */
+	if (!RecvRateOK (g_aCharInfo[pPara->dwTblID], RATE_CHGCHARGRP, 500)) {
+		return;
+	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
 
@@ -6318,6 +6404,12 @@ void RecvDataProcGMCALL(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
+
+	/* 連打は受け付けない（管理者の画面を埋めさせない） */
+	if (!RecvRateOK (pChar, RATE_GMCALL, 30000)) {
+		SendCmdSYSMSG (s_pIDRecv, "SYSTEM:管理人の呼び出しは30秒に1回までです。");
+		return;
+	}
 
 	SYSTEMTIME sysTime;
 	LPSTR szTmp = new char[256], szTmp2 = new char[256];
@@ -7604,6 +7696,15 @@ void RecvDataProcMAPMOVE(PBYTE pData, DWORD dwDataSize)
 	SubProcMapMove (pChar, pPara->dwMapID, pPara->dwX, pPara->dwY);
 }
 
+/* 押した先のマスの当たり判定の種別（マップの外は壁扱い） */
+static BYTE PushGetHitType(PMAPINFO pMap, int x, int y)
+{
+	if ((x < 0) || (x >= (int)pMap->nCX) || (y < 0) || (y >= (int)pMap->nCY)) {
+		return PARTSHIT_BLOCK1;
+	}
+	return (&g_aMapPartsInfo[pMap->pwMap[x + y * pMap->nCX]])->byHitType;
+}
+
 /* ========================================================================= */
 /* 関数名：RecvDataProcCHARPUSH												 */
 /* 内容：受信データ処理(キャラ押して要求)									 */
@@ -7639,6 +7740,14 @@ void RecvDataProcCHARPUSH(PBYTE pData, DWORD dwDataSize)
 	/* 離れたところのものは押せない */
 	if (!IsNearRecvChar (pCharPush, 2) || (GetMapNo (pCharPush->dwMapID) < 0)) {
 		return;
+	}
+	/* 公式は押すものの隣でしか押せない。大きいキャラは左端の座標で、右へ 2 マスまで広がっている */
+	{
+		int nDX = (int)pCharPush->dwX - (int)pChar->dwX;
+		int nDY = (int)pCharPush->dwY - (int)pChar->dwY;
+		if ((nDX > 1) || (nDX < -2) || (nDY > 1) || (nDY < -1) || ((nDY != 0) && (nDX > 0))) {
+			return;
+		}
 	}
 
 	if (timeGetTime () < pCharPush->dwLastDotMove + 300) {
@@ -7707,7 +7816,7 @@ void RecvDataProcCHARPUSH(PBYTE pData, DWORD dwDataSize)
 			pCharPush->byDirection = abyDirectionTbl[pCharPush->byDirection];
 			x = dwX + anPosAddTblX[pCharPush->byDirection];
 			y = dwY + anPosAddTblY[pCharPush->byDirection];
-			byHitType = (&g_aMapPartsInfo[pMap->pwMap[x + y * pMap->nCX]])->byHitType;
+			byHitType = PushGetHitType (pMap, x, y);
 
 			if ((byHitType == PARTSHIT_NONE) ||
 				(byHitType == PARTSHIT_HIDE1) ||
@@ -7738,7 +7847,7 @@ void RecvDataProcCHARPUSH(PBYTE pData, DWORD dwDataSize)
 						pCharPush->byDirection = abyDirectionTbl[pCharPush->byDirection];
 						x = pCharPush->dwX + anPosAddTblX[pCharPush->byDirection];
 						y = pCharPush->dwY + anPosAddTblY[pCharPush->byDirection];
-						byHitType = (&g_aMapPartsInfo[pMap->pwMap[x + y * pMap->nCX]])->byHitType;
+						byHitType = PushGetHitType (pMap, x, y);
 
 						if ((byHitType == PARTSHIT_NONE) ||
 							(byHitType == PARTSHIT_HIDE1) ||
@@ -7770,7 +7879,7 @@ void RecvDataProcCHARPUSH(PBYTE pData, DWORD dwDataSize)
 				pCharPush->byDirection = abyDirectionTbl[pCharPush->byDirection];
 				x = pCharPush->dwX + anPosAddTblX[pCharPush->byDirection];
 				y = pCharPush->dwY + anPosAddTblY[pCharPush->byDirection];
-				byHitType = (&g_aMapPartsInfo[pMap->pwMap[x + y * pMap->nCX]])->byHitType;
+				byHitType = PushGetHitType (pMap, x, y);
 
 				if ((byHitType == PARTSHIT_NONE) ||
 					(byHitType == PARTSHIT_HIDE1) ||
@@ -7838,6 +7947,9 @@ void RecvDataProcCOMEFC(PBYTE pData, DWORD dwDataSize)
 	if (!pPara->byData || (pPara->byData > MAX_COMEFC)) {
 		return;
 	}
+	if (!RecvRateOK (pChar, RATE_COMEFC, 500)) {
+		return;
+	}
 	pChar->byComEfc = pPara->byData;
 	pChar->byFlg |= CHARINFOFLG_COMEFC;
 }
@@ -7859,6 +7971,10 @@ void RecvDataProcADDSCORE(PBYTE pData, DWORD dwDataSize)
 	pChar = g_aCharInfo[pPara->dwTblID];
 	/* 話しかけた相手（目の前の NPC）だけ。種類が違うキャラや離れたキャラは変えない */
 	if (((pChar->byNpcType != NPCTYPE_SCORE) && (pChar->byNpcType != NPCTYPE_CHGPUSH)) || !IsNearRecvChar (pChar, 2)) {
+		return;
+	}
+	/* 連打は受け付けない */
+	if ((s_nCharNoRecv >= 0) && !RecvRateOK (g_aCharInfo[s_nCharNoRecv], RATE_ADDSCORE, 300)) {
 		return;
 	}
 	pChar->byEfect ++;
@@ -8540,6 +8656,10 @@ void RecvDataProcNAMECOLOR(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
+	/* 連打は受け付けない */
+	if (!RecvRateOK (pChar, RATE_NAMECOLOR, 500)) {
+		return;
+	}
 	/* 公式クライアントで選べるのは、色の表の先頭 7 色（名前と発言は同じ色）だけ。濃い目の色は管理人・NPC 用 */
 	if (pChar->byAdminLV == ADMINLV_USER) {
 		static const COLORREF s_aclName[7] = {
@@ -9648,6 +9768,10 @@ void RecvDataProcMSGCMD(PBYTE pData, DWORD dwDataSize)
 	}
 
 	pChar = g_aCharInfo[pPara->dwTblID];
+	/* 連打は受け付けない（結果が画面内の人のログを埋めるため） */
+	if (!RecvRateOK (pChar, RATE_MSGCMD, 1000)) {
+		return;
+	}
 	/* サイコロは 20 個まで（多すぎると文字列があふれる） */
 	if (pPara->nData1 > 20) {
 		pPara->nData1 = 20;
@@ -9818,6 +9942,11 @@ void RecvDataProcPARTY(PBYTE pData, DWORD dwDataSize)
 		if (pPartyInfo->adwTblID[MAX_PARTYMEMBER - 1]) {
 			wsprintf (szTmp, "これ以上パーティに参加できません。");
 			SendCmdSYSMSG (pCharFrom->pID, szTmp, SPEECHCMD_BATTLE1);
+			break;
+		}
+
+		/* 誘いの連打は受け付けない */
+		if (!RecvRateOK (pCharFrom, RATE_PARTYJOIN, 3000)) {
 			break;
 		}
 
@@ -10722,6 +10851,31 @@ void RecvDataProcTRADE(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 
+	/* 相手が別の人と取り引き中・サブゲーム中なら断る（相手の取り引きを乗っ取らない） */
+	{
+		std::map<DWORD, TRADESTATE>::iterator it = s_mapTrade.find (pRecv->dwData);
+		if (((it != s_mapTrade.end ()) && (it->second.dwPartner != pRecv->dwTblID)) ||
+				(g_aCharInfo[pRecv->dwData]->abySubStatus[0] != SUBGAMEID_NONE)) {
+			SendCmdSYSMSG (g_aCharInfo[pRecv->dwTblID]->pID, "相手は取り引きできる状態ではありません。", SPEECHCMD_BATTLE1);
+			TradeRefuse (g_aCharInfo[pRecv->dwTblID]);
+			return;
+		}
+	}
+	/* 申し込みの連打は受け付けない */
+	if (!RecvRateOK (g_aCharInfo[pRecv->dwTblID], RATE_TRADE, 3000)) {
+		TradeRefuse (g_aCharInfo[pRecv->dwTblID]);
+		return;
+	}
+	/* 自分が別の人と取り引き中だった場合は、元の相手に終了を知らせる */
+	{
+		std::map<DWORD, TRADESTATE>::iterator it = s_mapTrade.find (pRecv->dwTblID);
+		if ((it != s_mapTrade.end ()) && (it->second.dwPartner != pRecv->dwData) &&
+				(it->second.dwPartner < (DWORD)g_aCharInfo.GetSize ()) &&
+				(g_aCharInfo[it->second.dwPartner]->pID != 0)) {
+			SendCmdTRADE (g_aCharInfo[it->second.dwPartner]->pID, pRecv->dwTblID, CMDTRADE_OUT);
+		}
+	}
+
 	/* サーバーでも取り引きの状態を覚える */
 	TradeStart (pRecv->dwTblID, pRecv->dwData);
 
@@ -11521,9 +11675,10 @@ void RecvDataProcSubGameBOMB_INFO(PBYTE pData, DWORD dwDataSize)
 		SubGameProcBombDeleteBlock (pRecv->byID);
 	}
 
-	pBomb->byGameTime = pRecv->byGameTime;
-	pBomb->byMaxBomb = pRecv->byMaxBomb;
-	pBomb->byMaxFire = pRecv->byMaxFire;
+	/* 公式の設定画面で選べる範囲に収める（制限時間 0～240 秒、爆弾 1～5 個、火力 0～10） */
+	pBomb->byGameTime = (pRecv->byGameTime > 240) ? 240 : pRecv->byGameTime;
+	pBomb->byMaxBomb = (pRecv->byMaxBomb < 1) ? 1 : ((pRecv->byMaxBomb > 5) ? 5 : pRecv->byMaxBomb);
+	pBomb->byMaxFire = (pRecv->byMaxFire > 10) ? 10 : pRecv->byMaxFire;
 	pBomb->byFlgUseBlock = pRecv->byFlgUseBlock;
 	pBomb->byFlgUseItem = pRecv->byFlgUseItem;
 	pBomb->byFlgProgress = pRecv->byFlgProgress;
@@ -11769,8 +11924,20 @@ void RecvDataProcSubGameBOMB_REMOCON(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 
+	/* リモコンを取っていない？（公式はリモコン中だけ送る） */
+	if (!pSubStatus->byFlgRemocon) {
+		return;
+	}
+	if (pSubStatus->byID >= g_aSubaGameInfo.GetSize ()) {
+		return;
+	}
 	PSUBGAMEINFO pInfo = g_aSubaGameInfo[pSubStatus->byID];
 	PSUBGAME_BOMBINFO pBomb = (PSUBGAME_BOMBINFO)pInfo->pInfo;
+
+	/* 試合中ではない？ */
+	if (!pBomb->byFlgGameNow) {
+		return;
+	}
 
 	pIDTbl = pMap->paTblNoNPC;
 	for (int i = 0; i < (int)pMap->dwCountTblNoNPC; i ++) {
@@ -12036,6 +12203,14 @@ void RecvDataProcSubGameWAR_SELECTRULE(PBYTE pData, DWORD dwDataSize)
 
 	/* 受付状態ではない？ */
 	if (pProcSubGameWAR->GetState () != SUBGAME_WAR_STATE_SELECTRULE) {
+		goto Exit;
+	}
+	/* 本人がルール選択の状態ではない？（公式は選択の窓が開いている参加者だけ送る） */
+	if (pSubStatus->byState != SUBGAME_WAR_STATE_SELECTRULE) {
+		goto Exit;
+	}
+	/* 選べるルールは 0 と 1 だけ */
+	if (pRecv->byData > 1) {
 		goto Exit;
 	}
 
