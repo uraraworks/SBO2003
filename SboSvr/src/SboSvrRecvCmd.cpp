@@ -263,6 +263,7 @@ static void	SendWebOptBgm					(PCHARINFO);				/* 音楽ON/OFFのアカウント�
 static void	SendMagicKeySetting				(PCHARINFO);				/* 特技ショートカットと帯の表示設定を送る */
 void	WebStatNoteLogin						(PCHARINFO);				/* ログインできた時に利用環境の統計へ記録する */
 BOOL	WebAccIssueToken						(LPCSTR, LPSTR, int);		/* 端末トークンを発行する */
+BOOL	WebAccHasNgWord							(LPCSTR);					/* キャラ名に使えない言葉が入っているか */
 void	RecvDataProcDIFENCE						(PBYTE, DWORD);				/* 防御 */
 void	RecvDataProcTHROWSNOW					(PBYTE, DWORD);				/* 雪を投げる */
 /* 受信データ処理(爆弾ゲーム) */
@@ -6306,6 +6307,11 @@ void RecvDataProcCHGNAMESEX(PBYTE pData, DWORD dwDataSize)
 	SboTextSanitize (pPara->szName);
 	/* 名前に使えない文字（絵文字など Shift_JIS に無い文字）が入っていたら、同名と同じく断る */
 	if ((pPara->szName[0] != 0) && !SboTextIsNameSafe (pPara->szName)) {
+		pPara->szName[0] = 0;
+		bName = FALSE;
+	}
+	/* 管理人・運営などと紛らわしい名前も同じく断る（Node.js の名前変更と同じ NG ワード） */
+	if ((pPara->szName[0] != 0) && WebAccHasNgWord (pPara->szName)) {
 		pPara->szName[0] = 0;
 		bName = FALSE;
 	}

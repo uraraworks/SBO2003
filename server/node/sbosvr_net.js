@@ -378,6 +378,11 @@ Module['sboNet'] = (function () {
 					conn.kill();
 					return;
 				}
+				/* 制御フレーム（ping・close など）は 125 バイトまで、細切れにもできない */
+				if (op >= 8 && (len > 125 || !fin)) {
+					conn.kill();
+					return;
+				}
 				var mask = null;
 				if (masked) {
 					if (rest.length < pos + 4) { return; }
@@ -401,6 +406,11 @@ Module['sboNet'] = (function () {
 				} else if (op === 9) {	/* ping → pong */
 					sock.write(wsFrame(10, payload));
 				} else if (op === 0 || op === 1 || op === 2) {
+					/* 細切れの数にも上限を付ける（0 バイトの断片を溜め込ませない） */
+					if (aFrag.length >= 4096) {
+						conn.kill();
+						return;
+					}
 					aFrag.push(payload);
 					nFragSize += payload.length;
 					if (fin) {
@@ -672,7 +682,9 @@ Module['sboNet'] = (function () {
 			url = '/sbocli.html';
 		}
 		var file = path.normalize(path.join(strWwwDir, url));
-		if (!strWwwDir || file.indexOf(path.normalize(strWwwDir)) !== 0) {
+		/* 配信フォルダの外に出ていないか（前方一致だと www-old のような兄弟フォルダに出られるので、相対パスで確かめる） */
+		var strRel = strWwwDir ? path.relative(path.resolve(strWwwDir), path.resolve(file)) : '..';
+		if (!strWwwDir || strRel === '..' || strRel.indexOf('..' + path.sep) === 0 || path.isAbsolute(strRel)) {
 			res.writeHead(403);
 			res.end();
 			return;

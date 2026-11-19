@@ -1096,6 +1096,7 @@ Module['sboAccount'] = (function () {
 		handleHttp: handleHttp,
 		tokenToAccount: tokenToAccount,
 		issueToken: issueToken,
+		hasNgWord: hasNgWord,
 		/* sbosvr_feedback.js などから使う */
 		tokenInfo: tokenInfo,
 		noteLoginIp: noteLoginIp,
