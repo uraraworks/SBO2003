@@ -208,7 +208,8 @@ Module['sboDungeon'] = (function () {
 				on: on,
 				rate: int(d.rate, 0, 100, lb + ' の rate'),
 				max: int(d.max, 0, 999, lb + ' の max'),
-				room: d.room == null ? 0 : int(d.room, 0, 999, lb + ' の room')
+				room: d.room == null ? 0 : int(d.room, 0, 999, lb + ' の room'),
+				per: d.per == null ? (d.room > 0 ? 1 : 0) : Math.max(0, Math.min(1, Math.round(Number(d.per) || 0)))
 			});
 		});
 		openings.forEach(function (op, i) {

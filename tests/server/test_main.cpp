@@ -21,6 +21,10 @@
  */
 #include "stdafx.h"
 #include <algorithm>
+#pragma push_macro("max")
+#undef max
+#include "../../tools/dungeon/theme_checks.h"
+#pragma pop_macro("max")
 #include "SboSvrRecvCmd.h"
 #include "CharProcSEARCH2.h"
 #include "CharProcSEARCH.h"
@@ -12166,6 +12170,9 @@ static void TestSpamLimit(const std::vector<int> &aLogin)
 static void TestDungeonTheme(void)
 {
 	printf("== AN. Dungeon theme ==\n");
+	DungeonThemeChecks checks = CheckDungeonTheme();
+	printf("dungeontheme deco global=%d perRoom=%d limits=%d\n", checks.global, checks.perRoom, checks.failures == 0);
+	printf("dungeontheme plain bottom=1,2 walls=%d faces=%d verticalDoors=%d errors=%d\n", checks.walls, checks.faces, checks.verticalDoors, checks.failures);
 	int nMapNo = -1;
 	for (int i = 0; i < g_aMapInfo.GetSize(); i ++) {
 		if (g_aMapInfo[i] && g_aMapInfo[i]->nCX >= 60 && g_aMapInfo[i]->nCY >= 60 && g_aMapInfo[i]->pwMap) {

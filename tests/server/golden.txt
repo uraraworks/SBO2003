@@ -2054,6 +2054,8 @@ forge load recipe3 kind=2 affix=5 plain=1 mask=0 mat=1 gold=0
 forge load recipe4 kind=1 affix=2 plain=1 mask=0 mat=1 gold=0
 forge load recipe5 kind=1 affix=2 plain=1 mask=2 mat=1 gold=0
 == AN. Dungeon theme ==
+dungeontheme deco global=2 perRoom=32 limits=1
+dungeontheme plain bottom=1,2 walls=2152 faces=1081 verticalDoors=75 errors=0
 dungeontheme missing old=1 buildNo=0 events=2
 dungeontheme theme5 old=0 buildNo=1 entry=1 mapchg=3 doors>0=1 doorsOk=1 oldEvent=0 keepEvent=1 eventOutside=0 badParts=0 outChanged=1(entrance=1) goal=1 genSize=40x40
 dungeontheme lights count=2 p0=3/4 p1=1/7
@@ -2111,7 +2113,7 @@ dungeonbonus area automap dropped=1 off=1 preview-kept=1
 dungeonbonus api ok=1 tmpl=1,1 name2=魔法使い name1=戦士
 dungeonbonus end runs=0 sel=0
 == AP. Dungeon daily ==
-dungeondaily first auto ready=1 build=1 ver=1 found=1 date=2026-11-20 rebuild=0 seed=date genVer=1 themeId=5 size=40x40
+dungeondaily first auto ready=1 build=1 ver=1 found=1 date=2026-11-20 rebuild=0 seed=date genVer=2 themeId=5 size=40x40
 dungeondaily same-day rebuild same=1 build=2 versions=1
 dungeondaily after-reload same=1 versions=1 themeSaved=1
 dungeondaily seed differs-by-dungeon=1 differs-by-date=1

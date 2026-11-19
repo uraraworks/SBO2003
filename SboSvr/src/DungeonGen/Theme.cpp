@@ -152,6 +152,7 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 	if (sk.algo == 1 && !th.wallTop.empty())
 	{
 		std::vector<unsigned char> cover(W * H, 0);
+		std::vector<unsigned char> plainSide(W * H, 0);
 		std::vector<int> owner(W * H, -1);  // 床のマス → その床を中に持つ部屋
 		for (size_t ri = 0; ri < sk.rooms.size(); ++ri)
 		{
@@ -161,6 +162,7 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 				{
 					int x = r.x + i, y = r.y + j;
 					if (x < 0 || y < 0 || x >= W || y >= H) continue;
+					if (i == 0 || i == r.w - 1) plainSide[y * W + x] = 1;
 					if (cover[y * W + x] < 255) ++cover[y * W + x];
 					if (i >= 1 && i <= r.w - 2 && j >= 2 && j <= r.h - 1 - r.bot && sk.cells[y * W + x] == CELL_FLOOR)
 						owner[y * W + x] = (int)ri;
@@ -193,7 +195,20 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 			for (int x = 0; x < W; ++x)
 			{
 				int idx = y * W + x, c = sk.cells[idx];
-				if (cover[idx] < 2 || (c != CELL_TOP && c != CELL_FACE && c != CELL_WALL)) continue;
+				if (c != CELL_TOP && c != CELL_FACE && c != CELL_WALL) continue;
+				// 素の絵は共有範囲の外まで縦の柱をつなぐ。横の側面が柱に食い込まないよう柱を優先する。
+				// 縦の出入口（扉も含む）の上下は床に面した横壁ではないので、側面を付けない。
+				if (th.rooms.empty() && (plainSide[idx] || cover[idx] >= 2))
+				{
+					bool face = !plainSide[idx] && y > 0 && y + 1 < H &&
+						sk.cells[(y + 1) * W + x] == CELL_FLOOR &&
+						(sk.cells[(y - 1) * W + x] == CELL_TOP || sk.cells[(y - 1) * W + x] == CELL_WALL || sk.cells[(y - 1) * W + x] == CELL_FACE);
+					// 意味の色と側面の飾りの候補も、描き直した壁の役目に合わせる。
+					sk.cells[idx] = face ? CELL_FACE : CELL_TOP;
+					parts[idx] = Pick(face && !th.wallFace.empty() ? th.wallFace : th.wallTop, rng);
+					continue;
+				}
+				if (cover[idx] < 2) continue;
 				int ri = -1, v = -1;
 				bool face = false;
 				if ((ri = own(x, y + 1)) >= 0) face = true;
@@ -298,12 +313,13 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 		if (d.on != 1 && d.on != 3) continue;
 		// 置く範囲の四角（x0,y0 から x1,y1 の手前まで）。部屋の指定があれば、その 9分割の絵を使った部屋ごとに置く
 		std::vector<int> rects;
-		if (d.room > 0)
+		const bool perRoom = d.per < 0 ? d.room > 0 : d.per == 1;
+		if (d.room > 0 || perRoom)
 		{
 			for (size_t ri = 0; ri < sk.rooms.size(); ++ri)
 			{
 				const Room &r = sk.rooms[ri];
-				if (r.fixed || r.tpl != d.room - 1) continue;
+				if (r.fixed || (d.room > 0 && r.tpl != d.room - 1)) continue;
 				rects.push_back(r.x); rects.push_back(r.y); rects.push_back(r.x + r.w); rects.push_back(r.y + r.h);
 			}
 		}
@@ -311,10 +327,11 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 		{
 			rects.push_back(0); rects.push_back(0); rects.push_back(W); rects.push_back(H);
 		}
+		std::vector<int> cand;  // 全体の時は対象の部屋の候補をまとめる
 		for (size_t q = 0; q + 3 < rects.size(); q += 4)
 		{
 			const int x0 = rects[q], y0 = rects[q + 1], x1 = rects[q + 2], y1 = rects[q + 3];
-		std::vector<int> cand;  // 左上の位置
+		if (perRoom) cand.clear();  // 部屋ごとに候補と確率を判定する
 		if (d.on == 1)
 		{
 			// 部屋の床。まわり 1 マスも床（壁から 1 マス離す）。L1 だけでなく L3 でも床のセルを見る
@@ -358,6 +375,13 @@ void ApplyTheme(const Theme &th, Skeleton &sk, Rng &rng, std::vector<int> &parts
 							if (used[yy * W + xx]) { ok = false; break; }
 					if (ok) cand.push_back((y - d.h + 1) * W + x);
 				}
+		}
+		if (!perRoom && q + 4 < rects.size()) continue;
+		if (!perRoom && d.room > 0)
+		{
+			// 共有壁で同じ候補が複数の部屋に入っても、確率は一度だけ判定する。
+			std::sort(cand.begin(), cand.end());
+			cand.erase(std::unique(cand.begin(), cand.end()), cand.end());
 		}
 		for (int i = (int)cand.size() - 1; i > 0; --i)
 			std::swap(cand[i], cand[rng.Int(0, i)]);

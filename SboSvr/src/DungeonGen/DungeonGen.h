@@ -15,9 +15,9 @@
 namespace DungeonGen
 {
 
-// 生成器の版番号。形の作り方（同じシード・テーマ・設定で出る形）を変えた時に上げる。
+// 生成器の版番号。形や絵の再現結果（同じシード・テーマ・設定で出る形・絵）を変えた時に上げる。
 // 日替わりダンジョンの版（SboDungeonDaily.json）に残し、同じ版の記録どうしだけを比べられるようにする
-const int GEN_VERSION = 1;
+const int GEN_VERSION = 2;
 
 // セルの値
 enum Cell
@@ -138,8 +138,9 @@ struct Deco
 	int w, h;
 	std::vector<int> cells;
 	int on, rate, max;
-	int room;   // 0 = どこでも / 1〜 = その番号の 9分割の絵を使った部屋の中だけ（max は部屋ごと）
-	Deco() : w(1), h(1), on(1), rate(10), max(0), room(0) {}
+	int room;   // 0 = どこでも / 1〜 = その番号の 9分割の絵を使った部屋の中だけ
+	int per;    // 0 = 全体 / 1 = 部屋ごと / -1 = 省略（room の有無に合わせる）
+	Deco() : w(1), h(1), on(1), rate(10), max(0), room(0), per(-1) {}
 };
 
 // 出入口パターン（theme.openings。最大 50 件）

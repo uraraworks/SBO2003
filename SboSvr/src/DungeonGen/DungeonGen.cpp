@@ -163,6 +163,7 @@ void ReadTheme(const JVal &j, Theme &t)
 			dc.rate = d.Int("rate", 10);
 			dc.max = d.Int("max", 0);
 			dc.room = d.Int("room", 0);
+			dc.per = std::max(0, std::min(1, d.Int("per", dc.room > 0 ? 1 : 0)));
 			t.decos.push_back(dc);
 		}
 }

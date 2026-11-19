@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include "theme_checks.h"
 
 using namespace DungeonGen;
 
@@ -153,6 +154,8 @@ static Theme MakeStretchTheme()
 int main(int argc, char **argv)
 {
 	bool verbose = argc > 1 && !strcmp(argv[1], "-v");
+	DungeonThemeChecks themeChecks = CheckDungeonTheme(verbose);
+	CHECK(themeChecks.failures == 0, "theme checks: %d failures", themeChecks.failures);
 	const int seeds[] = { 1, 2, 3, 12345, 777, 20031, 99999 };
 	const int sizes[][2] = { { 40, 40 }, { 64, 48 }, { 24, 24 }, { 128, 128 } };
 
@@ -444,8 +447,11 @@ int main(int argc, char **argv)
 									bool hole0 = c0 == CELL_ARCH || c0 == CELL_DOOR, hole1 = c1 == CELL_ARCH || c1 == CELL_DOOR;
 									CHECK(hole0 == hole1, "bottom2 hole must cover both rows (x=%d)", x);
 									if (variant == 1 || variant == 2) continue;  // 固定パターン・パターン絵は別の絵
-									CHECK(hole0 || (c0 == CELL_TOP && c1 == CELL_FACE), "bottom2 shared rows %d/%d at x=%d", c0, c1, x);
-									if (!hole0) CHECK(pa[dn.y * W + x] == 7 && (pa[(dn.y + 1) * W + x] == 6 || pa[(dn.y + 1) * W + x] == 824), "bottom2 shared parts");
+									bool pillar = false;
+									for (const Room &side : a.rooms)
+										if ((x == side.x || x == side.x + side.w - 1) && dn.y + 1 >= side.y && dn.y + 1 < side.y + side.h) pillar = true;
+									CHECK(hole0 || (c0 == CELL_TOP && c1 == (pillar ? CELL_TOP : CELL_FACE)), "bottom2 shared rows %d/%d at x=%d", c0, c1, x);
+									if (!hole0) CHECK(pa[dn.y * W + x] == 7 && (pa[(dn.y + 1) * W + x] == (c1 == CELL_TOP ? 7 : 6) || pa[(dn.y + 1) * W + x] == 824), "bottom2 shared parts");
 								}
 							}
 						}
@@ -456,7 +462,11 @@ int main(int argc, char **argv)
 							int c0 = a.cells[(r.y + r.h - 2) * W + x], c1 = a.cells[(r.y + r.h - 1) * W + x];
 							if (c0 == CELL_PATTERN || c1 == CELL_PATTERN) continue;  // 重なった固定パターン
 							bool hole = c0 == CELL_ARCH || c0 == CELL_DOOR;
-							CHECK(hole ? (c1 == CELL_ARCH || c1 == CELL_DOOR) : (c0 == CELL_TOP && c1 == CELL_FACE), "bottom2 bottom rows %d/%d", c0, c1);
+							bool pillar = false;
+							if (th.rooms.empty())
+								for (const Room &side : a.rooms)
+									if ((x == side.x || x == side.x + side.w - 1) && r.y + r.h - 1 >= side.y && r.y + r.h - 1 < side.y + side.h) pillar = true;
+							CHECK(hole ? (c1 == CELL_ARCH || c1 == CELL_DOOR) : (c0 == CELL_TOP && c1 == (pillar ? CELL_TOP : CELL_FACE)), "bottom2 bottom rows %d/%d", c0, c1);
 						}
 						for (int y = r.y + 2; y <= r.y + r.h - 3; ++y)
 							for (int x = r.x + 1; x <= r.x + r.w - 2; ++x)

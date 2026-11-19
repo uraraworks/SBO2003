@@ -51,8 +51,14 @@ bool CanPlace(const Ctx &c, const Room &n)
 	for (size_t i = 0; i < c.rooms.size(); ++i)
 	{
 		int iw, ih;
-		Inter(c.rooms[i], n, iw, ih);
+		const Room &r = c.rooms[i];
+		Inter(r, n, iw, ih);
 		if (iw > 0 && ih > 0 && iw != 1 && ih != c.B) return false;
+		// 素の絵では、壁を共有せず隣り合う外枠が二重の壁に見える。
+		// 辺で接するなら壁を重ねる配置だけにする（9分割・固定パターンは従来どおり）。
+		if (c.th && c.th->rooms.empty() &&
+			((ih > 0 && (r.x + r.w == n.x || n.x + n.w == r.x)) ||
+			 (iw > 0 && (r.y + r.h == n.y || n.y + n.h == r.y)))) return false;
 	}
 	return true;
 }
