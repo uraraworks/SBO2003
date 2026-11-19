@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include <string>
+
 int		SboTextCharLen		(LPCSTR psz);							/* 先頭 1 文字のバイト数（終端なら 0） */
 int		SboTextCharWidth	(LPCSTR psz);							/* 先頭 1 文字の表示幅（終端なら 0） */
 BOOL	SboTextIsWide		(LPCSTR psz);							/* 先頭 1 文字が全角か */
@@ -28,3 +30,4 @@ BOOL	SboTextIsSingleByteOnly	(LPCSTR psz);						/* ASCII（1 バイト文字）�
 BOOL	SboTextIsValid		(LPCSTR psz);							/* UTF-8 として正しい並びだけか */
 int		SboTextSanitize		(LPSTR psz);							/* 正しくないバイトを「?」にする（戻り値は置き換えた数） */
 BOOL	SboTextIsNameSafe	(LPCSTR psz);							/* キャラ名に使える文字だけか（Shift_JIS にある文字だけ。絵文字は不可） */
+std::string	SboTextMsgSafe	(LPCSTR psz);							/* メッセージに埋め込む文字列の半角 @ を全角 ＠ にしたもの（制御コードとして効かなくする） */

@@ -292,6 +292,33 @@ BOOL SboTextIsNameSafe(LPCSTR psz)
 	if (!SboTextIsValid (psz)) {
 		return FALSE;
 	}
+	/* 半角の @ は、メッセージの制御コードと紛らわしいので新しい名前には使えない */
+	if (strchr (psz, '@') != NULL) {
+		return FALSE;
+	}
 	std::string strSjis = W32Utf8ToSjisStr (psz);
 	return (W32SjisToUtf8Str (strSjis.c_str (), -1) == psz) ? TRUE : FALSE;
+}
+
+/* ========================================================================= */
+/* 関数名：	SboTextMsgSafe													 */
+/* 内容：	メッセージに外から来た文字列（プレイヤーの名前など）を埋め込む時、	 */
+/*			半角の @ を全角の ＠ にして、メッセージの制御コードとして効かない	 */
+/*			ようにする（元の文字列は変えない）								 */
+/* ========================================================================= */
+std::string SboTextMsgSafe(LPCSTR psz)
+{
+	std::string str;
+
+	if (psz == NULL) {
+		return str;
+	}
+	for (; *psz; psz ++) {
+		if (*psz == '@') {
+			str += "\xEF\xBC\xA0";		/* U+FF20 */
+		} else {
+			str += *psz;
+		}
+	}
+	return str;
 }
