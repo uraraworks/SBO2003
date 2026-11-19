@@ -118,8 +118,12 @@ extern void DungeonSelRecv(PCHARINFO pChar, PCMDPARA_DUNGEONSEL pPara);	/* CMD_D
 extern BOOL QuestInDungeon(PCHARINFO pChar);					/* 番外編ダンジョンの中か（貸し出しの姿になっているか） */
 extern BOOL DungeonPutIsSpaced(PCHARINFO pParent);				/* NPC発生の発生元が番外編ダンジョンの範囲の中か（ふつうの世界には出さず、組の空間ごとに出す） */
 extern BOOL DungeonPutOnChildDec(PCHARINFO pChild);				/* 空間の中で発生した敵が消えた。空間の敵なら TRUE（発生元の数は動かさない） */
+extern void DungeonReceptionCheck(PCHARINFO pChar);
 extern void DungeonProcNow(DWORD dwNow);						/* 番外編ダンジョンの周期処理を今すぐ（テスト用。時刻を指定） */
 extern int  DungeonBagCount(PCHARINFO pChar);					/* 持ち帰り袋に入っている品の数（テスト用） */
+extern DWORD DungeonMapSpace(PCHARINFO);
+extern void DungeonMapSend(PCHARINFO);
+extern void DungeonMapRecv(PCHARINFO, PCMDPARA_DUNGEONMAPDIFF, DWORD);
 extern int  DungeonRunCount(void);								/* 番外編ダンジョンの空間（組）の数（テスト用） */
 extern int  DungeonSelCount(void);								/* 姿を選んでいる組の数（テスト用） */
 extern int  DungeonSelMemberCount(PCHARINFO pChar);				/* その人がいる選び中の組の人数（テスト用） */

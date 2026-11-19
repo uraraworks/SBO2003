@@ -71,6 +71,18 @@ EM_JS(void, SboJsChatNotify, (void), {
 	}
 });
 
+/* マップ受信の共通後始末から、HTML 側の一時入力欄も閉じる。 */
+EM_JS(void, SboJsCloseMapInput, (void), {
+	if (typeof window !== 'undefined' && typeof window['sboCloseMapInput'] === 'function') {
+		window['sboCloseMapInput']();
+	}
+});
+
+void SboWebCloseMapInput(void)
+{
+	SboJsCloseMapInput ();
+}
+
 /* 発言が来たことをシェルに知らせる（SboCliRecvCmd.cpp の RecvDataProcSPEECH から）。
    別のタブを見ている間は、タブの題名に新着の数を出す */
 void SboWebChatNotify(void)

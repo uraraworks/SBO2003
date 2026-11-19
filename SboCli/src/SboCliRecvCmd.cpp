@@ -35,6 +35,7 @@
 #include "SboCliAutoMap.h"
 extern void PruneItemKeys (PCHARINFO pChar);					/* 手持ちから無くなった装備品・道具をショートカットの枠から外す（SboCliKeyProc.cpp） */
 #ifdef __EMSCRIPTEN__
+extern void SboWebCloseMapInput(void);
 extern void SboWebChatNotify(void);								/* 発言が来たことをシェルに知らせる（タブの題名で新着を知らせる） */
 #endif
 
@@ -4642,6 +4643,17 @@ void RecvDataProcMAPINFO(PBYTE pData, DWORD dwDataSize)
 			SendCmdTRADE (g_aCharInfo[g_nMyCharID]->dwTblID, CMDTRADE_OUT);
 		}
 	}
+
+	/* 入退場・帰還・空間切替もここを通る。コマンドの子窓・発言欄も通常の後始末で閉じる。
+	   別管理のメッセージログ・吹き出し・デバッグ窓は残す。 */
+	AllEraseWindow ();
+	g_dwActiveMsgID = 0;
+	g_dwMsgIDSubGame = 0;
+	g_bEnableMove = TRUE;
+	g_nProcShopID = -1;
+#ifdef __EMSCRIPTEN__
+	SboWebCloseMapInput ();
+#endif
 
 	BOOL bClChg = FALSE;
 	if (g_pMapInfo->clChg) {

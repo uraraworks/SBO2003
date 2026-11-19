@@ -390,7 +390,7 @@ enum {
 	CMD_AFFIXINFO,													/* 付与表の1行(サーバー→クライアント。ログイン時と変更時) */
 	CMD_ITEMDERIVE,													/* 派生アイテム表の行(サーバー→クライアント。ログイン時と新しく振った時) */
 	CMD_APPRAISE,													/* 鑑定屋で鑑定してもらう(クライアント→サーバー。結果はサーバー→クライアント) */
-	CMD_DUNGEONMAP,													/* テーマで作った気まぐれダンジョンの探索マップ用の情報(サーバー→クライアントのみ。CMDPARA_DUNGEONMAP。マップ情報の直後と作り直した直後に送る) */
+	CMD_DUNGEONMAP,													/* テーマで作った気まぐれダンジョンの探索マップ用の情報(共有差分は双方向。CMDPARA_DUNGEONMAP。マップ情報の直後と作り直した直後に送る) */
 	CMD_DUNGEONSEL,													/* 番外編ダンジョンの入口で入る姿（テンプレート）を選ぶ(CMDPARA_DUNGEONSEL。一覧を開く・閉じるはサーバー→クライアント、選ぶ・やめるはクライアント→サーバー。プレイヤー用) */
 	CMD_MAX
 };
@@ -4132,6 +4132,21 @@ typedef struct _CMDPARA_DUNGEONMAP {
 	WORD		wLinkCount;											/* 出入口の数 */
 	char		szName[160];										/* 中にいる間に出すマップ名（テーマの名前。日替わりは「（今日のダンジョン）」付き。空ならマップの名前のまま） */
 } CMDPARA_DUNGEONMAP, *PCMDPARA_DUNGEONMAP;
+
+/* 共有探索：byValid=3 の地形情報の末尾に DWORD 空間番号を付ける。
+   byValid=2 は以下のヘッダー＋wCount 件の WORD（範囲内の相対マス番号。
+   最上位ビットはその位置で Visit、無ければ Seen）＋byMember 件の位置。
+   クライアント→サーバーでは dwTblID が本人、位置の一覧は付けない。 */
+typedef struct _CMDPARA_DUNGEONMAPDIFF {
+	BYTE byCmd, byValid;
+	DWORD dwMapID, dwBuildNo, dwSpaceID, dwTblID;
+	WORD wCount;
+	BYTE byMember;
+} CMDPARA_DUNGEONMAPDIFF, *PCMDPARA_DUNGEONMAPDIFF;
+typedef struct _DUNGEONMAPPOS {
+	DWORD dwTblID;
+	WORD wX, wY;
+} DUNGEONMAPPOS;
 
 /* 番外編ダンジョンの入口で、入る姿（テンプレート）を選ぶ（CMD_DUNGEONSEL）。
    サーバー→クライアント：DUNGEONSEL_OPEN で選ぶ窓を開く（byCount 件の名前・dwWait は締め切りまでのミリ秒）、DUNGEONSEL_CLOSE で閉じる。

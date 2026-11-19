@@ -4063,6 +4063,13 @@
 		canvas.focus();
 		setTimeout(onResize, 300);
 	}
+	/* 移動時はスマホの入力シートを閉じる。常設ログと書きかけの文章は残す。 */
+	window.sboCloseMapInput = function () {
+		if (sheet.classList.contains('sbo-open')) closeSheet();
+		chatInput.blur();
+		sheetInput.blur();
+		if (isLogPopOpen() && logPopInput) logPopInput.blur();
+	};
 	chatOpenBtn.addEventListener('click', function () {
 		openSheet();
 	});
