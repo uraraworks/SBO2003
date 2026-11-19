@@ -1288,6 +1288,41 @@ dispose sell full leave: n=3 7*2 1*1 2*1
 dispose sell full gold=999998
 dispose drop all leave: n=2 1*1 2*1
 dispose drop all gold=999998
+== AN. NpcNear ==
+npcnear buy none item=0 gold=5000
+npcnear buy othershop item=0 gold=5000
+npcnear buy ok item=6 gold=4998 (price 2)
+npcnear buy far item=0
+npcnear buy 3cells item=6
+npcnear sell none item0=7 gold=0
+npcnear sell nogold item1=3 gold=0
+npcnear sell nodrop item2=2 gold=0
+npcnear drop zero-id item0=7
+npcnear drop nodrop item2=2
+npcnear drop nogold item1=2
+npcnear sell ok item0=2 gold=2 (expect 2)
+npcnear drop free item0=0
+npcnear leave none item0=7
+npcnear leave shopman item0=7
+npcnear leave ok item0=0
+npcnear get none item0=0
+npcnear goldleave none gold=100
+npcnear goldleave ok gold=90
+npcnear get none2 item0=0
+npcnear get ok item0=7
+npcnear job none changed=0
+npcnear job wrongnpc changed=0
+npcnear job ok changed=1
+npcnear grp admin16 grp=5
+npcnear grp huge grp=5
+npcnear grp female grp=3
+npcnear grp dressnpc grp=40
+npcnear grp otherimage grp=40
+npcnear grp nonpc grp=2
+npcnear color random=16777215
+npcnear color admin=16777215
+npcnear color mismatch=16777215
+npcnear color ok=16777160
 == Q. Challenge ==
 challenge cells=8
 challenge solo accept=0
