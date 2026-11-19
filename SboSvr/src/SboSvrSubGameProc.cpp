@@ -1680,6 +1680,22 @@ static BOOL MakeDungeonByTheme(PSUBGAME_DUNGEONINFO pDungeon, PMAPINFO pMap)
 		}
 	}
 
+	/* テーマの灯りの上書き表（lights）を、そのマップのパーツの灯りの上書き表へ書く（マップ全体の表なので、
+	   ダンジョン専用のマップの前提。lights が空なら触らない）。送り直しでクライアントへ届く */
+	if (!theme.lights.empty ()) {
+		ZeroMemory (pMap->aPartsLight, sizeof (pMap->aPartsLight));
+		pMap->byPartsLightCount = 0;
+		for (i = 0; i < (int)theme.lights.size () && pMap->byPartsLightCount < MAX_MAPPARTSLIGHT; i ++) {
+			int nParts = theme.lights[i].first, nLight = theme.lights[i].second;
+			if ((nParts <= 0) || (nParts >= (int)g_wCountMapParts)) {
+				continue;
+			}
+			PMAPPARTSLIGHT pPL = &pMap->aPartsLight[pMap->byPartsLightCount ++];
+			pPL->wParts = (WORD)nParts;
+			pPL->byLight = (BYTE)min (nLight, (int)MAPLIGHT_RANGE_MAX);
+		}
+	}
+
 	/* 作り直し番号を進めて、マップにいる全員へマップを送り直す（tiles/set と同じ関数） */
 	pDungeon->dwBuildNo ++;
 	pDungeon->byTmpX = 0;

@@ -12136,6 +12136,9 @@ static void TestSpamLimit(const std::vector<int> &aLogin)
 
 	pA->byAdminLV = byAdminBack;
 	s_dwFakeNow = dwNowBack;
+}
+
+/* ------------------------------------------------------------------------- */
 /* AN. ダンジョンのテーマ生成												 */
 /*     テーマ番号 0・見つからない番号は今までの作り方（作成中の設計図が付く）	 */
 /*     テーマがあれば、範囲に絵が入り・入口と出口のワープ・扉イベントが置かれ・	 */
@@ -12162,13 +12165,16 @@ static void TestDungeonTheme(void)
 	int nEventBack = pMap->nEventCount;
 	pMap->pEvent = NULL;
 	pMap->nEventCount = 0;
+	BYTE byPLCBack = pMap->byPartsLightCount;
+	MAPPARTSLIGHT aPLBack[MAX_MAPPARTSLIGHT];
+	memcpy(aPLBack, pMap->aPartsLight, sizeof(aPLBack));
 
 	/* テーマ（床 1・2、天井 3、側面 4、その他の壁 5、出入口 6、扉 7→開いた 8、入口の絵 9、ゴールの絵 10。扉を多めに） */
 	{
 		FILE *fp = fopen("SBODATA/SboWebDungeonThemes.json", "wb");
 		if (fp) {
 			const char *psz = "{\"seq\":5,\"themes\":[{\"id\":5,\"name\":\"test\",\"algo\":1,\"floor\":[1,2],\"wallTop\":[3],\"wallFace\":[4],\"wallFill\":[5],"
-				"\"void\":0,\"arch\":[6],\"door\":7,\"doorOpen\":8,\"entry\":9,\"goal\":10,\"bottomRows\":1,\"rooms\":[],\"decos\":[],"
+				"\"void\":0,\"arch\":[6],\"door\":7,\"doorOpen\":8,\"entry\":9,\"goal\":10,\"bottomRows\":1,\"rooms\":[],\"decos\":[],\"lights\":[{\"wParts\":3,\"byLight\":4},{\"wParts\":1,\"byLight\":7},{\"wParts\":2,\"byLight\":9}],"
 				"\"params\":{\"doorRate\":100,\"openRate\":0,\"floorMin\":30}},"
 				"{\"id\":6,\"name\":\"nodoor\",\"algo\":1,\"floor\":[1],\"wallTop\":[3],\"wallFace\":[4],\"wallFill\":[5],\"arch\":[6],\"door\":7,\"goal\":10,\"rooms\":[],\"decos\":[]}]}";
 			fwrite(psz, 1, strlen(psz), fp);
@@ -12250,6 +12256,10 @@ static void TestDungeonTheme(void)
 		(int)(Info.pMapTmp != NULL), (unsigned long)Info.dwBuildNo, (int)(nTop % 10 == 1), nMapChg, (int)(nDoor > 0), (int)(nDoor == nDoorOk), nOld, nKeep, nOutside, nBadParts,
 		nOutChg, (int)(pMap->pwMap[3 + 4 * pMap->nCX] == 21), (int)(nTop >= 10), (int)Info.wGenCX, (int)Info.wGenCY);
 
+	/* 灯りの上書き表: テーマ 5 の lights（パーツ 3→4、1→7。byLight 9 の行は読み込みで捨てる）が入る */
+	printf("dungeontheme lights count=%d p0=%d/%d p1=%d/%d\n", (int)pMap->byPartsLightCount, (int)pMap->aPartsLight[0].wParts, (int)pMap->aPartsLight[0].byLight,
+		(int)pMap->aPartsLight[1].wParts, (int)pMap->aPartsLight[1].byLight);
+
 	/* 3. 作り直すと番号が進み、古い扉は消えて置き直し（扉の数は前後で 0 でない・events が積み上がらない） */
 	int nEvents1 = pMap->nEventCount;
 	MakeDungeonProc(byID);
@@ -12258,9 +12268,10 @@ static void TestDungeonTheme(void)
 	printf("dungeontheme rebuild buildNo=%lu doors>0=%d eventsBounded=%d keepEvent=%d\n", (unsigned long)Info.dwBuildNo, (int)(nDoor2 > 0),
 		(int)(pMap->nEventCount < nEvents1 + 400 && pMap->nEventCount > 2), nKeep);
 
-	/* 4. doorOpen の無いテーマ 6 は扉イベントを置かない */
+	/* 4. doorOpen の無いテーマ 6 は扉イベントを置かない（lights が空なので灯りの表は触らない） */
 	Info.dwThemeID = 6;
 	MakeDungeonProc(byID);
+	printf("dungeontheme theme6 lights untouched=%d\n", (int)(pMap->byPartsLightCount == 2));
 	int nDoor3 = 0;
 	for (int i = 0; i < pMap->nEventCount; i ++) if (pMap->pEvent[i].byType == EVENTTYPE_DOOR) nDoor3 ++;
 	printf("dungeontheme theme6 doors=%d buildNo=%lu goalPart=%d\n", nDoor3, (unsigned long)Info.dwBuildNo,
@@ -12320,6 +12331,8 @@ static void TestDungeonTheme(void)
 	pMap->nEventCount = nEventBack;
 	pMap->nProcEvent = 0;
 	g_nProcMap = 0;
+	pMap->byPartsLightCount = byPLCBack;
+	memcpy(pMap->aPartsLight, aPLBack, sizeof(aPLBack));
 	memcpy(pMap->pwMap, &aMapBack[0], sizeof(WORD) * aMapBack.size());
 	g_aSubaGameInfo.RemoveAt(byID);
 	unlink("SBODATA/SboWebDungeonThemes.json");
