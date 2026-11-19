@@ -14,7 +14,7 @@
 /* 定数定義																	 */
 /* ========================================================================= */
 #define DATACOUNT			(1)										/* 保存データ数 */
-#define DATACOUNT_DUNGEON	(16)									/* 保存データ数(ダンジョン) */
+#define DATACOUNT_DUNGEON	(19)									/* 保存データ数(ダンジョン) */
 #define DATACOUNT_MAZE		(26)									/* 保存データ数(迷路) */
 #define DATACOUNT_BOMB		(9)										/* 保存データ数(爆弾ゲーム) */
 #define DATACOUNT_WAR		(22)									/* 保存データ数(戦場ゲーム) */
@@ -57,6 +57,9 @@ static const char *s_aszNameDUNGEON[] = {
 	"wChipIDRoad",		/* 道のマップチップID */
 	"wChipIDBlock",		/* 壁のマップチップID */
 	"dwThemeID",		/* ダンジョン生成のテーマ番号 */
+	"byTmplCount",		/* 番外編：選べるテンプレートの数 */
+	"wTmplID",			/* 番外編：テンプレート番号（MAX_DGTMPL 個） */
+	"szTmplName",		/* 番外編：表示名（MAX_DGTMPL 個） */
 	"z"
 };
 
@@ -577,8 +580,12 @@ static PBYTE GetInfoDungeon(PSUBGAME_DUNGEONINFO pInfo, PDWORD pdwSize)
 		if (s_aszNameDUNGEON[i][0] == 'z') {
 			break;
 		}
-		/* 足した項目（16番目から）は使っている時だけ書く（前の版のサーバーでも読めるように） */
-		if ((i >= 15) && !pInfo->dwThemeID) {
+		/* 足した項目（16番目から）は使っている時だけ書く（前の版のサーバーでも読めるように）。
+		   テーマ番号（16番目）はテーマ番号を使っている時か番外編の時、番外編の項目（17番目から）は番外編の時だけ */
+		if ((i >= 15) && !pInfo->dwThemeID && !pInfo->byTmplCount) {
+			break;
+		}
+		if ((i >= 16) && !pInfo->byTmplCount) {
 			break;
 		}
 		strcpy (Info.szName, s_aszNameDUNGEON[i]);
@@ -625,6 +632,9 @@ static PBYTE GetInfoDungeon(PSUBGAME_DUNGEONINFO pInfo, PDWORD pdwSize)
 		case 13:	dwDataSizeTmp = sizeof (WORD);			break;	/* 道のマップチップID */
 		case 14:	dwDataSizeTmp = sizeof (WORD);			break;	/* 壁のマップチップID */
 		case 15:	dwDataSizeTmp = sizeof (DWORD);			break;	/* ダンジョン生成のテーマ番号 */
+		case 16:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 番外編：テンプレートの数 */
+		case 17:	dwDataSizeTmp = sizeof (pInfo->wTmplID);	break;	/* 番外編：テンプレート番号 */
+		case 18:	dwDataSizeTmp = sizeof (pInfo->szTmplName);	break;	/* 番外編：表示名 */
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
 		dwDataSize += dwDataSizeTmp;
@@ -725,6 +735,18 @@ static PBYTE GetInfoDungeon(PSUBGAME_DUNGEONINFO pInfo, PDWORD pdwSize)
 		case 15:	/* ダンジョン生成のテーマ番号 */
 			CopyMemory (&pData[dwOffset], &pInfo->dwThemeID, sizeof (DWORD));
 			dwOffset += sizeof (DWORD);
+			break;
+		case 16:	/* 番外編：テンプレートの数 */
+			CopyMemory (&pData[dwOffset], &pInfo->byTmplCount, sizeof (BYTE));
+			dwOffset += sizeof (BYTE);
+			break;
+		case 17:	/* 番外編：テンプレート番号 */
+			CopyMemory (&pData[dwOffset], pInfo->wTmplID, sizeof (pInfo->wTmplID));
+			dwOffset += sizeof (pInfo->wTmplID);
+			break;
+		case 18:	/* 番外編：表示名 */
+			CopyMemory (&pData[dwOffset], pInfo->szTmplName, sizeof (pInfo->szTmplName));
+			dwOffset += sizeof (pInfo->szTmplName);
 			break;
 		}
 	}
@@ -1637,6 +1659,19 @@ static PBYTE PetInfoDungeon(PBYTE pData, PDWORD pdwSize)
 		} else if (strcmp (aHeaderInfo[i].szName, "dwThemeID") == 0) {				/* ダンジョン生成のテーマ番号 */
 			CopyMemory (&pInfo->dwThemeID, &pData[dwOffsetTmp], sizeof (DWORD));
 			dwOffsetTmp += sizeof (DWORD);
+		} else if (strcmp (aHeaderInfo[i].szName, "byTmplCount") == 0) {			/* 番外編：テンプレートの数 */
+			CopyMemory (&pInfo->byTmplCount, &pData[dwOffsetTmp], sizeof (BYTE));
+			dwOffsetTmp += sizeof (BYTE);
+			pInfo->byTmplCount = min (pInfo->byTmplCount, (BYTE)MAX_DGTMPL);
+		} else if (strcmp (aHeaderInfo[i].szName, "wTmplID") == 0) {				/* 番外編：テンプレート番号 */
+			CopyMemory (pInfo->wTmplID, &pData[dwOffsetTmp], sizeof (pInfo->wTmplID));
+			dwOffsetTmp += sizeof (pInfo->wTmplID);
+		} else if (strcmp (aHeaderInfo[i].szName, "szTmplName") == 0) {			/* 番外編：表示名 */
+			CopyMemory (pInfo->szTmplName, &pData[dwOffsetTmp], sizeof (pInfo->szTmplName));
+			dwOffsetTmp += sizeof (pInfo->szTmplName);
+			for (j = 0; j < MAX_DGTMPL; j ++) {
+				pInfo->szTmplName[j][MAX_DGTMPLNAME - 1] = 0;
+			}
 		}
 		dwOffset = dwOffsetTmp;
 	}

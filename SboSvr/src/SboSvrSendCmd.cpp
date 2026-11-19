@@ -66,6 +66,7 @@ void SendCmdTALKMSG				(DWORD, DWORD, LPCSTR);						/* コマンド送信(会話
 void SendCmdMAPSWAP				(DWORD, DWORD, const MAPSWAPSEND *, int);	/* コマンド送信(印で変わるマスの差し替え一覧) */
 void SendCmdDUNGEONMAP			(DWORD, DWORD);								/* コマンド送信(探索マップ用の情報) */
 void SendCmdDUNGEONMAPMAP		(DWORD);									/* コマンド送信(探索マップ用の情報をマップの全員へ) */
+void SendCmdDUNGEONSEL			(DWORD, PCMDPARA_DUNGEONSEL);				/* コマンド送信(番外編ダンジョン：入る姿を選ぶ窓) */
 void SendCmdEFECTCHG			(DWORD, DWORD, BYTE, BOOL);					/* コマンド送信(エフェクト変更) */
 void SendCmdCOMEFC				(PCHARINFO);								/* コマンド送信(吹き出し通知) */
 void SendCmdERR					(DWORD, BYTE);								/* コマンド送信(エラー通知) */
@@ -591,6 +592,7 @@ static void MaskCharInfoForOther(PCMDPARA_CHARINFO pSendData)
 	pSendData->byAreaX				= 0;
 	pSendData->byAreaY				= 0;
 	pSendData->byPutCount			= 0;
+	pSendData->byPutOnce			= 0;
 	pSendData->wTimePutInterval		= 0;
 	pSendData->byDropProbability	= 0;
 	pSendData->byMoveProbabilityX	= 0;
@@ -716,6 +718,7 @@ void SendCmdCHARINFO(DWORD pIDSend, int nNo)
 					pSendData->byAreaX				= pChar->byAreaX;
 					pSendData->byAreaY				= pChar->byAreaY;
 					pSendData->byPutCount			= pChar->byPutCount;
+					pSendData->byPutOnce			= pChar->byPutOnce;
 					pSendData->wTimePutInterval		= pChar->wTimePutInterval;
 					pSendData->pszNpcSpeech			= pChar->pszNpcSpeech;
 					pSendData->clName				= pChar->clName;
@@ -962,6 +965,7 @@ void SendCmdCHARINFO3(int nNo)
 	pSendData->byAreaX				= pChar->byAreaX;
 	pSendData->byAreaY				= pChar->byAreaY;
 	pSendData->byPutCount			= pChar->byPutCount;
+	pSendData->byPutOnce			= pChar->byPutOnce;
 	pSendData->wTimePutInterval		= pChar->wTimePutInterval;
 	pSendData->pszNpcSpeech			= pChar->pszNpcSpeech;
 	pSendData->clName				= pChar->clName;
@@ -1863,6 +1867,16 @@ void SendCmdDUNGEONMAPMAP(DWORD dwMapID)
 }
 
 /* ========================================================================= */
+/* 関数名：SendCmdDUNGEONSEL												 */
+/* 内容：コマンド送信(番外編ダンジョン：入る姿を選ぶ窓を開く・閉じる。その人にだけ) */
+/* ========================================================================= */
+void SendCmdDUNGEONSEL(DWORD pIDSend, PCMDPARA_DUNGEONSEL pPara)
+{
+	pPara->byCmd = CMD_DUNGEONSEL;
+	svrSock.SendTo (pIDSend, (PBYTE)pPara, sizeof (CMDPARA_DUNGEONSEL), SENDTIMEOUT);
+}
+
+/* ========================================================================= */
 /* 関数名：SendCmdSYSMSGMAP													 */
 /* 内容：コマンド送信(マップ内システムメッセージ)							 */
 /* 日付：2004/01/31															 */
@@ -1975,6 +1989,7 @@ void SendCmdGETACCINFO(DWORD pIDSend, DWORD dwTblID)
 	pSendData->byAreaX				= pChar->byAreaX;
 	pSendData->byAreaY				= pChar->byAreaY;
 	pSendData->byPutCount			= pChar->byPutCount;
+	pSendData->byPutOnce			= pChar->byPutOnce;
 	pSendData->byDropProbability	= pChar->byDropProbability;
 	pSendData->byMoveProbabilityX	= pChar->byMoveProbabilityX;
 	pSendData->byMoveProbabilityY	= pChar->byMoveProbabilityY;
@@ -2919,6 +2934,9 @@ void SendCmdSUBGAMEINFO(DWORD pIDSend, int nNo)
 			pDungeon->wChipIDRoad = pDungeonInfo->wChipIDRoad;
 			pDungeon->wChipIDBlock = pDungeonInfo->wChipIDBlock;
 			pDungeon->dwThemeID = pDungeonInfo->dwThemeID;
+			pDungeon->byTmplCount = pDungeonInfo->byTmplCount;
+			CopyMemory (pDungeon->wTmplID, pDungeonInfo->wTmplID, sizeof (pDungeon->wTmplID));
+			CopyMemory (pDungeon->szTmplName, pDungeonInfo->szTmplName, sizeof (pDungeon->szTmplName));
 		}		
 		break;
 

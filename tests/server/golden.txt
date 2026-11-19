@@ -2067,4 +2067,30 @@ dungeontheme theme6 doors=0 buildNo=3 goalPart=1
 dungeontheme narrow buildNo+=0 mapTmp=0
 dungeontheme narrow automap dropped=1
 dungeontheme save theme0=0 theme7=7 fields=11 extraBytes=18
+== AO. Dungeon bonus-game ==
+dungeonbonus build ready=1 entry=1 goal=1
+dungeonbonus put normal=0 spaced=1
+dungeonbonus solo open sel=1 in=0
+dungeonbonus solo picked sel=0 in=1 indungeon=1 space>0=1 lv=8 runs=1
+dungeonbonus party member-step sel=0
+dungeonbonus party leader-step sel=1
+dungeonbonus party a-picked in a=0 b=0 sel=1
+dungeonbonus party both-in a=1 b=1 same=1 differs=1 lv=7 sel=0 runs=2
+dungeonbonus deadline open sel=1
+dungeonbonus deadline d-picked in d=0 sel=1
+dungeonbonus deadline 10s in d=0 sel=1
+dungeonbonus deadline 31s in d=1 e=0 sel=0 runs=3
+dungeonbonus enemies s1=3 s2=3 s3=3 normal=0
+dungeonbonus refill killed=2 after=3 full=1
+dungeonbonus once killed after=2 (full=3) s1=3 s2=3
+dungeonbonus once new-group in e=1 new space=1 enemies=3 full=1 runs=4
+dungeonbonus bag in c bag0=0 bag=2 real-item-visible=1
+dungeonbonus goal c in=0 space=0 got=2 kept=1 lv=30
+dungeonbonus goal freed runs=3 enemies-s1=0
+dungeonbonus dead a bag=1
+dungeonbonus dead a in=0 got=0 kept=1 b-still=1
+dungeonbonus rebuild b in=0 got=0 kept=1 d in=0 e in=0
+dungeonbonus rebuild freed runs=0 enemies=0/0/0/0
+dungeonbonus save roundtrip=1 extra>0=1
+dungeonbonus end runs=0 sel=0
 == done ==

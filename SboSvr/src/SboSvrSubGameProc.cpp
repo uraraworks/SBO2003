@@ -1783,6 +1783,19 @@ void MakeDungeonProc(BYTE byID)
 		return;
 	}
 
+	/* 作り直しで、範囲の中の NPC発生の「補充しない」の数を戻す（組の空間ごとの数は、組が入る時に最初から数える） */
+	{
+		int k, nChars = g_aCharInfo.GetSize ();
+		for (k = 0; k < nChars; k ++) {
+			PCHARINFO pPut = g_aCharInfo[k];
+			if ((pPut != NULL) && (pPut->byNpcType == NPCTYPE_PUT) && (pPut->dwMapID == pDungeon->dwMapID) &&
+				(pPut->dwX >= (DWORD)pDungeon->byX1) && (pPut->dwX <= (DWORD)pDungeon->byX2) &&
+				(pPut->dwY >= (DWORD)pDungeon->byY1) && (pPut->dwY <= (DWORD)pDungeon->byY2)) {
+				pPut->byPutDone = 0;
+			}
+		}
+	}
+
 	SendCmdSYSMSGMAP (pDungeon->dwMapID, "SYSTEM:ダンジョン作成開始します。");
 
 	/* スタート地点用イベント削除 */

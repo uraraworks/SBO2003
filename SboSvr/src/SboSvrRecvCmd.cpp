@@ -233,6 +233,7 @@ void	RecvDataProcNPCROUTE					(PBYTE, DWORD);				/* NPCの巡回ルート */
 void	RecvDataProcRECIPEMAKE					(PBYTE, DWORD);				/* レシピで作ってもらう */
 void	RecvDataProcAPPRAISE					(PBYTE, DWORD);				/* 鑑定屋で鑑定してもらう */
 void	RecvDataProcQUEST						(PBYTE, DWORD);				/* ギルドの仕事依頼（一覧・受ける・取り消す・渡す） */
+void	RecvDataProcDUNGEONSEL					(PBYTE, DWORD);				/* 番外編ダンジョン：入る姿を選ぶ・やめる */
 void	RecvDataProcADMINQUEST					(PBYTE, DWORD);				/* 管理者ウィンドウのギルドの依頼の編集 */
 void	RecvDataProcADMINRESURRECT				(PBYTE, DWORD);				/* 管理者ウィンドウからキャラを蘇生 */
 void	RecvDataProcADMINVIEWALL				(PBYTE, DWORD);				/* 管理者ウィンドウの「印で隠れたNPCも表示」の切り替え */
@@ -515,6 +516,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	NULL,								/* CMD_ITEMDERIVE(サーバー→クライアントのみ) */
 	RecvDataProcAPPRAISE,				/* CMD_APPRAISE */
 	NULL,								/* CMD_DUNGEONMAP(サーバー→クライアントのみ) */
+	RecvDataProcDUNGEONSEL,				/* CMD_DUNGEONSEL */
 
 	NULL
 };
@@ -3880,7 +3882,7 @@ void RecvDataProc(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	/* 管理者用のコマンド（管理者ウィンドウからしか送らないもの）は管理者だけ */
-	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_APPRAISE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && (byCmd != CMD_TALKANSWER) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET)) && ((byCmd < CMD_RECYCLELIST) || (byCmd > CMD_RECYCLECLOSE))) ||
+	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_APPRAISE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_DUNGEONSEL) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && (byCmd != CMD_TALKANSWER) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET)) && ((byCmd < CMD_RECYCLELIST) || (byCmd > CMD_RECYCLECLOSE))) ||
 			(byCmd == CMD_CHARITEM)) {
 		if (!CheckAdminBan (nNo)) {
 			SAFE_DELETE_ARRAY (pData);
@@ -5875,6 +5877,7 @@ void RecvDataProcCHARINFO(PBYTE pData, DWORD dwDataSize)
 	pCharDst->byAreaX = pChar->byAreaX;
 	pCharDst->byAreaY = pChar->byAreaY;
 	pCharDst->byPutCount = pChar->byPutCount;
+	pCharDst->byPutOnce = pChar->byPutOnce;
 	pCharDst->byMoveProbabilityX = pChar->byMoveProbabilityX;
 	pCharDst->byMoveProbabilityY = pChar->byMoveProbabilityY;
 	pCharDst->bySearchCx = pChar->bySearchCx;
@@ -9269,7 +9272,7 @@ static BOOL QuestChallengeBlock(PCHARINFO pChar)
 	if (!QuestInChallenge (pChar)) {
 		return FALSE;
 	}
-	SendCmdSYSMSG (pChar->pID, "討伐チャレンジ中はできません。", SPEECHCMD_BATTLE1);
+	SendCmdSYSMSG (pChar->pID, QuestInDungeon (pChar) ? "ダンジョンの中ではできません。" : "討伐チャレンジ中はできません。", SPEECHCMD_BATTLE1);
 	return TRUE;
 }
 
@@ -9595,6 +9598,9 @@ void RecvDataProcSUBGAMEINFO(PBYTE pData, DWORD dwDataSize)
 			pDungeonInfo->wChipIDRoad = pDungeon->wChipIDRoad;
 			pDungeonInfo->wChipIDBlock = pDungeon->wChipIDBlock;
 			pDungeonInfo->dwThemeID = pDungeon->dwThemeID;
+			pDungeonInfo->byTmplCount = pDungeon->byTmplCount;
+			CopyMemory (pDungeonInfo->wTmplID, pDungeon->wTmplID, sizeof (pDungeonInfo->wTmplID));
+			CopyMemory (pDungeonInfo->szTmplName, pDungeon->szTmplName, sizeof (pDungeonInfo->szTmplName));
 			/* 管理者ウィンドウから直した時も、作り直し番号と生成結果は引き継ぐ */
 			if (pInfoBack && (byTypeBack == SUBGAMEID_DUNGEON)) {
 				PSUBGAME_DUNGEONINFO pBack = (PSUBGAME_DUNGEONINFO)pInfoBack;
@@ -10827,7 +10833,7 @@ void RecvDataProcTRADE(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	if (QuestInChallenge (g_aCharInfo[pRecv->dwData])) {
-		SendCmdSYSMSG (g_aCharInfo[pRecv->dwTblID]->pID, "相手は討伐チャレンジ中なので取り引きできません。", SPEECHCMD_BATTLE1);
+		SendCmdSYSMSG (g_aCharInfo[pRecv->dwTblID]->pID, QuestInDungeon (g_aCharInfo[pRecv->dwData]) ? "相手はダンジョンの中なので取り引きできません。" : "相手は討伐チャレンジ中なので取り引きできません。", SPEECHCMD_BATTLE1);
 		TradeRefuse (g_aCharInfo[pRecv->dwTblID]);
 		return;
 	}
@@ -14522,7 +14528,7 @@ BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, 
 	/* 管理者用のコマンドだけ（ログインや「元に戻す」自体は通さない） */
 	if ((byCmd >= CMD_MAX) || (RecvDataProcTbl[byCmd] == NULL) ||
 			((byCmd < CMD_MAPPARTSADD) && (byCmd != CMD_CHARITEM)) ||
-			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_ADMINVIEWALL) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_APPRAISE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET)) || ((byCmd >= CMD_RECYCLELIST) && (byCmd <= CMD_RECYCLECLOSE))) {
+			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_ADMINVIEWALL) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_APPRAISE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_DUNGEONSEL) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET)) || ((byCmd >= CMD_RECYCLELIST) && (byCmd <= CMD_RECYCLECLOSE))) {
 		return FALSE;
 	}
 
@@ -14763,6 +14769,28 @@ void RecvDataProcQUEST(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	QuestRecv (pChar, pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcDUNGEONSEL											 */
+/* 内容：受信データ処理(番外編ダンジョン：入る姿を選ぶ・やめる)				 */
+/* ========================================================================= */
+void RecvDataProcDUNGEONSEL(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_DUNGEONSEL pPara = (PCMDPARA_DUNGEONSEL)pData;
+	PCHARINFO pChar;
+
+	if (s_dwRecvSize < sizeof (CMDPARA_DUNGEONSEL)) {
+		return;
+	}
+	if (!IsRecvChar (pPara->dwTblID)) {
+		return;
+	}
+	pChar = g_aCharInfo[pPara->dwTblID];
+	if ((pChar == NULL) || (pChar->pID == 0) || (pChar->byNpcType != NPCTYPE_INIT)) {
+		return;
+	}
+	DungeonSelRecv (pChar, pPara);
 }
 
 /* ========================================================================= */

@@ -1524,6 +1524,7 @@ static const DATAFIELD s_aFieldChar[] = {
 	FLD (CHARINFO, dwStTmplateID,		"ステータステンプレート",	FT_U32, 0, "stTmp の番号。4294967295 は無し"),
 	FLD (CHARINFO, dwParentTblID,		"発生元のキャラ",		FT_U32, RO, "NPC発生で出てきたキャラの発生元（char の番号）"),
 	FLD (CHARINFO, byPutCount,			"最大発生数",			FT_U8, 0, "NPC発生（発生元）の時"),
+	FLD (CHARINFO, byPutOnce,			"補充しない",			FT_U8, 0, "NPC発生（発生元）の時。1 にすると、最大発生数まで出したらそれ以上は出さない（倒されても出し直さない。数えるのはダンジョンの空間ごと。ダンジョンを作り直すと数が戻る）。0=今までどおり倒されたら出し直す"),
 	FLD (CHARINFO, wTimePutInterval,	"発生周期",				FT_U16, 0, NULL),
 	FLD (CHARINFO, byAreaX,				"移動範囲(横)",			FT_U8, 0, NULL),
 	FLD (CHARINFO, byAreaY,				"移動範囲(縦)",			FT_U8, 0, NULL),
@@ -2118,6 +2119,16 @@ static const DATAFIELD s_aFieldSgDungeon[] = {
 	FLD (SUBGAME_DUNGEONINFO, wChipIDBlock,"壁のパーツ",		FT_U16, 0, "mapParts の番号"),
 	FLD (SUBGAME_DUNGEONINFO, dwThemeID,"テーマ番号",			FT_U32, 0, "ダンジョン生成のテーマ（SboWebDungeonThemes.json の id）。0=今までの作り方。0 以外でテーマが見つかれば、作り直しのたびにエリアの大きさで生成してマス目・扉・入口を置く（見つからなければ今までの作り方）"),
 	FLD (SUBGAME_DUNGEONINFO, dwBuildNo,"作り直し番号",			FT_U32, FF_READONLY, "テーマで作り直すたびに増える番号（実行中だけ。保存しない・読むだけ）"),
+	FLD (SUBGAME_DUNGEONINFO, byTmplCount,"番外編のテンプレート数",	FT_U8, 0, "0〜8。0=番外編にしない（今までどおり、入口に乗れば誰でも自分の姿で入れる）。1 以上だと番外編のミニゲームになる: 入口にパーティのリーダー（ソロならその人）が乗ると、組の全員に wTmplID・szTmplName1〜8 の先頭 byTmplCount 件を一覧に出し、全員が選び終えたら（30秒で締め切り）一緒に新しい空間へ入る。中ではステータステンプレートの姿になり、経験値・お金は入らない。拾った物・ドロップは持ち帰り袋に入り、ゴールのワープで出た時だけ本物の持ち物になる（倒れる・抜ける・切断では全部なくなる）。テーマ番号（dwThemeID）が 0 でない時だけ使える"),
+	FLDA(SUBGAME_DUNGEONINFO, wTmplID,	"番外編のテンプレート番号",	FT_U16ARR, WORD, 0, "stTmp の番号（8 個。先頭 byTmplCount 件を使う）。存在しない番号は一覧から外す"),
+	{ "szTmplName1", "番外編の表示名1", FT_STR, offsetof(SUBGAME_DUNGEONINFO, szTmplName[0]), MAX_DGTMPLNAME, 0, "wTmplID の先頭から数えて同じ番号のテンプレートの、選ぶ窓に出す名前（空ならテンプレートの名前）" },
+	{ "szTmplName2", "番外編の表示名2", FT_STR, offsetof(SUBGAME_DUNGEONINFO, szTmplName[1]), MAX_DGTMPLNAME, 0, NULL },
+	{ "szTmplName3", "番外編の表示名3", FT_STR, offsetof(SUBGAME_DUNGEONINFO, szTmplName[2]), MAX_DGTMPLNAME, 0, NULL },
+	{ "szTmplName4", "番外編の表示名4", FT_STR, offsetof(SUBGAME_DUNGEONINFO, szTmplName[3]), MAX_DGTMPLNAME, 0, NULL },
+	{ "szTmplName5", "番外編の表示名5", FT_STR, offsetof(SUBGAME_DUNGEONINFO, szTmplName[4]), MAX_DGTMPLNAME, 0, NULL },
+	{ "szTmplName6", "番外編の表示名6", FT_STR, offsetof(SUBGAME_DUNGEONINFO, szTmplName[5]), MAX_DGTMPLNAME, 0, NULL },
+	{ "szTmplName7", "番外編の表示名7", FT_STR, offsetof(SUBGAME_DUNGEONINFO, szTmplName[6]), MAX_DGTMPLNAME, 0, NULL },
+	{ "szTmplName8", "番外編の表示名8", FT_STR, offsetof(SUBGAME_DUNGEONINFO, szTmplName[7]), MAX_DGTMPLNAME, 0, NULL },
 };
 static const DATAFIELD s_aFieldSgWar[] = {
 	FLD (SUBGAME_WARINFO, dwMapID,		"マップID",				FT_U32, 0, "map の dwID"),
@@ -3048,6 +3059,7 @@ static bool CharApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::str
 	}
 	pDst->dwStTmplateID		= w.dwStTmplateID;
 	pDst->byPutCount		= w.byPutCount;
+	pDst->byPutOnce			= w.byPutOnce;
 	pDst->wTimePutInterval	= w.wTimePutInterval;
 	pDst->byAreaX			= w.byAreaX;
 	pDst->byAreaY			= w.byAreaY;
@@ -4147,6 +4159,16 @@ static void SubGameRenewIfEmpty(int nID)
 	MakeMazeProc((BYTE)nID);
 }
 
+/* 番外編ダンジョンの設定の確かめ（テンプレートの数は 0〜MAX_DGTMPL） */
+static bool CheckDungeonDetail(const SUBGAME_DUNGEONINFO *p, std::string &strErr)
+{
+	if (p->byTmplCount > MAX_DGTMPL) {
+		strErr = "detail.byTmplCount は 0〜" + JsonNum(MAX_DGTMPL) + " にしてください";
+		return false;
+	}
+	return true;
+}
+
 /* 迷路の設定がマップに収まっているか確かめる */
 static bool CheckMazeDetail(const SUBGAME_MAZEINFO *p, std::string &strErr)
 {
@@ -4307,6 +4329,9 @@ static bool SubGameApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::
 		return false;
 	}
 	if (nTypeNew == SUBGAMEID_MAZE && pDetail && !CheckMazeDetail((const SUBGAME_MAZEINFO *)&aWork[0], strErr)) {
+		return false;
+	}
+	if (nTypeNew == SUBGAMEID_DUNGEON && pDetail && !CheckDungeonDetail((const SUBGAME_DUNGEONINFO *)&aWork[0], strErr)) {
 		return false;
 	}
 

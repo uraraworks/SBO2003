@@ -135,6 +135,7 @@ void DrawWindowITEMINFO							(PWNDINFO);			/* アイテム情報 */
 void DrawWindowDEAD_COMMAND						(PWNDINFO);			/* 死亡中：コマンド */
 void DrawWindowSTATUSMAGIC						(PWNDINFO);			/* 強さ：覚えている特技 */
 void DrawWindowMAKER							(PWNDINFO);			/* 作り手（レシピ）：作れる物の一覧・確認 */
+void DrawWindowDUNGEONSEL					(PWNDINFO);			/* 番外編ダンジョン：入る姿の選択 */
 void DrawWindowTOWNWARP						(PWNDINFO);			/* 町転送：行き先の選択 */
 void DrawWindowQUEST						(PWNDINFO);			/* ギルドの依頼：一覧・進み具合 */
 void DrawWindowMARKET						(PWNDINFO);			/* 取引所（商人ギルドの出張所）の受付 */
@@ -358,6 +359,7 @@ void DrawWindow(CImg32 *pDib, int x, int y)
 		case WNDTYPE_MARKET:				DrawWindowMARKET (pWnd);				break;
 		case WNDTYPE_IMPORTANT:				DrawWindowIMPORTANT (pWnd);				break;
 		case WNDTYPE_RECYCLE:				DrawWindowRECYCLE (pWnd);				break;
+		case WNDTYPE_DUNGEONSEL:			DrawWindowDUNGEONSEL (pWnd);			break;
 		}
 		s_bDrawingWindow = FALSE;
 		/* 一覧の横の詳細欄は、カーソルの所に品が無い時（「大事な物…」の行など）は画面に出さない（空の枠が透けて見えないように） */
@@ -3433,6 +3435,38 @@ void DrawWindowTOWNWARP(PWNDINFO pWnd)
 	for (i = 0; i < pWnd->nData2; i ++) {
 		GetTownWarpLabel (i, szTmp, sizeof (szTmp));
 		TextOut2 (hDC, 32, 16 + i * 16, szTmp, RGB (255, 255, 255));
+	}
+
+	SelectObject (hDC, hFontOld);
+	pWnd->pDib->Unlock ();
+	pWnd->dwTimeDrawStart = timeGetTime ();
+
+	DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
+}
+
+/* ========================================================================= */
+/* 関数名：DrawWindowDUNGEONSEL												 */
+/* 内容：ウィンドウの描画(番外編ダンジョン：入る姿の選択)					 */
+/* ========================================================================= */
+void DrawWindowDUNGEONSEL(PWNDINFO pWnd)
+{
+	if (pWnd->dwTimeDrawStart) {
+		DrawCursor (pWnd, 16, 16 + pWnd->nData1 * 16);
+		return;
+	}
+
+	DrawWindowFrame (pWnd);
+
+	HDC hDC = pWnd->pDib->Lock ();
+	HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFontBasic);
+
+	SetBkColor (hDC, RGB (40, 40, 40));
+	TextOut2 (hDC, 48, 0, (LPSTR)"どの姿で入る？", RGB (255, 255, 255));
+	SetBkMode (hDC, TRANSPARENT);
+	TextOut2 (hDC, 48, 0, (LPSTR)"どの姿で入る？", RGB (255, 255, 255));
+
+	for (int i = 0; i < pWnd->nData2; i ++) {
+		TextOut2 (hDC, 32, 16 + i * 16, g_DungeonSelInfo.aszName[i], RGB (255, 255, 255));
 	}
 
 	SelectObject (hDC, hFontOld);

@@ -109,6 +109,17 @@ extern void QuestChallengeSaveSwap(BOOL bBegin);				/* キャラ情報を保存�
 extern void QuestChallengeProcNow(void);						/* 討伐チャレンジの周期処理を今すぐ（テスト用） */
 extern void QuestChallengeOnWarp(PCHARINFO pChar);				/* マップの中のワープで動いた時（挑戦中で着いた後なら部屋を出たとして中断） */
 
+/* 番外編ダンジョン（気まぐれダンジョンのミニゲーム。入口で姿＝テンプレートを選び、組ごとの空間へ入る） */
+extern BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent);	/* マップ間移動のイベントに乗った時の最初に呼ぶ（入口なら姿を選ぶ組を作る・ゴールなら袋を本物にして出す）。処理したら TRUE */
+extern void DungeonSelRecv(PCHARINFO pChar, PCMDPARA_DUNGEONSEL pPara);	/* CMD_DUNGEONSEL の受信（姿を選ぶ・やめる） */
+extern BOOL QuestInDungeon(PCHARINFO pChar);					/* 番外編ダンジョンの中か（貸し出しの姿になっているか） */
+extern BOOL DungeonPutIsSpaced(PCHARINFO pParent);				/* NPC発生の発生元が番外編ダンジョンの範囲の中か（ふつうの世界には出さず、組の空間ごとに出す） */
+extern BOOL DungeonPutOnChildDec(PCHARINFO pChild);				/* 空間の中で発生した敵が消えた。空間の敵なら TRUE（発生元の数は動かさない） */
+extern void DungeonProcNow(DWORD dwNow);						/* 番外編ダンジョンの周期処理を今すぐ（テスト用。時刻を指定） */
+extern int  DungeonBagCount(PCHARINFO pChar);					/* 持ち帰り袋に入っている品の数（テスト用） */
+extern int  DungeonRunCount(void);								/* 番外編ダンジョンの空間（組）の数（テスト用） */
+extern int  DungeonSelCount(void);								/* 姿を選んでいる組の数（テスト用） */
+
 /* 空間（同じマップの同じ場所でも、別の空間の人とは出会わない。討伐チャレンジの組ごとに 1 つ作る） */
 extern void SpaceSet(PCHARINFO pChar, DWORD dwSpaceID, BOOL bRefresh = TRUE);	/* 空間を移す（遊んでいる人は、前の空間の人から消える。bRefresh なら新しい空間の見え方を作り直して送る。この後マップ移動をするなら FALSE で、移動の後に SpaceSendMapState を呼ぶ） */
 extern void SpaceSetQuiet(PCHARINFO pChar, DWORD dwSpaceID);	/* 空間番号だけ書き換える（まだ誰にも見えていない作りたてのキャラ・マップ移動の途中用） */

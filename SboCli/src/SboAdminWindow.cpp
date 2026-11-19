@@ -668,6 +668,7 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 						m_pParaCharInfo->clName = pChar->clName;
 						m_pParaCharInfo->byAreaY = pChar->byAreaY;
 						m_pParaCharInfo->byPutCount = pChar->byPutCount;
+						m_pParaCharInfo->byPutOnce = pChar->byPutOnce;
 						m_pParaCharInfo->byDropProbability = pChar->byDropProbability;
 						m_pParaCharInfo->byMoveProbabilityX = pChar->byMoveProbabilityX;
 						m_pParaCharInfo->byMoveProbabilityY = pChar->byMoveProbabilityY;
@@ -700,6 +701,7 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 						SetWindowText (m_hWndEdit13, szTmp);
 						wsprintf (szTmp, "%d", m_pParaCharInfo->byPutCount);
 						SetWindowText (m_hWndEdit14, szTmp);
+						CheckDlgButton (g_hWndAdmin, IDC_CHAR_PUTONCE, m_pParaCharInfo->byPutOnce ? BST_CHECKED : BST_UNCHECKED);
 						wsprintf (szTmp, "%d", m_pParaCharInfo->wTimePutInterval);
 						SetWindowText (m_hWndEdit15, szTmp);
 						m_pParaCharInfo->wShowFlagNo = CharFlagWireFix (pChar->wShowFlag);
@@ -927,6 +929,7 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 			m_pParaCharInfo->byAreaX = pPara->byAreaX;
 			m_pParaCharInfo->byAreaY = pPara->byAreaY;
 			m_pParaCharInfo->byPutCount = pPara->byPutCount;
+			m_pParaCharInfo->byPutOnce = pPara->byPutOnce;
 			m_pParaCharInfo->byDropProbability = pPara->byDropProbability;
 			m_pParaCharInfo->byMoveProbabilityX = pPara->byMoveProbabilityX;
 			m_pParaCharInfo->byMoveProbabilityY = pPara->byMoveProbabilityY;
@@ -971,6 +974,7 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 				SetWindowText (m_hWndEdit13, szTmp);
 				wsprintf (szTmp, "%d", m_pParaCharInfo->byPutCount);
 				SetWindowText (m_hWndEdit14, szTmp);
+				CheckDlgButton (g_hWndAdmin, IDC_CHAR_PUTONCE, m_pParaCharInfo->byPutOnce ? BST_CHECKED : BST_UNCHECKED);
 				wsprintf (szTmp, "%d", m_pParaCharInfo->wTimePutInterval);
 				SetWindowText (m_hWndEdit15, szTmp);
 				m_pParaCharInfo->wShowFlagNo = pPara->wShowFlagNo;
@@ -2745,6 +2749,8 @@ void AdminOnCommandCharInfo(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 			ZeroMemory (pszTmp, nSize);
 			GetWindowText (m_hWndEdit14, pszTmp, 4);
 			m_pParaCharInfo->byPutCount = (BYTE)atoi (pszTmp);
+			/* 補充しない（出し切り）：数だけ出したらあとは補充しない */
+			m_pParaCharInfo->byPutOnce = (IsDlgButtonChecked (g_hWndAdmin, IDC_CHAR_PUTONCE) == BST_CHECKED) ? 1 : 0;
 
 			ZeroMemory (pszTmp, nSize);
 			GetWindowText (m_hWndEdit15, pszTmp, 6);
@@ -5744,6 +5750,23 @@ void AdminOnCommandSubGameInfo(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 					pDungeon->wChipIDBlock = (WORD)atoi (szTmp);
 					GetWindowText (m_hWndEdit14, szTmp, 8);
 					pDungeon->dwThemeID = (DWORD)atoi (szTmp);
+
+					/* 番外編：入る姿（テンプレート）の一覧 */
+					{
+						char szName[MAX_DGTMPLNAME + 8];
+						int nTmpl;
+						GetWindowText (GetDlgItem (g_hWndAdmin, IDC_DGTMPL_COUNT), szTmp, 8);
+						nTmpl = atoi (szTmp);
+						pDungeon->byTmplCount = (BYTE)max (0, min (nTmpl, MAX_DGTMPL));
+						for (int k = 0; k < MAX_DGTMPL; k ++) {
+							GetWindowText (GetDlgItem (g_hWndAdmin, IDC_DGTMPL_ID1 + k), szTmp, 8);
+							pDungeon->wTmplID[k] = (WORD)atoi (szTmp);
+							ZeroMemory (szName, sizeof (szName));
+							GetWindowText (GetDlgItem (g_hWndAdmin, IDC_DGTMPL_NAME1 + k), szName, sizeof (szName));
+							ZeroMemory (pDungeon->szTmplName[k], MAX_DGTMPLNAME);
+							lstrcpyn (pDungeon->szTmplName[k], szName, MAX_DGTMPLNAME);
+						}
+					}
 				}
 				break;
 			}
@@ -7030,6 +7053,12 @@ void AdminOnPaintSubGame(HDC hDC)
 		MyTextOut (hDC, 0, 64 + 16 * 7, "壁ﾁｯﾌﾟ:");
 		MyTextOut (hDC, 0, 64 + 16 * 8, "ﾃｰﾏ番号:");
 		MyTextOut (hDC, 12 * 10, 64 + 16 * 8, "(0=従来)");
+		MyTextOut (hDC, 0, 64 + 16 * 9, "番外編の数:");
+		MyTextOut (hDC, 12 * 10, 64 + 16 * 9, "(0=無し 最大8。番号と名前を下へ)");
+		for (int k = 0; k < MAX_DGTMPL; k ++) {
+			wsprintf (szBuf, "姿%d:", k + 1);
+			MyTextOut (hDC, 0, 64 + 16 * (10 + k), szBuf);
+		}
 
 		MyTextOut (hDC, 12 * 13, 64 + 16 * 3, "座標チェックがONの場合、");
 		MyTextOut (hDC, 12 * 13, 64 + 16 * 4, "左クリックで開始座標");
@@ -8628,6 +8657,13 @@ void MakeAdminWndCharInfo(void)
 			12 * 7, 12 * 19, 24, 11, g_hWndAdmin, NULL, g_hInstance, NULL);
 	SendMessage (m_hWndEdit14, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
+	/* 補充しない（出し切り） */
+	{
+		HWND hWndOnce = CreateWindow ("BUTTON", "補充しない", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+				12 * 10, 12 * 20, 12 * 11, 12, g_hWndAdmin, (HMENU)(INT_PTR)IDC_CHAR_PUTONCE, g_hInstance, NULL);
+		SendMessage (hWndOnce, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+	}
+
 	/* 発生周期 */
 	m_hWndEdit15 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
 			12 * 7, 12 * 20, 24, 11, g_hWndAdmin, NULL, g_hInstance, NULL);
@@ -8761,6 +8797,7 @@ void DeleteAdminWndCharInfo(void)
 	SAFE_DESTROYWND (m_hWndButton13);
 	SAFE_DESTROYWND (m_hWndButton14);
 	SAFE_DESTROYWND (m_hWndButtonTalk);
+	DestroyWindow (GetDlgItem (g_hWndAdmin, IDC_CHAR_PUTONCE));
 	DestroyWindow (GetDlgItem (g_hWndAdmin, IDC_CHAR_SHOWFLAG));
 	DestroyWindow (GetDlgItem (g_hWndAdmin, IDC_CHAR_SHOWFLAGN));
 	DestroyWindow (GetDlgItem (g_hWndAdmin, IDC_CHAR_HIDEFLAG));
@@ -10933,6 +10970,23 @@ void MakeAdminWndSubGameInfoType(void)
 			/* ダンジョン生成のテーマ番号 */
 			m_hWndEdit14 = CreateWindowEdit (12 * 7, 64 + 16 * 8, 36, 14, ES_NUMBER);
 
+			/* 番外編：入る姿（テンプレート）の数・番号・表示名 */
+			{
+				HWND hWndTmp = CreateWindowEdit (12 * 7, 64 + 16 * 9, 24, 14, ES_NUMBER);
+				SetWindowLongPtr (hWndTmp, GWLP_ID, IDC_DGTMPL_COUNT);
+				wsprintf (szTmp, "%d", pDungeon->byTmplCount);
+				SetWindowText (hWndTmp, szTmp);
+				for (int k = 0; k < MAX_DGTMPL; k ++) {
+					hWndTmp = CreateWindowEdit (12 * 7, 64 + 16 * (10 + k), 36, 14, ES_NUMBER);
+					SetWindowLongPtr (hWndTmp, GWLP_ID, IDC_DGTMPL_ID1 + k);
+					wsprintf (szTmp, "%d", pDungeon->wTmplID[k]);
+					SetWindowText (hWndTmp, szTmp);
+					hWndTmp = CreateWindowEdit (12 * 7 + 44, 64 + 16 * (10 + k), 12 * 12, 14, ES_AUTOHSCROLL);
+					SetWindowLongPtr (hWndTmp, GWLP_ID, IDC_DGTMPL_NAME1 + k);
+					SetWindowText (hWndTmp, pDungeon->szTmplName[k]);
+				}
+			}
+
 			wsprintf (szTmp, "%ld", pDungeon->dwMapID);
 			SetWindowText (m_hWndEdit1, szTmp);
 			wsprintf (szTmp, "%d", pDungeon->byX1);
@@ -10988,6 +11042,11 @@ void DeleteAdminWndSubGameInfoType(void)
 	SAFE_DESTROYWND (m_hWndEdit12);
 	SAFE_DESTROYWND (m_hWndEdit13);
 	SAFE_DESTROYWND (m_hWndEdit14);
+	DestroyWindow (GetDlgItem (g_hWndAdmin, IDC_DGTMPL_COUNT));
+	for (int k = 0; k < MAX_DGTMPL; k ++) {
+		DestroyWindow (GetDlgItem (g_hWndAdmin, IDC_DGTMPL_ID1 + k));
+		DestroyWindow (GetDlgItem (g_hWndAdmin, IDC_DGTMPL_NAME1 + k));
+	}
 }
 
 /* Copyright(C)URARA-works 2003-2005 */

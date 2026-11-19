@@ -138,6 +138,7 @@ void SendCmdRECIPEMAKE		(BYTE, WORD, BYTE);						/* レシピで作ってもら�
 void SendCmdAPPRAISE		(BYTE, BYTE);							/* 鑑定してもらう要求 */
 void SendCmdMARKET			(BYTE, BYTE, BYTE, WORD, DWORD, DWORD);	/* 取引所の要求 */
 void SendCmdRECYCLE			(BYTE, WORD, BYTE);				/* リサイクルボックスの要求 */
+void SendCmdDUNGEONSEL		(BYTE, BYTE);							/* 番外編ダンジョンの入る姿の選択 */
 void SendCmdQUEST			(BYTE, WORD, DWORD);					/* ギルドの仕事依頼 */
 
 
@@ -2168,6 +2169,9 @@ void SendCmdSUBGAMEINFO(int nNo)
 			pDungeon->wChipIDRoad = pDungeonInfo->wChipIDRoad;
 			pDungeon->wChipIDBlock = pDungeonInfo->wChipIDBlock;
 			pDungeon->dwThemeID = pDungeonInfo->dwThemeID;
+			pDungeon->byTmplCount = pDungeonInfo->byTmplCount;
+			CopyMemory (pDungeon->wTmplID, pDungeonInfo->wTmplID, sizeof (pDungeon->wTmplID));
+			CopyMemory (pDungeon->szTmplName, pDungeonInfo->szTmplName, sizeof (pDungeon->szTmplName));
 		}		
 		break;
 
@@ -3025,6 +3029,26 @@ void SendCmdBATTLEMODE(
 }
 
 
+
+/* ========================================================================= */
+/* 関数名：SendCmdDUNGEONSEL												 */
+/* 内容：コマンド送信(番外編ダンジョンの入る姿の選択：選ぶ・やめる)			 */
+/* ========================================================================= */
+void SendCmdDUNGEONSEL(BYTE byType, BYTE byIndex)
+{
+	CMDPARA_DUNGEONSEL SendData;
+
+	if (g_nMyCharID < 0) {
+		return;
+	}
+	ZeroMemory (&SendData, sizeof (SendData));
+	SendData.byCmd		= CMD_DUNGEONSEL;
+	SendData.byType		= byType;
+	SendData.byIndex	= byIndex;
+	SendData.dwTblID	= g_aCharInfo[g_nMyCharID]->dwTblID;
+
+	cliSock.Send ((PBYTE)&SendData, sizeof (SendData));
+}
 
 /* ========================================================================= */
 /* 関数名：SendCmdQUEST														 */

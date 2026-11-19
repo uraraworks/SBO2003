@@ -1112,6 +1112,7 @@ static void TestTailOverlap(const std::vector<int> &aLogin);
 static void TestEmptyMapCheck(const std::vector<int> &aLogin);
 static void TestPutFill(void);
 static void TestDungeonTheme(void);
+static void TestDungeonBonus(const std::vector<int> &aLogin);
 extern void MakeDungeonProc(BYTE);
 extern BOOL SaveSubGameInfo(void);
 extern BOOL LoadSubGameInfo(void);
@@ -1653,6 +1654,8 @@ static void TestWorld(void)
 	TestAffixForge(aLogin);
 	/* AN. ダンジョンのテーマ生成（サブゲーム「ダンジョン」の作り直し。マップの中身を一時的に差し替えて、終わったら戻す） */
 	TestDungeonTheme();
+	/* AO. 番外編ダンジョン（段階1。ダンジョンのテーマ生成の後ろ。乱数を使うので最後のほう） */
+	TestDungeonBonus(aLogin);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -12387,4 +12390,359 @@ static void TestDungeonTheme(void)
 	memcpy(pMap->pwMap, &aMapBack[0], sizeof(WORD) * aMapBack.size());
 	g_aSubaGameInfo.RemoveAt(byID);
 	unlink("SBODATA/SboWebDungeonThemes.json");
+}
+
+/* ------------------------------------------------------------------------- */
+/* AO. 番外編ダンジョン（段階1）											 */
+/*     ソロは選んですぐ入る・パーティは全員の選択後にそろって入る・締め切りで	 */
+/*     選ばなかった人は置いていく・組ごとに別の空間と敵・補充しない印・		 */
+/*     持ち帰り袋（ゴールで本物・倒れると消える）・作り直しで全員出る・保存	 */
+/* ------------------------------------------------------------------------- */
+static int DgTestCountEnemy(DWORD dwParent, DWORD dwSpace)
+{
+	int n = 0;
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+		if (p && p->byGameState == GAMESTATE_NPC && p->dwParentTblID == dwParent && p->dwSpaceID == dwSpace && p->byNpcType != NPCTYPE_PUT && p->byNpcType != NPCTYPE_INIT) n ++;
+	}
+	return n;
+}
+
+static void DgTestSelPick(PCHARINFO p, BYTE byIndex)
+{
+	CMDPARA_DUNGEONSEL Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_DUNGEONSEL;
+	Para.byType = DUNGEONSEL_PICK;
+	Para.byIndex = byIndex;
+	Para.dwTblID = p->dwTblID;
+	TestRecv(p, &Para, sizeof(Para));
+}
+
+static void TestDungeonBonus(const std::vector<int> &aLogin)
+{
+	printf("== AO. Dungeon bonus-game ==\n");
+	if (aLogin.size() < 5) {
+		return;
+	}
+	int nMapNo = -1;
+	for (int i = 0; i < g_aMapInfo.GetSize(); i ++) {
+		if (g_aMapInfo[i] && g_aMapInfo[i]->nCX >= 60 && g_aMapInfo[i]->nCY >= 60 && g_aMapInfo[i]->pwMap) {
+			nMapNo = i;
+			break;
+		}
+	}
+	if (nMapNo < 0) {
+		printf("dungeonbonus no map\n");
+		return;
+	}
+	PMAPINFO pMap = g_aMapInfo[nMapNo];
+	std::vector<WORD> aMapBack(pMap->pwMap, pMap->pwMap + pMap->nCX * pMap->nCY);
+	PEVENTINFO pEventBack = pMap->pEvent;
+	int nEventBack = pMap->nEventCount;
+	pMap->pEvent = NULL;
+	pMap->nEventCount = 0;
+	BYTE byPLCBack = pMap->byPartsLightCount;
+	MAPPARTSLIGHT aPLBack[MAX_MAPPARTSLIGHT];
+	memcpy(aPLBack, pMap->aPartsLight, sizeof(aPLBack));
+	DWORD dwNowBack = s_dwFakeNow;
+
+	{
+		FILE *fp = fopen("SBODATA/SboWebDungeonThemes.json", "wb");
+		if (fp) {
+			const char *psz = "{\"seq\":5,\"themes\":[{\"id\":5,\"name\":\"test\",\"algo\":1,\"floor\":[1,2],\"wallTop\":[3],\"wallFace\":[4],\"wallFill\":[5],"
+				"\"void\":0,\"arch\":[6],\"door\":7,\"doorOpen\":8,\"entry\":9,\"goal\":10,\"bottomRows\":1,\"rooms\":[],\"decos\":[],\"lights\":[],"
+				"\"params\":{\"doorRate\":0,\"openRate\":0,\"floorMin\":30}}]}";
+			fwrite(psz, 1, strlen(psz), fp);
+			fclose(fp);
+		}
+	}
+
+	/* 遊ぶ人（TestSpace と同じように、持ち物と状態を決めて始める） */
+	PCHARINFO apPC[5];
+	CHARINFO aBack[5];
+	for (int i = 0; i < 5; i ++) {
+		apPC[i] = g_aCharInfo[aLogin[i]];
+		PCHARINFO p = apPC[i];
+		aBack[i] = *p;
+		p->byAdminLV = ADMINLV_USER;
+		p->dwPartyID = 0;
+		p->dwSpaceID = SPACE_NORMAL;
+		p->dwTargetTblID = (DWORD)-1;
+		p->wQuestID = 0; p->byQuestStep = 0; p->wQuestFlg = 0;
+		p->byLevel = 30; p->byPW = 99; p->wMaxHP = 500; p->wHP = 480; p->wMaxMana = 90; p->wMana = 80; p->dwGold = 5000;
+		ZeroMemory(p->waItem, sizeof(p->waItem));
+		for (int k = 0; k < MAX_EQUTYPE; k ++) p->waEqu[k] = 0xFFFF;
+	}
+	PCHARINFO pA = apPC[0], pB = apPC[1], pC = apPC[2], pD = apPC[3], pE = apPC[4];
+
+	/* 使うアイテム（大事な物でない 5 種） */
+	WORD awItem[5];
+	int nItem = 0;
+	for (int i = 1; i < g_aItemInfo.GetSize() && i < ITEMID_DERIVE_BASE && nItem < 5; i ++) {
+		if (g_aItemInfo[i]->szName[0] && !IsImportantItem((WORD)i)) awItem[nItem ++] = (WORD)i;
+	}
+	if (nItem < 5) {
+		printf("dungeonbonus no items\n");
+		return;
+	}
+
+	/* テンプレート 2 つ（1 つ目は道具 2 つ持ち、2 つ目は手ぶら） */
+	int nSt1 = g_aStTmpInfo.GetSize(), nSt2 = nSt1 + 1;
+	for (int k = 0; k < 2; k ++) {
+		PSTATUSTEMPLATEINFO t = new STATUSTEMPLATEINFO;
+		ZeroMemory(t, sizeof(*t));
+		strcpy(t->szName, k == 0 ? "戦士の姿" : "魔法使いの姿");
+		t->byLevel = (BYTE)(7 + k); t->byPW = 11; t->byDEX = 12; t->byST = 13; t->byIT = 14; t->byLK = 15;
+		t->wMaxHP = 60; t->wMaxMana = 20;
+		if (k == 0) { t->waItem[0] = awItem[0]; t->waItem[1] = awItem[1]; }
+		g_aStTmpInfo.Add(t);
+	}
+
+	SUBGAME_DUNGEONINFO Info;
+	ZeroMemory(&Info, sizeof(Info));
+	Info.dwMapID = pMap->dwID;
+	Info.byX1 = 12; Info.byY1 = 10; Info.byX2 = 51; Info.byY2 = 49;
+	Info.byStartX = 3; Info.byStartY = 4;
+	Info.wChipIDStart = 21; Info.wChipIDGoal = 22; Info.wChipIDRoad = 23; Info.wChipIDBlock = 24;
+	Info.dwTblID = (DWORD)-1;
+	Info.dwThemeID = 5;
+	Info.byTmplCount = 2;
+	Info.wTmplID[0] = (WORD)nSt1; strcpy(Info.szTmplName[0], "戦士");
+	Info.wTmplID[1] = (WORD)nSt2;
+	SUBGAMEINFO Sub;
+	ZeroMemory(&Sub, sizeof(Sub));
+	Sub.byType = SUBGAMEID_DUNGEON;
+	Sub.pInfo = &Info;
+	g_aSubaGameInfo.Add(&Sub);
+	BYTE byID = (BYTE)(g_aSubaGameInfo.GetSize() - 1);
+	MakeDungeonProc(byID);
+
+	/* 外の入口・中のゴール（外の入口へ戻るワープ） */
+	PEVENTINFO pEntry = NULL, pGoal = NULL;
+	for (int i = 0; i < pMap->nEventCount; i ++) {
+		PEVENTINFO pE = &pMap->pEvent[i];
+		if (pE->byType != EVENTTYPE_MAPCHG) continue;
+		if (pE->dwX == 3 && pE->dwY == 4) pEntry = pE;
+		else if (pE->dwX >= 12 && pE->dwX <= 51 && pE->dwY >= 10 && pE->dwY <= 49) pGoal = pE;
+	}
+	printf("dungeonbonus build ready=%d entry=%d goal=%d\n", (int)(Info.pwGenParts != NULL && Info.pMapTmp == NULL), (int)(pEntry != NULL), (int)(pGoal != NULL));
+	if (!pEntry || !pGoal) {
+		return;
+	}
+
+	/* 敵の発生元（範囲の中。補充しない印は後で付ける）：3 体 */
+	PCHARINFO pPut = new CHARINFO;
+	ZeroMemory((PBYTE)pPut, sizeof(CHARINFO));
+	pPut->byNpcType = NPCTYPE_PUT;
+	SetInitCharData(pPut);
+	pPut->byGameState = GAMESTATE_NPC;
+	pPut->byCharState = CHARSTATE_MOVE;
+	pPut->dwMapID = pMap->dwID;
+	pPut->dwX = pPut->dwXBack = pPut->dwStartX = (DWORD)Info.byGoalX + 1;
+	pPut->dwY = pPut->dwYBack = pPut->dwStartY = (DWORD)Info.byGoalY + 1;
+	pPut->byAreaX = 6; pPut->byAreaY = 6;
+	pPut->byPutCount = 3;
+	pPut->wTimePutInterval = 0;
+	pPut->wGrpID = 5;
+	pPut->wMaxHP = pPut->wHP = 30;
+	pPut->dwStTmplateID = (DWORD)-1;
+	strcpy(pPut->szName, "試しの魔物");
+	pPut = AddChar(pPut);
+	pPut->pID = pPut->dwTblID + 1;
+	{
+		CCharProcBase CharProcBase;
+		CharProcBase.SetProc(pPut);
+	}
+	DWORD dwPut = pPut->dwTblID;
+	/* 起動時の一斉発生はふつうの世界へは出さない（空間ごとに出す） */
+	PutCharFillAll();
+	printf("dungeonbonus put normal=%d spaced=%d\n", DgTestCountEnemy(dwPut, SPACE_NORMAL), (int)DungeonPutIsSpaced(pPut));
+
+	/* 位置 */
+	QuestMovePC(pA, nMapNo, 3, 5);
+	QuestMovePC(pB, nMapNo, 4, 5);
+	QuestMovePC(pC, nMapNo, 2, 5);
+	QuestMovePC(pD, nMapNo, 3, 6);
+	QuestMovePC(pE, nMapNo, 4, 6);
+	for (int i = 0; i < 5; i ++) apPC[i]->waItem[10] = awItem[4];		/* 本物の持ち物（外で持っている物） */
+	QuestSendParty(pA, pB, CMDPARTY_JOIN);
+	QuestSendParty(pB, pA, CMDPARTY_JOINOK);
+	QuestSendParty(pD, pE, CMDPARTY_JOIN);
+	QuestSendParty(pE, pD, CMDPARTY_JOINOK);
+
+	/* 1. ソロ（C）：入口に乗ると一覧が開き、選ぶとすぐ入る */
+	DungeonEventStep(pC, pEntry);
+	printf("dungeonbonus solo open sel=%d in=%d\n", DungeonSelCount(), (int)QuestInChallenge(pC));
+	DgTestSelPick(pC, 1);
+	DWORD dwS1 = pC->dwSpaceID;
+	printf("dungeonbonus solo picked sel=%d in=%d indungeon=%d space>0=%d lv=%d runs=%d\n", DungeonSelCount(), (int)QuestInChallenge(pC),
+		(int)QuestInDungeon(pC), (int)(dwS1 != SPACE_NORMAL), (int)pC->byLevel, DungeonRunCount());
+
+	/* 2. パーティ（A がリーダー）：リーダー以外が乗っても始まらない。リーダーが乗ると全員に一覧。全員が選ぶとそろって入る */
+	DungeonEventStep(pB, pEntry);
+	printf("dungeonbonus party member-step sel=%d\n", DungeonSelCount());
+	DungeonEventStep(pA, pEntry);
+	printf("dungeonbonus party leader-step sel=%d\n", DungeonSelCount());
+	DgTestSelPick(pA, 0);
+	printf("dungeonbonus party a-picked in a=%d b=%d sel=%d\n", (int)QuestInChallenge(pA), (int)QuestInChallenge(pB), DungeonSelCount());
+	DgTestSelPick(pB, 0);
+	DWORD dwS2 = pA->dwSpaceID;
+	printf("dungeonbonus party both-in a=%d b=%d same=%d differs=%d lv=%d sel=%d runs=%d\n", (int)QuestInChallenge(pA), (int)QuestInChallenge(pB),
+		(int)(pB->dwSpaceID == dwS2), (int)(dwS2 != dwS1 && dwS2 != SPACE_NORMAL), (int)pA->byLevel, DungeonSelCount(), DungeonRunCount());
+
+	/* 3. 締め切り：D が選び、E は選ばない → 30 秒後に D だけ入り、E は置いていかれる */
+	DungeonEventStep(pD, pEntry);
+	printf("dungeonbonus deadline open sel=%d\n", DungeonSelCount());
+	DgTestSelPick(pD, 0);
+	printf("dungeonbonus deadline d-picked in d=%d sel=%d\n", (int)QuestInChallenge(pD), DungeonSelCount());
+	s_dwFakeNow += 10000;
+	DungeonProcNow(s_dwFakeNow);
+	printf("dungeonbonus deadline 10s in d=%d sel=%d\n", (int)QuestInChallenge(pD), DungeonSelCount());
+	s_dwFakeNow += 21000;
+	DungeonProcNow(s_dwFakeNow);
+	DWORD dwS3 = pD->dwSpaceID;
+	printf("dungeonbonus deadline 31s in d=%d e=%d sel=%d runs=%d\n", (int)QuestInChallenge(pD), (int)QuestInChallenge(pE), DungeonSelCount(), DungeonRunCount());
+
+	/* 4. 組ごとの敵（別々の空間に、決めた数まで） */
+	printf("dungeonbonus enemies s1=%d s2=%d s3=%d normal=%d\n", DgTestCountEnemy(dwPut, dwS1), DgTestCountEnemy(dwPut, dwS2), DgTestCountEnemy(dwPut, dwS3),
+		DgTestCountEnemy(dwPut, SPACE_NORMAL));
+	int nFull = DgTestCountEnemy(dwPut, dwS3);
+	/* 倒すと、補充する（補充しない印なし） */
+	auto KillOne = [&](DWORD dwSpace) {
+		for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+			PCHARINFO p = g_aCharInfo[i];
+			if (p && p->byGameState == GAMESTATE_NPC && p->dwParentTblID == dwPut && p->dwSpaceID == dwSpace && p->byNpcType != NPCTYPE_PUT && p->byNpcType != NPCTYPE_INIT) {
+				DeleteChar(p->dwTblID);
+				return;
+			}
+		}
+	};
+	auto ProcMany = [&]() { for (int k = 0; k < 40; k ++) { s_dwFakeNow += 1000; DungeonProcNow(s_dwFakeNow); } };
+	KillOne(dwS3);
+	int nKilled = DgTestCountEnemy(dwPut, dwS3);
+	ProcMany();
+	printf("dungeonbonus refill killed=%d after=%d full=%d\n", nKilled, DgTestCountEnemy(dwPut, dwS3), (int)(DgTestCountEnemy(dwPut, dwS3) == nFull));
+	/* 補充しない印：出し切ったあとは倒しても出ない。ほかの組の数には響かない。あとから入る組は最初から出る */
+	pPut->byPutOnce = 1;
+	KillOne(dwS3);
+	ProcMany();
+	printf("dungeonbonus once killed after=%d (full=%d) s1=%d s2=%d\n", DgTestCountEnemy(dwPut, dwS3), nFull, DgTestCountEnemy(dwPut, dwS1), DgTestCountEnemy(dwPut, dwS2));
+	DungeonEventStep(pE, pEntry);
+	DgTestSelPick(pE, 1);
+	DWORD dwS4 = pE->dwSpaceID;
+	printf("dungeonbonus once new-group in e=%d new space=%d enemies=%d full=%d runs=%d\n", (int)QuestInChallenge(pE), (int)(dwS4 != SPACE_NORMAL && dwS4 != dwS3 && dwS4 != dwS1 && dwS4 != dwS2),
+		DgTestCountEnemy(dwPut, dwS4), (int)(DgTestCountEnemy(dwPut, dwS4) == nFull), DungeonRunCount());
+
+	/* 5. 持ち帰り袋：入った時のテンプレートの持ち物は袋でない。拾った物だけが袋。ゴールで本物になる */
+	int nBag0 = DungeonBagCount(pC);
+	pC->waItem[5] = awItem[2];
+	pC->waItem[6] = awItem[2];
+	printf("dungeonbonus bag in c bag0=%d bag=%d real-item-visible=%d\n", nBag0, DungeonBagCount(pC), (int)(QuestCountItem(pC, awItem[4]) == 0));
+	DungeonEventStep(pC, pGoal);
+	printf("dungeonbonus goal c in=%d space=%u got=%d kept=%d lv=%d\n", (int)QuestInChallenge(pC), pC->dwSpaceID, QuestCountItem(pC, awItem[2]), QuestCountItem(pC, awItem[4]), (int)pC->byLevel);
+	DungeonProcNow(s_dwFakeNow + 1000);
+	s_dwFakeNow += 1000;
+	printf("dungeonbonus goal freed runs=%d enemies-s1=%d\n", DungeonRunCount(), DgTestCountEnemy(dwPut, dwS1));
+
+	/* 6. 倒れる：袋は消える（本物には入らない）。仲間は残る */
+	pA->waItem[7] = awItem[3];
+	printf("dungeonbonus dead a bag=%d\n", DungeonBagCount(pA));
+	pA->wHP = 0;
+	pA->byCharState = CHARSTATE_DEAD;
+	s_dwFakeNow += 1000;
+	DungeonProcNow(s_dwFakeNow);
+	printf("dungeonbonus dead a in=%d got=%d kept=%d b-still=%d\n", (int)QuestInChallenge(pA), QuestCountItem(pA, awItem[3]), QuestCountItem(pA, awItem[4]), (int)QuestInChallenge(pB));
+	pA->wHP = 100;
+	pA->byCharState = CHARSTATE_MOVE;
+
+	/* 7. 作り直し：中にいる人は全員出て（袋はなくなる）、組の空間は空きになる */
+	pB->waItem[8] = awItem[3];
+	MakeDungeonProc(byID);
+	s_dwFakeNow += 1000;
+	DungeonProcNow(s_dwFakeNow);
+	printf("dungeonbonus rebuild b in=%d got=%d kept=%d d in=%d e in=%d\n", (int)QuestInChallenge(pB), QuestCountItem(pB, awItem[3]), QuestCountItem(pB, awItem[4]),
+		(int)QuestInChallenge(pD), (int)QuestInChallenge(pE));
+	s_dwFakeNow += 1000;
+	DungeonProcNow(s_dwFakeNow);
+	printf("dungeonbonus rebuild freed runs=%d enemies=%d/%d/%d/%d\n", DungeonRunCount(), DgTestCountEnemy(dwPut, dwS1), DgTestCountEnemy(dwPut, dwS2),
+		DgTestCountEnemy(dwPut, dwS3), DgTestCountEnemy(dwPut, dwS4));
+
+	/* 8. 保存：入る姿の列は、使う時だけ増える。読み直しで戻る */
+	{
+		struct stat st;
+		long nSize[2] = { 0, 0 };
+		int nOk = 0;
+		for (int k = 0; k < 2; k ++) {
+			BYTE byBack = Info.byTmplCount;
+			if (k == 0) Info.byTmplCount = 0;
+			SaveSubGameInfo();
+			if (stat("SBODATA/SboDataSubGameInfo.dat", &st) == 0) nSize[k] = (long)st.st_size;
+			if (k == 1) {
+				std::vector<PSUBGAMEINFO> aOrig;
+				for (int i = 0; i < g_aSubaGameInfo.GetSize(); i ++) aOrig.push_back(g_aSubaGameInfo[i]);
+				int nBase = (int)aOrig.size();
+				g_aSubaGameInfo.RemoveAll();
+				LoadSubGameInfo();
+				PSUBGAMEINFO pLoad = g_aSubaGameInfo.GetSize() ? g_aSubaGameInfo[g_aSubaGameInfo.GetSize() - 1] : NULL;
+				if (g_aSubaGameInfo.GetSize() == nBase && pLoad && pLoad->byType == SUBGAMEID_DUNGEON && pLoad->pInfo) {
+					PSUBGAME_DUNGEONINFO pL = (PSUBGAME_DUNGEONINFO)pLoad->pInfo;
+					nOk = (int)(pL->byTmplCount == 2 && pL->wTmplID[0] == (WORD)nSt1 && pL->wTmplID[1] == (WORD)nSt2 && strcmp(pL->szTmplName[0], "戦士") == 0 && pL->szTmplName[1][0] == 0);
+				}
+				for (int i = 0; i < g_aSubaGameInfo.GetSize(); i ++) {
+					PSUBGAMEINFO pDel = g_aSubaGameInfo[i];
+					SAFE_DELETE_ARRAY(pDel->pInfo);
+					delete pDel;
+				}
+				g_aSubaGameInfo.RemoveAll();
+				for (int i = 0; i < nBase; i ++) g_aSubaGameInfo.Add(aOrig[i]);
+			}
+			Info.byTmplCount = byBack;
+		}
+		printf("dungeonbonus save roundtrip=%d extra>0=%d\n", nOk, (int)(nSize[1] > nSize[0]));
+	}
+
+	/* 後始末 */
+	for (int i = 0; i < 5; i ++) {
+		CHARINFO *pBk = &aBack[i];
+		PCHARINFO p = apPC[i];
+		QuestSendParty(p, p, CMDPARTY_BREAKUP);
+		SpaceSet(p, SPACE_NORMAL);
+		p->dwSpaceID = SPACE_NORMAL;
+		p->dwTargetTblID = (DWORD)-1;
+		p->dwPartyID = 0;
+		p->byLevel = pBk->byLevel; p->byPW = pBk->byPW; p->wMaxHP = pBk->wMaxHP; p->wHP = pBk->wHP;
+		p->wMaxMana = pBk->wMaxMana; p->wMana = pBk->wMana; p->dwGold = pBk->dwGold; p->dwExp = pBk->dwExp;
+		p->byCharState = pBk->byCharState; p->byAdminLV = pBk->byAdminLV;
+		memcpy(p->waItem, pBk->waItem, sizeof(p->waItem));
+		memcpy(p->waEqu, pBk->waEqu, sizeof(p->waEqu));
+		QuestMovePC(p, (int)pBk->dwMapID, (int)pBk->dwX, (int)pBk->dwY);
+	}
+	QuestSyncAll();
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+		if (p && p->dwParentTblID == dwPut && p->byGameState == GAMESTATE_NPC && p->byNpcType != NPCTYPE_INIT) DeleteChar(p->dwTblID);
+	}
+	DeleteChar(dwPut);
+	for (int i = g_aStTmpInfo.GetSize() - 1; i >= nSt1; i --) {
+		delete g_aStTmpInfo[i];
+		g_aStTmpInfo.RemoveAt(i);
+	}
+	SAFE_DELETE_ARRAY(Info.pwGenParts);
+	SAFE_DELETE_ARRAY(Info.pbyAutoMap);
+	for (int i = 0; i < pMap->nEventCount; i ++) {
+		SAFE_DELETE_ARRAY(pMap->pEvent[i].pData);
+	}
+	SAFE_DELETE_ARRAY(pMap->pEvent);
+	pMap->pEvent = pEventBack;
+	pMap->nEventCount = nEventBack;
+	pMap->nProcEvent = 0;
+	g_nProcMap = 0;
+	pMap->byPartsLightCount = byPLCBack;
+	memcpy(pMap->aPartsLight, aPLBack, sizeof(aPLBack));
+	memcpy(pMap->pwMap, &aMapBack[0], sizeof(WORD) * aMapBack.size());
+	g_aSubaGameInfo.RemoveAt(byID);
+	unlink("SBODATA/SboWebDungeonThemes.json");
+	s_dwFakeNow = dwNowBack + 200000;
+	printf("dungeonbonus end runs=%d sel=%d\n", DungeonRunCount(), DungeonSelCount());
 }

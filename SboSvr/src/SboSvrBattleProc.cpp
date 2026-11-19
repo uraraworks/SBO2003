@@ -496,11 +496,12 @@ BOOL DamageAfterProcNPC(PCHARINFO pChar, PCHARINFO pCharTarget)
 				}
 			}
 
-			/* もう持てない？（大事な物は大事な物の欄の空きを見る） */
-			if (!CanAddCharItem (pCharGet->dwTblID, nGetItemNo)) {
+			/* もう持てない？（大事な物は大事な物の欄の空きを見る）。
+			   番外編ダンジョンの中（貸し出しの姿）の人は、大事な物の欄・預かり所（本物）へは入れられない（持ち帰り袋は手持ちだけ） */
+			if (!CanAddCharItem (pCharGet->dwTblID, nGetItemNo) || (QuestInChallenge (pCharGet) && IsImportantItem ((WORD)nGetItemNo))) {
 				byGetItem = 1;
 				/* 手持ちがいっぱいなら預かり所へ送る（預かり所もいっぱいならあきらめる。大事な物は預かり所へ送らない） */
-				if (!IsImportantItem ((WORD)nGetItemNo) && AddLeaveItem (pCharGet, (WORD)nGetItemNo)) {
+				if (!IsImportantItem ((WORD)nGetItemNo) && !QuestInChallenge (pCharGet) && AddLeaveItem (pCharGet, (WORD)nGetItemNo)) {
 					byGetItem = 3;
 				}
 

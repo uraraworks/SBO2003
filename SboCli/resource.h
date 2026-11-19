@@ -502,6 +502,10 @@
 #define IDC_AS_L_ITEM                     1437
 #define IDC_AS_L_MSG                      1438
 #define IDC_AS_L_MEMO                     1439
+#define IDC_CHAR_PUTONCE                  1448
+#define IDC_DGTMPL_COUNT                  1449
+#define IDC_DGTMPL_ID1                    1450
+#define IDC_DGTMPL_NAME1                  1458
 
 // Next default values for new objects
 // 
@@ -509,7 +513,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        244
 #define _APS_NEXT_COMMAND_VALUE         40037
-#define _APS_NEXT_CONTROL_VALUE         1448
+#define _APS_NEXT_CONTROL_VALUE         1466
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

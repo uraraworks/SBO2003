@@ -9,6 +9,7 @@
 #include "stdafx.h"
 #include "SboSvrRecvCmd.h"
 #include "CharProcPUT.h"
+#include "SboSvrQuest.h"
 
 /* ========================================================================= */
 /* 関数名：	CCharProcPUT::CCharProcPUT										 */
@@ -170,6 +171,14 @@ BOOL CCharProcPUT::Proc(DWORD dwTime)
 	if ((m_pChar->byPutCount == 0) || (m_pChar->byPutCountNow >= m_pChar->byPutCount)) {
 		goto Exit;
 	}
+	/* 補充しない印：決めた数を出したら、倒されても出さない */
+	if (m_pChar->byPutOnce && (m_pChar->byPutDone >= m_pChar->byPutCount)) {
+		goto Exit;
+	}
+	/* 番外編ダンジョンの発生元は、組ごとの空間に出す（SboSvrQuest.cpp の周期処理）。ふつうの世界には出さない */
+	if (DungeonPutIsSpaced (m_pChar)) {
+		goto Exit;
+	}
 	if (dwTime < m_pChar->dwLastPut + (DWORD)(m_pChar->wTimePutInterval * 1000)) {
 		goto Exit;
 	}
@@ -188,7 +197,7 @@ Exit:
 /* 日付：	2026/11/17（Proc から切り出し）									 */
 /* ========================================================================= */
 
-BOOL CCharProcPUT::PutOne(DWORD dwTime)
+BOOL CCharProcPUT::PutOne(DWORD dwTime, BOOL bSpaced)
 {
 	BOOL bRet, bResult;
 	DWORD dwTmpX, dwTmpY, dwX, dwY;
@@ -258,6 +267,11 @@ BOOL CCharProcPUT::PutOne(DWORD dwTime)
 	if (m_pChar->dwStTmplateID != -1) {
 		SetProc (pCharNew);
 	}
+	/* 番外編ダンジョンの中の敵は経験値・お金を持たない（中では入らない。落とす物はそのまま） */
+	if (bSpaced) {
+		pCharNew->dwExp = 0;
+		pCharNew->dwGold = 0;
+	}
 
 	if (pCharNew->byNpcType == NPCTYPE_BOMBITEM) {
 		pCharNew->byEfect = (BYTE)genrand () % 7;
@@ -268,12 +282,36 @@ BOOL CCharProcPUT::PutOne(DWORD dwTime)
 	RenewATDF (pCharNew->dwTblID);
 	SendCmdCHARINFO3 (pCharNew->dwTblID);
 
-	m_pChar->dwLastPut = dwTime;
-	m_pChar->byPutCountNow ++;
-	m_pChar->dwLastDotMove = dwTime;
+	if (!bSpaced) {
+		m_pChar->dwLastPut = dwTime;
+		m_pChar->byPutCountNow ++;
+		m_pChar->dwLastDotMove = dwTime;
+		if (m_pChar->byPutOnce && (m_pChar->byPutDone < 255)) {
+			m_pChar->byPutDone ++;
+		}
+	}
 
 	bRet = TRUE;
 Exit:
+	return bRet;
+}
+
+/* ========================================================================= */
+/* 関数名：	CCharProcPUT::PutOneSpace										 */
+/* 内容：	指定した空間に 1体出す（番外編ダンジョン）						 */
+/*			マスの空き・ぶつかりは、その空間で見る（発生元の空間を一時的に替える）。 */
+/*			発生元の数・時刻は動かさない（組ごとの数は呼ぶ側が持つ）			 */
+/* 日付：	2026/11/19														 */
+/* ========================================================================= */
+
+BOOL CCharProcPUT::PutOneSpace(DWORD dwTime, DWORD dwSpaceID)
+{
+	DWORD dwBak = m_pChar->dwSpaceID;
+	BOOL bRet;
+
+	m_pChar->dwSpaceID = dwSpaceID;
+	bRet = PutOne (dwTime, TRUE);
+	m_pChar->dwSpaceID = dwBak;
 	return bRet;
 }
 
@@ -306,6 +344,10 @@ void PutCharFillAll(void)
 			continue;
 		}
 		if (pChar->byPutCountNow >= pChar->byPutCount) {
+			continue;
+		}
+		/* 番外編ダンジョンの発生元は、組が入った時にその空間へ出す */
+		if (DungeonPutIsSpaced (pChar)) {
 			continue;
 		}
 		pProc = (CCharProcPUT *)pChar->pProc;

@@ -126,6 +126,7 @@ void KeyProcSUBSUGOROKU_IDLE				(PWNDINFO, BYTE, BYTE);		/* すごろく：平�
 void KeyProcDEAD_COMMAND					(PWNDINFO, BYTE, BYTE);		/* 死亡中：コマンド */
 void KeyProcSTATUSMAGIC					(PWNDINFO, BYTE, BYTE);		/* 強さ：覚えている特技 */
 void KeyProcMAKER							(PWNDINFO, BYTE, BYTE);		/* 作り手（レシピ）：作れる物の一覧・確認 */
+void KeyProcDUNGEONSEL					(PWNDINFO, BYTE, BYTE);		/* 番外編ダンジョン：入る姿の選択 */
 void KeyProcTOWNWARP						(PWNDINFO, BYTE, BYTE);		/* 町転送：行き先の選択 */
 void KeyProcQUEST							(PWNDINFO, BYTE, BYTE);		/* ギルドの依頼：一覧・進み具合 */
 void KeyProcMARKET							(PWNDINFO, BYTE, BYTE);		/* 取引所（商人ギルドの出張所）の受付 */
@@ -295,6 +296,7 @@ const KEYPROC KeyProcTbl[] = {
 	KeyProcMARKET,						/* WNDTYPE_MARKET					取引所（商人ギルドの出張所）の受付 */
 	KeyProcIMPORTANT,					/* WNDTYPE_IMPORTANT				大事な物の一覧（見るだけ） */
 	KeyProcRECYCLE,						/* WNDTYPE_RECYCLE					リサイクルボックス（おすそわけの共有の箱） */
+	KeyProcDUNGEONSEL,					/* WNDTYPE_DUNGEONSEL				番外編ダンジョン：入る姿の選択 */
 };
 
 
@@ -8261,6 +8263,58 @@ void KeyProcTOWNWARP(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			bMove = TRUE;
 		}
 
+		if (bMove) {
+			pWnd->dwTime = timeGetTime ();
+			pWnd->byAnime = 1;
+			pWnd->byRepeate ++;
+			pWnd->dwTimeKey = timeGetTime ();
+			pWnd->dwTimeDrawStart = 0;
+			g_bDraw = TRUE;
+		}
+
+	} else if (byEvent == KEY_UP) {
+		pWnd->dwTimeKey = timeGetTime () - 250;
+		pWnd->byRepeate = 0;
+		g_bDraw = TRUE;
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：KeyProcDUNGEONSEL												 */
+/* 内容：キー入力処理(番外編ダンジョン：入る姿の選択)						 */
+/* ========================================================================= */
+void KeyProcDUNGEONSEL(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
+{
+	DWORD dwTime = 250;
+	if (pWnd->byRepeate > 1) {
+		dwTime = 125;
+	}
+
+	if ((byEvent == KEY_UP) && (byCode == 'B')) {
+		/* やめる（窓はサーバーからの閉じる通知でも消える） */
+		SendCmdDUNGEONSEL (DUNGEONSEL_CANCEL, 0);
+		EraseWindow (pWnd);
+		g_bDraw = TRUE;
+		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
+
+	} else if ((byEvent == KEY_UP) && (byCode == 'A')) {
+		if ((pWnd->nData1 >= 0) && (pWnd->nData1 < pWnd->nData2)) {
+			SendCmdDUNGEONSEL (DUNGEONSEL_PICK, (BYTE)pWnd->nData1);
+			EraseWindow (pWnd);
+			g_bDraw = TRUE;
+			DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
+		}
+
+	} else if ((byEvent == KEY_DOWN) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
+		BOOL bMove = FALSE;
+
+		if ((byCode == VK_UP) && (pWnd->nData1 > 0)) {
+			pWnd->nData1 --;
+			bMove = TRUE;
+		} else if ((byCode == VK_DOWN) && (pWnd->nData1 + 1 < pWnd->nData2)) {
+			pWnd->nData1 ++;
+			bMove = TRUE;
+		}
 		if (bMove) {
 			pWnd->dwTime = timeGetTime ();
 			pWnd->byAnime = 1;

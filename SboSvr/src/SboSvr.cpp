@@ -813,8 +813,11 @@ void OnDecPlayer(int nNo)
 	}
 
 	if (pChar->dwParentTblID != -1) {
-		g_aCharInfo[pChar->dwParentTblID]->byPutCountNow --;
-		g_aCharInfo[pChar->dwParentTblID]->dwLastPut = timeGetTime ();
+		/* 番外編ダンジョンの空間ごとの敵は、その組の数を減らす（発生元の数は動かさない） */
+		if (!DungeonPutOnChildDec (pChar)) {
+			g_aCharInfo[pChar->dwParentTblID]->byPutCountNow --;
+			g_aCharInfo[pChar->dwParentTblID]->dwLastPut = timeGetTime ();
+		}
 	}
 
 	if ((pChar->byGameState >= GAMESTATE_MOVE) &&

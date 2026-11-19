@@ -2120,6 +2120,7 @@ void TimerProc(void)
 		case WNDTYPE_SORTMENU:
 		case WNDTYPE_MARKET:
 		case WNDTYPE_RECYCLE:
+		case WNDTYPE_DUNGEONSEL:
 		case WNDTYPE_IMPORTANT:
 			if (dwTime > pWnd->dwTime + 250) {
 				pWnd->dwTime = dwTime;

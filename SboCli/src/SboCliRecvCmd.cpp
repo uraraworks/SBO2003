@@ -170,6 +170,7 @@ void	RecvDataProcAFFIXINFO				(PBYTE, DWORD);			/* 受信データ処理(付与�
 void	RecvDataProcITEMDERIVE				(PBYTE, DWORD);			/* 受信データ処理(派生アイテム表の行) */
 void	RecvDataProcAPPRAISE				(PBYTE, DWORD);			/* 受信データ処理(鑑定の結果) */
 void	RecvDataProcNPCROUTE				(PBYTE, DWORD);			/* 受信データ処理(NPCの巡回ルート) */
+void	RecvDataProcDUNGEONSEL				(PBYTE, DWORD);			/* 受信データ処理(番外編ダンジョンの入る姿の一覧) */
 void	RecvDataProcTOWNWARP				(PBYTE, DWORD);			/* 受信データ処理(町転送の行き先一覧) */
 void	RecvDataProcQUEST					(PBYTE, DWORD);			/* 受信データ処理(ギルドの仕事依頼：一覧・結果) */
 void	RecvDataProcQUESTSTATE				(PBYTE, DWORD);			/* 受信データ処理(依頼の進み具合) */
@@ -457,6 +458,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcITEMDERIVE,				/* CMD_ITEMDERIVE */
 	RecvDataProcAPPRAISE,				/* CMD_APPRAISE */
 	RecvDataProcDUNGEONMAP,				/* CMD_DUNGEONMAP */
+	RecvDataProcDUNGEONSEL,				/* CMD_DUNGEONSEL */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -3861,6 +3863,42 @@ void RecvDataProcNPCROUTE(PBYTE pData, DWORD dwDataSize)
 }
 
 /* ========================================================================= */
+/* 関数名：RecvDataProcDUNGEONSEL											 */
+/* 内容：受信データ処理(番外編ダンジョンの入る姿の一覧を開く・閉じる)		 */
+/* ========================================================================= */
+void RecvDataProcDUNGEONSEL(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_DUNGEONSEL pPara = (PCMDPARA_DUNGEONSEL)pData;
+	int i;
+
+	if (dwDataSize < sizeof (CMDPARA_DUNGEONSEL)) {
+		return;
+	}
+	/* 開いている選択窓は一度閉じる */
+	for (i = g_WndInfo.GetSize () - 1; i >= 0; i --) {
+		if (((PWNDINFO)g_WndInfo[i])->nType == WNDTYPE_DUNGEONSEL) {
+			EraseWindow ((PWNDINFO)g_WndInfo[i]);
+			i = min (i, g_WndInfo.GetSize ());
+		}
+	}
+	if (pPara->byType == DUNGEONSEL_OPEN) {
+		CopyMemory (&g_DungeonSelInfo, pPara, sizeof (CMDPARA_DUNGEONSEL));
+		if (g_DungeonSelInfo.byCount > MAX_DGTMPL) {
+			g_DungeonSelInfo.byCount = MAX_DGTMPL;
+		}
+		for (i = 0; i < MAX_DGTMPL; i ++) {
+			g_DungeonSelInfo.aszName[i][MAX_DGTMPLNAME - 1] = 0;
+		}
+		if (g_DungeonSelInfo.byCount > 0) {
+			PWNDINFO pWnd = MakeWindowDUNGEONSEL ();
+			g_WndInfo.Add (pWnd);
+			g_dwActiveMsgID = pWnd->dwID;
+		}
+	}
+	g_bDraw = TRUE;
+}
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcTOWNWARP												 */
 /* 内容：受信データ処理(町転送の行き先一覧)									 */
 /* ========================================================================= */
@@ -4827,6 +4865,7 @@ void RecvDataProcCHARINFO(PBYTE pData, DWORD dwDataSize)
 	pCharDst->byAreaX				= pChar->byAreaX;
 	pCharDst->byAreaY				= pChar->byAreaY;
 	pCharDst->byPutCount			= pChar->byPutCount;
+	pCharDst->byPutOnce				= pChar->byPutOnce;
 	pCharDst->byDropProbability		= pChar->byDropProbability;
 	pCharDst->byMoveProbabilityX	= pChar->byMoveProbabilityX;
 	pCharDst->byMoveProbabilityY	= pChar->byMoveProbabilityY;
@@ -7425,6 +7464,9 @@ void RecvDataProcSUBGAMEINFO(BYTE *pData, DWORD dwDataSize)
 				pDungeonInfo->wChipIDRoad = pDungeon->wChipIDRoad;
 				pDungeonInfo->wChipIDBlock = pDungeon->wChipIDBlock;
 				pDungeonInfo->dwThemeID = pDungeon->dwThemeID;
+				pDungeonInfo->byTmplCount = pDungeon->byTmplCount;
+				CopyMemory (pDungeonInfo->wTmplID, pDungeon->wTmplID, sizeof (pDungeonInfo->wTmplID));
+				CopyMemory (pDungeonInfo->szTmplName, pDungeon->szTmplName, sizeof (pDungeonInfo->szTmplName));
 			}		
 			break;
 

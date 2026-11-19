@@ -26,6 +26,7 @@
 #include "SboSvrEventProc.h"
 #include "SboSvrCharInfoTimerProc.h"
 #include "SboSvrRecycle.h"
+#include "CharProc/CharProcPUT.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -79,10 +80,27 @@ typedef struct _LOANBAK {
 	char		chAttrFire, chAttrWater, chAttrWind, chAttrEarth, chAttrLight, chAttrDark;
 	DWORD		dwMapID, dwX, dwY;									/* 入る前にいた場所（戻る場所・保存する場所） */
 	BYTE		byDirection;
+	WORD		wDgTmpl;											/* 番外編ダンジョン：入った時のステータステンプレートの番号（持ち帰り袋の計算に使う） */
 } LOANBAK;
+
+/* 空間の種類（CHALLENGE::byKind） */
+#define CHALLENGEKIND_QUEST		(0)									/* 討伐チャレンジ */
+#define CHALLENGEKIND_DUNGEON	(1)									/* 番外編ダンジョン（気まぐれダンジョンのミニゲーム） */
+
+/* 番外編ダンジョンの、NPC発生の発生元ごとの数（組の空間ごとに数える） */
+typedef struct _DGPUT {
+	int			nNow;												/* いま生きている数 */
+	int			nTotal;												/* この組で出した数（補充しない印の数え用） */
+	DWORD		dwLast;												/* 最後に出した・倒された時刻 */
+	_DGPUT() : nNow(0), nTotal(0), dwLast(0) {}
+} DGPUT;
 
 /* 1 回の挑戦（一緒に入った組） */
 typedef struct _CHALLENGE {
+	BYTE		byKind;												/* CHALLENGEKIND_*（番外編ダンジョンは wQuestID・敵の一覧を使わない） */
+	BYTE		byDungeonID;										/* 番外編：サブゲームの番号 */
+	DWORD		dwBuildNo;											/* 番外編：入った時のダンジョンの作り直し番号（変わったら全員出す） */
+	std::map<DWORD, DGPUT>	mapPut;									/* 番外編：NPC発生の発生元のテーブルID → この組の数 */
 	WORD		wQuestID;											/* 依頼番号 */
 	DWORD		dwMapNo;											/* 戦う場所のマップ番号 */
 	DWORD		dwSpaceID;											/* この挑戦の空間番号（挑戦の番号と同じ。0 にはならない。組ごとに別の空間で戦う） */
@@ -94,6 +112,7 @@ typedef struct _CHALLENGE {
 	DWORD		dwClearTime;										/* かかった時間（ミリ秒） */
 	std::vector<DWORD>	aMember;									/* 挑戦中の人（テーブルID） */
 	std::vector<DWORD>	aEnemy;										/* 残っている敵（テーブルID） */
+	_CHALLENGE() : byKind(0), byDungeonID(0), dwBuildNo(0), wQuestID(0), dwMapNo(0), dwSpaceID(0), bArena(FALSE), dwPartyID(0), dwStart(0), bCleared(FALSE), dwClear(0), dwClearTime(0) {}
 } CHALLENGE;
 
 /* 戻す場所（切断した人は、マップの表から外れてから動かす） */
@@ -114,6 +133,13 @@ static void ChallengeOnDecPlayer(PCHARINFO pChar);
 static void ChallengeClearMember(PCHARINFO p, struct _CHALLENGE *pCh, int nReason);
 static void ChallengeStart(PCHARINFO pChar, PQUESTINFO pQuest, PQUESTNPCINFO pDef);
 static void GetChallengeMembers(PCHARINFO pChar, WORD wQuestID, std::vector<PCHARINFO> &aOut);
+static void DgBagCollect(PCHARINFO p, WORD wTmpl, std::vector<WORD> &aBag);
+static void DgBagGive(PCHARINFO p, const std::vector<WORD> &aBag);
+static void DgLeaveMsg(PCHARINFO p, int nReason, size_t nBag);
+static void DgProc(DWORD dwNow);
+static void DgSelOnDec(PCHARINFO pChar);
+static BOOL HasMercenary(PCHARINFO pChar);
+static void ChallengeLeave(PCHARINFO p, int nReason);
 
 /* ========================================================================= */
 /* 小さな道具																 */
@@ -2670,6 +2696,7 @@ enum {
 	CHALLENGELEAVE_OUT,				/* 戦う場所から出た（町転送など） */
 	CHALLENGELEAVE_QUEST,			/* 依頼が無くなった */
 	CHALLENGELEAVE_LOGOUT,			/* 切断した */
+	CHALLENGELEAVE_BUILD,			/* 番外編ダンジョンが作り直された */
 };
 
 /* 挑戦から外して元の状態に戻す */
@@ -2677,7 +2704,8 @@ static void ChallengeLeave(PCHARINFO p, int nReason)
 {
 	std::map<DWORD, LOANBAK>::iterator it = s_mapLoan.find (p->dwTblID);
 	LOANBAK Bak;
-	BOOL bMove;
+	BOOL bMove, bDungeon = FALSE;
+	std::vector<WORD> aBag;
 
 	if (it == s_mapLoan.end ()) {
 		return;
@@ -2689,7 +2717,12 @@ static void ChallengeLeave(PCHARINFO p, int nReason)
 		if (itC != s_mapChallenge.end ()) {
 			std::vector<DWORD> &aM = itC->second.aMember;
 			aM.erase (std::remove (aM.begin (), aM.end (), p->dwTblID), aM.end ());
+			bDungeon = (itC->second.byKind == CHALLENGEKIND_DUNGEON);
 		}
+	}
+	/* 番外編：ゴールで出た時だけ、持ち帰り袋（貸し出しの持ち物のうち増えた分）を本物にする。それ以外は全部なくなる */
+	if (bDungeon && (nReason == CHALLENGELEAVE_CLEAR)) {
+		DgBagCollect (p, Bak.wDgTmpl, aBag);
 	}
 
 	LoanXfer (p, &Bak, TRUE);
@@ -2714,7 +2747,10 @@ static void ChallengeLeave(PCHARINFO p, int nReason)
 	}
 
 	LoanSendAll (p);
-	switch (nReason) {
+	if (bDungeon) {
+		DgLeaveMsg (p, nReason, aBag.size ());
+	}
+	switch (bDungeon ? -1 : nReason) {
 	case CHALLENGELEAVE_DEAD:
 		SendCmdSYSMSG (p->pID, "力尽きてしまった…。挑戦は中断して、元の姿に戻りました。依頼は受けたままなので、また挑めます。", SPEECHCMD_BATTLE1);
 		break;
@@ -2742,6 +2778,10 @@ static void ChallengeLeave(PCHARINFO p, int nReason)
 		SubProcMapMove (p, Bak.dwMapID, Bak.dwX, Bak.dwY);
 		/* 移動で届くマップ情報は扉が閉じたままなので、ふつうの世界の扉などの状態を送る */
 		SpaceSendMapState (p);
+	}
+	/* 持ち帰り袋の品を本物の持ち物へ（いっぱいなら預かり所へ） */
+	if (!aBag.empty ()) {
+		DgBagGive (p, aBag);
 	}
 }
 
@@ -3001,6 +3041,8 @@ static void ChallengeOnDecPlayer(PCHARINFO pChar)
 {
 	std::map<DWORD, DWORD>::iterator itE = s_mapEnemy.find (pChar->dwTblID);
 
+	/* 番外編ダンジョンの姿を選んでいる最中の切断 */
+	DgSelOnDec (pChar);
 	/* 敵が倒された */
 	if (itE != s_mapEnemy.end ()) {
 		std::map<DWORD, CHALLENGE>::iterator itC = s_mapChallenge.find (itE->second);
@@ -3055,6 +3097,10 @@ static void ChallengeProc(void)
 		DWORD dwSession = itC->first;
 		std::vector<DWORD> aMember = itC->second.aMember;
 
+		/* 番外編ダンジョンの組は別（DgProc） */
+		if (itC->second.byKind == CHALLENGEKIND_DUNGEON) {
+			continue;
+		}
 		if (itC->second.bCleared) {
 			char szTime[64], szTmp[256];
 
@@ -3118,6 +3164,8 @@ static void ChallengeProc(void)
 	for (i = 0; i < aEnd.size (); i ++) {
 		ChallengeEnd (aEnd[i]);
 	}
+	/* 番外編ダンジョン（姿を選ぶ締め切り・中の人が出た判定・敵の補充） */
+	DgProc (dwNow);
 }
 
 /* 今すぐ周期処理をする（テスト用） */
@@ -3184,6 +3232,745 @@ void QuestChallengeSaveSwap(BOOL bBegin)
 	}
 }
 
+
+/* ========================================================================= */
+/* 番外編ダンジョン（気まぐれダンジョンのミニゲーム）						 */
+/* ========================================================================= */
+/*
+ * サブゲーム「ダンジョン」にテンプレート（SUBGAME_DUNGEONINFO::byTmplCount）を決めると、番外編のミニゲームになる。
+ * 入口（byStartX/Y）にパーティのリーダー（ソロならその人）が乗ると、近くの仲間全員に入る姿（テンプレート）の一覧を出し、
+ * 全員が選び終えるか 30 秒たつと、選んだ人だけで新しい空間へ一緒に入る（選ばなかった人は置いていく）。
+ * 中は討伐チャレンジと同じ貸し出しの姿（s_mapLoan。経験値・お金は戻る・預かり所などは使えない）。
+ * ダンジョンの形（マップ）は 1 つを共有し、組ごとに空間番号を割り当てる（s_mapChallenge の byKind が 1 の組）。
+ * 敵（NPC発生の出し分）・扉の開閉は空間ごと。一緒に入った全員が出たら、その空間を空きにする。
+ * 持ち帰り袋：中で増えた物（今の持ち物 − 入った時のテンプレートの持ち物）。ゴールのワープで出た時だけ本物の持ち物へ。
+ * 倒れた・抜けた・切断・パーティ外れ・作り直しで出た時は、袋の中身は全部なくなる。袋は保存しない。
+ */
+#define DGSEL_WAIT				30000								/* 姿を選ぶ締め切り（ミリ秒） */
+
+/* 姿を選んでいる組（入口に乗った人＝リーダーのテーブルIDが鍵） */
+typedef struct _DGSEL {
+	int			nDungeonID;											/* サブゲームの番号 */
+	DWORD		dwStart;											/* 入口に乗った時刻 */
+	DWORD		dwMapID, dwX, dwY;									/* 入口の場所（戻る場所） */
+	BYTE		byDirection;
+	std::vector<DWORD>		aMember;								/* 選ぶ人（テーブルID。リーダーが先頭） */
+	std::map<DWORD, int>	mapPick;								/* テーブルID → 選んだ番号（-1=まだ -2=やめた） */
+	std::vector<WORD>		aTmpl;									/* 選べるテンプレート番号 */
+	std::vector<std::string>	aName;								/* その表示名 */
+} DGSEL;
+
+static std::map<DWORD, DGSEL> s_mapDgSel;						/* リーダーのテーブルID → 選んでいる組 */
+static std::map<DWORD, DWORD> s_mapDgSelOf;						/* 選んでいる人のテーブルID → リーダーのテーブルID */
+
+/* サブゲームの番号からダンジョンの情報（無ければ NULL） */
+static PSUBGAME_DUNGEONINFO DgInfo(int nID)
+{
+	PSUBGAMEINFO pInfo;
+
+	if ((nID < 0) || (nID >= g_aSubaGameInfo.GetSize ())) {
+		return NULL;
+	}
+	pInfo = g_aSubaGameInfo[nID];
+	if ((pInfo == NULL) || (pInfo->byType != SUBGAMEID_DUNGEON) || (pInfo->pInfo == NULL)) {
+		return NULL;
+	}
+	return (PSUBGAME_DUNGEONINFO)pInfo->pInfo;
+}
+
+/* 番外編のダンジョンか（テーマで作り、テンプレートが 1 つ以上ある） */
+static BOOL DgIsGame(PSUBGAME_DUNGEONINFO p)
+{
+	return (p != NULL) && (p->dwThemeID != 0) && (p->byTmplCount > 0);
+}
+
+/* 遊べる状態か（作り終えている） */
+static BOOL DgReady(PSUBGAME_DUNGEONINFO p)
+{
+	return (p->pwGenParts != NULL) && (p->dwBuildNo > 0) && (p->pMapTmp == NULL) && (p->wGenCX > 0);
+}
+
+static BOOL DgInArea(PSUBGAME_DUNGEONINFO p, DWORD dwMapID, DWORD dwX, DWORD dwY)
+{
+	return (dwMapID == p->dwMapID) && (dwX >= (DWORD)p->byX1) && (dwX <= (DWORD)p->byX2) && (dwY >= (DWORD)p->byY1) && (dwY <= (DWORD)p->byY2);
+}
+
+/* その場所を範囲に含む番外編のダンジョンの番号（無ければ -1） */
+static int DgFindByArea(DWORD dwMapID, DWORD dwX, DWORD dwY)
+{
+	int i;
+
+	for (i = 0; i < g_aSubaGameInfo.GetSize (); i ++) {
+		PSUBGAME_DUNGEONINFO p = DgInfo (i);
+		if (DgIsGame (p) && DgInArea (p, dwMapID, dwX, dwY)) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+/* 入口（外の入口のマス）の番号。マスが同じ番外編のダンジョンが無ければ -1 */
+static int DgFindByEntrance(DWORD dwMapID, DWORD dwX, DWORD dwY)
+{
+	int i;
+
+	for (i = 0; i < g_aSubaGameInfo.GetSize (); i ++) {
+		PSUBGAME_DUNGEONINFO p = DgInfo (i);
+		if (DgIsGame (p) && (p->dwMapID == dwMapID) && (dwX == (DWORD)p->byStartX) && (dwY == (DWORD)p->byStartY)) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+/* 選べるテンプレートの一覧（存在しない番号は外す。名前が空ならテンプレートの名前） */
+static void DgMakeList(PSUBGAME_DUNGEONINFO p, std::vector<WORD> &aTmpl, std::vector<std::string> &aName)
+{
+	int i, nMax = min ((int)p->byTmplCount, (int)MAX_DGTMPL);
+
+	aTmpl.clear ();
+	aName.clear ();
+	for (i = 0; i < nMax; i ++) {
+		WORD wID = p->wTmplID[i];
+		char szName[MAX_DGTMPLNAME];
+
+		if (wID >= (WORD)g_aStTmpInfo.GetSize ()) {
+			continue;
+		}
+		CopyStr (szName, sizeof (szName), p->szTmplName[i][0] ? p->szTmplName[i] : g_aStTmpInfo[wID]->szName);
+		aTmpl.push_back (wID);
+		aName.push_back (szName);
+	}
+}
+
+/* 番外編の中の組（空間）を探す。無ければ NULL */
+static CHALLENGE *DgRunOf(PCHARINFO p)
+{
+	std::map<DWORD, LOANBAK>::iterator itL;
+	std::map<DWORD, CHALLENGE>::iterator itC;
+
+	if (p == NULL) {
+		return NULL;
+	}
+	itL = s_mapLoan.find (p->dwTblID);
+	if (itL == s_mapLoan.end ()) {
+		return NULL;
+	}
+	itC = s_mapChallenge.find (itL->second.dwSession);
+	if ((itC == s_mapChallenge.end ()) || (itC->second.byKind != CHALLENGEKIND_DUNGEON)) {
+		return NULL;
+	}
+	return &itC->second;
+}
+
+/* 番外編ダンジョンの中か */
+BOOL QuestInDungeon(PCHARINFO pChar)
+{
+	return DgRunOf (pChar) != NULL;
+}
+
+/* 持ち帰り袋に入るはずの品（今の持ち物のうち、入った時のテンプレートの持ち物より増えた分）を集める */
+static void DgBagCollect(PCHARINFO p, WORD wTmpl, std::vector<WORD> &aBag)
+{
+	std::map<WORD, int> mapNow, mapTmpl;
+	std::map<WORD, int>::iterator it;
+	int i;
+
+	aBag.clear ();
+	for (i = 0; i < MAX_MYITEM; i ++) {
+		if (p->waItem[i] != 0) {
+			mapNow[p->waItem[i]] ++;
+		}
+	}
+	if (wTmpl < (WORD)g_aStTmpInfo.GetSize ()) {
+		PSTATUSTEMPLATEINFO t = g_aStTmpInfo[wTmpl];
+		for (i = 0; i < MAX_MYITEM; i ++) {
+			/* LoanApply と同じく、無いアイテムの番号は持たせていない */
+			if ((t->waItem[i] != 0) && (t->waItem[i] < (WORD)g_aItemInfo.GetSize ())) {
+				mapTmpl[t->waItem[i]] ++;
+			}
+		}
+	}
+	for (it = mapNow.begin (); it != mapNow.end (); it ++) {
+		int nExtra = it->second - mapTmpl[it->first];
+		while (nExtra -- > 0) {
+			aBag.push_back (it->first);
+		}
+	}
+}
+
+/* 持ち帰り袋の品を本物の持ち物へ渡す（持ち物がいっぱいなら預かり所へ、預かり所もいっぱいならあきらめる） */
+static void DgBagGive(PCHARINFO p, const std::vector<WORD> &aBag)
+{
+	size_t i;
+	int nLost = 0;
+	char szTmp[256];
+
+	for (i = 0; i < aBag.size (); i ++) {
+		BOOL bToLeave = FALSE;
+		if (!GiveItem (p, aBag[i], &bToLeave)) {
+			nLost ++;
+			continue;
+		}
+		snprintf (szTmp, sizeof (szTmp), "持ち帰り袋から%sを受け取りました。%s", ItemName (aBag[i]), bToLeave ? "（持ちきれないので預かり所へ運びました）" : "");
+		SendCmdSYSMSG (p->pID, szTmp, SPEECHCMD_BATTLE1);
+	}
+	if (nLost > 0) {
+		snprintf (szTmp, sizeof (szTmp), "持ちきれない品が%d個ありました。預かり所もいっぱいなので、あきらめました。", nLost);
+		SendCmdSYSMSG (p->pID, szTmp, SPEECHCMD_BATTLE1);
+	}
+	SendBagState (p);
+}
+
+/* 出た理由の知らせ（番外編） */
+static void DgLeaveMsg(PCHARINFO p, int nReason, size_t nBag)
+{
+	const char *psz = NULL;
+
+	switch (nReason) {
+	case CHALLENGELEAVE_CLEAR:
+		psz = (nBag > 0) ? "ゴールに着きました！ 元の姿に戻ります。" : "ゴールに着きました。元の姿に戻ります。";
+		break;
+	case CHALLENGELEAVE_DEAD:
+		psz = "力尽きてしまった…。持ち帰り袋の中身はなくなり、元の姿に戻りました。";
+		break;
+	case CHALLENGELEAVE_PARTY:
+		psz = "パーティを抜けたので、ダンジョンから出ました。持ち帰り袋の中身はなくなり、元の姿に戻りました。";
+		break;
+	case CHALLENGELEAVE_OUT:
+		psz = "ダンジョンの外へ出たので、持ち帰り袋の中身はなくなり、元の姿に戻りました。";
+		break;
+	case CHALLENGELEAVE_BUILD:
+		psz = "ダンジョンが作り直されたので外へ出ました。持ち帰り袋の中身はなくなり、元の姿に戻りました。";
+		break;
+	case CHALLENGELEAVE_QUEST:
+		psz = "ダンジョンの挑戦が終わりました。持ち帰り袋の中身はなくなり、元の姿に戻りました。";
+		break;
+	}
+	if (psz) {
+		SendCmdSYSMSG (p->pID, (LPSTR)psz, SPEECHCMD_BATTLE1);
+	}
+}
+
+/* 姿を選ぶ窓を開く・閉じる */
+static void DgSendSel(PCHARINFO p, BYTE byType, const DGSEL *pSel, DWORD dwWait)
+{
+	CMDPARA_DUNGEONSEL Para;
+	size_t i;
+
+	if ((p == NULL) || (p->pID == 0)) {
+		return;
+	}
+	ZeroMemory (&Para, sizeof (Para));
+	Para.byType = byType;
+	Para.dwTblID = p->dwTblID;
+	if ((byType == DUNGEONSEL_OPEN) && pSel) {
+		Para.byCount = (BYTE)min (pSel->aName.size (), (size_t)MAX_DGTMPL);
+		Para.dwWait = dwWait;
+		for (i = 0; i < (size_t)Para.byCount; i ++) {
+			CopyStr (Para.aszName[i], sizeof (Para.aszName[i]), pSel->aName[i].c_str ());
+		}
+	}
+	SendCmdDUNGEONSEL (p->pID, &Para);
+}
+
+/* 一緒に入れる仲間（pChar の近くにいる同じパーティの人。本人が先頭） */
+static void DgGetMembers(PCHARINFO pChar, std::vector<PCHARINFO> &aOut)
+{
+	std::vector<PCHARINFO> aParty;
+	size_t i;
+
+	aOut.clear ();
+	GetPartyMembers (pChar, aParty);
+	for (i = 0; i < aParty.size (); i ++) {
+		PCHARINFO pTmp = aParty[i];
+		if (pTmp != pChar) {
+			if ((pTmp->dwMapID != pChar->dwMapID) || !IsSameSpace (pTmp, pChar)) {
+				continue;
+			}
+			if ((abs ((int)pTmp->dwX - (int)pChar->dwX) > CHALLENGE_NEAR) || (abs ((int)pTmp->dwY - (int)pChar->dwY) > CHALLENGE_NEAR)) {
+				continue;
+			}
+		}
+		if ((pTmp->wHP == 0) || (pTmp->byCharState == CHARSTATE_DEAD) || QuestInChallenge (pTmp) || (s_mapDgSelOf.find (pTmp->dwTblID) != s_mapDgSelOf.end ())) {
+			continue;
+		}
+		aOut.push_back (pTmp);
+	}
+}
+
+/* パーティのリーダー（adwTblID の先頭）。近くにそろっていない・倒れている・挑戦中なら、乗った人が代わりに始める */
+static PCHARINFO DgLeaderOf(PCHARINFO pChar)
+{
+	PPARTYINFO pParty;
+	PCHARINFO pLeader;
+	DWORD dwTbl;
+
+	if ((pChar->dwPartyID == 0) || (pChar->dwPartyID >= (DWORD)g_aPartyInfo.GetSize ())) {
+		return pChar;
+	}
+	pParty = g_aPartyInfo[pChar->dwPartyID];
+	dwTbl = pParty->adwTblID[0];
+	if ((dwTbl == 0) || (dwTbl >= (DWORD)g_aCharInfo.GetSize ()) || (dwTbl == pChar->dwTblID)) {
+		return pChar;
+	}
+	pLeader = g_aCharInfo[dwTbl];
+	if (!IsPlayerOnline (pLeader) || (pLeader->dwPartyID != pChar->dwPartyID) || (pLeader->dwMapID != pChar->dwMapID) ||
+		!IsSameSpace (pLeader, pChar) || (pLeader->wHP == 0) || (pLeader->byCharState == CHARSTATE_DEAD) || QuestInChallenge (pLeader) ||
+		(abs ((int)pLeader->dwX - (int)pChar->dwX) > CHALLENGE_NEAR) || (abs ((int)pLeader->dwY - (int)pChar->dwY) > CHALLENGE_NEAR)) {
+		return pChar;
+	}
+	return pLeader;
+}
+
+/* 空間の中の敵（NPC発生から出たもの）をその組の分だけ出す・補充する。bFirst は入った時に一度にそろえる */
+static void DgPutProc(CHALLENGE *pCh, DWORD dwNow, BOOL bFirst)
+{
+	PSUBGAME_DUNGEONINFO pDungeon = DgInfo (pCh->byDungeonID);
+	int i, nCount = g_aCharInfo.GetSize ();
+
+	if (pDungeon == NULL) {
+		return;
+	}
+	for (i = 0; i < nCount; i ++) {
+		PCHARINFO pParent = g_aCharInfo[i];
+		int nTry = 0, nTryMax;
+
+		if ((pParent == NULL) || (pParent->byNpcType != NPCTYPE_PUT) || (pParent->pProc == NULL) || (pParent->byPutCount == 0) ||
+			(pParent->dwSpaceID != SPACE_NORMAL) || !DgInArea (pDungeon, pParent->dwMapID, pParent->dwX, pParent->dwY)) {
+			continue;
+		}
+		DGPUT &d = pCh->mapPut[pParent->dwTblID];
+		nTryMax = bFirst ? (int)pParent->byPutCount * 50 : 1;
+		while ((d.nNow < (int)pParent->byPutCount) && (nTry < nTryMax)) {
+			/* 補充しない印：決めた数を出したら、倒されても出さない（数えるのはこの組だけ） */
+			if (pParent->byPutOnce && (d.nTotal >= (int)pParent->byPutCount)) {
+				break;
+			}
+			if (!bFirst && (dwNow < d.dwLast + (DWORD)pParent->wTimePutInterval * 1000)) {
+				break;
+			}
+			nTry ++;
+			if (((CCharProcPUT *)pParent->pProc)->PutOneSpace (dwNow, pCh->dwSpaceID)) {
+				d.nNow ++;
+				d.nTotal ++;
+				d.dwLast = dwNow;
+			}
+		}
+	}
+}
+
+/* その空間の敵を全部消して、空間を空きにする */
+static void DgEnd(DWORD dwSession)
+{
+	std::vector<DWORD> aDel;
+	int i, nCount = g_aCharInfo.GetSize ();
+
+	for (i = 0; i < nCount; i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+		if ((p != NULL) && (p->dwSpaceID == dwSession) && (p->byNpcType != NPCTYPE_INIT) && (p->byGameState == GAMESTATE_NPC)) {
+			aDel.push_back (p->dwTblID);
+		}
+	}
+	for (i = 0; i < (int)aDel.size (); i ++) {
+		DeleteChar (aDel[i]);
+	}
+	s_mapChallenge.erase (dwSession);
+}
+
+/* 選んだ人だけで、新しい空間へ入る */
+static void DgStart(int nDungeonID, const DGSEL &Sel, const std::vector<std::pair<PCHARINFO, WORD> > &aPart)
+{
+	PSUBGAME_DUNGEONINFO pDungeon = DgInfo (nDungeonID);
+	CHALLENGE Ch;
+	DWORD dwSession;
+	size_t i;
+	char szTmp[512];
+
+	dwSession = ++ s_dwChallengeSeq;
+	Ch.byKind = CHALLENGEKIND_DUNGEON;
+	Ch.byDungeonID = (BYTE)nDungeonID;
+	Ch.dwBuildNo = pDungeon->dwBuildNo;
+	Ch.wQuestID = 0;
+	Ch.dwSpaceID = dwSession;						/* 組の番号をそのまま空間番号にする（0 にはならない） */
+	Ch.bArena = FALSE;
+	Ch.dwMapNo = pDungeon->dwMapID;
+	Ch.dwPartyID = aPart[0].first->dwPartyID;
+	Ch.dwStart = timeGetTime ();
+	Ch.bCleared = FALSE;
+	s_mapChallenge[dwSession] = Ch;
+	CHALLENGE *pCh = &s_mapChallenge[dwSession];
+
+	for (i = 0; i < aPart.size (); i ++) {
+		PCHARINFO pTmp = aPart[i].first;
+		PSTATUSTEMPLATEINFO t = g_aStTmpInfo[aPart[i].second];
+		LOANBAK Bak;
+
+		CharTargetCancelPC (pTmp);
+		/* この組の空間へ（先に移る。見え方の作り直しはマップ移動のほうでされる） */
+		SpaceSet (pTmp, Ch.dwSpaceID, FALSE);
+		ZeroMemory (&Bak, sizeof (Bak));
+		LoanXfer (pTmp, &Bak, FALSE);
+		Bak.dwSession = dwSession;
+		Bak.bArrived = TRUE;
+		Bak.wDgTmpl = aPart[i].second;
+		/* 戻る場所は、仲間も全員、入口に乗った人の場所 */
+		Bak.dwMapID = Sel.dwMapID;
+		Bak.dwX = Sel.dwX;
+		Bak.dwY = Sel.dwY;
+		Bak.byDirection = Sel.byDirection;
+		s_mapLoan[pTmp->dwTblID] = Bak;
+		pCh->aMember.push_back (pTmp->dwTblID);
+
+		LoanApply (pTmp, t);
+		LoanSendAll (pTmp);
+
+		SendCmdPLAYSOUND (pTmp->pID, SOUND_MOVE);
+		SendCmdFADEINOUT (pTmp->pID, 0);
+		SubProcMapMove (pTmp, pDungeon->dwMapID, (DWORD)pDungeon->byGoalX, (DWORD)pDungeon->byGoalY);
+		/* 移動で届くマップ情報は扉が閉じたままなので、この空間の扉などの状態を送る */
+		SpaceSendMapState (pTmp);
+
+		snprintf (szTmp, sizeof (szTmp), "ダンジョンに入りました（%s）。経験値・お金は入りません。拾った物は持ち帰り袋に入り、ゴールのワープで出た時だけ持ち帰れます。", t->szName);
+		SendCmdSYSMSG (pTmp->pID, szTmp, SPEECHCMD_BATTLE1);
+		SendCmdSYSMSG (pTmp->pID, "倒れる・パーティを抜ける・切断すると、持ち帰り袋の中身はなくなります。", SPEECHCMD_BATTLE1);
+	}
+	/* この組の敵を、決めた数まで一度に出す */
+	DgPutProc (pCh, timeGetTime (), TRUE);
+}
+
+/* 選び終えた（全員が決めた・締め切り）：選んだ人だけで入る */
+static void DgSelFinish(DWORD dwLeader)
+{
+	std::map<DWORD, DGSEL>::iterator it = s_mapDgSel.find (dwLeader);
+	std::vector<std::pair<PCHARINFO, WORD> > aPart;
+	PSUBGAME_DUNGEONINFO pDungeon;
+	DGSEL Sel;
+	size_t i;
+
+	if (it == s_mapDgSel.end ()) {
+		return;
+	}
+	Sel = it->second;
+	s_mapDgSel.erase (it);
+	for (i = 0; i < Sel.aMember.size (); i ++) {
+		s_mapDgSelOf.erase (Sel.aMember[i]);
+	}
+	pDungeon = DgInfo (Sel.nDungeonID);
+
+	for (i = 0; i < Sel.aMember.size (); i ++) {
+		DWORD dwTbl = Sel.aMember[i];
+		PCHARINFO p = (dwTbl < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[dwTbl] : NULL;
+		int nPick = Sel.mapPick[dwTbl];
+
+		/* まだ開いたままの窓は閉じる（選ばなかった人は置いていく） */
+		if (p && IsPlayerOnline (p) && (nPick == -1)) {
+			DgSendSel (p, DUNGEONSEL_CLOSE, NULL, 0);
+			SendCmdSYSMSG (p->pID, "時間内に姿を選ばなかったので、置いていかれました。", SPEECHCMD_BATTLE1);
+		}
+		if ((nPick < 0) || (nPick >= (int)Sel.aTmpl.size ()) || (p == NULL) || !IsPlayerOnline (p)) {
+			continue;
+		}
+		/* まだ入口の近くにいて、倒れておらず、ほかで挑戦中でない人だけ */
+		if ((p->wHP == 0) || (p->byCharState == CHARSTATE_DEAD) || QuestInChallenge (p) || (p->dwMapID != Sel.dwMapID) || (p->dwSpaceID != SPACE_NORMAL) ||
+			(abs ((int)p->dwX - (int)Sel.dwX) > CHALLENGE_NEAR) || (abs ((int)p->dwY - (int)Sel.dwY) > CHALLENGE_NEAR)) {
+			SendCmdSYSMSG (p->pID, "入口から離れたので、ダンジョンには入れませんでした。", SPEECHCMD_BATTLE1);
+			continue;
+		}
+		aPart.push_back (std::make_pair (p, Sel.aTmpl[nPick]));
+	}
+	if (aPart.empty ()) {
+		return;
+	}
+	if ((pDungeon == NULL) || !DgIsGame (pDungeon) || !DgReady (pDungeon)) {
+		for (i = 0; i < aPart.size (); i ++) {
+			SendCmdSYSMSG (aPart[i].first->pID, "このダンジョンは準備中です。しばらくしてからもう一度どうぞ。", SPEECHCMD_BATTLE1);
+		}
+		return;
+	}
+	DgStart (Sel.nDungeonID, Sel, aPart);
+}
+
+/* 決めていない人がいなければ、始める */
+static void DgSelCheck(DWORD dwLeader)
+{
+	std::map<DWORD, DGSEL>::iterator it = s_mapDgSel.find (dwLeader);
+	std::map<DWORD, int>::iterator itP;
+
+	if (it == s_mapDgSel.end ()) {
+		return;
+	}
+	for (itP = it->second.mapPick.begin (); itP != it->second.mapPick.end (); itP ++) {
+		if (itP->second == -1) {
+			return;
+		}
+	}
+	DgSelFinish (dwLeader);
+}
+
+/* 入口に乗った時（EventProc_MAPCHG の最初）：番外編のダンジョンの入口なら姿を選ぶ組を作る。出口なら出す。処理したら TRUE */
+BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
+{
+	PEVENTINFO_MAPCHG pMapChg;
+	PSUBGAME_DUNGEONINFO pDungeon;
+	CHALLENGE *pRun;
+	DGSEL Sel;
+	std::vector<PCHARINFO> aMember;
+	size_t i;
+	int nID;
+	char szTmp[256];
+
+	if ((pChar == NULL) || (pEvent == NULL) || (pEvent->byType != EVENTTYPE_MAPCHG) || (pEvent->pData == NULL) || (pChar->byNpcType != NPCTYPE_INIT)) {
+		return FALSE;
+	}
+	pMapChg = (PEVENTINFO_MAPCHG)pEvent->pData;
+
+	/* ゴール：番外編の中の人が、外の入口へ戻るワープに乗った。袋の中身を本物にして外へ出す */
+	pRun = DgRunOf (pChar);
+	if (pRun) {
+		pDungeon = DgInfo (pRun->byDungeonID);
+		if (pDungeon && (pMapChg->dwMapID == pDungeon->dwMapID) && (pMapChg->dwX == (DWORD)pDungeon->byStartX) && (pMapChg->dwY == (DWORD)pDungeon->byStartY)) {
+			ChallengeLeave (pChar, CHALLENGELEAVE_CLEAR);
+			return TRUE;
+		}
+		return FALSE;
+	}
+
+	/* 入口 */
+	if (pChar->dwSpaceID != SPACE_NORMAL) {
+		return FALSE;
+	}
+	nID = DgFindByEntrance (pChar->dwMapID, pEvent->dwX, pEvent->dwY);
+	if (nID < 0) {
+		return FALSE;
+	}
+	pDungeon = DgInfo (nID);
+	if ((pChar->wHP == 0) || (pChar->byCharState == CHARSTATE_DEAD) || (s_mapDgSelOf.find (pChar->dwTblID) != s_mapDgSelOf.end ())) {
+		return TRUE;
+	}
+	if (!DgReady (pDungeon)) {
+		SendCmdSYSMSG (pChar->pID, "このダンジョンは準備中です。しばらくしてからもう一度どうぞ。", SPEECHCMD_BATTLE1);
+		return TRUE;
+	}
+	DgMakeList (pDungeon, Sel.aTmpl, Sel.aName);
+	if (Sel.aTmpl.empty ()) {
+		SendCmdSYSMSG (pChar->pID, "このダンジョンは準備中です。", SPEECHCMD_BATTLE1);
+		return TRUE;
+	}
+	/* パーティのリーダー（ソロならその人）が乗った時に始める */
+	if (DgLeaderOf (pChar) != pChar) {
+		SendCmdSYSMSG (pChar->pID, "パーティのリーダーが入口に乗ると、みんなで入れます。", SPEECHCMD_BATTLE1);
+		return TRUE;
+	}
+	DgGetMembers (pChar, aMember);
+	for (i = 0; i < aMember.size (); i ++) {
+		if (HasMercenary (aMember[i])) {
+			snprintf (szTmp, sizeof (szTmp), "%sさんの傭兵は一緒に入れません。別れてから来てください。", aMember[i]->szName);
+			SendCmdSYSMSG (pChar->pID, szTmp, SPEECHCMD_BATTLE1);
+			return TRUE;
+		}
+	}
+	Sel.nDungeonID = nID;
+	Sel.dwStart = timeGetTime ();
+	Sel.dwMapID = pChar->dwMapID;
+	Sel.dwX = pChar->dwX;
+	Sel.dwY = pChar->dwY;
+	Sel.byDirection = pChar->byDirection;
+	for (i = 0; i < aMember.size (); i ++) {
+		Sel.aMember.push_back (aMember[i]->dwTblID);
+		Sel.mapPick[aMember[i]->dwTblID] = -1;
+	}
+	s_mapDgSel[pChar->dwTblID] = Sel;
+	for (i = 0; i < aMember.size (); i ++) {
+		s_mapDgSelOf[aMember[i]->dwTblID] = pChar->dwTblID;
+		DgSendSel (aMember[i], DUNGEONSEL_OPEN, &Sel, DGSEL_WAIT);
+	}
+	return TRUE;
+}
+
+/* 姿を選ぶ・やめる（CMD_DUNGEONSEL の受信） */
+void DungeonSelRecv(PCHARINFO pChar, PCMDPARA_DUNGEONSEL pPara)
+{
+	std::map<DWORD, DWORD>::iterator itOf = s_mapDgSelOf.find (pChar->dwTblID);
+	std::map<DWORD, DGSEL>::iterator itS;
+	DWORD dwLeader;
+
+	if (itOf == s_mapDgSelOf.end ()) {
+		return;
+	}
+	dwLeader = itOf->second;
+	itS = s_mapDgSel.find (dwLeader);
+	if (itS == s_mapDgSel.end ()) {
+		s_mapDgSelOf.erase (itOf);
+		return;
+	}
+	if (pPara->byType == DUNGEONSEL_PICK) {
+		if (pPara->byIndex >= (BYTE)itS->second.aTmpl.size ()) {
+			return;
+		}
+		itS->second.mapPick[pChar->dwTblID] = (int)pPara->byIndex;
+	} else if (pPara->byType == DUNGEONSEL_CANCEL) {
+		itS->second.mapPick[pChar->dwTblID] = -2;
+		SendCmdSYSMSG (pChar->pID, "ダンジョンに入るのをやめました。", SPEECHCMD_BATTLE1);
+	} else {
+		return;
+	}
+	DgSendSel (pChar, DUNGEONSEL_CLOSE, NULL, 0);
+	DgSelCheck (dwLeader);
+}
+
+/* 選んでいる最中の人が切断した */
+static void DgSelOnDec(PCHARINFO pChar)
+{
+	std::map<DWORD, DWORD>::iterator itOf = s_mapDgSelOf.find (pChar->dwTblID);
+	std::map<DWORD, DGSEL>::iterator itS;
+	DWORD dwLeader;
+
+	if (itOf == s_mapDgSelOf.end ()) {
+		return;
+	}
+	dwLeader = itOf->second;
+	itS = s_mapDgSel.find (dwLeader);
+	s_mapDgSelOf.erase (itOf);
+	if (itS == s_mapDgSel.end ()) {
+		return;
+	}
+	itS->second.mapPick[pChar->dwTblID] = -2;
+	DgSelCheck (dwLeader);
+}
+
+/* 周期処理（約 1 秒ごと）：選ぶ締め切り・中の人が出た判定・空間ごとの敵の補充・空になった空間を空きにする */
+static void DgProc(DWORD dwNow)
+{
+	std::vector<DWORD> aKey, aEnd;
+	std::map<DWORD, DGSEL>::iterator itS;
+	std::map<DWORD, CHALLENGE>::iterator itC;
+	size_t i, j;
+
+	/* 姿を選ぶ締め切り（選ばなかった人は置いていく） */
+	for (itS = s_mapDgSel.begin (); itS != s_mapDgSel.end (); itS ++) {
+		if (dwNow - itS->second.dwStart >= DGSEL_WAIT) {
+			aKey.push_back (itS->first);
+		}
+	}
+	for (i = 0; i < aKey.size (); i ++) {
+		DgSelFinish (aKey[i]);
+	}
+
+	/* 中の組 */
+	for (itC = s_mapChallenge.begin (); itC != s_mapChallenge.end (); itC ++) {
+		CHALLENGE &Ch = itC->second;
+		PSUBGAME_DUNGEONINFO pDungeon;
+		std::vector<DWORD> aMember;
+
+		if (Ch.byKind != CHALLENGEKIND_DUNGEON) {
+			continue;
+		}
+		pDungeon = DgInfo (Ch.byDungeonID);
+		aMember = Ch.aMember;
+		for (j = 0; j < aMember.size (); j ++) {
+			PCHARINFO p = g_aCharInfo[aMember[j]];
+			int nReason = -1;
+
+			if (s_mapLoan.find (aMember[j]) == s_mapLoan.end ()) {
+				continue;
+			}
+			if ((p->wHP == 0) || (p->byCharState == CHARSTATE_DEAD)) {
+				nReason = CHALLENGELEAVE_DEAD;
+			} else if (p->dwPartyID != Ch.dwPartyID) {
+				nReason = CHALLENGELEAVE_PARTY;
+			} else if ((pDungeon == NULL) || (pDungeon->dwBuildNo != Ch.dwBuildNo)) {
+				nReason = CHALLENGELEAVE_BUILD;
+			} else if (!DgInArea (pDungeon, p->dwMapID, p->dwX, p->dwY)) {
+				nReason = CHALLENGELEAVE_OUT;
+			}
+			if (nReason >= 0) {
+				ChallengeLeave (p, nReason);
+			}
+		}
+		if (Ch.aMember.empty ()) {
+			aEnd.push_back (itC->first);
+		} else {
+			DgPutProc (&Ch, dwNow, FALSE);
+		}
+	}
+	for (i = 0; i < aEnd.size (); i ++) {
+		DgEnd (aEnd[i]);
+	}
+}
+
+/* 今すぐ周期処理をする（テスト用。時刻を指定できる） */
+void DungeonProcNow(DWORD dwNow)
+{
+	DgProc (dwNow);
+}
+
+/* NPC発生の発生元が、番外編ダンジョンの範囲の中にあるか（ふつうの世界には出さず、組の空間ごとに出す） */
+BOOL DungeonPutIsSpaced(PCHARINFO pParent)
+{
+	return (pParent != NULL) && (pParent->byNpcType == NPCTYPE_PUT) && (pParent->dwSpaceID == SPACE_NORMAL) &&
+			(DgFindByArea (pParent->dwMapID, pParent->dwX, pParent->dwY) >= 0);
+}
+
+/* 空間の中で発生した敵が消えた（倒された）。その組の数を減らす。空間の敵なら TRUE（発生元の数は動かさない） */
+BOOL DungeonPutOnChildDec(PCHARINFO pChild)
+{
+	std::map<DWORD, CHALLENGE>::iterator itC;
+	PCHARINFO pParent;
+
+	if ((pChild->dwSpaceID == SPACE_NORMAL) || (pChild->dwParentTblID >= (DWORD)g_aCharInfo.GetSize ())) {
+		return FALSE;
+	}
+	pParent = g_aCharInfo[pChild->dwParentTblID];
+	if ((pParent == NULL) || (pParent->byNpcType != NPCTYPE_PUT)) {
+		return FALSE;
+	}
+	itC = s_mapChallenge.find (pChild->dwSpaceID);
+	if ((itC != s_mapChallenge.end ()) && (itC->second.byKind == CHALLENGEKIND_DUNGEON)) {
+		std::map<DWORD, DGPUT>::iterator itP = itC->second.mapPut.find (pParent->dwTblID);
+		if (itP != itC->second.mapPut.end ()) {
+			if (itP->second.nNow > 0) {
+				itP->second.nNow --;
+			}
+			itP->second.dwLast = timeGetTime ();
+		}
+	}
+	return TRUE;
+}
+
+/* 番外編の中の持ち帰り袋に入っている品の数（今の持ち物 − 入った時のテンプレートの持ち物。テスト用） */
+int DungeonBagCount(PCHARINFO pChar)
+{
+	std::map<DWORD, LOANBAK>::iterator itL;
+	std::vector<WORD> aBag;
+
+	if (DgRunOf (pChar) == NULL) {
+		return 0;
+	}
+	itL = s_mapLoan.find (pChar->dwTblID);
+	DgBagCollect (pChar, itL->second.wDgTmpl, aBag);
+	return (int)aBag.size ();
+}
+
+/* ダンジョンの空間（組）の数・姿を選んでいる組の数（テスト用） */
+int DungeonRunCount(void)
+{
+	std::map<DWORD, CHALLENGE>::iterator itC;
+	int nCount = 0;
+
+	for (itC = s_mapChallenge.begin (); itC != s_mapChallenge.end (); itC ++) {
+		if (itC->second.byKind == CHALLENGEKIND_DUNGEON) {
+			nCount ++;
+		}
+	}
+	return nCount;
+}
+
+int DungeonSelCount(void)
+{
+	return (int)s_mapDgSel.size ();
+}
+
 /* ========================================================================= */
 /* 空間																		 */
 /* ========================================================================= */
@@ -3246,6 +4033,8 @@ int SpaceGetList(PADMINSPACEENTRY pEntry, int nMax)
 		}
 		if (pQuest) {
 			SboTextCopy (p->szQuest, sizeof (p->szQuest), pQuest->szName);
+		} else if (itC->second.byKind == CHALLENGEKIND_DUNGEON) {
+			SboTextCopy (p->szQuest, sizeof (p->szQuest), "ダンジョン（番外編）");
 		}
 		if ((itC->second.dwMapNo < (DWORD)g_aMapInfo.GetSize ()) && g_aMapInfo[itC->second.dwMapNo]->pszName) {
 			SboTextCopy (p->szMap, sizeof (p->szMap), g_aMapInfo[itC->second.dwMapNo]->pszName);

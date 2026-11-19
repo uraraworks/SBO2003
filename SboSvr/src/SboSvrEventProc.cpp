@@ -239,6 +239,11 @@ void EventProc_MAPCHG(PCHARINFO pChar, PEVENTINFO pEvent, BYTE byData)
 		return;
 	}
 
+	/* 番外編ダンジョンの入口（姿を選ぶ）・ゴール（持ち帰り袋を本物にして出る）は、ふつうのワープにしない */
+	if (DungeonEventStep (pChar, pEvent)) {
+		return;
+	}
+
 	/* 移動先は先頭のキャラで1回だけ決め、ついてきているキャラも同じ場所へ */
 	EventProc_MAPCHG_GetDest (pMap, dwX, dwY, pChar->dwSpaceID);
 	EventProc_MAPCHG_Move (pChar, pMap, dwX, dwY);

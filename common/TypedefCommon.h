@@ -63,6 +63,8 @@
 #define MAX_MAGICKEY		5										/* 特技ショートカットの枠数（1〜5 キー） */
 #define MAX_TOWNWARP		4										/* 町転送の行き先帳に覚えておける町の数 */
 #define MAX_TOWNWARPNAME	64										/* 町転送の行き先の名前の大きさ（UTF-8） */
+#define MAX_DGTMPL			8										/* 番外編ダンジョンで選べるテンプレート（職業）の数 */
+#define MAX_DGTMPLNAME		24										/* その表示名の大きさ（UTF-8。終端含む） */
 /* 町転送で選べる行き先の数（復活位置を含む）。Lv1～4:1 Lv5～9:2 Lv10～14:3 Lv15～:4 */
 #define TOWNWARP_SLOT(byLevel)	(1 + (((byLevel) / 5 < 3) ? ((byLevel) / 5) : 3))
 #define MAX_MAKER			100										/* 最大作り手数（NPCの台詞 "@cNN" の NN が 2 桁なので 100 まで） */
@@ -389,6 +391,7 @@ enum {
 	CMD_ITEMDERIVE,													/* 派生アイテム表の行(サーバー→クライアント。ログイン時と新しく振った時) */
 	CMD_APPRAISE,													/* 鑑定屋で鑑定してもらう(クライアント→サーバー。結果はサーバー→クライアント) */
 	CMD_DUNGEONMAP,													/* テーマで作った気まぐれダンジョンの探索マップ用の情報(サーバー→クライアントのみ。CMDPARA_DUNGEONMAP。マップ情報の直後と作り直した直後に送る) */
+	CMD_DUNGEONSEL,													/* 番外編ダンジョンの入口で入る姿（テンプレート）を選ぶ(CMDPARA_DUNGEONSEL。一覧を開く・閉じるはサーバー→クライアント、選ぶ・やめるはクライアント→サーバー。プレイヤー用) */
 	CMD_MAX
 };
 
@@ -1368,6 +1371,9 @@ typedef struct _SUBGAME_DUNGEONINFO {
 	WORD		wChipIDRoad;										/* 道のマップチップID */
 	WORD		wChipIDBlock;										/* 壁のマップチップID */
 	DWORD		dwThemeID;											/* ダンジョン生成のテーマ番号（0=今までの作り方。SboWebDungeonThemes.json の id） */
+	BYTE		byTmplCount;										/* 番外編：選べるテンプレートの数（0=番外編にしない。今までどおり誰でも入れる。最大 MAX_DGTMPL） */
+	WORD		wTmplID[MAX_DGTMPL];								/* 番外編：テンプレート番号（ステータステンプレートの番号） */
+	char		szTmplName[MAX_DGTMPL][MAX_DGTMPLNAME];				/* 番外編：選ぶ窓に出す表示名（空ならテンプレートの名前） */
 	BYTE		*pMapTmp;											/* 作成するマップ */
 	DWORD		dwTblID;											/* 管理人キャラのテーブルID */
 	DWORD		dwCountTmp;											/* 参加人数カウント用 */
@@ -1403,6 +1409,9 @@ typedef struct _SUBGAME_DUNGEONINFOSAVE {
 	WORD		wChipIDRoad;										/* 道のマップチップID */
 	WORD		wChipIDBlock;										/* 壁のマップチップID */
 	DWORD		dwThemeID;											/* ダンジョン生成のテーマ番号（0=今までの作り方） */
+	BYTE		byTmplCount;										/* 番外編：選べるテンプレートの数（0=番外編にしない） */
+	WORD		wTmplID[MAX_DGTMPL];								/* 番外編：テンプレート番号 */
+	char		szTmplName[MAX_DGTMPL][MAX_DGTMPLNAME];				/* 番外編：表示名 */
 } SUBGAME_DUNGEONINFOSAVE, *PSUBGAME_DUNGEONINFOSAVE;
 
 /* サブゲーム：迷路情報 */
@@ -2308,6 +2317,8 @@ typedef struct _CHARINFO {
 	BYTE		byAreaY;											/* 移動範囲（縦） */
 	BYTE		byPutCount;											/* 最大NPC発生数 */
 	BYTE		byPutCountNow;										/* 現在のNPC発生数 */
+	BYTE		byPutOnce;											/* NPC発生：1=補充しない（決めた数を出したら、それ以上は出さない。倒されても出し直さない） */
+	BYTE		byPutDone;											/* NPC発生：補充しない印の時に、これまでに出した数（実行中だけ・保存しない。ダンジョンの作り直しで 0 に戻す） */
 	BYTE		byCharEfcProc;										/* 処理中の文字エフェクト番号 */
 	BYTE		byDrunkPoint;										/* 酔いポイント */
 	BYTE		byDrunkLV;											/* 酔いレベル */
@@ -2488,6 +2499,7 @@ typedef struct _CMDPARA_CHARINFO {
 	BYTE		byAreaX;											/* 移動範囲（横） */
 	BYTE		byAreaY;											/* 移動範囲（縦） */
 	BYTE		byPutCount;											/* 最大NPC発生数 */
+	BYTE		byPutOnce;											/* NPC発生：1=補充しない */
 	BYTE		byDropProbability;									/* ドロップ率 */
 	BYTE		byMoveProbabilityX;									/* 移動確率X(NPC) */
 	BYTE		byMoveProbabilityY;									/* 移動確率Y(NPC) */
@@ -4097,6 +4109,25 @@ typedef struct _CMDPARA_DUNGEONMAP {
 	WORD		wRoomCount;											/* 部屋の数 */
 	WORD		wLinkCount;											/* 出入口の数 */
 } CMDPARA_DUNGEONMAP, *PCMDPARA_DUNGEONMAP;
+
+/* 番外編ダンジョンの入口で、入る姿（テンプレート）を選ぶ（CMD_DUNGEONSEL）。
+   サーバー→クライアント：DUNGEONSEL_OPEN で選ぶ窓を開く（byCount 件の名前・dwWait は締め切りまでのミリ秒）、DUNGEONSEL_CLOSE で閉じる。
+   クライアント→サーバー：DUNGEONSEL_PICK で byIndex 番目を選ぶ、DUNGEONSEL_CANCEL でやめる（dwTblID は本人のテーブルID） */
+enum {
+	DUNGEONSEL_OPEN = 1,											/* 選ぶ窓を開く（サーバー→クライアント） */
+	DUNGEONSEL_CLOSE,												/* 選ぶ窓を閉じる（サーバー→クライアント） */
+	DUNGEONSEL_PICK,												/* 選ぶ（クライアント→サーバー。byIndex=一覧の何番目か） */
+	DUNGEONSEL_CANCEL,												/* 入るのをやめる（クライアント→サーバー） */
+};
+typedef struct _CMDPARA_DUNGEONSEL {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byType;												/* DUNGEONSEL_* */
+	BYTE		byCount;											/* 一覧の件数（OPEN） */
+	BYTE		byIndex;											/* 選んだ番号（PICK） */
+	DWORD		dwTblID;											/* 本人のテーブルID（クライアント→サーバー） */
+	DWORD		dwWait;												/* 締め切りまでの残り時間（ミリ秒。OPEN） */
+	char		aszName[MAX_DGTMPL][MAX_DGTMPLNAME];				/* 表示名（UTF-8。OPEN） */
+} CMDPARA_DUNGEONSEL, *PCMDPARA_DUNGEONSEL;
 #pragma pack(pop)
 
 /* 並べ替えの対象(CMDPARA_SORTITEM の byTarget) */
