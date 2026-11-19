@@ -1113,8 +1113,11 @@ BOOL TimerProcChar(PCHARINFO pChar)
 	}
 	if (pChar->byGameState != GAMESTATE_NPC) {
 		if (pChar->byGameState >= GAMESTATE_MOVE) {
-			/* 生存確認チェック */
-			if (pChar->dwLastHartBeat && (abs (g_dwTime - pChar->dwLastHartBeat) > 90000)) {
+			/* 生存確認チェック（一度も届いていない接続も、ログインした時刻から数えて切る） */
+			if (pChar->dwLastHartBeat == 0) {
+				pChar->dwLastHartBeat = g_dwTime;
+			}
+			if (abs (g_dwTime - pChar->dwLastHartBeat) > 90000) {
 				/* 90秒以上通知がなかったので切断する */
 				PostMessage (g_hWndMain, WM_DECPLAYER, (WPARAM)pChar->pID, pChar->dwTblID);
 			}
