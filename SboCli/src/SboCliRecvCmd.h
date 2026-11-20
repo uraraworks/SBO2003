@@ -81,7 +81,7 @@ extern DWORD	g_dwAutoGageLastFront;																/* 自動ゲージで最後�
 extern DWORD	g_dwAutoGageSuppress;																/* Z でやめた相手 */
 extern DWORD	g_dwTurnGageContinue;																/* 殴って次のゲージを溜め始めた時間 */
 extern void	ContinueTurnGage		(PCHARINFO pChar);											/* 連続攻撃：次のターンゲージを溜め始める */
-extern int	FindFrontAttackTarget	(PCHARINFO pChar);											/* 目の前にいる敵を探す */
+extern int	FindFrontAttackTarget	(PCHARINFO pChar, BOOL bAllowOverlap = FALSE);				/* 攻撃できる敵を探す */
 extern void	RecvDataProc			(PBYTE, DWORD);												/* 受信データ処理 */
 extern void	RecvDataHoldProc		(void);														/* 保留中の受信データを処理 */
 extern void	RecvDataHoldClear		(void);														/* 保留中の受信データを捨てる */

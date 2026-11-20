@@ -2991,7 +2991,7 @@ static void TimerProcAutoTurnGage(PCHARINFO pChar, DWORD dwTime)
 		return;
 	}
 
-	nFront = FindFrontAttackTarget (pChar);
+	nFront = FindFrontAttackTarget (pChar, !GetBowWeapon (pChar));
 	if (nFront == -1) {
 		g_dwAutoGageSuppress = (DWORD)-1;
 		/* 目の前から敵がいなくなってしばらくたったらゲージを消す(一瞬ずれただけでは消さない) */
@@ -3096,7 +3096,7 @@ void TimerProcCharTurnLV(PCHARINFO pChar)
 						return;
 					}
 					/* 目の前に敵がいれば、選んだ相手でなくてもそちらを殴る(連続攻撃) */
-					nTmp = FindFrontAttackTarget (pChar);
+					nTmp = FindFrontAttackTarget (pChar, TRUE);
 					if (nTmp != -1) {
 						if (g_aCharInfo[nTmp]->dwTblID != pChar->dwAtackTblID) {
 							pChar->dwAtackTblID = g_aCharInfo[nTmp]->dwTblID;

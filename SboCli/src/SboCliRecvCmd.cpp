@@ -156,7 +156,7 @@ void	StartTurnGage						(PCHARINFO pChar, DWORD dwAtackTblID);										/* タ�
 void	CancelTurnGage						(PCHARINFO pChar);										/* ターンゲージをキャンセル */
 int		FindNextAttackTarget				(PCHARINFO pChar);										/* 連続攻撃の次の相手を探す */
 void	ContinueTurnGage					(PCHARINFO pChar);										/* 連続攻撃：次のターンゲージを溜め始める */
-int		FindFrontAttackTarget				(PCHARINFO pChar);										/* 目の前にいる敵を探す */
+int		FindFrontAttackTarget				(PCHARINFO pChar, BOOL bAllowOverlap);					/* 攻撃できる敵を探す */
 void	RecvDataProc						(PBYTE, DWORD);			/* 受信データ処理 */
 void	RecvDataProcCONNECT					(PBYTE, DWORD);			/* 受信データ処理(接続応答) */
 void	RecvDataProcLOGINRES				(PBYTE, DWORD);			/* 受信データ処理(ログイン応答) */
@@ -3362,9 +3362,10 @@ int FindNextAttackTarget(PCHARINFO pChar)
 /*			戻り値：キャラ番号（いなければ -1）								 */
 /* ========================================================================= */
 
-int FindFrontAttackTarget(PCHARINFO pChar)
+int FindFrontAttackTarget(PCHARINFO pChar, BOOL bAllowOverlap)
 {
 	int i, nCount;
+	int nOverlap = -1;
 	PCHARINFO pCharTmp;
 
 	nCount = g_aCharInfo.GetSize ();
@@ -3382,8 +3383,12 @@ int FindFrontAttackTarget(PCHARINFO pChar)
 		if (GetCharDistance (pCharTmp, pChar->dwMapID, pChar->dwX, pChar->dwY, pChar->byDirection) == 1) {
 			return i;
 		}
+		if (bAllowOverlap && (nOverlap == -1) && (pCharTmp->dwMapID == pChar->dwMapID) &&
+			(pCharTmp->dwX == pChar->dwX) && (pCharTmp->dwY == pChar->dwY)) {
+			nOverlap = i;
+		}
 	}
-	return -1;
+	return nOverlap;
 }
 
 
