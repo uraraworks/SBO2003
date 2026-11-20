@@ -3441,9 +3441,16 @@
 					}
 				}
 				/* 次の発言の先頭が句読点やコマンド扱いの文字にならないよう、手前で切る */
-				while (end > start + 1 && (isCmdChar(chars[end]) ||
+				/* ただし「！！！！…」のように同じ文字が続く時は、手前へ戻っても解決しないので
+				   （1 文字ずつに分かれてしまう）、戻るのは 3 文字までにして、
+				   それでも先頭に来てしまう時は元の位置で切る */
+				var origEnd = end;
+				while (end > start + 1 && origEnd - end < 3 && (isCmdChar(chars[end]) ||
 					(isBreakChar(chars[end]) && chars[end].trim()))) {
 					end --;
+				}
+				if (isCmdChar(chars[end]) || (isBreakChar(chars[end]) && chars[end].trim())) {
+					end = origEnd;
 				}
 			}
 			parts.push(chars.slice(start, end).join(''));
