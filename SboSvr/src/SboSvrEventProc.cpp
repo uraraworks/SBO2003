@@ -221,6 +221,7 @@ static void EventProc_MAPCHG_Move(PCHARINFO pChar, PEVENTINFO_MAPCHG pMap, DWORD
 	}
 
 	SendCmdFADEINOUT (pChar->pID, 0);
+	TailChaseMapMove (pChar, pMap->dwMapID, dwX, dwY);
 	SubProcMapMove (pChar, pMap->dwMapID, dwX, dwY);
 }
 

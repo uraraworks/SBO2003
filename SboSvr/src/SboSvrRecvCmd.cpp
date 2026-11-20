@@ -7069,6 +7069,44 @@ static void TailReturnMapMove(PCHARINFO pChar)
 	TailChasePause (pChar, FALSE);
 }
 
+/* 通常のマップ間移動では、同じ空間で先頭に戻る途中の人も連れて行く */
+void TailChaseMapMove(PCHARINFO pHead, DWORD dwMapID, DWORD dwX, DWORD dwY)
+{
+	if ((dwMapID == pHead->dwMapID) || (dwMapID >= (DWORD)g_aMapInfo.GetSize ())) {
+		return;
+	}
+
+	/* 移動すると追いかけの表から消えるので、先に候補を集める */
+	std::vector<DWORD> adwMember;
+	for (const auto &Entry : s_mapTailChase) {
+		if (Entry.second.Info.dwHeadTblID == pHead->dwTblID) {
+			adwMember.push_back (Entry.first);
+		}
+	}
+	for (DWORD dwMember : adwMember) {
+		auto it = s_mapTailChase.find (dwMember);
+		if ((it == s_mapTailChase.end ()) || (dwMember >= (DWORD)g_aCharInfo.GetSize ())) {
+			continue;
+		}
+		PCHARINFO pMember = g_aCharInfo[dwMember];
+		const TAILCHASE &Chase = it->second;
+		if ((pMember->pID == 0) || (pMember->pID != Chase.Info.dwPID) ||
+			(pMember->dwMapID != pHead->dwMapID) || !IsSameSpace (pMember, pHead) ||
+			(pMember->dwTailTblID != (DWORD)-1) || IsCharBattleMode (pMember) ||
+			(pMember->byCharState == CHARSTATE_DEAD) || (pMember->wHP == 0) ||
+			(TailReturnHead (pMember, Chase.Info) != pHead)) {
+			continue;
+		}
+		/* ワープで戻るために暗転済みなら、暗転を重ねない */
+		SendCmdCHGBGM (pMember->pID, pMember->dwMapID, 0);
+		if (!Chase.dwWarpTime) {
+			SendCmdFADEINOUT (pMember->pID, 0);
+		}
+		/* 移動で復帰を一旦保留し、到着後にいつもの順番で列へ戻す */
+		SubProcMapMove (pMember, dwMapID, dwX, dwY);
+	}
+}
+
 /* ========================================================================= */
 /* 関数名：	TailChaseSendTarget												 */
 /* 内容：	本人に「○○を追いかけています。」を知らせる(動けなくもする)		 */

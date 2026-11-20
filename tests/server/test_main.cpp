@@ -14048,36 +14048,53 @@ static void TestTailBattleMapMove(const std::vector<int> &aLogin)
 	TailChaseAdvance(apChar, 3, 2000);
 	printf("tailbattlemap member first returned=%d\n", pB->dwTailTblID == pC->dwTblID);
 
-	/* 歩いて復帰中に先頭が移動。追跡を止めて自由に出口へ向かい、到着後は復帰する */
-	for (int nWho = 0; nWho < 2; nWho ++) {
-		reset();
-		TailBattleSend(pB, 1);
-		place(pB, pPort->dwID, nX, nY + 6);
-		TailBattleSend(pB, 0);
-		printf("tailbattlemap chase%d start=%d\n", nWho, TailChaseIsActive(pB) ? 1 : 0);
-		move(nWho == 0 ? pA : pB);
-		TailChaseAdvance(apChar, 3, 31000);
-		printf("tailbattlemap chase%d paused=%d separate=%d\n", nWho, !TailChaseIsActive(pB), pB->dwMapID != pA->dwMapID);
-		move(nWho == 0 ? pB : pA);
-		TailChaseAdvance(apChar, 3, 2000);
-		printf("tailbattlemap chase%d returned=%d\n", nWho, pB->dwTailTblID == pC->dwTblID);
-	}
-
-	/* 画面外へのフェード中に先頭が移動しても、姿と操作を戻して待てる */
+	/* B が歩いて復帰中に、先頭 A と列につながっている C が出口を通る */
 	reset();
 	TailBattleSend(pB, 1);
-	place(pB, pPort->dwID, pPort->nCX - 1, pPort->nCY - 1);
+	place(pB, pPort->dwID, nX, nY + 6);
 	TailBattleSend(pB, 0);
-	move(pA);
+	TailChaseAdvance(apChar, 3, 300);
+	printf("tailbattlemap chase head start=%d walked=%d\n", TailChaseIsActive(pB),
+		pB->dwX != (DWORD)nX || pB->dwY != (DWORD)(nY + 6));
 	MockTrace(1);
-	TailChaseAdvance(apChar, 3, 100);
+	move(pA);
 	MockTrace(0);
 	char *pszFade = MockCmdData(1001, CMD_FADEINOUT);
-	printf("tailbattlemap fading paused=%d fade=[%s]\n", !TailChaseIsActive(pB), pszFade);
+	printf("tailbattlemap chase head arrived=%d fade=[%s]\n", pB->dwMapID != pPort->dwID &&
+		pB->dwMapID == pA->dwMapID && pB->dwX == pA->dwX && pB->dwY == pA->dwY, pszFade);
 	free(pszFade);
+	TailChaseAdvance(apChar, 3, 1000);
+	printf("tailbattlemap chase head returned=%d\n", pB->dwTailTblID == pC->dwTblID &&
+		pC->dwTailBackTblID == pB->dwTblID && !TailChaseIsActive(pB));
+
+	/* B が先に出口を通った場合は、A が着くまで追跡を保留する */
+	reset();
+	TailBattleSend(pB, 1);
+	place(pB, pPort->dwID, nX, nY + 6);
+	TailBattleSend(pB, 0);
+	printf("tailbattlemap chase member start=%d\n", TailChaseIsActive(pB));
 	move(pB);
+	TailChaseAdvance(apChar, 3, 31000);
+	printf("tailbattlemap chase member paused=%d separate=%d\n", !TailChaseIsActive(pB), pB->dwMapID != pA->dwMapID);
+	move(pA);
 	TailChaseAdvance(apChar, 3, 2000);
-	printf("tailbattlemap fading returned=%d\n", pB->dwTailTblID == pC->dwTblID);
+	printf("tailbattlemap chase member returned=%d\n", pB->dwTailTblID == pC->dwTblID);
+
+	/* ワープのために暗転中の B も同行し、まだ戦闘中の C は元のマップに残る */
+	reset();
+	TailBattleSend(pA, 1);
+	TailBattleSend(pC, 1);
+	place(pB, pPort->dwID, pPort->nCX - 1, pPort->nCY - 1);
+	MockTrace(1);
+	TailBattleSend(pA, 0);
+	move(pA);
+	MockTrace(0);
+	pszFade = MockCmdData(1001, CMD_FADEINOUT);
+	printf("tailbattlemap fading arrived=%d battle stayed=%d fade=[%s]\n", pB->dwMapID == pA->dwMapID,
+		pC->dwMapID == pPort->dwID && IsCharBattleMode(pC), pszFade);
+	free(pszFade);
+	TailChaseAdvance(apChar, 3, 2000);
+	printf("tailbattlemap fading returned=%d\n", pB->dwTailTblID == pA->dwTblID && !TailChaseIsActive(pB));
 
 	/* 先頭が切断された場合は覚えを消し、後から同じマップへ来ても復帰しない */
 	reset();
