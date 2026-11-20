@@ -11772,6 +11772,20 @@ void RecvDataProcSubGameBOMB_SETBOMB(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 
+	/* 同じ空間の同じマスに爆弾が残っている間は設置できない */
+	for (DWORD i = 0; i < pMap->dwCountTblNoNPC; i ++) {
+		DWORD dwNpcID = pMap->paTblNoNPC[i];
+		if (dwNpcID == (DWORD)-1) {
+			break;
+		}
+		PCHARINFO pNpc = g_aCharInfo[dwNpcID];
+		if ((pNpc->byNpcType == NPCTYPE_BOMB) &&
+			(pNpc->dwSpaceID == pChar->dwSpaceID) &&
+			(pNpc->dwX == pChar->dwX) && (pNpc->dwY == pChar->dwY)) {
+			return;
+		}
+	}
+
 	PCHARINFO pCharTmp = new CHARINFO;
 	ZeroMemory ((PBYTE)pCharTmp, sizeof (CHARINFO));
 	pCharTmp->byNpcType = NPCTYPE_BOMB;
