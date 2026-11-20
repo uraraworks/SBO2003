@@ -2211,13 +2211,13 @@ tailbattlemap normal chain=1 same=1
 tailbattlemap member arrived end=1
 tailbattlemap member first waiting=1
 tailbattlemap member first returned=1
-tailbattlemap chase0 start=1
-tailbattlemap chase0 paused=1 separate=1
-tailbattlemap chase0 returned=1
-tailbattlemap chase1 start=1
-tailbattlemap chase1 paused=1 separate=1
-tailbattlemap chase1 returned=1
-tailbattlemap fading paused=1 fade=[1]
+tailbattlemap chase head start=1 walked=1
+tailbattlemap chase head arrived=1 fade=[0]
+tailbattlemap chase head returned=1
+tailbattlemap chase member start=1
+tailbattlemap chase member paused=1 separate=1
+tailbattlemap chase member returned=1
+tailbattlemap fading arrived=1 battle stayed=1 fade=[0]
 tailbattlemap fading returned=1
 tailbattlemap forgotten detached=1
 == done ==

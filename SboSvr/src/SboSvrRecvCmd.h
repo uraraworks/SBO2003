@@ -71,6 +71,7 @@ extern BOOL		CheckMagicUserInfo			(BYTE, BYTE);									/* 魔法利用者情報
 extern void		SubProcMapMove				(PCHARINFO, DWORD, DWORD, DWORD);				/* マップ移動処理 */
 extern void		TailReturnForget			(DWORD);										/* 戦闘で列を離れた時に覚えた先頭を消す */
 extern void		TailChaseProc				(PCHARINFO);									/* 列に戻る途中のプレイヤーを歩かせる(タイマー処理から) */
+extern void		TailChaseMapMove			(PCHARINFO, DWORD, DWORD, DWORD);				/* マップ出口で列へ復帰中の人を連れて行く */
 extern BOOL		TailChaseIsActive			(PCHARINFO);									/* 列に戻る途中(追いかけ中)か */
 extern void		SubProcMove					(PCHARINFO, DWORD, DWORD);						/* 同マップ内移動処理 */
 extern void		DeleteEvent					(DWORD, int);									/* イベント情報を削除 */
