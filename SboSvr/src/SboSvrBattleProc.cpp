@@ -61,6 +61,45 @@ void	AddExp						(PCHARINFO, DWORD, BOOL);		/* 経験値を追加 */
 
 extern long genrand();												/* 乱数取得 */
 
+static BOOL IsBattleOverlap(PCHARINFO pChar, PCHARINFO pTarget)
+{
+	return (pChar->dwX == pTarget->dwX) && (pChar->dwY == pTarget->dwY);
+}
+
+static int FindEnemyStepAside(PCHARINFO pEnemy, PCHARINFO pPC, PMAPINFO pMap, BOOL bPick)
+{
+	/* 重なった時は、PCが入ってきた方向へ抜けると進入元から離れられる */
+	int nPreferred = pPC->byDirection;
+	int anOpen[4], nOpen = 0;
+	for (int d = 0; d < 4; d ++) {
+		if ((pPC->dwXBack + anPosAddTblX[d] == pPC->dwX) &&
+			(pPC->dwYBack + anPosAddTblY[d] == pPC->dwY)) {
+			nPreferred = d;
+			break;
+		}
+	}
+
+	for (int d = 0; d < 4; d ++) {
+		int x = (int)pEnemy->dwX + anPosAddTblX[d];
+		int y = (int)pEnemy->dwY + anPosAddTblY[d];
+		if ((x < 0) || (x >= pMap->nCX) || (y < 0) || (y >= pMap->nCY) ||
+			!CheckCharBlock (pEnemy, pEnemy->dwMapID, x, y) ||
+			CheckEventBlock (pEnemy->dwMapID, x, y) ||
+			IsAvoidDamageFloor (pEnemy, pMap, x, y) ||
+			(pEnemy->byAreaX && ((abs ((int)pEnemy->dwStartX - x) > pEnemy->byAreaX) ||
+				(abs ((int)pEnemy->dwStartY - y) > pEnemy->byAreaY))) ||
+			(CheckCharBlockPC (pEnemy->dwMapID, x, y, pEnemy->dwSpaceID) != -1) ||
+			(CheckCharBlockNPC2 (pEnemy->dwTblID, pEnemy->dwMapID, x, y, pEnemy->dwSpaceID) != -1)) {
+			continue;
+		}
+		if (!bPick || (d == nPreferred)) {
+			return d;
+		}
+		anOpen[nOpen ++] = d;
+	}
+	return nOpen ? anOpen[genrand () % nOpen] : -1;
+}
+
 
 /* ========================================================================= */
 /* 関数名：BattleProcCheck													 */
@@ -141,6 +180,25 @@ void BattleProcCheck(PCHARINFO pChar)
 		return;
 	}
 
+	if (IsEnemy (pChar) && (pChar->dwTargetTblID < (DWORD)g_aCharInfo.GetSize ())) {
+		PCHARINFO pTarget = g_aCharInfo[pChar->dwTargetTblID];
+		if ((pTarget->byNpcType == NPCTYPE_INIT) && (pTarget->byGameState >= GAMESTATE_MOVE) &&
+			pTarget->wHP && (pTarget->byCharState != CHARSTATE_DEAD) &&
+			(pTarget->dwMapID == pChar->dwMapID) && IsInteractable (pChar, pTarget) &&
+			IsBattleOverlap (pChar, pTarget)) {
+			int d = FindEnemyStepAside (pChar, pTarget, pMap, TRUE);
+			if (d >= 0) {
+				pChar->dwX += anPosAddTblX[d];
+				pChar->dwY += anPosAddTblY[d];
+				pChar->byDirection = (BYTE)(d ^ 1);
+				pChar->dwLastDotMove = g_dwTime;
+				SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 1);
+				CheckCharPosSend (pChar);
+				FloorDamageOnStep (pChar);
+			}
+		}
+	}
+
 	bResult = BattleProcWeapon (pChar);
 	if (bResult) {
 		pChar->dwLastBattle = timeGetTime ();
@@ -178,9 +236,10 @@ void BattleProcCheck(PCHARINFO pChar)
 			continue;
 		}
 
-		/* 目の前にはいない？ */
-		if (((CheckCharX (pChar, dwX, pCharTmp->dwX) == FALSE) && ((CheckCharX (pCharTmp, pCharTmp->dwX, dwX) == FALSE))) ||
-			(dwY != pCharTmp->dwY)) {
+		/* 目の前か、移動先が無く重なったままの相手 */
+		if (!(IsEnemy (pChar) && IsBattleOverlap (pChar, pCharTmp)) &&
+			(((CheckCharX (pChar, dwX, pCharTmp->dwX) == FALSE) && ((CheckCharX (pCharTmp, pCharTmp->dwX, dwX) == FALSE))) ||
+			(dwY != pCharTmp->dwY))) {
 			continue;
 		}
 		/* 敵は狙っている相手にだけ行動する（以前は特技だけ、目の前の誰にでも使っていた） */
@@ -288,14 +347,16 @@ void BattleProcCheckPC(PCHARINFO pChar)
 			continue;
 		}
 
-		/* 目の前にはいない？ */
-		if (((CheckCharX (pChar, dwX, pCharTmp->dwX) == FALSE) && ((CheckCharX (pCharTmp, pCharTmp->dwX, dwX) == FALSE))) ||
-			(dwY != pCharTmp->dwY)) {
-			continue;
-		}
-
 		/* ターゲット相手ではない？ */
 		if (pChar->dwTargetTblID != pCharTmp->dwTblID) {
+			continue;
+		}
+		if (IsEnemy (pCharTmp) && IsBattleOverlap (pChar, pCharTmp)) {
+			if (FindEnemyStepAside (pCharTmp, pChar, pMap, FALSE) >= 0) {
+				continue;
+			}
+		} else if (((CheckCharX (pChar, dwX, pCharTmp->dwX) == FALSE) && ((CheckCharX (pCharTmp, pCharTmp->dwX, dwX) == FALSE))) ||
+			(dwY != pCharTmp->dwY)) {
 			continue;
 		}
 		pChar->dwLastBattle = timeGetTime ();
@@ -819,8 +880,9 @@ static BOOL BattleProcTell(PCHARINFO pChar, PMAPINFO pMap, DWORD dwWait, BOOL bL
 			break;
 		}
 		pCharTmp = g_aCharInfo[pData[j]];
-		if (((CheckCharX (pChar, dwX, pCharTmp->dwX) == FALSE) && ((CheckCharX (pCharTmp, pCharTmp->dwX, dwX) == FALSE))) ||
-			(dwY != pCharTmp->dwY)) {
+		if (!IsBattleOverlap (pChar, pCharTmp) &&
+			(((CheckCharX (pChar, dwX, pCharTmp->dwX) == FALSE) && ((CheckCharX (pCharTmp, pCharTmp->dwX, dwX) == FALSE))) ||
+			(dwY != pCharTmp->dwY))) {
 			continue;
 		}
 		/* 別の空間にいる人には予兆を出さない */
