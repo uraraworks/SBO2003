@@ -1841,6 +1841,11 @@ static BOOL IsOwnerBattleMode(PCHARINFO pOwner)
 	if (it == s_mapBattleMode.end ()) {
 		return FALSE;
 	}
+	/* 戦闘のないマップ（町など）では戦闘モードにならない（入る時に解除し損ねても転職などを止めない） */
+	if ((pOwner->dwMapID < (DWORD)g_aMapInfo.GetSize ()) && g_aMapInfo[pOwner->dwMapID] &&
+		((g_aMapInfo[pOwner->dwMapID]->byFlg & MAPFLG_BATTLE) == 0)) {
+		return FALSE;
+	}
 	return (it->second == pOwner->pID);
 }
 
