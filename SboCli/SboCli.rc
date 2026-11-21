@@ -507,7 +507,7 @@ BEGIN
     LTEXT           ",",-1,95,52,8,8
     EDITTEXT        IDC_AREAY2,104,48,14,14
     LTEXT           ")",-1,122,52,8,8
-    LTEXT           "出口(防衛は拠点)：",-1,7,73,56,8
+    LTEXT           "出口・拠点の位置：",-1,7,73,56,8
     LTEXT           "X：",-1,9,87,8,8
     EDITTEXT        IDC_GOALX,18,84,14,14
     LTEXT           "Y：",-1,36,87,8,8
