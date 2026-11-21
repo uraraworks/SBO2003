@@ -2218,7 +2218,7 @@ dungeondefense wave1 start=1 put1=1 put2=0 put0=0
 dungeondefense status wave1 sent=4 state=2 wave=1/2 hp=100/100 rest=0 enemy=2
 dungeondefense wave1 put1=2 put2=0 put0=0 normal=0
 dungeondefense enemy-judge enemy=2 other=1
-dungeondefense map sent=5 size-ok=1 members=1 me=10,6(1) enemies=2 alive=2 match=2 base=20,8(1) spring=20,8 r=2 range=9,3-22,12
+dungeondefense map sent=5 size-ok=1 members=1 me=10,6(1) enemies=2 alive=2 match=2 base=20,8(1) spring=20,8 r=1 range=9,3-22,12
 dungeondefense wave1 hold put1=2 wave-end=0
 dungeondefense spring far mana=10
 dungeondefense spring near mana=20

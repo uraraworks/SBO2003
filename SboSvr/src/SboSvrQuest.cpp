@@ -4629,7 +4629,6 @@ static void DgSelOnDec(PCHARINFO pChar)
 #define DGDEF_BASE_HP			(1000)								/* 拠点の最大HP（設定が 0 の時） */
 #define DGDEF_PREP_SEC			(20)								/* 準備時間・秒（設定が 0 の時） */
 #define DGDEF_WAVEMAX_SEC		(180)								/* 1つの波の最長時間・秒（設定が 0 の時） */
-#define DGDEF_SPRING_RANGE		(2)									/* 泉の範囲・マス（設定が 0 の時） */
 #define DGDEF_RESULT_WAIT		(10000)								/* 結果を知らせてから帰るまで（ミリ秒） */
 #define DGDEF_REVIVE_STEP		(5)									/* 復活までの秒数＝倒れた回数×この秒数 */
 #define DGDEF_REVIVE_MAX		(30)								/* 復活までの最大秒数 */
@@ -5000,7 +4999,7 @@ static void DgDefMapSend(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon)
 		Para.wSpringX = Para.wBaseX;
 		Para.wSpringY = Para.wBaseY;
 	}
-	Para.bySpringRange = pDungeon->byDefSpringRange ? pDungeon->byDefSpringRange : (BYTE)DGDEF_SPRING_RANGE;
+	Para.bySpringRange = bSpringPos ? 0 : 1;						/* DgDefMembers と同じ（位置を決めた時は 1 マス） */
 	/* 仲間の位置（この組の空間・同じマップにいる人） */
 	for (k = 0; k < pCh->aMember.size () && nMember < 255; k ++) {
 		PCHARINFO p = (pCh->aMember[k] < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[pCh->aMember[k]] : NULL;
@@ -5070,12 +5069,14 @@ static void DgDefFinish(CHALLENGE *pCh, BYTE byResult, DWORD dwNow)
 static void DgDefMembers(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon, PCHARINFO pBase, DWORD dwNow)
 {
 	BOOL bSpring = ((int)(dwNow - pCh->dwDefSpring) >= DGDEF_SPRING_INTERVAL);
-	int nRange = pDungeon->byDefSpringRange ? (int)pDungeon->byDefSpringRange : DGDEF_SPRING_RANGE;
 	DWORD dwSpringPct = pDungeon->byDefSpringPct ? (DWORD)pDungeon->byDefSpringPct : (DWORD)DGDEF_SPRING_PERCENT;	/* 泉で戻る割合（%） */
 	/* 泉の中心：設定が両方 0 なら拠点の位置（古いデータ互換） */
 	BOOL bSpringPos = (pDungeon->byDefSpringX || pDungeon->byDefSpringY);
 	int nSpringX = bSpringPos ? (int)pDungeon->byDefSpringX : (pBase ? (int)pBase->dwX : 0);
 	int nSpringY = bSpringPos ? (int)pDungeon->byDefSpringY : (pBase ? (int)pBase->dwY : 0);
+	/* 泉の広さ：位置を決めた時はそのマス 1 つだけ。決めていない時は拠点のまわり 1 マス（拠点のマスには乗れないため）。
+	   範囲の設定（byDefSpringRange）は使わない（2026-11-21 泉は 1 マスで十分に） */
+	int nRange = bSpringPos ? 0 : 1;
 	size_t j;
 
 	if (bSpring) {
