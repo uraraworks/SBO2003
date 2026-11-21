@@ -3791,7 +3791,6 @@
 	   それに加えて画面の外や別のマップにいる仲間にもメッセージログで届く（% を付けて送る）。
 	   マップはマップ内放送（! を付けて送る）。
 	   選んだ送り先は覚えておき、パーティを抜けたり放送できないマップへ移ったりしたら「周り」に戻す */
-	var CHAT_TARGET_KEY = 'sbo2003.chatTarget';
 	var CHAT_TARGETS = {
 		around: { label: '周り', mark: '', kind: 0,
 			tip: '周りに発言します（押すと送り先を切り替えます）',
@@ -3811,9 +3810,26 @@
 		var k = CHAT_TARGETS[name].kind;
 		return k === 0 || (chatKinds & k) !== 0;
 	}
+	/* 送り先とゲーム側の発言の種類(g_bySpeechMode)は同じものとして連動させる。
+	   Enter で開くゲーム内の発言欄の↑↓で変えた時も、ここで変えた時も同じ送り先になる */
+	var CHAT_TARGET_MODE = { around: 0, party: 3, map: 2 };
 	function setChatTarget(name) {
 		chatTarget = name;
-		try { window.localStorage.setItem(CHAT_TARGET_KEY, name); } catch (e) {}
+		if (sboReady && Module['_SboWebSetSpeechMode']) {
+			Module['_SboWebSetSpeechMode'](CHAT_TARGET_MODE[name]);
+		}
+	}
+	/* ゲーム側の発言の種類から送り先を決める（1:画面内放送は送り先に無いので「周り」の見た目のまま） */
+	function syncChatTargetFromGame() {
+		if (!sboReady || !Module['_SboWebGetSpeechMode']) {
+			return;
+		}
+		var mode = Module['_SboWebGetSpeechMode']() | 0;
+		var name = mode === 3 ? 'party' : (mode === 2 ? 'map' : 'around');
+		if (name !== chatTarget) {
+			chatTarget = name;
+			applyChatTarget();
+		}
 	}
 	function applyChatTarget() {
 		/* 使えない間（ログイン前など）は「周り」として見せる */
@@ -3833,12 +3849,6 @@
 			chatBarText.textContent = t.bar;
 		}
 	}
-	try {
-		var savedTarget = window.localStorage.getItem(CHAT_TARGET_KEY);
-		if (CHAT_TARGETS[savedTarget]) {
-			chatTarget = savedTarget;
-		}
-	} catch (e) {}
 	for (var ct = 0; ct < chatTargetBtns.length; ct ++) {
 		chatTargetBtns[ct].addEventListener('click', function (ev) {
 			/* 次の選べる送り先へ */
@@ -3861,6 +3871,7 @@
 	setInterval(function () {
 		var kinds = (sboReady && Module['_SboWebChatKinds']) ? (Module['_SboWebChatKinds']() | 0) : 0;
 		if (kinds === chatKinds) {
+			syncChatTargetFromGame();
 			return;
 		}
 		chatKinds = kinds;
@@ -3868,6 +3879,7 @@
 		if (!chatTargetEnable(chatTarget)) {
 			setChatTarget('around');
 		}
+		syncChatTargetFromGame();
 		applyChatTarget();
 	}, 500);
 	applyChatTarget();
