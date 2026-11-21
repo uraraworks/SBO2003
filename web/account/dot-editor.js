@@ -1130,11 +1130,31 @@ function replaceColor(scope) {
 
 cv.addEventListener('contextmenu', (e) => e.preventDefault()); // Mac の Ctrl+クリックでも右クリックメニューを出さない
 
+// 指2本でスクロール（スマホ・タブレット）。1本目は普通に描き始めるので、2本目が来たら描きを確定して移動に切り替える
+const touches = new Map();
+let touchPan = null;
+function touchCentroid() {
+  let x = 0, y = 0;
+  for (const t of touches.values()) { x += t.x; y += t.y; }
+  return { x: x / touches.size, y: y / touches.size };
+}
+
 cv.addEventListener('pointerdown', (e) => {
   const tab = S.active;
   if (!tab) return;
   e.preventDefault();
   cv.focus();
+  if (e.pointerType === 'touch') {
+    touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (touches.size === 2) {
+      if (drag) { toolUp(tab, S.hover || toImg(e)); requestDraw(); }
+      cv.setPointerCapture(e.pointerId);
+      const c = touchCentroid();
+      touchPan = { cx: c.x, cy: c.y, l: vp.scrollLeft, t: vp.scrollTop };
+      return;
+    }
+    if (touches.size > 2) return;
+  }
   const p = toImg(e);
   const mod = e.metaKey || e.ctrlKey;
   if (mod && (e.button === 0 || e.button === 2)) {
@@ -1156,6 +1176,13 @@ cv.addEventListener('pointerdown', (e) => {
 cv.addEventListener('pointermove', (e) => {
   const tab = S.active;
   if (!tab) return;
+  if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (touchPan) {
+    const c = touchCentroid();
+    vp.scrollLeft = touchPan.l - (c.x - touchPan.cx);
+    vp.scrollTop = touchPan.t - (c.y - touchPan.cy);
+    return;
+  }
   const p = toImg(e);
   S.hover = p;
   if (drag) toolMove(tab, p, e);
@@ -1166,6 +1193,10 @@ cv.addEventListener('pointerleave', () => { if (!drag) { S.hover = null; request
 
 function endPointer(e) {
   const tab = S.active;
+  if (touches.has(e.pointerId)) {
+    touches.delete(e.pointerId);
+    if (touchPan) { if (touches.size < 2) touchPan = null; return; } // 2本指の移動中に指を離した時は何も描かない
+  }
   if (!tab || !drag) return;
   toolUp(tab, toImg(e));
   requestDraw();
