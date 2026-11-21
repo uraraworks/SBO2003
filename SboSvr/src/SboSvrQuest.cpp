@@ -112,7 +112,8 @@ typedef struct _DGPUT {
 typedef struct _DGDEFDEAD {
 	int			nCount;												/* この組で倒れた回数（復活までの秒数＝回数×5、最大30） */
 	DWORD		dwReviveAt;											/* 復活する時刻（0=いま倒れていない） */
-	_DGDEFDEAD() : nCount(0), dwReviveAt(0) {}
+	DWORD		dwSpringFx;											/* 泉でキラッとしたエフェクトを最後に出した時刻（0=まだ・泉の外に出たら 0 に戻す） */
+	_DGDEFDEAD() : nCount(0), dwReviveAt(0), dwSpringFx(0) {}
 } DGDEFDEAD;
 
 /* 1 回の挑戦（一緒に入った組） */
@@ -151,11 +152,12 @@ typedef struct _CHALLENGE {
 	DWORD		dwDefWaveStart;										/* 拠点防衛：今の波が始まった時刻 */
 	DWORD		dwDefEnd;											/* 拠点防衛：結果を知らせた時刻（この 10 秒後に全員帰還） */
 	DWORD		dwDefSpring;										/* 拠点防衛：最後に泉で Mana を戻した時刻 */
+	int			nEnemyLeft;											/* 拠点防衛：最後に確かめた「残り敵」の数（-1=波が始まったばかりでまだ確かめていない） */
 	BYTE		byBaseBracket;										/* 拠点防衛：最後に知らせた拠点HPの段（0〜4。4=満タン） */
 	std::map<DWORD, DGDEFDEAD>	mapDead;							/* 拠点防衛：組の人のテーブルID → 倒れた回数・復活の時刻 */
 	CMDPARA_DGDEFSTATUS	stDefSent;									/* 拠点防衛：最後に組へ送った画面の帯の状態（変わった時だけ送るため） */
 	DWORD		dwDefSentAt;										/* 拠点防衛：その状態を送った時刻（周期処理の時刻。一定時間ごとに同じ内容も送り直す） */
-	_CHALLENGE() : byKind(0), byDungeonID(0), dwBuildNo(0), bDaily(FALSE), bRanked(FALSE), dwDailyVer(0), dwDailySeed(0), bKillAll(FALSE), byCountDown(4), wQuestID(0), dwMapNo(0), dwSpaceID(0), bArena(FALSE), dwPartyID(0), dwStart(0), bCleared(FALSE), dwClear(0), dwClearTime(0), bDefense(FALSE), dwBaseTbl((DWORD)-1), nWave(0), byDefPhase(DGDEF_PHASE_INIT), byDefResult(DGDEF_RESULT_NONE), dwDefPhaseStart(0), dwDefWaveStart(0), dwDefEnd(0), dwDefSpring(0), byBaseBracket(4), dwDefSentAt(0) { ZeroMemory (&stDefSent, sizeof (stDefSent)); }
+	_CHALLENGE() : byKind(0), byDungeonID(0), dwBuildNo(0), bDaily(FALSE), bRanked(FALSE), dwDailyVer(0), dwDailySeed(0), bKillAll(FALSE), byCountDown(4), wQuestID(0), dwMapNo(0), dwSpaceID(0), bArena(FALSE), dwPartyID(0), dwStart(0), bCleared(FALSE), dwClear(0), dwClearTime(0), bDefense(FALSE), dwBaseTbl((DWORD)-1), nWave(0), byDefPhase(DGDEF_PHASE_INIT), byDefResult(DGDEF_RESULT_NONE), dwDefPhaseStart(0), dwDefWaveStart(0), dwDefEnd(0), dwDefSpring(0), nEnemyLeft(-1), byBaseBracket(4), dwDefSentAt(0) { ZeroMemory (&stDefSent, sizeof (stDefSent)); }
 } CHALLENGE;
 
 /* 戻す場所（切断した人は、マップの表から外れてから動かす） */
@@ -4566,6 +4568,8 @@ static void DgSelOnDec(PCHARINFO pChar)
 #define DGDEF_REVIVE_STEP		(5)									/* 復活までの秒数＝倒れた回数×この秒数 */
 #define DGDEF_REVIVE_MAX		(30)								/* 復活までの最大秒数 */
 #define DGDEF_STATUS_KEEP		(5000)								/* 画面の帯の状態は、変わらなくてもこの間隔（ミリ秒）で送り直す（つなぎ直した・入り直した人にも届く） */
+#define DGDEF_SPRING_PERCENT	(2)									/* 泉で 1 回に戻る Mana の割合（最大 Mana の %。最低 1） */
+#define DGDEF_SPRING_FX_INTERVAL	(3000)							/* 泉のキラッとしたエフェクトを出す間隔（ミリ秒。入って最初に戻った時は必ず出す） */
 #define DGDEF_SPRING_INTERVAL	(900)								/* 泉で Mana が戻る間隔（ミリ秒。周期処理が約 1 秒ごとなので少し短く） */
 
 static int DgDefPrepSec(PSUBGAME_DUNGEONINFO p)
@@ -4681,6 +4685,25 @@ static int DgDefEnemyCount(CHALLENGE *pCh)
 		}
 	}
 	return nEnemy;
+}
+
+/* 今の波の「残り敵」：まだ出ていない数（発生元の最大発生数の残り）＋今いる生きている敵（画面の帯と知らせで共通） */
+static int DgDefEnemyLeft(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon)
+{
+	int i, nCount = g_aCharInfo.GetSize (), nLeft = DgDefEnemyCount (pCh);
+
+	for (i = 0; i < nCount; i ++) {
+		PCHARINFO pParent = g_aCharInfo[i];
+
+		if ((pParent == NULL) || (pParent->byNpcType != NPCTYPE_PUT) || (pParent->byPutCount == 0) || (pParent->byPutWave != (BYTE)pCh->nWave) ||
+			(pParent->dwSpaceID != SPACE_NORMAL) || !DgInArea (pDungeon, pParent->dwMapID, pParent->dwX, pParent->dwY)) {
+			continue;
+		}
+		std::map<DWORD, DGPUT>::iterator it = pCh->mapPut.find (pParent->dwTblID);
+		int nTotal = (it == pCh->mapPut.end ()) ? 0 : it->second.nTotal;
+		nLeft += max ((int)pParent->byPutCount - nTotal, 0);
+	}
+	return nLeft;
 }
 
 /* 組の敵を全部消す（結果が出た時） */
@@ -4857,7 +4880,7 @@ static void DgDefStatusMake(CHALLENGE *pCh, CMDPARA_DGDEFSTATUS &Para, DWORD dwN
 		Para.wRestSec = (WORD)min (max ((nRest + 999) / 1000, 0), 65535);
 	}
 	if (Para.byState == DGDEFSTATUS_WAVE) {
-		Para.wEnemy = (WORD)min (DgDefEnemyCount (pCh), 65535);
+		Para.wEnemy = (WORD)min (pDungeon ? DgDefEnemyLeft (pCh, pDungeon) : DgDefEnemyCount (pCh), 65535);
 	}
 }
 
@@ -4890,6 +4913,7 @@ static void DgDefEnterPrep(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon, DWORD 
 	int nSec = DgDefPrepSec (pDungeon);
 
 	pCh->byDefPhase = DGDEF_PHASE_PREP;
+	pCh->nEnemyLeft = -1;
 	pCh->dwDefPhaseStart = dwNow;
 	DgDefRecoverAll (pCh);
 	DgDefSay (pCh, "def_wave_coming", "wave", std::to_string (pCh->nWave), "total", std::to_string (DgDefWaveCount (pDungeon)), "seconds", std::to_string (nSec));
@@ -4905,11 +4929,15 @@ static void DgDefFinish(CHALLENGE *pCh, BYTE byResult, DWORD dwNow)
 	DgDefStatusSend (pCh, dwNow, NULL, TRUE);
 }
 
-/* 倒れた人の復活待ちと、泉（拠点の近くで Mana が戻る） */
+/* 倒れた人の復活待ちと、泉（泉の中心の近くで Mana が戻る。中心は設定で拠点から離せる） */
 static void DgDefMembers(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon, PCHARINFO pBase, DWORD dwNow)
 {
 	BOOL bSpring = ((int)(dwNow - pCh->dwDefSpring) >= DGDEF_SPRING_INTERVAL);
 	int nRange = pDungeon->byDefSpringRange ? (int)pDungeon->byDefSpringRange : DGDEF_SPRING_RANGE;
+	/* 泉の中心：設定が両方 0 なら拠点の位置（古いデータ互換） */
+	BOOL bSpringPos = (pDungeon->byDefSpringX || pDungeon->byDefSpringY);
+	int nSpringX = bSpringPos ? (int)pDungeon->byDefSpringX : (pBase ? (int)pBase->dwX : 0);
+	int nSpringY = bSpringPos ? (int)pDungeon->byDefSpringY : (pBase ? (int)pBase->dwY : 0);
 	size_t j;
 
 	if (bSpring) {
@@ -4946,13 +4974,32 @@ static void DgDefMembers(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon, PCHARINF
 			continue;
 		}
 		dd.dwReviveAt = 0;
-		/* 泉：拠点から範囲内にいる間だけ、最大 Mana の 10% ずつ戻る */
-		if (bSpring && pBase && (p->wMana < p->wMaxMana) && (p->dwMapID == pBase->dwMapID) &&
-			(abs ((int)p->dwX - (int)pBase->dwX) <= nRange) && (abs ((int)p->dwY - (int)pBase->dwY) <= nRange)) {
-			DWORD dwMana = (DWORD)p->wMana + max ((DWORD)p->wMaxMana / 10, (DWORD)1);
+		/* 泉：泉の中心から範囲内にいる間だけ、最大 Mana の 2%（最低 1）ずつ戻る */
+		if (bSpring && pBase) {
+			BOOL bIn = (p->dwMapID == pBase->dwMapID) &&
+				(abs ((int)p->dwX - nSpringX) <= nRange) && (abs ((int)p->dwY - nSpringY) <= nRange);
 
-			p->wMana = (WORD)min (dwMana, (DWORD)p->wMaxMana);
-			SendCmdCHARSTATUSHPMANA (p->dwTblID, p->dwTblID);
+			if (!bIn) {
+				dd.dwSpringFx = 0;								/* 泉の外：次に入った時は最初に戻った時にエフェクトを出す */
+			} else if (p->wMana < p->wMaxMana) {
+				DWORD dwMana = (DWORD)p->wMana + max ((DWORD)p->wMaxMana * DGDEF_SPRING_PERCENT / 100, (DWORD)1);
+				int nGain;
+				char szTmp[32];
+
+				dwMana = min (dwMana, (DWORD)p->wMaxMana);
+				nGain = (int)dwMana - (int)p->wMana;
+				p->wMana = (WORD)dwMana;
+				SendCmdCHARSTATUSHPMANA (p->dwTblID, p->dwTblID);
+				/* 宿の回復と同じ見た目：増えた数の数字は毎回、キラッとしたエフェクトは最初と 3 秒おき */
+				wsprintf (szTmp, "%d", nGain);
+				SendCmdADDCHAREFC (p->dwTblID, RGB (139, 213, 255), szTmp);
+				if ((dd.dwSpringFx == 0) || ((int)(dwNow - dd.dwSpringFx) >= DGDEF_SPRING_FX_INTERVAL)) {
+					dd.dwSpringFx = dwNow ? dwNow : 1;
+					p->byEfect = EFECTTYPE_HOIMI;
+					SendCmdEFECTCHG (p->pID, p->dwTblID, p->byEfect);
+					p->byEfect = 0;
+				}
+			}
 		}
 	}
 }
@@ -5011,6 +5058,14 @@ static void DgDefProc(CHALLENGE &Ch, PSUBGAME_DUNGEONINFO pDungeon, DWORD dwNow)
 				Ch.nWave ++;
 				DgDefEnterPrep (&Ch, pDungeon, dwNow);
 			}
+		} else {
+			/* 敵が倒されて残りが減った：組の全員に残り敵を知らせる（1 秒の間に何体倒れても最後の数を 1 回。0 の時は上の「しのいだ」が出る） */
+			int nLeft = DgDefEnemyLeft (&Ch, pDungeon);
+
+			if ((Ch.nEnemyLeft >= 0) && (nLeft < Ch.nEnemyLeft) && (nLeft > 0)) {
+				DgDefSay (&Ch, "def_enemy_left", "count", std::to_string (nLeft));
+			}
+			Ch.nEnemyLeft = nLeft;
 		}
 	}
 	/* 画面の帯：変わった時（準備中は残り秒が変わるので1秒ごと）と、一定時間ごとに送る */

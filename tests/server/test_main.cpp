@@ -14179,6 +14179,24 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 	QuestMovePC(pA, nMapNo, 17, 8);
 	Tick(2);
 	printf("dungeondefense spring out mana=%d\n", (int)pA->wMana);
+	/* 4b. 泉を拠点から離れた位置（12,6）に置く：拠点の横では戻らず、泉の位置で最大Manaの 2% ずつ戻る（数字は毎回・キラッとは最初だけ。時間を進めすぎると後ろの状態帯の送信数がずれるので短く） */
+	{
+		WORD wManaBk = pA->wMana, wMaxBk = pA->wMaxMana;
+		Info.byDefSpringX = 12; Info.byDefSpringY = 6;
+		pA->wMaxMana = 500; pA->wMana = 10;
+		QuestMovePC(pA, nMapNo, 19, 8);
+		Tick(1);
+		printf("dungeondefense spring moved base-side mana=%d\n", (int)pA->wMana);
+		QuestMovePC(pA, nMapNo, 12, 6);
+		int nEfc0 = SpCnt(pA, CMD_ADDCHAREFC), nChg0 = SpCnt(pA, CMD_EFECTCHG);
+		Tick(1);
+		printf("dungeondefense spring moved at-spring mana=%d efc=%d fx=%d\n", (int)pA->wMana, SpCnt(pA, CMD_ADDCHAREFC) - nEfc0, SpCnt(pA, CMD_EFECTCHG) - nChg0);
+		Tick(1);
+		printf("dungeondefense spring moved at-spring +1s mana=%d efc=%d fx=%d\n", (int)pA->wMana, SpCnt(pA, CMD_ADDCHAREFC) - nEfc0, SpCnt(pA, CMD_EFECTCHG) - nChg0);
+		Info.byDefSpringX = 0; Info.byDefSpringY = 0;
+		pA->wMaxMana = wMaxBk; pA->wMana = wManaBk;
+		QuestMovePC(pA, nMapNo, 17, 8);
+	}
 
 	/* 5. 拠点の HP：25% 刻みで下がった時だけ知らせる */
 	{
@@ -14230,6 +14248,30 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 		printf("dungeondefense down2 +9s dead=%d\n", (int)(pA->byCharState == CHARSTATE_DEAD));
 		Tick(1);
 		printf("dungeondefense down2 +10s dead=%d hp=%d\n", (int)(pA->byCharState == CHARSTATE_DEAD), (int)pA->wHP);
+	}
+
+	/* 6b. 敵が倒されるたびに「残り敵 N」（残り＝まだ出ていない数＋今いる敵）。倒れても減らない数（最後の波以外の時間切れ等）は出さない。1 秒に何体倒れても最後の数を 1 回だけ（この形は敵が 2 体なので 1 体だけ確かめる） */
+	{
+		auto LeftMsg = [&]() -> int { for (int n = 0; n <= 40; n ++) { char sz[64]; sprintf(sz, "残り敵 %d", n); if (Say(sz)) return n; } return -1; };
+		/* 本当に消すと後ろの既存の確認（倒す数）が変わるので、HP を 0 にして「倒された」状態にし、確かめたら元に戻す */
+		std::vector<std::pair<int, WORD> > aKilled;
+		auto KillSome = [&](int nKill) -> int {
+			int nDone = 0;
+			for (int i = 0; i < g_aCharInfo.GetSize() && nDone < nKill; i ++) {
+				PCHARINFO p = g_aCharInfo[i];
+				if (p && p->dwSpaceID == dwSpace && DgIsDefenseEnemy(p) && p->wHP > 0) { aKilled.push_back(std::make_pair(i, p->wHP)); p->wHP = 0; nDone ++; }
+			}
+			return nDone;
+		};
+		Mark();
+		Tick(1);
+		printf("dungeondefense enemy-left idle msg=%d enemies=%d\n", LeftMsg(), Enemies(dwSpace));
+		int nK1 = KillSome(1);
+		Mark();
+		Tick(1);
+		printf("dungeondefense enemy-left kill1 killed=%d msg=%d enemies=%d\n", nK1, LeftMsg(), Enemies(dwSpace));
+		Status("enemy-left");
+		for (size_t i = 0; i < aKilled.size(); i ++) { PCHARINFO p = g_aCharInfo[aKilled[i].first]; if (p) p->wHP = aKilled[i].second; }
 	}
 
 	/* 7. 敵を倒し切ると波が終わる：準備時間に入って全員 HP/Mana 全回復・次の波の知らせ → 波 2 の敵が出る */

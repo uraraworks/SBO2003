@@ -7710,6 +7710,8 @@ void RecvDataProcSUBGAMEINFO(BYTE *pData, DWORD dwDataSize)
 				pDungeonInfo->byDefPrepSec = pDungeon->byDefPrepSec;
 				pDungeonInfo->wDefWaveMaxSec = pDungeon->wDefWaveMaxSec;
 				pDungeonInfo->byDefSpringRange = pDungeon->byDefSpringRange;
+				pDungeonInfo->byDefSpringX = pDungeon->byDefSpringX;
+				pDungeonInfo->byDefSpringY = pDungeon->byDefSpringY;
 				if (dwDataSize >= sizeof (CMDPARA_DATA1) + sizeof (SUBGAME_DUNGEONINFOSAVE)) {
 					CopyMemory (pDungeonInfo->szMessages, pDungeon->szMessages, sizeof (pDungeonInfo->szMessages));
 				}

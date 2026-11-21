@@ -69,6 +69,8 @@ static const char *s_aszNameDUNGEON[] = {
 	"byDefPrepSec",		/* 拠点防衛：準備時間・秒 */
 	"wDefWaveMaxSec",	/* 拠点防衛：1つの波の最長時間・秒 */
 	"byDefSpringRange",	/* 拠点防衛：泉の範囲（マス） */
+	"byDefSpringX",		/* 拠点防衛：泉の位置X */
+	"byDefSpringY",		/* 拠点防衛：泉の位置Y */
 	"z"
 };
 
@@ -557,7 +559,7 @@ Exit:
 /* 拠点防衛の項目をどれか使っているか（使っていなければ、その列は保存しない＝前の版でも読める） */
 static BOOL DgDefenseUsed(PSUBGAME_DUNGEONINFO pInfo)
 {
-	return pInfo->wDefBaseHP || pInfo->wDefBaseStTmp || pInfo->byDefWaveCount || pInfo->byDefPrepSec || pInfo->wDefWaveMaxSec || pInfo->byDefSpringRange;
+	return pInfo->wDefBaseHP || pInfo->wDefBaseStTmp || pInfo->byDefWaveCount || pInfo->byDefPrepSec || pInfo->wDefWaveMaxSec || pInfo->byDefSpringRange || pInfo->byDefSpringX || pInfo->byDefSpringY;
 }
 
 /* ========================================================================= */
@@ -669,6 +671,8 @@ static PBYTE GetInfoDungeon(PSUBGAME_DUNGEONINFO pInfo, PDWORD pdwSize)
 		case 25:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 拠点防衛：準備時間 */
 		case 26:	dwDataSizeTmp = sizeof (WORD);			break;	/* 拠点防衛：1つの波の最長時間 */
 		case 27:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 拠点防衛：泉の範囲 */
+		case 28:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 拠点防衛：泉の位置X */
+		case 29:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 拠点防衛：泉の位置Y */
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
 		dwDataSize += dwDataSizeTmp;
@@ -816,6 +820,14 @@ static PBYTE GetInfoDungeon(PSUBGAME_DUNGEONINFO pInfo, PDWORD pdwSize)
 			break;
 		case 27:	/* 拠点防衛：泉の範囲 */
 			CopyMemory (&pData[dwOffset], &pInfo->byDefSpringRange, sizeof (BYTE));
+			dwOffset += sizeof (BYTE);
+			break;
+		case 28:	/* 拠点防衛：泉の位置X */
+			CopyMemory (&pData[dwOffset], &pInfo->byDefSpringX, sizeof (BYTE));
+			dwOffset += sizeof (BYTE);
+			break;
+		case 29:	/* 拠点防衛：泉の位置Y */
+			CopyMemory (&pData[dwOffset], &pInfo->byDefSpringY, sizeof (BYTE));
 			dwOffset += sizeof (BYTE);
 			break;
 
@@ -1772,6 +1784,12 @@ static PBYTE PetInfoDungeon(PBYTE pData, PDWORD pdwSize)
 			dwOffsetTmp += sizeof (WORD);
 		} else if (strcmp (aHeaderInfo[i].szName, "byDefSpringRange") == 0) {	/* 拠点防衛：泉の範囲 */
 			CopyMemory (&pInfo->byDefSpringRange, &pData[dwOffsetTmp], sizeof (BYTE));
+			dwOffsetTmp += sizeof (BYTE);
+		} else if (strcmp (aHeaderInfo[i].szName, "byDefSpringX") == 0) {	/* 拠点防衛：泉の位置X */
+			CopyMemory (&pInfo->byDefSpringX, &pData[dwOffsetTmp], sizeof (BYTE));
+			dwOffsetTmp += sizeof (BYTE);
+		} else if (strcmp (aHeaderInfo[i].szName, "byDefSpringY") == 0) {	/* 拠点防衛：泉の位置Y */
+			CopyMemory (&pInfo->byDefSpringY, &pData[dwOffsetTmp], sizeof (BYTE));
 			dwOffsetTmp += sizeof (BYTE);
 		}
 		dwOffset = dwOffsetTmp;

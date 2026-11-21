@@ -140,6 +140,10 @@ void GetDataDlgEtcSubGameEditDungeon(void)
 	pInfo->wDefWaveMaxSec = (WORD)atoi (szTmp);
 	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGDEF_SPRING), szTmp, sizeof (szTmp));
 	pInfo->byDefSpringRange = (BYTE)atoi (szTmp);
+	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGDEF_SPRINGX), szTmp, sizeof (szTmp));
+	pInfo->byDefSpringX = (BYTE)atoi (szTmp);
+	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGDEF_SPRINGY), szTmp, sizeof (szTmp));
+	pInfo->byDefSpringY = (BYTE)atoi (szTmp);
 	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGMESSAGES), pInfo->szMessages, sizeof (pInfo->szMessages));
 }
 
@@ -260,6 +264,10 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 	SetWindowText (GetDlgItem (hWnd, IDC_DGDEF_WAVESEC), szTmp);
 	wsprintf (szTmp, "%d", pInfo->byDefSpringRange);
 	SetWindowText (GetDlgItem (hWnd, IDC_DGDEF_SPRING), szTmp);
+	wsprintf (szTmp, "%d", pInfo->byDefSpringX);
+	SetWindowText (GetDlgItem (hWnd, IDC_DGDEF_SPRINGX), szTmp);
+	wsprintf (szTmp, "%d", pInfo->byDefSpringY);
+	SetWindowText (GetDlgItem (hWnd, IDC_DGDEF_SPRINGY), szTmp);
 	SendMessage (GetDlgItem (hWnd, IDC_DGMESSAGES), EM_LIMITTEXT, MAX_DGTEXT - 1, 0);
 	SetWindowText (GetDlgItem (hWnd, IDC_DGMESSAGES), pInfo->szMessages);
 

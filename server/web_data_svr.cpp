@@ -2139,7 +2139,9 @@ static const DATAFIELD s_aFieldSgDungeon[] = {
 	FLD (SUBGAME_DUNGEONINFO, byDefWaveCount,"ウェーブの数",			FT_U8, 0, "拠点防衛の時。1〜。NPC発生の「防衛のウェーブ番号」（byPutWave）が 1〜この数の発生元がそのウェーブに出る。最後のウェーブを全部倒すと勝ち"),
 	FLD (SUBGAME_DUNGEONINFO, byDefPrepSec,	"準備時間(秒)",		FT_U8, 0, "拠点防衛の時。開始前とウェーブとウェーブの間の準備時間。0=20 秒。準備に入る時に全員のHP・Manaが全回復する"),
 	FLD (SUBGAME_DUNGEONINFO, wDefWaveMaxSec,"1つのウェーブの最長時間(秒)",	FT_U16, 0, "拠点防衛の時。過ぎたら敵が残っていても次のウェーブへ（最後のウェーブは敵を倒し切るまで続く）。0=180"),
-	FLD (SUBGAME_DUNGEONINFO, byDefSpringRange,"泉の範囲(マス)",	FT_U8, 0, "拠点防衛の時。拠点からこのマス数以内にいる間だけ、Mana が 1 秒ごとに最大Manaの 10% 戻る（防衛の空間では Mana の自然回復は止まる）。0=2"),
+	FLD (SUBGAME_DUNGEONINFO, byDefSpringRange,"泉の範囲(マス)",	FT_U8, 0, "拠点防衛の時。泉の中心（泉の位置。0,0 なら拠点）からこのマス数以内にいる間だけ、Mana が 1 秒ごとに最大Manaの 2%（最低 1）戻る（防衛の空間では Mana の自然回復は止まる）。0=2"),
+	FLD (SUBGAME_DUNGEONINFO, byDefSpringX,	"泉の位置X",		FT_U8, 0, "拠点防衛の時。拠点から離れた場所に置くと、拠点のまわりで戦いながら Mana を回復し続けることができなくなる。0,0=拠点の位置"),
+	FLD (SUBGAME_DUNGEONINFO, byDefSpringY,	"泉の位置Y",		FT_U8, 0, "拠点防衛の時。拠点から離れた場所に置くと、拠点のまわりで戦いながら Mana を回復し続けることができなくなる。0,0=拠点の位置"),
 	FLDS(SUBGAME_DUNGEONINFO, szMessages, "番外編の文言一覧", FT_STR, FF_MULTILINE, "1行に key=文。空なら既定文。差し込みは {name}・{time}・{rank} 等。キー一覧は docs/dungeon-gen.md"),
 	FLD (SUBGAME_DUNGEONINFO, dwDailyVer,	"日替わりの版番号",		FT_U32, FF_READONLY, "今の形の版の通し番号（SboDungeonDaily.json の no。0=まだ作っていない。実行中だけ・読むだけ）"),
 };

@@ -2182,6 +2182,8 @@ void SendCmdSUBGAMEINFO(int nNo)
 			pDungeon->byDefPrepSec = pDungeonInfo->byDefPrepSec;
 			pDungeon->wDefWaveMaxSec = pDungeonInfo->wDefWaveMaxSec;
 			pDungeon->byDefSpringRange = pDungeonInfo->byDefSpringRange;
+			pDungeon->byDefSpringX = pDungeonInfo->byDefSpringX;
+			pDungeon->byDefSpringY = pDungeonInfo->byDefSpringY;
 			CopyMemory (pDungeon->szMessages, pDungeonInfo->szMessages, sizeof (pDungeon->szMessages));
 		}		
 		break;

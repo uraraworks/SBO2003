@@ -63,6 +63,7 @@ static const DungeonTextDefault g_aDungeonTextDefault[] = {
     {"def_wave_coming", "ウェーブ {wave}/{total} が来ます（{seconds}秒後）"},
     {"def_wave_start", "ウェーブ {wave} 開始"},
     {"def_wave_clear", "ウェーブ {wave} をしのいだ！"},
+    {"def_enemy_left", "残り敵 {count}"},
     {"def_base_attacked", "拠点が攻撃されています（HP {percent}%）"},
     {"def_base_fallen", "拠点が落ちた…。10秒後に全員戻ります。"},
     {"def_win", "全部のウェーブをしのいだ！ 10秒後に全員戻ります。"},

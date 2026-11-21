@@ -1386,7 +1386,9 @@ typedef struct _SUBGAME_DUNGEONINFO {
 	BYTE		byDefWaveCount;										/* 拠点防衛：波の数（1〜） */
 	BYTE		byDefPrepSec;										/* 拠点防衛：波と波の間の準備時間・秒（0=20） */
 	WORD		wDefWaveMaxSec;										/* 拠点防衛：1つの波の最長時間・秒（0=180。過ぎたら残りがいても次の波へ） */
-	BYTE		byDefSpringRange;									/* 拠点防衛：泉の範囲＝拠点から何マス以内で Mana が戻るか（0=2） */
+	BYTE		byDefSpringRange;									/* 拠点防衛：泉の範囲＝泉の中心から何マス以内で Mana が戻るか（0=2） */
+	BYTE		byDefSpringX;										/* 拠点防衛：泉の位置X（byDefSpringX・byDefSpringY が両方 0 なら拠点の位置） */
+	BYTE		byDefSpringY;										/* 拠点防衛：泉の位置Y */
 	BYTE		*pMapTmp;											/* 作成するマップ */
 	DWORD		dwTblID;											/* 管理人キャラのテーブルID */
 	DWORD		dwCountTmp;											/* 参加人数カウント用 */
@@ -1449,6 +1451,8 @@ typedef struct _SUBGAME_DUNGEONINFOSAVE {
 	BYTE		byDefPrepSec;										/* 拠点防衛：準備時間・秒 */
 	WORD		wDefWaveMaxSec;										/* 拠点防衛：1つの波の最長時間・秒 */
 	BYTE		byDefSpringRange;									/* 拠点防衛：泉の範囲（マス） */
+	BYTE		byDefSpringX;										/* 拠点防衛：泉の位置X */
+	BYTE		byDefSpringY;										/* 拠点防衛：泉の位置Y */
 	char szMessages[MAX_DGTEXT];							/* 番外編の文言一覧 */
 } SUBGAME_DUNGEONINFOSAVE, *PSUBGAME_DUNGEONINFOSAVE;
 
