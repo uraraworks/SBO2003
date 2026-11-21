@@ -186,6 +186,7 @@ static void DgLeaveAskClose(PCHARINFO p, BOOL bSend);
 static void DgProc(DWORD dwNow);
 static CHALLENGE *DgRunOf(PCHARINFO p);
 static void DgDefCreateBase(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon);
+static void DgDefCreateSpringMark(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon);
 static void DgDefPutProc(CHALLENGE *pCh, DWORD dwNow);
 static void DgDefProc(CHALLENGE &Ch, PSUBGAME_DUNGEONINFO pDungeon, DWORD dwNow);
 static void DgDefFieldDrop(DWORD dwSpaceID);
@@ -4137,6 +4138,7 @@ static void DgStart(int nDungeonID, const DGSEL &Sel, const std::vector<std::pai
 	/* 拠点防衛：この組の空間に拠点を立てる */
 	if (pCh->bDefense) {
 		DgDefCreateBase (pCh, pDungeon);
+		DgDefCreateSpringMark (pCh, pDungeon);
 	}
 	/* この組の敵を、決めた数まで一度に出す */
 	DgPutProc (pCh, timeGetTime (), TRUE);
@@ -4722,6 +4724,49 @@ static void DgDefCreateBase(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon)
 		CharProcBase.SetProc (pNew);
 	}
 	pCh->dwBaseTbl = pNew->dwTblID;
+	SendCmdCHARINFO3 (pNew->dwTblID);
+}
+
+/* 泉の目印を作る：泉の位置に名前だけ見える透明な NPC（通り抜けられる・攻撃や特技の対象にならない）。
+   泉の位置を決めていない時（拠点のまわりが泉）は、拠点の名前で分かるので作らない。
+   組の空間に立つので、組が終わる時（DgEnd）に一緒に消える */
+static void DgDefCreateSpringMark(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon)
+{
+	PCHARINFO pNew;
+	CCharProcBase CharProcBase;
+	std::string strName = DungeonText (pDungeon, "def_spring_name");
+
+	if ((pDungeon->dwMapID >= (DWORD)g_aMapInfo.GetSize ()) || ((pDungeon->byDefSpringX == 0) && (pDungeon->byDefSpringY == 0)) || strName.empty ()) {
+		return;
+	}
+	pNew = new CHARINFO;
+	ZeroMemory ((PBYTE)pNew, sizeof (CHARINFO));
+	pNew->byNpcType = NPCTYPE_NOBLOCK;
+	SetInitCharData (pNew);
+	pNew->dwSpaceID			= pCh->dwSpaceID;
+	pNew->byGameState		= GAMESTATE_NPC;
+	pNew->byCharState		= CHARSTATE_MOVE;
+	pNew->dwMapID			= pDungeon->dwMapID;
+	pNew->dwStartMapID		= pDungeon->dwMapID;
+	pNew->dwXBack = pNew->dwX = pNew->dwStartX = (DWORD)pDungeon->byDefSpringX;
+	pNew->dwYBack = pNew->dwY = pNew->dwStartY = (DWORD)pDungeon->byDefSpringY;
+	pNew->byDirection		= 1;
+	pNew->byGhost			= CHARGHOST_NAMEONLY;				/* 体を描かず名前だけ見せる */
+	pNew->wMaxHP			= 0;
+	pNew->wHP				= 0;
+	pNew->dwGold			= 0;
+	pNew->dwExp				= 0;
+	pNew->byDropProbability	= 0;
+	pNew->clName			= RGB (139, 213, 255);				/* 泉で戻る時の数字と同じ水色 */
+	CopyStr (pNew->szName, sizeof (pNew->szName), strName.c_str ());
+
+	pNew = AddChar (pNew);
+	pNew->pID = pNew->dwTblID + 1;
+	/* 保存される NPC とみなされないように、自分自身を発生元にする */
+	pNew->dwParentTblID = pNew->dwTblID;
+	if (pNew->pProc == NULL) {
+		CharProcBase.SetProc (pNew);
+	}
 	SendCmdCHARINFO3 (pNew->dwTblID);
 }
 

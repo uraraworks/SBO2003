@@ -1705,6 +1705,11 @@ void DrawCharLine(int nLine)
 			nGrpSizeY = 96;
 		}
 
+		/* 体を描かない（名前だけ見える目印。拠点防衛の「回復の泉」など） */
+		if (pChar->byGhost == CHARGHOST_NAMEONLY) {
+			continue;
+		}
+
 		/* NPC発生？ */
 		if (pChar->byNpcType == NPCTYPE_PUT) {
 			g_pDibDrawMap->BltAlpha (x, y, nGrpSizeX, nGrpSizeY, pDib, xx, yy, 50, TRUE);
