@@ -547,13 +547,40 @@
 #define IDC_STT_MAGICCLR                    1478
 #define IDC_STT_MAGICNAME                   1479
 
+#define IDC_DGKIND_LABEL                   1491
+#define IDC_DGKIND                         1492
+#define IDC_DGLBL_START                    1493
+#define IDC_DGLBL_GOAL                     1494
+#define IDC_DGLBL_FIX                      1495
+#define IDC_DGLBL_FIXX                     1496
+#define IDC_DGLBL_FIXY                     1497
+#define IDC_DGLBL_CHIP1                    1498
+#define IDC_DGLBL_CHIP2                    1499
+#define IDC_DGLBL_CHIP3                    1500
+#define IDC_DGLBL_CHIP4                    1501
+#define IDC_DGLBL_THEME                    1502
+#define IDC_DGLBL_THEMEHINT                1503
+#define IDC_DGLBL_REBUILD                  1504
+#define IDC_DGLBL_REBUILDHINT              1505
+#define IDC_DGLBL_CLEAR                    1506
+#define IDC_DGLBL_CLEARHINT                1507
+#define IDC_DGLBL_DEFHDR                   1508
+#define IDC_DGLBL_DEF1                     1509
+#define IDC_DGLBL_DEF2                     1510
+#define IDC_DGLBL_DEF3                     1511
+#define IDC_DGLBL_DEF4                     1512
+#define IDC_DGLBL_DEF5                     1513
+#define IDC_DGLBL_DEF6                     1514
+#define IDC_DGLBL_DEF7                     1515
+#define IDC_DGLBL_DEF8                     1516
+
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        244
 #define _APS_NEXT_COMMAND_VALUE         40037
-#define _APS_NEXT_CONTROL_VALUE         1488
+#define _APS_NEXT_CONTROL_VALUE         1517
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
