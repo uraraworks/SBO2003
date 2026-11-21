@@ -35,6 +35,7 @@ static const DungeonTextDefault g_aDungeonTextDefault[] = {
     {"leave_dead", "力尽きてしまった…。元の姿に戻りました。"},
     {"leave_party", "パーティを抜けたので、ダンジョンから出ました。元の姿に戻りました。"},
     {"leave_out", "ダンジョンの外へ出たので、元の姿に戻りました。"},
+    {"leave_ask", "ダンジョンから抜けますか？"},
     {"leave_retire", "途中で帰りました（記録なし）。元の姿に戻りました。"},
     {"leave_build", "ダンジョンが作り直されたので外へ出ました。元の姿に戻りました。"},
     {"leave_end", "ダンジョンの挑戦が終わりました。元の姿に戻りました。"},

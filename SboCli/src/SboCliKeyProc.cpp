@@ -5911,6 +5911,23 @@ void KeyProcCONF(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		}
 	}
 
+	/* 番外編の「ダンジョンから抜けますか？」：答えをサーバーへ送る。はいなら抜け、いいえならそのまま残る */
+	if (pWnd->nType2 == IDCONFIRMTYPE_DGLEAVE) {
+		if ((byEvent == KEY_UP) && ((byCode == 'A') || (byCode == 'B'))) {
+			BOOL bYes = (byCode == 'A') && (pWnd->nData1 == 0);
+
+			/* 出た直後は決定ボタンの連打で選ばれないよう受け付けない */
+			if (timeGetTime () < pWnd->dwData + 400) {
+				return;
+			}
+			SendCmdDUNGEONSEL (bYes ? DUNGEONSEL_LEAVEYES : DUNGEONSEL_LEAVENO, 0);
+			DXAudio.PlaySecoundary (&aSoundTbl[bYes ? SOUND_OK : SOUND_PUSH51_C]);
+			EraseWindow (pWnd);
+			g_bDraw = TRUE;
+			return;
+		}
+	}
+
 	/* 会話データの「はい・いいえ」：答えをサーバーへ送り、会話の窓は閉じる（いいえの返事は新しい台詞として届く）。
 	   キーボードは決定（A）・キャンセル（B）、スマホは仮想パッドの同じボタン。キャンセルはいいえ */
 	if (pWnd->nType2 == IDCONFIRMTYPE_TALKASK) {

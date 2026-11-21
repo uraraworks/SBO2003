@@ -176,6 +176,7 @@ static void ChallengeStart(PCHARINFO pChar, PQUESTINFO pQuest, PQUESTNPCINFO pDe
 static void GetChallengeMembers(PCHARINFO pChar, WORD wQuestID, std::vector<PCHARINFO> &aOut);
 static void DgBagCollect(PCHARINFO p, WORD wTmpl, std::vector<WORD> &aBag);
 static void DgLeaveMsg(PCHARINFO p, int nReason, int nDungeonID);
+static void DgLeaveAskClose(PCHARINFO p, BOOL bSend);
 static void DgProc(DWORD dwNow);
 static CHALLENGE *DgRunOf(PCHARINFO p);
 static void DgDefCreateBase(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon);
@@ -2761,6 +2762,8 @@ static void ChallengeLeave(PCHARINFO p, int nReason)
 	}
 	Bak = it->second;
 	s_mapLoan.erase (it);
+	/* 出た後は「抜けますか？」の確認は無効（切断では送らない） */
+	DgLeaveAskClose (p, nReason != CHALLENGELEAVE_LOGOUT);
 	{
 		std::map<DWORD, CHALLENGE>::iterator itC = s_mapChallenge.find (Bak.dwSession);
 		if (itC != s_mapChallenge.end ()) {
@@ -3680,6 +3683,71 @@ static void DgLeaveMsg(PCHARINFO p, int nReason, int nDungeonID)
 	}
 }
 
+/* 開始マスを踏んで「抜けますか？」を聞いている人（テーブルID → 聞いた時の場所）。
+   はいが届いた時に、まだその場にいて挑戦中なら抜ける。離れていたら無効 */
+typedef struct _DGLEAVEASK {
+	DWORD dwMapID, dwX, dwY;
+} DGLEAVEASK;
+static std::map<DWORD, DGLEAVEASK> s_mapDgLeaveAsk;
+
+/* 抜ける確認を出す・閉じる（番外編の全モード共通） */
+static void DgSendLeave(PCHARINFO p, BYTE byType, const std::string &strText)
+{
+	CMDPARA_DUNGEONSEL Para;
+
+	if ((p == NULL) || (p->pID == 0)) {
+		return;
+	}
+	ZeroMemory (&Para, sizeof (Para));
+	Para.byType = byType;
+	Para.dwTblID = p->dwTblID;
+	SboTextCopy (Para.szTitle, sizeof (Para.szTitle), strText.c_str ());
+	SendCmdDUNGEONSEL (p->pID, &Para);
+}
+
+/* 開始マスを踏んだ：すぐには抜けず、はい・いいえを聞く（防衛の復活待ち・波の準備中も同じ） */
+static void DgLeaveAsk(PCHARINFO p, int nDungeonID)
+{
+	DGLEAVEASK Ask;
+
+	Ask.dwMapID = p->dwMapID;
+	Ask.dwX = p->dwX;
+	Ask.dwY = p->dwY;
+	s_mapDgLeaveAsk[p->dwTblID] = Ask;
+	DgSendLeave (p, DUNGEONSEL_LEAVEASK, DungeonText (DgInfo (nDungeonID), "leave_ask"));
+}
+
+/* 確認を無効にする（挑戦から外れた時など）。bSend なら窓も閉じさせる */
+static void DgLeaveAskClose(PCHARINFO p, BOOL bSend)
+{
+	std::map<DWORD, DGLEAVEASK>::iterator it = s_mapDgLeaveAsk.find (p->dwTblID);
+
+	if (it == s_mapDgLeaveAsk.end ()) {
+		return;
+	}
+	s_mapDgLeaveAsk.erase (it);
+	if (bSend) {
+		DgSendLeave (p, DUNGEONSEL_LEAVECLOSE, "");
+	}
+}
+
+/* 抜ける確認への返事。はいなら、聞いた場所にまだいて挑戦中の時だけ途中で帰る（記録なし） */
+static void DgLeaveAnswer(PCHARINFO p, BOOL bYes)
+{
+	std::map<DWORD, DGLEAVEASK>::iterator it = s_mapDgLeaveAsk.find (p->dwTblID);
+	DGLEAVEASK Ask;
+
+	if (it == s_mapDgLeaveAsk.end ()) {
+		return;
+	}
+	Ask = it->second;
+	s_mapDgLeaveAsk.erase (it);
+	if (!bYes || !DgRunOf (p) || (p->dwMapID != Ask.dwMapID) || (p->dwX != Ask.dwX) || (p->dwY != Ask.dwY)) {
+		return;
+	}
+	ChallengeLeave (p, CHALLENGELEAVE_RETIRE);
+}
+
 /* 姿を選ぶ窓を開く・閉じる */
 static void DgSendSel(PCHARINFO p, BYTE byType, const DGSEL *pSel, DWORD dwWait)
 {
@@ -4355,7 +4423,7 @@ BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
 		pRun = DgRunOf (pChar);
 		pDungeon = DgInfo (nID);
 		if (pRun && pDungeon && (pDungeon->byRebuildMode == DGREBUILD_FIXED) && (pRun->byDungeonID == (BYTE)nID)) {
-			ChallengeLeave (pChar, CHALLENGELEAVE_RETIRE);
+			DgLeaveAsk (pChar, nID);
 			return TRUE;
 		}
 	}
@@ -4397,12 +4465,12 @@ BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
 		if (pDungeon && (pMapChg->dwMapID == pDungeon->dwMapID) && (pMapChg->dwX == (DWORD)pDungeon->byStartX) && (pMapChg->dwY == (DWORD)pDungeon->byStartY)) {
 			/* 中の入口（入った時に立つ所）は途中で帰る出口（記録なし） */
 			if ((pEvent->dwX == (DWORD)pDungeon->byGenX1 + pDungeon->wGenStartX) && (pEvent->dwY == (DWORD)pDungeon->byGenY1 + pDungeon->wGenStartY)) {
-				ChallengeLeave (pChar, CHALLENGELEAVE_RETIRE);
+				DgLeaveAsk (pChar, pRun->byDungeonID);
 				return TRUE;
 			}
 			/* 設定変更前から残ったワープでも、全敵撃破では途中帰還として扱う（記録なし） */
 			if (pRun->bKillAll) {
-				ChallengeLeave (pChar, CHALLENGELEAVE_RETIRE);
+				DgLeaveAsk (pChar, pRun->byDungeonID);
 				return TRUE;
 			}
 			/* 組の誰かが最初にゴールした：クリア時間を記録する（まだ中にいる全員に知らせる文は、出した後に送る） */
@@ -4430,6 +4498,11 @@ void DungeonSelRecv(PCHARINFO pChar, PCMDPARA_DUNGEONSEL pPara)
 {
 	/* 旧クライアントの読み終えた通知では再開・再送・締め切り延長をしない。 */
 	if (pPara->byType == DUNGEONSEL_BEGIN) return;
+	/* 開始マスを踏んだ時の「抜けますか？」への返事（姿選びとは別） */
+	if ((pPara->byType == DUNGEONSEL_LEAVEYES) || (pPara->byType == DUNGEONSEL_LEAVENO)) {
+		DgLeaveAnswer (pChar, pPara->byType == DUNGEONSEL_LEAVEYES);
+		return;
+	}
 
 	std::map<DWORD, DWORD>::iterator itOf = s_mapDgSelOf.find (pChar->dwTblID);
 	std::map<DWORD, DGSEL>::iterator itS;

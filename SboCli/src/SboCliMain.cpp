@@ -2122,6 +2122,15 @@ void TimerProc(void)
 		case WNDTYPE_RECYCLE:
 		case WNDTYPE_DUNGEONSEL:
 		case WNDTYPE_IMPORTANT:
+			/* 番外編の「抜けますか？」は、聞かれた場所から離れたら閉じる */
+			if ((pWnd->nType == WNDTYPE_CONF) && (pWnd->nType2 == IDCONFIRMTYPE_DGLEAVE) && (g_nMyCharID >= 0)) {
+				PCHARINFO pMe = g_aCharInfo[g_nMyCharID];
+				if ((int)(((pMe->dwX & 0xFFFF) << 16) | (pMe->dwY & 0xFFFF)) != pWnd->nData2) {
+					EraseWindow (pWnd);
+					g_bDraw = TRUE;
+					break;
+				}
+			}
 			if (dwTime > pWnd->dwTime + 250) {
 				pWnd->dwTime = dwTime;
 				if (g_dwActiveMsgID == pWnd->dwID) {

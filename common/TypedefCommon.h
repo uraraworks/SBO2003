@@ -4173,6 +4173,10 @@ enum {
 	DUNGEONSEL_PICK,												/* 選ぶ（クライアント→サーバー。byIndex=一覧の何番目か） */
 	DUNGEONSEL_CANCEL,												/* 入るのをやめる（クライアント→サーバー） */
 	DUNGEONSEL_BEGIN,											/* 旧クライアントの読み終えた通知（サーバーでは無視） */
+	DUNGEONSEL_LEAVEASK,											/* 「ダンジョンから抜けますか？」のはい・いいえを出す（サーバー→クライアント。szTitle=文言） */
+	DUNGEONSEL_LEAVECLOSE,											/* 抜ける確認を閉じる（サーバー→クライアント） */
+	DUNGEONSEL_LEAVEYES,											/* 抜ける確認に「はい」（クライアント→サーバー） */
+	DUNGEONSEL_LEAVENO,												/* 抜ける確認に「いいえ」（クライアント→サーバー） */
 };
 typedef struct _CMDPARA_DUNGEONSEL {
 	BYTE		byCmd;												/* コマンドID */

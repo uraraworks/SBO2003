@@ -12459,6 +12459,14 @@ static void DgTestSelPick(PCHARINFO p, BYTE byIndex)
 	TestRecv(p, &Para, DungeonSelectionCommandSize());
 }
 
+/* 開始マスを踏んだ時の「抜けますか？」への返事（bYes=はい・いいえ） */
+static void DgTestLeaveAnswer(PCHARINFO p, BOOL bYes)
+{
+	CMDPARA_DUNGEONSEL Para;
+	DungeonSelectionCommand(Para, p->dwTblID, bYes ? DUNGEONSEL_LEAVEYES : DUNGEONSEL_LEAVENO, 0);
+	TestRecv(p, &Para, DungeonSelectionCommandSize());
+}
+
 #include "client-automap-test.inc"
 EM_JS(char *, MockMapBody, (int conn, int cmd, int valid), {
     return stringToNewUTF8(Module['sboNet'].lastBody(conn, cmd, valid));
@@ -13016,7 +13024,17 @@ static void TestDungeonBonus(const std::vector<int> &aLogin)
 		DgTestSelPick(pC, 0);
     DgTestEnter(pC);
 		int nIn = (int)QuestInChallenge(pC);
+		/* 開始マスを踏むと、すぐには抜けず「抜けますか？」を聞く。いいえなら残り、踏み直すとまた聞く。はいで抜ける */
+		int nAsk0 = SpCnt(pC, CMD_DUNGEONSEL);
 		if (pRetire) DungeonEventStep(pC, pRetire);
+		int nAsked = SpCnt(pC, CMD_DUNGEONSEL) - nAsk0;
+		int nStay0 = (int)QuestInChallenge(pC);
+		DgTestLeaveAnswer(pC, FALSE);
+		int nStay1 = (int)QuestInChallenge(pC);
+		if (pRetire) DungeonEventStep(pC, pRetire);
+		int nAsked2 = SpCnt(pC, CMD_DUNGEONSEL) - nAsk0 - nAsked;
+		DgTestLeaveAnswer(pC, TRUE);
+		printf("dungeonbonus leave-ask asked=%d stay-before=%d stay-no=%d asked-again=%d\n", nAsked, nStay0, nStay1, nAsked2);
 		s_dwFakeNow += 1000;
 		DungeonProcNow(s_dwFakeNow);
 		printf("dungeonbonus retire event=%d in-before=%d in=%d space=%u lv=%d runs=%d\n", (int)(pRetire != NULL), nIn, (int)QuestInChallenge(pC),
@@ -13726,6 +13744,7 @@ static void TestDungeonDaily(const std::vector<int> &aLogin)
 	DWORD dwK1 = pC->dwSpaceID;
 	s_dwFakeNow += 5000;
 	DungeonEventStep(pC, pRetire);
+	DgTestLeaveAnswer(pC, TRUE);
 	DungeonDailyFind(byID, dwKVer, vK);
 	printf("dungeondaily killall entrance-retire out=%d records=%d\n", (int)!QuestInChallenge(pC), (int)vK.aRec.size());
 	DungeonProcNow(s_dwFakeNow + 1000);
