@@ -2221,11 +2221,12 @@ dungeondefense enemy-judge enemy=2 other=1
 dungeondefense map sent=5 size-ok=1 members=1 me=10,6(1) enemies=2 alive=2 match=2 base=20,8(1) spring=20,8 r=2 range=9,3-22,12
 dungeondefense wave1 hold put1=2 wave-end=0
 dungeondefense spring far mana=10
-dungeondefense spring near mana=12
-dungeondefense spring out mana=12
+dungeondefense spring near mana=20
+dungeondefense spring out mana=20
 dungeondefense spring moved base-side mana=10
 dungeondefense spring moved at-spring mana=20 efc=1 fx=1
 dungeondefense spring moved at-spring +1s mana=30 efc=2 fx=1
+dungeondefense spring pct5 mana=35
 dungeondefense base-hp notices 90%=0 70%=1(1) 60%=0 40%=1
 dungeondefense down1 dead=1 near-base=1 (dist=1) down=1 inrun=1
 dungeondefense down1 resurrect-button=1 inrun=1

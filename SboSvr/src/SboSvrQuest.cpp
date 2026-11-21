@@ -4634,7 +4634,7 @@ static void DgSelOnDec(PCHARINFO pChar)
 #define DGDEF_REVIVE_STEP		(5)									/* 復活までの秒数＝倒れた回数×この秒数 */
 #define DGDEF_REVIVE_MAX		(30)								/* 復活までの最大秒数 */
 #define DGDEF_STATUS_KEEP		(5000)								/* 画面の帯の状態は、変わらなくてもこの間隔（ミリ秒）で送り直す（つなぎ直した・入り直した人にも届く） */
-#define DGDEF_SPRING_PERCENT	(2)									/* 泉で 1 回に戻る Mana の割合（最大 Mana の %。最低 1） */
+#define DGDEF_SPRING_PERCENT	(10)								/* 泉で 1 回に戻る Mana の割合の既定（最大 Mana の %。最低 1。設定 byDefSpringPct が 0 の時） */
 #define DGDEF_SPRING_FX_INTERVAL	(3000)							/* 泉のキラッとしたエフェクトを出す間隔（ミリ秒。入って最初に戻った時は必ず出す） */
 #define DGDEF_SPRING_INTERVAL	(900)								/* 泉で Mana が戻る間隔（ミリ秒。周期処理が約 1 秒ごとなので少し短く） */
 
@@ -5071,6 +5071,7 @@ static void DgDefMembers(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon, PCHARINF
 {
 	BOOL bSpring = ((int)(dwNow - pCh->dwDefSpring) >= DGDEF_SPRING_INTERVAL);
 	int nRange = pDungeon->byDefSpringRange ? (int)pDungeon->byDefSpringRange : DGDEF_SPRING_RANGE;
+	DWORD dwSpringPct = pDungeon->byDefSpringPct ? (DWORD)pDungeon->byDefSpringPct : (DWORD)DGDEF_SPRING_PERCENT;	/* 泉で戻る割合（%） */
 	/* 泉の中心：設定が両方 0 なら拠点の位置（古いデータ互換） */
 	BOOL bSpringPos = (pDungeon->byDefSpringX || pDungeon->byDefSpringY);
 	int nSpringX = bSpringPos ? (int)pDungeon->byDefSpringX : (pBase ? (int)pBase->dwX : 0);
@@ -5119,7 +5120,7 @@ static void DgDefMembers(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon, PCHARINF
 			if (!bIn) {
 				dd.dwSpringFx = 0;								/* 泉の外：次に入った時は最初に戻った時にエフェクトを出す */
 			} else if (p->wMana < p->wMaxMana) {
-				DWORD dwMana = (DWORD)p->wMana + max ((DWORD)p->wMaxMana * DGDEF_SPRING_PERCENT / 100, (DWORD)1);
+				DWORD dwMana = (DWORD)p->wMana + max ((DWORD)p->wMaxMana * dwSpringPct / 100, (DWORD)1);
 				int nGain;
 				char szTmp[32];
 

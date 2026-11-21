@@ -573,6 +573,8 @@
 #define IDC_DGLBL_DEF6                     1514
 #define IDC_DGLBL_DEF7                     1515
 #define IDC_DGLBL_DEF8                     1516
+#define IDC_DGLBL_DEF9                     1517
+#define IDC_DGDEF_SPRINGPCT                1518
 
 // Next default values for new objects
 // 
@@ -580,7 +582,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        244
 #define _APS_NEXT_COMMAND_VALUE         40037
-#define _APS_NEXT_CONTROL_VALUE         1517
+#define _APS_NEXT_CONTROL_VALUE         1519
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

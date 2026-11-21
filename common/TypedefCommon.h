@@ -1392,6 +1392,7 @@ typedef struct _SUBGAME_DUNGEONINFO {
 	BYTE		byDefSpringY;										/* 拠点防衛：泉の位置Y */
 	BYTE		byFixStartX;										/* 固定の形（byRebuildMode=2）：中の開始位置X（外の入口 byStartX/Y に乗ると組の空間のここへ移る。両方 0 なら外の入口と同じマス） */
 	BYTE		byFixStartY;										/* 固定の形：中の開始位置Y */
+	BYTE		byDefSpringPct;										/* 拠点防衛：泉の回復＝約1秒ごとに戻る Mana の割合（最大Manaの%。0=10） */
 	BYTE		*pMapTmp;											/* 作成するマップ */
 	DWORD		dwTblID;											/* 管理人キャラのテーブルID */
 	DWORD		dwCountTmp;											/* 参加人数カウント用 */
@@ -1458,6 +1459,7 @@ typedef struct _SUBGAME_DUNGEONINFOSAVE {
 	BYTE		byDefSpringY;										/* 拠点防衛：泉の位置Y */
 	BYTE		byFixStartX;										/* 固定の形：中の開始位置X */
 	BYTE		byFixStartY;										/* 固定の形：中の開始位置Y */
+	BYTE		byDefSpringPct;										/* 拠点防衛：泉の回復（最大Manaの%/秒） */
 	char szMessages[MAX_DGTEXT];							/* 番外編の文言一覧 */
 } SUBGAME_DUNGEONINFOSAVE, *PSUBGAME_DUNGEONINFOSAVE;
 

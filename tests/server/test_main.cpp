@@ -14210,10 +14210,11 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 	QuestMovePC(pA, nMapNo, 17, 8);
 	Tick(2);
 	printf("dungeondefense spring out mana=%d\n", (int)pA->wMana);
-	/* 4b. 泉を拠点から離れた位置（12,6）に置く：拠点の横では戻らず、泉の位置で最大Manaの 2% ずつ戻る（数字は毎回・キラッとは最初だけ。時間を進めすぎると後ろの状態帯の送信数がずれるので短く） */
+	/* 4b. 泉を拠点から離れた位置（12,6）に置く：拠点の横では戻らず、泉の位置で最大Manaの「泉の回復(%/秒)」ずつ戻る（ここは byDefSpringPct=2 を明示して、設定が効くことと従来の 2% の値を確かめる。既定の 10% は上の 4 で確認）（数字は毎回・キラッとは最初だけ。時間を進めすぎると後ろの状態帯の送信数がずれるので短く） */
 	{
 		WORD wManaBk = pA->wMana, wMaxBk = pA->wMaxMana;
 		Info.byDefSpringX = 12; Info.byDefSpringY = 6;
+		Info.byDefSpringPct = 2;
 		pA->wMaxMana = 500; pA->wMana = 10;
 		QuestMovePC(pA, nMapNo, 19, 8);
 		Tick(1);
@@ -14224,7 +14225,12 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 		printf("dungeondefense spring moved at-spring mana=%d efc=%d fx=%d\n", (int)pA->wMana, SpCnt(pA, CMD_ADDCHAREFC) - nEfc0, SpCnt(pA, CMD_EFECTCHG) - nChg0);
 		Tick(1);
 		printf("dungeondefense spring moved at-spring +1s mana=%d efc=%d fx=%d\n", (int)pA->wMana, SpCnt(pA, CMD_ADDCHAREFC) - nEfc0, SpCnt(pA, CMD_EFECTCHG) - nChg0);
-		Info.byDefSpringX = 0; Info.byDefSpringY = 0;
+		/* 泉の回復を 5% にすると、最大Mana 500 の 5% = 25 ずつ戻る */
+		Info.byDefSpringPct = 5;
+		pA->wMana = 10;
+		Tick(1);
+		printf("dungeondefense spring pct5 mana=%d\n", (int)pA->wMana);
+		Info.byDefSpringX = 0; Info.byDefSpringY = 0; Info.byDefSpringPct = 0;
 		pA->wMaxMana = wMaxBk; pA->wMana = wManaBk;
 		QuestMovePC(pA, nMapNo, 17, 8);
 	}
@@ -14387,10 +14393,11 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 		for (int k = 0; k < 2; k ++) {
 			SUBGAME_DUNGEONINFO Back = Info;
 			if (k == 0) {
-				Info.wDefBaseHP = 0; Info.wDefBaseStTmp = 0; Info.byDefWaveCount = 0; Info.byDefPrepSec = 0; Info.wDefWaveMaxSec = 0; Info.byDefSpringRange = 0;
+				Info.wDefBaseHP = 0; Info.wDefBaseStTmp = 0; Info.byDefWaveCount = 0; Info.byDefPrepSec = 0; Info.wDefWaveMaxSec = 0; Info.byDefSpringRange = 0; Info.byDefSpringPct = 0;
 				Info.byClearMode = DGCLEAR_GOAL; Info.byRebuildMode = DGREBUILD_RANDOM;
 			} else {
 				Info.wDefBaseStTmp = 3;
+				Info.byDefSpringPct = 7;						/* 泉の回復も保存・読み込みできる */
 			}
 			SaveSubGameInfo();
 			if (stat("SBODATA/SboDataSubGameInfo.dat", &st) == 0) nSize[k] = (long)st.st_size;
@@ -14406,7 +14413,7 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 					nOk[k] = (int)(pL->byRebuildMode == DGREBUILD_RANDOM && pL->byClearMode == DGCLEAR_GOAL && pL->wDefBaseHP == 0 && pL->byDefWaveCount == 0 && pL->byStartX == 10);
 				} else {
 					nOk[k] = (int)(pL->byRebuildMode == DGREBUILD_FIXED && pL->byClearMode == DGCLEAR_DEFENSE && pL->wDefBaseHP == 100 && pL->wDefBaseStTmp == 3 &&
-						pL->byDefWaveCount == 2 && pL->byDefPrepSec == 3 && pL->wDefWaveMaxSec == 30 && pL->byDefSpringRange == 2 && pL->byGoalX == 20 && pL->byGoalY == 8);
+						pL->byDefWaveCount == 2 && pL->byDefPrepSec == 3 && pL->wDefWaveMaxSec == 30 && pL->byDefSpringRange == 2 && pL->byDefSpringPct == 7 && pL->byGoalX == 20 && pL->byGoalY == 8);
 				}
 			}
 			for (int i = 0; i < g_aSubaGameInfo.GetSize(); i ++) {

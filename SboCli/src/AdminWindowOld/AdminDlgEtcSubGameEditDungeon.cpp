@@ -35,6 +35,7 @@ static const int s_anDefenseOnly[] = {
 	IDC_DGLBL_DEF3, IDC_DGDEF_WAVES, IDC_DGLBL_DEF4, IDC_DGDEF_PREP,
 	IDC_DGLBL_DEF5, IDC_DGDEF_WAVESEC, IDC_DGLBL_DEF6, IDC_DGDEF_SPRING,
 	IDC_DGLBL_DEF7, IDC_DGDEF_SPRINGX, IDC_DGLBL_DEF8, IDC_DGDEF_SPRINGY,
+	IDC_DGLBL_DEF9, IDC_DGDEF_SPRINGPCT,
 };
 /* 気まぐれダンジョンの時だけ出す欄（拠点防衛では隠す） */
 static const int s_anRandomOnly[] = {
@@ -181,6 +182,8 @@ void GetDataDlgEtcSubGameEditDungeon(void)
 	pInfo->byFixStartX = (BYTE)atoi (szTmp);
 	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGFIX_STARTY), szTmp, sizeof (szTmp));
 	pInfo->byFixStartY = (BYTE)atoi (szTmp);
+	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGDEF_SPRINGPCT), szTmp, sizeof (szTmp));
+	pInfo->byDefSpringPct = (BYTE)atoi (szTmp);
 	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGMESSAGES), pInfo->szMessages, sizeof (pInfo->szMessages));
 }
 
@@ -310,6 +313,8 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 	SetWindowText (GetDlgItem (hWnd, IDC_DGFIX_STARTX), szTmp);
 	wsprintf (szTmp, "%d", pInfo->byFixStartY);
 	SetWindowText (GetDlgItem (hWnd, IDC_DGFIX_STARTY), szTmp);
+	wsprintf (szTmp, "%d", pInfo->byDefSpringPct);
+	SetWindowText (GetDlgItem (hWnd, IDC_DGDEF_SPRINGPCT), szTmp);
 	SendMessage (GetDlgItem (hWnd, IDC_DGMESSAGES), EM_LIMITTEXT, MAX_DGTEXT - 1, 0);
 	SetWindowText (GetDlgItem (hWnd, IDC_DGMESSAGES), pInfo->szMessages);
 

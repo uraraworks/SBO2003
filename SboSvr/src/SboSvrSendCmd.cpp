@@ -2985,6 +2985,7 @@ void SendCmdSUBGAMEINFO(DWORD pIDSend, int nNo)
 			pDungeon->byDefSpringY = pDungeonInfo->byDefSpringY;
 			pDungeon->byFixStartX = pDungeonInfo->byFixStartX;
 			pDungeon->byFixStartY = pDungeonInfo->byFixStartY;
+			pDungeon->byDefSpringPct = pDungeonInfo->byDefSpringPct;
 			CopyMemory (pDungeon->szMessages, pDungeonInfo->szMessages, sizeof (pDungeon->szMessages));
 		}		
 		break;
