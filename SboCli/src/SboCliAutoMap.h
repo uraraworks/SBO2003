@@ -7,6 +7,7 @@
 #pragma once
 
 extern void	RecvDataProcDUNGEONMAP	(PBYTE, DWORD);					/* 受信データ処理(探索マップ用の情報) */
+extern void	RecvDataProcDGDEFMAP	(PBYTE, DWORD);					/* 受信データ処理(拠点防衛の全体地図) */
 extern void	AutoMapUpdate			(void);							/* 自分の位置・見えたマスを記録する（キャラ座標情報の更新のたび） */
 extern void	AutoMapReset			(void);							/* 全部消す（ログイン画面へ戻る時など） */
 extern void	AutoMapOnMapInfo		(DWORD);						/* マップ情報を受け取った（別のマップなら消す） */

@@ -394,6 +394,7 @@ enum {
 	CMD_DUNGEONSEL,													/* 番外編ダンジョンの入口で入る姿（テンプレート）を選ぶ(CMDPARA_DUNGEONSEL。一覧を開く・閉じるはサーバー→クライアント、選ぶ・やめるはクライアント→サーバー。プレイヤー用) */
 /* 以下、プレイヤー用（サーバー→本人だけ。サーバーは受け取らない） */
 	CMD_DGDEFSTATUS,												/* 番外編の拠点防衛の状態（拠点HP・波・残り秒・残り敵数。CMDPARA_DGDEFSTATUS） */
+	CMD_DGDEFMAP,													/* 番外編の拠点防衛の全体地図（範囲・拠点・泉・仲間と敵の位置。CMDPARA_DGDEFMAP。サーバー→組の全員） */
 	CMD_MAX
 };
 
@@ -4216,6 +4217,28 @@ typedef struct _CMDPARA_DGDEFSTATUS {
 	WORD		wRestSec;											/* 準備中：次の波までの残り秒 */
 	WORD		wEnemy;												/* 波の最中：残りの敵の数 */
 } CMDPARA_DGDEFSTATUS, *PCMDPARA_DGDEFSTATUS;
+
+/* 番外編の拠点防衛の全体地図（CMD_DGDEFMAP。サーバー→組の全員。約 1 秒ごと）
+   この後ろに byMember 件の DUNGEONMAPPOS（仲間の位置。自分も含む）、続けて wEnemy 件の敵の座標（BYTE の X, Y の組。詰めた形）が続く。
+   範囲の中のマス目はクライアントが持っているマップ情報から描く。敵は DGDEFMAP_MAXENEMY 体まで（超えた分は送らない）。
+   拠点・泉が無い時は DGDEFMAP_NONE */
+#define DGDEFMAP_MAXENEMY	(200)									/* 1 回に送る敵の数の上限 */
+#define DGDEFMAP_NONE		(0xFFFF)								/* 拠点・泉の位置が無い */
+typedef struct _CMDPARA_DGDEFMAP {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byMember;											/* 仲間の数（後ろに DUNGEONMAPPOS が並ぶ） */
+	WORD		wEnemy;												/* 敵の数（その後ろに BYTE の X, Y が並ぶ） */
+	DWORD		dwMapID;											/* マップID */
+	WORD		wX1;												/* 防衛の範囲（マップ座標） */
+	WORD		wY1;
+	WORD		wX2;
+	WORD		wY2;
+	WORD		wBaseX;												/* 拠点の位置（無ければ DGDEFMAP_NONE） */
+	WORD		wBaseY;
+	WORD		wSpringX;											/* 泉の中心（無ければ DGDEFMAP_NONE） */
+	WORD		wSpringY;
+	BYTE		bySpringRange;										/* 泉の範囲（中心から何マス以内か） */
+} CMDPARA_DGDEFMAP, *PCMDPARA_DGDEFMAP;
 #pragma pack(pop)
 
 /* 並べ替えの対象(CMDPARA_SORTITEM の byTarget) */

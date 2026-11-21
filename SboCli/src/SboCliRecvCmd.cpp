@@ -472,6 +472,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcDUNGEONMAP,				/* CMD_DUNGEONMAP */
 	RecvDataProcDUNGEONSEL,				/* CMD_DUNGEONSEL */
 	RecvDataProcDGDEFSTATUS,			/* CMD_DGDEFSTATUS */
+	RecvDataProcDGDEFMAP,				/* CMD_DGDEFMAP */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */

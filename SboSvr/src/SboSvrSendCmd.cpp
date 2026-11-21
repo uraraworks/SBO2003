@@ -1901,6 +1901,17 @@ void SendCmdDGDEFSTATUS(DWORD pIDSend, PCMDPARA_DGDEFSTATUS pPara)
 }
 
 /* ========================================================================= */
+/* 関数名：SendCmdDGDEFMAP													 */
+/* 内容：コマンド送信(番外編の拠点防衛：全体地図。その人にだけ)				 */
+/* 備考：CMDPARA_DGDEFMAP＋仲間の位置＋敵の座標を呼び出し側で組み立てて渡す	 */
+/* ========================================================================= */
+void SendCmdDGDEFMAP(DWORD pIDSend, PBYTE pData, DWORD dwSize)
+{
+	((PCMDPARA_DGDEFMAP)pData)->byCmd = CMD_DGDEFMAP;
+	svrSock.SendTo (pIDSend, pData, dwSize, SENDTIMEOUT);
+}
+
+/* ========================================================================= */
 /* 関数名：SendCmdSYSMSGMAP													 */
 /* 内容：コマンド送信(マップ内システムメッセージ)							 */
 /* 日付：2004/01/31															 */

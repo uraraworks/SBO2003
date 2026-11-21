@@ -4907,6 +4907,77 @@ static void DgDefStatusSend(CHALLENGE *pCh, DWORD dwNow, PCHARINFO pOnly, BOOL b
 	}
 }
 
+/* 全体地図（CMD_DGDEFMAP）を組の全員に送る（周期処理ごと＝約 1 秒）。敵は座標だけの詰めた形で上限 DGDEFMAP_MAXENEMY 体 */
+static void DgDefMapSend(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon)
+{
+	CMDPARA_DGDEFMAP Para;
+	std::vector<BYTE> aPos, aEnemy;
+	PCHARINFO pBase = DgDefBaseChar (pCh);
+	BOOL bSpringPos = (pDungeon->byDefSpringX || pDungeon->byDefSpringY);
+	int i, nCount = g_aCharInfo.GetSize (), nMember = 0, nEnemy = 0;
+	size_t k;
+
+	ZeroMemory (&Para, sizeof (Para));
+	Para.byCmd = CMD_DGDEFMAP;
+	Para.dwMapID = pDungeon->dwMapID;
+	Para.wX1 = pDungeon->byX1;
+	Para.wY1 = pDungeon->byY1;
+	Para.wX2 = pDungeon->byX2;
+	Para.wY2 = pDungeon->byY2;
+	Para.wBaseX = pBase ? (WORD)pBase->dwX : (WORD)DGDEFMAP_NONE;
+	Para.wBaseY = pBase ? (WORD)pBase->dwY : (WORD)DGDEFMAP_NONE;
+	/* 泉の中心：設定が両方 0 なら拠点の位置（DgDefMembers と同じ） */
+	if (bSpringPos) {
+		Para.wSpringX = pDungeon->byDefSpringX;
+		Para.wSpringY = pDungeon->byDefSpringY;
+	} else {
+		Para.wSpringX = Para.wBaseX;
+		Para.wSpringY = Para.wBaseY;
+	}
+	Para.bySpringRange = pDungeon->byDefSpringRange ? pDungeon->byDefSpringRange : (BYTE)DGDEF_SPRING_RANGE;
+	/* 仲間の位置（この組の空間・同じマップにいる人） */
+	for (k = 0; k < pCh->aMember.size () && nMember < 255; k ++) {
+		PCHARINFO p = (pCh->aMember[k] < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[pCh->aMember[k]] : NULL;
+		DUNGEONMAPPOS pos;
+
+		if ((p == NULL) || (p->pID == 0) || (p->dwSpaceID != pCh->dwSpaceID) || (p->dwMapID != pDungeon->dwMapID)) {
+			continue;
+		}
+		ZeroMemory (&pos, sizeof (pos));
+		pos.dwTblID = p->dwTblID;
+		pos.wX = (WORD)p->dwX;
+		pos.wY = (WORD)p->dwY;
+		aPos.insert (aPos.end (), (PBYTE)&pos, (PBYTE)(&pos + 1));
+		nMember ++;
+	}
+	/* 敵の位置（生きている敵だけ。座標は 0〜255 なので 1 バイトずつ） */
+	for (i = 0; (i < nCount) && (nEnemy < DGDEFMAP_MAXENEMY); i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+
+		if (DgDefIsEnemyOf (pCh, p) && (p->wHP > 0) && (p->dwMapID == pDungeon->dwMapID) && (p->dwX < 256) && (p->dwY < 256)) {
+			aEnemy.push_back ((BYTE)p->dwX);
+			aEnemy.push_back ((BYTE)p->dwY);
+			nEnemy ++;
+		}
+	}
+	Para.byMember = (BYTE)nMember;
+	Para.wEnemy = (WORD)nEnemy;
+	{
+		std::vector<BYTE> buf (sizeof (Para) + aPos.size () + aEnemy.size ());
+
+		CopyMemory (&buf[0], &Para, sizeof (Para));
+		if (!aPos.empty ()) CopyMemory (&buf[sizeof (Para)], &aPos[0], aPos.size ());
+		if (!aEnemy.empty ()) CopyMemory (&buf[sizeof (Para) + aPos.size ()], &aEnemy[0], aEnemy.size ());
+		for (k = 0; k < pCh->aMember.size (); k ++) {
+			PCHARINFO pTmp = (pCh->aMember[k] < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[pCh->aMember[k]] : NULL;
+
+			if (pTmp && IsPlayerOnline (pTmp) && (s_mapLoan.find (pCh->aMember[k]) != s_mapLoan.end ())) {
+				SendCmdDGDEFMAP (pTmp->pID, &buf[0], (DWORD)buf.size ());
+			}
+		}
+	}
+}
+
 /* 準備時間に入る（次に来る波の知らせ） */
 static void DgDefEnterPrep(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon, DWORD dwNow)
 {
@@ -5070,6 +5141,8 @@ static void DgDefProc(CHALLENGE &Ch, PSUBGAME_DUNGEONINFO pDungeon, DWORD dwNow)
 	}
 	/* 画面の帯：変わった時（準備中は残り秒が変わるので1秒ごと）と、一定時間ごとに送る */
 	DgDefStatusSend (&Ch, dwNow, NULL, FALSE);
+	/* 全体地図：敵・仲間の位置を毎回（約 1 秒ごと）組の全員へ */
+	DgDefMapSend (&Ch, pDungeon);
 }
 
 /* 周期処理（約 1 秒ごと）：選ぶ締め切り・中の人が出た判定・空間ごとの敵の補充・空になった空間を空きにする */

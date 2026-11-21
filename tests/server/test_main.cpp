@@ -14166,6 +14166,34 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 		}
 		printf("dungeondefense enemy-judge enemy=%d other=%d\n", nIsEnemy, nIsOther);
 	}
+	/* 全体地図（CMD_DGDEFMAP）：約 1 秒ごとに組へ届き、範囲・拠点・泉・仲間と生きている敵の位置（詰めた形）が入っている */
+	{
+		std::vector<BYTE> aMap;
+		CMDPARA_DGDEFMAP Mp;
+		int nAlive = 0, nMatch = 0, nSizeOk = 0;
+		if (MarketLast(DgTestConn(pA), CMD_DGDEFMAP, aMap) && aMap.size() >= sizeof(Mp)) {
+			memcpy(&Mp, &aMap[0], sizeof(Mp));
+			nSizeOk = (aMap.size() == sizeof(Mp) + Mp.byMember * sizeof(DUNGEONMAPPOS) + Mp.wEnemy * 2);
+			for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+				PCHARINFO p = g_aCharInfo[i];
+				if (!p || p->dwSpaceID != dwSpace || !DgIsDefenseEnemy(p) || p->wHP == 0) continue;
+				nAlive ++;
+				for (int k = 0; nSizeOk && k < (int)Mp.wEnemy; k ++) {
+					const BYTE *pe = &aMap[sizeof(Mp) + Mp.byMember * sizeof(DUNGEONMAPPOS) + k * 2];
+					if (pe[0] == (BYTE)p->dwX && pe[1] == (BYTE)p->dwY) { nMatch ++; break; }
+				}
+			}
+			DUNGEONMAPPOS Me;
+			memset(&Me, 0, sizeof(Me));
+			if (Mp.byMember >= 1) memcpy(&Me, &aMap[sizeof(Mp)], sizeof(Me));
+			printf("dungeondefense map sent=%d size-ok=%d members=%d me=%d,%d(%d) enemies=%d alive=%d match=%d base=%d,%d(%d) spring=%d,%d r=%d range=%d,%d-%d,%d\n", SpCnt(pA, CMD_DGDEFMAP), nSizeOk, (int)Mp.byMember,
+				(int)Me.wX, (int)Me.wY, (int)(Me.dwTblID == pA->dwTblID && Me.wX == pA->dwX && Me.wY == pA->dwY), (int)Mp.wEnemy, nAlive, nMatch,
+				(int)Mp.wBaseX, (int)Mp.wBaseY, (int)(pBase && Mp.wBaseX == pBase->dwX && Mp.wBaseY == pBase->dwY),
+				(int)Mp.wSpringX, (int)Mp.wSpringY, (int)Mp.bySpringRange, (int)Mp.wX1, (int)Mp.wY1, (int)Mp.wX2, (int)Mp.wY2);
+		} else {
+			printf("dungeondefense map none sent=%d\n", SpCnt(pA, CMD_DGDEFMAP));
+		}
+	}
 	Tick(3);
 	printf("dungeondefense wave1 hold put1=%d wave-end=%d\n", DgTestCountEnemy(dwPut1, dwSpace), Say("ウェーブ 1 をしのいだ"));
 
