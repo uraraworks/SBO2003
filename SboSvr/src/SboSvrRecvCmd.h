@@ -94,4 +94,7 @@ extern void		SubWar_PrePare				(PSUBGAME_WARINFO);								/* 準備処理 */
 extern void		SubWar_ChgTurn				(PSUBGAME_WARINFO);								/* ターン変更 */
 extern void		SubWar_Quit					(PSUBGAME_WARINFO);								/* 試合終了 */
 
+/* 特技ショートカットと帯の表示設定を本人へ送る（番外編・討伐チャレンジの出入りでも使う） */
+extern void		SendMagicKeySetting			(PCHARINFO);
+
 /* Copyright(C)URARA-works 2003-2006 */

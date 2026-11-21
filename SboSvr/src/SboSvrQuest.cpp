@@ -77,6 +77,8 @@ typedef struct _LOANBAK {
 	BYTE		abyMagic[MAX_USEMAGIC];
 	WORD		waItem[MAX_MYITEM];
 	WORD		waEqu[MAX_EQUTYPE];
+	BYTE		abyMagicKey[MAX_MAGICKEY];							/* 特技ショートカット（中で登録し直しても、出たら元に戻す） */
+	WORD		awKeyItem[MAX_MAGICKEY];							/* ショートカットの装備品・道具 */
 	WORD		wMaxHP, wHP, wMaxMana, wMana;
 	DWORD		dwGold, dwExp;
 	char		chAttrFire, chAttrWater, chAttrWind, chAttrEarth, chAttrLight, chAttrDark;
@@ -2628,6 +2630,7 @@ static void LoanXfer(PCHARINFO p, LOANBAK *b, BOOL bToChar)
 #define LOANA(f)	if (bToChar) { memcpy (p->f, b->f, sizeof (p->f)); } else { memcpy (b->f, p->f, sizeof (p->f)); }
 	LOANX (byLevel);	LOANX (byPW);	LOANX (byDEX);	LOANX (byST);	LOANX (byIT);	LOANX (byLK);
 	LOANA (abyMagic);	LOANA (waItem);	LOANA (waEqu);
+	LOANA (abyMagicKey);	LOANA (awKeyItem);
 	LOANX (wMaxHP);	LOANX (wHP);	LOANX (wMaxMana);	LOANX (wMana);
 	LOANX (dwGold);	LOANX (dwExp);
 	LOANX (chAttrFire);	LOANX (chAttrWater);	LOANX (chAttrWind);
@@ -2677,6 +2680,9 @@ static void LoanApply(PCHARINFO p, PSTATUSTEMPLATEINFO t)
 	p->chAttrLight	= t->chAttrLight;
 	p->chAttrDark	= t->chAttrDark;
 	memcpy (p->abyMagic, t->abyMagic, sizeof (p->abyMagic));
+	/* ショートカットは空から（元の登録は控えにあり、出る時に戻す） */
+	ZeroMemory (p->abyMagicKey, sizeof (p->abyMagicKey));
+	ZeroMemory (p->awKeyItem, sizeof (p->awKeyItem));
 	ZeroMemory (p->waItem, sizeof (p->waItem));
 	for (i = 0, j = 0; i < MAX_MYITEM; i ++) {
 		/* 無いアイテムの番号は持たせない */
@@ -2728,6 +2734,7 @@ static void LoanSendAll(PCHARINFO p)
 		SendCmdCHARITEM (p->pID, p->dwTblID);
 		SendCmdCHARSTATUS (p->pID, p->dwTblID);
 		SendCmdCHARSTATUSHP (URARASOCK_SENDALL, p->dwTblID);
+		SendMagicKeySetting (p);		/* 入れ替えたショートカットを知らせる */
 	}
 	/* 攻撃アップ・守りアップの表示も消す（入る前にかけた効果を持ち込まない・持ち出さない） */
 	BuffSendState (p);
