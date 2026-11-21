@@ -1378,7 +1378,13 @@ typedef struct _SUBGAME_DUNGEONINFO {
 	WORD		wTmplID[MAX_DGTMPL];								/* 番外編：テンプレート番号（ステータステンプレートの番号） */
 	char		szTmplName[MAX_DGTMPL][MAX_DGTMPLNAME];				/* 番外編：選ぶ窓に出す表示名（空ならテンプレートの名前） */
 	BYTE		byRebuildMode;										/* 作り直しの方式（DGREBUILD_*。0=今まで通り・無人5秒で新しいシードで作り直す／1=日替わり。0 以外の時だけ保存の列が増える） */
-	BYTE		byClearMode;										/* クリア条件（DGCLEAR_*。0=ゴールのワープに着く／1=補充しない印の敵を全部倒す。0 以外の時だけ保存の列が増える） */
+	BYTE		byClearMode;										/* クリア条件（DGCLEAR_*。0=ゴールのワープに着く／1=補充しない印の敵を全部倒す／2=拠点防衛。0 以外の時だけ保存の列が増える） */
+	WORD		wDefBaseHP;											/* 拠点防衛：拠点の最大HP（0=1000。0 以外の時だけ保存の列が増える） */
+	WORD		wDefBaseStTmp;										/* 拠点防衛：拠点の見た目に使うステータステンプレート番号（0=既定） */
+	BYTE		byDefWaveCount;										/* 拠点防衛：波の数（1〜） */
+	BYTE		byDefPrepSec;										/* 拠点防衛：波と波の間の準備時間・秒（0=20） */
+	WORD		wDefWaveMaxSec;										/* 拠点防衛：1つの波の最長時間・秒（0=180。過ぎたら残りがいても次の波へ） */
+	BYTE		byDefSpringRange;									/* 拠点防衛：泉の範囲＝拠点から何マス以内で Mana が戻るか（0=2） */
 	BYTE		*pMapTmp;											/* 作成するマップ */
 	DWORD		dwTblID;											/* 管理人キャラのテーブルID */
 	DWORD		dwCountTmp;											/* 参加人数カウント用 */
@@ -1409,6 +1415,8 @@ typedef struct _SUBGAME_DUNGEONINFO {
 #define DGCLEAR_GOAL		0										/* クリア条件：ゴールのワープに着く（今まで通り） */
 #define DGCLEAR_KILLALL		1										/* クリア条件：その組の空間の、補充しない印の敵を全部倒す（そういう敵がいない設定ならゴールと同じ） */
 #define DGREBUILD_DAILY		1										/* 日替わり（日付とダンジョン番号からシードを決める＝その日は同じ形。日付が変わったら無人の時に作り直す） */
+#define DGREBUILD_FIXED		2										/* 作り直さない（範囲のマス目は手で作ったものをそのまま使う。生成・探索マップ用の情報は作らない） */
+#define DGCLEAR_DEFENSE		2										/* クリア条件：拠点防衛（拠点を守って全部の波をしのぐ。負けは拠点HP 0） */
 
 /* サブゲーム：ダンジョン情報(保存データ) */
 typedef struct _SUBGAME_DUNGEONINFOSAVE {
@@ -1433,6 +1441,12 @@ typedef struct _SUBGAME_DUNGEONINFOSAVE {
 	char		szTmplName[MAX_DGTMPL][MAX_DGTMPLNAME];				/* 番外編：表示名 */
 	BYTE		byRebuildMode;										/* 作り直しの方式（DGREBUILD_*） */
 	BYTE		byClearMode;										/* クリア条件（DGCLEAR_*） */
+	WORD		wDefBaseHP;											/* 拠点防衛：拠点の最大HP */
+	WORD		wDefBaseStTmp;										/* 拠点防衛：拠点の見た目のテンプレート番号 */
+	BYTE		byDefWaveCount;										/* 拠点防衛：波の数 */
+	BYTE		byDefPrepSec;										/* 拠点防衛：準備時間・秒 */
+	WORD		wDefWaveMaxSec;										/* 拠点防衛：1つの波の最長時間・秒 */
+	BYTE		byDefSpringRange;									/* 拠点防衛：泉の範囲（マス） */
 	char szMessages[MAX_DGTEXT];							/* 番外編の文言一覧 */
 } SUBGAME_DUNGEONINFOSAVE, *PSUBGAME_DUNGEONINFOSAVE;
 
@@ -2340,6 +2354,7 @@ typedef struct _CHARINFO {
 	BYTE		byPutCount;											/* 最大NPC発生数 */
 	BYTE		byPutCountNow;										/* 現在のNPC発生数 */
 	BYTE		byPutOnce;											/* NPC発生：1=補充しない（決めた数を出したら、それ以上は出さない。倒されても出し直さない） */
+	BYTE		byPutWave;											/* NPC発生：拠点防衛の波番号（0=ふつう。1〜=防衛モードの組の空間で、その波の時だけ出す） */
 	BYTE		byPutDone;											/* NPC発生：補充しない印の時に、これまでに出した数（実行中だけ・保存しない。ダンジョンの作り直しで 0 に戻す） */
 	BYTE		byCharEfcProc;										/* 処理中の文字エフェクト番号 */
 	BYTE		byDrunkPoint;										/* 酔いポイント */
@@ -2522,6 +2537,7 @@ typedef struct _CMDPARA_CHARINFO {
 	BYTE		byAreaY;											/* 移動範囲（縦） */
 	BYTE		byPutCount;											/* 最大NPC発生数 */
 	BYTE		byPutOnce;											/* NPC発生：1=補充しない */
+	BYTE		byPutWave;											/* NPC発生：拠点防衛の波番号（0=ふつう） */
 	BYTE		byDropProbability;									/* ドロップ率 */
 	BYTE		byMoveProbabilityX;									/* 移動確率X(NPC) */
 	BYTE		byMoveProbabilityY;									/* 移動確率Y(NPC) */
@@ -4157,6 +4173,10 @@ enum {
 	DUNGEONSEL_PICK,												/* 選ぶ（クライアント→サーバー。byIndex=一覧の何番目か） */
 	DUNGEONSEL_CANCEL,												/* 入るのをやめる（クライアント→サーバー） */
 	DUNGEONSEL_BEGIN,											/* 旧クライアントの読み終えた通知（サーバーでは無視） */
+	DUNGEONSEL_LEAVEASK,											/* 「ダンジョンから抜けますか？」のはい・いいえを出す（サーバー→クライアント。szTitle=文言） */
+	DUNGEONSEL_LEAVECLOSE,											/* 抜ける確認を閉じる（サーバー→クライアント） */
+	DUNGEONSEL_LEAVEYES,											/* 抜ける確認に「はい」（クライアント→サーバー） */
+	DUNGEONSEL_LEAVENO,												/* 抜ける確認に「いいえ」（クライアント→サーバー） */
 };
 typedef struct _CMDPARA_DUNGEONSEL {
 	BYTE		byCmd;												/* コマンドID */

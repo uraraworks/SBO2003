@@ -510,6 +510,13 @@
 #define IDC_DGMESSAGES                    1480
 #define IDC_DGCLEAR_MODE                  1467
 #define IDC_DGREBUILD_NOW                 1468
+#define IDC_DGDEF_HP                      1481
+#define IDC_DGDEF_TMPL                    1482
+#define IDC_DGDEF_WAVES                   1483
+#define IDC_DGDEF_PREP                    1484
+#define IDC_DGDEF_WAVESEC                 1485
+#define IDC_DGDEF_SPRING                  1486
+#define IDC_CHAR_PUTWAVE                  1487
 #define IDC_DGTMPL_ID2            1451
 #define IDC_DGTMPL_ID3            1452
 #define IDC_DGTMPL_ID4            1453
@@ -542,7 +549,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        244
 #define _APS_NEXT_COMMAND_VALUE         40037
-#define _APS_NEXT_CONTROL_VALUE         1480
+#define _APS_NEXT_CONTROL_VALUE         1488
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

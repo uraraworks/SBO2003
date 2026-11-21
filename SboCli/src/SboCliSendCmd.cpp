@@ -2176,6 +2176,12 @@ void SendCmdSUBGAMEINFO(int nNo)
 			CopyMemory (pDungeon->szTmplName, pDungeonInfo->szTmplName, sizeof (pDungeon->szTmplName));
 			pDungeon->byRebuildMode = pDungeonInfo->byRebuildMode;
 			pDungeon->byClearMode = pDungeonInfo->byClearMode;
+			pDungeon->wDefBaseHP = pDungeonInfo->wDefBaseHP;
+			pDungeon->wDefBaseStTmp = pDungeonInfo->wDefBaseStTmp;
+			pDungeon->byDefWaveCount = pDungeonInfo->byDefWaveCount;
+			pDungeon->byDefPrepSec = pDungeonInfo->byDefPrepSec;
+			pDungeon->wDefWaveMaxSec = pDungeonInfo->wDefWaveMaxSec;
+			pDungeon->byDefSpringRange = pDungeonInfo->byDefSpringRange;
 			CopyMemory (pDungeon->szMessages, pDungeonInfo->szMessages, sizeof (pDungeon->szMessages));
 		}		
 		break;

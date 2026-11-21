@@ -18,6 +18,7 @@ typedef class CCharProcMOVERAND : public CCharProcBase
 {
 public:
 	CCharProcMOVERAND();								/* コンストラクタ */
+	virtual ~CCharProcMOVERAND();						/* デストラクタ */
 
 	BOOL Proc		(DWORD dwTime);								/* 処理 */
 
@@ -45,6 +46,7 @@ protected:
 	DWORD	m_dwRouteStuck;								/* 巡回ルートで進めなくなった時間 */
 	DWORD	m_dwBattleTarget;							/* 戦闘１：戦っている相手 */
 	DWORD	m_dwBattleTime;								/* 戦闘１：最後に相手が近くにいた時間 */
+	class CCharProcSEARCH	*m_pMarch;					/* 拠点防衛の組の空間で出た敵の行進（その時だけ作る。動きは戦闘２の処理に任せる） */
 } CCharProcMOVERAND, *PCCharProcMOVERAND;
 
 /* Copyright(C)URARA-works 2006 */

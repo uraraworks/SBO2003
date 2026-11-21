@@ -4027,6 +4027,38 @@ void RecvDataProcDUNGEONSEL(PBYTE pData, DWORD dwDataSize)
 	if (dwDataSize < offsetof (CMDPARA_DUNGEONSEL, szTitle)) {
 		return;
 	}
+	/* 開始マスを踏んだ時の「ダンジョンから抜けますか？」：姿選びの窓とは別に、はい・いいえだけを出す・閉じる */
+	if ((pPara->byType == DUNGEONSEL_LEAVEASK) || (pPara->byType == DUNGEONSEL_LEAVECLOSE)) {
+		/* 開いている同じ確認は閉じる（踏み直した時は出し直し） */
+		for (i = g_WndInfo.GetSize () - 1; i >= 0; i --) {
+			PWNDINFO pOld = g_WndInfo[i];
+			if ((pOld->nType == WNDTYPE_CONF) && (pOld->nType2 == IDCONFIRMTYPE_DGLEAVE)) {
+				EraseWindow (pOld);
+				i = min (i, g_WndInfo.GetSize ());
+			}
+		}
+		if ((pPara->byType == DUNGEONSEL_LEAVEASK) && (g_nMyCharID >= 0) && (dwDataSize > offsetof (CMDPARA_DUNGEONSEL, szTitle))) {
+			char szTmp[sizeof (pPara->szTitle) + 4];
+
+			pPara->szTitle[sizeof (pPara->szTitle) - 1] = 0;
+			_snprintf (szTmp, sizeof (szTmp) - 1, "%s@2", pPara->szTitle);
+			szTmp[sizeof (szTmp) - 1] = 0;
+			/* 初めは「いいえ」にカーソルを置く。出てから0.4秒は決定を受け付けない（連打対策） */
+			PWNDINFO pConf = MakeWindowCONF (16 * 20, 16 * 10, IDCONFIRMTYPE_DGLEAVE);
+			pConf->nData1 = 1;
+			pConf->nData2 = (int)(((g_aCharInfo[g_nMyCharID]->dwX & 0xFFFF) << 16) | (g_aCharInfo[g_nMyCharID]->dwY & 0xFFFF));
+			pConf->dwData = timeGetTime ();
+			g_WndInfo.Add (pConf);
+			g_dwActiveMsgID = pConf->dwID;
+
+			PWNDINFO pMsg = MakeWindowMSG (szTmp, FALSE);
+			pMsg->pParent = pConf;
+			pConf->pChild = pMsg;
+			g_WndInfo.Add (pMsg);
+		}
+		g_bDraw = TRUE;
+		return;
+	}
 	/* 台詞はお店と同じく一覧の子にする。残り時間の更新では前の台詞を引き継ぐ。 */
 	PWNDINFO pReception = NULL;
 	if (pPara->byType == DUNGEONSEL_OPEN) {
@@ -5057,6 +5089,7 @@ void RecvDataProcCHARINFO(PBYTE pData, DWORD dwDataSize)
 	pCharDst->byAreaY				= pChar->byAreaY;
 	pCharDst->byPutCount			= pChar->byPutCount;
 	pCharDst->byPutOnce				= pChar->byPutOnce;
+	pCharDst->byPutWave				= pChar->byPutWave;
 	pCharDst->byDropProbability		= pChar->byDropProbability;
 	pCharDst->byMoveProbabilityX	= pChar->byMoveProbabilityX;
 	pCharDst->byMoveProbabilityY	= pChar->byMoveProbabilityY;
@@ -7669,6 +7702,12 @@ void RecvDataProcSUBGAMEINFO(BYTE *pData, DWORD dwDataSize)
 				CopyMemory (pDungeonInfo->szTmplName, pDungeon->szTmplName, sizeof (pDungeonInfo->szTmplName));
 				pDungeonInfo->byRebuildMode = pDungeon->byRebuildMode;
 				pDungeonInfo->byClearMode = pDungeon->byClearMode;
+				pDungeonInfo->wDefBaseHP = pDungeon->wDefBaseHP;
+				pDungeonInfo->wDefBaseStTmp = pDungeon->wDefBaseStTmp;
+				pDungeonInfo->byDefWaveCount = pDungeon->byDefWaveCount;
+				pDungeonInfo->byDefPrepSec = pDungeon->byDefPrepSec;
+				pDungeonInfo->wDefWaveMaxSec = pDungeon->wDefWaveMaxSec;
+				pDungeonInfo->byDefSpringRange = pDungeon->byDefSpringRange;
 				if (dwDataSize >= sizeof (CMDPARA_DATA1) + sizeof (SUBGAME_DUNGEONINFOSAVE)) {
 					CopyMemory (pDungeonInfo->szMessages, pDungeon->szMessages, sizeof (pDungeonInfo->szMessages));
 				}

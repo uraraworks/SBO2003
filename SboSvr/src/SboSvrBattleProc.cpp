@@ -126,6 +126,11 @@ void BattleProcCheck(PCHARINFO pChar)
 		return;
 	}
 
+	/* 拠点防衛の拠点は攻撃しない（殴られても殴り返さない） */
+	if (DgIsDefenseBase (pChar)) {
+		return;
+	}
+
 	/* ターゲットがいない？ */
 	if (pChar->dwLastBattle == 0) {
 		return;
@@ -279,6 +284,19 @@ void BattleProcCheck(PCHARINFO pChar)
 			if (bResult == FALSE) {
 				break;
 			}
+		}
+	}
+
+	/* 拠点防衛の敵が拠点のとなりにいて、拠点を狙っている？ 拠点を殴る（拠点はプレイヤーの一覧にいないので、ここで目の前を見る）。
+	   となりにプレイヤーもいる時は、行進の処理が狙いを拠点にしているので拠点が先になる */
+	if (!bAtack && IsEnemy (pChar) && DgIsDefenseEnemy (pChar)) {
+		PCHARINFO pBase = DgDefenseBaseOf (pChar->dwSpaceID);
+
+		if (pBase && (pBase->wHP > 0) && (pChar->dwTargetTblID == pBase->dwTblID) && (pBase->dwMapID == pChar->dwMapID) &&
+			!(((CheckCharX (pChar, dwX, pBase->dwX) == FALSE) && (CheckCharX (pBase, pBase->dwX, dwX) == FALSE)) || (dwY != pBase->dwY))) {
+			BattleProc (pChar, pBase);
+			pChar->dwLastBattle = timeGetTime ();
+			bAtack = TRUE;
 		}
 	}
 
@@ -661,7 +679,7 @@ static BOOL BattleProc(PCHARINFO pChar, PCHARINFO pCharTarget)
 
 	/* 傭兵には特技を使わない(特技の相手はプレイヤーと敵だけの作りのため) */
 	byNo = 0;
-	if (pChar->byNpcType && !IsMercenary (pCharTarget)) {
+	if (pChar->byNpcType && !IsMercenary (pCharTarget) && !DgIsDefenseBase (pCharTarget)) {
 		int nNo = ChooseEnemyMagic (pChar, pCharTarget, FALSE);
 		if (nNo >= 0) {
 			byNo = (BYTE)nNo;
@@ -1069,6 +1087,11 @@ BOOL BattleProcAtack(PCHARINFO pChar, PCHARINFO pCharTarget)
 	case NPCTYPE_MIMIC:		/* 宝箱の敵（正体前。叩かれると正体を現す） */
 	case NPCTYPE_MERCENARY:	/* 傭兵 */
 		break;
+	case NPCTYPE_NOMOVE:	/* 拠点防衛の拠点：拠点防衛の敵だけが殴れる（プレイヤー・傭兵・矢は殴れない） */
+		if (!(DgIsDefenseBase (pCharTarget) && DgIsDefenseEnemy (pChar))) {
+			goto Exit;
+		}
+		break;
 	default:
 		goto Exit;
 	}
@@ -1273,6 +1296,14 @@ BOOL BattleProcAtack(PCHARINFO pChar, PCHARINFO pCharTarget)
 	/* 傭兵が攻撃を受けた */
 	} else if (IsMercenary (pCharTarget)) {
 		bRet = MercenaryDamaged (pChar, pCharTarget);
+
+	/* 拠点が殴られた（倒れても体は残さない。負けの判定・敵を消すのは拠点防衛の周期処理がする） */
+	} else if (DgIsDefenseBase (pCharTarget)) {
+		SendCmdCHARSTATUSHP (URARASOCK_SENDALL, pCharTarget->dwTblID);
+		if (pCharTarget->wHP == 0) {
+			pChar->dwLastBattle		= 0;
+			pChar->dwTargetTblID	= -1;
+		}
 
 	/* NPCの攻撃 */
 	} else {

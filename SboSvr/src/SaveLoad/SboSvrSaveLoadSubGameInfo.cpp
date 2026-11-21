@@ -61,8 +61,14 @@ static const char *s_aszNameDUNGEON[] = {
 	"wTmplID",			/* 番外編：テンプレート番号（MAX_DGTMPL 個） */
 	"szTmplName",		/* 番外編：表示名（MAX_DGTMPL 個） */
 	"byRebuildMode",	/* 作り直しの方式（0=今まで通り・1=日替わり） */
-	"byClearMode",		/* クリア条件（0=ゴールのワープ・1=敵を全部倒す） */
+	"byClearMode",		/* クリア条件（0=ゴールのワープ・1=敵を全部倒す・2=拠点防衛） */
 	"szMessages",		/* 番外編の文言一覧 */
+	"wDefBaseHP",		/* 拠点防衛：拠点の最大HP */
+	"wDefBaseStTmp",	/* 拠点防衛：拠点の見た目のテンプレート番号 */
+	"byDefWaveCount",	/* 拠点防衛：波の数 */
+	"byDefPrepSec",		/* 拠点防衛：準備時間・秒 */
+	"wDefWaveMaxSec",	/* 拠点防衛：1つの波の最長時間・秒 */
+	"byDefSpringRange",	/* 拠点防衛：泉の範囲（マス） */
 	"z"
 };
 
@@ -548,6 +554,12 @@ Exit:
 	return bRet;
 }
 
+/* 拠点防衛の項目をどれか使っているか（使っていなければ、その列は保存しない＝前の版でも読める） */
+static BOOL DgDefenseUsed(PSUBGAME_DUNGEONINFO pInfo)
+{
+	return pInfo->wDefBaseHP || pInfo->wDefBaseStTmp || pInfo->byDefWaveCount || pInfo->byDefPrepSec || pInfo->wDefWaveMaxSec || pInfo->byDefSpringRange;
+}
+
 /* ========================================================================= */
 /* 関数名：GetInfoDungeon													 */
 /* 内容：保存用サブゲーム情報取得(ダンジョン)								 */
@@ -598,7 +610,9 @@ static PBYTE GetInfoDungeon(PSUBGAME_DUNGEONINFO pInfo, PDWORD pdwSize)
 		if ((i >= 20) && !pInfo->byClearMode && !pInfo->szMessages[0]) {
 			break;
 		}
-		if ((i >= 21) && !pInfo->szMessages[0]) break;
+		/* 拠点防衛の項目（22番目から）は、どれか 0 以外の時だけ書く。その時は文言一覧（21番目）も空のまま書く（列は先頭から詰めて並べるため） */
+		if ((i >= 21) && !pInfo->szMessages[0] && !DgDefenseUsed (pInfo)) break;
+		if ((i >= 22) && !DgDefenseUsed (pInfo)) break;
 		strcpy (Info.szName, s_aszNameDUNGEON[i]);
 
 		dwHeaderSize += (strlen (Info.szName) + 1);
@@ -649,6 +663,12 @@ static PBYTE GetInfoDungeon(PSUBGAME_DUNGEONINFO pInfo, PDWORD pdwSize)
 		case 19:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 作り直しの方式 */
 		case 20:	dwDataSizeTmp = sizeof (BYTE);			break;	/* クリア条件 */
 		case 21:	dwDataSizeTmp = sizeof (pInfo->szMessages); break; /* 番外編の文言一覧 */
+		case 22:	dwDataSizeTmp = sizeof (WORD);			break;	/* 拠点防衛：拠点の最大HP */
+		case 23:	dwDataSizeTmp = sizeof (WORD);			break;	/* 拠点防衛：拠点の見た目のテンプレート番号 */
+		case 24:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 拠点防衛：波の数 */
+		case 25:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 拠点防衛：準備時間 */
+		case 26:	dwDataSizeTmp = sizeof (WORD);			break;	/* 拠点防衛：1つの波の最長時間 */
+		case 27:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 拠点防衛：泉の範囲 */
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
 		dwDataSize += dwDataSizeTmp;
@@ -773,6 +793,30 @@ static PBYTE GetInfoDungeon(PSUBGAME_DUNGEONINFO pInfo, PDWORD pdwSize)
 		case 21:		/* 番外編の文言一覧 */
 			CopyMemory (&pData[dwOffset], pInfo->szMessages, sizeof (pInfo->szMessages));
 			dwOffset += sizeof (pInfo->szMessages);
+			break;
+		case 22:	/* 拠点防衛：拠点の最大HP */
+			CopyMemory (&pData[dwOffset], &pInfo->wDefBaseHP, sizeof (WORD));
+			dwOffset += sizeof (WORD);
+			break;
+		case 23:	/* 拠点防衛：拠点の見た目のテンプレート番号 */
+			CopyMemory (&pData[dwOffset], &pInfo->wDefBaseStTmp, sizeof (WORD));
+			dwOffset += sizeof (WORD);
+			break;
+		case 24:	/* 拠点防衛：波の数 */
+			CopyMemory (&pData[dwOffset], &pInfo->byDefWaveCount, sizeof (BYTE));
+			dwOffset += sizeof (BYTE);
+			break;
+		case 25:	/* 拠点防衛：準備時間 */
+			CopyMemory (&pData[dwOffset], &pInfo->byDefPrepSec, sizeof (BYTE));
+			dwOffset += sizeof (BYTE);
+			break;
+		case 26:	/* 拠点防衛：1つの波の最長時間 */
+			CopyMemory (&pData[dwOffset], &pInfo->wDefWaveMaxSec, sizeof (WORD));
+			dwOffset += sizeof (WORD);
+			break;
+		case 27:	/* 拠点防衛：泉の範囲 */
+			CopyMemory (&pData[dwOffset], &pInfo->byDefSpringRange, sizeof (BYTE));
+			dwOffset += sizeof (BYTE);
 			break;
 
 		}
@@ -1702,7 +1746,7 @@ static PBYTE PetInfoDungeon(PBYTE pData, PDWORD pdwSize)
 		} else if (strcmp (aHeaderInfo[i].szName, "byRebuildMode") == 0) {		/* 作り直しの方式 */
 			CopyMemory (&pInfo->byRebuildMode, &pData[dwOffsetTmp], sizeof (BYTE));
 			dwOffsetTmp += sizeof (BYTE);
-			pInfo->byRebuildMode = min (pInfo->byRebuildMode, (BYTE)DGREBUILD_DAILY);
+			pInfo->byRebuildMode = min (pInfo->byRebuildMode, (BYTE)DGREBUILD_FIXED);
 		} else if (strcmp (aHeaderInfo[i].szName, "szMessages") == 0) {
 			CopyMemory (pInfo->szMessages, &pData[dwOffsetTmp], sizeof (pInfo->szMessages));
 			dwOffsetTmp += sizeof (pInfo->szMessages);
@@ -1710,7 +1754,25 @@ static PBYTE PetInfoDungeon(PBYTE pData, PDWORD pdwSize)
 		} else if (strcmp (aHeaderInfo[i].szName, "byClearMode") == 0) {			/* クリア条件 */
 			CopyMemory (&pInfo->byClearMode, &pData[dwOffsetTmp], sizeof (BYTE));
 			dwOffsetTmp += sizeof (BYTE);
-			pInfo->byClearMode = min (pInfo->byClearMode, (BYTE)DGCLEAR_KILLALL);
+			pInfo->byClearMode = min (pInfo->byClearMode, (BYTE)DGCLEAR_DEFENSE);
+		} else if (strcmp (aHeaderInfo[i].szName, "wDefBaseHP") == 0) {			/* 拠点防衛：拠点の最大HP */
+			CopyMemory (&pInfo->wDefBaseHP, &pData[dwOffsetTmp], sizeof (WORD));
+			dwOffsetTmp += sizeof (WORD);
+		} else if (strcmp (aHeaderInfo[i].szName, "wDefBaseStTmp") == 0) {		/* 拠点防衛：拠点の見た目のテンプレート番号 */
+			CopyMemory (&pInfo->wDefBaseStTmp, &pData[dwOffsetTmp], sizeof (WORD));
+			dwOffsetTmp += sizeof (WORD);
+		} else if (strcmp (aHeaderInfo[i].szName, "byDefWaveCount") == 0) {		/* 拠点防衛：波の数 */
+			CopyMemory (&pInfo->byDefWaveCount, &pData[dwOffsetTmp], sizeof (BYTE));
+			dwOffsetTmp += sizeof (BYTE);
+		} else if (strcmp (aHeaderInfo[i].szName, "byDefPrepSec") == 0) {		/* 拠点防衛：準備時間 */
+			CopyMemory (&pInfo->byDefPrepSec, &pData[dwOffsetTmp], sizeof (BYTE));
+			dwOffsetTmp += sizeof (BYTE);
+		} else if (strcmp (aHeaderInfo[i].szName, "wDefWaveMaxSec") == 0) {		/* 拠点防衛：1つの波の最長時間 */
+			CopyMemory (&pInfo->wDefWaveMaxSec, &pData[dwOffsetTmp], sizeof (WORD));
+			dwOffsetTmp += sizeof (WORD);
+		} else if (strcmp (aHeaderInfo[i].szName, "byDefSpringRange") == 0) {	/* 拠点防衛：泉の範囲 */
+			CopyMemory (&pInfo->byDefSpringRange, &pData[dwOffsetTmp], sizeof (BYTE));
+			dwOffsetTmp += sizeof (BYTE);
 		}
 		dwOffset = dwOffsetTmp;
 	}

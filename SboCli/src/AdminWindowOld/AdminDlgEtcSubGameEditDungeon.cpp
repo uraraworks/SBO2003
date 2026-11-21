@@ -122,11 +122,24 @@ void GetDataDlgEtcSubGameEditDungeon(void)
 		pInfo->wTmplID[k] = (WORD)atoi (szTmp);
 		GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGTMPL_NAME1 + k), pInfo->szTmplName[k], sizeof (pInfo->szTmplName[k]));
 	}
-	/* 作り直しの方式（0=気まぐれ 1=日替わり）・クリア条件（0=ゴール 1=敵を全部倒す） */
+	/* 作り直しの方式（0=気まぐれ 1=日替わり 2=固定）・クリア条件（0=ゴール 1=敵を全部倒す 2=拠点防衛） */
 	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGREBUILD_MODE), szTmp, sizeof (szTmp));
 	pInfo->byRebuildMode = (BYTE)atoi (szTmp);
 	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGCLEAR_MODE), szTmp, sizeof (szTmp));
 	pInfo->byClearMode = (BYTE)atoi (szTmp);
+	/* 拠点防衛の設定（0=既定） */
+	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGDEF_HP), szTmp, sizeof (szTmp));
+	pInfo->wDefBaseHP = (WORD)atoi (szTmp);
+	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGDEF_TMPL), szTmp, sizeof (szTmp));
+	pInfo->wDefBaseStTmp = (WORD)atoi (szTmp);
+	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGDEF_WAVES), szTmp, sizeof (szTmp));
+	pInfo->byDefWaveCount = (BYTE)atoi (szTmp);
+	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGDEF_PREP), szTmp, sizeof (szTmp));
+	pInfo->byDefPrepSec = (BYTE)atoi (szTmp);
+	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGDEF_WAVESEC), szTmp, sizeof (szTmp));
+	pInfo->wDefWaveMaxSec = (WORD)atoi (szTmp);
+	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGDEF_SPRING), szTmp, sizeof (szTmp));
+	pInfo->byDefSpringRange = (BYTE)atoi (szTmp);
 	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGMESSAGES), pInfo->szMessages, sizeof (pInfo->szMessages));
 }
 
@@ -235,6 +248,18 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 	SetWindowText (GetDlgItem (hWnd, IDC_DGREBUILD_MODE), szTmp);
 	wsprintf (szTmp, "%d", pInfo->byClearMode);
 	SetWindowText (GetDlgItem (hWnd, IDC_DGCLEAR_MODE), szTmp);
+	wsprintf (szTmp, "%d", pInfo->wDefBaseHP);
+	SetWindowText (GetDlgItem (hWnd, IDC_DGDEF_HP), szTmp);
+	wsprintf (szTmp, "%d", pInfo->wDefBaseStTmp);
+	SetWindowText (GetDlgItem (hWnd, IDC_DGDEF_TMPL), szTmp);
+	wsprintf (szTmp, "%d", pInfo->byDefWaveCount);
+	SetWindowText (GetDlgItem (hWnd, IDC_DGDEF_WAVES), szTmp);
+	wsprintf (szTmp, "%d", pInfo->byDefPrepSec);
+	SetWindowText (GetDlgItem (hWnd, IDC_DGDEF_PREP), szTmp);
+	wsprintf (szTmp, "%d", pInfo->wDefWaveMaxSec);
+	SetWindowText (GetDlgItem (hWnd, IDC_DGDEF_WAVESEC), szTmp);
+	wsprintf (szTmp, "%d", pInfo->byDefSpringRange);
+	SetWindowText (GetDlgItem (hWnd, IDC_DGDEF_SPRING), szTmp);
 	SendMessage (GetDlgItem (hWnd, IDC_DGMESSAGES), EM_LIMITTEXT, MAX_DGTEXT - 1, 0);
 	SetWindowText (GetDlgItem (hWnd, IDC_DGMESSAGES), pInfo->szMessages);
 

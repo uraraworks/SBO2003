@@ -51,6 +51,7 @@
 #include "SboSvrQuest.h"
 #include "SboSvrCharInfoTimerProc.h"
 #include "CharProcSEARCH.h"
+#include "CharProcMERCENARY.h"
 #include <vector>
 
 /* 判定の間隔(ms)。従来と同じ */
@@ -96,6 +97,11 @@ CCharProcSEARCH::CCharProcSEARCH()
 	m_dwGiveUpEnd	= 0;
 	m_bDetour		= FALSE;
 	m_dwBattleSeen	= 0;
+	m_bMarch		= FALSE;
+	m_dwMarchProgress	= 0;
+	m_dwMarchDetourEnd	= 0;
+	m_dwMarchNextDetour	= 0;
+	m_dwMarchDiagUntil	= 0;
 }
 
 
@@ -132,6 +138,12 @@ BOOL CCharProcSEARCH::Proc(DWORD dwTime)
 	bResult = PartsMoveProc (m_pChar);
 	if (bResult) {
 		m_pChar->dwLastDotMove = dwTime;
+		goto Exit;
+	}
+
+	/* 拠点防衛の組の空間で出た敵は、拠点へ行進する（ふだんのマップの敵は下の今までの動き） */
+	if (IsMarching ()) {
+		bRet = ProcMarch (dwTime);
 		goto Exit;
 	}
 
@@ -715,7 +727,13 @@ int CCharProcSEARCH::FindPathStep(PCHARINFO pCharTmp, int nX, int nY)
 	abyBlock.assign (nW * nH, 0);
 	for (y = 0; y < nH; y ++) {
 		for (x = 0; x < nW; x ++) {
-			if ((CheckCharBlock (pMap->dwID, (DWORD)(nX1 + x), (DWORD)(nY1 + y)) == FALSE) ||
+			if (m_bMarch) {
+				/* 拠点防衛の行進：組の空間で開いている扉は通れる */
+				if (!DgDefCellOpen (NULL, m_pChar->dwSpaceID, pMap->dwID, nX1 + x, nY1 + y) ||
+					IsAvoidDamageFloor (m_pChar, pMap, nX1 + x, nY1 + y)) {
+					abyBlock[x + y * nW] = 1;
+				}
+			} else if ((CheckCharBlock (pMap->dwID, (DWORD)(nX1 + x), (DWORD)(nY1 + y)) == FALSE) ||
 				CheckEventBlock (pMap->dwID, (DWORD)(nX1 + x), (DWORD)(nY1 + y)) ||
 				IsAvoidDamageFloor (m_pChar, pMap, nX1 + x, nY1 + y)) {
 				abyBlock[x + y * nW] = 1;
@@ -1035,6 +1053,246 @@ void CCharProcSEARCH::ChangeTarget(DWORD dwTblID, DWORD dwTime)
 	m_dwStuckTime	= dwTime;
 	m_dwLostTime	= 0;
 	m_bDetour		= FALSE;
+}
+
+
+/* ========================================================================= */
+/*
+	2026/11/21 拠点防衛の行進（番外編ダンジョンの防衛モードの組の空間で、NPC発生から出た戦闘１・戦闘２の敵だけ）
+	・目的地は組の拠点キャラ。拠点までの歩数表（SboSvrQuest.cpp の DgDefMarchDists。組の空間ごとに 1 つ・数秒おきに
+	  作り直す）を見て、今より拠点に近いマスへ 1 歩ずつ進む。敵ごとに経路探索はしない。
+	・前のマスを敵（仲間）がふさいでいたら待つ（列になる）。前をプレイヤー・傭兵がふさいでいたら、その人を狙って戦う。
+	・2 秒以上進めない時は、道さがし（FindPathStep。ほかのキャラも壁として見る）で横の別経路があれば切り替え、
+	  しばらくその道をたどる（m_bDetour）。引き直しの要求も出す。
+	・拠点のとなりに着いたら拠点を狙って殴る（戦闘処理 BattleProcCheck が拠点を殴る）。拠点とプレイヤーが両方となりなら拠点が先。
+	・遠くのプレイヤーは追わない。追うのは殴ってきた人・進路をふさいだ人だけで、2 マス以上離れたら行進に戻る。
+*/
+/* ========================================================================= */
+
+/* 行進の判定：この敵は拠点防衛の組の空間で出た戦闘１・戦闘２か */
+BOOL CCharProcSEARCH::IsMarching(void)
+{
+	return ((m_pChar->byNpcType == NPCTYPE_BATTLE1) || (m_pChar->byNpcType == NPCTYPE_BATTLE2)) && DgIsDefenseEnemy (m_pChar);
+}
+
+/* 向きを変える（変わった時だけ知らせる） */
+void CCharProcSEARCH::MarchFace(int nDirection)
+{
+	if (m_pChar->byDirection != (BYTE)nDirection) {
+		m_pChar->byDirection = (BYTE)nDirection;
+		m_pChar->byFlg |= CHARINFOFLG_DIRECTION;
+	}
+}
+
+/* 狙っている相手（殴ってきた・ふさいだ）をまだ相手にするか：生きたプレイヤー・傭兵で、1 マス以内（斜め含む）にいる */
+BOOL CCharProcSEARCH::MarchTargetOk(PCHARINFO pCharTmp)
+{
+	if ((pCharTmp == NULL) || ((pCharTmp->byNpcType != NPCTYPE_INIT) && !IsMercenary (pCharTmp))) {
+		return FALSE;
+	}
+	if (!IsTargetValid (pCharTmp) || (pCharTmp->wHP == 0) || (pCharTmp->byCharState == CHARSTATE_DEAD)) {
+		return FALSE;
+	}
+	return (abs (GetCharDistanceX (m_pChar, pCharTmp)) <= 1) && (abs ((int)pCharTmp->dwY - (int)m_pChar->dwY) <= 1);
+}
+
+/* 行進でそのマスへ 1 歩進めるか。ふさいでいるキャラ（プレイヤー・NPC）があれば pdwBlock に返す（なければ -1） */
+BOOL CCharProcSEARCH::MarchCanStep(int x, int y, PDWORD pdwBlock)
+{
+	PMAPINFO pMap;
+	DWORD dwTblID;
+
+	*pdwBlock = (DWORD)-1;
+	pMap = g_aMapInfo[m_pChar->dwMapID];
+	if ((x < 0) || (x >= pMap->nCX) || (y < 0) || (y >= pMap->nCY)) {
+		return FALSE;
+	}
+	if (IsAvoidDamageFloor (m_pChar, pMap, x, y) || !DgDefCellOpen (m_pChar, m_pChar->dwSpaceID, m_pChar->dwMapID, x, y)) {
+		return FALSE;
+	}
+	dwTblID = CheckCharBlockPC (m_pChar->dwMapID, (DWORD)x, (DWORD)y, m_pChar->dwSpaceID);
+	if (dwTblID != (DWORD)-1) {
+		*pdwBlock = dwTblID;
+		return FALSE;
+	}
+	dwTblID = CheckCharBlockNPC2 (m_pChar->dwTblID, m_pChar->dwMapID, (DWORD)x, (DWORD)y, m_pChar->dwSpaceID);
+	if (dwTblID != (DWORD)-1) {
+		*pdwBlock = dwTblID;
+		return FALSE;
+	}
+	return TRUE;
+}
+
+/* 行進で指定の向きへ 1 歩進む */
+BOOL CCharProcSEARCH::MarchStep(int nDirection)
+{
+	int x, y;
+	DWORD dwBlock;
+
+	x = (int)m_pChar->dwX + anPosAddTblX[nDirection];
+	y = (int)m_pChar->dwY + anPosAddTblY[nDirection];
+	if (MarchCanStep (x, y, &dwBlock) == FALSE) {
+		return FALSE;
+	}
+	m_pChar->byDirection = (BYTE)nDirection;
+	m_pChar->byFlg |= CHARINFOFLG_DIRECTION;
+	m_pChar->dwX = (DWORD)x;
+	m_pChar->dwY = (DWORD)y;
+	m_pChar->byFlg |= CHARINFOFLG_MOVE;
+	m_pChar->dwLastDotMove = g_dwTime;
+	return TRUE;
+}
+
+/* 行進の本体（0.5 秒に 1 回、Proc の間隔の判定のあとで呼ばれる） */
+BOOL CCharProcSEARCH::ProcMarch(DWORD dwTime)
+{
+	PCHARINFO pBase, pCharTmp;
+	int i, j, nDir, nCand, anDist[5], anDir[4], nLimit;
+	DWORD dwBlock, dwBlockPC;
+
+	m_bMarch = TRUE;
+	pBase = DgDefenseBaseOf (m_pChar->dwSpaceID);
+	if ((pBase == NULL) || (pBase->wHP == 0) || (pBase->dwMapID != m_pChar->dwMapID)) {
+		return FALSE;
+	}
+	if (m_dwMarchProgress == 0) {
+		m_dwMarchProgress = dwTime;
+	}
+
+	/* 拠点がとなり？ 拠点を狙って殴る（となりにプレイヤーもいても拠点が先） */
+	nDir = GetNextToDirection (pBase);
+	if (nDir >= 0) {
+		MarchFace (nDir);
+		m_pChar->dwTargetTblID = pBase->dwTblID;
+		if (m_pChar->dwLastBattle == 0) {
+			m_pChar->dwLastBattle = 1;
+		}
+		m_dwMarchProgress	= dwTime;
+		m_bDetour			= FALSE;
+		return TRUE;
+	}
+	if (m_pChar->dwTargetTblID == pBase->dwTblID) {
+		/* 拠点から離れた（押された等）：狙いを外して行進に戻る */
+		m_pChar->dwTargetTblID	= (DWORD)-1;
+		m_pChar->dwLastBattle	= 0;
+	}
+
+	/* 殴ってきた人・ふさいだ人を狙っている？ となりにいる間は戦う。2 マス以上離れたら行進に戻る */
+	if (m_pChar->dwTargetTblID != (DWORD)-1) {
+		pCharTmp = (m_pChar->dwTargetTblID < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[m_pChar->dwTargetTblID] : NULL;
+		if (MarchTargetOk (pCharTmp)) {
+			nDir = GetNextToDirection (pCharTmp);
+			if (nDir >= 0) {
+				MarchFace (nDir);
+				if (m_pChar->dwLastBattle == 0) {
+					m_pChar->dwLastBattle = 1;
+				}
+				m_dwMarchProgress	= dwTime;
+				m_bDetour			= FALSE;
+				return TRUE;
+			}
+			/* ななめのとなりで届かない：1 秒だけその場で止まり、相手の方へ向き直って待つ。それでも動かなければ狙いは持ったまま行進を続ける（追いかけはしない） */
+			if ((abs ((int)pCharTmp->dwX - (int)m_pChar->dwX) == 1) && (abs ((int)pCharTmp->dwY - (int)m_pChar->dwY) == 1)) {
+				if (m_dwMarchDiagUntil == 0) {
+					m_dwMarchDiagUntil = dwTime + 1000;
+				}
+				if ((int)(dwTime - m_dwMarchDiagUntil) < 0) {
+					for (i = 0; i < 4; i ++) {
+						if ((anPosAddTblY[i] == 0) && (anPosAddTblX[i] == (int)pCharTmp->dwX - (int)m_pChar->dwX)) {
+							MarchFace (i);
+							break;
+						}
+					}
+					m_dwMarchProgress = dwTime;
+					return TRUE;
+				}
+			} else {
+				m_dwMarchDiagUntil = 0;
+			}
+		} else {
+			m_pChar->dwTargetTblID	= (DWORD)-1;
+			m_pChar->dwLastBattle	= 0;
+		}
+	}
+
+	/* 回り込み中：道さがしの道をしばらくたどる */
+	if (m_bDetour) {
+		if ((int)(dwTime - m_dwMarchDetourEnd) < 0) {
+			nDir = FindPathStep (pBase, (int)pBase->dwX, (int)pBase->dwY);
+			if ((nDir >= 0) && MarchStep (nDir)) {
+				m_dwMarchProgress = dwTime;
+				return TRUE;
+			}
+		}
+		m_bDetour = FALSE;
+	}
+
+	/* 拠点に近づくマス（今のマスより歩数が小さい）を、近い順・同じなら今の向きを先に並べる */
+	nCand = 0;
+	if (DgDefMarchDists (m_pChar, anDist)) {
+		nLimit = (anDist[4] >= 0) ? anDist[4] : 0x7FFF;
+		for (i = 0; i < 4; i ++) {
+			if ((anDist[i] >= 0) && (anDist[i] < nLimit)) {
+				anDir[nCand ++] = i;
+			}
+		}
+		for (i = 1; i < nCand; i ++) {
+			nDir = anDir[i];
+			for (j = i - 1; j >= 0; j --) {
+				if ((anDist[anDir[j]] < anDist[nDir]) || ((anDist[anDir[j]] == anDist[nDir]) && (anDir[j] == (int)m_pChar->byDirection))) {
+					break;
+				}
+				anDir[j + 1] = anDir[j];
+			}
+			anDir[j + 1] = nDir;
+		}
+	}
+	dwBlockPC = (DWORD)-1;
+	for (i = 0; i < nCand; i ++) {
+		if (MarchStep (anDir[i])) {
+			m_dwMarchProgress = dwTime;
+			return TRUE;
+		}
+		/* ふさいでいるのがプレイヤー・傭兵なら覚えておく（敵・倒れた人・壁なら待つ） */
+		MarchCanStep ((int)m_pChar->dwX + anPosAddTblX[anDir[i]], (int)m_pChar->dwY + anPosAddTblY[anDir[i]], &dwBlock);
+		if ((dwBlockPC == (DWORD)-1) && (dwBlock < (DWORD)g_aCharInfo.GetSize ())) {
+			pCharTmp = g_aCharInfo[dwBlock];
+			if (((pCharTmp->byNpcType == NPCTYPE_INIT) || IsMercenary (pCharTmp)) && (pCharTmp->wHP > 0) &&
+				(pCharTmp->byCharState != CHARSTATE_DEAD) && IsInteractable (m_pChar, pCharTmp)) {
+				dwBlockPC = dwBlock;
+				nDir = anDir[i];
+			}
+		}
+	}
+
+	/* 前をプレイヤー・傭兵がふさいでいる：その人を狙って戦う（今の戦闘２の戦い方） */
+	if (dwBlockPC != (DWORD)-1) {
+		m_pChar->dwTargetTblID = dwBlockPC;
+		MarchFace (nDir);
+		if (m_pChar->dwLastBattle == 0) {
+			m_pChar->dwLastBattle = 1;
+		}
+		m_dwMarchProgress = dwTime;
+		return TRUE;
+	}
+
+	/* 敵（仲間）がふさいでいるなら列で待つ。前を向いて待つ */
+	if (nCand > 0) {
+		MarchFace (anDir[0]);
+	}
+	/* 2 秒以上進めない・行き先が分からない：歩数表を引き直し、横の空いた別経路があれば切り替える */
+	if (((nCand == 0) || ((int)(dwTime - m_dwMarchProgress) >= 2000)) && ((int)(dwTime - m_dwMarchNextDetour) >= 0)) {
+		m_dwMarchNextDetour = dwTime + 1000;
+		DgDefMarchRefresh (m_pChar->dwSpaceID);
+		nDir = FindPathStep (pBase, (int)pBase->dwX, (int)pBase->dwY);
+		if ((nDir >= 0) && MarchStep (nDir)) {
+			m_bDetour			= TRUE;
+			m_dwMarchDetourEnd	= dwTime + 2000;
+			m_dwMarchProgress	= dwTime;
+			return TRUE;
+		}
+	}
+	return FALSE;
 }
 
 /* Copyright(C)URARA-works 2006 */
