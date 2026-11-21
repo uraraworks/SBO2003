@@ -4752,6 +4752,20 @@ static int DgDefEnemyCount(CHALLENGE *pCh)
 	return nEnemy;
 }
 
+/* 発生元が今の組で出す数：設定の最大発生数は DGDEF_FULL_MEMBERS 人で遊ぶ時の数。人数が少ない時はその割合に減らす（切り上げ・最低 1 体） */
+#define DGDEF_FULL_MEMBERS	(4)
+static int DgDefPutLimit(CHALLENGE *pCh, PCHARINFO pParent)
+{
+	int nMember = (int)pCh->aMember.size ();
+	int nCount = (int)pParent->byPutCount;
+
+	if (nMember >= DGDEF_FULL_MEMBERS) {
+		return nCount;
+	}
+	nMember = max (nMember, 1);
+	return max ((nCount * nMember + DGDEF_FULL_MEMBERS - 1) / DGDEF_FULL_MEMBERS, 1);
+}
+
 /* 今の波の「残り敵」：まだ出ていない数（発生元の最大発生数の残り）＋今いる生きている敵（画面の帯と知らせで共通） */
 static int DgDefEnemyLeft(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon)
 {
@@ -4766,7 +4780,7 @@ static int DgDefEnemyLeft(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon)
 		}
 		std::map<DWORD, DGPUT>::iterator it = pCh->mapPut.find (pParent->dwTblID);
 		int nTotal = (it == pCh->mapPut.end ()) ? 0 : it->second.nTotal;
-		nLeft += max ((int)pParent->byPutCount - nTotal, 0);
+		nLeft += max (DgDefPutLimit (pCh, pParent) - nTotal, 0);
 	}
 	return nLeft;
 }
@@ -4800,7 +4814,7 @@ static BOOL DgDefWaveExhausted(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon)
 			continue;
 		}
 		std::map<DWORD, DGPUT>::iterator it = pCh->mapPut.find (pParent->dwTblID);
-		if ((it == pCh->mapPut.end ()) || (it->second.nTotal < (int)pParent->byPutCount)) {
+		if ((it == pCh->mapPut.end ()) || (it->second.nTotal < DgDefPutLimit (pCh, pParent))) {
 			return FALSE;
 		}
 	}
@@ -4827,7 +4841,7 @@ static void DgDefPutProc(CHALLENGE *pCh, DWORD dwNow)
 			continue;
 		}
 		DGPUT &d = pCh->mapPut[pParent->dwTblID];
-		if (d.nTotal >= (int)pParent->byPutCount) {
+		if (d.nTotal >= DgDefPutLimit (pCh, pParent)) {
 			continue;
 		}
 		dwInterval = pParent->wTimePutInterval ? (DWORD)pParent->wTimePutInterval * 1000 : 1000;
