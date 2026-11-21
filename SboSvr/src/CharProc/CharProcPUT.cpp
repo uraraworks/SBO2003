@@ -177,7 +177,8 @@ BOOL CCharProcPUT::Proc(DWORD dwTime)
 		goto Exit;
 	}
 	/* 番外編ダンジョンの発生元は、組ごとの空間に出す（SboSvrQuest.cpp の周期処理）。ふつうの世界には出さない */
-	if (DungeonPutIsSpaced (m_pChar)) {
+	/* 拠点防衛のウェーブ番号が付いた発生元も、ふつうの世界には出さない（範囲の外に置いてしまった時など） */
+	if (DungeonPutIsSpaced (m_pChar) || m_pChar->byPutWave) {
 		goto Exit;
 	}
 	if (dwTime < m_pChar->dwLastPut + (DWORD)(m_pChar->wTimePutInterval * 1000)) {
@@ -364,7 +365,7 @@ void PutCharFillAll(void)
 			continue;
 		}
 		/* 番外編ダンジョンの発生元は、組が入った時にその空間へ出す */
-		if (DungeonPutIsSpaced (pChar)) {
+		if (DungeonPutIsSpaced (pChar) || pChar->byPutWave) {
 			continue;
 		}
 		pProc = (CCharProcPUT *)pChar->pProc;
