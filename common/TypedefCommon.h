@@ -392,6 +392,8 @@ enum {
 	CMD_APPRAISE,													/* 鑑定屋で鑑定してもらう(クライアント→サーバー。結果はサーバー→クライアント) */
 	CMD_DUNGEONMAP,													/* テーマで作った気まぐれダンジョンの探索マップ用の情報(共有差分は双方向。CMDPARA_DUNGEONMAP。マップ情報の直後と作り直した直後に送る) */
 	CMD_DUNGEONSEL,													/* 番外編ダンジョンの入口で入る姿（テンプレート）を選ぶ(CMDPARA_DUNGEONSEL。一覧を開く・閉じるはサーバー→クライアント、選ぶ・やめるはクライアント→サーバー。プレイヤー用) */
+/* 以下、プレイヤー用（サーバー→本人だけ。サーバーは受け取らない） */
+	CMD_DGDEFSTATUS,												/* 番外編の拠点防衛の状態（拠点HP・波・残り秒・残り敵数。CMDPARA_DGDEFSTATUS） */
 	CMD_MAX
 };
 
@@ -4188,6 +4190,28 @@ typedef struct _CMDPARA_DUNGEONSEL {
 	char		aszName[MAX_DGTMPL][MAX_DGTMPLNAME];				/* 表示名（UTF-8。OPEN） */
 	char szTitle[128];									/* 姿選びの題名（空なら既定文） */
 } CMDPARA_DUNGEONSEL, *PCMDPARA_DUNGEONSEL;
+#pragma pack(pop)
+
+/* 番外編の拠点防衛の状態（CMD_DGDEFSTATUS。サーバー→組の全員。画面上の「拠点HP・波」の帯に使う）
+   変わった時と、準備中は1秒ごと、それ以外も数秒ごとに送る。DGDEFSTATUS_NONE は帯を消す（外へ出た時） */
+enum {
+	DGDEFSTATUS_NONE = 0,											/* 帯を消す */
+	DGDEFSTATUS_PREP,												/* 準備中（次の波まで） */
+	DGDEFSTATUS_WAVE,												/* 波の最中 */
+	DGDEFSTATUS_WIN,												/* 勝ち */
+	DGDEFSTATUS_LOSE,												/* 負け */
+};
+#pragma pack(push, 1)
+typedef struct _CMDPARA_DGDEFSTATUS {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byState;											/* DGDEFSTATUS_* */
+	BYTE		byWave;												/* 今の波（準備中は次に来る波。1〜） */
+	BYTE		byWaveMax;											/* 波の数 */
+	WORD		wBaseHP;											/* 拠点の今のHP */
+	WORD		wBaseMaxHP;											/* 拠点の最大HP */
+	WORD		wRestSec;											/* 準備中：次の波までの残り秒 */
+	WORD		wEnemy;												/* 波の最中：残りの敵の数 */
+} CMDPARA_DGDEFSTATUS, *PCMDPARA_DGDEFSTATUS;
 #pragma pack(pop)
 
 /* 並べ替えの対象(CMDPARA_SORTITEM の byTarget) */

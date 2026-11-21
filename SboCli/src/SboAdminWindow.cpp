@@ -6435,7 +6435,7 @@ void AdminOnPaintCharInfo(HDC hDC)
 	MyTextOut (hDC, 0, 12 * 18, "移動範囲Y:");
 	MyTextOut (hDC, 0, 12 * 19, "発生数:");
 	MyTextOut (hDC, 0, 12 * 20, "発生周期(秒):");
-	MyTextOut (hDC, 0, 12 * 21, "防衛の波:");
+	MyTextOut (hDC, 0, 12 * 21, "防衛のウェーブ:");
 	MyTextOut (hDC, 12 * 22, 12 * 20, "見える印(のみ):");
 	MyTextOut (hDC, 12 * 22, 12 * 21 + 4, "見えない印:");
 

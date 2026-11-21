@@ -153,7 +153,9 @@ typedef struct _CHALLENGE {
 	DWORD		dwDefSpring;										/* 拠点防衛：最後に泉で Mana を戻した時刻 */
 	BYTE		byBaseBracket;										/* 拠点防衛：最後に知らせた拠点HPの段（0〜4。4=満タン） */
 	std::map<DWORD, DGDEFDEAD>	mapDead;							/* 拠点防衛：組の人のテーブルID → 倒れた回数・復活の時刻 */
-	_CHALLENGE() : byKind(0), byDungeonID(0), dwBuildNo(0), bDaily(FALSE), bRanked(FALSE), dwDailyVer(0), dwDailySeed(0), bKillAll(FALSE), byCountDown(4), wQuestID(0), dwMapNo(0), dwSpaceID(0), bArena(FALSE), dwPartyID(0), dwStart(0), bCleared(FALSE), dwClear(0), dwClearTime(0), bDefense(FALSE), dwBaseTbl((DWORD)-1), nWave(0), byDefPhase(DGDEF_PHASE_INIT), byDefResult(DGDEF_RESULT_NONE), dwDefPhaseStart(0), dwDefWaveStart(0), dwDefEnd(0), dwDefSpring(0), byBaseBracket(4) {}
+	CMDPARA_DGDEFSTATUS	stDefSent;									/* 拠点防衛：最後に組へ送った画面の帯の状態（変わった時だけ送るため） */
+	DWORD		dwDefSentAt;										/* 拠点防衛：その状態を送った時刻（周期処理の時刻。一定時間ごとに同じ内容も送り直す） */
+	_CHALLENGE() : byKind(0), byDungeonID(0), dwBuildNo(0), bDaily(FALSE), bRanked(FALSE), dwDailyVer(0), dwDailySeed(0), bKillAll(FALSE), byCountDown(4), wQuestID(0), dwMapNo(0), dwSpaceID(0), bArena(FALSE), dwPartyID(0), dwStart(0), bCleared(FALSE), dwClear(0), dwClearTime(0), bDefense(FALSE), dwBaseTbl((DWORD)-1), nWave(0), byDefPhase(DGDEF_PHASE_INIT), byDefResult(DGDEF_RESULT_NONE), dwDefPhaseStart(0), dwDefWaveStart(0), dwDefEnd(0), dwDefSpring(0), byBaseBracket(4), dwDefSentAt(0) { ZeroMemory (&stDefSent, sizeof (stDefSent)); }
 } CHALLENGE;
 
 /* 戻す場所（切断した人は、マップの表から外れてから動かす） */
@@ -2754,7 +2756,7 @@ static void ChallengeLeave(PCHARINFO p, int nReason)
 {
 	std::map<DWORD, LOANBAK>::iterator it = s_mapLoan.find (p->dwTblID);
 	LOANBAK Bak;
-	BOOL bMove, bDungeon = FALSE;
+	BOOL bMove, bDungeon = FALSE, bDefense = FALSE;
 	int nDungeonID = -1;
 
 	if (it == s_mapLoan.end ()) {
@@ -2771,7 +2773,15 @@ static void ChallengeLeave(PCHARINFO p, int nReason)
 			aM.erase (std::remove (aM.begin (), aM.end (), p->dwTblID), aM.end ());
 			bDungeon = (itC->second.byKind == CHALLENGEKIND_DUNGEON);
 			nDungeonID = itC->second.byDungeonID;
+			bDefense = itC->second.bDefense;
 		}
+	}
+	/* 拠点防衛：外へ出る人の画面から帯を消す（切断では送れない。つなぎ直した画面は新しいので帯はない） */
+	if (bDefense && (nReason != CHALLENGELEAVE_LOGOUT) && IsPlayerOnline (p)) {
+		CMDPARA_DGDEFSTATUS Para;
+
+		ZeroMemory (&Para, sizeof (Para));
+		SendCmdDGDEFSTATUS (p->pID, &Para);
 	}
 	/* 番外編：中で手に入れた物は中だけの物。どの出方でも持ち帰らず、元の持ち物に戻すだけ（2026-11-19 方針） */
 
@@ -4555,6 +4565,7 @@ static void DgSelOnDec(PCHARINFO pChar)
 #define DGDEF_RESULT_WAIT		(10000)								/* 結果を知らせてから帰るまで（ミリ秒） */
 #define DGDEF_REVIVE_STEP		(5)									/* 復活までの秒数＝倒れた回数×この秒数 */
 #define DGDEF_REVIVE_MAX		(30)								/* 復活までの最大秒数 */
+#define DGDEF_STATUS_KEEP		(5000)								/* 画面の帯の状態は、変わらなくてもこの間隔（ミリ秒）で送り直す（つなぎ直した・入り直した人にも届く） */
 #define DGDEF_SPRING_INTERVAL	(900)								/* 泉で Mana が戻る間隔（ミリ秒。周期処理が約 1 秒ごとなので少し短く） */
 
 static int DgDefPrepSec(PSUBGAME_DUNGEONINFO p)
@@ -4815,6 +4826,64 @@ static void DgDefRecoverAll(CHALLENGE *pCh)
 	}
 }
 
+/* 画面の帯（CMD_DGDEFSTATUS）の今の状態を作る */
+static void DgDefStatusMake(CHALLENGE *pCh, CMDPARA_DGDEFSTATUS &Para, DWORD dwNow)
+{
+	PSUBGAME_DUNGEONINFO pDungeon = DgInfo (pCh->byDungeonID);
+	PCHARINFO pBase = DgDefBaseChar (pCh);
+
+	ZeroMemory (&Para, sizeof (Para));
+	Para.byCmd = CMD_DGDEFSTATUS;
+	if (pCh->byDefResult == DGDEF_RESULT_WIN) {
+		Para.byState = DGDEFSTATUS_WIN;
+	} else if (pCh->byDefResult == DGDEF_RESULT_LOSE) {
+		Para.byState = DGDEFSTATUS_LOSE;
+	} else if (pCh->byDefPhase == DGDEF_PHASE_WAVE) {
+		Para.byState = DGDEFSTATUS_WAVE;
+	} else {
+		Para.byState = DGDEFSTATUS_PREP;
+	}
+	Para.byWave = (BYTE)min (max (pCh->nWave, 0), 255);
+	Para.byWaveMax = (BYTE)min (pDungeon ? DgDefWaveCount (pDungeon) : 1, 255);
+	Para.wBaseHP = pBase ? pBase->wHP : (WORD)0;
+	Para.wBaseMaxHP = pBase ? pBase->wMaxHP : (pDungeon && pDungeon->wDefBaseHP ? pDungeon->wDefBaseHP : (WORD)DGDEF_BASE_HP);
+	if ((Para.byState == DGDEFSTATUS_PREP) && pDungeon) {
+		/* 準備中：次の波までの残り秒（切り上げ。最初の周期処理の前は準備時間まるごと） */
+		int nRest = DgDefPrepSec (pDungeon) * 1000;
+
+		if (pCh->byDefPhase == DGDEF_PHASE_PREP) {
+			nRest -= (int)(dwNow - pCh->dwDefPhaseStart);
+		}
+		Para.wRestSec = (WORD)min (max ((nRest + 999) / 1000, 0), 65535);
+	}
+	if (Para.byState == DGDEFSTATUS_WAVE) {
+		Para.wEnemy = (WORD)min (DgDefEnemyCount (pCh), 65535);
+	}
+}
+
+/* 画面の帯の状態を組の全員（pOnly があればその人だけ）に送る。変わった時と一定時間ごと、bForce なら必ず */
+static void DgDefStatusSend(CHALLENGE *pCh, DWORD dwNow, PCHARINFO pOnly, BOOL bForce)
+{
+	CMDPARA_DGDEFSTATUS Para;
+	size_t k;
+
+	DgDefStatusMake (pCh, Para, dwNow);
+	if (pOnly == NULL) {
+		if (!bForce && (memcmp (&Para, &pCh->stDefSent, sizeof (Para)) == 0) && ((int)(dwNow - pCh->dwDefSentAt) < DGDEF_STATUS_KEEP)) {
+			return;
+		}
+		pCh->stDefSent = Para;
+		pCh->dwDefSentAt = dwNow;
+	}
+	for (k = 0; k < pCh->aMember.size (); k ++) {
+		PCHARINFO pTmp = (pCh->aMember[k] < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[pCh->aMember[k]] : NULL;
+
+		if (pTmp && IsPlayerOnline (pTmp) && ((pOnly == NULL) || (pOnly == pTmp)) && (s_mapLoan.find (pCh->aMember[k]) != s_mapLoan.end ())) {
+			SendCmdDGDEFSTATUS (pTmp->pID, &Para);
+		}
+	}
+}
+
 /* 準備時間に入る（次に来る波の知らせ） */
 static void DgDefEnterPrep(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon, DWORD dwNow)
 {
@@ -4833,6 +4902,7 @@ static void DgDefFinish(CHALLENGE *pCh, BYTE byResult, DWORD dwNow)
 	pCh->dwDefEnd = dwNow ? dwNow : 1;
 	DgDefRemoveEnemies (pCh);
 	DgDefSay (pCh, (byResult == DGDEF_RESULT_WIN) ? "def_win" : "def_base_fallen");
+	DgDefStatusSend (pCh, dwNow, NULL, TRUE);
 }
 
 /* 倒れた人の復活待ちと、泉（拠点の近くで Mana が戻る） */
@@ -4871,6 +4941,7 @@ static void DgDefMembers(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon, PCHARINF
 				DgDefRevive (p);
 				dd.dwReviveAt = 0;
 				DgMessage (p, pCh->byDungeonID, "def_revived", FALSE);
+				DgDefStatusSend (pCh, dwNow, p, FALSE);			/* 復活した人に帯の状態を送り直す */
 			}
 			continue;
 		}
@@ -4942,6 +5013,8 @@ static void DgDefProc(CHALLENGE &Ch, PSUBGAME_DUNGEONINFO pDungeon, DWORD dwNow)
 			}
 		}
 	}
+	/* 画面の帯：変わった時（準備中は残り秒が変わるので1秒ごと）と、一定時間ごとに送る */
+	DgDefStatusSend (&Ch, dwNow, NULL, FALSE);
 }
 
 /* 周期処理（約 1 秒ごと）：選ぶ締め切り・中の人が出た判定・空間ごとの敵の補充・空になった空間を空きにする */

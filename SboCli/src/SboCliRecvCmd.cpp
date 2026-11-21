@@ -173,6 +173,7 @@ void	RecvDataProcADMINCHARFLAG			(PBYTE, DWORD);			/* 受信データ処理(管�
 void	RecvDataProcTALKMSG					(PBYTE, DWORD);			/* 受信データ処理(会話データで選ばれた台詞) */
 void	RecvDataProcMAPSWAP					(PBYTE, DWORD);			/* 受信データ処理(印で変わるマスの差し替え一覧) */
 void	RecvDataProcHASTE					(PBYTE, DWORD);			/* 受信データ処理(加速の状態) */
+void	RecvDataProcDGDEFSTATUS				(PBYTE, DWORD);			/* 受信データ処理(拠点防衛の状態) */
 void	RecvDataProcCHARBUFF				(PBYTE, DWORD);			/* 受信データ処理(攻撃力・守備力アップの残り) */
 void	RecvDataProcMAKERINFO				(PBYTE, DWORD);			/* 受信データ処理(作り手情報) */
 void	RecvDataProcRECIPEINFO				(PBYTE, DWORD);			/* 受信データ処理(レシピ情報) */
@@ -470,6 +471,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcAPPRAISE,				/* CMD_APPRAISE */
 	RecvDataProcDUNGEONMAP,				/* CMD_DUNGEONMAP */
 	RecvDataProcDUNGEONSEL,				/* CMD_DUNGEONSEL */
+	RecvDataProcDGDEFSTATUS,			/* CMD_DGDEFSTATUS */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -8434,6 +8436,40 @@ void RecvDataProcSUBGAME(BYTE *pData, DWORD dwDataSize)
 		}
 		break;
 	}
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcDGDEFSTATUS / GetDefenseStatus						 */
+/* 内容：受信データ処理(番外編の拠点防衛：拠点HP・波の状態)					 */
+/*		 サーバーは変わった時と数秒ごとに送る。途中で切れた・つなぎ直した時も	 */
+/*		 古い帯が残らないよう、一定時間届かなければ消す						 */
+/* ========================================================================= */
+#define DGDEFSTATUS_EXPIRE	(15000)								/* この時間(ms)届かなければ帯を消す */
+static CMDPARA_DGDEFSTATUS	s_DefStatus;						/* 最後に届いた状態（byState が DGDEFSTATUS_NONE なら帯なし） */
+static DWORD				s_dwDefStatusTime;					/* 最後に届いた時刻 */
+
+void RecvDataProcDGDEFSTATUS(PBYTE pData, DWORD dwDataSize)
+{
+	if (dwDataSize < sizeof (CMDPARA_DGDEFSTATUS)) {
+		return;
+	}
+	memcpy (&s_DefStatus, pData, sizeof (CMDPARA_DGDEFSTATUS));
+	s_dwDefStatusTime = timeGetTime ();
+	g_bDraw = TRUE;
+}
+
+/* 拠点防衛の状態を取得（帯を出す時だけ TRUE） */
+BOOL GetDefenseStatus(PCMDPARA_DGDEFSTATUS pOut)
+{
+	if (s_DefStatus.byState == DGDEFSTATUS_NONE) {
+		return FALSE;
+	}
+	if ((int)(timeGetTime () - s_dwDefStatusTime) >= DGDEFSTATUS_EXPIRE) {
+		ZeroMemory (&s_DefStatus, sizeof (s_DefStatus));
+		return FALSE;
+	}
+	*pOut = s_DefStatus;
+	return TRUE;
 }
 
 /* ========================================================================= */

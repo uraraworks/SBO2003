@@ -2211,8 +2211,11 @@ dungeondefense base name=拠点 type=1 pos=20,8 hp=100/100 space=1 isbase=1 enem
 dungeondefense player pos=10,6 hp=60/60 mana=50/50 enemies=0
 dungeondefense player-attack-base ret=0 hp=100
 dungeondefense prep coming=1 enemies=0
+dungeondefense status prep sent=1 state=1 wave=1/2 hp=100/100 rest=3 enemy=0
 dungeondefense prep-2s enemies=0 start=0
+dungeondefense status prep-2s sent=3 state=1 wave=1/2 hp=100/100 rest=1 enemy=0
 dungeondefense wave1 start=1 put1=1 put2=0 put0=0
+dungeondefense status wave1 sent=4 state=2 wave=1/2 hp=100/100 rest=0 enemy=1
 dungeondefense wave1 put1=2 put2=0 put0=0 normal=0
 dungeondefense enemy-judge enemy=2 other=1
 dungeondefense wave1 hold put1=2 wave-end=0
@@ -2224,21 +2227,26 @@ dungeondefense down1 dead=1 near-base=1 (dist=1) down=1 inrun=1
 dungeondefense down1 resurrect-button=1 inrun=1
 dungeondefense down1 +4s dead=1 runs=1
 dungeondefense down1 +5s dead=0 hp=60/60 mana=50/50 gold-kept=1 revived-msg=1
+dungeondefense status revive resent=1
 dungeondefense down2 down=1
 dungeondefense down2 +9s dead=1
 dungeondefense down2 +10s dead=0 hp=60
 dungeondefense wave1 clear killed=2 enemies=0 cleared=1 coming2=1 hp=60/60 mana=50/50
+dungeondefense status wave2-prep sent=17 state=1 wave=2/2 hp=100/100 rest=3 enemy=0
 dungeondefense wave2 before enemies=0
 dungeondefense wave2 start=1 put1=0 put2=1 put0=0
 dungeondefense win killed=1 cleared=1 win=1 inrun=1 enemies=0 base=1
+dungeondefense status win sent=21 state=3 wave=2/2 hp=100/100 rest=0 enemy=0
 dungeondefense win +9s inrun=1 runs=1
 dungeondefense win +10s inrun=0 runs=0 space=0 pos=4,5 base=0
+dungeondefense status left sent=22 state=0 wave=0/0 hp=0/0 rest=0 enemy=0
 dungeondefense win left-npcs=0 put1=0,0
 dungeondefense run2 in=1 base=1 hp=100
 dungeondefense run2 wave1 enemies=2 +28s enemies=2 cleared=0 coming2=0
 dungeondefense run2 timeout enemies=2 coming2=1
 dungeondefense run2 wave2 put1=2 put2=1
 dungeondefense lose fallen=1 enemies=0 inrun=1
+dungeondefense status lose sent=37 state=4 wave=2/2 hp=0/100 rest=0 enemy=0
 dungeondefense lose +9s inrun=1
 dungeondefense lose +10s inrun=0 runs=0 space=0 pos=4,5
 dungeondefense save plain=1 defense=1 extra>0=1

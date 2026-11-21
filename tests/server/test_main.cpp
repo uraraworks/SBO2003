@@ -14098,6 +14098,18 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 	auto Tick = [&](int n) { for (int k = 0; k < n; k ++) { s_dwFakeNow += 1000; DungeonProcNow(s_dwFakeNow); } };
 	auto Say = [&](const char *psz) -> int { return MockHasText(DgTestConn(pA), CMD_SYSMSG, psz); };
 	auto Mark = [&]() { MockTrace(1); };
+	/* 画面の帯の状態（CMD_DGDEFSTATUS）：最後に届いた内容と、届いた数 */
+	auto Status = [&](const char *pszTag) {
+		CMDPARA_DGDEFSTATUS St;
+		std::vector<BYTE> aSt;
+		if (MarketLast(DgTestConn(pA), CMD_DGDEFSTATUS, aSt) && aSt.size() >= sizeof(St)) {
+			memcpy(&St, &aSt[0], sizeof(St));
+			printf("dungeondefense status %s sent=%d state=%d wave=%d/%d hp=%d/%d rest=%d enemy=%d\n", pszTag, SpCnt(pA, CMD_DGDEFSTATUS), (int)St.byState, (int)St.byWave, (int)St.byWaveMax,
+				(int)St.wBaseHP, (int)St.wBaseMaxHP, (int)St.wRestSec, (int)St.wEnemy);
+		} else {
+			printf("dungeondefense status %s none sent=%d\n", pszTag, SpCnt(pA, CMD_DGDEFSTATUS));
+		}
+	};
 	auto Enemies = [&](DWORD dwSpace) -> int { return DgTestCountEnemy(dwPut1, dwSpace) + DgTestCountEnemy(dwPut2, dwSpace) + DgTestCountEnemy(dwPut0, dwSpace); };
 	auto Enter = [&]() {
 		QuestMovePC(pA, nMapNo, 4, 5);
@@ -14134,11 +14146,14 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 	/* 3. 最初の波の前に準備時間（3 秒）。波 1 が始まると、波 1 の発生元だけが 1 体ずつ出す */
 	Mark();
 	Tick(1);
-	printf("dungeondefense prep coming=%d enemies=%d\n", Say("波 1/2 が来ます（3秒後）"), Enemies(dwSpace));
+	printf("dungeondefense prep coming=%d enemies=%d\n", Say("ウェーブ 1/2 が来ます（3秒後）"), Enemies(dwSpace));
+	Status("prep");
 	Tick(2);
-	printf("dungeondefense prep-2s enemies=%d start=%d\n", Enemies(dwSpace), Say("波 1 開始"));
+	printf("dungeondefense prep-2s enemies=%d start=%d\n", Enemies(dwSpace), Say("ウェーブ 1 開始"));
+	Status("prep-2s");
 	Tick(1);
-	printf("dungeondefense wave1 start=%d put1=%d put2=%d put0=%d\n", Say("波 1 開始"), DgTestCountEnemy(dwPut1, dwSpace), DgTestCountEnemy(dwPut2, dwSpace), DgTestCountEnemy(dwPut0, dwSpace));
+	printf("dungeondefense wave1 start=%d put1=%d put2=%d put0=%d\n", Say("ウェーブ 1 開始"), DgTestCountEnemy(dwPut1, dwSpace), DgTestCountEnemy(dwPut2, dwSpace), DgTestCountEnemy(dwPut0, dwSpace));
+	Status("wave1");
 	Tick(1);
 	printf("dungeondefense wave1 put1=%d put2=%d put0=%d normal=%d\n", DgTestCountEnemy(dwPut1, dwSpace), DgTestCountEnemy(dwPut2, dwSpace), DgTestCountEnemy(dwPut0, dwSpace),
 		Enemies(SPACE_NORMAL));
@@ -14152,7 +14167,7 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 		printf("dungeondefense enemy-judge enemy=%d other=%d\n", nIsEnemy, nIsOther);
 	}
 	Tick(3);
-	printf("dungeondefense wave1 hold put1=%d wave-end=%d\n", DgTestCountEnemy(dwPut1, dwSpace), Say("波 1 をしのいだ"));
+	printf("dungeondefense wave1 hold put1=%d wave-end=%d\n", DgTestCountEnemy(dwPut1, dwSpace), Say("ウェーブ 1 をしのいだ"));
 
 	/* 4. 泉：拠点から遠いと Mana は戻らない（自然回復なし）・範囲内にいる間だけ最大Manaの 10% ずつ */
 	pA->wMana = 10;
@@ -14201,10 +14216,12 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 		printf("dungeondefense down1 resurrect-button=%d inrun=%d\n", (int)QuestChallengeResurrection(pA), (int)QuestInDungeon(pA));
 		Tick(4);
 		printf("dungeondefense down1 +4s dead=%d runs=%d\n", (int)(pA->byCharState == CHARSTATE_DEAD), DungeonRunCount());
+		int nSt0 = SpCnt(pA, CMD_DGDEFSTATUS);
 		Mark();
 		Tick(1);
 		printf("dungeondefense down1 +5s dead=%d hp=%d/%d mana=%d/%d gold-kept=%d revived-msg=%d\n", (int)(pA->byCharState == CHARSTATE_DEAD), (int)pA->wHP, (int)pA->wMaxHP,
 			(int)pA->wMana, (int)pA->wMaxMana, (int)(pA->dwGold == dwGold), Say("復活しました"));
+		printf("dungeondefense status revive resent=%d\n", (int)(SpCnt(pA, CMD_DGDEFSTATUS) > nSt0));
 		pA->wHP = 0; pA->byCharState = CHARSTATE_DEAD;
 		Mark();
 		Tick(1);
@@ -14226,12 +14243,13 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 		for (size_t i = 0; i < aDel.size(); i ++) DeleteChar(aDel[i]);
 		Mark();
 		Tick(1);
-		printf("dungeondefense wave1 clear killed=%d enemies=%d cleared=%d coming2=%d hp=%d/%d mana=%d/%d\n", (int)aDel.size(), Enemies(dwSpace), Say("波 1 をしのいだ"),
-			Say("波 2/2 が来ます（3秒後）"), (int)pA->wHP, (int)pA->wMaxHP, (int)pA->wMana, (int)pA->wMaxMana);
+		printf("dungeondefense wave1 clear killed=%d enemies=%d cleared=%d coming2=%d hp=%d/%d mana=%d/%d\n", (int)aDel.size(), Enemies(dwSpace), Say("ウェーブ 1 をしのいだ"),
+			Say("ウェーブ 2/2 が来ます（3秒後）"), (int)pA->wHP, (int)pA->wMaxHP, (int)pA->wMana, (int)pA->wMaxMana);
+		Status("wave2-prep");
 		Tick(2);
 		printf("dungeondefense wave2 before enemies=%d\n", Enemies(dwSpace));
 		Tick(1);
-		printf("dungeondefense wave2 start=%d put1=%d put2=%d put0=%d\n", Say("波 2 開始"), DgTestCountEnemy(dwPut1, dwSpace), DgTestCountEnemy(dwPut2, dwSpace), DgTestCountEnemy(dwPut0, dwSpace));
+		printf("dungeondefense wave2 start=%d put1=%d put2=%d put0=%d\n", Say("ウェーブ 2 開始"), DgTestCountEnemy(dwPut1, dwSpace), DgTestCountEnemy(dwPut2, dwSpace), DgTestCountEnemy(dwPut0, dwSpace));
 		/* 最後の波を倒すと勝ち：結果を知らせ、10 秒後に全員帰還（敵と拠点は消える） */
 		aDel.clear();
 		for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
@@ -14241,8 +14259,9 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 		for (size_t i = 0; i < aDel.size(); i ++) DeleteChar(aDel[i]);
 		Mark();
 		Tick(1);
-		printf("dungeondefense win killed=%d cleared=%d win=%d inrun=%d enemies=%d base=%d\n", (int)aDel.size(), Say("波 2 をしのいだ"), Say("全部の波をしのいだ！"),
+		printf("dungeondefense win killed=%d cleared=%d win=%d inrun=%d enemies=%d base=%d\n", (int)aDel.size(), Say("ウェーブ 2 をしのいだ"), Say("全部のウェーブをしのいだ！"),
 			(int)QuestInDungeon(pA), Enemies(dwSpace), (int)(DgDefenseBaseOf(dwSpace) != NULL));
+		Status("win");
 		Tick(9);
 		printf("dungeondefense win +9s inrun=%d runs=%d\n", (int)QuestInDungeon(pA), DungeonRunCount());
 		Tick(1);
@@ -14253,6 +14272,7 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 			PCHARINFO p = g_aCharInfo[i];
 			if (p && p->dwSpaceID == dwSpace && p->byGameState == GAMESTATE_NPC) nLeft ++;
 		}
+		Status("left");
 		printf("dungeondefense win left-npcs=%d put1=%d,%d\n", nLeft, DgTestCountEnemy(dwPut1, dwSpace), DgTestCountEnemy(dwPut2, dwSpace));
 	}
 
@@ -14269,15 +14289,16 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 			int nWave1 = Enemies(dwSpace);
 			Mark();
 			Tick(28);
-			printf("dungeondefense run2 wave1 enemies=%d +28s enemies=%d cleared=%d coming2=%d\n", nWave1, Enemies(dwSpace), Say("波 1 をしのいだ"), Say("波 2/2 が来ます"));
+			printf("dungeondefense run2 wave1 enemies=%d +28s enemies=%d cleared=%d coming2=%d\n", nWave1, Enemies(dwSpace), Say("ウェーブ 1 をしのいだ"), Say("ウェーブ 2/2 が来ます"));
 			Tick(1);
-			printf("dungeondefense run2 timeout enemies=%d coming2=%d\n", Enemies(dwSpace), Say("波 2/2 が来ます"));
+			printf("dungeondefense run2 timeout enemies=%d coming2=%d\n", Enemies(dwSpace), Say("ウェーブ 2/2 が来ます"));
 			Tick(4);
 			printf("dungeondefense run2 wave2 put1=%d put2=%d\n", DgTestCountEnemy(dwPut1, dwSpace), DgTestCountEnemy(dwPut2, dwSpace));
 			pBase->wHP = 0;
 			Mark();
 			Tick(1);
 			printf("dungeondefense lose fallen=%d enemies=%d inrun=%d\n", Say("拠点が落ちた…"), Enemies(dwSpace), (int)QuestInDungeon(pA));
+			Status("lose");
 			Tick(9);
 			printf("dungeondefense lose +9s inrun=%d\n", (int)QuestInDungeon(pA));
 			Tick(1);

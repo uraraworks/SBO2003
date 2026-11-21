@@ -224,6 +224,90 @@ static void DrawMagicKeyBand(PCHARINFO pChar, int nX, int nY)
 }
 
 /* ========================================================================= */
+/* 関数名：DrawDefenseBand													 */
+/* 内容：番外編の拠点防衛の挑戦中だけ、画面の上の中央に小さな帯を出す		 */
+/*		 1行目「拠点 [HPバー] HP 720/1000」（残り割合で緑→黄(50%以下)→赤(25%以下)） */
+/*		 2行目「波 3/5」と、準備中なら「次の波まで 12秒」・波の最中なら「残り敵 5」 */
+/*		 後ろに半透明の暗い帯を敷く。スマホで縮小されても読めるよう14ドットの文字 */
+/* ========================================================================= */
+static void DrawDefenseBand(int nX, int nY)
+{
+	const int nWidth = 244;		/* 帯の幅 */
+	const int nHeight = 40;		/* 帯の高さ（2行ぶん） */
+	const int nBarX = 36;		/* HPバーの左（帯の左から） */
+	const int nBarW = 96;		/* HPバーの幅 */
+	CMDPARA_DGDEFSTATUS St;
+	char szTmp[96];
+	HDC hDC;
+	HFONT hFontOld;
+	COLORREF clBar;
+	int yy, x0, nPct, nFill, nHP, nMax;
+
+	if (!GetDefenseStatus (&St)) {
+		return;
+	}
+	nMax = max ((int)St.wBaseMaxHP, 1);
+	nHP = min ((int)St.wBaseHP, nMax);
+	nPct = nHP * 100 / nMax;
+	if (nHP > 0 && nPct == 0) {
+		nPct = 1;
+	}
+	if (nPct <= 25) {
+		clBar = RGB (230, 60, 50);		/* 赤 */
+	} else if (nPct <= 50) {
+		clBar = RGB (240, 200, 50);		/* 黄 */
+	} else {
+		clBar = RGB (70, 200, 80);		/* 緑 */
+	}
+	nFill = nBarW * nHP / nMax;
+	if (nHP > 0) {
+		nFill = max (nFill, 1);
+	}
+	x0 = nX + (SCRSIZEX - nWidth) / 2;
+
+	hDC = g_pDibDrawMap->Lock ();
+	hFontOld = (HFONT)SelectObject (hDC, g_hFont14);
+	SetBkMode (hDC, TRANSPARENT);
+
+	/* 後ろの帯 */
+	for (yy = 0; yy < nHeight; yy ++) {
+		W32ShadeSpan (hDC, x0, nY + 4 + yy, nWidth, 0, RGB (0, 0, 0), 150);
+	}
+	/* HPバー（枠・空・中身） */
+	for (yy = 0; yy < 12; yy ++) {
+		W32ShadeSpan (hDC, x0 + nBarX - 1, nY + 7 + yy, nBarW + 2, 0, RGB (230, 230, 230), 255);
+		W32ShadeSpan (hDC, x0 + nBarX, nY + 8 + yy, nBarW, 0, RGB (50, 20, 20), 255);
+	}
+	for (yy = 0; yy < 10; yy ++) {
+		if (nFill > 0) {
+			W32ShadeSpan (hDC, x0 + nBarX, nY + 8 + yy, nFill, 0, clBar, 255);
+		}
+	}
+	TextOut2 (hDC, x0 + 5, nY + 6, (LPSTR)"拠点", RGB (255, 255, 255));
+	wsprintf (szTmp, "HP %d/%d", nHP, nMax);
+	TextOut2 (hDC, x0 + nBarX + nBarW + 6, nY + 6, szTmp, clBar);
+
+	switch (St.byState) {
+	case DGDEFSTATUS_PREP:
+		wsprintf (szTmp, "ウェーブ %d/%d  次のウェーブまで %d秒", St.byWave, St.byWaveMax, St.wRestSec);
+		break;
+	case DGDEFSTATUS_WAVE:
+		wsprintf (szTmp, "ウェーブ %d/%d  残り敵 %d", St.byWave, St.byWaveMax, St.wEnemy);
+		break;
+	case DGDEFSTATUS_WIN:
+		wsprintf (szTmp, "ウェーブ %d/%d  全部しのいだ！", St.byWaveMax, St.byWaveMax);
+		break;
+	default:
+		wsprintf (szTmp, "ウェーブ %d/%d  拠点が落ちた…", St.byWave, St.byWaveMax);
+		break;
+	}
+	TextOut2 (hDC, x0 + 5, nY + 24, szTmp, RGB (255, 255, 255));
+
+	SelectObject (hDC, hFontOld);
+	g_pDibDrawMap->Unlock ();
+}
+
+/* ========================================================================= */
 /* 関数名：DrawScreen														 */
 /* 内容：画面の描画															 */
 /* 日付：2003/04/29															 */
@@ -275,6 +359,9 @@ void DrawScreen(HWND hWnd, HDC hDC)
 
 				/* ウィンドウを表示 */
 				DrawWindow (g_pDibDrawMap, 32 - x, 32 - y);
+
+				/* 拠点防衛の帯（上の中央。挑戦中だけ） */
+				DrawDefenseBand (32 - x, 32 - y);
 
 				hDCPrimary = g_pDibDrawMap->Lock ();
 				HFONT hFontOld = (HFONT)SelectObject (hDCPrimary, g_hFont14);

@@ -1891,6 +1891,16 @@ void SendCmdDUNGEONSEL(DWORD pIDSend, PCMDPARA_DUNGEONSEL pPara)
 }
 
 /* ========================================================================= */
+/* 関数名：SendCmdDGDEFSTATUS												 */
+/* 内容：コマンド送信(番外編の拠点防衛：拠点HP・波の状態。その人にだけ)		 */
+/* ========================================================================= */
+void SendCmdDGDEFSTATUS(DWORD pIDSend, PCMDPARA_DGDEFSTATUS pPara)
+{
+	pPara->byCmd = CMD_DGDEFSTATUS;
+	svrSock.SendTo (pIDSend, (PBYTE)pPara, sizeof (CMDPARA_DGDEFSTATUS), SENDTIMEOUT);
+}
+
+/* ========================================================================= */
 /* 関数名：SendCmdSYSMSGMAP													 */
 /* 内容：コマンド送信(マップ内システムメッセージ)							 */
 /* 日付：2004/01/31															 */
