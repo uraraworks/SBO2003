@@ -101,6 +101,7 @@ CCharProcSEARCH::CCharProcSEARCH()
 	m_dwMarchProgress	= 0;
 	m_dwMarchDetourEnd	= 0;
 	m_dwMarchNextDetour	= 0;
+	m_dwMarchDiagUntil	= 0;
 }
 
 
@@ -1190,7 +1191,24 @@ BOOL CCharProcSEARCH::ProcMarch(DWORD dwTime)
 				m_bDetour			= FALSE;
 				return TRUE;
 			}
-			/* 斜めで届かない：狙いは持ったまま行進を続ける（追いかけはしない） */
+			/* ななめのとなりで届かない：1 秒だけその場で止まり、相手の方へ向き直って待つ。それでも動かなければ狙いは持ったまま行進を続ける（追いかけはしない） */
+			if ((abs ((int)pCharTmp->dwX - (int)m_pChar->dwX) == 1) && (abs ((int)pCharTmp->dwY - (int)m_pChar->dwY) == 1)) {
+				if (m_dwMarchDiagUntil == 0) {
+					m_dwMarchDiagUntil = dwTime + 1000;
+				}
+				if ((int)(dwTime - m_dwMarchDiagUntil) < 0) {
+					for (i = 0; i < 4; i ++) {
+						if ((anPosAddTblY[i] == 0) && (anPosAddTblX[i] == (int)pCharTmp->dwX - (int)m_pChar->dwX)) {
+							MarchFace (i);
+							break;
+						}
+					}
+					m_dwMarchProgress = dwTime;
+					return TRUE;
+				}
+			} else {
+				m_dwMarchDiagUntil = 0;
+			}
 		} else {
 			m_pChar->dwTargetTblID	= (DWORD)-1;
 			m_pChar->dwLastBattle	= 0;

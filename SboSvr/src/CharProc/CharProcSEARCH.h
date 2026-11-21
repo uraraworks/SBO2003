@@ -61,6 +61,7 @@ protected:
 	DWORD	m_dwMarchProgress;							/* 行進で最後に進んだ・戦った時間（進めない時間を数える） */
 	DWORD	m_dwMarchDetourEnd;							/* 回り込み（道さがしの道をたどる）を続ける終わりの時間 */
 	DWORD	m_dwMarchNextDetour;						/* 次に回り込みの道をさがせる時間 */
+	DWORD	m_dwMarchDiagUntil;							/* ななめにいる相手の前で止まって待つ締め切り（0=待っていない） */
 } CCharProcSEARCH, *PCCharProcSEARCH;
 
 /* Copyright(C)URARA-works 2006 */
