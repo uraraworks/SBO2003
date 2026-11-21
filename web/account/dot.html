@@ -291,6 +291,32 @@
 	table.keys td:first-child { white-space: nowrap; }
 	.note { background: var(--field); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; margin: 6px 0; color: var(--sub); font-size: 12px; }
 	a { color: var(--info); }
+	/* ---- スマホ・タブレット（狭い画面）: 編集エリアを一番上に出し、ツールやパレットはその下に縦に並べる。ページ全体を縦スクロールさせる ---- */
+	@media (max-width: 900px) {
+		html, body { height: auto; min-height: 100%; overflow: auto; }
+		body { display: block; }
+		#top { padding: 6px 8px; }
+		#top h1 { margin: 0 8px 0 0; font-size: 14px; }
+		#top .gap { display: none; }
+		#top button { padding: 9px 10px; }
+		#main { display: flex; flex-direction: column; min-height: 0; }
+		#center { order: 0; flex: none; width: 100%; }
+		#viewport { flex: none; height: 62vh; height: 62svh; min-height: 300px; }
+		#left { order: 1; width: 100%; border-right: none; border-top: 1px solid var(--border); }
+		#right { order: 2; width: 100%; border-left: none; border-top: 1px solid var(--border); }
+		aside { overflow-y: visible; }
+		#fileList { max-height: 200px; }
+		#tools { grid-template-columns: repeat(3, 1fr); }
+		#tools button { padding: 9px 8px; }
+		button.mini { padding: 8px 10px; font-size: 12px; }
+		#pal { width: 100%; max-width: 400px; height: auto; aspect-ratio: 1; }
+		#tabs { padding: 6px 8px 0; }
+		#status { padding: 4px 8px; gap: 10px; }
+		#toast { bottom: 16px; }
+		dialog { max-width: calc(100vw - 24px); }
+	}
+	/* 指で描く時にページがスクロールしないようにする */
+	#cv { touch-action: none; }
 </style>
 </head>
 <body>
