@@ -14065,7 +14065,8 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 		return;
 	}
 
-	/* 敵の発生元：波 1（2 体）・波 2（1 体）・ふつう（0。防衛の空間では出ない） */
+	/* 敵の発生元：波 1（2 体）・波 2（1 体）・ふつう（0。防衛の空間では出ない）。
+	   最大発生数は 4 人で遊ぶ時の数で、1 人だと 1/4（切り上げ・最低 1）になるので、波 1 は 8 で 2 体、波 2 は 1 のまま 1 体 */
 	auto MakePut = [&](BYTE byWave, BYTE byCount, int x, int y, WORD wInterval) -> DWORD {
 		PCHARINFO pPut = new CHARINFO;
 		ZeroMemory((PBYTE)pPut, sizeof(CHARINFO));
@@ -14090,7 +14091,7 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 		CharProcBase.SetProc(pPut);
 		return pPut->dwTblID;
 	};
-	DWORD dwPut1 = MakePut(1, 2, 17, 6, 0);
+	DWORD dwPut1 = MakePut(1, 8, 17, 6, 0);
 	DWORD dwPut2 = MakePut(2, 1, 17, 10, 0);
 	DWORD dwPut0 = MakePut(0, 3, 15, 8, 0);
 	DWORD dwReception = DgTestReception(pMap->dwID, byID);
@@ -14774,7 +14775,7 @@ static void TestDungeonDefenseMarch(const std::vector<int> &aLogin)
 	pPut->dwX = pPut->dwXBack = pPut->dwStartX = 11;
 	pPut->dwY = pPut->dwYBack = pPut->dwStartY = 8;
 	pPut->byAreaX = 1; pPut->byAreaY = 1;
-	pPut->byPutCount = 3;
+	pPut->byPutCount = 12;		/* 4 人で遊ぶ時の数。1 人なので 1/4 の 3 体 */
 	pPut->byPutWave = 1;
 	pPut->wGrpID = 5;
 	pPut->wMaxHP = pPut->wHP = 30;
