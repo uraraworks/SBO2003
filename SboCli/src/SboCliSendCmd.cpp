@@ -2184,6 +2184,8 @@ void SendCmdSUBGAMEINFO(int nNo)
 			pDungeon->byDefSpringRange = pDungeonInfo->byDefSpringRange;
 			pDungeon->byDefSpringX = pDungeonInfo->byDefSpringX;
 			pDungeon->byDefSpringY = pDungeonInfo->byDefSpringY;
+			pDungeon->byFixStartX = pDungeonInfo->byFixStartX;
+			pDungeon->byFixStartY = pDungeonInfo->byFixStartY;
 			CopyMemory (pDungeon->szMessages, pDungeonInfo->szMessages, sizeof (pDungeon->szMessages));
 		}		
 		break;

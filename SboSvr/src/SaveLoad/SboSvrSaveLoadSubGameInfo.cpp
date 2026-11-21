@@ -71,6 +71,8 @@ static const char *s_aszNameDUNGEON[] = {
 	"byDefSpringRange",	/* 拠点防衛：泉の範囲（マス） */
 	"byDefSpringX",		/* 拠点防衛：泉の位置X */
 	"byDefSpringY",		/* 拠点防衛：泉の位置Y */
+	"byFixStartX",		/* 固定の形：中の開始位置X */
+	"byFixStartY",		/* 固定の形：中の開始位置Y */
 	"z"
 };
 
@@ -556,10 +558,10 @@ Exit:
 	return bRet;
 }
 
-/* 拠点防衛の項目をどれか使っているか（使っていなければ、その列は保存しない＝前の版でも読める） */
+/* 拠点防衛・固定の形の中の開始位置の項目をどれか使っているか（使っていなければ、その列は保存しない＝前の版でも読める） */
 static BOOL DgDefenseUsed(PSUBGAME_DUNGEONINFO pInfo)
 {
-	return pInfo->wDefBaseHP || pInfo->wDefBaseStTmp || pInfo->byDefWaveCount || pInfo->byDefPrepSec || pInfo->wDefWaveMaxSec || pInfo->byDefSpringRange || pInfo->byDefSpringX || pInfo->byDefSpringY;
+	return pInfo->wDefBaseHP || pInfo->wDefBaseStTmp || pInfo->byDefWaveCount || pInfo->byDefPrepSec || pInfo->wDefWaveMaxSec || pInfo->byDefSpringRange || pInfo->byDefSpringX || pInfo->byDefSpringY || pInfo->byFixStartX || pInfo->byFixStartY;
 }
 
 /* ========================================================================= */
@@ -673,6 +675,8 @@ static PBYTE GetInfoDungeon(PSUBGAME_DUNGEONINFO pInfo, PDWORD pdwSize)
 		case 27:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 拠点防衛：泉の範囲 */
 		case 28:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 拠点防衛：泉の位置X */
 		case 29:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 拠点防衛：泉の位置Y */
+		case 30:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 固定の形：中の開始位置X */
+		case 31:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 固定の形：中の開始位置Y */
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
 		dwDataSize += dwDataSizeTmp;
@@ -828,6 +832,14 @@ static PBYTE GetInfoDungeon(PSUBGAME_DUNGEONINFO pInfo, PDWORD pdwSize)
 			break;
 		case 29:	/* 拠点防衛：泉の位置Y */
 			CopyMemory (&pData[dwOffset], &pInfo->byDefSpringY, sizeof (BYTE));
+			dwOffset += sizeof (BYTE);
+			break;
+		case 30:	/* 固定の形：中の開始位置X */
+			CopyMemory (&pData[dwOffset], &pInfo->byFixStartX, sizeof (BYTE));
+			dwOffset += sizeof (BYTE);
+			break;
+		case 31:	/* 固定の形：中の開始位置Y */
+			CopyMemory (&pData[dwOffset], &pInfo->byFixStartY, sizeof (BYTE));
 			dwOffset += sizeof (BYTE);
 			break;
 
@@ -1790,6 +1802,12 @@ static PBYTE PetInfoDungeon(PBYTE pData, PDWORD pdwSize)
 			dwOffsetTmp += sizeof (BYTE);
 		} else if (strcmp (aHeaderInfo[i].szName, "byDefSpringY") == 0) {	/* 拠点防衛：泉の位置Y */
 			CopyMemory (&pInfo->byDefSpringY, &pData[dwOffsetTmp], sizeof (BYTE));
+			dwOffsetTmp += sizeof (BYTE);
+		} else if (strcmp (aHeaderInfo[i].szName, "byFixStartX") == 0) {	/* 固定の形：中の開始位置X */
+			CopyMemory (&pInfo->byFixStartX, &pData[dwOffsetTmp], sizeof (BYTE));
+			dwOffsetTmp += sizeof (BYTE);
+		} else if (strcmp (aHeaderInfo[i].szName, "byFixStartY") == 0) {	/* 固定の形：中の開始位置Y */
+			CopyMemory (&pInfo->byFixStartY, &pData[dwOffsetTmp], sizeof (BYTE));
 			dwOffsetTmp += sizeof (BYTE);
 		}
 		dwOffset = dwOffsetTmp;

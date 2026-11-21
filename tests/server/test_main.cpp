@@ -1125,6 +1125,7 @@ static void TestDungeonBonus(const std::vector<int> &aLogin);
 static void TestDungeonDaily(const std::vector<int> &aLogin);
 static void TestDungeonDefense(const std::vector<int> &aLogin);
 static void TestDungeonDefenseMarch(const std::vector<int> &aLogin);
+static void TestDungeonDefenseInside(const std::vector<int> &aLogin);
 extern void SubGameProc(DWORD);
 extern BOOL DungeonDailyRebuildNow(int, std::string &);
 extern "C" const char *SboWebDataDungeonRecords(int nID, int nVerNo, int bTheme);
@@ -1679,6 +1680,8 @@ static void TestWorld(void)
 	TestDungeonDefense(aLogin);
 	/* AR. 番外編ダンジョン（拠点防衛モードの敵の行進。AQ の後ろ） */
 	TestDungeonDefenseMarch(aLogin);
+	/* AS. 番外編ダンジョン（固定の形の中の開始位置。AR の後ろ） */
+	TestDungeonDefenseInside(aLogin);
 	/* L3. 戦闘でばらけた列は、マップ移動後も戻り先を覚えている */
 	TestTailBattleMapMove(aLogin);
 }
@@ -14473,6 +14476,187 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 	MockTrace(0);
 	s_dwFakeNow = dwNowBack + 400000;
 	printf("dungeondefense end runs=%d sel=%d\n", DungeonRunCount(), DungeonSelCount());
+}
+
+/* ------------------------------------------------------------------------- */
+/* AS. 番外編ダンジョン（固定の形の「中の開始位置」）							 */
+/*     中の開始位置（byFixStartX・byFixStartY）を設定した固定の形：外の入口に乗る */
+/*     と組の空間の中の開始位置に立つ（マップ・キャラの情報が届く）・中の開始位置 */
+/*     のマスに戻ると「抜けますか？」・組の外の人が踏んでも何も起きない			 */
+/*     （設定しない時は AQ で確かめている。入口と同じマスのまま）				 */
+/* ------------------------------------------------------------------------- */
+static void TestDungeonDefenseInside(const std::vector<int> &aLogin)
+{
+	printf("== AS. Dungeon defense inside start ==\n");
+	if (aLogin.size() < 2) {
+		return;
+	}
+	int nMapNo = -1;
+	for (int i = 0; i < g_aMapInfo.GetSize(); i ++) {
+		if (g_aMapInfo[i] && g_aMapInfo[i]->nCX >= 60 && g_aMapInfo[i]->nCY >= 60 && g_aMapInfo[i]->pwMap) {
+			nMapNo = i;
+			break;
+		}
+	}
+	if (nMapNo < 0) {
+		printf("dungeoninside no map\n");
+		return;
+	}
+	PMAPINFO pMap = g_aMapInfo[nMapNo];
+	std::vector<WORD> aMapBack(pMap->pwMap, pMap->pwMap + pMap->nCX * pMap->nCY);
+	PEVENTINFO pEventBack = pMap->pEvent;
+	int nEventBack = pMap->nEventCount;
+	pMap->pEvent = NULL;
+	pMap->nEventCount = 0;
+	DWORD dwNowBack = s_dwFakeNow;
+	MockTrace(1);
+
+	/* 外の入口（10,6）は範囲（9,3)-(22,12）の中だが、中の開始位置（18,9）は別のマス */
+	for (int y = 2; y <= 13; y ++) {
+		for (int x = 2; x <= 23; x ++) pMap->pwMap[x + y * pMap->nCX] = 1;
+	}
+	PCHARINFO pA = g_aCharInfo[aLogin[0]];
+	PCHARINFO pB = g_aCharInfo[aLogin[1]];
+	CHARINFO aBack, aBackB;
+	TestCharBackup(&aBack, pA);
+	TestCharBackup(&aBackB, pB);
+	pA->byAdminLV = ADMINLV_USER;
+	pA->dwPartyID = 0;
+	pA->dwSpaceID = SPACE_NORMAL;
+	pA->dwTargetTblID = (DWORD)-1;
+	pA->wQuestID = 0; pA->byQuestStep = 0; pA->wQuestFlg = 0;
+	pA->byLevel = 30; pA->byPW = 99; pA->wMaxHP = 500; pA->wHP = 480; pA->wMaxMana = 90; pA->wMana = 80;
+	ZeroMemory(pA->waItem, sizeof(pA->waItem));
+	for (int k = 0; k < MAX_EQUTYPE; k ++) pA->waEqu[k] = 0xFFFF;
+	pB->byAdminLV = ADMINLV_USER;
+	pB->dwPartyID = 0;
+	pB->dwSpaceID = SPACE_NORMAL;
+	pB->dwTargetTblID = (DWORD)-1;
+
+	int nSt1 = g_aStTmpInfo.GetSize();
+	{
+		PSTATUSTEMPLATEINFO t = new STATUSTEMPLATEINFO;
+		ZeroMemory(t, sizeof(*t));
+		strcpy(t->szName, "守り手の姿");
+		t->byLevel = 7; t->byPW = 11; t->byDEX = 12; t->byST = 13; t->byIT = 14; t->byLK = 15;
+		t->wMaxHP = 60; t->wMaxMana = 50;
+		g_aStTmpInfo.Add(t);
+	}
+	SUBGAME_DUNGEONINFO Info;
+	ZeroMemory(&Info, sizeof(Info));
+	Info.dwMapID = pMap->dwID;
+	Info.byX1 = 9; Info.byY1 = 3; Info.byX2 = 22; Info.byY2 = 12;
+	Info.byStartX = 10; Info.byStartY = 6;					/* 外の入口 */
+	Info.byFixStartX = 18; Info.byFixStartY = 9;			/* 中の開始位置 */
+	Info.byGoalX = 20; Info.byGoalY = 8;					/* 拠点 */
+	Info.dwTblID = (DWORD)-1;
+	Info.byTmplCount = 1;
+	Info.wTmplID[0] = (WORD)nSt1; strcpy(Info.szTmplName[0], "守り手");
+	Info.byRebuildMode = DGREBUILD_FIXED;
+	Info.byClearMode = DGCLEAR_DEFENSE;
+	Info.wDefBaseHP = 100;
+	Info.byDefWaveCount = 1;
+	Info.byDefPrepSec = 30;
+	Info.wDefWaveMaxSec = 300;
+	SUBGAMEINFO Sub;
+	ZeroMemory(&Sub, sizeof(Sub));
+	Sub.byType = SUBGAMEID_DUNGEON;
+	Sub.pInfo = &Info;
+	g_aSubaGameInfo.Add(&Sub);
+	BYTE byID = (BYTE)(g_aSubaGameInfo.GetSize() - 1);
+
+	/* 1. 外の入口と中の開始位置の両方にワープが置かれる。中の開始位置のワープは外の入口へ戻る */
+	g_nProcSubGame = byID;
+	SubGameProc(byID);
+	PEVENTINFO pEntry = NULL, pInside = NULL;
+	for (int i = 0; i < pMap->nEventCount; i ++) {
+		PEVENTINFO pE = &pMap->pEvent[i];
+		if (pE->byType != EVENTTYPE_MAPCHG) continue;
+		if (pE->dwX == 10 && pE->dwY == 6) pEntry = pE;
+		if (pE->dwX == 18 && pE->dwY == 9) pInside = pE;
+	}
+	{
+		PEVENTINFO_MAPCHG pBack = pInside ? (PEVENTINFO_MAPCHG)pInside->pData : NULL;
+		DWORD dwX = 0, dwY = 0;
+		printf("dungeoninside events entry=%d inside=%d inside-back=%d,%d use=%d count=%d\n", (int)(pEntry != NULL), (int)(pInside != NULL),
+			pBack ? (int)pBack->dwX : -1, pBack ? (int)pBack->dwY : -1, (int)DungeonFixedInside(&Info, &dwX, &dwY), pMap->nEventCount);
+	}
+	SubGameProc(byID);
+	printf("dungeoninside events-again=%d\n", pMap->nEventCount);
+	if (!pEntry || !pInside) {
+		return;
+	}
+	DWORD dwReception = DgTestReception(pMap->dwID, byID);
+
+	/* 2. 組の外の人（受付済みでない）が中の開始位置のマスを踏んでも何も起きない（外の入口へ飛ばされない） */
+	QuestMovePC(pB, nMapNo, 18, 9);
+	BOOL bStep = DungeonEventStep(pB, pInside);
+	printf("dungeoninside outsider step handled=%d pos=%lu,%lu space=%d\n", (int)bStep, (unsigned long)pB->dwX, (unsigned long)pB->dwY, (int)(pB->dwSpaceID != SPACE_NORMAL));
+	QuestMovePC(pB, (int)aBackB.dwMapID, (int)aBackB.dwX, (int)aBackB.dwY);
+
+	/* 3. 受付→外の入口に乗ると、組の空間の中の開始位置へ移る。マップ・キャラの情報が届く */
+	QuestMovePC(pA, nMapNo, 4, 5);
+	DgTestTalk(pA, dwReception);
+	DgTestSelPick(pA, 0);
+	QuestMovePC(pA, nMapNo, 10, 6);
+	int nMapInfo0 = SpCnt(pA, CMD_MAPINFO), nCharInfo0 = SpCnt(pA, CMD_CHARINFO);
+	DungeonEventStep(pA, pEntry);
+	DWORD dwSpace = pA->dwSpaceID;
+	PCHARINFO pBase = DgDefenseBaseOf(dwSpace);
+	printf("dungeoninside enter in=%d run=%d space=%d pos=%lu,%lu map-same=%d base=%d\n", (int)QuestInDungeon(pA), DungeonRunCount(), (int)(dwSpace != SPACE_NORMAL),
+		(unsigned long)pA->dwX, (unsigned long)pA->dwY, (int)(pA->dwMapID == pMap->dwID), (int)(pBase != NULL));
+	printf("dungeoninside enter sent mapinfo=%d charinfo=%d\n", (int)(SpCnt(pA, CMD_MAPINFO) > nMapInfo0), (int)(SpCnt(pA, CMD_CHARINFO) > nCharInfo0));
+
+	/* 4. 中の開始位置のマスを（離れて戻って）踏むと「抜けますか？」。いいえなら残り、はいで受付の場所へ戻る */
+	int nAsk0 = SpCnt(pA, CMD_DUNGEONSEL);
+	DungeonEventStep(pA, pInside);
+	int nAsked = SpCnt(pA, CMD_DUNGEONSEL) - nAsk0;
+	DgTestLeaveAnswer(pA, FALSE);
+	int nStay = (int)QuestInDungeon(pA);
+	DungeonEventStep(pA, pInside);
+	int nAsked2 = SpCnt(pA, CMD_DUNGEONSEL) - nAsk0 - nAsked;
+	DgTestLeaveAnswer(pA, TRUE);
+	s_dwFakeNow += 1000;
+	DungeonProcNow(s_dwFakeNow);
+	printf("dungeoninside leave-ask asked=%d stay-no=%d asked-again=%d out=%d space=%d pos=%lu,%lu runs=%d\n", nAsked, nStay, nAsked2, (int)!QuestInDungeon(pA),
+		(int)(pA->dwSpaceID != SPACE_NORMAL), (unsigned long)pA->dwX, (unsigned long)pA->dwY, DungeonRunCount());
+
+	/* 後始末 */
+	DungeonProcNow(s_dwFakeNow + 1000);
+	s_dwFakeNow += 1000;
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+		if (p && p->byGameState == GAMESTATE_NPC && p->byNpcType != NPCTYPE_INIT && p->dwSpaceID != SPACE_NORMAL) DeleteChar(p->dwTblID);
+	}
+	SpaceSet(pA, SPACE_NORMAL);
+	pA->dwSpaceID = SPACE_NORMAL;
+	pA->byLevel = aBack.byLevel; pA->byPW = aBack.byPW; pA->wMaxHP = aBack.wMaxHP; pA->wHP = aBack.wHP;
+	pA->wMaxMana = aBack.wMaxMana; pA->wMana = aBack.wMana; pA->dwGold = aBack.dwGold; pA->dwExp = aBack.dwExp;
+	pA->byCharState = aBack.byCharState; pA->byAdminLV = aBack.byAdminLV;
+	memcpy(pA->waItem, aBack.waItem, sizeof(pA->waItem));
+	memcpy(pA->waEqu, aBack.waEqu, sizeof(pA->waEqu));
+	pB->byAdminLV = aBackB.byAdminLV;
+	QuestMovePC(pA, (int)aBack.dwMapID, (int)aBack.dwX, (int)aBack.dwY);
+	QuestSyncAll();
+	DeleteChar(dwReception);
+	for (int i = g_aStTmpInfo.GetSize() - 1; i >= nSt1; i --) {
+		delete g_aStTmpInfo[i];
+		g_aStTmpInfo.RemoveAt(i);
+	}
+	for (int i = 0; i < pMap->nEventCount; i ++) {
+		SAFE_DELETE_ARRAY(pMap->pEvent[i].pData);
+	}
+	SAFE_DELETE_ARRAY(pMap->pEvent);
+	pMap->pEvent = pEventBack;
+	pMap->nEventCount = nEventBack;
+	pMap->nProcEvent = 0;
+	g_nProcMap = 0;
+	memcpy(pMap->pwMap, &aMapBack[0], sizeof(WORD) * aMapBack.size());
+	g_aSubaGameInfo.RemoveAt(byID);
+	g_nProcSubGame = 0;
+	MockTrace(0);
+	s_dwFakeNow = dwNowBack + 400000;
+	printf("dungeoninside end runs=%d sel=%d\n", DungeonRunCount(), DungeonSelCount());
 }
 
 /* ------------------------------------------------------------------------- */

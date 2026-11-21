@@ -7713,6 +7713,8 @@ void RecvDataProcSUBGAMEINFO(BYTE *pData, DWORD dwDataSize)
 				pDungeonInfo->byDefSpringRange = pDungeon->byDefSpringRange;
 				pDungeonInfo->byDefSpringX = pDungeon->byDefSpringX;
 				pDungeonInfo->byDefSpringY = pDungeon->byDefSpringY;
+				pDungeonInfo->byFixStartX = pDungeon->byFixStartX;
+				pDungeonInfo->byFixStartY = pDungeon->byFixStartY;
 				if (dwDataSize >= sizeof (CMDPARA_DATA1) + sizeof (SUBGAME_DUNGEONINFOSAVE)) {
 					CopyMemory (pDungeonInfo->szMessages, pDungeon->szMessages, sizeof (pDungeonInfo->szMessages));
 				}

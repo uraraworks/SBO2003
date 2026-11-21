@@ -532,6 +532,24 @@ static void SubGameProc_DUNGEON(PSUBGAMEINFO pInfo)
 	}
 }
 
+/* マップ間移動のイベントを 1 つ置く（同じマップの中へ静かに移る） */
+static void DungeonFixedPutWarp(PMAPINFO pMap, DWORD dwX, DWORD dwY, DWORD dwToX, DWORD dwToY)
+{
+	int nNo = AddEvent (pMap->dwID);
+	PEVENTINFO pEvent = &pMap->pEvent[nNo];
+	pEvent->dwX = dwX;
+	pEvent->dwY = dwY;
+	pEvent->byType = EVENTTYPE_MAPCHG;
+	int nSize = GetEventDataSize (EVENTTYPE_MAPCHG);
+	pEvent->pData = new BYTE[nSize];
+	ZeroMemory (pEvent->pData, nSize);
+	PEVENTINFO_MAPCHG pMapChg = (PEVENTINFO_MAPCHG)pEvent->pData;
+	pMapChg->dwMapID = pMap->dwID;
+	pMapChg->dwX = dwToX;
+	pMapChg->dwY = dwToY;
+	pMapChg->byEfect = EVENTMOVEEFECT_SILENT;
+}
+
 /* ========================================================================= */
 /* 関数名：SubGameProc_DUNGEON_FIXED										 */
 /* 内容：作り直さない（固定の形）ダンジョンの周期処理（約 1 秒ごとに見る）	 */
@@ -539,6 +557,8 @@ static void SubGameProc_DUNGEON(PSUBGAMEINFO pInfo)
 /*       番外編（テンプレートあり）の入口のマス（byStartX・byStartY）に、	 */
 /*       何のイベントも無ければ、そのマスの上に立ったままにするワープを置く。 */
 /*       入った組はそのマスに立つので、一度離れて戻ると途中で帰る			 */
+/*       中の開始位置（byFixStartX・byFixStartY）を設定している時は、入口に乗ると */
+/*       組の空間のそこへ移る。そのマスにも（何のイベントも無ければ）ワープを置く（一度離れて戻ると途中で帰る） */
 /* ========================================================================= */
 static void SubGameProc_DUNGEON_FIXED(PSUBGAME_DUNGEONINFO pDungeon)
 {
@@ -556,23 +576,22 @@ static void SubGameProc_DUNGEON_FIXED(PSUBGAME_DUNGEONINFO pDungeon)
 	if (((int)pDungeon->byStartX >= pMap->nCX) || ((int)pDungeon->byStartY >= pMap->nCY)) {
 		return;
 	}
-	if (SearchEvent (pDungeon->dwMapID, (DWORD)pDungeon->byStartX, (DWORD)pDungeon->byStartY) >= 0) {
-		return;
+	BOOL bAdd = FALSE;
+	/* 外の入口：自分のマスに立ったままにするワープ（受付済みの組を入れる・中の人は途中で帰る） */
+	if (SearchEvent (pDungeon->dwMapID, (DWORD)pDungeon->byStartX, (DWORD)pDungeon->byStartY) < 0) {
+		DungeonFixedPutWarp (pMap, (DWORD)pDungeon->byStartX, (DWORD)pDungeon->byStartY, (DWORD)pDungeon->byStartX, (DWORD)pDungeon->byStartY);
+		bAdd = TRUE;
 	}
-	int nNo = AddEvent (pMap->dwID);
-	PEVENTINFO pEvent = &pMap->pEvent[nNo];
-	pEvent->dwX = (DWORD)pDungeon->byStartX;
-	pEvent->dwY = (DWORD)pDungeon->byStartY;
-	pEvent->byType = EVENTTYPE_MAPCHG;
-	int nSize = GetEventDataSize (EVENTTYPE_MAPCHG);
-	pEvent->pData = new BYTE[nSize];
-	ZeroMemory (pEvent->pData, nSize);
-	PEVENTINFO_MAPCHG pMapChg = (PEVENTINFO_MAPCHG)pEvent->pData;
-	pMapChg->dwMapID = pMap->dwID;
-	pMapChg->dwX = (DWORD)pDungeon->byStartX;
-	pMapChg->dwY = (DWORD)pDungeon->byStartY;
-	pMapChg->byEfect = EVENTMOVEEFECT_SILENT;
-	SendCmdEVENTPOS (URARASOCK_SENDALL, pMap->dwID);
+	/* 中の開始位置：外の入口へ戻るワープ（組の中の人だけ「抜けますか？」。外の人には何も起きない） */
+	DWORD dwInX, dwInY;
+	if (DungeonFixedInside (pDungeon, &dwInX, &dwInY) && ((int)dwInX < pMap->nCX) && ((int)dwInY < pMap->nCY) &&
+		(SearchEvent (pDungeon->dwMapID, dwInX, dwInY) < 0)) {
+		DungeonFixedPutWarp (pMap, dwInX, dwInY, (DWORD)pDungeon->byStartX, (DWORD)pDungeon->byStartY);
+		bAdd = TRUE;
+	}
+	if (bAdd) {
+		SendCmdEVENTPOS (URARASOCK_SENDALL, pMap->dwID);
+	}
 }
 
 /* ========================================================================= */

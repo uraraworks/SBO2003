@@ -2278,6 +2278,14 @@ dungeonmarch sweep found=1 main-hit=1 side-enemy-hit=1 base-hp-kept=1
 dungeonmarch door closed crossed=0 base-hp-kept=1
 dungeonmarch door opened=1 normal-space-closed=1 crossed=1 arrived=1
 dungeonmarch end runs=0 sel=0
+== AS. Dungeon defense inside start ==
+dungeoninside events entry=1 inside=1 inside-back=10,6 use=1 count=2
+dungeoninside events-again=2
+dungeoninside outsider step handled=1 pos=18,9 space=0
+dungeoninside enter in=1 run=1 space=1 pos=18,9 map-same=1 base=1
+dungeoninside enter sent mapinfo=1 charinfo=1
+dungeoninside leave-ask asked=1 stay-no=1 asked-again=1 out=1 space=0 pos=4,5 runs=0
+dungeoninside end runs=0 sel=0
 == L3. Tail battle mapmove ==
 tailbattlemap setup=1
 tailbattlemap battle preserved=1 wait=1

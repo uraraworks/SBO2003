@@ -518,6 +518,8 @@
 #define IDC_DGDEF_SPRING                  1486
 #define IDC_DGDEF_SPRINGX                 1487
 #define IDC_DGDEF_SPRINGY                 1488
+#define IDC_DGFIX_STARTX                  1489
+#define IDC_DGFIX_STARTY                  1490
 #define IDC_CHAR_PUTWAVE                  1487
 #define IDC_DGTMPL_ID2            1451
 #define IDC_DGTMPL_ID3            1452

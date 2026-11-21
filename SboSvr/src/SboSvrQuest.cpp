@@ -3360,9 +3360,14 @@ static BOOL DgIsGame(PSUBGAME_DUNGEONINFO p)
 static BOOL DgReady(PSUBGAME_DUNGEONINFO p)
 {
 	if (p->byRebuildMode == DGREBUILD_FIXED) {
-		return (p->dwMapID < (DWORD)g_aMapInfo.GetSize ()) && (g_aMapInfo[p->dwMapID] != NULL) &&
+		DWORD dwInX, dwInY;
+		if (!((p->dwMapID < (DWORD)g_aMapInfo.GetSize ()) && (g_aMapInfo[p->dwMapID] != NULL) &&
 			(p->byX2 > p->byX1) && (p->byY2 > p->byY1) &&
-			((int)p->byX2 < g_aMapInfo[p->dwMapID]->nCX) && ((int)p->byY2 < g_aMapInfo[p->dwMapID]->nCY);
+			((int)p->byX2 < g_aMapInfo[p->dwMapID]->nCX) && ((int)p->byY2 < g_aMapInfo[p->dwMapID]->nCY))) {
+			return FALSE;
+		}
+		/* 中の開始位置を設定している時は、それもマップに収まっていること */
+		return !DungeonFixedInside (p, &dwInX, &dwInY) || (((int)dwInX < g_aMapInfo[p->dwMapID]->nCX) && ((int)dwInY < g_aMapInfo[p->dwMapID]->nCY));
 	}
 	return (p->dwGenMapID == p->dwMapID) && (p->byGenX1 == p->byX1) && (p->byGenY1 == p->byY1) &&
 		(p->byGenX2 == p->byX2) && (p->byGenY2 == p->byY2) && (p->pwGenParts != NULL) && (p->dwBuildNo > 0) && (p->pMapTmp == NULL) && (p->wGenCX > 0);
@@ -3407,6 +3412,38 @@ static int DgFindByEntrance(DWORD dwMapID, DWORD dwX, DWORD dwY)
 	for (i = 0; i < g_aSubaGameInfo.GetSize (); i ++) {
 		PSUBGAME_DUNGEONINFO p = DgInfo (i);
 		if (DgIsGame (p) && (p->dwMapID == dwMapID) && (dwX == (DWORD)p->byStartX) && (dwY == (DWORD)p->byStartY)) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+/* 固定の形の中の開始位置（byFixStartX・byFixStartY）を使うか。使う時だけ TRUE で、その位置を返す。
+   両方 0・固定の形でない・外の入口と同じマスなら FALSE（外の入口＝開始位置のまま、今まで通り） */
+BOOL DungeonFixedInside(PSUBGAME_DUNGEONINFO p, DWORD *pdwX, DWORD *pdwY)
+{
+	if ((p == NULL) || (p->byRebuildMode != DGREBUILD_FIXED) || (!p->byFixStartX && !p->byFixStartY) ||
+		((p->byFixStartX == p->byStartX) && (p->byFixStartY == p->byStartY))) {
+		return FALSE;
+	}
+	if (pdwX) {
+		*pdwX = (DWORD)p->byFixStartX;
+	}
+	if (pdwY) {
+		*pdwY = (DWORD)p->byFixStartY;
+	}
+	return TRUE;
+}
+
+/* 固定の形の中の開始位置のマスの番号。外の入口と違うマスを設定している番外編が無ければ -1 */
+static int DgFindByFixInside(DWORD dwMapID, DWORD dwX, DWORD dwY)
+{
+	int i;
+
+	for (i = 0; i < g_aSubaGameInfo.GetSize (); i ++) {
+		PSUBGAME_DUNGEONINFO p = DgInfo (i);
+		DWORD dwInX, dwInY;
+		if (DgIsGame (p) && (p->dwMapID == dwMapID) && DungeonFixedInside (p, &dwInX, &dwInY) && (dwX == dwInX) && (dwY == dwInY)) {
 			return i;
 		}
 	}
@@ -4057,10 +4094,14 @@ static void DgStart(int nDungeonID, const DGSEL &Sel, const std::vector<std::pai
 
 		CharTargetCancelPC (pTmp);
 		/* この組の空間へ（先に移る。見え方の作り直しはマップ移動のほうでされる。
-		   固定の形は入口に立ったままの人が開始位置と同じマスなので、移動で何も届かない分、ここで作り直す） */
+		   固定の形で中の開始位置が無い時は、入口に立ったままの人が開始位置と同じマスなので、移動で何も届かない分、ここで作り直す。
+		   中の開始位置を設定している時は、気まぐれと同じく別のマスへ移るので、移動のほうで届く） */
 		BOOL bFixed = (pDungeon->byRebuildMode == DGREBUILD_FIXED);
 		DWORD dwInX = bFixed ? (DWORD)pDungeon->byStartX : (DWORD)pDungeon->byGenX1 + pDungeon->wGenStartX;
 		DWORD dwInY = bFixed ? (DWORD)pDungeon->byStartY : (DWORD)pDungeon->byGenY1 + pDungeon->wGenStartY;
+		if (bFixed) {
+			DungeonFixedInside (pDungeon, &dwInX, &dwInY);
+		}
 		SpaceSet (pTmp, Ch.dwSpaceID, (pTmp->dwMapID == pDungeon->dwMapID) && (pTmp->dwX == dwInX) && (pTmp->dwY == dwInY));
 		ZeroMemory (&Bak, sizeof (Bak));
 		LoanXfer (pTmp, &Bak, FALSE);
@@ -4437,6 +4478,22 @@ BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
 		if (pRun && pDungeon && (pDungeon->byRebuildMode == DGREBUILD_FIXED) && (pRun->byDungeonID == (BYTE)nID)) {
 			DgLeaveAsk (pChar, nID);
 			return TRUE;
+		}
+	}
+	/* 固定の形で中の開始位置を設定している時：そのマスに中の人が乗ったら（一度離れて戻った時）、途中で帰る（記録なし）。
+	   組の外の人には何もしない（自動で置いたワープで外の入口へ飛ばされないように） */
+	if (nID < 0) {
+		int nFix = DgFindByFixInside (pChar->dwMapID, pEvent->dwX, pEvent->dwY);
+		if (nFix >= 0) {
+			pRun = DgRunOf (pChar);
+			if (pRun && (pRun->byDungeonID == (BYTE)nFix)) {
+				DgLeaveAsk (pChar, nFix);
+				return TRUE;
+			}
+			pDungeon = DgInfo (nFix);
+			if (!pRun && (pMapChg->dwMapID == pDungeon->dwMapID) && (pMapChg->dwX == (DWORD)pDungeon->byStartX) && (pMapChg->dwY == (DWORD)pDungeon->byStartY)) {
+				return TRUE;
+			}
 		}
 	}
 	if (nID >= 0) {

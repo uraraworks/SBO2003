@@ -2142,6 +2142,8 @@ static const DATAFIELD s_aFieldSgDungeon[] = {
 	FLD (SUBGAME_DUNGEONINFO, byDefSpringRange,"泉の範囲(マス)",	FT_U8, 0, "拠点防衛の時。泉の中心（泉の位置。0,0 なら拠点）からこのマス数以内にいる間だけ、Mana が 1 秒ごとに最大Manaの 2%（最低 1）戻る（防衛の空間では Mana の自然回復は止まる）。0=2"),
 	FLD (SUBGAME_DUNGEONINFO, byDefSpringX,	"泉の位置X",		FT_U8, 0, "拠点防衛の時。拠点から離れた場所に置くと、拠点のまわりで戦いながら Mana を回復し続けることができなくなる。0,0=拠点の位置"),
 	FLD (SUBGAME_DUNGEONINFO, byDefSpringY,	"泉の位置Y",		FT_U8, 0, "拠点防衛の時。拠点から離れた場所に置くと、拠点のまわりで戦いながら Mana を回復し続けることができなくなる。0,0=拠点の位置"),
+	FLD (SUBGAME_DUNGEONINFO, byFixStartX,	"中の開始位置X",	FT_U8, 0, "固定の形（byRebuildMode=2）の時。外の入口（byStartX・byStartY）に乗ると組の空間のこの位置へ移る。0,0=入口と同じマス（今まで通り）"),
+	FLD (SUBGAME_DUNGEONINFO, byFixStartY,	"中の開始位置Y",	FT_U8, 0, "固定の形（byRebuildMode=2）の時。外の入口（byStartX・byStartY）に乗ると組の空間のこの位置へ移る。0,0=入口と同じマス（今まで通り）"),
 	FLDS(SUBGAME_DUNGEONINFO, szMessages, "番外編の文言一覧", FT_STR, FF_MULTILINE, "1行に key=文。空なら既定文。差し込みは {name}・{time}・{rank} 等。キー一覧は docs/dungeon-gen.md"),
 	FLD (SUBGAME_DUNGEONINFO, dwDailyVer,	"日替わりの版番号",		FT_U32, FF_READONLY, "今の形の版の通し番号（SboDungeonDaily.json の no。0=まだ作っていない。実行中だけ・読むだけ）"),
 };
