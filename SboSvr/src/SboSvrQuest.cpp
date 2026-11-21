@@ -5096,13 +5096,25 @@ static void DgDefMembers(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon, PCHARINF
 		DGDEFDEAD &dd = pCh->mapDead[dwTbl];
 		if ((p->wHP == 0) || (p->byCharState == CHARSTATE_DEAD)) {
 			if (dd.dwReviveAt == 0) {
-				/* 倒れたばかり：すぐ拠点の横へ移して、倒れたまま待つ */
+				/* 倒れたばかり：すぐ「入ってすぐの位置」（中の開始位置。無ければ入口＝開始位置）へ移して、倒れたまま待つ。
+				   2026-11-21 拠点の横だと戦っていた場所とほぼ同じで、起きてすぐ囲まれるため変えた（プレイヤーは重なれるので何人でも同じマス）。
+				   その位置がマップの外などおかしい時だけ、前と同じく拠点の横 */
 				int nSec, x, y;
+				DWORD dwInX, dwInY;
 
 				dd.nCount ++;
 				nSec = min (dd.nCount * DGDEF_REVIVE_STEP, DGDEF_REVIVE_MAX);
 				dd.dwReviveAt = (dwNow + (DWORD)nSec * 1000) ? (dwNow + (DWORD)nSec * 1000) : 1;
-				if (pBase && DgDefFindSeat (p, pBase, x, y)) {
+				if (!DungeonFixedInside (pDungeon, &dwInX, &dwInY)) {
+					dwInX = (DWORD)pDungeon->byStartX;
+					dwInY = (DWORD)pDungeon->byStartY;
+				}
+				if ((pDungeon->dwMapID < (DWORD)g_aMapInfo.GetSize ()) && g_aMapInfo[pDungeon->dwMapID] &&
+					((int)dwInX < g_aMapInfo[pDungeon->dwMapID]->nCX) && ((int)dwInY < g_aMapInfo[pDungeon->dwMapID]->nCY)) {
+					SendCmdFADEINOUT (p->pID, 0);
+					SubProcMapMove (p, pDungeon->dwMapID, dwInX, dwInY);
+					SpaceSendMapState (p);
+				} else if (pBase && DgDefFindSeat (p, pBase, x, y)) {
 					SendCmdFADEINOUT (p->pID, 0);
 					SubProcMapMove (p, pBase->dwMapID, (DWORD)x, (DWORD)y);
 					SpaceSendMapState (p);

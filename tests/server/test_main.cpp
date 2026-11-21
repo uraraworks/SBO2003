@@ -14257,7 +14257,7 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 		pBase->wHP = 100;
 	}
 
-	/* 6. 倒れる：その場に体を残さず拠点の横へ移る。回数×5秒で HP/Mana 満タンで起き上がる。お金は減らない。全員倒れても終わらない */
+	/* 6. 倒れる：その場に体を残さず入ってすぐの位置（ここでは入口 10,6）へ移る（2026-11-21 拠点の横から変更）。回数×5秒で HP/Mana 満タンで起き上がる。お金は減らない。全員倒れても終わらない */
 	{
 		DWORD dwGold = pA->dwGold;
 		QuestMovePC(pA, nMapNo, 15, 6);
@@ -14266,7 +14266,7 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 		Tick(1);
 		int dx = (int)pA->dwX - (int)pBase->dwX, dy = (int)pA->dwY - (int)pBase->dwY;
 		int dist = max(abs(dx), abs(dy));
-		printf("dungeondefense down1 dead=%d near-base=%d (dist=%d) down=%d inrun=%d\n", (int)(pA->byCharState == CHARSTATE_DEAD), (int)(dist >= 1 && dist <= 2), dist,
+		printf("dungeondefense down1 dead=%d at-start=%d (%d,%d dist-base=%d) down=%d inrun=%d\n", (int)(pA->byCharState == CHARSTATE_DEAD), (int)(pA->dwX == 10 && pA->dwY == 6), (int)pA->dwX, (int)pA->dwY, dist,
 			Say("倒れた…。5秒後に復活します。"), (int)QuestInDungeon(pA));
 		printf("dungeondefense down1 resurrect-button=%d inrun=%d\n", (int)QuestChallengeResurrection(pA), (int)QuestInDungeon(pA));
 		Tick(4);
