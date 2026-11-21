@@ -5117,25 +5117,41 @@ static void DgDefMembers(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon, PCHARINF
 			continue;
 		}
 		dd.dwReviveAt = 0;
-		/* 泉：泉の中心から範囲内にいる間だけ、最大 Mana の 2%（最低 1）ずつ戻る */
+		/* 泉：泉のマスにいる間だけ、HP と Mana が最大値の dwSpringPct %（最低 1）ずつ戻る（2026-11-21 HP も戻すことに） */
 		if (bSpring && pBase) {
 			BOOL bIn = (p->dwMapID == pBase->dwMapID) &&
 				(abs ((int)p->dwX - nSpringX) <= nRange) && (abs ((int)p->dwY - nSpringY) <= nRange);
 
 			if (!bIn) {
 				dd.dwSpringFx = 0;								/* 泉の外：次に入った時は最初に戻った時にエフェクトを出す */
-			} else if (p->wMana < p->wMaxMana) {
-				DWORD dwMana = (DWORD)p->wMana + max ((DWORD)p->wMaxMana * dwSpringPct / 100, (DWORD)1);
-				int nGain;
+			} else if ((p->wHP < p->wMaxHP) || (p->wMana < p->wMaxMana)) {
+				DWORD dwHP = (DWORD)p->wHP, dwMana = (DWORD)p->wMana;
+				int nGainHP, nGainMana;
 				char szTmp[32];
 
-				dwMana = min (dwMana, (DWORD)p->wMaxMana);
-				nGain = (int)dwMana - (int)p->wMana;
+				if (p->wHP < p->wMaxHP) {
+					dwHP = min (dwHP + max ((DWORD)p->wMaxHP * dwSpringPct / 100, (DWORD)1), (DWORD)p->wMaxHP);
+				}
+				if (p->wMana < p->wMaxMana) {
+					dwMana = min (dwMana + max ((DWORD)p->wMaxMana * dwSpringPct / 100, (DWORD)1), (DWORD)p->wMaxMana);
+				}
+				nGainHP = (int)dwHP - (int)p->wHP;
+				nGainMana = (int)dwMana - (int)p->wMana;
+				p->wHP = (WORD)dwHP;
 				p->wMana = (WORD)dwMana;
+				if (nGainHP > 0) {
+					SendCmdCHARSTATUSHP (URARASOCK_SENDALL, p->dwTblID);	/* HP は周りの人の表示にも */
+				}
 				SendCmdCHARSTATUSHPMANA (p->dwTblID, p->dwTblID);
-				/* 宿の回復と同じ見た目：増えた数の数字は毎回、キラッとしたエフェクトは最初と 3 秒おき */
-				wsprintf (szTmp, "%d", nGain);
-				SendCmdADDCHAREFC (p->dwTblID, RGB (139, 213, 255), szTmp);
+				/* 宿の回復と同じ見た目：増えた数の数字は毎回（HP・Mana それぞれ）、キラッとしたエフェクトは最初と 3 秒おき */
+				if (nGainHP > 0) {
+					wsprintf (szTmp, "%d", nGainHP);
+					SendCmdADDCHAREFC (p->dwTblID, RGB (139, 213, 255), szTmp);
+				}
+				if (nGainMana > 0) {
+					wsprintf (szTmp, "%d", nGainMana);
+					SendCmdADDCHAREFC (p->dwTblID, RGB (139, 213, 255), szTmp);
+				}
 				if ((dd.dwSpringFx == 0) || ((int)(dwNow - dd.dwSpringFx) >= DGDEF_SPRING_FX_INTERVAL)) {
 					dd.dwSpringFx = dwNow ? dwNow : 1;
 					p->byEfect = EFECTTYPE_HOIMI;
