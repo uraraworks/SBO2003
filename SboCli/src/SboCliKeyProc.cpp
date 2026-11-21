@@ -10321,6 +10321,40 @@ extern "C" EMSCRIPTEN_KEEPALIVE int SboWebChatKinds(void)
 }
 
 /* ========================================================================= */
+/* 関数名：	SboWebGetSpeechMode												 */
+/* 内容：	今の発言の種類(g_bySpeechMode)を返す（ブラウザ版）				 */
+/*			ゲーム内の発言欄(↑↓)とチャット欄の送り先を同じ値にそろえる	 */
+/*			0:普通 1:画面内放送 2:マップ内放送 3:パーティ					 */
+/* ========================================================================= */
+extern "C" EMSCRIPTEN_KEEPALIVE int SboWebGetSpeechMode(void)
+{
+	return (int)g_bySpeechMode;
+}
+
+/* ========================================================================= */
+/* 関数名：	SboWebSetSpeechMode												 */
+/* 内容：	発言の種類を切り替える（ブラウザ版。チャット欄の送り先ボタンから）*/
+/*			今選べない種類は無視する。戻り値：切り替え後の種類				 */
+/* ========================================================================= */
+extern "C" EMSCRIPTEN_KEEPALIVE int SboWebSetSpeechMode(int nMode)
+{
+	if ((nMode < 0) || (nMode >= SPEECHMODE_MAX) || (nMode == (int)g_bySpeechMode)) {
+		return (int)g_bySpeechMode;
+	}
+	if (!IsSpeechModeEnable ((BYTE)nMode)) {
+		return (int)g_bySpeechMode;
+	}
+	g_bySpeechMode = (BYTE)nMode;
+	for (int i = 0; i < g_WndInfo.GetSize (); i ++) {
+		/* 発言ウィンドウの見出しを描き直す */
+		if (g_WndInfo[i]->nType == WNDTYPE_SPEECH) {
+			g_WndInfo[i]->dwTimeDrawStart = 0;
+		}
+	}
+	return (int)g_bySpeechMode;
+}
+
+/* ========================================================================= */
 /* 関数名：	SboWebGetMagicKeyState											 */
 /* 内容：	スマホの特技ショートカットのボタン用の状態をJSON(UTF-8)で返す	 */
 /*			（ブラウザ版。シェル HTML が0.1秒ごとに読む）					 */
