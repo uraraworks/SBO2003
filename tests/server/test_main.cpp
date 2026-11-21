@@ -54,6 +54,7 @@
 #include <sys/stat.h>
 #include <string.h>
 #include <string>
+#include <functional>
 #include <set>
 #include <vector>
 #include <algorithm>
@@ -1123,6 +1124,7 @@ static void TestDungeonTheme(void);
 static void TestDungeonBonus(const std::vector<int> &aLogin);
 static void TestDungeonDaily(const std::vector<int> &aLogin);
 static void TestDungeonDefense(const std::vector<int> &aLogin);
+static void TestDungeonDefenseMarch(const std::vector<int> &aLogin);
 extern void SubGameProc(DWORD);
 extern BOOL DungeonDailyRebuildNow(int, std::string &);
 extern "C" const char *SboWebDataDungeonRecords(int nID, int nVerNo, int bTheme);
@@ -1134,6 +1136,7 @@ extern BOOL g_bPutFillOnStart;
 extern BOOL g_bLoginLimit;
 extern void RecvCmdOnDecPlayer(int);
 extern void BattleProcCheck(PCHARINFO);
+extern void BattleProcCheckPC(PCHARINFO);
 
 static void TestTownWarp(const std::vector<int> &aLogin)
 {
@@ -1674,6 +1677,8 @@ static void TestWorld(void)
 	TestDungeonDaily(aLogin);
 	/* AQ. 番外編ダンジョン（拠点防衛モード。作り直さない固定の形・波・拠点・復活・勝ち負け。AP の後ろ） */
 	TestDungeonDefense(aLogin);
+	/* AR. 番外編ダンジョン（拠点防衛モードの敵の行進。AQ の後ろ） */
+	TestDungeonDefenseMarch(aLogin);
 	/* L3. 戦闘でばらけた列は、マップ移動後も戻り先を覚えている */
 	TestTailBattleMapMove(aLogin);
 }
@@ -14358,6 +14363,490 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 	MockTrace(0);
 	s_dwFakeNow = dwNowBack + 400000;
 	printf("dungeondefense end runs=%d sel=%d\n", DungeonRunCount(), DungeonSelCount());
+}
+
+/* ------------------------------------------------------------------------- */
+/* AR. 番外編ダンジョン（拠点防衛モード・敵の行進）							 */
+/*     壁と通り道のある小さな形で、敵が拠点へ進んで拠点の HP を減らす・遠くの	 */
+/*     プレイヤーは追わない・前を敵がふさげば待って（回り込める時は別経路へ）・ */
+/*     前をプレイヤーがふさげば戦う（離れたら行進に戻る）・拠点とプレイヤーが	 */
+/*     となりなら拠点が先・閉じた扉は通れず組の空間で開けば通る・プレイヤーの	 */
+/*     攻撃（ふつうの攻撃・範囲の特技・なぎ払い）は拠点に当たらない			 */
+/* ------------------------------------------------------------------------- */
+static void TestDungeonDefenseMarch(const std::vector<int> &aLogin)
+{
+	printf("== AR. Dungeon defense march ==\n");
+	if (aLogin.size() < 1) {
+		return;
+	}
+	int nMapNo = -1;
+	for (int i = 0; i < g_aMapInfo.GetSize(); i ++) {
+		if (g_aMapInfo[i] && g_aMapInfo[i]->nCX >= 60 && g_aMapInfo[i]->nCY >= 60 && g_aMapInfo[i]->pwMap) {
+			nMapNo = i;
+			break;
+		}
+	}
+	WORD wWall = 0;
+	for (int i = 1; i < g_wCountMapParts; i ++) {
+		if (g_aMapPartsInfo[i].byHitType == PARTSHIT_BLOCK1) {
+			wWall = (WORD)i;
+			break;
+		}
+	}
+	if (nMapNo < 0 || wWall == 0) {
+		printf("dungeonmarch no map\n");
+		return;
+	}
+	PMAPINFO pMap = g_aMapInfo[nMapNo];
+	std::vector<WORD> aMapBack(pMap->pwMap, pMap->pwMap + pMap->nCX * pMap->nCY);
+	PEVENTINFO pEventBack = pMap->pEvent;
+	int nEventBack = pMap->nEventCount;
+	BYTE byFlgBack = pMap->byFlg;
+	pMap->pEvent = NULL;
+	pMap->nEventCount = 0;
+	pMap->byFlg |= MAPFLG_BATTLE;
+	pMap->byFlg &= ~MAPFLG_MAGIC;
+	DWORD dwNowBack = s_dwFakeNow, dwTimeBack = g_dwTime;
+	MockTrace(1);
+
+	/* 形：範囲（9,3)-(22,12）を床にし、x=15 に壁（y=3〜11）。y=12 が通り道（あとで扉にする）。拠点は（20,8） */
+	for (int y = 2; y <= 13; y ++) {
+		for (int x = 2; x <= 23; x ++) pMap->pwMap[x + y * pMap->nCX] = 1;
+	}
+	for (int y = 3; y <= 11; y ++) pMap->pwMap[15 + y * pMap->nCX] = wWall;
+
+	PCHARINFO pA = g_aCharInfo[aLogin[0]];
+	CHARINFO aBack;
+	TestCharBackup(&aBack, pA);
+	pA->byAdminLV = ADMINLV_USER;
+	pA->dwPartyID = 0;
+	pA->dwSpaceID = SPACE_NORMAL;
+	pA->dwTargetTblID = (DWORD)-1;
+	pA->wQuestID = 0; pA->byQuestStep = 0; pA->wQuestFlg = 0;
+	pA->byLevel = 30; pA->byPW = 99; pA->wMaxHP = 500; pA->wHP = 480; pA->wMaxMana = 90; pA->wMana = 80; pA->dwGold = 5000;
+	ZeroMemory(pA->waItem, sizeof(pA->waItem));
+	for (int k = 0; k < MAX_EQUTYPE; k ++) pA->waEqu[k] = 0xFFFF;
+
+	int nSt1 = g_aStTmpInfo.GetSize();
+	{
+		PSTATUSTEMPLATEINFO t = new STATUSTEMPLATEINFO;
+		ZeroMemory(t, sizeof(*t));
+		strcpy(t->szName, "守り手の姿");
+		t->byLevel = 7; t->byPW = 11; t->byDEX = 12; t->byST = 13; t->byIT = 14; t->byLK = 15;
+		t->wMaxHP = 60; t->wMaxMana = 50;
+		g_aStTmpInfo.Add(t);
+	}
+	SUBGAME_DUNGEONINFO Info;
+	ZeroMemory(&Info, sizeof(Info));
+	Info.dwMapID = pMap->dwID;
+	Info.byX1 = 9; Info.byY1 = 3; Info.byX2 = 22; Info.byY2 = 12;
+	Info.byStartX = 10; Info.byStartY = 6;
+	Info.byGoalX = 20; Info.byGoalY = 8;
+	Info.dwTblID = (DWORD)-1;
+	Info.byTmplCount = 1;
+	Info.wTmplID[0] = (WORD)nSt1; strcpy(Info.szTmplName[0], "守り手");
+	Info.byRebuildMode = DGREBUILD_FIXED;
+	Info.byClearMode = DGCLEAR_DEFENSE;
+	Info.wDefBaseHP = 1000;
+	Info.byDefWaveCount = 9;								/* 敵が一時的に 0 になっても、勝ちにならない */
+	Info.byDefPrepSec = 3;
+	Info.wDefWaveMaxSec = 3000;
+	Info.byDefSpringRange = 2;
+	SUBGAMEINFO Sub;
+	ZeroMemory(&Sub, sizeof(Sub));
+	Sub.byType = SUBGAMEID_DUNGEON;
+	Sub.pInfo = &Info;
+	g_aSubaGameInfo.Add(&Sub);
+	BYTE byID = (BYTE)(g_aSubaGameInfo.GetSize() - 1);
+	MakeDungeonProc(byID);
+	g_nProcSubGame = byID;
+	SubGameProc(byID);
+
+	/* 発生元：波 1 に 3 体 */
+	PCHARINFO pPut = new CHARINFO;
+	ZeroMemory((PBYTE)pPut, sizeof(CHARINFO));
+	pPut->byNpcType = NPCTYPE_PUT;
+	SetInitCharData(pPut);
+	pPut->byGameState = GAMESTATE_NPC;
+	pPut->byCharState = CHARSTATE_MOVE;
+	pPut->dwMapID = pMap->dwID;
+	pPut->dwX = pPut->dwXBack = pPut->dwStartX = 11;
+	pPut->dwY = pPut->dwYBack = pPut->dwStartY = 8;
+	pPut->byAreaX = 1; pPut->byAreaY = 1;
+	pPut->byPutCount = 3;
+	pPut->byPutWave = 1;
+	pPut->wGrpID = 5;
+	pPut->wMaxHP = pPut->wHP = 30;
+	pPut->dwStTmplateID = (DWORD)-1;
+	strcpy(pPut->szName, "試しの魔物");
+	pPut = AddChar(pPut);
+	pPut->pID = pPut->dwTblID + 1;
+	{
+		CCharProcBase CharProcBase;
+		CharProcBase.SetProc(pPut);
+	}
+	DWORD dwPut = pPut->dwTblID;
+	DWORD dwReception = DgTestReception(pMap->dwID, byID);
+	PEVENTINFO pEntry = NULL;
+	for (int i = 0; i < pMap->nEventCount; i ++) {
+		if (pMap->pEvent[i].byType == EVENTTYPE_MAPCHG && pMap->pEvent[i].dwX == 10 && pMap->pEvent[i].dwY == 6) pEntry = &pMap->pEvent[i];
+	}
+	if (!pEntry) {
+		printf("dungeonmarch no entry\n");
+		return;
+	}
+
+	auto Tick = [&](int n) { for (int k = 0; k < n; k ++) { s_dwFakeNow += 1000; DungeonProcNow(s_dwFakeNow); } };
+	auto Enemies = [&]() -> std::vector<PCHARINFO> {
+		std::vector<PCHARINFO> v;
+		for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+			PCHARINFO p = g_aCharInfo[i];
+			if (p && p->byNpcType != NPCTYPE_INIT && DgIsDefenseEnemy(p) && p->wHP > 0) v.push_back(p);
+		}
+		return v;
+	};
+	/* 0.5 秒ずつ進める（敵の処理→戦闘処理。組の周期処理は 1 秒ごと） */
+	int nStepNo = 0;
+	auto Step = [&](int n, const std::function<void()> &fn) {
+		for (int k = 0; k < n; k ++) {
+			s_dwFakeNow += 500;
+			g_dwTime = s_dwFakeNow;
+			std::vector<PCHARINFO> v = Enemies();
+			for (size_t i = 0; i < v.size(); i ++) {
+				if (v[i]->pProc) ((PCCharProcBase)v[i]->pProc)->Proc(s_dwFakeNow);
+				BattleProcCheck(v[i]);
+			}
+			if ((++ nStepNo) % 2 == 0) DungeonProcNow(s_dwFakeNow);
+			if (fn) fn();
+		}
+	};
+	auto Arm = [&](PCHARINFO p) { p->wAT = 10; p->byDEX = 255; p->wMaxHP = p->wHP = 5000; };
+	auto Place = [&](PCHARINFO p, int x, int y) {
+		p->dwX = (DWORD)x; p->dwY = (DWORD)y; p->dwLastDotMove = 0; p->dwTargetTblID = (DWORD)-1; p->dwLastBattle = 0;
+	};
+	auto Overlap = [&]() -> int {
+		std::vector<PCHARINFO> v = Enemies();
+		int n = 0;
+		for (size_t i = 0; i < v.size(); i ++) {
+			for (size_t j = i + 1; j < v.size(); j ++) if (v[i]->dwX == v[j]->dwX && v[i]->dwY == v[j]->dwY) n ++;
+			if (v[i]->dwX == pA->dwX && v[i]->dwY == pA->dwY) n ++;
+		}
+		return n;
+	};
+
+	/* 入る → 準備時間 → 波 1 の敵が 3 体出る */
+	QuestMovePC(pA, nMapNo, 4, 5);
+	DgTestTalk(pA, dwReception);
+	DgTestSelPick(pA, 0);
+	QuestMovePC(pA, nMapNo, 10, 6);
+	DungeonEventStep(pA, pEntry);
+	DWORD dwSpace = pA->dwSpaceID;
+	PCHARINFO pBase = DgDefenseBaseOf(dwSpace);
+	if (!pBase) {
+		printf("dungeonmarch no base\n");
+		return;
+	}
+	QuestMovePC(pA, nMapNo, 10, 3);
+	for (int k = 0; k < 12 && (int)Enemies().size() < 3; k ++) Tick(1);
+	std::vector<PCHARINFO> aE = Enemies();
+	{
+		int nProc = 0, nType1 = 0;
+		for (size_t i = 0; i < aE.size(); i ++) {
+			if (!aE[i]->pProc) {
+				CCharProcBase CharProcBase;
+				CharProcBase.SetProc(aE[i]);
+			}
+			nProc += (aE[i]->pProc != NULL);
+			nType1 += (aE[i]->byNpcType == NPCTYPE_BATTLE1);
+			Arm(aE[i]);
+		}
+		printf("dungeonmarch spawn enemies=%d proc=%d battle1=%d base-hp=%d/%d\n", (int)aE.size(), nProc, nType1, (int)pBase->wHP, (int)pBase->wMaxHP);
+	}
+	if (aE.size() < 3) {
+		return;
+	}
+
+	/* 1. 壁を回って（通り道 y=12）拠点へ進み、拠点を殴って HP を減らす。重ならない・遠くのプレイヤーは追わない */
+	{
+		int nSteps = 0, nOverlap = 0, nGap = 0, nWallCross = 0;
+		WORD wHPA = pA->wHP;
+		auto Watch = [&]() {
+			nOverlap += Overlap();
+			std::vector<PCHARINFO> v = Enemies();
+			for (size_t i = 0; i < v.size(); i ++) {
+				if (v[i]->dwX == 15 && v[i]->dwY == 12) nGap ++;
+				if (v[i]->dwX >= 16) nWallCross = 1;
+			}
+		};
+		while (nSteps < 160 && pBase->wHP == pBase->wMaxHP) {
+			Step(1, Watch);
+			nSteps ++;
+		}
+		printf("dungeonmarch march base-hp-lower=%d (within 80s=%d) wall-crossed=%d via-gap=%d overlap=%d player-hp-kept=%d\n", (int)(pBase->wHP < pBase->wMaxHP),
+			(int)(nSteps < 160), nWallCross, (int)(nGap > 0), nOverlap, (int)(pA->wHP == wHPA));
+		Step(12, Watch);
+		int nAdj = 0, nTarget = 0;
+		std::vector<PCHARINFO> v = Enemies();
+		for (size_t i = 0; i < v.size(); i ++) {
+			if (abs((int)v[i]->dwX - (int)pBase->dwX) + abs((int)v[i]->dwY - (int)pBase->dwY) == 1) nAdj ++;
+			nTarget += (v[i]->dwTargetTblID == pBase->dwTblID);
+		}
+		printf("dungeonmarch march +6s adjacent=%d target-base=%d overlap=%d base-hp-lower=%d player-hp-kept=%d\n", nAdj, nTarget, nOverlap, (int)(pBase->wHP < pBase->wMaxHP), (int)(pA->wHP == wHPA));
+		pBase->wHP = pBase->wMaxHP;
+	}
+
+	/* 2. 列：拠点のとなりの敵の後ろの敵は待つ。2 秒たっても進めず、横に空きがあれば別経路で回り込んで拠点のとなりへ */
+	{
+		std::vector<PCHARINFO> v = Enemies();
+		for (size_t i = 2; i < v.size(); i ++) DeleteChar(v[i]->dwTblID);
+		v = Enemies();
+		PCHARINFO pE1 = v[0], pE2 = v[1];
+		Place(pE1, 19, 8);
+		Place(pE2, 18, 8);
+		Step(1, nullptr);
+		int nOk1 = (pE1->dwTargetTblID == pBase->dwTblID) && (pE1->dwX == 19) && (pE1->dwY == 8);
+		Step(2, nullptr);
+		printf("dungeonmarch queue e1-hits-base=%d e2-waits=%d (%lu,%lu) overlap=%d\n", nOk1, (int)(pE2->dwX == 18 && pE2->dwY == 8), (unsigned long)pE2->dwX, (unsigned long)pE2->dwY, Overlap());
+		Step(14, nullptr);
+		int nAdj = abs((int)pE2->dwX - (int)pBase->dwX) + abs((int)pE2->dwY - (int)pBase->dwY) == 1;
+		printf("dungeonmarch queue e2-detour adjacent=%d target-base=%d overlap=%d base-hp-lower=%d\n", nAdj, (int)(pE2->dwTargetTblID == pBase->dwTblID), Overlap(),
+			(int)(pBase->wHP < pBase->wMaxHP));
+		pBase->wHP = pBase->wMaxHP;
+	}
+
+	/* 3. 前をプレイヤーがふさぐ：そのプレイヤーを狙って戦う。離れたら（2 マス以上）行進に戻る */
+	{
+		std::vector<PCHARINFO> v = Enemies();
+		for (size_t i = 1; i < v.size(); i ++) DeleteChar(v[i]->dwTblID);
+		PCHARINFO pE = Enemies()[0];
+		Place(pE, 16, 8);
+		QuestMovePC(pA, nMapNo, 17, 8);
+		pA->wHP = pA->wMaxHP = 500;
+		Step(1, nullptr);
+		int nTarget = (pE->dwTargetTblID == pA->dwTblID), nFace = (pE->byDirection == 3), nStay = (pE->dwX == 16);
+		Step(6, nullptr);
+		printf("dungeonmarch block target-player=%d facing=%d stayed=%d player-hp-lower=%d base-hp-kept=%d\n", nTarget, nFace, nStay, (int)(pA->wHP < pA->wMaxHP),
+			(int)(pBase->wHP == pBase->wMaxHP));
+		QuestMovePC(pA, nMapNo, 17, 5);
+		WORD wHPA = pA->wHP;
+		Step(2, nullptr);
+		printf("dungeonmarch block released target-cleared=%d moved=%d pos=(%lu,%lu)\n", (int)(pE->dwTargetTblID == (DWORD)-1), (int)(pE->dwX > 16), (unsigned long)pE->dwX, (unsigned long)pE->dwY);
+		Step(4, nullptr);
+		printf("dungeonmarch block marching pos=(%lu,%lu) far-player-kept=%d\n", (unsigned long)pE->dwX, (unsigned long)pE->dwY, (int)(pA->wHP == wHPA));
+	}
+
+	/* 4. となりにプレイヤーと拠点がいる：拠点が先。殴られても（狙いをプレイヤーにされても）拠点を殴る */
+	{
+		PCHARINFO pE = Enemies()[0];
+		Place(pE, 19, 8);
+		QuestMovePC(pA, nMapNo, 19, 7);
+		pA->wHP = pA->wMaxHP = 500;
+		pE->dwTargetTblID = pA->dwTblID;
+		pE->dwLastBattle = 1;
+		Step(1, nullptr);
+		int nTarget = (pE->dwTargetTblID == pBase->dwTblID);
+		Step(8, nullptr);
+		printf("dungeonmarch priority target-base=%d base-hp-lower=%d player-hp-kept=%d\n", nTarget, (int)(pBase->wHP < pBase->wMaxHP), (int)(pA->wHP == pA->wMaxHP));
+		pBase->wHP = pBase->wMaxHP;
+	}
+
+	/* 5. プレイヤーは拠点を殴れない：ふつうの攻撃・範囲の特技（周囲・前方・前方横一列・画面内）・なぎ払い。
+	      比べる相手に、行進しない敵（拠点防衛の敵ではない普通の敵）を拠点のとなりに置く（特技で倒れて消えても行進の敵は減らさない） */
+	{
+		auto MakeCtl = [&](int x, int y) -> DWORD {
+			PCHARINFO p = new CHARINFO;
+			ZeroMemory((PBYTE)p, sizeof(CHARINFO));
+			p->byNpcType = NPCTYPE_BATTLE1;
+			SetInitCharData(p);
+			p->dwSpaceID = dwSpace;
+			p->byGameState = GAMESTATE_NPC;
+			p->byCharState = CHARSTATE_MOVE;
+			p->dwMapID = pMap->dwID;
+			p->dwX = p->dwXBack = p->dwStartX = (DWORD)x;
+			p->dwY = p->dwYBack = p->dwStartY = (DWORD)y;
+			p->dwParentTblID = (DWORD)-1;
+			p->wGrpID = 5;
+			p->wMaxHP = p->wHP = 60000;
+			strcpy(p->szName, "比べる魔物");
+			p = AddChar(p);
+			p->pID = p->dwTblID + 1;
+			return p->dwTblID;
+		};
+		/* 比べる敵に特技などが当たったか（倒れて消えた・HP が減った） */
+		auto CtlHit = [&](DWORD dwTbl) -> int {
+			PCHARINFO q = (dwTbl < (DWORD)g_aCharInfo.GetSize()) ? g_aCharInfo[dwTbl] : NULL;
+			return (q == NULL || q->dwTblID != dwTbl || q->wHP < 60000) ? 1 : 0;
+		};
+		auto CtlDel = [&](DWORD dwTbl) {
+			PCHARINFO q = (dwTbl < (DWORD)g_aCharInfo.GetSize()) ? g_aCharInfo[dwTbl] : NULL;
+			if (q && q->dwTblID == dwTbl) DeleteChar(dwTbl);
+		};
+		PCHARINFO pE = Enemies()[0];
+		DWORD dwCtl = MakeCtl(19, 9);
+		Place(pE, 21, 8);
+		QuestMovePC(pA, nMapNo, 19, 8);
+		pA->byDirection = 3;
+		pA->wMana = pA->wMaxMana = 9999;
+		pA->dwTargetTblID = pBase->dwTblID;
+		pA->dwLastBattle = 1;
+		BOOL bAtk = BattleProcAtack(pA, pBase);
+		pA->dwTargetTblID = (DWORD)-1;
+		pA->dwLastBattle = 0;
+		int nPlain = (!bAtk && pBase->wHP == pBase->wMaxHP);
+		/* 拠点防衛の敵なら殴れる */
+		pE->dwTargetTblID = pBase->dwTblID;
+		BOOL bEnemyAtk = BattleProcAtack(pE, pBase);
+		int nEnemyHit = (bEnemyAtk && pBase->wHP < pBase->wMaxHP);
+		pBase->wHP = pBase->wMaxHP;
+		Place(pE, 12, 3);
+		printf("dungeonmarch player-attack plain-rejected=%d enemy-attack-works=%d\n", nPlain, nEnemyHit);
+
+		static const BYTE abyType[] = { MAGICTARGETTYPE_CIRCLE, MAGICTARGETTYPE_FRONT, MAGICTARGETTYPE_FRONTSIDE, MAGICTARGETTYPE_SCREEN };
+		static const char *apszType[] = { "circle", "front", "frontside", "screen" };
+		for (int t = 0; t < 4; t ++) {
+			int nFound = -1;
+			for (int i = 1; i < g_aMagicInfo.GetSize() && nFound < 0; i ++) {
+				PMAGICINFO pM = g_aMagicInfo[i];
+				if (pM == NULL || pM->byType != MAGICTYPE_HPDOWN || pM->byTarget != MAGICTARGET_NPC || pM->byTargetType != abyType[t]) continue;
+				if (abyType[t] == MAGICTARGETTYPE_CIRCLE && pM->byTargetArea < 1) continue;
+				nFound = i;
+			}
+			/* 使う人が拠点の左（拠点は前・横）か、その下（前に比べる敵）から右向きに使う。拠点に当たらず、比べる敵には当たる */
+			static const int aSetup[2][4] = { { 19, 8, 19, 9 }, { 19, 9, 20, 9 } };
+			int anBase[2] = { 0, 0 }, anCtl[2] = { 0, 0 };
+			for (int s = 0; s < 2 && nFound > 0; s ++) {
+				CtlDel(dwCtl);
+				dwCtl = MakeCtl(aSetup[s][2], aSetup[s][3]);
+				QuestMovePC(pA, nMapNo, aSetup[s][0], aSetup[s][1]);
+				pA->byDirection = 3;
+				pBase->wHP = pBase->wMaxHP;
+				pA->wMana = pA->wMaxMana;
+				MagicProcItem(pA->dwTblID, (BYTE)nFound, (DWORD)-1);
+				anBase[s] = (pBase->wHP == pBase->wMaxHP);
+				anCtl[s] = CtlHit(dwCtl);
+			}
+			printf("dungeonmarch magic %s found=%d base-hp-kept=%d,%d control-enemy-hit=%d,%d\n", apszType[t], (int)(nFound > 0), anBase[0], anBase[1], anCtl[0], anCtl[1]);
+		}
+
+		/* なぎ払い：自分（20,7）の左右（20,8）（20,6）のうち、(20,8) が拠点。前（21,7）の敵に当たり、拠点には当たらない */
+		int nSweep = -1;
+		BYTE byTypeBack = 0;
+		for (int i = 1; i < g_aItemInfo.GetSize() && nSweep < 0; i ++) {
+			PITEMINFO pI = g_aItemInfo[i];
+			if (pI && pI->byType == ITEMTYPE_WEAPON && pI->pData) nSweep = i;
+		}
+		if (nSweep > 0) {
+			/* 手元にある武器の 1 つを、一時的になぎ払いにする */
+			PITEMINFO_WEAPON pW = (PITEMINFO_WEAPON)g_aItemInfo[nSweep]->pData;
+			byTypeBack = pW->byAtackType;
+			pW->byAtackType = ATACKTYPE_SWEEP;
+			pA->waItem[0] = (WORD)nSweep;
+			pA->waEqu[0] = 0;
+		}
+		CtlDel(dwCtl);
+		DWORD dwMain = MakeCtl(21, 7);
+		DWORD dwSide = MakeCtl(20, 6);
+		QuestMovePC(pA, nMapNo, 20, 7);
+		pA->byDirection = 3;
+		pBase->wHP = pBase->wMaxHP;
+		pA->dwTargetTblID = dwMain;
+		pA->dwLastBattle = 1;
+		BattleProcCheckPC(pA);
+		printf("dungeonmarch sweep found=%d main-hit=%d side-enemy-hit=%d base-hp-kept=%d\n", (int)(nSweep > 0), CtlHit(dwMain), CtlHit(dwSide), (int)(pBase->wHP == pBase->wMaxHP));
+		if (nSweep > 0) ((PITEMINFO_WEAPON)g_aItemInfo[nSweep]->pData)->byAtackType = byTypeBack;
+		pA->waItem[0] = 0;
+		pA->waEqu[0] = 0xFFFF;
+		CtlDel(dwMain);
+		CtlDel(dwSide);
+	}
+
+	/* 6. 扉：通り道 (15,12) を扉にする。閉じている間は拠点へ行けず（壁の前で待つ）、組の空間で開くと通って拠点へ着く */
+	{
+		PCHARINFO pE = Enemies()[0];
+		pMap->pwMap[15 + 12 * pMap->nCX] = wWall;
+		int nOld = pMap->nEventCount;
+		PEVENTINFO pNew = new EVENTINFO[nOld + 1];
+		ZeroMemory(pNew, sizeof(EVENTINFO) * (nOld + 1));
+		memcpy(pNew, pMap->pEvent, sizeof(EVENTINFO) * nOld);
+		SAFE_DELETE_ARRAY(pMap->pEvent);
+		pMap->pEvent = pNew;
+		PEVENTINFO_DOOR pDoor = (PEVENTINFO_DOOR)new BYTE[sizeof(EVENTINFO_DOOR)];
+		ZeroMemory(pDoor, sizeof(EVENTINFO_DOOR));
+		pDoor->wGrpID = 11;
+		pDoor->wBackGrpID = 22;
+		pDoor->byType = EVENTDOOTTYPE_NONE;
+		PEVENTINFO pDoorEv = &pMap->pEvent[nOld];
+		pDoorEv->dwX = 15;
+		pDoorEv->dwY = 12;
+		pDoorEv->byType = EVENTTYPE_DOOR;
+		pDoorEv->pData = (PBYTE)pDoor;
+		pMap->nEventCount = nOld + 1;
+		QuestMovePC(pA, nMapNo, 10, 3);
+		Place(pE, 12, 8);
+		pBase->wHP = pBase->wMaxHP;
+		int nCross = 0;
+		auto Watch = [&]() { if (pE->dwX >= 16) nCross = 1; };
+		Step(60, Watch);
+		printf("dungeonmarch door closed crossed=%d base-hp-kept=%d\n", nCross, (int)(pBase->wHP == pBase->wMaxHP));
+		BOOL bOpen = SpaceDoorOpen(pMap->dwID, pDoorEv, pDoor, dwSpace);
+		int nOpenOther = SpaceDoorIsOpen(pMap->dwID, pDoorEv, pDoor, SPACE_NORMAL);
+		int nSteps = 0;
+		while (nSteps < 160 && pBase->wHP == pBase->wMaxHP) {
+			Step(1, Watch);
+			nSteps ++;
+		}
+		printf("dungeonmarch door opened=%d normal-space-closed=%d crossed=%d arrived=%d\n", (int)bOpen, (int)(nOpenOther == 0), nCross, (int)(pBase->wHP < pBase->wMaxHP));
+	}
+
+	/* 後始末 */
+	QuestSendParty(pA, pA, CMDPARTY_BREAKUP);
+	SpaceSet(pA, SPACE_NORMAL);
+	pA->dwSpaceID = SPACE_NORMAL;
+	pA->dwTargetTblID = (DWORD)-1;
+	pA->dwLastBattle = 0;
+	pA->dwPartyID = 0;
+	pA->byLevel = aBack.byLevel; pA->byPW = aBack.byPW; pA->wMaxHP = aBack.wMaxHP; pA->wHP = aBack.wHP;
+	pA->wMaxMana = aBack.wMaxMana; pA->wMana = aBack.wMana; pA->dwGold = aBack.dwGold; pA->dwExp = aBack.dwExp;
+	pA->byCharState = aBack.byCharState; pA->byAdminLV = aBack.byAdminLV;
+	memcpy(pA->waItem, aBack.waItem, sizeof(pA->waItem));
+	memcpy(pA->waEqu, aBack.waEqu, sizeof(pA->waEqu));
+	QuestMovePC(pA, (int)aBack.dwMapID, (int)aBack.dwX, (int)aBack.dwY);
+	QuestSyncAll();
+	/* 全員が出たので、次の周期処理で組が終わる */
+	DungeonProcNow(s_dwFakeNow + 1000);
+	s_dwFakeNow += 1000;
+	DungeonProcNow(s_dwFakeNow + 1000);
+	s_dwFakeNow += 1000;
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+		if (p && p->byGameState == GAMESTATE_NPC && p->byNpcType != NPCTYPE_INIT && p->dwSpaceID != SPACE_NORMAL) DeleteChar(p->dwTblID);
+	}
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+		if (p && p->dwParentTblID == dwPut && p->byGameState == GAMESTATE_NPC && p->byNpcType != NPCTYPE_INIT) DeleteChar(p->dwTblID);
+	}
+	DeleteChar(dwReception);
+	DeleteChar(dwPut);
+	for (int i = g_aStTmpInfo.GetSize() - 1; i >= nSt1; i --) {
+		delete g_aStTmpInfo[i];
+		g_aStTmpInfo.RemoveAt(i);
+	}
+	for (int i = 0; i < pMap->nEventCount; i ++) {
+		SAFE_DELETE_ARRAY(pMap->pEvent[i].pData);
+	}
+	SAFE_DELETE_ARRAY(pMap->pEvent);
+	pMap->pEvent = pEventBack;
+	pMap->nEventCount = nEventBack;
+	pMap->nProcEvent = 0;
+	pMap->byFlg = byFlgBack;
+	g_nProcMap = 0;
+	memcpy(pMap->pwMap, &aMapBack[0], sizeof(WORD) * aMapBack.size());
+	g_aSubaGameInfo.RemoveAt(byID);
+	g_nProcSubGame = 0;
+	MockTrace(0);
+	g_dwTime = dwTimeBack;
+	s_dwFakeNow = dwNowBack + 400000;
+	printf("dungeonmarch end runs=%d sel=%d\n", DungeonRunCount(), DungeonSelCount());
 }
 
 /* ------------------------------------------------------------------------- */

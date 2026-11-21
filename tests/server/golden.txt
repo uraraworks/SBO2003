@@ -2243,6 +2243,25 @@ dungeondefense lose +10s inrun=0 runs=0 space=0 pos=4,5
 dungeondefense save plain=1 defense=1 extra>0=1
 dungeondefense api ok=1 set=1 clear3-rejected=1 rebuild3-rejected=1 clear-kept=1
 dungeondefense end runs=0 sel=0
+== AR. Dungeon defense march ==
+dungeonmarch spawn enemies=3 proc=3 battle1=3 base-hp=1000/1000
+dungeonmarch march base-hp-lower=1 (within 80s=1) wall-crossed=1 via-gap=1 overlap=0 player-hp-kept=1
+dungeonmarch march +6s adjacent=3 target-base=3 overlap=0 base-hp-lower=1 player-hp-kept=1
+dungeonmarch queue e1-hits-base=1 e2-waits=1 (18,8) overlap=0
+dungeonmarch queue e2-detour adjacent=1 target-base=1 overlap=0 base-hp-lower=1
+dungeonmarch block target-player=1 facing=1 stayed=1 player-hp-lower=1 base-hp-kept=1
+dungeonmarch block released target-cleared=1 moved=1 pos=(18,8)
+dungeonmarch block marching pos=(19,8) far-player-kept=1
+dungeonmarch priority target-base=1 base-hp-lower=1 player-hp-kept=1
+dungeonmarch player-attack plain-rejected=1 enemy-attack-works=1
+dungeonmarch magic circle found=1 base-hp-kept=1,1 control-enemy-hit=1,1
+dungeonmarch magic front found=1 base-hp-kept=1,1 control-enemy-hit=0,1
+dungeonmarch magic frontside found=1 base-hp-kept=1,1 control-enemy-hit=0,1
+dungeonmarch magic screen found=1 base-hp-kept=1,1 control-enemy-hit=1,1
+dungeonmarch sweep found=1 main-hit=1 side-enemy-hit=1 base-hp-kept=1
+dungeonmarch door closed crossed=0 base-hp-kept=1
+dungeonmarch door opened=1 normal-space-closed=1 crossed=1 arrived=1
+dungeonmarch end runs=0 sel=0
 == L3. Tail battle mapmove ==
 tailbattlemap setup=1
 tailbattlemap battle preserved=1 wait=1

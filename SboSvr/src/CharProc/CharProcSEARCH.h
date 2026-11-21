@@ -22,6 +22,12 @@ public:
 	BOOL Proc		(DWORD dwTime);								/* 処理 */
 
 protected:
+	BOOL	IsMarching		(void);									/* 拠点防衛の組の空間で出た敵（行進する）か */
+	BOOL	ProcMarch		(DWORD dwTime);							/* 拠点へ行進する（隣の拠点を殴る・ふさいだ相手と戦う・列で待つ・回り込む） */
+	BOOL	MarchTargetOk	(PCHARINFO pCharTmp);					/* 行進中に狙っている相手（殴ってきた・ふさいだ）をまだ相手にするか */
+	BOOL	MarchCanStep	(int x, int y, PDWORD pdwBlock);		/* 行進でそのマスへ1歩進めるか（ふさいでいるキャラを返す） */
+	BOOL	MarchStep		(int nDirection);						/* 行進で指定の向きへ1歩進む */
+	void	MarchFace		(int nDirection);						/* 行進中の向きを変える */
 	BOOL	ProcTarget		(DWORD dwTime);							/* ターゲットを追いかける */
 	BOOL	ProcWander		(DWORD dwTime);							/* 開始位置の近くをうろつく */
 	BOOL	ProcGoHome		(DWORD dwTime);							/* 開始位置へ歩いて戻る */
@@ -51,6 +57,10 @@ protected:
 	DWORD	m_dwGiveUpEnd;								/* あきらめてから、新しく探さずに帰る間の終わり */
 	BOOL	m_bDetour;									/* 回り込み中（まっすぐより道さがしを先に使う） */
 	DWORD	m_dwBattleSeen;								/* 前の順番で見た dwLastBattle（行動したかを知る） */
+	BOOL	m_bMarch;									/* 拠点防衛の行進中（道さがしが開いた扉を通れるものとして見る） */
+	DWORD	m_dwMarchProgress;							/* 行進で最後に進んだ・戦った時間（進めない時間を数える） */
+	DWORD	m_dwMarchDetourEnd;							/* 回り込み（道さがしの道をたどる）を続ける終わりの時間 */
+	DWORD	m_dwMarchNextDetour;						/* 次に回り込みの道をさがせる時間 */
 } CCharProcSEARCH, *PCCharProcSEARCH;
 
 /* Copyright(C)URARA-works 2006 */

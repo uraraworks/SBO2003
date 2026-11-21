@@ -31,7 +31,9 @@
 
 #include "stdafx.h"
 #include "SboSvrRecvCmd.h"
+#include "SboSvrQuest.h"
 #include "CharProcMOVERAND.h"
+#include "CharProcSEARCH.h"
 
 /* 1歩ごとの間隔(ms)。クライアントは1マスを約 0.28 秒で歩くので、それより少し長くする */
 #define MOVERAND_STEPTIME		(320)
@@ -71,6 +73,18 @@ CCharProcMOVERAND::CCharProcMOVERAND()
 	m_dwRouteStuck	= 0;
 	m_dwBattleTarget	= (DWORD)-1;
 	m_dwBattleTime		= 0;
+	m_pMarch			= NULL;
+}
+
+
+/* ========================================================================= */
+/* 関数名：	CCharProcMOVERAND::~CCharProcMOVERAND							 */
+/* 内容：	デストラクタ													 */
+/* ========================================================================= */
+
+CCharProcMOVERAND::~CCharProcMOVERAND()
+{
+	SAFE_DELETE (m_pMarch);
 }
 
 
@@ -87,6 +101,15 @@ BOOL CCharProcMOVERAND::Proc(DWORD dwTime)
 	PMAPINFO pMap;
 
 	bRet = FALSE;
+
+	/* 拠点防衛の組の空間で出た戦闘１の敵は、拠点へ行進する（動きは行進用の処理に任せる。ふだんのマップの敵はこの下の今までの動き） */
+	if ((m_pChar->byNpcType == NPCTYPE_BATTLE1) && DgIsDefenseEnemy (m_pChar)) {
+		if (m_pMarch == NULL) {
+			m_pMarch = new CCharProcSEARCH;
+			m_pMarch->Create (m_pChar);
+		}
+		return m_pMarch->Proc (dwTime);
+	}
 
 	/* 歩いている間は1歩の間隔、休んでいる間は休みの判定間隔で処理する */
 	dwInterval = (m_nWalkLeft > 0) ? MOVERAND_STEPTIME : MOVERAND_RESTTIME;

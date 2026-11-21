@@ -181,6 +181,7 @@ static CHALLENGE *DgRunOf(PCHARINFO p);
 static void DgDefCreateBase(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon);
 static void DgDefPutProc(CHALLENGE *pCh, DWORD dwNow);
 static void DgDefProc(CHALLENGE &Ch, PSUBGAME_DUNGEONINFO pDungeon, DWORD dwNow);
+static void DgDefFieldDrop(DWORD dwSpaceID);
 static void DgSelOnDec(PCHARINFO pChar);
 static void DgReceptionForget(PCHARINFO pChar);
 static BOOL HasMercenary(PCHARINFO pChar);
@@ -3910,6 +3911,7 @@ static void DgEnd(DWORD dwSession)
 	for (i = 0; i < (int)aDel.size (); i ++) {
 		DeleteChar (aDel[i]);
 	}
+	DgDefFieldDrop (dwSession);
 	s_mapChallenge.erase (dwSession);
 }
 
@@ -5074,6 +5076,164 @@ BOOL DgIsDefenseEnemy(PCHARINFO pChar)
 BOOL DgIsDefenseBase(PCHARINFO pChar)
 {
 	return (pChar != NULL) && (pChar->byNpcType == NPCTYPE_NOMOVE) && (DgDefenseBaseOf (pChar->dwSpaceID) == pChar);
+}
+
+/*
+ * 拠点防衛：敵の行進用の道しるべ（拠点までの歩数表）
+ * 拠点から幅優先で、通れるマスの歩数を組の空間ごとに 1 つ作って全員で使う（敵ごとには作らない）。
+ * 地形・イベント・開いた扉（組の空間ごとに開閉が違う）・ダメージ床だけを見る。人や敵が立っているマスは
+ * 表には入れず、敵が 1 歩ずつ自分で確かめる。範囲は番外編の範囲の中だけ。数秒ごとに作り直す。
+ */
+#define DGDEF_FIELD_LIFE	(3000)		/* 表を作り直す間隔(ms) */
+#define DGDEF_FIELD_MINGAP	(1000)		/* 詰まって引き直しを頼まれても、作り直さない最短の間隔(ms) */
+
+typedef struct _DGDEFFIELD {
+	DWORD				dwBuilt;			/* 作った時刻（0 なら次に使う時に作り直す） */
+	int					nX1, nY1, nW, nH;	/* 表の範囲（マスの座標・大きさ） */
+	std::vector<short>	aDist;				/* 拠点までの歩数（通れない・行けないマスは -1） */
+} DGDEFFIELD;
+static std::map<DWORD, DGDEFFIELD> s_mapDefField;
+
+/* 組が終わった時に表を捨てる */
+static void DgDefFieldDrop(DWORD dwSpaceID)
+{
+	s_mapDefField.erase (dwSpaceID);
+}
+
+/* そのマスが敵の通れるマスか（番外編の範囲の中の、地形・イベント。閉じていない扉は組の空間ごとの開閉で見る。
+   pChar が NULL なら地形はベースの判定） */
+BOOL DgDefCellOpen(PCHARINFO pChar, DWORD dwSpaceID, DWORD dwMapID, int x, int y)
+{
+	std::map<DWORD, CHALLENGE>::iterator itC;
+	PSUBGAME_DUNGEONINFO pDungeon;
+	PMAPINFO pMap;
+	PEVENTINFO pEvent;
+	BOOL bTerrain, bDoorOpen = FALSE;
+	int i;
+
+	if (dwMapID >= (DWORD)g_aMapInfo.GetSize ()) {
+		return FALSE;
+	}
+	/* 範囲の外へは行かない（範囲の外に床があっても、扉を避けて回り込まない） */
+	itC = s_mapChallenge.find (dwSpaceID);
+	if (itC != s_mapChallenge.end ()) {
+		pDungeon = DgInfo (itC->second.byDungeonID);
+		if ((pDungeon != NULL) && !DgInArea (pDungeon, dwMapID, (DWORD)x, (DWORD)y)) {
+			return FALSE;
+		}
+	}
+	pMap = g_aMapInfo[dwMapID];
+	if ((x < 0) || (x >= pMap->nCX) || (y < 0) || (y >= pMap->nCY)) {
+		return FALSE;
+	}
+	bTerrain = pChar ? CheckCharBlock (pChar, dwMapID, (DWORD)x, (DWORD)y) : CheckCharBlock (dwMapID, (DWORD)x, (DWORD)y);
+	for (i = 0; i < pMap->nEventCount; i ++) {
+		pEvent = &pMap->pEvent[i];
+		if ((pEvent->dwX != (DWORD)x) || (pEvent->dwY != (DWORD)y)) {
+			continue;
+		}
+		/* 開いている扉は通れる（サーバーのマップは閉じた絵のままなので、扉の情報で見る）。それ以外のイベントは通れない */
+		if ((pEvent->byType == EVENTTYPE_DOOR) && pEvent->pData && SpaceDoorIsOpen (dwMapID, pEvent, (PEVENTINFO_DOOR)pEvent->pData, dwSpaceID)) {
+			bDoorOpen = TRUE;
+			continue;
+		}
+		return FALSE;
+	}
+	return bTerrain || bDoorOpen;
+}
+
+/* 組の空間の歩数表（古ければ作り直す）。防衛でない・拠点がない・範囲の外なら NULL */
+static DGDEFFIELD *DgDefField(PCHARINFO pEnemy, DWORD dwNow)
+{
+	std::map<DWORD, CHALLENGE>::iterator it;
+	PSUBGAME_DUNGEONINFO pDungeon;
+	PCHARINFO pBase;
+	PMAPINFO pMap;
+	DGDEFFIELD *pF;
+	std::vector<int> aQueue;
+	size_t nHead = 0;
+	int nX2, nY2, nPos, i, x, y;
+
+	if ((pEnemy == NULL) || (pEnemy->dwSpaceID == SPACE_NORMAL)) {
+		return NULL;
+	}
+	it = s_mapChallenge.find (pEnemy->dwSpaceID);
+	if ((it == s_mapChallenge.end ()) || (it->second.byKind != CHALLENGEKIND_DUNGEON) || !it->second.bDefense) {
+		return NULL;
+	}
+	pDungeon = DgInfo (it->second.byDungeonID);
+	pBase = DgDefBaseChar (&it->second);
+	if ((pDungeon == NULL) || (pBase == NULL) || (pBase->dwMapID != pDungeon->dwMapID) || (pBase->dwMapID >= (DWORD)g_aMapInfo.GetSize ())) {
+		return NULL;
+	}
+	pF = &s_mapDefField[pEnemy->dwSpaceID];
+	if ((pF->dwBuilt != 0) && ((int)(dwNow - pF->dwBuilt) < DGDEF_FIELD_LIFE) && (pF->nW > 0)) {
+		return pF;
+	}
+
+	pMap = g_aMapInfo[pBase->dwMapID];
+	pF->nX1 = max ((int)pDungeon->byX1, 0);
+	pF->nY1 = max ((int)pDungeon->byY1, 0);
+	nX2 = min ((int)pDungeon->byX2, pMap->nCX - 1);
+	nY2 = min ((int)pDungeon->byY2, pMap->nCY - 1);
+	pF->nW = max (nX2 - pF->nX1 + 1, 0);
+	pF->nH = max (nY2 - pF->nY1 + 1, 0);
+	pF->aDist.assign ((size_t)pF->nW * pF->nH, -1);
+	pF->dwBuilt = dwNow ? dwNow : 1;
+	x = (int)pBase->dwX - pF->nX1;
+	y = (int)pBase->dwY - pF->nY1;
+	if ((x < 0) || (x >= pF->nW) || (y < 0) || (y >= pF->nH)) {
+		return pF;
+	}
+	/* 拠点のマスから幅優先。拠点のマス自身は歩数 0（人が立っていても出発点） */
+	nPos = x + y * pF->nW;
+	pF->aDist[nPos] = 0;
+	aQueue.push_back (nPos);
+	while (nHead < aQueue.size ()) {
+		nPos = aQueue[nHead ++];
+		for (i = 0; i < 4; i ++) {
+			x = nPos % pF->nW + anPosAddTblX[i];
+			y = nPos / pF->nW + anPosAddTblY[i];
+			if ((x < 0) || (x >= pF->nW) || (y < 0) || (y >= pF->nH) || (pF->aDist[x + y * pF->nW] != -1)) {
+				continue;
+			}
+			if (!DgDefCellOpen (NULL, pEnemy->dwSpaceID, pBase->dwMapID, pF->nX1 + x, pF->nY1 + y) ||
+				IsDamageFloor (pMap, pF->nX1 + x, pF->nY1 + y)) {
+				continue;
+			}
+			pF->aDist[x + y * pF->nW] = (short)(pF->aDist[nPos] + 1);
+			aQueue.push_back (x + y * pF->nW);
+		}
+	}
+	return pF;
+}
+
+/* 敵の今いるマスと上下左右（向き 0〜3 の順）の、拠点までの歩数。anDist[0..3] が上下左右、anDist[4] が今のマス。分からない・通れないマスは -1。
+   表が無い（防衛でない・拠点がない）時は FALSE */
+BOOL DgDefMarchDists(PCHARINFO pEnemy, int *panDist)
+{
+	DGDEFFIELD *pF = DgDefField (pEnemy, timeGetTime ());
+	int i, x, y;
+
+	if (pF == NULL) {
+		return FALSE;
+	}
+	for (i = 0; i < 5; i ++) {
+		x = (int)pEnemy->dwX - pF->nX1 + ((i < 4) ? anPosAddTblX[i] : 0);
+		y = (int)pEnemy->dwY - pF->nY1 + ((i < 4) ? anPosAddTblY[i] : 0);
+		panDist[i] = ((x >= 0) && (x < pF->nW) && (y >= 0) && (y < pF->nH)) ? (int)pF->aDist[x + y * pF->nW] : -1;
+	}
+	return TRUE;
+}
+
+/* 進めず詰まった敵が、歩数表の引き直しを頼む（1 秒に 1 回まで） */
+void DgDefMarchRefresh(DWORD dwSpaceID)
+{
+	std::map<DWORD, DGDEFFIELD>::iterator it = s_mapDefField.find (dwSpaceID);
+
+	if ((it != s_mapDefField.end ()) && ((int)(timeGetTime () - it->second.dwBuilt) >= DGDEF_FIELD_MINGAP)) {
+		it->second.dwBuilt = 0;
+	}
 }
 
 /* 空間の中で発生した敵が消えた（倒された）。その組の数を減らす。空間の敵なら TRUE（発生元の数は動かさない） */

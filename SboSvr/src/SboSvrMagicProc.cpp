@@ -313,6 +313,13 @@ static BOOL MagicProcSub(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget, BOOL bIt
 
 		pCharTmp = g_aCharInfo[aCharTblTarget[i]];
 
+		/* 拠点防衛の拠点には、範囲の特技（前方・前方横一列・周囲・画面内・置く特技）もプレイヤー・傭兵・足元の仕掛けからは効かない
+		   （選んで使う特技は上で断っている。今は対象を集める所が戦闘型の NPC だけを入れるので拠点は入らないが、
+		   集め方が変わっても当たらないよう、ここでも守る。拠点を殴れるのは拠点防衛の敵だけ） */
+		if (DgIsDefenseBase (pCharTmp) && !DgIsDefenseEnemy (pChar)) {
+			continue;
+		}
+
 		if (pChar != pCharTmp) {
 			SendCmdSYSMSG2 (pCharTmp->pID, SYSMSG_USESPECIALTY, pChar->pID, (DWORD)byID);
 		}
