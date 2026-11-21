@@ -4545,7 +4545,9 @@ BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
 				return TRUE;
 			}
 			/* 設定変更前から残ったワープでも、全敵撃破では途中帰還として扱う（記録なし） */
-			if (pRun->bKillAll) {
+			/* 拠点防衛はゴールのワープで勝つことは無い（勝ち負けはウェーブと拠点で決まる）。
+			   中の開始位置を動かした後に残った古いワープなども、途中で帰るかを聞くだけにする */
+			if (pRun->bKillAll || pRun->bDefense) {
 				DgLeaveAsk (pChar, pRun->byDungeonID);
 				return TRUE;
 			}
