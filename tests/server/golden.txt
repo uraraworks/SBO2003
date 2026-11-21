@@ -2211,34 +2211,50 @@ dungeondefense base name=拠点 type=1 pos=20,8 hp=100/100 space=1 isbase=1 enem
 dungeondefense player pos=10,6 hp=60/60 mana=50/50 enemies=0
 dungeondefense player-attack-base ret=0 hp=100
 dungeondefense prep coming=1 enemies=0
+dungeondefense status prep sent=1 state=1 wave=1/2 hp=100/100 rest=3 enemy=0
 dungeondefense prep-2s enemies=0 start=0
+dungeondefense status prep-2s sent=3 state=1 wave=1/2 hp=100/100 rest=1 enemy=0
 dungeondefense wave1 start=1 put1=1 put2=0 put0=0
+dungeondefense status wave1 sent=4 state=2 wave=1/2 hp=100/100 rest=0 enemy=2
 dungeondefense wave1 put1=2 put2=0 put0=0 normal=0
 dungeondefense enemy-judge enemy=2 other=1
+dungeondefense map sent=5 size-ok=1 members=1 me=10,6(1) enemies=2 alive=2 match=2 base=20,8(1) spring=20,8 r=1 range=9,3-22,12
 dungeondefense wave1 hold put1=2 wave-end=0
 dungeondefense spring far mana=10
 dungeondefense spring near mana=20
 dungeondefense spring out mana=20
+dungeondefense spring moved base-side mana=10
+dungeondefense spring moved at-spring mana=20 efc=1 fx=1
+dungeondefense spring moved at-spring +1s mana=30 efc=2 fx=1
+dungeondefense spring pct5 mana=35
 dungeondefense base-hp notices 90%=0 70%=1(1) 60%=0 40%=1
-dungeondefense down1 dead=1 near-base=1 (dist=1) down=1 inrun=1
+dungeondefense down1 dead=1 at-start=1 (10,6 dist-base=10) down=1 inrun=1
 dungeondefense down1 resurrect-button=1 inrun=1
 dungeondefense down1 +4s dead=1 runs=1
 dungeondefense down1 +5s dead=0 hp=60/60 mana=50/50 gold-kept=1 revived-msg=1
+dungeondefense status revive resent=1
 dungeondefense down2 down=1
 dungeondefense down2 +9s dead=1
 dungeondefense down2 +10s dead=0 hp=60
-dungeondefense wave1 clear killed=2 enemies=0 cleared=1 coming2=1 hp=60/60 mana=50/50
+dungeondefense enemy-left idle msg=-1 enemies=2
+dungeondefense enemy-left kill1 killed=1 msg=1 enemies=2
+dungeondefense status enemy-left sent=17 state=2 wave=1/2 hp=100/100 rest=0 enemy=1
+dungeondefense wave1 clear killed=2 enemies=0 cleared=1 coming2=1 hp=20/60 mana=1/50
+dungeondefense status wave2-prep sent=18 state=1 wave=2/2 hp=100/100 rest=3 enemy=0
 dungeondefense wave2 before enemies=0
 dungeondefense wave2 start=1 put1=0 put2=1 put0=0
 dungeondefense win killed=1 cleared=1 win=1 inrun=1 enemies=0 base=1
+dungeondefense status win sent=22 state=3 wave=2/2 hp=100/100 rest=0 enemy=0
 dungeondefense win +9s inrun=1 runs=1
 dungeondefense win +10s inrun=0 runs=0 space=0 pos=4,5 base=0
+dungeondefense status left sent=23 state=0 wave=0/0 hp=0/0 rest=0 enemy=0
 dungeondefense win left-npcs=0 put1=0,0
 dungeondefense run2 in=1 base=1 hp=100
 dungeondefense run2 wave1 enemies=2 +28s enemies=2 cleared=0 coming2=0
 dungeondefense run2 timeout enemies=2 coming2=1
 dungeondefense run2 wave2 put1=2 put2=1
 dungeondefense lose fallen=1 enemies=0 inrun=1
+dungeondefense status lose sent=37 state=4 wave=2/2 hp=0/100 rest=0 enemy=0
 dungeondefense lose +9s inrun=1
 dungeondefense lose +10s inrun=0 runs=0 space=0 pos=4,5
 dungeondefense save plain=1 defense=1 extra>0=1
@@ -2263,6 +2279,14 @@ dungeonmarch sweep found=1 main-hit=1 side-enemy-hit=1 base-hp-kept=1
 dungeonmarch door closed crossed=0 base-hp-kept=1
 dungeonmarch door opened=1 normal-space-closed=1 crossed=1 arrived=1
 dungeonmarch end runs=0 sel=0
+== AS. Dungeon defense inside start ==
+dungeoninside events entry=1 inside=1 inside-back=10,6 use=1 count=2
+dungeoninside events-again=2
+dungeoninside outsider step handled=1 pos=18,9 space=0
+dungeoninside enter in=1 run=1 space=1 pos=18,9 map-same=1 base=1
+dungeoninside enter sent mapinfo=1 charinfo=1
+dungeoninside leave-ask asked=1 stay-no=1 asked-again=1 out=1 space=0 pos=4,5 runs=0
+dungeoninside end runs=0 sel=0
 == L3. Tail battle mapmove ==
 tailbattlemap setup=1
 tailbattlemap battle preserved=1 wait=1

@@ -264,7 +264,7 @@ void	RecvDataProcTALKANSWER					(PBYTE, DWORD);				/* 会話データの「は�
 /* 端末トークン（server/web_account_svr.cpp） */
 BOOL	WebAccTokenToAccount					(LPCSTR, LPSTR, int);		/* 端末トークンからアカウント名を引く */
 static void	SendWebOptBgm					(PCHARINFO);				/* 音楽ON/OFFのアカウント設定を送る */
-static void	SendMagicKeySetting				(PCHARINFO);				/* 特技ショートカットと帯の表示設定を送る */
+void	SendMagicKeySetting				(PCHARINFO);				/* 特技ショートカットと帯の表示設定を送る */
 void	WebStatNoteLogin						(PCHARINFO);				/* ログインできた時に利用環境の統計へ記録する */
 BOOL	WebAccIssueToken						(LPCSTR, LPSTR, int);		/* 端末トークンを発行する */
 BOOL	WebAccHasNgWord							(LPCSTR);					/* キャラ名に使えない言葉が入っているか */
@@ -522,6 +522,8 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcAPPRAISE,				/* CMD_APPRAISE */
 	RecvDataProcDUNGEONMAP,			/* CMD_DUNGEONMAP */
 	RecvDataProcDUNGEONSEL,				/* CMD_DUNGEONSEL */
+	NULL,								/* CMD_DGDEFSTATUS(サーバー→クライアントのみ) */
+	NULL,								/* CMD_DGDEFMAP(サーバー→クライアントのみ) */
 
 	NULL
 };
@@ -9754,6 +9756,11 @@ void RecvDataProcSUBGAMEINFO(PBYTE pData, DWORD dwDataSize)
 			pDungeonInfo->byDefPrepSec = pDungeon->byDefPrepSec;
 			pDungeonInfo->wDefWaveMaxSec = pDungeon->wDefWaveMaxSec;
 			pDungeonInfo->byDefSpringRange = pDungeon->byDefSpringRange;
+			pDungeonInfo->byDefSpringX = pDungeon->byDefSpringX;
+			pDungeonInfo->byDefSpringY = pDungeon->byDefSpringY;
+			pDungeonInfo->byFixStartX = pDungeon->byFixStartX;
+			pDungeonInfo->byFixStartY = pDungeon->byFixStartY;
+			pDungeonInfo->byDefSpringPct = pDungeon->byDefSpringPct;
 			if (s_dwRecvSize >= sizeof (CMDPARA_DATA1) + sizeof (SUBGAME_DUNGEONINFOSAVE)) {
 				CopyMemory (pDungeonInfo->szMessages, pDungeon->szMessages, sizeof (pDungeonInfo->szMessages));
 			}
@@ -13478,7 +13485,7 @@ static void SendWebOptBgm(PCHARINFO pChar)
 /* 内容：特技ショートカットの登録と帯の表示設定をログインしたクライアントへ送る */
 /*       （別のアカウントで入り直した時に前の設定が残らないよう、毎回送る）	 */
 /* ========================================================================= */
-static void SendMagicKeySetting(PCHARINFO pChar)
+void SendMagicKeySetting(PCHARINFO pChar)
 {
 	CMDPARA_WEBACCOUNT SendBar;
 	CMDPARA_MAGICKEY SendKey;

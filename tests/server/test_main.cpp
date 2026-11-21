@@ -1125,6 +1125,7 @@ static void TestDungeonBonus(const std::vector<int> &aLogin);
 static void TestDungeonDaily(const std::vector<int> &aLogin);
 static void TestDungeonDefense(const std::vector<int> &aLogin);
 static void TestDungeonDefenseMarch(const std::vector<int> &aLogin);
+static void TestDungeonDefenseInside(const std::vector<int> &aLogin);
 extern void SubGameProc(DWORD);
 extern BOOL DungeonDailyRebuildNow(int, std::string &);
 extern "C" const char *SboWebDataDungeonRecords(int nID, int nVerNo, int bTheme);
@@ -1679,6 +1680,8 @@ static void TestWorld(void)
 	TestDungeonDefense(aLogin);
 	/* AR. 番外編ダンジョン（拠点防衛モードの敵の行進。AQ の後ろ） */
 	TestDungeonDefenseMarch(aLogin);
+	/* AS. 番外編ダンジョン（固定の形の中の開始位置。AR の後ろ） */
+	TestDungeonDefenseInside(aLogin);
 	/* L3. 戦闘でばらけた列は、マップ移動後も戻り先を覚えている */
 	TestTailBattleMapMove(aLogin);
 }
@@ -14098,6 +14101,18 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 	auto Tick = [&](int n) { for (int k = 0; k < n; k ++) { s_dwFakeNow += 1000; DungeonProcNow(s_dwFakeNow); } };
 	auto Say = [&](const char *psz) -> int { return MockHasText(DgTestConn(pA), CMD_SYSMSG, psz); };
 	auto Mark = [&]() { MockTrace(1); };
+	/* 画面の帯の状態（CMD_DGDEFSTATUS）：最後に届いた内容と、届いた数 */
+	auto Status = [&](const char *pszTag) {
+		CMDPARA_DGDEFSTATUS St;
+		std::vector<BYTE> aSt;
+		if (MarketLast(DgTestConn(pA), CMD_DGDEFSTATUS, aSt) && aSt.size() >= sizeof(St)) {
+			memcpy(&St, &aSt[0], sizeof(St));
+			printf("dungeondefense status %s sent=%d state=%d wave=%d/%d hp=%d/%d rest=%d enemy=%d\n", pszTag, SpCnt(pA, CMD_DGDEFSTATUS), (int)St.byState, (int)St.byWave, (int)St.byWaveMax,
+				(int)St.wBaseHP, (int)St.wBaseMaxHP, (int)St.wRestSec, (int)St.wEnemy);
+		} else {
+			printf("dungeondefense status %s none sent=%d\n", pszTag, SpCnt(pA, CMD_DGDEFSTATUS));
+		}
+	};
 	auto Enemies = [&](DWORD dwSpace) -> int { return DgTestCountEnemy(dwPut1, dwSpace) + DgTestCountEnemy(dwPut2, dwSpace) + DgTestCountEnemy(dwPut0, dwSpace); };
 	auto Enter = [&]() {
 		QuestMovePC(pA, nMapNo, 4, 5);
@@ -14134,11 +14149,14 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 	/* 3. 最初の波の前に準備時間（3 秒）。波 1 が始まると、波 1 の発生元だけが 1 体ずつ出す */
 	Mark();
 	Tick(1);
-	printf("dungeondefense prep coming=%d enemies=%d\n", Say("波 1/2 が来ます（3秒後）"), Enemies(dwSpace));
+	printf("dungeondefense prep coming=%d enemies=%d\n", Say("ウェーブ 1/2 が来ます（3秒後）"), Enemies(dwSpace));
+	Status("prep");
 	Tick(2);
-	printf("dungeondefense prep-2s enemies=%d start=%d\n", Enemies(dwSpace), Say("波 1 開始"));
+	printf("dungeondefense prep-2s enemies=%d start=%d\n", Enemies(dwSpace), Say("ウェーブ 1 開始"));
+	Status("prep-2s");
 	Tick(1);
-	printf("dungeondefense wave1 start=%d put1=%d put2=%d put0=%d\n", Say("波 1 開始"), DgTestCountEnemy(dwPut1, dwSpace), DgTestCountEnemy(dwPut2, dwSpace), DgTestCountEnemy(dwPut0, dwSpace));
+	printf("dungeondefense wave1 start=%d put1=%d put2=%d put0=%d\n", Say("ウェーブ 1 開始"), DgTestCountEnemy(dwPut1, dwSpace), DgTestCountEnemy(dwPut2, dwSpace), DgTestCountEnemy(dwPut0, dwSpace));
+	Status("wave1");
 	Tick(1);
 	printf("dungeondefense wave1 put1=%d put2=%d put0=%d normal=%d\n", DgTestCountEnemy(dwPut1, dwSpace), DgTestCountEnemy(dwPut2, dwSpace), DgTestCountEnemy(dwPut0, dwSpace),
 		Enemies(SPACE_NORMAL));
@@ -14151,8 +14169,36 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 		}
 		printf("dungeondefense enemy-judge enemy=%d other=%d\n", nIsEnemy, nIsOther);
 	}
+	/* 全体地図（CMD_DGDEFMAP）：約 1 秒ごとに組へ届き、範囲・拠点・泉・仲間と生きている敵の位置（詰めた形）が入っている */
+	{
+		std::vector<BYTE> aMap;
+		CMDPARA_DGDEFMAP Mp;
+		int nAlive = 0, nMatch = 0, nSizeOk = 0;
+		if (MarketLast(DgTestConn(pA), CMD_DGDEFMAP, aMap) && aMap.size() >= sizeof(Mp)) {
+			memcpy(&Mp, &aMap[0], sizeof(Mp));
+			nSizeOk = (aMap.size() == sizeof(Mp) + Mp.byMember * sizeof(DUNGEONMAPPOS) + Mp.wEnemy * 2);
+			for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+				PCHARINFO p = g_aCharInfo[i];
+				if (!p || p->dwSpaceID != dwSpace || !DgIsDefenseEnemy(p) || p->wHP == 0) continue;
+				nAlive ++;
+				for (int k = 0; nSizeOk && k < (int)Mp.wEnemy; k ++) {
+					const BYTE *pe = &aMap[sizeof(Mp) + Mp.byMember * sizeof(DUNGEONMAPPOS) + k * 2];
+					if (pe[0] == (BYTE)p->dwX && pe[1] == (BYTE)p->dwY) { nMatch ++; break; }
+				}
+			}
+			DUNGEONMAPPOS Me;
+			memset(&Me, 0, sizeof(Me));
+			if (Mp.byMember >= 1) memcpy(&Me, &aMap[sizeof(Mp)], sizeof(Me));
+			printf("dungeondefense map sent=%d size-ok=%d members=%d me=%d,%d(%d) enemies=%d alive=%d match=%d base=%d,%d(%d) spring=%d,%d r=%d range=%d,%d-%d,%d\n", SpCnt(pA, CMD_DGDEFMAP), nSizeOk, (int)Mp.byMember,
+				(int)Me.wX, (int)Me.wY, (int)(Me.dwTblID == pA->dwTblID && Me.wX == pA->dwX && Me.wY == pA->dwY), (int)Mp.wEnemy, nAlive, nMatch,
+				(int)Mp.wBaseX, (int)Mp.wBaseY, (int)(pBase && Mp.wBaseX == pBase->dwX && Mp.wBaseY == pBase->dwY),
+				(int)Mp.wSpringX, (int)Mp.wSpringY, (int)Mp.bySpringRange, (int)Mp.wX1, (int)Mp.wY1, (int)Mp.wX2, (int)Mp.wY2);
+		} else {
+			printf("dungeondefense map none sent=%d\n", SpCnt(pA, CMD_DGDEFMAP));
+		}
+	}
 	Tick(3);
-	printf("dungeondefense wave1 hold put1=%d wave-end=%d\n", DgTestCountEnemy(dwPut1, dwSpace), Say("波 1 をしのいだ"));
+	printf("dungeondefense wave1 hold put1=%d wave-end=%d\n", DgTestCountEnemy(dwPut1, dwSpace), Say("ウェーブ 1 をしのいだ"));
 
 	/* 4. 泉：拠点から遠いと Mana は戻らない（自然回復なし）・範囲内にいる間だけ最大Manaの 10% ずつ */
 	pA->wMana = 10;
@@ -14164,6 +14210,30 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 	QuestMovePC(pA, nMapNo, 17, 8);
 	Tick(2);
 	printf("dungeondefense spring out mana=%d\n", (int)pA->wMana);
+	/* 4b. 泉を拠点から離れた位置（12,6）に置く：拠点の横では戻らず、泉の位置で最大Manaの「泉の回復(%/秒)」ずつ戻る（ここは byDefSpringPct=2 を明示して、設定が効くことと従来の 2% の値を確かめる。既定の 10% は上の 4 で確認）（数字は毎回・キラッとは最初だけ。時間を進めすぎると後ろの状態帯の送信数がずれるので短く） */
+	{
+		WORD wManaBk = pA->wMana, wMaxBk = pA->wMaxMana;
+		Info.byDefSpringX = 12; Info.byDefSpringY = 6;
+		Info.byDefSpringPct = 2;
+		pA->wMaxMana = 500; pA->wMana = 10;
+		QuestMovePC(pA, nMapNo, 19, 8);
+		Tick(1);
+		printf("dungeondefense spring moved base-side mana=%d\n", (int)pA->wMana);
+		QuestMovePC(pA, nMapNo, 12, 6);
+		int nEfc0 = SpCnt(pA, CMD_ADDCHAREFC), nChg0 = SpCnt(pA, CMD_EFECTCHG);
+		Tick(1);
+		printf("dungeondefense spring moved at-spring mana=%d efc=%d fx=%d\n", (int)pA->wMana, SpCnt(pA, CMD_ADDCHAREFC) - nEfc0, SpCnt(pA, CMD_EFECTCHG) - nChg0);
+		Tick(1);
+		printf("dungeondefense spring moved at-spring +1s mana=%d efc=%d fx=%d\n", (int)pA->wMana, SpCnt(pA, CMD_ADDCHAREFC) - nEfc0, SpCnt(pA, CMD_EFECTCHG) - nChg0);
+		/* 泉の回復を 5% にすると、最大Mana 500 の 5% = 25 ずつ戻る */
+		Info.byDefSpringPct = 5;
+		pA->wMana = 10;
+		Tick(1);
+		printf("dungeondefense spring pct5 mana=%d\n", (int)pA->wMana);
+		Info.byDefSpringX = 0; Info.byDefSpringY = 0; Info.byDefSpringPct = 0;
+		pA->wMaxMana = wMaxBk; pA->wMana = wManaBk;
+		QuestMovePC(pA, nMapNo, 17, 8);
+	}
 
 	/* 5. 拠点の HP：25% 刻みで下がった時だけ知らせる */
 	{
@@ -14187,7 +14257,7 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 		pBase->wHP = 100;
 	}
 
-	/* 6. 倒れる：その場に体を残さず拠点の横へ移る。回数×5秒で HP/Mana 満タンで起き上がる。お金は減らない。全員倒れても終わらない */
+	/* 6. 倒れる：その場に体を残さず入ってすぐの位置（ここでは入口 10,6）へ移る（2026-11-21 拠点の横から変更）。回数×5秒で HP/Mana 満タンで起き上がる。お金は減らない。全員倒れても終わらない */
 	{
 		DWORD dwGold = pA->dwGold;
 		QuestMovePC(pA, nMapNo, 15, 6);
@@ -14196,15 +14266,17 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 		Tick(1);
 		int dx = (int)pA->dwX - (int)pBase->dwX, dy = (int)pA->dwY - (int)pBase->dwY;
 		int dist = max(abs(dx), abs(dy));
-		printf("dungeondefense down1 dead=%d near-base=%d (dist=%d) down=%d inrun=%d\n", (int)(pA->byCharState == CHARSTATE_DEAD), (int)(dist >= 1 && dist <= 2), dist,
+		printf("dungeondefense down1 dead=%d at-start=%d (%d,%d dist-base=%d) down=%d inrun=%d\n", (int)(pA->byCharState == CHARSTATE_DEAD), (int)(pA->dwX == 10 && pA->dwY == 6), (int)pA->dwX, (int)pA->dwY, dist,
 			Say("倒れた…。5秒後に復活します。"), (int)QuestInDungeon(pA));
 		printf("dungeondefense down1 resurrect-button=%d inrun=%d\n", (int)QuestChallengeResurrection(pA), (int)QuestInDungeon(pA));
 		Tick(4);
 		printf("dungeondefense down1 +4s dead=%d runs=%d\n", (int)(pA->byCharState == CHARSTATE_DEAD), DungeonRunCount());
+		int nSt0 = SpCnt(pA, CMD_DGDEFSTATUS);
 		Mark();
 		Tick(1);
 		printf("dungeondefense down1 +5s dead=%d hp=%d/%d mana=%d/%d gold-kept=%d revived-msg=%d\n", (int)(pA->byCharState == CHARSTATE_DEAD), (int)pA->wHP, (int)pA->wMaxHP,
 			(int)pA->wMana, (int)pA->wMaxMana, (int)(pA->dwGold == dwGold), Say("復活しました"));
+		printf("dungeondefense status revive resent=%d\n", (int)(SpCnt(pA, CMD_DGDEFSTATUS) > nSt0));
 		pA->wHP = 0; pA->byCharState = CHARSTATE_DEAD;
 		Mark();
 		Tick(1);
@@ -14213,6 +14285,30 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 		printf("dungeondefense down2 +9s dead=%d\n", (int)(pA->byCharState == CHARSTATE_DEAD));
 		Tick(1);
 		printf("dungeondefense down2 +10s dead=%d hp=%d\n", (int)(pA->byCharState == CHARSTATE_DEAD), (int)pA->wHP);
+	}
+
+	/* 6b. 敵が倒されるたびに「残り敵 N」（残り＝まだ出ていない数＋今いる敵）。倒れても減らない数（最後の波以外の時間切れ等）は出さない。1 秒に何体倒れても最後の数を 1 回だけ（この形は敵が 2 体なので 1 体だけ確かめる） */
+	{
+		auto LeftMsg = [&]() -> int { for (int n = 0; n <= 40; n ++) { char sz[64]; sprintf(sz, "残り敵 %d", n); if (Say(sz)) return n; } return -1; };
+		/* 本当に消すと後ろの既存の確認（倒す数）が変わるので、HP を 0 にして「倒された」状態にし、確かめたら元に戻す */
+		std::vector<std::pair<int, WORD> > aKilled;
+		auto KillSome = [&](int nKill) -> int {
+			int nDone = 0;
+			for (int i = 0; i < g_aCharInfo.GetSize() && nDone < nKill; i ++) {
+				PCHARINFO p = g_aCharInfo[i];
+				if (p && p->dwSpaceID == dwSpace && DgIsDefenseEnemy(p) && p->wHP > 0) { aKilled.push_back(std::make_pair(i, p->wHP)); p->wHP = 0; nDone ++; }
+			}
+			return nDone;
+		};
+		Mark();
+		Tick(1);
+		printf("dungeondefense enemy-left idle msg=%d enemies=%d\n", LeftMsg(), Enemies(dwSpace));
+		int nK1 = KillSome(1);
+		Mark();
+		Tick(1);
+		printf("dungeondefense enemy-left kill1 killed=%d msg=%d enemies=%d\n", nK1, LeftMsg(), Enemies(dwSpace));
+		Status("enemy-left");
+		for (size_t i = 0; i < aKilled.size(); i ++) { PCHARINFO p = g_aCharInfo[aKilled[i].first]; if (p) p->wHP = aKilled[i].second; }
 	}
 
 	/* 7. 敵を倒し切ると波が終わる：準備時間に入って全員 HP/Mana 全回復・次の波の知らせ → 波 2 の敵が出る */
@@ -14226,12 +14322,13 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 		for (size_t i = 0; i < aDel.size(); i ++) DeleteChar(aDel[i]);
 		Mark();
 		Tick(1);
-		printf("dungeondefense wave1 clear killed=%d enemies=%d cleared=%d coming2=%d hp=%d/%d mana=%d/%d\n", (int)aDel.size(), Enemies(dwSpace), Say("波 1 をしのいだ"),
-			Say("波 2/2 が来ます（3秒後）"), (int)pA->wHP, (int)pA->wMaxHP, (int)pA->wMana, (int)pA->wMaxMana);
+		printf("dungeondefense wave1 clear killed=%d enemies=%d cleared=%d coming2=%d hp=%d/%d mana=%d/%d\n", (int)aDel.size(), Enemies(dwSpace), Say("ウェーブ 1 をしのいだ"),
+			Say("ウェーブ 2/2 が来ます（3秒後）"), (int)pA->wHP, (int)pA->wMaxHP, (int)pA->wMana, (int)pA->wMaxMana);
+		Status("wave2-prep");
 		Tick(2);
 		printf("dungeondefense wave2 before enemies=%d\n", Enemies(dwSpace));
 		Tick(1);
-		printf("dungeondefense wave2 start=%d put1=%d put2=%d put0=%d\n", Say("波 2 開始"), DgTestCountEnemy(dwPut1, dwSpace), DgTestCountEnemy(dwPut2, dwSpace), DgTestCountEnemy(dwPut0, dwSpace));
+		printf("dungeondefense wave2 start=%d put1=%d put2=%d put0=%d\n", Say("ウェーブ 2 開始"), DgTestCountEnemy(dwPut1, dwSpace), DgTestCountEnemy(dwPut2, dwSpace), DgTestCountEnemy(dwPut0, dwSpace));
 		/* 最後の波を倒すと勝ち：結果を知らせ、10 秒後に全員帰還（敵と拠点は消える） */
 		aDel.clear();
 		for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
@@ -14241,8 +14338,9 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 		for (size_t i = 0; i < aDel.size(); i ++) DeleteChar(aDel[i]);
 		Mark();
 		Tick(1);
-		printf("dungeondefense win killed=%d cleared=%d win=%d inrun=%d enemies=%d base=%d\n", (int)aDel.size(), Say("波 2 をしのいだ"), Say("全部の波をしのいだ！"),
+		printf("dungeondefense win killed=%d cleared=%d win=%d inrun=%d enemies=%d base=%d\n", (int)aDel.size(), Say("ウェーブ 2 をしのいだ"), Say("全部のウェーブをしのいだ！"),
 			(int)QuestInDungeon(pA), Enemies(dwSpace), (int)(DgDefenseBaseOf(dwSpace) != NULL));
+		Status("win");
 		Tick(9);
 		printf("dungeondefense win +9s inrun=%d runs=%d\n", (int)QuestInDungeon(pA), DungeonRunCount());
 		Tick(1);
@@ -14253,6 +14351,7 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 			PCHARINFO p = g_aCharInfo[i];
 			if (p && p->dwSpaceID == dwSpace && p->byGameState == GAMESTATE_NPC) nLeft ++;
 		}
+		Status("left");
 		printf("dungeondefense win left-npcs=%d put1=%d,%d\n", nLeft, DgTestCountEnemy(dwPut1, dwSpace), DgTestCountEnemy(dwPut2, dwSpace));
 	}
 
@@ -14269,15 +14368,16 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 			int nWave1 = Enemies(dwSpace);
 			Mark();
 			Tick(28);
-			printf("dungeondefense run2 wave1 enemies=%d +28s enemies=%d cleared=%d coming2=%d\n", nWave1, Enemies(dwSpace), Say("波 1 をしのいだ"), Say("波 2/2 が来ます"));
+			printf("dungeondefense run2 wave1 enemies=%d +28s enemies=%d cleared=%d coming2=%d\n", nWave1, Enemies(dwSpace), Say("ウェーブ 1 をしのいだ"), Say("ウェーブ 2/2 が来ます"));
 			Tick(1);
-			printf("dungeondefense run2 timeout enemies=%d coming2=%d\n", Enemies(dwSpace), Say("波 2/2 が来ます"));
+			printf("dungeondefense run2 timeout enemies=%d coming2=%d\n", Enemies(dwSpace), Say("ウェーブ 2/2 が来ます"));
 			Tick(4);
 			printf("dungeondefense run2 wave2 put1=%d put2=%d\n", DgTestCountEnemy(dwPut1, dwSpace), DgTestCountEnemy(dwPut2, dwSpace));
 			pBase->wHP = 0;
 			Mark();
 			Tick(1);
 			printf("dungeondefense lose fallen=%d enemies=%d inrun=%d\n", Say("拠点が落ちた…"), Enemies(dwSpace), (int)QuestInDungeon(pA));
+			Status("lose");
 			Tick(9);
 			printf("dungeondefense lose +9s inrun=%d\n", (int)QuestInDungeon(pA));
 			Tick(1);
@@ -14293,10 +14393,11 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 		for (int k = 0; k < 2; k ++) {
 			SUBGAME_DUNGEONINFO Back = Info;
 			if (k == 0) {
-				Info.wDefBaseHP = 0; Info.wDefBaseStTmp = 0; Info.byDefWaveCount = 0; Info.byDefPrepSec = 0; Info.wDefWaveMaxSec = 0; Info.byDefSpringRange = 0;
+				Info.wDefBaseHP = 0; Info.wDefBaseStTmp = 0; Info.byDefWaveCount = 0; Info.byDefPrepSec = 0; Info.wDefWaveMaxSec = 0; Info.byDefSpringRange = 0; Info.byDefSpringPct = 0;
 				Info.byClearMode = DGCLEAR_GOAL; Info.byRebuildMode = DGREBUILD_RANDOM;
 			} else {
 				Info.wDefBaseStTmp = 3;
+				Info.byDefSpringPct = 7;						/* 泉の回復も保存・読み込みできる */
 			}
 			SaveSubGameInfo();
 			if (stat("SBODATA/SboDataSubGameInfo.dat", &st) == 0) nSize[k] = (long)st.st_size;
@@ -14312,7 +14413,7 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 					nOk[k] = (int)(pL->byRebuildMode == DGREBUILD_RANDOM && pL->byClearMode == DGCLEAR_GOAL && pL->wDefBaseHP == 0 && pL->byDefWaveCount == 0 && pL->byStartX == 10);
 				} else {
 					nOk[k] = (int)(pL->byRebuildMode == DGREBUILD_FIXED && pL->byClearMode == DGCLEAR_DEFENSE && pL->wDefBaseHP == 100 && pL->wDefBaseStTmp == 3 &&
-						pL->byDefWaveCount == 2 && pL->byDefPrepSec == 3 && pL->wDefWaveMaxSec == 30 && pL->byDefSpringRange == 2 && pL->byGoalX == 20 && pL->byGoalY == 8);
+						pL->byDefWaveCount == 2 && pL->byDefPrepSec == 3 && pL->wDefWaveMaxSec == 30 && pL->byDefSpringRange == 2 && pL->byDefSpringPct == 7 && pL->byGoalX == 20 && pL->byGoalY == 8);
 				}
 			}
 			for (int i = 0; i < g_aSubaGameInfo.GetSize(); i ++) {
@@ -14382,6 +14483,187 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 	MockTrace(0);
 	s_dwFakeNow = dwNowBack + 400000;
 	printf("dungeondefense end runs=%d sel=%d\n", DungeonRunCount(), DungeonSelCount());
+}
+
+/* ------------------------------------------------------------------------- */
+/* AS. 番外編ダンジョン（固定の形の「中の開始位置」）							 */
+/*     中の開始位置（byFixStartX・byFixStartY）を設定した固定の形：外の入口に乗る */
+/*     と組の空間の中の開始位置に立つ（マップ・キャラの情報が届く）・中の開始位置 */
+/*     のマスに戻ると「抜けますか？」・組の外の人が踏んでも何も起きない			 */
+/*     （設定しない時は AQ で確かめている。入口と同じマスのまま）				 */
+/* ------------------------------------------------------------------------- */
+static void TestDungeonDefenseInside(const std::vector<int> &aLogin)
+{
+	printf("== AS. Dungeon defense inside start ==\n");
+	if (aLogin.size() < 2) {
+		return;
+	}
+	int nMapNo = -1;
+	for (int i = 0; i < g_aMapInfo.GetSize(); i ++) {
+		if (g_aMapInfo[i] && g_aMapInfo[i]->nCX >= 60 && g_aMapInfo[i]->nCY >= 60 && g_aMapInfo[i]->pwMap) {
+			nMapNo = i;
+			break;
+		}
+	}
+	if (nMapNo < 0) {
+		printf("dungeoninside no map\n");
+		return;
+	}
+	PMAPINFO pMap = g_aMapInfo[nMapNo];
+	std::vector<WORD> aMapBack(pMap->pwMap, pMap->pwMap + pMap->nCX * pMap->nCY);
+	PEVENTINFO pEventBack = pMap->pEvent;
+	int nEventBack = pMap->nEventCount;
+	pMap->pEvent = NULL;
+	pMap->nEventCount = 0;
+	DWORD dwNowBack = s_dwFakeNow;
+	MockTrace(1);
+
+	/* 外の入口（10,6）は範囲（9,3)-(22,12）の中だが、中の開始位置（18,9）は別のマス */
+	for (int y = 2; y <= 13; y ++) {
+		for (int x = 2; x <= 23; x ++) pMap->pwMap[x + y * pMap->nCX] = 1;
+	}
+	PCHARINFO pA = g_aCharInfo[aLogin[0]];
+	PCHARINFO pB = g_aCharInfo[aLogin[1]];
+	CHARINFO aBack, aBackB;
+	TestCharBackup(&aBack, pA);
+	TestCharBackup(&aBackB, pB);
+	pA->byAdminLV = ADMINLV_USER;
+	pA->dwPartyID = 0;
+	pA->dwSpaceID = SPACE_NORMAL;
+	pA->dwTargetTblID = (DWORD)-1;
+	pA->wQuestID = 0; pA->byQuestStep = 0; pA->wQuestFlg = 0;
+	pA->byLevel = 30; pA->byPW = 99; pA->wMaxHP = 500; pA->wHP = 480; pA->wMaxMana = 90; pA->wMana = 80;
+	ZeroMemory(pA->waItem, sizeof(pA->waItem));
+	for (int k = 0; k < MAX_EQUTYPE; k ++) pA->waEqu[k] = 0xFFFF;
+	pB->byAdminLV = ADMINLV_USER;
+	pB->dwPartyID = 0;
+	pB->dwSpaceID = SPACE_NORMAL;
+	pB->dwTargetTblID = (DWORD)-1;
+
+	int nSt1 = g_aStTmpInfo.GetSize();
+	{
+		PSTATUSTEMPLATEINFO t = new STATUSTEMPLATEINFO;
+		ZeroMemory(t, sizeof(*t));
+		strcpy(t->szName, "守り手の姿");
+		t->byLevel = 7; t->byPW = 11; t->byDEX = 12; t->byST = 13; t->byIT = 14; t->byLK = 15;
+		t->wMaxHP = 60; t->wMaxMana = 50;
+		g_aStTmpInfo.Add(t);
+	}
+	SUBGAME_DUNGEONINFO Info;
+	ZeroMemory(&Info, sizeof(Info));
+	Info.dwMapID = pMap->dwID;
+	Info.byX1 = 9; Info.byY1 = 3; Info.byX2 = 22; Info.byY2 = 12;
+	Info.byStartX = 10; Info.byStartY = 6;					/* 外の入口 */
+	Info.byFixStartX = 18; Info.byFixStartY = 9;			/* 中の開始位置 */
+	Info.byGoalX = 20; Info.byGoalY = 8;					/* 拠点 */
+	Info.dwTblID = (DWORD)-1;
+	Info.byTmplCount = 1;
+	Info.wTmplID[0] = (WORD)nSt1; strcpy(Info.szTmplName[0], "守り手");
+	Info.byRebuildMode = DGREBUILD_FIXED;
+	Info.byClearMode = DGCLEAR_DEFENSE;
+	Info.wDefBaseHP = 100;
+	Info.byDefWaveCount = 1;
+	Info.byDefPrepSec = 30;
+	Info.wDefWaveMaxSec = 300;
+	SUBGAMEINFO Sub;
+	ZeroMemory(&Sub, sizeof(Sub));
+	Sub.byType = SUBGAMEID_DUNGEON;
+	Sub.pInfo = &Info;
+	g_aSubaGameInfo.Add(&Sub);
+	BYTE byID = (BYTE)(g_aSubaGameInfo.GetSize() - 1);
+
+	/* 1. 外の入口と中の開始位置の両方にワープが置かれる。中の開始位置のワープは外の入口へ戻る */
+	g_nProcSubGame = byID;
+	SubGameProc(byID);
+	PEVENTINFO pEntry = NULL, pInside = NULL;
+	for (int i = 0; i < pMap->nEventCount; i ++) {
+		PEVENTINFO pE = &pMap->pEvent[i];
+		if (pE->byType != EVENTTYPE_MAPCHG) continue;
+		if (pE->dwX == 10 && pE->dwY == 6) pEntry = pE;
+		if (pE->dwX == 18 && pE->dwY == 9) pInside = pE;
+	}
+	{
+		PEVENTINFO_MAPCHG pBack = pInside ? (PEVENTINFO_MAPCHG)pInside->pData : NULL;
+		DWORD dwX = 0, dwY = 0;
+		printf("dungeoninside events entry=%d inside=%d inside-back=%d,%d use=%d count=%d\n", (int)(pEntry != NULL), (int)(pInside != NULL),
+			pBack ? (int)pBack->dwX : -1, pBack ? (int)pBack->dwY : -1, (int)DungeonFixedInside(&Info, &dwX, &dwY), pMap->nEventCount);
+	}
+	SubGameProc(byID);
+	printf("dungeoninside events-again=%d\n", pMap->nEventCount);
+	if (!pEntry || !pInside) {
+		return;
+	}
+	DWORD dwReception = DgTestReception(pMap->dwID, byID);
+
+	/* 2. 組の外の人（受付済みでない）が中の開始位置のマスを踏んでも何も起きない（外の入口へ飛ばされない） */
+	QuestMovePC(pB, nMapNo, 18, 9);
+	BOOL bStep = DungeonEventStep(pB, pInside);
+	printf("dungeoninside outsider step handled=%d pos=%lu,%lu space=%d\n", (int)bStep, (unsigned long)pB->dwX, (unsigned long)pB->dwY, (int)(pB->dwSpaceID != SPACE_NORMAL));
+	QuestMovePC(pB, (int)aBackB.dwMapID, (int)aBackB.dwX, (int)aBackB.dwY);
+
+	/* 3. 受付→外の入口に乗ると、組の空間の中の開始位置へ移る。マップ・キャラの情報が届く */
+	QuestMovePC(pA, nMapNo, 4, 5);
+	DgTestTalk(pA, dwReception);
+	DgTestSelPick(pA, 0);
+	QuestMovePC(pA, nMapNo, 10, 6);
+	int nMapInfo0 = SpCnt(pA, CMD_MAPINFO), nCharInfo0 = SpCnt(pA, CMD_CHARINFO);
+	DungeonEventStep(pA, pEntry);
+	DWORD dwSpace = pA->dwSpaceID;
+	PCHARINFO pBase = DgDefenseBaseOf(dwSpace);
+	printf("dungeoninside enter in=%d run=%d space=%d pos=%lu,%lu map-same=%d base=%d\n", (int)QuestInDungeon(pA), DungeonRunCount(), (int)(dwSpace != SPACE_NORMAL),
+		(unsigned long)pA->dwX, (unsigned long)pA->dwY, (int)(pA->dwMapID == pMap->dwID), (int)(pBase != NULL));
+	printf("dungeoninside enter sent mapinfo=%d charinfo=%d\n", (int)(SpCnt(pA, CMD_MAPINFO) > nMapInfo0), (int)(SpCnt(pA, CMD_CHARINFO) > nCharInfo0));
+
+	/* 4. 中の開始位置のマスを（離れて戻って）踏むと「抜けますか？」。いいえなら残り、はいで受付の場所へ戻る */
+	int nAsk0 = SpCnt(pA, CMD_DUNGEONSEL);
+	DungeonEventStep(pA, pInside);
+	int nAsked = SpCnt(pA, CMD_DUNGEONSEL) - nAsk0;
+	DgTestLeaveAnswer(pA, FALSE);
+	int nStay = (int)QuestInDungeon(pA);
+	DungeonEventStep(pA, pInside);
+	int nAsked2 = SpCnt(pA, CMD_DUNGEONSEL) - nAsk0 - nAsked;
+	DgTestLeaveAnswer(pA, TRUE);
+	s_dwFakeNow += 1000;
+	DungeonProcNow(s_dwFakeNow);
+	printf("dungeoninside leave-ask asked=%d stay-no=%d asked-again=%d out=%d space=%d pos=%lu,%lu runs=%d\n", nAsked, nStay, nAsked2, (int)!QuestInDungeon(pA),
+		(int)(pA->dwSpaceID != SPACE_NORMAL), (unsigned long)pA->dwX, (unsigned long)pA->dwY, DungeonRunCount());
+
+	/* 後始末 */
+	DungeonProcNow(s_dwFakeNow + 1000);
+	s_dwFakeNow += 1000;
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+		if (p && p->byGameState == GAMESTATE_NPC && p->byNpcType != NPCTYPE_INIT && p->dwSpaceID != SPACE_NORMAL) DeleteChar(p->dwTblID);
+	}
+	SpaceSet(pA, SPACE_NORMAL);
+	pA->dwSpaceID = SPACE_NORMAL;
+	pA->byLevel = aBack.byLevel; pA->byPW = aBack.byPW; pA->wMaxHP = aBack.wMaxHP; pA->wHP = aBack.wHP;
+	pA->wMaxMana = aBack.wMaxMana; pA->wMana = aBack.wMana; pA->dwGold = aBack.dwGold; pA->dwExp = aBack.dwExp;
+	pA->byCharState = aBack.byCharState; pA->byAdminLV = aBack.byAdminLV;
+	memcpy(pA->waItem, aBack.waItem, sizeof(pA->waItem));
+	memcpy(pA->waEqu, aBack.waEqu, sizeof(pA->waEqu));
+	pB->byAdminLV = aBackB.byAdminLV;
+	QuestMovePC(pA, (int)aBack.dwMapID, (int)aBack.dwX, (int)aBack.dwY);
+	QuestSyncAll();
+	DeleteChar(dwReception);
+	for (int i = g_aStTmpInfo.GetSize() - 1; i >= nSt1; i --) {
+		delete g_aStTmpInfo[i];
+		g_aStTmpInfo.RemoveAt(i);
+	}
+	for (int i = 0; i < pMap->nEventCount; i ++) {
+		SAFE_DELETE_ARRAY(pMap->pEvent[i].pData);
+	}
+	SAFE_DELETE_ARRAY(pMap->pEvent);
+	pMap->pEvent = pEventBack;
+	pMap->nEventCount = nEventBack;
+	pMap->nProcEvent = 0;
+	g_nProcMap = 0;
+	memcpy(pMap->pwMap, &aMapBack[0], sizeof(WORD) * aMapBack.size());
+	g_aSubaGameInfo.RemoveAt(byID);
+	g_nProcSubGame = 0;
+	MockTrace(0);
+	s_dwFakeNow = dwNowBack + 400000;
+	printf("dungeoninside end runs=%d sel=%d\n", DungeonRunCount(), DungeonSelCount());
 }
 
 /* ------------------------------------------------------------------------- */

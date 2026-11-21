@@ -21,6 +21,31 @@ static WORD s_wStart = 0,										/* 入り口 */
 			s_wRoad = 0,										/* 道 */
 			s_wBlock = 0;										/* 壁 */
 
+/* 種類（コンボボックスの並び順） */
+enum {
+	DGKIND_RANDOM = 0,											/* 気まぐれダンジョン */
+	DGKIND_DEFENSE,												/* 拠点防衛 */
+};
+
+/* 拠点防衛の時だけ出す欄 */
+static const int s_anDefenseOnly[] = {
+	IDC_DGLBL_FIX, IDC_DGLBL_FIXX, IDC_DGLBL_FIXY, IDC_DGFIX_STARTX, IDC_DGFIX_STARTY,
+	IDC_DGLBL_DEFHDR,
+	IDC_DGLBL_DEF1, IDC_DGDEF_HP, IDC_DGLBL_DEF2, IDC_DGDEF_TMPL,
+	IDC_DGLBL_DEF3, IDC_DGDEF_WAVES, IDC_DGLBL_DEF4, IDC_DGDEF_PREP,
+	IDC_DGLBL_DEF5, IDC_DGDEF_WAVESEC,		/* 泉の範囲（IDC_DGDEF_SPRING）は使わないので出さない（泉は泉の位置の 1 マス） */
+	IDC_DGLBL_DEF7, IDC_DGDEF_SPRINGX, IDC_DGLBL_DEF8, IDC_DGDEF_SPRINGY,
+	IDC_DGLBL_DEF9, IDC_DGDEF_SPRINGPCT,
+};
+/* 気まぐれダンジョンの時だけ出す欄（拠点防衛では隠す） */
+static const int s_anRandomOnly[] = {
+	IDC_DGLBL_CHIP1, IDC_DGLBL_CHIP2, IDC_DGLBL_CHIP3, IDC_DGLBL_CHIP4,
+	IDC_GRPSTART, IDC_GRPGOAL, IDC_GRPROAD, IDC_GRPBLOCK,
+	IDC_DGLBL_THEME, IDC_DGTHEME, IDC_DGLBL_THEMEHINT,
+	IDC_DGLBL_REBUILD, IDC_DGREBUILD_MODE, IDC_DGLBL_REBUILDHINT,
+	IDC_DGLBL_CLEAR, IDC_DGCLEAR_MODE, IDC_DGLBL_CLEARHINT,
+};
+
 /* ========================================================================= */
 /* 関数プロトタイプ宣言														 */
 /* ========================================================================= */
@@ -32,6 +57,9 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam);				/* メッ
 static void OnLButtonDown(HWND hWnd, BOOL fDoubleClick, int x, int y,
 					UINT keyFlags);												/* メッセージハンドラ(WM_LBUTTONDOWN) */
 static void OnPaint(HWND);														/* メッセージハンドラ(WM_PAINT) */
+static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify);		/* メッセージハンドラ(WM_COMMAND) */
+static int GetKind(HWND hWnd);													/* 選択中の種類を取得 */
+static void ApplyKind(HWND hWnd);												/* 種類に合わせて見出しと欄の表示を切り替え */
 
 /* ========================================================================= */
 /* 関数名：ShowDlgEtcSubGameEditDungeon										 */
@@ -123,10 +151,16 @@ void GetDataDlgEtcSubGameEditDungeon(void)
 		GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGTMPL_NAME1 + k), pInfo->szTmplName[k], sizeof (pInfo->szTmplName[k]));
 	}
 	/* 作り直しの方式（0=気まぐれ 1=日替わり 2=固定）・クリア条件（0=ゴール 1=敵を全部倒す 2=拠点防衛） */
-	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGREBUILD_MODE), szTmp, sizeof (szTmp));
-	pInfo->byRebuildMode = (BYTE)atoi (szTmp);
-	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGCLEAR_MODE), szTmp, sizeof (szTmp));
-	pInfo->byClearMode = (BYTE)atoi (szTmp);
+	if (GetKind (s_hWndDlg) == DGKIND_DEFENSE) {
+		/* 拠点防衛は 2・2 で固定 */
+		pInfo->byRebuildMode = 2;
+		pInfo->byClearMode = 2;
+	} else {
+		GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGREBUILD_MODE), szTmp, sizeof (szTmp));
+		pInfo->byRebuildMode = (BYTE)atoi (szTmp);
+		GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGCLEAR_MODE), szTmp, sizeof (szTmp));
+		pInfo->byClearMode = (BYTE)atoi (szTmp);
+	}
 	/* 拠点防衛の設定（0=既定） */
 	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGDEF_HP), szTmp, sizeof (szTmp));
 	pInfo->wDefBaseHP = (WORD)atoi (szTmp);
@@ -140,6 +174,16 @@ void GetDataDlgEtcSubGameEditDungeon(void)
 	pInfo->wDefWaveMaxSec = (WORD)atoi (szTmp);
 	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGDEF_SPRING), szTmp, sizeof (szTmp));
 	pInfo->byDefSpringRange = (BYTE)atoi (szTmp);
+	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGDEF_SPRINGX), szTmp, sizeof (szTmp));
+	pInfo->byDefSpringX = (BYTE)atoi (szTmp);
+	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGDEF_SPRINGY), szTmp, sizeof (szTmp));
+	pInfo->byDefSpringY = (BYTE)atoi (szTmp);
+	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGFIX_STARTX), szTmp, sizeof (szTmp));
+	pInfo->byFixStartX = (BYTE)atoi (szTmp);
+	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGFIX_STARTY), szTmp, sizeof (szTmp));
+	pInfo->byFixStartY = (BYTE)atoi (szTmp);
+	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGDEF_SPRINGPCT), szTmp, sizeof (szTmp));
+	pInfo->byDefSpringPct = (BYTE)atoi (szTmp);
 	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGMESSAGES), pInfo->szMessages, sizeof (pInfo->szMessages));
 }
 
@@ -154,6 +198,7 @@ static LRESULT CALLBACK DlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
 	HANDLE_MSG (hWnd, WM_INITDIALOG, OnInitDialog);
 	HANDLE_MSG (hWnd, WM_LBUTTONDOWN, OnLButtonDown);
 	HANDLE_MSG (hWnd, WM_PAINT, OnPaint);
+	HANDLE_MSG (hWnd, WM_COMMAND, OnCommand);
 
 	case WM_ADMINSELECTMAPPARTS:	/* マップパーツ選択 */
 		{
@@ -260,10 +305,112 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 	SetWindowText (GetDlgItem (hWnd, IDC_DGDEF_WAVESEC), szTmp);
 	wsprintf (szTmp, "%d", pInfo->byDefSpringRange);
 	SetWindowText (GetDlgItem (hWnd, IDC_DGDEF_SPRING), szTmp);
+	wsprintf (szTmp, "%d", pInfo->byDefSpringX);
+	SetWindowText (GetDlgItem (hWnd, IDC_DGDEF_SPRINGX), szTmp);
+	wsprintf (szTmp, "%d", pInfo->byDefSpringY);
+	SetWindowText (GetDlgItem (hWnd, IDC_DGDEF_SPRINGY), szTmp);
+	wsprintf (szTmp, "%d", pInfo->byFixStartX);
+	SetWindowText (GetDlgItem (hWnd, IDC_DGFIX_STARTX), szTmp);
+	wsprintf (szTmp, "%d", pInfo->byFixStartY);
+	SetWindowText (GetDlgItem (hWnd, IDC_DGFIX_STARTY), szTmp);
+	wsprintf (szTmp, "%d", pInfo->byDefSpringPct);
+	SetWindowText (GetDlgItem (hWnd, IDC_DGDEF_SPRINGPCT), szTmp);
 	SendMessage (GetDlgItem (hWnd, IDC_DGMESSAGES), EM_LIMITTEXT, MAX_DGTEXT - 1, 0);
 	SetWindowText (GetDlgItem (hWnd, IDC_DGMESSAGES), pInfo->szMessages);
 
+	/* 種類（作り直し 2・クリア条件 2 なら拠点防衛、それ以外は気まぐれ） */
+	HWND hWndKind = GetDlgItem (hWnd, IDC_DGKIND);
+	SendMessage (hWndKind, CB_ADDSTRING, 0, (LPARAM)"気まぐれダンジョン");
+	SendMessage (hWndKind, CB_ADDSTRING, 0, (LPARAM)"拠点防衛");
+	if (pInfo->byRebuildMode == 2 && pInfo->byClearMode == 2) {
+		SendMessage (hWndKind, CB_SETCURSEL, DGKIND_DEFENSE, 0);
+	} else {
+		SendMessage (hWndKind, CB_SETCURSEL, DGKIND_RANDOM, 0);
+	}
+	ApplyKind (hWnd);
+
 	return FALSE;
+}
+
+/* ========================================================================= */
+/* 関数名：GetKind															 */
+/* 内容：選択中の種類を取得													 */
+/* ========================================================================= */
+static int GetKind(HWND hWnd)
+{
+	int nSel;
+
+	nSel = (int)SendMessage (GetDlgItem (hWnd, IDC_DGKIND), CB_GETCURSEL, 0, 0);
+	if (nSel == DGKIND_DEFENSE) {
+		return DGKIND_DEFENSE;
+	}
+	return DGKIND_RANDOM;
+}
+
+/* ========================================================================= */
+/* 関数名：ApplyKind														 */
+/* 内容：種類に合わせて見出しと欄の表示を切り替え							 */
+/* ========================================================================= */
+static void ApplyKind(HWND hWnd)
+{
+	int i, nKind;
+	BOOL bDefense;
+
+	nKind = GetKind (hWnd);
+	bDefense = (nKind == DGKIND_DEFENSE);
+
+	/* 見出し */
+	if (bDefense) {
+		SetWindowText (GetDlgItem (hWnd, IDC_DGLBL_START), "受付そばの入口：");
+		SetWindowText (GetDlgItem (hWnd, IDC_DGLBL_GOAL), "拠点の位置：");
+		SetWindowText (GetDlgItem (hWnd, IDC_DGLBL_FIX), "入ってすぐの位置（0,0=入口と同じ）：");
+	} else {
+		SetWindowText (GetDlgItem (hWnd, IDC_DGLBL_START), "入り口：");
+		SetWindowText (GetDlgItem (hWnd, IDC_DGLBL_GOAL), "出口：");
+	}
+
+	/* 拠点防衛だけの欄 */
+	for (i = 0; i < (int)(sizeof (s_anDefenseOnly) / sizeof (s_anDefenseOnly[0])); i ++) {
+		ShowWindow (GetDlgItem (hWnd, s_anDefenseOnly[i]), bDefense ? SW_SHOW : SW_HIDE);
+	}
+	/* 気まぐれだけの欄 */
+	for (i = 0; i < (int)(sizeof (s_anRandomOnly) / sizeof (s_anRandomOnly[0])); i ++) {
+		ShowWindow (GetDlgItem (hWnd, s_anRandomOnly[i]), bDefense ? SW_HIDE : SW_SHOW);
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：OnCommand														 */
+/* 内容：メッセージハンドラ(WM_COMMAND)										 */
+/* ========================================================================= */
+static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
+{
+	char szTmp[64];
+
+	switch (nID) {
+	case IDC_DGKIND:		/* 種類 */
+		if (nCodeNotify != CBN_SELCHANGE) {
+			break;
+		}
+		if (GetKind (hWnd) == DGKIND_DEFENSE) {
+			/* 拠点防衛は 作り直し 2・クリア条件 2 に固定 */
+			SetWindowText (GetDlgItem (hWnd, IDC_DGREBUILD_MODE), "2");
+			SetWindowText (GetDlgItem (hWnd, IDC_DGCLEAR_MODE), "2");
+		} else {
+			/* 拠点防衛の値(2・2)が残っていたら気まぐれの 0・0 に戻す */
+			GetWindowText (GetDlgItem (hWnd, IDC_DGREBUILD_MODE), szTmp, sizeof (szTmp));
+			int nRebuild = atoi (szTmp);
+			GetWindowText (GetDlgItem (hWnd, IDC_DGCLEAR_MODE), szTmp, sizeof (szTmp));
+			int nClear = atoi (szTmp);
+			if (nRebuild == 2 && nClear == 2) {
+				SetWindowText (GetDlgItem (hWnd, IDC_DGREBUILD_MODE), "0");
+				SetWindowText (GetDlgItem (hWnd, IDC_DGCLEAR_MODE), "0");
+			}
+		}
+		ApplyKind (hWnd);
+		InvalidateRect (hWnd, NULL, TRUE);
+		break;
+	}
 }
 
 /* ========================================================================= */
@@ -280,6 +427,11 @@ static void OnLButtonDown(HWND hWnd, BOOL fDoubleClick, int x, int y, UINT keyFl
 	pt.x = x;
 	pt.y = y;
 	ClientToScreen (hWnd, &pt);
+
+	/* 拠点防衛では絵を選ばない（隠している枠の上のクリックは無視） */
+	if (GetKind (hWnd) == DGKIND_DEFENSE) {
+		return;
+	}
 
 	hWndTmp = GetDlgItem (hWnd, IDC_GRPSTART);
 	GetWindowRect (hWndTmp, &rc);

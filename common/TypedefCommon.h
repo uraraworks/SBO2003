@@ -392,6 +392,9 @@ enum {
 	CMD_APPRAISE,													/* 鑑定屋で鑑定してもらう(クライアント→サーバー。結果はサーバー→クライアント) */
 	CMD_DUNGEONMAP,													/* テーマで作った気まぐれダンジョンの探索マップ用の情報(共有差分は双方向。CMDPARA_DUNGEONMAP。マップ情報の直後と作り直した直後に送る) */
 	CMD_DUNGEONSEL,													/* 番外編ダンジョンの入口で入る姿（テンプレート）を選ぶ(CMDPARA_DUNGEONSEL。一覧を開く・閉じるはサーバー→クライアント、選ぶ・やめるはクライアント→サーバー。プレイヤー用) */
+/* 以下、プレイヤー用（サーバー→本人だけ。サーバーは受け取らない） */
+	CMD_DGDEFSTATUS,												/* 番外編の拠点防衛の状態（拠点HP・波・残り秒・残り敵数。CMDPARA_DGDEFSTATUS） */
+	CMD_DGDEFMAP,													/* 番外編の拠点防衛の全体地図（範囲・拠点・泉・仲間と敵の位置。CMDPARA_DGDEFMAP。サーバー→組の全員） */
 	CMD_MAX
 };
 
@@ -1384,7 +1387,12 @@ typedef struct _SUBGAME_DUNGEONINFO {
 	BYTE		byDefWaveCount;										/* 拠点防衛：波の数（1〜） */
 	BYTE		byDefPrepSec;										/* 拠点防衛：波と波の間の準備時間・秒（0=20） */
 	WORD		wDefWaveMaxSec;										/* 拠点防衛：1つの波の最長時間・秒（0=180。過ぎたら残りがいても次の波へ） */
-	BYTE		byDefSpringRange;									/* 拠点防衛：泉の範囲＝拠点から何マス以内で Mana が戻るか（0=2） */
+	BYTE		byDefSpringRange;									/* 拠点防衛：泉の範囲＝泉の中心から何マス以内で Mana が戻るか（0=2） */
+	BYTE		byDefSpringX;										/* 拠点防衛：泉の位置X（byDefSpringX・byDefSpringY が両方 0 なら拠点の位置） */
+	BYTE		byDefSpringY;										/* 拠点防衛：泉の位置Y */
+	BYTE		byFixStartX;										/* 固定の形（byRebuildMode=2）：中の開始位置X（外の入口 byStartX/Y に乗ると組の空間のここへ移る。両方 0 なら外の入口と同じマス） */
+	BYTE		byFixStartY;										/* 固定の形：中の開始位置Y */
+	BYTE		byDefSpringPct;										/* 拠点防衛：泉の回復＝約1秒ごとに戻る Mana の割合（最大Manaの%。0=10） */
 	BYTE		*pMapTmp;											/* 作成するマップ */
 	DWORD		dwTblID;											/* 管理人キャラのテーブルID */
 	DWORD		dwCountTmp;											/* 参加人数カウント用 */
@@ -1447,6 +1455,11 @@ typedef struct _SUBGAME_DUNGEONINFOSAVE {
 	BYTE		byDefPrepSec;										/* 拠点防衛：準備時間・秒 */
 	WORD		wDefWaveMaxSec;										/* 拠点防衛：1つの波の最長時間・秒 */
 	BYTE		byDefSpringRange;									/* 拠点防衛：泉の範囲（マス） */
+	BYTE		byDefSpringX;										/* 拠点防衛：泉の位置X */
+	BYTE		byDefSpringY;										/* 拠点防衛：泉の位置Y */
+	BYTE		byFixStartX;										/* 固定の形：中の開始位置X */
+	BYTE		byFixStartY;										/* 固定の形：中の開始位置Y */
+	BYTE		byDefSpringPct;										/* 拠点防衛：泉の回復（最大Manaの%/秒） */
 	char szMessages[MAX_DGTEXT];							/* 番外編の文言一覧 */
 } SUBGAME_DUNGEONINFOSAVE, *PSUBGAME_DUNGEONINFOSAVE;
 
@@ -4188,6 +4201,50 @@ typedef struct _CMDPARA_DUNGEONSEL {
 	char		aszName[MAX_DGTMPL][MAX_DGTMPLNAME];				/* 表示名（UTF-8。OPEN） */
 	char szTitle[128];									/* 姿選びの題名（空なら既定文） */
 } CMDPARA_DUNGEONSEL, *PCMDPARA_DUNGEONSEL;
+#pragma pack(pop)
+
+/* 番外編の拠点防衛の状態（CMD_DGDEFSTATUS。サーバー→組の全員。画面上の「拠点HP・波」の帯に使う）
+   変わった時と、準備中は1秒ごと、それ以外も数秒ごとに送る。DGDEFSTATUS_NONE は帯を消す（外へ出た時） */
+enum {
+	DGDEFSTATUS_NONE = 0,											/* 帯を消す */
+	DGDEFSTATUS_PREP,												/* 準備中（次の波まで） */
+	DGDEFSTATUS_WAVE,												/* 波の最中 */
+	DGDEFSTATUS_WIN,												/* 勝ち */
+	DGDEFSTATUS_LOSE,												/* 負け */
+};
+#pragma pack(push, 1)
+typedef struct _CMDPARA_DGDEFSTATUS {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byState;											/* DGDEFSTATUS_* */
+	BYTE		byWave;												/* 今の波（準備中は次に来る波。1〜） */
+	BYTE		byWaveMax;											/* 波の数 */
+	WORD		wBaseHP;											/* 拠点の今のHP */
+	WORD		wBaseMaxHP;											/* 拠点の最大HP */
+	WORD		wRestSec;											/* 準備中：次の波までの残り秒 */
+	WORD		wEnemy;												/* 波の最中：残りの敵の数 */
+} CMDPARA_DGDEFSTATUS, *PCMDPARA_DGDEFSTATUS;
+
+/* 番外編の拠点防衛の全体地図（CMD_DGDEFMAP。サーバー→組の全員。約 1 秒ごと）
+   この後ろに byMember 件の DUNGEONMAPPOS（仲間の位置。自分も含む）、続けて wEnemy 件の敵の座標（BYTE の X, Y の組。詰めた形）が続く。
+   範囲の中のマス目はクライアントが持っているマップ情報から描く。敵は DGDEFMAP_MAXENEMY 体まで（超えた分は送らない）。
+   拠点・泉が無い時は DGDEFMAP_NONE */
+#define DGDEFMAP_MAXENEMY	(200)									/* 1 回に送る敵の数の上限 */
+#define DGDEFMAP_NONE		(0xFFFF)								/* 拠点・泉の位置が無い */
+typedef struct _CMDPARA_DGDEFMAP {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byMember;											/* 仲間の数（後ろに DUNGEONMAPPOS が並ぶ） */
+	WORD		wEnemy;												/* 敵の数（その後ろに BYTE の X, Y が並ぶ） */
+	DWORD		dwMapID;											/* マップID */
+	WORD		wX1;												/* 防衛の範囲（マップ座標） */
+	WORD		wY1;
+	WORD		wX2;
+	WORD		wY2;
+	WORD		wBaseX;												/* 拠点の位置（無ければ DGDEFMAP_NONE） */
+	WORD		wBaseY;
+	WORD		wSpringX;											/* 泉の中心（無ければ DGDEFMAP_NONE） */
+	WORD		wSpringY;
+	BYTE		bySpringRange;										/* 泉の範囲（中心から何マス以内か） */
+} CMDPARA_DGDEFMAP, *PCMDPARA_DGDEFMAP;
 #pragma pack(pop)
 
 /* 並べ替えの対象(CMDPARA_SORTITEM の byTarget) */

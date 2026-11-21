@@ -30,6 +30,20 @@ static BOOL s_bInRange = FALSE;									/* 自分がダンジョンの範囲の�
 static std::vector<AutoMapCore::Seg> s_aSeg;					/* 壁の線 */
 static std::string s_strName;									/* 中にいる間に出すマップ名（テーマの名前） */
 
+/* 拠点防衛の全体地図（CMD_DGDEFMAP）。気まぐれダンジョンの探索マップとは別に持ち、固定マップの防衛の空間でだけ使う。
+   最初から範囲全体を見せる（マス目は今のマップの通れる・通れないから描く）。サーバーから約 1 秒ごとに届き、
+   しばらく届かない・範囲の外へ出た・別のマップへ移った時は消す */
+#define DEFMAP_EXPIRE		(6000)								/* この時間(ms)届かなければ全体地図を消す */
+#define DEFMAP_GRID_LIFE	(500)								/* マス目（通れる・通れない）を作り直す間隔(ms)。扉の開閉に追いつくため */
+static BOOL s_bDefValid = FALSE;								/* 拠点防衛の全体地図の情報を持っている */
+static CMDPARA_DGDEFMAP s_Def;									/* 最後に届いた範囲・拠点・泉 */
+static DWORD s_dwDefTime = 0;									/* 最後に届いた時刻 */
+static std::vector<DUNGEONMAPPOS> s_aDefMember;					/* 仲間の位置（自分も含む） */
+static std::vector<BYTE> s_abyDefEnemy;							/* 敵の座標（X, Y の組） */
+static std::vector<BYTE> s_abyDefGrid;							/* 範囲のマス目（1=通れる）。幅は範囲の幅 */
+static std::vector<AutoMapCore::Seg> s_aDefSeg;					/* 通れる所と通れない所の境目の線（範囲の左上が 0,0） */
+static DWORD s_dwDefGridAt = 0;									/* マス目を作った時刻（0 なら作り直す） */
+
 /* 歩けるマスか（マップのパーツのぶつかり判定） */
 struct AutoMapWalk {
 	bool operator () (int x, int y) const
@@ -52,8 +66,78 @@ void AutoMapReset(void)
 	s_Map.Clear ();
 	s_aSeg.clear ();
 	s_strName.clear ();
+	s_bDefValid = FALSE;
+	s_aDefMember.clear ();
+	s_abyDefEnemy.clear ();
+	s_abyDefGrid.clear ();
+	s_aDefSeg.clear ();
+	s_dwDefGridAt = 0;
 	s_bShown = FALSE;
 	s_bInRange = FALSE;
+	g_bDraw = TRUE;
+}
+
+/* 拠点防衛の全体地図が今使えるか（情報があり、新しく、同じマップで、自分が範囲の中）。使えなくなっていたら情報を捨てる */
+static BOOL DefMapActive(void)
+{
+	if (!s_bDefValid) {
+		return FALSE;
+	}
+	if ((g_pMapInfo != NULL) && (g_nMyCharID >= 0) && (g_nMyCharID < g_aCharInfo.GetSize ()) &&
+		(g_pMapInfo->dwID == s_Def.dwMapID) && ((int)(timeGetTime () - s_dwDefTime) < DEFMAP_EXPIRE)) {
+		PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
+
+		if (((int)pChar->dwX >= (int)s_Def.wX1) && ((int)pChar->dwX <= (int)s_Def.wX2) &&
+			((int)pChar->dwY >= (int)s_Def.wY1) && ((int)pChar->dwY <= (int)s_Def.wY2)) {
+			return TRUE;
+		}
+	}
+	/* 外へ出た・届かなくなった：地図の情報を消す（開いていたら閉じる） */
+	s_bDefValid = FALSE;
+	s_aDefMember.clear ();
+	s_abyDefEnemy.clear ();
+	s_abyDefGrid.clear ();
+	s_aDefSeg.clear ();
+	s_dwDefGridAt = 0;
+	if (!s_Map.IsValid ()) {
+		s_bShown = FALSE;
+	}
+	g_bDraw = TRUE;
+	return FALSE;
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcDGDEFMAP												 */
+/* 内容：受信データ処理(拠点防衛の全体地図：範囲・拠点・泉・仲間と敵の位置)	 */
+/* ========================================================================= */
+void RecvDataProcDGDEFMAP(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_DGDEFMAP pPara = (PCMDPARA_DGDEFMAP)pData;
+
+	if (dwDataSize < sizeof (CMDPARA_DGDEFMAP)) {
+		return;
+	}
+	if ((pPara->wX2 < pPara->wX1) || (pPara->wY2 < pPara->wY1) || (pPara->wX2 > 255) || (pPara->wY2 > 255) || (pPara->wEnemy > DGDEFMAP_MAXENEMY)) {
+		return;
+	}
+	if (dwDataSize != sizeof (CMDPARA_DGDEFMAP) + pPara->byMember * sizeof (DUNGEONMAPPOS) + pPara->wEnemy * 2) {
+		return;
+	}
+	/* 範囲・マップが変わったらマス目を作り直す */
+	if (!s_bDefValid || (s_Def.dwMapID != pPara->dwMapID) || (s_Def.wX1 != pPara->wX1) || (s_Def.wY1 != pPara->wY1) ||
+		(s_Def.wX2 != pPara->wX2) || (s_Def.wY2 != pPara->wY2)) {
+		s_dwDefGridAt = 0;
+	}
+	CopyMemory (&s_Def, pPara, sizeof (s_Def));
+	{
+		DUNGEONMAPPOS *pPos = (DUNGEONMAPPOS *)(pData + sizeof (CMDPARA_DGDEFMAP));
+		PBYTE pEnemy = (PBYTE)(pPos + pPara->byMember);
+
+		s_aDefMember.assign (pPos, pPos + pPara->byMember);
+		s_abyDefEnemy.assign (pEnemy, pEnemy + pPara->wEnemy * 2);
+	}
+	s_bDefValid = TRUE;
+	s_dwDefTime = timeGetTime ();
 	g_bDraw = TRUE;
 }
 
@@ -64,6 +148,9 @@ void AutoMapReset(void)
 void AutoMapOnMapInfo(DWORD dwMapID)
 {
 	if (s_Map.IsValid () && (s_Map.GetMapID () != dwMapID)) {
+		AutoMapReset ();
+	}
+	if (s_bDefValid && (s_Def.dwMapID != dwMapID)) {
 		AutoMapReset ();
 	}
 }
@@ -163,6 +250,10 @@ void AutoMapUpdate(void)
 	PCHARINFO pChar;
 	int x, y, mx, my, nWidth;
 
+	/* 拠点防衛の全体地図：外へ出た・届かなくなったらここで消す */
+	if (s_bDefValid) {
+		DefMapActive ();
+	}
 	if (!s_Map.IsValid () || (g_pMapInfo == NULL) || (g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ())) {
 		return;
 	}
@@ -251,7 +342,11 @@ void AutoMapUpdate(void)
 /* ========================================================================= */
 BOOL AutoMapIsAvailable(void)
 {
-	return (s_Map.IsValid () && s_bInRange) ? TRUE : FALSE;
+	if (s_Map.IsValid () && s_bInRange) {
+		return TRUE;
+	}
+	/* 気まぐれダンジョンの探索マップが無い所（拠点防衛の固定マップ）は、全体地図が使えるか */
+	return DefMapActive ();
 }
 
 /* 中にいる間に出すマップ名（範囲の外・テーマの名前が無い時は NULL） */
@@ -317,6 +412,153 @@ static void BlendRect(LPBYTE pBits, int nW, int nH, int nL, int nT, int nR, int 
 	}
 }
 
+/* 拠点防衛の全体地図のマス目と境目の線を作る（範囲全体。通れるマスと通れないマスの間に線を引く） */
+static void DefBuildGrid(void)
+{
+	int nW = (int)s_Def.wX2 - (int)s_Def.wX1 + 1, nH = (int)s_Def.wY2 - (int)s_Def.wY1 + 1;
+	static const int anDX[4] = { 0, 0, -1, 1 }, anDY[4] = { -1, 1, 0, 0 };
+	int x, y, i;
+
+	s_abyDefGrid.assign ((size_t)nW * nH, 0);
+	for (y = 0; y < nH; y ++) {
+		for (x = 0; x < nW; x ++) {
+			s_abyDefGrid[(size_t)y * nW + x] = CheckCharBlock ((DWORD)(s_Def.wX1 + x), (DWORD)(s_Def.wY1 + y)) ? 1 : 0;
+		}
+	}
+	s_aDefSeg.clear ();
+	for (y = 0; y < nH; y ++) {
+		for (x = 0; x < nW; x ++) {
+			if (!s_abyDefGrid[(size_t)y * nW + x]) {
+				continue;
+			}
+			for (i = 0; i < 4; i ++) {
+				int nx = x + anDX[i], ny = y + anDY[i];
+				AutoMapCore::Seg s;
+
+				if ((nx >= 0) && (ny >= 0) && (nx < nW) && (ny < nH) && s_abyDefGrid[(size_t)ny * nW + nx]) {
+					continue;
+				}
+				switch (i) {
+				case 0:	s.x1 = x;		s.y1 = y;		s.x2 = x + 1;	s.y2 = y;		break;
+				case 1:	s.x1 = x;		s.y1 = y + 1;	s.x2 = x + 1;	s.y2 = y + 1;	break;
+				case 2:	s.x1 = x;		s.y1 = y;		s.x2 = x;		s.y2 = y + 1;	break;
+				default:s.x1 = x + 1;	s.y1 = y;		s.x2 = x + 1;	s.y2 = y + 1;	break;
+				}
+				s_aDefSeg.push_back (s);
+			}
+		}
+	}
+	s_dwDefGridAt = timeGetTime () ? timeGetTime () : 1;
+}
+
+/* 拠点防衛の全体地図を描く（範囲全体を最初から出す。気まぐれの地図と同じ色・線の太さ）。
+   印は 自分=赤い点(白縁)・仲間=水色の十字・敵=赤い小さな四角・拠点=金色の四角(白縁)・泉=水色の範囲と印 */
+static void DefMapDraw(LPBYTE pBits, int nW, int nH, int nL, int nT, int nR, int nB, PCHARINFO pChar)
+{
+	int nCX = (int)s_Def.wX2 - (int)s_Def.wX1 + 1, nCY = (int)s_Def.wY2 - (int)s_Def.wY1 + 1;
+	int i, nOX, nOY, nThick, x, y;
+	float fScale;
+
+	if (s_abyDefGrid.empty () || (int)(timeGetTime () - s_dwDefGridAt) >= DEFMAP_GRID_LIFE) {
+		DefBuildGrid ();
+	}
+	/* 範囲全体が画面の約 75% に収まる倍率（1マス12ドットまで） */
+	fScale = (float)(min (SCRSIZEX, SCRSIZEY) * 3 / 4) / (float)max (nCX, nCY);
+	fScale = min (fScale, 12.0f);
+	nOX = nL + SCRSIZEX / 2 - (int)(nCX * 0.5f * fScale + 0.5f);
+	nOY = nT + SCRSIZEY / 2 - (int)(nCY * 0.5f * fScale + 0.5f);
+	nThick = (fScale >= 6.0f) ? 2 : 1;
+
+	/* 背景を少し暗くして、線を見やすくする */
+	BlendRect (pBits, nW, nH, nL, nT, nR, nB, nL, nT, SCRSIZEX, SCRSIZEY, 0, 0, 0, 65);
+
+	/* 通れるマスをうっすら塗る */
+	for (y = 0; y < nCY; y ++) {
+		for (x = 0; x < nCX; x ++) {
+			if (!s_abyDefGrid[(size_t)y * nCX + x]) {
+				continue;
+			}
+			int x1 = nOX + (int)(x * fScale + 0.5f), y1 = nOY + (int)(y * fScale + 0.5f);
+			int x2 = nOX + (int)((x + 1) * fScale + 0.5f), y2 = nOY + (int)((y + 1) * fScale + 0.5f);
+			BlendRect (pBits, nW, nH, nL, nT, nR, nB, x1, y1, max (x2 - x1, 1), max (y2 - y1, 1), 150, 170, 210, 45);
+		}
+	}
+	/* 壁の線 */
+	for (i = 0; i < (int)s_aDefSeg.size (); i ++) {
+		const AutoMapCore::Seg &s = s_aDefSeg[i];
+		int x1 = nOX + (int)(s.x1 * fScale + 0.5f);
+		int y1 = nOY + (int)(s.y1 * fScale + 0.5f);
+		int x2 = nOX + (int)(s.x2 * fScale + 0.5f);
+		int y2 = nOY + (int)(s.y2 * fScale + 0.5f);
+		if (s.y1 == s.y2) {
+			BlendRect (pBits, nW, nH, nL, nT, nR, nB, x1, y1 - nThick / 2, max (x2 - x1, 1), nThick, 210, 225, 255, 200);
+		} else {
+			BlendRect (pBits, nW, nH, nL, nT, nR, nB, x1 - nThick / 2, y1, nThick, max (y2 - y1, 1), 210, 225, 255, 200);
+		}
+	}
+	/* 泉：水色の範囲と、中心の印 */
+	if ((s_Def.wSpringX != DGDEFMAP_NONE) && (s_Def.wSpringY != DGDEFMAP_NONE)) {
+		int nRange = s_Def.bySpringRange;
+		int sx1 = max ((int)s_Def.wSpringX - nRange, (int)s_Def.wX1) - (int)s_Def.wX1;
+		int sy1 = max ((int)s_Def.wSpringY - nRange, (int)s_Def.wY1) - (int)s_Def.wY1;
+		int sx2 = min ((int)s_Def.wSpringX + nRange + 1, (int)s_Def.wX2 + 1) - (int)s_Def.wX1;
+		int sy2 = min ((int)s_Def.wSpringY + nRange + 1, (int)s_Def.wY2 + 1) - (int)s_Def.wY1;
+		int x1 = nOX + (int)(sx1 * fScale + 0.5f), y1 = nOY + (int)(sy1 * fScale + 0.5f);
+		int x2 = nOX + (int)(sx2 * fScale + 0.5f), y2 = nOY + (int)(sy2 * fScale + 0.5f);
+		int cx = nOX + (int)(((int)s_Def.wSpringX - (int)s_Def.wX1 + 0.5f) * fScale);
+		int cy = nOY + (int)(((int)s_Def.wSpringY - (int)s_Def.wY1 + 0.5f) * fScale);
+		int r = max (2, (int)(fScale * 0.4f));
+
+		BlendRect (pBits, nW, nH, nL, nT, nR, nB, x1, y1, max (x2 - x1, 1), max (y2 - y1, 1), 80, 200, 255, 70);
+		BlendRect (pBits, nW, nH, nL, nT, nR, nB, cx - r - 1, cy - r - 1, r * 2 + 3, r * 2 + 3, 255, 255, 255, 230);
+		BlendRect (pBits, nW, nH, nL, nT, nR, nB, cx - r, cy - r, r * 2 + 1, r * 2 + 1, 80, 200, 255, 255);
+	}
+	/* 拠点：金色の四角（白縁）。目立つように少し大きく */
+	if ((s_Def.wBaseX != DGDEFMAP_NONE) && (s_Def.wBaseY != DGDEFMAP_NONE)) {
+		int cx = nOX + (int)(((int)s_Def.wBaseX - (int)s_Def.wX1 + 0.5f) * fScale);
+		int cy = nOY + (int)(((int)s_Def.wBaseY - (int)s_Def.wY1 + 0.5f) * fScale);
+		int r = max (3, (int)(fScale * 0.7f));
+
+		BlendRect (pBits, nW, nH, nL, nT, nR, nB, cx - r - 1, cy - r - 1, r * 2 + 3, r * 2 + 3, 255, 255, 255, 255);
+		BlendRect (pBits, nW, nH, nL, nT, nR, nB, cx - r, cy - r, r * 2 + 1, r * 2 + 1, 255, 205, 40, 255);
+	}
+	/* 敵：赤い小さな四角 */
+	{
+		int r = max (1, (int)(fScale * 0.3f));
+
+		for (i = 0; i + 1 < (int)s_abyDefEnemy.size (); i += 2) {
+			int ex = (int)s_abyDefEnemy[i], ey = (int)s_abyDefEnemy[i + 1];
+			if ((ex < (int)s_Def.wX1) || (ex > (int)s_Def.wX2) || (ey < (int)s_Def.wY1) || (ey > (int)s_Def.wY2)) {
+				continue;
+			}
+			int cx = nOX + (int)((ex - (int)s_Def.wX1 + 0.5f) * fScale);
+			int cy = nOY + (int)((ey - (int)s_Def.wY1 + 0.5f) * fScale);
+			BlendRect (pBits, nW, nH, nL, nT, nR, nB, cx - r, cy - r, r * 2 + 1, r * 2 + 1, 255, 40, 40, 255);
+		}
+	}
+	/* 仲間は水色の十字（気まぐれの地図と同じ） */
+	for (i = 0; i < (int)s_aDefMember.size (); i ++) {
+		const DUNGEONMAPPOS &p = s_aDefMember[i];
+		if ((p.dwTblID == pChar->dwTblID) || ((int)p.wX < (int)s_Def.wX1) || ((int)p.wX > (int)s_Def.wX2) ||
+			((int)p.wY < (int)s_Def.wY1) || ((int)p.wY > (int)s_Def.wY2)) {
+			continue;
+		}
+		int cx = nOX + (int)((p.wX - (int)s_Def.wX1 + 0.5f) * fScale);
+		int cy = nOY + (int)((p.wY - (int)s_Def.wY1 + 0.5f) * fScale);
+		BlendRect (pBits, nW, nH, nL, nT, nR, nB, cx - 3, cy - 1, 7, 3, 60, 230, 255, 255);
+		BlendRect (pBits, nW, nH, nL, nT, nR, nB, cx - 1, cy - 3, 3, 7, 60, 230, 255, 255);
+	}
+	/* 自分の位置（気まぐれの地図と同じ：白縁の赤い点） */
+	{
+		int cx = nOX + (int)(((int)pChar->dwX - (int)s_Def.wX1 + 0.5f) * fScale);
+		int cy = nOY + (int)(((int)pChar->dwY - (int)s_Def.wY1 + 0.5f) * fScale);
+		int r = max (2, (int)(fScale * 0.45f));
+
+		BlendRect (pBits, nW, nH, nL, nT, nR, nB, cx - r - 1, cy - r - 1, r * 2 + 3, r * 2 + 3, 255, 255, 255, 230);
+		BlendRect (pBits, nW, nH, nL, nT, nR, nB, cx - r, cy - r, r * 2 + 1, r * 2 + 1, 255, 50, 50, 255);
+	}
+}
+
 /* ========================================================================= */
 /* 関数名：AutoMapDraw														 */
 /* 内容：地図を描く															 */
@@ -344,6 +586,12 @@ void AutoMapDraw(int nX, int nY)
 	nCX = s_Map.GetW ();
 	nCY = s_Map.GetH ();
 	pChar = g_aCharInfo[g_nMyCharID];
+
+	/* 探索マップが無い所（拠点防衛の固定マップ）は全体地図を描く */
+	if (!(s_Map.IsValid () && s_bInRange)) {
+		DefMapDraw (pBits, nW, nH, nL, nT, nR, nB, pChar);
+		return;
+	}
 
 	/* 扉・差し替えで歩けるかが変わることがあるので、描くたびに作り直す（最大 128×128 マス） */
 	s_Map.BuildSegments (AutoMapWalk (), s_aSeg);

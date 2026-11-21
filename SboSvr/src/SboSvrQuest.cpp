@@ -77,6 +77,8 @@ typedef struct _LOANBAK {
 	BYTE		abyMagic[MAX_USEMAGIC];
 	WORD		waItem[MAX_MYITEM];
 	WORD		waEqu[MAX_EQUTYPE];
+	BYTE		abyMagicKey[MAX_MAGICKEY];							/* 特技ショートカット（中で登録し直しても、出たら元に戻す） */
+	WORD		awKeyItem[MAX_MAGICKEY];							/* ショートカットの装備品・道具 */
 	WORD		wMaxHP, wHP, wMaxMana, wMana;
 	DWORD		dwGold, dwExp;
 	char		chAttrFire, chAttrWater, chAttrWind, chAttrEarth, chAttrLight, chAttrDark;
@@ -112,7 +114,8 @@ typedef struct _DGPUT {
 typedef struct _DGDEFDEAD {
 	int			nCount;												/* この組で倒れた回数（復活までの秒数＝回数×5、最大30） */
 	DWORD		dwReviveAt;											/* 復活する時刻（0=いま倒れていない） */
-	_DGDEFDEAD() : nCount(0), dwReviveAt(0) {}
+	DWORD		dwSpringFx;											/* 泉でキラッとしたエフェクトを最後に出した時刻（0=まだ・泉の外に出たら 0 に戻す） */
+	_DGDEFDEAD() : nCount(0), dwReviveAt(0), dwSpringFx(0) {}
 } DGDEFDEAD;
 
 /* 1 回の挑戦（一緒に入った組） */
@@ -151,9 +154,12 @@ typedef struct _CHALLENGE {
 	DWORD		dwDefWaveStart;										/* 拠点防衛：今の波が始まった時刻 */
 	DWORD		dwDefEnd;											/* 拠点防衛：結果を知らせた時刻（この 10 秒後に全員帰還） */
 	DWORD		dwDefSpring;										/* 拠点防衛：最後に泉で Mana を戻した時刻 */
+	int			nEnemyLeft;											/* 拠点防衛：最後に確かめた「残り敵」の数（-1=波が始まったばかりでまだ確かめていない） */
 	BYTE		byBaseBracket;										/* 拠点防衛：最後に知らせた拠点HPの段（0〜4。4=満タン） */
 	std::map<DWORD, DGDEFDEAD>	mapDead;							/* 拠点防衛：組の人のテーブルID → 倒れた回数・復活の時刻 */
-	_CHALLENGE() : byKind(0), byDungeonID(0), dwBuildNo(0), bDaily(FALSE), bRanked(FALSE), dwDailyVer(0), dwDailySeed(0), bKillAll(FALSE), byCountDown(4), wQuestID(0), dwMapNo(0), dwSpaceID(0), bArena(FALSE), dwPartyID(0), dwStart(0), bCleared(FALSE), dwClear(0), dwClearTime(0), bDefense(FALSE), dwBaseTbl((DWORD)-1), nWave(0), byDefPhase(DGDEF_PHASE_INIT), byDefResult(DGDEF_RESULT_NONE), dwDefPhaseStart(0), dwDefWaveStart(0), dwDefEnd(0), dwDefSpring(0), byBaseBracket(4) {}
+	CMDPARA_DGDEFSTATUS	stDefSent;									/* 拠点防衛：最後に組へ送った画面の帯の状態（変わった時だけ送るため） */
+	DWORD		dwDefSentAt;										/* 拠点防衛：その状態を送った時刻（周期処理の時刻。一定時間ごとに同じ内容も送り直す） */
+	_CHALLENGE() : byKind(0), byDungeonID(0), dwBuildNo(0), bDaily(FALSE), bRanked(FALSE), dwDailyVer(0), dwDailySeed(0), bKillAll(FALSE), byCountDown(4), wQuestID(0), dwMapNo(0), dwSpaceID(0), bArena(FALSE), dwPartyID(0), dwStart(0), bCleared(FALSE), dwClear(0), dwClearTime(0), bDefense(FALSE), dwBaseTbl((DWORD)-1), nWave(0), byDefPhase(DGDEF_PHASE_INIT), byDefResult(DGDEF_RESULT_NONE), dwDefPhaseStart(0), dwDefWaveStart(0), dwDefEnd(0), dwDefSpring(0), nEnemyLeft(-1), byBaseBracket(4), dwDefSentAt(0) { ZeroMemory (&stDefSent, sizeof (stDefSent)); }
 } CHALLENGE;
 
 /* 戻す場所（切断した人は、マップの表から外れてから動かす） */
@@ -2624,6 +2630,7 @@ static void LoanXfer(PCHARINFO p, LOANBAK *b, BOOL bToChar)
 #define LOANA(f)	if (bToChar) { memcpy (p->f, b->f, sizeof (p->f)); } else { memcpy (b->f, p->f, sizeof (p->f)); }
 	LOANX (byLevel);	LOANX (byPW);	LOANX (byDEX);	LOANX (byST);	LOANX (byIT);	LOANX (byLK);
 	LOANA (abyMagic);	LOANA (waItem);	LOANA (waEqu);
+	LOANA (abyMagicKey);	LOANA (awKeyItem);
 	LOANX (wMaxHP);	LOANX (wHP);	LOANX (wMaxMana);	LOANX (wMana);
 	LOANX (dwGold);	LOANX (dwExp);
 	LOANX (chAttrFire);	LOANX (chAttrWater);	LOANX (chAttrWind);
@@ -2673,6 +2680,9 @@ static void LoanApply(PCHARINFO p, PSTATUSTEMPLATEINFO t)
 	p->chAttrLight	= t->chAttrLight;
 	p->chAttrDark	= t->chAttrDark;
 	memcpy (p->abyMagic, t->abyMagic, sizeof (p->abyMagic));
+	/* ショートカットは空から（元の登録は控えにあり、出る時に戻す） */
+	ZeroMemory (p->abyMagicKey, sizeof (p->abyMagicKey));
+	ZeroMemory (p->awKeyItem, sizeof (p->awKeyItem));
 	ZeroMemory (p->waItem, sizeof (p->waItem));
 	for (i = 0, j = 0; i < MAX_MYITEM; i ++) {
 		/* 無いアイテムの番号は持たせない */
@@ -2724,6 +2734,7 @@ static void LoanSendAll(PCHARINFO p)
 		SendCmdCHARITEM (p->pID, p->dwTblID);
 		SendCmdCHARSTATUS (p->pID, p->dwTblID);
 		SendCmdCHARSTATUSHP (URARASOCK_SENDALL, p->dwTblID);
+		SendMagicKeySetting (p);		/* 入れ替えたショートカットを知らせる */
 	}
 	/* 攻撃アップ・守りアップの表示も消す（入る前にかけた効果を持ち込まない・持ち出さない） */
 	BuffSendState (p);
@@ -2754,7 +2765,7 @@ static void ChallengeLeave(PCHARINFO p, int nReason)
 {
 	std::map<DWORD, LOANBAK>::iterator it = s_mapLoan.find (p->dwTblID);
 	LOANBAK Bak;
-	BOOL bMove, bDungeon = FALSE;
+	BOOL bMove, bDungeon = FALSE, bDefense = FALSE;
 	int nDungeonID = -1;
 
 	if (it == s_mapLoan.end ()) {
@@ -2771,7 +2782,15 @@ static void ChallengeLeave(PCHARINFO p, int nReason)
 			aM.erase (std::remove (aM.begin (), aM.end (), p->dwTblID), aM.end ());
 			bDungeon = (itC->second.byKind == CHALLENGEKIND_DUNGEON);
 			nDungeonID = itC->second.byDungeonID;
+			bDefense = itC->second.bDefense;
 		}
+	}
+	/* 拠点防衛：外へ出る人の画面から帯を消す（切断では送れない。つなぎ直した画面は新しいので帯はない） */
+	if (bDefense && (nReason != CHALLENGELEAVE_LOGOUT) && IsPlayerOnline (p)) {
+		CMDPARA_DGDEFSTATUS Para;
+
+		ZeroMemory (&Para, sizeof (Para));
+		SendCmdDGDEFSTATUS (p->pID, &Para);
 	}
 	/* 番外編：中で手に入れた物は中だけの物。どの出方でも持ち帰らず、元の持ち物に戻すだけ（2026-11-19 方針） */
 
@@ -3348,9 +3367,14 @@ static BOOL DgIsGame(PSUBGAME_DUNGEONINFO p)
 static BOOL DgReady(PSUBGAME_DUNGEONINFO p)
 {
 	if (p->byRebuildMode == DGREBUILD_FIXED) {
-		return (p->dwMapID < (DWORD)g_aMapInfo.GetSize ()) && (g_aMapInfo[p->dwMapID] != NULL) &&
+		DWORD dwInX, dwInY;
+		if (!((p->dwMapID < (DWORD)g_aMapInfo.GetSize ()) && (g_aMapInfo[p->dwMapID] != NULL) &&
 			(p->byX2 > p->byX1) && (p->byY2 > p->byY1) &&
-			((int)p->byX2 < g_aMapInfo[p->dwMapID]->nCX) && ((int)p->byY2 < g_aMapInfo[p->dwMapID]->nCY);
+			((int)p->byX2 < g_aMapInfo[p->dwMapID]->nCX) && ((int)p->byY2 < g_aMapInfo[p->dwMapID]->nCY))) {
+			return FALSE;
+		}
+		/* 中の開始位置を設定している時は、それもマップに収まっていること */
+		return !DungeonFixedInside (p, &dwInX, &dwInY) || (((int)dwInX < g_aMapInfo[p->dwMapID]->nCX) && ((int)dwInY < g_aMapInfo[p->dwMapID]->nCY));
 	}
 	return (p->dwGenMapID == p->dwMapID) && (p->byGenX1 == p->byX1) && (p->byGenY1 == p->byY1) &&
 		(p->byGenX2 == p->byX2) && (p->byGenY2 == p->byY2) && (p->pwGenParts != NULL) && (p->dwBuildNo > 0) && (p->pMapTmp == NULL) && (p->wGenCX > 0);
@@ -3395,6 +3419,38 @@ static int DgFindByEntrance(DWORD dwMapID, DWORD dwX, DWORD dwY)
 	for (i = 0; i < g_aSubaGameInfo.GetSize (); i ++) {
 		PSUBGAME_DUNGEONINFO p = DgInfo (i);
 		if (DgIsGame (p) && (p->dwMapID == dwMapID) && (dwX == (DWORD)p->byStartX) && (dwY == (DWORD)p->byStartY)) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+/* 固定の形の中の開始位置（byFixStartX・byFixStartY）を使うか。使う時だけ TRUE で、その位置を返す。
+   両方 0・固定の形でない・外の入口と同じマスなら FALSE（外の入口＝開始位置のまま、今まで通り） */
+BOOL DungeonFixedInside(PSUBGAME_DUNGEONINFO p, DWORD *pdwX, DWORD *pdwY)
+{
+	if ((p == NULL) || (p->byRebuildMode != DGREBUILD_FIXED) || (!p->byFixStartX && !p->byFixStartY) ||
+		((p->byFixStartX == p->byStartX) && (p->byFixStartY == p->byStartY))) {
+		return FALSE;
+	}
+	if (pdwX) {
+		*pdwX = (DWORD)p->byFixStartX;
+	}
+	if (pdwY) {
+		*pdwY = (DWORD)p->byFixStartY;
+	}
+	return TRUE;
+}
+
+/* 固定の形の中の開始位置のマスの番号。外の入口と違うマスを設定している番外編が無ければ -1 */
+static int DgFindByFixInside(DWORD dwMapID, DWORD dwX, DWORD dwY)
+{
+	int i;
+
+	for (i = 0; i < g_aSubaGameInfo.GetSize (); i ++) {
+		PSUBGAME_DUNGEONINFO p = DgInfo (i);
+		DWORD dwInX, dwInY;
+		if (DgIsGame (p) && (p->dwMapID == dwMapID) && DungeonFixedInside (p, &dwInX, &dwInY) && (dwX == dwInX) && (dwY == dwInY)) {
 			return i;
 		}
 	}
@@ -4045,10 +4101,14 @@ static void DgStart(int nDungeonID, const DGSEL &Sel, const std::vector<std::pai
 
 		CharTargetCancelPC (pTmp);
 		/* この組の空間へ（先に移る。見え方の作り直しはマップ移動のほうでされる。
-		   固定の形は入口に立ったままの人が開始位置と同じマスなので、移動で何も届かない分、ここで作り直す） */
+		   固定の形で中の開始位置が無い時は、入口に立ったままの人が開始位置と同じマスなので、移動で何も届かない分、ここで作り直す。
+		   中の開始位置を設定している時は、気まぐれと同じく別のマスへ移るので、移動のほうで届く） */
 		BOOL bFixed = (pDungeon->byRebuildMode == DGREBUILD_FIXED);
 		DWORD dwInX = bFixed ? (DWORD)pDungeon->byStartX : (DWORD)pDungeon->byGenX1 + pDungeon->wGenStartX;
 		DWORD dwInY = bFixed ? (DWORD)pDungeon->byStartY : (DWORD)pDungeon->byGenY1 + pDungeon->wGenStartY;
+		if (bFixed) {
+			DungeonFixedInside (pDungeon, &dwInX, &dwInY);
+		}
 		SpaceSet (pTmp, Ch.dwSpaceID, (pTmp->dwMapID == pDungeon->dwMapID) && (pTmp->dwX == dwInX) && (pTmp->dwY == dwInY));
 		ZeroMemory (&Bak, sizeof (Bak));
 		LoanXfer (pTmp, &Bak, FALSE);
@@ -4427,6 +4487,22 @@ BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
 			return TRUE;
 		}
 	}
+	/* 固定の形で中の開始位置を設定している時：そのマスに中の人が乗ったら（一度離れて戻った時）、途中で帰る（記録なし）。
+	   組の外の人には何もしない（自動で置いたワープで外の入口へ飛ばされないように） */
+	if (nID < 0) {
+		int nFix = DgFindByFixInside (pChar->dwMapID, pEvent->dwX, pEvent->dwY);
+		if (nFix >= 0) {
+			pRun = DgRunOf (pChar);
+			if (pRun && (pRun->byDungeonID == (BYTE)nFix)) {
+				DgLeaveAsk (pChar, nFix);
+				return TRUE;
+			}
+			pDungeon = DgInfo (nFix);
+			if (!pRun && (pMapChg->dwMapID == pDungeon->dwMapID) && (pMapChg->dwX == (DWORD)pDungeon->byStartX) && (pMapChg->dwY == (DWORD)pDungeon->byStartY)) {
+				return TRUE;
+			}
+		}
+	}
 	if (nID >= 0) {
         std::map<DWORD, DWORD>::iterator ready = s_mapDgPreparedOf.find (pChar->dwTblID);
         if (ready != s_mapDgPreparedOf.end ()) {
@@ -4469,7 +4545,9 @@ BOOL DungeonEventStep(PCHARINFO pChar, PEVENTINFO pEvent)
 				return TRUE;
 			}
 			/* 設定変更前から残ったワープでも、全敵撃破では途中帰還として扱う（記録なし） */
-			if (pRun->bKillAll) {
+			/* 拠点防衛はゴールのワープで勝つことは無い（勝ち負けはウェーブと拠点で決まる）。
+			   中の開始位置を動かした後に残った古いワープなども、途中で帰るかを聞くだけにする */
+			if (pRun->bKillAll || pRun->bDefense) {
 				DgLeaveAsk (pChar, pRun->byDungeonID);
 				return TRUE;
 			}
@@ -4551,10 +4629,12 @@ static void DgSelOnDec(PCHARINFO pChar)
 #define DGDEF_BASE_HP			(1000)								/* 拠点の最大HP（設定が 0 の時） */
 #define DGDEF_PREP_SEC			(20)								/* 準備時間・秒（設定が 0 の時） */
 #define DGDEF_WAVEMAX_SEC		(180)								/* 1つの波の最長時間・秒（設定が 0 の時） */
-#define DGDEF_SPRING_RANGE		(2)									/* 泉の範囲・マス（設定が 0 の時） */
 #define DGDEF_RESULT_WAIT		(10000)								/* 結果を知らせてから帰るまで（ミリ秒） */
 #define DGDEF_REVIVE_STEP		(5)									/* 復活までの秒数＝倒れた回数×この秒数 */
 #define DGDEF_REVIVE_MAX		(30)								/* 復活までの最大秒数 */
+#define DGDEF_STATUS_KEEP		(5000)								/* 画面の帯の状態は、変わらなくてもこの間隔（ミリ秒）で送り直す（つなぎ直した・入り直した人にも届く） */
+#define DGDEF_SPRING_PERCENT	(10)								/* 泉で 1 回に戻る Mana の割合の既定（最大 Mana の %。最低 1。設定 byDefSpringPct が 0 の時） */
+#define DGDEF_SPRING_FX_INTERVAL	(3000)							/* 泉のキラッとしたエフェクトを出す間隔（ミリ秒。入って最初に戻った時は必ず出す） */
 #define DGDEF_SPRING_INTERVAL	(900)								/* 泉で Mana が戻る間隔（ミリ秒。周期処理が約 1 秒ごとなので少し短く） */
 
 static int DgDefPrepSec(PSUBGAME_DUNGEONINFO p)
@@ -4670,6 +4750,25 @@ static int DgDefEnemyCount(CHALLENGE *pCh)
 		}
 	}
 	return nEnemy;
+}
+
+/* 今の波の「残り敵」：まだ出ていない数（発生元の最大発生数の残り）＋今いる生きている敵（画面の帯と知らせで共通） */
+static int DgDefEnemyLeft(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon)
+{
+	int i, nCount = g_aCharInfo.GetSize (), nLeft = DgDefEnemyCount (pCh);
+
+	for (i = 0; i < nCount; i ++) {
+		PCHARINFO pParent = g_aCharInfo[i];
+
+		if ((pParent == NULL) || (pParent->byNpcType != NPCTYPE_PUT) || (pParent->byPutCount == 0) || (pParent->byPutWave != (BYTE)pCh->nWave) ||
+			(pParent->dwSpaceID != SPACE_NORMAL) || !DgInArea (pDungeon, pParent->dwMapID, pParent->dwX, pParent->dwY)) {
+			continue;
+		}
+		std::map<DWORD, DGPUT>::iterator it = pCh->mapPut.find (pParent->dwTblID);
+		int nTotal = (it == pCh->mapPut.end ()) ? 0 : it->second.nTotal;
+		nLeft += max ((int)pParent->byPutCount - nTotal, 0);
+	}
+	return nLeft;
 }
 
 /* 組の敵を全部消す（結果が出た時） */
@@ -4799,7 +4898,7 @@ static BOOL DgDefFindSeat(PCHARINFO pWho, PCHARINFO pBase, int &x, int &y)
 	return FALSE;
 }
 
-/* 準備時間に入る時：全員の HP/Mana を全回復（倒れている人も起こす） */
+/* 準備時間に入る時：倒れている人を起こす（HP/Mana の全回復はしない。回復は泉で） */
 static void DgDefRecoverAll(CHALLENGE *pCh)
 {
 	size_t j;
@@ -4810,8 +4909,141 @@ static void DgDefRecoverAll(CHALLENGE *pCh)
 		if ((p == NULL) || (s_mapLoan.find (pCh->aMember[j]) == s_mapLoan.end ())) {
 			continue;
 		}
+		/* 2026-11-21 全回復はやめた（回復は泉で）。倒れて復活待ちの人だけ、ここで復活させる */
+		if ((p->byCharState != CHARSTATE_DEAD) && (p->wHP != 0)) {
+			continue;
+		}
 		DgDefRevive (p);
 		pCh->mapDead[pCh->aMember[j]].dwReviveAt = 0;
+	}
+}
+
+/* 画面の帯（CMD_DGDEFSTATUS）の今の状態を作る */
+static void DgDefStatusMake(CHALLENGE *pCh, CMDPARA_DGDEFSTATUS &Para, DWORD dwNow)
+{
+	PSUBGAME_DUNGEONINFO pDungeon = DgInfo (pCh->byDungeonID);
+	PCHARINFO pBase = DgDefBaseChar (pCh);
+
+	ZeroMemory (&Para, sizeof (Para));
+	Para.byCmd = CMD_DGDEFSTATUS;
+	if (pCh->byDefResult == DGDEF_RESULT_WIN) {
+		Para.byState = DGDEFSTATUS_WIN;
+	} else if (pCh->byDefResult == DGDEF_RESULT_LOSE) {
+		Para.byState = DGDEFSTATUS_LOSE;
+	} else if (pCh->byDefPhase == DGDEF_PHASE_WAVE) {
+		Para.byState = DGDEFSTATUS_WAVE;
+	} else {
+		Para.byState = DGDEFSTATUS_PREP;
+	}
+	Para.byWave = (BYTE)min (max (pCh->nWave, 0), 255);
+	Para.byWaveMax = (BYTE)min (pDungeon ? DgDefWaveCount (pDungeon) : 1, 255);
+	Para.wBaseHP = pBase ? pBase->wHP : (WORD)0;
+	Para.wBaseMaxHP = pBase ? pBase->wMaxHP : (pDungeon && pDungeon->wDefBaseHP ? pDungeon->wDefBaseHP : (WORD)DGDEF_BASE_HP);
+	if ((Para.byState == DGDEFSTATUS_PREP) && pDungeon) {
+		/* 準備中：次の波までの残り秒（切り上げ。最初の周期処理の前は準備時間まるごと） */
+		int nRest = DgDefPrepSec (pDungeon) * 1000;
+
+		if (pCh->byDefPhase == DGDEF_PHASE_PREP) {
+			nRest -= (int)(dwNow - pCh->dwDefPhaseStart);
+		}
+		Para.wRestSec = (WORD)min (max ((nRest + 999) / 1000, 0), 65535);
+	}
+	if (Para.byState == DGDEFSTATUS_WAVE) {
+		Para.wEnemy = (WORD)min (pDungeon ? DgDefEnemyLeft (pCh, pDungeon) : DgDefEnemyCount (pCh), 65535);
+	}
+}
+
+/* 画面の帯の状態を組の全員（pOnly があればその人だけ）に送る。変わった時と一定時間ごと、bForce なら必ず */
+static void DgDefStatusSend(CHALLENGE *pCh, DWORD dwNow, PCHARINFO pOnly, BOOL bForce)
+{
+	CMDPARA_DGDEFSTATUS Para;
+	size_t k;
+
+	DgDefStatusMake (pCh, Para, dwNow);
+	if (pOnly == NULL) {
+		if (!bForce && (memcmp (&Para, &pCh->stDefSent, sizeof (Para)) == 0) && ((int)(dwNow - pCh->dwDefSentAt) < DGDEF_STATUS_KEEP)) {
+			return;
+		}
+		pCh->stDefSent = Para;
+		pCh->dwDefSentAt = dwNow;
+	}
+	for (k = 0; k < pCh->aMember.size (); k ++) {
+		PCHARINFO pTmp = (pCh->aMember[k] < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[pCh->aMember[k]] : NULL;
+
+		if (pTmp && IsPlayerOnline (pTmp) && ((pOnly == NULL) || (pOnly == pTmp)) && (s_mapLoan.find (pCh->aMember[k]) != s_mapLoan.end ())) {
+			SendCmdDGDEFSTATUS (pTmp->pID, &Para);
+		}
+	}
+}
+
+/* 全体地図（CMD_DGDEFMAP）を組の全員に送る（周期処理ごと＝約 1 秒）。敵は座標だけの詰めた形で上限 DGDEFMAP_MAXENEMY 体 */
+static void DgDefMapSend(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon)
+{
+	CMDPARA_DGDEFMAP Para;
+	std::vector<BYTE> aPos, aEnemy;
+	PCHARINFO pBase = DgDefBaseChar (pCh);
+	BOOL bSpringPos = (pDungeon->byDefSpringX || pDungeon->byDefSpringY);
+	int i, nCount = g_aCharInfo.GetSize (), nMember = 0, nEnemy = 0;
+	size_t k;
+
+	ZeroMemory (&Para, sizeof (Para));
+	Para.byCmd = CMD_DGDEFMAP;
+	Para.dwMapID = pDungeon->dwMapID;
+	Para.wX1 = pDungeon->byX1;
+	Para.wY1 = pDungeon->byY1;
+	Para.wX2 = pDungeon->byX2;
+	Para.wY2 = pDungeon->byY2;
+	Para.wBaseX = pBase ? (WORD)pBase->dwX : (WORD)DGDEFMAP_NONE;
+	Para.wBaseY = pBase ? (WORD)pBase->dwY : (WORD)DGDEFMAP_NONE;
+	/* 泉の中心：設定が両方 0 なら拠点の位置（DgDefMembers と同じ） */
+	if (bSpringPos) {
+		Para.wSpringX = pDungeon->byDefSpringX;
+		Para.wSpringY = pDungeon->byDefSpringY;
+	} else {
+		Para.wSpringX = Para.wBaseX;
+		Para.wSpringY = Para.wBaseY;
+	}
+	Para.bySpringRange = bSpringPos ? 0 : 1;						/* DgDefMembers と同じ（位置を決めた時は 1 マス） */
+	/* 仲間の位置（この組の空間・同じマップにいる人） */
+	for (k = 0; k < pCh->aMember.size () && nMember < 255; k ++) {
+		PCHARINFO p = (pCh->aMember[k] < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[pCh->aMember[k]] : NULL;
+		DUNGEONMAPPOS pos;
+
+		if ((p == NULL) || (p->pID == 0) || (p->dwSpaceID != pCh->dwSpaceID) || (p->dwMapID != pDungeon->dwMapID)) {
+			continue;
+		}
+		ZeroMemory (&pos, sizeof (pos));
+		pos.dwTblID = p->dwTblID;
+		pos.wX = (WORD)p->dwX;
+		pos.wY = (WORD)p->dwY;
+		aPos.insert (aPos.end (), (PBYTE)&pos, (PBYTE)(&pos + 1));
+		nMember ++;
+	}
+	/* 敵の位置（生きている敵だけ。座標は 0〜255 なので 1 バイトずつ） */
+	for (i = 0; (i < nCount) && (nEnemy < DGDEFMAP_MAXENEMY); i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+
+		if (DgDefIsEnemyOf (pCh, p) && (p->wHP > 0) && (p->dwMapID == pDungeon->dwMapID) && (p->dwX < 256) && (p->dwY < 256)) {
+			aEnemy.push_back ((BYTE)p->dwX);
+			aEnemy.push_back ((BYTE)p->dwY);
+			nEnemy ++;
+		}
+	}
+	Para.byMember = (BYTE)nMember;
+	Para.wEnemy = (WORD)nEnemy;
+	{
+		std::vector<BYTE> buf (sizeof (Para) + aPos.size () + aEnemy.size ());
+
+		CopyMemory (&buf[0], &Para, sizeof (Para));
+		if (!aPos.empty ()) CopyMemory (&buf[sizeof (Para)], &aPos[0], aPos.size ());
+		if (!aEnemy.empty ()) CopyMemory (&buf[sizeof (Para) + aPos.size ()], &aEnemy[0], aEnemy.size ());
+		for (k = 0; k < pCh->aMember.size (); k ++) {
+			PCHARINFO pTmp = (pCh->aMember[k] < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[pCh->aMember[k]] : NULL;
+
+			if (pTmp && IsPlayerOnline (pTmp) && (s_mapLoan.find (pCh->aMember[k]) != s_mapLoan.end ())) {
+				SendCmdDGDEFMAP (pTmp->pID, &buf[0], (DWORD)buf.size ());
+			}
+		}
 	}
 }
 
@@ -4821,6 +5053,7 @@ static void DgDefEnterPrep(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon, DWORD 
 	int nSec = DgDefPrepSec (pDungeon);
 
 	pCh->byDefPhase = DGDEF_PHASE_PREP;
+	pCh->nEnemyLeft = -1;
 	pCh->dwDefPhaseStart = dwNow;
 	DgDefRecoverAll (pCh);
 	DgDefSay (pCh, "def_wave_coming", "wave", std::to_string (pCh->nWave), "total", std::to_string (DgDefWaveCount (pDungeon)), "seconds", std::to_string (nSec));
@@ -4833,13 +5066,21 @@ static void DgDefFinish(CHALLENGE *pCh, BYTE byResult, DWORD dwNow)
 	pCh->dwDefEnd = dwNow ? dwNow : 1;
 	DgDefRemoveEnemies (pCh);
 	DgDefSay (pCh, (byResult == DGDEF_RESULT_WIN) ? "def_win" : "def_base_fallen");
+	DgDefStatusSend (pCh, dwNow, NULL, TRUE);
 }
 
-/* 倒れた人の復活待ちと、泉（拠点の近くで Mana が戻る） */
+/* 倒れた人の復活待ちと、泉（泉の中心の近くで Mana が戻る。中心は設定で拠点から離せる） */
 static void DgDefMembers(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon, PCHARINFO pBase, DWORD dwNow)
 {
 	BOOL bSpring = ((int)(dwNow - pCh->dwDefSpring) >= DGDEF_SPRING_INTERVAL);
-	int nRange = pDungeon->byDefSpringRange ? (int)pDungeon->byDefSpringRange : DGDEF_SPRING_RANGE;
+	DWORD dwSpringPct = pDungeon->byDefSpringPct ? (DWORD)pDungeon->byDefSpringPct : (DWORD)DGDEF_SPRING_PERCENT;	/* 泉で戻る割合（%） */
+	/* 泉の中心：設定が両方 0 なら拠点の位置（古いデータ互換） */
+	BOOL bSpringPos = (pDungeon->byDefSpringX || pDungeon->byDefSpringY);
+	int nSpringX = bSpringPos ? (int)pDungeon->byDefSpringX : (pBase ? (int)pBase->dwX : 0);
+	int nSpringY = bSpringPos ? (int)pDungeon->byDefSpringY : (pBase ? (int)pBase->dwY : 0);
+	/* 泉の広さ：位置を決めた時はそのマス 1 つだけ。決めていない時は拠点のまわり 1 マス（拠点のマスには乗れないため）。
+	   範囲の設定（byDefSpringRange）は使わない（2026-11-21 泉は 1 マスで十分に） */
+	int nRange = bSpringPos ? 0 : 1;
 	size_t j;
 
 	if (bSpring) {
@@ -4855,13 +5096,25 @@ static void DgDefMembers(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon, PCHARINF
 		DGDEFDEAD &dd = pCh->mapDead[dwTbl];
 		if ((p->wHP == 0) || (p->byCharState == CHARSTATE_DEAD)) {
 			if (dd.dwReviveAt == 0) {
-				/* 倒れたばかり：すぐ拠点の横へ移して、倒れたまま待つ */
+				/* 倒れたばかり：すぐ「入ってすぐの位置」（中の開始位置。無ければ入口＝開始位置）へ移して、倒れたまま待つ。
+				   2026-11-21 拠点の横だと戦っていた場所とほぼ同じで、起きてすぐ囲まれるため変えた（プレイヤーは重なれるので何人でも同じマス）。
+				   その位置がマップの外などおかしい時だけ、前と同じく拠点の横 */
 				int nSec, x, y;
+				DWORD dwInX, dwInY;
 
 				dd.nCount ++;
 				nSec = min (dd.nCount * DGDEF_REVIVE_STEP, DGDEF_REVIVE_MAX);
 				dd.dwReviveAt = (dwNow + (DWORD)nSec * 1000) ? (dwNow + (DWORD)nSec * 1000) : 1;
-				if (pBase && DgDefFindSeat (p, pBase, x, y)) {
+				if (!DungeonFixedInside (pDungeon, &dwInX, &dwInY)) {
+					dwInX = (DWORD)pDungeon->byStartX;
+					dwInY = (DWORD)pDungeon->byStartY;
+				}
+				if ((pDungeon->dwMapID < (DWORD)g_aMapInfo.GetSize ()) && g_aMapInfo[pDungeon->dwMapID] &&
+					((int)dwInX < g_aMapInfo[pDungeon->dwMapID]->nCX) && ((int)dwInY < g_aMapInfo[pDungeon->dwMapID]->nCY)) {
+					SendCmdFADEINOUT (p->pID, 0);
+					SubProcMapMove (p, pDungeon->dwMapID, dwInX, dwInY);
+					SpaceSendMapState (p);
+				} else if (pBase && DgDefFindSeat (p, pBase, x, y)) {
 					SendCmdFADEINOUT (p->pID, 0);
 					SubProcMapMove (p, pBase->dwMapID, (DWORD)x, (DWORD)y);
 					SpaceSendMapState (p);
@@ -4871,17 +5124,53 @@ static void DgDefMembers(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon, PCHARINF
 				DgDefRevive (p);
 				dd.dwReviveAt = 0;
 				DgMessage (p, pCh->byDungeonID, "def_revived", FALSE);
+				DgDefStatusSend (pCh, dwNow, p, FALSE);			/* 復活した人に帯の状態を送り直す */
 			}
 			continue;
 		}
 		dd.dwReviveAt = 0;
-		/* 泉：拠点から範囲内にいる間だけ、最大 Mana の 10% ずつ戻る */
-		if (bSpring && pBase && (p->wMana < p->wMaxMana) && (p->dwMapID == pBase->dwMapID) &&
-			(abs ((int)p->dwX - (int)pBase->dwX) <= nRange) && (abs ((int)p->dwY - (int)pBase->dwY) <= nRange)) {
-			DWORD dwMana = (DWORD)p->wMana + max ((DWORD)p->wMaxMana / 10, (DWORD)1);
+		/* 泉：泉のマスにいる間だけ、HP と Mana が最大値の dwSpringPct %（最低 1）ずつ戻る（2026-11-21 HP も戻すことに） */
+		if (bSpring && pBase) {
+			BOOL bIn = (p->dwMapID == pBase->dwMapID) &&
+				(abs ((int)p->dwX - nSpringX) <= nRange) && (abs ((int)p->dwY - nSpringY) <= nRange);
 
-			p->wMana = (WORD)min (dwMana, (DWORD)p->wMaxMana);
-			SendCmdCHARSTATUSHPMANA (p->dwTblID, p->dwTblID);
+			if (!bIn) {
+				dd.dwSpringFx = 0;								/* 泉の外：次に入った時は最初に戻った時にエフェクトを出す */
+			} else if ((p->wHP < p->wMaxHP) || (p->wMana < p->wMaxMana)) {
+				DWORD dwHP = (DWORD)p->wHP, dwMana = (DWORD)p->wMana;
+				int nGainHP, nGainMana;
+				char szTmp[32];
+
+				if (p->wHP < p->wMaxHP) {
+					dwHP = min (dwHP + max ((DWORD)p->wMaxHP * dwSpringPct / 100, (DWORD)1), (DWORD)p->wMaxHP);
+				}
+				if (p->wMana < p->wMaxMana) {
+					dwMana = min (dwMana + max ((DWORD)p->wMaxMana * dwSpringPct / 100, (DWORD)1), (DWORD)p->wMaxMana);
+				}
+				nGainHP = (int)dwHP - (int)p->wHP;
+				nGainMana = (int)dwMana - (int)p->wMana;
+				p->wHP = (WORD)dwHP;
+				p->wMana = (WORD)dwMana;
+				if (nGainHP > 0) {
+					SendCmdCHARSTATUSHP (URARASOCK_SENDALL, p->dwTblID);	/* HP は周りの人の表示にも */
+				}
+				SendCmdCHARSTATUSHPMANA (p->dwTblID, p->dwTblID);
+				/* 宿の回復と同じ見た目：増えた数の数字は毎回（HP・Mana それぞれ）、キラッとしたエフェクトは最初と 3 秒おき */
+				if (nGainHP > 0) {
+					wsprintf (szTmp, "%d", nGainHP);
+					SendCmdADDCHAREFC (p->dwTblID, RGB (139, 213, 255), szTmp);
+				}
+				if (nGainMana > 0) {
+					wsprintf (szTmp, "%d", nGainMana);
+					SendCmdADDCHAREFC (p->dwTblID, RGB (139, 213, 255), szTmp);
+				}
+				if ((dd.dwSpringFx == 0) || ((int)(dwNow - dd.dwSpringFx) >= DGDEF_SPRING_FX_INTERVAL)) {
+					dd.dwSpringFx = dwNow ? dwNow : 1;
+					p->byEfect = EFECTTYPE_HOIMI;
+					SendCmdEFECTCHG (p->pID, p->dwTblID, p->byEfect);
+					p->byEfect = 0;
+				}
+			}
 		}
 	}
 }
@@ -4940,8 +5229,20 @@ static void DgDefProc(CHALLENGE &Ch, PSUBGAME_DUNGEONINFO pDungeon, DWORD dwNow)
 				Ch.nWave ++;
 				DgDefEnterPrep (&Ch, pDungeon, dwNow);
 			}
+		} else {
+			/* 敵が倒されて残りが減った：組の全員に残り敵を知らせる（1 秒の間に何体倒れても最後の数を 1 回。0 の時は上の「しのいだ」が出る） */
+			int nLeft = DgDefEnemyLeft (&Ch, pDungeon);
+
+			if ((Ch.nEnemyLeft >= 0) && (nLeft < Ch.nEnemyLeft) && (nLeft > 0)) {
+				DgDefSay (&Ch, "def_enemy_left", "count", std::to_string (nLeft));
+			}
+			Ch.nEnemyLeft = nLeft;
 		}
 	}
+	/* 画面の帯：変わった時（準備中は残り秒が変わるので1秒ごと）と、一定時間ごとに送る */
+	DgDefStatusSend (&Ch, dwNow, NULL, FALSE);
+	/* 全体地図：敵・仲間の位置を毎回（約 1 秒ごと）組の全員へ */
+	DgDefMapSend (&Ch, pDungeon);
 }
 
 /* 周期処理（約 1 秒ごと）：選ぶ締め切り・中の人が出た判定・空間ごとの敵の補充・空になった空間を空きにする */

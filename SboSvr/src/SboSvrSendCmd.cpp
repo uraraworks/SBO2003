@@ -1891,6 +1891,27 @@ void SendCmdDUNGEONSEL(DWORD pIDSend, PCMDPARA_DUNGEONSEL pPara)
 }
 
 /* ========================================================================= */
+/* 関数名：SendCmdDGDEFSTATUS												 */
+/* 内容：コマンド送信(番外編の拠点防衛：拠点HP・波の状態。その人にだけ)		 */
+/* ========================================================================= */
+void SendCmdDGDEFSTATUS(DWORD pIDSend, PCMDPARA_DGDEFSTATUS pPara)
+{
+	pPara->byCmd = CMD_DGDEFSTATUS;
+	svrSock.SendTo (pIDSend, (PBYTE)pPara, sizeof (CMDPARA_DGDEFSTATUS), SENDTIMEOUT);
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdDGDEFMAP													 */
+/* 内容：コマンド送信(番外編の拠点防衛：全体地図。その人にだけ)				 */
+/* 備考：CMDPARA_DGDEFMAP＋仲間の位置＋敵の座標を呼び出し側で組み立てて渡す	 */
+/* ========================================================================= */
+void SendCmdDGDEFMAP(DWORD pIDSend, PBYTE pData, DWORD dwSize)
+{
+	((PCMDPARA_DGDEFMAP)pData)->byCmd = CMD_DGDEFMAP;
+	svrSock.SendTo (pIDSend, pData, dwSize, SENDTIMEOUT);
+}
+
+/* ========================================================================= */
 /* 関数名：SendCmdSYSMSGMAP													 */
 /* 内容：コマンド送信(マップ内システムメッセージ)							 */
 /* 日付：2004/01/31															 */
@@ -2960,6 +2981,11 @@ void SendCmdSUBGAMEINFO(DWORD pIDSend, int nNo)
 			pDungeon->byDefPrepSec = pDungeonInfo->byDefPrepSec;
 			pDungeon->wDefWaveMaxSec = pDungeonInfo->wDefWaveMaxSec;
 			pDungeon->byDefSpringRange = pDungeonInfo->byDefSpringRange;
+			pDungeon->byDefSpringX = pDungeonInfo->byDefSpringX;
+			pDungeon->byDefSpringY = pDungeonInfo->byDefSpringY;
+			pDungeon->byFixStartX = pDungeonInfo->byFixStartX;
+			pDungeon->byFixStartY = pDungeonInfo->byFixStartY;
+			pDungeon->byDefSpringPct = pDungeonInfo->byDefSpringPct;
 			CopyMemory (pDungeon->szMessages, pDungeonInfo->szMessages, sizeof (pDungeon->szMessages));
 		}		
 		break;
