@@ -690,6 +690,7 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 						m_pParaCharInfo->byAreaY = pChar->byAreaY;
 						m_pParaCharInfo->byPutCount = pChar->byPutCount;
 						m_pParaCharInfo->byPutOnce = pChar->byPutOnce;
+						m_pParaCharInfo->byPutWave = pChar->byPutWave;
 						m_pParaCharInfo->byDropProbability = pChar->byDropProbability;
 						m_pParaCharInfo->byMoveProbabilityX = pChar->byMoveProbabilityX;
 						m_pParaCharInfo->byMoveProbabilityY = pChar->byMoveProbabilityY;
@@ -723,6 +724,8 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 						wsprintf (szTmp, "%d", m_pParaCharInfo->byPutCount);
 						SetWindowText (m_hWndEdit14, szTmp);
 						CheckDlgButton (g_hWndAdmin, IDC_CHAR_PUTONCE, m_pParaCharInfo->byPutOnce ? BST_CHECKED : BST_UNCHECKED);
+						wsprintf (szTmp, "%d", m_pParaCharInfo->byPutWave);
+						SetWindowText (GetDlgItem (g_hWndAdmin, IDC_CHAR_PUTWAVE), szTmp);
 						wsprintf (szTmp, "%d", m_pParaCharInfo->wTimePutInterval);
 						SetWindowText (m_hWndEdit15, szTmp);
 						m_pParaCharInfo->wShowFlagNo = CharFlagWireFix (pChar->wShowFlag);
@@ -954,6 +957,7 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 			m_pParaCharInfo->byAreaY = pPara->byAreaY;
 			m_pParaCharInfo->byPutCount = pPara->byPutCount;
 			m_pParaCharInfo->byPutOnce = pPara->byPutOnce;
+			m_pParaCharInfo->byPutWave = pPara->byPutWave;
 			m_pParaCharInfo->byDropProbability = pPara->byDropProbability;
 			m_pParaCharInfo->byMoveProbabilityX = pPara->byMoveProbabilityX;
 			m_pParaCharInfo->byMoveProbabilityY = pPara->byMoveProbabilityY;
@@ -999,6 +1003,8 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 				wsprintf (szTmp, "%d", m_pParaCharInfo->byPutCount);
 				SetWindowText (m_hWndEdit14, szTmp);
 				CheckDlgButton (g_hWndAdmin, IDC_CHAR_PUTONCE, m_pParaCharInfo->byPutOnce ? BST_CHECKED : BST_UNCHECKED);
+				wsprintf (szTmp, "%d", m_pParaCharInfo->byPutWave);
+				SetWindowText (GetDlgItem (g_hWndAdmin, IDC_CHAR_PUTWAVE), szTmp);
 				wsprintf (szTmp, "%d", m_pParaCharInfo->wTimePutInterval);
 				SetWindowText (m_hWndEdit15, szTmp);
 				m_pParaCharInfo->wShowFlagNo = pPara->wShowFlagNo;
@@ -2779,6 +2785,9 @@ void AdminOnCommandCharInfo(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 			m_pParaCharInfo->byPutCount = (BYTE)atoi (pszTmp);
 			/* 補充しない（出し切り）：数だけ出したらあとは補充しない */
 			m_pParaCharInfo->byPutOnce = (IsDlgButtonChecked (g_hWndAdmin, IDC_CHAR_PUTONCE) == BST_CHECKED) ? 1 : 0;
+			/* 拠点防衛の波番号（0=ふつう） */
+			GetWindowText (GetDlgItem (g_hWndAdmin, IDC_CHAR_PUTWAVE), pszTmp, 4);
+			m_pParaCharInfo->byPutWave = (BYTE)atoi (pszTmp);
 
 			ZeroMemory (pszTmp, nSize);
 			GetWindowText (m_hWndEdit15, pszTmp, 6);
@@ -6426,6 +6435,7 @@ void AdminOnPaintCharInfo(HDC hDC)
 	MyTextOut (hDC, 0, 12 * 18, "移動範囲Y:");
 	MyTextOut (hDC, 0, 12 * 19, "発生数:");
 	MyTextOut (hDC, 0, 12 * 20, "発生周期(秒):");
+	MyTextOut (hDC, 0, 12 * 21, "防衛の波:");
 	MyTextOut (hDC, 12 * 22, 12 * 20, "見える印(のみ):");
 	MyTextOut (hDC, 12 * 22, 12 * 21 + 4, "見えない印:");
 
@@ -8694,6 +8704,13 @@ void MakeAdminWndCharInfo(void)
 		SendMessage (hWndOnce, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 	}
 
+	/* 拠点防衛の波番号（0=ふつう。1〜=防衛モードの組の空間で、その波の時だけ出す） */
+	{
+		HWND hWndWave = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_NUMBER,
+				12 * 7, 12 * 21, 24, 11, g_hWndAdmin, (HMENU)(INT_PTR)IDC_CHAR_PUTWAVE, g_hInstance, NULL);
+		SendMessage (hWndWave, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+	}
+
 	/* 発生周期 */
 	m_hWndEdit15 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
 			12 * 7, 12 * 20, 24, 11, g_hWndAdmin, NULL, g_hInstance, NULL);
@@ -8828,6 +8845,7 @@ void DeleteAdminWndCharInfo(void)
 	SAFE_DESTROYWND (m_hWndButton14);
 	SAFE_DESTROYWND (m_hWndButtonTalk);
 	DestroyWindow (GetDlgItem (g_hWndAdmin, IDC_CHAR_PUTONCE));
+	DestroyWindow (GetDlgItem (g_hWndAdmin, IDC_CHAR_PUTWAVE));
 	DestroyWindow (GetDlgItem (g_hWndAdmin, IDC_CHAR_SHOWFLAG));
 	DestroyWindow (GetDlgItem (g_hWndAdmin, IDC_CHAR_SHOWFLAGN));
 	DestroyWindow (GetDlgItem (g_hWndAdmin, IDC_CHAR_HIDEFLAG));

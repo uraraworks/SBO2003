@@ -49,6 +49,7 @@ void MakeDungeonProc(BYTE);												/* ダンジョン作成処理 */
 void MakeDungeonProcEx(BYTE, int);										/* ダンジョン作成処理(日替わりの版の決め方を指定。DGDAILY_*) */
 BOOL DungeonDailyRebuildNow(int, std::string &);						/* 日替わりダンジョンを今すぐ作り直す（管理者。中の組は外へ戻す） */
 static void SubGameProc_DUNGEON_DAILY(int, PSUBGAME_DUNGEONINFO);		/* 日替わりダンジョンの周期処理 */
+static void SubGameProc_DUNGEON_FIXED(PSUBGAME_DUNGEONINFO);			/* 作り直さない（固定の形）ダンジョンの周期処理 */
 static BOOL DungeonGenSize(PSUBGAME_DUNGEONINFO, int *, int *);			/* 生成の大きさ（範囲の大きさ。8〜128 に収まらなければ FALSE） */
 static BOOL MakeDungeonProcTmp(PBYTE, int, int, int, int, int);			/* ダンジョン作成処理(メイン) */
 static BOOL MakeDungeonByTheme(int, PSUBGAME_DUNGEONINFO, PMAPINFO, int);	/* ダンジョン作成処理(テーマで生成) */
@@ -467,6 +468,11 @@ static void SubGameProc_DUNGEON(PSUBGAMEINFO pInfo)
 
 	/* 作成中ではない */
 	} else {
+		/* 固定の形：作り直さない（手で作ったマス目をそのまま使う）。入口のワープだけ用意する */
+		if (pDungeon->byRebuildMode == DGREBUILD_FIXED) {
+			SubGameProc_DUNGEON_FIXED (pDungeon);
+			return;
+		}
 		/* 日替わり：日付が変わっていて無人の時だけ作り直す。無人 5 秒の作り直しはしない（形は変わらない） */
 		if ((pDungeon->byRebuildMode == DGREBUILD_DAILY) && pDungeon->dwThemeID) {
 			SubGameProc_DUNGEON_DAILY (g_nProcSubGame, pDungeon);
@@ -524,6 +530,49 @@ static void SubGameProc_DUNGEON(PSUBGAMEINFO pInfo)
 		pDungeon->dwTblIDCheck ++;
 		pDungeon->dwTblIDCheck = (pDungeon->dwTblIDCheck >= (DWORD)g_aCharInfo.GetSize ()) ? 0 : pDungeon->dwTblIDCheck;
 	}
+}
+
+/* ========================================================================= */
+/* 関数名：SubGameProc_DUNGEON_FIXED										 */
+/* 内容：作り直さない（固定の形）ダンジョンの周期処理（約 1 秒ごとに見る）	 */
+/* 備考：範囲のマス目・生成結果・探索マップ用の情報は作らない（触らない）。	 */
+/*       番外編（テンプレートあり）の入口のマス（byStartX・byStartY）に、	 */
+/*       何のイベントも無ければ、そのマスの上に立ったままにするワープを置く。 */
+/*       入った組はそのマスに立つので、一度離れて戻ると途中で帰る			 */
+/* ========================================================================= */
+static void SubGameProc_DUNGEON_FIXED(PSUBGAME_DUNGEONINFO pDungeon)
+{
+	DWORD dwNow = timeGetTime ();
+	PMAPINFO pMap;
+
+	if (pDungeon->dwDailyCheck && (dwNow - pDungeon->dwDailyCheck < 1000)) {
+		return;
+	}
+	pDungeon->dwDailyCheck = dwNow ? dwNow : 1;
+	if ((pDungeon->byTmplCount == 0) || (pDungeon->dwMapID >= (DWORD)g_aMapInfo.GetSize ()) || (g_aMapInfo[pDungeon->dwMapID] == NULL)) {
+		return;
+	}
+	pMap = g_aMapInfo[pDungeon->dwMapID];
+	if (((int)pDungeon->byStartX >= pMap->nCX) || ((int)pDungeon->byStartY >= pMap->nCY)) {
+		return;
+	}
+	if (SearchEvent (pDungeon->dwMapID, (DWORD)pDungeon->byStartX, (DWORD)pDungeon->byStartY) >= 0) {
+		return;
+	}
+	int nNo = AddEvent (pMap->dwID);
+	PEVENTINFO pEvent = &pMap->pEvent[nNo];
+	pEvent->dwX = (DWORD)pDungeon->byStartX;
+	pEvent->dwY = (DWORD)pDungeon->byStartY;
+	pEvent->byType = EVENTTYPE_MAPCHG;
+	int nSize = GetEventDataSize (EVENTTYPE_MAPCHG);
+	pEvent->pData = new BYTE[nSize];
+	ZeroMemory (pEvent->pData, nSize);
+	PEVENTINFO_MAPCHG pMapChg = (PEVENTINFO_MAPCHG)pEvent->pData;
+	pMapChg->dwMapID = pMap->dwID;
+	pMapChg->dwX = (DWORD)pDungeon->byStartX;
+	pMapChg->dwY = (DWORD)pDungeon->byStartY;
+	pMapChg->byEfect = EVENTMOVEEFECT_SILENT;
+	SendCmdEVENTPOS (URARASOCK_SENDALL, pMap->dwID);
 }
 
 /* ========================================================================= */
@@ -2037,6 +2086,11 @@ void MakeDungeonProcEx(BYTE byID, int nHow)
 
 	/* 現在作成中？ */
 	if (pDungeon->pMapTmp) {
+		return;
+	}
+	/* 固定の形は作らない（作成ボタンを押されても、手で作ったマス目をそのまま使う） */
+	if (pDungeon->byRebuildMode == DGREBUILD_FIXED) {
+		SendCmdSYSMSGMAP (pDungeon->dwMapID, "SYSTEM:作り直さない設定のダンジョンです（作成しません）。");
 		return;
 	}
 

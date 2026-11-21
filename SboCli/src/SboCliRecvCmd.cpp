@@ -5057,6 +5057,7 @@ void RecvDataProcCHARINFO(PBYTE pData, DWORD dwDataSize)
 	pCharDst->byAreaY				= pChar->byAreaY;
 	pCharDst->byPutCount			= pChar->byPutCount;
 	pCharDst->byPutOnce				= pChar->byPutOnce;
+	pCharDst->byPutWave				= pChar->byPutWave;
 	pCharDst->byDropProbability		= pChar->byDropProbability;
 	pCharDst->byMoveProbabilityX	= pChar->byMoveProbabilityX;
 	pCharDst->byMoveProbabilityY	= pChar->byMoveProbabilityY;
@@ -7669,6 +7670,12 @@ void RecvDataProcSUBGAMEINFO(BYTE *pData, DWORD dwDataSize)
 				CopyMemory (pDungeonInfo->szTmplName, pDungeon->szTmplName, sizeof (pDungeonInfo->szTmplName));
 				pDungeonInfo->byRebuildMode = pDungeon->byRebuildMode;
 				pDungeonInfo->byClearMode = pDungeon->byClearMode;
+				pDungeonInfo->wDefBaseHP = pDungeon->wDefBaseHP;
+				pDungeonInfo->wDefBaseStTmp = pDungeon->wDefBaseStTmp;
+				pDungeonInfo->byDefWaveCount = pDungeon->byDefWaveCount;
+				pDungeonInfo->byDefPrepSec = pDungeon->byDefPrepSec;
+				pDungeonInfo->wDefWaveMaxSec = pDungeon->wDefWaveMaxSec;
+				pDungeonInfo->byDefSpringRange = pDungeon->byDefSpringRange;
 				if (dwDataSize >= sizeof (CMDPARA_DATA1) + sizeof (SUBGAME_DUNGEONINFOSAVE)) {
 					CopyMemory (pDungeonInfo->szMessages, pDungeon->szMessages, sizeof (pDungeonInfo->szMessages));
 				}

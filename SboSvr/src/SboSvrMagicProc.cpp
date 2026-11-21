@@ -154,6 +154,12 @@ static BOOL MagicProcSub(DWORD dwTblID, BYTE byID, DWORD dwTblIDTarget, BOOL bIt
 		goto Exit;
 	}
 
+	/* 拠点防衛の拠点は、プレイヤー・傭兵の特技の相手にならない */
+	if ((dwTblIDTarget < (DWORD)g_aCharInfo.GetSize ()) && DgIsDefenseBase (g_aCharInfo[dwTblIDTarget]) &&
+		((pChar->byNpcType == NPCTYPE_INIT) || (pChar->byNpcType == NPCTYPE_MERCENARY))) {
+		goto Exit;
+	}
+
 	/* 眠っている間は使えない */
 	if (IsSleep (pChar)) {
 		goto Exit;

@@ -127,6 +127,9 @@ extern void DungeonMapRecv(PCHARINFO, PCMDPARA_DUNGEONMAPDIFF, DWORD);
 extern int  DungeonRunCount(void);								/* 番外編ダンジョンの空間（組）の数（テスト用） */
 extern int  DungeonSelCount(void);								/* 姿を選んでいる組の数（テスト用） */
 extern int  DungeonSelMemberCount(PCHARINFO pChar);				/* その人がいる選び中の組の人数（テスト用） */
+extern BOOL DgIsDefenseEnemy(PCHARINFO pChar);					/* 拠点防衛の組の空間で出た敵か（NPC発生から出たキャラ。拠点・傭兵・矢は含まない。敵の行進用） */
+extern PCHARINFO DgDefenseBaseOf(DWORD dwSpaceID);				/* 拠点防衛の組の空間の拠点キャラ（その空間が防衛でない・終わっていれば NULL。敵の行進用） */
+extern BOOL DgIsDefenseBase(PCHARINFO pChar);					/* 拠点防衛の組の拠点キャラか（プレイヤーからは攻撃できない・自分では攻撃しない） */
 extern int  DungeonRunLeaveAll(int nDungeonID, const char *pszMsg);	/* そのダンジョンの中の組の全員に pszMsg を知らせて、外へ戻す（作り直し）。戻した人数 */
 
 /* 空間（同じマップの同じ場所でも、別の空間の人とは出会わない。討伐チャレンジの組ごとに 1 つ作る） */

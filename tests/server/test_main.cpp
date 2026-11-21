@@ -1122,6 +1122,7 @@ static void TestPutFill(void);
 static void TestDungeonTheme(void);
 static void TestDungeonBonus(const std::vector<int> &aLogin);
 static void TestDungeonDaily(const std::vector<int> &aLogin);
+static void TestDungeonDefense(const std::vector<int> &aLogin);
 extern void SubGameProc(DWORD);
 extern BOOL DungeonDailyRebuildNow(int, std::string &);
 extern "C" const char *SboWebDataDungeonRecords(int nID, int nVerNo, int bTheme);
@@ -1671,6 +1672,8 @@ static void TestWorld(void)
 	TestDungeonBonus(aLogin);
 	/* AP. 番外編ダンジョン（段階2。日替わり・最短記録・クリア条件。AO の後ろ） */
 	TestDungeonDaily(aLogin);
+	/* AQ. 番外編ダンジョン（拠点防衛モード。作り直さない固定の形・波・拠点・復活・勝ち負け。AP の後ろ） */
+	TestDungeonDefense(aLogin);
 	/* L3. 戦闘でばらけた列は、マップ移動後も戻り先を覚えている */
 	TestTailBattleMapMove(aLogin);
 }
@@ -3586,6 +3589,9 @@ EM_JS(int, MockCmdCount, (int nConn, int nCmd), {
 });
 EM_JS(int, MockCmdLen, (int nConn), {
 	return Module['sboNet'].cmdLen(nConn);
+});
+EM_JS(int, MockHasText, (int nConn, int nCmd, const char *psz), {
+	return Module['sboNet'].hasText(nConn, nCmd, UTF8ToString(psz));
 });
 /* nFrom 番目以降で、コマンド nA が全部 nB より前なら 1、逆なら 0、どちらかが無ければ -1 */
 EM_JS(int, MockCmdBefore, (int nConn, int nFrom, int nA, int nB), {
@@ -13923,6 +13929,435 @@ static void TestDungeonDaily(const std::vector<int> &aLogin)
 	g_nProcSubGame = 0;
 	s_dwFakeNow = dwNowBack + 400000;
 	printf("dungeondaily end runs=%d sel=%d\n", DungeonRunCount(), DungeonSelCount());
+}
+
+/* ------------------------------------------------------------------------- */
+/* AQ. 番外編ダンジョン（拠点防衛モード・段階1）								 */
+/*     作り直さない固定の形・拠点ができる・波ごとに敵が出る（波番号の違う発生元は */
+/*     出ない）・波の終わりで準備時間と全回復・最後の波で勝ち・拠点HP 0 で負け・	 */
+/*     倒れた人は拠点の横で待って（回数×5秒）起き上がる・全員倒れても終わらない・ */
+/*     泉でだけ Mana が戻る・どちらの結果も10秒後に全員帰還・保存と読み直し		 */
+/*     （敵の行進・拠点を殴る動きは別の担当。ここでは拠点HPを直接減らして確かめる）*/
+/* ------------------------------------------------------------------------- */
+static void TestDungeonDefense(const std::vector<int> &aLogin)
+{
+	printf("== AQ. Dungeon defense ==\n");
+	if (aLogin.size() < 2) {
+		return;
+	}
+	int nMapNo = -1;
+	for (int i = 0; i < g_aMapInfo.GetSize(); i ++) {
+		if (g_aMapInfo[i] && g_aMapInfo[i]->nCX >= 60 && g_aMapInfo[i]->nCY >= 60 && g_aMapInfo[i]->pwMap) {
+			nMapNo = i;
+			break;
+		}
+	}
+	if (nMapNo < 0) {
+		printf("dungeondefense no map\n");
+		return;
+	}
+	PMAPINFO pMap = g_aMapInfo[nMapNo];
+	std::vector<WORD> aMapBack(pMap->pwMap, pMap->pwMap + pMap->nCX * pMap->nCY);
+	PEVENTINFO pEventBack = pMap->pEvent;
+	int nEventBack = pMap->nEventCount;
+	pMap->pEvent = NULL;
+	pMap->nEventCount = 0;
+	DWORD dwNowBack = s_dwFakeNow;
+	MockTrace(1);
+
+	/* 手で作った形：範囲（9,3)-(22,12) と、その周りを床で埋める（作り直さないので、地形はそのまま使われる） */
+	WORD wFloor = 1;
+	for (int y = 2; y <= 13; y ++) {
+		for (int x = 2; x <= 23; x ++) pMap->pwMap[x + y * pMap->nCX] = wFloor;
+	}
+	unsigned hMapBefore = 0;
+	for (int y = 3; y <= 12; y ++) for (int x = 9; x <= 22; x ++) hMapBefore = hMapBefore * 31 + pMap->pwMap[x + y * pMap->nCX];
+
+	PCHARINFO pA = g_aCharInfo[aLogin[0]];
+	CHARINFO aBack;
+	TestCharBackup(&aBack, pA);
+	pA->byAdminLV = ADMINLV_USER;
+	pA->dwPartyID = 0;
+	pA->dwSpaceID = SPACE_NORMAL;
+	pA->dwTargetTblID = (DWORD)-1;
+	pA->wQuestID = 0; pA->byQuestStep = 0; pA->wQuestFlg = 0;
+	pA->byLevel = 30; pA->byPW = 99; pA->wMaxHP = 500; pA->wHP = 480; pA->wMaxMana = 90; pA->wMana = 80; pA->dwGold = 5000;
+	ZeroMemory(pA->waItem, sizeof(pA->waItem));
+	for (int k = 0; k < MAX_EQUTYPE; k ++) pA->waEqu[k] = 0xFFFF;
+
+	int nSt1 = g_aStTmpInfo.GetSize();
+	{
+		PSTATUSTEMPLATEINFO t = new STATUSTEMPLATEINFO;
+		ZeroMemory(t, sizeof(*t));
+		strcpy(t->szName, "守り手の姿");
+		t->byLevel = 7; t->byPW = 11; t->byDEX = 12; t->byST = 13; t->byIT = 14; t->byLK = 15;
+		t->wMaxHP = 60; t->wMaxMana = 50;
+		g_aStTmpInfo.Add(t);
+	}
+
+	SUBGAME_DUNGEONINFO Info;
+	ZeroMemory(&Info, sizeof(Info));
+	Info.dwMapID = pMap->dwID;
+	Info.byX1 = 9; Info.byY1 = 3; Info.byX2 = 22; Info.byY2 = 12;
+	Info.byStartX = 10; Info.byStartY = 6;					/* 入口＝入った人が立つマス */
+	Info.byGoalX = 20; Info.byGoalY = 8;					/* 拠点 */
+	Info.dwTblID = (DWORD)-1;
+	Info.dwThemeID = 0;										/* テーマなし */
+	Info.byTmplCount = 1;
+	Info.wTmplID[0] = (WORD)nSt1; strcpy(Info.szTmplName[0], "守り手");
+	Info.byRebuildMode = DGREBUILD_FIXED;
+	Info.byClearMode = DGCLEAR_DEFENSE;
+	Info.wDefBaseHP = 100;
+	Info.byDefWaveCount = 2;
+	Info.byDefPrepSec = 3;
+	Info.wDefWaveMaxSec = 300;								/* 最初の run は長め（時間切れは run 2 で試す） */
+	Info.byDefSpringRange = 2;
+	SUBGAMEINFO Sub;
+	ZeroMemory(&Sub, sizeof(Sub));
+	Sub.byType = SUBGAMEID_DUNGEON;
+	Sub.pInfo = &Info;
+	g_aSubaGameInfo.Add(&Sub);
+	BYTE byID = (BYTE)(g_aSubaGameInfo.GetSize() - 1);
+
+	/* 1. 固定の形は作らない（作成ボタンを押しても地形・生成情報は何も変わらない）。入口のワープだけ用意する */
+	MakeDungeonProc(byID);
+	g_nProcSubGame = byID;
+	SubGameProc(byID);
+	unsigned hMapAfter = 0;
+	for (int y = 3; y <= 12; y ++) for (int x = 9; x <= 22; x ++) hMapAfter = hMapAfter * 31 + pMap->pwMap[x + y * pMap->nCX];
+	PEVENTINFO pEntry = NULL;
+	for (int i = 0; i < pMap->nEventCount; i ++) {
+		PEVENTINFO pE = &pMap->pEvent[i];
+		if (pE->byType == EVENTTYPE_MAPCHG && pE->dwX == 10 && pE->dwY == 6) pEntry = pE;
+	}
+	printf("dungeondefense fixed map-same=%d gen=%d buildNo=%lu automap=%d entry=%d events=%d\n", (int)(hMapBefore == hMapAfter),
+		(int)(Info.pwGenParts != NULL), (unsigned long)Info.dwBuildNo, (int)(Info.pbyAutoMap != NULL), (int)(pEntry != NULL), pMap->nEventCount);
+	SubGameProc(byID);
+	printf("dungeondefense fixed events-again=%d\n", pMap->nEventCount);
+	if (!pEntry) {
+		return;
+	}
+
+	/* 敵の発生元：波 1（2 体）・波 2（1 体）・ふつう（0。防衛の空間では出ない） */
+	auto MakePut = [&](BYTE byWave, BYTE byCount, int x, int y, WORD wInterval) -> DWORD {
+		PCHARINFO pPut = new CHARINFO;
+		ZeroMemory((PBYTE)pPut, sizeof(CHARINFO));
+		pPut->byNpcType = NPCTYPE_PUT;
+		SetInitCharData(pPut);
+		pPut->byGameState = GAMESTATE_NPC;
+		pPut->byCharState = CHARSTATE_MOVE;
+		pPut->dwMapID = pMap->dwID;
+		pPut->dwX = pPut->dwXBack = pPut->dwStartX = (DWORD)x;
+		pPut->dwY = pPut->dwYBack = pPut->dwStartY = (DWORD)y;
+		pPut->byAreaX = 2; pPut->byAreaY = 2;
+		pPut->byPutCount = byCount;
+		pPut->byPutWave = byWave;
+		pPut->wTimePutInterval = wInterval;
+		pPut->wGrpID = 5;
+		pPut->wMaxHP = pPut->wHP = 30;
+		pPut->dwStTmplateID = (DWORD)-1;
+		strcpy(pPut->szName, "試しの魔物");
+		pPut = AddChar(pPut);
+		pPut->pID = pPut->dwTblID + 1;
+		CCharProcBase CharProcBase;
+		CharProcBase.SetProc(pPut);
+		return pPut->dwTblID;
+	};
+	DWORD dwPut1 = MakePut(1, 2, 17, 6, 0);
+	DWORD dwPut2 = MakePut(2, 1, 17, 10, 0);
+	DWORD dwPut0 = MakePut(0, 3, 15, 8, 0);
+	DWORD dwReception = DgTestReception(pMap->dwID, byID);
+	PutCharFillAll();
+	printf("dungeondefense put normal=%d,%d,%d spaced=%d\n", DgTestCountEnemy(dwPut1, SPACE_NORMAL), DgTestCountEnemy(dwPut2, SPACE_NORMAL),
+		DgTestCountEnemy(dwPut0, SPACE_NORMAL), (int)DungeonPutIsSpaced(g_aCharInfo[dwPut1]));
+
+	auto Tick = [&](int n) { for (int k = 0; k < n; k ++) { s_dwFakeNow += 1000; DungeonProcNow(s_dwFakeNow); } };
+	auto Say = [&](const char *psz) -> int { return MockHasText(DgTestConn(pA), CMD_SYSMSG, psz); };
+	auto Mark = [&]() { MockTrace(1); };
+	auto Enemies = [&](DWORD dwSpace) -> int { return DgTestCountEnemy(dwPut1, dwSpace) + DgTestCountEnemy(dwPut2, dwSpace) + DgTestCountEnemy(dwPut0, dwSpace); };
+	auto Enter = [&]() {
+		QuestMovePC(pA, nMapNo, 4, 5);
+		DgTestTalk(pA, dwReception);
+		DgTestSelPick(pA, 0);
+		QuestMovePC(pA, nMapNo, 10, 6);
+		DungeonEventStep(pA, pEntry);
+	};
+
+	/* 2. 入る：組の空間・拠点ができる・敵はまだ出ない */
+	Enter();
+	DWORD dwSpace = pA->dwSpaceID;
+	PCHARINFO pBase = DgDefenseBaseOf(dwSpace);
+	printf("dungeondefense enter in=%d run=%d space=%d base=%d\n", (int)QuestInDungeon(pA), DungeonRunCount(), (int)(dwSpace != SPACE_NORMAL), (int)(pBase != NULL));
+	if (!pBase) {
+		return;
+	}
+	printf("dungeondefense base name=%s type=%d pos=%lu,%lu hp=%d/%d space=%d isbase=%d enemy=%d player-enemy=%d normal-base=%d\n", pBase->szName, (int)pBase->byNpcType,
+		(unsigned long)pBase->dwX, (unsigned long)pBase->dwY, (int)pBase->wHP, (int)pBase->wMaxHP, (int)(pBase->dwSpaceID == dwSpace),
+		(int)DgIsDefenseBase(pBase), (int)DgIsDefenseEnemy(pBase), (int)DgIsDefenseEnemy(pA), (int)(DgDefenseBaseOf(SPACE_NORMAL) != NULL));
+	printf("dungeondefense player pos=%lu,%lu hp=%d/%d mana=%d/%d enemies=%d\n", (unsigned long)pA->dwX, (unsigned long)pA->dwY, (int)pA->wHP, (int)pA->wMaxHP,
+		(int)pA->wMana, (int)pA->wMaxMana, Enemies(dwSpace));
+
+	/* プレイヤーから拠点は攻撃できない */
+	{
+		pA->dwTargetTblID = pBase->dwTblID;
+		pA->dwLastBattle = 1;
+		BOOL bAtk = BattleProcAtack(pA, pBase);
+		printf("dungeondefense player-attack-base ret=%d hp=%d\n", (int)bAtk, (int)pBase->wHP);
+		pA->dwTargetTblID = (DWORD)-1;
+		pA->dwLastBattle = 0;
+	}
+
+	/* 3. 最初の波の前に準備時間（3 秒）。波 1 が始まると、波 1 の発生元だけが 1 体ずつ出す */
+	Mark();
+	Tick(1);
+	printf("dungeondefense prep coming=%d enemies=%d\n", Say("波 1/2 が来ます（3秒後）"), Enemies(dwSpace));
+	Tick(2);
+	printf("dungeondefense prep-2s enemies=%d start=%d\n", Enemies(dwSpace), Say("波 1 開始"));
+	Tick(1);
+	printf("dungeondefense wave1 start=%d put1=%d put2=%d put0=%d\n", Say("波 1 開始"), DgTestCountEnemy(dwPut1, dwSpace), DgTestCountEnemy(dwPut2, dwSpace), DgTestCountEnemy(dwPut0, dwSpace));
+	Tick(1);
+	printf("dungeondefense wave1 put1=%d put2=%d put0=%d normal=%d\n", DgTestCountEnemy(dwPut1, dwSpace), DgTestCountEnemy(dwPut2, dwSpace), DgTestCountEnemy(dwPut0, dwSpace),
+		Enemies(SPACE_NORMAL));
+	{
+		int nIsEnemy = 0, nIsOther = 0;
+		for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+			PCHARINFO p = g_aCharInfo[i];
+			if (!p || p->dwSpaceID != dwSpace || p->byGameState != GAMESTATE_NPC) continue;
+			if (DgIsDefenseEnemy(p)) nIsEnemy ++; else nIsOther ++;
+		}
+		printf("dungeondefense enemy-judge enemy=%d other=%d\n", nIsEnemy, nIsOther);
+	}
+	Tick(3);
+	printf("dungeondefense wave1 hold put1=%d wave-end=%d\n", DgTestCountEnemy(dwPut1, dwSpace), Say("波 1 をしのいだ"));
+
+	/* 4. 泉：拠点から遠いと Mana は戻らない（自然回復なし）・範囲内にいる間だけ最大Manaの 10% ずつ */
+	pA->wMana = 10;
+	Tick(2);
+	printf("dungeondefense spring far mana=%d\n", (int)pA->wMana);
+	QuestMovePC(pA, nMapNo, 19, 8);
+	Tick(2);
+	printf("dungeondefense spring near mana=%d\n", (int)pA->wMana);
+	QuestMovePC(pA, nMapNo, 17, 8);
+	Tick(2);
+	printf("dungeondefense spring out mana=%d\n", (int)pA->wMana);
+
+	/* 5. 拠点の HP：25% 刻みで下がった時だけ知らせる */
+	{
+		int n0 = SpCnt(pA, CMD_SYSMSG);
+		pBase->wHP = 90;
+		Tick(1);
+		int n1 = SpCnt(pA, CMD_SYSMSG);
+		pBase->wHP = 70;
+		Mark();
+		Tick(1);
+		int n2 = SpCnt(pA, CMD_SYSMSG);
+		BOOL b70 = Say("拠点が攻撃されています（HP 70%）");
+		pBase->wHP = 60;
+		Tick(1);
+		int n3 = SpCnt(pA, CMD_SYSMSG);
+		pBase->wHP = 40;
+		Mark();
+		Tick(1);
+		BOOL b40 = Say("拠点が攻撃されています（HP 40%）");
+		printf("dungeondefense base-hp notices 90%%=%d 70%%=%d(%d) 60%%=%d 40%%=%d\n", n1 - n0, n2 - n1, (int)b70, n3 - n2, (int)b40);
+		pBase->wHP = 100;
+	}
+
+	/* 6. 倒れる：その場に体を残さず拠点の横へ移る。回数×5秒で HP/Mana 満タンで起き上がる。お金は減らない。全員倒れても終わらない */
+	{
+		DWORD dwGold = pA->dwGold;
+		QuestMovePC(pA, nMapNo, 15, 6);
+		pA->wHP = 0; pA->byCharState = CHARSTATE_DEAD; pA->wMana = 3;
+		Mark();
+		Tick(1);
+		int dx = (int)pA->dwX - (int)pBase->dwX, dy = (int)pA->dwY - (int)pBase->dwY;
+		int dist = max(abs(dx), abs(dy));
+		printf("dungeondefense down1 dead=%d near-base=%d (dist=%d) down=%d inrun=%d\n", (int)(pA->byCharState == CHARSTATE_DEAD), (int)(dist >= 1 && dist <= 2), dist,
+			Say("倒れた…。5秒後に復活します。"), (int)QuestInDungeon(pA));
+		printf("dungeondefense down1 resurrect-button=%d inrun=%d\n", (int)QuestChallengeResurrection(pA), (int)QuestInDungeon(pA));
+		Tick(4);
+		printf("dungeondefense down1 +4s dead=%d runs=%d\n", (int)(pA->byCharState == CHARSTATE_DEAD), DungeonRunCount());
+		Mark();
+		Tick(1);
+		printf("dungeondefense down1 +5s dead=%d hp=%d/%d mana=%d/%d gold-kept=%d revived-msg=%d\n", (int)(pA->byCharState == CHARSTATE_DEAD), (int)pA->wHP, (int)pA->wMaxHP,
+			(int)pA->wMana, (int)pA->wMaxMana, (int)(pA->dwGold == dwGold), Say("復活しました"));
+		pA->wHP = 0; pA->byCharState = CHARSTATE_DEAD;
+		Mark();
+		Tick(1);
+		printf("dungeondefense down2 down=%d\n", Say("倒れた…。10秒後に復活します。"));
+		Tick(9);
+		printf("dungeondefense down2 +9s dead=%d\n", (int)(pA->byCharState == CHARSTATE_DEAD));
+		Tick(1);
+		printf("dungeondefense down2 +10s dead=%d hp=%d\n", (int)(pA->byCharState == CHARSTATE_DEAD), (int)pA->wHP);
+	}
+
+	/* 7. 敵を倒し切ると波が終わる：準備時間に入って全員 HP/Mana 全回復・次の波の知らせ → 波 2 の敵が出る */
+	{
+		std::vector<DWORD> aDel;
+		for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+			PCHARINFO p = g_aCharInfo[i];
+			if (p && DgIsDefenseEnemy(p)) aDel.push_back((DWORD)i);
+		}
+		pA->wHP = 20; pA->wMana = 1;
+		for (size_t i = 0; i < aDel.size(); i ++) DeleteChar(aDel[i]);
+		Mark();
+		Tick(1);
+		printf("dungeondefense wave1 clear killed=%d enemies=%d cleared=%d coming2=%d hp=%d/%d mana=%d/%d\n", (int)aDel.size(), Enemies(dwSpace), Say("波 1 をしのいだ"),
+			Say("波 2/2 が来ます（3秒後）"), (int)pA->wHP, (int)pA->wMaxHP, (int)pA->wMana, (int)pA->wMaxMana);
+		Tick(2);
+		printf("dungeondefense wave2 before enemies=%d\n", Enemies(dwSpace));
+		Tick(1);
+		printf("dungeondefense wave2 start=%d put1=%d put2=%d put0=%d\n", Say("波 2 開始"), DgTestCountEnemy(dwPut1, dwSpace), DgTestCountEnemy(dwPut2, dwSpace), DgTestCountEnemy(dwPut0, dwSpace));
+		/* 最後の波を倒すと勝ち：結果を知らせ、10 秒後に全員帰還（敵と拠点は消える） */
+		aDel.clear();
+		for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+			PCHARINFO p = g_aCharInfo[i];
+			if (p && DgIsDefenseEnemy(p)) aDel.push_back((DWORD)i);
+		}
+		for (size_t i = 0; i < aDel.size(); i ++) DeleteChar(aDel[i]);
+		Mark();
+		Tick(1);
+		printf("dungeondefense win killed=%d cleared=%d win=%d inrun=%d enemies=%d base=%d\n", (int)aDel.size(), Say("波 2 をしのいだ"), Say("全部の波をしのいだ！"),
+			(int)QuestInDungeon(pA), Enemies(dwSpace), (int)(DgDefenseBaseOf(dwSpace) != NULL));
+		Tick(9);
+		printf("dungeondefense win +9s inrun=%d runs=%d\n", (int)QuestInDungeon(pA), DungeonRunCount());
+		Tick(1);
+		printf("dungeondefense win +10s inrun=%d runs=%d space=%d pos=%lu,%lu base=%d\n", (int)QuestInDungeon(pA), DungeonRunCount(), (int)pA->dwSpaceID,
+			(unsigned long)pA->dwX, (unsigned long)pA->dwY, (int)(DgDefenseBaseOf(dwSpace) != NULL));
+		int nLeft = 0;
+		for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+			PCHARINFO p = g_aCharInfo[i];
+			if (p && p->dwSpaceID == dwSpace && p->byGameState == GAMESTATE_NPC) nLeft ++;
+		}
+		printf("dungeondefense win left-npcs=%d put1=%d,%d\n", nLeft, DgTestCountEnemy(dwPut1, dwSpace), DgTestCountEnemy(dwPut2, dwSpace));
+	}
+
+	/* 8. 負け：波が長引くと（最後の波以外は）敵が残っていても次の波へ。拠点 HP 0 で負け・敵は消える・10 秒後に帰還 */
+	{
+		pA->wHP = pA->wMaxHP = 480; pA->wMana = pA->wMaxMana = 90;
+		Info.wDefWaveMaxSec = 30;
+		Enter();
+		dwSpace = pA->dwSpaceID;
+		pBase = DgDefenseBaseOf(dwSpace);
+		printf("dungeondefense run2 in=%d base=%d hp=%d\n", (int)QuestInDungeon(pA), (int)(pBase != NULL), pBase ? (int)pBase->wHP : -1);
+		if (pBase) {
+			Tick(1 + 3 + 1);
+			int nWave1 = Enemies(dwSpace);
+			Mark();
+			Tick(28);
+			printf("dungeondefense run2 wave1 enemies=%d +28s enemies=%d cleared=%d coming2=%d\n", nWave1, Enemies(dwSpace), Say("波 1 をしのいだ"), Say("波 2/2 が来ます"));
+			Tick(1);
+			printf("dungeondefense run2 timeout enemies=%d coming2=%d\n", Enemies(dwSpace), Say("波 2/2 が来ます"));
+			Tick(4);
+			printf("dungeondefense run2 wave2 put1=%d put2=%d\n", DgTestCountEnemy(dwPut1, dwSpace), DgTestCountEnemy(dwPut2, dwSpace));
+			pBase->wHP = 0;
+			Mark();
+			Tick(1);
+			printf("dungeondefense lose fallen=%d enemies=%d inrun=%d\n", Say("拠点が落ちた…"), Enemies(dwSpace), (int)QuestInDungeon(pA));
+			Tick(9);
+			printf("dungeondefense lose +9s inrun=%d\n", (int)QuestInDungeon(pA));
+			Tick(1);
+			printf("dungeondefense lose +10s inrun=%d runs=%d space=%d pos=%lu,%lu\n", (int)QuestInDungeon(pA), DungeonRunCount(), (int)pA->dwSpaceID, (unsigned long)pA->dwX, (unsigned long)pA->dwY);
+		}
+	}
+
+	/* 9. 保存：拠点防衛の列は使う時だけ増える。読み直しで戻る（前の版の保存データ＝列なしは 0 のまま） */
+	{
+		struct stat st;
+		long nSize[2] = { 0, 0 };
+		int nOk[2] = { 0, 0 };
+		for (int k = 0; k < 2; k ++) {
+			SUBGAME_DUNGEONINFO Back = Info;
+			if (k == 0) {
+				Info.wDefBaseHP = 0; Info.wDefBaseStTmp = 0; Info.byDefWaveCount = 0; Info.byDefPrepSec = 0; Info.wDefWaveMaxSec = 0; Info.byDefSpringRange = 0;
+				Info.byClearMode = DGCLEAR_GOAL; Info.byRebuildMode = DGREBUILD_RANDOM;
+			} else {
+				Info.wDefBaseStTmp = 3;
+			}
+			SaveSubGameInfo();
+			if (stat("SBODATA/SboDataSubGameInfo.dat", &st) == 0) nSize[k] = (long)st.st_size;
+			std::vector<PSUBGAMEINFO> aOrig;
+			for (int i = 0; i < g_aSubaGameInfo.GetSize(); i ++) aOrig.push_back(g_aSubaGameInfo[i]);
+			int nBase = (int)aOrig.size();
+			g_aSubaGameInfo.RemoveAll();
+			LoadSubGameInfo();
+			PSUBGAMEINFO pLoad = g_aSubaGameInfo.GetSize() ? g_aSubaGameInfo[g_aSubaGameInfo.GetSize() - 1] : NULL;
+			if (g_aSubaGameInfo.GetSize() == nBase && pLoad && pLoad->byType == SUBGAMEID_DUNGEON && pLoad->pInfo) {
+				PSUBGAME_DUNGEONINFO pL = (PSUBGAME_DUNGEONINFO)pLoad->pInfo;
+				if (k == 0) {
+					nOk[k] = (int)(pL->byRebuildMode == DGREBUILD_RANDOM && pL->byClearMode == DGCLEAR_GOAL && pL->wDefBaseHP == 0 && pL->byDefWaveCount == 0 && pL->byStartX == 10);
+				} else {
+					nOk[k] = (int)(pL->byRebuildMode == DGREBUILD_FIXED && pL->byClearMode == DGCLEAR_DEFENSE && pL->wDefBaseHP == 100 && pL->wDefBaseStTmp == 3 &&
+						pL->byDefWaveCount == 2 && pL->byDefPrepSec == 3 && pL->wDefWaveMaxSec == 30 && pL->byDefSpringRange == 2 && pL->byGoalX == 20 && pL->byGoalY == 8);
+				}
+			}
+			for (int i = 0; i < g_aSubaGameInfo.GetSize(); i ++) {
+				PSUBGAMEINFO pDel = g_aSubaGameInfo[i];
+				SAFE_DELETE_ARRAY(pDel->pInfo);
+				delete pDel;
+			}
+			g_aSubaGameInfo.RemoveAll();
+			for (int i = 0; i < nBase; i ++) g_aSubaGameInfo.Add(aOrig[i]);
+			Info = Back;
+		}
+		printf("dungeondefense save plain=%d defense=%d extra>0=%d\n", nOk[0], nOk[1], (int)(nSize[1] > nSize[0]));
+	}
+
+	/* 10. データAPI：新しい項目を書ける・範囲外の選択肢は断る */
+	{
+		std::string strOk = FlagGroupApi("subGame", byID, "{\"detail\":{\"byDefWaveCount\":5,\"wDefBaseHP\":777,\"byClearMode\":2,\"byRebuildMode\":2}}");
+		BOOL bSet = (Info.byDefWaveCount == 5 && Info.wDefBaseHP == 777 && Info.byClearMode == DGCLEAR_DEFENSE && Info.byRebuildMode == DGREBUILD_FIXED);
+		std::string strNg = FlagGroupApi("subGame", byID, "{\"detail\":{\"byClearMode\":3}}");
+		std::string strNg2 = FlagGroupApi("subGame", byID, "{\"detail\":{\"byRebuildMode\":3}}");
+		printf("dungeondefense api ok=%d set=%d clear3-rejected=%d rebuild3-rejected=%d clear-kept=%d\n", (int)(strOk.find("\"ok\":true") != std::string::npos), (int)bSet,
+			(int)(strNg.find("\"ok\":true") == std::string::npos), (int)(strNg2.find("\"ok\":true") == std::string::npos), (int)(Info.byClearMode == DGCLEAR_DEFENSE));
+	}
+
+	/* 後始末 */
+	DungeonProcNow(s_dwFakeNow + 1000);
+	s_dwFakeNow += 1000;
+	QuestSendParty(pA, pA, CMDPARTY_BREAKUP);
+	SpaceSet(pA, SPACE_NORMAL);
+	pA->dwSpaceID = SPACE_NORMAL;
+	pA->dwTargetTblID = (DWORD)-1;
+	pA->dwPartyID = 0;
+	pA->byLevel = aBack.byLevel; pA->byPW = aBack.byPW; pA->wMaxHP = aBack.wMaxHP; pA->wHP = aBack.wHP;
+	pA->wMaxMana = aBack.wMaxMana; pA->wMana = aBack.wMana; pA->dwGold = aBack.dwGold; pA->dwExp = aBack.dwExp;
+	pA->byCharState = aBack.byCharState; pA->byAdminLV = aBack.byAdminLV;
+	memcpy(pA->waItem, aBack.waItem, sizeof(pA->waItem));
+	memcpy(pA->waEqu, aBack.waEqu, sizeof(pA->waEqu));
+	QuestMovePC(pA, (int)aBack.dwMapID, (int)aBack.dwX, (int)aBack.dwY);
+	QuestSyncAll();
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+		if (p && p->byGameState == GAMESTATE_NPC && p->byNpcType != NPCTYPE_INIT && p->dwSpaceID != SPACE_NORMAL) DeleteChar(p->dwTblID);
+	}
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+		if (p && p->dwParentTblID == dwPut1 && p->byGameState == GAMESTATE_NPC && p->byNpcType != NPCTYPE_INIT) DeleteChar(p->dwTblID);
+	}
+	DeleteChar(dwReception);
+	DeleteChar(dwPut2);
+	DeleteChar(dwPut1);
+	DeleteChar(dwPut0);
+	for (int i = g_aStTmpInfo.GetSize() - 1; i >= nSt1; i --) {
+		delete g_aStTmpInfo[i];
+		g_aStTmpInfo.RemoveAt(i);
+	}
+	for (int i = 0; i < pMap->nEventCount; i ++) {
+		SAFE_DELETE_ARRAY(pMap->pEvent[i].pData);
+	}
+	SAFE_DELETE_ARRAY(pMap->pEvent);
+	pMap->pEvent = pEventBack;
+	pMap->nEventCount = nEventBack;
+	pMap->nProcEvent = 0;
+	g_nProcMap = 0;
+	memcpy(pMap->pwMap, &aMapBack[0], sizeof(WORD) * aMapBack.size());
+	g_aSubaGameInfo.RemoveAt(byID);
+	g_nProcSubGame = 0;
+	MockTrace(0);
+	s_dwFakeNow = dwNowBack + 400000;
+	printf("dungeondefense end runs=%d sel=%d\n", DungeonRunCount(), DungeonSelCount());
 }
 
 /* ------------------------------------------------------------------------- */

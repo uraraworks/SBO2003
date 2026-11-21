@@ -126,6 +126,11 @@ void BattleProcCheck(PCHARINFO pChar)
 		return;
 	}
 
+	/* 拠点防衛の拠点は攻撃しない（殴られても殴り返さない） */
+	if (DgIsDefenseBase (pChar)) {
+		return;
+	}
+
 	/* ターゲットがいない？ */
 	if (pChar->dwLastBattle == 0) {
 		return;

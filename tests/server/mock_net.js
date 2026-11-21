@@ -101,6 +101,26 @@ Module['sboNet'] = (function () {
 			}
 			return a.join(',');
 		},
+		/* 覚えたパケット（trace を入れた後のもの）のうち、コマンド nCmd で中身に文字列 sText を含むものがあれば 1 */
+		hasText: function (n, nCmd, sText) {
+			var c = aConn[n];
+			if (!c) {
+				return 0;
+			}
+			var b = Buffer.concat(c.raw), nPos = 0, t = Buffer.from(sText, 'utf8');
+			while (nPos + 8 <= b.length) {
+				var nSize = b.readUInt32LE(nPos);
+				var body = b.subarray(nPos + 8, nPos + 8 + nSize);
+				if (body.length > 5 && body[0] === 0xFF) {
+					try { body = zlib.inflateSync(Buffer.from(body.subarray(5))); } catch (e) { body = Buffer.alloc(0); }
+				}
+				if (body.length >= 1 && body[0] === nCmd && body.indexOf(t) >= 0) {
+					return 1;
+				}
+				nPos += 8 + nSize;
+			}
+			return 0;
+		},
 		/* 最後のコマンドを16進で返す。地形・差分の種類と、マスを含む差分に絞ることもできる。 */
 		lastBody: function (n, nCmd, nValid, countOffset) {
 			var c = aConn[n];

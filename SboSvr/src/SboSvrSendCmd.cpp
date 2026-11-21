@@ -593,6 +593,7 @@ static void MaskCharInfoForOther(PCMDPARA_CHARINFO pSendData)
 	pSendData->byAreaY				= 0;
 	pSendData->byPutCount			= 0;
 	pSendData->byPutOnce			= 0;
+	pSendData->byPutWave			= 0;
 	pSendData->wTimePutInterval		= 0;
 	pSendData->byDropProbability	= 0;
 	pSendData->byMoveProbabilityX	= 0;
@@ -719,6 +720,7 @@ void SendCmdCHARINFO(DWORD pIDSend, int nNo)
 					pSendData->byAreaY				= pChar->byAreaY;
 					pSendData->byPutCount			= pChar->byPutCount;
 					pSendData->byPutOnce			= pChar->byPutOnce;
+					pSendData->byPutWave			= pChar->byPutWave;
 					pSendData->wTimePutInterval		= pChar->wTimePutInterval;
 					pSendData->pszNpcSpeech			= pChar->pszNpcSpeech;
 					pSendData->clName				= pChar->clName;
@@ -966,6 +968,7 @@ void SendCmdCHARINFO3(int nNo)
 	pSendData->byAreaY				= pChar->byAreaY;
 	pSendData->byPutCount			= pChar->byPutCount;
 	pSendData->byPutOnce			= pChar->byPutOnce;
+	pSendData->byPutWave			= pChar->byPutWave;
 	pSendData->wTimePutInterval		= pChar->wTimePutInterval;
 	pSendData->pszNpcSpeech			= pChar->pszNpcSpeech;
 	pSendData->clName				= pChar->clName;
@@ -2001,6 +2004,7 @@ void SendCmdGETACCINFO(DWORD pIDSend, DWORD dwTblID)
 	pSendData->byAreaY				= pChar->byAreaY;
 	pSendData->byPutCount			= pChar->byPutCount;
 	pSendData->byPutOnce			= pChar->byPutOnce;
+	pSendData->byPutWave			= pChar->byPutWave;
 	pSendData->byDropProbability	= pChar->byDropProbability;
 	pSendData->byMoveProbabilityX	= pChar->byMoveProbabilityX;
 	pSendData->byMoveProbabilityY	= pChar->byMoveProbabilityY;
@@ -2950,6 +2954,12 @@ void SendCmdSUBGAMEINFO(DWORD pIDSend, int nNo)
 			CopyMemory (pDungeon->szTmplName, pDungeonInfo->szTmplName, sizeof (pDungeon->szTmplName));
 			pDungeon->byRebuildMode = pDungeonInfo->byRebuildMode;
 			pDungeon->byClearMode = pDungeonInfo->byClearMode;
+			pDungeon->wDefBaseHP = pDungeonInfo->wDefBaseHP;
+			pDungeon->wDefBaseStTmp = pDungeonInfo->wDefBaseStTmp;
+			pDungeon->byDefWaveCount = pDungeonInfo->byDefWaveCount;
+			pDungeon->byDefPrepSec = pDungeonInfo->byDefPrepSec;
+			pDungeon->wDefWaveMaxSec = pDungeonInfo->wDefWaveMaxSec;
+			pDungeon->byDefSpringRange = pDungeonInfo->byDefSpringRange;
 			CopyMemory (pDungeon->szMessages, pDungeonInfo->szMessages, sizeof (pDungeon->szMessages));
 		}		
 		break;

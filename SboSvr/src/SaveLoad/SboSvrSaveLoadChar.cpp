@@ -125,6 +125,7 @@ static const char *s_aszName[] = {
 	"abyJobMagicKey",			/* 転職前の職業で使っていた特技ショートカット（職業ID別） */
 	"byGhost",				/* 半透明（霊）で描く（0=ふつう 1=半透明。見た目だけ） */
 	"byPutOnce",			/* NPC発生：1=補充しない（決めた数を出したら、それ以上は出さない） */
+	"byPutWave",			/* NPC発生：拠点防衛の波番号（0=ふつう。1〜=その波の時だけ出す） */
 	"z"
 };
 
@@ -568,6 +569,7 @@ static BOOL SaveCharInfoMain(void)
 				break;
 			case 89:	dwDataSizeTmp += sizeof (BYTE);							break;	/* 半透明（霊）で描く */
 			case 90:	dwDataSizeTmp += sizeof (BYTE);							break;	/* NPC発生：補充しない */
+			case 91:	dwDataSizeTmp += sizeof (BYTE);							break;	/* NPC発生：拠点防衛の波番号 */
 			}
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
@@ -1049,6 +1051,10 @@ static BOOL SaveCharInfoMain(void)
 				break;
 			case 90:	/* NPC発生：補充しない */
 				CopyMemory (&pData[dwOffset], &pInfo->byPutOnce, sizeof (BYTE));
+				dwOffset += sizeof (BYTE);
+				break;
+			case 91:	/* NPC発生：拠点防衛の波番号 */
+				CopyMemory (&pData[dwOffset], &pInfo->byPutWave, sizeof (BYTE));
 				dwOffset += sizeof (BYTE);
 				break;
 			}
@@ -1835,6 +1841,11 @@ BOOL LoadCharInfo(void)
 			/* NPC発生：補充しない（無い古いデータは 0=今までどおり補充する） */
 			if (strcmp (aHeaderInfo[i].szName, s_aszName[90]) == 0) {
 				pInfo->byPutOnce = pData[dwOffsetTmp ++];
+			}
+
+			/* NPC発生：拠点防衛の波番号（無い古いデータは 0=ふつう） */
+			if (strcmp (aHeaderInfo[i].szName, s_aszName[91]) == 0) {
+				pInfo->byPutWave = pData[dwOffsetTmp ++];
 			}
 		}
 	}
