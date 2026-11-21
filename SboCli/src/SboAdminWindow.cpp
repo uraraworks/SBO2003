@@ -1324,10 +1324,11 @@ static LRESULT WndProcAdminWindowSub(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 				item.iItem = i;
 				char szTmp[MAX_CHARNAMEBUF];
 
-				/* 名前 */
+				/* 名前（先頭にテンプレート番号） */
 				ZeroMemory (szTmp, sizeof (szTmp));
+				snprintf (szTmp, sizeof (szTmp), "%d: %s", i, pInfo->szName);
 				item.iSubItem = 0;
-				item.pszText = pInfo->szName;
+				item.pszText = szTmp;
 				ListView_InsertItem (m_hWndList1, &item);
 				/* 移動種別 */
 				ZeroMemory (szTmp, sizeof (szTmp));

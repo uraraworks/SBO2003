@@ -170,7 +170,9 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 	nCount = g_aStTmpInfo.GetSize ();
 	for (i = 0; i < nCount; i ++) {
 		PSTATUSTEMPLATEINFO pInfo = g_aStTmpInfo[i];
-		SendMessage (hWndTmp, CB_ADDSTRING, (WPARAM)i, (LPARAM)pInfo->szName);
+		char szTmp[128];
+		snprintf (szTmp, sizeof (szTmp), "%d: %s", i, pInfo->szName);
+		SendMessage (hWndTmp, CB_ADDSTRING, (WPARAM)i, (LPARAM)szTmp);
 	}
 	return FALSE;
 }

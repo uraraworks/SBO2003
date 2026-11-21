@@ -29,7 +29,7 @@ static const struct {
 	LPCSTR	pszName;
 	int		nWidth;
 } s_aColumn[] = {
-	{"名前", 100}, {"移動種別", 100}, {"力", 40}, {"素早さ", 50}, {"体力", 40}, {"賢さ", 40},
+	{"番号", 40}, {"名前", 100}, {"移動種別", 100}, {"力", 40}, {"素早さ", 50}, {"体力", 40}, {"賢さ", 40},
 	{"運のよさ", 55}, {"最大HP", 55}, {"最大Mana", 65}, {"所持金", 60}, {"ドロップ率", 65},
 	{"移動確率X", 65}, {"移動確率Y", 65}, {"検索範囲X", 65}, {"検索範囲Y", 65},
 	{"火", 35}, {"水", 35}, {"風", 35}, {"土", 35}, {"光", 35}, {"闇", 35},
@@ -217,11 +217,14 @@ static void RenewList(void)
 		item.mask = LVIF_TEXT;
 		item.iItem = i;
 		item.iSubItem = nCol ++;
-		item.pszText = pInfo->szName;
+		/* 番号（NPC発生・サブゲームなどで指定するテンプレート番号） */
+		snprintf (szTmp, sizeof (szTmp), "%d", i);
+		item.pszText = szTmp;
 		ListView_InsertItem (hWndTmp, &item);
 
 #define	SETCOL(pszCol)	{ item.iSubItem = nCol ++; item.pszText = (LPSTR)(pszCol); ListView_SetItem (hWndTmp, &item); }
 #define	SETNUM(fmtCol, nCol_)	{ snprintf (szTmp, sizeof (szTmp), fmtCol, nCol_); SETCOL (szTmp); }
+		SETCOL (pInfo->szName);
 		SETCOL ((pInfo->byNpcType < nMoveTypeMax) ? aNpcMoveTypeTbl[pInfo->byNpcType] : "?");
 		SETNUM ("%d", pInfo->byPW);
 		SETNUM ("%d", pInfo->byDEX);
