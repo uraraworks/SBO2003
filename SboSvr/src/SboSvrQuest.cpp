@@ -4898,7 +4898,7 @@ static BOOL DgDefFindSeat(PCHARINFO pWho, PCHARINFO pBase, int &x, int &y)
 	return FALSE;
 }
 
-/* 準備時間に入る時：全員の HP/Mana を全回復（倒れている人も起こす） */
+/* 準備時間に入る時：倒れている人を起こす（HP/Mana の全回復はしない。回復は泉で） */
 static void DgDefRecoverAll(CHALLENGE *pCh)
 {
 	size_t j;
@@ -4907,6 +4907,10 @@ static void DgDefRecoverAll(CHALLENGE *pCh)
 		PCHARINFO p = (pCh->aMember[j] < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[pCh->aMember[j]] : NULL;
 
 		if ((p == NULL) || (s_mapLoan.find (pCh->aMember[j]) == s_mapLoan.end ())) {
+			continue;
+		}
+		/* 2026-11-21 全回復はやめた（回復は泉で）。倒れて復活待ちの人だけ、ここで復活させる */
+		if ((p->byCharState != CHARSTATE_DEAD) && (p->wHP != 0)) {
 			continue;
 		}
 		DgDefRevive (p);
