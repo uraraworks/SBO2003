@@ -4667,6 +4667,11 @@ static void BattleModeResync(void)
 {
 	if (s_bBattleModeResync && (g_nMyCharID >= 0)) {
 		s_bBattleModeResync = FALSE;
+		/* 戦闘のないマップ（町など）へ入ったら戦闘モードを解除する
+		   （戦闘モードのまま町へ戻ると、冒険者登録所で転職できなかった） */
+		if (g_bBattleMode && g_pMapInfo && ((g_pMapInfo->byFlg & MAPFLG_BATTLE) == 0)) {
+			g_bBattleMode = FALSE;
+		}
 		SendCmdBATTLEMODE (g_bBattleMode);
 	}
 }
