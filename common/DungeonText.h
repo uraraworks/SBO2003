@@ -60,6 +60,7 @@ static const DungeonTextDefault g_aDungeonTextDefault[] = {
     {"rebuild_notice", "管理者がダンジョンを作り直します。外へ戻ります。"},
     {"blocked", "ダンジョンの中ではできません。"},
     {"def_base_name", "拠点"},
+    {"def_spring_name", "回復の泉"},
     {"def_wave_coming", "ウェーブ {wave}/{total} が来ます（{seconds}秒後）"},
     {"def_wave_start", "ウェーブ {wave} 開始"},
     {"def_wave_clear", "ウェーブ {wave} をしのいだ！"},

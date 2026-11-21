@@ -176,6 +176,8 @@ inline WORD CharFlagWireFix(WORD wWire)
 #define ITEMFLG_TRADE			(0x04)								/* アイテムフラグ：取り引き不可 */
 #define ITEMFLG_IMPORTANT		(0x08)								/* アイテムフラグ：大事な物（手持ちではなく大事な物の欄に入る） */
 
+#define CHARGHOST_NAMEONLY		(2)								/* byGhost: 体を描かず名前だけ見せる（目印用。1=半透明（霊）） */
+
 /* マップ用のフラグ */
 #define MAPFLG_EFECT			(0x01)								/* エフェクトを許可 */
 #define MAPFLG_BATTLE			(0x02)								/* 戦闘モードを許可 */
