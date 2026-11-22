@@ -14,6 +14,7 @@
 #include "Proc/ProcSubGame.h"
 #include "Glbldata.h"
 #include "SboSvrRecvCmd.h"
+#include "ProcFunc/ProcFunc.h"
 #include "SboSvrDrawWindow.h"
 #include <vector>
 #include "SboSvrDlgLeaveInfo.h"
@@ -804,6 +805,7 @@ void OnDecPlayer(int nNo)
 	QuestPartyLeaveHold (TRUE);		/* 切断で抜けた時は討伐チャレンジの依頼を取り消さない */
 	ProcBreakParty (pChar);			/* パーティから抜ける */
 	QuestPartyLeaveHold (FALSE);
+	TailRelinkLeave (pChar);		/* 列の途中の人が抜けても、後ろの人は前の人へつなぎ直す */
 	CharTargetCancelPC (pChar);		/* ついてく解除 */
 	DeleteTblNoPC (nNo);			/* PC番号テーブルから削除 */
 	DeleteAllTimerEvent (pChar);	/* タイマーイベントを削除 */

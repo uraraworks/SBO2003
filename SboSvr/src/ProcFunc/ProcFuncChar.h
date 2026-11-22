@@ -10,5 +10,6 @@
 
 extern void TailOn	(PCHARINFO pChar, PCHARINFO pCharTarget);		/* ついていく */
 extern void TailOff	(PCHARINFO pChar);								/* ついていくのを解除 */
+extern void TailRelinkLeave	(PCHARINFO pChar);							/* 列の途中の人が抜ける時、後ろの人を前の人へつなぎ直す */
 
 /* Copyright(C)URARA-works 2006 */
