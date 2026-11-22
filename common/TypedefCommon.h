@@ -395,6 +395,7 @@ enum {
 /* 以下、プレイヤー用（サーバー→本人だけ。サーバーは受け取らない） */
 	CMD_DGDEFSTATUS,												/* 番外編の拠点防衛の状態（拠点HP・波・残り秒・残り敵数。CMDPARA_DGDEFSTATUS） */
 	CMD_DGDEFMAP,													/* 番外編の拠点防衛の全体地図（範囲・拠点・泉・仲間と敵の位置。CMDPARA_DGDEFMAP。サーバー→組の全員） */
+	CMD_DGSTATUS,													/* 番外編ダンジョン（拠点防衛以外）の状況パネル（題・残り敵数・経過秒・目標。CMDPARA_DGSTATUS。サーバー→組の全員） */
 	CMD_MAX
 };
 
@@ -4245,6 +4246,31 @@ typedef struct _CMDPARA_DGDEFMAP {
 	WORD		wSpringY;
 	BYTE		bySpringRange;										/* 泉の範囲（中心から何マス以内か） */
 } CMDPARA_DGDEFMAP, *PCMDPARA_DGDEFMAP;
+#pragma pack(pop)
+
+/* 番外編ダンジョン（拠点防衛以外）の状況パネル（CMD_DGSTATUS。サーバー→組の全員。画面の左上の小さなパネルに使う）
+   変わった時と数秒ごとに送る（経過秒はクライアントが届いた時刻から進める）。DGSTATUS_NONE はパネルを消す（外へ出た時）。
+   拠点防衛は CMD_DGDEFSTATUS だけを使い、これは送らない */
+enum {
+	DGSTATUS_NONE = 0,												/* パネルを消す */
+	DGSTATUS_RUN,													/* 挑戦中（経過秒が進む） */
+	DGSTATUS_CLEAR,													/* クリアした（経過秒は止まる） */
+};
+enum {
+	DGSTATUS_GOAL_WARP = 0,											/* 目標：奥のゴールへ（敵の数は出さない） */
+	DGSTATUS_GOAL_KILLALL,											/* 目標：敵を全部倒す */
+};
+#define DGSTATUS_TITLE_LEN	(40)									/* 題の長さ（UTF-8 のバイト数。終わりの 0 を含む） */
+#pragma pack(push, 1)
+typedef struct _CMDPARA_DGSTATUS {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byState;											/* DGSTATUS_* */
+	BYTE		byGoal;												/* DGSTATUS_GOAL_* */
+	WORD		wEnemy;												/* 残りの敵の数（byGoal が DGSTATUS_GOAL_KILLALL の時だけ） */
+	WORD		wEnemyMax;											/* 敵の総数（同上。0 なら敵数を出さない） */
+	DWORD		dwElapsedSec;										/* 経過秒（クリア後はクリアまでの秒） */
+	char		szTitle[DGSTATUS_TITLE_LEN];						/* 題（テーマ名など。UTF-8） */
+} CMDPARA_DGSTATUS, *PCMDPARA_DGSTATUS;
 #pragma pack(pop)
 
 /* 並べ替えの対象(CMDPARA_SORTITEM の byTarget) */

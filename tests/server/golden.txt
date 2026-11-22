@@ -2188,6 +2188,8 @@ dungeondaily reload same-json=1 len>0=1
 dungeondaily killall once goal-event=0 picture=0 saved-picture=0
 dungeondaily killall entrance-retire out=1 records=0
 dungeondaily killall start in=11 enemies=3 after2=1 cleared-yet=0
+dungeonstatus killall-after2 state=1 goal=1 enemy=1/3 elapsed=30 title-ok=1 a=1 b-got=1 defstatus=0
+dungeonstatus killall-cleared state=2 goal=1 enemy=0/3 elapsed=42 title-ok=1 a=1 b-got=1 defstatus=0
 dungeondaily killall cleared records=1 ms=42345 count=2 in=11
 dungeondaily killall countdown 3s in=11
 dungeondaily killall after10s in=00 b-hp>0=1 runs=0

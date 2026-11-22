@@ -17,6 +17,7 @@ extern PWNDINFO	QuestListOpen			(BOOL);														/* 依頼の一覧の窓を
 extern void	QuestStoryGreet			(DWORD);													/* 語り部の台詞を出す */
 extern void	QuestStoryGreetEnd		(DWORD);													/* 語り部の台詞が終わった（一覧を開く） */
 extern int	GetCharNo2				(DWORD);													/* キャラ番号取得2 */
+extern BOOL		GetDungeonStatus		(PCMDPARA_DGSTATUS pOut);									/* 番外編ダンジョン（拠点防衛以外）の状況（パネルを出す時だけ TRUE。しばらく届かなければ消える） */
 extern BOOL		GetDefenseStatus		(PCMDPARA_DGDEFSTATUS pOut);								/* 拠点防衛の状態（帯を出す時だけ TRUE。しばらく届かなければ消える） */
 extern DWORD	GetCharBuffRest			(DWORD dwTblID, int nType);									/* 攻撃力(0)・守備力(1)アップの残り(ms)。0=かかっていない */
 extern int	GetEventDataSize		(BYTE);														/* イベント種別毎のデータサイズを取得 */
