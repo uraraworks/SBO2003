@@ -5572,8 +5572,17 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 		pCharDst->dwXBack = pCharDst->dwX;
 		pCharDst->dwYBack = pCharDst->dwY;
 	}
+	/* 自分がサーバーに2マス以上戻された（回線が遅れて先に歩きすぎた・まとめて届いて速さの見張りに引っかかった等）時は、
+	   SendCmdCHARPOS の「前回位置から2歩以上移動する」確認が戻された距離を移動と見て、
+	   自分で接続を閉じていた（遅い回線で長く歩くと固まる）。サーバーの補正なので前回位置も合わせる */
+	BOOL bFar = (nNo == g_nMyCharID) &&
+		((abs ((int)pCharDst->dwX - (int)pChar->byX) > 1) || (abs ((int)pCharDst->dwY - (int)pChar->byY) > 1));
 	pCharDst->dwX = (DWORD)pChar->byX;
 	pCharDst->dwY = (DWORD)pChar->byY;
+	if (bFar) {
+		pCharDst->dwXBack = pCharDst->dwX;
+		pCharDst->dwYBack = pCharDst->dwY;
+	}
 	pCharDst->dwLastDotMove = 0;
 	g_pMapInfo->pdwMapChar[g_pMapInfo->nCX * pCharDst->dwY + pCharDst->dwX] ++;
 	g_bDraw = TRUE;
