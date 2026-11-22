@@ -1536,7 +1536,7 @@ static const DATAFIELD s_aFieldChar[] = {
 	FLD (CHARINFO, bySearchCx,			"検索範囲X",			FT_U8, 0, NULL),
 	FLD (CHARINFO, bySearchCy,			"検索範囲Y",			FT_U8, 0, NULL),
 	FLD (CHARINFO, byDropProbability,	"ドロップ率",			FT_U8, 0, NULL),
-	FLD (CHARINFO, byGhost,			"半透明（霊）",			FT_U8, 0, "1 にすると半透明（霊）で描かれる（見た目だけ。ふつうの NPC・敵どちらにも付けられる）。0=ふつう。NPC発生で出る敵は、発生元の NPC かステータステンプレート（stTmp の byGhost）の設定になる"),
+	FLD (CHARINFO, byGhost,			"半透明（霊）",			FT_U8, 0, "1 にすると半透明（霊）で描かれる（見た目だけ。ふつうの NPC・敵どちらにも付けられる）。2 にすると体を描かず名前だけ見える（目印用）。0=ふつう。NPC発生で出る敵は、発生元の NPC かステータステンプレート（stTmp の byGhost）の設定になる"),
 	FLD (CHARINFO, wShowFlag,			"見える条件の印",		FT_U16, 0, "キャラのフラグの印の番号（0〜1023）。この印が立っている人にだけ見える（立っていない人には居ないのと同じ）。65535=条件なし（足す時に省くと条件なし）。町の人（byNpcType=1・2）向け"),
 	FLD (CHARINFO, wHideFlag,			"見えない条件の印",		FT_U16, 0, "キャラのフラグの印の番号（0〜1023）。この印が立っている人には見えない。65535=条件なし。wShowFlag と両方ある時は、両方の条件を満たす人にだけ見える"),
 	FLD (CHARINFO, byAtackRate,			"攻撃力の割合",			FT_U8, 0, NULL),

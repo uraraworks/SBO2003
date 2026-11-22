@@ -15,6 +15,7 @@
 
 void TailOn		(PCHARINFO pChar, PCHARINFO pCharTarget);		/* ついていく */
 void TailOff	(PCHARINFO pChar);								/* ついていくのを解除 */
+void TailRelinkLeave	(PCHARINFO pChar);						/* 列の途中の人が抜ける時、後ろの人を前の人へつなぎ直す */
 
 
 /* ========================================================================= */
@@ -82,6 +83,55 @@ void TailOff(PCHARINFO pChar)
 
 		Packet.Make (pCharTarget->dwTblID, -1, CHAR_TAIL_OFF2);
 		svrSock.SendTo (pCharTarget->pID, Packet.Get (), Packet.GetSize ());
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：	TailRelinkLeave													 */
+/* 内容：	列の途中の人がログアウトなどで抜ける時、後ろの人を前の人へ		 */
+/*			つなぎ直して、列が切れないようにする（A←B←C←D で B が抜けたら	 */
+/*			A←C←D）。先頭・最後尾・列に入っていない人は何もしない			 */
+/*			（その時は呼び出し側の CharTargetCancelPC で外す）				 */
+/*			つなぎ直しはメッセージ無し(CHAR_TAIL_ON/BACK は後ろがある時は出ない) */
+/* 戻り値：	なし（つなぎ直した時は pChar の前後は -1 になる）				 */
+/* ========================================================================= */
+
+void TailRelinkLeave(PCHARINFO pChar)
+{
+	DWORD dwCount = (DWORD)g_aCharInfo.GetSize ();
+	PCHARINFO pPrev, pNext;
+	CCHAR_TAIL Packet;
+
+	if ((pChar->dwTailTblID >= dwCount) || (pChar->dwTailBackTblID >= dwCount)) {
+		return;
+	}
+	pPrev = g_aCharInfo[pChar->dwTailTblID];
+	pNext = g_aCharInfo[pChar->dwTailBackTblID];
+	/* 前後とも、ちゃんと自分とつながっている時だけ（食い違っていたら触らない） */
+	if ((pPrev == pChar) || (pNext == pChar) || (pPrev == pNext)) {
+		return;
+	}
+	if ((pPrev->dwTailBackTblID != pChar->dwTblID) || (pNext->dwTailTblID != pChar->dwTblID)) {
+		return;
+	}
+	/* 前の人と後ろの人が別のマップ・別の空間なら、つなぎ直さず従来どおり外す */
+	if ((pPrev->dwMapID != pNext->dwMapID) || !IsSameSpace (pPrev, pNext)) {
+		return;
+	}
+
+	pPrev->dwTailBackTblID	= pNext->dwTblID;
+	pNext->dwTailTblID		= pPrev->dwTblID;
+	pChar->dwTailTblID		= (DWORD)-1;
+	pChar->dwTailBackTblID	= (DWORD)-1;
+
+	/* 後ろの人は前の人へ、前の人は後ろの人へ、画面の持ち物もつなぎ直す */
+	if (pNext->pID != 0) {
+		Packet.Make (pNext->dwTblID, pPrev->dwTblID, CHAR_TAIL_ON);
+		svrSock.SendTo (pNext->pID, Packet.Get (), Packet.GetSize ());
+	}
+	if (pPrev->pID != 0) {
+		Packet.Make (pPrev->dwTblID, pNext->dwTblID, CHAR_TAIL_BACK);
+		svrSock.SendTo (pPrev->pID, Packet.Get (), Packet.GetSize ());
 	}
 }
 
