@@ -2285,8 +2285,10 @@ dungeonmarch end runs=0 sel=0
 dungeoninside events entry=1 inside=1 inside-back=10,6 use=1 count=2
 dungeoninside events-again=2
 dungeoninside outsider step handled=1 pos=18,9 space=0
+dungeoninside party same=1 nonzero=1
 dungeoninside enter in=1 run=1 space=1 pos=18,9 map-same=1 base=1
 dungeoninside enter sent mapinfo=1 charinfo=1
+dungeoninside late-member runs=1->1 sel=0 b-space=0 b-in=0
 dungeoninside leave-ask asked=1 stay-no=1 asked-again=1 out=1 space=0 pos=4,5 runs=0
 dungeoninside end runs=0 sel=0
 == L3. Tail battle mapmove ==

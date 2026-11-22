@@ -14619,6 +14619,11 @@ static void TestDungeonDefenseInside(const std::vector<int> &aLogin)
 	printf("dungeoninside outsider step handled=%d pos=%lu,%lu space=%d\n", (int)bStep, (unsigned long)pB->dwX, (unsigned long)pB->dwY, (int)(pB->dwSpaceID != SPACE_NORMAL));
 	QuestMovePC(pB, (int)aBackB.dwMapID, (int)aBackB.dwX, (int)aBackB.dwY);
 
+	/* A と B は同じパーティ。B は受付から離れた所にいて、A だけが先に入る */
+	QuestSendParty(pA, pB, CMDPARTY_JOIN);
+	QuestSendParty(pB, pA, CMDPARTY_JOINOK);
+	QuestMovePC(pB, nMapNo, 20, 13);
+	printf("dungeoninside party same=%d nonzero=%d\n", (int)(pA->dwPartyID == pB->dwPartyID), (int)(pA->dwPartyID != 0));
 	/* 3. 受付→外の入口に乗ると、組の空間の中の開始位置へ移る。マップ・キャラの情報が届く */
 	QuestMovePC(pA, nMapNo, 4, 5);
 	DgTestTalk(pA, dwReception);
@@ -14631,6 +14636,20 @@ static void TestDungeonDefenseInside(const std::vector<int> &aLogin)
 	printf("dungeoninside enter in=%d run=%d space=%d pos=%lu,%lu map-same=%d base=%d\n", (int)QuestInDungeon(pA), DungeonRunCount(), (int)(dwSpace != SPACE_NORMAL),
 		(unsigned long)pA->dwX, (unsigned long)pA->dwY, (int)(pA->dwMapID == pMap->dwID), (int)(pBase != NULL));
 	printf("dungeoninside enter sent mapinfo=%d charinfo=%d\n", (int)(SpCnt(pA, CMD_MAPINFO) > nMapInfo0), (int)(SpCnt(pA, CMD_CHARINFO) > nCharInfo0));
+
+	/* 3b. 同じパーティの B が遅れて受付に話しても、同じパーティ番号の組を 2 つ目として作らない
+	   （作ると先の組が終わった時に B まで巻き込まれて操作できなくなる）。組は 1 つのまま・B は外のまま・選択も始まらない */
+	{
+		int nRun0 = DungeonRunCount();
+		QuestMovePC(pB, nMapNo, 4, 5);
+		DgTestTalk(pB, dwReception);
+		DgTestSelPick(pB, 0);
+		DungeonProcNow(s_dwFakeNow + 1000);
+		s_dwFakeNow += 1000;
+		printf("dungeoninside late-member runs=%d->%d sel=%d b-space=%d b-in=%d\n", nRun0, DungeonRunCount(), DungeonSelCount(),
+			(int)(pB->dwSpaceID != SPACE_NORMAL), (int)QuestInDungeon(pB));
+		QuestMovePC(pB, nMapNo, 20, 13);
+	}
 
 	/* 4. 中の開始位置のマスを（離れて戻って）踏むと「抜けますか？」。いいえなら残り、はいで受付の場所へ戻る */
 	int nAsk0 = SpCnt(pA, CMD_DUNGEONSEL);
@@ -14660,6 +14679,9 @@ static void TestDungeonDefenseInside(const std::vector<int> &aLogin)
 	pA->byCharState = aBack.byCharState; pA->byAdminLV = aBack.byAdminLV;
 	memcpy(pA->waItem, aBack.waItem, sizeof(pA->waItem));
 	memcpy(pA->waEqu, aBack.waEqu, sizeof(pA->waEqu));
+	QuestSendParty(pA, pA, CMDPARTY_BREAKUP);
+	pA->dwPartyID = 0; pB->dwPartyID = 0;
+	QuestMovePC(pB, (int)aBackB.dwMapID, (int)aBackB.dwX, (int)aBackB.dwY);
 	pB->byAdminLV = aBackB.byAdminLV;
 	QuestMovePC(pA, (int)aBack.dwMapID, (int)aBack.dwX, (int)aBack.dwY);
 	QuestSyncAll();

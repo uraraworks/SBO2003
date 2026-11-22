@@ -3907,6 +3907,22 @@ static DWORD DgSelOfParty(PCHARINFO pChar)
 	return 0;
 }
 
+/* 同じパーティの人が、番外編の中の組（空間）に入っているか */
+static BOOL DgPartyRunning(PCHARINFO pChar)
+{
+	std::map<DWORD, CHALLENGE>::iterator it;
+
+	if (pChar->dwPartyID == 0) {
+		return FALSE;
+	}
+	for (it = s_mapChallenge.begin (); it != s_mapChallenge.end (); it ++) {
+		if ((it->second.byKind == CHALLENGEKIND_DUNGEON) && (it->second.dwPartyID == pChar->dwPartyID) && !it->second.aMember.empty ()) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
 /* 姿の一覧と同時に出す説明。受付の独自台詞、設定、既定文の順に選ぶ。 */
 static void DgSendReception(PCHARINFO pChar, int nID, DWORD dwNpcTblID)
 {
@@ -4423,6 +4439,12 @@ static BOOL DgSelStart(PCHARINFO pChar, int nID, DWORD dwNpcTblID)
             return TRUE;
         }
     }
+	/* 同じパーティの人がすでに番外編の中にいる時は、新しい組を作らない（同じパーティ番号の組が 2 つできて、
+	   片方が終わった時にもう片方の人まで巻き込んで操作できなくなるため。遅れて来た人は組が終わってから申し込む） */
+	if (DgPartyRunning (pChar)) {
+		DgMessage (pChar, nID, "party_running", TRUE);
+		return TRUE;
+	}
 	/* 同じパーティの組が姿を選んでいる最中なら、その組に加わる（リーダーより遅れて来た仲間・代わりに始めた組へ遅れて来たリーダー） */
 	{
 		DWORD dwKey = DgSelOfParty (pChar);

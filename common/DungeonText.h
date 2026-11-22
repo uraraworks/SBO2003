@@ -20,6 +20,7 @@ static const DungeonTextDefault g_aDungeonTextDefault[] = {
     {"mercenary", "{name}さんの傭兵は一緒に入れません。別れてから来てください。"},
     {"mercenary_self", "傭兵は一緒に入れません。別れてから来てください。"},
     {"party_selecting", "今{name}さんの組が姿を選んでいます。"},
+    {"party_running", "パーティの仲間がすでに挑戦中です。その組が終わってから、あらためて受付で申し込んでください。"},
     {"joined", "{name}さんの組に加わりました。残り{seconds}秒で姿を選んでください。"},
     {"member_joined", "{name}さんが組に加わりました。"},
     {"running", "今{count}組が挑戦中です。その組と同じ形のダンジョンに入ります。"},
