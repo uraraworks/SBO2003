@@ -378,6 +378,69 @@ static void DrawDefenseDot(HDC hDC, int cx, int cy, int r, COLORREF cl)
 }
 
 /* ========================================================================= */
+/* 関数名：DrawDungeonPanel													 */
+/* 内容：番外編ダンジョン（拠点防衛以外）の挑戦中だけ、画面の左上に小さなパネルを出す	 */
+/*		 1行目 題（テーマ名）／2行目 残り敵 n/N（敵を数えるモードだけ）／3行目 経過 m:ss／4行目 目標	 */
+/*		 拠点防衛の帯と同じ作り（半透明の暗い帯・枠・影つきの文字）。Tab の表示切替が「なし」の間は隠す	 */
+/* ========================================================================= */
+static int s_nDgPanelSec = -1;		/* 最後に描いた経過秒 */
+static void DrawDungeonPanel(int nX, int nY)
+{
+	const int nWidth = 190;		/* パネルの幅 */
+	const int nLine = 18;		/* 1 行の高さ */
+	CMDPARA_DGSTATUS St;
+	char szTmp[96];
+	HDC hDC;
+	HFONT hFontOld;
+	BOOL bEnemy;
+	int nRows, nHeight, x0, y0, yy, nSec;
+
+	if ((g_byViewMode == 0) || !GetDungeonStatus (&St)) {
+		return;
+	}
+	bEnemy = (St.byGoal == DGSTATUS_GOAL_KILLALL) && (St.wEnemyMax > 0);
+	nRows = bEnemy ? 4 : 3;
+	nHeight = nRows * nLine + 8;
+	x0 = nX + 4;
+	y0 = nY + 4;
+	nSec = (int)min (St.dwElapsedSec, (DWORD)(99 * 3600 + 59 * 60 + 59));
+
+	hDC = g_pDibDrawMap->Lock ();
+	hFontOld = (HFONT)SelectObject (hDC, g_hFont14);
+	SetBkMode (hDC, TRANSPARENT);
+	DrawDefenseFrame (hDC, x0, y0, nWidth, nHeight, RGB (200, 200, 200), 150);
+	yy = y0 + 5;
+	TextOut2 (hDC, x0 + 8, yy, St.szTitle, RGB (255, 235, 120));
+	yy += nLine;
+	if (bEnemy) {
+		wsprintf (szTmp, "残り敵 %d/%d", (int)St.wEnemy, (int)St.wEnemyMax);
+		TextOut2 (hDC, x0 + 8, yy, szTmp, RGB (255, 255, 255));
+		yy += nLine;
+	}
+	if (nSec >= 3600) {
+		wsprintf (szTmp, "経過 %d:%02d:%02d", nSec / 3600, (nSec / 60) % 60, nSec % 60);
+	} else {
+		wsprintf (szTmp, "経過 %d:%02d", nSec / 60, nSec % 60);
+	}
+	TextOut2 (hDC, x0 + 8, yy, szTmp, RGB (255, 255, 255));
+	yy += nLine;
+	if (St.byState == DGSTATUS_CLEAR) {
+		TextOut2 (hDC, x0 + 8, yy, (LPSTR)"目標: クリア！", RGB (140, 255, 150));
+	} else if (St.byGoal == DGSTATUS_GOAL_KILLALL) {
+		TextOut2 (hDC, x0 + 8, yy, (LPSTR)"目標: 全部倒せ", RGB (255, 255, 255));
+	} else {
+		TextOut2 (hDC, x0 + 8, yy, (LPSTR)"目標: 奥の扉", RGB (255, 255, 255));
+	}
+	SelectObject (hDC, hFontOld);
+	g_pDibDrawMap->Unlock ();
+	/* 経過秒が進むので、秒が変わったら次も描き直す（毎フレームは描かない） */
+	if ((St.byState == DGSTATUS_RUN) && (nSec != s_nDgPanelSec)) {
+		g_bDraw = TRUE;
+	}
+	s_nDgPanelSec = nSec;
+}
+
+/* ========================================================================= */
 /* 関数名：DrawDefenseBand													 */
 /* 内容：番外編の拠点防衛の挑戦中だけ、画面の上の中央にパネルを出す			 */
 /*		 1行目「拠点HP [バー] 720/1000」（残り割合で緑→黄(50%以下)→赤(25%以下)）	 */
@@ -638,6 +701,9 @@ void DrawScreen(HWND hWnd, HDC hDC)
 
 				/* 拠点防衛の帯（上の中央。挑戦中だけ） */
 				DrawDefenseBand (32 - x, 32 - y);
+
+				/* 拠点防衛以外の番外編ダンジョンの状況パネル（左上。挑戦中だけ） */
+				DrawDungeonPanel (32 - x, 32 - y);
 
 				hDCPrimary = g_pDibDrawMap->Lock ();
 				HFONT hFontOld = (HFONT)SelectObject (hDCPrimary, g_hFont14);

@@ -524,6 +524,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcDUNGEONSEL,				/* CMD_DUNGEONSEL */
 	NULL,								/* CMD_DGDEFSTATUS(サーバー→クライアントのみ) */
 	NULL,								/* CMD_DGDEFMAP(サーバー→クライアントのみ) */
+	NULL,								/* CMD_DGSTATUS(サーバー→クライアントのみ) */
 
 	NULL
 };

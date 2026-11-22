@@ -1901,6 +1901,16 @@ void SendCmdDGDEFSTATUS(DWORD pIDSend, PCMDPARA_DGDEFSTATUS pPara)
 }
 
 /* ========================================================================= */
+/* 関数名：SendCmdDGSTATUS													 */
+/* 内容：コマンド送信(番外編ダンジョンの状況パネル。その人にだけ)			 */
+/* ========================================================================= */
+void SendCmdDGSTATUS(DWORD pIDSend, PCMDPARA_DGSTATUS pPara)
+{
+	pPara->byCmd = CMD_DGSTATUS;
+	svrSock.SendTo (pIDSend, (PBYTE)pPara, sizeof (CMDPARA_DGSTATUS), SENDTIMEOUT);
+}
+
+/* ========================================================================= */
 /* 関数名：SendCmdDGDEFMAP													 */
 /* 内容：コマンド送信(番外編の拠点防衛：全体地図。その人にだけ)				 */
 /* 備考：CMDPARA_DGDEFMAP＋仲間の位置＋敵の座標を呼び出し側で組み立てて渡す	 */
