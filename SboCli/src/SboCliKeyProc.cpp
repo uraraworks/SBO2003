@@ -224,6 +224,7 @@ BYTE m_byKeyOnX = 0,
 	 m_byKeyOnS = 0,
 	 m_byKeyOnC = 0,
 	 m_byKeyOnM = 0,
+	 m_byKeyOnH = 0,
 	 m_byKeyOnReturn = 0,
 	 m_byKeyOnUp = 0,
 	 m_byKeyOnDown = 0,
@@ -561,6 +562,19 @@ void KeyProc(void)
 		m_byKeyOnM = 0;
 		byEvent = KEY_UP;
 		byCode = 'M';
+		KeyEvPush (byEvent, byCode);
+	}
+
+	/* Hキー（拠点防衛の状況表示の出し入れ） */
+	if ((g_abyKeyState['H'] & 0x80) && (m_byKeyOnH == 0)) {
+		m_byKeyOnH = 1;
+		byEvent = KEY_DOWN;
+		byCode = 'H';
+		KeyEvPush (byEvent, byCode);
+	} else if (((g_abyKeyState['H'] & 0x80) == 0) && (m_byKeyOnH == 1)) {
+		m_byKeyOnH = 0;
+		byEvent = KEY_UP;
+		byCode = 'H';
 		KeyEvPush (byEvent, byCode);
 	}
 
@@ -1232,6 +1246,9 @@ void KeyProcMove(BYTE byEvent, BYTE byCode)
 	if ((byEvent == KEY_UP) && (byCode == 'M')) {
 		AutoMapToggleKey ();
 	}
+	if ((byEvent == KEY_UP) && (byCode == 'H')) {
+		DefenseHudToggle ();
+	}
 	if ((byEvent == KEY_UP) && (byCode == VK_TAB)) {
 		ViewModeNext ();
 	}
@@ -1307,6 +1324,9 @@ void KeyProcDead(BYTE byEvent, BYTE byCode)
 	   いつもの 4 つの後ろに「地図」を足す。M は地図だけを出し入れする */
 	if ((byEvent == KEY_UP) && (byCode == 'M')) {
 		AutoMapToggleKey ();
+	}
+	if ((byEvent == KEY_UP) && (byCode == 'H')) {
+		DefenseHudToggle ();
 	}
 	if ((byEvent == KEY_UP) && (byCode == VK_TAB)) {
 		ViewModeNext ();
