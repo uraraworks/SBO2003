@@ -240,24 +240,13 @@ enum {
 	DEFHUD_BANNER_KIND_LOSE,
 };
 
-static BOOL		s_bDefHudShow = TRUE;			/* 状況表示を出すか（H キーで切り替え。拠点防衛を出たら出す側に戻す） */
+static BOOL		s_bDefHudShow = TRUE;			/* 状況表示を出すか（Tab の表示切替が「なし」の間だけ隠す。毎フレーム決める） */
 static BYTE		s_byDefPrevState = DGDEFSTATUS_NONE;	/* 前に見た状態 */
 static BYTE		s_byDefPrevWave = 0;			/* 前に見た波の番号 */
 static BYTE		s_byDefBanner = DEFHUD_BANNER_NONE;	/* 出している大見出しの種類 */
 static BYTE		s_byDefBannerWave = 0;			/* 大見出しの波の番号 */
 static BYTE		s_byDefBannerWaveMax = 0;		/* 大見出しの波の数 */
 static DWORD	s_dwDefBannerStart = 0;			/* 大見出しを出し始めた時刻 */
-
-/* H キー：状況表示の出し入れ（拠点防衛の中だけ） */
-void DefenseHudToggle(void)
-{
-	CMDPARA_DGDEFSTATUS St;
-
-	if (GetDefenseStatus (&St)) {
-		s_bDefHudShow = !s_bDefHudShow;
-		g_bDraw = TRUE;
-	}
-}
 
 /* 拠点のHPの割合（0〜100。残っていれば最低 1） */
 static int DefenseHpPercent(const CMDPARA_DGDEFSTATUS *pSt)
@@ -292,6 +281,7 @@ static void DefenseHudWatch(BOOL bActive, const CMDPARA_DGDEFSTATUS *pSt)
 		s_bDefHudShow = TRUE;
 		return;
 	}
+	s_bDefHudShow = (g_byViewMode != 0);
 	/* 入った直後（前の状態が無い）は、途中から見た時に古い演出を出さないよう見るだけ */
 	if (s_byDefPrevState != DGDEFSTATUS_NONE) {
 		if ((pSt->byState == DGDEFSTATUS_WAVE) && ((s_byDefPrevState != DGDEFSTATUS_WAVE) || (pSt->byWave > s_byDefPrevWave))) {
