@@ -224,34 +224,191 @@ static void DrawMagicKeyBand(PCHARINFO pChar, int nX, int nY)
 }
 
 /* ========================================================================= */
+/* 拠点防衛の状況表示（上の中央のパネル・中央の大見出し・拠点が危ない時の赤い縁）	 */
+/*		 サーバーから届く状態（CMD_DGDEFSTATUS）の変わり目から、クライアントだけで演出を出す */
+/*		 H キーで全部まとめて隠す・出す（Tab は表示切り替えで使っているので使えない）	 */
+/* ========================================================================= */
+#define DEFHUD_BANNER_WAVE		(2500)		/* 「WAVE n/N」の大見出しを出す時間(ms) */
+#define DEFHUD_BANNER_RESULT	(4000)		/* 勝ち・負けの大見出しを出す時間(ms) */
+#define DEFHUD_BANNER_OPEN		(220)		/* 大見出しがスッと開く時間(ms) */
+#define DEFHUD_BANNER_CLOSE		(300)		/* 大見出しがスッと閉じる時間(ms) */
+
+enum {
+	DEFHUD_BANNER_NONE = 0,
+	DEFHUD_BANNER_KIND_WAVE,
+	DEFHUD_BANNER_KIND_WIN,
+	DEFHUD_BANNER_KIND_LOSE,
+};
+
+static BOOL		s_bDefHudShow = TRUE;			/* 状況表示を出すか（Tab の表示切替が「なし」の間だけ隠す。毎フレーム決める） */
+static BYTE		s_byDefPrevState = DGDEFSTATUS_NONE;	/* 前に見た状態 */
+static BYTE		s_byDefPrevWave = 0;			/* 前に見た波の番号 */
+static BYTE		s_byDefBanner = DEFHUD_BANNER_NONE;	/* 出している大見出しの種類 */
+static BYTE		s_byDefBannerWave = 0;			/* 大見出しの波の番号 */
+static BYTE		s_byDefBannerWaveMax = 0;		/* 大見出しの波の数 */
+static DWORD	s_dwDefBannerStart = 0;			/* 大見出しを出し始めた時刻 */
+
+/* 拠点のHPの割合（0〜100。残っていれば最低 1） */
+static int DefenseHpPercent(const CMDPARA_DGDEFSTATUS *pSt)
+{
+	int nMax = max ((int)pSt->wBaseMaxHP, 1);
+	int nHP = min ((int)pSt->wBaseHP, nMax);
+	int nPct = nHP * 100 / nMax;
+
+	if (nHP > 0 && nPct == 0) {
+		nPct = 1;
+	}
+	return nPct;
+}
+
+/* 拠点が危ない（HPが25%以下で、まだ続いている）か */
+static BOOL IsDefenseDanger(const CMDPARA_DGDEFSTATUS *pSt)
+{
+	return ((pSt->byState == DGDEFSTATUS_PREP) || (pSt->byState == DGDEFSTATUS_WAVE)) &&
+		(pSt->wBaseHP > 0) && (DefenseHpPercent (pSt) <= 25);
+}
+
+/* 状態の変わり目を見て、大見出しを出し始める（毎フレーム 1 回。隠している間も見ておく） */
+static void DefenseHudWatch(BOOL bActive, const CMDPARA_DGDEFSTATUS *pSt)
+{
+	DWORD dwNow = timeGetTime ();
+
+	if (!bActive) {
+		/* 拠点防衛の外：全部元に戻す */
+		s_byDefPrevState = DGDEFSTATUS_NONE;
+		s_byDefPrevWave = 0;
+		s_byDefBanner = DEFHUD_BANNER_NONE;
+		s_bDefHudShow = TRUE;
+		return;
+	}
+	s_bDefHudShow = (g_byViewMode != 0);
+	/* 入った直後（前の状態が無い）は、途中から見た時に古い演出を出さないよう見るだけ */
+	if (s_byDefPrevState != DGDEFSTATUS_NONE) {
+		if ((pSt->byState == DGDEFSTATUS_WAVE) && ((s_byDefPrevState != DGDEFSTATUS_WAVE) || (pSt->byWave > s_byDefPrevWave))) {
+			s_byDefBanner = DEFHUD_BANNER_KIND_WAVE;
+			s_byDefBannerWave = pSt->byWave;
+			s_byDefBannerWaveMax = pSt->byWaveMax;
+			s_dwDefBannerStart = dwNow;
+		} else if ((pSt->byState == DGDEFSTATUS_WIN) && (s_byDefPrevState != DGDEFSTATUS_WIN)) {
+			s_byDefBanner = DEFHUD_BANNER_KIND_WIN;
+			s_dwDefBannerStart = dwNow;
+		} else if ((pSt->byState == DGDEFSTATUS_LOSE) && (s_byDefPrevState != DGDEFSTATUS_LOSE)) {
+			s_byDefBanner = DEFHUD_BANNER_KIND_LOSE;
+			s_dwDefBannerStart = dwNow;
+		}
+	}
+	s_byDefPrevState = pSt->byState;
+	s_byDefPrevWave = pSt->byWave;
+}
+
+/* ========================================================================= */
+/* 関数名：DrawDefenseDanger													 */
+/* 内容：拠点のHPが25%以下の間、画面の縁をゆっくり赤く点滅させる（強すぎない程度）	 */
+/*		 ウィンドウの下になるよう、ウィンドウを描く前に呼ぶ					 */
+/* ========================================================================= */
+static void DrawDefenseDanger(int nX, int nY)
+{
+	const int nWidth = 26;		/* 縁の幅 */
+	CMDPARA_DGDEFSTATUS St;
+	HDC hDC;
+	DWORD dwNow = timeGetTime ();
+	int yy, d, nAlpha;
+	double dRate;
+
+	if (!s_bDefHudShow || !GetDefenseStatus (&St) || !IsDefenseDanger (&St)) {
+		return;
+	}
+	/* 2.4 秒で 1 回ゆっくり明るくなって戻る */
+	dRate = 0.5 + 0.5 * sin ((double)(dwNow % 2400) * 6.2831853 / 2400.0);
+	nAlpha = 35 + (int)(75.0 * dRate);
+
+	hDC = g_pDibDrawMap->Lock ();
+	for (yy = 0; yy < SCRSIZEY; yy ++) {
+		/* 上下の縁（行ごとに全幅を薄く） */
+		if (yy < nWidth) {
+			W32ShadeSpan (hDC, nX, nY + yy, SCRSIZEX, 0, RGB (220, 20, 20), nAlpha * (nWidth - yy) / nWidth);
+		} else if (yy >= SCRSIZEY - nWidth) {
+			W32ShadeSpan (hDC, nX, nY + yy, SCRSIZEX, 0, RGB (220, 20, 20), nAlpha * (yy - (SCRSIZEY - nWidth) + 1) / nWidth);
+		}
+		/* 左の縁（右へ向かって薄くなる） */
+		W32ShadeSpan (hDC, nX, nY + yy, 0, nWidth, RGB (220, 20, 20), nAlpha);
+		/* 右の縁（2 ドットずつ） */
+		for (d = 0; d < nWidth; d += 2) {
+			W32ShadeSpan (hDC, nX + SCRSIZEX - d - 2, nY + yy, 2, 0, RGB (220, 20, 20), nAlpha * (nWidth - d) / nWidth);
+		}
+	}
+	g_pDibDrawMap->Unlock ();
+	g_bDraw = TRUE;
+}
+
+/* 枠のある帯を描く（半透明の暗い帯＋1 ドットの枠） */
+static void DrawDefenseFrame(HDC hDC, int x, int y, int cx, int cy, COLORREF clFrame, int nAlpha)
+{
+	int yy;
+
+	for (yy = 0; yy < cy; yy ++) {
+		if ((yy == 0) || (yy == cy - 1)) {
+			W32ShadeSpan (hDC, x + 1, y + yy, cx - 2, 0, clFrame, 255);
+		} else {
+			W32ShadeSpan (hDC, x, y + yy, cx, 0, RGB (0, 0, 0), nAlpha);
+			W32ShadeSpan (hDC, x, y + yy, 1, 0, clFrame, 255);
+			W32ShadeSpan (hDC, x + cx - 1, y + yy, 1, 0, clFrame, 255);
+		}
+	}
+}
+
+/* 真ん中揃えで文字を描く */
+static void DrawDefenseTextCenter(HDC hDC, int xCenter, int y, LPSTR pszText, COLORREF cl)
+{
+	SIZE size;
+
+	GetTextExtentPoint32 (hDC, pszText, strlen (pszText), &size);
+	TextOut2 (hDC, xCenter - size.cx / 2, y, pszText, cl);
+}
+
+/* 塗りつぶしの丸 */
+static void DrawDefenseDot(HDC hDC, int cx, int cy, int r, COLORREF cl)
+{
+	int yy;
+
+	for (yy = -r; yy <= r; yy ++) {
+		int w = (int)(sqrt ((double)(r * r - yy * yy) + 0.5));
+		W32ShadeSpan (hDC, cx - w, cy + yy, w * 2 + 1, 0, cl, 255);
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：DrawDefenseBand													 */
-/* 内容：番外編の拠点防衛の挑戦中だけ、画面の上の中央に小さな帯を出す		 */
-/*		 1行目「拠点 [HPバー] HP 720/1000」（残り割合で緑→黄(50%以下)→赤(25%以下)） */
-/*		 2行目「波 3/5」と、準備中なら「次の波まで 12秒」・波の最中なら「残り敵 5」 */
-/*		 後ろに半透明の暗い帯を敷く。スマホで縮小されても読めるよう14ドットの文字 */
+/* 内容：番外編の拠点防衛の挑戦中だけ、画面の上の中央にパネルを出す			 */
+/*		 1行目「拠点HP [バー] 720/1000」（残り割合で緑→黄(50%以下)→赤(25%以下)）	 */
+/*		 2行目 ウェーブの丸（済み=緑・今=橙で番号・未=暗）と、残り敵数を大きく	 */
+/*		 準備中は「次のウェーブまで N 秒」。勝ち・負けは文言を入れ替える		 */
+/*		 状態の変わり目で、中央の大見出し（WAVE n/N・勝ち・負け）を出す		 */
+/*		 後ろに半透明の暗い帯を敷く。スマホで縮小されても読めるよう大きめに	 */
 /* ========================================================================= */
 static void DrawDefenseBand(int nX, int nY)
 {
-	const int nWidth = 244;		/* 帯の幅 */
-	const int nHeight = 40;		/* 帯の高さ（2行ぶん） */
-	const int nBarX = 36;		/* HPバーの左（帯の左から） */
-	const int nBarW = 96;		/* HPバーの幅 */
+	const int nWidth = 316;		/* パネルの幅 */
+	const int nHeight = 76;		/* パネルの高さ */
+	const int nBarX = 62;		/* HPバーの左（パネルの左から） */
+	const int nBarW = 150;		/* HPバーの幅 */
 	CMDPARA_DGDEFSTATUS St;
 	char szTmp[96];
 	HDC hDC;
 	HFONT hFontOld;
 	COLORREF clBar;
-	int yy, x0, nPct, nFill, nHP, nMax;
+	BOOL bActive;
+	DWORD dwNow = timeGetTime ();
+	int i, yy, x0, nPct, nFill, nHP, nMax, nY0;
 
-	if (!GetDefenseStatus (&St)) {
+	bActive = GetDefenseStatus (&St);
+	DefenseHudWatch (bActive, &St);
+	if (!bActive || !s_bDefHudShow) {
 		return;
 	}
 	nMax = max ((int)St.wBaseMaxHP, 1);
 	nHP = min ((int)St.wBaseHP, nMax);
-	nPct = nHP * 100 / nMax;
-	if (nHP > 0 && nPct == 0) {
-		nPct = 1;
-	}
+	nPct = DefenseHpPercent (&St);
 	if (nPct <= 25) {
 		clBar = RGB (230, 60, 50);		/* 赤 */
 	} else if (nPct <= 50) {
@@ -264,44 +421,160 @@ static void DrawDefenseBand(int nX, int nY)
 		nFill = max (nFill, 1);
 	}
 	x0 = nX + (SCRSIZEX - nWidth) / 2;
+	nY0 = nY + 4;
 
 	hDC = g_pDibDrawMap->Lock ();
 	hFontOld = (HFONT)SelectObject (hDC, g_hFont14);
 	SetBkMode (hDC, TRANSPARENT);
 
 	/* 後ろの帯 */
-	for (yy = 0; yy < nHeight; yy ++) {
-		W32ShadeSpan (hDC, x0, nY + 4 + yy, nWidth, 0, RGB (0, 0, 0), 150);
+	DrawDefenseFrame (hDC, x0, nY0, nWidth, nHeight, RGB (200, 200, 200), 150);
+
+	/* 1行目：拠点HP */
+	TextOut2 (hDC, x0 + 8, nY0 + 6, (LPSTR)"拠点HP", RGB (255, 255, 255));
+	for (yy = 0; yy < 14; yy ++) {
+		W32ShadeSpan (hDC, x0 + nBarX - 1, nY0 + 6 + yy, nBarW + 2, 0, RGB (230, 230, 230), 255);
+		W32ShadeSpan (hDC, x0 + nBarX, nY0 + 7 + yy, nBarW, 0, RGB (50, 20, 20), 255);
 	}
-	/* HPバー（枠・空・中身） */
 	for (yy = 0; yy < 12; yy ++) {
-		W32ShadeSpan (hDC, x0 + nBarX - 1, nY + 7 + yy, nBarW + 2, 0, RGB (230, 230, 230), 255);
-		W32ShadeSpan (hDC, x0 + nBarX, nY + 8 + yy, nBarW, 0, RGB (50, 20, 20), 255);
-	}
-	for (yy = 0; yy < 10; yy ++) {
 		if (nFill > 0) {
-			W32ShadeSpan (hDC, x0 + nBarX, nY + 8 + yy, nFill, 0, clBar, 255);
+			W32ShadeSpan (hDC, x0 + nBarX, nY0 + 7 + yy, nFill, 0, clBar, 255);
 		}
 	}
-	TextOut2 (hDC, x0 + 5, nY + 6, (LPSTR)"拠点", RGB (255, 255, 255));
-	wsprintf (szTmp, "HP %d/%d", nHP, nMax);
-	TextOut2 (hDC, x0 + nBarX + nBarW + 6, nY + 6, szTmp, clBar);
+	wsprintf (szTmp, "%d/%d", nHP, nMax);
+	TextOut2 (hDC, x0 + nBarX + nBarW + 8, nY0 + 6, szTmp, RGB (255, 255, 255));
 
+	/* 2行目：ウェーブの丸 */
+	{
+		int nWaves = max ((int)St.byWaveMax, 1);
+		int nStep = min (22, 150 / nWaves);
+		int nR = (nStep >= 20) ? 8 : max (nStep / 2 - 1, 3);
+		int nDotX = x0 + 8 + nR;
+		int nDotY = nY0 + 50;
+		int nNow = (St.byState == DGDEFSTATUS_PREP || St.byState == DGDEFSTATUS_WAVE) ? (int)St.byWave : 0;
+
+		for (i = 1; i <= nWaves; i ++) {
+			COLORREF cl;
+			BOOL bDone;
+
+			if (St.byState == DGDEFSTATUS_WIN) {
+				bDone = TRUE;
+			} else if (St.byState == DGDEFSTATUS_LOSE) {
+				bDone = (i < (int)St.byWave);
+			} else if (St.byState == DGDEFSTATUS_PREP) {
+				bDone = (i < nNow);		/* 準備中は次に来る波が「今」 */
+			} else {
+				bDone = (i < nNow);
+			}
+			DrawDefenseDot (hDC, nDotX, nDotY, nR + 1, RGB (230, 230, 230));
+			if (bDone) {
+				cl = RGB (70, 200, 80);
+			} else if ((i == nNow) && (St.byState == DGDEFSTATUS_WAVE)) {
+				cl = RGB (245, 150, 40);
+			} else if ((i == nNow) && (St.byState == DGDEFSTATUS_PREP) && ((dwNow / 500) % 2)) {
+				cl = RGB (120, 80, 40);
+			} else {
+				cl = RGB (45, 45, 55);
+			}
+			DrawDefenseDot (hDC, nDotX, nDotY, nR - 1, cl);
+			if ((i == nNow) && (St.byState == DGDEFSTATUS_WAVE) && (nR >= 7)) {
+				wsprintf (szTmp, "%d", i);
+				DrawDefenseTextCenter (hDC, nDotX, nDotY - 7, szTmp, RGB (255, 255, 255));
+			}
+			nDotX += nStep;
+		}
+	}
+	/* 区切り */
+	for (yy = 0; yy < 44; yy ++) {
+		W32ShadeSpan (hDC, x0 + 8 + 160, nY0 + 28 + yy, 1, 0, RGB (200, 200, 200), 140);
+	}
+
+	/* 2行目の右：残り敵数（大きく）・準備中の秒・結果 */
 	switch (St.byState) {
 	case DGDEFSTATUS_PREP:
-		wsprintf (szTmp, "ウェーブ %d/%d  次のウェーブまで %d秒", St.byWave, St.byWaveMax, St.wRestSec);
+		TextOut2 (hDC, x0 + 176, nY0 + 28, (LPSTR)"次のウェーブまで", RGB (255, 255, 255));
+		SelectObject (hDC, g_hFont32);
+		wsprintf (szTmp, "%d", (int)St.wRestSec);
+		TextOut2 (hDC, x0 + 176, nY0 + 40, szTmp, RGB (255, 235, 120));
+		{
+			SIZE size;
+			GetTextExtentPoint32 (hDC, szTmp, strlen (szTmp), &size);
+			SelectObject (hDC, g_hFont14);
+			TextOut2 (hDC, x0 + 176 + size.cx + 4, nY0 + 56, (LPSTR)"秒", RGB (255, 235, 120));
+		}
+		SelectObject (hDC, g_hFont14);
 		break;
 	case DGDEFSTATUS_WAVE:
-		wsprintf (szTmp, "ウェーブ %d/%d  残り敵 %d", St.byWave, St.byWaveMax, St.wEnemy);
+		TextOut2 (hDC, x0 + 176, nY0 + 50, (LPSTR)"残り", RGB (255, 255, 255));
+		SelectObject (hDC, g_hFont32);
+		wsprintf (szTmp, "%d", (int)St.wEnemy);
+		TextOut2 (hDC, x0 + 176 + 36, nY0 + 38, szTmp, RGB (255, 255, 255));
+		SelectObject (hDC, g_hFont14);
 		break;
 	case DGDEFSTATUS_WIN:
-		wsprintf (szTmp, "ウェーブ %d/%d  全部しのいだ！", St.byWaveMax, St.byWaveMax);
+		TextOut2 (hDC, x0 + 176, nY0 + 48, (LPSTR)"全部しのいだ！", RGB (140, 255, 150));
 		break;
 	default:
-		wsprintf (szTmp, "ウェーブ %d/%d  拠点が落ちた…", St.byWave, St.byWaveMax);
+		TextOut2 (hDC, x0 + 176, nY0 + 48, (LPSTR)"拠点が落ちた…", RGB (255, 110, 100));
 		break;
 	}
-	TextOut2 (hDC, x0 + 5, nY + 24, szTmp, RGB (255, 255, 255));
+
+	/* 拠点が危ない：パネルの下に知らせ（赤い縁と同じ周期でゆっくり点滅） */
+	if (IsDefenseDanger (&St)) {
+		const int nWarnW = 188;
+		int nWx = x0 + (nWidth - nWarnW) / 2;
+		COLORREF clWarn = ((dwNow / 600) % 2) ? RGB (255, 120, 100) : RGB (255, 235, 200);
+
+		DrawDefenseFrame (hDC, nWx, nY0 + nHeight + 3, nWarnW, 20, RGB (200, 60, 50), 150);
+		DrawDefenseTextCenter (hDC, nWx + nWarnW / 2, nY0 + nHeight + 6, (LPSTR)"拠点が攻撃されています！", clWarn);
+		g_bDraw = TRUE;
+	}
+
+	/* 中央の大見出し（WAVE n/N・勝ち・負け）。スッと開いて、スッと閉じる */
+	if (s_byDefBanner != DEFHUD_BANNER_NONE) {
+		DWORD dwLife = (s_byDefBanner == DEFHUD_BANNER_KIND_WAVE) ? DEFHUD_BANNER_WAVE : DEFHUD_BANNER_RESULT;
+		DWORD dwAge = dwNow - s_dwDefBannerStart;
+
+		if (dwAge >= dwLife) {
+			s_byDefBanner = DEFHUD_BANNER_NONE;
+		} else {
+			const int nBannerW = 400;
+			const int nBannerH = 74;
+			int nOpen = 100;
+			int nH, bx, by, nMid;
+			COLORREF clFrame, clText;
+
+			if (dwAge < DEFHUD_BANNER_OPEN) {
+				nOpen = (int)(dwAge * 100 / DEFHUD_BANNER_OPEN);
+			} else if (dwAge > dwLife - DEFHUD_BANNER_CLOSE) {
+				nOpen = (int)((dwLife - dwAge) * 100 / DEFHUD_BANNER_CLOSE);
+			}
+			nH = max (nBannerH * nOpen / 100, 2);
+			nMid = nY + SCRSIZEY / 2 - 80;
+			bx = nX + (SCRSIZEX - nBannerW) / 2;
+			by = nMid - nH / 2;
+			switch (s_byDefBanner) {
+			case DEFHUD_BANNER_KIND_WIN:	clFrame = RGB (120, 230, 130);	clText = RGB (170, 255, 170);	break;
+			case DEFHUD_BANNER_KIND_LOSE:	clFrame = RGB (230, 80, 70);	clText = RGB (255, 130, 120);	break;
+			default:						clFrame = RGB (240, 200, 40);	clText = RGB (255, 255, 255);	break;
+			}
+			DrawDefenseFrame (hDC, bx, by, nBannerW, nH, clFrame, 170);
+			if (nOpen >= 70) {
+				SelectObject (hDC, g_hFont32);
+				if (s_byDefBanner == DEFHUD_BANNER_KIND_WAVE) {
+					wsprintf (szTmp, "WAVE %d/%d", (int)s_byDefBannerWave, (int)s_byDefBannerWaveMax);
+					DrawDefenseTextCenter (hDC, nX + SCRSIZEX / 2, nMid - 30, szTmp, clText);
+					SelectObject (hDC, g_hFont14);
+					DrawDefenseTextCenter (hDC, nX + SCRSIZEX / 2, nMid + 12, (LPSTR)"敵が来るぞ！", RGB (255, 255, 255));
+				} else {
+					DrawDefenseTextCenter (hDC, nX + SCRSIZEX / 2, nMid - 16,
+						(LPSTR)((s_byDefBanner == DEFHUD_BANNER_KIND_WIN) ? "全部しのいだ！" : "拠点が落ちた…"), clText);
+				}
+				SelectObject (hDC, g_hFont14);
+			}
+			g_bDraw = TRUE;
+		}
+	}
 
 	SelectObject (hDC, hFontOld);
 	g_pDibDrawMap->Unlock ();
@@ -350,6 +623,9 @@ void DrawScreen(HWND hWnd, HDC hDC)
 				nCount = g_SysMsgInfo.GetSize ();
 				x = BowOffsetX(pChar);
 				y = BowOffsetY(pChar);
+
+				/* 拠点が危ない時の赤い縁（ウィンドウの下に敷く） */
+				DrawDefenseDanger (32 - x, 32 - y);
 
 				/* 特技ショートカットの帯（ウィンドウの下に敷く） */
 				DrawMagicKeyBand (pChar, 32 - x, 32 - y);
