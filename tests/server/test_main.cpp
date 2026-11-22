@@ -1118,6 +1118,7 @@ static void TestTailRelogin(const std::vector<int> &aLogin);
 static void TestAttackRate(const std::vector<int> &aLogin);
 static void TestTailOverlap(const std::vector<int> &aLogin);
 static void TestTailBattleMapMove(const std::vector<int> &aLogin);
+static void TestTailSpaceMove(const std::vector<int> &aLogin);
 static void TestTailMidLeave(const std::vector<int> &aLogin);
 static void TestEmptyMapCheck(const std::vector<int> &aLogin);
 static void TestPutFill(void);
@@ -1686,6 +1687,8 @@ static void TestWorld(void)
 	TestDungeonDefenseInside(aLogin);
 	/* L3. 戦闘でばらけた列は、マップ移動後も戻り先を覚えている */
 	TestTailBattleMapMove(aLogin);
+	/* L4. 戦闘で列を離れて戻る途中に空間が変わっても、追いかけが残らない */
+	TestTailSpaceMove(aLogin);
 	/* AT. 列の途中の人が抜けても、後ろの人は前の人へつなぎ直る */
 	TestTailMidLeave(aLogin);
 }
@@ -14637,6 +14640,11 @@ static void TestDungeonDefenseInside(const std::vector<int> &aLogin)
 	printf("dungeoninside outsider step handled=%d pos=%lu,%lu space=%d\n", (int)bStep, (unsigned long)pB->dwX, (unsigned long)pB->dwY, (int)(pB->dwSpaceID != SPACE_NORMAL));
 	QuestMovePC(pB, (int)aBackB.dwMapID, (int)aBackB.dwX, (int)aBackB.dwY);
 
+	/* A と B は同じパーティ。B は受付から離れた所にいて、A だけが先に入る */
+	QuestSendParty(pA, pB, CMDPARTY_JOIN);
+	QuestSendParty(pB, pA, CMDPARTY_JOINOK);
+	QuestMovePC(pB, nMapNo, 20, 13);
+	printf("dungeoninside party same=%d nonzero=%d\n", (int)(pA->dwPartyID == pB->dwPartyID), (int)(pA->dwPartyID != 0));
 	/* 3. 受付→外の入口に乗ると、組の空間の中の開始位置へ移る。マップ・キャラの情報が届く */
 	QuestMovePC(pA, nMapNo, 4, 5);
 	DgTestTalk(pA, dwReception);
@@ -14649,6 +14657,20 @@ static void TestDungeonDefenseInside(const std::vector<int> &aLogin)
 	printf("dungeoninside enter in=%d run=%d space=%d pos=%lu,%lu map-same=%d base=%d\n", (int)QuestInDungeon(pA), DungeonRunCount(), (int)(dwSpace != SPACE_NORMAL),
 		(unsigned long)pA->dwX, (unsigned long)pA->dwY, (int)(pA->dwMapID == pMap->dwID), (int)(pBase != NULL));
 	printf("dungeoninside enter sent mapinfo=%d charinfo=%d\n", (int)(SpCnt(pA, CMD_MAPINFO) > nMapInfo0), (int)(SpCnt(pA, CMD_CHARINFO) > nCharInfo0));
+
+	/* 3b. 同じパーティの B が遅れて受付に話しても、同じパーティ番号の組を 2 つ目として作らない
+	   （作ると先の組が終わった時に B まで巻き込まれて操作できなくなる）。組は 1 つのまま・B は外のまま・選択も始まらない */
+	{
+		int nRun0 = DungeonRunCount();
+		QuestMovePC(pB, nMapNo, 4, 5);
+		DgTestTalk(pB, dwReception);
+		DgTestSelPick(pB, 0);
+		DungeonProcNow(s_dwFakeNow + 1000);
+		s_dwFakeNow += 1000;
+		printf("dungeoninside late-member runs=%d->%d sel=%d b-space=%d b-in=%d\n", nRun0, DungeonRunCount(), DungeonSelCount(),
+			(int)(pB->dwSpaceID != SPACE_NORMAL), (int)QuestInDungeon(pB));
+		QuestMovePC(pB, nMapNo, 20, 13);
+	}
 
 	/* 4. 中の開始位置のマスを（離れて戻って）踏むと「抜けますか？」。いいえなら残り、はいで受付の場所へ戻る */
 	int nAsk0 = SpCnt(pA, CMD_DUNGEONSEL);
@@ -14678,6 +14700,9 @@ static void TestDungeonDefenseInside(const std::vector<int> &aLogin)
 	pA->byCharState = aBack.byCharState; pA->byAdminLV = aBack.byAdminLV;
 	memcpy(pA->waItem, aBack.waItem, sizeof(pA->waItem));
 	memcpy(pA->waEqu, aBack.waEqu, sizeof(pA->waEqu));
+	QuestSendParty(pA, pA, CMDPARTY_BREAKUP);
+	pA->dwPartyID = 0; pB->dwPartyID = 0;
+	QuestMovePC(pB, (int)aBackB.dwMapID, (int)aBackB.dwX, (int)aBackB.dwY);
 	pB->byAdminLV = aBackB.byAdminLV;
 	QuestMovePC(pA, (int)aBack.dwMapID, (int)aBack.dwX, (int)aBack.dwY);
 	QuestSyncAll();
@@ -15446,6 +15471,179 @@ static void TestTailBattleMapMove(const std::vector<int> &aLogin)
 	printf("tailbattlemap forgotten detached=%d\n", pB->dwTailTblID == (DWORD)-1 && pC->dwTailTblID == (DWORD)-1);
 
 	pInfo->byRandomRange = byRangeBack;
+	for (int i = 0; i < 3; i ++) {
+		PCHARINFO p = apChar[i];
+		TailReturnForget(p->dwTblID);
+		MercenarySetBattleMode(p, FALSE);
+		p->dwTailTblID = aBack[i].dwTailTblID;
+		p->dwTailBackTblID = aBack[i].dwTailBackTblID;
+		p->dwSpaceID = aBack[i].dwSpaceID;
+		p->byCharState = aBack[i].byCharState;
+		p->wHP = aBack[i].wHP;
+		p->byDirection = aBack[i].byDirection;
+		p->dwTargetTblID = aBack[i].dwTargetTblID;
+		p->dwTargetTblID2 = aBack[i].dwTargetTblID2;
+		p->dwTargetTblID3 = aBack[i].dwTargetTblID3;
+		place(p, aBack[i].dwMapID, aBack[i].dwX, aBack[i].dwY);
+	}
+}
+
+/* ------------------------------------------------------------------------- */
+/* L4. 戦闘で列を離れて戻る途中（追いかけ中）に、先頭か本人が空間を移る			 */
+/*    （番外編ダンジョンの受付→入口など。SpaceSet）							 */
+/*    追いかけが残ると、本人が動けない(位置を送り返される)まま戻れなくなる		 */
+/* ------------------------------------------------------------------------- */
+static void TestTailSpaceMove(const std::vector<int> &aLogin)
+{
+	printf("== L4. Tail battle space move ==\n");
+	if (aLogin.size() < 3) return;
+	PMAPINFO pPort = g_aMapInfo[GetMapNo(14)];
+	int nX = -1, nY = -1;
+	for (int y = 1; y + 7 < pPort->nCY && nX < 0; y ++) {
+		for (int x = 1; x + 1 < pPort->nCX && nX < 0; x ++) {
+			bool bOpen = true;
+			for (int dy = -1; dy <= 6 && bOpen; dy ++) {
+				for (int dx = -1; dx <= 1 && bOpen; dx ++) {
+					if (!CheckCharBlock(pPort->dwID, x + dx, y + dy) || CheckEventBlock(pPort->dwID, x + dx, y + dy)) bOpen = false;
+				}
+			}
+			if (bOpen) { nX = x; nY = y; }
+		}
+	}
+	printf("tailspace setup=%d\n", nX >= 0 ? 1 : 0);
+	if (nX < 0) return;
+	PCHARINFO apChar[3] = { g_aCharInfo[aLogin[0]], g_aCharInfo[aLogin[1]], g_aCharInfo[aLogin[2]] };
+	PCHARINFO pA = apChar[0], pB = apChar[1], pC = apChar[2];
+	/* 変更する欄だけを保存する */
+	struct {
+		DWORD dwMapID, dwX, dwY, dwTailTblID, dwTailBackTblID, dwSpaceID;
+		DWORD dwTargetTblID, dwTargetTblID2, dwTargetTblID3;
+		BYTE byCharState, byDirection;
+		WORD wHP;
+	} aBack[3];
+	for (int i = 0; i < 3; i ++) {
+		PCHARINFO p = apChar[i];
+		aBack[i] = { p->dwMapID, p->dwX, p->dwY, p->dwTailTblID, p->dwTailBackTblID, p->dwSpaceID,
+			p->dwTargetTblID, p->dwTargetTblID2, p->dwTargetTblID3, p->byCharState, p->byDirection, p->wHP };
+	}
+	auto place = [&](PCHARINFO p, DWORD dwMap, DWORD x, DWORD y) {
+		DeleteTblNoPC((int)p->dwTblID);
+		p->dwMapID = dwMap;
+		p->dwX = p->dwXBack = x;
+		p->dwY = p->dwYBack = y;
+		AddTblNoPC((int)p->dwTblID);
+	};
+	/* A-B-C の列（縦に並ぶ）に戻す。B を戦闘モードにして列から離し、離れた所で解除＝追いかけ中にする */
+	auto reset = [&]() {
+		for (int i = 0; i < 3; i ++) TailReturnForget(apChar[i]->dwTblID);
+		for (int i = 0; i < 3; i ++) {
+			PCHARINFO p = apChar[i];
+			MercenarySetBattleMode(p, FALSE);
+			p->byCharState = CHARSTATE_MOVE;
+			p->wHP = max(p->wHP, (WORD)10);
+			p->dwSpaceID = SPACE_NORMAL;
+			p->dwTargetTblID = p->dwTargetTblID2 = p->dwTargetTblID3 = (DWORD)-1;
+			p->dwTailTblID = i ? apChar[i - 1]->dwTblID : (DWORD)-1;
+			p->dwTailBackTblID = i < 2 ? apChar[i + 1]->dwTblID : (DWORD)-1;
+			place(p, pPort->dwID, nX, nY + i);
+		}
+	};
+	auto startChase = [&]() {
+		TailBattleSend(pB, 1);
+		place(pB, pPort->dwID, nX + 1, nY + 5);
+		TailBattleSend(pB, 0);
+	};
+	/* B から動く要求（1マス横）が受け付けられたか */
+	auto keyMove = [&]() {
+		CMDPARA_CHARPOS Pos;
+		ZeroMemory(&Pos, sizeof(Pos));
+		Pos.byCmd = CMD_CHARPOS;
+		Pos.pID = pB->pID;
+		Pos.dwTblID = pB->dwTblID;
+		Pos.dwMapID = pB->dwMapID;
+		Pos.byX = (BYTE)(pB->dwX - 1);
+		Pos.byY = (BYTE)pB->dwY;
+		Pos.byDirection = 2;
+		DWORD dwXBack = pB->dwX;
+		TestRecv(pB, &Pos, sizeof(Pos));
+		return pB->dwX != dwXBack;
+	};
+
+	/* 1. 先頭が空間を移る：B の追いかけが残らず、B は動ける */
+	reset();
+	startChase();
+	printf("tailspace head chase start=%d\n", TailChaseIsActive(pB) ? 1 : 0);
+	SpaceSet(pA, 1, FALSE);
+	printf("tailspace head moved active=%d\n", TailChaseIsActive(pB) ? 1 : 0);
+	TailChaseAdvance(apChar, 3, 3000);
+	printf("tailspace head after active=%d free=%d\n", TailChaseIsActive(pB) ? 1 : 0, keyMove() ? 1 : 0);
+	/* 先頭が戻ってきて B が戦闘モードを解除しても、古い覚えで追いかけ直さない */
+	SpaceSet(pA, SPACE_NORMAL, FALSE);
+	TailBattleSend(pB, 1);
+	TailBattleSend(pB, 0);
+	printf("tailspace head back active=%d\n", TailChaseIsActive(pB) ? 1 : 0);
+
+	/* 2. 追いかけ中の本人が空間を移る：追いかけが残らず、先頭が戻るのを待たずに動ける */
+	reset();
+	startChase();
+	SpaceSet(pB, 1, FALSE);
+	printf("tailspace self moved active=%d\n", TailChaseIsActive(pB) ? 1 : 0);
+	SpaceSet(pB, SPACE_NORMAL, FALSE);
+	TailChaseAdvance(apChar, 3, 3000);
+	printf("tailspace self back active=%d free=%d\n", TailChaseIsActive(pB) ? 1 : 0, keyMove() ? 1 : 0);
+
+	/* 3. 先頭が空間を移ってから、先の空間の終了で戻っても、後ろの人は動ける（戻る途中だった人の残り） */
+	reset();
+	startChase();
+	SpaceSet(pA, 1, FALSE);
+	SpaceSet(pA, SPACE_NORMAL, FALSE);
+	TailChaseAdvance(apChar, 3, 31000);
+	printf("tailspace head round trip active=%d free=%d\n", TailChaseIsActive(pB) ? 1 : 0, keyMove() ? 1 : 0);
+
+	/* 4. 先頭が別マップの空間へ移ると、戦闘モードで列を離れた B は戻り先を覚えたまま待つ。
+	      その間に B が別の空間へ移って遊び、先頭が元のマップへ戻ると、B が同じ空間に戻った時に
+	      古い覚えで列を追いかけ始めて動けなくなる（空間を移る時に覚えを消す） */
+	{
+		PMAPINFO pMap2 = NULL;
+		int nX2 = -1, nY2 = -1;
+		for (int m = 0; m < g_aMapInfo.GetSize() && !pMap2; m ++) {
+			PMAPINFO p2 = g_aMapInfo[m];
+			if (!p2 || p2->dwID == pPort->dwID || !p2->pwMap) continue;
+			for (int y = 2; y + 2 < p2->nCY && !pMap2; y ++) {
+				for (int x = 2; x + 2 < p2->nCX && !pMap2; x ++) {
+					bool bOpen = true;
+					for (int dy = -1; dy <= 1 && bOpen; dy ++) {
+						for (int dx = -1; dx <= 1 && bOpen; dx ++) {
+							if (!CheckCharBlock(p2->dwID, x + dx, y + dy) || CheckEventBlock(p2->dwID, x + dx, y + dy)) bOpen = false;
+						}
+					}
+					if (bOpen) { pMap2 = p2; nX2 = x; nY2 = y; }
+				}
+			}
+		}
+		printf("tailspace map2 found=%d\n", pMap2 ? 1 : 0);
+		if (pMap2) {
+			reset();
+			TailBattleSend(pB, 1);
+			place(pA, pMap2->dwID, nX2, nY2);
+			SpaceSet(pA, 1, FALSE);
+			TailBattleSend(pB, 0);
+			PCHARINFO apRun[3] = { pA, pB, pC };
+			TailChaseAdvance(apRun, 3, 1000);
+			/* B は別の組の空間へ移る */
+			place(pB, pMap2->dwID, nX2 + 1, nY2);
+			SpaceSet(pB, 2, FALSE);
+			/* 先の組が終わって先頭が戻り、B も同じ空間に戻る */
+			place(pA, pPort->dwID, nX, nY);
+			SpaceSet(pA, SPACE_NORMAL, FALSE);
+			place(pB, pPort->dwID, nX + 1, nY + 5);
+			SpaceSet(pB, SPACE_NORMAL, FALSE);
+			TailChaseAdvance(apRun, 3, 1000);
+			printf("tailspace stale return active=%d free=%d\n", TailChaseIsActive(pB) ? 1 : 0, keyMove() ? 1 : 0);
+		}
+	}
+
+	reset();
 	for (int i = 0; i < 3; i ++) {
 		PCHARINFO p = apChar[i];
 		TailReturnForget(p->dwTblID);
