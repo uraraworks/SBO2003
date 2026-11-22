@@ -2310,4 +2310,15 @@ tailbattlemap chase member returned=1
 tailbattlemap fading arrived=1 battle stayed=1 fade=[0]
 tailbattlemap fading returned=1
 tailbattlemap forgotten detached=1
+== L4. Tail battle space move ==
+tailspace setup=1
+tailspace head chase start=1
+tailspace head moved active=0
+tailspace head after active=0 free=1
+tailspace head back active=0
+tailspace self moved active=0
+tailspace self back active=0 free=1
+tailspace head round trip active=0 free=1
+tailspace map2 found=1
+tailspace stale return active=0 free=1
 == done ==
