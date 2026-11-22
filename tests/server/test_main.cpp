@@ -1118,6 +1118,7 @@ static void TestTailRelogin(const std::vector<int> &aLogin);
 static void TestAttackRate(const std::vector<int> &aLogin);
 static void TestTailOverlap(const std::vector<int> &aLogin);
 static void TestTailBattleMapMove(const std::vector<int> &aLogin);
+static void TestTailMidLeave(const std::vector<int> &aLogin);
 static void TestEmptyMapCheck(const std::vector<int> &aLogin);
 static void TestPutFill(void);
 static void TestDungeonTheme(void);
@@ -1136,6 +1137,7 @@ extern BOOL LoadSubGameInfo(void);
 extern BOOL g_bPutFillOnStart;
 extern BOOL g_bLoginLimit;
 extern void RecvCmdOnDecPlayer(int);
+extern void TailRelinkLeave(PCHARINFO);
 extern void BattleProcCheck(PCHARINFO);
 extern void BattleProcCheckPC(PCHARINFO);
 
@@ -1684,6 +1686,8 @@ static void TestWorld(void)
 	TestDungeonDefenseInside(aLogin);
 	/* L3. 戦闘でばらけた列は、マップ移動後も戻り先を覚えている */
 	TestTailBattleMapMove(aLogin);
+	/* AT. 列の途中の人が抜けても、後ろの人は前の人へつなぎ直る */
+	TestTailMidLeave(aLogin);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -15171,6 +15175,84 @@ static void TestDungeonDefenseMarch(const std::vector<int> &aLogin)
 /* ------------------------------------------------------------------------- */
 /* L3. 戦闘中・復帰中のマップ移動：別マップでは待ち、そろったら列へ戻る */
 /* ------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
+/* AT. ついていく列の途中の人がログアウトなどで抜ける時のつなぎ直し			 */
+/*    A←B←C←D で B が抜けると A←C←D。先頭・最後尾が抜けた時は従来どおり		 */
+/* ------------------------------------------------------------------------- */
+static void TestTailMidLeave(const std::vector<int> &aLogin)
+{
+	printf("== AT. Tail mid leave ==\n");
+	if (aLogin.size() < 4) {
+		return;
+	}
+	PCHARINFO apChar[4];
+	DWORD adwBack[4][5];
+	for (int i = 0; i < 4; i ++) {
+		PCHARINFO p = apChar[i] = g_aCharInfo[aLogin[i]];
+		adwBack[i][0] = p->dwMapID; adwBack[i][1] = p->dwX; adwBack[i][2] = p->dwY;
+		adwBack[i][3] = p->dwTailTblID; adwBack[i][4] = p->dwTailBackTblID;
+	}
+	auto setLine = [&]() {
+		for (int i = 0; i < 4; i ++) {
+			PCHARINFO p = apChar[i];
+			p->dwMapID = apChar[0]->dwMapID;
+			p->dwTailTblID = (i > 0) ? apChar[i - 1]->dwTblID : (DWORD)-1;
+			p->dwTailBackTblID = (i < 3) ? apChar[i + 1]->dwTblID : (DWORD)-1;
+		}
+	};
+	auto idx = [&](DWORD dwTblID) -> int {
+		for (int i = 0; i < 4; i ++) if (apChar[i]->dwTblID == dwTblID) return i;
+		return -1;
+	};
+	auto show = [&](const char *pszName) {
+		printf("%s:", pszName);
+		for (int i = 0; i < 4; i ++) {
+			printf(" front[%d]=%d back[%d]=%d", i, idx(apChar[i]->dwTailTblID), i, idx(apChar[i]->dwTailBackTblID));
+		}
+		printf("\n");
+	};
+	/* 抜ける時の処理（OnDecPlayer と同じ順） */
+	auto leave = [&](int n) {
+		MockTrace(1);
+		TailRelinkLeave(apChar[n]);
+		CharTargetCancelPC(apChar[n]);
+		MockTrace(0);
+	};
+
+	/* (a) 2番目が抜ける：A←C←D */
+	setLine();
+	leave(1);
+	show("mid-leave 2nd");
+	/* (b) 3番目が抜ける：A←B←D */
+	setLine();
+	leave(2);
+	show("mid-leave 3rd");
+	/* (c) 先頭が抜ける：B←C←D の先頭は B になる（つなぎ直しなし） */
+	setLine();
+	leave(0);
+	show("mid-leave head");
+	/* (d) 最後尾が抜ける：A←B←C */
+	setLine();
+	leave(3);
+	show("mid-leave tail");
+	/* (e) 前後が食い違っていたら触らない */
+	setLine();
+	apChar[2]->dwTailTblID = apChar[0]->dwTblID;
+	TailRelinkLeave(apChar[1]);
+	show("mid-leave mismatch");
+	/* (f) 続けて2人抜ける：A←D */
+	setLine();
+	leave(1);
+	leave(2);
+	show("mid-leave twice");
+
+	for (int i = 0; i < 4; i ++) {
+		PCHARINFO p = apChar[i];
+		p->dwMapID = adwBack[i][0]; p->dwX = adwBack[i][1]; p->dwY = adwBack[i][2];
+		p->dwTailTblID = adwBack[i][3]; p->dwTailBackTblID = adwBack[i][4];
+	}
+}
+
 static void TestTailBattleMapMove(const std::vector<int> &aLogin)
 {
 	printf("== L3. Tail battle mapmove ==\n");
