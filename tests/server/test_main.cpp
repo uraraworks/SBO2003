@@ -14377,10 +14377,24 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 	{
 		pA->wHP = pA->wMaxHP = 480; pA->wMana = pA->wMaxMana = 90;
 		Info.wDefWaveMaxSec = 30;
+		/* 泉の位置を決めて入ると、泉の位置に名前だけの透明な目印（通り抜けられる NPC）が立つ（入った後は位置を戻す） */
+		Info.byDefSpringX = 12; Info.byDefSpringY = 6;
 		Enter();
+		Info.byDefSpringX = 0; Info.byDefSpringY = 0;
 		dwSpace = pA->dwSpaceID;
 		pBase = DgDefenseBaseOf(dwSpace);
 		printf("dungeondefense run2 in=%d base=%d hp=%d\n", (int)QuestInDungeon(pA), (int)(pBase != NULL), pBase ? (int)pBase->wHP : -1);
+		{
+			int nMark = 0, nOk = 0;
+			for (int k = 0; k < g_aCharInfo.GetSize(); k ++) {
+				PCHARINFO p = g_aCharInfo[k];
+				if (p && (p->dwSpaceID == dwSpace) && (p->byGameState == GAMESTATE_NPC) && (strcmp(p->szName, "回復の泉") == 0)) {
+					nMark ++;
+					nOk = (p->byNpcType == NPCTYPE_NOBLOCK) && (p->byGhost == CHARGHOST_NAMEONLY) && (p->dwX == 12) && (p->dwY == 6) && (p->dwParentTblID == p->dwTblID) && !DgIsDefenseEnemy(p);
+				}
+			}
+			printf("dungeondefense run2 spring-mark count=%d ok=%d\n", nMark, nOk);
+		}
 		if (pBase) {
 			Tick(1 + 3 + 1);
 			int nWave1 = Enemies(dwSpace);
