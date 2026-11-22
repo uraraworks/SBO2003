@@ -6408,6 +6408,8 @@ void SpaceSet(PCHARINFO pChar, DWORD dwSpaceID, BOOL bRefresh)
 	/* ついていく・ターゲットは切る（空間をまたいでは続けられない） */
 	CharTargetCancelPC (pChar);
 	pChar->dwTargetTblID = -1;
+	/* 戦闘で列を離れて戻る途中（追いかけ中）の覚えも消す。残ると別の空間の先頭を追いかけ続けて本人が動けなくなる */
+	TailReturnForget (pChar->dwTblID);
 
 	/* 前の空間の人から消える（向きを 99 にして座標を送るのが「いなくなった」の合図） */
 	{
