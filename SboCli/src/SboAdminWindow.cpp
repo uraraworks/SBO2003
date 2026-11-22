@@ -8456,6 +8456,10 @@ void DeleteAdminWndEventInfoType(void)
 	SAFE_DESTROYWND (m_hWndEdit2);
 	SAFE_DESTROYWND (m_hWndEdit3);
 	SAFE_DESTROYWND (m_hWndEdit4);
+	SAFE_DESTROYWND (m_hWndEdit5);
+	SAFE_DESTROYWND (m_hWndEdit6);
+	SAFE_DESTROYWND (m_hWndEdit7);
+	SAFE_DESTROYWND (m_hWndEdit8);
 	SAFE_DESTROYWND (m_hWndCombo2);
 }
 

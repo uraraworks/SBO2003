@@ -174,6 +174,7 @@ void	RecvDataProcTALKMSG					(PBYTE, DWORD);			/* 受信データ処理(会話�
 void	RecvDataProcMAPSWAP					(PBYTE, DWORD);			/* 受信データ処理(印で変わるマスの差し替え一覧) */
 void	RecvDataProcHASTE					(PBYTE, DWORD);			/* 受信データ処理(加速の状態) */
 void	RecvDataProcDGDEFSTATUS				(PBYTE, DWORD);			/* 受信データ処理(拠点防衛の状態) */
+void	RecvDataProcDGSTATUS				(PBYTE, DWORD);			/* 受信データ処理(番外編ダンジョンの状況パネル) */
 void	RecvDataProcCHARBUFF				(PBYTE, DWORD);			/* 受信データ処理(攻撃力・守備力アップの残り) */
 void	RecvDataProcMAKERINFO				(PBYTE, DWORD);			/* 受信データ処理(作り手情報) */
 void	RecvDataProcRECIPEINFO				(PBYTE, DWORD);			/* 受信データ処理(レシピ情報) */
@@ -473,6 +474,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcDUNGEONSEL,				/* CMD_DUNGEONSEL */
 	RecvDataProcDGDEFSTATUS,			/* CMD_DGDEFSTATUS */
 	RecvDataProcDGDEFMAP,				/* CMD_DGDEFMAP */
+	RecvDataProcDGSTATUS,				/* CMD_DGSTATUS */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -5570,8 +5572,17 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 		pCharDst->dwXBack = pCharDst->dwX;
 		pCharDst->dwYBack = pCharDst->dwY;
 	}
+	/* 自分がサーバーに2マス以上戻された（回線が遅れて先に歩きすぎた・まとめて届いて速さの見張りに引っかかった等）時は、
+	   SendCmdCHARPOS の「前回位置から2歩以上移動する」確認が戻された距離を移動と見て、
+	   自分で接続を閉じていた（遅い回線で長く歩くと固まる）。サーバーの補正なので前回位置も合わせる */
+	BOOL bFar = (nNo == g_nMyCharID) &&
+		((abs ((int)pCharDst->dwX - (int)pChar->byX) > 1) || (abs ((int)pCharDst->dwY - (int)pChar->byY) > 1));
 	pCharDst->dwX = (DWORD)pChar->byX;
 	pCharDst->dwY = (DWORD)pChar->byY;
+	if (bFar) {
+		pCharDst->dwXBack = pCharDst->dwX;
+		pCharDst->dwYBack = pCharDst->dwY;
+	}
 	pCharDst->dwLastDotMove = 0;
 	g_pMapInfo->pdwMapChar[g_pMapInfo->nCX * pCharDst->dwY + pCharDst->dwX] ++;
 	g_bDraw = TRUE;
@@ -8480,6 +8491,47 @@ BOOL GetDefenseStatus(PCMDPARA_DGDEFSTATUS pOut)
 		return FALSE;
 	}
 	*pOut = s_DefStatus;
+	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcDGSTATUS / GetDungeonStatus							 */
+/* 内容：受信データ処理(番外編ダンジョン：拠点防衛以外の状況パネル)			 */
+/*		 サーバーは変わった時と数秒ごとに送る。一定時間届かなければ消す		 */
+/*		 経過秒は、届いた時刻からこちらで進める（挑戦中だけ）					 */
+/* ========================================================================= */
+#define DGSTATUS_EXPIRE		(12000)								/* この時間(ms)届かなければパネルを消す */
+static CMDPARA_DGSTATUS		s_DgStatus;							/* 最後に届いた状態（byState が DGSTATUS_NONE ならパネルなし） */
+static DWORD				s_dwDgStatusTime;					/* 最後に届いた時刻 */
+
+void RecvDataProcDGSTATUS(PBYTE pData, DWORD dwDataSize)
+{
+	if (dwDataSize < sizeof (CMDPARA_DGSTATUS)) {
+		return;
+	}
+	memcpy (&s_DgStatus, pData, sizeof (CMDPARA_DGSTATUS));
+	s_DgStatus.szTitle[sizeof (s_DgStatus.szTitle) - 1] = 0;
+	s_dwDgStatusTime = timeGetTime ();
+	g_bDraw = TRUE;
+}
+
+/* 番外編ダンジョンの状況を取得（パネルを出す時だけ TRUE。挑戦中は経過秒を今に合わせて返す） */
+BOOL GetDungeonStatus(PCMDPARA_DGSTATUS pOut)
+{
+	DWORD dwAge;
+
+	if (s_DgStatus.byState == DGSTATUS_NONE) {
+		return FALSE;
+	}
+	dwAge = timeGetTime () - s_dwDgStatusTime;
+	if ((int)dwAge >= DGSTATUS_EXPIRE) {
+		ZeroMemory (&s_DgStatus, sizeof (s_DgStatus));
+		return FALSE;
+	}
+	*pOut = s_DgStatus;
+	if (s_DgStatus.byState == DGSTATUS_RUN) {
+		pOut->dwElapsedSec += dwAge / 1000;
+	}
 	return TRUE;
 }
 

@@ -13765,8 +13765,25 @@ static void TestDungeonDaily(const std::vector<int> &aLogin)
 	DpKillEnemy(dwPut, dwK2);
 	printf("dungeondaily killall start in=%d%d enemies=%d after2=%d cleared-yet=%d\n", (int)QuestInChallenge(pA), (int)QuestInChallenge(pB), nEn, DgTestCountEnemy(dwPut, dwK2),
 		(int)(DungeonDailyFind(byID, dwKVer, vK) && vK.aRec.size() > 0));
+	/* 状況パネル（CMD_DGSTATUS）：A にも B にも届き、残り敵数・総数・経過秒・目標が入っている */
+	auto DgSt = [&](const char *pszTag) {
+		CMDPARA_DGSTATUS St;
+		std::vector<BYTE> aSt;
+		MockTrace(1);
+		DungeonProcNow(s_dwFakeNow);
+		if (MarketLast(DgTestConn(pA), CMD_DGSTATUS, aSt) && aSt.size() >= sizeof(St)) {
+			memcpy(&St, &aSt[0], sizeof(St));
+			printf("dungeonstatus %s state=%d goal=%d enemy=%d/%d elapsed=%u title-ok=%d a=%d b-got=%d defstatus=%d\n", pszTag, (int)St.byState, (int)St.byGoal, (int)St.wEnemy, (int)St.wEnemyMax,
+				(unsigned)St.dwElapsedSec, (int)(St.szTitle[0] != 0), (int)(MockCmdCount(DgTestConn(pA), CMD_DGSTATUS) > 0), (int)(MockCmdCount(DgTestConn(pB), CMD_DGSTATUS) > 0), MockCmdCount(DgTestConn(pA), CMD_DGDEFSTATUS));
+		} else {
+			printf("dungeonstatus %s none\n", pszTag);
+		}
+	};
+	DgSt("killall-after2");
 	s_dwFakeNow += 12345;
 	DpKillEnemy(dwPut, dwK2);
+	DgSt("killall-cleared");
+	MockTrace(0);
 	DungeonDailyFind(byID, dwKVer, vK);
 	printf("dungeondaily killall cleared records=%d ms=%u count=%d in=%d%d\n", (int)vK.aRec.size(), vK.aRec.empty() ? 0u : (unsigned)vK.aRec[0].dwMs, vK.aRec.empty() ? 0 : vK.aRec[0].nCount,
 		(int)QuestInChallenge(pA), (int)QuestInChallenge(pB));

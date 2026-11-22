@@ -1130,9 +1130,14 @@ function replaceColor(scope) {
 
 cv.addEventListener('contextmenu', (e) => e.preventDefault()); // Mac の Ctrl+クリックでも右クリックメニューを出さない
 
-// 指2本でスクロール（スマホ・タブレット）。1本目は普通に描き始めるので、2本目が来たら描きを確定して移動に切り替える
+// 指2本でスクロール＋ピンチ拡大縮小（スマホ・タブレット。ドット絵工房と同じ操作感）。
+// 1本目は普通に描き始めるので、2本目が来たら描きを確定して移動に切り替える。指を離したら倍率は整数に寄せる
 const touches = new Map();
 let touchPan = null;
+function touchDist() {
+  const a = [...touches.values()];
+  return a.length < 2 ? 0 : Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y);
+}
 function touchCentroid() {
   let x = 0, y = 0;
   for (const t of touches.values()) { x += t.x; y += t.y; }
@@ -1150,7 +1155,11 @@ cv.addEventListener('pointerdown', (e) => {
       if (drag) { toolUp(tab, S.hover || toImg(e)); requestDraw(); }
       cv.setPointerCapture(e.pointerId);
       const c = touchCentroid();
-      touchPan = { cx: c.x, cy: c.y, l: vp.scrollLeft, t: vp.scrollTop };
+      const q = vp.getBoundingClientRect();
+      const sx = c.x - q.left - vp.clientLeft;
+      const sy = c.y - q.top - vp.clientTop;
+      const o = origin(tab);
+      touchPan = { d: Math.max(10, touchDist()), z: tab.zoom, ix: (sx - o.ox) / tab.zoom, iy: (sy - o.oy) / tab.zoom, sx, sy };
       return;
     }
     if (touches.size > 2) return;
@@ -1178,9 +1187,18 @@ cv.addEventListener('pointermove', (e) => {
   if (!tab) return;
   if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (touchPan) {
+    if (touches.size < 2) return;
+    // 2本の指の真ん中にある絵の点を、指の動きに合わせて動かしながら、指の間隔の比で拡大縮小する
     const c = touchCentroid();
-    vp.scrollLeft = touchPan.l - (c.x - touchPan.cx);
-    vp.scrollTop = touchPan.t - (c.y - touchPan.cy);
+    const q = vp.getBoundingClientRect();
+    touchPan.sx = c.x - q.left - vp.clientLeft;
+    touchPan.sy = c.y - q.top - vp.clientTop;
+    const z = clamp(Math.round(touchPan.z * touchDist() / touchPan.d * 100) / 100, ZOOMS[0], ZOOMS[ZOOMS.length - 1]);
+    if (z !== tab.zoom) setZoom(tab, z, touchPan.ix, touchPan.iy, touchPan.sx, touchPan.sy);
+    else {
+      vp.scrollLeft = touchPan.ix * z + PAD - touchPan.sx;
+      vp.scrollTop = touchPan.iy * z + PAD - touchPan.sy;
+    }
     return;
   }
   const p = toImg(e);
@@ -1195,7 +1213,14 @@ function endPointer(e) {
   const tab = S.active;
   if (touches.has(e.pointerId)) {
     touches.delete(e.pointerId);
-    if (touchPan) { if (touches.size < 2) touchPan = null; return; } // 2本指の移動中に指を離した時は何も描かない
+    if (touchPan) { // 2本指の移動中に指を離した時は何も描かない
+      if (touches.size < 2) {
+        const z = Math.max(1, Math.round(tab ? tab.zoom : 1));
+        if (tab && z !== tab.zoom) setZoom(tab, z, touchPan.ix, touchPan.iy, touchPan.sx, touchPan.sy); // 倍率は整数に寄せる（ドットがそろって見える）
+        touchPan = null;
+      }
+      return;
+    }
   }
   if (!tab || !drag) return;
   toolUp(tab, toImg(e));

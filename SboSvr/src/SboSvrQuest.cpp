@@ -89,6 +89,7 @@ typedef struct _LOANBAK {
 
 /* 空間の種類（CHALLENGE::byKind） */
 #define CHALLENGEKIND_QUEST		(0)									/* 討伐チャレンジ */
+#define DG_STATUS_KEEP			(3000)								/* 状況パネル（CMD_DGSTATUS）は、変わらなくてもこの間隔（ミリ秒）で送り直す */
 #define CHALLENGEKIND_DUNGEON	(1)									/* 番外編ダンジョン（気まぐれダンジョンのミニゲーム） */
 
 /* 番外編ダンジョンの、NPC発生の発生元ごとの数（組の空間ごとに数える） */
@@ -159,7 +160,9 @@ typedef struct _CHALLENGE {
 	std::map<DWORD, DGDEFDEAD>	mapDead;							/* 拠点防衛：組の人のテーブルID → 倒れた回数・復活の時刻 */
 	CMDPARA_DGDEFSTATUS	stDefSent;									/* 拠点防衛：最後に組へ送った画面の帯の状態（変わった時だけ送るため） */
 	DWORD		dwDefSentAt;										/* 拠点防衛：その状態を送った時刻（周期処理の時刻。一定時間ごとに同じ内容も送り直す） */
-	_CHALLENGE() : byKind(0), byDungeonID(0), dwBuildNo(0), bDaily(FALSE), bRanked(FALSE), dwDailyVer(0), dwDailySeed(0), bKillAll(FALSE), byCountDown(4), wQuestID(0), dwMapNo(0), dwSpaceID(0), bArena(FALSE), dwPartyID(0), dwStart(0), bCleared(FALSE), dwClear(0), dwClearTime(0), bDefense(FALSE), dwBaseTbl((DWORD)-1), nWave(0), byDefPhase(DGDEF_PHASE_INIT), byDefResult(DGDEF_RESULT_NONE), dwDefPhaseStart(0), dwDefWaveStart(0), dwDefEnd(0), dwDefSpring(0), nEnemyLeft(-1), byBaseBracket(4), dwDefSentAt(0) { ZeroMemory (&stDefSent, sizeof (stDefSent)); }
+	CMDPARA_DGSTATUS	stStSent;									/* 拠点防衛以外：最後に組へ送った状況パネルの状態（変わった時だけ送るため） */
+	DWORD		dwStSentAt;											/* 拠点防衛以外：その状態を送った時刻（周期処理の時刻。数秒ごとに送り直して経過秒を合わせる） */
+	_CHALLENGE() : byKind(0), byDungeonID(0), dwBuildNo(0), bDaily(FALSE), bRanked(FALSE), dwDailyVer(0), dwDailySeed(0), bKillAll(FALSE), byCountDown(4), wQuestID(0), dwMapNo(0), dwSpaceID(0), bArena(FALSE), dwPartyID(0), dwStart(0), bCleared(FALSE), dwClear(0), dwClearTime(0), bDefense(FALSE), dwBaseTbl((DWORD)-1), nWave(0), byDefPhase(DGDEF_PHASE_INIT), byDefResult(DGDEF_RESULT_NONE), dwDefPhaseStart(0), dwDefWaveStart(0), dwDefEnd(0), dwDefSpring(0), nEnemyLeft(-1), byBaseBracket(4), dwDefSentAt(0), dwStSentAt(0) { ZeroMemory (&stDefSent, sizeof (stDefSent)); ZeroMemory (&stStSent, sizeof (stStSent)); }
 } CHALLENGE;
 
 /* 戻す場所（切断した人は、マップの表から外れてから動かす） */
@@ -2793,6 +2796,13 @@ static void ChallengeLeave(PCHARINFO p, int nReason)
 		ZeroMemory (&Para, sizeof (Para));
 		SendCmdDGDEFSTATUS (p->pID, &Para);
 	}
+	/* 拠点防衛以外の番外編：外へ出る人の画面から状況パネルを消す（切断では送れない） */
+	if (bDungeon && !bDefense && (nReason != CHALLENGELEAVE_LOGOUT) && IsPlayerOnline (p)) {
+		CMDPARA_DGSTATUS Para;
+
+		ZeroMemory (&Para, sizeof (Para));
+		SendCmdDGSTATUS (p->pID, &Para);
+	}
 	/* 番外編：中で手に入れた物は中だけの物。どの出方でも持ち帰らず、元の持ち物に戻すだけ（2026-11-19 方針） */
 
 	LoanXfer (p, &Bak, TRUE);
@@ -4245,6 +4255,87 @@ static int DgRemain(CHALLENGE *pCh)
 	return nRemain;
 }
 
+/* 敵の総数（クリア条件「敵を全部倒す」の、範囲の中の補充しない印の発生元が出す数の合計） */
+static int DgEnemyTotal(CHALLENGE *pCh)
+{
+	PSUBGAME_DUNGEONINFO pDungeon = DgInfo (pCh->byDungeonID);
+	int i, nTotal = 0, nCount = g_aCharInfo.GetSize ();
+
+	if (pDungeon == NULL) {
+		return 0;
+	}
+	for (i = 0; i < nCount; i ++) {
+		PCHARINFO pParent = g_aCharInfo[i];
+		if ((pParent == NULL) || (pParent->byNpcType != NPCTYPE_PUT) || !pParent->byPutOnce || (pParent->byPutCount == 0) ||
+			(pParent->dwSpaceID != SPACE_NORMAL) || !DgInArea (pDungeon, pParent->dwMapID, pParent->dwX, pParent->dwY)) {
+			continue;
+		}
+		nTotal += pParent->byPutCount;
+	}
+	return nTotal;
+}
+
+/* 状況パネル（CMD_DGSTATUS）の今の状態を作る */
+static void DgStatusMake(CHALLENGE *pCh, CMDPARA_DGSTATUS &Para, DWORD dwNow)
+{
+	PSUBGAME_DUNGEONINFO pDungeon = DgInfo (pCh->byDungeonID);
+	std::string strTitle;
+	size_t nPos;
+	int nTotal;
+
+	ZeroMemory (&Para, sizeof (Para));
+	Para.byCmd = CMD_DGSTATUS;
+	Para.byState = (pCh->bKillAll && pCh->bCleared) ? DGSTATUS_CLEAR : DGSTATUS_RUN;
+	if (pCh->bKillAll) {
+		Para.byGoal = DGSTATUS_GOAL_KILLALL;
+		nTotal = DgEnemyTotal (pCh);
+		Para.wEnemyMax = (WORD)min (nTotal, 65535);
+		Para.wEnemy = (Para.byState == DGSTATUS_CLEAR) ? (WORD)0 : (WORD)min (DgRemain (pCh), 65535);
+	}
+	if (Para.byState == DGSTATUS_CLEAR) {
+		Para.dwElapsedSec = pCh->dwClearTime / 1000;
+	} else {
+		Para.dwElapsedSec = ((int)(dwNow - pCh->dwStart) > 0) ? (dwNow - pCh->dwStart) / 1000 : 0;
+	}
+	/* 題：テーマ名（日替わりの「（今日のダンジョン）」は付けない）。無ければ「気まぐれダンジョン」 */
+	if (pDungeon && pDungeon->dwThemeID && pDungeon->pbyAutoMap && (pDungeon->dwAutoMapSize >= sizeof (CMDPARA_DUNGEONMAP))) {
+		PCMDPARA_DUNGEONMAP pMap = (PCMDPARA_DUNGEONMAP)pDungeon->pbyAutoMap;
+		strTitle.assign (pMap->szName, strnlen (pMap->szName, sizeof (pMap->szName)));
+	}
+	nPos = strTitle.find ("（今日のダンジョン）");
+	if (nPos != std::string::npos) {
+		strTitle.erase (nPos);
+	}
+	if (strTitle.empty ()) {
+		strTitle = "気まぐれダンジョン";
+	}
+	SboTextCopy (Para.szTitle, sizeof (Para.szTitle), strTitle.c_str ());
+}
+
+/* 状況パネルを組の全員に送る。変わった時と一定時間ごと（経過秒の合わせ直しも兼ねる） */
+static void DgStatusSend(CHALLENGE *pCh, DWORD dwNow)
+{
+	CMDPARA_DGSTATUS Para, A, B;
+	size_t k;
+
+	DgStatusMake (pCh, Para, dwNow);
+	A = Para;
+	B = pCh->stStSent;
+	A.dwElapsedSec = B.dwElapsedSec = 0;
+	if ((memcmp (&A, &B, sizeof (A)) == 0) && ((int)(dwNow - pCh->dwStSentAt) < DG_STATUS_KEEP) && (pCh->dwStSentAt != 0)) {
+		return;
+	}
+	pCh->stStSent = Para;
+	pCh->dwStSentAt = dwNow;
+	for (k = 0; k < pCh->aMember.size (); k ++) {
+		PCHARINFO pTmp = (pCh->aMember[k] < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[pCh->aMember[k]] : NULL;
+
+		if (pTmp && IsPlayerOnline (pTmp) && (s_mapLoan.find (pCh->aMember[k]) != s_mapLoan.end ())) {
+			SendCmdDGSTATUS (pTmp->pID, &Para);
+		}
+	}
+}
+
 /* クリア時間を決める（最初の 1 回だけ）。日替わりだけ、その版の最短記録に足す。記録には、今も組に残っている人だけを残す。
    組に知らせる「クリア時間 X分Y秒（今日の○位）」を返す。日替わりでなく bAlways も偽なら空 */
 static std::string DgRecordClear(CHALLENGE *pRun, BOOL bAlways)
@@ -5378,6 +5469,7 @@ static void DgProc(DWORD dwNow)
 		/* クリア済み（敵を全部倒した）：3・2・1 を数えて、10 秒後に全員（倒れている人も）戻す。それまで途中の判定はしない */
 		if (Ch.bKillAll && Ch.bCleared) {
 			DWORD dwEl = dwNow - Ch.dwClear;
+			DgStatusSend (&Ch, dwNow);
 			int nLeft = 10 - (int)(dwEl / 1000);
 			if (dwEl >= 10000) {
 				for (j = 0; j < aMember.size (); j ++) {
@@ -5438,6 +5530,7 @@ static void DgProc(DWORD dwNow)
 				}
 			} else {
 				DgPutProc (&Ch, dwNow, FALSE);
+				DgStatusSend (&Ch, dwNow);
 			}
 			if (Ch.bMapShared) {
 				std::vector<BYTE> pos = DgMapPositions (&Ch);

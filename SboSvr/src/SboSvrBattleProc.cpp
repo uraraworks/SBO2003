@@ -1465,7 +1465,8 @@ static int DamageProc(PCHARINFO pChar, PCHARINFO pCharTarget, BOOL bSPAtack, BOO
 	nTmp2 = pCharTarget->wHP;
 	nTmp2 -= nTmp;
 	pCharTarget->wHP = (WORD)max (nTmp2, 0);
-	if (pCharTarget->wHP == 0) {
+	/* 拠点防衛の拠点は人ではないので、HP 0 でも倒れた（棺桶の）状態にしない（負けは拠点防衛の周期処理が HP 0 で決める） */
+	if ((pCharTarget->wHP == 0) && !DgIsDefenseBase (pCharTarget)) {
 		pCharTarget->byCharState = CHARSTATE_DEAD;
 	}
 
