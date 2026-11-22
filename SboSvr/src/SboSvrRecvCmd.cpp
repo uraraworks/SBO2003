@@ -4643,7 +4643,7 @@ void FloorDamageOnStep(PCHARINFO pChar)
 /* ------------------------------------------------------------------------- */
 #define MOVEGUARD_STEPMS		(280)		/* 公式クライアントの 1 マスの時間(ms) */
 #define MOVEGUARD_RATEPERCENT	(130)		/* 公式の速さに足すゆとり(%)。130 なら 1.3 倍まで */
-#define MOVEGUARD_BURSTSTEPS	(4)			/* ラグで続けて届いてもよい歩数(バケツの大きさ) */
+#define MOVEGUARD_BURSTSTEPS	(6)		/* ラグで続けて届いてもよい歩数(バケツの大きさ)。回線が1秒ほど止まって溜まった分がまとめて届いても戻さない */
 #define MOVEGUARD_LOGCOUNT		(10)		/* この回数戻したらログに残す(10 秒以内) */
 #define MOVEGUARD_LOGWINDOW		(10000)		/* 戻した回数を数える時間(ms) */
 

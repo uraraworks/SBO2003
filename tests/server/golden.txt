@@ -1457,8 +1457,8 @@ floor immune avoid=0 hp=20 normal_hp=15
 == MoveGuard ==
 moveguard wall stay=1
 moveguard normal walked=7
-moveguard burst walked=4 x=4
-moveguard after wait x=5
+moveguard burst walked=6 x=6
+moveguard after wait x=7
 moveguard admin x=5
 moveguard far x=0
 moveguard dead x=0
