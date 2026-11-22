@@ -1457,8 +1457,8 @@ floor immune avoid=0 hp=20 normal_hp=15
 == MoveGuard ==
 moveguard wall stay=1
 moveguard normal walked=7
-moveguard burst walked=4 x=4
-moveguard after wait x=5
+moveguard burst walked=6 x=6
+moveguard after wait x=7
 moveguard admin x=5
 moveguard far x=0
 moveguard dead x=0
@@ -2252,6 +2252,7 @@ dungeondefense win +10s inrun=0 runs=0 space=0 pos=4,5 base=0
 dungeondefense status left sent=23 state=0 wave=0/0 hp=0/0 rest=0 enemy=0
 dungeondefense win left-npcs=0 put1=0,0
 dungeondefense run2 in=1 base=1 hp=100
+dungeondefense run2 spring-mark count=1 ok=1
 dungeondefense run2 wave1 enemies=2 +28s enemies=2 cleared=0 coming2=0
 dungeondefense run2 timeout enemies=2 coming2=1
 dungeondefense run2 wave2 put1=2 put2=1
