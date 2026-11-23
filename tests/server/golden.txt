@@ -1178,6 +1178,12 @@ quest cond need off list=-1 accept=0 | on list=0 accept=3
 quest cond not on list=-1 accept=0 | off list=0 accept=3
 quest cond reload need=0 not=1023 q2=65535,65535
 quest intro none packets=0 reload=1 req packets=1 bad packets=0 accept=3
+quest lvmin low list=-1 note=1 accept=0 msg=1 own_speech list=-1 note=0 empty=1 | enough list=0 note=0 accept=3 mine list=0 | zero list=0 accept=3 | admin list=0 accept=3
+quest lvmin reload=42 q2=0
+quest lvmin api set {"ok":true,"id":2,"added":false,...} now=50 get=1
+quest lvmin api max {"ok":true,"id":2,"added":false,...} now=99
+quest lvmin api over {"ok":false,"error":"byLevelMin（最低レベル）は 0〜99 で指定してください（0=制限なし）"} now=99
+quest lvmin api zero {"ok":true,"id":2,"added":false,...} now=0
 flagtalk quest cond none=1 q2s0=1 q2s1=0 q2s2=0 q2s3=1 q3s1=1 any s200=0
 talk give first item+=1 flag=1 talkmsg=1 sysmsg=1 order_window_first=1 second item+=0 sysmsg=0 quest item+=0 flag=0 full item+=1 leave=0
 talk take ok ticket-1 prize+1 flag=1 num=1 sysmsg=2 talkmsg=1 none prize+0 flag=0 num=0 sysmsg=0 talkmsg=1 equ prize+0 ticket=1 flag=0 equ2 slot0=1 slot1=0 equ=0 order bag=0 imp=1 full ticket=1 prize=0 flag=0 num=0 sysmsg=1 talkmsg=1

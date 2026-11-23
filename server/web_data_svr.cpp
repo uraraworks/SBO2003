@@ -528,6 +528,7 @@ static const DATAFIELD s_aFieldTalkLine[] = {
 };
 
 /* 依頼情報（ギルドの仕事依頼。npcs・goals は項目表の外で扱う） */
+#define MAX_QUESTLEVELMIN	99			/* 依頼の最低レベルの上限（プレイヤーのレベルの上限に合わせる。0=制限なし） */
 static const DATAFIELD s_aFieldQuest[] = {
 	FLD (QUESTINFO, wID,				"依頼番号",				FT_U16, FF_READONLY, "足す時に自動で振られる（1〜511。ほかの依頼と重ならない）。プレイヤーの受注・クリア済みの印はこの番号で覚えているので変わらない。id（配列の番号）とは別"),
 	FLD (QUESTINFO, byState,			"状態",					FT_U8, 0, "0=止める（一覧に出ない。受けている人は続けられる） 1=出す。足す時に省くと 1"),
@@ -553,6 +554,7 @@ static const DATAFIELD s_aFieldQuest[] = {
 	FLD (QUESTINFO, byDoneNumVal,		"完了した時の数値の値",	FT_U8, 0, "0〜255。番号が無しなら使わない"),
 	FLD (QUESTINFO, wNeedFlag,			"受ける条件の印",		FT_U16, 0, "キャラのフラグの印の番号（0〜1023）。この印が立っている人だけ、ギルドの一覧に出て受けられる。65535=条件なし（足す時に省くと条件なし）"),
 	FLD (QUESTINFO, wNotFlag,			"受けられなくなる印",	FT_U16, 0, "キャラのフラグの印の番号（0〜1023）。この印が立っている人は、ギルドの一覧に出ず受けられない。65535=条件なし（足す時に省くと条件なし）。すでに受けている人は続けられる"),
+	FLD (QUESTINFO, byLevelMin,			"最低レベル",			FT_U8, 0, "キャラのレベルがこれ未満の人にはギルドの一覧に出さず、受けられない。0=制限なし（足す時に省くと 0）。管理者は常に見える。既に受けている人には影響しない"),
 };
 
 /* 思い出の本のシナリオ（クリア済みのミニシナリオをキャラごとにやり直す。NPC の台詞を "@r" にした語り部に話すと、そのキャラがクリアしたシナリオの一覧が開く）。
@@ -5007,6 +5009,10 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 			}
 			if ((Info.wNeedFlag >= MAX_FLAGBIT && Info.wNeedFlag != FLAG_NOBIT) || (Info.wNotFlag >= MAX_FLAGBIT && Info.wNotFlag != FLAG_NOBIT)) {
 				strErr = "wNeedFlag・wNotFlag は印の番号（0〜" + JsonNum(MAX_FLAGBIT - 1) + "）か 65535（条件なし）で指定してください";
+				goto Exit;
+			}
+			if (Info.byLevelMin > MAX_QUESTLEVELMIN) {
+				strErr = "byLevelMin（最低レベル）は 0〜" + JsonNum(MAX_QUESTLEVELMIN) + " で指定してください（0=制限なし）";
 				goto Exit;
 			}
 			if (Info.byDoneNumNo >= MAX_FLAGNUM && Info.byDoneNumNo != FLAG_NONUM) {

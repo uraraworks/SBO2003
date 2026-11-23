@@ -5089,6 +5089,125 @@ static void TestQuest(const std::vector<int> &aLogin)
 		}
 	}
 
+	/* 最低レベル（byLevelMin）：足りない人には一覧に出ず、受けられない。0 は制限なし・管理者は常に見える・受けている人は続けられる
+	   窓口の一言：レベルで隠した依頼がある人にだけ、NPC に自前の台詞（@g の後ろの文）が無い時に出る */
+	{
+		PQUESTINFO pQ3 = NULL;
+		for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) if (g_aQuestInfo[i]->wID == 3) pQ3 = g_aQuestInfo[i];
+		if (pQ3) {
+			BYTE byLvBack = pOwner->byLevel, byAdBack = pOwner->byAdminLV;
+			char *pszSpeechBack = pGuild->pszNpcSpeech;
+			char szOwnSpeech[64];
+			std::vector<BYTE> aCap;
+			int nList;
+			QuestMovePC(pOwner, nMap, aCell[4].first, aCell[4].second + 1);
+			pOwner->wQuestID = 0;
+			pOwner->byAdminLV = ADMINLV_USER;
+			pOwner->byLevel = 1;
+			int nBase0 = MockCmdCount(anConn[0], CMD_QUEST);
+			QuestSendTalk(pOwner, dwGuild);
+			int nBase = MockCmdCount(anConn[0], CMD_QUEST) - nBase0;
+			/* 足りない人：出ない・受けられない（理由にレベルが出る）。一言が最初の 1 件に添えられる */
+			pQ3->byLevelMin = 30;
+			nBase0 = MockCmdCount(anConn[0], CMD_QUEST);
+			QuestSendTalk(pOwner, dwGuild);
+			nList = MockCmdCount(anConn[0], CMD_QUEST) - nBase0 - nBase;
+			SvrSendCaptureBegin();
+			QuestSendTalk(pOwner, dwGuild);
+			SvrSendCaptureEnd(aCap);
+			std::string strCap((const char *)(aCap.empty() ? (const BYTE *)"" : &aCap[0]), aCap.size());
+			printf("quest lvmin low list=%d note=%d", nList,
+				(int)(strCap.find("今のレベルに合った依頼は、こんな感じです。") != std::string::npos));
+			SvrSendCaptureBegin();
+			QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 3, dwGuild);
+			SvrSendCaptureEnd(aCap);
+			strCap.assign((const char *)(aCap.empty() ? (const BYTE *)"" : &aCap[0]), aCap.size());
+			printf(" accept=%u msg=%d", pOwner->wQuestID, (int)(strCap.find("この依頼を受けるには、レベル30が必要です。") != std::string::npos));
+			/* NPC に自前の台詞（@g の後ろの文）があれば、そちらを優先して一言は添えない */
+			strcpy(szOwnSpeech, "@g0【受付】@1いらっしゃい@0");
+			pGuild->pszNpcSpeech = szOwnSpeech;
+			nBase0 = MockCmdCount(anConn[0], CMD_QUEST);
+			QuestSendTalk(pOwner, dwGuild);
+			nList = MockCmdCount(anConn[0], CMD_QUEST) - nBase0 - nBase;
+			SvrSendCaptureBegin();
+			QuestSendTalk(pOwner, dwGuild);
+			SvrSendCaptureEnd(aCap);
+			strCap.assign((const char *)(aCap.empty() ? (const BYTE *)"" : &aCap[0]), aCap.size());
+			printf(" own_speech list=%d note=%d", nList,
+				(int)(strCap.find("今のレベルに合った依頼は、こんな感じです。") != std::string::npos));
+			pGuild->pszNpcSpeech = pszSpeechBack;
+			/* 1 件も出なくなった時は「合う依頼はありません」 */
+			for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) if (g_aQuestInfo[i]->wID == 2) g_aQuestInfo[i]->byLevelMin = 30;
+			SvrSendCaptureBegin();
+			QuestSendTalk(pOwner, dwGuild);
+			SvrSendCaptureEnd(aCap);
+			strCap.assign((const char *)(aCap.empty() ? (const BYTE *)"" : &aCap[0]), aCap.size());
+			printf(" empty=%d", (int)(strCap.find("いまのレベルに合う依頼はありません。") != std::string::npos));
+			for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) if (g_aQuestInfo[i]->wID == 2) g_aQuestInfo[i]->byLevelMin = 0;
+			/* 足りると出る・受けられる */
+			pOwner->byLevel = 30;
+			nBase0 = MockCmdCount(anConn[0], CMD_QUEST);
+			QuestSendTalk(pOwner, dwGuild);
+			nList = MockCmdCount(anConn[0], CMD_QUEST) - nBase0 - nBase;
+			SvrSendCaptureBegin();
+			QuestSendTalk(pOwner, dwGuild);
+			SvrSendCaptureEnd(aCap);
+			strCap.assign((const char *)(aCap.empty() ? (const BYTE *)"" : &aCap[0]), aCap.size());
+			printf(" | enough list=%d note=%d", nList,
+				(int)(strCap.find("今のレベルに合った依頼は、こんな感じです。") != std::string::npos));
+			QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 3, dwGuild);
+			printf(" accept=%u", pOwner->wQuestID);
+			/* 受けている人は、レベルが足りなくなっても続けられる・一覧に出る */
+			pOwner->byLevel = 1;
+			nBase0 = MockCmdCount(anConn[0], CMD_QUEST);
+			QuestSendTalk(pOwner, dwGuild);
+			printf(" mine list=%d", MockCmdCount(anConn[0], CMD_QUEST) - nBase0 - nBase);
+			QuestSendCmd(pOwner, QUESTCMD_CANCEL, 0, dwGuild);
+			/* 0 は制限なし */
+			pQ3->byLevelMin = 0;
+			nBase0 = MockCmdCount(anConn[0], CMD_QUEST);
+			QuestSendTalk(pOwner, dwGuild);
+			printf(" | zero list=%d", MockCmdCount(anConn[0], CMD_QUEST) - nBase0 - nBase);
+			QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 3, dwGuild);
+			printf(" accept=%u", pOwner->wQuestID);
+			QuestSendCmd(pOwner, QUESTCMD_CANCEL, 0, dwGuild);
+			/* 管理者は常に見える・受けられる（レベル 1 でも） */
+			pQ3->byLevelMin = 99;
+			pOwner->byAdminLV = ADMINLV_ADMINISTRATOR;
+			nBase0 = MockCmdCount(anConn[0], CMD_QUEST);
+			QuestSendTalk(pOwner, dwGuild);
+			printf(" | admin list=%d", MockCmdCount(anConn[0], CMD_QUEST) - nBase0 - nBase);
+			QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 3, dwGuild);
+			printf(" accept=%u\n", pOwner->wQuestID);
+			QuestSendCmd(pOwner, QUESTCMD_CANCEL, 0, dwGuild);
+			pOwner->byAdminLV = ADMINLV_USER;
+			/* 保存して読み直しても残る（古いファイルは 0） */
+			pQ3->byLevelMin = 42;
+			SaveQuestInfo();
+			for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) delete g_aQuestInfo[i];
+			g_aQuestInfo.RemoveAll();
+			LoadQuestInfo();
+			pQ3 = NULL;
+			int nIdx3 = 0;
+			for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) if (g_aQuestInfo[i]->wID == 3) { pQ3 = g_aQuestInfo[i]; nIdx3 = i; }
+			printf("quest lvmin reload=%u", pQ3 ? pQ3->byLevelMin : 9999);
+			for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) if (g_aQuestInfo[i]->wID == 2) printf(" q2=%u", g_aQuestInfo[i]->byLevelMin);
+			printf("\n");
+			/* データAPI：設定・範囲外の拒否・足す時に省くと 0・取得に出る */
+			printf("quest lvmin api set %s", FlagGroupApi("quest", nIdx3, "{\"byLevelMin\":50}").c_str());
+			printf(" now=%u get=%d\n", pQ3 ? pQ3->byLevelMin : 9999, SboWebDataGet("quest", nIdx3) && strstr(SboWebDataGet("quest", nIdx3), "\"byLevelMin\":50") ? 1 : 0);
+			printf("quest lvmin api max %s", FlagGroupApi("quest", nIdx3, "{\"byLevelMin\":99}").c_str());
+			printf(" now=%u\n", pQ3 ? pQ3->byLevelMin : 9999);
+			printf("quest lvmin api over %s", FlagGroupApi("quest", nIdx3, "{\"byLevelMin\":100}").c_str());
+			printf(" now=%u\n", pQ3 ? pQ3->byLevelMin : 9999);
+			printf("quest lvmin api zero %s", FlagGroupApi("quest", nIdx3, "{\"byLevelMin\":0}").c_str());
+			printf(" now=%u\n", pQ3 ? pQ3->byLevelMin : 9999);
+			pOwner->byLevel = byLvBack;
+			pOwner->byAdminLV = byAdBack;
+			if (pQ3) pQ3->byLevelMin = 0;
+		}
+	}
+
 	/* 会話の行：受けている依頼の条件・アイテムを渡す（一度きりは「立てる印」と「いけない印」で組む） */
 	{
 		PTALKINFO pTalk = new TALKINFO;

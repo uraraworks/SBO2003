@@ -3252,6 +3252,7 @@ typedef struct _QUESTINFO {
 	WORD		wNeedFlag;											/* この印が立っている人だけ受けられる（FLAG_NOBIT=条件なし） */
 	WORD		wNotFlag;											/* この印が立っている人は受けられない（FLAG_NOBIT=条件なし） */
 	char		szIntro[MAX_QUESTINTRO];							/* 導入のお話（受ける前に読ませる長い文。空なら読ませずにすぐ確認。保存する） */
+	BYTE		byLevelMin;											/* 受けられる最低レベル（0=制限なし。足りない人には一覧に出さず、受けられない。管理者・受けている人は対象外） */
 } QUESTINFO, *PQUESTINFO;
 
 /* 討伐チャレンジの種類(QUESTINFO の byChallenge) */
