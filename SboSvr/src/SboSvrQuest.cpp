@@ -162,6 +162,7 @@ typedef struct _CHALLENGE {
 	DWORD		dwDefSentAt;										/* 拠点防衛：その状態を送った時刻（周期処理の時刻。一定時間ごとに同じ内容も送り直す） */
 	CMDPARA_DGSTATUS	stStSent;									/* 拠点防衛以外：最後に組へ送った状況パネルの状態（変わった時だけ送るため） */
 	DWORD		dwStSentAt;											/* 拠点防衛以外：その状態を送った時刻（周期処理の時刻。数秒ごとに送り直して経過秒を合わせる） */
+	std::set<DWORD>	setViewer;										/* 拠点防衛の観戦：帯を送っている観客（テーブルID。観客席の範囲に入ると足し、出る・組が終わると消す帯を送って除く） */
 	_CHALLENGE() : byKind(0), byDungeonID(0), dwBuildNo(0), bDaily(FALSE), bRanked(FALSE), dwDailyVer(0), dwDailySeed(0), bKillAll(FALSE), byCountDown(4), wQuestID(0), dwMapNo(0), dwSpaceID(0), bArena(FALSE), dwPartyID(0), dwStart(0), bCleared(FALSE), dwClear(0), dwClearTime(0), bDefense(FALSE), dwBaseTbl((DWORD)-1), nWave(0), byDefPhase(DGDEF_PHASE_INIT), byDefResult(DGDEF_RESULT_NONE), dwDefPhaseStart(0), dwDefWaveStart(0), dwDefEnd(0), dwDefSpring(0), nEnemyLeft(-1), byBaseBracket(4), dwDefSentAt(0), dwStSentAt(0) { ZeroMemory (&stDefSent, sizeof (stDefSent)); ZeroMemory (&stStSent, sizeof (stStSent)); }
 } CHALLENGE;
 
@@ -193,6 +194,7 @@ static void DgDefCreateSpringMark(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon)
 static void DgDefPutProc(CHALLENGE *pCh, DWORD dwNow);
 static void DgDefProc(CHALLENGE &Ch, PSUBGAME_DUNGEONINFO pDungeon, DWORD dwNow);
 static void DgDefFieldDrop(DWORD dwSpaceID);
+static void DgDefViewClear(CHALLENGE *pCh);
 static void DgSelOnDec(PCHARINFO pChar);
 static void DgReceptionForget(PCHARINFO pChar);
 static BOOL HasMercenary(PCHARINFO pChar);
@@ -4229,7 +4231,33 @@ static void DgEnd(DWORD dwSession)
 		DeleteChar (aDel[i]);
 	}
 	DgDefFieldDrop (dwSession);
+	{
+		/* 観客の画面の帯を消す（観戦ありの拠点防衛） */
+		std::map<DWORD, CHALLENGE>::iterator itV = s_mapChallenge.find (dwSession);
+		if (itV != s_mapChallenge.end ()) {
+			DgDefViewClear (&itV->second);
+		}
+	}
 	s_mapChallenge.erase (dwSession);
+}
+
+/* 観戦ありの拠点防衛か（組を闘技場の空間にして、一度に 1 組だけにする） */
+static BOOL DgDefArenaOn(PSUBGAME_DUNGEONINFO p)
+{
+	return (p != NULL) && (p->byClearMode == DGCLEAR_DEFENSE) && (p->byDefArena != 0);
+}
+
+/* その番外編ダンジョンで、いま組が遊んでいるか（観戦ありは一度に 1 組だけ） */
+static BOOL DgDefArenaBusy(int nDungeonID)
+{
+	std::map<DWORD, CHALLENGE>::iterator it;
+
+	for (it = s_mapChallenge.begin (); it != s_mapChallenge.end (); it ++) {
+		if ((it->second.byKind == CHALLENGEKIND_DUNGEON) && (it->second.byDungeonID == (BYTE)nDungeonID)) {
+			return TRUE;
+		}
+	}
+	return FALSE;
 }
 
 /* 選んだ人だけで、新しい空間へ入る */
@@ -4247,7 +4275,7 @@ static void DgStart(int nDungeonID, const DGSEL &Sel, const std::vector<std::pai
 	Ch.dwBuildNo = pDungeon->dwBuildNo;
 	Ch.wQuestID = 0;
 	Ch.dwSpaceID = dwSession;						/* 組の番号をそのまま空間番号にする（0 にはならない） */
-	Ch.bArena = FALSE;
+	Ch.bArena = DgDefArenaOn (pDungeon);			/* 観戦ありの拠点防衛だけ闘技場の空間（ふつうの世界の人から中が見えて手は出せない） */
 	Ch.dwMapNo = pDungeon->dwMapID;
 	Ch.dwPartyID = aPart[0].first->dwPartyID;
 	Ch.bMapShared = aPart.size () > 1;
@@ -4637,6 +4665,23 @@ static BOOL DgSelStart(PCHARINFO pChar, int nID, DWORD dwNpcTblID)
 			return TRUE;
 		}
 	}
+	/* 観戦ありの拠点防衛は一度に 1 組だけ。別の組が遊んでいる間は断る（観客席から見て待ってもらう）。
+	   別の組がもう受付済み・姿を選んでいる時も断る（同時に入口へ入って 2 組が重ならないように。同じパーティは上で返している） */
+	if (DgDefArenaOn (pDungeon)) {
+		std::map<DWORD, DGSEL>::iterator itO;
+		BOOL bOther = DgDefArenaBusy (nID);
+
+		for (itO = s_mapDgSel.begin (); itO != s_mapDgSel.end (); itO ++) {
+			bOther = bOther || (itO->second.nDungeonID == nID);
+		}
+		for (itO = s_mapDgPrepared.begin (); itO != s_mapDgPrepared.end (); itO ++) {
+			bOther = bOther || (itO->second.nDungeonID == nID);
+		}
+		if (bOther) {
+			DgMessage (pChar, nID, "def_arena_busy", TRUE);
+			return TRUE;
+		}
+	}
 	Sel.dwPartyID = pChar->dwPartyID;
 	Sel.nDungeonID = nID;
 	Sel.dwNpcTblID = dwNpcTblID;
@@ -4948,10 +4993,64 @@ static PCHARINFO DgDefBaseChar(CHALLENGE *pCh)
 	return p;
 }
 
-/* 組の全員に、szMessages のキーの文を知らせる */
+/* 観客席の範囲の中にいる観客か（観戦ありの拠点防衛。ふつうの世界の、そのダンジョンのマップの四角の中。全部 0=観客席なし） */
+static BOOL DgDefInView(PSUBGAME_DUNGEONINFO p, PCHARINFO c)
+{
+	if (!DgDefArenaOn (p) || (c == NULL) || (c->byNpcType != NPCTYPE_INIT) || !IsPlayerOnline (c) ||
+		(c->dwSpaceID != SPACE_NORMAL) || (c->dwMapID != p->dwMapID)) {
+		return FALSE;
+	}
+	if (!p->byViewX1 && !p->byViewY1 && !p->byViewX2 && !p->byViewY2) {
+		return FALSE;
+	}
+	return ((int)c->dwX >= min ((int)p->byViewX1, (int)p->byViewX2)) && ((int)c->dwX <= max ((int)p->byViewX1, (int)p->byViewX2)) &&
+		((int)c->dwY >= min ((int)p->byViewY1, (int)p->byViewY2)) && ((int)c->dwY <= max ((int)p->byViewY1, (int)p->byViewY2));
+}
+
+/* 観客の全員に、組全体へのお知らせを送る */
+static void DgDefViewNotice(CHALLENGE *pCh, const char *pszMsg)
+{
+	std::set<DWORD>::iterator it;
+
+	for (it = pCh->setViewer.begin (); it != pCh->setViewer.end (); it ++) {
+		PCHARINFO p = (*it < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[*it] : NULL;
+		if (p && IsPlayerOnline (p)) {
+			SendCmdSYSMSG (p->pID, (LPSTR)pszMsg, SPEECHCMD_BATTLE1);
+		}
+	}
+}
+
+/* 観客の全員に、画面の帯を送る */
+static void DgDefViewSend(CHALLENGE *pCh, const CMDPARA_DGDEFSTATUS &Para)
+{
+	std::set<DWORD>::iterator it;
+
+	for (it = pCh->setViewer.begin (); it != pCh->setViewer.end (); it ++) {
+		PCHARINFO p = (*it < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[*it] : NULL;
+		if (p && IsPlayerOnline (p)) {
+			CMDPARA_DGDEFSTATUS Tmp = Para;
+			SendCmdDGDEFSTATUS (p->pID, &Tmp);
+		}
+	}
+}
+
+/* 観客全員の帯を消して、観客の控えを空にする（組が終わった時） */
+static void DgDefViewClear(CHALLENGE *pCh)
+{
+	CMDPARA_DGDEFSTATUS Para;
+
+	ZeroMemory (&Para, sizeof (Para));
+	DgDefViewSend (pCh, Para);
+	pCh->setViewer.clear ();
+}
+
+/* 組の全員に、szMessages のキーの文を知らせる（観戦ありなら観客にも） */
 static void DgDefSay(CHALLENGE *pCh, const char *pszKey, const char *k1 = "", const std::string &v1 = "", const char *k2 = "", const std::string &v2 = "", const char *k3 = "", const std::string &v3 = "")
 {
-	DgNoticeMembers (pCh, DungeonText (DgInfo (pCh->byDungeonID), pszKey, k1, v1, k2, v2, k3, v3).c_str ());
+	std::string strMsg = DungeonText (DgInfo (pCh->byDungeonID), pszKey, k1, v1, k2, v2, k3, v3);
+
+	DgNoticeMembers (pCh, strMsg.c_str ());
+	DgDefViewNotice (pCh, strMsg.c_str ());
 }
 
 /* 拠点キャラを作る（ゴール地点に立つ。動かない・攻撃しない・プレイヤーからは攻撃できない NPC） */
@@ -5312,6 +5411,52 @@ static void DgDefStatusSend(CHALLENGE *pCh, DWORD dwNow, PCHARINFO pOnly, BOOL b
 			SendCmdDGDEFSTATUS (pTmp->pID, &Para);
 		}
 	}
+	/* 観客にも同じ内容（組全体に送る時だけ。復活した人あての送り直しは観客に送らない） */
+	if (pOnly == NULL) {
+		DgDefViewSend (pCh, Para);
+	}
+}
+
+/* 観客席の出入りを見る（約 1 秒ごと）。入った人には今の帯を送り、出た人・つなぎ切れた人には帯を消す内容を送って控えから除く */
+static void DgDefViewSync(CHALLENGE *pCh, PSUBGAME_DUNGEONINFO pDungeon, DWORD dwNow)
+{
+	std::vector<DWORD> aIn, aOut;
+	std::set<DWORD>::iterator it;
+	int i, nCount = g_aCharInfo.GetSize ();
+
+	for (it = pCh->setViewer.begin (); it != pCh->setViewer.end (); it ++) {
+		PCHARINFO p = (*it < (DWORD)nCount) ? g_aCharInfo[*it] : NULL;
+		if (!DgDefInView (pDungeon, p)) {
+			aOut.push_back (*it);
+		}
+	}
+	if (DgDefArenaOn (pDungeon)) {
+		for (i = 0; i < nCount; i ++) {
+			PCHARINFO p = g_aCharInfo[i];
+			if ((p != NULL) && (pCh->setViewer.find (p->dwTblID) == pCh->setViewer.end ()) && DgDefInView (pDungeon, p)) {
+				aIn.push_back (p->dwTblID);
+			}
+		}
+	}
+	for (i = 0; i < (int)aOut.size (); i ++) {
+		PCHARINFO p = (aOut[i] < (DWORD)nCount) ? g_aCharInfo[aOut[i]] : NULL;
+		if (p && IsPlayerOnline (p)) {
+			CMDPARA_DGDEFSTATUS Para;
+
+			ZeroMemory (&Para, sizeof (Para));
+			SendCmdDGDEFSTATUS (p->pID, &Para);
+		}
+		pCh->setViewer.erase (aOut[i]);
+	}
+	if (!aIn.empty ()) {
+		CMDPARA_DGDEFSTATUS Para;
+
+		DgDefStatusMake (pCh, Para, dwNow);
+		for (i = 0; i < (int)aIn.size (); i ++) {
+			pCh->setViewer.insert (aIn[i]);
+			SendCmdDGDEFSTATUS (g_aCharInfo[aIn[i]]->pID, &Para);
+		}
+	}
 }
 
 /* 全体地図（CMD_DGDEFMAP）を組の全員に送る（周期処理ごと＝約 1 秒）。敵は座標だけの詰めた形で上限 DGDEFMAP_MAXENEMY 体 */
@@ -5519,6 +5664,8 @@ static void DgDefProc(CHALLENGE &Ch, PSUBGAME_DUNGEONINFO pDungeon, DWORD dwNow)
 	PCHARINFO pBase = DgDefBaseChar (&Ch);
 	int nWaves = DgDefWaveCount (pDungeon);
 
+	/* 観戦ありなら、観客席の出入りを見る（結果が出た後の 10 秒間も、入った人に最後の帯を見せる） */
+	DgDefViewSync (&Ch, pDungeon, dwNow);
 	if (Ch.byDefResult != DGDEF_RESULT_NONE) {
 		return;
 	}

@@ -2996,6 +2996,11 @@ void SendCmdSUBGAMEINFO(DWORD pIDSend, int nNo)
 			pDungeon->byFixStartX = pDungeonInfo->byFixStartX;
 			pDungeon->byFixStartY = pDungeonInfo->byFixStartY;
 			pDungeon->byDefSpringPct = pDungeonInfo->byDefSpringPct;
+			pDungeon->byDefArena = pDungeonInfo->byDefArena;
+			pDungeon->byViewX1 = pDungeonInfo->byViewX1;
+			pDungeon->byViewY1 = pDungeonInfo->byViewY1;
+			pDungeon->byViewX2 = pDungeonInfo->byViewX2;
+			pDungeon->byViewY2 = pDungeonInfo->byViewY2;
 			CopyMemory (pDungeon->szMessages, pDungeonInfo->szMessages, sizeof (pDungeon->szMessages));
 		}		
 		break;

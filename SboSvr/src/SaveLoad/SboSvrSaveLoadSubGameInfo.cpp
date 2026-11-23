@@ -74,6 +74,11 @@ static const char *s_aszNameDUNGEON[] = {
 	"byFixStartX",		/* 固定の形：中の開始位置X */
 	"byFixStartY",		/* 固定の形：中の開始位置Y */
 	"byDefSpringPct",	/* 拠点防衛：泉の回復（最大Manaの%/秒） */
+	"byDefArena",		/* 拠点防衛：観戦あり */
+	"byViewX1",			/* 拠点防衛の観戦：観客席の範囲（開始X） */
+	"byViewY1",			/* 拠点防衛の観戦：観客席の範囲（開始Y） */
+	"byViewX2",			/* 拠点防衛の観戦：観客席の範囲（終了X） */
+	"byViewY2",			/* 拠点防衛の観戦：観客席の範囲（終了Y） */
 	"z"
 };
 
@@ -562,7 +567,7 @@ Exit:
 /* 拠点防衛・固定の形の中の開始位置の項目をどれか使っているか（使っていなければ、その列は保存しない＝前の版でも読める） */
 static BOOL DgDefenseUsed(PSUBGAME_DUNGEONINFO pInfo)
 {
-	return pInfo->wDefBaseHP || pInfo->wDefBaseStTmp || pInfo->byDefWaveCount || pInfo->byDefPrepSec || pInfo->wDefWaveMaxSec || pInfo->byDefSpringRange || pInfo->byDefSpringX || pInfo->byDefSpringY || pInfo->byFixStartX || pInfo->byFixStartY || pInfo->byDefSpringPct;
+	return pInfo->wDefBaseHP || pInfo->wDefBaseStTmp || pInfo->byDefWaveCount || pInfo->byDefPrepSec || pInfo->wDefWaveMaxSec || pInfo->byDefSpringRange || pInfo->byDefSpringX || pInfo->byDefSpringY || pInfo->byFixStartX || pInfo->byFixStartY || pInfo->byDefSpringPct || pInfo->byDefArena || pInfo->byViewX1 || pInfo->byViewY1 || pInfo->byViewX2 || pInfo->byViewY2;
 }
 
 /* ========================================================================= */
@@ -679,6 +684,11 @@ static PBYTE GetInfoDungeon(PSUBGAME_DUNGEONINFO pInfo, PDWORD pdwSize)
 		case 30:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 固定の形：中の開始位置X */
 		case 31:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 固定の形：中の開始位置Y */
 		case 32:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 拠点防衛：泉の回復 */
+		case 33:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 拠点防衛：観戦あり */
+		case 34:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 拠点防衛：観客席（開始X） */
+		case 35:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 拠点防衛：観客席（開始Y） */
+		case 36:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 拠点防衛：観客席（終了X） */
+		case 37:	dwDataSizeTmp = sizeof (BYTE);			break;	/* 拠点防衛：観客席（終了Y） */
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
 		dwDataSize += dwDataSizeTmp;
@@ -846,6 +856,26 @@ static PBYTE GetInfoDungeon(PSUBGAME_DUNGEONINFO pInfo, PDWORD pdwSize)
 			break;
 		case 32:	/* 拠点防衛：泉の回復 */
 			CopyMemory (&pData[dwOffset], &pInfo->byDefSpringPct, sizeof (BYTE));
+			dwOffset += sizeof (BYTE);
+			break;
+		case 33:	/* 拠点防衛：観戦あり */
+			CopyMemory (&pData[dwOffset], &pInfo->byDefArena, sizeof (BYTE));
+			dwOffset += sizeof (BYTE);
+			break;
+		case 34:	/* 拠点防衛：観客席（開始X） */
+			CopyMemory (&pData[dwOffset], &pInfo->byViewX1, sizeof (BYTE));
+			dwOffset += sizeof (BYTE);
+			break;
+		case 35:	/* 拠点防衛：観客席（開始Y） */
+			CopyMemory (&pData[dwOffset], &pInfo->byViewY1, sizeof (BYTE));
+			dwOffset += sizeof (BYTE);
+			break;
+		case 36:	/* 拠点防衛：観客席（終了X） */
+			CopyMemory (&pData[dwOffset], &pInfo->byViewX2, sizeof (BYTE));
+			dwOffset += sizeof (BYTE);
+			break;
+		case 37:	/* 拠点防衛：観客席（終了Y） */
+			CopyMemory (&pData[dwOffset], &pInfo->byViewY2, sizeof (BYTE));
 			dwOffset += sizeof (BYTE);
 			break;
 
@@ -1817,6 +1847,21 @@ static PBYTE PetInfoDungeon(PBYTE pData, PDWORD pdwSize)
 			dwOffsetTmp += sizeof (BYTE);
 		} else if (strcmp (aHeaderInfo[i].szName, "byDefSpringPct") == 0) {	/* 拠点防衛：泉の回復 */
 			CopyMemory (&pInfo->byDefSpringPct, &pData[dwOffsetTmp], sizeof (BYTE));
+			dwOffsetTmp += sizeof (BYTE);
+		} else if (strcmp (aHeaderInfo[i].szName, "byDefArena") == 0) {	/* 拠点防衛：観戦あり */
+			CopyMemory (&pInfo->byDefArena, &pData[dwOffsetTmp], sizeof (BYTE));
+			dwOffsetTmp += sizeof (BYTE);
+		} else if (strcmp (aHeaderInfo[i].szName, "byViewX1") == 0) {	/* 拠点防衛：観客席（開始X） */
+			CopyMemory (&pInfo->byViewX1, &pData[dwOffsetTmp], sizeof (BYTE));
+			dwOffsetTmp += sizeof (BYTE);
+		} else if (strcmp (aHeaderInfo[i].szName, "byViewY1") == 0) {	/* 拠点防衛：観客席（開始Y） */
+			CopyMemory (&pInfo->byViewY1, &pData[dwOffsetTmp], sizeof (BYTE));
+			dwOffsetTmp += sizeof (BYTE);
+		} else if (strcmp (aHeaderInfo[i].szName, "byViewX2") == 0) {	/* 拠点防衛：観客席（終了X） */
+			CopyMemory (&pInfo->byViewX2, &pData[dwOffsetTmp], sizeof (BYTE));
+			dwOffsetTmp += sizeof (BYTE);
+		} else if (strcmp (aHeaderInfo[i].szName, "byViewY2") == 0) {	/* 拠点防衛：観客席（終了Y） */
+			CopyMemory (&pInfo->byViewY2, &pData[dwOffsetTmp], sizeof (BYTE));
 			dwOffsetTmp += sizeof (BYTE);
 		}
 		dwOffset = dwOffsetTmp;

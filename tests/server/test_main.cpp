@@ -15914,6 +15914,101 @@ static void TestDungeonDefense(const std::vector<int> &aLogin)
 			(int)(strNg.find("\"ok\":true") == std::string::npos), (int)(strNg2.find("\"ok\":true") == std::string::npos), (int)(Info.byClearMode == DGCLEAR_DEFENSE));
 	}
 
+	/* 11. 観戦あり（byDefArena=1）：組は闘技場の空間・2 組目は受付で断られる・観客席（ふつうの世界の範囲）の人に帯と残り敵が届き、外の人には届かない・
+	       範囲を出る／組が終わると消す帯が届く */
+	if (aLogin.size() >= 4) {
+		PCHARINFO pB = g_aCharInfo[aLogin[1]], pC = g_aCharInfo[aLogin[2]], pD = g_aCharInfo[aLogin[3]];
+		PCHARINFO apW[3] = { pB, pC, pD };
+		CHARINFO aWBack[3];
+		for (int k = 0; k < 3; k ++) {
+			TestCharBackup(&aWBack[k], apW[k]);
+			apW[k]->byAdminLV = ADMINLV_USER;
+			apW[k]->dwPartyID = 0;
+			apW[k]->dwSpaceID = SPACE_NORMAL;
+			apW[k]->dwTargetTblID = (DWORD)-1;
+			apW[k]->wQuestID = 0; apW[k]->byQuestStep = 0; apW[k]->wQuestFlg = 0;
+			apW[k]->byLevel = 30; apW[k]->byPW = 99; apW[k]->wMaxHP = 500; apW[k]->wHP = 480; apW[k]->wMaxMana = 90; apW[k]->wMana = 80;
+			ZeroMemory(apW[k]->waItem, sizeof(apW[k]->waItem));
+			for (int m = 0; m < MAX_EQUTYPE; m ++) apW[k]->waEqu[m] = 0xFFFF;
+		}
+		Info.byDefWaveCount = 2; Info.wDefBaseHP = 100; Info.byDefPrepSec = 3; Info.wDefWaveMaxSec = 30;
+		Info.byDefSpringX = 0; Info.byDefSpringY = 0;
+		Info.byDefArena = 1;
+		Info.byViewX1 = 1; Info.byViewY1 = 1; Info.byViewX2 = 6; Info.byViewY2 = 3;			/* 観客席：(1,1)-(6,3) */
+		QuestMovePC(pB, nMapNo, 3, 2);									/* 観客席の中 */
+		QuestMovePC(pC, nMapNo, 7, 8);									/* 観客席の外 */
+		QuestMovePC(pD, nMapNo, 4, 5);									/* 受付の前（観客席の外）。2 組目の申し込み */
+		/* 帯の最後の状態（届いていなければ -1） */
+		auto LastState = [&](PCHARINFO p) -> int {
+			CMDPARA_DGDEFSTATUS St;
+			std::vector<BYTE> aSt;
+			if (MarketLast(DgTestConn(p), CMD_DGDEFSTATUS, aSt) && aSt.size() >= sizeof(St)) {
+				memcpy(&St, &aSt[0], sizeof(St));
+				return (int)St.byState;
+			}
+			return -1;
+		};
+		auto SayTo = [&](PCHARINFO p, const char *psz) -> int { return MockHasText(DgTestConn(p), CMD_SYSMSG, psz); };
+		auto LeftMsgOf = [&](PCHARINFO p) -> int { for (int n = 0; n <= 40; n ++) { char sz[64]; sprintf(sz, "残り敵 %d", n); if (SayTo(p, sz)) return n; } return -1; };
+
+		pA->wHP = pA->wMaxHP = 480; pA->wMana = pA->wMaxMana = 90;
+		Enter();
+		dwSpace = pA->dwSpaceID;
+		printf("dungeondefense arena enter in=%d arena=%d runs=%d\n", (int)QuestInDungeon(pA), (int)SpaceIsArena(dwSpace), DungeonRunCount());
+		/* 観客席の外の人が受付に申し込んでも（2 組目）断られる */
+		DgTestTalk(pD, dwReception);
+		printf("dungeondefense arena second busy=%d sel=%d\n", (int)DgTestText(pD, CMD_TALKMSG, "いま別の組が拠点を守っています。終わるまで観客席で観戦して待ちましょう。"), DungeonSelCount());
+		/* 周期処理で、観客席の人に帯が届く（外の人には届かない） */
+		Mark();
+		Tick(1);
+		printf("dungeondefense arena view in sent=%d state=%d out sent=%d\n", SpCnt(pB, CMD_DGDEFSTATUS), LastState(pB), SpCnt(pC, CMD_DGDEFSTATUS));
+		Tick(1 + 3);
+		printf("dungeondefense arena view wave-start in=%d out=%d state=%d\n", SayTo(pB, "ウェーブ 1 開始"), SayTo(pC, "ウェーブ 1 開始"), LastState(pB));
+		/* 敵が倒されると「残り敵」も観客に届く */
+		{
+			std::vector<std::pair<int, WORD> > aKilled;
+			for (int k = 0; k < g_aCharInfo.GetSize() && aKilled.empty(); k ++) {
+				PCHARINFO p = g_aCharInfo[k];
+				if (p && p->dwSpaceID == dwSpace && DgIsDefenseEnemy(p) && p->wHP > 0) { aKilled.push_back(std::make_pair(k, p->wHP)); p->wHP = 0; }
+			}
+			Mark();
+			Tick(1);
+			printf("dungeondefense arena enemy-left killed=%d member=%d in=%d out=%d\n", (int)aKilled.size(), LeftMsgOf(pA), LeftMsgOf(pB), LeftMsgOf(pC));
+			for (size_t k = 0; k < aKilled.size(); k ++) { PCHARINFO p = g_aCharInfo[aKilled[k].first]; if (p) p->wHP = aKilled[k].second; }
+		}
+		/* 観客席を出ると、消す帯が届く。戻ると今の帯が届く */
+		Mark();
+		QuestMovePC(pB, nMapNo, 3, 8);
+		Tick(1);
+		printf("dungeondefense arena view leave state=%d sent=%d\n", LastState(pB), SpCnt(pB, CMD_DGDEFSTATUS));
+		QuestMovePC(pB, nMapNo, 3, 2);
+		Mark();
+		Tick(1);
+		printf("dungeondefense arena view back state=%d sent=%d\n", LastState(pB), SpCnt(pB, CMD_DGDEFSTATUS));
+		/* 拠点が落ちる：負けの帯とお知らせが観客にも届く。10 秒後に組が終わると、消す帯が届く */
+		{
+			PCHARINFO pBase2 = DgDefenseBaseOf(dwSpace);
+			if (pBase2) pBase2->wHP = 0;
+			Mark();
+			Tick(1);
+			printf("dungeondefense arena lose in-state=%d fallen=%d out=%d\n", LastState(pB), SayTo(pB, "拠点が落ちた…"), SayTo(pC, "拠点が落ちた…"));
+			Tick(10);
+			printf("dungeondefense arena end in-state=%d runs=%d out-sent=%d\n", LastState(pB), DungeonRunCount(), SpCnt(pC, CMD_DGDEFSTATUS));
+		}
+		Info.byDefArena = 0; Info.byViewX1 = 0; Info.byViewY1 = 0; Info.byViewX2 = 0; Info.byViewY2 = 0;
+		for (int k = 0; k < 3; k ++) {
+			PCHARINFO p = apW[k];
+			p->byLevel = aWBack[k].byLevel; p->byPW = aWBack[k].byPW; p->wMaxHP = aWBack[k].wMaxHP; p->wHP = aWBack[k].wHP;
+			p->wMaxMana = aWBack[k].wMaxMana; p->wMana = aWBack[k].wMana;
+			p->byCharState = aWBack[k].byCharState; p->byAdminLV = aWBack[k].byAdminLV;
+			memcpy(p->waItem, aWBack[k].waItem, sizeof(p->waItem));
+			memcpy(p->waEqu, aWBack[k].waEqu, sizeof(p->waEqu));
+			QuestMovePC(p, (int)aWBack[k].dwMapID, (int)aWBack[k].dwX, (int)aWBack[k].dwY);
+		}
+		/* 観戦なしに戻せば、今まで通り（その場で始まる）ことは上の AQ で確かめている */
+		sgenrand(4357);												/* この確認で使った乱数の分、後ろのテスト（敵の殴りの当たり外れなど）の出目が動かないよう、決まった種に戻す */
+	}
+
 	/* 後始末 */
 	DungeonProcNow(s_dwFakeNow + 1000);
 	s_dwFakeNow += 1000;

@@ -71,6 +71,7 @@ static const DungeonTextDefault g_aDungeonTextDefault[] = {
     {"def_win", "全部のウェーブをしのいだ！ 10秒後に全員戻ります。"},
     {"def_down", "倒れた…。{seconds}秒後に復活します。"},
     {"def_revived", "復活しました。"},
+    {"def_arena_busy", "いま別の組が拠点を守っています。終わるまで観客席で観戦して待ちましょう。"},
 };
 inline std::string DungeonText(const SUBGAME_DUNGEONINFO *p, const char *key,
     const char *k1 = "", const std::string &v1 = "", const char *k2 = "", const std::string &v2 = "",
