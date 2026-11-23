@@ -92,6 +92,7 @@
 #define MAX_STORYFLAGRANGE	2										/* シナリオをやり直す時に消す印の範囲の数（STORYINFO の awFlagFrom・awFlagTo） */
 #define MAX_STORYNUM		4										/* シナリオをやり直す時に 0 に戻す数値の数（STORYINFO の abyNum） */
 #define MAX_STORYQUEST		4										/* シナリオをやり直す時に受け直せるようにする依頼の数（STORYINFO の awQuest） */
+#define MAX_STORYTAKEITEM	8										/* シナリオをやり直す時に取り上げる持ち物の数（STORYINFO の awTakeItem） */
 #define MAX_STORYGOAL		8										/* シナリオの「いまの目的」の行の数（STORYINFO の aGoal。コマンド窓の「目的」に出る） */
 #define QUESTNPC_NOSTEP		(0xFF)									/* 見えるNPCで「段を変えない」を表す値（byNextStep）、「どの段でも」を表す値（byStepMax） */
 
@@ -3300,6 +3301,7 @@ typedef struct _STORYINFO {
 	BYTE		abyNum[MAX_STORYNUM];								/* やり直す時に 0 に戻す数値の番号（FLAG_NONUM=無し） */
 	WORD		awQuest[MAX_STORYQUEST];							/* やり直す時にクリア済みの印を消す依頼の番号（QUESTINFO の wID。0=無し） */
 	BYTE		byCountNum;											/* やり直した回数を数える数値の番号（選んだシナリオだけ +1。255 で止まる。FLAG_NONUM=数えない） */
+	WORD		awTakeItem[MAX_STORYTAKEITEM];						/* やり直す時に取り上げるアイテム番号（0=無し。大事な物欄と手持ち（装備中を除く）から全部消す。預かり所は触らない） */
 	STORYGOAL	aGoal[MAX_STORYGOAL];								/* 「いまの目的」の行（クリアしていない人に、上から見て最初に合う行をコマンド窓の「目的」に出す。合う行が無ければ出さない） */
 } STORYINFO, *PSTORYINFO;
 

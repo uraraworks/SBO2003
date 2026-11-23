@@ -2438,6 +2438,39 @@ void StoryTalk(PCHARINFO pChar, PCHARINFO pNpc)
 	}
 }
 
+/* やり直しで取り上げる品を持ち物から消す（大事な物の欄の全部と、手持ちの装備していない分）。消した個数を返す */
+static int StoryTakeItems(PCHARINFO pChar, WORD wItem)
+{
+	int i, j, nRet = 0;
+
+	if ((wItem == 0) || (wItem >= (WORD)g_aItemInfo.GetSize ())) {
+		return 0;
+	}
+	while (DelImportantItem (pChar, wItem)) {
+		nRet ++;
+	}
+	for (i = 0; i < MAX_MYITEM; ) {
+		BOOL bEqu = FALSE;
+
+		if (pChar->waItem[i] != wItem) {
+			i ++;
+			continue;
+		}
+		for (j = 0; j < 10; j ++) {
+			if (pChar->waEqu[j] == (WORD)i) {
+				bEqu = TRUE;
+			}
+		}
+		if (bEqu) {
+			i ++;			/* 装備中は触らない */
+			continue;
+		}
+		DelCharItem (pChar->dwTblID, (BYTE)i);		/* 後ろがつまるので i は進めない */
+		nRet ++;
+	}
+	return nRet;
+}
+
 /* 思い出をやり直す（選んだシナリオと、それにつながる後のシナリオの印・数値・依頼のクリア済みの印を戻す） */
 static void DoStoryReset(PCHARINFO pChar, WORD wStoryID)
 {
@@ -2447,7 +2480,7 @@ static void DoStoryReset(PCHARINFO pChar, WORD wStoryID)
 	char szMsg[MAX_QUESTMSG];
 	std::string strNext;
 	size_t i;
-	int j, k;
+	int j, k, nTake = 0;
 
 	if ((pStory == NULL) || !StoryIsShown (pChar, pStory)) {
 		SendResult (pChar, QUESTRESULT_NG, 0, "その思い出は、いまは開けません。");
@@ -2496,6 +2529,10 @@ static void DoStoryReset(PCHARINFO pChar, WORD wStoryID)
 				pChar->abyQuestDone[wQuest / 8] &= (BYTE)~(1 << (wQuest % 8));
 			}
 		}
+		/* 取り上げる持ち物 */
+		for (j = 0; j < MAX_STORYTAKEITEM; j ++) {
+			nTake += StoryTakeItems (pChar, p->awTakeItem[j]);
+		}
 	}
 	/* やり直した回数（選んだシナリオだけ。消す数値と重なっても最後に +1） */
 	if (pStory->byCountNum < MAX_FLAGNUM) {
@@ -2509,6 +2546,10 @@ static void DoStoryReset(PCHARINFO pChar, WORD wStoryID)
 	snprintf (szMsg, sizeof (szMsg), "「%s」を最初からやり直せるようになりました。", pStory->szName);
 	if (!strNext.empty ()) {
 		snprintf (szMsg + strlen (szMsg), sizeof (szMsg) - strlen (szMsg), "%sもいっしょに最初に戻りました。", strNext.c_str ());
+	}
+	if (nTake > 0) {
+		snprintf (szMsg + strlen (szMsg), sizeof (szMsg) - strlen (szMsg), "（%d個の大事な物を手放しました）", nTake);
+		SendBagState (pChar);		/* 持ち物の更新をクライアントへ */
 	}
 	SendResult (pChar, QUESTRESULT_STORY, wStoryID, szMsg);
 	/* 印・数値が戻ったので、物語の「いまの目的」も送り直す */
