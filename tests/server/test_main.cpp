@@ -1091,6 +1091,7 @@ static void TestLowParts(const std::vector<int> &aLogin);
 static void TestMimic(const std::vector<int> &aLogin);
 static void TestEnemyDoor(const std::vector<int> &aLogin);
 static void TestDoorExtra(const std::vector<int> &aLogin);
+static void TestDoorLockMsg(const std::vector<int> &aLogin);
 static void TestImportant(const std::vector<int> &aLogin);
 static void TestAdminResurrect(const std::vector<int> &aLogin);
 static void TestFlagTalk(const std::vector<int> &aLogin);
@@ -1631,6 +1632,7 @@ static void TestWorld(void)
 	/* X. 敵を全部倒すと開く扉 */
 	TestEnemyDoor(aLogin);
 	TestDoorExtra(aLogin);
+	TestDoorLockMsg(aLogin);
 	/* Y. 管理者ウィンドウの蘇生ボタン */
 	TestAdminResurrect(aLogin);
 	TestFlagTalk(aLogin);
@@ -9556,6 +9558,270 @@ static void TestDoorExtra(const std::vector<int> &aLogin)
 	DoorExtraRestoreEvents(pMap, aBackup);
 	s_dwFakeNow = dwNowBack;
 	g_dwTime = s_dwFakeNow;
+	DeleteTblNoPC((int)pPC->dwTblID);
+	pPC->dwX = pPC->dwXBack = dwXBack;
+	pPC->dwY = pPC->dwYBack = dwYBack;
+	pPC->byDirection = byDirBack;
+	pPC->dwSpaceID = dwSpaceBack;
+	pPC->byAdminLV = byAdminBack;
+	AddTblNoPC((int)pPC->dwTblID);
+}
+
+/* ------------------------------------------------------------------------- */
+/* X3. 鍵の扉の「鍵がない時の文」（EVENTINFO_DOOR の szLockMsg）				 */
+/*    鍵を持たない人が開けようとすると szLockMsg（末尾に @2 が無ければ足す）が	 */
+/*    その人に届く・空なら既定文。データAPIの範囲外・鍵以外の扉への指定は断る。	 */
+/*    保存して読み直しても残り、管理者ウィンドウの短い（文を知らない）扉で		 */
+/*    直しても消えない（新しい大きさで送れば反映される）					 */
+/* ------------------------------------------------------------------------- */
+static void TestDoorLockMsg(const std::vector<int> &aLogin)
+{
+	printf("== X3. DoorLockMsg ==\n");
+	if (aLogin.size() < 1) {
+		return;
+	}
+	PCHARINFO pPC = g_aCharInfo[aLogin[0]];
+	int nMapNo = GetMapNo(pPC->dwMapID);
+	if (nMapNo < 0) {
+		printf("no map\n");
+		return;
+	}
+	PMAPINFO pMap = g_aMapInfo[nMapNo];
+	int nX = -1, nY = -1;
+	for (int y = 0; y < pMap->nCY && nX < 0; y ++) {
+		for (int x = 0; x + 2 < pMap->nCX; x ++) {
+			if (PushIsFree(pMap, x, y) && PushIsFree(pMap, x + 1, y) && PushIsFree(pMap, x + 2, y)) {
+				nX = x;
+				nY = y;
+				break;
+			}
+		}
+	}
+	WORD wKey = 0;
+	for (int i = 1; i < g_aItemInfo.GetSize(); i ++) {
+		if (g_aItemInfo[i]->szName[0]) {
+			wKey = (WORD)i;
+			break;
+		}
+	}
+	if (nX < 0 || wKey == 0) {
+		printf("no floor\n");
+		return;
+	}
+	const int nConn = 1000;
+	const DWORD dwMapID = pMap->dwID;
+	DWORD dwXBack = pPC->dwX, dwYBack = pPC->dwY;
+	BYTE byDirBack = pPC->byDirection;
+	DWORD dwSpaceBack = pPC->dwSpaceID;
+	BYTE byAdminBack = pPC->byAdminLV;
+	WORD awImpBack[MAX_IMPORTANT], awItemBack[MAX_MYITEM];
+	memcpy(awImpBack, pPC->waImportant, sizeof(awImpBack));
+	memcpy(awItemBack, pPC->waItem, sizeof(awItemBack));
+	std::vector<DOOREXEV> aBackup;
+	DoorExtraSaveEvents(pMap, aBackup);
+	const std::string strOrig = DoorExtraEventsJson(nMapNo);
+	const int nEvOrig = pMap->nEventCount;
+	const int xD = nX + 1, yD = nY;
+	const char szMsg[] = "カルバの話を聞いてからだ。";
+	const char szDefault[] = "鍵がかかっている。@2";
+
+	char sz[1024];
+	/* events の全部（元のイベント＋試す扉）。strDetail は扉の detail に足す文字列（byType 以降） */
+	auto Events = [&](const std::string &strDetail) {
+		std::string strHead = strOrig.substr(0, strOrig.size() - 1);
+		std::string s = "{\"events\":" + strHead + (strOrig.size() > 2 ? "," : "");
+		snprintf(sz, sizeof(sz), "{\"x\":%d,\"y\":%d,\"type\":3,\"detail\":{\"wGrpID\":11,\"wBackGrpID\":22,\"byTimeClose\":30%s}}]}", xD, yD, strDetail.c_str());
+		return s + sz;
+	};
+	auto ok = [](const std::string &s) { return (int)(s.find("\"ok\":true") != std::string::npos); };
+	auto Door = [&]() {
+		PEVENTINFO pE = DoorExtraFind(pMap, xD, yD);
+		return pE ? (PEVENTINFO_DOOR)pE->pData : (PEVENTINFO_DOOR)NULL;
+	};
+	char szKeyType[64];
+	snprintf(szKeyType, sizeof(szKeyType), ",\"byType\":2,\"wKeyItem\":%d", (int)wKey);
+	const std::string strKey = szKeyType;
+
+	/* 範囲外・鍵以外の扉への指定は断る（イベントは増えない） */
+	{
+		std::string str95(95, 'a'), str96(96, 'a');
+		std::vector<std::pair<std::string, std::string> > aBad;
+		aBad.push_back(std::make_pair("nonkey type0", ",\"byType\":0,\"szLockMsg\":\"x\""));
+		aBad.push_back(std::make_pair("nonkey type1", ",\"byType\":1,\"szLockMsg\":\"x\""));
+		aBad.push_back(std::make_pair("too long", strKey + ",\"szLockMsg\":\"" + str96 + "\""));
+		aBad.push_back(std::make_pair("not string", strKey + ",\"szLockMsg\":5"));
+		for (size_t i = 0; i < aBad.size(); i ++) {
+			std::string strRes = SwapApi(nMapNo, Events(aBad[i].second).c_str());
+			printf("doorlock api bad %s ok=%d events=%d\n", aBad[i].first.c_str(), ok(strRes), (int)(pMap->nEventCount == nEvOrig));
+		}
+		/* 空文字は鍵以外の扉でも書ける（既定文のまま） */
+		std::string strEmpty = SwapApi(nMapNo, Events(",\"byType\":0,\"szLockMsg\":\"\"").c_str());
+		printf("doorlock api nonkey empty ok=%d\n", ok(strEmpty));
+		/* ちょうど 95 バイトは通る */
+		std::string strMax = SwapApi(nMapNo, Events(strKey + ",\"szLockMsg\":\"" + str95 + "\"").c_str());
+		printf("doorlock api max95 ok=%d len=%d\n", ok(strMax), Door() ? (int)strlen(Door()->szLockMsg) : -1);
+	}
+
+	/* 設定する */
+	std::string strRes = SwapApi(nMapNo, Events(strKey + ",\"szLockMsg\":\"" + szMsg + "\"").c_str());
+	PEVENTINFO_DOOR pDoor = Door();
+	if (!pDoor) {
+		printf("doorlock api set ok=%d door=0\n", ok(strRes));
+		DoorExtraRestoreEvents(pMap, aBackup);
+		return;
+	}
+	printf("doorlock api set ok=%d type=%d msg=%d\n", ok(strRes), (int)pDoor->byType, (int)(strcmp(pDoor->szLockMsg, szMsg) == 0));
+	{
+		std::string strGet = SboWebDataGet("map", nMapNo);
+		printf("doorlock api get has=%d\n", (int)(strGet.find(std::string("\"szLockMsg\":\"") + szMsg + "\"") != std::string::npos));
+		/* get した中身をそのまま書き戻しても変わらない */
+		size_t nS = strGet.find("\"events\":"), nE = strGet.find(",\"shops\":");
+		std::string strBody = "{" + ((nS != std::string::npos && nE != std::string::npos) ? strGet.substr(nS, nE - nS) : std::string()) + "}";
+		std::string strRound = SwapApi(nMapNo, strBody.c_str());
+		pDoor = Door();
+		printf("doorlock api roundtrip ok=%d msg=%d\n", ok(strRound), pDoor ? (int)(strcmp(pDoor->szLockMsg, szMsg) == 0) : -1);
+	}
+	/* detail に szLockMsg を書かない時は今のまま（残る） */
+	SwapApi(nMapNo, Events(strKey).c_str());
+	pDoor = Door();
+	printf("doorlock api omit msg=%d\n", pDoor ? (int)(strcmp(pDoor->szLockMsg, szMsg) == 0) : -1);
+
+	/* 鍵なしの人が開けようとする */
+	MimicPC(pPC, nX, nY, 3);
+	pPC->dwSpaceID = SPACE_NORMAL;
+	ZeroMemory(pPC->waImportant, sizeof(pPC->waImportant));
+	ZeroMemory(pPC->waItem, sizeof(pPC->waItem));
+	CMDPARA_DATA1 Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_OPENDOOR;
+	Para.pID = pPC->pID;
+	Para.dwTblID = pPC->dwTblID;
+	auto Try = [&](const char *pszFind1, const char *pszFind2, const char *pszLabel) {
+		int nMsg0 = MockCmdCount(nConn, CMD_MAPMSG);
+		MockTrace(1);
+		TestRecv(pPC, &Para, sizeof(Para));
+		int nHit1 = MockHasText(nConn, CMD_MAPMSG, pszFind1), nHit2 = MockHasText(nConn, CMD_MAPMSG, pszFind2);
+		MockTrace(0);
+		PEVENTINFO_DOOR pD = Door();
+		printf("doorlock %s mapmsg=%d text=%d other=%d open=%d\n", pszLabel, MockCmdCount(nConn, CMD_MAPMSG) - nMsg0, nHit1, nHit2,
+			(int)(pD && SpaceDoorIsOpen(dwMapID, DoorExtraFind(pMap, xD, yD), pD, SPACE_NORMAL)));
+	};
+	{
+		std::string strWithAt = std::string(szMsg) + "@2";
+		Try(strWithAt.c_str(), szDefault, "nokey custom");
+	}
+	/* 文の末尾に @2 が最初からあれば二重に付けない */
+	SwapApi(nMapNo, Events(strKey + ",\"szLockMsg\":\"カルバの話を聞いてからだ。@2\"").c_str());
+	Try("だ。@2", "@2@2", "nokey with@2");
+	/* 空なら既定文 */
+	SwapApi(nMapNo, Events(strKey + ",\"szLockMsg\":\"\"").c_str());
+	pDoor = Door();
+	printf("doorlock api empty msg_empty=%d\n", pDoor ? (int)(pDoor->szLockMsg[0] == 0) : -1);
+	Try(szDefault, szMsg, "nokey default");
+
+	/* 鍵があれば今までどおり開く（鍵なしの文は出ない） */
+	SwapApi(nMapNo, Events(strKey + ",\"szLockMsg\":\"カルバの話を聞いてからだ。\"").c_str());
+	AddCharItem(pPC->dwTblID, wKey);
+	Try("で扉を開けた。@2", szMsg, "withkey");
+	ZeroMemory(pPC->waImportant, sizeof(pPC->waImportant));
+	ZeroMemory(pPC->waItem, sizeof(pPC->waItem));
+
+	/* 管理者ウィンドウからの CMD_CHGEVENT：文を知らない短い扉は文が残る・新しい大きさなら反映される */
+	{
+		pPC->byAdminLV = ADMINLV_ADMINISTRATOR;
+		PEVENTINFO pEvent = DoorExtraFind(pMap, xD, yD);
+		int nNo = (int)(pEvent - pMap->pEvent);
+		EVENTINFO_DOOR New;
+		ZeroMemory(&New, sizeof(New));
+		New.wGrpID = 33;
+		New.wBackGrpID = 44;
+		New.byTimeClose = 50;
+		New.byType = EVENTDOOTTYPE_KEY;
+		New.wKeyItem = wKey;
+		New.wEnemyStTmp = 65535;
+		const size_t nShortNoExtra = offsetof(EVENTINFO_DOOR, byExtraCount);
+		const size_t nShortNoLock = offsetof(EVENTINFO_DOOR, szLockMsg);
+		auto Send = [&](const EVENTINFO_DOOR &Src, size_t nBody) {
+			std::vector<BYTE> aPacket(sizeof(CMDPARA_CHGEVENT) + nBody, 0xCC);
+			PCMDPARA_CHGEVENT pPara = (PCMDPARA_CHGEVENT)&aPacket[0];
+			ZeroMemory(pPara, sizeof(CMDPARA_CHGEVENT));
+			pPara->byCmd = CMD_CHGEVENT;
+			pPara->dwID = dwMapID;
+			pPara->dwDataID = (DWORD)nNo;
+			pPara->dwX = (DWORD)xD;
+			pPara->dwY = (DWORD)yD;
+			pPara->byType = EVENTTYPE_DOOR;
+			pPara->pData = (PVOID)1;
+			memcpy(&aPacket[sizeof(CMDPARA_CHGEVENT)], &Src, nBody);
+			TestRecv(pPC, &aPacket[0], aPacket.size());
+			PEVENTINFO_DOOR pD = Door();
+			return pD;
+		};
+		/* 追加マスも文も知らない短い扉 */
+		pDoor = Send(New, nShortNoExtra);
+		printf("doorlock admin short noextra msg=%d changed=%d\n", pDoor ? (int)(strcmp(pDoor->szLockMsg, szMsg) == 0) : -1, pDoor ? (int)(pDoor->wGrpID == 33 && pDoor->byTimeClose == 50) : -1);
+		/* 追加マスまで知っていて文を知らない扉 */
+		New.wGrpID = 35;
+		pDoor = Send(New, nShortNoLock);
+		printf("doorlock admin short noroom msg=%d changed=%d\n", pDoor ? (int)(strcmp(pDoor->szLockMsg, szMsg) == 0) : -1, pDoor ? (int)(pDoor->wGrpID == 35) : -1);
+		/* 新しい大きさで、文が空 → 消える */
+		New.wGrpID = 36;
+		pDoor = Send(New, sizeof(New));
+		printf("doorlock admin full empty msg_empty=%d changed=%d\n", pDoor ? (int)(pDoor->szLockMsg[0] == 0) : -1, pDoor ? (int)(pDoor->wGrpID == 36) : -1);
+		/* 新しい大きさで、文あり → 反映（終端が無い長い文は 95 バイトで切る） */
+		memset(New.szLockMsg, 'b', sizeof(New.szLockMsg));
+		pDoor = Send(New, sizeof(New));
+		printf("doorlock admin full msg len=%d\n", pDoor ? (int)strlen(pDoor->szLockMsg) : -1);
+		ZeroMemory(New.szLockMsg, sizeof(New.szLockMsg));
+		strcpy(New.szLockMsg, szMsg);
+		pDoor = Send(New, sizeof(New));
+		printf("doorlock admin full msg set=%d\n", pDoor ? (int)(strcmp(pDoor->szLockMsg, szMsg) == 0) : -1);
+		pPC->byAdminLV = byAdminBack;
+	}
+
+	/* 保存して読み直す（読み込みは末尾に足される）。文のある扉と、文が空の扉 */
+	{
+		extern BOOL SaveMapInfo(void);
+		extern BOOL LoadMapInfo(void);
+		int nMaps = g_aMapInfo.GetSize();
+		DWORD dwNewMapIDBak = g_dwNewMapID;
+		BOOL bSaved = SaveMapInfo();
+		BOOL bLoaded = LoadMapInfo();
+		int nAdded = g_aMapInfo.GetSize() - nMaps;
+		if (nAdded >= 1) {
+			PMAPINFO pL = g_aMapInfo[nMaps + nMapNo];
+			PEVENTINFO pE = DoorExtraFind(pL, xD, yD);
+			PEVENTINFO_DOOR pD = pE ? (PEVENTINFO_DOOR)pE->pData : NULL;
+			printf("doorlock save=%d load=%d added=%d msg=%d type=%d key=%d\n", (int)bSaved, (int)bLoaded, nAdded,
+				pD ? (int)(strcmp(pD->szLockMsg, szMsg) == 0) : -1, pD ? (int)pD->byType : -1, pD ? (int)(pD->wKeyItem == wKey) : -1);
+			/* 文を空にして保存し直すと、読み直した扉も空（古いデータと同じ・既定文） */
+			ZeroMemory(((PEVENTINFO_DOOR)DoorExtraFind(pMap, xD, yD)->pData)->szLockMsg, MAX_MAPSWAPMSG);
+		} else {
+			printf("doorlock save=%d load=%d added=%d\n", (int)bSaved, (int)bLoaded, nAdded);
+		}
+		for (int i = g_aMapInfo.GetSize() - 1; i >= nMaps; i --) {
+			g_aMapInfo.RemoveAt(i);
+		}
+		g_dwNewMapID = dwNewMapIDBak;
+		nMaps = g_aMapInfo.GetSize();
+		bSaved = SaveMapInfo();
+		bLoaded = LoadMapInfo();
+		nAdded = g_aMapInfo.GetSize() - nMaps;
+		if (nAdded >= 1) {
+			PEVENTINFO pE = DoorExtraFind(g_aMapInfo[nMaps + nMapNo], xD, yD);
+			PEVENTINFO_DOOR pD = pE ? (PEVENTINFO_DOOR)pE->pData : NULL;
+			printf("doorlock save empty=%d type=%d\n", pD ? (int)(pD->szLockMsg[0] == 0) : -1, pD ? (int)pD->byType : -1);
+		}
+		for (int i = g_aMapInfo.GetSize() - 1; i >= nMaps; i --) {
+			g_aMapInfo.RemoveAt(i);
+		}
+		g_dwNewMapID = dwNewMapIDBak;
+	}
+
+	/* 片付け */
+	DoorExtraRestoreEvents(pMap, aBackup);
+	memcpy(pPC->waImportant, awImpBack, sizeof(awImpBack));
+	memcpy(pPC->waItem, awItemBack, sizeof(awItemBack));
 	DeleteTblNoPC((int)pPC->dwTblID);
 	pPC->dwX = pPC->dwXBack = dwXBack;
 	pPC->dwY = pPC->dwYBack = dwYBack;

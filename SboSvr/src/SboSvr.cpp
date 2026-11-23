@@ -1630,6 +1630,10 @@ BOOL SaveMapInfo(void)
 								WriteData (hFile, "byExtraCount", sizeof (byExtra), &byExtra);							/* 追加マスの数 */
 								WriteData (hFile, "aExtra", sizeof (DOOREXTRA) * byExtra, (PBYTE)pInfo->aExtra);			/* 追加マス */
 							}
+							if (pInfo->szLockMsg[0]) {
+								/* 鍵なしの文が空の時は書かない（古いサーバーでも読めるように） */
+								WriteData (hFile, "szLockMsg", sizeof (pInfo->szLockMsg), (PBYTE)pInfo->szLockMsg);		/* 鍵がなくて開けられない時の文 */
+							}
 							WriteFile (hFile, &byTmp, 1, &dwBytes, NULL);	/* 区切り */
 						}
 						break;
@@ -2027,6 +2031,8 @@ BOOL LoadMapInfo(void)
 												} else if (strcmp (pszTmp, "aExtra") == 0) {			/* 追加マス */
 													dwExtraSize = min (dwSize, (DWORD)sizeof (pInfo->aExtra));
 													CopyMemory (pInfo->aExtra, &pData[dwFilePtr], dwExtraSize);	dwFilePtr += dwSize;	continue;
+												} else if (strcmp (pszTmp, "szLockMsg") == 0) {			/* 鍵がなくて開けられない時の文（項目が無い古いデータは空=既定文） */
+													CopyMemory (pInfo->szLockMsg, &pData[dwFilePtr], min (dwSize, (DWORD)(sizeof (pInfo->szLockMsg) - 1)));	dwFilePtr += dwSize;	continue;
 												}
 												/* 知らない項目は読み飛ばす */
 												dwFilePtr += dwSize;

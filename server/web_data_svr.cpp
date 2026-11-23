@@ -1662,6 +1662,7 @@ static const DATAFIELD s_aFieldEvDoor[] = {
 	FLD (EVENTINFO_DOOR, wAreaX2,		"敵を数える範囲 右下X",	FT_U16, 0, NULL),
 	FLD (EVENTINFO_DOOR, wAreaY2,		"敵を数える範囲 右下Y",	FT_U16, 0, NULL),
 	FLD (EVENTINFO_DOOR, wEnemyStTmp,	"数える敵の種類",		FT_U16, 0, "種別1の時に数える敵の stTmp（NPC のステータステンプレート番号）。その stTmp の敵だけ数える。65535=指定なしで範囲の敵を全部数える（既定）"),
+	FLDS(EVENTINFO_DOOR, szLockMsg,		"鍵がない時の文",		FT_STR, 0, "種別2（鍵）の時だけ使える。鍵を持っていない人が開けようとした時に、その人にだけ出る文（最大 95 バイト。末尾に @2 が無ければ自動で付く）。空なら既定の「鍵がかかっている。」。種別が2以外の扉に空でない文は指定できない"),
 };
 static const DATAFIELD s_aFieldEvHpMana[] = {
 	FLD (EVENTINFO_HPMANA, byType,		"種別",					FT_U8, 0, NULL),
@@ -3667,6 +3668,15 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 						if ((wSt != 65535) && ((int)wSt >= g_aStTmpInfo.GetSize())) {
 							strErr = strP + ".detail.wEnemyStTmp は stTmp の番号（0〜" + JsonNum(g_aStTmpInfo.GetSize() - 1) + "）か 65535（指定なし）で指定してください";
 							return false;
+						}
+						/* 鍵なしの文は、種別が「鍵」の扉だけ（それ以外は空にしておく） */
+						PEVENTINFO_DOOR pDoorChk = (PEVENTINFO_DOOR)&ev.aData[0];
+						if (pDoorChk->szLockMsg[0] && pDoorChk->byType != EVENTDOOTTYPE_KEY) {
+							if (pd->Get("szLockMsg")) {
+								strErr = strP + ".detail.szLockMsg は種別が 2（鍵）の扉だけで指定できます";
+								return false;
+							}
+							ZeroMemory(pDoorChk->szLockMsg, sizeof(pDoorChk->szLockMsg));	/* 鍵でなくなる扉は、前の文を持ち越さない */
 						}
 					}
 				}

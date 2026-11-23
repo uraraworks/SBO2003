@@ -2781,6 +2781,7 @@ typedef struct _EVENTINFO_DOOR {
 	WORD		wEnemyStTmp;										/* 数える敵の種類（ステータステンプレート番号。65535=指定なしで全部数える。種別が「敵を全部倒す」の時） */
 	BYTE		byExtraCount;										/* 追加マスの数（0〜MAX_DOOREXTRA。0 なら今までどおり扉のマスだけ） */
 	DOOREXTRA	aExtra[MAX_DOOREXTRA];								/* 追加マス（扉の開閉に合わせて、扉の位置からずらしたマスのパーツも切り替える） */
+	char		szLockMsg[MAX_MAPSWAPMSG];							/* 鍵を持っていなくて開けられない時の文(UTF-8。空=既定文。種別が「鍵」の時) */
 } EVENTINFO_DOOR, *PEVENTINFO_DOOR;
 
 /* イベントデータ(HP/Mana回復) */
