@@ -2471,7 +2471,8 @@ static int StoryTakeItems(PCHARINFO pChar, WORD wItem)
 	return nRet;
 }
 
-/* 思い出をやり直す（選んだシナリオと、それにつながる後のシナリオの印・数値・依頼のクリア済みの印を戻す） */
+/* 思い出をやり直す（選んだシナリオと、それにつながる後のシナリオの印・数値・依頼のクリア済みの印を戻す。
+   開けた宝箱の記録は、各シナリオの awTakeChest に指定した宝箱だけ戻す（指定の無い宝箱は戻さない＝宝は一度きり）） */
 static void DoStoryReset(PCHARINFO pChar, WORD wStoryID)
 {
 	std::vector<PSTORYINFO> aTree;
@@ -2480,7 +2481,7 @@ static void DoStoryReset(PCHARINFO pChar, WORD wStoryID)
 	char szMsg[MAX_QUESTMSG];
 	std::string strNext;
 	size_t i;
-	int j, k, nTake = 0;
+	int j, k, nTake = 0, nChest = 0;
 
 	if ((pStory == NULL) || !StoryIsShown (pChar, pStory)) {
 		SendResult (pChar, QUESTRESULT_NG, 0, "その思い出は、いまは開けません。");
@@ -2533,13 +2534,22 @@ static void DoStoryReset(PCHARINFO pChar, WORD wStoryID)
 		for (j = 0; j < MAX_STORYTAKEITEM; j ++) {
 			nTake += StoryTakeItems (pChar, p->awTakeItem[j]);
 		}
+		/* 開けた記録を戻す宝箱（開けていた分だけ数える。「無し」は FLAG_NOBIT） */
+		for (j = 0; j < MAX_STORYCHEST; j ++) {
+			WORD wChest = p->awTakeChest[j];
+			if ((wChest < MAX_CHESTNO) && ChestOpenedGet (pChar, wChest)) {
+				ChestOpenedSet (pChar, wChest, FALSE);
+				nChest ++;
+			}
+		}
 	}
 	/* やり直した回数（選んだシナリオだけ。消す数値と重なっても最後に +1） */
 	if (pStory->byCountNum < MAX_FLAGNUM) {
 		FlagNumAdd (pChar->abyFlagNum, pStory->byCountNum, 1);
 	}
 	/* 印が動いたら、印で見える・消えるNPCを見え直す */
-	if (memcmp (abyFlagBak, pChar->abyFlag, sizeof (abyFlagBak)) != 0) {
+	/* 宝箱の記録が戻った時も、本人の「印で変わるマス」（宝箱の見た目）を送り直す（CharViewRefresh が差し替えも送る） */
+	if ((memcmp (abyFlagBak, pChar->abyFlag, sizeof (abyFlagBak)) != 0) || (nChest > 0)) {
 		CharViewRefresh (pChar);
 	}
 
@@ -2550,6 +2560,9 @@ static void DoStoryReset(PCHARINFO pChar, WORD wStoryID)
 	if (nTake > 0) {
 		snprintf (szMsg + strlen (szMsg), sizeof (szMsg) - strlen (szMsg), "（%d個の大事な物を手放しました）", nTake);
 		SendBagState (pChar);		/* 持ち物の更新をクライアントへ */
+	}
+	if (nChest > 0) {
+		snprintf (szMsg + strlen (szMsg), sizeof (szMsg) - strlen (szMsg), "（宝箱を%d個戻しました）", nChest);
 	}
 	SendResult (pChar, QUESTRESULT_STORY, wStoryID, szMsg);
 	/* 印・数値が戻ったので、物語の「いまの目的」も送り直す */

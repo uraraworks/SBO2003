@@ -76,6 +76,10 @@ void ShowDlgStoryInfoEdit(HWND hWndParent, int nNo)
 			s_Info.abyNum[i] = FLAG_NONUM;
 		}
 		s_Info.byCountNum = FLAG_NONUM;
+		/* 宝箱の番号は 0 も使えるので「無し」で埋める（欄は無いが、0 のままだと宝箱 0 を戻してしまう） */
+		for (int i = 0; i < MAX_STORYCHEST; i ++) {
+			s_Info.awTakeChest[i] = FLAG_NOBIT;
+		}
 	}
 	s_bWait = FALSE;
 	s_hWndParent = hWndParent;
