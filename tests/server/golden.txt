@@ -1498,6 +1498,46 @@ enemydoor clear open=1 chgmap=1 sound=1 sysmsg=1
 enemydoor later open=1
 enemydoor respawn onDoor open=1
 enemydoor respawn open=0 sysmsg=1
+enemydoor sttmp other count=0 open=1
+enemydoor sttmp target count=1 open=0
+enemydoor sttmp clear count=0 open=1
+enemydoor sttmp none count=1 open=0
+== X2. DoorExtra ==
+doorextra api bad dx over ok=0 events=1
+doorextra api bad dx under ok=0 events=1
+doorextra api bad dy over ok=0 events=1
+doorextra api bad dy under ok=0 events=1
+doorextra api bad both zero ok=0 events=1
+doorextra api bad closed range ok=0 events=1
+doorextra api bad open range ok=0 events=1
+doorextra api bad open negative ok=0 events=1
+doorextra api bad dup ok=0 events=1
+doorextra api bad missing key ok=0 events=1
+doorextra api bad unknown key ok=0 events=1
+doorextra api bad not array ok=0 events=1
+doorextra api bad not int ok=0 events=1
+doorextra api bad nine ok=0 events=1
+doorextra api bad outside left ok=0 events=1
+doorextra api bad outside top ok=0 events=1
+doorextra api bad nondoor ok=0 events=1
+doorextra api dry has=1 events=1
+doorextra api set ok=1 events=2 count=2 a=0,-1,1,1 b=1,0,1,1
+doorextra api get has=1 once=1
+doorextra closed block normal a=0 b=0 viewer a=0 b=0
+doorextra closed walk stay=1
+doorextra open ret=1 chgmap=3 last=1,3,2
+doorextra open block normal a=1 b=1 viewer a=1 b=1
+doorextra open walk in=1
+doorextra close open=0 chgmap=3 last=1,3,2 block a=0 b=0
+doorextra space open ret=1 chgmap=3 viewer a=1 b=1 normal a=0 b=0
+doorextra space state extra=2
+doorextra space other normal open=0 a=0 b=0
+doorextra space close open=0 chgmap=3 viewer a=0 b=0
+doorextra api omit count=2
+doorextra admin full count=2 a=0,-1 b=1,0 changed=1
+doorextra admin short count=2 a=0,-1 b=1,0 changed=1
+doorextra save=1 load=1 added=232 events=1 door1=2,0,-1,1,1,0,1 door2=0
+doorextra none count=0 get_has=0 open chgmap=1 block a=1 b=1 same=1
 == Y. AdminResurrect ==
 adminres user hp=0 dead=1
 adminres short hp=0 dead=1

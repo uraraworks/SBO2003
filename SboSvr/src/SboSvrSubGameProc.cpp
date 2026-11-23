@@ -1971,6 +1971,7 @@ static BOOL MakeDungeonByTheme(int nID, PSUBGAME_DUNGEONINFO pDungeon, PMAPINFO 
 			pEvent->pData = new BYTE[sizeof (EVENTINFO_DOOR)];
 			ZeroMemory (pEvent->pData, sizeof (EVENTINFO_DOOR));
 			PEVENTINFO_DOOR pDoor = (PEVENTINFO_DOOR)pEvent->pData;
+			pDoor->wEnemyStTmp = 65535;							/* 敵の種類の指定なし */
 			pDoor->wGrpID = (WORD)nClose;
 			pDoor->wBackGrpID = (WORD)nOpen;
 			pDoor->byTimeClose = 30;							/* 3秒で閉まる */

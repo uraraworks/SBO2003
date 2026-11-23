@@ -334,7 +334,7 @@ static void AdminSpaceFillList		(void);								/* 空間の一覧を作り直す
 static BYTE s_byAdminUndoScreen = 0xFF;
 
 /* マップパーツ一覧のスクロール（ドット単位。ホイールやトラックパッドでなめらかに動かす） */
-#define	MAPPARTS_LIST_COLS		10			/* 一覧の横の数 */
+#define	MAPPARTS_LIST_COLS		8			/* 一覧の横の数（枠 IDC_PARTS は 184 ダイアログ単位＝276 ドットなので 32×8=256 まで） */
 #define	MAPPARTS_LIST_CY		(32 * 4)	/* 一覧の見える高さ（ドット） */
 #define	MAPPARTS_LINE_STEP		32			/* スクロールバーの矢印 1 回で動かすドット数（1 段） */
 static int s_nMapPartsScrollY;				/* 一覧の今のスクロール位置（ドット） */
@@ -2323,6 +2323,9 @@ void AdminOnCommandMapEvent(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 			if (nSize) {
 				g_pEventInfo->pData = new BYTE[nSize];
 				ZeroMemory (g_pEventInfo->pData, nSize);
+				if (g_pEventInfo->byType == EVENTTYPE_DOOR) {
+					((PEVENTINFO_DOOR)g_pEventInfo->pData)->wEnemyStTmp = 65535;	/* 敵の種類の指定なし */
+				}
 			}
 
 			MakeAdminWndEventInfoType ();
@@ -2457,6 +2460,12 @@ void AdminOnCommandMapEvent(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 					ZeroMemory (szTmp, sizeof (szTmp));
 					GetWindowText (m_hWndEdit8, szTmp, 6);
 					pDoor->wKeyItem = (WORD)atoi (szTmp);
+
+					/* 数える敵の種類（ステータステンプレート番号。空・範囲外=指定なし） */
+					ZeroMemory (szTmp, sizeof (szTmp));
+					GetWindowText (m_hWndEdit9, szTmp, 7);
+					int nStTmp = (szTmp[0] == 0) ? 65535 : atoi (szTmp);
+					pDoor->wEnemyStTmp = ((nStTmp < 0) || (nStTmp > 65535)) ? (WORD)65535 : (WORD)nStTmp;
 
 					/* 敵を数える範囲 */
 					HWND ahWnd[4] = {m_hWndEdit4, m_hWndEdit5, m_hWndEdit6, m_hWndEdit7};
@@ -6313,6 +6322,7 @@ void AdminOnPaintMapEvent(HDC hDC)
 					MyTextOut (hDC, 0, 64 + 16 * 5, "範囲 左上X,Y:");
 					MyTextOut (hDC, 0, 64 + 16 * 6, "範囲 右下X,Y:");
 					MyTextOut (hDC, 0, 64 + 16 * 7, "(敵を数える範囲。全部0=マップ全体)");
+					MyTextOut (hDC, 0, 64 + 16 * 8, "数える敵のST番号(65535=全部):");
 				}
 				break;
 
@@ -8375,6 +8385,13 @@ void MakeAdminWndEventInfoType(void)
 			SendMessage (m_hWndEdit8, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 			wsprintf (szTmp, "%d", pDoor->wKeyItem);
 			SetWindowText (m_hWndEdit8, szTmp);
+
+			/* 数える敵の種類（種別が「敵を全部倒す」の時。ステータステンプレート番号。65535=全部） */
+			m_hWndEdit9 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+					12 * 13 + 60, 64 + 16 * 8, 40, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
+			SendMessage (m_hWndEdit9, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+			wsprintf (szTmp, "%d", pDoor->wEnemyStTmp);
+			SetWindowText (m_hWndEdit9, szTmp);
 
 			/* 敵を数える範囲（種別が「敵を全部倒す」の時。全部0ならマップ全体） */
 			HWND *aphWnd[4] = {&m_hWndEdit4, &m_hWndEdit5, &m_hWndEdit6, &m_hWndEdit7};

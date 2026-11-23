@@ -6153,6 +6153,105 @@ BOOL SpaceDoorIsOpen(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor, DW
 	return (pDoor != NULL) && (SpaceDoorTime (dwMapID, pEvent, pDoor, dwSpaceID) != 0);
 }
 
+/* 扉の追加マス i のマスの座標（扉の位置からずらした所）。マップの外・パーツ番号が範囲外なら FALSE */
+static BOOL SpaceDoorExtraCell(PMAPINFO pMap, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor, int i, int *pX, int *pY)
+{
+	if ((pDoor == NULL) || (i < 0) || (i >= (int)pDoor->byExtraCount) || (i >= MAX_DOOREXTRA)) {
+		return FALSE;
+	}
+	*pX = (int)pEvent->dwX + pDoor->aExtra[i].sbyOffX;
+	*pY = (int)pEvent->dwY + pDoor->aExtra[i].sbyOffY;
+	return (*pX >= 0) && (*pX < pMap->nCX) && (*pY >= 0) && (*pY < pMap->nCY);
+}
+
+/* 扉の追加マスを、その空間の人にだけ今の状態の絵にする（bOpen なら wOpenParts、そうでなければ wClosedParts）。
+   pIDTo が 0 でなければその 1 人だけに送る（空間を移った人・ログインした人向け） */
+static void SpaceDoorExtraSend(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID, BOOL bOpen, DWORD pIDTo = 0)
+{
+	PMAPINFO pMap;
+	int i, x, y, nMapNo;
+
+	if ((pDoor == NULL) || (pDoor->byExtraCount == 0)) {
+		return;
+	}
+	nMapNo = GetMapNo (dwMapID);
+	if (nMapNo < 0) {
+		return;
+	}
+	pMap = g_aMapInfo[nMapNo];
+	for (i = 0; i < (int)pDoor->byExtraCount && i < MAX_DOOREXTRA; i ++) {
+		WORD wParts = bOpen ? pDoor->aExtra[i].wOpenParts : pDoor->aExtra[i].wClosedParts;
+		if (!SpaceDoorExtraCell (pMap, pEvent, pDoor, i, &x, &y) || (wParts >= g_wCountMapParts)) {
+			continue;
+		}
+		if (pIDTo) {
+			SendCmdCHGMAPTo (pIDTo, dwMapID, wParts, x, y);
+		} else {
+			SendCmdCHGMAPSpace (dwMapID, dwSpaceID, wParts, x, y);
+		}
+	}
+}
+
+/* (x,y) が扉の追加マスなら、その空間の扉の開閉に合ったパーツを返す。
+   サーバーのマップの中身（pwMap）は書き換えず、通れる判定（CheckCharBlockFor）がこれで見る */
+BOOL SpaceDoorExtraParts(PMAPINFO pMap, DWORD dwSpaceID, int x, int y, WORD *pwParts)
+{
+	int i, j, nX, nY;
+
+	if ((pMap == NULL) || (pMap->pEvent == NULL)) {
+		return FALSE;
+	}
+	for (i = 0; i < pMap->nEventCount; i ++) {
+		PEVENTINFO pEvent = &pMap->pEvent[i];
+		PEVENTINFO_DOOR pDoor;
+
+		if ((pEvent->byType != EVENTTYPE_DOOR) || (pEvent->pData == NULL)) {
+			continue;
+		}
+		pDoor = (PEVENTINFO_DOOR)pEvent->pData;
+		if (pDoor->byExtraCount == 0) {
+			continue;
+		}
+		for (j = 0; j < (int)pDoor->byExtraCount && j < MAX_DOOREXTRA; j ++) {
+			WORD wParts;
+			if (!SpaceDoorExtraCell (pMap, pEvent, pDoor, j, &nX, &nY) || (nX != x) || (nY != y)) {
+				continue;
+			}
+			wParts = SpaceDoorIsOpen (pMap->dwID, pEvent, pDoor, dwSpaceID) ? pDoor->aExtra[j].wOpenParts : pDoor->aExtra[j].wClosedParts;
+			if (wParts >= g_wCountMapParts) {
+				continue;
+			}
+			*pwParts = wParts;
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* 扉の追加マスを外（API）から変えた時、そのマップにいる人へ追加マスの今の絵を送り直す。
+   変える前の追加マスの座標（panOldXY の x,y の並び）は、まずマップ本来の絵に戻し、そのあと扉・追加マスの今の状態を送る */
+void SpaceDoorExtraRefresh(PMAPINFO pMap, const int *panOldXY, int nOld)
+{
+	int i, j;
+
+	if (pMap == NULL) {
+		return;
+	}
+	for (i = 0; i < g_aCharInfo.GetSize (); i ++) {
+		PCHARINFO pChar = g_aCharInfo[i];
+		if ((pChar == NULL) || (pChar->pID == 0) || (pChar->szAcc[0] == 0) || (pChar->dwMapID != pMap->dwID) || (pChar->byNpcType != NPCTYPE_INIT)) {
+			continue;
+		}
+		for (j = 0; j + 1 < nOld; j += 2) {
+			int x = panOldXY[j], y = panOldXY[j + 1];
+			if ((x >= 0) && (x < pMap->nCX) && (y >= 0) && (y < pMap->nCY)) {
+				SendCmdCHGMAPTo (pChar->pID, pMap->dwID, pMap->pwMap[x + y * pMap->nCX], x, y);
+			}
+		}
+		SpaceSendMapState (pChar);
+	}
+}
+
 /* 扉をその空間で開ける（種別は見ない） */
 static BOOL SpaceDoorOpenRaw(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID)
 {
@@ -6166,6 +6265,7 @@ static BOOL SpaceDoorOpenRaw(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR p
 		s_mapSpaceDoor[SPACEKEY (dwMapID, pEvent->dwX, pEvent->dwY, dwSpaceID)] = dwTime ? dwTime : 1;
 	}
 	SendCmdCHGMAPSpace (dwMapID, dwSpaceID, pDoor->wBackGrpID, (int)pEvent->dwX, (int)pEvent->dwY);
+	SpaceDoorExtraSend (dwMapID, pEvent, pDoor, dwSpaceID, TRUE);	/* 追加マスも開いた絵に */
 	return TRUE;
 }
 
@@ -6197,6 +6297,7 @@ static void SpaceDoorClose(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDo
 		s_mapSpaceDoor.erase (SPACEKEY (dwMapID, pEvent->dwX, pEvent->dwY, dwSpaceID));
 	}
 	SendCmdCHGMAPSpace (dwMapID, dwSpaceID, pDoor->wGrpID, (int)pEvent->dwX, (int)pEvent->dwY);
+	SpaceDoorExtraSend (dwMapID, pEvent, pDoor, dwSpaceID, FALSE);	/* 追加マスも閉じた絵に戻す */
 }
 
 /* ========================================================================= */
@@ -6267,6 +6368,9 @@ int SpaceDoorEnemyCount(DWORD dwMapID, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID)
 		}
 		if (!IsInDoorArea (pDoor, pCharTmp->dwX, pCharTmp->dwY)) {
 			continue;
+		}
+		if ((pDoor->wEnemyStTmp != 65535) && (pCharTmp->dwStTmplateID != (DWORD)pDoor->wEnemyStTmp)) {
+			continue;	/* 種類の指定があれば、そのステータステンプレートの敵だけ数える */
 		}
 		nRet ++;
 	}
@@ -6458,6 +6562,7 @@ void SpaceDoorProc(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor)
 		if (g_dwTime > pDoor->dwTimeOpen + (pDoor->byTimeClose * 100)) {
 			pDoor->dwTimeOpen = 0;
 			SendCmdCHGMAPSpace (dwMapID, SPACE_NORMAL, pDoor->wGrpID, (int)pEvent->dwX, (int)pEvent->dwY);
+			SpaceDoorExtraSend (dwMapID, pEvent, pDoor, SPACE_NORMAL, FALSE);	/* 追加マスも閉じた絵に戻す */
 		}
 	}
 	/* ほかの空間（開けた扉がある時だけ見る） */
@@ -6469,6 +6574,7 @@ void SpaceDoorProc(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor)
 				DWORD dwSpaceID = std::get<3> (it->first);
 				s_mapSpaceDoor.erase (it ++);
 				SendCmdCHGMAPSpace (dwMapID, dwSpaceID, pDoor->wGrpID, (int)pEvent->dwX, (int)pEvent->dwY);
+				SpaceDoorExtraSend (dwMapID, pEvent, pDoor, dwSpaceID, FALSE);	/* 追加マスも閉じた絵に戻す */
 			} else {
 				it ++;
 			}
@@ -6596,6 +6702,7 @@ void SpaceSendMapState(PCHARINFO pChar)
 				PEVENTINFO_DOOR pDoor = (PEVENTINFO_DOOR)pEvent->pData;
 				BOOL bOpen = SpaceDoorIsOpen (pMap->dwID, pEvent, pDoor, pChar->dwSpaceID);
 				SendCmdCHGMAPTo (pChar->pID, pMap->dwID, bOpen ? pDoor->wBackGrpID : pDoor->wGrpID, (int)pEvent->dwX, (int)pEvent->dwY);
+				SpaceDoorExtraSend (pMap->dwID, pEvent, pDoor, pChar->dwSpaceID, bOpen, pChar->pID);	/* 追加マスも今の状態で */
 			}
 			break;
 
