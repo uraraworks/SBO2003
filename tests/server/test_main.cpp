@@ -3915,6 +3915,54 @@ static void TestStory(const std::vector<int> &aLogin)
 	QuestSendCmd(pOwner, QUESTCMD_HANDIN, 0, dwGuild);
 	printf("story q1 second gold+=%d flag100=%d done=%d\n", (int)(pOwner->dwGold - dwGold0), FlagBitGet(pOwner->abyFlag, 100), (int)QuestIsDone(pOwner, 1));
 
+	/* 取り上げる持ち物：大事な物の欄と手持ち（装備中を除く）から消える・預かり所と他の物は残る・0 のお話は何も消えない */
+	if (g_aItemInfo.GetSize() > 6) {
+		WORD awImpBak[MAX_IMPORTANT], awItemBak[MAX_MYITEM], awEquBak[MAX_EQUTYPE];
+		memcpy(awImpBak, pOwner->waImportant, sizeof(awImpBak));
+		memcpy(awItemBak, pOwner->waItem, sizeof(awItemBak));
+		memcpy(awEquBak, pOwner->waEqu, sizeof(awEquBak));
+		auto TakeSetup = [&]() {
+			ZeroMemory(pOwner->waImportant, sizeof(pOwner->waImportant));
+			ZeroMemory(pOwner->waItem, sizeof(pOwner->waItem));
+			for (int e = 0; e < MAX_EQUTYPE; e ++) pOwner->waEqu[e] = 0xFFFF;
+			pOwner->waImportant[0] = 1; pOwner->waImportant[1] = 5; pOwner->waImportant[2] = 2; pOwner->waImportant[3] = 1;
+			pOwner->waItem[0] = 4; pOwner->waItem[1] = 3; pOwner->waItem[2] = 1; pOwner->waItem[3] = 3;
+			pOwner->waEqu[0] = 3;													/* 手持ち 3 番目（品 3）を装備中 */
+		};
+		auto TakeShow = [&](LPCSTR pszTitle) {
+			printf("story take %s imp=", pszTitle);
+			for (int n = 0; n < MAX_IMPORTANT && n < 6; n ++) printf("%u,", pOwner->waImportant[n]);
+			printf(" item=");
+			for (int n = 0; n < 5; n ++) printf("%u,", pOwner->waItem[n]);
+			printf(" equ0=%u equitem=%u\n", pOwner->waEqu[0], (pOwner->waEqu[0] < MAX_MYITEM) ? pOwner->waItem[pOwner->waEqu[0]] : 0);
+		};
+		/* 取り上げ指定が 0 のお話：何も消えない */
+		TakeSetup();
+		FlagBitSet(pOwner->abyFlag, 100, TRUE);
+		StoryReset(pOwner, 1, dwTeller);
+		TakeShow("none");
+		/* 後のお話 L2 だけ：品 3 だけ消える（装備中の 3 は残り、装備も付いたまま）。品 1・2 は残る */
+		g_aStoryInfo[0]->awTakeItem[0] = 1; g_aStoryInfo[0]->awTakeItem[1] = 2;
+		g_aStoryInfo[1]->awTakeItem[0] = 3;
+		TakeSetup();
+		FlagBitSet(pOwner->abyFlag, 110, TRUE);
+		StoryReset(pOwner, 2, dwTeller);
+		TakeShow("L2");
+		/* 前のお話 L1：L1 と L2 の分が全部消える */
+		TakeSetup();
+		FlagBitSet(pOwner->abyFlag, 100, TRUE);
+		StoryReset(pOwner, 1, dwTeller);
+		TakeShow("L1");
+		/* 持っていなければ何も起きない（もう一度やり直しても同じ） */
+		FlagBitSet(pOwner->abyFlag, 100, TRUE);
+		StoryReset(pOwner, 1, dwTeller);
+		TakeShow("again");
+		for (int n = 0; n < MAX_STORYTAKEITEM; n ++) g_aStoryInfo[0]->awTakeItem[n] = g_aStoryInfo[1]->awTakeItem[n] = 0;
+		memcpy(pOwner->waImportant, awImpBak, sizeof(awImpBak));
+		memcpy(pOwner->waItem, awItemBak, sizeof(awItemBak));
+		memcpy(pOwner->waEqu, awEquBak, sizeof(awEquBak));
+	}
+
 	/* 本が空に戻ったら（印を全部消す）また空 */
 	ZeroMemory(pOwner->abyFlag, sizeof(pOwner->abyFlag));
 	nList0 = MockCmdCount(1000, CMD_QUEST);
@@ -3960,6 +4008,7 @@ static void TestStory(const std::vector<int> &aLogin)
 		g_aStoryInfo[0]->abyNum[0] = 0;
 		g_aStoryInfo[0]->awQuest[1] = 2;
 		g_aStoryInfo[0]->byCountNum = 0;
+		g_aStoryInfo[0]->awTakeItem[0] = 2; g_aStoryInfo[0]->awTakeItem[7] = 5;
 		BOOL bSaved = SaveStoryInfo();
 		g_aStoryInfo.RemoveAll();
 		BOOL bLoaded = LoadStoryInfo();
@@ -3968,6 +4017,8 @@ static void TestStory(const std::vector<int> &aLogin)
 			printf("story save=%d load=%d count=%d id=%u name=%s clear=%u prev=%u from=%u,%u to=%u,%u num=%u,%u quest=%u,%u count=%u\n", (int)bSaved, (int)bLoaded,
 				g_aStoryInfo.GetSize(), p->wID, p->szName, p->wClearFlag, p->wPrevStory, p->awFlagFrom[0], p->awFlagFrom[1], p->awFlagTo[0],
 				p->awFlagTo[1], p->abyNum[0], p->abyNum[1], p->awQuest[0], p->awQuest[1], p->byCountNum);
+			printf("story save take=%u,%u,%u,%u,%u,%u,%u,%u\n", p->awTakeItem[0], p->awTakeItem[1], p->awTakeItem[2], p->awTakeItem[3],
+				p->awTakeItem[4], p->awTakeItem[5], p->awTakeItem[6], p->awTakeItem[7]);
 		} else {
 			printf("story save=%d load=%d not found\n", (int)bSaved, (int)bLoaded);
 		}
@@ -4209,6 +4260,19 @@ static void TestStoryGoal(const std::vector<int> &aLogin)
 	printf("storygoal api kept after-error row0=[%s]\n", g_aStoryInfo[0]->aGoal[0].szGoal);
 	printf("storygoal api clear %s get=%s\n", FlagGroupApi("story", 0, "{\"goals\":[]}").c_str(), SboWebDataGet("story", 0));
 
+	/* 取り上げる持ち物（データAPI）：入れる・省いたら今のまま・存在しない item 番号は断る */
+	{
+		std::string strOk = FlagGroupApi("story", 0, "{\"awTakeItem\":[1,2]}");
+		printf("storytake api set ok=%d take=%u,%u,%u\n", strOk.find("\"ok\":true") != std::string::npos, g_aStoryInfo[0]->awTakeItem[0], g_aStoryInfo[0]->awTakeItem[1], g_aStoryInfo[0]->awTakeItem[2]);
+		FlagGroupApi("story", 0, "{\"szName\":\"API改2\"}");
+		printf("storytake api keep take=%u,%u\n", g_aStoryInfo[0]->awTakeItem[0], g_aStoryInfo[0]->awTakeItem[1]);
+		std::string strBad = FlagGroupApi("story", 0, "{\"awTakeItem\":[65000]}");
+		printf("storytake api bad ng=%d take=%u,%u\n", strBad.find("\"ok\":false") != std::string::npos, g_aStoryInfo[0]->awTakeItem[0], g_aStoryInfo[0]->awTakeItem[1]);
+		strBad = FlagGroupApi("story", 0, "{\"awTakeItem\":[1,2,3,4,5,6,7,8,9]}");
+		printf("storytake api toomany ng=%d\n", strBad.find("\"ok\":false") != std::string::npos);
+		printf("storytake api get %s\n", strstr(SboWebDataGet("story", 0), "\"awTakeItem\":[1,2,0,0,0,0,0,0]") ? "has" : "none");
+	}
+
 	/* 管理者ウィンドウの書き込み（目的の欄は無い）：保存しても目的が消えない・足す時は目的なし */
 	{
 		PCHARINFO pAdmin = pPC;
@@ -4222,6 +4286,7 @@ static void TestStoryGoal(const std::vector<int> &aLogin)
 		BOOL bGot = AdminStorySend(pAdmin, ADMINSTORY_SET, 0, &Info, Res);
 		printf("storygoal admin edit got=%d result=%d name=%s goal=[%s] need=%u\n", bGot, Res.byResult, g_aStoryInfo[0]->szName,
 			g_aStoryInfo[0]->aGoal[0].szGoal, g_aStoryInfo[0]->aGoal[0].awNeed[0]);
+		printf("storytake admin keep take=%u,%u\n", g_aStoryInfo[0]->awTakeItem[0], g_aStoryInfo[0]->awTakeItem[1]);
 		Info.wID = 0; strcpy(Info.szName, "管理者新");
 		bGot = AdminStorySend(pAdmin, ADMINSTORY_SET, -1, &Info, Res);
 		printf("storygoal admin add got=%d result=%d count=%d goal=[%s]\n", bGot, Res.byResult, g_aStoryInfo.GetSize(),

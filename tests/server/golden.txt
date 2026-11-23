@@ -1805,6 +1805,10 @@ story q2 second gold+=0 flag110=1 done=1 rewarded=1
 story reset L1 flag99=1 flag100=0 flag110=0 flag111=1 flag120=1 done1=0 done2=0 count5=4 num6=0 rewarded1=1 rewarded2=1
 story q1 reaccept quest=1
 story q1 second gold+=0 flag100=1 done=1
+story take none imp=1,5,2,1,0,0, item=4,3,1,3,0, equ0=3 equitem=3
+story take L2 imp=1,5,2,1,0,0, item=4,1,3,0,0, equ0=2 equitem=3
+story take L1 imp=5,0,0,0,0,0, item=4,3,0,0,0, equ0=1 equitem=3
+story take again imp=5,0,0,0,0,0, item=4,3,0,0,0, equ0=1 equitem=3
 story empty again packets=1
 adminstory list got=1 count=3 id=1 name=L1
 adminstory add got=1 result=1 count=4 id=4 prev=2
@@ -1813,6 +1817,7 @@ adminstory self got=1 result=0 prev=0
 adminstory range got=1 result=0 from=100
 adminstory edit got=1 result=1 name=L1改 state=0 id=1
 story save=1 load=1 count=1 id=7 name=保存 clear=0 prev=0 from=0,65535 to=0,65535 num=0,255 quest=0,2 count=0
+story save take=2,0,0,0,0,0,0,5
 == AF. FlagGroup ==
 flaggroup add1 {"ok":true,"id":0,"added":true,...} count=1
 flaggroup add2 {"ok":true,"id":1,"added":true,...} count=2
@@ -1954,19 +1959,25 @@ storygoal sent clear-B size=1821 count=1 [港の話:灯台へ行く]
 storygoal sent clear-A size=1821 count=1 [港の話:灯台へ行く]
 storygoal resend talk=1 again=0 flag231=1 size=1821 count=1 [再送:次へ]
 storygoal api add {"ok":true,"id":0,"added":true,...}
-storygoal api get {"id":0,"wID":1,"byState":1,"wSort":0,"szName":"API","szExplain":"","wClearFlag":300,"wPrevStory":0,"awFlagFrom":[65535,65535],"awFlagTo":[65535,65535],"abyNum":[255,255,255,255],"awQuest":[0,0,0,0],"byCountNum":255,"goals":[{"awNeed":[5,65535,65535,65535],"awNot":[65535,65535,65535,65535],"abyCondNo":[7,255],"abyCondCmp":[2,0],"abyCondVal":[3,0],"szGoal":"一つめ"},{"awNeed":[65535,65535,65535,65535],"awNot":[65535,65535,65535,65535],"abyCondNo":[255,255],"abyCondCmp":[0,0],"abyCondVal":[0,0],"szGoal":"二つめ"}]}
+storygoal api get {"id":0,"wID":1,"byState":1,"wSort":0,"szName":"API","szExplain":"","wClearFlag":300,"wPrevStory":0,"awFlagFrom":[65535,65535],"awFlagTo":[65535,65535],"abyNum":[255,255,255,255],"awQuest":[0,0,0,0],"byCountNum":255,"awTakeItem":[0,0,0,0,0,0,0,0],"goals":[{"awNeed":[5,65535,65535,65535],"awNot":[65535,65535,65535,65535],"abyCondNo":[7,255],"abyCondCmp":[2,0],"abyCondVal":[3,0],"szGoal":"一つめ"},{"awNeed":[65535,65535,65535,65535],"awNot":[65535,65535,65535,65535],"abyCondNo":[255,255],"abyCondCmp":[0,0],"abyCondVal":[0,0],"szGoal":"二つめ"}]}
 storygoal api internal need=5,65535 not=65535 no=7,255 cmp=2,0 val=3 row1need=65535 row1no=255 row2=[] pick=1
 storygoal api keep {"ok":true,"id":0,"added":false,...} goals=[一つめ]
 storygoal api replace {"ok":true,"id":0,"added":false,...} row0=[置換] row1=[]
-storygoal api get2 {"id":0,"wID":1,"byState":1,"wSort":0,"szName":"API改","szExplain":"","wClearFlag":300,"wPrevStory":0,"awFlagFrom":[65535,65535],"awFlagTo":[65535,65535],"abyNum":[255,255,255,255],"awQuest":[0,0,0,0],"byCountNum":255,"goals":[{"awNeed":[65535,65535,65535,65535],"awNot":[65535,65535,65535,65535],"abyCondNo":[255,255],"abyCondCmp":[0,0],"abyCondVal":[0,0],"szGoal":"置換"}]}
+storygoal api get2 {"id":0,"wID":1,"byState":1,"wSort":0,"szName":"API改","szExplain":"","wClearFlag":300,"wPrevStory":0,"awFlagFrom":[65535,65535],"awFlagTo":[65535,65535],"abyNum":[255,255,255,255],"awQuest":[0,0,0,0],"byCountNum":255,"awTakeItem":[0,0,0,0,0,0,0,0],"goals":[{"awNeed":[65535,65535,65535,65535],"awNot":[65535,65535,65535,65535],"abyCondNo":[255,255],"abyCondCmp":[0,0],"abyCondVal":[0,0],"szGoal":"置換"}]}
 storygoal api toomany {"ok":false,"error":"goals はオブジェクトの配列で、8 行までです"}
 storygoal api badflag {"ok":false,"error":"goals[0].awNeed・awNot は印の番号（0〜1023）か 65535（無し）で指定してください"}
 storygoal api badnum {"ok":false,"error":"goals[0].abyCondNo は数値の番号（0〜127）か 255（無し）で指定してください"}
 storygoal api badcmp {"ok":false,"error":"goals[0].abyCondCmp は 0（以上）・1（ちょうど）・2（以下）のどれかで指定してください"}
 storygoal api badkey {"ok":false,"error":"知らない項目です: zzz"}
 storygoal api kept after-error row0=[置換]
-storygoal api clear {"ok":true,"id":0,"added":false,...} get={"id":0,"wID":1,"byState":1,"wSort":0,"szName":"API改","szExplain":"","wClearFlag":300,"wPrevStory":0,"awFlagFrom":[65535,65535],"awFlagTo":[65535,65535],"abyNum":[255,255,255,255],"awQuest":[0,0,0,0],"byCountNum":255,"goals":[]}
+storygoal api clear {"ok":true,"id":0,"added":false,...} get={"id":0,"wID":1,"byState":1,"wSort":0,"szName":"API改","szExplain":"","wClearFlag":300,"wPrevStory":0,"awFlagFrom":[65535,65535],"awFlagTo":[65535,65535],"abyNum":[255,255,255,255],"awQuest":[0,0,0,0],"byCountNum":255,"awTakeItem":[0,0,0,0,0,0,0,0],"goals":[]}
+storytake api set ok=1 take=1,2,0
+storytake api keep take=1,2
+storytake api bad ng=1 take=1,2
+storytake api toomany ng=1
+storytake api get has
 storygoal admin edit got=1 result=1 name=管理者改 goal=[残る目的] need=5
+storytake admin keep take=1,2
 storygoal admin add got=1 result=1 count=2 goal=[]
 storygoal save=1 load=1 row0=[ゼロの条件] need=0,65535 not=65535,1023 no=0,255 cmp=2 val=9 row1=[] row7=[最後の行] row7need=65535 row7no=255
 == AJ. Tail relogin ==

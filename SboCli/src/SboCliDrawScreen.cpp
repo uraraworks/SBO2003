@@ -2068,7 +2068,12 @@ void DrawCharLine(int nLine)
 				BYTE byLevel = 100 - nTmp;
 
 				if (pChar->byFadeLevel) {
-					g_pDibDrawMap->BltAlpha (x, y, nGrpSizeX, nGrpSizeY, pDib, xx, yy, pChar->byFadeLevel, TRUE);
+					/* フェード中でも、霊・隠れている間は半透明より濃くならない（出てきた直後に一瞬ふつうに見えない） */
+					BYTE byAlpha = pChar->byFadeLevel;
+					if (pChar->byHide || pChar->byGhost) {
+						byAlpha = max (byAlpha, (BYTE)(100 - byLevel / 2));
+					}
+					g_pDibDrawMap->BltAlpha (x, y, nGrpSizeX, nGrpSizeY, pDib, xx, yy, byAlpha, TRUE);
 
 				} else if (pChar->byHide || pChar->byGhost) {
 					/* 隠れている間・霊(byGhost)は半透明(BltAlpha は大きいほど透明。明るい所は半分、暗い所ほど薄く) */
