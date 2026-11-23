@@ -334,7 +334,7 @@ static void AdminSpaceFillList		(void);								/* 空間の一覧を作り直す
 static BYTE s_byAdminUndoScreen = 0xFF;
 
 /* マップパーツ一覧のスクロール（ドット単位。ホイールやトラックパッドでなめらかに動かす） */
-#define	MAPPARTS_LIST_COLS		10			/* 一覧の横の数 */
+#define	MAPPARTS_LIST_COLS		8			/* 一覧の横の数（枠 IDC_PARTS は 184 ダイアログ単位＝276 ドットなので 32×8=256 まで） */
 #define	MAPPARTS_LIST_CY		(32 * 4)	/* 一覧の見える高さ（ドット） */
 #define	MAPPARTS_LINE_STEP		32			/* スクロールバーの矢印 1 回で動かすドット数（1 段） */
 static int s_nMapPartsScrollY;				/* 一覧の今のスクロール位置（ドット） */
