@@ -6369,8 +6369,16 @@ int SpaceDoorEnemyCount(DWORD dwMapID, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID)
 		if (!IsInDoorArea (pDoor, pCharTmp->dwX, pCharTmp->dwY)) {
 			continue;
 		}
-		if ((pDoor->wEnemyStTmp != 65535) && (pCharTmp->dwStTmplateID != (DWORD)pDoor->wEnemyStTmp)) {
-			continue;	/* 種類の指定があれば、そのステータステンプレートの敵だけ数える */
+		if (pDoor->wEnemyStTmp != 65535) {
+			/* 種類の指定があれば、そのステータステンプレートの敵だけ数える。
+			   NPC発生から出た敵は自分では番号を持たず、発生元(dwParentTblID)が持っているので、そちらを見る */
+			DWORD dwStTmp = pCharTmp->dwStTmplateID;
+			if ((dwStTmp == (DWORD)-1) && (pCharTmp->dwParentTblID < (DWORD)g_aCharInfo.GetSize ()) && (pCharTmp->dwParentTblID != pCharTmp->dwTblID)) {
+				dwStTmp = g_aCharInfo[pCharTmp->dwParentTblID]->dwStTmplateID;
+			}
+			if (dwStTmp != (DWORD)pDoor->wEnemyStTmp) {
+				continue;
+			}
 		}
 		nRet ++;
 	}
