@@ -9115,6 +9115,20 @@ static void TestEnemyDoor(const std::vector<int> &aLogin)
 		printf("enemydoor sttmp none count=%d open=%d\n", SpaceDoorEnemyCount(pPC->dwMapID, &Door, SPACE_NORMAL), EnemyDoorOpen(pPC, pEvent, &Door));
 	}
 
+	/* 閉じ込められた時：範囲の外（奥）の人は中から開けられる。範囲の中（広間側）からは開けられない */
+	{
+		Door.wAreaX1 = (WORD)(nX + 2);
+		Door.wAreaX2 = (WORD)(nX + 4);
+		int nMsg0 = MockCmdCount(nConn, CMD_MAPMSG);
+		printf("enemydoor inside before open=%d\n", EnemyDoorOpen(pPC, pEvent, &Door));
+		MimicPC(pPC, nX + 2, nY, 2);				/* 広間側（範囲の中）から。扉は西の隣 */
+		MimicExamine(pPC);
+		printf("enemydoor inside hall open=%d\n", EnemyDoorOpen(pPC, pEvent, &Door));
+		MimicPC(pPC, nX, nY, 3);					/* 奥側（範囲の外）から */
+		MimicExamine(pPC);
+		printf("enemydoor inside back open=%d mapmsg=%d\n", EnemyDoorOpen(pPC, pEvent, &Door), MockCmdCount(nConn, CMD_MAPMSG) - nMsg0);
+	}
+
 	/* 片付け */
 	DeleteChar(pE->dwTblID);
 	DeleteChar(pOut->dwTblID);
