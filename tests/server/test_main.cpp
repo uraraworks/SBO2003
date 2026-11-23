@@ -3699,6 +3699,8 @@ static int QuestCountCopies(void)
 /* ------------------------------------------------------------------------- */
 extern BOOL SaveStoryInfo(void);
 extern BOOL LoadStoryInfo(void);
+extern "C" const char *SboWebDataGet(const char *, int);
+static std::string FlagGroupApi(const char *pszKind, int nID, const char *pszJson);	/* 後ろで定義 */
 
 static PSTORYINFO StoryTestNew(WORD wID, LPCSTR pszName, WORD wClear, WORD wPrev, WORD wFrom, WORD wTo, WORD wQuest, BYTE byCountNum)
 {
@@ -4028,6 +4030,123 @@ static void TestStory(const std::vector<int> &aLogin)
 		memcpy(pOwner->abyChestOpened, abyChestBak, sizeof(abyChestBak));
 		memcpy(pMap->aSwap, aSwapBak, sizeof(aSwapBak));
 		pMap->bySwapCount = bySwapCountBak;
+	}
+
+	/* 依頼を取り消した時に戻すお話（wCancelStory）：L1（と後の L2）の印・持ち物・宝箱が最初に戻る。
+	   0 は何もしない・完了（渡す）では戻さない・受けていない時の取り消しは何も起きない・パーティ離脱など他の経路では戻さない */
+	{
+		BYTE abyChestBak[MAX_CHESTBYTE];
+		WORD awImpBak[MAX_IMPORTANT];
+		memcpy(abyChestBak, pOwner->abyChestOpened, sizeof(abyChestBak));
+		memcpy(awImpBak, pOwner->waImportant, sizeof(awImpBak));
+		PQUESTINFO pQC = new QUESTINFO;
+		ZeroMemory(pQC, sizeof(*pQC));
+		pQC->wNeedFlag = pQC->wNotFlag = FLAG_NOBIT;
+		pQC->wID = 3; pQC->byState = QUESTSTATE_ON; pQC->byGuild = 0; pQC->wSort = 3; pQC->byOnce = 0; pQC->byStepCount = 1;
+		strcpy(pQC->szName, "取り消し依頼");
+		for (int k = 0; k < MAX_QUESTDONESET; k ++) pQC->awDoneSetFlag[k] = FLAG_NOBIT;
+		pQC->byDoneNumNo = FLAG_NONUM;
+		for (int k = 0; k < MAX_QUESTNPC; k ++) { pQC->aNpc[k].byStepMax = QUESTNPC_NOSTEP; pQC->aNpc[k].byNextStep = QUESTNPC_NOSTEP; }
+		g_aQuestInfo.Add(pQC);
+		g_aStoryInfo[0]->awTakeItem[0] = 1; g_aStoryInfo[0]->awTakeChest[0] = 0;
+		g_aStoryInfo[1]->awTakeItem[0] = 3; g_aStoryInfo[1]->awTakeChest[0] = 5;
+		/* 進めた状態を作る（印 100・110・111・99、数値 5=3 6=9、品 1・3、宝箱 0・5・7） */
+		auto CancelSetup = [&]() {
+			ZeroMemory(pOwner->waImportant, sizeof(pOwner->waImportant));
+			pOwner->waImportant[0] = 1; pOwner->waImportant[1] = 3; pOwner->waImportant[2] = 2;
+			FlagBitSet(pOwner->abyFlag, 99, TRUE); FlagBitSet(pOwner->abyFlag, 100, TRUE);
+			FlagBitSet(pOwner->abyFlag, 110, TRUE); FlagBitSet(pOwner->abyFlag, 111, TRUE);
+			FlagNumSet(pOwner->abyFlagNum, 5, 3); FlagNumSet(pOwner->abyFlagNum, 6, 9);
+			ZeroMemory(pOwner->abyChestOpened, sizeof(pOwner->abyChestOpened));
+			ChestOpenedSet(pOwner, 0, TRUE); ChestOpenedSet(pOwner, 5, TRUE); ChestOpenedSet(pOwner, 7, TRUE);
+			pOwner->abyQuestDone[0] |= (BYTE)((1 << 1) | (1 << 2));
+		};
+		/* 取り消した時に届いた CMD_QUEST の中に、追記の一文があったか（nNote に入れる） */
+		int nNote = 0;
+		auto CancelShow = [&](LPCSTR pszTitle, const std::string &) {
+			printf("story cancel %s quest=%u flag99=%d,100=%d,110=%d,111=%d num5=%u,6=%u imp=%u,%u,%u chest0=%d,5=%d,7=%d done1=%d,2=%d note=%d\n", pszTitle, pOwner->wQuestID,
+				FlagBitGet(pOwner->abyFlag, 99), FlagBitGet(pOwner->abyFlag, 100), FlagBitGet(pOwner->abyFlag, 110), FlagBitGet(pOwner->abyFlag, 111),
+				FlagNumGet(pOwner->abyFlagNum, 5), FlagNumGet(pOwner->abyFlagNum, 6),
+				pOwner->waImportant[0], pOwner->waImportant[1], pOwner->waImportant[2],
+				(int)ChestOpenedGet(pOwner, 0), (int)ChestOpenedGet(pOwner, 5), (int)ChestOpenedGet(pOwner, 7),
+				(int)QuestIsDone(pOwner, 1), (int)QuestIsDone(pOwner, 2),
+				nNote);
+		};
+		auto DoCancelCap = [&](std::string &) {
+			MockTrace(1);
+			QuestSendCmd(pOwner, QUESTCMD_CANCEL, 0, dwGuild);
+			nNote = MockHasText(1000, CMD_QUEST, "（進めていた分は最初に戻りました）");
+			MockTrace(0);
+		};
+		std::string strCap;
+		/* L1 を指定：L1 と後の L2 の印・持ち物・宝箱が戻る（範囲外の印 99・指定外の宝箱 7・品 2 は残る。数値 5 は回数なので +1 しない） */
+		pQC->wCancelStory = 1;
+		CancelSetup();
+		QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 3, dwGuild);
+		DoCancelCap(strCap);
+		CancelShow("L1", strCap);
+		/* L2 だけ指定：L2 の分だけ戻る */
+		pQC->wCancelStory = 2;
+		CancelSetup();
+		QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 3, dwGuild);
+		DoCancelCap(strCap);
+		CancelShow("L2", strCap);
+		/* 0：何も戻らない（普通の取り消し文のまま） */
+		pQC->wCancelStory = 0;
+		CancelSetup();
+		QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 3, dwGuild);
+		DoCancelCap(strCap);
+		CancelShow("zero", strCap);
+		/* 無いお話の番号：何も戻らない */
+		pQC->wCancelStory = 200;
+		CancelSetup();
+		QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 3, dwGuild);
+		DoCancelCap(strCap);
+		CancelShow("nostory", strCap);
+		/* 依頼を受けていない時の取り消し：何も起きない */
+		pQC->wCancelStory = 1;
+		CancelSetup();
+		DoCancelCap(strCap);
+		CancelShow("noquest", strCap);
+		/* 完了（渡す）では戻さない。そのあと取り消し操作をしても受けていないので何も起きない */
+		CancelSetup();
+		QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 3, dwGuild);
+		QuestSendCmd(pOwner, QUESTCMD_HANDIN, 0, dwGuild);
+		CancelShow("handin", "");
+		DoCancelCap(strCap);
+		CancelShow("handin+cancel", strCap);
+		/* 他の取り消し経路（パーティ離脱で取り消される討伐チャレンジの依頼）では戻さない */
+		pQC->byChallenge = QUESTCHALLENGE_ARENA;
+		CancelSetup();
+		pOwner->wQuestID = 3; pOwner->byQuestStep = 0; pOwner->wQuestFlg = 0;
+		QuestOnPartyLeave(pOwner);
+		CancelShow("partyleave", "");
+		pQC->byChallenge = QUESTCHALLENGE_NONE;
+		/* 保存して読み直しても残る・データAPI（0 は何もしない／存在するお話だけ／足す時に省くと 0／取得に出る） */
+		pQC->wCancelStory = 2;
+		SaveQuestInfo();
+		for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) delete g_aQuestInfo[i];
+		g_aQuestInfo.RemoveAll();
+		LoadQuestInfo();
+		pQC = NULL;
+		int nIdxC = 0;
+		for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) if (g_aQuestInfo[i]->wID == 3) { pQC = g_aQuestInfo[i]; nIdxC = i; }
+		printf("story cancel reload=%u\n", pQC ? pQC->wCancelStory : 9999);
+		if (pQC) {
+			printf("story cancel api set %s", FlagGroupApi("quest", nIdxC, "{\"wCancelStory\":1}").c_str());
+			printf(" now=%u get=%d\n", pQC->wCancelStory, SboWebDataGet("quest", nIdxC) && strstr(SboWebDataGet("quest", nIdxC), "\"wCancelStory\":1") ? 1 : 0);
+			printf("story cancel api nostory %s", FlagGroupApi("quest", nIdxC, "{\"wCancelStory\":9}").c_str());
+			printf(" now=%u\n", pQC->wCancelStory);
+			printf("story cancel api over %s", FlagGroupApi("quest", nIdxC, "{\"wCancelStory\":256}").c_str());
+			printf(" now=%u\n", pQC->wCancelStory);
+			printf("story cancel api zero %s", FlagGroupApi("quest", nIdxC, "{\"wCancelStory\":0}").c_str());
+			printf(" now=%u\n", pQC->wCancelStory);
+		}
+		for (int n = 0; n < MAX_STORYTAKEITEM; n ++) g_aStoryInfo[0]->awTakeItem[n] = g_aStoryInfo[1]->awTakeItem[n] = 0;
+		for (int n = 0; n < MAX_STORYCHEST; n ++) g_aStoryInfo[0]->awTakeChest[n] = g_aStoryInfo[1]->awTakeChest[n] = FLAG_NOBIT;
+		memcpy(pOwner->abyChestOpened, abyChestBak, sizeof(abyChestBak));
+		memcpy(pOwner->waImportant, awImpBak, sizeof(awImpBak));
+		pOwner->wQuestID = 0; pOwner->byQuestStep = 0; pOwner->wQuestFlg = 0;
 	}
 
 	/* 本が空に戻ったら（印を全部消す）また空 */

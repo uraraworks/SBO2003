@@ -2123,10 +2123,14 @@ static void DoAccept(PCHARINFO pChar, PCHARINFO pNpc, PQUESTINFO pQuest)
 	QuestSyncAll ();
 }
 
-/* 取り消す（依頼の品・旗・数を消す。罰は無い） */
+static void StoryCollect(WORD wID, std::vector<PSTORYINFO> &aOut);
+static void StoryResetCore(PCHARINFO pChar, const std::vector<PSTORYINFO> &aTree, PSTORYINFO pCountStory, int *pnTake, int *pnChest);
+
+/* 取り消す（依頼の品・旗・数を消す。罰は無い。依頼の wCancelStory があれば、そのお話の進みも戻す） */
 static void DoCancel(PCHARINFO pChar)
 {
 	PQUESTINFO pQuest = FindQuest (pChar->wQuestID);
+	std::string strMsg;
 
 	if (pChar->wQuestID == 0) {
 		SendResult (pChar, QUESTRESULT_NG, 0, "受けている依頼はありません。");
@@ -2138,7 +2142,21 @@ static void DoCancel(PCHARINFO pChar)
 		SendBagState (pChar);
 	}
 	ClearQuest (pChar);
-	SendResult (pChar, QUESTRESULT_CANCEL, 0, "依頼を取り消しました。");
+	/* 依頼に「取り消したら最初に戻すお話」があれば、進めていた印・持ち物・宝箱を戻す（ユーザーの取り消しだけ。完了では通らない） */
+	strMsg = "依頼を取り消しました。";
+	if (pQuest && pQuest->wCancelStory) {
+		std::vector<PSTORYINFO> aTree;
+		int nTake = 0, nChest = 0;
+
+		StoryCollect (pQuest->wCancelStory, aTree);
+		if (!aTree.empty ()) {
+			StoryResetCore (pChar, aTree, NULL, &nTake, &nChest);
+			if ((nTake > 0) || (nChest > 0)) {
+				strMsg += "（進めていた分は最初に戻りました）";
+			}
+		}
+	}
+	SendResult (pChar, QUESTRESULT_CANCEL, 0, strMsg.c_str ());
 	QuestSendState (pChar);
 	QuestSyncAll ();
 }
@@ -2517,38 +2535,14 @@ static int StoryTakeItems(PCHARINFO pChar, WORD wItem)
 	return nRet;
 }
 
-/* 思い出をやり直す（選んだシナリオと、それにつながる後のシナリオの印・数値・依頼のクリア済みの印を戻す。
-   開けた宝箱の記録は、各シナリオの awTakeChest に指定した宝箱だけ戻す（指定の無い宝箱は戻さない＝宝は一度きり）） */
-static void DoStoryReset(PCHARINFO pChar, WORD wStoryID)
+/* 戻す核の部分（やり直しと、依頼の取り消しで共有する）。aTree の各シナリオの印の範囲・数値・依頼のクリア済みの印・
+   持ち物 awTakeItem・宝箱 awTakeChest を戻す。前提の確認・結果の知らせはしない（呼ぶ側の仕事）。
+   pCountStory が NULL でなければ、そのシナリオの「やり直した回数」を +1 する。戻した持ち物の数・宝箱の数を返す */
+static void StoryResetCore(PCHARINFO pChar, const std::vector<PSTORYINFO> &aTree, PSTORYINFO pCountStory, int *pnTake, int *pnChest)
 {
-	std::vector<PSTORYINFO> aTree;
-	PSTORYINFO pStory = FindStory (wStoryID);
 	BYTE abyFlagBak[sizeof (pChar->abyFlag)];
-	char szMsg[MAX_QUESTMSG];
-	std::string strNext;
 	size_t i;
 	int j, k, nTake = 0, nChest = 0;
-
-	if ((pStory == NULL) || !StoryIsShown (pChar, pStory)) {
-		SendResult (pChar, QUESTRESULT_NG, 0, "その思い出は、いまは開けません。");
-		return;
-	}
-	StoryCollect (wStoryID, aTree);
-
-	/* 受けている依頼が戻す依頼に入っている間は断る（受けたまま印だけ戻ると、話がつながらなくなる） */
-	if (pChar->wQuestID != 0) {
-		for (i = 0; i < aTree.size (); i ++) {
-			for (j = 0; j < MAX_STORYQUEST; j ++) {
-				if (aTree[i]->awQuest[j] == pChar->wQuestID) {
-					SendResult (pChar, QUESTRESULT_NG, wStoryID, "いま受けている依頼を終えるか取り消してから、思い出をやり直してください。");
-					return;
-				}
-			}
-		}
-	}
-
-	/* 巻き込む続きのお話の名前（印を消す前の、本に出ているもの） */
-	strNext = StoryNextNames (pChar, aTree, MAX_QUESTMSG / 2);
 
 	CopyMemory (abyFlagBak, pChar->abyFlag, sizeof (abyFlagBak));
 	for (i = 0; i < aTree.size (); i ++) {
@@ -2589,15 +2583,55 @@ static void DoStoryReset(PCHARINFO pChar, WORD wStoryID)
 			}
 		}
 	}
-	/* やり直した回数（選んだシナリオだけ。消す数値と重なっても最後に +1） */
-	if (pStory->byCountNum < MAX_FLAGNUM) {
-		FlagNumAdd (pChar->abyFlagNum, pStory->byCountNum, 1);
+	/* やり直した回数（やり直しの時だけ。選んだシナリオだけ。消す数値と重なっても最後に +1） */
+	if ((pCountStory != NULL) && (pCountStory->byCountNum < MAX_FLAGNUM)) {
+		FlagNumAdd (pChar->abyFlagNum, pCountStory->byCountNum, 1);
 	}
 	/* 印が動いたら、印で見える・消えるNPCを見え直す */
 	/* 宝箱の記録が戻った時も、本人の「印で変わるマス」（宝箱の見た目）を送り直す（CharViewRefresh が差し替えも送る） */
 	if ((memcmp (abyFlagBak, pChar->abyFlag, sizeof (abyFlagBak)) != 0) || (nChest > 0)) {
 		CharViewRefresh (pChar);
 	}
+	if (nTake > 0) {
+		SendBagState (pChar);		/* 持ち物の更新をクライアントへ */
+	}
+	*pnTake = nTake;
+	*pnChest = nChest;
+}
+
+/* 思い出をやり直す（選んだシナリオと、それにつながる後のシナリオの印・数値・依頼のクリア済みの印を戻す。
+   開けた宝箱の記録は、各シナリオの awTakeChest に指定した宝箱だけ戻す（指定の無い宝箱は戻さない＝宝は一度きり）） */
+static void DoStoryReset(PCHARINFO pChar, WORD wStoryID)
+{
+	std::vector<PSTORYINFO> aTree;
+	PSTORYINFO pStory = FindStory (wStoryID);
+	char szMsg[MAX_QUESTMSG];
+	std::string strNext;
+	size_t i;
+	int j, nTake = 0, nChest = 0;
+
+	if ((pStory == NULL) || !StoryIsShown (pChar, pStory)) {
+		SendResult (pChar, QUESTRESULT_NG, 0, "その思い出は、いまは開けません。");
+		return;
+	}
+	StoryCollect (wStoryID, aTree);
+
+	/* 受けている依頼が戻す依頼に入っている間は断る（受けたまま印だけ戻ると、話がつながらなくなる） */
+	if (pChar->wQuestID != 0) {
+		for (i = 0; i < aTree.size (); i ++) {
+			for (j = 0; j < MAX_STORYQUEST; j ++) {
+				if (aTree[i]->awQuest[j] == pChar->wQuestID) {
+					SendResult (pChar, QUESTRESULT_NG, wStoryID, "いま受けている依頼を終えるか取り消してから、思い出をやり直してください。");
+					return;
+				}
+			}
+		}
+	}
+
+	/* 巻き込む続きのお話の名前（印を消す前の、本に出ているもの） */
+	strNext = StoryNextNames (pChar, aTree, MAX_QUESTMSG / 2);
+
+	StoryResetCore (pChar, aTree, pStory, &nTake, &nChest);
 
 	snprintf (szMsg, sizeof (szMsg), "「%s」を最初からやり直せるようになりました。", pStory->szName);
 	if (!strNext.empty ()) {
@@ -2605,7 +2639,6 @@ static void DoStoryReset(PCHARINFO pChar, WORD wStoryID)
 	}
 	if (nTake > 0) {
 		snprintf (szMsg + strlen (szMsg), sizeof (szMsg) - strlen (szMsg), "（%d個の大事な物を手放しました）", nTake);
-		SendBagState (pChar);		/* 持ち物の更新をクライアントへ */
 	}
 	if (nChest > 0) {
 		snprintf (szMsg + strlen (szMsg), sizeof (szMsg) - strlen (szMsg), "（宝箱を%d個戻しました）", nChest);

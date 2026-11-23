@@ -3253,6 +3253,7 @@ typedef struct _QUESTINFO {
 	WORD		wNotFlag;											/* この印が立っている人は受けられない（FLAG_NOBIT=条件なし） */
 	char		szIntro[MAX_QUESTINTRO];							/* 導入のお話（受ける前に読ませる長い文。空なら読ませずにすぐ確認。保存する） */
 	BYTE		byLevelMin;											/* 受けられる最低レベル（0=制限なし。足りない人には一覧に出さず、受けられない。管理者・受けている人は対象外） */
+	WORD		wCancelStory;									/* 依頼を取り消した時に最初に戻す思い出の本のお話（STORYINFO の wID。0=何もしない。つながる後のお話も戻す。保存する） */
 } QUESTINFO, *PQUESTINFO;
 
 /* 討伐チャレンジの種類(QUESTINFO の byChallenge) */
