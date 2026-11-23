@@ -3447,6 +3447,9 @@ void SubProcMapMove(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY)
 		/* 呼び出し元がフェードアウトを送っているので、ここで戻さないと
 		   マップ情報が来ないまま画面が真っ暗になる（キラメルの翼・帰還の巻物など） */
 		SendCmdFADEINOUT (pChar->pID, 1);
+		/* マスを踏んだ時は、クライアントがワープの返事（キャラ位置）待ちで歩けなくなっているので、
+		   位置を送って解く（自分の位置へ飛ぶワープ・古いワープの残りで動けなくなるのを防ぐ） */
+		SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
 		return;
 	}
 
