@@ -1541,6 +1541,29 @@ doorextra admin new clear count=0 a=0,0,0,0
 doorextra admin new restore count=2 a=0,-1 b=1,0
 doorextra save=1 load=1 added=232 events=1 door1=2,0,-1,1,1,0,1 door2=0
 doorextra none count=0 get_has=0 open chgmap=1 block a=1 b=1 same=1
+== X3. DoorLockMsg ==
+doorlock api bad nonkey type0 ok=0 events=1
+doorlock api bad nonkey type1 ok=0 events=1
+doorlock api bad too long ok=0 events=1
+doorlock api bad not string ok=0 events=1
+doorlock api nonkey empty ok=1
+doorlock api max95 ok=1 len=95
+doorlock api set ok=1 type=2 msg=1
+doorlock api get has=1
+doorlock api roundtrip ok=1 msg=1
+doorlock api omit msg=1
+doorlock nokey custom mapmsg=1 text=1 other=0 open=0
+doorlock nokey with@2 mapmsg=1 text=1 other=0 open=0
+doorlock api empty msg_empty=1
+doorlock nokey default mapmsg=1 text=1 other=0 open=0
+doorlock withkey mapmsg=1 text=1 other=0 open=1
+doorlock admin short noextra msg=1 changed=1
+doorlock admin short noroom msg=1 changed=1
+doorlock admin full empty msg_empty=1 changed=1
+doorlock admin full msg len=95
+doorlock admin full msg set=1
+doorlock save=1 load=1 added=232 msg=1 type=2 key=1
+doorlock save empty=1 type=2
 == Y. AdminResurrect ==
 adminres user hp=0 dead=1
 adminres short hp=0 dead=1

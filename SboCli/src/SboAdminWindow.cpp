@@ -2589,6 +2589,19 @@ void AdminOnCommandMapEvent(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 					GetWindowText (m_hWndEdit8, szTmp, 6);
 					pDoor->wKeyItem = (WORD)atoi (szTmp);
 
+					/* 鍵を持っていない時の文（種別が「鍵」の時だけ使われる。空=既定文） */
+					{
+						char szLock[MAX_MAPSWAPMSG + 8];
+						if (GetWindowTextLength (m_hWndEdit11) >= MAX_MAPSWAPMSG) {
+							MessageBox (g_hWndAdmin, "鍵なしの文が長すぎます（95バイトまで）。", "扉の鍵なしの文", MB_OK | MB_ICONWARNING);
+							return;
+						}
+						ZeroMemory (szLock, sizeof (szLock));
+						GetWindowText (m_hWndEdit11, szLock, MAX_MAPSWAPMSG);
+						ZeroMemory (pDoor->szLockMsg, sizeof (pDoor->szLockMsg));
+						strncpy (pDoor->szLockMsg, szLock, sizeof (pDoor->szLockMsg) - 1);
+					}
+
 					/* 数える敵の種類（ステータステンプレート番号。空・範囲外=指定なし） */
 					ZeroMemory (szTmp, sizeof (szTmp));
 					GetWindowText (m_hWndEdit9, szTmp, 7);
@@ -6453,6 +6466,7 @@ void AdminOnPaintMapEvent(HDC hDC)
 					MyTextOut (hDC, 0, 64 + 16 * 8, "数える敵のST番号(65535=全部):");
 				MyTextOut (hDC, 0, 64 + 16 * 9, "追加マス dx,dy,閉,開 を;で区切る(最大8件)");
 				MyTextOut (hDC, 0, 64 + 16 * 11, "例 0,-1,1025,9;1,0,10,11 (dx,dy=-8〜8)");
+				MyTextOut (hDC, 0, 64 + 16 * 12, "鍵なしの文(種別が鍵の時だけ。空=既定文。95バイトまで)");
 				}
 				break;
 
@@ -8533,6 +8547,13 @@ void MakeAdminWndEventInfoType(void)
 				SetWindowText (m_hWndEdit10, szExtra);
 			}
 
+			/* 鍵を持っていない時の文（種別が「鍵」の時だけ。空=既定の「鍵がかかっている。」） */
+			m_hWndEdit11 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+					0, 64 + 16 * 13, 12 * 28, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
+			SendMessage (m_hWndEdit11, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+			SendMessage (m_hWndEdit11, EM_LIMITTEXT, (WPARAM)(MAX_MAPSWAPMSG - 1), 0);
+			SetWindowText (m_hWndEdit11, pDoor->szLockMsg);
+
 			/* 敵を数える範囲（種別が「敵を全部倒す」の時。全部0ならマップ全体） */
 			HWND *aphWnd[4] = {&m_hWndEdit4, &m_hWndEdit5, &m_hWndEdit6, &m_hWndEdit7};
 			WORD awArea[4] = {pDoor->wAreaX1, pDoor->wAreaY1, pDoor->wAreaX2, pDoor->wAreaY2};
@@ -8617,6 +8638,9 @@ void DeleteAdminWndEventInfoType(void)
 	SAFE_DESTROYWND (m_hWndEdit6);
 	SAFE_DESTROYWND (m_hWndEdit7);
 	SAFE_DESTROYWND (m_hWndEdit8);
+	SAFE_DESTROYWND (m_hWndEdit9);
+	SAFE_DESTROYWND (m_hWndEdit10);
+	SAFE_DESTROYWND (m_hWndEdit11);
 	SAFE_DESTROYWND (m_hWndCombo2);
 }
 

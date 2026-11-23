@@ -5535,18 +5535,30 @@ void RecvDataProcEVENTCHG(PBYTE pData, DWORD dwDataSize)
 		if (pEvent->byType == EVENTTYPE_DOOR) {
 			PEVENTINFO_DOOR pNew = (PEVENTINFO_DOOR)pEventData->pData;
 			int nRecv2 = (s_dwRecvSize > sizeof (CMDPARA_CHGEVENT)) ? (int)(s_dwRecvSize - sizeof (CMDPARA_CHGEVENT)) : 0;
-			if (nRecv2 >= (int)sizeof (EVENTINFO_DOOR)) {
+			/* 追加マスまで届いたか・鍵なしの文まで届いたか（古いクライアントはどちらも付く前の短い扉を送る） */
+			const BOOL bRecvExtra = (nRecv2 >= (int)offsetof (EVENTINFO_DOOR, szLockMsg)) ? TRUE : FALSE;
+			const BOOL bRecvLock = (nRecv2 >= (int)(offsetof (EVENTINFO_DOOR, szLockMsg) + sizeof (pNew->szLockMsg))) ? TRUE : FALSE;
+			PEVENTINFO_DOOR pOld = (pOldData && (byOldType == EVENTTYPE_DOOR)) ? (PEVENTINFO_DOOR)pOldData : NULL;
+			if (bRecvExtra) {
 				/* 届いた値を採用（個数だけ範囲に収める） */
 				if (pNew->byExtraCount > MAX_DOOREXTRA) {
 					pNew->byExtraCount = (BYTE)MAX_DOOREXTRA;
 				}
-			} else if (pOldData && (byOldType == EVENTTYPE_DOOR)) {
-				PEVENTINFO_DOOR pOld = (PEVENTINFO_DOOR)pOldData;
+			} else if (pOld) {
 				pNew->byExtraCount = (pOld->byExtraCount > MAX_DOOREXTRA) ? (BYTE)MAX_DOOREXTRA : pOld->byExtraCount;
 				CopyMemory (pNew->aExtra, pOld->aExtra, sizeof (pNew->aExtra));
 			} else {
 				pNew->byExtraCount = 0;
 				ZeroMemory (pNew->aExtra, sizeof (pNew->aExtra));
+			}
+			if (bRecvLock) {
+				pNew->szLockMsg[sizeof (pNew->szLockMsg) - 1] = 0;
+			} else if (pOld) {
+				/* 鍵なしの文を知らない古いクライアントは、今の文を引き継ぐ（消さない） */
+				CopyMemory (pNew->szLockMsg, pOld->szLockMsg, sizeof (pNew->szLockMsg));
+				pNew->szLockMsg[sizeof (pNew->szLockMsg) - 1] = 0;
+			} else {
+				ZeroMemory (pNew->szLockMsg, sizeof (pNew->szLockMsg));
 			}
 		}
 		SAFE_DELETE_ARRAY (pOldData);
@@ -6174,7 +6186,19 @@ static BOOL OpenDoorFront(PCHARINFO pChar)
 					return FALSE;
 				}
 				if (!DoorHasKey (pChar, pDoor)) {
-					SendCmdMAPMSG (pChar->pID, "鍵がかかっている。@2");
+					/* 鍵なしの文（空なら既定文。末尾に @2 が無ければ足す） */
+					if (pDoor->szLockMsg[0]) {
+						char szLock[MAX_MAPSWAPMSG + 4];
+						ZeroMemory (szLock, sizeof (szLock));
+						strncpy (szLock, pDoor->szLockMsg, MAX_MAPSWAPMSG - 1);
+						int nLen = (int)strlen (szLock);
+						if ((nLen < 2) || (szLock[nLen - 2] != '@') || (szLock[nLen - 1] != '2')) {
+							strcat (szLock, "@2");
+						}
+						SendCmdMAPMSG (pChar->pID, szLock);
+					} else {
+						SendCmdMAPMSG (pChar->pID, "鍵がかかっている。@2");
+					}
 					SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
 					return TRUE;
 				}
