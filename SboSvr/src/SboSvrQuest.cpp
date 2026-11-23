@@ -6171,7 +6171,8 @@ static BOOL IsCharOnDoor(PMAPINFO pMap, PEVENTINFO pEvent, DWORD dwSpaceID)
 	return FALSE;
 }
 
-/* 扉の近く（数える範囲の中か、扉から少しの所）にいる、その空間の人に知らせる */
+/* 扉の近く（数える範囲の中か、扉から少しの所）にいる、その空間の人に知らせる
+   隣り合う扉が同時に開閉する時、同じ文を何度も出さない（同じ人・同じ文は、ほかの扉から1秒以内に出したばかりなら出さない） */
 static void EnemyDoorNotify(PMAPINFO pMap, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID, LPCSTR pszMsg)
 {
 	int i, nCount;
@@ -6193,6 +6194,18 @@ static void EnemyDoorNotify(PMAPINFO pMap, PEVENTINFO pEvent, PEVENTINFO_DOOR pD
 			((abs ((int)pCharTmp->dwX - (int)pEvent->dwX) > ENEMYDOOR_NOTIFYRANGE) ||
 			 (abs ((int)pCharTmp->dwY - (int)pEvent->dwY) > ENEMYDOOR_NOTIFYRANGE))) {
 			continue;
+		}
+		{
+			static std::map<std::pair<DWORD, std::string>, std::pair<DWORD, PEVENTINFO> > s_mapNotify;
+			std::pair<DWORD, std::string> key (pCharTmp->pID, pszMsg);
+			std::map<std::pair<DWORD, std::string>, std::pair<DWORD, PEVENTINFO> >::iterator itN = s_mapNotify.find (key);
+			if ((itN != s_mapNotify.end ()) && (itN->second.second != pEvent) && (g_dwTime - itN->second.first < 1000)) {
+				continue;
+			}
+			s_mapNotify[key] = std::make_pair (g_dwTime, pEvent);
+			if (s_mapNotify.size () > 256) {
+				s_mapNotify.clear ();
+			}
 		}
 		SendCmdPLAYSOUND (pCharTmp->pID, SOUND_DOOR);
 		SendCmdSYSMSG (pCharTmp->pID, (LPTSTR)pszMsg, SPEECHCMD_BATTLE1);
