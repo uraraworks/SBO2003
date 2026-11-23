@@ -8178,6 +8178,16 @@ void KeyProcQUEST(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		g_bDraw = TRUE;
 		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
 
+	} else if ((byEvent == KEY_UP) && (byCode == 'A') && (pWnd->nType2 == QUESTWND_STATE) && g_dwMsgIDCommand) {
+		/* 目的の窓でXキー：コマンドごと閉じる（Zキーはコマンドに戻る） */
+		int nNo = GetWindowID (g_dwMsgIDCommand);
+		if (nNo >= 0) {
+			EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
+			g_dwMsgIDCommand = 0;
+			g_bDraw = TRUE;
+			DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
+		}
+
 	} else if ((byEvent == KEY_UP) && (byCode == 'A') && (pWnd->nType2 == QUESTWND_LIST)) {
 		PQUESTLISTITEM pItem;
 		int nType = 0;
@@ -8212,7 +8222,7 @@ void KeyProcQUEST(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			break;
 		case QUESTMARK_READY:
 			nType = IDCONFIRMTYPE_QUESTHANDIN;
-			_snprintf (szTmp, sizeof (szTmp) - 1, "「%s」が終わりました。ほうしゅうを受け取りますか？", pItem->szName);
+			_snprintf (szTmp, sizeof (szTmp) - 1, "「%s」が終わりました。報酬を受け取りますか？", pItem->szName);
 			break;
 		default:
 			/* 受けられない */

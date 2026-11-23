@@ -9437,6 +9437,9 @@ static void TestDoorExtra(const std::vector<int> &aLogin)
 		New.byTimeClose = 50;
 		New.wEnemyStTmp = 65535;
 		const size_t nShort = offsetof(EVENTINFO_DOOR, byExtraCount);
+		/* 新しい大きさで送る時は、クライアントが送った追加マスが採用される。まず今の追加マスをそのまま送って引き継ぎを確かめる */
+		New.byExtraCount = pDoor->byExtraCount;
+		CopyMemory(New.aExtra, pDoor->aExtra, sizeof(New.aExtra));
 		for (int k = 0; k < 2; k ++) {
 			const WORD wExpect = New.wGrpID;
 			size_t nBody = (k == 0) ? sizeof(New) : nShort;
@@ -9458,6 +9461,51 @@ static void TestDoorExtra(const std::vector<int> &aLogin)
 				pDoor ? (int)pDoor->aExtra[0].sbyOffX : 0, pDoor ? (int)pDoor->aExtra[0].sbyOffY : 0, pDoor ? (int)pDoor->aExtra[1].sbyOffX : 0, pDoor ? (int)pDoor->aExtra[1].sbyOffY : 0,
 				pDoor ? (int)(pDoor->wGrpID == wExpect && pDoor->byTimeClose == 50) : -1);
 			New.wGrpID = wBlock;
+		}
+		/* 新しい大きさで送った追加マスは、引き継ぎで上書きされずに反映される（件数・値の変更、0 件で全部消す） */
+		{
+			DOOREXTRA aKeep[MAX_DOOREXTRA];
+			BYTE byKeep = pDoor->byExtraCount;
+			CopyMemory(aKeep, pDoor->aExtra, sizeof(aKeep));
+			for (int k = 0; k < 3; k ++) {
+				EVENTINFO_DOOR Send = New;
+				if (k == 0) {			/* 1 件に減らして値も変える */
+					ZeroMemory(Send.aExtra, sizeof(Send.aExtra));
+					Send.byExtraCount = 1;
+					Send.aExtra[0].sbyOffX = 2;
+					Send.aExtra[0].sbyOffY = -3;
+					Send.aExtra[0].wClosedParts = wFree;
+					Send.aExtra[0].wOpenParts = wBlock;
+				} else if (k == 1) {	/* 0 件で全部消す */
+					ZeroMemory(Send.aExtra, sizeof(Send.aExtra));
+					Send.byExtraCount = 0;
+				} else {				/* 元に戻す */
+					Send.byExtraCount = byKeep;
+					CopyMemory(Send.aExtra, aKeep, sizeof(Send.aExtra));
+				}
+				std::vector<BYTE> aPacket(sizeof(CMDPARA_CHGEVENT) + sizeof(Send), 0xCC);
+				PCMDPARA_CHGEVENT pPara = (PCMDPARA_CHGEVENT)&aPacket[0];
+				ZeroMemory(pPara, sizeof(CMDPARA_CHGEVENT));
+				pPara->byCmd = CMD_CHGEVENT;
+				pPara->dwID = dwMapID;
+				pPara->dwDataID = (DWORD)nNo;
+				pPara->dwX = (DWORD)xD;
+				pPara->dwY = (DWORD)yD;
+				pPara->byType = EVENTTYPE_DOOR;
+				pPara->pData = (PVOID)1;
+				memcpy(&aPacket[sizeof(CMDPARA_CHGEVENT)], &Send, sizeof(Send));
+				TestRecv(pPC, &aPacket[0], aPacket.size());
+				pEvent = DoorExtraFind(pMap, xD, yD);
+				pDoor = pEvent ? (PEVENTINFO_DOOR)pEvent->pData : NULL;
+				if (k < 2) {
+					printf("doorextra admin new %s count=%d a=%d,%d,%d,%d\n", (k == 0) ? "edit" : "clear", pDoor ? (int)pDoor->byExtraCount : -1,
+						pDoor ? (int)pDoor->aExtra[0].sbyOffX : 0, pDoor ? (int)pDoor->aExtra[0].sbyOffY : 0,
+						pDoor ? (int)(pDoor->aExtra[0].wClosedParts == wFree) : -1, pDoor ? (int)(pDoor->aExtra[0].wOpenParts == wBlock) : -1);
+				} else {
+					printf("doorextra admin new restore count=%d a=%d,%d b=%d,%d\n", pDoor ? (int)pDoor->byExtraCount : -1,
+						pDoor ? (int)pDoor->aExtra[0].sbyOffX : 0, pDoor ? (int)pDoor->aExtra[0].sbyOffY : 0, pDoor ? (int)pDoor->aExtra[1].sbyOffX : 0, pDoor ? (int)pDoor->aExtra[1].sbyOffY : 0);
+				}
+			}
 		}
 		pPC->byAdminLV = byAdminBack;
 	}
