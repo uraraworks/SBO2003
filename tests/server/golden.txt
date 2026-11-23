@@ -1211,7 +1211,10 @@ chest char reload bits=1,1,1,0,0 same=1
 chest old save patched=1 found=1 all_zero=1 name_ok=1
 mapswap map save=1 load=1 added=116 count=4 high=90 row0=1,2,1,1,1,77,宝箱を開けた,ルシー 港の倉庫の奥 row1=3,4,0,1023,1,2 row2=5,5,3
 mapswap map recycle row3=7,8,2,4,6,ルシー 広場の箱 boxhigh=12 chesthigh=90
+mapswap map lock row0=241,カルバの話を聞いてからだ。 row1=65535,0 row2=0,0 row3=65535,0
 mapswap map old-format count=0 high=0 tiles_same=1
+mapswap map nolock round=0 count=2 row0=77,65535, row1=5,65535,0
+mapswap map nolock round=1 count=2 row0=77,65535,文だけ row1=5,65535,0
 == AG3. MapPartsLight ==
 partslight api ok=1 count=2 row0=1783,2 row1=1,0
 partslight api get has=1
@@ -1721,6 +1724,31 @@ mapswap open again item+=0 swap=0 bit=1
 mapswap open full item+=0 bit=0 sys=1 msg=0 swap=0 parts_closed=1
 mapswap open wrongdir item+=0 bit=0
 mapswap open flags_dont_open=1 npc_examine=0
+mapswap lock api ok=1 need=241 lockmsg_empty=1 kind=1
+mapswap lock api get need=1 lockmsg=1
+mapswap lock api roundtrip ok=1 same=1
+mapswap lock none default first=1 msg=1 item+=0 bit=0 swap=0 mapmsg=1 sys=0 b_msg=0 parts_closed=1
+mapswap lock other_flags msg=1 bit=0 item+=0
+mapswap lock none custom msg=1 default_not=1 bit=0 item+=0 lockmsg=カルバの話を聞いてからだ。
+mapswap lock admin none msg=1 bit=0 item+=0
+mapswap lock admin flag opens mapmsg=1 bit=1 item+=1
+mapswap lock flag opens item+=1 bit=1 swap=1 mapmsg=1 parts_open=1 b_closed=1
+mapswap lock opened again item+=1 mapmsg=1 bit=1
+mapswap lock flag full bit=0 item+=0
+mapswap lock nocond case=0 need=65535 mapmsg=1 item+=1 bit=1
+mapswap lock nocond case=1 need=65535 mapmsg=1 item+=1 bit=1
+mapswap lock flag0 need=0 locked=1 bit_before=0 opens=1
+mapswap lock api 1023 ok=1 need=1023
+mapswap lock api reject need1024 ok=0 same=1
+mapswap lock api reject need65534 ok=0 same=1
+mapswap lock api reject need-1 ok=0 same=1
+mapswap lock api reject need_str ok=0 same=1
+mapswap lock api reject lock_long ok=0 same=1
+mapswap lock api reject kind0_need ok=0 same=1
+mapswap lock api reject kind2_lockmsg ok=0 same=1
+mapswap lock api reject kind0_lockmsg ok=0 same=1
+mapswap lock api reject kind2_need ok=0
+mapswap lock api max len ok=1 len=95
 == AG3. AdminChest ==
 viewflag cells=8
 adminchest user bit=0 reply_b=0 reply_a=0 swap=0
@@ -1747,6 +1775,13 @@ adminswap explicit retired count=5 no=1
 adminswap kind mismatch tried=10 changed_mask=0 result_msgs=10
 adminswap rejected tried=8 changed_mask=0 result_msgs=8 swap_resent=0 unchanged=1
 adminswap undo ok=1 count=0 swap=9 high_kept=3
+adminswap lock add count=1 need=241 lockmsg=錠が固い。 memo=鍵 swap=1
+adminswap lock set keeps need=241 lockmsg=錠が固い。 memo=鍵・直した
+adminswap lock other rows need=241 lockmsg=錠が固い。 count=1
+adminswap lock info get=1 has=1 need=241 lockmsg=錠が固い。
+adminswap lock set need=300 lockmsg=錠が固い。
+adminswap lock restore need=241 lockmsg=錠が固い。 count=1
+adminswap lock rejected range_same=1 kind0_same=1
 == AD2. JobMagicKey ==
 jobkey ids=8
 jobkey A set key=1,2,0,0,0 item=0,0,77,0,0 saved=00000000

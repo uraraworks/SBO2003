@@ -147,12 +147,13 @@ BOOL MapSwapBuild(int nMapNo, MAPINFO &w, const std::vector<MAPSWAPEDITROW> &aRo
 				p->wParts = (WORD)e.nParts;
 				p->wFlag = FLAG_NOBIT;
 				p->wChestNo = 0xFFFF;
+				p->wNeedFlag = FLAG_NOBIT;		/* 宝箱の開ける条件: 無し */
 				if (p->byKind == MAPSWAPKIND_RECYCLE) {
 					p->wBoxNo = 0;		/* 0=まだ振っていない（番号は 1 から） */
 				}
 				if (p->byKind == MAPSWAPKIND_FLAG) {
-					if (dw & (MAPSWAPEDIT_CHESTNO | MAPSWAPEDIT_BOXNO | MAPSWAPEDIT_GIVEITEM | MAPSWAPEDIT_MSG | MAPSWAPEDIT_MEMO)) {
-						strErr = strP + ": 印で変わる行（kind 0）に wChestNo・wBoxNo・wGiveItem・szMsg・szMemo は使えません（宝箱は kind 1・リサイクル箱は kind 2）";
+					if (dw & (MAPSWAPEDIT_CHESTNO | MAPSWAPEDIT_BOXNO | MAPSWAPEDIT_GIVEITEM | MAPSWAPEDIT_MSG | MAPSWAPEDIT_MEMO | MAPSWAPEDIT_NEEDFLAG | MAPSWAPEDIT_LOCKMSG)) {
+						strErr = strP + ": 印で変わる行（kind 0）に wChestNo・wBoxNo・wGiveItem・szMsg・szMemo・wNeedFlag・szLockMsg は使えません（宝箱は kind 1・リサイクル箱は kind 2）";
 						return FALSE;
 					}
 					if (!(dw & MAPSWAPEDIT_FLAG)) {
@@ -166,7 +167,7 @@ BOOL MapSwapBuild(int nMapNo, MAPINFO &w, const std::vector<MAPSWAPEDITROW> &aRo
 						p->byCmp = (BYTE)e.nCmp;
 					}
 				} else if (p->byKind == MAPSWAPKIND_RECYCLE) {
-					if (dw & (MAPSWAPEDIT_FLAG | MAPSWAPEDIT_CMP | MAPSWAPEDIT_CHESTNO | MAPSWAPEDIT_GIVEITEM | MAPSWAPEDIT_MSG)) {
+					if (dw & (MAPSWAPEDIT_FLAG | MAPSWAPEDIT_CMP | MAPSWAPEDIT_CHESTNO | MAPSWAPEDIT_GIVEITEM | MAPSWAPEDIT_MSG | MAPSWAPEDIT_NEEDFLAG | MAPSWAPEDIT_LOCKMSG)) {
 						strErr = strP + ": リサイクル箱の行（kind 2）に使えるのは x・y・wParts（開いた絵）・szMemo・wBoxNo だけです";
 						return FALSE;
 					}
@@ -210,6 +211,17 @@ BOOL MapSwapBuild(int nMapNo, MAPINFO &w, const std::vector<MAPSWAPEDITROW> &aRo
 					if (dw & MAPSWAPEDIT_MEMO) {
 						if (!CheckText (e.strMemo, MAX_MAPSWAPMEMO, strP + ".szMemo", strErr)) return FALSE;
 						CopyMemory (p->szMemo, e.strMemo.c_str (), e.strMemo.size () + 1);
+					}
+					if (dw & MAPSWAPEDIT_NEEDFLAG) {
+						/* 印の番号 0〜1023。FLAG_NOBIT（65535）は「条件なし」（読み出した値をそのまま書き戻せるように受ける） */
+						if (e.nNeedFlag != FLAG_NOBIT) {
+							if (!CheckRange (e.nNeedFlag, 0, MAX_FLAGBIT - 1, strP + ".wNeedFlag", strErr)) return FALSE;
+						}
+						p->wNeedFlag = (WORD)e.nNeedFlag;
+					}
+					if (dw & MAPSWAPEDIT_LOCKMSG) {
+						if (!CheckText (e.strLockMsg, MAX_MAPSWAPMSG, strP + ".szLockMsg", strErr)) return FALSE;
+						CopyMemory (p->szLockMsg, e.strLockMsg.c_str (), e.strLockMsg.size () + 1);
 					}
 					if (dw & MAPSWAPEDIT_CHESTNO) {
 						long long n = e.nChestNo;
@@ -284,6 +296,9 @@ void MapSwapToEdit(const MAPSWAP &Sw, MAPSWAPEDITROW &Row)
 		Row.nGiveItem	= Sw.wGiveItem;
 		Row.strMsg		= Sw.szMsg;
 		Row.strMemo		= Sw.szMemo;
+		Row.dwHas		|= MAPSWAPEDIT_NEEDFLAG | MAPSWAPEDIT_LOCKMSG;
+		Row.nNeedFlag	= Sw.wNeedFlag;
+		Row.strLockMsg	= Sw.szLockMsg;
 	}
 }
 
@@ -334,11 +349,20 @@ void MapSwapEditFromWire(const ADMINSWAPROW &Wire, MAPSWAPEDITROW &Row)
 		Row.dwHas |= MAPSWAPEDIT_MEMO;
 		Row.strMemo = WireText (Wire.szMemo, sizeof (Wire.szMemo));
 	}
+	if (by & ADMINSWAPHAS_NEED) {
+		Row.dwHas |= MAPSWAPEDIT_NEEDFLAG;
+		Row.nNeedFlag = Wire.wNeedFlag;
+	}
+	if (by & ADMINSWAPHAS_LOCKMSG) {
+		Row.dwHas |= MAPSWAPEDIT_LOCKMSG;
+		Row.strLockMsg = WireText (Wire.szLockMsg, sizeof (Wire.szLockMsg));
+	}
 }
 
 void MapSwapWireFromSwap(const MAPSWAP &Sw, ADMINSWAPROW &Wire)
 {
 	ZeroMemory (&Wire, sizeof (Wire));
+	Wire.wNeedFlag	= FLAG_NOBIT;
 	Wire.byKind	= Sw.byKind;
 	Wire.wX		= Sw.wX;
 	Wire.wY		= Sw.wY;
@@ -357,7 +381,11 @@ void MapSwapWireFromSwap(const MAPSWAP &Sw, ADMINSWAPROW &Wire)
 		Wire.wGiveItem	= Sw.wGiveItem;
 		CopyMemory (Wire.szMsg, Sw.szMsg, sizeof (Wire.szMsg));
 		CopyMemory (Wire.szMemo, Sw.szMemo, sizeof (Wire.szMemo));
+		Wire.byHas		|= ADMINSWAPHAS_NEED | ADMINSWAPHAS_LOCKMSG;
+		Wire.wNeedFlag	= Sw.wNeedFlag;
+		CopyMemory (Wire.szLockMsg, Sw.szLockMsg, sizeof (Wire.szLockMsg));
 	}
+	Wire.szLockMsg[sizeof (Wire.szLockMsg) - 1] = 0;
 	Wire.szMsg[sizeof (Wire.szMsg) - 1] = 0;
 	Wire.szMemo[sizeof (Wire.szMemo) - 1] = 0;
 }

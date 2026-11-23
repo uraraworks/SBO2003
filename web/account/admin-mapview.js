@@ -1439,6 +1439,11 @@
 			/* 直す時は宝箱番号を変えない（番号を空にしたまま送ると新しい番号になってしまう） */
 			if (row.kind === 1 && row.wChestNo == null && swaps[swSel].kind === 1) row.wChestNo = swaps[swSel].wChestNo;
 			if (row.kind === 2 && row.wBoxNo == null && swaps[swSel].kind === 2) row.wBoxNo = swaps[swSel].wBoxNo;
+			/* 宝箱を開ける条件（この画面には入力欄が無い）は、直しても消さずに引き継ぐ */
+			if (row.kind === 1 && swaps[swSel].kind === 1) {
+				if (row.wNeedFlag == null && swaps[swSel].wNeedFlag != null) row.wNeedFlag = swaps[swSel].wNeedFlag;
+				if (row.szLockMsg == null && swaps[swSel].szLockMsg != null) row.szLockMsg = swaps[swSel].szLockMsg;
+			}
 			swaps[swSel] = row;
 		} else {
 			swaps.push(row);
