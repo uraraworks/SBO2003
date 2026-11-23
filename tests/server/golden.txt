@@ -2415,6 +2415,15 @@ dungeondefense lose +9s inrun=1
 dungeondefense lose +10s inrun=0 runs=0 space=0 pos=4,5
 dungeondefense save plain=1 defense=1 extra>0=1
 dungeondefense api ok=1 set=1 clear3-rejected=1 rebuild3-rejected=1 clear-kept=1
+dungeondefense arena enter in=1 arena=1 runs=1
+dungeondefense arena second busy=1 sel=0
+dungeondefense arena view in sent=2 state=1 out sent=0
+dungeondefense arena view wave-start in=1 out=0 state=2
+dungeondefense arena enemy-left killed=1 member=1 in=1 out=-1
+dungeondefense arena view leave state=0 sent=7
+dungeondefense arena view back state=2 sent=8
+dungeondefense arena lose in-state=4 fallen=1 out=0
+dungeondefense arena end in-state=0 runs=0 out-sent=0
 dungeondefense end runs=0 sel=0
 == AR. Dungeon defense march ==
 dungeonmarch spawn enemies=3 proc=3 battle1=3 base-hp=1000/1000

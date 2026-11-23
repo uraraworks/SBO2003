@@ -575,6 +575,12 @@
 #define IDC_DGLBL_DEF8                     1516
 #define IDC_DGLBL_DEF9                     1517
 #define IDC_DGDEF_SPRINGPCT                1518
+#define IDC_DGDEF_ARENA                    1519
+#define IDC_DGLBL_VIEW                     1520
+#define IDC_DGVIEW_X1                      1521
+#define IDC_DGVIEW_Y1                      1522
+#define IDC_DGVIEW_X2                      1523
+#define IDC_DGVIEW_Y2                      1524
 
 // Next default values for new objects
 // 
@@ -582,7 +588,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        244
 #define _APS_NEXT_COMMAND_VALUE         40037
-#define _APS_NEXT_CONTROL_VALUE         1519
+#define _APS_NEXT_CONTROL_VALUE         1525
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

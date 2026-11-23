@@ -1399,6 +1399,8 @@ typedef struct _SUBGAME_DUNGEONINFO {
 	BYTE		byFixStartX;										/* 固定の形（byRebuildMode=2）：中の開始位置X（外の入口 byStartX/Y に乗ると組の空間のここへ移る。両方 0 なら外の入口と同じマス） */
 	BYTE		byFixStartY;										/* 固定の形：中の開始位置Y */
 	BYTE		byDefSpringPct;										/* 拠点防衛：泉の回復＝約1秒ごとに戻る Mana の割合（最大Manaの%。0=10） */
+	BYTE		byDefArena;											/* 拠点防衛：観戦あり（1=組は闘技場の空間で、一度に1組だけ。ふつうの世界の観客席から見られる） */
+	BYTE		byViewX1, byViewY1, byViewX2, byViewY2;				/* 拠点防衛の観戦：観客席の範囲（ふつうの世界の同じマップ。全部 0=観客席なし） */
 	BYTE		*pMapTmp;											/* 作成するマップ */
 	DWORD		dwTblID;											/* 管理人キャラのテーブルID */
 	DWORD		dwCountTmp;											/* 参加人数カウント用 */
@@ -1466,6 +1468,8 @@ typedef struct _SUBGAME_DUNGEONINFOSAVE {
 	BYTE		byFixStartX;										/* 固定の形：中の開始位置X */
 	BYTE		byFixStartY;										/* 固定の形：中の開始位置Y */
 	BYTE		byDefSpringPct;										/* 拠点防衛：泉の回復（最大Manaの%/秒） */
+	BYTE		byDefArena;											/* 拠点防衛：観戦あり */
+	BYTE		byViewX1, byViewY1, byViewX2, byViewY2;				/* 拠点防衛の観戦：観客席の範囲 */
 	char szMessages[MAX_DGTEXT];							/* 番外編の文言一覧 */
 } SUBGAME_DUNGEONINFOSAVE, *PSUBGAME_DUNGEONINFOSAVE;
 

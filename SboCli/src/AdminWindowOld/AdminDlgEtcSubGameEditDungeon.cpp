@@ -36,6 +36,7 @@ static const int s_anDefenseOnly[] = {
 	IDC_DGLBL_DEF5, IDC_DGDEF_WAVESEC,		/* 泉の範囲（IDC_DGDEF_SPRING）は使わないので出さない（泉は泉の位置の 1 マス） */
 	IDC_DGLBL_DEF7, IDC_DGDEF_SPRINGX, IDC_DGLBL_DEF8, IDC_DGDEF_SPRINGY,
 	IDC_DGLBL_DEF9, IDC_DGDEF_SPRINGPCT,
+	IDC_DGDEF_ARENA, IDC_DGLBL_VIEW, IDC_DGVIEW_X1, IDC_DGVIEW_Y1, IDC_DGVIEW_X2, IDC_DGVIEW_Y2,
 };
 /* 気まぐれダンジョンの時だけ出す欄（拠点防衛では隠す） */
 static const int s_anRandomOnly[] = {
@@ -184,6 +185,15 @@ void GetDataDlgEtcSubGameEditDungeon(void)
 	pInfo->byFixStartY = (BYTE)atoi (szTmp);
 	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGDEF_SPRINGPCT), szTmp, sizeof (szTmp));
 	pInfo->byDefSpringPct = (BYTE)atoi (szTmp);
+	pInfo->byDefArena = (SendMessage (GetDlgItem (s_hWndDlg, IDC_DGDEF_ARENA), BM_GETCHECK, 0, 0) == BST_CHECKED) ? 1 : 0;
+	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGVIEW_X1), szTmp, sizeof (szTmp));
+	pInfo->byViewX1 = (BYTE)atoi (szTmp);
+	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGVIEW_Y1), szTmp, sizeof (szTmp));
+	pInfo->byViewY1 = (BYTE)atoi (szTmp);
+	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGVIEW_X2), szTmp, sizeof (szTmp));
+	pInfo->byViewX2 = (BYTE)atoi (szTmp);
+	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGVIEW_Y2), szTmp, sizeof (szTmp));
+	pInfo->byViewY2 = (BYTE)atoi (szTmp);
 	GetWindowText (GetDlgItem (s_hWndDlg, IDC_DGMESSAGES), pInfo->szMessages, sizeof (pInfo->szMessages));
 }
 
@@ -315,6 +325,15 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 	SetWindowText (GetDlgItem (hWnd, IDC_DGFIX_STARTY), szTmp);
 	wsprintf (szTmp, "%d", pInfo->byDefSpringPct);
 	SetWindowText (GetDlgItem (hWnd, IDC_DGDEF_SPRINGPCT), szTmp);
+	SendMessage (GetDlgItem (hWnd, IDC_DGDEF_ARENA), BM_SETCHECK, pInfo->byDefArena ? BST_CHECKED : BST_UNCHECKED, 0);
+	wsprintf (szTmp, "%d", pInfo->byViewX1);
+	SetWindowText (GetDlgItem (hWnd, IDC_DGVIEW_X1), szTmp);
+	wsprintf (szTmp, "%d", pInfo->byViewY1);
+	SetWindowText (GetDlgItem (hWnd, IDC_DGVIEW_Y1), szTmp);
+	wsprintf (szTmp, "%d", pInfo->byViewX2);
+	SetWindowText (GetDlgItem (hWnd, IDC_DGVIEW_X2), szTmp);
+	wsprintf (szTmp, "%d", pInfo->byViewY2);
+	SetWindowText (GetDlgItem (hWnd, IDC_DGVIEW_Y2), szTmp);
 	SendMessage (GetDlgItem (hWnd, IDC_DGMESSAGES), EM_LIMITTEXT, MAX_DGTEXT - 1, 0);
 	SetWindowText (GetDlgItem (hWnd, IDC_DGMESSAGES), pInfo->szMessages);
 
