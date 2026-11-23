@@ -2267,6 +2267,116 @@ void AdminOnCommandMapInfo(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 }
 
 /* ========================================================================= */
+/* 関数名：AdminDoorExtraToText												 */
+/* 内容：扉の追加マスを「dx,dy,閉,開;dx,dy,閉,開」の文字列にする			 */
+/* ========================================================================= */
+static void AdminDoorExtraToText(PEVENTINFO_DOOR pDoor, char *pszDst, int nSize)
+{
+	int i, nLen = 0, nCount = (pDoor->byExtraCount > MAX_DOOREXTRA) ? MAX_DOOREXTRA : (int)pDoor->byExtraCount;
+	char szTmp[48];
+
+	pszDst[0] = 0;
+	for (i = 0; i < nCount; i ++) {
+		wsprintf (szTmp, "%s%d,%d,%d,%d", (i > 0) ? ";" : "",
+				(int)pDoor->aExtra[i].sbyOffX, (int)pDoor->aExtra[i].sbyOffY,
+				(int)pDoor->aExtra[i].wClosedParts, (int)pDoor->aExtra[i].wOpenParts);
+		if (nLen + (int)strlen (szTmp) >= nSize) {
+			break;
+		}
+		strcpy (pszDst + nLen, szTmp);
+		nLen += (int)strlen (szTmp);
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：AdminDoorExtraParse												 */
+/* 内容：「dx,dy,閉,開;…」の文字列を検査して扉に入れる						 */
+/* 戻り値：NULL=成功 / それ以外=エラーメッセージ（扉は変えない）			 */
+/* ========================================================================= */
+static LPCSTR AdminDoorExtraParse(LPCSTR pszSrc, PEVENTINFO_DOOR pDoor)
+{
+	static char szErr[160];
+	DOOREXTRA aTmp[MAX_DOOREXTRA];
+	int nCount = 0, i, j;
+	LPCSTR p = pszSrc;
+
+	ZeroMemory (aTmp, sizeof (aTmp));
+	while (1) {
+		int anVal[4];
+		/* 空白と項目の間の「;」を読み飛ばす（空欄・末尾の「;」は 0 件扱い） */
+		while ((*p == ' ') || (*p == '\t') || (*p == ';')) {
+			p ++;
+		}
+		if (*p == 0) {
+			break;
+		}
+		if (nCount >= MAX_DOOREXTRA) {
+			wsprintf (szErr, "追加マスは %d 件までです。", MAX_DOOREXTRA);
+			return szErr;
+		}
+		for (i = 0; i < 4; i ++) {
+			char *pEnd;
+			while ((*p == ' ') || (*p == '\t')) {
+				p ++;
+			}
+			if (!((*p == '-') || ((*p >= '0') && (*p <= '9')))) {
+				wsprintf (szErr, "追加マス %d 件目：「dx,dy,閉,開」の形（数字を4つ、カンマ区切り）で書いてください。", nCount + 1);
+				return szErr;
+			}
+			anVal[i] = (int)strtol (p, &pEnd, 10);
+			if (pEnd == p) {
+				wsprintf (szErr, "追加マス %d 件目：数字ではない所があります。", nCount + 1);
+				return szErr;
+			}
+			p = pEnd;
+			while ((*p == ' ') || (*p == '\t')) {
+				p ++;
+			}
+			if (i < 3) {
+				if (*p != ',') {
+					wsprintf (szErr, "追加マス %d 件目：数字は4つ（dx,dy,閉,開）をカンマで区切ってください。", nCount + 1);
+					return szErr;
+				}
+				p ++;
+			}
+		}
+		if ((*p != ';') && (*p != 0)) {
+			wsprintf (szErr, "追加マス %d 件目：数字が4つより多いか、「;」で区切られていません。", nCount + 1);
+			return szErr;
+		}
+		if ((anVal[0] < -DOOREXTRA_OFFMAX) || (anVal[0] > DOOREXTRA_OFFMAX) ||
+			(anVal[1] < -DOOREXTRA_OFFMAX) || (anVal[1] > DOOREXTRA_OFFMAX)) {
+			wsprintf (szErr, "追加マス %d 件目：ずらし幅 dx,dy は -%d〜%d にしてください。", nCount + 1, DOOREXTRA_OFFMAX, DOOREXTRA_OFFMAX);
+			return szErr;
+		}
+		if ((anVal[0] == 0) && (anVal[1] == 0)) {
+			wsprintf (szErr, "追加マス %d 件目：dx と dy が両方 0 です（扉のマス自身は足せません）。", nCount + 1);
+			return szErr;
+		}
+		if ((anVal[2] < 0) || (anVal[2] > 65534) || (anVal[3] < 0) || (anVal[3] > 65534)) {
+			wsprintf (szErr, "追加マス %d 件目：パーツ番号は 0〜65534 にしてください。", nCount + 1);
+			return szErr;
+		}
+		for (j = 0; j < nCount; j ++) {
+			if ((aTmp[j].sbyOffX == anVal[0]) && (aTmp[j].sbyOffY == anVal[1])) {
+				wsprintf (szErr, "追加マス %d 件目：%d 件目と同じマス（%d,%d）です。", nCount + 1, j + 1, anVal[0], anVal[1]);
+				return szErr;
+			}
+		}
+		aTmp[nCount].sbyOffX = (signed char)anVal[0];
+		aTmp[nCount].sbyOffY = (signed char)anVal[1];
+		aTmp[nCount].wClosedParts = (WORD)anVal[2];
+		aTmp[nCount].wOpenParts = (WORD)anVal[3];
+		nCount ++;
+	}
+
+	pDoor->byExtraCount = (BYTE)nCount;
+	CopyMemory (pDoor->aExtra, aTmp, sizeof (pDoor->aExtra));
+	return NULL;
+}
+
+
+/* ========================================================================= */
 /* 関数名：AdminOnCommandMapEvent											 */
 /* 内容：WM_COMMAND処理(イベント情報)										 */
 /* 日付：2003/06/04															 */
@@ -2443,6 +2553,24 @@ void AdminOnCommandMapEvent(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 				{
 					PEVENTINFO_DOOR pDoor = (PEVENTINFO_DOOR)g_pEventInfo->pData;
 					char szTmp[10];
+
+					/* 追加マス（「dx,dy,閉,開;…」。不正なら送らない。空欄=0件） */
+					{
+						char szExtra[512];
+						LPCSTR pszErr;
+						if (GetWindowTextLength (m_hWndEdit10) >= (int)sizeof (szExtra)) {
+							MessageBox (g_hWndAdmin, "追加マスの欄が長すぎます。", "扉の追加マス", MB_OK | MB_ICONWARNING);
+							return;
+						}
+						ZeroMemory (szExtra, sizeof (szExtra));
+						GetWindowText (m_hWndEdit10, szExtra, sizeof (szExtra));
+						pszErr = AdminDoorExtraParse (szExtra, pDoor);
+						if (pszErr) {
+							MessageBox (g_hWndAdmin, pszErr, "扉の追加マス", MB_OK | MB_ICONWARNING);
+							return;
+						}
+					}
+
 					ZeroMemory (szTmp, sizeof (szTmp));
 					GetWindowText (m_hWndEdit1, szTmp, 5);
 					pDoor->wGrpID = atoi (szTmp);
@@ -6323,6 +6451,8 @@ void AdminOnPaintMapEvent(HDC hDC)
 					MyTextOut (hDC, 0, 64 + 16 * 6, "範囲 右下X,Y:");
 					MyTextOut (hDC, 0, 64 + 16 * 7, "(敵を数える範囲。全部0=マップ全体)");
 					MyTextOut (hDC, 0, 64 + 16 * 8, "数える敵のST番号(65535=全部):");
+				MyTextOut (hDC, 0, 64 + 16 * 9, "追加マス dx,dy,閉,開 を;で区切る(最大8件)");
+				MyTextOut (hDC, 0, 64 + 16 * 11, "例 0,-1,1025,9;1,0,10,11 (dx,dy=-8〜8)");
 				}
 				break;
 
@@ -8392,6 +8522,16 @@ void MakeAdminWndEventInfoType(void)
 			SendMessage (m_hWndEdit9, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 			wsprintf (szTmp, "%d", pDoor->wEnemyStTmp);
 			SetWindowText (m_hWndEdit9, szTmp);
+
+			/* 追加マス（「dx,dy,閉,開;dx,dy,閉,開」最大8件。空=なし） */
+			m_hWndEdit10 = CreateWindow ("EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+					0, 64 + 16 * 10, 12 * 28, 14, g_hWndAdmin, NULL, g_hInstance, NULL);
+			SendMessage (m_hWndEdit10, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
+			{
+				char szExtra[512];
+				AdminDoorExtraToText (pDoor, szExtra, sizeof (szExtra));
+				SetWindowText (m_hWndEdit10, szExtra);
+			}
 
 			/* 敵を数える範囲（種別が「敵を全部倒す」の時。全部0ならマップ全体） */
 			HWND *aphWnd[4] = {&m_hWndEdit4, &m_hWndEdit5, &m_hWndEdit6, &m_hWndEdit7};

@@ -1536,6 +1536,9 @@ doorextra space close open=0 chgmap=3 viewer a=0 b=0
 doorextra api omit count=2
 doorextra admin full count=2 a=0,-1 b=1,0 changed=1
 doorextra admin short count=2 a=0,-1 b=1,0 changed=1
+doorextra admin new edit count=1 a=2,-3,1,1
+doorextra admin new clear count=0 a=0,0,0,0
+doorextra admin new restore count=2 a=0,-1 b=1,0
 doorextra save=1 load=1 added=232 events=1 door1=2,0,-1,1,1,0,1 door2=0
 doorextra none count=0 get_has=0 open chgmap=1 block a=1 b=1 same=1
 == Y. AdminResurrect ==

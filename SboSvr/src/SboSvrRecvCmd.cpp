@@ -5529,11 +5529,18 @@ void RecvDataProcEVENTCHG(PBYTE pData, DWORD dwDataSize)
 			int nRecv = (s_dwRecvSize > sizeof (CMDPARA_CHGEVENT)) ? (int)(s_dwRecvSize - sizeof (CMDPARA_CHGEVENT)) : 0;
 			CopyMemory ((PBYTE)pEventData->pData, (PBYTE)pEvent + sizeof (CMDPARA_CHGEVENT), (nRecv < nSize) ? nRecv : nSize);
 		}
-		/* 扉の追加マスは管理者ウィンドウでは編集できないので、今の扉のものを引き継ぐ（前の扉の追加マスを消さない）。
+		/* 扉の追加マス：クライアントが新しい大きさ（追加マスまで含む）で送ってきたら、その値をそのまま使う。
+		   追加マスを知らない古い短い扉の時だけ、今の扉のものを引き継ぐ（前の扉の追加マスを消さない）。
 		   前が扉でなければ追加マスは無し */
 		if (pEvent->byType == EVENTTYPE_DOOR) {
 			PEVENTINFO_DOOR pNew = (PEVENTINFO_DOOR)pEventData->pData;
-			if (pOldData && (byOldType == EVENTTYPE_DOOR)) {
+			int nRecv2 = (s_dwRecvSize > sizeof (CMDPARA_CHGEVENT)) ? (int)(s_dwRecvSize - sizeof (CMDPARA_CHGEVENT)) : 0;
+			if (nRecv2 >= (int)sizeof (EVENTINFO_DOOR)) {
+				/* 届いた値を採用（個数だけ範囲に収める） */
+				if (pNew->byExtraCount > MAX_DOOREXTRA) {
+					pNew->byExtraCount = (BYTE)MAX_DOOREXTRA;
+				}
+			} else if (pOldData && (byOldType == EVENTTYPE_DOOR)) {
 				PEVENTINFO_DOOR pOld = (PEVENTINFO_DOOR)pOldData;
 				pNew->byExtraCount = (pOld->byExtraCount > MAX_DOOREXTRA) ? (BYTE)MAX_DOOREXTRA : pOld->byExtraCount;
 				CopyMemory (pNew->aExtra, pOld->aExtra, sizeof (pNew->aExtra));
