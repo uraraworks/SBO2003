@@ -1624,6 +1624,12 @@ BOOL SaveMapInfo(void)
 							WriteData (hFile, "wAreaX2", sizeof (pInfo->wAreaX2), (PBYTE)&pInfo->wAreaX2);
 							WriteData (hFile, "wAreaY2", sizeof (pInfo->wAreaY2), (PBYTE)&pInfo->wAreaY2);
 							WriteData (hFile, "wEnemyStTmp", sizeof (pInfo->wEnemyStTmp), (PBYTE)&pInfo->wEnemyStTmp);	/* 数える敵の種類（65535=指定なし） */
+							if (pInfo->byExtraCount) {
+								/* 追加マスが無い時は書かない（古いサーバーでも読めるように） */
+								BYTE byExtra = (pInfo->byExtraCount > MAX_DOOREXTRA) ? (BYTE)MAX_DOOREXTRA : pInfo->byExtraCount;
+								WriteData (hFile, "byExtraCount", sizeof (byExtra), &byExtra);							/* 追加マスの数 */
+								WriteData (hFile, "aExtra", sizeof (DOOREXTRA) * byExtra, (PBYTE)pInfo->aExtra);			/* 追加マス */
+							}
 							WriteFile (hFile, &byTmp, 1, &dwBytes, NULL);	/* 区切り */
 						}
 						break;
@@ -1986,6 +1992,7 @@ BOOL LoadMapInfo(void)
 											ZeroMemory (pEvent->pData, sizeof (EVENTINFO_DOOR));
 											PEVENTINFO_DOOR pInfo = (PEVENTINFO_DOOR)pEvent->pData;
 											pInfo->wEnemyStTmp = 65535;	/* 古いデータは指定なし */
+											DWORD dwExtraSize = 0;		/* aExtra の項目で読めたバイト数 */
 											while (1) {
 												if (pData[dwFilePtr] == 0) {
 													dwFilePtr ++;
@@ -2015,9 +2022,18 @@ BOOL LoadMapInfo(void)
 													CopyMemory (&pInfo->wAreaY2, &pData[dwFilePtr], dwSize);	dwFilePtr += dwSize;	continue;
 												} else if (strcmp (pszTmp, "wEnemyStTmp") == 0) {			/* 数える敵の種類 */
 													CopyMemory (&pInfo->wEnemyStTmp, &pData[dwFilePtr], min (dwSize, (DWORD)sizeof (pInfo->wEnemyStTmp)));	dwFilePtr += dwSize;	continue;
+												} else if (strcmp (pszTmp, "byExtraCount") == 0) {		/* 追加マスの数（項目が無い古いデータは 0 件） */
+													CopyMemory (&pInfo->byExtraCount, &pData[dwFilePtr], min (dwSize, (DWORD)sizeof (pInfo->byExtraCount)));	dwFilePtr += dwSize;	continue;
+												} else if (strcmp (pszTmp, "aExtra") == 0) {			/* 追加マス */
+													dwExtraSize = min (dwSize, (DWORD)sizeof (pInfo->aExtra));
+													CopyMemory (pInfo->aExtra, &pData[dwFilePtr], dwExtraSize);	dwFilePtr += dwSize;	continue;
 												}
 												/* 知らない項目は読み飛ばす */
 												dwFilePtr += dwSize;
+											}
+											/* 件数は、読めた追加マスの数と最大数を超えないようにする */
+											if (pInfo->byExtraCount > (BYTE)(dwExtraSize / sizeof (DOOREXTRA))) {
+												pInfo->byExtraCount = (BYTE)(dwExtraSize / sizeof (DOOREXTRA));
 											}
 										}
 										break;

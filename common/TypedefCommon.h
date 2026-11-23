@@ -2754,6 +2754,17 @@ typedef struct _EVENTINFO_MSG {
 	DWORD		dwY;												/* Y座標 */
 } EVENTINFO_MSG, *PEVENTINFO_MSG;
 
+/* 扉の追加マス（扉の位置から (sbyOffX, sbyOffY) ずらしたマス。扉が閉まっている間は wClosedParts、開いている間は wOpenParts になる。
+   見た目と通れる判定の両方が扉の開閉に付いてくる） */
+#define MAX_DOOREXTRA		(8)											/* 扉の追加マスの最大数 */
+#define DOOREXTRA_OFFMAX	(8)											/* ずらし幅の最大（-8〜8） */
+typedef struct _DOOREXTRA {
+	signed char	sbyOffX;											/* 扉からのずらし幅X */
+	signed char	sbyOffY;											/* 扉からのずらし幅Y */
+	WORD		wClosedParts;										/* 閉まっている時のパーツ */
+	WORD		wOpenParts;											/* 開いている時のパーツ */
+} DOOREXTRA, *PDOOREXTRA;
+
 /* イベントデータ(扉) */
 typedef struct _EVENTINFO_DOOR {
 	DWORD		dwTimeOpen;											/* 開けた時間 */
@@ -2768,6 +2779,8 @@ typedef struct _EVENTINFO_DOOR {
 	DWORD		dwCheckTime;										/* 最後に敵を数えた時間（サーバーだけ。保存しない） */
 	WORD		wKeyItem;											/* 必要な鍵の品の種類ID（種別が「鍵」の時） */
 	WORD		wEnemyStTmp;										/* 数える敵の種類（ステータステンプレート番号。65535=指定なしで全部数える。種別が「敵を全部倒す」の時） */
+	BYTE		byExtraCount;										/* 追加マスの数（0〜MAX_DOOREXTRA。0 なら今までどおり扉のマスだけ） */
+	DOOREXTRA	aExtra[MAX_DOOREXTRA];								/* 追加マス（扉の開閉に合わせて、扉の位置からずらしたマスのパーツも切り替える） */
 } EVENTINFO_DOOR, *PEVENTINFO_DOOR;
 
 /* イベントデータ(HP/Mana回復) */

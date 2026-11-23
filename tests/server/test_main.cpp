@@ -1090,6 +1090,7 @@ static void TestMoveGuard(const std::vector<int> &aLogin);
 static void TestLowParts(const std::vector<int> &aLogin);
 static void TestMimic(const std::vector<int> &aLogin);
 static void TestEnemyDoor(const std::vector<int> &aLogin);
+static void TestDoorExtra(const std::vector<int> &aLogin);
 static void TestImportant(const std::vector<int> &aLogin);
 static void TestAdminResurrect(const std::vector<int> &aLogin);
 static void TestFlagTalk(const std::vector<int> &aLogin);
@@ -1629,6 +1630,7 @@ static void TestWorld(void)
 	TestMimic(aLogin);
 	/* X. 敵を全部倒すと開く扉 */
 	TestEnemyDoor(aLogin);
+	TestDoorExtra(aLogin);
 	/* Y. 管理者ウィンドウの蘇生ボタン */
 	TestAdminResurrect(aLogin);
 	TestFlagTalk(aLogin);
@@ -9111,6 +9113,407 @@ static void TestEnemyDoor(const std::vector<int> &aLogin)
 	pPC->dwY = pPC->dwYBack = dwYBack;
 	pPC->byDirection = byDirBack;
 	pPC->dwSpaceID = dwSpaceBack;
+	AddTblNoPC((int)pPC->dwTblID);
+}
+
+/* ------------------------------------------------------------------------- */
+/* X2. 扉の追加マス（EVENTINFO_DOOR の byExtraCount・aExtra）				 */
+/*    扉の開閉に合わせて、扉の位置からずらしたマスのパーツも切り替わるか		 */
+/*    （開けた空間の人にだけ・閉めた時に戻る・通れる判定も付いてくる）。		 */
+/*    0 件なら今までどおり。データAPIの範囲外の入力は断る・省くと今のまま。	 */
+/*    管理者ウィンドウ（追加マスを知らない短い扉）で直しても追加マスは消えない。	 */
+/*    保存して読み直しても残る												 */
+/* ------------------------------------------------------------------------- */
+typedef struct _DOOREXEV {
+	DWORD				dwX, dwY;
+	BYTE				byType;
+	std::vector<BYTE>	aData;
+} DOOREXEV;
+
+static void DoorExtraSaveEvents(PMAPINFO pMap, std::vector<DOOREXEV> &aOut)
+{
+	aOut.clear();
+	for (int i = 0; i < pMap->nEventCount; i ++) {
+		DOOREXEV e;
+		e.dwX = pMap->pEvent[i].dwX;
+		e.dwY = pMap->pEvent[i].dwY;
+		e.byType = pMap->pEvent[i].byType;
+		int nSize = GetEventDataSize(e.byType);
+		if (pMap->pEvent[i].pData && nSize > 0) {
+			e.aData.assign((const BYTE *)pMap->pEvent[i].pData, (const BYTE *)pMap->pEvent[i].pData + nSize);
+		}
+		aOut.push_back(e);
+	}
+}
+
+static void DoorExtraRestoreEvents(PMAPINFO pMap, const std::vector<DOOREXEV> &aSrc)
+{
+	for (int i = 0; i < pMap->nEventCount && pMap->pEvent; i ++) {
+		if (pMap->pEvent[i].pData) {
+			delete [] (PBYTE)pMap->pEvent[i].pData;
+		}
+	}
+	SAFE_DELETE_ARRAY(pMap->pEvent);
+	pMap->nEventCount = (int)aSrc.size();
+	if (!aSrc.empty()) {
+		pMap->pEvent = new EVENTINFO[aSrc.size()];
+		ZeroMemory(pMap->pEvent, sizeof(EVENTINFO) * aSrc.size());
+		for (size_t i = 0; i < aSrc.size(); i ++) {
+			pMap->pEvent[i].dwX = aSrc[i].dwX;
+			pMap->pEvent[i].dwY = aSrc[i].dwY;
+			pMap->pEvent[i].byType = aSrc[i].byType;
+			if (!aSrc[i].aData.empty()) {
+				PBYTE p = new BYTE[aSrc[i].aData.size()];
+				memcpy(p, &aSrc[i].aData[0], aSrc[i].aData.size());
+				pMap->pEvent[i].pData = p;
+			}
+		}
+	}
+	pMap->nProcEvent = 0;
+	g_nProcMap = 0;
+}
+
+/* マップの JSON から events の配列（[...]）を取り出す */
+static std::string DoorExtraEventsJson(int nMapNo)
+{
+	std::string str = SboWebDataGet("map", nMapNo);
+	size_t nPos = str.find("\"events\":[");
+	if (nPos == std::string::npos) {
+		return "[]";
+	}
+	nPos += 9;
+	int nDepth = 0;
+	for (size_t i = nPos; i < str.size(); i ++) {
+		if (str[i] == '[') nDepth ++;
+		if (str[i] == ']') {
+			nDepth --;
+			if (nDepth == 0) {
+				return str.substr(nPos, i - nPos + 1);
+			}
+		}
+	}
+	return "[]";
+}
+
+static PEVENTINFO DoorExtraFind(PMAPINFO pMap, int x, int y)
+{
+	for (int i = 0; i < pMap->nEventCount; i ++) {
+		if (pMap->pEvent[i].byType == EVENTTYPE_DOOR && pMap->pEvent[i].pData && (int)pMap->pEvent[i].dwX == x && (int)pMap->pEvent[i].dwY == y) {
+			return &pMap->pEvent[i];
+		}
+	}
+	return NULL;
+}
+
+static void TestDoorExtra(const std::vector<int> &aLogin)
+{
+	printf("== X2. DoorExtra ==\n");
+	if (aLogin.size() < 1) {
+		return;
+	}
+	PCHARINFO pPC = g_aCharInfo[aLogin[0]];
+	int nMapNo = GetMapNo(pPC->dwMapID);
+	if (nMapNo < 0) {
+		printf("no map\n");
+		return;
+	}
+	PMAPINFO pMap = g_aMapInfo[nMapNo];
+	/* 横に3マス空いていて、その上（y-1）の左端も空いている所（左から プレイヤーが立つ上のマス・扉の下のマス…） */
+	int nX = -1, nY = -1;
+	for (int y = 1; y < pMap->nCY && nX < 0; y ++) {
+		for (int x = 0; x + 2 < pMap->nCX; x ++) {
+			if (PushIsFree(pMap, x, y) && PushIsFree(pMap, x + 1, y) && PushIsFree(pMap, x + 2, y) && PushIsFree(pMap, x, y - 1)) {
+				nX = x;
+				nY = y;
+				break;
+			}
+		}
+	}
+	WORD wBlock = 0xFFFF, wFree = 0xFFFF;
+	for (int i = 0; i < (int)g_wCountMapParts; i ++) {
+		if (wBlock == 0xFFFF && g_aMapPartsInfo[i].byHitType == PARTSHIT_BLOCK1) wBlock = (WORD)i;
+		if (wFree == 0xFFFF && g_aMapPartsInfo[i].byHitType == PARTSHIT_NONE) wFree = (WORD)i;
+	}
+	if (nX < 0 || wBlock == 0xFFFF || wFree == 0xFFFF) {
+		printf("no floor\n");
+		return;
+	}
+	const int nConn = 1000;		/* aLogin[0] は 1000 番 */
+	const DWORD dwMapID = pMap->dwID;
+	DWORD dwXBack = pPC->dwX, dwYBack = pPC->dwY;
+	BYTE byDirBack = pPC->byDirection;
+	DWORD dwSpaceBack = pPC->dwSpaceID;
+	DWORD dwNowBack = s_dwFakeNow;
+	BYTE byAdminBack = pPC->byAdminLV;
+	std::vector<DOOREXEV> aBackup;
+	DoorExtraSaveEvents(pMap, aBackup);
+	const std::string strOrig = DoorExtraEventsJson(nMapNo);
+	const int nEvOrig = pMap->nEventCount;
+	const int xD = nX + 1, yD = nY;			/* 扉 */
+	const int xA = nX + 1, yA = nY - 1;		/* 追加マス A（扉の上。dx=0 dy=-1） */
+	const int xB = nX + 2, yB = nY;			/* 追加マス B（扉の右。dx=1 dy=0） */
+	/* 追加マスを付ける前の通れる判定（0 件なら変わらないことの確認用） */
+	int nBaseA = (int)CheckCharBlock(dwMapID, xA, yA), nBaseB = (int)CheckCharBlock(dwMapID, xB, yB);
+
+	char sz[1024];
+	/* events の全部（元のイベント＋試す扉）を作る。pszExtra は扉の detail に足す文字列（"" か ,"extraCells":[...]） */
+	auto Events = [&](const std::string &strExtra1, const std::string &strDoor2Extra) {
+		std::string strHead = strOrig.substr(0, strOrig.size() - 1);
+		std::string s = "{\"events\":" + strHead + (strOrig.size() > 2 ? "," : "");
+		snprintf(sz, sizeof(sz), "{\"x\":%d,\"y\":%d,\"type\":3,\"detail\":{\"wGrpID\":%d,\"wBackGrpID\":%d,\"byTimeClose\":30,\"byType\":0%s}}", xD, yD, (int)wBlock, (int)wFree, strExtra1.c_str());
+		s += sz;
+		snprintf(sz, sizeof(sz), ",{\"x\":%d,\"y\":%d,\"type\":3,\"detail\":{\"wGrpID\":%d,\"wBackGrpID\":%d,\"byTimeClose\":30,\"byType\":0%s}}]}", nX, nY, (int)wBlock, (int)wFree, strDoor2Extra.c_str());
+		s += sz;
+		return s;
+	};
+	char szCells[512];
+	snprintf(szCells, sizeof(szCells), ",\"extraCells\":[{\"dx\":0,\"dy\":-1,\"closed\":%d,\"open\":%d},{\"dx\":1,\"dy\":0,\"closed\":%d,\"open\":%d}]", (int)wBlock, (int)wFree, (int)wBlock, (int)wFree);
+	const std::string strCells = szCells;
+	auto ok = [](const std::string &s) { return (int)(s.find("\"ok\":true") != std::string::npos); };
+
+	/* 範囲外・不正な入力は断る（イベントは増えず、追加マスも付かない） */
+	{
+		std::vector<std::pair<std::string, std::string> > aBad;
+		snprintf(sz, sizeof(sz), "%d", (int)g_wCountMapParts);
+		const std::string strCnt = sz;
+		aBad.push_back(std::make_pair("dx over", ",\"extraCells\":[{\"dx\":9,\"dy\":0,\"closed\":1,\"open\":1}]"));
+		aBad.push_back(std::make_pair("dx under", ",\"extraCells\":[{\"dx\":-9,\"dy\":0,\"closed\":1,\"open\":1}]"));
+		aBad.push_back(std::make_pair("dy over", ",\"extraCells\":[{\"dx\":0,\"dy\":9,\"closed\":1,\"open\":1}]"));
+		aBad.push_back(std::make_pair("dy under", ",\"extraCells\":[{\"dx\":0,\"dy\":-9,\"closed\":1,\"open\":1}]"));
+		aBad.push_back(std::make_pair("both zero", ",\"extraCells\":[{\"dx\":0,\"dy\":0,\"closed\":1,\"open\":1}]"));
+		aBad.push_back(std::make_pair("closed range", ",\"extraCells\":[{\"dx\":0,\"dy\":-1,\"closed\":" + strCnt + ",\"open\":1}]"));
+		aBad.push_back(std::make_pair("open range", ",\"extraCells\":[{\"dx\":0,\"dy\":-1,\"closed\":1,\"open\":" + strCnt + "}]"));
+		aBad.push_back(std::make_pair("open negative", ",\"extraCells\":[{\"dx\":0,\"dy\":-1,\"closed\":1,\"open\":-1}]"));
+		aBad.push_back(std::make_pair("dup", ",\"extraCells\":[{\"dx\":0,\"dy\":-1,\"closed\":1,\"open\":1},{\"dx\":0,\"dy\":-1,\"closed\":2,\"open\":2}]"));
+		aBad.push_back(std::make_pair("missing key", ",\"extraCells\":[{\"dx\":0,\"dy\":-1,\"closed\":1}]"));
+		aBad.push_back(std::make_pair("unknown key", ",\"extraCells\":[{\"dx\":0,\"dy\":-1,\"closed\":1,\"open\":1,\"zz\":1}]"));
+		aBad.push_back(std::make_pair("not array", ",\"extraCells\":{\"dx\":0}"));
+		aBad.push_back(std::make_pair("not int", ",\"extraCells\":[{\"dx\":0.5,\"dy\":-1,\"closed\":1,\"open\":1}]"));
+		std::string strNine = ",\"extraCells\":[";
+		for (int i = 0; i < 9; i ++) {
+			snprintf(sz, sizeof(sz), "%s{\"dx\":%d,\"dy\":-1,\"closed\":1,\"open\":1}", i ? "," : "", i - 4);
+			strNine += sz;
+		}
+		aBad.push_back(std::make_pair("nine", strNine + "]"));
+		/* マップの外のマス（扉の位置から左・右・上・下へずらして外に出る組） */
+		if (xD <= DOOREXTRA_OFFMAX) {
+			snprintf(sz, sizeof(sz), ",\"extraCells\":[{\"dx\":%d,\"dy\":0,\"closed\":1,\"open\":1}]", -(xD + 1));
+			aBad.push_back(std::make_pair("outside left", sz));
+		}
+		if (pMap->nCX - xD <= DOOREXTRA_OFFMAX) {
+			snprintf(sz, sizeof(sz), ",\"extraCells\":[{\"dx\":%d,\"dy\":0,\"closed\":1,\"open\":1}]", pMap->nCX - xD);
+			aBad.push_back(std::make_pair("outside right", sz));
+		}
+		if (yD + 1 <= DOOREXTRA_OFFMAX) {
+			snprintf(sz, sizeof(sz), ",\"extraCells\":[{\"dx\":0,\"dy\":%d,\"closed\":1,\"open\":1}]", -(yD + 1));
+			aBad.push_back(std::make_pair("outside top", sz));
+		}
+		if (pMap->nCY - yD <= DOOREXTRA_OFFMAX) {
+			snprintf(sz, sizeof(sz), ",\"extraCells\":[{\"dx\":0,\"dy\":%d,\"closed\":1,\"open\":1}]", pMap->nCY - yD);
+			aBad.push_back(std::make_pair("outside bottom", sz));
+		}
+		for (size_t i = 0; i < aBad.size(); i ++) {
+			std::string strRes = SwapApi(nMapNo, Events(aBad[i].second, "").c_str());
+			printf("doorextra api bad %s ok=%d events=%d\n", aBad[i].first.c_str(), ok(strRes), (int)(pMap->nEventCount == nEvOrig));
+		}
+		/* 扉ではないイベントには付けられない */
+		snprintf(sz, sizeof(sz), "{\"events\":[{\"x\":%d,\"y\":%d,\"type\":0,\"detail\":{\"extraCells\":[]}}]}", xD, yD);
+		printf("doorextra api bad nondoor ok=%d events=%d\n", ok(SwapApi(nMapNo, sz)), (int)(pMap->nEventCount == nEvOrig));
+	}
+
+	/* 追加マスを 2 件つけて保存する（扉の下見だけでは何も変わらない） */
+	{
+		const char *pszDry = SboWebDataApply("map", nMapNo, Events(strCells, "").c_str(), 0, "テスト");
+		printf("doorextra api dry has=%d events=%d\n", (int)(pszDry && strstr(pszDry, "\"extraCells\":[{\"dx\":0,\"dy\":-1,") != NULL), (int)(pMap->nEventCount == nEvOrig));
+	}
+	std::string strRes = SwapApi(nMapNo, Events(strCells, "").c_str());
+	PEVENTINFO pEvent = DoorExtraFind(pMap, xD, yD);
+	PEVENTINFO_DOOR pDoor = pEvent ? (PEVENTINFO_DOOR)pEvent->pData : NULL;
+	if (!pDoor) {
+		printf("doorextra api set ok=%d door=0\n", ok(strRes));
+		DoorExtraRestoreEvents(pMap, aBackup);
+		return;
+	}
+	printf("doorextra api set ok=%d events=%d count=%d a=%d,%d,%d,%d b=%d,%d,%d,%d\n", ok(strRes), pMap->nEventCount - nEvOrig, (int)pDoor->byExtraCount,
+		(int)pDoor->aExtra[0].sbyOffX, (int)pDoor->aExtra[0].sbyOffY, (int)(pDoor->aExtra[0].wClosedParts == wBlock), (int)(pDoor->aExtra[0].wOpenParts == wFree),
+		(int)pDoor->aExtra[1].sbyOffX, (int)pDoor->aExtra[1].sbyOffY, (int)(pDoor->aExtra[1].wClosedParts == wBlock), (int)(pDoor->aExtra[1].wOpenParts == wFree));
+	{
+		std::string strGet = SboWebDataGet("map", nMapNo);
+		size_t nFirst = strGet.find("\"extraCells\"");
+		printf("doorextra api get has=%d once=%d\n", (int)(strGet.find(strCells.substr(1)) != std::string::npos),
+			(int)(nFirst != std::string::npos && strGet.find("\"extraCells\"", nFirst + 1) == std::string::npos));
+	}
+
+	/* ふつうの世界：閉まっている間は追加マスが通れず、開けると 3 マス（扉＋追加2）切り替わって通れる */
+	MimicPC(pPC, nX, nY - 1, 3);
+	pPC->dwSpaceID = SPACE_NORMAL;
+	printf("doorextra closed block normal a=%d b=%d viewer a=%d b=%d\n", (int)CheckCharBlock(dwMapID, xA, yA), (int)CheckCharBlock(dwMapID, xB, yB),
+		(int)CheckCharBlock(pPC, dwMapID, xA, yA), (int)CheckCharBlock(pPC, dwMapID, xB, yB));
+	s_dwFakeNow += 10000;
+	FloorStep(pPC, xA, yA, 3);
+	printf("doorextra closed walk stay=%d\n", (int)(pPC->dwX == (DWORD)nX && pPC->dwY == (DWORD)(nY - 1)));
+	{
+		int nChg0 = MockCmdCount(nConn, CMD_CHGMAP);
+		MockTrace(1);
+		int nOpen = (int)SpaceDoorOpen(dwMapID, pEvent, pDoor, SPACE_NORMAL);
+		std::vector<BYTE> aBody;
+		MarketLast(nConn, CMD_CHGMAP, aBody);
+		MockTrace(0);
+		PCMDPARA_CHGMAP pLast = (aBody.size() >= sizeof(CMDPARA_CHGMAP)) ? (PCMDPARA_CHGMAP)&aBody[0] : NULL;
+		printf("doorextra open ret=%d chgmap=%d last=%d,%d,%d\n", nOpen, MockCmdCount(nConn, CMD_CHGMAP) - nChg0,
+			(int)(pLast && pLast->wMap == wFree), pLast ? pLast->nX : -1, pLast ? pLast->nY : -1);
+	}
+	printf("doorextra open block normal a=%d b=%d viewer a=%d b=%d\n", (int)CheckCharBlock(dwMapID, xA, yA), (int)CheckCharBlock(dwMapID, xB, yB),
+		(int)CheckCharBlock(pPC, dwMapID, xA, yA), (int)CheckCharBlock(pPC, dwMapID, xB, yB));
+	s_dwFakeNow += 10000;
+	FloorStep(pPC, xA, yA, 3);
+	printf("doorextra open walk in=%d\n", (int)(pPC->dwX == (DWORD)xA && pPC->dwY == (DWORD)yA));
+	MimicPC(pPC, nX, nY - 1, 3);
+	/* 閉まる時間が過ぎると 3 マスとも戻る */
+	{
+		s_dwFakeNow += 60000;
+		g_dwTime = s_dwFakeNow;
+		int nChg0 = MockCmdCount(nConn, CMD_CHGMAP);
+		MockTrace(1);
+		SpaceDoorProc(dwMapID, pEvent, pDoor);
+		std::vector<BYTE> aBody;
+		MarketLast(nConn, CMD_CHGMAP, aBody);
+		MockTrace(0);
+		PCMDPARA_CHGMAP pLast = (aBody.size() >= sizeof(CMDPARA_CHGMAP)) ? (PCMDPARA_CHGMAP)&aBody[0] : NULL;
+		printf("doorextra close open=%d chgmap=%d last=%d,%d,%d block a=%d b=%d\n", (int)SpaceDoorIsOpen(dwMapID, pEvent, pDoor, SPACE_NORMAL), MockCmdCount(nConn, CMD_CHGMAP) - nChg0,
+			(int)(pLast && pLast->wMap == wBlock), pLast ? pLast->nX : -1, pLast ? pLast->nY : -1,
+			(int)CheckCharBlock(dwMapID, xA, yA), (int)CheckCharBlock(dwMapID, xB, yB));
+	}
+
+	/* 別の空間：開けた空間の人だけ切り替わり、ふつうの世界は閉じたまま。空間を移った人には今の状態を送る */
+	pPC->dwSpaceID = 77;
+	{
+		int nChg0 = MockCmdCount(nConn, CMD_CHGMAP);
+		int nOpen = (int)SpaceDoorOpen(dwMapID, pEvent, pDoor, 77);
+		printf("doorextra space open ret=%d chgmap=%d viewer a=%d b=%d normal a=%d b=%d\n", nOpen, MockCmdCount(nConn, CMD_CHGMAP) - nChg0,
+			(int)CheckCharBlock(pPC, dwMapID, xA, yA), (int)CheckCharBlock(pPC, dwMapID, xB, yB),
+			(int)CheckCharBlock(dwMapID, xA, yA), (int)CheckCharBlock(dwMapID, xB, yB));
+	}
+	{
+		int nChg0 = MockCmdCount(nConn, CMD_CHGMAP);
+		SpaceSendMapState(pPC);
+		int nWith = MockCmdCount(nConn, CMD_CHGMAP) - nChg0;
+		BYTE byCnt = pDoor->byExtraCount;
+		pDoor->byExtraCount = 0;
+		nChg0 = MockCmdCount(nConn, CMD_CHGMAP);
+		SpaceSendMapState(pPC);
+		int nWithout = MockCmdCount(nConn, CMD_CHGMAP) - nChg0;
+		pDoor->byExtraCount = byCnt;
+		printf("doorextra space state extra=%d\n", nWith - nWithout);
+	}
+	pPC->dwSpaceID = SPACE_NORMAL;
+	printf("doorextra space other normal open=%d a=%d b=%d\n", (int)SpaceDoorIsOpen(dwMapID, pEvent, pDoor, SPACE_NORMAL),
+		(int)CheckCharBlock(pPC, dwMapID, xA, yA), (int)CheckCharBlock(pPC, dwMapID, xB, yB));
+	pPC->dwSpaceID = 77;
+	{
+		s_dwFakeNow += 60000;
+		g_dwTime = s_dwFakeNow;
+		int nChg0 = MockCmdCount(nConn, CMD_CHGMAP);
+		SpaceDoorProc(dwMapID, pEvent, pDoor);
+		printf("doorextra space close open=%d chgmap=%d viewer a=%d b=%d\n", (int)SpaceDoorIsOpen(dwMapID, pEvent, pDoor, 77), MockCmdCount(nConn, CMD_CHGMAP) - nChg0,
+			(int)CheckCharBlock(pPC, dwMapID, xA, yA), (int)CheckCharBlock(pPC, dwMapID, xB, yB));
+	}
+	pPC->dwSpaceID = SPACE_NORMAL;
+
+	/* データAPIで extraCells を省くと今のまま（残る）・[] で全部消える */
+	SwapApi(nMapNo, Events("", "").c_str());
+	pEvent = DoorExtraFind(pMap, xD, yD);
+	pDoor = pEvent ? (PEVENTINFO_DOOR)pEvent->pData : NULL;
+	printf("doorextra api omit count=%d\n", pDoor ? (int)pDoor->byExtraCount : -1);
+
+	/* 管理者ウィンドウの扉の更新（追加マスを知らない短い扉・追加マスが 0 件の新しい扉）でも追加マスは消えない */
+	{
+		pPC->byAdminLV = ADMINLV_ADMINISTRATOR;
+		int nNo = (int)(pEvent - pMap->pEvent);
+		EVENTINFO_DOOR New;
+		ZeroMemory(&New, sizeof(New));
+		New.wGrpID = wFree;
+		New.wBackGrpID = wBlock;
+		New.byTimeClose = 50;
+		New.wEnemyStTmp = 65535;
+		const size_t nShort = offsetof(EVENTINFO_DOOR, byExtraCount);
+		for (int k = 0; k < 2; k ++) {
+			const WORD wExpect = New.wGrpID;
+			size_t nBody = (k == 0) ? sizeof(New) : nShort;
+			std::vector<BYTE> aPacket(sizeof(CMDPARA_CHGEVENT) + nBody, 0xCC);
+			PCMDPARA_CHGEVENT pPara = (PCMDPARA_CHGEVENT)&aPacket[0];
+			ZeroMemory(pPara, sizeof(CMDPARA_CHGEVENT));
+			pPara->byCmd = CMD_CHGEVENT;
+			pPara->dwID = dwMapID;
+			pPara->dwDataID = (DWORD)nNo;
+			pPara->dwX = (DWORD)xD;
+			pPara->dwY = (DWORD)yD;
+			pPara->byType = EVENTTYPE_DOOR;
+			pPara->pData = (PVOID)1;
+			memcpy(&aPacket[sizeof(CMDPARA_CHGEVENT)], &New, nBody);
+			TestRecv(pPC, &aPacket[0], aPacket.size());
+			pEvent = DoorExtraFind(pMap, xD, yD);
+			pDoor = pEvent ? (PEVENTINFO_DOOR)pEvent->pData : NULL;
+			printf("doorextra admin %s count=%d a=%d,%d b=%d,%d changed=%d\n", (k == 0) ? "full" : "short", pDoor ? (int)pDoor->byExtraCount : -1,
+				pDoor ? (int)pDoor->aExtra[0].sbyOffX : 0, pDoor ? (int)pDoor->aExtra[0].sbyOffY : 0, pDoor ? (int)pDoor->aExtra[1].sbyOffX : 0, pDoor ? (int)pDoor->aExtra[1].sbyOffY : 0,
+				pDoor ? (int)(pDoor->wGrpID == wExpect && pDoor->byTimeClose == 50) : -1);
+			New.wGrpID = wBlock;
+		}
+		pPC->byAdminLV = byAdminBack;
+	}
+
+	/* 保存して読み直す（読み込みは末尾に足される）。追加マスのある扉と無い扉 */
+	{
+		extern BOOL SaveMapInfo(void);
+		extern BOOL LoadMapInfo(void);
+		int nMaps = g_aMapInfo.GetSize();
+		DWORD dwNewMapIDBak = g_dwNewMapID;
+		BOOL bSaved = SaveMapInfo();
+		BOOL bLoaded = LoadMapInfo();
+		int nAdded = g_aMapInfo.GetSize() - nMaps;
+		if (nAdded >= 1) {
+			PMAPINFO pL = g_aMapInfo[nMaps + nMapNo];
+			PEVENTINFO pE1 = DoorExtraFind(pL, xD, yD), pE2 = DoorExtraFind(pL, nX, nY);
+			PEVENTINFO_DOOR pD1 = pE1 ? (PEVENTINFO_DOOR)pE1->pData : NULL, pD2 = pE2 ? (PEVENTINFO_DOOR)pE2->pData : NULL;
+			printf("doorextra save=%d load=%d added=%d events=%d door1=%d,%d,%d,%d,%d,%d,%d door2=%d\n", (int)bSaved, (int)bLoaded, nAdded, (int)(pL->nEventCount == pMap->nEventCount),
+				pD1 ? (int)pD1->byExtraCount : -1, pD1 ? (int)pD1->aExtra[0].sbyOffX : 0, pD1 ? (int)pD1->aExtra[0].sbyOffY : 0,
+				pD1 ? (int)(pD1->aExtra[0].wClosedParts == wBlock && pD1->aExtra[0].wOpenParts == wFree) : -1,
+				pD1 ? (int)pD1->aExtra[1].sbyOffX : 0, pD1 ? (int)pD1->aExtra[1].sbyOffY : 0, pD1 ? (int)(pD1->aExtra[1].wClosedParts == wBlock && pD1->aExtra[1].wOpenParts == wFree) : -1,
+				pD2 ? (int)pD2->byExtraCount : -1);
+		} else {
+			printf("doorextra save=%d load=%d added=%d\n", (int)bSaved, (int)bLoaded, nAdded);
+		}
+		for (int i = g_aMapInfo.GetSize() - 1; i >= nMaps; i --) {
+			g_aMapInfo.RemoveAt(i);
+		}
+		g_dwNewMapID = dwNewMapIDBak;
+	}
+
+	/* [] で全部消す：0 件なら今までどおり（開けても扉の 1 マスだけ送り、追加マスだった所は元の通れる判定に戻る） */
+	SwapApi(nMapNo, Events(",\"extraCells\":[]", "").c_str());
+	pEvent = DoorExtraFind(pMap, xD, yD);
+	pDoor = pEvent ? (PEVENTINFO_DOOR)pEvent->pData : NULL;
+	if (pDoor) {
+		std::string strGet = SboWebDataGet("map", nMapNo);
+		int nChg0 = MockCmdCount(nConn, CMD_CHGMAP);
+		SpaceDoorOpen(dwMapID, pEvent, pDoor, SPACE_NORMAL);
+		printf("doorextra none count=%d get_has=%d open chgmap=%d block a=%d b=%d same=%d\n", (int)pDoor->byExtraCount, (int)(strGet.find("\"extraCells\"") != std::string::npos),
+			MockCmdCount(nConn, CMD_CHGMAP) - nChg0, (int)CheckCharBlock(dwMapID, xA, yA), (int)CheckCharBlock(dwMapID, xB, yB),
+			(int)(CheckCharBlock(dwMapID, xA, yA) == nBaseA && CheckCharBlock(dwMapID, xB, yB) == nBaseB));
+	} else {
+		printf("doorextra none door=0\n");
+	}
+
+	/* 片付け */
+	DoorExtraRestoreEvents(pMap, aBackup);
+	s_dwFakeNow = dwNowBack;
+	g_dwTime = s_dwFakeNow;
+	DeleteTblNoPC((int)pPC->dwTblID);
+	pPC->dwX = pPC->dwXBack = dwXBack;
+	pPC->dwY = pPC->dwYBack = dwYBack;
+	pPC->byDirection = byDirBack;
+	pPC->dwSpaceID = dwSpaceBack;
+	pPC->byAdminLV = byAdminBack;
 	AddTblNoPC((int)pPC->dwTblID);
 }
 

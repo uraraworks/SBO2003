@@ -1986,6 +1986,19 @@ static std::string MapJson(PMAPINFO pMap)
 				",\"type\":" + JsonNum(pEv->byType) + ",\"detail\":{";
 		if (paField && pEv->pData) {
 			out += FieldsJson((const BYTE *)pEv->pData, paField, nCount);
+			/* 扉の追加マス（0 件の時は出さない） */
+			if (pEv->byType == EVENTTYPE_DOOR) {
+				PEVENTINFO_DOOR pDoor = (PEVENTINFO_DOOR)pEv->pData;
+				if (pDoor->byExtraCount) {
+					out += ",\"extraCells\":[";
+					for (j = 0; j < pDoor->byExtraCount && j < MAX_DOOREXTRA; j ++) {
+						if (j) out += ",";
+						out += "{\"dx\":" + JsonNum(pDoor->aExtra[j].sbyOffX) + ",\"dy\":" + JsonNum(pDoor->aExtra[j].sbyOffY) +
+								",\"closed\":" + JsonNum(pDoor->aExtra[j].wClosedParts) + ",\"open\":" + JsonNum(pDoor->aExtra[j].wOpenParts) + "}";
+					}
+					out += "]";
+				}
+			}
 		}
 		out += "}}";
 	}
@@ -2372,7 +2385,14 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataSchema(void)
 				if (nOut ++) {
 					out += ",";
 				}
-				out += "\"" + JsonNum(t) + "\":" + FieldSchemaJson(paField, nCount);
+				std::string strSchema = FieldSchemaJson(paField, nCount);
+				if (t == EVENTTYPE_DOOR) {
+					strSchema.insert(strSchema.size() - 1, std::string(",{\"name\":\"extraCells\",\"type\":\"object[]\",\"label\":\"追加マス\",\"count\":") + JsonNum(MAX_DOOREXTRA) +
+							",\"note\":\"扉の位置からずらしたマスのパーツも、扉の開閉に合わせて切り替える（見た目と通れる判定の両方）。配列で丸ごと置き換え（省くと今のまま、[] で全部消す）。"
+							"{dx, dy: 扉からのずらし幅 -8〜8（両方 0 は不可）, closed: 閉まっている時の mapParts の番号, open: 開いている時の mapParts の番号}。"
+							"最大 " + JsonNum(MAX_DOOREXTRA) + " 件。マップの外のマスは不可。0 件の時は get の detail にこの項目は出ない。マップ本来のそのマスの絵も closed と同じにしておくと、入りたての人の画面と合う\"}");
+				}
+				out += "\"" + JsonNum(t) + "\":" + strSchema;
 			}
 			out += "}";
 			break;
@@ -3215,6 +3235,75 @@ static std::string MapWorkJson(PMAPINFO pBase, const std::string &strName, const
 
 /* マップにいるプレイヤーへの送り直し（ResendMapToPlayers）は SboSvrQuest.cpp。ダンジョンの作り直しと共用 */
 
+/* 扉の追加マス（extraCells）を扉に読む。丸ごと置き換え。範囲・マップの外・重なりを確かめる */
+static bool ParseDoorExtraCells(const JVal &v, DWORD dwX, DWORD dwY, int nCX, int nCY, PEVENTINFO_DOOR pDoor, std::string &strErr, const std::string &strName)
+{
+	static const char *apszKey[] = { "dx", "dy", "closed", "open", NULL };
+	DOOREXTRA aTmp[MAX_DOOREXTRA];
+	long long n;
+
+	if (v.t != JVal::ARR) {
+		strErr = strName + " は配列で指定してください";
+		return false;
+	}
+	if (v.a.size() > MAX_DOOREXTRA) {
+		strErr = strName + " は " + JsonNum(MAX_DOOREXTRA) + " 件までです";
+		return false;
+	}
+	ZeroMemory(aTmp, sizeof(aTmp));
+	for (size_t i = 0; i < v.a.size(); i ++) {
+		const JVal &e = v.a[i];
+		std::string strP = strName + "[" + JsonNum((long long)i) + "]";
+		if (e.t != JVal::OBJ) {
+			strErr = strP + " はオブジェクトで指定してください";
+			return false;
+		}
+		for (size_t k = 0; k < e.o.size(); k ++) {
+			bool bOk = false;
+			for (int m = 0; apszKey[m]; m ++) if (e.o[k].first == apszKey[m]) bOk = true;
+			if (!bOk) {
+				strErr = strP + ": 知らない項目です: " + e.o[k].first;
+				return false;
+			}
+		}
+		const JVal *pdx = e.Get("dx"), *pdy = e.Get("dy"), *pc = e.Get("closed"), *po = e.Get("open");
+		if (!pdx || !pdy || !pc || !po) {
+			strErr = strP + " には dx・dy・closed・open が要ります";
+			return false;
+		}
+		if (g_wCountMapParts <= 0) {
+			strErr = "パーツがありません";
+			return false;
+		}
+		if (!GetInt(*pdx, -DOOREXTRA_OFFMAX, DOOREXTRA_OFFMAX, n, strErr, strP + ".dx")) return false;
+		aTmp[i].sbyOffX = (signed char)n;
+		if (!GetInt(*pdy, -DOOREXTRA_OFFMAX, DOOREXTRA_OFFMAX, n, strErr, strP + ".dy")) return false;
+		aTmp[i].sbyOffY = (signed char)n;
+		if (!GetInt(*pc, 0, g_wCountMapParts - 1, n, strErr, strP + ".closed")) return false;
+		aTmp[i].wClosedParts = (WORD)n;
+		if (!GetInt(*po, 0, g_wCountMapParts - 1, n, strErr, strP + ".open")) return false;
+		aTmp[i].wOpenParts = (WORD)n;
+		if (aTmp[i].sbyOffX == 0 && aTmp[i].sbyOffY == 0) {
+			strErr = strP + ": dx・dy が両方 0 です（扉のマス自身は追加マスにできません）";
+			return false;
+		}
+		long long nCellX = (long long)dwX + aTmp[i].sbyOffX, nCellY = (long long)dwY + aTmp[i].sbyOffY;
+		if (nCellX < 0 || nCellX >= nCX || nCellY < 0 || nCellY >= nCY) {
+			strErr = strP + ": 扉の位置 (" + JsonNum((long long)dwX) + "," + JsonNum((long long)dwY) + ") からずらしたマス (" + JsonNum(nCellX) + "," + JsonNum(nCellY) + ") がマップの外です";
+			return false;
+		}
+		for (size_t j = 0; j < i; j ++) {
+			if (aTmp[j].sbyOffX == aTmp[i].sbyOffX && aTmp[j].sbyOffY == aTmp[i].sbyOffY) {
+				strErr = strP + ": dx・dy が " + JsonNum((long long)j) + " 件目と同じマスです";
+				return false;
+			}
+		}
+	}
+	pDoor->byExtraCount = (BYTE)v.a.size();
+	CopyMemory(pDoor->aExtra, aTmp, sizeof(pDoor->aExtra));
+	return true;
+}
+
 /* swaps（印で変わるマス）を w に読む。JSON を MAPSWAPEDITROW に直すだけで、範囲・種類違いの欄・重なり・番号の自動振りは
    ゲーム内の管理者ウィンドウと同じ MapSwapBuild（SboSvrMapSwapEdit.cpp）が行う */
 static bool ParseMapSwaps(const JVal &sw, int nID, MAPINFO &w, std::string &strErr)
@@ -3564,8 +3653,13 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 						strErr = strP + ".detail はオブジェクトで指定してください";
 						return false;
 					}
-					if (!CheckKnownKeys(*pd, paField, nCount, NULL, strErr) ||
+					static const char *apszDoorExtra[] = { "extraCells", NULL };
+					if (!CheckKnownKeys(*pd, paField, nCount, (ev.byType == EVENTTYPE_DOOR) ? apszDoorExtra : NULL, strErr) ||
 							!ApplyFields(&ev.aData[0], paField, nCount, *pd, strErr, strP + ".detail.")) {
+						return false;
+					}
+					if ((ev.byType == EVENTTYPE_DOOR) && pd->Get("extraCells") &&
+							!ParseDoorExtraCells(*pd->Get("extraCells"), ev.dwX, ev.dwY, w.nCX, w.nCY, (PEVENTINFO_DOOR)&ev.aData[0], strErr, strP + ".detail.extraCells")) {
 						return false;
 					}
 					if (ev.byType == EVENTTYPE_DOOR) {
@@ -3671,6 +3765,7 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 
 	/* 反映 */
 	WORD wBGMOld = pMap->wBGM;
+	std::vector<int> aOldExtraXY;		/* 変える前の扉の追加マスの座標（x,y の並び） */
 	/* マップ全体の情報（マップ情報の送り直しが要るもの）が変わるか。
 	 * 店・イベント・メッセージだけなら、マップに入り直させずに差分だけ送る */
 	bool bMapWide =
@@ -3715,6 +3810,17 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 		CopyMemory(pMap->pszName, strName.c_str(), strName.size() + 1);
 	}
 	if (pEvs) {
+		/* 変える前の扉の追加マスの座標（変えた後、本人の画面を戻すため） */
+		for (int i = 0; i < pMap->nEventCount && pMap->pEvent; i ++) {
+			PEVENTINFO pOld = &pMap->pEvent[i];
+			if (pOld->byType == EVENTTYPE_DOOR && pOld->pData) {
+				PEVENTINFO_DOOR pOldDoor = (PEVENTINFO_DOOR)pOld->pData;
+				for (int j = 0; j < pOldDoor->byExtraCount && j < MAX_DOOREXTRA; j ++) {
+					aOldExtraXY.push_back((int)pOld->dwX + pOldDoor->aExtra[j].sbyOffX);
+					aOldExtraXY.push_back((int)pOld->dwY + pOldDoor->aExtra[j].sbyOffY);
+				}
+			}
+		}
 		for (int i = 0; i < pMap->nEventCount && pMap->pEvent; i ++) {
 			if (pMap->pEvent[i].pData) {
 				delete [] (PBYTE)pMap->pEvent[i].pData;
@@ -3807,6 +3913,18 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 					SendCmdEVENTPOS(pChar->pID, (DWORD)nID);
 				}
 			}
+		}
+	}
+	/* 扉の追加マスが変わった（前か後に追加マスがある）なら、いる人の画面の追加マスを今の状態に直す */
+	if (pEvs) {
+		bool bNewExtra = false;
+		for (size_t i = 0; i < aEv.size(); i ++) {
+			if (aEv[i].byType == EVENTTYPE_DOOR && !aEv[i].aData.empty() && ((PEVENTINFO_DOOR)&aEv[i].aData[0])->byExtraCount) {
+				bNewExtra = true;
+			}
+		}
+		if (bNewExtra || !aOldExtraXY.empty()) {
+			SpaceDoorExtraRefresh(pMap, aOldExtraXY.empty() ? NULL : &aOldExtraXY[0], (int)aOldExtraXY.size());
 		}
 	}
 	SaveMapInfo();

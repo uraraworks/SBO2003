@@ -2883,6 +2883,13 @@ BOOL CheckCharBlockFor(PCHARINFO pViewer, DWORD dwMapID, DWORD dwX, DWORD dwY)
 	}
 
 	nPartsID = MapSwapParts (pMap, pViewer, nX, nY);
+	/* 扉の追加マスは、その空間の扉の開閉に合ったパーツで見る（サーバーのマップの中身は閉じた絵のまま書き換えない） */
+	{
+		WORD wDoorParts;
+		if (SpaceDoorExtraParts (pMap, pViewer ? pViewer->dwSpaceID : SPACE_NORMAL, nX, nY, &wDoorParts)) {
+			nPartsID = wDoorParts;
+		}
+	}
 	if (nPartsID >= g_wCountMapParts) {
 		return FALSE;
 	}
@@ -5503,9 +5510,9 @@ void RecvDataProcEVENTCHG(PBYTE pData, DWORD dwDataSize)
 
 	pEventData = &pMap->pEvent[pEvent->dwDataID];
 
-	if (pEventData->pData) {
-		SAFE_DELETE_ARRAY (pEventData->pData);
-	}
+	/* 前の中身は、扉の追加マスを引き継いでから捨てる */
+	PBYTE pOldData = (PBYTE)pEventData->pData;
+	BYTE byOldType = pEventData->byType;
 
 	pEventData->dwX = pEvent->dwX;
 	pEventData->dwY = pEvent->dwY;
@@ -5516,10 +5523,30 @@ void RecvDataProcEVENTCHG(PBYTE pData, DWORD dwDataSize)
 	if (pEvent->pData) {
 		nSize = GetEventDataSize (pEvent->byType);
 		pEventData->pData = new BYTE[nSize];
-		CopyMemory ((PBYTE)pEventData->pData, (PBYTE)pEvent + sizeof (CMDPARA_CHGEVENT), nSize);
+		ZeroMemory ((PBYTE)pEventData->pData, nSize);
+		/* 届いた分だけ写す（古いクライアントは、追加マスが付く前の短い扉を送ってくる） */
+		{
+			int nRecv = (s_dwRecvSize > sizeof (CMDPARA_CHGEVENT)) ? (int)(s_dwRecvSize - sizeof (CMDPARA_CHGEVENT)) : 0;
+			CopyMemory ((PBYTE)pEventData->pData, (PBYTE)pEvent + sizeof (CMDPARA_CHGEVENT), (nRecv < nSize) ? nRecv : nSize);
+		}
+		/* 扉の追加マスは管理者ウィンドウでは編集できないので、今の扉のものを引き継ぐ（前の扉の追加マスを消さない）。
+		   前が扉でなければ追加マスは無し */
+		if (pEvent->byType == EVENTTYPE_DOOR) {
+			PEVENTINFO_DOOR pNew = (PEVENTINFO_DOOR)pEventData->pData;
+			if (pOldData && (byOldType == EVENTTYPE_DOOR)) {
+				PEVENTINFO_DOOR pOld = (PEVENTINFO_DOOR)pOldData;
+				pNew->byExtraCount = (pOld->byExtraCount > MAX_DOOREXTRA) ? (BYTE)MAX_DOOREXTRA : pOld->byExtraCount;
+				CopyMemory (pNew->aExtra, pOld->aExtra, sizeof (pNew->aExtra));
+			} else {
+				pNew->byExtraCount = 0;
+				ZeroMemory (pNew->aExtra, sizeof (pNew->aExtra));
+			}
+		}
+		SAFE_DELETE_ARRAY (pOldData);
 
 	/* 詳細データが無い */
 	} else {
+		SAFE_DELETE_ARRAY (pOldData);
 		if ((pEventData->dwX == 0) && (pEventData->dwY == 0)) {
 			DeleteEvent (nNo, pEvent->dwDataID);
 			return;
