@@ -6342,6 +6342,16 @@ static BOOL IsInDoorArea(PEVENTINFO_DOOR pDoor, DWORD dwX, DWORD dwY)
 	return (dwX >= dwX1) && (dwX <= dwX2) && (dwY >= dwY1) && (dwY <= dwY2);
 }
 
+/* 閉じ込められた人のために、「敵を全部倒す」扉を数える範囲の外側（奥）から開ける
+   （広間側＝範囲の中からは開けられない。dwX/dwY は開ける人の今いるマス） */
+BOOL SpaceDoorOpenEnemyInside(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID, DWORD dwX, DWORD dwY)
+{
+	if ((pDoor == NULL) || (pDoor->byType != EVENTDOOTTYPE_ENEMY) || IsInDoorArea (pDoor, dwX, dwY)) {
+		return FALSE;
+	}
+	return SpaceDoorOpenRaw (dwMapID, pEvent, pDoor, dwSpaceID);
+}
+
 /* 扉の範囲にいる、その空間の生きている敵の数 */
 int SpaceDoorEnemyCount(DWORD dwMapID, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID)
 {

@@ -147,6 +147,7 @@ extern BOOL SpaceDoorIsOpen(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pD
 extern void SpaceDoorExtraRefresh(PMAPINFO pMap, const int *panOldXY, int nOld);	/* 扉の追加マスを外から変えた時、そのマップにいる人へ追加マスの今の絵を送り直す（panOldXY は変える前の追加マスの座標 x,y の並び。外れたマスはマップ本来の絵に戻す） */
 extern BOOL SpaceDoorExtraParts(PMAPINFO pMap, DWORD dwSpaceID, int x, int y, WORD *pwParts);	/* (x,y) が扉の追加マスなら、その空間の扉の開閉に合ったパーツを返す（通れる判定用。追加マスでなければ FALSE） */
 extern BOOL SpaceDoorOpen(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID);	/* 扉をその空間で開ける（開けたら TRUE。クライアントへもその空間にだけ知らせる） */
+extern BOOL SpaceDoorOpenEnemyInside(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID, DWORD dwX, DWORD dwY);	/* 閉じ込められた時、「敵を全部倒す」扉を数える範囲の外から開ける */
 extern BOOL SpaceDoorOpenKey(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID);	/* 「鍵」の扉をその空間で開ける（鍵を持っているかは呼ぶ側で確かめる） */
 extern void SpaceDoorProc(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoor);	/* 扉が閉まる時間を見る（ふつうの世界と、ほかの空間の分） */
 extern int  SpaceDoorEnemyCount(DWORD dwMapID, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID);	/* 扉の数える範囲にいる、その空間の生きている敵の数（「敵を全部倒す」扉用） */

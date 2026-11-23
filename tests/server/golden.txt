@@ -1504,6 +1504,9 @@ enemydoor sttmp child target count=1
 enemydoor sttmp child other count=0
 enemydoor sttmp clear count=0 open=1
 enemydoor sttmp none count=1 open=0
+enemydoor inside before open=0
+enemydoor inside hall open=0
+enemydoor inside back open=1 mapmsg=2
 == X2. DoorExtra ==
 doorextra api bad dx over ok=0 events=1
 doorextra api bad dx under ok=0 events=1

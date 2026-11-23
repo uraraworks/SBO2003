@@ -6217,6 +6217,13 @@ static BOOL OpenDoorFront(PCHARINFO pChar)
 				if (SpaceDoorIsOpen (pChar->dwMapID, pEvent, pDoor, pChar->dwSpaceID)) {
 					return FALSE;
 				}
+				/* 数える範囲の外（奥）にいる人は、閉じ込められないよう中から開けられる */
+				if (SpaceDoorOpenEnemyInside (pChar->dwMapID, pEvent, pDoor, pChar->dwSpaceID, pChar->dwX, pChar->dwY)) {
+					SendCmdMAPMSG (pChar->pID, "内側から扉を押し開けた。@2");
+					SendCmdPLAYSOUND (pChar->pID, SOUND_DOOR);
+					SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
+					return TRUE;
+				}
 				char szTmp[128];
 				int nEnemy = SpaceDoorEnemyCount (pChar->dwMapID, pDoor, pChar->dwSpaceID);
 				if (nEnemy > 0) {
