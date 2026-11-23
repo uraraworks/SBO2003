@@ -25,6 +25,8 @@
 #define MAPSWAPEDIT_GIVEITEM	(0x0010)						/* wGiveItem */
 #define MAPSWAPEDIT_MSG			(0x0020)						/* szMsg */
 #define MAPSWAPEDIT_MEMO		(0x0040)						/* szMemo */
+#define MAPSWAPEDIT_NEEDFLAG	(0x0080)						/* wNeedFlag（宝箱だけ。開けるのに要る印。FLAG_NOBIT=条件なし） */
+#define MAPSWAPEDIT_LOCKMSG		(0x0100)						/* szLockMsg（宝箱だけ。開けられない時の文） */
 
 /* 入力 1 行。値は範囲を確かめる前なので、広い型で持つ */
 typedef struct _MAPSWAPEDITROW {
@@ -40,7 +42,9 @@ typedef struct _MAPSWAPEDITROW {
 	long long		nGiveItem;									/* 渡す品 */
 	std::string		strMsg;										/* 調べた時の文 */
 	std::string		strMemo;									/* 管理用のメモ */
-	_MAPSWAPEDITROW() : nKind (0), nX (0), nY (0), nParts (0), dwHas (0), nFlag (0), nCmp (0), nChestNo (0), nBoxNo (0), nGiveItem (0) {}
+	long long		nNeedFlag;									/* 開けるのに要る印 */
+	std::string		strLockMsg;									/* 開けられない時の文 */
+	_MAPSWAPEDITROW() : nKind (0), nX (0), nY (0), nParts (0), dwHas (0), nFlag (0), nCmp (0), nChestNo (0), nBoxNo (0), nGiveItem (0), nNeedFlag (FLAG_NOBIT) {}
 } MAPSWAPEDITROW, *PMAPSWAPEDITROW;
 
 /* 表を確かめて w.aSwap・w.bySwapCount・w.wChestHigh・w.wBoxHigh に作る。

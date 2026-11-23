@@ -3977,7 +3977,7 @@ static void TestStory(const std::vector<int> &aLogin)
 		ZeroMemory(pMap->aSwap, sizeof(pMap->aSwap));
 		pMap->bySwapCount = 1;
 		pMap->aSwap[0].wX = (WORD)aCell[0].first; pMap->aSwap[0].wY = (WORD)aCell[0].second;
-		pMap->aSwap[0].byKind = MAPSWAPKIND_CHEST; pMap->aSwap[0].wChestNo = 5;
+		pMap->aSwap[0].byKind = MAPSWAPKIND_CHEST; pMap->aSwap[0].wChestNo = 5; pMap->aSwap[0].wNeedFlag = FLAG_NOBIT;
 		pMap->aSwap[0].wParts = 1;
 		ZeroMemory(pOwner->abyChestOpened, sizeof(pOwner->abyChestOpened));
 		WORD wBaseParts = MapSwapParts(pMap, pOwner, aCell[0].first, aCell[0].second);
@@ -10800,6 +10800,168 @@ static void TestMapSwap(const std::vector<int> &aLogin)
 		ZeroMemory(pA->waItem, sizeof(pA->waItem));
 	}
 
+	/* (e) 開ける条件（wNeedFlag・szLockMsg）：この印が立っている人だけ開けられる。ミニシナリオの鍵の宝箱用 */
+	{
+		auto ok = [](const std::string &s) { return (int)(s.find("\"ok\":true") != std::string::npos); };
+		const char *pszDefault = "いまは開けられないようだ。", *pszCustom = "カルバの話を聞いてからだ。";
+		auto Json = [&](const char *pszNeed, const char *pszLock) {
+			char sz[1024];
+			snprintf(sz, sizeof(sz), "{\"swaps\":[{\"kind\":1,\"x\":%d,\"y\":%d,\"wParts\":%d,\"wGiveItem\":%d,\"szMsg\":\"鍵を手に入れた！\",\"szMemo\":\"鍵の宝箱\"%s%s}]}",
+				ax, ay, (int)wWalk, (int)wItem, pszNeed, pszLock);
+			return std::string(sz);
+		};
+		/* 調べて、最初に届いたパケット（開けられない時は MAPMSG だけ）に文が入っているか */
+		auto Examine = [&](PCHARINFO p, const char *pszFind, int &nHit) {
+			std::vector<BYTE> aCap;
+			SvrSendCaptureBegin();
+			MimicExamine(p);
+			BOOL bCap = SvrSendCaptureEnd(aCap);
+			nHit = 0;
+			size_t nLen = strlen(pszFind);
+			if (bCap && aCap.size() >= nLen) {
+				for (size_t i = 0; i + nLen <= aCap.size(); i ++) {
+					if (memcmp(&aCap[i], pszFind, nLen) == 0) { nHit = 1; break; }
+				}
+			}
+			return bCap ? (int)aCap[0] : -1;
+		};
+		auto Clear = [&](PCHARINFO p) {
+			ZeroMemory(p->abyChestOpened, sizeof(p->abyChestOpened));
+			ZeroMemory(p->waItem, sizeof(p->waItem));
+			ZeroMemory(p->waImportant, sizeof(p->waImportant));
+			FlagBitSet(p->abyFlag, 241, FALSE); FlagBitSet(p->abyFlag, 0, FALSE);
+		};
+		Clear(pA); Clear(pB); Clear(pC);
+		QuestMovePC(pA, nMap, ax, ay + 1);
+		pA->byDirection = 0;
+
+		/* API：設定・読み出し・書き戻し */
+		std::string strSet = SwapApi(nMap, Json(",\"wNeedFlag\":241", "").c_str());
+		printf("mapswap lock api ok=%d need=%d lockmsg_empty=%d kind=%d\n", ok(strSet), (int)pMap->aSwap[0].wNeedFlag, (int)(pMap->aSwap[0].szLockMsg[0] == 0), (int)pMap->aSwap[0].byKind);
+		std::string strG = SboWebDataGet("map", nMap);
+		printf("mapswap lock api get need=%d lockmsg=%d\n", (int)(strG.find("\"wNeedFlag\":241,\"szLockMsg\":\"\"}") != std::string::npos),
+			(int)(strG.find("\"szLockMsg\"") != std::string::npos));
+		{
+			size_t nS = strG.find("\"swaps\":"), nE = strG.find(",\"events\":");
+			std::string strBody = "{" + ((nS != std::string::npos && nE != std::string::npos) ? strG.substr(nS, nE - nS) : std::string()) + "}";
+			MAPINFO Before = *pMap;
+			std::string strRound = SwapApi(nMap, strBody.c_str());
+			printf("mapswap lock api roundtrip ok=%d same=%d\n", ok(strRound), (int)(memcmp(Before.aSwap, pMap->aSwap, sizeof(Before.aSwap)) == 0));
+		}
+		/* 印が無い人（既定の文）：開かず、品も記録も無く、開いた絵にもならず、本人にだけ文が届く */
+		int nItem0 = QuestCountItem(pA, wItem);
+		int nSwap0 = SpCnt(pA, CMD_MAPSWAP), nMsg0 = SpCnt(pA, CMD_MAPMSG), nSys0 = SpCnt(pA, CMD_SYSMSG), nB0 = SpCnt(pB, CMD_MAPMSG);
+		int nHitDef = 0;
+		MimicExamine(pA);			/* 実際に送らせて数える */
+		int nFirst = Examine(pA, pszDefault, nHitDef);		/* もう一度（開けないので同じ）。最初に届くパケットの中身を見る */
+		printf("mapswap lock none default first=%d msg=%d item+=%d bit=%d swap=%d mapmsg=%d sys=%d b_msg=%d parts_closed=%d\n", nFirst == CMD_MAPMSG, nHitDef,
+			QuestCountItem(pA, wItem) - nItem0, (int)ChestOpenedGet(pA, pMap->aSwap[0].wChestNo), SpCnt(pA, CMD_MAPSWAP) - nSwap0,
+			SpCnt(pA, CMD_MAPMSG) - nMsg0, SpCnt(pA, CMD_SYSMSG) - nSys0, SpCnt(pB, CMD_MAPMSG) - nB0,
+			(int)(MapSwapParts(pMap, pA, ax, ay) == pMap->pwMap[ax + ay * pMap->nCX]));
+		/* 別の印（241 以外）が立っていても開かない */
+		FlagBitSet(pA->abyFlag, 240, TRUE); FlagBitSet(pA->abyFlag, 242, TRUE);
+		Examine(pA, pszDefault, nHitDef);
+		printf("mapswap lock other_flags msg=%d bit=%d item+=%d\n", nHitDef, (int)ChestOpenedGet(pA, pMap->aSwap[0].wChestNo), QuestCountItem(pA, wItem) - nItem0);
+		FlagBitSet(pA->abyFlag, 240, FALSE); FlagBitSet(pA->abyFlag, 242, FALSE);
+		/* szLockMsg を決めると、その文が出る */
+		SwapApi(nMap, Json(",\"wNeedFlag\":241", ",\"szLockMsg\":\"カルバの話を聞いてからだ。\"").c_str());
+		int nHitCustom = 0;
+		Examine(pA, pszCustom, nHitCustom);
+		nMsg0 = SpCnt(pA, CMD_MAPMSG);
+		Examine(pA, pszDefault, nHitDef);
+		printf("mapswap lock none custom msg=%d default_not=%d bit=%d item+=%d lockmsg=%s\n", nHitCustom, 1 - nHitDef,
+			(int)ChestOpenedGet(pA, pMap->aSwap[0].wChestNo), QuestCountItem(pA, wItem) - nItem0, pMap->aSwap[0].szLockMsg);
+		/* 管理者も同じ（印を見る。特別扱いしない） */
+		QuestMovePC(pA, nMap, aCell[0].first, aCell[0].second);
+		QuestMovePC(pC, nMap, ax, ay + 1);
+		pC->byDirection = 0;
+		int nItemC0 = QuestCountItem(pC, wItem);
+		int nHitC = 0;
+		Examine(pC, pszCustom, nHitC);
+		printf("mapswap lock admin none msg=%d bit=%d item+=%d\n", nHitC, (int)ChestOpenedGet(pC, pMap->aSwap[0].wChestNo), QuestCountItem(pC, wItem) - nItemC0);
+		FlagBitSet(pC->abyFlag, 241, TRUE);
+		int nMsgC0 = SpCnt(pC, CMD_MAPMSG);
+		MimicExamine(pC);
+		printf("mapswap lock admin flag opens mapmsg=%d bit=%d item+=%d\n", SpCnt(pC, CMD_MAPMSG) - nMsgC0, (int)ChestOpenedGet(pC, pMap->aSwap[0].wChestNo), QuestCountItem(pC, wItem) - nItemC0);
+		Clear(pC);
+		QuestMovePC(pC, nMap, aCell[1].first, aCell[1].second);
+		QuestMovePC(pA, nMap, ax, ay + 1);
+		pA->byDirection = 0;
+		/* 印が立つと、いつもの宝箱として開く（品・記録・文・開いた絵） */
+		FlagBitSet(pA->abyFlag, 241, TRUE);
+		nSwap0 = SpCnt(pA, CMD_MAPSWAP); nMsg0 = SpCnt(pA, CMD_MAPMSG);
+		MimicExamine(pA);
+		printf("mapswap lock flag opens item+=%d bit=%d swap=%d mapmsg=%d parts_open=%d b_closed=%d\n",
+			QuestCountItem(pA, wItem) - nItem0, (int)ChestOpenedGet(pA, pMap->aSwap[0].wChestNo), SpCnt(pA, CMD_MAPSWAP) - nSwap0, SpCnt(pA, CMD_MAPMSG) - nMsg0,
+			(int)(MapSwapParts(pMap, pA, ax, ay) == wWalk), (int)(MapSwapParts(pMap, pB, ax, ay) == pMap->pwMap[ax + ay * pMap->nCX]));
+		/* 開けた後は、印が消えても何も起きない（開けた記録が先） */
+		FlagBitSet(pA->abyFlag, 241, FALSE);
+		nMsg0 = SpCnt(pA, CMD_MAPMSG);
+		MimicExamine(pA);
+		printf("mapswap lock opened again item+=%d mapmsg=%d bit=%d\n", QuestCountItem(pA, wItem) - nItem0, SpCnt(pA, CMD_MAPMSG) - nMsg0, (int)ChestOpenedGet(pA, pMap->aSwap[0].wChestNo));
+		/* 持ち物がいっぱいで渡せなければ、印があっても記録を立てない（今までどおり） */
+		Clear(pA);
+		FlagBitSet(pA->abyFlag, 241, TRUE);
+		BYTE byFlgBak = g_aItemInfo[wItem]->byFlg;
+		g_aItemInfo[wItem]->byFlg |= ITEMFLG_IMPORTANT;
+		for (int i = 0; i < MAX_IMPORTANT; i ++) pA->waImportant[i] = wFill;
+		MimicExamine(pA);
+		printf("mapswap lock flag full bit=%d item+=%d\n", (int)ChestOpenedGet(pA, pMap->aSwap[0].wChestNo), QuestCountItem(pA, wItem));
+		g_aItemInfo[wItem]->byFlg = byFlgBak;
+		Clear(pA);
+
+		/* 条件なし（65535 を書く・省く）は今までどおり、印が無くても開く */
+		for (int nCase = 0; nCase < 2; nCase ++) {
+			SwapApi(nMap, Json(nCase == 0 ? ",\"wNeedFlag\":65535" : "", "").c_str());
+			nItem0 = QuestCountItem(pA, wItem);
+			nMsg0 = SpCnt(pA, CMD_MAPMSG);
+			MimicExamine(pA);
+			printf("mapswap lock nocond case=%d need=%d mapmsg=%d item+=%d bit=%d\n", nCase, (int)pMap->aSwap[0].wNeedFlag, SpCnt(pA, CMD_MAPMSG) - nMsg0, QuestCountItem(pA, wItem) - nItem0,
+				(int)ChestOpenedGet(pA, pMap->aSwap[0].wChestNo));
+			Clear(pA);
+		}
+		/* 印 0 を条件にできる（65535 だけが条件なし）。範囲 1023 まで */
+		SwapApi(nMap, Json(",\"wNeedFlag\":0", "").c_str());
+		int nHit0 = 0;
+		Examine(pA, pszDefault, nHit0);
+		int nBit0 = (int)ChestOpenedGet(pA, pMap->aSwap[0].wChestNo);
+		FlagBitSet(pA->abyFlag, 0, TRUE);
+		MimicExamine(pA);
+		printf("mapswap lock flag0 need=%d locked=%d bit_before=%d opens=%d\n", (int)pMap->aSwap[0].wNeedFlag, nHit0, nBit0, (int)ChestOpenedGet(pA, pMap->aSwap[0].wChestNo));
+		Clear(pA);
+		printf("mapswap lock api 1023 ok=%d need=%d\n", ok(SwapApi(nMap, Json(",\"wNeedFlag\":1023", "").c_str())), (int)pMap->aSwap[0].wNeedFlag);
+
+		/* 断る：範囲の外・文字でない・長すぎる文・kind 0/2 に付ける。表は変わらない */
+		SwapApi(nMap, Json(",\"wNeedFlag\":241", ",\"szLockMsg\":\"カルバの話を聞いてからだ。\"").c_str());
+		MAPINFO Keep = *pMap;
+		std::string strLong(MAX_MAPSWAPMSG, 'a');
+		char szOne[512];
+		struct { const char *pszName; std::string strJson; } aBad[8];
+		int nBad = 0;
+		aBad[nBad ++] = { "need1024", Json(",\"wNeedFlag\":1024", "") };
+		aBad[nBad ++] = { "need65534", Json(",\"wNeedFlag\":65534", "") };
+		aBad[nBad ++] = { "need-1", Json(",\"wNeedFlag\":-1", "") };
+		aBad[nBad ++] = { "need_str", Json(",\"wNeedFlag\":\"241\"", "") };
+		aBad[nBad ++] = { "lock_long", Json(",\"wNeedFlag\":241", (",\"szLockMsg\":\"" + strLong + "\"").c_str()) };
+		snprintf(szOne, sizeof(szOne), "{\"swaps\":[{\"kind\":0,\"x\":%d,\"y\":%d,\"wFlag\":3,\"wParts\":%d,\"wNeedFlag\":241}]}", ax, ay, (int)wWalk);
+		aBad[nBad ++] = { "kind0_need", szOne };
+		snprintf(szOne, sizeof(szOne), "{\"swaps\":[{\"kind\":2,\"x\":%d,\"y\":%d,\"wParts\":%d,\"szLockMsg\":\"x\"}]}", ax, ay, (int)wWalk);
+		aBad[nBad ++] = { "kind2_lockmsg", szOne };
+		snprintf(szOne, sizeof(szOne), "{\"swaps\":[{\"kind\":0,\"x\":%d,\"y\":%d,\"wFlag\":3,\"wParts\":%d,\"szLockMsg\":\"x\"}]}", ax, ay, (int)wWalk);
+		aBad[nBad ++] = { "kind0_lockmsg", szOne };
+		for (int i = 0; i < nBad; i ++) {
+			printf("mapswap lock api reject %s ok=%d same=%d\n", aBad[i].pszName, ok(SwapApi(nMap, aBad[i].strJson.c_str())),
+				(int)(memcmp(Keep.aSwap, pMap->aSwap, sizeof(Keep.aSwap)) == 0 && Keep.bySwapCount == pMap->bySwapCount));
+		}
+		snprintf(szOne, sizeof(szOne), "{\"swaps\":[{\"kind\":2,\"x\":%d,\"y\":%d,\"wParts\":%d,\"wNeedFlag\":241}]}", ax, ay, (int)wWalk);
+		printf("mapswap lock api reject kind2_need ok=%d\n", ok(SwapApi(nMap, szOne)));
+		/* 長さちょうど（95 バイト）は通る */
+		std::string strMax(MAX_MAPSWAPMSG - 1, 'b');
+		printf("mapswap lock api max len ok=%d len=%d\n", ok(SwapApi(nMap, Json(",\"wNeedFlag\":241", (",\"szLockMsg\":\"" + strMax + "\"").c_str()).c_str())), (int)strlen(pMap->aSwap[0].szLockMsg));
+		Clear(pA); Clear(pB); Clear(pC);
+		QuestMovePC(pA, nMap, aCell[0].first, aCell[0].second);
+	}
+
 	/* 片付け：マップを元に戻す */
 	QuestMovePC(pA, nMap, aCell[0].first, aCell[0].second);
 	SwapRestore(pMap, Bak);
@@ -10876,6 +11038,7 @@ static void TestAdminChest(const std::vector<int> &aLogin)
 		pSw->wX = (WORD)aCell[3 + (k % 5)].first;
 		pSw->wY = (WORD)aCell[3 + (k % 5)].second;
 		pSw->byKind = MAPSWAPKIND_CHEST;
+		pSw->wNeedFlag = FLAG_NOBIT;
 		pSw->wParts = wWalk;
 		pSw->wChestNo = (WORD)(109 - k);		/* 並びは逆順で持たせ、宝箱番号の順に直って届くか見る */
 	}
@@ -11122,6 +11285,7 @@ static void TestAdminSwap(const std::vector<int> &aLogin)
 		g_aMapInfo[nOther]->bySwapCount = 1;
 		g_aMapInfo[nOther]->aSwap[0].byKind = MAPSWAPKIND_CHEST;
 		g_aMapInfo[nOther]->aSwap[0].wChestNo = 1500;
+		g_aMapInfo[nOther]->aSwap[0].wNeedFlag = FLAG_NOBIT;
 		g_aMapInfo[nOther]->aSwap[0].wParts = wWalk;
 		int sw0 = SpCnt(pA, CMD_MAPSWAP), nMask = 0, nMsg = 0, nTry = 0;
 		struct { BYTE kind; BYTE has; } aT[] = {
@@ -11201,6 +11365,54 @@ static void TestAdminSwap(const std::vector<int> &aLogin)
 		int sw0 = SpCnt(pA, CMD_MAPSWAP);
 		BOOL bOk = AdminUndoExec(ADMINSCR_SWAP, 0, 0, strMsg, wCount);
 		printf("adminswap undo ok=%d count=%d swap=%d high_kept=%d\n", (int)bOk, (int)pMap->bySwapCount, SpCnt(pA, CMD_MAPSWAP) - sw0, (int)pMap->wChestHigh - nHigh0);
+	}
+
+	/* (f) 開ける条件（wNeedFlag・szLockMsg）：管理者ウィンドウの行の受け渡しで消えない・壊れない */
+	{
+		int sw0 = SpCnt(pA, CMD_MAPSWAP);
+		/* 足す（条件を指定した行。一覧にも入って届く） */
+		AdminSwapRow(R, MAPSWAPKIND_CHEST, aCell[4].first, aCell[4].second, wWalk, ADMINSWAPHAS_MEMO | ADMINSWAPHAS_NEED | ADMINSWAPHAS_LOCKMSG);
+		R.wNeedFlag = 241; strcpy(R.szLockMsg, "錠が固い。"); strcpy(R.szMemo, "鍵");
+		AdminSwapSend(pC, ADMINSWAP_ADD, dwMapID, 0, &R, FALSE, Res);
+		printf("adminswap lock add count=%d need=%d lockmsg=%s memo=%s swap=%d\n", (int)pMap->bySwapCount, (int)pMap->aSwap[0].wNeedFlag, pMap->aSwap[0].szLockMsg, pMap->aSwap[0].szMemo,
+			SpCnt(pA, CMD_MAPSWAP) - sw0);
+		/* ウィンドウから直す（入力欄が無いので条件の指定が無い行）：条件はそのまま残る */
+		AdminSwapRow(R, MAPSWAPKIND_CHEST, aCell[4].first, aCell[4].second, wWalk, ADMINSWAPHAS_NO | ADMINSWAPHAS_MEMO);
+		R.wNo = pMap->aSwap[0].wChestNo; strcpy(R.szMemo, "鍵・直した");
+		AdminSwapSend(pC, ADMINSWAP_SET, dwMapID, 0, &R, FALSE, Res);
+		printf("adminswap lock set keeps need=%d lockmsg=%s memo=%s\n", (int)pMap->aSwap[0].wNeedFlag, pMap->aSwap[0].szLockMsg, pMap->aSwap[0].szMemo);
+		/* ほかの行を足して消しても残る */
+		AdminSwapRow(R, MAPSWAPKIND_FLAG, aCell[5].first, aCell[5].second, wWalk, ADMINSWAPHAS_FLAG);
+		R.wFlag = 9;
+		AdminSwapSend(pC, ADMINSWAP_ADD, dwMapID, 0, &R, FALSE, Res);
+		AdminSwapSend(pC, ADMINSWAP_DEL, dwMapID, 1, NULL, FALSE, Res);
+		printf("adminswap lock other rows need=%d lockmsg=%s count=%d\n", (int)pMap->aSwap[0].wNeedFlag, pMap->aSwap[0].szLockMsg, (int)pMap->bySwapCount);
+		/* 取得（INFO）の行に条件が入り、そのまま RESTORE で戻せる */
+		BOOL bGet = AdminSwapSend(pC, ADMINSWAP_GET, dwMapID, 0, NULL, TRUE, Res);
+		printf("adminswap lock info get=%d has=%d need=%d lockmsg=%s\n", (int)bGet, (int)((Res.aRow[0].byHas & (ADMINSWAPHAS_NEED | ADMINSWAPHAS_LOCKMSG)) == (ADMINSWAPHAS_NEED | ADMINSWAPHAS_LOCKMSG)),
+			(int)Res.aRow[0].wNeedFlag, Res.aRow[0].szLockMsg);
+		CMDPARA_ADMINSWAP Info = Res;
+		AdminSwapRow(R, MAPSWAPKIND_CHEST, aCell[4].first, aCell[4].second, wWalk, ADMINSWAPHAS_NEED);
+		R.wNeedFlag = 300;											/* ウィンドウ以外（API 相当）で条件を直せる */
+		AdminSwapSend(pC, ADMINSWAP_SET, dwMapID, 0, &R, FALSE, Res);
+		printf("adminswap lock set need=%d lockmsg=%s\n", (int)pMap->aSwap[0].wNeedFlag, pMap->aSwap[0].szLockMsg);
+		{
+			PCMDPARA_ADMINSWAP pRes = new CMDPARA_ADMINSWAP(Info);
+			pRes->byCmd = CMD_ADMINSWAP; pRes->byCmdSub = ADMINSWAP_RESTORE;
+			TestRecv(pC, pRes, sizeof(CMDPARA_ADMINSWAP));
+			delete pRes;
+		}
+		printf("adminswap lock restore need=%d lockmsg=%s count=%d\n", (int)pMap->aSwap[0].wNeedFlag, pMap->aSwap[0].szLockMsg, (int)pMap->bySwapCount);
+		/* 範囲の外・種類違い（印の行に条件）は断る */
+		MAPINFO Keep2 = *pMap;
+		AdminSwapRow(R, MAPSWAPKIND_CHEST, aCell[4].first, aCell[4].second, wWalk, ADMINSWAPHAS_NEED);
+		R.wNeedFlag = 1024;
+		AdminSwapSend(pC, ADMINSWAP_SET, dwMapID, 0, &R, FALSE, Res);
+		int nR1 = (memcmp(Keep2.aSwap, pMap->aSwap, sizeof(Keep2.aSwap)) == 0);
+		AdminSwapRow(R, MAPSWAPKIND_FLAG, aCell[5].first, aCell[5].second, wWalk, ADMINSWAPHAS_FLAG | ADMINSWAPHAS_NEED);
+		R.wFlag = 9; R.wNeedFlag = 241;
+		AdminSwapSend(pC, ADMINSWAP_ADD, dwMapID, 0, &R, FALSE, Res);
+		printf("adminswap lock rejected range_same=%d kind0_same=%d\n", nR1, (int)(memcmp(Keep2.aSwap, pMap->aSwap, sizeof(Keep2.aSwap)) == 0 && Keep2.bySwapCount == pMap->bySwapCount));
 	}
 
 	/* 片付け */
@@ -11577,6 +11789,9 @@ static void TestMapSwapSave(const std::vector<int> &aLogin)
 	pMap->bySwapCount = 4;
 	pMap->aSwap[0].wX = 1; pMap->aSwap[0].wY = 2; pMap->aSwap[0].byKind = MAPSWAPKIND_CHEST; pMap->aSwap[0].wParts = 1; pMap->aSwap[0].wGiveItem = 1; pMap->aSwap[0].wChestNo = 77;
 	strcpy(pMap->aSwap[0].szMsg, "宝箱を開けた"); strcpy(pMap->aSwap[0].szMemo, "ルシー 港の倉庫の奥");
+	for (int i = 0; i < 4; i ++) pMap->aSwap[i].wNeedFlag = FLAG_NOBIT;
+	pMap->aSwap[0].wNeedFlag = 241; strcpy(pMap->aSwap[0].szLockMsg, "カルバの話を聞いてからだ。");		/* 開ける条件（宝箱だけ） */
+	pMap->aSwap[2].wNeedFlag = 0;				/* 印 0 も条件にできる（65535 だけが条件なし） */
 	pMap->aSwap[1].wX = 3; pMap->aSwap[1].wY = 4; pMap->aSwap[1].byKind = MAPSWAPKIND_FLAG; pMap->aSwap[1].wFlag = 1023; pMap->aSwap[1].byCmp = MAPSWAPCMP_OFF; pMap->aSwap[1].wParts = 2;
 	pMap->aSwap[2].wX = 5; pMap->aSwap[2].wY = 6; pMap->aSwap[2].byKind = MAPSWAPKIND_CHEST; pMap->aSwap[2].wParts = 3; pMap->aSwap[2].wChestNo = 5;
 	pMap->aSwap[3].wX = 7; pMap->aSwap[3].wY = 8; pMap->aSwap[3].byKind = MAPSWAPKIND_RECYCLE; pMap->aSwap[3].wParts = 4; pMap->aSwap[3].wBoxNo = 6;
@@ -11600,6 +11815,9 @@ static void TestMapSwapSave(const std::vector<int> &aLogin)
 			(int)pL->aSwap[2].wX, (int)pL->aSwap[2].wChestNo, (int)pL->aSwap[2].wParts);
 		printf("mapswap map recycle row3=%d,%d,%d,%d,%d,%s boxhigh=%d chesthigh=%d\n", (int)pL->aSwap[3].wX, (int)pL->aSwap[3].wY, (int)pL->aSwap[3].byKind,
 			(int)pL->aSwap[3].wParts, (int)pL->aSwap[3].wBoxNo, pL->aSwap[3].szMemo, (int)pL->wBoxHigh, (int)pL->wChestHigh);
+		printf("mapswap map lock row0=%d,%s row1=%d,%d row2=%d,%d row3=%d,%d\n", (int)pL->aSwap[0].wNeedFlag, pL->aSwap[0].szLockMsg,
+			(int)pL->aSwap[1].wNeedFlag, (int)pL->aSwap[1].szLockMsg[0], (int)pL->aSwap[2].wNeedFlag, (int)pL->aSwap[2].szLockMsg[0],
+			(int)pL->aSwap[3].wNeedFlag, (int)pL->aSwap[3].szLockMsg[0]);
 		/* 差し替えの無い別のマップ（古いデータと同じ）：読み直しても 0 件・マス目は同じ */
 		if (nMaps >= 2) {
 			PMAPINFO pOrig = g_aMapInfo[1], pOld = g_aMapInfo[nMaps + 1];
@@ -11612,6 +11830,30 @@ static void TestMapSwapSave(const std::vector<int> &aLogin)
 	/* 読み込みは末尾に足されるので、足された分は外して元に戻す（あとのテストに響かないように） */
 	for (int i = g_aMapInfo.GetSize() - 1; i >= nMaps; i --) {
 		g_aMapInfo.RemoveAt(i);
+	}
+	/* 開ける条件を決めた宝箱が 1 つも無いマップ（古いデータと同じ形。項目 aSwapLock を書かない）：条件なし・文は空で読める。
+	   先頭の宝箱の文だけ（印は条件なしのまま）でも書いて読める */
+	for (int nRound = 0; nRound < 2; nRound ++) {
+		ZeroMemory(pMap->aSwap, sizeof(pMap->aSwap));
+		pMap->bySwapCount = 2;
+		pMap->aSwap[0].wX = 1; pMap->aSwap[0].wY = 2; pMap->aSwap[0].byKind = MAPSWAPKIND_CHEST; pMap->aSwap[0].wParts = 1; pMap->aSwap[0].wChestNo = 77;
+		pMap->aSwap[1].wX = 3; pMap->aSwap[1].wY = 4; pMap->aSwap[1].byKind = MAPSWAPKIND_FLAG; pMap->aSwap[1].wFlag = 5; pMap->aSwap[1].wParts = 2;
+		for (int i = 0; i < 2; i ++) pMap->aSwap[i].wNeedFlag = FLAG_NOBIT;
+		if (nRound == 1) strcpy(pMap->aSwap[0].szLockMsg, "文だけ");
+		SaveMapInfo();
+		SwapRestore(pMap, Bak);
+		LoadMapInfo();
+		int nAdd2 = g_aMapInfo.GetSize() - nMaps;
+		if (nAdd2 >= 1) {
+			PMAPINFO pL = g_aMapInfo[nMaps + nMap];
+			printf("mapswap map nolock round=%d count=%d row0=%d,%d,%s row1=%d,%d,%d\n", nRound, (int)pL->bySwapCount, (int)pL->aSwap[0].wChestNo, (int)pL->aSwap[0].wNeedFlag,
+				pL->aSwap[0].szLockMsg, (int)pL->aSwap[1].wFlag, (int)pL->aSwap[1].wNeedFlag, (int)pL->aSwap[1].szLockMsg[0]);
+		} else {
+			printf("mapswap map nolock round=%d added=%d\n", nRound, nAdd2);
+		}
+		for (int i = g_aMapInfo.GetSize() - 1; i >= nMaps; i --) {
+			g_aMapInfo.RemoveAt(i);
+		}
 	}
 	g_dwNewMapID = dwNewMapIDBak;
 }

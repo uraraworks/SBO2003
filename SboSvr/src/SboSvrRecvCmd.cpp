@@ -14462,7 +14462,19 @@ void RecvDataProcADMINSWAP(PBYTE pData, DWORD dwDataSize)
 			if (bySub == ADMINSWAP_DEL) {
 				aRow.erase (aRow.begin () + pPara->wIndex);
 			} else {
+				/* 管理者ウィンドウには開ける条件の入力欄が無いので、行に指定が無ければ、同じ宝箱の今の条件をそのまま残す */
+				MAPSWAPEDITROW Old = aRow[pPara->wIndex];
 				MapSwapEditFromWire (pPara->Row, aRow[pPara->wIndex]);
+				if ((Old.nKind == MAPSWAPKIND_CHEST) && (aRow[pPara->wIndex].nKind == MAPSWAPKIND_CHEST)) {
+					if (!(aRow[pPara->wIndex].dwHas & MAPSWAPEDIT_NEEDFLAG)) {
+						aRow[pPara->wIndex].dwHas |= MAPSWAPEDIT_NEEDFLAG;
+						aRow[pPara->wIndex].nNeedFlag = Old.nNeedFlag;
+					}
+					if (!(aRow[pPara->wIndex].dwHas & MAPSWAPEDIT_LOCKMSG)) {
+						aRow[pPara->wIndex].dwHas |= MAPSWAPEDIT_LOCKMSG;
+						aRow[pPara->wIndex].strLockMsg = Old.strLockMsg;
+					}
+				}
 			}
 		}
 	}

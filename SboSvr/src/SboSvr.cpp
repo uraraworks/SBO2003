@@ -1527,7 +1527,24 @@ BOOL SaveMapInfo(void)
 		}
 		/* 印で変わるマス（無いマップは書かない。古いデータはそのまま読める）と、使った宝箱番号の覚え */
 		if (pMap->bySwapCount) {
-			WriteData (hFile, "aSwap", sizeof (MAPSWAP) * pMap->bySwapCount, (PBYTE)pMap->aSwap);
+			/* aSwap は昔と同じ 1 行の大きさ（MAPSWAP_BASESIZE）で書く。後から足した欄（開けるのに要る印・開けられない時の文）は
+			   別の項目 aSwapLock に書く（古いデータはそのまま読め、古いサーバーも aSwap を読める） */
+			std::vector<BYTE> abySwap (MAPSWAP_BASESIZE * pMap->bySwapCount);
+			std::vector<BYTE> abyLock (MAPSWAP_LOCKSIZE * pMap->bySwapCount, 0);
+			BOOL bLock = FALSE;
+			for (int nSw = 0; nSw < pMap->bySwapCount; nSw ++) {
+				const MAPSWAP *pSw = &pMap->aSwap[nSw];
+				memcpy (&abySwap[MAPSWAP_BASESIZE * nSw], pSw, MAPSWAP_BASESIZE);
+				memcpy (&abyLock[MAPSWAP_LOCKSIZE * nSw], &pSw->wNeedFlag, sizeof (pSw->wNeedFlag));
+				memcpy (&abyLock[MAPSWAP_LOCKSIZE * nSw + sizeof (pSw->wNeedFlag)], pSw->szLockMsg, sizeof (pSw->szLockMsg));
+				if ((pSw->wNeedFlag != FLAG_NOBIT) || pSw->szLockMsg[0]) {
+					bLock = TRUE;
+				}
+			}
+			WriteData (hFile, "aSwap", abySwap.size (), &abySwap[0]);
+			if (bLock) {		/* 条件を決めた宝箱がある時だけ書く */
+				WriteData (hFile, "aSwapLock", abyLock.size (), &abyLock[0]);
+			}
 		}
 		if (pMap->wChestHigh) {
 			WriteData (hFile, "wChestHigh", sizeof (pMap->wChestHigh), (PBYTE)&pMap->wChestHigh);
@@ -1781,9 +1798,11 @@ BOOL LoadMapInfo(void)
 					CopyMemory (pMap->aDarkArea, &pData[dwFilePtr], sizeof (MAPDARKAREA) * pMap->byDarkAreaCount);
 					dwFilePtr += dwSize;	continue;
 				} else if (strcmp (pszTmp, "aSwap") == 0) {					/* 印で変わるマス */
-					pMap->bySwapCount = (BYTE)min (dwSize / sizeof (MAPSWAP), (DWORD)MAX_MAPSWAP);
-					CopyMemory (pMap->aSwap, &pData[dwFilePtr], sizeof (MAPSWAP) * pMap->bySwapCount);
+					pMap->bySwapCount = (BYTE)min (dwSize / MAPSWAP_BASESIZE, (DWORD)MAX_MAPSWAP);
 					for (int nSw = 0; nSw < pMap->bySwapCount; nSw ++) {
+						CopyMemory (&pMap->aSwap[nSw], &pData[dwFilePtr + MAPSWAP_BASESIZE * nSw], MAPSWAP_BASESIZE);
+						pMap->aSwap[nSw].wNeedFlag = FLAG_NOBIT;			/* 項目 aSwapLock が無い古いデータは条件なし */
+						ZeroMemory (pMap->aSwap[nSw].szLockMsg, sizeof (pMap->aSwap[nSw].szLockMsg));
 						pMap->aSwap[nSw].szMsg[MAX_MAPSWAPMSG - 1] = 0;
 						pMap->aSwap[nSw].szMemo[MAX_MAPSWAPMEMO - 1] = 0;
 						if ((pMap->aSwap[nSw].byKind == MAPSWAPKIND_CHEST) && (pMap->aSwap[nSw].wChestNo < MAX_CHESTNO)) {
@@ -1791,6 +1810,19 @@ BOOL LoadMapInfo(void)
 						}
 						if ((pMap->aSwap[nSw].byKind == MAPSWAPKIND_RECYCLE) && (pMap->aSwap[nSw].wBoxNo <= MAX_RECYCLEBOX)) {
 							pMap->wBoxHigh = max (pMap->wBoxHigh, pMap->aSwap[nSw].wBoxNo);
+						}
+					}
+					dwFilePtr += dwSize;	continue;
+				} else if (strcmp (pszTmp, "aSwapLock") == 0) {				/* 宝箱を開けるのに要る印と、開けられない時の文（aSwap の後ろに書かれる） */
+					int nLockCount = (int)min (dwSize / MAPSWAP_LOCKSIZE, (DWORD)pMap->bySwapCount);
+					for (int nSw = 0; nSw < nLockCount; nSw ++) {
+						const BYTE *pLock = &pData[dwFilePtr + MAPSWAP_LOCKSIZE * nSw];
+						memcpy (&pMap->aSwap[nSw].wNeedFlag, pLock, sizeof (pMap->aSwap[nSw].wNeedFlag));
+						memcpy (pMap->aSwap[nSw].szLockMsg, pLock + sizeof (pMap->aSwap[nSw].wNeedFlag), sizeof (pMap->aSwap[nSw].szLockMsg));
+						pMap->aSwap[nSw].szLockMsg[MAX_MAPSWAPMSG - 1] = 0;
+						if ((pMap->aSwap[nSw].byKind != MAPSWAPKIND_CHEST) || ((pMap->aSwap[nSw].wNeedFlag >= MAX_FLAGBIT) && (pMap->aSwap[nSw].wNeedFlag != FLAG_NOBIT))) {
+							pMap->aSwap[nSw].wNeedFlag = FLAG_NOBIT;		/* 宝箱以外・範囲外の印は条件なしに戻す */
+							pMap->aSwap[nSw].szLockMsg[0] = 0;
 						}
 					}
 					dwFilePtr += dwSize;	continue;

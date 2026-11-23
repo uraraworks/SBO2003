@@ -690,6 +690,14 @@ BOOL MapSwapExamine(PCHARINFO pChar)
 		if (ChestOpenedGet (pChar, pSwap->wChestNo)) {
 			continue;			/* もう開けた人は何も起きない（ほかのイベントに任せる） */
 		}
+		/* 開けるのに要る印（wNeedFlag）が立っていない人は開けられない（品も渡さず、記録も立てず、開いた絵にもしない）。
+		   管理者も同じ（印を見る）。文は宝箱の szMsg と同じ出し方でその人だけに出す */
+		if ((pSwap->wNeedFlag != FLAG_NOBIT) && !((pSwap->wNeedFlag < MAX_FLAGBIT) && FlagBitGet (pChar->abyFlag, pSwap->wNeedFlag))) {
+			SboTextCopy (szMsg, MAX_MAPSWAPMSG + 4, pSwap->szLockMsg[0] ? pSwap->szLockMsg : "いまは開けられないようだ。");
+			ItemMsgAddWait (szMsg, sizeof (szMsg));
+			SendCmdMAPMSG (pChar->pID, szMsg);
+			return TRUE;
+		}
 		/* 品を渡す（宝箱・会話データと同じ渡し方と知らせ）。受け取れない時は記録を立てず、同じ知らせだけ出る */
 		/* 知らせの白文字は、文の窓を送った後に流す（窓が開いたまま重ならないように）。失敗の知らせは窓が無いのでその場で送る */
 		QUESTNOTICEVEC vLater;

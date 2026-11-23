@@ -2128,7 +2128,9 @@ typedef struct _MAPPARTSLIGHT {
        wFlag の印を見る。byCmp=0 は「印が立っている時に差し替え」、1 は「印が立っていない時に差し替え」。
    (b) MAPSWAPKIND_CHEST 宝箱：wChestNo（全マップ通しの番号 0〜2047）の「開けた宝箱の記録」（キャラの abyChestOpened）が
        立っている人にだけ wParts（開いた後のパーツ）に差し替える。記録がまだ立っていない人が目の前のそのマスを調べると、
-       wGiveItem を渡して（持ち物がいっぱいなら渡さず、記録も立てない）記録を立てて szMsg を出す。印は使わない
+       wGiveItem を渡して（持ち物がいっぱいなら渡さず、記録も立てない）記録を立てて szMsg を出す。印で変わる行の wFlag・byCmp は使わない。
+       wNeedFlag（キャラの印 0〜1023。FLAG_NOBIT=条件なし）があれば、その印が立っている人だけ開けられる。立っていない人が調べると、
+       開けず（品を渡さない・記録も立てない・開いた絵にしない）szLockMsg（空なら既定文）をその人だけに出す
    (c) MAPSWAPKIND_RECYCLE リサイクル箱（docs/recycle.md）：wBoxNo（全マップ通しの番号 1〜MAX_RECYCLEBOX。宝箱の番号とは別。
        中身はこの番号ごとに持つ）。閉じた絵は「ふだんのマップのパーツそのもの」で、wParts は開いた絵。正面で調べた人の画面だけ、
        窓を開いている間 wParts に差し替わる（キャラの wRecycleBox が自分の番号の時）。印・開けた記録は使わない */
@@ -2154,7 +2156,12 @@ typedef struct _MAPSWAP {
 	};
 	char			szMsg[MAX_MAPSWAPMSG];							/* 調べた時の文(UTF-8。空=無し。宝箱の行) */
 	char			szMemo[MAX_MAPSWAPMEMO];						/* 管理用のメモ(UTF-8。例「ルシー 港の倉庫の奥」。プレイヤーには出さない) */
+	/* ここから後ろは後から足した欄。マップの保存では aSwap には含めず、別の項目 aSwapLock に書く（古いデータ・古いサーバーと互換） */
+	WORD			wNeedFlag;										/* 開けるのに要る印の番号(0〜1023。FLAG_NOBIT=条件なし。宝箱の行) */
+	char			szLockMsg[MAX_MAPSWAPMSG];						/* 印が無くて開けられない時の文(UTF-8。空=既定文。宝箱の行) */
 } MAPSWAP, *PMAPSWAP;
+#define MAPSWAP_BASESIZE	(offsetof (MAPSWAP, wNeedFlag))		/* 保存の aSwap の 1 行の大きさ(wNeedFlag より前) */
+#define MAPSWAP_LOCKSIZE	(sizeof (WORD) + MAX_MAPSWAPMSG)		/* 保存の aSwapLock の 1 行の大きさ(wNeedFlag と szLockMsg) */
 
 /* マップ情報 */
 typedef struct _MAPINFO {
@@ -4084,6 +4091,8 @@ enum {
 #define ADMINSWAPHAS_GIVEITEM	(0x08)							/* wGiveItem（宝箱の行） */
 #define ADMINSWAPHAS_MSG		(0x10)							/* szMsg（宝箱の行） */
 #define ADMINSWAPHAS_MEMO		(0x20)							/* szMemo（宝箱・リサイクル箱の行） */
+#define ADMINSWAPHAS_NEED		(0x40)							/* wNeedFlag（宝箱の行。開けるのに要る印。FLAG_NOBIT=条件なし） */
+#define ADMINSWAPHAS_LOCKMSG	(0x80)							/* szLockMsg（宝箱の行。開けられない時の文） */
 typedef struct _ADMINSWAPROW {
 	BYTE		byKind;												/* MAPSWAPKIND_* */
 	BYTE		byHas;												/* 指定した欄（ADMINSWAPHAS_* の組み合わせ。INFO では、その種類で使う欄が入る） */
@@ -4097,6 +4106,8 @@ typedef struct _ADMINSWAPROW {
 	WORD		wNo;												/* 宝箱の番号（宝箱の行）・リサイクル箱の番号（リサイクル箱の行） */
 	char		szMsg[MAX_MAPSWAPMSG];								/* 調べた時の文（宝箱の行） */
 	char		szMemo[MAX_MAPSWAPMEMO];							/* 管理用のメモ（宝箱・リサイクル箱の行） */
+	WORD		wNeedFlag;											/* 開けるのに要る印（宝箱の行。FLAG_NOBIT=条件なし。管理者ウィンドウには入力欄が無く、サーバーが保持する） */
+	char		szLockMsg[MAX_MAPSWAPMSG];							/* 開けられない時の文（宝箱の行） */
 } ADMINSWAPROW, *PADMINSWAPROW;
 
 /* 管理者ウィンドウの「印で変わるマス・宝箱」（送受信とも同じ形） */

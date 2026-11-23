@@ -1963,7 +1963,8 @@ static std::string MapJson(PMAPINFO pMap)
 				",\"wParts\":" + JsonNum(pSw->wParts);
 		if (pSw->byKind == MAPSWAPKIND_CHEST) {
 			out += ",\"wChestNo\":" + JsonNum(pSw->wChestNo) + ",\"wGiveItem\":" + JsonNum(pSw->wGiveItem) +
-					",\"szMsg\":" + JsonStr(pSw->szMsg) + ",\"szMemo\":" + JsonStr(pSw->szMemo);
+					",\"szMsg\":" + JsonStr(pSw->szMsg) + ",\"szMemo\":" + JsonStr(pSw->szMemo) +
+					",\"wNeedFlag\":" + JsonNum(pSw->wNeedFlag) + ",\"szLockMsg\":" + JsonStr(pSw->szLockMsg);
 		} else if (pSw->byKind == MAPSWAPKIND_RECYCLE) {
 			out += ",\"wBoxNo\":" + JsonNum(pSw->wBoxNo) + ",\"szMemo\":" + JsonStr(pSw->szMemo);
 		} else {
@@ -3217,7 +3218,7 @@ static std::string MapWorkJson(PMAPINFO pBase, const std::string &strName, const
    ゲーム内の管理者ウィンドウと同じ MapSwapBuild（SboSvrMapSwapEdit.cpp）が行う */
 static bool ParseMapSwaps(const JVal &sw, int nID, MAPINFO &w, std::string &strErr)
 {
-	static const char *apszKey[] = { "kind", "x", "y", "wParts", "wFlag", "byCmp", "wChestNo", "wBoxNo", "wGiveItem", "szMsg", "szMemo", NULL };
+	static const char *apszKey[] = { "kind", "x", "y", "wParts", "wFlag", "byCmp", "wChestNo", "wBoxNo", "wGiveItem", "szMsg", "szMemo", "wNeedFlag", "szLockMsg", NULL };
 	long long n;
 	const long long nAny = 1LL << 40;		/* 型だけ確かめる（範囲は MapSwapBuild） */
 
@@ -3266,7 +3267,8 @@ static bool ParseMapSwaps(const JVal &sw, int nID, MAPINFO &w, std::string &strE
 		struct { const char *pszKey; DWORD dwBit; long long *pn; } aInt[] = {
 			{ "wFlag", MAPSWAPEDIT_FLAG, &r.nFlag }, { "byCmp", MAPSWAPEDIT_CMP, &r.nCmp },
 			{ "wChestNo", MAPSWAPEDIT_CHESTNO, &r.nChestNo }, { "wBoxNo", MAPSWAPEDIT_BOXNO, &r.nBoxNo },
-			{ "wGiveItem", MAPSWAPEDIT_GIVEITEM, &r.nGiveItem } };
+			{ "wGiveItem", MAPSWAPEDIT_GIVEITEM, &r.nGiveItem },
+			{ "wNeedFlag", MAPSWAPEDIT_NEEDFLAG, &r.nNeedFlag } };
 		for (size_t m = 0; m < COUNTOF(aInt); m ++) {
 			const JVal *pv = e.Get(aInt[m].pszKey);
 			if (!pv) continue;
@@ -3274,7 +3276,8 @@ static bool ParseMapSwaps(const JVal &sw, int nID, MAPINFO &w, std::string &strE
 			r.dwHas |= aInt[m].dwBit;
 		}
 		struct { const char *pszKey; DWORD dwBit; std::string *ps; } aStr[] = {
-			{ "szMsg", MAPSWAPEDIT_MSG, &r.strMsg }, { "szMemo", MAPSWAPEDIT_MEMO, &r.strMemo } };
+			{ "szMsg", MAPSWAPEDIT_MSG, &r.strMsg }, { "szMemo", MAPSWAPEDIT_MEMO, &r.strMemo },
+			{ "szLockMsg", MAPSWAPEDIT_LOCKMSG, &r.strLockMsg } };
 		for (size_t m = 0; m < COUNTOF(aStr); m ++) {
 			const JVal *pv = e.Get(aStr[m].pszKey);
 			if (!pv) continue;
