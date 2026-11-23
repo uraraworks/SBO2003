@@ -228,6 +228,8 @@ int g_nQuestListCount = 0;											/* 依頼一覧の件数 */
 DWORD g_dwQuestGuildTblID = 0;										/* 一覧を出したギルドの人（思い出の本の時は語り部）のテーブルID */
 BOOL g_bQuestBook = FALSE;											/* 依頼の一覧の窓が、思い出の本（語り部に話した時）の一覧か */
 DWORD g_dwQuestStoryMsgID = 0;									/* 語り部の台詞の窓の番号（0=出していない。閉じたら思い出の本の一覧を開く） */
+DWORD g_dwQuestIntroMsgID = 0;									/* 依頼の導入のお話の窓の番号（0=出していない。最後まで読んで閉じたら「受けますか？」を出す） */
+WORD g_wQuestIntroID = 0;											/* 導入のお話を読んでいる依頼の番号 */
 DWORD g_dwQuestWaitTime = 0;										/* 一覧の返事待ちを始めた時間（0=待っていない） */
 CMDPARA_QUESTSTATE g_QuestState = {0};								/* 自分と仲間の依頼の進み具合（byCount=0 なら無し） */
 char g_szQuestMsg[MAX_QUESTMSG] = {0};								/* 依頼の窓の詳細欄に出す「お知らせ」「確認の文」（空なら選んだ依頼の説明） */

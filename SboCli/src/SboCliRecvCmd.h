@@ -15,6 +15,7 @@ extern void	SysMsgPendFlush			(BOOL);													/* メッセージ窓が開い
 extern int	GetCharNo				(DWORD);													/* キャラ番号取得 */
 extern PWNDINFO	QuestListOpen			(BOOL);														/* 依頼の一覧の窓を開く */
 extern void	QuestStoryGreet			(DWORD);													/* 語り部の台詞を出す */
+extern void	QuestIntroEnd			(DWORD);													/* 依頼の導入のお話を読み終わった（受けるかの確認を出す） */
 extern void	QuestStoryGreetEnd		(DWORD);													/* 語り部の台詞が終わった（一覧を開く） */
 extern int	GetCharNo2				(DWORD);													/* キャラ番号取得2 */
 extern BOOL		GetDungeonStatus		(PCMDPARA_DGSTATUS pOut);									/* 番外編ダンジョン（拠点防衛以外）の状況（パネルを出す時だけ TRUE。しばらく届かなければ消える） */

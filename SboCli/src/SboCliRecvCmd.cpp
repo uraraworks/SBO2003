@@ -4266,6 +4266,7 @@ void RecvDataProcQUEST(PBYTE pData, DWORD dwDataSize)
 			strcpy (pItem->szExplain, pPara->szExplain);
 			strcpy (pItem->szGoal, pPara->szGoal);
 			strcpy (pItem->szReward, pPara->szReward);
+			pItem->byIntro = pPara->byIntro;
 			if ((int)pPara->byIndex + 1 > g_nQuestListCount) {
 				g_nQuestListCount = (int)pPara->byIndex + 1;
 			}
@@ -4297,6 +4298,35 @@ void RecvDataProcQUEST(PBYTE pData, DWORD dwDataSize)
 		}
 		pWndList->dwTimeDrawStart = 0;
 		g_bDraw = TRUE;
+		break;
+
+	case QUESTCMD_INTRO:
+		/* 導入のお話：一覧を開いたまま、メッセージの窓で 1 ページずつ読ませる。読み終わったら受けるかの確認（QuestIntroEnd）。
+		   一覧が閉じている・すでに読んでいる最中・本文が無い時は捨てる。本文は構造体の後ろに終端付きで続く */
+		if ((pWndList != NULL) && (pWndList->pChild == NULL) && (g_dwQuestIntroMsgID == 0) && !g_bQuestBook &&
+			(dwDataSize > sizeof (CMDPARA_QUEST))) {
+			const char *pszIntro = (const char *)(pData + sizeof (CMDPARA_QUEST));
+			size_t nLen = strnlen (pszIntro, dwDataSize - sizeof (CMDPARA_QUEST));
+			std::string strMsg (pszIntro, nLen);
+
+			if (nLen > 0) {
+				/* 送り終わるまで待つ（最後が入力待ち・終わりでなければ入力待ちを足す） */
+				if ((strMsg.size () < 2) || (strMsg[strMsg.size () - 2] != '@') ||
+					((strMsg[strMsg.size () - 1] != '0') && (strMsg[strMsg.size () - 1] != '2'))) {
+					strMsg += "@0";
+				}
+				PWNDINFO pWndMsg = MakeWindowMSG ((LPSTR)strMsg.c_str (), TRUE);
+				pWndMsg->wMsgQuestIntro = pPara->wQuestID;
+				/* 一覧の子にして、閉じたら入力先が一覧に戻るようにする */
+				pWndMsg->pParent = pWndList;
+				pWndList->pChild = pWndMsg;
+				g_WndInfo.Add (pWndMsg);
+				g_dwActiveMsgID = pWndMsg->dwID;
+				g_dwQuestIntroMsgID = pWndMsg->dwID;
+				g_wQuestIntroID = pPara->wQuestID;
+				g_bDraw = TRUE;
+			}
+		}
 		break;
 
 	case QUESTCMD_RESULT:

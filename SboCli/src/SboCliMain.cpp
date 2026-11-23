@@ -2026,6 +2026,8 @@ void TimerProc(void)
 								EraseWindow (pWnd);
 								/* 語り部の台詞を送り終わったら、思い出の本の一覧を開く */
 								QuestStoryGreetEnd (dwMsgID);
+								/* 依頼の導入のお話を読み終わったら、受けるかの確認を出す */
+								QuestIntroEnd (dwMsgID);
 
 								/* コマンドウィンドウを閉じる */
 								int nNo = GetWindowID (g_dwMsgIDCommand);

@@ -3613,6 +3613,14 @@ void KeyProcSTATUSMAGIC(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 /* ========================================================================= */
 void KeyProcMSG(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 {
+	/* 依頼の導入のお話：キャンセルで何も起きずに閉じて、一覧に戻る（受けるかの確認は出さない） */
+	if (pWnd->wMsgQuestIntro && (byEvent == KEY_UP) && ((byCode == 'B') || (byCode == VK_ESCAPE))) {
+		g_dwQuestIntroMsgID = 0;
+		EraseWindow (pWnd);
+		g_bDraw = TRUE;
+		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUSH51_C]);
+		return;
+	}
 	/* アイテムの読み物：キャンセルで残りのページを飛ばして閉じる
 	   （音・アイテム取得などの制御コードは順に処理する。復活位置の「はい・いいえ」が出たらそこで止まる） */
 	if (pWnd->bMsgSkip && (byEvent == KEY_UP) && ((byCode == 'B') || (byCode == VK_ESCAPE)) && (pWnd->nData2 != MSGSTATE_STARTPOSCONF) && (pWnd->nData2 != MSGSTATE_TALKASK) && pWnd->pszMsg) {
@@ -8097,6 +8105,62 @@ void KeyProcBATTLE_TARGET(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 }
 
 /* ========================================================================= */
+/* 関数名：QuestConfirmOpen													 */
+/* 内容：依頼の一覧の確認（受ける・取り消す・渡す・やり直す）を開く			 */
+/*       確認の文は詳細欄に出す。いいえを先に選んでおく						 */
+/* ========================================================================= */
+static void QuestConfirmOpen(PWNDINFO pWnd, int nType, WORD wQuestID, const char *pszMsg)
+{
+	PWNDINFO pWndConf;
+
+	_snprintf (g_szQuestMsg, sizeof (g_szQuestMsg) - 1, "%s", pszMsg);
+	g_szQuestMsg[sizeof (g_szQuestMsg) - 1] = 0;
+
+	pWndConf = MakeWindowCONF (pWnd->nX + pWnd->nCx - 16 * 7, pWnd->nY + 16, nType);
+	pWndConf->nData1 = 1;
+	pWndConf->dwData = wQuestID;
+	pWndConf->pParent = pWnd;
+	pWnd->pChild = pWndConf;
+	g_WndInfo.Add (pWndConf);
+	g_dwActiveMsgID = pWndConf->dwID;
+	pWnd->dwTimeDrawStart = 0;
+	g_bDraw = TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：QuestIntroEnd													 */
+/* 内容：依頼の導入のお話の窓が閉じた時（最後まで読んだ時）、受けるかの確認を出す */
+/*       途中でキャンセルした時は KeyProcMSG が先に閉じるので、ここへは来ない	 */
+/* ========================================================================= */
+void QuestIntroEnd(DWORD dwMsgID)
+{
+	PWNDINFO pWndList = QuestFindWindow (QUESTWND_LIST);
+	char szTmp[MAX_QUESTNAME + 64];
+
+	if ((g_dwQuestIntroMsgID == 0) || (g_dwQuestIntroMsgID != dwMsgID)) {
+		return;
+	}
+	g_dwQuestIntroMsgID = 0;
+	if ((pWndList == NULL) || (pWndList->pChild != NULL) || g_bQuestBook) {
+		return;
+	}
+	for (int i = 0; i < g_nQuestListCount; i ++) {
+		if ((g_aQuestList[i].wQuestID == g_wQuestIntroID) && (g_aQuestList[i].byMark == QUESTMARK_FREE)) {
+			pWndList->nData1 = i;
+			if (pWndList->nData1 < pWndList->nData2) {
+				pWndList->nData2 = pWndList->nData1;
+			} else if (pWndList->nData1 >= pWndList->nData2 + QUEST_LISTROWS) {
+				pWndList->nData2 = pWndList->nData1 - QUEST_LISTROWS + 1;
+			}
+			_snprintf (szTmp, sizeof (szTmp) - 1, "「%s」を受けますか？", g_aQuestList[i].szName);
+			szTmp[sizeof (szTmp) - 1] = 0;
+			QuestConfirmOpen (pWndList, IDCONFIRMTYPE_QUESTACCEPT, g_aQuestList[i].wQuestID, szTmp);
+			break;
+		}
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：KeyProcQUEST														 */
 /* 内容：キー入力処理(ギルドの依頼：一覧・進み具合)							 */
 /*		 一覧：決定で、印に合わせて「受ける」「取り消す」「渡す」の確認		 */
@@ -8116,7 +8180,6 @@ void KeyProcQUEST(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 
 	} else if ((byEvent == KEY_UP) && (byCode == 'A') && (pWnd->nType2 == QUESTWND_LIST)) {
 		PQUESTLISTITEM pItem;
-		PWNDINFO pWndConf;
 		int nType = 0;
 		char szTmp[MAX_QUESTNAME + MAX_QUESTGOAL + 64];
 
@@ -8134,6 +8197,12 @@ void KeyProcQUEST(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			}
 		} else switch (pItem->byMark) {
 		case QUESTMARK_FREE:
+			/* 導入のお話がある依頼は、まずサーバーに文を頼む（届いたらメッセージの窓で読ませ、読み終わったら確認を出す） */
+			if (pItem->byIntro) {
+				SendCmdQUEST (QUESTCMD_INTROREQ, pItem->wQuestID, g_dwQuestGuildTblID);
+				DXAudio.PlaySecoundary (&aSoundTbl[SOUND_OK]);
+				return;
+			}
 			nType = IDCONFIRMTYPE_QUESTACCEPT;
 			_snprintf (szTmp, sizeof (szTmp) - 1, "「%s」を受けますか？", pItem->szName);
 			break;
@@ -8154,18 +8223,9 @@ void KeyProcQUEST(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			return;
 		}
 		szTmp[sizeof (szTmp) - 1] = 0;
-		_snprintf (g_szQuestMsg, sizeof (g_szQuestMsg) - 1, "%s", szTmp);
 
 		/* 確認（いいえを先に選んでおく） */
-		pWndConf = MakeWindowCONF (pWnd->nX + pWnd->nCx - 16 * 7, pWnd->nY + 16, nType);
-		pWndConf->nData1 = 1;
-		pWndConf->dwData = pItem->wQuestID;
-		pWndConf->pParent = pWnd;
-		pWnd->pChild = pWndConf;
-		g_WndInfo.Add (pWndConf);
-		g_dwActiveMsgID = pWndConf->dwID;
-		pWnd->dwTimeDrawStart = 0;
-		g_bDraw = TRUE;
+		QuestConfirmOpen (pWnd, nType, pItem->wQuestID, szTmp);
 
 	} else if ((byEvent == KEY_DOWN) && (timeGetTime () > pWnd->dwTimeKey + dwTime)) {
 		BOOL bMove = FALSE;

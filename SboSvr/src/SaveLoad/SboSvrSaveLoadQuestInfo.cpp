@@ -329,6 +329,7 @@ typedef struct _QUESTFILE {
 	BYTE		byDoneNumVal;
 	WORD		wNeedFlag;								/* 受ける条件の印（番号+1。0=無し。古いファイルには無く、0 =無しで読める） */
 	WORD		wNotFlag;
+	char		szIntro[MAX_QUESTINTRO];				/* 導入のお話（古いファイルには無く、空で読める） */
 } QUESTFILE;
 
 /* 依頼情報のカラム */
@@ -376,6 +377,7 @@ static const COLINFO s_aQuestCol[] = {
 	COL (QUESTFILE, byDoneNumVal,	COL_U8),
 	COL (QUESTFILE, wNeedFlag,		COL_U16),
 	COL (QUESTFILE, wNotFlag,		COL_U16),
+	COLS(QUESTFILE, szIntro,		COL_STR, MAX_QUESTINTRO),
 };
 
 BOOL SaveQuestInfo(void);										/* 依頼情報保存 */
@@ -392,6 +394,7 @@ static void ToFile(QUESTFILE *p, const QUESTINFO *q)
 	memcpy (p->szExplain, q->szExplain, sizeof (p->szExplain));
 	memcpy (p->szMsgAccept, q->szMsgAccept, sizeof (p->szMsgAccept));
 	memcpy (p->szMsgDone, q->szMsgDone, sizeof (p->szMsgDone));
+	memcpy (p->szIntro, q->szIntro, sizeof (p->szIntro));
 	p->dwGold = q->dwGold;	p->dwExp = q->dwExp;
 	p->wRewardItem = q->wRewardItem;	p->wQuestItem = q->wQuestItem;
 	p->byStepCount = q->byStepCount;
@@ -430,6 +433,7 @@ static void FromFile(QUESTINFO *q, const QUESTFILE *p)
 	memcpy (q->szExplain, p->szExplain, sizeof (q->szExplain));
 	memcpy (q->szMsgAccept, p->szMsgAccept, sizeof (q->szMsgAccept));
 	memcpy (q->szMsgDone, p->szMsgDone, sizeof (q->szMsgDone));
+	memcpy (q->szIntro, p->szIntro, sizeof (q->szIntro));
 	q->dwGold = p->dwGold;	q->dwExp = p->dwExp;
 	q->wRewardItem = p->wRewardItem;	q->wQuestItem = p->wQuestItem;
 	q->byStepCount = p->byStepCount;
@@ -447,6 +451,7 @@ static void FromFile(QUESTINFO *q, const QUESTFILE *p)
 	q->szExplain[MAX_QUESTMSG - 1] = 0;
 	q->szMsgAccept[MAX_QUESTMSG - 1] = 0;
 	q->szMsgDone[MAX_QUESTMSG - 1] = 0;
+	q->szIntro[MAX_QUESTINTRO - 1] = 0;
 	for (i = 0; i < MAX_QUESTSTEP; i ++) {
 		q->aszGoal[i][MAX_QUESTGOAL - 1] = 0;
 	}

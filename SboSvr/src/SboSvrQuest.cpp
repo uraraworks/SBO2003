@@ -1934,6 +1934,7 @@ void QuestGuildTalk(PCHARINFO pChar, PCHARINFO pNpc)
 		}
 		CopyStr (Para.szName, sizeof (Para.szName), pQuest->szName);
 		CopyStr (Para.szExplain, sizeof (Para.szExplain), pQuest->szExplain);
+		Para.byIntro = pQuest->szIntro[0] ? 1 : 0;	/* 導入のお話がある（本文は決定を押した時に INTROREQ で送る） */
 		CopyStr (Para.szGoal, sizeof (Para.szGoal), (pChar->wQuestID == pQuest->wID) ? GetGoal (pQuest, pChar->byQuestStep) : "");
 		MakeRewardText (pChar, pQuest, Para.szReward, sizeof (Para.szReward));
 		svrSock.SendTo (pChar->pID, (LPBYTE)&Para, sizeof (Para), SENDTIMEOUT);
@@ -1953,6 +1954,21 @@ static void SendResult(PCHARINFO pChar, BYTE byResult, WORD wQuestID, const char
 	Para.dwTblID = pChar->dwTblID;
 	CopyStr (Para.szMsg, sizeof (Para.szMsg), pszMsg);
 	svrSock.SendTo (pChar->pID, (LPBYTE)&Para, sizeof (Para), SENDTIMEOUT);
+}
+
+/* 導入のお話を送る（本文は構造体の後ろに終端付きで続ける） */
+static void SendIntro(PCHARINFO pChar, PQUESTINFO pQuest)
+{
+	std::vector<BYTE> aBuf (sizeof (CMDPARA_QUEST) + MAX_QUESTINTRO, 0);
+	PCMDPARA_QUEST pPara = (PCMDPARA_QUEST)&aBuf[0];
+	size_t nLen = strnlen (pQuest->szIntro, MAX_QUESTINTRO - 1);
+
+	pPara->byCmd = CMD_QUEST;
+	pPara->byType = QUESTCMD_INTRO;
+	pPara->wQuestID = pQuest->wID;
+	pPara->dwTblID = pChar->dwTblID;
+	memcpy (&aBuf[sizeof (CMDPARA_QUEST)], pQuest->szIntro, nLen);
+	svrSock.SendTo (pChar->pID, &aBuf[0], (DWORD)(sizeof (CMDPARA_QUEST) + nLen + 1), SENDTIMEOUT);
 }
 
 /* 近くに、ギルドの人（nGuild が負なら誰でも・そうでなければその番号）がいるか */
@@ -2537,6 +2553,15 @@ void QuestRecv(PCHARINFO pChar, PCMDPARA_QUEST pPara)
 			break;
 		}
 		DoStoryReset (pChar, pPara->wQuestID);
+		break;
+
+	case QUESTCMD_INTROREQ:
+		/* 導入のお話は読み物なので、受ける条件は見ない（受ける時にもう一度見る）。ギルドの人の近くで、お話がある依頼だけ */
+		pNpc = FindNearGuild (pChar, -1, pPara->dwNpcTblID);
+		pQuest = FindQuest (pPara->wQuestID);
+		if ((pNpc != NULL) && (pQuest != NULL) && pQuest->szIntro[0]) {
+			SendIntro (pChar, pQuest);
+		}
 		break;
 
 	case QUESTCMD_ACCEPT:
