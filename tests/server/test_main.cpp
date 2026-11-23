@@ -3710,6 +3710,7 @@ static PSTORYINFO StoryTestNew(WORD wID, LPCSTR pszName, WORD wClear, WORD wPrev
 	p->wClearFlag = wClear; p->wPrevStory = wPrev;
 	for (int i = 0; i < MAX_STORYFLAGRANGE; i ++) p->awFlagFrom[i] = p->awFlagTo[i] = FLAG_NOBIT;
 	for (int i = 0; i < MAX_STORYNUM; i ++) p->abyNum[i] = FLAG_NONUM;
+	for (int i = 0; i < MAX_STORYCHEST; i ++) p->awTakeChest[i] = FLAG_NOBIT;
 	p->awFlagFrom[0] = wFrom; p->awFlagTo[0] = wTo;
 	p->awQuest[0] = wQuest;
 	p->byCountNum = byCountNum;
@@ -3963,6 +3964,72 @@ static void TestStory(const std::vector<int> &aLogin)
 		memcpy(pOwner->waEqu, awEquBak, sizeof(awEquBak));
 	}
 
+	/* 戻す宝箱：指定した宝箱の開けた記録だけ消える（番号 0 も）・指定外は残る・無し(65535)は何も消えない・後のお話だけならその分だけ */
+	{
+		BYTE abyChestBak[MAX_CHESTBYTE];
+		memcpy(abyChestBak, pOwner->abyChestOpened, sizeof(abyChestBak));
+		/* 宝箱 5 の「印で変わるマス」を 1 行足す（本人の見た目が閉じた絵に戻って送り直されるかを見る。終わったら戻す） */
+		MAPSWAP aSwapBak[MAX_MAPSWAP];
+		BYTE bySwapCountBak = pMap->bySwapCount;
+		memcpy(aSwapBak, pMap->aSwap, sizeof(aSwapBak));
+		ZeroMemory(pMap->aSwap, sizeof(pMap->aSwap));
+		pMap->bySwapCount = 1;
+		pMap->aSwap[0].wX = (WORD)aCell[0].first; pMap->aSwap[0].wY = (WORD)aCell[0].second;
+		pMap->aSwap[0].byKind = MAPSWAPKIND_CHEST; pMap->aSwap[0].wChestNo = 5;
+		pMap->aSwap[0].wParts = 1;
+		ZeroMemory(pOwner->abyChestOpened, sizeof(pOwner->abyChestOpened));
+		WORD wBaseParts = MapSwapParts(pMap, pOwner, aCell[0].first, aCell[0].second);
+		WORD wOpenParts = (wBaseParts == 1) ? 2 : 1;
+		pMap->aSwap[0].wParts = wOpenParts;
+		auto ChestSetup = [&]() {
+			ZeroMemory(pOwner->abyChestOpened, sizeof(pOwner->abyChestOpened));
+			ChestOpenedSet(pOwner, 0, TRUE); ChestOpenedSet(pOwner, 5, TRUE); ChestOpenedSet(pOwner, 6, TRUE);
+			ChestOpenedSet(pOwner, 7, TRUE); ChestOpenedSet(pOwner, 2047, TRUE);
+		};
+		auto ChestShow = [&](LPCSTR pszTitle, int nSwap0) {
+			printf("story chest %s bits0=%d,5=%d,6=%d,7=%d,2047=%d,8=%d swap=%d open_view=%d\n", pszTitle, (int)ChestOpenedGet(pOwner, 0), (int)ChestOpenedGet(pOwner, 5),
+				(int)ChestOpenedGet(pOwner, 6), (int)ChestOpenedGet(pOwner, 7), (int)ChestOpenedGet(pOwner, 2047), (int)ChestOpenedGet(pOwner, 8),
+				MockCmdCount(1000, CMD_MAPSWAP) - nSwap0, (int)(MapSwapParts(pMap, pOwner, aCell[0].first, aCell[0].second) == wOpenParts));
+		};
+		int nSwap0;
+		/* 指定が全部無しのお話：何も戻らない */
+		ChestSetup();
+		FlagBitSet(pOwner->abyFlag, 100, TRUE);
+		nSwap0 = MockCmdCount(1000, CMD_MAPSWAP);
+		StoryReset(pOwner, 1, dwTeller);
+		ChestShow("none", nSwap0);
+		/* 後のお話 L2 だけ指定（5・2047）：L2 だけやり直すとその分だけ。0・6・7 は残る */
+		g_aStoryInfo[1]->awTakeChest[0] = 5; g_aStoryInfo[1]->awTakeChest[1] = 2047;
+		g_aStoryInfo[0]->awTakeChest[0] = 0; g_aStoryInfo[0]->awTakeChest[3] = 6;
+		ChestSetup();
+		FlagBitSet(pOwner->abyFlag, 110, TRUE);
+		nSwap0 = MockCmdCount(1000, CMD_MAPSWAP);
+		StoryReset(pOwner, 2, dwTeller);
+		ChestShow("L2", nSwap0);
+		/* 前のお話 L1：L1（0・6）と L2（5・2047）の分が全部戻る。7 と 8 は残る */
+		ChestSetup();
+		FlagBitSet(pOwner->abyFlag, 100, TRUE);
+		nSwap0 = MockCmdCount(1000, CMD_MAPSWAP);
+		StoryReset(pOwner, 1, dwTeller);
+		ChestShow("L1", nSwap0);
+		/* 開けていなければ何も起きない（もう一度やり直しても同じ） */
+		FlagBitSet(pOwner->abyFlag, 100, TRUE);
+		nSwap0 = MockCmdCount(1000, CMD_MAPSWAP);
+		StoryReset(pOwner, 1, dwTeller);
+		ChestShow("again", nSwap0);
+		/* 同じ宝箱を 2 つのお話で指定しても、戻す数は 1 個 */
+		g_aStoryInfo[1]->awTakeChest[2] = 0;
+		ChestSetup();
+		FlagBitSet(pOwner->abyFlag, 100, TRUE);
+		nSwap0 = MockCmdCount(1000, CMD_MAPSWAP);
+		StoryReset(pOwner, 1, dwTeller);
+		ChestShow("dup", nSwap0);
+		for (int n = 0; n < MAX_STORYCHEST; n ++) g_aStoryInfo[0]->awTakeChest[n] = g_aStoryInfo[1]->awTakeChest[n] = FLAG_NOBIT;
+		memcpy(pOwner->abyChestOpened, abyChestBak, sizeof(abyChestBak));
+		memcpy(pMap->aSwap, aSwapBak, sizeof(aSwapBak));
+		pMap->bySwapCount = bySwapCountBak;
+	}
+
 	/* 本が空に戻ったら（印を全部消す）また空 */
 	ZeroMemory(pOwner->abyFlag, sizeof(pOwner->abyFlag));
 	nList0 = MockCmdCount(1000, CMD_QUEST);
@@ -4009,6 +4076,7 @@ static void TestStory(const std::vector<int> &aLogin)
 		g_aStoryInfo[0]->awQuest[1] = 2;
 		g_aStoryInfo[0]->byCountNum = 0;
 		g_aStoryInfo[0]->awTakeItem[0] = 2; g_aStoryInfo[0]->awTakeItem[7] = 5;
+		g_aStoryInfo[0]->awTakeChest[0] = 0; g_aStoryInfo[0]->awTakeChest[7] = 2047;		/* 宝箱 0 と最後の 2047 */
 		BOOL bSaved = SaveStoryInfo();
 		g_aStoryInfo.RemoveAll();
 		BOOL bLoaded = LoadStoryInfo();
@@ -4019,6 +4087,8 @@ static void TestStory(const std::vector<int> &aLogin)
 				p->awFlagTo[1], p->abyNum[0], p->abyNum[1], p->awQuest[0], p->awQuest[1], p->byCountNum);
 			printf("story save take=%u,%u,%u,%u,%u,%u,%u,%u\n", p->awTakeItem[0], p->awTakeItem[1], p->awTakeItem[2], p->awTakeItem[3],
 				p->awTakeItem[4], p->awTakeItem[5], p->awTakeItem[6], p->awTakeItem[7]);
+			printf("story save chest=%u,%u,%u,%u,%u,%u,%u,%u\n", p->awTakeChest[0], p->awTakeChest[1], p->awTakeChest[2], p->awTakeChest[3],
+				p->awTakeChest[4], p->awTakeChest[5], p->awTakeChest[6], p->awTakeChest[7]);
 		} else {
 			printf("story save=%d load=%d not found\n", (int)bSaved, (int)bLoaded);
 		}
@@ -4271,6 +4341,28 @@ static void TestStoryGoal(const std::vector<int> &aLogin)
 		strBad = FlagGroupApi("story", 0, "{\"awTakeItem\":[1,2,3,4,5,6,7,8,9]}");
 		printf("storytake api toomany ng=%d\n", strBad.find("\"ok\":false") != std::string::npos);
 		printf("storytake api get %s\n", strstr(SboWebDataGet("story", 0), "\"awTakeItem\":[1,2,0,0,0,0,0,0]") ? "has" : "none");
+	}
+
+	/* 戻す宝箱（データAPI）：入れる（0 も）・短い配列の残りは無し(65535)・省いたら今のまま・範囲外・多すぎは断る */
+	{
+		std::string strOk = FlagGroupApi("story", 0, "{\"awTakeChest\":[0,2047,5]}");
+		printf("storychest api set ok=%d chest=%u,%u,%u,%u\n", strOk.find("\"ok\":true") != std::string::npos, g_aStoryInfo[0]->awTakeChest[0],
+			g_aStoryInfo[0]->awTakeChest[1], g_aStoryInfo[0]->awTakeChest[2], g_aStoryInfo[0]->awTakeChest[3]);
+		FlagGroupApi("story", 0, "{\"szName\":\"API改3\"}");
+		printf("storychest api keep chest=%u,%u,%u\n", g_aStoryInfo[0]->awTakeChest[0], g_aStoryInfo[0]->awTakeChest[1], g_aStoryInfo[0]->awTakeChest[2]);
+		std::string strBad = FlagGroupApi("story", 0, "{\"awTakeChest\":[2048]}");
+		printf("storychest api bad ng=%d chest=%u,%u\n", strBad.find("\"ok\":false") != std::string::npos, g_aStoryInfo[0]->awTakeChest[0], g_aStoryInfo[0]->awTakeChest[1]);
+		strBad = FlagGroupApi("story", 0, "{\"awTakeChest\":[1,2,3,4,5,6,7,8,9]}");
+		printf("storychest api toomany ng=%d\n", strBad.find("\"ok\":false") != std::string::npos);
+		printf("storychest api get %s\n", strstr(SboWebDataGet("story", 0), "\"awTakeChest\":[0,2047,5,65535,65535,65535,65535,65535]") ? "has" : "none");
+		/* 足す時に省くと全部無し（0 にならない） */
+		std::string strAdd = FlagGroupApi("story", g_aStoryInfo.GetSize(), "{\"szName\":\"宝箱なし\",\"wClearFlag\":321}");
+		int nLast = g_aStoryInfo.GetSize() - 1;
+		printf("storychest api add ok=%d chest=%u,%u,%u\n", strAdd.find("\"ok\":true") != std::string::npos, g_aStoryInfo[nLast]->awTakeChest[0],
+			g_aStoryInfo[nLast]->awTakeChest[1], g_aStoryInfo[nLast]->awTakeChest[7]);
+		if (nLast > 0) { PSTORYINFO pDel = g_aStoryInfo[nLast]; g_aStoryInfo.RemoveAt(nLast); delete pDel; }
+		FlagGroupApi("story", 0, "{\"awTakeChest\":[]}");
+		printf("storychest api clear chest=%u\n", g_aStoryInfo[0]->awTakeChest[0]);
 	}
 
 	/* 管理者ウィンドウの書き込み（目的の欄は無い）：保存しても目的が消えない・足す時は目的なし */

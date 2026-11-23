@@ -298,6 +298,7 @@ typedef struct _STORYFILE {
 	WORD		awQuest[MAX_STORYQUEST];				/* クリア済みの印を消す依頼の番号（0=無し） */
 	BYTE		byCountNum;								/* やり直した回数を数える数値の番号（番号+1。0=数えない） */
 	WORD		awTakeItem[MAX_STORYTAKEITEM];			/* やり直す時に取り上げるアイテム番号（0=無し。古いファイルには無く、全部 0 で読める） */
+	WORD		awTakeChest[MAX_STORYCHEST];			/* 開けた記録を戻す宝箱の番号+1（0=無し。古いファイルには無く、全部 0＝無しで読める。宝箱 0 も使えるので +1 で持つ） */
 	/* 「いまの目的」（古いファイルには無く、目的なしで読める）。行ごとの項目は MAX_STORYGOAL 行まとめた配列のカラムにする */
 	WORD		awGoalNeed[MAX_STORYGOAL * MAX_TALKNEED];	/* 立っている必要のある印（番号+1。0=無し） */
 	WORD		awGoalNot[MAX_STORYGOAL * MAX_TALKNEED];	/* 立っていてはいけない印（番号+1。0=無し） */
@@ -322,6 +323,7 @@ static const COLINFO s_aStoryCol[] = {
 	COLS(STORYFILE, awQuest,		COL_U16ARR, MAX_STORYQUEST),
 	COL (STORYFILE, byCountNum,		COL_U8),
 	COLS(STORYFILE, awTakeItem,		COL_U16ARR, MAX_STORYTAKEITEM),
+	COLS(STORYFILE, awTakeChest,	COL_U16ARR, MAX_STORYCHEST),
 	COLS(STORYFILE, awGoalNeed,		COL_U16ARR, MAX_STORYGOAL * MAX_TALKNEED),
 	COLS(STORYFILE, awGoalNot,		COL_U16ARR, MAX_STORYGOAL * MAX_TALKNEED),
 	COLS(STORYFILE, abyGoalCondNo,	COL_U8ARR, MAX_STORYGOAL * MAX_TALKCOND),
@@ -365,6 +367,9 @@ static void ToFile(STORYFILE *p, const STORYINFO *q)
 	for (i = 0; i < MAX_STORYTAKEITEM; i ++) {
 		p->awTakeItem[i] = q->awTakeItem[i];
 	}
+	for (i = 0; i < MAX_STORYCHEST; i ++) {
+		p->awTakeChest[i] = (q->awTakeChest[i] < MAX_CHESTNO) ? (WORD)(q->awTakeChest[i] + 1) : 0;
+	}
 	for (i = 0; i < MAX_STORYGOAL; i ++) {
 		const STORYGOAL *g = &q->aGoal[i];
 		int j;
@@ -407,6 +412,9 @@ static void FromFile(STORYINFO *q, const STORYFILE *p)
 	q->byCountNum = ((p->byCountNum >= 1) && (p->byCountNum <= MAX_FLAGNUM)) ? (BYTE)(p->byCountNum - 1) : (BYTE)FLAG_NONUM;
 	for (i = 0; i < MAX_STORYTAKEITEM; i ++) {
 		q->awTakeItem[i] = p->awTakeItem[i];
+	}
+	for (i = 0; i < MAX_STORYCHEST; i ++) {
+		q->awTakeChest[i] = ((p->awTakeChest[i] >= 1) && (p->awTakeChest[i] <= MAX_CHESTNO)) ? (WORD)(p->awTakeChest[i] - 1) : (WORD)FLAG_NOBIT;
 	}
 	/* 目的：古いファイルには無く 0 で読めるので、印・数値は「無し」、文は空になる */
 	for (i = 0; i < MAX_STORYGOAL; i ++) {
