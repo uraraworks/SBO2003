@@ -6395,8 +6395,9 @@ int SpaceDoorEnemyCount(DWORD dwMapID, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID)
 	return nRet;
 }
 
-/* 扉のマスに、その空間の誰か（倒れていない人・ぶつかるNPC）が立っているか */
-static BOOL IsCharOnDoor(PMAPINFO pMap, PEVENTINFO pEvent, DWORD dwSpaceID)
+/* 扉のマスに、その空間の誰か（倒れていない人・ぶつかるNPC）が立っているか
+   nNear>0 なら、人は扉のマスから縦横 nNear マス以内でも「いる」とする（開けた直後に通り抜ける間は閉めない） */
+static BOOL IsCharOnDoor(PMAPINFO pMap, PEVENTINFO pEvent, DWORD dwSpaceID, int nNear)
 {
 	int t, i;
 
@@ -6427,6 +6428,10 @@ static BOOL IsCharOnDoor(PMAPINFO pMap, PEVENTINFO pEvent, DWORD dwSpaceID)
 				}
 			}
 			if (CheckCharX (pCharTmp, pCharTmp->dwX, pEvent->dwX) && (pCharTmp->dwY == pEvent->dwY)) {
+				return TRUE;
+			}
+			if ((t == 0) && (nNear > 0) &&
+				(abs ((int)pCharTmp->dwX - (int)pEvent->dwX) <= nNear) && (abs ((int)pCharTmp->dwY - (int)pEvent->dwY) <= nNear)) {
 				return TRUE;
 			}
 		}
@@ -6530,8 +6535,8 @@ static void EnemyDoorProc(DWORD dwMapID, PEVENTINFO pEvent, PEVENTINFO_DOOR pDoo
 			SpaceDoorOpenRaw (dwMapID, pEvent, pDoor, dwSpaceID);
 			EnemyDoorNotify (pMap, pEvent, pDoor, dwSpaceID, "魔物の気配が消え、扉が開いた！");
 		} else if ((nEnemy > 0) && bOpen) {
-			/* 敵がまた出てきた（扉の上に誰かいる間は待つ） */
-			if (IsCharOnDoor (pMap, pEvent, dwSpaceID)) {
+			/* 敵がまた出てきた（扉の上や、すぐ隣に人がいる間は待つ。内側から開けて通り抜ける時間を残す） */
+			if (IsCharOnDoor (pMap, pEvent, dwSpaceID, 1)) {
 				continue;
 			}
 			SpaceDoorClose (dwMapID, pEvent, pDoor, dwSpaceID);
