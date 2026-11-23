@@ -6268,6 +6268,9 @@ int SpaceDoorEnemyCount(DWORD dwMapID, PEVENTINFO_DOOR pDoor, DWORD dwSpaceID)
 		if (!IsInDoorArea (pDoor, pCharTmp->dwX, pCharTmp->dwY)) {
 			continue;
 		}
+		if ((pDoor->wEnemyStTmp != 65535) && (pCharTmp->dwStTmplateID != (DWORD)pDoor->wEnemyStTmp)) {
+			continue;	/* 種類の指定があれば、そのステータステンプレートの敵だけ数える */
+		}
 		nRet ++;
 	}
 	return nRet;

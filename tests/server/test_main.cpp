@@ -9005,6 +9005,7 @@ static void TestEnemyDoor(const std::vector<int> &aLogin)
 	Door.wBackGrpID = 22;
 	Door.byTimeClose = 30;
 	Door.byType = EVENTDOOTTYPE_ENEMY;
+	Door.wEnemyStTmp = 65535;			/* 敵の種類の指定なし（全部数える） */
 	Door.wAreaX1 = (WORD)(nX + 2);		/* 右下→左上の順に入れても同じ四角 */
 	Door.wAreaY1 = (WORD)nY;
 	Door.wAreaX2 = (WORD)nX;
@@ -9077,6 +9078,24 @@ static void TestEnemyDoor(const std::vector<int> &aLogin)
 		int nSys0 = MockCmdCount(nConn, CMD_SYSMSG);
 		SpaceEnemyDoorCheckMap(pPC->dwMapID);
 		printf("enemydoor respawn open=%d sysmsg=%d\n", EnemyDoorOpen(pPC, pEvent, &Door), MockCmdCount(nConn, CMD_SYSMSG) - nSys0);
+	}
+
+	/* 数える敵の種類を指定：指定外の敵が残っていても開き、指定の敵が残れば閉まる。指定なしは全部数える */
+	{
+		const WORD wTarget = 5;
+		Door.wEnemyStTmp = wTarget;
+		pE->dwStTmplateID = 7;						/* 指定外の敵だけが範囲にいる */
+		SpaceEnemyDoorCheckMap(pPC->dwMapID);
+		printf("enemydoor sttmp other count=%d open=%d\n", SpaceDoorEnemyCount(pPC->dwMapID, &Door, SPACE_NORMAL), EnemyDoorOpen(pPC, pEvent, &Door));
+		PCHARINFO pT = EnemyDoorMake(pPC, nX + 2, nY, SPACE_NORMAL);
+		pT->dwStTmplateID = wTarget;				/* 指定の敵が出る */
+		SpaceEnemyDoorCheckMap(pPC->dwMapID);
+		printf("enemydoor sttmp target count=%d open=%d\n", SpaceDoorEnemyCount(pPC->dwMapID, &Door, SPACE_NORMAL), EnemyDoorOpen(pPC, pEvent, &Door));
+		DeleteChar(pT->dwTblID);					/* 指定の敵が倒れる（指定外は残っている） */
+		printf("enemydoor sttmp clear count=%d open=%d\n", SpaceDoorEnemyCount(pPC->dwMapID, &Door, SPACE_NORMAL), EnemyDoorOpen(pPC, pEvent, &Door));
+		Door.wEnemyStTmp = 65535;					/* 指定なしなら指定外の敵も数える */
+		SpaceEnemyDoorCheckMap(pPC->dwMapID);
+		printf("enemydoor sttmp none count=%d open=%d\n", SpaceDoorEnemyCount(pPC->dwMapID, &Door, SPACE_NORMAL), EnemyDoorOpen(pPC, pEvent, &Door));
 	}
 
 	/* 片付け */

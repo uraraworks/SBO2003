@@ -1661,6 +1661,7 @@ static const DATAFIELD s_aFieldEvDoor[] = {
 	FLD (EVENTINFO_DOOR, wAreaY1,		"敵を数える範囲 左上Y",	FT_U16, 0, NULL),
 	FLD (EVENTINFO_DOOR, wAreaX2,		"敵を数える範囲 右下X",	FT_U16, 0, NULL),
 	FLD (EVENTINFO_DOOR, wAreaY2,		"敵を数える範囲 右下Y",	FT_U16, 0, NULL),
+	FLD (EVENTINFO_DOOR, wEnemyStTmp,	"数える敵の種類",		FT_U16, 0, "種別1の時に数える敵の stTmp（NPC のステータステンプレート番号）。その stTmp の敵だけ数える。65535=指定なしで範囲の敵を全部数える（既定）"),
 };
 static const DATAFIELD s_aFieldEvHpMana[] = {
 	FLD (EVENTINFO_HPMANA, byType,		"種別",					FT_U8, 0, NULL),
@@ -3551,6 +3552,9 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 					ev.aData = aEvOld[i].aData;
 				} else {
 					ev.aData.assign(nSize, 0);
+					if (ev.byType == EVENTTYPE_DOOR) {
+						((PEVENTINFO_DOOR)&ev.aData[0])->wEnemyStTmp = 65535;	/* 敵の種類は指定なしが既定 */
+					}
 				}
 				int nCount = 0;
 				const DATAFIELD *paField = EventFields(ev.byType, nCount);
@@ -3563,6 +3567,13 @@ static bool MapApply(int nID, const JVal &chg, bool bApply, std::string &strErr,
 					if (!CheckKnownKeys(*pd, paField, nCount, NULL, strErr) ||
 							!ApplyFields(&ev.aData[0], paField, nCount, *pd, strErr, strP + ".detail.")) {
 						return false;
+					}
+					if (ev.byType == EVENTTYPE_DOOR) {
+						WORD wSt = ((PEVENTINFO_DOOR)&ev.aData[0])->wEnemyStTmp;
+						if ((wSt != 65535) && ((int)wSt >= g_aStTmpInfo.GetSize())) {
+							strErr = strP + ".detail.wEnemyStTmp は stTmp の番号（0〜" + JsonNum(g_aStTmpInfo.GetSize() - 1) + "）か 65535（指定なし）で指定してください";
+							return false;
+						}
 					}
 				}
 			} else if (ev.dwX == 0 && ev.dwY == 0) {

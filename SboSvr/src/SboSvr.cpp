@@ -1623,6 +1623,7 @@ BOOL SaveMapInfo(void)
 							WriteData (hFile, "wAreaY1", sizeof (pInfo->wAreaY1), (PBYTE)&pInfo->wAreaY1);
 							WriteData (hFile, "wAreaX2", sizeof (pInfo->wAreaX2), (PBYTE)&pInfo->wAreaX2);
 							WriteData (hFile, "wAreaY2", sizeof (pInfo->wAreaY2), (PBYTE)&pInfo->wAreaY2);
+							WriteData (hFile, "wEnemyStTmp", sizeof (pInfo->wEnemyStTmp), (PBYTE)&pInfo->wEnemyStTmp);	/* 数える敵の種類（65535=指定なし） */
 							WriteFile (hFile, &byTmp, 1, &dwBytes, NULL);	/* 区切り */
 						}
 						break;
@@ -1984,6 +1985,7 @@ BOOL LoadMapInfo(void)
 											pEvent->pData = new BYTE[sizeof (EVENTINFO_DOOR)];
 											ZeroMemory (pEvent->pData, sizeof (EVENTINFO_DOOR));
 											PEVENTINFO_DOOR pInfo = (PEVENTINFO_DOOR)pEvent->pData;
+											pInfo->wEnemyStTmp = 65535;	/* 古いデータは指定なし */
 											while (1) {
 												if (pData[dwFilePtr] == 0) {
 													dwFilePtr ++;
@@ -2011,6 +2013,8 @@ BOOL LoadMapInfo(void)
 													CopyMemory (&pInfo->wAreaX2, &pData[dwFilePtr], dwSize);	dwFilePtr += dwSize;	continue;
 												} else if (strcmp (pszTmp, "wAreaY2") == 0) {
 													CopyMemory (&pInfo->wAreaY2, &pData[dwFilePtr], dwSize);	dwFilePtr += dwSize;	continue;
+												} else if (strcmp (pszTmp, "wEnemyStTmp") == 0) {			/* 数える敵の種類 */
+													CopyMemory (&pInfo->wEnemyStTmp, &pData[dwFilePtr], min (dwSize, (DWORD)sizeof (pInfo->wEnemyStTmp)));	dwFilePtr += dwSize;	continue;
 												}
 												/* 知らない項目は読み飛ばす */
 												dwFilePtr += dwSize;

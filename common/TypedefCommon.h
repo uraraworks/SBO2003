@@ -2767,6 +2767,7 @@ typedef struct _EVENTINFO_DOOR {
 	WORD		wAreaY2;											/* 敵を数える範囲 右下Y */
 	DWORD		dwCheckTime;										/* 最後に敵を数えた時間（サーバーだけ。保存しない） */
 	WORD		wKeyItem;											/* 必要な鍵の品の種類ID（種別が「鍵」の時） */
+	WORD		wEnemyStTmp;										/* 数える敵の種類（ステータステンプレート番号。65535=指定なしで全部数える。種別が「敵を全部倒す」の時） */
 } EVENTINFO_DOOR, *PEVENTINFO_DOOR;
 
 /* イベントデータ(HP/Mana回復) */

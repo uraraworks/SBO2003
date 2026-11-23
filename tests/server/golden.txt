@@ -1498,6 +1498,10 @@ enemydoor clear open=1 chgmap=1 sound=1 sysmsg=1
 enemydoor later open=1
 enemydoor respawn onDoor open=1
 enemydoor respawn open=0 sysmsg=1
+enemydoor sttmp other count=0 open=1
+enemydoor sttmp target count=1 open=0
+enemydoor sttmp clear count=0 open=1
+enemydoor sttmp none count=1 open=0
 == Y. AdminResurrect ==
 adminres user hp=0 dead=1
 adminres short hp=0 dead=1
