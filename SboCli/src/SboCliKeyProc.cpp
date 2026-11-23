@@ -8222,7 +8222,7 @@ void KeyProcQUEST(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			break;
 		case QUESTMARK_READY:
 			nType = IDCONFIRMTYPE_QUESTHANDIN;
-			_snprintf (szTmp, sizeof (szTmp) - 1, "「%s」が終わりました。ほうしゅうを受け取りますか？", pItem->szName);
+			_snprintf (szTmp, sizeof (szTmp) - 1, "「%s」が終わりました。報酬を受け取りますか？", pItem->szName);
 			break;
 		default:
 			/* 受けられない */
