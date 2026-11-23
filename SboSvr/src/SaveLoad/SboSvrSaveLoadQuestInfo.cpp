@@ -330,6 +330,7 @@ typedef struct _QUESTFILE {
 	WORD		wNeedFlag;								/* 受ける条件の印（番号+1。0=無し。古いファイルには無く、0 =無しで読める） */
 	WORD		wNotFlag;
 	char		szIntro[MAX_QUESTINTRO];				/* 導入のお話（古いファイルには無く、空で読める） */
+	BYTE		byLevelMin;								/* 受けられる最低レベル（0=制限なし。古いファイルには無く、0 で読める） */
 } QUESTFILE;
 
 /* 依頼情報のカラム */
@@ -378,6 +379,7 @@ static const COLINFO s_aQuestCol[] = {
 	COL (QUESTFILE, wNeedFlag,		COL_U16),
 	COL (QUESTFILE, wNotFlag,		COL_U16),
 	COLS(QUESTFILE, szIntro,		COL_STR, MAX_QUESTINTRO),
+	COL (QUESTFILE, byLevelMin,		COL_U8),
 };
 
 BOOL SaveQuestInfo(void);										/* 依頼情報保存 */
@@ -400,6 +402,7 @@ static void ToFile(QUESTFILE *p, const QUESTINFO *q)
 	p->byStepCount = q->byStepCount;
 	memcpy (p->aszGoal, q->aszGoal, sizeof (p->aszGoal));
 	p->byChallenge = q->byChallenge;	p->wLoanStTmp = q->wLoanStTmp;	p->byMemberMin = q->byMemberMin;
+	p->byLevelMin = q->byLevelMin;
 	/* 印・数値の番号は「番号+1」で保存する（0=無し。この項目が無い古いファイルは全部 0 で「無し」になる） */
 	for (i = 0; i < MAX_QUESTDONESET; i ++) {
 		p->awDoneSetFlag[i] = (q->awDoneSetFlag[i] < MAX_FLAGBIT) ? (WORD)(q->awDoneSetFlag[i] + 1) : 0;
@@ -439,6 +442,7 @@ static void FromFile(QUESTINFO *q, const QUESTFILE *p)
 	q->byStepCount = p->byStepCount;
 	memcpy (q->aszGoal, p->aszGoal, sizeof (q->aszGoal));
 	q->byChallenge = p->byChallenge;	q->wLoanStTmp = p->wLoanStTmp;	q->byMemberMin = p->byMemberMin;
+	q->byLevelMin = p->byLevelMin;
 	for (i = 0; i < MAX_QUESTDONESET; i ++) {
 		q->awDoneSetFlag[i] = ((p->awDoneSetFlag[i] >= 1) && (p->awDoneSetFlag[i] <= MAX_FLAGBIT)) ? (WORD)(p->awDoneSetFlag[i] - 1) : (WORD)FLAG_NOBIT;
 	}

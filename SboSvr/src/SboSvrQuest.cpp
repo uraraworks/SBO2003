@@ -1452,6 +1452,15 @@ BOOL QuestFlagOk(PCHARINFO pChar, const QUESTINFO *pQuest)
 	return TRUE;
 }
 
+/* 依頼を受ける最低レベルに合うか（0=制限なし。管理者は常に合う） */
+BOOL QuestLevelOk(PCHARINFO pChar, const QUESTINFO *pQuest)
+{
+	if ((pQuest->byLevelMin == 0) || (pChar->byAdminLV != ADMINLV_USER)) {
+		return TRUE;
+	}
+	return (pChar->byLevel >= pQuest->byLevelMin) ? TRUE : FALSE;
+}
+
 /* ========================================================================= */
 /* 見えるNPC に話す															 */
 /* ========================================================================= */
@@ -1790,6 +1799,16 @@ static int GetGuildNo(PCHARINFO pNpc)
 	return n;
 }
 
+/* NPC の台詞に、番号の後ろの挨拶（「@g10【受付】@1いらっしゃい…」の【受付】以降）があるか */
+static BOOL GuildHasGreeting(PCHARINFO pNpc)
+{
+	const char *p = pNpc->pszNpcSpeech + 2;
+	while ((*p >= '0') && (*p <= '9')) {
+		p ++;
+	}
+	return (*p != 0) ? TRUE : FALSE;
+}
+
 /* 仲間が受けている依頼の番号（誰も受けていなければ 0。食い違っていれば 0xFFFF） */
 static WORD GetPartyQuest(PCHARINFO pChar, PCHARINFO pExclude)
 {
@@ -1884,6 +1903,7 @@ void QuestGuildTalk(PCHARINFO pChar, PCHARINFO pNpc)
 	CMDPARA_QUEST Para;
 	int i, nGuild = GetGuildNo (pNpc);
 	WORD wParty = GetPartyQuest (pChar, pChar);
+	int nHideLv = 0;												/* 最低レベルに足りなくて出さなかった依頼の数 */
 
 	for (i = 0; i < g_aQuestInfo.GetSize (); i ++) {
 		PQUESTINFO pQuest = g_aQuestInfo[i];
@@ -1902,6 +1922,11 @@ void QuestGuildTalk(PCHARINFO pChar, PCHARINFO pNpc)
 		if ((pChar->wQuestID != pQuest->wID) && !QuestFlagOk (pChar, pQuest)) {
 			continue;
 		}
+		/* 最低レベルに足りないものも出さない（受けている人・管理者には出す）。出さなかった数を覚えておく */
+		if ((pChar->wQuestID != pQuest->wID) && !QuestLevelOk (pChar, pQuest)) {
+			nHideLv ++;
+			continue;
+		}
 		if ((int)aList.size () >= MAX_QUESTLIST) {
 			break;
 		}
@@ -1916,6 +1941,10 @@ void QuestGuildTalk(PCHARINFO pChar, PCHARINFO pNpc)
 	Para.dwNpcTblID = pNpc->dwTblID;
 	Para.byCount = (BYTE)aList.size ();
 	if (aList.empty ()) {
+		/* レベルで絞って 1 件も出ない時だけ、窓口の一言を添える（NPC に自前の台詞があればそちらが先なので添えない） */
+		if ((nHideLv > 0) && !GuildHasGreeting (pNpc)) {
+			CopyStr (Para.szMsg, sizeof (Para.szMsg), "いまのレベルに合う依頼はありません。");
+		}
 		svrSock.SendTo (pChar->pID, (LPBYTE)&Para, sizeof (Para), SENDTIMEOUT);
 		return;
 	}
@@ -1931,6 +1960,12 @@ void QuestGuildTalk(PCHARINFO pChar, PCHARINFO pNpc)
 			Para.byMark = QUESTMARK_LOCKED;
 		} else {
 			Para.byMark = QUESTMARK_FREE;
+		}
+		/* レベルで依頼を絞った人にだけ、最初の 1 件に窓口の一言を添える（NPC に自前の台詞があればそちらが先なので添えない） */
+		if ((i == 0) && (nHideLv > 0) && !GuildHasGreeting (pNpc)) {
+			CopyStr (Para.szMsg, sizeof (Para.szMsg), "今のレベルに合った依頼は、こんな感じです。");
+		} else {
+			Para.szMsg[0] = 0;
 		}
 		CopyStr (Para.szName, sizeof (Para.szName), pQuest->szName);
 		CopyStr (Para.szExplain, sizeof (Para.szExplain), pQuest->szExplain);
@@ -2013,6 +2048,12 @@ static void DoAccept(PCHARINFO pChar, PCHARINFO pNpc, PQUESTINFO pQuest)
 		SendResult (pChar, QUESTRESULT_NG, 0, "この依頼は、いまは受けられません。");
 		return;
 	}
+	if (!QuestLevelOk (pChar, pQuest)) {
+		char szLv[96];
+		snprintf (szLv, sizeof (szLv), "この依頼を受けるには、レベル%uが必要です。", (unsigned)pQuest->byLevelMin);
+		SendResult (pChar, QUESTRESULT_NG, 0, szLv);
+		return;
+	}
 	wParty = GetPartyQuest (pChar, pChar);
 	if ((wParty != 0) && (wParty != pQuest->wID)) {
 		SendResult (pChar, QUESTRESULT_NG, 0, "仲間が別の依頼を受けているので、同じ依頼しか受けられません。");
@@ -2044,6 +2085,11 @@ static void DoAccept(PCHARINFO pChar, PCHARINFO pNpc, PQUESTINFO pQuest)
 		for (i = 0; i < aMember.size (); i ++) {
 			if (!QuestFlagOk (aMember[i], pQuest)) {
 				snprintf (szTmp, sizeof (szTmp), "%sさんは、この依頼をいまは受けられません。", aMember[i]->szName);
+				SendResult (pChar, QUESTRESULT_NG, 0, szTmp);
+				return;
+			}
+			if (!QuestLevelOk (aMember[i], pQuest)) {
+				snprintf (szTmp, sizeof (szTmp), "%sさんは、レベルが足りないので、この依頼を受けられません。", aMember[i]->szName);
 				SendResult (pChar, QUESTRESULT_NG, 0, szTmp);
 				return;
 			}

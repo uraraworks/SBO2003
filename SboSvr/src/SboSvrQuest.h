@@ -93,6 +93,7 @@ extern BOOL QuestIsRewarded(PCHARINFO pChar, WORD wQuestID);	/* 報酬をもう�
 extern void StoryTalk(PCHARINFO pChar, PCHARINFO pNpc);			/* 語り部（台詞 "@r"）に話しかけた（思い出の本の一覧を送る） */
 extern BOOL StoryIsNpc(PCHARINFO pNpc);							/* 台詞が "@r" で始まるか */
 extern BOOL QuestFlagOk(PCHARINFO pChar, const QUESTINFO *pQuest);	/* 依頼を受ける条件の印（wNeedFlag・wNotFlag）に合うか */
+extern BOOL QuestLevelOk(PCHARINFO pChar, const QUESTINFO *pQuest);	/* 依頼を受ける最低レベル（byLevelMin）に合うか（管理者は常に TRUE） */
 extern BOOL QuestGiveItemNotice(PCHARINFO pChar, WORD wItem, QUESTNOTICEVEC *pvLater = NULL);	/* 会話データからアイテムを 1 つ渡して知らせる（持ち物がいっぱいなら預かり所へ。渡せたら TRUE。pvLater があれば知らせは送らず溜める） */
 extern void QuestNoticeFlush(PCHARINFO pChar, QUESTNOTICEVEC *pvLater);	/* 溜めた知らせを、溜めた順に送って空にする（セリフの窓を送った直後に呼ぶ） */
 enum { QUESTTAKE_NONE = 0, QUESTTAKE_BAG, QUESTTAKE_IMPORTANT };	/* QuestTakeFind の戻り値（持っていない・手持ち・大事な物の欄） */

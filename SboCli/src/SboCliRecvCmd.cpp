@@ -4162,12 +4162,58 @@ PWNDINFO QuestListOpen(BOOL bBook)
 /* 内容：語り部の台詞をメッセージの窓で出す（思い出の本の一覧を開く前）		 */
 /*       台詞は NPC の台詞「@r」の後ろの文。空なら既定文。ボタンで送ると一覧が開く */
 /* ========================================================================= */
+static BOOL s_bQuestGreetBook = FALSE;							/* 台詞を送り終えたら開く一覧が、思い出の本の一覧か（FALSE=ギルドの一覧） */
+
+/* ギルドの窓口の台詞を出す（一覧を開く前）。NPC の台詞「@gNN」の NN の後ろに文があればそれを、無ければ
+   サーバーが添えた一言（pszDefault。レベルで依頼を絞った人にだけ届く）を出す。どちらも無ければ出さずにすぐ一覧。
+   送り終えたら（閉じたら）ギルドの一覧を開く */
+static void QuestGuildGreet(DWORD dwNpcTblID, const char *pszDefault)
+{
+	std::string strMsg;
+	int nNo;
+
+	g_dwQuestStoryMsgID = 0;
+	nNo = GetCharNo2 (dwNpcTblID);
+	if ((nNo >= 0) && (g_aCharInfo[nNo]->pszNpcSpeech != NULL) &&
+		(g_aCharInfo[nNo]->pszNpcSpeech[0] == '@') && (g_aCharInfo[nNo]->pszNpcSpeech[1] == 'g')) {
+		const char *p = &g_aCharInfo[nNo]->pszNpcSpeech[2];
+		while ((*p >= '0') && (*p <= '9')) {
+			p ++;
+		}
+		strMsg = p;
+	}
+	if (strMsg.empty ()) {
+		strMsg = pszDefault;
+	}
+	if (strMsg.empty ()) {
+		return;
+	}
+	/* 送るまで待つ（台詞の最後が入力待ちでなければ足す） */
+	if ((strMsg.size () < 2) || (strMsg[strMsg.size () - 2] != '@') ||
+		((strMsg[strMsg.size () - 1] != '0') && (strMsg[strMsg.size () - 1] != '2'))) {
+		strMsg += "@0";
+	}
+	s_bQuestGreetBook = FALSE;
+	nNo = GetWindowID (g_dwMsgIDCommand);
+	if (nNo >= 0) {
+		EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
+	}
+	g_dwMsgIDCommand = 0;
+	g_dwQuestWaitTime = 0;
+	PWNDINFO pWndMsg = MakeWindowMSG ((LPSTR)strMsg.c_str (), TRUE);
+	g_WndInfo.Add (pWndMsg);
+	g_dwActiveMsgID = pWndMsg->dwID;
+	g_dwQuestStoryMsgID = pWndMsg->dwID;
+	g_bDraw = TRUE;
+}
+
 void QuestStoryGreet(DWORD dwNpcTblID)
 {
 	std::string strMsg;
 	int nNo;
 
 	g_dwQuestStoryMsgID = 0;
+	s_bQuestGreetBook = TRUE;
 	nNo = GetCharNo2 (dwNpcTblID);
 	if ((nNo < 0) || (g_aCharInfo[nNo]->pszNpcSpeech == NULL) ||
 		(g_aCharInfo[nNo]->pszNpcSpeech[0] != '@') || (g_aCharInfo[nNo]->pszNpcSpeech[1] != 'r')) {
@@ -4209,7 +4255,7 @@ void QuestStoryGreetEnd(DWORD dwMsgID)
 	}
 	g_dwQuestStoryMsgID = 0;
 	if (QuestFindWindow (QUESTWND_LIST) == NULL) {
-		PWNDINFO pWndList = QuestListOpen (TRUE);
+		PWNDINFO pWndList = QuestListOpen (s_bQuestGreetBook);
 		/* カーソルと表示位置を一覧の中に収める */
 		pWndList->nData1 = 0;
 		pWndList->nData2 = 0;
@@ -4272,6 +4318,16 @@ void RecvDataProcQUEST(PBYTE pData, DWORD dwDataSize)
 			}
 		}
 		if (pWndList == NULL) {
+			/* ギルドの窓口の台詞があれば（NPC 自前の台詞か、サーバーが添えた一言）、先に出して、送ったら一覧を開く。
+			   一覧の続きのデータは、台詞を出している間もここで溜めておく */
+			if ((pPara->byType == QUESTCMD_LISTITEM) && (pPara->byIndex == 0) &&
+				((g_dwQuestStoryMsgID == 0) || (GetWindowID (g_dwQuestStoryMsgID) < 0))) {
+				QuestGuildGreet (pPara->dwNpcTblID, pPara->szMsg);
+			}
+			if ((pPara->byType == QUESTCMD_LISTITEM) && (g_dwQuestStoryMsgID != 0) && (GetWindowID (g_dwQuestStoryMsgID) >= 0)) {
+				g_bDraw = TRUE;
+				return;
+			}
 			if (pPara->byType == QUESTCMD_STORYITEM) {
 				/* 語り部に話した最初の返事：先に語り部の台詞を出し、送ったら（閉じたら）一覧を開く。
 				   一覧の続きのデータは、台詞を出している間もここで溜めておく */
