@@ -234,6 +234,7 @@ typedef struct _QUESTLISTITEM {
 	char		szExplain[MAX_QUESTMSG];							/* 説明 */
 	char		szGoal[MAX_QUESTGOAL];								/* いまの目的 */
 	char		szReward[MAX_QUESTGOAL];							/* 報酬 */
+	BYTE		byIntro;											/* 1=導入のお話がある（受ける前に読ませる） */
 } QUESTLISTITEM, *PQUESTLISTITEM;
 
 /* 作り手ウィンドウ(WNDTYPE_MAKER)の nType2 */
@@ -327,6 +328,7 @@ typedef struct _WNDINFO {
 	int				nMsgBackLine;								/* メッセージ：入力待ちの間に上キーで読み返している行数（0 なら最新） */
 	int				nMsgScrollMax;								/* メッセージ：最後に描いた時にずれていた行数（読み返せる上限） */
 	BOOL			bDungeonReception;							/* 姿の一覧と一緒に表示する受付の説明 */
+	WORD			wMsgQuestIntro;								/* メッセージ：依頼の導入のお話の窓（依頼番号。0=違う）。キャンセルで何もせず閉じ、最後まで読んだら「受けますか？」を出す */
 	BOOL			bMsgSkip;									/* メッセージ：キャンセルで残りを飛ばして閉じてよい（アイテムを使った時の読み物だけ） */
 } WNDINFO, *PWNDINFO;
 

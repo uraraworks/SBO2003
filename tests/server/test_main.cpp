@@ -4895,6 +4895,43 @@ static void TestQuest(const std::vector<int> &aLogin)
 		FlagBitSet(pOwner->abyFlag, 501, FALSE);
 	}
 
+	/* 導入のお話：一覧には「ある」目印だけ。決定を押した時の要求（INTROREQ）で本文が 1 通だけ返る。
+	   読まずに受けてもよい。保存して読み直しても残る（古いファイルは空） */
+	{
+		PQUESTINFO pQ3 = NULL;
+		for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) if (g_aQuestInfo[i]->wID == 3) pQ3 = g_aQuestInfo[i];
+		if (pQ3) {
+			QuestMovePC(pOwner, nMap, aCell[4].first, aCell[4].second + 1);
+			pOwner->wQuestID = 0;
+			int n0 = MockCmdCount(anConn[0], CMD_QUEST);
+			QuestSendCmd(pOwner, QUESTCMD_INTROREQ, 3, dwGuild);
+			printf("quest intro none packets=%d", MockCmdCount(anConn[0], CMD_QUEST) - n0);
+			strcpy(pQ3->szIntro, "むかしむかし。@0つづきです。@1おわり。@2");
+			SaveQuestInfo();
+			for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) delete g_aQuestInfo[i];
+			g_aQuestInfo.RemoveAll();
+			LoadQuestInfo();
+			pQ3 = NULL;
+			for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) if (g_aQuestInfo[i]->wID == 3) pQ3 = g_aQuestInfo[i];
+			printf(" reload=%d", (pQ3 && strcmp(pQ3->szIntro, "むかしむかし。@0つづきです。@1おわり。@2") == 0) ? 1 : 0);
+			if (pQ3) {
+				n0 = MockCmdCount(anConn[0], CMD_QUEST);
+				QuestSendCmd(pOwner, QUESTCMD_INTROREQ, 3, dwGuild);
+				printf(" req packets=%d", MockCmdCount(anConn[0], CMD_QUEST) - n0);
+				n0 = MockCmdCount(anConn[0], CMD_QUEST);
+				QuestSendCmd(pOwner, QUESTCMD_INTROREQ, 3, pOwner->dwTblID);		/* ギルドの人ではない */
+				QuestSendCmd(pOwner, QUESTCMD_INTROREQ, 9999, dwGuild);	/* 無い依頼 */
+				printf(" bad packets=%d", MockCmdCount(anConn[0], CMD_QUEST) - n0);
+				QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 3, dwGuild);			/* 読まずに受けてもよい */
+				printf(" accept=%u\n", pOwner->wQuestID);
+				QuestSendCmd(pOwner, QUESTCMD_CANCEL, 0, dwGuild);
+				memset(pQ3->szIntro, 0, sizeof(pQ3->szIntro));
+			} else {
+				printf("\n");
+			}
+		}
+	}
+
 	/* 会話の行：受けている依頼の条件・アイテムを渡す（一度きりは「立てる印」と「いけない印」で組む） */
 	{
 		PTALKINFO pTalk = new TALKINFO;

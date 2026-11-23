@@ -220,6 +220,8 @@ extern int g_nQuestListCount;											/* 依頼一覧の件数 */
 extern DWORD g_dwQuestGuildTblID;										/* 一覧を出したギルドの人（思い出の本の時は語り部）のテーブルID */
 extern BOOL g_bQuestBook;												/* 依頼の一覧の窓が、思い出の本（語り部に話した時）の一覧か */
 extern DWORD g_dwQuestStoryMsgID;										/* 語り部の台詞の窓の番号（0=出していない。閉じたら思い出の本の一覧を開く） */
+extern DWORD g_dwQuestIntroMsgID;										/* 依頼の導入のお話の窓の番号（0=出していない） */
+extern WORD g_wQuestIntroID;											/* 導入のお話を読んでいる依頼の番号 */
 extern DWORD g_dwQuestWaitTime;											/* 一覧の返事待ちを始めた時間（0=待っていない） */
 extern BOOL QuestHasAny			(void);				/* 自分か仲間が依頼を受けているか、物語の「いまの目的」があるか（コマンドに「目的」を出すか） */
 extern CMDPARA_QUESTSTATE g_QuestState;									/* 自分と仲間の依頼の進み具合（byCount=0 なら無し） */

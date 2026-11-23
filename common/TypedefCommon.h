@@ -84,6 +84,7 @@
 #define MAX_QUESTNAME		64										/* 依頼の名前の欄のバイト数（終端含む） */
 #define MAX_QUESTMSG		256										/* 依頼の説明・台詞の欄のバイト数（終端含む） */
 #define MAX_QUESTGOAL		128										/* 依頼の「いまの目的」の欄のバイト数（終端含む） */
+#define MAX_QUESTINTRO		1024									/* 依頼の「導入のお話」の欄のバイト数（終端含む。NPC の台詞と同じ制御コード @0 @1 @2） */
 #define MAX_QUESTLIST		16										/* ギルドの一覧に出す依頼の最大数 */
 #define MAX_QUESTDONEBYTE	(MAX_QUEST / 8)							/* 一度きり依頼のクリア済みの印の大きさ（バイト） */
 #define MAX_QUESTDONESET	2										/* 依頼を完了した時に立てる印の数（QUESTINFO の awDoneSetFlag） */
@@ -3248,6 +3249,7 @@ typedef struct _QUESTINFO {
 	BYTE		byDoneNumVal;										/* 数値の動きの値 */
 	WORD		wNeedFlag;											/* この印が立っている人だけ受けられる（FLAG_NOBIT=条件なし） */
 	WORD		wNotFlag;											/* この印が立っている人は受けられない（FLAG_NOBIT=条件なし） */
+	char		szIntro[MAX_QUESTINTRO];							/* 導入のお話（受ける前に読ませる長い文。空なら読ませずにすぐ確認。保存する） */
 } QUESTINFO, *PQUESTINFO;
 
 /* 討伐チャレンジの種類(QUESTINFO の byChallenge) */
@@ -3312,6 +3314,8 @@ enum {
 	QUESTCMD_STORYREQ,											/* 思い出の本の一覧の要求（クライアント→サーバー。dwNpcTblID=話した語り部） */
 	QUESTCMD_STORYITEM,											/* 思い出の本の一覧の1件（サーバー→クライアント。byIndex 番目・全部で byCount 件。0 件なら byCount=0 だけ届く。wQuestID=シナリオ番号・szName・szExplain・szGoal=いっしょに最初に戻る後のお話の名前） */
 	QUESTCMD_STORYRESET,										/* 思い出をやり直す（クライアント→サーバー。wQuestID=シナリオ番号・dwNpcTblID=語り部。結果は RESULT） */
+	QUESTCMD_INTROREQ,											/* 導入のお話の要求（クライアント→サーバー。wQuestID・dwNpcTblID=話したギルドの人） */
+	QUESTCMD_INTRO,												/* 導入のお話（サーバー→クライアント。wQuestID。本文は構造体の後ろに終端付きで続く可変長） */
 };
 
 /* 一覧の印(CMDPARA_QUEST の byMark) */
@@ -3348,6 +3352,7 @@ typedef struct _CMDPARA_QUEST {
 	char		szGoal[MAX_QUESTGOAL];								/* いまの目的（LISTITEM。受けている依頼だけ） */
 	char		szReward[MAX_QUESTGOAL];							/* 報酬の文（LISTITEM） */
 	char		szMsg[MAX_QUESTMSG];								/* 台詞・お知らせ（RESULT） */
+	BYTE		byIntro;											/* 1=導入のお話がある（LISTITEM。受けると決める前に INTROREQ で読める） */
 } CMDPARA_QUEST, *PCMDPARA_QUEST;
 
 /* 依頼の進み具合の1人分 */

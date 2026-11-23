@@ -538,6 +538,7 @@ static const DATAFIELD s_aFieldQuest[] = {
 	FLDS(QUESTINFO, szExplain,			"説明",					FT_STR, FF_MULTILINE, "一覧で選んだ時に出る説明（報酬は自動で出る）"),
 	FLDS(QUESTINFO, szMsgAccept,		"受けた時の台詞",		FT_STR, FF_MULTILINE, "省くと「依頼を受けました。」"),
 	FLDS(QUESTINFO, szMsgDone,			"達成した時の台詞",		FT_STR, FF_MULTILINE, "省くと「ありがとう！ 依頼は完了です。」"),
+	FLDS(QUESTINFO, szIntro,			"導入のお話",			FT_STR, FF_MULTILINE, "受ける前に読ませる長い文（最大 1023 バイト）。NPC の台詞と同じ制御コード（@0=入力待ち＝次のページ @1=改行 @2=終わり）。空なら読ませずにすぐ「受けますか？」。受けていない依頼で決定を押すと、まずこの文を 1 ページずつ読み、読み終わったら受けるか選ぶ。途中でキャンセルすると何も起きず一覧に戻る"),
 	FLD (QUESTINFO, dwGold,				"報酬のお金",			FT_U32, 0, "ゴールド（持てる上限 999999 まで）"),
 	FLD (QUESTINFO, dwExp,				"報酬の経験値",			FT_U32, 0, NULL),
 	FLD (QUESTINFO, wRewardItem,		"報酬のアイテム",		FT_U16, 0, "item の番号（0=なし）。持ち物がいっぱいなら預かり所へ。どちらもいっぱいだと渡せずやり直し"),
@@ -5773,6 +5774,7 @@ void SboDataQuestApplyInfo(int nNo, const QUESTINFO *pInfo, int &nNoOut, std::st
 	Info.szExplain[sizeof(Info.szExplain) - 1] = 0;
 	Info.szMsgAccept[sizeof(Info.szMsgAccept) - 1] = 0;
 	Info.szMsgDone[sizeof(Info.szMsgDone) - 1] = 0;
+	Info.szIntro[sizeof(Info.szIntro) - 1] = 0;
 	for (int i = 0; i < MAX_QUESTSTEP; i ++) {
 		Info.aszGoal[i][MAX_QUESTGOAL - 1] = 0;
 	}
