@@ -9097,6 +9097,19 @@ static void TestEnemyDoor(const std::vector<int> &aLogin)
 		printf("enemydoor sttmp target count=%d open=%d\n", SpaceDoorEnemyCount(pPC->dwMapID, &Door, SPACE_NORMAL), EnemyDoorOpen(pPC, pEvent, &Door));
 		DeleteChar(pT->dwTblID);					/* 指定の敵が倒れる（指定外は残っている） */
 		printf("enemydoor sttmp clear count=%d open=%d\n", SpaceDoorEnemyCount(pPC->dwMapID, &Door, SPACE_NORMAL), EnemyDoorOpen(pPC, pEvent, &Door));
+		/* NPC発生から出た敵は自分では番号を持たず（-1）、発生元(dwParentTblID)の番号で数える */
+		{
+			PCHARINFO pC = EnemyDoorMake(pPC, nX + 2, nY, SPACE_NORMAL);
+			DWORD dwOutBack = pOut->dwStTmplateID;
+			pC->dwStTmplateID = (DWORD)-1;
+			pC->dwParentTblID = pOut->dwTblID;
+			pOut->dwStTmplateID = wTarget;			/* 発生元が指定の番号 */
+			printf("enemydoor sttmp child target count=%d\n", SpaceDoorEnemyCount(pPC->dwMapID, &Door, SPACE_NORMAL));
+			pOut->dwStTmplateID = 7;				/* 発生元が指定外 */
+			printf("enemydoor sttmp child other count=%d\n", SpaceDoorEnemyCount(pPC->dwMapID, &Door, SPACE_NORMAL));
+			pOut->dwStTmplateID = dwOutBack;
+			DeleteChar(pC->dwTblID);
+		}
 		Door.wEnemyStTmp = 65535;					/* 指定なしなら指定外の敵も数える */
 		SpaceEnemyDoorCheckMap(pPC->dwMapID);
 		printf("enemydoor sttmp none count=%d open=%d\n", SpaceDoorEnemyCount(pPC->dwMapID, &Door, SPACE_NORMAL), EnemyDoorOpen(pPC, pEvent, &Door));
