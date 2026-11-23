@@ -555,6 +555,7 @@ static const DATAFIELD s_aFieldQuest[] = {
 	FLD (QUESTINFO, wNeedFlag,			"受ける条件の印",		FT_U16, 0, "キャラのフラグの印の番号（0〜1023）。この印が立っている人だけ、ギルドの一覧に出て受けられる。65535=条件なし（足す時に省くと条件なし）"),
 	FLD (QUESTINFO, wNotFlag,			"受けられなくなる印",	FT_U16, 0, "キャラのフラグの印の番号（0〜1023）。この印が立っている人は、ギルドの一覧に出ず受けられない。65535=条件なし（足す時に省くと条件なし）。すでに受けている人は続けられる"),
 	FLD (QUESTINFO, byLevelMin,			"最低レベル",			FT_U8, 0, "キャラのレベルがこれ未満の人にはギルドの一覧に出さず、受けられない。0=制限なし（足す時に省くと 0）。管理者は常に見える。既に受けている人には影響しない"),
+	FLD (QUESTINFO, wCancelStory,		"取り消しで戻すお話",	FT_U16, 0, "依頼を取り消した時に、最初に戻す思い出の本のお話の番号（0=何もしない）。そのお話とつながる後のお話の印・数値・持ち物・宝箱が、やり直しと同じように戻る。管理者ウィンドウ・ほかの取り消しでは戻さない"),
 };
 
 /* 思い出の本のシナリオ（クリア済みのミニシナリオをキャラごとにやり直す。NPC の台詞を "@r" にした語り部に話すと、そのキャラがクリアしたシナリオの一覧が開く）。
@@ -5014,6 +5015,19 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 			if (Info.byLevelMin > MAX_QUESTLEVELMIN) {
 				strErr = "byLevelMin（最低レベル）は 0〜" + JsonNum(MAX_QUESTLEVELMIN) + " で指定してください（0=制限なし）";
 				goto Exit;
+			}
+			if (Info.wCancelStory != 0) {
+				bool bFound = false;
+				for (int k = 0; k < g_aStoryInfo.GetSize(); k ++) {
+					if (g_aStoryInfo[k]->wID == Info.wCancelStory) {
+						bFound = true;
+						break;
+					}
+				}
+				if (Info.wCancelStory >= MAX_STORY || !bFound) {
+					strErr = "wCancelStory（取り消しで戻すお話）は 0（何もしない）か、思い出の本のお話の wID（1〜" + JsonNum(MAX_STORY - 1) + "）で指定してください";
+					goto Exit;
+				}
 			}
 			if (Info.byDoneNumNo >= MAX_FLAGNUM && Info.byDoneNumNo != FLAG_NONUM) {
 				strErr = "byDoneNumNo は数値の番号（0〜" + JsonNum(MAX_FLAGNUM - 1) + "）か 255（無し）で指定してください";
