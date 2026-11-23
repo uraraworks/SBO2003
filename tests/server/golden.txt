@@ -1497,6 +1497,7 @@ enemydoor force=0
 enemydoor clear open=1 chgmap=1 sound=1 sysmsg=1
 enemydoor later open=1
 enemydoor respawn onDoor open=1
+enemydoor respawn next open=1
 enemydoor respawn open=0 sysmsg=1
 enemydoor sttmp other count=0 open=1
 enemydoor sttmp target count=1 open=0
@@ -1507,6 +1508,8 @@ enemydoor sttmp none count=1 open=0
 enemydoor inside before open=0
 enemydoor inside hall open=0
 enemydoor inside back open=1 mapmsg=2
+enemydoor inside stay open=1
+enemydoor inside leave open=0
 == X2. DoorExtra ==
 doorextra api bad dx over ok=0 events=1
 doorextra api bad dx under ok=0 events=1

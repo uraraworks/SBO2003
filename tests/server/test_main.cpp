@@ -9078,6 +9078,9 @@ static void TestEnemyDoor(const std::vector<int> &aLogin)
 	SpaceEnemyDoorCheckMap(pPC->dwMapID);
 	printf("enemydoor respawn onDoor open=%d\n", EnemyDoorOpen(pPC, pEvent, &Door));
 	MimicPC(pPC, nX, nY, 3);
+	SpaceEnemyDoorCheckMap(pPC->dwMapID);
+	printf("enemydoor respawn next open=%d\n", EnemyDoorOpen(pPC, pEvent, &Door));	/* 扉のすぐ隣にいる間は閉めない */
+	MimicPC(pPC, nX - 1, nY, 3);
 	{
 		int nSys0 = MockCmdCount(nConn, CMD_SYSMSG);
 		SpaceEnemyDoorCheckMap(pPC->dwMapID);
@@ -9127,6 +9130,11 @@ static void TestEnemyDoor(const std::vector<int> &aLogin)
 		MimicPC(pPC, nX, nY, 3);					/* 奥側（範囲の外）から */
 		MimicExamine(pPC);
 		printf("enemydoor inside back open=%d mapmsg=%d\n", EnemyDoorOpen(pPC, pEvent, &Door), MockCmdCount(nConn, CMD_MAPMSG) - nMsg0);
+		SpaceEnemyDoorCheckMap(pPC->dwMapID);
+		printf("enemydoor inside stay open=%d\n", EnemyDoorOpen(pPC, pEvent, &Door));	/* 開けた直後、隣にいる間は閉まらない */
+		MimicPC(pPC, nX - 2, nY, 3);
+		SpaceEnemyDoorCheckMap(pPC->dwMapID);
+		printf("enemydoor inside leave open=%d\n", EnemyDoorOpen(pPC, pEvent, &Door));	/* 離れたら閉まる */
 	}
 
 	/* 片付け */
