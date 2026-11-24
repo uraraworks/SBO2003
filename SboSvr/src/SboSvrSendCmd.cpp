@@ -1911,6 +1911,17 @@ void SendCmdDGSTATUS(DWORD pIDSend, PCMDPARA_DGSTATUS pPara)
 }
 
 /* ========================================================================= */
+/* 関数名：SendCmdPUZZLESTATE												 */
+/* 内容：コマンド送信(落ち物パズルの盤面・落ち物・得点。席に座っている人にだけ)	 */
+/*		 pData は先頭が CMDPARA_PUZZLESTATE。盤面付きの時はその後ろに続く		 */
+/* ========================================================================= */
+void SendCmdPUZZLESTATE(DWORD pIDSend, PBYTE pData, DWORD dwSize)
+{
+	((PCMDPARA_PUZZLESTATE)pData)->byCmd = CMD_PUZZLESTATE;
+	svrSock.SendTo (pIDSend, pData, dwSize, SENDTIMEOUT);
+}
+
+/* ========================================================================= */
 /* 関数名：SendCmdDGDEFMAP													 */
 /* 内容：コマンド送信(番外編の拠点防衛：全体地図。その人にだけ)				 */
 /* 備考：CMDPARA_DGDEFMAP＋仲間の位置＋敵の座標を呼び出し側で組み立てて渡す	 */

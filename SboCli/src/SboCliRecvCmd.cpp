@@ -9,6 +9,7 @@
 #include "stdafx.h"
 #include "../../common/DungeonReception.h"
 #include "common/BowFlight.h"
+#include "common/FallingPuzzle.h"
 #include <string>
 #include <vector>
 #include "SboCliRecvCmd.h"
@@ -175,6 +176,7 @@ void	RecvDataProcMAPSWAP					(PBYTE, DWORD);			/* 受信データ処理(印で�
 void	RecvDataProcHASTE					(PBYTE, DWORD);			/* 受信データ処理(加速の状態) */
 void	RecvDataProcDGDEFSTATUS				(PBYTE, DWORD);			/* 受信データ処理(拠点防衛の状態) */
 void	RecvDataProcDGSTATUS				(PBYTE, DWORD);			/* 受信データ処理(番外編ダンジョンの状況パネル) */
+void	RecvDataProcPUZZLESTATE				(PBYTE, DWORD);			/* 受信データ処理(落ち物パズルの盤面・落ち物・得点) */
 void	RecvDataProcCHARBUFF				(PBYTE, DWORD);			/* 受信データ処理(攻撃力・守備力アップの残り) */
 void	RecvDataProcMAKERINFO				(PBYTE, DWORD);			/* 受信データ処理(作り手情報) */
 void	RecvDataProcRECIPEINFO				(PBYTE, DWORD);			/* 受信データ処理(レシピ情報) */
@@ -475,6 +477,8 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcDGDEFSTATUS,			/* CMD_DGDEFSTATUS */
 	RecvDataProcDGDEFMAP,				/* CMD_DGDEFMAP */
 	RecvDataProcDGSTATUS,				/* CMD_DGSTATUS */
+	NULL,								/* CMD_PUZZLEKEY(クライアント→サーバーのみ) */
+	RecvDataProcPUZZLESTATE,			/* CMD_PUZZLESTATE */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -8623,6 +8627,97 @@ BOOL GetDungeonStatus(PCMDPARA_DGSTATUS pOut)
 	if (s_DgStatus.byState == DGSTATUS_RUN) {
 		pOut->dwElapsedSec += dwAge / 1000;
 	}
+	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcPUZZLESTATE / IsPuzzleSeated / GetPuzzleState		 */
+/* 内容：受信データ処理(落ち物パズル)										 */
+/*		 サーバーは、盤面・次の落ち物・得点が変わった時に盤面全体(FULL)を、	 */
+/*		 動いただけの時は落ち物の位置(MOVE)だけを送る。盤面は FULL の時に覚え、	 */
+/*		 MOVE では位置だけ差し替える。終わり(OVER)は最後の盤面を少し見せる		 */
+/*		 NONE は席を立った・片付いた時で、重ね描きを消す						 */
+/* ========================================================================= */
+#define PUZZLE_OVER_SHOW_MS	(3000)								/* ゲームオーバー後に最後の盤面を見せる時間(ms) */
+static CMDPARA_PUZZLESTATE	s_Puz;									/* 最後に届いた状態 */
+static BYTE					s_abyPuzBoard[PUZZLE_MAX_COLS * PUZZLE_MAX_ROWS];	/* 最後に届いた盤面 */
+static BOOL					s_bPuzBoard;							/* 盤面を持っているか */
+static BOOL					s_bPuzSeat;								/* 席に座って遊んでいる */
+static DWORD				s_dwPuzOverTime;						/* ゲームオーバーを受けた時刻（0=まだ） */
+
+void RecvDataProcPUZZLESTATE(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_PUZZLESTATE pPara = (PCMDPARA_PUZZLESTATE)pData;
+	int nCells;
+
+	if (dwDataSize < sizeof (CMDPARA_PUZZLESTATE)) {
+		return;
+	}
+	switch (pPara->byKind) {
+	case PUZZLESTATE_NONE:
+		s_bPuzSeat = FALSE;
+		s_bPuzBoard = FALSE;
+		s_dwPuzOverTime = 0;
+		break;
+	case PUZZLESTATE_FULL:
+	case PUZZLESTATE_OVER:
+		nCells = (int)pPara->byCols * (int)pPara->byRows;
+		if ((pPara->byCols < 4) || (pPara->byCols > PUZZLE_MAX_COLS) || (pPara->byRows < 4) || (pPara->byRows > PUZZLE_MAX_ROWS) ||
+			(dwDataSize != sizeof (CMDPARA_PUZZLESTATE) + nCells)) {
+			return;
+		}
+		memcpy (&s_Puz, pData, sizeof (CMDPARA_PUZZLESTATE));
+		memcpy (s_abyPuzBoard, pData + sizeof (CMDPARA_PUZZLESTATE), nCells);
+		s_bPuzBoard = TRUE;
+		if (pPara->byKind == PUZZLESTATE_OVER) {
+			s_bPuzSeat = FALSE;
+			s_dwPuzOverTime = timeGetTime ();
+			if (s_dwPuzOverTime == 0) {
+				s_dwPuzOverTime = 1;
+			}
+		} else {
+			s_bPuzSeat = TRUE;
+			s_dwPuzOverTime = 0;
+		}
+		break;
+	case PUZZLESTATE_MOVE:
+		if (!s_bPuzBoard || (pPara->byCols != s_Puz.byCols) || (pPara->byRows != s_Puz.byRows)) {
+			return;
+		}
+		s_Puz.byPiece = pPara->byPiece;
+		s_Puz.byRot = pPara->byRot;
+		s_Puz.cX = pPara->cX;
+		s_Puz.cY = pPara->cY;
+		break;
+	default:
+		return;
+	}
+	g_bDraw = TRUE;
+}
+
+/* 席に座って遊んでいるか（座っている間は歩かず、キーはゲーム側へ送る） */
+BOOL IsPuzzleSeated(void)
+{
+	return s_bPuzSeat && (g_byGameState == GAMESTATE_MOVE);
+}
+
+/* 重ね描きする状態を取得（遊んでいる間と、ゲームオーバー後の少しの間だけ TRUE） */
+BOOL GetPuzzleState(PCMDPARA_PUZZLESTATE pOut, const BYTE **ppBoard, BOOL *pbOver)
+{
+	if (!s_bPuzBoard || (g_byGameState != GAMESTATE_MOVE)) {
+		return FALSE;
+	}
+	if (!s_bPuzSeat) {
+		if ((s_dwPuzOverTime == 0) || ((int)(timeGetTime () - s_dwPuzOverTime) >= PUZZLE_OVER_SHOW_MS)) {
+			s_bPuzBoard = FALSE;
+			s_dwPuzOverTime = 0;
+			return FALSE;
+		}
+		g_bDraw = TRUE;		/* 消える時まで描き続ける */
+	}
+	*pOut = s_Puz;
+	*ppBoard = s_abyPuzBoard;
+	*pbOver = !s_bPuzSeat;
 	return TRUE;
 }
 

@@ -173,6 +173,7 @@ void	RecvDataProcACCADD						(PBYTE, DWORD);				/* アカウント追加要求 *
 void	RecvDataProcGETACC						(PBYTE, DWORD);				/* アカウント・パスワード取得 */
 void	RecvDataProcCHGACC						(PBYTE, DWORD);				/* アカウント・パスワード更新 */
 void	RecvDataProcTALKRAND					(PBYTE, DWORD);				/* 話してランダム要求 */
+void	RecvDataProcPUZZLEKEY					(PBYTE, DWORD);				/* 落ち物パズルのキー入力 */
 void	RecvDataProcSTOPRAND					(PBYTE, DWORD);				/* 止まるかランダム切り替え */
 void	RecvDataProcGETACCINFO					(PBYTE, DWORD);				/* アカウント情報要求 */
 void	RecvDataProcCHGACCSTATE					(PBYTE, DWORD);				/* アカウント状態更新 */
@@ -526,6 +527,8 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	NULL,								/* CMD_DGDEFSTATUS(サーバー→クライアントのみ) */
 	NULL,								/* CMD_DGDEFMAP(サーバー→クライアントのみ) */
 	NULL,								/* CMD_DGSTATUS(サーバー→クライアントのみ) */
+	RecvDataProcPUZZLEKEY,				/* CMD_PUZZLEKEY */
+	NULL,								/* CMD_PUZZLESTATE(サーバー→クライアントのみ) */
 
 	NULL
 };
@@ -3909,7 +3912,7 @@ void RecvDataProc(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	/* 管理者用のコマンド（管理者ウィンドウからしか送らないもの）は管理者だけ */
-	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_APPRAISE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_DUNGEONSEL) && (byCmd != CMD_DUNGEONMAP) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && (byCmd != CMD_TALKANSWER) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET)) && ((byCmd < CMD_RECYCLELIST) || (byCmd > CMD_RECYCLECLOSE))) ||
+	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_APPRAISE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_DUNGEONSEL) && (byCmd != CMD_DUNGEONMAP) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && (byCmd != CMD_TALKANSWER) && (byCmd != CMD_PUZZLEKEY) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET)) && ((byCmd < CMD_RECYCLELIST) || (byCmd > CMD_RECYCLECLOSE))) ||
 			(byCmd == CMD_CHARITEM)) {
 		if (!CheckAdminBan (nNo)) {
 			SAFE_DELETE_ARRAY (pData);
@@ -4852,6 +4855,11 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 	if (pChar->dwMapID == pPara->dwMapID) {
 		/* 誰かに引っ張られてる？ */
 		if (pChar->dwTargetTblID3 != -1) {
+			return;
+		}
+		/* 落ち物パズルの席に座っている間は歩けない。今の位置を送り返す */
+		if (PuzzleIsSeated (pChar)) {
+			SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
 			return;
 		}
 		/* 列に戻る途中(サーバーが歩かせている)は、自分では動けない。今の位置を送り返す */
@@ -8357,6 +8365,13 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 		}
 		return;
 	}
+	/* 落ち物パズルの台（台詞が「@p」で始まる）？ コインを使って席に座る */
+	if (PuzzleIsTableNpc (pChar)) {
+		if ((s_nCharNoRecv >= 0) && IsNearRecvChar (pChar, 2)) {
+			PuzzleSit (g_aCharInfo[s_nCharNoRecv], pChar);
+		}
+		return;
+	}
 	/* ギルドのNPC（台詞が「@gNN」）？ 依頼の一覧を送る */
 	if (QuestIsGuildNpc (pChar)) {
 		if ((s_nCharNoRecv >= 0) && IsNearRecvChar (pChar, 2)) {
@@ -8387,6 +8402,21 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 	sgenrand (timeGetTime ());
 	pChar->byEfect = (BYTE)genrand () % 8;
 	SendCmdEFECTCHG (pChar->pID, pChar->dwTblID, pChar->byEfect);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcPUZZLEKEY											 */
+/* 内容：受信データ処理(落ち物パズルのキー入力)								 */
+/*		 座っている本人のものだけ受ける（座っていなければ何もしない）			 */
+/* ========================================================================= */
+void RecvDataProcPUZZLEKEY(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_DATA1 pPara = (PCMDPARA_DATA1)pData;
+
+	if ((dwDataSize < sizeof (CMDPARA_DATA1)) || (s_nCharNoRecv < 0) || (pPara->dwTblID != (DWORD)s_nCharNoRecv)) {
+		return;
+	}
+	PuzzleKey (g_aCharInfo[s_nCharNoRecv], pPara->byData);
 }
 
 /* ========================================================================= */
@@ -14840,7 +14870,7 @@ BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, 
 	/* 管理者用のコマンドだけ（ログインや「元に戻す」自体は通さない） */
 	if ((byCmd >= CMD_MAX) || (RecvDataProcTbl[byCmd] == NULL) ||
 			((byCmd < CMD_MAPPARTSADD) && (byCmd != CMD_CHARITEM)) ||
-			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_ADMINVIEWALL) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_APPRAISE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_DUNGEONSEL) || (byCmd == CMD_DUNGEONMAP) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET)) || ((byCmd >= CMD_RECYCLELIST) && (byCmd <= CMD_RECYCLECLOSE))) {
+			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_ADMINVIEWALL) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_APPRAISE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_DUNGEONSEL) || (byCmd == CMD_DUNGEONMAP) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || (byCmd == CMD_PUZZLEKEY) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET)) || ((byCmd >= CMD_RECYCLELIST) && (byCmd <= CMD_RECYCLECLOSE))) {
 		return FALSE;
 	}
 

@@ -796,6 +796,7 @@ void OnDecPlayer(int nNo)
 	RecvCmdOnDecPlayer (nNo);		/* 取り引きなど受信処理で覚えている状態を消す */
 	MercenaryOwnerLogout (pChar);	/* 傭兵に持たせた道具を返してもらい、傭兵は帰る */
 	QuestOnDecPlayer (pChar);		/* 依頼の見えるNPCを消す（持ち主がいなくなる時） */
+	PuzzleOnLeave (pChar);			/* 落ち物パズルの席に座っていたら台の状態を片付ける */
 
 
 	pChar->dwLastBattle		= 0;
@@ -1094,6 +1095,7 @@ void TimerProc(void)
 		g_nProcSubGame = (g_nProcSubGame >= nCount) ? 0 : g_nProcSubGame;
 	}
 	g_ProcSubGame.Proc ();
+	PuzzleProc ();					/* 落ち物パズルの台（落下を経過時間で進める） */
 }
 
 

@@ -401,6 +401,9 @@ enum {
 	CMD_DGDEFSTATUS,												/* 番外編の拠点防衛の状態（拠点HP・波・残り秒・残り敵数。CMDPARA_DGDEFSTATUS） */
 	CMD_DGDEFMAP,													/* 番外編の拠点防衛の全体地図（範囲・拠点・泉・仲間と敵の位置。CMDPARA_DGDEFMAP。サーバー→組の全員） */
 	CMD_DGSTATUS,													/* 番外編ダンジョン（拠点防衛以外）の状況パネル（題・残り敵数・経過秒・目標。CMDPARA_DGSTATUS。サーバー→組の全員） */
+/* 以下、プレイヤー用（落ち物パズル。CMD_PUZZLEKEY はクライアント→サーバーも受ける。管理者用の判定から外すこと） */
+	CMD_PUZZLEKEY,													/* 落ち物パズルのキー入力（クライアント→サーバー。CMDPARA_DATA1 の byData が PUZZLEKEY_*、dwTblID=本人） */
+	CMD_PUZZLESTATE,												/* 落ち物パズルの盤面・操作中の落ち物・得点（サーバー→座っている人。CMDPARA_PUZZLESTATE） */
 	CMD_MAX
 };
 
@@ -4317,6 +4320,46 @@ typedef struct _CMDPARA_DGSTATUS {
 	DWORD		dwElapsedSec;										/* 経過秒（クリア後はクリアまでの秒） */
 	char		szTitle[DGSTATUS_TITLE_LEN];						/* 題（テーマ名など。UTF-8） */
 } CMDPARA_DGSTATUS, *PCMDPARA_DGSTATUS;
+#pragma pack(pop)
+
+/* 落ち物パズル（台に座って遊ぶ。ロジックは common/FallingPuzzle.h）
+   CMD_PUZZLEKEY: クライアント→サーバー。座っている間のキー入力（CMDPARA_DATA1 の byData に PUZZLEKEY_*） */
+enum {
+	PUZZLEKEY_LEFT = 1,												/* 左へ */
+	PUZZLEKEY_RIGHT,												/* 右へ */
+	PUZZLEKEY_DOWN,													/* 1 段落とす（ソフトドロップ） */
+	PUZZLEKEY_ROTATE,												/* 回す */
+	PUZZLEKEY_LEAVE,												/* 席を立つ */
+};
+/* CMD_PUZZLESTATE の byKind */
+enum {
+	PUZZLESTATE_NONE = 0,											/* 席を立った・片付いた（クライアントは重ね描きを消す） */
+	PUZZLESTATE_FULL,												/* 盤面全体（後ろに byCols*byRows バイトの盤面が続く）。盤面・次の落ち物・得点が変わった時 */
+	PUZZLESTATE_MOVE,												/* 操作中の落ち物の位置・向きだけ（盤面は続かない。前の FULL の盤面を使う） */
+	PUZZLESTATE_OVER,												/* ゲームオーバー（盤面付き。しばらく残して見せ、席を立ったら NONE が届く） */
+};
+/* 台の席の側（フィールドを席のどちら側に描くか。段階2で 2 人目の席を反対側に置く） */
+#define PUZZLESIDE_RIGHT	(0)										/* フィールドは席の右 */
+#define PUZZLESIDE_LEFT		(1)										/* フィールドは席の左 */
+#pragma pack(push, 1)
+typedef struct _CMDPARA_PUZZLESTATE {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byKind;												/* PUZZLESTATE_* */
+	BYTE		bySeat;												/* 席の番号（0 から。段階1は 0 だけ） */
+	BYTE		bySide;												/* PUZZLESIDE_*（席のどちら側にフィールドがあるか） */
+	BYTE		byCols;												/* 盤面の横（ブロック数） */
+	BYTE		byRows;												/* 盤面の縦（ブロック数） */
+	BYTE		byPiece;											/* 操作中の落ち物の種類（0〜6） */
+	BYTE		byRot;												/* 操作中の落ち物の向き（0〜3） */
+	BYTE		byNext;												/* 次の落ち物の種類（0〜6） */
+	BYTE		byLevel;											/* レベル */
+	signed char	cX;													/* 操作中の落ち物の箱の左上（ブロック座標。上にはみ出すと Y は負） */
+	signed char	cY;
+	short		sFieldX;											/* フィールドの左上（マップのドット座標。台の席の座標から決める） */
+	short		sFieldY;
+	WORD		wLines;												/* 消したライン数 */
+	DWORD		dwScore;											/* 得点 */
+} CMDPARA_PUZZLESTATE, *PCMDPARA_PUZZLESTATE;
 #pragma pack(pop)
 
 /* 並べ替えの対象(CMDPARA_SORTITEM の byTarget) */

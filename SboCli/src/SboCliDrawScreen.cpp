@@ -8,6 +8,7 @@
 
 #include "stdafx.h"
 #include "common/BowFlight.h"
+#include "common/FallingPuzzle.h"
 #include "Glbldata.h"
 #include "SboCliDrawWindow.h"
 #include "SboCliRecvCmd.h"
@@ -462,6 +463,129 @@ static void DrawDungeonPanel(int nX, int nY)
 }
 
 /* ========================================================================= */
+/* 関数名：DrawPuzzle														 */
+/* 内容：落ち物パズル（台に座っている間と、ゲームオーバー後の少しの間）の重ね描き	 */
+/*		 枠・盤面・操作中の落ち物・次の落ち物・得点を、地図の上に描く。			 */
+/*		 フィールドの位置はサーバーが台NPCの座標から決めて（マップのドット座標）	 */
+/*		 送ってくる。自分のキャラを画面の真ん中として、地図の座標に合わせる。	 */
+/*		 ブロックの絵は新しい画像を使わず、単色の塗り分け（立体の縁つき）		 */
+/* ========================================================================= */
+static const COLORREF s_aclPuzzle[PUZZLE_KINDS] = {
+	RGB (70, 210, 235),		/* I 水色 */
+	RGB (240, 215, 60),		/* O 黄 */
+	RGB (180, 90, 220),		/* T 紫 */
+	RGB (90, 210, 90),		/* S 緑 */
+	RGB (235, 80, 70),		/* Z 赤 */
+	RGB (80, 120, 235),		/* J 青 */
+	RGB (240, 150, 50),		/* L 橙 */
+};
+
+static COLORREF PuzzleShade(COLORREF cl, int nPct)
+{
+	int r = GetRValue (cl) * nPct / 100, g = GetGValue (cl) * nPct / 100, b = GetBValue (cl) * nPct / 100;
+	return RGB (min (r, 255), min (g, 255), min (b, 255));
+}
+
+/* ブロック 1 つ（PUZZLE_BLOCK_DOT 四方）。nKind は 0〜6 */
+static void PuzzleDrawBlock(HDC hDC, int x, int y, int nKind)
+{
+	const int n = PUZZLE_BLOCK_DOT;
+	COLORREF cl = s_aclPuzzle[nKind];
+	COLORREF clLight = PuzzleShade (cl, 135), clDark = PuzzleShade (cl, 60);
+	int yy;
+
+	for (yy = 0; yy < n; yy ++) {
+		if (yy == 0) {
+			W32ShadeSpan (hDC, x, y + yy, n, 0, clLight, 255);
+		} else if (yy == n - 1) {
+			W32ShadeSpan (hDC, x, y + yy, n, 0, clDark, 255);
+		} else {
+			W32ShadeSpan (hDC, x, y + yy, n, 0, cl, 255);
+			W32ShadeSpan (hDC, x, y + yy, 1, 0, clLight, 255);
+			W32ShadeSpan (hDC, x + n - 1, y + yy, 1, 0, clDark, 255);
+		}
+	}
+}
+
+static void DrawPuzzle(int nX, int nY)
+{
+	CMDPARA_PUZZLESTATE St;
+	const BYTE *pBoard;
+	PCHARINFO pChar;
+	HDC hDC;
+	HFONT hFontOld;
+	BOOL bOver;
+	char szTmp[64];
+	int x, y, i, nCols, nRows, nW, nH, sx, sy, px, py, anC[4][2];
+	const int nPanelW = 96;
+
+	if ((g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ()) || !GetPuzzleState (&St, &pBoard, &bOver)) {
+		return;
+	}
+	pChar = g_aCharInfo[g_nMyCharID];
+	nCols = St.byCols;
+	nRows = St.byRows;
+	nW = nCols * PUZZLE_BLOCK_DOT;
+	nH = nRows * PUZZLE_BLOCK_DOT;
+	/* マップのドット座標 → 画面（自分のキャラのマスが真ん中） */
+	sx = nX + DRAW_PARTS_X * 32 + (int)St.sFieldX - (int)pChar->dwX * 32;
+	sy = nY + DRAW_PARTS_Y * 32 + (int)St.sFieldY - (int)pChar->dwY * 32;
+
+	hDC = g_pDibDrawMap->Lock ();
+	hFontOld = (HFONT)SelectObject (hDC, g_hFont14);
+	SetBkMode (hDC, TRANSPARENT);
+
+	/* 枠と盤面の背景 */
+	DrawDefenseFrame (hDC, sx - 3, sy - 3, nW + 6, nH + 6, RGB (240, 200, 60), 190);
+
+	/* 積んだブロック */
+	for (y = 0; y < nRows; y ++) {
+		for (x = 0; x < nCols; x ++) {
+			int nCell = pBoard[x + y * nCols];
+			if ((nCell >= 1) && (nCell <= PUZZLE_KINDS)) {
+				PuzzleDrawBlock (hDC, sx + x * PUZZLE_BLOCK_DOT, sy + y * PUZZLE_BLOCK_DOT, nCell - 1);
+			}
+		}
+	}
+	/* 操作中の落ち物 */
+	if (St.byPiece < PUZZLE_KINDS) {
+		PuzzleCells (St.byPiece, St.byRot, anC);
+		for (i = 0; i < 4; i ++) {
+			x = (int)St.cX + anC[i][0];
+			y = (int)St.cY + anC[i][1];
+			if ((x >= 0) && (x < nCols) && (y >= 0) && (y < nRows)) {
+				PuzzleDrawBlock (hDC, sx + x * PUZZLE_BLOCK_DOT, sy + y * PUZZLE_BLOCK_DOT, St.byPiece);
+			}
+		}
+	}
+
+	/* 横の帯（フィールドの席と反対側）：次の落ち物・得点・ライン・レベル */
+	px = (St.bySide == PUZZLESIDE_LEFT) ? (sx - 6 - nPanelW) : (sx + nW + 6);
+	py = sy;
+	DrawDefenseFrame (hDC, px, py, nPanelW, 150, RGB (200, 200, 200), 150);
+	TextOut2 (hDC, px + 8, py + 4, (LPSTR)"NEXT", RGB (255, 235, 120));
+	if (St.byNext < PUZZLE_KINDS) {
+		PuzzleCells (St.byNext, 0, anC);
+		for (i = 0; i < 4; i ++) {
+			PuzzleDrawBlock (hDC, px + 16 + anC[i][0] * PUZZLE_BLOCK_DOT, py + 24 + anC[i][1] * PUZZLE_BLOCK_DOT, St.byNext);
+		}
+	}
+	TextOut2 (hDC, px + 8, py + 70, (LPSTR)"SCORE", RGB (255, 235, 120));
+	wsprintf (szTmp, "%u", (unsigned int)St.dwScore);
+	TextOut2 (hDC, px + 8, py + 88, szTmp, RGB (255, 255, 255));
+	wsprintf (szTmp, "LINES %d", (int)St.wLines);
+	TextOut2 (hDC, px + 8, py + 108, szTmp, RGB (255, 255, 255));
+	wsprintf (szTmp, "LEVEL %d", (int)St.byLevel);
+	TextOut2 (hDC, px + 8, py + 126, szTmp, RGB (255, 255, 255));
+
+	if (bOver) {
+		DrawDefenseTextCenter (hDC, sx + nW / 2, sy + nH / 2 - 8, (LPSTR)"GAME OVER", RGB (255, 120, 110));
+	}
+	SelectObject (hDC, hFontOld);
+	g_pDibDrawMap->Unlock ();
+}
+
+/* ========================================================================= */
 /* 関数名：DrawDefenseBand													 */
 /* 内容：番外編の拠点防衛の挑戦中だけ、画面の上の中央にパネルを出す			 */
 /*		 1行目「拠点HP [バー] 720/1000」（残り割合で緑→黄(50%以下)→赤(25%以下)）	 */
@@ -722,6 +846,9 @@ void DrawScreen(HWND hWnd, HDC hDC)
 
 				/* 拠点防衛以外の番外編ダンジョンの状況パネル（左上。挑戦中だけ） */
 				DrawDungeonPanel (32 - x, 32 - y);
+
+				/* 落ち物パズル（台の横のフィールド。遊んでいる間だけ。ウィンドウの下に敷く） */
+				DrawPuzzle (32 - x, 32 - y);
 
 				hDCPrimary = g_pDibDrawMap->Lock ();
 				HFONT hFontOld = (HFONT)SelectObject (hDCPrimary, g_hFont14);

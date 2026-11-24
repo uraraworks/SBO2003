@@ -401,8 +401,66 @@ static void KeyEvPush(BYTE byEvent, BYTE byCode)
 }
 
 /* キーイベントを、開いているウィンドウか歩き中の処理へ渡す */
+/* ========================================================================= */
+/* 関数名：PuzzleKeyProc													 */
+/* 内容：落ち物パズルの席に座っている間のキー入力（歩かず、すべてゲーム側へ送る）	 */
+/*		 左右＝移動、下＝落下(ソフトドロップ)、S＝回す、ESC・Z(スマホのキャンセル)＝席を立つ	 */
+/*		 方向キーは押し続けている間 KEY_DOWN が何度も来るので、最初の一回は	 */
+/*		 すぐ、それからは間隔をあけて送る。特技ショートカットなど他のキーは捨てる	 */
+/* ========================================================================= */
+#define PUZZLE_REPEAT_DELAY_SIDE	(170)		/* 左右を押し続けて繰り返し始めるまで(ms) */
+#define PUZZLE_REPEAT_MS_SIDE		(70)		/* 左右の繰り返し間隔(ms) */
+#define PUZZLE_REPEAT_MS_DOWN		(55)		/* 下の繰り返し間隔(ms) */
+static void PuzzleKeyProc(BYTE byEvent, BYTE byCode)
+{
+	static DWORD s_dwHoldStart[256];		/* 押し始めた時刻（0=押していない） */
+	static DWORD s_dwSent[256];				/* 最後に送った時刻 */
+	DWORD dwNow = timeGetTime ();
+	BYTE byKey = 0;
+
+	if (byEvent == KEY_UP) {
+		s_dwHoldStart[byCode] = 0;
+		return;
+	}
+	if (byEvent != KEY_DOWN) {
+		return;
+	}
+	switch (byCode) {
+	case VK_LEFT:		byKey = PUZZLEKEY_LEFT;		break;
+	case VK_RIGHT:		byKey = PUZZLEKEY_RIGHT;	break;
+	case VK_DOWN:		byKey = PUZZLEKEY_DOWN;		break;
+	case 'Y':			byKey = PUZZLEKEY_ROTATE;	break;		/* S キー */
+	case VK_ESCAPE:
+	case 'B':			byKey = PUZZLEKEY_LEAVE;	break;		/* ESC・Z キー（スマホのキャンセル） */
+	}
+	if (byKey == 0) {
+		return;
+	}
+	if ((byKey == PUZZLEKEY_LEFT) || (byKey == PUZZLEKEY_RIGHT) || (byKey == PUZZLEKEY_DOWN)) {
+		DWORD dwInterval = (byKey == PUZZLEKEY_DOWN) ? PUZZLE_REPEAT_MS_DOWN : PUZZLE_REPEAT_MS_SIDE;
+
+		if (s_dwHoldStart[byCode] == 0) {
+			s_dwHoldStart[byCode] = (dwNow == 0) ? 1 : dwNow;
+		} else {
+			if ((byKey != PUZZLEKEY_DOWN) && (dwNow - s_dwHoldStart[byCode] < PUZZLE_REPEAT_DELAY_SIDE)) {
+				return;
+			}
+			if (dwNow - s_dwSent[byCode] < dwInterval) {
+				return;
+			}
+		}
+		s_dwSent[byCode] = dwNow;
+	}
+	SendCmdPUZZLEKEY (byKey);
+}
+
 static void KeyProcDispatch(BYTE byEvent, BYTE byCode)
 {
+	/* 落ち物パズルの席に座っている間は、キーを全部ゲーム側へ送る（歩かない・ショートカットも使えない） */
+	if (IsPuzzleSeated ()) {
+		PuzzleKeyProc (byEvent, byCode);
+		return;
+	}
 	if (!g_dwActiveMsgID) {
 		if (g_nMyCharID >= 0) {
 			if ((g_FadeInOutInfo.byFadeIn == 0) && (g_FadeInOutInfo.byFadeOut == 0)) {
@@ -770,6 +828,9 @@ void KeyProcMoveNext(void)
 		return;
 	}
 	if ((g_FadeInOutInfo.byFadeIn != 0) || (g_FadeInOutInfo.byFadeOut != 0)) {
+		return;
+	}
+	if (IsPuzzleSeated ()) {
 		return;
 	}
 
@@ -9468,6 +9529,18 @@ void CmdProcHanasu(PWNDINFO pWnd)
 		}
 		return;
 
+	/* 落ち物パズルの台（@p）？ コインを使って座るのはサーバーが決める（座ると CMD_PUZZLESTATE が届く） */
+	} else if (pChar2->pszNpcSpeech[0] == '@' && pChar2->pszNpcSpeech[1] == 'p') {
+		SendCmdTALKRAND (pChar2->dwTblID);
+		pChar2->byDirection = abyDirectionTbl[pChar->byDirection];
+		int nNo = GetWindowID (g_dwMsgIDCommand);
+		if (nNo >= 0) {
+			EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
+			g_dwMsgIDCommand = 0;
+			g_bDraw = TRUE;
+		}
+		return;
+
 	/* 傭兵所？ 雇う・お別れするのはサーバーが決めて、お知らせが来る */
 	} else if (pChar2->pszNpcSpeech[0] == '@' && pChar2->pszNpcSpeech[1] == 'm') {
 
@@ -10280,6 +10353,7 @@ std::string W32TextToUtf8Str(const char *psz, int nLen);		/* ゲーム内の文�
 #define PADSTATE_BATTLEMODE	(0x10)	/* 戦闘モード中（「決定」を「攻撃」、「キャンセル」を「構え」と表示） */
 #define PADSTATE_SCORE		(0x20)	/* 目の前に得点板がある（「キャンセル」を「名前」と表示。Z で名前を付ける） */
 #define PADSTATE_MAP		(0x40)	/* 探索マップが使える場所（テーマで作ったダンジョンの範囲の中。「地図」ボタンを出す） */
+#define PADSTATE_PUZZLE		(0x80)	/* 落ち物パズルの席に座っている（「調べる」を「回す」、「キャンセル」を「席を立つ」と表示。表示・戦闘・地図は隠す） */
 
 static int SboWebGetPadStateBase(void)
 {
@@ -10299,6 +10373,10 @@ static int SboWebGetPadStateBase(void)
 	/* 発言の入力欄を出している間はどれも効かない */
 	if (g_bSpeech) {
 		return 0;
+	}
+	/* 落ち物パズルの席に座っている間は、回す(S)と席を立つ(Z)だけ */
+	if (IsPuzzleSeated ()) {
+		return PADSTATE_SIRABERU | PADSTATE_PUZZLE;
 	}
 
 	/* ウィンドウ（コマンド・道具・お店など）を開いている間は、そのウィンドウにキーが渡る。
@@ -10450,8 +10528,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebGetMagicKeyState(void)
 		return strRet.c_str ();
 	}
 	pChar = g_aCharInfo[g_nMyCharID];
-	/* ミニゲームに参加中は登録の列もショートカットのボタンも出さない */
-	if (pChar->abySubStatus[0] != 0) {
+	/* ミニゲームに参加中（落ち物パズルの席を含む）は登録の列もショートカットのボタンも出さない */
+	if ((pChar->abySubStatus[0] != 0) || IsPuzzleSeated ()) {
 		return strRet.c_str ();
 	}
 	if (IsMagicListOpen ()) {
@@ -10683,7 +10761,7 @@ BOOL IsMagicBandShown(PCHARINFO pChar)
 	if (!g_bMagicBar || (g_pMapInfo == NULL)) {
 		return FALSE;
 	}
-	if ((pChar->abySubStatus[0] != 0) || (pChar->byCharState == CHARSTATE_DEAD)) {
+	if ((pChar->abySubStatus[0] != 0) || (pChar->byCharState == CHARSTATE_DEAD) || IsPuzzleSeated ()) {
 		return FALSE;
 	}
 	/* 戦闘モード中は出す。戦闘モードでない時は、装備品・道具の枠が1つでもある時だけ出す（特技だけなら今まで通り出さない） */

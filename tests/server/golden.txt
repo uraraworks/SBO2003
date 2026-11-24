@@ -2491,4 +2491,21 @@ mid-leave head: front[0]=-1 back[0]=-1 front[1]=-1 back[1]=2 front[2]=1 back[2]=
 mid-leave tail: front[0]=-1 back[0]=1 front[1]=0 back[1]=2 front[2]=1 back[2]=-1 front[3]=-1 back[3]=-1
 mid-leave mismatch: front[0]=-1 back[0]=1 front[1]=0 back[1]=2 front[2]=0 back[2]=3 front[3]=2 back[3]=-1
 mid-leave twice: front[0]=-1 back[0]=3 front[1]=-1 back[1]=-1 front[2]=-1 back[2]=-1 front[3]=0 back[3]=-1
+== AV. Falling puzzle table ==
+puzzle npc=1 isTable=1 free=0
+puzzle nocoin seated=0 msg=1 state=0
+puzzle short seated=0 coin=1
+puzzle sit seated=1 coin=1 state+1 used=1
+puzzle busy seatedB=0 coinB=2 msg=1
+puzzle nowalk moved=0
+puzzle keys packets=3 seated=1
+puzzle gravity early=0 later=1
+puzzle otherkey packets=0
+puzzle over seated=0 score=1 state=0
+puzzle sitB seated=1 coinB=0
+puzzle leave seated=0 count=0 none+1
+puzzle away before=1 after=0 count=0
+puzzle logout before=1 after=0 count=0
+puzzle free seated=1
+puzzle done seats=0
 == done ==
