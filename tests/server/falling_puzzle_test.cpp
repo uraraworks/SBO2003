@@ -150,13 +150,132 @@ int main()
 	/* フィールドの位置：席の相対位置。既定は席がフィールドの真下（下端のマス行が席の 1 マス上・横は中央） */
 	int fx, fy;
 	PuzzleFieldPos (20, 30, PuzzleDefaultDx (10), PuzzleDefaultDy (14), &fx, &fy);
-	CHECK (PuzzleDefaultDx (10) == -2 && PuzzleDefaultDy (14) == -7);
-	CHECK (fx == 18 * 32 && fy == 23 * 32);
+	CHECK (PuzzleDefaultDx (10) == -2 && PuzzleDefaultDy (14) == -6);
+	CHECK (fx == 18 * 32 && fy == 24 * 32);
 	CHECK (fx + 80 == 20 * 32 + 16);						/* 横の中央が席のマスの中央 */
-	CHECK (fy + 14 * 16 == 30 * 32);						/* 下端は席のマスの上端（最下行は席の 1 マス上） */
-	CHECK (PuzzleDefaultDy (18) == -9);						/* 18 段（9 マス）は -9 */
+	CHECK (fy + 14 * 16 == 30 * 32 + 32);					/* 下端は台のマスの下端（最下行が台のマスと重なる） */
+	CHECK (PuzzleDefaultDy (18) == -8);						/* 18 段（9 マス）は -8（マス数−1） */
 	PuzzleFieldPos (20, 30, 2, -3, &fx, &fy);				/* 席の横に置く指定 */
 	CHECK (fx == 22 * 32 && fy == 27 * 32);
+
+	/* ---- 対戦：お邪魔ブロック ---- */
+
+	/* 消した列数に応じた段数：1 列は送らない・2→1・3→2・4→4 */
+	CHECK (PuzzleGarbageLines (0) == 0 && PuzzleGarbageLines (1) == 0 && PuzzleGarbageLines (2) == 1 &&
+		PuzzleGarbageLines (3) == 2 && PuzzleGarbageLines (4) == 4);
+
+	/* 盤面にお邪魔を積む：下から nLines 段・全体が上へずれる・穴は 1 段に 1 か所 */
+	PuzzleRand rnd;
+	rnd.Seed (77);
+	bd.Init (10, 18);
+	bd.Set (3, 17, 2);							/* 一番下に普通のブロック */
+	CHECK (bd.AddGarbage (3, rnd));
+	CHECK (bd.Get (3, 14) == 2);				/* 3 段上へずれた */
+	for (r = 15; r < 18; r ++) {
+		int nHole = 0, nGarb = 0;
+		for (i = 0; i < 10; i ++) {
+			if (bd.Get (i, r) == 0) nHole ++;
+			if (bd.Get (i, r) == PUZZLE_CELL_GARBAGE) nGarb ++;
+		}
+		CHECK (nHole == 1 && nGarb == 9);
+	}
+	CHECK (bd.ClearLines () == 0);				/* 穴があるので消えない */
+	/* 穴の位置は段ごとにばらつく（20 段積んで全部同じ列にはならない） */
+	bd.Init (10, 24);
+	bd.AddGarbage (20, rnd);
+	int anHoleSeen[10] = {0}, nKinds = 0;
+	for (r = 4; r < 24; r ++) {
+		for (i = 0; i < 10; i ++) { if (bd.Get (i, r) == 0) anHoleSeen[i] ++; }
+	}
+	for (i = 0; i < 10; i ++) { if (anHoleSeen[i]) nKinds ++; }
+	CHECK (nKinds >= 4);
+	/* 上にはみ出す時は false（負け）。空の盤面なら true */
+	bd.Init (10, 18);
+	bd.Set (0, 0, 1);							/* 一番上の行にブロック */
+	CHECK (!bd.AddGarbage (1, rnd));
+	bd.Init (10, 18);
+	bd.Set (0, 1, 1);
+	CHECK (bd.AddGarbage (1, rnd));				/* 上から 2 行目は 1 段ずれても残る */
+	CHECK (bd.AddGarbage (0, rnd));
+
+	/* 待ちお邪魔：足す（上限あり）・自分が消したラインで相殺・残りが相手へ・相殺しきれない分は固定で積まれる */
+	PuzzleGame a;
+	a.Start (10, 18, 5, 0);
+	CHECK (a.nPending == 0 && a.nAttack == 0);
+	CHECK (a.AddPending (3) == PUZZLE_CHG_GARBAGE && a.nPending == 3);
+	CHECK (a.AddPending (1000) == PUZZLE_CHG_GARBAGE && a.nPending == PUZZLE_PENDING_MAX);
+	CHECK (a.AddPending (1) == 0);				/* 上限なので変わらない */
+
+	/* 4 列消し（攻撃 4）：待ち 3 を相殺して残り 1 を相手へ。待ちは 0 になり積まれない */
+	a.Start (10, 18, 5, 0);
+	a.AddPending (3);
+	for (r = 0; r < 4; r ++) for (i = 0; i < 10; i ++) { if (!(i == 4 && r < 4)) a.Board.Set (i, 14 + r, 1); }
+	a.nKind = 0; a.nRot = 1; a.nX = 2; a.nY = 14;			/* 縦の I を 4 列目の穴（x=4）に入れる */
+	CHECK (a.LockAndNext () & PUZZLE_CHG_BOARD);
+	CHECK (a.nLines == 4);
+	CHECK (a.nPending == 0);
+	CHECK (a.nAttack == 1);
+	CHECK (a.Board.Get (0, 17) == 0);			/* お邪魔は積まれていない（空の盤面に戻った） */
+
+	/* 4 列消し・待ち 0：4 段をそのまま相手へ */
+	a.Start (10, 18, 5, 0);
+	for (r = 0; r < 4; r ++) for (i = 0; i < 10; i ++) { if (i != 4) a.Board.Set (i, 14 + r, 1); }
+	a.nKind = 0; a.nRot = 1; a.nX = 2; a.nY = 14;
+	a.LockAndNext ();
+	CHECK (a.nAttack == 4);
+
+	/* 1 列消しは送らない */
+	a.Start (10, 18, 5, 0);
+	for (i = 0; i < 10; i ++) { if (i < 4 || i > 5) a.Board.Set (i, 17, 1); }
+	a.nKind = 1; a.nRot = 0; a.nX = 4; a.nY = 16;
+	a.LockAndNext ();
+	CHECK (a.nLines == 1 && a.nAttack == 0);
+
+	/* ラインを消さずに固定すると待ちお邪魔が下から積まれる（1 回に PUZZLE_GARBAGE_APPLY_MAX 段まで。残りは持ち越し） */
+	a.Start (10, 18, 5, 0);
+	a.AddPending (PUZZLE_GARBAGE_APPLY_MAX + 2);
+	a.nKind = 1; a.nRot = 0; a.nX = 0; a.nY = 16;			/* 左下に O を置く */
+	int nChgG = a.LockAndNext ();
+	CHECK (nChgG & PUZZLE_CHG_GARBAGE);
+	CHECK (a.nPending == 2);
+	CHECK (!a.bOver);
+	for (r = 18 - PUZZLE_GARBAGE_APPLY_MAX; r < 18; r ++) {
+		int nGarb = 0;
+		for (i = 0; i < 10; i ++) { if (a.Board.Get (i, r) == PUZZLE_CELL_GARBAGE) nGarb ++; }
+		CHECK (nGarb >= 8);						/* 穴 1 か所（O の上に重なった行は 8 のこともある） */
+	}
+	CHECK (a.Board.Get (0, 18 - PUZZLE_GARBAGE_APPLY_MAX - 1) == 2);	/* O（値 2）は上へずれた */
+
+	/* 勝敗判定：お邪魔で積み上がって上にはみ出す・次の落ち物が置けない → 置けなくなった側が負け（OVER） */
+	a.Start (10, 18, 5, 0);
+	for (r = 0; r < 18; r ++) { a.Board.Set (9, r, 1); }	/* 右端を全段埋める（消えない：他の列が空） */
+	for (i = 0; i < 9; i ++) { a.Board.Set (i, 0, 1); }		/* 一番上の行に 9 個（左右の壁際は空でも、お邪魔でずれて出る） */
+	a.Board.Set (9, 0, 0);
+	a.AddPending (1);
+	a.nKind = 1; a.nRot = 0; a.nX = 0; a.nY = 16;
+	int nChgO = a.LockAndNext ();
+	CHECK ((nChgO & PUZZLE_CHG_OVER) && a.bOver);
+	PuzzleGame b;											/* お邪魔なしで、置けなくなった時も OVER */
+	b.Start (10, 18, 5, 0);
+	for (r = 0; r < 18; r ++) for (i = 0; i < 10; i ++) { if (i != 9) b.Board.Set (i, r, 1); }
+	b.nKind = 1; b.nRot = 0; b.nX = 4; b.nY = 16;
+	CHECK ((b.LockAndNext () & PUZZLE_CHG_OVER) && b.bOver);
+	/* 逆に、お邪魔が積まれても余裕があれば続く */
+	b.Start (10, 18, 5, 0);
+	b.AddPending (2);
+	b.nKind = 1; b.nRot = 0; b.nX = 0; b.nY = 16;
+	CHECK (!(b.LockAndNext () & PUZZLE_CHG_OVER) && !b.bOver);
+
+	/* お邪魔の穴の乱数は落ち物の順番に影響しない（同じ種の 2 人は、お邪魔の有無にかかわらず同じ順番） */
+	PuzzleGame c1, c2;
+	c1.Start (10, 18, 4242, 0);
+	c2.Start (10, 18, 4242, 0);
+	c1.AddPending (2);
+	c1.Board.AddGarbage (2, c1.GRand);
+	for (i = 0; i < 20; i ++) {
+		CHECK (c1.nKind == c2.nKind && c1.nNext == c2.nNext);
+		c1.Spawn (); c2.Spawn ();
+	}
 
 	printf (g_nNg ? "NG %d 件\n" : "一致\n", g_nNg);
 	return g_nNg ? 1 : 0;

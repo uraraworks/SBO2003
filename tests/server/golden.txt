@@ -2508,4 +2508,31 @@ puzzle away before=1 after=0 count=0
 puzzle logout before=1 after=0 count=0
 puzzle free seated=1
 puzzle done seats=0
+== AV2. Falling puzzle versus ==
+vs solo seatedA=1 vsA=0 coinA=0
+vs spectate near packets=1
+vs spectate nochange packets=0
+vs spectate far packets=1
+vs spectate far key packets=0
+vs spectate back packets=1
+vs spectate key packets=1
+vs start seated=11 vs=11 coinB=0 msg=11
+vs start reset board=0 score=0 sameOrder=1
+vs start packets A=2 B=2 C=2
+vs countdown y=0 packets=1
+vs go y=1
+vs attack4 pendingB=4 pendingA=0 linesA=4 packetsB=1
+vs offset pendingB=0 pendingA=0 linesB=2 garbageRows=3 bottom3=3
+vs garbage pendingB=0 rows=3
+vs lose seatedB=0 seatedA=1 vsA=0 msgA=1 msgB=1 scoreB=1
+vs lose keep score=1 pending=0 packetsA=1 packetsC=1
+vs winner continues seated=1 packets=1
+vs esc again=1 seatedB=0 seatedA=1 vsA=0 msgA+1
+vs logout again=1 seatedB=0 seatedA=1 vsA=0 msgA+1 packetsB=0
+vs away again=1 seatedB=0 seatedA=1 vsA=0
+vs otherpair seated=11 vs=00
+vs nopair seated=11 vs=00
+vs nocoin seatedB=0 vsA=0
+vs spectate leave packets=1 seats=0
+vs done seats=0
 == done ==

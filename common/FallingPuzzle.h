@@ -24,16 +24,31 @@
 #define PUZZLE_LINES_PER_LEVEL	(10)	/* このライン数ごとにレベルが上がる */
 #define PUZZLE_SOFTDROP_SCORE	(1)		/* 下キーで 1 段落とすごとの得点 */
 
+/* 対戦（台を 2 台ペアにした時）の調整用定数 */
+#define PUZZLE_VS_COUNTDOWN_SEC	(3)		/* 対戦開始前のカウントダウン(秒) */
+#define PUZZLE_PENDING_MAX		(20)	/* 待ちお邪魔（自分宛てでまだ積まれていない段数）の上限。これ以上は捨てる */
+#define PUZZLE_GARBAGE_APPLY_MAX	(8)	/* ブロックが固定された時に、いっぺんに積まれるお邪魔の段数の上限（残りは次の固定へ持ち越し） */
+#define PUZZLE_VIEW_MAX			(8)		/* クライアントが同時に覚える盤面の数（自分・相手・観戦で見える台） */
+#define PUZZLE_CELL_GARBAGE		(PUZZLE_KINDS + 1)	/* お邪魔ブロックのセルの値（8。灰色で描く） */
+
 /* フィールドの置き場所（席の台NPCからの相対位置。台ごとに変えられる）
    フィールドの左上は、台のマスの左上から (dx, dy) マス（負なら左・上）。縦横の段数も台ごとに指定できる。
    dx, dy を省略した時（既定）は、席がフィールドの真下：フィールドの一番下のマスの行が席の 1 マス上で、
-   横はフィールドの中央が席のマスの中央に来る（盤面 10×14 なら 横 5 マス×縦 7 マスで dx=-2, dy=-7） */
+   横はフィールドの中央が席のマスの中央に来る（盤面 10×14 なら 横 5 マス×縦 7 マスで dx=-2, dy=-6）。
+   縦は、フィールドの一番下のマス行が台NPC のマスと重なる（実プレイで dy=-7 だと上 2 段が画面の上にはみ出したため 1 つ下げた） */
 #define PUZZLE_BLOCK_DOT		(16)	/* ブロック 1 つの大きさ(ドット) */
 #define PUZZLE_TILE_DOT			(32)	/* 地図 1 マスの大きさ(ドット) */
 #define PUZZLE_DEFAULT_SIDE		(0)		/* 横の帯（次の落ち物・得点）をフィールドのどちら側に出すか（0=右 1=左。PUZZLESIDE_*） */
 
 /* ライン消しの得点（1〜4 列。レベルが上がっても同じ） */
 static const int g_anPuzzleLineScore[5] = { 0, 100, 300, 500, 800 };
+
+/* 対戦で相手に送るお邪魔の段数（1〜4 列。1 列は送らない） */
+static const int g_anPuzzleGarbage[5] = { 0, 0, 1, 2, 4 };
+static inline int PuzzleGarbageLines(int nCleared)
+{
+	return (nCleared <= 0) ? 0 : g_anPuzzleGarbage[(nCleared > 4) ? 4 : nCleared];
+}
 
 /* ========================================================================= */
 /* 落ち物の形																 */
@@ -144,6 +159,37 @@ struct PuzzleBoard {
 		}
 	}
 
+	/* 下から nLines 段のお邪魔ブロックを積み上げる（盤面全体が上へ nLines 段ずれる）。
+	   穴は 1 段ごとに 1 か所でランダム（rnd で決める）。上にはみ出して消えるブロックがあれば false（負け） */
+	bool AddGarbage(int nLines, PuzzleRand &rnd)
+	{
+		int y, x, nHole;
+		bool bOk = true;
+
+		if (nLines <= 0) {
+			return true;
+		}
+		if (nLines > nRows) {
+			nLines = nRows;
+		}
+		for (y = 0; y < nLines && bOk; y ++) {
+			for (x = 0; x < nCols; x ++) {
+				if (abyCell[x + y * nCols]) {
+					bOk = false;
+					break;
+				}
+			}
+		}
+		memmove (abyCell, abyCell + nLines * nCols, (nRows - nLines) * nCols);
+		for (y = nRows - nLines; y < nRows; y ++) {
+			nHole = (int)(rnd.Next () % (unsigned int)nCols);
+			for (x = 0; x < nCols; x ++) {
+				abyCell[x + y * nCols] = (x == nHole) ? 0 : (unsigned char)PUZZLE_CELL_GARBAGE;
+			}
+		}
+		return bOk;
+	}
+
 	/* 横一列がそろった行を消して、上を詰める。消した列数を返す */
 	int ClearLines(void)
 	{
@@ -183,6 +229,7 @@ struct PuzzleBoard {
 #define PUZZLE_CHG_NEXT		(0x04)		/* 次の落ち物が変わった（盤面と一緒に送る） */
 #define PUZZLE_CHG_SCORE	(0x08)		/* 得点・ライン・レベルが変わった（盤面と一緒に送る） */
 #define PUZZLE_CHG_OVER		(0x10)		/* ゲームオーバーになった */
+#define PUZZLE_CHG_GARBAGE	(0x20)		/* 待ちお邪魔の段数が変わった（盤面と一緒に送る） */
 
 struct PuzzleGame {
 	PuzzleBoard	Board;
@@ -199,6 +246,9 @@ struct PuzzleGame {
 	int			nLevel;
 	bool		bOver;
 	unsigned int dwLastDrop;				/* 最後に 1 段落ちた時刻(ms) */
+	PuzzleRand	GRand;						/* お邪魔の穴の位置を決める乱数（落ち物の順番とは別。落ち物は参加者で同じ順番にするため） */
+	int			nPending;					/* 待ちお邪魔（自分宛てでまだ積まれていない段数） */
+	int			nAttack;					/* 直前の固定で相手へ送る段数（相殺した残り。呼び出し側が読んで 0 に戻す） */
 
 	/* 袋から次の種類を取り出す（袋が空なら詰め直してかき混ぜる） */
 	int BagNext(void)
@@ -229,6 +279,9 @@ struct PuzzleGame {
 		nLines = 0;
 		nLevel = 0;
 		bOver = false;
+		GRand.Seed (dwSeed ^ 0x5BD1E995u);
+		nPending = 0;
+		nAttack = 0;
 		nNext = BagNext ();
 		dwLastDrop = dwNow;
 		Spawn ();
@@ -291,11 +344,27 @@ struct PuzzleGame {
 		return 0;
 	}
 
-	/* 固定して、ライン消し・得点・次の落ち物まで進める */
+	/* 相手から送られたお邪魔 nLines 段を待ちに足す（上限あり）。変わったら PUZZLE_CHG_GARBAGE */
+	int AddPending(int nLines)
+	{
+		int nOld = nPending;
+
+		nPending += nLines;
+		if (nPending > PUZZLE_PENDING_MAX) {
+			nPending = PUZZLE_PENDING_MAX;
+		}
+		return (nPending != nOld) ? PUZZLE_CHG_GARBAGE : 0;
+	}
+
+	/* 固定して、ライン消し・得点・お邪魔の相殺と反映・次の落ち物まで進める。
+	   消した列数に応じたお邪魔は、まず自分宛ての待ちを相殺し、残りが nAttack（相手へ送る分）になる。
+	   相殺しても残った待ちは、この固定で下から積まれる（1 回に PUZZLE_GARBAGE_APPLY_MAX 段まで） */
 	int LockAndNext(void)
 	{
-		int nRet = PUZZLE_CHG_BOARD | PUZZLE_CHG_NEXT | PUZZLE_CHG_PIECE, nCleared;
+		int nRet = PUZZLE_CHG_BOARD | PUZZLE_CHG_NEXT | PUZZLE_CHG_PIECE, nCleared, nSend;
+		bool bOverflow = false;
 
+		nAttack = 0;
 		Board.Lock (nKind, nRot, nX, nY);
 		nCleared = Board.ClearLines ();
 		if (nCleared > 0) {
@@ -303,8 +372,25 @@ struct PuzzleGame {
 			nLines += nCleared;
 			nLevel = nLines / PUZZLE_LINES_PER_LEVEL;
 			nRet |= PUZZLE_CHG_SCORE;
+			nSend = PuzzleGarbageLines (nCleared);
+			if (nSend > 0 && nPending > 0) {
+				int nCancel = (nSend < nPending) ? nSend : nPending;
+				nPending -= nCancel;
+				nSend -= nCancel;
+				nRet |= PUZZLE_CHG_GARBAGE;
+			}
+			nAttack = nSend;
+		}
+		if (nPending > 0) {
+			int nApply = (nPending < PUZZLE_GARBAGE_APPLY_MAX) ? nPending : PUZZLE_GARBAGE_APPLY_MAX;
+			nPending -= nApply;
+			bOverflow = !Board.AddGarbage (nApply, GRand);
+			nRet |= PUZZLE_CHG_GARBAGE;
 		}
 		Spawn ();
+		if (bOverflow) {
+			bOver = true;
+		}
 		if (bOver) {
 			nRet |= PUZZLE_CHG_OVER;
 		}
@@ -363,8 +449,8 @@ static inline int PuzzleDefaultDx(int nCols)
 	return -((nCols * PUZZLE_BLOCK_DOT / 2 - PUZZLE_TILE_DOT / 2) / PUZZLE_TILE_DOT);
 }
 
-/* dy の既定：フィールドの一番下のマスの行が席の 1 マス上（盤面が 7 マス分の高さなら -7） */
+/* dy の既定：フィールドの高さ（マス数）−1。一番下のマス行が台NPC のマスと重なる（盤面が 7 マス分の高さなら -6、18 段なら -8） */
 static inline int PuzzleDefaultDy(int nRows)
 {
-	return -((nRows * PUZZLE_BLOCK_DOT + PUZZLE_TILE_DOT - 1) / PUZZLE_TILE_DOT);
+	return -((nRows * PUZZLE_BLOCK_DOT + PUZZLE_TILE_DOT - 1) / PUZZLE_TILE_DOT - 1);
 }
