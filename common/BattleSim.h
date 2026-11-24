@@ -96,7 +96,7 @@ inline Result OneBattle(const Player &P, const Enemy &E, Rng &rng) {
             if (e.nPos <= 1 && e.nAtkAt < 0) {
                 e.nAtkAt = t + ENEMY_THINK_MS + nETurn; /* 初回は 1 間隔後 */
             } else if (e.nPos <= 1 && t >= e.nAtkAt) {
-                e.nAtkAt = t;
+                e.nAtkAt = t + nETurn; /* 殴った時刻を記録（サーバーの dwLastBattle）。次は 1 間隔後 */
                 if (Pct (rng) >= 100 - MISS_RATE) continue;
                 bool bCrit = Pct (rng) >= 100 - CRIT_RATE;
                 nPlHP -= BattleCalc::Damage (E.nAT, 0, P.nDF, bCrit, false, 100, 0, rng);
