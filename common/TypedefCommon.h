@@ -2499,6 +2499,9 @@ typedef struct _CHARINFO {
 	DWORD		dwLastDotMove;										/* 最後に移動した時間 */
 	DWORD		dwTimeStep;											/* 今のマスへ歩き始めた時間(サーバー。町転送の床で歩き終わりを待つ) */
 	DWORD		dwTimeReturnHold;									/* 町転送の床に捕まった時間(サーバー。発動まで先へ歩かせない) */
+	DWORD		dwTimeMapMove;										/* マップ間移動で着いた時間(サーバー。着いた直後に届く古いイベント問い合わせを捨てる) */
+	DWORD		dwXMapMove;											/* マップ間移動で着いたX座標(サーバー) */
+	DWORD		dwYMapMove;											/* マップ間移動で着いたY座標(サーバー) */
 	DWORD		dwLastAnime;										/* 最後にアニメーションした時間 */
 	DWORD		dwLastHartBeat;										/* 最後に生存確認を受けた時間 */
 	DWORD		dwLastSpeech;										/* 最後に発言した時間 */
