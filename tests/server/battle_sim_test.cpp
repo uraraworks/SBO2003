@@ -123,6 +123,23 @@ int main() {
         BattleSim::Summary c = BattleSim::RunParty (duo, 2, E, 300, r3, BattleSim::TARGET_LOWHP);
         CHECK (c.dDead >= b.dDead, "HPが低い人を狙う方が倒れる人数が少ない (%.2f vs %.2f)", c.dDead, b.dDead);
     }
+    /* 7. 遠隔の先撃ち（bAtkIsAT の bit1 以上＝攻撃特技の射程）: 動かない敵（開始距離4）に射程3の攻撃特技（通常型）を持つ人は、
+          歩いて近づく間にも撃つので、射程なし（同じ特技）より早く倒せる。射程 0・1 の人は従来どおり（同じ乱数で同じ結果） */
+    {
+        BattleSim::Player M = Player();
+        M.nHP = 300; M.nMana = 100; M.nAT = 5; M.nAtkMana = 3; M.nAtkAvg = 40; M.nAtkTime = 0; M.nDEX = 255;
+        BattleSim::Player Mr = M; Mr.bAtkIsAT = 6;      /* 射程3・通常型 */
+        BattleSim::Player Mn = M; Mn.bAtkIsAT = 0;
+        BattleSim::Player M1 = M; M1.bAtkIsAT = 2;      /* 射程1 = 遠隔なし */
+        BattleSim::Enemy E = {120, 1, 5, 0, 1, 4, 0, 3, 20};
+        Rng r1 (21), r2 (21), r3 (21);
+        BattleSim::Summary a = BattleSim::Run (Mn, E, 200, r1);
+        BattleSim::Summary b = BattleSim::Run (Mr, E, 200, r2);
+        BattleSim::Summary c = BattleSim::Run (M1, E, 200, r3);
+        printf ("遠隔なし %.2f秒 / 射程3 %.2f秒 / 射程1 %.2f秒\n", a.dSec, b.dSec, c.dSec);
+        CHECK (b.dSec < a.dSec - 0.5, "遠隔の先撃ちで速く倒せていない (%.2f秒 vs %.2f秒)", b.dSec, a.dSec);
+        CHECK (a.dSec == c.dSec, "射程1 が射程なしと違う (%.2f秒 vs %.2f秒)", c.dSec, a.dSec);
+    }
     printf (g_bad ? "NG\n" : "一致\n");
     return g_bad ? 1 : 0;
 }

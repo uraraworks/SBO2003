@@ -4,7 +4,8 @@
    1人戦は OneBattle、パーティ戦は OneBattleParty（OneBattle は 1 人のパーティとして呼ぶだけで、乱数の引き方も 1 人の時は従来と同じ）。
    計算式は BattleCalc.h を使う。乱数は呼び出し側から関数オブジェクトで受け取る（rng() は整数）。
    仮の JS 試作（sim.js）と同じ流れ。敵の特技（攻撃魔法・回復）は入っている（敵は Mana を使わない）。
-   入っていないもの: 回復道具、ジャスト、遠隔、属性軽減、状態異常（毒・眠りなどの特技は「行動を使うだけ」）。
+   入っていないもの: 回復道具、ジャスト、属性軽減、状態異常（毒・眠りなどの特技は「行動を使うだけ」）、召喚（置く魔法の複数回ヒット）。
+   遠隔は任意（Player.bAtkIsAT の bit1 以上に攻撃特技の射程を入れた人だけ、射程内に敵が入ったら手前に来る前から撃つ。入れなければ従来どおり）。
    連携ボーナス（別の人が 2 秒以内に同じ敵へ当てたら 130%）はパーティ戦で入っている（RenkeiCheck と同じ）。 */
 #include <string>
 #include <vector>
@@ -24,7 +25,7 @@ struct Player {
     int nHealMana, nHealAvg, nHealTime;
     /* 攻撃特技（nMana が 0 なら無し） */
     int nAtkMana, nAtkAvg, nAtkTime;
-    int bAtkIsAT;       /* 1: 攻撃力＋値−守備/2 型 */
+    int bAtkIsAT;       /* bit0=1: 攻撃力＋値−守備/2 型。bit1 以上: 攻撃特技の射程（マス。0・1 は遠隔なし。例: 射程3・通常型 = 6、AT型 = 7） */
     int nDFMagic;       /* 魔法防御（標準プレイヤーは 0。魔法防御の首飾り・指輪を付けた時だけ増える） */
 };
 
@@ -240,7 +241,26 @@ inline Result OneBattleParty(const Player *aP, int nP, const Enemy &E, Rng &rng,
             if (!E.bMove && t % PLAYER_WALK_MS == 0) {
                 for (int i = 0; i < nCnt; i++) if (es[i].nHP > 0 && es[i].nPos > 1) es[i].nPos -= 1;
             }
-            for (int i = 0; i < nP; i++) aNext[i] = -1;
+            for (int i = 0; i < nP; i++) {
+                /* 遠隔の先撃ち（任意）: 攻撃特技の射程（bAtkIsAT の bit1 以上）が 2 以上の人は、射程内に敵がいる間、
+                   手前に来る前でも攻撃特技を撃つ（Mana があれば）。射程 0・1 の人は従来どおり（ゲージは敵が来てから）。連携は入れない */
+                const Player &Q = aP[i];
+                const int nRange = Q.bAtkIsAT >> 1;
+                int nTo = -1;
+                if (aHP[i] > 0 && nRange > 1 && Q.nAtkMana > 0 && aMana[i] >= Q.nAtkMana) {
+                    for (int j = 0; j < nCnt; j++)
+                        if (es[j].nHP > 0 && es[j].nPos <= nRange && (nTo < 0 || es[j].nPos < es[nTo].nPos)) nTo = j;
+                }
+                if (nTo < 0) { aNext[i] = -1; continue; }
+                if (aNext[i] < 0) aNext[i] = t + aGauge[i];
+                if (t >= aNext[i] && t >= aBusy[i]) {
+                    aMana[i] -= Q.nAtkMana;
+                    int d = Q.nAtkAvg + ((Q.bAtkIsAT & 1) ? Q.nAT - E.nDF : 0);
+                    es[nTo].nHP -= d > 0 ? d : 0;
+                    aBusy[i] = t + 1000 + Q.nAtkTime * 990;
+                    aNext[i] = -1;
+                }
+            }
             continue;
         }
         for (int pi = 0; pi < nP; pi++) {
@@ -273,7 +293,7 @@ inline Result OneBattleParty(const Player *aP, int nP, const Enemy &E, Rng &rng,
                     aBusy[pi] = t + 1000 + P.nHealTime * 990;
                 } else if (P.nAtkMana > 0 && aMana[pi] >= P.nAtkMana) {
                     aMana[pi] -= P.nAtkMana;
-                    int d = P.nAtkAvg + (P.bAtkIsAT ? P.nAT - E.nDF : 0);
+                    int d = P.nAtkAvg + ((P.bAtkIsAT & 1) ? P.nAT - E.nDF : 0);
                     d = d > 0 ? d : 0;
                     int nRate; BS_RENKEI (nRate);
                     tgt.nHP -= d * nRate / 100;
