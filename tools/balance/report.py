@@ -605,6 +605,17 @@ def BattleTurn(e):
 def goal_check(d, w, batch, cfg, out_path, a):
     th1, thp, ths = cfg['zako_solo_win_min'], cfg['boss_party_win_min'], cfg['boss_solo_win_max']
     stages = [k for k in cfg['stages'] if k in w.chk]
+    # 設計上「ボス格」として置かれている敵（HP・経験値の基準には届かないもの）は、目標チェックだけボス格として扱う
+    boss_names = set(cfg.get('boss_override', []))
+
+    def goal_enemies(sk, group):
+        zs = [e for e in w.enemies(sk, 'zako') if e['name'] not in boss_names]
+        bs = list(w.enemies(sk, 'boss'))
+        if group == 'zako':
+            return zs
+        have = {e['name'] for e in bs}
+        bs += [e for e in w.enemies(sk, 'zako') if e['name'] in boss_names and e['name'] not in have]
+        return bs
     sw = lambda sk: cfg['stage_weight'].get(str(min(w.stage[sk]['order'], 6)), 1)
     comps = [(int(n), c) for n, cl in sorted(cfg['parties'].items()) for c in cl]
     fx = _factors(cfg); fxd = _factors_down(cfg)
@@ -615,8 +626,8 @@ def goal_check(d, w, batch, cfg, out_path, a):
         lv = w.chk[sk]['lv']
         pl = {j: w.player(j, lv, sk) for j in w.jobs}
         for job in w.jobs:
-            z_req[(sk, job)] = [(e, batch.add(scen_row(pl[job], e, 1))) for e in w.enemies(sk, 'zako')]
-        for e in w.enemies(sk, 'boss'):
+            z_req[(sk, job)] = [(e, batch.add(scen_row(pl[job], e, 1))) for e in goal_enemies(sk, 'zako')]
+        for e in goal_enemies(sk, 'boss'):
             for job in w.jobs:
                 b_solo[(sk, e['name'], job)] = batch.add(scen_row(pl[job], e, 1))
             for n, c in comps:
@@ -640,7 +651,7 @@ def goal_check(d, w, batch, cfg, out_path, a):
                            bads=sorted(bad, key=lambda x: x[0])))
     # ---- 目標3 ----
     g3 = []
-    bosses = [(sk, e) for sk in stages for e in w.enemies(sk, 'boss')]
+    bosses = [(sk, e) for sk in stages for e in goal_enemies(sk, 'boss')]
     for sk, e in bosses:
         solo = {job: batch[b_solo[(sk, e['name'], job)]]['win'] for job in w.jobs}
         pw = {(n, tuple(c)): batch[b_party[(sk, e['name'], tuple(c))]]['win'] for n, c in comps}
