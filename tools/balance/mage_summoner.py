@@ -653,9 +653,11 @@ def main():
     ap.add_argument('--runs', type=int, default=1000)
     ap.add_argument('--seed', type=int, default=1)
     ap.add_argument('--exe', default='/tmp/battlesim')
+    ap.add_argument('--summon', type=float, default=4.0, help='見方Cで仮定する、召喚が 1 回の使用で当たる回数（既定 4）')
     ap.add_argument('--part', default='1,2,3,4', help='出す節（1=要因の比較 2=入れ替え 3=役割の再現 4=案）')
     a = ap.parse_args()
     parts = set(a.part.split(','))
+    VIEW_C['summon'] = a.summon
     d0 = json.load(open(a.simdata, encoding='utf-8'))
     cfg = json.load(open(a.goal, encoding='utf-8'))
     batch = R.Batch(R.build_exe(a.exe), a.runs, a.seed)

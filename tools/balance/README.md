@@ -96,3 +96,5 @@ python3 tools/balance/report.py --goal-check [--goal tools/balance/goal.json] [-
 
 ## 魔法使い・召喚士の原因と案の比較（mage_summoner.py）
 魔法使い・召喚士が目標1を満たさない原因（HP・守備・攻撃・Mana・特技・装備できる物を 1 つずつ他職に入れ替える）と、シミュレータ未対応の役割（遠隔の先撃ち・召喚の複数回ヒット・敵の魔法防御・特技の使い分け）を入れた時の勝率、案（職業表・特技の入手・装備・何もしない）の比較。`python3 tools/balance/mage_summoner.py [--simdata …] [--runs 2000] [--part 1,2,3,4] > 表.md`。データは書き換えない。見方A＝goal-check と同じ／B＝補正込み（特技は強い時だけ使う・敵の魔法防御・遠隔）／C＝B＋召喚が 4 回当たると仮定。結果と見立ては sbo2003-balance-sim の mage-summoner.md。
+
+`mage_summoner.py --summon N`: 見方C（召喚が 1 回の使用で当たる回数）の仮定を変える（既定 4）。本番のソース読みでは上限が約 4 なので、×2・×3・×4 で並べて見る。
