@@ -1896,7 +1896,9 @@
 		opacity: 0.75;
 	}
 	body.sbo-pad.sbo-gp-on #sbo-gp-open {
-		display: block;
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
 	}
 	/* 共有できないブラウザ向け：画像を大きく出して長押しで保存してもらう
 	   （ログ保存の案内 #sbo-log-view も同じ見た目） */
@@ -1986,6 +1988,7 @@
 	#sbo-log-pc,
 	#sbo-log-pop,
 	#sbo-sheet-save,
+	#sbo-gp-sheet,
 	#sbo-sheet-tabs button {
 		display: inline-flex;
 		align-items: center;
@@ -2017,6 +2020,7 @@
 	<symbol id="sbo-ic-save" viewBox="0 0 24 24"><path d="M12 4v10.5M7.5 10l4.5 4.5 4.5-4.5M4 16.5V19a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2.5"/></symbol>
 	<symbol id="sbo-ic-popout" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-8.5 8.5M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
 	<symbol id="sbo-ic-chat" viewBox="0 0 24 24"><path d="M5 4.5h14a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2h-8l-4.5 3.5V17H5a2 2 0 0 1-2-2V6.5a2 2 0 0 1 2-2z"/></symbol>
+	<symbol id="sbo-ic-gamepad" viewBox="0 0 24 24"><path d="M7 7h10a4.5 4.5 0 0 1 4.4 5.4l-.8 4A2.6 2.6 0 0 1 16 17.6l-1-1.6H9l-1 1.6A2.6 2.6 0 0 1 3.4 16.4l-.8-4A4.5 4.5 0 0 1 7 7zM8 10v4M6 12h4M16 11v.5M18 13v.5"/></symbol>
 	<symbol id="sbo-ic-smile" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 14a4.2 4.2 0 0 0 7 0M9.3 9.5v.5M14.7 9.5v.5"/></symbol>
 </svg>
 <header class="site-header">
@@ -2097,7 +2101,7 @@
 </div>
 <div id="sbo-dot-preview" data-sbo-ui="1"><span id="sbo-dot-preview-text"></span><button type="button" id="sbo-dot-preview-stop">やめて読み直す</button></div>
 <!-- ゲームパッドのボタン割当 -->
-<button type="button" id="sbo-gp-open" data-sbo-ui="1">🎮 パッド設定</button>
+<button type="button" id="sbo-gp-open" data-sbo-ui="1"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-gamepad"/></svg>パッド設定</button>
 <div id="sbo-gp-set" data-sbo-ui="1">
 	<div class="sbo-gp-card">
 		<h2>ゲームパッドの設定</h2>
@@ -2265,7 +2269,7 @@
 			<button type="button" data-sheet-tab="balloon"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-smile"/></svg>吹き出し</button>
 		</span>
 		<span id="sbo-sheet-tools">
-			<button id="sbo-gp-sheet" type="button" title="ゲームパッドのボタン割当を開きます">🎮 パッド</button>
+			<button id="sbo-gp-sheet" type="button" title="ゲームパッドのボタン割当を開きます"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-gamepad"/></svg>パッド</button>
 			<button id="sbo-sheet-save" type="button" title="メッセージログをテキストファイルで保存します"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-save"/></svg>ログ保存</button>
 			<button id="sbo-sheet-close" type="button" title="閉じる">✕</button>
 		</span>
@@ -3057,7 +3061,7 @@
 			refreshList();
 		});
 		openBtn.addEventListener('click', openSet);
-		/* 入口：PC はフッター、スマホはチャットシートの「🎮 パッド」とログイン前の「おかえりなさい」の画面
+		/* 入口：PC はフッター、スマホはチャットシートの「パッド」ボタンとログイン前の「おかえりなさい」の画面
 		   （スマホはフッターが出ないため）。つながっている間は右上の小さなボタンからも開ける */
 		['sbo-gp-link', 'sbo-gp-link2', 'sbo-gp-sheet'].forEach(function (id) {
 			var link = document.getElementById(id);
