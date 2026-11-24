@@ -89,3 +89,6 @@ python3 tools/balance/report.py --goal-check [--goal tools/balance/goal.json] [-
 
 ## 序盤の高HPの敵の比較（early_boss.py）
 段階1 プヨンクイーン・段階2 ぬめぬめ が目標1を満たさない問題の改善案（敵の弱体・経験値据え置き・職業側・店/特技の入手・ボス格扱い）を、simdata のコピーをメモリ上で書き換えて比べる。`python3 tools/balance/early_boss.py [--simdata …] > 表.md`。データは書き換えない。結果と見立ては sbo2003-balance-sim の early-bosses.md。
+
+## 段階4 きらきらの比較（north_flare.py）
+段階4 ノースフレアの敵「きらきら」が目標1を満たさない問題の改善案（敵の特技・守備・素早さ・HP、職業側、店、ボス格扱い）を比べる。`python3 tools/balance/north_flare.py [--simdata …] > 表.md`。データは書き換えない。battlesim が見ない敵の魔法防御（dfm）は、攻撃特技（「攻撃力＋値」型以外）のダメージから dfm/2 を引いて補正している。結果と見立ては sbo2003-balance-sim の north-flare.md。
