@@ -141,6 +141,7 @@ void	RecvDataProcEVENTADD					(PBYTE, DWORD);				/* イベント情報追加 */
 void	RecvDataProcEVENTGET					(PBYTE, DWORD);				/* イベント情報取得 */
 void	RecvDataProcEVENTCHG					(PBYTE, DWORD);				/* イベント情報更新 */
 void	RecvDataProcMAPINFOCHG					(PBYTE, DWORD);				/* マップ情報更新 */
+#define MAPMOVE_ARRIVE_IGNORE	1500	/* マップ間移動で着いた直後、古いイベント問い合わせを捨てる時間(ms) */
 void	RecvDataProcEVENTCHECK					(PBYTE, DWORD);				/* イベントチェック要求 */
 void	RecvDataProcADDCHAR						(PBYTE, DWORD);				/* キャラ追加要求 */
 void	RecvDataProcBANCHAR						(PBYTE, DWORD);				/* キャラ強制ログオフ要求 */
@@ -3519,6 +3520,11 @@ void SubProcMapMove(PCHARINFO pChar, DWORD dwMapID, DWORD dwX, DWORD dwY)
 	pChar->dwYBack = pChar->dwY;
 	pChar->dwMapID = dwMapID;
 	AddTblNoPC (pChar->dwTblID);
+	/* 着いたマスと時間を覚える（着いた直後に届く「歩き終わったマスのイベント問い合わせ」は
+	   RecvDataProcEVENTCHECK で捨てる。ついていく人が着いたマスの別のマップ移動に反応するのを防ぐ） */
+	pChar->dwTimeMapMove = timeGetTime ();
+	pChar->dwXMapMove = pChar->dwX;
+	pChar->dwYMapMove = pChar->dwY;
 	/* 暗闇表示？ */
 	if (pMap->byFlg & MAPFLG_DARK) {
 		pChar->byLightLevel = 0;
@@ -5673,6 +5679,13 @@ void RecvDataProcEVENTCHECK(PBYTE pData, DWORD dwDataSize)
 		SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
 		return;
 	}
+	/* マップ間移動で着いた直後に、着いたマスから動かずに届いた「歩き終わったマスの問い合わせ」は、
+	   移動前の歩きの名残。着いたマスにマップ移動があっても反応しない（下のイベント探しで見る）
+	   （ついていく人が、着いたマスにある別のマップ移動（管理人室の出口から着く先など）に反応して、
+	   すぐ別のマップへ飛んでいた） */
+	BOOL bJustArrived = ((pPara->byData == 0) && pChar->dwTimeMapMove &&
+		(timeGetTime () - pChar->dwTimeMapMove < MAPMOVE_ARRIVE_IGNORE) &&
+		(pChar->dwX == pChar->dwXMapMove) && (pChar->dwY == pChar->dwYMapMove));
 
 	nNo = GetMapNo (pChar->dwMapID);
 	if (nNo < 0) {
@@ -5718,6 +5731,11 @@ void RecvDataProcEVENTCHECK(PBYTE pData, DWORD dwDataSize)
 		}
 		/* イベント発見？ */
 		if ((pEvent->dwX == dwX) && (pEvent->dwY == dwY)) {
+			/* 着いた直後の古い問い合わせでは、マップ移動を動かさない（位置を送って待ちを解く） */
+			if (bJustArrived && (pEvent->byType == EVENTTYPE_MAPCHG)) {
+				SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
+				return;
+			}
 			/* 足元を調べた時(Sキー)、足元のイベントが調べても何も起きない物なら
 			   目の前の扉を開ける（扉の前のマスに乗った時のメッセージなどがあると開けられなかった） */
 			if ((pPara->byData == 1) && !IsEventExamine (pEvent, pPara->byData)) {

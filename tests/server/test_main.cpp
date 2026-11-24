@@ -1354,6 +1354,7 @@ static void TestTailOverlap(const std::vector<int> &aLogin);
 static void TestTailBattleMapMove(const std::vector<int> &aLogin);
 static void TestTailSpaceMove(const std::vector<int> &aLogin);
 static void TestTailMidLeave(const std::vector<int> &aLogin);
+static void TestTailArrive(const std::vector<int> &aLogin);
 static void TestEmptyMapCheck(const std::vector<int> &aLogin);
 static void TestPutFill(void);
 static void TestDungeonTheme(void);
@@ -1927,6 +1928,8 @@ static void TestWorld(void)
 	TestTailSpaceMove(aLogin);
 	/* AT. 列の途中の人が抜けても、後ろの人は前の人へつなぎ直る */
 	TestTailMidLeave(aLogin);
+	/* AU. ついていく人が、着いたマスの別のマップ移動に反応しない */
+	TestTailArrive(aLogin);
 	/* SM. 召喚特技のヒット数の実測（SUMMON_HITS=1 の時だけ。最後に流す） */
 	TestSummonHits(aLogin);
 }
@@ -17063,6 +17066,95 @@ static void TestTailMidLeave(const std::vector<int> &aLogin)
 		PCHARINFO p = apChar[i];
 		p->dwMapID = adwBack[i][0]; p->dwX = adwBack[i][1]; p->dwY = adwBack[i][2];
 		p->dwTailTblID = adwBack[i][3]; p->dwTailBackTblID = adwBack[i][4];
+	}
+}
+
+/* ------------------------------------------------------------------------- */
+/* AU. マップ間移動で着いた直後、着いたマスにあるマップ移動に反応しない		 */
+/*    管理人室の出口(始まりの町 (48,74))→マップ3 (10,9) は、着いたマスが		 */
+/*    別のマップ移動(→始まりの町)の上。ついていく人の古い問い合わせで			 */
+/*    すぐ飛ばされていた。着いてしばらくは捨て、動いた後・時間が過ぎた後は動く	 */
+/* ------------------------------------------------------------------------- */
+static void TailArriveCheck(PCHARINFO p, BYTE byData)
+{
+	CMDPARA_DATA1 Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_CHECKEVENT;
+	Para.pID = p->pID;
+	Para.dwTblID = p->dwTblID;
+	Para.byData = byData;
+	TestRecv(p, &Para, sizeof(Para));
+}
+
+static void TestTailArrive(const std::vector<int> &aLogin)
+{
+	printf("== AU. Tail arrive ==\n");
+	if (aLogin.size() < 2) {
+		return;
+	}
+	PMAPINFO pTown = g_aMapInfo[GetMapNo(0)];
+	PEVENTINFO pEvent = NULL;
+	for (int i = 0; i < pTown->nEventCount; i ++) {
+		PEVENTINFO p = &pTown->pEvent[i];
+		if (p->byType == EVENTTYPE_MAPCHG && p->pData && p->dwX == 48 && p->dwY == 74) {
+			pEvent = p;
+		}
+	}
+	printf("tailarrive setup=%d\n", pEvent ? 1 : 0);
+	if (!pEvent) {
+		return;
+	}
+	PEVENTINFO_MAPCHG pInfo = (PEVENTINFO_MAPCHG)pEvent->pData;
+	BYTE byRangeBack = pInfo->byRandomRange;
+	pInfo->byRandomRange = 0;
+	printf("tailarrive dest map=%u pos=(%u,%u)\n", pInfo->dwMapID, pInfo->dwX, pInfo->dwY);
+
+	PCHARINFO apChar[2] = { g_aCharInfo[aLogin[0]], g_aCharInfo[aLogin[1]] };
+	DWORD adwBack[2][5];
+	for (int i = 0; i < 2; i ++) {
+		PCHARINFO p = apChar[i];
+		adwBack[i][0] = p->dwMapID; adwBack[i][1] = p->dwX; adwBack[i][2] = p->dwY;
+		adwBack[i][3] = p->dwTailTblID; adwBack[i][4] = p->dwTailBackTblID;
+		DeleteTblNoPC((int)p->dwTblID);
+		p->dwMapID = pTown->dwID;
+		p->dwX = p->dwXBack = pEvent->dwX;
+		p->dwY = p->dwYBack = pEvent->dwY + i;
+		AddTblNoPC((int)p->dwTblID);
+	}
+	apChar[0]->dwTailTblID = (DWORD)-1;
+	apChar[0]->dwTailBackTblID = apChar[1]->dwTblID;
+	apChar[1]->dwTailTblID = apChar[0]->dwTblID;
+	apChar[1]->dwTailBackTblID = (DWORD)-1;
+
+	/* 先頭が出口に乗る → 後ろの人も着いたマスへ */
+	EventProc(apChar[0], pEvent, 0);
+	for (int i = 0; i < 2; i ++) {
+		printf("tailarrive moved %d map=%u pos=(%u,%u)\n", i, apChar[i]->dwMapID, apChar[i]->dwX, apChar[i]->dwY);
+	}
+	/* 着いた直後の古い問い合わせ（歩き終わり）は捨てる */
+	s_dwFakeNow += 200;
+	g_dwTime = s_dwFakeNow;
+	TailArriveCheck(apChar[1], 0);
+	printf("tailarrive stale follower map=%u pos=(%u,%u)\n", apChar[1]->dwMapID, apChar[1]->dwX, apChar[1]->dwY);
+	TailArriveCheck(apChar[0], 0);
+	printf("tailarrive stale leader map=%u pos=(%u,%u)\n", apChar[0]->dwMapID, apChar[0]->dwX, apChar[0]->dwY);
+	/* 時間が過ぎれば、乗っているマス（まだ動いていない）のマップ移動は動く */
+	s_dwFakeNow += 2000;
+	g_dwTime = s_dwFakeNow;
+	TailArriveCheck(apChar[1], 0);
+	printf("tailarrive later follower map=%u pos=(%u,%u)\n", apChar[1]->dwMapID, apChar[1]->dwX, apChar[1]->dwY);
+
+	pInfo->byRandomRange = byRangeBack;
+	for (int i = 0; i < 2; i ++) {
+		PCHARINFO p = apChar[i];
+		DeleteTblNoPC((int)p->dwTblID);
+		p->dwMapID = adwBack[i][0];
+		p->dwX = p->dwXBack = adwBack[i][1];
+		p->dwY = p->dwYBack = adwBack[i][2];
+		p->dwTailTblID = adwBack[i][3];
+		p->dwTailBackTblID = adwBack[i][4];
+		p->dwTimeMapMove = 0;
+		AddTblNoPC((int)p->dwTblID);
 	}
 }
 
