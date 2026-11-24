@@ -999,7 +999,7 @@ static void DrawMapViewFog(void)
 /* ========================================================================= */
 #define MAPLIGHT_MAX	32									/* 灯りの最大数 */
 #define LIGHTITEM_POWER	1.6f								/* 明かりの道具の強さ(1 より大きいと真ん中が全部明るい。1.6 なら半径の 4 割まで) */
-#define LIGHTITEM_WARM	0.5f								/* 明かりの道具の炎の色の強さ(光源の暖色は 1) */
+#define LIGHTITEM_WARM	0.15f								/* 明かりの道具の炎の色の強さ(光源の暖色は 1。強いと水・洞窟の青が濁るので弱め) */
 
 static void DrawMapLight(const char *pMapDark)
 {
