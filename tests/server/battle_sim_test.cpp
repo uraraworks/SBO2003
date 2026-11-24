@@ -73,6 +73,56 @@ int main() {
         BattleSim::Result x = BattleSim::OneBattle (P, M, r);
         CHECK (x.nEnemyMagic > 0, "前方魔法を撃たない");
     }
+    /* 4. 味方が複数: 1 人のパーティは OneBattle と同じ乱数・同じ結果（既存の 1 人戦を変えていない） */
+    {
+        BattleSim::Player P = Player();
+        BattleSim::Enemy E = {300, 20, 10, 100, 2, 3, 1, 5, 40};
+        Fill (E, BattleCalc::EMT_HPDOWN, 3, 6, BattleCalc::EMTT_FRONT, 1, 2);
+        for (int i = 4; i < BattleCalc::EM_SLOTS; i++) { BattleSim::EnemySkill none = {0, 0, 0, 0, 0, 0}; E.aSkill[i] = none; }
+        Rng r1 (9), r2 (9);
+        int nSame = 0;
+        for (int i = 0; i < 100; i++) {
+            BattleSim::Result a = BattleSim::OneBattle (P, E, r1), b = BattleSim::OneBattleParty (&P, 1, E, r2);
+            if (a.bWin == b.bWin && a.nMs == b.nMs && a.nHeal == b.nHeal && a.nEnemyMagic == b.nEnemyMagic && a.dHpRate == b.dHpRate) nSame++;
+        }
+        CHECK (nSame == 100, "1人のパーティが OneBattle と違う (%d/100 一致)", nSame);
+    }
+    /* 5. 2 人なら 1 人より勝てる・連携で速く倒せる: HP が多くて硬い敵（1 人では削り切られる）に、同じ戦士 1 人と 2 人で挑む。
+          連携あり（2 秒以内に別の人が当てる）の方が、連携なしより所要時間が短い */
+    {
+        BattleSim::Player P = Player();
+        BattleSim::Enemy E = {800, 25, 10, 120, 1, 1, 1, 3, 20};
+        BattleSim::Player two[2] = {P, P};
+        Rng r1 (11), r2 (11), r3 (11);
+        BattleSim::Summary one = BattleSim::Run (P, E, 300, r1);
+        BattleSim::Summary duo = BattleSim::RunParty (two, 2, E, 300, r2);
+        BattleSim::Summary noRenkei = BattleSim::RunParty (two, 2, E, 300, r3, BattleSim::TARGET_FIRST, 0);
+        printf ("1人 勝率%.2f %.1f秒 / 2人 勝率%.2f %.1f秒 倒れ%.2f人 / 連携なし 勝率%.2f %.1f秒\n", one.dWinRate, one.dSec, duo.dWinRate, duo.dSec, duo.dDead, noRenkei.dWinRate, noRenkei.dSec);
+        CHECK (duo.dWinRate > one.dWinRate + 0.2, "2人が1人より勝てていない (%.2f vs %.2f)", duo.dWinRate, one.dWinRate);
+        CHECK (duo.dSec < noRenkei.dSec * 0.97, "連携で速く倒せていない (%.1f秒 vs %.1f秒)", duo.dSec, noRenkei.dSec);
+        CHECK (duo.dSec < one.dSec * 0.6 || one.dWinRate < 0.3, "2人が速く倒せていない (%.1f秒 vs %.1f秒)", duo.dSec, one.dSec);
+    }
+    /* 6. 回復役は仲間を回復する・敵の狙い方: 殴り役 + 回復役（自分は攻撃しない・回復だけ）。敵は先頭の殴り役を狙い続けるので、
+          回復役が仲間のHPが 40% 以下で回復し、回復の回数が 0 より多い。回復役がいない時より勝率が高く、
+          狙い方 TARGET_FIRST では先頭が倒れるまで後ろの回復役は殴られない（倒れた人数が回復役ぶん増えない） */
+    {
+        BattleSim::Player F = Player();
+        F.nHP = 150; F.nAT = 40;
+        BattleSim::Player H = Player();
+        H.nHP = 60; H.nAT = 2; H.nMana = 200; H.nHealMana = 3; H.nHealAvg = 40; H.nHealTime = 0;
+        BattleSim::Enemy E = {900, 30, 10, 150, 1, 1, 1, 3, 20};
+        BattleSim::Player duo[2] = {F, H};
+        BattleSim::Player solo[1] = {F};
+        Rng r1 (13), r2 (13), r3 (13);
+        BattleSim::Summary a = BattleSim::RunParty (solo, 1, E, 300, r1);
+        BattleSim::Summary b = BattleSim::RunParty (duo, 2, E, 300, r2);
+        printf ("前衛だけ 勝率%.2f / 前衛+回復役 勝率%.2f 回復%.1f回 倒れ%.2f人\n", a.dWinRate, b.dWinRate, b.dHeal, b.dDead);
+        CHECK (b.dHeal > 1.0, "回復役が仲間を回復していない (%.2f回)", b.dHeal);
+        CHECK (b.dWinRate > a.dWinRate + 0.2, "回復役がいても勝率が上がらない (%.2f vs %.2f)", b.dWinRate, a.dWinRate);
+        /* 狙い方 TARGET_LOWHP: 一番HPが低い（回復役）が最初に狙われるので、先頭狙いより回復役が倒れやすい */
+        BattleSim::Summary c = BattleSim::RunParty (duo, 2, E, 300, r3, BattleSim::TARGET_LOWHP);
+        CHECK (c.dDead >= b.dDead, "HPが低い人を狙う方が倒れる人数が少ない (%.2f vs %.2f)", c.dDead, b.dDead);
+    }
     printf (g_bad ? "NG\n" : "一致\n");
     return g_bad ? 1 : 0;
 }

@@ -30,4 +30,4 @@ AO では姿選び中（未選択・一部選択済み）と受付済みの別�
 
 バランステスト用シミュレータ（common/BattleSim.h・tools/balance/battlesim.cpp）: `g++ -std=c++11 -O2 -I. tools/balance/battlesim.cpp -o /tmp/battlesim && python3 tools/balance/simdata2tsv.py <simdata.json> | /tmp/battlesim 1 1000`（入力形式と JS 試作との突き合わせは tools/balance/README.md）。
 
-シミュレータの敵の特技・回復（common/BattleSim.h の EnemyCast）の確認: `g++ -std=c++11 -O1 -I. tests/server/battle_sim_test.cpp -o /tmp/battle_sim_test && /tmp/battle_sim_test`（回復持ちの敵は倒すまで長引く・HP が 70% 以上のうちは回復しない・離れている間は回復しない／前方魔法は届く所から撃つ。「一致」で終われば OK）。
+シミュレータの敵の特技・回復（common/BattleSim.h の EnemyCast）の確認: `g++ -std=c++11 -O1 -I. tests/server/battle_sim_test.cpp -o /tmp/battle_sim_test && /tmp/battle_sim_test`（回復持ちの敵は倒すまで長引く・HP が 70% 以上のうちは回復しない・離れている間は回復しない／前方魔法は届く所から撃つ。味方が複数のケースも確かめる: 1人のパーティは OneBattle と同じ結果・2人は1人より勝てて連携で速く倒せる・回復役が仲間を回復する・敵の狙い方。「一致」で終われば OK）。
