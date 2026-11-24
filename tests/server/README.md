@@ -27,3 +27,5 @@ AO の共有地図では、入場時に実際に送られた地形を、本体�
 AO では姿選び中（未選択・一部選択済み）と受付済みの別マップ移動を共通の移動処理・周期処理で検出し、組全員の取消・仲間への通知・選択窓の閉鎖・戻った後の入場拒否を確認する。選択中の切断でも仲間へ通知し、外の入口からの正規入場では取り消さない。
 
 戦闘計算（common/BattleCalc.h）が旧実装と同じ結果・同じ乱数順になるかの native テスト: `g++ -std=c++11 -O1 -I. tests/server/battle_calc_test.cpp -o /tmp/battle_calc_test && /tmp/battle_calc_test`
+
+バランステスト用シミュレータ（common/BattleSim.h・tools/balance/battlesim.cpp）: `g++ -std=c++11 -O2 -I. tools/balance/battlesim.cpp -o /tmp/battlesim && python3 tools/balance/simdata2tsv.py <simdata.json> | /tmp/battlesim 1 1000`（入力形式と JS 試作との突き合わせは tools/balance/README.md）。

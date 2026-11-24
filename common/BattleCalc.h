@@ -65,4 +65,30 @@ inline int Damage(int nAT, int byAtackRate, int nDF, bool bSPAtack, bool bGuard,
     return nTmp;
 }
 
+/* 素早さから 0〜100 の段へ（最低 1）。ゲージ時間・敵の行動間隔で共通 */
+inline int DexStep(int nDEX) {
+    int nTmp = nDEX * 100 / 255;
+    return (nTmp > 1) ? nTmp : 1;
+}
+
+/* プレイヤーのターンゲージが満タンになるまでの時間(ms)。素早さ 0 で 3 秒〜255 で 1 秒。
+   nHasteRate は加速率(%)。0 なら加速なし。SboCli の GetTurnGageTime と同じ式。 */
+inline int GaugeTime(int nDEX, int nHasteRate = 0) {
+    int nTmp = DexStep(nDEX);
+    nTmp = 1000 + (2000 - ((2000 * nTmp) / 100));
+    if (nHasteRate) {
+        nTmp = nTmp * 100 / (100 + nHasteRate);
+    }
+    return nTmp;
+}
+
+/* 敵の行動の間隔(ms)。素早さ 0 で 5 秒〜255 で 1 秒。加速で短くなる。
+   SboSvrBattleProc.cpp の GetEnemyTurnTime と同じ式。 */
+inline int EnemyTurnTime(int nDEX, int nHasteRate = 0) {
+    int nTmp = DexStep(nDEX);
+    nTmp = 1000 + (4000 - ((4000 * nTmp) / 100));
+    nTmp = nTmp * 100 / (100 + nHasteRate);
+    return (nTmp > 1) ? nTmp : 1;
+}
+
 } // namespace BattleCalc
