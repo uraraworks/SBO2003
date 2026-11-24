@@ -1240,7 +1240,8 @@ void SendCmdPUZZLEKEY(BYTE byKey)
 	ZeroMemory (&SendData, sizeof (SendData));
 	SendData.byCmd = CMD_PUZZLEKEY;
 	SendData.byData = byKey;
-	SendData.dwTblID = (DWORD)g_nMyCharID;
+	/* サーバーのキャラ番号は、クライアント側の配列番号(g_nMyCharID)ではなくキャラのテーブルID */
+	SendData.dwTblID = g_aCharInfo[g_nMyCharID]->dwTblID;
 
 	cliSock.Send ((PBYTE)&SendData, sizeof (CMDPARA_DATA1));
 }
