@@ -1806,6 +1806,97 @@
 		from { opacity: 0.7; }
 		to { opacity: 0; }
 	}
+	/* ゲームパッドのボタン割当（設定画面。見た目は画像保存の案内と同じ黒い幕） */
+	#sbo-gp-set {
+		display: none;
+		position: fixed;
+		left: 0; top: 0; right: 0; bottom: 0;
+		z-index: 2600;
+		background: rgba(0, 0, 0, 0.88);
+		align-items: center;
+		justify-content: center;
+		padding: calc(12px + env(safe-area-inset-top)) 12px calc(12px + env(safe-area-inset-bottom));
+		box-sizing: border-box;
+	}
+	#sbo-gp-set.sbo-open {
+		display: flex;
+	}
+	#sbo-gp-set .sbo-gp-card {
+		background: #1d1f24;
+		color: var(--fg);
+		border-radius: 12px;
+		padding: 14px;
+		width: 100%;
+		max-width: 460px;
+		max-height: 100%;
+		overflow-y: auto;
+		box-sizing: border-box;
+		font-size: 14px;
+		line-height: 1.5;
+	}
+	#sbo-gp-set h2 {
+		margin: 0 0 6px;
+		font-size: 16px;
+	}
+	#sbo-gp-set .sbo-gp-pad {
+		font-size: 12px;
+		opacity: 0.85;
+		margin: 0 0 8px;
+		word-break: break-all;
+	}
+	#sbo-gp-set .sbo-gp-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 4px 0;
+		border-top: 1px solid rgba(255, 255, 255, 0.08);
+	}
+	#sbo-gp-set .sbo-gp-name {
+		flex: 1 1 auto;
+	}
+	#sbo-gp-set .sbo-gp-val {
+		flex: 0 0 auto;
+		min-width: 7em;
+		text-align: right;
+		opacity: 0.9;
+	}
+	#sbo-gp-set button {
+		border: none;
+		border-radius: 8px;
+		font: bold 13px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		padding: 8px 12px;
+		cursor: pointer;
+		background: #3a3d45;
+		color: var(--fg);
+	}
+	#sbo-gp-set button.sbo-gp-listen {
+		background: var(--accent);
+		color: #1d1f24;
+	}
+	#sbo-gp-set .sbo-gp-foot {
+		display: flex;
+		gap: 10px;
+		justify-content: flex-end;
+		margin-top: 10px;
+	}
+	/* スマホ：ゲームパッドがつながっている間だけ、右上に設定を開く小さなボタンを出す */
+	#sbo-gp-open {
+		display: none;
+		position: fixed;
+		right: calc(8px + env(safe-area-inset-right));
+		top: calc(8px + env(safe-area-inset-top));
+		z-index: 900;
+		border: none;
+		border-radius: 8px;
+		background: rgba(0, 0, 0, 0.55);
+		color: #fff;
+		font: bold 12px/1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		padding: 7px 9px;
+		opacity: 0.75;
+	}
+	body.sbo-pad.sbo-gp-on #sbo-gp-open {
+		display: block;
+	}
 	/* 共有できないブラウザ向け：画像を大きく出して長押しで保存してもらう
 	   （ログ保存の案内 #sbo-log-view も同じ見た目） */
 	#sbo-shot-view,
@@ -2003,6 +2094,20 @@
 	<div id="sbo-status">読み込み中...</div>
 </div>
 <div id="sbo-dot-preview" data-sbo-ui="1"><span id="sbo-dot-preview-text"></span><button type="button" id="sbo-dot-preview-stop">やめて読み直す</button></div>
+<!-- ゲームパッドのボタン割当 -->
+<button type="button" id="sbo-gp-open" data-sbo-ui="1">🎮 パッド設定</button>
+<div id="sbo-gp-set" data-sbo-ui="1">
+	<div class="sbo-gp-card">
+		<h2>ゲームパッドの設定</h2>
+		<p class="sbo-gp-pad" id="sbo-gp-pad">ゲームパッドが見つかりません。つないで、どれかボタンを押してください。</p>
+		<p class="sbo-gp-pad">左スティックはいつでも歩きます。「変更」を押してから、割り当てたいボタンを押してください。</p>
+		<div id="sbo-gp-list"></div>
+		<div class="sbo-gp-foot">
+			<button type="button" id="sbo-gp-reset">初期設定に戻す</button>
+			<button type="button" id="sbo-gp-close">閉じる</button>
+		</div>
+	</div>
+</div>
 <footer class="site-footer">
 	<a href="https://www.urara-works.jp/" target="_blank" rel="noopener">© URARA-works</a> /
 	<a href="/about" target="_blank" rel="noopener">SBOってどんなゲーム？</a> /
@@ -2013,6 +2118,7 @@
 	<a href="/kobo" target="_blank" rel="noopener">ドット絵工房</a> /
 	<a href="/changes" target="_blank" rel="noopener">更新履歴<span class="sbo-new-mark" hidden>NEW</span></a> /
 	<a href="/credits" target="_blank" rel="noopener">クレジット</a> /
+	<a href="#" id="sbo-gp-link">ゲームパッド設定</a> /
 	<a href="https://github.com/uraraworks/SBO2003" target="_blank" rel="noopener">GitHubで見る</a> /
 	<!-- 反映した日時とコミット（tools/web/build.sh がビルドの時に書き込む） -->
 	<span class="site-build" title="反映した日時とコミット">@@SBO_BUILD_DATE@@ <a href="https://github.com/uraraworks/SBO2003/commit/@@SBO_BUILD_COMMIT@@" target="_blank" rel="noopener">@@SBO_BUILD_COMMIT@@</a></span>
@@ -2801,6 +2907,275 @@
 	for (var i = 0; i < padButtons.length; i ++) {
 		bindPadButton(padButtons[i], parseInt(padButtons[i].dataset.vk, 10));
 	}
+
+	/* ===================================================================
+	   ゲームパッド（ブラウザの Gamepad API）
+	   ボタンを仮想パッドと同じ padKey に流すだけで、ゲーム本体は変えない。
+	   左スティックは歩く（4方向）。ボタンの割当は localStorage に保存する
+	   =================================================================== */
+	(function () {
+		if (!navigator.getGamepads) {
+			return;
+		}
+		/* 割り当てできる操作（vk はゲームのキー）。def は標準配置での初期のボタン番号 */
+		var ACTIONS = [
+			{vk: 38, name: '上', def: 12},
+			{vk: 40, name: '下', def: 13},
+			{vk: 37, name: '左', def: 14},
+			{vk: 39, name: '右', def: 15},
+			{vk: 88, name: '決定・攻撃 (X)', def: 0},
+			{vk: 90, name: 'キャンセル・構え (Z)', def: 1},
+			{vk: 83, name: '調べる・話す (S)', def: 2},
+			{vk: 67, name: '特技 (C)', def: 3},
+			{vk: 9, name: '表示 (Tab)', def: 4},
+			{vk: 17, name: '戦闘 (Ctrl)', def: 5},
+			{vk: 16, name: '向きだけ変える (Shift)', def: 6},
+			{vk: 77, name: '地図 (M)', def: 9},
+			{vk: 0x31, name: '特技ショートカット 1', def: -1},
+			{vk: 0x32, name: '特技ショートカット 2', def: -1},
+			{vk: 0x33, name: '特技ショートカット 3', def: -1},
+			{vk: 0x34, name: '特技ショートカット 4', def: -1},
+			{vk: 0x35, name: '特技ショートカット 5', def: -1}
+		];
+		var BTN_NAMES = ['下ボタン(A/×)', '右ボタン(B/○)', '左ボタン(X/□)', '上ボタン(Y/△)', 'L1/LB', 'R1/RB',
+			'L2/LT', 'R2/RT', 'Back/Select', 'Start', 'L3(左スティック押し込み)', 'R3(右スティック押し込み)',
+			'十字キー 上', '十字キー 下', '十字キー 左', '十字キー 右', 'Home'];
+		var STORE_KEY = 'sbo_gamepad_map';
+		var STICK_ON = 0.5;
+		var map = {};	/* vk -> ボタン番号（-1 は割当なし） */
+
+		function defaultMap() {
+			var m = {};
+			for (var i = 0; i < ACTIONS.length; i ++) {
+				m[ACTIONS[i].vk] = ACTIONS[i].def;
+			}
+			return m;
+		}
+		function loadMap() {
+			map = defaultMap();
+			try {
+				var saved = JSON.parse(window.localStorage.getItem(STORE_KEY) || 'null');
+				if (saved && typeof saved === 'object') {
+					for (var i = 0; i < ACTIONS.length; i ++) {
+						var v = saved[ACTIONS[i].vk];
+						if (typeof v === 'number' && v >= -1 && v < 64) {
+							map[ACTIONS[i].vk] = v;
+						}
+					}
+				}
+			} catch (e) { /* 読めなければ初期設定 */ }
+		}
+		function saveMap() {
+			try {
+				window.localStorage.setItem(STORE_KEY, JSON.stringify(map));
+			} catch (e) { /* 保存できなくても遊べる */ }
+		}
+		loadMap();
+
+		var setEl = document.getElementById('sbo-gp-set');
+		var listEl = document.getElementById('sbo-gp-list');
+		var padNameEl = document.getElementById('sbo-gp-pad');
+		var openBtn = document.getElementById('sbo-gp-open');
+		var listenVk = 0;	/* 割当待ちの操作（0 は待っていない） */
+		var rows = {};
+
+		function btnName(n) {
+			if (n < 0) {
+				return '（なし）';
+			}
+			return n < BTN_NAMES.length ? BTN_NAMES[n] : 'ボタン' + n;
+		}
+
+		function buildList() {
+			listEl.innerHTML = '';
+			rows = {};
+			ACTIONS.forEach(function (a) {
+				var row = document.createElement('div');
+				row.className = 'sbo-gp-row';
+				var name = document.createElement('span');
+				name.className = 'sbo-gp-name';
+				name.textContent = a.name;
+				var val = document.createElement('span');
+				val.className = 'sbo-gp-val';
+				var btn = document.createElement('button');
+				btn.type = 'button';
+				btn.textContent = '変更';
+				btn.addEventListener('click', function () {
+					listenVk = listenVk === a.vk ? 0 : a.vk;
+					refreshList();
+				});
+				row.appendChild(name);
+				row.appendChild(val);
+				row.appendChild(btn);
+				listEl.appendChild(row);
+				rows[a.vk] = {val: val, btn: btn};
+			});
+			refreshList();
+		}
+		function refreshList() {
+			ACTIONS.forEach(function (a) {
+				var r = rows[a.vk];
+				if (!r) {
+					return;
+				}
+				var listening = listenVk === a.vk;
+				r.val.textContent = listening ? 'ボタンを押して…' : btnName(map[a.vk]);
+				r.btn.textContent = listening ? 'やめる' : '変更';
+				r.btn.classList.toggle('sbo-gp-listen', listening);
+			});
+		}
+
+		/* いま押しているキー：vk -> 送り先（離す時も同じ所へ送る） */
+		var held = {};
+		function releaseAll() {
+			for (var vk in held) {
+				if (held[vk]) {
+					padKey(held[vk].vk, false, held[vk].id);
+				}
+			}
+			held = {};
+		}
+
+		function openSet() {
+			listenVk = 0;
+			buildList();
+			setEl.classList.add('sbo-open');
+			releaseAll();
+		}
+		function closeSet() {
+			listenVk = 0;
+			setEl.classList.remove('sbo-open');
+		}
+		document.getElementById('sbo-gp-close').addEventListener('click', closeSet);
+		document.getElementById('sbo-gp-reset').addEventListener('click', function () {
+			map = defaultMap();
+			saveMap();
+			listenVk = 0;
+			refreshList();
+		});
+		openBtn.addEventListener('click', openSet);
+		var link = document.getElementById('sbo-gp-link');
+		if (link) {
+			link.addEventListener('click', function (ev) {
+				ev.preventDefault();
+				openSet();
+			});
+		}
+		window.addEventListener('keydown', function (ev) {
+			if (ev.key === 'Escape' && setEl.classList.contains('sbo-open')) {
+				ev.preventDefault();
+				ev.stopPropagation();
+				closeSet();
+			}
+		}, true);
+
+		var prevPressed = {};	/* 割当待ち用：直前に押されていたボタン */
+		var connected = false;
+
+		function poll() {
+			var pads = navigator.getGamepads ? navigator.getGamepads() : [];
+			var any = null;
+			var pressed = {};	/* ボタン番号 -> true（つながっている全部のパッドの合算） */
+			var sx = 0;
+			var sy = 0;
+			for (var i = 0; i < pads.length; i ++) {
+				var gp = pads[i];
+				if (!gp || !gp.connected) {
+					continue;
+				}
+				any = any || gp;
+				for (var b = 0; b < gp.buttons.length; b ++) {
+					if (gp.buttons[b].pressed) {
+						pressed[b] = true;
+					}
+				}
+				if (gp.axes.length >= 2) {
+					if (Math.abs(gp.axes[0]) > Math.abs(sx)) {
+						sx = gp.axes[0];
+					}
+					if (Math.abs(gp.axes[1]) > Math.abs(sy)) {
+						sy = gp.axes[1];
+					}
+				}
+			}
+			if (!!any !== connected) {
+				connected = !!any;
+				document.body.classList.toggle('sbo-gp-on', connected);
+				padNameEl.textContent = connected ? '使用中：' + any.id :
+					'ゲームパッドが見つかりません。つないで、どれかボタンを押してください。';
+				if (!connected) {
+					releaseAll();
+				}
+			}
+
+			/* 設定画面が開いている間は、ゲームには送らずに割当だけ受け付ける */
+			if (setEl.classList.contains('sbo-open')) {
+				releaseAll();
+				if (listenVk) {
+					for (var n in pressed) {
+						if (!prevPressed[n]) {
+							var num = parseInt(n, 10);
+							/* 同じボタンを使っていた別の操作は外す */
+							for (var k = 0; k < ACTIONS.length; k ++) {
+								if (map[ACTIONS[k].vk] === num) {
+									map[ACTIONS[k].vk] = -1;
+								}
+							}
+							map[listenVk] = num;
+							saveMap();
+							listenVk = 0;
+							refreshList();
+							break;
+						}
+					}
+				}
+				prevPressed = pressed;
+				return;
+			}
+			prevPressed = pressed;
+			if (!sboReady) {
+				return;
+			}
+
+			/* いま押されている操作（ボタン＋左スティック） */
+			var want = {};
+			ACTIONS.forEach(function (a) {
+				var n = map[a.vk];
+				if (n >= 0 && pressed[n]) {
+					want[a.vk] = true;
+				}
+			});
+			var ax = Math.abs(sx);
+			var ay = Math.abs(sy);
+			if (ax >= STICK_ON || ay >= STICK_ON) {
+				if (ax > ay) {
+					want[sx < 0 ? 37 : 39] = true;
+				} else {
+					want[sy < 0 ? 38 : 40] = true;
+				}
+			}
+			ACTIONS.forEach(function (a) {
+				var vk = a.vk;
+				if (want[vk] && !held[vk]) {
+					var t = padTarget(vk);
+					held[vk] = t;
+					padKey(t.vk, true, t.id);
+				} else if (!want[vk] && held[vk]) {
+					var h = held[vk];
+					held[vk] = null;
+					padKey(h.vk, false, h.id);
+				}
+			});
+		}
+
+		function tick() {
+			try {
+				poll();
+			} catch (e) { /* 1回の失敗でパッドが止まらないように */ }
+			window.requestAnimationFrame(tick);
+		}
+		window.requestAnimationFrame(tick);
+	})();
 
 	/* 十字キー：このゲームは斜めに歩けないので上下左右の 4 方向にする。
 	   判定は四角全体を角度で分け、指を離さず滑らせれば向きを変えられる */
