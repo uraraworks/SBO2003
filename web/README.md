@@ -12,6 +12,7 @@ Windows 版クライアント（SboCli）を Emscripten でブラウザ向けに
 | サーバーへの接続 | WebSocket で接続し、ログイン・キャラ作成・マップでの移動まで動く（Node.js 版サーバーで確認） |
 | 効果音 | Web Audio で直接鳴らす（AudioBufferSourceNode。スマホでの遅れ対策） |
 | BGM（MIDI） | MIDI のまま、ページ側の JS シンセ（spessasynth_lib）とサウンドフォント（GeneralUser GS）で鳴らす。入れ替えた曲は音声ファイル（.m4a）で鳴らす（[下](#音声ファイルm4aの-bgm)） |
+| ゲームパッド | ブラウザの Gamepad API（`sbocli.html` の「ゲームパッド」の項）。ボタンを仮想パッドと同じ `padKey` に流す。割当は設定画面（フッターの「ゲームパッド設定」）で変え、`localStorage` の `sbo_gamepad_map` に保存 |
 | 管理者ウィンドウ | Web 版には入れていない（MFC のダイアログのため） |
 | 保存データ（INI など） | ブラウザの IndexedDB に保存される |
 
