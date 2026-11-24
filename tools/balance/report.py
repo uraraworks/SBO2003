@@ -11,6 +11,8 @@ import argparse, json, math, os, random, shutil, subprocess, sys, tempfile
 from statistics import median, mean
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import enemyskill
 ROOT = os.path.abspath(os.path.join(HERE, '..', '..'))
 WORK = '/mnt/project-files/_work/sbo2003-balance-sim'
 VERDICTS = ['余裕', '互角', 'きつい', '無理']
@@ -100,8 +102,12 @@ class World:
         return out
 
 
-def scen_row(p, e, count, dist=None, nobuff=False):
-    """battlesim の 1 行（名前以外 23 列）。nobuff=True は特技を使わない（通常攻撃のみ）"""
+ESKILL_ON = True    # --no-enemy-skills で False
+
+
+def scen_row(p, e, count, dist=None, nobuff=False, eskill=None):
+    """battlesim の 1 行（名前以外 24 列）。nobuff=True はプレイヤーが特技を使わない（通常攻撃のみ）。
+    eskill=False は敵の特技を入れない（特技を入れる前の結果を出す用）"""
     moves = 1 if e['npcType'] == 13 else 0
     if dist is None:
         dist = max(2, e['searchCx']) if moves else 3
@@ -110,7 +116,8 @@ def scen_row(p, e, count, dist=None, nobuff=False):
     cols = [p['lv'], p['hp'], 0 if nobuff else p['mana'], p['at'], p['df'], p['dex'], p['wmin'],
             hm, ha, ht, am, aa, at_, p['aisat'],
             e['hp'], e['pw'], e['st'] // 2, e['dex'], count, dist, moves, e['searchCx'], e.get('moveX') or 20]
-    return '\t'.join(str(int(c)) for c in cols)
+    sk = enemyskill.skill_column(e)[0] if (ESKILL_ON if eskill is None else eskill) else '-'
+    return '\t'.join(str(int(c)) for c in cols) + '\t' + sk
 
 
 # ---------------------------------------------------------------- battlesim を 1 プロセスで回す
@@ -133,7 +140,8 @@ class Batch:
         assert len(lines) == len(keys), 'battlesim の出力行数が合わない'
         for k, ln in zip(keys, lines):
             c = ln.split('\t')
-            self.rows[k] = dict(win=float(c[1]) / 100, hp=float(c[2]) / 100, sec=float(c[3]), heal=float(c[4]), v=c[5])
+            self.rows[k] = dict(win=float(c[1]) / 100, hp=float(c[2]) / 100, sec=float(c[3]), heal=float(c[4]), v=c[5],
+                                em=float(c[6]), eh=float(c[7]))
 
     def __getitem__(self, row):
         return self.rows[row]
@@ -218,7 +226,7 @@ def parse_override(s):
 
 
 # ---------------------------------------------------------------- (1) 段階×職業
-def part1_requests(w, batch, runs_stages):
+def part1_requests(w, batch, runs_stages, eskill=None):
     """各 (段階, 職業, 群, 体数) の行リストを登録して返す"""
     req = {}
     for sk in runs_stages:
@@ -227,7 +235,7 @@ def part1_requests(w, batch, runs_stages):
             p = w.player(job, lv, sk)
             for grp in ('zako', 'boss'):
                 for cnt in (1, 3):
-                    req[(sk, job, grp, cnt)] = [(e['name'], batch.add(scen_row(p, e, cnt))) for e in w.enemies(sk, grp)]
+                    req[(sk, job, grp, cnt)] = [(e['name'], batch.add(scen_row(p, e, cnt, eskill=eskill))) for e in w.enemies(sk, grp)]
     return req
 
 
@@ -420,6 +428,65 @@ def diff_md(w0, w1, batch, stages, req0, req1, p2_0, p2_1, lvs, changed_jobs):
     return '\n'.join(out)
 
 
+# ---------------------------------------------------------------- (4) 敵の特技を入れる前後
+def skills_md(w, batch, reqA, reqB, stages):
+    """reqA: 特技なし（前）、reqB: 特技あり（後）。判定が変わった敵と、無視した種類の一覧"""
+    out = ['## (4) 敵の特技（攻撃魔法・回復）を入れる前と後\n']
+    out.append('敵の特技（本番の magic 表の効果種別・基本値・射程）をシミュレータに入れた。くじは本番どおり（16 枠、HP30%以下で50%の回復優先、'
+               '回復は HP70% 未満の時だけ・離れた所では使わない）、攻撃魔法は魔法防御0（標準プレイヤーは魔法防御の装備なし）で、敵は Mana を使わない。'
+               '前＝特技なし（通常攻撃のみ）、後＝(1)(2) の数字と同じ。\n')
+    # 特技を持つ敵・無視した種類
+    seen, ign, notes, heal_n = {}, {}, set(), 0
+    for sk in stages:
+        for grp in ('zako', 'boss'):
+            for e in w.enemies(sk, grp):
+                col, ig, nt = enemyskill.skill_column(e)
+                if col == '-' or e['name'] in seen:
+                    continue
+                seen[e['name']] = (sk, grp)
+                for x in ig:
+                    ign.setdefault(x, set()).add(e['name'])
+                notes.update(nt)
+                if any(m and m['type'] == 2 for m in e.get('skills') or []):
+                    heal_n += 1
+    out.append('特技を持つ敵（(1) に出る敵のうち）: %d 種（うち回復持ち %d 種）。\n' % (len(seen), heal_n))
+    # 無視した種類は本番の敵全体から集める（(1) に出ない敵も含む）
+    ign_all = {}
+    for e in w.d['enemies']:
+        for x in enemyskill.skill_column(e)[1]:
+            ign_all.setdefault(x, set()).add(e['name'])
+    out.append('**無視した種類**（シミュレータが効果を再現していない物。枠はくじで当たり、行動は使うが何も起きない）: %s。'
+               '(1) に出る敵では %s\n'
+               % ('、'.join('%s（%s）' % (k, '・'.join(sorted(v))) for k, v in sorted(ign_all.items())) if ign_all else '本番の敵の特技には無し',
+                  '、'.join(sorted(ign)) if ign else '該当なし'))
+    out.append('')
+    out.append('そのほか未対応: 属性軽減（敵の耐性・特技の属性）、連携、状態異常、同じ群れの位置関係（回復の「仲間」は同じ群れの生きている敵が範囲内にいるとみなす）。'
+               + ('置く魔法（炎壁・火炎放射・風衣など、残って何度も当たる型）は当たった 1 回分だけで数えている（過小評価）。' if notes else '') + '\n')
+    rows, tot, same = [], 0, 0
+    heal_rows = {}
+    for sk in stages:
+        for grp in ('zako', 'boss'):
+            for job in w.jobs:
+                for cnt in (1, 3):
+                    for (n, ra), (_, rb) in zip(reqA[(sk, job, grp, cnt)], reqB[(sk, job, grp, cnt)]):
+                        if n not in seen:
+                            continue
+                        tot += 1
+                        a, b = batch[ra], batch[rb]
+                        if a['v'] == b['v']:
+                            same += 1
+                        else:
+                            rows.append([sk, n + ('(ボス格)' if grp == 'boss' else ''), '%d体' % cnt, job,
+                                         '%s→%s' % (a['v'], b['v']), '%s→%s' % (pct(a['win']), pct(b['win'])),
+                                         '%.1f' % b['em'], '%.1f' % b['eh']])
+    out.append('特技を持つ敵 × 職業 × 1体/3体 の %d 組のうち、判定が変わったのは %d 組、変わらないのは %d 組。\n' % (tot, len(rows), same))
+    if rows:
+        out.append('判定が変わった組（勝率は 前→後。右 2 列は後の 1 戦あたりの敵の特技回数・うち回復回数）:\n')
+        out.append(table(['段階', '敵', '体数', '職業', '判定 前→後', '勝率 前→後', '特技/戦', '回復/戦'], rows))
+        out.append('')
+    return '\n'.join(out)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--simdata', default=os.path.join(WORK, 'simdata.json'))
@@ -429,9 +496,12 @@ def main():
     ap.add_argument('--hp-override', default='', help='職業名:Lv=値,Lv=値,…（値は +N で加算、6-15=30 の範囲指定可）')
     ap.add_argument('--refresh', action='store_true', help='本番を読んで simdata.json を作り直す（SBO2003_AI_KEY が要る）')
     ap.add_argument('--only', choices=['1', '2'], help='(1) か (2) だけ出す')
+    ap.add_argument('--no-enemy-skills', action='store_true', help='敵の特技を入れない（通常攻撃のみ。特技を入れる前の数字）')
     ap.add_argument('--exe', default='/tmp/battlesim')
     ap.add_argument('--detail', help='(1) の敵ごとの結果を TSV に書く')
     a = ap.parse_args()
+    global ESKILL_ON
+    ESKILL_ON = not a.no_enemy_skills
 
     if a.refresh:
         refresh(a.simdata)
@@ -444,6 +514,8 @@ def main():
     lvs = list(range(1, 16))
     batch = Batch(exe, a.runs, a.seed)
     req1_0 = part1_requests(w0, batch, stages) if a.only != '2' else None
+    has_sk = ESKILL_ON and any(enemyskill.skill_column(e)[0] != '-' for e in d['enemies'])
+    req1_B = part1_requests(w0, batch, stages, eskill=False) if (req1_0 and has_sk) else None
     req2_0 = part2_requests(w0, batch, lvs) if a.only != '1' else None
     req1_1 = part1_requests(w1, batch, stages) if w1 and a.only != '2' else None
     req2_1 = part2_requests(w1, batch, lvs) if w1 and a.only != '1' else None
@@ -452,9 +524,9 @@ def main():
     md = ['# SBO2003 バランスレポート\n',
           'データ: %s（%s 時点の本番）／ battlesim（試行 %d 回・seed %d）／ 標準プレイヤーは段階の目安Lv・店売り最強装備。\n'
           % (os.path.basename(a.simdata), d.get('at', '?'), a.runs, a.seed),
-          '判定: 余裕=勝率95%以上かつ残HP50%以上 / 互角=80%以上 / きつい=40%以上 / 無理。シミュレータが未対応の物（敵の特技・回復、回復道具、ジャスト、遠隔、連携、状態異常）は入っていない。'
+          '判定: 余裕=勝率95%以上かつ残HP50%以上 / 互角=80%以上 / きつい=40%以上 / 無理。シミュレータが未対応の物（回復道具、ジャスト、遠隔、連携、属性軽減、状態異常の特技）は入っていない。敵の特技（攻撃魔法・回復）は入っている（末尾の (4)）。'
           '「所要秒」は勝った時の平均で、敵に近づく時間を含む。判定内訳は敵ごとの判定の数。\n',
-          '読み方の注意: ボス格・プヨンクイーン等は敵の特技（回復・冷気・火）が未対応で、1人で挑む前提の数字（本来は複数人想定）。FES はお祭り用。'
+          '読み方の注意: ボス格は1人で挑む前提の数字（本来は複数人想定）。FES はお祭り用。'
           '種込み・結晶込みの列は上限値を最大HP・Manaに単純に足した上限の見積もり。\n']
     if a.only != '2':
         md.append('## (1) 段階×職業の勝率\n')
@@ -474,6 +546,8 @@ def main():
             md.append(diff_md(w0, w1, batch, stages, req1_0, req1_1,
                               {k: part2_metrics(batch, v) for k, v in req2_0.items()},
                               {k: part2_metrics(batch, v) for k, v in req2_1.items()}, lvs, changed))
+    if req1_B:
+        md.append(skills_md(w0, batch, req1_B, req1_0, stages))
     open(a.out, 'w', encoding='utf-8').write('\n'.join(md) + '\n')
     if a.detail and req1_0:
         with open(a.detail, 'w', encoding='utf-8') as f:

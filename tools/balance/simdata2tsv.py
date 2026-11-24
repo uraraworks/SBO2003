@@ -2,7 +2,9 @@
 """JS 試作の simdata.json から battlesim 用のシナリオ（TSV）を作る。
 使い方: python3 tools/balance/simdata2tsv.py simdata.json [段階=1] [体数=1] [開始距離] > scenarios.tsv
 標準プレイヤーの作り方は JS 試作 sim.js の buildPlayer と同じ。"""
-import json, sys
+import json, os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import enemyskill
 
 d = json.load(open(sys.argv[1], encoding='utf-8'))
 stage_no = int(sys.argv[2]) if len(sys.argv) > 2 else 1
@@ -42,7 +44,7 @@ def build(job):
                 aisat=1 if a and a['isAT'] else 0)
 
 
-print('# 名前\tLv\tHP\tMana\t攻撃力\t守備力\t素早さ\t武器byMin\t回復Mana\t回復量\t回復time\t攻撃特技Mana\t攻撃特技平均\t攻撃特技time\t攻撃特技がAT型\t敵HP\t敵攻撃力\t敵守備力\t敵素早さ\t体数\t開始距離\t敵が動く\t気づく範囲\t近づく確率')
+print('# 名前\tLv\tHP\tMana\t攻撃力\t守備力\t素早さ\t武器byMin\t回復Mana\t回復量\t回復time\t攻撃特技Mana\t攻撃特技平均\t攻撃特技time\t攻撃特技がAT型\t敵HP\t敵攻撃力\t敵守備力\t敵素早さ\t体数\t開始距離\t敵が動く\t気づく範囲\t近づく確率\t敵の特技')
 for jn in [j['name'] for j in d['jobs']]:
     p = build(jn)
     for e in d['enemies']:
@@ -53,5 +55,5 @@ for jn in [j['name'] for j in d['jobs']]:
         # 敵の守備力は JS 試作と同じく st/2 を Damage に渡す
         cols = [jn + '/' + e['name'], p['lv'], p['hp'], p['mana'], p['at'], p['df'], p['dex'], p['wmin'],
                 p['hm'], p['ha'], p['ht'], p['am'], p['aa'], p['at_'], p['aisat'],
-                e['hp'], e['pw'], e['st'] // 2, e['dex'], count, dist, moves, e['searchCx'], e.get('moveX') or 20]
+                e['hp'], e['pw'], e['st'] // 2, e['dex'], count, dist, moves, e['searchCx'], e.get('moveX') or 20, enemyskill.skill_column(e)[0]]
         print('\t'.join(str(c) for c in cols))
