@@ -1032,6 +1032,238 @@ static void TestShotMagic(const std::vector<int> &aLogin)
 }
 
 /* ------------------------------------------------------------------------- */
+/* SM. 召喚の特技（獣召喚 79→80→81 など）を 1 回使って、動かない敵に何回当たるか	 */
+/*    環境変数 SUMMON_HITS=1 の時だけ流す（golden には出ない。最後に流す）。		 */
+/*    本物の TimerProc を 1 周ずつ回し、時刻は 1 回呼ぶごとに dCharUs マイクロ秒、	 */
+/*    1 周ごとに nLapMs ミリ秒（本体の「ちょっと休憩」10ms）進める。				 */
+/*    hole = 親より前に空き番号（消えたキャラの跡）が常に H 個ある状態			 */
+/*    （子は空いている一番若い番号に入るので、親より若い番号の子はその周に処理されない） */
+/* ------------------------------------------------------------------------- */
+extern void DeleteChar(DWORD dwTblID);
+extern void SetInitCharData(PCHARINFO);
+extern PCHARINFO AddChar(PCHARINFO, BOOL bCheck);
+extern int g_nProcChar;
+
+static BOOL SmIsHole(PCHARINFO p)
+{
+	return p->dwMapID == 0 && p->dwX == 0 && p->dwY == 0 && p->szAcc[0] == 0;
+}
+
+static int SmAddDummy(void)
+{
+	PCHARINFO p = new CHARINFO;
+	ZeroMemory(p, sizeof(CHARINFO));
+	p->byNpcType = NPCTYPE_NOMOVE;
+	SetInitCharData(p);
+	p->byGameState = GAMESTATE_NPC;
+	p->dwMapID = 0;
+	p->dwX = 1;
+	p->dwY = 1;
+	p = AddChar(p, TRUE);
+	return (int)p->dwTblID;
+}
+
+struct SMRES { int nHit, nDmg, nTick, nMoved; };
+
+static SMRES SmRun(PCHARINFO pPC, PCHARINFO pEnemy, BYTE byMagic, int dx, int dy, int nHole, double dCharUs, int nLapMs, int nSeed)
+{
+	SMRES r = {0, 0, 0, 0};
+	DWORD dwEnemyX = pEnemy->dwX, dwEnemyY = pEnemy->dwY;
+	sgenrand((unsigned long)(1000 + nSeed * 7919));
+	/* 空き番号を全部ふさぎ、親は一番後ろに入るようにする。ふさいだ物は穴を作る材料にする */
+	std::vector<int> aDummy;
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		if (SmIsHole(g_aCharInfo[i])) {
+			aDummy.push_back(SmAddDummy());
+			i = -1;
+		}
+	}
+	/* 後ろの方の材料（親の番号より前）を消す順に使う */
+	std::sort(aDummy.begin(), aDummy.end());
+
+	pPC->dwMapID = pEnemy->dwMapID;
+	pPC->dwX = dwEnemyX + dx;
+	pPC->dwY = dwEnemyY + dy;
+	pPC->byDirection = 3;
+	pPC->wMana = 9999;
+	pPC->wHP = pPC->wMaxHP = 60000;
+	memset(pPC->abyMagic, 0, sizeof(pPC->abyMagic));
+	pPC->abyMagic[0] = byMagic;
+	pEnemy->wMaxHP = pEnemy->wHP = 30000;
+	pEnemy->wDF = 0;
+	pEnemy->chAttrFire = pEnemy->chAttrWater = pEnemy->chAttrWind = pEnemy->chAttrEarth = pEnemy->chAttrLight = pEnemy->chAttrDark = 0;
+	pEnemy->byMoveProbabilityX = pEnemy->byMoveProbabilityY = 0;
+
+	double dUs = (double)((nSeed * 397) % 1000);					/* ミリ秒の中のどこで始まるか */
+	DWORD dwBase = 3000000 + (DWORD)(nSeed * 100003 % 5000) * 1000;
+	int nPre = (nSeed * 131) % 700;									/* 周の途中のどこで使うか */
+	size_t nUsedDummy = 0;
+	BOOL bCast = FALSE;
+	int nCastCalls = 0;
+	std::set<DWORD> aTick;
+	WORD wBefore = pEnemy->wHP;
+	int nLap = 0;
+	/* 周の頭（g_nProcChar==0）まで進めてから、nPre 回呼んで使う */
+	for (int guard = 0; guard < 100000000 && nLap < 400; guard ++) {
+		s_dwFakeNow = dwBase + (DWORD)((dUs) / 1000.0);
+		g_dwTime = s_dwFakeNow;
+		if (!bCast && g_nProcChar == 0 && nCastCalls == 0) {
+			nCastCalls = 1;
+		}
+		if (!bCast && nCastCalls > 0 && nCastCalls > nPre) {
+			MagicProc(pPC->dwTblID, byMagic, pPC->dwTblID);
+			bCast = TRUE;
+			nLap = 0;
+			wBefore = pEnemy->wHP;
+		}
+		if (nCastCalls > 0 && !bCast) {
+			nCastCalls ++;
+		}
+		pPC->dwLastHartBeat = s_dwFakeNow;
+		pPC->wHP = pPC->wMaxHP = 60000;
+		TimerProc();
+		dUs += dCharUs;
+		if (pEnemy->wHP < wBefore) {
+			r.nHit ++;
+			r.nDmg += wBefore - pEnemy->wHP;
+		}
+		wBefore = pEnemy->wHP;
+		if (g_nProcChar == 0) {
+			dUs += nLapMs * 1000.0;
+			if (bCast) {
+				nLap ++;
+				/* 親より前の穴を H 個に保つ */
+				if (nHole > 0) {
+					int nNow = 0;
+					for (size_t k = 0; k < aDummy.size(); k ++) {
+						if (SmIsHole(g_aCharInfo[aDummy[k]])) nNow ++;
+					}
+					while (nNow < nHole && nUsedDummy < aDummy.size()) {
+						int n = aDummy[nUsedDummy ++];
+						if (!SmIsHole(g_aCharInfo[n])) {
+							DeleteChar((DWORD)n);
+							nNow ++;
+						}
+					}
+				}
+				for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+					PCHARINFO p = g_aCharInfo[i];
+					if ((p->byNpcType == NPCTYPE_USEMAGIC || p->byNpcType == NPCTYPE_USEMAGICPARENT) && p->dwParentTblID == pPC->dwTblID) {
+						aTick.insert(p->dwTimeLogin);
+					}
+				}
+				/* 親も子も居なくなったら終わり */
+				BOOL bAny = FALSE;
+				for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+					PCHARINFO p = g_aCharInfo[i];
+					if ((p->byNpcType == NPCTYPE_USEMAGIC || p->byNpcType == NPCTYPE_USEMAGICPARENT) && p->dwParentTblID == pPC->dwTblID) {
+						bAny = TRUE;
+					}
+				}
+				if (!bAny && nLap > 3) {
+					break;
+				}
+			}
+		}
+	}
+	r.nTick = (int)aTick.size();		/* 最初の親（使った時）の分を含む。子を出した回数は −1 */
+	r.nMoved = (pEnemy->dwX != dwEnemyX || pEnemy->dwY != dwEnemyY);
+	pEnemy->dwX = dwEnemyX;
+	pEnemy->dwY = dwEnemyY;
+	/* 残りを片付ける */
+	for (int i = 0; i < g_aCharInfo.GetSize(); i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+		if ((p->byNpcType == NPCTYPE_USEMAGIC || p->byNpcType == NPCTYPE_USEMAGICPARENT) && p->dwParentTblID == pPC->dwTblID) {
+			DeleteChar((DWORD)i);
+		}
+	}
+	return r;
+}
+
+static void TestSummonHits(const std::vector<int> &aLogin)
+{
+	if (!getenv("SUMMON_HITS") || aLogin.empty()) {
+		return;
+	}
+	printf("== SM. Summon hits ==\n");
+	PCHARINFO pPC = g_aCharInfo[aLogin[0]];
+	/* 周り 8 マスが全部通れる、動かない敵にできる戦闘用の敵（ぬめぬめ優先） */
+	PCHARINFO pEnemy = NULL;
+	for (int pass = 0; pass < 2 && !pEnemy; pass ++) {
+		for (int i = 0; i < g_aCharInfo.GetSize() && !pEnemy; i ++) {
+			PCHARINFO p = g_aCharInfo[i];
+			if ((p->byNpcType != NPCTYPE_BATTLE1 && p->byNpcType != NPCTYPE_BATTLE2) || p->wGrpMain != CHARGRP_MAIN_NORMAL ||
+				p->dwX < 3 || p->dwY < 3 || (g_aMapInfo[p->dwMapID]->byFlg & MAPFLG_MAGIC) || p->dwSpaceID != 0) {
+				continue;
+			}
+			if (pass == 0 && strstr(p->szName, "ぬめぬめ") == NULL) {
+				continue;
+			}
+			BOOL bOK = TRUE;
+			for (int dy = -1; dy <= 1; dy ++) {
+				for (int dx = -1; dx <= 1; dx ++) {
+					if ((dx || dy) && !CheckCharBlock(p->dwMapID, p->dwX + dx, p->dwY + dy)) bOK = FALSE;
+				}
+			}
+			if (bOK) pEnemy = p;
+		}
+	}
+	if (!pEnemy) {
+		printf("SM no enemy\n");
+		return;
+	}
+	printf("SM enemy=%s map=%u x=%u y=%u type=%d chars=%d\n", pEnemy->szName, pEnemy->dwMapID, pEnemy->dwX, pEnemy->dwY, pEnemy->byNpcType, g_aCharInfo.GetSize());
+	static const BYTE abyMagic[] = {79, 83, 86};
+	for (size_t m = 0; m < sizeof(abyMagic); m ++) {
+		for (int k = 0; k < 3; k ++) {
+			int id = abyMagic[m] + k;
+			if (id >= g_aMagicInfo.GetSize()) continue;
+			PMAGICINFO pi = g_aMagicInfo[id];
+			printf("SM magic %d name=%s type=%d tgt=%d area=%d cnt=%d d1=%d d2=%d d3=%d d4=%d mana=%d\n", id, pi->szName, pi->byType, pi->byTargetType,
+				pi->byTargetArea, pi->byTargetCount, pi->wData1, pi->wData2, pi->wData3, pi->wData4, pi->wMana);
+		}
+	}
+	const int NSEED = getenv("SUMMON_SEEDS") ? atoi(getenv("SUMMON_SEEDS")) : 12;
+	static const int aPos[][2] = {{1, 0}, {0, 1}, {-1, -1}, {2, 0}, {0, 0}};
+	static const int aHole[] = {0, 9};
+	for (size_t m = 0; m < sizeof(abyMagic); m ++) {
+		for (size_t q = 0; q < sizeof(aPos) / sizeof(aPos[0]); q ++) {
+			for (size_t h = 0; h < sizeof(aHole) / sizeof(aHole[0]); h ++) {
+				int aHist[40] = {0};
+				int nSum = 0, nTick = 0, nMoved = 0, nDmg = 0;
+				for (int s = 0; s < NSEED; s ++) {
+					SMRES r = SmRun(pPC, pEnemy, abyMagic[m], aPos[q][0], aPos[q][1], aHole[h], 0.05, 10, s);
+					aHist[r.nHit < 39 ? r.nHit : 39] ++;
+					nSum += r.nHit; nTick += r.nTick; nMoved += r.nMoved; nDmg += r.nDmg;
+				}
+				printf("SM magic=%d pos=%d,%d hole=%d cost=0.05us lap=10ms avg_hit=%.2f avg_tick=%.2f avg_dmg=%.1f moved=%d hist:", abyMagic[m], aPos[q][0], aPos[q][1],
+					aHole[h], (double)nSum / NSEED, (double)nTick / NSEED, (double)nDmg / NSEED, nMoved);
+				for (int i = 0; i < 40; i ++) if (aHist[i]) printf(" %d:%d", i, aHist[i]);
+				printf("\n");
+			}
+		}
+	}
+	/* 時刻の違い（1 周の長さ・1 キャラあたりの処理時間）。獣召喚・隣の敵・穴なし */
+	static const double aCost[] = {0.05, 1.0, 5.0, 20.0};
+	static const int aLap[] = {10, 16, 30};
+	for (size_t c = 0; c < sizeof(aCost) / sizeof(aCost[0]); c ++) {
+		for (size_t l = 0; l < sizeof(aLap) / sizeof(aLap[0]); l ++) {
+			int aHist[40] = {0};
+			int nSum = 0;
+			for (int s = 0; s < NSEED; s ++) {
+				SMRES r = SmRun(pPC, pEnemy, 79, 1, 0, 0, aCost[c], aLap[l], s);
+				aHist[r.nHit < 39 ? r.nHit : 39] ++;
+				nSum += r.nHit;
+			}
+			printf("SM time magic=79 pos=1,0 hole=0 cost=%.2fus lap=%dms avg_hit=%.2f hist:", aCost[c], aLap[l], (double)nSum / NSEED);
+			for (int i = 0; i < 40; i ++) if (aHist[i]) printf(" %d:%d", i, aHist[i]);
+			printf("\n");
+		}
+	}
+	/* 後始末：動かした位置を戻す必要はない（最後に流すので） */
+}
+
+/* ------------------------------------------------------------------------- */
 /* G. すごろくの観戦参加													 */
 /* ------------------------------------------------------------------------- */
 /* 観戦で参加すると、以前は最適化ビルドで unreachable になりサーバーが止まった */
@@ -1695,6 +1927,8 @@ static void TestWorld(void)
 	TestTailSpaceMove(aLogin);
 	/* AT. 列の途中の人が抜けても、後ろの人は前の人へつなぎ直る */
 	TestTailMidLeave(aLogin);
+	/* SM. 召喚特技のヒット数の実測（SUMMON_HITS=1 の時だけ。最後に流す） */
+	TestSummonHits(aLogin);
 }
 
 /* ------------------------------------------------------------------------- */
