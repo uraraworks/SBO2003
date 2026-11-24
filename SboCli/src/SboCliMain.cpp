@@ -2294,7 +2294,7 @@ void TimerProc(void)
 			}
 
 			/* 上段まで表示した？ */
-			if (pSysMsgInfo->nY < SYSMSG_EY) {
+			if (pSysMsgInfo->nY < SYSMSG_EY - GetSysMsgBottomOfs ()) {
 				SAFE_DELETE_ARRAY (pSysMsgInfo->pszMsg);
 				SAFE_DELETE (pSysMsgInfo);
 				g_SysMsgInfo.RemoveAt (g_nProcSysMsg);

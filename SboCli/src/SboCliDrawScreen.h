@@ -11,6 +11,7 @@
 /* ========================================================================= */
 extern void TextOut2	(HDC, int, int, char *, COLORREF);			/* 黒縁取りで文字描画 */
 extern void DrawScreen	(HWND, HDC);								/* 画面の描画 */
+extern int GetSysMsgBottomOfs	(void);										/* 戦闘ログを上へ持ち上げる量(特技の帯が出ている間) */
 extern void AddSysMsg	(LPSTR, COLORREF);							/* システムメッセージの追加 */
 extern void AddDropEffect	(DWORD dwMapID, int nWorldX, int nWorldY, DWORD dwItemNo);	/* アイテムドロップ演出の追加 */
 extern void SetDropEffectOwner	(DWORD dwItemNo, DWORD dwCharID);	/* 演出のアイテムをもらった人を設定 */

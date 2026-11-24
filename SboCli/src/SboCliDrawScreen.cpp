@@ -106,6 +106,26 @@ void TextOut2(HDC hdc, int iX, int iY, char *pStr, COLORREF Color)
 }
 
 /* ========================================================================= */
+/* 関数名：GetSysMsgBottomOfs												 */
+/* 内容：戦闘ログの流れ始める位置と消える位置を上へ持ち上げる量				 */
+/*		 画面の下に特技ショートカットの帯が出ている間は、ログが帯に重ならない	 */
+/*		 ように、帯のぶん（帯の高さ21＋文字の高さ16）だけ上にずらす			 */
+/* ========================================================================= */
+int GetSysMsgBottomOfs(void)
+{
+	PCHARINFO pChar;
+
+	if (g_nMyCharID < 0 || g_nMyCharID >= g_aCharInfo.GetSize ()) {
+		return 0;
+	}
+	pChar = g_aCharInfo[g_nMyCharID];
+	if (pChar == NULL || !IsMagicBandShown (pChar)) {
+		return 0;
+	}
+	return 37;
+}
+
+/* ========================================================================= */
 /* 関数名：DrawSysMsgBand													 */
 /* 内容：戦闘ログ（システムメッセージ）の後ろに半透明の暗い帯を敷く			 */
 /*		 草原など明るい背景でも細い文字が読めるように。右端は 1 文字ぶんぼかす */
@@ -116,6 +136,7 @@ static void DrawSysMsgBand(HDC hDC, int nX, int nY)
 	const int nFade = 14;		/* 右端をぼかす幅（1 文字ぶん） */
 	const int nAlpha = 120;		/* 帯の濃さ（0〜255） */
 	int i, yy, nCount = g_SysMsgInfo.GetSize ();
+	int nOfs = GetSysMsgBottomOfs ();
 	int anRight[SCRSIZEY + 2];
 	TEXTMETRIC tm;
 	SIZE size;
@@ -129,7 +150,7 @@ static void DrawSysMsgBand(HDC hDC, int nX, int nY)
 	}
 	for (i = 0; i < nCount; i ++) {
 		PSYSMSGINFO pSysMsgInfo = g_SysMsgInfo[i];
-		if (pSysMsgInfo->nY < SYSMSG_EY) {
+		if (pSysMsgInfo->nY < SYSMSG_EY - nOfs) {
 			continue;
 		}
 		GetTextExtentPoint32 (hDC, pSysMsgInfo->pszMsg, strlen (pSysMsgInfo->pszMsg), &size);
@@ -696,10 +717,7 @@ void DrawScreen(HWND hWnd, HDC hDC)
 				/* 探索マップ（ウィンドウの下に重ねる） */
 				AutoMapDraw (32 - x, 32 - y);
 
-				/* ウィンドウを表示 */
-				DrawWindow (g_pDibDrawMap, 32 - x, 32 - y);
-
-				/* 拠点防衛の帯（上の中央。挑戦中だけ） */
+				/* 拠点防衛の帯（上の中央。挑戦中だけ。コマンドなどのウィンドウが隠れないよう、ウィンドウの下に敷く） */
 				DrawDefenseBand (32 - x, 32 - y);
 
 				/* 拠点防衛以外の番外編ダンジョンの状況パネル（左上。挑戦中だけ） */
@@ -709,14 +727,18 @@ void DrawScreen(HWND hWnd, HDC hDC)
 				HFONT hFontOld = (HFONT)SelectObject (hDCPrimary, g_hFont14);
 				SetBkMode (hDCPrimary, TRANSPARENT);
 				DrawSysMsgBand (hDCPrimary, 32 - x, 32 - y);
+				int nOfs = GetSysMsgBottomOfs ();
 				for (i = 0; i < nCount; i ++) {
 					PSYSMSGINFO pSysMsgInfo = g_SysMsgInfo[i];
-					if (pSysMsgInfo->nY >= SYSMSG_EY) {
+					if (pSysMsgInfo->nY >= SYSMSG_EY - nOfs) {
 						TextOut2 (hDCPrimary, 32 - x, 32 - y + pSysMsgInfo->nY, pSysMsgInfo->pszMsg, pSysMsgInfo->cl);
 					}
 				}
 				SelectObject (hDCPrimary, hFontOld);
 				g_pDibDrawMap->Unlock ();
+
+				/* ウィンドウを表示（帯・戦闘ログより上に重ねる） */
+				DrawWindow (g_pDibDrawMap, 32 - x, 32 - y);
 			}
 
 			BYTE byLV = 0;
@@ -3997,13 +4019,14 @@ void AddSysMsg(LPSTR pszStr, COLORREF cl)
 static void AddSysMsgLine(LPCSTR pszStr, int nLen, COLORREF cl)
 {
 	int i, y = 0, tmp, nCount = g_SysMsgInfo.GetSize ();
+	int nStart = SYSMSG_SY - GetSysMsgBottomOfs ();
 
 	if (nCount > 0) {
 		y = g_SysMsgInfo[nCount - 1]->nY;
 	}
 
-	if (y >= SYSMSG_SY - 15) {
-		tmp = y - (SYSMSG_SY - 15);
+	if (y >= nStart - 15) {
+		tmp = y - (nStart - 15);
 		for (i = 0; i < nCount; i ++) {
 			g_SysMsgInfo[i]->nY -= tmp;
 		}
@@ -4016,7 +4039,7 @@ static void AddSysMsgLine(LPCSTR pszStr, int nLen, COLORREF cl)
 
 	PSYSMSGINFO pSysMsgInfo = new SYSMSGINFO;
 	ZeroMemory (pSysMsgInfo, sizeof (SYSMSGINFO));
-	pSysMsgInfo->nY = SYSMSG_SY;
+	pSysMsgInfo->nY = nStart;
 	pSysMsgInfo->cl = cl;
 	pSysMsgInfo->pszMsg = pszTmp;
 	pSysMsgInfo->dwTime = timeGetTime ();
