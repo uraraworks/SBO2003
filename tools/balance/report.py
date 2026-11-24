@@ -607,9 +607,11 @@ def goal_check(d, w, batch, cfg, out_path, a):
     stages = [k for k in cfg['stages'] if k in w.chk]
     # 設計上「ボス格」として置かれている敵（HP・経験値の基準には届かないもの）は、目標チェックだけボス格として扱う
     boss_names = set(cfg.get('boss_override', []))
+    # 「宝物役」（硬く素早いが倒すと得をする敵）は目標1の対象外。ボス格にも数えない（2026-11-24）
+    treasure_names = set(cfg.get('treasure_override', []))
 
     def goal_enemies(sk, group):
-        zs = [e for e in w.enemies(sk, 'zako') if e['name'] not in boss_names]
+        zs = [e for e in w.enemies(sk, 'zako') if e['name'] not in boss_names and e['name'] not in treasure_names]
         bs = list(w.enemies(sk, 'boss'))
         if group == 'zako':
             return zs
