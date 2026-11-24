@@ -52,6 +52,7 @@ extern void SendCmdACCADD			(LPSTR, LPSTR);							/* アカウント追加要求
 extern void SendCmdGETACC			(DWORD);								/* アカウント・パスワード取得 */
 extern void SendCmdCHGACC			(DWORD, LPSTR, LPSTR);					/* アカウント・パスワード更新 */
 extern void SendCmdTALKRAND			(DWORD);								/* 話してランダム要求 */
+extern void SendCmdPUZZLEKEY		(BYTE);									/* 落ち物パズルのキー入力(PUZZLEKEY_*) */
 extern void SendCmdTALKANSWER		(DWORD, BOOL);							/* 会話データの「はい・いいえ」の答え(NPCのテーブルID・はいならTRUE) */
 extern void SendCmdSTOPRAND			(DWORD);								/* 止まるかランダム切り替え */
 extern void SendCmdGETACCINFO		(DWORD);								/* アカウント情報要求 */

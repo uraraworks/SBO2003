@@ -18,6 +18,8 @@ extern void	QuestStoryGreet			(DWORD);													/* 語り部の台詞を出�
 extern void	QuestIntroEnd			(DWORD);													/* 依頼の導入のお話を読み終わった（受けるかの確認を出す） */
 extern void	QuestStoryGreetEnd		(DWORD);													/* 語り部の台詞が終わった（一覧を開く） */
 extern int	GetCharNo2				(DWORD);													/* キャラ番号取得2 */
+extern BOOL		IsPuzzleSeated			(void);														/* 落ち物パズルの席に座って遊んでいるか */
+extern BOOL		GetPuzzleState			(int nIdx, PCMDPARA_PUZZLESTATE pOut, const BYTE **ppBoard, BOOL *pbOver);			/* 落ち物パズルの重ね描きの状態（nIdx は 0〜PUZZLE_VIEW_MAX-1。見えている台とゲームオーバー後の少しの間だけ TRUE） */
 extern BOOL		GetDungeonStatus		(PCMDPARA_DGSTATUS pOut);									/* 番外編ダンジョン（拠点防衛以外）の状況（パネルを出す時だけ TRUE。しばらく届かなければ消える） */
 extern BOOL		GetDefenseStatus		(PCMDPARA_DGDEFSTATUS pOut);								/* 拠点防衛の状態（帯を出す時だけ TRUE。しばらく届かなければ消える） */
 extern DWORD	GetCharBuffRest			(DWORD dwTblID, int nType);									/* 攻撃力(0)・守備力(1)アップの残り(ms)。0=かかっていない */

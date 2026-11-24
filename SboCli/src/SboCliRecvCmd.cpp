@@ -9,6 +9,7 @@
 #include "stdafx.h"
 #include "../../common/DungeonReception.h"
 #include "common/BowFlight.h"
+#include "common/FallingPuzzle.h"
 #include <string>
 #include <vector>
 #include "SboCliRecvCmd.h"
@@ -175,6 +176,7 @@ void	RecvDataProcMAPSWAP					(PBYTE, DWORD);			/* 受信データ処理(印で�
 void	RecvDataProcHASTE					(PBYTE, DWORD);			/* 受信データ処理(加速の状態) */
 void	RecvDataProcDGDEFSTATUS				(PBYTE, DWORD);			/* 受信データ処理(拠点防衛の状態) */
 void	RecvDataProcDGSTATUS				(PBYTE, DWORD);			/* 受信データ処理(番外編ダンジョンの状況パネル) */
+void	RecvDataProcPUZZLESTATE				(PBYTE, DWORD);			/* 受信データ処理(落ち物パズルの盤面・落ち物・得点) */
 void	RecvDataProcCHARBUFF				(PBYTE, DWORD);			/* 受信データ処理(攻撃力・守備力アップの残り) */
 void	RecvDataProcMAKERINFO				(PBYTE, DWORD);			/* 受信データ処理(作り手情報) */
 void	RecvDataProcRECIPEINFO				(PBYTE, DWORD);			/* 受信データ処理(レシピ情報) */
@@ -475,6 +477,8 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcDGDEFSTATUS,			/* CMD_DGDEFSTATUS */
 	RecvDataProcDGDEFMAP,				/* CMD_DGDEFMAP */
 	RecvDataProcDGSTATUS,				/* CMD_DGSTATUS */
+	NULL,								/* CMD_PUZZLEKEY(クライアント→サーバーのみ) */
+	RecvDataProcPUZZLESTATE,			/* CMD_PUZZLESTATE */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -8623,6 +8627,155 @@ BOOL GetDungeonStatus(PCMDPARA_DGSTATUS pOut)
 	if (s_DgStatus.byState == DGSTATUS_RUN) {
 		pOut->dwElapsedSec += dwAge / 1000;
 	}
+	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcPUZZLESTATE / IsPuzzleSeated / GetPuzzleState		 */
+/* 内容：受信データ処理(落ち物パズル)										 */
+/*		 サーバーは、盤面・次の落ち物・得点・待ちお邪魔が変わった時に盤面全体(FULL)を、	 */
+/*		 動いただけの時は落ち物の位置(MOVE)だけを、台ごとに送ってくる。			 */
+/*		 台は dwNpc で見分け、PUZZLE_VIEW_MAX 台ぶん（自分の台・対戦相手の台・		 */
+/*		 近くで遊んでいる台）の盤面を覚える。盤面は FULL の時に覚え、MOVE では位置などだけ差し替える。 */
+/*		 終わり(OVER)は最後の盤面を少し見せる。NONE はその台の席が空になった・見えなくなった時で、	 */
+/*		 その台の重ね描きを消す												 */
+/* ========================================================================= */
+#define PUZZLE_OVER_SHOW_MS	(3000)								/* ゲームオーバー後に最後の盤面を見せる時間(ms) */
+typedef struct _PUZZLEVIEW {
+	BOOL					bUse;									/* 使っているか */
+	CMDPARA_PUZZLESTATE		St;										/* 最後に届いた状態 */
+	BYTE					abyBoard[PUZZLE_MAX_COLS * PUZZLE_MAX_ROWS];	/* 最後に届いた盤面 */
+	BOOL					bBoard;									/* 盤面を持っているか */
+	DWORD					dwOverTime;								/* ゲームオーバーを受けた時刻（0=まだ） */
+} PUZZLEVIEW;
+static PUZZLEVIEW			s_aPuzView[PUZZLE_VIEW_MAX];
+
+/* 台の盤面を探す（無ければ bAlloc で空きを使う。空きが無ければ、終わった盤面か先頭を上書き） */
+static PUZZLEVIEW *PuzzleViewFind(DWORD dwNpc, BOOL bAlloc)
+{
+	int i, nFree = -1;
+
+	for (i = 0; i < PUZZLE_VIEW_MAX; i ++) {
+		if (s_aPuzView[i].bUse && (s_aPuzView[i].St.dwNpc == dwNpc)) {
+			return &s_aPuzView[i];
+		}
+		if (!s_aPuzView[i].bUse && (nFree < 0)) {
+			nFree = i;
+		}
+	}
+	if (!bAlloc) {
+		return NULL;
+	}
+	if (nFree < 0) {
+		for (i = 0; i < PUZZLE_VIEW_MAX; i ++) {
+			if (s_aPuzView[i].dwOverTime != 0) {
+				nFree = i;
+				break;
+			}
+		}
+	}
+	if (nFree < 0) {
+		nFree = 0;
+	}
+	ZeroMemory (&s_aPuzView[nFree], sizeof (PUZZLEVIEW));
+	s_aPuzView[nFree].bUse = TRUE;
+	return &s_aPuzView[nFree];
+}
+
+void RecvDataProcPUZZLESTATE(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_PUZZLESTATE pPara = (PCMDPARA_PUZZLESTATE)pData;
+	PUZZLEVIEW *pView;
+	int nCells;
+
+	if (dwDataSize < sizeof (CMDPARA_PUZZLESTATE)) {
+		return;
+	}
+	switch (pPara->byKind) {
+	case PUZZLESTATE_NONE:
+		pView = PuzzleViewFind (pPara->dwNpc, FALSE);
+		if (pView) {
+			pView->bUse = FALSE;
+		}
+		break;
+	case PUZZLESTATE_FULL:
+	case PUZZLESTATE_OVER:
+		nCells = (int)pPara->byCols * (int)pPara->byRows;
+		if ((pPara->byCols < 4) || (pPara->byCols > PUZZLE_MAX_COLS) || (pPara->byRows < 4) || (pPara->byRows > PUZZLE_MAX_ROWS) ||
+			(dwDataSize != sizeof (CMDPARA_PUZZLESTATE) + nCells)) {
+			return;
+		}
+		pView = PuzzleViewFind (pPara->dwNpc, TRUE);
+		memcpy (&pView->St, pData, sizeof (CMDPARA_PUZZLESTATE));
+		memcpy (pView->abyBoard, pData + sizeof (CMDPARA_PUZZLESTATE), nCells);
+		pView->bBoard = TRUE;
+		if (pPara->byKind == PUZZLESTATE_OVER) {
+			pView->dwOverTime = timeGetTime ();
+			if (pView->dwOverTime == 0) {
+				pView->dwOverTime = 1;
+			}
+		} else {
+			pView->dwOverTime = 0;
+		}
+		break;
+	case PUZZLESTATE_MOVE:
+		pView = PuzzleViewFind (pPara->dwNpc, FALSE);
+		if ((pView == NULL) || !pView->bBoard || (pPara->byCols != pView->St.byCols) || (pPara->byRows != pView->St.byRows)) {
+			return;
+		}
+		pView->St.byPiece = pPara->byPiece;
+		pView->St.byRot = pPara->byRot;
+		pView->St.cX = pPara->cX;
+		pView->St.cY = pPara->cY;
+		pView->St.byMine = pPara->byMine;
+		pView->St.byVs = pPara->byVs;
+		pView->St.byGarbage = pPara->byGarbage;
+		pView->St.byCount = pPara->byCount;
+		break;
+	default:
+		return;
+	}
+	g_bDraw = TRUE;
+}
+
+/* 席に座って遊んでいるか（座っている間は歩かず、キーはゲーム側へ送る） */
+BOOL IsPuzzleSeated(void)
+{
+	int i;
+
+	if (g_byGameState != GAMESTATE_MOVE) {
+		return FALSE;
+	}
+	for (i = 0; i < PUZZLE_VIEW_MAX; i ++) {
+		if (s_aPuzView[i].bUse && s_aPuzView[i].bBoard && s_aPuzView[i].St.byMine && (s_aPuzView[i].dwOverTime == 0)) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* 重ね描きする状態を取得（nIdx は 0〜PUZZLE_VIEW_MAX-1。遊んでいる台と、ゲームオーバー後の少しの間だけ TRUE） */
+BOOL GetPuzzleState(int nIdx, PCMDPARA_PUZZLESTATE pOut, const BYTE **ppBoard, BOOL *pbOver)
+{
+	PUZZLEVIEW *pView;
+
+	if ((nIdx < 0) || (nIdx >= PUZZLE_VIEW_MAX)) {
+		return FALSE;
+	}
+	pView = &s_aPuzView[nIdx];
+	if (!pView->bUse || !pView->bBoard || (g_byGameState != GAMESTATE_MOVE)) {
+		return FALSE;
+	}
+	if (pView->dwOverTime != 0) {
+		if ((int)(timeGetTime () - pView->dwOverTime) >= PUZZLE_OVER_SHOW_MS) {
+			pView->bUse = FALSE;
+			return FALSE;
+		}
+		g_bDraw = TRUE;		/* 消える時まで描き続ける */
+	}
+	*pOut = pView->St;
+	*ppBoard = pView->abyBoard;
+	*pbOver = (pView->dwOverTime != 0);
 	return TRUE;
 }
 

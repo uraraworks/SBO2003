@@ -21,6 +21,7 @@
  */
 #include "stdafx.h"
 #include "../../common/DungeonReception.h"
+#include "../../common/FallingPuzzle.h"
 #include "../../common/DungeonText.h"
 #include <algorithm>
 #pragma push_macro("max")
@@ -1355,6 +1356,8 @@ static void TestTailBattleMapMove(const std::vector<int> &aLogin);
 static void TestTailSpaceMove(const std::vector<int> &aLogin);
 static void TestTailMidLeave(const std::vector<int> &aLogin);
 static void TestTailArrive(const std::vector<int> &aLogin);
+static void TestPuzzle(const std::vector<int> &aLogin);
+static void TestPuzzleVs(const std::vector<int> &aLogin);
 static void TestEmptyMapCheck(const std::vector<int> &aLogin);
 static void TestPutFill(void);
 static void TestDungeonTheme(void);
@@ -1930,6 +1933,10 @@ static void TestWorld(void)
 	TestTailMidLeave(aLogin);
 	/* AU. ついていく人が、着いたマスの別のマップ移動に反応しない */
 	TestTailArrive(aLogin);
+	/* AV. 落ち物パズルの台（コイン・席・キー入力・落下・ゲームオーバー・片付け） */
+	TestPuzzle(aLogin);
+	/* AV2. 落ち物パズルの対戦（ペアの台・カウントダウン・お邪魔・勝敗・観戦） */
+	TestPuzzleVs(aLogin);
 	/* SM. 召喚特技のヒット数の実測（SUMMON_HITS=1 の時だけ。最後に流す） */
 	TestSummonHits(aLogin);
 }
@@ -17525,4 +17532,436 @@ static void TestTailSpaceMove(const std::vector<int> &aLogin)
 		p->dwTargetTblID3 = aBack[i].dwTargetTblID3;
 		place(p, aBack[i].dwMapID, aBack[i].dwX, aBack[i].dwY);
 	}
+}
+
+
+/* ------------------------------------------------------------------------- */
+/* AV. 落ち物パズルの台（台詞 "@p<コイン>,<枚数>,<側>,<距離>" の NPC）			 */
+/*     コインが無ければ座れない・あれば枚数ぶん減って座る・座っている間は歩けない・	 */
+/*     キー入力で位置だけ／盤面ごと送る・落下は経過時間で進む・ゲームオーバーで得点を出して立つ・	 */
+/*     席を立つ／離れる／切断で片付く・使用中の台には座れない					 */
+/* ------------------------------------------------------------------------- */
+static void PuzzleKeySend(PCHARINFO p, BYTE byKey)
+{
+	CMDPARA_DATA1 Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_PUZZLEKEY;
+	Para.byData = byKey;
+	Para.dwTblID = p->dwTblID;
+	TestRecv(p, &Para, sizeof(Para));
+}
+
+static void PuzzleTalk(PCHARINFO p, PCHARINFO pNpc)
+{
+	CMDPARA_DATA1 Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_TALKRAND;
+	Para.dwTblID = pNpc->dwTblID;
+	TestRecv(p, &Para, sizeof(Para));
+}
+
+static int PuzzleCoinCount(PCHARINFO p, WORD wItem)
+{
+	int n = 0;
+	for (int i = 0; i < MAX_MYITEM; i ++) if (p->waItem[i] == wItem) n ++;
+	return n;
+}
+
+static void TestPuzzle(const std::vector<int> &aLogin)
+{
+	printf("== AV. Falling puzzle table ==\n");
+	if (aLogin.size() < 2) return;
+	s_pSpLogin = &aLogin;
+	PCHARINFO pA = g_aCharInfo[aLogin[0]], pB = g_aCharInfo[aLogin[1]];
+	int nConnA = DgTestConn(pA), nConnB = DgTestConn(pB);
+	WORD wCoin = 1;
+	char szSpeech[32];
+	DWORD dwXBack = pA->dwX, dwYBack = pA->dwY, dwMapBack = pA->dwMapID;
+	BYTE byStateBack = pA->byCharState;
+	WORD wHPBack = pA->wHP;
+	DWORD dwTimeBack = g_dwTime;
+
+	/* 座れる状態にする（A は台のすぐ隣、B は同じ場所） */
+	pA->byCharState = CHARSTATE_MOVE;
+	if (pA->wHP == 0) pA->wHP = 10;
+	sprintf(szSpeech, "@p%d,2", (int)wCoin);
+	NearNpcOpen(pA, szSpeech);
+	PCHARINFO pNpc = s_aNearNpc.back();
+	for (int i = 0; i < MAX_MYITEM; i ++) if (pA->waItem[i] == wCoin) DelCharItem(pA->dwTblID, (BYTE)i);
+	printf("puzzle npc=%d isTable=%d free=%d\n", pNpc ? 1 : 0, PuzzleIsTableNpc(pNpc), PuzzleSeatCount());
+
+	/* コインが無い → 座れず「コインがありません」（文字の確認は、送ったバイト列を覚えさせている間だけ） */
+	MockTrace(1);
+	PuzzleTalk(pA, pNpc);
+	printf("puzzle nocoin seated=%d msg=%d state=%d\n", PuzzleIsSeated(pA), MockHasText(nConnA, CMD_SYSMSG, "コインがありません"),
+		MockCmdCount(nConnA, CMD_PUZZLESTATE));
+
+	/* コイン 1 枚（2 枚必要）→ まだ座れず、減りもしない */
+	AddCharItem(pA->dwTblID, wCoin);
+	PuzzleTalk(pA, pNpc);
+	printf("puzzle short seated=%d coin=%d\n", PuzzleIsSeated(pA), PuzzleCoinCount(pA, wCoin));
+	/* 2 枚 → 座る。2 枚減り、盤面全体(FULL)が届く */
+	AddCharItem(pA->dwTblID, wCoin);
+	AddCharItem(pA->dwTblID, wCoin);
+	int nState0 = MockCmdCount(nConnA, CMD_PUZZLESTATE);
+	PuzzleTalk(pA, pNpc);
+	printf("puzzle sit seated=%d coin=%d state+%d used=%d\n", PuzzleIsSeated(pA), PuzzleCoinCount(pA, wCoin),
+		MockCmdCount(nConnA, CMD_PUZZLESTATE) - nState0, MockHasText(nConnA, CMD_SYSMSG, "コインを2枚使いました"));
+
+	/* 同じ台に 2 人目（段階1は席 1 つ）は座れず、コインも減らない */
+	AddCharItem(pB->dwTblID, wCoin);
+	AddCharItem(pB->dwTblID, wCoin);
+	DWORD dwBX = pB->dwX, dwBY = pB->dwY, dwBMap = pB->dwMapID;
+	DeleteTblNoPC((int)pB->dwTblID);
+	pB->dwMapID = pA->dwMapID; pB->dwX = pA->dwX; pB->dwY = pA->dwY;
+	AddTblNoPC((int)pB->dwTblID);
+	BYTE byBState = pB->byCharState; WORD wBHP = pB->wHP;
+	pB->byCharState = CHARSTATE_MOVE; if (pB->wHP == 0) pB->wHP = 10;
+	PuzzleTalk(pB, pNpc);
+	printf("puzzle busy seatedB=%d coinB=%d msg=%d\n", PuzzleIsSeated(pB), PuzzleCoinCount(pB, wCoin),
+		MockHasText(nConnB, CMD_SYSMSG, "この台は今、使われています"));
+
+	/* 座っている間は歩けない（歩いても位置は動かない） */
+	{
+		CMDPARA_CHARPOS Pos;
+		ZeroMemory(&Pos, sizeof(Pos));
+		Pos.byCmd = CMD_CHARPOS;
+		Pos.dwTblID = pA->dwTblID;
+		Pos.dwMapID = pA->dwMapID;
+		Pos.byX = (BYTE)(pA->dwX + 1);
+		Pos.byY = (BYTE)pA->dwY;
+		Pos.byDirection = 3;
+		DWORD dwX0 = pA->dwX;
+		TestRecv(pA, &Pos, sizeof(Pos));
+		printf("puzzle nowalk moved=%d\n", pA->dwX != dwX0);
+	}
+
+	/* キー入力：回す・左右は位置だけ(MOVE)。速すぎる入力は捨てる。下は落とす */
+	g_dwTime = s_dwFakeNow = max(s_dwFakeNow, g_dwTime) + 100;
+	int nBeforeKey = MockCmdCount(nConnA, CMD_PUZZLESTATE);
+	PuzzleKeySend(pA, PUZZLEKEY_LEFT);
+	g_dwTime = (s_dwFakeNow += 5);
+	PuzzleKeySend(pA, PUZZLEKEY_LEFT);							/* 5ms 後（捨てる） */
+	g_dwTime = (s_dwFakeNow += 100);
+	PuzzleKeySend(pA, PUZZLEKEY_ROTATE);
+	g_dwTime = (s_dwFakeNow += 100);
+	PuzzleKeySend(pA, PUZZLEKEY_RIGHT);
+	printf("puzzle keys packets=%d seated=%d\n", MockCmdCount(nConnA, CMD_PUZZLESTATE) - nBeforeKey, PuzzleIsSeated(pA));
+
+	/* 落下は経過時間で進む（PuzzleProc を呼ぶ間隔に関係なく 1 秒に 1 段）。動いた時は位置だけ(MOVE) */
+	int nBeforeDrop = MockCmdCount(nConnA, CMD_PUZZLESTATE);
+	g_dwTime = (s_dwFakeNow += 400);
+	PuzzleProc();
+	int nNoDrop = MockCmdCount(nConnA, CMD_PUZZLESTATE) - nBeforeDrop;
+	g_dwTime = (s_dwFakeNow += 700);							/* 前のキー入力から 1 秒以上 */
+	PuzzleProc();
+	int nDrop = MockCmdCount(nConnA, CMD_PUZZLESTATE) - nBeforeDrop;
+	printf("puzzle gravity early=%d later=%d\n", nNoDrop, nDrop > 0 ? 1 : 0);
+
+	/* 他人の席には触れない：B（座っていない）のキー入力は無視 */
+	int nBefore = MockCmdCount(nConnB, CMD_PUZZLESTATE);
+	PuzzleKeySend(pB, PUZZLEKEY_DOWN);
+	printf("puzzle otherkey packets=%d\n", MockCmdCount(nConnB, CMD_PUZZLESTATE) - nBefore);
+
+	/* 下キーで落とし続けると、置いて積み上がり、置けなくなってゲームオーバー（得点を出して席を立つ） */
+	int nLoops = 0;
+	while (PuzzleIsSeated(pA) && nLoops < 5000) {
+		g_dwTime = (s_dwFakeNow += 30);
+		PuzzleKeySend(pA, PUZZLEKEY_DOWN);
+		nLoops ++;
+	}
+	printf("puzzle over seated=%d score=%d state=%d\n", PuzzleIsSeated(pA), MockHasText(nConnA, CMD_SYSMSG, "ゲームオーバー！ 得点"),
+		PuzzleSeatCount());
+
+	/* 席を立つ（ESC）→ 片付く。立った後のキーは無視 */
+	PuzzleTalk(pB, pNpc);
+	printf("puzzle sitB seated=%d coinB=%d\n", PuzzleIsSeated(pB), PuzzleCoinCount(pB, wCoin));
+	int nNone0 = MockCmdCount(nConnB, CMD_PUZZLESTATE);
+	PuzzleKeySend(pB, PUZZLEKEY_LEAVE);
+	printf("puzzle leave seated=%d count=%d none+%d\n", PuzzleIsSeated(pB), PuzzleSeatCount(), MockCmdCount(nConnB, CMD_PUZZLESTATE) - nNone0);
+
+	/* 席から離れる（マップ移動など）と周期処理で片付く */
+	AddCharItem(pB->dwTblID, wCoin);
+	AddCharItem(pB->dwTblID, wCoin);
+	PuzzleTalk(pB, pNpc);
+	int nSeatedAway = PuzzleIsSeated(pB);
+	DeleteTblNoPC((int)pB->dwTblID);
+	pB->dwX = pA->dwX + 10;
+	AddTblNoPC((int)pB->dwTblID);
+	g_dwTime = (s_dwFakeNow += 10);
+	PuzzleProc();
+	printf("puzzle away before=%d after=%d count=%d\n", nSeatedAway, PuzzleIsSeated(pB), PuzzleSeatCount());
+
+	/* 切断（OnLeave）で片付く */
+	DeleteTblNoPC((int)pB->dwTblID);
+	pB->dwX = pA->dwX;
+	AddTblNoPC((int)pB->dwTblID);
+	AddCharItem(pB->dwTblID, wCoin);
+	AddCharItem(pB->dwTblID, wCoin);
+	PuzzleTalk(pB, pNpc);
+	int nSeatedBefore = PuzzleIsSeated(pB);
+	PuzzleOnLeave(pB);
+	printf("puzzle logout before=%d after=%d count=%d\n", nSeatedBefore, PuzzleIsSeated(pB), PuzzleSeatCount());
+
+	/* 無料の台（枚数 0）はコイン無しで座れる */
+	{
+		PCHARINFO pFree;
+		NearNpcOpen(pB, "@p");
+		pFree = s_aNearNpc.back();
+		for (int i = 0; i < MAX_MYITEM; i ++) if (pB->waItem[i] == wCoin) DelCharItem(pB->dwTblID, (BYTE)i);
+		PuzzleTalk(pB, pFree);
+		printf("puzzle free seated=%d\n", PuzzleIsSeated(pB));
+		PuzzleOnLeave(pB);
+	}
+
+	/* 片付け */
+	MockTrace(0);
+	PuzzleOnLeave(pA);
+	PuzzleOnLeave(pB);
+	NearNpcClose();
+	for (int i = 0; i < MAX_MYITEM; i ++) if (pA->waItem[i] == wCoin) DelCharItem(pA->dwTblID, (BYTE)i);
+	for (int i = 0; i < MAX_MYITEM; i ++) if (pB->waItem[i] == wCoin) DelCharItem(pB->dwTblID, (BYTE)i);
+	DeleteTblNoPC((int)pB->dwTblID);
+	pB->dwMapID = dwBMap; pB->dwX = dwBX; pB->dwY = dwBY;
+	pB->byCharState = byBState; pB->wHP = wBHP;
+	AddTblNoPC((int)pB->dwTblID);
+	pA->dwMapID = dwMapBack; pA->dwX = dwXBack; pA->dwY = dwYBack;
+	pA->byCharState = byStateBack; pA->wHP = wHPBack;
+	g_dwTime = dwTimeBack;
+	printf("puzzle done seats=%d\n", PuzzleSeatCount());
+}
+
+/* ------------------------------------------------------------------------- */
+/* AV2. 落ち物パズルの対戦（台詞 "@p<コイン>,<枚数>,,,,,,<ペア番号>" の 2 台）	 */
+/*     ひとりが遊んでいる所へ、ペアのもう 1 台に座ると対戦（盤面を空に戻す・同じ落ち物の順・カウントダウン）・	 */
+/*     お邪魔の送信・相殺・固定で積まれる・置けなくなった側が負け（勝者は続ける）・	 */
+/*     ESC・切断・離れるで残った側の勝ち・別のペアやペアなしでは対戦にならない・近くの人（観戦）にも届く	 */
+/* ------------------------------------------------------------------------- */
+static void PuzzleVsSit(PCHARINFO p, WORD wCoin, PCHARINFO pNpc)
+{
+	AddCharItem(p->dwTblID, wCoin);
+	PuzzleTalk(p, pNpc);
+}
+
+static void TestPuzzleVs(const std::vector<int> &aLogin)
+{
+	printf("== AV2. Falling puzzle versus ==\n");
+	if (aLogin.size() < 3) return;
+	s_pSpLogin = &aLogin;
+	PCHARINFO pA = g_aCharInfo[aLogin[0]], pB = g_aCharInfo[aLogin[1]], pC = g_aCharInfo[aLogin[2]];
+	PCHARINFO apP[3] = { pA, pB, pC };
+	int anConn[3] = { DgTestConn(pA), DgTestConn(pB), DgTestConn(pC) };
+	struct { DWORD dwMap, dwX, dwY; BYTE byState; WORD wHP; } aBack[3];
+	WORD wCoin = 1;
+	DWORD dwTimeBack = g_dwTime;
+	int i;
+
+	for (i = 0; i < 3; i ++) {
+		aBack[i].dwMap = apP[i]->dwMapID; aBack[i].dwX = apP[i]->dwX; aBack[i].dwY = apP[i]->dwY;
+		aBack[i].byState = apP[i]->byCharState; aBack[i].wHP = apP[i]->wHP;
+		for (int j = 0; j < MAX_MYITEM; j ++) if (apP[i]->waItem[j] == wCoin) DelCharItem(apP[i]->dwTblID, (BYTE)j);
+	}
+	/* 3 人とも pA のいる所（台のすぐそば）。C は観戦 */
+	DWORD dwMap = pA->dwMapID, dwX = pA->dwX, dwY = pA->dwY;
+	for (i = 1; i < 3; i ++) QuestMovePC(apP[i], (int)dwMap, (int)dwX, (int)dwY);
+	QuestMovePC(pA, (int)dwMap, (int)dwX, (int)dwY);
+	/* ペア 5 の 2 台・ペア 6 の台・ペアなしの台（コイン 1 枚） */
+	NearNpcOpen(pA, "@p1,1,,,,,,5");
+	PCHARINFO pT1 = s_aNearNpc.back();
+	NearNpcOpen(pA, "@p1,1,,,,,,5");
+	PCHARINFO pT2 = s_aNearNpc.back();
+	NearNpcOpen(pA, "@p1,1,,,,,,6");
+	PCHARINFO pT3 = s_aNearNpc.back();
+	NearNpcOpen(pA, "@p1,1");
+	PCHARINFO pT4 = s_aNearNpc.back();
+	MockTrace(1);
+	g_dwTime = (s_dwFakeNow = max(s_dwFakeNow, g_dwTime) + 1000);
+
+	/* 1. A がペア 5 の台 1 にひとりで座る（ひとり用）。ペアの相手がいないので対戦にならない */
+	int nC0 = MockCmdCount(anConn[2], CMD_PUZZLESTATE);
+	PuzzleVsSit(pA, wCoin, pT1);
+	printf("vs solo seatedA=%d vsA=%d coinA=%d\n", PuzzleIsSeated(pA), PuzzleIsVersus(pA), PuzzleCoinCount(pA, wCoin));
+
+	/* 2. 観戦：近くにいる C へは、座った時に盤面全体が 1 回届き、見直しでは重ねて送らない。
+	   遠くへ離れたら NONE が届き（遠い間はキーの更新も届かない）、戻るとまた盤面全体が届く */
+	printf("vs spectate near packets=%d\n", MockCmdCount(anConn[2], CMD_PUZZLESTATE) - nC0);
+	nC0 = MockCmdCount(anConn[2], CMD_PUZZLESTATE);
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	printf("vs spectate nochange packets=%d\n", MockCmdCount(anConn[2], CMD_PUZZLESTATE) - nC0);
+	QuestMovePC(pC, (int)dwMap, (int)dwX + 40, (int)dwY);
+	nC0 = MockCmdCount(anConn[2], CMD_PUZZLESTATE);
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	printf("vs spectate far packets=%d\n", MockCmdCount(anConn[2], CMD_PUZZLESTATE) - nC0);
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleKeySend(pA, PUZZLEKEY_LEFT);
+	nC0 = MockCmdCount(anConn[2], CMD_PUZZLESTATE);
+	g_dwTime = (s_dwFakeNow += 100);
+	PuzzleKeySend(pA, PUZZLEKEY_RIGHT);
+	printf("vs spectate far key packets=%d\n", MockCmdCount(anConn[2], CMD_PUZZLESTATE) - nC0);
+	QuestMovePC(pC, (int)dwMap, (int)dwX, (int)dwY);
+	nC0 = MockCmdCount(anConn[2], CMD_PUZZLESTATE);
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	printf("vs spectate back packets=%d\n", MockCmdCount(anConn[2], CMD_PUZZLESTATE) - nC0 >= 1);
+	nC0 = MockCmdCount(anConn[2], CMD_PUZZLESTATE);
+	g_dwTime = (s_dwFakeNow += 100);
+	PuzzleKeySend(pA, PUZZLEKEY_LEFT);
+	printf("vs spectate key packets=%d\n", MockCmdCount(anConn[2], CMD_PUZZLESTATE) - nC0);
+	/* （以降、台が増減するとゲームの置き場所が動くので、使う直前に取り直す） */
+
+	/* 3. A が少し遊んだ盤面で、B が台 2 に座る → 対戦開始：両方の盤面が空に戻り、同じ落ち物の順番・カウントダウン */
+	PuzzleGame *gA = PuzzleGetGame(pA);
+	gA->Board.Set(0, 13, 3);
+	gA->dwScore = 999;
+	int nA0 = MockCmdCount(anConn[0], CMD_PUZZLESTATE), nB0 = MockCmdCount(anConn[1], CMD_PUZZLESTATE);
+	nC0 = MockCmdCount(anConn[2], CMD_PUZZLESTATE);
+	g_dwTime = (s_dwFakeNow += 100);
+	DWORD dwSit = g_dwTime;
+	PuzzleVsSit(pB, wCoin, pT2);
+	gA = PuzzleGetGame(pA);
+	PuzzleGame *gB = PuzzleGetGame(pB);
+	printf("vs start seated=%d%d vs=%d%d coinB=%d msg=%d%d\n", PuzzleIsSeated(pA), PuzzleIsSeated(pB), PuzzleIsVersus(pA), PuzzleIsVersus(pB),
+		PuzzleCoinCount(pB, wCoin), MockHasText(anConn[0], CMD_SYSMSG, "対戦開始"), MockHasText(anConn[1], CMD_SYSMSG, "対戦開始"));
+	printf("vs start reset board=%d score=%d sameOrder=%d\n", gA->Board.Get(0, 13), (int)gA->dwScore,
+		gA->nKind == gB->nKind && gA->nNext == gB->nNext);
+	printf("vs start packets A=%d B=%d C=%d\n", MockCmdCount(anConn[0], CMD_PUZZLESTATE) - nA0, MockCmdCount(anConn[1], CMD_PUZZLESTATE) - nB0,
+		MockCmdCount(anConn[2], CMD_PUZZLESTATE) - nC0);
+
+	/* 4. カウントダウン中は落ちず、キーも効かない。秒が変わるたびに状態が届き、終わると動く */
+	int nY0 = gA->nY;
+	g_dwTime = (s_dwFakeNow = dwSit + 1500);
+	PuzzleKeySend(pA, PUZZLEKEY_DOWN);
+	nA0 = MockCmdCount(anConn[0], CMD_PUZZLESTATE);
+	PuzzleProc();
+	g_dwTime = (s_dwFakeNow = dwSit + 2500);
+	PuzzleProc();
+	printf("vs countdown y=%d packets=%d\n", gA->nY - nY0, MockCmdCount(anConn[0], CMD_PUZZLESTATE) - nA0 > 0);
+	g_dwTime = (s_dwFakeNow = dwSit + 3100);
+	PuzzleProc();
+	g_dwTime = (s_dwFakeNow += 100);
+	PuzzleKeySend(pA, PUZZLEKEY_DOWN);
+	printf("vs go y=%d\n", gA->nY - nY0);
+
+	/* 5. お邪魔：A が 4 列消す → 相手 B の待ちに 4 段。B の盤面にはまだ積まれない */
+	gA->Board.Init(10, 14);
+	for (int r = 0; r < 4; r ++) for (int c = 0; c < 10; c ++) if (c != 4) gA->Board.Set(c, 10 + r, 1);
+	gA->nKind = 0; gA->nRot = 1; gA->nX = 2; gA->nY = 10;
+	g_dwTime = (s_dwFakeNow += 100);
+	int nB1 = MockCmdCount(anConn[1], CMD_PUZZLESTATE);
+	PuzzleKeySend(pA, PUZZLEKEY_DOWN);
+	printf("vs attack4 pendingB=%d pendingA=%d linesA=%d packetsB=%d\n", gB->nPending, gA->nPending, gA->nLines,
+		MockCmdCount(anConn[1], CMD_PUZZLESTATE) - nB1 > 0);
+	/* B が 2 列消す（攻撃 1）→ 自分宛て 4 から 1 を相殺して 3 が残り（A へは送らない）、残りの 3 段はこの固定で B の盤面の下から積まれる */
+	gB->Board.Init(10, 14);
+	for (int r = 0; r < 2; r ++) for (int c = 0; c < 10; c ++) if (c != 4) gB->Board.Set(c, 12 + r, 1);
+	gB->nKind = 0; gB->nRot = 1; gB->nX = 2; gB->nY = 10;
+	g_dwTime = (s_dwFakeNow += 100);
+	PuzzleKeySend(pB, PUZZLEKEY_DOWN);
+	int nGarbRows = 0, nHoleOK = 0;
+	for (int r = 0; r < 14; r ++) {
+		int nG = 0, nHole = 0;
+		for (int c = 0; c < 10; c ++) { if (gB->Board.Get(c, r) == PUZZLE_CELL_GARBAGE) nG ++; if (gB->Board.Get(c, r) == 0) nHole ++; }
+		if (nG == 9 && nHole == 1) { nGarbRows ++; if (r >= 11) nHoleOK ++; }
+	}
+	printf("vs offset pendingB=%d pendingA=%d linesB=%d garbageRows=%d bottom3=%d\n", gB->nPending, gA->nPending, gB->nLines, nGarbRows, nHoleOK);
+	/* B が消さずに固定する → 待ちが下から積まれる（穴は 1 段 1 か所） */
+	gB->Board.Init(10, 14);
+	gB->AddPending(3);
+	gB->nKind = 1; gB->nRot = 0; gB->nX = 0; gB->nY = 12;
+	g_dwTime = (s_dwFakeNow += 100);
+	PuzzleKeySend(pB, PUZZLEKEY_DOWN);
+	nGarbRows = 0;
+	for (int r = 0; r < 14; r ++) {
+		int nG = 0;
+		for (int c = 0; c < 10; c ++) if (gB->Board.Get(c, r) == PUZZLE_CELL_GARBAGE) nG ++;
+		if (nG >= 8) nGarbRows ++;
+	}
+	printf("vs garbage pendingB=%d rows=%d\n", gB->nPending, nGarbRows);
+
+	/* 6. B が置けなくなって負け → 両者に「○○の勝ち！」・B は席を立つ・A は続ける（得点そのまま・待ちなし） */
+	DWORD dwScoreA = gA->dwScore;
+	gB->Board.Init(10, 14);
+	gB->Board.Set(4, 0, 1); gB->Board.Set(5, 0, 1);
+	gB->nKind = 1; gB->nRot = 0; gB->nX = 0; gB->nY = 12;
+	gB->nPending = 0;
+	gA->AddPending(2);
+	int nA2 = MockCmdCount(anConn[0], CMD_PUZZLESTATE), nC2 = MockCmdCount(anConn[2], CMD_PUZZLESTATE);
+	g_dwTime = (s_dwFakeNow += 100);
+	PuzzleKeySend(pB, PUZZLEKEY_DOWN);
+	printf("vs lose seatedB=%d seatedA=%d vsA=%d msgA=%d msgB=%d scoreB=%d\n", PuzzleIsSeated(pB), PuzzleIsSeated(pA), PuzzleIsVersus(pA),
+		MockHasText(anConn[0], CMD_SYSMSG, "の勝ち！"), MockHasText(anConn[1], CMD_SYSMSG, "の勝ち！"),
+		MockHasText(anConn[1], CMD_SYSMSG, "ゲームオーバー！ 得点"));
+	gA = PuzzleGetGame(pA);
+	printf("vs lose keep score=%d pending=%d packetsA=%d packetsC=%d\n", gA && gA->dwScore == dwScoreA, gA ? gA->nPending : -1,
+		MockCmdCount(anConn[0], CMD_PUZZLESTATE) - nA2 > 0, MockCmdCount(anConn[2], CMD_PUZZLESTATE) - nC2 > 0);
+	/* 勝者はそのまま続けられる：落下が進む・消しても相手へは送られない */
+	g_dwTime = (s_dwFakeNow += 1500);
+	nA2 = MockCmdCount(anConn[0], CMD_PUZZLESTATE);
+	PuzzleProc();
+	printf("vs winner continues seated=%d packets=%d\n", PuzzleIsSeated(pA), MockCmdCount(anConn[0], CMD_PUZZLESTATE) - nA2 > 0);
+
+	/* 7. もう一度対戦 → B が ESC で席を立つ → A の勝ち */
+	g_dwTime = (s_dwFakeNow += 100);
+	PuzzleVsSit(pB, wCoin, pT2);
+	int nVsAgain = PuzzleIsVersus(pA) && PuzzleIsVersus(pB);
+	int nMsgA = MockCmdCount(anConn[0], CMD_SYSMSG);
+	g_dwTime = (s_dwFakeNow += 100);
+	PuzzleKeySend(pB, PUZZLEKEY_LEAVE);
+	printf("vs esc again=%d seatedB=%d seatedA=%d vsA=%d msgA+%d\n", nVsAgain, PuzzleIsSeated(pB), PuzzleIsSeated(pA), PuzzleIsVersus(pA),
+		MockCmdCount(anConn[0], CMD_SYSMSG) - nMsgA);
+
+	/* 8. 対戦中に B が切断（OnLeave）→ A の勝ち（B には何も送らない）。A は続ける */
+	g_dwTime = (s_dwFakeNow += 100);
+	PuzzleVsSit(pB, wCoin, pT2);
+	nVsAgain = PuzzleIsVersus(pA) && PuzzleIsVersus(pB);
+	int nMsgA3 = MockCmdCount(anConn[0], CMD_SYSMSG), nStB = MockCmdCount(anConn[1], CMD_PUZZLESTATE);
+	PuzzleOnLeave(pB);
+	printf("vs logout again=%d seatedB=%d seatedA=%d vsA=%d msgA+%d packetsB=%d\n", nVsAgain, PuzzleIsSeated(pB), PuzzleIsSeated(pA),
+		PuzzleIsVersus(pA), MockCmdCount(anConn[0], CMD_SYSMSG) - nMsgA3, MockCmdCount(anConn[1], CMD_PUZZLESTATE) - nStB);
+
+	/* 9. 対戦中に B が席から離れる → A の勝ち */
+	g_dwTime = (s_dwFakeNow += 100);
+	PuzzleVsSit(pB, wCoin, pT2);
+	nVsAgain = PuzzleIsVersus(pA) && PuzzleIsVersus(pB);
+	QuestMovePC(pB, (int)dwMap, (int)dwX + 10, (int)dwY);
+	g_dwTime = (s_dwFakeNow += 10);
+	PuzzleProc();
+	printf("vs away again=%d seatedB=%d seatedA=%d vsA=%d\n", nVsAgain, PuzzleIsSeated(pB), PuzzleIsSeated(pA), PuzzleIsVersus(pA));
+	QuestMovePC(pB, (int)dwMap, (int)dwX, (int)dwY);
+
+	/* 10. 別のペア・ペアなしの台に座っても対戦にならない（A はペア 5 の台 1 でひとり） */
+	g_dwTime = (s_dwFakeNow += 100);
+	PuzzleVsSit(pB, wCoin, pT3);
+	printf("vs otherpair seated=%d%d vs=%d%d\n", PuzzleIsSeated(pA), PuzzleIsSeated(pB), PuzzleIsVersus(pA), PuzzleIsVersus(pB));
+	PuzzleOnLeave(pB);
+	PuzzleVsSit(pB, wCoin, pT4);
+	printf("vs nopair seated=%d%d vs=%d%d\n", PuzzleIsSeated(pA), PuzzleIsSeated(pB), PuzzleIsVersus(pA), PuzzleIsVersus(pB));
+	PuzzleOnLeave(pB);
+
+	/* 11. コインが無ければ対戦にもならない（A は台 1 で遊んでいる所へ、コイン無しの B が台 2） */
+	for (int j = 0; j < MAX_MYITEM; j ++) if (pB->waItem[j] == wCoin) DelCharItem(pB->dwTblID, (BYTE)j);
+	PuzzleTalk(pB, pT2);
+	printf("vs nocoin seatedB=%d vsA=%d\n", PuzzleIsSeated(pB), PuzzleIsVersus(pA));
+
+	/* 12. 台が空になった時、観戦の C に NONE（OVER）が届く */
+	nC2 = MockCmdCount(anConn[2], CMD_PUZZLESTATE);
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	PuzzleKeySend(pA, PUZZLEKEY_LEAVE);
+	printf("vs spectate leave packets=%d seats=%d\n", MockCmdCount(anConn[2], CMD_PUZZLESTATE) - nC2 > 0, PuzzleSeatCount());
+
+	/* 片付け */
+	MockTrace(0);
+	PuzzleOnLeave(pA); PuzzleOnLeave(pB); PuzzleOnLeave(pC);
+	NearNpcClose();
+	for (i = 0; i < 3; i ++) {
+		for (int j = 0; j < MAX_MYITEM; j ++) if (apP[i]->waItem[j] == wCoin) DelCharItem(apP[i]->dwTblID, (BYTE)j);
+		QuestMovePC(apP[i], (int)aBack[i].dwMap, (int)aBack[i].dwX, (int)aBack[i].dwY);
+		apP[i]->byCharState = aBack[i].byState;
+		apP[i]->wHP = aBack[i].wHP;
+	}
+	g_dwTime = dwTimeBack;
+	printf("vs done seats=%d\n", PuzzleSeatCount());
 }
