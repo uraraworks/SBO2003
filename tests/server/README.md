@@ -25,3 +25,9 @@ AO/AP は受付で説明と姿一覧を同時に受信→姿選び→全員へ�
 AO の共有地図では、入場時に実際に送られた地形を、本体から抽出したブラウザ受信処理（CRC・圧縮展開・通知サイズ）と探索記録処理に渡す。地形→キャラ情報→探索送信の順序を再現し、圧縮あり・なしの差分が記録と仲間の位置へ反映されることを確認する。2人の組の探索差分・仲間の位置・別空間への非配信・ソロの非共有・重複の抑止・不正な報告の拒否・累積記録の再送・移動時だけの位置更新を確認する。
 
 AO では姿選び中（未選択・一部選択済み）と受付済みの別マップ移動を共通の移動処理・周期処理で検出し、組全員の取消・仲間への通知・選択窓の閉鎖・戻った後の入場拒否を確認する。選択中の切断でも仲間へ通知し、外の入口からの正規入場では取り消さない。
+
+戦闘計算（common/BattleCalc.h）が旧実装と同じ結果・同じ乱数順になるかの native テスト: `g++ -std=c++11 -O1 -I. tests/server/battle_calc_test.cpp -o /tmp/battle_calc_test && /tmp/battle_calc_test`（敵の特技のくじ ChooseEnemyMagic と魔法ダメージ・回復の式も、旧実装を写したものと結果・乱数の消費順序が同じかを見る）
+
+バランステスト用シミュレータ（common/BattleSim.h・tools/balance/battlesim.cpp）: `g++ -std=c++11 -O2 -I. tools/balance/battlesim.cpp -o /tmp/battlesim && python3 tools/balance/simdata2tsv.py <simdata.json> | /tmp/battlesim 1 1000`（入力形式と JS 試作との突き合わせは tools/balance/README.md）。
+
+シミュレータの敵の特技・回復（common/BattleSim.h の EnemyCast）の確認: `g++ -std=c++11 -O1 -I. tests/server/battle_sim_test.cpp -o /tmp/battle_sim_test && /tmp/battle_sim_test`（回復持ちの敵は倒すまで長引く・HP が 70% 以上のうちは回復しない・離れている間は回復しない／前方魔法は届く所から撃つ。「一致」で終われば OK）。

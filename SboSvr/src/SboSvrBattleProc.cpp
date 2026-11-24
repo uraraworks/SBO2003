@@ -9,6 +9,7 @@
 #include "include.h"
 #include "Glbldata.h"
 #include "common/BowFlight.h"
+#include "common/BattleCalc.h"
 #include "../../Common/Info/InfoJob.h"
 #include "ProcFunc/ProcFunc.h"
 #include "SboSvrRecvCmd.h"
@@ -1396,8 +1397,8 @@ static int GetWeponMin(PCHARINFO pChar)
 
 	pInfo = (PITEMINFO_WEAPON)pItem->pData;
 	/* 減少値が設定されている？ */
-	if (pInfo && pInfo->byMin) {
-		nTmp = ((genrand () % pInfo->byMin) + 1);
+	if (pInfo) {
+		nTmp = BattleCalc::WeaponMinRoll (pInfo->byMin, genrand);
 	}
 
 Exit:
@@ -1411,55 +1412,12 @@ Exit:
 /* ========================================================================= */
 static int DamageProc(PCHARINFO pChar, PCHARINFO pCharTarget, BOOL bSPAtack, BOOL bGuard, int nRate)
 {
-	int nTmp, nTmp2, nAT, nDF;
+	int nTmp, nTmp2, nWeaponDec;
 
-	/* PCの行動？ */
-	if (pChar->byAtackRate > 0) {
-		/* ジャスト(101)も威力は 100% */
-		nAT = pChar->wAT * min (pChar->byAtackRate, 100) / 100;
-	} else {
-		nAT = pChar->wAT;
-	}
-	nDF = pCharTarget->wDF;
-
-	if (bSPAtack == FALSE) {
-		/* 武器の減少値を取得 */
-		nTmp = GetWeponMin (pChar);
-		/* 減少幅を補正する */
-		nAT -= nTmp;
-	}
-
-	/* 割り算用に補正 */
-	nAT = max (nAT, 2);
-
-	/* 会心の一撃 */
-	if (bSPAtack) {
-		nAT += (nAT / 2);
-	}
-
-	/* 直接攻撃のダメージ＝{ 攻撃力 - ( 守備力/2 ) }　+-16％ */
-	nTmp = nAT - (nDF / 2);
-
-	/* ＋－の補正 */
-	if (genrand () % 2) {
-		nTmp += (nTmp * ((genrand () % 16) + 1) / 100);
-	} else {
-		nTmp -= (nTmp * ((genrand () % 16) + 1) / 100);
-	}
-	nTmp = max (nTmp, 0);
-	/* 構えている相手には半分 */
-	if (bGuard) {
-		nTmp /= 2;
-	}
-	/* 連携ボーナス */
-	nTmp = nTmp * nRate / 100;
-
-	/* ノーダメージ？(おまけの1ダメージはゲージ満タンの攻撃だけ。早撃ちの連打で削れないように) */
-	if ((nTmp == 0) && ((pChar->byAtackRate == 0) || (pChar->byAtackRate >= 100))) {
-		if ((genrand () % 100) > 66) {
-			nTmp = 1;
-		}
-	}
+	/* 武器の減少値を取得（会心の時は使わない） */
+	nWeaponDec = (bSPAtack == FALSE) ? GetWeponMin (pChar) : 0;
+	/* 計算式は BattleCalc::Damage（乱数の順番は旧実装と同じ） */
+	nTmp = BattleCalc::Damage (pChar->wAT, pChar->byAtackRate, pCharTarget->wDF, bSPAtack != FALSE, bGuard != FALSE, nRate, nWeaponDec, genrand);
 
 	AddBattleDamage (pChar, pCharTarget, nTmp);
 	nTmp2 = pCharTarget->wHP;
