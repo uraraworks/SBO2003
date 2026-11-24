@@ -1164,6 +1164,7 @@
 		align-items: center;
 		gap: 10px;
 	}
+	#sbo-gp-sheet,
 	#sbo-sheet-save {
 		background: none;
 		border: 1px solid var(--border);
@@ -2043,6 +2044,7 @@
 				<button type="button" class="sbo-btn sbo-btn-sub" data-quick-other="1">別のアカウントを追加（ID・パスワード）</button>
 				<button type="button" class="sbo-link" id="sbo-quick-add-code">復旧キーで追加</button>
 				<button type="button" class="sbo-link" id="sbo-quick-settings">アカウント設定</button>
+				<button type="button" class="sbo-link" id="sbo-gp-link2">ゲームパッド設定</button>
 				<a class="sbo-link" href="https://github.com/uraraworks/SBO2003/wiki" target="_blank" rel="noopener">取扱説明書（遊び方ガイド）</a>
 				<a class="sbo-link" href="/feedback" target="_blank" rel="noopener">ご意見箱（要望・不具合はこちら）</a>
 				<a class="sbo-link" href="/kobo" target="_blank" rel="noopener">ドット絵工房（みんなでドット絵を描く）</a>
@@ -2263,6 +2265,7 @@
 			<button type="button" data-sheet-tab="balloon"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-smile"/></svg>吹き出し</button>
 		</span>
 		<span id="sbo-sheet-tools">
+			<button id="sbo-gp-sheet" type="button" title="ゲームパッドのボタン割当を開きます">🎮 パッド</button>
 			<button id="sbo-sheet-save" type="button" title="メッセージログをテキストファイルで保存します"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-save"/></svg>ログ保存</button>
 			<button id="sbo-sheet-close" type="button" title="閉じる">✕</button>
 		</span>
@@ -3054,13 +3057,17 @@
 			refreshList();
 		});
 		openBtn.addEventListener('click', openSet);
-		var link = document.getElementById('sbo-gp-link');
-		if (link) {
-			link.addEventListener('click', function (ev) {
-				ev.preventDefault();
-				openSet();
-			});
-		}
+		/* 入口：PC はフッター、スマホはチャットシートの「🎮 パッド」とログイン前の「おかえりなさい」の画面
+		   （スマホはフッターが出ないため）。つながっている間は右上の小さなボタンからも開ける */
+		['sbo-gp-link', 'sbo-gp-link2', 'sbo-gp-sheet'].forEach(function (id) {
+			var link = document.getElementById(id);
+			if (link) {
+				link.addEventListener('click', function (ev) {
+					ev.preventDefault();
+					openSet();
+				});
+			}
+		});
 		window.addEventListener('keydown', function (ev) {
 			if (ev.key === 'Escape' && setEl.classList.contains('sbo-open')) {
 				ev.preventDefault();
