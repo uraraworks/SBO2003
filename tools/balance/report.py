@@ -3,6 +3,8 @@
 (1) 段階×職業×敵（雑魚・ボス格、1体と3体）の勝率・残HP・所要秒・判定
 (2) 職業別の成長比較 Lv1〜15（魔法使いのHPが低すぎる、という要望の調査用。種込みの別列つき）
 (3) --hp-override で職業のLv別最大HPを一時的に書き換えた時の差分（データは書き換えない）
+(目標チェック) --goal-check: 雑魚1体は1人で勝てるか・ボス格は2〜3人で勝てて1人だと厳しいかを goal.json の基準で調べ、
+    goal-check.md（外れている所と「直す候補リスト」）を出す。通常のレポートは出さない。
 
 使い方: python3 tools/balance/report.py [--simdata simdata.json] [--out report.md] [--runs 1000] [--seed 1]
                                          [--hp-override 魔法使い:1=14,2=18,...] [--refresh] [--only 1|2]
@@ -105,25 +107,34 @@ class World:
 ESKILL_ON = True    # --no-enemy-skills で False
 
 
-def scen_row(p, e, count, dist=None, nobuff=False, eskill=None):
-    """battlesim の 1 行（名前以外 24 列）。nobuff=True はプレイヤーが特技を使わない（通常攻撃のみ）。
-    eskill=False は敵の特技を入れない（特技を入れる前の結果を出す用）"""
+def pl_cols(p, nobuff=False):
+    """プレイヤー 14 列（Lv, HP, Mana, 攻撃力, 守備力, 素早さ, 武器byMin, 回復3, 攻撃特技3, AT型）"""
+    hm, ha, ht = (0, 0, 0) if nobuff else (p['hm'], p['ha'], p['ht'])
+    am, aa, at_ = (0, 0, 0) if nobuff else (p['am'], p['aa'], p['at_'])
+    return [p['lv'], p['hp'], 0 if nobuff else p['mana'], p['at'], p['df'], p['dex'], p['wmin'],
+            hm, ha, ht, am, aa, at_, p['aisat']]
+
+
+def scen_row(p, e, count, dist=None, nobuff=False, eskill=None, allies=None):
+    """battlesim の 1 行（名前以外 24 列＋敵の特技）。nobuff=True はプレイヤーが特技を使わない（通常攻撃のみ）。
+    eskill=False は敵の特技を入れない（特技を入れる前の結果を出す用）。
+    allies: 追加の味方（プレイヤー dict のリスト。p が先頭＝前衛）。あれば 26 列目に付ける"""
     moves = 1 if e['npcType'] == 13 else 0
     if dist is None:
         dist = max(2, e['searchCx']) if moves else 3
-    hm, ha, ht = (0, 0, 0) if nobuff else (p['hm'], p['ha'], p['ht'])
-    am, aa, at_ = (0, 0, 0) if nobuff else (p['am'], p['aa'], p['at_'])
-    cols = [p['lv'], p['hp'], 0 if nobuff else p['mana'], p['at'], p['df'], p['dex'], p['wmin'],
-            hm, ha, ht, am, aa, at_, p['aisat'],
-            e['hp'], e['pw'], e['st'] // 2, e['dex'], count, dist, moves, e['searchCx'], e.get('moveX') or 20]
+    cols = pl_cols(p, nobuff) + [e['hp'], e['pw'], e['st'] // 2, e['dex'], count, dist, moves, e['searchCx'], e.get('moveX') or 20]
     sk = enemyskill.skill_column(e)[0] if (ESKILL_ON if eskill is None else eskill) else '-'
-    return '\t'.join(str(int(c)) for c in cols) + '\t' + sk
+    row = '\t'.join(str(int(c)) for c in cols) + '\t' + sk
+    if allies:
+        row += '\t' + '|'.join(','.join(str(int(c)) for c in pl_cols(a, nobuff)) for a in allies)
+    return row
 
 
 # ---------------------------------------------------------------- battlesim を 1 プロセスで回す
 class Batch:
-    def __init__(self, exe, runs, seed):
+    def __init__(self, exe, runs, seed, rule=0, renkei=1):
         self.exe, self.runs, self.seed = exe, runs, seed
+        self.rule, self.renkei = rule, renkei
         self.rows = {}      # 行の中身 → 結果（同じ行は 1 回だけ計算する）
 
     def add(self, row):
@@ -131,9 +142,11 @@ class Batch:
         return row
 
     def run(self):
-        keys = list(self.rows)
+        keys = [k for k, v in self.rows.items() if v is None]    # まだ計算していない行だけ
+        if not keys:
+            return
         inp = ''.join('%d\t%s\n' % (i, k) for i, k in enumerate(keys))
-        r = subprocess.run([self.exe, str(self.seed), str(self.runs)], input=inp, capture_output=True, text=True)
+        r = subprocess.run([self.exe, str(self.seed), str(self.runs), str(self.rule), str(self.renkei)], input=inp, capture_output=True, text=True)
         if r.returncode != 0:
             raise SystemExit('error: battlesim 失敗: ' + r.stderr.strip())
         lines = r.stdout.strip().split('\n')[1:]
@@ -141,7 +154,7 @@ class Batch:
         for k, ln in zip(keys, lines):
             c = ln.split('\t')
             self.rows[k] = dict(win=float(c[1]) / 100, hp=float(c[2]) / 100, sec=float(c[3]), heal=float(c[4]), v=c[5],
-                                em=float(c[6]), eh=float(c[7]))
+                                em=float(c[6]), eh=float(c[7]), dead=float(c[8]) if len(c) > 8 else 0.0)
 
     def __getitem__(self, row):
         return self.rows[row]
@@ -487,6 +500,287 @@ def skills_md(w, batch, reqA, reqB, stages):
     return '\n'.join(out)
 
 
+# ---------------------------------------------------------------- 目標チェック（--goal-check）
+def _scale_player(p, hp=1.0, df=1.0, at=1.0):
+    q = dict(p)
+    q['hp'] = max(1, int(round(p['hp'] * hp))); q['df'] = int(round(p['df'] * df))
+    q['at'] = int(round(p['at'] * at)); q['aa'] = int(round(p['aa'] * at))
+    return q
+
+
+def _scale_enemy(e, pw=1.0, hp=1.0):
+    return dict(e, pw=int(round(e['pw'] * pw)), hp=max(1, int(round(e['hp'] * hp))))
+
+
+def _factors(cfg):
+    """見立て用の 1 項目ずつの変更。(名前, 自分への変換, 敵への変換, 敵の特技を外すか)"""
+    up, dn = cfg['sensitivity']['up'], cfg['sensitivity']['down']
+    return [('HP×%g' % up, lambda p: _scale_player(p, hp=up), None, False),
+            ('守備力×%g' % up, lambda p: _scale_player(p, df=up), None, False),
+            ('攻撃力×%g' % up, lambda p: _scale_player(p, at=up), None, False),
+            ('敵の攻撃力×%g' % dn, None, lambda e: _scale_enemy(e, pw=dn), False),
+            ('敵のHP×%g' % dn, None, lambda e: _scale_enemy(e, hp=dn), False),
+            ('敵の特技なし', None, None, True)]
+
+
+def _factors_down(cfg):
+    """（簡単すぎる所用）1 項目ずつ弱める／敵を強める"""
+    up, dn = cfg['sensitivity']['up'], cfg['sensitivity']['down']
+    return [('HP×%g' % dn, lambda p: _scale_player(p, hp=dn), None, False),
+            ('守備力×%g' % dn, lambda p: _scale_player(p, df=dn), None, False),
+            ('攻撃力×%g' % dn, lambda p: _scale_player(p, at=dn), None, False),
+            ('敵の攻撃力×%g' % up, None, lambda e: _scale_enemy(e, pw=up), False),
+            ('敵のHP×%g' % up, None, lambda e: _scale_enemy(e, hp=up), False)]
+
+
+def _sens_rows(batch, ps, e, cnt, factors):
+    """ps: 味方 dict のリスト。各変更後の行を登録して [(名前, 行)] を返す"""
+    out = []
+    for name, fp, fe, noskill in factors:
+        qs = [fp(p) for p in ps] if fp else ps
+        qe = fe(e) if fe else e
+        if noskill and enemyskill.skill_column(e)[0] == '-':
+            continue
+        out.append((name, batch.add(scen_row(qs[0], qe, cnt, eskill=False if noskill else None, allies=qs[1:] or None))))
+    return out
+
+
+def _sens_text(batch, base_win, rows, improve=True, min_delta=.05):
+    ds = sorted(((batch[r]['win'] - base_win) * (1 if improve else -1), n) for n, r in rows)
+    ds.sort(reverse=True)
+    top = [(d, n) for d, n in ds if d >= min_delta][:3]
+    if not top:
+        return '1項目だけ動かしても勝率は %d%%pt 以上は変わらない（複数の要因が重なっている）' % round(min_delta * 100)
+    return '、'.join('%s で %+.0fpt' % (n, d * 100) for d, n in top)
+
+
+def _facts_solo(w, sk, job, p, e):
+    """自分のHP・守備・攻撃が他職の中央値の何%か、敵の特技の有無"""
+    lv = w.chk[sk]['lv']
+    others = [w.player(j, lv, sk) for j in w.jobs if j != job]
+    def rel(k):
+        m = median(o[k] for o in others)
+        return (p[k] / m) if m else 1.0
+    # 1 発の期待ダメージ（守備・攻撃の効き）は式の簡易版で比べる
+    dmg_in = max(e['pw'] - p['df'] // 2, 0)
+    dmg_in_o = median(max(e['pw'] - o['df'] // 2, 0) for o in others)
+    dmg_out = max(p['at'] - e['st'] // 4, 0)
+    dmg_out_o = median(max(o['at'] - e['st'] // 4, 0) for o in others)
+    parts = ['敵HP%d・攻撃%d' % (e['hp'], e['pw']), 'HP%d（他職中央値の%d%%）' % (p['hp'], rel('hp') * 100),
+             '敵の1発%d（他職中央値%d）' % (dmg_in, dmg_in_o),
+             '自分の1発%d（他職中央値%d）' % (dmg_out, dmg_out_o)]
+    if p['am'] or p['hm']:
+        parts.append('特技: %s%s' % ('攻撃(Mana%d)' % p['am'] if p['am'] else '', '回復(Mana%d)' % p['hm'] if p['hm'] else ''))
+    else:
+        parts.append('特技なし')
+    if enemyskill.skill_column(e)[0] != '-':
+        parts.append('敵は特技あり')
+    return '、'.join(parts)
+
+
+def _facts_party(ps, e):
+    hp = sum(p['hp'] for p in ps)
+    dmg_in = [max(e['pw'] - p['df'] // 2, 0) for p in ps]
+    dps_in = (sum(dmg_in) / len(ps)) / (BattleTurn(e) / 1000.0)      # 狙われる人は平均的とみなす
+    dmg_out = sum(max(p['at'] - e['st'] // 4, 0) for p in ps)
+    turn = lambda p: 1000 + (2000 - (2000 * max(p['dex'] * 100 // 255, 1)) // 100)
+    dps_out = sum(max(p['at'] - e['st'] // 4, 0) / (turn(p) / 1000.0) for p in ps)
+    wipe = hp / dps_in if dps_in > 0 else float('inf')
+    kill = e['hp'] / dps_out if dps_out > 0 else float('inf')
+    heal = sum(1 for p in ps if p['hm'])
+    t = '全員のHP合計%d・敵の通常攻撃だけなら全滅まで約%.0f秒／通常攻撃だけで倒すまで約%.0f秒（敵HP%d）' % (hp, wipe, kill, e['hp'])
+    if heal:
+        t += '・回復役%d人' % heal
+    if enemyskill.skill_column(e)[0] != '-':
+        t += '・敵は特技あり'
+    return t
+
+
+def BattleTurn(e):
+    """敵の行動間隔(ms)（BattleCalc::EnemyTurnTime と同じ）"""
+    step = max(e['dex'] * 100 // 255, 1)
+    return max(1000 + (4000 - 4000 * step // 100), 1)
+
+
+def goal_check(d, w, batch, cfg, out_path, a):
+    th1, thp, ths = cfg['zako_solo_win_min'], cfg['boss_party_win_min'], cfg['boss_solo_win_max']
+    stages = [k for k in cfg['stages'] if k in w.chk]
+    # 設計上「ボス格」として置かれている敵（HP・経験値の基準には届かないもの）は、目標チェックだけボス格として扱う
+    boss_names = set(cfg.get('boss_override', []))
+    # 「宝物役」（硬く素早いが倒すと得をする敵）は目標1の対象外。ボス格にも数えない（2026-11-24）
+    treasure_names = set(cfg.get('treasure_override', []))
+
+    def goal_enemies(sk, group):
+        zs = [e for e in w.enemies(sk, 'zako') if e['name'] not in boss_names and e['name'] not in treasure_names]
+        bs = list(w.enemies(sk, 'boss'))
+        if group == 'zako':
+            return zs
+        have = {e['name'] for e in bs}
+        bs += [e for e in w.enemies(sk, 'zako') if e['name'] in boss_names and e['name'] not in have]
+        return bs
+    sw = lambda sk: cfg['stage_weight'].get(str(min(w.stage[sk]['order'], 6)), 1)
+    comps = [(int(n), c) for n, cl in sorted(cfg['parties'].items()) for c in cl]
+    fx = _factors(cfg); fxd = _factors_down(cfg)
+    md_delta = cfg['sensitivity']['min_delta']
+    # ---- 登録 ----
+    z_req, b_solo, b_party = {}, {}, {}
+    for sk in stages:
+        lv = w.chk[sk]['lv']
+        pl = {j: w.player(j, lv, sk) for j in w.jobs}
+        for job in w.jobs:
+            z_req[(sk, job)] = [(e, batch.add(scen_row(pl[job], e, 1))) for e in goal_enemies(sk, 'zako')]
+        for e in goal_enemies(sk, 'boss'):
+            for job in w.jobs:
+                b_solo[(sk, e['name'], job)] = batch.add(scen_row(pl[job], e, 1))
+            for n, c in comps:
+                ps = [pl[j] for j in c]
+                b_party[(sk, e['name'], tuple(c))] = batch.add(scen_row(ps[0], e, 1, allies=ps[1:]))
+    batch.run()
+    # ---- 目標1 ----
+    g1 = []     # (重さ, 外れ幅, 段階, 職業, 最悪の敵, 失敗した敵数, 敵数)
+    z_cell = {}
+    for (sk, job), lst in z_req.items():
+        ws = [(batch[r]['win'], e) for e, r in lst]
+        if not ws:
+            continue
+        worst = min(ws, key=lambda x: x[0])
+        mean_w = mean(x[0] for x in ws)
+        bad = [x for x in ws if x[0] < th1]
+        z_cell[(sk, job)] = (mean_w, worst, len(bad), len(ws))
+        if bad:
+            gap = th1 - worst[0]
+            g1.append(dict(w=gap * 100 * sw(sk), gap=gap, sk=sk, job=job, e=worst[1], win=worst[0], nbad=len(bad), n=len(ws),
+                           bads=sorted(bad, key=lambda x: x[0])))
+    # ---- 目標3 ----
+    g3 = []
+    bosses = [(sk, e) for sk in stages for e in goal_enemies(sk, 'boss')]
+    for sk, e in bosses:
+        solo = {job: batch[b_solo[(sk, e['name'], job)]]['win'] for job in w.jobs}
+        pw = {(n, tuple(c)): batch[b_party[(sk, e['name'], tuple(c))]]['win'] for n, c in comps}
+        for size in sorted({n for n, _ in comps}):
+            sub = {k: v for k, v in pw.items() if k[0] == size}
+            med = median(sub.values())
+            if med < thp:
+                gap = thp - med
+                g3.append(dict(kind='party', size=size, w=gap * 100 * sw(sk), gap=gap, sk=sk, e=e, win=med, best=max(sub.values()),
+                               solo=solo, pw=sub))
+        for job, v in solo.items():
+            # 序盤（段階1・2）のボスは前衛なら1人で勝ててもよい（2026-11-24）。1人の目安は solo_check_from_order 以降だけ見る
+            if v > ths and w.stage[sk]['order'] >= cfg.get('boss_solo_check_from_order', 1):
+                gap = v - ths
+                g3.append(dict(kind='solo', w=gap * 100 * sw(sk), gap=gap, sk=sk, e=e, job=job, win=v, solo=solo, pw=pw))
+    # ---- 見立て（1項目ずつ動かす） ----
+    for g in g1:
+        lv = w.chk[g['sk']]['lv']
+        p = w.player(g['job'], lv, g['sk'])
+        g['facts'] = _facts_solo(w, g['sk'], g['job'], p, g['e'])
+        g['sens'] = _sens_rows(batch, [p], g['e'], 1, fx)
+    for g in g3:
+        lv = w.chk[g['sk']]['lv']
+        if g['kind'] == 'solo':
+            p = w.player(g['job'], lv, g['sk'])
+            g['facts'] = _facts_solo(w, g['sk'], g['job'], p, g['e'])
+            g['sens'] = _sens_rows(batch, [p], g['e'], 1, fxd)
+        else:
+            mid = sorted(g['pw'].items(), key=lambda kv: kv[1])[len(g['pw']) // 2][0]
+            g['mid'] = mid
+            ps = [w.player(j, lv, g['sk']) for j in mid[1]]
+            g['facts'] = _facts_party(ps, g['e'])
+            g['sens'] = _sens_rows(batch, ps, g['e'], 1, fx)
+    batch.run()
+    for g in g1:
+        g['why'] = _sens_text(batch, g['win'], g['sens'], True, md_delta)
+    for g in g3:
+        if g['kind'] == 'solo':
+            g['why'] = _sens_text(batch, g['win'], g['sens'], False, md_delta)
+        else:
+            g['why'] = _sens_text(batch, g['pw'][g['mid']], g['sens'], True, md_delta)
+    # ---- 書き出し ----
+    cn = lambda c: '＋'.join(c)
+    md = ['# SBO2003 目標チェック（goal-check）\n',
+          'データ: %s（%s 時点の本番）／ battlesim（試行 %d 回・seed %d）／ 標準プレイヤーは段階の目安Lv・店売り最強装備（種・結晶なし）。\n'
+          % (os.path.basename(a.simdata), d.get('at', '?'), a.runs, a.seed),
+          '## 目標と判定ライン（tools/balance/goal.json）\n',
+          '- 目標1: 雑魚1体は、全職業が1人で「普通に倒せる」。合格ライン＝**雑魚1体の勝率 %d%% 以上**（敵の種類ごと）。' % round(th1 * 100),
+          '- 目標3: ボス格は2〜3人で挑む想定。**2人・3人それぞれの代表編成で勝率 %d%% 以上（人数ごとの編成の中央値）**、**1人なら %d%% 以下**（職業ごと。0%% は目標どおり）。'
+          % (round(thp * 100), round(ths * 100)),
+          '- 代表編成: ' + ' ／ '.join('%d人 %s' % (n, cn(c)) for n, c in comps) + '（先頭が前衛。全員 段階の目安Lv）。',
+          '- シミュレータの簡易ルール（詳しくは README）: 敵は%s、回復特技の持ち主は仲間のHPが40%%以下で回復、連携130%%（%s）。回復道具・ジャスト・遠隔・状態異常は未対応。'
+          % ('並び順の先頭（前衛）を狙い、倒れたら次の人' if batch.rule == 0 else '狙い直す時に一番HPが低い人を狙い',
+             '2秒以内に別の人が同じ敵へ当てた時だけ' if batch.renkei else '無効'),
+          '- 重さ ＝ 外れ幅(pt) × 段階の重み（%s）。序盤ほど重い。'
+          % '、'.join('段階%s=%s' % (k, v) for k, v in sorted(cfg['stage_weight'].items())),
+          '']
+    # 表1
+    md.append('## 目標1: 雑魚1体を1人で（勝率 平均／最低。%d%% 未満は **太字**）\n' % round(th1 * 100))
+    rows = []
+    for sk in stages:
+        r = [w.chk[sk]['label'] + '(Lv%d)' % w.chk[sk]['lv']]
+        for job in w.jobs:
+            m, (ww, e), nb, n = z_cell[(sk, job)]
+            c = '%s／%s' % (pct(m), pct(ww))
+            r.append('**%s**' % c if nb else c)
+        rows.append(r)
+    md.append(table(['段階'] + w.jobs, rows))
+    md.append('')
+    md.append('外れ（%d 組 / %d 組）: ' % (len(g1), len(z_cell)) + ('、'.join('%s×%s' % (w.chk[g['sk']]['label'], g['job']) for g in sorted(g1, key=lambda g: -g['w'])) or 'なし') + '\n')
+    # 表3
+    md.append('## 目標3: ボス格を 1人／2人／3人で（勝率）\n')
+    for sk, e in bosses:
+        solo = next((g['solo'] for g in g3 if g['sk'] == sk and g['e'] is e), None)
+        solo = {job: batch[b_solo[(sk, e['name'], job)]]['win'] for job in w.jobs}
+        pw = {(n, tuple(c)): batch[b_party[(sk, e['name'], tuple(c))]]['win'] for n, c in comps}
+        md.append('### %s %s（HP%d・攻撃%d）\n' % (w.chk[sk]['label'], e['name'], e['hp'], next((x['pw'] for x in d['enemies'] if x['name'] == e['name']), 0)))
+        mk = lambda v, ok: v if ok else '**%s**' % v
+        if w.stage[sk]['order'] >= cfg.get('boss_solo_check_from_order', 1):
+            md.append('1人（目安 %d%% 以下）: ' % round(ths * 100) + '、'.join('%s %s' % (j, mk(pct(v), v <= ths)) for j, v in solo.items()) + '\n')
+        else:
+            md.append('1人（序盤のボスなので目安なし。前衛なら1人で勝ててよい）: ' + '、'.join('%s %s' % (j, pct(v)) for j, v in solo.items()) + '\n')
+        rows = [['%d人' % n, cn(c), mk(pct(v), v >= thp)] for (n, c), v in pw.items()]
+        md.append(table(['人数', '編成', '勝率（目安 %d%% 以上）' % round(thp * 100)], rows))
+        for n in sorted({n for n, _ in comps}):
+            md.append('\n%d人の中央値 %s' % (n, pct(median(v for (k, _), v in pw.items() if k == n))))
+        md.append('')
+    md.append('外れ（2人または3人の代表編成で勝てない %d 件、1人で簡単に勝てる 職×ボス %d 件）。\n' % (
+        sum(1 for g in g3 if g['kind'] == 'party'), sum(1 for g in g3 if g['kind'] == 'solo')))
+    # 直す候補リスト
+    cand = [dict(g, k='目標1') for g in g1] + [dict(g, k='目標3') for g in g3]
+    cand.sort(key=lambda g: -g['w'])
+    md.append('## 直す候補リスト（重さ順）\n')
+    md.append('重さ＝外れ幅(pt)×段階の重み。「見立て」は、その組の標準プレイヤー（編成は中央の勝率のもの）で 1 項目だけ動かした時の勝率の変化（%d%%pt 以上だけ、効く順）と、数字の事実。'
+              '乱数のばらつき（±3pt 程度）があるので目安。\n' % round(md_delta * 100))
+    from collections import Counter
+    cnt = Counter()
+    for g in cand:
+        if g['k'] == '目標3' and g['kind'] == 'solo':
+            continue
+        first = g['why'].split(' で ')[0] if ' で ' in g['why'] else '（複合）'
+        cnt[first.split('、')[0].split('×')[0]] += 1
+    if cnt:
+        md.append('見立ての 1 位に出た要因の数（不足側のみ）: ' + '、'.join('%s %d件' % kv for kv in cnt.most_common()) + '。\n')
+    rows = []
+    for i, g in enumerate(cand, 1):
+        if g['k'] == '目標1':
+            what = '%s×%s: 雑魚1体の勝率 最低%s（%s）。%d/%d 種が %d%% 未満' % (w.chk[g['sk']]['label'], g['job'], pct(g['win']), g['e']['name'], g['nbad'], g['n'], round(th1 * 100))
+            gapt = '%.0fpt 不足' % (g['gap'] * 100)
+        elif g['kind'] == 'party':
+            what = '%s %s: %d人でも勝てない（代表編成の中央値%s、最良%s）' % (w.chk[g['sk']]['label'], g['e']['name'], g['size'], pct(g['win']), pct(g['best']))
+            gapt = '%.0fpt 不足' % (g['gap'] * 100)
+        else:
+            what = '%s %s: %s が1人で勝率%s（簡単すぎ）' % (w.chk[g['sk']]['label'], g['e']['name'], g['job'], pct(g['win']))
+            gapt = '%.0fpt 超過' % (g['gap'] * 100)
+        why = g['why'] + '。' + g['facts']
+        if g['k'] == '目標3' and g['kind'] == 'party':
+            why = '（%s）' % cn(g['mid'][1]) + why
+        elif g['k'] == '目標3':
+            why = '（効いている要因: ' + g['why'] + '）。' + g['facts']
+        rows.append([i, g['k'], '%.0f' % g['w'], what, gapt, why])
+    md.append(table(['順', '目標', '重さ', '外れている所', '外れ幅', '見立て'], rows) if rows else '外れている所はありません。')
+    md.append('')
+    open(out_path, 'w', encoding='utf-8').write('\n'.join(md) + '\n')
+    print('書き出し: %s（目標1の外れ %d 組、目標3の外れ %d 件）' % (out_path, len(g1), len(g3)))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--simdata', default=os.path.join(WORK, 'simdata.json'))
@@ -498,6 +792,11 @@ def main():
     ap.add_argument('--only', choices=['1', '2'], help='(1) か (2) だけ出す')
     ap.add_argument('--no-enemy-skills', action='store_true', help='敵の特技を入れない（通常攻撃のみ。特技を入れる前の数字）')
     ap.add_argument('--exe', default='/tmp/battlesim')
+    ap.add_argument('--goal-check', action='store_true', help='目標チェック（goal-check.md）だけを出す')
+    ap.add_argument('--goal', default=os.path.join(HERE, 'goal.json'), help='目標チェックの基準（既定 tools/balance/goal.json）')
+    ap.add_argument('--goal-out', default=os.path.join(WORK, 'goal-check.md'))
+    ap.add_argument('--target-rule', type=int, choices=[0, 1], default=0, help='敵の狙い方 0=並び順の先頭（前衛）/1=一番HPが低い味方')
+    ap.add_argument('--no-renkei', action='store_true', help='連携ボーナスを入れない')
     ap.add_argument('--detail', help='(1) の敵ごとの結果を TSV に書く')
     a = ap.parse_args()
     global ESKILL_ON
@@ -512,7 +811,10 @@ def main():
     w1 = World(d, hpo) if hpo else None
     stages = [c['key'] for c in d['checks']]
     lvs = list(range(1, 16))
-    batch = Batch(exe, a.runs, a.seed)
+    batch = Batch(exe, a.runs, a.seed, a.target_rule, 0 if a.no_renkei else 1)
+    if a.goal_check:
+        goal_check(d, w0, batch, json.load(open(a.goal, encoding='utf-8')), a.goal_out, a)
+        return
     req1_0 = part1_requests(w0, batch, stages) if a.only != '2' else None
     has_sk = ESKILL_ON and any(enemyskill.skill_column(e)[0] != '-' for e in d['enemies'])
     req1_B = part1_requests(w0, batch, stages, eskill=False) if (req1_0 and has_sk) else None
