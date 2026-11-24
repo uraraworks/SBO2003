@@ -663,7 +663,8 @@ def goal_check(d, w, batch, cfg, out_path, a):
                 g3.append(dict(kind='party', size=size, w=gap * 100 * sw(sk), gap=gap, sk=sk, e=e, win=med, best=max(sub.values()),
                                solo=solo, pw=sub))
         for job, v in solo.items():
-            if v > ths:
+            # 序盤（段階1・2）のボスは前衛なら1人で勝ててもよい（2026-11-24）。1人の目安は solo_check_from_order 以降だけ見る
+            if v > ths and w.stage[sk]['order'] >= cfg.get('boss_solo_check_from_order', 1):
                 gap = v - ths
                 g3.append(dict(kind='solo', w=gap * 100 * sw(sk), gap=gap, sk=sk, e=e, job=job, win=v, solo=solo, pw=pw))
     # ---- 見立て（1項目ずつ動かす） ----
@@ -729,7 +730,10 @@ def goal_check(d, w, batch, cfg, out_path, a):
         pw = {(n, tuple(c)): batch[b_party[(sk, e['name'], tuple(c))]]['win'] for n, c in comps}
         md.append('### %s %s（HP%d・攻撃%d）\n' % (w.chk[sk]['label'], e['name'], e['hp'], next((x['pw'] for x in d['enemies'] if x['name'] == e['name']), 0)))
         mk = lambda v, ok: v if ok else '**%s**' % v
-        md.append('1人（目安 %d%% 以下）: ' % round(ths * 100) + '、'.join('%s %s' % (j, mk(pct(v), v <= ths)) for j, v in solo.items()) + '\n')
+        if w.stage[sk]['order'] >= cfg.get('boss_solo_check_from_order', 1):
+            md.append('1人（目安 %d%% 以下）: ' % round(ths * 100) + '、'.join('%s %s' % (j, mk(pct(v), v <= ths)) for j, v in solo.items()) + '\n')
+        else:
+            md.append('1人（序盤のボスなので目安なし。前衛なら1人で勝ててよい）: ' + '、'.join('%s %s' % (j, pct(v)) for j, v in solo.items()) + '\n')
         rows = [['%d人' % n, cn(c), mk(pct(v), v >= thp)] for (n, c), v in pw.items()]
         md.append(table(['人数', '編成', '勝率（目安 %d%% 以上）' % round(thp * 100)], rows))
         for n in sorted({n for n, _ in comps}):

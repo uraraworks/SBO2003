@@ -81,7 +81,7 @@ python3 tools/balance/report.py [--simdata simdata.json] [--out report.md] [--ru
 python3 tools/balance/report.py --goal-check [--goal tools/balance/goal.json] [--goal-out goal-check.md] [--runs 1000] [--seed 1]
     [--target-rule 0|1] [--no-renkei] [--simdata simdata.json]
 ```
-- 基準・パーティ編成・段階の重みは `tools/balance/goal.json`（`zako_solo_win_min` / `boss_party_win_min` / `boss_solo_win_max` / `parties` / `stage_weight` / `sensitivity` / `boss_override`＝設計上のボスなので目標チェックだけボス格扱いにする敵の名前）。暫定の数字なのでここだけ書き換えて再実行する。既定の出力は `/mnt/project-files/_work/sbo2003-balance-sim/goal-check.md`。通常のレポートは出ない（`--goal-check` の時はこちらだけ）。数秒で終わる。
+- 基準・パーティ編成・段階の重みは `tools/balance/goal.json`（`zako_solo_win_min` / `boss_party_win_min` / `boss_solo_win_max` / `parties` / `stage_weight` / `sensitivity` / `boss_solo_check_from_order`＝1人の目安を見る段階（3以降）/ `boss_override`＝設計上のボスなので目標チェックだけボス格扱いにする敵の名前）。暫定の数字なのでここだけ書き換えて再実行する。既定の出力は `/mnt/project-files/_work/sbo2003-balance-sim/goal-check.md`。通常のレポートは出ない（`--goal-check` の時はこちらだけ）。数秒で終わる。
 - 中身: 目標1の表（段階×職業、雑魚の勝率の平均／最低）、目標3の表（ボス格ごとに 1人×8職と代表編成の勝率）、外れの一覧、末尾に「直す候補リスト」（重さ＝外れ幅(pt)×段階の重み。重みは序盤ほど重い）。
 - 判定の単位: 目標1は敵の種類ごと（1 種でも基準未満なら、その 段階×職業 が外れ。表には最低勝率を出す）。目標3は 2人・3人それぞれの代表編成の勝率の中央値が基準未満なら「勝てない」、1人は職業ごとに基準超過なら「簡単すぎ」。
 - 「見立て」: 外れた組の標準プレイヤー（編成は人数別の中央の勝率のもの）で、1 項目だけ動かして再計算した勝率の変化（自分のHP×1.5・守備力×1.5・攻撃力×1.5（攻撃特技も）、敵の攻撃力×0.7・HP×0.7、敵の特技なし。簡単すぎの場合は逆向き）の上位 3 つ（5pt 以上）。「敵の特技なし」が効くなら敵の特技（回復・魔法）、「攻撃力」が効くなら火力不足、…と読む。乱数のばらつき（1000回で ±3pt 程度）がある。HP・守備・攻撃・特技の数字の事実（他職中央値との比）も添える。
