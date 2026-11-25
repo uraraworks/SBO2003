@@ -239,11 +239,11 @@ static inline bool PuzzleTryMove(const PuzzleBoard &Board, int nKind, int nRot, 
 	return true;
 }
 
-/* 右に回せるか。壁際は左右にずらして入れる（壁けり）。O は回しても同じなので false。回せたら *pnRot・*pnX を更新して true */
-static inline bool PuzzleTryRotate(const PuzzleBoard &Board, int nKind, int *pnRot, int *pnX, int nY)
+/* 回せるか（nDir=1 で右回し、-1 で左回し）。壁際は左右にずらして入れる（壁けり）。O は回しても同じなので false。回せたら *pnRot・*pnX を更新して true */
+static inline bool PuzzleTryRotate(const PuzzleBoard &Board, int nKind, int *pnRot, int *pnX, int nY, int nDir = 1)
 {
 	static const int anKick[5] = { 0, -1, 1, -2, 2 };
-	int nNewRot = (*pnRot + 1) & 3, i;
+	int nNewRot = (*pnRot + ((nDir < 0) ? 3 : 1)) & 3, i;
 
 	if (nKind == 1) {
 		return false;
@@ -372,10 +372,10 @@ struct PuzzleGame {
 		return PUZZLE_CHG_PIECE;
 	}
 
-	/* 右に回す。壁際は左右にずらして入れる（壁けり）。回せたら PUZZLE_CHG_PIECE */
-	int Rotate(void)
+	/* 回す（nDir=1 で右回し、-1 で左回し）。壁際は左右にずらして入れる（壁けり）。回せたら PUZZLE_CHG_PIECE */
+	int Rotate(int nDir = 1)
 	{
-		if (bOver || !PuzzleTryRotate (Board, nKind, &nRot, &nX, nY)) {
+		if (bOver || !PuzzleTryRotate (Board, nKind, &nRot, &nX, nY, nDir)) {
 			return 0;
 		}
 		return PUZZLE_CHG_PIECE;

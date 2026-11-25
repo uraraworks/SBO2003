@@ -2500,9 +2500,11 @@ puzzle use elsewhere seated=0 coin=1 state=0 sysmsg+1
 puzzle sit seated=1 coin=1 state+1 used=1
 puzzle busy seatedB=0 coinB=2 msg=1
 puzzle nowalk moved=0
-puzzle keys packets=3 seated=1
+puzzle keys packets=4 seated=1
 puzzle ack last=1
-puzzle gravity early=0 later=1
+puzzle burst packets=12 ack last=1
+puzzle rotate left ok=1
+puzzle gravity early=1 later=1
 puzzle otherkey packets=0
 puzzle over seated=0 score=1 state=0
 puzzle sitB seated=1 coinB=0
@@ -2519,6 +2521,7 @@ vs spectate far packets=4
 vs spectate far key packets=0
 vs spectate back packets=1
 vs spectate key packets=1
+puzzle ask shown seated=0 answer=1
 vs start seated=11 vs=11 coinB=0 msg=11
 vs start reset board=0 score=0 sameOrder=1
 vs start packets A=2 B=2 C=2
@@ -2532,12 +2535,17 @@ vs lose keep score=1 pending=0 packetsA=1 packetsC=1
 vs lose gameover spectator=1 idle=1 board=1 winner=1
 vs lose gameover before=1 after=0 idle=1 board=1 winner=0
 vs winner continues seated=1 packets=1
+puzzle ask shown seated=0 answer=1
 vs esc again=1 seatedB=0 seatedA=1 vsA=0 msgA+1
+puzzle ask shown seated=0 answer=1
 vs logout again=1 seatedB=0 seatedA=1 vsA=0 msgA+1 packetsB=0
+puzzle ask shown seated=0 answer=1
 vs away again=1 seatedB=0 seatedA=1 vsA=0
 vs otherpair seated=11 vs=00
 vs nopair seated=11 vs=00
 vs nocoin seatedB=0 vsA=0
+puzzle ask shown seated=0 answer=0
+vs decline seatedB=1 vs=00 coinB=0
 vs spectate leave packets=1 seats=0
 vs done seats=0
 == AV3. Falling puzzle idle table ==
@@ -2573,13 +2581,18 @@ insert notcell seatedB=0 coinB=1
 insert free near=1 seatedNear=0 back=7 seated=1 idleAfter=0
 insert free esc seated=0 idle=7
 insert sit nocoin=0 still=3 seated=1 A:idle=0 B:idle=0
+puzzle ask shown seated=0 answer=1
 streak vs=11 start=0
 streak win1 A=1 B=0 seatedB=0 msgStreak=0 notice=1 pkt=1
 streak rec scores=1 streaks=0
+puzzle ask shown seated=0 answer=1
 streak win2 A=2 msgA=1 msgB=1 msgNew=1 pktC=2 pktA=2
 streak rec scoreB=1500 n=1 streaks=0
+puzzle ask shown seated=0 answer=1
 streak lose A seated=0 streakA=0 B=1 recStreak=1(A:2 20261125) recScore=A:5000,B:1500
 streak esc recStreak=1 sitAgain=0
+puzzle ask shown seated=0 answer=1
+puzzle ask shown seated=0 answer=1
 streak logout B=2 recStreak=2 first=A second=B values=2,2 seatedB=0
 solo over seatedA=0 scores=2 top=5000
 board talk A=1 B=0 head=1 streakHead=1 name=1 cut=1 noat0=1

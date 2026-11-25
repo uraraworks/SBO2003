@@ -58,9 +58,11 @@
 #include <time.h>
 #include <string>
 #include <vector>
+#include <map>
 
 #define PUZZLE_NOCHAR			((DWORD)-1)
-#define PUZZLE_KEY_MIN_MS		(25)		/* キー入力の最短間隔（これより速い入力は捨てる。連打・改造対策） */
+#define PUZZLE_KEY_BUCKET		(8)			/* キー入力のバケツの大きさ（回線が遅れてまとめて届いたキーを捨てないための余裕。連打・改造対策） */
+#define PUZZLE_KEY_FILL_MS		(25)		/* バケツに 1 個たまる時間（平均してこれより速い入力は捨てる） */
 #define PUZZLE_NEAR				(3)			/* 座る場所のマスからこれ以上離れたら席を立たせる（マス） */
 #define PUZZLE_WATCH_MS			(250)		/* 台の近くにいる人（観戦）を見直す間隔(ms) */
 /* 盤面を送る距離（横・縦それぞれ。盤面の中心から）。盤面の一部でも画面（地図 15×15 マス）にかかる距離は、
@@ -89,7 +91,8 @@ typedef struct _PUZZLEPARAM {
 typedef struct _PUZZLESEAT {
 	DWORD		dwChar;						/* 座っているキャラのテーブルID（いなければ PUZZLE_NOCHAR） */
 	DWORD		dwPID;						/* そのキャラのプレイヤーID（テーブルIDの使い回しを見分ける） */
-	DWORD		dwLastKey;					/* 最後にキーを受けた時刻 */
+	DWORD		dwLastKey;					/* バケツを最後に計算した時刻 */
+	int			nKeyTokens;					/* バケツに残っているキーの数（PUZZLE_KEY_FILL_MS ごとに 1 個たまる） */
 	DWORD		dwAck;						/* 最後に受けたキーの連番（クライアントの先読みの差し引き用。CMDPARA_PUZZLEKEY の dwSerial） */
 	PuzzleGame	Game;						/* ゲーム */
 } PUZZLESEAT;
@@ -573,6 +576,21 @@ static void Leave(int nTable, BYTE byKind, BOOL bNotifySelf, BOOL bLost)
 	}
 }
 
+/* 席の本人だけに、今の落ち物の位置（MOVE）を dwAck 付きで返す。
+   キーを捨てた・動けなかった時に、先読みしているクライアントがすぐサーバーの位置にそろえられるようにする（1 秒後に突然戻るのを防ぐ） */
+static void SendAck(int nTable)
+{
+	PUZZLETABLE &Table = s_aTable[nTable];
+	PCHARINFO pChar = SeatChar (Table.Seat);
+	std::vector<BYTE> aBuf;
+
+	if ((pChar == NULL) || Table.bIdle) {
+		return;
+	}
+	BuildState (Table, PUZZLESTATE_MOVE, aBuf);
+	SendStateTo (Table, pChar, aBuf);
+}
+
 /* 入力・周期処理の結果を送る（変わった所だけ）。置けなくなったら負け／ゲームオーバー。
    対戦中は、固定で消したラインのお邪魔を相手の待ちに足す */
 static void SendChanged(int nTable, int nChg)
@@ -889,7 +907,40 @@ BOOL PuzzleUseItem(PCHARINFO pChar, WORD wItem)
 	return FALSE;
 }
 
-void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed)
+/* 「乱入しますか？」の問い（座ろうとした人ごとに 1 つ。答えは PuzzleAnswer。時間がたったら捨てる） */
+#define PUZZLE_ASK_TIMEOUT_MS	(30000)
+typedef struct _PUZZLEASK {
+	DWORD	dwNpc;				/* 座ろうとした台NPCのテーブルID */
+	DWORD	dwTime;				/* 問いを出した時刻 */
+	BOOL	bCoinUsed;			/* 道具のコインから座ろうとしたか */
+} PUZZLEASK;
+static std::map<DWORD, PUZZLEASK> s_mapAsk;
+
+BOOL PuzzleAnswer(PCHARINFO pChar, DWORD dwNpcTblID, BOOL bYes)
+{
+	std::map<DWORD, PUZZLEASK>::iterator it;
+	PUZZLEASK Ask;
+	PCHARINFO pNpc;
+
+	if ((pChar == NULL) || (pChar->pID == 0)) {
+		return FALSE;
+	}
+	it = s_mapAsk.find (pChar->dwTblID);
+	if ((it == s_mapAsk.end ()) || (it->second.dwNpc != dwNpcTblID)) {
+		return FALSE;
+	}
+	Ask = it->second;
+	s_mapAsk.erase (it);
+	if (((DWORD)(timeGetTime () - Ask.dwTime) > (DWORD)PUZZLE_ASK_TIMEOUT_MS) || (dwNpcTblID >= (DWORD)g_aCharInfo.GetSize ())) {
+		return TRUE;
+	}
+	pNpc = g_aCharInfo[dwNpcTblID];
+	/* 座る条件は PuzzleSit が改めて確かめる（その間に台が使われた・立つ場所を離れた時は座らない）。はい=乱入、いいえ=ひとりで */
+	PuzzleSit (pChar, pNpc, Ask.bCoinUsed, bYes ? 1 : 2);
+	return TRUE;
+}
+
+void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed, int nChoice)
 {
 	PUZZLEPARAM Param;
 	int i, nTable, nPartner = -1;
@@ -927,6 +978,24 @@ void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed)
 		if ((nPartner >= 0) && (s_aTable[nPartner].bVs || (SeatChar (s_aTable[nPartner].Seat) == NULL))) {
 			nPartner = -1;
 		}
+	}
+	/* ひとりが遊んでいる台のペアへ座る時は、乱入するか、ひとりで遊ぶかを聞く（コインは答えを受けてから取り上げる） */
+	if ((nPartner >= 0) && (nChoice == 0)) {
+		PUZZLEASK Ask;
+		char szAsk[160];
+		PCHARINFO pOther = SeatChar (s_aTable[nPartner].Seat);
+
+		Ask.dwNpc = pNpc->dwTblID;
+		Ask.dwTime = timeGetTime ();
+		Ask.bCoinUsed = bCoinUsed;
+		s_mapAsk[pChar->dwTblID] = Ask;
+		sprintf (szAsk, "%sさんが遊んでいます。乱入して対戦しますか？（「いいえ」でひとりで遊びます）@y", pOther ? pOther->szName : "だれか");
+		SendCmdTALKMSG (pChar->pID, pNpc->dwTblID, szAsk);
+		return;
+	}
+	s_mapAsk.erase (pChar->dwTblID);
+	if (nChoice == 2) {
+		nPartner = -1;		/* ひとりで遊ぶ */
 	}
 
 	/* コイン（無料の台は何も使わない）。足りなければ座らせない */
@@ -1025,21 +1094,43 @@ void PuzzleKey(PCHARINFO pChar, BYTE byKey, DWORD dwSerial)
 		Leave (nTable, PUZZLESTATE_NONE, TRUE, FALSE);
 		return;
 	}
-	/* カウントダウン中は動かせない */
+	/* カウントダウン中は動かせない（先読みしたクライアントに、取り合わなかったことを返す） */
 	if (s_aTable[nTable].bCount) {
+		SendAck (nTable);
 		return;
 	}
-	/* 速すぎる入力は捨てる */
-	if ((Seat.dwLastKey != 0) && ((DWORD)(g_dwTime - Seat.dwLastKey) < PUZZLE_KEY_MIN_MS)) {
+	/* 速すぎる入力は捨てる（バケツ方式。回線が遅れてまとまって届いたキーは、バケツの分だけ受ける） */
+	if (Seat.dwLastKey == 0) {
+		Seat.nKeyTokens = PUZZLE_KEY_BUCKET;
+		Seat.dwLastKey = g_dwTime;
+	} else {
+		DWORD dwAdd = (DWORD)(g_dwTime - Seat.dwLastKey) / PUZZLE_KEY_FILL_MS;
+
+		if ((int)dwAdd >= PUZZLE_KEY_BUCKET - Seat.nKeyTokens) {
+			Seat.nKeyTokens = PUZZLE_KEY_BUCKET;
+			Seat.dwLastKey = g_dwTime;
+		} else {
+			Seat.nKeyTokens += (int)dwAdd;
+			Seat.dwLastKey += dwAdd * PUZZLE_KEY_FILL_MS;
+		}
+	}
+	if (Seat.nKeyTokens <= 0) {
+		SendAck (nTable);
 		return;
 	}
-	Seat.dwLastKey = g_dwTime;
+	Seat.nKeyTokens --;
 	switch (byKey) {
 	case PUZZLEKEY_LEFT:	nChg = Seat.Game.Move (-1);						break;
 	case PUZZLEKEY_RIGHT:	nChg = Seat.Game.Move (1);						break;
 	case PUZZLEKEY_DOWN:	nChg = Seat.Game.Step (true, g_dwTime);			break;
-	case PUZZLEKEY_ROTATE:	nChg = Seat.Game.Rotate ();						break;
+	case PUZZLEKEY_ROTATE:	nChg = Seat.Game.Rotate (1);					break;
+	case PUZZLEKEY_ROTATE_L:	nChg = Seat.Game.Rotate (-1);				break;
 	default:				return;
+	}
+	if (nChg == 0) {
+		/* 動けなかった（クライアントの先読みと食い違った）時も、処理したことを返して先読みを直させる */
+		SendAck (nTable);
+		return;
 	}
 	SendChanged (nTable, nChg);
 }

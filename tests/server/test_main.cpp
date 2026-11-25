@@ -17696,12 +17696,31 @@ static void PuzzlePlace(PCHARINFO p, PCHARINFO pNpc, DWORD dwX, DWORD dwY)
 }
 
 /* 台の座る場所のマス（台詞の 9・10 番目。省略は台NPCの 1 つ下）に立ってから S キーで話しかける */
-static void PuzzleTalk(PCHARINFO p, PCHARINFO pNpc)
+/* 「乱入しますか？」への答え（CMD_TALKANSWER。問いが無ければ黙って捨てられる） */
+static void PuzzleAnswerSend(PCHARINFO p, PCHARINFO pNpc, BOOL bYes)
+{
+	CMDPARA_DATA1 Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_TALKANSWER;
+	Para.byData = bYes ? 1 : 0;
+	Para.dwTblID = pNpc->dwTblID;
+	TestRecv(p, &Para, sizeof(Para));
+}
+
+/* ペアの台でひとりが遊んでいる所へ座ると、乱入するかを聞かれる。bYes=乱入（対戦）、FALSE=ひとりで遊ぶ。
+   聞かれたら「puzzle ask」を出し、答えを送る（聞かれなければ何もしない） */
+static void PuzzleTalk(PCHARINFO p, PCHARINFO pNpc, BOOL bYes = TRUE)
 {
 	int nSdx, nSdy;
+	int nConn = DgTestConn(p);
 	PuzzleSeatOffset(pNpc->pszNpcSpeech, &nSdx, &nSdy);
 	PuzzlePlace(p, pNpc, (DWORD)((int)pNpc->dwX + nSdx), (DWORD)((int)pNpc->dwY + nSdy));
+	int nBefore = MockCmdCount(nConn, CMD_TALKMSG);
 	PuzzleTalkRaw(p, pNpc);
+	if (MockCmdCount(nConn, CMD_TALKMSG) > nBefore && MockHasText(nConn, CMD_TALKMSG, "乱入")) {
+		printf("puzzle ask shown seated=%d answer=%d\n", PuzzleIsSeated(p), bYes ? 1 : 0);
+		PuzzleAnswerSend(p, pNpc, bYes);
+	}
 }
 
 static void TestPuzzle(const std::vector<int> &aLogin)
@@ -17796,7 +17815,7 @@ static void TestPuzzle(const std::vector<int> &aLogin)
 	int nBeforeKey = MockCmdCount(nConnA, CMD_PUZZLESTATE);
 	PuzzleKeySend(pA, PUZZLEKEY_LEFT);
 	g_dwTime = (s_dwFakeNow += 5);
-	PuzzleKeySend(pA, PUZZLEKEY_LEFT);							/* 5ms 後（捨てる） */
+	PuzzleKeySend(pA, PUZZLEKEY_LEFT);							/* 5ms 後（バケツに余裕があるので受ける） */
 	g_dwTime = (s_dwFakeNow += 100);
 	PuzzleKeySend(pA, PUZZLEKEY_ROTATE);
 	g_dwTime = (s_dwFakeNow += 100);
@@ -17807,6 +17826,21 @@ static void TestPuzzle(const std::vector<int> &aLogin)
 		DWORD dwAck = 0;
 		PuzzleOverFlag(nConnA, pNpc->dwTblID, NULL, NULL, &dwAck);
 		printf("puzzle ack last=%d\n", dwAck == s_dwPuzzleSerial);
+	}
+	{
+		/* 回線が遅れてまとまって届いたキー：バケツ（8 個）の分だけ受け、残りは捨てるが連番（dwAck）は MOVE で返す（先読みしたクライアントがすぐ直せる） */
+		g_dwTime = s_dwFakeNow = max(s_dwFakeNow, g_dwTime) + 1000;
+		int nBeforeBurst = MockCmdCount(nConnA, CMD_PUZZLESTATE);
+		for (int i = 0; i < 12; i ++) {
+			PuzzleKeySend(pA, (i % 2) ? PUZZLEKEY_RIGHT : PUZZLEKEY_LEFT);
+		}
+		DWORD dwAckBurst = 0;
+		PuzzleOverFlag(nConnA, pNpc->dwTblID, NULL, NULL, &dwAckBurst);
+		printf("puzzle burst packets=%d ack last=%d\n", MockCmdCount(nConnA, CMD_PUZZLESTATE) - nBeforeBurst, dwAckBurst == s_dwPuzzleSerial);
+		/* 左回しも受ける */
+		g_dwTime = s_dwFakeNow = max(s_dwFakeNow, g_dwTime) + 100;
+		PuzzleKeySend(pA, PUZZLEKEY_ROTATE_L);
+		printf("puzzle rotate left ok=%d\n", PuzzleIsSeated(pA));
 	}
 
 	/* 落下は経過時間で進む（PuzzleProc を呼ぶ間隔に関係なく 1 秒に 1 段）。動いた時は位置だけ(MOVE) */
@@ -18123,6 +18157,12 @@ static void TestPuzzleVs(const std::vector<int> &aLogin)
 	for (int j = 0; j < MAX_MYITEM; j ++) if (pB->waItem[j] == wCoin) DelCharItem(pB->dwTblID, (BYTE)j);
 	PuzzleTalk(pB, pT2);
 	printf("vs nocoin seatedB=%d vsA=%d\n", PuzzleIsSeated(pB), PuzzleIsVersus(pA));
+
+	/* 11b. 乱入を聞かれて「いいえ」と答えると、座るがひとりで遊ぶ（対戦にならない）。コインは答えのあとに取り上げる */
+	AddCharItem(pB->dwTblID, wCoin);
+	PuzzleTalk(pB, pT2, FALSE);
+	printf("vs decline seatedB=%d vs=%d%d coinB=%d\n", PuzzleIsSeated(pB), PuzzleIsVersus(pA), PuzzleIsVersus(pB), PuzzleCoinCount(pB, wCoin));
+	PuzzleOnLeave(pB);
 
 	/* 12. 台が空になった時、観戦の C に NONE（OVER）が届く */
 	nC2 = MockCmdCount(anConn[2], CMD_PUZZLESTATE);

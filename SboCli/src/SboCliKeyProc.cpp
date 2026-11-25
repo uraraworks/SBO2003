@@ -405,7 +405,7 @@ static void KeyEvPush(BYTE byEvent, BYTE byCode)
 /* ========================================================================= */
 /* 関数名：PuzzleKeyProc													 */
 /* 内容：落ち物パズルの席に座っている間のキー入力（歩かず、すべてゲーム側へ送る）	 */
-/*		 左右＝移動、下＝落下(ソフトドロップ)、S＝回す、ESC・Z(スマホのキャンセル)＝席を立つ	 */
+/*		 左右＝移動、下＝落下(ソフトドロップ)、X＝右回し、Z＝左回し、ESC＝席を立つ（S では立たない）	 */
 /*		 方向キーは押し続けている間 KEY_DOWN が何度も来るので、最初の一回は	 */
 /*		 すぐ、それからは間隔をあけて送る。特技ショートカットなど他のキーは捨てる	 */
 /* ========================================================================= */
@@ -430,9 +430,9 @@ static void PuzzleKeyProc(BYTE byEvent, BYTE byCode)
 	case VK_LEFT:		byKey = PUZZLEKEY_LEFT;		break;
 	case VK_RIGHT:		byKey = PUZZLEKEY_RIGHT;	break;
 	case VK_DOWN:		byKey = PUZZLEKEY_DOWN;		break;
-	case 'Y':			byKey = PUZZLEKEY_ROTATE;	break;		/* S キー */
-	case VK_ESCAPE:
-	case 'B':			byKey = PUZZLEKEY_LEAVE;	break;		/* ESC・Z キー（スマホのキャンセル） */
+	case 'A':			byKey = PUZZLEKEY_ROTATE;	break;		/* X キー（右回し。スマホの決定） */
+	case 'B':			byKey = PUZZLEKEY_ROTATE_L;	break;		/* Z キー（左回し。スマホのキャンセル） */
+	case VK_ESCAPE:		byKey = PUZZLEKEY_LEAVE;	break;		/* ESC キー（S では立たない。ゲームオーバーで自動で立つ） */
 	}
 	if (byKey == 0) {
 		return;
@@ -10407,7 +10407,7 @@ std::string W32TextToUtf8Str(const char *psz, int nLen);		/* ゲーム内の文�
 #define PADSTATE_BATTLEMODE	(0x10)	/* 戦闘モード中（「決定」を「攻撃」、「キャンセル」を「構え」と表示） */
 #define PADSTATE_SCORE		(0x20)	/* 目の前に得点板がある（「キャンセル」を「名前」と表示。Z で名前を付ける） */
 #define PADSTATE_MAP		(0x40)	/* 探索マップが使える場所（テーマで作ったダンジョンの範囲の中。「地図」ボタンを出す） */
-#define PADSTATE_PUZZLE		(0x80)	/* 落ち物パズルの席に座っている（「調べる」を「回す」、「キャンセル」を「席を立つ」と表示。表示・戦闘・地図は隠す） */
+#define PADSTATE_PUZZLE		(0x80)	/* 落ち物パズルの席に座っている（「調べる(S)」は隠し、「決定(X)」を「右回し」、「キャンセル(Z)」を「左回し」と表示。表示・戦闘・地図は隠す） */
 
 static int SboWebGetPadStateBase(void)
 {
@@ -10428,9 +10428,9 @@ static int SboWebGetPadStateBase(void)
 	if (g_bSpeech) {
 		return 0;
 	}
-	/* 落ち物パズルの席に座っている間は、回す(S)と席を立つ(Z)だけ */
+	/* 落ち物パズルの席に座っている間は、右回し(X)・左回し(Z)だけ */
 	if (IsPuzzleSeated ()) {
-		return PADSTATE_SIRABERU | PADSTATE_PUZZLE;
+		return PADSTATE_PUZZLE;
 	}
 
 	/* ウィンドウ（コマンド・道具・お店など）を開いている間は、そのウィンドウにキーが渡る。
