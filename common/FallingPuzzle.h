@@ -18,6 +18,7 @@
 #define PUZZLE_MAX_COLS		(16)		/* 通信で運べる盤面の横の上限 */
 #define PUZZLE_MAX_ROWS		(24)		/* 通信で運べる盤面の縦の上限 */
 #define PUZZLE_KINDS		(7)			/* 落ち物の種類（I O T S Z J L） */
+#define PUZZLE_LOCK_RESET_MAX	(4)			/* 床に着いたまま動かして、固定までの時間を測り直せる回数（1 つの落ち物ごと） */
 #define PUZZLE_DROP_MS_BASE	(1000)		/* レベル 0 の落下間隔(ms)。1 秒に 1 段 */
 #define PUZZLE_DROP_MS_STEP	(80)		/* レベルが 1 上がるごとに短くなる量(ms) */
 #define PUZZLE_DROP_MS_MIN	(100)		/* 落下間隔の下限(ms) */
@@ -294,6 +295,7 @@ struct PuzzleGame {
 	int			nLevel;
 	bool		bOver;
 	unsigned int dwLastDrop;				/* 最後に 1 段落ちた時刻(ms) */
+	int			nLockResets;				/* この落ち物で、床に着いたまま動かして固定を待たせた回数（PUZZLE_LOCK_RESET_MAX まで） */
 	PuzzleRand	GRand;						/* お邪魔の穴の位置を決める乱数（落ち物の順番とは別。落ち物は参加者で同じ順番にするため） */
 	int			nPending;					/* 待ちお邪魔（自分宛てでまだ積まれていない段数） */
 	int			nAttack;					/* 直前の固定で相手へ送る段数（相殺した残り。呼び出し側が読んで 0 に戻す） */
@@ -343,6 +345,7 @@ struct PuzzleGame {
 		nKind = nNext;
 		nNext = BagNext ();
 		nRot = 0;
+		nLockResets = 0;
 		PuzzleCells (nKind, 0, anC);
 		for (i = 0; i < 4; i ++) {
 			if (anC[i][1] < nMinY) {
@@ -363,21 +366,33 @@ struct PuzzleGame {
 		return (n < PUZZLE_DROP_MS_MIN) ? PUZZLE_DROP_MS_MIN : n;
 	}
 
+	/* 床・積んだブロックに着いている落ち物を動かせた時に、固定までの時間を測り直す（動かして入れる時間を取る。
+	   1 つの落ち物で PUZZLE_LOCK_RESET_MAX 回まで。dwNow=0 なら何もしない） */
+	void LockDelay(unsigned int dwNow)
+	{
+		if ((dwNow != 0) && (nLockResets < PUZZLE_LOCK_RESET_MAX) && Board.Collide (nKind, nRot, nX, nY + 1)) {
+			dwLastDrop = dwNow;
+			nLockResets ++;
+		}
+	}
+
 	/* 左右に動かす（dx=-1/+1）。動けたら PUZZLE_CHG_PIECE */
-	int Move(int dx)
+	int Move(int dx, unsigned int dwNow = 0)
 	{
 		if (bOver || !PuzzleTryMove (Board, nKind, nRot, &nX, nY, dx)) {
 			return 0;
 		}
+		LockDelay (dwNow);
 		return PUZZLE_CHG_PIECE;
 	}
 
 	/* 回す（nDir=1 で右回し、-1 で左回し）。壁際は左右にずらして入れる（壁けり）。回せたら PUZZLE_CHG_PIECE */
-	int Rotate(int nDir = 1)
+	int Rotate(int nDir = 1, unsigned int dwNow = 0)
 	{
 		if (bOver || !PuzzleTryRotate (Board, nKind, &nRot, &nX, nY, nDir)) {
 			return 0;
 		}
+		LockDelay (dwNow);
 		return PUZZLE_CHG_PIECE;
 	}
 

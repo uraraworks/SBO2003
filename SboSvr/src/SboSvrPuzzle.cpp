@@ -1122,11 +1122,11 @@ void PuzzleKey(PCHARINFO pChar, BYTE byKey, DWORD dwSerial)
 	}
 	Seat.nKeyTokens --;
 	switch (byKey) {
-	case PUZZLEKEY_LEFT:	nChg = Seat.Game.Move (-1);						break;
-	case PUZZLEKEY_RIGHT:	nChg = Seat.Game.Move (1);						break;
+	case PUZZLEKEY_LEFT:	nChg = Seat.Game.Move (-1, g_dwTime);						break;
+	case PUZZLEKEY_RIGHT:	nChg = Seat.Game.Move (1, g_dwTime);						break;
 	case PUZZLEKEY_DOWN:	nChg = Seat.Game.Step (true, g_dwTime);			break;
-	case PUZZLEKEY_ROTATE:	nChg = Seat.Game.Rotate (1);					break;
-	case PUZZLEKEY_ROTATE_L:	nChg = Seat.Game.Rotate (-1);				break;
+	case PUZZLEKEY_ROTATE:	nChg = Seat.Game.Rotate (1, g_dwTime);					break;
+	case PUZZLEKEY_ROTATE_L:	nChg = Seat.Game.Rotate (-1, g_dwTime);				break;
 	default:				return;
 	}
 	if (nChg == 0) {
