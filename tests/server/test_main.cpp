@@ -17560,14 +17560,37 @@ static void PuzzleRetireNpcs(void)
 	}
 }
 
+static DWORD s_dwPuzzleSerial = 0;		/* 最後に送ったキーの連番（クライアントと同じく 1 から） */
 static void PuzzleKeySend(PCHARINFO p, BYTE byKey)
 {
-	CMDPARA_DATA1 Para;
+	CMDPARA_PUZZLEKEY Para;
 	ZeroMemory(&Para, sizeof(Para));
 	Para.byCmd = CMD_PUZZLEKEY;
 	Para.byData = byKey;
 	Para.dwTblID = p->dwTblID;
+	Para.dwSerial = ++ s_dwPuzzleSerial;
 	TestRecv(p, &Para, sizeof(Para));
+}
+
+/* その人が最後に受けた、台 dwNpc の CMD_PUZZLESTATE の byOver（パケットが無ければ -1）。*pnIdle=byIdle・*pnCells=盤面のブロック数・*pdwAck=dwAck */
+static void PuzzlePackets(int nConn, std::vector<std::vector<BYTE> > &aOut);
+static int PuzzleOverFlag(int nConn, DWORD dwNpc, int *pnIdle = NULL, int *pnCells = NULL, DWORD *pdwAck = NULL)
+{
+	std::vector<std::vector<BYTE> > aP;
+	PuzzlePackets(nConn, aP);
+	for (int i = (int)aP.size() - 1; i >= 0; i --) {
+		if (aP[i].size() < sizeof(CMDPARA_PUZZLESTATE)) continue;
+		const CMDPARA_PUZZLESTATE *pSt = (const CMDPARA_PUZZLESTATE *)&aP[i][0];
+		if (pSt->dwNpc != dwNpc) continue;
+		if (pnIdle) *pnIdle = pSt->byIdle;
+		if (pnCells) {
+			*pnCells = 0;
+			for (size_t j = sizeof(CMDPARA_PUZZLESTATE); j < aP[i].size(); j ++) if (aP[i][j]) (*pnCells) ++;
+		}
+		if (pdwAck) *pdwAck = pSt->dwAck;
+		return pSt->byKind == PUZZLESTATE_NONE ? -2 : pSt->byOver;
+	}
+	return -1;
 }
 
 /* S キーで台に話しかけた（今いる場所のまま送る。座れるのは台の座る場所のマスの上だけ） */
@@ -17689,6 +17712,12 @@ static void TestPuzzle(const std::vector<int> &aLogin)
 	g_dwTime = (s_dwFakeNow += 100);
 	PuzzleKeySend(pA, PUZZLEKEY_RIGHT);
 	printf("puzzle keys packets=%d seated=%d\n", MockCmdCount(nConnA, CMD_PUZZLESTATE) - nBeforeKey, PuzzleIsSeated(pA));
+	{
+		/* 先読みの差し引き用：受けたキーの連番を、変わった時の通知に付けて返す（捨てたキーも連番は進む） */
+		DWORD dwAck = 0;
+		PuzzleOverFlag(nConnA, pNpc->dwTblID, NULL, NULL, &dwAck);
+		printf("puzzle ack last=%d\n", dwAck == s_dwPuzzleSerial);
+	}
 
 	/* 落下は経過時間で進む（PuzzleProc を呼ぶ間隔に関係なく 1 秒に 1 段）。動いた時は位置だけ(MOVE) */
 	int nBeforeDrop = MockCmdCount(nConnA, CMD_PUZZLESTATE);
@@ -17942,6 +17971,20 @@ static void TestPuzzleVs(const std::vector<int> &aLogin)
 	gA = PuzzleGetGame(pA);
 	printf("vs lose keep score=%d pending=%d packetsA=%d packetsC=%d\n", gA && gA->dwScore == dwScoreA, gA ? gA->nPending : -1,
 		MockCmdCount(anConn[0], CMD_PUZZLESTATE) - nA2 > 0, MockCmdCount(anConn[2], CMD_PUZZLESTATE) - nC2 > 0);
+	/* 負けた B の盤面の GAME OVER は、観覧者 C と勝った A にも見える（最後の盤面＋byOver=1・待機中）。本人 B へは OVER（k3） */
+	{
+		int nIdC = 0, nCellsC = 0, nIdA = 0;
+		int nOvC = PuzzleOverFlag(anConn[2], pT2->dwTblID, &nIdC, &nCellsC), nOvA = PuzzleOverFlag(anConn[0], pT2->dwTblID, &nIdA);
+		printf("vs lose gameover spectator=%d idle=%d board=%d winner=%d\n", nOvC, nIdC, nCellsC > 0, nOvA);
+		/* 消える時間（PUZZLE_OVER_SHOW_MS）の手前ではまだ出ている。過ぎると byOver=0 の盤面が届き、最後の盤面だけ残る */
+		g_dwTime = (s_dwFakeNow += PUZZLE_OVER_SHOW_MS - 200);
+		PuzzleProc();
+		nOvC = PuzzleOverFlag(anConn[2], pT2->dwTblID);
+		g_dwTime = (s_dwFakeNow += 300);
+		PuzzleProc();
+		int nOvC2 = PuzzleOverFlag(anConn[2], pT2->dwTblID, &nIdC, &nCellsC), nOvA2 = PuzzleOverFlag(anConn[0], pT2->dwTblID);
+		printf("vs lose gameover before=%d after=%d idle=%d board=%d winner=%d\n", nOvC, nOvC2, nIdC, nCellsC > 0, nOvA2);
+	}
 	/* 勝者はそのまま続けられる：落下が進む・消しても相手へは送られない */
 	g_dwTime = (s_dwFakeNow += 1500);
 	nA2 = MockCmdCount(anConn[0], CMD_PUZZLESTATE);
@@ -18197,6 +18240,31 @@ static void TestPuzzleIdle(const std::vector<int> &aLogin)
 	sC = PuzzleSummary(anConn[2], 0, &anN[2]);
 	printf("idle over seated=%d A_over=%d B=%s C=%s kept=%d idleTables=%d seats=%d\n", PuzzleIsSeated(pA), nOverA,
 		sB.substr(0, sB.find("/c")).c_str(), sC.substr(0, sC.find("/c")).c_str(), PuzzlePktCells(aLastB) > 0, PuzzleIdleCount(), PuzzleSeatCount());
+	/* 5b. 観覧者 B・C の最後の盤面には GAME OVER（byOver=1）が付く。PUZZLE_OVER_SHOW_MS の手前ではまだ出ていて、過ぎると byOver=0 の盤面が
+	   届いて消える（最後の盤面は残る）。字が出ている間に近づいた人（C を一度遠ざけてから戻す）にも byOver=1 で届く */
+	{
+		int nOvB = PuzzleOverFlag(anConn[1], pT->dwTblID), nOvC = PuzzleOverFlag(anConn[2], pT->dwTblID);
+		int nOvA = PuzzleOverFlag(anConn[0], pT->dwTblID);		/* 本人には OVER（byOver は付けず k3 で決まる） */
+		printf("idle over flag B=%d C=%d selfA=%d\n", nOvB, nOvC, nOvA);
+		g_dwTime = (s_dwFakeNow += PUZZLE_OVER_SHOW_MS - 2000);
+		PuzzleProc();
+		int nB0 = PuzzleCount(anConn[1]);
+		QuestMovePC(pC, (int)dwMap, (int)dwX + 25, (int)dwY);
+		g_dwTime = (s_dwFakeNow += 300);
+		PuzzleProc();
+		QuestMovePC(pC, (int)dwMap, (int)dwX + 10, (int)dwY);
+		g_dwTime = (s_dwFakeNow += 300);
+		PuzzleProc();
+		int nOvC2 = PuzzleOverFlag(anConn[2], pT->dwTblID);
+		g_dwTime = (s_dwFakeNow += 1500);
+		PuzzleProc();
+		int nIdB = 0, nCellsB = 0, nIdC = 0;
+		int nOvB3 = PuzzleOverFlag(anConn[1], pT->dwTblID, &nIdB, &nCellsB), nOvC3 = PuzzleOverFlag(anConn[2], pT->dwTblID, &nIdC);
+		printf("idle over timeline before=%d late-comer=%d after B=%d C=%d idle=%d/%d board=%d packetsB=%d\n", nOvB, nOvC2, nOvB3, nOvC3, nIdB, nIdC,
+			nCellsB > 0, PuzzleCount(anConn[1]) - nB0);
+		PuzzlePackets(anConn[1], aP);
+		aLastB = aP.back();		/* 字が消えたあとに残る盤面（次の確認で戻ってきた人にも同じものが届く） */
+	}
 
 	/* 6. 最後の盤面は、見ていた人が離れても・誰もいなくなっても残り、戻ってきた人に同じ盤面が待機状態で届く */
 	QuestMovePC(pB, (int)dwMap, (int)dwX + 30, (int)dwY);

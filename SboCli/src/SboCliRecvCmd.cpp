@@ -8638,16 +8638,31 @@ BOOL GetDungeonStatus(PCMDPARA_DGSTATUS pOut)
 /*		 台は dwNpc で見分け、PUZZLE_VIEW_MAX 台ぶん（自分の台・対戦相手の台・		 */
 /*		 近くで遊んでいる台）の盤面を覚える。盤面は FULL の時に覚え、MOVE では位置などだけ差し替える。 */
 /*		 終わり(OVER)は座っていた本人にだけ届き、最後の盤面を 3 秒見せたあと待機中の台の見え方に変わる。	 */
+/*		 ほかの人（観覧者・対戦相手の席の人）には、待機中の最後の盤面に byOver=1 が付いて届き、		 */
+/*		 その間は盤面の上に GAME OVER を出す（消える時はサーバーが byOver=0 の盤面を送る）。			 */
+/*		 先読み：座っている本人の盤面だけ、キーを送る時に PuzzlePredictKey で落ち物を先に動かして描く。	 */
+/*		 サーバーが正解なので、サーバーの FULL・MOVE が届いたら、その位置にそろえ（nSv*）、まだ処理されていない	 */
+/*		 キー（dwAck より後の連番）だけをもう一度かける。こうすると、押した直後は先に動き、サーバーの通知が		 */
+/*		 少し遅れて届いても巻き戻らない。サーバーが取り合わなかったキーは PUZZLE_PRED_MS で捨てる。		 */
 /*		 待機中の台（byIdle=1。席が空）は FULL で届き、枠と井戸（空か最後の盤面）だけ描く。		 */
 /*		 NONE はその台から離れた（見えなくなった）時で、その台の重ね描きを消す			 */
 /* ========================================================================= */
-#define PUZZLE_OVER_SHOW_MS	(3000)								/* ゲームオーバー後に最後の盤面を見せる時間(ms) */
+#define PUZZLE_PRED_MAX		(16)								/* 先読みで覚えておく「サーバーがまだ処理していないキー」の数 */
+#define PUZZLE_PRED_MS		(1000)								/* サーバーからの返事がこれ以上来ないキーは、先読みを捨てる(ms) */
+typedef struct _PUZZLEPRED {
+	DWORD					dwSerial;								/* キーの連番 */
+	BYTE					byKey;									/* PUZZLEKEY_* */
+	DWORD					dwTime;									/* 先読みした時刻 */
+} PUZZLEPRED;
 typedef struct _PUZZLEVIEW {
 	BOOL					bUse;									/* 使っているか */
 	CMDPARA_PUZZLESTATE		St;										/* 最後に届いた状態 */
 	BYTE					abyBoard[PUZZLE_MAX_COLS * PUZZLE_MAX_ROWS];	/* 最後に届いた盤面 */
 	BOOL					bBoard;									/* 盤面を持っているか */
 	DWORD					dwOverTime;								/* ゲームオーバーを受けた時刻（0=まだ） */
+	int						nSvRot, nSvX, nSvY;						/* サーバーが最後に知らせた操作中の落ち物の向き・位置（St の位置は先読みで先に進んでいることがある） */
+	int						nPred;									/* 先読み中のキーの数 */
+	PUZZLEPRED				aPred[PUZZLE_PRED_MAX];
 } PUZZLEVIEW;
 static PUZZLEVIEW			s_aPuzView[PUZZLE_VIEW_MAX];
 
@@ -8681,6 +8696,89 @@ static PUZZLEVIEW *PuzzleViewFind(DWORD dwNpc, BOOL bAlloc)
 	ZeroMemory (&s_aPuzView[nFree], sizeof (PUZZLEVIEW));
 	s_aPuzView[nFree].bUse = TRUE;
 	return &s_aPuzView[nFree];
+}
+
+/* 先読みできる盤面か（座っている本人の遊んでいる盤面。カウントダウン中・ゲームオーバー中・待機中は先読みしない） */
+static BOOL PuzzleViewPredictable(const PUZZLEVIEW *pView)
+{
+	return pView->bUse && pView->bBoard && pView->St.byMine && !pView->St.byIdle && (pView->St.byCount == 0) &&
+		(pView->dwOverTime == 0) && (pView->St.byPiece < PUZZLE_KINDS);
+}
+
+/* 落ち物（St の位置）を 1 キーぶん動かす。動けた時だけ TRUE（サーバーと同じ common/FallingPuzzle.h の判定。動けなければ何もしない） */
+static BOOL PuzzleViewApplyKey(PUZZLEVIEW *pView, BYTE byKey)
+{
+	PuzzleBoard Board;
+	int nRot = pView->St.byRot, nX = pView->St.cX, nY = pView->St.cY, nKind = pView->St.byPiece;
+	BOOL bMoved;
+
+	Board.Init (pView->St.byCols, pView->St.byRows);
+	memcpy (Board.abyCell, pView->abyBoard, (int)pView->St.byCols * (int)pView->St.byRows);
+	switch (byKey) {
+	case PUZZLEKEY_LEFT:	bMoved = PuzzleTryMove (Board, nKind, nRot, &nX, nY, -1);	break;
+	case PUZZLEKEY_RIGHT:	bMoved = PuzzleTryMove (Board, nKind, nRot, &nX, nY, 1);	break;
+	case PUZZLEKEY_DOWN:	bMoved = PuzzleTryDown (Board, nKind, nRot, nX, &nY);		break;	/* 詰まった時の固定はサーバーの通知を待つ */
+	case PUZZLEKEY_ROTATE:	bMoved = PuzzleTryRotate (Board, nKind, &nRot, &nX, nY);	break;
+	default:				return FALSE;
+	}
+	if (bMoved) {
+		pView->St.byRot = (BYTE)nRot;
+		pView->St.cX = (signed char)nX;
+		pView->St.cY = (signed char)nY;
+	}
+	return bMoved;
+}
+
+/* サーバーの通知（St の位置・向き）にそろえ、まだ処理されていないキー（dwAck より後）だけもう一度かける */
+static void PuzzleViewReconcile(PUZZLEVIEW *pView, DWORD dwAck)
+{
+	int i, nKeep = 0;
+
+	pView->nSvRot = pView->St.byRot;
+	pView->nSvX = pView->St.cX;
+	pView->nSvY = pView->St.cY;
+	if (!PuzzleViewPredictable (pView)) {
+		pView->nPred = 0;
+		return;
+	}
+	for (i = 0; i < pView->nPred; i ++) {
+		if ((int)(pView->aPred[i].dwSerial - dwAck) > 0) {
+			pView->aPred[nKeep ++] = pView->aPred[i];
+		}
+	}
+	pView->nPred = nKeep;
+	for (i = 0; i < pView->nPred; i ++) {
+		PuzzleViewApplyKey (pView, pView->aPred[i].byKey);
+	}
+}
+
+/* キーを送った時に呼ぶ：座っている本人の落ち物を先に動かす（動けなければ何もしない。サーバーの通知が来たら上書きされる） */
+void PuzzlePredictKey(BYTE byKey, DWORD dwSerial)
+{
+	int i;
+
+	if ((g_byGameState != GAMESTATE_MOVE) || (dwSerial == 0)) {
+		return;
+	}
+	for (i = 0; i < PUZZLE_VIEW_MAX; i ++) {
+		PUZZLEVIEW *pView = &s_aPuzView[i];
+
+		if (!PuzzleViewPredictable (pView)) {
+			continue;
+		}
+		if (PuzzleViewApplyKey (pView, byKey)) {
+			if (pView->nPred >= PUZZLE_PRED_MAX) {
+				memmove (&pView->aPred[0], &pView->aPred[1], sizeof (PUZZLEPRED) * (PUZZLE_PRED_MAX - 1));
+				pView->nPred = PUZZLE_PRED_MAX - 1;
+			}
+			pView->aPred[pView->nPred].dwSerial = dwSerial;
+			pView->aPred[pView->nPred].byKey = byKey;
+			pView->aPred[pView->nPred].dwTime = timeGetTime ();
+			pView->nPred ++;
+			g_bDraw = TRUE;
+		}
+		return;
+	}
 }
 
 void RecvDataProcPUZZLESTATE(PBYTE pData, DWORD dwDataSize)
@@ -8718,6 +8816,11 @@ void RecvDataProcPUZZLESTATE(PBYTE pData, DWORD dwDataSize)
 		} else {
 			pView->dwOverTime = 0;
 		}
+		if (pPara->byKind == PUZZLESTATE_FULL) {
+			PuzzleViewReconcile (pView, pPara->dwAck);
+		} else {
+			pView->nPred = 0;
+		}
 		break;
 	case PUZZLESTATE_MOVE:
 		pView = PuzzleViewFind (pPara->dwNpc, FALSE);
@@ -8733,6 +8836,8 @@ void RecvDataProcPUZZLESTATE(PBYTE pData, DWORD dwDataSize)
 		pView->St.byGarbage = pPara->byGarbage;
 		pView->St.byCount = pPara->byCount;
 		pView->St.byIdle = pPara->byIdle;
+		pView->St.byOver = pPara->byOver;
+		PuzzleViewReconcile (pView, pPara->dwAck);
 		break;
 	default:
 		return;
@@ -8768,8 +8873,21 @@ BOOL GetPuzzleState(int nIdx, PCMDPARA_PUZZLESTATE pOut, const BYTE **ppBoard, B
 	if (!pView->bUse || !pView->bBoard || (g_byGameState != GAMESTATE_MOVE)) {
 		return FALSE;
 	}
+	/* 返事の来ない先読みは捨てて、サーバーの位置に戻す（サーバーが取り合わなかったキー） */
+	if (pView->nPred > 0) {
+		DWORD dwNow = timeGetTime ();
+
+		if ((DWORD)(dwNow - pView->aPred[0].dwTime) >= PUZZLE_PRED_MS) {
+			pView->St.byRot = (BYTE)pView->nSvRot;
+			pView->St.cX = (signed char)pView->nSvX;
+			pView->St.cY = (signed char)pView->nSvY;
+			pView->nPred = 0;
+		} else {
+			g_bDraw = TRUE;
+		}
+	}
 	if (pView->dwOverTime != 0) {
-		if ((int)(timeGetTime () - pView->dwOverTime) >= PUZZLE_OVER_SHOW_MS) {
+		if ((int)(timeGetTime () - pView->dwOverTime) >= PUZZLE_OVER_SELF_MS) {
 			/* 3 秒たったら、ほかの人に見えているのと同じ待機中の台（最後の盤面だけ。帯・落ち物・GAME OVER なし）にする。
 			   台から離れて NONE が届くまで残る */
 			pView->dwOverTime = 0;
@@ -8783,7 +8901,7 @@ BOOL GetPuzzleState(int nIdx, PCMDPARA_PUZZLESTATE pOut, const BYTE **ppBoard, B
 	}
 	*pOut = pView->St;
 	*ppBoard = pView->abyBoard;
-	*pbOver = (pView->dwOverTime != 0);
+	*pbOver = (pView->dwOverTime != 0) || (pView->St.byOver != 0);
 	return TRUE;
 }
 

@@ -31,6 +31,9 @@
  *   両方の盤面を空に戻し、PUZZLE_VS_COUNTDOWN_SEC 秒のカウントダウンのあと同時スタート（落ち物の順番は共通の種）。
  *   ライン消しでお邪魔ブロックを相手へ送る（FallingPuzzle.h）。置けなくなった側が負け。
  *   負けた側は席を立ち、勝った側はそのままひとり用に続ける。ESC・切断・マップ移動で席を立った場合は残った側の勝ち。
+ * ゲームオーバー：本人には OVER（帯付き）、ほかの人（観覧者・対戦相手の席の人）には byIdle=1 の最後の盤面に byOver=1 を付けて送る。
+ *   PUZZLE_OVER_SHOW_MS（FallingPuzzle.h）たつと byOver=0 の FULL を送って字を消す（最後の盤面は次に誰かが座るまで残る）。
+ * キー入力の先読み：クライアントが自分の落ち物を先に動かすため、キーの連番を覚えて、通知の dwAck で返す。
  * 送る相手（台ごと）: 座っている人・対戦相手の台の人・台の近くにいる人（観戦。画面に入る距離。PUZZLE_WATCH_MS ごとに見直し、
  *   近づいた時に盤面全体を 1 回送り、離れた時に NONE を送る）。
  */
@@ -76,6 +79,7 @@ typedef struct _PUZZLESEAT {
 	DWORD		dwChar;						/* 座っているキャラのテーブルID（いなければ PUZZLE_NOCHAR） */
 	DWORD		dwPID;						/* そのキャラのプレイヤーID（テーブルIDの使い回しを見分ける） */
 	DWORD		dwLastKey;					/* 最後にキーを受けた時刻 */
+	DWORD		dwAck;						/* 最後に受けたキーの連番（クライアントの先読みの差し引き用。CMDPARA_PUZZLEKEY の dwSerial） */
 	PuzzleGame	Game;						/* ゲーム */
 } PUZZLESEAT;
 
@@ -99,6 +103,8 @@ typedef struct _PUZZLETABLE {
 	DWORD		dwLastWatch;				/* 最後に観戦の人を見直した時刻 */
 	BOOL		bIdle;						/* 待機中（席に誰もいない。Seat.Game は空の盤面か、bLast なら最後の盤面） */
 	BOOL		bLast;						/* 待機中で、ゲームオーバーの最後の盤面を残している（次に誰かが座るまで） */
+	BOOL		bOverShow;					/* 最後の盤面の上に「GAME OVER」を出している間（本人以外にも見える。PUZZLE_OVER_SHOW_MS で消す） */
+	DWORD		dwOverTime;					/* ゲームオーバーになった時刻 */
 	std::vector<PUZZLEWATCH>	aWatch;		/* 盤面を送ってある人（座っている人・対戦相手・近くにいる人） */
 } PUZZLETABLE;
 
@@ -180,6 +186,8 @@ static void ToIdle(int nTable, BOOL bLast)
 	Table.Seat.dwPID = 0;
 	Table.bIdle = TRUE;
 	Table.bLast = bLast;
+	Table.bOverShow = bLast;
+	Table.dwOverTime = g_dwTime;
 	Table.bVs = FALSE;
 	Table.dwOppNpc = (DWORD)-1;
 	Table.bCount = FALSE;
@@ -248,6 +256,8 @@ static void BuildState(const PUZZLETABLE &Table, BYTE byKind, std::vector<BYTE> 
 	Head.byGarbage	= (BYTE)((g.nPending > 255) ? 255 : g.nPending);
 	Head.byCount	= (BYTE)CountRemain (Table);
 	Head.byIdle		= (BYTE)(bIdle ? 1 : 0);
+	Head.byOver		= (BYTE)((bIdle && Table.bOverShow) ? 1 : 0);
+	Head.dwAck		= Table.Seat.dwAck;
 	if (bIdle) {
 		/* 待機中は落ち物・次の落ち物・得点・待ちお邪魔を持たない（盤面の枠と井戸だけ） */
 		Head.byPiece = Head.byNext = 255;
@@ -668,9 +678,12 @@ void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc)
 		Table.dwLastWatch = 0;
 		Table.bIdle = FALSE;
 		Table.bLast = FALSE;
+		Table.bOverShow = FALSE;
+		Table.dwOverTime = 0;
 		Table.Seat.dwChar = pChar->dwTblID;
 		Table.Seat.dwPID = pChar->pID;
 		Table.Seat.dwLastKey = 0;
+		Table.Seat.dwAck = 0;
 		if (nTable >= 0) {
 			/* 待機中の台に座る：今見ている人の表を引き継ぐ（下で、見ている人全員に始まった盤面を送る） */
 			Table.aWatch = s_aTable[nTable].aWatch;
@@ -717,7 +730,7 @@ void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc)
 	WatchRefresh (nTable);
 }
 
-void PuzzleKey(PCHARINFO pChar, BYTE byKey)
+void PuzzleKey(PCHARINFO pChar, BYTE byKey, DWORD dwSerial)
 {
 	int nTable, nChg = 0;
 
@@ -726,6 +739,10 @@ void PuzzleKey(PCHARINFO pChar, BYTE byKey)
 	}
 	PUZZLESEAT &Seat = s_aTable[nTable].Seat;
 
+	/* 受けたキーの連番を覚える（捨てるキーも含む。変わった時の通知に付けて返し、クライアントが先読みを差し引く） */
+	if (dwSerial != 0) {
+		Seat.dwAck = dwSerial;
+	}
 	if (byKey == PUZZLEKEY_LEAVE) {
 		Leave (nTable, PUZZLESTATE_NONE, TRUE, FALSE);
 		return;
@@ -807,9 +824,12 @@ static void IdleScan(void)
 				Table.dwLastWatch = 0;
 				Table.bIdle = TRUE;
 				Table.bLast = FALSE;
+				Table.bOverShow = FALSE;
+				Table.dwOverTime = 0;
 				Table.Seat.dwChar = PUZZLE_NOCHAR;
 				Table.Seat.dwPID = 0;
 				Table.Seat.dwLastKey = 0;
+				Table.Seat.dwAck = 0;
 				ZeroMemory (&Table.Seat.Game, sizeof (Table.Seat.Game));
 				Table.Seat.Game.Board.Init (Param.nCols, Param.nRows);
 				s_aTable.push_back (Table);
@@ -851,6 +871,11 @@ void PuzzleProc(void)
 				}
 				s_aTable.erase (s_aTable.begin () + i);
 				continue;
+			}
+			/* GAME OVER の字を消す（最後の盤面は残す。見ている人全員へ byOver=0 の盤面を送る） */
+			if (Table.bOverShow && (PUZZLE_OVER_SHOW_MS > 0) && ((DWORD)(g_dwTime - Table.dwOverTime) >= (DWORD)PUZZLE_OVER_SHOW_MS)) {
+				Table.bOverShow = FALSE;
+				SendTable (i, PUZZLESTATE_FULL);
 			}
 			if ((DWORD)(g_dwTime - Table.dwLastWatch) >= PUZZLE_WATCH_MS) {
 				WatchRefresh (i);

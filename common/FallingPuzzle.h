@@ -31,6 +31,12 @@
 #define PUZZLE_VIEW_MAX			(16)	/* クライアントが同時に覚える盤面の数（自分・相手・近くの台。待機中の台も数える） */
 #define PUZZLE_CELL_GARBAGE		(PUZZLE_KINDS + 1)	/* お邪魔ブロックのセルの値（8。灰色で描く） */
 
+/* ゲームオーバーの「GAME OVER」を盤面の上に出す時間(ms)。本人も観覧者・対戦相手の席の人も同じ時間（サーバーが消す時刻を決める）。
+   そのあとは最後の盤面だけが次に誰かが座るまで残る。0 にすると、次の人が座るまで GAME OVER を出し続ける
+   （本人の帯だけは、0 でも 3 秒で消える） */
+#define PUZZLE_OVER_SHOW_MS		(3000)
+#define PUZZLE_OVER_SELF_MS		((PUZZLE_OVER_SHOW_MS > 0) ? PUZZLE_OVER_SHOW_MS : 3000)	/* 本人の帯（得点など）を出している時間 */
+
 /* フィールドの置き場所（席の台NPCからの相対位置。台ごとに変えられる）
    フィールドの左上は、台のマスの左上から (dx, dy) マス（負なら左・上）。縦横の段数も台ごとに指定できる。
    dx, dy を省略した時（既定）は、席がフィールドの真下：フィールドの一番下のマスの行が席の 1 マス上で、
@@ -221,6 +227,48 @@ struct PuzzleBoard {
 };
 
 /* ========================================================================= */
+/* 操作中の落ち物の動かし方（サーバーの PuzzleGame と、クライアントの先読みが同じ判定を使う）	 */
+/* ========================================================================= */
+/* 左右（dx=-1/+1）に動けるか。動けるなら *pnX を更新して true */
+static inline bool PuzzleTryMove(const PuzzleBoard &Board, int nKind, int nRot, int *pnX, int nY, int dx)
+{
+	if (Board.Collide (nKind, nRot, *pnX + dx, nY)) {
+		return false;
+	}
+	*pnX += dx;
+	return true;
+}
+
+/* 右に回せるか。壁際は左右にずらして入れる（壁けり）。O は回しても同じなので false。回せたら *pnRot・*pnX を更新して true */
+static inline bool PuzzleTryRotate(const PuzzleBoard &Board, int nKind, int *pnRot, int *pnX, int nY)
+{
+	static const int anKick[5] = { 0, -1, 1, -2, 2 };
+	int nNewRot = (*pnRot + 1) & 3, i;
+
+	if (nKind == 1) {
+		return false;
+	}
+	for (i = 0; i < 5; i ++) {
+		if (!Board.Collide (nKind, nNewRot, *pnX + anKick[i], nY)) {
+			*pnRot = nNewRot;
+			*pnX += anKick[i];
+			return true;
+		}
+	}
+	return false;
+}
+
+/* 1 段下に動けるか（動けなければ固定になる）。動けるなら *pnY を更新して true */
+static inline bool PuzzleTryDown(const PuzzleBoard &Board, int nKind, int nRot, int nX, int *pnY)
+{
+	if (Board.Collide (nKind, nRot, nX, *pnY + 1)) {
+		return false;
+	}
+	*pnY += 1;
+	return true;
+}
+
+/* ========================================================================= */
 /* 1人ぶんのゲーム															 */
 /* ========================================================================= */
 /* 周期処理・入力の結果として、何が変わったか（送る内容を決めるのに使う） */
@@ -318,30 +366,19 @@ struct PuzzleGame {
 	/* 左右に動かす（dx=-1/+1）。動けたら PUZZLE_CHG_PIECE */
 	int Move(int dx)
 	{
-		if (bOver || Board.Collide (nKind, nRot, nX + dx, nY)) {
+		if (bOver || !PuzzleTryMove (Board, nKind, nRot, &nX, nY, dx)) {
 			return 0;
 		}
-		nX += dx;
 		return PUZZLE_CHG_PIECE;
 	}
 
 	/* 右に回す。壁際は左右にずらして入れる（壁けり）。回せたら PUZZLE_CHG_PIECE */
 	int Rotate(void)
 	{
-		static const int anKick[5] = { 0, -1, 1, -2, 2 };
-		int nNewRot = (nRot + 1) & 3, i;
-
-		if (bOver || (nKind == 1)) {		/* O は回しても同じ */
+		if (bOver || !PuzzleTryRotate (Board, nKind, &nRot, &nX, nY)) {
 			return 0;
 		}
-		for (i = 0; i < 5; i ++) {
-			if (!Board.Collide (nKind, nNewRot, nX + anKick[i], nY)) {
-				nRot = nNewRot;
-				nX += anKick[i];
-				return PUZZLE_CHG_PIECE;
-			}
-		}
-		return 0;
+		return PUZZLE_CHG_PIECE;
 	}
 
 	/* 相手から送られたお邪魔 nLines 段を待ちに足す（上限あり）。変わったら PUZZLE_CHG_GARBAGE */
@@ -404,8 +441,7 @@ struct PuzzleGame {
 			return 0;
 		}
 		dwLastDrop = dwNow;
-		if (!Board.Collide (nKind, nRot, nX, nY + 1)) {
-			nY ++;
+		if (PuzzleTryDown (Board, nKind, nRot, nX, &nY)) {
 			if (bSoft) {
 				dwScore += PUZZLE_SOFTDROP_SCORE;
 				return PUZZLE_CHG_PIECE | PUZZLE_CHG_SCORE;

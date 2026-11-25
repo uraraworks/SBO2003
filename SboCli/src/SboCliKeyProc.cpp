@@ -452,7 +452,13 @@ static void PuzzleKeyProc(BYTE byEvent, BYTE byCode)
 		}
 		s_dwSent[byCode] = dwNow;
 	}
-	SendCmdPUZZLEKEY (byKey);
+	/* 先読み：サーバーの返事を待たずに、自分の落ち物を先に動かして描く（動けなければ何もしない） */
+	{
+		DWORD dwSerial = SendCmdPUZZLEKEY (byKey);
+		if (byKey != PUZZLEKEY_LEAVE) {
+			PuzzlePredictKey (byKey, dwSerial);
+		}
+	}
 }
 
 static void KeyProcDispatch(BYTE byEvent, BYTE byCode)
