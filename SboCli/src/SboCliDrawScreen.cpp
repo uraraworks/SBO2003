@@ -649,7 +649,8 @@ static void DrawPuzzleOne(HDC hDC, const CMDPARA_PUZZLESTATE &St, const BYTE *pB
 	/* ここから上の層（帯・バー・文字） */
 
 	/* 待ちお邪魔の段数のバー（帯と反対側の、フィールドの横。下から積み上がる分だけ赤く伸びる） */
-	if (!St.byIdle && (St.byVs || (St.byGarbage > 0))) {
+	/* 待ちが 0 の時は何も描かない（対戦中ずっと、盤面の横に黒っぽい縦線が出て見えないように） */
+	if (!St.byIdle && (St.byGarbage > 0)) {
 		const int nBarW = 6;
 		int bx = (St.bySide == PUZZLESIDE_LEFT) ? (sx + nW + 6) : (sx - 6 - nBarW);
 		int nBarH = (int)St.byGarbage * PUZZLE_BLOCK_DOT;
