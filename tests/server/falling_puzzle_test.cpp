@@ -81,6 +81,18 @@ int main()
 	g.nKind = 1;
 	CHECK (g.Rotate (-1) == 0);								/* O は左にも回らない */
 
+	/* 上にはみ出す回転はしない：出たての I（盤面の 1 行目）は縦にできない。1 段落ちれば縦にできる。
+	   上段に 3 行しか空きが無ければ、縦にできず（立てた瞬間に負けにならない）、横のまま置ける */
+	g.nKind = 0; g.nRot = 0; g.nX = 3; g.nY = -1;
+	CHECK (g.Rotate () == 0 && g.nRot == 0);
+	g.nY = 0;
+	CHECK (g.Rotate () == PUZZLE_CHG_PIECE && g.nRot == 1);
+	g.Board.Init (10, 14);
+	for (int xx = 0; xx < 10; xx ++) g.Board.Set (xx, 3, 4);
+	g.nKind = 0; g.nRot = 0; g.nX = 3; g.nY = 0;
+	CHECK (g.Rotate () == 0 && g.nRot == 0);				/* 縦にすると 3 行目のブロックに当たる */
+	g.Board.Init (10, 14);
+
 	/* 左右移動：壁で止まる */
 	g.nKind = 2; g.nRot = 0; g.nX = 0; g.nY = 5;
 	CHECK (g.Move (-1) == 0 || g.Board.Collide (2, 0, -1, 5) == false);

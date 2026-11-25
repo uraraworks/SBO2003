@@ -248,6 +248,17 @@ static inline bool PuzzleTryRotate(const PuzzleBoard &Board, int nKind, int *pnR
 	if (nKind == 1) {
 		return false;
 	}
+	/* 回した形が盤面の上にはみ出す（上段で縦にすると上の外へ出る）時は回さない。
+	   はみ出したまま固定されて、立てた瞬間に負けになることがないよう、負けは次の落ち物が出せない時だけにする */
+	{
+		int anC[4][2], k;
+		PuzzleCells (nKind, nNewRot, anC);
+		for (k = 0; k < 4; k ++) {
+			if (nY + anC[k][1] < 0) {
+				return false;
+			}
+		}
+	}
 	for (i = 0; i < 5; i ++) {
 		if (!Board.Collide (nKind, nNewRot, *pnX + anKick[i], nY)) {
 			*pnRot = nNewRot;
