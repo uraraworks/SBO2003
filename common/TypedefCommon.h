@@ -4323,7 +4323,7 @@ typedef struct _CMDPARA_DGSTATUS {
 #pragma pack(pop)
 
 /* 落ち物パズル（台に座って遊ぶ。ロジックは common/FallingPuzzle.h。台を 2 台ペアにすると対戦。
-   CMD_PUZZLESTATE は、座っている人・対戦相手の台・台の近くにいる人（観戦）に、台ごとに送る）
+   CMD_PUZZLESTATE は、座っている人・対戦相手の台・台の近くにいる人（観戦。席が空の待機中の台も）に、台ごとに送る）
    CMD_PUZZLEKEY: クライアント→サーバー。座っている間のキー入力（CMDPARA_DATA1 の byData に PUZZLEKEY_*） */
 enum {
 	PUZZLEKEY_LEFT = 1,												/* 左へ */
@@ -4365,6 +4365,7 @@ typedef struct _CMDPARA_PUZZLESTATE {
 	BYTE		byVs;												/* 対戦中か（1=相手がいる） */
 	BYTE		byGarbage;											/* 待ちお邪魔の段数（盤面の横のバーに出す） */
 	BYTE		byCount;											/* 対戦開始までのカウントダウン残り秒（0=始まっている） */
+	BYTE		byIdle;												/* 待機中の台（1=席に誰もいない。盤面の枠と井戸（空か最後の盤面）だけ描き、落ち物・帯・バー・カウントダウンは出さない。将来「コインを入れてSで開始」などの案内文字を出す目印にもなる） */
 } CMDPARA_PUZZLESTATE, *PCMDPARA_PUZZLESTATE;
 #pragma pack(pop)
 

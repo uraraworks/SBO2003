@@ -2511,8 +2511,8 @@ puzzle done seats=0
 == AV2. Falling puzzle versus ==
 vs solo seatedA=1 vsA=0 coinA=0
 vs spectate near packets=1
-vs spectate nochange packets=0
-vs spectate far packets=1
+vs spectate nochange packets=3
+vs spectate far packets=4
 vs spectate far key packets=0
 vs spectate back packets=1
 vs spectate key packets=1
@@ -2535,4 +2535,18 @@ vs nopair seated=11 vs=00
 vs nocoin seatedB=0 vsA=0
 vs spectate leave packets=1 seats=0
 vs done seats=0
+== AV3. Falling puzzle idle table ==
+idle near A=k1/m0/i1/c0 x1 B=k1/m0/i1/c0 x1 far C=- x0 idleTables=1 seats=0
+idle nochange A=0 B=0 C=0
+idle approach 18=0 17=k1/m0/i1/c0 x1
+idle hysteresis packets=0
+idle leave 21=k0/m0/i1/c-1 x1
+idle re-approach=k1/m0/i1/c0 x1
+idle sit seated=1 A=k1/m1/i0/c0 x1 B=k1/m0/i0/c0 x1 C=k1/m0/i0/c0 x1 seats=1
+idle over seated=0 A_over=1 B=k1/m0/i1 C=k1/m0/i1 kept=1 idleTables=1 seats=0
+idle last board stays away_idleTables=1 returned_same=1
+idle sit again seatedB=1 A=k1/m0/i0/c0 x1 B=k1/m1/i0/c0 x1
+idle esc seatedB=0 A=k1/m0/i1/c0 x1 B=k1/m0/i1/c0 x1 seats=0
+idle empty cleaned idleTables=0
+idle done seats=0 idleTables=0
 == done ==

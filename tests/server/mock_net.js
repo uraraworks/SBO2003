@@ -121,6 +121,26 @@ Module['sboNet'] = (function () {
 			}
 			return 0;
 		},
+		/* 覚えたパケットのうち、コマンド nCmd のものの中身を、順番に 16 進にして「,」区切りで返す（圧縮は伸ばす） */
+		cmdAll: function (n, nCmd) {
+			var c = aConn[n], a = [], nPos = 0;
+			if (!c) {
+				return '';
+			}
+			var b = Buffer.concat(c.raw);
+			while (nPos + 8 <= b.length) {
+				var nSize = b.readUInt32LE(nPos);
+				var body = b.subarray(nPos + 8, nPos + 8 + nSize);
+				if (body.length > 5 && body[0] === 0xFF) {
+					try { body = zlib.inflateSync(Buffer.from(body.subarray(5))); } catch (e) { body = Buffer.alloc(0); }
+				}
+				if (body.length >= 1 && body[0] === nCmd) {
+					a.push(body.toString('hex'));
+				}
+				nPos += 8 + nSize;
+			}
+			return a.join(',');
+		},
 		/* 最後のコマンドを16進で返す。地形・差分の種類と、マスを含む差分に絞ることもできる。 */
 		lastBody: function (n, nCmd, nValid, countOffset) {
 			var c = aConn[n];

@@ -488,6 +488,66 @@ static COLORREF PuzzleShade(COLORREF cl, int nPct)
 	return RGB (min (r, 255), min (g, 255), min (b, 255));
 }
 
+/* 重ね描きを画面の中だけに切り取る範囲（DrawPuzzle が画面の左上・右下に合わせて決める）。
+   盤面が画面の端にかかる時、画面に入っている部分だけを描く */
+static int s_nPzL, s_nPzT, s_nPzR, s_nPzB;
+
+/* 横 1 行を、切り取り範囲の中だけ半透明で塗る */
+static void PuzSpan(HDC hDC, int x, int y, int cx, COLORREF cl, int nAlpha)
+{
+	int x1 = x + cx;
+
+	if ((y < s_nPzT) || (y >= s_nPzB)) {
+		return;
+	}
+	if (x < s_nPzL) {
+		x = s_nPzL;
+	}
+	if (x1 > s_nPzR) {
+		x1 = s_nPzR;
+	}
+	if (x1 > x) {
+		W32ShadeSpan (hDC, x, y, x1 - x, 0, cl, nAlpha);
+	}
+}
+
+/* 枠のある帯（半透明の暗い帯＋1 ドットの枠）を、切り取り範囲の中だけ描く */
+static void PuzFrame(HDC hDC, int x, int y, int cx, int cy, COLORREF clFrame, int nAlpha)
+{
+	int yy;
+
+	if ((y >= s_nPzB) || (y + cy <= s_nPzT) || (x >= s_nPzR) || (x + cx <= s_nPzL)) {
+		return;
+	}
+	for (yy = max (0, s_nPzT - y); yy < cy; yy ++) {
+		if (y + yy >= s_nPzB) {
+			break;
+		}
+		if ((yy == 0) || (yy == cy - 1)) {
+			PuzSpan (hDC, x + 1, y + yy, cx - 2, clFrame, 255);
+		} else {
+			PuzSpan (hDC, x, y + yy, cx, RGB (0, 0, 0), nAlpha);
+			PuzSpan (hDC, x, y + yy, 1, clFrame, 255);
+			PuzSpan (hDC, x + cx - 1, y + yy, 1, clFrame, 255);
+		}
+	}
+}
+
+/* 文字は、全体が切り取り範囲に入る時だけ描く（半分切れた文字は出さない）。nHeight は文字の高さ */
+static void PuzText(HDC hDC, int x, int y, LPSTR pszText, COLORREF cl, int nHeight, BOOL bCenter)
+{
+	SIZE size;
+
+	GetTextExtentPoint32 (hDC, pszText, strlen (pszText), &size);
+	if (bCenter) {
+		x -= size.cx / 2;
+	}
+	if ((x < s_nPzL) || (x + size.cx > s_nPzR) || (y < s_nPzT) || (y + nHeight > s_nPzB)) {
+		return;
+	}
+	TextOut2 (hDC, x, y, pszText, cl);
+}
+
 /* ブロック 1 つ（PUZZLE_BLOCK_DOT 四方）。nKind は 0〜6、お邪魔は 7 */
 static void PuzzleDrawBlock(HDC hDC, int x, int y, int nKind)
 {
@@ -496,15 +556,18 @@ static void PuzzleDrawBlock(HDC hDC, int x, int y, int nKind)
 	COLORREF clLight = PuzzleShade (cl, 135), clDark = PuzzleShade (cl, 60);
 	int yy;
 
+	if ((x >= s_nPzR) || (x + n <= s_nPzL) || (y >= s_nPzB) || (y + n <= s_nPzT)) {
+		return;
+	}
 	for (yy = 0; yy < n; yy ++) {
 		if (yy == 0) {
-			W32ShadeSpan (hDC, x, y + yy, n, 0, clLight, 255);
+			PuzSpan (hDC, x, y + yy, n, clLight, 255);
 		} else if (yy == n - 1) {
-			W32ShadeSpan (hDC, x, y + yy, n, 0, clDark, 255);
+			PuzSpan (hDC, x, y + yy, n, clDark, 255);
 		} else {
-			W32ShadeSpan (hDC, x, y + yy, n, 0, cl, 255);
-			W32ShadeSpan (hDC, x, y + yy, 1, 0, clLight, 255);
-			W32ShadeSpan (hDC, x + n - 1, y + yy, 1, 0, clDark, 255);
+			PuzSpan (hDC, x, y + yy, n, cl, 255);
+			PuzSpan (hDC, x, y + yy, 1, clLight, 255);
+			PuzSpan (hDC, x + n - 1, y + yy, 1, clDark, 255);
 		}
 	}
 }
@@ -521,7 +584,7 @@ static void DrawPuzzleOne(HDC hDC, const CMDPARA_PUZZLESTATE &St, const BYTE *pB
 	nH = nRows * PUZZLE_BLOCK_DOT;
 
 	/* 枠と盤面の背景 */
-	DrawDefenseFrame (hDC, sx - 3, sy - 3, nW + 6, nH + 6, clFrame, 190);
+	PuzFrame (hDC, sx - 3, sy - 3, nW + 6, nH + 6, clFrame, 190);
 
 	/* 積んだブロック（お邪魔は灰色） */
 	for (y = 0; y < nRows; y ++) {
@@ -533,7 +596,7 @@ static void DrawPuzzleOne(HDC hDC, const CMDPARA_PUZZLESTATE &St, const BYTE *pB
 		}
 	}
 	/* 操作中の落ち物 */
-	if ((St.byPiece < PUZZLE_KINDS) && !bOver) {
+	if ((St.byPiece < PUZZLE_KINDS) && !bOver && !St.byIdle) {
 		PuzzleCells (St.byPiece, St.byRot, anC);
 		for (i = 0; i < 4; i ++) {
 			x = (int)St.cX + anC[i][0];
@@ -545,7 +608,7 @@ static void DrawPuzzleOne(HDC hDC, const CMDPARA_PUZZLESTATE &St, const BYTE *pB
 	}
 
 	/* 待ちお邪魔の段数のバー（帯と反対側の、フィールドの横。下から積み上がる分だけ赤く伸びる） */
-	if (St.byVs || (St.byGarbage > 0)) {
+	if (!St.byIdle && (St.byVs || (St.byGarbage > 0))) {
 		const int nBarW = 6;
 		int bx = (St.bySide == PUZZLESIDE_LEFT) ? (sx + nW + 6) : (sx - 6 - nBarW);
 		int nBarH = (int)St.byGarbage * PUZZLE_BLOCK_DOT;
@@ -553,43 +616,43 @@ static void DrawPuzzleOne(HDC hDC, const CMDPARA_PUZZLESTATE &St, const BYTE *pB
 			nBarH = nH;
 		}
 		for (y = 0; y < nH; y ++) {
-			W32ShadeSpan (hDC, bx, sy + y, nBarW, 0, RGB (0, 0, 0), 150);
+			PuzSpan (hDC, bx, sy + y, nBarW, RGB (0, 0, 0), 150);
 		}
 		for (y = nH - nBarH; y < nH; y ++) {
-			W32ShadeSpan (hDC, bx + 1, sy + y, nBarW - 2, 0, RGB (235, 70, 60), 255);
+			PuzSpan (hDC, bx + 1, sy + y, nBarW - 2, RGB (235, 70, 60), 255);
 		}
 	}
 
-	/* 横の帯：次の落ち物・得点・ライン・レベル */
-	px = (St.bySide == PUZZLESIDE_LEFT) ? (sx - 6 - nPanelW) : (sx + nW + 6);
-	py = sy;
-	DrawDefenseFrame (hDC, px, py, nPanelW, 150, RGB (200, 200, 200), 150);
-	TextOut2 (hDC, px + 8, py + 4, (LPSTR)"NEXT", RGB (255, 235, 120));
-	if (St.byNext < PUZZLE_KINDS) {
-		PuzzleCells (St.byNext, 0, anC);
-		for (i = 0; i < 4; i ++) {
-			PuzzleDrawBlock (hDC, px + 16 + anC[i][0] * PUZZLE_BLOCK_DOT, py + 24 + anC[i][1] * PUZZLE_BLOCK_DOT, St.byNext);
+	/* 横の帯：次の落ち物・得点・ライン・レベル（座っている本人の台にだけ。待機中・ほかの人の台には出さない） */
+	if (St.byMine && !St.byIdle) {
+		px = (St.bySide == PUZZLESIDE_LEFT) ? (sx - 6 - nPanelW) : (sx + nW + 6);
+		py = sy;
+		PuzFrame (hDC, px, py, nPanelW, 150, RGB (200, 200, 200), 150);
+		PuzText (hDC, px + 8, py + 4, (LPSTR)"NEXT", RGB (255, 235, 120), 16, FALSE);
+		if (St.byNext < PUZZLE_KINDS) {
+			PuzzleCells (St.byNext, 0, anC);
+			for (i = 0; i < 4; i ++) {
+				PuzzleDrawBlock (hDC, px + 16 + anC[i][0] * PUZZLE_BLOCK_DOT, py + 24 + anC[i][1] * PUZZLE_BLOCK_DOT, St.byNext);
+			}
 		}
+		PuzText (hDC, px + 8, py + 70, (LPSTR)"SCORE", RGB (255, 235, 120), 16, FALSE);
+		wsprintf (szTmp, "%u", (unsigned int)St.dwScore);
+		PuzText (hDC, px + 8, py + 88, szTmp, RGB (255, 255, 255), 16, FALSE);
+		wsprintf (szTmp, "LINES %d", (int)St.wLines);
+		PuzText (hDC, px + 8, py + 108, szTmp, RGB (255, 255, 255), 16, FALSE);
+		wsprintf (szTmp, "LEVEL %d", (int)St.byLevel);
+		PuzText (hDC, px + 8, py + 126, szTmp, RGB (255, 255, 255), 16, FALSE);
 	}
-	TextOut2 (hDC, px + 8, py + 70, (LPSTR)"SCORE", RGB (255, 235, 120));
-	wsprintf (szTmp, "%u", (unsigned int)St.dwScore);
-	TextOut2 (hDC, px + 8, py + 88, szTmp, RGB (255, 255, 255));
-	wsprintf (szTmp, "LINES %d", (int)St.wLines);
-	TextOut2 (hDC, px + 8, py + 108, szTmp, RGB (255, 255, 255));
-	wsprintf (szTmp, "LEVEL %d", (int)St.byLevel);
-	TextOut2 (hDC, px + 8, py + 126, szTmp, RGB (255, 255, 255));
 
 	/* 対戦開始前のカウントダウン（盤面の真ん中に大きく） */
-	if (St.byCount > 0) {
-		SIZE size;
+	if ((St.byCount > 0) && !St.byIdle) {
 		wsprintf (szTmp, "%d", (int)St.byCount);
 		SelectObject (hDC, g_hFont32);
-		GetTextExtentPoint32 (hDC, szTmp, strlen (szTmp), &size);
-		TextOut2 (hDC, sx + nW / 2 - size.cx / 2, sy + nH / 2 - 16, szTmp, RGB (255, 255, 255));
+		PuzText (hDC, sx + nW / 2, sy + nH / 2 - 16, szTmp, RGB (255, 255, 255), 32, TRUE);
 		SelectObject (hDC, g_hFont14);
 	}
 	if (bOver) {
-		DrawDefenseTextCenter (hDC, sx + nW / 2, sy + nH / 2 - 8, (LPSTR)"GAME OVER", RGB (255, 120, 110));
+		PuzText (hDC, sx + nW / 2, sy + nH / 2 - 8, (LPSTR)"GAME OVER", RGB (255, 120, 110), 16, TRUE);
 	}
 }
 
@@ -614,11 +677,18 @@ static void DrawPuzzle(int nX, int nY)
 		/* マップのドット座標 → 画面（自分のキャラのマスが真ん中） */
 		sx = nX + DRAW_PARTS_X * 32 + (int)St.sFieldX - (int)pChar->dwX * 32;
 		sy = nY + DRAW_PARTS_Y * 32 + (int)St.sFieldY - (int)pChar->dwY * 32;
-		/* 帯・バーも含めて画面に入らない台は描かない */
-		if ((sx + St.byCols * PUZZLE_BLOCK_DOT + 110 < 0) || (sx - 110 > SCRSIZEX) ||
-			(sy + St.byRows * PUZZLE_BLOCK_DOT + 40 < 0) || (sy - 40 > SCRSIZEY)) {
-			continue;
+		/* 画面に少しもかからない台は描かない（帯・バーが出る台はそのぶん広く見る。画面にかかる分だけ切り取って描く） */
+		{
+			int nExtra = (St.byIdle ? 0 : 110) + 6;
+			if ((sx + St.byCols * PUZZLE_BLOCK_DOT + nExtra <= nX) || (sx - nExtra >= nX + SCRSIZEX) ||
+				(sy + St.byRows * PUZZLE_BLOCK_DOT + 6 <= nY) || (sy - 6 >= nY + SCRSIZEY)) {
+				continue;
+			}
 		}
+		s_nPzL = nX;
+		s_nPzT = nY;
+		s_nPzR = nX + SCRSIZEX;
+		s_nPzB = nY + SCRSIZEY;
 		if (hDC == NULL) {
 			hDC = g_pDibDrawMap->Lock ();
 			hFontOld = (HFONT)SelectObject (hDC, g_hFont14);
