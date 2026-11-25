@@ -5224,7 +5224,9 @@
 		function tapAudio() {
 			var se = window.Module && Module.SboSe;
 			var bgm = window.SboBgm && SboBgm.recordTap ? SboBgm.recordTap() : null;
-			var mix = se && se.ctx ? se.ctx : bgm ? bgm.ctx : null;
+			/* 混ぜる側は BGM の AudioContext にする。BGM を別の AudioContext から橋渡しすると、
+			   2 つの時計のずれで BGM がひび割れるため（効果音は短い音なので橋渡しでも目立たない） */
+			var mix = bgm ? bgm.ctx : se && se.ctx ? se.ctx : null;
 			if (!mix || !mix.createMediaStreamDestination) {
 				return null;
 			}
@@ -5232,30 +5234,32 @@
 			var dest;
 			try {
 				dest = mix.createMediaStreamDestination();
-				if (se && se.ctx === mix && se.gainPri && se.gainSec) {
-					se.gainPri.connect(dest);
-					se.gainSec.connect(dest);
+				if (bgm) {
+					bgm.node.connect(dest);
 					undo.push(function () {
-						se.gainPri.disconnect(dest);
-						se.gainSec.disconnect(dest);
+						bgm.node.disconnect(dest);
 					});
 				}
-				if (bgm) {
-					if (bgm.ctx === mix) {
-						bgm.node.connect(dest);
+				if (se && se.gainPri && se.gainSec) {
+					if (se.ctx === mix) {
+						se.gainPri.connect(dest);
+						se.gainSec.connect(dest);
 						undo.push(function () {
-							bgm.node.disconnect(dest);
+							se.gainPri.disconnect(dest);
+							se.gainSec.disconnect(dest);
 						});
 					} else {
 						/* 別の AudioContext の音は、いったん MediaStream にして混ぜる側へ渡す */
-						var bd = bgm.ctx.createMediaStreamDestination();
-						bgm.node.connect(bd);
-						var src = mix.createMediaStreamSource(bd.stream);
+						var sd = se.ctx.createMediaStreamDestination();
+						se.gainPri.connect(sd);
+						se.gainSec.connect(sd);
+						var src = mix.createMediaStreamSource(sd.stream);
 						src.connect(dest);
 						undo.push(function () {
 							src.disconnect();
-							bgm.node.disconnect(bd);
-							bd.stream.getTracks().forEach(function (t) {
+							se.gainPri.disconnect(sd);
+							se.gainSec.disconnect(sd);
+							sd.stream.getTracks().forEach(function (t) {
 								t.stop();
 							});
 						});
