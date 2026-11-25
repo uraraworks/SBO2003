@@ -356,6 +356,8 @@ struct PuzzleGame {
 		nY = -nMinY;		/* いちばん上のブロックが盤面の 1 行目に来る */
 		if (Board.Collide (nKind, nRot, nX, nY)) {
 			bOver = true;
+			/* 置けなかった最後の落ち物も、重なった形のまま盤面に残して見せる（見えないままゲームオーバーにならないように） */
+			Board.Lock (nKind, nRot, nX, nY);
 		}
 	}
 
