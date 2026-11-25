@@ -72,6 +72,15 @@ int main()
 	g.nKind = 1;											/* O は回らない */
 	CHECK (g.Rotate () == 0);
 
+	/* 左回し：右回しの逆向き。右に 1 回回して左に 1 回回すと元に戻る（壁けりなしの位置） */
+	g.nKind = 2; g.nRot = 0; g.nX = 3; g.nY = 5;
+	CHECK (g.Rotate (1) == PUZZLE_CHG_PIECE && g.nRot == 1);
+	CHECK (g.Rotate (-1) == PUZZLE_CHG_PIECE && g.nRot == 0);
+	CHECK (g.Rotate (-1) == PUZZLE_CHG_PIECE && g.nRot == 3);
+	CHECK (!g.Board.Collide (g.nKind, g.nRot, g.nX, g.nY));
+	g.nKind = 1;
+	CHECK (g.Rotate (-1) == 0);								/* O は左にも回らない */
+
 	/* 左右移動：壁で止まる */
 	g.nKind = 2; g.nRot = 0; g.nX = 0; g.nY = 5;
 	CHECK (g.Move (-1) == 0 || g.Board.Collide (2, 0, -1, 5) == false);

@@ -4329,8 +4329,9 @@ enum {
 	PUZZLEKEY_LEFT = 1,												/* 左へ */
 	PUZZLEKEY_RIGHT,												/* 右へ */
 	PUZZLEKEY_DOWN,													/* 1 段落とす（ソフトドロップ） */
-	PUZZLEKEY_ROTATE,												/* 回す */
-	PUZZLEKEY_LEAVE,												/* 席を立つ */
+	PUZZLEKEY_ROTATE,												/* 右に回す（X キー） */
+	PUZZLEKEY_LEAVE,												/* 席を立つ（S・ESC キー） */
+	PUZZLEKEY_ROTATE_L,												/* 左に回す（Z キー。あとから足したので番号は末尾） */
 };
 /* CMD_PUZZLESTATE の byKind */
 enum {

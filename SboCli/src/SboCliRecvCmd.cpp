@@ -8721,7 +8721,8 @@ static BOOL PuzzleViewApplyKey(PUZZLEVIEW *pView, BYTE byKey)
 	case PUZZLEKEY_LEFT:	bMoved = PuzzleTryMove (Board, nKind, nRot, &nX, nY, -1);	break;
 	case PUZZLEKEY_RIGHT:	bMoved = PuzzleTryMove (Board, nKind, nRot, &nX, nY, 1);	break;
 	case PUZZLEKEY_DOWN:	bMoved = PuzzleTryDown (Board, nKind, nRot, nX, &nY);		break;	/* 詰まった時の固定はサーバーの通知を待つ */
-	case PUZZLEKEY_ROTATE:	bMoved = PuzzleTryRotate (Board, nKind, &nRot, &nX, nY);	break;
+	case PUZZLEKEY_ROTATE:	bMoved = PuzzleTryRotate (Board, nKind, &nRot, &nX, nY, 1);	break;
+	case PUZZLEKEY_ROTATE_L:	bMoved = PuzzleTryRotate (Board, nKind, &nRot, &nX, nY, -1);	break;
 	default:				return FALSE;
 	}
 	if (bMoved) {
