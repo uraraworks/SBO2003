@@ -2498,6 +2498,7 @@ puzzle short seated=0 coin=1 msg=1
 puzzle skey paid seated=0 coin=1 msg+1
 puzzle use elsewhere seated=0 coin=1 state=0 sysmsg+1
 puzzle sit seated=1 coin=1 state+1 used=1
+puzzle coin charitem +1
 puzzle busy seatedB=0 coinB=2 msg=1
 puzzle nowalk moved=0
 puzzle keys packets=4 seated=1

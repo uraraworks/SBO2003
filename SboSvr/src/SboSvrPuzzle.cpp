@@ -1007,6 +1007,8 @@ void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed, int nChoice)
 		for (i = 0; i < Param.nCoinCount; i ++) {
 			QuestTakeItemOne (pChar, Param.wCoinItem);
 		}
+		/* 取り上げた分を本人の画面の持ち物に反映する（送らないと、座った後も画面にコインが残り、捨てると切断になる） */
+		SendCmdCHARITEM (pChar->pID, pChar->dwTblID);
 		sprintf (szMsg, "コインを%d枚使いました。", Param.nCoinCount);
 		SendCmdSYSMSG (pChar->pID, szMsg);
 	}
