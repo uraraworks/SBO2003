@@ -454,3 +454,61 @@ static inline int PuzzleDefaultDy(int nRows)
 {
 	return -((nRows * PUZZLE_BLOCK_DOT + PUZZLE_TILE_DOT - 1) / PUZZLE_TILE_DOT - 1);
 }
+
+/* ========================================================================= */
+/* 台の台詞 "@p..." のパラメータ（サーバーとクライアントで同じ読み方をする）			 */
+/*   @p<コイン番号>,<枚数>,<dx>,<dy>,<横>,<縦>,<帯の側>,<ペア番号>,<sdx>,<sdy>		 */
+/*   9・10 番目の sdx, sdy は「座る場所」：台NPCのマスからの相対位置（マス）。			 */
+/*   省略は (0, +1)＝台NPCの 1 つ下（既定の盤面の真下）。台NPCは見えないので、		 */
+/*   座る場所のマスに立って S キーを押すと座る										 */
+/* ========================================================================= */
+#define PUZZLE_PARAM_NONE		(-99999)	/* 省略・空欄 */
+#define PUZZLE_PARAM_COUNT		(10)		/* 台詞のパラメータの数 */
+#define PUZZLE_SEAT_DEFAULT_DX	(0)			/* 座る場所の既定（台NPCのマスから） */
+#define PUZZLE_SEAT_DEFAULT_DY	(1)
+#define PUZZLE_SEAT_LIMIT		(60)		/* sdx, sdy の範囲（±マス） */
+
+/* 台詞（"@p" で始まる）を読み、anVal[PUZZLE_PARAM_COUNT] に入れる（空欄・足りない欄は PUZZLE_PARAM_NONE） */
+static inline void PuzzleParseSpeech(const char *pszSpeech, int anVal[PUZZLE_PARAM_COUNT])
+{
+	const char *p = pszSpeech + 2;
+	int i;
+
+	for (i = 0; i < PUZZLE_PARAM_COUNT; i ++) {
+		anVal[i] = PUZZLE_PARAM_NONE;
+	}
+	for (i = 0; i < PUZZLE_PARAM_COUNT; i ++) {
+		bool bMinus = false, bNum = false;
+		int n = 0;
+
+		if (*p == '-') {
+			bMinus = true;
+			p ++;
+		}
+		while ((*p >= '0') && (*p <= '9')) {
+			if (n < 100000) {
+				n = n * 10 + (*p - '0');
+			}
+			bNum = true;
+			p ++;
+		}
+		if (bNum) {
+			anVal[i] = bMinus ? -n : n;
+		}
+		if (*p != ',') {
+			break;
+		}
+		p ++;
+	}
+}
+
+/* 座る場所（台NPCのマスからの相対位置）を台詞から読む */
+static inline void PuzzleSeatOffset(const char *pszSpeech, int *pnSdx, int *pnSdy)
+{
+	int anVal[PUZZLE_PARAM_COUNT];
+
+	PuzzleParseSpeech (pszSpeech, anVal);
+	*pnSdx = (anVal[8] == PUZZLE_PARAM_NONE) ? PUZZLE_SEAT_DEFAULT_DX : ((anVal[8] < -PUZZLE_SEAT_LIMIT) ? -PUZZLE_SEAT_LIMIT : (anVal[8] > PUZZLE_SEAT_LIMIT) ? PUZZLE_SEAT_LIMIT : anVal[8]);
+	*pnSdy = (anVal[9] == PUZZLE_PARAM_NONE) ? PUZZLE_SEAT_DEFAULT_DY : ((anVal[9] < -PUZZLE_SEAT_LIMIT) ? -PUZZLE_SEAT_LIMIT : (anVal[9] > PUZZLE_SEAT_LIMIT) ? PUZZLE_SEAT_LIMIT : anVal[9]);
+}
+

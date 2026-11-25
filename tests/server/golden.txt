@@ -2549,4 +2549,12 @@ idle sit again seatedB=1 A=k1/m0/i0/c0 x1 B=k1/m1/i0/c0 x1
 idle esc seatedB=0 A=k1/m0/i1/c0 x1 B=k1/m0/i1/c0 x1 seats=0
 idle empty cleaned idleTables=0
 idle done seats=0 idleTables=0
+== AV4. Falling puzzle seat cell ==
+seat other cells seated=0 coin=1
+seat default cell seated=1 coin=0 x=1 y=1
+seat custom default=0 custom=1 stay=1 away=0 coin=0
+seat negative default=0 left2=1
+seat other space seated=0
+seat ghost table=2 shop=0 ghost=1 preset=2 data=01 func=20
+seat done seats=0 idleTables=0
 == done ==

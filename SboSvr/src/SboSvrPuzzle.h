@@ -10,7 +10,9 @@
 /* 関数プロトタイプ宣言														 */
 /* ========================================================================= */
 extern BOOL PuzzleIsTableNpc(PCHARINFO pNpc);								/* 台詞が "@p" で始まる台NPCか */
-extern void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc);						/* 台NPCにSキーで話しかけた（コインを使って席に座る） */
+extern void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc);						/* 台の座る場所のマスでSキーを押した（コインを使って席に座る。座る場所以外では何もしない） */
+extern BOOL PuzzleOnSeatCell(PCHARINFO pChar, PCHARINFO pNpc);				/* pChar が台NPCの「座る場所」のマスの上にいるか（同じマップ・空間。台詞の 9・10 番目。既定は台NPCの 1 つ下） */
+extern BYTE PuzzleGhostForSend(PCHARINFO pChar);							/* CMD_CHARINFO に載せる byGhost（台NPCは体を描かない CHARGHOST_NAMEONLY に上書き。ほかは pChar->byGhost） */
 extern BOOL PuzzleIsSeated(PCHARINFO pChar);								/* 席に座っているか（座っている間は歩けない） */
 extern void PuzzleKey(PCHARINFO pChar, BYTE byKey);							/* 座っている人のキー入力（PUZZLEKEY_*） */
 extern void PuzzleProc(void);												/* 周期処理（g_dwTime の経過時間で落下を進める。メインループから毎回呼ぶ） */

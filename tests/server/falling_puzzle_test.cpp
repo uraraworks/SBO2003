@@ -277,6 +277,26 @@ int main()
 		c1.Spawn (); c2.Spawn ();
 	}
 
+	/* 台詞の座る場所（9・10 番目）。省略は台NPCの 1 つ下、負の値・空欄・範囲外の丸め。既存の 8 項目の台詞はそのまま読める */
+	{
+		int nSx, nSy, anVal[PUZZLE_PARAM_COUNT];
+
+		PuzzleSeatOffset ("@p314,1,,,,,1,1", &nSx, &nSy);
+		CHECK (nSx == 0 && nSy == 1);
+		PuzzleSeatOffset ("@p", &nSx, &nSy);
+		CHECK (nSx == 0 && nSy == 1);
+		PuzzleSeatOffset ("@p1,1,,,,,,,3,-2", &nSx, &nSy);
+		CHECK (nSx == 3 && nSy == -2);
+		PuzzleSeatOffset ("@p1,1,,,,,,,-4", &nSx, &nSy);
+		CHECK (nSx == -4 && nSy == 1);
+		PuzzleSeatOffset ("@p1,1,,,,,,,,5", &nSx, &nSy);
+		CHECK (nSx == 0 && nSy == 5);
+		PuzzleSeatOffset ("@p1,1,,,,,,,999,-999", &nSx, &nSy);
+		CHECK (nSx == PUZZLE_SEAT_LIMIT && nSy == -PUZZLE_SEAT_LIMIT);
+		PuzzleParseSpeech ("@p314,1,,,,,1,1", anVal);
+		CHECK (anVal[0] == 314 && anVal[1] == 1 && anVal[2] == PUZZLE_PARAM_NONE && anVal[6] == 1 && anVal[7] == 1 && anVal[8] == PUZZLE_PARAM_NONE);
+	}
+
 	printf (g_nNg ? "NG %d 件\n" : "一致\n", g_nNg);
 	return g_nNg ? 1 : 0;
 }

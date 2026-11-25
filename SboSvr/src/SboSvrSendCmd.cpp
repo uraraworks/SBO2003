@@ -18,6 +18,7 @@
 #include "SboSvrRecvCmd.h"
 #include "SboSvrNpcRoute.h"
 #include "SboSvrMagicProc.h"
+#include "SboSvrPuzzle.h"
 
 
 /* ========================================================================= */
@@ -688,7 +689,7 @@ void SendCmdCHARINFO(DWORD pIDSend, int nNo)
 					pSendData->bySearchCy			= pChar->bySearchCy;
 					pSendData->byLightLevel			= pChar->byLightLevel;
 					pSendData->byHide				= pChar->byHide;
-					pSendData->byGhost				= pChar->byGhost;
+					pSendData->byGhost				= PuzzleGhostForSend (pChar);
 					pSendData->wGrpID				= pChar->wGrpID;
 					pSendData->wGrpMain				= pChar->wGrpMain;
 					pSendData->wGrpSub				= pChar->wGrpSub;
@@ -817,7 +818,7 @@ void SendCmdCHARINFO2(DWORD pIDSend, DWORD dwID, int nNo)
 					pSendData->byNpcType		= pChar->byNpcType;
 					pSendData->byLightLevel		= pChar->byLightLevel;
 					pSendData->byHide			= pChar->byHide;
-					pSendData->byGhost			= pChar->byGhost;
+					pSendData->byGhost			= PuzzleGhostForSend (pChar);
 					pSendData->wGrpID			= pChar->wGrpID;
 					pSendData->wGrpMain			= pChar->wGrpMain;
 					pSendData->wGrpSub			= pChar->wGrpSub;
@@ -939,7 +940,7 @@ void SendCmdCHARINFO3(int nNo)
 	pSendData->bySearchCy			= pChar->bySearchCy;
 	pSendData->byLightLevel			= pChar->byLightLevel;
 	pSendData->byHide				= pChar->byHide;
-	pSendData->byGhost				= pChar->byGhost;
+	pSendData->byGhost				= PuzzleGhostForSend (pChar);
 	pSendData->wGrpID				= pChar->wGrpID;
 	pSendData->wGrpMain				= pChar->wGrpMain;
 	pSendData->wGrpSub				= pChar->wGrpSub;

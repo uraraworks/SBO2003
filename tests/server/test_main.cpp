@@ -1359,6 +1359,7 @@ static void TestTailArrive(const std::vector<int> &aLogin);
 static void TestPuzzle(const std::vector<int> &aLogin);
 static void TestPuzzleVs(const std::vector<int> &aLogin);
 static void TestPuzzleIdle(const std::vector<int> &aLogin);
+static void TestPuzzleSeat(const std::vector<int> &aLogin);
 static void TestEmptyMapCheck(const std::vector<int> &aLogin);
 static void TestPutFill(void);
 static void TestDungeonTheme(void);
@@ -1939,6 +1940,8 @@ static void TestWorld(void)
 	/* AV2. 落ち物パズルの対戦（ペアの台・カウントダウン・お邪魔・勝敗・観戦） */
 	TestPuzzleVs(aLogin);
 	TestPuzzleIdle(aLogin);
+	/* AV4. 落ち物パズルの座る場所（台詞の 9・10 番目）と、見えない台NPC */
+	TestPuzzleSeat(aLogin);
 	/* SM. 召喚特技のヒット数の実測（SUMMON_HITS=1 の時だけ。最後に流す） */
 	TestSummonHits(aLogin);
 }
@@ -17567,13 +17570,36 @@ static void PuzzleKeySend(PCHARINFO p, BYTE byKey)
 	TestRecv(p, &Para, sizeof(Para));
 }
 
-static void PuzzleTalk(PCHARINFO p, PCHARINFO pNpc)
+/* S キーで台に話しかけた（今いる場所のまま送る。座れるのは台の座る場所のマスの上だけ） */
+static void PuzzleTalkRaw(PCHARINFO p, PCHARINFO pNpc)
 {
 	CMDPARA_DATA1 Para;
 	ZeroMemory(&Para, sizeof(Para));
 	Para.byCmd = CMD_TALKRAND;
 	Para.dwTblID = pNpc->dwTblID;
 	TestRecv(p, &Para, sizeof(Para));
+}
+
+/* 人を決めたマスへ置く（同じマップ・同じ空間。QuestMovePC と違い席は片付けない） */
+static void PuzzlePlace(PCHARINFO p, PCHARINFO pNpc, DWORD dwX, DWORD dwY)
+{
+	if ((p->dwMapID == pNpc->dwMapID) && (p->dwX == dwX) && (p->dwY == dwY)) {
+		return;
+	}
+	DeleteTblNoPC((int)p->dwTblID);
+	p->dwMapID = pNpc->dwMapID;
+	p->dwX = dwX;
+	p->dwY = dwY;
+	AddTblNoPC((int)p->dwTblID);
+}
+
+/* 台の座る場所のマス（台詞の 9・10 番目。省略は台NPCの 1 つ下）に立ってから S キーで話しかける */
+static void PuzzleTalk(PCHARINFO p, PCHARINFO pNpc)
+{
+	int nSdx, nSdy;
+	PuzzleSeatOffset(pNpc->pszNpcSpeech, &nSdx, &nSdy);
+	PuzzlePlace(p, pNpc, (DWORD)((int)pNpc->dwX + nSdx), (DWORD)((int)pNpc->dwY + nSdy));
+	PuzzleTalkRaw(p, pNpc);
 }
 
 static int PuzzleCoinCount(PCHARINFO p, WORD wItem)
@@ -18233,4 +18259,143 @@ static void TestPuzzleIdle(const std::vector<int> &aLogin)
 	}
 	g_dwTime = dwTimeBack;
 	printf("idle done seats=%d idleTables=%d\n", PuzzleSeatCount(), PuzzleIdleCount());
+}
+
+/* ------------------------------------------------------------------------- */
+/* AV4. 落ち物パズルの座る場所と、見えない台NPC								 */
+/*     台詞 "@p<コイン>,<枚数>,<dx>,<dy>,<横>,<縦>,<帯>,<ペア>,<sdx>,<sdy>" の 9・10 番目が座る場所（台NPCのマスから）。	 */
+/*     座る場所のマスで S → 座れる（向きは問わない・台NPCが目の前でなくてもよい）・台NPCのマスや隣のマスでは座れない・	 */
+/*     sdx,sdy を指定した台では指定の場所に座れる（負の値も）・席を立たせる距離は座る場所のマスが基準・	 */
+/*     台NPCの CMD_CHARINFO は体を描かない byGhost=CHARGHOST_NAMEONLY で送る（データは書き換えない・台でないNPCはそのまま）	 */
+/* ------------------------------------------------------------------------- */
+static int PuzzleGhostSent(PCHARINFO pViewer, PCHARINFO pNpc)
+{
+	std::vector<BYTE> aCap;
+	CMDPARA_CHARINFO Para;
+
+	SvrSendCaptureBegin();
+	SendCmdCHARINFO(pViewer->pID, (int)pNpc->dwTblID);
+	BOOL bRet = SvrSendCaptureEnd(aCap);
+	ZeroMemory(&Para, sizeof(Para));
+	if (!bRet) {
+		return -1;
+	}
+	SboPackGetCHARINFO(&Para, &aCap[0], &aCap[0] + aCap.size());
+	return (Para.dwTblID == pNpc->dwTblID) ? (int)Para.byGhost : -2;
+}
+
+static void TestPuzzleSeat(const std::vector<int> &aLogin)
+{
+	printf("== AV4. Falling puzzle seat cell ==\n");
+	if (aLogin.size() < 2) return;
+	s_pSpLogin = &aLogin;
+	PCHARINFO pA = g_aCharInfo[aLogin[0]];
+	WORD wCoin = 1;
+	DWORD dwXBack = pA->dwX, dwYBack = pA->dwY, dwMapBack = pA->dwMapID;
+	BYTE byStateBack = pA->byCharState, byDirBack = pA->byDirection;
+	WORD wHPBack = pA->wHP;
+	DWORD dwTimeBack = g_dwTime;
+
+	pA->byCharState = CHARSTATE_MOVE;
+	if (pA->wHP == 0) pA->wHP = 10;
+	for (int i = 0; i < MAX_MYITEM; i ++) if (pA->waItem[i] == wCoin) DelCharItem(pA->dwTblID, (BYTE)i);
+	DWORD dwX = pA->dwX, dwY = pA->dwY;
+	/* 台NPC は A のマスに置く。既定の座る場所は 1 つ下 */
+	NearNpcOpen(pA, "@p1,1");
+	PCHARINFO pT = s_aNearNpc.back();
+	g_dwTime = (s_dwFakeNow = max(s_dwFakeNow, g_dwTime) + 1000);
+	AddCharItem(pA->dwTblID, wCoin);
+
+	/* 1. 台NPCのマス・隣のマス・その上下では座れず、コインも減らない。座る場所（NPC の 1 つ下）では向きを問わず座れる */
+	{
+		int anCell[5][2] = { {0, 0}, {1, 1}, {-1, 1}, {0, 2}, {0, -1} };
+		int nSeated = 0;
+		for (int i = 0; i < 5; i ++) {
+			PuzzlePlace(pA, pT, (DWORD)((int)dwX + anCell[i][0]), (DWORD)((int)dwY + anCell[i][1]));
+			pA->byDirection = 0;
+			PuzzleTalkRaw(pA, pT);
+			nSeated += PuzzleIsSeated(pA);
+		}
+		printf("seat other cells seated=%d coin=%d\n", nSeated, PuzzleCoinCount(pA, wCoin));
+		PuzzlePlace(pA, pT, dwX, dwY + 1);
+		pA->byDirection = 3;											/* 台NPCと反対側・横向きでもよい */
+		PuzzleTalkRaw(pA, pT);
+		printf("seat default cell seated=%d coin=%d x=%d y=%d\n", PuzzleIsSeated(pA), PuzzleCoinCount(pA, wCoin),
+			(int)(pA->dwX == dwX), (int)(pA->dwY == dwY + 1));
+		PuzzleKeySend(pA, PUZZLEKEY_LEAVE);
+	}
+
+	/* 2. sdx,sdy を指定した台（右 5・上 2）。既定の場所では座れず、指定の場所では座れる。
+	   座る場所から台NPCは 5 マス離れているが、席を立たせる距離は座る場所が基準なので座ったままでいられる。
+	   座る場所から 4 マス離れると立たされる */
+	PuzzlePlace(pA, pT, dwX, dwY);							/* 台NPC は人のいるマスに置かれる */
+	NearNpcOpen(pA, "@p1,1,,,,,,,5,-2");
+	PCHARINFO pT2 = s_aNearNpc.back();
+	AddCharItem(pA->dwTblID, wCoin);
+	PuzzlePlace(pA, pT2, dwX, dwY + 1);
+	PuzzleTalkRaw(pA, pT2);
+	int nDefault = PuzzleIsSeated(pA);
+	PuzzlePlace(pA, pT2, dwX + 5, dwY - 2);
+	PuzzleTalkRaw(pA, pT2);
+	int nCustom = PuzzleIsSeated(pA);
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	int nStay = PuzzleIsSeated(pA);
+	PuzzlePlace(pA, pT2, dwX + 5 + 4, dwY - 2);
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	printf("seat custom default=%d custom=%d stay=%d away=%d coin=%d\n", nDefault, nCustom, nStay, PuzzleIsSeated(pA), PuzzleCoinCount(pA, wCoin));
+	PuzzleOnLeave(pA);
+
+	/* 3. 負の値（左 2・下 0）。台の近く 3 マス以内の制限は座る場所が基準 */
+	PuzzlePlace(pA, pT, dwX, dwY);							/* 台NPC は人のいるマスに置かれる */
+	NearNpcOpen(pA, "@p1,1,,,,,,,-2,0");
+	PCHARINFO pT3 = s_aNearNpc.back();
+	AddCharItem(pA->dwTblID, wCoin);
+	PuzzlePlace(pA, pT3, dwX, dwY + 1);
+	PuzzleTalkRaw(pA, pT3);
+	int nOld = PuzzleIsSeated(pA);
+	PuzzlePlace(pA, pT3, dwX - 2, dwY);
+	PuzzleTalkRaw(pA, pT3);
+	printf("seat negative default=%d left2=%d\n", nOld, PuzzleIsSeated(pA));
+	PuzzleOnLeave(pA);
+
+	/* 4. 別のマップ・別の空間からは座れない（同じ座標でも） */
+	{
+		DWORD dwSpaceBack = pA->dwSpaceID;
+		AddCharItem(pA->dwTblID, wCoin);
+		PuzzlePlace(pA, pT, dwX, dwY + 1);
+		pA->dwSpaceID = dwSpaceBack + 1;
+		PuzzleTalkRaw(pA, pT);
+		int nSpace = PuzzleIsSeated(pA);
+		pA->dwSpaceID = dwSpaceBack;
+		printf("seat other space seated=%d\n", nSpace);
+	}
+
+	/* 5. 台NPCは体を描かない（CMD_CHARINFO の byGhost が CHARGHOST_NAMEONLY。名前は送ったまま）。
+	   台NPCのデータは書き換えない・台でないNPC（byGhost=1 の霊も）はそのまま */
+	PuzzlePlace(pA, pT, dwX, dwY + 1);
+	NearNpcOpen(pA, "@6");
+	PCHARINFO pShop = s_aNearNpc.back();
+	NearNpcOpen(pA, "@6");
+	PCHARINFO pGhost = s_aNearNpc.back();
+	pGhost->byGhost = 1;
+	pT2->byGhost = 1;										/* 台NPCに半透明の設定が入っていても、体を描かない値で送る */
+	int nTable = PuzzleGhostSent(pA, pT), nShop = PuzzleGhostSent(pA, pShop), nGhost = PuzzleGhostSent(pA, pGhost), nPreset = PuzzleGhostSent(pA, pT2);
+	printf("seat ghost table=%d shop=%d ghost=%d preset=%d data=%d%d func=%d%d\n", nTable, nShop, nGhost, nPreset, (int)pT->byGhost, (int)pT2->byGhost,
+		(int)PuzzleGhostForSend(pT), (int)PuzzleGhostForSend(pShop));
+
+	/* 片付け */
+	PuzzleOnLeave(pA);
+	PuzzleRetireNpcs();
+	NearNpcClose();
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	for (int i = 0; i < MAX_MYITEM; i ++) if (pA->waItem[i] == wCoin) DelCharItem(pA->dwTblID, (BYTE)i);
+	DeleteTblNoPC((int)pA->dwTblID);
+	pA->dwMapID = dwMapBack; pA->dwX = dwXBack; pA->dwY = dwYBack;
+	AddTblNoPC((int)pA->dwTblID);
+	pA->byCharState = byStateBack; pA->wHP = wHPBack; pA->byDirection = byDirBack;
+	g_dwTime = dwTimeBack;
+	printf("seat done seats=%d idleTables=%d\n", PuzzleSeatCount(), PuzzleIdleCount());
 }

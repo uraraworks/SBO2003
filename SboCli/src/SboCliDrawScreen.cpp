@@ -468,7 +468,12 @@ static void DrawDungeonPanel(int nX, int nY)
 /*		 ゲームオーバー後の少しの間も）の重ね描き								 */
 /*		 枠・盤面・操作中の落ち物・次の落ち物・得点を、地図の上に描く。			 */
 /*		 フィールドの位置はサーバーが台NPCの座標から決めて（マップのドット座標）	 */
-/*		 送ってくる。自分のキャラを画面の真ん中として、地図の座標に合わせる。	 */
+/*		 送ってくる。地図のパーツ・キャラと同じ描画用の画面（歩きでずれる画面の外側まで含む）の	 */
+/*		 座標（自分のマスが (DRAW_PARTS_X+1)*32）に合わせるので、歩いている間も地図と一緒に	 */
+/*		 ドット単位で動く（画面に見える範囲の切り取りだけ、画面の左上 nX,nY を使う）。	 */
+/*		 2 層に分けて描く：下の層（bTop=FALSE。キャラより前＝地図のパーツの後）は井戸の背景・	 */
+/*		 枠・ブロック・落ち物。上の層（bTop=TRUE。ウィンドウの下）は帯・待ちお邪魔のバー・	 */
+/*		 カウントダウン・GAME OVER。盤面の下に立つキャラの頭が隠れないようにする			 */
 /*		 ブロックの絵は新しい画像を使わず、単色の塗り分け（立体の縁つき）		 */
 /* ========================================================================= */
 static const COLORREF s_aclPuzzle[PUZZLE_KINDS + 1] = {
@@ -573,7 +578,7 @@ static void PuzzleDrawBlock(HDC hDC, int x, int y, int nKind)
 }
 
 /* 盤面 1 つ（自分の台・対戦相手の台・近くで遊んでいる台）を描く。sx, sy は画面上のフィールドの左上 */
-static void DrawPuzzleOne(HDC hDC, const CMDPARA_PUZZLESTATE &St, const BYTE *pBoard, BOOL bOver, int sx, int sy)
+static void DrawPuzzleOne(HDC hDC, const CMDPARA_PUZZLESTATE &St, const BYTE *pBoard, BOOL bOver, int sx, int sy, BOOL bTop)
 {
 	char szTmp[64];
 	int x, y, i, nCols = St.byCols, nRows = St.byRows, nW, nH, px, py, anC[4][2];
@@ -583,29 +588,34 @@ static void DrawPuzzleOne(HDC hDC, const CMDPARA_PUZZLESTATE &St, const BYTE *pB
 	nW = nCols * PUZZLE_BLOCK_DOT;
 	nH = nRows * PUZZLE_BLOCK_DOT;
 
-	/* 枠と盤面の背景 */
-	PuzFrame (hDC, sx - 3, sy - 3, nW + 6, nH + 6, clFrame, 190);
+	if (!bTop) {
+		/* 下の層：枠と盤面の背景 */
+		PuzFrame (hDC, sx - 3, sy - 3, nW + 6, nH + 6, clFrame, 190);
 
-	/* 積んだブロック（お邪魔は灰色） */
-	for (y = 0; y < nRows; y ++) {
-		for (x = 0; x < nCols; x ++) {
-			int nCell = pBoard[x + y * nCols];
-			if ((nCell >= 1) && (nCell <= PUZZLE_CELL_GARBAGE)) {
-				PuzzleDrawBlock (hDC, sx + x * PUZZLE_BLOCK_DOT, sy + y * PUZZLE_BLOCK_DOT, nCell - 1);
+		/* 積んだブロック（お邪魔は灰色） */
+		for (y = 0; y < nRows; y ++) {
+			for (x = 0; x < nCols; x ++) {
+				int nCell = pBoard[x + y * nCols];
+				if ((nCell >= 1) && (nCell <= PUZZLE_CELL_GARBAGE)) {
+					PuzzleDrawBlock (hDC, sx + x * PUZZLE_BLOCK_DOT, sy + y * PUZZLE_BLOCK_DOT, nCell - 1);
+				}
 			}
 		}
-	}
-	/* 操作中の落ち物 */
-	if ((St.byPiece < PUZZLE_KINDS) && !bOver && !St.byIdle) {
-		PuzzleCells (St.byPiece, St.byRot, anC);
-		for (i = 0; i < 4; i ++) {
-			x = (int)St.cX + anC[i][0];
-			y = (int)St.cY + anC[i][1];
-			if ((x >= 0) && (x < nCols) && (y >= 0) && (y < nRows)) {
-				PuzzleDrawBlock (hDC, sx + x * PUZZLE_BLOCK_DOT, sy + y * PUZZLE_BLOCK_DOT, St.byPiece);
+		/* 操作中の落ち物 */
+		if ((St.byPiece < PUZZLE_KINDS) && !bOver && !St.byIdle) {
+			PuzzleCells (St.byPiece, St.byRot, anC);
+			for (i = 0; i < 4; i ++) {
+				x = (int)St.cX + anC[i][0];
+				y = (int)St.cY + anC[i][1];
+				if ((x >= 0) && (x < nCols) && (y >= 0) && (y < nRows)) {
+					PuzzleDrawBlock (hDC, sx + x * PUZZLE_BLOCK_DOT, sy + y * PUZZLE_BLOCK_DOT, St.byPiece);
+				}
 			}
 		}
+		return;
 	}
+
+	/* ここから上の層（帯・バー・文字） */
 
 	/* 待ちお邪魔の段数のバー（帯と反対側の、フィールドの横。下から積み上がる分だけ赤く伸びる） */
 	if (!St.byIdle && (St.byVs || (St.byGarbage > 0))) {
@@ -656,7 +666,7 @@ static void DrawPuzzleOne(HDC hDC, const CMDPARA_PUZZLESTATE &St, const BYTE *pB
 	}
 }
 
-static void DrawPuzzle(int nX, int nY)
+static void DrawPuzzle(int nX, int nY, BOOL bTop)
 {
 	CMDPARA_PUZZLESTATE St;
 	const BYTE *pBoard;
@@ -674,9 +684,11 @@ static void DrawPuzzle(int nX, int nY)
 		if (!GetPuzzleState (i, &St, &pBoard, &bOver)) {
 			continue;
 		}
-		/* マップのドット座標 → 画面（自分のキャラのマスが真ん中） */
-		sx = nX + DRAW_PARTS_X * 32 + (int)St.sFieldX - (int)pChar->dwX * 32;
-		sy = nY + DRAW_PARTS_Y * 32 + (int)St.sFieldY - (int)pChar->dwY * 32;
+		/* マップのドット座標 → 描画用の画面（地図のパーツ・キャラと同じ座標。自分のマスが (DRAW_PARTS_X+1)*32）。
+		   歩きのずれ（nX,nY = 32 - BowOffset）は画面の切り取り範囲だけに効かせ、盤面の位置には足さない
+		   （以前は盤面の位置に nX を足していたため歩きのずれが地図と合わず、1 マスごとにカクカクした） */
+		sx = (DRAW_PARTS_X + 1) * 32 + (int)St.sFieldX - (int)pChar->dwX * 32;
+		sy = (DRAW_PARTS_Y + 1) * 32 + (int)St.sFieldY - (int)pChar->dwY * 32;
 		/* 画面に少しもかからない台は描かない（帯・バーが出る台はそのぶん広く見る。画面にかかる分だけ切り取って描く） */
 		{
 			int nExtra = (St.byIdle ? 0 : 110) + 6;
@@ -694,7 +706,7 @@ static void DrawPuzzle(int nX, int nY)
 			hFontOld = (HFONT)SelectObject (hDC, g_hFont14);
 			SetBkMode (hDC, TRANSPARENT);
 		}
-		DrawPuzzleOne (hDC, St, pBoard, bOver, sx, sy);
+		DrawPuzzleOne (hDC, St, pBoard, bOver, sx, sy, bTop);
 	}
 	if (hDC) {
 		SelectObject (hDC, hFontOld);
@@ -964,8 +976,8 @@ void DrawScreen(HWND hWnd, HDC hDC)
 				/* 拠点防衛以外の番外編ダンジョンの状況パネル（左上。挑戦中だけ） */
 				DrawDungeonPanel (32 - x, 32 - y);
 
-				/* 落ち物パズル（台の横のフィールド。遊んでいる間だけ。ウィンドウの下に敷く） */
-				DrawPuzzle (32 - x, 32 - y);
+				/* 落ち物パズルの帯・待ちお邪魔のバー・文字（盤面本体は DrawScreenMOVE でキャラの前に描いてある。ウィンドウの下に敷く） */
+				DrawPuzzle (32 - x, 32 - y, TRUE);
 
 				hDCPrimary = g_pDibDrawMap->Lock ();
 				HFONT hFontOld = (HFONT)SelectObject (hDCPrimary, g_hFont14);
@@ -1177,6 +1189,12 @@ BOOL DrawScreenMOVE(void)
 	}
 
 	DrawObj ();				/* オブジェクトを描画 */
+	/* 落ち物パズルの盤面本体（井戸・枠・ブロック）は、地面のパーツの上・キャラの下に描く。
+	   台の下に立つキャラの頭が盤面に隠れないように（帯・文字は最前面で DrawScreen が描く） */
+	{
+		PCHARINFO pMyChar = g_aCharInfo[g_nMyCharID];
+		DrawPuzzle (32 - BowOffsetX (pMyChar), 32 - BowOffsetY (pMyChar), FALSE);
+	}
 	for (i = 0; i < DRAW_PARTS_Y * 2 + 3; i ++) {
 		DrawCharLine (i);
 		DrawMapLine (i, PARTSHIT_BRIDGEV);	/* 橋の下をくぐる人に橋を重ねる */
@@ -2747,7 +2765,10 @@ void DrawChar3(void)
 			}
 		}
 
-		if ((g_byViewMode == 1) || (g_byViewMode == 3)) {
+		/* 落ち物パズルの台NPC（台詞が @p。サーバーが byGhost=CHARGHOST_NAMEONLY で送ってくる）は体も名前も描かない（見えない台） */
+		BOOL bPuzzleTable = (pChar->byGhost == CHARGHOST_NAMEONLY) && (pChar->byNpcType != NPCTYPE_INIT) && pChar->pszNpcSpeech &&
+				(pChar->pszNpcSpeech[0] == '@') && (pChar->pszNpcSpeech[1] == 'p');
+		if (!bPuzzleTable && ((g_byViewMode == 1) || (g_byViewMode == 3))) {
 			cl = RGB(255, 255, 255);
 			if (pChar->clName) {
 				cl = pChar->clName;
