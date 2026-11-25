@@ -666,12 +666,19 @@ static void DrawPuzzleOne(HDC hDC, const CMDPARA_PUZZLESTATE &St, const BYTE *pB
 	}
 
 	/* 座る場所に立っている時の案内（待機中の台の、本人にだけ。サーバーが PUZZLEIDLE_SEAT を付ける）。
-	   盤面の中央に「INSERT COIN」「（Sキー）」を約 1 秒周期で点滅させる（必要な枚数が 0 の台は「PUSH START」）。GAME OVER の字が出ている間は出さない */
+	   盤面の中央に「INSERT COIN」「道具→コイン」（コマンドの道具からコインを使う）を約 1 秒周期で点滅させる
+	   （必要な枚数が 0 の台は「PUSH START」「（Sキー）」）。GAME OVER の字が出ている間は出さない */
 	if ((St.byIdle & PUZZLEIDLE_SEAT) && !bOver) {
 		g_bDraw = TRUE;		/* 点滅のため、出ている間は描き続ける */
 		if (((timeGetTime () / 500) & 1) == 0) {
-			PuzText (hDC, sx + nW / 2, sy + nH / 2 - 18, (LPSTR)((St.byIdle & PUZZLEIDLE_FREE) ? "PUSH START" : "INSERT COIN"), RGB (255, 235, 120), 16, TRUE);
-			PuzText (hDC, sx + nW / 2, sy + nH / 2 + 2, (LPSTR)"（Sキー）", RGB (255, 255, 255), 16, TRUE);
+			BOOL bFree = (St.byIdle & PUZZLEIDLE_FREE) ? TRUE : FALSE;
+			PuzText (hDC, sx + nW / 2, sy + nH / 2 - 18, (LPSTR)(bFree ? "PUSH START" : "INSERT COIN"), RGB (255, 235, 120), 16, TRUE);
+			/* 有料の台は「道具→コイン」を下に小さく。無料の台は今まで通り「（Sキー）」 */
+			if (bFree) {
+				PuzText (hDC, sx + nW / 2, sy + nH / 2 + 2, (LPSTR)"（Sキー）", RGB (255, 255, 255), 16, TRUE);
+			} else {
+				PuzText (hDC, sx + nW / 2, sy + nH / 2 + 4, (LPSTR)"道具→コイン", RGB (255, 255, 255), 14, TRUE);
+			}
 		}
 	}
 

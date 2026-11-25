@@ -8367,7 +8367,7 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 		}
 		return;
 	}
-	/* 落ち物パズルの台（台詞が「@p」で始まる）？ 座る場所のマスに立っていれば、コインを使って席に座る
+	/* 落ち物パズルの台（台詞が「@p」で始まる）？ 座る場所のマスに立っていれば、座る（無料の台だけ始まる。有料の台は道具のコインを使う案内だけ。コイン使用は ItemProc → PuzzleUseItem）
 	   （台NPCは見えず目の前でなくてよい。座る場所かどうかは PuzzleSit が見る） */
 	if (PuzzleIsTableNpc (pChar)) {
 		if (s_nCharNoRecv >= 0) {

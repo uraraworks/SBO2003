@@ -10,6 +10,7 @@
 #include "Proc/SubGame/ProcSubGameWAR.h"
 #include "Proc/ProcSubGame.h"
 #include "SboSvrRecvCmd.h"
+#include "SboSvrPuzzle.h"
 #include "SboSvrBattleProc.h"
 #include "SboSvrMagicProc.h"
 #include "SboSvrCharInfoTimerProc.h"
@@ -108,6 +109,12 @@ void ItemProc(DWORD dwTblID, BYTE byNo, DWORD dwUseTblID)
 	pItem = g_aItemInfo[pChar->waItem[byNo]];
 	bDrop = TRUE;
 	ZeroMemory (szMsg, sizeof (szMsg));
+
+	/* 落ち物パズルの台の座る場所のマスで、その台のコインを自分に使った？ 種別にかかわらず先に調べ、座って始める（コインは台の処理が取り上げる）。
+	   当てはまらなければ、以下の通常の処理（効果なしなら説明文）になる */
+	if ((dwTblID == dwUseTblID) && PuzzleUseItem (pChar, pChar->waItem[byNo])) {
+		return;
+	}
 
 	/*********************************
 		他キャラに使えるかチェック

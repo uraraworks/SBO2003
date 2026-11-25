@@ -2494,7 +2494,9 @@ mid-leave twice: front[0]=-1 back[0]=3 front[1]=-1 back[1]=-1 front[2]=-1 back[2
 == AV. Falling puzzle table ==
 puzzle npc=1 isTable=1 free=0
 puzzle nocoin seated=0 msg=1 state=0
-puzzle short seated=0 coin=1
+puzzle short seated=0 coin=1 msg=1
+puzzle skey paid seated=0 coin=1 msg+1
+puzzle use elsewhere seated=0 coin=1 state=0 sysmsg+1
 puzzle sit seated=1 coin=1 state+1 used=1
 puzzle busy seatedB=0 coinB=2 msg=1
 puzzle nowalk moved=0

@@ -4341,7 +4341,7 @@ enum {
 };
 /* CMDPARA_PUZZLESTATE の byIdle のビット（待機中の台の、受け取った本人向けの案内） */
 #define PUZZLEIDLE_ON		(0x01)									/* 待機中（席が空） */
-#define PUZZLEIDLE_SEAT		(0x02)									/* 受け取った本人が座る場所のマスに立っている（盤面の中央に「INSERT COIN（Sキー）」を点滅。本人にだけ付く） */
+#define PUZZLEIDLE_SEAT		(0x02)									/* 受け取った本人が座る場所のマスに立っている（盤面の中央に「INSERT COIN」「道具→コイン」を点滅。本人にだけ付く） */
 #define PUZZLEIDLE_FREE		(0x04)									/* この台は必要な枚数が 0（SEAT と一緒に付く。「PUSH START（Sキー）」を出す） */
 /* 台の帯（次の落ち物・得点）をフィールドのどちら側に出すか（台詞 @p の 7 番目の値） */
 #define PUZZLESIDE_RIGHT	(0)										/* 帯はフィールドの右 */

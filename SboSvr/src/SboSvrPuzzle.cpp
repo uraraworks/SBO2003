@@ -35,7 +35,8 @@
  *   PUZZLE_OVER_SHOW_MS（FallingPuzzle.h）たつと byOver=0 の FULL を送って字を消す（最後の盤面は次に誰かが座るまで残る）。
  * 座る場所に立つと（INSERT COIN）：待機中の台の座る場所のマスに誰かが立っている間、その人にだけ byIdle の PUZZLEIDLE_SEAT の bit（必要な枚数が 0 なら
  *   PUZZLEIDLE_FREE も）を付けた待機中の盤面を送る（盤面の中央に「INSERT COIN（Sキー）」を点滅させる合図。ほかの人には付けない）。
- *   立つ・離れる時に見直し（PUZZLE_WATCH_MS ごと）、変わった時だけ送り直す（送ってある値を PUZZLEWATCH::byFlag に持つ）。座るのは今まで通り S キー（PuzzleSit）。
+ *   立つ・離れる時に見直し（PUZZLE_WATCH_MS ごと）、変わった時だけ送り直す（送ってある値を PUZZLEWATCH::byFlag に持つ）。
+ *   座るのは、有料の台は道具のコインを使う（ItemProc → PuzzleUseItem → PuzzleSit）。有料の台で S キーを押してもコインは使わず案内だけ。無料の台は S キー（PuzzleSit）。
  * 連勝：対戦に勝って続ける側の席に nWinStreak を持つ（勝ちで +1。席を立つ・切断・マップ移動・負け・ゲームオーバーで 0 に戻す）。
  *   盤面の通知の byStreak で見ている全員に知らせ、勝った時のシステムメッセージにも付ける。
  * 記録：ハイスコア（ゲームオーバーになった本人の得点）と連勝記録（連勝が途切れた時の連勝数。2 以上）を、落ち物パズル全体で 1 つずつ
@@ -851,7 +852,44 @@ void PuzzleRecordTalk(PCHARINFO pChar, PCHARINFO pNpc)
 	SendCmdTALKMSG (pChar->pID, pNpc->dwTblID, szMsg);
 }
 
-void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc)
+/* 道具（コイン）を使った時の処理。使う人が今立っているのが、そのコインを使う有料の台の座る場所のマスなら
+   座って始める（使われている台は PuzzleSit が断る）（コインは PuzzleSit が取り上げる。座れなかった時は減らさない）。始まった・座れなかった旨を伝えた時は TRUE（道具の通常の処理はしない）。
+   当てはまらなければ FALSE（効果なしの道具として今まで通りの説明文が出る） */
+BOOL PuzzleUseItem(PCHARINFO pChar, WORD wItem)
+{
+	PMAPINFO pMap;
+	int i;
+
+	if ((wItem == 0) || (pChar->byNpcType != NPCTYPE_INIT) || (pChar->dwMapID >= (DWORD)g_aMapInfo.GetSize ())) {
+		return FALSE;
+	}
+	pMap = g_aMapInfo[pChar->dwMapID];
+	if (pMap == NULL || pMap->paTblNoNPC == NULL) {
+		return FALSE;
+	}
+	for (i = 0; i < (int)pMap->dwCountTblNoNPC; i ++) {
+		PCHARINFO pNpc;
+		PUZZLEPARAM Param;
+
+		if (pMap->paTblNoNPC[i] == (DWORD)-1) {
+			break;
+		}
+		pNpc = g_aCharInfo[pMap->paTblNoNPC[i]];
+		if (!PuzzleIsTableNpc (pNpc) || !PuzzleOnSeatCell (pChar, pNpc)) {
+			continue;
+		}
+		ParseParam (pNpc->pszNpcSpeech, &Param);
+		if ((Param.wCoinItem != wItem) || (Param.nCoinCount <= 0)) {
+			continue;
+		}
+		/* 席が使われている台でも PuzzleSit が「この台は今、使われています。」を伝える（コインは減らさない） */
+		PuzzleSit (pChar, pNpc, TRUE);
+		return TRUE;
+	}
+	return FALSE;
+}
+
+void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed)
 {
 	PUZZLEPARAM Param;
 	int i, nTable, nPartner = -1;
@@ -875,6 +913,11 @@ void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc)
 	nTable = FindTable (pNpc->dwTblID, pNpc->dwMapID);
 	if ((nTable >= 0) && !s_aTable[nTable].bIdle) {
 		SendCmdSYSMSG (pChar->pID, "この台は今、使われています。");
+		return;
+	}
+	/* 有料の台（必要枚数 1 以上）は S キーでは始まらない。道具のコインを使って始める（無料の台は S キーで始まる） */
+	if (!bCoinUsed && (Param.wCoinItem != 0) && (Param.nCoinCount > 0)) {
+		SendCmdSYSMSG (pChar->pID, "コインを使って始めます。コマンドの道具からコインを使ってください。");
 		return;
 	}
 	/* ペアの台でひとりが遊んでいれば、対戦になる */

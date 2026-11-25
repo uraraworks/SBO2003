@@ -10,7 +10,8 @@
 /* 関数プロトタイプ宣言														 */
 /* ========================================================================= */
 extern BOOL PuzzleIsTableNpc(PCHARINFO pNpc);								/* 台詞が "@p" で始まる台NPCか */
-extern void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc);						/* 台の座る場所のマスでSキーを押した（コインを使って席に座る。座る場所以外では何もしない） */
+extern void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed = FALSE);	/* 台の座る場所のマスで席に座る（座る場所以外では何もしない）。Sキー：無料の台だけ始まる（有料の台は案内だけ）。bCoinUsed=TRUE（道具のコインから）：コインを使って始まる */
+extern BOOL PuzzleUseItem(PCHARINFO pChar, WORD wItem);						/* 道具を使った時の処理。座る場所のマスでその台のコインなら席に座って始める（TRUE）。当てはまらなければ FALSE */
 extern BOOL PuzzleOnSeatCell(PCHARINFO pChar, PCHARINFO pNpc);				/* pChar が台NPCの「座る場所」のマスの上にいるか（同じマップ・空間。台詞の 9・10 番目。既定は台NPCの 1 つ下） */
 extern BYTE PuzzleGhostForSend(PCHARINFO pChar);							/* CMD_CHARINFO に載せる byGhost（台NPCは体を描かない CHARGHOST_NAMEONLY に上書き。ほかは pChar->byGhost） */
 extern BOOL PuzzleIsSeated(PCHARINFO pChar);								/* 席に座っているか（座っている間は歩けない） */

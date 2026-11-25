@@ -1936,6 +1936,12 @@ static void TestWorld(void)
 	TestTailMidLeave(aLogin);
 	/* AU. ついていく人が、着いたマスの別のマップ移動に反応しない */
 	TestTailArrive(aLogin);
+	/* AV〜AV5 のコイン（アイテム 1）は、本番のコイン（番号 314）と同じ「効果なし・使っても減らない」にしておく
+	   （座る場所でコインを使うと台が取り上げ、使えなかった時は減らないことを確かめるため。終わったら元に戻す） */
+	BYTE byCoinTypeBack = g_aItemInfo[1]->byType, byCoinFlgBack = g_aItemInfo[1]->byFlg, byCoinEraseBack = g_aItemInfo[1]->byEraseProbability;
+	g_aItemInfo[1]->byType = 0;
+	g_aItemInfo[1]->byFlg &= (BYTE)~ITEMFLG_LOST;
+	g_aItemInfo[1]->byEraseProbability = 0;
 	/* AV. 落ち物パズルの台（コイン・席・キー入力・落下・ゲームオーバー・片付け） */
 	TestPuzzle(aLogin);
 	/* AV2. 落ち物パズルの対戦（ペアの台・カウントダウン・お邪魔・勝敗・観戦） */
@@ -1945,6 +1951,9 @@ static void TestWorld(void)
 	TestPuzzleSeat(aLogin);
 	/* AV5. 落ち物パズルの INSERT COIN の案内（座る場所に立つと本人にだけ）・連勝・ハイスコアと連勝記録（保存・掲示板 @h・API） */
 	TestPuzzleRecord(aLogin);
+	g_aItemInfo[1]->byType = byCoinTypeBack;
+	g_aItemInfo[1]->byFlg = byCoinFlgBack;
+	g_aItemInfo[1]->byEraseProbability = byCoinEraseBack;
 	/* SM. 召喚特技のヒット数の実測（SUMMON_HITS=1 の時だけ。最後に流す） */
 	TestSummonHits(aLogin);
 }
@@ -17599,14 +17608,78 @@ static int PuzzleOverFlag(int nConn, DWORD dwNpc, int *pnIdle = NULL, int *pnCel
 	return -1;
 }
 
-/* S キーで台に話しかけた（今いる場所のまま送る。座れるのは台の座る場所のマスの上だけ） */
-static void PuzzleTalkRaw(PCHARINFO p, PCHARINFO pNpc)
+static int PuzzleCoinCount(PCHARINFO p, WORD wItem)
+{
+	int n = 0;
+	for (int i = 0; i < MAX_MYITEM; i ++) if (p->waItem[i] == wItem) n ++;
+	return n;
+}
+
+/* 持ち物の byNo 番目を自分に使う（CMD_USEITEM。クライアントの道具メニューの「使う」と同じ通信） */
+static void PuzzleUseItemSend(PCHARINFO p, BYTE byNo)
+{
+	CMDPARA_DATA4 Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_USEITEM;
+	Para.dwTblID = p->dwTblID;
+	Para.byData = byNo;
+	Para.dwData = p->dwTblID;
+	TestRecv(p, &Para, sizeof(Para));
+}
+
+/* 台のコインを持っていれば、その 1 枚目を使う（使えたら TRUE。持っていなければ何もせず FALSE） */
+static BOOL PuzzleUseCoin(PCHARINFO p, WORD wCoin)
+{
+	for (int i = 0; i < MAX_MYITEM; i ++) {
+		if (p->waItem[i] == wCoin) {
+			PuzzleUseItemSend(p, (BYTE)i);
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* S キーで台に話しかけた（今いる場所のまま送る） */
+static void PuzzleKeyS(PCHARINFO p, PCHARINFO pNpc)
 {
 	CMDPARA_DATA1 Para;
 	ZeroMemory(&Para, sizeof(Para));
 	Para.byCmd = CMD_TALKRAND;
 	Para.dwTblID = pNpc->dwTblID;
 	TestRecv(p, &Para, sizeof(Para));
+}
+
+/* 台に座ろうとする（今いる場所のまま。座れるのは台の座る場所のマスの上だけ）。
+   有料の台はコマンドの道具からコインを使う（持っていなければ何も使わず S キー＝案内だけ）。無料の台と台でない NPC は S キー */
+static void PuzzleTalkRaw(PCHARINFO p, PCHARINFO pNpc)
+{
+	int anVal[PUZZLE_PARAM_COUNT];
+	if (PuzzleIsTableNpc(pNpc)) {
+		PuzzleParseSpeech(pNpc->pszNpcSpeech, anVal);
+		if ((anVal[0] > 0) && (anVal[1] > 0) && (PuzzleCoinCount(p, (WORD)anVal[0]) > 0)) {
+			/* 立っているマスが、この台だけの座る場所なら、本当に道具のコインを使う（本番の通り）。
+			   テストでは台を同じマスに何台も置くので、ほかの台と座る場所が重なる時（または別の台の座る場所の時）は、
+			   使う台を決めて PuzzleSit にコインを使った扱いで渡す（本番では座る場所は重ならない） */
+			int nSame = 0, nSelf = 0;
+			for (size_t i = 0; i < s_aNearNpc.size(); i ++) {
+				if (PuzzleIsTableNpc(s_aNearNpc[i]) && PuzzleOnSeatCell(p, s_aNearNpc[i])) {
+					int anTmp[PUZZLE_PARAM_COUNT];
+					PuzzleParseSpeech(s_aNearNpc[i]->pszNpcSpeech, anTmp);
+					if (anTmp[0] == anVal[0]) {
+						nSame ++;
+						if (s_aNearNpc[i] == pNpc) nSelf ++;
+					}
+				}
+			}
+			if ((nSame == 1) && (nSelf == 1)) {
+				PuzzleUseCoin(p, (WORD)anVal[0]);
+			} else {
+				PuzzleSit(p, pNpc, TRUE);
+			}
+			return;
+		}
+	}
+	PuzzleKeyS(p, pNpc);
 }
 
 /* 人を決めたマスへ置く（同じマップ・同じ空間。QuestMovePC と違い席は片付けない） */
@@ -17629,13 +17702,6 @@ static void PuzzleTalk(PCHARINFO p, PCHARINFO pNpc)
 	PuzzleSeatOffset(pNpc->pszNpcSpeech, &nSdx, &nSdy);
 	PuzzlePlace(p, pNpc, (DWORD)((int)pNpc->dwX + nSdx), (DWORD)((int)pNpc->dwY + nSdy));
 	PuzzleTalkRaw(p, pNpc);
-}
-
-static int PuzzleCoinCount(PCHARINFO p, WORD wItem)
-{
-	int n = 0;
-	for (int i = 0; i < MAX_MYITEM; i ++) if (p->waItem[i] == wItem) n ++;
-	return n;
 }
 
 static void TestPuzzle(const std::vector<int> &aLogin)
@@ -17661,16 +17727,34 @@ static void TestPuzzle(const std::vector<int> &aLogin)
 	for (int i = 0; i < MAX_MYITEM; i ++) if (pA->waItem[i] == wCoin) DelCharItem(pA->dwTblID, (BYTE)i);
 	printf("puzzle npc=%d isTable=%d free=%d\n", pNpc ? 1 : 0, PuzzleIsTableNpc(pNpc), PuzzleSeatCount());
 
-	/* コインが無い → 座れず「コインがありません」（文字の確認は、送ったバイト列を覚えさせている間だけ） */
+	/* コインが無い（使えるものが無いので S キー）→ 座れず、コインを使う案内だけ（文字の確認は、送ったバイト列を覚えさせている間だけ） */
 	MockTrace(1);
 	PuzzleTalk(pA, pNpc);
-	printf("puzzle nocoin seated=%d msg=%d state=%d\n", PuzzleIsSeated(pA), MockHasText(nConnA, CMD_SYSMSG, "コインがありません"),
+	printf("puzzle nocoin seated=%d msg=%d state=%d\n", PuzzleIsSeated(pA), MockHasText(nConnA, CMD_SYSMSG, "コマンドの道具からコインを使ってください"),
 		MockCmdCount(nConnA, CMD_PUZZLESTATE));
 
-	/* コイン 1 枚（2 枚必要）→ まだ座れず、減りもしない */
+	/* コイン 1 枚（2 枚必要）を座る場所で使う → まだ座れず「コインがありません」、減りもしない */
 	AddCharItem(pA->dwTblID, wCoin);
 	PuzzleTalk(pA, pNpc);
-	printf("puzzle short seated=%d coin=%d\n", PuzzleIsSeated(pA), PuzzleCoinCount(pA, wCoin));
+	printf("puzzle short seated=%d coin=%d msg=%d\n", PuzzleIsSeated(pA), PuzzleCoinCount(pA, wCoin),
+		MockHasText(nConnA, CMD_SYSMSG, "コインがありません"));
+	/* 有料の台で S キー → コインを持っていても使わず、座れず、減らない（案内のメッセージが 1 つ出る） */
+	{
+		int nMsg = MockCmdCount(nConnA, CMD_SYSMSG);
+		PuzzleKeyS(pA, pNpc);
+		printf("puzzle skey paid seated=%d coin=%d msg+%d\n", PuzzleIsSeated(pA), PuzzleCoinCount(pA, wCoin),
+			MockCmdCount(nConnA, CMD_SYSMSG) - nMsg);
+	}
+	/* 座る場所以外（座る場所の 1 つ隣）でコインを使う → 座れず、減らず、案内も出ない（今まで通り効果なしの説明）。
+	   「何も起こりませんでした」の MAPMSG は出る（SYSMSG は増えない） */
+	{
+		int nSdx, nSdy, nMsg = MockCmdCount(nConnA, CMD_SYSMSG);
+		PuzzleSeatOffset(pNpc->pszNpcSpeech, &nSdx, &nSdy);
+		PuzzlePlace(pA, pNpc, (DWORD)((int)pNpc->dwX + nSdx + 1), (DWORD)((int)pNpc->dwY + nSdy));
+		PuzzleUseCoin(pA, wCoin);
+		printf("puzzle use elsewhere seated=%d coin=%d state=%d sysmsg+%d\n", PuzzleIsSeated(pA), PuzzleCoinCount(pA, wCoin),
+			PuzzleSeatCount(), MockCmdCount(nConnA, CMD_SYSMSG) - nMsg);
+	}
 	/* 2 枚 → 座る。2 枚減り、盤面全体(FULL)が届く */
 	AddCharItem(pA->dwTblID, wCoin);
 	AddCharItem(pA->dwTblID, wCoin);
