@@ -17777,10 +17777,12 @@ static void TestPuzzle(const std::vector<int> &aLogin)
 	/* 2 枚 → 座る。2 枚減り、盤面全体(FULL)が届く */
 	AddCharItem(pA->dwTblID, wCoin);
 	AddCharItem(pA->dwTblID, wCoin);
-	int nState0 = MockCmdCount(nConnA, CMD_PUZZLESTATE);
+	int nState0 = MockCmdCount(nConnA, CMD_PUZZLESTATE), nItem0 = MockCmdCount(nConnA, CMD_CHARITEM);
 	PuzzleTalk(pA, pNpc);
 	printf("puzzle sit seated=%d coin=%d state+%d used=%d\n", PuzzleIsSeated(pA), PuzzleCoinCount(pA, wCoin),
 		MockCmdCount(nConnA, CMD_PUZZLESTATE) - nState0, MockHasText(nConnA, CMD_SYSMSG, "コインを2枚使いました"));
+	/* コインを取り上げたら持ち物を本人に送り直す（送らないと画面にコインが残り、捨てると切断になる） */
+	printf("puzzle coin charitem +%d\n", MockCmdCount(nConnA, CMD_CHARITEM) - nItem0);
 
 	/* 同じ台に 2 人目（段階1は席 1 つ）は座れず、コインも減らない */
 	AddCharItem(pB->dwTblID, wCoin);
