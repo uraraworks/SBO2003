@@ -18,6 +18,14 @@
 - ブロックが置けなくなった側（お邪魔で上にはみ出した場合を含む）が負け。両者に「○○の勝ち！」（名前はキャラ名）と出て、負けた側は席を立つ。勝った側は盤面そのまま・続きの得点でひとり用に続ける。ESC・切断・マップ移動・席から離れた場合は、残った側の勝ち。
 - 画面：自分の盤面と相手の盤面が、マップ上の各台の位置に描かれる（相手の盤面もリアルタイムに見える）。台の近く（画面に入る距離）にいる人にも、両方の盤面が見える（観戦）。
 
+### 待機中の台（遊んでいない台）
+
+- 席に誰もいない台も、近くを歩く人には盤面の枠と空の井戸が見える（座らなくてよい）。帯（次の落ち物・得点）・落ち物・カウントダウンは出ない。帯は座っている本人の台にだけ出る。
+- 台に近づくと、画面に入る前（横の距離 `PUZZLE_VIEW_ENTER`＝盤面の中心から 15 マス＋盤面の半分）に盤面が届くので、画面の端から少しずつ現れる。離れる時は、届き始めた距離より 3 マス外（`PUZZLE_VIEW_LEAVE`）まで離れてから消える（境目で送る・消すを繰り返さない）。画面にかかる部分だけを描く（半分だけ入っている状態も自然に見える）。
+- ゲームオーバーの最後の盤面は、次に誰かが座るまで台に残る（席を立っただけ・切断・離れた場合は空の井戸に戻る）。座っていた本人は「GAME OVER」を 3 秒見たあと、ほかの人と同じ待機中の見え方になる。
+- 同じマップで遠い人には送らない。台の近くに誰もいなければ、最後の盤面のない待機中の台は覚えない。
+
+
 ## 台の作り方（データ投入）
 
 コードは「台詞の先頭の印」で台を見分けます（`@d`＝ダンジョン受付・`@m`＝傭兵などと同じ仕組み）。管理者ウィンドウで NPC を置き、台詞に次を書くだけです。
@@ -64,9 +72,11 @@ NPC は「移動しない」などふつうの NPC でよく、台詞が `@p` �
   - S キー（`CMD_TALKRAND`）→ `PuzzleSit`。キー入力（`CMD_PUZZLEKEY`）→ `PuzzleKey`。周期処理は `PuzzleProc`（`SboSvr.cpp` の `g_ProcSubGame.Proc()` の直後。`g_dwTime` の経過時間で落下を進める）。
   - サブゲームの `SUBGAMEID_*`・`CProcSubGame` は使わない（台ごとの状態は台 NPC に結び付いていて、保存データも要らないため）。座っている間の歩行は `RecvDataProcCHARPOS` で止める。切断は `OnDecPlayer` → `PuzzleOnLeave`。
   - 変わった時に `CMD_PUZZLESTATE`（盤面が変わった時は `PUZZLESTATE_FULL`＝盤面全体、動いただけは `PUZZLESTATE_MOVE`＝位置だけ）を、台ごとに送る。送り先は、座っている人・対戦相手の台の人・台の近くにいる人（観戦。フィールドの中心から画面に入る距離＝`PUZZLE_VIEW_MARGIN`＋盤面の大きさ）。台ごとに「送ってある人」の表を持ち、`PUZZLE_WATCH_MS`（250ms）ごとに同じマップの人を見直して、近づいた人に盤面全体を 1 回、離れた人に `PUZZLESTATE_NONE` を送る。盤面が見える人が増えるほど送る量は増える（キー 1 回の位置更新は数十バイト×人数）。重くなる場合は「座っている 2 人だけ」に絞る（`WatchRefresh` の同じマップの人を探す部分を外す）。
+  - 待機中の台：席が空でも `PUZZLETABLE` を表に載せる（`bIdle`。ゲームオーバーの最後の盤面は `bLast`）。`PuzzleProc` が `PUZZLE_WATCH_MS` ごとに `IdleScan` で、人のいるマップの台NPCのうち近くに人がいるものを待機中として載せ、`WatchRefresh` で近づいた人に `PUZZLESTATE_FULL`（`byIdle=1`・`byMine=0`・空の盤面か最後の盤面）を送る。座ると同じ表を引き継いでゲーム中の `FULL` に切り替わる。席の人数は `PuzzleSeatCount`（待機中は数えない）。
+  - 通信：`CMDPARA_PUZZLESTATE` の `byIdle`（待機中の台）。クライアントは `byIdle` なら枠と盤面だけ描く。将来「コインを入れてSで開始」などの案内文字を出す時の目印にもなる（今は出さない）。`PUZZLE_VIEW_MAX` は 16。
   - 台は 1 台＝1 席。対戦は `PUZZLETABLE` の `bVs`（対戦中）・`dwOppNpc`（相手の台NPC）・`bCount`（カウントダウン中）で持ち、台詞の 8 番目（ペア番号）が同じ別の台NPCを `FindPartnerNpc` で探す。勝敗・離席は `Leave`、お邪魔の送信は `SendChanged`。
   - 通信：`CMDPARA_PUZZLESTATE` に `dwNpc`（盤面の見分け）・`byMine`（受け取った本人の席か）・`byVs`・`byGarbage`（待ちお邪魔の段数）・`byCount`（カウントダウン残り秒）を持つ。クライアントは `dwNpc` ごとに最大 `PUZZLE_VIEW_MAX`（8）台ぶんの盤面を覚えて描く。
   - 調整用の定数は `common/FallingPuzzle.h`：落下の速さ（`PUZZLE_DROP_MS_*`・`PUZZLE_LINES_PER_LEVEL`）、お邪魔の量（`g_anPuzzleGarbage`）、カウントダウン秒（`PUZZLE_VS_COUNTDOWN_SEC`）、待ちの上限（`PUZZLE_PENDING_MAX`）、1 回に積む段数（`PUZZLE_GARBAGE_APPLY_MAX`）。
 - クライアント: `SboCliRecvCmd.cpp`（受信・`IsPuzzleSeated`・`GetPuzzleState`）、`SboCliKeyProc.cpp`（`KeyProcDispatch` の先頭で座っている間のキーをすべて `CMD_PUZZLEKEY` へ。押し続けの繰り返し間隔もここ）、`SboCliDrawScreen.cpp`（`DrawPuzzle`。マップの上・ウィンドウの下に重ね描き）。スマホの仮想パッドは `SboWebGetPadState` の 128（`PADSTATE_PUZZLE`）で「調べる」を「回す」、「キャンセル」を「席を立つ」にし、表示・戦闘・地図を隠す。
 - ブロックの絵は新しい画像を作らず、種類ごとの単色＋縁の塗り分け（`PuzzleDrawBlock`）。
-- サーバー回帰テスト `tests/server/test_main.cpp` の AV（コイン・席・キー・落下・ゲームオーバー・片付け）と AV2（対戦：開始・カウントダウン・お邪魔・相殺・勝敗・ESC/切断/離れる・観戦）。お邪魔の計算・相殺・勝敗判定の単体テストは `falling_puzzle_test.cpp`。
+- サーバー回帰テスト `tests/server/test_main.cpp` の AV3（待機中の台：近づく・距離の境目・離れる・座る・最後の盤面が残る・席を立つ・誰もいなくなると消える。`mock_net.js` の `cmdAll` でパケットの中身を見る）、AV（コイン・席・キー・落下・ゲームオーバー・片付け）と AV2（対戦：開始・カウントダウン・お邪魔・相殺・勝敗・ESC/切断/離れる・観戦）。お邪魔の計算・相殺・勝敗判定の単体テストは `falling_puzzle_test.cpp`。

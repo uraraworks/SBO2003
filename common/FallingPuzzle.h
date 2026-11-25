@@ -28,7 +28,7 @@
 #define PUZZLE_VS_COUNTDOWN_SEC	(3)		/* 対戦開始前のカウントダウン(秒) */
 #define PUZZLE_PENDING_MAX		(20)	/* 待ちお邪魔（自分宛てでまだ積まれていない段数）の上限。これ以上は捨てる */
 #define PUZZLE_GARBAGE_APPLY_MAX	(8)	/* ブロックが固定された時に、いっぺんに積まれるお邪魔の段数の上限（残りは次の固定へ持ち越し） */
-#define PUZZLE_VIEW_MAX			(8)		/* クライアントが同時に覚える盤面の数（自分・相手・観戦で見える台） */
+#define PUZZLE_VIEW_MAX			(16)	/* クライアントが同時に覚える盤面の数（自分・相手・近くの台。待機中の台も数える） */
 #define PUZZLE_CELL_GARBAGE		(PUZZLE_KINDS + 1)	/* お邪魔ブロックのセルの値（8。灰色で描く） */
 
 /* フィールドの置き場所（席の台NPCからの相対位置。台ごとに変えられる）

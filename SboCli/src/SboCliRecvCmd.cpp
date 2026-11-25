@@ -8637,8 +8637,9 @@ BOOL GetDungeonStatus(PCMDPARA_DGSTATUS pOut)
 /*		 動いただけの時は落ち物の位置(MOVE)だけを、台ごとに送ってくる。			 */
 /*		 台は dwNpc で見分け、PUZZLE_VIEW_MAX 台ぶん（自分の台・対戦相手の台・		 */
 /*		 近くで遊んでいる台）の盤面を覚える。盤面は FULL の時に覚え、MOVE では位置などだけ差し替える。 */
-/*		 終わり(OVER)は最後の盤面を少し見せる。NONE はその台の席が空になった・見えなくなった時で、	 */
-/*		 その台の重ね描きを消す												 */
+/*		 終わり(OVER)は座っていた本人にだけ届き、最後の盤面を 3 秒見せたあと待機中の台の見え方に変わる。	 */
+/*		 待機中の台（byIdle=1。席が空）は FULL で届き、枠と井戸（空か最後の盤面）だけ描く。		 */
+/*		 NONE はその台から離れた（見えなくなった）時で、その台の重ね描きを消す			 */
 /* ========================================================================= */
 #define PUZZLE_OVER_SHOW_MS	(3000)								/* ゲームオーバー後に最後の盤面を見せる時間(ms) */
 typedef struct _PUZZLEVIEW {
@@ -8731,6 +8732,7 @@ void RecvDataProcPUZZLESTATE(PBYTE pData, DWORD dwDataSize)
 		pView->St.byVs = pPara->byVs;
 		pView->St.byGarbage = pPara->byGarbage;
 		pView->St.byCount = pPara->byCount;
+		pView->St.byIdle = pPara->byIdle;
 		break;
 	default:
 		return;
@@ -8768,10 +8770,16 @@ BOOL GetPuzzleState(int nIdx, PCMDPARA_PUZZLESTATE pOut, const BYTE **ppBoard, B
 	}
 	if (pView->dwOverTime != 0) {
 		if ((int)(timeGetTime () - pView->dwOverTime) >= PUZZLE_OVER_SHOW_MS) {
-			pView->bUse = FALSE;
-			return FALSE;
+			/* 3 秒たったら、ほかの人に見えているのと同じ待機中の台（最後の盤面だけ。帯・落ち物・GAME OVER なし）にする。
+			   台から離れて NONE が届くまで残る */
+			pView->dwOverTime = 0;
+			pView->St.byMine = 0;
+			pView->St.byIdle = 1;
+			pView->St.byPiece = pView->St.byNext = 255;
+			pView->St.byVs = pView->St.byGarbage = pView->St.byCount = 0;
+		} else {
+			g_bDraw = TRUE;		/* 切り替わる時まで描き続ける */
 		}
-		g_bDraw = TRUE;		/* 消える時まで描き続ける */
 	}
 	*pOut = pView->St;
 	*ppBoard = pView->abyBoard;

@@ -1358,6 +1358,7 @@ static void TestTailMidLeave(const std::vector<int> &aLogin);
 static void TestTailArrive(const std::vector<int> &aLogin);
 static void TestPuzzle(const std::vector<int> &aLogin);
 static void TestPuzzleVs(const std::vector<int> &aLogin);
+static void TestPuzzleIdle(const std::vector<int> &aLogin);
 static void TestEmptyMapCheck(const std::vector<int> &aLogin);
 static void TestPutFill(void);
 static void TestDungeonTheme(void);
@@ -1937,6 +1938,7 @@ static void TestWorld(void)
 	TestPuzzle(aLogin);
 	/* AV2. 落ち物パズルの対戦（ペアの台・カウントダウン・お邪魔・勝敗・観戦） */
 	TestPuzzleVs(aLogin);
+	TestPuzzleIdle(aLogin);
 	/* SM. 召喚特技のヒット数の実測（SUMMON_HITS=1 の時だけ。最後に流す） */
 	TestSummonHits(aLogin);
 }
@@ -17541,6 +17543,20 @@ static void TestTailSpaceMove(const std::vector<int> &aLogin)
 /*     キー入力で位置だけ／盤面ごと送る・落下は経過時間で進む・ゲームオーバーで得点を出して立つ・	 */
 /*     席を立つ／離れる／切断で片付く・使用中の台には座れない					 */
 /* ------------------------------------------------------------------------- */
+/* 台 NPC を、台でなくす（台詞を空にする）。NearNpcClose は途中までしか消せない事があり、台 NPC が残ると
+   待機中の台として次のテストの人に見えてしまうため、片付けの前に呼ぶ */
+static void PuzzleRetireNpcs(void)
+{
+	for (size_t i = 0; i < s_aNearNpc.size(); i ++) {
+		PCHARINFO pNpc = s_aNearNpc[i];
+		if (PuzzleIsTableNpc(pNpc)) {
+			delete [] pNpc->pszNpcSpeech;
+			pNpc->pszNpcSpeech = new char[1];
+			pNpc->pszNpcSpeech[0] = '\0';
+		}
+	}
+}
+
 static void PuzzleKeySend(PCHARINFO p, BYTE byKey)
 {
 	CMDPARA_DATA1 Para;
@@ -17718,7 +17734,10 @@ static void TestPuzzle(const std::vector<int> &aLogin)
 	MockTrace(0);
 	PuzzleOnLeave(pA);
 	PuzzleOnLeave(pB);
+	PuzzleRetireNpcs();
 	NearNpcClose();
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();									/* 台 NPC が無くなった待機中の台を表から消す */
 	for (int i = 0; i < MAX_MYITEM; i ++) if (pA->waItem[i] == wCoin) DelCharItem(pA->dwTblID, (BYTE)i);
 	for (int i = 0; i < MAX_MYITEM; i ++) if (pB->waItem[i] == wCoin) DelCharItem(pB->dwTblID, (BYTE)i);
 	DeleteTblNoPC((int)pB->dwTblID);
@@ -17782,8 +17801,9 @@ static void TestPuzzleVs(const std::vector<int> &aLogin)
 	PuzzleVsSit(pA, wCoin, pT1);
 	printf("vs solo seatedA=%d vsA=%d coinA=%d\n", PuzzleIsSeated(pA), PuzzleIsVersus(pA), PuzzleCoinCount(pA, wCoin));
 
-	/* 2. 観戦：近くにいる C へは、座った時に盤面全体が 1 回届き、見直しでは重ねて送らない。
-	   遠くへ離れたら NONE が届き（遠い間はキーの更新も届かない）、戻るとまた盤面全体が届く */
+	/* 2. 観戦：近くにいる C へは、座った時に盤面全体が 1 回届き、見直しでは重ねて送らない
+	   （席が空の待機中の台 3 つ＝台 2・3・4 の待機状態は、見直しで 1 回ずつ届く）。
+	   遠くへ離れたら NONE が届き（座っている台 1 つと待機中の台 3 つで 4 回。遠い間はキーの更新も届かない）、戻るとまた盤面全体が届く */
 	printf("vs spectate near packets=%d\n", MockCmdCount(anConn[2], CMD_PUZZLESTATE) - nC0);
 	nC0 = MockCmdCount(anConn[2], CMD_PUZZLESTATE);
 	g_dwTime = (s_dwFakeNow += 300);
@@ -17955,7 +17975,10 @@ static void TestPuzzleVs(const std::vector<int> &aLogin)
 	/* 片付け */
 	MockTrace(0);
 	PuzzleOnLeave(pA); PuzzleOnLeave(pB); PuzzleOnLeave(pC);
+	PuzzleRetireNpcs();
 	NearNpcClose();
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();									/* 台 NPC が無くなった待機中の台を表から消す */
 	for (i = 0; i < 3; i ++) {
 		for (int j = 0; j < MAX_MYITEM; j ++) if (apP[i]->waItem[j] == wCoin) DelCharItem(apP[i]->dwTblID, (BYTE)j);
 		QuestMovePC(apP[i], (int)aBack[i].dwMap, (int)aBack[i].dwX, (int)aBack[i].dwY);
@@ -17964,4 +17987,250 @@ static void TestPuzzleVs(const std::vector<int> &aLogin)
 	}
 	g_dwTime = dwTimeBack;
 	printf("vs done seats=%d\n", PuzzleSeatCount());
+}
+
+/* ------------------------------------------------------------------------- */
+/* AV3. 落ち物パズルの待機中の台（席に誰もいない台）が、近づいた人に見える					 */
+/*     台の近くに来た人へ待機状態（byIdle=1・空の盤面・byMine=0）が届く・画面に入り始めるより手前から送り、	 */
+/*     離れる時は送り始める距離より外まで離れてから NONE（境目で繰り返さない）・	 */
+/*     同じマップの遠い人には送らない・座るとゲーム中の状態（byMine=1・byIdle=0）に切り替わる・	 */
+/*     ゲームオーバーの最後の盤面は次に誰かが座るまで残る（戻ってきた人にも見える）・	 */
+/*     席を立つと空の井戸に戻る・誰もいなくなった待機中の台は表から消える			 */
+/* ------------------------------------------------------------------------- */
+EM_JS(char *, MockCmdAll, (int nConn, int nCmd), {
+	return stringToNewUTF8(Module['sboNet'].cmdAll(nConn, nCmd));
+});
+
+/* 覚えたパケットのうち CMD_PUZZLESTATE を順番に取り出す */
+static void PuzzlePackets(int nConn, std::vector<std::vector<BYTE> > &aOut)
+{
+	char *psz = MockCmdAll(nConn, CMD_PUZZLESTATE);
+	size_t nLen = strlen(psz), nPos = 0;
+	aOut.clear();
+	while (nPos < nLen) {
+		size_t nEnd = nPos;
+		while (nEnd < nLen && psz[nEnd] != ',') nEnd ++;
+		std::vector<BYTE> a((nEnd - nPos) / 2, 0);
+		for (size_t i = 0; i < a.size(); i ++) {
+			unsigned int u = 0;
+			sscanf(psz + nPos + i * 2, "%2x", &u);
+			a[i] = (BYTE)u;
+		}
+		aOut.push_back(a);
+		nPos = nEnd + 1;
+	}
+	free(psz);
+}
+
+/* 盤面のセルのうち 0 でないものの数（盤面が付いていなければ -1） */
+static int PuzzlePktCells(const std::vector<BYTE> &a)
+{
+	int n = 0;
+	if (a.size() <= sizeof(CMDPARA_PUZZLESTATE)) return -1;
+	for (size_t i = sizeof(CMDPARA_PUZZLESTATE); i < a.size(); i ++) if (a[i] != 0) n ++;
+	return n;
+}
+
+/* 起点（nFrom 個目）より後ろのパケットの数と、最後のパケットの要約を作る。
+   要約: kind/mine/idle/盤面のブロック数（パケットが無ければ "-"） */
+static std::string PuzzleSummary(int nConn, int nFrom, int *pnCount)
+{
+	std::vector<std::vector<BYTE> > aP;
+	char sz[64];
+	PuzzlePackets(nConn, aP);
+	*pnCount = (int)aP.size() - nFrom;
+	if (*pnCount <= 0) return "-";
+	const std::vector<BYTE> &a = aP.back();
+	const CMDPARA_PUZZLESTATE *pSt = (const CMDPARA_PUZZLESTATE *)&a[0];
+	sprintf(sz, "k%d/m%d/i%d/c%d", (int)pSt->byKind, (int)pSt->byMine, (int)pSt->byIdle, PuzzlePktCells(a));
+	return sz;
+}
+
+static int PuzzleCount(int nConn)
+{
+	std::vector<std::vector<BYTE> > aP;
+	PuzzlePackets(nConn, aP);
+	return (int)aP.size();
+}
+
+static void TestPuzzleIdle(const std::vector<int> &aLogin)
+{
+	printf("== AV3. Falling puzzle idle table ==\n");
+	if (aLogin.size() < 3) return;
+	s_pSpLogin = &aLogin;
+	PCHARINFO pA = g_aCharInfo[aLogin[0]], pB = g_aCharInfo[aLogin[1]], pC = g_aCharInfo[aLogin[2]];
+	PCHARINFO apP[3] = { pA, pB, pC };
+	int anConn[3] = { DgTestConn(pA), DgTestConn(pB), DgTestConn(pC) };
+	struct { DWORD dwMap, dwX, dwY; BYTE byState; WORD wHP; } aBack[3];
+	WORD wCoin = 1;
+	DWORD dwTimeBack = g_dwTime;
+	int i, n, anN[3];
+
+	for (i = 0; i < 3; i ++) {
+		aBack[i].dwMap = apP[i]->dwMapID; aBack[i].dwX = apP[i]->dwX; aBack[i].dwY = apP[i]->dwY;
+		aBack[i].byState = apP[i]->byCharState; aBack[i].wHP = apP[i]->wHP;
+		apP[i]->byCharState = CHARSTATE_MOVE;
+		if (apP[i]->wHP == 0) apP[i]->wHP = 10;
+		for (int j = 0; j < MAX_MYITEM; j ++) if (apP[i]->waItem[j] == wCoin) DelCharItem(apP[i]->dwTblID, (BYTE)j);
+	}
+	/* A・B は台のすぐそば、C は同じマップの遠く（台 NPC は A と同じマス。10×14 の既定では盤面の中心が台と同じ列） */
+	DWORD dwMap = pA->dwMapID, dwX = pA->dwX, dwY = pA->dwY;
+	QuestMovePC(pB, (int)dwMap, (int)dwX, (int)dwY);
+	QuestMovePC(pA, (int)dwMap, (int)dwX, (int)dwY);
+	QuestMovePC(pC, (int)dwMap, (int)dwX + 40, (int)dwY);
+	NearNpcOpen(pA, "@p1,1");
+	PCHARINFO pT = s_aNearNpc.back();
+	MockTrace(1);
+	int an0[3] = { 0, 0, 0 };
+	g_dwTime = (s_dwFakeNow = max(s_dwFakeNow, g_dwTime) + 1000);
+
+	/* 1. 誰も座っていない台でも、近くにいる A・B に待機状態（k1=FULL・m0=本人でない・i1=待機・c0=ブロックなし）が 1 回届く。遠い C には何も届かない */
+	PuzzleProc();
+	std::string sA = PuzzleSummary(anConn[0], 0, &anN[0]), sB = PuzzleSummary(anConn[1], 0, &anN[1]), sC = PuzzleSummary(anConn[2], 0, &anN[2]);
+	printf("idle near A=%s x%d B=%s x%d far C=%s x%d idleTables=%d seats=%d\n", sA.c_str(), anN[0], sB.c_str(), anN[1], sC.c_str(), anN[2],
+		PuzzleIdleCount(), PuzzleSeatCount());
+	/* 変わらなければ送り直さない（時間が過ぎても） */
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	printf("idle nochange A=%d B=%d C=%d\n", PuzzleCount(anConn[0]) - 1, PuzzleCount(anConn[1]) - 1, PuzzleCount(anConn[2]));
+
+	/* 2. C が歩いて近づく。送り始める距離は横 17 マス（画面に入り始めるより手前）。18 マスではまだ届かない */
+	QuestMovePC(pC, (int)dwMap, (int)dwX + 18, (int)dwY);
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	n = PuzzleCount(anConn[2]);
+	QuestMovePC(pC, (int)dwMap, (int)dwX + 17, (int)dwY);
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	sC = PuzzleSummary(anConn[2], n, &anN[2]);
+	printf("idle approach 18=%d 17=%s x%d\n", n, sC.c_str(), anN[2]);
+
+	/* 3. 離れる：送り始めた距離より外（横 20 マスまで）は消さない（19・20 では何も届かず）、21 マスで NONE（k0）。
+	   境目（19〜20）をうろうろしても送ったり消したりしない */
+	n = PuzzleCount(anConn[2]);
+	for (i = 19; i <= 20; i ++) {
+		QuestMovePC(pC, (int)dwMap, (int)dwX + i, (int)dwY);
+		g_dwTime = (s_dwFakeNow += 300);
+		PuzzleProc();
+		QuestMovePC(pC, (int)dwMap, (int)dwX + 18, (int)dwY);
+		g_dwTime = (s_dwFakeNow += 300);
+		PuzzleProc();
+	}
+	printf("idle hysteresis packets=%d\n", PuzzleCount(anConn[2]) - n);
+	QuestMovePC(pC, (int)dwMap, (int)dwX + 21, (int)dwY);
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	sC = PuzzleSummary(anConn[2], n, &anN[2]);
+	{
+		/* NONE は盤面が付かないので c は -1 */
+		printf("idle leave 21=%s x%d\n", sC.c_str(), anN[2]);
+	}
+	/* 遠くなると、離れた C には台のキー操作も届かない（NONE のあとは何も来ない）。もう一度 17 マスまで来ると待機状態が届く */
+	n = PuzzleCount(anConn[2]);
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	QuestMovePC(pC, (int)dwMap, (int)dwX + 17, (int)dwY);
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	sC = PuzzleSummary(anConn[2], n, &anN[2]);
+	printf("idle re-approach=%s x%d\n", sC.c_str(), anN[2]);
+
+	/* 4. A が座る → 見ていた全員へゲーム中の状態（A は m1・B と C は m0。i0）に切り替わる（それぞれ 1 回） */
+	AddCharItem(pA->dwTblID, wCoin);
+	for (i = 0; i < 3; i ++) an0[i] = PuzzleCount(anConn[i]);
+	g_dwTime = (s_dwFakeNow += 100);
+	PuzzleTalk(pA, pT);
+	sA = PuzzleSummary(anConn[0], an0[0], &anN[0]);
+	sB = PuzzleSummary(anConn[1], an0[1], &anN[1]);
+	sC = PuzzleSummary(anConn[2], an0[2], &anN[2]);
+	printf("idle sit seated=%d A=%s x%d B=%s x%d C=%s x%d seats=%d\n", PuzzleIsSeated(pA), sA.c_str(), anN[0], sB.c_str(), anN[1], sC.c_str(), anN[2],
+		PuzzleSeatCount());
+
+	/* 5. ゲームオーバー：A には OVER（k3・m1）、見ていた B・C には待機状態で最後の盤面（k1・m0・i1・積んだブロックあり）。席は空になる */
+	for (i = 0; i < 3; i ++) an0[i] = PuzzleCount(anConn[i]);
+	n = 0;
+	while (PuzzleIsSeated(pA) && n < 5000) {
+		g_dwTime = (s_dwFakeNow += 30);
+		PuzzleKeySend(pA, PUZZLEKEY_DOWN);
+		n ++;
+	}
+	std::vector<std::vector<BYTE> > aP;
+	PuzzlePackets(anConn[1], aP);
+	std::vector<BYTE> aLastB = aP.back();		/* B が最後に見た盤面（残るはずの盤面） */
+	/* 落とし続けた途中の更新も含まれるので、起点は使わず最後の 1 つだけ見る */
+	int nOverA = 0;
+	{
+		std::vector<std::vector<BYTE> > aPA;
+		PuzzlePackets(anConn[0], aPA);
+		const CMDPARA_PUZZLESTATE *pSt = (const CMDPARA_PUZZLESTATE *)&aPA.back()[0];
+		nOverA = (pSt->byKind == PUZZLESTATE_OVER) && pSt->byMine && !pSt->byIdle;
+	}
+	sB = PuzzleSummary(anConn[1], 0, &anN[1]);
+	sC = PuzzleSummary(anConn[2], 0, &anN[2]);
+	printf("idle over seated=%d A_over=%d B=%s C=%s kept=%d idleTables=%d seats=%d\n", PuzzleIsSeated(pA), nOverA,
+		sB.substr(0, sB.find("/c")).c_str(), sC.substr(0, sC.find("/c")).c_str(), PuzzlePktCells(aLastB) > 0, PuzzleIdleCount(), PuzzleSeatCount());
+
+	/* 6. 最後の盤面は、見ていた人が離れても・誰もいなくなっても残り、戻ってきた人に同じ盤面が待機状態で届く */
+	QuestMovePC(pB, (int)dwMap, (int)dwX + 30, (int)dwY);
+	QuestMovePC(pC, (int)dwMap, (int)dwX + 30, (int)dwY);
+	QuestMovePC(pA, (int)dwMap, (int)dwX + 30, (int)dwY);
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	int nIdleAway = PuzzleIdleCount();
+	n = PuzzleCount(anConn[1]);
+	QuestMovePC(pB, (int)dwMap, (int)dwX + 5, (int)dwY);
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	PuzzlePackets(anConn[1], aP);
+	bool bSame = ((int)aP.size() == n + 1) && (aP.back() == aLastB);
+	printf("idle last board stays away_idleTables=%d returned_same=%d\n", nIdleAway, bSame);
+
+	/* 7. 次に誰かが座ると、最後の盤面は消えて新しいゲーム（B は m1・盤面は空）。見ている人（A を呼び戻す）には m0・i0・空 */
+	QuestMovePC(pA, (int)dwMap, (int)dwX, (int)dwY);
+	QuestMovePC(pB, (int)dwMap, (int)dwX, (int)dwY);
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	AddCharItem(pB->dwTblID, wCoin);
+	for (i = 0; i < 2; i ++) an0[i] = PuzzleCount(anConn[i]);
+	g_dwTime = (s_dwFakeNow += 100);
+	PuzzleTalk(pB, pT);
+	sA = PuzzleSummary(anConn[0], an0[0], &anN[0]);
+	sB = PuzzleSummary(anConn[1], an0[1], &anN[1]);
+	printf("idle sit again seatedB=%d A=%s x%d B=%s x%d\n", PuzzleIsSeated(pB), sA.c_str(), anN[0], sB.c_str(), anN[1]);
+
+	/* 8. 席を立つ（ESC）と空の井戸に戻る（A にも、立った B にも待機状態。k1・m0・i1・c0） */
+	for (i = 0; i < 2; i ++) an0[i] = PuzzleCount(anConn[i]);
+	g_dwTime = (s_dwFakeNow += 100);
+	PuzzleKeySend(pB, PUZZLEKEY_LEAVE);
+	sA = PuzzleSummary(anConn[0], an0[0], &anN[0]);
+	sB = PuzzleSummary(anConn[1], an0[1], &anN[1]);
+	printf("idle esc seatedB=%d A=%s x%d B=%s x%d seats=%d\n", PuzzleIsSeated(pB), sA.c_str(), anN[0], sB.c_str(), anN[1], PuzzleSeatCount());
+
+	/* 9. 全員が遠くへ行くと、最後の盤面のない待機中の台は表から消える（何も送らず、覚えない） */
+	for (i = 0; i < 3; i ++) QuestMovePC(apP[i], (int)dwMap, (int)dwX + 40, (int)dwY);
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	printf("idle empty cleaned idleTables=%d\n", PuzzleIdleCount());
+
+	/* 片付け */
+	MockTrace(0);
+	PuzzleOnLeave(pA); PuzzleOnLeave(pB); PuzzleOnLeave(pC);
+	PuzzleRetireNpcs();
+	NearNpcClose();
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	for (i = 0; i < 3; i ++) {
+		for (int j = 0; j < MAX_MYITEM; j ++) if (apP[i]->waItem[j] == wCoin) DelCharItem(apP[i]->dwTblID, (BYTE)j);
+		QuestMovePC(apP[i], (int)aBack[i].dwMap, (int)aBack[i].dwX, (int)aBack[i].dwY);
+		apP[i]->byCharState = aBack[i].byState;
+		apP[i]->wHP = aBack[i].wHP;
+	}
+	g_dwTime = dwTimeBack;
+	printf("idle done seats=%d idleTables=%d\n", PuzzleSeatCount(), PuzzleIdleCount());
 }

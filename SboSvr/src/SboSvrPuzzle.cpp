@@ -44,7 +44,9 @@
 #define PUZZLE_KEY_MIN_MS		(25)		/* キー入力の最短間隔（これより速い入力は捨てる。連打・改造対策） */
 #define PUZZLE_NEAR				(3)			/* 席の台NPCからこれ以上離れたら席を立たせる（マス） */
 #define PUZZLE_WATCH_MS			(250)		/* 台の近くにいる人（観戦）を見直す間隔(ms) */
-#define PUZZLE_VIEW_MARGIN		(12)		/* 観戦で盤面を送る範囲：フィールドの中心から、画面の半分（7 マス）＋帯・余白ぶん（マス）。盤面の大きさを足す */
+#define PUZZLE_VIEW_MARGIN		(12)		/* 盤面が画面に入り始める距離：フィールドの中心から、画面の半分（7 マス）＋帯・余白ぶん（マス）。盤面の大きさを足す */
+#define PUZZLE_VIEW_ENTER		(PUZZLE_VIEW_MARGIN + 3)	/* 盤面を送り始める距離（画面に入り始める距離より 3 マス手前。受信済みで端からスクロールインして見える） */
+#define PUZZLE_VIEW_LEAVE		(PUZZLE_VIEW_MARGIN + 6)	/* 盤面を消す（NONE を送る）距離（送り始める距離より 3 マス外。境目で送る・消すを繰り返さない） */
 
 /* 台の設定（台NPCの台詞から読む） */
 typedef struct _PUZZLEPARAM {
@@ -72,7 +74,7 @@ typedef struct _PUZZLEWATCH {
 	DWORD		dwPID;						/* プレイヤーID */
 } PUZZLEWATCH;
 
-/* 台（座っている人がいる間だけ表に載せる） */
+/* 台（座っている人がいる間と、待機中の台の近くに人がいる間・最後の盤面を残している間、表に載せる） */
 typedef struct _PUZZLETABLE {
 	DWORD		dwNpc;						/* 台NPCのテーブルID */
 	DWORD		dwMapID;					/* 台NPCのいるマップ */
@@ -84,6 +86,8 @@ typedef struct _PUZZLETABLE {
 	DWORD		dwStartTime;				/* カウントダウンが終わる時刻(ms) */
 	int			nCountSent;					/* 最後に知らせたカウントダウンの残り秒 */
 	DWORD		dwLastWatch;				/* 最後に観戦の人を見直した時刻 */
+	BOOL		bIdle;						/* 待機中（席に誰もいない。Seat.Game は空の盤面か、bLast なら最後の盤面） */
+	BOOL		bLast;						/* 待機中で、ゲームオーバーの最後の盤面を残している（次に誰かが座るまで） */
 	std::vector<PUZZLEWATCH>	aWatch;		/* 盤面を送ってある人（座っている人・対戦相手・近くにいる人） */
 } PUZZLETABLE;
 
@@ -181,11 +185,25 @@ static BOOL FindSeat(PCHARINFO pChar, int *pnTable)
 	return FALSE;
 }
 
-/* 台が空（座っている人がいない）なら表から消す */
-static void CleanTable(int nTable)
+/* 席が空になった台を待機中にする（表からは消さない。近くの人への盤面は待機状態で送り続ける）。
+   bLast なら最後の盤面をそのまま残す。そうでなければ空の盤面に戻す */
+static void ToIdle(int nTable, BOOL bLast)
 {
-	if (s_aTable[nTable].Seat.dwChar == PUZZLE_NOCHAR) {
-		s_aTable.erase (s_aTable.begin () + nTable);
+	PUZZLETABLE &Table = s_aTable[nTable];
+	int nCols = Table.Param.nCols, nRows = Table.Param.nRows;
+
+	Table.Seat.dwChar = PUZZLE_NOCHAR;
+	Table.Seat.dwPID = 0;
+	Table.bIdle = TRUE;
+	Table.bLast = bLast;
+	Table.bVs = FALSE;
+	Table.dwOppNpc = (DWORD)-1;
+	Table.bCount = FALSE;
+	if (!bLast) {
+		ZeroMemory (&Table.Seat.Game, sizeof (Table.Seat.Game));
+		Table.Seat.Game.Board.Init (nCols, nRows);
+	} else {
+		Table.Seat.Game.nPending = 0;
 	}
 }
 
@@ -223,6 +241,7 @@ static void BuildState(const PUZZLETABLE &Table, BYTE byKind, std::vector<BYTE> 
 	CMDPARA_PUZZLESTATE Head;
 	int nCells = g.Board.nCols * g.Board.nRows, nX, nY;
 	BOOL bBoard = (byKind == PUZZLESTATE_FULL) || (byKind == PUZZLESTATE_OVER);
+	BOOL bIdle = Table.bIdle && (byKind != PUZZLESTATE_OVER);
 	PCHARINFO pNpc = (Table.dwNpc < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[Table.dwNpc] : NULL;
 
 	ZeroMemory (&Head, sizeof (Head));
@@ -244,6 +263,17 @@ static void BuildState(const PUZZLETABLE &Table, BYTE byKind, std::vector<BYTE> 
 	Head.byVs		= (BYTE)(Table.bVs ? 1 : 0);
 	Head.byGarbage	= (BYTE)((g.nPending > 255) ? 255 : g.nPending);
 	Head.byCount	= (BYTE)CountRemain (Table);
+	Head.byIdle		= (BYTE)(bIdle ? 1 : 0);
+	if (bIdle) {
+		/* 待機中は落ち物・次の落ち物・得点・待ちお邪魔を持たない（盤面の枠と井戸だけ） */
+		Head.byPiece = Head.byNext = 255;
+		Head.byLevel = 0;
+		Head.wLines = 0;
+		Head.dwScore = 0;
+		Head.byVs = 0;
+		Head.byGarbage = 0;
+		Head.byCount = 0;
+	}
 	if (pNpc) {
 		PuzzleFieldPos ((int)pNpc->dwX, (int)pNpc->dwY, Table.Param.nDx, Table.Param.nDy, &nX, &nY);
 		Head.sFieldX = (short)nX;
@@ -280,20 +310,21 @@ static void SendTable(int nTable, BYTE byKind, PCHARINFO pSkip = NULL)
 	}
 }
 
-/* 台の盤面が見える距離にいるか（フィールドの中心から、画面に入る範囲） */
-static BOOL WatchEligible(const PUZZLETABLE &Table, PCHARINFO pNpc, PCHARINFO pChar)
+/* 台の盤面を送る距離にいるか（フィールドの中心から nMargin マス＋盤面の大きさの範囲。
+   送り始める距離は PUZZLE_VIEW_ENTER、すでに送ってある人が消える距離は PUZZLE_VIEW_LEAVE） */
+static BOOL WatchEligible(const PUZZLEPARAM &Param, DWORD dwMapID, PCHARINFO pNpc, PCHARINFO pChar, int nMargin)
 {
 	int nFx, nFy, nCx, nCy;
 
-	if ((pChar->byNpcType != NPCTYPE_INIT) || (pChar->byGameState < GAMESTATE_MOVE) || (pChar->dwMapID != Table.dwMapID) ||
+	if ((pChar->byNpcType != NPCTYPE_INIT) || (pChar->byGameState < GAMESTATE_MOVE) || (pChar->dwMapID != dwMapID) ||
 		!IsSameSpace (pNpc, pChar) || !IsCharSeenBy (pNpc, pChar)) {
 		return FALSE;
 	}
-	PuzzleFieldPos ((int)pNpc->dwX, (int)pNpc->dwY, Table.Param.nDx, Table.Param.nDy, &nFx, &nFy);
-	nCx = (nFx + Table.Param.nCols * PUZZLE_BLOCK_DOT / 2) / PUZZLE_TILE_DOT;
-	nCy = (nFy + Table.Param.nRows * PUZZLE_BLOCK_DOT / 2) / PUZZLE_TILE_DOT;
-	return (abs ((int)pChar->dwX - nCx) <= PUZZLE_VIEW_MARGIN + Table.Param.nCols / 4) &&
-		(abs ((int)pChar->dwY - nCy) <= PUZZLE_VIEW_MARGIN + Table.Param.nRows / 4);
+	PuzzleFieldPos ((int)pNpc->dwX, (int)pNpc->dwY, Param.nDx, Param.nDy, &nFx, &nFy);
+	nCx = (nFx + Param.nCols * PUZZLE_BLOCK_DOT / 2) / PUZZLE_TILE_DOT;
+	nCy = (nFy + Param.nRows * PUZZLE_BLOCK_DOT / 2) / PUZZLE_TILE_DOT;
+	return (abs ((int)pChar->dwX - nCx) <= nMargin + Param.nCols / 4) &&
+		(abs ((int)pChar->dwY - nCy) <= nMargin + Param.nRows / 4);
 }
 
 static BOOL InWatch(const std::vector<PUZZLEWATCH> &aWatch, const PUZZLEWATCH &w)
@@ -354,11 +385,15 @@ static void WatchRefresh(int nTable)
 				break;
 			}
 			pChar = g_aCharInfo[pMap->paTblNoPC[i]];
-			if ((pChar == pSeat) || (pChar == pOpp) || !WatchEligible (Table, pNpc, pChar)) {
+			if ((pChar == pSeat) || (pChar == pOpp)) {
 				continue;
 			}
 			w.dwChar = pChar->dwTblID;
 			w.dwPID = pChar->pID;
+			/* すでに送ってある人は遠い距離（LEAVE）まで、新しい人は近い距離（ENTER）から。境目で送る・消すを繰り返さない */
+			if (!WatchEligible (Table.Param, Table.dwMapID, pNpc, pChar, InWatch (Table.aWatch, w) ? PUZZLE_VIEW_LEAVE : PUZZLE_VIEW_ENTER)) {
+				continue;
+			}
 			aNew.push_back (w);
 		}
 	}
@@ -437,10 +472,15 @@ static void Leave(int nTable, BYTE byKind, BOOL bNotifySelf, BOOL bLost)
 		sprintf (szMsg, "ゲームオーバー！ 得点 %u（%dライン・レベル%d）", Table.Seat.Game.dwScore, Table.Seat.Game.nLines, Table.Seat.Game.nLevel);
 		SendCmdSYSMSG (pSelf->pID, szMsg);
 	}
-	SendTable (nTable, byKind, bNotifySelf ? NULL : pSelf);
-	Table.Seat.dwChar = PUZZLE_NOCHAR;
-	Table.Seat.dwPID = 0;
-	CleanTable (nTable);
+	/* 本人へ：ゲームオーバーは OVER（3 秒ほど見せる）。ほかの人（と、席を立っただけの本人）へは、
+	   待機中の台の状態（最後の盤面か空の井戸。byIdle=1）を送る。切断・マップ移動の本人へは送らない */
+	if ((byKind == PUZZLESTATE_OVER) && pSelf && bNotifySelf) {
+		std::vector<BYTE> aOver;
+		BuildState (Table, PUZZLESTATE_OVER, aOver);
+		SendStateTo (Table, pSelf, aOver);
+	}
+	ToIdle (nTable, byKind == PUZZLESTATE_OVER);
+	SendTable (nTable, PUZZLESTATE_FULL, ((byKind == PUZZLESTATE_OVER) || !bNotifySelf) ? pSelf : NULL);
 }
 
 /* 入力・周期処理の結果を送る（変わった所だけ）。置けなくなったら負け／ゲームオーバー。
@@ -551,7 +591,19 @@ PuzzleGame *PuzzleGetGame(PCHARINFO pChar)
 
 int PuzzleSeatCount(void)
 {
-	return (int)s_aTable.size ();
+	int i, nRet = 0;
+
+	for (i = 0; i < (int)s_aTable.size (); i ++) {
+		if (!s_aTable[i].bIdle) {
+			nRet ++;
+		}
+	}
+	return nRet;
+}
+
+int PuzzleIdleCount(void)
+{
+	return (int)s_aTable.size () - PuzzleSeatCount ();
 }
 
 void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc)
@@ -570,8 +622,9 @@ void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc)
 	}
 	ParseParam (pNpc->pszNpcSpeech, &Param);
 
-	/* この台は席が 1 つ。使われていれば座れない */
-	if (FindTable (pNpc->dwTblID, pNpc->dwMapID) >= 0) {
+	/* この台は席が 1 つ。使われていれば座れない（待機中の台は座れる） */
+	nTable = FindTable (pNpc->dwTblID, pNpc->dwMapID);
+	if ((nTable >= 0) && !s_aTable[nTable].bIdle) {
 		SendCmdSYSMSG (pChar->pID, "この台は今、使われています。");
 		return;
 	}
@@ -608,11 +661,19 @@ void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc)
 		Table.dwStartTime = 0;
 		Table.nCountSent = 0;
 		Table.dwLastWatch = 0;
+		Table.bIdle = FALSE;
+		Table.bLast = FALSE;
 		Table.Seat.dwChar = pChar->dwTblID;
 		Table.Seat.dwPID = pChar->pID;
 		Table.Seat.dwLastKey = 0;
-		s_aTable.push_back (Table);
-		nTable = (int)s_aTable.size () - 1;
+		if (nTable >= 0) {
+			/* 待機中の台に座る：今見ている人の表を引き継ぐ（下で、見ている人全員に始まった盤面を送る） */
+			Table.aWatch = s_aTable[nTable].aWatch;
+			s_aTable[nTable] = Table;
+		} else {
+			s_aTable.push_back (Table);
+			nTable = (int)s_aTable.size () - 1;
+		}
 	}
 	{
 		PUZZLETABLE &Table = s_aTable[nTable];
@@ -646,7 +707,8 @@ void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc)
 			WatchRefresh (nPartner);
 		}
 	}
-	/* 自分の台：近くにいる人（座った本人を含む）に盤面全体 */
+	/* 自分の台：待機中から見ていた人（座った本人を含む）へ始まった盤面全体。新しく見える人へは見直しで届く */
+	SendTable (nTable, PUZZLESTATE_FULL);
 	WatchRefresh (nTable);
 }
 
@@ -682,13 +744,81 @@ void PuzzleKey(PCHARINFO pChar, BYTE byKey)
 	SendChanged (nTable, nChg);
 }
 
+/* 待機中の台を新しく表に載せる：人のいるマップの台NPC（席が空）のうち、近くに人がいるものだけ。
+   近くに誰もいない台は表に載らない（何も送らない・覚えない） */
+static void IdleScan(void)
+{
+	int nMap, i, j;
+
+	for (nMap = 0; nMap < (int)g_aMapInfo.GetSize (); nMap ++) {
+		PMAPINFO pMap = g_aMapInfo[nMap];
+
+		if ((pMap == NULL) || (pMap->paTblNoPC == NULL) || (pMap->paTblNoNPC == NULL) || (pMap->dwCountTblNoPC == 0) ||
+			(pMap->paTblNoPC[0] == (DWORD)-1)) {
+			continue;
+		}
+		for (i = 0; i < (int)pMap->dwCountTblNoNPC; i ++) {
+			PCHARINFO pNpc;
+			PUZZLEPARAM Param;
+			BOOL bNear = FALSE;
+
+			if (pMap->paTblNoNPC[i] == (DWORD)-1) {
+				break;
+			}
+			if (pMap->paTblNoNPC[i] >= (DWORD)g_aCharInfo.GetSize ()) {
+				continue;
+			}
+			pNpc = g_aCharInfo[pMap->paTblNoNPC[i]];
+			if (!PuzzleIsTableNpc (pNpc) || (FindTable (pNpc->dwTblID, (DWORD)nMap) >= 0)) {
+				continue;
+			}
+			ParseParam (pNpc->pszNpcSpeech, &Param);
+			for (j = 0; j < (int)pMap->dwCountTblNoPC; j ++) {
+				PCHARINFO pChar;
+
+				if (pMap->paTblNoPC[j] == (DWORD)-1) {
+					break;
+				}
+				if (pMap->paTblNoPC[j] >= (DWORD)g_aCharInfo.GetSize ()) {
+					continue;
+				}
+				pChar = g_aCharInfo[pMap->paTblNoPC[j]];
+				if (WatchEligible (Param, (DWORD)nMap, pNpc, pChar, PUZZLE_VIEW_ENTER)) {
+					bNear = TRUE;
+					break;
+				}
+			}
+			if (bNear) {
+				PUZZLETABLE Table;
+
+				Table.dwNpc = pNpc->dwTblID;
+				Table.dwMapID = (DWORD)nMap;
+				Table.Param = Param;
+				Table.bVs = FALSE;
+				Table.dwOppNpc = (DWORD)-1;
+				Table.bCount = FALSE;
+				Table.dwStartTime = 0;
+				Table.nCountSent = 0;
+				Table.dwLastWatch = 0;
+				Table.bIdle = TRUE;
+				Table.bLast = FALSE;
+				Table.Seat.dwChar = PUZZLE_NOCHAR;
+				Table.Seat.dwPID = 0;
+				Table.Seat.dwLastKey = 0;
+				ZeroMemory (&Table.Seat.Game, sizeof (Table.Seat.Game));
+				Table.Seat.Game.Board.Init (Param.nCols, Param.nRows);
+				s_aTable.push_back (Table);
+				WatchRefresh ((int)s_aTable.size () - 1);
+			}
+		}
+	}
+}
+
 void PuzzleProc(void)
 {
+	static DWORD s_dwLastScan = 0;
 	int i;
 
-	if (s_aTable.empty ()) {
-		return;
-	}
 	/* 台が消えると添字がずれるので、後ろから 1 つずつ（消えるのはその台だけ） */
 	for (i = (int)s_aTable.size () - 1; i >= 0; i --) {
 		if (i >= (int)s_aTable.size ()) {
@@ -699,6 +829,32 @@ void PuzzleProc(void)
 		BOOL bNpcOK = PuzzleIsTableNpc (pNpc) && (pNpc->dwMapID == Table.dwMapID);
 		PCHARINFO pChar = SeatChar (Table.Seat);
 		int nChg, nSize;
+
+		/* 待機中の台：台が無くなれば見ている人へ NONE を送って表から消す。
+		   近くの人の見直しをして、誰もいなくなって最後の盤面も残していなければ表から消す */
+		if (Table.bIdle) {
+			if (!bNpcOK) {
+				std::vector<BYTE> aNone;
+				int k;
+
+				BuildState (Table, PUZZLESTATE_NONE, aNone);
+				for (k = 0; k < (int)Table.aWatch.size (); k ++) {
+					PCHARINFO pW = WatchChar (Table.aWatch[k]);
+					if (pW) {
+						SendStateTo (Table, pW, aNone);
+					}
+				}
+				s_aTable.erase (s_aTable.begin () + i);
+				continue;
+			}
+			if ((DWORD)(g_dwTime - Table.dwLastWatch) >= PUZZLE_WATCH_MS) {
+				WatchRefresh (i);
+			}
+			if (Table.aWatch.empty () && !Table.bLast) {
+				s_aTable.erase (s_aTable.begin () + i);
+			}
+			continue;
+		}
 
 		/* 切断・マップ移動・席から離れた・倒れた・台が無くなった時は片付ける（対戦中なら相手の勝ち） */
 		if ((pChar == NULL) || !bNpcOK || (pChar->byGameState < GAMESTATE_MOVE) ||
@@ -736,6 +892,11 @@ void PuzzleProc(void)
 				continue;
 			}
 		}
+	}
+	/* 待機中の台を新しく見つける（PUZZLE_WATCH_MS ごと） */
+	if ((DWORD)(g_dwTime - s_dwLastScan) >= PUZZLE_WATCH_MS) {
+		s_dwLastScan = g_dwTime;
+		IdleScan ();
 	}
 }
 

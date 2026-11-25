@@ -15,6 +15,7 @@ extern BOOL PuzzleIsSeated(PCHARINFO pChar);								/* 席に座っているか�
 extern void PuzzleKey(PCHARINFO pChar, BYTE byKey);							/* 座っている人のキー入力（PUZZLEKEY_*） */
 extern void PuzzleProc(void);												/* 周期処理（g_dwTime の経過時間で落下を進める。メインループから毎回呼ぶ） */
 extern void PuzzleOnLeave(PCHARINFO pChar);									/* 切断・マップ移動などで席を立たせて台の状態を片付ける（本人へは何も送らない） */
+extern int  PuzzleIdleCount(void);											/* 表に載っている待機中の台の数（近くに人がいる台と、最後の盤面を残している台。テスト用） */
 extern int  PuzzleSeatCount(void);											/* 今座っている人の数（テスト用） */
 extern BOOL PuzzleIsVersus(PCHARINFO pChar);								/* 対戦中か（テスト用） */
 struct PuzzleGame;
