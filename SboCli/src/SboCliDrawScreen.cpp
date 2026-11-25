@@ -538,6 +538,22 @@ static void PuzFrame(HDC hDC, int x, int y, int cx, int cy, COLORREF clFrame, in
 	}
 }
 
+/* 枠線なしで背景の暗い色だけを敷く（盤面の背景用。盤面のブロックと枠線が重ならないようにする） */
+static void PuzFill(HDC hDC, int x, int y, int cx, int cy, int nAlpha)
+{
+	int yy;
+
+	if ((y >= s_nPzB) || (y + cy <= s_nPzT) || (x >= s_nPzR) || (x + cx <= s_nPzL)) {
+		return;
+	}
+	for (yy = max (0, s_nPzT - y); yy < cy; yy ++) {
+		if (y + yy >= s_nPzB) {
+			break;
+		}
+		PuzSpan (hDC, x, y + yy, cx, RGB (0, 0, 0), nAlpha);
+	}
+}
+
 /* 文字は、全体が切り取り範囲に入る時だけ描く（半分切れた文字は出さない）。nHeight は文字の高さ */
 static void PuzText(HDC hDC, int x, int y, LPSTR pszText, COLORREF cl, int nHeight, BOOL bCenter)
 {
@@ -583,14 +599,13 @@ static void DrawPuzzleOne(HDC hDC, const CMDPARA_PUZZLESTATE &St, const BYTE *pB
 	char szTmp[64];
 	int x, y, i, nCols = St.byCols, nRows = St.byRows, nW, nH, px, py, anC[4][2];
 	const int nPanelW = 96;
-	COLORREF clFrame = St.byMine ? RGB (240, 200, 60) : RGB (150, 190, 240);
 
 	nW = nCols * PUZZLE_BLOCK_DOT;
 	nH = nRows * PUZZLE_BLOCK_DOT;
 
 	if (!bTop) {
 		/* 下の層：枠と盤面の背景 */
-		PuzFrame (hDC, sx, sy, nW, nH, clFrame, 190);
+		PuzFill (hDC, sx, sy, nW, nH, 190);
 
 		/* 積んだブロック（お邪魔は灰色） */
 		for (y = 0; y < nRows; y ++) {
