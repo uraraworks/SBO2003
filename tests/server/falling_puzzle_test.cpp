@@ -373,6 +373,66 @@ int main()
 	/* GAME OVER を出す時間（定数）：本人の帯の表示時間は 0 でも 3 秒 */
 	CHECK (PUZZLE_OVER_SHOW_MS >= 0 && PUZZLE_OVER_SELF_MS > 0);
 
+	/* ハイスコア・連勝記録の並び：上位 10 件・1 キャラ 1 件（最高だけ）・同点は先に達成した方が上 */
+	{
+		PuzzleRecordList L;
+		char szName[PUZZLE_RECORD_NAMEBUF];
+
+		L.Clear ();
+		CHECK (L.nCount == 0);
+		CHECK (L.Add ("", 100, 1) == 0 && L.Add (NULL, 100, 1) == 0 && L.Add ("A", 0, 1) == 0);		/* 名前なし・0 点は載せない */
+		CHECK (L.Add ("A", 500, 20261101) == 1);
+		CHECK (L.Add ("B", 800, 20261102) == 1);					/* 上に入る */
+		CHECK (L.Add ("C", 500, 20261103) == 3);					/* 同点は先の A の後ろ */
+		CHECK (L.nCount == 3);
+		CHECK (strcmp (L.aRec[0].szName, "B") == 0 && strcmp (L.aRec[1].szName, "A") == 0 && strcmp (L.aRec[2].szName, "C") == 0);
+		CHECK (L.aRec[1].dwDate == 20261101 && L.aRec[2].dwDate == 20261103);
+		/* 1 キャラ 1 件：同じか低い得点は足さない（先着の日付も変わらない）・高ければ前の行を消して入れ直す */
+		CHECK (L.Add ("A", 500, 20261110) == 0 && L.Add ("A", 100, 20261110) == 0);
+		CHECK (L.nCount == 3 && L.aRec[1].dwDate == 20261101);
+		CHECK (L.Add ("A", 900, 20261111) == 1);
+		CHECK (L.nCount == 3);
+		CHECK (strcmp (L.aRec[0].szName, "A") == 0 && L.aRec[0].dwValue == 900 && L.aRec[0].dwDate == 20261111);
+		CHECK (strcmp (L.aRec[1].szName, "B") == 0 && strcmp (L.aRec[2].szName, "C") == 0);
+		/* 10 件で打ち止め：満杯の時、一番下より高ければ押し出す・同点や低いのは入らない */
+		L.Clear ();
+		for (i = 1; i <= 12; i ++) {
+			sprintf (szName, "P%d", i);
+			L.Add (szName, (unsigned int)(i * 100), 20261120);
+		}
+		CHECK (L.nCount == PUZZLE_RECORD_MAX);
+		CHECK (L.aRec[0].dwValue == 1200 && L.aRec[9].dwValue == 300);		/* 100・200 は押し出された */
+		CHECK (L.Add ("Q", 300, 20261121) == 0);						/* 最下位と同点は入らない（先着が上） */
+		CHECK (L.Add ("Q", 250, 20261121) == 0);
+		CHECK (L.Add ("Q", 301, 20261121) == 10);
+		CHECK (L.nCount == PUZZLE_RECORD_MAX && L.aRec[9].dwValue == 301 && strcmp (L.aRec[9].szName, "Q") == 0);
+		CHECK (strcmp (L.aRec[8].szName, "P4") == 0);					/* 300 の P3 は押し出された */
+		/* 満杯でも、載っているキャラが上がる時は件数が増えない */
+		CHECK (L.Add ("P4", 5000, 20261122) == 1);
+		CHECK (L.nCount == PUZZLE_RECORD_MAX && strcmp (L.aRec[0].szName, "P4") == 0);
+		{
+			int n = 0;
+			for (i = 0; i < L.nCount; i ++) {
+				if (strcmp (L.aRec[i].szName, "P4") == 0) n ++;
+			}
+			CHECK (n == 1);
+		}
+		/* 並びは常に降順 */
+		for (i = 1; i < L.nCount; i ++) {
+			CHECK (L.aRec[i - 1].dwValue >= L.aRec[i].dwValue);
+		}
+		/* 欄より長い名前は欄に収まるところまで（終端つき） */
+		{
+			char szLong[200];
+			memset (szLong, 'x', sizeof (szLong));
+			szLong[199] = 0;
+			L.Clear ();
+			CHECK (L.Add (szLong, 10, 1) == 1);
+			CHECK (strlen (L.aRec[0].szName) == PUZZLE_RECORD_NAMEBUF - 1);
+			CHECK (L.Add (szLong, 20, 1) == 1 && L.nCount == 1);		/* 同じ名前とみなす */
+		}
+	}
+
 	printf (g_nNg ? "NG %d 件\n" : "一致\n", g_nNg);
 	return g_nNg ? 1 : 0;
 }

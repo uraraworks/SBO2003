@@ -25,6 +25,8 @@
 #include "SboSvrAdminUndo.h"
 #include "SboSvrNpcRoute.h"
 #include "SboSvrRecycle.h"
+#include "SboSvrPuzzle.h"
+#include "../common/FallingPuzzle.h"
 #include "SboSvrMarket.h"
 #include "SboSvrMapSwapEdit.h"
 #include "SboSvrDungeonDaily.h"
@@ -2733,6 +2735,37 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataRecycle()
 	out += "],\"limits\":{\"maxKind\":" + JsonNum(RECYCLE_MAXKIND) + ",\"maxCount\":" + JsonNum(RECYCLE_MAXCOUNT) +
 			",\"dayLimit\":" + JsonNum(RECYCLE_DAYLIMIT) + ",\"logMax\":" + JsonNum(RECYCLE_LOGMAX) + ",\"range\":" + JsonNum(RECYCLE_RANGE) + ",\"maxBox\":" + JsonNum(MAX_RECYCLEBOX) + "}}";
 	s_strResult = out;
+	return s_strResult.c_str();
+}
+
+/*
+ * 落ち物パズルのハイスコアと連勝記録（docs/falling-puzzle.md）。読むだけ。
+ *   scores … ハイスコア（順位順＝得点の高い順。同点は先に達成した方が上。最大 10 件）。rank=順位・name=キャラ名・score=得点・date=達成した日（日本時間の「年-月-日」）
+ *   streaks … 連勝記録（同じ並び。streak=連勝数）
+ *   max … 残す件数。1 キャラ（キャラ名）につき最高 1 件だけ
+ */
+static std::string PuzzleRecordDate(DWORD dwDate)
+{
+	char sz[32];
+	snprintf(sz, sizeof(sz), "%04u-%02u-%02u", dwDate / 10000, (dwDate / 100) % 100, dwDate % 100);
+	return sz;
+}
+
+static std::string PuzzleRecordJson(const PuzzleRecordList &L, const char *pszValueKey)
+{
+	std::string out = "[";
+	for (int k = 0; k < L.nCount; k ++) {
+		if (k > 0) out += ",";
+		out += "{\"rank\":" + JsonNum(k + 1) + ",\"name\":" + JsonStr(L.aRec[k].szName) + ",\"" + pszValueKey + "\":" + JsonNum(L.aRec[k].dwValue) +
+				",\"date\":" + JsonStr(PuzzleRecordDate(L.aRec[k].dwDate).c_str()) + "}";
+	}
+	return out + "]";
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataPuzzleRecords()
+{
+	s_strResult = "{\"scores\":" + PuzzleRecordJson(g_PuzzleScoreRec, "score") + ",\"streaks\":" + PuzzleRecordJson(g_PuzzleStreakRec, "streak") +
+			",\"max\":" + JsonNum(PUZZLE_RECORD_MAX) + "}";
 	return s_strResult.c_str();
 }
 

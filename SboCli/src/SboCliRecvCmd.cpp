@@ -8644,7 +8644,10 @@ BOOL GetDungeonStatus(PCMDPARA_DGSTATUS pOut)
 /*		 サーバーが正解なので、サーバーの FULL・MOVE が届いたら、その位置にそろえ（nSv*）、まだ処理されていない	 */
 /*		 キー（dwAck より後の連番）だけをもう一度かける。こうすると、押した直後は先に動き、サーバーの通知が		 */
 /*		 少し遅れて届いても巻き戻らない。サーバーが取り合わなかったキーは PUZZLE_PRED_MS で捨てる。		 */
-/*		 待機中の台（byIdle=1。席が空）は FULL で届き、枠と井戸（空か最後の盤面）だけ描く。		 */
+/*		 待機中の台（byIdle の bit0。席が空）は FULL で届き、枠と井戸（空か最後の盤面）だけ描く。		 */
+/*		 待機中の台に PUZZLEIDLE_SEAT の bit が付いていれば、自分がその台の座る場所のマスに立っている	 */
+/*		 （サーバーが本人にだけ付ける）。盤面の中央に「INSERT COIN」「道具→コイン」を点滅させる（必要な枚数が 0 なら FREE の bit で「PUSH START」）。 */
+/*		 連勝数 byStreak は勝ち残りの側の盤面にだけ付き、盤面の横に「N連勝」を出す（2 以上）。			 */
 /*		 NONE はその台から離れた（見えなくなった）時で、その台の重ね描きを消す			 */
 /* ========================================================================= */
 #define PUZZLE_PRED_MAX		(16)								/* 先読みで覚えておく「サーバーがまだ処理していないキー」の数 */
@@ -8837,6 +8840,7 @@ void RecvDataProcPUZZLESTATE(PBYTE pData, DWORD dwDataSize)
 		pView->St.byCount = pPara->byCount;
 		pView->St.byIdle = pPara->byIdle;
 		pView->St.byOver = pPara->byOver;
+		pView->St.byStreak = pPara->byStreak;
 		PuzzleViewReconcile (pView, pPara->dwAck);
 		break;
 	default:
@@ -8895,6 +8899,7 @@ BOOL GetPuzzleState(int nIdx, PCMDPARA_PUZZLESTATE pOut, const BYTE **ppBoard, B
 			pView->St.byIdle = 1;
 			pView->St.byPiece = pView->St.byNext = 255;
 			pView->St.byVs = pView->St.byGarbage = pView->St.byCount = 0;
+			pView->St.byStreak = 0;
 		} else {
 			g_bDraw = TRUE;		/* 切り替わる時まで描き続ける */
 		}

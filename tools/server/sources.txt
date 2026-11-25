@@ -37,6 +37,7 @@ SboSvr/src/SaveLoad/SboSvrSaveLoadQuestInfo.cpp
 SboSvr/src/SaveLoad/SboSvrSaveLoadStoryInfo.cpp
 SboSvr/src/SaveLoad/SboSvrSaveLoadMarket.cpp
 SboSvr/src/SaveLoad/SboSvrSaveLoadRecycle.cpp
+SboSvr/src/SaveLoad/SboSvrSaveLoadPuzzleRecord.cpp
 SboSvr/src/SaveLoad/SboSvrSaveLoadTalkInfo.cpp
 SboSvr/src/SaveLoad/SboSvrSaveLoadStTmpInfo.cpp
 SboSvr/src/SaveLoad/SboSvrSaveLoadSubGameInfo.cpp
