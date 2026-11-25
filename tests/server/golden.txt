@@ -2551,7 +2551,7 @@ idle over flag B=1 C=1 selfA=0
 idle over timeline before=1 late-comer=1 after B=0 C=0 idle=1/1 board=1 packetsB=1
 idle last board stays away_idleTables=1 returned_same=1
 idle sit again seatedB=1 A=k1/m0/i0/c0 x1 B=k1/m1/i0/c0 x1
-idle esc seatedB=0 A=k1/m0/i1/c0 x1 B=k1/m0/i1/c0 x1 seats=0
+idle esc seatedB=0 A=k1/m0/i1/c0 x1 B=k1/m0/i3/c0 x1 seats=0
 idle empty cleaned idleTables=0
 idle done seats=0 idleTables=0
 == AV4. Falling puzzle seat cell ==
@@ -2562,4 +2562,30 @@ seat negative default=0 left2=1
 seat other space seated=0
 seat ghost table=2 shop=0 ghost=1 preset=2 data=01 func=20
 seat done seats=0 idleTables=0
+== AV5. Falling puzzle insert coin, win streak, records ==
+record date=20261125 empty=00
+insert flags A:t1=3 t2=1 t3=1 B:t1=1 t2=1 t3=1 C:t1=1 t2=1 t3=7
+insert nochange packets A=0 C=0
+insert leave off=1 packets=1 back=3
+insert notcell seatedB=0 coinB=1
+insert free near=1 seatedNear=0 back=7 seated=1 idleAfter=0
+insert free esc seated=0 idle=7
+insert sit nocoin=0 still=3 seated=1 A:idle=0 B:idle=0
+streak vs=11 start=0
+streak win1 A=1 B=0 seatedB=0 msgStreak=0 notice=1 pkt=1
+streak rec scores=1 streaks=0
+streak win2 A=2 msgA=1 msgB=1 msgNew=1 pktC=2 pktA=2
+streak rec scoreB=1500 n=1 streaks=0
+streak lose A seated=0 streakA=0 B=1 recStreak=1(A:2 20261125) recScore=A:5000,B:1500
+streak esc recStreak=1 sitAgain=0
+streak logout B=2 recStreak=2 first=A second=B values=2,2 seatedB=0
+solo over seatedA=0 scores=2 top=5000
+board talk A=1 B=0 head=1 streakHead=1 name=1 cut=1 noat0=1
+board msg len<max=1 end=1 waits=1 lines=6
+record save=1 cleared=0 load=1 same=1 counts=3,3
+record after load addLow=0 addHigh=1
+record api scores=1 streaks=1 max=1 top=1 date=1
+board empty text=2
+board full counts=10,10 len<max=1 tenth=2 end=1
+record done seats=0
 == done ==

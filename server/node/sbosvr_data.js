@@ -39,6 +39,7 @@
  *   /api/data/chests    {}                                   → 全マップの宝箱（印で変わるマスの kind 1）の一覧。読むだけ {chests, retired, nextNo}
  *   /api/data/market    {}                                   → 取引所の出品（新しい順・出品中/期限切れ）とアカウントごとの出品数・売上。読むだけ {items, accounts, total, limits}
  *   /api/data/recycle   {}                                   → リサイクルボックス（マップに置く共有の箱。map の swaps の kind 2）の箱ごとの中身と、入れた・もらった記録（新しい順）。読むだけ {boxes, retired, nextNo, log, daily, limits}
+ *   /api/data/puzzle/records {}                              → 落ち物パズルのハイスコアと連勝記録（上位 10 件・1 キャラ 1 件）。読むだけ {scores, streaks, max}
  *   /api/data/dungeon/records {id?, versionNo?, theme?}      → 日替わりダンジョンの版と最短記録（版ごと・上位 20 件）。読むだけ {genVersion, today, dungeons:[{id, byRebuildMode, nowVersion, versions:[...]}]}
  *   /api/data/dungeon/rebuild {id}                           → 日替わりダンジョンを今すぐ作り直す（中の組は外へ戻る・新しいランダムなシード）。書き込みキーだけ
  *   /api/data/tiles     {id, x?, y?, w?, h?}                 → マップのマス目（parts・flags・roof、最大 128×128）
@@ -564,6 +565,14 @@ Module['sboData'] = (function () {
 		var r = JSON.parse(UTF8ToString(_SboWebDataRecycle()));
 		r.note = 'boxes は箱（map の swaps の kind 2）の箱番号 boxNo の順。boxNo は全マップ通しの番号（宝箱の番号とは別。中身はこの番号ごとに持つ）で、mapNo・mapName・x・y・memo は置いてある所、missing が true なのは中身が残っているのに箱がどのマップにも無いもの。retired は消した箱の番号（使い回さない）。箱の足し方・直し方は map の swaps（kind 2）。' +
 			'log は新しい順（action は put=入れた・take=もらった、date は日本時間）。daily は今日（日本時間）に 1 個以上もらったアカウント。仕様は docs/recycle.md';
+		return r;
+	}
+
+	/* 落ち物パズルのハイスコアと連勝記録（読むだけ） */
+	function opPuzzleRecords() {
+		var r = JSON.parse(UTF8ToString(_SboWebDataPuzzleRecords()));
+		r.note = 'scores はハイスコア（得点の高い順・最大 max 件）、streaks は連勝記録（連勝数の多い順）。どちらも 1 キャラ（name＝キャラ名）につき最高 1 件で、同点は先に達成した方が上。date は達成した日（日本時間）。' +
+			'ゲーム内では台詞が @h の NPC（掲示板）に話しかけると見られる。仕様は docs/falling-puzzle.md';
 		return r;
 	}
 
@@ -1724,6 +1733,12 @@ Module['sboData'] = (function () {
 			run: opRecycle
 		},
 		{
+			name: 'sbo_puzzle_records', write: false,
+			description: '落ち物パズル（台に座って遊ぶテトリス型）のハイスコアと連勝記録。scores=ハイスコア（得点の高い順・上位 10 件。rank・name・score・date）、streaks=連勝記録（連勝数の多い順。rank・name・streak・date）。1 キャラにつき最高 1 件、同点は先に達成した方が上。date は達成した日（日本時間）。',
+			inputSchema: { type: 'object', properties: {} },
+			run: opPuzzleRecords
+		},
+		{
 			name: 'sbo_dungeon_records', write: false,
 			description: '日替わりダンジョン（サブゲームの detail.byRebuildMode が 1）の版と最短記録。版ごとに date・rebuild（その日の作り直し番号）・seed・genVer（生成器の版）・themeId・w,h・themeRef（theme:true でテーマの写し）と、records（上位 20 件。names・forms・count・ms・at）。' +
 				'id（サブゲームの番号）・versionNo（版の通し番号 no）で絞れる。nowVersion は今の形の版。',
@@ -2012,6 +2027,7 @@ Module['sboData'] = (function () {
 		'/api/data/dungeon/records': opDungeonRecords,
 		'/api/data/dungeon/rebuild': opDungeonRebuild,
 		'/api/data/recycle': opRecycle,
+		'/api/data/puzzle/records': opPuzzleRecords,
 		'/api/data/market': opMarket,
 		'/api/data/tiles/set': opTilesSet,
 		'/api/data/update': opUpdate,
@@ -2040,6 +2056,7 @@ Module['sboData'] = (function () {
 		'/api/admin/data/chests': function (body) { adminWho(body); return opChests(body); },
 		'/api/admin/data/dungeon/records': function (body) { adminWho(body); return opDungeonRecords(body); },
 		'/api/admin/data/recycle': function (body) { adminWho(body); return opRecycle(body); },
+		'/api/admin/data/puzzle/records': function (body) { adminWho(body); return opPuzzleRecords(body); },
 		'/api/admin/data/market': function (body) { adminWho(body); return opMarket(body); },
 		/* 作り手・レシピの保存（管理ページの「レシピ」）。読む方は /api/admin/data/list */
 		'/api/admin/recipe/save': apiAdminRecipeSave,

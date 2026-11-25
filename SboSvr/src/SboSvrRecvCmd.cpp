@@ -326,6 +326,7 @@ extern BOOL SaveStTmpInfo				(void);								/* ステータステンプレート
 extern BOOL SaveLeaveInfo				(void);								/* 預かり所情報保存 */
 extern BOOL SaveMarket					(void);								/* 取引所の出品・売上保存 */
 extern BOOL SaveRecycle					(void);								/* リサイクルボックスの中身・記録保存 */
+extern BOOL SavePuzzleRecord			(void);								/* 落ち物パズルのハイスコア・連勝記録保存 */
 extern BOOL SaveSubGameInfo				(void);								/* サブゲーム情報保存 */
 extern BOOL SaveJobInfo					(void);								/* 職業情報情報保存 */
 extern BOOL SaveMagicUserInfo			(void);								/* 魔法利用者情報情報保存 */
@@ -5431,6 +5432,7 @@ void RecvDataProcSAVEMAP(PBYTE pData, DWORD dwDataSize)
 	SaveEquUserInfo ();
 	SaveMarket ();
 	SaveRecycle ();
+	SavePuzzleRecord ();
 	WebThreadRenew ();
 
 	PCHARINFO pChar = g_aCharInfo[pPara->dwTblID];
@@ -8370,6 +8372,14 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 	if (PuzzleIsTableNpc (pChar)) {
 		if (s_nCharNoRecv >= 0) {
 			PuzzleSit (g_aCharInfo[s_nCharNoRecv], pChar);
+		}
+		return;
+	}
+	/* 落ち物パズルの掲示板（台詞が「@h」で始まる）？ ハイスコアと連勝記録を、話しかけた本人にだけ出す
+	   （「@r」は思い出の本の語り部で使っているので、記録は「@h」にしている） */
+	if (PuzzleIsRecordNpc (pChar)) {
+		if ((s_nCharNoRecv >= 0) && IsNearRecvChar (pChar, 2)) {
+			PuzzleRecordTalk (g_aCharInfo[s_nCharNoRecv], pChar);
 		}
 		return;
 	}

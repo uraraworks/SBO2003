@@ -3,7 +3,7 @@
 /* 概要：		落ち物パズル（テトリス型）の盤面ロジック（サーバーが使う。通信・時計を知らない） */
 /*				盤面・7種の落ち物・回転・衝突・ライン消し・得点・落下の速さだけ。	 */
 /*				単体テスト: tests/server/falling_puzzle_test.cpp				 */
-/* 日付：		2026/11/24													 */
+/* 日付：		2026/11/24（連勝・記録の並びを 2026/11/25 に追加）			 */
 /* ========================================================================= */
 
 #pragma once
@@ -548,3 +548,77 @@ static inline void PuzzleSeatOffset(const char *pszSpeech, int *pnSdx, int *pnSd
 	*pnSdy = (anVal[9] == PUZZLE_PARAM_NONE) ? PUZZLE_SEAT_DEFAULT_DY : ((anVal[9] < -PUZZLE_SEAT_LIMIT) ? -PUZZLE_SEAT_LIMIT : (anVal[9] > PUZZLE_SEAT_LIMIT) ? PUZZLE_SEAT_LIMIT : anVal[9]);
 }
 
+
+/* ========================================================================= */
+/* ハイスコア・連勝記録の並び（落ち物パズル全体で 1 つずつ。通信・保存を知らない）	 */
+/*   1 キャラ（キャラ名）につき最高 1 件だけ残して上位 PUZZLE_RECORD_MAX 件。				 */
+/*   同点は先に達成した方が上（今ある同点の後ろに入る）。								 */
+/* ========================================================================= */
+#define PUZZLE_RECORD_MAX		(10)		/* 残す件数 */
+#define PUZZLE_RECORD_NAMEBUF	(64)		/* キャラ名の欄（終端含むバイト数。MAX_CHARNAMEBUF と同じ） */
+#define PUZZLE_STREAK_MIN		(2)			/* 連勝記録に載せる最小の連勝数 */
+
+struct PuzzleRecord {
+	char			szName[PUZZLE_RECORD_NAMEBUF];	/* キャラ名（UTF-8） */
+	unsigned int	dwValue;						/* 得点（ハイスコア）または連勝数 */
+	unsigned int	dwDate;							/* 達成した日（日本時間の年月日。20261125 の形） */
+};
+
+struct PuzzleRecordList {
+	int				nCount;
+	PuzzleRecord	aRec[PUZZLE_RECORD_MAX];
+
+	void Clear(void) { nCount = 0; memset (aRec, 0, sizeof (aRec)); }
+
+	/* 名前の欄に収まるよう切って、名前を比べる（欄より長い名前は欄に収まる所まで同じとみなす） */
+	static bool SameName(const char *pszA, const char *pszB)
+	{
+		return strncmp (pszA, pszB, PUZZLE_RECORD_NAMEBUF - 1) == 0;
+	}
+
+	/* 記録を足す。入った順位（1〜PUZZLE_RECORD_MAX）を返す。入らなければ 0。
+	   同じ名前の記録が今より良い・同じなら足さない（同点は先に達成した方を残す）。良くなったら前の記録は消して入れ直す */
+	int Add(const char *pszName, unsigned int dwValue, unsigned int dwDate)
+	{
+		int i, nSame = -1, nPos;
+
+		if ((pszName == NULL) || (pszName[0] == 0) || (dwValue == 0)) {
+			return 0;
+		}
+		for (i = 0; i < nCount; i ++) {
+			if (SameName (aRec[i].szName, pszName)) {
+				nSame = i;
+				break;
+			}
+		}
+		if ((nSame >= 0) && (aRec[nSame].dwValue >= dwValue)) {
+			return 0;
+		}
+		if (nSame >= 0) {
+			for (i = nSame; i < nCount - 1; i ++) {
+				aRec[i] = aRec[i + 1];
+			}
+			nCount --;
+		}
+		/* 同点は今ある方が上：自分より大きい・同じ値の後ろに入れる */
+		for (nPos = 0; nPos < nCount; nPos ++) {
+			if (aRec[nPos].dwValue < dwValue) {
+				break;
+			}
+		}
+		if (nPos >= PUZZLE_RECORD_MAX) {
+			return 0;
+		}
+		if (nCount < PUZZLE_RECORD_MAX) {
+			nCount ++;
+		}
+		for (i = nCount - 1; i > nPos; i --) {
+			aRec[i] = aRec[i - 1];
+		}
+		memset (&aRec[nPos], 0, sizeof (PuzzleRecord));
+		strncpy (aRec[nPos].szName, pszName, PUZZLE_RECORD_NAMEBUF - 1);
+		aRec[nPos].dwValue = dwValue;
+		aRec[nPos].dwDate = dwDate;
+		return nPos + 1;
+	}
+};

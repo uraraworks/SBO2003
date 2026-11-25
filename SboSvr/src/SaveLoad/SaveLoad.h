@@ -24,6 +24,7 @@
 #include "SboSvrSaveLoadTalkInfo.h"
 #include "SboSvrSaveLoadMarket.h"
 #include "SboSvrSaveLoadRecycle.h"
+#include "SboSvrSaveLoadPuzzleRecord.h"
 
 
 /* Copyright(C)URARA-works 2003-2005 */

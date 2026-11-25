@@ -590,7 +590,7 @@ static void DrawPuzzleOne(HDC hDC, const CMDPARA_PUZZLESTATE &St, const BYTE *pB
 
 	if (!bTop) {
 		/* 下の層：枠と盤面の背景 */
-		PuzFrame (hDC, sx - 3, sy - 3, nW + 6, nH + 6, clFrame, 190);
+		PuzFrame (hDC, sx, sy, nW, nH, clFrame, 190);
 
 		/* 積んだブロック（お邪魔は灰色） */
 		for (y = 0; y < nRows; y ++) {
@@ -652,6 +652,27 @@ static void DrawPuzzleOne(HDC hDC, const CMDPARA_PUZZLESTATE &St, const BYTE *pB
 		PuzText (hDC, px + 8, py + 108, szTmp, RGB (255, 255, 255), 16, FALSE);
 		wsprintf (szTmp, "LEVEL %d", (int)St.byLevel);
 		PuzText (hDC, px + 8, py + 126, szTmp, RGB (255, 255, 255), 16, FALSE);
+	}
+
+	/* 勝ち残りの連勝数（2 連勝以上。待ちお邪魔のバーの外側、帯と反対側の上の方に小さく。観覧者にも見える） */
+	if (!St.byIdle && (St.byStreak >= 2)) {
+		SIZE size;
+		int tx, ty = sy + 2;
+		wsprintf (szTmp, "%d連勝", (int)St.byStreak);
+		GetTextExtentPoint32 (hDC, szTmp, strlen (szTmp), &size);
+		tx = (St.bySide == PUZZLESIDE_LEFT) ? (sx + nW + 6 + 6 + 4) : (sx - 6 - 6 - 4 - size.cx);
+		PuzFrame (hDC, tx - 3, ty - 2, size.cx + 6, size.cy + 4, RGB (240, 200, 60), 150);
+		PuzText (hDC, tx, ty, szTmp, RGB (255, 235, 120), size.cy, FALSE);
+	}
+
+	/* 座る場所に立っている時の案内（待機中の台の、本人にだけ。サーバーが PUZZLEIDLE_SEAT を付ける）。
+	   盤面の中央に「INSERT COIN」「（Sキー）」を約 1 秒周期で点滅させる（必要な枚数が 0 の台は「PUSH START」）。GAME OVER の字が出ている間は出さない */
+	if ((St.byIdle & PUZZLEIDLE_SEAT) && !bOver) {
+		g_bDraw = TRUE;		/* 点滅のため、出ている間は描き続ける */
+		if (((timeGetTime () / 500) & 1) == 0) {
+			PuzText (hDC, sx + nW / 2, sy + nH / 2 - 18, (LPSTR)((St.byIdle & PUZZLEIDLE_FREE) ? "PUSH START" : "INSERT COIN"), RGB (255, 235, 120), 16, TRUE);
+			PuzText (hDC, sx + nW / 2, sy + nH / 2 + 2, (LPSTR)"（Sキー）", RGB (255, 255, 255), 16, TRUE);
+		}
 	}
 
 	/* 対戦開始前のカウントダウン（盤面の真ん中に大きく） */

@@ -4339,6 +4339,10 @@ enum {
 	PUZZLESTATE_MOVE,												/* 操作中の落ち物の位置・向きだけ（盤面は続かない。前の FULL の盤面を使う） */
 	PUZZLESTATE_OVER,												/* ゲームオーバー（盤面付き。しばらく残して見せ、席を立ったら NONE が届く） */
 };
+/* CMDPARA_PUZZLESTATE の byIdle のビット（待機中の台の、受け取った本人向けの案内） */
+#define PUZZLEIDLE_ON		(0x01)									/* 待機中（席が空） */
+#define PUZZLEIDLE_SEAT		(0x02)									/* 受け取った本人が座る場所のマスに立っている（盤面の中央に「INSERT COIN（Sキー）」を点滅。本人にだけ付く） */
+#define PUZZLEIDLE_FREE		(0x04)									/* この台は必要な枚数が 0（SEAT と一緒に付く。「PUSH START（Sキー）」を出す） */
 /* 台の帯（次の落ち物・得点）をフィールドのどちら側に出すか（台詞 @p の 7 番目の値） */
 #define PUZZLESIDE_RIGHT	(0)										/* 帯はフィールドの右 */
 #define PUZZLESIDE_LEFT		(1)										/* 帯はフィールドの左 */
@@ -4346,7 +4350,7 @@ enum {
 typedef struct _CMDPARA_PUZZLESTATE {
 	BYTE		byCmd;												/* コマンドID */
 	BYTE		byKind;												/* PUZZLESTATE_* */
-	BYTE		bySeat;												/* 予約（0。台は席 1 つ） */
+	BYTE		byStreak;											/* 勝ち残りの連勝数（対戦に勝って続けている側の盤面。2 以上で盤面の横に「N連勝」を出す。旧クライアントは予約の 0 として無視する） */
 	BYTE		bySide;												/* PUZZLESIDE_*（帯をフィールドのどちら側に出すか） */
 	BYTE		byCols;												/* 盤面の横（ブロック数） */
 	BYTE		byRows;												/* 盤面の縦（ブロック数） */
@@ -4365,7 +4369,8 @@ typedef struct _CMDPARA_PUZZLESTATE {
 	BYTE		byVs;												/* 対戦中か（1=相手がいる） */
 	BYTE		byGarbage;											/* 待ちお邪魔の段数（盤面の横のバーに出す） */
 	BYTE		byCount;											/* 対戦開始までのカウントダウン残り秒（0=始まっている） */
-	BYTE		byIdle;												/* 待機中の台（1=席に誰もいない。盤面の枠と井戸（空か最後の盤面）だけ描き、落ち物・帯・バー・カウントダウンは出さない。将来「コインを入れてSで開始」などの案内文字を出す目印にもなる） */
+	BYTE		byIdle;												/* 待機中の台（bit0=席に誰もいない。盤面の枠と井戸（空か最後の盤面）だけ描き、落ち物・帯・バー・カウントダウンは出さない）。
+																			   待機中の台で、受け取った本人だけに PUZZLEIDLE_SEAT（座る場所に立っている→「INSERT COIN」を出す）・PUZZLEIDLE_FREE（必要な枚数が 0→「PUSH START」）の bit が付く。旧クライアントは 0 以外を「待機中」として扱うので壊れない */
 	BYTE		byOver;												/* 1=ゲームオーバーの「GAME OVER」を盤面の上に出す間（待機中の最後の盤面に付く。本人以外にも見える。消える時にサーバーが 0 の FULL を送る） */
 	DWORD		dwAck;												/* この台の席の人のキーを、ここまで処理した（CMDPARA_PUZZLEKEY の dwSerial）。座っている本人が先読みの差し引きに使う */
 } CMDPARA_PUZZLESTATE, *PCMDPARA_PUZZLESTATE;

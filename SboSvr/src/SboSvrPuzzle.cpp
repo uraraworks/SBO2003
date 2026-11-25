@@ -33,6 +33,14 @@
  *   負けた側は席を立ち、勝った側はそのままひとり用に続ける。ESC・切断・マップ移動で席を立った場合は残った側の勝ち。
  * ゲームオーバー：本人には OVER（帯付き）、ほかの人（観覧者・対戦相手の席の人）には byIdle=1 の最後の盤面に byOver=1 を付けて送る。
  *   PUZZLE_OVER_SHOW_MS（FallingPuzzle.h）たつと byOver=0 の FULL を送って字を消す（最後の盤面は次に誰かが座るまで残る）。
+ * 座る場所に立つと（INSERT COIN）：待機中の台の座る場所のマスに誰かが立っている間、その人にだけ byIdle の PUZZLEIDLE_SEAT の bit（必要な枚数が 0 なら
+ *   PUZZLEIDLE_FREE も）を付けた待機中の盤面を送る（盤面の中央に「INSERT COIN（Sキー）」を点滅させる合図。ほかの人には付けない）。
+ *   立つ・離れる時に見直し（PUZZLE_WATCH_MS ごと）、変わった時だけ送り直す（送ってある値を PUZZLEWATCH::byFlag に持つ）。座るのは今まで通り S キー（PuzzleSit）。
+ * 連勝：対戦に勝って続ける側の席に nWinStreak を持つ（勝ちで +1。席を立つ・切断・マップ移動・負け・ゲームオーバーで 0 に戻す）。
+ *   盤面の通知の byStreak で見ている全員に知らせ、勝った時のシステムメッセージにも付ける。
+ * 記録：ハイスコア（ゲームオーバーになった本人の得点）と連勝記録（連勝が途切れた時の連勝数。2 以上）を、落ち物パズル全体で 1 つずつ
+ *   g_PuzzleScoreRec・g_PuzzleStreakRec に持つ（FallingPuzzle.h の PuzzleRecordList。上位 10 件・1 キャラ 1 件・同点は先着）。
+ *   保存は SaveLoad/SboSvrSaveLoadPuzzleRecord.cpp（SBODATA/SboDataPuzzleRecord.dat）。台詞が "@h" のNPCに話しかけると PuzzleRecordTalk で見せる。
  * キー入力の先読み：クライアントが自分の落ち物を先に動かすため、キーの連番を覚えて、通知の dwAck で返す。
  * 送る相手（台ごと）: 座っている人・対戦相手の台の人・台の近くにいる人（観戦。画面に入る距離。PUZZLE_WATCH_MS ごとに見直し、
  *   近づいた時に盤面全体を 1 回送り、離れた時に NONE を送る）。
@@ -46,6 +54,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
+#include <string>
 #include <vector>
 
 #define PUZZLE_NOCHAR			((DWORD)-1)
@@ -87,6 +97,7 @@ typedef struct _PUZZLESEAT {
 typedef struct _PUZZLEWATCH {
 	DWORD		dwChar;						/* キャラのテーブルID */
 	DWORD		dwPID;						/* プレイヤーID */
+	BYTE		byFlag;						/* 最後に送った待機中の案内（PUZZLEIDLE_SEAT・PUZZLEIDLE_FREE の bit。変わった時だけ送り直す） */
 } PUZZLEWATCH;
 
 /* 台（座っている人がいる間と、待機中の台の近くに人がいる間・最後の盤面を残している間、表に載せる） */
@@ -105,10 +116,16 @@ typedef struct _PUZZLETABLE {
 	BOOL		bLast;						/* 待機中で、ゲームオーバーの最後の盤面を残している（次に誰かが座るまで） */
 	BOOL		bOverShow;					/* 最後の盤面の上に「GAME OVER」を出している間（本人以外にも見える。PUZZLE_OVER_SHOW_MS で消す） */
 	DWORD		dwOverTime;					/* ゲームオーバーになった時刻 */
+	int			nWinStreak;					/* 対戦に勝って続けている連勝数（席を立つ・負け・ゲームオーバーで 0 に戻る） */
 	std::vector<PUZZLEWATCH>	aWatch;		/* 盤面を送ってある人（座っている人・対戦相手・近くにいる人） */
 } PUZZLETABLE;
 
 static std::vector<PUZZLETABLE> s_aTable;
+
+/* ハイスコア・連勝記録（落ち物パズル全体で 1 つずつ） */
+PuzzleRecordList g_PuzzleScoreRec;
+PuzzleRecordList g_PuzzleStreakRec;
+DWORD g_dwPuzzleNowOverride = 0;
 
 /* ========================================================================= */
 /* 内部関数																	 */
@@ -191,6 +208,7 @@ static void ToIdle(int nTable, BOOL bLast)
 	Table.bVs = FALSE;
 	Table.dwOppNpc = (DWORD)-1;
 	Table.bCount = FALSE;
+	Table.nWinStreak = 0;
 	if (!bLast) {
 		ZeroMemory (&Table.Seat.Game, sizeof (Table.Seat.Game));
 		Table.Seat.Game.Board.Init (nCols, nRows);
@@ -239,7 +257,7 @@ static void BuildState(const PUZZLETABLE &Table, BYTE byKind, std::vector<BYTE> 
 	ZeroMemory (&Head, sizeof (Head));
 	Head.byCmd		= CMD_PUZZLESTATE;
 	Head.byKind		= byKind;
-	Head.bySeat		= 0;
+	Head.byStreak	= 0;
 	Head.bySide		= (BYTE)Table.Param.nSide;
 	Head.byCols		= (BYTE)g.Board.nCols;
 	Head.byRows		= (BYTE)g.Board.nRows;
@@ -255,7 +273,7 @@ static void BuildState(const PUZZLETABLE &Table, BYTE byKind, std::vector<BYTE> 
 	Head.byVs		= (BYTE)(Table.bVs ? 1 : 0);
 	Head.byGarbage	= (BYTE)((g.nPending > 255) ? 255 : g.nPending);
 	Head.byCount	= (BYTE)CountRemain (Table);
-	Head.byIdle		= (BYTE)(bIdle ? 1 : 0);
+	Head.byIdle		= (BYTE)(bIdle ? PUZZLEIDLE_ON : 0);
 	Head.byOver		= (BYTE)((bIdle && Table.bOverShow) ? 1 : 0);
 	Head.dwAck		= Table.Seat.dwAck;
 	if (bIdle) {
@@ -267,6 +285,8 @@ static void BuildState(const PUZZLETABLE &Table, BYTE byKind, std::vector<BYTE> 
 		Head.byVs = 0;
 		Head.byGarbage = 0;
 		Head.byCount = 0;
+	} else if (byKind != PUZZLESTATE_NONE) {
+		Head.byStreak = (BYTE)((Table.nWinStreak > 255) ? 255 : Table.nWinStreak);
 	}
 	if (pNpc) {
 		PuzzleFieldPos ((int)pNpc->dwX, (int)pNpc->dwY, Table.Param.nDx, Table.Param.nDy, &nX, &nY);
@@ -280,17 +300,41 @@ static void BuildState(const PUZZLETABLE &Table, BYTE byKind, std::vector<BYTE> 
 	}
 }
 
-/* 1 人に送る（byMine はその人が席に座っているかで決める） */
-static void SendStateTo(const PUZZLETABLE &Table, PCHARINFO pChar, std::vector<BYTE> &aBuf)
+/* 待機中の台の、その人だけへの案内（座る場所に立っている→PUZZLEIDLE_SEAT。必要な枚数が 0 なら PUZZLEIDLE_FREE も）。
+   席が空の台の座る場所のマスに立っていて、倒れておらず、ほかの台に座っていない人だけ（PuzzleSit で座れる状態） */
+static BYTE SeatFlag(const PUZZLETABLE &Table, PCHARINFO pChar)
 {
-	((PCMDPARA_PUZZLESTATE)&aBuf[0])->byMine = (SeatChar (Table.Seat) == pChar) ? 1 : 0;
+	PCHARINFO pNpc = (Table.dwNpc < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[Table.dwNpc] : NULL;
+
+	if (!Table.bIdle || (pNpc == NULL) || (pChar->byNpcType != NPCTYPE_INIT) || (pChar->byGameState < GAMESTATE_MOVE) ||
+		(pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0) || (pChar->abySubStatus[0] != 0) || PuzzleIsSeated (pChar) ||
+		(pChar->dwMapID != Table.dwMapID) || !IsSameSpace (pNpc, pChar) ||
+		((int)pChar->dwX != (int)pNpc->dwX + Table.Param.nSdx) || ((int)pChar->dwY != (int)pNpc->dwY + Table.Param.nSdy)) {
+		return 0;
+	}
+	return (BYTE)(PUZZLEIDLE_SEAT | (((Table.Param.wCoinItem == 0) || (Table.Param.nCoinCount <= 0)) ? PUZZLEIDLE_FREE : 0));
+}
+
+/* 1 人に送る（byMine はその人が席に座っているかで決める。待機中の盤面には、その人だけの座る場所の案内を付ける）。
+   送った案内（PUZZLEIDLE_* の bit）を返す */
+static BYTE SendStateTo(const PUZZLETABLE &Table, PCHARINFO pChar, std::vector<BYTE> &aBuf)
+{
+	PCMDPARA_PUZZLESTATE pHead = (PCMDPARA_PUZZLESTATE)&aBuf[0];
+	BYTE byFlag = 0;
+
+	pHead->byMine = (SeatChar (Table.Seat) == pChar) ? 1 : 0;
+	if ((pHead->byKind == PUZZLESTATE_FULL) && (pHead->byIdle & PUZZLEIDLE_ON)) {
+		byFlag = SeatFlag (Table, pChar);
+	}
+	pHead->byIdle = (BYTE)((pHead->byIdle & PUZZLEIDLE_ON) | byFlag);
 	SendCmdPUZZLESTATE (pChar->pID, &aBuf[0], (DWORD)aBuf.size ());
+	return byFlag;
 }
 
 /* 台の状態を、盤面を送ってある全員（座っている人・対戦相手・近くにいる人）に送る。pSkip には送らない */
 static void SendTable(int nTable, BYTE byKind, PCHARINFO pSkip = NULL)
 {
-	const PUZZLETABLE &Table = s_aTable[nTable];
+	PUZZLETABLE &Table = s_aTable[nTable];
 	std::vector<BYTE> aBuf;
 	int i;
 
@@ -300,7 +344,7 @@ static void SendTable(int nTable, BYTE byKind, PCHARINFO pSkip = NULL)
 		if ((pChar == NULL) || (pChar == pSkip)) {
 			continue;
 		}
-		SendStateTo (Table, pChar, aBuf);
+		Table.aWatch[i].byFlag = SendStateTo (Table, pChar, aBuf);
 	}
 }
 
@@ -314,6 +358,10 @@ static BOOL WatchEligible(const PUZZLEPARAM &Param, DWORD dwMapID, PCHARINFO pNp
 		!IsSameSpace (pNpc, pChar) || !IsCharSeenBy (pNpc, pChar)) {
 		return FALSE;
 	}
+	/* 座る場所のマスに立っている人は、盤面から遠くても届ける（INSERT COIN の案内を出すため） */
+	if (((int)pChar->dwX == (int)pNpc->dwX + Param.nSdx) && ((int)pChar->dwY == (int)pNpc->dwY + Param.nSdy)) {
+		return TRUE;
+	}
 	PuzzleFieldPos ((int)pNpc->dwX, (int)pNpc->dwY, Param.nDx, Param.nDy, &nFx, &nFy);
 	nCx = (nFx + Param.nCols * PUZZLE_BLOCK_DOT / 2) / PUZZLE_TILE_DOT;
 	nCy = (nFy + Param.nRows * PUZZLE_BLOCK_DOT / 2) / PUZZLE_TILE_DOT;
@@ -321,16 +369,22 @@ static BOOL WatchEligible(const PUZZLEPARAM &Param, DWORD dwMapID, PCHARINFO pNp
 		(abs ((int)pChar->dwY - nCy) <= nMargin + Param.nRows / 4);
 }
 
-static BOOL InWatch(const std::vector<PUZZLEWATCH> &aWatch, const PUZZLEWATCH &w)
+/* 送ってある人の中の位置（いなければ -1） */
+static int FindWatch(const std::vector<PUZZLEWATCH> &aWatch, const PUZZLEWATCH &w)
 {
 	int i;
 
 	for (i = 0; i < (int)aWatch.size (); i ++) {
 		if ((aWatch[i].dwChar == w.dwChar) && (aWatch[i].dwPID == w.dwPID)) {
-			return TRUE;
+			return i;
 		}
 	}
-	return FALSE;
+	return -1;
+}
+
+static BOOL InWatch(const std::vector<PUZZLEWATCH> &aWatch, const PUZZLEWATCH &w)
+{
+	return FindWatch (aWatch, w) >= 0;
 }
 
 /* 盤面が見える人を見直す。新しく見える人には盤面全体を 1 回送り、見えなくなった人には NONE を送って消してもらう */
@@ -360,12 +414,14 @@ static void WatchRefresh(int nTable)
 		PUZZLEWATCH w;
 		w.dwChar = pSeat->dwTblID;
 		w.dwPID = pSeat->pID;
+		w.byFlag = 0;
 		aNew.push_back (w);
 	}
 	if (pOpp && (pOpp != pSeat)) {
 		PUZZLEWATCH w;
 		w.dwChar = pOpp->dwTblID;
 		w.dwPID = pOpp->pID;
+		w.byFlag = 0;
 		aNew.push_back (w);
 	}
 	/* 同じマップの近くにいる人 */
@@ -384,6 +440,7 @@ static void WatchRefresh(int nTable)
 			}
 			w.dwChar = pChar->dwTblID;
 			w.dwPID = pChar->pID;
+			w.byFlag = 0;
 			/* すでに送ってある人は遠い距離（LEAVE）まで、新しい人は近い距離（ENTER）から。境目で送る・消すを繰り返さない */
 			if (!WatchEligible (Table.Param, Table.dwMapID, pNpc, pChar, InWatch (Table.aWatch, w) ? PUZZLE_VIEW_LEAVE : PUZZLE_VIEW_ENTER)) {
 				continue;
@@ -405,19 +462,25 @@ static void WatchRefresh(int nTable)
 			SendStateTo (Table, pChar, aNone);
 		}
 	}
-	/* 新しく見える人へ盤面全体 */
+	/* 新しく見える人へ盤面全体。すでに見ている人は、座る場所に立った・離れた（待機中の台の案内が変わった）時だけ送り直す */
 	for (i = 0; i < (int)aNew.size (); i ++) {
 		PCHARINFO pChar;
-		if (InWatch (Table.aWatch, aNew[i])) {
+		int nOld = FindWatch (Table.aWatch, aNew[i]);
+
+		pChar = WatchChar (aNew[i]);
+		if (nOld >= 0) {
+			aNew[i].byFlag = Table.aWatch[nOld].byFlag;
+		}
+		if (pChar == NULL) {
 			continue;
 		}
-		pChar = WatchChar (aNew[i]);
-		if (pChar) {
-			if (aFull.empty ()) {
-				BuildState (Table, PUZZLESTATE_FULL, aFull);
-			}
-			SendStateTo (Table, pChar, aFull);
+		if ((nOld >= 0) && (!Table.bIdle || (SeatFlag (Table, pChar) == aNew[i].byFlag))) {
+			continue;
 		}
+		if (aFull.empty ()) {
+			BuildState (Table, PUZZLESTATE_FULL, aFull);
+		}
+		aNew[i].byFlag = SendStateTo (Table, pChar, aFull);
 	}
 	Table.aWatch = aNew;
 }
@@ -452,14 +515,32 @@ static void Leave(int nTable, BYTE byKind, BOOL bNotifySelf, BOOL bLost)
 
 		Table.bVs = FALSE;
 		if (nOpp >= 0) {
+			/* 勝った側の連勝を 1 つ増やす（EndVs の盤面の通知に連勝数が載る） */
+			if (pWin) {
+				s_aTable[nOpp].nWinStreak ++;
+			}
 			EndVs (nOpp, bNotifySelf ? NULL : pSelf);
 		}
 		if (pWin) {
-			sprintf (szMsg, "%sの勝ち！", pWin->szName);
+			if (s_aTable[nOpp].nWinStreak >= PUZZLE_STREAK_MIN) {
+				sprintf (szMsg, "%sの勝ち！ %sの%d連勝！", pWin->szName, pWin->szName, s_aTable[nOpp].nWinStreak);
+			} else {
+				sprintf (szMsg, "%sの勝ち！", pWin->szName);
+			}
 			SendCmdSYSMSG (pWin->pID, szMsg);
 			if (pSelf && bNotifySelf) {
 				SendCmdSYSMSG (pSelf->pID, szMsg);
 			}
+		}
+	}
+	/* 連勝が途切れた（席を立つ・切断・負け・ゲームオーバー）：連勝数が 2 以上なら連勝記録へ。ゲームオーバーなら得点をハイスコアへ。
+	   連勝数は ToIdle で 0 に戻る */
+	if (pSelf) {
+		if (Table.nWinStreak >= PUZZLE_STREAK_MIN) {
+			PuzzleRecordStreak (pSelf->szName, (DWORD)Table.nWinStreak);
+		}
+		if (bLost) {
+			PuzzleRecordScore (pSelf->szName, Table.Seat.Game.dwScore);
 		}
 	}
 	if (bLost && pSelf) {
@@ -475,6 +556,20 @@ static void Leave(int nTable, BYTE byKind, BOOL bNotifySelf, BOOL bLost)
 	}
 	ToIdle (nTable, byKind == PUZZLESTATE_OVER);
 	SendTable (nTable, PUZZLESTATE_FULL, ((byKind == PUZZLESTATE_OVER) || !bNotifySelf) ? pSelf : NULL);
+	/* 本人へ盤面を送らなかった時（ゲームオーバー中の OVER 表示。切断）は、送ってある案内の値を今の値にそろえておく
+	   （見直しで待機中の盤面を送り直して OVER の表示を消さない。GAME OVER の字が消える時の全員宛ての盤面で、案内が届く） */
+	if (pSelf && ((byKind == PUZZLESTATE_OVER) || !bNotifySelf)) {
+		PUZZLEWATCH w;
+		int nW;
+
+		w.dwChar = pSelf->dwTblID;
+		w.dwPID = pSelf->pID;
+		w.byFlag = 0;
+		nW = FindWatch (Table.aWatch, w);
+		if (nW >= 0) {
+			Table.aWatch[nW].byFlag = SeatFlag (Table, pSelf);
+		}
+	}
 }
 
 /* 入力・周期処理の結果を送る（変わった所だけ）。置けなくなったら負け／ゲームオーバー。
@@ -617,6 +712,145 @@ int PuzzleIdleCount(void)
 	return (int)s_aTable.size () - PuzzleSeatCount ();
 }
 
+int PuzzleWinStreak(PCHARINFO pChar)
+{
+	int nTable;
+
+	return FindSeat (pChar, &nTable) ? s_aTable[nTable].nWinStreak : 0;
+}
+
+/* ========================================================================= */
+/* ハイスコア・連勝記録														 */
+/* ========================================================================= */
+
+void PuzzleRecordClear(void)
+{
+	g_PuzzleScoreRec.Clear ();
+	g_PuzzleStreakRec.Clear ();
+}
+
+/* 今日の日付（日本時間の年月日） */
+DWORD PuzzleDateJst(void)
+{
+	time_t t = (time_t)((g_dwPuzzleNowOverride != 0) ? g_dwPuzzleNowOverride : (DWORD)time (NULL)) + 9 * 60 * 60;	/* 日本時間は UTC より 9 時間進んでいる */
+	struct tm *pTm = gmtime (&t);
+
+	return pTm ? (DWORD)((pTm->tm_year + 1900) * 10000 + (pTm->tm_mon + 1) * 100 + pTm->tm_mday) : 0;
+}
+
+int PuzzleRecordScore(LPCSTR pszName, DWORD dwScore)
+{
+	return g_PuzzleScoreRec.Add (pszName, dwScore, PuzzleDateJst ());
+}
+
+int PuzzleRecordStreak(LPCSTR pszName, DWORD dwStreak)
+{
+	if (dwStreak < PUZZLE_STREAK_MIN) {
+		return 0;
+	}
+	return g_PuzzleStreakRec.Add (pszName, dwStreak, PuzzleDateJst ());
+}
+
+BOOL PuzzleIsRecordNpc(PCHARINFO pNpc)
+{
+	return pNpc && (pNpc->byNpcType != NPCTYPE_INIT) && pNpc->pszNpcSpeech &&
+		(pNpc->pszNpcSpeech[0] == '@') && (pNpc->pszNpcSpeech[1] == 'h');
+}
+
+#define PUZZLE_RECORD_NAMEW		(12)		/* メッセージ窓に出す名前の表示幅（半角 1・全角 2。これを超える名前は「…」で切る） */
+#define PUZZLE_RECORD_PAGE		(5)			/* メッセージ窓 1 画面の行数（この行数ごとに入力待ちを入れる） */
+
+/* 名前を表示幅 PUZZLE_RECORD_NAMEW に切る（文字の途中で切らない。切った時は「…」を付ける）。制御コードの印 '@' は全角に直す */
+static std::string RecordShortName(LPCSTR pszName)
+{
+	std::string str;
+	int nWidth = 0, nTotal = 0, i;
+
+	for (i = 0; pszName[i]; ) {
+		int nLen = SboTextCharLen (&pszName[i]);
+		if (nLen <= 0) {
+			break;
+		}
+		nTotal += SboTextCharWidth (&pszName[i]);
+		i += nLen;
+	}
+	for (i = 0; pszName[i]; ) {
+		int nLen = SboTextCharLen (&pszName[i]), nW;
+		if (nLen <= 0) {
+			break;
+		}
+		nW = SboTextCharWidth (&pszName[i]);
+		if (nWidth + nW > ((nTotal > PUZZLE_RECORD_NAMEW) ? PUZZLE_RECORD_NAMEW - 2 : PUZZLE_RECORD_NAMEW)) {
+			break;
+		}
+		if (pszName[i] == '@') {
+			str += "＠";			/* 台詞の制御コード（@0 など）にならないように */
+		} else {
+			str.append (&pszName[i], nLen);
+		}
+		nWidth += nW;
+		i += nLen;
+	}
+	if (nTotal > PUZZLE_RECORD_NAMEW) {
+		str += "…";
+	}
+	return str;
+}
+
+/* 掲示板に出す文（ハイスコア上位 10 件→連勝記録上位 10 件。@1=改行・@0=入力待ち・最後は @2）。
+   1 つのメッセージは MAX_TALKMSG バイトまでなので、入らない分は後ろの行から落とす */
+void PuzzleRecordMessage(char *pszOut, int nSize)
+{
+	std::vector<std::string> aLine;
+	std::string str;
+	int i, nLimit = (nSize < MAX_TALKMSG ? nSize : MAX_TALKMSG) - 8;
+	char sz[160];
+
+	aLine.push_back ("【ハイスコア】");
+	if (g_PuzzleScoreRec.nCount == 0) {
+		aLine.push_back ("まだ記録がありません。");
+	}
+	for (i = 0; i < g_PuzzleScoreRec.nCount; i ++) {
+		sprintf (sz, "%d位 %s %u点", i + 1, RecordShortName (g_PuzzleScoreRec.aRec[i].szName).c_str (), g_PuzzleScoreRec.aRec[i].dwValue);
+		aLine.push_back (sz);
+	}
+	aLine.push_back ("【連勝記録】");
+	if (g_PuzzleStreakRec.nCount == 0) {
+		aLine.push_back ("まだ記録がありません。");
+	}
+	for (i = 0; i < g_PuzzleStreakRec.nCount; i ++) {
+		sprintf (sz, "%d位 %s %u連勝", i + 1, RecordShortName (g_PuzzleStreakRec.aRec[i].szName).c_str (), g_PuzzleStreakRec.aRec[i].dwValue);
+		aLine.push_back (sz);
+	}
+	for (i = 0; i < (int)aLine.size (); i ++) {
+		std::string strAdd = aLine[i];
+
+		if (i + 1 < (int)aLine.size ()) {
+			strAdd += (((i + 1) % PUZZLE_RECORD_PAGE) == 0) ? "@0" : "@1";
+		}
+		if ((int)(str.size () + strAdd.size ()) > nLimit) {
+			break;
+		}
+		str += strAdd;
+	}
+	if ((str.size () >= 2) && (str[str.size () - 2] == '@') && ((str[str.size () - 1] == '1') || (str[str.size () - 1] == '0'))) {
+		str.resize (str.size () - 2);		/* 入りきらずに切った時の、末尾の改行・入力待ちは付けない */
+	}
+	str += "@2";
+	SboTextCopy (pszOut, nSize, str.c_str ());
+}
+
+void PuzzleRecordTalk(PCHARINFO pChar, PCHARINFO pNpc)
+{
+	char szMsg[MAX_TALKMSG];
+
+	if (!PuzzleIsRecordNpc (pNpc) || (pChar->byNpcType != NPCTYPE_INIT)) {
+		return;
+	}
+	PuzzleRecordMessage (szMsg, sizeof (szMsg));
+	SendCmdTALKMSG (pChar->pID, pNpc->dwTblID, szMsg);
+}
+
 void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc)
 {
 	PUZZLEPARAM Param;
@@ -680,6 +914,7 @@ void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc)
 		Table.bLast = FALSE;
 		Table.bOverShow = FALSE;
 		Table.dwOverTime = 0;
+		Table.nWinStreak = 0;
 		Table.Seat.dwChar = pChar->dwTblID;
 		Table.Seat.dwPID = pChar->pID;
 		Table.Seat.dwLastKey = 0;
@@ -826,6 +1061,7 @@ static void IdleScan(void)
 				Table.bLast = FALSE;
 				Table.bOverShow = FALSE;
 				Table.dwOverTime = 0;
+				Table.nWinStreak = 0;
 				Table.Seat.dwChar = PUZZLE_NOCHAR;
 				Table.Seat.dwPID = 0;
 				Table.Seat.dwLastKey = 0;

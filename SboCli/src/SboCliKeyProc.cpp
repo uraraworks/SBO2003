@@ -9548,6 +9548,18 @@ void CmdProcHanasu(PWNDINFO pWnd)
 		}
 		return;
 
+	/* 落ち物パズルの掲示板（@h）？ ハイスコアと連勝記録はサーバーが本人にだけ会話の窓で送る */
+	} else if (pChar2->pszNpcSpeech[0] == '@' && pChar2->pszNpcSpeech[1] == 'h') {
+		SendCmdTALKRAND (pChar2->dwTblID);
+		pChar2->byDirection = abyDirectionTbl[pChar->byDirection];
+		int nNo = GetWindowID (g_dwMsgIDCommand);
+		if (nNo >= 0) {
+			EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
+			g_dwMsgIDCommand = 0;
+			g_bDraw = TRUE;
+		}
+		return;
+
 	/* 傭兵所？ 雇う・お別れするのはサーバーが決めて、お知らせが来る */
 	} else if (pChar2->pszNpcSpeech[0] == '@' && pChar2->pszNpcSpeech[1] == 'm') {
 

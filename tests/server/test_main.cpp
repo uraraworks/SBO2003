@@ -1360,6 +1360,7 @@ static void TestPuzzle(const std::vector<int> &aLogin);
 static void TestPuzzleVs(const std::vector<int> &aLogin);
 static void TestPuzzleIdle(const std::vector<int> &aLogin);
 static void TestPuzzleSeat(const std::vector<int> &aLogin);
+static void TestPuzzleRecord(const std::vector<int> &aLogin);
 static void TestEmptyMapCheck(const std::vector<int> &aLogin);
 static void TestPutFill(void);
 static void TestDungeonTheme(void);
@@ -1942,6 +1943,8 @@ static void TestWorld(void)
 	TestPuzzleIdle(aLogin);
 	/* AV4. 落ち物パズルの座る場所（台詞の 9・10 番目）と、見えない台NPC */
 	TestPuzzleSeat(aLogin);
+	/* AV5. 落ち物パズルの INSERT COIN の案内（座る場所に立つと本人にだけ）・連勝・ハイスコアと連勝記録（保存・掲示板 @h・API） */
+	TestPuzzleRecord(aLogin);
 	/* SM. 召喚特技のヒット数の実測（SUMMON_HITS=1 の時だけ。最後に流す） */
 	TestSummonHits(aLogin);
 }
@@ -7884,8 +7887,11 @@ static void TestMarket(const std::vector<int> &aLogin)
 /*    時刻は g_dwRecycleNowOverride で決め打ちにする（日付の変わり目を試す）	 */
 /* ------------------------------------------------------------------------- */
 extern BOOL SaveRecycle(void);
+extern BOOL SavePuzzleRecord(void);
+extern BOOL LoadPuzzleRecord(void);
 extern BOOL LoadRecycle(void);
 extern "C" const char *SboWebDataRecycle();
+extern "C" const char *SboWebDataPuzzleRecords();
 static std::string SwapApi(int nMap, const char *pszJson);
 static void SwapRestore(PMAPINFO p, const MAPINFO &Bak);
 static void MimicExamine(PCHARINFO pPC);
@@ -18466,4 +18472,335 @@ static void TestPuzzleSeat(const std::vector<int> &aLogin)
 	pA->byCharState = byStateBack; pA->wHP = wHPBack; pA->byDirection = byDirBack;
 	g_dwTime = dwTimeBack;
 	printf("seat done seats=%d idleTables=%d\n", PuzzleSeatCount(), PuzzleIdleCount());
+}
+
+/* ------------------------------------------------------------------------- */
+/* AV5. 落ち物パズルの INSERT COIN の案内・連勝・ハイスコアと連勝記録					 */
+/*     待機中の台の座る場所のマスに立つと、本人にだけ byIdle の PUZZLEIDLE_SEAT（必要な枚数が 0 なら FREE も）が届く・	 */
+/*     離れると消える・変化が無ければ送り直さない・使われている台には付かない・座る場所の隣では座れない・	 */
+/*     連勝数が勝ちで増え（byStreak・「N連勝！」）、負け・席を立つ・切断・ゲームオーバーで 0 に戻る（2 以上は連勝記録へ）・	 */
+/*     ハイスコアは 1 キャラ 1 件で上位 10 件・同点は先着・保存して読み直せる・掲示板 @h の文・API の JSON			 */
+/* ------------------------------------------------------------------------- */
+/* その人が最後に受けた、台 dwNpc の CMD_PUZZLESTATE の byStreak（パケットが無ければ -1） */
+static int PuzzleLastStreak(int nConn, DWORD dwNpc)
+{
+	std::vector<std::vector<BYTE> > aP;
+	PuzzlePackets(nConn, aP);
+	for (int i = (int)aP.size() - 1; i >= 0; i --) {
+		if (aP[i].size() < sizeof(CMDPARA_PUZZLESTATE)) continue;
+		const CMDPARA_PUZZLESTATE *pSt = (const CMDPARA_PUZZLESTATE *)&aP[i][0];
+		if (pSt->dwNpc == dwNpc) return pSt->byKind == PUZZLESTATE_NONE ? -2 : pSt->byStreak;
+	}
+	return -1;
+}
+
+/* その人が最後に受けた、台 dwNpc の byIdle（パケットが無ければ -1） */
+static int PuzzleLastIdle(int nConn, DWORD dwNpc)
+{
+	int nIdle = -1;
+	PuzzleOverFlag(nConn, dwNpc, &nIdle);
+	return nIdle;
+}
+
+/* 対戦中の p が置けなくなって負ける（盤面を詰めて、下キーで固定させる）。得点を決めておく */
+static void PuzzleForceLose(PCHARINFO p, DWORD dwScore)
+{
+	PuzzleGame *g = PuzzleGetGame(p);
+	if (g == NULL) return;
+	g->dwScore = dwScore;
+	g->Board.Init(10, 14);
+	for (int c = 3; c <= 6; c ++) { g->Board.Set(c, 0, 1); g->Board.Set(c, 1, 1); }		/* 次の落ち物は必ず出せず、ゲームオーバー */
+	g->nKind = 1; g->nRot = 0; g->nX = 0; g->nY = 12;
+	g_dwTime = (s_dwFakeNow += 100);
+	PuzzleKeySend(p, PUZZLEKEY_DOWN);
+}
+
+static void TestPuzzleRecord(const std::vector<int> &aLogin)
+{
+	printf("== AV5. Falling puzzle insert coin, win streak, records ==\n");
+	if (aLogin.size() < 3) return;
+	s_pSpLogin = &aLogin;
+	PCHARINFO pA = g_aCharInfo[aLogin[0]], pB = g_aCharInfo[aLogin[1]], pC = g_aCharInfo[aLogin[2]];
+	PCHARINFO apP[3] = { pA, pB, pC };
+	int anConn[3] = { DgTestConn(pA), DgTestConn(pB), DgTestConn(pC) };
+	struct { DWORD dwMap, dwX, dwY; BYTE byState; WORD wHP; } aBack[3];
+	WORD wCoin = 1;
+	DWORD dwTimeBack = g_dwTime;
+	int i;
+
+	for (i = 0; i < 3; i ++) {
+		aBack[i].dwMap = apP[i]->dwMapID; aBack[i].dwX = apP[i]->dwX; aBack[i].dwY = apP[i]->dwY;
+		aBack[i].byState = apP[i]->byCharState; aBack[i].wHP = apP[i]->wHP;
+		apP[i]->byCharState = CHARSTATE_MOVE;
+		if (apP[i]->wHP == 0) apP[i]->wHP = 10;
+		for (int j = 0; j < MAX_MYITEM; j ++) if (apP[i]->waItem[j] == wCoin) DelCharItem(apP[i]->dwTblID, (BYTE)j);
+	}
+	DWORD dwMap = pA->dwMapID, dwX = pA->dwX, dwY = pA->dwY;
+	for (i = 1; i < 3; i ++) QuestMovePC(apP[i], (int)dwMap, (int)dwX, (int)dwY);
+	QuestMovePC(pA, (int)dwMap, (int)dwX, (int)dwY);
+	/* キャラ名は記録の名前になる（空の名前は載らない）ので、決めておく */
+	char aszNameBack[3][MAX_CHARNAMEBUF];
+	for (i = 0; i < 3; i ++) {
+		strcpy(aszNameBack[i], apP[i]->szName);
+	}
+	strcpy(pA->szName, "甲"); strcpy(pB->szName, "乙"); strcpy(pC->szName, "丙");
+	/* 記録は空から始める。日付は 2026-11-25（日本時間）に決め打ち */
+	PuzzleRecordClear();
+	g_dwPuzzleNowOverride = 1795575600u;
+	printf("record date=%u empty=%d%d\n", PuzzleDateJst(), g_PuzzleScoreRec.nCount, g_PuzzleStreakRec.nCount);
+	/* 台 1・2 はペア 5（座る場所は台NPCの下・右 4 の下）・台 3 は無料（座る場所は左 4 の下） */
+	NearNpcOpen(pA, "@p1,1,,,,,,5,0,1");
+	PCHARINFO pT1 = s_aNearNpc.back();
+	NearNpcOpen(pA, "@p1,1,,,,,,5,4,1");
+	PCHARINFO pT2 = s_aNearNpc.back();
+	NearNpcOpen(pA, "@p0,0,,,,,,,-4,1");
+	PCHARINFO pT3 = s_aNearNpc.back();
+	MockTrace(1);
+	g_dwTime = (s_dwFakeNow = max(s_dwFakeNow, g_dwTime) + 1000);
+
+	/* 1. A は台 1 の座る場所・B は座る場所でないマス・C は無料の台 3 の座る場所に立つ。
+	   A には台 1 の待機中の盤面に SEAT（byIdle=3）、C には台 3 に SEAT+FREE（7）が届く。B と、それぞれほかの台・ほかの人の座る場所には付かない（1） */
+	PuzzlePlace(pA, pT1, dwX, dwY + 1);
+	PuzzlePlace(pB, pT1, dwX + 1, dwY + 3);
+	PuzzlePlace(pC, pT3, dwX - 4, dwY + 1);
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	printf("insert flags A:t1=%d t2=%d t3=%d B:t1=%d t2=%d t3=%d C:t1=%d t2=%d t3=%d\n",
+		PuzzleLastIdle(anConn[0], pT1->dwTblID), PuzzleLastIdle(anConn[0], pT2->dwTblID), PuzzleLastIdle(anConn[0], pT3->dwTblID),
+		PuzzleLastIdle(anConn[1], pT1->dwTblID), PuzzleLastIdle(anConn[1], pT2->dwTblID), PuzzleLastIdle(anConn[1], pT3->dwTblID),
+		PuzzleLastIdle(anConn[2], pT1->dwTblID), PuzzleLastIdle(anConn[2], pT2->dwTblID), PuzzleLastIdle(anConn[2], pT3->dwTblID));
+
+	/* 2. 変化が無ければ送り直さない（動かずに見直しを重ねてもパケットは増えない） */
+	int nA0 = PuzzleCount(anConn[0]), nC0 = PuzzleCount(anConn[2]);
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	printf("insert nochange packets A=%d C=%d\n", PuzzleCount(anConn[0]) - nA0, PuzzleCount(anConn[2]) - nC0);
+
+	/* 3. 座る場所から 1 歩離れると消える（A に 1 回だけ届く）。戻るとまた出る */
+	nA0 = PuzzleCount(anConn[0]);
+	PuzzlePlace(pA, pT1, dwX + 1, dwY + 1);
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	int nOff = PuzzleLastIdle(anConn[0], pT1->dwTblID), nOffPk = PuzzleCount(anConn[0]) - nA0;
+	PuzzlePlace(pA, pT1, dwX, dwY + 1);
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	printf("insert leave off=%d packets=%d back=%d\n", nOff, nOffPk, PuzzleLastIdle(anConn[0], pT1->dwTblID));
+
+	/* 4. 座る場所の隣（B のいるマス）で S を押しても座れない（台NPCのマスでも）。コインは減らない */
+	AddCharItem(pB->dwTblID, wCoin);
+	PuzzleTalkRaw(pB, pT1);
+	PuzzlePlace(pB, pT1, dwX, dwY);
+	PuzzleTalkRaw(pB, pT1);
+	printf("insert notcell seatedB=%d coinB=%d\n", PuzzleIsSeated(pB), PuzzleCoinCount(pB, wCoin));
+	/* 無料の台 3 は、座る場所の隣では座れず、座る場所では座れる（コイン無し）。座ると案内は消える */
+	PuzzlePlace(pC, pT3, dwX - 3, dwY + 1);
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	int nNear = PuzzleLastIdle(anConn[2], pT3->dwTblID);
+	PuzzleTalkRaw(pC, pT3);
+	int nSeatedNear = PuzzleIsSeated(pC);
+	PuzzlePlace(pC, pT3, dwX - 4, dwY + 1);
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	int nBack = PuzzleLastIdle(anConn[2], pT3->dwTblID);
+	PuzzleTalkRaw(pC, pT3);
+	printf("insert free near=%d seatedNear=%d back=%d seated=%d idleAfter=%d\n", nNear, nSeatedNear, nBack, PuzzleIsSeated(pC),
+		PuzzleLastIdle(anConn[2], pT3->dwTblID));
+	/* C が ESC で席を立つと、座る場所に立ったままなので案内がすぐ戻る */
+	PuzzleKeySend(pC, PUZZLEKEY_LEAVE);
+	printf("insert free esc seated=%d idle=%d\n", PuzzleIsSeated(pC), PuzzleLastIdle(anConn[2], pT3->dwTblID));
+
+	/* 5. コインが無ければ S を押しても座れず案内は残る。コインを持って S → 座る（案内は消え、本人の盤面になる）。
+	   A が座っている台 1 の座る場所に立つ B には、使われている台なので案内は付かない */
+	PuzzlePlace(pB, pT1, dwX + 1, dwY + 3);
+	for (int j = 0; j < MAX_MYITEM; j ++) if (pA->waItem[j] == wCoin) DelCharItem(pA->dwTblID, (BYTE)j);
+	PuzzleTalkRaw(pA, pT1);
+	int nNoCoin = PuzzleIsSeated(pA), nStill = PuzzleLastIdle(anConn[0], pT1->dwTblID);
+	AddCharItem(pA->dwTblID, wCoin);
+	PuzzleTalkRaw(pA, pT1);
+	PuzzlePlace(pB, pT1, dwX, dwY + 1);
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	printf("insert sit nocoin=%d still=%d seated=%d A:idle=%d B:idle=%d\n", nNoCoin, nStill, PuzzleIsSeated(pA),
+		PuzzleLastIdle(anConn[0], pT1->dwTblID), PuzzleLastIdle(anConn[1], pT1->dwTblID));
+	PuzzlePlace(pB, pT1, dwX + 1, dwY + 3);
+
+	/* 6. 連勝：B が台 2（座る場所は右 4 の下）に座ると対戦。B が負けると A の連勝が 1 になり（「N連勝！」は 2 から）、盤面の通知に載る */
+	g_dwTime = (s_dwFakeNow += 100);
+	AddCharItem(pB->dwTblID, wCoin);
+	PuzzleTalk(pB, pT2);
+	DWORD dwSit = g_dwTime;
+	g_dwTime = (s_dwFakeNow = dwSit + 3100);
+	PuzzleProc();
+	printf("streak vs=%d%d start=%d\n", PuzzleIsVersus(pA), PuzzleIsVersus(pB), PuzzleWinStreak(pA));
+	PuzzleForceLose(pB, 1234);
+	printf("streak win1 A=%d B=%d seatedB=%d msgStreak=%d notice=%d pkt=%d\n", PuzzleWinStreak(pA), PuzzleWinStreak(pB), PuzzleIsSeated(pB),
+		MockHasText(anConn[0], CMD_SYSMSG, "連勝！"), MockHasText(anConn[0], CMD_SYSMSG, "の勝ち！"), PuzzleLastStreak(anConn[0], pT1->dwTblID));
+	printf("streak rec scores=%d streaks=%d\n", g_PuzzleScoreRec.nCount, g_PuzzleStreakRec.nCount);
+	/* 2 連勝：もう一度 B が乱入して負ける → 「○○の 2 連勝！」が両者に出て、観覧者 C にも byStreak=2 が届く */
+	PuzzlePlace(pC, pT3, dwX - 4, dwY + 1);
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	AddCharItem(pB->dwTblID, wCoin);
+	PuzzleTalk(pB, pT2);
+	g_dwTime = (s_dwFakeNow += 3100);
+	PuzzleProc();
+	int nMsgA = MockCmdCount(anConn[0], CMD_SYSMSG);
+	PuzzleForceLose(pB, 1500);
+	char szWin[96];
+	sprintf(szWin, "%sの勝ち！ %sの2連勝！", pA->szName, pA->szName);
+	printf("streak win2 A=%d msgA=%d msgB=%d msgNew=%d pktC=%d pktA=%d\n", PuzzleWinStreak(pA), MockHasText(anConn[0], CMD_SYSMSG, szWin),
+		MockHasText(anConn[1], CMD_SYSMSG, szWin), MockCmdCount(anConn[0], CMD_SYSMSG) - nMsgA, PuzzleLastStreak(anConn[2], pT1->dwTblID),
+		PuzzleLastStreak(anConn[0], pT1->dwTblID));
+	/* B の得点は 1 キャラ 1 件で、高い方（1500）に更新される。連勝記録はまだ空（B は連勝していない・A は続行中） */
+	printf("streak rec scoreB=%u n=%d streaks=%d\n", g_PuzzleScoreRec.nCount ? g_PuzzleScoreRec.aRec[0].dwValue : 0, g_PuzzleScoreRec.nCount, g_PuzzleStreakRec.nCount);
+
+	/* 7. 連勝中の A が B に負ける（B が台 2 で乱入し、A が置けなくなる）→ A の 2 連勝が記録され、A は 0 に戻り、B は 1 連勝。
+	   A の得点もハイスコアに載る（5000 で 1 位・B が 2 位） */
+	AddCharItem(pB->dwTblID, wCoin);
+	PuzzleTalk(pB, pT2);
+	g_dwTime = (s_dwFakeNow += 3100);
+	PuzzleProc();
+	PuzzleForceLose(pA, 5000);
+	printf("streak lose A seated=%d streakA=%d B=%d recStreak=%d(%s:%u %u) recScore=%s:%u,%s:%u\n", PuzzleIsSeated(pA), PuzzleWinStreak(pA), PuzzleWinStreak(pB),
+		g_PuzzleStreakRec.nCount, g_PuzzleStreakRec.nCount ? (strcmp(g_PuzzleStreakRec.aRec[0].szName, pA->szName) == 0 ? "A" : "?") : "-",
+		g_PuzzleStreakRec.nCount ? g_PuzzleStreakRec.aRec[0].dwValue : 0, g_PuzzleStreakRec.nCount ? g_PuzzleStreakRec.aRec[0].dwDate : 0,
+		g_PuzzleScoreRec.nCount > 0 ? (strcmp(g_PuzzleScoreRec.aRec[0].szName, pA->szName) == 0 ? "A" : "?") : "-", g_PuzzleScoreRec.nCount > 0 ? g_PuzzleScoreRec.aRec[0].dwValue : 0,
+		g_PuzzleScoreRec.nCount > 1 ? (strcmp(g_PuzzleScoreRec.aRec[1].szName, pB->szName) == 0 ? "B" : "?") : "-", g_PuzzleScoreRec.nCount > 1 ? g_PuzzleScoreRec.aRec[1].dwValue : 0);
+
+	/* 8. B（1 連勝）が席を立つと 0 に戻る（連勝記録には 2 未満なので載らない）。座り直しは 0 から */
+	PuzzleKeySend(pB, PUZZLEKEY_LEAVE);
+	int nRecAfterEsc = g_PuzzleStreakRec.nCount;
+	AddCharItem(pB->dwTblID, wCoin);
+	PuzzleTalk(pB, pT2);
+	printf("streak esc recStreak=%d sitAgain=%d\n", nRecAfterEsc, PuzzleWinStreak(pB));
+	PuzzleKeySend(pB, PUZZLEKEY_LEAVE);
+
+	/* 9. 2 連勝した B が切断すると記録される（A の 2 連勝と同点なので、先に達成した A が上）。
+	   B が台 2 で座っている所へ A が台 1 に座って乱入し、A が負けるのを 2 回 */
+	AddCharItem(pB->dwTblID, wCoin);
+	PuzzleTalk(pB, pT2);
+	for (i = 0; i < 2; i ++) {
+		AddCharItem(pA->dwTblID, wCoin);
+		PuzzleTalk(pA, pT1);
+		g_dwTime = (s_dwFakeNow += 3100);
+		PuzzleProc();
+		PuzzleForceLose(pA, 10);
+	}
+	int nStreakB = PuzzleWinStreak(pB);
+	PuzzleOnLeave(pB);
+	printf("streak logout B=%d recStreak=%d first=%s second=%s values=%u,%u seatedB=%d\n", nStreakB, g_PuzzleStreakRec.nCount,
+		g_PuzzleStreakRec.nCount > 0 && strcmp(g_PuzzleStreakRec.aRec[0].szName, pA->szName) == 0 ? "A" : "?",
+		g_PuzzleStreakRec.nCount > 1 && strcmp(g_PuzzleStreakRec.aRec[1].szName, pB->szName) == 0 ? "B" : "?",
+		g_PuzzleStreakRec.nCount > 0 ? g_PuzzleStreakRec.aRec[0].dwValue : 0, g_PuzzleStreakRec.nCount > 1 ? g_PuzzleStreakRec.aRec[1].dwValue : 0, PuzzleIsSeated(pB));
+
+	/* 10. ひとり用のゲームオーバーでも得点が載る（1 キャラ 1 件：A の低い得点では更新しない）。ゲームオーバーで連勝は 0 */
+	AddCharItem(pA->dwTblID, wCoin);
+	PuzzleTalk(pA, pT1);
+	PuzzleGame *gA = PuzzleGetGame(pA);
+	gA->Board.Init(10, 14);
+	for (int c = 3; c <= 6; c ++) { gA->Board.Set(c, 0, 1); gA->Board.Set(c, 1, 1); }
+	gA->nKind = 1; gA->nRot = 0; gA->nX = 0; gA->nY = 12;
+	gA->dwScore = 3000;
+	g_dwTime = (s_dwFakeNow += 100);
+	PuzzleKeySend(pA, PUZZLEKEY_DOWN);
+	printf("solo over seatedA=%d scores=%d top=%u\n", PuzzleIsSeated(pA), g_PuzzleScoreRec.nCount, g_PuzzleScoreRec.aRec[0].dwValue);
+
+	/* 11. 掲示板 @h：話しかけた本人にだけ、ハイスコアと連勝記録が会話の窓（CMD_TALKMSG）で届く。名前が長い時は切り詰める。 */
+	g_PuzzleScoreRec.Add("あいうえおかきくけこさしすせそたちつてと", 7777, 20261125);
+	g_PuzzleStreakRec.Add("ア@0イ", 9, 20261125);
+	PuzzlePlace(pA, pT1, dwX + 6, dwY);
+	NearNpcOpen(pA, "@h");
+	PCHARINFO pH = s_aNearNpc.back();
+	int nTalk0 = MockCmdCount(anConn[0], CMD_TALKMSG), nTalkB0 = MockCmdCount(anConn[1], CMD_TALKMSG);
+	PuzzleTalkRaw(pA, pH);
+	printf("board talk A=%d B=%d head=%d streakHead=%d name=%d cut=%d noat0=%d\n", MockCmdCount(anConn[0], CMD_TALKMSG) - nTalk0,
+		MockCmdCount(anConn[1], CMD_TALKMSG) - nTalkB0, MockHasText(anConn[0], CMD_TALKMSG, "【ハイスコア】"), MockHasText(anConn[0], CMD_TALKMSG, "【連勝記録】"),
+		MockHasText(anConn[0], CMD_TALKMSG, "7777点"), MockHasText(anConn[0], CMD_TALKMSG, "あいうえお…"), !MockHasText(anConn[0], CMD_TALKMSG, "ア@0イ"));
+	{
+		char szMsg[MAX_TALKMSG];
+		PuzzleRecordMessage(szMsg, sizeof(szMsg));
+		int nLen = (int)strlen(szMsg), nWait = 0, nLine = 0;
+		for (int k = 0; k + 1 < nLen; k ++) if (szMsg[k] == '@') { if (szMsg[k + 1] == '0') nWait ++; if (szMsg[k + 1] == '1') nLine ++; }
+		printf("board msg len<max=%d end=%d waits=%d lines=%d\n", nLen < MAX_TALKMSG, nLen >= 2 && strcmp(szMsg + nLen - 2, "@2") == 0, nWait, nLine);
+	}
+
+	/* 12. 保存して読み直せる（名前・値・日付・並びが同じ）。ファイルが無い時（読み直し前に消した後）は空で始まる */
+	{
+		PuzzleRecordList sc = g_PuzzleScoreRec, st = g_PuzzleStreakRec;
+		BOOL bSaved = SavePuzzleRecord();
+		PuzzleRecordClear();
+		int nCleared = g_PuzzleScoreRec.nCount + g_PuzzleStreakRec.nCount;
+		BOOL bLoaded = LoadPuzzleRecord();
+		int nSame = (g_PuzzleScoreRec.nCount == sc.nCount) && (g_PuzzleStreakRec.nCount == st.nCount);
+		for (int k = 0; nSame && k < sc.nCount; k ++) nSame = strcmp(sc.aRec[k].szName, g_PuzzleScoreRec.aRec[k].szName) == 0 && sc.aRec[k].dwValue == g_PuzzleScoreRec.aRec[k].dwValue && sc.aRec[k].dwDate == g_PuzzleScoreRec.aRec[k].dwDate;
+		for (int k = 0; nSame && k < st.nCount; k ++) nSame = strcmp(st.aRec[k].szName, g_PuzzleStreakRec.aRec[k].szName) == 0 && st.aRec[k].dwValue == g_PuzzleStreakRec.aRec[k].dwValue && st.aRec[k].dwDate == g_PuzzleStreakRec.aRec[k].dwDate;
+		printf("record save=%d cleared=%d load=%d same=%d counts=%d,%d\n", bSaved, nCleared, bLoaded, nSame, g_PuzzleScoreRec.nCount, g_PuzzleStreakRec.nCount);
+		/* 読み込んだ記録は、そのまま次の記録を足せる（1 キャラ 1 件・同点は先着が保たれる） */
+		printf("record after load addLow=%d addHigh=%d\n", g_PuzzleScoreRec.Add("あいうえおかきくけこさしすせそたちつてと", 100, 1), g_PuzzleScoreRec.Add("あいうえおかきくけこさしすせそたちつてと", 8000, 20261126));
+	}
+
+	/* 13. API の JSON（読むだけ）。順位順・1 キャラ 1 件 */
+	{
+		std::string sJson = SboWebDataPuzzleRecords();
+		printf("record api scores=%d streaks=%d max=%d top=%d date=%d\n", sJson.find("\"scores\":[{\"rank\":1,") != std::string::npos,
+			sJson.find("\"streaks\":[{\"rank\":1,") != std::string::npos, sJson.find("\"max\":10") != std::string::npos,
+			sJson.find("\"score\":8000") != std::string::npos, sJson.find("\"date\":\"2026-11-25\"") != std::string::npos);
+	}
+
+	/* 記録が空の時の掲示板（まだ記録がありません。が 2 回） */
+	PuzzleRecordClear();
+	{
+		char szMsg[MAX_TALKMSG];
+		int nEmpty = 0;
+		PuzzleRecordMessage(szMsg, sizeof(szMsg));
+		for (const char *p = szMsg; (p = strstr(p, "まだ記録がありません。")) != NULL; p ++) nEmpty ++;
+		printf("board empty text=%d\n", nEmpty);
+	}
+
+	/* 10 件ずつ・長い名前・大きい値でも、1 つのメッセージ（MAX_TALKMSG バイト）に収まり、10 位まで出る */
+	{
+		char szMsg[MAX_TALKMSG], szName[PUZZLE_RECORD_NAMEBUF];
+		for (int k = 1; k <= 12; k ++) {
+			sprintf(szName, "ながいなまえのひとのなまえ%02d", k);
+			g_PuzzleScoreRec.Add(szName, 4000000000u - k, 20261125);
+			g_PuzzleStreakRec.Add(szName, 200 - k, 20261125);
+		}
+		PuzzleRecordMessage(szMsg, sizeof(szMsg));
+		int nLen = (int)strlen(szMsg), nTen = 0;
+		for (const char *p = szMsg; (p = strstr(p, "10位")) != NULL; p ++) nTen ++;
+		printf("board full counts=%d,%d len<max=%d tenth=%d end=%d\n", g_PuzzleScoreRec.nCount, g_PuzzleStreakRec.nCount, nLen < MAX_TALKMSG, nTen, strcmp(szMsg + nLen - 2, "@2") == 0);
+	}
+
+	/* 片付け */
+	MockTrace(0);
+	PuzzleOnLeave(pA); PuzzleOnLeave(pB); PuzzleOnLeave(pC);
+	PuzzleRetireNpcs();
+	for (size_t k = 0; k < s_aNearNpc.size(); k ++) {
+		if (PuzzleIsRecordNpc(s_aNearNpc[k])) {
+			delete [] s_aNearNpc[k]->pszNpcSpeech;
+			s_aNearNpc[k]->pszNpcSpeech = new char[1];
+			s_aNearNpc[k]->pszNpcSpeech[0] = '\0';
+		}
+	}
+	NearNpcClose();
+	g_dwTime = (s_dwFakeNow += 300);
+	PuzzleProc();
+	for (i = 0; i < 3; i ++) {
+		for (int j = 0; j < MAX_MYITEM; j ++) if (apP[i]->waItem[j] == wCoin) DelCharItem(apP[i]->dwTblID, (BYTE)j);
+		QuestMovePC(apP[i], (int)aBack[i].dwMap, (int)aBack[i].dwX, (int)aBack[i].dwY);
+		apP[i]->byCharState = aBack[i].byState;
+		apP[i]->wHP = aBack[i].wHP;
+	}
+	g_dwPuzzleNowOverride = 0;
+	for (i = 0; i < 3; i ++) {
+		strcpy(apP[i]->szName, aszNameBack[i]);
+	}
+	PuzzleRecordClear();
+	SavePuzzleRecord();
+	g_dwTime = dwTimeBack;
+	printf("record done seats=%d\n", PuzzleSeatCount());
 }

@@ -29,6 +29,7 @@
 #include "SboSvrDataUtf8.h"
 #include "SboSvrMarket.h"
 #include "SboSvrRecycle.h"
+#include "SboSvrPuzzle.h"
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #endif
@@ -315,6 +316,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			SaveQuestInfo ();
 			SaveMarket ();
 			SaveRecycle ();
+			SavePuzzleRecord ();
 			SaveFlagNameInfo ();
 			SaveFlagGroupInfo ();
 			SaveTalkInfo ();
@@ -506,6 +508,7 @@ BOOL OnCreate(HWND hWnd)
 	LoadQuestInfo ();
 	LoadMarket ();
 	LoadRecycle ();
+	LoadPuzzleRecord ();
 	LoadFlagNameInfo ();
 	LoadFlagGroupInfo ();
 	LoadTalkInfo ();
@@ -628,6 +631,7 @@ void OnDestroy(HWND hWnd)
 	SaveQuestInfo ();			/* 依頼情報の保存 */
 	SaveMarket ();				/* 取引所の出品・売上の保存 */
 	SaveRecycle ();				/* リサイクルボックスの中身・記録の保存 */
+	SavePuzzleRecord ();		/* 落ち物パズルのハイスコア・連勝記録の保存 */
 	SaveFlagNameInfo ();		/* フラグの名前表の保存 */
 	SaveFlagGroupInfo ();		/* フラグのグループの保存 */
 	SaveTalkInfo ();			/* 会話データの保存 */
@@ -748,6 +752,7 @@ void OnDestroy(HWND hWnd)
 	g_aQuestInfo.RemoveAll ();
 	MarketClear ();
 	RecycleClear ();
+	PuzzleRecordClear ();
 
 	for (i = 0; i < g_aFlagNameInfo.GetSize (); i ++) {
 		SAFE_DELETE (g_aFlagNameInfo[i]);
