@@ -277,6 +277,102 @@ int main()
 		c1.Spawn (); c2.Spawn ();
 	}
 
+	/* 台詞の座る場所（9・10 番目）。省略は台NPCの 1 つ下、負の値・空欄・範囲外の丸め。既存の 8 項目の台詞はそのまま読める */
+	{
+		int nSx, nSy, anVal[PUZZLE_PARAM_COUNT];
+
+		PuzzleSeatOffset ("@p314,1,,,,,1,1", &nSx, &nSy);
+		CHECK (nSx == 0 && nSy == 1);
+		PuzzleSeatOffset ("@p", &nSx, &nSy);
+		CHECK (nSx == 0 && nSy == 1);
+		PuzzleSeatOffset ("@p1,1,,,,,,,3,-2", &nSx, &nSy);
+		CHECK (nSx == 3 && nSy == -2);
+		PuzzleSeatOffset ("@p1,1,,,,,,,-4", &nSx, &nSy);
+		CHECK (nSx == -4 && nSy == 1);
+		PuzzleSeatOffset ("@p1,1,,,,,,,,5", &nSx, &nSy);
+		CHECK (nSx == 0 && nSy == 5);
+		PuzzleSeatOffset ("@p1,1,,,,,,,999,-999", &nSx, &nSy);
+		CHECK (nSx == PUZZLE_SEAT_LIMIT && nSy == -PUZZLE_SEAT_LIMIT);
+		PuzzleParseSpeech ("@p314,1,,,,,1,1", anVal);
+		CHECK (anVal[0] == 314 && anVal[1] == 1 && anVal[2] == PUZZLE_PARAM_NONE && anVal[6] == 1 && anVal[7] == 1 && anVal[8] == PUZZLE_PARAM_NONE);
+	}
+
+	/* 先読み（クライアントが同じ判定で先に動かす）：PuzzleTry* はサーバーの PuzzleGame と同じ結果になる */
+	{
+		PuzzleBoard pb;
+		int nX, nRot, nY;
+
+		/* 動けない時は動かさない（左の壁・積んだブロック・床） */
+		pb.Init (10, 14);
+		nX = -0; nRot = 0; nY = 3;
+		CHECK (!PuzzleTryMove (pb, 1, 0, &nX, nY, -1) && nX == 0);		/* O が左の壁 */
+		nX = 4;
+		pb.Set (6, 4, 3);
+		CHECK (!PuzzleTryMove (pb, 1, 0, &nX, nY, 1) && nX == 4);		/* O の右が積んだブロック */
+		CHECK (PuzzleTryMove (pb, 1, 0, &nX, nY, -1) && nX == 3);
+		nY = 12;
+		CHECK (!PuzzleTryDown (pb, 1, 0, 0, &nY) && nY == 12);			/* O が床 */
+		nY = 3;
+		CHECK (PuzzleTryDown (pb, 1, 0, 0, &nY) && nY == 4);
+		/* O は回らない */
+		nRot = 0; nX = 4;
+		CHECK (!PuzzleTryRotate (pb, 1, &nRot, &nX, 3) && nRot == 0 && nX == 4);
+		/* 壁けり：I を縦（回転 1）にして右の壁際で回すと、左にずらして入る（サーバーの Rotate と同じ） */
+		pb.Init (10, 14);
+		PuzzleGame g1;
+		g1.Start (10, 14, 1, 0);
+		g1.nKind = 0; g1.nRot = 1; g1.nX = 8; g1.nY = 2;
+		nRot = g1.nRot; nX = g1.nX; nY = g1.nY;
+		bool bClient = PuzzleTryRotate (g1.Board, 0, &nRot, &nX, nY);
+		int nSrv = g1.Rotate ();
+		CHECK (bClient == (nSrv != 0));
+		CHECK (nRot == g1.nRot && nX == g1.nX);
+		CHECK (g1.nX != 8);												/* 壁けりでずれた */
+	}
+	/* ランダムなキー列を、サーバー（PuzzleGame）とクライアントの先読み（PuzzleTry*）で同じに動かすと、毎回同じ位置・向きになる */
+	{
+		PuzzleGame sv;
+		PuzzleRand rk;
+		int nSeed, nStep;
+		int nSame = 0, nTotal = 0;
+
+		for (nSeed = 1; nSeed <= 20; nSeed ++) {
+			sv.Start (10, 14, (unsigned int)nSeed, 0);
+			rk.Seed ((unsigned int)nSeed * 7919u);
+			/* 盤面にでこぼこを作る */
+			for (i = 0; i < 25; i ++) {
+				sv.Board.Set ((int)(rk.Next () % 10), 8 + (int)(rk.Next () % 6), 4);
+			}
+			for (nStep = 0; nStep < 200 && !sv.bOver; nStep ++) {
+				int nKey = (int)(rk.Next () % 4);
+				int nKind = sv.nKind, nRot = sv.nRot, nX = sv.nX, nY = sv.nY;
+				bool bPred = false;
+				int nChg = 0;
+
+				switch (nKey) {
+				case 0:	bPred = PuzzleTryMove (sv.Board, nKind, nRot, &nX, nY, -1);	nChg = sv.Move (-1);	break;
+				case 1:	bPred = PuzzleTryMove (sv.Board, nKind, nRot, &nX, nY, 1);	nChg = sv.Move (1);		break;
+				case 2:	bPred = PuzzleTryRotate (sv.Board, nKind, &nRot, &nX, nY);	nChg = sv.Rotate ();	break;
+				default:
+					bPred = PuzzleTryDown (sv.Board, nKind, nRot, nX, &nY);
+					nChg = sv.Step (true, 0);
+					if (!bPred) {		/* 詰まれば固定（サーバー任せ）。次の落ち物から */
+						continue;
+					}
+					break;
+				}
+				nTotal ++;
+				CHECK (bPred == (nChg != 0));
+				if (bPred && nChg && sv.nKind == nKind && sv.nRot == nRot && sv.nX == nX && sv.nY == nY) {
+					nSame ++;
+				}
+			}
+		}
+		CHECK (nSame > 100 && nSame <= nTotal);
+	}
+	/* GAME OVER を出す時間（定数）：本人の帯の表示時間は 0 でも 3 秒 */
+	CHECK (PUZZLE_OVER_SHOW_MS >= 0 && PUZZLE_OVER_SELF_MS > 0);
+
 	printf (g_nNg ? "NG %d 件\n" : "一致\n", g_nNg);
 	return g_nNg ? 1 : 0;
 }

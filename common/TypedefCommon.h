@@ -402,7 +402,7 @@ enum {
 	CMD_DGDEFMAP,													/* 番外編の拠点防衛の全体地図（範囲・拠点・泉・仲間と敵の位置。CMDPARA_DGDEFMAP。サーバー→組の全員） */
 	CMD_DGSTATUS,													/* 番外編ダンジョン（拠点防衛以外）の状況パネル（題・残り敵数・経過秒・目標。CMDPARA_DGSTATUS。サーバー→組の全員） */
 /* 以下、プレイヤー用（落ち物パズル。CMD_PUZZLEKEY はクライアント→サーバーも受ける。管理者用の判定から外すこと） */
-	CMD_PUZZLEKEY,													/* 落ち物パズルのキー入力（クライアント→サーバー。CMDPARA_DATA1 の byData が PUZZLEKEY_*、dwTblID=本人） */
+	CMD_PUZZLEKEY,													/* 落ち物パズルのキー入力（クライアント→サーバー。CMDPARA_PUZZLEKEY の byData が PUZZLEKEY_*、dwTblID=本人、dwSerial=連番） */
 	CMD_PUZZLESTATE,												/* 落ち物パズルの盤面・操作中の落ち物・得点（サーバー→座っている人・対戦相手・台の近くの人。CMDPARA_PUZZLESTATE） */
 	CMD_MAX
 };
@@ -4366,8 +4366,19 @@ typedef struct _CMDPARA_PUZZLESTATE {
 	BYTE		byGarbage;											/* 待ちお邪魔の段数（盤面の横のバーに出す） */
 	BYTE		byCount;											/* 対戦開始までのカウントダウン残り秒（0=始まっている） */
 	BYTE		byIdle;												/* 待機中の台（1=席に誰もいない。盤面の枠と井戸（空か最後の盤面）だけ描き、落ち物・帯・バー・カウントダウンは出さない。将来「コインを入れてSで開始」などの案内文字を出す目印にもなる） */
+	BYTE		byOver;												/* 1=ゲームオーバーの「GAME OVER」を盤面の上に出す間（待機中の最後の盤面に付く。本人以外にも見える。消える時にサーバーが 0 の FULL を送る） */
+	DWORD		dwAck;												/* この台の席の人のキーを、ここまで処理した（CMDPARA_PUZZLEKEY の dwSerial）。座っている本人が先読みの差し引きに使う */
 } CMDPARA_PUZZLESTATE, *PCMDPARA_PUZZLESTATE;
 #pragma pack(pop)
+
+/* CMD_PUZZLEKEY の中身（CMDPARA_DATA1 と同じ並び（pack しない）の後ろに連番を足したもの。連番なしの古い送り方も受ける） */
+typedef struct _CMDPARA_PUZZLEKEY {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byData;												/* PUZZLEKEY_* */
+	DWORD		pID;												/* プレイヤーID */
+	DWORD		dwTblID;											/* テーブルID */
+	DWORD		dwSerial;											/* キーごとの連番（1 から。サーバーは処理した最後の連番を CMDPARA_PUZZLESTATE の dwAck で返す） */
+} CMDPARA_PUZZLEKEY, *PCMDPARA_PUZZLEKEY;
 
 /* 並べ替えの対象(CMDPARA_SORTITEM の byTarget) */
 enum {

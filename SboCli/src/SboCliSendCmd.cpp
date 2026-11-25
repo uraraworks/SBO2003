@@ -59,7 +59,7 @@ void SendCmdACCADD			(LPSTR, LPSTR);							/* アカウント追加要求 */
 void SendCmdGETACC			(DWORD);								/* アカウント・パスワード取得 */
 void SendCmdCHGACC			(DWORD, LPSTR, LPSTR);					/* アカウント・パスワード更新 */
 void SendCmdTALKRAND		(DWORD);								/* 話してランダム要求 */
-void SendCmdPUZZLEKEY		(BYTE);									/* 落ち物パズルのキー入力 */
+DWORD SendCmdPUZZLEKEY		(BYTE);									/* 落ち物パズルのキー入力 */
 void SendCmdTALKANSWER		(DWORD, BOOL);							/* 会話データの「はい・いいえ」の答え */
 void SendCmdSTOPRAND		(DWORD);								/* 止まるかランダム切り替え */
 void SendCmdGETACCINFO		(DWORD);								/* アカウント情報要求 */
@@ -1230,20 +1230,28 @@ void SendCmdCHGACC(DWORD dwTblID, LPSTR pszAcc, LPSTR pszPas)
 /* 関数名：SendCmdPUZZLEKEY													 */
 /* 内容：コマンド送信(落ち物パズルのキー入力。座っている間だけ)				 */
 /* ========================================================================= */
-void SendCmdPUZZLEKEY(BYTE byKey)
+DWORD SendCmdPUZZLEKEY(BYTE byKey)
 {
-	CMDPARA_DATA1 SendData;
+	static DWORD s_dwSerial = 0;
+	CMDPARA_PUZZLEKEY SendData;
 
 	if ((g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ())) {
-		return;
+		return 0;
+	}
+	/* キーごとの連番（1 から。サーバーが処理した最後の連番を返すので、先読みの差し引きに使う） */
+	s_dwSerial ++;
+	if (s_dwSerial == 0) {
+		s_dwSerial = 1;
 	}
 	ZeroMemory (&SendData, sizeof (SendData));
 	SendData.byCmd = CMD_PUZZLEKEY;
 	SendData.byData = byKey;
 	/* サーバーのキャラ番号は、クライアント側の配列番号(g_nMyCharID)ではなくキャラのテーブルID */
 	SendData.dwTblID = g_aCharInfo[g_nMyCharID]->dwTblID;
+	SendData.dwSerial = s_dwSerial;
 
-	cliSock.Send ((PBYTE)&SendData, sizeof (CMDPARA_DATA1));
+	cliSock.Send ((PBYTE)&SendData, sizeof (CMDPARA_PUZZLEKEY));
+	return s_dwSerial;
 }
 
 /* ========================================================================= */

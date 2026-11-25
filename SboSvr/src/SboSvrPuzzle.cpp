@@ -6,15 +6,20 @@
 /*
  * 仕様は docs/falling-puzzle.md。盤面ロジックは common/FallingPuzzle.h。
  * 台は、台詞が "@p" で始まる NPC。台詞のパラメータ（コンマ区切り。後ろは省略でき、空欄も既定になる）:
- *     @p<コインのアイテム番号>,<必要な枚数>,<dx>,<dy>,<横の段数>,<縦の段数>,<帯の側 0=右 1=左>,<ペア番号>
+ *     @p<コインのアイテム番号>,<必要な枚数>,<dx>,<dy>,<横の段数>,<縦の段数>,<帯の側 0=右 1=左>,<ペア番号>,<sdx>,<sdy>
  *   dx, dy … フィールドの左上が、台のマスの左上から何マスか（負は左・上）。省略はフィールドの真下に席（10×14 なら -2,-6）
  *   横・縦の段数 … 省略は PUZZLE_COLS × PUZZLE_ROWS（10×14）。台ごとに 10×18 なども指定できる
  *   帯の側 … 次の落ち物・得点の帯をフィールドのどちら側に出すか（省略は右）
  *   ペア番号 … 同じマップで同じ番号の台 2 台が 1 組（対戦）。省略・0 はペアなし（ひとり用）
+ *   sdx, sdy … 座る場所：台NPCのマスからの相対位置（マス）。省略は (0,+1)＝台NPCの 1 つ下（既定の盤面の真下）。
+ *             台NPCは見えない（体も名前も描かない。CMD_CHARINFO に載せる byGhost を CHARGHOST_NAMEONLY にして送り、
+ *             クライアントは台詞が @p のそのキャラの名前も描かない。データは書き換えない）ので、
+ *             座る場所のマスに立って S キーを押すと座る（向きは問わない。台NPCが目の前でなくてもよい）
  *   例  @p20,1            … アイテム 20 を 1 枚使って遊ぶ。フィールドは席の真上（10×14）
  *       @p20,1,,,10,18    … 10×18 にする（位置は既定＝席の真上に合わせて決まる）
  *       @p20,1,2,-3       … フィールドの左上を席の右へ 2・上へ 3 マスにする（席の横に置く）
  *       @p20,1,,,,,,1     … ペア番号 1（もう 1 台も ,,,,,,1 にすると対戦台になる）
+ *       @p20,1,,,,,,,3,0  … 座る場所を台NPCの右 3 マスにする
  *       @p                … 無料
  *   枚数 0 かアイテム番号 0 なら無料。
  * ゲームの正はサーバー。盤面・操作中の落ち物・次の落ち物・得点はここで持ち、変わった時だけ送る
@@ -26,6 +31,9 @@
  *   両方の盤面を空に戻し、PUZZLE_VS_COUNTDOWN_SEC 秒のカウントダウンのあと同時スタート（落ち物の順番は共通の種）。
  *   ライン消しでお邪魔ブロックを相手へ送る（FallingPuzzle.h）。置けなくなった側が負け。
  *   負けた側は席を立ち、勝った側はそのままひとり用に続ける。ESC・切断・マップ移動で席を立った場合は残った側の勝ち。
+ * ゲームオーバー：本人には OVER（帯付き）、ほかの人（観覧者・対戦相手の席の人）には byIdle=1 の最後の盤面に byOver=1 を付けて送る。
+ *   PUZZLE_OVER_SHOW_MS（FallingPuzzle.h）たつと byOver=0 の FULL を送って字を消す（最後の盤面は次に誰かが座るまで残る）。
+ * キー入力の先読み：クライアントが自分の落ち物を先に動かすため、キーの連番を覚えて、通知の dwAck で返す。
  * 送る相手（台ごと）: 座っている人・対戦相手の台の人・台の近くにいる人（観戦。画面に入る距離。PUZZLE_WATCH_MS ごとに見直し、
  *   近づいた時に盤面全体を 1 回送り、離れた時に NONE を送る）。
  */
@@ -42,8 +50,12 @@
 
 #define PUZZLE_NOCHAR			((DWORD)-1)
 #define PUZZLE_KEY_MIN_MS		(25)		/* キー入力の最短間隔（これより速い入力は捨てる。連打・改造対策） */
-#define PUZZLE_NEAR				(3)			/* 席の台NPCからこれ以上離れたら席を立たせる（マス） */
+#define PUZZLE_NEAR				(3)			/* 座る場所のマスからこれ以上離れたら席を立たせる（マス） */
 #define PUZZLE_WATCH_MS			(250)		/* 台の近くにいる人（観戦）を見直す間隔(ms) */
+/* 盤面を送る距離（横・縦それぞれ。盤面の中心から）。盤面の一部でも画面（地図 15×15 マス）にかかる距離は、
+   画面の半分 7.5 マス＋歩きのずれ 1 マス＋盤面の半分（横 cols/4・縦 rows/4 マス。10×14 で 2.5・3.5）＋帯（横に約 3.2 マス）。
+   横は最大 7.5+1+2.5+3.2＝14.2、縦は 7.5+1+3.5＝12 なので、MARGIN＝12 に盤面の半分を足した距離（横 14.5・縦 15.5）でもかかる範囲は足りている。
+   送り始めは MARGIN＋3（横 17・縦 18）、消すのは＋6（横 20・縦 21）で、画面にかかっている間に届かない・先に消えることはない */
 #define PUZZLE_VIEW_MARGIN		(12)		/* 盤面が画面に入り始める距離：フィールドの中心から、画面の半分（7 マス）＋帯・余白ぶん（マス）。盤面の大きさを足す */
 #define PUZZLE_VIEW_ENTER		(PUZZLE_VIEW_MARGIN + 3)	/* 盤面を送り始める距離（画面に入り始める距離より 3 マス手前。受信済みで端からスクロールインして見える） */
 #define PUZZLE_VIEW_LEAVE		(PUZZLE_VIEW_MARGIN + 6)	/* 盤面を消す（NONE を送る）距離（送り始める距離より 3 マス外。境目で送る・消すを繰り返さない） */
@@ -58,6 +70,8 @@ typedef struct _PUZZLEPARAM {
 	int		nRows;							/* 盤面の縦（段数） */
 	int		nSide;							/* 帯の側（PUZZLESIDE_*） */
 	int		nPair;							/* ペア番号（0=ペアなし） */
+	int		nSdx;							/* 座る場所：台のマスから（マス。既定 0,+1） */
+	int		nSdy;
 } PUZZLEPARAM;
 
 /* 席 */
@@ -65,6 +79,7 @@ typedef struct _PUZZLESEAT {
 	DWORD		dwChar;						/* 座っているキャラのテーブルID（いなければ PUZZLE_NOCHAR） */
 	DWORD		dwPID;						/* そのキャラのプレイヤーID（テーブルIDの使い回しを見分ける） */
 	DWORD		dwLastKey;					/* 最後にキーを受けた時刻 */
+	DWORD		dwAck;						/* 最後に受けたキーの連番（クライアントの先読みの差し引き用。CMDPARA_PUZZLEKEY の dwSerial） */
 	PuzzleGame	Game;						/* ゲーム */
 } PUZZLESEAT;
 
@@ -88,6 +103,8 @@ typedef struct _PUZZLETABLE {
 	DWORD		dwLastWatch;				/* 最後に観戦の人を見直した時刻 */
 	BOOL		bIdle;						/* 待機中（席に誰もいない。Seat.Game は空の盤面か、bLast なら最後の盤面） */
 	BOOL		bLast;						/* 待機中で、ゲームオーバーの最後の盤面を残している（次に誰かが座るまで） */
+	BOOL		bOverShow;					/* 最後の盤面の上に「GAME OVER」を出している間（本人以外にも見える。PUZZLE_OVER_SHOW_MS で消す） */
+	DWORD		dwOverTime;					/* ゲームオーバーになった時刻 */
 	std::vector<PUZZLEWATCH>	aWatch;		/* 盤面を送ってある人（座っている人・対戦相手・近くにいる人） */
 } PUZZLETABLE;
 
@@ -97,42 +114,13 @@ static std::vector<PUZZLETABLE> s_aTable;
 /* 内部関数																	 */
 /* ========================================================================= */
 
-/* 台詞 "@p..." のパラメータを読む（コンマ区切り。空欄・足りない欄は既定） */
-#define PUZZLE_PARAM_NONE	(-99999)
-#define PUZZLE_PARAM_COUNT	(8)
+/* 台詞 "@p..." のパラメータを読む（コンマ区切り。空欄・足りない欄は既定。読み方は common/FallingPuzzle.h の PuzzleParseSpeech） */
 static int Clamp(int n, int nMin, int nMax) { return (n < nMin) ? nMin : (n > nMax) ? nMax : n; }
 static void ParseParam(LPCSTR pszSpeech, PUZZLEPARAM *pParam)
 {
-	int anVal[PUZZLE_PARAM_COUNT], i = 0;
-	LPCSTR p = pszSpeech + 2;
+	int anVal[PUZZLE_PARAM_COUNT];
 
-	for (i = 0; i < PUZZLE_PARAM_COUNT; i ++) {
-		anVal[i] = PUZZLE_PARAM_NONE;
-	}
-	for (i = 0; i < PUZZLE_PARAM_COUNT; i ++) {
-		BOOL bMinus = FALSE;
-		int n = 0;
-		BOOL bNum = FALSE;
-
-		if (*p == '-') {
-			bMinus = TRUE;
-			p ++;
-		}
-		while ((*p >= '0') && (*p <= '9')) {
-			if (n < 100000) {
-				n = n * 10 + (*p - '0');
-			}
-			bNum = TRUE;
-			p ++;
-		}
-		if (bNum) {
-			anVal[i] = bMinus ? -n : n;
-		}
-		if (*p != ',') {
-			break;
-		}
-		p ++;
-	}
+	PuzzleParseSpeech (pszSpeech, anVal);
 	pParam->wCoinItem	= ((anVal[0] < 0) || (anVal[0] > 65535)) ? 0 : (WORD)anVal[0];
 	pParam->nCoinCount	= (anVal[1] < 0) ? 0 : (anVal[1] > 99) ? 99 : anVal[1];
 	pParam->nCols		= (anVal[4] == PUZZLE_PARAM_NONE) ? PUZZLE_COLS : Clamp (anVal[4], 4, PUZZLE_MAX_COLS);
@@ -142,6 +130,8 @@ static void ParseParam(LPCSTR pszSpeech, PUZZLEPARAM *pParam)
 	/* dx, dy の省略時は、席がフィールドの真下（横は中央） */
 	pParam->nDx = (anVal[2] == PUZZLE_PARAM_NONE) ? PuzzleDefaultDx (pParam->nCols) : Clamp (anVal[2], -60, 60);
 	pParam->nDy = (anVal[3] == PUZZLE_PARAM_NONE) ? PuzzleDefaultDy (pParam->nRows) : Clamp (anVal[3], -60, 60);
+	/* 座る場所（台NPCのマスから。省略は 1 つ下） */
+	PuzzleSeatOffset (pszSpeech, &pParam->nSdx, &pParam->nSdy);
 }
 
 static PCHARINFO SeatChar(const PUZZLESEAT &Seat)
@@ -196,6 +186,8 @@ static void ToIdle(int nTable, BOOL bLast)
 	Table.Seat.dwPID = 0;
 	Table.bIdle = TRUE;
 	Table.bLast = bLast;
+	Table.bOverShow = bLast;
+	Table.dwOverTime = g_dwTime;
 	Table.bVs = FALSE;
 	Table.dwOppNpc = (DWORD)-1;
 	Table.bCount = FALSE;
@@ -264,6 +256,8 @@ static void BuildState(const PUZZLETABLE &Table, BYTE byKind, std::vector<BYTE> 
 	Head.byGarbage	= (BYTE)((g.nPending > 255) ? 255 : g.nPending);
 	Head.byCount	= (BYTE)CountRemain (Table);
 	Head.byIdle		= (BYTE)(bIdle ? 1 : 0);
+	Head.byOver		= (BYTE)((bIdle && Table.bOverShow) ? 1 : 0);
+	Head.dwAck		= Table.Seat.dwAck;
 	if (bIdle) {
 		/* 待機中は落ち物・次の落ち物・得点・待ちお邪魔を持たない（盤面の枠と井戸だけ） */
 		Head.byPiece = Head.byNext = 255;
@@ -568,6 +562,23 @@ BOOL PuzzleIsTableNpc(PCHARINFO pNpc)
 		(pNpc->pszNpcSpeech[0] == '@') && (pNpc->pszNpcSpeech[1] == 'p');
 }
 
+BOOL PuzzleOnSeatCell(PCHARINFO pChar, PCHARINFO pNpc)
+{
+	PUZZLEPARAM Param;
+
+	if (!PuzzleIsTableNpc (pNpc) || (pChar->dwMapID != pNpc->dwMapID) || !IsSameSpace (pNpc, pChar)) {
+		return FALSE;
+	}
+	ParseParam (pNpc->pszNpcSpeech, &Param);
+	return ((int)pChar->dwX == (int)pNpc->dwX + Param.nSdx) && ((int)pChar->dwY == (int)pNpc->dwY + Param.nSdy);
+}
+
+BYTE PuzzleGhostForSend(PCHARINFO pChar)
+{
+	/* 台NPC（@p）は体を描かない（名前だけの目印と同じ扱い）。データは書き換えず、送る時だけそうする */
+	return PuzzleIsTableNpc (pChar) ? (BYTE)CHARGHOST_NAMEONLY : pChar->byGhost;
+}
+
 BOOL PuzzleIsSeated(PCHARINFO pChar)
 {
 	int nTable;
@@ -614,6 +625,10 @@ void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc)
 	char szMsg[96];
 
 	if (!PuzzleIsTableNpc (pNpc) || (pChar->byNpcType != NPCTYPE_INIT) || PuzzleIsSeated (pChar)) {
+		return;
+	}
+	/* 座れるのは、台の座る場所のマスの上だけ（同じマップ・同じ空間。向きは問わない。隣のマスから台NPC越しには座らない） */
+	if (!PuzzleOnSeatCell (pChar, pNpc)) {
 		return;
 	}
 	/* 倒れている・ほかのミニゲーム中は座れない */
@@ -663,9 +678,12 @@ void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc)
 		Table.dwLastWatch = 0;
 		Table.bIdle = FALSE;
 		Table.bLast = FALSE;
+		Table.bOverShow = FALSE;
+		Table.dwOverTime = 0;
 		Table.Seat.dwChar = pChar->dwTblID;
 		Table.Seat.dwPID = pChar->pID;
 		Table.Seat.dwLastKey = 0;
+		Table.Seat.dwAck = 0;
 		if (nTable >= 0) {
 			/* 待機中の台に座る：今見ている人の表を引き継ぐ（下で、見ている人全員に始まった盤面を送る） */
 			Table.aWatch = s_aTable[nTable].aWatch;
@@ -712,7 +730,7 @@ void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc)
 	WatchRefresh (nTable);
 }
 
-void PuzzleKey(PCHARINFO pChar, BYTE byKey)
+void PuzzleKey(PCHARINFO pChar, BYTE byKey, DWORD dwSerial)
 {
 	int nTable, nChg = 0;
 
@@ -721,6 +739,10 @@ void PuzzleKey(PCHARINFO pChar, BYTE byKey)
 	}
 	PUZZLESEAT &Seat = s_aTable[nTable].Seat;
 
+	/* 受けたキーの連番を覚える（捨てるキーも含む。変わった時の通知に付けて返し、クライアントが先読みを差し引く） */
+	if (dwSerial != 0) {
+		Seat.dwAck = dwSerial;
+	}
 	if (byKey == PUZZLEKEY_LEAVE) {
 		Leave (nTable, PUZZLESTATE_NONE, TRUE, FALSE);
 		return;
@@ -802,9 +824,12 @@ static void IdleScan(void)
 				Table.dwLastWatch = 0;
 				Table.bIdle = TRUE;
 				Table.bLast = FALSE;
+				Table.bOverShow = FALSE;
+				Table.dwOverTime = 0;
 				Table.Seat.dwChar = PUZZLE_NOCHAR;
 				Table.Seat.dwPID = 0;
 				Table.Seat.dwLastKey = 0;
+				Table.Seat.dwAck = 0;
 				ZeroMemory (&Table.Seat.Game, sizeof (Table.Seat.Game));
 				Table.Seat.Game.Board.Init (Param.nCols, Param.nRows);
 				s_aTable.push_back (Table);
@@ -847,6 +872,11 @@ void PuzzleProc(void)
 				s_aTable.erase (s_aTable.begin () + i);
 				continue;
 			}
+			/* GAME OVER の字を消す（最後の盤面は残す。見ている人全員へ byOver=0 の盤面を送る） */
+			if (Table.bOverShow && (PUZZLE_OVER_SHOW_MS > 0) && ((DWORD)(g_dwTime - Table.dwOverTime) >= (DWORD)PUZZLE_OVER_SHOW_MS)) {
+				Table.bOverShow = FALSE;
+				SendTable (i, PUZZLESTATE_FULL);
+			}
 			if ((DWORD)(g_dwTime - Table.dwLastWatch) >= PUZZLE_WATCH_MS) {
 				WatchRefresh (i);
 			}
@@ -859,7 +889,8 @@ void PuzzleProc(void)
 		/* 切断・マップ移動・席から離れた・倒れた・台が無くなった時は片付ける（対戦中なら相手の勝ち） */
 		if ((pChar == NULL) || !bNpcOK || (pChar->byGameState < GAMESTATE_MOVE) ||
 			(pChar->dwMapID != Table.dwMapID) ||
-			(abs ((int)pChar->dwX - (int)pNpc->dwX) > PUZZLE_NEAR) || (abs ((int)pChar->dwY - (int)pNpc->dwY) > PUZZLE_NEAR) ||
+			(abs ((int)pChar->dwX - ((int)pNpc->dwX + Table.Param.nSdx)) > PUZZLE_NEAR) ||
+			(abs ((int)pChar->dwY - ((int)pNpc->dwY + Table.Param.nSdy)) > PUZZLE_NEAR) ||
 			(pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0)) {
 			Leave (i, PUZZLESTATE_NONE, TRUE, FALSE);
 			continue;

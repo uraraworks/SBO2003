@@ -8365,9 +8365,10 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 		}
 		return;
 	}
-	/* 落ち物パズルの台（台詞が「@p」で始まる）？ コインを使って席に座る */
+	/* 落ち物パズルの台（台詞が「@p」で始まる）？ 座る場所のマスに立っていれば、コインを使って席に座る
+	   （台NPCは見えず目の前でなくてよい。座る場所かどうかは PuzzleSit が見る） */
 	if (PuzzleIsTableNpc (pChar)) {
-		if ((s_nCharNoRecv >= 0) && IsNearRecvChar (pChar, 2)) {
+		if (s_nCharNoRecv >= 0) {
 			PuzzleSit (g_aCharInfo[s_nCharNoRecv], pChar);
 		}
 		return;
@@ -8416,7 +8417,7 @@ void RecvDataProcPUZZLEKEY(PBYTE pData, DWORD dwDataSize)
 	if ((dwDataSize < sizeof (CMDPARA_DATA1)) || (s_nCharNoRecv < 0) || (pPara->dwTblID != (DWORD)s_nCharNoRecv)) {
 		return;
 	}
-	PuzzleKey (g_aCharInfo[s_nCharNoRecv], pPara->byData);
+	PuzzleKey (g_aCharInfo[s_nCharNoRecv], pPara->byData, (dwDataSize >= sizeof (CMDPARA_PUZZLEKEY)) ? ((PCMDPARA_PUZZLEKEY)pData)->dwSerial : 0);
 }
 
 /* ========================================================================= */

@@ -16,6 +16,7 @@
 #include "SboCliMsgLogWindow.h"
 #include "SboCliDrawScreen.h"
 #include "SboCliAutoMap.h"
+#include "common/FallingPuzzle.h"
 
 /* 装備品の装備職業情報の番号を返す（装備品でなければ 0xFFFF） */
 static WORD ShopGetItemEquNo(PITEMINFO pItem)
@@ -451,7 +452,13 @@ static void PuzzleKeyProc(BYTE byEvent, BYTE byCode)
 		}
 		s_dwSent[byCode] = dwNow;
 	}
-	SendCmdPUZZLEKEY (byKey);
+	/* 先読み：サーバーの返事を待たずに、自分の落ち物を先に動かして描く（動けなければ何もしない） */
+	{
+		DWORD dwSerial = SendCmdPUZZLEKEY (byKey);
+		if (byKey != PUZZLEKEY_LEAVE) {
+			PuzzlePredictKey (byKey, dwSerial);
+		}
+	}
 }
 
 static void KeyProcDispatch(BYTE byEvent, BYTE byCode)
@@ -9777,6 +9784,32 @@ BOOL IsSKeyCounterTalk(void)
 }
 
 /* ========================================================================= */
+/* 関数名：PuzzleSeatNpcHere												 */
+/* 内容：落ち物パズルの台の「座る場所」のマスに立っているか					 */
+/*		 台NPC（台詞 @p…）は見えないので、台NPCの前に立たなくても、台詞の			 */
+/*		 9・10 番目（sdx,sdy。省略は台NPCの 1 つ下）で決まる座る場所のマスに立って	 */
+/*		 S キーを押せば座れる（向きは問わない）。座る場所の外では見つけない			 */
+/*		 戻り値：見つけた台NPCのテーブルID（無ければ -1）						 */
+/* ========================================================================= */
+static int PuzzleSeatNpcHere(PCHARINFO pChar)
+{
+	int i, nCount = g_aCharInfo.GetSize (), nSdx, nSdy;
+
+	for (i = 0; i < nCount; i ++) {
+		PCHARINFO pNpc = (PCHARINFO)g_aCharInfo[i];
+		if ((pNpc == pChar) || (pNpc->byNpcType == NPCTYPE_INIT) || !pNpc->pszNpcSpeech ||
+			(pNpc->pszNpcSpeech[0] != '@') || (pNpc->pszNpcSpeech[1] != 'p')) {
+			continue;
+		}
+		PuzzleSeatOffset (pNpc->pszNpcSpeech, &nSdx, &nSdy);
+		if (((int)pNpc->dwX + nSdx == (int)pChar->dwX) && ((int)pNpc->dwY + nSdy == (int)pChar->dwY)) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+/* ========================================================================= */
 /* 関数名：CmdProcSKey														 */
 /* 内容：Sキーの処理（調べる・話す・扉）									 */
 /*		 足元にイベントがある時は今まで通り調べる。							 */
@@ -9787,6 +9820,15 @@ BOOL IsSKeyCounterTalk(void)
 BOOL CmdProcSKey(void)
 {
 	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
+
+	/* 落ち物パズルの台の座る場所に立っている時は、座る（コインを使うのはサーバーが決める。台NPCは目の前でなくてよい） */
+	if (g_aCharInfo.GetSize () > 0) {
+		int nPuzzle = PuzzleSeatNpcHere (pChar);
+		if (nPuzzle >= 0) {
+			SendCmdTALKRAND (((PCHARINFO)g_aCharInfo[nPuzzle])->dwTblID);
+			return TRUE;
+		}
+	}
 
 	/* 足元にイベントがある時は調べる。
 	   ただしカウンター越しに話せる相手がいる時は話す（爆弾亭のカウンター前の椅子のように、
