@@ -569,6 +569,22 @@ static void PuzText(HDC hDC, int x, int y, LPSTR pszText, COLORREF cl, int nHeig
 	TextOut2 (hDC, x, y, pszText, cl);
 }
 
+/* 文字を 1 文字ずつ、切り取り範囲に全部入る文字だけ描く（半角英数字だけの短い文字列用）。
+   帯が画面の左右に見切れる時、枠が見えているのに字が全部消えることがないよう、見えている分の字は出す */
+static void PuzTextClip(HDC hDC, int x, int y, LPSTR pszText, COLORREF cl, int nHeight)
+{
+	char szOne[2];
+	SIZE size;
+
+	szOne[1] = 0;
+	for (; *pszText; pszText ++) {
+		szOne[0] = *pszText;
+		GetTextExtentPoint32 (hDC, szOne, 1, &size);
+		PuzText (hDC, x, y, szOne, cl, nHeight, FALSE);
+		x += size.cx;
+	}
+}
+
 /* ブロック 1 つ（PUZZLE_BLOCK_DOT 四方）。nKind は 0〜6、お邪魔は 7 */
 static void PuzzleDrawBlock(HDC hDC, int x, int y, int nKind)
 {
@@ -686,8 +702,8 @@ static void DrawPuzzleOne(HDC hDC, const CMDPARA_PUZZLESTATE &St, const BYTE *pB
 		ty = max (sy + 2, s_nPzT + 2);
 		ty = min (ty, sy + nH - 40);		/* 盤面の下端より下へは出ない */
 		PuzFrame (hDC, tx, ty, tw, 38, RGB (200, 200, 200), 150);
-		PuzText (hDC, tx + 4, ty + 3, szLine1, RGB (255, 235, 120), 16, FALSE);
-		PuzText (hDC, tx + 4, ty + 20, szLine2, RGB (255, 255, 255), 16, FALSE);
+		PuzTextClip (hDC, tx + 4, ty + 3, szLine1, RGB (255, 235, 120), 16);
+		PuzTextClip (hDC, tx + 4, ty + 20, szLine2, RGB (255, 255, 255), 16);
 	}
 
 	/* 勝ち残りの連勝数（2 連勝以上。待ちお邪魔のバーの外側、帯と反対側の上の方に小さく。観覧者にも見える） */
