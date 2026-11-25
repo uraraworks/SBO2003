@@ -669,25 +669,25 @@ static void DrawPuzzleOne(HDC hDC, const CMDPARA_PUZZLESTATE &St, const BYTE *pB
 		PuzText (hDC, px + 8, py + 126, szTmp, RGB (255, 255, 255), 16, FALSE);
 	}
 
-	/* 遊んでいる台を見ている人（座っている本人以外）には、得点・ライン・レベルを画面の一番上に小さく出す
-	   （盤面の横の帯は本人の台だけ。観戦の人は盤面の位置に合わせて、画面の上端から横に動かして見える範囲に収める） */
+	/* 遊んでいる台を見ている人（座っている本人以外）には、得点・ライン・レベルを盤面の上端に小さく出す。
+	   盤面の幅の中に収め（隣の盤面と重ならない）、盤面が画面の上へ出ていく間は画面の上端に張り付いて、
+	   盤面と一緒に見えなくなる（盤面から離れて浮かない）。画面の外・盤面の外にかかる分は描かない（PuzText の切り取り） */
 	if (!St.byMine && !St.byIdle) {
 		SIZE sz1, sz2;
 		int tw, tx, ty;
 		char szLine1[48], szLine2[48];
 
 		wsprintf (szLine1, "SCORE %u", (unsigned int)St.dwScore);
-		wsprintf (szLine2, "LINES %d  LV %d", (int)St.wLines, (int)St.byLevel);
+		wsprintf (szLine2, "LINES %d LV %d", (int)St.wLines, (int)St.byLevel);
 		GetTextExtentPoint32 (hDC, szLine1, strlen (szLine1), &sz1);
 		GetTextExtentPoint32 (hDC, szLine2, strlen (szLine2), &sz2);
-		tw = max (sz1.cx, sz2.cx) + 10;
-		tx = sx + nW / 2 - tw / 2;
-		tx = min (tx, s_nPzR - tw - 2);
-		tx = max (tx, s_nPzL + 2);
-		ty = s_nPzT + 2;
+		tw = min (max (sz1.cx, sz2.cx) + 8, nW);
+		tx = sx + (nW - tw) / 2;
+		ty = max (sy + 2, s_nPzT + 2);
+		ty = min (ty, sy + nH - 40);		/* 盤面の下端より下へは出ない */
 		PuzFrame (hDC, tx, ty, tw, 38, RGB (200, 200, 200), 150);
-		PuzText (hDC, tx + 5, ty + 3, szLine1, RGB (255, 235, 120), 16, FALSE);
-		PuzText (hDC, tx + 5, ty + 20, szLine2, RGB (255, 255, 255), 16, FALSE);
+		PuzText (hDC, tx + 4, ty + 3, szLine1, RGB (255, 235, 120), 16, FALSE);
+		PuzText (hDC, tx + 4, ty + 20, szLine2, RGB (255, 255, 255), 16, FALSE);
 	}
 
 	/* 勝ち残りの連勝数（2 連勝以上。待ちお邪魔のバーの外側、帯と反対側の上の方に小さく。観覧者にも見える） */
