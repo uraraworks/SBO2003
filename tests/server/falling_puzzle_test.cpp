@@ -81,16 +81,20 @@ int main()
 	g.nKind = 1;
 	CHECK (g.Rotate (-1) == 0);								/* O は左にも回らない */
 
-	/* 上にはみ出す回転はしない：出たての I（盤面の 1 行目）は縦にできない。1 段落ちれば縦にできる。
-	   上段に 3 行しか空きが無ければ、縦にできず（立てた瞬間に負けにならない）、横のまま置ける */
-	g.nKind = 0; g.nRot = 0; g.nX = 3; g.nY = -1;
-	CHECK (g.Rotate () == 0 && g.nRot == 0);
-	g.nY = 0;
-	CHECK (g.Rotate () == PUZZLE_CHG_PIECE && g.nRot == 1);
+	/* 上段でも回せる（出たての I を縦にすると上にはみ出してもよい）。
+	   床・積んだブロックに着いたまま動かしたり回したりすると、固定までの時間が測り直される（立てた直後にすぐ固定されない）。回数に上限あり */
 	g.Board.Init (10, 14);
-	for (int xx = 0; xx < 10; xx ++) g.Board.Set (xx, 3, 4);
-	g.nKind = 0; g.nRot = 0; g.nX = 3; g.nY = 0;
-	CHECK (g.Rotate () == 0 && g.nRot == 0);				/* 縦にすると 3 行目のブロックに当たる */
+	g.nKind = 0; g.nRot = 0; g.nX = 3; g.nY = -1;
+	CHECK (g.Rotate () == PUZZLE_CHG_PIECE && g.nRot == 1);
+	g.nKind = 1; g.nRot = 0; g.nX = 4; g.nY = 12;			/* O が床に着いている */
+	g.nLockResets = 0; g.dwLastDrop = 0;
+	CHECK (g.Move (1, 900) == PUZZLE_CHG_PIECE && g.dwLastDrop == 900 && g.nLockResets == 1);
+	g.nKind = 1; g.nRot = 0; g.nX = 4; g.nY = 5;			/* 空中では測り直さない */
+	g.dwLastDrop = 0;
+	CHECK (g.Move (1, 900) == PUZZLE_CHG_PIECE && g.dwLastDrop == 0 && g.nLockResets == 1);
+	g.nKind = 1; g.nRot = 0; g.nX = 4; g.nY = 12;
+	for (int nn = 0; nn < 6; nn ++) { g.nX = 4; g.Move (1, 900 + (unsigned int)nn); }
+	CHECK (g.nLockResets == PUZZLE_LOCK_RESET_MAX);			/* 上限まで */
 	g.Board.Init (10, 14);
 
 	/* 左右移動：壁で止まる */
