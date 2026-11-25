@@ -97,6 +97,23 @@ int main()
 	CHECK (g.nLockResets == PUZZLE_LOCK_RESET_MAX);			/* 上限まで */
 	g.Board.Init (10, 14);
 
+	/* 次の落ち物が置けずにゲームオーバーになった時は、その落ち物も盤面に残る（見えないまま終わらない） */
+	{
+		PuzzleGame go;
+		go.Start (10, 14, 1, 0);
+		for (int xx = 0; xx < 9; xx ++) go.Board.Set (xx, 0, 8);		// 1 行目はすき間を残す（揃って消えないように）
+		go.nKind = 1; go.nRot = 0; go.nX = 4; go.nY = 12;
+		int nBefore = 0;
+		for (int ii = 0; ii < 10 * 14; ii ++) if (go.Board.abyCell[ii]) nBefore ++;
+		go.nNext = 0;
+		go.Step (false, 0);									/* O が床に着いていなければ落ちる。着くまで落とす */
+		for (int kk = 0; kk < 20 && !go.bOver; kk ++) go.Step (false, 0);
+		CHECK (go.bOver);
+		int nAfter = 0;
+		for (int ii = 0; ii < 10 * 14; ii ++) if (go.Board.abyCell[ii]) nAfter ++;
+		CHECK (nAfter > nBefore);							/* 固定した O と、置けなかった落ち物のぶん増えている */
+	}
+
 	/* 左右移動：壁で止まる */
 	g.nKind = 2; g.nRot = 0; g.nX = 0; g.nY = 5;
 	CHECK (g.Move (-1) == 0 || g.Board.Collide (2, 0, -1, 5) == false);
