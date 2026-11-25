@@ -18,7 +18,8 @@
 #define PUZZLE_MAX_COLS		(16)		/* 通信で運べる盤面の横の上限 */
 #define PUZZLE_MAX_ROWS		(24)		/* 通信で運べる盤面の縦の上限 */
 #define PUZZLE_KINDS		(7)			/* 落ち物の種類（I O T S Z J L） */
-#define PUZZLE_LOCK_RESET_MAX	(4)			/* 床に着いたまま動かして、固定までの時間を測り直せる回数（1 つの落ち物ごと） */
+#define PUZZLE_LOCK_DELAY_MS	(500)		/* 床・積んだブロックに着いてから固定されるまでの猶予(ms)。この間は動かせる */
+#define PUZZLE_LOCK_RESET_MAX	(15)		/* 床に着いたまま動かして、固定までの猶予を測り直せる回数（1 つの落ち物ごと） */
 #define PUZZLE_DROP_MS_BASE	(1000)		/* レベル 0 の落下間隔(ms)。1 秒に 1 段 */
 #define PUZZLE_DROP_MS_STEP	(80)		/* レベルが 1 上がるごとに短くなる量(ms) */
 #define PUZZLE_DROP_MS_MIN	(100)		/* 落下間隔の下限(ms) */
@@ -49,6 +50,14 @@
 
 /* ライン消しの得点（1〜4 列。レベルが上がっても同じ） */
 static const int g_anPuzzleLineScore[5] = { 0, 100, 300, 500, 800 };
+
+/* 連続消し（REN）の追加攻撃。nCombo は「その前に続けて消した回数」（最初の消しは 0、2 回目は 1…）。
+   ガイドライン準拠：0〜1→0、2〜3→1、4〜5→2、6〜7→3、8〜10→4、11 以上→5 段 */
+static const int g_anPuzzleCombo[12] = { 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 4, 5 };
+static inline int PuzzleComboLines(int nCombo)
+{
+	return (nCombo <= 0) ? 0 : g_anPuzzleCombo[(nCombo > 11) ? 11 : nCombo];
+}
 
 /* 対戦で相手に送るお邪魔の段数（1〜4 列。1 列は送らない） */
 static const int g_anPuzzleGarbage[5] = { 0, 0, 1, 2, 4 };
@@ -240,19 +249,51 @@ static inline bool PuzzleTryMove(const PuzzleBoard &Board, int nKind, int nRot, 
 	return true;
 }
 
-/* 回せるか（nDir=1 で右回し、-1 で左回し）。壁際は左右にずらして入れる（壁けり）。O は回しても同じなので false。回せたら *pnRot・*pnX を更新して true */
-static inline bool PuzzleTryRotate(const PuzzleBoard &Board, int nKind, int *pnRot, int *pnX, int nY, int nDir = 1)
+/* 回転の壁けり表（SRS＝ガイドラインの回転法則）。回転の向きは 0=出た時 1=右に 1 回 2=反対 3=左に 1 回。
+   遷移の番号は 0→1:0 1→0:1 1→2:2 2→1:3 2→3:4 3→2:5 3→0:6 0→3:7。各 5 通りを順に試し、最初に置ける所へ動く。
+   値は (dx, dy)。dy は上が正（盤面の y は下が正なので、使う時に符号を逆にする）。I は専用の表、O は回らない */
+static const signed char g_anPuzzleKick[8][5][2] = {
+	{ {0, 0}, {-1, 0}, {-1, 1}, {0, -2}, {-1, -2} },
+	{ {0, 0}, {1, 0}, {1, -1}, {0, 2}, {1, 2} },
+	{ {0, 0}, {1, 0}, {1, -1}, {0, 2}, {1, 2} },
+	{ {0, 0}, {-1, 0}, {-1, 1}, {0, -2}, {-1, -2} },
+	{ {0, 0}, {1, 0}, {1, 1}, {0, -2}, {1, -2} },
+	{ {0, 0}, {-1, 0}, {-1, -1}, {0, 2}, {-1, 2} },
+	{ {0, 0}, {-1, 0}, {-1, -1}, {0, 2}, {-1, 2} },
+	{ {0, 0}, {1, 0}, {1, 1}, {0, -2}, {1, -2} }
+};
+static const signed char g_anPuzzleKickI[8][5][2] = {
+	{ {0, 0}, {-2, 0}, {1, 0}, {-2, -1}, {1, 2} },
+	{ {0, 0}, {2, 0}, {-1, 0}, {2, 1}, {-1, -2} },
+	{ {0, 0}, {-1, 0}, {2, 0}, {-1, 2}, {2, -1} },
+	{ {0, 0}, {1, 0}, {-2, 0}, {1, -2}, {-2, 1} },
+	{ {0, 0}, {2, 0}, {-1, 0}, {2, 1}, {-1, -2} },
+	{ {0, 0}, {-2, 0}, {1, 0}, {-2, -1}, {1, 2} },
+	{ {0, 0}, {1, 0}, {-2, 0}, {1, -2}, {-2, 1} },
+	{ {0, 0}, {-1, 0}, {2, 0}, {-1, 2}, {2, -1} }
+};
+
+/* 回せるか（nDir=1 で右回し、-1 で左回し）。SRS の壁けり表の順に、壁・積んだブロックを避けて入れる所を探す
+   （階段を登る・隙間にねじ込む回転や T スピンもできる）。O は回しても同じなので false。
+   回せたら *pnRot・*pnX・*pnY を更新して true */
+static inline bool PuzzleTryRotate(const PuzzleBoard &Board, int nKind, int *pnRot, int *pnX, int *pnY, int nDir = 1)
 {
-	static const int anKick[5] = { 0, -1, 1, -2, 2 };
-	int nNewRot = (*pnRot + ((nDir < 0) ? 3 : 1)) & 3, i;
+	int nOld = *pnRot & 3;
+	int nNewRot = (nOld + ((nDir < 0) ? 3 : 1)) & 3, i;
+	int nIdx = (nDir < 0) ? ((nOld * 2 + 7) & 7) : (nOld * 2);
+	const signed char (*pKick)[2] = (nKind == 0) ? g_anPuzzleKickI[nIdx] : g_anPuzzleKick[nIdx];
 
 	if (nKind == 1) {
 		return false;
 	}
 	for (i = 0; i < 5; i ++) {
-		if (!Board.Collide (nKind, nNewRot, *pnX + anKick[i], nY)) {
+		int nx = *pnX + pKick[i][0];
+		int ny = *pnY - pKick[i][1];
+
+		if (!Board.Collide (nKind, nNewRot, nx, ny)) {
 			*pnRot = nNewRot;
-			*pnX += anKick[i];
+			*pnX = nx;
+			*pnY = ny;
 			return true;
 		}
 	}
@@ -296,6 +337,8 @@ struct PuzzleGame {
 	bool		bOver;
 	unsigned int dwLastDrop;				/* 最後に 1 段落ちた時刻(ms) */
 	int			nLockResets;				/* この落ち物で、床に着いたまま動かして固定を待たせた回数（PUZZLE_LOCK_RESET_MAX まで） */
+	unsigned int dwGround;					/* 床・積んだブロックに着いた時刻（固定までの猶予の起点。0=着いていない） */
+	int			nCombo;						/* 連続消し：その前に続けて消した回数（消さずに固定したら -1。最初の消しは 0） */
 	PuzzleRand	GRand;						/* お邪魔の穴の位置を決める乱数（落ち物の順番とは別。落ち物は参加者で同じ順番にするため） */
 	int			nPending;					/* 待ちお邪魔（自分宛てでまだ積まれていない段数） */
 	int			nAttack;					/* 直前の固定で相手へ送る段数（相殺した残り。呼び出し側が読んで 0 に戻す） */
@@ -332,6 +375,7 @@ struct PuzzleGame {
 		GRand.Seed (dwSeed ^ 0x5BD1E995u);
 		nPending = 0;
 		nAttack = 0;
+		nCombo = -1;
 		nNext = BagNext ();
 		dwLastDrop = dwNow;
 		Spawn ();
@@ -346,6 +390,7 @@ struct PuzzleGame {
 		nNext = BagNext ();
 		nRot = 0;
 		nLockResets = 0;
+		dwGround = 0;
 		PuzzleCells (nKind, 0, anC);
 		for (i = 0; i < 4; i ++) {
 			if (anC[i][1] < nMinY) {
@@ -368,12 +413,25 @@ struct PuzzleGame {
 		return (n < PUZZLE_DROP_MS_MIN) ? PUZZLE_DROP_MS_MIN : n;
 	}
 
-	/* 床・積んだブロックに着いている落ち物を動かせた時に、固定までの時間を測り直す（動かして入れる時間を取る。
-	   1 つの落ち物で PUZZLE_LOCK_RESET_MAX 回まで。dwNow=0 なら何もしない） */
-	void LockDelay(unsigned int dwNow)
+	/* 床・積んだブロックに着いているか（もう 1 段下に動けないか） */
+	bool Grounded(void) const
 	{
-		if ((dwNow != 0) && (nLockResets < PUZZLE_LOCK_RESET_MAX) && Board.Collide (nKind, nRot, nX, nY + 1)) {
-			dwLastDrop = dwNow;
+		return Board.Collide (nKind, nRot, nX, nY + 1);
+	}
+
+	/* 動かした・回した後に呼ぶ（dwNow=0 なら何もしない）。着いたままだった時は固定までの猶予を測り直す（PUZZLE_LOCK_RESET_MAX 回まで）。
+	   着いていなければ猶予は止める。空中から着いた時は、そこから猶予を数える */
+	void AfterMove(bool bWasGrounded, unsigned int dwNow)
+	{
+		if (dwNow == 0) {
+			return;
+		}
+		if (!Grounded ()) {
+			dwGround = 0;
+		} else if (!bWasGrounded) {
+			dwGround = dwNow;
+		} else if (nLockResets < PUZZLE_LOCK_RESET_MAX) {
+			dwGround = dwNow;
 			nLockResets ++;
 		}
 	}
@@ -381,20 +439,24 @@ struct PuzzleGame {
 	/* 左右に動かす（dx=-1/+1）。動けたら PUZZLE_CHG_PIECE */
 	int Move(int dx, unsigned int dwNow = 0)
 	{
+		bool bWas = Grounded ();
+
 		if (bOver || !PuzzleTryMove (Board, nKind, nRot, &nX, nY, dx)) {
 			return 0;
 		}
-		LockDelay (dwNow);
+		AfterMove (bWas, dwNow);
 		return PUZZLE_CHG_PIECE;
 	}
 
-	/* 回す（nDir=1 で右回し、-1 で左回し）。壁際は左右にずらして入れる（壁けり）。回せたら PUZZLE_CHG_PIECE */
+	/* 回す（nDir=1 で右回し、-1 で左回し）。SRS の壁けり（階段を登る・隙間にねじ込む）。回せたら PUZZLE_CHG_PIECE */
 	int Rotate(int nDir = 1, unsigned int dwNow = 0)
 	{
-		if (bOver || !PuzzleTryRotate (Board, nKind, &nRot, &nX, nY, nDir)) {
+		bool bWas = Grounded ();
+
+		if (bOver || !PuzzleTryRotate (Board, nKind, &nRot, &nX, &nY, nDir)) {
 			return 0;
 		}
-		LockDelay (dwNow);
+		AfterMove (bWas, dwNow);
 		return PUZZLE_CHG_PIECE;
 	}
 
@@ -421,12 +483,13 @@ struct PuzzleGame {
 		nAttack = 0;
 		Board.Lock (nKind, nRot, nX, nY);
 		nCleared = Board.ClearLines ();
+		nCombo = (nCleared > 0) ? (nCombo + 1) : -1;
 		if (nCleared > 0) {
 			dwScore += (unsigned int)g_anPuzzleLineScore[(nCleared > 4) ? 4 : nCleared];
 			nLines += nCleared;
 			nLevel = nLines / PUZZLE_LINES_PER_LEVEL;
 			nRet |= PUZZLE_CHG_SCORE;
-			nSend = PuzzleGarbageLines (nCleared);
+			nSend = PuzzleGarbageLines (nCleared) + PuzzleComboLines (nCombo);
 			if (nSend > 0 && nPending > 0) {
 				int nCancel = (nSend < nPending) ? nSend : nPending;
 				nPending -= nCancel;
@@ -468,14 +531,33 @@ struct PuzzleGame {
 		return LockAndNext ();
 	}
 
-	/* 周期処理。前に落ちてから間隔が過ぎた分だけ落とす（呼ばれる間隔に左右されない。1 回の処理で落とすのは最大 nMaxSteps 段） */
+	/* 周期処理。前に落ちてから間隔が過ぎた分だけ落とす（呼ばれる間隔に左右されない。1 回の処理で進めるのは最大 nMaxSteps 回）。
+	   床・積んだブロックに着いたら、PUZZLE_LOCK_DELAY_MS の猶予のあとに固定する（その間は動かせる） */
 	int Tick(unsigned int dwNow, int nMaxSteps = 4)
 	{
 		int nRet = 0, n = 0;
 
-		while (!bOver && (n < nMaxSteps) && ((unsigned int)(dwNow - dwLastDrop) >= (unsigned int)DropMs (nLevel))) {
-			unsigned int dwBase = dwLastDrop + (unsigned int)DropMs (nLevel);
-			nRet |= Step (false, dwBase);		/* 経過時間で進める（遅れた分は次の段へ持ち越す） */
+		while (!bOver && (n < nMaxSteps)) {
+			if (Grounded ()) {
+				if (dwGround == 0) {
+					dwGround = dwNow;
+				}
+				if ((unsigned int)(dwNow - dwGround) < (unsigned int)PUZZLE_LOCK_DELAY_MS) {
+					break;
+				}
+				dwLastDrop = dwNow;
+				nRet |= LockAndNext ();
+				n ++;
+				continue;
+			}
+			dwGround = 0;
+			if ((unsigned int)(dwNow - dwLastDrop) < (unsigned int)DropMs (nLevel)) {
+				break;
+			}
+			{
+				unsigned int dwBase = dwLastDrop + (unsigned int)DropMs (nLevel);
+				nRet |= Step (false, dwBase);		/* 経過時間で進める（遅れた分は次の段へ持ち越す） */
+			}
 			n ++;
 		}
 		/* 遅れが大きすぎる時（止まっていた後など）は追いつかせず、いま落ちたことにする */

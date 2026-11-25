@@ -81,21 +81,61 @@ int main()
 	g.nKind = 1;
 	CHECK (g.Rotate (-1) == 0);								/* O は左にも回らない */
 
-	/* 上段でも回せる（出たての I を縦にすると上にはみ出してもよい）。
-	   床・積んだブロックに着いたまま動かしたり回したりすると、固定までの時間が測り直される（立てた直後にすぐ固定されない）。回数に上限あり */
+	/* 上段でも回せる（出たての I を縦にすると上にはみ出してもよい） */
 	g.Board.Init (10, 14);
 	g.nKind = 0; g.nRot = 0; g.nX = 3; g.nY = -1;
 	CHECK (g.Rotate () == PUZZLE_CHG_PIECE && g.nRot == 1);
+
+	/* SRS の壁けり：階段を登る回転（T が 1 段上の足場へ）。右壁際の縦の I も回せる */
+	{
+		PuzzleBoard pb;
+		int nRot = 1, nX, nY;
+		pb.Init (10, 14);
+		/* T（縦・右向き）の左が壁側に詰まる形：床 y=13 の上で、左下に段差 */
+		nRot = 0; nX = 3; nY = 10;
+		CHECK (PuzzleTryRotate (pb, 2, &nRot, &nX, &nY, 1) && nRot == 1 && nX == 3 && nY == 10);	/* 空きなら 0 番の位置 */
+		pb.Set (4, 12, 4); pb.Set (5, 12, 4);						/* 1 番目の位置が塞がっている */
+		nRot = 0; nX = 3; nY = 11;
+		bool bKick = PuzzleTryRotate (pb, 2, &nRot, &nX, &nY, 1);
+		CHECK (bKick && nRot == 1 && !pb.Collide (2, nRot, nX, nY) && (nX != 3 || nY != 11));	/* 壁けりでずれて入る */
+	}
+
+	/* 固定の猶予：床・積んだブロックに着いたら PUZZLE_LOCK_DELAY_MS 待ってから固定。その間に動かす・回すと測り直される（回数に上限あり） */
+	g.Start (10, 14, 1, 0);
 	g.nKind = 1; g.nRot = 0; g.nX = 4; g.nY = 12;			/* O が床に着いている */
-	g.nLockResets = 0; g.dwLastDrop = 0;
-	CHECK (g.Move (1, 900) == PUZZLE_CHG_PIECE && g.dwLastDrop == 900 && g.nLockResets == 1);
+	g.dwGround = 0; g.nLockResets = 0; g.dwLastDrop = 0;
+	CHECK (g.Tick (10000) == 0 && g.dwGround == 10000);		/* 着いたと見て猶予を数え始める（固定しない） */
+	CHECK (g.Move (1, 10300) == PUZZLE_CHG_PIECE && g.dwGround == 10300 && g.nLockResets == 1);
+	CHECK (g.Tick (10700) == 0);							/* 動かしてから 400ms：まだ固定しない */
+	CHECK ((g.Tick (10800) & PUZZLE_CHG_BOARD) != 0);		/* 500ms たった：固定して次の落ち物 */
+	g.Start (10, 14, 1, 0);
 	g.nKind = 1; g.nRot = 0; g.nX = 4; g.nY = 5;			/* 空中では測り直さない */
-	g.dwLastDrop = 0;
-	CHECK (g.Move (1, 900) == PUZZLE_CHG_PIECE && g.dwLastDrop == 0 && g.nLockResets == 1);
+	g.dwGround = 0; g.nLockResets = 0;
+	CHECK (g.Move (1, 900) == PUZZLE_CHG_PIECE && g.dwGround == 0 && g.nLockResets == 0);
 	g.nKind = 1; g.nRot = 0; g.nX = 4; g.nY = 12;
-	for (int nn = 0; nn < 6; nn ++) { g.nX = 4; g.Move (1, 900 + (unsigned int)nn); }
+	for (int nn = 0; nn < 30; nn ++) { g.Move ((nn & 1) ? -1 : 1, 900 + (unsigned int)nn); }
 	CHECK (g.nLockResets == PUZZLE_LOCK_RESET_MAX);			/* 上限まで */
 	g.Board.Init (10, 14);
+
+	/* 連続消し（REN）：続けて消すほど追加で攻撃が増える。消さずに固定すると途切れる */
+	CHECK (PuzzleComboLines (-1) == 0 && PuzzleComboLines (0) == 0 && PuzzleComboLines (1) == 0 && PuzzleComboLines (2) == 1 &&
+		PuzzleComboLines (4) == 2 && PuzzleComboLines (7) == 3 && PuzzleComboLines (10) == 4 && PuzzleComboLines (11) == 5 && PuzzleComboLines (30) == 5);
+	{
+		PuzzleGame gc;
+		int nAtk[3];
+		gc.Start (10, 14, 1, 0);
+		for (int rr = 0; rr < 3; rr ++) {
+			for (int xx = 0; xx < 8; xx ++) { gc.Board.Set (xx, 12, 4); gc.Board.Set (xx, 13, 4); }
+			gc.nKind = 1; gc.nRot = 0; gc.nX = 8; gc.nY = 12;
+			gc.LockAndNext ();								/* O で 2 列消し */
+			nAtk[rr] = gc.nAttack;
+		}
+		CHECK (nAtk[0] == 1 && nAtk[1] == 1 && nAtk[2] == 2 && gc.nCombo == 2);	/* 2 列消し=1 段。3 回目は連続消しで +1 */
+		gc.Board.Init (10, 14);
+		gc.nKind = 1; gc.nRot = 0; gc.nX = 0; gc.nY = 12;
+		gc.LockAndNext ();									/* 消さずに固定 */
+		CHECK (gc.nCombo == -1);
+	}
 
 	/* 次の落ち物が置けずにゲームオーバーになった時は、その落ち物も盤面に残る（見えないまま終わらない） */
 	{
@@ -358,18 +398,19 @@ int main()
 		CHECK (PuzzleTryDown (pb, 1, 0, 0, &nY) && nY == 4);
 		/* O は回らない */
 		nRot = 0; nX = 4;
-		CHECK (!PuzzleTryRotate (pb, 1, &nRot, &nX, 3) && nRot == 0 && nX == 4);
+		int nYr = 3;
+		CHECK (!PuzzleTryRotate (pb, 1, &nRot, &nX, &nYr) && nRot == 0 && nX == 4 && nYr == 3);
 		/* 壁けり：I を縦（回転 1）にして右の壁際で回すと、左にずらして入る（サーバーの Rotate と同じ） */
 		pb.Init (10, 14);
 		PuzzleGame g1;
 		g1.Start (10, 14, 1, 0);
-		g1.nKind = 0; g1.nRot = 1; g1.nX = 8; g1.nY = 2;
+		g1.nKind = 0; g1.nRot = 1; g1.nX = 7; g1.nY = 2;
 		nRot = g1.nRot; nX = g1.nX; nY = g1.nY;
-		bool bClient = PuzzleTryRotate (g1.Board, 0, &nRot, &nX, nY);
+		bool bClient = PuzzleTryRotate (g1.Board, 0, &nRot, &nX, &nY);
 		int nSrv = g1.Rotate ();
 		CHECK (bClient == (nSrv != 0));
-		CHECK (nRot == g1.nRot && nX == g1.nX);
-		CHECK (g1.nX != 8);												/* 壁けりでずれた */
+		CHECK (nRot == g1.nRot && nX == g1.nX && nY == g1.nY);
+		CHECK (g1.nX != 7);												/* 壁けりでずれた */
 	}
 	/* ランダムなキー列を、サーバー（PuzzleGame）とクライアントの先読み（PuzzleTry*）で同じに動かすと、毎回同じ位置・向きになる */
 	{
@@ -394,7 +435,7 @@ int main()
 				switch (nKey) {
 				case 0:	bPred = PuzzleTryMove (sv.Board, nKind, nRot, &nX, nY, -1);	nChg = sv.Move (-1);	break;
 				case 1:	bPred = PuzzleTryMove (sv.Board, nKind, nRot, &nX, nY, 1);	nChg = sv.Move (1);		break;
-				case 2:	bPred = PuzzleTryRotate (sv.Board, nKind, &nRot, &nX, nY);	nChg = sv.Rotate ();	break;
+				case 2:	bPred = PuzzleTryRotate (sv.Board, nKind, &nRot, &nX, &nY);	nChg = sv.Rotate ();	break;
 				default:
 					bPred = PuzzleTryDown (sv.Board, nKind, nRot, nX, &nY);
 					nChg = sv.Step (true, 0);
