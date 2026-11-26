@@ -60,6 +60,7 @@ void SendCmdGETACC			(DWORD);								/* アカウント・パスワード取得 
 void SendCmdCHGACC			(DWORD, LPSTR, LPSTR);					/* アカウント・パスワード更新 */
 void SendCmdTALKRAND		(DWORD);								/* 話してランダム要求 */
 DWORD SendCmdPUZZLEKEY		(BYTE);									/* 落ち物パズルのキー入力 */
+void SendCmdJANKEY			(BYTE, BYTE);							/* SBOじゃんの操作 */
 void SendCmdTALKANSWER		(DWORD, BOOL);							/* 会話データの「はい・いいえ」の答え */
 void SendCmdSTOPRAND		(DWORD);								/* 止まるかランダム切り替え */
 void SendCmdGETACCINFO		(DWORD);								/* アカウント情報要求 */
@@ -1252,6 +1253,27 @@ DWORD SendCmdPUZZLEKEY(BYTE byKey)
 
 	cliSock.Send ((PBYTE)&SendData, sizeof (CMDPARA_PUZZLEKEY));
 	return s_dwSerial;
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdJANKEY													 */
+/* 内容：SBOじゃんの操作送信（byAct=JAN_ACT_*。byParam=DISCARD は牌id・GUMI は組の添字）	 */
+/*		 dwTblID はクライアントの配列番号ではなく、キャラのテーブルID				 */
+/* ========================================================================= */
+void SendCmdJANKEY(BYTE byAct, BYTE byParam)
+{
+	CMDPARA_JANKEY SendData;
+
+	if ((g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ())) {
+		return;
+	}
+	ZeroMemory (&SendData, sizeof (SendData));
+	SendData.byCmd = CMD_JANKEY;
+	SendData.dwTblID = g_aCharInfo[g_nMyCharID]->dwTblID;
+	SendData.byAct = byAct;
+	SendData.byParam = byParam;
+
+	cliSock.Send ((PBYTE)&SendData, sizeof (CMDPARA_JANKEY));
 }
 
 /* ========================================================================= */
