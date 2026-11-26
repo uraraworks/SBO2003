@@ -4448,7 +4448,7 @@ typedef struct _CMDPARA_MAZESTATE {
 	BYTE		byWallLeft[2];										/* 各自の壁の残り枚数 */
 	BYTE		byWallCount;										/* 置かれた壁の数（0〜MAZEPARA_WALL_MAX） */
 	MAZEWALLPARA	aWall[MAZEPARA_WALL_MAX];						/* 置かれた壁（置いた順。byWallCount 個だけ有効） */
-	short		sBoardX;											/* 盤の左上（マップのドット座標。13×13 タイル＝416×416 ドット。台の座標と台詞から決める） */
+	short		sBoardX;											/* 盤の左上（マップのドット座標。10×10 タイル＝320×320 ドット。台の座標と台詞から決める） */
 	short		sBoardY;
 	DWORD		dwNpc;												/* 台NPCのテーブルID（盤を見分ける印。受け取る側は台ごとに盤を覚える） */
 	DWORD		dwChar[2];											/* 2 人分の座っているキャラのテーブルID（座っていない側は MAZE_NOCHAR） */

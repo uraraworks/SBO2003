@@ -19093,7 +19093,7 @@ static void TestMaze(const std::vector<int> &aLogin)
 		}
 	}
 
-	/* 台（既定：盤の左上 -6,-12・座る場所は台NPCの 1 つ下）。A のマスに置く */
+	/* 台（既定：盤の左上 -5,-9・座る場所は台NPCの 1 つ下）。A のマスに置く */
 	QuestMovePC(pA, (int)dwMap, (int)dwX, (int)dwY);
 	NearNpcOpen(pA, "@k");
 	PCHARINFO pNpc = s_aNearNpc.back();
@@ -19122,8 +19122,8 @@ static void TestMaze(const std::vector<int> &aLogin)
 		printf("maze sit seated=%d seats=%d got=%d kind=%d seat=%d idle=%d c0=%d c1=%d\n", MazeIsSeated(pA), MazeSeatCount(), bOK,
 			bOK ? St.byKind : -1, bOK ? (St.byState & MAZESTATE_SEAT) != 0 : -1, bOK ? (St.byState & MAZESTATE_IDLE) != 0 : -1,
 			bOK ? St.dwChar[0] == pA->dwTblID : -1, bOK ? St.dwChar[1] == MAZE_NOCHAR : -1);
-		printf("maze sit board x=%d y=%d size=%d\n", bOK ? St.sBoardX == (short)(((int)dwX - 6) * 32) : -1,
-			bOK ? St.sBoardY == (short)(((int)dwY - 12) * 32) : -1, (int)sizeof(CMDPARA_MAZESTATE));
+		printf("maze sit board x=%d y=%d size=%d\n", bOK ? St.sBoardX == (short)(((int)dwX - 5) * 32) : -1,
+			bOK ? St.sBoardY == (short)(((int)dwY - 9) * 32) : -1, (int)sizeof(CMDPARA_MAZESTATE));
 		printf("maze sit %s\n", MazeBrief(nConnA, dwNpc).c_str());
 	}
 
@@ -19235,26 +19235,26 @@ static void TestMaze(const std::vector<int> &aLogin)
 	MazeKeySend(pA, MAZEACT_MOVE, MAZE_UP);
 	printf("maze leave then key packets=%d\n", MazeCount(nConnA) - n0);
 
-	/* 12. 待機中の台は近くの人に初期配置の盤（IDLE ビット）を送る。送り始めは 22 マス（盤の中心から。盤の半分 7＋余白 12＋3）・消すのは 25 マスの外 */
+	/* 12. 待機中の台は近くの人に初期配置の盤（IDLE ビット）を送る。送り始めは 17 マス（盤の中心から。盤の半分 5＋余白 9＋3）・消すのは 20 マスの外 */
 	{
 		int nB0 = MazeCount(nConnB);
-		QuestMovePC(pB, (int)dwMap, (int)dwX + 23, (int)dwY);
+		QuestMovePC(pB, (int)dwMap, (int)dwX + 18, (int)dwY);
 		g_dwTime = (s_dwFakeNow += 300);
 		MazeProc();
 		int nFar = MazeCount(nConnB) - nB0;
-		QuestMovePC(pB, (int)dwMap, (int)dwX + 22, (int)dwY);
+		QuestMovePC(pB, (int)dwMap, (int)dwX + 17, (int)dwY);
 		g_dwTime = (s_dwFakeNow += 300);
 		MazeProc();
-		printf("maze watch approach 23=%d 22=[%s] +%d idleTables=%d\n", nFar, MazeBrief(nConnB, dwNpc).c_str(), MazeCount(nConnB) - nB0 - nFar, MazeIdleCount());
-		/* 境目（23〜25）をうろうろしても送ったり消したりしない・26 マスで NONE */
+		printf("maze watch approach 18=%d 17=[%s] +%d idleTables=%d\n", nFar, MazeBrief(nConnB, dwNpc).c_str(), MazeCount(nConnB) - nB0 - nFar, MazeIdleCount());
+		/* 境目（18〜20）をうろうろしても送ったり消したりしない・21 マスで NONE */
 		nB0 = MazeCount(nConnB);
-		for (int i = 23; i <= 25; i ++) {
+		for (int i = 18; i <= 20; i ++) {
 			QuestMovePC(pB, (int)dwMap, (int)dwX + i, (int)dwY);
 			g_dwTime = (s_dwFakeNow += 300);
 			MazeProc();
 		}
 		printf("maze watch hysteresis packets=%d\n", MazeCount(nConnB) - nB0);
-		QuestMovePC(pB, (int)dwMap, (int)dwX + 26, (int)dwY);
+		QuestMovePC(pB, (int)dwMap, (int)dwX + 21, (int)dwY);
 		g_dwTime = (s_dwFakeNow += 300);
 		MazeProc();
 		printf("maze watch leave %s +%d\n", MazeBrief(nConnB, dwNpc).c_str(), MazeCount(nConnB) - nB0);

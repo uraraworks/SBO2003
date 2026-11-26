@@ -2608,9 +2608,9 @@ board empty text=2
 board full counts=10,10 len<max=1 tenth=2 end=1
 record done seats=0
 == AW. Maze attack table ==
-maze parse default -6,-12,0,1
+maze parse default -5,-9,0,1
 maze parse all 3,-4,5,-2
-maze parse blank -6,-12,3,1
+maze parse blank -5,-9,3,1
 maze parse clamp 60,-60,0,1
 maze isTable q=1 puzzle=0 questnpc=0
 maze other cells seated=0 state=0
@@ -2639,7 +2639,7 @@ maze nopath p0=0,6 p1=3,0 left=5/6 walls=1 turn=0 win=-1 st=2 +1
 maze otherkey packets=0 p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2
 maze leave seated=0 seats=0 p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=1 +1
 maze leave then key packets=0
-maze watch approach 23=0 22=[p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=1] +1 idleTables=1
+maze watch approach 18=0 17=[p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=1] +1 idleTables=1
 maze watch hysteresis packets=0
 maze watch leave none +1
 maze watch sit p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=0 seat=0 idle=0 chA=1

@@ -808,14 +808,15 @@ static void DrawPuzzle(int nX, int nY, BOOL bTop)
 
 /* ========================================================================= */
 /* 関数名：DrawMaze															 */
-/* 内容：迷路対戦の盤（13×13 タイル・1 タイル 32 ドット）の重ね描き				 */
-/*		 偶数タイル＝マス（市松の明るい床）、奇数タイルの通り道＝暗い溝、置かれた壁＝レンガ色の3タイル。	 */
+/* 内容：迷路対戦の盤（320×320 ドット）の重ね描き								 */
+/*		 マス 32 ドット（市松の明るい床。左上は盤ドット (48x, 48y)）、マスの間の通り道 16 ドット＝暗い溝、	 */
+/*		 置かれた壁＝レンガ色（太さ 16・長さ 80。交差点の 16×16 も壁の一部）。					 */
 /*		 bTop=FALSE：盤の床・壁・カーソル（地面の上・キャラの下）					 */
 /*		 bTop=TRUE ：コマ（台NPCに隠れないよう前に）・手番・壁の残り・勝敗・操作ヒント（最前面）	 */
 /*		 盤の左上はサーバーが台の座標から決めた（マップのドット座標）				 */
 /* ========================================================================= */
 static int s_nMazeL, s_nMazeT, s_nMazeR, s_nMazeB;		/* 迷路対戦の重ね描きを切り取る範囲（DrawMaze が決める） */
-#define MAZE_BOARD_DOT		(MAZE_TABLE_TILES * MAZE_TABLE_TILE_DOT)		/* 盤の一辺（ドット） */
+#define MAZE_BOARD_DOT		(MAZE_BOARD_DOTS)		/* 盤の一辺（ドット。320） */
 
 /* 塗りつぶし（切り取り範囲の中だけ） */
 static void MazeRect(HDC hDC, int x, int y, int cx, int cy, COLORREF cl, int nAlpha)
@@ -833,15 +834,15 @@ static void MazeRect(HDC hDC, int x, int y, int cx, int cy, COLORREF cl, int nAl
 	}
 }
 
-/* レンガ 1 枚分の長方形（段の高さ 10 ドット。段ごとに継ぎ目を半分ずらす） */
+/* レンガ 1 枚分の長方形（段の高さ 8 ドット。段ごとに継ぎ目を半分ずらす） */
 static void MazeBrick(HDC hDC, int x, int y, int cx, int cy)
 {
 	const COLORREF clBase = RGB (178, 86, 58), clMortar = RGB (104, 52, 40), clLight = RGB (214, 128, 92);
 	int r, xs, nRow = 0, nH;
 
 	MazeRect (hDC, x, y, cx, cy, clBase, 255);
-	for (r = 0; r < cy; r += 10, nRow ++) {
-		nH = min (10, cy - r);
+	for (r = 0; r < cy; r += 8, nRow ++) {
+		nH = min (8, cy - r);
 		MazeRect (hDC, x, y + r, cx, 1, clLight, 255);							/* 段の上の明るい線 */
 		MazeRect (hDC, x, y + r + nH - 1, cx, 1, clMortar, 255);					/* 段の下の目地 */
 		for (xs = (nRow & 1) ? 16 : 0; xs < cx; xs += 32) {
@@ -857,21 +858,22 @@ static void MazeBrick(HDC hDC, int x, int y, int cx, int cy)
 	MazeRect (hDC, x + cx - 1, y, 1, cy, clMortar, 255);
 }
 
-/* 壁 1 枚（交点 (wx, wy)・向き）を盤の左上 (bx, by) を基準に描く。通り道（32 ドット）の中央に太さ 20 ドットで置く */
+/* 壁 1 枚（交点 (wx, wy)・向き）を盤の左上 (bx, by) を基準に描く。マスの間の通り道（16 ドット）にぴったり置く。
+   横壁：縦 48y+32〜+48・横 48x〜48x+80（2 マス＋隙間 1 つ分）／縦壁はその縦横を入れ替えた形 */
 static void MazeWallRect(int wx, int wy, int nOrient, int bx, int by, int *px, int *py, int *pcx, int *pcy)
 {
-	const int T = MAZE_TABLE_TILE_DOT;
+	const int P = MAZE_PITCH_DOT;
 
 	if (nOrient == MAZE_H) {
-		*px = bx + wx * 2 * T;
-		*py = by + (wy * 2 + 1) * T + 6;
-		*pcx = T * 3;
-		*pcy = 20;
+		*px = bx + wx * P;
+		*py = by + wy * P + MAZE_CELL_DOT;
+		*pcx = MAZE_CELL_DOT * 2 + MAZE_GAP_DOT;
+		*pcy = MAZE_GAP_DOT;
 	} else {
-		*px = bx + (wx * 2 + 1) * T + 6;
-		*py = by + wy * 2 * T;
-		*pcx = 20;
-		*pcy = T * 3;
+		*px = bx + wx * P + MAZE_CELL_DOT;
+		*py = by + wy * P;
+		*pcx = MAZE_GAP_DOT;
+		*pcy = MAZE_CELL_DOT * 2 + MAZE_GAP_DOT;
 	}
 }
 
@@ -917,7 +919,6 @@ static CImg32 *MazePieceImage(PCHARINFO pChar, int *pxx, int *pyy)
 /* コマ（台NPCのマスに盤の下の行が重なるので、キャラより前に描く） */
 static void DrawMazePieces(const CMDPARA_MAZESTATE &St, int sx, int sy)
 {
-	const int T = MAZE_TABLE_TILE_DOT;
 	const COLORREF clPiece[2] = { RGB (255, 210, 70), RGB (110, 190, 255) };
 	int x, y, p;
 	HDC hDC;
@@ -932,8 +933,8 @@ static void DrawMazePieces(const CMDPARA_MAZESTATE &St, int sx, int sy)
 	SetBkMode (hDC, TRANSPARENT);
 	/* コマ（絵が使えない時と不在の側は色付きの丸） */
 	for (p = 0; p < 2; p ++) {
-		int cx = sx + (int)St.byPosX[p] * 2 * T + T / 2;
-		int cy = sy + (int)St.byPosY[p] * 2 * T + T / 2;
+		int cx = sx + (int)St.byPosX[p] * MAZE_PITCH_DOT + MAZE_CELL_DOT / 2;
+		int cy = sy + (int)St.byPosY[p] * MAZE_PITCH_DOT + MAZE_CELL_DOT / 2;
 		BOOL bHave = (St.dwChar[p] != MAZE_NOCHAR);
 		int nNo = bHave ? GetCharNo (St.dwChar[p]) : -1;
 		int xx, yy;
@@ -966,8 +967,8 @@ static void DrawMazePieces(const CMDPARA_MAZESTATE &St, int sx, int sy)
 		if (pDib == NULL) {
 			continue;
 		}
-		x = sx + (int)St.byPosX[p] * 2 * T;
-		y = sy + (int)St.byPosY[p] * 2 * T - 8;		/* キャラの絵は 8 ドット上にずらして描く */
+		x = sx + (int)St.byPosX[p] * MAZE_PITCH_DOT;		/* マスの左上から 32 ドット四方（ずらさない） */
+		y = sy + (int)St.byPosY[p] * MAZE_PITCH_DOT;
 		if ((x < s_nPzL) || (x + 32 > s_nPzR) || (y < s_nPzT) || (y + 32 > s_nPzB)) {
 			continue;
 		}
@@ -977,7 +978,6 @@ static void DrawMazePieces(const CMDPARA_MAZESTATE &St, int sx, int sy)
 
 static void DrawMazeOne(const CMDPARA_MAZESTATE &St, int sx, int sy, BOOL bTop)
 {
-	const int T = MAZE_TABLE_TILE_DOT;
 	BOOL bSeat = (St.byState & MAZESTATE_SEAT) ? TRUE : FALSE;
 	BOOL bWin = (St.byState & MAZESTATE_WIN) ? TRUE : FALSE;
 	int nMode, nCurX, nCurY, nCurO;
@@ -999,25 +999,20 @@ static void DrawMazeOne(const CMDPARA_MAZESTATE &St, int sx, int sy, BOOL bTop)
 	if (!bTop) {
 		/* 盤の縁 */
 		MazeRect (hDC, sx - 4, sy - 4, MAZE_BOARD_DOT + 8, MAZE_BOARD_DOT + 8, RGB (36, 28, 24), 255);
-		/* 床（偶数タイル＝マスは市松、奇数タイルの通り道は暗い溝） */
-		for (y = 0; y < MAZE_TABLE_TILES; y ++) {
-			for (x = 0; x < MAZE_TABLE_TILES; x ++) {
-				COLORREF cl;
-				if (((x & 1) == 0) && ((y & 1) == 0)) {
-					cl = (((x / 2) + (y / 2)) & 1) ? RGB (200, 188, 158) : RGB (226, 216, 186);
-				} else {
-					cl = RGB (58, 48, 44);
-				}
-				MazeRect (hDC, sx + x * T, sy + y * T, T, T, cl, 255);
-				if (((x & 1) == 0) && ((y & 1) == 0)) {
-					MazeRect (hDC, sx + x * T, sy + y * T, T, 1, RGB (244, 238, 214), 255);		/* マスの上の縁を明るく */
-					MazeRect (hDC, sx + x * T, sy + y * T + T - 1, T, 1, RGB (150, 138, 110), 255);	/* 下の縁を暗く */
-				}
+		/* 床（全体を暗い溝にして、マスだけ市松に明るく） */
+		MazeRect (hDC, sx, sy, MAZE_BOARD_DOT, MAZE_BOARD_DOT, RGB (58, 48, 44), 255);
+		for (y = 0; y < MAZE_BOARD_CELLS; y ++) {
+			for (x = 0; x < MAZE_BOARD_CELLS; x ++) {
+				int cx0 = sx + x * MAZE_PITCH_DOT, cy0 = sy + y * MAZE_PITCH_DOT;
+				COLORREF cl = ((x + y) & 1) ? RGB (200, 188, 158) : RGB (226, 216, 186);
+				MazeRect (hDC, cx0, cy0, MAZE_CELL_DOT, MAZE_CELL_DOT, cl, 255);
+				MazeRect (hDC, cx0, cy0, MAZE_CELL_DOT, 1, RGB (244, 238, 214), 255);							/* マスの上の縁を明るく */
+				MazeRect (hDC, cx0, cy0 + MAZE_CELL_DOT - 1, MAZE_CELL_DOT, 1, RGB (150, 138, 110), 255);		/* 下の縁を暗く */
 			}
 		}
-		/* 座っている本人のゴール行（盤の上端の行）をうっすら色づける */
+		/* 座っている本人のゴール行（盤の上端のマスの行）をうっすら色づける */
 		if (bSeat) {
-			MazeRect (hDC, sx, sy, MAZE_BOARD_DOT, T, RGB (255, 200, 40), 90);
+			MazeRect (hDC, sx, sy, MAZE_BOARD_DOT, MAZE_CELL_DOT, RGB (255, 200, 40), 90);
 		}
 		/* 置かれた壁 */
 		for (i = 0; i < St.byWallCount && i < MAZEPARA_WALL_MAX; i ++) {
@@ -1035,7 +1030,7 @@ static void DrawMazeOne(const CMDPARA_MAZESTATE &St, int sx, int sy, BOOL bTop)
 			} else {
 				MazeRect (hDC, wx, wy, wcx, wcy, RGB (255, 70, 60), 120);
 				int mx = wx + wcx / 2, my = wy + wcy / 2, k;
-				for (k = -10; k <= 10; k ++) {
+				for (k = -6; k <= 6; k ++) {
 					MazeRect (hDC, mx + k - 1, my + k - 1, 3, 3, RGB (255, 40, 40), 255);
 					MazeRect (hDC, mx + k - 1, my - k - 1, 3, 3, RGB (255, 40, 40), 255);
 				}

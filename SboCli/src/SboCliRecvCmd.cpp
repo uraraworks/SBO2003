@@ -8800,8 +8800,8 @@ BOOL MazeCanPlaceWall(const CMDPARA_MAZESTATE *pSt, int nX, int nY, int nOrient)
 }
 
 /* 画面の基準点（カメラ）。通常は自分のキャラのマス＋歩きずれ。迷路対戦の席に座っている間は
-   盤の中央（タイル(6,6)）のマスで、歩きずれは 0。地図・キャラ・NPC・盤・天気などの描画は全部これを基準にする。
-   pnX, pnY=基準のマス座標 / pnOfsX, pnOfsY=歩きずれ(ドット。座っている間は 0) */
+   盤の中央（盤ドット(160,160)）で固定。画面の中央はタイルの中心なので、タイル(5,5)の左上＝盤の中央に合わせるため歩きずれ +16 で画面の中身を右下へ 16 ドット寄せる。地図・キャラ・NPC・盤・天気などの描画は全部これを基準にする。
+   pnX, pnY=基準のマス座標 / pnOfsX, pnOfsY=歩きずれ(ドット。座っている間は盤の中央に合わせる固定値) */
 void GetCameraBase(int *pnX, int *pnY, int *pnOfsX, int *pnOfsY)
 {
 	PCHARINFO pMy = NULL;
@@ -8815,10 +8815,10 @@ void GetCameraBase(int *pnX, int *pnY, int *pnOfsX, int *pnOfsY)
 		return;
 	}
 	if (GetMazeSeatState (&St)) {
-		/* 盤の左上はタイル単位（32 ドットの倍数）。中央のタイルは左上から 6 タイル */
+		/* 盤の左上はタイル単位（32 ドットの倍数）。盤の中央（ドット 160）はタイル 5 の左上＝その中心より 16 ドット左上 */
 		*pnX = ((int)St.sBoardX >> 5) + MAZE_TABLE_TILES / 2;
 		*pnY = ((int)St.sBoardY >> 5) + MAZE_TABLE_TILES / 2;
-		*pnOfsX = *pnOfsY = 0;
+		*pnOfsX = *pnOfsY = MAZE_TABLE_TILE_DOT / 2;
 		return;
 	}
 	*pnX = (int)pMy->dwX;

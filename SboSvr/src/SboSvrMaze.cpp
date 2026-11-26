@@ -7,7 +7,7 @@
  * 盤面ロジックは common/MazeAttack.h、台詞の読み方は common/MazeTable.h。台の作りは落ち物パズル（SboSvrPuzzle.cpp）にならう。
  * 台は、台詞が "@k" で始まる NPC（"@q" は依頼NPCの印なので使わない）:
  *     @k<dx>,<dy>,<sdx>,<sdy>      後ろは省略でき、空欄も既定になる
- *   dx, dy   … 盤（13×13 タイル）の左上が、台NPCのマスの左上から何タイルか。省略は -6,-12
+ *   dx, dy   … 盤（10×10 タイル＝320 ドット）の左上が、台NPCのマスの左上から何タイルか。省略は -5,-9
  *   sdx, sdy … 座る場所：台NPCのマスからの相対位置（マス）。省略は (0,+1)
  * 今は段階 1（ひとり練習）。コインは無く、座る場所のマスに立って S キーで座る（無料の台）。
  *   座るとゲームを初期化し、座った人がプレイヤー 0（下側スタート）。プレイヤー 1 は不在で、プレイヤー 0 が 1 手指すたびに手番を戻す
@@ -34,10 +34,10 @@
 #define MAZE_WATCH_MS			(250)		/* 台の近くにいる人（観戦）を見直す間隔(ms) */
 #define MAZE_OVER_SHOW_MS		(3000)		/* 勝ちを見せている時間(ms)。過ぎると盤を戻して続けられる */
 /* 盤を送る距離（横・縦それぞれ。盤の中心から）。盤の一部でも画面（地図 15×15 マス）にかかる距離は、画面の半分 7.5 マス＋歩きのずれ 1 マス
-   ＋盤の半分（13 タイルなので 6.5 マス）。MARGIN＝12 に盤の半分 MAZE_VIEW_HALF（7）を足した距離でもかかる範囲は足りている。
+   ＋盤の半分（10 タイルなので 5 マス）＝13.5 マス。MARGIN＝9 に盤の半分 MAZE_VIEW_HALF（5）を足した 14 マスでかかる範囲は足りている。
    送り始めは MARGIN＋3、消すのは＋6 で、画面にかかっている間に届かない・先に消えることはない（境目で送る・消すを繰り返さない） */
-#define MAZE_VIEW_MARGIN		(12)
-#define MAZE_VIEW_HALF			((MAZE_TABLE_TILES + 1) / 2)	/* 盤の半分（マス。切り上げ） */
+#define MAZE_VIEW_MARGIN		(9)
+#define MAZE_VIEW_HALF			((MAZE_TABLE_TILES + 1) / 2)	/* 盤の半分（マス。切り上げ。10 タイルなので 5） */
 #define MAZE_VIEW_ENTER			(MAZE_VIEW_MARGIN + 3)
 #define MAZE_VIEW_LEAVE			(MAZE_VIEW_MARGIN + 6)
 
