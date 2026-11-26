@@ -4513,6 +4513,11 @@ static void DrawWindowAPPRAISE(PWNDINFO pWnd)
 			break;
 		}
 		WORD wID = g_aCharInfo[g_nMyCharID]->waItem[anList[nIndex]];
+		if (!ItemIsUnknown (wID)) {
+			/* 鑑定が済んだ行：鑑定後の名前だけ（代金は出さない） */
+			TextOut2 (hDC, 32, 16 + i * 16, (char *)ItemNameOf (wID), RGB (150, 255, 200));
+			continue;
+		}
 		COLORREF clText = (g_aCharInfo[g_nMyCharID]->dwGold >= AppraiseCost (wID)) ? RGB (255, 255, 255) : RGB (150, 150, 150);
 		TextOut2 (hDC, 32, 16 + i * 16, (char *)ItemNameOf (wID), clText);
 		wsprintf (szTmp, "%dG", (int)AppraiseCost (wID));

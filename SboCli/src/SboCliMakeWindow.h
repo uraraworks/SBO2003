@@ -105,6 +105,9 @@ extern PWNDINFO MakeWindowMAKER_CONF					(int nRecipe);				/* 作り手：確認
 extern PWNDINFO MakeWindowAPPRAISE						(int nMaker);				/* 鑑定屋：未鑑定の持ち物の一覧 */
 extern int AppraiseGetList								(int *pnList, int nMax);	/* 未鑑定の持ち物の位置を取得 */
 extern DWORD AppraiseCost								(WORD wItemID);				/* 鑑定の代金（サーバーの AffixAppraiseCost と同じ） */
+extern int AppraiseCountUnknown							(void);						/* 持ち物の未鑑定の数 */
+extern void AppraiseMarkDone							(int nSlot);				/* 今回の鑑定で済んだ持ち物の位置を覚える（一覧に鑑定後の名前を残す） */
+extern int g_nAppraiseSlot;																/* 鑑定を頼んだ持ち物の位置 */
 extern PWNDINFO MakeWindowDUNGEONSEL				(void);								/* 番外編ダンジョン：入る姿の選択 */
 extern PWNDINFO MakeWindowTOWNWARP					(int nMode);						/* 町転送：行き先の選択 */
 extern PWNDINFO MakeWindowQUEST						(int nMode);						/* ギルドの依頼：一覧・進み具合 */

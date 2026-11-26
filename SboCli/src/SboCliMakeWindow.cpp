@@ -117,6 +117,8 @@ PWNDINFO MakeWindowMAKER_CONF					(int);				/* 作り手：確認 */
 PWNDINFO MakeWindowAPPRAISE					(int);				/* 鑑定屋：未鑑定の持ち物の一覧 */
 int AppraiseGetList							(int *, int);		/* 未鑑定の持ち物の位置を取得 */
 DWORD AppraiseCost							(WORD);				/* 鑑定の代金 */
+int AppraiseCountUnknown						(void);				/* 持ち物の未鑑定の数 */
+void AppraiseMarkDone							(int);				/* 今回の鑑定で済んだ持ち物の位置を覚える */
 PWNDINFO MakeWindowDUNGEONSEL				(void);						/* 番外編ダンジョン：入る姿の選択 */
 PWNDINFO MakeWindowTOWNWARP					(int nMode);				/* 町転送：行き先の選択 */
 PWNDINFO MakeWindowQUEST					(int nMode);				/* ギルドの依頼：一覧・進み具合 */
@@ -3778,8 +3780,12 @@ PWNDINFO MakeWindowMAKER_CONF(int nRecipe)
 
 /* ========================================================================= */
 /* 関数名：AppraiseGetList													 */
-/* 内容：持ち物のうち、未鑑定の物の位置を並び順で取得する（件数を返す）		 */
+/* 内容：持ち物のうち、未鑑定の物と、今回の鑑定で済んだ物（鑑定後の名前を残す）の	 */
+/*		 位置を並び順で取得する（件数を返す）								 */
 /* ========================================================================= */
+static BOOL s_abAppraised[MAX_MYITEM];										/* 今回の鑑定屋の画面で鑑定が済んだ持ち物の位置 */
+int g_nAppraiseSlot = -1;													/* 鑑定を頼んだ持ち物の位置 */
+
 int AppraiseGetList(int *pnList, int nMax)
 {
 	int i, nCount = 0;
@@ -3789,7 +3795,7 @@ int AppraiseGetList(int *pnList, int nMax)
 	}
 	for (i = 0; i < MAX_MYITEM; i ++) {
 		WORD wID = g_aCharInfo[g_nMyCharID]->waItem[i];
-		if ((wID == 0) || !ItemIDValid (wID) || !ItemIsUnknown (wID)) {
+		if ((wID == 0) || !ItemIDValid (wID) || (!ItemIsUnknown (wID) && !s_abAppraised[i])) {
 			continue;
 		}
 		if (nCount >= nMax) {
@@ -3799,6 +3805,31 @@ int AppraiseGetList(int *pnList, int nMax)
 		nCount ++;
 	}
 	return nCount;
+}
+
+/* 持ち物の未鑑定の数 */
+int AppraiseCountUnknown(void)
+{
+	int i, nCount = 0;
+
+	if ((g_nMyCharID < 0) || (g_aCharInfo[g_nMyCharID] == NULL)) {
+		return 0;
+	}
+	for (i = 0; i < MAX_MYITEM; i ++) {
+		WORD wID = g_aCharInfo[g_nMyCharID]->waItem[i];
+		if ((wID != 0) && ItemIDValid (wID) && ItemIsUnknown (wID)) {
+			nCount ++;
+		}
+	}
+	return nCount;
+}
+
+/* 今回の鑑定で済んだ持ち物の位置を覚える（一覧に鑑定後の名前を残す） */
+void AppraiseMarkDone(int nSlot)
+{
+	if ((nSlot >= 0) && (nSlot < MAX_MYITEM)) {
+		s_abAppraised[nSlot] = TRUE;
+	}
 }
 
 /* 鑑定の代金（元の値段の 1/10。最低 10 ゴールド） */
@@ -3819,6 +3850,9 @@ PWNDINFO MakeWindowAPPRAISE(int nMaker)
 	int anList[MAX_MYITEM], nCount;
 	PWNDINFO pWnd;
 
+	/* 開き直したら、前に鑑定が済んだ物の表示は消す */
+	ZeroMemory (s_abAppraised, sizeof (s_abAppraised));
+	g_nAppraiseSlot = -1;
 	nCount = AppraiseGetList (anList, MAX_MYITEM);
 
 	pWnd = new WNDINFO;
