@@ -4436,6 +4436,7 @@ typedef struct _MAZEWALLPARA {
 	BYTE		byX;												/* 壁の交点の列（0〜5） */
 	BYTE		byY;												/* 壁の交点の行（0〜5） */
 	BYTE		byOrient;											/* 0=横壁（x〜x+1 列の y 行と y+1 行の境目）・1=縦壁（y〜y+1 行の x 列と x+1 列の境目） */
+	BYTE		byOwner;											/* 置いたプレイヤー（0 / 1。壁の絵の色分け用） */
 } MAZEWALLPARA, *PMAZEWALLPARA;
 typedef struct _CMDPARA_MAZESTATE {
 	BYTE		byCmd;												/* コマンドID */
@@ -4452,6 +4453,8 @@ typedef struct _CMDPARA_MAZESTATE {
 	short		sBoardY;
 	DWORD		dwNpc;												/* 台NPCのテーブルID（盤を見分ける印。受け取る側は台ごとに盤を覚える） */
 	DWORD		dwChar[2];											/* 2 人分の座っているキャラのテーブルID（座っていない側は MAZE_NOCHAR） */
+	WORD		wFloor[2];											/* 床に使うマップパーツID（市松の A・B。B が 0 なら A だけの単色。両方 0 ならコード描画。台詞の床A・床B） */
+	WORD		wGap;												/* 壁の通り道（隙間）の地に使うマップパーツID（0 ならコード描画。台詞の隙間） */
 } CMDPARA_MAZESTATE, *PCMDPARA_MAZESTATE;
 /* CMD_MAZEKEY の中身（クライアント→サーバー。使わない欄は 0） */
 typedef struct _CMDPARA_MAZEKEY {

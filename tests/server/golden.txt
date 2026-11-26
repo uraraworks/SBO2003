@@ -2612,11 +2612,18 @@ maze parse default -5,-9,0,1
 maze parse all 3,-4,5,-2
 maze parse blank -5,-9,3,1
 maze parse clamp 60,-60,0,1
+maze parts default 0,0,0
+maze parts all 5,6,7
+maze parts floorA only 9,0,0
+maze parts gap only 0,0,12
+maze parts clamp 0,65535,0
+maze parts with pos 3,-4,5,-2
 maze isTable q=1 puzzle=0 questnpc=0
 maze other cells seated=0 state=0
 maze sit seated=1 seats=1 got=1 kind=1 seat=1 idle=0 c0=1 c1=1
-maze sit board x=1 y=1 size=64
+maze sit board x=1 y=1 size=82
 maze sit p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2
+maze sit parts floor=5,6 gap=7
 maze busy seatedB=0 msg=1
 maze nowalk moved=0
 maze move up p0=3,5 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2 +1

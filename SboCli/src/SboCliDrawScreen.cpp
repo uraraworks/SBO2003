@@ -877,6 +877,82 @@ static void MazeWallRect(int wx, int wy, int nOrient, int bx, int by, int *px, i
 	}
 }
 
+/* ---- 迷路対戦の見た目の素材 ----------------------------------------------------------------
+   壁の絵：system.png の右端に 16×16 を 14 枚描き足してある（プレイヤー 0＝茶のレンガ・プレイヤー 1＝灰の石レンガ）。
+	 x=224 がプレイヤー 0、x=240 がプレイヤー 1。y は上から
+	   128 横壁の左端 / 144 横壁の中 / 160 横壁の右端 / 176 縦壁の上端 / 208 縦壁の中 / 224 縦壁の下端 / 240 交差点（壁の真ん中の石）
+	 （y=192〜207 は元からある絵があるので飛ばしてある。ほかの使用済みの場所は docs/maze-attack.md）
+	 横壁（80×16）は 左端・中・交差点・中・右端 の 5 枚、縦壁（16×80）は 上端・中・交差点・中・下端 の 5 枚で組む。
+	 黒 (0,0,0) は透過色なので、描き足した絵に黒は使っていない。
+   床・隙間：台詞のパーツID（マップパーツ。(wMap%16*32, wMap/16*32) の 32×32）から描く。隙間は中央の 16×16 をタイル状に敷く */
+#define MAZEART_X0			224		/* system.png の壁の絵の左（プレイヤー 0）。プレイヤー 1 は +16 */
+#define MAZEART_HL			0		/* 絵の番号：横壁の左端 */
+#define MAZEART_HM			1		/* 横壁の中 */
+#define MAZEART_HR			2		/* 横壁の右端 */
+#define MAZEART_VT			3		/* 縦壁の上端 */
+#define MAZEART_VM			4		/* 縦壁の中 */
+#define MAZEART_VB			5		/* 縦壁の下端 */
+#define MAZEART_X			6		/* 交差点（壁の真ん中） */
+static const int s_anMazeArtY[7] = { 128, 144, 160, 176, 208, 224, 240 };	/* 絵の番号ごとの system.png の y */
+
+/* 壁の絵が使えるか（system.png を読めていて、描き足した場所が透明でない） */
+static BOOL MazeWallArtOk(void)
+{
+	int p, k;
+
+	if ((g_pDibSystem == NULL) || (g_pDibSystem->Width () < 256) || (g_pDibSystem->Height () < 256)) {
+		return FALSE;
+	}
+	for (p = 0; p < 2; p ++) {
+		for (k = 0; k < 7; k ++) {
+			int x = MAZEART_X0 + p * 16 + 8, y = s_anMazeArtY[k] + 8;
+			DWORD dwPix = *(PDWORD)(g_pDibSystem->GetBits () + (size_t)(g_pDibSystem->Width () * 4) * (g_pDibSystem->Height () - 1 - y) + x * 4);
+			if ((dwPix & 0x00FFFFFF) == 0) {
+				return FALSE;
+			}
+		}
+	}
+	return TRUE;
+}
+
+/* マップパーツIDが使えるか（0 は「指定なし」、パーツ数以上は範囲外。どちらもコード描画に戻す） */
+static BOOL MazePartOk(WORD wMap)
+{
+	return (g_pDibMapParts != NULL) && (wMap != 0) && (wMap < g_wCountMapParts);
+}
+
+/* 切り取り範囲（s_nPz*）の中だけ矩形転送する。nAlpha が 100 未満なら半透明 */
+static void MazeBlt(int dx, int dy, int cx, int cy, CImg32 *pSrc, int sx, int sy, BOOL bColorKey, int nAlpha)
+{
+	int l = max (dx, s_nPzL), t = max (dy, s_nPzT), r = min (dx + cx, s_nPzR), b = min (dy + cy, s_nPzB);
+
+	if ((r <= l) || (b <= t)) {
+		return;
+	}
+	sx += l - dx;
+	sy += t - dy;
+	if (nAlpha >= 100) {
+		g_pDibDrawMap->Blt (l, t, r - l, b - t, pSrc, sx, sy, bColorKey);
+	} else {
+		g_pDibDrawMap->BltAlpha (l, t, r - l, b - t, pSrc, sx, sy, (BYTE)nAlpha, bColorKey);
+	}
+}
+
+/* 壁 1 枚を system.png の絵で描く（Lock していない状態で呼ぶ。nOwner=0/1 で色違い。nAlpha<100 で半透明） */
+static void MazeWallArt(int wx, int wy, int nOrient, int nOwner, int nAlpha)
+{
+	static const int anH[5] = { MAZEART_HL, MAZEART_HM, MAZEART_X, MAZEART_HM, MAZEART_HR };
+	static const int anV[5] = { MAZEART_VT, MAZEART_VM, MAZEART_X, MAZEART_VM, MAZEART_VB };
+	const int *pn = (nOrient == MAZE_H) ? anH : anV;
+	int k, sx = MAZEART_X0 + ((nOwner == 1) ? 16 : 0);
+
+	for (k = 0; k < 5; k ++) {
+		int x = (nOrient == MAZE_H) ? wx + k * 16 : wx;
+		int y = (nOrient == MAZE_H) ? wy : wy + k * 16;
+		MazeBlt (x, y, 16, 16, g_pDibSystem, sx, s_anMazeArtY[pn[k]], TRUE, nAlpha);
+	}
+}
+
 /* 色付きの丸（半径 nR。中心 cx, cy） */
 static void MazeCircle(HDC hDC, int cx, int cy, int nR, COLORREF cl, COLORREF clEdge, int nAlpha)
 {
@@ -976,16 +1052,135 @@ static void DrawMazePieces(const CMDPARA_MAZESTATE &St, int sx, int sy)
 	}
 }
 
+/* 盤（床・隙間・壁・カーソル）。GDI の描画（Lock 中）と絵の転送（Lock していない時）を分けて順に描く */
+static void DrawMazeBoard(const CMDPARA_MAZESTATE &St, int sx, int sy)
+{
+	BOOL bSeat = (St.byState & MAZESTATE_SEAT) ? TRUE : FALSE;
+	BOOL bWin = (St.byState & MAZESTATE_WIN) ? TRUE : FALSE;
+	BOOL bGapPart = MazePartOk (St.wGap);
+	BOOL bWallArt = MazeWallArtOk ();
+	BOOL bNeedCode = FALSE;
+	int nMode, nCurX, nCurY, nCurO;
+	int i, x, y;
+	HDC hDC;
+
+	GetMazeCursor (&nMode, &nCurX, &nCurY, &nCurO);
+	s_nPzL = s_nMazeL;
+	s_nPzT = s_nMazeT;
+	s_nPzR = s_nMazeR;
+	s_nPzB = s_nMazeB;
+
+	/* 盤の縁と、隙間の地（パーツ指定が無ければ暗い単色） */
+	hDC = g_pDibDrawMap->Lock ();
+	MazeRect (hDC, sx - 4, sy - 4, MAZE_BOARD_DOT + 8, MAZE_BOARD_DOT + 8, RGB (36, 28, 24), 255);
+	if (!bGapPart) {
+		MazeRect (hDC, sx, sy, MAZE_BOARD_DOT, MAZE_BOARD_DOT, RGB (58, 48, 44), 255);
+	}
+	g_pDibDrawMap->Unlock ();
+	if (bGapPart) {
+		/* 隙間：パーツの中央 16×16 を、通り道（16 ドット幅の溝と交差点）にだけ敷く（盤を 16 ドットで割った格子のうち、マスにかからない所） */
+		int nSx = (St.wGap % 16) * 32 + 8, nSy = (St.wGap / 16) * 32 + 8;
+		for (y = 0; y < MAZE_BOARD_DOT / MAZE_GAP_DOT; y ++) {
+			for (x = 0; x < MAZE_BOARD_DOT / MAZE_GAP_DOT; x ++) {
+				if ((x % 3 != 2) && (y % 3 != 2)) {
+					continue;		/* マスの上（床が覆う） */
+				}
+				MazeBlt (sx + x * MAZE_GAP_DOT, sy + y * MAZE_GAP_DOT, MAZE_GAP_DOT, MAZE_GAP_DOT, g_pDibMapParts, nSx, nSy, FALSE, 100);
+			}
+		}
+	}
+
+	/* 床：マスごとに、市松で床A・床B のパーツ（B が無ければ A だけ。どちらも使えないマスはコード描画） */
+	for (y = 0; y < MAZE_BOARD_CELLS; y ++) {
+		for (x = 0; x < MAZE_BOARD_CELLS; x ++) {
+			WORD wA = St.wFloor[0], wB = St.wFloor[1];
+			WORD wMap = ((x + y) & 1) ? wB : wA, wOther = ((x + y) & 1) ? wA : wB;
+			if (!MazePartOk (wMap)) {
+				wMap = wOther;
+			}
+			if (MazePartOk (wMap)) {
+				MazeBlt (sx + x * MAZE_PITCH_DOT, sy + y * MAZE_PITCH_DOT, MAZE_CELL_DOT, MAZE_CELL_DOT, g_pDibMapParts,
+					(wMap % 16) * 32, (wMap / 16) * 32, FALSE, 100);
+			} else {
+				bNeedCode = TRUE;
+			}
+		}
+	}
+	hDC = g_pDibDrawMap->Lock ();
+	if (bNeedCode) {
+		for (y = 0; y < MAZE_BOARD_CELLS; y ++) {
+			for (x = 0; x < MAZE_BOARD_CELLS; x ++) {
+				int cx0 = sx + x * MAZE_PITCH_DOT, cy0 = sy + y * MAZE_PITCH_DOT;
+				WORD wMap = ((x + y) & 1) ? St.wFloor[1] : St.wFloor[0], wOther = ((x + y) & 1) ? St.wFloor[0] : St.wFloor[1];
+				COLORREF cl = ((x + y) & 1) ? RGB (200, 188, 158) : RGB (226, 216, 186);
+				if (MazePartOk (wMap) || MazePartOk (wOther)) {
+					continue;
+				}
+				MazeRect (hDC, cx0, cy0, MAZE_CELL_DOT, MAZE_CELL_DOT, cl, 255);
+				MazeRect (hDC, cx0, cy0, MAZE_CELL_DOT, 1, RGB (244, 238, 214), 255);							/* マスの上の縁を明るく */
+				MazeRect (hDC, cx0, cy0 + MAZE_CELL_DOT - 1, MAZE_CELL_DOT, 1, RGB (150, 138, 110), 255);		/* 下の縁を暗く */
+			}
+		}
+	}
+	/* 座っている本人のゴール行（盤の上端のマスの行）をうっすら色づける */
+	if (bSeat) {
+		MazeRect (hDC, sx, sy, MAZE_BOARD_DOT, MAZE_CELL_DOT, RGB (255, 200, 40), 90);
+	}
+	g_pDibDrawMap->Unlock ();
+
+	/* 置かれた壁（絵が使えなければコード描画のレンガ） */
+	if (bWallArt) {
+		for (i = 0; i < St.byWallCount && i < MAZEPARA_WALL_MAX; i ++) {
+			int wx, wy, wcx, wcy;
+			MazeWallRect (St.aWall[i].byX, St.aWall[i].byY, St.aWall[i].byOrient, sx, sy, &wx, &wy, &wcx, &wcy);
+			MazeWallArt (wx, wy, St.aWall[i].byOrient, St.aWall[i].byOwner, 100);
+		}
+	} else if (St.byWallCount > 0) {
+		hDC = g_pDibDrawMap->Lock ();
+		for (i = 0; i < St.byWallCount && i < MAZEPARA_WALL_MAX; i ++) {
+			int wx, wy, wcx, wcy;
+			MazeWallRect (St.aWall[i].byX, St.aWall[i].byY, St.aWall[i].byOrient, sx, sy, &wx, &wy, &wcx, &wcy);
+			MazeBrick (hDC, wx, wy, wcx, wcy);
+		}
+		g_pDibDrawMap->Unlock ();
+	}
+
+	/* 壁を置くカーソル（半透明の壁。置けない位置は赤い壁と ✕）。座っている本人はプレイヤー 0 */
+	if (bSeat && (nMode == MAZEMODE_WALL) && !bWin) {
+		int wx, wy, wcx, wcy;
+		BOOL bOk = (St.byWallLeft[0] > 0) && MazeCanPlaceWall (&St, nCurX, nCurY, nCurO);
+		MazeWallRect (nCurX, nCurY, nCurO, sx, sy, &wx, &wy, &wcx, &wcy);
+		if (bWallArt) {
+			MazeWallArt (wx, wy, nCurO, 0, 100);		/* 壁の絵に明るい色を重ねて、置いた壁と見分ける（半透明だと隙間の土に紛れる） */
+		}
+		hDC = g_pDibDrawMap->Lock ();
+		if (bOk) {
+			MazeRect (hDC, wx, wy, wcx, wcy, RGB (255, 235, 150), bWallArt ? 120 : 150);
+		} else {
+			MazeRect (hDC, wx, wy, wcx, wcy, RGB (255, 70, 60), 120);
+			int mx = wx + wcx / 2, my = wy + wcy / 2, k;
+			for (k = -6; k <= 6; k ++) {
+				MazeRect (hDC, mx + k - 1, my + k - 1, 3, 3, RGB (255, 40, 40), 255);
+				MazeRect (hDC, mx + k - 1, my - k - 1, 3, 3, RGB (255, 40, 40), 255);
+			}
+		}
+		g_pDibDrawMap->Unlock ();
+	}
+}
+
 static void DrawMazeOne(const CMDPARA_MAZESTATE &St, int sx, int sy, BOOL bTop)
 {
 	BOOL bSeat = (St.byState & MAZESTATE_SEAT) ? TRUE : FALSE;
 	BOOL bWin = (St.byState & MAZESTATE_WIN) ? TRUE : FALSE;
 	int nMode, nCurX, nCurY, nCurO;
-	int i, x, y;
 	HDC hDC;
 	HFONT hFontOld;
 	char szTmp[96];
 
+	if (!bTop) {
+		DrawMazeBoard (St, sx, sy);
+		return;
+	}
 	GetMazeCursor (&nMode, &nCurX, &nCurY, &nCurO);
 	s_nPzL = s_nMazeL;
 	s_nPzT = s_nMazeT;
@@ -995,51 +1190,6 @@ static void DrawMazeOne(const CMDPARA_MAZESTATE &St, int sx, int sy, BOOL bTop)
 	hDC = g_pDibDrawMap->Lock ();
 	hFontOld = (HFONT)SelectObject (hDC, g_hFont14);
 	SetBkMode (hDC, TRANSPARENT);
-
-	if (!bTop) {
-		/* 盤の縁 */
-		MazeRect (hDC, sx - 4, sy - 4, MAZE_BOARD_DOT + 8, MAZE_BOARD_DOT + 8, RGB (36, 28, 24), 255);
-		/* 床（全体を暗い溝にして、マスだけ市松に明るく） */
-		MazeRect (hDC, sx, sy, MAZE_BOARD_DOT, MAZE_BOARD_DOT, RGB (58, 48, 44), 255);
-		for (y = 0; y < MAZE_BOARD_CELLS; y ++) {
-			for (x = 0; x < MAZE_BOARD_CELLS; x ++) {
-				int cx0 = sx + x * MAZE_PITCH_DOT, cy0 = sy + y * MAZE_PITCH_DOT;
-				COLORREF cl = ((x + y) & 1) ? RGB (200, 188, 158) : RGB (226, 216, 186);
-				MazeRect (hDC, cx0, cy0, MAZE_CELL_DOT, MAZE_CELL_DOT, cl, 255);
-				MazeRect (hDC, cx0, cy0, MAZE_CELL_DOT, 1, RGB (244, 238, 214), 255);							/* マスの上の縁を明るく */
-				MazeRect (hDC, cx0, cy0 + MAZE_CELL_DOT - 1, MAZE_CELL_DOT, 1, RGB (150, 138, 110), 255);		/* 下の縁を暗く */
-			}
-		}
-		/* 座っている本人のゴール行（盤の上端のマスの行）をうっすら色づける */
-		if (bSeat) {
-			MazeRect (hDC, sx, sy, MAZE_BOARD_DOT, MAZE_CELL_DOT, RGB (255, 200, 40), 90);
-		}
-		/* 置かれた壁 */
-		for (i = 0; i < St.byWallCount && i < MAZEPARA_WALL_MAX; i ++) {
-			int wx, wy, wcx, wcy;
-			MazeWallRect (St.aWall[i].byX, St.aWall[i].byY, St.aWall[i].byOrient, sx, sy, &wx, &wy, &wcx, &wcy);
-			MazeBrick (hDC, wx, wy, wcx, wcy);
-		}
-		/* 壁を置くカーソル（半透明の壁。置けない位置は赤い壁と ✕） */
-		if (bSeat && (nMode == MAZEMODE_WALL) && !bWin) {
-			int wx, wy, wcx, wcy;
-			BOOL bOk = (St.byWallLeft[0] > 0) && MazeCanPlaceWall (&St, nCurX, nCurY, nCurO);
-			MazeWallRect (nCurX, nCurY, nCurO, sx, sy, &wx, &wy, &wcx, &wcy);
-			if (bOk) {
-				MazeRect (hDC, wx, wy, wcx, wcy, RGB (255, 235, 150), 150);
-			} else {
-				MazeRect (hDC, wx, wy, wcx, wcy, RGB (255, 70, 60), 120);
-				int mx = wx + wcx / 2, my = wy + wcy / 2, k;
-				for (k = -6; k <= 6; k ++) {
-					MazeRect (hDC, mx + k - 1, my + k - 1, 3, 3, RGB (255, 40, 40), 255);
-					MazeRect (hDC, mx + k - 1, my - k - 1, 3, 3, RGB (255, 40, 40), 255);
-				}
-			}
-		}
-		SelectObject (hDC, hFontOld);
-		g_pDibDrawMap->Unlock ();
-		return;
-	}
 
 	/* ここから最前面の文字（座っている本人にだけ） */
 	if (bSeat) {

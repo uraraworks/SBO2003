@@ -19076,6 +19076,21 @@ static void TestMaze(const std::vector<int> &aLogin)
 		printf("maze parse blank %d,%d,%d,%d\n", dx, dy, sdx, sdy);
 		MazeParseTable("@k999,-999,x,2", &dx, &dy, &sdx, &sdy);
 		printf("maze parse clamp %d,%d,%d,%d\n", dx, dy, sdx, sdy);
+		{
+			unsigned short wA, wB, wG;
+			MazeParseParts("@k", &wA, &wB, &wG);
+			printf("maze parts default %d,%d,%d\n", wA, wB, wG);
+			MazeParseParts("@k,,,,5,6,7", &wA, &wB, &wG);
+			printf("maze parts all %d,%d,%d\n", wA, wB, wG);
+			MazeParseParts("@k1,2,3,4,9", &wA, &wB, &wG);
+			printf("maze parts floorA only %d,%d,%d\n", wA, wB, wG);
+			MazeParseParts("@k,,,,,,12", &wA, &wB, &wG);
+			printf("maze parts gap only %d,%d,%d\n", wA, wB, wG);
+			MazeParseParts("@k,,,,-3,70000,x", &wA, &wB, &wG);
+			printf("maze parts clamp %d,%d,%d\n", wA, wB, wG);
+			MazeParseTable("@k3,-4,5,-2,8,9,10", &dx, &dy, &sdx, &sdy);
+			printf("maze parts with pos %d,%d,%d,%d\n", dx, dy, sdx, sdy);
+		}
 		NearNpcOpen(pA, "@k");
 		PCHARINFO pPlain = s_aNearNpc.back();
 		NearNpcOpen(pA, "@p");
@@ -19095,7 +19110,7 @@ static void TestMaze(const std::vector<int> &aLogin)
 
 	/* 台（既定：盤の左上 -5,-9・座る場所は台NPCの 1 つ下）。A のマスに置く */
 	QuestMovePC(pA, (int)dwMap, (int)dwX, (int)dwY);
-	NearNpcOpen(pA, "@k");
+	NearNpcOpen(pA, "@k,,,,5,6,7");											/* 見た目のパーツID（床A=5・床B=6・隙間=7）つきの台 */
 	PCHARINFO pNpc = s_aNearNpc.back();
 	DWORD dwNpc = pNpc->dwTblID;
 	MockTrace(1);
@@ -19125,6 +19140,7 @@ static void TestMaze(const std::vector<int> &aLogin)
 		printf("maze sit board x=%d y=%d size=%d\n", bOK ? St.sBoardX == (short)(((int)dwX - 5) * 32) : -1,
 			bOK ? St.sBoardY == (short)(((int)dwY - 9) * 32) : -1, (int)sizeof(CMDPARA_MAZESTATE));
 		printf("maze sit %s\n", MazeBrief(nConnA, dwNpc).c_str());
+		printf("maze sit parts floor=%d,%d gap=%d\n", bOK ? St.wFloor[0] : -1, bOK ? St.wFloor[1] : -1, bOK ? St.wGap : -1);
 	}
 
 	/* 4. 使用中の台には座れない（B を座る場所へ呼ぶ）・座っている間は歩けない */

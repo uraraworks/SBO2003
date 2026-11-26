@@ -31,6 +31,7 @@ static const int g_anMazeDy[4] = { -1, 1, 0, 0 };
 /* 壁 1 枚（交点 (x, y) は 0..MAZE_SIZE-2、nOrient は MAZE_H / MAZE_V） */
 struct MazeWall {
 	int nX, nY, nOrient;
+	int nOwner;						/* 置いたプレイヤー（0 / 1。壁の絵の色分けに使う） */
 };
 
 /* ========================================================================= */
@@ -196,6 +197,7 @@ struct MazeGame {
 		if (nWinner != MAZE_NO_WINNER || who != byTurn || nWallLeft[who] <= 0) return false;
 		if (!CanPlaceWall (x, y, orient)) return false;
 		aWall[nWallCount].nX = x;  aWall[nWallCount].nY = y;  aWall[nWallCount].nOrient = orient;
+		aWall[nWallCount].nOwner = who;
 		nWallCount ++;
 		nWallLeft[who] --;
 		byTurn = 1 - who;

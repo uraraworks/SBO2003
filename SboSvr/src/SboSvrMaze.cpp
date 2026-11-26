@@ -53,6 +53,7 @@ typedef struct _MAZETABLE {
 	DWORD		dwMapID;					/* 台NPCのいるマップ */
 	int			nDx, nDy;					/* 盤の左上：台のマスの左上から（タイル） */
 	int			nSdx, nSdy;					/* 座る場所：台のマスから（マス） */
+	WORD		wFloorA, wFloorB, wGap;		/* 見た目のマップパーツID（床の市松 A・B、隙間。0 ならクライアントがコード描画） */
 	DWORD		dwChar;						/* 座っているキャラのテーブルID（いなければ MAZE_NOSEAT） */
 	DWORD		dwPID;						/* そのキャラのプレイヤーID（テーブルIDの使い回しを見分ける） */
 	MazeGame	Game;						/* ゲーム（待機中は初期配置） */
@@ -169,10 +170,14 @@ static void BuildState(const MAZETABLE &Table, BYTE byKind, CMDPARA_MAZESTATE *p
 		pOut->aWall[i].byX = (BYTE)g.aWall[i].nX;
 		pOut->aWall[i].byY = (BYTE)g.aWall[i].nY;
 		pOut->aWall[i].byOrient = (BYTE)g.aWall[i].nOrient;
+		pOut->aWall[i].byOwner = (BYTE)g.aWall[i].nOwner;
 	}
 	if (!Table.bIdle) {
 		pOut->dwChar[0] = Table.dwChar;			/* 座った人がプレイヤー 0。プレイヤー 1 は不在（MAZE_NOCHAR） */
 	}
+	pOut->wFloor[0] = Table.wFloorA;
+	pOut->wFloor[1] = Table.wFloorB;
+	pOut->wGap = Table.wGap;
 	if (pNpc) {
 		MazeBoardPos ((int)pNpc->dwX, (int)pNpc->dwY, Table.nDx, Table.nDy, &nX, &nY);
 		pOut->sBoardX = (short)nX;
@@ -345,6 +350,7 @@ static void InitTable(MAZETABLE *pTable, PCHARINFO pNpc, DWORD dwMapID)
 	pTable->dwNpc = pNpc->dwTblID;
 	pTable->dwMapID = dwMapID;
 	MazeParseTable (pNpc->pszNpcSpeech, &pTable->nDx, &pTable->nDy, &pTable->nSdx, &pTable->nSdy);
+	MazeParseParts (pNpc->pszNpcSpeech, &pTable->wFloorA, &pTable->wFloorB, &pTable->wGap);
 	pTable->dwChar = MAZE_NOSEAT;
 	pTable->dwPID = 0;
 	pTable->bIdle = TRUE;
