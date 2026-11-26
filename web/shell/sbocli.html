@@ -1573,7 +1573,7 @@
 		--bg-ratio: 2;
 		--town-bottom: 0.42;
 		--bg-w: max(100vw, calc(100dvh / 2));
-		--bg-end: #cdd09b;
+		--bg-end: #ccd496;
 		--bg-h: calc(var(--bg-w) * var(--bg-ratio));
 		display: block;
 		overflow-x: hidden;
@@ -1645,8 +1645,8 @@
 		}
 	}
 	/* PC・横長（幅 900px 以上・高さ 560px 以上・横長）：絵は cover/center で固定。ロゴ・町（上〜約 50%）には何も重ねない。
-	   遊ぶボタンは小道の中央（絵の縦 83% 付近）、アカウント・管理は左下の草原、お知らせは右下の草原、リンクは最下段の帯。
-	   橋の上の 2 人（幅 49〜56%・縦 37〜46%）と小道の右の 2 人（幅 61〜74%・縦 63〜82%）には何も重ねない。 */
+	   遊ぶボタンは小道の中央（絵の縦 78〜88%）、アカウント・管理は左下の草原、お知らせは右下の草原、リンクは最下段の帯。
+	   橋の上の 2 人（幅 52〜57%・縦 37〜42%）と小道の右の 2 人（幅 60〜65%・縦 57〜67%）には何も重ねない。 */
 	@media (min-width: 900px) and (min-height: 560px) and (min-aspect-ratio: 5/4) {
 		body.sbo-loginscr #sbo-quick.sbo-show {
 			display: flex;
@@ -1692,13 +1692,14 @@
 			--ox: calc((100vw - var(--iw)) / 2);
 			--sbo-pt: min(calc(var(--ih) * 0.55), 58vh);
 		}
-		/* 遊ぶボタン：右の人物（縦 63〜82%）の下、絵の縦 83〜90% あたりの小道の中央。低い画面ではリンクの帯の上に収める */
+		/* 遊ぶボタン：小道の中央（横 50%）、絵の縦 88% の位置を下端に。右の人物（横 60%〜・縦 57〜67%）の下。
+		   低い画面ではリンクの帯の上に収める */
 		body.sbo-loginscr .sbo-home .sbo-col-play {
 			position: absolute;
-			left: 50%; top: min(calc(var(--ih) * 0.9), calc(100vh - 60px));
+			left: 50%; top: min(calc(var(--ih) * 0.88), calc(100vh - 68px));
 			transform: translate(-50%, -100%);
-			/* 高さが足りず絵の縦 83% まで下げられない時、右の人物（横 61%〜）にかからないよう幅を絞る */
-			width: min(420px, max(250px, calc(2 * (var(--ox) + var(--iw) * 0.61 - 50vw) - 24px)));
+			/* 幅 300〜400px。高さが足りず上へ上がる時は、右の人物（横 59%〜）にかからないよう幅を絞る */
+			width: min(400px, max(250px, calc(2 * (var(--ox) + var(--iw) * 0.59 - 50vw) - 24px)));
 			gap: 6px;
 		}
 		body.sbo-loginscr .sbo-home .sbo-col-play .sbo-btn {
@@ -1724,7 +1725,7 @@
 			left: 12px;
 			width: min(300px, max(180px, calc(var(--ox) + var(--iw) * 0.22 - 12px)));
 		}
-		/* 右の草原（絵の横 78〜100%）に。右の人物（61〜74%）とは重ならない */
+		/* 右の草原（絵の横 78〜100%）に。右の人物（60〜65%）とは重ならない */
 		body.sbo-loginscr .sbo-home .sbo-news {
 			right: 12px;
 			width: min(300px, max(180px, calc(var(--ox) + var(--iw) * 0.22 - 12px)));
@@ -1732,8 +1733,9 @@
 		body.sbo-loginscr .sbo-news:not(.sbo-has) { display: none; }
 		body.sbo-loginscr .sbo-home .sbo-links {
 			position: absolute;
-			/* 右端は小道の右の人物（横 61%〜）の手前まで。足元にかからないよう、中央ではなく左寄せ気味に置く */
-			right: max(12px, calc(100vw - var(--ox) - var(--iw) * 0.61 + 12px));
+			/* 最下段の中央 */
+			left: 50%;
+			transform: translateX(-50%);
 			bottom: max(8px, env(safe-area-inset-bottom));
 			width: max-content;
 			max-width: calc(100% - 24px);
