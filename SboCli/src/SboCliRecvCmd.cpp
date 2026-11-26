@@ -3968,6 +3968,7 @@ void RecvDataProcAPPRAISE(PBYTE pData, DWORD dwDataSize)
 	PCMDPARA_APPRAISE pPara = (PCMDPARA_APPRAISE)pData;
 	PWNDINFO pWndList = NULL;
 	LPCSTR pszMsg;
+	char szMsgDone[MAX_MAKERMSG + 64];
 	int i;
 
 	if (dwDataSize < sizeof (CMDPARA_APPRAISE)) {
@@ -3989,10 +3990,18 @@ void RecvDataProcAPPRAISE(PBYTE pData, DWORD dwDataSize)
 
 	switch (pPara->byResult) {
 	case APPRAISERESULT_OK:
-		pszMsg = g_aMakerInfo[g_nProcMakerID].szMsgDone;
-		if (pszMsg[0] == 0) {
-			pszMsg = "鑑定できました。@2";
+		/* 鑑定が済んだ行は、鑑定後の名前を残す（代金は消す）。台詞の後に、まだ未鑑定があれば聞き、無ければ見送る */
+		AppraiseMarkDone (g_nAppraiseSlot);
+		strncpy (szMsgDone, g_aMakerInfo[g_nProcMakerID].szMsgDone[0] ? g_aMakerInfo[g_nProcMakerID].szMsgDone : "鑑定できました。@2", MAX_MAKERMSG - 1);
+		szMsgDone[MAX_MAKERMSG - 1] = 0;
+		{
+			int nLen = (int)strlen (szMsgDone);
+			if ((nLen >= 2) && (szMsgDone[nLen - 2] == '@') && (szMsgDone[nLen - 1] == '2')) {
+				szMsgDone[nLen - 2] = 0;
+			}
 		}
+		strncat (szMsgDone, (AppraiseCountUnknown () > 0) ? "@1他にも鑑定するものはあるかい？@2" : "@1また何かあればもっておいで。@2", sizeof (szMsgDone) - strlen (szMsgDone) - 1);
+		pszMsg = szMsgDone;
 		break;
 	case APPRAISERESULT_LACKGOLD:
 		pszMsg = "代金が足りないようです。@2";

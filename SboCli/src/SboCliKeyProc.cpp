@@ -3058,9 +3058,22 @@ static void KeyProcAPPRAISE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		if (pWnd->nType2 == MAKERWND_APPRAISE) {
 			int nIndex = (int)pWnd->byData1 + pWnd->nData1;
 			if ((nIndex < 0) || (nIndex >= nCount)) {
+				if (nCount == 0) {
+					/* 全部鑑定して選ぶ物が無くなったら、決定でも閉じる（取消だけだと分かりにくい） */
+					EraseWindow (pWnd);
+					g_bDraw = TRUE;
+				}
 				return;
 			}
 			WORD wID = g_aCharInfo[g_nMyCharID]->waItem[anList[nIndex]];
+			if (!ItemIsUnknown (wID)) {
+				/* 鑑定が済んだ行（名前だけ残している）。もう鑑定する物が無ければ決定でも閉じる */
+				if (AppraiseCountUnknown () == 0) {
+					EraseWindow (pWnd);
+					g_bDraw = TRUE;
+				}
+				return;
+			}
 			DWORD dwCost = AppraiseCost (wID);
 			char szTmp[256];
 
@@ -3086,6 +3099,7 @@ static void KeyProcAPPRAISE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			EraseWindow (pWnd);
 			g_dwActiveMsgID = pWndList->dwID;
 			if (bYes && (nNo >= 0) && (nNo < MAX_MYITEM)) {
+				g_nAppraiseSlot = nNo;
 				SendCmdAPPRAISE ((BYTE)g_nProcMakerID, (BYTE)nNo);
 				g_bProcMakerWait = TRUE;
 				g_dwProcMakerWaitTime = timeGetTime ();
@@ -9467,8 +9481,7 @@ void CmdProcHanasu(PWNDINFO pWnd)
 
 		} else if (g_aMakerInfo[nMaker].byKind == MAKERKIND_APPRAISE) {
 			/* 鑑定屋：手持ちの未鑑定の物を選ぶ */
-			int anAppr[MAX_MYITEM];
-			if (AppraiseGetList (anAppr, MAX_MYITEM) == 0) {
+			if (AppraiseCountUnknown () == 0) {
 				pWndTmp = MakeWindowMSG ("鑑定してほしい物がないようです。@2", TRUE);
 			} else {
 				g_WndInfo.Add (MakeWindowGOLD ());
