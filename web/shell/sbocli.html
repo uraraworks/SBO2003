@@ -1223,7 +1223,7 @@
 			linear-gradient(180deg, rgba(120, 200, 235, 0.55) 0%, rgba(150, 215, 170, 0.62) 55%, rgba(80, 170, 110, 0.72) 100%);
 		line-height: 1.4;
 		z-index: 50;
-		container-type: size;	/* 挿絵の高さを、この画面（仮想パッドの端末では上のゲーム画面だけ）の高さに合わせる */
+		container-type: size;	/* 挿絵の高さを、この画面の高さに合わせる */
 	}
 	#sbo-quick.sbo-show {
 		display: flex;
@@ -1314,20 +1314,15 @@
 		display: block;
 		width: auto;
 		height: auto;
-		max-width: min(100%, 300px);
-		max-height: min(26vh, 26cqh, 170px);
+		max-width: min(100%, 340px);
+		max-height: min(30vh, 30cqh, 240px);
 		margin: 0 auto;
 		pointer-events: none;
 		user-select: none;
 		-webkit-user-drag: none;
 		filter: drop-shadow(0 3px 6px rgba(20, 60, 40, 0.35));
 	}
-	@media (max-height: 700px) {
-		.sbo-art {
-			display: none;
-		}
-	}
-	@container (max-height: 340px) {
+	@container (max-height: 300px) {
 		.sbo-art {
 			display: none;
 		}
@@ -1543,20 +1538,20 @@
 	/* PC・横長（幅 900px 以上）は 3 列：左=アカウント、中央=遊ぶ、右=お知らせ、下=リンク */
 	@media (min-width: 900px) and (orientation: landscape) {
 		/* 仮想パッドの端末ではゲーム画面の中だけに出すので、PC（パッド無し）だけ 3 列にして画面いっぱいに広げる */
-		body:not(.sbo-pad) #sbo-quick {
+		body:is(:not(.sbo-pad), .sbo-loginscr) #sbo-quick {
 			position: fixed;
 			background:
 				url(/login/login-bg-pc.webp?v=@@SBO_BUILD_COMMIT@@) center / cover no-repeat,
 				linear-gradient(180deg, rgba(120, 200, 235, 0.98) 0%, rgba(150, 215, 170, 0.98) 55%, rgba(80, 170, 110, 0.98) 100%);
 		}
-		body:not(.sbo-pad) #sbo-quick .sbo-card.sbo-home {
+		body:is(:not(.sbo-pad), .sbo-loginscr) #sbo-quick .sbo-card.sbo-home {
 			width: 100%;
 			max-width: 1100px;
 			display: none;
 			padding: 16px 24px;
 		}
-		body:not(.sbo-pad) #sbo-quick.sbo-back:not(.sbo-id) #sbo-quick-back,
-		body:not(.sbo-pad) #sbo-quick.sbo-new:not(.sbo-id) #sbo-quick-new {
+		body:is(:not(.sbo-pad), .sbo-loginscr) #sbo-quick.sbo-back:not(.sbo-id) #sbo-quick-back,
+		body:is(:not(.sbo-pad), .sbo-loginscr) #sbo-quick.sbo-new:not(.sbo-id) #sbo-quick-new {
 			display: grid;
 			grid-template-columns: minmax(240px, 1fr) minmax(300px, 1.1fr) minmax(240px, 1fr);
 			grid-template-areas: "hero hero hero" "acc play news" "links links links";
@@ -1564,22 +1559,114 @@
 			align-items: center;
 			gap: 14px 20px;
 		}
-		body:not(.sbo-pad) .sbo-home > :first-child,
-		body:not(.sbo-pad) .sbo-home > :last-child {
+		body:is(:not(.sbo-pad), .sbo-loginscr) .sbo-home > :first-child,
+		body:is(:not(.sbo-pad), .sbo-loginscr) .sbo-home > :last-child {
 			margin: 0;
 		}
-		body:not(.sbo-pad) .sbo-art {
+		body:is(:not(.sbo-pad), .sbo-loginscr) .sbo-art {
 			max-width: min(100%, 560px);
 			max-height: 38vh;
 		}
-		body:not(.sbo-pad) .sbo-home .sbo-hero { grid-area: hero; }
-		body:not(.sbo-pad) .sbo-home .sbo-col-acc { grid-area: acc; align-self: center; }
-		body:not(.sbo-pad) .sbo-home .sbo-col-play { grid-area: play; }
-		body:not(.sbo-pad) .sbo-home .sbo-news { grid-area: news; align-self: center; }
-		body:not(.sbo-pad) .sbo-home .sbo-links { grid-area: links; justify-self: center; }
-		body:not(.sbo-pad) .sbo-news:not(.sbo-has) {
+		body:is(:not(.sbo-pad), .sbo-loginscr) .sbo-home .sbo-hero { grid-area: hero; }
+		body:is(:not(.sbo-pad), .sbo-loginscr) .sbo-home .sbo-col-acc { grid-area: acc; align-self: center; }
+		body:is(:not(.sbo-pad), .sbo-loginscr) .sbo-home .sbo-col-play { grid-area: play; }
+		body:is(:not(.sbo-pad), .sbo-loginscr) .sbo-home .sbo-news { grid-area: news; align-self: center; }
+		body:is(:not(.sbo-pad), .sbo-loginscr) .sbo-home .sbo-links { grid-area: links; justify-self: center; }
+		body:is(:not(.sbo-pad), .sbo-loginscr) .sbo-news:not(.sbo-has) {
 			display: none;
 		}
+	}
+	/* ===================================================================
+	   ログインするまで（#sbo-quick が出ている間 = body.sbo-loginscr）は、
+	   スマホ・タブレットでも仮想パッドなど下の部品を隠し、ホーム画面をビューポート全体に広げる。
+	   カードは指で直接押せるのでパッドは要らない。visibility なのでレイアウト（ゲーム画面の大きさ）は動かさない
+	   =================================================================== */
+	body.sbo-loginscr #sbo-pad,
+	body.sbo-loginscr #sbo-pad *,
+	body.sbo-loginscr #sbo-chat-box,
+	body.sbo-loginscr #sbo-chat-open,
+	body.sbo-loginscr #sbo-chat-sheet,
+	body.sbo-loginscr #sbo-chat-panel,
+	body.sbo-loginscr #sbo-shot-pad,
+	body.sbo-loginscr #sbo-rec-pad,
+	body.sbo-loginscr #sbo-gp-open,
+	body.sbo-loginscr #sbo-rec-badge {
+		visibility: hidden !important;
+		pointer-events: none !important;
+	}
+	body.sbo-loginscr #sbo-quick {
+		position: fixed;
+		left: 0; top: 0; right: 0; bottom: 0;
+		width: 100%;
+		height: 100vh;
+		height: 100dvh;
+		z-index: 900;
+		background:
+			url(/login/login-bg-mobile.webp?v=@@SBO_BUILD_COMMIT@@) center top / cover no-repeat,
+			linear-gradient(180deg, rgba(120, 200, 235, 0.98) 0%, rgba(150, 215, 170, 0.98) 55%, rgba(80, 170, 110, 0.98) 100%);
+	}
+	@media (orientation: landscape) {
+		body.sbo-loginscr #sbo-quick {
+			background:
+				url(/login/login-bg-pc.webp?v=@@SBO_BUILD_COMMIT@@) center / cover no-repeat,
+				linear-gradient(180deg, rgba(120, 200, 235, 0.98) 0%, rgba(150, 215, 170, 0.98) 55%, rgba(80, 170, 110, 0.98) 100%);
+		}
+	}
+	body.sbo-loginscr #sbo-quick .sbo-card.sbo-home {
+		padding: calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
+		gap: 14px;
+	}
+	/* 指で押しやすい大きさ（44px 以上） */
+	body.sbo-loginscr #sbo-quick .sbo-btn,
+	body.sbo-loginscr #sbo-quick .sbo-acc-gear,
+	body.sbo-loginscr #sbo-quick .sbo-manage .sbo-mbtn,
+	body.sbo-loginscr #sbo-quick .sbo-links .sbo-link,
+	body.sbo-loginscr #sbo-quick .sbo-news-more {
+		min-height: 44px;
+		box-sizing: border-box;
+	}
+	body.sbo-loginscr #sbo-quick #sbo-id-forgot {
+		min-height: 44px;
+	}
+	body.sbo-loginscr #sbo-quick .sbo-links .sbo-link,
+	body.sbo-loginscr #sbo-quick .sbo-news-more {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding-left: 10px;
+		padding-right: 10px;
+	}
+	body.sbo-loginscr #sbo-quick .sbo-btn.sbo-play {
+		min-height: 60px;
+	}
+	/* スマホ横持ち（短い画面）は 3 列にして 1 画面に収める */
+	@media (orientation: landscape) and (max-width: 899px) and (min-width: 640px) {
+		body.sbo-loginscr #sbo-quick .sbo-card.sbo-home {
+			width: 100%;
+			max-width: 100%;
+			padding-top: calc(8px + env(safe-area-inset-top));
+			padding-bottom: calc(8px + env(safe-area-inset-bottom));
+		}
+		body.sbo-loginscr #sbo-quick.sbo-back:not(.sbo-id) #sbo-quick-back,
+		body.sbo-loginscr #sbo-quick.sbo-new:not(.sbo-id) #sbo-quick-new {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 1fr);
+			grid-template-areas: "hero hero hero" "acc play news" "links links links";
+			align-content: center;
+			align-items: center;
+			gap: 8px 14px;
+		}
+		body.sbo-loginscr .sbo-home > :first-child,
+		body.sbo-loginscr .sbo-home > :last-child {
+			margin: 0;
+		}
+		body.sbo-loginscr .sbo-home .sbo-hero { grid-area: hero; }
+		body.sbo-loginscr .sbo-home .sbo-col-acc { grid-area: acc; align-self: center; }
+		body.sbo-loginscr .sbo-home .sbo-col-play { grid-area: play; }
+		body.sbo-loginscr .sbo-home .sbo-news { grid-area: news; align-self: center; }
+		body.sbo-loginscr .sbo-home .sbo-links { grid-area: links; justify-self: center; }
+		body.sbo-loginscr .sbo-news:not(.sbo-has) { display: none; }
+		body.sbo-loginscr .sbo-art { max-height: 22vh; max-width: min(100%, 300px); }
 	}
 	.sbo-col-acc,
 	.sbo-col-play {
@@ -6480,6 +6567,8 @@
 			focusCanvas();
 		}
 		forgot.classList.toggle('sbo-show', state === 1 && !bShow);
+		/* ログインするまで（接続を始めるまで）は、スマホの仮想パッドなど下の部品を隠して画面いっぱいにする */
+		document.body.classList.toggle('sbo-loginscr', state === 1);
 	}, 250);
 
 	function focusCanvas() {
