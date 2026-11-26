@@ -311,6 +311,7 @@ IDR_MIDI_W0101          WAVE    DISCARDABLE     "MIDI\\wanna\\w0101.mid"
 IDR_WAVE_CHAT           WAVE    DISCARDABLE     "wave\\chat（発言）.wav"
 IDR_WAVE_PUZZLE_ROTATE  WAVE    DISCARDABLE     "SE\\puzzle_rotate.wav"
 IDR_WAVE_PUZZLE_LOCK    WAVE    DISCARDABLE     "SE\\puzzle_lock.wav"
+IDR_WAVE_PUZZLE_CLEAR   WAVE    DISCARDABLE     "SE\\puzzle_clear.wav"
 
 #ifndef _MAC
 /////////////////////////////////////////////////////////////////////////////
