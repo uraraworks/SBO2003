@@ -114,6 +114,7 @@ static BOOL SectionVisible(int nGroupID, int nType, int nKind)
 	switch (nGroupID) {
 	case IDC_Q_GRP_SEARCH:		return (nType == QUESTCHALLENGE_NONE) ? TRUE : FALSE;	/* 探し物（依頼の品） */
 	case IDC_Q_GRP_CHALLENGE:	return (nType != QUESTCHALLENGE_NONE) ? TRUE : FALSE;	/* 討伐チャレンジ（人数・貸し出し） */
+	case IDC_Q_GRP_KILL:		return (nType == QUESTCHALLENGE_NONE) ? TRUE : FALSE;	/* 討伐依頼（数える敵・必要数・再受注の時間） */
 	case IDC_Q_GRP_NPCCOMMON:	return (nKind != QUESTNPCKIND_NONE) ? TRUE : FALSE;
 	case IDC_Q_GRP_NPCDEST:		return NpcKindHasDest (nKind);
 	case IDC_Q_GRP_NPCITEM:		return NpcKindHasItem (nKind);
@@ -548,6 +549,16 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 		SendDlgItemMessage (hWnd, IDC_Q_DONEOP, CB_SETCURSEL, (s_Info.byDoneNumOp < TALKNUMOP_MAX) ? s_Info.byDoneNumOp : 0, 0);
 		AdminFlagSetNo (hWnd, IDC_Q_DONEVAL, s_Info.byDoneNumVal, bNone);
 	}
+	/* 討伐依頼（数える敵は空欄=なし） */
+	for (i = 0; i < MAX_QUESTKILLTMP; i ++) {
+		if (s_Info.awKillStTmp[i] != 0) {
+			SetNum (hWnd, IDC_Q_KILLTMP0 + i, s_Info.awKillStTmp[i]);
+		} else {
+			SetDlgItemText (hWnd, IDC_Q_KILLTMP0 + i, "");
+		}
+	}
+	SetNum (hWnd, IDC_Q_KILLNEED, s_Info.wKillNeed);
+	SetNum (hWnd, IDC_Q_KILLHOURS, s_Info.dwRepeatHours);
 	/* 受ける条件の印（空欄=条件なし） */
 	AdminFlagSetNo (hWnd, IDC_Q_NEEDFLAG, s_Info.wNeedFlag, s_Info.wNeedFlag == FLAG_NOBIT);
 	AdminFlagSetNo (hWnd, IDC_Q_NOTFLAG, s_Info.wNotFlag, s_Info.wNotFlag == FLAG_NOBIT);
@@ -760,7 +771,7 @@ static void LayoutInit(HWND hWnd)
 {
 	static const int s_anGroup[] = {
 		IDC_Q_GRP_BASE, IDC_Q_GRP_SEARCH, IDC_Q_GRP_CHALLENGE, IDC_Q_GRP_GOAL,
-		IDC_Q_GRP_DONE, IDC_Q_GRP_COND,
+		IDC_Q_GRP_DONE, IDC_Q_GRP_COND, IDC_Q_GRP_KILL,
 		IDC_Q_GRP_NPC, IDC_Q_GRP_NPCCOMMON, IDC_Q_GRP_NPCDEST, IDC_Q_GRP_NPCITEM, IDC_Q_GRP_NPCENEMY,
 	};
 	std::vector<HWND> ahWnd;
@@ -1136,7 +1147,32 @@ static BOOL SaveAll(HWND hWnd)
 	/* 受ける条件の印（空欄=条件なし） */
 	if (!AdminFlagGetBit (hWnd, s_hWndDlg, IDC_Q_NEEDFLAG, "受ける条件の印（立っている人だけ）の番号", QUESTEDIT_TITLE, Info.wNeedFlag)) return FALSE;
 	if (!AdminFlagGetBit (hWnd, s_hWndDlg, IDC_Q_NOTFLAG, "受ける条件の印（立っている人は不可）の番号", QUESTEDIT_TITLE, Info.wNotFlag)) return FALSE;
+	/* 討伐依頼（数える敵は空欄=なし） */
+	{
+		BOOL bHasTmp = FALSE;
+		for (int i = 0; i < MAX_QUESTKILLTMP; i ++) {
+			if (!GetNumRange (hWnd, IDC_Q_KILLTMP0 + i, 0xFFFF, "数える敵の番号", ul)) return FALSE;
+			Info.awKillStTmp[i] = (WORD)ul;
+			if (ul != 0) {
+				bHasTmp = TRUE;
+			}
+		}
+		if (!GetNumRange (hWnd, IDC_Q_KILLNEED, MAX_QUESTKILLNEED, "討伐の必要数", ul)) return FALSE;
+		Info.wKillNeed = (WORD)ul;
+		if (!GetNumRange (hWnd, IDC_Q_KILLHOURS, MAX_QUESTREPEATHOURS, "再び受けられるまでの時間", ul)) return FALSE;
+		Info.dwRepeatHours = (DWORD)ul;
+		if ((Info.wKillNeed > 0) && !bHasTmp && SectionVisible (IDC_Q_GRP_KILL, Info.byChallenge, QUESTNPCKIND_NONE)) {
+			MessageBox (s_hWndDlg, "必要数が 1 以上の時は、数える敵の番号を 1 つ以上入れてください。", QUESTEDIT_TITLE, MB_OK);
+			SetFocus (GetDlgItem (hWnd, IDC_Q_KILLTMP0));
+			return FALSE;
+		}
+	}
 	/* 隠れている枠（この依頼の種類では使わない）は空にしておく */
+	if (!SectionVisible (IDC_Q_GRP_KILL, Info.byChallenge, QUESTNPCKIND_NONE)) {
+		ZeroMemory (Info.awKillStTmp, sizeof (Info.awKillStTmp));
+		Info.wKillNeed = 0;
+		Info.dwRepeatHours = 0;
+	}
 	if (!SectionVisible (IDC_Q_GRP_SEARCH, Info.byChallenge, QUESTNPCKIND_NONE)) {
 		Info.wQuestItem = 0;
 	}
