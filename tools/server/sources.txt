@@ -53,6 +53,7 @@ SboSvr/src/SboSvrAffix.cpp
 SboSvr/src/SboSvrItemProc.cpp
 SboSvr/src/SboSvrMagicProc.cpp
 SboSvr/src/SboSvrNpcRoute.cpp
+SboSvr/src/SboSvrLoan.cpp
 SboSvr/src/SboSvrQuest.cpp
 SboSvr/src/DungeonGen/CaveL3.cpp
 SboSvr/src/DungeonGen/CathedralL1.cpp
