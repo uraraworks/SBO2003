@@ -65,6 +65,7 @@ SboSvr/src/SboSvrRecycle.cpp
 SboSvr/src/SboSvrDungeonDaily.cpp
 SboSvr/src/SboSvrTalk.cpp
 SboSvr/src/SboSvrPuzzle.cpp
+SboSvr/src/SboSvrSubGameProcLand.cpp
 SboSvr/src/SboSvrRecvCmd.cpp
 SboSvr/src/SboSvrSendCmd.cpp
 SboSvr/src/SboSvrSubGameProc.cpp

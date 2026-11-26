@@ -2607,4 +2607,33 @@ record api scores=1 streaks=1 max=1 top=1 date=1
 board empty text=2
 board full counts=10,10 len<max=1 tenth=2 end=1
 record done seats=0
+== AW. Land sugoroku ==
+land join players=2 state=3
+land recruiting state=3 land=0
+land start land=1 state=8 turn=0 phase=0 players=2 gold=1500,1500
+land start msg=1 turnmsg=1 stateA=1
+land late join players=2 viewers=0
+land viewer players=2 viewers=1 state+1
+land B dice phase=0 turn=0
+land A dice phase=1 state=7 steps>0=1 roll msg=1
+land A waits first step phase=1
+land A arrive phase=2 state=10 ask=12 pos=12 charAtCell=1 state+2
+land B buy ignored owner=-1 phase=2
+land A decline owner=-1 turn=1 gold=0
+land B moved turn=0 phase=0
+land A buy owner=0 gold=-170 turn=1 msg=1
+land price ok=1
+land B toll=34 A gain=34 turn=0 msg=1
+land toll ok=1
+land timeout before turn=0 phase=0
+land timeout not yet phase=0
+land timeout auto phase=1 msg=1
+land timeout ask phase=2 cell=13
+land timeout decline owner13=-1 turn=1 phase=0 msg=1
+land B rolling phase=1
+land B leave over=1 win=1 reason=1 state=9 players=1 msg=1 state+1
+land B back to reception=1 notNone=1
+land result state=9 land=1
+land closed state=0 land=0 players=0 viewers=0 A=0 C=0
+land A back to reception=1
 == done ==

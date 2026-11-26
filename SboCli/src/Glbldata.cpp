@@ -691,7 +691,8 @@ const char *aMsgCmdTbl[] = {
 /* すごろくルール */
 const char *aSugorokuRuleTbl[] = {
 	"ゴール(ぴったり)",
-	"ゴール(通過)"
+	"ゴール(通過)",
+	"土地取り(周回)"
 };
 
 /* すごろくパーツ */

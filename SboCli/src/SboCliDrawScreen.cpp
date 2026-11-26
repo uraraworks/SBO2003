@@ -796,6 +796,159 @@ static void DrawPuzzle(int nX, int nY, BOOL bTop)
 }
 
 /* ========================================================================= */
+/* 関数名：DrawLand															 */
+/* 内容：土地取りすごろく（遊んでいる間・観戦中）の重ね描き					 */
+/*		 サーバーが CMD_LANDSTATE で送ってくる盤（左上のマップ座標＋外周 28 マス）の各マスの上に、	 */
+/*		 「短い土地名・値段」と、持ち主の色の枠・薄い色を、地図のマスと同じ座標で描く。			 */
+/*		 下の層（bTop=FALSE。キャラより前＝地図のパーツの後）がマスの上の重ね描き、					 */
+/*		 上の層（bTop=TRUE。ウィンドウの下）が帯HUD（各自の所持金・周回・手番・残り時間）。		 */
+/*		 切り取りは落ち物パズルと同じ（画面にかかる分だけ描く）。新しい画像は使わず、単色と文字だけ	 */
+/* ========================================================================= */
+static const COLORREF s_aclLandPlayer[LAND_MAX_PLAYERS] = {
+	RGB (235, 80, 70),		/* 1 人目 赤 */
+	RGB (80, 140, 240),		/* 2 人目 青 */
+	RGB (80, 200, 100),		/* 3 人目 緑 */
+	RGB (240, 210, 70),		/* 4 人目 黄 */
+};
+
+static void DrawLand(int nX, int nY, BOOL bTop)
+{
+	CMDPARA_LANDSTATE St;
+	PCHARINFO pChar;
+	HDC hDC;
+	HFONT hFontOld;
+	DWORD dwRecv, dwNow = timeGetTime ();
+	char szTmp[160];
+	int i, nDx, nDy, sx, sy, yy, nSec;
+
+	if ((g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ()) || !GetLandState (&St, &dwRecv)) {
+		return;
+	}
+	pChar = g_aCharInfo[g_nMyCharID];
+	s_nPzL = nX;
+	s_nPzT = nY;
+	s_nPzR = nX + SCRSIZEX;
+	s_nPzB = nY + SCRSIZEY;
+	nSec = (int)St.wSecLeft - (int)((dwNow - dwRecv) / 1000);
+	if (nSec < 0) {
+		nSec = 0;
+	}
+
+	hDC = g_pDibDrawMap->Lock ();
+	hFontOld = (HFONT)SelectObject (hDC, bTop ? g_hFont14 : g_hFont12);
+	SetBkMode (hDC, TRANSPARENT);
+
+	if (!bTop) {
+		/* 盤の各マス：自分のマスが (DRAW_PARTS_X+1)*32 の描画用の画面に合わせる（落ち物パズルと同じ） */
+		for (i = 0; i < LAND_CELLS; i ++) {
+			const CMDPARA_LANDSTATE_CELL &C = St.aCell[i];
+			BOOL bTown = (C.byKind == LANDCELL_TOWN);
+			BOOL bOwned = bTown && (C.byOwner < St.byPlayers);
+			COLORREF cl = bOwned ? s_aclLandPlayer[C.byOwner] : RGB (255, 255, 255);
+
+			LandCellOffset (i, &nDx, &nDy);
+			sx = (DRAW_PARTS_X + 1) * 32 + ((int)St.wOriginX + nDx - (int)pChar->dwX) * 32;
+			sy = (DRAW_PARTS_Y + 1) * 32 + ((int)St.wOriginY + nDy - (int)pChar->dwY) * 32;
+			if ((sx + 32 <= nX) || (sx >= nX + SCRSIZEX) || (sy + 32 <= nY) || (sy >= nY + SCRSIZEY)) {
+				continue;
+			}
+			/* 持ち主の色を薄く敷く（空き地は暗くして字を読みやすく）。四隅は少し暗く */
+			for (yy = 0; yy < 32; yy ++) {
+				if (bOwned) {
+					PuzSpan (hDC, sx, sy + yy, 32, cl, 70);
+				} else {
+					PuzSpan (hDC, sx, sy + yy, 32, RGB (0, 0, 0), bTown ? 70 : 110);
+				}
+			}
+			/* 持ち主の色の枠（2 ドット） */
+			if (bOwned) {
+				for (yy = 0; yy < 32; yy ++) {
+					if ((yy < 2) || (yy >= 30)) {
+						PuzSpan (hDC, sx, sy + yy, 32, cl, 255);
+					} else {
+						PuzSpan (hDC, sx, sy + yy, 2, cl, 255);
+						PuzSpan (hDC, sx + 30, sy + yy, 2, cl, 255);
+					}
+				}
+			}
+			/* 短い名前と値段 */
+			if (bTown) {
+				PuzText (hDC, sx + 16, sy + 3, (LPSTR)C.szShort, RGB (255, 255, 255), 12, TRUE);
+				_snprintf (szTmp, sizeof (szTmp) - 1, "%d", (int)C.wPrice);
+				szTmp[sizeof (szTmp) - 1] = 0;
+				PuzText (hDC, sx + 16, sy + 17, szTmp, bOwned ? RGB (255, 255, 160) : RGB (180, 255, 180), 12, TRUE);
+			} else {
+				PuzText (hDC, sx + 16, sy + 10, (LPSTR)C.szShort, RGB (255, 220, 120), 12, TRUE);
+			}
+		}
+	} else {
+		/* 帯HUD：1 行目に題・手番・残り時間・出目、その下に各自の所持金・周回・土地数 */
+		const int nWidth = 336;
+		int x0 = nX + (SCRSIZEX - nWidth) / 2, y0 = nY + 6;
+		int nRows = 1 + (int)St.byPlayers;
+		BOOL bMyTurn = (St.byMe == St.byTurn) && (St.byPhase == LANDPHASE_ROLL);
+
+		PuzFrame (hDC, x0, y0, nWidth, 8 + nRows * 16 + (bMyTurn ? 16 : 0), RGB (230, 200, 120), 150);
+		if (St.byPhase == LANDPHASE_OVER) {
+			_snprintf (szTmp, sizeof (szTmp) - 1, "土地取り　ゲーム終了！");
+		} else {
+			_snprintf (szTmp, sizeof (szTmp) - 1, "土地取り　%d周で終了　%sの番", (int)St.wMaxLaps, St.aPlayer[St.byTurn].szName);
+		}
+		szTmp[sizeof (szTmp) - 1] = 0;
+		PuzText (hDC, x0 + 8, y0 + 4, szTmp, RGB (255, 235, 120), 14, FALSE);
+		if ((St.byPhase == LANDPHASE_ROLL) || (St.byPhase == LANDPHASE_BUY)) {
+			_snprintf (szTmp, sizeof (szTmp) - 1, "残り%d秒", nSec);
+			szTmp[sizeof (szTmp) - 1] = 0;
+			PuzText (hDC, x0 + nWidth - 8 - 60, y0 + 4, szTmp, (nSec <= 10) ? RGB (255, 130, 110) : RGB (255, 255, 255), 14, FALSE);
+		} else if ((St.byPhase == LANDPHASE_MOVE) && (St.byDice1 > 0)) {
+			_snprintf (szTmp, sizeof (szTmp) - 1, "出目 %d+%d", (int)St.byDice1, (int)St.byDice2);
+			szTmp[sizeof (szTmp) - 1] = 0;
+			PuzText (hDC, x0 + nWidth - 8 - 66, y0 + 4, szTmp, RGB (255, 255, 255), 14, FALSE);
+		}
+		for (i = 0; i < (int)St.byPlayers; i ++) {
+			const CMDPARA_LANDSTATE_PLAYER &P = St.aPlayer[i];
+			COLORREF clText = P.byAlive ? RGB (255, 255, 255) : RGB (150, 150, 150);
+			int yy0 = y0 + 4 + (i + 1) * 16;
+
+			/* 手番の印と持ち主の色の四角 */
+			if ((i == (int)St.byTurn) && (St.byPhase != LANDPHASE_OVER) && P.byAlive) {
+				PuzText (hDC, x0 + 4, yy0, (LPSTR)">", RGB (255, 235, 120), 14, FALSE);
+			}
+			for (yy = 0; yy < 10; yy ++) {
+				PuzSpan (hDC, x0 + 16, yy0 + 3 + yy, 10, s_aclLandPlayer[i], 255);
+			}
+			_snprintf (szTmp, sizeof (szTmp) - 1, "%s%s", P.szName, (i == (int)St.byMe) ? "(あなた)" : "");
+			szTmp[sizeof (szTmp) - 1] = 0;
+			PuzText (hDC, x0 + 32, yy0, szTmp, clText, 14, FALSE);
+			if (P.byAlive) {
+				_snprintf (szTmp, sizeof (szTmp) - 1, "%dG　%d周　土地%d%s", P.nGold, (int)P.byLaps, (int)P.byLands, P.bySkip ? "　休" : "");
+			} else {
+				_snprintf (szTmp, sizeof (szTmp) - 1, "脱落");
+			}
+			szTmp[sizeof (szTmp) - 1] = 0;
+			PuzText (hDC, x0 + 168, yy0, szTmp, clText, 14, FALSE);
+			/* 終了後は勝者の印 */
+			if ((St.byPhase == LANDPHASE_OVER) && (St.byWinMask & (1 << i))) {
+				PuzText (hDC, x0 + nWidth - 8 - 28, yy0, (LPSTR)"勝ち", RGB (255, 235, 120), 14, FALSE);
+			}
+		}
+		if (bMyTurn) {
+			PuzText (hDC, x0 + 8, y0 + 4 + nRows * 16, (LPSTR)"あなたの番です。コマンドを開いてサイコロを振ってください", RGB (160, 255, 160), 14, FALSE);
+		}
+		/* 残り秒が減るので、秒が変わったら次も描き直す（毎フレームは描かない） */
+		{
+			static int s_nLandSec = -1;
+			if (((St.byPhase == LANDPHASE_ROLL) || (St.byPhase == LANDPHASE_BUY)) && (nSec != s_nLandSec)) {
+				g_bDraw = TRUE;
+			}
+			s_nLandSec = nSec;
+		}
+	}
+	SelectObject (hDC, hFontOld);
+	g_pDibDrawMap->Unlock ();
+}
+
+/* ========================================================================= */
 /* 関数名：DrawDefenseBand													 */
 /* 内容：番外編の拠点防衛の挑戦中だけ、画面の上の中央にパネルを出す			 */
 /*		 1行目「拠点HP [バー] 720/1000」（残り割合で緑→黄(50%以下)→赤(25%以下)）	 */
@@ -1060,6 +1213,9 @@ void DrawScreen(HWND hWnd, HDC hDC)
 				/* 落ち物パズルの帯・待ちお邪魔のバー・文字（盤面本体は DrawScreenMOVE でキャラの前に描いてある。ウィンドウの下に敷く） */
 				DrawPuzzle (32 - x, 32 - y, TRUE);
 
+				/* 土地取りすごろくの帯HUD（各自の所持金・周回・手番・残り時間。ウィンドウの下に敷く） */
+				DrawLand (32 - x, 32 - y, TRUE);
+
 				hDCPrimary = g_pDibDrawMap->Lock ();
 				HFONT hFontOld = (HFONT)SelectObject (hDCPrimary, g_hFont14);
 				SetBkMode (hDCPrimary, TRANSPARENT);
@@ -1275,6 +1431,8 @@ BOOL DrawScreenMOVE(void)
 	{
 		PCHARINFO pMyChar = g_aCharInfo[g_nMyCharID];
 		DrawPuzzle (32 - BowOffsetX (pMyChar), 32 - BowOffsetY (pMyChar), FALSE);
+		/* 土地取りすごろくの各マスの上の重ね描き（短い土地名・値段・持ち主の色枠）。キャラの下・地面の上 */
+		DrawLand (32 - BowOffsetX (pMyChar), 32 - BowOffsetY (pMyChar), FALSE);
 	}
 	for (i = 0; i < DRAW_PARTS_Y * 2 + 3; i ++) {
 		DrawCharLine (i);

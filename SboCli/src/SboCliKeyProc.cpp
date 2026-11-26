@@ -6018,6 +6018,24 @@ void KeyProcCONF(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		}
 	}
 
+	/* 土地取りすごろくの「買いますか？」：答えをサーバーへ送る（はいなら買い、いいえならやめる。
+	   制限時間内に答えないとサーバーが「やめる」にして、次の状態の通知でこの窓は閉じる） */
+	if (pWnd->nType2 == IDCONFIRMTYPE_LANDBUY) {
+		if ((byEvent == KEY_UP) && ((byCode == 'A') || (byCode == 'B'))) {
+			BOOL bYes = (byCode == 'A') && (pWnd->nData1 == 0);
+
+			/* 出た直後は決定ボタンの連打で選ばれないよう受け付けない */
+			if (timeGetTime () < pWnd->dwData + 400) {
+				return;
+			}
+			SendCmdSubSUGOROKULANDBUY (bYes);
+			DXAudio.PlaySecoundary (&aSoundTbl[bYes ? SOUND_OK : SOUND_PUSH51_C]);
+			EraseWindow (pWnd);
+			g_bDraw = TRUE;
+			return;
+		}
+	}
+
 	/* 会話データの「はい・いいえ」：答えをサーバーへ送り、会話の窓は閉じる（いいえの返事は新しい台詞として届く）。
 	   キーボードは決定（A）・キャンセル（B）、スマホは仮想パッドの同じボタン。キャンセルはいいえ */
 	if (pWnd->nType2 == IDCONFIRMTYPE_TALKASK) {

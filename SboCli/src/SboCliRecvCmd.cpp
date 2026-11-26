@@ -178,6 +178,7 @@ void	RecvDataProcDGDEFSTATUS				(PBYTE, DWORD);			/* 受信データ処理(拠�
 void	RecvDataProcDGSTATUS				(PBYTE, DWORD);			/* 受信データ処理(番外編ダンジョンの状況パネル) */
 void	RecvDataProcPUZZLESE				(PBYTE, DWORD);			/* 受信データ処理(落ち物パズルの効果音) */
 void	RecvDataProcPUZZLESTATE				(PBYTE, DWORD);			/* 受信データ処理(落ち物パズルの盤面・落ち物・得点) */
+void	RecvDataProcLANDSTATE				(PBYTE, DWORD);			/* 受信データ処理(土地取りすごろくの盤の状態) */
 void	RecvDataProcCHARBUFF				(PBYTE, DWORD);			/* 受信データ処理(攻撃力・守備力アップの残り) */
 void	RecvDataProcMAKERINFO				(PBYTE, DWORD);			/* 受信データ処理(作り手情報) */
 void	RecvDataProcRECIPEINFO				(PBYTE, DWORD);			/* 受信データ処理(レシピ情報) */
@@ -481,6 +482,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	NULL,								/* CMD_PUZZLEKEY(クライアント→サーバーのみ) */
 	RecvDataProcPUZZLESTATE,			/* CMD_PUZZLESTATE */
 	RecvDataProcPUZZLESE,				/* CMD_PUZZLESE */
+	RecvDataProcLANDSTATE,				/* CMD_LANDSTATE */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -8874,6 +8876,121 @@ void RecvDataProcPUZZLESTATE(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	g_bDraw = TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcLANDSTATE / GetLandState								 */
+/* 内容：受信データ処理(土地取りすごろくの盤の状態)							 */
+/*		 サーバーは状態が変わるたびに盤の全体（各マスの持ち主・各自の所持金・周回・手番）を送ってくる。	 */
+/*		 最後に届いたものを覚え、DrawScreen が盤の各マスの上と帯に重ね描きする（DrawLand）。	 */
+/*		 byAsk が付いていれば、本人に「買いますか？」の確認を出す（はい・いいえ。IDCONFIRMTYPE_LANDBUY）。	 */
+/*		 手番や段階が変わって byAsk が付かなくなったら（時間切れ・他の人の脱落など）その確認を閉じる。	 */
+/*		 自分の番でなくなったらコマンド（サイコロ）の窓も閉じる。NONE が届いたら全部消す	 */
+/* ========================================================================= */
+static BOOL					s_bLandValid;									/* 状態を持っているか */
+static CMDPARA_LANDSTATE	s_Land;											/* 最後に届いた状態 */
+static DWORD				s_dwLandRecv;									/* 届いた時刻 */
+static DWORD				s_dwLandMapID;									/* 届いた時のマップ（別のマップへ移ったら重ね描きを消す。再ログインで古い状態が残らないように） */
+
+static void LandEraseWindows(BOOL bConfirm, BOOL bCommand, int nKeepAskCell)
+{
+	int i;
+
+	for (i = g_WndInfo.GetSize () - 1; i >= 0; i --) {
+		PWNDINFO pOld = g_WndInfo[i];
+		if ((bConfirm && (pOld->nType == WNDTYPE_CONF) && (pOld->nType2 == IDCONFIRMTYPE_LANDBUY) && (pOld->nData2 != nKeepAskCell)) ||
+			(bCommand && (pOld->nType == WNDTYPE_SUBSUGOROKU_COMMAND))) {
+			EraseWindow (pOld);
+			i = min (i, g_WndInfo.GetSize ());
+		}
+	}
+}
+
+void RecvDataProcLANDSTATE(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_LANDSTATE pPara = (PCMDPARA_LANDSTATE)pData;
+	int i;
+
+	if (dwDataSize != sizeof (CMDPARA_LANDSTATE)) {
+		return;
+	}
+	if (pPara->byKind == LANDSTATE_NONE) {
+		s_bLandValid = FALSE;
+		LandEraseWindows (TRUE, FALSE, -1);
+		g_bDraw = TRUE;
+		return;
+	}
+	if ((pPara->byKind != LANDSTATE_FULL) || (pPara->byPlayers < 1) || (pPara->byPlayers > LAND_MAX_PLAYERS) ||
+		(pPara->byTurn >= pPara->byPlayers)) {
+		return;
+	}
+	memcpy (&s_Land, pData, sizeof (CMDPARA_LANDSTATE));
+	/* 文字は終端を保証する（描画は終端まで読む） */
+	for (i = 0; i < LAND_MAX_PLAYERS; i ++) {
+		s_Land.aPlayer[i].szName[LANDSTATE_NAME_LEN - 1] = 0;
+	}
+	for (i = 0; i < LAND_CELLS; i ++) {
+		s_Land.aCell[i].szShort[LAND_SHORT_BUF - 1] = 0;
+	}
+	s_Land.szAskName[LAND_NAME_BUF - 1] = 0;
+	s_bLandValid = TRUE;
+	s_dwLandRecv = timeGetTime ();
+	s_dwLandMapID = g_pMapInfo ? g_pMapInfo->dwID : 0;
+
+	/* 自分の番でサイコロ待ちではない間は、コマンドの窓（サイコロ）を閉じる（時間切れで自動で振られた時など） */
+	if (!((s_Land.byMe == s_Land.byTurn) && (s_Land.byPhase == LANDPHASE_ROLL))) {
+		LandEraseWindows (FALSE, TRUE, -1);
+	}
+	/* 買うかの確認 */
+	if (s_Land.byAsk && (g_nMyCharID >= 0)) {
+		BOOL bExist = FALSE;
+
+		for (i = 0; i < g_WndInfo.GetSize (); i ++) {
+			PWNDINFO pOld = g_WndInfo[i];
+			if ((pOld->nType == WNDTYPE_CONF) && (pOld->nType2 == IDCONFIRMTYPE_LANDBUY) && (pOld->nData2 == (int)s_Land.byAskCell)) {
+				bExist = TRUE;
+			}
+		}
+		LandEraseWindows (TRUE, TRUE, (int)s_Land.byAskCell);
+		if (!bExist) {
+			char szTmp[LAND_NAME_BUF + 96];
+			PWNDINFO pConf, pMsg;
+
+			_snprintf (szTmp, sizeof (szTmp) - 1, "「%s」を%dGで買いますか？（所持金%dG）@2",
+				s_Land.szAskName, (int)s_Land.wAskPrice, s_Land.aPlayer[s_Land.byMe < LAND_MAX_PLAYERS ? s_Land.byMe : 0].nGold);
+			szTmp[sizeof (szTmp) - 1] = 0;
+			/* 出てから0.4秒は決定を受け付けない（連打対策） */
+			pConf = MakeWindowCONF (16 * 20, 16 * 10, IDCONFIRMTYPE_LANDBUY);
+			pConf->nData1 = 0;
+			pConf->nData2 = (int)s_Land.byAskCell;
+			pConf->dwData = timeGetTime ();
+			g_WndInfo.Add (pConf);
+			g_dwActiveMsgID = pConf->dwID;
+
+			pMsg = MakeWindowMSG (szTmp, FALSE);
+			pMsg->pParent = pConf;
+			pConf->pChild = pMsg;
+			g_WndInfo.Add (pMsg);
+		}
+	} else {
+		LandEraseWindows (TRUE, FALSE, -1);
+	}
+	g_bDraw = TRUE;
+}
+
+/* 重ね描きする状態を取得（遊んでいる間・観戦中だけ TRUE） */
+BOOL GetLandState(PCMDPARA_LANDSTATE pOut, DWORD *pdwRecvTime)
+{
+	if (!s_bLandValid || (g_byGameState != GAMESTATE_MOVE)) {
+		return FALSE;
+	}
+	if (g_pMapInfo && (g_pMapInfo->dwID != s_dwLandMapID)) {
+		s_bLandValid = FALSE;
+		return FALSE;
+	}
+	*pOut = s_Land;
+	*pdwRecvTime = s_dwLandRecv;
+	return TRUE;
 }
 
 /* 落ち物パズルの効果音（サーバーから）：その台の盤面を持っている（=盤面が見える距離にいる）人だけが鳴らす。

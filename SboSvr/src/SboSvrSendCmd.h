@@ -33,6 +33,7 @@ extern void SendCmdDGDEFSTATUS			(DWORD, PCMDPARA_DGDEFSTATUS);					/* コマン
 extern void SendCmdDGSTATUS				(DWORD, PCMDPARA_DGSTATUS);						/* コマンド送信(番外編ダンジョンの状況パネル。その人にだけ) */
 extern void SendCmdPUZZLESE				(DWORD, BYTE, DWORD);							/* コマンド送信(落ち物パズルの効果音) */
 extern void SendCmdPUZZLESTATE			(DWORD, PBYTE, DWORD);							/* コマンド送信(落ち物パズルの盤面・落ち物・得点。座っている人にだけ。先頭が CMDPARA_PUZZLESTATE) */
+extern void SendCmdLANDSTATE			(DWORD, PCMDPARA_LANDSTATE);					/* コマンド送信(土地取りすごろくの盤の状態。遊んでいる人・観戦者に) */
 extern void SendCmdDGDEFMAP				(DWORD, PBYTE, DWORD);							/* コマンド送信(番外編の拠点防衛：全体地図。組み立て済みのデータをその人にだけ) */
 extern void SendCmdDUNGEONSEL			(DWORD, PCMDPARA_DUNGEONSEL);					/* コマンド送信(番外編ダンジョン：入る姿を選ぶ窓を開く・閉じる。その人にだけ) */
 extern void SendCmdCHARPOS				(DWORD, int, BYTE, BYTE);						/* コマンド送信(座標通知) */

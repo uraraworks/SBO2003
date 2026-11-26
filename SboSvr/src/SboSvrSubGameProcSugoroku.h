@@ -26,4 +26,17 @@ extern void SubSugoroku_NextPlayer(PSUBGAME_SUGOROKUINFO);						/* 次のプレ�
 extern BOOL SubSugoroku_IsAllGoal(PSUBGAME_SUGOROKUINFO);						/* 全員ゴールしているか判定 */
 extern void SubSugoroku_GoalProc(PSUBGAME_SUGOROKUINFO, BYTE);					/* ゴール処理 */
 
+/* すごろくの土地取りルール（SboSvrSubGameProcLand.cpp。仕様は docs/land-sugoroku.md） */
+extern void SubLand_Start(PSUBGAME_SUGOROKUINFO);								/* 土地取りを始める */
+extern void SubLand_Stop(PSUBGAME_SUGOROKUINFO);								/* 進行を止める（終了処理の最初） */
+extern void SubLand_Release(PSUBGAME_SUGOROKUINFO);								/* 進行の情報を捨てる（終了処理の最後） */
+extern BOOL SubLand_Active(PSUBGAME_SUGOROKUINFO);								/* 土地取りの進行を持っているか */
+extern void SubLand_Proc(PSUBGAME_SUGOROKUINFO, DWORD);							/* ゲーム開始後の処理（制限時間・駒の移動・片付け） */
+extern void SubLand_Dice(PSUBGAME_SUGOROKUINFO, DWORD);							/* サイコロを振る */
+extern void SubLand_Buy(PSUBGAME_SUGOROKUINFO, DWORD, BOOL);					/* 空き地を買うかの返事 */
+extern void SubLand_OnLeave(PSUBGAME_SUGOROKUINFO, DWORD);						/* 参加者が抜けた（脱落） */
+extern void SubLand_SendTo(PSUBGAME_SUGOROKUINFO, DWORD);						/* 1 人へ盤の状態を送る */
+extern void SubLand_SendNone(PCHARINFO);										/* 盤の重ね描きを消させる */
+extern LandGame *SubLand_GetGame(PSUBGAME_SUGOROKUINFO);						/* ルールの状態（テスト・調べる用。進行が無ければ NULL） */
+
 /* Copyright(C)URARA-works 2003-2005 */

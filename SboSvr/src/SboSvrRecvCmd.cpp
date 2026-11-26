@@ -299,6 +299,7 @@ void	RecvDataProcSubGameWAR_MAGIC_TARGET		(PBYTE, DWORD);				/* 戦場ゲーム�
 void	RecvDataProcSubGameSUGOROKU_JOINMODE	(PBYTE, DWORD);				/* すごろく：モード選択 */
 void	RecvDataProcSubGameSUGOROKU_QUIT		(PBYTE, DWORD);				/* すごろく：ゲームから抜ける */
 void	RecvDataProcSubGameSUGOROKU_DICE		(PBYTE, DWORD);				/* すごろく：サイコロを振る */
+void	RecvDataProcSubGameSUGOROKU_LANDBUY		(PBYTE, DWORD);				/* すごろく（土地取り）：空き地を買うかの返事 */
 
 void	RecvDataProcMAIN_CHAR_STATEINFO			(PBYTE, DWORD);				/* キャラ系:状態通知 */
 void	RecvDataProcMAIN_CHAR_TAIL				(PBYTE, DWORD);				/* キャラ系:ついていく要求 */
@@ -531,6 +532,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcPUZZLEKEY,				/* CMD_PUZZLEKEY */
 	NULL,								/* CMD_PUZZLESTATE(サーバー→クライアントのみ) */
 	NULL,								/* CMD_PUZZLESE(サーバー→クライアントのみ) */
+	NULL,								/* CMD_LANDSTATE(サーバー→クライアントのみ) */
 
 	NULL
 };
@@ -589,6 +591,8 @@ const RECVDATAPROC RecvDataProcSubGameTblSugoroku[] = {
 	RecvDataProcSubGameSUGOROKU_JOINMODE,		/* CMDSUBSUGOROKU_JOINMODE */
 	RecvDataProcSubGameSUGOROKU_QUIT,			/* CMDSUBSUGOROKU_QUIT */
 	RecvDataProcSubGameSUGOROKU_DICE,			/* CMDSUBSUGOROKU_DICE */
+	NULL,										/* CMDSUBSUGOROKU_MSG */
+	RecvDataProcSubGameSUGOROKU_LANDBUY,		/* CMDSUBSUGOROKU_LANDBUY */
 };
 
 /* 関数ジャンプテーブル(キャラ系コマンド) */
@@ -13169,8 +13173,9 @@ void RecvDataProcSubGameSUGOROKU_JOINMODE(PBYTE pData, DWORD dwDataSize)
 	}
 
 	if (pRecv->byData == 0) {
-		/* 定員オーバー？ */
-		if (pSugoroku->adwPlayerTblID.GetSize () >= pSugoroku->byMaxCount) {
+		/* 定員オーバー？（土地取りは盤で遊べる人数 LAND_MAX_PLAYERS まで） */
+		if ((pSugoroku->adwPlayerTblID.GetSize () >= pSugoroku->byMaxCount) ||
+			((pSugoroku->byRule == SUBGAME_SUGOROKU_RULE_LAND) && (pSugoroku->adwPlayerTblID.GetSize () >= LAND_MAX_PLAYERS))) {
 			wsprintf (szMsg, "満員のようです。@2");
 			/* 状態遷移 */
 			pSubStatus->byState = SUBGAME_SUGOROKU_STATE_INIT;
@@ -13221,6 +13226,11 @@ void RecvDataProcSubGameSUGOROKU_JOINMODE(PBYTE pData, DWORD dwDataSize)
 		SendCmdFADEINOUT (pChar->pID, 1);
 	}
 	SendCmdSUBSTATUS (pChar->dwTblID);
+
+	/* 土地取りの途中から観戦に来た人へ、盤の状態を送る（遊んでいる間は参加者が増えない） */
+	if ((pRecv->byData != 0) && SubLand_Active (pSugoroku)) {
+		SubLand_SendTo (pSugoroku, pRecv->dwTblID);
+	}
 
 	/* 最初の参加者？ */
 	if (pSugoroku->adwPlayerTblID.GetSize () == 1) {
@@ -13317,6 +13327,12 @@ void RecvDataProcSubGameSUGOROKU_DICE(PBYTE pData, DWORD dwDataSize)
 	pInfo = g_aSubaGameInfo[pSubStatus->byID];
 	pSugoroku = (PSUBGAME_SUGOROKUINFO)pInfo->pInfo;
 
+	/* 土地取り：サイコロは LandGame が手番と段階を見る */
+	if (pSugoroku->byRule == SUBGAME_SUGOROKU_RULE_LAND) {
+		SubLand_Dice (pSugoroku, pRecv->dwTblID);
+		goto Exit;
+	}
+
 	if (pSugoroku->byState != SUBGAME_SUGOROKU_STATE_WAIT) {
 		goto Exit;
 	}
@@ -13343,6 +13359,43 @@ void RecvDataProcSubGameSUGOROKU_DICE(PBYTE pData, DWORD dwDataSize)
 
 Exit:
 	return;
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcSubGameSUGOROKU_LANDBUY								 */
+/* 内容：受信データ処理(すごろく・土地取り：空き地を買うかの返事。byData=1 買う・0 やめる)	 */
+/* 日付：2026/11/26															 */
+/* ========================================================================= */
+void RecvDataProcSubGameSUGOROKU_LANDBUY(PBYTE pData, DWORD dwDataSize)
+{
+	PSUBCMDPARA_DATA1 pRecv = (PSUBCMDPARA_DATA1)pData;
+	PCHARINFO pChar;
+	PSUBSTATUS_SUGOROKU pSubStatus;
+	PSUBGAMEINFO pInfo;
+	PSUBGAME_SUGOROKUINFO pSugoroku;
+
+	if (dwDataSize < sizeof (SUBCMDPARA_DATA1)) {
+		return;
+	}
+	if (!IsRecvChar (pRecv->dwTblID)) {
+		return;
+	}
+
+	pChar = g_aCharInfo[pRecv->dwTblID];
+	pSubStatus = (PSUBSTATUS_SUGOROKU)pChar->abySubStatus;
+
+	/* すごろくに参加していない？ */
+	if (pSubStatus->byType != SUBGAMEID_SUGOROKU) {
+		return;
+	}
+	pInfo = g_aSubaGameInfo[pSubStatus->byID];
+	pSugoroku = (PSUBGAME_SUGOROKUINFO)pInfo->pInfo;
+	if ((pSugoroku == NULL) || (pSugoroku->byRule != SUBGAME_SUGOROKU_RULE_LAND)) {
+		return;
+	}
+
+	/* 手番・購入待ちかどうかは LandGame が見る（観戦者・手番でない人の返事は無視される） */
+	SubLand_Buy (pSugoroku, pRecv->dwTblID, (pRecv->byData != 0) ? TRUE : FALSE);
 }
 
 
