@@ -17,6 +17,8 @@
 #include "SboCliDrawScreen.h"
 #include "SboCliAutoMap.h"
 #include "common/FallingPuzzle.h"
+#include "common/Pinball.h"
+#include "SboCliPinball.h"
 
 /* 装備品の装備職業情報の番号を返す（装備品でなければ 0xFFFF） */
 static WORD ShopGetItemEquNo(PITEMINFO pItem)
@@ -465,7 +467,9 @@ static void KeyProcDispatch(BYTE byEvent, BYTE byCode)
 {
 	/* 落ち物パズルの席に座っている間は、キーを全部ゲーム側へ送る（歩かない・ショートカットも使えない） */
 	if (IsPuzzleSeated ()) {
-		PuzzleKeyProc (byEvent, byCode);
+		if (!IsPinballSeated ()) {
+			PuzzleKeyProc (byEvent, byCode);		/* ピンボールの席は KeyProc の先頭で PinballKeyPoll が見る */
+		}
 		return;
 	}
 	if (!g_dwActiveMsgID) {
@@ -502,6 +506,13 @@ void KeyProc(void)
 	}
 
 	GetKeyboardState (g_abyKeyState);
+
+	/* ピンボールの席に座っている間は、キーの状態を見て押した時・離した時だけサーバーへ送る
+	   （方向キーのイベントは 1 回に 1 つしか残らず、離したイベントを取りこぼしてフリッパーが上がりっぱなしになるため、状態で見る） */
+	if (IsPinballSeated ()) {
+		PinballKeyPoll (g_abyKeyState);
+		return;
+	}
 
 	/* ↑キー押した */
 	if (g_abyKeyState[VK_UP] & 0x80) {
@@ -9550,7 +9561,7 @@ void CmdProcHanasu(PWNDINFO pWnd)
 		return;
 
 	/* 落ち物パズルの台（@p）？ コインを使って座るのはサーバーが決める（座ると CMD_PUZZLESTATE が届く） */
-	} else if (pChar2->pszNpcSpeech[0] == '@' && pChar2->pszNpcSpeech[1] == 'p') {
+	} else if (pChar2->pszNpcSpeech[0] == '@' && ((pChar2->pszNpcSpeech[1] == 'p') || (pChar2->pszNpcSpeech[1] == 'i'))) {
 		SendCmdTALKRAND (pChar2->dwTblID);
 		pChar2->byDirection = abyDirectionTbl[pChar->byDirection];
 		int nNo = GetWindowID (g_dwMsgIDCommand);
@@ -9823,10 +9834,14 @@ static int PuzzleSeatNpcHere(PCHARINFO pChar)
 	for (i = 0; i < nCount; i ++) {
 		PCHARINFO pNpc = (PCHARINFO)g_aCharInfo[i];
 		if ((pNpc == pChar) || (pNpc->byNpcType == NPCTYPE_INIT) || !pNpc->pszNpcSpeech ||
-			(pNpc->pszNpcSpeech[0] != '@') || (pNpc->pszNpcSpeech[1] != 'p')) {
+			(pNpc->pszNpcSpeech[0] != '@') || ((pNpc->pszNpcSpeech[1] != 'p') && (pNpc->pszNpcSpeech[1] != 'i'))) {
 			continue;
 		}
-		PuzzleSeatOffset (pNpc->pszNpcSpeech, &nSdx, &nSdy);
+		if (pNpc->pszNpcSpeech[1] == 'i') {
+			PinballSeatOffset (pNpc->pszNpcSpeech, &nSdx, &nSdy);		/* ピンボールの台（座る場所の欄の位置が違う） */
+		} else {
+			PuzzleSeatOffset (pNpc->pszNpcSpeech, &nSdx, &nSdy);
+		}
 		if (((int)pNpc->dwX + nSdx == (int)pChar->dwX) && ((int)pNpc->dwY + nSdy == (int)pChar->dwY)) {
 			return i;
 		}
@@ -10420,6 +10435,7 @@ std::string W32TextToUtf8Str(const char *psz, int nLen);		/* ゲーム内の文�
 #define PADSTATE_BATTLEMODE	(0x10)	/* 戦闘モード中（「決定」を「攻撃」、「キャンセル」を「構え」と表示） */
 #define PADSTATE_SCORE		(0x20)	/* 目の前に得点板がある（「キャンセル」を「名前」と表示。Z で名前を付ける） */
 #define PADSTATE_MAP		(0x40)	/* 探索マップが使える場所（テーマで作ったダンジョンの範囲の中。「地図」ボタンを出す） */
+#define PADSTATE_PINBALL	(0x100)	/* PADSTATE_PUZZLE と一緒に付く：ピンボールの席（十字キーの左右＝フリッパー・下＝打ち出し。決定(X)＝右フリッパー、キャンセル(Z)＝左フリッパーとして表示） */
 #define PADSTATE_PUZZLE		(0x80)	/* 落ち物パズルの席に座っている（「調べる(S)」は隠し、「決定(X)」を「右回し」、「キャンセル(Z)」を「左回し」と表示。表示・戦闘・地図は隠す） */
 
 static int SboWebGetPadStateBase(void)
@@ -10443,7 +10459,7 @@ static int SboWebGetPadStateBase(void)
 	}
 	/* 落ち物パズルの席に座っている間は、右回し(X)・左回し(Z)だけ */
 	if (IsPuzzleSeated ()) {
-		return PADSTATE_PUZZLE;
+		return IsPinballSeated () ? (PADSTATE_PUZZLE | PADSTATE_PINBALL) : PADSTATE_PUZZLE;
 	}
 
 	/* ウィンドウ（コマンド・道具・お店など）を開いている間は、そのウィンドウにキーが渡る。

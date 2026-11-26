@@ -60,6 +60,7 @@ void SendCmdGETACC			(DWORD);								/* アカウント・パスワード取得 
 void SendCmdCHGACC			(DWORD, LPSTR, LPSTR);					/* アカウント・パスワード更新 */
 void SendCmdTALKRAND		(DWORD);								/* 話してランダム要求 */
 DWORD SendCmdPUZZLEKEY		(BYTE);									/* 落ち物パズルのキー入力 */
+DWORD SendCmdPINBALLKEY		(BYTE);									/* ピンボールのキー入力 */
 void SendCmdTALKANSWER		(DWORD, BOOL);							/* 会話データの「はい・いいえ」の答え */
 void SendCmdSTOPRAND		(DWORD);								/* 止まるかランダム切り替え */
 void SendCmdGETACCINFO		(DWORD);								/* アカウント情報要求 */
@@ -1224,6 +1225,34 @@ void SendCmdCHGACC(DWORD dwTblID, LPSTR pszAcc, LPSTR pszPas)
 
 	cliSock.Send ((PBYTE)pSendData, sizeof (CMDPARA_ACCADD));
 	delete pSendData;
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdPINBALLKEY												 */
+/* 内容：コマンド送信(ピンボールのキー入力。押した時・離した時だけ。座っている間だけ)	 */
+/*		 戻り値：このキーの連番（サーバーが処理した最後の連番を返すので先読みの差し引きに使う） */
+/* ========================================================================= */
+DWORD SendCmdPINBALLKEY(BYTE byKey)
+{
+	static DWORD s_dwSerial = 0;
+	CMDPARA_PINBALLKEY SendData;
+
+	if ((g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ())) {
+		return 0;
+	}
+	s_dwSerial ++;
+	if (s_dwSerial == 0) {
+		s_dwSerial = 1;
+	}
+	ZeroMemory (&SendData, sizeof (SendData));
+	SendData.byCmd = CMD_PINBALLKEY;
+	SendData.byData = byKey;
+	/* サーバーのキャラ番号は、クライアント側の配列番号(g_nMyCharID)ではなくキャラのテーブルID */
+	SendData.dwTblID = g_aCharInfo[g_nMyCharID]->dwTblID;
+	SendData.dwSerial = s_dwSerial;
+
+	cliSock.Send ((PBYTE)&SendData, sizeof (CMDPARA_PINBALLKEY));
+	return s_dwSerial;
 }
 
 /* ========================================================================= */

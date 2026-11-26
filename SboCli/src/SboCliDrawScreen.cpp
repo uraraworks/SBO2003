@@ -9,6 +9,8 @@
 #include "stdafx.h"
 #include "common/BowFlight.h"
 #include "common/FallingPuzzle.h"
+#include "common/Pinball.h"
+#include "SboCliPinball.h"
 #include "Glbldata.h"
 #include "SboCliDrawWindow.h"
 #include "SboCliRecvCmd.h"
@@ -796,6 +798,228 @@ static void DrawPuzzle(int nX, int nY, BOOL bTop)
 }
 
 /* ========================================================================= */
+/* 関数名：DrawPinball														 */
+/* 内容：ピンボール（見えている台すべて＝自分の台・近くの台）の重ね描き				 */
+/*		 落ち物パズルと同じ 2 層：bTop=FALSE（盤本体：壁・アーチ・バンパー・ターゲット・	 */
+/*		 フリッパー・ボール。キャラの前）、bTop=TRUE（帯・文字。ウィンドウの下）。		 */
+/*		 盤の位置は台NPCの座標からサーバーが決めて送る（sFieldX/Y）。					 */
+/*		 絵は図形（円・線・矩形）だけ。台の形は common/Pinball.h の PinballTable			 */
+/* ========================================================================= */
+static void PbFillCircle(HDC hDC, int cx, int cy, int r, COLORREF cl)
+{
+	int dy;
+
+	for (dy = -r; dy <= r; dy ++) {
+		int nHalf = (int)PbIsqrt ((unsigned long long)(r * r - dy * dy));
+		PuzSpan (hDC, cx - nHalf, cy + dy, nHalf * 2 + 1, cl, 255);
+	}
+}
+
+/* 太さ nThick の線（四角い筆で、1 ドットずつ） */
+static void PbLine(HDC hDC, int x1, int y1, int x2, int y2, int nThick, COLORREF cl)
+{
+	int dx = abs (x2 - x1), dy = abs (y2 - y1);
+	int sx = (x1 < x2) ? 1 : -1, sy = (y1 < y2) ? 1 : -1;
+	int err = dx - dy, ty;
+
+	for (;;) {
+		for (ty = 0; ty < nThick; ty ++) {
+			PuzSpan (hDC, x1 - nThick / 2, y1 - nThick / 2 + ty, nThick, cl, 255);
+		}
+		if ((x1 == x2) && (y1 == y2)) {
+			break;
+		}
+		{
+			int e2 = err * 2;
+			if (e2 > -dy) { err -= dy; x1 += sx; }
+			if (e2 < dx) { err += dx; y1 += sy; }
+		}
+	}
+}
+
+static int PbPx(int nFp) { return (nFp + PB_FP / 2) / PB_FP; }
+
+static void DrawPinballOne(HDC hDC, const PINBALLDRAW &D, int sx, int sy, BOOL bTop)
+{
+	const PinballTable &T = PinballGetTable ();
+	const CMDPARA_PINBALLSTATE &St = D.St;
+	const int nW = PB_W, nH = PB_H;
+	char szTmp[64];
+	int i;
+
+	if (!bTop) {
+		const COLORREF clWall = RGB (150, 190, 255);
+		/* 背景と枠 */
+		PuzFrame (hDC, sx - 1, sy - 1, nW + 2, nH + 2, RGB (200, 200, 200), 170);
+		/* 壁・斜め壁・仕切り・床（ターゲット以外の線分） */
+		for (i = 0; i < T.nSeg; i ++) {
+			const PBSEG &S = T.aSeg[i];
+			if (S.nTarget >= 0) {
+				continue;
+			}
+			PbLine (hDC, sx + PbPx (S.x1), sy + PbPx (S.y1), sx + PbPx (S.x2), sy + PbPx (S.y2), 2, clWall);
+		}
+		/* 上部のアーチ（半円。5 度刻みの点をつなぐ） */
+		{
+			int nDeg, nPrevX = 0, nPrevY = 0;
+			int cx = sx + PbPx (T.nArchCx), cy = sy + PbPx (T.nArchCy), r = PbPx (T.nArchR);
+			for (nDeg = 180; nDeg <= 360; nDeg += 5) {
+				int ax = cx + r * PbCos (nDeg) / PB_TRIG, ay = cy + r * PbSin (nDeg) / PB_TRIG;
+				if (nDeg > 180) {
+					PbLine (hDC, nPrevX, nPrevY, ax, ay, 2, clWall);
+				}
+				nPrevX = ax;
+				nPrevY = ay;
+			}
+		}
+		/* ターゲット（立っている間は黄色、倒れたら暗い） */
+		for (i = 0; i < T.nSeg; i ++) {
+			const PBSEG &S = T.aSeg[i];
+			BOOL bDown, bFlash;
+			if (S.nTarget < 0) {
+				continue;
+			}
+			bDown = (D.nTargetMask & (1u << S.nTarget)) ? TRUE : FALSE;
+			bFlash = D.dwFlashAge[PB_BUMPERS + S.nTarget] < PINBALL_FLASH_MS;
+			PbLine (hDC, sx + PbPx (S.x1), sy + PbPx (S.y1), sx + PbPx (S.x2), sy + PbPx (S.y2), 4,
+				bFlash ? RGB (255, 255, 255) : (bDown ? RGB (90, 80, 40) : RGB (255, 215, 60)));
+		}
+		/* バンパー（丸い反発。当たると光る） */
+		for (i = 0; i < PB_BUMPERS; i ++) {
+			int bx = sx + PbPx (T.aBumper[i].x), by = sy + PbPx (T.aBumper[i].y), r = PbPx (PB_BUMPER_R);
+			BOOL bFlash = D.dwFlashAge[i] < PINBALL_FLASH_MS;
+			PbFillCircle (hDC, bx, by, r, bFlash ? RGB (255, 255, 255) : RGB (240, 110, 70));
+			PbFillCircle (hDC, bx, by, r - 3, bFlash ? RGB (255, 235, 150) : RGB (150, 40, 40));
+			PbFillCircle (hDC, bx, by, 2, RGB (255, 220, 160));
+		}
+		/* 打ち出しレーンの溜め（強さ） */
+		if (D.nCharge > 0) {
+			int nLen = 50 * D.nCharge / 100, yy;
+			for (yy = 0; yy < nLen; yy ++) {
+				PuzSpan (hDC, sx + PB_LANE_L + 3, sy + PB_LANE_FLOOR - 1 - yy, 11, (yy * 100 / 50 > 66) ? RGB (240, 80, 70) : RGB (110, 220, 110), 200);
+			}
+		}
+		/* フリッパー（回る線分。太く） */
+		for (i = 0; i < 2; i ++) {
+			int nAng = i ? D.nAngR : D.nAngL, tx, ty, px = PbPx (i ? T.nPivotRx : T.nPivotLx), py = PbPx (T.nPivotY);
+			PinballFlipperTip (T, i, nAng, &tx, &ty);
+			PbLine (hDC, sx + px, sy + py, sx + PbPx (tx), sy + PbPx (ty), 5, RGB (235, 235, 245));
+			PbFillCircle (hDC, sx + px, sy + py, 3, RGB (235, 235, 245));
+			PbFillCircle (hDC, sx + PbPx (tx), sy + PbPx (ty), 3, RGB (235, 235, 245));
+			PbFillCircle (hDC, sx + px, sy + py, 1, RGB (90, 90, 120));
+		}
+		/* ボール */
+		if (D.bBallShow && !St.byIdle) {
+			int bx = sx + PbPx (D.nBallX), by = sy + PbPx (D.nBallY);
+			PbFillCircle (hDC, bx, by, PbPx (PB_BALL_R), RGB (235, 235, 235));
+			PbFillCircle (hDC, bx - 1, by - 1, 1, RGB (255, 255, 255));
+		}
+		return;
+	}
+
+	/* 上の層：帯（本人の台だけ。観戦の台は盤の上に小さく得点） */
+	if (!St.byIdle && St.byMine) {
+		int nPanelW = 96, nPanelH = 96;
+		int px = (St.bySide == PUZZLESIDE_LEFT) ? (sx - 6 - nPanelW) : (sx + nW + 6), py = sy + 8, ty = py + 4;
+		PuzFrame (hDC, px, py, nPanelW, nPanelH, RGB (200, 200, 200), 150);
+		PuzText (hDC, px + 6, ty, (LPSTR)"SCORE", RGB (255, 235, 120), 16, FALSE);
+		wsprintf (szTmp, "%u", (unsigned int)St.dwScore);
+		PuzText (hDC, px + 6, ty + 16, szTmp, RGB (255, 255, 255), 16, FALSE);
+		PuzText (hDC, px + 6, ty + 34, (LPSTR)"BALLS", RGB (255, 235, 120), 16, FALSE);
+		for (i = 0; i < PB_BALLS; i ++) {
+			int bx = px + 12 + i * 14, by = ty + 60;
+			if (i < (int)St.byBalls) {
+				PbFillCircle (hDC, bx, by, 4, RGB (235, 235, 235));
+			} else {
+				PbFillCircle (hDC, bx, by, 4, RGB (70, 70, 80));
+			}
+		}
+		if (St.byCombo >= 2) {
+			wsprintf (szTmp, "COMBO %d", (int)St.byCombo);
+			PuzText (hDC, px + 6, ty + 70, szTmp, RGB (255, 150, 90), 16, FALSE);
+		}
+		if ((St.bySave > 0) && (St.byPhase == PB_PHASE_PLAY)) {
+			wsprintf (szTmp, "SAVE %d", (int)St.bySave);
+			PuzText (hDC, px + 52, ty + 52, szTmp, RGB (120, 230, 255), 16, FALSE);
+		}
+	} else if (!St.byIdle) {
+		SIZE size;
+		wsprintf (szTmp, "SCORE %u  BALL %d", (unsigned int)St.dwScore, (int)St.byBalls);
+		GetTextExtentPoint32 (hDC, szTmp, strlen (szTmp), &size);
+		{
+			int tx = sx + (nW - size.cx) / 2, ty = max (sy - size.cy - 4, s_nPzT + 2);
+			PuzFrame (hDC, tx - 3, ty - 2, size.cx + 6, size.cy + 4, RGB (200, 200, 200), 150);
+			PuzText (hDC, tx, ty, szTmp, RGB (255, 255, 255), size.cy, FALSE);
+		}
+	}
+	/* 座る場所に立っている時の案内（待機中の台の、本人にだけ） */
+	if ((St.byIdle & PINBALLIDLE_SEAT) && !D.bOver) {
+		g_bDraw = TRUE;
+		if (((timeGetTime () / 500) & 1) == 0) {
+			BOOL bFree = (St.byIdle & PINBALLIDLE_FREE) ? TRUE : FALSE;
+			PuzText (hDC, sx + nW / 2, sy + nH / 2 - 18, (LPSTR)(bFree ? "PUSH START" : "INSERT COIN"), RGB (255, 235, 120), 16, TRUE);
+			if (bFree) {
+				PuzText (hDC, sx + nW / 2, sy + nH / 2 + 2, (LPSTR)"（Sキー）", RGB (255, 255, 255), 16, TRUE);
+			} else {
+				PuzText (hDC, sx + nW / 2, sy + nH / 2 + 4, (LPSTR)"道具→コイン", RGB (255, 255, 255), 14, TRUE);
+			}
+		}
+	}
+	/* 打ち出し待ちの案内（本人の台：レーンで球が待っている間） */
+	if (!St.byIdle && St.byMine && (St.byPhase == PB_PHASE_READY) && !D.bOver) {
+		PuzText (hDC, sx + nW / 2, sy + nH - 56, (LPSTR)"↓を押して離すと発射", RGB (255, 255, 255), 14, TRUE);
+	}
+	if (D.bOver) {
+		PuzText (hDC, sx + nW / 2, sy + nH / 2 - 16, (LPSTR)"GAME OVER", RGB (255, 120, 110), 16, TRUE);
+		wsprintf (szTmp, "SCORE %u", (unsigned int)St.dwScore);
+		PuzText (hDC, sx + nW / 2, sy + nH / 2 + 2, szTmp, RGB (255, 255, 255), 16, TRUE);
+	}
+}
+
+static void DrawPinball(int nX, int nY, BOOL bTop)
+{
+	PINBALLDRAW D;
+	PCHARINFO pChar;
+	HDC hDC = NULL;
+	HFONT hFontOld = NULL;
+	int i, sx, sy;
+
+	if ((g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ())) {
+		return;
+	}
+	pChar = g_aCharInfo[g_nMyCharID];
+	for (i = 0; i < PINBALL_VIEW_MAX; i ++) {
+		if (!GetPinballView (i, &D)) {
+			continue;
+		}
+		/* マップのドット座標 → 描画用の画面（落ち物パズルの DrawPuzzle と同じ） */
+		sx = (DRAW_PARTS_X + 1) * 32 + (int)D.St.sFieldX - (int)pChar->dwX * 32;
+		sy = (DRAW_PARTS_Y + 1) * 32 + (int)D.St.sFieldY - (int)pChar->dwY * 32;
+		{
+			int nExtra = (D.St.byIdle ? 0 : 110) + 6;
+			if ((sx + PB_W + nExtra <= nX) || (sx - nExtra >= nX + SCRSIZEX) ||
+				(sy + PB_H + 6 <= nY) || (sy - 24 >= nY + SCRSIZEY)) {
+				continue;
+			}
+		}
+		s_nPzL = nX;
+		s_nPzT = nY;
+		s_nPzR = nX + SCRSIZEX;
+		s_nPzB = nY + SCRSIZEY;
+		if (hDC == NULL) {
+			hDC = g_pDibDrawMap->Lock ();
+			hFontOld = (HFONT)SelectObject (hDC, g_hFont14);
+			SetBkMode (hDC, TRANSPARENT);
+		}
+		DrawPinballOne (hDC, D, sx, sy, bTop);
+	}
+	if (hDC) {
+		SelectObject (hDC, hFontOld);
+		g_pDibDrawMap->Unlock ();
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：DrawDefenseBand													 */
 /* 内容：番外編の拠点防衛の挑戦中だけ、画面の上の中央にパネルを出す			 */
 /*		 1行目「拠点HP [バー] 720/1000」（残り割合で緑→黄(50%以下)→赤(25%以下)）	 */
@@ -1059,6 +1283,7 @@ void DrawScreen(HWND hWnd, HDC hDC)
 
 				/* 落ち物パズルの帯・待ちお邪魔のバー・文字（盤面本体は DrawScreenMOVE でキャラの前に描いてある。ウィンドウの下に敷く） */
 				DrawPuzzle (32 - x, 32 - y, TRUE);
+				DrawPinball (32 - x, 32 - y, TRUE);
 
 				hDCPrimary = g_pDibDrawMap->Lock ();
 				HFONT hFontOld = (HFONT)SelectObject (hDCPrimary, g_hFont14);
@@ -1275,6 +1500,7 @@ BOOL DrawScreenMOVE(void)
 	{
 		PCHARINFO pMyChar = g_aCharInfo[g_nMyCharID];
 		DrawPuzzle (32 - BowOffsetX (pMyChar), 32 - BowOffsetY (pMyChar), FALSE);
+		DrawPinball (32 - BowOffsetX (pMyChar), 32 - BowOffsetY (pMyChar), FALSE);
 	}
 	for (i = 0; i < DRAW_PARTS_Y * 2 + 3; i ++) {
 		DrawCharLine (i);
@@ -2848,7 +3074,7 @@ void DrawChar3(void)
 
 		/* 落ち物パズルの台NPC（台詞が @p。サーバーが byGhost=CHARGHOST_NAMEONLY で送ってくる）は体も名前も描かない（見えない台） */
 		BOOL bPuzzleTable = (pChar->byGhost == CHARGHOST_NAMEONLY) && (pChar->byNpcType != NPCTYPE_INIT) && pChar->pszNpcSpeech &&
-				(pChar->pszNpcSpeech[0] == '@') && (pChar->pszNpcSpeech[1] == 'p');
+				(pChar->pszNpcSpeech[0] == '@') && ((pChar->pszNpcSpeech[1] == 'p') || (pChar->pszNpcSpeech[1] == 'i'));
 		if (!bPuzzleTable && ((g_byViewMode == 1) || (g_byViewMode == 3))) {
 			cl = RGB(255, 255, 255);
 			if (pChar->clName) {
