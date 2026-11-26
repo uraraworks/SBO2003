@@ -366,7 +366,9 @@ inline char *RecipeKindName(const RECIPEINFO *pRecipe, char *pszOut, int nSize)
 	}
 	if (pRecipe->byKind == RECIPEKIND_FORGE) {
 		pNext = ItemAffixFind (pAffix->wNext);
-		if (pNext) {
+		if (pNext && pRecipe->byAllowPlain) {
+			snprintf (pszOut, nSize, "鍛える（%s→%s・普通の装備も）", pAffix->szName, pNext->szName);
+		} else if (pNext) {
 			snprintf (pszOut, nSize, "鍛える（%s→%s）", pAffix->szName, pNext->szName);
 		} else {
 			snprintf (pszOut, nSize, "鍛える：%s", pAffix->szName);

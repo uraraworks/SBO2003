@@ -3058,6 +3058,11 @@ static void KeyProcAPPRAISE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		if (pWnd->nType2 == MAKERWND_APPRAISE) {
 			int nIndex = (int)pWnd->byData1 + pWnd->nData1;
 			if ((nIndex < 0) || (nIndex >= nCount)) {
+				if (nCount == 0) {
+					/* 全部鑑定して選ぶ物が無くなったら、決定でも閉じる（取消だけだと分かりにくい） */
+					EraseWindow (pWnd);
+					g_bDraw = TRUE;
+				}
 				return;
 			}
 			WORD wID = g_aCharInfo[g_nMyCharID]->waItem[anList[nIndex]];

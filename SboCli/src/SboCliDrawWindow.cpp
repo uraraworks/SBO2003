@@ -4518,6 +4518,10 @@ static void DrawWindowAPPRAISE(PWNDINFO pWnd)
 		wsprintf (szTmp, "%dG", (int)AppraiseCost (wID));
 		TextOut2 (hDC, pWnd->nCx - 16 - SboTextWidth (szTmp) * 8, 16 + i * 16, szTmp, clText);
 	}
+	if (nCount == 0) {
+		/* 全部鑑定した後の空の一覧 */
+		TextOut2 (hDC, 32, 16, "鑑定する物はもうありません", RGB (150, 150, 150));
+	}
 
 	SelectObject (hDC, hFontOld);
 	pWnd->pDib->Unlock ();
@@ -4761,6 +4765,26 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 			}
 		}
 	}
+	/* 鍛える・付け替えるレシピは、できる物が無いので材料のアイテムを出さず、レシピの名前と説明を出す */
+	static ITEMINFO s_ItemForge;
+	BOOL bForge = (pRecipe && (pRecipe->byKind != RECIPEKIND_NORMAL)) ? TRUE : FALSE;
+	char szForgeTitle[96], szForgeLine1[96], szForgeLine2[96];
+	szForgeTitle[0] = szForgeLine1[0] = szForgeLine2[0] = 0;
+	if (bForge) {
+		ZeroMemory (&s_ItemForge, sizeof (s_ItemForge));
+		pItem = &s_ItemForge;
+		RecipeKindName (pRecipe, szForgeTitle, sizeof (szForgeTitle));
+		if (pRecipe->byKind == RECIPEKIND_FORGE) {
+			strcpy (szForgeLine1, "付与のついた装備を鍛えて、");
+			strcpy (szForgeLine2, "後ろの付与を一段上げます。");
+		} else {
+			strcpy (szForgeLine1, "付与のついた装備の付与を、");
+			strcpy (szForgeLine2, "このレシピの付与に取り替えます。");
+		}
+		if (pRecipe->byAllowPlain) {
+			strcpy (szForgeLine2, "お店の普通の装備にも使えます。");
+		}
+	}
 	if (pRecipe) {
 		for (int k = 0; k < MAX_RECIPEMAT; k ++) {
 			if ((pRecipe->awMatItem[k] != 0) && (pRecipe->abyMatCount[k] != 0) &&
@@ -4880,7 +4904,10 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 		}
 	}
 	/* 長いアイテム名でも切れない幅にする（画面の幅まで） */
-	nCxNew = max (nCxNew, 16 + SboTextWidth (ItemNameOf (pWnd->nData1)) * 8 + 16);
+	nCxNew = max (nCxNew, 16 + SboTextWidth (bForge ? szForgeTitle : ItemNameOf (pWnd->nData1)) * 8 + 16);
+	if (bForge) {
+		nCxNew = max (nCxNew, 16 + SboTextWidth (szForgeLine2) * 8 + 16);
+	}
 	nCxNew = (nCxNew + 15) / 16 * 16;
 	nCxNew = min (nCxNew, SCRSIZEX);
 	if ((pWnd->nCx != nCxNew) || (pWnd->nCy != nCyNew)) {
@@ -4965,18 +4992,23 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 	HFONT hFontOld = (HFONT)SelectObject (hDC, g_hFontBasic);
 
 	SetBkColor (hDC, RGB (40, 40, 40));
-	wsprintf (szTmp, "%s", ItemNameOf (pWnd->nData1));
+	wsprintf (szTmp, "%s", bForge ? szForgeTitle : ItemNameOf (pWnd->nData1));
 	TextOut2 (hDC, 16, 0, szTmp, RGB (255, 255, 255));
 	SetBkMode (hDC, TRANSPARENT);
 
 	TextOut2 (hDC, 16, 0, szTmp, RGB (255, 255, 255));
-	TextOut2 (hDC, 16, 16, "種類：", RGB (200, 200, 200));
-	wsprintf (szTmp, "%s", aItemeTypeNameTbl[pItem->byType]);
-	TextOut2 (hDC, 16 + ITEMINFO_LINE * 3, 16, szTmp, RGB (150, 255, 200));
+	if (bForge) {
+		TextOut2 (hDC, 16, 16, szForgeLine1, RGB (255, 255, 255));
+		TextOut2 (hDC, 16, 16 + ITEMINFO_LINE * 1, szForgeLine2, RGB (255, 255, 255));
+	} else {
+		TextOut2 (hDC, 16, 16, "種類：", RGB (200, 200, 200));
+		wsprintf (szTmp, "%s", aItemeTypeNameTbl[pItem->byType]);
+		TextOut2 (hDC, 16 + ITEMINFO_LINE * 3, 16, szTmp, RGB (150, 255, 200));
 
-	TextOut2 (hDC, 16, 16 + ITEMINFO_LINE * 1, "価値：", RGB (200, 200, 200));
-	wsprintf (szTmp, "%d", ItemGoldOf ((WORD)pWnd->nData1));
-	TextOut2 (hDC, 16 + ITEMINFO_LINE * 3, 16 + ITEMINFO_LINE * 1, szTmp, RGB (150, 255, 200));
+		TextOut2 (hDC, 16, 16 + ITEMINFO_LINE * 1, "価値：", RGB (200, 200, 200));
+		wsprintf (szTmp, "%d", ItemGoldOf ((WORD)pWnd->nData1));
+		TextOut2 (hDC, 16 + ITEMINFO_LINE * 3, 16 + ITEMINFO_LINE * 1, szTmp, RGB (150, 255, 200));
+	}
 
 	wEqu = 0xFFFF;
 	switch (pItem->byType) {
