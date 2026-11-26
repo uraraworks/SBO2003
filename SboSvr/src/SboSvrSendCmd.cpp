@@ -1923,6 +1923,17 @@ void SendCmdPUZZLESTATE(DWORD pIDSend, PBYTE pData, DWORD dwSize)
 }
 
 /* ========================================================================= */
+/* 関数名：SendCmdJANSTATE													 */
+/* 内容：コマンド送信(SBOじゃんの卓の状態。受取人ごとに作ったもの)			 */
+/*		 pData は先頭が CMDPARA_JANSTATE										 */
+/* ========================================================================= */
+void SendCmdJANSTATE(DWORD pIDSend, PBYTE pData, DWORD dwSize)
+{
+	((PCMDPARA_JANSTATE)pData)->byCmd = CMD_JANSTATE;
+	svrSock.SendTo (pIDSend, pData, dwSize, SENDTIMEOUT);
+}
+
+/* ========================================================================= */
 /* 関数名：SendCmdPUZZLESE													 */
 /* 内容：コマンド送信(落ち物パズルの効果音。台の盤面を見ている人に)			 */
 /* ========================================================================= */

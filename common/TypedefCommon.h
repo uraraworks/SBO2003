@@ -410,6 +410,9 @@ enum {
 	CMD_PUZZLEKEY,													/* 落ち物パズルのキー入力（クライアント→サーバー。CMDPARA_PUZZLEKEY の byData が PUZZLEKEY_*、dwTblID=本人、dwSerial=連番） */
 	CMD_PUZZLESTATE,												/* 落ち物パズルの盤面・操作中の落ち物・得点（サーバー→座っている人・対戦相手・台の近くの人。CMDPARA_PUZZLESTATE） */
 	CMD_PUZZLESE,												/* 落ち物パズルの効果音（サーバー→台の近くの人。CMDPARA_PUZZLESE。盤面が見える距離にいる人だけに届く） */
+/* 以下、プレイヤー用（SBOじゃん。CMD_JANKEY はクライアント→サーバーも受ける。管理者用の判定から外すこと） */
+	CMD_JANSTATE,													/* SBOじゃんの卓の状態（サーバー→座っている人・卓の近くの人。受取人ごとに作る。CMDPARA_JANSTATE） */
+	CMD_JANKEY,														/* SBOじゃんの操作（クライアント→サーバー。CMDPARA_JANKEY。byAct が JAN_ACT_*） */
 	CMD_MAX
 };
 
@@ -4415,6 +4418,91 @@ typedef struct _CMDPARA_PUZZLESE {
 	BYTE		bySe;												/* PUZZLESE_* */
 	DWORD		dwNpc;												/* 台NPCのテーブルID（その台の盤面を持っている人だけが鳴らす） */
 } CMDPARA_PUZZLESE, *PCMDPARA_PUZZLESE;
+#pragma pack(pop)
+
+/* SBOじゃん（台詞が "@j<コイン番号>,<枚数>,<CPUの強さ>" の台NPCが卓の中心。盤面ロジックは common/Janjan.h。
+   段階 1 は人間 1 人＋CPU 3 人。CMD_JANSTATE は、座っている人・卓の近くにいる人（観戦。席が空の待機中の卓も）に、受取人ごとに作って送る） */
+/* CMDPARA_JANKEY の byAct（クライアント→サーバー。反則・手番外は黙って捨てられる） */
+#define JAN_ACT_LEAVE		(0)										/* 席を立つ */
+#define JAN_ACT_DISCARD		(1)										/* 牌を捨てる（byParam=牌id） */
+#define JAN_ACT_TSUMO		(2)										/* ツモ上がり */
+#define JAN_ACT_RON			(3)										/* ロン */
+#define JAN_ACT_SOROI		(4)										/* そろいで鳴く */
+#define JAN_ACT_GUMI		(5)										/* 組そろいで鳴く（byParam=CMDPARA_JANSTATE の abyGumi の添字） */
+#define JAN_ACT_PASS		(6)										/* 見送る（鳴き・ロンの待ちを飛ばす） */
+/* CMDPARA_JANSTATE の byKind */
+#define JANSTATE_NONE		(0)										/* 消す（席を立った・片付いた・離れた。クライアントは卓の絵を消す） */
+#define JANSTATE_STATE		(1)										/* 卓の状態（全体。毎回これで上書きする） */
+/* CMDPARA_JANSTATE の byIdle のビット */
+#define JANIDLE_ON			(0x01)									/* 待機（席に誰もいない空卓） */
+#define JANIDLE_SEAT		(0x02)									/* 受取人が座る場所のマスに立っている（待機の卓で、本人にだけ付く） */
+#define JANIDLE_FREE		(0x04)									/* この台は無料（SEAT と一緒に付く） */
+/* CMDPARA_JANSTATE の byPhase（卓の進行） */
+#define JANPHASE_IDLE		(0)										/* 待機（空卓） */
+#define JANPHASE_PLAY		(1)										/* 進行中（座ってから配牌までの 1.5 秒も含む。その間 byLogicPhase は DRAW・手牌は空） */
+#define JANPHASE_OVER		(2)										/* 終局表示（全員の手牌が表。数秒後に席を立たせる） */
+/* CMDPARA_JANSTATE の byCanAct のビット（受取人が今できる操作） */
+#define JAN_CAN_TSUMO		(0x01)
+#define JAN_CAN_RON			(0x02)
+#define JAN_CAN_SOROI		(0x04)
+#define JAN_CAN_GUMI		(0x08)
+#define JAN_CAN_PASS		(0x10)
+/* JANSEATWIRE の byState */
+#define JANSEAT_EMPTY		(0)										/* 空席 */
+#define JANSEAT_HUMAN		(1)										/* 人間 */
+#define JANSEAT_CPU			(2)										/* CPU */
+#define JAN_TILE_HIDDEN		(0xFF)									/* 手牌の裏（見えない牌）／byLastTile のなし */
+#define JAN_NAME_LEN		(32)									/* 席名の欄（終端含むバイト数。UTF-8） */
+#define JAN_HAND_WIRE		(9)										/* 手牌の欄（配牌 8 枚＋引いた牌 1 枚） */
+#define JAN_MELD_WIRE		(2)										/* 鳴いた組の欄 */
+#define JAN_RIVER_WIRE		(32)									/* 捨て牌の欄 */
+#define JAN_GUMI_WIRE		(3)										/* 組そろいの選び方の欄 */
+#pragma pack(push, 1)
+typedef struct _JANMELDWIRE {
+	BYTE		byKind;												/* JANJAN_MELD_*（0=そろい 1=組そろい） */
+	BYTE		abyTile[3];											/* 牌id（昇順） */
+} JANMELDWIRE;
+typedef struct _JANSEATWIRE {
+	BYTE		byState;											/* JANSEAT_*（0=空 1=人間 2=CPU） */
+	char		szName[JAN_NAME_LEN];								/* 席名（UTF-8。\0 終端。人間=キャラ名・CPU=「CPU1」〜） */
+	short		sScore;												/* 得点 */
+	BYTE		byHandNum;											/* 手牌の枚数（隠した牌。引いた牌を含む） */
+	BYTE		abyHand[JAN_HAND_WIRE];								/* 牌id。見せない牌は 0xFF（裏）。引いた牌は最後 */
+	BYTE		byMeldNum;											/* 鳴いた組の数 */
+	JANMELDWIRE	aMeld[JAN_MELD_WIRE];
+	BYTE		byRiverNum;											/* 捨て牌の数 */
+	BYTE		abyRiver[JAN_RIVER_WIRE];							/* 捨て牌（捨てた順。鳴かれた牌は抜ける） */
+} JANSEATWIRE;
+typedef struct _CMDPARA_JANSTATE {
+	BYTE		byCmd;												/* コマンドID */
+	DWORD		dwNpc;												/* 台NPCのテーブルID（卓を見分ける印。受け取る側は卓ごとに状態を覚える） */
+	BYTE		byKind;												/* JANSTATE_* */
+	BYTE		byMySeat;											/* 受取人が座っている席（0〜3）。座っていなければ 0xFF（観戦・待機の卓） */
+	BYTE		byIdle;												/* JANIDLE_* のビット */
+	BYTE		byPhase;											/* JANPHASE_* */
+	BYTE		byTurn;												/* 手番の席（0〜3） */
+	BYTE		byLogicPhase;										/* JANJAN_PHASE_*（0=引く番 1=捨てる番 2=終局） */
+	BYTE		byPileLeft;											/* 山の残り枚数 */
+	BYTE		byResult;											/* JANJAN_RESULT_*（0=続行 1=上がり 2=流局） */
+	BYTE		byWinner;											/* 上がった席（byResult=1 の時） */
+	BYTE		byWinHow;											/* JANJAN_HOW_*（0=ツモ 1=ロン） */
+	BYTE		byCanAct;											/* 受取人が今できる操作（JAN_CAN_* のビット） */
+	BYTE		byGumiNum;											/* 組そろいの選び方の数（受取人が組そろいできる時だけ。最大 3） */
+	BYTE		abyGumi[JAN_GUMI_WIRE][2];							/* 組そろいで手牌から出す 2 枚（牌id。CMDPARA_JANKEY の byParam はこの添字） */
+	BYTE		byLastSeat;											/* 直前に捨てた席 */
+	BYTE		byLastTile;											/* 直前に捨てた牌（まだロン・鳴きの対象の牌だけ。なければ 0xFF） */
+	int			nFieldX;											/* 卓の左上（マップのドット座標。7×7 マスの左上） */
+	int			nFieldY;
+	DWORD		dwLimitMs;											/* 受取人本人の待ち残り(ms)。待ちが無ければ 0（送った時点の値。クライアントは自分で減らす） */
+	JANSEATWIRE	aSeat[4];
+} CMDPARA_JANSTATE, *PCMDPARA_JANSTATE;
+/* CMD_JANKEY の中身（クライアント→サーバー。dwTblID は本人のキャラのテーブルID） */
+typedef struct _CMDPARA_JANKEY {
+	BYTE		byCmd;												/* コマンドID */
+	DWORD		dwTblID;											/* 本人のキャラのテーブルID */
+	BYTE		byAct;												/* JAN_ACT_* */
+	BYTE		byParam;											/* DISCARD=牌id・GUMI=選んだ組の番号（abyGumi の添字） */
+} CMDPARA_JANKEY, *PCMDPARA_JANKEY;
 #pragma pack(pop)
 
 /* 並べ替えの対象(CMDPARA_SORTITEM の byTarget) */

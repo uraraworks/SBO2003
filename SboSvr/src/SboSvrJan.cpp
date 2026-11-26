@@ -1,0 +1,1122 @@
+/* ========================================================================= */
+/* ファイル名：	SboSvrJan.cpp												 */
+/* 概要：		SBOじゃんの卓（台NPC・4 席・CPU・ゲームの進行）の処理(実装ファイル) */
+/* 作成日：		2026/11/26													 */
+/* ========================================================================= */
+/*
+ * 仕様は docs/janjan.md。盤面ロジックは common/Janjan.h（通信・時計を知らない）。落ち物パズル（SboSvrPuzzle.cpp）の作りを写している。
+ * 台は、台詞が "@j<コイン番号>,<枚数>,<CPUの強さ>" の NPC（枚数 0・コイン番号 0 は無料。強さの省略は 2）。
+ *   台NPCのマスが卓の中心 (cx,cy)。盤は 7×7 マス。座る場所は 席0=(cx,cy+4) 席1=(cx+4,cy) 席2=(cx,cy-4) 席3=(cx-4,cy)。
+ *   台NPCは見えない（CMD_CHARINFO の byGhost を送る時だけ CHARGHOST_NAMEONLY にする。PuzzleGhostForSend）。
+ *   どの席かは、立っているマスで決まる。座るとキャラは歩かない。
+ * 段階 1 は人間 1 人＋CPU 3 人。座った人の席以外は CPU。台が使われている間は他の人は座れない（観戦はできる）。
+ * 進行（JanProc。g_dwTime の経過時間で進める。1 回の呼び出しで進めるのは 1 動作だけ）:
+ *   座る→JAN_START_MS 後に配牌（親は席 0）→ 引く→捨てる→（他席のロン・鳴きの申し出）→次の席 … 局が終わったら結果を
+ *   システムメッセージで出し、JAN_OVER_MS 見せてから席を立たせる。
+ *   CPU は JAN_CPU_MS ごとに 1 動作。人間の手番は JAN_TURN_MS（時間切れは引いた牌を捨てる）。人間がロン・鳴きできる時だけ
+ *   JAN_CLAIM_MS 待つ（時間切れは見送り）。CPU の申し出と優先順位は Janjan.h（JanjanCpuClaim・JanjanResolveClaim）。
+ * 状態（CMD_JANSTATE）は受取人ごとに作る：座っている人には自分の手牌だけ表（他席は 0xFF=裏）。座っていない観戦者には全員の手牌を表。
+ *   局が終わった時は全員に全手牌を表。変わった時だけ送る（同じ内容は送り直さない。待ち残り dwLimitMs の違いだけでは送り直さない）。
+ * 送る相手（卓ごと）: 座っている人・卓の近くにいる人（観戦。JAN_WATCH_MS ごとに見直し、近づいた時に状態を 1 回送り、離れた時に NONE を送る）。
+ * 席を立つ・切断・マップ移動・座る場所から離れる（JAN_NEAR マス超）で卓を片付けて待機（空卓）に戻す。
+ */
+#include "include.h"
+#include "Glbldata.h"
+#include "SboSvrRecvCmd.h"
+#include "SboSvrQuest.h"
+#include "SboSvrJan.h"
+#include "../../common/Janjan.h"
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <string>
+#include <vector>
+
+#define JAN_NOCHAR			((DWORD)-1)
+#define JAN_NEAR			(3)			/* 座る場所のマスからこれ以上離れたら席を立たせる（マス） */
+#define JAN_WATCH_MS		(250)		/* 卓の近くにいる人（観戦）を見直す間隔(ms) */
+#define JAN_TILE_DOT		(32)		/* 地図 1 マスの大きさ(ドット) */
+/* 状態を送る距離（卓の中心から。横・縦それぞれ。画面は 15×15 マス：半分 7.5＋歩きのずれ 1＋卓の半分と席 4＝12.5 マスに余裕を足した） */
+#define JAN_VIEW_ENTER		(15)		/* 送り始める距離（マス） */
+#define JAN_VIEW_LEAVE		(18)		/* 消す（NONE を送る）距離（送り始める距離より 3 マス外。境目で送る・消すを繰り返さない） */
+
+/* 卓の進行 */
+#define JANMODE_IDLE		(0)			/* 待機（空卓） */
+#define JANMODE_START		(1)			/* 座ってから配牌まで */
+#define JANMODE_PLAY		(2)			/* 進行中 */
+#define JANMODE_OVER		(3)			/* 終局表示 */
+/* 進行中の段 */
+#define JANSTEP_DRAW		(0)			/* 手番の席が引く（dwNext） */
+#define JANSTEP_DISCARD		(1)			/* 手番の席が捨てる（CPU は dwNext・人間は dwLimit まで） */
+#define JANSTEP_CLAIM		(2)			/* 直前の捨て牌への申し出を決める（人間が申し出できる時は bHumanWait で dwLimit まで待つ。そうでなければ dwNext） */
+
+/* 台の設定（台NPCの台詞から読む） */
+typedef struct _JANPARAM {
+	WORD	wCoinItem;						/* コインのアイテム番号（0=無料） */
+	int		nCoinCount;						/* 必要な枚数（0=無料） */
+	int		nStrength;						/* CPU の強さ（1〜3） */
+} JANPARAM;
+
+/* 状態を送ってある人 */
+typedef struct _JANWATCH {
+	DWORD				dwChar;				/* キャラのテーブルID */
+	DWORD				dwPID;				/* プレイヤーID */
+	BOOL				bSent;				/* 最後に送った内容を持っているか */
+	CMDPARA_JANSTATE	Last;				/* 最後に送った内容（dwLimitMs は 0 にして持つ。同じ内容を送り直さないための比べ用） */
+} JANWATCH;
+
+/* 卓（座っている人がいる間と、待機中の卓の近くに人がいる間、表に載せる） */
+typedef struct _JANTABLE {
+	DWORD		dwNpc;						/* 台NPCのテーブルID */
+	DWORD		dwMapID;					/* 台NPCのいるマップ */
+	JANPARAM	Param;
+	DWORD		dwChar;						/* 座っている人のテーブルID（いなければ JAN_NOCHAR） */
+	DWORD		dwPID;						/* そのキャラのプレイヤーID（テーブルIDの使い回しを見分ける） */
+	int			nSeat;						/* 座っている人の席（0〜3。いなければ -1） */
+	int			nMode;						/* JANMODE_* */
+	int			nStep;						/* JANSTEP_*（JANMODE_PLAY の時） */
+	DWORD		dwNext;						/* 次の動作の時刻（START=配牌・PLAY=CPU の動作・OVER=席を立たせる） */
+	DWORD		dwLimit;					/* 人間の待ちの期限（人間の手番・申し出の待ち） */
+	BOOL		bHumanWait;					/* 人間の申し出を待っているか（JANSTEP_CLAIM の時） */
+	int			nHumanClaim;				/* 人間の申し出（JANJAN_CLAIM_*） */
+	int			nHumanA;					/* 組そろいで使う手牌の 2 枚 */
+	int			nHumanB;
+	DWORD		dwLastWatch;				/* 最後に観戦の人を見直した時刻 */
+	JanjanGame	Game;						/* ゲーム（START の間は空） */
+	char		aszName[JANJAN_SEATS][JAN_NAME_LEN];	/* 席名（UTF-8。人間=キャラ名・CPU=CPU1〜） */
+	std::vector<JANWATCH>	aWatch;			/* 状態を送ってある人（座っている人・近くにいる人） */
+} JANTABLE;
+
+static std::vector<JANTABLE> s_aTable;
+DWORD g_dwJanSeedOverride = 0;
+
+/* ========================================================================= */
+/* 内部関数																	 */
+/* ========================================================================= */
+
+static void ParseParam(LPCSTR pszSpeech, JANPARAM *pParam)
+{
+	int anVal[JANJAN_PARAM_COUNT];
+
+	JanjanParseSpeech (pszSpeech, anVal);
+	pParam->wCoinItem	= ((anVal[0] < 0) || (anVal[0] > 65535)) ? 0 : (WORD)anVal[0];
+	pParam->nCoinCount	= (anVal[1] < 0) ? 0 : (anVal[1] > 99) ? 99 : anVal[1];
+	pParam->nStrength	= (anVal[2] == JANJAN_PARAM_NONE) ? JANJAN_STRENGTH_DEFAULT : ((anVal[2] < 1) ? 1 : (anVal[2] > 3) ? 3 : anVal[2]);
+}
+
+static PCHARINFO NpcOf(const JANTABLE &Table)
+{
+	return (Table.dwNpc < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[Table.dwNpc] : NULL;
+}
+
+static PCHARINFO SeatChar(const JANTABLE &Table)
+{
+	PCHARINFO pChar;
+
+	if ((Table.dwChar == JAN_NOCHAR) || (Table.dwChar >= (DWORD)g_aCharInfo.GetSize ())) {
+		return NULL;
+	}
+	pChar = g_aCharInfo[Table.dwChar];
+	if ((pChar == NULL) || (pChar->pID != Table.dwPID)) {
+		return NULL;
+	}
+	return pChar;
+}
+
+static PCHARINFO WatchChar(const JANWATCH &w)
+{
+	PCHARINFO pChar;
+
+	if (w.dwChar >= (DWORD)g_aCharInfo.GetSize ()) {
+		return NULL;
+	}
+	pChar = g_aCharInfo[w.dwChar];
+	if ((pChar == NULL) || (pChar->pID != w.dwPID) || (pChar->byGameState < GAMESTATE_MOVE)) {
+		return NULL;
+	}
+	return pChar;
+}
+
+static int FindTable(DWORD dwNpc, DWORD dwMapID)
+{
+	int i;
+
+	for (i = 0; i < (int)s_aTable.size (); i ++) {
+		if ((s_aTable[i].dwNpc == dwNpc) && (s_aTable[i].dwMapID == dwMapID)) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+/* 座っている卓を探す（座っていなければ FALSE） */
+static BOOL FindSeat(PCHARINFO pChar, int *pnTable)
+{
+	int i;
+
+	for (i = 0; i < (int)s_aTable.size (); i ++) {
+		if ((s_aTable[i].nMode != JANMODE_IDLE) && (s_aTable[i].dwChar == pChar->dwTblID) && (s_aTable[i].dwPID == pChar->pID)) {
+			*pnTable = i;
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* UTF-8 の文字の途中で切らずに nSize バイト（終端含む）の欄へ写す */
+static void CopyName(char *pszDst, int nSize, LPCSTR pszSrc)
+{
+	int n = (int)strlen (pszSrc);
+
+	if (n > nSize - 1) {
+		n = nSize - 1;
+		while ((n > 0) && ((((BYTE)pszSrc[n]) & 0xC0) == 0x80)) {
+			n --;
+		}
+	}
+	memcpy (pszDst, pszSrc, n);
+	pszDst[n] = '\0';
+}
+
+/* 席名を決める（人間=キャラ名・CPU=CPU1〜。席の順に数える） */
+static void SetNames(JANTABLE &Table, PCHARINFO pChar)
+{
+	int s, nCpu = 0;
+
+	ZeroMemory (Table.aszName, sizeof (Table.aszName));
+	for (s = 0; s < JANJAN_SEATS; s ++) {
+		if (s == Table.nSeat) {
+			CopyName (Table.aszName[s], JAN_NAME_LEN, pChar->szName);
+		} else {
+			nCpu ++;
+			sprintf (Table.aszName[s], "CPU%d", nCpu);
+		}
+	}
+}
+
+/* 卓を待機（空卓）に戻す（表からは消さない。近くの人へは待機状態で送り続ける） */
+static void ToIdle(int nTable)
+{
+	JANTABLE &Table = s_aTable[nTable];
+
+	Table.dwChar = JAN_NOCHAR;
+	Table.dwPID = 0;
+	Table.nSeat = -1;
+	Table.nMode = JANMODE_IDLE;
+	Table.nStep = JANSTEP_DRAW;
+	Table.dwNext = 0;
+	Table.dwLimit = 0;
+	Table.bHumanWait = FALSE;
+	Table.nHumanClaim = JANJAN_CLAIM_NONE;
+	Table.nHumanA = Table.nHumanB = 0;
+	ZeroMemory (&Table.Game, sizeof (Table.Game));
+	ZeroMemory (Table.aszName, sizeof (Table.aszName));
+}
+
+/* 空卓の座る場所に立っている人の案内（JANIDLE_SEAT。必要な枚数が 0 なら JANIDLE_FREE も）。
+   席が空の卓の座る場所のマスに立っていて、倒れておらず、ほかの卓に座っていない人だけ（JanSit で座れる状態） */
+static BYTE SeatFlag(const JANTABLE &Table, PCHARINFO pChar)
+{
+	PCHARINFO pNpc = NpcOf (Table);
+
+	if ((Table.nMode != JANMODE_IDLE) || (pNpc == NULL) || (pChar->byNpcType != NPCTYPE_INIT) || (pChar->byGameState < GAMESTATE_MOVE) ||
+		(pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0) || (pChar->abySubStatus[0] != 0) || JanIsSeated (pChar) ||
+		PuzzleIsSeated (pChar) || (pChar->dwMapID != Table.dwMapID) || !IsSameSpace (pNpc, pChar) || !JanOnSeatCell (pChar, pNpc, NULL)) {
+		return 0;
+	}
+	return (BYTE)(JANIDLE_SEAT | (((Table.Param.wCoinItem == 0) || (Table.Param.nCoinCount <= 0)) ? JANIDLE_FREE : 0));
+}
+
+/* 人間が今、できる操作（JAN_CAN_*）と、組そろいの選び方（aGumi。最大 JAN_GUMI_WIRE）を調べる */
+static BYTE CanAct(const JANTABLE &Table, int *pnGumi, BYTE aGumi[JAN_GUMI_WIRE][2])
+{
+	const JanjanGame &g = Table.Game;
+	int s = Table.nSeat, n, i;
+	BYTE by = 0;
+
+	*pnGumi = 0;
+	if ((Table.nMode != JANMODE_PLAY) || (s < 0)) {
+		return 0;
+	}
+	if ((Table.nStep == JANSTEP_DISCARD) && (g.nTurn == s)) {
+		if (JanjanCanTsumo (g, s)) {
+			by |= JAN_CAN_TSUMO;
+		}
+	} else if ((Table.nStep == JANSTEP_CLAIM) && Table.bHumanWait) {
+		int aOut[JANJAN_GROUP_SIZE * JANJAN_GROUP_SIZE][2];
+
+		if (JanjanCanRon (g, s)) {
+			by |= JAN_CAN_RON;
+		}
+		if (JanjanCanSoroi (g, s)) {
+			by |= JAN_CAN_SOROI;
+		}
+		n = JanjanGumiOptions (g, s, aOut, JANJAN_GROUP_SIZE * JANJAN_GROUP_SIZE);
+		if (n > 0) {
+			by |= JAN_CAN_GUMI;
+			*pnGumi = (n > JAN_GUMI_WIRE) ? JAN_GUMI_WIRE : n;
+			for (i = 0; i < *pnGumi; i ++) {
+				aGumi[i][0] = (BYTE)aOut[i][0];
+				aGumi[i][1] = (BYTE)aOut[i][1];
+			}
+		}
+		by |= JAN_CAN_PASS;
+	}
+	return by;
+}
+
+/* 席 s の手牌を欄へ書く。bOpen=FALSE なら牌は 0xFF（裏）。引いた牌は最後に置く */
+static void FillSeat(const JANTABLE &Table, int s, BOOL bOpen, JANSEATWIRE *pSeat)
+{
+	const JanjanGame &g = Table.Game;
+	int i, n, nSkip = -1;
+
+	ZeroMemory (pSeat, sizeof (*pSeat));
+	if (Table.nMode == JANMODE_IDLE) {
+		return;			/* 空席 */
+	}
+	pSeat->byState = (BYTE)((s == Table.nSeat) ? JANSEAT_HUMAN : JANSEAT_CPU);
+	memcpy (pSeat->szName, Table.aszName[s], JAN_NAME_LEN);
+	pSeat->szName[JAN_NAME_LEN - 1] = '\0';
+	pSeat->sScore = (short)g.anScore[s];
+	n = g.anHand[s];
+	if (n > JAN_HAND_WIRE) {
+		n = JAN_HAND_WIRE;
+	}
+	pSeat->byHandNum = (BYTE)n;
+	/* 引いた牌（引いた席の捨てる番。ツモ上がりで終わった時も）は最後に置く */
+	if ((s == g.nTurn) && g.bDrew && (n > 0) &&
+		((g.nPhase == JANJAN_PHASE_DISCARD) || ((g.nPhase == JANJAN_PHASE_END) && (g.nResult == JANJAN_RESULT_WIN) && (g.nWinHow == JANJAN_HOW_TSUMO)))) {
+		int nDrawn = g.aPile[g.nPileTop - 1];
+		for (i = 0; i < n; i ++) {
+			if (g.aHand[s][i] == nDrawn) {
+				nSkip = i;
+				break;
+			}
+		}
+	}
+	{
+		int nPos = 0;
+		for (i = 0; i < n; i ++) {
+			if (i == nSkip) {
+				continue;
+			}
+			pSeat->abyHand[nPos ++] = bOpen ? (BYTE)g.aHand[s][i] : (BYTE)JAN_TILE_HIDDEN;
+		}
+		if (nSkip >= 0) {
+			pSeat->abyHand[nPos ++] = bOpen ? (BYTE)g.aHand[s][nSkip] : (BYTE)JAN_TILE_HIDDEN;
+		}
+	}
+	n = g.anMeld[s];
+	if (n > JAN_MELD_WIRE) {
+		n = JAN_MELD_WIRE;
+	}
+	pSeat->byMeldNum = (BYTE)n;
+	for (i = 0; i < n; i ++) {
+		pSeat->aMeld[i].byKind = (BYTE)g.aMeld[s][i].nKind;
+		pSeat->aMeld[i].abyTile[0] = (BYTE)g.aMeld[s][i].aTile[0];
+		pSeat->aMeld[i].abyTile[1] = (BYTE)g.aMeld[s][i].aTile[1];
+		pSeat->aMeld[i].abyTile[2] = (BYTE)g.aMeld[s][i].aTile[2];
+	}
+	n = g.anRiver[s];
+	if (n > JAN_RIVER_WIRE) {
+		n = JAN_RIVER_WIRE;
+	}
+	pSeat->byRiverNum = (BYTE)n;
+	for (i = 0; i < n; i ++) {
+		pSeat->abyRiver[i] = (BYTE)g.aRiver[s][i];
+	}
+}
+
+/* 卓の状態を受取人 pRecv（NULL=誰でもない観戦者）向けに作る。bNone なら「消す」 */
+static void BuildState(const JANTABLE &Table, PCHARINFO pRecv, BOOL bNone, CMDPARA_JANSTATE *pOut)
+{
+	const JanjanGame &g = Table.Game;
+	PCHARINFO pNpc = NpcOf (Table), pSeat = SeatChar (Table);
+	BOOL bMine = (pRecv != NULL) && (pRecv == pSeat) && (Table.nMode != JANMODE_IDLE);
+	BOOL bAll = (Table.nMode == JANMODE_OVER);			/* 局が終わった時は全員に全手牌 */
+	int s, nGumi = 0;
+	BYTE aGumi[JAN_GUMI_WIRE][2];
+
+	ZeroMemory (pOut, sizeof (*pOut));
+	pOut->byCmd = CMD_JANSTATE;
+	pOut->dwNpc = Table.dwNpc;
+	pOut->byKind = (BYTE)(bNone ? JANSTATE_NONE : JANSTATE_STATE);
+	pOut->byMySeat = (BYTE)(bMine ? Table.nSeat : 0xFF);
+	pOut->byLastTile = JAN_TILE_HIDDEN;
+	if (pNpc) {
+		pOut->nFieldX = ((int)pNpc->dwX - JANJAN_TABLE_HALF) * JAN_TILE_DOT;
+		pOut->nFieldY = ((int)pNpc->dwY - JANJAN_TABLE_HALF) * JAN_TILE_DOT;
+	}
+	if (bNone) {
+		return;
+	}
+	if (Table.nMode == JANMODE_IDLE) {
+		pOut->byIdle = (BYTE)(JANIDLE_ON | ((pRecv != NULL) ? SeatFlag (Table, pRecv) : 0));
+		pOut->byPhase = JANPHASE_IDLE;
+		for (s = 0; s < JANJAN_SEATS; s ++) {
+			FillSeat (Table, s, FALSE, &pOut->aSeat[s]);
+		}
+		return;
+	}
+	pOut->byPhase = (BYTE)((Table.nMode == JANMODE_OVER) ? JANPHASE_OVER : JANPHASE_PLAY);
+	pOut->byTurn = (BYTE)g.nTurn;
+	pOut->byLogicPhase = (BYTE)g.nPhase;
+	pOut->byPileLeft = (BYTE)JanjanPileLeft (g);
+	pOut->byResult = (BYTE)g.nResult;
+	pOut->byWinner = (BYTE)((g.nWinner < 0) ? 0 : g.nWinner);
+	pOut->byWinHow = (BYTE)g.nWinHow;
+	pOut->byLastSeat = (BYTE)g.nLastSeat;
+	if (g.bLastLive || ((g.nResult == JANJAN_RESULT_WIN) && (g.nWinHow == JANJAN_HOW_RON))) {
+		pOut->byLastTile = (BYTE)g.nLastTile;			/* 続行中は鳴き・ロンの対象の牌。ロンで終わった時は上がり牌 */
+	}
+	if (bMine) {
+		pOut->byCanAct = CanAct (Table, &nGumi, aGumi);
+		pOut->byGumiNum = (BYTE)nGumi;
+		memcpy (pOut->abyGumi, aGumi, sizeof (pOut->abyGumi));
+		if ((Table.nMode == JANMODE_PLAY) && (((Table.nStep == JANSTEP_DISCARD) && (g.nTurn == Table.nSeat)) ||
+			((Table.nStep == JANSTEP_CLAIM) && Table.bHumanWait))) {
+			int nMs = (int)(Table.dwLimit - g_dwTime);
+			pOut->dwLimitMs = (DWORD)((nMs < 0) ? 0 : nMs);
+		}
+	}
+	/* 手牌：座っている人は自分だけ表。座っていない観戦者は全員表。局が終わったら全員表 */
+	for (s = 0; s < JANJAN_SEATS; s ++) {
+		BOOL bOpen = bAll || !bMine || (s == Table.nSeat);
+		FillSeat (Table, s, bOpen, &pOut->aSeat[s]);
+	}
+}
+
+/* 1 人に送る。前に送った内容と同じ（待ち残りの違いだけ）なら送らない */
+static void SendStateTo(const JANTABLE &Table, PCHARINFO pChar, JANWATCH &w, BOOL bNone)
+{
+	CMDPARA_JANSTATE St, Cmp;
+
+	BuildState (Table, pChar, bNone, &St);
+	Cmp = St;
+	Cmp.dwLimitMs = 0;
+	if (w.bSent && (memcmp (&w.Last, &Cmp, sizeof (Cmp)) == 0)) {
+		return;
+	}
+	w.Last = Cmp;
+	w.bSent = TRUE;
+	SendCmdJANSTATE (pChar->pID, (PBYTE)&St, sizeof (St));
+}
+
+/* 卓の状態を、送ってある全員に送る（受取人ごとに作る）。pSkip には送らない */
+static void SendTable(int nTable, PCHARINFO pSkip = NULL)
+{
+	JANTABLE &Table = s_aTable[nTable];
+	int i;
+
+	for (i = 0; i < (int)Table.aWatch.size (); i ++) {
+		PCHARINFO pChar = WatchChar (Table.aWatch[i]);
+		if ((pChar == NULL) || (pChar == pSkip)) {
+			continue;
+		}
+		SendStateTo (Table, pChar, Table.aWatch[i], FALSE);
+	}
+}
+
+/* 送ってある全員へシステムメッセージ */
+static void SendMsgAll(const JANTABLE &Table, LPCSTR pszMsg)
+{
+	int i;
+
+	for (i = 0; i < (int)Table.aWatch.size (); i ++) {
+		PCHARINFO pChar = WatchChar (Table.aWatch[i]);
+		if (pChar) {
+			SendCmdSYSMSG (pChar->pID, pszMsg);
+		}
+	}
+}
+
+/* 卓の状態を送る距離にいるか（卓の中心から nMargin マス） */
+static BOOL WatchEligible(DWORD dwMapID, PCHARINFO pNpc, PCHARINFO pChar, int nMargin)
+{
+	if ((pChar->byNpcType != NPCTYPE_INIT) || (pChar->byGameState < GAMESTATE_MOVE) || (pChar->dwMapID != dwMapID) ||
+		!IsSameSpace (pNpc, pChar) || !IsCharSeenBy (pNpc, pChar)) {
+		return FALSE;
+	}
+	/* 座る場所のマスに立っている人は、遠くても届ける（案内を出すため） */
+	if (JanOnSeatCell (pChar, pNpc, NULL)) {
+		return TRUE;
+	}
+	return (abs ((int)pChar->dwX - (int)pNpc->dwX) <= nMargin) && (abs ((int)pChar->dwY - (int)pNpc->dwY) <= nMargin);
+}
+
+static int FindWatch(const std::vector<JANWATCH> &aWatch, DWORD dwChar, DWORD dwPID)
+{
+	int i;
+
+	for (i = 0; i < (int)aWatch.size (); i ++) {
+		if ((aWatch[i].dwChar == dwChar) && (aWatch[i].dwPID == dwPID)) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+/* 状態が見える人を見直す。新しく見える人には状態を送り、見えなくなった人には NONE を送って消してもらう。
+   すでに見ている人へは、内容が変わっていた時（座る場所に立った・離れたなど）だけ送る */
+static void WatchRefresh(int nTable)
+{
+	JANTABLE &Table = s_aTable[nTable];
+	PCHARINFO pNpc = NpcOf (Table), pSeat;
+	std::vector<JANWATCH> aNew;
+	PMAPINFO pMap;
+	int i, nOld;
+
+	Table.dwLastWatch = g_dwTime;
+	if (pNpc == NULL) {
+		return;
+	}
+	/* 座っている人は距離に関係なく入れる */
+	pSeat = SeatChar (Table);
+	if (pSeat) {
+		JANWATCH w;
+		nOld = FindWatch (Table.aWatch, pSeat->dwTblID, pSeat->pID);
+		if (nOld >= 0) {
+			w = Table.aWatch[nOld];
+		} else {
+			ZeroMemory (&w, sizeof (w));
+			w.dwChar = pSeat->dwTblID;
+			w.dwPID = pSeat->pID;
+		}
+		aNew.push_back (w);
+	}
+	/* 同じマップの近くにいる人 */
+	pMap = (Table.dwMapID < (DWORD)g_aMapInfo.GetSize ()) ? g_aMapInfo[Table.dwMapID] : NULL;
+	if (pMap && pMap->paTblNoPC) {
+		for (i = 0; i < (int)pMap->dwCountTblNoPC; i ++) {
+			PCHARINFO pChar;
+			JANWATCH w;
+
+			if (pMap->paTblNoPC[i] == (DWORD)-1) {
+				break;
+			}
+			pChar = g_aCharInfo[pMap->paTblNoPC[i]];
+			if (pChar == pSeat) {
+				continue;
+			}
+			nOld = FindWatch (Table.aWatch, pChar->dwTblID, pChar->pID);
+			/* すでに送ってある人は遠い距離（LEAVE）まで、新しい人は近い距離（ENTER）から。境目で送る・消すを繰り返さない */
+			if (!WatchEligible (Table.dwMapID, pNpc, pChar, (nOld >= 0) ? JAN_VIEW_LEAVE : JAN_VIEW_ENTER)) {
+				continue;
+			}
+			if (nOld >= 0) {
+				w = Table.aWatch[nOld];
+			} else {
+				ZeroMemory (&w, sizeof (w));
+				w.dwChar = pChar->dwTblID;
+				w.dwPID = pChar->pID;
+			}
+			aNew.push_back (w);
+		}
+	}
+	/* 見えなくなった人へ NONE */
+	for (i = 0; i < (int)Table.aWatch.size (); i ++) {
+		PCHARINFO pChar;
+		if (FindWatch (aNew, Table.aWatch[i].dwChar, Table.aWatch[i].dwPID) >= 0) {
+			continue;
+		}
+		pChar = WatchChar (Table.aWatch[i]);
+		if (pChar) {
+			SendStateTo (Table, pChar, Table.aWatch[i], TRUE);
+		}
+	}
+	/* 新しく見える人へ状態。すでに見ている人へは変わった時だけ */
+	for (i = 0; i < (int)aNew.size (); i ++) {
+		PCHARINFO pChar = WatchChar (aNew[i]);
+		if (pChar) {
+			SendStateTo (Table, pChar, aNew[i], FALSE);
+		}
+	}
+	Table.aWatch = aNew;
+}
+
+/* 席を立たせる。bNotifySelf でなければ本人へは送らない（切断）。卓は待機（空卓）に戻る */
+static void Leave(int nTable, BOOL bNotifySelf)
+{
+	JANTABLE &Table = s_aTable[nTable];
+	PCHARINFO pSelf = SeatChar (Table);
+
+	ToIdle (nTable);
+	SendTable (nTable, bNotifySelf ? NULL : pSelf);
+}
+
+/* 局を終える（結果をシステムメッセージで出し、JAN_OVER_MS 見せてから席を立たせる） */
+static void EndRound(int nTable)
+{
+	JANTABLE &Table = s_aTable[nTable];
+	const JanjanGame &g = Table.Game;
+	char szMsg[96];
+
+	Table.nMode = JANMODE_OVER;
+	Table.dwNext = g_dwTime + JAN_OVER_MS;
+	Table.bHumanWait = FALSE;
+	if ((g.nResult == JANJAN_RESULT_WIN) && (g.nWinner >= 0) && (g.nWinner < JANJAN_SEATS)) {
+		sprintf (szMsg, "%sの上がり！", Table.aszName[g.nWinner]);
+	} else {
+		strcpy (szMsg, "流局");
+	}
+	SendMsgAll (Table, szMsg);
+	SendTable (nTable);
+}
+
+/* 人間の手番（捨てる）に入る時の待ちの期限 */
+static void SetHumanTurn(JANTABLE &Table)
+{
+	if (Table.Game.nTurn == Table.nSeat) {
+		Table.dwLimit = g_dwTime + JAN_TURN_MS;
+	}
+	Table.dwNext = g_dwTime + JAN_CPU_MS;
+}
+
+/* 捨てた直後：人間がロン・鳴きできるならその返事を待ち、できなければ CPU の申し出を決める段へ */
+static void GoClaim(JANTABLE &Table)
+{
+	const JanjanGame &g = Table.Game;
+	int s = Table.nSeat;
+
+	Table.nStep = JANSTEP_CLAIM;
+	Table.nHumanClaim = JANJAN_CLAIM_NONE;
+	Table.bHumanWait = FALSE;
+	if ((s >= 0) && (JanjanCanRon (g, s) || JanjanCanSoroi (g, s) || JanjanCanGumi (g, s))) {
+		Table.bHumanWait = TRUE;
+		Table.dwLimit = g_dwTime + JAN_CLAIM_MS;
+	}
+	Table.dwNext = g_dwTime + JAN_CPU_MS;
+}
+
+/* 直前の捨て牌への申し出を決める（CPU は JanjanCpuClaim・人間は nHumanClaim。優先は JanjanResolveClaim）。
+   上がり→局を終える／鳴き→その席が捨てる番／誰もなし→次の席が引く */
+static void ResolveClaim(int nTable)
+{
+	JANTABLE &Table = s_aTable[nTable];
+	JanjanGame &g = Table.Game;
+	int aClaim[JANJAN_SEATS], aA[JANJAN_SEATS], aB[JANJAN_SEATS], s, nSeat = -1, nType;
+
+	for (s = 0; s < JANJAN_SEATS; s ++) {
+		aClaim[s] = JANJAN_CLAIM_NONE;
+		aA[s] = aB[s] = 0;
+		if (s == Table.nSeat) {
+			aClaim[s] = Table.nHumanClaim;
+			aA[s] = Table.nHumanA;
+			aB[s] = Table.nHumanB;
+		} else if (s != g.nLastSeat) {
+			aClaim[s] = JanjanCpuClaim (g, s, Table.Param.nStrength, &aA[s], &aB[s]);
+		}
+	}
+	Table.bHumanWait = FALSE;
+	nType = JanjanResolveClaim (g, aClaim, &nSeat);
+	if (nType == JANJAN_CLAIM_RON) {
+		/* 頭ハネは「申し出た席の中」で決める（人間が見送ったロンは、後ろの席のロンを止めない） */
+		JanjanFinishWin (g, nSeat, JANJAN_HOW_RON);
+		EndRound (nTable);
+		return;
+	}
+	if (nType == JANJAN_CLAIM_SOROI) {
+		JanjanSoroi (g, nSeat);
+	} else if (nType == JANJAN_CLAIM_GUMI) {
+		JanjanGumi (g, nSeat, aA[nSeat], aB[nSeat]);
+	}
+	if (nType != JANJAN_CLAIM_NONE) {
+		Table.nStep = JANSTEP_DISCARD;
+		SetHumanTurn (Table);
+	} else {
+		Table.nStep = JANSTEP_DRAW;
+		Table.dwNext = g_dwTime + JAN_CPU_MS;
+	}
+	SendTable (nTable);
+}
+
+/* 手番の席が引く（山が尽きていれば流局） */
+static void DoDraw(int nTable)
+{
+	JANTABLE &Table = s_aTable[nTable];
+	JanjanGame &g = Table.Game;
+
+	if (JanjanPileLeft (g) <= 0) {
+		JanjanFinishDraw (g);
+		EndRound (nTable);
+		return;
+	}
+	JanjanDraw (g, g.nTurn);
+	Table.nStep = JANSTEP_DISCARD;
+	SetHumanTurn (Table);
+	SendTable (nTable);
+}
+
+/* 手番の席が捨てた後（共通） */
+static void AfterDiscard(int nTable)
+{
+	JANTABLE &Table = s_aTable[nTable];
+
+	GoClaim (Table);
+	SendTable (nTable);
+}
+
+/* CPU の捨てる番：上がれるなら上がる。そうでなければ捨てる */
+static void DoCpuDiscard(int nTable)
+{
+	JANTABLE &Table = s_aTable[nTable];
+	JanjanGame &g = Table.Game;
+	int s = g.nTurn, nTile;
+
+	if (JanjanCanTsumo (g, s)) {
+		JanjanTsumo (g, s);
+		EndRound (nTable);
+		return;
+	}
+	nTile = JanjanCpuDiscard (g, s, Table.Param.nStrength);
+	if ((nTile < 0) || !JanjanDiscard (g, s, nTile)) {
+		return;
+	}
+	AfterDiscard (nTable);
+}
+
+/* 人間の時間切れ：引いた牌（なければ手牌の最後）を捨てる */
+static void DoHumanTimeoutDiscard(int nTable)
+{
+	JANTABLE &Table = s_aTable[nTable];
+	JanjanGame &g = Table.Game;
+	int s = Table.nSeat, nTile;
+
+	if (g.anHand[s] <= 0) {
+		return;
+	}
+	nTile = (g.bDrew && (g.nPileTop > 0)) ? g.aPile[g.nPileTop - 1] : g.aHand[s][g.anHand[s] - 1];
+	if (!JanjanDiscard (g, s, nTile)) {
+		return;
+	}
+	AfterDiscard (nTable);
+}
+
+/* 手持ちにあるコインの数（装備品でない普通のアイテム） */
+static int CountCoin(PCHARINFO pChar, WORD wItem)
+{
+	int i, nRet = 0;
+
+	for (i = 0; i < MAX_MYITEM; i ++) {
+		if (pChar->waItem[i] == wItem) {
+			nRet ++;
+		}
+	}
+	return nRet;
+}
+
+/* ========================================================================= */
+/* 外から呼ぶ関数															 */
+/* ========================================================================= */
+
+BOOL JanIsTableNpc(PCHARINFO pNpc)
+{
+	return pNpc && (pNpc->byNpcType != NPCTYPE_INIT) && pNpc->pszNpcSpeech &&
+		(pNpc->pszNpcSpeech[0] == '@') && (pNpc->pszNpcSpeech[1] == 'j');
+}
+
+BOOL JanOnSeatCell(PCHARINFO pChar, PCHARINFO pNpc, int *pnSeat)
+{
+	int s;
+
+	if (!JanIsTableNpc (pNpc) || (pChar->dwMapID != pNpc->dwMapID) || !IsSameSpace (pNpc, pChar)) {
+		return FALSE;
+	}
+	for (s = 0; s < JANJAN_SEATS; s ++) {
+		int nDx, nDy;
+
+		JanjanSeatOffset (s, &nDx, &nDy);
+		if (((int)pChar->dwX == (int)pNpc->dwX + nDx) && ((int)pChar->dwY == (int)pNpc->dwY + nDy)) {
+			if (pnSeat) {
+				*pnSeat = s;
+			}
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+BOOL JanIsSeated(PCHARINFO pChar)
+{
+	int nTable;
+
+	return FindSeat (pChar, &nTable);
+}
+
+JanjanGame *JanGetGame(PCHARINFO pChar)
+{
+	int nTable;
+
+	return FindSeat (pChar, &nTable) ? &s_aTable[nTable].Game : NULL;
+}
+
+int JanGetSeat(PCHARINFO pChar)
+{
+	int nTable;
+
+	return FindSeat (pChar, &nTable) ? s_aTable[nTable].nSeat : -1;
+}
+
+int JanSeatCount(void)
+{
+	int i, nRet = 0;
+
+	for (i = 0; i < (int)s_aTable.size (); i ++) {
+		if (s_aTable[i].nMode != JANMODE_IDLE) {
+			nRet ++;
+		}
+	}
+	return nRet;
+}
+
+int JanIdleCount(void)
+{
+	return (int)s_aTable.size () - JanSeatCount ();
+}
+
+void JanSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed)
+{
+	JANPARAM Param;
+	int i, nTable, nSeat = 0;
+	char szMsg[96];
+
+	if (!JanIsTableNpc (pNpc) || (pChar->byNpcType != NPCTYPE_INIT) || JanIsSeated (pChar) || PuzzleIsSeated (pChar)) {
+		return;
+	}
+	/* 座れるのは、台の 4 つの座る場所のマスの上だけ（同じマップ・同じ空間。向きは問わない）。どの席かはマスで決まる */
+	if (!JanOnSeatCell (pChar, pNpc, &nSeat)) {
+		return;
+	}
+	/* 倒れている・ほかのミニゲーム中は座れない */
+	if ((pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0) || (pChar->abySubStatus[0] != 0)) {
+		return;
+	}
+	ParseParam (pNpc->pszNpcSpeech, &Param);
+
+	/* 卓が使われていれば座れない（待機中の卓は座れる） */
+	nTable = FindTable (pNpc->dwTblID, pNpc->dwMapID);
+	if ((nTable >= 0) && (s_aTable[nTable].nMode != JANMODE_IDLE)) {
+		SendCmdSYSMSG (pChar->pID, "この台は今、使われています。");
+		return;
+	}
+	/* 有料の台（必要枚数 1 以上）は S キーでは始まらない。道具のコインを使って始める（無料の台は S キーで始まる） */
+	if (!bCoinUsed && (Param.wCoinItem != 0) && (Param.nCoinCount > 0)) {
+		SendCmdSYSMSG (pChar->pID, "コインを使って始めます。コマンドの道具からコインを使ってください。");
+		return;
+	}
+	/* コイン（無料の台は何も使わない）。足りなければ座らせない */
+	if ((Param.wCoinItem != 0) && (Param.nCoinCount > 0)) {
+		if (CountCoin (pChar, Param.wCoinItem) < Param.nCoinCount) {
+			SendCmdSYSMSG (pChar->pID, "コインがありません。");
+			return;
+		}
+		for (i = 0; i < Param.nCoinCount; i ++) {
+			QuestTakeItemOne (pChar, Param.wCoinItem);
+		}
+		/* 取り上げた分を本人の画面の持ち物に反映する（送らないと、座った後も画面にコインが残り、捨てると切断になる） */
+		SendCmdCHARITEM (pChar->pID, pChar->dwTblID);
+		sprintf (szMsg, "コインを%d枚使いました。", Param.nCoinCount);
+		SendCmdSYSMSG (pChar->pID, szMsg);
+	}
+
+	if (nTable < 0) {
+		JANTABLE Table;
+
+		Table.dwNpc = pNpc->dwTblID;
+		Table.dwMapID = pNpc->dwMapID;
+		Table.dwLastWatch = 0;
+		s_aTable.push_back (Table);
+		nTable = (int)s_aTable.size () - 1;
+		ToIdle (nTable);
+	}
+	{
+		JANTABLE &Table = s_aTable[nTable];
+
+		Table.Param = Param;
+		Table.dwChar = pChar->dwTblID;
+		Table.dwPID = pChar->pID;
+		Table.nSeat = nSeat;
+		Table.nMode = JANMODE_START;
+		Table.nStep = JANSTEP_DRAW;
+		Table.dwNext = g_dwTime + JAN_START_MS;
+		ZeroMemory (&Table.Game, sizeof (Table.Game));
+		Table.Game.nWinner = -1;
+		SetNames (Table, pChar);
+	}
+	/* 待機中から見ていた人（座った本人を含む）へ始まった状態。新しく見える人へは見直しで届く */
+	SendTable (nTable);
+	WatchRefresh (nTable);
+}
+
+BOOL JanUseItem(PCHARINFO pChar, WORD wItem)
+{
+	PMAPINFO pMap;
+	int i;
+
+	if ((wItem == 0) || (pChar->byNpcType != NPCTYPE_INIT) || (pChar->dwMapID >= (DWORD)g_aMapInfo.GetSize ())) {
+		return FALSE;
+	}
+	pMap = g_aMapInfo[pChar->dwMapID];
+	if (pMap == NULL || pMap->paTblNoNPC == NULL) {
+		return FALSE;
+	}
+	for (i = 0; i < (int)pMap->dwCountTblNoNPC; i ++) {
+		PCHARINFO pNpc;
+		JANPARAM Param;
+
+		if (pMap->paTblNoNPC[i] == (DWORD)-1) {
+			break;
+		}
+		pNpc = g_aCharInfo[pMap->paTblNoNPC[i]];
+		if (!JanIsTableNpc (pNpc) || !JanOnSeatCell (pChar, pNpc, NULL)) {
+			continue;
+		}
+		ParseParam (pNpc->pszNpcSpeech, &Param);
+		if ((Param.wCoinItem != wItem) || (Param.nCoinCount <= 0)) {
+			continue;
+		}
+		/* 卓が使われていても JanSit が「この台は今、使われています。」を伝える（コインは減らさない） */
+		JanSit (pChar, pNpc, TRUE);
+		return TRUE;
+	}
+	return FALSE;
+}
+
+void JanKey(PCHARINFO pChar, BYTE byAct, BYTE byParam)
+{
+	int nTable, s;
+
+	if (!FindSeat (pChar, &nTable)) {
+		return;
+	}
+	JANTABLE &Table = s_aTable[nTable];
+	JanjanGame &g = Table.Game;
+
+	s = Table.nSeat;
+	if (byAct == JAN_ACT_LEAVE) {
+		Leave (nTable, TRUE);
+		return;
+	}
+	if (Table.nMode != JANMODE_PLAY) {
+		return;
+	}
+	if ((Table.nStep == JANSTEP_DISCARD) && (g.nTurn == s)) {
+		if (byAct == JAN_ACT_DISCARD) {
+			if (JanjanDiscard (g, s, (int)byParam)) {
+				AfterDiscard (nTable);
+			}
+		} else if (byAct == JAN_ACT_TSUMO) {
+			if (JanjanTsumo (g, s)) {
+				EndRound (nTable);
+			}
+		}
+		return;
+	}
+	if ((Table.nStep == JANSTEP_CLAIM) && Table.bHumanWait) {
+		switch (byAct) {
+		case JAN_ACT_RON:
+			if (!JanjanCanRon (g, s)) {
+				return;
+			}
+			Table.nHumanClaim = JANJAN_CLAIM_RON;
+			break;
+		case JAN_ACT_SOROI:
+			if (!JanjanCanSoroi (g, s)) {
+				return;
+			}
+			Table.nHumanClaim = JANJAN_CLAIM_SOROI;
+			break;
+		case JAN_ACT_GUMI:
+			{
+				int aOut[JANJAN_GROUP_SIZE * JANJAN_GROUP_SIZE][2];
+				int n = JanjanGumiOptions (g, s, aOut, JANJAN_GROUP_SIZE * JANJAN_GROUP_SIZE);
+
+				if ((int)byParam >= n || (int)byParam >= JAN_GUMI_WIRE) {
+					return;
+				}
+				Table.nHumanClaim = JANJAN_CLAIM_GUMI;
+				Table.nHumanA = aOut[byParam][0];
+				Table.nHumanB = aOut[byParam][1];
+			}
+			break;
+		case JAN_ACT_PASS:
+			Table.nHumanClaim = JANJAN_CLAIM_NONE;
+			break;
+		default:
+			return;
+		}
+		ResolveClaim (nTable);
+	}
+}
+
+/* 待機中の卓を新しく表に載せる：人のいるマップの台NPC（席が空）のうち、近くに人がいるものだけ。
+   近くに誰もいない卓は表に載らない（何も送らない・覚えない） */
+static void IdleScan(void)
+{
+	int nMap, i, j;
+
+	for (nMap = 0; nMap < (int)g_aMapInfo.GetSize (); nMap ++) {
+		PMAPINFO pMap = g_aMapInfo[nMap];
+
+		if ((pMap == NULL) || (pMap->paTblNoPC == NULL) || (pMap->paTblNoNPC == NULL) || (pMap->dwCountTblNoPC == 0) ||
+			(pMap->paTblNoPC[0] == (DWORD)-1)) {
+			continue;
+		}
+		for (i = 0; i < (int)pMap->dwCountTblNoNPC; i ++) {
+			PCHARINFO pNpc;
+			BOOL bNear = FALSE;
+
+			if (pMap->paTblNoNPC[i] == (DWORD)-1) {
+				break;
+			}
+			if (pMap->paTblNoNPC[i] >= (DWORD)g_aCharInfo.GetSize ()) {
+				continue;
+			}
+			pNpc = g_aCharInfo[pMap->paTblNoNPC[i]];
+			if (!JanIsTableNpc (pNpc) || (FindTable (pNpc->dwTblID, (DWORD)nMap) >= 0)) {
+				continue;
+			}
+			for (j = 0; j < (int)pMap->dwCountTblNoPC; j ++) {
+				PCHARINFO pChar;
+
+				if (pMap->paTblNoPC[j] == (DWORD)-1) {
+					break;
+				}
+				if (pMap->paTblNoPC[j] >= (DWORD)g_aCharInfo.GetSize ()) {
+					continue;
+				}
+				pChar = g_aCharInfo[pMap->paTblNoPC[j]];
+				if (WatchEligible ((DWORD)nMap, pNpc, pChar, JAN_VIEW_ENTER)) {
+					bNear = TRUE;
+					break;
+				}
+			}
+			if (bNear) {
+				JANTABLE Table;
+				int nTable;
+
+				Table.dwNpc = pNpc->dwTblID;
+				Table.dwMapID = (DWORD)nMap;
+				Table.dwLastWatch = 0;
+				ParseParam (pNpc->pszNpcSpeech, &Table.Param);
+				s_aTable.push_back (Table);
+				nTable = (int)s_aTable.size () - 1;
+				ToIdle (nTable);
+				WatchRefresh (nTable);
+			}
+		}
+	}
+}
+
+void JanProc(void)
+{
+	static DWORD s_dwLastScan = 0;
+	int i;
+
+	/* 卓が消えると添字がずれるので、後ろから 1 つずつ（消えるのはその卓だけ） */
+	for (i = (int)s_aTable.size () - 1; i >= 0; i --) {
+		if (i >= (int)s_aTable.size ()) {
+			continue;
+		}
+		JANTABLE &Table = s_aTable[i];
+		PCHARINFO pNpc = NpcOf (Table);
+		BOOL bNpcOK = JanIsTableNpc (pNpc) && (pNpc->dwMapID == Table.dwMapID);
+		PCHARINFO pChar = SeatChar (Table);
+		int nSdx = 0, nSdy = 0;
+
+		/* 待機中の卓：台が無くなれば見ている人へ NONE を送って表から消す。
+		   近くの人の見直しをして、誰もいなくなれば表から消す */
+		if (Table.nMode == JANMODE_IDLE) {
+			if (!bNpcOK) {
+				int k;
+
+				for (k = 0; k < (int)Table.aWatch.size (); k ++) {
+					PCHARINFO pW = WatchChar (Table.aWatch[k]);
+					if (pW) {
+						SendStateTo (Table, pW, Table.aWatch[k], TRUE);
+					}
+				}
+				s_aTable.erase (s_aTable.begin () + i);
+				continue;
+			}
+			if ((DWORD)(g_dwTime - Table.dwLastWatch) >= JAN_WATCH_MS) {
+				WatchRefresh (i);
+			}
+			if (Table.aWatch.empty ()) {
+				s_aTable.erase (s_aTable.begin () + i);
+			}
+			continue;
+		}
+
+		/* 切断・マップ移動・席から離れた・倒れた・台が無くなった時は片付ける */
+		if (bNpcOK && (pChar != NULL)) {
+			JanjanSeatOffset (Table.nSeat, &nSdx, &nSdy);
+		}
+		if ((pChar == NULL) || !bNpcOK || (pChar->byGameState < GAMESTATE_MOVE) ||
+			(pChar->dwMapID != Table.dwMapID) || !IsSameSpace (pNpc, pChar) ||
+			(abs ((int)pChar->dwX - ((int)pNpc->dwX + nSdx)) > JAN_NEAR) ||
+			(abs ((int)pChar->dwY - ((int)pNpc->dwY + nSdy)) > JAN_NEAR) ||
+			(pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0)) {
+			Leave (i, TRUE);
+			continue;
+		}
+		/* 卓の近くにいる人（観戦）の見直し */
+		if ((DWORD)(g_dwTime - Table.dwLastWatch) >= JAN_WATCH_MS) {
+			WatchRefresh (i);
+		}
+		if (Table.nMode == JANMODE_START) {
+			if ((int)(g_dwTime - Table.dwNext) >= 0) {
+				unsigned int dwSeed = (g_dwJanSeedOverride != 0) ? g_dwJanSeedOverride : ((unsigned int)(g_dwTime * 2654435761u) ^ (pChar->dwTblID * 40503u + 1));
+
+				JanjanStart (Table.Game, dwSeed);
+				Table.nMode = JANMODE_PLAY;
+				Table.nStep = JANSTEP_DRAW;
+				Table.dwNext = g_dwTime + JAN_CPU_MS;
+				SendTable (i);
+			}
+			continue;
+		}
+		if (Table.nMode == JANMODE_OVER) {
+			if ((int)(g_dwTime - Table.dwNext) >= 0) {
+				Leave (i, TRUE);
+			}
+			continue;
+		}
+		/* 進行中：1 回に 1 動作だけ進める */
+		if (Table.nStep == JANSTEP_DISCARD) {
+			if (Table.Game.nTurn == Table.nSeat) {
+				if ((int)(g_dwTime - Table.dwLimit) >= 0) {
+					DoHumanTimeoutDiscard (i);
+				}
+			} else if ((int)(g_dwTime - Table.dwNext) >= 0) {
+				DoCpuDiscard (i);
+			}
+		} else if (Table.nStep == JANSTEP_CLAIM) {
+			if (Table.bHumanWait) {
+				if ((int)(g_dwTime - Table.dwLimit) >= 0) {
+					Table.nHumanClaim = JANJAN_CLAIM_NONE;
+					ResolveClaim (i);
+				}
+			} else if ((int)(g_dwTime - Table.dwNext) >= 0) {
+				ResolveClaim (i);
+			}
+		} else if ((int)(g_dwTime - Table.dwNext) >= 0) {
+			DoDraw (i);
+		}
+	}
+	/* 待機中の卓を新しく見つける（JAN_WATCH_MS ごと） */
+	if ((DWORD)(g_dwTime - s_dwLastScan) >= JAN_WATCH_MS) {
+		s_dwLastScan = g_dwTime;
+		IdleScan ();
+	}
+}
+
+void JanOnLeave(PCHARINFO pChar)
+{
+	int nTable;
+
+	if (FindSeat (pChar, &nTable)) {
+		Leave (nTable, FALSE);
+	}
+}

@@ -2631,4 +2631,63 @@ record api scores=1 streaks=1 max=1 top=1 date=1
 board empty text=2
 board full counts=10,10 len<max=1 tenth=2 end=1
 record done seats=0
+== AW. SBO Janjan table ==
+jan packet size=385 npc=1 ghost=1 free=0
+jan seat cells ok=4
+jan idle A idle=3 phase=0 myseat=255 empty=4 | C idle=1
+jan idle field x=1 y=1 tables idle=1
+jan other cells seated=0 coin=2
+jan skey paid seated=0 coin=2 msg=1
+jan short seated=0 coin=1 msg=1
+jan sit seated=1 seat=2 coin=0 used=1 charitem+1 packets+1
+jan sit state A kind=1 myseat=2 idle=0 phase=1 states=2212 names=CPU1,CPU2,1,CPU3 hand=0
+jan sit state C myseat=255 idle=0 phase=1
+jan busy seatedB=0 coinB=2 msg=1
+jan nowalk moved=0
+jan otherkey seatedA=1 packets A+0 B+0
+jan deal A packets+1 phase=1 turn=0 pile=32 open=0,0,8,0 hidden=8,8,0,8
+jan deal C packets+1 myseat=255 open=8,8,8,8 hidden=0,0,0,0
+jan nochange packets A+0 C+0
+jan cpu draw early+0 turn=0 logic=1 hand0=9 pile=31
+jan cpu discard river0=1 hand0=8 lastseat=0
+jan to human turn=2 logic=1 phase=1 hand=9 limit>0=1 limit<=20000=1
+jan illegal ignored packets+0
+jan human discard river2=1 hand2=8 logic=0 lastseat=2
+jan human discard tile=1
+jan leave seated=0 seats=0 packets A+1 C+1 idleA=3 idleC=1 phaseA=0
+jan after leave packets+0
+jan ron wait can=26 gumi=1,12,13 last=0/15 limit>0=1
+jan ron illegal packets+0
+jan ron result=1 winner=1 how=1 phase=2 score=1 hidden=0,0,0,0 msg=1 seated=1
+jan ron watcher msg=1 phase=2 lasttile=15
+jan ron over before seated=1
+jan ron over after seated=0 idle=7 phase=0
+jan gumi wait can=24 gumi=1,12,13
+jan gumi done melds=1 kind=1 tiles=12,13,15 hand=6 turn=1 logic=1 river0=0
+jan gumi timeout river1 0->1 turn=2
+jan soroi wait can=20
+jan soroi timeout before=20 after can=0 turn=1 logic=1 hand=9 melds=0
+jan soroi done melds=1 kind=0 tiles=15,15,15 hand=6 turn=1 logic=1
+jan pass can=0 turn=1 logic=0
+jan pass draw turn=1 logic=1 hand=9
+jan cpu claim wait can=0 lastseat=0
+jan cpu soroi melds2=1 turn=2 logic=1 river0=0 hand2=6
+jan cpu ron result=1 winner=3 how=1 phase=2 name=CPU3 msg=1
+jan cpu ron after seated=0
+jan tsumo can=1 last=15 hand=9 limit>0=1
+jan tsumo result=1 winner=0 how=0 phase=2
+jan tsumo leave seated=0 idle=7
+jan timeout drawn=15 river0 0->1 first=1 lastseat=0
+jan draw result=2 phase=2 pile=0 msg=1
+jan draw after seated=0
+jan away near=1 far=0 seats=0
+jan mapmove before=1 after=0 seats=0
+jan logout seated=0 seats=0 packets A+0 C+1 idleC=1 phaseC=0
+jan idle free A idle=7 C idle=1
+jan idle resend A+0
+jan idle left cell A idle=1
+jan view far packets+1 kind=0
+jan view far again packets+0
+jan view near packets+1 kind=1 myseat=255 phase=1 open3=8 hidden3=0 hand0=8
+jan done seats=0 idle=0
 == done ==

@@ -174,6 +174,7 @@ void	RecvDataProcGETACC						(PBYTE, DWORD);				/* アカウント・パスワ�
 void	RecvDataProcCHGACC						(PBYTE, DWORD);				/* アカウント・パスワード更新 */
 void	RecvDataProcTALKRAND					(PBYTE, DWORD);				/* 話してランダム要求 */
 void	RecvDataProcPUZZLEKEY					(PBYTE, DWORD);				/* 落ち物パズルのキー入力 */
+void	RecvDataProcJANKEY						(PBYTE, DWORD);				/* SBOじゃんの操作 */
 void	RecvDataProcSTOPRAND					(PBYTE, DWORD);				/* 止まるかランダム切り替え */
 void	RecvDataProcGETACCINFO					(PBYTE, DWORD);				/* アカウント情報要求 */
 void	RecvDataProcCHGACCSTATE					(PBYTE, DWORD);				/* アカウント状態更新 */
@@ -531,6 +532,8 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcPUZZLEKEY,				/* CMD_PUZZLEKEY */
 	NULL,								/* CMD_PUZZLESTATE(サーバー→クライアントのみ) */
 	NULL,								/* CMD_PUZZLESE(サーバー→クライアントのみ) */
+	NULL,								/* CMD_JANSTATE(サーバー→クライアントのみ) */
+	RecvDataProcJANKEY,					/* CMD_JANKEY */
 
 	NULL
 };
@@ -3914,7 +3917,7 @@ void RecvDataProc(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	/* 管理者用のコマンド（管理者ウィンドウからしか送らないもの）は管理者だけ */
-	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_APPRAISE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_DUNGEONSEL) && (byCmd != CMD_DUNGEONMAP) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && (byCmd != CMD_TALKANSWER) && (byCmd != CMD_PUZZLEKEY) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET)) && ((byCmd < CMD_RECYCLELIST) || (byCmd > CMD_RECYCLECLOSE))) ||
+	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_APPRAISE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_DUNGEONSEL) && (byCmd != CMD_DUNGEONMAP) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && (byCmd != CMD_TALKANSWER) && (byCmd != CMD_PUZZLEKEY) && (byCmd != CMD_JANKEY) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET)) && ((byCmd < CMD_RECYCLELIST) || (byCmd > CMD_RECYCLECLOSE))) ||
 			(byCmd == CMD_CHARITEM)) {
 		if (!CheckAdminBan (nNo)) {
 			SAFE_DELETE_ARRAY (pData);
@@ -4860,7 +4863,7 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 			return;
 		}
 		/* 落ち物パズルの席に座っている間は歩けない。今の位置を送り返す */
-		if (PuzzleIsSeated (pChar)) {
+		if (PuzzleIsSeated (pChar) || JanIsSeated (pChar)) {
 			SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
 			return;
 		}
@@ -8376,6 +8379,14 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 		}
 		return;
 	}
+	/* SBOじゃんの台（台詞が「@j」で始まる）？ 4 つの座る場所のどれかのマスに立っていれば、そのマスの席に座る（無料の台だけ始まる。有料の台は道具のコインを使う案内だけ。コイン使用は ItemProc → JanUseItem）
+	   （台NPCは見えず目の前でなくてよい。座る場所かどうかは JanSit が見る） */
+	if (JanIsTableNpc (pChar)) {
+		if (s_nCharNoRecv >= 0) {
+			JanSit (g_aCharInfo[s_nCharNoRecv], pChar);
+		}
+		return;
+	}
 	/* 落ち物パズルの掲示板（台詞が「@h」で始まる）？ ハイスコアと連勝記録を、話しかけた本人にだけ出す
 	   （「@r」は思い出の本の語り部で使っているので、記録は「@h」にしている） */
 	if (PuzzleIsRecordNpc (pChar)) {
@@ -8429,6 +8440,21 @@ void RecvDataProcPUZZLEKEY(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	PuzzleKey (g_aCharInfo[s_nCharNoRecv], pPara->byData, (dwDataSize >= sizeof (CMDPARA_PUZZLEKEY)) ? ((PCMDPARA_PUZZLEKEY)pData)->dwSerial : 0);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcJANKEY												 */
+/* 内容：受信データ処理(SBOじゃんの操作)									 */
+/*		 座っている本人のものだけ受ける（座っていなければ何もしない。反則・手番外は JanKey が捨てる） */
+/* ========================================================================= */
+void RecvDataProcJANKEY(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_JANKEY pPara = (PCMDPARA_JANKEY)pData;
+
+	if ((dwDataSize < sizeof (CMDPARA_JANKEY)) || (s_nCharNoRecv < 0) || (pPara->dwTblID != (DWORD)s_nCharNoRecv)) {
+		return;
+	}
+	JanKey (g_aCharInfo[s_nCharNoRecv], pPara->byAct, pPara->byParam);
 }
 
 /* ========================================================================= */
@@ -14882,7 +14908,7 @@ BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, 
 	/* 管理者用のコマンドだけ（ログインや「元に戻す」自体は通さない） */
 	if ((byCmd >= CMD_MAX) || (RecvDataProcTbl[byCmd] == NULL) ||
 			((byCmd < CMD_MAPPARTSADD) && (byCmd != CMD_CHARITEM)) ||
-			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_ADMINVIEWALL) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_APPRAISE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_DUNGEONSEL) || (byCmd == CMD_DUNGEONMAP) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || (byCmd == CMD_PUZZLEKEY) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET)) || ((byCmd >= CMD_RECYCLELIST) && (byCmd <= CMD_RECYCLECLOSE))) {
+			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_ADMINVIEWALL) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_APPRAISE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_DUNGEONSEL) || (byCmd == CMD_DUNGEONMAP) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || (byCmd == CMD_PUZZLEKEY) || (byCmd == CMD_JANKEY) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET)) || ((byCmd >= CMD_RECYCLELIST) && (byCmd <= CMD_RECYCLECLOSE))) {
 		return FALSE;
 	}
 

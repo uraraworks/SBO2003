@@ -533,3 +533,58 @@ static inline int JanjanCpuClaim (JanjanGame &g, int nSeat, int nStrength, int *
 	}
 	return JANJAN_CLAIM_NONE;
 }
+
+/* ========================================================================= */
+/* 台の台詞・席の位置（サーバーとクライアントで同じ読み方をする）			 */
+/*   台詞 "@j<コイン番号>,<枚数>,<CPUの強さ>"（後ろは省略可。枚数 0=無料。強さの省略は 2）	 */
+/*   台NPCのマスが卓の中心 (cx,cy)。盤は 7×7 マス（cx-3〜cx+3, cy-3〜cy+3）。			 */
+/*   座る場所のマスは 席0=(cx,cy+4) 席1=(cx+4,cy) 席2=(cx,cy-4) 席3=(cx-4,cy)			 */
+/* ========================================================================= */
+#define JANJAN_PARAM_NONE		(-99999)	/* 省略・空欄 */
+#define JANJAN_PARAM_COUNT		(3)			/* 台詞の数値の数 */
+#define JANJAN_STRENGTH_DEFAULT	(2)			/* CPU の強さの既定 */
+#define JANJAN_TABLE_HALF		(3)			/* 盤の半分の大きさ（マス。7×7） */
+#define JANJAN_SEAT_DIST		(4)			/* 台NPCから座る場所までの距離（マス） */
+
+/* 台詞（"@j" で始まる）を読み、anVal[JANJAN_PARAM_COUNT] に入れる（空欄・足りない欄は JANJAN_PARAM_NONE） */
+static inline void JanjanParseSpeech (const char *pszSpeech, int anVal[JANJAN_PARAM_COUNT])
+{
+	const char *p = pszSpeech + 2;
+	int i;
+
+	for (i = 0; i < JANJAN_PARAM_COUNT; i ++) {
+		anVal[i] = JANJAN_PARAM_NONE;
+	}
+	for (i = 0; i < JANJAN_PARAM_COUNT; i ++) {
+		bool bMinus = false, bNum = false;
+		int n = 0;
+
+		if (*p == '-') {
+			bMinus = true;
+			p ++;
+		}
+		while ((*p >= '0') && (*p <= '9')) {
+			if (n < 100000) {
+				n = n * 10 + (*p - '0');
+			}
+			bNum = true;
+			p ++;
+		}
+		if (bNum) {
+			anVal[i] = bMinus ? -n : n;
+		}
+		if (*p != ',') {
+			break;
+		}
+		p ++;
+	}
+}
+
+/* 席 nSeat の座る場所：台NPCのマスからの相対位置（マス） */
+static inline void JanjanSeatOffset (int nSeat, int *pnDx, int *pnDy)
+{
+	static const int aDx[JANJAN_SEATS] = { 0, JANJAN_SEAT_DIST, 0, -JANJAN_SEAT_DIST };
+	static const int aDy[JANJAN_SEATS] = { JANJAN_SEAT_DIST, 0, -JANJAN_SEAT_DIST, 0 };
+	*pnDx = aDx[nSeat & 3];
+	*pnDy = aDy[nSeat & 3];
+}
