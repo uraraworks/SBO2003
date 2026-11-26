@@ -242,4 +242,8 @@ sed "s/@@SBO_BUILD_DATE@@/$BUILD_DATE/g; s/@@SBO_BUILD_COMMIT@@/$BUILD_COMMIT/g"
 mkdir -p "$DIST/about"
 cp "$ROOT"/web/about/img/*.png "$DIST/about/"
 
+# ブラウザ版ログイン前ホーム画面の背景・挿絵（web/shell/img/*.webp。sbocli.html が /login/ から読む）
+mkdir -p "$DIST/login"
+cp "$ROOT"/web/shell/img/*.webp "$DIST/login/"
+
 echo "[build] 完了: $DIST/sbocli.html"

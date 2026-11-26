@@ -1216,10 +1216,14 @@
 		left: 0; top: 0; right: 0; bottom: 0;
 		align-items: center;
 		justify-content: center;
-		/* ゲーム画面が透ける明るめのグラデーション（草原の緑と空の水色） */
-		background: linear-gradient(180deg, rgba(120, 200, 235, 0.55) 0%, rgba(150, 215, 170, 0.62) 55%, rgba(80, 170, 110, 0.72) 100%);
+		/* 背景のイラスト（スマホ縦は縦長、PC 横長は横長）。#sbo-quick が表示されるまで読まれない。
+		   読み込み中・失敗時は下のグラデーション（草原の緑と空の水色）が見える。版はビルドのコミット */
+		background:
+			url(/login/login-bg-mobile.webp?v=@@SBO_BUILD_COMMIT@@) center top / cover no-repeat,
+			linear-gradient(180deg, rgba(120, 200, 235, 0.55) 0%, rgba(150, 215, 170, 0.62) 55%, rgba(80, 170, 110, 0.72) 100%);
 		line-height: 1.4;
 		z-index: 50;
+		container-type: size;	/* 挿絵の高さを、この画面（仮想パッドの端末では上のゲーム画面だけ）の高さに合わせる */
 	}
 	#sbo-quick.sbo-show {
 		display: flex;
@@ -1304,6 +1308,29 @@
 		background: linear-gradient(180deg, #ffe58a, #f5b73a);
 		border-radius: 999px;
 		box-shadow: 0 2px 0 #b57a14;
+	}
+	/* タイトルの下の挿絵（切り抜き）。飾りなのでクリック・フォーカス・ドラッグの対象にしない。高さが足りない時は隠す */
+	.sbo-art {
+		display: block;
+		width: auto;
+		height: auto;
+		max-width: min(100%, 300px);
+		max-height: min(26vh, 26cqh, 170px);
+		margin: 0 auto;
+		pointer-events: none;
+		user-select: none;
+		-webkit-user-drag: none;
+		filter: drop-shadow(0 3px 6px rgba(20, 60, 40, 0.35));
+	}
+	@media (max-height: 700px) {
+		.sbo-art {
+			display: none;
+		}
+	}
+	@container (max-height: 340px) {
+		.sbo-art {
+			display: none;
+		}
 	}
 	.sbo-sec {
 		background: rgba(255, 255, 255, 0.72);
@@ -1518,7 +1545,9 @@
 		/* 仮想パッドの端末ではゲーム画面の中だけに出すので、PC（パッド無し）だけ 3 列にして画面いっぱいに広げる */
 		body:not(.sbo-pad) #sbo-quick {
 			position: fixed;
-			background: linear-gradient(180deg, rgba(120, 200, 235, 0.98) 0%, rgba(150, 215, 170, 0.98) 55%, rgba(80, 170, 110, 0.98) 100%);
+			background:
+				url(/login/login-bg-pc.webp?v=@@SBO_BUILD_COMMIT@@) center / cover no-repeat,
+				linear-gradient(180deg, rgba(120, 200, 235, 0.98) 0%, rgba(150, 215, 170, 0.98) 55%, rgba(80, 170, 110, 0.98) 100%);
 		}
 		body:not(.sbo-pad) #sbo-quick .sbo-card.sbo-home {
 			width: 100%;
@@ -1538,6 +1567,10 @@
 		body:not(.sbo-pad) .sbo-home > :first-child,
 		body:not(.sbo-pad) .sbo-home > :last-child {
 			margin: 0;
+		}
+		body:not(.sbo-pad) .sbo-art {
+			max-width: min(100%, 560px);
+			max-height: 38vh;
 		}
 		body:not(.sbo-pad) .sbo-home .sbo-hero { grid-area: hero; }
 		body:not(.sbo-pad) .sbo-home .sbo-col-acc { grid-area: acc; align-self: center; }
@@ -2432,6 +2465,7 @@
 			<div class="sbo-card sbo-home" id="sbo-quick-back">
 				<div class="sbo-hero"><span class="sbo-title-ja">スクラップブック<br>オンライン</span><span class="sbo-title-en">Scrapbook Online</span></div>
 				<div class="sbo-col-play">
+					<img class="sbo-art" src="/login/login-art.webp?v=@@SBO_BUILD_COMMIT@@" alt="" width="1000" height="644" decoding="async" loading="lazy" draggable="false">
 					<!-- いちばん新しく使ったアカウント（大きな金色ボタン） -->
 					<div id="sbo-quick-main"></div>
 					<p class="sbo-note">おかえりなさい！ 前回のアカウントで、すぐに冒険を再開できます。</p>
@@ -2482,6 +2516,7 @@
 			<div class="sbo-card sbo-home" id="sbo-quick-new">
 				<div class="sbo-hero"><span class="sbo-title-ja">スクラップブック<br>オンライン</span><span class="sbo-title-en">Scrapbook Online</span></div>
 				<div class="sbo-col-play">
+					<img class="sbo-art" src="/login/login-art.webp?v=@@SBO_BUILD_COMMIT@@" alt="" width="1000" height="644" decoding="async" loading="lazy" draggable="false">
 					<button type="button" class="sbo-btn sbo-play" id="sbo-quick-newstart">すぐにはじめる</button>
 					<p class="sbo-note">アカウントは自動で作ります。次からはこの端末でボタンを押すだけで入れます。</p>
 				</div>
