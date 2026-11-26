@@ -10,6 +10,8 @@
 /* ========================================================================= */
 extern BOOL SaveMakerInfo(void);								/* 作り手情報保存 */
 extern BOOL LoadMakerInfo(void);								/* 作り手情報読み込み */
+extern BOOL SaveTrialRoomInfo(void);							/* お試し個室保存 */
+extern BOOL LoadTrialRoomInfo(void);							/* お試し個室読み込み */
 extern BOOL SaveRecipeInfo(void);								/* レシピ情報保存 */
 extern BOOL LoadRecipeInfo(void);								/* レシピ情報読み込み */
 

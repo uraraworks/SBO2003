@@ -28,6 +28,7 @@
 #include "SboSvrRecycle.h"
 #include "SboSvrAffix.h"
 #include "SboSvrQuest.h"
+#include "SboSvrTrialRoom.h"
 #include "SboSvrMapSwapEdit.h"
 #include "CharProc/CharProcMERCENARY.h"
 #include "SboSvrMagicProc.h"
@@ -8361,6 +8362,13 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 		}
 		return;
 	}
+	/* お試し個室の入口（台詞が「@x番号」）？ 説明を出して「入りますか？」を聞く */
+	if (TrialRoomIsNpc (pChar)) {
+		if ((s_nCharNoRecv >= 0) && IsNearRecvChar (pChar, 2)) {
+			TrialRoomTalk (g_aCharInfo[s_nCharNoRecv], pChar);
+		}
+		return;
+	}
 	/* ダンジョンの受付（台詞が「@d番号」）？ 姿選びを始める */
 	if (DungeonIsReceptionNpc (pChar)) {
 		if ((s_nCharNoRecv >= 0) && IsNearRecvChar (pChar, 2)) {
@@ -9544,7 +9552,7 @@ static BOOL QuestChallengeBlock(PCHARINFO pChar)
 	if (!QuestInChallenge (pChar)) {
 		return FALSE;
 	}
-	SendCmdSYSMSG (pChar->pID, QuestInDungeon (pChar) ? (LPSTR)DungeonBlockedText (pChar).c_str () : "討伐チャレンジ中はできません。", SPEECHCMD_BATTLE1);
+	SendCmdSYSMSG (pChar->pID, QuestInDungeon (pChar) ? (LPSTR)DungeonBlockedText (pChar).c_str () : (LPSTR)TrialRoomBlockedText (pChar), SPEECHCMD_BATTLE1);
 	return TRUE;
 }
 
@@ -11142,7 +11150,7 @@ void RecvDataProcTRADE(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	if (QuestInChallenge (g_aCharInfo[pRecv->dwData])) {
-		SendCmdSYSMSG (g_aCharInfo[pRecv->dwTblID]->pID, QuestInDungeon (g_aCharInfo[pRecv->dwData]) ? "相手はダンジョンの中なので取り引きできません。" : "相手は討伐チャレンジ中なので取り引きできません。", SPEECHCMD_BATTLE1);
+		SendCmdSYSMSG (g_aCharInfo[pRecv->dwTblID]->pID, QuestInDungeon (g_aCharInfo[pRecv->dwData]) ? "相手はダンジョンの中なので取り引きできません。" : TrialRoomIs (g_aCharInfo[pRecv->dwData]) ? "相手はお試し個室の中なので取り引きできません。" : "相手は討伐チャレンジ中なので取り引きできません。", SPEECHCMD_BATTLE1);
 		TradeRefuse (g_aCharInfo[pRecv->dwTblID]);
 		return;
 	}
@@ -16226,6 +16234,10 @@ void RecvDataProcTALKANSWER(PBYTE pData, DWORD dwDataSize)
 	PCMDPARA_DATA1 pPara = (PCMDPARA_DATA1)pData;
 
 	if ((dwDataSize < sizeof (CMDPARA_DATA1)) || (s_nCharNoRecv < 0) || (s_nCharNoRecv >= g_aCharInfo.GetSize ())) {
+		return;
+	}
+	/* お試し個室の「入りますか？」への答えなら、そちらで受ける */
+	if (TrialRoomAnswer (g_aCharInfo[s_nCharNoRecv], pPara->dwTblID, pPara->byData ? TRUE : FALSE)) {
 		return;
 	}
 	/* 落ち物パズルの「乱入しますか？」への答えなら、そちらで受ける */

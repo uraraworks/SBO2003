@@ -69,6 +69,7 @@ extern CmyArray<PMAGICINFO, PMAGICINFO> g_aMagicInfo;						/* 魔法情報 */
 extern CmyArray<PMAGICUSERINFO, PMAGICUSERINFO> g_aMagicUserInfo;			/* 魔法利用者情報 */
 extern CmyArray<PEQUUSERINFO, PEQUUSERINFO> g_aEquUserInfo;					/* 装備職業情報 */
 extern CmyArray<PMAKERINFO, PMAKERINFO> g_aMakerInfo;							/* 作り手情報 */
+extern CmyArray<PTRIALROOMINFO, PTRIALROOMINFO> g_aTrialRoomInfo;				/* お試し個室 */
 extern CmyArray<PRECIPEINFO, PRECIPEINFO> g_aRecipeInfo;						/* レシピ情報 */
 extern CmyArray<PQUESTINFO, PQUESTINFO> g_aQuestInfo;							/* 依頼情報 */
 extern CmyArray<PFLAGNAMEINFO, PFLAGNAMEINFO> g_aFlagNameInfo;				/* フラグの名前表 */

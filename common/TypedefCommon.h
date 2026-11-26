@@ -72,6 +72,9 @@
 #define MAX_RECIPEMAT		4										/* レシピの材料の種類 */
 #define MAX_MAKERNAME		64										/* 作り手の名前の欄のバイト数（終端含む） */
 #define MAX_MAKERMSG		256										/* 作り手の台詞の欄のバイト数（終端含む） */
+#define MAX_TRIALROOM		100										/* お試し個室の最大数 */
+#define MAX_TRIALROOMNAME	64										/* お試し個室の名前の欄のバイト数（終端含む） */
+#define MAX_TRIALROOMDESC	512										/* お試し個室の説明文の欄のバイト数（終端含む） */
 #define MAX_AFFIX			1000									/* 付与（接頭辞・接尾辞）の最大数 */
 #define MAX_AFFIXNAME		32										/* 付与の名前の欄のバイト数（終端含む） */
 #define MAX_ITEMDERIVE		(65535 - 16384)							/* 派生アイテムの最大数（番号は 16384 から） */
@@ -3054,6 +3057,22 @@ typedef struct _MAKERINFO {
 	char		szMsgMore[MAX_MAKERMSG];							/* 鑑定屋：鑑定した後、まだ鑑定する物がある時に続ける台詞 */
 	char		szMsgEnd[MAX_MAKERMSG];								/* 鑑定屋：鑑定した後、もう鑑定する物が無い時に続ける台詞 */
 } MAKERINFO, *PMAKERINFO;
+
+/* お試し個室の状態 */
+enum {
+	TRIALROOMSTATE_CLOSED = 0,									/* 閉じている（入れない） */
+	TRIALROOMSTATE_OPEN,										/* 開いている */
+};
+
+/* お試し個室（試し中の新機能を遊べる部屋。入口のNPCの台詞 "@xNN"（NN=番号 2 桁）。サーバーだけが持ち、クライアントへは送らない） */
+typedef struct _TRIALROOMINFO {
+	BYTE		byState;											/* 状態(TRIALROOMSTATE_*) */
+	char		szName[MAX_TRIALROOMNAME];							/* 名前 */
+	char		szDesc[MAX_TRIALROOMDESC];							/* 入口で出す説明文（改行可） */
+	WORD		wLoanStTmp;											/* 貸すステータステンプレートの番号 */
+	DWORD		dwMapID, dwX, dwY;									/* 入るマップ・座標 */
+	DWORD		dwX1, dwY1, dwX2, dwY2;								/* 個室の範囲の四角（入るマップの中。この外に出ると出たことにする） */
+} TRIALROOMINFO, *PTRIALROOMINFO;
 
 /* レシピ情報 */
 typedef struct _RECIPEINFO {
