@@ -4779,15 +4779,29 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 		ZeroMemory (&s_ItemForge, sizeof (s_ItemForge));
 		pItem = &s_ItemForge;
 		RecipeKindName (pRecipe, szForgeTitle, sizeof (szForgeTitle));
-		if (pRecipe->byKind == RECIPEKIND_FORGE) {
-			strcpy (szForgeLine1, "付与のついた装備を鍛えて、");
-			strcpy (szForgeLine2, "後ろの付与を一段上げます。");
-		} else {
-			strcpy (szForgeLine1, "付与のついた装備の付与を、");
-			strcpy (szForgeLine2, "このレシピの付与に取り替えます。");
-		}
-		if (pRecipe->byAllowPlain) {
-			strcpy (szForgeLine2, "お店の普通の装備にも使えます。");
+		{
+			PITEMAFFIXINFO pAf = ItemAffixFind (pRecipe->wAffix);
+			PITEMAFFIXINFO pNx = pAf ? ItemAffixFind (pAf->wNext) : NULL;
+			if (pRecipe->byKind == RECIPEKIND_FORGE) {
+				if (pAf && pNx) {
+					snprintf (szForgeLine1, sizeof (szForgeLine1), "名前の後ろの%sを%sに上げます。", pAf->szName, pNx->szName);
+					snprintf (szForgeLine2, sizeof (szForgeLine2), "（例）木の剣%s → 木の剣%s", pAf->szName, pNx->szName);
+				} else if (pAf) {
+					snprintf (szForgeLine1, sizeof (szForgeLine1), "名前の後ろに%sをつけます。", pAf->szName);
+					snprintf (szForgeLine2, sizeof (szForgeLine2), "（例）木の剣 → 木の剣%s", pAf->szName);
+				}
+			} else if (pAf) {
+				if (pAf->byPos == AFFIXPOS_FRONT) {
+					snprintf (szForgeLine1, sizeof (szForgeLine1), "名前の前の言葉を「%s」に取り替えます。", pAf->szName);
+					snprintf (szForgeLine2, sizeof (szForgeLine2), "（例）古びた木の剣 → %s木の剣", pAf->szName);
+				} else {
+					snprintf (szForgeLine1, sizeof (szForgeLine1), "名前の後ろの言葉を「%s」に取り替えます。", pAf->szName);
+					snprintf (szForgeLine2, sizeof (szForgeLine2), "（例）木の剣＋1 → 木の剣%s", pAf->szName);
+				}
+			}
+			if (pRecipe->byAllowPlain) {
+				strcpy (szForgeLine2, "お店の普通の装備にも使えます。");
+			}
 		}
 	}
 	if (pRecipe) {
@@ -4911,6 +4925,7 @@ void DrawWindowITEMINFO(PWNDINFO pWnd)
 	/* 長いアイテム名でも切れない幅にする（画面の幅まで） */
 	nCxNew = max (nCxNew, 16 + SboTextWidth (bForge ? szForgeTitle : ItemNameOf (pWnd->nData1)) * 8 + 16);
 	if (bForge) {
+		nCxNew = max (nCxNew, 16 + SboTextWidth (szForgeLine1) * 8 + 16);
 		nCxNew = max (nCxNew, 16 + SboTextWidth (szForgeLine2) * 8 + 16);
 	}
 	nCxNew = (nCxNew + 15) / 16 * 16;
