@@ -36,5 +36,6 @@ extern DWORD PuzzleDateJst(void);											/* 今日の日付（日本時間の
 extern int  PuzzleRecordScore(LPCSTR pszName, DWORD dwScore);				/* ハイスコアに足す（順位 1〜10 か、入らなければ 0） */
 extern int  PuzzleRecordStreak(LPCSTR pszName, DWORD dwStreak);				/* 連勝記録に足す（2 連勝以上だけ。順位 1〜10 か 0） */
 extern BOOL PuzzleIsRecordNpc(PCHARINFO pNpc);								/* 台詞が "@h" で始まる掲示板NPCか（ハイスコア・連勝記録を見せる） */
+extern BOOL PuzzleIsRecordText(LPCSTR pszMsg);								/* マップのメッセージ（調べるマス）が "@h" で始まるか（ランキングの掲示板パーツ。ハイスコア・連勝記録を見せる） */
 extern void PuzzleRecordTalk(PCHARINFO pChar, PCHARINFO pNpc);				/* 掲示板NPCに話しかけた（本人にだけ、ハイスコアと連勝記録をメッセージで出す） */
 extern void PuzzleRecordMessage(char *pszOut, int nSize);					/* 掲示板に出す文を作る（テスト用に外へ出している。@1=改行・@0=入力待ち） */
