@@ -1216,14 +1216,9 @@
 		left: 0; top: 0; right: 0; bottom: 0;
 		align-items: center;
 		justify-content: center;
-		/* 背景のイラスト（スマホ縦は縦長、PC 横長は横長）。#sbo-quick が表示されるまで読まれない。
-		   読み込み中・失敗時は下のグラデーション（草原の緑と空の水色）が見える。版はビルドのコミット */
-		background:
-			url(/login/login-bg-mobile.webp?v=@@SBO_BUILD_COMMIT@@) center top / cover no-repeat,
-			linear-gradient(180deg, rgba(120, 200, 235, 0.55) 0%, rgba(150, 215, 170, 0.62) 55%, rgba(80, 170, 110, 0.72) 100%);
+		background: #e4e7c3;
 		line-height: 1.4;
 		z-index: 50;
-		container-type: size;	/* 挿絵の高さを、この画面の高さに合わせる */
 	}
 	#sbo-quick.sbo-show {
 		display: flex;
@@ -1308,24 +1303,6 @@
 		background: linear-gradient(180deg, #ffe58a, #f5b73a);
 		border-radius: 999px;
 		box-shadow: 0 2px 0 #b57a14;
-	}
-	/* タイトルの下の挿絵（切り抜き）。飾りなのでクリック・フォーカス・ドラッグの対象にしない。高さが足りない時は隠す */
-	.sbo-art {
-		display: block;
-		width: auto;
-		height: auto;
-		max-width: min(100%, 340px);
-		max-height: min(30vh, 30cqh, 240px);
-		margin: 0 auto;
-		pointer-events: none;
-		user-select: none;
-		-webkit-user-drag: none;
-		filter: drop-shadow(0 3px 6px rgba(20, 60, 40, 0.35));
-	}
-	@container (max-height: 300px) {
-		.sbo-art {
-			display: none;
-		}
 	}
 	.sbo-sec {
 		background: rgba(255, 255, 255, 0.72);
@@ -1535,47 +1512,6 @@
 		padding: 6px 8px;
 		border-radius: 8px;
 	}
-	/* PC・横長（幅 900px 以上）は 3 列：左=アカウント、中央=遊ぶ、右=お知らせ、下=リンク */
-	@media (min-width: 900px) and (orientation: landscape) {
-		/* 仮想パッドの端末ではゲーム画面の中だけに出すので、PC（パッド無し）だけ 3 列にして画面いっぱいに広げる */
-		body:is(:not(.sbo-pad), .sbo-loginscr) #sbo-quick {
-			position: fixed;
-			background:
-				url(/login/login-bg-pc.webp?v=@@SBO_BUILD_COMMIT@@) center / cover no-repeat,
-				linear-gradient(180deg, rgba(120, 200, 235, 0.98) 0%, rgba(150, 215, 170, 0.98) 55%, rgba(80, 170, 110, 0.98) 100%);
-		}
-		body:is(:not(.sbo-pad), .sbo-loginscr) #sbo-quick .sbo-card.sbo-home {
-			width: 100%;
-			max-width: 1100px;
-			display: none;
-			padding: 16px 24px;
-		}
-		body:is(:not(.sbo-pad), .sbo-loginscr) #sbo-quick.sbo-back:not(.sbo-id) #sbo-quick-back,
-		body:is(:not(.sbo-pad), .sbo-loginscr) #sbo-quick.sbo-new:not(.sbo-id) #sbo-quick-new {
-			display: grid;
-			grid-template-columns: minmax(240px, 1fr) minmax(300px, 1.1fr) minmax(240px, 1fr);
-			grid-template-areas: "hero hero hero" "acc play news" "links links links";
-			align-content: center;
-			align-items: center;
-			gap: 14px 20px;
-		}
-		body:is(:not(.sbo-pad), .sbo-loginscr) .sbo-home > :first-child,
-		body:is(:not(.sbo-pad), .sbo-loginscr) .sbo-home > :last-child {
-			margin: 0;
-		}
-		body:is(:not(.sbo-pad), .sbo-loginscr) .sbo-art {
-			max-width: min(100%, 560px);
-			max-height: 38vh;
-		}
-		body:is(:not(.sbo-pad), .sbo-loginscr) .sbo-home .sbo-hero { grid-area: hero; }
-		body:is(:not(.sbo-pad), .sbo-loginscr) .sbo-home .sbo-col-acc { grid-area: acc; align-self: center; }
-		body:is(:not(.sbo-pad), .sbo-loginscr) .sbo-home .sbo-col-play { grid-area: play; }
-		body:is(:not(.sbo-pad), .sbo-loginscr) .sbo-home .sbo-news { grid-area: news; align-self: center; }
-		body:is(:not(.sbo-pad), .sbo-loginscr) .sbo-home .sbo-links { grid-area: links; justify-self: center; }
-		body:is(:not(.sbo-pad), .sbo-loginscr) .sbo-news:not(.sbo-has) {
-			display: none;
-		}
-	}
 	/* ===================================================================
 	   ログインするまで（#sbo-quick が出ている間 = body.sbo-loginscr）は、
 	   スマホ・タブレットでも仮想パッドなど下の部品を隠し、ホーム画面をビューポート全体に広げる。
@@ -1601,16 +1537,6 @@
 		height: 100vh;
 		height: 100dvh;
 		z-index: 900;
-		background:
-			url(/login/login-bg-mobile.webp?v=@@SBO_BUILD_COMMIT@@) center top / cover no-repeat,
-			linear-gradient(180deg, rgba(120, 200, 235, 0.98) 0%, rgba(150, 215, 170, 0.98) 55%, rgba(80, 170, 110, 0.98) 100%);
-	}
-	@media (orientation: landscape) {
-		body.sbo-loginscr #sbo-quick {
-			background:
-				url(/login/login-bg-pc.webp?v=@@SBO_BUILD_COMMIT@@) center / cover no-repeat,
-				linear-gradient(180deg, rgba(120, 200, 235, 0.98) 0%, rgba(150, 215, 170, 0.98) 55%, rgba(80, 170, 110, 0.98) 100%);
-		}
 	}
 	body.sbo-loginscr #sbo-quick .sbo-card.sbo-home {
 		padding: calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
@@ -1639,34 +1565,163 @@
 	body.sbo-loginscr #sbo-quick .sbo-btn.sbo-play {
 		min-height: 60px;
 	}
-	/* スマホ横持ち（短い画面）は 3 列にして 1 画面に収める */
-	@media (orientation: landscape) and (max-width: 899px) and (min-width: 640px) {
-		body.sbo-loginscr #sbo-quick .sbo-card.sbo-home {
+	/* ---- ログイン前ホーム画面の背景（4 人が描き込まれた 1 枚絵）。#sbo-quick が出てから読まれる。版はビルドのコミット ----
+	   既定＝スマホ縦（幅 900px 未満、または縦長）：ページ全体が縦スクロール。縦長の絵を先頭に幅いっぱいで敷き（絵ごとスクロール）、
+	   その下は絵の最下行と同じ無地色。ロゴは上の空、人物の帯（上から約 12〜42%）はスペーサーで空け、遊ぶボタンは約 44% から。 */
+	body.sbo-loginscr #sbo-quick.sbo-show {
+		display: block;
+		overflow-x: hidden;
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		-webkit-overflow-scrolling: touch;
+		background: #e4e7c3 url(/login/login-mobile.webp?v=@@SBO_BUILD_COMMIT@@) top center / 100% auto no-repeat local;
+	}
+	body.sbo-loginscr #sbo-quick .sbo-card.sbo-home {
+		height: auto;
+		max-height: none;
+		min-height: 100%;
+		overflow: visible;
+		margin: 0 auto;
+		padding-top: 0;
+	}
+	body.sbo-loginscr .sbo-home > :first-child,
+	body.sbo-loginscr .sbo-home > :last-child {
+		margin: 0;
+	}
+	/* ロゴ：絵の上端（空）に重ねる。縁取りと影で読みやすく。高さ 66vw = 絵（高さ 150vw）の 44% まで */
+	body.sbo-loginscr .sbo-hero {
+		height: 66vw;
+		margin-bottom: -10px;
+		padding: calc(8px + env(safe-area-inset-top)) 0 0;
+		box-sizing: border-box;
+		pointer-events: none;
+	}
+	body.sbo-loginscr .sbo-title-ja {
+		white-space: nowrap;
+		font-size: clamp(18px, 6.2vw, 40px);
+		-webkit-text-stroke: 5px #3b6f2c;
+		text-shadow: 0 2px 0 #2c5421, 0 4px 8px rgba(0, 40, 20, 0.55);
+	}
+	body.sbo-loginscr .sbo-title-ja br {
+		display: none;
+	}
+	body.sbo-loginscr .sbo-title-en {
+		font-size: 11px;
+		margin-top: 2px;
+	}
+	/* ID・パスワードのカードは、背景の上の中央に（上は人物の帯の下あたりから） */
+	body.sbo-loginscr #sbo-quick #sbo-quick-id {
+		margin: calc(12vw + env(safe-area-inset-top)) auto 24px;
+	}
+	body.sbo-loginscr #sbo-quick .sbo-sec {
+		background: rgba(255, 255, 255, 0.84);
+	}
+	body.sbo-loginscr .sbo-links {
+		background: rgba(255, 255, 255, 0.7);
+	}
+	/* PC・横長（幅 900px 以上・高さ 560px 以上・横長）：絵は高さに合わせて中央に置き（4 人の足元の下に無地の余白がある）、
+	   左右の余りは同じ絵のぼかしで埋める。ロゴは上の空、遊ぶボタンは足元の下、アカウント・お知らせは左右の端、リンクは最下段の帯。 */
+	@media (min-width: 900px) and (min-height: 560px) and (min-aspect-ratio: 5/4) {
+		body.sbo-loginscr #sbo-quick.sbo-show {
+			display: flex;
+			overflow: hidden;
+			background: #e4e7c3;
+			--sw: calc(100vh * 1.2236);	/* 絵の幅（login-pc.webp は 1500x1226） */
+		}
+		body.sbo-loginscr #sbo-quick.sbo-show::before,
+		body.sbo-loginscr #sbo-quick.sbo-show::after {
+			content: "";
+			position: absolute;
+			z-index: 0;
+			pointer-events: none;
+		}
+		body.sbo-loginscr #sbo-quick.sbo-show::before {
+			left: -40px; right: -40px; top: -40px; bottom: -40px;
+			background: url(/login/login-pc.webp?v=@@SBO_BUILD_COMMIT@@) center / cover no-repeat;
+			filter: blur(22px) saturate(1.1);
+		}
+		body.sbo-loginscr #sbo-quick.sbo-show::after {
+			left: 50%; top: 0; bottom: 0;
+			width: var(--sw);
+			transform: translateX(-50%);
+			background: url(/login/login-pc.webp?v=@@SBO_BUILD_COMMIT@@) center / 100% 100% no-repeat;
+			-webkit-mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent);
+			mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent);
+		}
+		body.sbo-loginscr #sbo-quick .sbo-card {
+			position: relative;
+			z-index: 1;
+		}
+		body.sbo-loginscr #sbo-quick #sbo-quick-id {
+			margin: 0;
+		}
+		body.sbo-loginscr #sbo-quick .sbo-card.sbo-home,
+		body.sbo-loginscr #sbo-quick.sbo-back:not(.sbo-id) #sbo-quick-back,
+		body.sbo-loginscr #sbo-quick.sbo-new:not(.sbo-id) #sbo-quick-new {
+			position: absolute;
+			left: 0; top: 0;
 			width: 100%;
-			max-width: 100%;
-			padding-top: calc(8px + env(safe-area-inset-top));
-			padding-bottom: calc(8px + env(safe-area-inset-bottom));
+			max-width: none;
+			height: 100%;
+			min-height: 0;
+			padding: 0;
+			margin: 0;
+			overflow: visible;
 		}
 		body.sbo-loginscr #sbo-quick.sbo-back:not(.sbo-id) #sbo-quick-back,
 		body.sbo-loginscr #sbo-quick.sbo-new:not(.sbo-id) #sbo-quick-new {
-			display: grid;
-			grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 1fr);
-			grid-template-areas: "hero hero hero" "acc play news" "links links links";
-			align-content: center;
-			align-items: center;
-			gap: 8px 14px;
+			display: block;
 		}
-		body.sbo-loginscr .sbo-home > :first-child,
-		body.sbo-loginscr .sbo-home > :last-child {
+		body.sbo-loginscr .sbo-hero {
+			position: absolute;
+			left: 0; right: 0;
+			top: max(8px, 1.8vh);
+			height: auto;
 			margin: 0;
+			padding: 0;
 		}
-		body.sbo-loginscr .sbo-home .sbo-hero { grid-area: hero; }
-		body.sbo-loginscr .sbo-home .sbo-col-acc { grid-area: acc; align-self: center; }
-		body.sbo-loginscr .sbo-home .sbo-col-play { grid-area: play; }
-		body.sbo-loginscr .sbo-home .sbo-news { grid-area: news; align-self: center; }
-		body.sbo-loginscr .sbo-home .sbo-links { grid-area: links; justify-self: center; }
+		body.sbo-loginscr .sbo-title-ja {
+			font-size: clamp(24px, 5.4vh, 54px);
+			-webkit-text-stroke: 7px #3b6f2c;
+		}
+		body.sbo-loginscr .sbo-title-en {
+			font-size: clamp(11px, 1.8vh, 15px);
+		}
+		body.sbo-loginscr .sbo-home .sbo-col-play {
+			position: absolute;
+			left: 50%; top: 79vh;
+			transform: translateX(-50%);
+			width: min(420px, calc(100% - 24px));
+			gap: 6px;
+		}
+		body.sbo-loginscr .sbo-home .sbo-col-acc,
+		body.sbo-loginscr .sbo-home .sbo-news {
+			position: absolute;
+			top: 17vh;
+			width: min(21vw, 300px);
+			max-height: calc(100vh - 17vh - 64px);
+			overflow-y: auto;
+			overscroll-behavior: contain;
+		}
+		body.sbo-loginscr .sbo-home .sbo-col-acc { left: 12px; }
+		body.sbo-loginscr .sbo-home .sbo-news { right: 12px; }
 		body.sbo-loginscr .sbo-news:not(.sbo-has) { display: none; }
-		body.sbo-loginscr .sbo-art { max-height: 22vh; max-width: min(100%, 300px); }
+		body.sbo-loginscr .sbo-home .sbo-links {
+			position: absolute;
+			left: 50%;
+			bottom: max(8px, env(safe-area-inset-bottom));
+			transform: translateX(-50%);
+			width: max-content;
+			max-width: calc(100% - 24px);
+		}
+		body.sbo-loginscr #sbo-quick .sbo-links .sbo-link {
+			min-height: 34px;
+		}
+	}
+	@media (min-width: 900px) and (min-height: 560px) and (min-aspect-ratio: 5/4) and (max-height: 760px) {
+		body.sbo-loginscr .sbo-home .sbo-note {
+			display: none;
+		}
 	}
 	.sbo-col-acc,
 	.sbo-col-play {
@@ -2552,7 +2607,6 @@
 			<div class="sbo-card sbo-home" id="sbo-quick-back">
 				<div class="sbo-hero"><span class="sbo-title-ja">スクラップブック<br>オンライン</span><span class="sbo-title-en">Scrapbook Online</span></div>
 				<div class="sbo-col-play">
-					<img class="sbo-art" src="/login/login-art.webp?v=@@SBO_BUILD_COMMIT@@" alt="" width="1000" height="644" decoding="async" loading="lazy" draggable="false">
 					<!-- いちばん新しく使ったアカウント（大きな金色ボタン） -->
 					<div id="sbo-quick-main"></div>
 					<p class="sbo-note">おかえりなさい！ 前回のアカウントで、すぐに冒険を再開できます。</p>
@@ -2603,7 +2657,6 @@
 			<div class="sbo-card sbo-home" id="sbo-quick-new">
 				<div class="sbo-hero"><span class="sbo-title-ja">スクラップブック<br>オンライン</span><span class="sbo-title-en">Scrapbook Online</span></div>
 				<div class="sbo-col-play">
-					<img class="sbo-art" src="/login/login-art.webp?v=@@SBO_BUILD_COMMIT@@" alt="" width="1000" height="644" decoding="async" loading="lazy" draggable="false">
 					<button type="button" class="sbo-btn sbo-play" id="sbo-quick-newstart">すぐにはじめる</button>
 					<p class="sbo-note">アカウントは自動で作ります。次からはこの端末でボタンを押すだけで入れます。</p>
 				</div>
