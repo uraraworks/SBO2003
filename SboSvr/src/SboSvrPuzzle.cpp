@@ -593,6 +593,22 @@ static void SendAck(int nTable)
 
 /* 入力・周期処理の結果を送る（変わった所だけ）。置けなくなったら負け／ゲームオーバー。
    対戦中は、固定で消したラインのお邪魔を相手の待ちに足す */
+/* 台の盤面を見ている人（座っている人・対戦相手・近くの人）に効果音を知らせる。pSkip には送らない。
+   向きを変えた音は、座っている本人には送らない（本人のクライアントは押した時にすぐ鳴らす） */
+static void SendSe(int nTable, BYTE bySe, PCHARINFO pSkip)
+{
+	PUZZLETABLE &Table = s_aTable[nTable];
+	int i;
+
+	for (i = 0; i < (int)Table.aWatch.size (); i ++) {
+		PCHARINFO pChar = WatchChar (Table.aWatch[i]);
+		if ((pChar == NULL) || (pChar == pSkip)) {
+			continue;
+		}
+		SendCmdPUZZLESE (pChar->pID, bySe, Table.dwNpc);
+	}
+}
+
 static void SendChanged(int nTable, int nChg)
 {
 	PUZZLETABLE &Table = s_aTable[nTable];
@@ -604,6 +620,10 @@ static void SendChanged(int nTable, int nChg)
 		return;
 	}
 	g.nAttack = 0;
+	/* 定着した（盤面が変わった）効果音。ゲームオーバーになった最後の 1 つも鳴らす */
+	if (nChg & PUZZLE_CHG_BOARD) {
+		SendSe (nTable, PUZZLESE_LOCK, NULL);
+	}
 	if (nChg & PUZZLE_CHG_OVER) {
 		Leave (nTable, PUZZLESTATE_OVER, TRUE, TRUE);
 		return;
@@ -1133,6 +1153,10 @@ void PuzzleKey(PCHARINFO pChar, BYTE byKey, DWORD dwSerial)
 		/* 動けなかった（クライアントの先読みと食い違った）時も、処理したことを返して先読みを直させる */
 		SendAck (nTable);
 		return;
+	}
+	/* 向きを変えた効果音（座っている本人は押した時に鳴らしているので送らない） */
+	if (((byKey == PUZZLEKEY_ROTATE) || (byKey == PUZZLEKEY_ROTATE_L)) && (nChg & PUZZLE_CHG_PIECE)) {
+		SendSe (nTable, PUZZLESE_ROTATE, SeatChar (Seat));
 	}
 	SendChanged (nTable, nChg);
 }

@@ -19,6 +19,7 @@ EXCLUDES=(
 	"private"				# プレイヤーのデータ（本番の移行用）
 	"SboSoundData/MIDI"		# 再配布できない BGM
 	"SboSoundData/Audio"	# 音声ファイル(.m4a)の BGM
+	"SboSoundData/SE"		# 再配布できない効果音（効果音ラボの素材。落ち物パズルの音）
 	"Release/SBODATA"		# 本物のゲームデータ（ネタバレになる。公開側は make-min-seed.sh の草原だけ）
 	"*.xls"					# 職業のレベルアップの設計（レベルアップ情報.xls。ネタバレになる）
 )

@@ -286,12 +286,14 @@
 #define IDR_MIDI_W0100                  396
 #define IDR_MIDI_W0101                  397
 #define IDR_WAVE_CHAT                   398
+#define IDR_WAVE_PUZZLE_ROTATE          399
+#define IDR_WAVE_PUZZLE_LOCK            400
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        399
+#define _APS_NEXT_RESOURCE_VALUE        401
 #define _APS_NEXT_COMMAND_VALUE         40001
 #define _APS_NEXT_CONTROL_VALUE         1000
 #define _APS_NEXT_SYMED_VALUE           101

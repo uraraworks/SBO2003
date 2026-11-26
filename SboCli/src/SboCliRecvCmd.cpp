@@ -176,6 +176,7 @@ void	RecvDataProcMAPSWAP					(PBYTE, DWORD);			/* 受信データ処理(印で�
 void	RecvDataProcHASTE					(PBYTE, DWORD);			/* 受信データ処理(加速の状態) */
 void	RecvDataProcDGDEFSTATUS				(PBYTE, DWORD);			/* 受信データ処理(拠点防衛の状態) */
 void	RecvDataProcDGSTATUS				(PBYTE, DWORD);			/* 受信データ処理(番外編ダンジョンの状況パネル) */
+void	RecvDataProcPUZZLESE				(PBYTE, DWORD);			/* 受信データ処理(落ち物パズルの効果音) */
 void	RecvDataProcPUZZLESTATE				(PBYTE, DWORD);			/* 受信データ処理(落ち物パズルの盤面・落ち物・得点) */
 void	RecvDataProcCHARBUFF				(PBYTE, DWORD);			/* 受信データ処理(攻撃力・守備力アップの残り) */
 void	RecvDataProcMAKERINFO				(PBYTE, DWORD);			/* 受信データ処理(作り手情報) */
@@ -479,6 +480,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcDGSTATUS,				/* CMD_DGSTATUS */
 	NULL,								/* CMD_PUZZLEKEY(クライアント→サーバーのみ) */
 	RecvDataProcPUZZLESTATE,			/* CMD_PUZZLESTATE */
+	RecvDataProcPUZZLESE,				/* CMD_PUZZLESE */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -8771,6 +8773,10 @@ void PuzzlePredictKey(BYTE byKey, DWORD dwSerial)
 			continue;
 		}
 		if (PuzzleViewApplyKey (pView, byKey)) {
+			/* 向きが変わったら、サーバーの返事を待たずにすぐ鳴らす（見ている人には、サーバーが別に知らせる） */
+			if ((byKey == PUZZLEKEY_ROTATE) || (byKey == PUZZLEKEY_ROTATE_L)) {
+				DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUZZLE_ROTATE]);
+			}
 			if (pView->nPred >= PUZZLE_PRED_MAX) {
 				memmove (&pView->aPred[0], &pView->aPred[1], sizeof (PUZZLEPRED) * (PUZZLE_PRED_MAX - 1));
 				pView->nPred = PUZZLE_PRED_MAX - 1;
@@ -8848,6 +8854,26 @@ void RecvDataProcPUZZLESTATE(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	g_bDraw = TRUE;
+}
+
+/* 落ち物パズルの効果音（サーバーから）：その台の盤面を持っている（=盤面が見える距離にいる）人だけが鳴らす。
+   向きを変えた音は、座っている本人には送られない（本人は PuzzlePredictKey で押した時に鳴らす）。定着の音は本人にも届く */
+void RecvDataProcPUZZLESE(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_PUZZLESE pPara = (PCMDPARA_PUZZLESE)pData;
+	PUZZLEVIEW *pView;
+
+	if (dwDataSize < sizeof (CMDPARA_PUZZLESE)) {
+		return;
+	}
+	pView = PuzzleViewFind (pPara->dwNpc, FALSE);
+	if ((pView == NULL) || !pView->bBoard) {
+		return;
+	}
+	switch (pPara->bySe) {
+	case PUZZLESE_ROTATE:	DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUZZLE_ROTATE]);	break;
+	case PUZZLESE_LOCK:		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUZZLE_LOCK]);	break;
+	}
 }
 
 /* 席に座って遊んでいるか（座っている間は歩かず、キーはゲーム側へ送る） */

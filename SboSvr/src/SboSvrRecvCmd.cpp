@@ -530,6 +530,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	NULL,								/* CMD_DGSTATUS(サーバー→クライアントのみ) */
 	RecvDataProcPUZZLEKEY,				/* CMD_PUZZLEKEY */
 	NULL,								/* CMD_PUZZLESTATE(サーバー→クライアントのみ) */
+	NULL,								/* CMD_PUZZLESE(サーバー→クライアントのみ) */
 
 	NULL
 };

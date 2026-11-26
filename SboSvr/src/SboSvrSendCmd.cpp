@@ -1923,6 +1923,21 @@ void SendCmdPUZZLESTATE(DWORD pIDSend, PBYTE pData, DWORD dwSize)
 }
 
 /* ========================================================================= */
+/* 関数名：SendCmdPUZZLESE													 */
+/* 内容：コマンド送信(落ち物パズルの効果音。台の盤面を見ている人に)			 */
+/* ========================================================================= */
+void SendCmdPUZZLESE(DWORD pIDSend, BYTE bySe, DWORD dwNpc)
+{
+	CMDPARA_PUZZLESE Para;
+
+	ZeroMemory (&Para, sizeof (Para));
+	Para.byCmd = CMD_PUZZLESE;
+	Para.bySe = bySe;
+	Para.dwNpc = dwNpc;
+	svrSock.SendTo (pIDSend, (PBYTE)&Para, sizeof (Para), SENDTIMEOUT);
+}
+
+/* ========================================================================= */
 /* 関数名：SendCmdDGDEFMAP													 */
 /* 内容：コマンド送信(番外編の拠点防衛：全体地図。その人にだけ)				 */
 /* 備考：CMDPARA_DGDEFMAP＋仲間の位置＋敵の座標を呼び出し側で組み立てて渡す	 */
