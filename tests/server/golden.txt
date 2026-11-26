@@ -2529,6 +2529,7 @@ puzzle logout before=1 after=0 count=0
 puzzle free seated=1
 puzzle done seats=0
 == AV2. Falling puzzle versus ==
+puzzle ask shown seated=0 answer=1
 vs solo seatedA=1 vsA=0 coinA=0
 vs spectate near packets=1
 vs spectate nochange packets=3
@@ -2561,6 +2562,10 @@ vs nopair seated=11 vs=00
 vs nocoin seatedB=0 vsA=0
 puzzle ask shown seated=0 answer=0
 vs decline seatedB=1 vs=00 coinB=0
+puzzle ask shown seated=0 answer=0
+puzzle ask shown seated=0 answer=1
+vs denyvs seated=11 vs=00 msgB+2 deny=1
+puzzle ask shown seated=0 answer=1
 vs spectate leave packets=1 seats=0
 vs done seats=0
 == AV3. Falling puzzle idle table ==
@@ -2595,6 +2600,7 @@ insert leave off=1 packets=1 back=3
 insert notcell seatedB=0 coinB=1
 insert free near=1 seatedNear=0 back=7 seated=1 idleAfter=0
 insert free esc seated=0 idle=7
+puzzle ask shown seated=0 answer=1
 insert sit nocoin=0 still=3 seated=1 A:idle=0 B:idle=0
 puzzle ask shown seated=0 answer=1
 streak vs=11 start=0
@@ -2605,10 +2611,13 @@ streak win2 A=2 msgA=1 msgB=1 msgNew=1 pktC=2 pktA=2
 streak rec scoreB=1500 n=1 streaks=0
 puzzle ask shown seated=0 answer=1
 streak lose A seated=0 streakA=0 B=1 recStreak=1(A:2 20261125) recScore=A:5000,B:1500
+puzzle ask shown seated=0 answer=1
 streak esc recStreak=1 sitAgain=0
 puzzle ask shown seated=0 answer=1
 puzzle ask shown seated=0 answer=1
+puzzle ask shown seated=0 answer=1
 streak logout B=2 recStreak=2 first=A second=B values=2,2 seatedB=0
+puzzle ask shown seated=0 answer=1
 solo over seatedA=0 scores=2 top=5000
 board talk A=1 B=0 head=1 streakHead=1 name=1 cut=1 noat0=1
 board parts A=1 B=0 head=1 score=1 plain=1

@@ -18394,6 +18394,20 @@ static void TestPuzzleVs(const std::vector<int> &aLogin)
 	printf("vs decline seatedB=%d vs=%d%d coinB=%d\n", PuzzleIsSeated(pB), PuzzleIsVersus(pA), PuzzleIsVersus(pB), PuzzleCoinCount(pB, wCoin));
 	PuzzleOnLeave(pB);
 
+	/* 11c. A が座る前の「乱入されてもよいですか？」に「いいえ」と答えると、あとから台 2 に座った B は乱入できず、ひとりで遊ぶ（相手が受け付けていない旨が出る） */
+	PuzzleOnLeave(pA);
+	AddCharItem(pA->dwTblID, wCoin);
+	PuzzleTalk(pA, pT1, FALSE);
+	AddCharItem(pB->dwTblID, wCoin);
+	int nMsgDeny = MockCmdCount(anConn[1], CMD_SYSMSG);
+	PuzzleTalk(pB, pT2);
+	printf("vs denyvs seated=%d%d vs=%d%d msgB+%d deny=%d\n", PuzzleIsSeated(pA), PuzzleIsSeated(pB), PuzzleIsVersus(pA), PuzzleIsVersus(pB),
+		MockCmdCount(anConn[1], CMD_SYSMSG) - nMsgDeny, MockHasText(anConn[1], CMD_SYSMSG, "乱入を受け付けていません"));
+	PuzzleOnLeave(pB);
+	PuzzleOnLeave(pA);
+	AddCharItem(pA->dwTblID, wCoin);
+	PuzzleTalk(pA, pT1);
+
 	/* 12. 台が空になった時、観戦の C に NONE（OVER）が届く */
 	nC2 = MockCmdCount(anConn[2], CMD_PUZZLESTATE);
 	g_dwTime = (s_dwFakeNow += 300);
@@ -18974,7 +18988,7 @@ static void TestPuzzleRecord(const std::vector<int> &aLogin)
 	PuzzleTalkRaw(pA, pT1);
 	int nNoCoin = PuzzleIsSeated(pA), nStill = PuzzleLastIdle(anConn[0], pT1->dwTblID);
 	AddCharItem(pA->dwTblID, wCoin);
-	PuzzleTalkRaw(pA, pT1);
+	PuzzleTalk(pA, pT1)	/* ペアの台なので「乱入されてもよいか」を聞かれる。はいで座る */;
 	PuzzlePlace(pB, pT1, dwX, dwY + 1);
 	g_dwTime = (s_dwFakeNow += 300);
 	PuzzleProc();
