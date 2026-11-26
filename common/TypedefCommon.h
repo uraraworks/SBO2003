@@ -3042,7 +3042,10 @@ typedef struct _MAKERINFO {
 	char		szName[MAX_MAKERNAME];								/* 名前（例：料理人） */
 	char		szMsgTalk[MAX_MAKERMSG];							/* 話しかけた時の台詞 */
 	char		szMsgDone[MAX_MAKERMSG];							/* 作った時の台詞 */
-	char		szMsgLack[MAX_MAKERMSG];							/* 材料が足りない時の台詞 */
+	char		szMsgLack[MAX_MAKERMSG];							/* 材料が足りない時の台詞（鑑定屋は代金が足りない時） */
+	char		szMsgNone[MAX_MAKERMSG];							/* 鑑定屋：鑑定する物が無い時の台詞 */
+	char		szMsgMore[MAX_MAKERMSG];							/* 鑑定屋：鑑定した後、まだ鑑定する物がある時に続ける台詞 */
+	char		szMsgEnd[MAX_MAKERMSG];								/* 鑑定屋：鑑定した後、もう鑑定する物が無い時に続ける台詞 */
 } MAKERINFO, *PMAKERINFO;
 
 /* レシピ情報 */

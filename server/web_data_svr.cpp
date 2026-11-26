@@ -433,7 +433,10 @@ static const DATAFIELD s_aFieldMaker[] = {
 	FLDS(MAKERINFO, szName,				"名前",					FT_STR, 0, "例: 料理人"),
 	FLDS(MAKERINFO, szMsgTalk,			"話しかけた時の台詞",	FT_STR, FF_MULTILINE, "NPC の台詞と同じ制御コード（@0 入力待ち・@1 改行・@2 点滅無しで入力待ち）が使える"),
 	FLDS(MAKERINFO, szMsgDone,			"作った時の台詞",		FT_STR, FF_MULTILINE, NULL),
-	FLDS(MAKERINFO, szMsgLack,			"材料が足りない時の台詞",	FT_STR, FF_MULTILINE, NULL),
+	FLDS(MAKERINFO, szMsgLack,			"材料が足りない時の台詞",	FT_STR, FF_MULTILINE, "鑑定屋では、代金が足りない時の台詞"),
+	FLDS(MAKERINFO, szMsgNone,			"鑑定する物が無い時の台詞",	FT_STR, FF_MULTILINE, "鑑定屋だけ。手持ちに未鑑定の装備が無い時。空なら既定の台詞"),
+	FLDS(MAKERINFO, szMsgMore,			"鑑定の後、まだある時の台詞",	FT_STR, FF_MULTILINE, "鑑定屋だけ。作った時の台詞の次の行に続く。空なら既定の台詞"),
+	FLDS(MAKERINFO, szMsgEnd,			"鑑定の後、もう無い時の台詞",	FT_STR, FF_MULTILINE, "鑑定屋だけ。作った時の台詞の次の行に続く。空なら既定の台詞"),
 };
 
 /* 付与情報（装備に付く接頭辞・接尾辞。docs/item-affix.md） */
