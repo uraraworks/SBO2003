@@ -31,6 +31,7 @@
 #include "SboSvrQuest.h"
 #include "SboSvrTalk.h"
 #include "SboSvrPuzzle.h"
+#include "SboSvrMaze.h"
 
 extern long genrand();				/* 乱数取得 */
 

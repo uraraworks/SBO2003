@@ -2607,4 +2607,47 @@ record api scores=1 streaks=1 max=1 top=1 date=1
 board empty text=2
 board full counts=10,10 len<max=1 tenth=2 end=1
 record done seats=0
+== AW. Maze attack table ==
+maze parse default -6,-12,0,1
+maze parse all 3,-4,5,-2
+maze parse blank -6,-12,3,1
+maze parse clamp 60,-60,0,1
+maze isTable q=1 puzzle=0 questnpc=0
+maze other cells seated=0 state=0
+maze sit seated=1 seats=1 got=1 kind=1 seat=1 idle=0 c0=1 c1=1
+maze sit board x=1 y=1 size=64
+maze sit p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2
+maze busy seatedB=0 msg=1
+maze nowalk moved=0
+maze move up p0=3,5 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2 +1
+maze move right p0=6,5 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2 +4
+maze move invalid p0=3,5 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2 +2
+maze wall p0=3,5 p1=3,0 left=5/6 walls=1 turn=0 win=-1 st=2 +1 wall0=3,4,0
+maze blocked p0=3,5 p1=3,0 left=5/6 walls=1 turn=0 win=-1 st=2 +1
+maze badwall overlapL p0=3,5 p1=3,0 left=5/6 walls=1 turn=0 win=-1 st=2 +1
+maze badwall overlapR p0=3,5 p1=3,0 left=5/6 walls=1 turn=0 win=-1 st=2 +1
+maze badwall cross p0=3,5 p1=3,0 left=5/6 walls=1 turn=0 win=-1 st=2 +1
+maze badwall outX p0=3,5 p1=3,0 left=5/6 walls=1 turn=0 win=-1 st=2 +1
+maze badwall outY p0=3,5 p1=3,0 left=5/6 walls=1 turn=0 win=-1 st=2 +1
+maze badwall orient p0=3,5 p1=3,0 left=5/6 walls=1 turn=0 win=-1 st=2 +1
+maze win p0=2,0 p1=3,0 left=5/6 walls=1 turn=0 win=0 st=6
+maze win locked p0=2,0 p1=3,0 left=5/6 walls=1 turn=0 win=0 st=6 +3 seated=1
+maze win reset early=[p0=2,0 p1=3,0 left=5/6 walls=1 turn=0 win=0 st=6] later=[p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2] seated=1
+maze restart p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2
+maze after restart p0=3,5 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2
+maze nopath p0=0,6 p1=3,0 left=5/6 walls=1 turn=0 win=-1 st=2 +1
+maze otherkey packets=0 p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2
+maze leave seated=0 seats=0 p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=1 +1
+maze leave then key packets=0
+maze watch approach 23=0 22=[p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=1] +1 idleTables=1
+maze watch hysteresis packets=0
+maze watch leave none +1
+maze watch sit p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=0 seat=0 idle=0 chA=1
+maze watch move B=p0=3,5 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=0
+maze watch Bkey A=p0=3,5 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2
+maze away seated=0 seats=0 B=p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=1
+maze dead before=1 after=0
+maze logout before=1 after=0 seats=0 A+0 B+1 B=p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=1
+maze exclusive puzzle=1 maze=0
+maze done seats=0 idleTables=0
 == done ==

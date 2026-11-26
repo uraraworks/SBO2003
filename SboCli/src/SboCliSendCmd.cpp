@@ -1255,6 +1255,28 @@ DWORD SendCmdPUZZLEKEY(BYTE byKey)
 }
 
 /* ========================================================================= */
+/* 関数名：SendCmdMAZEKEY													 */
+/* 内容：コマンド送信(迷路対戦の操作。座っている間だけ)						 */
+/*		 byAct=MAZEACT_*。使わない欄は 0（byDir=進む向き、byX/byY/byOrient=壁の交点と向き）	 */
+/* ========================================================================= */
+void SendCmdMAZEKEY(BYTE byAct, BYTE byDir, BYTE byX, BYTE byY, BYTE byOrient)
+{
+	CMDPARA_MAZEKEY SendData;
+
+	if ((g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ())) {
+		return;
+	}
+	ZeroMemory (&SendData, sizeof (SendData));
+	SendData.byCmd = CMD_MAZEKEY;
+	SendData.byAct = byAct;
+	SendData.byDir = byDir;
+	SendData.byX = byX;
+	SendData.byY = byY;
+	SendData.byOrient = byOrient;
+	cliSock.Send ((PBYTE)&SendData, sizeof (CMDPARA_MAZEKEY));
+}
+
+/* ========================================================================= */
 /* 関数名：SendCmdTALKRAND													 */
 /* 内容：コマンド送信(話してランダム要求)									 */
 /* 日付：2003/08/28															 */

@@ -405,6 +405,9 @@ enum {
 	CMD_PUZZLEKEY,													/* 落ち物パズルのキー入力（クライアント→サーバー。CMDPARA_PUZZLEKEY の byData が PUZZLEKEY_*、dwTblID=本人、dwSerial=連番） */
 	CMD_PUZZLESTATE,												/* 落ち物パズルの盤面・操作中の落ち物・得点（サーバー→座っている人・対戦相手・台の近くの人。CMDPARA_PUZZLESTATE） */
 	CMD_PUZZLESE,												/* 落ち物パズルの効果音（サーバー→台の近くの人。CMDPARA_PUZZLESE。盤面が見える距離にいる人だけに届く） */
+/* 以下、プレイヤー用（迷路対戦。CMD_MAZEKEY はクライアント→サーバーも受ける。管理者用の判定から外すこと） */
+	CMD_MAZEKEY,													/* 迷路対戦の操作（クライアント→サーバー。CMDPARA_MAZEKEY の byAct が MAZEACT_*） */
+	CMD_MAZESTATE,													/* 迷路対戦の盤面・コマ・壁（サーバー→座っている人・台の近くの人。CMDPARA_MAZESTATE） */
 	CMD_MAX
 };
 
@@ -4405,6 +4408,60 @@ typedef struct _CMDPARA_PUZZLESE {
 	BYTE		bySe;												/* PUZZLESE_* */
 	DWORD		dwNpc;												/* 台NPCのテーブルID（その台の盤面を持っている人だけが鳴らす） */
 } CMDPARA_PUZZLESE, *PCMDPARA_PUZZLESE;
+#pragma pack(pop)
+
+/* 迷路対戦（台に座って遊ぶ 7×7 の 2 人対戦。ロジックは common/MazeAttack.h、台詞 "@k..." の読み方は common/MazeTable.h。
+   今は 1 人練習（座った人がプレイヤー 0＝下側。プレイヤー 1 は不在で、手番は自動で戻る）。
+   CMD_MAZESTATE は、座っている人と台の近くにいる人（観戦。席が空の待機中の台も）に、台ごとに送る）
+   CMD_MAZEKEY: クライアント→サーバー。座っている間の操作。サーバーが検証し、不正なら無視して状態を送り直す */
+enum {
+	MAZEACT_MOVE = 1,												/* コマを進める（byDir: 0=上 1=下 2=左 3=右） */
+	MAZEACT_WALL,													/* 壁を置く（byX, byY=壁の交点 0〜5、byOrient: 0=横壁 1=縦壁） */
+	MAZEACT_LEAVE,													/* 席を立つ（ESC キー） */
+	MAZEACT_RESTART,												/* やり直す（盤を初期状態に戻す。勝ちを見せている間は無視） */
+};
+/* CMD_MAZESTATE の byKind */
+enum {
+	MAZEKIND_NONE = 0,												/* 片付いた・見えなくなった（クライアントは重ね描きを消す。ほかの項目は 0） */
+	MAZEKIND_FULL,													/* 盤面全体（変わるたびに全部送る。小さいので差分は作らない） */
+};
+/* CMDPARA_MAZESTATE の byState のビット */
+#define MAZESTATE_IDLE		(0x01)									/* 待機中（席が空。初期配置の盤を見せる） */
+#define MAZESTATE_SEAT		(0x02)									/* 受け取った本人が、この台の席に座っている（人ごとに付け替える） */
+#define MAZESTATE_WIN		(0x04)									/* 勝ちを見せている間（3 秒ほど。過ぎるとサーバーが盤を戻して FULL を送る） */
+#define MAZE_NOCHAR			((DWORD)0xFFFFFFFF)						/* dwChar の無効値（その側に誰も座っていない） */
+#define MAZEPARA_WALL_MAX	(12)									/* 置かれた壁の最大数（MAZE_WALL_MAX と同じ。1 人 6 枚×2） */
+#pragma pack(push, 1)
+typedef struct _MAZEWALLPARA {
+	BYTE		byX;												/* 壁の交点の列（0〜5） */
+	BYTE		byY;												/* 壁の交点の行（0〜5） */
+	BYTE		byOrient;											/* 0=横壁（x〜x+1 列の y 行と y+1 行の境目）・1=縦壁（y〜y+1 行の x 列と x+1 列の境目） */
+} MAZEWALLPARA, *PMAZEWALLPARA;
+typedef struct _CMDPARA_MAZESTATE {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byKind;												/* MAZEKIND_* */
+	BYTE		byState;											/* MAZESTATE_* のビット */
+	BYTE		byTurn;												/* 今の手番（0 / 1） */
+	signed char	cWinner;											/* 勝者（0 / 1。-1 なら未決着） */
+	BYTE		byPosX[2];											/* 2 匹のコマの列（0〜6）。[0]=座った人（下側スタート）・[1]=相手 */
+	BYTE		byPosY[2];											/* 2 匹のコマの行（0〜6） */
+	BYTE		byWallLeft[2];										/* 各自の壁の残り枚数 */
+	BYTE		byWallCount;										/* 置かれた壁の数（0〜MAZEPARA_WALL_MAX） */
+	MAZEWALLPARA	aWall[MAZEPARA_WALL_MAX];						/* 置かれた壁（置いた順。byWallCount 個だけ有効） */
+	short		sBoardX;											/* 盤の左上（マップのドット座標。13×13 タイル＝416×416 ドット。台の座標と台詞から決める） */
+	short		sBoardY;
+	DWORD		dwNpc;												/* 台NPCのテーブルID（盤を見分ける印。受け取る側は台ごとに盤を覚える） */
+	DWORD		dwChar[2];											/* 2 人分の座っているキャラのテーブルID（座っていない側は MAZE_NOCHAR） */
+} CMDPARA_MAZESTATE, *PCMDPARA_MAZESTATE;
+/* CMD_MAZEKEY の中身（クライアント→サーバー。使わない欄は 0） */
+typedef struct _CMDPARA_MAZEKEY {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byAct;												/* MAZEACT_* */
+	BYTE		byDir;												/* MAZEACT_MOVE の向き（0=上 1=下 2=左 3=右） */
+	BYTE		byX;												/* MAZEACT_WALL の交点の列（0〜5） */
+	BYTE		byY;												/* MAZEACT_WALL の交点の行（0〜5） */
+	BYTE		byOrient;											/* MAZEACT_WALL の向き（0=横 1=縦） */
+} CMDPARA_MAZEKEY, *PCMDPARA_MAZEKEY;
 #pragma pack(pop)
 
 /* 並べ替えの対象(CMDPARA_SORTITEM の byTarget) */

@@ -974,7 +974,7 @@ void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed, int nChoice)
 	DWORD dwPartnerNpc;
 	char szMsg[96];
 
-	if (!PuzzleIsTableNpc (pNpc) || (pChar->byNpcType != NPCTYPE_INIT) || PuzzleIsSeated (pChar)) {
+	if (!PuzzleIsTableNpc (pNpc) || (pChar->byNpcType != NPCTYPE_INIT) || PuzzleIsSeated (pChar) || MazeIsSeated (pChar)) {
 		return;
 	}
 	/* 座れるのは、台の座る場所のマスの上だけ（同じマップ・同じ空間。向きは問わない。隣のマスから台NPC越しには座らない） */

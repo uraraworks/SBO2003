@@ -32,6 +32,7 @@ extern void SendCmdDUNGEONMAPMAP		(DWORD);										/* コマンド送信(探索
 extern void SendCmdDGDEFSTATUS			(DWORD, PCMDPARA_DGDEFSTATUS);					/* コマンド送信(番外編の拠点防衛：拠点HP・波の状態。その人にだけ) */
 extern void SendCmdDGSTATUS				(DWORD, PCMDPARA_DGSTATUS);						/* コマンド送信(番外編ダンジョンの状況パネル。その人にだけ) */
 extern void SendCmdPUZZLESE				(DWORD, BYTE, DWORD);							/* コマンド送信(落ち物パズルの効果音) */
+extern void SendCmdMAZESTATE			(DWORD, PCMDPARA_MAZESTATE);						/* コマンド送信(迷路対戦の盤面・コマ・壁。座っている人と台の近くの人に) */
 extern void SendCmdPUZZLESTATE			(DWORD, PBYTE, DWORD);							/* コマンド送信(落ち物パズルの盤面・落ち物・得点。座っている人にだけ。先頭が CMDPARA_PUZZLESTATE) */
 extern void SendCmdDGDEFMAP				(DWORD, PBYTE, DWORD);							/* コマンド送信(番外編の拠点防衛：全体地図。組み立て済みのデータをその人にだけ) */
 extern void SendCmdDUNGEONSEL			(DWORD, PCMDPARA_DUNGEONSEL);					/* コマンド送信(番外編ダンジョン：入る姿を選ぶ窓を開く・閉じる。その人にだけ) */

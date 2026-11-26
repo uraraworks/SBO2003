@@ -1923,6 +1923,16 @@ void SendCmdPUZZLESTATE(DWORD pIDSend, PBYTE pData, DWORD dwSize)
 }
 
 /* ========================================================================= */
+/* 関数名：SendCmdMAZESTATE													 */
+/* 内容：コマンド送信(迷路対戦の盤面・コマ・壁。席に座っている人と台の近くの人に)	 */
+/* ========================================================================= */
+void SendCmdMAZESTATE(DWORD pIDSend, PCMDPARA_MAZESTATE pPara)
+{
+	pPara->byCmd = CMD_MAZESTATE;
+	svrSock.SendTo (pIDSend, (PBYTE)pPara, sizeof (CMDPARA_MAZESTATE), SENDTIMEOUT);
+}
+
+/* ========================================================================= */
 /* 関数名：SendCmdPUZZLESE													 */
 /* 内容：コマンド送信(落ち物パズルの効果音。台の盤面を見ている人に)			 */
 /* ========================================================================= */

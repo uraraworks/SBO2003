@@ -2801,6 +2801,10 @@
 	   元の Windows 版は入力欄を ESC でしか閉じられず、スマホにはそのキーが無いため */
 	var PAD_INPUT_KEY = {90: 27, 88: 13};
 	function padTarget(vk) {
+		/* 迷路対戦の席に座っている間は「調べる(S)」ボタンが「やめる」＝ESC（パッドに ESC が無いため） */
+		if (vk === 83 && window.sboPadMaze) {
+			return {vk: 27, id: 0};
+		}
 		var input = PAD_INPUT_KEY[vk] ? gameInputShown() : null;
 		/* ゲームがゲーム画面にフォーカスを戻した後（キャラ作成の名前欄を残したまま性別選択を
 		   出した時など）は、入力欄が見えていてもゲームに送る。入力欄に Enter を送ると
@@ -4660,14 +4664,16 @@
 			for (var k = 0; k < showButtons.length; k ++) {
 				showButtons[k].classList.toggle('sbo-pad-battle-off', !battle);
 			}
+			/* 256 は迷路対戦の席に座っている時（S＝やめる(ESC)・X＝かべ／壁モードでは おく・Z＝壁モード(512)の時だけ 向き） */
+			window.sboPadMaze = (state & 256) !== 0;
 			if (sLabel) {
-				sLabel.textContent = (state & 128) ? '回す' : ((state & 8) ? '話す' : '調べる');
+				sLabel.textContent = (state & 256) ? 'やめる' : ((state & 128) ? '回す' : ((state & 8) ? '話す' : '調べる'));
 			}
 			if (xLabel) {
-				xLabel.textContent = (state & 128) ? '右回し' : (battle ? '攻撃' : '決定');
+				xLabel.textContent = (state & 256) ? ((state & 512) ? 'おく' : 'かべ') : ((state & 128) ? '右回し' : (battle ? '攻撃' : '決定'));
 			}
 			if (zLabel) {
-				zLabel.textContent = battle ? '構え(長押し)' : ((state & 128) ? '左回し' : ((state & 32) ? '名前' : 'キャンセル'));
+				zLabel.textContent = (state & 256) ? ((state & 512) ? '向き' : 'キャンセル') : (battle ? '構え(長押し)' : ((state & 128) ? '左回し' : ((state & 32) ? '名前' : 'キャンセル')));
 			}
 		}, 100);
 	})();

@@ -22,6 +22,8 @@
 #include "stdafx.h"
 #include "../../common/DungeonReception.h"
 #include "../../common/FallingPuzzle.h"
+#include "../../common/MazeAttack.h"
+#include "../../common/MazeTable.h"
 #include "../../common/DungeonText.h"
 #include <algorithm>
 #pragma push_macro("max")
@@ -1361,6 +1363,7 @@ static void TestPuzzleVs(const std::vector<int> &aLogin);
 static void TestPuzzleIdle(const std::vector<int> &aLogin);
 static void TestPuzzleSeat(const std::vector<int> &aLogin);
 static void TestPuzzleRecord(const std::vector<int> &aLogin);
+static void TestMaze(const std::vector<int> &aLogin);
 static void TestEmptyMapCheck(const std::vector<int> &aLogin);
 static void TestPutFill(void);
 static void TestDungeonTheme(void);
@@ -1951,6 +1954,8 @@ static void TestWorld(void)
 	TestPuzzleSeat(aLogin);
 	/* AV5. 落ち物パズルの INSERT COIN の案内（座る場所に立つと本人にだけ）・連勝・ハイスコアと連勝記録（保存・掲示板 @h・API） */
 	TestPuzzleRecord(aLogin);
+	/* AW. 迷路対戦の台（台詞 @k・座る・進む・壁・不正な操作・勝ち・やり直し・席を立つ・観戦・片付け） */
+	TestMaze(aLogin);
 	g_aItemInfo[1]->byType = byCoinTypeBack;
 	g_aItemInfo[1]->byFlg = byCoinFlgBack;
 	g_aItemInfo[1]->byEraseProbability = byCoinEraseBack;
@@ -18956,4 +18961,382 @@ static void TestPuzzleRecord(const std::vector<int> &aLogin)
 	SavePuzzleRecord();
 	g_dwTime = dwTimeBack;
 	printf("record done seats=%d\n", PuzzleSeatCount());
+}
+
+/* ------------------------------------------------------------------------- */
+/* AW. 迷路対戦の台（台詞 "@k<dx>,<dy>,<sdx>,<sdy>" の NPC。段階 1＝ひとり練習）				 */
+/*     台詞の解析（既定・省略・負の値・依頼の見えるNPCは台でない）・座る場所で S → 座る・		 */
+/*     隣では座れない・使用中は座れない・座っている間は歩けない・進む・壁を置く・				 */
+/*     不正な操作（壁の重なり・十字・範囲外・進めない向き・知らない操作）は無視して状態を送り直す・	 */
+/*     勝つと 3 秒盤を見せて（その間は操作を受けない）座ったまま戻る・やり直し・席を立つ・		 */
+/*     近くの人（観戦）への盤の送り始め・消す距離・離れる／切断で片付く						 */
+/* ------------------------------------------------------------------------- */
+static void MazePackets(int nConn, std::vector<std::vector<BYTE> > &aOut)
+{
+	char *psz = MockCmdAll(nConn, CMD_MAZESTATE);
+	size_t nLen = strlen(psz), nPos = 0;
+	aOut.clear();
+	while (nPos < nLen) {
+		size_t nEnd = nPos;
+		while (nEnd < nLen && psz[nEnd] != ',') nEnd ++;
+		std::vector<BYTE> a((nEnd - nPos) / 2, 0);
+		for (size_t i = 0; i < a.size(); i ++) {
+			unsigned int u = 0;
+			sscanf(psz + nPos + i * 2, "%2x", &u);
+			a[i] = (BYTE)u;
+		}
+		aOut.push_back(a);
+		nPos = nEnd + 1;
+	}
+	free(psz);
+}
+
+/* 覚えた CMD_MAZESTATE の数 */
+static int MazeCount(int nConn)
+{
+	std::vector<std::vector<BYTE> > aP;
+	MazePackets(nConn, aP);
+	return (int)aP.size();
+}
+
+/* 最後に受けた CMD_MAZESTATE（無ければ FALSE。台 dwNpc のものだけ見る） */
+static BOOL MazeLast(int nConn, DWORD dwNpc, CMDPARA_MAZESTATE *pOut)
+{
+	std::vector<std::vector<BYTE> > aP;
+	MazePackets(nConn, aP);
+	for (int i = (int)aP.size() - 1; i >= 0; i --) {
+		if (aP[i].size() != sizeof(CMDPARA_MAZESTATE)) continue;
+		memcpy(pOut, &aP[i][0], sizeof(CMDPARA_MAZESTATE));
+		if (pOut->dwNpc == dwNpc) return TRUE;
+	}
+	return FALSE;
+}
+
+static void MazeKeySend(PCHARINFO p, BYTE byAct, BYTE byDir = 0, BYTE byX = 0, BYTE byY = 0, BYTE byOrient = 0)
+{
+	CMDPARA_MAZEKEY Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_MAZEKEY;
+	Para.byAct = byAct;
+	Para.byDir = byDir;
+	Para.byX = byX;
+	Para.byY = byY;
+	Para.byOrient = byOrient;
+	TestRecv(p, &Para, sizeof(Para));
+}
+
+/* 台の座る場所のマスに立って S キーで話しかける */
+static void MazeTalk(PCHARINFO p, PCHARINFO pNpc)
+{
+	int nDx, nDy, nSdx, nSdy;
+	MazeParseTable(pNpc->pszNpcSpeech, &nDx, &nDy, &nSdx, &nSdy);
+	PuzzlePlace(p, pNpc, (DWORD)((int)pNpc->dwX + nSdx), (DWORD)((int)pNpc->dwY + nSdy));
+	PuzzleKeyS(p, pNpc);
+}
+
+/* 駒の位置・残りの壁・手番・勝者・状態ビットを 1 つの文字列にして見やすくする */
+static std::string MazeBrief(int nConn, DWORD dwNpc)
+{
+	CMDPARA_MAZESTATE St;
+	char sz[160];
+	if (!MazeLast(nConn, dwNpc, &St)) return "-";
+	if (St.byKind == MAZEKIND_NONE) return "none";
+	sprintf(sz, "p0=%d,%d p1=%d,%d left=%d/%d walls=%d turn=%d win=%d st=%d", St.byPosX[0], St.byPosY[0], St.byPosX[1], St.byPosY[1],
+		St.byWallLeft[0], St.byWallLeft[1], St.byWallCount, St.byTurn, St.cWinner, St.byState);
+	return sz;
+}
+
+static void TestMaze(const std::vector<int> &aLogin)
+{
+	printf("== AW. Maze attack table ==\n");
+	if (aLogin.size() < 2) return;
+	s_pSpLogin = &aLogin;
+	PCHARINFO pA = g_aCharInfo[aLogin[0]], pB = g_aCharInfo[aLogin[1]];
+	int nConnA = DgTestConn(pA), nConnB = DgTestConn(pB);
+	DWORD dwMapA = pA->dwMapID, dwXA = pA->dwX, dwYA = pA->dwY, dwMapB = pB->dwMapID, dwXB = pB->dwX, dwYB = pB->dwY;
+	BYTE byStateA = pA->byCharState, byStateB = pB->byCharState;
+	WORD wHPA = pA->wHP, wHPB = pB->wHP;
+	DWORD dwTimeBack = g_dwTime;
+
+	pA->byCharState = CHARSTATE_MOVE;
+	pB->byCharState = CHARSTATE_MOVE;
+	if (pA->wHP == 0) pA->wHP = 10;
+	if (pB->wHP == 0) pB->wHP = 10;
+	QuestMovePC(pB, (int)pA->dwMapID, (int)pA->dwX + 40, (int)pA->dwY);			/* B は同じマップの遠く */
+	DWORD dwMap = pA->dwMapID, dwX = pA->dwX, dwY = pA->dwY;
+
+	/* 1. 台詞の解析：既定・全部指定・空欄・上限・後ろの省略。台でない NPC（@p・依頼の見えるNPC）は台として扱わない */
+	{
+		int dx, dy, sdx, sdy;
+		MazeParseTable("@k", &dx, &dy, &sdx, &sdy);
+		printf("maze parse default %d,%d,%d,%d\n", dx, dy, sdx, sdy);
+		MazeParseTable("@k3,-4,5,-2", &dx, &dy, &sdx, &sdy);
+		printf("maze parse all %d,%d,%d,%d\n", dx, dy, sdx, sdy);
+		MazeParseTable("@k,,3", &dx, &dy, &sdx, &sdy);
+		printf("maze parse blank %d,%d,%d,%d\n", dx, dy, sdx, sdy);
+		MazeParseTable("@k999,-999,x,2", &dx, &dy, &sdx, &sdy);
+		printf("maze parse clamp %d,%d,%d,%d\n", dx, dy, sdx, sdy);
+		NearNpcOpen(pA, "@k");
+		PCHARINFO pPlain = s_aNearNpc.back();
+		NearNpcOpen(pA, "@p");
+		PCHARINFO pPuzzleNpc = s_aNearNpc.back();
+		NearNpcOpen(pA, "@q");
+		PCHARINFO pQuest = s_aNearNpc.back();
+		pQuest->byNpcType = NPCTYPE_QUESTNPC;
+		printf("maze isTable q=%d puzzle=%d questnpc=%d\n", MazeIsTableNpc(pPlain), MazeIsTableNpc(pPuzzleNpc), MazeIsTableNpc(pQuest));
+		pQuest->byNpcType = NPCTYPE_NOMOVE;
+		for (int i = 0; i < 3; i ++) {
+			PCHARINFO pNpc = s_aNearNpc[s_aNearNpc.size() - 1 - i];
+			delete [] pNpc->pszNpcSpeech;
+			pNpc->pszNpcSpeech = new char[1];
+			pNpc->pszNpcSpeech[0] = '\0';
+		}
+	}
+
+	/* 台（既定：盤の左上 -6,-12・座る場所は台NPCの 1 つ下）。A のマスに置く */
+	QuestMovePC(pA, (int)dwMap, (int)dwX, (int)dwY);
+	NearNpcOpen(pA, "@k");
+	PCHARINFO pNpc = s_aNearNpc.back();
+	DWORD dwNpc = pNpc->dwTblID;
+	MockTrace(1);
+	g_dwTime = (s_dwFakeNow = max(s_dwFakeNow, g_dwTime) + 1000);
+
+	/* 2. 座る場所以外（台NPCのマス・横の隣・2 つ下）では座れない。座る場所では向きを問わず座れる */
+	{
+		int anCell[3][2] = { {0, 0}, {1, 1}, {0, 2} };
+		int nSeated = 0;
+		for (int i = 0; i < 3; i ++) {
+			PuzzlePlace(pA, pNpc, (DWORD)((int)dwX + anCell[i][0]), (DWORD)((int)dwY + anCell[i][1]));
+			PuzzleKeyS(pA, pNpc);
+			nSeated += MazeIsSeated(pA);
+		}
+		printf("maze other cells seated=%d state=%d\n", nSeated, MazeCount(nConnA));
+	}
+
+	/* 3. 座る：盤全体 FULL が届く（本人=SEAT ビット・待機でない・A がプレイヤー 0・相手は不在・盤の左上は台から決まる） */
+	pA->byDirection = 3;
+	MazeTalk(pA, pNpc);
+	{
+		CMDPARA_MAZESTATE St;
+		BOOL bOK = MazeLast(nConnA, dwNpc, &St);
+		printf("maze sit seated=%d seats=%d got=%d kind=%d seat=%d idle=%d c0=%d c1=%d\n", MazeIsSeated(pA), MazeSeatCount(), bOK,
+			bOK ? St.byKind : -1, bOK ? (St.byState & MAZESTATE_SEAT) != 0 : -1, bOK ? (St.byState & MAZESTATE_IDLE) != 0 : -1,
+			bOK ? St.dwChar[0] == pA->dwTblID : -1, bOK ? St.dwChar[1] == MAZE_NOCHAR : -1);
+		printf("maze sit board x=%d y=%d size=%d\n", bOK ? St.sBoardX == (short)(((int)dwX - 6) * 32) : -1,
+			bOK ? St.sBoardY == (short)(((int)dwY - 12) * 32) : -1, (int)sizeof(CMDPARA_MAZESTATE));
+		printf("maze sit %s\n", MazeBrief(nConnA, dwNpc).c_str());
+	}
+
+	/* 4. 使用中の台には座れない（B を座る場所へ呼ぶ）・座っている間は歩けない */
+	QuestMovePC(pB, (int)dwMap, (int)dwX, (int)dwY + 1);
+	PuzzleKeyS(pB, pNpc);
+	printf("maze busy seatedB=%d msg=%d\n", MazeIsSeated(pB), MockHasText(nConnB, CMD_SYSMSG, "この台は今、使われています"));
+	QuestMovePC(pB, (int)dwMap, (int)dwX + 40, (int)dwY);
+	{
+		CMDPARA_CHARPOS Pos;
+		ZeroMemory(&Pos, sizeof(Pos));
+		Pos.byCmd = CMD_CHARPOS;
+		Pos.dwTblID = pA->dwTblID;
+		Pos.dwMapID = pA->dwMapID;
+		Pos.byX = (BYTE)(pA->dwX + 1);
+		Pos.byY = (BYTE)pA->dwY;
+		Pos.byDirection = 3;
+		DWORD dwX0 = pA->dwX;
+		TestRecv(pA, &Pos, sizeof(Pos));
+		printf("maze nowalk moved=%d\n", pA->dwX != dwX0);
+	}
+
+	/* 5. 進む：上へ 1 マス。手番は自動で戻る（turn=0）。進めない向き（盤の外）は無視して状態を送り直す */
+	int n0 = MazeCount(nConnA);
+	MazeKeySend(pA, MAZEACT_MOVE, MAZE_UP);
+	printf("maze move up %s +%d\n", MazeBrief(nConnA, dwNpc).c_str(), MazeCount(nConnA) - n0);
+	n0 = MazeCount(nConnA);
+	MazeKeySend(pA, MAZEACT_MOVE, MAZE_RIGHT);
+	MazeKeySend(pA, MAZEACT_MOVE, MAZE_RIGHT);
+	MazeKeySend(pA, MAZEACT_MOVE, MAZE_RIGHT);
+	MazeKeySend(pA, MAZEACT_MOVE, MAZE_RIGHT);									/* 3 回目で右端 (6,5)、4 回目は盤の外 */
+	printf("maze move right %s +%d\n", MazeBrief(nConnA, dwNpc).c_str(), MazeCount(nConnA) - n0);
+	for (int i = 0; i < 3; i ++) MazeKeySend(pA, MAZEACT_MOVE, MAZE_LEFT);			/* 真ん中の列へ戻る (3,5) */
+	n0 = MazeCount(nConnA);
+	MazeKeySend(pA, MAZEACT_MOVE, 9);											/* 知らない向き */
+	MazeKeySend(pA, 77);														/* 知らない操作 */
+	printf("maze move invalid %s +%d\n", MazeBrief(nConnA, dwNpc).c_str(), MazeCount(nConnA) - n0);
+
+	/* 6. 壁を置く：残りが 1 枚減り、手番は戻る。置いた壁の向こうへは進めない */
+	n0 = MazeCount(nConnA);
+	MazeKeySend(pA, MAZEACT_WALL, 0, 3, 4, MAZE_H);								/* (3,5) の真上の境目（x=3〜4 列） */
+	{
+		CMDPARA_MAZESTATE St;
+		BOOL bOK = MazeLast(nConnA, dwNpc, &St);
+		printf("maze wall %s +%d wall0=%d,%d,%d\n", MazeBrief(nConnA, dwNpc).c_str(), MazeCount(nConnA) - n0,
+			bOK ? St.aWall[0].byX : -1, bOK ? St.aWall[0].byY : -1, bOK ? St.aWall[0].byOrient : -1);
+	}
+	n0 = MazeCount(nConnA);
+	MazeKeySend(pA, MAZEACT_MOVE, MAZE_UP);
+	printf("maze blocked %s +%d\n", MazeBrief(nConnA, dwNpc).c_str(), MazeCount(nConnA) - n0);
+
+	/* 7. 不正な壁（どれも無視して状態を送り直す。壁の数・残りは変わらない）：同じ向きで重なる／十字／盤の外／知らない向き */
+	{
+		int anWall[6][3] = { {2, 4, MAZE_H}, {4, 4, MAZE_H}, {3, 4, MAZE_V}, {6, 0, MAZE_H}, {0, 6, MAZE_V}, {1, 1, 2} };
+		const char *apName[6] = { "overlapL", "overlapR", "cross", "outX", "outY", "orient" };
+		for (int i = 0; i < 6; i ++) {
+			n0 = MazeCount(nConnA);
+			MazeKeySend(pA, MAZEACT_WALL, 0, (BYTE)anWall[i][0], (BYTE)anWall[i][1], (BYTE)anWall[i][2]);
+			printf("maze badwall %s %s +%d\n", apName[i], MazeBrief(nConnA, dwNpc).c_str(), MazeCount(nConnA) - n0);
+		}
+	}
+
+	/* 8. 勝つ：(3,5) から左へ 1・上へ 5 で最上段へ着く。勝ちを見せている間（WIN ビット）は操作を受けない */
+	MazeKeySend(pA, MAZEACT_MOVE, MAZE_LEFT);
+	for (int i = 0; i < 5; i ++) MazeKeySend(pA, MAZEACT_MOVE, MAZE_UP);
+	printf("maze win %s\n", MazeBrief(nConnA, dwNpc).c_str());
+	n0 = MazeCount(nConnA);
+	MazeKeySend(pA, MAZEACT_MOVE, MAZE_DOWN);
+	MazeKeySend(pA, MAZEACT_RESTART);
+	MazeKeySend(pA, MAZEACT_WALL, 0, 0, 3, MAZE_V);
+	printf("maze win locked %s +%d seated=%d\n", MazeBrief(nConnA, dwNpc).c_str(), MazeCount(nConnA) - n0, MazeIsSeated(pA));
+	/* 3 秒たつ前は戻らず、過ぎると座ったまま盤が初期状態に戻る（WIN ビットが消え、勝者は未決着）。S キーは要らない */
+	g_dwTime = (s_dwFakeNow += 2000);
+	MazeProc();
+	std::string strBefore = MazeBrief(nConnA, dwNpc);
+	g_dwTime = (s_dwFakeNow += 1100);
+	MazeProc();
+	printf("maze win reset early=[%s] later=[%s] seated=%d\n", strBefore.c_str(), MazeBrief(nConnA, dwNpc).c_str(), MazeIsSeated(pA));
+
+	/* 9. やり直し（途中で盤を初期状態へ）。戻した後も続けて指せる */
+	MazeKeySend(pA, MAZEACT_MOVE, MAZE_UP);
+	MazeKeySend(pA, MAZEACT_WALL, 0, 0, 3, MAZE_V);
+	MazeKeySend(pA, MAZEACT_RESTART);
+	printf("maze restart %s\n", MazeBrief(nConnA, dwNpc).c_str());
+	MazeKeySend(pA, MAZEACT_MOVE, MAZE_UP);
+	printf("maze after restart %s\n", MazeBrief(nConnA, dwNpc).c_str());
+
+	/* 9b. 自分のコマの行き場をなくす壁は置けない：左下の隅 (0,6) へ行って上に横壁 (0,5)・右に縦壁 (1,5) を置くと、
+	   (0,6)(1,6) の 2 マスに閉じ込められる（最後の 1 枚は経路が無くなるので無視され、状態が送り直される） */
+	MazeKeySend(pA, MAZEACT_RESTART);
+	for (int i = 0; i < 3; i ++) MazeKeySend(pA, MAZEACT_MOVE, MAZE_LEFT);
+	MazeKeySend(pA, MAZEACT_WALL, 0, 0, 5, MAZE_H);
+	n0 = MazeCount(nConnA);
+	MazeKeySend(pA, MAZEACT_WALL, 0, 1, 5, MAZE_V);
+	printf("maze nopath %s +%d\n", MazeBrief(nConnA, dwNpc).c_str(), MazeCount(nConnA) - n0);
+	MazeKeySend(pA, MAZEACT_RESTART);
+
+	/* 10. 座っていない人（B）の操作は無視（何も送られない・盤も変わらない） */
+	n0 = MazeCount(nConnB);
+	MazeKeySend(pB, MAZEACT_MOVE, MAZE_UP);
+	MazeKeySend(pB, MAZEACT_RESTART);
+	printf("maze otherkey packets=%d %s\n", MazeCount(nConnB) - n0, MazeBrief(nConnA, dwNpc).c_str());
+
+	/* 11. 席を立つ（ESC）→ 片付く（待機中の盤が本人に届く）。立った後の操作は無視 */
+	n0 = MazeCount(nConnA);
+	MazeKeySend(pA, MAZEACT_LEAVE);
+	printf("maze leave seated=%d seats=%d %s +%d\n", MazeIsSeated(pA), MazeSeatCount(), MazeBrief(nConnA, dwNpc).c_str(), MazeCount(nConnA) - n0);
+	n0 = MazeCount(nConnA);
+	MazeKeySend(pA, MAZEACT_MOVE, MAZE_UP);
+	printf("maze leave then key packets=%d\n", MazeCount(nConnA) - n0);
+
+	/* 12. 待機中の台は近くの人に初期配置の盤（IDLE ビット）を送る。送り始めは 22 マス（盤の中心から。盤の半分 7＋余白 12＋3）・消すのは 25 マスの外 */
+	{
+		int nB0 = MazeCount(nConnB);
+		QuestMovePC(pB, (int)dwMap, (int)dwX + 23, (int)dwY);
+		g_dwTime = (s_dwFakeNow += 300);
+		MazeProc();
+		int nFar = MazeCount(nConnB) - nB0;
+		QuestMovePC(pB, (int)dwMap, (int)dwX + 22, (int)dwY);
+		g_dwTime = (s_dwFakeNow += 300);
+		MazeProc();
+		printf("maze watch approach 23=%d 22=[%s] +%d idleTables=%d\n", nFar, MazeBrief(nConnB, dwNpc).c_str(), MazeCount(nConnB) - nB0 - nFar, MazeIdleCount());
+		/* 境目（23〜25）をうろうろしても送ったり消したりしない・26 マスで NONE */
+		nB0 = MazeCount(nConnB);
+		for (int i = 23; i <= 25; i ++) {
+			QuestMovePC(pB, (int)dwMap, (int)dwX + i, (int)dwY);
+			g_dwTime = (s_dwFakeNow += 300);
+			MazeProc();
+		}
+		printf("maze watch hysteresis packets=%d\n", MazeCount(nConnB) - nB0);
+		QuestMovePC(pB, (int)dwMap, (int)dwX + 26, (int)dwY);
+		g_dwTime = (s_dwFakeNow += 300);
+		MazeProc();
+		printf("maze watch leave %s +%d\n", MazeBrief(nConnB, dwNpc).c_str(), MazeCount(nConnB) - nB0);
+	}
+
+	/* 13. 観戦：B が近くにいる間に A が座ると、B に始まった盤（SEAT でない・A のキャラ）が届き、A の手が B にも届く */
+	QuestMovePC(pB, (int)dwMap, (int)dwX + 5, (int)dwY);
+	g_dwTime = (s_dwFakeNow += 300);
+	MazeProc();
+	MazeTalk(pA, pNpc);
+	{
+		CMDPARA_MAZESTATE St;
+		BOOL bOK = MazeLast(nConnB, dwNpc, &St);
+		printf("maze watch sit %s seat=%d idle=%d chA=%d\n", MazeBrief(nConnB, dwNpc).c_str(), bOK ? (St.byState & MAZESTATE_SEAT) != 0 : -1,
+			bOK ? (St.byState & MAZESTATE_IDLE) != 0 : -1, bOK ? St.dwChar[0] == pA->dwTblID : -1);
+	}
+	MazeKeySend(pA, MAZEACT_MOVE, MAZE_UP);
+	printf("maze watch move B=%s\n", MazeBrief(nConnB, dwNpc).c_str());
+	/* 観戦中の B の操作は受けない */
+	MazeKeySend(pB, MAZEACT_MOVE, MAZE_UP);
+	printf("maze watch Bkey A=%s\n", MazeBrief(nConnA, dwNpc).c_str());
+
+	/* 14. 座る場所から離れる（マップ移動など）と周期処理で片付く（A への NONE は無く待機の盤）。B は待機の盤を受ける */
+	QuestMovePC(pA, (int)dwMap, (int)dwX + 8, (int)dwY);
+	g_dwTime = (s_dwFakeNow += 300);
+	MazeProc();
+	printf("maze away seated=%d seats=%d B=%s\n", MazeIsSeated(pA), MazeSeatCount(), MazeBrief(nConnB, dwNpc).c_str());
+
+	/* 15. 倒れたら片付く */
+	QuestMovePC(pA, (int)dwMap, (int)dwX, (int)dwY + 1);
+	MazeTalk(pA, pNpc);
+	int nSeatedBeforeDead = MazeIsSeated(pA);
+	pA->byCharState = CHARSTATE_DEAD;
+	g_dwTime = (s_dwFakeNow += 300);
+	MazeProc();
+	printf("maze dead before=%d after=%d\n", nSeatedBeforeDead, MazeIsSeated(pA));
+	pA->byCharState = CHARSTATE_MOVE;
+
+	/* 16. 切断（OnLeave）で片付く。本人には何も送らない。見ている B には待機の盤が届く */
+	QuestMovePC(pA, (int)dwMap, (int)dwX, (int)dwY + 1);
+	MazeTalk(pA, pNpc);
+	{
+		int nSeatedBefore = MazeIsSeated(pA);
+		int nA1 = MazeCount(nConnA), nB1 = MazeCount(nConnB);
+		MazeOnLeave(pA);
+		printf("maze logout before=%d after=%d seats=%d A+%d B+%d B=%s\n", nSeatedBefore, MazeIsSeated(pA), MazeSeatCount(),
+			MazeCount(nConnA) - nA1, MazeCount(nConnB) - nB1, MazeBrief(nConnB, dwNpc).c_str());
+	}
+
+	/* 17. 落ち物パズルの席に座っている人は迷路に座れない（ふたつの席に同時に座らない） */
+	{
+		QuestMovePC(pA, (int)dwMap, (int)dwX, (int)dwY);
+		NearNpcOpen(pA, "@p");
+		PCHARINFO pPuz = s_aNearNpc.back();
+		QuestMovePC(pA, (int)dwMap, (int)dwX, (int)dwY + 1);
+		PuzzleKeyS(pA, pPuz);
+		int nPuz = PuzzleIsSeated(pA);
+		PuzzleKeyS(pA, pNpc);
+		printf("maze exclusive puzzle=%d maze=%d\n", nPuz, MazeIsSeated(pA));
+		PuzzleOnLeave(pA);
+	}
+
+	/* 片付け */
+	MockTrace(0);
+	MazeOnLeave(pA);
+	MazeOnLeave(pB);
+	PuzzleRetireNpcs();
+	for (size_t i = 0; i < s_aNearNpc.size(); i ++) {
+		if (MazeIsTableNpc(s_aNearNpc[i])) {
+			delete [] s_aNearNpc[i]->pszNpcSpeech;
+			s_aNearNpc[i]->pszNpcSpeech = new char[1];
+			s_aNearNpc[i]->pszNpcSpeech[0] = '\0';
+		}
+	}
+	NearNpcClose();
+	g_dwTime = (s_dwFakeNow += 300);
+	MazeProc();									/* 台 NPC が無くなった待機中の台を表から消す */
+	PuzzleProc();
+	QuestMovePC(pB, (int)dwMapB, (int)dwXB, (int)dwYB);
+	QuestMovePC(pA, (int)dwMapA, (int)dwXA, (int)dwYA);
+	pA->byCharState = byStateA; pA->wHP = wHPA;
+	pB->byCharState = byStateB; pB->wHP = wHPB;
+	g_dwTime = dwTimeBack;
+	printf("maze done seats=%d idleTables=%d\n", MazeSeatCount(), MazeIdleCount());
 }
