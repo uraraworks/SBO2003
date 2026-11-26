@@ -163,7 +163,13 @@ int main()
 	/* 落下の速さ：レベル 0 は 1 秒、レベルごとに短く、下限あり */
 	CHECK (PuzzleGame::DropMs (0) == 1000);
 	CHECK (PuzzleGame::DropMs (1) < PuzzleGame::DropMs (0));
-	CHECK (PuzzleGame::DropMs (100) == PUZZLE_DROP_MS_MIN);
+	CHECK (PuzzleGame::DropMs (11) == 120);
+	CHECK (PuzzleGame::DropMs (12) == PUZZLE_DROP_MS_MIN);
+	CHECK (PuzzleGame::DropMs (20) == PUZZLE_DROP_MS_FAST);
+	CHECK (PuzzleGame::DropMs (100) == PUZZLE_DROP_MS_FAST);
+	for (int nLv = 0; nLv < 40; nLv ++) {
+		CHECK (PuzzleGame::DropMs (nLv + 1) <= PuzzleGame::DropMs (nLv));		/* 速くなる一方で、遅くはならない */
+	}
 
 	/* 周期処理：経過時間で進む（呼ばれる間隔に関係なく 1 秒に 1 段） */
 	g.Start (10, 18, 7, 1000);
