@@ -5,7 +5,7 @@
 /* 日付：		2026/11/26													 */
 /* ========================================================================= */
 /*
- * 台詞:  @k<dx>,<dy>,<sdx>,<sdy>,<床A>,<床B>,<隙間>,<sdx2>,<sdy2>   （後ろは省略でき、空欄も既定になる。落ち物の @p と同じ流儀）
+ * 台詞:  @k<dx>,<dy>,<sdx>,<sdy>,<床A>,<床B>,<隙間>,<sdx2>,<sdy2>,<CPU強さ>   （後ろは省略でき、空欄も既定になる。落ち物の @p と同じ流儀）
  *   盤は 320×320 ドット（10×10 タイル分。1 タイル=32 ドット）。マスは 32 ドット（キャラの実寸）、マスの間の
  *   壁の通り道は 16 ドット（半キャラ分）で、7*32+6*16=320。マス (x, y) の左上は盤ドット (48x, 48y)。
  *   横壁 (x, y) は盤ドットで縦 48y+32〜+48・横 48x〜48x+80（2 マス＋隙間 1 つ分）、縦壁はその縦横を入れ替えた形。
@@ -17,11 +17,14 @@
  *            既定の盤（dy=-9）の上端の 1 行上）。盤の外にはみ出す場合の扱いは決めていない（台を置く側が収まる所に置く）
  *   隙間     … 壁の通り道（16 ドット幅の溝と交差点）の地に使うマップパーツID（0・省略ならコード描画の暗い単色）。
  *              パーツ（32×32）の中央 16×16 を敷き詰める。パーツIDが範囲外（g_wCountMapParts 以上）なら、その指定はコード描画に戻る
+ *   CPU強さ  … 0・省略＝CPUなし（従来のひとり練習）、1=よわい・2=ふつう・3=つよい。1 以上の台は、人がひとりで座った時に
+ *              「CPUと対戦しますか？」と聞き、はいなら空いている側の席をCPUが受け持つ（範囲外は 0〜3 に丸める）
  *   例  @k            … 全部既定（"@q" は依頼NPCの印なので使わない）
  *       @k-5,-9,0,1   … 上と同じ
  *       @k,,3,0       … 座る場所を台NPCの右 3 マスにする
  *       @k,,,,5,6,7   … 床にパーツ5と6（市松）、隙間にパーツ7を使う
  *       @k,,,,,,,3,-10 … 席 2 を台NPCの右 3 マス・上 10 マスにする
+ *       @k,,,,,,,,,3   … CPU対戦のある台（つよい）
  */
 
 #pragma once
@@ -34,7 +37,9 @@
 #define MAZE_BOARD_CELLS		(7)			/* 盤の一辺のマス数（common/MazeAttack.h の MAZE_SIZE と同じ） */
 #define MAZE_BOARD_DOTS			(MAZE_BOARD_CELLS * MAZE_CELL_DOT + (MAZE_BOARD_CELLS - 1) * MAZE_GAP_DOT)	/* 盤の一辺（ドット。320） */
 #define MAZE_PARAM_NONE			(-99999)	/* 省略・空欄 */
-#define MAZE_PARAM_COUNT		(9)			/* 台詞のパラメータの数（dx, dy, sdx, sdy, 床A, 床B, 隙間, sdx2, sdy2） */
+#define MAZE_PARAM_COUNT		(10)		/* 台詞のパラメータの数（dx, dy, sdx, sdy, 床A, 床B, 隙間, sdx2, sdy2, CPU強さ） */
+#define MAZE_PARAM_CPU			(9)			/* そのうち CPU強さの番号 */
+#define MAZE_CPU_LEVEL_MAX		(3)			/* CPU強さの最大（1=よわい・2=ふつう・3=つよい。0=CPUなし） */
 #define MAZE_PARAM_SEAT2		(7)			/* そのうち席 2 の位置（sdx2, sdy2）の最初の番号 */
 #define MAZE_PARAM_POS_COUNT	(4)			/* そのうち位置の 4 つ（dx, dy, sdx, sdy。範囲は ±MAZE_PARAM_LIMIT） */
 #define MAZE_PART_MAX			(65535)		/* パーツIDの上限（WORD） */
@@ -133,4 +138,14 @@ static inline void MazeBoardPos(int nTileX, int nTileY, int nDx, int nDy, int *p
 {
 	*pnX = (nTileX + nDx) * MAZE_TABLE_TILE_DOT;
 	*pnY = (nTileY + nDy) * MAZE_TABLE_TILE_DOT;
+}
+
+/* 台詞から、CPU強さ（0=CPUなし・1=よわい・2=ふつう・3=つよい）を読む。省略・空欄・負は 0、3 より大きい値は 3 */
+static inline int MazeParseCpuLevel(const char *pszSpeech)
+{
+	int anVal[MAZE_PARAM_COUNT], n;
+
+	MazeParseSpeech (pszSpeech, anVal);
+	n = anVal[MAZE_PARAM_CPU];
+	return (n == MAZE_PARAM_NONE || n < 0) ? 0 : (n > MAZE_CPU_LEVEL_MAX) ? MAZE_CPU_LEVEL_MAX : n;
 }

@@ -2626,7 +2626,7 @@ maze seat2 omitted 0,-10
 maze isTable q=1 puzzle=0 questnpc=0
 maze other cells seated=0 state=0
 maze sit seated=1 seats=1 got=1 kind=1 seat=1 idle=0 c0=1 c1=1
-maze sit board x=1 y=1 size=92
+maze sit board x=1 y=1 size=93
 maze sit p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2
 maze sit parts floor=5,6 gap=7
 maze busy seatedB=0 msg=1
@@ -2707,5 +2707,43 @@ maze ask shown seated=0 answer=0
 maze vs ask expired seatedB=0 seats=1
 maze vs emptied seats=0
 maze vs exclusive puzzle=1 maze=0
+maze cpu parse 0 2 3 0 0
+maze cpuask plain asked=0 seated=1
+maze cpu plain seated=1 cpu=0 lv=0 vs=0 count=0(0) left=0 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpuask no asked=1 cpu=1 swap=0 yes=0 seated(before)=0
+maze cpu no seated=1 cpu=0 lv=1 vs=0 count=0(0) left=0 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpu practice move p0=3,5 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2
+maze cpu left seats=0 cpu=0 lv=1 vs=0 count=0(0) left=0 turn=0 name=00 c1=1 win=0 idle=1 p0=3,6 p1=3,0 walls=6/6
+maze cpuask yes asked=1 cpu=1 swap=0 yes=1 seated(before)=0
+maze cpu start seated=1 seats=1 msg=1 cpu=1 lv=1 vs=1 count=1(3) left=0 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpu count locked cpu=1 lv=1 vs=1 count=1(3) left=0 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpu go cpu=1 lv=1 vs=1 count=0(0) left=30 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpu after A cpu=1 lv=1 vs=1 count=0(0) left=0 turn=1 name=10 c1=1 win=0 idle=0 p0=3,5 p1=3,0 walls=6/6
+maze cpu thinking cpu=1 lv=1 vs=1 count=0(0) left=0 turn=1 name=10 c1=1 win=0 idle=0 p0=3,5 p1=3,0 walls=6/6
+maze cpu not my turn cpu=1 lv=1 vs=1 count=0(0) left=0 turn=1 name=10 c1=1 win=0 idle=0 p0=3,5 p1=3,0 walls=6/6
+maze cpu moved cpu=1 lv=1 vs=1 count=0(0) left=30 turn=0 name=10 c1=1 win=0 idle=0 p0=3,5 p1=3,1 walls=6/6
+maze cpu human win cpu=1 lv=1 vs=1 count=0(0) left=0 turn=0 name=10 c1=1 win=1 idle=0 p0=3,0 p1=0,3 walls=6/6 msg=1 cpuwin=0
+maze cpu win shown cpu=1 lv=1 vs=1 count=0(0) left=0 turn=0 name=10 c1=1 win=1 idle=0 p0=3,0 p1=0,3 walls=6/6
+maze cpu next game cpu=1 lv=1 vs=1 count=1(3) left=0 turn=1 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpu second game cpu=1 lv=1 vs=1 count=0(0) left=0 turn=1 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpu first move cpu=1 lv=1 vs=1 count=0(0) left=29 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,1 walls=6/6
+maze cpu timeout loss steps=1 cpuwin=1 forfeit=1 cpu=1 lv=1 vs=1 count=0(0) left=0 turn=0 name=10 c1=1 win=1 idle=0 p0=3,6 p1=4,1 walls=6/5
+maze cpu esc seated=0 seats=0 cpu=0 lv=1 vs=0 count=0(0) left=0 turn=0 name=00 c1=1 win=0 idle=1 p0=3,6 p1=3,0 walls=6/6
+maze cpu esc after wait cpu=0 lv=1 vs=0 count=0(0) left=0 turn=0 name=00 c1=1 win=0 idle=1 p0=3,6 p1=3,0 walls=6/6
+maze cpuask yes2 asked=1 cpu=1 swap=0 yes=1 seated(before)=0
+maze cpu away seated=0 seats=0 cpu=0 lv=1 vs=0 count=0(0) left=0 turn=0 name=00 c1=1 win=0 idle=1 p0=3,6 p1=3,0 walls=6/6
+maze cpuask yes3 asked=1 cpu=1 swap=0 yes=1 seated(before)=0
+maze cpu logout seated=0 seats=0
+maze cpuask yes4 asked=1 cpu=1 swap=0 yes=1 seated(before)=0
+maze cpuask swapno asked=1 cpu=0 swap=1 yes=0 seated(before)=0
+maze cpu swap no seatedA=1 seatedB=0 askedA=0 cpu=1 lv=1 vs=1 count=0(0) left=30 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpuask swapyes asked=1 cpu=0 swap=1 yes=1 seated(before)=0
+maze cpu swap yes seatedA=1 seatedB=1 seats=2 msgA=1 msgB=1
+maze cpu swap A cpu=0 lv=1 vs=1 count=1(3) left=0 turn=0 name=11 c1=0 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpu swap B cpu=0 lv=1 vs=1 count=1(3) left=0 turn=0 name=11 c1=0 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpu human vs human idle cpu=0 lv=1 vs=1 count=0(0) left=25 turn=0 name=11 c1=0 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpu after swap B left seatedA=1 cpu=0 lv=1 vs=0 count=0(0) left=0 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpuask expire asked=1 cpu=1 swap=0 yes=1 seated(before)=0
+maze cpu ask expired seated=0 seats=0
 maze done seats=0 idleTables=0
 == done ==

@@ -1012,9 +1012,22 @@ static void DrawMazePieces(const CMDPARA_MAZESTATE &St, int sx, int sy)
 		int cx = sx + (int)St.byPosX[p] * MAZE_PITCH_DOT + MAZE_CELL_DOT / 2;
 		int cy = sy + (int)St.byPosY[p] * MAZE_PITCH_DOT + MAZE_CELL_DOT / 2;
 		BOOL bHave = (St.dwChar[p] != MAZE_NOCHAR);
+		BOOL bCpu = (!bHave && (St.byState & MAZESTATE_CPU)) ? TRUE : FALSE;		/* CPU対戦中の、人のいない側＝CPU */
 		int nNo = bHave ? GetCharNo2 (St.dwChar[p]) : -1;
 		int xx, yy;
 		if (St.byPosX[p] >= MAZE_SIZE || St.byPosY[p] >= MAZE_SIZE) {
+			continue;
+		}
+		if (bCpu) {
+			/* CPU：色付きの丸と名前「CPU」（強さの数だけ ★ を添える） */
+			char szCpu[16] = "CPU";
+			int k;
+			for (k = 0; (k < (int)St.byCpuLevel) && (k < 3); k ++) {
+				lstrcat (szCpu, "★");
+			}
+			MazeCircle (hDC, cx, cy, 11, clPiece[p], RGB (40, 30, 20), 255);
+			PuzText (hDC, cx, cy - 6, (LPSTR)"C", RGB (40, 30, 20), 14, TRUE);
+			PuzText (hDC, cx, cy + 12, szCpu, RGB (255, 255, 255), 14, TRUE);
 			continue;
 		}
 		if ((nNo >= 0) && MazePieceImage (g_aCharInfo[nNo], p, &xx, &yy)) {
@@ -1202,6 +1215,7 @@ static void DrawMazeOne(const CMDPARA_MAZESTATE &St, int sx, int sy, BOOL bTop)
 	BOOL bSeat = (St.byState & MAZESTATE_SEAT) ? TRUE : FALSE;
 	BOOL bWin = (St.byState & MAZESTATE_WIN) ? TRUE : FALSE;
 	BOOL bVs = (St.byState & MAZESTATE_VS) ? TRUE : FALSE;
+	BOOL bCpuMatch = (St.byState & MAZESTATE_CPU) ? TRUE : FALSE;
 	int nMode, nCurX, nCurY, nCurO;
 	HDC hDC;
 	HFONT hFontOld;
@@ -1228,11 +1242,12 @@ static void DrawMazeOne(const CMDPARA_MAZESTATE &St, int sx, int sy, BOOL bTop)
 		int nSeat = bSeat ? max (0, GetMazeMySeat (&St)) : 0;
 		BOOL bMyTurn = (!bVs || ((int)St.byTurn == nSeat)) && !(St.byState & MAZESTATE_COUNT);
 		char szWho[64];
+		const char *pszOpp = bCpuMatch ? "CPU" : "相手";
 		PCHARINFO pTurn = NULL;
 		int nNo;
 
-		/* 手番の人の名前（dwTurnChar のキャラ。いなければ「相手」） */
-		lstrcpy (szWho, "相手");
+		/* 手番の人の名前（dwTurnChar のキャラ。いなければ「相手」。CPU対戦中のCPUの手番は「CPU」） */
+		lstrcpy (szWho, bCpuMatch ? "CPU" : "相手");
 		nNo = (St.dwTurnChar != MAZE_NOCHAR) ? GetCharNo2 (St.dwTurnChar) : -1;
 		if (nNo >= 0) {
 			pTurn = g_aCharInfo[nNo];
@@ -1249,9 +1264,9 @@ static void DrawMazeOne(const CMDPARA_MAZESTATE &St, int sx, int sy, BOOL bTop)
 				wsprintf (szTime, "  残り %d 秒", (int)St.byTimeLeft);
 			}
 			if (bSeat) {
-				wsprintf (szTmp, "%s%s   壁 あなた %d / 相手 %d", bMyTurn ? "あなたの番" : "", szTime, (int)St.byWallLeft[nSeat], (int)St.byWallLeft[1 - nSeat]);
+				wsprintf (szTmp, "%s%s   壁 あなた %d / %s %d", bMyTurn ? "あなたの番" : "", szTime, (int)St.byWallLeft[nSeat], pszOpp, (int)St.byWallLeft[1 - nSeat]);
 				if (!bMyTurn) {
-					wsprintf (szTmp, "%sの番%s   壁 あなた %d / 相手 %d", szWho, szTime, (int)St.byWallLeft[nSeat], (int)St.byWallLeft[1 - nSeat]);
+					wsprintf (szTmp, "%sの番%s   壁 あなた %d / %s %d", szWho, szTime, (int)St.byWallLeft[nSeat], pszOpp, (int)St.byWallLeft[1 - nSeat]);
 				}
 			} else {
 				wsprintf (szTmp, "%sの番%s   壁 %d / %d", szWho, szTime, (int)St.byWallLeft[0], (int)St.byWallLeft[1]);
@@ -1263,7 +1278,7 @@ static void DrawMazeOne(const CMDPARA_MAZESTATE &St, int sx, int sy, BOOL bTop)
 
 		/* 操作ヒント（盤の下。座っている人だけ） */
 		if (bSeat) {
-			const char *pszHint = (bVs && !bMyTurn) ? "相手の番です  ESC：やめる" :
+			const char *pszHint = (bVs && !bMyTurn) ? (bCpuMatch ? "CPUの番です  ESC：やめる" : "相手の番です  ESC：やめる") :
 				(nMode == MAZEMODE_WALL) ? "矢印：ばしょ  Z：むき  X：おく  ESC：もどる" : "矢印：うごく  X：かべ  ESC：やめる";
 			if (bVs && (St.byState & MAZESTATE_COUNT)) {
 				pszHint = "じゅんびしてね  ESC：やめる";
@@ -1272,6 +1287,16 @@ static void DrawMazeOne(const CMDPARA_MAZESTATE &St, int sx, int sy, BOOL bTop)
 			PuzFrame (hDC, sx + (MAZE_BOARD_DOT - size.cx) / 2 - 6, sy + MAZE_BOARD_DOT + 6, size.cx + 12, size.cy + 4, RGB (200, 200, 200), 170);
 			PuzText (hDC, sx + MAZE_BOARD_DOT / 2, sy + MAZE_BOARD_DOT + 8, (LPSTR)pszHint, RGB (255, 255, 255), size.cy, TRUE);
 		}
+	}
+	/* CPU対戦の台の案内（盤の外の上に小さく。待機中と、CPU対戦中を見ている人に。座っている人には手番表示があるので出さない） */
+	if ((St.byCpuLevel >= 1) && (St.byCpuLevel <= 3) && ((St.byState & MAZESTATE_IDLE) || (bCpuMatch && !bSeat))) {
+		static const char *s_apszLv[4] = { "", "よわい", "ふつう", "つよい" };
+		SIZE size;
+		int yy = bCpuMatch ? (sy + MAZE_BOARD_DOT + 6) : (sy - 24);		/* 対戦中は手番表示が上にあるので下に */
+		wsprintf (szTmp, "CPU対戦（%s）", s_apszLv[St.byCpuLevel]);
+		GetTextExtentPoint32 (hDC, szTmp, strlen (szTmp), &size);
+		PuzFrame (hDC, sx + (MAZE_BOARD_DOT - size.cx) / 2 - 6, yy, size.cx + 12, size.cy + 4, RGB (200, 200, 200), 150);
+		PuzText (hDC, sx + MAZE_BOARD_DOT / 2, yy + 2, szTmp, RGB (190, 230, 255), size.cy, TRUE);
 	}
 	/* 開始前のカウントダウン（盤の真ん中に大きく 3・2・1） */
 	if ((St.byState & MAZESTATE_COUNT) && (St.byCount > 0)) {
@@ -1295,7 +1320,9 @@ static void DrawMazeOne(const CMDPARA_MAZESTATE &St, int sx, int sy, BOOL bTop)
 		} else {
 			int nNo = (St.dwChar[St.cWinner] != MAZE_NOCHAR) ? GetCharNo2 (St.dwChar[St.cWinner]) : -1;
 			bWon = TRUE;
-			if (nNo >= 0) {
+			if (bCpuMatch && (St.dwChar[St.cWinner] == MAZE_NOCHAR)) {
+				lstrcpy (szWin, "CPU WIN!");
+			} else if (nNo >= 0) {
 				wsprintf (szWin, "%.16s WIN!", g_aCharInfo[nNo]->szName);
 			} else {
 				lstrcpy (szWin, "WIN!");

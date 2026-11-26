@@ -241,3 +241,222 @@ static inline int MazeShortestDist (const MazeGame &g, int who)
 	}
 	return -1;
 }
+
+/* ========================================================================= */
+/* CPU の思考（純粋ロジック。乱数は呼び出し側が持つ状態 pdwRand を更新する）	 */
+/* ========================================================================= */
+#define MAZE_CPU_PASS		(3)		/* MazeCpuAction::nAct：パス */
+#define MAZE_CPU_MOVE		(1)		/* 進む */
+#define MAZE_CPU_WALL		(2)		/* 壁を置く */
+#define MAZE_CPU_WIN		(100)	/* 評価値：勝ち（負けは -100） */
+#define MAZE_CPU_CAND_MAX	(MAZE_SIZE * MAZE_SIZE * 2 + 8)	/* 候補手の最大数 */
+
+struct MazeCpuAction {
+	int nAct;				/* 1=進む、2=壁を置く、3=パス */
+	int nDir;				/* 進む向き（nAct==1） */
+	int nX, nY, nOrient;	/* 壁（nAct==2） */
+};
+
+/* xorshift32：状態を更新して乱数を返す */
+static inline unsigned int MazeCpuRand (unsigned int *pdwRand)
+{
+	unsigned int x = *pdwRand;
+	if (x == 0) x = 2463534242u;
+	x ^= x << 13;  x ^= x >> 17;  x ^= x << 5;
+	*pdwRand = x;
+	return x;
+}
+
+/* 0..n-1 の乱数 */
+static inline int MazeCpuRandN (unsigned int *pdwRand, int n)
+{
+	return (int)((MazeCpuRand (pdwRand) >> 8) % (unsigned int)n);
+}
+
+/* 手を打った後の盤を作る。打てなければ false */
+static inline bool MazeCpuApply (MazeGame &g, int who, const MazeCpuAction &a)
+{
+	if (a.nAct == MAZE_CPU_MOVE) return g.Move (who, a.nDir);
+	if (a.nAct == MAZE_CPU_WALL) return g.PlaceWall (who, a.nX, a.nY, a.nOrient);
+	return false;
+}
+
+/* 評価値：(相手の最短手数 − 自分の最短手数)。決着済みなら ±MAZE_CPU_WIN */
+static inline int MazeCpuEval (const MazeGame &g, int who)
+{
+	if (g.nWinner == who) return MAZE_CPU_WIN;
+	if (g.nWinner != MAZE_NO_WINNER) return -MAZE_CPU_WIN;
+	int dm = MazeShortestDist (g, who), dop = MazeShortestDist (g, 1 - who);
+	if (dm < 0 || dop < 0) return 0;
+	return dop - dm;
+}
+
+/* who の最短路の 1 つを塞ぐ壁の候補を cand[orient][y][x] に立てる */
+static inline void MazeCpuMarkPathWalls (const MazeGame &g, int who, bool cand[2][MAZE_SIZE - 1][MAZE_SIZE - 1])
+{
+	int dist[MAZE_SIZE][MAZE_SIZE], px[MAZE_SIZE][MAZE_SIZE], py[MAZE_SIZE][MAZE_SIZE];
+	int qx[MAZE_SIZE * MAZE_SIZE], qy[MAZE_SIZE * MAZE_SIZE];
+	int head = 0, tail = 0, d, x, y, ex = -1, ey = -1;
+	for (y = 0; y < MAZE_SIZE; y ++) for (x = 0; x < MAZE_SIZE; x ++) dist[y][x] = -1;
+	dist[g.nPosY[who]][g.nPosX[who]] = 0;
+	qx[tail] = g.nPosX[who];  qy[tail ++] = g.nPosY[who];
+	while (head < tail) {
+		x = qx[head];  y = qy[head ++];
+		if (y == MazeGame::GoalRow (who)) { ex = x;  ey = y;  break; }
+		for (d = 0; d < 4; d ++) {
+			int nx = x + g_anMazeDx[d], ny = y + g_anMazeDy[d];
+			if (nx < 0 || nx >= MAZE_SIZE || ny < 0 || ny >= MAZE_SIZE) continue;
+			if (dist[ny][nx] >= 0 || g.EdgeBlocked (x, y, d)) continue;
+			dist[ny][nx] = dist[y][x] + 1;
+			px[ny][nx] = x;  py[ny][nx] = y;
+			qx[tail] = nx;  qy[tail ++] = ny;
+		}
+	}
+	while (ex >= 0 && (ex != g.nPosX[who] || ey != g.nPosY[who])) {
+		int fx = px[ey][ex], fy = py[ey][ex], k;
+		if (fx == ex) {		/* 縦に動く辺：横壁が塞ぐ */
+			int row = fy < ey ? fy : ey;
+			for (k = ex - 1; k <= ex; k ++) if (k >= 0 && k <= MAZE_SIZE - 2 && row <= MAZE_SIZE - 2) cand[MAZE_H][row][k] = true;
+		} else {			/* 横に動く辺：縦壁が塞ぐ */
+			int col = fx < ex ? fx : ex;
+			for (k = ey - 1; k <= ey; k ++) if (k >= 0 && k <= MAZE_SIZE - 2 && col <= MAZE_SIZE - 2) cand[MAZE_V][k][col] = true;
+		}
+		ex = fx;  ey = fy;
+	}
+}
+
+/* 手番 who の合法手を列挙する。nRadius>=0 なら壁は「相手の最短路を塞ぐもの＋自コマから nRadius マス以内」に絞る（-1 は全部） */
+static inline int MazeCpuGenerate (const MazeGame &g, int who, int nRadius, MazeCpuAction *pOut)
+{
+	int n = 0, d, x, y, o;
+	MazeGame w = g;		/* CanPlaceWall が非 const のため作業用コピー */
+	for (d = 0; d < 4; d ++) {
+		if (g.CanMove (who, d)) {
+			pOut[n].nAct = MAZE_CPU_MOVE;  pOut[n].nDir = d;
+			pOut[n].nX = pOut[n].nY = pOut[n].nOrient = 0;
+			n ++;
+		}
+	}
+	if (g.nWallLeft[who] > 0) {
+		bool cand[2][MAZE_SIZE - 1][MAZE_SIZE - 1];
+		memset (cand, 0, sizeof (cand));
+		if (nRadius >= 0) MazeCpuMarkPathWalls (g, 1 - who, cand);
+		for (y = 0; y < MAZE_SIZE - 1; y ++) {
+			for (x = 0; x < MAZE_SIZE - 1; x ++) {
+				for (o = 0; o < 2; o ++) {
+					if (nRadius >= 0 && !cand[o][y][x]) {
+						int dx = x - g.nPosX[who], dy = y - g.nPosY[who];
+						if (dx < 0) dx = -dx;
+						if (dy < 0) dy = -dy;
+						if (dx > nRadius || dy > nRadius) continue;
+					}
+					if (!w.CanPlaceWall (x, y, o)) continue;
+					pOut[n].nAct = MAZE_CPU_WALL;  pOut[n].nDir = 0;
+					pOut[n].nX = x;  pOut[n].nY = y;  pOut[n].nOrient = o;
+					n ++;
+				}
+			}
+		}
+	}
+	return n;
+}
+
+/* 2 手先読み（自分→相手→評価）の相手の返し：相手が評価を最小にする手の値。bound を下回ったら打ち切り */
+static inline int MazeCpuReply (const MazeGame &g, int who, int nBound)
+{
+	MazeCpuAction aA[MAZE_CPU_CAND_MAX];
+	int n = MazeCpuGenerate (g, 1 - who, 1, aA), i, nMin = 1000;
+	if (n == 0) return MazeCpuEval (g, who);	/* 相手はパス */
+	for (i = 0; i < n; i ++) {
+		MazeGame c = g;
+		MazeCpuApply (c, 1 - who, aA[i]);
+		int v = MazeCpuEval (c, who);
+		if (v < nMin) nMin = v;
+		if (nMin < nBound) break;		/* これ以上悪くなるだけ（同点は残す） */
+	}
+	return nMin;
+}
+
+/* CPU の 1 手を選ぶ（g の手番が who の時に呼ぶ）。nLevel：1=よわい 2=ふつう 3=つよい */
+static inline MazeCpuAction MazeCpuChoose (const MazeGame &g, int who, int nLevel, unsigned int *pdwRand)
+{
+	MazeCpuAction act, aA[MAZE_CPU_CAND_MAX];
+	int n, i, nBest, nCnt, aIdx[MAZE_CPU_CAND_MAX];
+	memset (&act, 0, sizeof (act));
+	act.nAct = MAZE_CPU_PASS;
+	if (g.nWinner != MAZE_NO_WINNER) return act;
+
+	if (nLevel <= 1) {
+		/* 70%：最短路の 1 歩 */
+		if (MazeCpuRandN (pdwRand, 100) < 70) {
+			int nMinD = 1000;
+			nCnt = 0;
+			for (i = 0; i < 4; i ++) {
+				if (!g.CanMove (who, i)) continue;
+				MazeGame c = g;
+				c.Move (who, i);
+				int d = (c.nWinner == who) ? 0 : MazeShortestDist (c, who);
+				if (d < 0) continue;
+				if (d < nMinD) { nMinD = d;  nCnt = 0; }
+				if (d == nMinD) aIdx[nCnt ++] = i;
+			}
+			if (nCnt > 0) {
+				act.nAct = MAZE_CPU_MOVE;  act.nDir = aIdx[MazeCpuRandN (pdwRand, nCnt)];
+				return act;
+			}
+		}
+		/* 30%：ランダムな合法手（壁は残っていれば確率的に） */
+		n = MazeCpuGenerate (g, who, -1, aA);
+		if (n == 0) return act;
+		int nWalls = 0, nMoves = 0;
+		for (i = 0; i < n; i ++) { if (aA[i].nAct == MAZE_CPU_WALL) nWalls ++; else nMoves ++; }
+		bool bWall = nWalls > 0 && (nMoves == 0 || MazeCpuRandN (pdwRand, 100) < 40);
+		nCnt = 0;
+		for (i = 0; i < n; i ++) if ((aA[i].nAct == MAZE_CPU_WALL) == bWall) aIdx[nCnt ++] = i;
+		return aA[aIdx[MazeCpuRandN (pdwRand, nCnt)]];
+	}
+
+	if (nLevel == 2) {
+		int dMe = MazeShortestDist (g, who), dOp = MazeShortestDist (g, 1 - who);
+		bool bAhead = (dMe >= 0 && dMe < dOp);		/* 先に着ける：進む */
+		n = MazeCpuGenerate (g, who, -1, aA);
+		if (n == 0) return act;
+		nBest = -100000;  nCnt = 0;
+		for (i = 0; i < n; i ++) {
+			MazeGame c = g;
+			MazeCpuApply (c, who, aA[i]);
+			int v = MazeCpuEval (c, who);
+			if (aA[i].nAct == MAZE_CPU_WALL) {
+				if (bAhead) continue;
+				int dOp2 = MazeShortestDist (c, 1 - who);
+				if (dOp2 <= dOp) continue;			/* 相手の手数が増えない壁は候補にしない */
+			}
+			int s = v * 2 + (aA[i].nAct == MAZE_CPU_MOVE ? 1 : 0);	/* 同評価なら進む手 */
+			if (s > nBest) { nBest = s;  nCnt = 0; }
+			if (s == nBest) aIdx[nCnt ++] = i;
+		}
+		if (nCnt == 0) return act;
+		return aA[aIdx[MazeCpuRandN (pdwRand, nCnt)]];
+	}
+
+	/* つよい：2 手先読み＋アルファ・ベータ */
+	n = MazeCpuGenerate (g, who, 2, aA);
+	if (n == 0) {
+		n = MazeCpuGenerate (g, who, -1, aA);		/* 絞り込みで尽きた時は全部から */
+		if (n == 0) return act;
+	}
+	nBest = -100000;  nCnt = 0;
+	for (i = 0; i < n; i ++) {
+		MazeGame c = g;
+		MazeCpuApply (c, who, aA[i]);
+		int v;
+		if (c.nWinner == who) {
+			v = MAZE_CPU_WIN + 1;					/* 相手の番が来る前に着く */
+		} else {
+			v = MazeCpuReply (c, who, nBest);
+		}
+		if (v > nBest) { nBest = v;  nCnt = 0; }
+		if (v == nBest) aIdx[nCnt ++] = i;
+	}
+	return aA[aIdx[MazeCpuRandN (pdwRand, nCnt)]];
+}

@@ -4416,6 +4416,8 @@ typedef struct _CMDPARA_PUZZLESE {
    「乱入しますか？」（会話の「はい・いいえ」と CMD_TALKANSWER）を聞き、はい＝盤を初期化して 2 人対戦（3・2・1 のカウントダウンのあと開始。
    手番は交互で 1 手 30 秒。時間切れは手番を飛ばし、連続 3 回で不戦敗。勝敗が決まると 3 秒見せてから盤を初期化して続け、先手は交代）。
    席を立つ・切断・マップ移動・倒れた時は残った側の勝ちで、残った人はひとり練習に戻る。
+   台詞でCPU強さが 1 以上の台は、人がひとりで座った時に「CPUと対戦しますか？」と聞き、はい＝空いている側の席をCPUが受け持つ（MAZESTATE_CPU）。
+   CPU対戦中にもう一方の席に座ろうとすると「交代して対戦しますか？」と聞き、はい＝CPUを外して人対人にする。
    CMD_MAZESTATE は、座っている人と台の近くにいる人（観戦。席が空の待機中の台も）に、台ごとに送る）
    CMD_MAZEKEY: クライアント→サーバー。座っている間の操作。サーバーが検証し、不正なら無視して状態を送り直す */
 enum {
@@ -4435,6 +4437,7 @@ enum {
 #define MAZESTATE_WIN		(0x04)									/* 勝ちを見せている間（3 秒ほど。過ぎるとサーバーが盤を戻して FULL を送る。2 人対戦中は続けてカウントダウンになる） */
 #define MAZESTATE_VS		(0x08)									/* 2 人対戦中（両方の席に人がいて対戦している。立ち去って 1 人になるか席が空になると消える） */
 #define MAZESTATE_COUNT		(0x10)									/* 対戦開始前のカウントダウン中（byCount が残り秒。この間は操作できない） */
+#define MAZESTATE_CPU		(0x20)									/* CPU対戦中（MAZESTATE_VS も立つ。空いている側の席をCPUが受け持ち、その側は dwChar=MAZE_NOCHAR・byHasName=0。byCpuLevel が強さ。CPUの手番は byTimeLeft=0） */
 #define MAZE_NOCHAR			((DWORD)0xFFFFFFFF)						/* dwChar の無効値（その側に誰も座っていない） */
 #define MAZEPARA_WALL_MAX	(12)									/* 置かれた壁の最大数（MAZE_WALL_MAX と同じ。1 人 6 枚×2） */
 #pragma pack(push, 1)
@@ -4468,6 +4471,7 @@ typedef struct _CMDPARA_MAZESTATE {
 	BYTE		byTimeouts[2];										/* 各プレイヤーの連続時間切れ回数（0〜2。3 回で不戦敗。手を指すと 0 に戻る） */
 	BYTE		byHasName[2];										/* 各席に名前を出せる人がいるか（1=dwChar[i] のキャラがいる・0=空席） */
 	DWORD		dwTurnChar;											/* 手番の人のキャラのテーブルID（その席が空なら MAZE_NOCHAR。残り秒を出す相手の見分けに使う） */
+	BYTE		byCpuLevel;											/* この台のCPU強さ（0=CPUなしの台・1=よわい・2=ふつう・3=つよい。待機中の台にも入る。CPU対戦中かは MAZESTATE_CPU） */
 } CMDPARA_MAZESTATE, *PCMDPARA_MAZESTATE;
 /* CMD_MAZEKEY の中身（クライアント→サーバー。使わない欄は 0） */
 typedef struct _CMDPARA_MAZEKEY {

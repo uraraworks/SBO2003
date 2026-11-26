@@ -1,6 +1,7 @@
 /* 迷路対戦の盤面ロジック（common/MazeAttack.h）の native テスト
    g++ -std=c++17 -O1 -I. tests/server/maze_attack_test.cpp -o /tmp/maze_attack_test && /tmp/maze_attack_test */
 #include <stdio.h>
+#include <chrono>
 #include "common/MazeAttack.h"
 
 static int g_nNg = 0;
@@ -11,6 +12,76 @@ static void AddWall (MazeGame &g, int x, int y, int o)
 {
 	g.aWall[g.nWallCount].nX = x;  g.aWall[g.nWallCount].nY = y;  g.aWall[g.nWallCount].nOrient = o;
 	g.nWallCount ++;
+}
+
+/* ---- CPU の思考 ---- */
+/* 1 手を打つ。合法でなければ false（パスも合法判定する） */
+static bool CpuStep (MazeGame &g, int nLevel, unsigned int *pdwRand, double *pdMaxMs)
+{
+	int who = g.byTurn;
+	auto t0 = std::chrono::steady_clock::now ();
+	MazeCpuAction a = MazeCpuChoose (g, who, nLevel, pdwRand);
+	double ms = std::chrono::duration<double, std::milli> (std::chrono::steady_clock::now () - t0).count ();
+	if (nLevel == 3 && pdMaxMs && ms > *pdMaxMs) *pdMaxMs = ms;
+	if (a.nAct == MAZE_CPU_MOVE) return g.Move (who, a.nDir);
+	if (a.nAct == MAZE_CPU_WALL) return g.PlaceWall (who, a.nX, a.nY, a.nOrient);
+	return MazeNeedPass (g) && g.Pass (who);
+}
+
+/* 1 局。nLevel[p] が 0 ならランダム手。勝者（打ち切りは -1）。不正手・打ち切りは g_nNg に数える */
+static int PlayCpuGame (int nLevel0, int nLevel1, unsigned int *pdwRand, double *pdMaxMs)
+{
+	MazeGame g;
+	int aLv[2] = { nLevel0, nLevel1 }, turns;
+	g.Init ();
+	for (turns = 0; turns < 400 && g.GetWinner () == MAZE_NO_WINNER; turns ++) {
+		int who = g.byTurn;
+		if (aLv[who] > 0) {
+			bool ok = CpuStep (g, aLv[who], pdwRand, pdMaxMs);
+			CHECK (ok);
+			if (!ok) return -1;
+		} else {
+			int r = MazeCpuRandN (pdwRand, 3);
+			bool ok = false;
+			if (r == 0) ok = g.Move (who, MazeCpuRandN (pdwRand, 4));
+			else ok = g.PlaceWall (who, MazeCpuRandN (pdwRand, 6), MazeCpuRandN (pdwRand, 6), MazeCpuRandN (pdwRand, 2));
+			if (!ok && MazeNeedPass (g)) g.Pass (who);
+		}
+		CHECK (g.HasPath (0) && g.HasPath (1));
+	}
+	CHECK (g.GetWinner () != MAZE_NO_WINNER);
+	return g.GetWinner ();
+}
+
+static void CpuTests ()
+{
+	unsigned int rnd = 2026u;
+	double dMaxMs = 0;
+	int lv, i;
+	/* (a) 各レベル 200 局（CPU 同士・片方ランダム）が合法手のまま終わる */
+	for (lv = 1; lv <= 3; lv ++) {
+		for (i = 0; i < 200; i ++) {
+			if (i % 2 == 0) PlayCpuGame (lv, lv, &rnd, &dMaxMs);
+			else if (i % 4 == 1) PlayCpuGame (lv, 0, &rnd, &dMaxMs);
+			else PlayCpuGame (0, lv, &rnd, &dMaxMs);
+			if (g_nNg > 20) return;
+		}
+	}
+	/* (b) 勝率（先手後手入れ替えで各 50 局） */
+	{
+		int w3 = 0, w2 = 0;
+		for (i = 0; i < 100; i ++) {
+			int w = (i % 2 == 0) ? PlayCpuGame (3, 1, &rnd, &dMaxMs) : PlayCpuGame (1, 3, &rnd, &dMaxMs);
+			if (w == ((i % 2 == 0) ? 0 : 1)) w3 ++;
+			w = (i % 2 == 0) ? PlayCpuGame (2, 1, &rnd, &dMaxMs) : PlayCpuGame (1, 2, &rnd, &dMaxMs);
+			if (w == ((i % 2 == 0) ? 0 : 1)) w2 ++;
+		}
+		printf ("つよい vs よわい: %d/100, ふつう vs よわい: %d/100, つよい最大 %.2f ms\n", w3, w2, dMaxMs);
+		CHECK (w3 >= 80);
+		CHECK (w2 >= 65);
+	}
+	/* (c) 1 手の計算時間（つよいの最悪） */
+	CHECK (dMaxMs <= 200.0);
 }
 
 int main()
@@ -114,6 +185,8 @@ int main()
 			}
 		}
 	}
+
+	CpuTests ();
 
 	if (g_nNg == 0) {
 		printf ("OK maze_attack\n");

@@ -6,10 +6,11 @@
 /*
  * 盤面ロジックは common/MazeAttack.h、台詞の読み方は common/MazeTable.h。台の作りは落ち物パズル（SboSvrPuzzle.cpp）にならう。
  * 台は、台詞が "@k" で始まる NPC（"@q" は依頼NPCの印なので使わない）:
- *     @k<dx>,<dy>,<sdx>,<sdy>,<床A>,<床B>,<隙間>,<sdx2>,<sdy2>      後ろは省略でき、空欄も既定になる
+ *     @k<dx>,<dy>,<sdx>,<sdy>,<床A>,<床B>,<隙間>,<sdx2>,<sdy2>,<CPU強さ>      後ろは省略でき、空欄も既定になる
  *   dx, dy   … 盤（10×10 タイル＝320 ドット）の左上が、台NPCのマスの左上から何タイルか。省略は -5,-9
  *   sdx, sdy … 席 1（プレイヤー 0＝下側）の座る場所：台NPCのマスからの相対位置（マス）。省略は (0,+1)
  *   sdx2, sdy2 … 席 2（プレイヤー 1＝上側）の座る場所。省略は (0,-10)（盤の真上の 1 つ上）
+ *   CPU強さ … 0・省略＝CPUなし、1=よわい・2=ふつう・3=つよい
  * 台は席が 2 つで盤は 1 枚を共有する。コインは無く、座る場所のマスに立って S キーで座る（無料の台）。
  *   片方だけが座っている間はひとり練習：座るとゲームを初期化し、相手（不在）の手番は 1 手指すたびに自動で飛ばす
  *   （MazeGame::Pass は「相手が動けない時」しか成立しないので、手番は直接座っている人に戻す）。
@@ -18,6 +19,11 @@
  *   対戦：手番はプレイヤー 0 から始まり 1 手ごとに交代。手番でない人の操作は無視。1 手 MAZE_TURN_MS で、時間切れはその手番を飛ばし、
  *   連続 MAZE_TIMEOUT_MAX 回で不戦敗。勝敗が決まると両者へ「○○の勝ち！」、盤を MAZE_OVER_SHOW_MS 見せて初期化し、
  *   続けて対戦（先手を交代）。席を立つ・切断・マップ移動・倒れた時は残った側の勝ちで、残った人はひとり練習に戻る。
+ *   CPU対戦（CPU強さ>0 の台）：人がひとりで座る時（相手の席が空）、先に座る本人へ「CPUと対戦しますか？」（@y。30 秒で無効）。
+ *   はい＝空いている側の席をCPU（仮想プレイヤー。席の dwChar は空のまま。bCpu）が受け持ち、カウントダウンのあと交互に指す。
+ *   いいえ＝従来のひとり練習。CPUの手番は MAZE_CPU_THINK_MIN〜MAX_MS 考えたあと MazeCpuChoose の 1 手を Move/PlaceWall/Pass と同じ検証で指す
+ *   （時間切れはCPUには無い）。勝敗は「CPUの勝ち！」「○○の勝ち！」、見せたあと次の対戦（先手交代・CPU継続）。人が席を立つ・切断・マップ移動・倒れた
+ *   時は終了して盤を初期化（待機中に戻る）。CPU対戦中にCPU側の席へ座ろうとすると「交代して対戦しますか？」を聞き、はい＝CPUを外して人対人。
  *   ひとり練習で勝ったら盤をそのまま MAZE_OVER_SHOW_MS だけ見せ（その間は操作を受けない）、過ぎたら席に座ったまま盤を初期状態に戻して続けられる。
  * ゲームの正はサーバー。盤・コマ・壁は変わるたびに全部送る（小さいので差分は作らない）。
  * 送る相手（台ごと）: 座っている人と台の近くにいる人（観戦。画面に入る距離。MAZE_WATCH_MS ごとに見直し、
@@ -40,7 +46,9 @@
 #define MAZE_NEAR				(3)			/* 座る場所のマスからこれ以上離れたら席を立たせる（マス） */
 #define MAZE_WATCH_MS			(250)		/* 台の近くにいる人（観戦）を見直す間隔(ms) */
 #define MAZE_OVER_SHOW_MS		(3000)		/* 勝ちを見せている時間(ms)。過ぎると盤を戻して続けられる */
-#define MAZE_ASK_TIMEOUT_MS		(30000)		/* 「乱入しますか？」の問いが無効になるまで(ms) */
+#define MAZE_ASK_TIMEOUT_MS		(30000)		/* 「乱入しますか？」などの問いが無効になるまで(ms) */
+#define MAZE_CPU_THINK_MIN_MS	(1000)		/* CPUが 1 手指すまでに考える時間の下限(ms) */
+#define MAZE_CPU_THINK_MAX_MS	(2000)		/* 同、上限(ms) */
 /* 盤を送る距離（横・縦それぞれ。盤の中心から）。盤の一部でも画面（地図 15×15 マス）にかかる距離は、画面の半分 7.5 マス＋歩きのずれ 1 マス
    ＋盤の半分（10 タイルなので 5 マス）＝13.5 マス。MARGIN＝9 に盤の半分 MAZE_VIEW_HALF（5）を足した 14 マスでかかる範囲は足りている。
    送り始めは MARGIN＋3、消すのは＋6 で、画面にかかっている間に届かない・先に消えることはない（境目で送る・消すを繰り返さない） */
@@ -68,6 +76,11 @@ typedef struct _MAZETABLE {
 	BOOL		bIdle;						/* 待機中（席に誰もいない） */
 	BOOL		bVs;						/* 2 人対戦中（両方の席に人がいて、乱入で始めた） */
 	BOOL		bCount;						/* 対戦開始前のカウントダウン中 */
+	int			nCpuLevel;					/* 台詞のCPU強さ（0=CPUなし・1〜3） */
+	BOOL		bCpu;						/* CPU対戦中（bVs も立つ。CPUは nCpuSeat 側） */
+	int			nCpuSeat;					/* CPUが受け持つ席（0 / 1） */
+	DWORD		dwCpuMove;					/* CPUが指す時刻（0=まだ決めていない。CPUの手番になって最初に決める） */
+	unsigned int	dwCpuRand;				/* CPUの乱数の状態（台ごと） */
 	DWORD		dwStartTime;				/* カウントダウンが終わる（対戦が始まる）時刻 */
 	int			nCountSent;					/* 最後に知らせたカウントダウンの残り秒 */
 	DWORD		dwTurnStart;				/* 今の手番が始まった時刻（対戦中） */
@@ -197,6 +210,8 @@ static void ToIdle(int nTable)
 	Table.bIdle = TRUE;
 	Table.bVs = FALSE;
 	Table.bCount = FALSE;
+	Table.bCpu = FALSE;
+	Table.dwCpuMove = 0;
 	Table.bWin = FALSE;
 	Table.nFirst = 0;
 	Table.Game.Init ();
@@ -209,6 +224,9 @@ static int TurnLeft(const MAZETABLE &Table)
 
 	if (!Table.bVs || Table.bCount || Table.bWin || (Table.Game.GetWinner () != MAZE_NO_WINNER)) {
 		return 0;
+	}
+	if (Table.bCpu && (Table.Game.byTurn == Table.nCpuSeat)) {
+		return 0;			/* CPUの手番には時間切れが無い */
 	}
 	dwEl = g_dwTime - Table.dwTurnStart;
 	if (dwEl >= (DWORD)MAZE_TURN_MS) {
@@ -236,6 +254,7 @@ static void ResetBoard(MAZETABLE &Table, int nTurn)
 	Table.Game.byTurn = nTurn;
 	Table.bWin = FALSE;
 	Table.anTimeout[0] = Table.anTimeout[1] = 0;
+	Table.dwCpuMove = 0;
 }
 
 /* 対戦の始め（または続き）：盤を初期化して、カウントダウンのあと nFirst から始める */
@@ -280,7 +299,7 @@ static void BuildState(const MAZETABLE &Table, BYTE byKind, CMDPARA_MAZESTATE *p
 		pOut->aWall[i].byOrient = (BYTE)g.aWall[i].nOrient;
 		pOut->aWall[i].byOwner = (BYTE)g.aWall[i].nOwner;
 	}
-	pOut->byState |= (BYTE)((Table.bVs ? MAZESTATE_VS : 0) | (Table.bCount ? MAZESTATE_COUNT : 0));
+	pOut->byState |= (BYTE)((Table.bVs ? MAZESTATE_VS : 0) | (Table.bCount ? MAZESTATE_COUNT : 0) | (Table.bCpu ? MAZESTATE_CPU : 0));
 	for (i = 0; i < 2; i ++) {
 		pOut->dwChar[i] = Table.dwChar[i];		/* 席 1=プレイヤー 0・席 2=プレイヤー 1。空席は MAZE_NOSEAT（＝MAZE_NOCHAR） */
 		pOut->byHasName[i] = (BYTE)((SeatChar (Table, i) != NULL) ? 1 : 0);
@@ -289,6 +308,7 @@ static void BuildState(const MAZETABLE &Table, BYTE byKind, CMDPARA_MAZESTATE *p
 	pOut->dwTurnChar = (g.byTurn == 0 || g.byTurn == 1) ? Table.dwChar[g.byTurn] : MAZE_NOCHAR;
 	pOut->byCount = (BYTE)CountLeft (Table);
 	pOut->byTimeLeft = (BYTE)TurnLeft (Table);
+	pOut->byCpuLevel = (BYTE)Table.nCpuLevel;
 	pOut->wFloor[0] = Table.wFloorA;
 	pOut->wFloor[1] = Table.wFloorB;
 	pOut->wGap = Table.wGap;
@@ -451,7 +471,7 @@ static void Decided(int nTable)
 	if (!Table.bVs) {
 		return;
 	}
-	sprintf (szMsg, "%sの勝ち！", pWin ? pWin->szName : "だれか");
+	sprintf (szMsg, "%sの勝ち！", Table.bCpu && (Table.Game.nWinner == Table.nCpuSeat) ? "CPU" : pWin ? pWin->szName : "だれか");
 	for (i = 0; i < 2; i ++) {
 		PCHARINFO pChar = SeatChar (Table, i);
 		if (pChar) {
@@ -520,6 +540,14 @@ static void InitTable(MAZETABLE *pTable, PCHARINFO pNpc, DWORD dwMapID)
 	pTable->bIdle = TRUE;
 	pTable->bVs = FALSE;
 	pTable->bCount = FALSE;
+	pTable->nCpuLevel = MazeParseCpuLevel (pNpc->pszNpcSpeech);
+	pTable->bCpu = FALSE;
+	pTable->nCpuSeat = 1;
+	pTable->dwCpuMove = 0;
+	pTable->dwCpuRand = (pNpc->dwTblID * 2654435761u) ^ (g_dwTime * 40503u) ^ 0x9E3779B9u;
+	if (pTable->dwCpuRand == 0) {
+		pTable->dwCpuRand = 1;
+	}
 	pTable->dwStartTime = 0;
 	pTable->nCountSent = 0;
 	pTable->dwTurnStart = 0;
@@ -581,12 +609,20 @@ int MazeIdleCount(void)
 	return nRet;
 }
 
-/* 「乱入しますか？」の問い（座ろうとした人ごとに 1 つ。答えは MazeAnswer。MAZE_ASK_TIMEOUT_MS たったら捨てる） */
+/* 座ろうとした時に聞く問いの種類 */
+#define MAZEASK_JOIN			(1)			/* ひとり練習中の人のところへ乱入して対戦するか */
+#define MAZEASK_CPU				(2)			/* 人がひとりで座る時、CPUと対戦するか（いいえ＝ひとり練習） */
+#define MAZEASK_SWAP			(3)			/* CPU対戦中のCPU側の席へ座る時、交代して人対人で対戦するか */
+
+/* 「乱入しますか？」などの問い（座ろうとした人ごとに 1 つ。答えは MazeAnswer。MAZE_ASK_TIMEOUT_MS たったら捨てる） */
 typedef struct _MAZEASK {
 	DWORD	dwNpc;				/* 座ろうとした台NPCのテーブルID */
 	DWORD	dwTime;				/* 問いを出した時刻 */
+	int		nKind;				/* MAZEASK_* */
 } MAZEASK;
 static std::map<DWORD, MAZEASK> s_mapAsk;
+
+static void SitMain(PCHARINFO pChar, PCHARINFO pNpc, int nChoice, int nKind);
 
 BOOL MazeAnswer(PCHARINFO pChar, DWORD dwNpcTblID, BOOL bYes)
 {
@@ -605,15 +641,21 @@ BOOL MazeAnswer(PCHARINFO pChar, DWORD dwNpcTblID, BOOL bYes)
 	if (((DWORD)(g_dwTime - Ask.dwTime) > (DWORD)MAZE_ASK_TIMEOUT_MS) || (dwNpcTblID >= (DWORD)g_aCharInfo.GetSize ())) {
 		return TRUE;
 	}
-	/* 座る条件は MazeSit が改めて確かめる（その間に席が埋まった・立つ場所を離れた時は座らない）。はい=乱入、いいえ=座らない */
-	MazeSit (pChar, g_aCharInfo[dwNpcTblID], bYes ? 1 : 2);
+	/* 座る条件は SitMain が改めて確かめる（その間に席が埋まった・立つ場所を離れた・台の状況が変わった時は座らない）。
+	   はい＝乱入／CPU対戦／交代、いいえ＝座らない（CPUの問いだけは、ひとり練習で座る） */
+	SitMain (pChar, g_aCharInfo[dwNpcTblID], bYes ? 1 : 2, Ask.nKind);
 	return TRUE;
 }
 
 void MazeSit(PCHARINFO pChar, PCHARINFO pNpc, int nChoice)
 {
-	int nTable, nSeat;
-	BOOL bOther;
+	SitMain (pChar, pNpc, nChoice, 0);
+}
+
+/* nKind は答えの時だけ（その問いを出した時の状況。今の状況と違えば座らない）。0 なら確かめない */
+static void SitMain(PCHARINFO pChar, PCHARINFO pNpc, int nChoice, int nKind)
+{
+	int nTable, nSeat, nSit, nLevel;
 	PCHARINFO pOther = NULL;
 
 	if (!MazeIsTableNpc (pNpc) || (pChar->byNpcType != NPCTYPE_INIT) || MazeIsSeated (pChar) || PuzzleIsSeated (pChar)) {
@@ -628,30 +670,47 @@ void MazeSit(PCHARINFO pChar, PCHARINFO pNpc, int nChoice)
 	if ((pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0) || (pChar->abySubStatus[0] != 0)) {
 		return;
 	}
-	/* その席が使われていれば座れない（待機中の台は座れる） */
+	/* その席が使われていれば座れない（待機中の台・CPUの席は座れる） */
 	nTable = FindTable (pNpc->dwTblID, pNpc->dwMapID);
 	if ((nTable >= 0) && (s_aTable[nTable].dwChar[nSeat] != MAZE_NOSEAT)) {
 		SendCmdSYSMSG (pChar->pID, "この台は今、使われています。");
 		return;
 	}
-	/* もう一方の席でひとりが遊んでいれば、乱入するかを聞く */
+	/* 今の状況で聞くこと：CPUの席なら交代、もう一方の席でひとりが遊んでいれば乱入、ひとりで座るなら（CPUのある台は）CPU対戦 */
+	nLevel = MazeParseCpuLevel (pNpc->pszNpcSpeech);
 	if (nTable >= 0) {
 		pOther = SeatChar (s_aTable[nTable], 1 - nSeat);
 	}
-	bOther = (pOther != NULL);
-	if (bOther && (nChoice == 0)) {
+	if ((nTable >= 0) && s_aTable[nTable].bCpu && (s_aTable[nTable].nCpuSeat == nSeat)) {
+		nSit = MAZEASK_SWAP;
+	} else if (pOther != NULL) {
+		nSit = MAZEASK_JOIN;
+	} else {
+		nSit = (nLevel > 0) ? MAZEASK_CPU : 0;
+	}
+	if ((nSit != 0) && (nChoice == 0)) {
 		MAZEASK Ask;
 		char szAsk[160];
 
 		Ask.dwNpc = pNpc->dwTblID;
 		Ask.dwTime = g_dwTime;
+		Ask.nKind = nSit;
 		s_mapAsk[pChar->dwTblID] = Ask;
-		sprintf (szAsk, "%sさんが遊んでいます。乱入して対戦しますか？（「いいえ」で座りません）@y", pOther->szName);
+		if (nSit == MAZEASK_JOIN) {
+			sprintf (szAsk, "%sさんが遊んでいます。乱入して対戦しますか？（「いいえ」で座りません）@y", pOther->szName);
+		} else if (nSit == MAZEASK_SWAP) {
+			sprintf (szAsk, "CPUと対戦中です。交代して対戦しますか？（「いいえ」で座りません）@y");
+		} else {
+			sprintf (szAsk, "CPUと対戦しますか？（「いいえ」でひとりで練習します）@y");
+		}
 		SendCmdTALKMSG (pChar->pID, pNpc->dwTblID, szAsk);
 		return;
 	}
 	s_mapAsk.erase (pChar->dwTblID);
-	if (nChoice == 2) {
+	if ((nChoice != 0) && (nKind != 0) && (nKind != nSit)) {
+		return;			/* 問いを出した時と状況が変わった */
+	}
+	if ((nChoice == 2) && (nSit != MAZEASK_CPU)) {
 		return;			/* いいえ：座らない */
 	}
 	if (nTable < 0) {
@@ -666,8 +725,17 @@ void MazeSit(PCHARINFO pChar, PCHARINFO pNpc, int nChoice)
 		Table.dwChar[nSeat] = pChar->dwTblID;
 		Table.dwPID[nSeat] = pChar->pID;
 		Table.bIdle = FALSE;
-		if (bOther) {
-			/* 乱入：盤を初期化して、カウントダウンのあと対戦（先手はプレイヤー 0） */
+		Table.bCpu = FALSE;
+		if ((nSit == MAZEASK_CPU) && (nChoice == 1)) {
+			/* CPU対戦：空いている側の席をCPUが受け持つ。盤を初期化して、カウントダウンのあと対戦（先手はプレイヤー 0） */
+			Table.nCpuLevel = nLevel;
+			Table.bCpu = TRUE;
+			Table.nCpuSeat = 1 - nSeat;
+			Table.nFirst = 0;
+			StartVs (Table);
+			SendCmdSYSMSG (pChar->pID, "対戦開始！ 相手はCPUです。");
+		} else if (pOther != NULL) {
+			/* 乱入・交代：盤を初期化して、カウントダウンのあと人対人で対戦（先手はプレイヤー 0） */
 			char szMsg[96];
 
 			Table.nFirst = 0;
@@ -685,6 +753,55 @@ void MazeSit(PCHARINFO pChar, PCHARINFO pNpc, int nChoice)
 	/* 待機中から見ていた人（座った本人を含む）へ始まった盤。新しく見える人へは見直しで届く */
 	SendTable (nTable, MAZEKIND_FULL);
 	WatchRefresh (nTable);
+}
+
+/* 席 nSeat が 1 手指した後の処理（人の操作・CPUの手で共通）：勝ち・手番の交代・手番の時刻・パス */
+static void Moved(int nTable, int nSeat)
+{
+	MAZETABLE &Table = s_aTable[nTable];
+	MazeGame &g = Table.Game;
+
+	Table.anTimeout[nSeat] = 0;					/* 指したので連続時間切れは途切れる */
+	if (g.GetWinner () == nSeat) {
+		Decided (nTable);
+	} else if (Table.bVs) {
+		Table.dwTurnStart = g_dwTime;
+		if (g.NeedPass ()) {
+			g.Pass (g.byTurn);					/* 相手が動けず壁も置けない時は手番が戻る */
+		}
+	} else {
+		g.byTurn = nSeat;						/* 相手は不在なので、その手番は飛ばす */
+	}
+}
+
+/* CPUが 1 手指す（CPUの手番で考える時間が過ぎた時）。人と同じ Move/PlaceWall/Pass で検証する */
+static void CpuMove(int nTable)
+{
+	MAZETABLE &Table = s_aTable[nTable];
+	MazeGame &g = Table.Game;
+	int nSeat = Table.nCpuSeat, d;
+	MazeCpuAction a = MazeCpuChoose (g, nSeat, Table.nCpuLevel, &Table.dwCpuRand);
+	BOOL bOK;
+
+	if (a.nAct == MAZE_CPU_MOVE) {
+		bOK = g.Move (nSeat, a.nDir);
+	} else if (a.nAct == MAZE_CPU_WALL) {
+		bOK = g.PlaceWall (nSeat, a.nX, a.nY, a.nOrient);
+	} else {
+		bOK = g.Pass (nSeat);
+	}
+	for (d = 0; !bOK && (d < 4); d ++) {		/* 通らなかった時の保険（止まらないように、動ける向きかパス） */
+		bOK = g.Move (nSeat, d);
+	}
+	if (!bOK) {
+		bOK = g.Pass (nSeat);
+	}
+	if (!bOK) {
+		g.byTurn = 1 - nSeat;					/* どうしても指せない時は人に手番を渡す */
+		Table.dwTurnStart = g_dwTime;
+		return;
+	}
+	Moved (nTable, nSeat);
 }
 
 void MazeKey(PCHARINFO pChar, BYTE byAct, BYTE byDir, BYTE byX, BYTE byY, BYTE byOrient)
@@ -730,17 +847,7 @@ void MazeKey(PCHARINFO pChar, BYTE byAct, BYTE byDir, BYTE byX, BYTE byY, BYTE b
 		SendBack (nTable, nSeat);
 		return;
 	}
-	Table.anTimeout[nSeat] = 0;					/* 指したので連続時間切れは途切れる */
-	if (g.GetWinner () == nSeat) {
-		Decided (nTable);
-	} else if (Table.bVs) {
-		Table.dwTurnStart = g_dwTime;
-		if (g.NeedPass ()) {
-			g.Pass (g.byTurn);					/* 相手が動けず壁も置けない時は手番が戻る */
-		}
-	} else {
-		g.byTurn = nSeat;						/* 相手は不在なので、その手番は飛ばす */
-	}
+	Moved (nTable, nSeat);
 	SendTable (nTable, MAZEKIND_FULL);
 }
 
@@ -876,6 +983,16 @@ void MazeProc(void)
 					SendTable (i, MAZEKIND_FULL);
 				} else if (CountLeft (Table) != Table.nCountSent) {
 					Table.nCountSent = CountLeft (Table);
+					SendTable (i, MAZEKIND_FULL);
+				}
+			} else if (Table.bCpu && (Table.Game.byTurn == Table.nCpuSeat)) {
+				/* CPUの手番：考える時間（乱数）が過ぎたら 1 手指す。時間切れは無い */
+				if (Table.dwCpuMove == 0) {
+					Table.dwCpuMove = g_dwTime + MAZE_CPU_THINK_MIN_MS +
+						MazeCpuRand (&Table.dwCpuRand) % (MAZE_CPU_THINK_MAX_MS - MAZE_CPU_THINK_MIN_MS + 1);
+				} else if (g_dwTime >= Table.dwCpuMove) {
+					Table.dwCpuMove = 0;
+					CpuMove (i);
 					SendTable (i, MAZEKIND_FULL);
 				}
 			} else if ((DWORD)(g_dwTime - Table.dwTurnStart) >= (DWORD)MAZE_TURN_MS) {
