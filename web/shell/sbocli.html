@@ -1645,8 +1645,8 @@
 		}
 	}
 	/* PC・横長（幅 900px 以上・高さ 560px 以上・横長）：絵は cover/center で固定。ロゴ・町（上〜約 50%）には何も重ねない。
-	   遊ぶボタンは小道の中央、アカウント・管理は左下の草原、お知らせは右下の草原、リンクは最下段の帯。
-	   中央の小道の左右（幅 25〜55%・縦 50〜85%）はキャラを置く隙間として空けておく。 */
+	   遊ぶボタンは小道の中央（絵の縦 83% 付近）、アカウント・管理は左下の草原、お知らせは右下の草原、リンクは最下段の帯。
+	   橋の上の 2 人（幅 49〜56%・縦 37〜46%）と小道の右の 2 人（幅 61〜74%・縦 63〜82%）には何も重ねない。 */
 	@media (min-width: 900px) and (min-height: 560px) and (min-aspect-ratio: 5/4) {
 		body.sbo-loginscr #sbo-quick.sbo-show {
 			display: flex;
@@ -1685,31 +1685,56 @@
 			left: 0; top: 0;
 			height: 0;
 		}
+		/* 絵（1536x1024・cover・上端そろえ）の表示サイズ。画像の縦 N% = ih*N、横 N% = ox + iw*N */
+		body.sbo-loginscr #sbo-quick.sbo-show {
+			--iw: max(100vw, 150vh);
+			--ih: calc(var(--iw) / 1.5);
+			--ox: calc((100vw - var(--iw)) / 2);
+			--sbo-pt: min(calc(var(--ih) * 0.55), 58vh);
+		}
+		/* 遊ぶボタン：右の人物（縦 63〜82%）の下、絵の縦 83〜90% あたりの小道の中央。低い画面ではリンクの帯の上に収める */
 		body.sbo-loginscr .sbo-home .sbo-col-play {
 			position: absolute;
-			left: 50%; top: 64vh;
-			transform: translateX(-50%);
-			width: min(420px, calc(100% - 24px));
+			left: 50%; top: min(calc(var(--ih) * 0.9), calc(100vh - 60px));
+			transform: translate(-50%, -100%);
+			/* 高さが足りず絵の縦 83% まで下げられない時、右の人物（横 61%〜）にかからないよう幅を絞る */
+			width: min(420px, max(250px, calc(2 * (var(--ox) + var(--iw) * 0.61 - 50vw) - 24px)));
 			gap: 6px;
+		}
+		body.sbo-loginscr .sbo-home .sbo-col-play .sbo-btn {
+			padding-left: 6px;
+			padding-right: 6px;
+			font-size: 15px;
+		}
+		/* 一言は、ボタンの上（小道の上で、橋の人物・右の人物とは離れた所）に */
+		body.sbo-loginscr .sbo-home .sbo-col-play .sbo-note {
+			position: absolute;
+			left: 0; right: 0; bottom: calc(100% + 6px);
 		}
 		body.sbo-loginscr .sbo-home .sbo-col-acc,
 		body.sbo-loginscr .sbo-home .sbo-news {
 			position: absolute;
-			top: 54vh;
-			width: min(21vw, 300px);
-			max-height: calc(100vh - 54vh - 56px);
+			top: var(--sbo-pt);
+			max-height: calc(100vh - var(--sbo-pt) - 56px);
 			overflow-y: auto;
 			overscroll-behavior: contain;
 		}
-		body.sbo-loginscr .sbo-home .sbo-col-acc { left: 12px; }
-		/* 右の桜の下に立つ人物（幅 75〜79%）を隠さないよう、お知らせは右端の細めの枠に */
-		body.sbo-loginscr .sbo-home .sbo-news { right: 12px; width: min(17vw, 260px); }
+		/* 左の草原（絵の横 0〜22%）に */
+		body.sbo-loginscr .sbo-home .sbo-col-acc {
+			left: 12px;
+			width: min(300px, max(180px, calc(var(--ox) + var(--iw) * 0.22 - 12px)));
+		}
+		/* 右の草原（絵の横 78〜100%）に。右の人物（61〜74%）とは重ならない */
+		body.sbo-loginscr .sbo-home .sbo-news {
+			right: 12px;
+			width: min(300px, max(180px, calc(var(--ox) + var(--iw) * 0.22 - 12px)));
+		}
 		body.sbo-loginscr .sbo-news:not(.sbo-has) { display: none; }
 		body.sbo-loginscr .sbo-home .sbo-links {
 			position: absolute;
-			left: 50%;
+			/* 右端は小道の右の人物（横 61%〜）の手前まで。足元にかからないよう、中央ではなく左寄せ気味に置く */
+			right: max(12px, calc(100vw - var(--ox) - var(--iw) * 0.61 + 12px));
 			bottom: max(8px, env(safe-area-inset-bottom));
-			transform: translateX(-50%);
 			width: max-content;
 			max-width: calc(100% - 24px);
 		}
