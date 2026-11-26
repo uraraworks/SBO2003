@@ -245,7 +245,12 @@ PWNDINFO MakeWindowLOGIN(void)
 	pWnd->nCy	= 16 * 6;
 	pWnd->nType	= WNDTYPE_LOGIN;
 	g_dwMsgIDLogin = pWnd->dwID;
+#ifdef __EMSCRIPTEN__
+	/* ブラウザ版は ID・パスワードの入力も HTML のカードで行うので、ゲーム内のログイン窓は常に隠す */
+	g_bLoginHide = TRUE;
+#else
 	g_bLoginHide = FALSE;
+#endif
 	pWnd->pDib = new CImg32;
 	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
 

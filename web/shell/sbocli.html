@@ -1238,10 +1238,44 @@
 		display: none;
 		text-align: center;
 		width: 320px;
+		/* 小さい画面（横持ちのスマホなど）で上下が切れないように、はみ出す分は中でスクロール */
+		max-height: calc(100% - 16px);
+		overflow-y: auto;
 	}
-	#sbo-quick.sbo-back #sbo-quick-back,
-	#sbo-quick.sbo-new #sbo-quick-new {
+	#sbo-quick.sbo-back:not(.sbo-id) #sbo-quick-back,
+	#sbo-quick.sbo-new:not(.sbo-id) #sbo-quick-new,
+	#sbo-quick.sbo-id #sbo-quick-id {
 		display: block;
+	}
+	/* ID・パスワードでログインするカード（ゲーム内の入力窓の代わり） */
+	#sbo-quick-id label {
+		display: block;
+		text-align: left;
+		margin-top: 10px;
+		font-size: 12px;
+		color: var(--sub);
+	}
+	#sbo-quick-id input {
+		display: block;
+		width: 100%;
+		box-sizing: border-box;
+		margin-top: 4px;
+		padding: 8px 10px;
+		font-size: 16px;	/* 16px 未満だと iPhone が入力時に拡大する */
+		border-radius: 8px;
+		border: 1px solid var(--border);
+		background: var(--bg, #0e1116);
+		color: var(--fg);
+	}
+	#sbo-quick-id input:focus {
+		outline: 2px solid var(--accent);
+		outline-offset: 1px;
+	}
+	#sbo-id-msg {
+		min-height: 1.4em;
+		margin: 8px 0 0;
+		font-size: 12px;
+		color: #ff8a8a;
 	}
 	.sbo-quick-note {
 		margin: 8px 0 4px;
@@ -1293,11 +1327,11 @@
 	a.sbo-link {
 		display: inline-block;
 	}
-	#sbo-forgot, #sbo-quick-return {
+	#sbo-forgot {
 		display: none;
 		font-size: 13px;
 	}
-	#sbo-forgot.sbo-show, #sbo-quick-return.sbo-show {
+	#sbo-forgot.sbo-show {
 		display: block;
 	}
 	/* 覚えているアカウントの一覧（多い時は中だけスクロール） */
@@ -2086,6 +2120,20 @@
 				<a class="sbo-link" href="/credits" target="_blank" rel="noopener">クレジット（音楽・効果音など）</a>
 				<button type="button" class="sbo-link" id="sbo-quick-forget">この端末の記憶を消す</button>
 			</div>
+			<!-- ID・パスワードでログイン（前に遊んでいた方・別のアカウントを追加） -->
+			<form class="sbo-card" id="sbo-quick-id" autocomplete="on">
+				<h2>ID・パスワードでログイン</h2>
+				<label for="sbo-id-acc">アカウント名（半角英数字）</label>
+				<input type="text" id="sbo-id-acc" name="username" maxlength="13" autocomplete="username"
+					autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="next">
+				<label for="sbo-id-pas">パスワード</label>
+				<input type="password" id="sbo-id-pas" name="password" maxlength="13" autocomplete="current-password"
+					autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go">
+				<p id="sbo-id-msg" role="alert"></p>
+				<button type="submit" class="sbo-btn" id="sbo-id-go">ログインする</button>
+				<button type="button" class="sbo-btn sbo-btn-sub" id="sbo-quick-return">← ボタンでログインに戻る</button>
+				<button type="button" class="sbo-link" id="sbo-id-forgot">昔のアカウントを忘れてしまった方はこちら</button>
+			</form>
 			<!-- はじめての端末 -->
 			<div class="sbo-card" id="sbo-quick-new">
 				<h2>ようこそ！</h2>
@@ -2099,7 +2147,6 @@
 			</div>
 		</div>
 	</div>
-	<button type="button" class="sbo-link" id="sbo-quick-return" data-sbo-ui="1">← ボタンでログインに戻る</button>
 	<button type="button" class="sbo-link" id="sbo-forgot" data-sbo-ui="1">昔のアカウントを忘れてしまった方はこちら</button>
 	<!-- 仮想パッド：タッチ操作の端末だけ出す（?pad=1 で PC でも出せる） -->
 	<div id="sbo-pad">
@@ -5974,9 +6021,10 @@
 		var state = loginState();
 		var list = loadList();
 		var bHave = list.length > 0;
-		var bShow = state === 1 && !bDismissed && !recover.classList.contains('sbo-show');
+		var bShow = state === 1 && !recover.classList.contains('sbo-show');
 		quick.classList.toggle('sbo-back', bHave);
 		quick.classList.toggle('sbo-new', !bHave);
+		quick.classList.toggle('sbo-id', bDismissed);
 		if (bShow && bHave) {
 			renderList(list);
 		}
@@ -5996,9 +6044,6 @@
 			focusCanvas();
 		}
 		forgot.classList.toggle('sbo-show', state === 1 && !bShow);
-		/* ID・パスワードの入力中は、ボタンの画面へ戻れるようにする（はじめての端末なら「ようこそ」へ） */
-		quickReturn.classList.toggle('sbo-show', state === 1 && bDismissed &&
-			!recover.classList.contains('sbo-show'));
 	}, 250);
 
 	function focusCanvas() {
@@ -6020,7 +6065,8 @@
 			});
 	}
 	function shownQuickCard() {
-		return quick.querySelector('#sbo-quick.sbo-back #sbo-quick-back, #sbo-quick.sbo-new #sbo-quick-new');
+		return quick.querySelector('#sbo-quick.sbo-id #sbo-quick-id, ' +
+			'#sbo-quick.sbo-back:not(.sbo-id) #sbo-quick-back, #sbo-quick.sbo-new:not(.sbo-id) #sbo-quick-new');
 	}
 	function focusQuickIfLost() {
 		var card = shownQuickCard();
@@ -6179,14 +6225,9 @@
 			ev.stopPropagation();
 		}
 	}, true);
-	/* ID・パスワードの入力中に Esc を押したら、ボタンの画面へ戻る
-	   （入力欄のキーはゲームに渡すので、先回りして受け取る） */
+	/* ID・パスワードの入力中に Esc を押したら、ボタンの画面へ戻る */
 	document.addEventListener('keydown', function (ev) {
-		if (ev.key !== 'Escape' || ev.isComposing || !quickReturn.classList.contains('sbo-show')) {
-			return;
-		}
-		var t = ev.target;
-		if (!(t && t.dataset && t.dataset.w32Id && t.closest && t.closest('#sbo-overlay'))) {
+		if (ev.key !== 'Escape' || ev.isComposing || !bDismissed || !quick.classList.contains('sbo-show')) {
 			return;
 		}
 		ev.preventDefault();
@@ -6195,15 +6236,51 @@
 	}, true);
 
 	/* 「ID・パスワードでログイン」を押したら、アカウント名（入っていればパスワード）の欄へ */
+	var idAcc = document.getElementById('sbo-id-acc');
+	var idPas = document.getElementById('sbo-id-pas');
+	var idMsg = document.getElementById('sbo-id-msg');
 	function focusLoginInput() {
-		var a = Array.prototype.filter.call(document.querySelectorAll('#sbo-overlay input[data-w32-id]'),
-			function (el) { return el.style.display !== 'none' && !el.disabled; });
-		if (a.length === 0) {
+		(idAcc.value ? idPas : idAcc).focus({ preventScroll: true });
+	}
+	/* 全角の英数字・記号（日本語入力のまま打った時など）は半角にそろえる */
+	function toHalf(str) {
+		return str.replace(/[\uFF01-\uFF5E]/g, function (c) {
+			return String.fromCharCode(c.charCodeAt(0) - 0xFEE0);
+		}).replace(/\u3000/g, ' ');
+	}
+	document.getElementById('sbo-quick-id').addEventListener('submit', function (ev) {
+		ev.preventDefault();
+		var M = window.Module;
+		if (!M || !M['_SboWebPasLogin']) {
 			return;
 		}
-		var el = (a.length > 1 && a[0].value) ? a[1] : a[0];
-		el.focus();
-	}
+		/* 出たばかりの Enter の押しっぱなしでは送らない */
+		if (Date.now() - tmQuickShow < QUICK_KEY_GUARD_MS) {
+			return;
+		}
+		var acc = toHalf(idAcc.value).replace(/^\s+|\s+$/g, '').toLowerCase();
+		var pas = toHalf(idPas.value);
+		if (!acc) {
+			idMsg.textContent = 'アカウント名を入力してください';
+			idAcc.focus();
+			return;
+		}
+		if (!/^[\x21-\x7e]+$/.test(acc) || !/^[\x20-\x7e]*$/.test(pas)) {
+			idMsg.textContent = 'アカウント名・パスワードは半角英数字で入力してください';
+			(/^[\x21-\x7e]+$/.test(acc) ? idPas : idAcc).focus();
+			return;
+		}
+		idMsg.textContent = '';
+		var pA = M['stringToNewUTF8'](acc), pP = M['stringToNewUTF8'](pas);
+		M['_SboWebPasLogin'](pA, pP);
+		M['_free'](pA);
+		M['_free'](pP);
+		/* パスワードは残さない（失敗したら入れ直してもらう） */
+		idPas.value = '';
+	});
+	document.getElementById('sbo-id-forgot').addEventListener('click', function () {
+		forgot.click();
+	});
 
 	function tokenLogin(token) {
 		var M = window.Module;
@@ -6219,7 +6296,8 @@
 	Array.prototype.forEach.call(document.querySelectorAll('[data-quick-other]'), function (el) {
 		el.addEventListener('click', function () {
 			bDismissed = true;
-			quick.classList.remove('sbo-show');
+			idMsg.textContent = '';
+			quick.classList.add('sbo-id');
 			setTimeout(focusLoginInput, 0);
 		});
 	});
