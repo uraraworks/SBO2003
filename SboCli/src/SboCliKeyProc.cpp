@@ -3078,7 +3078,7 @@ static void KeyProcAPPRAISE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			char szTmp[256];
 
 			if (g_aCharInfo[g_nMyCharID]->dwGold < dwCost) {
-				MakerSetMsg (pWnd, "代金が足りないようです。@2");
+				MakerSetMsg (pWnd, g_aMakerInfo[g_nProcMakerID].szMsgLack[0] ? g_aMakerInfo[g_nProcMakerID].szMsgLack : "代金が足りないようです。@2");
 				g_dwActiveMsgID = pWnd->dwID;
 				g_bDraw = TRUE;
 				return;
@@ -9482,7 +9482,7 @@ void CmdProcHanasu(PWNDINFO pWnd)
 		} else if (g_aMakerInfo[nMaker].byKind == MAKERKIND_APPRAISE) {
 			/* 鑑定屋：手持ちの未鑑定の物を選ぶ */
 			if (AppraiseCountUnknown () == 0) {
-				pWndTmp = MakeWindowMSG ("鑑定してほしい物がないようです。@2", TRUE);
+				pWndTmp = MakeWindowMSG ((LPSTR)(g_aMakerInfo[nMaker].szMsgNone[0] ? g_aMakerInfo[nMaker].szMsgNone : "鑑定してほしい物がないようです。@2"), TRUE);
 			} else {
 				g_WndInfo.Add (MakeWindowGOLD ());
 				PWNDINFO pWndList = MakeWindowAPPRAISE (nMaker);

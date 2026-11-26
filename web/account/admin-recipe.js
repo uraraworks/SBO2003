@@ -208,6 +208,9 @@
 			$('rc-mk-talk').value = 'いらっしゃい。@1何を作りましょうか？';
 			$('rc-mk-done').value = 'はい、できました。@2';
 			$('rc-mk-lack').value = '材料が足りないようです。@2';
+			$('rc-mk-none').value = '';
+			$('rc-mk-more').value = '';
+			$('rc-mk-end').value = '';
 			$('rc-mk-state').value = String(ST_ON);
 			$('rc-mk-kind').value = '0';
 			$('rc-mk-del').hidden = true;
@@ -218,6 +221,9 @@
 			$('rc-mk-talk').value = m.szMsgTalk;
 			$('rc-mk-done').value = m.szMsgDone;
 			$('rc-mk-lack').value = m.szMsgLack;
+			$('rc-mk-none').value = m.szMsgNone || '';
+			$('rc-mk-more').value = m.szMsgMore || '';
+			$('rc-mk-end').value = m.szMsgEnd || '';
 			$('rc-mk-state').value = String(m.byState);
 			$('rc-mk-kind').value = String(m.byKind || 0);
 			$('rc-mk-del').hidden = false;
@@ -369,7 +375,10 @@
 			szName: name,
 			szMsgTalk: $('rc-mk-talk').value,
 			szMsgDone: $('rc-mk-done').value,
-			szMsgLack: $('rc-mk-lack').value
+			szMsgLack: $('rc-mk-lack').value,
+			szMsgNone: $('rc-mk-none').value,
+			szMsgMore: $('rc-mk-more').value,
+			szMsgEnd: $('rc-mk-end').value
 		};
 		var bAdd = selMaker === -2;
 		save('maker', bAdd ? null : selMaker, ch, bAdd ? '作り手を足しました' : '作り手を保存しました').then(function (r) {

@@ -3809,6 +3809,9 @@ void RecvDataProcMAKERINFO(PBYTE pData, DWORD dwDataSize)
 	g_aMakerInfo[pPara->wID].szMsgTalk[MAX_MAKERMSG - 1] = 0;
 	g_aMakerInfo[pPara->wID].szMsgDone[MAX_MAKERMSG - 1] = 0;
 	g_aMakerInfo[pPara->wID].szMsgLack[MAX_MAKERMSG - 1] = 0;
+	g_aMakerInfo[pPara->wID].szMsgNone[MAX_MAKERMSG - 1] = 0;
+	g_aMakerInfo[pPara->wID].szMsgMore[MAX_MAKERMSG - 1] = 0;
+	g_aMakerInfo[pPara->wID].szMsgEnd[MAX_MAKERMSG - 1] = 0;
 	g_nMakerCount = pPara->wCount;
 	g_bDraw = TRUE;
 }
@@ -4000,11 +4003,19 @@ void RecvDataProcAPPRAISE(PBYTE pData, DWORD dwDataSize)
 				szMsgDone[nLen - 2] = 0;
 			}
 		}
-		strncat (szMsgDone, (AppraiseCountUnknown () > 0) ? "@1他にも鑑定するものはあるかい？@2" : "@1また何かあればもっておいで。@2", sizeof (szMsgDone) - strlen (szMsgDone) - 1);
+		{
+			/* 続ける台詞は作り手のデータ（無ければ既定）。頭に @1 を足して前の文の次の行にする */
+			const char *pszNext = (AppraiseCountUnknown () > 0) ? g_aMakerInfo[g_nProcMakerID].szMsgMore : g_aMakerInfo[g_nProcMakerID].szMsgEnd;
+			if (pszNext[0] == 0) {
+				pszNext = (AppraiseCountUnknown () > 0) ? "他にも鑑定するものはあるかい？@2" : "また何かあればもっておいで。@2";
+			}
+			strncat (szMsgDone, "@1", sizeof (szMsgDone) - strlen (szMsgDone) - 1);
+			strncat (szMsgDone, pszNext, sizeof (szMsgDone) - strlen (szMsgDone) - 1);
+		}
 		pszMsg = szMsgDone;
 		break;
 	case APPRAISERESULT_LACKGOLD:
-		pszMsg = "代金が足りないようです。@2";
+		pszMsg = g_aMakerInfo[g_nProcMakerID].szMsgLack[0] ? g_aMakerInfo[g_nProcMakerID].szMsgLack : "代金が足りないようです。@2";
 		break;
 	default:
 		pszMsg = "それは鑑定できないようです。@2";
