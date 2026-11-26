@@ -1609,144 +1609,64 @@
 	body.sbo-loginscr #sbo-quick .sbo-sec {
 		background: rgba(255, 255, 255, 0.92);
 	}
-	/* リンク群：画面最下部に固定のフッターバー（アイコン＋短いラベルを横並び）。PC・横長は下の @media で最下段の帯に戻す */
-	@media not all and (min-width: 900px) and (min-height: 560px) and (min-aspect-ratio: 5/4) {
-		body.sbo-loginscr #sbo-quick.sbo-show {
-			--sbo-foot: calc(56px + env(safe-area-inset-bottom));
-		}
-		body.sbo-loginscr #sbo-quick .sbo-card.sbo-home {
-			padding-bottom: calc(24px + var(--sbo-foot));
-		}
-		body.sbo-loginscr #sbo-quick .sbo-home .sbo-links {
-			position: fixed;
-			left: 0; right: 0; bottom: 0;
-			z-index: 3;
-			flex-wrap: nowrap;
-			gap: 0;
-			padding: 2px 4px env(safe-area-inset-bottom);
-			border-radius: 0;
-			background: rgba(255, 255, 255, 0.94);
-			box-shadow: 0 -2px 8px rgba(30, 70, 40, 0.18);
-			box-sizing: border-box;
-		}
-		body.sbo-loginscr #sbo-quick .sbo-home .sbo-links .sbo-link {
-			flex: 1 1 0;
-			min-width: 0;
-			flex-direction: column;
-			gap: 1px;
-			min-height: 52px;
-			padding: 4px 2px;
-			font-size: 10px;
-			line-height: 1.2;
-			overflow-wrap: anywhere;
-		}
-		body.sbo-loginscr #sbo-quick .sbo-home .sbo-links .sbo-ic2 {
-			font-size: 17px;
-		}
+	/* リンク群：画面最下部に固定のフッターバー（アイコン＋短いラベルを横並び）。PC・横長でも同じで、下の @media で列幅 W・中央に */
+	body.sbo-loginscr #sbo-quick.sbo-show {
+		--sbo-foot: calc(56px + env(safe-area-inset-bottom));
 	}
-	/* PC・横長（幅 900px 以上・高さ 560px 以上・横長）：絵は cover/center で固定。ロゴ・町（上〜約 50%）には何も重ねない。
-	   遊ぶボタンは小道の中央（絵の縦 78〜88%）、アカウント・管理は左下の草原、お知らせは右下の草原、リンクは最下段の帯。
-	   橋の上の 2 人（幅 52〜57%・縦 37〜42%）と小道の右の 2 人（幅 60〜65%・縦 57〜67%）には何も重ねない。 */
+	body.sbo-loginscr #sbo-quick .sbo-card.sbo-home {
+		padding-bottom: calc(24px + var(--sbo-foot));
+	}
+	body.sbo-loginscr #sbo-quick .sbo-home .sbo-links {
+		position: fixed;
+		left: 0; right: 0; bottom: 0;
+		z-index: 3;
+		flex-wrap: nowrap;
+		gap: 0;
+		padding: 2px 4px env(safe-area-inset-bottom);
+		border-radius: 0;
+		background: rgba(255, 255, 255, 0.94);
+		box-shadow: 0 -2px 8px rgba(30, 70, 40, 0.18);
+		box-sizing: border-box;
+	}
+	body.sbo-loginscr #sbo-quick .sbo-home .sbo-links .sbo-link {
+		flex: 1 1 0;
+		min-width: 0;
+		flex-direction: column;
+		gap: 1px;
+		min-height: 52px;
+		padding: 4px 2px;
+		font-size: 10px;
+		line-height: 1.2;
+		overflow-wrap: anywhere;
+	}
+	body.sbo-loginscr #sbo-quick .sbo-home .sbo-links .sbo-ic2 {
+		font-size: 17px;
+	}
+	/* PC・横長（幅 900px 以上・高さ 560px 以上・横長）：スマホ縦のレイアウトをそのまま、幅 W の列にして画面中央に置く。
+	   左右は絵（loginbg-wide.webp 2240x1280 = 7:4）で埋める。絵の中央 512/1792 がスマホ絵と同じ内容の列なので、
+	   絵の表示幅を W×3.5（高さ W×2）にして上端・水平中央に敷けば、中央の列がスマホ絵（幅 W・高さ 2W）にぴったり重なる。
+	   絵より下・さらに左右の余りは --bg-end。絵が画面より縦長なら、スマホと同じく縦スクロール（local）。 */
 	@media (min-width: 900px) and (min-height: 560px) and (min-aspect-ratio: 5/4) {
 		body.sbo-loginscr #sbo-quick.sbo-show {
-			display: flex;
-			overflow: hidden;
+			--col-w: clamp(390px, 50dvh, 540px);
+			--bg-w: var(--col-w);
 			background:
-				url(/login/loginbg-pc.webp?v=@@SBO_BUILD_COMMIT@@) center top / cover no-repeat,
-				linear-gradient(180deg, #f4f8de 0%, #dfe9bd 55%, #cfe0a4 100%),
-				#dfe9bd;
+				url(/login/loginbg-wide.webp?v=@@SBO_BUILD_COMMIT@@) top center / calc(var(--col-w) * 3.5) auto no-repeat local,
+				var(--bg-end);
 		}
-		body.sbo-loginscr #sbo-quick .sbo-card {
-			position: relative;
-			z-index: 1;
+		/* 中身は幅 W の列（中央寄せ）に収める */
+		body.sbo-loginscr #sbo-quick .sbo-card.sbo-home {
+			width: var(--col-w);
+			max-width: var(--col-w);
 		}
 		body.sbo-loginscr #sbo-quick #sbo-quick-id {
-			margin: 0;
+			width: min(320px, calc(var(--col-w) - 32px));
 		}
-		body.sbo-loginscr #sbo-quick .sbo-card.sbo-home,
-		body.sbo-loginscr #sbo-quick.sbo-back:not(.sbo-id) #sbo-quick-back,
-		body.sbo-loginscr #sbo-quick.sbo-new:not(.sbo-id) #sbo-quick-new {
-			position: absolute;
-			left: 0; top: 0;
-			width: 100%;
-			max-width: none;
-			height: 100%;
-			min-height: 0;
-			padding: 0;
-			margin: 0;
-			overflow: visible;
-		}
-		body.sbo-loginscr #sbo-quick.sbo-back:not(.sbo-id) #sbo-quick-back,
-		body.sbo-loginscr #sbo-quick.sbo-new:not(.sbo-id) #sbo-quick-new {
-			display: block;
-		}
-		body.sbo-loginscr .sbo-hero {
-			position: absolute;
-			left: 0; top: 0;
-			height: 0;
-		}
-		/* 絵（1536x1024・cover・上端そろえ）の表示サイズ。画像の縦 N% = ih*N、横 N% = ox + iw*N */
-		body.sbo-loginscr #sbo-quick.sbo-show {
-			--iw: max(100vw, 150vh);
-			--ih: calc(var(--iw) / 1.5);
-			--ox: calc((100vw - var(--iw)) / 2);
-			--sbo-pt: min(calc(var(--ih) * 0.55), 58vh);
-		}
-		/* 遊ぶボタン：小道の中央（横 50%）、絵の縦 88% の位置を下端に。右の人物（横 60%〜・縦 57〜67%）の下。
-		   低い画面ではリンクの帯の上に収める */
-		body.sbo-loginscr .sbo-home .sbo-col-play {
-			position: absolute;
-			left: 50%; top: min(calc(var(--ih) * 0.88), calc(100vh - 68px));
-			transform: translate(-50%, -100%);
-			/* 幅 300〜400px。高さが足りず上へ上がる時は、右の人物（横 59%〜）にかからないよう幅を絞る */
-			width: min(400px, max(250px, calc(2 * (var(--ox) + var(--iw) * 0.59 - 50vw) - 24px)));
-			gap: 6px;
-		}
-		body.sbo-loginscr .sbo-home .sbo-col-play .sbo-btn {
-			padding-left: 6px;
-			padding-right: 6px;
-			font-size: 15px;
-		}
-		/* 一言は、ボタンの上（小道の上で、橋の人物・右の人物とは離れた所）に */
-		body.sbo-loginscr .sbo-home .sbo-col-play .sbo-note {
-			position: absolute;
-			left: 0; right: 0; bottom: calc(100% + 6px);
-		}
-		body.sbo-loginscr .sbo-home .sbo-col-acc,
-		body.sbo-loginscr .sbo-home .sbo-news {
-			position: absolute;
-			top: var(--sbo-pt);
-			max-height: calc(100vh - var(--sbo-pt) - 56px);
-			overflow-y: auto;
-			overscroll-behavior: contain;
-		}
-		/* 左の草原（絵の横 0〜22%）に */
-		body.sbo-loginscr .sbo-home .sbo-col-acc {
-			left: 12px;
-			width: min(300px, max(180px, calc(var(--ox) + var(--iw) * 0.22 - 12px)));
-		}
-		/* 右の草原（絵の横 78〜100%）に。右の人物（60〜65%）とは重ならない */
-		body.sbo-loginscr .sbo-home .sbo-news {
-			right: 12px;
-			width: min(300px, max(180px, calc(var(--ox) + var(--iw) * 0.22 - 12px)));
-		}
-		body.sbo-loginscr .sbo-news:not(.sbo-has) { display: none; }
-		body.sbo-loginscr .sbo-home .sbo-links {
-			position: absolute;
-			/* 最下段の中央 */
-			left: 50%;
+		/* 固定フッターも列幅 W で中央に */
+		body.sbo-loginscr #sbo-quick .sbo-home .sbo-links {
+			left: 50%; right: auto;
+			width: var(--col-w);
 			transform: translateX(-50%);
-			bottom: max(8px, env(safe-area-inset-bottom));
-			width: max-content;
-			max-width: calc(100% - 24px);
-		}
-		body.sbo-loginscr #sbo-quick .sbo-links .sbo-link {
-			min-height: 34px;
-		}
-	}
-	@media (min-width: 900px) and (min-height: 560px) and (min-aspect-ratio: 5/4) and (max-height: 760px) {
-		body.sbo-loginscr .sbo-home .sbo-note {
-			display: none;
 		}
 	}
 	.sbo-col-acc,
