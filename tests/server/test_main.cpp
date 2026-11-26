@@ -5647,7 +5647,7 @@ static void TestQuest(const std::vector<int> &aLogin)
 			pQ3->byStepCount = 1;
 			pQ3->dwGold = 60;
 			pQ3->dwExp = 0;
-			pQ3->awKillStTmp[0] = 7; pQ3->awKillStTmp[1] = 9; pQ3->awKillStTmp[2] = 0; pQ3->awKillStTmp[3] = 0;
+			pQ3->awKillStTmp[0] = 7; pQ3->awKillStTmp[1] = 9; pQ3->awKillStTmp[2] = QUEST_KILLTMP_NONE; pQ3->awKillStTmp[3] = QUEST_KILLTMP_NONE;
 			pQ3->wKillNeed = 3;
 			pQ3->dwRepeatHours = 24;
 			strcpy(pQ3->aszGoal[0], "プヨンを倒す");
@@ -5786,15 +5786,47 @@ static void TestQuest(const std::vector<int> &aLogin)
 				/* データAPI：取得に出る・範囲外や空の敵の拒否・討伐チャレンジとは一緒にできない */
 				const char *pszGet = SboWebDataGet("quest", nIdx3);
 				printf("quest kill api get need=%d tmp=%d hours=%d\n", pszGet && strstr(pszGet, "\"wKillNeed\":3") ? 1 : 0,
-					pszGet && strstr(pszGet, "\"awKillStTmp\":[7,9,0,0]") ? 1 : 0, pszGet && strstr(pszGet, "\"dwRepeatHours\":24") ? 1 : 0);
+					pszGet && strstr(pszGet, "\"awKillStTmp\":[7,9,65535,65535]") ? 1 : 0, pszGet && strstr(pszGet, "\"dwRepeatHours\":24") ? 1 : 0);
 				printf("quest kill api set %s", FlagGroupApi("quest", nIdx3, "{\"wKillNeed\":15,\"awKillStTmp\":[7],\"dwRepeatHours\":12}").c_str());
 				printf(" now=%u,%u,%u,%u,%u,%u\n", pQ3->wKillNeed, pQ3->awKillStTmp[0], pQ3->awKillStTmp[1], (unsigned)pQ3->dwRepeatHours, 0u, 0u);
 				printf("quest kill api over %s\n", FlagGroupApi("quest", nIdx3, "{\"wKillNeed\":1000}").c_str());
 				printf("quest kill api hours %s\n", FlagGroupApi("quest", nIdx3, "{\"dwRepeatHours\":8761}").c_str());
-				printf("quest kill api notmp %s\n", FlagGroupApi("quest", nIdx3, "{\"awKillStTmp\":[0,0,0,0]}").c_str());
+				printf("quest kill api notmp %s\n", FlagGroupApi("quest", nIdx3, "{\"awKillStTmp\":[65535,65535,65535,65535]}").c_str());
 				printf("quest kill api challenge %s\n", FlagGroupApi("quest", nIdx3, "{\"byChallenge\":1}").c_str());
 				printf("quest kill api zero %s", FlagGroupApi("quest", nIdx3, "{\"wKillNeed\":0}").c_str());
 				printf(" now=%u\n", pQ3->wKillNeed);
+				/* stTmp id 0 の敵（プヨン）も数えられる：API で指定・範囲外の拒否・保存して読み直しても id 0 のまま・古い 0 は空き */
+				printf("quest kill id0 api %s", FlagGroupApi("quest", nIdx3, "{\"wKillNeed\":2,\"awKillStTmp\":[0]}").c_str());
+				printf(" now=%u,%u,%u,%u", pQ3->awKillStTmp[0], pQ3->awKillStTmp[1], pQ3->awKillStTmp[2], pQ3->awKillStTmp[3]);
+				pszGet = SboWebDataGet("quest", nIdx3);
+				printf(" get=%d\n", pszGet && strstr(pszGet, "\"awKillStTmp\":[0,65535,65535,65535]") ? 1 : 0);
+				printf("quest kill id0 range %s\n", FlagGroupApi("quest", nIdx3, "{\"awKillStTmp\":[60000]}").c_str());
+				SaveQuestInfo();
+				for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) delete g_aQuestInfo[i];
+				g_aQuestInfo.RemoveAll();
+				LoadQuestInfo();
+				pQ3 = NULL;
+				for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) if (g_aQuestInfo[i]->wID == 3) { pQ3 = g_aQuestInfo[i]; nIdx3 = i; }
+				if (pQ3) {
+					printf("quest kill id0 reload tmp=%u,%u,%u,%u need=%u", pQ3->awKillStTmp[0], pQ3->awKillStTmp[1], pQ3->awKillStTmp[2], pQ3->awKillStTmp[3], pQ3->wKillNeed);
+					WORD wQBak = pOwner->wQuestID;
+					pOwner->wQuestID = 3;
+					pOwner->awQuestCount[0] = 0;
+					PCHARINFO pE0 = KillTestEnemy(pOwner, 0, 0);
+					QuestOnKill(pOwner, pE0);
+					printf(" kill0=%u", pOwner->awQuestCount[0]);
+					pE0->dwStTmplateID = 1;
+					QuestOnKill(pOwner, pE0);
+					printf(" kill1=%u\n", pOwner->awQuestCount[0]);
+					DeleteChar(pE0->dwTblID);
+					pOwner->wQuestID = wQBak;
+					pOwner->awQuestCount[0] = 0;
+				}
+				if (pQ3) *pQ3 = Q3Bak;
+				pQ3 = NULL;
+				for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) if (g_aQuestInfo[i]->wID == 3) pQ3 = g_aQuestInfo[i];
+			}
+			if (pQ3) {
 				*pQ3 = Q3Bak;
 			}
 			memcpy(pOwner->awQuestClearID, awClearIDBak, sizeof(awClearIDBak));
