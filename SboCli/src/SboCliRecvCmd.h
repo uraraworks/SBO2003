@@ -26,6 +26,7 @@ extern BOOL		GetPuzzleState			(int nIdx, PCMDPARA_PUZZLESTATE pOut, const BYTE *
 #define MAZEMODE_WALL			(1)															/* 迷路対戦の操作：壁を置く場所を選ぶ */
 extern BOOL		IsMazeSeated			(void);														/* 迷路対戦の席に座って遊んでいるか */
 extern BOOL		GetMazeState			(int nIdx, PCMDPARA_MAZESTATE pOut);							/* 迷路対戦の重ね描きの状態（nIdx は 0〜MAZE_VIEW_MAX-1。見えている台だけ TRUE） */
+extern int		GetMazeMySeat			(const CMDPARA_MAZESTATE *pSt);									/* 自分がどちらの席か（0/1。どちらでもなければ -1） */
 extern BOOL		GetMazeSeatState		(PCMDPARA_MAZESTATE pOut);										/* 迷路対戦の座っている台の状態（座っていなければ FALSE） */
 extern void		GetMazeCursor			(int *pnMode, int *pnX, int *pnY, int *pnOrient);				/* 壁を置くカーソルの状態（MAZEMODE_*・交点 0〜5・向き 0=横 1=縦） */
 extern void		SetMazeCursor			(int nMode, int nX, int nY, int nOrient);						/* 壁を置くカーソルの状態を変える */

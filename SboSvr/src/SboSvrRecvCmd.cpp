@@ -16257,5 +16257,9 @@ void RecvDataProcTALKANSWER(PBYTE pData, DWORD dwDataSize)
 	if (PuzzleAnswer (g_aCharInfo[s_nCharNoRecv], pPara->dwTblID, pPara->byData ? TRUE : FALSE)) {
 		return;
 	}
+	/* 迷路対戦の「乱入しますか？」への答えなら、そちらで受ける */
+	if (MazeAnswer (g_aCharInfo[s_nCharNoRecv], pPara->dwTblID, pPara->byData ? TRUE : FALSE)) {
+		return;
+	}
 	TalkAnswer (g_aCharInfo[s_nCharNoRecv], pPara->dwTblID, pPara->byData ? TRUE : FALSE);
 }

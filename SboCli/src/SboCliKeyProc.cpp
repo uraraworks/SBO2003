@@ -481,7 +481,7 @@ static void MazeKeyProc(BYTE byEvent, BYTE byCode)
 	static DWORD s_dwSent[256];				/* 最後に処理した時刻 */
 	DWORD dwNow = timeGetTime ();
 	CMDPARA_MAZESTATE St;
-	int nMode, nCurX, nCurY, nCurO, nDir = -1;
+	int nMode, nCurX, nCurY, nCurO, nDir = -1, nSeat;
 	BOOL bEsc = FALSE;
 
 	if (byEvent == KEY_UP) {
@@ -515,8 +515,10 @@ static void MazeKeyProc(BYTE byEvent, BYTE byCode)
 		}
 		s_dwSent[byCode] = dwNow;
 	}
-	/* 勝ちを見せている間は操作を受けない（ESC で席を立つのだけ通す） */
-	if ((St.byState & MAZESTATE_WIN) && !bEsc) {
+	/* 勝ちを見せている間・開始前のカウントダウン中・2 人対戦で相手の番の間は操作を受けない（ESC で席を立つのだけ通す。
+	   壁モードの途中で相手の番になった時は、カーソルを消して MOVE に戻す） */
+	nSeat = max (0, GetMazeMySeat (&St));
+	if (!bEsc && ((St.byState & (MAZESTATE_WIN | MAZESTATE_COUNT)) || ((St.byState & MAZESTATE_VS) && ((int)St.byTurn != nSeat)))) {
 		return;
 	}
 	GetMazeCursor (&nMode, &nCurX, &nCurY, &nCurO);
@@ -529,7 +531,7 @@ static void MazeKeyProc(BYTE byEvent, BYTE byCode)
 			SetMazeCursor (nMode, nCurX, nCurY, (nCurO == MAZE_H) ? MAZE_V : MAZE_H);		/* 向き（横/縦）切り替え */
 		} else if (byCode == 'A') {
 			/* 置けない位置・壁が残っていない時は、送らず効果音もなし */
-			if ((St.byWallLeft[0] > 0) && MazeCanPlaceWall (&St, nCurX, nCurY, nCurO)) {
+			if ((St.byWallLeft[nSeat] > 0) && MazeCanPlaceWall (&St, nCurX, nCurY, nCurO)) {
 				SendCmdMAZEKEY (MAZEACT_WALL, 0, (BYTE)nCurX, (BYTE)nCurY, (BYTE)nCurO);
 				SetMazeCursor (MAZEMODE_MOVE, nCurX, nCurY, nCurO);
 			}
@@ -9941,13 +9943,15 @@ static int PuzzleSeatNpcHere(PCHARINFO pChar)
 /* ========================================================================= */
 /* 関数名：MazeSeatNpcHere													 */
 /* 内容：迷路対戦の台の「座る場所」のマスに立っているか						 */
-/*		 台NPC（台詞 @k…）の台詞の 3・4 番目（sdx,sdy。省略は台NPCの 1 つ下）で決まる	 */
-/*		 座る場所のマスに立って S キーを押せば座れる（向きは問わない）				 */
-/*		 戻り値：見つけた台NPCの配列番号（無ければ -1）						 */
+/*		 台NPC（台詞 @k…）の台詞の 3・4 番目（席 1。sdx,sdy。省略は台NPCの 1 つ下）と、	 */
+/*		 8・9 番目（席 2。sdx2,sdy2。省略は台NPCの 10 マス上）で決まる					 */
+/*		 どちらかの席のマスに立って S キーを押せば座れる（向きは問わない。どちらの席かはサーバーが決める）	 */
+/*		 戻り値：座る場所なら TRUE（*pdwTblID に台NPCのテーブルID）						 */
 /* ========================================================================= */
-static int MazeSeatNpcHere(PCHARINFO pChar)
+static BOOL MazeSeatNpcHere(PCHARINFO pChar, DWORD *pdwTblID)
 {
 	int i, nCount = g_aCharInfo.GetSize (), nDx, nDy, nSdx, nSdy;
+	CMDPARA_MAZESTATE St;
 
 	for (i = 0; i < nCount; i ++) {
 		PCHARINFO pNpc = (PCHARINFO)g_aCharInfo[i];
@@ -9957,10 +9961,30 @@ static int MazeSeatNpcHere(PCHARINFO pChar)
 		}
 		MazeParseTable (pNpc->pszNpcSpeech, &nDx, &nDy, &nSdx, &nSdy);
 		if (((int)pNpc->dwX + nSdx == (int)pChar->dwX) && ((int)pNpc->dwY + nSdy == (int)pChar->dwY)) {
-			return i;
+			*pdwTblID = pNpc->dwTblID;
+			return TRUE;
+		}
+		/* 席 2（プレイヤー 1＝上側）の座る場所 */
+		MazeParseSeat2 (pNpc->pszNpcSpeech, &nSdx, &nSdy);
+		if (((int)pNpc->dwX + nSdx == (int)pChar->dwX) && ((int)pNpc->dwY + nSdy == (int)pChar->dwY)) {
+			*pdwTblID = pNpc->dwTblID;
+			return TRUE;
 		}
 	}
-	return -1;
+	/* 席 2 は台NPCから既定で 10 マス上にあり、画面（15×15）に台NPCが入らないので、NPC が見つからない。
+	   そこで、サーバーから届いている盤（CMD_MAZESTATE）の位置から、既定の席 2（盤の上端の 1 行上・盤の中央の列）を割り出す。
+	   座れるかどうかを決めるのはサーバー（座る場所でなければ何も起きない） */
+	for (i = 0; i < MAZE_VIEW_MAX; i ++) {
+		if (!GetMazeState (i, &St)) {
+			continue;
+		}
+		if (((int)pChar->dwX == (int)St.sBoardX / MAZE_TABLE_TILE_DOT + MAZE_TABLE_TILES / 2) &&
+			((int)pChar->dwY == (int)St.sBoardY / MAZE_TABLE_TILE_DOT - 1)) {
+			*pdwTblID = St.dwNpc;
+			return TRUE;
+		}
+	}
+	return FALSE;
 }
 
 /* ========================================================================= */
@@ -9977,9 +10001,9 @@ BOOL CmdProcSKey(void)
 
 	/* 迷路対戦の台の座る場所に立っている時は、座る（無料。台NPCは目の前でなくてよい。座ると CMD_MAZESTATE が届く） */
 	if (g_aCharInfo.GetSize () > 0) {
-		int nMaze = MazeSeatNpcHere (pChar);
-		if (nMaze >= 0) {
-			SendCmdTALKRAND (((PCHARINFO)g_aCharInfo[nMaze])->dwTblID);
+		DWORD dwMazeNpc;
+		if (MazeSeatNpcHere (pChar, &dwMazeNpc)) {
+			SendCmdTALKRAND (dwMazeNpc);
 			return TRUE;
 		}
 	}

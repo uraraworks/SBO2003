@@ -24,6 +24,9 @@
 #define MAZE_LEFT		(2)		/* 左（x が減る） */
 #define MAZE_RIGHT		(3)		/* 右（x が増える） */
 #define MAZE_NO_WINNER	(-1)	/* 勝負がまだついていない */
+#define MAZE_TURN_MS	(30000)	/* 2 人対戦：1 手の制限時間(ms)。過ぎるとその手番は飛ばされる */
+#define MAZE_TIMEOUT_MAX	(3)	/* 2 人対戦：連続でこの回数、時間切れにした人は不戦敗 */
+#define MAZE_VS_COUNTDOWN_SEC	(3)	/* 2 人対戦：始まる前のカウントダウン（秒。3・2・1。その間は操作できない） */
 
 static const int g_anMazeDx[4] = { 0, 0, -1, 1 };
 static const int g_anMazeDy[4] = { -1, 1, 0, 0 };

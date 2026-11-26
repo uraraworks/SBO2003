@@ -8719,6 +8719,24 @@ void RecvDataProcMAZESTATE(PBYTE pData, DWORD dwDataSize)
 	g_bDraw = TRUE;
 }
 
+/* 自分がこの台のどちらの席か（0=席 1=プレイヤー 0・1=席 2=プレイヤー 1・-1=どちらでもない）。dwChar に自分のキャラのテーブルIDがあるかで決める */
+int GetMazeMySeat(const CMDPARA_MAZESTATE *pSt)
+{
+	DWORD dwMe;
+
+	if ((g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ())) {
+		return -1;
+	}
+	dwMe = ((PCHARINFO)g_aCharInfo[g_nMyCharID])->dwTblID;
+	if (pSt->dwChar[0] == dwMe) {
+		return 0;
+	}
+	if (pSt->dwChar[1] == dwMe) {
+		return 1;
+	}
+	return (pSt->byState & MAZESTATE_SEAT) ? 0 : -1;		/* 座っているのに見つからない時（古いサーバー）は席 1 */
+}
+
 /* 席に座って遊んでいるか（座っている間は歩かず、キーはゲーム側へ送る） */
 BOOL IsMazeSeated(void)
 {

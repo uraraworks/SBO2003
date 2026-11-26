@@ -4411,14 +4411,18 @@ typedef struct _CMDPARA_PUZZLESE {
 #pragma pack(pop)
 
 /* 迷路対戦（台に座って遊ぶ 7×7 の 2 人対戦。ロジックは common/MazeAttack.h、台詞 "@k..." の読み方は common/MazeTable.h。
-   今は 1 人練習（座った人がプレイヤー 0＝下側。プレイヤー 1 は不在で、手番は自動で戻る）。
+   台は席が 2 つ。席 1 に座るとプレイヤー 0（下側スタート）、席 2 に座るとプレイヤー 1（上側スタート）。
+   片方だけ座っている間はひとり練習（相手の手番はサーバーが自動で飛ばす）。ひとり練習中のところへもう一方が座ると、
+   「乱入しますか？」（会話の「はい・いいえ」と CMD_TALKANSWER）を聞き、はい＝盤を初期化して 2 人対戦（3・2・1 のカウントダウンのあと開始。
+   手番は交互で 1 手 30 秒。時間切れは手番を飛ばし、連続 3 回で不戦敗。勝敗が決まると 3 秒見せてから盤を初期化して続け、先手は交代）。
+   席を立つ・切断・マップ移動・倒れた時は残った側の勝ちで、残った人はひとり練習に戻る。
    CMD_MAZESTATE は、座っている人と台の近くにいる人（観戦。席が空の待機中の台も）に、台ごとに送る）
    CMD_MAZEKEY: クライアント→サーバー。座っている間の操作。サーバーが検証し、不正なら無視して状態を送り直す */
 enum {
 	MAZEACT_MOVE = 1,												/* コマを進める（byDir: 0=上 1=下 2=左 3=右） */
 	MAZEACT_WALL,													/* 壁を置く（byX, byY=壁の交点 0〜5、byOrient: 0=横壁 1=縦壁） */
 	MAZEACT_LEAVE,													/* 席を立つ（ESC キー） */
-	MAZEACT_RESTART,												/* やり直す（盤を初期状態に戻す。勝ちを見せている間は無視） */
+	MAZEACT_RESTART,												/* やり直す（ひとり練習で盤を初期状態に戻す。勝ちを見せている間・2 人対戦中は無視） */
 };
 /* CMD_MAZESTATE の byKind */
 enum {
@@ -4428,7 +4432,9 @@ enum {
 /* CMDPARA_MAZESTATE の byState のビット */
 #define MAZESTATE_IDLE		(0x01)									/* 待機中（席が空。初期配置の盤を見せる） */
 #define MAZESTATE_SEAT		(0x02)									/* 受け取った本人が、この台の席に座っている（人ごとに付け替える） */
-#define MAZESTATE_WIN		(0x04)									/* 勝ちを見せている間（3 秒ほど。過ぎるとサーバーが盤を戻して FULL を送る） */
+#define MAZESTATE_WIN		(0x04)									/* 勝ちを見せている間（3 秒ほど。過ぎるとサーバーが盤を戻して FULL を送る。2 人対戦中は続けてカウントダウンになる） */
+#define MAZESTATE_VS		(0x08)									/* 2 人対戦中（両方の席に人がいて対戦している。立ち去って 1 人になるか席が空になると消える） */
+#define MAZESTATE_COUNT		(0x10)									/* 対戦開始前のカウントダウン中（byCount が残り秒。この間は操作できない） */
 #define MAZE_NOCHAR			((DWORD)0xFFFFFFFF)						/* dwChar の無効値（その側に誰も座っていない） */
 #define MAZEPARA_WALL_MAX	(12)									/* 置かれた壁の最大数（MAZE_WALL_MAX と同じ。1 人 6 枚×2） */
 #pragma pack(push, 1)
@@ -4442,9 +4448,9 @@ typedef struct _CMDPARA_MAZESTATE {
 	BYTE		byCmd;												/* コマンドID */
 	BYTE		byKind;												/* MAZEKIND_* */
 	BYTE		byState;											/* MAZESTATE_* のビット */
-	BYTE		byTurn;												/* 今の手番（0 / 1） */
+	BYTE		byTurn;												/* 今の手番のプレイヤー（0 / 1。プレイヤー番号＝席の番号。ひとり練習では座っている人の側） */
 	signed char	cWinner;											/* 勝者（0 / 1。-1 なら未決着） */
-	BYTE		byPosX[2];											/* 2 匹のコマの列（0〜6）。[0]=座った人（下側スタート）・[1]=相手 */
+	BYTE		byPosX[2];											/* 2 匹のコマの列（0〜6）。[0]=プレイヤー 0（席 1・下側スタート）・[1]=プレイヤー 1（席 2・上側スタート） */
 	BYTE		byPosY[2];											/* 2 匹のコマの行（0〜6） */
 	BYTE		byWallLeft[2];										/* 各自の壁の残り枚数 */
 	BYTE		byWallCount;										/* 置かれた壁の数（0〜MAZEPARA_WALL_MAX） */
@@ -4452,9 +4458,16 @@ typedef struct _CMDPARA_MAZESTATE {
 	short		sBoardX;											/* 盤の左上（マップのドット座標。10×10 タイル＝320×320 ドット。台の座標と台詞から決める） */
 	short		sBoardY;
 	DWORD		dwNpc;												/* 台NPCのテーブルID（盤を見分ける印。受け取る側は台ごとに盤を覚える） */
-	DWORD		dwChar[2];											/* 2 人分の座っているキャラのテーブルID（座っていない側は MAZE_NOCHAR） */
+	DWORD		dwChar[2];											/* 2 人分の座っているキャラのテーブルID。[0]=席 1（プレイヤー 0）・[1]=席 2（プレイヤー 1）。座っていない側は MAZE_NOCHAR。
+																			   受け取った本人がどちらの席かは、自分のテーブルIDがどちらにあるかで分かる（MAZESTATE_SEAT は座っているかだけ） */
 	WORD		wFloor[2];											/* 床に使うマップパーツID（市松の A・B。B が 0 なら A だけの単色。両方 0 ならコード描画。台詞の床A・床B） */
 	WORD		wGap;												/* 壁の通り道（隙間）の地に使うマップパーツID（0 ならコード描画。台詞の隙間） */
+	/* ここから 2 人対戦用（旧クライアントは後ろを無視する。ひとり練習・待機中は byCount・byTimeLeft・byTimeouts が 0） */
+	BYTE		byCount;											/* 対戦開始までのカウントダウン残り秒（3・2・1。0=カウントダウン中でない。0 以外の間は MAZESTATE_COUNT も立つ。この間は操作できない） */
+	BYTE		byTimeLeft;											/* 手番の人の残り秒（対戦中でカウントダウン・勝ち表示中でない時だけ 30〜1。0=出さない）。1 秒ごとにサーバーが FULL を送り直す */
+	BYTE		byTimeouts[2];										/* 各プレイヤーの連続時間切れ回数（0〜2。3 回で不戦敗。手を指すと 0 に戻る） */
+	BYTE		byHasName[2];										/* 各席に名前を出せる人がいるか（1=dwChar[i] のキャラがいる・0=空席） */
+	DWORD		dwTurnChar;											/* 手番の人のキャラのテーブルID（その席が空なら MAZE_NOCHAR。残り秒を出す相手の見分けに使う） */
 } CMDPARA_MAZESTATE, *PCMDPARA_MAZESTATE;
 /* CMD_MAZEKEY の中身（クライアント→サーバー。使わない欄は 0） */
 typedef struct _CMDPARA_MAZEKEY {

@@ -18964,7 +18964,7 @@ static void TestPuzzleRecord(const std::vector<int> &aLogin)
 }
 
 /* ------------------------------------------------------------------------- */
-/* AW. 迷路対戦の台（台詞 "@k<dx>,<dy>,<sdx>,<sdy>" の NPC。段階 1＝ひとり練習）				 */
+/* AW. 迷路対戦の台（台詞 "@k<dx>,<dy>,<sdx>,<sdy>,…,<sdx2>,<sdy2>" の NPC。ひとり練習と 2 人対戦）				 */
 /*     台詞の解析（既定・省略・負の値・依頼の見えるNPCは台でない）・座る場所で S → 座る・		 */
 /*     隣では座れない・使用中は座れない・座っている間は歩けない・進む・壁を置く・				 */
 /*     不正な操作（壁の重なり・十字・範囲外・進めない向き・知らない操作）は無視して状態を送り直す・	 */
@@ -19046,6 +19046,42 @@ static std::string MazeBrief(int nConn, DWORD dwNpc)
 	return sz;
 }
 
+/* 2 人対戦の状態：対戦中か・カウントダウン残り・手番の残り秒・連続時間切れ・手番の人（A/B/-）・名前の有無・勝敗の表示 */
+static std::string MazeVsBrief(int nConn, DWORD dwNpc, PCHARINFO pA, PCHARINFO pB)
+{
+	CMDPARA_MAZESTATE St;
+	char sz[160];
+	if (!MazeLast(nConn, dwNpc, &St) || St.byKind == MAZEKIND_NONE) return "-";
+	const char *pszTurn = (St.dwTurnChar == pA->dwTblID) ? "A" : (St.dwTurnChar == pB->dwTblID) ? "B" : "-";
+	sprintf(sz, "vs=%d count=%d(%d) left=%d to=%d,%d turn=%s%d name=%d%d win=%d seat=%c%c", (St.byState & MAZESTATE_VS) != 0, (St.byState & MAZESTATE_COUNT) != 0,
+		St.byCount, St.byTimeLeft, St.byTimeouts[0], St.byTimeouts[1], pszTurn, St.byTurn, St.byHasName[0], St.byHasName[1], (St.byState & MAZESTATE_WIN) != 0,
+		St.dwChar[0] == pA->dwTblID ? 'A' : St.dwChar[0] == pB->dwTblID ? 'B' : '-', St.dwChar[1] == pA->dwTblID ? 'A' : St.dwChar[1] == pB->dwTblID ? 'B' : '-');
+	return sz;
+}
+
+/* 座る場所（nSeat=0 が席 1・1 が席 2）のマスへ置いて S キー。聞かれたら「maze ask」を出して bYes で答える */
+static void MazeSitSeat(PCHARINFO p, PCHARINFO pNpc, int nSeat, BOOL bYes = TRUE)
+{
+	int nDx, nDy, nSdx, nSdy;
+	int nConn = DgTestConn(p);
+	MazeParseTable(pNpc->pszNpcSpeech, &nDx, &nDy, &nSdx, &nSdy);
+	if (nSeat == 1) MazeParseSeat2(pNpc->pszNpcSpeech, &nSdx, &nSdy);
+	PuzzlePlace(p, pNpc, (DWORD)((int)pNpc->dwX + nSdx), (DWORD)((int)pNpc->dwY + nSdy));
+	int nBefore = MockCmdCount(nConn, CMD_TALKMSG);
+	PuzzleKeyS(p, pNpc);
+	if (MockCmdCount(nConn, CMD_TALKMSG) > nBefore && MockHasText(nConn, CMD_TALKMSG, "乱入")) {
+		printf("maze ask shown seated=%d answer=%d\n", MazeIsSeated(p), bYes ? 1 : 0);
+		PuzzleAnswerSend(p, pNpc, bYes);
+	}
+}
+
+/* 時間を進めて周期処理 */
+static void MazeAdvance(DWORD dwMs)
+{
+	g_dwTime = (s_dwFakeNow += dwMs);
+	MazeProc();
+}
+
 static void TestMaze(const std::vector<int> &aLogin)
 {
 	printf("== AW. Maze attack table ==\n");
@@ -19090,6 +19126,16 @@ static void TestMaze(const std::vector<int> &aLogin)
 			printf("maze parts clamp %d,%d,%d\n", wA, wB, wG);
 			MazeParseTable("@k3,-4,5,-2,8,9,10", &dx, &dy, &sdx, &sdy);
 			printf("maze parts with pos %d,%d,%d,%d\n", dx, dy, sdx, sdy);
+			MazeParseSeat2("@k", &sdx, &sdy);
+			printf("maze seat2 default %d,%d\n", sdx, sdy);
+			MazeParseSeat2("@k3,-4,5,-2,8,9,10,4,-7", &sdx, &sdy);
+			printf("maze seat2 all %d,%d\n", sdx, sdy);
+			MazeParseSeat2("@k,,,,,,,,3", &sdx, &sdy);
+			printf("maze seat2 blank %d,%d\n", sdx, sdy);
+			MazeParseSeat2("@k,,,,,,,999,-999", &sdx, &sdy);
+			printf("maze seat2 clamp %d,%d\n", sdx, sdy);
+			MazeParseSeat2("@k,,3,-4", &sdx, &sdy);
+			printf("maze seat2 omitted %d,%d\n", sdx, sdy);
 		}
 		NearNpcOpen(pA, "@k");
 		PCHARINFO pPlain = s_aNearNpc.back();
@@ -19331,6 +19377,175 @@ static void TestMaze(const std::vector<int> &aLogin)
 		PuzzleKeyS(pA, pNpc);
 		printf("maze exclusive puzzle=%d maze=%d\n", nPuz, MazeIsSeated(pA));
 		PuzzleOnLeave(pA);
+	}
+
+	/* 18. 2 人対戦（席 2 は台詞の 8・9 番目。既定は台NPCの (0,-10)）。A が席 2・B が席 1 に座る */
+	{
+		QuestMovePC(pA, (int)dwMap, (int)dwX + 3, (int)dwY);
+		NearNpcOpen(pA, "@k");
+		PCHARINFO pV = s_aNearNpc.back();
+		DWORD dwV = pV->dwTblID;
+		std::string strWinB = std::string(pB->szName) + "の勝ち！", strWinA = std::string(pA->szName) + "の勝ち！";
+		int n0, nBefore, nBeforeB;
+		g_dwTime = (s_dwFakeNow += 1000);
+		MazeProc();
+
+		/* 18a. 席 2 だけ座るとひとり練習（プレイヤー 1。相手＝プレイヤー 0 の手番は飛ばす） */
+		MazeSitSeat(pA, pV, 1);
+		printf("maze vs solo2 seated=%d seats=%d %s | %s\n", MazeIsSeated(pA), MazeSeatCount(), MazeBrief(nConnA, dwV).c_str(), MazeVsBrief(nConnA, dwV, pA, pB).c_str());
+		MazeKeySend(pA, MAZEACT_MOVE, MAZE_DOWN);
+		printf("maze vs solo2 move %s\n", MazeBrief(nConnA, dwV).c_str());
+		MazeKeySend(pA, MAZEACT_MOVE, MAZE_UP);
+		MazeKeySend(pA, MAZEACT_MOVE, MAZE_UP);										/* 上は盤の外 */
+		printf("maze vs solo2 up %s\n", MazeBrief(nConnA, dwV).c_str());
+		/* 席 2 が使用中なら別の人は席 2 に座れない */
+		nBefore = MockCmdCount(nConnB, CMD_SYSMSG);
+		MazeSitSeat(pB, pV, 1);
+		printf("maze vs busy2 seatedB=%d msg=%d\n", MazeIsSeated(pB), MockCmdCount(nConnB, CMD_SYSMSG) - nBefore);
+
+		/* 18b. 席 1 へ座ろうとすると乱入を聞かれる。「いいえ」なら座らない（A はそのまま） */
+		MazeSitSeat(pB, pV, 0, FALSE);
+		printf("maze vs no seatedB=%d seats=%d %s\n", MazeIsSeated(pB), MazeSeatCount(), MazeBrief(nConnA, dwV).c_str());
+		PuzzleAnswerSend(pB, pV, TRUE);												/* 問いが無い答えは何も起きない */
+		printf("maze vs stray answer seatedB=%d\n", MazeIsSeated(pB));
+		/* はい → 乱入して対戦（盤は初期化・カウントダウン中・先手はプレイヤー 0） */
+		MazeSitSeat(pB, pV, 0, TRUE);
+		printf("maze vs start seatedB=%d seats=%d A: %s | %s\n", MazeIsSeated(pB), MazeSeatCount(), MazeBrief(nConnA, dwV).c_str(), MazeVsBrief(nConnA, dwV, pA, pB).c_str());
+		printf("maze vs start B: %s | %s\n", MazeBrief(nConnB, dwV).c_str(), MazeVsBrief(nConnB, dwV, pA, pB).c_str());
+		printf("maze vs start msg A=%d B=%d\n", MockHasText(nConnA, CMD_SYSMSG, "対戦開始"), MockHasText(nConnB, CMD_SYSMSG, "対戦開始"));
+
+		/* 18c. カウントダウン中（3・2・1）は操作できない。1 秒ごとに残りを知らせ、3 秒で開始 */
+		MazeKeySend(pB, MAZEACT_MOVE, MAZE_UP);
+		printf("maze vs count locked %s\n", MazeBrief(nConnB, dwV).c_str());
+		MazeAdvance(1000);
+		printf("maze vs count2 %s\n", MazeVsBrief(nConnB, dwV, pA, pB).c_str());
+		MazeAdvance(1000);
+		printf("maze vs count1 %s\n", MazeVsBrief(nConnB, dwV, pA, pB).c_str());
+		MazeAdvance(1000);
+		printf("maze vs go %s | %s\n", MazeBrief(nConnA, dwV).c_str(), MazeVsBrief(nConnA, dwV, pA, pB).c_str());
+
+		/* 18d. 手番はプレイヤー 0（B）から。手番でない人の入力は無視。1 手ごとに交代 */
+		n0 = MazeCount(nConnA);
+		MazeKeySend(pA, MAZEACT_MOVE, MAZE_DOWN);
+		printf("maze vs notturn A %s +%d\n", MazeBrief(nConnA, dwV).c_str(), MazeCount(nConnA) - n0);
+		MazeKeySend(pB, MAZEACT_MOVE, MAZE_UP);
+		printf("maze vs B up A: %s | %s\n", MazeBrief(nConnA, dwV).c_str(), MazeVsBrief(nConnA, dwV, pA, pB).c_str());
+		MazeKeySend(pB, MAZEACT_MOVE, MAZE_UP);
+		printf("maze vs notturn B %s\n", MazeBrief(nConnB, dwV).c_str());
+		MazeKeySend(pA, MAZEACT_WALL, 0, 3, 4, MAZE_H);
+		printf("maze vs A wall %s\n", MazeBrief(nConnA, dwV).c_str());
+		MazeKeySend(pB, MAZEACT_RESTART);
+		printf("maze vs restart ignored %s\n", MazeBrief(nConnB, dwV).c_str());
+
+		/* 18e. 残り秒は 1 秒ごとに知らせる。時間切れで手番を飛ばし（連続回数が増える）、指すと回数は 0 に戻る */
+		MazeAdvance(1000);
+		printf("maze vs left %s\n", MazeVsBrief(nConnA, dwV, pA, pB).c_str());
+		MazeAdvance(28000);
+		printf("maze vs left1 %s\n", MazeVsBrief(nConnA, dwV, pA, pB).c_str());
+		MazeAdvance(1000);
+		printf("maze vs timeout1 %s | %s msg=%d\n", MazeBrief(nConnA, dwV).c_str(), MazeVsBrief(nConnA, dwV, pA, pB).c_str(), MockHasText(nConnB, CMD_SYSMSG, "時間切れです"));
+		MazeAdvance(MAZE_TURN_MS);
+		printf("maze vs timeout2 %s\n", MazeVsBrief(nConnA, dwV, pA, pB).c_str());		/* B も A も 1 回ずつ */
+		MazeKeySend(pB, MAZEACT_MOVE, MAZE_LEFT);
+		MazeKeySend(pA, MAZEACT_MOVE, MAZE_DOWN);
+		printf("maze vs timeouts reset %s\n", MazeVsBrief(nConnA, dwV, pA, pB).c_str());
+
+		/* 18f. 連続 3 回の時間切れは不戦敗：A が指したあと、A の手番を 3 回放置する → B の勝ち */
+		MazeKeySend(pB, MAZEACT_MOVE, MAZE_LEFT);
+		MazeAdvance(MAZE_TURN_MS);												/* A 1 回目 → B の手番 */
+		MazeKeySend(pB, MAZEACT_MOVE, MAZE_RIGHT);
+		MazeAdvance(MAZE_TURN_MS);												/* A 2 回目 */
+		MazeKeySend(pB, MAZEACT_MOVE, MAZE_LEFT);
+		printf("maze vs before forfeit %s\n", MazeVsBrief(nConnA, dwV, pA, pB).c_str());
+		nBefore = MockCmdCount(nConnA, CMD_SYSMSG);
+		nBeforeB = MockCmdCount(nConnB, CMD_SYSMSG);
+		MazeAdvance(MAZE_TURN_MS);												/* A 3 回目 → 不戦敗 */
+		printf("maze vs forfeit %s | %s msgA=%d msgB=%d new A=%d B=%d\n", MazeBrief(nConnA, dwV).c_str(), MazeVsBrief(nConnA, dwV, pA, pB).c_str(),
+			MockHasText(nConnA, CMD_SYSMSG, strWinB.c_str()), MockHasText(nConnB, CMD_SYSMSG, strWinB.c_str()),
+			MockCmdCount(nConnA, CMD_SYSMSG) - nBefore, MockCmdCount(nConnB, CMD_SYSMSG) - nBeforeB);
+		n0 = MazeCount(nConnA);
+		MazeKeySend(pB, MAZEACT_MOVE, MAZE_UP);
+		printf("maze vs win locked +%d\n", MazeCount(nConnA) - n0);
+		/* 3 秒見せたあと自動で初期化して、先手を交代して（プレイヤー 1＝A から）カウントダウン → 続けて対戦 */
+		MazeAdvance(2000);
+		std::string strEarly = MazeBrief(nConnA, dwV);
+		MazeAdvance(1100);
+		printf("maze vs reset early=[%s] later=%s | %s\n", strEarly.c_str(), MazeBrief(nConnA, dwV).c_str(), MazeVsBrief(nConnA, dwV, pA, pB).c_str());
+		MazeAdvance(3000);
+		printf("maze vs second game %s\n", MazeVsBrief(nConnA, dwV, pA, pB).c_str());
+		MazeKeySend(pB, MAZEACT_MOVE, MAZE_LEFT);
+		printf("maze vs second B first ignored %s\n", MazeBrief(nConnB, dwV).c_str());
+
+		/* 18g. 勝敗：A は左へ 1・下へ、B は上へ。B が先に最上段へ着く → B の勝ち（両者へメッセージ）。次は先手が B に戻る */
+		MazeKeySend(pA, MAZEACT_MOVE, MAZE_LEFT);
+		for (int i = 0; i < 5; i ++) {
+			MazeKeySend(pB, MAZEACT_MOVE, MAZE_UP);
+			MazeKeySend(pA, MAZEACT_MOVE, MAZE_DOWN);
+		}
+		MazeKeySend(pB, MAZEACT_MOVE, MAZE_UP);
+		printf("maze vs win %s | %s msgA=%d msgB=%d\n", MazeBrief(nConnA, dwV).c_str(), MazeVsBrief(nConnA, dwV, pA, pB).c_str(),
+			MockHasText(nConnA, CMD_SYSMSG, strWinB.c_str()), MockHasText(nConnB, CMD_SYSMSG, strWinB.c_str()));
+		MazeAdvance(3100);
+		printf("maze vs third game %s | %s\n", MazeBrief(nConnA, dwV).c_str(), MazeVsBrief(nConnA, dwV, pA, pB).c_str());
+		MazeAdvance(3000);
+
+		/* 18h. 席を立つ（ESC）：残った B の勝ち（両者へメッセージ）で、B はそのままひとり練習（プレイヤー 0）に戻る */
+		nBefore = MockCmdCount(nConnA, CMD_SYSMSG);
+		MazeKeySend(pB, MAZEACT_MOVE, MAZE_UP);
+		MazeKeySend(pA, MAZEACT_LEAVE);
+		printf("maze vs esc seatedA=%d seatedB=%d seats=%d msgA=%d msgB=%d | %s | %s\n", MazeIsSeated(pA), MazeIsSeated(pB), MazeSeatCount(),
+			MockHasText(nConnA, CMD_SYSMSG, strWinB.c_str()), MockHasText(nConnB, CMD_SYSMSG, strWinB.c_str()),
+			MazeBrief(nConnB, dwV).c_str(), MazeVsBrief(nConnB, dwV, pA, pB).c_str());
+		MazeKeySend(pB, MAZEACT_MOVE, MAZE_UP);
+		printf("maze vs solo after %s\n", MazeBrief(nConnB, dwV).c_str());
+
+		/* 18i. 切断：A が席 2 に乱入して対戦 → B が切断（MazeOnLeave）→ A の勝ちでひとり練習（プレイヤー 1）へ。A へは盤が届く */
+		MazeSitSeat(pA, pV, 1, TRUE);
+		MazeAdvance(3000);
+		nBefore = MockCmdCount(nConnA, CMD_SYSMSG);
+		MazeOnLeave(pB);
+		printf("maze vs logout seatedA=%d seatedB=%d msgA=%d | %s | %s\n", MazeIsSeated(pA), MazeIsSeated(pB), MockHasText(nConnA, CMD_SYSMSG, strWinA.c_str()),
+			MazeBrief(nConnA, dwV).c_str(), MazeVsBrief(nConnA, dwV, pA, pB).c_str());
+
+		/* 18j. マップ移動（座る場所から離れる）：B が席 1 に乱入 → カウントダウン中に A が離れる → B の勝ちでひとり練習 */
+		MazeSitSeat(pB, pV, 0, TRUE);
+		printf("maze vs again %s\n", MazeVsBrief(nConnB, dwV, pA, pB).c_str());
+		QuestMovePC(pA, (int)dwMap, (int)dwX + 40, (int)dwY);
+		MazeAdvance(300);
+		printf("maze vs away seatedA=%d seatedB=%d | %s\n", MazeIsSeated(pA), MazeIsSeated(pB), MazeVsBrief(nConnB, dwV, pA, pB).c_str());
+
+		/* 18k. 倒れた：A が席 2 に乱入 → 開始後に B が倒れる → A の勝ちでひとり練習（プレイヤー 1） */
+		MazeSitSeat(pA, pV, 1, TRUE);
+		MazeAdvance(3000);
+		pB->byCharState = CHARSTATE_DEAD;
+		MazeAdvance(300);
+		printf("maze vs dead seatedA=%d seatedB=%d | %s\n", MazeIsSeated(pA), MazeIsSeated(pB), MazeVsBrief(nConnA, dwV, pA, pB).c_str());
+		pB->byCharState = CHARSTATE_MOVE;
+
+		/* 18l. 乱入の問いは 30 秒で無効（答えても座らない）。座っている人が席を立てば台は空になる */
+		MazeSitSeat(pB, pV, 0, FALSE);												/* 問いを出して「いいえ」（座らない） */
+		PuzzlePlace(pB, pV, (DWORD)((int)pV->dwX), (DWORD)((int)pV->dwY + 1));
+		PuzzleKeyS(pB, pV);															/* もう一度問いを出す */
+		MazeAdvance(31000);
+		PuzzleAnswerSend(pB, pV, TRUE);
+		printf("maze vs ask expired seatedB=%d seats=%d\n", MazeIsSeated(pB), MazeSeatCount());
+		MazeKeySend(pA, MAZEACT_LEAVE);
+		printf("maze vs emptied seats=%d\n", MazeSeatCount());
+
+		/* 18m. 落ち物パズルの席に座っている人は迷路の席 2 にも座れない */
+		{
+			QuestMovePC(pA, (int)dwMap, (int)dwX, (int)dwY);
+			NearNpcOpen(pA, "@p");
+			PCHARINFO pPuz = s_aNearNpc.back();
+			QuestMovePC(pA, (int)dwMap, (int)dwX, (int)dwY + 1);
+			PuzzleKeyS(pA, pPuz);
+			int nPuz = PuzzleIsSeated(pA);
+			MazeSitSeat(pA, pV, 1);
+			printf("maze vs exclusive puzzle=%d maze=%d\n", nPuz, MazeIsSeated(pA));
+			PuzzleOnLeave(pA);
+		}
+		MazeOnLeave(pA);
+		MazeOnLeave(pB);
 	}
 
 	/* 片付け */
