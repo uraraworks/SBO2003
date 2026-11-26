@@ -18854,6 +18854,26 @@ static void TestPuzzleRecord(const std::vector<int> &aLogin)
 		MockCmdCount(anConn[1], CMD_TALKMSG) - nTalkB0, MockHasText(anConn[0], CMD_TALKMSG, "【ハイスコア】"), MockHasText(anConn[0], CMD_TALKMSG, "【連勝記録】"),
 		MockHasText(anConn[0], CMD_TALKMSG, "7777点"), MockHasText(anConn[0], CMD_TALKMSG, "あいうえお…"), !MockHasText(anConn[0], CMD_TALKMSG, "ア@0イ"));
 	{
+		/* マップのメッセージ（調べるマス）が「@h」で始まる掲示板パーツ：調べた本人にだけ、ランキングが CMD_MAPMSG で届く。普通のメッセージはそのまま */
+		PMAPINFO pMapB = g_aMapInfo[GetMapNo(pA->dwMapID)];
+		LPSTR *ppOld = pMapB->pMsg;
+		int nOldCount = pMapB->nMsgCount;
+		LPSTR apBoardMsg[2] = { (LPSTR)"@h", (LPSTR)"ふつうの看板です。@2" };
+		EVENTINFO_MSG EvMsg = { 0, 1, 0, 0, 0 };
+		EVENTINFO Ev = { 0, 0, EVENTTYPE_MSG, &EvMsg };
+		pMapB->pMsg = apBoardMsg;
+		pMapB->nMsgCount = 2;
+		int nMsgA0 = MockCmdCount(anConn[0], CMD_MAPMSG), nMsgB0 = MockCmdCount(anConn[1], CMD_MAPMSG);
+		EventProc(pA, &Ev, 1);
+		int nBoardA = MockCmdCount(anConn[0], CMD_MAPMSG) - nMsgA0, nBoardB = MockCmdCount(anConn[1], CMD_MAPMSG) - nMsgB0;
+		BOOL bHead = MockHasText(anConn[0], CMD_MAPMSG, "【ハイスコア】"), bScore = MockHasText(anConn[0], CMD_MAPMSG, "7777点");
+		EvMsg.dwNo = 1;
+		EventProc(pA, &Ev, 1);
+		printf("board parts A=%d B=%d head=%d score=%d plain=%d\n", nBoardA, nBoardB, bHead, bScore, MockHasText(anConn[0], CMD_MAPMSG, "ふつうの看板です。"));
+		pMapB->pMsg = ppOld;
+		pMapB->nMsgCount = nOldCount;
+	}
+	{
 		char szMsg[MAX_TALKMSG];
 		PuzzleRecordMessage(szMsg, sizeof(szMsg));
 		int nLen = (int)strlen(szMsg), nWait = 0, nLine = 0;

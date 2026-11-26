@@ -2599,6 +2599,7 @@ puzzle ask shown seated=0 answer=1
 streak logout B=2 recStreak=2 first=A second=B values=2,2 seatedB=0
 solo over seatedA=0 scores=2 top=5000
 board talk A=1 B=0 head=1 streakHead=1 name=1 cut=1 noat0=1
+board parts A=1 B=0 head=1 score=1 plain=1
 board msg len<max=1 end=1 waits=1 lines=6
 record save=1 cleared=0 load=1 same=1 counts=3,3
 record after load addLow=0 addHigh=1

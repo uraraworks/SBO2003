@@ -10,6 +10,7 @@
 #include "Glbldata.h"
 #include "SboSvrRecvCmd.h"
 #include "CharProc/CharProcMERCENARY.h"
+#include "SboSvrPuzzle.h"
 
 /* ========================================================================= */
 /* 関数プロトタイプ宣言														 */
@@ -303,6 +304,14 @@ void EventProc_MSG(PCHARINFO pChar, PEVENTINFO pEvent, BYTE byData)
 					SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
 					break;
 				}
+			}
+			/* 文が「@h」で始まるメッセージは、落ち物パズルのランキングの掲示板（NPC の掲示板と同じ文を、調べた本人にだけ出す） */
+			if (PuzzleIsRecordText (pMsgTmp) && (pChar->byNpcType == NPCTYPE_INIT)) {
+				char szRecord[MAX_TALKMSG];
+
+				PuzzleRecordMessage (szRecord, sizeof (szRecord));
+				SendCmdMAPMSG (pChar->pID, szRecord);
+				break;
 			}
 			SendCmdMAPMSG (pChar->pID, pMsgTmp);
 		}

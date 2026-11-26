@@ -797,6 +797,12 @@ BOOL PuzzleIsRecordNpc(PCHARINFO pNpc)
 		(pNpc->pszNpcSpeech[0] == '@') && (pNpc->pszNpcSpeech[1] == 'h');
 }
 
+/* マップのメッセージが "@h" で始まるか（調べるマスをランキングの掲示板にする。NPC の掲示板と同じ印） */
+BOOL PuzzleIsRecordText(LPCSTR pszMsg)
+{
+	return pszMsg && (pszMsg[0] == '@') && (pszMsg[1] == 'h');
+}
+
 #define PUZZLE_RECORD_NAMEW		(12)		/* メッセージ窓に出す名前の表示幅（半角 1・全角 2。これを超える名前は「…」で切る） */
 #define PUZZLE_RECORD_PAGE		(5)			/* メッセージ窓 1 画面の行数（この行数ごとに入力待ちを入れる） */
 
