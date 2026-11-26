@@ -390,6 +390,13 @@
 #define IDC_CHAR_HIDEFLAGN                1354
 #define IDC_Q_NOTFLAG                     1349
 #define IDC_Q_NOTFLAGN                    1350
+#define IDC_Q_GRP_KILL                    1525
+#define IDC_Q_KILLTMP0                    1526
+#define IDC_Q_KILLTMP1                    1527
+#define IDC_Q_KILLTMP2                    1528
+#define IDC_Q_KILLTMP3                    1529
+#define IDC_Q_KILLNEED                    1530
+#define IDC_Q_KILLHOURS                   1531
 #define IDC_S_ID                          1355
 #define IDC_S_NAME                        1356
 #define IDC_S_STATE                       1357
@@ -588,7 +595,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        244
 #define _APS_NEXT_COMMAND_VALUE         40037
-#define _APS_NEXT_CONTROL_VALUE         1525
+#define _APS_NEXT_CONTROL_VALUE         1532
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

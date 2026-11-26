@@ -87,6 +87,10 @@
 #define MAX_QUESTINTRO		1024									/* 依頼の「導入のお話」の欄のバイト数（終端含む。NPC の台詞と同じ制御コード @0 @1 @2） */
 #define MAX_QUESTLIST		16										/* ギルドの一覧に出す依頼の最大数 */
 #define MAX_QUESTDONEBYTE	(MAX_QUEST / 8)							/* 一度きり依頼のクリア済みの印の大きさ（バイト） */
+#define MAX_QUESTKILLTMP	4										/* 討伐依頼で数える敵の数（QUESTINFO の awKillStTmp） */
+#define MAX_QUESTCLEAR		8										/* 達成時刻を覚える依頼の数（CHARINFO の awQuestClearID。直近の分だけ。古い順に押し出す） */
+#define MAX_QUESTREPEATHOURS	8760								/* 再受注までの時間の上限（時間。1 年） */
+#define MAX_QUESTKILLNEED	999										/* 討伐依頼の必要数の上限 */
 #define MAX_QUESTDONESET	2										/* 依頼を完了した時に立てる印の数（QUESTINFO の awDoneSetFlag） */
 #define MAX_STORY			256										/* 最大思い出の本のシナリオ数（シナリオ番号 wID は 1〜255） */
 #define MAX_STORYFLAGRANGE	2										/* シナリオをやり直す時に消す印の範囲の数（STORYINFO の awFlagFrom・awFlagTo） */
@@ -2440,6 +2444,8 @@ typedef struct _CHARINFO {
 	WORD		awQuestCount[MAX_QUESTCOUNT];						/* 依頼の数（倒した数など。ステップ2で使う。保存する） */
 	DWORD		dwQuestAcceptTime;									/* 依頼を受けた時刻（time_t の秒。保存する） */
 	BYTE		abyQuestDone[MAX_QUESTDONEBYTE];					/* 一度きりの依頼のクリア済みの印（依頼番号のビット。保存する） */
+	WORD		awQuestClearID[MAX_QUESTCLEAR];						/* 達成した依頼の番号（再受注の待ちのため、直近 MAX_QUESTCLEAR 件。0=空き。保存する） */
+	DWORD		adwQuestClearTime[MAX_QUESTCLEAR];					/* その達成時刻（time_t の秒。保存する） */
 	BYTE		abyQuestRewarded[MAX_QUESTDONEBYTE];				/* 依頼の報酬をもうもらっている印（依頼番号のビット。保存する。思い出の本でやり直しても消えない。報酬は初回だけ） */
 	BYTE		abyFlag[MAX_FLAGBITBYTE];							/* キャラのフラグ（印。ビット番号=印の番号。保存する。サーバーだけが持ち、クライアントへは送らない） */
 	BYTE		abyFlagNum[MAX_FLAGNUM];							/* キャラのフラグ（数値 0〜255。保存する。サーバーだけが持つ） */
@@ -3293,6 +3299,9 @@ typedef struct _QUESTINFO {
 	char		szIntro[MAX_QUESTINTRO];							/* 導入のお話（受ける前に読ませる長い文。空なら読ませずにすぐ確認。保存する） */
 	BYTE		byLevelMin;											/* 受けられる最低レベル（0=制限なし。足りない人には一覧に出さず、受けられない。管理者・受けている人は対象外） */
 	WORD		wCancelStory;									/* 依頼を取り消した時に最初に戻す思い出の本のお話（STORYINFO の wID。0=何もしない。つながる後のお話も戻す。保存する） */
+	WORD		awKillStTmp[MAX_QUESTKILLTMP];						/* 討伐依頼で数える敵（ステータステンプレートの番号。0=空き。保存する） */
+	WORD		wKillNeed;											/* 討伐依頼の必要数（0=討伐依頼ではない。倒した数が届くとギルドで報告できる。保存する） */
+	DWORD		dwRepeatHours;										/* 達成してから再び受けられるまでの時間（時間。0=制限なし。実時間でログアウト中も進む。保存する） */
 } QUESTINFO, *PQUESTINFO;
 
 /* 討伐チャレンジの種類(QUESTINFO の byChallenge) */

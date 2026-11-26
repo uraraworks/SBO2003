@@ -304,6 +304,147 @@ static const char *GetGoal(PQUESTINFO pQuest, BYTE byStep)
 }
 
 /* ========================================================================= */
+/* 討伐依頼（倒した数で達成する依頼。通年・何度でも受けられる）				 */
+/* ========================================================================= */
+
+/* 討伐依頼か（討伐チャレンジは対象外） */
+BOOL QuestIsKillQuest(const QUESTINFO *pQuest)
+{
+	return (pQuest != NULL) && (pQuest->wKillNeed > 0) && (pQuest->byChallenge == QUESTCHALLENGE_NONE);
+}
+
+/* 討伐依頼で、必要な数を倒したか */
+static BOOL KillQuestReached(PCHARINFO pChar, const QUESTINFO *pQuest)
+{
+	return (pChar->awQuestCount[0] >= pQuest->wKillNeed) ? TRUE : FALSE;
+}
+
+/* 文字列の後ろに足す（欄に収まらなければ、前の文を UTF-8 の文字の切れ目で削って、足す分を必ず残す） */
+static void AppendTail(char *pszBuf, size_t nSize, const char *pszTail)
+{
+	size_t nTail = strlen (pszTail);
+	size_t nLen = strlen (pszBuf);
+
+	if (nTail >= nSize) {
+		return;
+	}
+	if (nLen + nTail >= nSize) {
+		nLen = nSize - 1 - nTail;
+		while ((nLen > 0) && (((BYTE)pszBuf[nLen] & 0xC0) == 0x80)) {
+			nLen --;
+		}
+	}
+	memcpy (&pszBuf[nLen], pszTail, nTail + 1);
+}
+
+/* 倒した敵が、依頼で数える敵か（ステータステンプレート番号。NPC発生から出た敵は自分では番号を持たず、発生元が持っている） */
+static BOOL KillQuestMatch(const QUESTINFO *pQuest, PCHARINFO pEnemy)
+{
+	DWORD dwStTmp = pEnemy->dwStTmplateID;
+	int i;
+
+	if ((dwStTmp == (DWORD)-1) && (pEnemy->dwParentTblID < (DWORD)g_aCharInfo.GetSize ()) && (pEnemy->dwParentTblID != pEnemy->dwTblID)) {
+		dwStTmp = g_aCharInfo[pEnemy->dwParentTblID]->dwStTmplateID;
+	}
+	if (dwStTmp == (DWORD)-1) {
+		return FALSE;
+	}
+	for (i = 0; i < MAX_QUESTKILLTMP; i ++) {
+		if ((pQuest->awKillStTmp[i] != 0) && ((DWORD)pQuest->awKillStTmp[i] == dwStTmp)) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* 敵を倒した時、報酬をもらう人ごとに呼ぶ（討伐依頼の数を数える）。ふつうの世界（空間 0）どうしの時だけ数える */
+void QuestOnKill(PCHARINFO pChar, PCHARINFO pEnemy)
+{
+	PQUESTINFO pQuest;
+
+	if ((pChar == NULL) || (pEnemy == NULL) || (pChar->wQuestID == 0)) {
+		return;
+	}
+	if ((pChar->dwSpaceID != 0) || (pEnemy->dwSpaceID != 0)) {
+		return;													/* 異空間・番外編ダンジョン・討伐チャレンジの敵は数えない */
+	}
+	pQuest = FindQuest (pChar->wQuestID);
+	if (!QuestIsKillQuest (pQuest) || KillQuestReached (pChar, pQuest) || !KillQuestMatch (pQuest, pEnemy)) {
+		return;
+	}
+	pChar->awQuestCount[0] ++;
+	QuestSendState (pChar);										/* 本人とパーティに進み具合を送り直す */
+}
+
+/* 達成の時刻を覚える（同じ依頼があれば上書き。無ければ空き。満杯なら一番古いものを押し出す） */
+void QuestClearTimeSet(PCHARINFO pChar, WORD wQuestID, DWORD dwNow)
+{
+	int i, nSlot = -1;
+
+	for (i = 0; i < MAX_QUESTCLEAR; i ++) {
+		if (pChar->awQuestClearID[i] == wQuestID) {
+			nSlot = i;
+			break;
+		}
+	}
+	for (i = 0; (nSlot < 0) && (i < MAX_QUESTCLEAR); i ++) {
+		if (pChar->awQuestClearID[i] == 0) {
+			nSlot = i;
+		}
+	}
+	if (nSlot < 0) {
+		nSlot = 0;
+		for (i = 1; i < MAX_QUESTCLEAR; i ++) {
+			if (pChar->adwQuestClearTime[i] < pChar->adwQuestClearTime[nSlot]) {
+				nSlot = i;
+			}
+		}
+	}
+	pChar->awQuestClearID[nSlot] = wQuestID;
+	pChar->adwQuestClearTime[nSlot] = dwNow;
+}
+
+/* 再び受けられるまでの残り秒（0=受けられる） */
+DWORD QuestRepeatWaitSec(PCHARINFO pChar, const QUESTINFO *pQuest, DWORD dwNow)
+{
+	DWORD dwSpan;
+	int i;
+
+	if ((pQuest->dwRepeatHours == 0) || (pQuest->wID == 0)) {
+		return 0;
+	}
+	dwSpan = min (pQuest->dwRepeatHours, (DWORD)MAX_QUESTREPEATHOURS) * 3600;
+	for (i = 0; i < MAX_QUESTCLEAR; i ++) {
+		if (pChar->awQuestClearID[i] == pQuest->wID) {
+			DWORD dwPass = (dwNow >= pChar->adwQuestClearTime[i]) ? (dwNow - pChar->adwQuestClearTime[i]) : 0;	/* 時計が戻っていたら今達成したことにする */
+			return (dwPass >= dwSpan) ? 0 : (dwSpan - dwPass);
+		}
+	}
+	return 0;
+}
+
+/* 残り秒の文（「3時間」「20分」。1 時間を切ったら分で出す。使う側が「あと」を付ける） */
+static void MakeWaitText(DWORD dwSec, char *pszOut, size_t nSize)
+{
+	if (dwSec > 3600) {
+		snprintf (pszOut, nSize, "%u時間", (unsigned)((dwSec + 3599) / 3600));
+	} else {
+		snprintf (pszOut, nSize, "%u分", (unsigned)max ((dwSec + 59) / 60, (DWORD)1));
+	}
+}
+
+/* 進み具合の文を足した「いまの目的」（討伐依頼は「3/15」を付ける） */
+static void MakeGoalText(PCHARINFO pChar, PQUESTINFO pQuest, char *pszOut, size_t nSize)
+{
+	CopyStr (pszOut, nSize, GetGoal (pQuest, pChar->byQuestStep));
+	if (QuestIsKillQuest (pQuest)) {
+		char szTmp[32];
+		snprintf (szTmp, sizeof (szTmp), "（%u/%u）", (unsigned)min (pChar->awQuestCount[0], pQuest->wKillNeed), (unsigned)pQuest->wKillNeed);
+		AppendTail (pszOut, nSize, szTmp);
+	}
+}
+
+/* ========================================================================= */
 /* 見えるかどうか															 */
 /* ========================================================================= */
 
@@ -813,7 +954,7 @@ static void FillEntry(QUESTSTATEENTRY *pEntry, PCHARINFO pChar)
 		pEntry->wQuestID = pChar->wQuestID;
 		pEntry->byStep = pChar->byQuestStep;
 		CopyStr (pEntry->szQuestName, sizeof (pEntry->szQuestName), pQuest->szName);
-		CopyStr (pEntry->szGoal, sizeof (pEntry->szGoal), GetGoal (pQuest, pChar->byQuestStep));
+		MakeGoalText (pChar, pQuest, pEntry->szGoal, sizeof (pEntry->szGoal));
 		memcpy (pEntry->awCount, pChar->awQuestCount, sizeof (pEntry->awCount));
 	}
 }
@@ -1960,13 +2101,20 @@ void QuestGuildTalk(PCHARINFO pChar, PCHARINFO pNpc)
 	}
 	for (i = 0; i < (int)aList.size (); i ++) {
 		PQUESTINFO pQuest = aList[i];
+		/* 再び受けられるまで待つ依頼は、名前の後ろに残りの時間を付ける（受けている人は待ちの対象外） */
+		DWORD dwWait = (pChar->wQuestID == pQuest->wID) ? 0 : QuestRepeatWaitSec (pChar, pQuest, (DWORD)time (NULL));
 		Para.byIndex = (BYTE)i;
 		Para.wQuestID = pQuest->wID;
 		if (pChar->wQuestID == pQuest->wID) {
-			Para.byMark = (IsLastStep (pChar, pQuest) &&
-				((pQuest->byChallenge == QUESTCHALLENGE_NONE) || QuestFlagCheck (pChar, QUEST_FLG_CLEARED)) &&
-				((pQuest->wQuestItem == 0) || (CountItem (pChar, pQuest->wQuestItem, NULL, NULL) > 0))) ? QUESTMARK_READY : QUESTMARK_MINE;
-		} else if ((pChar->wQuestID != 0) || (wParty == 0xFFFF) || ((wParty != 0) && (wParty != pQuest->wID))) {
+			if (QuestIsKillQuest (pQuest)) {
+				/* 討伐依頼は、必要な数を倒していれば報告できる（段・依頼の品は見ない） */
+				Para.byMark = KillQuestReached (pChar, pQuest) ? QUESTMARK_READY : QUESTMARK_MINE;
+			} else {
+				Para.byMark = (IsLastStep (pChar, pQuest) &&
+					((pQuest->byChallenge == QUESTCHALLENGE_NONE) || QuestFlagCheck (pChar, QUEST_FLG_CLEARED)) &&
+					((pQuest->wQuestItem == 0) || (CountItem (pChar, pQuest->wQuestItem, NULL, NULL) > 0))) ? QUESTMARK_READY : QUESTMARK_MINE;
+			}
+		} else if ((pChar->wQuestID != 0) || (wParty == 0xFFFF) || ((wParty != 0) && (wParty != pQuest->wID)) || (dwWait != 0)) {
 			Para.byMark = QUESTMARK_LOCKED;
 		} else {
 			Para.byMark = QUESTMARK_FREE;
@@ -1978,9 +2126,19 @@ void QuestGuildTalk(PCHARINFO pChar, PCHARINFO pNpc)
 			Para.szMsg[0] = 0;
 		}
 		CopyStr (Para.szName, sizeof (Para.szName), pQuest->szName);
+		if (dwWait != 0) {
+			char szWait[48], szTail[64];
+			MakeWaitText (dwWait, szWait, sizeof (szWait));
+			snprintf (szTail, sizeof (szTail), "（あと%s）", szWait);
+			AppendTail (Para.szName, sizeof (Para.szName), szTail);
+		}
 		CopyStr (Para.szExplain, sizeof (Para.szExplain), pQuest->szExplain);
 		Para.byIntro = pQuest->szIntro[0] ? 1 : 0;	/* 導入のお話がある（本文は決定を押した時に INTROREQ で送る） */
-		CopyStr (Para.szGoal, sizeof (Para.szGoal), (pChar->wQuestID == pQuest->wID) ? GetGoal (pQuest, pChar->byQuestStep) : "");
+		if (pChar->wQuestID == pQuest->wID) {
+			MakeGoalText (pChar, pQuest, Para.szGoal, sizeof (Para.szGoal));
+		} else {
+			Para.szGoal[0] = 0;
+		}
 		MakeRewardText (pChar, pQuest, Para.szReward, sizeof (Para.szReward));
 		svrSock.SendTo (pChar->pID, (LPBYTE)&Para, sizeof (Para), SENDTIMEOUT);
 	}
@@ -2043,7 +2201,7 @@ static void DoAccept(PCHARINFO pChar, PCHARINFO pNpc, PQUESTINFO pQuest)
 	WORD wParty;
 
 	if (pChar->wQuestID != 0) {
-		SendResult (pChar, QUESTRESULT_NG, 0, "いま受けている依頼があります。先に終わらせるか、取り消してください。");
+		SendResult (pChar, QUESTRESULT_NG, 0, "いま受けている依頼を終えてから来てね。（終えられない時は、取り消すこともできます）");
 		return;
 	}
 	if ((pQuest->byState != QUESTSTATE_ON) || (pQuest->byGuild != GetGuildNo (pNpc))) {
@@ -2057,6 +2215,17 @@ static void DoAccept(PCHARINFO pChar, PCHARINFO pNpc, PQUESTINFO pQuest)
 	if (!QuestFlagOk (pChar, pQuest)) {
 		SendResult (pChar, QUESTRESULT_NG, 0, "この依頼は、いまは受けられません。");
 		return;
+	}
+	{
+		/* 達成から時間がたっていない依頼は、まだ受けられない */
+		DWORD dwWait = QuestRepeatWaitSec (pChar, pQuest, (DWORD)time (NULL));
+		if (dwWait != 0) {
+			char szWait[48], szMsg[128];
+			MakeWaitText (dwWait, szWait, sizeof (szWait));
+			snprintf (szMsg, sizeof (szMsg), "この依頼は、あと%sたつとまた受けられるよ。", szWait);
+			SendResult (pChar, QUESTRESULT_NG, 0, szMsg);
+			return;
+		}
 	}
 	if (!QuestLevelOk (pChar, pQuest)) {
 		char szLv[96];
@@ -2225,12 +2394,18 @@ static void DoHandIn(PCHARINFO pChar, PCHARINFO pNpc)
 		SendResult (pChar, QUESTRESULT_NG, 0, "ここでは渡せません。依頼を受けたギルドへ行ってください。");
 		return;
 	}
-	if (!IsLastStep (pChar, pQuest) ||
+	if (QuestIsKillQuest (pQuest)) {
+		/* 討伐依頼は、必要な数を倒していれば報告できる（段・依頼の品は見ない） */
+		if (!KillQuestReached (pChar, pQuest)) {
+			SendResult (pChar, QUESTRESULT_NG, pQuest->wID, "まだ数が足りないようです。");
+			return;
+		}
+	} else if (!IsLastStep (pChar, pQuest) ||
 			((pQuest->byChallenge != QUESTCHALLENGE_NONE) && !QuestFlagCheck (pChar, QUEST_FLG_CLEARED))) {
 		SendResult (pChar, QUESTRESULT_NG, pQuest->wID, "まだ終わっていないようです。");
 		return;
 	}
-	if (pQuest->wQuestItem && (CountItem (pChar, pQuest->wQuestItem, NULL, NULL) == 0)) {
+	if (!QuestIsKillQuest (pQuest) && pQuest->wQuestItem && (CountItem (pChar, pQuest->wQuestItem, NULL, NULL) == 0)) {
 		SendResult (pChar, QUESTRESULT_NG, pQuest->wID, "依頼の品が見つかりません。持ち物か預かり所を確かめてください。");
 		return;
 	}
@@ -2254,7 +2429,7 @@ static void DoHandIn(PCHARINFO pChar, PCHARINFO pNpc)
 	   討伐チャレンジの 2 回目は今まで通り動かさない */
 	BOOL bFlagMove = (pQuest->byChallenge == QUESTCHALLENGE_NONE) ? TRUE : bReward;
 
-	if (pQuest->wQuestItem) {
+	if (pQuest->wQuestItem && !QuestIsKillQuest (pQuest)) {
 		TakeItem (pChar, pQuest->wQuestItem);
 	}
 	if (bReward && pQuest->wRewardItem && !GiveItem (pChar, pQuest->wRewardItem, &bToLeave)) {
@@ -2290,6 +2465,10 @@ static void DoHandIn(PCHARINFO pChar, PCHARINFO pNpc)
 		if (memcmp (abyFlagBak, pChar->abyFlag, sizeof (abyFlagBak)) != 0) {
 			CharViewRefresh (pChar);
 		}
+	}
+	/* 再受注の待ちがある依頼は、達成の時刻を覚える */
+	if (pQuest->dwRepeatHours > 0) {
+		QuestClearTimeSet (pChar, pQuest->wID, (DWORD)time (NULL));
 	}
 	WORD wID = pQuest->wID;
 	char szMsgDone[MAX_QUESTMSG];

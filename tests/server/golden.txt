@@ -1184,6 +1184,17 @@ quest lvmin api set {"ok":true,"id":2,"added":false,...} now=50 get=1
 quest lvmin api max {"ok":true,"id":2,"added":false,...} now=99
 quest lvmin api over {"ok":false,"error":"byLevelMin（最低レベル）は 0〜99 で指定してください（0=制限なし）"} now=99
 quest lvmin api zero {"ok":true,"id":2,"added":false,...} now=0
+quest kill accept id=3 count=0 tmp7=1 tmp5=1 tmp9=2 goal=1 space=2 early_id=3 gold=0 parent=3 cap=3
+quest kill battle count=1 noquest=0 other=0
+quest kill handin id=0 gold=60 count=0 cleared=1 | wait24 list=1 accept=0 msg=1 | wait30m list=1 sec=30 wait22h sec=79200 | passed sec=0 accept=3 | nolimit sec=0 | slots has10=0 has18=1 t12=5000
+quest kill reload tmp=7,9,0,0 need=3 hours=24 q2=0/0
+quest kill api get need=1 tmp=1 hours=1
+quest kill api set {"ok":true,"id":2,"added":false,...} now=15,7,0,12,0,0
+quest kill api over {"ok":false,"error":"wKillNeed（討伐の必要数）は 0〜999 で指定してください（0=討伐依頼ではない）"}
+quest kill api hours {"ok":false,"error":"dwRepeatHours（再び受けられるまでの時間）は 0〜8760 で指定してください（0=制限なし）"}
+quest kill api notmp {"ok":false,"error":"wKillNeed が 1 以上の時は、awKillStTmp に数える敵の stTmp の id を 1 つ以上入れてください"}
+quest kill api challenge {"ok":false,"error":"討伐依頼（wKillNeed が 1 以上）は討伐チャレンジ（byChallenge）と一緒にできません"}
+quest kill api zero {"ok":true,"id":2,"added":false,...} now=0
 flagtalk quest cond none=1 q2s0=1 q2s1=0 q2s2=0 q2s3=1 q3s1=1 any s200=0
 talk give first item+=1 flag=1 talkmsg=1 sysmsg=1 order_window_first=1 second item+=0 sysmsg=0 quest item+=0 flag=0 full item+=1 leave=0
 talk take ok ticket-1 prize+1 flag=1 num=1 sysmsg=2 talkmsg=1 none prize+0 flag=0 num=0 sysmsg=0 talkmsg=1 equ prize+0 ticket=1 flag=0 equ2 slot0=1 slot1=0 equ=0 order bag=0 imp=1 full ticket=1 prize=0 flag=0 num=0 sysmsg=1 talkmsg=1
@@ -1198,6 +1209,7 @@ quest info reload count=3 same=1
 quest char save=1 load=1
 quest char reload id=2 step=1 flg=4660 counts=1,22,333,4444 time=1700000000 done=06,80
 quest char reload rewarded=02,80
+quest char reload clear=3@1700001234,0@0,511@4000000000
 quest char reload viewcond show=0 hide=0
 quest npc loaded=0
 quest leave questitem=1 sell=1 gold+=0 full=1 res=2,1,0 after=0

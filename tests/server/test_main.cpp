@@ -3915,6 +3915,31 @@ static void QuestSendTalk(PCHARINFO p, DWORD dwNpcTbl)
 	TestRecv(p, &Para, sizeof(Para));
 }
 
+/* 討伐依頼のテスト用の敵（ふつうの世界のマップ上に置く。dwStTmp=-1 なら番号なし） */
+extern void AddBattleDamage(PCHARINFO, PCHARINFO, int);
+extern BOOL DamageAfterProcNPC(PCHARINFO, PCHARINFO);
+static PCHARINFO KillTestEnemy(PCHARINFO pPC, DWORD dwStTmp, DWORD dwSpace)
+{
+	PCHARINFO pE = new CHARINFO;
+	ZeroMemory((PBYTE)pE, sizeof(CHARINFO));
+	pE->byNpcType = NPCTYPE_BATTLE1;
+	SetInitCharData(pE);
+	pE->byGameState = GAMESTATE_NPC;
+	pE->dwMapID = pPC->dwMapID;
+	pE->dwXBack = pE->dwX = pPC->dwX + 1;
+	pE->dwYBack = pE->dwY = pPC->dwY;
+	pE->dwSpaceID = dwSpace;
+	pE->dwStTmplateID = dwStTmp;
+	pE->wGrpMain = CHARGRP_MAIN_NORMAL;
+	pE->wMaxHP = pE->wHP = 10;
+	pE->dwGold = 0;
+	pE->dwExp = 0;
+	strcpy(pE->szName, "テスト敵");
+	pE = AddChar(pE, TRUE);
+	pE->pID = pE->dwTblID + 1;
+	return pE;
+}
+
 static void QuestSendParty(PCHARINFO pFrom, PCHARINFO pTo, BYTE bySub)
 {
 	CMDPARA_PARTYCMD Para;
@@ -5592,6 +5617,196 @@ static void TestQuest(const std::vector<int> &aLogin)
 		}
 	}
 
+	/* 討伐依頼（wKillNeed・awKillStTmp・dwRepeatHours）：受けた時に数が 0・対象の敵だけ数える（空間 0 どうしだけ・必要数で頭打ち）・
+	   必要数に届くまで報告できない・報告で報酬と達成時刻・待ちの間は一覧の名前に残り時間が付いて受けられない・保存と読み直し */
+	{
+		PQUESTINFO pQ3 = NULL;
+		for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) if (g_aQuestInfo[i]->wID == 3) pQ3 = g_aQuestInfo[i];
+		if (pQ3) {
+			QUESTINFO Q3Bak = *pQ3;
+			BYTE byLvBack = pOwner->byLevel, byAdBack = pOwner->byAdminLV;
+			DWORD dwSpaceBack = pOwner->dwSpaceID, dwGoldBack = pOwner->dwGold;
+			WORD awClearIDBak[MAX_QUESTCLEAR];
+			DWORD adwClearTimeBak[MAX_QUESTCLEAR];
+			memcpy(awClearIDBak, pOwner->awQuestClearID, sizeof(awClearIDBak));
+			memcpy(adwClearTimeBak, pOwner->adwQuestClearTime, sizeof(adwClearTimeBak));
+			ZeroMemory(pOwner->awQuestClearID, sizeof(pOwner->awQuestClearID));
+			ZeroMemory(pOwner->adwQuestClearTime, sizeof(pOwner->adwQuestClearTime));
+			QuestMovePC(pOwner, nMap, aCell[4].first, aCell[4].second + 1);
+			pOwner->wQuestID = 0;
+			pOwner->byAdminLV = ADMINLV_USER;
+			pOwner->byLevel = 30;
+			pOwner->dwSpaceID = 0;
+			pOwner->dwGold = 0;
+			pQ3->byState = QUESTSTATE_ON;
+			pQ3->byLevelMin = 0;
+			pQ3->byOnce = 0;
+			pQ3->byChallenge = QUESTCHALLENGE_NONE;
+			pQ3->wQuestItem = 0;
+			pQ3->wRewardItem = 0;
+			pQ3->byStepCount = 1;
+			pQ3->dwGold = 60;
+			pQ3->dwExp = 0;
+			pQ3->awKillStTmp[0] = 7; pQ3->awKillStTmp[1] = 9; pQ3->awKillStTmp[2] = 0; pQ3->awKillStTmp[3] = 0;
+			pQ3->wKillNeed = 3;
+			pQ3->dwRepeatHours = 24;
+			strcpy(pQ3->aszGoal[0], "プヨンを倒す");
+			/* 一覧の最初の 1 件だけ取れるので、この依頼を先頭にする（ほかの並び順は後で戻す） */
+			WORD wSortBak3 = pQ3->wSort;
+			std::vector<std::pair<PQUESTINFO, WORD> > aSortBak;
+			pQ3->wSort = 0;
+			for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) {
+				if (g_aQuestInfo[i] != pQ3) {
+					aSortBak.push_back(std::make_pair(g_aQuestInfo[i], g_aQuestInfo[i]->wSort));
+					g_aQuestInfo[i]->wSort = 100;
+				}
+			}
+			std::vector<BYTE> aCap;
+			std::string strCap;
+			/* 受けた時に数を 0 に戻す */
+			pOwner->awQuestCount[0] = 2;
+			QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 3, dwGuild);
+			printf("quest kill accept id=%u count=%u", pOwner->wQuestID, pOwner->awQuestCount[0]);
+			/* 数える：対象 7・9 は +1、対象外 5 は数えない、発生元の番号で数える敵も +1、必要数で頭打ち */
+			PCHARINFO pE = KillTestEnemy(pOwner, 7, 0);
+			QuestOnKill(pOwner, pE);
+			printf(" tmp7=%u", pOwner->awQuestCount[0]);
+			pE->dwStTmplateID = 5;
+			QuestOnKill(pOwner, pE);
+			printf(" tmp5=%u", pOwner->awQuestCount[0]);
+			pE->dwStTmplateID = 9;
+			QuestOnKill(pOwner, pE);
+			printf(" tmp9=%u", pOwner->awQuestCount[0]);
+			/* 目的の文に進み具合が付く */
+			SvrSendCaptureBegin();
+			QuestSendTalk(pOwner, dwGuild);
+			SvrSendCaptureEnd(aCap);
+			strCap.assign((const char *)(aCap.empty() ? (const BYTE *)"" : &aCap[0]), aCap.size());
+			printf(" goal=%d", (int)(strCap.find("プヨンを倒す（2/3）") != std::string::npos));
+			/* 異空間（敵・本人のどちらが空間 0 以外でも）は数えない */
+			pE->dwStTmplateID = 7;
+			pE->dwSpaceID = 5;
+			QuestOnKill(pOwner, pE);
+			pE->dwSpaceID = 0;
+			pOwner->dwSpaceID = 5;
+			QuestOnKill(pOwner, pE);
+			pOwner->dwSpaceID = 0;
+			printf(" space=%u", pOwner->awQuestCount[0]);
+			/* 数が足りない間は報告できない */
+			QuestSendCmd(pOwner, QUESTCMD_HANDIN, 0, dwGuild);
+			printf(" early_id=%u gold=%u", pOwner->wQuestID, pOwner->dwGold);
+			/* 発生元の番号で数える敵（自分は番号なし） */
+			PCHARINFO pChild = KillTestEnemy(pOwner, (DWORD)-1, 0);
+			pChild->dwParentTblID = pE->dwTblID;
+			QuestOnKill(pOwner, pChild);
+			printf(" parent=%u", pOwner->awQuestCount[0]);
+			QuestOnKill(pOwner, pE);
+			printf(" cap=%u\n", pOwner->awQuestCount[0]);
+			DeleteChar(pChild->dwTblID);
+			/* 実際の討伐（戦闘の報酬の処理）でも数える・依頼を受けていない人・別の依頼の人は数えない */
+			pOwner->awQuestCount[0] = 0;
+			pE->wHP = 0;
+			AddBattleDamage(pOwner, pE, 5);
+			DamageAfterProcNPC(pOwner, pE);
+			printf("quest kill battle count=%u", pOwner->awQuestCount[0]);
+			pOwner->wQuestID = 0;
+			pOwner->awQuestCount[0] = 0;
+			pE = KillTestEnemy(pOwner, 7, 0);
+			QuestOnKill(pOwner, pE);
+			printf(" noquest=%u", pOwner->awQuestCount[0]);
+			pOwner->wQuestID = 2;
+			QuestOnKill(pOwner, pE);
+			printf(" other=%u\n", pOwner->awQuestCount[0]);
+			pOwner->wQuestID = 0;
+			pOwner->awQuestCount[0] = 0;
+			/* 必要数に届いたら報告できて、報酬が出て、依頼が終わり、達成時刻が残る */
+			QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 3, dwGuild);
+			for (int k = 0; k < 5; k ++) QuestOnKill(pOwner, pE);
+			SvrSendCaptureBegin();
+			QuestSendCmd(pOwner, QUESTCMD_HANDIN, 0, dwGuild);
+			SvrSendCaptureEnd(aCap);
+			DWORD dwNow = (DWORD)time(NULL);
+			printf("quest kill handin id=%u gold=%u count=%u cleared=%d", pOwner->wQuestID, pOwner->dwGold, pOwner->awQuestCount[0],
+				(int)(pOwner->awQuestClearID[0] == 3 && pOwner->adwQuestClearTime[0] + 5 >= dwNow && pOwner->adwQuestClearTime[0] <= dwNow));
+			/* 達成から 24 時間は受けられず、一覧の名前に残り時間が付く・断りの文が出る */
+			SvrSendCaptureBegin();
+			QuestSendTalk(pOwner, dwGuild);
+			SvrSendCaptureEnd(aCap);
+			strCap.assign((const char *)(aCap.empty() ? (const BYTE *)"" : &aCap[0]), aCap.size());
+			printf(" | wait24 list=%d", (int)(strCap.find("（あと24時間）") != std::string::npos));
+			SvrSendCaptureBegin();
+			QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 3, dwGuild);
+			SvrSendCaptureEnd(aCap);
+			strCap.assign((const char *)(aCap.empty() ? (const BYTE *)"" : &aCap[0]), aCap.size());
+			printf(" accept=%u msg=%d", pOwner->wQuestID, (int)(strCap.find("この依頼は、あと24時間たつとまた受けられるよ。") != std::string::npos));
+			/* 23 時間 30 分前に達成していたら「あと30分」、25 時間前なら受けられる */
+			pOwner->adwQuestClearTime[0] = dwNow - 23 * 3600 - 30 * 60;
+			SvrSendCaptureBegin();
+			QuestSendTalk(pOwner, dwGuild);
+			SvrSendCaptureEnd(aCap);
+			strCap.assign((const char *)(aCap.empty() ? (const BYTE *)"" : &aCap[0]), aCap.size());
+			printf(" | wait30m list=%d sec=%d", (int)(strCap.find("（あと30分）") != std::string::npos),
+				(int)(QuestRepeatWaitSec(pOwner, pQ3, dwNow) / 60));
+			pOwner->adwQuestClearTime[0] = dwNow - 2 * 3600;
+			printf(" wait22h sec=%u", (unsigned)QuestRepeatWaitSec(pOwner, pQ3, dwNow));
+			pOwner->adwQuestClearTime[0] = dwNow - 25 * 3600;
+			printf(" | passed sec=%u", (unsigned)QuestRepeatWaitSec(pOwner, pQ3, dwNow));
+			QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 3, dwGuild);
+			printf(" accept=%u", pOwner->wQuestID);
+			/* 制限なし（0）なら達成直後でも受けられる */
+			QuestSendCmd(pOwner, QUESTCMD_CANCEL, 0, dwGuild);
+			pOwner->adwQuestClearTime[0] = dwNow;
+			pQ3->dwRepeatHours = 0;
+			printf(" | nolimit sec=%u", (unsigned)QuestRepeatWaitSec(pOwner, pQ3, dwNow));
+			pQ3->dwRepeatHours = 24;
+			/* 達成時刻は 8 件まで。9 件目は一番古いものを押し出す */
+			ZeroMemory(pOwner->awQuestClearID, sizeof(pOwner->awQuestClearID));
+			ZeroMemory(pOwner->adwQuestClearTime, sizeof(pOwner->adwQuestClearTime));
+			for (int k = 0; k < MAX_QUESTCLEAR + 1; k ++) QuestClearTimeSet(pOwner, (WORD)(10 + k), 1000 + k);
+			QuestClearTimeSet(pOwner, 12, 5000);
+			int nHas10 = 0, nHas18 = 0;
+			for (int k = 0; k < MAX_QUESTCLEAR; k ++) { if (pOwner->awQuestClearID[k] == 10) nHas10 = 1; if (pOwner->awQuestClearID[k] == 18) nHas18 = 1; }
+			printf(" | slots has10=%d has18=%d t12=%u\n", nHas10, nHas18, pOwner->adwQuestClearTime[2]);
+			pOwner->wQuestID = 0;
+			pQ3->wSort = wSortBak3;
+			for (size_t k = 0; k < aSortBak.size(); k ++) aSortBak[k].first->wSort = aSortBak[k].second;
+			/* 保存して読み直しても残る（古いファイルは 0） */
+			SaveQuestInfo();
+			for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) delete g_aQuestInfo[i];
+			g_aQuestInfo.RemoveAll();
+			LoadQuestInfo();
+			pQ3 = NULL;
+			int nIdx3 = 0;
+			for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) if (g_aQuestInfo[i]->wID == 3) { pQ3 = g_aQuestInfo[i]; nIdx3 = i; }
+			if (pQ3) {
+				printf("quest kill reload tmp=%u,%u,%u,%u need=%u hours=%u", pQ3->awKillStTmp[0], pQ3->awKillStTmp[1], pQ3->awKillStTmp[2], pQ3->awKillStTmp[3],
+					pQ3->wKillNeed, (unsigned)pQ3->dwRepeatHours);
+				for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) if (g_aQuestInfo[i]->wID == 2) printf(" q2=%u/%u", g_aQuestInfo[i]->wKillNeed, (unsigned)g_aQuestInfo[i]->dwRepeatHours);
+				printf("\n");
+				/* データAPI：取得に出る・範囲外や空の敵の拒否・討伐チャレンジとは一緒にできない */
+				const char *pszGet = SboWebDataGet("quest", nIdx3);
+				printf("quest kill api get need=%d tmp=%d hours=%d\n", pszGet && strstr(pszGet, "\"wKillNeed\":3") ? 1 : 0,
+					pszGet && strstr(pszGet, "\"awKillStTmp\":[7,9,0,0]") ? 1 : 0, pszGet && strstr(pszGet, "\"dwRepeatHours\":24") ? 1 : 0);
+				printf("quest kill api set %s", FlagGroupApi("quest", nIdx3, "{\"wKillNeed\":15,\"awKillStTmp\":[7],\"dwRepeatHours\":12}").c_str());
+				printf(" now=%u,%u,%u,%u,%u,%u\n", pQ3->wKillNeed, pQ3->awKillStTmp[0], pQ3->awKillStTmp[1], (unsigned)pQ3->dwRepeatHours, 0u, 0u);
+				printf("quest kill api over %s\n", FlagGroupApi("quest", nIdx3, "{\"wKillNeed\":1000}").c_str());
+				printf("quest kill api hours %s\n", FlagGroupApi("quest", nIdx3, "{\"dwRepeatHours\":8761}").c_str());
+				printf("quest kill api notmp %s\n", FlagGroupApi("quest", nIdx3, "{\"awKillStTmp\":[0,0,0,0]}").c_str());
+				printf("quest kill api challenge %s\n", FlagGroupApi("quest", nIdx3, "{\"byChallenge\":1}").c_str());
+				printf("quest kill api zero %s", FlagGroupApi("quest", nIdx3, "{\"wKillNeed\":0}").c_str());
+				printf(" now=%u\n", pQ3->wKillNeed);
+				*pQ3 = Q3Bak;
+			}
+			memcpy(pOwner->awQuestClearID, awClearIDBak, sizeof(awClearIDBak));
+			memcpy(pOwner->adwQuestClearTime, adwClearTimeBak, sizeof(adwClearTimeBak));
+			pOwner->byLevel = byLvBack;
+			pOwner->byAdminLV = byAdBack;
+			pOwner->dwSpaceID = dwSpaceBack;
+			pOwner->dwGold = dwGoldBack;
+			DeleteChar(pE->dwTblID);
+		}
+	}
+
 	/* 会話の行：受けている依頼の条件・アイテムを渡す（一度きりは「立てる印」と「いけない印」で組む） */
 	{
 		PTALKINFO pTalk = new TALKINFO;
@@ -6031,6 +6246,10 @@ static void TestQuest(const std::vector<int> &aLogin)
 	pOther->wQuestID = 2; pOther->byQuestStep = 1; pOther->wQuestFlg = 0x1234;
 	pOther->awQuestCount[0] = 1; pOther->awQuestCount[1] = 22; pOther->awQuestCount[2] = 333; pOther->awQuestCount[3] = 4444;
 	pOther->dwQuestAcceptTime = 1700000000;
+	ZeroMemory(pOther->awQuestClearID, sizeof(pOther->awQuestClearID));
+	ZeroMemory(pOther->adwQuestClearTime, sizeof(pOther->adwQuestClearTime));
+	pOther->awQuestClearID[0] = 3; pOther->adwQuestClearTime[0] = 1700001234;
+	pOther->awQuestClearID[7] = 511; pOther->adwQuestClearTime[7] = 4000000000u;
 	ZeroMemory(pOther->abyQuestDone, sizeof(pOther->abyQuestDone));
 	ZeroMemory(pOther->abyQuestRewarded, sizeof(pOther->abyQuestRewarded));
 	pOther->abyQuestDone[0] = 0x06; pOther->abyQuestDone[63] = 0x80;
@@ -6053,6 +6272,8 @@ static void TestQuest(const std::vector<int> &aLogin)
 			pLoaded->wQuestFlg, pLoaded->awQuestCount[0], pLoaded->awQuestCount[1], pLoaded->awQuestCount[2], pLoaded->awQuestCount[3],
 			pLoaded->dwQuestAcceptTime, pLoaded->abyQuestDone[0], pLoaded->abyQuestDone[63]);
 		printf("quest char reload rewarded=%02x,%02x\n", pLoaded->abyQuestRewarded[0], pLoaded->abyQuestRewarded[63]);
+		printf("quest char reload clear=%u@%u,%u@%u,%u@%u\n", pLoaded->awQuestClearID[0], pLoaded->adwQuestClearTime[0], pLoaded->awQuestClearID[1], pLoaded->adwQuestClearTime[1],
+			pLoaded->awQuestClearID[7], pLoaded->adwQuestClearTime[7]);
 	} else {
 		printf("quest char reload not found\n");
 	}

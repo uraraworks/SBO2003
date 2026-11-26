@@ -331,6 +331,9 @@ typedef struct _QUESTFILE {
 	WORD		wNotFlag;
 	char		szIntro[MAX_QUESTINTRO];				/* 導入のお話（古いファイルには無く、空で読める） */
 	BYTE		byLevelMin;								/* 受けられる最低レベル（0=制限なし。古いファイルには無く、0 で読める） */
+	WORD		awKillStTmp[MAX_QUESTKILLTMP];			/* 討伐依頼で数える敵（古いファイルには無く、全部 0 =空きで読める） */
+	WORD		wKillNeed;								/* 討伐依頼の必要数（0=討伐依頼ではない。古いファイルには無く、0 で読める） */
+	DWORD		dwRepeatHours;							/* 再び受けられるまでの時間（0=制限なし。古いファイルには無く、0 で読める） */
 	WORD		wCancelStory;							/* 取り消した時に最初に戻す思い出の本のお話（0=何もしない。古いファイルには無く、0 で読める） */
 } QUESTFILE;
 
@@ -382,6 +385,9 @@ static const COLINFO s_aQuestCol[] = {
 	COLS(QUESTFILE, szIntro,		COL_STR, MAX_QUESTINTRO),
 	COL (QUESTFILE, byLevelMin,		COL_U8),
 	COL (QUESTFILE, wCancelStory,	COL_U16),
+	COLS(QUESTFILE, awKillStTmp,	COL_U16ARR, MAX_QUESTKILLTMP),
+	COL (QUESTFILE, wKillNeed,		COL_U16),
+	COL (QUESTFILE, dwRepeatHours,	COL_U32),
 };
 
 BOOL SaveQuestInfo(void);										/* 依頼情報保存 */
@@ -406,6 +412,8 @@ static void ToFile(QUESTFILE *p, const QUESTINFO *q)
 	p->byChallenge = q->byChallenge;	p->wLoanStTmp = q->wLoanStTmp;	p->byMemberMin = q->byMemberMin;
 	p->byLevelMin = q->byLevelMin;
 	p->wCancelStory = q->wCancelStory;
+	memcpy (p->awKillStTmp, q->awKillStTmp, sizeof (p->awKillStTmp));
+	p->wKillNeed = q->wKillNeed;	p->dwRepeatHours = q->dwRepeatHours;
 	/* 印・数値の番号は「番号+1」で保存する（0=無し。この項目が無い古いファイルは全部 0 で「無し」になる） */
 	for (i = 0; i < MAX_QUESTDONESET; i ++) {
 		p->awDoneSetFlag[i] = (q->awDoneSetFlag[i] < MAX_FLAGBIT) ? (WORD)(q->awDoneSetFlag[i] + 1) : 0;
@@ -447,6 +455,8 @@ static void FromFile(QUESTINFO *q, const QUESTFILE *p)
 	q->byChallenge = p->byChallenge;	q->wLoanStTmp = p->wLoanStTmp;	q->byMemberMin = p->byMemberMin;
 	q->byLevelMin = p->byLevelMin;
 	q->wCancelStory = p->wCancelStory;
+	memcpy (q->awKillStTmp, p->awKillStTmp, sizeof (q->awKillStTmp));
+	q->wKillNeed = p->wKillNeed;	q->dwRepeatHours = p->dwRepeatHours;
 	for (i = 0; i < MAX_QUESTDONESET; i ++) {
 		q->awDoneSetFlag[i] = ((p->awDoneSetFlag[i] >= 1) && (p->awDoneSetFlag[i] <= MAX_FLAGBIT)) ? (WORD)(p->awDoneSetFlag[i] - 1) : (WORD)FLAG_NOBIT;
 	}
