@@ -933,7 +933,7 @@ static void DrawLand(int nX, int nY, BOOL bTop)
 			}
 		}
 		if (bMyTurn) {
-			PuzText (hDC, x0 + 8, y0 + 4 + nRows * 16, (LPSTR)"あなたの番です。コマンドを開いてサイコロを振ってください", RGB (160, 255, 160), 14, FALSE);
+			PuzText (hDC, x0 + 8, y0 + 4 + nRows * 16, (LPSTR)"あなたの番です。コマンドでサイコロを振る", RGB (160, 255, 160), 14, FALSE);
 		}
 		/* 残り秒が減るので、秒が変わったら次も描き直す（毎フレームは描かない） */
 		{
