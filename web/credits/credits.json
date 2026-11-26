@@ -325,7 +325,8 @@
 					"author": "効果音ラボ", "site": "効果音ラボ", "url": "https://soundeffect-lab.info/",
 					"items": [
 						{"title": "パンチ素振り（ブロックの向きを変える音）", "file": "puzzle_rotate.wav"},
-						{"title": "卓球のピンポン玉が跳ねる1（ブロックが定着した音）", "file": "puzzle_lock.wav"}
+						{"title": "卓球のピンポン玉が跳ねる1（ブロックが定着した音）", "file": "puzzle_lock.wav"},
+						{"title": "壁をドンと叩く（列が揃って消えた音）", "file": "puzzle_clear.wav"}
 					]
 				}
 			]

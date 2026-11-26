@@ -620,9 +620,10 @@ static void SendChanged(int nTable, int nChg)
 		return;
 	}
 	g.nAttack = 0;
-	/* 定着した（盤面が変わった）効果音。ゲームオーバーになった最後の 1 つも鳴らす */
+	/* 定着した（盤面が変わった）効果音。ゲームオーバーになった最後の 1 つも鳴らす。
+	   列が揃って消えた時（盤面と得点が一緒に変わる。ソフトドロップの得点だけなら盤面は変わらない）は、定着の音の代わりに消える音 */
 	if (nChg & PUZZLE_CHG_BOARD) {
-		SendSe (nTable, PUZZLESE_LOCK, NULL);
+		SendSe (nTable, (nChg & PUZZLE_CHG_SCORE) ? PUZZLESE_CLEAR : PUZZLESE_LOCK, NULL);
 	}
 	if (nChg & PUZZLE_CHG_OVER) {
 		Leave (nTable, PUZZLESTATE_OVER, TRUE, TRUE);

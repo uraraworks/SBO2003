@@ -8873,10 +8873,12 @@ void RecvDataProcPUZZLESE(PBYTE pData, DWORD dwDataSize)
 	switch (pPara->bySe) {
 	case PUZZLESE_ROTATE:	DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUZZLE_ROTATE]);	break;
 	case PUZZLESE_LOCK:		DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUZZLE_LOCK]);	break;
+	case PUZZLESE_CLEAR:	DXAudio.PlaySecoundary (&aSoundTbl[SOUND_PUZZLE_CLEAR]);	break;
 	}
 }
 
-/* 席に座って遊んでいるか（座っている間は歩かず、キーはゲーム側へ送る） */
+/* 席に座って遊んでいるか（座っている間は歩かず、キーはゲーム側へ送る）。
+   ゲームオーバーになった直後も PUZZLE_OVER_LOCK_MS の間は座っているのと同じ扱い（押していたキーで終わった直後に歩いてしまわないように） */
 BOOL IsPuzzleSeated(void)
 {
 	int i;
@@ -8885,7 +8887,8 @@ BOOL IsPuzzleSeated(void)
 		return FALSE;
 	}
 	for (i = 0; i < PUZZLE_VIEW_MAX; i ++) {
-		if (s_aPuzView[i].bUse && s_aPuzView[i].bBoard && s_aPuzView[i].St.byMine && (s_aPuzView[i].dwOverTime == 0)) {
+		if (s_aPuzView[i].bUse && s_aPuzView[i].bBoard && s_aPuzView[i].St.byMine &&
+			((s_aPuzView[i].dwOverTime == 0) || ((int)(timeGetTime () - s_aPuzView[i].dwOverTime) < PUZZLE_OVER_LOCK_MS))) {
 			return TRUE;
 		}
 	}

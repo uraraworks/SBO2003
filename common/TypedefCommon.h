@@ -919,6 +919,7 @@ enum {
 	SOUND_CHAT,					/* 発言した時の音（SBOP2 の chat.wav） */
 	SOUND_PUZZLE_ROTATE,		/* 落ち物パズル：ブロックの向きを変えた時（パンチ素振り） */
 	SOUND_PUZZLE_LOCK,			/* 落ち物パズル：ブロックが定着した時（ピンポン玉が跳ねる） */
+	SOUND_PUZZLE_CLEAR,			/* 落ち物パズル：列が揃って消えた時（壁をドンと叩く） */
 	SOUND_MAX
 };
 
@@ -4393,6 +4394,7 @@ typedef struct _CMDPARA_PUZZLEKEY {
 enum {
 	PUZZLESE_ROTATE = 1,											/* ブロックの向きを変えた（座っている本人には送らない。本人は押した時にすぐ鳴らす） */
 	PUZZLESE_LOCK,												/* ブロックが定着した（本人にも送る） */
+	PUZZLESE_CLEAR,												/* 列が揃って消えた（本人にも送る。この時は定着の音の代わりに鳴らす） */
 };
 #pragma pack(push, 1)
 typedef struct _CMDPARA_PUZZLESE {
