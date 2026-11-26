@@ -1278,31 +1278,20 @@
 	.sbo-home > * {
 		flex: none;
 	}
+	/* タイトルロゴは背景の絵に入っている。見出しは読み上げ用に画面外へ */
 	.sbo-hero {
 		text-align: center;
-		padding: 2px 0 4px;
 		line-height: 1.1;
 		user-select: none;
 	}
-	.sbo-title-ja {
-		display: block;
-		font: 900 clamp(24px, min(8vw, 6.4vh), 42px)/1.1 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
-		letter-spacing: 0.02em;
-		color: #fff7d6;
-		-webkit-text-stroke: 6px #3b6f2c;
-		paint-order: stroke fill;
-		text-shadow: 0 3px 0 #2c5421, 0 6px 8px rgba(0, 40, 20, 0.45);
-	}
-	.sbo-title-en {
-		display: inline-block;
-		margin-top: 4px;
-		padding: 1px 12px;
-		font: italic 700 12px/1.5 Georgia, "Times New Roman", serif;
-		letter-spacing: 0.12em;
-		color: #5a3b00;
-		background: linear-gradient(180deg, #ffe58a, #f5b73a);
-		border-radius: 999px;
-		box-shadow: 0 2px 0 #b57a14;
+	.sbo-sr {
+		position: absolute;
+		width: 1px; height: 1px;
+		margin: -1px; padding: 0;
+		overflow: hidden;
+		clip: rect(0 0 0 0);
+		white-space: nowrap;
+		border: 0;
 	}
 	.sbo-sec {
 		background: rgba(255, 255, 255, 0.72);
@@ -1565,16 +1554,20 @@
 	body.sbo-loginscr #sbo-quick .sbo-btn.sbo-play {
 		min-height: 60px;
 	}
-	/* ---- ログイン前ホーム画面の背景（4 人が描き込まれた 1 枚絵）。#sbo-quick が出てから読まれる。版はビルドのコミット ----
-	   既定＝スマホ縦（幅 900px 未満、または縦長）：ページ全体が縦スクロール。縦長の絵を先頭に幅いっぱいで敷き（絵ごとスクロール）、
-	   その下は絵の最下行と同じ無地色。ロゴは上の空、人物の帯（上から約 12〜42%）はスペーサーで空け、遊ぶボタンは約 44% から。 */
+	/* ---- ログイン前ホーム画面の背景（ロゴ入り・人物なしの 1 枚絵）。#sbo-quick が出てから読まれる。版はビルドのコミット ----
+	   既定＝スマホ縦（幅 900px 未満、または縦長）：ページ全体が縦スクロール。縦長の絵（1024x1536 = 高さ 150vw）を先頭に幅いっぱいで敷き（絵ごとスクロール）、
+	   その下は絵の最下行と同じ無地色。絵の上〜52%（ロゴと町）はスペーサーで空け、さらに遊ぶボタンの真上に約 96px の帯を空ける
+	   （あとでキャラ 4 人を描き足す帯）。画像が読めない間・失敗時は、絵の背後のうす緑のグラデーションが見える。 */
 	body.sbo-loginscr #sbo-quick.sbo-show {
 		display: block;
 		overflow-x: hidden;
 		overflow-y: auto;
 		overscroll-behavior: contain;
 		-webkit-overflow-scrolling: touch;
-		background: #e4e7c3 url(/login/login-mobile.webp?v=@@SBO_BUILD_COMMIT@@) top center / 100% auto no-repeat local;
+		background:
+			url(/login/loginbg-mobile.webp?v=@@SBO_BUILD_COMMIT@@) top center / 100% auto no-repeat local,
+			linear-gradient(180deg, #f4f8de 0%, #dfe9bd 55%, #eaf1c7 100%) top center / 100% 150vw no-repeat local,
+			#eaf1c7;
 	}
 	body.sbo-loginscr #sbo-quick .sbo-card.sbo-home {
 		height: auto;
@@ -1582,71 +1575,70 @@
 		min-height: 100%;
 		overflow: visible;
 		margin: 0 auto;
-		padding-top: 0;
+		padding: 0 calc(16px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
 	}
 	body.sbo-loginscr .sbo-home > :first-child,
 	body.sbo-loginscr .sbo-home > :last-child {
 		margin: 0;
 	}
-	/* ロゴ：絵の上端（空）に重ねる。縁取りと影で読みやすく。高さ 66vw = 絵（高さ 150vw）の 44% まで */
+	/* スペーサー：絵の 52%（78vw）＋キャラの帯 96px。ここには何も置かない */
 	body.sbo-loginscr .sbo-hero {
-		height: 66vw;
-		margin-bottom: -10px;
-		padding: calc(8px + env(safe-area-inset-top)) 0 0;
-		box-sizing: border-box;
+		height: calc(78vw + 96px);
 		pointer-events: none;
 	}
-	body.sbo-loginscr .sbo-title-ja {
-		white-space: nowrap;
-		font-size: clamp(18px, 6.2vw, 40px);
-		-webkit-text-stroke: 5px #3b6f2c;
-		text-shadow: 0 2px 0 #2c5421, 0 4px 8px rgba(0, 40, 20, 0.55);
-	}
-	body.sbo-loginscr .sbo-title-ja br {
-		display: none;
-	}
-	body.sbo-loginscr .sbo-title-en {
-		font-size: 11px;
-		margin-top: 2px;
-	}
-	/* ID・パスワードのカードは、背景の上の中央に（上は人物の帯の下あたりから） */
+	/* ID・パスワードのカードは、ロゴの下の中央に */
 	body.sbo-loginscr #sbo-quick #sbo-quick-id {
-		margin: calc(12vw + env(safe-area-inset-top)) auto 24px;
+		margin: calc(40vw + env(safe-area-inset-top)) auto 24px;
 	}
 	body.sbo-loginscr #sbo-quick .sbo-sec {
-		background: rgba(255, 255, 255, 0.84);
+		background: rgba(255, 255, 255, 0.92);
 	}
-	body.sbo-loginscr .sbo-links {
-		background: rgba(255, 255, 255, 0.7);
+	/* リンク群：画面最下部に固定のフッターバー（アイコン＋短いラベルを横並び）。PC・横長は下の @media で最下段の帯に戻す */
+	@media not all and (min-width: 900px) and (min-height: 560px) and (min-aspect-ratio: 5/4) {
+		body.sbo-loginscr #sbo-quick.sbo-show {
+			--sbo-foot: calc(56px + env(safe-area-inset-bottom));
+		}
+		body.sbo-loginscr #sbo-quick .sbo-card.sbo-home {
+			padding-bottom: calc(24px + var(--sbo-foot));
+		}
+		body.sbo-loginscr #sbo-quick .sbo-home .sbo-links {
+			position: fixed;
+			left: 0; right: 0; bottom: 0;
+			z-index: 3;
+			flex-wrap: nowrap;
+			gap: 0;
+			padding: 2px 4px env(safe-area-inset-bottom);
+			border-radius: 0;
+			background: rgba(255, 255, 255, 0.94);
+			box-shadow: 0 -2px 8px rgba(30, 70, 40, 0.18);
+			box-sizing: border-box;
+		}
+		body.sbo-loginscr #sbo-quick .sbo-home .sbo-links .sbo-link {
+			flex: 1 1 0;
+			min-width: 0;
+			flex-direction: column;
+			gap: 1px;
+			min-height: 52px;
+			padding: 4px 2px;
+			font-size: 10px;
+			line-height: 1.2;
+			overflow-wrap: anywhere;
+		}
+		body.sbo-loginscr #sbo-quick .sbo-home .sbo-links .sbo-ic2 {
+			font-size: 18px;
+		}
 	}
-	/* PC・横長（幅 900px 以上・高さ 560px 以上・横長）：絵は高さに合わせて中央に置き（4 人の足元の下に無地の余白がある）、
-	   左右の余りは同じ絵のぼかしで埋める。ロゴは上の空、遊ぶボタンは足元の下、アカウント・お知らせは左右の端、リンクは最下段の帯。 */
+	/* PC・横長（幅 900px 以上・高さ 560px 以上・横長）：絵は cover/center で固定。ロゴ・町（上〜約 50%）には何も重ねない。
+	   遊ぶボタンは小道の中央、アカウント・管理は左下の草原、お知らせは右下の草原、リンクは最下段の帯。
+	   中央の小道の左右（幅 25〜55%・縦 50〜85%）はキャラを置く隙間として空けておく。 */
 	@media (min-width: 900px) and (min-height: 560px) and (min-aspect-ratio: 5/4) {
 		body.sbo-loginscr #sbo-quick.sbo-show {
 			display: flex;
 			overflow: hidden;
-			background: #e4e7c3;
-			--sw: calc(100vh * 1.2236);	/* 絵の幅（login-pc.webp は 1500x1226） */
-		}
-		body.sbo-loginscr #sbo-quick.sbo-show::before,
-		body.sbo-loginscr #sbo-quick.sbo-show::after {
-			content: "";
-			position: absolute;
-			z-index: 0;
-			pointer-events: none;
-		}
-		body.sbo-loginscr #sbo-quick.sbo-show::before {
-			left: -40px; right: -40px; top: -40px; bottom: -40px;
-			background: url(/login/login-pc.webp?v=@@SBO_BUILD_COMMIT@@) center / cover no-repeat;
-			filter: blur(22px) saturate(1.1);
-		}
-		body.sbo-loginscr #sbo-quick.sbo-show::after {
-			left: 50%; top: 0; bottom: 0;
-			width: var(--sw);
-			transform: translateX(-50%);
-			background: url(/login/login-pc.webp?v=@@SBO_BUILD_COMMIT@@) center / 100% 100% no-repeat;
-			-webkit-mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent);
-			mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent);
+			background:
+				url(/login/loginbg-pc.webp?v=@@SBO_BUILD_COMMIT@@) center top / cover no-repeat,
+				linear-gradient(180deg, #f4f8de 0%, #dfe9bd 55%, #cfe0a4 100%),
+				#dfe9bd;
 		}
 		body.sbo-loginscr #sbo-quick .sbo-card {
 			position: relative;
@@ -1674,22 +1666,12 @@
 		}
 		body.sbo-loginscr .sbo-hero {
 			position: absolute;
-			left: 0; right: 0;
-			top: max(8px, 1.8vh);
-			height: auto;
-			margin: 0;
-			padding: 0;
-		}
-		body.sbo-loginscr .sbo-title-ja {
-			font-size: clamp(24px, 5.4vh, 54px);
-			-webkit-text-stroke: 7px #3b6f2c;
-		}
-		body.sbo-loginscr .sbo-title-en {
-			font-size: clamp(11px, 1.8vh, 15px);
+			left: 0; top: 0;
+			height: 0;
 		}
 		body.sbo-loginscr .sbo-home .sbo-col-play {
 			position: absolute;
-			left: 50%; top: 79vh;
+			left: 50%; top: 64vh;
 			transform: translateX(-50%);
 			width: min(420px, calc(100% - 24px));
 			gap: 6px;
@@ -1697,9 +1679,9 @@
 		body.sbo-loginscr .sbo-home .sbo-col-acc,
 		body.sbo-loginscr .sbo-home .sbo-news {
 			position: absolute;
-			top: 17vh;
+			top: 54vh;
 			width: min(21vw, 300px);
-			max-height: calc(100vh - 17vh - 64px);
+			max-height: calc(100vh - 54vh - 56px);
 			overflow-y: auto;
 			overscroll-behavior: contain;
 		}
@@ -2605,7 +2587,7 @@
 		<div id="sbo-quick" data-sbo-ui="1">
 			<!-- この端末で前にログインしていた -->
 			<div class="sbo-card sbo-home" id="sbo-quick-back">
-				<div class="sbo-hero"><span class="sbo-title-ja">スクラップブック<br>オンライン</span><span class="sbo-title-en">Scrapbook Online</span></div>
+				<div class="sbo-hero"><h1 class="sbo-sr">スクラップブックオンライン</h1></div>
 				<div class="sbo-col-play">
 					<!-- いちばん新しく使ったアカウント（大きな金色ボタン） -->
 					<div id="sbo-quick-main"></div>
@@ -2655,7 +2637,7 @@
 			</form>
 			<!-- はじめての端末 -->
 			<div class="sbo-card sbo-home" id="sbo-quick-new">
-				<div class="sbo-hero"><span class="sbo-title-ja">スクラップブック<br>オンライン</span><span class="sbo-title-en">Scrapbook Online</span></div>
+				<div class="sbo-hero"><h1 class="sbo-sr">スクラップブックオンライン</h1></div>
 				<div class="sbo-col-play">
 					<button type="button" class="sbo-btn sbo-play" id="sbo-quick-newstart">すぐにはじめる</button>
 					<p class="sbo-note">アカウントは自動で作ります。次からはこの端末でボタンを押すだけで入れます。</p>

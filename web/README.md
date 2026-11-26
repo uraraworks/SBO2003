@@ -201,7 +201,7 @@ web/replace   … Windows 専用クラスの Web 版（Windows 版の実装は�
 | `web/web_main.cpp` | 入口（IndexedDB を読み込んでから `SboCliMain` を呼ぶ） |
 | `web/replace/` | CDXAudio（Web Audio）、CUraraSockTCP（WebSocket）、LibMusic・MAC アドレス・管理画面の代わり |
 | `web/shell/sbocli.html` | ページの HTML（キー・マウスの受け渡しもここ） |
-| `web/shell/img/` | ログイン前ホーム画面の背景（4 人が描き込まれた 1 枚絵。縦長 `login-mobile.webp`・横長 `login-pc.webp`）。ビルドで `/login/` に置く |
+| `web/shell/img/` | ログイン前ホーム画面の背景（ロゴ入り・人物なしの 1 枚絵。縦長 1024 幅、横長 1600x1066。縦長 `loginbg-mobile.webp`・横長 `loginbg-pc.webp`）。ビルドで `/login/` に置く |
 | `web/changes/` | 更新履歴のページ（`/changes`）と最初の中身 `changes.json` |
 | `web/about/` | 紹介ページ（`/about`）。はじめての人向けに、どんなゲームかをスクショ付きで。画像は `web/about/img/*.png`（ビルドで `/about/` に置く）。最近の更新・遊んでいる人数はその場で `/api/changes`・`/health` を読む |
 | `web/credits/` | クレジットのページ（`/credits`）。BGM・効果音などの曲名・ファイル名・作者は `credits.json`。曲や効果音を足したらここにも 1 行足す |
