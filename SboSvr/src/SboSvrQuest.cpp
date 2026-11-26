@@ -28,6 +28,7 @@
 #include "SboSvrCharInfoTimerProc.h"
 #include "SboSvrRecycle.h"
 #include "SboSvrLoan.h"
+#include "SboSvrTrialRoom.h"
 #include "SboSvrDungeonDaily.h"
 #include "CharProc/CharProcPUT.h"
 #include <stdio.h>
@@ -796,7 +797,7 @@ BOOL MapSwapExamine(PCHARINFO pChar)
 		if (pSwap->byKind == MAPSWAPKIND_RECYCLE) {
 			if ((pChar->szAcc[0] == 0) || QuestInChallenge (pChar)) {
 				if (QuestInChallenge (pChar)) {
-					SendCmdSYSMSG (pChar->pID, QuestInDungeon (pChar) ? DungeonBlockedText (pChar).c_str () : "討伐チャレンジ中はできません。", SPEECHCMD_BATTLE1);
+					SendCmdSYSMSG (pChar->pID, QuestInDungeon (pChar) ? DungeonBlockedText (pChar).c_str () : TrialRoomBlockedText (pChar), SPEECHCMD_BATTLE1);
 				}
 				SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
 			} else {
@@ -1202,6 +1203,8 @@ void QuestSyncProc(void)
 	s_dwLastSync = dwNow;
 	/* 討伐チャレンジ（倒れた・抜けた人を戻す、全部倒したら成功） */
 	ChallengeProc ();
+	/* お試し個室（範囲の外に出た人を戻す） */
+	TrialRoomProc ();
 	/* 依頼を受けている人も、出ている見えるNPC も無ければ何もしない */
 	if (s_mapNpc.empty ()) {
 		int i, nCount = g_aCharInfo.GetSize ();
@@ -1230,8 +1233,10 @@ void QuestOnDecPlayer(PCHARINFO pChar)
 		return;
 	}
 	s_mapStepWait.erase (pChar->dwTblID);
-	/* 討伐チャレンジの敵が倒された・挑戦中の人が切断した */
-	ChallengeOnDecPlayer (pChar);
+	/* お試し個室の中の人が切断した（元の姿に戻す）。そうでなければ、討伐チャレンジの敵が倒された・挑戦中の人が切断した */
+	if (!TrialRoomOnDecPlayer (pChar)) {
+		ChallengeOnDecPlayer (pChar);
+	}
 	for (it = s_mapNpc.begin (); it != s_mapNpc.end (); it ++) {
 		if (it->second.dwOwner == pChar->dwTblID) {
 			aRemove.push_back (it->first);
@@ -2814,7 +2819,7 @@ void QuestRecv(PCHARINFO pChar, PCMDPARA_QUEST pPara)
 		return;
 	}
 	if (QuestInChallenge (pChar) && (pPara->byType != QUESTCMD_LISTREQ) && (pPara->byType != QUESTCMD_STORYREQ)) {
-		SendResult (pChar, QUESTRESULT_NG, 0, QuestInDungeon (pChar) ? DungeonBlockedText (pChar).c_str () : "討伐チャレンジ中はできません。");
+		SendResult (pChar, QUESTRESULT_NG, 0, QuestInDungeon (pChar) ? DungeonBlockedText (pChar).c_str () : TrialRoomBlockedText (pChar));
 		return;
 	}
 	switch (pPara->byType) {
@@ -2829,7 +2834,7 @@ void QuestRecv(PCHARINFO pChar, PCMDPARA_QUEST pPara)
 		pNpc = FindNearStoryNpc (pChar, pPara->dwNpcTblID);
 		if (pNpc) {
 			if (QuestInChallenge (pChar)) {
-				SendResult (pChar, QUESTRESULT_NG, 0, QuestInDungeon (pChar) ? DungeonBlockedText (pChar).c_str () : "討伐チャレンジ中はできません。");
+				SendResult (pChar, QUESTRESULT_NG, 0, QuestInDungeon (pChar) ? DungeonBlockedText (pChar).c_str () : TrialRoomBlockedText (pChar));
 			} else {
 				StoryTalk (pChar, pNpc);
 			}
@@ -3454,6 +3459,10 @@ void QuestChallengeOnWarp(PCHARINFO pChar)
 /* 倒れた人が「復活」を選んだ：挑戦中ならすぐ中断して入る前の場所へ（お金は減らさない）。処理したら TRUE */
 BOOL QuestChallengeResurrection(PCHARINFO pChar)
 {
+	/* お試し個室の中：すぐ出して元の姿・元の場所へ */
+	if (TrialRoomResurrection (pChar)) {
+		return TRUE;
+	}
 	if (!QuestInChallenge (pChar)) {
 		return FALSE;
 	}

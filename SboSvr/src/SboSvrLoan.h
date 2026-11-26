@@ -30,6 +30,8 @@ typedef struct _LOANBAK {
 	char		chAttrFire, chAttrWater, chAttrWind, chAttrEarth, chAttrLight, chAttrDark;
 	DWORD		dwMapID, dwX, dwY;									/* 入る前にいた場所（戻る場所・保存する場所） */
 	BYTE		byDirection;
+	BOOL		bTrial;												/* お試し個室で借りている（SboSvrTrialRoom。討伐チャレンジ・番外編は FALSE） */
+	WORD		wTrialRoom;											/* お試し個室の番号 */
 	WORD		wDgTmpl;											/* 番外編ダンジョン：入った時のステータステンプレートの番号（中で増えた物を数えるのに使う） */
 } LOANBAK;
 
