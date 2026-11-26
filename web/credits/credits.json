@@ -320,6 +320,13 @@
 						{"title": "音波", "file": "音波.wav"},
 						{"title": "音波攻撃", "file": "音波攻撃.wav"}
 					]
+				},
+				{
+					"author": "効果音ラボ", "site": "効果音ラボ", "url": "https://soundeffect-lab.info/",
+					"items": [
+						{"title": "パンチ素振り（ブロックの向きを変える音）", "file": "puzzle_rotate.wav"},
+						{"title": "卓球のピンポン玉が跳ねる1（ブロックが定着した音）", "file": "puzzle_lock.wav"}
+					]
 				}
 			]
 		}

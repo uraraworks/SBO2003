@@ -2505,8 +2505,10 @@ puzzle keys packets=4 seated=1
 puzzle ack last=1
 puzzle burst packets=12 ack last=1
 puzzle rotate left ok=1
+puzzle se rotate self=0 viewer=1
 puzzle gravity early=1 later=1
 puzzle otherkey packets=0
+puzzle se lock self>0=1 same=1
 puzzle over seated=0 score=1 state=0
 puzzle sitB seated=1 coinB=0
 puzzle leave seated=0 count=0 none+1

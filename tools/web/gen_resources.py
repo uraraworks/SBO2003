@@ -313,6 +313,7 @@ def main():
 	res_rows = []
 	str_rows = []
 	missing_midi = []
+	missing_se = []
 	preload = []
 	for module, rc, header, _types in MODULES:
 		defs = load_defines(os.path.join(root, header))
@@ -350,6 +351,10 @@ def main():
 					# MIDI は再配布できないので公開リポジトリには無い。無ければ BGM 無しで作る（最後にまとめて知らせる）
 					if rel.lower().startswith('midi/'):
 						missing_midi.append(rel)
+						continue
+					# SE/ の効果音も再配布できない素材なので公開リポジトリには無い。無ければその音が鳴らないだけ
+					if rel.lower().startswith('se/'):
+						missing_se.append(rel)
 						continue
 					print('[gen-resources] 警告: ファイルがありません: %s' % os.path.join(rc_dir, rel), file=sys.stderr)
 					continue
@@ -396,6 +401,8 @@ def main():
 		len(res_rows), len(str_rows), len(dialogs), len(menus), len(preload)))
 	if missing_midi:
 		print('[gen-resources] MIDI が %d 曲ありません（SboSoundData/MIDI）。その曲の BGM は鳴りません' % len(missing_midi))
+	if missing_se:
+		print('[gen-resources] 効果音（再配布できない分）が %d 個ありません（SboSoundData/SE）。その音は鳴りません' % len(missing_se))
 	return 0
 
 

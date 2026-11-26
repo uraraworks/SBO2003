@@ -17841,8 +17841,11 @@ static void TestPuzzle(const std::vector<int> &aLogin)
 		printf("puzzle burst packets=%d ack last=%d\n", MockCmdCount(nConnA, CMD_PUZZLESTATE) - nBeforeBurst, dwAckBurst == s_dwPuzzleSerial);
 		/* 左回しも受ける */
 		g_dwTime = s_dwFakeNow = max(s_dwFakeNow, g_dwTime) + 100;
+		int nSeA0 = MockCmdCount(nConnA, CMD_PUZZLESE), nSeB0 = MockCmdCount(nConnB, CMD_PUZZLESE);
 		PuzzleKeySend(pA, PUZZLEKEY_ROTATE_L);
 		printf("puzzle rotate left ok=%d\n", PuzzleIsSeated(pA));
+		/* 向きを変えた効果音：見ている人(B)には届き、座っている本人(A)には送らない（本人は押した時にクライアントで鳴らす） */
+		printf("puzzle se rotate self=%d viewer=%d\n", MockCmdCount(nConnA, CMD_PUZZLESE) - nSeA0, MockCmdCount(nConnB, CMD_PUZZLESE) - nSeB0);
 	}
 
 	/* 落下は経過時間で進む（PuzzleProc を呼ぶ間隔に関係なく 1 秒に 1 段）。動いた時は位置だけ(MOVE) */
@@ -17862,11 +17865,15 @@ static void TestPuzzle(const std::vector<int> &aLogin)
 
 	/* 下キーで落とし続けると、置いて積み上がり、置けなくなってゲームオーバー（得点を出して席を立つ） */
 	int nLoops = 0;
+	int nLockA0 = MockCmdCount(nConnA, CMD_PUZZLESE), nLockB0 = MockCmdCount(nConnB, CMD_PUZZLESE);
 	while (PuzzleIsSeated(pA) && nLoops < 5000) {
 		g_dwTime = (s_dwFakeNow += 30);
 		PuzzleKeySend(pA, PUZZLEKEY_DOWN);
 		nLoops ++;
 	}
+	/* 定着の効果音は本人にも見ている人にも届く（同じ回数） */
+	printf("puzzle se lock self>0=%d same=%d\n", MockCmdCount(nConnA, CMD_PUZZLESE) - nLockA0 > 0,
+		MockCmdCount(nConnA, CMD_PUZZLESE) - nLockA0 == MockCmdCount(nConnB, CMD_PUZZLESE) - nLockB0);
 	printf("puzzle over seated=%d score=%d state=%d\n", PuzzleIsSeated(pA), MockHasText(nConnA, CMD_SYSMSG, "ゲームオーバー！ 得点"),
 		PuzzleSeatCount());
 

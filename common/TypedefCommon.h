@@ -404,6 +404,7 @@ enum {
 /* 以下、プレイヤー用（落ち物パズル。CMD_PUZZLEKEY はクライアント→サーバーも受ける。管理者用の判定から外すこと） */
 	CMD_PUZZLEKEY,													/* 落ち物パズルのキー入力（クライアント→サーバー。CMDPARA_PUZZLEKEY の byData が PUZZLEKEY_*、dwTblID=本人、dwSerial=連番） */
 	CMD_PUZZLESTATE,												/* 落ち物パズルの盤面・操作中の落ち物・得点（サーバー→座っている人・対戦相手・台の近くの人。CMDPARA_PUZZLESTATE） */
+	CMD_PUZZLESE,												/* 落ち物パズルの効果音（サーバー→台の近くの人。CMDPARA_PUZZLESE。盤面が見える距離にいる人だけに届く） */
 	CMD_MAX
 };
 
@@ -916,6 +917,8 @@ enum {
 	SOUND_MIDI_W0009,
 	SOUND_MIDI_W0100,
 	SOUND_CHAT,					/* 発言した時の音（SBOP2 の chat.wav） */
+	SOUND_PUZZLE_ROTATE,		/* 落ち物パズル：ブロックの向きを変えた時（パンチ素振り） */
+	SOUND_PUZZLE_LOCK,			/* 落ち物パズル：ブロックが定着した時（ピンポン玉が跳ねる） */
 	SOUND_MAX
 };
 
@@ -4385,6 +4388,19 @@ typedef struct _CMDPARA_PUZZLEKEY {
 	DWORD		dwTblID;											/* テーブルID */
 	DWORD		dwSerial;											/* キーごとの連番（1 から。サーバーは処理した最後の連番を CMDPARA_PUZZLESTATE の dwAck で返す） */
 } CMDPARA_PUZZLEKEY, *PCMDPARA_PUZZLEKEY;
+
+/* CMD_PUZZLESE の bySe（落ち物パズルの効果音の種類） */
+enum {
+	PUZZLESE_ROTATE = 1,											/* ブロックの向きを変えた（座っている本人には送らない。本人は押した時にすぐ鳴らす） */
+	PUZZLESE_LOCK,												/* ブロックが定着した（本人にも送る） */
+};
+#pragma pack(push, 1)
+typedef struct _CMDPARA_PUZZLESE {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		bySe;												/* PUZZLESE_* */
+	DWORD		dwNpc;												/* 台NPCのテーブルID（その台の盤面を持っている人だけが鳴らす） */
+} CMDPARA_PUZZLESE, *PCMDPARA_PUZZLESE;
+#pragma pack(pop)
 
 /* 並べ替えの対象(CMDPARA_SORTITEM の byTarget) */
 enum {

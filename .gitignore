@@ -18,6 +18,7 @@ publish/
 /private/
 /SboSoundData/MIDI/
 /SboSoundData/Audio/
+/SboSoundData/SE/
 
 # 本番 VPS への接続設定（deploy/production/deploy.env.example をコピーして作る）
 deploy/production/deploy.local.env

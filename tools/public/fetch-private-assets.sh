@@ -1,6 +1,6 @@
 #!/bin/bash
 # ===========================================================================
-# 非公開リポジトリ（uraraworks/SBO2003-private）から、公開できない素材（BGM の MIDI と音声ファイル）を取ってくる
+# 非公開リポジトリ（uraraworks/SBO2003-private）から、公開できない素材（BGM の MIDI・音声ファイル・再配布できない効果音）を取ってくる
 #
 #   使い方: SBO2003_PRIVATE_TOKEN=<トークン> tools/public/fetch-private-assets.sh
 #
@@ -17,7 +17,7 @@ REPO="${SBO2003_PRIVATE_REPO:-uraraworks/SBO2003-private}"
 
 # 取ってくるフォルダ（SboSoundData/ の下）。もう手元にあるものは取らない
 NEED=()
-for d in MIDI Audio; do
+for d in MIDI Audio SE; do
 	if [ -d "$ROOT/SboSoundData/$d" ]; then
 		echo "[private] SboSoundData/$d はもうあります"
 	else
@@ -68,5 +68,6 @@ for d in "${NEED[@]}"; do
 	fi
 done
 [ -d "$ROOT/SboSoundData/MIDI" ] && echo "[private] MIDI: $(find "$ROOT/SboSoundData/MIDI" -iname '*.mid' | wc -l) 曲"
+[ -d "$ROOT/SboSoundData/SE" ] && echo "[private] 効果音（再配布できない分）: $(find "$ROOT/SboSoundData/SE" -iname '*.wav' | wc -l) 個"
 [ -d "$ROOT/SboSoundData/Audio" ] && echo "[private] 音声: $(find "$ROOT/SboSoundData/Audio" -iname '*.m4a' | wc -l) 曲"
 exit 0
