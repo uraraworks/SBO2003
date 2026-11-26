@@ -111,6 +111,7 @@
 #define MAX_CHESTNO			2048									/* 「印で変わるマス」の宝箱の番号の数（0〜2047。全マップ通しの番号） */
 #define MAX_CHESTBYTE		(MAX_CHESTNO / 8)						/* 開けた宝箱の記録の大きさ（バイト。abyChestOpened） */
 #define MAX_RECYCLEBOX		1024									/* リサイクル箱の番号の数（1〜1024。全マップ通しの番号。宝箱の番号とは別。0 は「無し」） */
+#define QUEST_KILLTMP_NONE	(0xFFFF)								/* 討伐依頼で数える敵の「空き」（stTmp の id 0 のプヨンも数えられるよう 0 ではなくこれにする） */
 #define FLAG_NOBIT			(0xFFFF)								/* 印の番号の「無し」（印 0 も使えるよう 0 ではなくこれにする） */
 /* 印の番号（FLAG_NOBIT=無し）を、通信・保存用の「番号+1（0=無し）」にする・戻す。
    0 のままのデータが「印 0」の条件にならないようにするため */
@@ -3299,7 +3300,7 @@ typedef struct _QUESTINFO {
 	char		szIntro[MAX_QUESTINTRO];							/* 導入のお話（受ける前に読ませる長い文。空なら読ませずにすぐ確認。保存する） */
 	BYTE		byLevelMin;											/* 受けられる最低レベル（0=制限なし。足りない人には一覧に出さず、受けられない。管理者・受けている人は対象外） */
 	WORD		wCancelStory;									/* 依頼を取り消した時に最初に戻す思い出の本のお話（STORYINFO の wID。0=何もしない。つながる後のお話も戻す。保存する） */
-	WORD		awKillStTmp[MAX_QUESTKILLTMP];						/* 討伐依頼で数える敵（ステータステンプレートの番号。0=空き。保存する） */
+	WORD		awKillStTmp[MAX_QUESTKILLTMP];						/* 討伐依頼で数える敵（ステータステンプレートの番号。QUEST_KILLTMP_NONE=空き。id 0 も有効。保存する） */
 	WORD		wKillNeed;											/* 討伐依頼の必要数（0=討伐依頼ではない。倒した数が届くとギルドで報告できる。保存する） */
 	DWORD		dwRepeatHours;										/* 達成してから再び受けられるまでの時間（時間。0=制限なし。実時間でログアウト中も進む。保存する） */
 } QUESTINFO, *PQUESTINFO;

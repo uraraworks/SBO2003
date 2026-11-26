@@ -350,7 +350,7 @@ static BOOL KillQuestMatch(const QUESTINFO *pQuest, PCHARINFO pEnemy)
 		return FALSE;
 	}
 	for (i = 0; i < MAX_QUESTKILLTMP; i ++) {
-		if ((pQuest->awKillStTmp[i] != 0) && ((DWORD)pQuest->awKillStTmp[i] == dwStTmp)) {
+		if ((pQuest->awKillStTmp[i] != QUEST_KILLTMP_NONE) && ((DWORD)pQuest->awKillStTmp[i] == dwStTmp)) {
 			return TRUE;
 		}
 	}

@@ -561,7 +561,7 @@ static const DATAFIELD s_aFieldQuest[] = {
 	FLD (QUESTINFO, wNotFlag,			"受けられなくなる印",	FT_U16, 0, "キャラのフラグの印の番号（0〜1023）。この印が立っている人は、ギルドの一覧に出ず受けられない。65535=条件なし（足す時に省くと条件なし）。すでに受けている人は続けられる"),
 	FLD (QUESTINFO, byLevelMin,			"最低レベル",			FT_U8, 0, "キャラのレベルがこれ未満の人にはギルドの一覧に出さず、受けられない。0=制限なし（足す時に省くと 0）。管理者は常に見える。既に受けている人には影響しない"),
 	FLD (QUESTINFO, wCancelStory,		"取り消しで戻すお話",	FT_U16, 0, "依頼を取り消した時に、最初に戻す思い出の本のお話の番号（0=何もしない）。そのお話とつながる後のお話の印・数値・持ち物・宝箱が、やり直しと同じように戻る。管理者ウィンドウ・ほかの取り消しでは戻さない"),
-	FLDA(QUESTINFO, awKillStTmp,		"数える敵",				FT_U16ARR, WORD, 0, "討伐依頼（wKillNeed が 1 以上）で数える敵の stTmp（ステータステンプレート）の id を最大 4 つ。0=空き（id 0 の敵は数えられない。短い配列の残りは 0）。NPC発生から出た敵は発生元の stTmp で見る。ふつうの世界（空間 0）の敵だけ数え、異空間・番外編ダンジョン・討伐チャレンジの敵は数えない"),
+	FLDA(QUESTINFO, awKillStTmp,		"数える敵",				FT_U16ARR, WORD, FF_PADMAX, "討伐依頼（wKillNeed が 1 以上）で数える敵の stTmp（ステータステンプレート）の id を最大 4 つ。65535=空き（id 0 の敵も数えられる。足す時に省くと 4 つとも空き。短い配列の残りは空き）。NPC発生から出た敵は発生元の stTmp で見る。ふつうの世界（空間 0）の敵だけ数え、異空間・番外編ダンジョン・討伐チャレンジの敵は数えない"),
 	FLD (QUESTINFO, wKillNeed,			"討伐の必要数",			FT_U16, 0, "0=討伐依頼ではない（足す時に省くと 0）。1 以上=受けた後に awKillStTmp の敵をこの数だけ倒すとギルドで報告できる（段・依頼の品は見ない）。ダメージを与えた人と、全員で分配のパーティの仲間が数える。1〜999。byChallenge が 0 の時だけ"),
 	FLD (QUESTINFO, dwRepeatHours,		"再び受けられるまでの時間",	FT_U32, 0, "達成（報告）してからまた受けられるまでの時間（時間）。0=制限なし（足す時に省くと 0）。実時間でログアウト中も進む。0〜8760。待ち中は一覧の名前の後ろに「（あと○時間）」が付き、受けられない。覚えるのは直近 8 依頼まで"),
 };
@@ -5122,6 +5122,10 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 				Info.byDoneNumNo = FLAG_NONUM;
 				Info.wNeedFlag = FLAG_NOBIT;
 				Info.wNotFlag = FLAG_NOBIT;
+				/* 討伐依頼で数える敵は「空き」から（0 のままだと stTmp 0 のプヨンを数える） */
+				for (int k = 0; k < MAX_QUESTKILLTMP; k ++) {
+					Info.awKillStTmp[k] = QUEST_KILLTMP_NONE;
+				}
 			}
 			if (!CheckKnownKeys(chg, s_aFieldQuest, COUNTOF(s_aFieldQuest), apszQuestExtra, strErr)) {
 				goto Exit;
@@ -5213,10 +5217,10 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 			if (Info.wKillNeed > 0) {
 				bool bHasTmp = false;
 				for (int k = 0; k < MAX_QUESTKILLTMP; k ++) {
-					if (Info.awKillStTmp[k] != 0) {
+					if (Info.awKillStTmp[k] != QUEST_KILLTMP_NONE) {
 						bHasTmp = true;
 						if (Info.awKillStTmp[k] >= g_aStTmpInfo.GetSize()) {
-							strErr = "awKillStTmp[" + JsonNum(k) + "] は stTmp の id で指定してください";
+							strErr = "awKillStTmp[" + JsonNum(k) + "] は stTmp の id（0 から）か 65535（空き）で指定してください";
 							goto Exit;
 						}
 					}
