@@ -1642,6 +1642,36 @@
 	body.sbo-loginscr #sbo-quick .sbo-home .sbo-links .sbo-ic2 {
 		font-size: 17px;
 	}
+	/* ログイン前ホームの一番下（お知らせの下・固定フッターの上）の小さな文字リンク。固定フッターぶんの余白は card の padding-bottom */
+	.sbo-minilinks {
+		display: none;
+	}
+	body.sbo-loginscr #sbo-quick .sbo-minilinks {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: center;
+		align-items: center;
+		gap: 2px 12px;
+		padding: 8px 10px;
+		border-radius: 12px;
+		background: rgba(255, 255, 255, 0.7);
+		text-align: center;
+		font-size: 12px;
+		line-height: 1.4;
+		color: #3b5a48;
+	}
+	body.sbo-loginscr #sbo-quick .sbo-minilinks a,
+	body.sbo-loginscr #sbo-quick .sbo-minilinks button {
+		display: inline-block;
+		margin: 0;
+		padding: 4px 2px;
+		border: 0;
+		background: none;
+		font: inherit;
+		color: #2a6b49;
+		text-decoration: underline;
+		cursor: pointer;
+	}
 	/* PC・横長（幅 900px 以上・高さ 560px 以上・横長）：スマホ縦のレイアウトをそのまま、幅 W の列にして画面中央に置く。
 	   左右は絵（loginbg-wide.webp 2240x1280 = 7:4）で埋める。絵の中央 512/1792 がスマホ絵と同じ内容の列なので、
 	   絵の表示幅を W×3.5（高さ W×2）にして上端・水平中央に敷けば、中央の列がスマホ絵（幅 W・高さ 2W）にぴったり重なる。
@@ -1650,13 +1680,13 @@
 		body.sbo-loginscr #sbo-quick.sbo-show {
 			--col-w: clamp(390px, 50dvh, 540px);
 			--bg-w: var(--col-w);
-			/* 列の外側は白へフェードして見えなくする（一番上のグラデーション。列の端の少し外から白に） */
+			/* 列の外側はゲーム画面と同じ暗い色（--bg）へフェードして見えなくする（一番上のグラデーション。列の端の少し外から） */
 			background:
 				linear-gradient(90deg,
-					#fff calc(50% - var(--col-w) / 2 - 56px),
-					rgba(255, 255, 255, 0) calc(50% - var(--col-w) / 2 + 8px),
-					rgba(255, 255, 255, 0) calc(50% + var(--col-w) / 2 - 8px),
-					#fff calc(50% + var(--col-w) / 2 + 56px)) 0 0 / 100% 100% no-repeat scroll,
+					var(--bg) calc(50% - var(--col-w) / 2 - 56px),
+					rgba(29, 31, 36, 0) calc(50% - var(--col-w) / 2 + 8px),
+					rgba(29, 31, 36, 0) calc(50% + var(--col-w) / 2 - 8px),
+					var(--bg) calc(50% + var(--col-w) / 2 + 56px)) 0 0 / 100% 100% no-repeat scroll,
 				url(/login/loginbg-wide.webp?v=@@SBO_BUILD_COMMIT@@) top center / calc(var(--col-w) * 3.5) auto no-repeat local,
 				var(--bg-end);
 		}
@@ -2593,12 +2623,19 @@
 					<div class="sbo-news-h"><h2 class="sbo-sec-h"><svg class="sbo-ic sbo-ic2" aria-hidden="true"><use href="#sbo-ic-megaphone"/></svg>お知らせ</h2><a class="sbo-link sbo-news-more" href="/changes" target="_blank" rel="noopener">もっと見る<span class="sbo-new-mark" hidden>NEW</span></a></div>
 					<div class="sbo-news-list"></div>
 				</div>
+				<div class="sbo-minilinks">
+					<a href="/kobo" target="_blank" rel="noopener">ドット絵工房</a>
+					<button type="button" id="sbo-gp-link2">ゲームパッド設定</button>
+					<a href="/status" target="_blank" rel="noopener" class="sbo-site-status-mini">サーバー状況</a>
+					<a href="https://github.com/uraraworks/SBO2003" target="_blank" rel="noopener">GitHubで見る</a>
+					<a href="https://www.urara-works.jp/" target="_blank" rel="noopener">© URARA-works</a>
+					<span class="sbo-minibuild" title="反映したコミット"><a href="https://github.com/uraraworks/SBO2003/commit/@@SBO_BUILD_COMMIT@@" target="_blank" rel="noopener">@@SBO_BUILD_COMMIT@@</a></span>
+				</div>
 				<div class="sbo-links">
 					<a class="sbo-link" href="https://github.com/uraraworks/SBO2003/wiki" target="_blank" rel="noopener"><svg class="sbo-ic sbo-ic2" aria-hidden="true"><use href="#sbo-ic-book"/></svg>取扱説明書</a>
+					<a class="sbo-link" href="/about" target="_blank" rel="noopener"><svg class="sbo-ic sbo-ic2" aria-hidden="true"><use href="#sbo-ic-help"/></svg>どんなゲーム？</a>
 					<a class="sbo-link" href="/feedback" target="_blank" rel="noopener"><svg class="sbo-ic sbo-ic2" aria-hidden="true"><use href="#sbo-ic-mail"/></svg>ご意見箱</a>
-					<a class="sbo-link" href="/kobo" target="_blank" rel="noopener"><svg class="sbo-ic sbo-ic2" aria-hidden="true"><use href="#sbo-ic-palette"/></svg>ドット絵工房</a>
 					<a class="sbo-link" href="/credits" target="_blank" rel="noopener"><svg class="sbo-ic sbo-ic2" aria-hidden="true"><use href="#sbo-ic-star"/></svg>クレジット</a>
-					<button type="button" class="sbo-link" id="sbo-gp-link2"><svg class="sbo-ic sbo-ic2" aria-hidden="true"><use href="#sbo-ic-gamepad"/></svg>ゲームパッド設定</button>
 				</div>
 			</div>
 			<!-- ID・パスワードでログイン（前に遊んでいた方・別のアカウントを追加） -->
@@ -2632,6 +2669,14 @@
 				<div class="sbo-sec sbo-news">
 					<div class="sbo-news-h"><h2 class="sbo-sec-h"><svg class="sbo-ic sbo-ic2" aria-hidden="true"><use href="#sbo-ic-megaphone"/></svg>お知らせ</h2><a class="sbo-link sbo-news-more" href="/changes" target="_blank" rel="noopener">もっと見る<span class="sbo-new-mark" hidden>NEW</span></a></div>
 					<div class="sbo-news-list"></div>
+				</div>
+				<div class="sbo-minilinks">
+					<a href="/kobo" target="_blank" rel="noopener">ドット絵工房</a>
+					<button type="button" id="sbo-gp-link3">ゲームパッド設定</button>
+					<a href="/status" target="_blank" rel="noopener" class="sbo-site-status-mini">サーバー状況</a>
+					<a href="https://github.com/uraraworks/SBO2003" target="_blank" rel="noopener">GitHubで見る</a>
+					<a href="https://www.urara-works.jp/" target="_blank" rel="noopener">© URARA-works</a>
+					<span class="sbo-minibuild" title="反映したコミット"><a href="https://github.com/uraraworks/SBO2003/commit/@@SBO_BUILD_COMMIT@@" target="_blank" rel="noopener">@@SBO_BUILD_COMMIT@@</a></span>
 				</div>
 				<div class="sbo-links">
 					<a class="sbo-link" href="https://github.com/uraraworks/SBO2003/wiki" target="_blank" rel="noopener"><svg class="sbo-ic sbo-ic2" aria-hidden="true"><use href="#sbo-ic-book"/></svg>取扱説明書</a>
@@ -2703,18 +2748,22 @@
 <script>
 	/* フッターの「サーバー状況」にオンライン数を添える（/health は server/node/sbosvr_status.js） */
 	(function () {
-		var link = document.getElementById('sbo-site-status');
-		if (!link || location.protocol.indexOf('http') !== 0) {
+		var links = [document.getElementById('sbo-site-status')].concat(
+			Array.prototype.slice.call(document.querySelectorAll('.sbo-site-status-mini')));
+		if (!links[0] || location.protocol.indexOf('http') !== 0) {
 			return;
+		}
+		function setText(t) {
+			links.forEach(function (a) { a.textContent = t; });
 		}
 		function update() {
 			fetch('/health', { cache: 'no-store' }).then(function (res) {
 				return res.ok ? res.json() : null;
 			}).then(function (data) {
-				link.textContent = (data && typeof data.onlinePlayers === 'number') ?
-					'サーバー状況（オンライン ' + data.onlinePlayers + ' 人）' : 'サーバー状況';
+				setText((data && typeof data.onlinePlayers === 'number') ?
+					'サーバー状況（オンライン ' + data.onlinePlayers + ' 人）' : 'サーバー状況');
 			}).catch(function () {
-				link.textContent = 'サーバー状況';
+				setText('サーバー状況');
 			});
 		}
 		update();
@@ -3673,7 +3722,7 @@
 		openBtn.addEventListener('click', openSet);
 		/* 入口：PC はフッター、スマホはゲーム画面右上のスクショ・録画の隣のボタンとログイン前の「おかえりなさい」の画面
 		   （スマホはフッターが出ないため）。つながっている間は右上の小さなボタンからも開ける */
-		['sbo-gp-link', 'sbo-gp-link2', 'sbo-gp-open'].forEach(function (id) {
+		['sbo-gp-link', 'sbo-gp-link2', 'sbo-gp-link3', 'sbo-gp-open'].forEach(function (id) {
 			var link = document.getElementById(id);
 			if (link) {
 				link.addEventListener('click', function (ev) {
