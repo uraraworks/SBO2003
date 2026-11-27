@@ -1223,6 +1223,12 @@
 	#sbo-quick.sbo-show {
 		display: flex;
 	}
+	/* ログインを始めて隠れる時は、すぐ消さずに 0.4 秒かけて薄くする（終わってから非表示。JS が外す） */
+	#sbo-quick.sbo-fadeout {
+		opacity: 0;
+		transition: opacity 0.4s ease;
+		pointer-events: none;
+	}
 	.sbo-card {
 		background: var(--panel);
 		border: 1px solid var(--border);
@@ -6604,18 +6610,49 @@
 
 	/* ログイン画面にいる間だけボタンを出す */
 	var bQuickShown = false;
+	var tmFade = 0;
+	function fadingQuick() {
+		return quick.classList.contains('sbo-fadeout');
+	}
+	function endQuickFade() {
+		clearTimeout(tmFade);
+		tmFade = 0;
+		if (!fadingQuick()) {
+			return;
+		}
+		quick.classList.remove('sbo-fadeout');
+		quick.classList.remove('sbo-show');
+		document.body.classList.toggle('sbo-loginscr', loginState() === 1);
+	}
+	quick.addEventListener('transitionend', function (ev) {
+		if (ev.target === quick && ev.propertyName === 'opacity') {
+			endQuickFade();
+		}
+	});
 	setInterval(function () {
 		var state = loginState();
 		var list = loadList();
 		var bHave = list.length > 0;
 		var bShow = state === 1 && !recover.classList.contains('sbo-show');
+		if (bShow && fadingQuick()) {
+			/* フェード中にログインが失敗して戻ってきた：中断して即、通常表示に */
+			clearTimeout(tmFade);
+			tmFade = 0;
+			quick.classList.remove('sbo-fadeout');
+		}
+		if (!bShow && bQuickShown && !fadingQuick() &&
+			!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+			quick.classList.add('sbo-fadeout');
+			tmFade = setTimeout(endQuickFade, 450);
+		}
+		var bFading = fadingQuick();
 		quick.classList.toggle('sbo-back', bHave);
 		quick.classList.toggle('sbo-new', !bHave);
 		quick.classList.toggle('sbo-id', bDismissed);
 		if (bShow && bHave) {
 			renderList(list);
 		}
-		quick.classList.toggle('sbo-show', bShow);
+		quick.classList.toggle('sbo-show', bShow || bFading);
 		if (bShow && !bQuickShown) {
 			tmQuickShow = Date.now();
 		}
@@ -6631,8 +6668,9 @@
 			focusCanvas();
 		}
 		forgot.classList.toggle('sbo-show', state === 1 && !bShow);
-		/* ログインするまで（接続を始めるまで）は、スマホの仮想パッドなど下の部品を隠して画面いっぱいにする */
-		document.body.classList.toggle('sbo-loginscr', state === 1);
+		/* ログインするまで（接続を始めるまで）は、スマホの仮想パッドなど下の部品を隠して画面いっぱいにする
+		   （フェード中は、フェードが終わるまで保つ） */
+		document.body.classList.toggle('sbo-loginscr', state === 1 || bFading);
 	}, 250);
 
 	function focusCanvas() {
