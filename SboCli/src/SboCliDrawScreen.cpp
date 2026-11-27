@@ -839,6 +839,70 @@ static void PbLine(HDC hDC, int x1, int y1, int x2, int y2, int nThick, COLORREF
 
 static int PbPx(int nFp) { return (nFp + PB_FP / 2) / PB_FP; }
 
+/* ---- 差し替え絵（docs/pinball-art.md）。黒(0,0,0)は透明。描く範囲は切り取り範囲（s_nPz*）の中だけ ---- */
+/* 絵の一部を (dx,dy) へ写す（切り取り範囲に合わせて削る） */
+static void PbArtBlt(CImg32 *pSrc, int sx, int sy, int cx, int cy, int dx, int dy)
+{
+	if (dx < s_nPzL) { sx += s_nPzL - dx; cx -= s_nPzL - dx; dx = s_nPzL; }
+	if (dy < s_nPzT) { sy += s_nPzT - dy; cy -= s_nPzT - dy; dy = s_nPzT; }
+	if (dx + cx > s_nPzR) { cx = s_nPzR - dx; }
+	if (dy + cy > s_nPzB) { cy = s_nPzB - dy; }
+	if ((cx <= 0) || (cy <= 0)) {
+		return;
+	}
+	g_pDibDrawMap->Blt (dx, dy, cx, cy, pSrc, sx, sy, TRUE);
+}
+
+/* 絵のドット (x,y) の色（上下逆の DIB を読む。範囲外・透明は FALSE） */
+static BOOL PbArtPixel(CImg32 *pSrc, int x, int y, DWORD *pdwCl)
+{
+	DWORD dw;
+
+	if ((x < 0) || (y < 0) || (x >= pSrc->Width ()) || (y >= pSrc->Height ())) {
+		return FALSE;
+	}
+	dw = ((PDWORD)(pSrc->GetBits () + (size_t)(pSrc->Height () - 1 - y) * pSrc->Width () * 4))[x];
+	if ((dw & 0x00FFFFFF) == 0) {
+		return FALSE;
+	}
+	*pdwCl = dw;
+	return TRUE;
+}
+
+/* 軸 (px,py)（画面）を中心に、絵（セルの左上 sx,sy・軸の位置 pivx,pivy）を nDeg 度回して描く。bMirror で左右反転（右のフリッパー）。
+   回転は逆向きに写して（最近傍）取る。角度は PbFlipDeg と同じ向き（水平から下向きが正） */
+static void PbArtBltRot(CImg32 *pSrc, int sx, int sy, int nPivX, int nPivY, int px, int py, int nDeg, BOOL bMirror, int nRadius)
+{
+	int dxx, dyy, nCos = PbCos (nDeg), nSin = PbSin (nDeg);
+	DWORD dwCl;
+	PDWORD pDst;
+
+	for (dyy = -nRadius; dyy <= nRadius; dyy ++) {
+		int y = py + dyy;
+		if ((y < s_nPzT) || (y >= s_nPzB)) {
+			continue;
+		}
+		for (dxx = -nRadius; dxx <= nRadius; dxx ++) {
+			int x = px + dxx, rx = bMirror ? -dxx : dxx, ux, uy, ix, iy;
+			if ((x < s_nPzL) || (x >= s_nPzR)) {
+				continue;
+			}
+			/* 画面の (rx,dyy) を -nDeg 回して、絵の軸からの位置 (ux,uy) にする */
+			ux = (rx * nCos + dyy * nSin) / PB_TRIG;
+			uy = (-rx * nSin + dyy * nCos) / PB_TRIG;
+			ix = sx + nPivX + ux;
+			iy = sy + nPivY + uy;
+			if ((ix < sx) || (iy < sy) || (ix >= sx + PBART_FLIP_S) || (iy >= sy + PBART_FLIP_S)) {
+				continue;
+			}
+			if (PbArtPixel (pSrc, ix, iy, &dwCl)) {
+				pDst = (PDWORD)(g_pDibDrawMap->GetBits () + (size_t)(g_pDibDrawMap->Height () - 1 - y) * g_pDibDrawMap->Width () * 4);
+				pDst[x] = dwCl;
+			}
+		}
+	}
+}
+
 static void DrawPinballOne(HDC hDC, const PINBALLDRAW &D, int sx, int sy, BOOL bTop)
 {
 	const PinballTable &T = PinballGetTable ();
@@ -851,13 +915,66 @@ static void DrawPinballOne(HDC hDC, const PINBALLDRAW &D, int sx, int sy, BOOL b
 	if (!bTop) {
 		const COLORREF clWall = RGB (150, 190, 255);
 		const int nClipL = s_nPzL, nClipT = s_nPzT, nClipR = s_nPzR, nClipB = s_nPzB;
-		/* 背景と枠（窓の大きさ。待機中は盤の下端を映す） */
-		PuzFrame (hDC, sx - 1, sy - 1, nW + 2, nH + 2, RGB (200, 200, 200), 170);
+		CImg32 *pArtBg = NULL, *pArtParts = NULL;
+		const BOOL bArt = GetPinballArt (&pArtBg, &pArtParts);		/* 差し替え絵があれば、図形の代わりにそれで描く */
+		/* 背景と枠（窓の大きさ。待機中は盤の下端を映す。差し替え絵の時は絵に任せる） */
+		if (!bArt) {
+			PuzFrame (hDC, sx - 1, sy - 1, nW + 2, nH + 2, RGB (200, 200, 200), 170);
+		}
 		/* 盤の絵は窓の中だけに切り取る（盤が窓より高い時、窓の外にはみ出さない） */
 		s_nPzL = max (s_nPzL, sx);
 		s_nPzR = min (s_nPzR, sx + nW);
 		s_nPzT = max (s_nPzT, sy);
 		s_nPzB = min (s_nPzB, sy + nH);
+		if (bArt) {
+			/* 背景（盤全体 160×PB_H の、窓が映している範囲） */
+			PbArtBlt (pArtBg, 0, D.nCamY, nW, nH, sx, sy);
+			/* ターゲット（セルの中心＝線分の中心） */
+			for (i = 0; i < T.nSeg; i ++) {
+				const PBSEG &S = T.aSeg[i];
+				int nCellX, cx, cy;
+				if (S.nTarget < 0) {
+					continue;
+				}
+				if (D.dwFlashAge[PB_BUMPERS + S.nTarget] < PINBALL_FLASH_MS) {
+					nCellX = PBART_TARGET_HIT_X;
+				} else if (D.nTargetMask & (1u << S.nTarget)) {
+					nCellX = PBART_TARGET_DOWN_X;
+				} else {
+					nCellX = PBART_TARGET_UP_X;
+				}
+				cx = sx + PbPx ((S.x1 + S.x2) / 2);
+				cy = ty0 + PbPx ((S.y1 + S.y2) / 2);
+				PbArtBlt (pArtParts, nCellX, PBART_TARGET_Y, PBART_TARGET_W, PBART_TARGET_H, cx - PBART_TARGET_W / 2, cy - PBART_TARGET_H / 2);
+			}
+			/* バンパー */
+			for (i = 0; i < PB_BUMPERS; i ++) {
+				int cx = sx + PbPx (T.aBumper[i].x), cy = ty0 + PbPx (T.aBumper[i].y);
+				BOOL bFlash = D.dwFlashAge[i] < PINBALL_FLASH_MS;
+				PbArtBlt (pArtParts, bFlash ? PBART_BUMPER_HIT_X : PBART_BUMPER_X, PBART_BUMPER_Y, PBART_BUMPER_S, PBART_BUMPER_S,
+					cx - PBART_BUMPER_S / 2, cy - PBART_BUMPER_S / 2);
+			}
+			/* 打ち出しレーンの溜め（強さ。図形のまま） */
+			if (D.nCharge > 0) {
+				int nLen = 50 * D.nCharge / 100, yy;
+				for (yy = 0; yy < nLen; yy ++) {
+					PuzSpan (hDC, sx + PB_LANE_L + 3, ty0 + PB_LANE_FLOOR - 1 - yy, 11, (yy * 100 / 50 > 66) ? RGB (240, 80, 70) : RGB (110, 220, 110), 200);
+				}
+			}
+			/* フリッパー：近い方の姿（下がり・上がり）の絵を、今の角度との差だけ回して描く。右は左右反転 */
+			for (i = 0; i < 2; i ++) {
+				int nAng = i ? D.nAngR : D.nAngL, bUp = (nAng * 2 >= PB_FLIP_STEPS) ? 1 : 0;
+				int nPoseDeg = PbFlipDeg (bUp ? PB_FLIP_STEPS : 0);
+				PbArtBltRot (pArtParts, bUp ? PBART_FLIP_UP_X : PBART_FLIP_REST_X, PBART_FLIP_Y, PBART_FLIP_PX, PBART_FLIP_PY,
+					sx + PbPx (i ? T.nPivotRx : T.nPivotLx), ty0 + PbPx (T.nPivotY), PbFlipDeg (nAng) - nPoseDeg, i ? TRUE : FALSE, 46);
+			}
+			/* ボール */
+			if (D.bBallShow && !St.byIdle) {
+				PbArtBlt (pArtParts, PBART_BALL_X, PBART_BALL_Y, PBART_BALL_S, PBART_BALL_S,
+					sx + PbPx (D.nBallX) - PBART_BALL_S / 2, ty0 + PbPx (D.nBallY) - PBART_BALL_S / 2);
+			}
+		}
+		if (!bArt) {		/* 図形で描く（差し替え絵が無い時） */
 		/* 壁・斜め壁・仕切り・床（ターゲット以外の線分） */
 		for (i = 0; i < T.nSeg; i ++) {
 			const PBSEG &S = T.aSeg[i];
@@ -920,6 +1037,7 @@ static void DrawPinballOne(HDC hDC, const PINBALLDRAW &D, int sx, int sy, BOOL b
 			int bx = sx + PbPx (D.nBallX), by = ty0 + PbPx (D.nBallY);
 			PbFillCircle (hDC, bx, by, PbPx (PB_BALL_R), RGB (235, 235, 235));
 			PbFillCircle (hDC, bx - 1, by - 1, 1, RGB (255, 255, 255));
+		}
 		}
 		/* 窓の位置の目印（盤が窓より高い時。左端の細い縦線で、盤全体のどこを映しているか） */
 		if ((PB_YOFS > 0) && !St.byIdle) {

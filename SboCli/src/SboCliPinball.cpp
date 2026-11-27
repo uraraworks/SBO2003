@@ -451,6 +451,31 @@ static void CamUpdate(PBVIEW *pView, PPINBALLDRAW pOut, DWORD dwNow, BOOL bFollo
 	if (pOut->nCamY > PB_YOFS) pOut->nCamY = PB_YOFS;
 }
 
+/* 差し替え絵を読む（初めて描く時に 1 回だけ。リソースが無い・形式違い・大きさ違いなら図形で描く） */
+extern void ReadGrpData2(LPSTR pszName, CImg32 **pDib, int nSize);	/* SboCliMain.cpp */
+
+BOOL GetPinballArt(CImg32 **ppBg, CImg32 **ppParts)
+{
+	static int s_nState = 0;				/* 0=未読み込み・1=使える・2=使わない */
+	static CImg32 *s_pBg = NULL, *s_pParts = NULL;
+
+	if (s_nState == 0) {
+		s_nState = 2;
+		ReadGrpData2 ("IDP_PINBALL_BG", &s_pBg, 1);
+		ReadGrpData2 ("IDP_PINBALL_PARTS", &s_pParts, 1);
+		if (s_pBg && s_pParts && (s_pBg->Width () == PB_W) && (s_pBg->Height () == PB_H) &&
+			(s_pParts->Width () >= PBART_PARTS_W) && (s_pParts->Height () >= PBART_PARTS_H)) {
+			s_nState = 1;
+		}
+	}
+	if (s_nState != 1) {
+		return FALSE;
+	}
+	*ppBg = s_pBg;
+	*ppParts = s_pParts;
+	return TRUE;
+}
+
 BOOL GetPinballView(int nIdx, PPINBALLDRAW pOut)
 {
 	PBVIEW *pView;

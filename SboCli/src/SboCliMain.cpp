@@ -1524,11 +1524,22 @@ void ReadGrpData2(LPSTR pszName, CImg32 **pDib, int nSize)
 	int CompressionType;
 	int FilterType;
 	png_get_IHDR (Png, Info, &Width, &Height, &BitDepth, &ColorType, &InterlaceType, &CompressionType, &FilterType);
+	/* パレット（インデックスカラー）の PNG だけ読める（色数が少ないと 1・2・4 ビットで保存されるので、8 ビットに広げて読む）。
+	   RGB・RGBA・16 ビット・インターレースは読み出しで壊れるので、読まずに空の絵のまま返す
+	   （ピンボールの差し替え絵など、後から人が置く PNG の取り違え対策） */
+	if ((BitDepth > 8) || (ColorType != PNG_COLOR_TYPE_PALETTE) || (InterlaceType != PNG_INTERLACE_NONE)) {
+		png_destroy_read_struct (&Png, &Info, NULL);
+		delete pDibTmp;
+		return;
+	}
+	if (BitDepth < 8) {
+		png_set_packing (Png);
+	}
 	BitDepth = 8;
 
 	png_set_bgr(Png);
 
-	png_colorp Palette;
+	png_colorp Palette = NULL;
 	int PaletteCount = 0;
 	if (BitDepth == 8) {
 		png_get_PLTE (Png, Info, &Palette, &PaletteCount);
