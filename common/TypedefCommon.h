@@ -413,6 +413,8 @@ enum {
 	CMD_PUZZLEKEY,													/* 落ち物パズルのキー入力（クライアント→サーバー。CMDPARA_PUZZLEKEY の byData が PUZZLEKEY_*、dwTblID=本人、dwSerial=連番） */
 	CMD_PUZZLESTATE,												/* 落ち物パズルの盤面・操作中の落ち物・得点（サーバー→座っている人・対戦相手・台の近くの人。CMDPARA_PUZZLESTATE） */
 	CMD_PUZZLESE,												/* 落ち物パズルの効果音（サーバー→台の近くの人。CMDPARA_PUZZLESE。盤面が見える距離にいる人だけに届く） */
+/* 以下、管理者用（CMD_MAPPARTSADD 以上は自動で管理者専用になる。CMD_PUZZLESE より後ろに足す） */
+	CMD_ADMINTRIALROOM,												/* 管理者ウィンドウのお試し個室の編集（一覧・書き込み。結果はサーバー→クライアント） */
 	CMD_MAX
 };
 
@@ -3652,6 +3654,30 @@ typedef struct _CMDPARA_ADMINQUEST {
 	QUESTINFO	Info;												/* 依頼（ITEM・SET） */
 	char		szMsg[MAX_ADMINQUESTMSG];							/* 結果の文（RESULT。うまくいかなかった理由） */
 } CMDPARA_ADMINQUEST, *PCMDPARA_ADMINQUEST;
+#pragma pack(pop)
+
+/* 管理者ウィンドウのお試し個室の編集（CMD_ADMINTRIALROOM の byCmdSub） */
+enum {
+	ADMINTRIALROOM_LISTREQ = 0,									/* 一覧の問い合わせ（クライアント→サーバー） */
+	ADMINTRIALROOM_ITEM,										/* 一覧の 1 件（サーバー→クライアント。nNo 番目・全部で wCount 件。0 件なら wCount=0 だけ届く） */
+	ADMINTRIALROOM_SET,											/* 書き込み（クライアント→サーバー。nNo=-1 なら足す。削除は無く、止めるのは byState=0。データAPIと同じ確認を通す） */
+	ADMINTRIALROOM_RESULT,										/* 書き込みの結果（サーバー→クライアント。byResult・szMsg。うまくいった時は続けて ITEM も届く） */
+};
+
+#define MAX_ADMINTRIALROOMMSG	256									/* お試し個室の書き込みの結果の文（UTF-8） */
+
+#pragma pack(push, 1)
+/* 管理者ウィンドウのお試し個室の編集（送受信とも同じ形） */
+typedef struct _CMDPARA_ADMINTRIALROOM {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byCmdSub;											/* サブコマンド(ADMINTRIALROOM_*) */
+	BYTE		byResult;											/* 結果（RESULT: 1=書き込んだ 0=書き込めなかった） */
+	BYTE		byReserve;											/* 予備 */
+	WORD		wCount;												/* お試し個室の全部の件数（ITEM・RESULT） */
+	int			nNo;												/* お試し個室の配列の番号（ITEM・SET・RESULT。SET の -1 は足す） */
+	TRIALROOMINFO	Info;											/* お試し個室（ITEM・SET） */
+	char		szMsg[MAX_ADMINTRIALROOMMSG];						/* 結果の文（RESULT。うまくいかなかった理由） */
+} CMDPARA_ADMINTRIALROOM, *PCMDPARA_ADMINTRIALROOM;
 #pragma pack(pop)
 
 /* 管理者ウィンドウの思い出の本の編集（CMD_ADMINSTORY の byCmdSub） */
