@@ -9522,9 +9522,9 @@ void CmdProcHanasu(PWNDINFO pWnd)
 			pWndTmp = NULL;
 		}
 
-	/* ギルドの依頼の受付(@g)・依頼の見える人(@q)・思い出の本の語り部(@r)・ダンジョン受付(@d)？ 返事（一覧・お知らせ）はサーバーから届く */
+	/* ギルドの依頼の受付(@g)・依頼の見える人(@q)・思い出の本の語り部(@r)・ダンジョン受付(@d)・お試し個室の入口(@x)？ 返事（一覧・お知らせ）はサーバーから届く */
 	} else if (pChar2->pszNpcSpeech[0] == '@' &&
-		((pChar2->pszNpcSpeech[1] == 'g') || (pChar2->pszNpcSpeech[1] == 'q') || (pChar2->pszNpcSpeech[1] == 'r') || (pChar2->pszNpcSpeech[1] == 'd'))) {
+		((pChar2->pszNpcSpeech[1] == 'g') || (pChar2->pszNpcSpeech[1] == 'q') || (pChar2->pszNpcSpeech[1] == 'r') || (pChar2->pszNpcSpeech[1] == 'd') || (pChar2->pszNpcSpeech[1] == 'x'))) {
 		if ((pChar2->pszNpcSpeech[1] == 'g') || (pChar2->pszNpcSpeech[1] == 'r')) {
 			/* 一覧を開くのは、返事が届いてから */
 			g_dwQuestWaitTime = timeGetTime ();
@@ -9533,9 +9533,9 @@ void CmdProcHanasu(PWNDINFO pWnd)
 			}
 		}
 		SendCmdTALKRAND (pChar2->dwTblID);
-		/* ギルドの人・語り部・ダンジョン受付はこちらを向く。依頼の見える物(@q)は宝箱や光もあるので向きを変えない
+		/* ギルドの人・語り部・ダンジョン受付・お試し個室の入口はこちらを向く。依頼の見える物(@q)は宝箱や光もあるので向きを変えない
 		   （宝箱の絵は向きによって別の絵（化け箱）になっている） */
-		if ((pChar2->pszNpcSpeech[1] == 'g') || (pChar2->pszNpcSpeech[1] == 'r') || (pChar2->pszNpcSpeech[1] == 'd')) {
+		if ((pChar2->pszNpcSpeech[1] == 'g') || (pChar2->pszNpcSpeech[1] == 'r') || (pChar2->pszNpcSpeech[1] == 'd') || (pChar2->pszNpcSpeech[1] == 'x')) {
 			pChar2->byDirection = abyDirectionTbl[pChar->byDirection];
 		}
 		int nNo = GetWindowID (g_dwMsgIDCommand);

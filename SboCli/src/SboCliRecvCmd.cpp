@@ -30,6 +30,7 @@
 #include "AdminWindowOld/AdminDlgMapSwap.h"
 #include "AdminWindowOld/AdminDlgQuestInfo.h"
 #include "AdminWindowOld/AdminDlgStoryInfo.h"
+#include "AdminWindowOld/AdminDlgTrialRoom.h"
 #include "AdminWindowOld/AdminFlagTalk.h"
 #include "SboCliDebugWindow.h"
 #include "SboCliMsgLogWindow.h"
@@ -171,6 +172,7 @@ void	RecvDataProcADMINFLAGNAME			(PBYTE, DWORD);			/* 受信データ処理(管�
 void	RecvDataProcADMINTALK				(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウの会話データの編集) */
 void	RecvDataProcADMINSTORY				(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウの思い出の本の編集) */
 void	RecvDataProcADMINFLAGGROUP			(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのフラグのグループの編集) */
+void	RecvDataProcADMINTRIALROOM			(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのお試し個室の編集) */
 void	RecvDataProcADMINCHARFLAG			(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのキャラのフラグ) */
 void	RecvDataProcTALKMSG					(PBYTE, DWORD);			/* 受信データ処理(会話データで選ばれた台詞) */
 void	RecvDataProcMAPSWAP					(PBYTE, DWORD);			/* 受信データ処理(印で変わるマスの差し替え一覧) */
@@ -485,6 +487,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcPUZZLESE,				/* CMD_PUZZLESE */
 	NULL,								/* CMD_PINBALLKEY(クライアント→サーバーのみ) */
 	RecvDataProcPINBALLSTATE,			/* CMD_PINBALLSTATE */
+	RecvDataProcADMINTRIALROOM,			/* CMD_ADMINTRIALROOM */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -4525,6 +4528,22 @@ void RecvDataProcADMINFLAGGROUP(PBYTE pData, DWORD dwDataSize)
 	}
 	pPara->szMsg[sizeof (pPara->szMsg) - 1] = 0;
 	AdminFlagGroupOnRecv (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINTRIALROOM										 */
+/* 内容：受信データ処理(管理者ウィンドウのお試し個室の編集)					 */
+/*       一覧の 1 件・書き込みの結果が届く									 */
+/* ========================================================================= */
+void RecvDataProcADMINTRIALROOM(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINTRIALROOM pPara = (PCMDPARA_ADMINTRIALROOM)pData;
+
+	if (dwDataSize < sizeof (CMDPARA_ADMINTRIALROOM)) {
+		return;
+	}
+	pPara->szMsg[sizeof (pPara->szMsg) - 1] = 0;
+	AdminTrialRoomOnRecv (pPara);
 }
 
 /* ========================================================================= */

@@ -60,7 +60,7 @@ async function once(dist, record) {
 		});
 		await page.clock.install({ time: 0 });
 		await page.clock.pauseAt(1000);
-		await page.goto(`http://127.0.0.1:${port}/sbocli.html${process.env.NOVERIFY ? "" : "?verify=1"}`);
+		await page.goto(`http://127.0.0.1:${port}/sbocli.html?logo=1${process.env.NOVERIFY ? "" : "&verify=1"}`);
 		// 起動するまでは 16ms（rAF の間隔）ずつ時計を進める。起動の時刻が 16ms の倍数にそろい、描画フレームとの位相が毎回同じになる
 		for (let i = 0; i < 4000 && !started; i++) {
 			await page.clock.runFor(16);

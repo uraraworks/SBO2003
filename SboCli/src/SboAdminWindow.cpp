@@ -26,6 +26,7 @@
 #include "AdminWindowOld/AdminDlgStoryInfo.h"
 #include "AdminWindowOld/AdminDlgFlagName.h"
 #include "AdminWindowOld/AdminDlgFlagGroup.h"
+#include "AdminWindowOld/AdminDlgTrialRoom.h"
 #include "AdminWindowOld/AdminDlgTalk.h"
 #include "AdminWindowOld/AdminDlgCharFlag.h"
 #include "AdminWindowOld/AdminFlagUi.h"
@@ -1650,6 +1651,11 @@ void AdminOnCommand(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 		DeleteAdminWnd ();
 		g_nAdminWindowType = IDM_ETC_FLAGGROUP;
 		ShowDlgFlagGroup (hWnd);
+		break;
+	case IDM_ETC_TRIALROOM:
+		DeleteAdminWnd ();
+		g_nAdminWindowType = IDM_ETC_TRIALROOM;
+		ShowDlgTrialRoom (hWnd);
 		break;
 	case IDM_ETC_TALK:
 		DeleteAdminWnd ();
@@ -7912,6 +7918,7 @@ void DeleteAdminWnd(void)
 	CloseDlgStoryInfo ();
 	CloseDlgFlagName ();
 	CloseDlgFlagGroup ();
+	CloseDlgTrialRoom ();
 	CloseDlgTalk ();
 	CloseDlgCharFlag ();
 	CloseDlgAccSearch ();

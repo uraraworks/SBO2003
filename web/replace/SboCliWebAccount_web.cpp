@@ -120,3 +120,38 @@ extern "C" EMSCRIPTEN_KEEPALIVE void SboWebNewLogin(const char *pszAcc, const ch
 	strcpy(g_szPas, pszPas);
 	PostMessage(g_hWndMain, WM_COMMAND, IDC_CONNECTNEW, 0);
 }
+
+/* ========================================================================= */
+/* 関数名：SboWebPasLogin													 */
+/* 内容：ID・パスワードでログインする（HTML のログインカードから）			 */
+/*       ゲーム内の入力窓は使わない。アカウント名・パスワードとも半角のみ	 */
+/* ========================================================================= */
+extern "C" EMSCRIPTEN_KEEPALIVE void SboWebPasLogin(const char *pszAcc, const char *pszPas)
+{
+	size_t i, nAcc, nPas;
+
+	if (pszAcc == NULL || pszPas == NULL || SboWebLoginState() != 1) {
+		return;
+	}
+	nAcc = strlen(pszAcc);
+	nPas = strlen(pszPas);
+	if (nAcc == 0 || nAcc >= MAX_ACCNAME || nPas >= MAX_ACCNAME) {
+		return;
+	}
+	for (i = 0; i < nAcc; i ++) {
+		if ((unsigned char)pszAcc[i] < 0x21 || (unsigned char)pszAcc[i] > 0x7E) {
+			return;
+		}
+	}
+	for (i = 0; i < nPas; i ++) {
+		if ((unsigned char)pszPas[i] < 0x20 || (unsigned char)pszPas[i] > 0x7E) {
+			return;
+		}
+	}
+	ZeroMemory(g_szWebToken, sizeof(g_szWebToken));
+	ZeroMemory(g_szAcc, sizeof(g_szAcc));
+	ZeroMemory(g_szPas, sizeof(g_szPas));
+	strcpy(g_szAcc, pszAcc);
+	strcpy(g_szPas, pszPas);
+	PostMessage(g_hWndMain, WM_COMMAND, IDC_CONNECTNEW, 0);
+}

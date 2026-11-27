@@ -98,6 +98,8 @@ Module['sboData'] = (function () {
 		/* 付与（接頭辞・接尾辞）と派生アイテム表（ファイルが無い時は 0 件。派生表は読むだけで、ドロップ・鑑定で増える） */
 		affix: 'SboDataAffixInfo.dat',
 		itemDerive: 'SboDataItemDerive.dat',
+		/* お試し個室（ファイルが無い時は 0 件。初めて保存した時に作られる） */
+		trialRoom: 'SboDataTrialRoom.dat',
 		/* ギルドの仕事依頼（ファイルが無い時は 0 件。初めて保存した時に作られる） */
 		quest: 'SboDataQuestInfo.dat',
 		/* キャラのフラグの名前表と会話データ（どちらもファイルが無い時は 0 件。初めて保存した時に作られる） */
@@ -734,8 +736,8 @@ Module['sboData'] = (function () {
 
 	/* 追加した記録を「消す」変更。消せない種類は null */
 	function eraseChanges(kind) {
-		if (kind === 'maker' || kind === 'recipe' || kind === 'quest' || kind === 'flag' || kind === 'talk' || kind === 'story' || kind === 'flagGroup') {
-			return { byState: 0 };		/* 依頼・思い出の本のシナリオは削除が無いので、追加したものは「止める」（0）にする。名前表・会話データの 0 は「削除済み」 */
+		if (kind === 'maker' || kind === 'recipe' || kind === 'quest' || kind === 'flag' || kind === 'talk' || kind === 'story' || kind === 'flagGroup' || kind === 'trialRoom') {
+			return { byState: 0 };		/* 依頼・思い出の本のシナリオは削除が無いので、追加したものは「止める」（0）にする。名前表・会話データの 0 は「削除済み」。お試し個室は 0=閉じる */
 		}
 
 		if (kind === 'char') {

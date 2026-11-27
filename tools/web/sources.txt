@@ -43,6 +43,8 @@ SboCli/src/AdminWindowOld/AdminDlgStoryInfoEdit.cpp
 SboCli/src/AdminWindowOld/AdminFlagTalk.cpp
 SboCli/src/AdminWindowOld/AdminDlgFlagName.cpp
 SboCli/src/AdminWindowOld/AdminDlgFlagGroup.cpp
+SboCli/src/AdminWindowOld/AdminDlgTrialRoom.cpp
+SboCli/src/AdminWindowOld/AdminDlgTrialRoomEdit.cpp
 SboCli/src/AdminWindowOld/AdminDlgTalk.cpp
 SboCli/src/AdminWindowOld/AdminDlgTalkEdit.cpp
 SboCli/src/AdminWindowOld/AdminDlgCharFlag.cpp
