@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>スクラップブックオンライン</title>
+<!-- ホーム画面の背景は最初のページで要るので、本文を読む前から取り始める（CSS の背景と同じ URL・同じ切り替え条件） -->
+<link rel="preload" as="image" type="image/webp" href="/login/loginbg-mobile.webp?v=@@SBO_BUILD_COMMIT@@" media="not all and (min-width: 900px) and (min-height: 560px) and (min-aspect-ratio: 5/4)">
+<link rel="preload" as="image" type="image/webp" href="/login/loginbg-wide.webp?v=@@SBO_BUILD_COMMIT@@" media="(min-width: 900px) and (min-height: 560px) and (min-aspect-ratio: 5/4)">
 <style>
 	:root {
 		--bg: #1d1f24;
@@ -1567,7 +1570,40 @@
 	body.sbo-loginscr #sbo-quick .sbo-btn.sbo-play {
 		min-height: 60px;
 	}
-	/* ---- ログイン前ホーム画面の背景（ロゴ入り・人物なしの 1 枚絵）。#sbo-quick が出てから読まれる。版はビルドのコミット ----
+	/* ---- ホーム画面（ページを開いた直後から出す）。ゲームの準備ができるまで（body.sbo-booting）は、
+	   ログインを始めるボタンを押せなくして、読み込みの進み具合（#sbo-status）を画面の下に重ねる ---- */
+	body.sbo-booting #sbo-quick .sbo-btn,
+	body.sbo-booting #sbo-quick .sbo-acc-gear {
+		opacity: 0.55;
+		filter: saturate(0.6);
+		pointer-events: none;
+		cursor: default;
+	}
+	body.sbo-booting #sbo-status {
+		position: fixed;
+		left: 50%;
+		right: auto;
+		top: auto;
+		bottom: calc(14px + env(safe-area-inset-bottom));
+		transform: translateX(-50%);
+		z-index: 1000;
+		box-sizing: border-box;
+		width: max-content;
+		max-width: calc(100% - 32px);
+		padding: 8px 16px 10px;
+		border-radius: 10px;
+		background: rgba(35, 64, 47, 0.92);
+		color: #f4f8de;
+		text-align: center;
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+	}
+	body.sbo-booting #sbo-status:empty {
+		display: none;
+	}
+	body.sbo-booting #sbo-status .sbo-load-bar {
+		border-color: rgba(244, 248, 222, 0.5);
+	}
+	/* ---- ログイン前ホーム画面の背景（ロゴ入り・人物なしの 1 枚絵）。ページの <head> で先読みする。版はビルドのコミット ----
 	   既定＝スマホ縦（幅 900px 未満、または縦長）：ページ全体が縦スクロール。絵は幅いっぱいで上端から敷き（絵ごとスクロール）、
 	   絵より下は絵の最下行の色（--bg-end）。絵の上〜 --town-bottom（ロゴと町）はスペーサーで空け、遊ぶボタンはそのすぐ下。
 	   絵の差し替え（1024x2048 = 1:2）はここの変数だけ：
@@ -2561,7 +2597,7 @@
 	}
 </style>
 </head>
-<body>
+<body class="sbo-loginscr sbo-booting">
 <!-- ボタンのアイコン（24×24 の線画。使う所は <svg class="sbo-ic"><use href="#sbo-ic-…"/></svg>） -->
 <svg id="sbo-icons" width="0" height="0" style="position:absolute" aria-hidden="true">
 	<symbol id="sbo-ic-camera" viewBox="0 0 24 24"><path d="M4 8h3l1.5-2.5h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></symbol>
@@ -2600,7 +2636,7 @@
 		<button type="button" id="sbo-gp-open" title="ゲームパッドのボタン割当"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-gamepad"/></svg><span class="sbo-pad-txt">パッド</span></button>
 		<div id="sbo-rec-badge">REC <span id="sbo-rec-time">0:00</span></div>
 		<!-- ログイン画面のボタン。ID・パスワードの入力欄は「ID・パスワードでログイン」を押した時だけ見せる -->
-		<div id="sbo-quick" data-sbo-ui="1">
+		<div id="sbo-quick" class="sbo-show" data-sbo-ui="1">
 			<!-- この端末で前にログインしていた -->
 			<div class="sbo-card sbo-home" id="sbo-quick-back">
 				<div class="sbo-hero"><h1 class="sbo-sr">スクラップブックオンライン</h1></div>
@@ -6574,6 +6610,9 @@
 		var fn = window.Module && window.Module['_SboWebLoginState'];
 		return typeof fn === 'function' ? fn() : 0;
 	}
+	/* ゲーム（ブラウザ版はロゴ・タイトルを飛ばして最初からログイン画面）の準備ができて、
+	   ログインを受け付けるまで true。この間もホーム画面は出し、ログインを始めるボタンだけ押せなくする */
+	var bBoot = true;
 
 	/* 覚えているアカウントのボタンを並べる（中身が変わった時だけ作り直す） */
 	var strListSig = null;
@@ -6629,11 +6668,14 @@
 			endQuickFade();
 		}
 	});
-	setInterval(function () {
+	function watchQuick() {
 		var state = loginState();
+		if (state !== 0) {
+			bBoot = false;
+		}
 		var list = loadList();
 		var bHave = list.length > 0;
-		var bShow = state === 1 && !recover.classList.contains('sbo-show');
+		var bShow = (state === 1 || bBoot) && !recover.classList.contains('sbo-show');
 		if (bShow && fadingQuick()) {
 			/* フェード中にログインが失敗して戻ってきた：中断して即、通常表示に */
 			clearTimeout(tmFade);
@@ -6670,8 +6712,11 @@
 		forgot.classList.toggle('sbo-show', state === 1 && !bShow);
 		/* ログインするまで（接続を始めるまで）は、スマホの仮想パッドなど下の部品を隠して画面いっぱいにする
 		   （フェード中は、フェードが終わるまで保つ） */
-		document.body.classList.toggle('sbo-loginscr', state === 1 || bFading);
-	}, 250);
+		document.body.classList.toggle('sbo-loginscr', state === 1 || bFading || bBoot);
+		document.body.classList.toggle('sbo-booting', bBoot);
+	}
+	watchQuick();
+	setInterval(watchQuick, 250);
 
 	function focusCanvas() {
 		var cv = document.getElementById('canvas');
@@ -6878,7 +6923,7 @@
 	document.getElementById('sbo-quick-id').addEventListener('submit', function (ev) {
 		ev.preventDefault();
 		var M = window.Module;
-		if (!M || !M['_SboWebPasLogin']) {
+		if (!M || !M['_SboWebPasLogin'] || loginState() !== 1) {
 			return;
 		}
 		/* 出たばかりの Enter の押しっぱなしでは送らない */
@@ -6911,7 +6956,7 @@
 
 	function tokenLogin(token) {
 		var M = window.Module;
-		if (!isToken(token) || !M || !M['_SboWebTokenLogin']) {
+		if (!isToken(token) || !M || !M['_SboWebTokenLogin'] || loginState() !== 1) {
 			return;
 		}
 		selectToken(token);
@@ -6949,7 +6994,7 @@
 	}
 	document.getElementById('sbo-quick-newstart').addEventListener('click', function () {
 		var M = window.Module;
-		if (!M || !M['_SboWebNewLogin']) {
+		if (!M || !M['_SboWebNewLogin'] || loginState() !== 1) {
 			return;
 		}
 		/* 見間違えやすい文字（0/o・1/l/i）は使わない。アカウント名は 11 文字、パスワードは 12 文字 */
