@@ -1680,13 +1680,13 @@
 		body.sbo-loginscr #sbo-quick.sbo-show {
 			--col-w: clamp(390px, 50dvh, 540px);
 			--bg-w: var(--col-w);
-			/* 列の外側はゲーム画面と同じ暗い色（--bg）へフェードして見えなくする（一番上のグラデーション。列の端の少し外から） */
+			/* 列の外側はゲーム画面と同じ暗い色（--bg）で隠す（フェードせずすぱっと切る）（一番上のグラデーション。列の端の少し外から） */
 			background:
 				linear-gradient(90deg,
-					var(--bg) calc(50% - var(--col-w) / 2 - 56px),
-					rgba(29, 31, 36, 0) calc(50% - var(--col-w) / 2 + 8px),
-					rgba(29, 31, 36, 0) calc(50% + var(--col-w) / 2 - 8px),
-					var(--bg) calc(50% + var(--col-w) / 2 + 56px)) 0 0 / 100% 100% no-repeat scroll,
+					var(--bg) calc(50% - var(--col-w) / 2),
+					rgba(29, 31, 36, 0) calc(50% - var(--col-w) / 2),
+					rgba(29, 31, 36, 0) calc(50% + var(--col-w) / 2),
+					var(--bg) calc(50% + var(--col-w) / 2)) 0 0 / 100% 100% no-repeat scroll,
 				url(/login/loginbg-wide.webp?v=@@SBO_BUILD_COMMIT@@) top center / calc(var(--col-w) * 3.5) auto no-repeat local,
 				var(--bg-end);
 		}
