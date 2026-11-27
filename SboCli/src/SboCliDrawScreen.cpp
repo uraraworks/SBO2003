@@ -809,7 +809,7 @@ static void DrawPuzzle(int nX, int nY, BOOL bTop)
 /* ========================================================================= */
 /* 上段（土地名・値段）の暗い帯の濃さ（0〜255）。ドット絵と anime2（g_bLandArtStyle。細かい絵なので文字が埋もれやすい）で別々に決める */
 static const int s_nLandTopAlphaDot = 140;
-static const int s_nLandTopAlphaArt = 140;
+static const int s_nLandTopAlphaArt = 165;
 
 static const COLORREF s_aclLandPlayer[LAND_MAX_PLAYERS] = {
 	RGB (235, 80, 70),		/* 1 人目 赤 */

@@ -1610,16 +1610,16 @@ void ReadGrpData2(LPSTR pszName, CImg32 **pDib, int nSize)
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
-/* ブラウザ版：URL に ?landart=anime2 があれば 1（文字列リテラルは前処理で SJIS 化されるので正規表現で調べる） */
+/* ブラウザ版：URL に ?landart=dot があれば 0（ドット絵に戻す）、無ければ 1（アニメ絵）。文字列リテラルは前処理で SJIS 化されるので正規表現で調べる */
 EM_JS(int, SboJsLandArtStyle, (void), {
-	return /[?&]landart=anime2/.test (location.search) ? 1 : 0;
+	return /[?&]landart=dot/.test (location.search) ? 0 : 1;
 });
 #endif
 
 /* ========================================================================= */
 /* 関数名：LandArtStyleInit													 */
-/* 内容：土地取りのコマ絵の比較用の切り替え。g_bLandArtStyle が立つ時（ブラウザ版は URL ?landart=anime2、	 */
-/*		 他は環境変数 SBO_LAND_ART=anime2）、anime2（192×192 ×7×4＝1344×768）を読み、	 */
+/* 内容：土地取りのコマ絵の比較用の切り替え。g_bLandArtStyle が立つ時（既定。ブラウザ版は URL ?landart=dot、	 */
+/*		 他は環境変数 SBO_LAND_ART=dot でドット絵に戻す）、anime2（192×192 ×7×4＝1344×768）を読み、	 */
 /*		 2×2 の平均で 96×96 に縮小した絵（672×384）で g_pDibLandCells を置き換える。	 */
 /*		 読めない・大きさが違う時はドット絵のまま									 */
 /* ========================================================================= */
@@ -1634,7 +1634,7 @@ static void LandArtStyleInit(void)
 #else
 	{
 		const char *pszEnv = getenv ("SBO_LAND_ART");
-		g_bLandArtStyle = (pszEnv && (strcmp (pszEnv, "anime2") == 0)) ? TRUE : FALSE;
+		g_bLandArtStyle = (pszEnv && (strcmp (pszEnv, "dot") == 0)) ? FALSE : TRUE;
 	}
 #endif
 	if (!g_bLandArtStyle) {
