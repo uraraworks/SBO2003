@@ -373,7 +373,7 @@ int main()
 	}
 	/* サブゲーム情報の既定値と丸め（CPU 強さ 0 は 2・上限・チケット枚数の上限） */
 	{
-		struct { unsigned char byCpuLevel; unsigned short wTicketItemID; unsigned char byTicketNum; } Info;		/* SUBGAME_JANJANINFO と同じ欄（TypedefCommon.h は入れない） */
+		struct { unsigned char byCpuLevel; unsigned short wTicketItemID; unsigned char byTicketNum; unsigned short wWaitSec; } Info;		/* SUBGAME_JANJANINFO と同じ欄（TypedefCommon.h は入れない） */
 		memset (&Info, 0xFF, sizeof (Info));
 		JanjanInfoSetDefault (&Info);
 		CHECK (Info.byCpuLevel == JANJAN_STRENGTH_DEFAULT && Info.wTicketItemID == 0 && Info.byTicketNum == 0);
@@ -383,6 +383,13 @@ int main()
 		Info.byCpuLevel = 9;
 		JanjanInfoClamp (&Info);
 		CHECK (Info.byCpuLevel == JANJAN_CPU_LEVEL_MAX);
+		/* 参加募集の待ち時間：既定 60・0 は 60・下限 5・上限 600 */
+		JanjanInfoSetDefault (&Info);
+		CHECK (Info.wWaitSec == JANJAN_WAIT_DEFAULT);
+		Info.wWaitSec = 0; JanjanInfoClamp (&Info); CHECK (Info.wWaitSec == JANJAN_WAIT_DEFAULT);
+		Info.wWaitSec = 2; JanjanInfoClamp (&Info); CHECK (Info.wWaitSec == JANJAN_WAIT_MIN);
+		Info.wWaitSec = 9999; JanjanInfoClamp (&Info); CHECK (Info.wWaitSec == JANJAN_WAIT_MAX);
+		Info.wWaitSec = 30; JanjanInfoClamp (&Info); CHECK (Info.wWaitSec == 30);
 	}
 
 	printf (g_nNg ? "NG %d 件\n" : "一致\n", g_nNg);

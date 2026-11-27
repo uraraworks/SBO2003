@@ -84,6 +84,11 @@ void GetDataDlgEtcSubGameEditJanjan(void)
 	GetWindowText (GetDlgItem (s_hWndDlg, IDC_JJ_TICKETNUM), szTmp, sizeof (szTmp));
 	nNum = atoi (szTmp);
 	pInfo->byTicketNum = (BYTE)((nNum < 0) ? 0 : (nNum > JANJAN_TICKET_MAX) ? JANJAN_TICKET_MAX : nNum);
+	/* 参加募集の待ち時間（秒。0 や空は既定） */
+	ZeroMemory (szTmp, sizeof (szTmp));
+	GetWindowText (GetDlgItem (s_hWndDlg, IDC_JJ_WAITSEC), szTmp, sizeof (szTmp));
+	nNum = atoi (szTmp);
+	pInfo->wWaitSec = (WORD)((nNum < 0) ? 0 : (nNum > JANJAN_WAIT_MAX) ? JANJAN_WAIT_MAX : nNum);
 	/* CPU強さ */
 	nSel = (int)SendMessage (GetDlgItem (s_hWndDlg, IDC_JJ_LEVEL), CB_GETCURSEL, 0, 0);
 	pInfo->byCpuLevel = (BYTE)((nSel < 0) ? 0 : (nSel > JANJAN_CPU_LEVEL_MAX) ? JANJAN_CPU_LEVEL_MAX : nSel);
@@ -134,6 +139,8 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 	FillItemCombo (hWnd, IDC_JJ_TICKET, pInfo->wTicketItemID);
 	wsprintf (szTmp, "%d", pInfo->byTicketNum);
 	SetWindowText (GetDlgItem (hWnd, IDC_JJ_TICKETNUM), szTmp);
+	wsprintf (szTmp, "%d", pInfo->wWaitSec);
+	SetWindowText (GetDlgItem (hWnd, IDC_JJ_WAITSEC), szTmp);
 
 	return FALSE;
 }

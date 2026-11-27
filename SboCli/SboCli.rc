@@ -666,6 +666,8 @@ BEGIN
     LTEXT           "CPU強さ：",IDC_STATIC,7,43,30,8
     COMBOBOX        IDC_JJ_LEVEL,7,54,70,60,CBS_DROPDOWNLIST | WS_VSCROLL | 
                     WS_TABSTOP
+    LTEXT           "募集の待ち時間(秒)：",IDC_STATIC,90,43,60,8
+    EDITTEXT        IDC_JJ_WAITSEC,152,40,26,14,ES_AUTOHSCROLL
     LTEXT           "台NPCの台詞を @j<このサブゲームの番号> にする",IDC_STATIC,7,75,200,8
 END
 

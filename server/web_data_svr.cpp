@@ -2239,6 +2239,7 @@ static const DATAFIELD s_aFieldSgJanjan[] = {
 	FLD (SUBGAME_JANJANINFO, wTicketItemID,	"チケットのアイテム番号",	FT_U16, 0, "item の番号。byTicketNum が 0 なら使わない。台に座る時に byTicketNum 枚使う（座る場所に立って、道具のチケットを使い、確認で「はい」を選ぶと始まる）"),
 	FLD (SUBGAME_JANJANINFO, byTicketNum,	"必要なチケットの枚数",		FT_U8, 0, "0〜99。0=無料（S キーで始まる）"),
 	FLD (SUBGAME_JANJANINFO, byCpuLevel,	"CPUの強さ",				FT_U8, 0, "1=よわい 2=ふつう 3=つよい。0=既定の 2"),
+	FLD (SUBGAME_JANJANINFO, wWaitSec,		"参加募集の待ち時間(秒)",	FT_U16, 0, "最初の人が座ってから開始までの秒数（その間に別の人が空いている席に座れる。空き席は CPU が埋める）。5〜600。0=既定の 60"),
 };
 
 /* 6・7 は迷路対戦の台・ピンボール（別の変更）が使う番号 */
@@ -4497,6 +4498,10 @@ static bool CheckJanjanDetail(const SUBGAME_JANJANINFO *p, std::string &strErr)
 	}
 	if (p->byCpuLevel > JANJAN_CPU_LEVEL_MAX) {
 		strErr = "detail.byCpuLevel は 0〜" + JsonNum(JANJAN_CPU_LEVEL_MAX) + " にしてください";
+		return false;
+	}
+	if (p->wWaitSec != 0 && (p->wWaitSec < JANJAN_WAIT_MIN || p->wWaitSec > JANJAN_WAIT_MAX)) {
+		strErr = "detail.wWaitSec は 0（既定 " + JsonNum(JANJAN_WAIT_DEFAULT) + "）または " + JsonNum(JANJAN_WAIT_MIN) + "〜" + JsonNum(JANJAN_WAIT_MAX) + " にしてください";
 		return false;
 	}
 	return true;

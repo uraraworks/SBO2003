@@ -337,9 +337,11 @@ static void MakeInfo(LPSTR pszInfo)
 			wsprintf (szTmp,
 					"チケット:%d x%d\n"
 					"CPU:%s\n"
+					"募集:%d秒\n"
 					"台詞:@j%d\n",
 					pInfo->wTicketItemID, pInfo->byTicketNum,
 					apszLevel[(pInfo->byCpuLevel > 3) ? 3 : pInfo->byCpuLevel],
+					pInfo->wWaitSec,
 					g_nSelectSubGameID);
 		}
 		break;

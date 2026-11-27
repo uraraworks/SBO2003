@@ -585,6 +585,9 @@ static inline void JanjanParseSpeech (const char *pszSpeech, int anVal[JANJAN_PA
 
 #define JANJAN_SPEECH_NO_MAX	(100000)	/* 台詞の番号の上限（これを超えたら番号ではない） */
 #define JANJAN_TICKET_MAX		(99)		/* チケット必要枚数の上限 */
+#define JANJAN_WAIT_DEFAULT		(60)		/* 参加募集の待ち時間（秒）の既定（0 や欄なしはこの値） */
+#define JANJAN_WAIT_MIN			(5)			/* 待ち時間の下限（秒） */
+#define JANJAN_WAIT_MAX			(600)		/* 待ち時間の上限（秒） */
 #define JANJAN_CPU_LEVEL_MAX	(3)			/* CPU強さの最大（1=よわい・2=ふつう・3=つよい） */
 
 /* 台詞 "@j<番号>" の番号（サブゲーム情報の番号）。"@j" の後ろが数字だけの時の番号・そうでなければ（空・旧形式のカンマ区切り・数字以外）-1 */
@@ -616,6 +619,7 @@ template<class T> static inline void JanjanInfoSetDefault (T *p)
 	p->byCpuLevel		= (unsigned char)JANJAN_STRENGTH_DEFAULT;
 	p->wTicketItemID	= 0;
 	p->byTicketNum		= 0;
+	p->wWaitSec			= (unsigned short)JANJAN_WAIT_DEFAULT;
 }
 
 /* 範囲に丸める（保存データ・管理者の入力・データ API が範囲外でも遊べる値にする。CPU強さ 0 は既定の 2） */
@@ -628,6 +632,13 @@ template<class T> static inline void JanjanInfoClamp (T *p)
 	}
 	if (p->byTicketNum > JANJAN_TICKET_MAX) {
 		p->byTicketNum = (unsigned char)JANJAN_TICKET_MAX;
+	}
+	if (p->wWaitSec == 0) {
+		p->wWaitSec = (unsigned short)JANJAN_WAIT_DEFAULT;
+	} else if (p->wWaitSec < JANJAN_WAIT_MIN) {
+		p->wWaitSec = (unsigned short)JANJAN_WAIT_MIN;
+	} else if (p->wWaitSec > JANJAN_WAIT_MAX) {
+		p->wWaitSec = (unsigned short)JANJAN_WAIT_MAX;
 	}
 }
 

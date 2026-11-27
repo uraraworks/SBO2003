@@ -1345,6 +1345,7 @@ static void DrawJanOne(HDC hDC, const JANDRAW &D, int sx, int sy, int nMyX, int 
 	const CMDPARA_JANSTATE &St = D.St;
 	BOOL bIdle = (St.byPhase == JANPHASE_IDLE) ? TRUE : FALSE;
 	BOOL bOver = (St.byPhase == JANPHASE_OVER) ? TRUE : FALSE;
+	BOOL bRecruit = (St.byPhase == JANPHASE_RECRUIT) ? TRUE : FALSE;		/* 参加募集中（残りはサーバーの dwLimitMs をクライアントが減らす） */
 	DWORD dwNow = timeGetTime ();
 	BOOL bBlink = (((dwNow / 400) & 1) == 0) ? TRUE : FALSE;
 	int s, i, nX, nY, nLen, nDx, nDy, aHandOff[JAN_HAND_WIRE + 1], aMeldOff[JAN_MELD_WIRE * JANJAN_SET_SIZE + 1];
@@ -1371,9 +1372,9 @@ static void DrawJanOne(HDC hDC, const JANDRAW &D, int sx, int sy, int nMyX, int 
 			nX = sx + (JANJAN_TABLE_HALF + nDx) * 32;
 			nY = sy + (JANJAN_TABLE_HALF + nDy) * 32;
 			if (s_aJanImg[JIMG_SEATMARK].pRgba != NULL) {
-				JanArtRotTint (JIMG_SEATMARK, nX + 3, nY + 3, s_anJanSeatRot[s & 3], s_aclJanSeat[s], bIdle ? 255 : 190);		/* 白〜灰色の絵に席の色を掛ける */
+				JanArtRotTint (JIMG_SEATMARK, nX + 3, nY + 3, s_anJanSeatRot[s & 3], s_aclJanSeat[s], (bIdle || bRecruit) ? 255 : 190);		/* 白〜灰色の絵に席の色を掛ける */
 			} else {
-				JanRect (hDC, nX + 3, nY + 3, 26, 26, s_aclJanSeat[s], bIdle ? 90 : 60);
+				JanRect (hDC, nX + 3, nY + 3, 26, 26, s_aclJanSeat[s], (bIdle || bRecruit) ? 90 : 60);
 				JanEdge (hDC, nX + 3, nY + 3, 26, 26, s_aclJanSeat[s]);
 			}
 		}
@@ -1384,8 +1385,8 @@ static void DrawJanOne(HDC hDC, const JANDRAW &D, int sx, int sy, int nMyX, int 
 			COLORREF clSeat = s_aclJanSeat[s];
 			int nHand = min ((int)Seat.byHandNum, JAN_HAND_WIRE), nMeld = min ((int)Seat.byMeldNum, JAN_MELD_WIRE);
 			int nRiver = min ((int)Seat.byRiverNum, JAN_RIVER_WIRE), nFrom, bx, by;
-			BOOL bGap = (!bIdle && (St.byLogicPhase == JANJAN_PHASE_DISCARD) && (St.byTurn == s) && (nHand % 3 == 0)) ? TRUE : FALSE;
-			BOOL bTurn = (!bIdle && !bOver && (St.byTurn == s) && (St.byLogicPhase != JANJAN_PHASE_END)) ? TRUE : FALSE;
+			BOOL bGap = (!bIdle && !bRecruit && (St.byLogicPhase == JANJAN_PHASE_DISCARD) && (St.byTurn == s) && (nHand % 3 == 0)) ? TRUE : FALSE;
+			BOOL bTurn = (!bIdle && !bRecruit && !bOver && (St.byTurn == s) && (St.byLogicPhase != JANJAN_PHASE_END)) ? TRUE : FALSE;
 
 			/* 川の箱の縁（手番の席は黄色で強調） */
 			JanBoxOrigin (s, &bx, &by);
@@ -1466,7 +1467,7 @@ static void DrawJanOne(HDC hDC, const JANDRAW &D, int sx, int sy, int nMyX, int 
 		/* 名前札と得点 */
 		for (s = 0; s < JANJAN_SEATS; s++) {
 			const JANSEATWIRE &Seat = St.aSeat[s];
-			BOOL bTurn = (!bIdle && !bOver && (St.byTurn == s) && (St.byLogicPhase != JANJAN_PHASE_END)) ? TRUE : FALSE;
+			BOOL bTurn = (!bIdle && !bRecruit && !bOver && (St.byTurn == s) && (St.byLogicPhase != JANJAN_PHASE_END)) ? TRUE : FALSE;
 			BOOL bWin = (bOver && (St.byResult == JANJAN_RESULT_WIN) && (St.byWinner == s)) ? TRUE : FALSE;
 			int bx, by, nNameW, nScoreW = 0;
 			SIZE size;
@@ -1528,6 +1529,17 @@ static void DrawJanOne(HDC hDC, const JANDRAW &D, int sx, int sy, int nMyX, int 
 			if ((St.byIdle & JANIDLE_SEAT) == 0) {
 				PuzText (hDC, nBandCX, nBandY + 14, (LPSTR)"空き卓", RGB (210, 230, 210), 14, TRUE);
 			}
+		} else if (bRecruit) {
+			/* 参加募集中：残り時間（座れる席の座る場所に立っている人には、下で案内を点滅させる） */
+			if (!((St.byIdle & JANIDLE_SEAT) && bBlink)) {
+				PuzText (hDC, nBandCX, nBandY, (LPSTR)"参加者を募集中", RGB (255, 240, 150), 14, TRUE);
+				if (D.nLeftMs > 0) {
+					wsprintf (szTmp, "残り %d 秒", (D.nLeftMs + 999) / 1000);
+				} else {
+					strcpy (szTmp, "まもなく開始");
+				}
+				PuzText (hDC, nBandCX, nBandY + 14, szTmp, RGB (255, 255, 255), 14, TRUE);
+			}
 		} else if (!bOver) {
 			wsprintf (szTmp, "山 %d", (int)St.byPileLeft);
 			PuzText (hDC, nBandCX, nBandY, szTmp, RGB (255, 255, 255), 14, TRUE);
@@ -1540,7 +1552,7 @@ static void DrawJanOne(HDC hDC, const JANDRAW &D, int sx, int sy, int nMyX, int 
 
 		/* 座る場所に立っている時の案内（待機中の卓の、本人にだけ。サーバーが JANIDLE_SEAT を付ける）。
 		   帯に「INSERT COIN」「道具→コイン」（無料の台は「PUSH START」「（Sキー）」）を点滅させ、立っている席の目印も点滅させる */
-		if (bIdle && (St.byIdle & JANIDLE_SEAT)) {
+		if ((bIdle || bRecruit) && (St.byIdle & JANIDLE_SEAT)) {
 			int nCellX = St.nFieldX / 32 + JANJAN_TABLE_HALF, nCellY = St.nFieldY / 32 + JANJAN_TABLE_HALF;
 			g_bDraw = TRUE;		/* 点滅のため、出ている間は描き続ける */
 			for (s = 0; s < JANJAN_SEATS; s ++) {
@@ -1645,6 +1657,8 @@ static void DrawJanPanel(HDC hDC, const JANDRAW &D, int nX, int nY)
 		pszMsg = (St.byCanAct & JAN_CAN_TSUMO) ? "ツモ上がりできます" : "捨てる牌を選んで 決定";
 	} else if (D.nOpNum > 0) {
 		pszMsg = "どうしますか？";
+	} else if (St.byPhase == JANPHASE_RECRUIT) {
+		pszMsg = "参加者を募集中（ESCで席を立つ）";
 	} else if (nHand <= 0) {
 		pszMsg = "配牌をまっています";
 	} else {

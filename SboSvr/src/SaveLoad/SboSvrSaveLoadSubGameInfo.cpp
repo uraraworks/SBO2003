@@ -178,6 +178,7 @@ static const char *s_aszNameJANJAN[] = {
 	"byCpuLevel",		/* CPU強さ */
 	"wTicketItemID",	/* チケットのアイテム番号 */
 	"byTicketNum",		/* チケットの必要枚数 */
+	"wWaitSec",			/* 参加募集の待ち時間（秒） */
 	"z"
 };
 
@@ -190,6 +191,7 @@ static const JANJANCOL s_aJanjanCol[] = {
 	{ 0, offsetof (SUBGAME_JANJANINFO, byCpuLevel) },
 	{ 1, offsetof (SUBGAME_JANJANINFO, wTicketItemID) },
 	{ 0, offsetof (SUBGAME_JANJANINFO, byTicketNum) },
+	{ 1, offsetof (SUBGAME_JANJANINFO, wWaitSec) },
 };
 
 /* ========================================================================= */

@@ -1783,6 +1783,7 @@ typedef struct _SUBGAME_JANJANINFO {
 	BYTE		byCpuLevel;										/* CPU強さ（1=よわい・2=ふつう・3=つよい。0=既定の 2） */
 	WORD		wTicketItemID;									/* 参加チケットのアイテム番号（byTicketNum が 0 なら使わない） */
 	BYTE		byTicketNum;									/* 座る時に使うチケットの枚数（0=無料。席のマスでコマンド→道具→チケットを使って「はい」で座る。無料ならSキー） */
+	WORD		wWaitSec;										/* 参加募集の待ち時間（秒。最初の人が座ってから開始まで。0=既定の 60。5〜600 に丸める） */
 } SUBGAME_JANJANINFO, *PSUBGAME_JANJANINFO;
 
 /* サブゲーム：SBOじゃんの台の情報(保存データ。管理者ウィンドウとの通信にも使う。実行用と同じ中身) */
@@ -4498,8 +4499,9 @@ typedef struct _CMDPARA_PUZZLESE {
 #define JANIDLE_FREE		(0x04)									/* この台は無料（SEAT と一緒に付く） */
 /* CMDPARA_JANSTATE の byPhase（卓の進行） */
 #define JANPHASE_IDLE		(0)										/* 待機（空卓） */
-#define JANPHASE_PLAY		(1)										/* 進行中（座ってから配牌までの 1.5 秒も含む。その間 byLogicPhase は DRAW・手牌は空） */
+#define JANPHASE_PLAY		(1)										/* 進行中 */
 #define JANPHASE_OVER		(2)										/* 終局表示（全員の手牌が表。数秒後に席を立たせる） */
+#define JANPHASE_RECRUIT	(3)										/* 参加募集中（最初の人が座ってから開始まで。dwLimitMs=開始までの残り。手牌は空。席の byState は座っている人だけ HUMAN・ほかは EMPTY） */
 /* CMDPARA_JANSTATE の byCanAct のビット（受取人が今できる操作） */
 #define JAN_CAN_TSUMO		(0x01)
 #define JAN_CAN_RON			(0x02)

@@ -7,7 +7,7 @@
 #pragma once
 
 /* 進行の時間(ms) */
-#define JAN_START_MS		(1500)		/* 座ってから配牌まで */
+#define JAN_TIMEOUT_MAX		(3)			/* 手番の時間切れがこの回数続いたら、その人の席を CPU に戻す */
 #define JAN_CPU_MS			(700)		/* CPU の 1 動作（引く・捨てる・鳴きの確定）の間隔 */
 #define JAN_TURN_MS			(20000)		/* 人間の手番（捨てる）の制限時間。時間切れは引いた牌を捨てる */
 #define JAN_CLAIM_MS		(8000)		/* 人間がロン・鳴きできる時の待ち。時間切れは見送り */
@@ -19,13 +19,13 @@
 /* ========================================================================= */
 extern BOOL JanIsTableNpc(PCHARINFO pNpc);									/* 台詞が "@j" で始まる台NPCか */
 extern BOOL JanOnSeatCell(PCHARINFO pChar, PCHARINFO pNpc, int *pnSeat);	/* pChar が台NPCの 4 つの座る場所のどれかのマスの上にいるか（同じマップ・空間）。いれば席番号 0〜3 を *pnSeat に入れる（NULL 可） */
-extern void JanSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed = FALSE);	/* 座る場所のマスで席に座る（座る場所以外では何もしない）。Sキー：無料の台だけ始まる。bCoinUsed=TRUE（道具のチケットの確認で「はい」）：チケットを取り上げて始まる */
+extern void JanSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed = FALSE);	/* 座る場所のマスで席に座る（座る場所以外では何もしない。空卓なら参加募集を始める。募集中の卓は空いている席に座れる。開始後は座れない）。Sキー：無料の台だけ始まる。bCoinUsed=TRUE（道具のチケットの確認で「はい」）：チケットを取り上げて始まる */
 extern BOOL JanUseItem(PCHARINFO pChar, WORD wItem);						/* 道具を使った時の処理。座る場所のマスでその台のチケットなら「始めますか？」と聞く（TRUE。取り上げは JanAnswer の「はい」のあと）。当てはまらなければ FALSE */
 extern BOOL JanAnswer(PCHARINFO pChar, DWORD dwNpcTblID, BOOL bYes);		/* 「チケットを使って始めますか？」への答え（CMD_TALKANSWER から。問いを出していなければ FALSE） */
-extern BOOL JanIsSeated(PCHARINFO pChar);									/* 席に座っているか（座っている間は歩けない） */
+extern BOOL JanIsSeated(PCHARINFO pChar);									/* 席に座っているか（募集中も。座っている間は歩けない） */
 extern void JanKey(PCHARINFO pChar, BYTE byAct, BYTE byParam);				/* 座っている人の操作（JAN_ACT_*。反則・手番外は黙って捨てる） */
 extern void JanProc(void);													/* 周期処理（g_dwTime の経過時間で卓を進める。メインループから毎回呼ぶ） */
-extern void JanOnLeave(PCHARINFO pChar);									/* 切断などで席を立たせて卓を片付ける（本人へは何も送らない） */
+extern void JanOnLeave(PCHARINFO pChar);									/* 切断などで席を立たせる（その席は CPU・募集中は空席に戻る。人間が 0 人なら卓を片付ける。本人へは何も送らない） */
 extern int  JanIdleCount(void);												/* 表に載っている待機中の卓の数（テスト用） */
 extern int  JanSeatCount(void);												/* 人が座っている卓の数（テスト用） */
 struct JanjanGame;
