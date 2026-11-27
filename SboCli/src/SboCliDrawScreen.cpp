@@ -1017,6 +1017,47 @@ static void JanArtRot16(int nImg, int dx, int dy, int nRot)
 	}
 }
 
+/* 正方形の素材を nRot 回して、色（clTint）を掛けて重ねる（座る場所の目印の矢印用。席の方向＝卓の中央を向く） */
+static void JanArtRotTint(int nImg, int dx, int dy, int nRot, COLORREF clTint, int nOpa)
+{
+	const JANIMG &Im = s_aJanImg[nImg];
+	CImg32 *pDst = g_pDibDrawMap;
+	int xx, yy, nSx, nSy, a, nDW, nDH, nN = Im.nW, tr, tg, tb;
+	BYTE *pBits, *pS, *pD;
+
+	if ((Im.pRgba == NULL) || (pDst == NULL) || (Im.nW != Im.nH)) {
+		return;
+	}
+	tr = GetRValue (clTint);
+	tg = GetGValue (clTint);
+	tb = GetBValue (clTint);
+	nDW = pDst->Width ();
+	nDH = pDst->Height ();
+	pBits = pDst->GetBits ();
+	for (yy = 0; yy < nN; yy ++) {
+		for (xx = 0; xx < nN; xx ++) {
+			if ((dx + xx < max (s_nPzL, 0)) || (dx + xx >= min (s_nPzR, nDW)) || (dy + yy < max (s_nPzT, 0)) || (dy + yy >= min (s_nPzB, nDH))) {
+				continue;
+			}
+			switch (nRot) {
+			case JAN_ROT_CW:	nSx = yy;			nSy = nN - 1 - xx;	break;
+			case JAN_ROT_180:	nSx = nN - 1 - xx;	nSy = nN - 1 - yy;	break;
+			case JAN_ROT_CCW:	nSx = nN - 1 - yy;	nSy = xx;			break;
+			default:			nSx = xx;			nSy = yy;			break;
+			}
+			pS = Im.pRgba + (nSy * Im.nW + nSx) * 4;
+			a = pS[3] * nOpa / 255;
+			if (a <= 0) {
+				continue;
+			}
+			pD = pBits + ((nDH - 1 - (dy + yy)) * nDW + dx + xx) * 4;
+			pD[0] = (BYTE)((pD[0] * (255 - a) + (pS[2] * tb / 255) * a) / 255);
+			pD[1] = (BYTE)((pD[1] * (255 - a) + (pS[1] * tg / 255) * a) / 255);
+			pD[2] = (BYTE)((pD[2] * (255 - a) + (pS[0] * tr / 255) * a) / 255);
+		}
+	}
+}
+
 /* 牌の絵の一覧を作る（最初に描く時に 1 回）。キャラの絵は 2 倍に拡大して持っているので、
    16 ドット版は 1 ドットおきに取り出す。取り出せなければ FALSE（その間は牌の絵なしで描く） */
 static BOOL JanSheetInit(void)
@@ -1330,7 +1371,7 @@ static void DrawJanOne(HDC hDC, const JANDRAW &D, int sx, int sy, int nMyX, int 
 			nX = sx + (JANJAN_TABLE_HALF + nDx) * 32;
 			nY = sy + (JANJAN_TABLE_HALF + nDy) * 32;
 			if (s_aJanImg[JIMG_SEATMARK].pRgba != NULL) {
-				JanArt (JIMG_SEATMARK, nX + 3, nY + 3, s_aclJanSeat[s], 255, bIdle ? 255 : 190);		/* 白〜灰色の絵に席の色を掛ける */
+				JanArtRotTint (JIMG_SEATMARK, nX + 3, nY + 3, s_anJanSeatRot[s & 3], s_aclJanSeat[s], bIdle ? 255 : 190);		/* 白〜灰色の絵に席の色を掛ける */
 			} else {
 				JanRect (hDC, nX + 3, nY + 3, 26, 26, s_aclJanSeat[s], bIdle ? 90 : 60);
 				JanEdge (hDC, nX + 3, nY + 3, 26, 26, s_aclJanSeat[s]);
