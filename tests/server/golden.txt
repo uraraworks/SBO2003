@@ -1301,6 +1301,7 @@ speech normal len=5
 speech long len=256
 speech url len=1020
 speech edit len=600
+speech edit at=[ 5xx 6a t001@2 c01 ]
 speech burst accepted=8 of 12
 speech after window accepted=1
 speech every 1.2s accepted=20 of 20
