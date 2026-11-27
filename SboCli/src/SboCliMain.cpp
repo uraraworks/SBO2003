@@ -1037,7 +1037,14 @@ void OnInitEnd(HWND hWnd)
 	}
 
 	/* タイトルスキップモード？ */
+#ifdef __EMSCRIPTEN__
+	/* ブラウザ版：ロゴ・タイトルはシェル HTML のホーム画面が代わりに担うので、最初からログイン画面にする */
+	/* 画素比較テスト（tests/client/pixels.js）だけ、?logo=1 でこれまでどおりロゴ・タイトルから始める */
+	if (!EM_ASM_INT({ return /[?&]logo=1(&|$)/.test(location.search) ? 1 : 0; })) {
+#else
 	if (g_bTitleSkip) {
+#endif
+
 		ChgState (GAMESTATE_LOGIN);
 
 	} else {
