@@ -25,6 +25,7 @@
 #define IDD_ETC_SUBGAME_EDIT_WAR        215
 #define IDD_ETC_SUBGAME_EDIT_SUGOROKU   216
 #define IDD_ETC_SUBGAME                 217
+#define IDD_ETC_SUBGAME_EDIT_PINBALL    244
 #define IDD_SUGOROKU_PARTS              223
 #define IDD_SUGOROKU_PARTS_EDIT         224
 #define IDD_SUGOROKU_EVENT              225
@@ -588,14 +589,27 @@
 #define IDC_DGVIEW_Y1                      1522
 #define IDC_DGVIEW_X2                      1523
 #define IDC_DGVIEW_Y2                      1524
+#define IDC_PB_COINITEM                    1532
+#define IDC_PB_COINCOUNT                   1533
+#define IDC_PB_BALLS                       1534
+#define IDC_PB_SAVESEC                     1535
+#define IDC_PB_SCOREBUMPER                 1536
+#define IDC_PB_SCORETARGET                 1537
+#define IDC_PB_SCOREBONUS                  1538
+#define IDC_PB_COMBOMS                     1539
+#define IDC_PB_DX                          1540
+#define IDC_PB_DY                          1541
+#define IDC_PB_SEATDX                      1542
+#define IDC_PB_SEATDY                      1543
+#define IDC_PB_BANDSIDE                    1544
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        244
+#define _APS_NEXT_RESOURCE_VALUE        245
 #define _APS_NEXT_COMMAND_VALUE         40037
-#define _APS_NEXT_CONTROL_VALUE         1532
+#define _APS_NEXT_CONTROL_VALUE         1545
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

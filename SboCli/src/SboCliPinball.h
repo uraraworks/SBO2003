@@ -64,6 +64,7 @@ extern BOOL PinballArtHasSpring(void);							/* 部品シートにバネの絵�
 #define PBART_SPRING_BACK_MS	(100)	/* 離してバネが元に戻るまで(ms) */
 
 extern void RecvDataProcPINBALLSTATE(PBYTE pData, DWORD dwDataSize);	/* 受信データ処理(ピンボールの状態) */
+extern int PinballSeatNpcHere(PCHARINFO pChar);					/* 今立っているマスが台の座る場所（台NPCのマス＋サーバーが送ってきた座る場所）の台NPCのキャラ番号（無ければ -1。S キーで座る） */
 extern BOOL IsPinballSeated(void);								/* ピンボールの席に座って遊んでいるか（ゲームオーバー直後の少しの間も TRUE） */
 extern void PinballKeyPoll(const BYTE *abyKeyState);			/* 座っている間のキー処理（KeyProc から毎回。押した時・離した時だけ送る） */
 extern BOOL GetPinballView(int nIdx, PPINBALLDRAW pOut);		/* 重ね描きの状態（nIdx は 0〜PINBALL_VIEW_MAX-1。見えている台だけ TRUE） */

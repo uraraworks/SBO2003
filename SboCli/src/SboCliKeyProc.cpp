@@ -9825,7 +9825,9 @@ BOOL IsSKeyCounterTalk(void)
 /*		 台NPC（台詞 @p…）は見えないので、台NPCの前に立たなくても、台詞の			 */
 /*		 9・10 番目（sdx,sdy。省略は台NPCの 1 つ下）で決まる座る場所のマスに立って	 */
 /*		 S キーを押せば座れる（向きは問わない）。座る場所の外では見つけない			 */
-/*		 戻り値：見つけた台NPCのテーブルID（無ければ -1）						 */
+/*		 ピンボールの台は、台の設定（座る場所）をサーバーが盤の状態と一緒に送ってくる		 */
+/*		 ので、そちらで調べる（PinballSeatNpcHere。台の設定は台詞ではなくサブゲーム情報）	 */
+/*		 戻り値：見つけた台NPCのキャラ番号（無ければ -1）						 */
 /* ========================================================================= */
 static int PuzzleSeatNpcHere(PCHARINFO pChar)
 {
@@ -9834,19 +9836,15 @@ static int PuzzleSeatNpcHere(PCHARINFO pChar)
 	for (i = 0; i < nCount; i ++) {
 		PCHARINFO pNpc = (PCHARINFO)g_aCharInfo[i];
 		if ((pNpc == pChar) || (pNpc->byNpcType == NPCTYPE_INIT) || !pNpc->pszNpcSpeech ||
-			(pNpc->pszNpcSpeech[0] != '@') || ((pNpc->pszNpcSpeech[1] != 'p') && (pNpc->pszNpcSpeech[1] != 'i'))) {
+			(pNpc->pszNpcSpeech[0] != '@') || (pNpc->pszNpcSpeech[1] != 'p')) {
 			continue;
 		}
-		if (pNpc->pszNpcSpeech[1] == 'i') {
-			PinballSeatOffset (pNpc->pszNpcSpeech, &nSdx, &nSdy);		/* ピンボールの台（座る場所の欄の位置が違う） */
-		} else {
-			PuzzleSeatOffset (pNpc->pszNpcSpeech, &nSdx, &nSdy);
-		}
+		PuzzleSeatOffset (pNpc->pszNpcSpeech, &nSdx, &nSdy);
 		if (((int)pNpc->dwX + nSdx == (int)pChar->dwX) && ((int)pNpc->dwY + nSdy == (int)pChar->dwY)) {
 			return i;
 		}
 	}
-	return -1;
+	return PinballSeatNpcHere (pChar);
 }
 
 /* ========================================================================= */

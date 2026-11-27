@@ -328,6 +328,24 @@ static void MakeInfo(LPSTR pszInfo)
 					pInfo->byX, pInfo->byY);
 		}
 		break;
+
+	case SUBGAMEID_PINBALL:			/* ピンボール */
+		{
+			PSUBGAME_PINBALLINFOSAVE pInfo = (PSUBGAME_PINBALLINFOSAVE)g_pSubGameInfo->pInfo;
+
+			wsprintf (szTmp,
+					"球数:%d 帯:%s\n"
+					"コイン:%d x%d\n"
+					"盤位置 X:%d Y:%d\n"
+					"席 X:%d Y:%d\n"
+					"台詞:@i%d\n",
+					pInfo->byBalls, pInfo->byBandSide ? "左" : "右",
+					pInfo->wCoinItem, pInfo->byCoinCount,
+					pInfo->cDx, pInfo->cDy,
+					pInfo->cSeatDx, pInfo->cSeatDy,
+					g_nSelectSubGameID);
+		}
+		break;
 	}
 
 	strcat (pszInfo, szTmp);

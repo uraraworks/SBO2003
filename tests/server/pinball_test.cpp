@@ -2,6 +2,16 @@
    g++ -std=c++11 -O1 -I. tests/server/pinball_test.cpp -o /tmp/pinball_test && /tmp/pinball_test */
 #include <stdio.h>
 #include "common/Pinball.h"
+/* サブゲーム情報の既定値・丸めは、SUBGAME_PINBALLINFO と同じ項目名の構造体なら使える（TypedefCommon.h は要らない） */
+#define PINBALLINFO_VERSION		(1)
+#define PINBALLINFO_RESERVED	(16)
+#include "common/PinballInfo.h"
+struct TestInfo {
+	unsigned short wCoinItem; unsigned char byCoinCount, byBalls, bySaveSec, byBandSide;
+	unsigned short wScoreBumper, wScoreTarget, wScoreBonus, wComboMs;
+	signed char cDx, cDy, cSeatDx, cSeatDy;
+	unsigned char byVersion, abyReserved[PINBALLINFO_RESERVED];
+};
 
 static int g_nNg = 0;
 #define CHECK(c) do { if (!(c)) { printf ("NG %d: %s\n", __LINE__, #c); g_nNg ++; } } while (0)
@@ -412,23 +422,102 @@ int main()
 		(void)nHitUpper;
 	}
 
-	/* 台詞の読み方 */
+	/* 台詞の読み方：@i<サブゲーム情報の番号> だけ。それ以外は台ではない（-1） */
 	{
-		int an[PBP_COUNT], sdx, sdy;
-		PinballParseSpeech ("@i20,1", an);
-		CHECK (an[0] == 20 && an[1] == 1 && an[2] == PBP_NONE && an[6] == PBP_NONE);
-		PinballParseSpeech ("@i", an);
-		CHECK (an[0] == PBP_NONE);
-		PinballParseSpeech ("@i20,1,-2,-6,1,3,-1", an);
-		CHECK (an[2] == -2 && an[3] == -6 && an[4] == 1 && an[5] == 3 && an[6] == -1);
-		PinballSeatOffset ("@i", &sdx, &sdy);
-		CHECK (sdx == 0 && sdy == 1);
-		PinballSeatOffset ("@i20,1,,,,3,-1", &sdx, &sdy);
-		CHECK (sdx == 3 && sdy == -1);
-		PinballSeatOffset ("@i1,1,,,,999,-999", &sdx, &sdy);
-		CHECK (sdx == PBP_SEAT_LIMIT && sdy == -PBP_SEAT_LIMIT);
+		CHECK (PinballSpeechInfoNo ("@i0") == 0);
+		CHECK (PinballSpeechInfoNo ("@i3") == 3);
+		CHECK (PinballSpeechInfoNo ("@i65535") == 65535);
+		CHECK (PinballSpeechInfoNo ("@i65536") == -1);
+		CHECK (PinballSpeechInfoNo ("@i99999999999") == -1);
+		CHECK (PinballSpeechInfoNo ("@i") == -1);
+		CHECK (PinballSpeechInfoNo ("@i20,1") == -1);		/* 古い形（台詞にパラメータを並べる）は台にならない */
+		CHECK (PinballSpeechInfoNo ("@i3a") == -1);
+		CHECK (PinballSpeechInfoNo ("@i-1") == -1);
+		CHECK (PinballSpeechInfoNo ("@p3") == -1);
+		CHECK (PinballSpeechInfoNo ("i3") == -1);
+		CHECK (PinballSpeechInfoNo ("") == -1);
+		CHECK (PinballSpeechInfoNo (NULL) == -1);
 		/* 既定の盤の位置：席の真上（盤の下端が台NPCのマスの下端）。10×14 ブロックと同じ 5×7 マス */
 		CHECK (PinballDefaultDx () == -2 && PinballDefaultDy () == -6);
+	}
+
+	/* サブゲーム情報（既定値・範囲の丸め・ゲームの設定）。型は TypedefCommon.h を使わず同じ項目名の構造体で確かめる */
+	{
+		TestInfo Info;
+		PinballConfig Cfg, Def;
+
+		PinballInfoSetDefault (&Info);
+		CHECK (Info.wCoinItem == 0 && Info.byCoinCount == 0 && Info.byBalls == PB_BALLS && Info.bySaveSec == PB_SAVE_MS / 1000);
+		CHECK (Info.wScoreBumper == PB_SCORE_BUMPER && Info.wScoreTarget == PB_SCORE_TARGET && Info.wScoreBonus == PB_SCORE_BONUS && Info.wComboMs == PB_COMBO_MS);
+		CHECK (Info.cDx == -2 && Info.cDy == -6 && Info.cSeatDx == 0 && Info.cSeatDy == 1 && Info.byBandSide == 0 && Info.byVersion == PINBALLINFO_VERSION);
+		for (i = 0; i < PINBALLINFO_RESERVED; i ++) CHECK (Info.abyReserved[i] == 0);
+		/* 既定値から作った設定は、設定を渡さない Start と同じ */
+		PinballInfoToConfig (&Info, &Cfg);
+		Def.SetDefault ();
+		CHECK (Cfg.nBalls == Def.nBalls && Cfg.nSaveMs == Def.nSaveMs && Cfg.nComboMs == Def.nComboMs);
+		CHECK (Cfg.nScoreBumper == Def.nScoreBumper && Cfg.nScoreTarget == Def.nScoreTarget && Cfg.nScoreBonus == Def.nScoreBonus);
+		/* 範囲外は丸める（0 球・席が盤の遠く・得点が大きすぎ・帯の側が 2） */
+		memset (&Info, 0, sizeof (Info));
+		Info.byBalls = 0; Info.byCoinCount = 200; Info.bySaveSec = 255; Info.byBandSide = 2;
+		Info.wScoreBumper = 65535; Info.wComboMs = 65535; Info.cDx = 127; Info.cDy = -128; Info.cSeatDx = 100; Info.cSeatDy = -100;
+		PinballInfoClamp (&Info);
+		CHECK (Info.byBalls == 1 && Info.byCoinCount == 99 && Info.bySaveSec == 60 && Info.byBandSide == 0);
+		CHECK (Info.wScoreBumper == PB_CFG_SCORE_MAX && Info.wComboMs == PB_CFG_MS_MAX);
+		CHECK (Info.cDx == PBP_SEAT_LIMIT && Info.cDy == -PBP_SEAT_LIMIT && Info.cSeatDx == PBP_SEAT_LIMIT && Info.cSeatDy == -PBP_SEAT_LIMIT);
+		Info.byBalls = 99;
+		PinballInfoClamp (&Info);
+		CHECK (Info.byBalls == PB_BALLS_MAX);
+	}
+
+	/* 台ごとの設定：球数・得点・ボールセーブ・コンボの時間がゲームに効く */
+	{
+		PinballGame g;
+		PinballConfig Cfg;
+		int nEv = 0, nBall;
+
+		Cfg.SetDefault ();
+		Cfg.nBalls = 5;
+		Cfg.nScoreBumper = 250;
+		Cfg.nScoreTarget = 777;
+		Cfg.nScoreBonus = 4000;
+		Cfg.nSaveMs = 3000;
+		Cfg.nComboMs = 500;
+		g.Start (&Cfg);
+		CHECK (g.nBallsLeft == 5 && g.Cfg.nBalls == 5);
+		/* 5 球で終わる */
+		for (nBall = 0; nBall < 5; nBall ++) {
+			g.nPhase = PB_PHASE_PLAY;
+			g.nSaveSteps = 0;
+			g.nX = PbX (73); g.nY = PbY (150 + PB_YOFS); g.nVx = 0; g.nVy = 0;
+			nEv = 0;
+			for (i = 0; i < 120 * 20 && !(nEv & PB_EV_DRAIN); i ++) nEv |= g.Step ();
+			CHECK (nEv & PB_EV_DRAIN);
+			CHECK (g.nBallsLeft == 4 - nBall);
+		}
+		CHECK ((nEv & PB_EV_OVER) && g.nPhase == PB_PHASE_OVER);
+		/* ボールセーブの長さ：打ち出した時に 3 秒ぶん。0 秒ならボールセーブなし */
+		g.Start (&Cfg);
+		g.Launch (0);
+		CHECK (g.nSaveSteps == 3 * PB_STEP_HZ);
+		Cfg.nSaveMs = 0;
+		g.Start (&Cfg);
+		g.Launch (0);
+		CHECK (g.nSaveSteps == 0);
+		/* 得点（バンパー 250）。コンボは 500ms で切れる */
+		g.Start (&Cfg);
+		g.AddHit (g.Cfg.nScoreBumper, PB_EV_BUMPER, 0);
+		g.AddHit (g.Cfg.nScoreBumper, PB_EV_BUMPER, 0);
+		CHECK (g.dwScore == 500 && g.nCombo == 2);
+		for (i = 0; i < 500 * PB_STEP_HZ / 1000 + 2; i ++) g.Step ();
+		g.AddHit (g.Cfg.nScoreBumper, PB_EV_BUMPER, 0);
+		CHECK (g.nCombo == 1);
+		/* 設定を渡さない Start は既定（これまでと同じ） */
+		g.Start ();
+		CHECK (g.nBallsLeft == PB_BALLS && g.Cfg.nScoreBumper == PB_SCORE_BUMPER && g.Cfg.nSaveMs == PB_SAVE_MS);
+		/* 範囲外の設定で始めても壊れない（球 0 → 1 球。得点・時間は上限） */
+		Cfg.nBalls = 0; Cfg.nScoreBumper = 999999; Cfg.nComboMs = -5;
+		g.Start (&Cfg);
+		CHECK (g.nBallsLeft == 1 && g.Cfg.nScoreBumper == PB_CFG_SCORE_MAX && g.Cfg.nComboMs == 0);
 	}
 
 	printf (g_nNg ? "NG %d 件\n" : "一致\n", g_nNg);

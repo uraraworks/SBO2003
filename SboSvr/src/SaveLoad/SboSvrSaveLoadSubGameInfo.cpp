@@ -9,6 +9,7 @@
 #include "../../../Common/Info/SubGame/InfoSubGameWAR.h"
 #include "../Proc/SubGame/ProcSubGameWAR.h"
 #include "../Proc/ProcSubGame.h"
+#include "../../../common/PinballInfo.h"
 
 /* ========================================================================= */
 /* 定数定義																	 */
@@ -183,11 +184,13 @@ static PBYTE GetInfoMaze(PSUBGAME_MAZEINFO, PDWORD);			/* 保存用サブゲー�
 static PBYTE GetInfoBomb(PSUBGAME_BOMBINFO, PDWORD);			/* 保存用サブゲーム情報取得(爆弾ゲーム) */
 static PBYTE GetInfoWar(PSUBGAME_WARINFO, PDWORD);				/* 保存用サブゲーム情報取得(戦場ゲーム) */
 static PBYTE GetInfoSugoroku(PSUBGAME_SUGOROKUINFO, PDWORD);	/* 保存用サブゲーム情報取得(すごろく) */
+static PBYTE GetInfoPinball(PSUBGAME_PINBALLINFO, PDWORD);		/* 保存用サブゲーム情報取得(ピンボール) */
 static PBYTE PetInfoDungeon(PBYTE, PDWORD);						/* サブゲーム情報作成(ダンジョン) */
 static PBYTE PetInfoMaze(PBYTE, PDWORD);						/* サブゲーム情報作成(迷路) */
 static PBYTE PetInfoWar(PBYTE, PDWORD);							/* サブゲーム情報作成(戦場ゲーム) */
 static PBYTE PetInfoBomb(PBYTE, PDWORD);						/* サブゲーム情報作成(爆弾ゲーム) */
 static PBYTE PetInfoSugoroku(PBYTE, PDWORD);					/* サブゲーム情報作成(すごろく) */
+static PBYTE PetInfoPinball(PBYTE, PDWORD);						/* サブゲーム情報作成(ピンボール) */
 
 
 /* ========================================================================= */
@@ -293,6 +296,9 @@ BOOL SaveSubGameInfo(void)
 				case SUBGAMEID_SUGOROKU:		/* すごろく */
 					pTmp = GetInfoSugoroku ((PSUBGAME_SUGOROKUINFO)pInfo->pInfo, &dwTmp);
 					break;
+				case SUBGAMEID_PINBALL:			/* ピンボール */
+					pTmp = GetInfoPinball ((PSUBGAME_PINBALLINFO)pInfo->pInfo, &dwTmp);
+					break;
 				}
 				SAFE_DELETE_ARRAY (pTmp);
 				dwDataSizeTmp += dwTmp;
@@ -369,6 +375,9 @@ BOOL SaveSubGameInfo(void)
 					break;
 				case SUBGAMEID_SUGOROKU:		/* すごろく */
 					pTmp = GetInfoSugoroku ((PSUBGAME_SUGOROKUINFO)pInfo->pInfo, &dwTmp);
+					break;
+				case SUBGAMEID_PINBALL:			/* ピンボール */
+					pTmp = GetInfoPinball ((PSUBGAME_PINBALLINFO)pInfo->pInfo, &dwTmp);
 					break;
 				}
 				if (pTmp) {
@@ -545,6 +554,9 @@ BOOL LoadSubGameInfo(void)
 					break;
 				case SUBGAMEID_SUGOROKU:		/* すごろく */
 					pTmp = PetInfoSugoroku (&pData[dwOffsetTmp], &dwTmp);
+					break;
+				case SUBGAMEID_PINBALL:			/* ピンボール */
+					pTmp = PetInfoPinball (&pData[dwOffsetTmp], &dwTmp);
 					break;
 				}
 
@@ -2446,6 +2458,173 @@ static PBYTE PetInfoSugoroku(PBYTE pData, PDWORD pdwSize)
 	}
 
 	*pdwSize = dwOffsetData + dwOffset;
+	return (PBYTE)pInfo;
+}
+
+/* ========================================================================= */
+/* ピンボールの保存項目表														 */
+/*   保存は他のサブゲームと同じ「項目名つきの列」。先頭の wBlobSize はこの 1 件の保存データ全体の大きさで、	 */
+/*   読む側が知らない項目（後の版で足した項目）が末尾にあっても、次のサブゲームの位置を間違えない。		 */
+/*   項目を足す時は、SUBGAME_PINBALLINFO に足して、この表に 1 行足す（既定値は PinballInfoSetDefault）。	 */
+/*   読む時は、保存に無い項目は既定値、知らない項目は読み飛ばす。									 */
+/* ========================================================================= */
+typedef struct _PINBALLFIELD {
+	const char	*pszName;											/* 列の名前 */
+	DWORD		dwOffset;											/* SUBGAME_PINBALLINFO の中の位置 */
+	DWORD		dwSize;												/* バイト数 */
+} PINBALLFIELD;
+
+#define PBFIELD(name)	{ #name, (DWORD)offsetof (SUBGAME_PINBALLINFO, name), (DWORD)sizeof (((SUBGAME_PINBALLINFO *)0)->name) }
+static const PINBALLFIELD s_aPinballField[] = {
+	PBFIELD (wCoinItem),		/* コインのアイテム番号 */
+	PBFIELD (byCoinCount),		/* 必要な枚数 */
+	PBFIELD (byBalls),			/* 球数 */
+	PBFIELD (bySaveSec),		/* ボールセーブの秒数 */
+	PBFIELD (byBandSide),		/* 帯の側 */
+	PBFIELD (wScoreBumper),		/* バンパーの得点 */
+	PBFIELD (wScoreTarget),		/* ターゲットの得点 */
+	PBFIELD (wScoreBonus),		/* ターゲット全部のボーナス */
+	PBFIELD (wComboMs),			/* コンボが続く時間 */
+	PBFIELD (cDx),				/* 盤の左上(横) */
+	PBFIELD (cDy),				/* 盤の左上(縦) */
+	PBFIELD (cSeatDx),			/* 座る場所(横) */
+	PBFIELD (cSeatDy),			/* 座る場所(縦) */
+	PBFIELD (byVersion),		/* 保存の版 */
+	PBFIELD (abyReserved),		/* 将来用 */
+};
+#define PINBALL_FIELDCOUNT	((DWORD)(sizeof (s_aPinballField) / sizeof (s_aPinballField[0])))
+static const char s_szPinballBlobSize[] = "wBlobSize";				/* 先頭の列：保存データ全体の大きさ(WORD) */
+
+/* ========================================================================= */
+/* 関数名：GetInfoPinball													 */
+/* 内容：保存用サブゲーム情報取得(ピンボール)								 */
+/* 日付：2026/11/27															 */
+/* ========================================================================= */
+static PBYTE GetInfoPinball(PSUBGAME_PINBALLINFO pInfo, PDWORD pdwSize)
+{
+	PBYTE pData;
+	DWORD i, dwColumnCount, dwHeaderSize, dwDataSize, dwOffset, dwTmp, dwTotal;
+	WORD wBlobSize;
+
+	pData = NULL;
+	*pdwSize = 0;
+	if (pInfo == NULL) {
+		return NULL;
+	}
+
+	/* 列は、先頭の wBlobSize ＋ 項目表の順 */
+	dwColumnCount = 1 + PINBALL_FIELDCOUNT;
+	dwHeaderSize = sizeof (DWORD) * 2;
+	dwHeaderSize += (strlen (s_szPinballBlobSize) + 1) + sizeof (DWORD);
+	dwDataSize = sizeof (WORD);
+	for (i = 0; i < PINBALL_FIELDCOUNT; i ++) {
+		dwHeaderSize += (strlen (s_aPinballField[i].pszName) + 1) + sizeof (DWORD);
+		dwDataSize += s_aPinballField[i].dwSize;
+	}
+	dwTotal = dwHeaderSize + dwDataSize;
+	wBlobSize = (WORD)dwTotal;
+
+	pData = new BYTE[dwTotal];
+	ZeroMemory (pData, dwTotal);
+	*pdwSize = dwTotal;
+	dwOffset = 0;
+
+	/* カラム数 */
+	CopyMemory (&pData[dwOffset], &dwColumnCount, sizeof (dwColumnCount));
+	dwOffset += sizeof (dwColumnCount);
+	/* ヘッダ部分（名前と、データの位置） */
+	dwTmp = 0;
+	strcpy ((LPSTR)&pData[dwOffset], s_szPinballBlobSize);
+	dwOffset += (strlen (s_szPinballBlobSize) + 1);
+	{
+		DWORD dwPos = dwHeaderSize + dwTmp;
+		CopyMemory (&pData[dwOffset], &dwPos, sizeof (dwPos));
+		dwOffset += sizeof (dwPos);
+	}
+	dwTmp += sizeof (WORD);
+	for (i = 0; i < PINBALL_FIELDCOUNT; i ++) {
+		DWORD dwPos = dwHeaderSize + dwTmp;
+
+		strcpy ((LPSTR)&pData[dwOffset], s_aPinballField[i].pszName);
+		dwOffset += (strlen (s_aPinballField[i].pszName) + 1);
+		CopyMemory (&pData[dwOffset], &dwPos, sizeof (dwPos));
+		dwOffset += sizeof (dwPos);
+		dwTmp += s_aPinballField[i].dwSize;
+	}
+	/* データ部分 */
+	CopyMemory (&pData[dwOffset], &wBlobSize, sizeof (wBlobSize));
+	dwOffset += sizeof (wBlobSize);
+	for (i = 0; i < PINBALL_FIELDCOUNT; i ++) {
+		CopyMemory (&pData[dwOffset], (PBYTE)pInfo + s_aPinballField[i].dwOffset, s_aPinballField[i].dwSize);
+		dwOffset += s_aPinballField[i].dwSize;
+	}
+	return pData;
+}
+
+/* ========================================================================= */
+/* 関数名：PetInfoPinball													 */
+/* 内容：サブゲーム情報作成(ピンボール)										 */
+/* 日付：2026/11/27															 */
+/* ========================================================================= */
+static PBYTE PetInfoPinball(PBYTE pData, PDWORD pdwSize)
+{
+	DWORD i, j, dwOffset, dwOffsetData, dwColumnCount, dwEnd, dwBlobSize;
+	PSUBGAME_PINBALLINFO pInfo;
+
+	dwOffset = 0;
+
+	/* カラム数を読み込み */
+	CopyMemory (&dwColumnCount, &pData[dwOffset], sizeof (dwColumnCount));
+	dwOffset += sizeof (dwColumnCount);
+	dwOffsetData = dwOffset;
+
+	/* 保存に無い項目は既定値のまま */
+	pInfo = new SUBGAME_PINBALLINFO;
+	PinballInfoSetDefault (pInfo);
+
+	dwEnd = 0;
+	dwBlobSize = 0;
+	for (i = 0; i < dwColumnCount; i ++) {
+		char szName[64];
+		DWORD dwPos, dwSize = 0;
+		int nField = -1;
+
+		strncpy (szName, (LPSTR)&pData[dwOffset], sizeof (szName) - 1);
+		szName[sizeof (szName) - 1] = 0;
+		dwOffset += (strlen ((LPSTR)&pData[dwOffset]) + 1);
+		CopyMemory (&dwPos, &pData[dwOffset], sizeof (dwPos));
+		dwPos -= dwOffsetData;
+		dwOffset += sizeof (dwPos);
+
+		if (strcmp (szName, s_szPinballBlobSize) == 0) {
+			WORD wTmp;
+			CopyMemory (&wTmp, &pData[dwPos], sizeof (wTmp));
+			dwBlobSize = wTmp;
+			dwSize = sizeof (WORD);
+		} else {
+			for (j = 0; j < PINBALL_FIELDCOUNT; j ++) {
+				if (strcmp (szName, s_aPinballField[j].pszName) == 0) {
+					nField = (int)j;
+					break;
+				}
+			}
+			if (nField < 0) {
+				continue;		/* 知らない項目（後の版で足した項目）は読み飛ばす */
+			}
+			CopyMemory ((PBYTE)pInfo + s_aPinballField[nField].dwOffset, &pData[dwPos], s_aPinballField[nField].dwSize);
+			dwSize = s_aPinballField[nField].dwSize;
+		}
+		if (dwPos + dwSize > dwEnd) {
+			dwEnd = dwPos + dwSize;
+		}
+	}
+	PinballInfoClamp (pInfo);
+
+	/* 読んだ大きさ。知らない項目が末尾にある時は、保存データ全体の大きさ（wBlobSize）に従う */
+	*pdwSize = dwOffsetData + dwEnd;
+	if ((dwBlobSize > *pdwSize) && (dwBlobSize < 4096)) {
+		*pdwSize = dwBlobSize;
+	}
 	return (PBYTE)pInfo;
 }
 

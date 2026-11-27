@@ -1051,13 +1051,6 @@ static void DrawPinballOne(HDC hDC, const PINBALLDRAW &D, int sx, int sy, BOOL b
 				PbArtBlt (pArtParts, bFlash ? PBART_BUMPER_HIT_X : PBART_BUMPER_X, PBART_BUMPER_Y, PBART_BUMPER_S, PBART_BUMPER_S,
 					cx - PBART_BUMPER_S / 2, cy - PBART_BUMPER_S / 2);
 			}
-			/* 打ち出しレーンの溜め（強さ。図形のまま） */
-			if (D.nCharge > 0) {
-				int nLen = 50 * D.nCharge / 100, yy;
-				for (yy = 0; yy < nLen; yy ++) {
-					PuzSpan (hDC, sx + PB_LANE_L + 3, ty0 + PB_LANE_FLOOR - 1 - yy, 11, (yy * 100 / 50 > 66) ? RGB (240, 80, 70) : RGB (110, 220, 110), 200);
-				}
-			}
 			/* フリッパー：近い方の姿（下がり・上がり）の絵を、今の角度との差だけ回して描く。右は左右反転 */
 			for (i = 0; i < 2; i ++) {
 				int nAng = i ? D.nAngR : D.nAngL, bUp = (nAng * 2 >= PB_FLIP_STEPS) ? 1 : 0;
@@ -1117,13 +1110,6 @@ static void DrawPinballOne(HDC hDC, const PINBALLDRAW &D, int sx, int sy, BOOL b
 			PbFillCircle (hDC, bx, by, r - 3, bFlash ? RGB (255, 235, 150) : RGB (150, 40, 40));
 			PbFillCircle (hDC, bx, by, 2, RGB (255, 220, 160));
 		}
-		/* 打ち出しレーンの溜め（強さ） */
-		if (D.nCharge > 0) {
-			int nLen = 50 * D.nCharge / 100, yy;
-			for (yy = 0; yy < nLen; yy ++) {
-				PuzSpan (hDC, sx + PB_LANE_L + 3, ty0 + PB_LANE_FLOOR - 1 - yy, 11, (yy * 100 / 50 > 66) ? RGB (240, 80, 70) : RGB (110, 220, 110), 200);
-			}
-		}
 		/* フリッパー（回る線分。太く） */
 		for (i = 0; i < 2; i ++) {
 			int nAng = i ? D.nAngR : D.nAngL, tx, ty, px = PbPx (i ? T.nPivotRx : T.nPivotLx), py = PbPx (T.nPivotY);
@@ -1157,15 +1143,18 @@ static void DrawPinballOne(HDC hDC, const PINBALLDRAW &D, int sx, int sy, BOOL b
 
 	/* 上の層：帯（本人の台だけ。観戦の台は盤の上に小さく得点） */
 	if (!St.byIdle && St.byMine) {
-		int nPanelW = 96, nPanelH = 96;
+		int nPanelW = 96, nPanelH = 112;
 		int px = (St.bySide == PUZZLESIDE_LEFT) ? (sx - 6 - nPanelW) : (sx + nW + 6), py = sy + 8, ty = py + 4;
 		PuzFrame (hDC, px, py, nPanelW, nPanelH, RGB (200, 200, 200), 150);
 		PuzText (hDC, px + 6, ty, (LPSTR)"SCORE", RGB (255, 235, 120), 16, FALSE);
 		wsprintf (szTmp, "%u", (unsigned int)St.dwScore);
 		PuzText (hDC, px + 6, ty + 16, szTmp, RGB (255, 255, 255), 16, FALSE);
 		PuzText (hDC, px + 6, ty + 34, (LPSTR)"BALLS", RGB (255, 235, 120), 16, FALSE);
-		for (i = 0; i < PB_BALLS; i ++) {
-			int bx = px + 12 + i * 14, by = ty + 60;
+		/* 球の数は台の設定（サーバーが送ってくる。多い台は間隔をつめて帯に収める） */
+		int nBallsMax = ((int)St.byBallsMax >= 1) ? min ((int)St.byBallsMax, PB_BALLS_MAX) : PB_BALLS;
+		int nBallStep = (nBallsMax <= 6) ? 14 : max (6, (nPanelW - 24) / (nBallsMax - 1));
+		for (i = 0; i < nBallsMax; i ++) {
+			int bx = px + 12 + i * nBallStep, by = ty + 60;
 			if (i < (int)St.byBalls) {
 				PbFillCircle (hDC, bx, by, 4, RGB (235, 235, 235));
 			} else {
@@ -1178,7 +1167,7 @@ static void DrawPinballOne(HDC hDC, const PINBALLDRAW &D, int sx, int sy, BOOL b
 		}
 		if ((St.bySave > 0) && (St.byPhase == PB_PHASE_PLAY)) {
 			wsprintf (szTmp, "SAVE %d", (int)St.bySave);
-			PuzText (hDC, px + 52, ty + 52, szTmp, RGB (120, 230, 255), 16, FALSE);
+			PuzText (hDC, px + 6, ty + 88, szTmp, RGB (120, 230, 255), 16, FALSE);		/* 球が多い台でも球の並びと重ならないよう、コンボの下 */
 		}
 	} else if (!St.byIdle) {
 		SIZE size;

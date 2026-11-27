@@ -9,6 +9,7 @@
 #include "include.h"
 #include "Glbldata.h"
 #include "common/BowFlight.h"
+#include "common/PinballInfo.h"
 #include "CharProc/CharProcBase.h"
 #include "CharProc/CharProcPUT.h"
 #include "../Common/Info/InfoJob.h"
@@ -1435,6 +1436,7 @@ int GetSubGameDataSize(BYTE byType)
 	case SUBGAMEID_DUNGEON:		nSize = sizeof (SUBGAME_DUNGEONINFO);	break;
 	case SUBGAMEID_WAR:			nSize = sizeof (SUBGAME_WARINFO);		break;
 	case SUBGAMEID_SUGOROKU:	nSize = sizeof (SUBGAME_SUGOROKUINFO);	break;
+	case SUBGAMEID_PINBALL:		nSize = sizeof (SUBGAME_PINBALLINFO);	break;
 	}
 
 	return nSize;
@@ -8379,11 +8381,15 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 		}
 		return;
 	}
-	/* ピンボールの台（台詞が「@i」で始まる）？ 座る場所のマスに立っていれば座る（落ち物パズルの台と同じ作り） */
+	/* ピンボールの台（台詞が「@i<サブゲーム情報の番号>」）？ 座る場所のマスに立っていれば座る（落ち物パズルの台と同じ作り） */
 	if (PinballIsTableNpc (pChar)) {
 		if (s_nCharNoRecv >= 0) {
 			PinballSit (g_aCharInfo[s_nCharNoRecv], pChar);
 		}
+		return;
+	}
+	/* 台詞が「@i」で始まるのに台にならない（番号が無い・情報が無い・種別が違う）NPC は、何も言わない（台詞を読み上げない） */
+	if (PinballIsMarkedNpc (pChar)) {
 		return;
 	}
 	/* 落ち物パズルの掲示板（台詞が「@h」で始まる）？ ハイスコアと連勝記録を、話しかけた本人にだけ出す
@@ -10021,6 +10027,21 @@ void RecvDataProcSUBGAMEINFO(PBYTE pData, DWORD dwDataSize)
 				pInfo->aPartsInfo.Add (PartsInfo);
 				pTmp += sizeof (SUGOROKUPARTSINFO);
 			}
+		}
+		break;
+
+	case SUBGAMEID_PINBALL:		/* ピンボール（実行中の値を持たないので、そのまま写して範囲に丸める） */
+		{
+			PSUBGAME_PINBALLINFO pPinball = (PSUBGAME_PINBALLINFO)g_aSubaGameInfo[pRecv->dwTblID]->pInfo;
+			PSUBGAME_PINBALLINFOSAVE pPinballRecv = (PSUBGAME_PINBALLINFOSAVE)(pRecv + 1);
+
+			if (s_dwRecvSize >= sizeof (CMDPARA_DATA1) + sizeof (SUBGAME_PINBALLINFOSAVE)) {
+				CopyMemory (pPinball, pPinballRecv, sizeof (SUBGAME_PINBALLINFOSAVE));
+			} else {
+				PinballInfoSetDefault (pPinball);
+			}
+			PinballInfoClamp (pPinball);
+			pPinball->byVersion = PINBALLINFO_VERSION;
 		}
 		break;
 	}

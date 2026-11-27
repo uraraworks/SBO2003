@@ -1203,6 +1203,7 @@ enum {
 	SUBGAMEID_DUNGEON,											/* ダンジョン */
 	SUBGAMEID_WAR,												/* 戦場ゲーム */
 	SUBGAMEID_SUGOROKU,											/* すごろく */
+	SUBGAMEID_PINBALL,											/* ピンボール（台の設定。台NPCの台詞 @i<このサブゲームの番号> で使う。docs/pinball.md） */
 	SUBGAMEID_MAX
 };
 
@@ -1768,6 +1769,50 @@ typedef struct _SUBGAME_SUGOROKUINFOSAVE {
 	CmyArray<SUGOROKUEVENTINFO, SUGOROKUEVENTINFO>	aEventInfo;		/* イベント情報 */
 	CmyArray<SUGOROKUPARTSINFO, SUGOROKUPARTSINFO>	aPartsInfo;		/* パーツ情報 */
 } SUBGAME_SUGOROKUINFOSAVE, *PSUBGAME_SUGOROKUINFOSAVE;
+
+/* サブゲーム：ピンボール情報（台1つぶんの設定。台NPCの台詞 "@i<サブゲーム情報の番号>" がこの情報を指す）
+ *   実行中の値を持たない（遊んでいる最中の状態は SboSvrPinball.cpp の台の表に持つ）ので、INFO と INFOSAVE は同じ並び。
+ *   既定値・範囲の丸めは common/PinballInfo.h。0 のままでも遊べるよう、サーバーは範囲に丸めて使う。
+ *   項目を足す時は、末尾の abyReserved から切り出すか、この構造体の最後に足す（保存は項目名つきの列なので、
+ *   足した項目は SboSvrSaveLoadSubGameInfo.cpp の s_aPinballField に 1 行足すだけ。前の版のサーバーはその項目を読み飛ばす） */
+#define PINBALLINFO_VERSION		(1)								/* 保存の版（項目を足したら上げる。読む側は未知の項目を読み飛ばすので、上げなくても壊れない） */
+#define PINBALLINFO_RESERVED	(16)							/* 将来の項目用に空けてある保存領域（バイト） */
+typedef struct _SUBGAME_PINBALLINFO {
+	WORD		wCoinItem;											/* コインのアイテム番号（0=無料） */
+	BYTE		byCoinCount;										/* 必要な枚数（0=無料） */
+	BYTE		byBalls;											/* 球数（1〜9。既定 3） */
+	BYTE		bySaveSec;											/* ボールセーブの秒数（0=なし。既定 8） */
+	BYTE		byBandSide;											/* 得点・残り球の帯の側（0=盤の右・1=盤の左） */
+	WORD		wScoreBumper;										/* バンパーの得点（既定 100） */
+	WORD		wScoreTarget;										/* ターゲットの得点（既定 300） */
+	WORD		wScoreBonus;										/* ターゲットを全部倒した時のボーナス（既定 1000） */
+	WORD		wComboMs;											/* コンボが続く時間（ミリ秒。既定 2000） */
+	signed char	cDx;												/* 盤の左上が台NPCのマスの左上から何マスか（横。負は左。既定 -2） */
+	signed char	cDy;												/* 同（縦。負は上。既定 -6） */
+	signed char	cSeatDx;											/* 座る場所の、台NPCのマスからの相対位置（横。既定 0） */
+	signed char	cSeatDy;											/* 同（縦。既定 1） */
+	BYTE		byVersion;											/* 保存の版（PINBALLINFO_VERSION） */
+	BYTE		abyReserved[PINBALLINFO_RESERVED];					/* 将来用（0 で保存する） */
+} SUBGAME_PINBALLINFO, *PSUBGAME_PINBALLINFO;
+
+/* サブゲーム：ピンボール情報(保存データ。管理者ウィンドウとの通信にも使う。INFO と同じ並び) */
+typedef struct _SUBGAME_PINBALLINFOSAVE {
+	WORD		wCoinItem;											/* コインのアイテム番号（0=無料） */
+	BYTE		byCoinCount;										/* 必要な枚数（0=無料） */
+	BYTE		byBalls;											/* 球数 */
+	BYTE		bySaveSec;											/* ボールセーブの秒数（0=なし） */
+	BYTE		byBandSide;											/* 帯の側（0=右・1=左） */
+	WORD		wScoreBumper;										/* バンパーの得点 */
+	WORD		wScoreTarget;										/* ターゲットの得点 */
+	WORD		wScoreBonus;										/* ターゲット全部のボーナス */
+	WORD		wComboMs;											/* コンボが続く時間（ミリ秒） */
+	signed char	cDx;												/* 盤の左上（横） */
+	signed char	cDy;												/* 盤の左上（縦） */
+	signed char	cSeatDx;											/* 座る場所（横） */
+	signed char	cSeatDy;											/* 座る場所（縦） */
+	BYTE		byVersion;											/* 保存の版 */
+	BYTE		abyReserved[PINBALLINFO_RESERVED];					/* 将来用 */
+} SUBGAME_PINBALLINFOSAVE, *PSUBGAME_PINBALLINFOSAVE;
 
 /* サブステータス情報(すごろく) */
 typedef struct _SUBSTATUS_SUGOROKU {
@@ -4420,7 +4465,7 @@ typedef struct _CMDPARA_PUZZLESE {
 } CMDPARA_PUZZLESE, *PCMDPARA_PUZZLESE;
 #pragma pack(pop)
 
-/* ピンボール（台に座って遊ぶ。ロジックは common/Pinball.h。台詞が "@i" の台NPC。docs/pinball.md）
+/* ピンボール（台に座って遊ぶ。ロジックは common/Pinball.h。台詞が "@i<サブゲーム情報の番号>" の台NPC。設定は SUBGAME_PINBALLINFO。docs/pinball.md）
    CMD_PINBALLKEY: クライアント→サーバー。押した時と離した時だけ送る（CMDPARA_PINBALLKEY の byData に PINBALLKEY_*）
    CMD_PINBALLSTATE: サーバー→座っている人と台の近くの人。約 0.1 秒ごとと、状態が変わった時 */
 enum {
@@ -4470,6 +4515,15 @@ typedef struct _CMDPARA_PINBALLSTATE {
 	DWORD		dwNpc;												/* 台NPCのテーブルID（盤を見分ける印） */
 	DWORD		dwStep;												/* サーバーの固定ステップ数（先読みの巻き直しの目印） */
 	DWORD		dwAck;												/* この台の席の人のキーを、ここまで処理した（CMDPARA_PINBALLKEY の dwSerial） */
+	/* ここから台の設定（サブゲーム情報 SUBGAME_PINBALLINFO から。クライアントの先読み・帯の表示・座る場所の判定に使う） */
+	BYTE		byBallsMax;											/* 球数（帯の球の数。先読みでも使う） */
+	BYTE		bySaveSecMax;										/* ボールセーブの秒数 */
+	signed char	cSeatDx;											/* 座る場所（台NPCのマスからの相対位置。S キーで座れるマスの判定） */
+	signed char	cSeatDy;
+	WORD		wComboMs;											/* コンボが続く時間（ミリ秒） */
+	WORD		wScoreBumper;										/* バンパーの得点 */
+	WORD		wScoreTarget;										/* ターゲットの得点 */
+	WORD		wScoreBonus;										/* ターゲット全部のボーナス */
 } CMDPARA_PINBALLSTATE, *PCMDPARA_PINBALLSTATE;
 #pragma pack(pop)
 

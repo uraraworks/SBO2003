@@ -37,7 +37,7 @@
 #define PB_FP				(256)		/* 1 ドット＝256 */
 #define PB_STEP_HZ			(120)		/* 固定ステップ（1 秒あたり） */
 #define PB_MAX_CATCHUP		(60)		/* 1 回の Update で回すステップの上限（これを超える遅れは捨てる） */
-#define PB_BALLS			(3)			/* ひとり練習の球数 */
+#define PB_BALLS			(3)			/* 球数の既定（台ごとの設定は SUBGAME_PINBALLINFO。PinballConfig） */
 #define PB_BALL_R			(4 * PB_FP)	/* ボールの半径 */
 #define PB_GRAVITY			(5)			/* 重力（1 ステップあたり、下向き） */
 #define PB_VMAX				(900)		/* ボールの速さの上限（1 ステップあたり。約 420 ドット/秒） */
@@ -58,11 +58,14 @@
 #define PB_LAUNCH_MIN		(350)		/* 打ち出しの強さ（1 ステップあたりの速さ）の最小。最大は盤の高さから決まる（PinballTable::nLaunchMax） */
 #define PB_LAUNCH_REACH		(17)		/* 打ち出しの最大の強さ＝レーンの床からアーチまで届くのに要る強さの PB_LAUNCH_REACH/10 倍（二乗の比。1.7 倍） */
 #define PB_CHARGE_MS		(1000)		/* ↓を押してこの時間で最大の強さ（それ以上は上限） */
-#define PB_SAVE_MS			(8000)		/* 球を打ち出してからこの間は、穴に落ちても同じ球（ボールセーブ。1 球につき 1 回） */
-#define PB_COMBO_MS			(2000)		/* この間に続けてヒットするとコンボ */
-#define PB_SCORE_BUMPER		(100)
-#define PB_SCORE_TARGET		(300)
-#define PB_SCORE_BONUS		(1000)		/* ターゲットを全部倒した時のボーナス */
+#define PB_SAVE_MS			(8000)		/* 既定：球を打ち出してからこの間は、穴に落ちても同じ球（ボールセーブ。1 球につき 1 回） */
+#define PB_COMBO_MS			(2000)		/* 既定：この間に続けてヒットするとコンボ */
+#define PB_SCORE_BUMPER		(100)		/* 既定：バンパーの得点 */
+#define PB_SCORE_TARGET		(300)		/* 既定：ターゲットの得点 */
+#define PB_SCORE_BONUS		(1000)		/* 既定：ターゲットを全部倒した時のボーナス */
+#define PB_BALLS_MAX		(9)			/* 球数の上限（帯に並べて描ける数） */
+#define PB_CFG_MS_MAX		(60000)		/* ボールセーブ・コンボの時間の上限(ミリ秒) */
+#define PB_CFG_SCORE_MAX	(60000)		/* 得点の設定の上限 */
 #define PB_STALL_MS			(5000)		/* 球がほとんど動かないままこの時間たつと、軽く弾いて救う */
 #define PB_TARGETS			(PB_UPPER ? 6 : 3)	/* 0〜2 が下側、3〜5 が上側 */
 #define PB_BUMPERS			(PB_UPPER ? 8 : 3)	/* 0〜2 が下側、3〜5 が上側（アーチの下）、6・7 が中ほど */
@@ -282,6 +285,39 @@ static inline void PbClosest(int x1, int y1, int x2, int y2, int px, int py, int
 }
 
 /* ========================================================================= */
+/* 台ごとに変えられる設定（サブゲーム情報 SUBGAME_PINBALLINFO から作る。物理・盤の形は変えない） */
+/* ========================================================================= */
+struct PinballConfig {
+	int		nBalls;			/* 球数（1〜PB_BALLS_MAX） */
+	int		nSaveMs;		/* ボールセーブの時間(ミリ秒。0=なし) */
+	int		nComboMs;		/* コンボが続く時間(ミリ秒) */
+	int		nScoreBumper;	/* バンパーの得点 */
+	int		nScoreTarget;	/* ターゲットの得点 */
+	int		nScoreBonus;	/* ターゲット全部のボーナス */
+
+	/* 既定値（これまでの定数） */
+	void SetDefault(void)
+	{
+		nBalls = PB_BALLS;
+		nSaveMs = PB_SAVE_MS;
+		nComboMs = PB_COMBO_MS;
+		nScoreBumper = PB_SCORE_BUMPER;
+		nScoreTarget = PB_SCORE_TARGET;
+		nScoreBonus = PB_SCORE_BONUS;
+	}
+	/* 範囲に丸める（外から来た値・保存データを、そのまま使っても壊れないように） */
+	void Clamp(void)
+	{
+		nBalls = (nBalls < 1) ? 1 : (nBalls > PB_BALLS_MAX) ? PB_BALLS_MAX : nBalls;
+		nSaveMs = (nSaveMs < 0) ? 0 : (nSaveMs > PB_CFG_MS_MAX) ? PB_CFG_MS_MAX : nSaveMs;
+		nComboMs = (nComboMs < 0) ? 0 : (nComboMs > PB_CFG_MS_MAX) ? PB_CFG_MS_MAX : nComboMs;
+		nScoreBumper = (nScoreBumper < 0) ? 0 : (nScoreBumper > PB_CFG_SCORE_MAX) ? PB_CFG_SCORE_MAX : nScoreBumper;
+		nScoreTarget = (nScoreTarget < 0) ? 0 : (nScoreTarget > PB_CFG_SCORE_MAX) ? PB_CFG_SCORE_MAX : nScoreTarget;
+		nScoreBonus = (nScoreBonus < 0) ? 0 : (nScoreBonus > PB_CFG_SCORE_MAX) ? PB_CFG_SCORE_MAX : nScoreBonus;
+	}
+};
+
+/* ========================================================================= */
 /* ゲーム																	 */
 /* ========================================================================= */
 struct PinballGame {
@@ -302,11 +338,19 @@ struct PinballGame {
 	int				bPredict;			/* 先読み用（穴に落ちても球を減らさず、サーバーの返事を待つ） */
 	unsigned int	dwStep;				/* 開始からの固定ステップ数 */
 	unsigned int	nAcc;				/* Update の端数（ミリ秒×PB_STEP_HZ。1000 で 1 ステップ） */
+	PinballConfig	Cfg;				/* 台の設定（球数・ボールセーブ・コンボ・得点） */
 
-	void Start(void)
+	/* 始める。pCfg が NULL なら既定の設定。サーバーとクライアントは同じ設定で始める（先読みが合うように） */
+	void Start(const PinballConfig *pCfg = NULL)
 	{
 		memset (this, 0, sizeof (*this));
-		nBallsLeft = PB_BALLS;
+		if (pCfg) {
+			Cfg = *pCfg;
+		} else {
+			Cfg.SetDefault ();
+		}
+		Cfg.Clamp ();
+		nBallsLeft = Cfg.nBalls;
 		SetReady ();
 	}
 	/* 打ち出しレーンで球を待たせる */
@@ -338,7 +382,7 @@ struct PinballGame {
 		nVx = 0;
 		nVy = -nPower;
 		nPhase = PB_PHASE_PLAY;
-		nSaveSteps = bSaved ? 0 : (PB_SAVE_MS * PB_STEP_HZ / 1000);
+		nSaveSteps = bSaved ? 0 : (Cfg.nSaveMs * PB_STEP_HZ / 1000);
 		nStall = 0;
 		return 1;
 	}
@@ -427,7 +471,7 @@ inline int PinballGame::AddHit(int nScore, int nEvent, int nFlashBit)
 	} else {
 		nCombo = 1;
 	}
-	nComboSteps = PB_COMBO_MS * PB_STEP_HZ / 1000;
+	nComboSteps = Cfg.nComboMs * PB_STEP_HZ / 1000;
 	dwScore += (unsigned int)nScore;
 	nFlash |= 1u << nFlashBit;
 	return nEvent;
@@ -558,9 +602,9 @@ inline int PinballGame::Step(void)
 				}
 				if (CollideSeg (S, PB_TARGET_R)) {
 					nTargetMask |= 1u << S.nTarget;
-					nEv |= AddHit (PB_SCORE_TARGET, PB_EV_TARGET, PB_BUMPERS + S.nTarget);
+					nEv |= AddHit (Cfg.nScoreTarget, PB_EV_TARGET, PB_BUMPERS + S.nTarget);
 					if (nTargetMask == (1u << PB_TARGETS) - 1) {
-						dwScore += PB_SCORE_BONUS;
+						dwScore += (unsigned int)Cfg.nScoreBonus;
 						nTargetMask = 0;
 						nEv |= PB_EV_BONUS;
 					}
@@ -590,7 +634,7 @@ inline int PinballGame::Step(void)
 					nVx = nNx * PB_BUMPER_KICK / PB_NORM;
 					nVy = nNy * PB_BUMPER_KICK / PB_NORM;
 				}
-				nEv |= AddHit (PB_SCORE_BUMPER, PB_EV_BUMPER, j);
+				nEv |= AddHit (Cfg.nScoreBumper, PB_EV_BUMPER, j);
 			}
 		}
 		/* フリッパー */
@@ -656,60 +700,35 @@ inline int PinballGame::Step(void)
 
 /* ========================================================================= */
 /* 台詞（"@i" で始まる）の読み方												 */
-/*   @i<コインのアイテム番号>,<必要な枚数>,<dx>,<dy>,<帯の側>,<sdx>,<sdy>			 */
-/*   dx, dy … 盤の左上が、台NPCのマスの左上から何マスか（負は左・上）。省略は席が盤の真下	 */
-/*   帯の側 … 0=盤の右・1=盤の左									 */
-/*   sdx, sdy … 座る場所（台NPCのマスからの相対位置。省略は 0,+1）					 */
+/*   @i<サブゲーム情報の番号>													 */
+/*   台の設定（コイン・球数・得点・盤の位置・座る場所など）はサブゲーム情報（SUBGAME_PINBALLINFO）にある。	 */
+/*   台詞は、その情報の番号（管理者ウィンドウのサブゲーム情報の番号）だけを書く。				 */
+/*   番号が無い・数字以外が混じる・大きすぎる時は台ではない（-1）。情報が無い・種別が違う時の判定は呼ぶ側	 */
 /* ========================================================================= */
-#define PBP_NONE			(-99999)	/* 省略・空欄 */
-#define PBP_COUNT			(7)
-#define PBP_SEAT_LIMIT		(60)
+#define PBP_SEAT_LIMIT		(60)		/* 盤の位置・座る場所の範囲（台NPCのマスから±マス） */
 #define PBP_TILE_DOT		(32)		/* 地図 1 マス(ドット) */
+#define PBP_INFO_MAX		(65535)		/* 台詞の番号の上限 */
 
-static inline void PinballParseSpeech(const char *pszSpeech, int anVal[PBP_COUNT])
+static inline int PinballSpeechInfoNo(const char *pszSpeech)
 {
-	const char *p = pszSpeech + 2;
-	int i;
+	const char *p;
+	int n = 0;
 
-	for (i = 0; i < PBP_COUNT; i ++) {
-		anVal[i] = PBP_NONE;
+	if ((pszSpeech == NULL) || (pszSpeech[0] != '@') || (pszSpeech[1] != 'i')) {
+		return -1;
 	}
-	for (i = 0; i < PBP_COUNT; i ++) {
-		bool bMinus = false, bNum = false;
-		int n = 0;
-
-		if (*p == '-') {
-			bMinus = true;
-			p ++;
-		}
-		while ((*p >= '0') && (*p <= '9')) {
-			if (n < 100000) {
-				n = n * 10 + (*p - '0');
-			}
-			bNum = true;
-			p ++;
-		}
-		if (bNum) {
-			anVal[i] = bMinus ? -n : n;
-		}
-		if (*p != ',') {
-			break;
+	p = pszSpeech + 2;
+	if ((*p < '0') || (*p > '9')) {
+		return -1;
+	}
+	while ((*p >= '0') && (*p <= '9')) {
+		n = n * 10 + (*p - '0');
+		if (n > PBP_INFO_MAX) {
+			return -1;
 		}
 		p ++;
 	}
-}
-
-/* 座る場所（台NPCのマスからの相対位置） */
-static inline void PinballSeatOffset(const char *pszSpeech, int *pnSdx, int *pnSdy)
-{
-	int anVal[PBP_COUNT];
-	int a, b;
-
-	PinballParseSpeech (pszSpeech, anVal);
-	a = (anVal[5] == PBP_NONE) ? 0 : anVal[5];
-	b = (anVal[6] == PBP_NONE) ? 1 : anVal[6];
-	*pnSdx = (a < -PBP_SEAT_LIMIT) ? -PBP_SEAT_LIMIT : (a > PBP_SEAT_LIMIT) ? PBP_SEAT_LIMIT : a;
-	*pnSdy = (b < -PBP_SEAT_LIMIT) ? -PBP_SEAT_LIMIT : (b > PBP_SEAT_LIMIT) ? PBP_SEAT_LIMIT : b;
+	return (*p == '\0') ? n : -1;
 }
 
 /* 盤の左上の既定（席が盤の真下の中央）。盤の中心の x が席の x になるよう、横は盤の幅の半分 */

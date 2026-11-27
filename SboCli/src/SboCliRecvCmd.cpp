@@ -612,6 +612,7 @@ int GetSubGameDataSize(BYTE byType)
 	case SUBGAMEID_DUNGEON:		nSize = sizeof (SUBGAME_DUNGEONINFOSAVE);	break;
 	case SUBGAMEID_WAR:			nSize = sizeof (SUBGAME_WARINFOSAVE);		break;
 	case SUBGAMEID_SUGOROKU:	nSize = sizeof (SUBGAME_SUGOROKUINFOSAVE);	break;
+	case SUBGAMEID_PINBALL:		nSize = sizeof (SUBGAME_PINBALLINFOSAVE);	break;
 	}
 	return nSize;
 }
@@ -7867,6 +7868,10 @@ void RecvDataProcSUBGAMEINFO(BYTE *pData, DWORD dwDataSize)
 
 				CopyMemory (pInfo, pInfoRecv, sizeof (SUBGAME_WARINFOSAVE));
 			}
+			break;
+
+		case SUBGAMEID_PINBALL:		/* ピンボール */
+			CopyMemory (g_pSubGameInfo->pInfo, pRecv + 1, sizeof (SUBGAME_PINBALLINFOSAVE));
 			break;
 
 		case SUBGAMEID_SUGOROKU:	/* すごろく */

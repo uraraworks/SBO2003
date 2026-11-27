@@ -3072,6 +3072,10 @@ void SendCmdSUBGAMEINFO(DWORD pIDSend, int nNo)
 		}
 		break;
 
+	case SUBGAMEID_PINBALL:		/* ピンボール（INFO と INFOSAVE は同じ並び） */
+		CopyMemory (pData + sizeof (CMDPARA_DATA1), pInfo->pInfo, sizeof (SUBGAME_PINBALLINFOSAVE));
+		break;
+
 	case SUBGAMEID_SUGOROKU:	/* すごろく */
 		{
 			PSUBGAME_SUGOROKUINFO pInfoTmp = (PSUBGAME_SUGOROKUINFO)pInfo->pInfo;

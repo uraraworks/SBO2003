@@ -105,7 +105,16 @@ static BOOL Predictable(const PBVIEW *pView)
 /* サーバーの状態から先読み用のゲームを作る */
 static void SimFromState(PinballGame *pG, const CMDPARA_PINBALLSTATE &St)
 {
-	pG->Start ();
+	PinballConfig Cfg;
+
+	/* サーバーと同じ設定（球数・ボールセーブ・コンボ・得点。台ごとにサブゲーム情報で決まる）で始める */
+	Cfg.nBalls			= St.byBallsMax;
+	Cfg.nSaveMs			= (int)St.bySaveSecMax * 1000;
+	Cfg.nComboMs		= St.wComboMs;
+	Cfg.nScoreBumper	= St.wScoreBumper;
+	Cfg.nScoreTarget	= St.wScoreTarget;
+	Cfg.nScoreBonus		= St.wScoreBonus;
+	pG->Start (&Cfg);
 	pG->nPhase = St.byPhase;
 	pG->nX = St.nBallX;
 	pG->nY = St.nBallY;
@@ -274,6 +283,33 @@ void RecvDataProcPINBALLSTATE(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	g_bDraw = TRUE;
+}
+
+/* S キーで座れる台：今立っているマスが、台の座る場所（台NPCのマス＋サーバーが送ってきた座る場所）の台NPCのキャラ番号 */
+int PinballSeatNpcHere(PCHARINFO pChar)
+{
+	int i;
+
+	for (i = 0; i < PINBALL_VIEW_MAX; i ++) {
+		int nNo;
+		PCHARINFO pNpc;
+
+		if (!s_aView[i].bUse || s_aView[i].St.byMine) {
+			continue;
+		}
+		nNo = GetCharNo2 (s_aView[i].St.dwNpc);
+		if (nNo < 0) {
+			continue;
+		}
+		pNpc = (PCHARINFO)g_aCharInfo[nNo];
+		if ((pNpc == NULL) || (pNpc == pChar)) {
+			continue;
+		}
+		if (((int)pNpc->dwX + s_aView[i].St.cSeatDx == (int)pChar->dwX) && ((int)pNpc->dwY + s_aView[i].St.cSeatDy == (int)pChar->dwY)) {
+			return nNo;
+		}
+	}
+	return -1;
 }
 
 /* 席に座って遊んでいるか。ゲームオーバーの直後も PINBALL_OVER_LOCK_MS の間は座っているのと同じ扱い */

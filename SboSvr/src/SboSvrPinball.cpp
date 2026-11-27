@@ -6,19 +6,18 @@
 /*
  * 仕様は docs/pinball.md。物理・進行は common/Pinball.h（サーバーとクライアントで同じコード）。
  * 作りは落ち物パズル（SboSvrPuzzle.cpp）をなぞっている（台NPC・席・コイン・待機中の台・近くの人への送信）。
- * 台は、台詞が "@i" で始まる NPC。台詞のパラメータ（コンマ区切り。後ろは省略でき、空欄も既定になる）:
- *     @i<コインのアイテム番号>,<必要な枚数>,<dx>,<dy>,<帯の側 0=右 1=左>,<sdx>,<sdy>
- *   dx, dy … 盤の左上が、台のマスの左上から何マスか（負は左・上）。省略は盤の真下に席（160×224 なら -2,-6）
- *   帯の側 … 得点・残り球の帯を盤のどちら側に出すか（省略は右）
- *   sdx, sdy … 座る場所：台NPCのマスからの相対位置（省略は 0,+1）
- *   例  @i20,1  … アイテム 20 を 1 枚使って遊ぶ。  @i … 無料
- *   枚数 0 かアイテム番号 0 なら無料。台NPCは見えない（byGhost を CHARGHOST_NAMEONLY にして送る）。
+ * 台は、台詞が "@i<サブゲーム情報の番号>" の NPC。台の設定は、その番号のサブゲーム情報（SUBGAME_PINBALLINFO。管理者ウィンドウ・データ API）にある:
+ *   コイン（アイテム番号・枚数。どちらか 0 なら無料）・球数・ボールセーブの秒数・得点（バンパー・ターゲット・全部倒したボーナス）・
+ *   コンボの時間・盤の位置（dx, dy）・帯の側・座る場所（sdx, sdy）。範囲外の値は範囲に丸めて使う（PinballInfoClamp）。
+ *   番号が無い・情報が無い・種別がピンボールでない時は、台ではない（何もしない）。台NPCは見えない（byGhost を CHARGHOST_NAMEONLY にして送る）。
+ * 設定は、ゲームを始める時に取り込む（遊んでいる間に変えても、そのゲームは変わらない。待機中の台は変えたらすぐ盤の位置などに反映）。
+ * クライアントの先読み・帯の表示・座る場所の判定に要る設定は、CMDPARA_PINBALLSTATE の末尾で一緒に送る。
  * ゲームの正はサーバー。周期処理（PinballProc）で g_dwTime の経過時間から固定ステップ（1/120 秒）を回す。
  * キーは押した時と離した時だけ届く（PINBALLKEY_*）。届いた時、まず経過時間ぶんゲームを進めてから反映する（入力の時刻が合う）。
  * 状態は PINBALLSTATE_FULL を、約 PINBALL_SEND_MS ごとと、得点・球・状態が変わった時に、盤を見ている全員
  * （座っている人・台の近くにいる人）へ送る。本人のクライアントは common/Pinball.h で先読みし、
  * 届いた状態（ステップ数 dwStep・ボール・フリッパー）から巻き直して少しずつ寄せる。観戦者は補間して描く。
- * 記録（ランキング）・対戦・台のデータ化は今回やらない（後で足せるよう、終了は Leave の 1 か所に集めてある）。
+ * 記録（ランキング）・対戦は今回やらない（後で足せるよう、終了は Leave の 1 か所に集めてある）。
  */
 #include "include.h"
 #include "Glbldata.h"
@@ -26,6 +25,7 @@
 #include "SboSvrQuest.h"
 #include "SboSvrPinball.h"
 #include "../../common/Pinball.h"
+#include "../../common/PinballInfo.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -45,15 +45,17 @@
 #define PINBALL_TILES_W			(PB_W / PBP_TILE_DOT)		/* 盤の横のマス数（切り捨て） */
 #define PINBALL_TILES_H			(PB_VIEW_H / PBP_TILE_DOT)
 
-/* 台の設定（台NPCの台詞から読む） */
+/* 台の設定（台NPCの台詞が指すサブゲーム情報から読む。範囲に丸めた値） */
 typedef struct _PINBALLPARAM {
+	int		nInfo;							/* サブゲーム情報の番号（台詞の @i の後の数） */
 	WORD	wCoinItem;						/* コインのアイテム番号（0=無料） */
 	int		nCoinCount;						/* 必要な枚数（0=無料） */
 	int		nDx;							/* 盤の左上：台のマスの左上から（マス） */
 	int		nDy;
 	int		nSide;							/* 帯の側（PUZZLESIDE_*） */
-	int		nSdx;							/* 座る場所：台のマスから（マス。既定 0,+1） */
+	int		nSdx;							/* 座る場所：台のマスから（マス） */
 	int		nSdy;
+	PinballConfig	Cfg;					/* ゲームの設定（球数・ボールセーブ・コンボ・得点） */
 } PINBALLPARAM;
 
 /* 盤面を送ってある人 */
@@ -92,20 +94,48 @@ static std::vector<PINBALLTABLE> s_aTable;
 /* 内部関数																	 */
 /* ========================================================================= */
 
-static int PbClamp(int n, int nMin, int nMax) { return (n < nMin) ? nMin : (n > nMax) ? nMax : n; }
-
-/* 台詞 "@i..." のパラメータを読む（読み方は common/Pinball.h の PinballParseSpeech） */
-static void ParseParam(LPCSTR pszSpeech, PINBALLPARAM *pParam)
+/* 台NPC（台詞 "@i<番号>"）の設定をサブゲーム情報から読む。台でない（番号が無い・情報が無い・種別が違う）なら FALSE */
+static BOOL LoadParam(PCHARINFO pNpc, PINBALLPARAM *pParam)
 {
-	int anVal[PBP_COUNT];
+	SUBGAME_PINBALLINFO Info;
+	PSUBGAMEINFO pSub;
+	int nNo;
 
-	PinballParseSpeech (pszSpeech, anVal);
-	pParam->wCoinItem	= ((anVal[0] < 0) || (anVal[0] > 65535)) ? 0 : (WORD)anVal[0];
-	pParam->nCoinCount	= (anVal[1] < 0) ? 0 : (anVal[1] > 99) ? 99 : anVal[1];
-	pParam->nDx = (anVal[2] == PBP_NONE) ? PinballDefaultDx () : PbClamp (anVal[2], -60, 60);
-	pParam->nDy = (anVal[3] == PBP_NONE) ? PinballDefaultDy () : PbClamp (anVal[3], -60, 60);
-	pParam->nSide = (anVal[4] == 1) ? PUZZLESIDE_LEFT : PUZZLESIDE_RIGHT;
-	PinballSeatOffset (pszSpeech, &pParam->nSdx, &pParam->nSdy);
+	if ((pNpc == NULL) || (pNpc->byNpcType == NPCTYPE_INIT) || (pNpc->pszNpcSpeech == NULL)) {
+		return FALSE;
+	}
+	nNo = PinballSpeechInfoNo (pNpc->pszNpcSpeech);
+	if ((nNo < 0) || (nNo >= g_aSubaGameInfo.GetSize ())) {
+		return FALSE;
+	}
+	pSub = g_aSubaGameInfo[nNo];
+	if ((pSub == NULL) || (pSub->byType != SUBGAMEID_PINBALL) || (pSub->pInfo == NULL)) {
+		return FALSE;
+	}
+	if (pParam) {
+		memcpy (&Info, pSub->pInfo, sizeof (Info));
+		PinballInfoClamp (&Info);
+		memset (pParam, 0, sizeof (*pParam));
+		pParam->nInfo		= nNo;
+		pParam->wCoinItem	= Info.wCoinItem;
+		pParam->nCoinCount	= Info.byCoinCount;
+		pParam->nDx			= Info.cDx;
+		pParam->nDy			= Info.cDy;
+		pParam->nSide		= (Info.byBandSide == 1) ? PUZZLESIDE_LEFT : PUZZLESIDE_RIGHT;
+		pParam->nSdx		= Info.cSeatDx;
+		pParam->nSdy		= Info.cSeatDy;
+		PinballInfoToConfig (&Info, &pParam->Cfg);
+	}
+	return TRUE;
+}
+
+/* 設定が同じか（待機中の台の、設定の変更の検出） */
+static BOOL ParamSame(const PINBALLPARAM &a, const PINBALLPARAM &b)
+{
+	return (a.nInfo == b.nInfo) && (a.wCoinItem == b.wCoinItem) && (a.nCoinCount == b.nCoinCount) &&
+		(a.nDx == b.nDx) && (a.nDy == b.nDy) && (a.nSide == b.nSide) && (a.nSdx == b.nSdx) && (a.nSdy == b.nSdy) &&
+		(a.Cfg.nBalls == b.Cfg.nBalls) && (a.Cfg.nSaveMs == b.Cfg.nSaveMs) && (a.Cfg.nComboMs == b.Cfg.nComboMs) &&
+		(a.Cfg.nScoreBumper == b.Cfg.nScoreBumper) && (a.Cfg.nScoreTarget == b.Cfg.nScoreTarget) && (a.Cfg.nScoreBonus == b.Cfg.nScoreBonus);
 }
 
 static PCHARINFO SeatChar(const PINBALLTABLE &Table)
@@ -199,6 +229,15 @@ static void BuildState(PINBALLTABLE &Table, BYTE byKind, std::vector<BYTE> &aBuf
 	Head.dwNpc		= Table.dwNpc;
 	Head.dwStep		= g.dwStep;
 	Head.dwAck		= Table.dwAck;
+	/* 台の設定（クライアントの先読み・帯・座る場所の判定用。待機中も同じ） */
+	Head.byBallsMax		= (BYTE)Table.Param.Cfg.nBalls;
+	Head.bySaveSecMax	= (BYTE)(Table.Param.Cfg.nSaveMs / 1000);
+	Head.cSeatDx		= (signed char)Table.Param.nSdx;
+	Head.cSeatDy		= (signed char)Table.Param.nSdy;
+	Head.wComboMs		= (WORD)Table.Param.Cfg.nComboMs;
+	Head.wScoreBumper	= (WORD)Table.Param.Cfg.nScoreBumper;
+	Head.wScoreTarget	= (WORD)Table.Param.Cfg.nScoreTarget;
+	Head.wScoreBonus	= (WORD)Table.Param.Cfg.nScoreBonus;
 	if (bIdle) {
 		/* 待機中は盤の枠だけ（ボール・帯なし）。ゲームオーバーの字の間だけ最後の得点を持つ */
 		Head.byPhase = PB_PHASE_OVER;
@@ -394,7 +433,7 @@ static void ToIdle(int nTable, BOOL bOver)
 	Table.bOverShow = bOver;
 	Table.dwOverTime = g_dwTime;
 	Table.bCharging = FALSE;
-	Table.Game.Start ();
+	Table.Game.Start (&Table.Param.Cfg);
 }
 
 /* 席を立たせる。bOver=ゲームオーバー（得点を知らせ、本人に OVER を送る）。bNotifySelf でなければ本人へは何も送らない（切断）。
@@ -449,7 +488,7 @@ static BOOL HandleEvents(int nTable, int nEv)
 		SendCmdSYSMSG (pChar->pID, szMsg);
 	}
 	if (nEv & PB_EV_BONUS) {
-		sprintf (szMsg, "ターゲットを全部倒した！ ボーナス %d", PB_SCORE_BONUS);
+		sprintf (szMsg, "ターゲットを全部倒した！ ボーナス %d", Table.Game.Cfg.nScoreBonus);
 		SendCmdSYSMSG (pChar->pID, szMsg);
 	}
 	if (nEv & PB_EV_OVER) {
@@ -496,6 +535,11 @@ static int CountCoin(PCHARINFO pChar, WORD wItem)
 
 BOOL PinballIsTableNpc(PCHARINFO pNpc)
 {
+	return LoadParam (pNpc, NULL);
+}
+
+BOOL PinballIsMarkedNpc(PCHARINFO pNpc)
+{
 	return pNpc && (pNpc->byNpcType != NPCTYPE_INIT) && pNpc->pszNpcSpeech &&
 		(pNpc->pszNpcSpeech[0] == '@') && (pNpc->pszNpcSpeech[1] == 'i');
 }
@@ -504,10 +548,9 @@ static BOOL OnSeatCell(PCHARINFO pChar, PCHARINFO pNpc)
 {
 	PINBALLPARAM Param;
 
-	if (!PinballIsTableNpc (pNpc) || (pChar->dwMapID != pNpc->dwMapID) || !IsSameSpace (pNpc, pChar)) {
+	if (!LoadParam (pNpc, &Param) || (pChar->dwMapID != pNpc->dwMapID) || !IsSameSpace (pNpc, pChar)) {
 		return FALSE;
 	}
-	ParseParam (pNpc->pszNpcSpeech, &Param);
 	return ((int)pChar->dwX == (int)pNpc->dwX + Param.nSdx) && ((int)pChar->dwY == (int)pNpc->dwY + Param.nSdy);
 }
 
@@ -562,10 +605,9 @@ BOOL PinballUseItem(PCHARINFO pChar, WORD wItem)
 			break;
 		}
 		pNpc = g_aCharInfo[pMap->paTblNoNPC[i]];
-		if (!PinballIsTableNpc (pNpc) || !OnSeatCell (pChar, pNpc)) {
+		if (!OnSeatCell (pChar, pNpc) || !LoadParam (pNpc, &Param)) {
 			continue;
 		}
-		ParseParam (pNpc->pszNpcSpeech, &Param);
 		if ((Param.wCoinItem != wItem) || (Param.nCoinCount <= 0)) {
 			continue;
 		}
@@ -581,7 +623,7 @@ void PinballSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed)
 	int i, nTable;
 	char szMsg[96];
 
-	if (!PinballIsTableNpc (pNpc) || (pChar->byNpcType != NPCTYPE_INIT) || PinballIsSeated (pChar) || PuzzleIsSeated (pChar)) {
+	if (!LoadParam (pNpc, &Param) || (pChar->byNpcType != NPCTYPE_INIT) || PinballIsSeated (pChar) || PuzzleIsSeated (pChar)) {
 		return;
 	}
 	/* 座れるのは、台の座る場所のマスの上だけ */
@@ -592,7 +634,6 @@ void PinballSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed)
 	if ((pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0) || (pChar->abySubStatus[0] != 0)) {
 		return;
 	}
-	ParseParam (pNpc->pszNpcSpeech, &Param);
 
 	/* この台は席が 1 つ。使われていれば座れない（待機中の台は座れる） */
 	nTable = FindTable (pNpc->dwTblID, pNpc->dwMapID);
@@ -630,7 +671,7 @@ void PinballSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed)
 		Table.dwAck = 0;
 		Table.dwLastKey = 0;
 		Table.nKeyTokens = 0;
-		Table.Game.Start ();
+		Table.Game.Start (&Param.Cfg);
 		Table.dwLastTick = g_dwTime;
 		Table.dwLastSend = g_dwTime;
 		Table.bCharging = FALSE;
@@ -649,7 +690,7 @@ void PinballSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed)
 			nTable = (int)s_aTable.size () - 1;
 		}
 	}
-	sprintf (szMsg, "ピンボール開始！ %d球。↓を押して離すと打ち出し、←→でフリッパー。", PB_BALLS);
+	sprintf (szMsg, "ピンボール開始！ %d球。↓を押して離すと打ち出し、←→でフリッパー。", Param.Cfg.nBalls);
 	SendCmdSYSMSG (pChar->pID, szMsg);
 	/* 見ている人全員へ始まった状態。新しく見える人へは見直しで届く */
 	SendTable (nTable, PINBALLSTATE_FULL);
@@ -746,10 +787,9 @@ static void IdleScan(void)
 				continue;
 			}
 			pNpc = g_aCharInfo[pMap->paTblNoNPC[i]];
-			if (!PinballIsTableNpc (pNpc) || (FindTable (pNpc->dwTblID, (DWORD)nMap) >= 0)) {
+			if ((FindTable (pNpc->dwTblID, (DWORD)nMap) >= 0) || !LoadParam (pNpc, &Param)) {
 				continue;
 			}
-			ParseParam (pNpc->pszNpcSpeech, &Param);
 			for (j = 0; j < (int)pMap->dwCountTblNoPC; j ++) {
 				PCHARINFO pChar;
 
@@ -776,7 +816,7 @@ static void IdleScan(void)
 				Table.dwAck = 0;
 				Table.dwLastKey = 0;
 				Table.nKeyTokens = 0;
-				Table.Game.Start ();
+				Table.Game.Start (&Param.Cfg);
 				Table.dwLastTick = g_dwTime;
 				Table.dwLastSend = g_dwTime;
 				Table.bCharging = FALSE;
@@ -823,6 +863,16 @@ void PinballProc(void)
 				}
 				s_aTable.erase (s_aTable.begin () + i);
 				continue;
+			}
+			/* 台の設定が変わっていたら取り込んで、見ている人へ送り直す（盤の位置・座る場所・帯の側など） */
+			{
+				PINBALLPARAM Np;
+
+				if (LoadParam (pNpc, &Np) && !ParamSame (Np, Table.Param)) {
+					Table.Param = Np;
+					Table.Game.Start (&Np.Cfg);
+					SendTable (i, PINBALLSTATE_FULL);
+				}
 			}
 			/* GAME OVER の字を消す（見ている全員へ byOver=0 の盤を送る） */
 			if (Table.bOverShow && ((DWORD)(g_dwTime - Table.dwOverTime) >= (DWORD)PINBALL_OVER_SHOW_MS)) {
