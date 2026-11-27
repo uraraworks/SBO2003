@@ -29,8 +29,8 @@
 
 ### 2. テンプレートを用意する
 
-テンプレート一式は、リポジトリには入れていません（下の make_art_template.py で作る。出力先 out/pinball-art）。Claude 側の作業フォルダ（_work/sbo2003-pinball/art）には作成済みのものがあります（`pinball_bg_guide.png`・`pinball_bg_empty.png`・`pinball_parts_guide.png`・`pinball_parts_empty.png`・拡大版・`layout.json`）。
-無い・古い時は、ルートで作り直します（Python 3・Pillow・g++ か clang++ が必要。Pillow は `pip install pillow`）。
+テンプレート一式は tools/pinball/template/ にあります（`pinball_bg_guide.png`・`pinball_bg_empty.png`・`pinball_parts_guide.png`・`pinball_parts_empty.png`・拡大版・`layout.json`）。コンパイラが無い環境でもそのまま使えます（make_art_template.py で作り直すのは座標を変えた時だけ）。
+コードの座標が変わった時だけ、ルートで作り直します（Python 3・Pillow・g++ か clang++ が必要。Pillow は `pip install pillow`）。
 
 ```sh
 python3 tools/pinball/make_art_template.py -o out/pinball-art
