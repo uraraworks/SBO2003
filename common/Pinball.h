@@ -38,7 +38,7 @@
 #define PB_STEP_HZ			(120)		/* 固定ステップ（1 秒あたり） */
 #define PB_MAX_CATCHUP		(60)		/* 1 回の Update で回すステップの上限（これを超える遅れは捨てる） */
 #define PB_BALLS			(3)			/* 球数の既定（台ごとの設定は SUBGAME_PINBALLINFO。PinballConfig） */
-#define PB_BALL_R			(4 * PB_FP)	/* ボールの半径 */
+#define PB_BALL_R			(5 * PB_FP)	/* ボールの半径（4 から 5 へ。見た目の小ささを直した） */
 #define PB_GRAVITY			(5)			/* 重力（1 ステップあたり、下向き） */
 #define PB_VMAX				(900)		/* ボールの速さの上限（1 ステップあたり。約 420 ドット/秒） */
 #define PB_VMAX_LANE		(1700)		/* 打ち出しレーンの中だけの上限（盤が高いと、上のアーチまで届く強い打ち出しが要る） */

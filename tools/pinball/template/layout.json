@@ -4,7 +4,7 @@
   "H": 448,
   "VIEW_H": 224,
   "YOFS": 224,
-  "BALL_R": 4,
+  "BALL_R": 5,
   "BUMPER_R": 9,
   "TARGET_R": 2,
   "FLIP_LEN": 28,
