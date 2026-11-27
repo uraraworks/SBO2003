@@ -31,6 +31,7 @@ static int FarFromSeg(const PBSEG &S, int x, int y, int nR)
 	return dx * dx + dy * dy >= (long long)nR * nR;
 }
 
+static unsigned int g_dwFlashAll = 0, g_dwEvAll = 0;	/* ランダム遊びで当たったバンパー・ターゲット（nFlash の OR）と、起きた出来事（Step の戻り値の OR） */
 static int g_nUpperSteps = 0;		/* ランダム遊びで、ボールが盤の上側（アーチの下の上のバンパー域）にいたステップ数 */
 
 /* 打ち出しから、ランダムなフリッパー操作で長く遊ばせる。毎ステップ、不変条件を調べる */
@@ -54,6 +55,7 @@ static void RandomPlay(unsigned int dwSeed, int nSteps, int *pnDrains)
 			}
 		}
 		nEv = g.Step ();
+		g_dwEvAll |= nEv; g_dwFlashAll |= g.nFlash; g.nFlash = 0;
 		if (nEv & PB_EV_DRAIN) {
 			(*pnDrains) ++;
 			/* 穴に落ちるのは、フリッパーの軸の間だけ（壁・斜め壁の外へ抜けて落ちていない） */
@@ -120,6 +122,16 @@ int main()
 		CHECK (rx0 - lx0 > 2 * (PB_BALL_R + PB_FLIP_R));
 		/* 上がり切っても、斜め壁と軸でつながって隙間がない（球が通れる隙間がない） */
 		CHECK (T.nPivotLx == PbX (PB_PIVOT_LX));
+		/* 打ち出しレーンの幅は、ボールの直径より広い（詰まらない） */
+		CHECK (PbX (PB_WALL_R) - T.nLaneL > 2 * PB_BALL_R);
+		/* バンパーどうし・バンパーと壁の隙間は、ボールの直径より広いか、完全に閉じている（半端に狭くて詰まらない） */
+		for (int a = 0; a < PB_BUMPERS; a ++) {
+			for (int b = a + 1; b < PB_BUMPERS; b ++) {
+				long long dx = T.aBumper[a].x - T.aBumper[b].x, dy = T.aBumper[a].y - T.aBumper[b].y;
+				long long nGap = (long long)PbIsqrt ((unsigned long long)(dx * dx + dy * dy)) - 2 * PB_BUMPER_R;
+				CHECK (nGap > 2 * PB_BALL_R + PB_FP);
+			}
+		}
 	}
 
 	/* 経過時間のステップ：1 秒で 120 ステップ。細かく分けても同じ。遅れすぎは捨てる */
@@ -186,6 +198,10 @@ int main()
 		}
 		CHECK (nDrains > 20);
 		printf ("ランダム遊び: 穴に落ちた回数 %d、上側にいたステップ %d\n", nDrains, g_nUpperSteps);
+		/* 半径 5 のボールでも、打ち出し→レーンを出る→フリッパーで打ち返す→穴まで、全バンパー・全ターゲットに当たる */
+		CHECK ((g_dwEvAll & (PB_EV_FLIPHIT | PB_EV_DRAIN | PB_EV_BUMPER | PB_EV_TARGET)) == (PB_EV_FLIPHIT | PB_EV_DRAIN | PB_EV_BUMPER | PB_EV_TARGET));
+		CHECK (g_dwFlashAll == ((1u << (PB_BUMPERS + PB_TARGETS)) - 1));
+		printf ("当たった印 0x%x\n", g_dwFlashAll);
 		CHECK (!PB_UPPER || g_nUpperSteps > 1000);		/* 上のバンパー域も通っている */
 	}
 
