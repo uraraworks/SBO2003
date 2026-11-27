@@ -1051,6 +1051,7 @@ static void DrawPinballOne(HDC hDC, const PINBALLDRAW &D, int sx, int sy, BOOL b
 				PbArtBlt (pArtParts, bFlash ? PBART_BUMPER_HIT_X : PBART_BUMPER_X, PBART_BUMPER_Y, PBART_BUMPER_S, PBART_BUMPER_S,
 					cx - PBART_BUMPER_S / 2, cy - PBART_BUMPER_S / 2);
 			}
+			/* 打ち出しレーンの溜めは、バネの沈み込み（PbDrawSpring）で見せる。強さの棒は描かない */
 			/* フリッパー：近い方の姿（下がり・上がり）の絵を、今の角度との差だけ回して描く。右は左右反転 */
 			for (i = 0; i < 2; i ++) {
 				int nAng = i ? D.nAngR : D.nAngL, bUp = (nAng * 2 >= PB_FLIP_STEPS) ? 1 : 0;
@@ -1110,6 +1111,7 @@ static void DrawPinballOne(HDC hDC, const PINBALLDRAW &D, int sx, int sy, BOOL b
 			PbFillCircle (hDC, bx, by, r - 3, bFlash ? RGB (255, 235, 150) : RGB (150, 40, 40));
 			PbFillCircle (hDC, bx, by, 2, RGB (255, 220, 160));
 		}
+		/* 打ち出しレーンの溜めは、バネの沈み込み（PbDrawSpring）で見せる。強さの棒は描かない */
 		/* フリッパー（回る線分。太く） */
 		for (i = 0; i < 2; i ++) {
 			int nAng = i ? D.nAngR : D.nAngL, tx, ty, px = PbPx (i ? T.nPivotRx : T.nPivotLx), py = PbPx (T.nPivotY);
