@@ -23,6 +23,11 @@ OBJ="$OUT/obj-$MODE"
 DIST="$OUT/dist"
 GEN="$OUT/gen"
 
+# Windows（Git Bash）の時だけ python3 と長いパスを直す。Mac / Linux では何もしない
+# shellcheck disable=SC1091
+. "$ROOT/tools/sbo-env.sh"
+sbo_env_init "tools/web/build.sh" "$@"
+
 if ! command -v em++ >/dev/null 2>&1; then
 	if [ -f "$HOME/emsdk/emsdk_env.sh" ]; then
 		# shellcheck disable=SC1091
