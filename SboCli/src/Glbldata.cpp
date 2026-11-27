@@ -591,6 +591,7 @@ const char *aSubGameNameTbl[] = {
 	"ダンジョン",
 	"戦場ゲーム",
 	"すごろく",
+	"ピンボール",
 	"z"
 };
 

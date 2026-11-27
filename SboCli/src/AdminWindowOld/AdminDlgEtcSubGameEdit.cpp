@@ -15,6 +15,8 @@
 #include "AdminDlgEtcSubGameEditDungeon.h"
 #include "AdminDlgEtcSubGameEditWar.h"
 #include "AdminDlgEtcSubGameEditSugoroku.h"
+#include "AdminDlgEtcSubGameEditPinball.h"
+#include "../../../common/PinballInfo.h"
 
 /* ========================================================================= */
 /* グローバル変数定義														 */
@@ -174,6 +176,9 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 		case SUBGAMEID_SUGOROKU:
 			GetDataDlgEtcSubGameEditSugoroku ();
 			break;
+		case SUBGAMEID_PINBALL:
+			GetDataDlgEtcSubGameEditPinball ();
+			break;
 		}
 
 		PostMessage (s_hWndParent, WM_ADMINSUBGAMEINFO, 0, 0);
@@ -200,6 +205,7 @@ static void OnInitEnd(HWND hWnd, WPARAM wParam, LPARAM lParam)
 	CloseDlgEtcSubGameEditDungeon ();
 	CloseDlgEtcSubGameEditWar ();
 	CloseDlgEtcSubGameEditSugoroku ();
+	CloseDlgEtcSubGameEditPinball ();
 
 	hWndTmp = GetDlgItem (hWnd, IDC_INFO);
 
@@ -218,6 +224,9 @@ static void OnInitEnd(HWND hWnd, WPARAM wParam, LPARAM lParam)
 		break;
 	case SUBGAMEID_SUGOROKU:
 		ShowDlgEtcSubGameEditSugoroku (hWndTmp);
+		break;
+	case SUBGAMEID_PINBALL:
+		ShowDlgEtcSubGameEditPinball (hWndTmp);
 		break;
 	}
 }
@@ -253,6 +262,10 @@ static void ChgSubGameType(BYTE byType)
 	nSize = GetSubGameDataSize (byType);
 	g_pSubGameInfo->pInfo = new BYTE[nSize];
 	ZeroMemory (g_pSubGameInfo->pInfo, nSize);
+	/* ピンボールは 0 のままでは遊べない値（球 0・席が台の上）なので、既定値で始める */
+	if ((byType == SUBGAMEID_PINBALL) && (nSize >= (int)sizeof (SUBGAME_PINBALLINFOSAVE))) {
+		PinballInfoSetDefault ((PSUBGAME_PINBALLINFOSAVE)g_pSubGameInfo->pInfo);
+	}
 }
 
 /* Copyright(C)URARA-works 2003-2005 */
