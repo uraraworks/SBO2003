@@ -367,7 +367,7 @@ void DrawWindow(CImg32 *pDib, int x, int y)
 		if ((pWnd->nType == WNDTYPE_LOGIN) && g_bLoginHide) {
 			continue;
 		}
-		if ((pWnd->nType == WNDTYPE_ITEMINFO) && (pWnd->nType2 == ITEMINFOPOS_LIST) && ((pWnd->nData1 <= 0) || (pWnd->nData1 >= g_aItemInfo.GetSize ()))) {
+		if ((pWnd->nType == WNDTYPE_ITEMINFO) && (pWnd->nType2 == ITEMINFOPOS_LIST) && ((pWnd->nData1 <= 0) || (pWnd->nData1 > 0xFFFF) || !ItemIDValid ((WORD)pWnd->nData1))) {
 			continue;
 		}
 		pDib->BltAlpha2 (pWnd->nX + x, pWnd->nY + y, pWnd->nCx, pWnd->nCy, pWnd->pDib, 0, 0, 15, TRUE);

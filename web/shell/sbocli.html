@@ -1572,6 +1572,12 @@
 	.sbo-home .sbo-note {
 		position: relative;
 		transition: color 0.3s ease;
+		/* 文言が1行になる幅（PC の広い列・Mac など）でも、重ねた進み具合（文字＋バー）が入る高さを、いつも確保する
+		   （バーが出る時・消える時に下のパネルが縦に動かないように） */
+		min-height: 50px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 	}
 	body.sbo-boot-on .sbo-home .sbo-note {
 		color: transparent;

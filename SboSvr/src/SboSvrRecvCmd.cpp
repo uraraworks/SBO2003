@@ -5080,6 +5080,12 @@ void RecvDataProcSPEECH(PBYTE pData, DWORD dwDataSize)
 	if (pPara->byType == SPEECHCMD_SPEECHEDIT) {
 		/* 自己紹介 */
 		RecvCutStr (pszTmp, SPEECH_MAX_EDIT);
+		/* NPC の会話データ用の「@」の印は使わせない（公式クライアントと同じく @0・@1・@2 以外は空白にする） */
+		for (LPSTR pszAt = pszTmp; *pszAt; pszAt ++) {
+			if ((*pszAt == '@') && (pszAt[1] != '0') && (pszAt[1] != '1') && (pszAt[1] != '2')) {
+				*pszAt = ' ';
+			}
+		}
 	} else if ((pChar->byAdminLV <= ADMINLV_USER) && (strlen (pszTmp) > SPEECH_MAX_NORMAL) &&
 			(strstr (pszTmp, "http://") == NULL) && (strstr (pszTmp, "https://") == NULL)) {
 		RecvCutStr (pszTmp, SPEECH_MAX_NORMAL);
