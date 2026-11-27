@@ -2660,12 +2660,6 @@ jan human discard river2=1 hand2=8 logic=0 lastseat=2
 jan human discard tile=1
 jan leave seated=0 seats=0 packets A+1 C+1 idleA=3 idleC=1 phaseA=0
 jan after leave packets+0
-DBG0
-DBG1
-DBG2
-DBG3
-DBG4
-DBG5
 jan ticket ask shown=+1 text=1 seated=0 coin=2
 jan ticket no seated=0 coin=2 again seated=0 coin=2
 jan ticket timeout seated=0 coin=2
