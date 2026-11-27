@@ -15,7 +15,7 @@
   pinball_bg_guide.png        背景 160×448 に当たり判定のガイド（薄い色）を重ねたもの（描く時の下敷き。ゲームには使わない）
   pinball_bg_guide_x3.png     同じものを 3 倍に拡大（人が眺める用）
   pinball_bg_empty.png        背景の空版（透明＝黒のインデックスカラー PNG。この上に描いて pinball_bg.png にする）
-  pinball_parts_guide.png     部品シート 96×96 に枠・番号・中心・当たり判定のガイドを重ねたもの
+  pinball_parts_guide.png     部品シート 128×96 に枠・番号・中心・当たり判定のガイドを重ねたもの
   pinball_parts_guide_x6.png  同じものを 6 倍に拡大
   pinball_parts_empty.png     部品シートの空版（同上）
   layout.json                 寸法の一覧（Codex などに読ませる用）
@@ -220,6 +220,12 @@ def draw_parts_guide(P, L, S):
 		ty = py + L['FLIP_LEN'] * math.sin(math.radians(deg))
 		g.capsule(px, py, tx, ty, L['FLIP_R'], C_FLIP)
 		g.circle(px, py, 1.5, C_FLIP, 1)
+	# 9・10 打ち出しのバネ（頭・コイル）。↓で溜める間、頭と球がレーンの床の下の「穴」へ沈み、コイルが縮む（見た目だけ）
+	cx, cy = cell(9, P['PBART_SPRING_X'], P['PBART_SPRING_HEAD_Y'], P['PBART_SPRING_HEAD_W'], 'head', P['PBART_SPRING_HEAD_H'])
+	g.line(P['PBART_SPRING_X'], P['PBART_SPRING_HEAD_Y'], P['PBART_SPRING_X'] + P['PBART_SPRING_HEAD_W'], P['PBART_SPRING_HEAD_Y'], C_START, 1)
+	g.text(P['PBART_SPRING_X'] - 15, P['PBART_SPRING_HEAD_Y'] - 1, 'ball', C_START, 6)
+	cell(10, P['PBART_SPRING_X'], P['PBART_SPRING_COIL_Y'], P['PBART_SPRING_COIL_W'], 'coil', P['PBART_SPRING_COIL_H'])
+	g.text(P['PBART_SPRING_X'] - 12, P['PBART_SPRING_COIL_Y'] + 6, 'stretch', C_TEXT, 6)
 	return g.finish()
 
 

@@ -64,6 +64,9 @@ typedef struct _PBVIEW {
 	BOOL					bCam;			/* nCamFp が使える */
 	int						nCamFp;			/* 窓の上端の盤上の位置（1/256 ドット） */
 	DWORD					dwCamTime;
+	/* 打ち出しのバネの沈み（見た目だけ。1/256 ドット） */
+	int						nSpringFp;
+	DWORD					dwSpringTime;
 } PBVIEW;
 static PBVIEW s_aView[PINBALL_VIEW_MAX];
 
@@ -454,26 +457,80 @@ static void CamUpdate(PBVIEW *pView, PPINBALLDRAW pOut, DWORD dwNow, BOOL bFollo
 /* 差し替え絵を読む（初めて描く時に 1 回だけ。リソースが無い・形式違い・大きさ違いなら図形で描く） */
 extern void ReadGrpData2(LPSTR pszName, CImg32 **pDib, int nSize);	/* SboCliMain.cpp */
 
-BOOL GetPinballArt(CImg32 **ppBg, CImg32 **ppParts)
-{
-	static int s_nState = 0;				/* 0=未読み込み・1=使える・2=使わない */
-	static CImg32 *s_pBg = NULL, *s_pParts = NULL;
+static int s_nArtState = 0;				/* 0=未読み込み・1=使える・2=使わない */
+static CImg32 *s_pArtBg = NULL, *s_pArtParts = NULL;
+static BOOL s_bArtSpring = FALSE;			/* 部品シートにバネの絵がある */
 
-	if (s_nState == 0) {
-		s_nState = 2;
-		ReadGrpData2 ("IDP_PINBALL_BG", &s_pBg, 1);
-		ReadGrpData2 ("IDP_PINBALL_PARTS", &s_pParts, 1);
-		if (s_pBg && s_pParts && (s_pBg->Width () == PB_W) && (s_pBg->Height () == PB_H) &&
-			(s_pParts->Width () >= PBART_PARTS_W) && (s_pParts->Height () >= PBART_PARTS_H)) {
-			s_nState = 1;
+/* 部品シートの四角（x,y,w,h）に、透明（黒）でないドットが 1 つでもあるか */
+static BOOL ArtCellUsed(CImg32 *pImg, int x, int y, int w, int h)
+{
+	int i, j;
+
+	for (j = y; j < y + h; j ++) {
+		PDWORD pRow = (PDWORD)(pImg->GetBits () + (size_t)(pImg->Height () - 1 - j) * pImg->Width () * 4);
+		for (i = x; i < x + w; i ++) {
+			if (pRow[i] & 0x00FFFFFF) {
+				return TRUE;
+			}
 		}
 	}
-	if (s_nState != 1) {
+	return FALSE;
+}
+
+BOOL GetPinballArt(CImg32 **ppBg, CImg32 **ppParts)
+{
+	if (s_nArtState == 0) {
+		s_nArtState = 2;
+		ReadGrpData2 ("IDP_PINBALL_BG", &s_pArtBg, 1);
+		ReadGrpData2 ("IDP_PINBALL_PARTS", &s_pArtParts, 1);
+		if (s_pArtBg && s_pArtParts && (s_pArtBg->Width () == PB_W) && (s_pArtBg->Height () == PB_H) &&
+			(s_pArtParts->Width () >= PBART_PARTS_W) && (s_pArtParts->Height () >= PBART_PARTS_H)) {
+			s_nArtState = 1;
+			s_bArtSpring = ArtCellUsed (s_pArtParts, PBART_SPRING_X, PBART_SPRING_HEAD_Y, PBART_SPRING_HEAD_W, PBART_SPRING_HEAD_H) &&
+				ArtCellUsed (s_pArtParts, PBART_SPRING_X, PBART_SPRING_COIL_Y, PBART_SPRING_COIL_W, PBART_SPRING_COIL_H);
+		}
+	}
+	if (s_nArtState != 1) {
 		return FALSE;
 	}
-	*ppBg = s_pBg;
-	*ppParts = s_pParts;
+	*ppBg = s_pArtBg;
+	*ppParts = s_pArtParts;
 	return TRUE;
+}
+
+BOOL PinballArtHasSpring(void)
+{
+	CImg32 *pBg, *pParts;
+
+	return GetPinballArt (&pBg, &pParts) && s_bArtSpring;
+}
+
+/* 打ち出しのバネの沈み（見た目だけ。物理・サーバーは関係ない）。
+   球が待っていて↓で溜めている間は、溜め量（nCharge 0〜100）に応じて沈む。観戦者の nCharge は約 0.1 秒ごとの段なので、沈むほうは
+   少しずつ追いかけて滑らかにする。離したら PBART_SPRING_BACK_MS で元まで戻る（球は元の待機位置から出ていく） */
+static void SpringUpdate(PBVIEW *pView, PPINBALLDRAW pOut, DWORD dwNow, BOOL bReady)
+{
+	const int nMax = PBART_SPRING_DEPTH * PB_FP;
+	int nTarget = 0, nDt = (int)(dwNow - pView->dwSpringTime);
+
+	if (nDt < 0) nDt = 0;
+	if (nDt > 200) nDt = 200;
+	if (bReady && (pOut->nCharge > 0)) {
+		nTarget = nMax * pOut->nCharge / 100;
+	}
+	if (nTarget >= pView->nSpringFp) {
+		/* 沈む：溜め切るまでの時間（PB_CHARGE_MS）の半分ほどの速さまで。自分の押した瞬間はすぐ沈み始める */
+		int nStep = (int)((long long)nMax * nDt * 2 / PB_CHARGE_MS) + PB_FP / 2;
+		pView->nSpringFp = min (nTarget, pView->nSpringFp + nStep);
+	} else {
+		pView->nSpringFp = max (nTarget, pView->nSpringFp - (int)((long long)nMax * nDt / PBART_SPRING_BACK_MS));
+	}
+	pView->dwSpringTime = dwNow;
+	if (pView->nSpringFp != nTarget) {
+		g_bDraw = TRUE;
+	}
+	pOut->nSpring = (pView->nSpringFp + PB_FP / 2) / PB_FP;
+	pOut->bBallReady = bReady;
 }
 
 BOOL GetPinballView(int nIdx, PPINBALLDRAW pOut)
@@ -481,7 +538,7 @@ BOOL GetPinballView(int nIdx, PPINBALLDRAW pOut)
 	PBVIEW *pView;
 	DWORD dwNow = timeGetTime ();
 	int i;
-	BOOL bPlay = FALSE;
+	BOOL bPlay = FALSE, bReady = FALSE;
 
 	if ((nIdx < 0) || (nIdx >= PINBALL_VIEW_MAX) || (g_byGameState != GAMESTATE_MOVE)) {
 		return FALSE;
@@ -523,6 +580,7 @@ BOOL GetPinballView(int nIdx, PPINBALLDRAW pOut)
 		if (pView->St.byIdle) {
 			pView->bCam = FALSE;		/* 待機中の台は下端を映す（次に遊ぶ時も下端から） */
 		}
+		pView->nSpringFp = 0;
 		CamUpdate (pView, pOut, dwNow, FALSE);
 		return TRUE;
 	}
@@ -532,6 +590,7 @@ BOOL GetPinballView(int nIdx, PPINBALLDRAW pOut)
 		pOut->nBallY = pView->Sim.nY + pView->nOffY;
 		pOut->bBallShow = (pView->Sim.nPhase == PB_PHASE_PLAY) || (pView->Sim.nPhase == PB_PHASE_READY);
 		bPlay = (pView->Sim.nPhase == PB_PHASE_PLAY);
+		bReady = (pView->Sim.nPhase == PB_PHASE_READY);
 		pOut->nAngL = pView->Sim.nAngL;
 		pOut->nAngR = pView->Sim.nAngR;
 		pOut->nTargetMask = pView->Sim.nTargetMask;
@@ -541,7 +600,9 @@ BOOL GetPinballView(int nIdx, PPINBALLDRAW pOut)
 		Interpolate (pView, dwNow, pOut);
 		pOut->nCharge = (pView->St.byHeld & 4) ? pView->St.byCharge : 0;
 		bPlay = (pView->St.byPhase == PB_PHASE_PLAY);
+		bReady = (pView->St.byPhase == PB_PHASE_READY);
 	}
+	SpringUpdate (pView, pOut, dwNow, bReady);
 	CamUpdate (pView, pOut, dwNow, pOut->bBallShow && bPlay);
 	return TRUE;
 }

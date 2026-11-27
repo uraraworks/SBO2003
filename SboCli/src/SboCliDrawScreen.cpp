@@ -903,6 +903,103 @@ static void PbArtBltRot(CImg32 *pSrc, int sx, int sy, int nPivX, int nPivY, int 
 	}
 }
 
+/* 絵（w×h）を縦だけ dh 行に伸び縮みして (dx,dy) へ（最近傍。切り取り範囲の中だけ） */
+static void PbArtBltStretchV(CImg32 *pSrc, int sx, int sy, int w, int h, int dx, int dy, int dh)
+{
+	int r, i;
+	DWORD dwCl;
+
+	for (r = 0; r < dh; r ++) {
+		int y = dy + r, ys = sy + r * h / dh;
+		PDWORD pDst;
+		if ((y < s_nPzT) || (y >= s_nPzB)) {
+			continue;
+		}
+		pDst = (PDWORD)(g_pDibDrawMap->GetBits () + (size_t)(g_pDibDrawMap->Height () - 1 - y) * g_pDibDrawMap->Width () * 4);
+		for (i = 0; i < w; i ++) {
+			int x = dx + i;
+			if ((x < s_nPzL) || (x >= s_nPzR)) {
+				continue;
+			}
+			if (PbArtPixel (pSrc, sx + i, ys, &dwCl)) {
+				pDst[x] = dwCl;
+			}
+		}
+	}
+}
+
+/* 打ち出しのバネ（見た目だけ）：レーンの床の下に穴（暗い箱）を重ね、頭（受け皿）を nSpring ドット沈めて、コイルを縮める。
+   休み位置の球は頭の上に乗って一緒に沈む。絵（部品シートのバネ）が無ければ、頭は横棒・コイルは線のジグザグ。
+   穴は盤の下端より下へはみ出すので、切り取り範囲の下端を穴の深さまで広げて描く */
+static void PbDrawSpring(HDC hDC, const PINBALLDRAW &D, int sx, int sy, int ty0, CImg32 *pParts, const int nScrL, const int nScrT, const int nScrR, const int nScrB)
+{
+	const PinballTable &T = PinballGetTable ();
+	const int nSaveL = s_nPzL, nSaveT = s_nPzT, nSaveR = s_nPzR, nSaveB = s_nPzB;		/* 窓に切り取った範囲（終わりに戻す） */
+	const int nFloor = ty0 + PB_LANE_FLOOR, nBottom = nFloor + PBART_SPRING_WELL_H;
+	const int cx = sx + PbPx (T.nStartX), nHeadY = nFloor + D.nSpring, nCoilTop = nHeadY + PBART_SPRING_HEAD_H;
+	const int nWellL = sx + PB_LANE_L, nWellR = sx + PB_WALL_R + 2;
+	int yy, i;
+
+	/* 床が窓の外（窓が上へ動いている間）は描かない。窓の下端より下へは穴の深さまで */
+	const BOOL bVis = ((nFloor >= s_nPzT) && (nFloor < sy + PB_VIEW_H)) ? TRUE : FALSE;
+
+	if (bVis) {
+	s_nPzL = max (nScrL, nWellL);			/* 画面の範囲（窓ではなく）に、穴の範囲を重ねる */
+	s_nPzR = min (nScrR, nWellR);
+	s_nPzT = max (nScrT, nFloor);
+	s_nPzB = min (nScrB, nBottom);
+	/* 穴（床の絵を隠す暗い箱。左右と底に細い縁） */
+	for (yy = nFloor; yy < nBottom; yy ++) {
+		PuzSpan (hDC, nWellL, yy, nWellR - nWellL, RGB (20, 20, 38), 255);
+		if (yy >= nBottom - 2) {
+			PuzSpan (hDC, nWellL, yy, nWellR - nWellL, RGB (84, 70, 76), 255);
+		} else {
+			PuzSpan (hDC, nWellL, yy, 2, RGB (84, 70, 76), 255);
+			PuzSpan (hDC, nWellR - 2, yy, 2, RGB (84, 70, 76), 255);
+		}
+	}
+	{
+		const int nCoilBottom = nBottom - 2;
+		const int nCoilH = nCoilBottom - nCoilTop;
+		if (pParts) {
+			if (nCoilH > 0) {
+				PbArtBltStretchV (pParts, PBART_SPRING_X, PBART_SPRING_COIL_Y, PBART_SPRING_COIL_W, PBART_SPRING_COIL_H,
+					cx - PBART_SPRING_COIL_W / 2, nCoilTop, nCoilH);
+			}
+			PbArtBlt (pParts, PBART_SPRING_X, PBART_SPRING_HEAD_Y, PBART_SPRING_HEAD_W, PBART_SPRING_HEAD_H, cx - PBART_SPRING_HEAD_W / 2, nHeadY);
+		} else {
+			/* コイル：線のジグザグ（縮むと細かくなる） */
+			if (nCoilH > 0) {
+				int nZig = 6, nPrevX = cx, nPrevY = nCoilTop;
+				for (i = 1; i <= nZig; i ++) {
+					int zx = cx + ((i & 1) ? 5 : -5), zy = nCoilTop + nCoilH * i / nZig;
+					if (i == nZig) { zx = cx; }
+					PbLine (hDC, nPrevX, nPrevY, zx, zy, 1, RGB (200, 200, 215));
+					nPrevX = zx; nPrevY = zy;
+				}
+			}
+			/* 頭：横棒 */
+			for (yy = 0; yy < PBART_SPRING_HEAD_H / 2; yy ++) {
+				PuzSpan (hDC, cx - 6, nHeadY + yy, 12, RGB (235, 235, 245), 255);
+			}
+		}
+	}
+	/* 球は床の上から穴の中まで（下端だけ穴の深さまで広げる） */
+	s_nPzL = nSaveL; s_nPzR = nSaveR; s_nPzT = nSaveT; s_nPzB = min (nScrB, nBottom);
+	}
+	/* 休み位置の球（頭の上に乗って沈む） */
+	if (D.bBallShow && D.bBallReady) {
+		int bx = sx + PbPx (D.nBallX), by = ty0 + PbPx (D.nBallY) + D.nSpring;
+		if (pParts) {
+			PbArtBlt (pParts, PBART_BALL_X, PBART_BALL_Y, PBART_BALL_S, PBART_BALL_S, bx - PBART_BALL_S / 2, by - PBART_BALL_S / 2);
+		} else {
+			PbFillCircle (hDC, bx, by, PbPx (PB_BALL_R), RGB (235, 235, 235));
+			PbFillCircle (hDC, bx - 1, by - 1, 1, RGB (255, 255, 255));
+		}
+	}
+	s_nPzL = nSaveL; s_nPzT = nSaveT; s_nPzR = nSaveR; s_nPzB = nSaveB;
+}
+
 static void DrawPinballOne(HDC hDC, const PINBALLDRAW &D, int sx, int sy, BOOL bTop)
 {
 	const PinballTable &T = PinballGetTable ();
@@ -968,8 +1065,12 @@ static void DrawPinballOne(HDC hDC, const PINBALLDRAW &D, int sx, int sy, BOOL b
 				PbArtBltRot (pArtParts, bUp ? PBART_FLIP_UP_X : PBART_FLIP_REST_X, PBART_FLIP_Y, PBART_FLIP_PX, PBART_FLIP_PY,
 					sx + PbPx (i ? T.nPivotRx : T.nPivotLx), ty0 + PbPx (T.nPivotY), PbFlipDeg (nAng) - nPoseDeg, i ? TRUE : FALSE, 46);
 			}
+			/* 打ち出しのバネ（絵にバネが無い古い部品シートなら図形のバネ）と、休み位置の球 */
+			if (!St.byIdle) {
+				PbDrawSpring (hDC, D, sx, sy, ty0, PinballArtHasSpring () ? pArtParts : NULL, nClipL, nClipT, nClipR, nClipB);
+			}
 			/* ボール */
-			if (D.bBallShow && !St.byIdle) {
+			if (D.bBallShow && !St.byIdle && !D.bBallReady) {
 				PbArtBlt (pArtParts, PBART_BALL_X, PBART_BALL_Y, PBART_BALL_S, PBART_BALL_S,
 					sx + PbPx (D.nBallX) - PBART_BALL_S / 2, ty0 + PbPx (D.nBallY) - PBART_BALL_S / 2);
 			}
@@ -1032,8 +1133,12 @@ static void DrawPinballOne(HDC hDC, const PINBALLDRAW &D, int sx, int sy, BOOL b
 			PbFillCircle (hDC, sx + PbPx (tx), ty0 + PbPx (ty), 3, RGB (235, 235, 245));
 			PbFillCircle (hDC, sx + px, ty0 + py, 1, RGB (90, 90, 120));
 		}
+		/* 打ち出しのバネ（図形）と、休み位置の球 */
+		if (!bArt && !St.byIdle) {
+			PbDrawSpring (hDC, D, sx, sy, ty0, NULL, nClipL, nClipT, nClipR, nClipB);
+		}
 		/* ボール */
-		if (D.bBallShow && !St.byIdle) {
+		if (D.bBallShow && !St.byIdle && !D.bBallReady) {
 			int bx = sx + PbPx (D.nBallX), by = ty0 + PbPx (D.nBallY);
 			PbFillCircle (hDC, bx, by, PbPx (PB_BALL_R), RGB (235, 235, 235));
 			PbFillCircle (hDC, bx - 1, by - 1, 1, RGB (255, 255, 255));

@@ -59,6 +59,13 @@ def main():
 	ng = []
 	bg = check(a.bg, L['W'], L['H'], '背景', ng)
 	parts = check(a.parts, P['PBART_PARTS_W'], P['PBART_PARTS_H'], '部品', ng)
+	if parts is not None and not ng:
+		# バネの絵（頭・コイル）が空なら、バネは図形（線のジグザグ）で描かれる
+		def used(x, y, w, h):
+			return any(parts.getpixel((i, j)) != (0, 0, 0) for j in range(y, y + h) for i in range(x, x + w))
+		if not (used(P['PBART_SPRING_X'], P['PBART_SPRING_HEAD_Y'], P['PBART_SPRING_HEAD_W'], P['PBART_SPRING_HEAD_H']) and
+				used(P['PBART_SPRING_X'], P['PBART_SPRING_COIL_Y'], P['PBART_SPRING_COIL_W'], P['PBART_SPRING_COIL_H'])):
+			print('部品: 注意: バネの絵（9 頭・10 コイル）が空です。打ち出しのバネは図形で描かれます')
 	if a.preview and bg is not None and not ng:
 		# 下地の上に絵（黒＝透明は下地のまま）を載せ、当たり判定のガイドの線だけをその上に重ねる（3 倍）
 		size = (bg.width * 3, bg.height * 3)
