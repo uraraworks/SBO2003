@@ -19258,6 +19258,28 @@ static int TrialTalkYes(PCHARINFO p, PCHARINFO pNpc, BOOL bYes = TRUE)
 	return nAsked;
 }
 
+/* 管理者ウィンドウのお試し個室（CMD_ADMINTRIALROOM）を送り、最初に返ってきた 1 件を Res に取る。nSize は送るバイト数（0=全部） */
+static BOOL AdminTrialRoomSend(PCHARINFO p, BYTE bySub, int nNo, const TRIALROOMINFO *pInfo, CMDPARA_ADMINTRIALROOM &Res, int nSize = 0)
+{
+	PCMDPARA_ADMINTRIALROOM pPara = new CMDPARA_ADMINTRIALROOM;
+	std::vector<BYTE> aCap;
+	BOOL bRet;
+
+	ZeroMemory(pPara, sizeof(*pPara));
+	pPara->byCmd = CMD_ADMINTRIALROOM;
+	pPara->byCmdSub = bySub;
+	pPara->nNo = nNo;
+	if (pInfo) pPara->Info = *pInfo;
+	SvrSendCaptureBegin();
+	TestRecv(p, pPara, nSize ? nSize : sizeof(CMDPARA_ADMINTRIALROOM));
+	bRet = SvrSendCaptureEnd(aCap);
+	delete pPara;
+	ZeroMemory(&Res, sizeof(Res));
+	if (!bRet || aCap.size() < sizeof(CMDPARA_ADMINTRIALROOM)) return FALSE;
+	memcpy(&Res, &aCap[0], sizeof(Res));
+	return TRUE;
+}
+
 static void TestTrialRoom(const std::vector<int> &aLogin)
 {
 	printf("== AX. TrialRoom ==\n");
@@ -19328,6 +19350,54 @@ static void TestTrialRoom(const std::vector<int> &aLogin)
 			r ? (int)(r->wLoanStTmp == nSt) : -1, r ? r->dwX1 : 0, r ? r->dwY1 : 0, r ? r->dwX2 : 0, r ? r->dwY2 : 0, r ? (int)(strchr(r->szDesc, '\n') != NULL) : -1);
 		psz = SboWebDataGet("trialRoom", nRoom);
 		printf("trialroom get has_desc=%d\n", (int)(psz && strstr(psz, "\"szDesc\"") != NULL));
+	}
+
+	/* 管理者ウィンドウ：一覧が届く・直す（データAPIと同じ確認を通す）・足す・不正は断って中身を変えない・管理者でない人と短いパケットは弾く */
+	{
+		CMDPARA_ADMINTRIALROOM Res;
+		TRIALROOMINFO Info, Orig = *g_aTrialRoomInfo[nRoom];
+		int nCount0 = g_aTrialRoomInfo.GetSize();
+		pA->byAdminLV = ADMINLV_ADMINISTRATOR;
+		BOOL bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_LISTREQ, 0, NULL, Res);
+		printf("admintrialroom list got=%d sub=%d count_ok=%d first=%d\n", bGot, Res.byCmdSub, (int)(Res.wCount == nCount0), Res.nNo);
+		Info = Orig;
+		strcpy(Info.szName, "管理者の個室");
+		bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_SET, nRoom, &Info, Res);
+		printf("admintrialroom edit got=%d sub=%d result=%d no_ok=%d name=%s\n", bGot, Res.byCmdSub, Res.byResult, (int)(Res.nNo == nRoom), g_aTrialRoomInfo[nRoom]->szName);
+		Info.byState = TRIALROOMSTATE_OPEN; Info.wLoanStTmp = 65000;
+		bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_SET, nRoom, &Info, Res);
+		printf("admintrialroom bad tmpl got=%d result=%d msg_ok=%d same=%d\n", bGot, Res.byResult, (int)(strstr(Res.szMsg, "wLoanStTmp") != NULL), (int)(strcmp(g_aTrialRoomInfo[nRoom]->szName, "管理者の個室") == 0 && g_aTrialRoomInfo[nRoom]->wLoanStTmp == Orig.wLoanStTmp));
+		Info = Orig; Info.szName[0] = 0;
+		bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_SET, nRoom, &Info, Res);
+		printf("admintrialroom empty name got=%d result=%d\n", bGot, Res.byResult);
+		Info = Orig;
+		bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_SET, nRoom, &Info, Res);
+		printf("admintrialroom restore got=%d result=%d name_ok=%d desc_ok=%d\n", bGot, Res.byResult, (int)(strcmp(g_aTrialRoomInfo[nRoom]->szName, Orig.szName) == 0), (int)(strcmp(g_aTrialRoomInfo[nRoom]->szDesc, Orig.szDesc) == 0));
+		bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_SET, nCount0 + 50, &Info, Res);
+		printf("admintrialroom range got=%d result=%d count_same=%d\n", bGot, Res.byResult, (int)(g_aTrialRoomInfo.GetSize() == nCount0));
+		/* 足す（閉じたまま。番号は末尾） */
+		ZeroMemory(&Info, sizeof(Info));
+		strcpy(Info.szName, "足した個室"); Info.byState = TRIALROOMSTATE_CLOSED;
+		bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_SET, -1, &Info, Res);
+		printf("admintrialroom add got=%d result=%d no_ok=%d count_up=%d state=%u\n", bGot, Res.byResult, (int)(Res.nNo == nCount0), g_aTrialRoomInfo.GetSize() - nCount0, g_aTrialRoomInfo.GetSize() > nCount0 ? g_aTrialRoomInfo[nCount0]->byState : 99);
+		/* 開く時に範囲がおかしければ断る（足した個室はそのまま） */
+		Info.byState = TRIALROOMSTATE_OPEN; Info.dwX1 = 5; Info.dwX2 = 1;
+		bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_SET, nCount0, &Info, Res);
+		printf("admintrialroom open bad rect got=%d result=%d state=%u\n", bGot, Res.byResult, g_aTrialRoomInfo[nCount0]->byState);
+		/* 管理者でない人・短いパケットは何も変えない */
+		int nCount1 = g_aTrialRoomInfo.GetSize();
+		Info.byState = TRIALROOMSTATE_CLOSED; strcpy(Info.szName, "ユーザーの個室");
+		pA->byAdminLV = ADMINLV_USER;
+		bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_SET, -1, &Info, Res);
+		printf("admintrialroom user got=%d count_same=%d\n", bGot, (int)(g_aTrialRoomInfo.GetSize() == nCount1));
+		pA->byAdminLV = ADMINLV_ADMINISTRATOR;
+		bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_SET, -1, &Info, Res, 8);
+		printf("admintrialroom short got=%d count_same=%d\n", bGot, (int)(g_aTrialRoomInfo.GetSize() == nCount1));
+		pA->byAdminLV = ADMINLV_USER;
+		/* 足した個室は片付ける（本物のデータに残さない） */
+		for (int i = nCount0; i < g_aTrialRoomInfo.GetSize(); i ++) SAFE_DELETE(g_aTrialRoomInfo[i]);
+		while (g_aTrialRoomInfo.GetSize() > nCount0) g_aTrialRoomInfo.RemoveAt(g_aTrialRoomInfo.GetSize() - 1);
+		SaveTrialRoomInfo();
 	}
 
 	/* 入口の NPC（台詞 @x番号）と、入口の手前に立つ A・B */

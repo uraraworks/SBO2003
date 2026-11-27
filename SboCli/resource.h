@@ -45,6 +45,8 @@
 #define IDD_STORYINFO                   239
 #define IDD_STORYINFO_EDIT              240
 #define IDD_FLAGGROUP                   241
+#define IDD_TRIALROOM                   244
+#define IDD_TRIALROOM_EDIT              245
 #define IDD_CHARCHEST                   242
 #define IDD_ADMINSWAP                   243
 #define IDC_BUTTON1                     1000
@@ -482,6 +484,7 @@
 #define IDM_ETC_STORY                   40034
 #define IDM_ETC_FLAGGROUP               40035
 #define IDM_MAP_SWAP                    40036
+#define IDM_ETC_TRIALROOM               40037
 #define IDC_AS_LIST                       1413
 #define IDC_AS_COUNT                      1414
 #define IDC_AS_KIND                       1415
@@ -588,14 +591,26 @@
 #define IDC_DGVIEW_Y1                      1522
 #define IDC_DGVIEW_X2                      1523
 #define IDC_DGVIEW_Y2                      1524
+#define IDC_TR_ID                          1532
+#define IDC_TR_NAME                        1533
+#define IDC_TR_STATE                       1534
+#define IDC_TR_DESC                        1535
+#define IDC_TR_STTMP                       1536
+#define IDC_TR_MAPID                       1537
+#define IDC_TR_X                           1538
+#define IDC_TR_Y                           1539
+#define IDC_TR_X1                          1540
+#define IDC_TR_Y1                          1541
+#define IDC_TR_X2                          1542
+#define IDC_TR_Y2                          1543
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        244
-#define _APS_NEXT_COMMAND_VALUE         40037
-#define _APS_NEXT_CONTROL_VALUE         1532
+#define _APS_NEXT_RESOURCE_VALUE        246
+#define _APS_NEXT_COMMAND_VALUE         40038
+#define _APS_NEXT_CONTROL_VALUE         1544
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

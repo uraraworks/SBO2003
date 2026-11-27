@@ -6269,6 +6269,33 @@ void SboDataFlagGroupApplyInfo(int nNo, const FLAGGROUPINFO *pInfo, int &nNoOut,
 }
 
 /*
+ * 管理者ウィンドウからお試し個室を書き込む（フラグのグループと同じ作り）。
+ *   nNo: お試し個室の配列の番号（-1 なら足す。削除は無く、止めるのは byState=0）。
+ *   届いた TRIALROOMINFO を JSON にして SboWebDataApply を通すので、
+ *   確認（貸すテンプレート・マップ・範囲）・履歴・保存はデータAPIと同じ。
+ *   結果: strErr が空ならうまくいった（nNoOut に書き込んだ番号）
+ */
+void SboDataTrialRoomApplyInfo(int nNo, const TRIALROOMINFO *pInfo, int &nNoOut, std::string &strErr)
+{
+	TRIALROOMINFO Info;
+	bool bAdd = (nNo < 0);
+
+	nNoOut = -1;
+	strErr.clear();
+	if (!bAdd && nNo >= g_aTrialRoomInfo.GetSize()) {
+		strErr = "お試し個室の番号が範囲外です（ほかの人が変えたかもしれません。取得し直してください）";
+		return;
+	}
+	Info = *pInfo;
+	/* 文字の欄は必ず終端させる */
+	Info.szName[sizeof(Info.szName) - 1] = 0;
+	Info.szDesc[sizeof(Info.szDesc) - 1] = 0;
+	std::string strJson = "{" + FieldsJson((const BYTE *)&Info, s_aFieldTrialRoom, COUNTOF(s_aFieldTrialRoom)) + "}";
+	const char *pszRes = SboWebDataApply("trialRoom", bAdd ? g_aTrialRoomInfo.GetSize() : nNo, strJson.c_str(), 1, "管理者ウィンドウ");
+	ApplyResultToErr(pszRes, bAdd ? g_aTrialRoomInfo.GetSize() - 1 : nNo, nNoOut, strErr);
+}
+
+/*
  * 管理者ウィンドウから会話データを書き込む（依頼と同じ作り）。
  *   nNo: 会話セットの配列の番号（-1 なら足す）。届いた TALKINFO を JSON にして
  *   SboWebDataApply を通すので、確認・保存はデータAPIと同じ。
