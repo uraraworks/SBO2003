@@ -38,6 +38,8 @@ template<class T> static inline void PinballInfoSetDefault(T *p)
 	p->cDy				= (signed char)PinballDefaultDy ();
 	p->cSeatDx			= 0;
 	p->cSeatDy			= 1;
+	p->wVsSec			= (unsigned short)PB_VS_SEC_DEFAULT;
+	p->byPair			= 0;
 	p->byVersion		= PINBALLINFO_VERSION;
 }
 
@@ -56,6 +58,8 @@ template<class T> static inline void PinballInfoClamp(T *p)
 	p->cDy			= (signed char)PbiClampInt (p->cDy, -PBP_SEAT_LIMIT, PBP_SEAT_LIMIT);
 	p->cSeatDx		= (signed char)PbiClampInt (p->cSeatDx, -PBP_SEAT_LIMIT, PBP_SEAT_LIMIT);
 	p->cSeatDy		= (signed char)PbiClampInt (p->cSeatDy, -PBP_SEAT_LIMIT, PBP_SEAT_LIMIT);
+	/* 対戦の時間：0（古い保存データ・未設定）は既定の秒数。それ以外は範囲に丸める */
+	p->wVsSec		= (unsigned short)((p->wVsSec == 0) ? PB_VS_SEC_DEFAULT : PbiClampInt (p->wVsSec, PB_VS_SEC_MIN, PB_VS_SEC_MAX));
 }
 
 /* ゲームの設定（球数・ボールセーブ・コンボ・得点）にする */

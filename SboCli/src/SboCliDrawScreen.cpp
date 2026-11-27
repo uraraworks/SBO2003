@@ -1151,6 +1151,12 @@ static void DrawPinballOne(HDC hDC, const PINBALLDRAW &D, int sx, int sy, BOOL b
 		PuzText (hDC, px + 6, ty, (LPSTR)"SCORE", RGB (255, 235, 120), 16, FALSE);
 		wsprintf (szTmp, "%u", (unsigned int)St.dwScore);
 		PuzText (hDC, px + 6, ty + 16, szTmp, RGB (255, 255, 255), 16, FALSE);
+		if (St.byVs) {
+			/* 対戦：球は減らない。残り時間を出す */
+			wsprintf (szTmp, "%d", (int)((St.wVsRemain + 9) / 10));
+			PuzText (hDC, px + 6, ty + 34, (LPSTR)"TIME", RGB (255, 235, 120), 16, FALSE);
+			PuzText (hDC, px + 6, ty + 52, szTmp, RGB (255, 255, 255), 16, FALSE);
+		} else {
 		PuzText (hDC, px + 6, ty + 34, (LPSTR)"BALLS", RGB (255, 235, 120), 16, FALSE);
 		/* 球の数は台の設定（サーバーが送ってくる。多い台は間隔をつめて帯に収める） */
 		int nBallsMax = ((int)St.byBallsMax >= 1) ? min ((int)St.byBallsMax, PB_BALLS_MAX) : PB_BALLS;
@@ -1163,6 +1169,7 @@ static void DrawPinballOne(HDC hDC, const PINBALLDRAW &D, int sx, int sy, BOOL b
 				PbFillCircle (hDC, bx, by, 4, RGB (70, 70, 80));
 			}
 		}
+		}
 		if (St.byCombo >= 2) {
 			wsprintf (szTmp, "COMBO %d", (int)St.byCombo);
 			PuzText (hDC, px + 6, ty + 70, szTmp, RGB (255, 150, 90), 16, FALSE);
@@ -1171,15 +1178,39 @@ static void DrawPinballOne(HDC hDC, const PINBALLDRAW &D, int sx, int sy, BOOL b
 			wsprintf (szTmp, "SAVE %d", (int)St.bySave);
 			PuzText (hDC, px + 6, ty + 88, szTmp, RGB (120, 230, 255), 16, FALSE);		/* 球が多い台でも球の並びと重ならないよう、コンボの下 */
 		}
-	} else if (!St.byIdle) {
+	}
+	/* 観戦の台は盤の上に小さく得点。対戦中は本人の台にも、自分の得点・相手の得点・残り時間を出す（観戦者にも見える） */
+	if (!St.byIdle && (!St.byMine || St.byVs)) {
 		SIZE size;
-		wsprintf (szTmp, "SCORE %u  BALL %d", (unsigned int)St.dwScore, (int)St.byBalls);
+		if (St.byVs) {
+			wsprintf (szTmp, "SCORE %u  VS %u  TIME %d", (unsigned int)St.dwScore, (unsigned int)St.dwOppScore, (int)((St.wVsRemain + 9) / 10));
+		} else {
+			wsprintf (szTmp, "SCORE %u  BALL %d", (unsigned int)St.dwScore, (int)St.byBalls);
+		}
 		GetTextExtentPoint32 (hDC, szTmp, strlen (szTmp), &size);
 		{
 			int tx = sx + (nW - size.cx) / 2, ty = max (sy - size.cy - 4, s_nPzT + 2);
 			PuzFrame (hDC, tx - 3, ty - 2, size.cx + 6, size.cy + 4, RGB (200, 200, 200), 150);
 			PuzText (hDC, tx, ty, szTmp, RGB (255, 255, 255), size.cy, FALSE);
 		}
+	}
+	/* 勝ち残りの連勝数（2 連勝以上。帯と反対側の上の方に小さく。観戦者にも見える） */
+	if (!St.byIdle && (St.byStreak >= 2)) {
+		SIZE size;
+		int tx, ty2 = sy + 8;
+		wsprintf (szTmp, "%d連勝", (int)St.byStreak);
+		GetTextExtentPoint32 (hDC, szTmp, strlen (szTmp), &size);
+		tx = (St.bySide == PUZZLESIDE_LEFT) ? (sx + nW + 6 + 4) : (sx - 6 - 4 - size.cx);
+		PuzFrame (hDC, tx - 3, ty2 - 2, size.cx + 6, size.cy + 4, RGB (240, 200, 60), 150);
+		PuzText (hDC, tx, ty2, szTmp, RGB (255, 235, 120), size.cy, FALSE);
+	}
+	/* 対戦開始前のカウントダウン（盤の真ん中に大きく。3・2・1） */
+	if ((St.byCount > 0) && !St.byIdle) {
+		wsprintf (szTmp, "%d", (int)St.byCount);
+		SelectObject (hDC, g_hFont32);
+		PuzText (hDC, sx + nW / 2, sy + nH / 2 - 16, szTmp, RGB (255, 255, 255), 32, TRUE);
+		SelectObject (hDC, g_hFont14);
+		g_bDraw = TRUE;
 	}
 	/* 座る場所に立っている時の案内（待機中の台の、本人にだけ） */
 	if ((St.byIdle & PINBALLIDLE_SEAT) && !D.bOver) {

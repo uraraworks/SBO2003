@@ -2230,6 +2230,8 @@ static const DATAFIELD s_aFieldSgPinball[] = {
 	FLD (SUBGAME_PINBALLINFO, cDy,			"盤の位置Y",			FT_S8, 0, "同（縦。負は上）。-60〜60。既定 -6"),
 	FLD (SUBGAME_PINBALLINFO, cSeatDx,		"座る場所X",			FT_S8, 0, "座る場所の、台NPCのマスからの相対位置（横）。-60〜60。既定 0"),
 	FLD (SUBGAME_PINBALLINFO, cSeatDy,		"座る場所Y",			FT_S8, 0, "同（縦）。-60〜60。既定 1（台NPCの 1 つ下）"),
+	FLD (SUBGAME_PINBALLINFO, byPair,		"ペア番号",				FT_U8, 0, "同じマップ・同じ番号の台 2 台が 1 組になり、対戦できる（ひとりが遊んでいる所へ乱入）。0=ペアなし。既定 0"),
+	FLD (SUBGAME_PINBALLINFO, wVsSec,		"対戦の時間(秒)",		FT_U16, 0, "10〜600。対戦は時間制（球数の上限なし）で、時間切れで得点が高い方の勝ち。既定 90"),
 };
 
 static const char *s_apszSubGameName[] = { "なし", "爆弾ゲーム", "迷路", "ダンジョン", "戦場ゲーム", "すごろく", "ピンボール" };
@@ -4490,6 +4492,10 @@ static bool CheckPinballDetail(const SUBGAME_PINBALLINFO *p, std::string &strErr
 	}
 	if (p->wComboMs > PB_CFG_MS_MAX) {
 		strErr = "detail.wComboMs は 0〜" + JsonNum(PB_CFG_MS_MAX) + " にしてください";
+		return false;
+	}
+	if (p->wVsSec < PB_VS_SEC_MIN || p->wVsSec > PB_VS_SEC_MAX) {
+		strErr = "detail.wVsSec は " + JsonNum(PB_VS_SEC_MIN) + "〜" + JsonNum(PB_VS_SEC_MAX) + " にしてください";
 		return false;
 	}
 	if (p->cDx < -PBP_SEAT_LIMIT || p->cDx > PBP_SEAT_LIMIT || p->cDy < -PBP_SEAT_LIMIT || p->cDy > PBP_SEAT_LIMIT ||

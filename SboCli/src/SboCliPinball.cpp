@@ -11,6 +11,8 @@
  *   （まだサーバーが処理していないキー＝dwAck より後のキーをかけ直す）、今の時刻まで進める。
  *   作り直しでボールの位置が飛ぶ分は、見た目のずれ（nOff）として持ち、1 ステップごとに 15/16 に縮めて少しずつ寄せる。
  *   得点・残り球・ターゲットを決めるのはサーバー（先読みの得点は使わない。穴に落ちたら先読みは止めてサーバーを待つ）。
+ * 対戦（ペアの 2 台）：自分の盤は同じ先読み（打ち出しの乱数はサーバーと同じ種・同じ番号）。相手の盤は先読みせず、観戦と同じ補間。
+ *   カウントダウン中は操作できないので先読みしない。
  * ほかの人（観戦）：先読みしない。届いた位置を補間して、PINBALL_INTERP_MS だけ遅らせて描く。
  */
 #include "stdafx.h"
@@ -99,7 +101,7 @@ static PBVIEW *ViewFind(DWORD dwNpc, BOOL bAlloc)
 static BOOL Predictable(const PBVIEW *pView)
 {
 	return pView->bUse && pView->St.byMine && !pView->St.byIdle && (pView->dwOverTime == 0) &&
-		(pView->St.byPhase != PB_PHASE_OVER);
+		(pView->St.byPhase != PB_PHASE_OVER) && (pView->St.byCount == 0);		/* 対戦のカウントダウン中は操作できないので先読みしない */
 }
 
 /* サーバーの状態から先読み用のゲームを作る */
@@ -128,6 +130,11 @@ static void SimFromState(PinballGame *pG, const CMDPARA_PINBALLSTATE &St)
 	pG->dwScore = St.dwScore;
 	pG->nBallsLeft = St.byBalls;
 	pG->dwStep = St.dwStep;
+	/* 対戦（球は減らない・ボールセーブは最初の球だけ・打ち出しの乱数はサーバーと同じ列）。ペアの 2 台で同じ種 */
+	pG->bVs = St.byVs ? 1 : 0;
+	pG->nSeed = St.dwSeed;
+	pG->nLaunchNo = St.byLaunchNo;
+	pG->nBallNo = St.byBallNo;
 	pG->bPredict = 1;		/* 穴に落ちたら球を減らさず、サーバーの返事を待つ */
 }
 

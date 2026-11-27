@@ -285,6 +285,60 @@ static inline void PbClosest(int x1, int y1, int x2, int y2, int px, int py, int
 }
 
 /* ========================================================================= */
+/* 対戦（ペアの 2 台。時間制）の共通の決まり。サーバーとクライアントとテストで同じものを使う */
+/* ========================================================================= */
+#define PB_VS_COUNT_SEC		(3)			/* 対戦開始前のカウントダウン（秒） */
+#define PB_VS_SEC_DEFAULT	(90)		/* 対戦の時間（秒）の既定 */
+#define PB_VS_SEC_MIN		(10)
+#define PB_VS_SEC_MAX		(600)
+#define PB_VS_JITTER		(40)		/* 対戦の打ち出しの横の速さの振れ幅（±。1/256 ドット/ステップ） */
+#define PB_STREAK_MIN		(2)			/* 連勝を表示する・知らせる最小 */
+
+enum {
+	PB_VS_DRAW = 0,						/* 引き分け */
+	PB_VS_WIN_A,						/* A の勝ち */
+	PB_VS_WIN_B,						/* B の勝ち */
+};
+
+/* 対戦の打ち出しの乱数（-PB_VS_JITTER〜+PB_VS_JITTER）。種と打ち出した回数（下位 8 ビット）で決まる。
+   ペアの 2 台に同じ種を渡せば、同じ番号の打ち出しで同じ値になる（乱数列の共有） */
+static inline int PinballLaunchJitter(unsigned int dwSeed, int nLaunchNo)
+{
+	unsigned int h = dwSeed * 2654435761u ^ ((unsigned int)((nLaunchNo & 0xFF) + 1) * 40503u);
+
+	h ^= h >> 13;
+	h *= 0x5bd1e995u;
+	h ^= h >> 15;
+	return (int)(h % (2 * PB_VS_JITTER + 1)) - PB_VS_JITTER;
+}
+
+/* 時間切れの勝敗：得点が高い方の勝ち。同点は引き分け */
+static inline int PinballVsJudge(unsigned int dwScoreA, unsigned int dwScoreB)
+{
+	return (dwScoreA > dwScoreB) ? PB_VS_WIN_A : (dwScoreA < dwScoreB) ? PB_VS_WIN_B : PB_VS_DRAW;
+}
+
+/* 対戦の終わりの時刻（ミリ秒。1 周しても合う引き算）に達したか */
+static inline int PinballVsTimeUp(unsigned int dwNow, unsigned int dwEnd)
+{
+	return ((int)(dwNow - dwEnd) >= 0) ? 1 : 0;
+}
+
+/* 残り時間（ミリ秒。終わっていれば 0） */
+static inline int PinballVsRemainMs(unsigned int dwNow, unsigned int dwEnd)
+{
+	int n = (int)(dwEnd - dwNow);
+
+	return (n < 0) ? 0 : n;
+}
+
+/* 連勝の数え方：勝ち(nOutcome>0)は +1・引き分け(<0)は変わらない・負け/席を立つ/切断(0)は 0 */
+static inline int PinballStreakNext(int nStreak, int nOutcome)
+{
+	return (nOutcome > 0) ? nStreak + 1 : (nOutcome == 0) ? 0 : nStreak;
+}
+
+/* ========================================================================= */
 /* 台ごとに変えられる設定（サブゲーム情報 SUBGAME_PINBALLINFO から作る。物理・盤の形は変えない） */
 /* ========================================================================= */
 struct PinballConfig {
@@ -339,6 +393,11 @@ struct PinballGame {
 	unsigned int	dwStep;				/* 開始からの固定ステップ数 */
 	unsigned int	nAcc;				/* Update の端数（ミリ秒×PB_STEP_HZ。1000 で 1 ステップ） */
 	PinballConfig	Cfg;				/* 台の設定（球数・ボールセーブ・コンボ・得点） */
+	/* 対戦（時間制）。球は落ちても次の球が出る（球数の上限なし）・ボールセーブは最初の球だけ・打ち出しに共有の乱数が入る */
+	int				bVs;				/* 対戦中のゲーム */
+	unsigned int	nSeed;				/* 対戦の乱数の種（ペアの 2 台で同じ。サーバーが決める） */
+	int				nLaunchNo;			/* 打ち出した回数（下位 8 ビットだけ通信で送る。乱数列の何番目かを決める） */
+	int				nBallNo;			/* 対戦で穴に落ちた球の数（0=最初の球。255 で頭打ち） */
 
 	/* 始める。pCfg が NULL なら既定の設定。サーバーとクライアントは同じ設定で始める（先読みが合うように） */
 	void Start(const PinballConfig *pCfg = NULL)
@@ -352,6 +411,13 @@ struct PinballGame {
 		Cfg.Clamp ();
 		nBallsLeft = Cfg.nBalls;
 		SetReady ();
+	}
+	/* 対戦で始める。ペアの 2 台に同じ dwSeed を渡すと、同じ番号の打ち出しは同じ乱数（PinballLaunchJitter）になる */
+	void StartVs(const PinballConfig *pCfg, unsigned int dwSeed)
+	{
+		Start (pCfg);
+		bVs = 1;
+		nSeed = dwSeed ? dwSeed : 1;
 	}
 	/* 打ち出しレーンで球を待たせる */
 	void SetReady(void)
@@ -379,10 +445,12 @@ struct PinballGame {
 		if (nHoldMs < 0) nHoldMs = 0;
 		if (nHoldMs > PB_CHARGE_MS) nHoldMs = PB_CHARGE_MS;
 		nPower = PB_LAUNCH_MIN + (PinballGetTable ().nLaunchMax - PB_LAUNCH_MIN) * nHoldMs / PB_CHARGE_MS;
-		nVx = 0;
+		nVx = bVs ? PinballLaunchJitter (nSeed, nLaunchNo) : 0;
 		nVy = -nPower;
 		nPhase = PB_PHASE_PLAY;
-		nSaveSteps = bSaved ? 0 : (Cfg.nSaveMs * PB_STEP_HZ / 1000);
+		nLaunchNo ++;
+		/* ボールセーブ：対戦では最初の球だけ */
+		nSaveSteps = (bSaved || (bVs && (nBallNo > 0))) ? 0 : (Cfg.nSaveMs * PB_STEP_HZ / 1000);
 		nStall = 0;
 		return 1;
 	}
@@ -679,6 +747,14 @@ inline int PinballGame::Step(void)
 			bSaved = 1;
 			SetReady ();
 			nEv |= PB_EV_SAVE | PB_EV_NEXT;
+		} else if (bVs) {
+			/* 対戦：球は減らない。次の球が出る */
+			bSaved = 0;
+			nCombo = 0;
+			nComboSteps = 0;
+			if (nBallNo < 255) nBallNo ++;
+			SetReady ();
+			nEv |= PB_EV_NEXT;
 		} else {
 			nBallsLeft --;
 			bSaved = 0;

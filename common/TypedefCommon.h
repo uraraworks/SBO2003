@@ -1775,8 +1775,8 @@ typedef struct _SUBGAME_SUGOROKUINFOSAVE {
  *   既定値・範囲の丸めは common/PinballInfo.h。0 のままでも遊べるよう、サーバーは範囲に丸めて使う。
  *   項目を足す時は、末尾の abyReserved から切り出すか、この構造体の最後に足す（保存は項目名つきの列なので、
  *   足した項目は SboSvrSaveLoadSubGameInfo.cpp の s_aPinballField に 1 行足すだけ。前の版のサーバーはその項目を読み飛ばす） */
-#define PINBALLINFO_VERSION		(1)								/* 保存の版（項目を足したら上げる。読む側は未知の項目を読み飛ばすので、上げなくても壊れない） */
-#define PINBALLINFO_RESERVED	(16)							/* 将来の項目用に空けてある保存領域（バイト） */
+#define PINBALLINFO_VERSION		(2)								/* 保存の版（項目を足したら上げる。読む側は未知の項目を読み飛ばすので、上げなくても壊れない） */
+#define PINBALLINFO_RESERVED	(13)							/* 将来の項目用に空けてある保存領域（バイト） */
 typedef struct _SUBGAME_PINBALLINFO {
 	WORD		wCoinItem;											/* コインのアイテム番号（0=無料） */
 	BYTE		byCoinCount;										/* 必要な枚数（0=無料） */
@@ -1791,6 +1791,8 @@ typedef struct _SUBGAME_PINBALLINFO {
 	signed char	cDy;												/* 同（縦。負は上。既定 -6） */
 	signed char	cSeatDx;											/* 座る場所の、台NPCのマスからの相対位置（横。既定 0） */
 	signed char	cSeatDy;											/* 同（縦。既定 1） */
+	WORD		wVsSec;												/* 対戦の時間（秒。10〜600。既定 90。版 2 で追加） */
+	BYTE		byPair;												/* ペア番号（同じマップ・同じ番号の台 2 台が対戦できる。0=ペアなし。版 2 で追加） */
 	BYTE		byVersion;											/* 保存の版（PINBALLINFO_VERSION） */
 	BYTE		abyReserved[PINBALLINFO_RESERVED];					/* 将来用（0 で保存する） */
 } SUBGAME_PINBALLINFO, *PSUBGAME_PINBALLINFO;
@@ -1810,6 +1812,8 @@ typedef struct _SUBGAME_PINBALLINFOSAVE {
 	signed char	cDy;												/* 盤の左上（縦） */
 	signed char	cSeatDx;											/* 座る場所（横） */
 	signed char	cSeatDy;											/* 座る場所（縦） */
+	WORD		wVsSec;												/* 対戦の時間（秒） */
+	BYTE		byPair;												/* ペア番号（0=ペアなし） */
 	BYTE		byVersion;											/* 保存の版 */
 	BYTE		abyReserved[PINBALLINFO_RESERVED];					/* 将来用 */
 } SUBGAME_PINBALLINFOSAVE, *PSUBGAME_PINBALLINFOSAVE;
@@ -4524,6 +4528,15 @@ typedef struct _CMDPARA_PINBALLSTATE {
 	WORD		wScoreBumper;										/* バンパーの得点 */
 	WORD		wScoreTarget;										/* ターゲットの得点 */
 	WORD		wScoreBonus;										/* ターゲット全部のボーナス */
+	/* ここから対戦（ペアの 2 台。時間制）。対戦でない台は byVs=0 で、ほかは 0 */
+	BYTE		byVs;												/* 0=対戦なし・1=対戦中・2=カウントダウン中（操作できない） */
+	BYTE		byCount;											/* カウントダウンの数（3・2・1。それ以外は 0。盤の真ん中に大きく出す） */
+	WORD		wVsRemain;											/* 対戦の残り時間（1/10 秒。カウントダウン中は対戦の長さ） */
+	DWORD		dwOppScore;											/* 相手の得点（盤の上に小さく出す） */
+	BYTE		byStreak;											/* この席の連勝数（2 以上の時だけ「N連勝」を出す） */
+	BYTE		byBallNo;											/* 対戦で穴に落ちた球の数（先読みのボールセーブ判定用） */
+	BYTE		byLaunchNo;											/* 対戦で打ち出した回数の下位 8 ビット（先読みの乱数列の位置） */
+	DWORD		dwSeed;												/* 対戦の乱数の種（ペアの 2 台で同じ） */
 } CMDPARA_PINBALLSTATE, *PCMDPARA_PINBALLSTATE;
 #pragma pack(pop)
 

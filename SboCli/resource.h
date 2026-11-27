@@ -602,6 +602,8 @@
 #define IDC_PB_SEATDX                      1542
 #define IDC_PB_SEATDY                      1543
 #define IDC_PB_BANDSIDE                    1544
+#define IDC_PB_PAIR                        1545
+#define IDC_PB_VSSEC                       1546
 
 // Next default values for new objects
 // 
@@ -609,7 +611,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        245
 #define _APS_NEXT_COMMAND_VALUE         40037
-#define _APS_NEXT_CONTROL_VALUE         1545
+#define _APS_NEXT_CONTROL_VALUE         1547
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

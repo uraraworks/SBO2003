@@ -2489,6 +2489,8 @@ static const PINBALLFIELD s_aPinballField[] = {
 	PBFIELD (cDy),				/* 盤の左上(縦) */
 	PBFIELD (cSeatDx),			/* 座る場所(横) */
 	PBFIELD (cSeatDy),			/* 座る場所(縦) */
+	PBFIELD (wVsSec),			/* 対戦の時間(秒)（版 2） */
+	PBFIELD (byPair),			/* ペア番号（版 2） */
 	PBFIELD (byVersion),		/* 保存の版 */
 	PBFIELD (abyReserved),		/* 将来用 */
 };

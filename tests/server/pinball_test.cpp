@@ -3,13 +3,14 @@
 #include <stdio.h>
 #include "common/Pinball.h"
 /* サブゲーム情報の既定値・丸めは、SUBGAME_PINBALLINFO と同じ項目名の構造体なら使える（TypedefCommon.h は要らない） */
-#define PINBALLINFO_VERSION		(1)
-#define PINBALLINFO_RESERVED	(16)
+#define PINBALLINFO_VERSION		(2)
+#define PINBALLINFO_RESERVED	(13)
 #include "common/PinballInfo.h"
 struct TestInfo {
 	unsigned short wCoinItem; unsigned char byCoinCount, byBalls, bySaveSec, byBandSide;
 	unsigned short wScoreBumper, wScoreTarget, wScoreBonus, wComboMs;
 	signed char cDx, cDy, cSeatDx, cSeatDy;
+	unsigned short wVsSec; unsigned char byPair;
 	unsigned char byVersion, abyReserved[PINBALLINFO_RESERVED];
 };
 
@@ -451,6 +452,7 @@ int main()
 		CHECK (Info.wScoreBumper == PB_SCORE_BUMPER && Info.wScoreTarget == PB_SCORE_TARGET && Info.wScoreBonus == PB_SCORE_BONUS && Info.wComboMs == PB_COMBO_MS);
 		CHECK (Info.cDx == -2 && Info.cDy == -6 && Info.cSeatDx == 0 && Info.cSeatDy == 1 && Info.byBandSide == 0 && Info.byVersion == PINBALLINFO_VERSION);
 		for (i = 0; i < PINBALLINFO_RESERVED; i ++) CHECK (Info.abyReserved[i] == 0);
+		CHECK (Info.wVsSec == PB_VS_SEC_DEFAULT && Info.byPair == 0);
 		/* 既定値から作った設定は、設定を渡さない Start と同じ */
 		PinballInfoToConfig (&Info, &Cfg);
 		Def.SetDefault ();
@@ -467,6 +469,11 @@ int main()
 		Info.byBalls = 99;
 		PinballInfoClamp (&Info);
 		CHECK (Info.byBalls == PB_BALLS_MAX);
+		/* 対戦の時間：0（未設定・古い保存データ）は既定。短すぎ・長すぎは範囲に丸める */
+		Info.wVsSec = 0; PinballInfoClamp (&Info); CHECK (Info.wVsSec == PB_VS_SEC_DEFAULT);
+		Info.wVsSec = 3; PinballInfoClamp (&Info); CHECK (Info.wVsSec == PB_VS_SEC_MIN);
+		Info.wVsSec = 65535; PinballInfoClamp (&Info); CHECK (Info.wVsSec == PB_VS_SEC_MAX);
+		Info.wVsSec = 45; PinballInfoClamp (&Info); CHECK (Info.wVsSec == 45);
 	}
 
 	/* 台ごとの設定：球数・得点・ボールセーブ・コンボの時間がゲームに効く */
@@ -518,6 +525,86 @@ int main()
 		Cfg.nBalls = 0; Cfg.nScoreBumper = 999999; Cfg.nComboMs = -5;
 		g.Start (&Cfg);
 		CHECK (g.nBallsLeft == 1 && g.Cfg.nScoreBumper == PB_CFG_SCORE_MAX && g.Cfg.nComboMs == 0);
+	}
+
+	/* 対戦：勝敗・同点・時間切れの判定・連勝・乱数列の共有・球の数の上限なし・ボールセーブは最初の球だけ */
+	{
+		PinballGame a, b, s;
+		PinballConfig Cfg;
+		int nEv, nBall, nSaveFirst;
+
+		/* 時間切れの勝敗：高い方の勝ち・同点は引き分け */
+		CHECK (PinballVsJudge (500, 300) == PB_VS_WIN_A);
+		CHECK (PinballVsJudge (300, 500) == PB_VS_WIN_B);
+		CHECK (PinballVsJudge (0, 0) == PB_VS_DRAW);
+		CHECK (PinballVsJudge (1234, 1234) == PB_VS_DRAW);
+		/* 終わりの時刻の判定（時刻が 1 周しても合う）。残り時間 */
+		CHECK (!PinballVsTimeUp (1000, 1001) && PinballVsTimeUp (1001, 1001) && PinballVsTimeUp (2000, 1001));
+		CHECK (!PinballVsTimeUp (0xFFFFFF00u, 0x100u) && PinballVsTimeUp (0x100u, 0x100u) && PinballVsTimeUp (0x200u, 0x100u));
+		CHECK (PinballVsRemainMs (1000, 91000) == 90000 && PinballVsRemainMs (91000, 91000) == 0 && PinballVsRemainMs (95000, 91000) == 0);
+		/* 連勝：勝てば +1・引き分けは変わらない・負け/席を立つ/切断は 0 */
+		CHECK (PinballStreakNext (0, 1) == 1 && PinballStreakNext (1, 1) == 2 && PinballStreakNext (5, 1) == 6);
+		CHECK (PinballStreakNext (3, -1) == 3 && PinballStreakNext (0, -1) == 0);
+		CHECK (PinballStreakNext (3, 0) == 0);
+		/* 乱数列の共有：同じ種は同じ列・番号は下位 8 ビット・範囲内・種が違えば違う列 */
+		{
+			int nDiff = 0, nMin = 999, nMax = -999;
+			for (i = 0; i < 512; i ++) {
+				int j1 = PinballLaunchJitter (777, i), j2 = PinballLaunchJitter (777, i), j3 = PinballLaunchJitter (778, i);
+				CHECK (j1 == j2);
+				CHECK (j1 >= -PB_VS_JITTER && j1 <= PB_VS_JITTER);
+				if (j1 != j3) nDiff ++;
+				if (j1 < nMin) nMin = j1;
+				if (j1 > nMax) nMax = j1;
+			}
+			CHECK (PinballLaunchJitter (777, 5) == PinballLaunchJitter (777, 5 + 256));
+			CHECK (nDiff > 400);
+			CHECK (nMin < -PB_VS_JITTER / 2 && nMax > PB_VS_JITTER / 2);		/* 振れ幅を使い切っている */
+		}
+		/* ペアの 2 台に同じ種を渡すと、同じ番号の打ち出しは同じ横の速さ。ひとり用は乱数なし（今まで通り真上） */
+		Cfg.SetDefault ();
+		a.StartVs (&Cfg, 4242);
+		b.StartVs (&Cfg, 4242);
+		for (i = 0; i < 6; i ++) {
+			a.SetReady (); b.SetReady ();
+			a.Launch (300); b.Launch (700);			/* 押していた時間が違っても、横の速さの乱数は同じ */
+			CHECK (a.nVx == b.nVx);
+			CHECK (a.nVx == PinballLaunchJitter (4242, i));
+		}
+		CHECK (a.nLaunchNo == 6 && b.nLaunchNo == 6);
+		s.Start (&Cfg);
+		s.Launch (300);
+		CHECK (s.nVx == 0 && !s.bVs);
+		/* 球の数に上限がない：何度落ちても終わらず、次の球が出る。球数は減らない */
+		a.StartVs (&Cfg, 99);
+		CHECK (a.bVs && a.nSeed == 99);
+		for (nBall = 0; nBall < Cfg.nBalls * 3 + 2; nBall ++) {
+			a.nPhase = PB_PHASE_PLAY;
+			a.nSaveSteps = 0;
+			a.nX = PbX (73); a.nY = PbY (150 + PB_YOFS); a.nVx = 0; a.nVy = 0;
+			nEv = 0;
+			for (i = 0; i < 120 * 20 && !(nEv & PB_EV_DRAIN); i ++) nEv |= a.Step ();
+			CHECK (nEv & PB_EV_DRAIN);
+			CHECK (!(nEv & PB_EV_OVER));
+			CHECK (a.nPhase == PB_PHASE_READY && (nEv & PB_EV_NEXT));
+			CHECK (a.nBallsLeft == Cfg.nBalls);
+			CHECK (a.nBallNo == nBall + 1);
+		}
+		/* ボールセーブは最初の球だけ（最初の球では効き、落ちて次の球になるともう効かない） */
+		a.StartVs (&Cfg, 99);
+		a.Launch (0);
+		nSaveFirst = a.nSaveSteps;
+		CHECK (nSaveFirst == Cfg.nSaveMs * PB_STEP_HZ / 1000 && nSaveFirst > 0);
+		a.nSaveSteps = 0;
+		a.nX = PbX (73); a.nY = PbY (150 + PB_YOFS); a.nVx = 0; a.nVy = 0;
+		for (i = 0; i < 120 * 20 && a.nPhase == PB_PHASE_PLAY; i ++) a.Step ();
+		CHECK (a.nBallNo == 1 && a.nPhase == PB_PHASE_READY);
+		a.Launch (0);
+		CHECK (a.nSaveSteps == 0);
+		/* ひとり用は今まで通り（球が減って 3 球で終わる・毎回ボールセーブ） */
+		s.Start (&Cfg);
+		s.Launch (0);
+		CHECK (s.nSaveSteps > 0 && s.nBallsLeft == Cfg.nBalls);
 	}
 
 	printf (g_nNg ? "NG %d 件\n" : "一致\n", g_nNg);

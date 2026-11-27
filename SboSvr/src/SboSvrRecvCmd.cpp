@@ -16274,8 +16274,11 @@ void RecvDataProcTALKANSWER(PBYTE pData, DWORD dwDataSize)
 	if ((dwDataSize < sizeof (CMDPARA_DATA1)) || (s_nCharNoRecv < 0) || (s_nCharNoRecv >= g_aCharInfo.GetSize ())) {
 		return;
 	}
-	/* 落ち物パズルの「乱入しますか？」への答えなら、そちらで受ける */
+	/* 落ち物パズル・ピンボールの「乱入しますか？」への答えなら、そちらで受ける */
 	if (PuzzleAnswer (g_aCharInfo[s_nCharNoRecv], pPara->dwTblID, pPara->byData ? TRUE : FALSE)) {
+		return;
+	}
+	if (PinballAnswer (g_aCharInfo[s_nCharNoRecv], pPara->dwTblID, pPara->byData ? TRUE : FALSE)) {
 		return;
 	}
 	TalkAnswer (g_aCharInfo[s_nCharNoRecv], pPara->dwTblID, pPara->byData ? TRUE : FALSE);

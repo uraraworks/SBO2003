@@ -83,6 +83,8 @@ void GetDataDlgEtcSubGameEditPinball(void)
 	pInfo->cSeatDx			= (signed char)PbiClampInt (GetNum (IDC_PB_SEATDX), -PBP_SEAT_LIMIT, PBP_SEAT_LIMIT);
 	pInfo->cSeatDy			= (signed char)PbiClampInt (GetNum (IDC_PB_SEATDY), -PBP_SEAT_LIMIT, PBP_SEAT_LIMIT);
 	pInfo->byBandSide		= (BYTE)GetNum (IDC_PB_BANDSIDE);
+	pInfo->byPair			= (BYTE)PbiClampInt (GetNum (IDC_PB_PAIR), 0, 255);
+	pInfo->wVsSec			= (WORD)PbiClampInt (GetNum (IDC_PB_VSSEC), 0, 65535);	/* 範囲外は PinballInfoClamp で丸める（0=既定） */
 	PinballInfoClamp (pInfo);
 	/* 保存の版と予約領域は、サーバーから受け取った値のまま */
 }
@@ -158,6 +160,8 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 	SetNum (hWnd, IDC_PB_SEATDX, pInfo->cSeatDx);
 	SetNum (hWnd, IDC_PB_SEATDY, pInfo->cSeatDy);
 	SetNum (hWnd, IDC_PB_BANDSIDE, pInfo->byBandSide);
+	SetNum (hWnd, IDC_PB_PAIR, pInfo->byPair);
+	SetNum (hWnd, IDC_PB_VSSEC, pInfo->wVsSec);
 
 	return FALSE;
 }

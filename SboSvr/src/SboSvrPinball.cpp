@@ -17,7 +17,16 @@
  * 状態は PINBALLSTATE_FULL を、約 PINBALL_SEND_MS ごとと、得点・球・状態が変わった時に、盤を見ている全員
  * （座っている人・台の近くにいる人）へ送る。本人のクライアントは common/Pinball.h で先読みし、
  * 届いた状態（ステップ数 dwStep・ボール・フリッパー）から巻き直して少しずつ寄せる。観戦者は補間して描く。
- * 記録（ランキング）・対戦は今回やらない（後で足せるよう、終了は Leave の 1 か所に集めてある）。
+ * 対戦（ペアの 2 台。落ち物パズルの対戦をなぞる）：
+ *   サブゲーム情報のペア番号（byPair）が同じ・同じマップの台 2 台が 1 組。ひとりが遊んでいる所へ、ペアの台に座ろうとすると
+ *   「乱入して対戦しますか？」と聞く（CMD_TALKANSWER。答えは PinballAnswer）。ペアの台に座る時（乱入するのでなければ）は
+ *   「乱入されてもよいですか？」と聞く（NG なら乱入できず、その人もひとりで遊ぶ）。
+ *   乱入が成り立つと両方の盤が最初に戻り、3・2・1 のカウントダウン（操作できない）のあと同時に始まる。同じ乱数の種（dwSeed）で
+ *   打ち出しの乱数が両者同じになる。時間制（nVsSec 秒。既定 90）で、球は落ちても次が出る・ボールセーブは最初の球だけ。
+ *   時間切れで得点が高い方の勝ち（同点は引き分け＝連勝は続き、両者とも席に残る）。途中で席を立つ・切断・離れたら残った側の勝ち。
+ *   勝った側は席に残ってひとり用に戻り（次の乱入を受け付ける）、負けた側は席を立つ。連勝は台（席）ごと。
+ *   両方の盤は、対戦相手と近くの人の全員に届く（相手の盤は後追い補間で描く）。
+ *   ゲームの結果（得点・勝敗・連勝）は FinishResult の 1 か所に集めてある（記録＝ランキングは次の段階。そこに足す）。
  */
 #include "include.h"
 #include "Glbldata.h"
@@ -30,6 +39,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <vector>
+#include <map>
 
 #define PINBALL_NOCHAR			((DWORD)-1)
 #define PINBALL_NEAR			(3)			/* 座る場所のマスからこれ以上離れたら席を立たせる（マス） */
@@ -38,6 +48,7 @@
 #define PINBALL_KEY_BUCKET		(8)			/* キー入力に伴う即時の送信のバケツ（連打で観戦者へ送りすぎない） */
 #define PINBALL_KEY_FILL_MS		(25)
 #define PINBALL_OVER_SHOW_MS	(3000)		/* ゲームオーバーの字を出している時間(ms) */
+#define PINBALL_ASK_TIMEOUT_MS	(30000)		/* 「乱入しますか？」の問いが有効な時間(ms) */
 /* 盤面を送る距離（落ち物パズルと同じ。盤の中心から。盤は 5×7 マス） */
 #define PINBALL_VIEW_MARGIN		(12)
 #define PINBALL_VIEW_ENTER		(PINBALL_VIEW_MARGIN + 3)
@@ -56,6 +67,8 @@ typedef struct _PINBALLPARAM {
 	int		nSdx;							/* 座る場所：台のマスから（マス） */
 	int		nSdy;
 	PinballConfig	Cfg;					/* ゲームの設定（球数・ボールセーブ・コンボ・得点） */
+	int		nPair;							/* ペア番号（0=ペアなし。同じマップ・同じ番号の台 2 台が対戦できる） */
+	int		nVsSec;							/* 対戦の時間（秒） */
 } PINBALLPARAM;
 
 /* 盤面を送ってある人 */
@@ -86,7 +99,42 @@ typedef struct _PINBALLTABLE {
 	DWORD		dwOverTime;					/* ゲームオーバーになった時刻 */
 	DWORD		dwOverScore;				/* ゲームオーバーの得点（字と一緒に出す） */
 	std::vector<PINBALLWATCH>	aWatch;		/* 盤面を送ってある人 */
+	/* 対戦 */
+	BOOL		bVs;						/* 対戦中（カウントダウン中を含む） */
+	BOOL		bAllowVs;					/* 乱入を受け付けるか（座る前に選ぶ。FALSE ならペアの台に座った人は乱入できず、ひとりで遊ぶ） */
+	DWORD		dwOppNpc;					/* 対戦相手の台NPCのテーブルID（bVs の時） */
+	BOOL		bCount;						/* カウントダウン中（操作できない・ゲームを進めない） */
+	DWORD		dwStartTime;				/* 対戦が始まる時刻（カウントダウンの終わり） */
+	DWORD		dwEndTime;					/* 対戦が終わる時刻（時間切れ） */
+	int			nCountSent;					/* 最後に知らせたカウントダウンの数 */
+	int			nWinStreak;					/* この席の連勝数（勝つと +1。席を立つ・切断・負け・ひとり用の結果で 0） */
 } PINBALLTABLE;
+
+/* ゲームの結果（記録を足す時は FinishResult にだけ足せばよい） */
+enum {
+	PBRESULT_SOLO = 0,						/* ひとり用のゲームオーバー */
+	PBRESULT_WIN,							/* 対戦に勝った（時間切れ・相手が席を立った・切断） */
+	PBRESULT_LOSE,							/* 対戦に負けた（時間切れ・自分が席を立った・切断） */
+	PBRESULT_DRAW,							/* 引き分け（同点の時間切れ） */
+};
+typedef struct _PINBALLRESULT {
+	int			nKind;						/* PBRESULT_* */
+	char		szName[32];					/* 席の人の名前 */
+	DWORD		dwScore;					/* 得点 */
+	DWORD		dwOppScore;					/* 相手の得点（対戦のみ） */
+	int			nStreak;					/* 結果が出た後の連勝数（負け・ひとり用は 0） */
+	DWORD		dwNpc;						/* 台NPCのテーブルID */
+	int			nInfo;						/* 台のサブゲーム情報の番号 */
+} PINBALLRESULT;
+
+/* 「乱入しますか？」の問い（座ろうとした人ごとに 1 つ。答えは PinballAnswer。時間がたったら捨てる） */
+typedef struct _PINBALLASK {
+	DWORD	dwNpc;							/* 座ろうとした台NPCのテーブルID */
+	DWORD	dwTime;							/* 問いを出した時刻 */
+	BOOL	bCoinUsed;						/* 道具のコインから座ろうとしたか */
+	BOOL	bAllowAsk;						/* TRUE=「乱入されてもよいか」の問い、FALSE=「乱入するか」の問い */
+} PINBALLASK;
+static std::map<DWORD, PINBALLASK> s_mapAsk;
 
 static std::vector<PINBALLTABLE> s_aTable;
 
@@ -125,6 +173,8 @@ static BOOL LoadParam(PCHARINFO pNpc, PINBALLPARAM *pParam)
 		pParam->nSdx		= Info.cSeatDx;
 		pParam->nSdy		= Info.cSeatDy;
 		PinballInfoToConfig (&Info, &pParam->Cfg);
+		pParam->nPair		= Info.byPair;
+		pParam->nVsSec		= Info.wVsSec;
 	}
 	return TRUE;
 }
@@ -135,7 +185,45 @@ static BOOL ParamSame(const PINBALLPARAM &a, const PINBALLPARAM &b)
 	return (a.nInfo == b.nInfo) && (a.wCoinItem == b.wCoinItem) && (a.nCoinCount == b.nCoinCount) &&
 		(a.nDx == b.nDx) && (a.nDy == b.nDy) && (a.nSide == b.nSide) && (a.nSdx == b.nSdx) && (a.nSdy == b.nSdy) &&
 		(a.Cfg.nBalls == b.Cfg.nBalls) && (a.Cfg.nSaveMs == b.Cfg.nSaveMs) && (a.Cfg.nComboMs == b.Cfg.nComboMs) &&
-		(a.Cfg.nScoreBumper == b.Cfg.nScoreBumper) && (a.Cfg.nScoreTarget == b.Cfg.nScoreTarget) && (a.Cfg.nScoreBonus == b.Cfg.nScoreBonus);
+		(a.Cfg.nScoreBumper == b.Cfg.nScoreBumper) && (a.Cfg.nScoreTarget == b.Cfg.nScoreTarget) && (a.Cfg.nScoreBonus == b.Cfg.nScoreBonus) &&
+		(a.nPair == b.nPair) && (a.nVsSec == b.nVsSec);
+}
+
+/* 対戦の項目を初期にする（台を作る時） */
+static void VsClear(PINBALLTABLE &Table)
+{
+	Table.bVs = FALSE;
+	Table.bAllowVs = TRUE;
+	Table.dwOppNpc = PINBALL_NOCHAR;
+	Table.bCount = FALSE;
+	Table.dwStartTime = 0;
+	Table.dwEndTime = 0;
+	Table.nCountSent = 0;
+	Table.nWinStreak = 0;
+}
+
+/* ゲームの結果（得点・勝敗・連勝）。ゲームが終わる時に必ずここを通る。記録（ランキング）を足す時はここに足す */
+static void FinishResult(const PINBALLRESULT &R)
+{
+	(void)R;
+}
+
+/* 結果を作って FinishResult へ渡す */
+static void ReportResult(const PINBALLTABLE &Table, PCHARINFO pChar, int nKind, DWORD dwOppScore, int nStreak)
+{
+	PINBALLRESULT R;
+
+	memset (&R, 0, sizeof (R));
+	R.nKind = nKind;
+	if (pChar) {
+		strncpy (R.szName, pChar->szName, sizeof (R.szName) - 1);
+	}
+	R.dwScore = Table.Game.dwScore;
+	R.dwOppScore = dwOppScore;
+	R.nStreak = nStreak;
+	R.dwNpc = Table.dwNpc;
+	R.nInfo = Table.Param.nInfo;
+	FinishResult (R);
 }
 
 static PCHARINFO SeatChar(const PINBALLTABLE &Table)
@@ -196,6 +284,17 @@ static PCHARINFO NpcOf(const PINBALLTABLE &Table)
 	return (Table.dwNpc < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[Table.dwNpc] : NULL;
 }
 
+/* カウントダウンの残り（3・2・1。始まる時刻を過ぎたら 0） */
+static int CountRemain(const PINBALLTABLE &Table)
+{
+	int nMs = (int)(Table.dwStartTime - g_dwTime);
+
+	if (nMs <= 0) {
+		return 0;
+	}
+	return (nMs + 999) / 1000;
+}
+
 /* 台の状態のパケットを作る。byKind: FULL=状態 OVER=終わり（本人向け） NONE=消す。byMine は送る相手ごとに書き換える */
 static void BuildState(PINBALLTABLE &Table, BYTE byKind, std::vector<BYTE> &aBuf, BOOL bFlash)
 {
@@ -238,6 +337,22 @@ static void BuildState(PINBALLTABLE &Table, BYTE byKind, std::vector<BYTE> &aBuf
 	Head.wScoreBumper	= (WORD)Table.Param.Cfg.nScoreBumper;
 	Head.wScoreTarget	= (WORD)Table.Param.Cfg.nScoreTarget;
 	Head.wScoreBonus	= (WORD)Table.Param.Cfg.nScoreBonus;
+	/* 対戦（待機中・終わりの本人向けは対戦なし。連勝は席の人の分） */
+	if (!bIdle) {
+		Head.byStreak	= (BYTE)((Table.nWinStreak > 255) ? 255 : Table.nWinStreak);
+		Head.byBallNo	= (BYTE)((g.nBallNo > 255) ? 255 : g.nBallNo);
+		Head.byLaunchNo	= (BYTE)(g.nLaunchNo & 0xFF);
+		Head.dwSeed		= g.nSeed;
+		if (Table.bVs) {
+			int nOpp = FindTable (Table.dwOppNpc, Table.dwMapID);
+			int nMs = Table.bCount ? (int)(Table.dwEndTime - Table.dwStartTime) : PinballVsRemainMs (g_dwTime, Table.dwEndTime);
+
+			Head.byVs = (BYTE)(Table.bCount ? 2 : 1);
+			Head.byCount = (BYTE)(Table.bCount ? CountRemain (Table) : 0);
+			Head.wVsRemain = (WORD)(((nMs + 99) / 100 > 65535) ? 65535 : (nMs + 99) / 100);
+			Head.dwOppScore = (nOpp >= 0) ? s_aTable[nOpp].Game.dwScore : 0;
+		}
+	}
 	if (bIdle) {
 		/* 待機中は盤の枠だけ（ボール・帯なし）。ゲームオーバーの字の間だけ最後の得点を持つ */
 		Head.byPhase = PB_PHASE_OVER;
@@ -345,7 +460,7 @@ static void WatchRefresh(int nTable)
 	PCHARINFO pNpc = NpcOf (Table);
 	std::vector<PINBALLWATCH> aNew;
 	std::vector<BYTE> aFull, aNone;
-	PCHARINFO pSeat;
+	PCHARINFO pSeat, pOpp = NULL;
 	PMAPINFO pMap;
 	int i;
 
@@ -353,11 +468,25 @@ static void WatchRefresh(int nTable)
 	if (pNpc == NULL) {
 		return;
 	}
+	/* 座っている人と、対戦相手の席の人は距離に関係なく入れる（相手の盤も見えるように） */
 	pSeat = SeatChar (Table);
+	if (Table.bVs) {
+		int nOpp = FindTable (Table.dwOppNpc, Table.dwMapID);
+		if (nOpp >= 0) {
+			pOpp = SeatChar (s_aTable[nOpp]);
+		}
+	}
 	if (pSeat) {
 		PINBALLWATCH w;
 		w.dwChar = pSeat->dwTblID;
 		w.dwPID = pSeat->pID;
+		w.byFlag = 0;
+		aNew.push_back (w);
+	}
+	if (pOpp && (pOpp != pSeat)) {
+		PINBALLWATCH w;
+		w.dwChar = pOpp->dwTblID;
+		w.dwPID = pOpp->pID;
 		w.byFlag = 0;
 		aNew.push_back (w);
 	}
@@ -371,7 +500,7 @@ static void WatchRefresh(int nTable)
 				break;
 			}
 			pChar = g_aCharInfo[pMap->paTblNoPC[i]];
-			if (pChar == pSeat) {
+			if ((pChar == pSeat) || (pChar == pOpp)) {
 				continue;
 			}
 			w.dwChar = pChar->dwTblID;
@@ -433,20 +562,107 @@ static void ToIdle(int nTable, BOOL bOver)
 	Table.bOverShow = bOver;
 	Table.dwOverTime = g_dwTime;
 	Table.bCharging = FALSE;
+	VsClear (Table);		/* 席を立つ・負け・ひとり用の結果で連勝は 0 に戻る */
 	Table.Game.Start (&Table.Param.Cfg);
 }
 
+/* 対戦を終える（席に残る側。ひとり用に戻って続ける。次の乱入を受け付ける）。ゲームは最初からやり直す */
+static void EndVs(int nTable, PCHARINFO pSkip)
+{
+	PINBALLTABLE &Table = s_aTable[nTable];
+
+	Table.bVs = FALSE;
+	Table.bAllowVs = TRUE;
+	Table.dwOppNpc = PINBALL_NOCHAR;
+	Table.bCount = FALSE;
+	Table.nCountSent = 0;
+	Table.bCharging = FALSE;
+	Table.Game.Start (&Table.Param.Cfg);
+	Table.dwLastTick = g_dwTime;
+	SendTable (nTable, PINBALLSTATE_FULL, pSkip);
+}
+
+/* 対戦の勝ち・引き分けの知らせ（連勝は 2 以上で付く）。席の人（取れる人）だけに送る */
+static void TellVsResult(PCHARINFO pWin, int nStreak, PCHARINFO pTell1, PCHARINFO pTell2)
+{
+	char szMsg[128];
+
+	if (pWin == NULL) {
+		strcpy (szMsg, "引き分け！");
+	} else if (nStreak >= PB_STREAK_MIN) {
+		sprintf (szMsg, "%sの勝ち！ %sの%d連勝！", pWin->szName, pWin->szName, nStreak);
+	} else {
+		sprintf (szMsg, "%sの勝ち！", pWin->szName);
+	}
+	if (pTell1) {
+		SendCmdSYSMSG (pTell1->pID, szMsg);
+	}
+	if (pTell2 && (pTell2 != pTell1)) {
+		SendCmdSYSMSG (pTell2->pID, szMsg);
+	}
+}
+
+/* 対戦の決着（nA・nB は対戦中の 2 台の表の添字。nJudge は A から見た PB_VS_*）。勝った側（と引き分けの両者）は席に残って
+   ひとり用に戻る。負けた側の席は、呼んだ側が立たせる（時間切れ→Leave。席を立つ・切断→その人の Leave の続き）。
+   bNotifyA・bNotifyB: その席の人へ知らせを送るか（切断した人へは送らない） */
+static void VsResolve(int nA, int nB, int nJudge, BOOL bNotifyA, BOOL bNotifyB)
+{
+	PINBALLTABLE &A = s_aTable[nA];
+	PINBALLTABLE &B = s_aTable[nB];
+	PCHARINFO pA = SeatChar (A), pB = SeatChar (B);
+	DWORD dwSa = A.Game.dwScore, dwSb = B.Game.dwScore;
+
+	A.bVs = B.bVs = FALSE;		/* 離席の処理で、もう一度「残った側の勝ち」にならないように */
+	if (nJudge == PB_VS_DRAW) {
+		/* 引き分け：連勝は途切れない。両者とも席に残る */
+		ReportResult (A, pA, PBRESULT_DRAW, dwSb, A.nWinStreak);
+		ReportResult (B, pB, PBRESULT_DRAW, dwSa, B.nWinStreak);
+		TellVsResult (NULL, 0, bNotifyA ? pA : NULL, bNotifyB ? pB : NULL);
+		EndVs (nA, bNotifyA ? NULL : pA);
+		EndVs (nB, bNotifyB ? NULL : pB);
+	} else {
+		BOOL bAWin = (nJudge == PB_VS_WIN_A);
+		PINBALLTABLE &W = bAWin ? A : B;
+		PINBALLTABLE &L = bAWin ? B : A;
+		PCHARINFO pW = bAWin ? pA : pB, pL = bAWin ? pB : pA;
+		BOOL bNotifyW = bAWin ? bNotifyA : bNotifyB, bNotifyL = bAWin ? bNotifyB : bNotifyA;
+
+		W.nWinStreak = PinballStreakNext (W.nWinStreak, 1);
+		ReportResult (W, pW, PBRESULT_WIN, bAWin ? dwSb : dwSa, W.nWinStreak);
+		ReportResult (L, pL, PBRESULT_LOSE, bAWin ? dwSa : dwSb, 0);
+		TellVsResult (pW, W.nWinStreak, bNotifyW ? pW : NULL, bNotifyL ? pL : NULL);
+		EndVs (bAWin ? nA : nB, bNotifyW ? NULL : pW);
+		/* 負けた側は、対戦ではなくなったので連勝を 0 にする（席を立つのは呼んだ側） */
+		L.nWinStreak = 0;
+	}
+}
+
 /* 席を立たせる。bOver=ゲームオーバー（得点を知らせ、本人に OVER を送る）。bNotifySelf でなければ本人へは何も送らない（切断）。
-   記録（ランキング）を足す時はここ（得点が決まるのはここだけ） */
-static void Leave(int nTable, BOOL bOver, BOOL bNotifySelf)
+   対戦中に席を立つ・切断・離れた時は、残った側の勝ち（連勝 +1。残った側は席に残る）。
+   bSolo=FALSE は、対戦の負け（時間切れ）で立たせる時（ひとり用のゲームオーバーの知らせ・結果を出さない。結果は VsResolve が済ませてある）。
+   結果（得点・勝敗・連勝）は FinishResult（ReportResult）へ集まる */
+static void Leave(int nTable, BOOL bOver, BOOL bNotifySelf, BOOL bSolo = TRUE)
 {
 	PINBALLTABLE &Table = s_aTable[nTable];
 	PCHARINFO pSelf = SeatChar (Table);
 	char szMsg[128];
 
-	if (bOver && pSelf) {
+	if (Table.bVs) {
+		int nOpp = FindTable (Table.dwOppNpc, Table.dwMapID);
+
+		if ((nOpp >= 0) && (SeatChar (s_aTable[nOpp]) != NULL)) {
+			VsResolve (nOpp, nTable, PB_VS_WIN_A, TRUE, bNotifySelf);
+		} else {
+			Table.bVs = FALSE;
+		}
+		bSolo = FALSE;
+	}
+	if (bOver && pSelf && bSolo) {
 		sprintf (szMsg, "ゲームオーバー！ 得点 %u", Table.Game.dwScore);
 		SendCmdSYSMSG (pSelf->pID, szMsg);
+	}
+	if (bOver && bSolo) {
+		ReportResult (Table, pSelf, PBRESULT_SOLO, 0, 0);
 	}
 	/* 本人へ：ゲームオーバーは OVER（字を 3 秒ほど見せる）。ほかの人（と、席を立っただけの本人）へは待機中の台の状態 */
 	if (bOver && pSelf && bNotifySelf) {
@@ -483,7 +699,7 @@ static BOOL HandleEvents(int nTable, int nEv)
 	}
 	if (nEv & PB_EV_SAVE) {
 		SendCmdSYSMSG (pChar->pID, "ボールセーブ！ もう一度打ち出せます。");
-	} else if ((nEv & PB_EV_DRAIN) && !(nEv & PB_EV_OVER)) {
+	} else if ((nEv & PB_EV_DRAIN) && !(nEv & PB_EV_OVER) && !Table.bVs) {
 		sprintf (szMsg, "球が落ちました。残り%d球", Table.Game.nBallsLeft);
 		SendCmdSYSMSG (pChar->pID, szMsg);
 	}
@@ -585,6 +801,63 @@ int PinballIdleCount(void)
 	return (int)s_aTable.size () - PinballSeatCount ();
 }
 
+/* 「乱入しますか？」「乱入されてもよいですか？」への答え（CMD_TALKANSWER から。問いを出していなければ FALSE） */
+BOOL PinballAnswer(PCHARINFO pChar, DWORD dwNpcTblID, BOOL bYes)
+{
+	std::map<DWORD, PINBALLASK>::iterator it;
+	PINBALLASK Ask;
+	PCHARINFO pNpc;
+
+	if ((pChar == NULL) || (pChar->pID == 0)) {
+		return FALSE;
+	}
+	it = s_mapAsk.find (pChar->dwTblID);
+	if ((it == s_mapAsk.end ()) || (it->second.dwNpc != dwNpcTblID)) {
+		return FALSE;
+	}
+	Ask = it->second;
+	s_mapAsk.erase (it);
+	if (((DWORD)(g_dwTime - Ask.dwTime) > (DWORD)PINBALL_ASK_TIMEOUT_MS) || (dwNpcTblID >= (DWORD)g_aCharInfo.GetSize ())) {
+		return TRUE;
+	}
+	pNpc = g_aCharInfo[dwNpcTblID];
+	/* 座る条件は PinballSit が改めて確かめる（その間に台が使われた・立つ場所を離れた時は座らない）。
+	   乱入の問い：はい=乱入、いいえ=ひとりで。乱入されてもよいかの問い：はい=乱入OK、いいえ=乱入NG */
+	PinballSit (pChar, pNpc, Ask.bCoinUsed, Ask.bAllowAsk ? (bYes ? 3 : 4) : (bYes ? 1 : 2));
+	return TRUE;
+}
+
+/* ペアの台（同じマップ・同じ空間で、ペア番号が同じ別の台NPC）のテーブルIDを探す（無ければ PINBALL_NOCHAR） */
+static DWORD FindPartnerNpc(PCHARINFO pNpc, const PINBALLPARAM &Param)
+{
+	PMAPINFO pMap;
+	int i;
+
+	if ((Param.nPair <= 0) || (pNpc->dwMapID >= (DWORD)g_aMapInfo.GetSize ())) {
+		return PINBALL_NOCHAR;
+	}
+	pMap = g_aMapInfo[pNpc->dwMapID];
+	if (pMap == NULL || pMap->paTblNoNPC == NULL) {
+		return PINBALL_NOCHAR;
+	}
+	for (i = 0; i < (int)pMap->dwCountTblNoNPC; i ++) {
+		PCHARINFO pTmp;
+		PINBALLPARAM Tmp;
+
+		if (pMap->paTblNoNPC[i] == (DWORD)-1) {
+			break;
+		}
+		pTmp = g_aCharInfo[pMap->paTblNoNPC[i]];
+		if ((pTmp == pNpc) || !IsSameSpace (pTmp, pNpc) || !LoadParam (pTmp, &Tmp)) {
+			continue;
+		}
+		if (Tmp.nPair == Param.nPair) {
+			return pTmp->dwTblID;
+		}
+	}
+	return PINBALL_NOCHAR;
+}
+
 BOOL PinballUseItem(PCHARINFO pChar, WORD wItem)
 {
 	PMAPINFO pMap;
@@ -617,11 +890,12 @@ BOOL PinballUseItem(PCHARINFO pChar, WORD wItem)
 	return FALSE;
 }
 
-void PinballSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed)
+void PinballSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed, int nChoice)
 {
 	PINBALLPARAM Param;
-	int i, nTable;
-	char szMsg[96];
+	int i, nTable, nPartner = -1;
+	DWORD dwPartnerNpc;
+	char szMsg[128];
 
 	if (!LoadParam (pNpc, &Param) || (pChar->byNpcType != NPCTYPE_INIT) || PinballIsSeated (pChar) || PuzzleIsSeated (pChar)) {
 		return;
@@ -646,6 +920,53 @@ void PinballSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed)
 		SendCmdSYSMSG (pChar->pID, "コインを使って始めます。コマンドの道具からコインを使ってください。");
 		return;
 	}
+	/* ペアの台でひとりが遊んでいれば、対戦になる */
+	dwPartnerNpc = FindPartnerNpc (pNpc, Param);
+	if (dwPartnerNpc != PINBALL_NOCHAR) {
+		nPartner = FindTable (dwPartnerNpc, pNpc->dwMapID);
+		if ((nPartner >= 0) && (s_aTable[nPartner].bVs || s_aTable[nPartner].bIdle || (SeatChar (s_aTable[nPartner]) == NULL))) {
+			nPartner = -1;
+		}
+	}
+	/* ペアの台があるのに乱入できない（ひとりで遊んでいる人が乱入NGを選んでいる）時は、対戦にならない */
+	if ((nPartner >= 0) && !s_aTable[nPartner].bAllowVs) {
+		nPartner = -1;
+		if (nChoice == 0) {
+			SendCmdSYSMSG (pChar->pID, "相手は乱入を受け付けていません。");
+		}
+	}
+	/* ひとりが遊んでいる台のペアへ座る時は、乱入するか、ひとりで遊ぶかを聞く（コインは答えを受けてから取り上げる） */
+	if ((nPartner >= 0) && (nChoice == 0)) {
+		PINBALLASK Ask;
+		char szAsk[160];
+		PCHARINFO pOther = SeatChar (s_aTable[nPartner]);
+
+		Ask.dwNpc = pNpc->dwTblID;
+		Ask.dwTime = g_dwTime;
+		Ask.bCoinUsed = bCoinUsed;
+		Ask.bAllowAsk = FALSE;
+		s_mapAsk[pChar->dwTblID] = Ask;
+		sprintf (szAsk, "%sさんが遊んでいます。乱入して対戦しますか？（「いいえ」でひとりで遊びます）@y", pOther ? pOther->szName : "だれか");
+		SendCmdTALKMSG (pChar->pID, pNpc->dwTblID, szAsk);
+		return;
+	}
+	/* ペアの台（相手と組める台）には、始める前に、乱入されてもよいかを聞く（対戦に乱入するのでなければ） */
+	if ((nPartner < 0) && (nChoice == 0) && (Param.nPair > 0) && (FindPartnerNpc (pNpc, Param) != PINBALL_NOCHAR)) {
+		PINBALLASK Ask;
+
+		Ask.dwNpc = pNpc->dwTblID;
+		Ask.dwTime = g_dwTime;
+		Ask.bCoinUsed = bCoinUsed;
+		Ask.bAllowAsk = TRUE;
+		s_mapAsk[pChar->dwTblID] = Ask;
+		SendCmdTALKMSG (pChar->pID, pNpc->dwTblID, "遊んでいる途中で乱入されてもよいですか？（「いいえ」だと乱入されずにひとりで遊べます）@y");
+		return;
+	}
+	s_mapAsk.erase (pChar->dwTblID);
+	if (nChoice == 2) {
+		nPartner = -1;		/* ひとりで遊ぶ */
+	}
+
 	/* コイン（無料の台は何も使わない）。足りなければ座らせない */
 	if ((Param.wCoinItem != 0) && (Param.nCoinCount > 0)) {
 		if (CountCoin (pChar, Param.wCoinItem) < Param.nCoinCount) {
@@ -681,6 +1002,8 @@ void PinballSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed)
 		Table.bOverShow = FALSE;
 		Table.dwOverTime = 0;
 		Table.dwOverScore = 0;
+		VsClear (Table);
+		Table.bAllowVs = (nChoice != 2) && (nChoice != 4);	/* 乱入NG・乱入を断ってひとりで遊ぶ人は乱入を受けない */
 		if (nTable >= 0) {
 			/* 待機中の台に座る：今見ている人の表を引き継ぐ */
 			Table.aWatch = s_aTable[nTable].aWatch;
@@ -690,8 +1013,42 @@ void PinballSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed)
 			nTable = (int)s_aTable.size () - 1;
 		}
 	}
-	sprintf (szMsg, "ピンボール開始！ %d球。↓を押して離すと打ち出し、←→でフリッパー。", Param.Cfg.nBalls);
-	SendCmdSYSMSG (pChar->pID, szMsg);
+	if (nPartner < 0) {
+		sprintf (szMsg, "ピンボール開始！ %d球。↓を押して離すと打ち出し、←→でフリッパー。", Param.Cfg.nBalls);
+		SendCmdSYSMSG (pChar->pID, szMsg);
+	} else {
+		/* 対戦開始：両方の盤を最初に戻し、同じ乱数の種でカウントダウンのあと同時にスタート（球は落ちても次が出る時間制） */
+		PINBALLTABLE &Table = s_aTable[nTable];
+		PINBALLTABLE &Partner = s_aTable[nPartner];
+		unsigned int dwSeed = (unsigned int)(g_dwTime * 2654435761u) ^ (pChar->dwTblID * 40503u + 1);
+		DWORD dwStart = g_dwTime + PB_VS_COUNT_SEC * 1000;
+		DWORD dwEnd = dwStart + (DWORD)Partner.Param.nVsSec * 1000;		/* 時間は、先に遊んでいた側の台の設定 */
+		PCHARINFO pOther = SeatChar (Partner);
+
+		Table.Game.StartVs (&Table.Param.Cfg, dwSeed);
+		Partner.Game.StartVs (&Partner.Param.Cfg, dwSeed);
+		Table.bVs = Partner.bVs = TRUE;
+		Table.dwOppNpc = Partner.dwNpc;
+		Partner.dwOppNpc = Table.dwNpc;
+		Table.bAllowVs = Partner.bAllowVs = FALSE;		/* 対戦中は乱入を受けない（終わると勝った側は TRUE に戻る） */
+		Table.bCount = Partner.bCount = TRUE;
+		Table.dwStartTime = Partner.dwStartTime = dwStart;
+		Table.dwEndTime = Partner.dwEndTime = dwEnd;
+		Table.nCountSent = Partner.nCountSent = PB_VS_COUNT_SEC;
+		Table.dwLastTick = Partner.dwLastTick = dwStart;
+		Partner.bCharging = FALSE;
+		Partner.dwLastKey = 0;
+		Partner.nKeyTokens = 0;
+		if (pOther) {
+			sprintf (szMsg, "対戦開始！ 相手は%sです。%d秒間、球は何個でも出ます。", pOther->szName, Partner.Param.nVsSec);
+			SendCmdSYSMSG (pChar->pID, szMsg);
+			sprintf (szMsg, "対戦開始！ 相手は%sです。%d秒間、球は何個でも出ます。", pChar->szName, Partner.Param.nVsSec);
+			SendCmdSYSMSG (pOther->pID, szMsg);
+		}
+		/* 相手の盤（最初に戻った）を今の見ている人へ。新しく見える人（今座った人）へは見直しで届く */
+		SendTable (nPartner, PINBALLSTATE_FULL);
+		WatchRefresh (nPartner);
+	}
 	/* 見ている人全員へ始まった状態。新しく見える人へは見直しで届く */
 	SendTable (nTable, PINBALLSTATE_FULL);
 	WatchRefresh (nTable);
@@ -711,6 +1068,10 @@ void PinballKey(PCHARINFO pChar, BYTE byKey, DWORD dwSerial)
 	}
 	if (byKey == PINBALLKEY_LEAVE) {
 		Leave (nTable, FALSE, TRUE);
+		return;
+	}
+	/* カウントダウン中は操作できない（席を立つ以外は受けない） */
+	if (s_aTable[nTable].bCount) {
 		return;
 	}
 	/* 入力の時刻に合わせて、まず今までの経過を進める（ゲームオーバーで片付いたら終わり） */
@@ -826,10 +1187,32 @@ static void IdleScan(void)
 				Table.bOverShow = FALSE;
 				Table.dwOverTime = 0;
 				Table.dwOverScore = 0;
+				VsClear (Table);
 				s_aTable.push_back (Table);
 				WatchRefresh ((int)s_aTable.size () - 1);
 			}
 		}
+	}
+}
+
+/* 対戦の時間切れ。両方のゲームを今の時刻まで進めてから、得点で勝敗を決める。勝った側は席に残り、負けた側は席を立つ */
+static void VsTimeUp(int nTable)
+{
+	int nOpp = FindTable (s_aTable[nTable].dwOppNpc, s_aTable[nTable].dwMapID);
+	int nJudge;
+
+	if ((nOpp < 0) || (SeatChar (s_aTable[nOpp]) == NULL) || !s_aTable[nOpp].bVs) {
+		EndVs (nTable, NULL);		/* 相手がいない（ありえない）：ひとり用に戻す */
+		return;
+	}
+	Advance (nTable);
+	Advance (nOpp);
+	nJudge = PinballVsJudge (s_aTable[nTable].Game.dwScore, s_aTable[nOpp].Game.dwScore);
+	VsResolve (nTable, nOpp, nJudge, TRUE, TRUE);
+	if (nJudge == PB_VS_WIN_A) {
+		Leave (nOpp, TRUE, TRUE, FALSE);
+	} else if (nJudge == PB_VS_WIN_B) {
+		Leave (nTable, TRUE, TRUE, FALSE);
 	}
 }
 
@@ -900,12 +1283,34 @@ void PinballProc(void)
 		if ((DWORD)(g_dwTime - Table.dwLastWatch) >= PINBALL_WATCH_MS) {
 			WatchRefresh (i);
 		}
+		/* 対戦開始前のカウントダウン（数が変わった時と、始まる時に知らせる。それまでゲームを進めない） */
+		if (Table.bCount) {
+			if (PinballVsTimeUp (g_dwTime, Table.dwStartTime)) {
+				Table.bCount = FALSE;
+				Table.nCountSent = 0;
+				Table.dwLastTick = g_dwTime;
+				SendTable (i, PINBALLSTATE_FULL);
+			} else {
+				int nRemain = CountRemain (Table);
+
+				if ((nRemain != Table.nCountSent) || ((DWORD)(g_dwTime - Table.dwLastSend) >= PINBALL_SEND_MS)) {
+					Table.nCountSent = nRemain;
+					SendTable (i, PINBALLSTATE_FULL);
+				}
+				continue;
+			}
+		}
 		/* ゲームを進める。片付いたらこの台は終わり */
 		{
 			int nSize = (int)s_aTable.size ();
 			if (!Advance (i) || (nSize != (int)s_aTable.size ())) {
 				continue;
 			}
+		}
+		/* 対戦の時間切れ：得点が高い方の勝ち（同点は引き分け） */
+		if (s_aTable[i].bVs && PinballVsTimeUp (g_dwTime, s_aTable[i].dwEndTime)) {
+			VsTimeUp (i);
+			continue;
 		}
 		/* 約 0.1 秒ごとに状態を送る */
 		if ((DWORD)(g_dwTime - s_aTable[i].dwLastSend) >= PINBALL_SEND_MS) {
