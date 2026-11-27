@@ -8931,6 +8931,7 @@ void RecvDataProcLANDSTATE(PBYTE pData, DWORD dwDataSize)
 	}
 	for (i = 0; i < LAND_CELLS; i ++) {
 		s_Land.aCell[i].szShort[LAND_SHORT_BUF - 1] = 0;
+		s_Land.aCell[i].szName[LAND_NAME_BUF - 1] = 0;
 	}
 	s_Land.szAskName[LAND_NAME_BUF - 1] = 0;
 	s_bLandValid = TRUE;

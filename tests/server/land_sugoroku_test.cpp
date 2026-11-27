@@ -107,6 +107,43 @@ int main()
 		CHECK (x0 == 0 && y0 == 1);
 	}
 
+	/* ---- 1 コマ＝3×3 マス：コマ番号 → マップのマス位置（盤は 24×24 マス） ---- */
+	{
+		int x0, y0, x1, y1, gx, gy, nSlot;
+		bool bSeen[LAND_SIDE * LAND_CELL_TILES][LAND_SIDE * LAND_CELL_TILES];
+		memset (bSeen, 0, sizeof (bSeen));
+		CHECK (LAND_CELL_TILES == 3);
+		LandCellTile (0, -1, &x0, &y0);							/* スタートの中央は (1, 1) */
+		CHECK (x0 == 1 && y0 == 1);
+		LandCellTile (7, -1, &x0, &y0);							/* 右上の中央は (22, 1) */
+		CHECK (x0 == 22 && y0 == 1);
+		LandCellTile (14, -1, &x0, &y0);
+		CHECK (x0 == 22 && y0 == 22);
+		LandCellTile (21, -1, &x0, &y0);
+		CHECK (x0 == 1 && y0 == 22);
+		for (i = 0; i < LAND_CELLS; i ++) {
+			LandCellOffset (i, &gx, &gy);
+			LandCellTile (i, -1, &x0, &y0);
+			CHECK (x0 == gx * 3 + 1 && y0 == gy * 3 + 1);		/* 代表位置は 3×3 の中央 */
+			CHECK (!bSeen[y0][x0]);
+			bSeen[y0][x0] = true;
+			LandCellTile (i + 1, -1, &x1, &y1);
+			CHECK (abs (x1 - x0) + abs (y1 - y0) == 3);			/* となりのコマの中央とは 3 歩（曲がり角も 27→0 も） */
+			for (nSlot = 0; nSlot < 4; nSlot ++) {				/* 四隅は同じコマの中で、中央と重ならず、互いにも重ならない */
+				int k, xs, ys;
+				LandCellTile (i, nSlot, &xs, &ys);
+				CHECK (xs / 3 == gx && ys / 3 == gy);
+				CHECK (!(xs == x0 && ys == y0));
+				CHECK ((xs % 3) != 1 && (ys % 3) != 1);
+				for (k = 0; k < nSlot; k ++) {
+					int xk, yk;
+					LandCellTile (i, k, &xk, &yk);
+					CHECK (!(xk == xs && yk == ys));
+				}
+			}
+		}
+	}
+
 	/* ---- TSV の読み込み ---- */
 	{
 		LandBoard B;

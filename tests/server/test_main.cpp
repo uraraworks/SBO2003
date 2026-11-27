@@ -18992,6 +18992,16 @@ static void LandAdvance(DWORD nID, DWORD dwMs, int nRounds)
 	}
 }
 
+/* キャラを nCell の中央のマスへ置く（テストで nPos だけずらした時、駒の位置を合わせる） */
+static void LandPlaceAt(PSUBGAME_SUGOROKUINFO pSg, PCHARINFO p, int nCell)
+{
+	int nDx, nDy;
+
+	LandCellTile(nCell, -1, &nDx, &nDy);
+	p->dwX = pSg->dwStartX + nDx;
+	p->dwY = pSg->dwStartY + nDy;
+}
+
 /* 手番の人がサイコロを振って、止まるマスが nCell になるように今いる場所をずらす（出目は乱数で決まるため） */
 static void LandRollTo(PSUBGAME_SUGOROKUINFO pSg, DWORD nID, PCHARINFO p, int nWho, int nCell)
 {
@@ -18999,8 +19009,9 @@ static void LandRollTo(PSUBGAME_SUGOROKUINFO pSg, DWORD nID, PCHARINFO p, int nW
 
 	LandSend(p, CMDSUBSUGOROKU_DICE, 0);
 	pG->aPlayer[nWho].nPos = ((nCell - pG->nStepsLeft) % LAND_CELLS + LAND_CELLS) % LAND_CELLS;
-	for (int i = 0; i < 20 && pG->nPhase == LANDPHASE_MOVE; i ++) {
-		LandAdvance(nID, LAND_STEP_MS, 1);
+	LandPlaceAt(pSg, p, pG->aPlayer[nWho].nPos);
+	for (int i = 0; i < 80 && pG->nPhase == LANDPHASE_MOVE; i ++) {
+		LandAdvance(nID, LAND_WALK_MS, 1);
 	}
 }
 
@@ -19069,6 +19080,8 @@ static void TestLandSugoroku(const std::vector<int> &aLogin)
 		MockTrace(0);
 		return;
 	}
+	/* 開始：全員がスタートのコマ（盤の左上の 3×3 マス）に立つ。同じコマなので四隅に分かれる */
+	printf("land start corners A=%d,%d B=%d,%d\n", (int)(pA->dwX - dwOriginX), (int)(pA->dwY - dwOriginY), (int)(pB->dwX - dwOriginX), (int)(pB->dwY - dwOriginY));
 	printf("land start msg=%d turnmsg=%d stateA=%d\n", MockHasText(nConnA, CMD_SYSMSG, "土地取りすごろく"), MockHasText(nConnA, CMD_SYSMSG, "の番です"),
 		MockCmdCount(nConnA, CMD_LANDSTATE) - nStateA0);
 
@@ -19098,14 +19111,32 @@ static void TestLandSugoroku(const std::vector<int> &aLogin)
 	LandSend(pA, CMDSUBSUGOROKU_DICE, 0);
 	printf("land A dice phase=%d state=%d steps>0=%d roll msg=%d\n", pG->nPhase, pSg->byState, pG->nStepsLeft > 0, MockHasText(nConnA, CMD_SYSMSG, "サイコロ！"));
 	pG->aPlayer[0].nPos = 12 - pG->nStepsLeft;				/* 12（土地）に止まる。スタートは通らない */
-	LandAdvance(nID, 500, 1);
+	LandPlaceAt(pSg, pA, pG->aPlayer[0].nPos);
+	int nSteps0 = pG->nStepsLeft;
+	DWORD dwPX = pA->dwX, dwPY = pA->dwY;
+	LandAdvance(nID, 100, 1);
 	printf("land A waits first step phase=%d\n", pG->nPhase);
-	for (int i = 0; i < 20 && pG->nPhase == LANDPHASE_MOVE; i ++) {
-		LandAdvance(nID, LAND_STEP_MS, 1);
+	/* 1 コマは 3 歩（LAND_WALK_MS ごと）。1 歩ずつ位置を記録して、となりのマスへ歩くだけで、中央から次のコマの中央まで着くか確かめる */
+	int nPosts = MockCmdCount(nConnA, CMD_CHARPOS), nJump = 0, nTiles = 0, nMaxStep = 0;
+	nTiles = (pA->dwX != dwPX || pA->dwY != dwPY) ? 1 : 0;		/* 最初の 1 歩は待たずに歩き出している */
+	dwPX = pA->dwX;
+	dwPY = pA->dwY;
+	for (int i = 0; i < 90 && pG->nPhase == LANDPHASE_MOVE; i ++) {
+		LandAdvance(nID, LAND_WALK_MS, 1);
+		if (pA->dwX != dwPX || pA->dwY != dwPY) {
+			int nD = abs((int)pA->dwX - (int)dwPX) + abs((int)pA->dwY - (int)dwPY);
+			nTiles ++;
+			if (nD > nMaxStep) nMaxStep = nD;
+			if (nD != 1) nJump ++;
+			dwPX = pA->dwX;
+			dwPY = pA->dwY;
+		}
 	}
+	printf("land A walk cells=%d tiles=%d (3/cell=%d) jumps=%d maxstep=%d charpos+%d\n", nSteps0, nTiles, nTiles == nSteps0 * 3, nJump, nMaxStep,
+		MockCmdCount(nConnA, CMD_CHARPOS) - nPosts);
 	int nCellX, nCellY;
-	LandCellOffset(12, &nCellX, &nCellY);
-	printf("land A arrive phase=%d state=%d ask=%d pos=%d charAtCell=%d state+%d\n", pG->nPhase, pSg->byState, pG->nAskCell, pG->aPlayer[0].nPos,
+	LandCellTile(12, -1, &nCellX, &nCellY);
+	printf("land A arrive phase=%d state=%d ask=%d pos=%d charAtCenter=%d state+%d\n", pG->nPhase, pSg->byState, pG->nAskCell, pG->aPlayer[0].nPos,
 		pA->dwX == dwOriginX + nCellX && pA->dwY == dwOriginY + nCellY, MockCmdCount(nConnA, CMD_LANDSTATE) - nStateA1);
 
 	/* B が買うと返事しても無視される。A が「いいえ」→ 買わない。もう一度同じ土地へ来て「はい」で買う */
@@ -19127,6 +19158,16 @@ static void TestLandSugoroku(const std::vector<int> &aLogin)
 	/* B が A の土地 12 に止まる → 通行料 */
 	int nGoldB = pG->aPlayer[1].nGold, nGoldA2 = pG->aPlayer[0].nGold;
 	LandRollTo(pSg, nID, pB, 1, 12);
+	LandAdvance(nID, LAND_WALK_MS, 4);						/* A がいるコマなので、B は空いている四隅へ寄る */
+	{
+		int nCx, nCy, nOk = 0, nSlot;
+		for (nSlot = 0; nSlot < 4; nSlot ++) {
+			LandCellTile(12, nSlot, &nCx, &nCy);
+			if (pB->dwX == dwOriginX + nCx && pB->dwY == dwOriginY + nCy) nOk = 1;
+		}
+		LandCellTile(12, -1, &nCx, &nCy);
+		printf("land B shares cell: B at corner=%d A stays center=%d\n", nOk, pA->dwX == dwOriginX + nCx && pA->dwY == dwOriginY + nCy);
+	}
 	printf("land B toll=%d A gain=%d turn=%d msg=%d\n", nGoldB - pG->aPlayer[1].nGold, pG->aPlayer[0].nGold - nGoldA2, pG->nTurn,
 		MockHasText(nConnB, CMD_SYSMSG, "通行料"));
 	printf("land toll ok=%d\n", (nGoldB - pG->aPlayer[1].nGold) == nToll3 && (pG->aPlayer[0].nGold - nGoldA2) == nToll3);
@@ -19138,8 +19179,9 @@ static void TestLandSugoroku(const std::vector<int> &aLogin)
 	LandAdvance(nID, 3000, 1);
 	printf("land timeout auto phase=%d msg=%d\n", pG->nPhase, MockHasText(nConnA, CMD_SYSMSG, "時間切れで自動"));
 	pG->aPlayer[0].nPos = 13 - pG->nStepsLeft;				/* 13（空き地）に止まる */
-	for (int i = 0; i < 20 && pG->nPhase == LANDPHASE_MOVE; i ++) {
-		LandAdvance(nID, LAND_STEP_MS, 1);
+	LandPlaceAt(pSg, pA, pG->aPlayer[0].nPos);
+	for (int i = 0; i < 80 && pG->nPhase == LANDPHASE_MOVE; i ++) {
+		LandAdvance(nID, LAND_WALK_MS, 1);
 	}
 	printf("land timeout ask phase=%d cell=%d\n", pG->nPhase, pG->nAskCell);
 	LandAdvance(nID, (LAND_TURN_SEC + 1) * 1000, 1);
@@ -19148,6 +19190,37 @@ static void TestLandSugoroku(const std::vector<int> &aLogin)
 	/* 手番の人（B）が移動中に抜ける → 脱落・A の勝ち。土地は銀行へ（A が持つ土地 12 は A のもの） */
 	LandSend(pB, CMDSUBSUGOROKU_DICE, 0);
 	printf("land B rolling phase=%d\n", pG->nPhase);
+	/* 移動中の曲がり角：右上のコマ（7）の手前 5 から 8 まで歩くと、コマ 6・7 の中央を通り、7 の中央で下へ曲がる。
+	   歩く向きは 1 マスずつ（斜めに飛ばない）。着いた時点でまだ残り歩数があるまま、次の確認（抜ける）へ */
+	{
+		int nCx7, nCy7, nCx8, nCy8, nTilesB = 0, nBadB = 0, nVia7 = 0, nAt8 = 0;
+		DWORD dwBX, dwBY;
+
+		pG->nStepsLeft = 6;
+		pG->aPlayer[1].nPos = 5;
+		LandPlaceAt(pSg, pB, 5);
+		dwBX = pB->dwX;
+		dwBY = pB->dwY;
+		LandAdvance(nID, 1, 1);
+		if (pB->dwX != dwBX || pB->dwY != dwBY) nTilesB ++;			/* 最初の 1 歩は待たずに歩き出す */
+		dwBX = pB->dwX;
+		dwBY = pB->dwY;
+		LandCellTile(7, -1, &nCx7, &nCy7);
+		LandCellTile(8, -1, &nCx8, &nCy8);
+		for (int i = 0; i < 60 && pG->aPlayer[1].nPos != 8; i ++) {
+			LandAdvance(nID, LAND_WALK_MS, 1);
+			if (pB->dwX != dwBX || pB->dwY != dwBY) {
+				nTilesB ++;
+				if (abs((int)pB->dwX - (int)dwBX) + abs((int)pB->dwY - (int)dwBY) != 1) nBadB ++;
+				if (pB->dwX == dwOriginX + nCx7 && pB->dwY == dwOriginY + nCy7) nVia7 ++;
+				if (pB->dwX == dwOriginX + nCx8 && pB->dwY == dwOriginY + nCy8) nAt8 ++;
+				dwBX = pB->dwX;
+				dwBY = pB->dwY;
+			}
+		}
+		/* 8 の中央に着いたらすぐ次のコマの最初の 1 歩に入る（止まらず続けて歩く）ので、タイルは 9 歩＋次の 1 歩 */
+		printf("land corner tiles=%d bad=%d via7=%d at8=%d steps left=%d phase=%d\n", nTilesB, nBadB, nVia7, nAt8, pG->nStepsLeft, pG->nPhase);
+	}
 	int nStateA2 = MockCmdCount(nConnA, CMD_LANDSTATE), nNoneC = MockCmdCount(nConnC, CMD_LANDSTATE);
 	SubSugoroku_RemoveAndMove(pSg, pB->dwTblID);
 	printf("land B leave over=%d win=%d reason=%d state=%d players=%d msg=%d state+%d\n", pG->IsOver(), pG->nWinMask, pG->nOverReason, pSg->byState,

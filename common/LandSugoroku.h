@@ -4,6 +4,7 @@
 /*				盤（28 マスの土地表）・お金・土地の持ち主・手番・サイコロの移動・	 */
 /*				購入・通行料・周回ボーナス・脱落・勝敗だけ。					 */
 /*				駒の移動・メッセージ・通信は SboSvr/src/SboSvrSubGameProcLand.cpp。	 */
+/*				1 コマ＝マップ 3×3 マス。コマ番号 → マップ座標の対応もここ（LandCell*）。	 */
 /*				単体テスト: tests/server/land_sugoroku_test.cpp				 */
 /*				仕様・遊び方・データ投入手順は docs/land-sugoroku.md			 */
 /* 日付：		2026/11/26（段階 1）										 */
@@ -20,20 +21,22 @@
 /* ========================================================================= */
 /* 調整しやすい定数（遊びながら変える）										 */
 /* ========================================================================= */
-#define LAND_CELLS			(28)		/* 盤のマス数（外周。1 辺 8 マスの正方形の縁） */
-#define LAND_SIDE			(8)			/* 1 辺のマス数（角を含む） */
+#define LAND_CELLS			(28)		/* 盤のコマ数（外周。1 辺 8 コマの正方形の縁） */
+#define LAND_SIDE			(8)			/* 1 辺のコマ数（角を含む） */
+#define LAND_CELL_TILES		(3)			/* 1 コマの 1 辺のマップのマス数（1 コマ＝3×3 マス）。盤全体は 24×24 マス */
 #define LAND_MAX_PLAYERS	(4)			/* 遊べる人数の上限（段階 1 は 2 人で確かめる。ロジックは 4 人まで） */
 #define LAND_START_GOLD		(1500)		/* 初めの所持金(G) */
 #define LAND_LAP_BONUS		(200)		/* スタートを通る（止まる）たびの周回ボーナス(G) */
 #define LAND_LAPS			(12)		/* この周回数に誰かが届くと、その周の全員の手番が終わった所で終了 */
 #define LAND_TURN_SEC		(30)		/* 手番（サイコロ・購入の返事）の制限時間(秒)。過ぎると自動で進める */
 #define LAND_BACK_STEPS		(3)			/* 迷いの森で戻るマス数 */
-#define LAND_STEP_MS		(1000)		/* 駒が 1 マス進む間隔(ms)。既存のすごろく（1 マス 1 秒）と同じ */
+#define LAND_WALK_MS		(300)		/* 駒が地図の 1 マスを歩く間隔(ms)。クライアントの歩き（1 マス約 280ms）より少し長く、止まらず続けて歩いて見える */
+#define LAND_STEP_MS		(LAND_WALK_MS * LAND_CELL_TILES)	/* 駒が 1 コマ進む（3 歩）のにかかる時間(ms) */
 #define LAND_NAME_BUF		(40)		/* 土地名の欄のバイト数（UTF-8・終端含む） */
 #define LAND_SHORT_BUF		(8)			/* 短い土地名の欄のバイト数（盤の上に重ねて描く。全角 2 文字・終端含む） */
 #define LAND_REGIONS		(8)			/* 地方の数（土地 24 マス＝8 地方×3 町） */
 
-/* マスの種類 */
+/* コマの種類 */
 enum {
 	LANDCELL_START = 0,					/* スタート（周回ボーナス） */
 	LANDCELL_FERRY,						/* 渡し舟小屋（1 回休み） */
@@ -46,7 +49,7 @@ enum {
 /* 手番の段階 */
 enum {
 	LANDPHASE_ROLL = 0,					/* サイコロ待ち（制限時間あり） */
-	LANDPHASE_MOVE,						/* 駒が進んでいる（Step を LAND_STEP_MS ごとに呼ぶ） */
+	LANDPHASE_MOVE,						/* 駒が進んでいる（1 コマ歩き終えるたびに Step を呼ぶ） */
 	LANDPHASE_BUY,						/* 空き地を買うかの返事待ち（制限時間あり） */
 	LANDPHASE_OVER,						/* ゲーム終了 */
 };
@@ -104,7 +107,7 @@ struct LandCellDef {
 	char		szShort[LAND_SHORT_BUF];	/* 盤の上に出す短い名前（全角 2 文字まで） */
 };
 
-/* マス番号 → 盤の左上から見た位置（横・縦。0〜LAND_SIDE-1）。
+/* コマ番号 → 盤の左上から見たコマの格子位置（横・縦。0〜LAND_SIDE-1）。
    0 が左上（スタート）、時計回りに 7=右上（渡し舟小屋）、14=右下（ギルド酒場）、21=左下（迷いの森） */
 static inline void LandCellOffset(int nCell, int *pnDx, int *pnDy)
 {
@@ -126,7 +129,23 @@ static inline void LandCellOffset(int nCell, int *pnDx, int *pnDy)
 	}
 }
 
-/* 四隅のマス番号（スタート・渡し舟小屋・ギルド酒場・迷いの森） */
+/* コマ → 盤の左上から見たマップのマス位置。nSlot < 0 ならコマの中央（3×3 の真ん中。コマの代表位置）、
+   0〜3 なら四隅（0=左上 1=右上 2=左下 3=右下。同じコマに複数人が止まる時の立ち位置） */
+static inline void LandCellTile(int nCell, int nSlot, int *pnDx, int *pnDy)
+{
+	int gx, gy, nLast = LAND_CELL_TILES - 1;
+
+	LandCellOffset (nCell, &gx, &gy);
+	if (nSlot < 0) {
+		*pnDx = gx * LAND_CELL_TILES + LAND_CELL_TILES / 2;
+		*pnDy = gy * LAND_CELL_TILES + LAND_CELL_TILES / 2;
+	} else {
+		*pnDx = gx * LAND_CELL_TILES + ((nSlot & 1) ? nLast : 0);
+		*pnDy = gy * LAND_CELL_TILES + ((nSlot & 2) ? nLast : 0);
+	}
+}
+
+/* 四隅のコマ番号（スタート・渡し舟小屋・ギルド酒場・迷いの森） */
 static inline int LandCornerKind(int nCell)
 {
 	switch (nCell) {
@@ -472,7 +491,7 @@ public:
 		return true;
 	}
 
-	/* 駒を 1 マス進める（LANDPHASE_MOVE の間 LAND_STEP_MS ごとに）。スタートを通る（止まる）と周回ボーナス。
+	/* 駒を 1 コマ進める（LANDPHASE_MOVE の間、駒が 1 コマ（マップ 3 歩）歩き終えるたびに）。スタートを通る（止まる）と周回ボーナス。
 	   最後の 1 マスなら、そのマスの処理（購入の問い合わせ・通行料・四隅の効果）まで済ませる */
 	bool Step(unsigned int dwNow)
 	{

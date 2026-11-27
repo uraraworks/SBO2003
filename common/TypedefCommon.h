@@ -4417,9 +4417,10 @@ typedef struct _CMDPARA_PUZZLESE {
 
 /* 土地取りすごろく（周回型。ロジックは common/LandSugoroku.h、仕様は docs/land-sugoroku.md）
    CMD_LANDSTATE は、遊んでいる人と観戦者に、状態が変わるたびに盤の全体を 1 通で送る
-   （28 マスの持ち主と短い名前・値段・各自の所持金と周回・手番・サイコロ・購入の問い合わせ）。
-   クライアントは盤の各マスの上に「短い土地名・持ち主の色枠・値段」を重ね描きし、帯に各自の所持金などを出す。
-   盤の左上のマップ座標は wOriginX・wOriginY（スタート・マスの座標）。マス番号 → 盤の位置は LandCellOffset */
+   （28 コマの持ち主と名前・値段・各自の所持金と周回・手番・サイコロ・購入の問い合わせ）。
+   クライアントは盤の各コマ（マップ 3×3 マス＝96×96 ドット）の上に「土地名・値段・持ち主の色・開発段階の場所」を重ね描きし、
+   帯に各自の所持金と 28 コマの一覧を出す。
+   盤の左上のマップ座標は wOriginX・wOriginY（盤 24×24 マスの左上＝スタートのコマの左上のマス）。コマ番号 → 盤の位置は LandCellOffset・LandCellTile */
 enum {
 	LANDSTATE_NONE = 0,												/* 重ね描きを消す（ゲームが終わった・抜けた） */
 	LANDSTATE_FULL,													/* 盤の全体 */
@@ -4436,12 +4437,14 @@ typedef struct _CMDPARA_LANDSTATE_PLAYER {
 	BYTE		byAlive;											/* 遊んでいるか（0=脱落） */
 	BYTE		bySkip;												/* 残りの休み回数 */
 	BYTE		byLands;											/* 持っている土地の数 */
+	BYTE		byPos;												/* いるコマ番号（帯の一覧に駒の位置を出す） */
 } CMDPARA_LANDSTATE_PLAYER;
 typedef struct _CMDPARA_LANDSTATE_CELL {
 	BYTE		byKind;												/* LANDCELL_* */
 	BYTE		byOwner;											/* 持ち主の番号（LANDSTATE_OWNER_NONE=空き地） */
 	WORD		wPrice;												/* 値段(G)（土地だけ） */
-	char		szShort[LAND_SHORT_BUF];							/* 盤の上に出す短い名前（UTF-8） */
+	char		szShort[LAND_SHORT_BUF];							/* 短い名前（UTF-8。全名が 1 コマ（96 ドット）に収まらない時に使う） */
+	char		szName[LAND_NAME_BUF];								/* 土地の名前（UTF-8。収まる時はこれを出す） */
 } CMDPARA_LANDSTATE_CELL;
 typedef struct _CMDPARA_LANDSTATE {
 	BYTE		byCmd;												/* コマンドID */
@@ -4456,7 +4459,7 @@ typedef struct _CMDPARA_LANDSTATE {
 	BYTE		byDice2;
 	BYTE		byWinMask;											/* 終了した時の勝者（ビット = 番号。同点は複数） */
 	BYTE		byOverReason;										/* LANDOVER_* */
-	WORD		wOriginX;											/* 盤の左上（スタートのマス）のマップ座標 */
+	WORD		wOriginX;											/* 盤の左上（スタートのコマの左上のマス）のマップ座標 */
 	WORD		wOriginY;
 	WORD		wSecLeft;											/* 手番の制限時間の残り秒（サイコロ・購入待ちの時。届いた時刻から減らして見せる） */
 	WORD		wRound;												/* 何周目の手番か（1 から） */
