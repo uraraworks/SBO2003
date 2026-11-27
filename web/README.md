@@ -143,7 +143,7 @@ Windows 版のメッセージログウィンドウは、ブラウザ版ではペ
 ゲームの画像（`SboGrpData/grp` の PNG）を描き直す管理者用のページです（`web/account/dot.html`・`dot-*.js`。管理ページの「ドット絵」タブから開く）。
 PC の Chrome / Edge で、手元のリポジトリのフォルダを「作業フォルダを開く」で選ぶと、その中の PNG を直接上書きします。ゲームの絵はサーバーへは送りません（サーバーに置くのは一時保存の控えだけ）。
 
-- 保存は必ず 256 色パレットの PNG（`dot-png.js`。SBOP2 の lib/indexed-png.js から）。ゲームの読み込み（`ReadGrpData2`）はパレット形式しか読めず、透明は「黒 (0,0,0) の色」です。
+- 保存は必ず 256 色パレットの PNG（`dot-png.js`。SBOP2 の lib/indexed-png.js から）。ゲームの読み込み（`ReadGrpData2`）は基本的にパレット形式で、透明は「黒 (0,0,0) の色」です（土地取りすごろくの `land_cells.png`・`land_ui.png` だけは RGBA の PNG で、読み込み時に透明を黒にします。docs/land-sugoroku.md）。
 - 操作は EDGE 風: 右クリック = スポイト、Cmd（Ctrl）+左クリック = 拡大、Cmd（Ctrl）+右クリック = 縮小。`?` でショートカット一覧。
 - 「一時保存」は元のファイルを書き換えずに控えを残します（レイヤーごと）。管理ページ（/admin）にログインしていればサーバー（`SBODATA/SboWebDotDrafts/`、`server/node/sbosvr_dotdraft.js` の `/api/admin/dot/drafts/*`）に置くので、PC・タブレットなどほかの端末でも続きを描けます。最後の書き出しは今まで通り PC の作業フォルダへ。
   - ログインしていない・サーバーに届かない時は、この端末のブラウザ（IndexedDB `sbo-dot-editor`）に置きます。一覧の「この端末」の控えは、ログイン後に「サーバーへ移す」で移せます。

@@ -56,6 +56,8 @@ CImg32	*g_pDibPrimary,												/* プライマリビットマップ */
 		*g_pDibAnime,												/* アニメーション用ビットマップ */
 		*g_pDibSubgBomb,											/* サブゲーム（爆弾ゲーム）用ビットマップ */
 		*g_pDibWChar,												/* サブゲーム（戦場ゲーム）用ビットマップ */
+		*g_pDibLandCells,										/* 土地取りすごろくのコマ絵 */
+		*g_pDibLandUi,											/* 土地取りすごろくのUI部品 */
 		pDibDrawTmp;												/* 描画テンポラリ */
 
 HMODULE g_hDll,														/* リソースDLLハンドル */

@@ -1342,6 +1342,10 @@ BOOL ReadData(void)
 	/* サブゲーム（戦場ゲーム）グラフィックの読み込み */
 	ReadGrpData2 ("IDP_WCHAR01", &g_pDibWChar, 2);
 
+	/* 土地取りすごろくのコマ絵・UI部品の読み込み（透明つきPNG。透明は黒＝カラーキーにして読む。読めなくても重ね描きは単色にフォールバック） */
+	ReadGrpData2 ("IDP_LAND_CELLS", &g_pDibLandCells, 1);
+	ReadGrpData2 ("IDP_LAND_UI", &g_pDibLandUi, 1);
+
 	/* 吹き出しグラフィックの読み込み */
 	ReadGrpData2 ("IDP_EFC01", &g_pDibComEfc, 2);
 
@@ -1528,13 +1532,20 @@ void ReadGrpData2(LPSTR pszName, CImg32 **pDib, int nSize)
 
 	png_set_bgr(Png);
 
-	png_colorp Palette;
+	/* 透明つき（RGBA）のPNG（土地取りの素材）は 8 ビット BGRA に揃えて読む。透明のドットは黒（カラーキー）にする */
+	BOOL bRgba = (ColorType == PNG_COLOR_TYPE_RGB_ALPHA);
+	if (bRgba) {
+		png_set_strip_16 (Png);
+		png_read_update_info (Png, Info);
+	}
+
+	png_colorp Palette = NULL;
 	int PaletteCount = 0;
-	if (BitDepth == 8) {
+	if ((BitDepth == 8) && !bRgba) {
 		png_get_PLTE (Png, Info, &Palette, &PaletteCount);
 	}
 
-	png_byte *LineBuf = new png_byte[Width * BitDepth / 8];
+	png_byte *LineBuf = new png_byte[Width * 4];
 
 	pDibTmp->Create (Width, Height);
 	pDibNew->CreateWithoutGdi (Width * nSize, Height * nSize);
@@ -1547,7 +1558,17 @@ void ReadGrpData2(LPSTR pszName, CImg32 **pDib, int nSize)
 		pTmp = pData + (Height - y - 1) * Width * 4;
 		   for (int x = 0; x < (int)Width; x ++) {
 			BYTE *Src = LineBuf + x * BitDepth / 8;
-			if (BitDepth == 8) {
+			if (bRgba) {
+				Src = LineBuf + x * 4;
+				if (Src[3] < 128) {
+					pTmp[0] = pTmp[1] = pTmp[2] = 0;
+				} else {
+					/* 不透明の黒はカラーキーに化けないよう、ほんの少し明るくする */
+					pTmp[0] = (Src[0] > 1) ? Src[0] : 1;
+					pTmp[1] = (Src[1] > 1) ? Src[1] : 1;
+					pTmp[2] = (Src[2] > 1) ? Src[2] : 1;
+				}
+			} else if (BitDepth == 8) {
 				pTmp[1] = Palette[*Src].green;
 				pTmp[0] = Palette[*Src].blue;
 				pTmp[2] = Palette[*Src].red;

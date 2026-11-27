@@ -47,6 +47,8 @@ extern CImg32	*g_pDibPrimary,										/* プライマリビットマップ */
 				*g_pDibAnime,										/* アニメーション用ビットマップ */
 				*g_pDibSubgBomb,									/* サブゲーム（爆弾ゲーム）用ビットマップ */
 				*g_pDibWChar,										/* サブゲーム（戦場ゲーム）用ビットマップ */
+				*g_pDibLandCells,									/* 土地取りすごろくのコマ絵（96×96 が 7 列×4 行） */
+				*g_pDibLandUi,										/* 土地取りすごろくのUI部品（枠・旗・開発・ポインタ・サイコロ） */
 				pDibDrawTmp;										/* 描画テンポラリ */
 
 extern HMODULE g_hDll,												/* リソースDLLハンドル */
