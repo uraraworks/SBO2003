@@ -72,6 +72,9 @@
 #define MAX_RECIPEMAT		4										/* レシピの材料の種類 */
 #define MAX_MAKERNAME		64										/* 作り手の名前の欄のバイト数（終端含む） */
 #define MAX_MAKERMSG		256										/* 作り手の台詞の欄のバイト数（終端含む） */
+#define MAX_TRIALROOM		100										/* お試し個室の最大数 */
+#define MAX_TRIALROOMNAME	64										/* お試し個室の名前の欄のバイト数（終端含む） */
+#define MAX_TRIALROOMDESC	512										/* お試し個室の説明文の欄のバイト数（終端含む） */
 #define MAX_AFFIX			1000									/* 付与（接頭辞・接尾辞）の最大数 */
 #define MAX_AFFIXNAME		32										/* 付与の名前の欄のバイト数（終端含む） */
 #define MAX_ITEMDERIVE		(65535 - 16384)							/* 派生アイテムの最大数（番号は 16384 から） */
@@ -87,6 +90,10 @@
 #define MAX_QUESTINTRO		1024									/* 依頼の「導入のお話」の欄のバイト数（終端含む。NPC の台詞と同じ制御コード @0 @1 @2） */
 #define MAX_QUESTLIST		16										/* ギルドの一覧に出す依頼の最大数 */
 #define MAX_QUESTDONEBYTE	(MAX_QUEST / 8)							/* 一度きり依頼のクリア済みの印の大きさ（バイト） */
+#define MAX_QUESTKILLTMP	4										/* 討伐依頼で数える敵の数（QUESTINFO の awKillStTmp） */
+#define MAX_QUESTCLEAR		8										/* 達成時刻を覚える依頼の数（CHARINFO の awQuestClearID。直近の分だけ。古い順に押し出す） */
+#define MAX_QUESTREPEATHOURS	8760								/* 再受注までの時間の上限（時間。1 年） */
+#define MAX_QUESTKILLNEED	999										/* 討伐依頼の必要数の上限 */
 #define MAX_QUESTDONESET	2										/* 依頼を完了した時に立てる印の数（QUESTINFO の awDoneSetFlag） */
 #define MAX_STORY			256										/* 最大思い出の本のシナリオ数（シナリオ番号 wID は 1〜255） */
 #define MAX_STORYFLAGRANGE	2										/* シナリオをやり直す時に消す印の範囲の数（STORYINFO の awFlagFrom・awFlagTo） */
@@ -107,6 +114,7 @@
 #define MAX_CHESTNO			2048									/* 「印で変わるマス」の宝箱の番号の数（0〜2047。全マップ通しの番号） */
 #define MAX_CHESTBYTE		(MAX_CHESTNO / 8)						/* 開けた宝箱の記録の大きさ（バイト。abyChestOpened） */
 #define MAX_RECYCLEBOX		1024									/* リサイクル箱の番号の数（1〜1024。全マップ通しの番号。宝箱の番号とは別。0 は「無し」） */
+#define QUEST_KILLTMP_NONE	(0xFFFF)								/* 討伐依頼で数える敵の「空き」（stTmp の id 0 のプヨンも数えられるよう 0 ではなくこれにする） */
 #define FLAG_NOBIT			(0xFFFF)								/* 印の番号の「無し」（印 0 も使えるよう 0 ではなくこれにする） */
 /* 印の番号（FLAG_NOBIT=無し）を、通信・保存用の「番号+1（0=無し）」にする・戻す。
    0 のままのデータが「印 0」の条件にならないようにするため */
@@ -405,6 +413,8 @@ enum {
 	CMD_PUZZLEKEY,													/* 落ち物パズルのキー入力（クライアント→サーバー。CMDPARA_PUZZLEKEY の byData が PUZZLEKEY_*、dwTblID=本人、dwSerial=連番） */
 	CMD_PUZZLESTATE,												/* 落ち物パズルの盤面・操作中の落ち物・得点（サーバー→座っている人・対戦相手・台の近くの人。CMDPARA_PUZZLESTATE） */
 	CMD_PUZZLESE,												/* 落ち物パズルの効果音（サーバー→台の近くの人。CMDPARA_PUZZLESE。盤面が見える距離にいる人だけに届く） */
+/* 以下、管理者用（CMD_MAPPARTSADD 以上は自動で管理者専用になる。CMD_PUZZLESE より後ろに足す） */
+	CMD_ADMINTRIALROOM,												/* 管理者ウィンドウのお試し個室の編集（一覧・書き込み。結果はサーバー→クライアント） */
 	CMD_MAX
 };
 
@@ -2440,6 +2450,8 @@ typedef struct _CHARINFO {
 	WORD		awQuestCount[MAX_QUESTCOUNT];						/* 依頼の数（倒した数など。ステップ2で使う。保存する） */
 	DWORD		dwQuestAcceptTime;									/* 依頼を受けた時刻（time_t の秒。保存する） */
 	BYTE		abyQuestDone[MAX_QUESTDONEBYTE];					/* 一度きりの依頼のクリア済みの印（依頼番号のビット。保存する） */
+	WORD		awQuestClearID[MAX_QUESTCLEAR];						/* 達成した依頼の番号（再受注の待ちのため、直近 MAX_QUESTCLEAR 件。0=空き。保存する） */
+	DWORD		adwQuestClearTime[MAX_QUESTCLEAR];					/* その達成時刻（time_t の秒。保存する） */
 	BYTE		abyQuestRewarded[MAX_QUESTDONEBYTE];				/* 依頼の報酬をもうもらっている印（依頼番号のビット。保存する。思い出の本でやり直しても消えない。報酬は初回だけ） */
 	BYTE		abyFlag[MAX_FLAGBITBYTE];							/* キャラのフラグ（印。ビット番号=印の番号。保存する。サーバーだけが持ち、クライアントへは送らない） */
 	BYTE		abyFlagNum[MAX_FLAGNUM];							/* キャラのフラグ（数値 0〜255。保存する。サーバーだけが持つ） */
@@ -3048,6 +3060,22 @@ typedef struct _MAKERINFO {
 	char		szMsgEnd[MAX_MAKERMSG];								/* 鑑定屋：鑑定した後、もう鑑定する物が無い時に続ける台詞 */
 } MAKERINFO, *PMAKERINFO;
 
+/* お試し個室の状態 */
+enum {
+	TRIALROOMSTATE_CLOSED = 0,									/* 閉じている（入れない） */
+	TRIALROOMSTATE_OPEN,										/* 開いている */
+};
+
+/* お試し個室（試し中の新機能を遊べる部屋。入口のNPCの台詞 "@xNN"（NN=番号 2 桁）。サーバーだけが持ち、クライアントへは送らない） */
+typedef struct _TRIALROOMINFO {
+	BYTE		byState;											/* 状態(TRIALROOMSTATE_*) */
+	char		szName[MAX_TRIALROOMNAME];							/* 名前 */
+	char		szDesc[MAX_TRIALROOMDESC];							/* 入口で出す説明文（改行可） */
+	WORD		wLoanStTmp;											/* 貸すステータステンプレートの番号 */
+	DWORD		dwMapID, dwX, dwY;									/* 入るマップ・座標 */
+	DWORD		dwX1, dwY1, dwX2, dwY2;								/* 個室の範囲の四角（入るマップの中。この外に出ると出たことにする） */
+} TRIALROOMINFO, *PTRIALROOMINFO;
+
 /* レシピ情報 */
 typedef struct _RECIPEINFO {
 	BYTE		byState;											/* 状態(RECIPESTATE_*) */
@@ -3293,6 +3321,9 @@ typedef struct _QUESTINFO {
 	char		szIntro[MAX_QUESTINTRO];							/* 導入のお話（受ける前に読ませる長い文。空なら読ませずにすぐ確認。保存する） */
 	BYTE		byLevelMin;											/* 受けられる最低レベル（0=制限なし。足りない人には一覧に出さず、受けられない。管理者・受けている人は対象外） */
 	WORD		wCancelStory;									/* 依頼を取り消した時に最初に戻す思い出の本のお話（STORYINFO の wID。0=何もしない。つながる後のお話も戻す。保存する） */
+	WORD		awKillStTmp[MAX_QUESTKILLTMP];						/* 討伐依頼で数える敵（ステータステンプレートの番号。QUEST_KILLTMP_NONE=空き。id 0 も有効。保存する） */
+	WORD		wKillNeed;											/* 討伐依頼の必要数（0=討伐依頼ではない。倒した数が届くとギルドで報告できる。保存する） */
+	DWORD		dwRepeatHours;										/* 達成してから再び受けられるまでの時間（時間。0=制限なし。実時間でログアウト中も進む。保存する） */
 } QUESTINFO, *PQUESTINFO;
 
 /* 討伐チャレンジの種類(QUESTINFO の byChallenge) */
@@ -3623,6 +3654,30 @@ typedef struct _CMDPARA_ADMINQUEST {
 	QUESTINFO	Info;												/* 依頼（ITEM・SET） */
 	char		szMsg[MAX_ADMINQUESTMSG];							/* 結果の文（RESULT。うまくいかなかった理由） */
 } CMDPARA_ADMINQUEST, *PCMDPARA_ADMINQUEST;
+#pragma pack(pop)
+
+/* 管理者ウィンドウのお試し個室の編集（CMD_ADMINTRIALROOM の byCmdSub） */
+enum {
+	ADMINTRIALROOM_LISTREQ = 0,									/* 一覧の問い合わせ（クライアント→サーバー） */
+	ADMINTRIALROOM_ITEM,										/* 一覧の 1 件（サーバー→クライアント。nNo 番目・全部で wCount 件。0 件なら wCount=0 だけ届く） */
+	ADMINTRIALROOM_SET,											/* 書き込み（クライアント→サーバー。nNo=-1 なら足す。削除は無く、止めるのは byState=0。データAPIと同じ確認を通す） */
+	ADMINTRIALROOM_RESULT,										/* 書き込みの結果（サーバー→クライアント。byResult・szMsg。うまくいった時は続けて ITEM も届く） */
+};
+
+#define MAX_ADMINTRIALROOMMSG	256									/* お試し個室の書き込みの結果の文（UTF-8） */
+
+#pragma pack(push, 1)
+/* 管理者ウィンドウのお試し個室の編集（送受信とも同じ形） */
+typedef struct _CMDPARA_ADMINTRIALROOM {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byCmdSub;											/* サブコマンド(ADMINTRIALROOM_*) */
+	BYTE		byResult;											/* 結果（RESULT: 1=書き込んだ 0=書き込めなかった） */
+	BYTE		byReserve;											/* 予備 */
+	WORD		wCount;												/* お試し個室の全部の件数（ITEM・RESULT） */
+	int			nNo;												/* お試し個室の配列の番号（ITEM・SET・RESULT。SET の -1 は足す） */
+	TRIALROOMINFO	Info;											/* お試し個室（ITEM・SET） */
+	char		szMsg[MAX_ADMINTRIALROOMMSG];						/* 結果の文（RESULT。うまくいかなかった理由） */
+} CMDPARA_ADMINTRIALROOM, *PCMDPARA_ADMINTRIALROOM;
 #pragma pack(pop)
 
 /* 管理者ウィンドウの思い出の本の編集（CMD_ADMINSTORY の byCmdSub） */

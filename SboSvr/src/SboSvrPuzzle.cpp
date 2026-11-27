@@ -111,6 +111,7 @@ typedef struct _PUZZLETABLE {
 	PUZZLEPARAM	Param;
 	PUZZLESEAT	Seat;						/* 席は 1 つ */
 	BOOL		bVs;						/* 対戦中か */
+	BOOL		bAllowVs;					/* 乱入を受け付けるか（座る前に選ぶ。FALSE ならペアの台に座った人は乱入できず、ひとりで遊ぶ） */
 	DWORD		dwOppNpc;					/* 対戦相手の台NPCのテーブルID（bVs の時） */
 	BOOL		bCount;						/* カウントダウン中か（この間は落ちず、キーも効かない） */
 	DWORD		dwStartTime;				/* カウントダウンが終わる時刻(ms) */
@@ -210,6 +211,7 @@ static void ToIdle(int nTable, BOOL bLast)
 	Table.bOverShow = bLast;
 	Table.dwOverTime = g_dwTime;
 	Table.bVs = FALSE;
+	Table.bAllowVs = TRUE;
 	Table.dwOppNpc = (DWORD)-1;
 	Table.bCount = FALSE;
 	Table.nWinStreak = 0;
@@ -495,6 +497,7 @@ static void EndVs(int nTable, PCHARINFO pSkip)
 	PUZZLETABLE &Table = s_aTable[nTable];
 
 	Table.bVs = FALSE;
+	Table.bAllowVs = TRUE;
 	Table.dwOppNpc = (DWORD)-1;
 	Table.Seat.Game.nPending = 0;
 	if (Table.bCount) {
@@ -518,6 +521,7 @@ static void Leave(int nTable, BYTE byKind, BOOL bNotifySelf, BOOL bLost)
 		PCHARINFO pWin = (nOpp >= 0) ? SeatChar (s_aTable[nOpp].Seat) : NULL;
 
 		Table.bVs = FALSE;
+		Table.bAllowVs = TRUE;
 		if (nOpp >= 0) {
 			/* 勝った側の連勝を 1 つ増やす（EndVs の盤面の通知に連勝数が載る） */
 			if (pWin) {
@@ -940,6 +944,7 @@ typedef struct _PUZZLEASK {
 	DWORD	dwNpc;				/* 座ろうとした台NPCのテーブルID */
 	DWORD	dwTime;				/* 問いを出した時刻 */
 	BOOL	bCoinUsed;			/* 道具のコインから座ろうとしたか */
+	BOOL	bAllowAsk;			/* TRUE=「乱入されてもよいか」の問い、FALSE=「乱入するか」の問い */
 } PUZZLEASK;
 static std::map<DWORD, PUZZLEASK> s_mapAsk;
 
@@ -962,8 +967,9 @@ BOOL PuzzleAnswer(PCHARINFO pChar, DWORD dwNpcTblID, BOOL bYes)
 		return TRUE;
 	}
 	pNpc = g_aCharInfo[dwNpcTblID];
-	/* 座る条件は PuzzleSit が改めて確かめる（その間に台が使われた・立つ場所を離れた時は座らない）。はい=乱入、いいえ=ひとりで */
-	PuzzleSit (pChar, pNpc, Ask.bCoinUsed, bYes ? 1 : 2);
+	/* 座る条件は PuzzleSit が改めて確かめる（その間に台が使われた・立つ場所を離れた時は座らない）。
+	   乱入の問い：はい=乱入、いいえ=ひとりで。乱入されてもよいかの問い：はい=乱入OK、いいえ=乱入NG */
+	PuzzleSit (pChar, pNpc, Ask.bCoinUsed, Ask.bAllowAsk ? (bYes ? 3 : 4) : (bYes ? 1 : 2));
 	return TRUE;
 }
 
@@ -1006,6 +1012,13 @@ void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed, int nChoice)
 			nPartner = -1;
 		}
 	}
+	/* ペアの台があるのに乱入できない（ひとりで遊んでいる人が乱入NGを選んでいる）時は、対戦にならない */
+	if ((nPartner >= 0) && !s_aTable[nPartner].bAllowVs) {
+		nPartner = -1;
+		if (nChoice == 0) {
+			SendCmdSYSMSG (pChar->pID, "相手は乱入を受け付けていません。");
+		}
+	}
 	/* ひとりが遊んでいる台のペアへ座る時は、乱入するか、ひとりで遊ぶかを聞く（コインは答えを受けてから取り上げる） */
 	if ((nPartner >= 0) && (nChoice == 0)) {
 		PUZZLEASK Ask;
@@ -1015,9 +1028,22 @@ void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed, int nChoice)
 		Ask.dwNpc = pNpc->dwTblID;
 		Ask.dwTime = timeGetTime ();
 		Ask.bCoinUsed = bCoinUsed;
+		Ask.bAllowAsk = FALSE;
 		s_mapAsk[pChar->dwTblID] = Ask;
 		sprintf (szAsk, "%sさんが遊んでいます。乱入して対戦しますか？（「いいえ」でひとりで遊びます）@y", pOther ? pOther->szName : "だれか");
 		SendCmdTALKMSG (pChar->pID, pNpc->dwTblID, szAsk);
+		return;
+	}
+	/* ペアの台（相手と組める台）には、始める前に、乱入されてもよいかを聞く（対戦に乱入するのでなければ） */
+	if ((nPartner < 0) && (nChoice == 0) && (Param.nPair > 0) && (FindPartnerNpc (pNpc, Param) != (DWORD)-1)) {
+		PUZZLEASK Ask;
+
+		Ask.dwNpc = pNpc->dwTblID;
+		Ask.dwTime = timeGetTime ();
+		Ask.bCoinUsed = bCoinUsed;
+		Ask.bAllowAsk = TRUE;
+		s_mapAsk[pChar->dwTblID] = Ask;
+		SendCmdTALKMSG (pChar->pID, pNpc->dwTblID, "遊んでいる途中で乱入されてもよいですか？（「いいえ」だと乱入されずにひとりで遊べます）@y");
 		return;
 	}
 	s_mapAsk.erase (pChar->dwTblID);
@@ -1046,6 +1072,7 @@ void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed, int nChoice)
 		Table.dwMapID = pNpc->dwMapID;
 		Table.Param = Param;
 		Table.bVs = FALSE;
+		Table.bAllowVs = (nChoice != 2) && (nChoice != 4);	/* 乱入NG・乱入を断ってひとりで遊ぶ人は乱入を受けない */
 		Table.dwOppNpc = (DWORD)-1;
 		Table.bCount = FALSE;
 		Table.dwStartTime = 0;
@@ -1219,6 +1246,7 @@ static void IdleScan(void)
 				Table.dwMapID = (DWORD)nMap;
 				Table.Param = Param;
 				Table.bVs = FALSE;
+				Table.bAllowVs = TRUE;
 				Table.dwOppNpc = (DWORD)-1;
 				Table.bCount = FALSE;
 				Table.dwStartTime = 0;
