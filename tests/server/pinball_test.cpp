@@ -20,6 +20,8 @@ static int FarFromSeg(const PBSEG &S, int x, int y, int nR)
 	return dx * dx + dy * dy >= (long long)nR * nR;
 }
 
+static int g_nUpperSteps = 0;		/* ランダム遊びで、ボールが盤の上側（アーチの下の上のバンパー域）にいたステップ数 */
+
 /* 打ち出しから、ランダムなフリッパー操作で長く遊ばせる。毎ステップ、不変条件を調べる */
 static void RandomPlay(unsigned int dwSeed, int nSteps, int *pnDrains)
 {
@@ -53,11 +55,15 @@ static void RandomPlay(unsigned int dwSeed, int nSteps, int *pnDrains)
 		if (g.nPhase != PB_PHASE_PLAY) {
 			continue;
 		}
+		if (g.nY < PbY (PB_H / 4)) g_nUpperSteps ++;
 		/* 壁の外へ出ていない */
 		CHECK (g.nX >= PbX (PB_WALL_L) && g.nX <= PbX (PB_WALL_R));
 		CHECK (g.nY >= PbY (0) && g.nY <= T.nDrainY + PB_BALL_R);
 		/* 速さの上限 */
-		CHECK ((long long)g.nVx * g.nVx + (long long)g.nVy * g.nVy <= (long long)(PB_VMAX + 2) * (PB_VMAX + 2));
+		{
+			long long nCap = (g.nX > T.nLaneL) ? PB_VMAX_LANE : PB_VMAX;
+			CHECK ((long long)g.nVx * g.nVx + (long long)g.nVy * g.nVy <= (nCap + 2) * (nCap + 2));
+		}
 		/* 壁にめり込んでいない（反発の後は半径の 3/4 まで許す） */
 		for (j = 0; j < T.nSeg; j ++) {
 			if (T.aSeg[j].nTarget >= 0) continue;
@@ -126,8 +132,8 @@ int main()
 		a.Start (); b.Start (); c.Start ();
 		CHECK (a.Launch (0) && a.nVy == -PB_LAUNCH_MIN && a.nPhase == PB_PHASE_PLAY);
 		CHECK (!a.Launch (500));
-		CHECK (b.Launch (PB_CHARGE_MS) && b.nVy == -PB_LAUNCH_MAX);
-		CHECK (c.Launch (PB_CHARGE_MS * 5) && c.nVy == -PB_LAUNCH_MAX);
+		CHECK (b.Launch (PB_CHARGE_MS) && b.nVy == -PinballGetTable ().nLaunchMax);
+		CHECK (c.Launch (PB_CHARGE_MS * 5) && c.nVy == -PinballGetTable ().nLaunchMax);
 		CHECK (PinballGame::ChargePercent (PB_CHARGE_MS / 2) == 50 && PinballGame::ChargePercent (99999) == 100);
 	}
 
@@ -168,7 +174,8 @@ int main()
 			RandomPlay (1000 + i * 7919, 120 * 90, &nDrains);
 		}
 		CHECK (nDrains > 20);
-		printf ("ランダム遊び: 穴に落ちた回数 %d\n", nDrains);
+		printf ("ランダム遊び: 穴に落ちた回数 %d、上側にいたステップ %d\n", nDrains, g_nUpperSteps);
+		CHECK (!PB_UPPER || g_nUpperSteps > 1000);		/* 上のバンパー域も通っている */
 	}
 
 	/* 最大の速さで壁に向けて何度撃っても出ない（上・左・右・斜め壁・レーン） */
@@ -182,7 +189,7 @@ int main()
 				int nStep;
 				g.Start ();
 				g.nPhase = PB_PHASE_PLAY;
-				g.nX = PbX (30 + k * 12); g.nY = PbY (100 + k * 6);
+				g.nX = PbX (30 + k * 12); g.nY = PbY (20 + k * (PB_H - 60) / 8);		/* 盤の上から下まで散らす */
 				g.nVx = PbCos (nDeg) * PB_VMAX / PB_TRIG;
 				g.nVy = PbSin (nDeg) * PB_VMAX / PB_TRIG;
 				for (nStep = 0; nStep < 500; nStep ++) {
@@ -202,7 +209,7 @@ int main()
 		int nEv = 0;
 		g.Start ();
 		g.nPhase = PB_PHASE_PLAY;
-		g.nX = PbX (73); g.nY = PbY (150);		/* 2 つのフリッパーの真ん中の上 */
+		g.nX = PbX (73); g.nY = PbY (150 + PB_YOFS);		/* 2 つのフリッパーの真ん中の上 */
 		g.nVx = 0; g.nVy = 0;
 		for (i = 0; i < 120 * 20 && !(nEv & PB_EV_DRAIN); i ++) nEv |= g.Step ();
 		CHECK (nEv & PB_EV_DRAIN);
@@ -217,7 +224,7 @@ int main()
 		g.Start ();
 		g.Launch (0);
 		g.nPhase = PB_PHASE_PLAY;
-		g.nX = PbX (73); g.nY = PbY (215); g.nVx = 0; g.nVy = 300;
+		g.nX = PbX (73); g.nY = PbY (215 + PB_YOFS); g.nVx = 0; g.nVy = 300;
 		nEv = g.Step ();
 		for (i = 0; i < 20 && !(nEv & PB_EV_DRAIN); i ++) nEv |= g.Step ();
 		CHECK ((nEv & PB_EV_DRAIN) && (nEv & PB_EV_SAVE));
@@ -225,7 +232,7 @@ int main()
 		/* 同じ球をもう一度打って、また落ちる：今度は減る */
 		g.Launch (0);
 		g.nPhase = PB_PHASE_PLAY;
-		g.nX = PbX (73); g.nY = PbY (215); g.nVx = 0; g.nVy = 300;
+		g.nX = PbX (73); g.nY = PbY (215 + PB_YOFS); g.nVx = 0; g.nVy = 300;
 		nEv = 0;
 		for (i = 0; i < 20 && !(nEv & PB_EV_DRAIN); i ++) nEv |= g.Step ();
 		CHECK ((nEv & PB_EV_DRAIN) && !(nEv & PB_EV_SAVE));
@@ -234,7 +241,7 @@ int main()
 		g.Launch (0);
 		g.nPhase = PB_PHASE_PLAY;
 		g.nSaveSteps = 1;
-		g.nX = PbX (73); g.nY = PbY (150); g.nVx = 0; g.nVy = 0;
+		g.nX = PbX (73); g.nY = PbY (150 + PB_YOFS); g.nVx = 0; g.nVy = 0;
 		nEv = 0;
 		for (i = 0; i < 120 * 20 && !(nEv & PB_EV_DRAIN); i ++) nEv |= g.Step ();
 		CHECK ((nEv & PB_EV_DRAIN) && !(nEv & PB_EV_SAVE) && g.nBallsLeft == PB_BALLS - 2);
@@ -248,7 +255,7 @@ int main()
 		for (nBall = 0; nBall < PB_BALLS; nBall ++) {
 			g.nPhase = PB_PHASE_PLAY;
 			g.nSaveSteps = 0;
-			g.nX = PbX (73); g.nY = PbY (150); g.nVx = 0; g.nVy = 0;
+			g.nX = PbX (73); g.nY = PbY (150 + PB_YOFS); g.nVx = 0; g.nVy = 0;
 			nEv = 0;
 			for (i = 0; i < 120 * 20 && !(nEv & PB_EV_DRAIN); i ++) nEv |= g.Step ();
 			CHECK (nEv & PB_EV_DRAIN);
@@ -356,6 +363,53 @@ int main()
 				CHECK (g.nTargetMask == 0);
 			}
 		}
+	}
+
+	/* 縦に長い盤：最大の打ち出しで上のアーチまで届き、盤の中（上のバンパー域）を通って、下の穴まで戻ってくる */
+	{
+		const PinballTable &T = PinballGetTable ();
+		PinballGame g;
+		int nMinY = T.nStartY, nBack = 0, nDrain = 0, nHitUpper = 0;
+
+		CHECK (PB_H >= PB_VIEW_H);
+		CHECK (T.nStartY > PbY (PB_H - 40) && T.nArchCy == PbY (PB_ARCH_CY));		/* レーンの床は盤の下端・アーチは盤の最上部 */
+		g.Start ();
+		CHECK (g.Launch (PB_CHARGE_MS));
+		for (i = 0; i < 120 * 40 && !nDrain; i ++) {
+			int nEv = g.Step ();
+			if (g.nY < nMinY) nMinY = g.nY;
+			if (nMinY < PbY (PB_ARCH_CY) && g.nX < T.nLaneL) nBack = 1;		/* 上のアーチを回って、遊ぶ場所へ戻った */
+			if (nEv & PB_EV_BUMPER) nHitUpper |= 1;
+			if (nEv & PB_EV_DRAIN) nDrain = 1;
+		}
+		CHECK (nMinY < PbY (PB_ARCH_CY + 40));		/* 盤の最上部のアーチの所まで届く */
+		CHECK (nBack);
+		CHECK (nDrain);
+		/* 最小の打ち出しでは上まで行かず、レーンへ戻る */
+		g.Start ();
+		g.Launch (0);
+		nMinY = T.nStartY;
+		for (i = 0; i < 120 * 10; i ++) {
+			g.Step ();
+			if (g.nY < nMinY) nMinY = g.nY;
+		}
+		CHECK (nMinY > PbY (PB_H / 2));
+		CHECK (g.nPhase == PB_PHASE_READY);
+#if PB_UPPER
+		/* 上側・中ほどのバンパーに当てると +100（下側と同じ） */
+		for (int b = 3; b < PB_BUMPERS; b ++) {
+			PinballGame h;
+			int nEv = 0;
+			h.Start ();
+			h.nPhase = PB_PHASE_PLAY;
+			h.nSaveSteps = 1000;
+			h.nX = T.aBumper[b].x + 2 * PB_FP; h.nY = T.aBumper[b].y - 22 * PB_FP;
+			h.nVx = 0; h.nVy = 200;
+			for (i = 0; i < 40 && !(nEv & PB_EV_BUMPER); i ++) nEv |= h.Step ();
+			CHECK ((nEv & PB_EV_BUMPER) && h.dwScore == PB_SCORE_BUMPER && (h.nFlash & (1u << b)));
+		}
+#endif
+		(void)nHitUpper;
 	}
 
 	/* 台詞の読み方 */

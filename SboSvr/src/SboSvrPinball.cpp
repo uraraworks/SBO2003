@@ -43,7 +43,7 @@
 #define PINBALL_VIEW_ENTER		(PINBALL_VIEW_MARGIN + 3)
 #define PINBALL_VIEW_LEAVE		(PINBALL_VIEW_MARGIN + 6)
 #define PINBALL_TILES_W			(PB_W / PBP_TILE_DOT)		/* 盤の横のマス数（切り捨て） */
-#define PINBALL_TILES_H			(PB_H / PBP_TILE_DOT)
+#define PINBALL_TILES_H			(PB_VIEW_H / PBP_TILE_DOT)
 
 /* 台の設定（台NPCの台詞から読む） */
 typedef struct _PINBALLPARAM {
@@ -184,7 +184,7 @@ static void BuildState(PINBALLTABLE &Table, BYTE byKind, std::vector<BYTE> &aBuf
 	Head.byPhase	= (BYTE)g.nPhase;
 	Head.byBalls	= (BYTE)g.nBallsLeft;
 	Head.byTargets	= (BYTE)g.nTargetMask;
-	Head.byFlash	= (BYTE)(bFlash ? g.nFlash : 0);
+	Head.wFlash	= (WORD)(bFlash ? g.nFlash : 0);
 	Head.byCombo	= (BYTE)((g.nCombo > 255) ? 255 : g.nCombo);
 	Head.byAngL		= (BYTE)g.nAngL;
 	Head.byAngR		= (BYTE)g.nAngR;
@@ -204,7 +204,7 @@ static void BuildState(PINBALLTABLE &Table, BYTE byKind, std::vector<BYTE> &aBuf
 		Head.byPhase = PB_PHASE_OVER;
 		Head.byBalls = 0;
 		Head.byTargets = 0;
-		Head.byFlash = 0;
+		Head.wFlash = 0;
 		Head.byCombo = 0;
 		Head.byHeld = 0;
 		Head.byCharge = 0;
@@ -282,7 +282,7 @@ static BOOL WatchEligible(const PINBALLPARAM &Param, DWORD dwMapID, PCHARINFO pN
 	}
 	PinballFieldPos ((int)pNpc->dwX, (int)pNpc->dwY, Param.nDx, Param.nDy, &nFx, &nFy);
 	nCx = (nFx + PB_W / 2) / PBP_TILE_DOT;
-	nCy = (nFy + PB_H / 2) / PBP_TILE_DOT;
+	nCy = (nFy + PB_VIEW_H / 2) / PBP_TILE_DOT;
 	return (abs ((int)pChar->dwX - nCx) <= nMargin + PINBALL_TILES_W / 2) &&
 		(abs ((int)pChar->dwY - nCy) <= nMargin + PINBALL_TILES_H / 2);
 }

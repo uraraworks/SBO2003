@@ -843,26 +843,33 @@ static void DrawPinballOne(HDC hDC, const PINBALLDRAW &D, int sx, int sy, BOOL b
 {
 	const PinballTable &T = PinballGetTable ();
 	const CMDPARA_PINBALLSTATE &St = D.St;
-	const int nW = PB_W, nH = PB_H;
+	const int nW = PB_W, nH = PB_VIEW_H;		/* 見える窓の大きさ（盤全体は PB_H。窓が D.nCamY の高さに映す） */
+	const int ty0 = sy - D.nCamY;			/* 盤の上端の画面上の位置（盤の座標 y は ty0 + y に描く） */
 	char szTmp[64];
 	int i;
 
 	if (!bTop) {
 		const COLORREF clWall = RGB (150, 190, 255);
-		/* 背景と枠 */
+		const int nClipL = s_nPzL, nClipT = s_nPzT, nClipR = s_nPzR, nClipB = s_nPzB;
+		/* 背景と枠（窓の大きさ。待機中は盤の下端を映す） */
 		PuzFrame (hDC, sx - 1, sy - 1, nW + 2, nH + 2, RGB (200, 200, 200), 170);
+		/* 盤の絵は窓の中だけに切り取る（盤が窓より高い時、窓の外にはみ出さない） */
+		s_nPzL = max (s_nPzL, sx);
+		s_nPzR = min (s_nPzR, sx + nW);
+		s_nPzT = max (s_nPzT, sy);
+		s_nPzB = min (s_nPzB, sy + nH);
 		/* 壁・斜め壁・仕切り・床（ターゲット以外の線分） */
 		for (i = 0; i < T.nSeg; i ++) {
 			const PBSEG &S = T.aSeg[i];
 			if (S.nTarget >= 0) {
 				continue;
 			}
-			PbLine (hDC, sx + PbPx (S.x1), sy + PbPx (S.y1), sx + PbPx (S.x2), sy + PbPx (S.y2), 2, clWall);
+			PbLine (hDC, sx + PbPx (S.x1), ty0 + PbPx (S.y1), sx + PbPx (S.x2), ty0 + PbPx (S.y2), 2, clWall);
 		}
 		/* 上部のアーチ（半円。5 度刻みの点をつなぐ） */
 		{
 			int nDeg, nPrevX = 0, nPrevY = 0;
-			int cx = sx + PbPx (T.nArchCx), cy = sy + PbPx (T.nArchCy), r = PbPx (T.nArchR);
+			int cx = sx + PbPx (T.nArchCx), cy = ty0 + PbPx (T.nArchCy), r = PbPx (T.nArchR);
 			for (nDeg = 180; nDeg <= 360; nDeg += 5) {
 				int ax = cx + r * PbCos (nDeg) / PB_TRIG, ay = cy + r * PbSin (nDeg) / PB_TRIG;
 				if (nDeg > 180) {
@@ -881,12 +888,12 @@ static void DrawPinballOne(HDC hDC, const PINBALLDRAW &D, int sx, int sy, BOOL b
 			}
 			bDown = (D.nTargetMask & (1u << S.nTarget)) ? TRUE : FALSE;
 			bFlash = D.dwFlashAge[PB_BUMPERS + S.nTarget] < PINBALL_FLASH_MS;
-			PbLine (hDC, sx + PbPx (S.x1), sy + PbPx (S.y1), sx + PbPx (S.x2), sy + PbPx (S.y2), 4,
+			PbLine (hDC, sx + PbPx (S.x1), ty0 + PbPx (S.y1), sx + PbPx (S.x2), ty0 + PbPx (S.y2), 4,
 				bFlash ? RGB (255, 255, 255) : (bDown ? RGB (90, 80, 40) : RGB (255, 215, 60)));
 		}
 		/* バンパー（丸い反発。当たると光る） */
 		for (i = 0; i < PB_BUMPERS; i ++) {
-			int bx = sx + PbPx (T.aBumper[i].x), by = sy + PbPx (T.aBumper[i].y), r = PbPx (PB_BUMPER_R);
+			int bx = sx + PbPx (T.aBumper[i].x), by = ty0 + PbPx (T.aBumper[i].y), r = PbPx (PB_BUMPER_R);
 			BOOL bFlash = D.dwFlashAge[i] < PINBALL_FLASH_MS;
 			PbFillCircle (hDC, bx, by, r, bFlash ? RGB (255, 255, 255) : RGB (240, 110, 70));
 			PbFillCircle (hDC, bx, by, r - 3, bFlash ? RGB (255, 235, 150) : RGB (150, 40, 40));
@@ -896,24 +903,32 @@ static void DrawPinballOne(HDC hDC, const PINBALLDRAW &D, int sx, int sy, BOOL b
 		if (D.nCharge > 0) {
 			int nLen = 50 * D.nCharge / 100, yy;
 			for (yy = 0; yy < nLen; yy ++) {
-				PuzSpan (hDC, sx + PB_LANE_L + 3, sy + PB_LANE_FLOOR - 1 - yy, 11, (yy * 100 / 50 > 66) ? RGB (240, 80, 70) : RGB (110, 220, 110), 200);
+				PuzSpan (hDC, sx + PB_LANE_L + 3, ty0 + PB_LANE_FLOOR - 1 - yy, 11, (yy * 100 / 50 > 66) ? RGB (240, 80, 70) : RGB (110, 220, 110), 200);
 			}
 		}
 		/* フリッパー（回る線分。太く） */
 		for (i = 0; i < 2; i ++) {
 			int nAng = i ? D.nAngR : D.nAngL, tx, ty, px = PbPx (i ? T.nPivotRx : T.nPivotLx), py = PbPx (T.nPivotY);
 			PinballFlipperTip (T, i, nAng, &tx, &ty);
-			PbLine (hDC, sx + px, sy + py, sx + PbPx (tx), sy + PbPx (ty), 5, RGB (235, 235, 245));
-			PbFillCircle (hDC, sx + px, sy + py, 3, RGB (235, 235, 245));
-			PbFillCircle (hDC, sx + PbPx (tx), sy + PbPx (ty), 3, RGB (235, 235, 245));
-			PbFillCircle (hDC, sx + px, sy + py, 1, RGB (90, 90, 120));
+			PbLine (hDC, sx + px, ty0 + py, sx + PbPx (tx), ty0 + PbPx (ty), 5, RGB (235, 235, 245));
+			PbFillCircle (hDC, sx + px, ty0 + py, 3, RGB (235, 235, 245));
+			PbFillCircle (hDC, sx + PbPx (tx), ty0 + PbPx (ty), 3, RGB (235, 235, 245));
+			PbFillCircle (hDC, sx + px, ty0 + py, 1, RGB (90, 90, 120));
 		}
 		/* ボール */
 		if (D.bBallShow && !St.byIdle) {
-			int bx = sx + PbPx (D.nBallX), by = sy + PbPx (D.nBallY);
+			int bx = sx + PbPx (D.nBallX), by = ty0 + PbPx (D.nBallY);
 			PbFillCircle (hDC, bx, by, PbPx (PB_BALL_R), RGB (235, 235, 235));
 			PbFillCircle (hDC, bx - 1, by - 1, 1, RGB (255, 255, 255));
 		}
+		/* 窓の位置の目印（盤が窓より高い時。左端の細い縦線で、盤全体のどこを映しているか） */
+		if ((PB_YOFS > 0) && !St.byIdle) {
+			int nThumbH = max (8, nH * nH / PB_H), nThumbY = (int)((long long)(nH - nThumbH) * D.nCamY / PB_YOFS), yy;
+			for (yy = 0; yy < nH; yy ++) {
+				PuzSpan (hDC, sx + 1, sy + yy, 2, ((yy >= nThumbY) && (yy < nThumbY + nThumbH)) ? RGB (230, 230, 120) : RGB (90, 90, 90), 160);
+			}
+		}
+		s_nPzL = nClipL; s_nPzT = nClipT; s_nPzR = nClipR; s_nPzB = nClipB;
 		return;
 	}
 
@@ -998,7 +1013,7 @@ static void DrawPinball(int nX, int nY, BOOL bTop)
 		{
 			int nExtra = (D.St.byIdle ? 0 : 110) + 6;
 			if ((sx + PB_W + nExtra <= nX) || (sx - nExtra >= nX + SCRSIZEX) ||
-				(sy + PB_H + 6 <= nY) || (sy - 24 >= nY + SCRSIZEY)) {
+				(sy + PB_VIEW_H + 6 <= nY) || (sy - 24 >= nY + SCRSIZEY)) {
 				continue;
 			}
 		}

@@ -4453,7 +4453,7 @@ typedef struct _CMDPARA_PINBALLSTATE {
 	BYTE		byPhase;											/* PB_PHASE_*（common/Pinball.h） */
 	BYTE		byBalls;											/* 残り球（今の球を含む） */
 	BYTE		byTargets;											/* 倒れたターゲットの印（ビット i がターゲット i） */
-	BYTE		byFlash;											/* 前回の通知から当たった印（バンパー・ターゲット。光らせる） */
+	WORD		wFlash;											/* 前回の通知から当たった印（バンパー・ターゲット。光らせる） */
 	BYTE		byCombo;											/* 連続ヒット数 */
 	BYTE		byAngL;												/* 左フリッパーの段階（0〜PB_FLIP_STEPS） */
 	BYTE		byAngR;												/* 右フリッパーの段階 */

@@ -26,6 +26,7 @@
 #define PINBALL_HIST_MAX		(8)
 #define PINBALL_OVER_SELF_MS	(3000)		/* 本人のゲームオーバーの表示 */
 #define PINBALL_OVER_LOCK_MS	(1500)		/* ゲームオーバー直後、座っているのと同じ扱いにする時間（押していたキーで歩かない） */
+#define PINBALL_CAM_MS			(90)		/* 窓がボールに寄る速さ（残りの差が半分以下になるのに約この時間×0.7。小さいほど速い） */
 #define PINBALL_SNAP_PX			(24)		/* 作り直しでこれ以上ずれたら、寄せずに飛ばす */
 
 typedef struct _PBPRED {
@@ -59,6 +60,10 @@ typedef struct _PBVIEW {
 	/* 観戦の補間 */
 	PBSAMPLE				aHist[PINBALL_HIST_MAX];
 	int						nHist;
+	/* 窓の縦位置（盤が窓より高い時。クライアントだけで決める） */
+	BOOL					bCam;			/* nCamFp が使える */
+	int						nCamFp;			/* 窓の上端の盤上の位置（1/256 ドット） */
+	DWORD					dwCamTime;
 } PBVIEW;
 static PBVIEW s_aView[PINBALL_VIEW_MAX];
 
@@ -230,7 +235,7 @@ void RecvDataProcPINBALLSTATE(PBYTE pData, DWORD dwDataSize)
 		memcpy (&pView->St, pData, sizeof (CMDPARA_PINBALLSTATE));
 		/* 当たった印（光らせる） */
 		for (i = 0; i < PB_BUMPERS + PB_TARGETS; i ++) {
-			if (pPara->byFlash & (1 << i)) {
+			if (pPara->wFlash & (1 << i)) {
 				pView->dwFlashTime[i] = dwNow ? dwNow : 1;
 			}
 		}
@@ -416,11 +421,42 @@ static void Interpolate(PBVIEW *pView, DWORD dwNow, PPINBALLDRAW pOut)
 	g_bDraw = TRUE;	/* 補間のため、見えている間は描き続ける */
 }
 
+/* 窓の縦位置：ボールを窓の中央に置く位置へ、滑らかに寄る。bFollow が FALSE（待機中・打ち出し前・穴に落ちて返事待ち）なら下端
+   ボールの位置は、本人は先読み・観戦者は補間した位置（pOut->nBallY）なので、同じ式で決まる */
+static void CamUpdate(PBVIEW *pView, PPINBALLDRAW pOut, DWORD dwNow, BOOL bFollow)
+{
+	const int nBottom = PB_YOFS * PB_FP;
+	int nTarget = nBottom;
+
+	if (bFollow) {
+		nTarget = pOut->nBallY - PB_VIEW_H * PB_FP / 2;
+		if (nTarget < 0) nTarget = 0;
+		if (nTarget > nBottom) nTarget = nBottom;
+	}
+	if (!pView->bCam) {
+		pView->nCamFp = nTarget;
+		pView->bCam = TRUE;
+	} else {
+		int nDt = (int)(dwNow - pView->dwCamTime);
+		if (nDt < 0) nDt = 0;
+		if (nDt > 200) nDt = 200;
+		pView->nCamFp += (int)((long long)(nTarget - pView->nCamFp) * nDt / (nDt + PINBALL_CAM_MS));
+	}
+	pView->dwCamTime = dwNow;
+	if (abs (pView->nCamFp - nTarget) > PB_FP / 2) {
+		g_bDraw = TRUE;		/* 寄っている間は描き続ける */
+	}
+	pOut->nCamY = (pView->nCamFp + PB_FP / 2) / PB_FP;
+	if (pOut->nCamY < 0) pOut->nCamY = 0;
+	if (pOut->nCamY > PB_YOFS) pOut->nCamY = PB_YOFS;
+}
+
 BOOL GetPinballView(int nIdx, PPINBALLDRAW pOut)
 {
 	PBVIEW *pView;
 	DWORD dwNow = timeGetTime ();
 	int i;
+	BOOL bPlay = FALSE;
 
 	if ((nIdx < 0) || (nIdx >= PINBALL_VIEW_MAX) || (g_byGameState != GAMESTATE_MOVE)) {
 		return FALSE;
@@ -459,6 +495,10 @@ BOOL GetPinballView(int nIdx, PPINBALLDRAW pOut)
 	}
 	if (pView->St.byIdle || (pView->dwOverTime != 0)) {
 		pOut->bBallShow = FALSE;
+		if (pView->St.byIdle) {
+			pView->bCam = FALSE;		/* 待機中の台は下端を映す（次に遊ぶ時も下端から） */
+		}
+		CamUpdate (pView, pOut, dwNow, FALSE);
 		return TRUE;
 	}
 	if (Predictable (pView) && pView->bSim) {
@@ -466,6 +506,7 @@ BOOL GetPinballView(int nIdx, PPINBALLDRAW pOut)
 		pOut->nBallX = pView->Sim.nX + pView->nOffX;
 		pOut->nBallY = pView->Sim.nY + pView->nOffY;
 		pOut->bBallShow = (pView->Sim.nPhase == PB_PHASE_PLAY) || (pView->Sim.nPhase == PB_PHASE_READY);
+		bPlay = (pView->Sim.nPhase == PB_PHASE_PLAY);
 		pOut->nAngL = pView->Sim.nAngL;
 		pOut->nAngR = pView->Sim.nAngR;
 		pOut->nTargetMask = pView->Sim.nTargetMask;
@@ -474,6 +515,8 @@ BOOL GetPinballView(int nIdx, PPINBALLDRAW pOut)
 	} else {
 		Interpolate (pView, dwNow, pOut);
 		pOut->nCharge = (pView->St.byHeld & 4) ? pView->St.byCharge : 0;
+		bPlay = (pView->St.byPhase == PB_PHASE_PLAY);
 	}
+	CamUpdate (pView, pOut, dwNow, pOut->bBallShow && bPlay);
 	return TRUE;
 }

@@ -19,6 +19,7 @@ typedef struct _PINBALLDRAW {
 	int			nCharge;							/* 溜めている打ち出しの強さ（0〜100 ％。溜めていなければ 0） */
 	DWORD		dwFlashAge[PB_BUMPERS + PB_TARGETS];	/* 当たってからの経過(ms)（PINBALL_FLASH_MS を超えたら光らない） */
 	BOOL		bOver;								/* 「GAME OVER」を出す */
+	int			nCamY;								/* 窓（高さ PB_VIEW_H）の上端が、盤の上端から何ドット下か（0〜PB_YOFS。待機中・打ち出し前は下端 PB_YOFS）。クライアントだけで決める */
 } PINBALLDRAW, *PPINBALLDRAW;
 
 extern void RecvDataProcPINBALLSTATE(PBYTE pData, DWORD dwDataSize);	/* 受信データ処理(ピンボールの状態) */
