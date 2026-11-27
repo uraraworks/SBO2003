@@ -14037,6 +14037,9 @@ static void TestSpamLimit(const std::vector<int> &aLogin)
 		printf("speech url len=%d\n", (int)strlen(pA->pszSpeech));
 		SpamSpeech(pA, sEdit.c_str(), SPEECHCMD_SPEECHEDIT);
 		printf("speech edit len=%d\n", (int)strlen(pA->pszNpcSpeech));
+		/* 自己紹介の「@」：@0〜@2 以外は空白にする（NPC 用の印を使わせない） */
+		SpamSpeech(pA, "@5xx@6a@t001@2@c01@", SPEECHCMD_SPEECHEDIT);
+		printf("speech edit at=[%s]\n", pA->pszNpcSpeech);
 	}
 
 	/* 連投：5 秒に 8 回まで。1.2 秒おきの自動分割は通る */
