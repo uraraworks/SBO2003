@@ -15,7 +15,7 @@
 | `stTmp` | ステータステンプレート（NPC・敵の能力のひな形） |
 | `item` | アイテム情報（種別ごとの詳細は `detail`） |
 | `maker` | 作り手（料理人・鍛冶屋など）。名前と台詞 3 つ（`szMsgTalk`・`szMsgDone`・`szMsgLack`）と種類（`byKind` 0=レシピ・1=鑑定屋）。NPC の台詞を `@c` + 番号 2 桁にすると開く |
-| `trialRoom` | お試し個室（試し中の新機能をテンプレートのキャラで遊べる部屋）。名前・説明文（`szDesc`。入口で出す・改行可）・貸すステータステンプレート（`wLoanStTmp` = stTmp の番号）・入るマップと座標（`dwMapID`・`dwX`・`dwY`）・個室の範囲の四角（`dwX1`・`dwY1`・`dwX2`・`dwY2`。同じマップの中）・状態（`byState` 0=閉じている・1=開いている）。NPC の台詞を `@x` + 番号 2 桁（例 `@x01`）にすると、話すと説明と「入りますか？」が出て、はいで借りた姿で入る。範囲の外に出る（出口はマップのイベントで作る）・倒れて復活を選ぶ・切断すると元の姿・元の場所に戻る。消せない（`byState` 0 で閉じる）。保存先は `SBODATA/SboDataTrialRoom.dat` |
+| `trialRoom` | お試し個室（試し中の新機能をテンプレートのキャラで遊べる部屋）。名前・説明文（`szDesc`。入口で出す・改行可）・貸すステータステンプレート（`wLoanStTmp` = stTmp の番号）・入るマップと座標（`dwMapID`・`dwX`・`dwY`）・個室の範囲の四角（`dwX1`・`dwY1`・`dwX2`・`dwY2`。同じマップの中）・状態（`byState` 0=閉じている・1=開いている）。NPC の台詞を `@x` + 番号 2 桁（例 `@x01`）にすると、話すと説明と「入りますか？」が出て、はいで借りた姿で入る。範囲の外に出る（出口はマップのイベントで作る）・倒れて復活を選ぶ・切断すると元の姿・元の場所に戻る。傭兵と一緒は断る・パーティのままで入れる（各自が受付に話して入る）。消せない（`byState` 0 で閉じる）。保存先は `SBODATA/SboDataTrialRoom.dat` |
 | `affix` | 付与（接頭辞・接尾辞）の表（`docs/item-affix.md`）。名前・位置（`byPos`）・付く装備種別・割合/固定値/魔法防御・ランク・重み・売値の割合。`wID` は自動で振る |
 | `itemDerive` | 付与の付いた派生アイテムの表（読むだけ）。`itemId`（16384+行）・`wBase`・`wPre`・`wSuf`・`byUnknown` |
 | `recipe` | レシピ。作り手（`byMaker`）・できる物（`wItem`）と個数（`byCount`）・材料 4 種まで（`awMatItem`・`abyMatCount`）・手数料（`dwGold`）・並び順（`wSort`）・種類（`byKind`。0=普通 1=鍛える 2=付け替える。1・2 は付ける付与 `wAffix`・普通の装備も対象 `byAllowPlain`・対象の装備種別 `wEquMask`。`docs/recipe.md`） |

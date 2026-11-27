@@ -19437,11 +19437,30 @@ static void TestTrialRoom(const std::vector<int> &aLogin)
 	/* 話さずに「はい」だけ送っても入れない */
 	TrialAnswerSend(pA, pNpc, TRUE);
 	printf("trialroom answer without ask in=%d\n", (int)QuestInChallenge(pA));
-	/* パーティの仲間がいる間は入れない（聞かれない） */
+	/* パーティのままでも入れる（各自が個別に借りた姿で入り、出ると元に戻る） */
 	QuestSendParty(pA, pB, CMDPARTY_JOIN);
 	QuestSendParty(pB, pA, CMDPARTY_JOINOK);
+	DWORD dwPartyLv = pA->byLevel;
 	nAsk = TrialTalkYes(pA, pNpc);
-	printf("trialroom party asked=%d in=%d\n", nAsk, (int)QuestInChallenge(pA));
+	int nAsk2 = TrialTalkYes(pB, pNpc);
+	printf("trialroom party asked=%d,%d in=%d,%d trial=%d,%d party_kept=%d\n", nAsk, nAsk2, (int)QuestInChallenge(pA), (int)QuestInChallenge(pB),
+		(int)TrialRoomIs(pA), (int)TrialRoomIs(pB), (int)(pA->dwPartyID != 0 && pA->dwPartyID == pB->dwPartyID));
+	{
+		EVENTINFO Event;
+		EVENTINFO_MOVE Move;
+		ZeroMemory(&Event, sizeof(Event));
+		ZeroMemory(&Move, sizeof(Move));
+		Move.dwX = (DWORD)(pMap->nCX - 6);
+		Move.dwY = (DWORD)(pMap->nCY - 6);
+		Event.byType = EVENTTYPE_MOVE;
+		Event.pData = &Move;
+		EventProc(pA, &Event, 0);
+		EventProc(pB, &Event, 0);
+		TrialRoomProc();
+		printf("trialroom party out trial=%d,%d lv_back=%d,%d\n", (int)TrialRoomIs(pA), (int)TrialRoomIs(pB), (int)(pA->byLevel == dwPartyLv), (int)(pB->byLevel == dwPartyLv));
+		QuestMovePC(pA, nMap, nStartX, nStartY);
+		QuestMovePC(pB, nMap, nStartX, nStartY + 1);
+	}
 	QuestSendParty(pB, pA, CMDPARTY_BREAK);
 	pA->dwPartyID = 0; pB->dwPartyID = 0;
 

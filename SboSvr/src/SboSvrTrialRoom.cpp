@@ -12,7 +12,7 @@
  *
  * 出る条件（周期処理で見張る）：部屋の範囲の四角（同じマップ内）の外に出た。出口はマップのイベントで作る。
  * 倒れた時は「復活」を選んだ時にすぐ戻す（お金は減らさない）。切断・サーバー保存は SboSvrLoan に任せる。
- * 第 1 版は 1 人用（空間は分けず、ふつうの世界の部屋。パーティ・傭兵と一緒には入れない）。
+ * 空間は分けず、ふつうの世界の部屋（パーティのままでも、各自が受付に話して個別に入れて、仲間と同じ部屋で会える）。傭兵と一緒には入れない。
  */
 #include "include.h"
 #include "Glbldata.h"
@@ -129,29 +129,6 @@ static BOOL TrialRoomHasMercenary(PCHARINFO pChar)
 	return FALSE;
 }
 
-/* 自分のほかに、パーティの仲間が（遊んでいて）いるか */
-static BOOL TrialRoomHasPartner(PCHARINFO pChar)
-{
-	PPARTYINFO pParty;
-	int i;
-
-	if ((pChar->dwPartyID == 0) || (pChar->dwPartyID >= (DWORD)g_aPartyInfo.GetSize ())) {
-		return FALSE;
-	}
-	pParty = g_aPartyInfo[pChar->dwPartyID];
-	for (i = 0; i < MAX_PARTYMEMBER; i ++) {
-		DWORD dwTbl = pParty->adwTblID[i];
-		if (dwTbl == 0) {
-			break;
-		}
-		if ((dwTbl != pChar->dwTblID) && (dwTbl < (DWORD)g_aCharInfo.GetSize ()) && (g_aCharInfo[dwTbl]->pID != 0) &&
-			(g_aCharInfo[dwTbl]->dwPartyID == pChar->dwPartyID)) {
-			return TRUE;
-		}
-	}
-	return FALSE;
-}
-
 /* 入れるか確かめる。入れなければ断る文を返す（入れる時は NULL） */
 static const char *TrialRoomCanEnter(PCHARINFO pChar, int nRoom)
 {
@@ -180,9 +157,6 @@ static const char *TrialRoomCanEnter(PCHARINFO pChar, int nRoom)
 	}
 	if (pChar->abySubStatus[0] != 0) {
 		return "ミニゲームの途中では入れません。";
-	}
-	if (TrialRoomHasPartner (pChar)) {
-		return "パーティを組んでいる間は入れません（1 人用です）。パーティを抜けてから来てください。";
 	}
 	if (TrialRoomHasMercenary (pChar)) {
 		return "傭兵と一緒には入れません。別れてから来てください。";

@@ -343,6 +343,9 @@ void QuestOnKill(PCHARINFO pChar, PCHARINFO pEnemy)
 	if ((pChar->dwSpaceID != 0) || (pEnemy->dwSpaceID != 0)) {
 		return;													/* 異空間・番外編ダンジョン・討伐チャレンジの敵は数えない */
 	}
+	if (LoanIs (pChar)) {
+		return;													/* お試し個室など、姿を借りている間の撃破は数えない */
+	}
 	pQuest = FindQuest (pChar->wQuestID);
 	if (!QuestIsKillQuest (pQuest) || KillQuestReached (pChar, pQuest) || !KillQuestMatch (pQuest, pEnemy)) {
 		return;
