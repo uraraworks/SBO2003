@@ -91,6 +91,7 @@ void SendCmdCHGEQU			(DWORD, BYTE);							/* 装備変更 */
 void SendCmdSTTMPLATE		(DWORD, BYTE);							/* ステータステンプレート情報 */
 void SendCmdLEAVEITEM		(BYTE);									/* アイテム預ける */
 void SendCmdLEAVEITEMGET	(DWORD);								/* 預けてるアイテム取得 */
+void SendCmdLEAVEITEMTAKE	(DWORD, int);							/* 預けてるアイテムを個数指定で引き取る */
 void SendCmdSUBGAMEINFOGET	(DWORD);								/* サブゲーム情報取得 */
 void SendCmdSUBGAMEINFOADD	(void);									/* サブゲーム情報追加 */
 void SendCmdSUBGAMEINFO		(int);									/* サブゲーム情報通知 */
@@ -131,7 +132,7 @@ void SendCmdADMINCHEST		(BYTE, DWORD, WORD, WORD);				/* 管理者ウィンド�
 void SendCmdADMINVIEWALL	(BOOL);									/* 管理者ウィンドウの「印で隠れたNPCも表示」の切り替え */
 void SendCmdADMINRESURRECT	(DWORD);								/* 管理者ウィンドウからキャラをHP満タンで蘇生 */
 void SendCmdMAGICKEY		(BYTE, BYTE, WORD);						/* ショートカットの登録（特技・装備品・道具） */
-void SendCMDSHOPBUY			(DWORD, DWORD);							/* アイテム購入 */
+void SendCMDSHOPBUY			(DWORD, DWORD, int);							/* アイテム購入 */
 void SendCMDDIFENCE			(void);									/* 防御 */
 void SendCMDTHROWSNOW		(void);									/* 雪を投げる */
 void SendCmdEFECTCHG		(BYTE, BOOL);							/* エフェクト変更 */
@@ -2116,6 +2117,24 @@ void SendCmdLEAVEITEMGET(DWORD dwID)
 }
 
 /* ========================================================================= */
+/* 関数名：SendCmdLEAVEITEMTAKE												 */
+/* 内容：コマンド送信(預けてるアイテムを個数指定で引き取る)					 */
+/* ========================================================================= */
+void SendCmdLEAVEITEMTAKE(DWORD dwNo, int nCount)
+{
+	CMDPARA_LEAVEITEMTAKE SendData;
+
+	ZeroMemory (&SendData, sizeof (SendData));
+	SendData.byCmd = CMD_LEAVEITEMGET;
+	SendData.pID = g_pMyID;
+	SendData.dwTblID = g_aCharInfo[g_nMyCharID]->dwTblID;
+	SendData.dwData = dwNo;
+	SendData.dwCount = (DWORD)max (nCount, 1);
+
+	cliSock.Send ((PBYTE)&SendData, sizeof (SendData));
+}
+
+/* ========================================================================= */
 /* 関数名：SendCmdSUBGAMEINFOGET											 */
 /* 内容：コマンド送信(サブゲーム情報取得)									 */
 /* 日付：2003/11/08															 */
@@ -2932,20 +2951,19 @@ void SendCMDEQUUSERINFOREQ(BYTE byID)
 /* 内容：コマンド送信(アイテム購入)											 */
 /* 日付：2004/07/28															 */
 /* ========================================================================= */
-void SendCMDSHOPBUY(DWORD dwID, DWORD dwNo)
+void SendCMDSHOPBUY(DWORD dwID, DWORD dwNo, int nCount)
 {
-	PCMDPARA_DATA5 pSendData;
+	CMDPARA_SHOPBUY SendData;
 
-	pSendData = (PCMDPARA_DATA5)new CMDPARA_DATA5;
-	ZeroMemory (pSendData, sizeof (CMDPARA_DATA5));
-	pSendData->byCmd = CMD_SHOPBUY;
-	pSendData->pID = g_pMyID;
-	pSendData->dwTblID = g_aCharInfo[g_nMyCharID]->dwTblID;
-	pSendData->dwData1 = dwID;
-	pSendData->dwData2 = dwNo;
+	ZeroMemory (&SendData, sizeof (SendData));
+	SendData.byCmd = CMD_SHOPBUY;
+	SendData.pID = g_pMyID;
+	SendData.dwTblID = g_aCharInfo[g_nMyCharID]->dwTblID;
+	SendData.dwData1 = dwID;
+	SendData.dwData2 = dwNo;
+	SendData.dwCount = (DWORD)max (nCount, 1);
 
-	cliSock.Send ((PBYTE)pSendData, sizeof (CMDPARA_DATA5));
-	delete pSendData;
+	cliSock.Send ((PBYTE)&SendData, sizeof (SendData));
 }
 
 /* ========================================================================= */

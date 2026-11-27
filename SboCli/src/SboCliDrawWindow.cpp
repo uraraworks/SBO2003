@@ -2831,6 +2831,17 @@ void DrawWindowLEAVE_DISPOSECOUNT(PWNDINFO pWnd)
 		}
 		wsprintf (szTmp, "%7uG", dwSell * pWnd->nData1);
 		TextOut2 (hDC, 16, 32, szTmp, RGB (255, 255, 0));
+	} else if (pWnd->byData1 == LEAVEDISPOSE_BUY) {
+		/* 買う合計金額 */
+		DWORD dwPrice = 0;
+		if ((g_nProcShopID >= 0) && (g_nProcShopSelect >= 0) && (g_nProcShopSelect < MAX_SHOPITEM)) {
+			WORD wItem = g_pMapInfo->pShopInfo[g_nProcShopID].awItem[g_nProcShopSelect];
+			if (ItemIDValid (wItem)) {
+				dwPrice = g_aItemInfo[wItem]->dwGold;
+			}
+		}
+		wsprintf (szTmp, "%7uG", dwPrice * pWnd->nData1);
+		TextOut2 (hDC, 16, 32, szTmp, RGB (255, 255, 0));
 	}
 
 	SelectObject (hDC, hFontOld);
