@@ -83,7 +83,7 @@ void SubGameProc(DWORD dwID)
 	PSUBGAMEINFO pInfo = g_aSubaGameInfo[dwID];
 
 	/* 種類別に処理 */
-	if (SubGameProcTbl[pInfo->byType]) {
+	if ((pInfo->byType < sizeof (SubGameProcTbl) / sizeof (SubGameProcTbl[0])) && SubGameProcTbl[pInfo->byType]) {
 		SubGameProcTbl[pInfo->byType] (pInfo);
 	}
 }
