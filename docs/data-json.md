@@ -36,6 +36,8 @@ node tools/data/sbo-data.mjs import --target staging --note "料理のレシピ�
 | map（マス目は除く）・mapParts・efc・comEfc・subGame | できる（subGame は `detail` の項目だけ） |
 | leave | 書き出さない（プレイヤーの預かり所） |
 
+subGame の迷路対戦の台（`byType` 6）の `detail` には、参加チケットの `wTicketItemID`（アイテム番号）と `byTicketNum`（必要枚数。0＝無料でSキー、0〜99）も入ります。列が無い古いデータは 0 になります（`docs/maze-attack.md`）。
+
 マップのマス目はこのツールでは扱いません（大きいので）。AI に頼むか、API の `/api/data/tiles/set` を使います。
 
 ## 取り込みのきまり

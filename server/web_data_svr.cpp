@@ -2226,6 +2226,8 @@ static const DATAFIELD s_aFieldSgMazeTable[] = {
 	FLD (SUBGAME_MAZETABLEINFO, byCpuLevel,"CPU強さ",			FT_U8, 0, "0=CPUなし（ひとり練習だけ）・1=よわい・2=ふつう・3=つよい。1以上だと、ひとりで座った人に「CPUと対戦しますか？」と聞く"),
 	FLD (SUBGAME_MAZETABLEINFO, wCpuGrpID,"CPUのキャラ画像",	FT_U16, 0, "NPC・キャラの見た目の画像ID（NPC の wGrpID と同じ意味）。0=色付きの丸"),
 	FLDS(SUBGAME_MAZETABLEINFO, szCpuName,"CPUの名前表示",		FT_STR, 0, "空なら「CPU」。対戦中の名前表示と勝敗のお知らせに使う"),
+	FLD (SUBGAME_MAZETABLEINFO, wTicketItemID,"チケットのアイテム番号",	FT_U16, 0, "item の番号。必要枚数（byTicketNum）が 1 以上の台は、席のマスでコマンド→道具→このチケットを使うと座る（Sキーでは座れない）。座る時（CPU・乱入の確認で「はい」の後）に取り上げる"),
+	FLD (SUBGAME_MAZETABLEINFO, byTicketNum,"チケットの必要枚数",	FT_U8, 0, "0=無料（Sキーで座る・既定）。1〜99=有料。チケットを配る方法は docs/maze-attack.md（配布係NPC）"),
 };
 
 static const char *s_apszSubGameName[] = { "なし", "爆弾ゲーム", "迷路", "ダンジョン", "戦場ゲーム", "すごろく", "迷路対戦の台" };
@@ -4484,6 +4486,10 @@ static bool CheckMazeTableDetail(const SUBGAME_MAZETABLEINFO *p, std::string &st
 	}
 	if (p->byCpuLevel > MAZE_CPU_LEVEL_MAX) {
 		strErr = "byCpuLevel は 0〜3 で指定してください";
+		return false;
+	}
+	if (p->byTicketNum > MAZE_TICKET_MAX) {
+		strErr = "byTicketNum は 0〜" + JsonNum(MAZE_TICKET_MAX) + " で指定してください";
 		return false;
 	}
 	return true;

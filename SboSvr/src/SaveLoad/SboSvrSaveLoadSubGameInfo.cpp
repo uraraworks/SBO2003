@@ -188,6 +188,8 @@ static const char *s_aszNameMAZETABLE[] = {
 	"byCpuLevel",		/* CPU強さ */
 	"wCpuGrpID",		/* CPUのキャラ画像 */
 	"szCpuName",		/* CPUの名前表示 */
+	"wTicketItemID",		/* チケットのアイテム番号 */
+	"byTicketNum",		/* チケットの必要枚数 */
 	"z"
 };
 
@@ -211,6 +213,8 @@ static const MAZETABLECOL s_aMazeTableCol[] = {
 	{ 0, offsetof (SUBGAME_MAZETABLEINFO, byCpuLevel),	1 },
 	{ 1, offsetof (SUBGAME_MAZETABLEINFO, wCpuGrpID),	2 },
 	{ 2, offsetof (SUBGAME_MAZETABLEINFO, szCpuName),	sizeof (((SUBGAME_MAZETABLEINFO *)0)->szCpuName) },
+	{ 1, offsetof (SUBGAME_MAZETABLEINFO, wTicketItemID),	2 },
+	{ 0, offsetof (SUBGAME_MAZETABLEINFO, byTicketNum),	1 },
 };
 
 /* ========================================================================= */

@@ -8381,7 +8381,7 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 		}
 		return;
 	}
-	/* 迷路対戦の台（台詞が「@k」で始まる。依頼の見えるNPCは上で処理済み）？ 座る場所のマスに立っていれば座る（無料の台。Sキー） */
+	/* 迷路対戦の台（台詞が「@k」で始まる。依頼の見えるNPCは上で処理済み）？ 座る場所のマスに立っていれば座る（無料の台だけ始まる。チケットの台は道具のチケットを使う案内だけ。チケット使用は ItemProc → MazeUseItem） */
 	if (MazeIsTableNpc (pChar)) {
 		if (s_nCharNoRecv >= 0) {
 			MazeSit (g_aCharInfo[s_nCharNoRecv], pChar);

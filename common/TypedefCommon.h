@@ -1791,6 +1791,8 @@ typedef struct _SUBGAME_MAZETABLEINFO {
 	BYTE		byCpuLevel;											/* CPU強さ（0=CPUなし・1=よわい・2=ふつう・3=つよい） */
 	WORD		wCpuGrpID;											/* CPUのキャラ画像（NPCの見た目 wGrpID と同じ意味。0=色付きの丸） */
 	char		szCpuName[MAX_CHARNAMEBUF];							/* CPUの名前表示（空なら「CPU」） */
+	WORD		wTicketItemID;										/* 参加チケットのアイテム番号（byTicketNum が 0 なら使わない） */
+	BYTE		byTicketNum;										/* 座る時に使うチケットの枚数（0=無料。席のマスでコマンド→道具→チケットを使うと座る。Sキーでは座れない） */
 } SUBGAME_MAZETABLEINFO, *PSUBGAME_MAZETABLEINFO;
 
 /* サブゲーム：迷路対戦の台の情報(保存データ。実行用と同じ中身) */

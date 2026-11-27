@@ -19841,6 +19841,102 @@ static void TestMaze(const std::vector<int> &aLogin)
 			g_aSubaGameInfo[nAdd]->byType, MazeIsTableNpc(pGone));
 	}
 
+	/* 20. チケットの台（byTicketNum>0）：席のマスでコマンド→道具→チケットを使うと座る。Sキーは案内だけ。チケットは座る時（確認の「はい」の後）に取り上げる */
+	{
+		const WORD wTk = 1;
+		auto ClearTk = [&](PCHARINFO p) { for (int i = 0; i < MAX_MYITEM; i ++) if (p->waItem[i] == wTk) DelCharItem(p->dwTblID, (BYTE)i); };
+		auto GiveTk = [&](PCHARINFO p, int n) { for (int i = 0; i < n; i ++) AddCharItem(p->dwTblID, wTk); };
+		auto UseAt = [&](PCHARINFO p, PCHARINFO pT, int nSeat, int nDx) {			/* 席のマス（nDx ずらせる）に立って、チケットを使う */
+			int nSdx, nSdy;
+			MazeSeatOffset(pT, nSeat, &nSdx, &nSdy);
+			PuzzlePlace(p, pT, (DWORD)((int)pT->dwX + nSdx + nDx), (DWORD)((int)pT->dwY + nSdy));
+			PuzzleUseCoin(p, wTk);
+		};
+		ClearTk(pA); ClearTk(pB);
+		QuestMovePC(pA, (int)dwMap, (int)dwX + 18, (int)dwY);
+		SUBGAME_MAZETABLEINFO Info;
+		MazeTableInfoDefault(&Info);
+		Info.wTicketItemID = wTk; Info.byTicketNum = 2; Info.byCpuLevel = 1;
+		MazeNpcOpen(pA, MazeInfoAdd(Info));
+		PCHARINFO pT = s_aNearNpc.back();
+		DWORD dwT = pT->dwTblID;
+		int nConnAT = nConnA;
+		/* 20a. チケット無し：Sキーは案内だけ（座れない） */
+		int nMsg = MockCmdCount(nConnAT, CMD_SYSMSG);
+		MazeTalk(pA, pT);
+		printf("maze ticket none seated=%d guide=%d sysmsg+%d\n", MazeIsSeated(pA), MockHasText(nConnAT, CMD_SYSMSG, "チケットを使って始めます。コマンドの道具からチケットを使ってください。"),
+			MockCmdCount(nConnAT, CMD_SYSMSG) - nMsg);
+		/* 20b. 1 枚（2 枚必要）：席で使っても座れず、「チケットがありません。」・減らない */
+		GiveTk(pA, 1);
+		UseAt(pA, pT, 0, 0);
+		printf("maze ticket short seated=%d tk=%d msg=%d\n", MazeIsSeated(pA), PuzzleCoinCount(pA, wTk), MockHasText(nConnAT, CMD_SYSMSG, "チケットがありません。"));
+		/* 20c. 2 枚持ってSキー：座れず、減らず、案内だけ */
+		GiveTk(pA, 1);
+		nMsg = MockCmdCount(nConnAT, CMD_SYSMSG);
+		MazeTalk(pA, pT);
+		printf("maze ticket skey seated=%d tk=%d sysmsg+%d\n", MazeIsSeated(pA), PuzzleCoinCount(pA, wTk), MockCmdCount(nConnAT, CMD_SYSMSG) - nMsg);
+		/* 20d. 席以外（席の 1 つ隣）で使う：座れず、減らず、案内も出ない（効果なしの説明のまま） */
+		nMsg = MockCmdCount(nConnAT, CMD_SYSMSG);
+		UseAt(pA, pT, 0, 1);
+		printf("maze ticket elsewhere seated=%d tk=%d sysmsg+%d\n", MazeIsSeated(pA), PuzzleCoinCount(pA, wTk), MockCmdCount(nConnAT, CMD_SYSMSG) - nMsg);
+		/* 20e. 席で使う → CPU確認が出る。「いいえ」は座らず、減らない（チケットの台は、いいえでひとり練習にはならない） */
+		int nTalk = MockCmdCount(nConnAT, CMD_TALKMSG);
+		UseAt(pA, pT, 0, 0);
+		printf("maze ticket ask asked=%d cpu=%d seated=%d tk=%d\n", MockCmdCount(nConnAT, CMD_TALKMSG) > nTalk, MockHasText(nConnAT, CMD_TALKMSG, "CPUと対戦しますか"), MazeIsSeated(pA), PuzzleCoinCount(pA, wTk));
+		PuzzleAnswerSend(pA, pT, FALSE);
+		printf("maze ticket cpu no seated=%d tk=%d seats=%d\n", MazeIsSeated(pA), PuzzleCoinCount(pA, wTk), MazeSeatCount());
+		/* 20f. 確認が 30 秒を過ぎたら無効：座らず、減らない */
+		UseAt(pA, pT, 0, 0);
+		MazeAdvance(31000);
+		PuzzleAnswerSend(pA, pT, TRUE);
+		printf("maze ticket expire seated=%d tk=%d\n", MazeIsSeated(pA), PuzzleCoinCount(pA, wTk));
+		/* 20g. 席で使う → 「はい」で座る：2 枚取り上げ、持ち物を本人へ送り直し、CPU対戦が始まる */
+		int nItem0 = MockCmdCount(nConnAT, CMD_CHARITEM);
+		UseAt(pA, pT, 0, 0);
+		printf("maze ticket before-yes tk=%d\n", PuzzleCoinCount(pA, wTk));
+		PuzzleAnswerSend(pA, pT, TRUE);
+		printf("maze ticket yes seated=%d tk=%d used=%d charitem+%d %s\n", MazeIsSeated(pA), PuzzleCoinCount(pA, wTk), MockHasText(nConnAT, CMD_SYSMSG, "チケットを2枚使いました。"),
+			MockCmdCount(nConnAT, CMD_CHARITEM) - nItem0, MazeCpuBrief(nConnAT, dwT).c_str());
+		MazeKeySend(pA, MAZEACT_LEAVE);
+		ClearTk(pA);
+
+		/* 20h. 乱入：CPUなしの台。A がチケットで座ってひとり練習、B が席 2 でチケットを使うと乱入の確認。「いいえ」は座らず減らない、「はい」で対戦・2 枚減る */
+		QuestMovePC(pA, (int)dwMap, (int)dwX + 22, (int)dwY);
+		MazeTableInfoDefault(&Info);
+		Info.wTicketItemID = wTk; Info.byTicketNum = 2;
+		MazeNpcOpen(pA, MazeInfoAdd(Info));
+		PCHARINFO pT2 = s_aNearNpc.back();
+		GiveTk(pA, 2);
+		UseAt(pA, pT2, 0, 0);
+		printf("maze ticket solo seated=%d tk=%d\n", MazeIsSeated(pA), PuzzleCoinCount(pA, wTk));
+		GiveTk(pB, 2);
+		nTalk = MockCmdCount(nConnB, CMD_TALKMSG);
+		UseAt(pB, pT2, 1, 0);
+		printf("maze ticket join asked=%d join=%d seatedB=%d tkB=%d\n", MockCmdCount(nConnB, CMD_TALKMSG) > nTalk, MockHasText(nConnB, CMD_TALKMSG, "乱入"), MazeIsSeated(pB), PuzzleCoinCount(pB, wTk));
+		PuzzleAnswerSend(pB, pT2, FALSE);
+		printf("maze ticket join no seatedB=%d tkB=%d\n", MazeIsSeated(pB), PuzzleCoinCount(pB, wTk));
+		UseAt(pB, pT2, 1, 0);
+		PuzzleAnswerSend(pB, pT2, TRUE);
+		printf("maze ticket join yes seatedB=%d tkB=%d %s\n", MazeIsSeated(pB), PuzzleCoinCount(pB, wTk), MazeVsBrief(nConnA, pT2->dwTblID, pA, pB).c_str());
+		MazeKeySend(pB, MAZEACT_LEAVE);
+		MazeKeySend(pA, MAZEACT_LEAVE);
+		ClearTk(pA); ClearTk(pB);
+
+		/* 20i. データAPI：チケットの項目が読み書きでき、範囲外（100 枚）は断る */
+		{
+			int nApi = MazeInfoAdd(Info);
+			std::string strOK = FlagGroupApi("subGame", nApi, "{\"detail\":{\"wTicketItemID\":3,\"byTicketNum\":5}}");
+			PSUBGAME_MAZETABLEINFO pI = (PSUBGAME_MAZETABLEINFO)g_aSubaGameInfo[nApi]->pInfo;
+			printf("maze ticket api ok=%d item=%d num=%d\n", (int)(strOK.find("\"ok\":true") != std::string::npos), pI->wTicketItemID, pI->byTicketNum);
+			std::string strNG = FlagGroupApi("subGame", nApi, "{\"detail\":{\"byTicketNum\":100}}");
+			printf("maze ticket api over ok=%d num=%d\n", (int)(strNG.find("\"ok\":true") != std::string::npos), pI->byTicketNum);
+			SUBGAME_MAZETABLEINFO Fix = *pI;
+			Fix.byTicketNum = 200;
+			MazeTableInfoFix(&Fix);
+			printf("maze ticket fix num=%d\n", Fix.byTicketNum);
+		}
+	}
+
 	/* 片付け */
 	MockTrace(0);
 	MazeOnLeave(pA);

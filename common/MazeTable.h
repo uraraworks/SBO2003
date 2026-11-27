@@ -22,6 +22,8 @@
  *                  「CPUと対戦しますか？」と聞き、はいなら空いている側の席をCPUが受け持つ
  *   wCpuGrpID    … CPUのコマに使うキャラ画像（NPC の見た目 wGrpID と同じ意味。0＝色付きの丸）
  *   szCpuName    … CPUの名前表示（空なら「CPU」）
+ *   wTicketItemID, byTicketNum … 参加チケット。byTicketNum が 1 以上の台は有料で、席のマスに立ってコマンド→道具→そのチケットを使うと座る
+ *                  （Sキーでは座れず案内だけ。落ち物パズルのコインと同じ流れ）。チケットは座る時（CPU・乱入の確認で「はい」を受けてから）に取り上げる。0 なら無料でSキー
  *   クライアントは台の設定を持たない。盤の位置・席の位置・CPUの見た目は、サーバーが送る CMD_MAZESTATE から読む。
  */
 
@@ -44,6 +46,7 @@
 #define MAZE_SEAT2_DEFAULT_DX	(0)			/* 席 2 の座る場所の既定（台NPCのマスから。盤の真上の 1 つ上） */
 #define MAZE_SEAT2_DEFAULT_DY	(-10)
 #define MAZE_SPEECH_NO_MAX		(100000)	/* 台詞の番号の上限（これを超えたら台ではない） */
+#define MAZE_TICKET_MAX			(99)		/* チケット必要枚数の上限 */
 #define MAZE_PARAM_LIMIT		(60)		/* 位置の値（dx, dy, sdx, sdy, sdx2, sdy2）の範囲（±） */
 
 /* 盤の一辺は 10 タイル分ちょうど */
@@ -84,6 +87,9 @@ static inline void MazeTableInfoFix(SUBGAME_MAZETABLEINFO *p)
 	}
 	if (p->byCpuLevel > MAZE_CPU_LEVEL_MAX) {
 		p->byCpuLevel = MAZE_CPU_LEVEL_MAX;
+	}
+	if (p->byTicketNum > MAZE_TICKET_MAX) {
+		p->byTicketNum = MAZE_TICKET_MAX;
 	}
 	p->szName[sizeof (p->szName) - 1] = '\0';
 	p->szCpuName[sizeof (p->szCpuName) - 1] = '\0';

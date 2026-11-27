@@ -9980,7 +9980,7 @@ BOOL CmdProcSKey(void)
 {
 	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
 
-	/* 迷路対戦の台の座る場所に立っている時は、座る（無料。台NPCは目の前でなくてよい。座ると CMD_MAZESTATE が届く） */
+	/* 迷路対戦の台の座る場所に立っている時は、座る（無料の台。チケットの台は案内が出るだけで、チケットを使うのはサーバーが決める。台NPCは目の前でなくてよい。座ると CMD_MAZESTATE が届く） */
 	if (g_aCharInfo.GetSize () > 0) {
 		DWORD dwMazeNpc;
 		if (MazeSeatNpcHere (pChar, &dwMazeNpc)) {

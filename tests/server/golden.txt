@@ -2742,5 +2742,21 @@ maze api reject dx100=1 cpu4=1 unknown=1 type5=1 kept=-3,2
 maze api reload count=1 same=1 dx=-3 seat1=2,1 seat2=0,-8 parts=11,12,13 cpu=2 grp=123 cpuname=[ロボ] name=[テスト台]
 maze api erase ok=1 type=0 info=0 table before=1 after=0
 maze api reuse ok=1 size=1 type=6 table=1
+maze ticket none seated=0 guide=1 sysmsg+1
+maze ticket short seated=0 tk=1 msg=1
+maze ticket skey seated=0 tk=2 sysmsg+1
+maze ticket elsewhere seated=0 tk=2 sysmsg+1
+maze ticket ask asked=1 cpu=1 seated=0 tk=2
+maze ticket cpu no seated=0 tk=2 seats=0
+maze ticket expire seated=0 tk=2
+maze ticket before-yes tk=2
+maze ticket yes seated=1 tk=0 used=1 charitem+1 cpu=1 lv=1 vs=1 count=1(3) left=0 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze ticket solo seated=1 tk=0
+maze ticket join asked=1 join=1 seatedB=0 tkB=2
+maze ticket join no seatedB=0 tkB=2
+maze ticket join yes seatedB=1 tkB=0 vs=1 count=1(3) left=0 to=0,0 turn=A0 name=11 win=0 seat=AB
+maze ticket api ok=1 item=3 num=5
+maze ticket api over ok=0 num=5
+maze ticket fix num=99
 maze done seats=0 idleTables=0
 == done ==

@@ -14,7 +14,9 @@
  *   wFloorA, wFloorB, wGap … 床の市松・隙間のマップパーツID（0 ならクライアントがコード描画）
  *   byCpuLevel   … 0＝CPUなし、1=よわい・2=ふつう・3=つよい
  *   wCpuGrpID, szCpuName … CPUのコマのキャラ画像（0＝丸）・名前表示（空なら「CPU」）
- * 台は席が 2 つで盤は 1 枚を共有する。コインは無く、座る場所のマスに立って S キーで座る（無料の台）。
+ * 台は席が 2 つで盤は 1 枚を共有する。座る場所のマスに立って S キーで座る（無料の台）。
+ *   チケットの台（byTicketNum>0。wTicketItemID）は S キーでは座れず（案内だけ）、座る場所のマスでコマンド→道具→そのチケットを使うと座る（落ち物パズルのコインと同じ流れ。ItemProc → MazeUseItem）。
+ *   チケットは座る時（CPU・乱入・交代の確認の「はい」を受けてから）に必要枚数を取り上げる（いいえ・30 秒切れ・足りない時は減らさない）。
  *   片方だけが座っている間はひとり練習：座るとゲームを初期化し、相手（不在）の手番は 1 手指すたびに自動で飛ばす
  *   （MazeGame::Pass は「相手が動けない時」しか成立しないので、手番は直接座っている人に戻す）。
  *   ひとり練習中のところへもう一方が座ろうとすると「乱入しますか？」を聞く（会話の「はい・いいえ」@y。答えは CMD_TALKANSWER → MazeAnswer。
@@ -672,10 +674,11 @@ typedef struct _MAZEASK {
 	DWORD	dwNpc;				/* 座ろうとした台NPCのテーブルID */
 	DWORD	dwTime;				/* 問いを出した時刻 */
 	int		nKind;				/* MAZEASK_* */
+	BOOL	bTicketUsed;		/* 道具のチケットから座ろうとしたか */
 } MAZEASK;
 static std::map<DWORD, MAZEASK> s_mapAsk;
 
-static void SitMain(PCHARINFO pChar, PCHARINFO pNpc, int nChoice, int nKind);
+static void SitMain(PCHARINFO pChar, PCHARINFO pNpc, int nChoice, int nKind, BOOL bTicketUsed);
 
 BOOL MazeAnswer(PCHARINFO pChar, DWORD dwNpcTblID, BOOL bYes)
 {
@@ -696,19 +699,65 @@ BOOL MazeAnswer(PCHARINFO pChar, DWORD dwNpcTblID, BOOL bYes)
 	}
 	/* 座る条件は SitMain が改めて確かめる（その間に席が埋まった・立つ場所を離れた・台の状況が変わった時は座らない）。
 	   はい＝乱入／CPU対戦／交代、いいえ＝座らない（CPUの問いだけは、ひとり練習で座る） */
-	SitMain (pChar, g_aCharInfo[dwNpcTblID], bYes ? 1 : 2, Ask.nKind);
+	SitMain (pChar, g_aCharInfo[dwNpcTblID], bYes ? 1 : 2, Ask.nKind, Ask.bTicketUsed);
 	return TRUE;
 }
 
-void MazeSit(PCHARINFO pChar, PCHARINFO pNpc, int nChoice)
+void MazeSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bTicketUsed, int nChoice)
 {
-	SitMain (pChar, pNpc, nChoice, 0);
+	SitMain (pChar, pNpc, nChoice, 0, bTicketUsed);
+}
+
+/* 手持ちにあるチケットの数（装備品でない普通のアイテム） */
+static int CountTicket(PCHARINFO pChar, WORD wItem)
+{
+	int i, nRet = 0;
+
+	for (i = 0; i < MAX_MYITEM; i ++) {
+		if (pChar->waItem[i] == wItem) {
+			nRet ++;
+		}
+	}
+	return nRet;
+}
+
+/* 道具（チケット）を使った時の処理。今立っているのが、そのチケットを使う有料の台の座る場所のマスなら座る（チケットは SitMain が座る時に取り上げる）。
+   座れなかった旨を伝えた時も TRUE。当てはまらなければ FALSE（効果なしの道具として今まで通りの説明文が出る） */
+BOOL MazeUseItem(PCHARINFO pChar, WORD wItem)
+{
+	PMAPINFO pMap;
+	int i;
+
+	if ((wItem == 0) || (pChar->byNpcType != NPCTYPE_INIT) || (pChar->dwMapID >= (DWORD)g_aMapInfo.GetSize ())) {
+		return FALSE;
+	}
+	pMap = g_aMapInfo[pChar->dwMapID];
+	if (pMap == NULL || pMap->paTblNoNPC == NULL) {
+		return FALSE;
+	}
+	for (i = 0; i < (int)pMap->dwCountTblNoNPC; i ++) {
+		PCHARINFO pNpc;
+		const SUBGAME_MAZETABLEINFO *pInfo;
+
+		if (pMap->paTblNoNPC[i] == (DWORD)-1) {
+			break;
+		}
+		pNpc = g_aCharInfo[pMap->paTblNoNPC[i]];
+		pInfo = InfoOf (pNpc);
+		if ((pInfo == NULL) || (pInfo->wTicketItemID != wItem) || (pInfo->byTicketNum == 0) || !MazeOnSeatCell (pChar, pNpc)) {
+			continue;
+		}
+		SitMain (pChar, pNpc, 0, 0, TRUE);
+		return TRUE;
+	}
+	return FALSE;
 }
 
 /* nKind は答えの時だけ（その問いを出した時の状況。今の状況と違えば座らない）。0 なら確かめない */
-static void SitMain(PCHARINFO pChar, PCHARINFO pNpc, int nChoice, int nKind)
+static void SitMain(PCHARINFO pChar, PCHARINFO pNpc, int nChoice, int nKind, BOOL bTicketUsed)
 {
-	int nTable, nSeat, nSit, nLevel;
+	int nTable, nSeat, nSit, nLevel, nTicket;
+	const SUBGAME_MAZETABLEINFO *pInfo;
 	PCHARINFO pOther = NULL;
 
 	if (!MazeIsTableNpc (pNpc) || (pChar->byNpcType != NPCTYPE_INIT) || MazeIsSeated (pChar) || PuzzleIsSeated (pChar)) {
@@ -729,8 +778,21 @@ static void SitMain(PCHARINFO pChar, PCHARINFO pNpc, int nChoice, int nKind)
 		SendCmdSYSMSG (pChar->pID, "この台は今、使われています。");
 		return;
 	}
+	/* チケットの台（必要枚数 1 以上）は S キーでは始まらない。道具のチケットを使って座る（無料の台は S キーで座る）。足りなければ座らせない（問いの前に確かめる） */
+	pInfo = InfoOf (pNpc);
+	nTicket = ((pInfo->wTicketItemID != 0) && (pInfo->byTicketNum > 0)) ? (int)pInfo->byTicketNum : 0;
+	if (nTicket > 0) {
+		if (!bTicketUsed) {
+			SendCmdSYSMSG (pChar->pID, "チケットを使って始めます。コマンドの道具からチケットを使ってください。");
+			return;
+		}
+		if (CountTicket (pChar, pInfo->wTicketItemID) < nTicket) {
+			SendCmdSYSMSG (pChar->pID, "チケットがありません。");
+			return;
+		}
+	}
 	/* 今の状況で聞くこと：CPUの席なら交代、もう一方の席でひとりが遊んでいれば乱入、ひとりで座るなら（CPUのある台は）CPU対戦 */
-	nLevel = InfoOf (pNpc)->byCpuLevel;
+	nLevel = pInfo->byCpuLevel;
 	if (nTable >= 0) {
 		pOther = SeatChar (s_aTable[nTable], 1 - nSeat);
 	}
@@ -748,11 +810,14 @@ static void SitMain(PCHARINFO pChar, PCHARINFO pNpc, int nChoice, int nKind)
 		Ask.dwNpc = pNpc->dwTblID;
 		Ask.dwTime = g_dwTime;
 		Ask.nKind = nSit;
+		Ask.bTicketUsed = bTicketUsed;
 		s_mapAsk[pChar->dwTblID] = Ask;
 		if (nSit == MAZEASK_JOIN) {
 			sprintf (szAsk, "%sさんが遊んでいます。乱入して対戦しますか？（「いいえ」で座りません）@y", pOther->szName);
 		} else if (nSit == MAZEASK_SWAP) {
 			sprintf (szAsk, "CPUと対戦中です。交代して対戦しますか？（「いいえ」で座りません）@y");
+		} else if (nTicket > 0) {
+			sprintf (szAsk, "CPUと対戦しますか？（「いいえ」で座りません）@y");		/* チケットの台：いいえは座らない（チケットは減らない） */
 		} else {
 			sprintf (szAsk, "CPUと対戦しますか？（「いいえ」でひとりで練習します）@y");
 		}
@@ -763,8 +828,24 @@ static void SitMain(PCHARINFO pChar, PCHARINFO pNpc, int nChoice, int nKind)
 	if ((nChoice != 0) && (nKind != 0) && (nKind != nSit)) {
 		return;			/* 問いを出した時と状況が変わった */
 	}
-	if ((nChoice == 2) && (nSit != MAZEASK_CPU)) {
-		return;			/* いいえ：座らない */
+	if ((nChoice == 2) && ((nSit != MAZEASK_CPU) || (nTicket > 0))) {
+		return;			/* いいえ：座らない（チケットの台は CPU の問いでも座らず、チケットは減らない） */
+	}
+	/* チケットを取り上げる（ここまで来たら座る）。持ち物の変化は本人の画面にも反映する */
+	if (nTicket > 0) {
+		int i;
+		char szMsg[96];
+
+		if (CountTicket (pChar, pInfo->wTicketItemID) < nTicket) {
+			SendCmdSYSMSG (pChar->pID, "チケットがありません。");
+			return;
+		}
+		for (i = 0; i < nTicket; i ++) {
+			QuestTakeItemOne (pChar, pInfo->wTicketItemID);
+		}
+		SendCmdCHARITEM (pChar->pID, pChar->dwTblID);
+		sprintf (szMsg, "チケットを%d枚使いました。", nTicket);
+		SendCmdSYSMSG (pChar->pID, szMsg);
 	}
 	if (nTable < 0) {
 		MAZETABLE Table;

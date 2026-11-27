@@ -36,6 +36,7 @@ static void SetNumber(HWND hWnd, int nID, int nValue);							/* 欄に数を入�
 static int GetNumber(int nID, int nMin, int nMax);								/* 欄の数を範囲内で取得 */
 static void PaintParts(HWND hWnd, int nPreviewID, int nEditID);					/* マップパーツのプレビュー */
 static void PaintCharGrp(HWND hWnd, int nPreviewID, int nEditID);				/* キャラ画像のプレビュー(1コマ) */
+static void FillItemCombo(HWND hWnd, int nID, int nValue);						/* チケットのアイテム一覧（0=なし）を作る */
 
 /* ========================================================================= */
 /* 関数名：ShowDlgEtcSubGameEditMazeTable									 */
@@ -102,6 +103,10 @@ void GetDataDlgEtcSubGameEditMazeTable(void)
 	/* CPUのキャラ画像・名前 */
 	pInfo->wCpuGrpID = (WORD)GetNumber (IDC_MT_CPUGRP, 0, 65535);
 	GetWindowText (GetDlgItem (s_hWndDlg, IDC_MT_CPUNAME), pInfo->szCpuName, sizeof (pInfo->szCpuName));
+	/* 参加チケット（アイテムと必要枚数。枚数 0 は無料でSキー） */
+	nSel = (int)SendMessage (GetDlgItem (s_hWndDlg, IDC_MT_TICKET), CB_GETCURSEL, 0, 0);
+	pInfo->wTicketItemID = (WORD)((nSel < 0) ? 0 : (nSel > 65535) ? 65535 : nSel);
+	pInfo->byTicketNum = (BYTE)GetNumber (IDC_MT_TICKETNUM, 0, MAZE_TICKET_MAX);
 }
 
 /* ========================================================================= */
@@ -187,6 +192,8 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 	SetNumber (hWnd, IDC_MT_CPUGRP, pInfo->wCpuGrpID);
 	SetWindowText (GetDlgItem (hWnd, IDC_MT_CPUNAME), pInfo->szCpuName);
 	SendMessage (GetDlgItem (hWnd, IDC_MT_CPUNAME), EM_LIMITTEXT, sizeof (pInfo->szCpuName) - 1, 0);
+	FillItemCombo (hWnd, IDC_MT_TICKET, pInfo->wTicketItemID);
+	SetNumber (hWnd, IDC_MT_TICKETNUM, pInfo->byTicketNum);
 
 	return FALSE;
 }
@@ -239,6 +246,28 @@ static void OnPaint(HWND hWnd)
 	PaintParts (hWnd, IDC_MT_PVGAP, IDC_MT_GAP);
 	PaintCharGrp (hWnd, IDC_MT_PVCPU, IDC_MT_CPUGRP);
 	EndPaint (hWnd, &ps);
+}
+
+/* ========================================================================= */
+/* 関数名：FillItemCombo													 */
+/* 内容：チケットのアイテム一覧（一覧の何番目＝アイテム番号。0=なし）を作る	 */
+/*		 手元に無い番号が入っていた時は「(不明)」で足して値を残す			 */
+/* 日付：2026/11/27															 */
+/* ========================================================================= */
+static void FillItemCombo(HWND hWnd, int nID, int nValue)
+{
+	HWND hWndCombo = GetDlgItem (hWnd, nID);
+	char szTmp[160];
+	int i, nCount = g_aItemInfo.GetSize ();
+
+	SendMessage (hWndCombo, CB_RESETCONTENT, 0, 0);
+	SendMessage (hWndCombo, CB_ADDSTRING, 0, (LPARAM)"0: なし");
+	for (i = 1; (i < nCount) || (i <= nValue); i ++) {
+		PITEMINFO pItem = (i < nCount) ? g_aItemInfo[i] : NULL;
+		snprintf (szTmp, sizeof (szTmp), "%d: %s", i, pItem ? pItem->szName : "(不明)");
+		SendMessage (hWndCombo, CB_ADDSTRING, 0, (LPARAM)szTmp);
+	}
+	SendMessage (hWndCombo, CB_SETCURSEL, nValue, 0);
 }
 
 /* ========================================================================= */
