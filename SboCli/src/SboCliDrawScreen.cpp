@@ -836,10 +836,7 @@ static void LandUiFrame(int x, int y, int cx, int cy, BOOL bMine)
 
 	for (j = c; j < cy - c; j += m) {
 		h = min (m, cy - c - j);
-		for (i = c; i < cx - c; i += m) {
-			w = min (m, cx - c - i);
-			LandUiBlt (x + i, y + j, w, h, sx0 + c, c);
-		}
+		/* 中央は描かない（半透明の塗りを文字の描画側で敷き、背景のマップを少し透かす） */
 		LandUiBlt (x, y + j, c, h, sx0, c);
 		LandUiBlt (x + cx - c, y + j, c, h, sx0 + 24 - c, c);
 	}
@@ -922,6 +919,14 @@ static void DrawLand(int nX, int nY, BOOL bTop)
 	hDC = g_pDibDrawMap->Lock ();
 	hFontOld = (HFONT)SelectObject (hDC, bTop ? g_hFont14 : g_hFont12);
 	SetBkMode (hDC, TRANSPARENT);
+
+	if (bArt && bTop) {
+		/* 帯HUD の中の塗り（枠の内側）。背景のマップが少し透ける（濃さ 0〜255） */
+		const int nAlpha = 170, c = 6;
+		for (i = c; i < nHeight - c; i ++) {
+			W32ShadeSpan (hDC, x0 + c, y0 + i, nWidth - c * 2, 0, RGB (34, 35, 55), nAlpha);
+		}
+	}
 
 	if (!bTop) {
 		/* 盤の各コマ（マップ 3×3 マス＝96×96 ドット）。自分のマスが (DRAW_PARTS_X+1)*32 の描画用の画面に合わせる（落ち物パズルと同じ）。
