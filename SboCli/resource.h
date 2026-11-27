@@ -25,6 +25,7 @@
 #define IDD_ETC_SUBGAME_EDIT_WAR        215
 #define IDD_ETC_SUBGAME_EDIT_SUGOROKU   216
 #define IDD_ETC_SUBGAME                 217
+#define IDD_ETC_SUBGAME_EDIT_PINBALL    246
 #define IDD_SUGOROKU_PARTS              223
 #define IDD_SUGOROKU_PARTS_EDIT         224
 #define IDD_SUGOROKU_EVENT              225
@@ -603,14 +604,29 @@
 #define IDC_TR_Y1                          1541
 #define IDC_TR_X2                          1542
 #define IDC_TR_Y2                          1543
+#define IDC_PB_COINITEM                    1544
+#define IDC_PB_COINCOUNT                   1545
+#define IDC_PB_BALLS                       1546
+#define IDC_PB_SAVESEC                     1547
+#define IDC_PB_SCOREBUMPER                 1548
+#define IDC_PB_SCORETARGET                 1549
+#define IDC_PB_SCOREBONUS                  1550
+#define IDC_PB_COMBOMS                     1551
+#define IDC_PB_DX                          1552
+#define IDC_PB_DY                          1553
+#define IDC_PB_SEATDX                      1554
+#define IDC_PB_SEATDY                      1555
+#define IDC_PB_BANDSIDE                    1556
+#define IDC_PB_PAIR                        1557
+#define IDC_PB_VSSEC                       1558
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        246
+#define _APS_NEXT_RESOURCE_VALUE        247
 #define _APS_NEXT_COMMAND_VALUE         40038
-#define _APS_NEXT_CONTROL_VALUE         1544
+#define _APS_NEXT_CONTROL_VALUE         1559
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

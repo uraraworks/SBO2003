@@ -314,6 +314,7 @@ def main():
 	str_rows = []
 	missing_midi = []
 	missing_se = []
+	missing_art = []
 	preload = []
 	for module, rc, header, _types in MODULES:
 		defs = load_defines(os.path.join(root, header))
@@ -355,6 +356,10 @@ def main():
 					# SE/ の効果音も再配布できない素材なので公開リポジトリには無い。無ければその音が鳴らないだけ
 					if rel.lower().startswith('se/'):
 						missing_se.append(rel)
+						continue
+					# ピンボールの差し替え絵（docs/pinball-art.md）は後から置くもの。無ければ図形で描くだけ
+					if rel.lower().startswith('grp/pinball_'):
+						missing_art.append(rel)
 						continue
 					print('[gen-resources] 警告: ファイルがありません: %s' % os.path.join(rc_dir, rel), file=sys.stderr)
 					continue
@@ -401,6 +406,8 @@ def main():
 		len(res_rows), len(str_rows), len(dialogs), len(menus), len(preload)))
 	if missing_midi:
 		print('[gen-resources] MIDI が %d 曲ありません（SboSoundData/MIDI）。その曲の BGM は鳴りません' % len(missing_midi))
+	if missing_art:
+		print('[gen-resources] ピンボールの絵（%s）が無いので、盤は図形で描きます' % ', '.join(missing_art))
 	if missing_se:
 		print('[gen-resources] 効果音（再配布できない分）が %d 個ありません（SboSoundData/SE）。その音は鳴りません' % len(missing_se))
 	return 0
