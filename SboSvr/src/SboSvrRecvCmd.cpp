@@ -9763,20 +9763,33 @@ void RecvDataProcLEAVEITEMGET(PBYTE pData, DWORD dwDataSize)
 			(pPara->dwData >= MAX_LEAVEITEM) || (pInfo->byItemCount[pPara->dwData] == 0)) {
 		return;
 	}
-	/* もう持てない？（大事な物は大事な物の欄の空きを見る） */
-	if (!CanAddCharItem (pChar->dwTblID, pInfo->waItem[pPara->dwData])) {
+
+	/* 引き取る個数（個数が付かない古い形は1個。付いていても 1〜預かり数 に収める） */
+	DWORD dwNo = pPara->dwData;
+	int nWant = 1;
+	if (s_dwRecvSize >= sizeof (CMDPARA_LEAVEITEMTAKE)) {
+		DWORD dwCount = ((PCMDPARA_LEAVEITEMTAKE)pData)->dwCount;
+		nWant = (dwCount == 0) ? 1 : (int)min (dwCount, (DWORD)pInfo->byItemCount[dwNo]);
+	}
+	nWant = min (nWant, (int)pInfo->byItemCount[dwNo]);
+
+	/* 入る分だけ追加する（大事な物は大事な物の欄の空きを見る）。入らなかった分は預かり所に残す */
+	int nGot = 0;
+	WORD wItem = pInfo->waItem[dwNo];
+	while ((nGot < nWant) && CanAddCharItem (pChar->dwTblID, wItem)) {
+		AddCharItem (pChar->dwTblID, wItem);
+		nGot ++;
+	}
+	/* 1個も持てない？ */
+	if (nGot == 0) {
 		return;
 	}
-
-	AddCharItem (pChar->dwTblID, pInfo->waItem[pPara->dwData]);
 	SendCmdCHARITEM (s_pIDRecv, pPara->dwTblID);
 
-	if (pInfo->byItemCount[pPara->dwData] >= 1) {
-		pInfo->byItemCount[pPara->dwData] --;
-	}
-	if (pInfo->byItemCount[pPara->dwData] == 0) {
+	pInfo->byItemCount[dwNo] -= (BYTE)nGot;
+	if (pInfo->byItemCount[dwNo] == 0) {
 		int i;
-		for (i = pPara->dwData; i < MAX_LEAVEITEM - 1; i ++) {
+		for (i = dwNo; i < MAX_LEAVEITEM - 1; i ++) {
 			pInfo->waItem[i] = pInfo->waItem[i + 1];
 			pInfo->byItemCount[i] = pInfo->byItemCount[i + 1];
 		}
@@ -10931,19 +10944,36 @@ void RecvDataProcSHOPBUY(PBYTE pData, DWORD dwDataSize)
 	}
 	pItem = g_aItemInfo[dwItemID];
 
-	/* お金が足りない？ */
-	if (pChar->dwGold < pItem->dwGold) {
+	/* 買う個数（個数が付かない古い形は1個。1〜99 以外は受け付けない） */
+	DWORD dwCount = 1;
+	if (s_dwRecvSize >= sizeof (CMDPARA_SHOPBUY)) {
+		dwCount = ((PCMDPARA_SHOPBUY)pData)->dwCount;
+		if ((dwCount < 1) || (dwCount > 99)) {
+			return;
+		}
+	}
+
+	/* お金が足りない？（合計金額で見る） */
+	if (pChar->dwGold < pItem->dwGold * dwCount) {
 		return;
 	}
-	/* もう持てない？（大事な物は大事な物の欄の空きを見る） */
-	if (!CanAddCharItem (pChar->dwTblID, dwItemID)) {
+	/* もう持てない？（大事な物は大事な物の欄の空きを見る。全部入る時だけ買える） */
+	DWORD dwSpace;
+	if ((dwItemID < 0x10000) && IsImportantItem ((WORD)dwItemID)) {
+		dwSpace = (DWORD)max (MAX_IMPORTANT - GetImportantCount (pChar->dwTblID), 0);
+	} else {
+		dwSpace = (DWORD)max (MAX_MYITEM - GetItemCount (pChar->dwTblID), 0);
+	}
+	if (dwSpace < dwCount) {
 		return;
 	}
 
-	pChar->dwGold -= pItem->dwGold;
+	pChar->dwGold -= pItem->dwGold * dwCount;
 	SendCmdCHARSTATUSGOLDEXP (s_pIDRecv, pPara->dwTblID);
 
-	AddCharItem (pChar->dwTblID, dwItemID);
+	for (DWORD i = 0; i < dwCount; i ++) {
+		AddCharItem (pChar->dwTblID, dwItemID);
+	}
 	SendCmdCHARITEM (pChar->pID, pChar->dwTblID);
 }
 

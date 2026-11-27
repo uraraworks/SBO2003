@@ -85,6 +85,7 @@ extern void SendCmdCHGEQU			(DWORD, BYTE);							/* 装備変更 */
 extern void SendCmdSTTMPLATE		(DWORD, BYTE);							/* ステータステンプレート情報 */
 extern void SendCmdLEAVEITEM		(BYTE);									/* アイテム預ける */
 extern void SendCmdLEAVEITEMGET		(DWORD);								/* 預けてるアイテム取得 */
+extern void SendCmdLEAVEITEMTAKE	(DWORD, int);							/* 預けてるアイテムを個数指定で引き取る */
 extern void SendCmdSUBGAMEINFOGET	(DWORD);								/* サブゲーム情報取得 */
 extern void SendCmdSUBGAMEINFOADD	(void);									/* サブゲーム情報追加 */
 extern void SendCmdSUBGAMEINFO		(int);									/* サブゲーム情報通知 */
@@ -128,7 +129,7 @@ extern void SendCmdADMINRESURRECT	(DWORD dwTblID);						/* 管理者ウィンド
 extern void SendCmdMAGICKEY			(BYTE byNo, BYTE byMagicID, WORD wItemID);	/* ショートカットの登録（特技・装備品・道具） */
 void SendCmdNPCROUTE		(BYTE, DWORD, DWORD, BYTE, BYTE, BYTE, const BYTE *, const BYTE *);	/* NPCの巡回ルート */
 extern void SendCmdNPCROUTE		(BYTE, DWORD, DWORD, BYTE, BYTE, BYTE, const BYTE *, const BYTE *);	/* NPCの巡回ルート */
-extern void SendCMDSHOPBUY			(DWORD, DWORD);							/* アイテム購入 */
+extern void SendCMDSHOPBUY			(DWORD, DWORD, int);							/* アイテム購入 */
 extern void SendCMDDIFENCE			(void);									/* 防御 */
 extern void SendCMDTHROWSNOW		(void);									/* 雪を投げる */
 extern void SendCmdEFECTCHG			(BYTE, BOOL);							/* エフェクト変更 */
