@@ -75,6 +75,89 @@ static void LandBuildState(PSUBGAME_SUGOROKUINFO pSugoroku, PLANDSVR pL, int nMe
 static void LandBroadcast(PSUBGAME_SUGOROKUINFO pSugoroku);									/* 遊んでいる人・観戦者全員へ盤の状態を送る */
 static void LandWalkTile(PLANDSVR pL, int nIdx, int nX, int nY);							/* 駒を隣のマップのマスへ 1 歩歩かせる */
 static void LandJump(PLANDSVR pL, int nIdx, int nCell, int nSlot);							/* 駒を指定のコマへフェードで移す */
+
+#ifdef SBO_LAND_TEST
+/* ========================================================================= */
+/* テスト用の仕掛け（-DSBO_LAND_TEST でビルドした時だけ有効。本番のビルドには入らない）	 */
+/*		 データフォルダの LandTest.txt を読む（無ければ普通の乱数・設定）。行の書き方:		 */
+/*		   D 出目1 出目2   … サイコロを振るたびに先頭の 1 行を使って消す（足りなければ乱数）	 */
+/*		   LAPS n          … 終了する周回数をゲーム開始時に n にする						 */
+/*		   GOLD 番号 G     … ゲーム開始時に、その番号の人の所持金を G にする				 */
+/* ========================================================================= */
+static void LandTestRead(std::vector<std::string> &aLine)
+{
+	FILE *fp = fopen ("LandTest.txt", "rb");
+	char szBuf[256];
+
+	if (fp == NULL) {
+		return;
+	}
+	while (fgets (szBuf, sizeof (szBuf), fp)) {
+		std::string str = szBuf;
+
+		while (!str.empty () && ((str[str.size () - 1] == '\n') || (str[str.size () - 1] == '\r'))) {
+			str.erase (str.size () - 1);
+		}
+		if (!str.empty ()) {
+			aLine.push_back (str);
+		}
+	}
+	fclose (fp);
+}
+
+static void LandTestDice(int *pn1, int *pn2)
+{
+	std::vector<std::string> aLine;
+	size_t i;
+
+	*pn1 = (int)(genrand () % 6 + 1);
+	*pn2 = (int)(genrand () % 6 + 1);
+	LandTestRead (aLine);
+	for (i = 0; i < aLine.size (); i ++) {
+		int a, b;
+
+		if (sscanf (aLine[i].c_str (), "D %d %d", &a, &b) == 2) {
+			FILE *fp;
+			size_t j;
+
+			*pn1 = a;
+			*pn2 = b;
+			fp = fopen ("LandTest.txt", "wb");
+			if (fp) {
+				for (j = 0; j < aLine.size (); j ++) {
+					if (j != i) {
+						fprintf (fp, "%s\n", aLine[j].c_str ());
+					}
+				}
+				fclose (fp);
+			}
+			return;
+		}
+	}
+}
+
+static void LandTestSetup(LandGame *pG)
+{
+	std::vector<std::string> aLine;
+	size_t i;
+
+	LandTestRead (aLine);
+	for (i = 0; i < aLine.size (); i ++) {
+		int a, b;
+
+		if (sscanf (aLine[i].c_str (), "LAPS %d", &a) == 1) {
+			pG->nMaxLaps = a;
+		} else if (sscanf (aLine[i].c_str (), "GOLD %d %d", &a, &b) == 2) {
+			if ((a >= 0) && (a < LAND_MAX_PLAYERS)) {
+				pG->aPlayer[a].nGold = b;
+			}
+		}
+	}
+}
+#define LAND_DICE(n1, n2)	LandTestDice (&(n1), &(n2))
+#else
+#define LAND_DICE(n1, n2)	do { (n1) = (int)(genrand () % 6 + 1); (n2) = (int)(genrand () % 6 + 1); } while (0)
+#endif
 static void LandMakeViewer(PSUBGAME_SUGOROKUINFO pSugoroku, DWORD dwTblID);					/* 脱落した人を観戦者にする */
 static void LandDrain(PSUBGAME_SUGOROKUINFO pSugoroku, DWORD dwTime);						/* 起きたことをメッセージ・通信にする */
 static void LandLoadBoard(LandBoard *pBoard);												/* 土地表を用意（差し替えファイルがあれば読む） */
@@ -473,6 +556,9 @@ void SubLand_Start(PSUBGAME_SUGOROKUINFO pSugoroku)
 	}
 	LandLoadBoard (&pL->Game.Board);
 	pL->Game.Start (nCount, dwTime);
+#ifdef SBO_LAND_TEST
+	LandTestSetup (&pL->Game);
+#endif
 	/* 全員がスタートのコマに立つ。全員同じコマなので四隅に分かれる（参加者の番号順） */
 	for (i = 0; i < nCount; i ++) {
 		LandJump (pL, i, 0, i);
@@ -536,7 +622,7 @@ LandGame *SubLand_GetGame(PSUBGAME_SUGOROKUINFO pSugoroku)
 void SubLand_Dice(PSUBGAME_SUGOROKUINFO pSugoroku, DWORD dwTblID)
 {
 	PLANDSVR pL = (PLANDSVR)pSugoroku->pLand;
-	int nIdx;
+	int nIdx, nD1, nD2;
 	DWORD dwTime = timeGetTime ();
 
 	if ((pL == NULL) || !pL->bPlaying) {
@@ -546,7 +632,8 @@ void SubLand_Dice(PSUBGAME_SUGOROKUINFO pSugoroku, DWORD dwTblID)
 	if (nIdx < 0) {
 		return;
 	}
-	if (pL->Game.Roll (nIdx, (int)(genrand () % 6 + 1), (int)(genrand () % 6 + 1), false)) {
+	LAND_DICE (nD1, nD2);
+	if (pL->Game.Roll (nIdx, nD1, nD2, false)) {
 		pL->dwLastStep = dwTime;
 		LandDrain (pSugoroku, dwTime);
 	}
@@ -661,7 +748,10 @@ void SubLand_Proc(PSUBGAME_SUGOROKUINFO pSugoroku, DWORD dwTime)
 	case LANDPHASE_ROLL:
 		/* 制限時間切れ：自動でサイコロを振る */
 		if (pG->TimeoutAction (dwTime) == LANDTIMEOUT_ROLL) {
-			if (pG->Roll (nTurn, (int)(genrand () % 6 + 1), (int)(genrand () % 6 + 1), true)) {
+			int nD1, nD2;
+
+			LAND_DICE (nD1, nD2);
+			if (pG->Roll (nTurn, nD1, nD2, true)) {
 				pL->dwLastStep = dwTime;
 				LandDrain (pSugoroku, dwTime);
 			}
@@ -854,6 +944,10 @@ static void LandDrain(PSUBGAME_SUGOROKUINFO pSugoroku, DWORD dwTime)
 		}
 		if (szMsg[0]) {
 			SubSugoroku_Msg (pSugoroku, szMsg);
+#ifdef SBO_LAND_TEST
+			printf ("[landtest] %s\n", szMsg);		/* テスト用：進行をサーバーのログに出す */
+			fflush (stdout);
+#endif
 		}
 	}
 

@@ -904,7 +904,31 @@ static void DrawLand(int nX, int nY, BOOL bTop)
 					}
 				}
 			} else {
-				PuzText (hDC, sx + nCell / 2, sy + 9, pszName, RGB (255, 220, 120), 12, TRUE);
+				/* 四隅のコマ：駒（四隅と中央に立つ。絵は立つマスの上に 10 ドットほどはみ出し、名前札も下に出る）が名前に重ならないよう、
+				   名前は 3 段のうち駒の立つマスが一番少ない段に出す（誰もいない段があればそこ。同数なら 中段→下段→上段）。
+				   段ごとの字の高さは、上段 y=3・中段 y=38（上の段の駒の名前札の下）・下段 y=70（中央の駒の名前札の下） */
+				int aRow[3] = {0, 0, 0}, nBest = 1, nTx, nTy, k;
+				static const int s_anRowY[3] = {3, 38, 70};
+
+				LandCellOffset (i, &nDx, &nDy);
+				for (k = 0; k < g_aCharInfo.GetSize (); k ++) {
+					PCHARINFO pOther = g_aCharInfo[k];
+					int tx = (int)pOther->dwX - ((int)St.wOriginX + nDx * LAND_CELL_TILES);
+					int ty = (int)pOther->dwY - ((int)St.wOriginY + nDy * LAND_CELL_TILES);
+
+					if ((pOther->dwMapID == pChar->dwMapID) && (tx >= 0) && (tx < LAND_CELL_TILES) && (ty >= 0) && (ty < LAND_CELL_TILES)) {
+						aRow[ty] ++;
+					}
+				}
+				if (aRow[2] < aRow[nBest]) {
+					nBest = 2;
+				}
+				if (aRow[0] < aRow[nBest]) {
+					nBest = 0;
+				}
+				nTx = sx + nCell / 2;
+				nTy = sy + s_anRowY[nBest];
+				PuzText (hDC, nTx, nTy, pszName, RGB (255, 220, 120), 12, TRUE);
 			}
 		}
 	} else {
