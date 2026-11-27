@@ -25,6 +25,7 @@
 #define IDD_ETC_SUBGAME_EDIT_WAR        215
 #define IDD_ETC_SUBGAME_EDIT_SUGOROKU   216
 #define IDD_ETC_SUBGAME                 217
+#define IDD_ETC_SUBGAME_EDIT_PINBALL    246
 #define IDD_SUGOROKU_PARTS              223
 #define IDD_SUGOROKU_PARTS_EDIT         224
 #define IDD_SUGOROKU_EVENT              225
@@ -45,6 +46,8 @@
 #define IDD_STORYINFO                   239
 #define IDD_STORYINFO_EDIT              240
 #define IDD_FLAGGROUP                   241
+#define IDD_TRIALROOM                   244
+#define IDD_TRIALROOM_EDIT              245
 #define IDD_CHARCHEST                   242
 #define IDD_ADMINSWAP                   243
 #define IDD_ETC_SUBGAME_EDIT_MAZETABLE  260
@@ -391,6 +394,13 @@
 #define IDC_CHAR_HIDEFLAGN                1354
 #define IDC_Q_NOTFLAG                     1349
 #define IDC_Q_NOTFLAGN                    1350
+#define IDC_Q_GRP_KILL                    1525
+#define IDC_Q_KILLTMP0                    1526
+#define IDC_Q_KILLTMP1                    1527
+#define IDC_Q_KILLTMP2                    1528
+#define IDC_Q_KILLTMP3                    1529
+#define IDC_Q_KILLNEED                    1530
+#define IDC_Q_KILLHOURS                   1531
 #define IDC_S_ID                          1355
 #define IDC_S_NAME                        1356
 #define IDC_S_STATE                       1357
@@ -476,6 +486,7 @@
 #define IDM_ETC_STORY                   40034
 #define IDM_ETC_FLAGGROUP               40035
 #define IDM_MAP_SWAP                    40036
+#define IDM_ETC_TRIALROOM               40037
 #define IDC_AS_LIST                       1413
 #define IDC_AS_COUNT                      1414
 #define IDC_AS_KIND                       1415
@@ -582,6 +593,33 @@
 #define IDC_DGVIEW_Y1                      1522
 #define IDC_DGVIEW_X2                      1523
 #define IDC_DGVIEW_Y2                      1524
+#define IDC_TR_ID                          1532
+#define IDC_TR_NAME                        1533
+#define IDC_TR_STATE                       1534
+#define IDC_TR_DESC                        1535
+#define IDC_TR_STTMP                       1536
+#define IDC_TR_MAPID                       1537
+#define IDC_TR_X                           1538
+#define IDC_TR_Y                           1539
+#define IDC_TR_X1                          1540
+#define IDC_TR_Y1                          1541
+#define IDC_TR_X2                          1542
+#define IDC_TR_Y2                          1543
+#define IDC_PB_COINITEM                    1544
+#define IDC_PB_COINCOUNT                   1545
+#define IDC_PB_BALLS                       1546
+#define IDC_PB_SAVESEC                     1547
+#define IDC_PB_SCOREBUMPER                 1548
+#define IDC_PB_SCORETARGET                 1549
+#define IDC_PB_SCOREBONUS                  1550
+#define IDC_PB_COMBOMS                     1551
+#define IDC_PB_DX                          1552
+#define IDC_PB_DY                          1553
+#define IDC_PB_SEATDX                      1554
+#define IDC_PB_SEATDY                      1555
+#define IDC_PB_BANDSIDE                    1556
+#define IDC_PB_PAIR                        1557
+#define IDC_PB_VSSEC                       1558
 #define IDC_MT_LEVEL                       1600
 #define IDC_MT_DX                          1601
 #define IDC_MT_DY                          1602
@@ -610,7 +648,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        261
-#define _APS_NEXT_COMMAND_VALUE         40037
+#define _APS_NEXT_COMMAND_VALUE         40038
 #define _APS_NEXT_CONTROL_VALUE         1622
 #define _APS_NEXT_SYMED_VALUE           101
 #endif

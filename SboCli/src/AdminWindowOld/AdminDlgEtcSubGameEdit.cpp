@@ -15,6 +15,8 @@
 #include "AdminDlgEtcSubGameEditDungeon.h"
 #include "AdminDlgEtcSubGameEditWar.h"
 #include "AdminDlgEtcSubGameEditSugoroku.h"
+#include "AdminDlgEtcSubGameEditPinball.h"
+#include "../../../common/PinballInfo.h"
 #include "AdminDlgEtcSubGameEditMazeTable.h"
 #include "common/MazeTable.h"
 
@@ -182,6 +184,9 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 		case SUBGAMEID_SUGOROKU:
 			GetDataDlgEtcSubGameEditSugoroku ();
 			break;
+		case SUBGAMEID_PINBALL:
+			GetDataDlgEtcSubGameEditPinball ();
+			break;
 		case SUBGAMEID_MAZETABLE:
 			GetDataDlgEtcSubGameEditMazeTable ();
 			break;
@@ -211,6 +216,7 @@ static void OnInitEnd(HWND hWnd, WPARAM wParam, LPARAM lParam)
 	CloseDlgEtcSubGameEditDungeon ();
 	CloseDlgEtcSubGameEditWar ();
 	CloseDlgEtcSubGameEditSugoroku ();
+	CloseDlgEtcSubGameEditPinball ();
 	CloseDlgEtcSubGameEditMazeTable ();
 
 	hWndTmp = GetDlgItem (hWnd, IDC_INFO);
@@ -230,6 +236,9 @@ static void OnInitEnd(HWND hWnd, WPARAM wParam, LPARAM lParam)
 		break;
 	case SUBGAMEID_SUGOROKU:
 		ShowDlgEtcSubGameEditSugoroku (hWndTmp);
+		break;
+	case SUBGAMEID_PINBALL:
+		ShowDlgEtcSubGameEditPinball (hWndTmp);
 		break;
 	case SUBGAMEID_MAZETABLE:
 		ShowDlgEtcSubGameEditMazeTable (hWndTmp);
@@ -268,6 +277,10 @@ static void ChgSubGameType(BYTE byType)
 	nSize = GetSubGameDataSize (byType);
 	g_pSubGameInfo->pInfo = new BYTE[nSize];
 	ZeroMemory (g_pSubGameInfo->pInfo, nSize);
+	/* ピンボールは 0 のままでは遊べない値（球 0・席が台の上）なので、既定値で始める */
+	if ((byType == SUBGAMEID_PINBALL) && (nSize >= (int)sizeof (SUBGAME_PINBALLINFOSAVE))) {
+		PinballInfoSetDefault ((PSUBGAME_PINBALLINFOSAVE)g_pSubGameInfo->pInfo);
+	}
 	if (byType == SUBGAMEID_MAZETABLE) {
 		/* 迷路対戦の台は、新規の既定値（盤の位置 -5,-9・座る場所 0,1 と 0,-10・CPU名「CPU」）にする */
 		MazeTableInfoDefault ((PSUBGAME_MAZETABLEINFO)g_pSubGameInfo->pInfo);

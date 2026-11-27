@@ -26,6 +26,7 @@
 #include "AdminWindowOld/AdminDlgStoryInfo.h"
 #include "AdminWindowOld/AdminDlgFlagName.h"
 #include "AdminWindowOld/AdminDlgFlagGroup.h"
+#include "AdminWindowOld/AdminDlgTrialRoom.h"
 #include "AdminWindowOld/AdminDlgTalk.h"
 #include "AdminWindowOld/AdminDlgCharFlag.h"
 #include "AdminWindowOld/AdminFlagUi.h"
@@ -1650,6 +1651,11 @@ void AdminOnCommand(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 		DeleteAdminWnd ();
 		g_nAdminWindowType = IDM_ETC_FLAGGROUP;
 		ShowDlgFlagGroup (hWnd);
+		break;
+	case IDM_ETC_TRIALROOM:
+		DeleteAdminWnd ();
+		g_nAdminWindowType = IDM_ETC_TRIALROOM;
+		ShowDlgTrialRoom (hWnd);
 		break;
 	case IDM_ETC_TALK:
 		DeleteAdminWnd ();
@@ -7918,6 +7924,7 @@ void DeleteAdminWnd(void)
 	CloseDlgStoryInfo ();
 	CloseDlgFlagName ();
 	CloseDlgFlagGroup ();
+	CloseDlgTrialRoom ();
 	CloseDlgTalk ();
 	CloseDlgCharFlag ();
 	CloseDlgAccSearch ();
@@ -10991,7 +10998,7 @@ void MakeAdminWndSubGameInfo(void)
 	SendMessage (m_hWndButton6, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
 	int i;
-	LPCTSTR liststr[] = {"未設定", "爆弾ゲーム", "迷路", "ダンジョン"};
+	LPCTSTR liststr[] = {"未設定", "爆弾ゲーム", "迷路", "ダンジョン", "戦場ゲーム", "すごろく", "ピンボール", "迷路対戦の台"};
 
 	for (i = 0; i < SUBGAMEID_MAX; i ++) {
 		SendMessage (m_hWndCombo1, CB_ADDSTRING, (WPARAM)0, (LPARAM)liststr[i]);

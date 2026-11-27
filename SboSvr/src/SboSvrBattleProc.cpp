@@ -535,6 +535,11 @@ BOOL DamageAfterProcNPC(PCHARINFO pChar, PCHARINFO pCharTarget)
 		}
 	}
 
+	/* 討伐依頼の数（その人の依頼が討伐依頼で、倒した敵が対象なら +1） */
+	for (i = 0; i < nMember; i ++) {
+		QuestOnKill (aMember[i].first, pCharTarget);
+	}
+
 	/* お金は人数で割る(1人1ゴールドは残す) */
 	dwGoldTmp = pCharTarget->dwGold;
 	if (dwGoldTmp > 0) {

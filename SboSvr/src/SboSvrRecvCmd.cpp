@@ -9,6 +9,7 @@
 #include "include.h"
 #include "Glbldata.h"
 #include "common/BowFlight.h"
+#include "common/PinballInfo.h"
 #include "CharProc/CharProcBase.h"
 #include "CharProc/CharProcPUT.h"
 #include "../Common/Info/InfoJob.h"
@@ -28,6 +29,7 @@
 #include "SboSvrRecycle.h"
 #include "SboSvrAffix.h"
 #include "SboSvrQuest.h"
+#include "SboSvrTrialRoom.h"
 #include "SboSvrMapSwapEdit.h"
 #include "CharProc/CharProcMERCENARY.h"
 #include "SboSvrMagicProc.h"
@@ -57,6 +59,7 @@ extern void SboWebSendLoginNotice	(DWORD);	/* ログインした人に、覚え�
 extern void SboDataFlagNameApplyInfo	(int, const FLAGNAMEINFO *, int &, std::string &);	/* 管理者ウィンドウからフラグの名前表を書き込む(server/web_data_svr.cpp) */
 extern void SboDataTalkApplyInfo		(int, const TALKINFO *, int &, std::string &);		/* 管理者ウィンドウから会話データを書き込む(server/web_data_svr.cpp) */
 extern void SboDataStoryApplyInfo		(int, const STORYINFO *, int &, std::string &);		/* 管理者ウィンドウから思い出の本のシナリオを書き込む(server/web_data_svr.cpp) */
+extern void SboDataTrialRoomApplyInfo	(int, const TRIALROOMINFO *, int &, std::string &);	/* 管理者ウィンドウからお試し個室を書き込む(server/web_data_svr.cpp) */
 extern void SboDataFlagGroupApplyInfo	(int, const FLAGGROUPINFO *, int &, std::string &);	/* 管理者ウィンドウからフラグのグループを書き込む(server/web_data_svr.cpp) */
 PCHARINFO AddChar					(PCHARINFO, BOOL bCheck=TRUE);					/* キャラ追加 */
 void	CharNpcIdEnsure				(PCHARINFO);									/* NPC番号がまだ無ければ振る(SboSvrSaveLoadChar.cpp) */
@@ -175,6 +178,7 @@ void	RecvDataProcGETACC						(PBYTE, DWORD);				/* アカウント・パスワ�
 void	RecvDataProcCHGACC						(PBYTE, DWORD);				/* アカウント・パスワード更新 */
 void	RecvDataProcTALKRAND					(PBYTE, DWORD);				/* 話してランダム要求 */
 void	RecvDataProcPUZZLEKEY					(PBYTE, DWORD);				/* 落ち物パズルのキー入力 */
+void	RecvDataProcPINBALLKEY					(PBYTE, DWORD);				/* ピンボールのキー入力 */
 void	RecvDataProcMAZEKEY						(PBYTE, DWORD);				/* 迷路対戦の操作 */
 void	RecvDataProcSTOPRAND					(PBYTE, DWORD);				/* 止まるかランダム切り替え */
 void	RecvDataProcGETACCINFO					(PBYTE, DWORD);				/* アカウント情報要求 */
@@ -250,6 +254,7 @@ void	RecvDataProcADMINTALK					(PBYTE, DWORD);				/* 管理者ウィンドウの
 void	RecvDataProcADMINCHARFLAG				(PBYTE, DWORD);				/* 管理者ウィンドウのキャラのフラグの取得・変更 */
 void	RecvDataProcADMINSTORY					(PBYTE, DWORD);				/* 管理者ウィンドウの思い出の本の編集 */
 void	RecvDataProcADMINFLAGGROUP				(PBYTE, DWORD);				/* 管理者ウィンドウのフラグのグループの編集 */
+void	RecvDataProcADMINTRIALROOM				(PBYTE, DWORD);				/* 管理者ウィンドウのお試し個室の編集 */
 void	RecvDataProcSORTITEM					(PBYTE, DWORD);				/* 道具欄・預かり所の並べ替え */
 void	RecvDataProcLEAVEITEMDISPOSE			(PBYTE, DWORD);				/* 預かり所の品を売る・捨てる */
 void	RecvDataProcBATTLEMODE					(PBYTE, DWORD);				/* 戦闘モードの切り替え通知 */
@@ -533,8 +538,11 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcPUZZLEKEY,				/* CMD_PUZZLEKEY */
 	NULL,								/* CMD_PUZZLESTATE(サーバー→クライアントのみ) */
 	NULL,								/* CMD_PUZZLESE(サーバー→クライアントのみ) */
+	RecvDataProcPINBALLKEY,				/* CMD_PINBALLKEY */
+	NULL,								/* CMD_PINBALLSTATE(サーバー→クライアントのみ) */
 	RecvDataProcMAZEKEY,				/* CMD_MAZEKEY */
 	NULL,								/* CMD_MAZESTATE(サーバー→クライアントのみ) */
+	RecvDataProcADMINTRIALROOM,			/* CMD_ADMINTRIALROOM */
 
 	NULL
 };
@@ -1436,6 +1444,7 @@ int GetSubGameDataSize(BYTE byType)
 	case SUBGAMEID_DUNGEON:		nSize = sizeof (SUBGAME_DUNGEONINFO);	break;
 	case SUBGAMEID_WAR:			nSize = sizeof (SUBGAME_WARINFO);		break;
 	case SUBGAMEID_SUGOROKU:	nSize = sizeof (SUBGAME_SUGOROKUINFO);	break;
+	case SUBGAMEID_PINBALL:		nSize = sizeof (SUBGAME_PINBALLINFO);	break;
 	case SUBGAMEID_MAZETABLE:	nSize = sizeof (SUBGAME_MAZETABLEINFO);	break;
 	}
 
@@ -3919,7 +3928,7 @@ void RecvDataProc(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	/* 管理者用のコマンド（管理者ウィンドウからしか送らないもの）は管理者だけ */
-	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_APPRAISE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_DUNGEONSEL) && (byCmd != CMD_DUNGEONMAP) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && (byCmd != CMD_TALKANSWER) && (byCmd != CMD_PUZZLEKEY) && (byCmd != CMD_MAZEKEY) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET)) && ((byCmd < CMD_RECYCLELIST) || (byCmd > CMD_RECYCLECLOSE))) ||
+	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_APPRAISE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_DUNGEONSEL) && (byCmd != CMD_DUNGEONMAP) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && (byCmd != CMD_TALKANSWER) && (byCmd != CMD_PUZZLEKEY) && (byCmd != CMD_PINBALLKEY) && (byCmd != CMD_MAZEKEY) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET)) && ((byCmd < CMD_RECYCLELIST) || (byCmd > CMD_RECYCLECLOSE))) ||
 			(byCmd == CMD_CHARITEM)) {
 		if (!CheckAdminBan (nNo)) {
 			SAFE_DELETE_ARRAY (pData);
@@ -4864,8 +4873,8 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 		if (pChar->dwTargetTblID3 != -1) {
 			return;
 		}
-		/* 落ち物パズル・迷路対戦の席に座っている間は歩けない。今の位置を送り返す */
-		if (PuzzleIsSeated (pChar) || MazeIsSeated (pChar)) {
+		/* 落ち物パズル・ピンボール・迷路対戦の席に座っている間は歩けない。今の位置を送り返す */
+		if (PuzzleIsSeated (pChar) || PinballIsSeated (pChar) || MazeIsSeated (pChar)) {
 			SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
 			return;
 		}
@@ -8366,6 +8375,13 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 		}
 		return;
 	}
+	/* お試し個室の入口（台詞が「@x番号」）？ 説明を出して「入りますか？」を聞く */
+	if (TrialRoomIsNpc (pChar)) {
+		if ((s_nCharNoRecv >= 0) && IsNearRecvChar (pChar, 2)) {
+			TrialRoomTalk (g_aCharInfo[s_nCharNoRecv], pChar);
+		}
+		return;
+	}
 	/* ダンジョンの受付（台詞が「@d番号」）？ 姿選びを始める */
 	if (DungeonIsReceptionNpc (pChar)) {
 		if ((s_nCharNoRecv >= 0) && IsNearRecvChar (pChar, 2)) {
@@ -8379,6 +8395,17 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 		if (s_nCharNoRecv >= 0) {
 			PuzzleSit (g_aCharInfo[s_nCharNoRecv], pChar);
 		}
+		return;
+	}
+	/* ピンボールの台（台詞が「@i<サブゲーム情報の番号>」）？ 座る場所のマスに立っていれば座る（落ち物パズルの台と同じ作り） */
+	if (PinballIsTableNpc (pChar)) {
+		if (s_nCharNoRecv >= 0) {
+			PinballSit (g_aCharInfo[s_nCharNoRecv], pChar);
+		}
+		return;
+	}
+	/* 台詞が「@i」で始まるのに台にならない（番号が無い・情報が無い・種別が違う）NPC は、何も言わない（台詞を読み上げない） */
+	if (PinballIsMarkedNpc (pChar)) {
 		return;
 	}
 	/* 迷路対戦の台（台詞が「@k」で始まる。依頼の見えるNPCは上で処理済み）？ 座る場所のマスに立っていれば座る（無料の台だけ始まる。チケットの台は道具のチケットを使う案内だけ。チケット使用は ItemProc → MazeUseItem） */
@@ -8441,6 +8468,21 @@ void RecvDataProcPUZZLEKEY(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	PuzzleKey (g_aCharInfo[s_nCharNoRecv], pPara->byData, (dwDataSize >= sizeof (CMDPARA_PUZZLEKEY)) ? ((PCMDPARA_PUZZLEKEY)pData)->dwSerial : 0);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcPINBALLKEY											 */
+/* 内容：受信データ処理(ピンボールのキー入力。押した時・離した時だけ届く)			 */
+/*		 座っている本人のものだけ受ける（座っていなければ何もしない）			 */
+/* ========================================================================= */
+void RecvDataProcPINBALLKEY(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_PINBALLKEY pPara = (PCMDPARA_PINBALLKEY)pData;
+
+	if ((dwDataSize < sizeof (CMDPARA_PINBALLKEY)) || (s_nCharNoRecv < 0) || (pPara->dwTblID != (DWORD)s_nCharNoRecv)) {
+		return;
+	}
+	PinballKey (g_aCharInfo[s_nCharNoRecv], pPara->byData, pPara->dwSerial);
 }
 
 /* ========================================================================= */
@@ -9571,7 +9613,7 @@ static BOOL QuestChallengeBlock(PCHARINFO pChar)
 	if (!QuestInChallenge (pChar)) {
 		return FALSE;
 	}
-	SendCmdSYSMSG (pChar->pID, QuestInDungeon (pChar) ? (LPSTR)DungeonBlockedText (pChar).c_str () : "討伐チャレンジ中はできません。", SPEECHCMD_BATTLE1);
+	SendCmdSYSMSG (pChar->pID, QuestInDungeon (pChar) ? (LPSTR)DungeonBlockedText (pChar).c_str () : (LPSTR)TrialRoomBlockedText (pChar), SPEECHCMD_BATTLE1);
 	return TRUE;
 }
 
@@ -10036,6 +10078,21 @@ void RecvDataProcSUBGAMEINFO(PBYTE pData, DWORD dwDataSize)
 				pInfo->aPartsInfo.Add (PartsInfo);
 				pTmp += sizeof (SUGOROKUPARTSINFO);
 			}
+		}
+		break;
+
+	case SUBGAMEID_PINBALL:		/* ピンボール（実行中の値を持たないので、そのまま写して範囲に丸める） */
+		{
+			PSUBGAME_PINBALLINFO pPinball = (PSUBGAME_PINBALLINFO)g_aSubaGameInfo[pRecv->dwTblID]->pInfo;
+			PSUBGAME_PINBALLINFOSAVE pPinballRecv = (PSUBGAME_PINBALLINFOSAVE)(pRecv + 1);
+
+			if (s_dwRecvSize >= sizeof (CMDPARA_DATA1) + sizeof (SUBGAME_PINBALLINFOSAVE)) {
+				CopyMemory (pPinball, pPinballRecv, sizeof (SUBGAME_PINBALLINFOSAVE));
+			} else {
+				PinballInfoSetDefault (pPinball);
+			}
+			PinballInfoClamp (pPinball);
+			pPinball->byVersion = PINBALLINFO_VERSION;
 		}
 		break;
 	}
@@ -11182,7 +11239,7 @@ void RecvDataProcTRADE(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	if (QuestInChallenge (g_aCharInfo[pRecv->dwData])) {
-		SendCmdSYSMSG (g_aCharInfo[pRecv->dwTblID]->pID, QuestInDungeon (g_aCharInfo[pRecv->dwData]) ? "相手はダンジョンの中なので取り引きできません。" : "相手は討伐チャレンジ中なので取り引きできません。", SPEECHCMD_BATTLE1);
+		SendCmdSYSMSG (g_aCharInfo[pRecv->dwTblID]->pID, QuestInDungeon (g_aCharInfo[pRecv->dwData]) ? "相手はダンジョンの中なので取り引きできません。" : TrialRoomIs (g_aCharInfo[pRecv->dwData]) ? "相手はお試し個室の中なので取り引きできません。" : "相手は討伐チャレンジ中なので取り引きできません。", SPEECHCMD_BATTLE1);
 		TradeRefuse (g_aCharInfo[pRecv->dwTblID]);
 		return;
 	}
@@ -14259,6 +14316,78 @@ void RecvDataProcADMINFLAGGROUP(PBYTE pData, DWORD dwDataSize)
 }
 
 /* ========================================================================= */
+/* 関数名：SendAdminTrialRoomItem											 */
+/* 内容：管理者ウィンドウへお試し個室 1 件を送る（nNo が範囲外なら件数だけ）	 */
+/* ========================================================================= */
+static void SendAdminTrialRoomItem(DWORD pID, int nNo)
+{
+	PCMDPARA_ADMINTRIALROOM pPara = new CMDPARA_ADMINTRIALROOM;
+
+	ZeroMemory (pPara, sizeof (CMDPARA_ADMINTRIALROOM));
+	pPara->byCmd	= CMD_ADMINTRIALROOM;
+	pPara->byCmdSub	= ADMINTRIALROOM_ITEM;
+	pPara->wCount	= (WORD)g_aTrialRoomInfo.GetSize ();
+	pPara->nNo		= nNo;
+	if ((nNo >= 0) && (nNo < g_aTrialRoomInfo.GetSize ()) && g_aTrialRoomInfo[nNo]) {
+		pPara->Info = *g_aTrialRoomInfo[nNo];
+	} else {
+		pPara->nNo = -1;
+	}
+	svrSock.SendTo (pID, (PBYTE)pPara, sizeof (CMDPARA_ADMINTRIALROOM));
+	SAFE_DELETE (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINTRIALROOM										 */
+/* 内容：受信データ処理(管理者ウィンドウのお試し個室の編集)					 */
+/*       LISTREQ : お試し個室を 1 件ずつ ITEM で送る（0 件なら件数 0 の ITEM だけ）*/
+/*       SET     : データAPI（SboWebDataApply）と同じ確認を通して書き込み、	 */
+/*                 RESULT と、うまくいけばその個室の ITEM を返す				 */
+/*       管理者でない人のコマンドは、受け取る前に弾かれる					 */
+/* ========================================================================= */
+void RecvDataProcADMINTRIALROOM(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINTRIALROOM pPara = (PCMDPARA_ADMINTRIALROOM)pData;
+	PCMDPARA_ADMINTRIALROOM pRes;
+	DWORD pID = s_pIDRecv;
+	int i, nNoOut = -1;
+	std::string strErr;
+
+	if (s_dwRecvSize < sizeof (CMDPARA_ADMINTRIALROOM)) {
+		return;
+	}
+
+	switch (pPara->byCmdSub) {
+	case ADMINTRIALROOM_LISTREQ:	/* 一覧の問い合わせ */
+		if (g_aTrialRoomInfo.GetSize () == 0) {
+			SendAdminTrialRoomItem (pID, -1);
+			break;
+		}
+		for (i = 0; i < g_aTrialRoomInfo.GetSize (); i ++) {
+			SendAdminTrialRoomItem (pID, i);
+		}
+		break;
+
+	case ADMINTRIALROOM_SET:		/* 書き込み */
+		SboDataTrialRoomApplyInfo (pPara->nNo, &pPara->Info, nNoOut, strErr);
+		pRes = new CMDPARA_ADMINTRIALROOM;
+		ZeroMemory (pRes, sizeof (CMDPARA_ADMINTRIALROOM));
+		pRes->byCmd		= CMD_ADMINTRIALROOM;
+		pRes->byCmdSub	= ADMINTRIALROOM_RESULT;
+		pRes->byResult	= strErr.empty () ? 1 : 0;
+		pRes->wCount	= (WORD)g_aTrialRoomInfo.GetSize ();
+		pRes->nNo		= strErr.empty () ? nNoOut : pPara->nNo;
+		SboTextCopy (pRes->szMsg, sizeof (pRes->szMsg), strErr.c_str ());
+		svrSock.SendTo (pID, (PBYTE)pRes, sizeof (CMDPARA_ADMINTRIALROOM));
+		SAFE_DELETE (pRes);
+		if (strErr.empty ()) {
+			SendAdminTrialRoomItem (pID, nNoOut);
+		}
+		break;
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：SendAdminCharFlagInfo											 */
 /* 内容：管理者ウィンドウへキャラのフラグ（印・数値）を全部送る				 */
 /* ========================================================================= */
@@ -14922,7 +15051,7 @@ BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, 
 	/* 管理者用のコマンドだけ（ログインや「元に戻す」自体は通さない） */
 	if ((byCmd >= CMD_MAX) || (RecvDataProcTbl[byCmd] == NULL) ||
 			((byCmd < CMD_MAPPARTSADD) && (byCmd != CMD_CHARITEM)) ||
-			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_ADMINVIEWALL) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_APPRAISE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_DUNGEONSEL) || (byCmd == CMD_DUNGEONMAP) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || (byCmd == CMD_PUZZLEKEY) || (byCmd == CMD_MAZEKEY) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET)) || ((byCmd >= CMD_RECYCLELIST) && (byCmd <= CMD_RECYCLECLOSE))) {
+			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_ADMINVIEWALL) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_APPRAISE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_DUNGEONSEL) || (byCmd == CMD_DUNGEONMAP) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || (byCmd == CMD_PUZZLEKEY) || (byCmd == CMD_PINBALLKEY) || (byCmd == CMD_MAZEKEY) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET)) || ((byCmd >= CMD_RECYCLELIST) && (byCmd <= CMD_RECYCLECLOSE))) {
 		return FALSE;
 	}
 
@@ -16268,8 +16397,15 @@ void RecvDataProcTALKANSWER(PBYTE pData, DWORD dwDataSize)
 	if ((dwDataSize < sizeof (CMDPARA_DATA1)) || (s_nCharNoRecv < 0) || (s_nCharNoRecv >= g_aCharInfo.GetSize ())) {
 		return;
 	}
-	/* 落ち物パズルの「乱入しますか？」への答えなら、そちらで受ける */
+	/* お試し個室の「入りますか？」への答えなら、そちらで受ける */
+	if (TrialRoomAnswer (g_aCharInfo[s_nCharNoRecv], pPara->dwTblID, pPara->byData ? TRUE : FALSE)) {
+		return;
+	}
+	/* 落ち物パズル・ピンボールの「乱入しますか？」への答えなら、そちらで受ける */
 	if (PuzzleAnswer (g_aCharInfo[s_nCharNoRecv], pPara->dwTblID, pPara->byData ? TRUE : FALSE)) {
+		return;
+	}
+	if (PinballAnswer (g_aCharInfo[s_nCharNoRecv], pPara->dwTblID, pPara->byData ? TRUE : FALSE)) {
 		return;
 	}
 	/* 迷路対戦の「乱入しますか？」への答えなら、そちらで受ける */

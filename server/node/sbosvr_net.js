@@ -54,6 +54,7 @@ Module['sboNet'] = (function () {
 		'.data': 'application/octet-stream',
 		'.css': 'text/css; charset=utf-8',
 		'.png': 'image/png',
+		'.webp': 'image/webp',
 		'.ico': 'image/x-icon',
 		'.json': 'application/json',
 		'.m4a': 'audio/mp4'		/* 音声 BGM（bgm/audio/） */
@@ -438,7 +439,7 @@ Module['sboNet'] = (function () {
 	 *   ビルドし直して中身が変わったら版も変わるので、新しい URL として読み直される。
 	 */
 	var aHashCache = {};		/* フルパス → { mtime, size, hash } */
-	var VER_EXT = { '.js': 1, '.wasm': 1, '.data': 1, '.sf3': 1, '.css': 1, '.png': 1, '.ico': 1, '.m4a': 1 };
+	var VER_EXT = { '.js': 1, '.wasm': 1, '.data': 1, '.sf3': 1, '.css': 1, '.png': 1, '.webp': 1, '.ico': 1, '.m4a': 1 };
 
 	/*
 	 * 圧縮して配る
@@ -447,7 +448,7 @@ Module['sboNet'] = (function () {
 	 *   br の最高圧縮は .data で数十秒かかるので、大きいファイルは裏で作り、できるまでは gzip で返す。
 	 *   起動直後に配るファイルの br を前もって作っておく（warmCompress）。
 	 *   ステージングの Caddy は、すでに圧縮済みの返事を圧縮し直さない。
-	 *   .png・.m4a・.sf3 は中身がもう圧縮されているので対象外（.m4a は Range にも答えるため）。
+	 *   .png・.webp・.m4a・.sf3 は中身がもう圧縮されているので対象外（.m4a は Range にも答えるため）。
 	 */
 	var ZIP_EXT = { '.html': 1, '.js': 1, '.wasm': 1, '.data': 1, '.css': 1, '.json': 1, '.ico': 1 };
 	var ZIP_MIN = 1024;					/* これより小さいファイルは圧縮しない */

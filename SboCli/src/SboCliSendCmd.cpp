@@ -60,6 +60,7 @@ void SendCmdGETACC			(DWORD);								/* アカウント・パスワード取得 
 void SendCmdCHGACC			(DWORD, LPSTR, LPSTR);					/* アカウント・パスワード更新 */
 void SendCmdTALKRAND		(DWORD);								/* 話してランダム要求 */
 DWORD SendCmdPUZZLEKEY		(BYTE);									/* 落ち物パズルのキー入力 */
+DWORD SendCmdPINBALLKEY		(BYTE);									/* ピンボールのキー入力 */
 void SendCmdTALKANSWER		(DWORD, BOOL);							/* 会話データの「はい・いいえ」の答え */
 void SendCmdSTOPRAND		(DWORD);								/* 止まるかランダム切り替え */
 void SendCmdGETACCINFO		(DWORD);								/* アカウント情報要求 */
@@ -122,6 +123,7 @@ void SendCmdADMINSPACE		(BYTE, DWORD);							/* 管理者の空間の切り替�
 void SendCmdADMINQUEST		(BYTE, int, const QUESTINFO *);			/* 管理者ウィンドウのギルドの依頼の編集 */
 void SendCmdADMINSTORY		(BYTE, int, const STORYINFO *);			/* 管理者ウィンドウの思い出の本の編集 */
 void SendCmdADMINFLAGGROUP	(BYTE, int, const FLAGGROUPINFO *);		/* 管理者ウィンドウのフラグのグループの編集 */
+void SendCmdADMINTRIALROOM	(BYTE, int, const TRIALROOMINFO *);		/* 管理者ウィンドウのお試し個室の編集 */
 void SendCmdADMINFLAGNAME	(BYTE, int, const FLAGNAMEINFO *);		/* 管理者ウィンドウのフラグの名前表の編集 */
 void SendCmdADMINTALK		(BYTE, int, const TALKINFO *);			/* 管理者ウィンドウの会話データの編集 */
 void SendCmdADMINCHARFLAG	(BYTE, DWORD, BYTE, WORD, WORD);		/* 管理者ウィンドウのキャラのフラグの取得・変更 */
@@ -1224,6 +1226,34 @@ void SendCmdCHGACC(DWORD dwTblID, LPSTR pszAcc, LPSTR pszPas)
 
 	cliSock.Send ((PBYTE)pSendData, sizeof (CMDPARA_ACCADD));
 	delete pSendData;
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdPINBALLKEY												 */
+/* 内容：コマンド送信(ピンボールのキー入力。押した時・離した時だけ。座っている間だけ)	 */
+/*		 戻り値：このキーの連番（サーバーが処理した最後の連番を返すので先読みの差し引きに使う） */
+/* ========================================================================= */
+DWORD SendCmdPINBALLKEY(BYTE byKey)
+{
+	static DWORD s_dwSerial = 0;
+	CMDPARA_PINBALLKEY SendData;
+
+	if ((g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ())) {
+		return 0;
+	}
+	s_dwSerial ++;
+	if (s_dwSerial == 0) {
+		s_dwSerial = 1;
+	}
+	ZeroMemory (&SendData, sizeof (SendData));
+	SendData.byCmd = CMD_PINBALLKEY;
+	SendData.byData = byKey;
+	/* サーバーのキャラ番号は、クライアント側の配列番号(g_nMyCharID)ではなくキャラのテーブルID */
+	SendData.dwTblID = g_aCharInfo[g_nMyCharID]->dwTblID;
+	SendData.dwSerial = s_dwSerial;
+
+	cliSock.Send ((PBYTE)&SendData, sizeof (CMDPARA_PINBALLKEY));
+	return s_dwSerial;
 }
 
 /* ========================================================================= */
@@ -3838,6 +3868,28 @@ void SendCmdADMINFLAGGROUP(BYTE byCmdSub, int nNo, const FLAGGROUPINFO *pInfo)
 		pPara->Info = *pInfo;
 	}
 	cliSock.Send ((PBYTE)pPara, sizeof (CMDPARA_ADMINFLAGGROUP));
+	SAFE_DELETE (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdADMINTRIALROOM											 */
+/* 内容：コマンド送信(管理者ウィンドウのお試し個室の編集)					 */
+/*       byCmdSub: ADMINTRIALROOM_LISTREQ（一覧の問い合わせ）・				 */
+/*                 ADMINTRIALROOM_SET（pInfo を nNo 番目に書き込む。-1 は足す。*/
+/*                 止めるのは byState=0）									 */
+/* ========================================================================= */
+void SendCmdADMINTRIALROOM(BYTE byCmdSub, int nNo, const TRIALROOMINFO *pInfo)
+{
+	PCMDPARA_ADMINTRIALROOM pPara = new CMDPARA_ADMINTRIALROOM;
+
+	ZeroMemory (pPara, sizeof (CMDPARA_ADMINTRIALROOM));
+	pPara->byCmd	= CMD_ADMINTRIALROOM;
+	pPara->byCmdSub	= byCmdSub;
+	pPara->nNo		= nNo;
+	if (pInfo) {
+		pPara->Info = *pInfo;
+	}
+	cliSock.Send ((PBYTE)pPara, sizeof (CMDPARA_ADMINTRIALROOM));
 	SAFE_DELETE (pPara);
 }
 

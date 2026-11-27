@@ -20,6 +20,7 @@ SboCli/src/AdminWindowOld/AdminDlgEtcSubGameEdit.cpp
 SboCli/src/AdminWindowOld/AdminDlgEtcSubGameEditBomb.cpp
 SboCli/src/AdminWindowOld/AdminDlgEtcSubGameEditDungeon.cpp
 SboCli/src/AdminWindowOld/AdminDlgEtcSubGameEditMaze.cpp
+SboCli/src/AdminWindowOld/AdminDlgEtcSubGameEditPinball.cpp
 SboCli/src/AdminWindowOld/AdminDlgEtcSubGameEditMazeTable.cpp
 SboCli/src/AdminWindowOld/AdminDlgEtcSubGameEditSugoroku.cpp
 SboCli/src/AdminWindowOld/AdminDlgEtcSubGameEditWar.cpp
@@ -43,6 +44,8 @@ SboCli/src/AdminWindowOld/AdminDlgStoryInfoEdit.cpp
 SboCli/src/AdminWindowOld/AdminFlagTalk.cpp
 SboCli/src/AdminWindowOld/AdminDlgFlagName.cpp
 SboCli/src/AdminWindowOld/AdminDlgFlagGroup.cpp
+SboCli/src/AdminWindowOld/AdminDlgTrialRoom.cpp
+SboCli/src/AdminWindowOld/AdminDlgTrialRoomEdit.cpp
 SboCli/src/AdminWindowOld/AdminDlgTalk.cpp
 SboCli/src/AdminWindowOld/AdminDlgTalkEdit.cpp
 SboCli/src/AdminWindowOld/AdminDlgCharFlag.cpp
@@ -69,6 +72,7 @@ SboCli/src/SboCliMain.cpp
 SboCli/src/SboCliMagicExplain.cpp
 SboCli/src/SboCliMakeWindow.cpp
 SboCli/src/SboCliRecvCmd.cpp
+SboCli/src/SboCliPinball.cpp
 SboCli/src/SboCliSendCmd.cpp
 common/Command/CHAR_STATEINFO.cpp
 common/Command/CHAR_TAIL.cpp

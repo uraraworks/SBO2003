@@ -53,6 +53,7 @@ extern void SendCmdGETACC			(DWORD);								/* アカウント・パスワード
 extern void SendCmdCHGACC			(DWORD, LPSTR, LPSTR);					/* アカウント・パスワード更新 */
 extern void SendCmdTALKRAND			(DWORD);								/* 話してランダム要求 */
 extern DWORD SendCmdPUZZLEKEY		(BYTE);									/* 落ち物パズルのキー入力(PUZZLEKEY_*) */
+extern DWORD SendCmdPINBALLKEY		(BYTE);									/* ピンボールのキー入力(PINBALLKEY_*。押した時・離した時) */
 extern void SendCmdMAZEKEY		(BYTE, BYTE, BYTE, BYTE, BYTE);			/* 迷路対戦の操作(MAZEACT_*, 向き, 壁の列, 壁の行, 壁の向き) */
 extern void SendCmdTALKANSWER		(DWORD, BOOL);							/* 会話データの「はい・いいえ」の答え(NPCのテーブルID・はいならTRUE) */
 extern void SendCmdSTOPRAND			(DWORD);								/* 止まるかランダム切り替え */
@@ -117,6 +118,7 @@ extern void SendCmdADMINSPACE		(BYTE, DWORD);							/* 管理者の空間の切�
 extern void SendCmdADMINQUEST		(BYTE, int, const QUESTINFO *);			/* 管理者ウィンドウのギルドの依頼の編集 */
 extern void SendCmdADMINSTORY		(BYTE, int, const STORYINFO *);			/* 管理者ウィンドウの思い出の本の編集 */
 extern void SendCmdADMINFLAGGROUP	(BYTE, int, const FLAGGROUPINFO *);		/* 管理者ウィンドウのフラグのグループの編集 */
+extern void SendCmdADMINTRIALROOM	(BYTE, int, const TRIALROOMINFO *);	/* 管理者ウィンドウのお試し個室の編集 */
 extern void SendCmdADMINFLAGNAME	(BYTE, int, const FLAGNAMEINFO *);		/* 管理者ウィンドウのフラグの名前表の編集 */
 extern void SendCmdADMINTALK		(BYTE, int, const TALKINFO *);			/* 管理者ウィンドウの会話データの編集 */
 extern void SendCmdADMINCHARFLAG	(BYTE, DWORD, BYTE, WORD, WORD);		/* 管理者ウィンドウのキャラのフラグの取得・変更 */

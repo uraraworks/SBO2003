@@ -72,6 +72,9 @@
 #define MAX_RECIPEMAT		4										/* レシピの材料の種類 */
 #define MAX_MAKERNAME		64										/* 作り手の名前の欄のバイト数（終端含む） */
 #define MAX_MAKERMSG		256										/* 作り手の台詞の欄のバイト数（終端含む） */
+#define MAX_TRIALROOM		100										/* お試し個室の最大数 */
+#define MAX_TRIALROOMNAME	64										/* お試し個室の名前の欄のバイト数（終端含む） */
+#define MAX_TRIALROOMDESC	512										/* お試し個室の説明文の欄のバイト数（終端含む） */
 #define MAX_AFFIX			1000									/* 付与（接頭辞・接尾辞）の最大数 */
 #define MAX_AFFIXNAME		32										/* 付与の名前の欄のバイト数（終端含む） */
 #define MAX_ITEMDERIVE		(65535 - 16384)							/* 派生アイテムの最大数（番号は 16384 から） */
@@ -87,6 +90,10 @@
 #define MAX_QUESTINTRO		1024									/* 依頼の「導入のお話」の欄のバイト数（終端含む。NPC の台詞と同じ制御コード @0 @1 @2） */
 #define MAX_QUESTLIST		16										/* ギルドの一覧に出す依頼の最大数 */
 #define MAX_QUESTDONEBYTE	(MAX_QUEST / 8)							/* 一度きり依頼のクリア済みの印の大きさ（バイト） */
+#define MAX_QUESTKILLTMP	4										/* 討伐依頼で数える敵の数（QUESTINFO の awKillStTmp） */
+#define MAX_QUESTCLEAR		8										/* 達成時刻を覚える依頼の数（CHARINFO の awQuestClearID。直近の分だけ。古い順に押し出す） */
+#define MAX_QUESTREPEATHOURS	8760								/* 再受注までの時間の上限（時間。1 年） */
+#define MAX_QUESTKILLNEED	999										/* 討伐依頼の必要数の上限 */
 #define MAX_QUESTDONESET	2										/* 依頼を完了した時に立てる印の数（QUESTINFO の awDoneSetFlag） */
 #define MAX_STORY			256										/* 最大思い出の本のシナリオ数（シナリオ番号 wID は 1〜255） */
 #define MAX_STORYFLAGRANGE	2										/* シナリオをやり直す時に消す印の範囲の数（STORYINFO の awFlagFrom・awFlagTo） */
@@ -107,6 +114,7 @@
 #define MAX_CHESTNO			2048									/* 「印で変わるマス」の宝箱の番号の数（0〜2047。全マップ通しの番号） */
 #define MAX_CHESTBYTE		(MAX_CHESTNO / 8)						/* 開けた宝箱の記録の大きさ（バイト。abyChestOpened） */
 #define MAX_RECYCLEBOX		1024									/* リサイクル箱の番号の数（1〜1024。全マップ通しの番号。宝箱の番号とは別。0 は「無し」） */
+#define QUEST_KILLTMP_NONE	(0xFFFF)								/* 討伐依頼で数える敵の「空き」（stTmp の id 0 のプヨンも数えられるよう 0 ではなくこれにする） */
 #define FLAG_NOBIT			(0xFFFF)								/* 印の番号の「無し」（印 0 も使えるよう 0 ではなくこれにする） */
 /* 印の番号（FLAG_NOBIT=無し）を、通信・保存用の「番号+1（0=無し）」にする・戻す。
    0 のままのデータが「印 0」の条件にならないようにするため */
@@ -405,9 +413,14 @@ enum {
 	CMD_PUZZLEKEY,													/* 落ち物パズルのキー入力（クライアント→サーバー。CMDPARA_PUZZLEKEY の byData が PUZZLEKEY_*、dwTblID=本人、dwSerial=連番） */
 	CMD_PUZZLESTATE,												/* 落ち物パズルの盤面・操作中の落ち物・得点（サーバー→座っている人・対戦相手・台の近くの人。CMDPARA_PUZZLESTATE） */
 	CMD_PUZZLESE,												/* 落ち物パズルの効果音（サーバー→台の近くの人。CMDPARA_PUZZLESE。盤面が見える距離にいる人だけに届く） */
+/* 以下、プレイヤー用（ピンボール。CMD_PINBALLKEY はクライアント→サーバーも受ける。管理者用の判定から外すこと） */
+	CMD_PINBALLKEY,													/* ピンボールのキー入力（クライアント→サーバー。CMDPARA_PINBALLKEY の byData が PINBALLKEY_*、dwTblID=本人、dwSerial=連番） */
+	CMD_PINBALLSTATE,												/* ピンボールのボール・フリッパー・得点・残り球（サーバー→座っている人・台の近くの人。CMDPARA_PINBALLSTATE） */
 /* 以下、プレイヤー用（迷路対戦。CMD_MAZEKEY はクライアント→サーバーも受ける。管理者用の判定から外すこと） */
 	CMD_MAZEKEY,													/* 迷路対戦の操作（クライアント→サーバー。CMDPARA_MAZEKEY の byAct が MAZEACT_*） */
 	CMD_MAZESTATE,													/* 迷路対戦の盤面・コマ・壁（サーバー→座っている人・台の近くの人。CMDPARA_MAZESTATE） */
+/* 以下、管理者用（CMD_MAPPARTSADD 以上は自動で管理者専用になる。CMD_MAZESTATE より後ろに足す） */
+	CMD_ADMINTRIALROOM,												/* 管理者ウィンドウのお試し個室の編集（一覧・書き込み。結果はサーバー→クライアント） */
 	CMD_MAX
 };
 
@@ -1198,7 +1211,8 @@ enum {
 	SUBGAMEID_DUNGEON,											/* ダンジョン */
 	SUBGAMEID_WAR,												/* 戦場ゲーム */
 	SUBGAMEID_SUGOROKU,											/* すごろく */
-	SUBGAMEID_MAZETABLE = 7,									/* 迷路対戦の台（迷路ダンジョン SUBGAMEID_MAZE とは別物。NPC台詞 @k<サブゲーム番号> で使う）。6 はピンボール（別の変更）が使う番号なので空けてある */
+	SUBGAMEID_PINBALL,											/* ピンボール（台の設定。台NPCの台詞 @i<このサブゲームの番号> で使う。docs/pinball.md） */
+	SUBGAMEID_MAZETABLE = 7,									/* 迷路対戦の台（迷路ダンジョン SUBGAMEID_MAZE とは別物。NPC台詞 @k<サブゲーム番号> で使う）。6 はピンボール */
 	SUBGAMEID_MAX
 };
 
@@ -1764,6 +1778,54 @@ typedef struct _SUBGAME_SUGOROKUINFOSAVE {
 	CmyArray<SUGOROKUEVENTINFO, SUGOROKUEVENTINFO>	aEventInfo;		/* イベント情報 */
 	CmyArray<SUGOROKUPARTSINFO, SUGOROKUPARTSINFO>	aPartsInfo;		/* パーツ情報 */
 } SUBGAME_SUGOROKUINFOSAVE, *PSUBGAME_SUGOROKUINFOSAVE;
+
+/* サブゲーム：ピンボール情報（台1つぶんの設定。台NPCの台詞 "@i<サブゲーム情報の番号>" がこの情報を指す）
+ *   実行中の値を持たない（遊んでいる最中の状態は SboSvrPinball.cpp の台の表に持つ）ので、INFO と INFOSAVE は同じ並び。
+ *   既定値・範囲の丸めは common/PinballInfo.h。0 のままでも遊べるよう、サーバーは範囲に丸めて使う。
+ *   項目を足す時は、末尾の abyReserved から切り出すか、この構造体の最後に足す（保存は項目名つきの列なので、
+ *   足した項目は SboSvrSaveLoadSubGameInfo.cpp の s_aPinballField に 1 行足すだけ。前の版のサーバーはその項目を読み飛ばす） */
+#define PINBALLINFO_VERSION		(2)								/* 保存の版（項目を足したら上げる。読む側は未知の項目を読み飛ばすので、上げなくても壊れない） */
+#define PINBALLINFO_RESERVED	(13)							/* 将来の項目用に空けてある保存領域（バイト） */
+typedef struct _SUBGAME_PINBALLINFO {
+	WORD		wCoinItem;											/* コインのアイテム番号（0=無料） */
+	BYTE		byCoinCount;										/* 必要な枚数（0=無料） */
+	BYTE		byBalls;											/* 球数（1〜9。既定 3） */
+	BYTE		bySaveSec;											/* ボールセーブの秒数（0=なし。既定 8） */
+	BYTE		byBandSide;											/* 得点・残り球の帯の側（0=盤の右・1=盤の左） */
+	WORD		wScoreBumper;										/* バンパーの得点（既定 100） */
+	WORD		wScoreTarget;										/* ターゲットの得点（既定 300） */
+	WORD		wScoreBonus;										/* ターゲットを全部倒した時のボーナス（既定 1000） */
+	WORD		wComboMs;											/* コンボが続く時間（ミリ秒。既定 2000） */
+	signed char	cDx;												/* 盤の左上が台NPCのマスの左上から何マスか（横。負は左。既定 -2） */
+	signed char	cDy;												/* 同（縦。負は上。既定 -6） */
+	signed char	cSeatDx;											/* 座る場所の、台NPCのマスからの相対位置（横。既定 0） */
+	signed char	cSeatDy;											/* 同（縦。既定 1） */
+	WORD		wVsSec;												/* 対戦の時間（秒。10〜600。既定 90。版 2 で追加） */
+	BYTE		byPair;												/* ペア番号（同じマップ・同じ番号の台 2 台が対戦できる。0=ペアなし。版 2 で追加） */
+	BYTE		byVersion;											/* 保存の版（PINBALLINFO_VERSION） */
+	BYTE		abyReserved[PINBALLINFO_RESERVED];					/* 将来用（0 で保存する） */
+} SUBGAME_PINBALLINFO, *PSUBGAME_PINBALLINFO;
+
+/* サブゲーム：ピンボール情報(保存データ。管理者ウィンドウとの通信にも使う。INFO と同じ並び) */
+typedef struct _SUBGAME_PINBALLINFOSAVE {
+	WORD		wCoinItem;											/* コインのアイテム番号（0=無料） */
+	BYTE		byCoinCount;										/* 必要な枚数（0=無料） */
+	BYTE		byBalls;											/* 球数 */
+	BYTE		bySaveSec;											/* ボールセーブの秒数（0=なし） */
+	BYTE		byBandSide;											/* 帯の側（0=右・1=左） */
+	WORD		wScoreBumper;										/* バンパーの得点 */
+	WORD		wScoreTarget;										/* ターゲットの得点 */
+	WORD		wScoreBonus;										/* ターゲット全部のボーナス */
+	WORD		wComboMs;											/* コンボが続く時間（ミリ秒） */
+	signed char	cDx;												/* 盤の左上（横） */
+	signed char	cDy;												/* 盤の左上（縦） */
+	signed char	cSeatDx;											/* 座る場所（横） */
+	signed char	cSeatDy;											/* 座る場所（縦） */
+	WORD		wVsSec;												/* 対戦の時間（秒） */
+	BYTE		byPair;												/* ペア番号（0=ペアなし） */
+	BYTE		byVersion;											/* 保存の版 */
+	BYTE		abyReserved[PINBALLINFO_RESERVED];					/* 将来用 */
+} SUBGAME_PINBALLINFOSAVE, *PSUBGAME_PINBALLINFOSAVE;
 
 /* サブステータス情報(すごろく) */
 typedef struct _SUBSTATUS_SUGOROKU {
@@ -2466,6 +2528,8 @@ typedef struct _CHARINFO {
 	WORD		awQuestCount[MAX_QUESTCOUNT];						/* 依頼の数（倒した数など。ステップ2で使う。保存する） */
 	DWORD		dwQuestAcceptTime;									/* 依頼を受けた時刻（time_t の秒。保存する） */
 	BYTE		abyQuestDone[MAX_QUESTDONEBYTE];					/* 一度きりの依頼のクリア済みの印（依頼番号のビット。保存する） */
+	WORD		awQuestClearID[MAX_QUESTCLEAR];						/* 達成した依頼の番号（再受注の待ちのため、直近 MAX_QUESTCLEAR 件。0=空き。保存する） */
+	DWORD		adwQuestClearTime[MAX_QUESTCLEAR];					/* その達成時刻（time_t の秒。保存する） */
 	BYTE		abyQuestRewarded[MAX_QUESTDONEBYTE];				/* 依頼の報酬をもうもらっている印（依頼番号のビット。保存する。思い出の本でやり直しても消えない。報酬は初回だけ） */
 	BYTE		abyFlag[MAX_FLAGBITBYTE];							/* キャラのフラグ（印。ビット番号=印の番号。保存する。サーバーだけが持ち、クライアントへは送らない） */
 	BYTE		abyFlagNum[MAX_FLAGNUM];							/* キャラのフラグ（数値 0〜255。保存する。サーバーだけが持つ） */
@@ -3074,6 +3138,22 @@ typedef struct _MAKERINFO {
 	char		szMsgEnd[MAX_MAKERMSG];								/* 鑑定屋：鑑定した後、もう鑑定する物が無い時に続ける台詞 */
 } MAKERINFO, *PMAKERINFO;
 
+/* お試し個室の状態 */
+enum {
+	TRIALROOMSTATE_CLOSED = 0,									/* 閉じている（入れない） */
+	TRIALROOMSTATE_OPEN,										/* 開いている */
+};
+
+/* お試し個室（試し中の新機能を遊べる部屋。入口のNPCの台詞 "@xNN"（NN=番号 2 桁）。サーバーだけが持ち、クライアントへは送らない） */
+typedef struct _TRIALROOMINFO {
+	BYTE		byState;											/* 状態(TRIALROOMSTATE_*) */
+	char		szName[MAX_TRIALROOMNAME];							/* 名前 */
+	char		szDesc[MAX_TRIALROOMDESC];							/* 入口で出す説明文（改行可） */
+	WORD		wLoanStTmp;											/* 貸すステータステンプレートの番号 */
+	DWORD		dwMapID, dwX, dwY;									/* 入るマップ・座標 */
+	DWORD		dwX1, dwY1, dwX2, dwY2;								/* 個室の範囲の四角（入るマップの中。この外に出ると出たことにする） */
+} TRIALROOMINFO, *PTRIALROOMINFO;
+
 /* レシピ情報 */
 typedef struct _RECIPEINFO {
 	BYTE		byState;											/* 状態(RECIPESTATE_*) */
@@ -3319,6 +3399,9 @@ typedef struct _QUESTINFO {
 	char		szIntro[MAX_QUESTINTRO];							/* 導入のお話（受ける前に読ませる長い文。空なら読ませずにすぐ確認。保存する） */
 	BYTE		byLevelMin;											/* 受けられる最低レベル（0=制限なし。足りない人には一覧に出さず、受けられない。管理者・受けている人は対象外） */
 	WORD		wCancelStory;									/* 依頼を取り消した時に最初に戻す思い出の本のお話（STORYINFO の wID。0=何もしない。つながる後のお話も戻す。保存する） */
+	WORD		awKillStTmp[MAX_QUESTKILLTMP];						/* 討伐依頼で数える敵（ステータステンプレートの番号。QUEST_KILLTMP_NONE=空き。id 0 も有効。保存する） */
+	WORD		wKillNeed;											/* 討伐依頼の必要数（0=討伐依頼ではない。倒した数が届くとギルドで報告できる。保存する） */
+	DWORD		dwRepeatHours;										/* 達成してから再び受けられるまでの時間（時間。0=制限なし。実時間でログアウト中も進む。保存する） */
 } QUESTINFO, *PQUESTINFO;
 
 /* 討伐チャレンジの種類(QUESTINFO の byChallenge) */
@@ -3649,6 +3732,30 @@ typedef struct _CMDPARA_ADMINQUEST {
 	QUESTINFO	Info;												/* 依頼（ITEM・SET） */
 	char		szMsg[MAX_ADMINQUESTMSG];							/* 結果の文（RESULT。うまくいかなかった理由） */
 } CMDPARA_ADMINQUEST, *PCMDPARA_ADMINQUEST;
+#pragma pack(pop)
+
+/* 管理者ウィンドウのお試し個室の編集（CMD_ADMINTRIALROOM の byCmdSub） */
+enum {
+	ADMINTRIALROOM_LISTREQ = 0,									/* 一覧の問い合わせ（クライアント→サーバー） */
+	ADMINTRIALROOM_ITEM,										/* 一覧の 1 件（サーバー→クライアント。nNo 番目・全部で wCount 件。0 件なら wCount=0 だけ届く） */
+	ADMINTRIALROOM_SET,											/* 書き込み（クライアント→サーバー。nNo=-1 なら足す。削除は無く、止めるのは byState=0。データAPIと同じ確認を通す） */
+	ADMINTRIALROOM_RESULT,										/* 書き込みの結果（サーバー→クライアント。byResult・szMsg。うまくいった時は続けて ITEM も届く） */
+};
+
+#define MAX_ADMINTRIALROOMMSG	256									/* お試し個室の書き込みの結果の文（UTF-8） */
+
+#pragma pack(push, 1)
+/* 管理者ウィンドウのお試し個室の編集（送受信とも同じ形） */
+typedef struct _CMDPARA_ADMINTRIALROOM {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byCmdSub;											/* サブコマンド(ADMINTRIALROOM_*) */
+	BYTE		byResult;											/* 結果（RESULT: 1=書き込んだ 0=書き込めなかった） */
+	BYTE		byReserve;											/* 予備 */
+	WORD		wCount;												/* お試し個室の全部の件数（ITEM・RESULT） */
+	int			nNo;												/* お試し個室の配列の番号（ITEM・SET・RESULT。SET の -1 は足す） */
+	TRIALROOMINFO	Info;											/* お試し個室（ITEM・SET） */
+	char		szMsg[MAX_ADMINTRIALROOMMSG];						/* 結果の文（RESULT。うまくいかなかった理由） */
+} CMDPARA_ADMINTRIALROOM, *PCMDPARA_ADMINTRIALROOM;
 #pragma pack(pop)
 
 /* 管理者ウィンドウの思い出の本の編集（CMD_ADMINSTORY の byCmdSub） */
@@ -4432,6 +4539,86 @@ typedef struct _CMDPARA_PUZZLESE {
 	DWORD		dwNpc;												/* 台NPCのテーブルID（その台の盤面を持っている人だけが鳴らす） */
 } CMDPARA_PUZZLESE, *PCMDPARA_PUZZLESE;
 #pragma pack(pop)
+
+/* ピンボール（台に座って遊ぶ。ロジックは common/Pinball.h。台詞が "@i<サブゲーム情報の番号>" の台NPC。設定は SUBGAME_PINBALLINFO。docs/pinball.md）
+   CMD_PINBALLKEY: クライアント→サーバー。押した時と離した時だけ送る（CMDPARA_PINBALLKEY の byData に PINBALLKEY_*）
+   CMD_PINBALLSTATE: サーバー→座っている人と台の近くの人。約 0.1 秒ごとと、状態が変わった時 */
+enum {
+	PINBALLKEY_LEFT_DOWN = 1,										/* 左のフリッパーを上げる（←を押した） */
+	PINBALLKEY_LEFT_UP,												/* 左のフリッパーを下ろす（←を離した） */
+	PINBALLKEY_RIGHT_DOWN,											/* 右のフリッパーを上げる（→を押した） */
+	PINBALLKEY_RIGHT_UP,											/* 右のフリッパーを下ろす（→を離した） */
+	PINBALLKEY_LAUNCH_DOWN,											/* 打ち出しを溜め始める（↓を押した） */
+	PINBALLKEY_LAUNCH_UP,											/* 打ち出す（↓を離した。押していた時間が強さ） */
+	PINBALLKEY_LEAVE,												/* 席を立つ（ESC） */
+};
+/* CMD_PINBALLSTATE の byKind */
+enum {
+	PINBALLSTATE_NONE = 0,											/* 席を立った・片付いた（クライアントは重ね描きを消す） */
+	PINBALLSTATE_FULL,												/* 状態（盤面は決まった形なので、ボール・フリッパー・得点などだけ） */
+	PINBALLSTATE_OVER,												/* ゲームオーバー（本人に。しばらく残して見せ、席を立ったら NONE が届く） */
+};
+/* CMDPARA_PINBALLSTATE の byIdle のビット（落ち物パズルの PUZZLEIDLE_* と同じ意味） */
+#define PINBALLIDLE_ON		(0x01)									/* 待機中（席が空） */
+#define PINBALLIDLE_SEAT	(0x02)									/* 受け取った本人が座る場所のマスに立っている */
+#define PINBALLIDLE_FREE	(0x04)									/* この台は必要な枚数が 0（SEAT と一緒に付く） */
+#pragma pack(push, 1)
+typedef struct _CMDPARA_PINBALLSTATE {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byKind;												/* PINBALLSTATE_* */
+	BYTE		bySide;												/* 帯をどちら側に出すか（PUZZLESIDE_*） */
+	BYTE		byMine;												/* 受け取った本人が、この台の席に座っているか（1=本人の台・0=観戦の台） */
+	BYTE		byIdle;												/* 待機中の台（PINBALLIDLE_*。盤の枠だけ描く） */
+	BYTE		byOver;												/* 1=ゲームオーバーの「GAME OVER」を盤の上に出す間（待機中の台に付く。消える時にサーバーが 0 を送る） */
+	BYTE		byPhase;											/* PB_PHASE_*（common/Pinball.h） */
+	BYTE		byBalls;											/* 残り球（今の球を含む） */
+	BYTE		byTargets;											/* 倒れたターゲットの印（ビット i がターゲット i） */
+	WORD		wFlash;											/* 前回の通知から当たった印（バンパー・ターゲット。光らせる） */
+	BYTE		byCombo;											/* 連続ヒット数 */
+	BYTE		byAngL;												/* 左フリッパーの段階（0〜PB_FLIP_STEPS） */
+	BYTE		byAngR;												/* 右フリッパーの段階 */
+	BYTE		byHeld;												/* bit0=左を上げている・bit1=右を上げている・bit2=打ち出しを溜めている */
+	BYTE		byCharge;											/* 溜めている打ち出しの強さ（0〜100 ％） */
+	BYTE		bySave;												/* ボールセーブの残り秒（0=なし） */
+	short		sFieldX;											/* 盤の左上（マップのドット座標。台の席の座標から決める） */
+	short		sFieldY;
+	int			nBallX;												/* ボールの中心（1/256 ドット） */
+	int			nBallY;
+	short		sVx;												/* ボールの速度（1/120 秒あたりの 1/256 ドット） */
+	short		sVy;
+	DWORD		dwScore;											/* 得点 */
+	DWORD		dwNpc;												/* 台NPCのテーブルID（盤を見分ける印） */
+	DWORD		dwStep;												/* サーバーの固定ステップ数（先読みの巻き直しの目印） */
+	DWORD		dwAck;												/* この台の席の人のキーを、ここまで処理した（CMDPARA_PINBALLKEY の dwSerial） */
+	/* ここから台の設定（サブゲーム情報 SUBGAME_PINBALLINFO から。クライアントの先読み・帯の表示・座る場所の判定に使う） */
+	BYTE		byBallsMax;											/* 球数（帯の球の数。先読みでも使う） */
+	BYTE		bySaveSecMax;										/* ボールセーブの秒数 */
+	signed char	cSeatDx;											/* 座る場所（台NPCのマスからの相対位置。S キーで座れるマスの判定） */
+	signed char	cSeatDy;
+	WORD		wComboMs;											/* コンボが続く時間（ミリ秒） */
+	WORD		wScoreBumper;										/* バンパーの得点 */
+	WORD		wScoreTarget;										/* ターゲットの得点 */
+	WORD		wScoreBonus;										/* ターゲット全部のボーナス */
+	/* ここから対戦（ペアの 2 台。時間制）。対戦でない台は byVs=0 で、ほかは 0 */
+	BYTE		byVs;												/* 0=対戦なし・1=対戦中・2=カウントダウン中（操作できない） */
+	BYTE		byCount;											/* カウントダウンの数（3・2・1。それ以外は 0。盤の真ん中に大きく出す） */
+	WORD		wVsRemain;											/* 対戦の残り時間（1/10 秒。カウントダウン中は対戦の長さ） */
+	DWORD		dwOppScore;											/* 相手の得点（盤の上に小さく出す） */
+	BYTE		byStreak;											/* この席の連勝数（2 以上の時だけ「N連勝」を出す） */
+	BYTE		byBallNo;											/* 対戦で穴に落ちた球の数（先読みのボールセーブ判定用） */
+	BYTE		byLaunchNo;											/* 対戦で打ち出した回数の下位 8 ビット（先読みの乱数列の位置） */
+	DWORD		dwSeed;												/* 対戦の乱数の種（ペアの 2 台で同じ） */
+} CMDPARA_PINBALLSTATE, *PCMDPARA_PINBALLSTATE;
+#pragma pack(pop)
+
+/* CMD_PINBALLKEY の中身（CMDPARA_PUZZLEKEY と同じ並び） */
+typedef struct _CMDPARA_PINBALLKEY {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byData;												/* PINBALLKEY_* */
+	DWORD		pID;												/* プレイヤーID */
+	DWORD		dwTblID;											/* テーブルID */
+	DWORD		dwSerial;											/* キーごとの連番（1 から。サーバーは処理した最後の連番を CMDPARA_PINBALLSTATE の dwAck で返す） */
+} CMDPARA_PINBALLKEY, *PCMDPARA_PINBALLKEY;
 
 /* 迷路対戦（台に座って遊ぶ 7×7 の 2 人対戦。ロジックは common/MazeAttack.h、台の設定は SUBGAME_MAZETABLEINFO（NPC台詞 "@k<サブゲーム番号>"。common/MazeTable.h）。
    台は席が 2 つ。席 1 に座るとプレイヤー 0（下側スタート）、席 2 に座るとプレイヤー 1（上側スタート）。

@@ -11,6 +11,7 @@
 #include "SboSvrRecvCmd.h"
 #include "CharProc/CharProcMERCENARY.h"
 #include "SboSvrPuzzle.h"
+#include "SboSvrTrialRoom.h"
 
 /* ========================================================================= */
 /* 関数プロトタイプ宣言														 */
@@ -74,6 +75,11 @@ void EventProc_MOVE(PCHARINFO pChar, PEVENTINFO pEvent, BYTE byData)
 	pMove = (PEVENTINFO_MOVE)pEvent->pData;
 	if (!pMove) {
 		SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
+		return;
+	}
+
+	/* お試し個室の出口：イベントの行き先へは飛ばさず、直接元の場所へ戻す */
+	if (TrialRoomEventExit (pChar)) {
 		return;
 	}
 
@@ -238,6 +244,11 @@ void EventProc_MAPCHG(PCHARINFO pChar, PEVENTINFO pEvent, BYTE byData)
 
 	if (!pMap) {
 		SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
+		return;
+	}
+
+	/* お試し個室の出口：イベントの行き先へは飛ばさず、直接元の場所へ戻す */
+	if (TrialRoomEventExit (pChar)) {
 		return;
 	}
 

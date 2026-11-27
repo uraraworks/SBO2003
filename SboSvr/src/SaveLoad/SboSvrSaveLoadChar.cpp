@@ -14,7 +14,7 @@
 /* ========================================================================= */
 /* 定数定義																	 */
 /* ========================================================================= */
-#define DATACOUNTCOLUMN		(92)									/* 保存データ数 */
+#define DATACOUNTCOLUMN		(93)									/* 保存データ数 */
 
 /* ========================================================================= */
 /* 構造体定義																 */
@@ -126,6 +126,7 @@ static const char *s_aszName[] = {
 	"byGhost",				/* 半透明（霊）で描く（0=ふつう 1=半透明。見た目だけ） */
 	"byPutOnce",			/* NPC発生：1=補充しない（決めた数を出したら、それ以上は出さない） */
 	"byPutWave",			/* NPC発生：拠点防衛の波番号（0=ふつう。1〜=その波の時だけ出す） */
+	"abyQuestClear",		/* 依頼の達成時刻（直近8件の 依頼番号WORD+時刻DWORD。再受注の待ち） */
 	"z"
 };
 
@@ -570,6 +571,7 @@ static BOOL SaveCharInfoMain(void)
 			case 89:	dwDataSizeTmp += sizeof (BYTE);							break;	/* 半透明（霊）で描く */
 			case 90:	dwDataSizeTmp += sizeof (BYTE);							break;	/* NPC発生：補充しない */
 			case 91:	dwDataSizeTmp += sizeof (BYTE);							break;	/* NPC発生：拠点防衛の波番号 */
+			case 92:	dwDataSizeTmp += MAX_QUESTCLEAR * (sizeof (WORD) + sizeof (DWORD));	break;	/* 依頼の達成時刻 */
 			}
 		}
 		aHeaderInfo[i].dwDataSize = dwDataSizeTmp;
@@ -1056,6 +1058,12 @@ static BOOL SaveCharInfoMain(void)
 			case 91:	/* NPC発生：拠点防衛の波番号 */
 				CopyMemory (&pData[dwOffset], &pInfo->byPutWave, sizeof (BYTE));
 				dwOffset += sizeof (BYTE);
+				break;
+			case 92:	/* 依頼の達成時刻 */
+				CopyMemory (&pData[dwOffset], pInfo->awQuestClearID, sizeof (pInfo->awQuestClearID));
+				dwOffset += sizeof (pInfo->awQuestClearID);
+				CopyMemory (&pData[dwOffset], pInfo->adwQuestClearTime, sizeof (pInfo->adwQuestClearTime));
+				dwOffset += sizeof (pInfo->adwQuestClearTime);
 				break;
 			}
 		}
@@ -1846,6 +1854,14 @@ BOOL LoadCharInfo(void)
 			/* NPC発生：拠点防衛の波番号（無い古いデータは 0=ふつう） */
 			if (strcmp (aHeaderInfo[i].szName, s_aszName[91]) == 0) {
 				pInfo->byPutWave = pData[dwOffsetTmp ++];
+			}
+
+			/* 依頼の達成時刻（無い古いデータは全部空 =「待ちなし」のまま） */
+			if (strcmp (aHeaderInfo[i].szName, s_aszName[92]) == 0) {
+				CopyMemory (pInfo->awQuestClearID, &pData[dwOffsetTmp], sizeof (pInfo->awQuestClearID));
+				dwOffsetTmp += sizeof (pInfo->awQuestClearID);
+				CopyMemory (pInfo->adwQuestClearTime, &pData[dwOffsetTmp], sizeof (pInfo->adwQuestClearTime));
+				dwOffsetTmp += sizeof (pInfo->adwQuestClearTime);
 			}
 		}
 	}

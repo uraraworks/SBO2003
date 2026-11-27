@@ -1923,6 +1923,16 @@ void SendCmdPUZZLESTATE(DWORD pIDSend, PBYTE pData, DWORD dwSize)
 }
 
 /* ========================================================================= */
+/* 関数名：SendCmdPINBALLSTATE												 */
+/* 内容：コマンド送信(ピンボールのボール・フリッパー・得点。pData は先頭が CMDPARA_PINBALLSTATE) */
+/* ========================================================================= */
+void SendCmdPINBALLSTATE(DWORD pIDSend, PBYTE pData, DWORD dwSize)
+{
+	((PCMDPARA_PINBALLSTATE)pData)->byCmd = CMD_PINBALLSTATE;
+	svrSock.SendTo (pIDSend, pData, dwSize, SENDTIMEOUT);
+}
+
+/* ========================================================================= */
 /* 関数名：SendCmdMAZESTATE													 */
 /* 内容：コマンド送信(迷路対戦の盤面・コマ・壁。席に座っている人と台の近くの人に)	 */
 /* ========================================================================= */
@@ -3070,6 +3080,10 @@ void SendCmdSUBGAMEINFO(DWORD pIDSend, int nNo)
 			pInfoSend->byCastle2X = pInfoTmp->byCastle2X;
 			pInfoSend->byCastleY = pInfoTmp->byCastleY;
 		}
+		break;
+
+	case SUBGAMEID_PINBALL:		/* ピンボール（INFO と INFOSAVE は同じ並び） */
+		CopyMemory (pData + sizeof (CMDPARA_DATA1), pInfo->pInfo, sizeof (SUBGAME_PINBALLINFOSAVE));
 		break;
 
 	case SUBGAMEID_MAZETABLE:	/* 迷路対戦の台（保存用と実行用が同じ中身） */

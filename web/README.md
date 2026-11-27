@@ -7,7 +7,7 @@ Windows 版クライアント（SboCli）を Emscripten でブラウザ向けに
 
 | 項目 | 状態 |
 | --- | --- |
-| ロゴ → タイトル → ログイン画面 | 表示できる |
+| ログイン画面 | ページを開くとすぐシェル HTML のホーム画面（読み込み中はボタンが押せない）。ブラウザ版のゲームはロゴ・タイトルを飛ばして最初からログイン画面（`?logo=1` を付けるとロゴ・タイトルから。画素比較テスト用） |
 | アカウント名・パスワード入力 | HTML の入力欄を canvas の上に重ねて入力できる |
 | サーバーへの接続 | WebSocket で接続し、ログイン・キャラ作成・マップでの移動まで動く（Node.js 版サーバーで確認） |
 | 効果音 | Web Audio で直接鳴らす（AudioBufferSourceNode。スマホでの遅れ対策） |
@@ -201,6 +201,7 @@ web/replace   … Windows 専用クラスの Web 版（Windows 版の実装は�
 | `web/web_main.cpp` | 入口（IndexedDB を読み込んでから `SboCliMain` を呼ぶ） |
 | `web/replace/` | CDXAudio（Web Audio）、CUraraSockTCP（WebSocket）、LibMusic・MAC アドレス・管理画面の代わり |
 | `web/shell/sbocli.html` | ページの HTML（キー・マウスの受け渡しもここ） |
+| `web/shell/img/` | ログイン前ホーム画面の背景（ロゴ入り・人物なしの 1 枚絵。縦長は 1024 幅、PC 横長は 2240x1280（中央 512/1792 がスマホ絵と同じ列）。縦長 `loginbg-mobile.webp`・横長 `loginbg-wide.webp`）。ビルドで `/login/` に置く |
 | `web/changes/` | 更新履歴のページ（`/changes`）と最初の中身 `changes.json` |
 | `web/about/` | 紹介ページ（`/about`）。はじめての人向けに、どんなゲームかをスクショ付きで。画像は `web/about/img/*.png`（ビルドで `/about/` に置く）。最近の更新・遊んでいる人数はその場で `/api/changes`・`/health` を読む |
 | `web/credits/` | クレジットのページ（`/credits`）。BGM・効果音などの曲名・ファイル名・作者は `credits.json`。曲や効果音を足したらここにも 1 行足す |

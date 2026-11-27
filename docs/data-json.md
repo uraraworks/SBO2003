@@ -33,7 +33,7 @@ node tools/data/sbo-data.mjs import --target staging --note "料理のレシピ�
 | magic・magicUser・equUser・job・stTmp・item・maker・recipe・quest・flag・talk | できる |
 
 | char（保存される NPC だけ） | できる（`npcId` で突き合わせ。下の「NPC」） |
-| map（マス目は除く）・mapParts・efc・comEfc・subGame | できる（subGame は `detail` の項目だけ） |
+| map（マス目は除く）・mapParts・efc・comEfc・subGame | できる（subGame は `detail` の項目だけ。種別 6 のピンボールの台の設定も `detail` にある。設定の項目は `docs/ai-data.md` の「ピンボール」・`docs/pinball.md`） |
 | leave | 書き出さない（プレイヤーの預かり所） |
 
 subGame の迷路対戦の台（`byType` 7）の `detail` には、参加チケットの `wTicketItemID`（アイテム番号）と `byTicketNum`（必要枚数。0＝無料でSキー、0〜99）も入ります。列が無い古いデータは 0 になります（`docs/maze-attack.md`）。

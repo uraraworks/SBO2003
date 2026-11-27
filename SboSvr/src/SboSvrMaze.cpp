@@ -760,7 +760,7 @@ static void SitMain(PCHARINFO pChar, PCHARINFO pNpc, int nChoice, int nKind, BOO
 	const SUBGAME_MAZETABLEINFO *pInfo;
 	PCHARINFO pOther = NULL;
 
-	if (!MazeIsTableNpc (pNpc) || (pChar->byNpcType != NPCTYPE_INIT) || MazeIsSeated (pChar) || PuzzleIsSeated (pChar)) {
+	if (!MazeIsTableNpc (pNpc) || (pChar->byNpcType != NPCTYPE_INIT) || MazeIsSeated (pChar) || PuzzleIsSeated (pChar) || PinballIsSeated (pChar)) {
 		return;
 	}
 	/* 座れるのは、台の座る場所（席 1・席 2）のマスの上だけ（同じマップ・同じ空間。向きは問わない） */

@@ -17,6 +17,8 @@
 #include "SboCliDrawScreen.h"
 #include "SboCliAutoMap.h"
 #include "common/FallingPuzzle.h"
+#include "common/Pinball.h"
+#include "SboCliPinball.h"
 #include "common/MazeAttack.h"
 #include "common/MazeTable.h"
 
@@ -559,7 +561,9 @@ static void KeyProcDispatch(BYTE byEvent, BYTE byCode)
 	}
 	/* 落ち物パズルの席に座っている間は、キーを全部ゲーム側へ送る（歩かない・ショートカットも使えない） */
 	if (IsPuzzleSeated ()) {
-		PuzzleKeyProc (byEvent, byCode);
+		if (!IsPinballSeated ()) {
+			PuzzleKeyProc (byEvent, byCode);		/* ピンボールの席は KeyProc の先頭で PinballKeyPoll が見る */
+		}
 		return;
 	}
 	if (!g_dwActiveMsgID) {
@@ -596,6 +600,13 @@ void KeyProc(void)
 	}
 
 	GetKeyboardState (g_abyKeyState);
+
+	/* ピンボールの席に座っている間は、キーの状態を見て押した時・離した時だけサーバーへ送る
+	   （方向キーのイベントは 1 回に 1 つしか残らず、離したイベントを取りこぼしてフリッパーが上がりっぱなしになるため、状態で見る） */
+	if (IsPinballSeated ()) {
+		PinballKeyPoll (g_abyKeyState);
+		return;
+	}
 
 	/* ↑キー押した */
 	if (g_abyKeyState[VK_UP] & 0x80) {
@@ -9605,9 +9616,9 @@ void CmdProcHanasu(PWNDINFO pWnd)
 			pWndTmp = NULL;
 		}
 
-	/* ギルドの依頼の受付(@g)・依頼の見える人(@q)・思い出の本の語り部(@r)・ダンジョン受付(@d)？ 返事（一覧・お知らせ）はサーバーから届く */
+	/* ギルドの依頼の受付(@g)・依頼の見える人(@q)・思い出の本の語り部(@r)・ダンジョン受付(@d)・お試し個室の入口(@x)？ 返事（一覧・お知らせ）はサーバーから届く */
 	} else if (pChar2->pszNpcSpeech[0] == '@' &&
-		((pChar2->pszNpcSpeech[1] == 'g') || (pChar2->pszNpcSpeech[1] == 'q') || (pChar2->pszNpcSpeech[1] == 'r') || (pChar2->pszNpcSpeech[1] == 'd'))) {
+		((pChar2->pszNpcSpeech[1] == 'g') || (pChar2->pszNpcSpeech[1] == 'q') || (pChar2->pszNpcSpeech[1] == 'r') || (pChar2->pszNpcSpeech[1] == 'd') || (pChar2->pszNpcSpeech[1] == 'x'))) {
 		if ((pChar2->pszNpcSpeech[1] == 'g') || (pChar2->pszNpcSpeech[1] == 'r')) {
 			/* 一覧を開くのは、返事が届いてから */
 			g_dwQuestWaitTime = timeGetTime ();
@@ -9616,9 +9627,9 @@ void CmdProcHanasu(PWNDINFO pWnd)
 			}
 		}
 		SendCmdTALKRAND (pChar2->dwTblID);
-		/* ギルドの人・語り部・ダンジョン受付はこちらを向く。依頼の見える物(@q)は宝箱や光もあるので向きを変えない
+		/* ギルドの人・語り部・ダンジョン受付・お試し個室の入口はこちらを向く。依頼の見える物(@q)は宝箱や光もあるので向きを変えない
 		   （宝箱の絵は向きによって別の絵（化け箱）になっている） */
-		if ((pChar2->pszNpcSpeech[1] == 'g') || (pChar2->pszNpcSpeech[1] == 'r') || (pChar2->pszNpcSpeech[1] == 'd')) {
+		if ((pChar2->pszNpcSpeech[1] == 'g') || (pChar2->pszNpcSpeech[1] == 'r') || (pChar2->pszNpcSpeech[1] == 'd') || (pChar2->pszNpcSpeech[1] == 'x')) {
 			pChar2->byDirection = abyDirectionTbl[pChar->byDirection];
 		}
 		int nNo = GetWindowID (g_dwMsgIDCommand);
@@ -9644,7 +9655,7 @@ void CmdProcHanasu(PWNDINFO pWnd)
 		return;
 
 	/* 落ち物パズルの台（@p）？ コインを使って座るのはサーバーが決める（座ると CMD_PUZZLESTATE が届く） */
-	} else if (pChar2->pszNpcSpeech[0] == '@' && pChar2->pszNpcSpeech[1] == 'p') {
+	} else if (pChar2->pszNpcSpeech[0] == '@' && ((pChar2->pszNpcSpeech[1] == 'p') || (pChar2->pszNpcSpeech[1] == 'i'))) {
 		SendCmdTALKRAND (pChar2->dwTblID);
 		pChar2->byDirection = abyDirectionTbl[pChar->byDirection];
 		int nNo = GetWindowID (g_dwMsgIDCommand);
@@ -9920,7 +9931,9 @@ BOOL IsSKeyCounterTalk(void)
 /*		 台NPC（台詞 @p…）は見えないので、台NPCの前に立たなくても、台詞の			 */
 /*		 9・10 番目（sdx,sdy。省略は台NPCの 1 つ下）で決まる座る場所のマスに立って	 */
 /*		 S キーを押せば座れる（向きは問わない）。座る場所の外では見つけない			 */
-/*		 戻り値：見つけた台NPCのテーブルID（無ければ -1）						 */
+/*		 ピンボールの台は、台の設定（座る場所）をサーバーが盤の状態と一緒に送ってくる		 */
+/*		 ので、そちらで調べる（PinballSeatNpcHere。台の設定は台詞ではなくサブゲーム情報）	 */
+/*		 戻り値：見つけた台NPCのキャラ番号（無ければ -1）						 */
 /* ========================================================================= */
 static int PuzzleSeatNpcHere(PCHARINFO pChar)
 {
@@ -9937,7 +9950,7 @@ static int PuzzleSeatNpcHere(PCHARINFO pChar)
 			return i;
 		}
 	}
-	return -1;
+	return PinballSeatNpcHere (pChar);
 }
 
 /* ========================================================================= */
@@ -10563,8 +10576,9 @@ std::string W32TextToUtf8Str(const char *psz, int nLen);		/* ゲーム内の文�
 #define PADSTATE_BATTLEMODE	(0x10)	/* 戦闘モード中（「決定」を「攻撃」、「キャンセル」を「構え」と表示） */
 #define PADSTATE_SCORE		(0x20)	/* 目の前に得点板がある（「キャンセル」を「名前」と表示。Z で名前を付ける） */
 #define PADSTATE_MAP		(0x40)	/* 探索マップが使える場所（テーマで作ったダンジョンの範囲の中。「地図」ボタンを出す） */
-#define PADSTATE_MAZE		(0x100)	/* 迷路対戦の席に座っている（「調べる(S)」を「やめる」、「決定(X)」を「かべ」（壁モードでは「おく」）、「キャンセル(Z)」を壁モードの時だけ「向き」と表示） */
-#define PADSTATE_MAZEWALL	(0x200)	/* 迷路対戦で壁を置く場所を選んでいる（PADSTATE_MAZE と一緒に付く） */
+#define PADSTATE_PINBALL	(0x100)	/* PADSTATE_PUZZLE と一緒に付く：ピンボールの席（十字キーの左右＝フリッパー・下＝打ち出し。決定ボタンは → を送って右フリッパー（sbocli.html の padTarget。キーボードの X は左フリッパー）、キャンセル(Z)は隠す） */
+#define PADSTATE_MAZE		(0x400)	/* 迷路対戦の席に座っている（「調べる(S)」を「やめる」、「決定(X)」を「かべ」（壁モードでは「おく」）、「キャンセル(Z)」を壁モードの時だけ「向き」と表示） */
+#define PADSTATE_MAZEWALL	(0x800)	/* 迷路対戦で壁を置く場所を選んでいる（PADSTATE_MAZE と一緒に付く） */
 #define PADSTATE_PUZZLE		(0x80)	/* 落ち物パズルの席に座っている（「調べる(S)」は隠し、「決定(X)」を「右回し」、「キャンセル(Z)」を「左回し」と表示。表示・戦闘・地図は隠す） */
 
 static int SboWebGetPadStateBase(void)
@@ -10588,7 +10602,7 @@ static int SboWebGetPadStateBase(void)
 	}
 	/* 落ち物パズルの席に座っている間は、右回し(X)・左回し(Z)だけ */
 	if (IsPuzzleSeated ()) {
-		return PADSTATE_PUZZLE;
+		return IsPinballSeated () ? (PADSTATE_PUZZLE | PADSTATE_PINBALL) : PADSTATE_PUZZLE;
 	}
 	/* 迷路対戦の席に座っている間は、矢印・かべ(X)・向き(Z)・やめる(S は ESC として送る) */
 	if (IsMazeSeated ()) {

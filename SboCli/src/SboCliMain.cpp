@@ -572,6 +572,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			case MSG3SEC_ACC:
 				EnableWindow (g_hWndCon, TRUE);
 				/* 入力待ちに戻るので、隠していたログイン窓を出す */
+#ifndef __EMSCRIPTEN__	/* ブラウザ版は HTML のカードで入力するので、ゲーム内のログイン窓は出さない */
 				if (g_bLoginHide) {
 					g_bLoginHide = FALSE;
 					int nLogin = GetWindowID (g_dwMsgIDLogin);
@@ -579,6 +580,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 						g_WndInfo[nLogin]->dwTimeDrawStart = 0;
 					}
 				}
+#endif
 				break;
 			}
 			EraseWindow (g_WndInfo[nNo]);
@@ -1035,7 +1037,14 @@ void OnInitEnd(HWND hWnd)
 	}
 
 	/* タイトルスキップモード？ */
+#ifdef __EMSCRIPTEN__
+	/* ブラウザ版：ロゴ・タイトルはシェル HTML のホーム画面が代わりに担うので、最初からログイン画面にする */
+	/* 画素比較テスト（tests/client/pixels.js）だけ、?logo=1 でこれまでどおりロゴ・タイトルから始める */
+	if (!EM_ASM_INT({ return /[?&]logo=1(&|$)/.test(location.search) ? 1 : 0; })) {
+#else
 	if (g_bTitleSkip) {
+#endif
+
 		ChgState (GAMESTATE_LOGIN);
 
 	} else {
@@ -1089,7 +1098,9 @@ void OnCommand(HWND hWnd, int nID)
 		}
 		/* ID・パスワードで入るので、端末トークンは使わない */
 		ZeroMemory (g_szWebToken, sizeof (g_szWebToken));
+#ifndef __EMSCRIPTEN__
 		g_bLoginHide = FALSE;
+#endif
 		{
 			char szAccTmp[MAX_ACCNAME];
 			ZeroMemory (szAccTmp, sizeof (szAccTmp));
@@ -1524,11 +1535,22 @@ void ReadGrpData2(LPSTR pszName, CImg32 **pDib, int nSize)
 	int CompressionType;
 	int FilterType;
 	png_get_IHDR (Png, Info, &Width, &Height, &BitDepth, &ColorType, &InterlaceType, &CompressionType, &FilterType);
+	/* パレット（インデックスカラー）の PNG だけ読める（色数が少ないと 1・2・4 ビットで保存されるので、8 ビットに広げて読む）。
+	   RGB・RGBA・16 ビット・インターレースは読み出しで壊れるので、読まずに空の絵のまま返す
+	   （ピンボールの差し替え絵など、後から人が置く PNG の取り違え対策） */
+	if ((BitDepth > 8) || (ColorType != PNG_COLOR_TYPE_PALETTE) || (InterlaceType != PNG_INTERLACE_NONE)) {
+		png_destroy_read_struct (&Png, &Info, NULL);
+		delete pDibTmp;
+		return;
+	}
+	if (BitDepth < 8) {
+		png_set_packing (Png);
+	}
 	BitDepth = 8;
 
 	png_set_bgr(Png);
 
-	png_colorp Palette;
+	png_colorp Palette = NULL;
 	int PaletteCount = 0;
 	if (BitDepth == 8) {
 		png_get_PLTE (Png, Info, &Palette, &PaletteCount);

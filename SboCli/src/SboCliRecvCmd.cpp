@@ -10,6 +10,7 @@
 #include "../../common/DungeonReception.h"
 #include "common/BowFlight.h"
 #include "common/FallingPuzzle.h"
+#include "SboCliPinball.h"
 #include "common/MazeAttack.h"
 #include "common/MazeTable.h"
 #include <string>
@@ -31,6 +32,7 @@
 #include "AdminWindowOld/AdminDlgMapSwap.h"
 #include "AdminWindowOld/AdminDlgQuestInfo.h"
 #include "AdminWindowOld/AdminDlgStoryInfo.h"
+#include "AdminWindowOld/AdminDlgTrialRoom.h"
 #include "AdminWindowOld/AdminFlagTalk.h"
 #include "SboCliDebugWindow.h"
 #include "SboCliMsgLogWindow.h"
@@ -172,6 +174,7 @@ void	RecvDataProcADMINFLAGNAME			(PBYTE, DWORD);			/* 受信データ処理(管�
 void	RecvDataProcADMINTALK				(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウの会話データの編集) */
 void	RecvDataProcADMINSTORY				(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウの思い出の本の編集) */
 void	RecvDataProcADMINFLAGGROUP			(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのフラグのグループの編集) */
+void	RecvDataProcADMINTRIALROOM			(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのお試し個室の編集) */
 void	RecvDataProcADMINCHARFLAG			(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのキャラのフラグ) */
 void	RecvDataProcTALKMSG					(PBYTE, DWORD);			/* 受信データ処理(会話データで選ばれた台詞) */
 void	RecvDataProcMAPSWAP					(PBYTE, DWORD);			/* 受信データ処理(印で変わるマスの差し替え一覧) */
@@ -180,6 +183,7 @@ void	RecvDataProcDGDEFSTATUS				(PBYTE, DWORD);			/* 受信データ処理(拠�
 void	RecvDataProcDGSTATUS				(PBYTE, DWORD);			/* 受信データ処理(番外編ダンジョンの状況パネル) */
 void	RecvDataProcPUZZLESE				(PBYTE, DWORD);			/* 受信データ処理(落ち物パズルの効果音) */
 void	RecvDataProcPUZZLESTATE				(PBYTE, DWORD);			/* 受信データ処理(落ち物パズルの盤面・落ち物・得点) */
+void	RecvDataProcPINBALLSTATE			(PBYTE, DWORD);			/* 受信データ処理(ピンボールのボール・フリッパー・得点。SboCliPinball.cpp) */
 void	RecvDataProcMAZESTATE				(PBYTE, DWORD);			/* 受信データ処理(迷路対戦の盤面・コマ・壁。今は空のスタブ。クライアント担当が実装する) */
 void	RecvDataProcCHARBUFF				(PBYTE, DWORD);			/* 受信データ処理(攻撃力・守備力アップの残り) */
 void	RecvDataProcMAKERINFO				(PBYTE, DWORD);			/* 受信データ処理(作り手情報) */
@@ -484,8 +488,11 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	NULL,								/* CMD_PUZZLEKEY(クライアント→サーバーのみ) */
 	RecvDataProcPUZZLESTATE,			/* CMD_PUZZLESTATE */
 	RecvDataProcPUZZLESE,				/* CMD_PUZZLESE */
+	NULL,								/* CMD_PINBALLKEY(クライアント→サーバーのみ) */
+	RecvDataProcPINBALLSTATE,			/* CMD_PINBALLSTATE */
 	NULL,								/* CMD_MAZEKEY(クライアント→サーバーのみ) */
 	RecvDataProcMAZESTATE,				/* CMD_MAZESTATE */
+	RecvDataProcADMINTRIALROOM,			/* CMD_ADMINTRIALROOM */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */
@@ -613,6 +620,7 @@ int GetSubGameDataSize(BYTE byType)
 	case SUBGAMEID_DUNGEON:		nSize = sizeof (SUBGAME_DUNGEONINFOSAVE);	break;
 	case SUBGAMEID_WAR:			nSize = sizeof (SUBGAME_WARINFOSAVE);		break;
 	case SUBGAMEID_SUGOROKU:	nSize = sizeof (SUBGAME_SUGOROKUINFOSAVE);	break;
+	case SUBGAMEID_PINBALL:		nSize = sizeof (SUBGAME_PINBALLINFOSAVE);	break;
 	case SUBGAMEID_MAZETABLE:	nSize = sizeof (SUBGAME_MAZETABLEINFOSAVE);	break;
 	}
 	return nSize;
@@ -4529,6 +4537,22 @@ void RecvDataProcADMINFLAGGROUP(PBYTE pData, DWORD dwDataSize)
 }
 
 /* ========================================================================= */
+/* 関数名：RecvDataProcADMINTRIALROOM										 */
+/* 内容：受信データ処理(管理者ウィンドウのお試し個室の編集)					 */
+/*       一覧の 1 件・書き込みの結果が届く									 */
+/* ========================================================================= */
+void RecvDataProcADMINTRIALROOM(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINTRIALROOM pPara = (PCMDPARA_ADMINTRIALROOM)pData;
+
+	if (dwDataSize < sizeof (CMDPARA_ADMINTRIALROOM)) {
+		return;
+	}
+	pPara->szMsg[sizeof (pPara->szMsg) - 1] = 0;
+	AdminTrialRoomOnRecv (pPara);
+}
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcADMINFLAGNAME										 */
 /* 内容：受信データ処理(管理者ウィンドウのフラグの名前表の編集)				 */
 /*       一覧の続き・書き込みの結果が届く（画面は無いので覚えておくだけ）		 */
@@ -7871,6 +7895,10 @@ void RecvDataProcSUBGAMEINFO(BYTE *pData, DWORD dwDataSize)
 			}
 			break;
 
+		case SUBGAMEID_PINBALL:		/* ピンボール */
+			CopyMemory (g_pSubGameInfo->pInfo, pRecv + 1, sizeof (SUBGAME_PINBALLINFOSAVE));
+			break;
+
 		case SUBGAMEID_MAZETABLE:	/* 迷路対戦の台 */
 			{
 				PSUBGAME_MAZETABLEINFOSAVE pInfo = (PSUBGAME_MAZETABLEINFOSAVE)g_pSubGameInfo->pInfo;
@@ -9108,6 +9136,10 @@ BOOL IsPuzzleSeated(void)
 
 	if (g_byGameState != GAMESTATE_MOVE) {
 		return FALSE;
+	}
+	/* ピンボールの席も同じ扱い（座っている間は歩かない・ショートカットや仮想パッドの扱いが落ち物と同じ） */
+	if (IsPinballSeated ()) {
+		return TRUE;
 	}
 	for (i = 0; i < PUZZLE_VIEW_MAX; i ++) {
 		if (s_aPuzView[i].bUse && s_aPuzView[i].bBoard && s_aPuzView[i].St.byMine &&
