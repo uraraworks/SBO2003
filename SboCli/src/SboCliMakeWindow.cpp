@@ -73,6 +73,7 @@ PWNDINFO MakeWindowLEAVE_ITEMGET				(void);				/* 預かり所：引き取るア
 PWNDINFO MakeWindowLEAVE_GOLD					(BYTE);				/* 預かり所：預ける金額設定 */
 PWNDINFO MakeWindowLEAVE_DISPOSEMENU			(void);				/* 預かり所：手放す品を売る・捨てる */
 PWNDINFO MakeWindowLEAVE_DISPOSECOUNT			(BYTE);				/* 預かり所：手放す個数 */
+PWNDINFO MakeWindowSHOP_COUNT					(int, BOOL);		/* 店:買う個数 */
 PWNDINFO MakeWindowCOMMANDITEMCHAR				(void);				/* 道具使う相手選択 */
 PWNDINFO MakeWindowCOMMANDTRADE					(void);				/* 取り引きコマンド */
 PWNDINFO MakeWindowTRADE						(DWORD);			/* 取り引き */
@@ -1697,7 +1698,12 @@ PWNDINFO MakeWindowLEAVE_DISPOSECOUNT(BYTE byMode)
 
 	PITEMINFO pItem = g_aItemInfo[g_pLeaveInfo->waItem[g_nProcShopSelect]];
 	int nMax = g_pLeaveInfo->byItemCount[g_nProcShopSelect];
-	if (byMode == LEAVEDISPOSE_SELL) {
+	if (byMode == LEAVEDISPOSE_TAKE) {
+		/* 受け取れる数：大事な物は大事な物の欄、他は手持ちの空き枠 */
+		int nSpace = (pItem->byFlg & ITEMFLG_IMPORTANT) ?
+				(MAX_IMPORTANT - GetImportantCount (g_nMyCharID)) : (MAX_MYITEM - GetItemCount (g_nMyCharID));
+		nMax = max (min (nMax, nSpace), 1);
+	} else if (byMode == LEAVEDISPOSE_SELL) {
 		/* 所持金が 999999 を超えない分まで */
 		PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
 		DWORD dwSell = max (ItemGoldOf (g_pLeaveInfo->waItem[g_nProcShopSelect]) / 4, (DWORD)1);
@@ -1720,7 +1726,48 @@ PWNDINFO MakeWindowLEAVE_DISPOSECOUNT(BYTE byMode)
 
 	char szTmp[512];
 	wsprintf (szTmp, "＊｢%sをいくつ%s？@1　 ↑↓で1個ずつ、←→で10個ずつ@1　 変えられます。@2", ItemNameOf (g_pLeaveInfo->waItem[g_nProcShopSelect]),
-			(byMode == LEAVEDISPOSE_SELL) ? "売りますか" : "捨てますか");
+			(byMode == LEAVEDISPOSE_SELL) ? "売りますか" : ((byMode == LEAVEDISPOSE_TAKE) ? "引き取りますか" : "捨てますか"));
+	PWNDINFO pWndNew = MakeWindowMSG (szTmp, TRUE);
+	pWndNew->pParent = pWnd;
+	pWnd->pChild = pWndNew;
+	g_WndInfo.Add (pWndNew);
+	return pWnd;
+}
+
+/* ========================================================================= */
+/* 関数名：MakeWindowSHOP_COUNT												 */
+/* 内容：ウィンドウの作成(店:買う個数)										 */
+/*       預かり所の個数入力と同じ窓を使う。nData1=個数、nData2=最大、		 */
+/*       byData1=LEAVEDISPOSE_BUY、nType2=1なら「売るだけ」系の店			 */
+/*       ↑↓で1個ずつ（1と最大でひと回り）、←→で10個ずつ					 */
+/* ========================================================================= */
+PWNDINFO MakeWindowSHOP_COUNT(int nMax, BOOL bSellShop)
+{
+	PSHOPINFO pShop = &g_pMapInfo->pShopInfo[g_nProcShopID];
+	PWNDINFO pWnd = new WNDINFO;
+	ZeroMemory (pWnd, sizeof (WNDINFO));
+	pWnd->dwID = g_dwNewID;
+	g_dwNewID ++;
+	pWnd->nType = WNDTYPE_LEAVE;
+	pWnd->nType2 = bSellShop ? 1 : 0;
+	pWnd->pDib = new CImg32;
+
+	pWnd->nData1 = 1;
+	pWnd->nData2 = max (nMax, 1);
+	pWnd->byData1 = LEAVEDISPOSE_BUY;
+
+	pWnd->nX = 32 + 16 * 15;
+	pWnd->nY = 50 + 16 * 10;
+	pWnd->nCx = 16 * 2 + 8 * 13;
+	pWnd->nCy = 16 * 4;
+	pWnd->pDib->Create (pWnd->nCx, pWnd->nCy);
+	pWnd->pDib->SetColorKey (RGB (40, 40, 40));
+
+	g_nProcShopState = LEAVESTATE_DISPOSECOUNT;
+	g_bProcShopConfirm = FALSE;
+
+	char szTmp[512];
+	wsprintf (szTmp, "＊｢%sをいくつ買いますか？@1　 ↑↓で1個ずつ、←→で10個ずつ@1　 変えられます。@2", ItemNameOf (pShop->awItem[g_nProcShopSelect]));
 	PWNDINFO pWndNew = MakeWindowMSG (szTmp, TRUE);
 	pWndNew->pParent = pWnd;
 	pWnd->pChild = pWndNew;
@@ -3607,7 +3654,8 @@ void ListScrollFitMargin(PWNDINFO pWndList, int nIndex, int nCount, int nMargin)
 /* ========================================================================= */
 /* 関数名：ListScrollKey													 */
 /* 内容：一覧の上下左右キーの処理（余白付きスクロール）					 */
-/*       ←で先頭、→で末尾。動かしたら TRUE									 */
+/*       ←で前のページ、→で次のページ（表示行数ぶん）。端では先頭/末尾で止まる	 */
+/*       動かしたら TRUE														 */
 /* ========================================================================= */
 BOOL ListScrollKey(PWNDINFO pWndList, BYTE byCode, int nCount)
 {
@@ -3619,9 +3667,9 @@ BOOL ListScrollKey(PWNDINFO pWndList, BYTE byCode, int nCount)
 	} else if ((byCode == VK_DOWN) && (nIndex < nCount - 1)) {
 		nIndexNew = nIndex + 1;
 	} else if (byCode == VK_LEFT) {
-		nIndexNew = 0;
+		nIndexNew = max (nIndex - max (pWndList->nData2, 1), 0);
 	} else if (byCode == VK_RIGHT) {
-		nIndexNew = max (nCount - 1, 0);
+		nIndexNew = min (nIndex + max (pWndList->nData2, 1), max (nCount - 1, 0));
 	} else {
 		return FALSE;
 	}

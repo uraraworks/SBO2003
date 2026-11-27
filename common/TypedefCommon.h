@@ -2930,6 +2930,18 @@ typedef struct _CMDPARA_DATA5 {
 	DWORD		dwData2;											/* データ２ */
 } CMDPARA_DATA5, *PCMDPARA_DATA5;
 
+/* お店で買う（クライアント→サーバー）
+   先頭は CMDPARA_DATA5 と同じ並び。個数が付かない古い形（CMDPARA_DATA5 の大きさ）は1個として扱う */
+typedef struct _CMDPARA_SHOPBUY {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byData;												/* 予備 */
+	DWORD		pID;												/* プレイヤーID */
+	DWORD		dwTblID;											/* テーブルID */
+	DWORD		dwData1;											/* 店の番号 */
+	DWORD		dwData2;											/* 店の何番目の品か */
+	DWORD		dwCount;											/* 買う個数 */
+} CMDPARA_SHOPBUY, *PCMDPARA_SHOPBUY;
+
 /* 汎用データ６ */
 typedef struct _CMDPARA_DATA6 {
 	BYTE		byCmd;												/* コマンドID */
@@ -4624,7 +4636,19 @@ typedef struct _CMDPARA_SORTITEM {
 enum {
 	LEAVEDISPOSE_SELL = 0,										/* 売る（店の買い取りと同じ 価値の1/4、最低1） */
 	LEAVEDISPOSE_DROP,											/* 捨てる */
+	LEAVEDISPOSE_TAKE,											/* 引き取る（個数入力の窓だけで使う。通信には載せない） */
+	LEAVEDISPOSE_BUY,											/* お店で買う（個数入力の窓だけで使う。通信には載せない） */
 };
+
+/* 預かり所の品を個数を指定して引き取る（クライアント→サーバー）
+   先頭は CMDPARA_DATA3 と同じ並び。個数が付かない古い形（CMDPARA_DATA3 の大きさ）は1個として扱う */
+typedef struct _CMDPARA_LEAVEITEMTAKE {
+	BYTE		byCmd;												/* コマンドID */
+	DWORD		pID;												/* プレイヤーID */
+	DWORD		dwTblID;											/* テーブルID */
+	DWORD		dwData;												/* 預かり所の何番目か */
+	DWORD		dwCount;											/* 引き取る個数 */
+} CMDPARA_LEAVEITEMTAKE, *PCMDPARA_LEAVEITEMTAKE;
 
 #pragma pack(push, 1)
 /* 預かり所の品を引き取らずに売る・捨てる（クライアント→サーバー） */

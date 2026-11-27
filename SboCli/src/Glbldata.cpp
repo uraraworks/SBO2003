@@ -170,6 +170,7 @@ int g_nMyCharID,													/* 自分のキャラ番号 */
 	g_nProcShopID,													/* 処理中の店ID */
 	g_nProcShopState,												/* 処理中の店状態 */
 	g_nProcShopSelect,												/* 選択した番号 */
+	g_nProcShopBuyCount = 1,										/* 買う個数 */
 	g_nLoginAnimeX;													/* ログイン画面アニメ表示用 */
 
 LPSTR g_pszServer;													/* サーバーのアドレス */

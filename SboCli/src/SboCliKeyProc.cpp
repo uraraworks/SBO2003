@@ -56,6 +56,51 @@ static void ShopAddEquWarn(LPSTR pszMsg, int nSize, PITEMINFO pItem, PCHARINFO p
 	pszMsg[nSize - 1] = 0;
 }
 
+/* お店で一度に買える最大個数（所持金/単価・手持ちの空き・99 の一番小さい数。大事な物は大事な物の欄の空き） */
+static int ShopBuyMaxCount(PSHOPINFO pShop, int nSel, PCHARINFO pChar)
+{
+	WORD wItem = pShop->awItem[nSel];
+	if (!ItemIDValid (wItem)) {
+		return 1;
+	}
+	PITEMINFO pItem = g_aItemInfo[wItem];
+	int nMax = 99;
+	if (pItem->dwGold > 0) {
+		nMax = min (nMax, (int)min (pChar->dwGold / pItem->dwGold, (DWORD)99));
+	}
+	int nSpace = (pItem->byFlg & ITEMFLG_IMPORTANT) ?
+			(MAX_IMPORTANT - GetImportantCount (g_nMyCharID)) : (MAX_MYITEM - GetItemCount (g_nMyCharID));
+	nMax = min (nMax, nSpace);
+	return max (nMax, 0);
+}
+
+/* お店の「買う」確認窓（はい・いいえ＋確認文）を出す。確認文の品名には個数を、金額には合計を入れる */
+static void ShopMakeBuyConfirm(PSHOPINFO pShop, int nSel, int nCount, BOOL bSellShop, PCHARINFO pChar)
+{
+	PWNDINFO pWndTmp = MakeWindowSHOP_CONF ();
+	if (bSellShop) {
+		pWndTmp->nType = WNDTYPE_SHOPSELL;
+	}
+	g_WndInfo.Add (pWndTmp);
+	g_dwActiveMsgID = pWndTmp->dwID;
+	g_nProcShopSelect = nSel;
+	g_nProcShopBuyCount = nCount;
+
+	char szMsgTmp[2048], szName[256];
+	PITEMINFO pItem = g_aItemInfo[pShop->awItem[nSel]];
+	if (nCount > 1) {
+		wsprintf (szName, "%s×%d個", ItemNameOf (pShop->awItem[nSel]), nCount);
+	} else {
+		wsprintf (szName, "%s", ItemNameOf (pShop->awItem[nSel]));
+	}
+	wsprintf (szMsgTmp, pShop->apMsg[SHOPMSG_BUYCONF], szName, pItem->dwGold * nCount);
+	ShopAddEquWarn (szMsgTmp, sizeof (szMsgTmp), pItem, pChar);
+	PWNDINFO pWndNew = MakeWindowMSG (szMsgTmp, TRUE);
+	pWndNew->pParent = pWndTmp;
+	pWndTmp->pChild = pWndNew;
+	g_WndInfo.Add (pWndNew);
+}
+
 /* ========================================================================= */
 /* 関数名：ViewModeNext														 */
 /* 内容：Tab の表示切り替え（なし→名前→HP→名前とHP→［地図］→なし）		 */
@@ -4102,35 +4147,31 @@ void KeyProcSHOP(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 
 			/* 初回表示？ */
 			if (g_bProcShopConfirm == FALSE) {
-				pWndTmp = MakeWindowSHOP_CONF ();
-				g_WndInfo.Add (pWndTmp);
-				g_dwActiveMsgID = pWndTmp->dwID;
 				g_nProcShopSelect = nTmp;
-
-				char szMsgTmp[2048];
-				PITEMINFO pItem = g_aItemInfo[pShop->awItem[nTmp]];
-				wsprintf (szMsgTmp, pShop->apMsg[SHOPMSG_BUYCONF], ItemNameOf (pShop->awItem[nTmp]), pItem->dwGold);
-				ShopAddEquWarn (szMsgTmp, sizeof (szMsgTmp), pItem, pChar);
-				pWndNew = MakeWindowMSG (szMsgTmp, TRUE);
-				pWndNew->pParent = pWndTmp;
-				pWndTmp->pChild = pWndNew;
-				g_WndInfo.Add (pWndNew);
+				/* 2個以上買えるなら、先に個数を聞く（1個しか買えない時は聞かない） */
+				if (ShopBuyMaxCount (pShop, nTmp, pChar) >= 2) {
+					pWndTmp = MakeWindowSHOP_COUNT (ShopBuyMaxCount (pShop, nTmp, pChar), FALSE);
+					g_WndInfo.Add (pWndTmp);
+					g_dwActiveMsgID = pWndTmp->dwID;
+				} else {
+					ShopMakeBuyConfirm (pShop, nTmp, 1, FALSE, pChar);
+				}
 
 			/* 買う確認中 */
 			} else {
 				/* はい */
 				if (nTmp == 0) {
 					PITEMINFO pItem = g_aItemInfo[pShop->awItem[g_nProcShopSelect]];
-					/* お金が足りない？ */
-					if (pChar->dwGold < pItem->dwGold) {
+					/* お金が足りない？（合計金額で見る） */
+					if (pChar->dwGold < pItem->dwGold * (DWORD)g_nProcShopBuyCount) {
 						pWndTmp = MakeWindowSHOP (g_nProcShopID, SHOPMSG_BUYGOLD);
 
 					/* もう持てない？ */
-					} else if (GetItemCount (g_nMyCharID) >= MAX_MYITEM) {
+					} else if (ShopBuyMaxCount (pShop, g_nProcShopSelect, pChar) < g_nProcShopBuyCount) {
 						pWndTmp = MakeWindowSHOP (g_nProcShopID, SHOPMSG_BUYTAKE);
 
 					} else {
-						SendCMDSHOPBUY ((DWORD)g_nProcShopID, (DWORD)g_nProcShopSelect);
+						SendCMDSHOPBUY ((DWORD)g_nProcShopID, (DWORD)g_nProcShopSelect, g_nProcShopBuyCount);
 						pWndTmp = MakeWindowSHOP (g_nProcShopID, SHOPMSG_BUYCLOSE);
 					}
 					g_WndInfo.Add (pWndTmp);
@@ -4313,20 +4354,15 @@ void KeyProcSHOPSELL(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 
 			/* 初回表示？ */
 			if (g_bProcShopConfirm == FALSE) {
-				pWndTmp = MakeWindowSHOP_CONF ();
-				pWndTmp->nType = WNDTYPE_SHOPSELL;
-				g_WndInfo.Add (pWndTmp);
-				g_dwActiveMsgID = pWndTmp->dwID;
 				g_nProcShopSelect = nTmp;
-
-				char szMsgTmp[2048];
-				PITEMINFO pItem = g_aItemInfo[pShop->awItem[nTmp]];
-				wsprintf (szMsgTmp, pShop->apMsg[SHOPMSG_BUYCONF], ItemNameOf (pShop->awItem[nTmp]), pItem->dwGold);
-				ShopAddEquWarn (szMsgTmp, sizeof (szMsgTmp), pItem, pChar);
-				pWndNew = MakeWindowMSG (szMsgTmp, TRUE);
-				pWndNew->pParent = pWndTmp;
-				pWndTmp->pChild = pWndNew;
-				g_WndInfo.Add (pWndNew);
+				/* 2個以上買えるなら、先に個数を聞く（1個しか買えない時は聞かない） */
+				if (ShopBuyMaxCount (pShop, nTmp, pChar) >= 2) {
+					pWndTmp = MakeWindowSHOP_COUNT (ShopBuyMaxCount (pShop, nTmp, pChar), TRUE);
+					g_WndInfo.Add (pWndTmp);
+					g_dwActiveMsgID = pWndTmp->dwID;
+				} else {
+					ShopMakeBuyConfirm (pShop, nTmp, 1, TRUE, pChar);
+				}
 
 			/* 買う確認中 */
 			} else {
@@ -4334,16 +4370,16 @@ void KeyProcSHOPSELL(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				/* はい */
 				if (nTmp == 0) {
 					PITEMINFO pItem = g_aItemInfo[pShop->awItem[g_nProcShopSelect]];
-					/* お金が足りない？ */
-					if (pChar->dwGold < pItem->dwGold) {
+					/* お金が足りない？（合計金額で見る） */
+					if (pChar->dwGold < pItem->dwGold * (DWORD)g_nProcShopBuyCount) {
 						pWndTmp = MakeWindowSHOP_BUY (SHOPMSG_BUYGOLD);
 
 					/* もう持てない？ */
-					} else if (GetItemCount (g_nMyCharID) >= MAX_MYITEM) {
+					} else if (ShopBuyMaxCount (pShop, g_nProcShopSelect, pChar) < g_nProcShopBuyCount) {
 						pWndTmp = MakeWindowSHOP_BUY (SHOPMSG_BUYTAKE);
 
 					} else {
-						SendCMDSHOPBUY ((DWORD)g_nProcShopID, (DWORD)g_nProcShopSelect);
+						SendCMDSHOPBUY ((DWORD)g_nProcShopID, (DWORD)g_nProcShopSelect, g_nProcShopBuyCount);
 						pWndTmp = MakeWindowSHOP_BUY (SHOPMSG_BUYCLOSE);
 					}
 					pWndTmp->nType = WNDTYPE_SHOPSELL;
@@ -4744,7 +4780,39 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		case LEAVESTATE_DISPOSECOUNT:
 			{
 				BYTE byMode = pWnd->byData1;
+				BOOL bSellShop = (pWnd->nType2 == 1);
 				EraseWindow (pWnd);
+				/* 店で買う個数の窓：買う品を選び直す前の画面（店の最初／売るだけの店の一覧）へ戻る */
+				if (byMode == LEAVEDISPOSE_BUY) {
+					PSHOPINFO pShop = &g_pMapInfo->pShopInfo[g_nProcShopID];
+					g_bProcShopConfirm = FALSE;
+					if (bSellShop) {
+						pWndTmp = MakeWindowSHOP_BUY (SHOPMSG_CONTINUE);
+						pWndTmp->nType = WNDTYPE_SHOPSELL;
+						g_WndInfo.Add (pWndTmp);
+						if (pShop->awItem[0] > 0) {
+							PWNDINFO pWndItemInfo = MakeWindowITEMINFO (16 * 19, 16 * (pShop->byCountItem + 5));
+							pWndTmp->pWndTmp = pWndItemInfo;
+							pWndItemInfo->nData1 = pShop->awItem[0];
+							g_WndInfo.Add (pWndItemInfo);
+						}
+					} else {
+						pWndTmp = MakeWindowSHOP (g_nProcShopID, SHOPMSG_CONTINUE);
+						g_WndInfo.Add (pWndTmp);
+					}
+					g_dwActiveMsgID = pWndTmp->dwID;
+					g_bDraw = TRUE;
+					break;
+				}
+				/* 引き取る個数の窓：引き取る品の一覧へ戻る（一覧を頼み直す。返ってきたら窓を作る） */
+				if (byMode == LEAVEDISPOSE_TAKE) {
+					g_nProcShopState = LEAVESTATE_ITEMSELECTGET;
+					g_nLeaveListPos = g_nProcShopSelect;
+					SAFE_DELETE (g_pLeaveInfo);
+					SendCmdLEAVEITEMGET (-1);
+					g_bEnableMove = FALSE;
+					break;
+				}
 				pWndTmp = MakeWindowLEAVE_DISPOSEMENU ();
 				pWndTmp->nData1 = (byMode == LEAVEDISPOSE_SELL) ? 0 : 1;
 				g_WndInfo.Add (pWndTmp);
@@ -4965,7 +5033,26 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 
 		/* 手放す：個数を決めた → サーバーへ頼む。結果は預かり所の一覧で返ってくる */
 		case LEAVESTATE_DISPOSECOUNT:
-			if ((g_pLeaveInfo == NULL) || (pWnd->nData1 <= 0)) {
+			if (((g_pLeaveInfo == NULL) && (pWnd->byData1 != LEAVEDISPOSE_BUY)) || (pWnd->nData1 <= 0)) {
+				break;
+			}
+			/* 店で買う個数を決めた → 合計金額の入った確認窓へ */
+			if (pWnd->byData1 == LEAVEDISPOSE_BUY) {
+				int nCount = pWnd->nData1;
+				BOOL bSellShop = (pWnd->nType2 == 1);
+				EraseWindow (pWnd);
+				g_nProcShopState = SHOPMSG_BUY;
+				ShopMakeBuyConfirm (&g_pMapInfo->pShopInfo[g_nProcShopID], g_nProcShopSelect, nCount, bSellShop, pChar);
+				g_bDraw = TRUE;
+				break;
+			}
+			/* 引き取る個数を決めた → 個数を付けて頼む（結果は手持ちの更新で返る） */
+			if (pWnd->byData1 == LEAVEDISPOSE_TAKE) {
+				SendCmdLEAVEITEMTAKE ((DWORD)g_nProcShopSelect, pWnd->nData1);
+				EraseWindow (pWnd);
+				g_nProcShopState = LEAVESTATE_ITEMSELECTGET;
+				SAFE_DELETE (g_pLeaveInfo);
+				pWndTmp = MakeWindowLEAVE (1);
 				break;
 			}
 			{
@@ -4993,14 +5080,33 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			if (g_pLeaveInfo == NULL) {
 				break;
 			}
-			if (GetItemCount (g_nMyCharID) == MAX_MYITEM) {
-				EraseWindow (pWnd);
-				pWndTmp = MakeWindowLEAVE (5);
+			{
+				int nNo = pWnd->nData1 + pWnd->byData1;
+				if ((nNo < 0) || (nNo >= g_pLeaveInfo->byCount) || (nNo >= MAX_LEAVEITEM) ||
+						!ItemIDValid (g_pLeaveInfo->waItem[nNo])) {
+					break;
+				}
+				/* 受け取れる数：大事な物は大事な物の欄、他は手持ちの空き枠 */
+				int nSpace = (g_aItemInfo[g_pLeaveInfo->waItem[nNo]]->byFlg & ITEMFLG_IMPORTANT) ?
+						(MAX_IMPORTANT - GetImportantCount (g_nMyCharID)) : (MAX_MYITEM - GetItemCount (g_nMyCharID));
+				int nMax = min ((int)g_pLeaveInfo->byItemCount[nNo], nSpace);
 
-			} else {
-				SendCmdLEAVEITEMGET (pWnd->nData1 + pWnd->byData1);
-				EraseWindow (pWnd);
-				pWndTmp = MakeWindowLEAVE (1);
+				if (nMax <= 0) {
+					EraseWindow (pWnd);
+					pWndTmp = MakeWindowLEAVE (5);
+
+				} else if (nMax == 1) {
+					/* 1個だけ：従来どおりすぐ引き取る */
+					SendCmdLEAVEITEMGET (nNo);
+					EraseWindow (pWnd);
+					pWndTmp = MakeWindowLEAVE (1);
+
+				} else {
+					/* 2個以上：個数を聞く（手放す時と同じ窓） */
+					EraseWindow (pWnd);
+					g_nProcShopSelect = nNo;
+					pWndTmp = MakeWindowLEAVE_DISPOSECOUNT (LEAVEDISPOSE_TAKE);
+				}
 			}
 			break;
 
