@@ -19424,6 +19424,26 @@ static void TestTrialRoom(const std::vector<int> &aLogin)
 			(int)(pA->dwX == dwBackX && pA->dwY == dwBackY), (int)(pA->waItem[0] == 0));
 	}
 
+	/* 個室の中でワープのイベントに乗る（イベントは範囲の中・行き先は範囲の外）：行き先へは飛ばず、直接元の姿・入る前の場所へ戻る */
+	{
+		QuestMovePC(pA, nMap, nStartX, nStartY);
+		TrialTalkYes(pA, pNpc);
+		QuestMovePC(pA, nMap, 2, 3);
+		EVENTINFO Event;
+		EVENTINFO_MOVE Move;
+		ZeroMemory(&Event, sizeof(Event));
+		ZeroMemory(&Move, sizeof(Move));
+		Move.dwX = (DWORD)(pMap->nCX - 6);
+		Move.dwY = (DWORD)(pMap->nCY - 6);
+		Event.byType = EVENTTYPE_MOVE;
+		Event.pData = &Move;
+		int nIn = (int)TrialRoomIs(pA);
+		EventProc(pA, &Event, 0);
+		printf("trialroom event exit before=%d in=%d trial=%d lv=%u pw=%u gold=%u exp=%u at_back=%d at_dest=%d item0=%d\n", nIn, (int)QuestInChallenge(pA), (int)TrialRoomIs(pA),
+			pA->byLevel, pA->byPW, pA->dwGold, pA->dwExp, (int)(pA->dwX == (DWORD)nStartX && pA->dwY == (DWORD)nStartY),
+			(int)(pA->dwX == Move.dwX && pA->dwY == Move.dwY), (int)(pA->waItem[0] == 0));
+	}
+
 	/* 再び入る→倒れる→復活を選ぶとすぐ戻る（お金は減らない・倒れたままにならない） */
 	QuestMovePC(pA, nMap, nStartX, nStartY);
 	TrialTalkYes(pA, pNpc);

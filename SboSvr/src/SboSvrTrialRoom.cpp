@@ -371,6 +371,22 @@ void TrialRoomProc(void)
 	}
 }
 
+/* 個室の中でワープのイベント（出口の光）に乗った：イベントの行き先へは飛ばさず、直接元の場所へ戻す */
+BOOL TrialRoomEventExit(PCHARINFO pChar)
+{
+	DWORD dwMapBack = pChar->dwMapID, dwXBack = pChar->dwX, dwYBack = pChar->dwY;
+
+	if (!TrialRoomIs (pChar)) {
+		return FALSE;
+	}
+	TrialRoomLeave (pChar, TRIALLEAVE_OUT);
+	/* その場に残った時は、クライアントがワープの返事待ちで歩けないので位置を送って解く */
+	if ((pChar->dwMapID == dwMapBack) && (pChar->dwX == dwXBack) && (pChar->dwY == dwYBack)) {
+		SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
+	}
+	return TRUE;
+}
+
 /* 倒れて「復活」を選んだ */
 BOOL TrialRoomResurrection(PCHARINFO pChar)
 {
