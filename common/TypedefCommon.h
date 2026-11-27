@@ -1198,6 +1198,7 @@ enum {
 	SUBGAMEID_DUNGEON,											/* ダンジョン */
 	SUBGAMEID_WAR,												/* 戦場ゲーム */
 	SUBGAMEID_SUGOROKU,											/* すごろく */
+	SUBGAMEID_MAZETABLE,										/* 迷路対戦の台（迷路ダンジョン SUBGAMEID_MAZE とは別物。NPC台詞 @k<サブゲーム番号> で使う） */
 	SUBGAMEID_MAX
 };
 
@@ -1774,6 +1775,26 @@ typedef struct _SUBSTATUS_SUGOROKU {
 	BYTE		byFlgViewer			: 1;							/* 観客として参加 */
 	BYTE		byFlgReserve		: 7;							/* 予約 */
 } SUBSTATUS_SUGOROKU, *PSUBSTATUS_SUGOROKU;
+
+/* サブゲーム：迷路対戦の台の情報（実行用）。NPC の台詞 "@k<サブゲーム番号>" から参照する（common/MazeTable.h）。実行中だけの状態は持たない */
+typedef struct _SUBGAME_MAZETABLEINFO {
+	char		szName[MAX_CHARNAMEBUF];							/* 台の名前（管理用の呼び名。ゲーム中は使わない） */
+	char		chDx;												/* 盤の左上が台NPCのマスの左上から何タイルか（X。既定 -5） */
+	char		chDy;												/* 同（Y。既定 -9） */
+	char		chSdx;												/* 座る場所1（プレイヤー0＝下側）の台NPCからの相対位置（X。既定 0） */
+	char		chSdy;												/* 同（Y。既定 1） */
+	char		chSdx2;												/* 座る場所2（プレイヤー1＝上側）の台NPCからの相対位置（X。既定 0） */
+	char		chSdy2;												/* 同（Y。既定 -10） */
+	WORD		wFloorA;											/* 床パーツA（マップパーツID。0=既定のコード描画の単色） */
+	WORD		wFloorB;											/* 床パーツB（市松の相手。0ならAだけの単色） */
+	WORD		wGap;												/* 隙間パーツ（壁の通り道の地。0=既定） */
+	BYTE		byCpuLevel;											/* CPU強さ（0=CPUなし・1=よわい・2=ふつう・3=つよい） */
+	WORD		wCpuGrpID;											/* CPUのキャラ画像（NPCの見た目 wGrpID と同じ意味。0=色付きの丸） */
+	char		szCpuName[MAX_CHARNAMEBUF];							/* CPUの名前表示（空なら「CPU」） */
+} SUBGAME_MAZETABLEINFO, *PSUBGAME_MAZETABLEINFO;
+
+/* サブゲーム：迷路対戦の台の情報(保存データ。実行用と同じ中身) */
+typedef SUBGAME_MAZETABLEINFO SUBGAME_MAZETABLEINFOSAVE, *PSUBGAME_MAZETABLEINFOSAVE;
 
 /* 座標用構造体 */
 typedef struct _XYINFO {
@@ -4410,13 +4431,13 @@ typedef struct _CMDPARA_PUZZLESE {
 } CMDPARA_PUZZLESE, *PCMDPARA_PUZZLESE;
 #pragma pack(pop)
 
-/* 迷路対戦（台に座って遊ぶ 7×7 の 2 人対戦。ロジックは common/MazeAttack.h、台詞 "@k..." の読み方は common/MazeTable.h。
+/* 迷路対戦（台に座って遊ぶ 7×7 の 2 人対戦。ロジックは common/MazeAttack.h、台の設定は SUBGAME_MAZETABLEINFO（NPC台詞 "@k<サブゲーム番号>"。common/MazeTable.h）。
    台は席が 2 つ。席 1 に座るとプレイヤー 0（下側スタート）、席 2 に座るとプレイヤー 1（上側スタート）。
    片方だけ座っている間はひとり練習（相手の手番はサーバーが自動で飛ばす）。ひとり練習中のところへもう一方が座ると、
    「乱入しますか？」（会話の「はい・いいえ」と CMD_TALKANSWER）を聞き、はい＝盤を初期化して 2 人対戦（3・2・1 のカウントダウンのあと開始。
    手番は交互で 1 手 30 秒。時間切れは手番を飛ばし、連続 3 回で不戦敗。勝敗が決まると 3 秒見せてから盤を初期化して続け、先手は交代）。
    席を立つ・切断・マップ移動・倒れた時は残った側の勝ちで、残った人はひとり練習に戻る。
-   台詞でCPU強さが 1 以上の台は、人がひとりで座った時に「CPUと対戦しますか？」と聞き、はい＝空いている側の席をCPUが受け持つ（MAZESTATE_CPU）。
+   サブゲーム情報のCPU強さが 1 以上の台は、人がひとりで座った時に「CPUと対戦しますか？」と聞き、はい＝空いている側の席をCPUが受け持つ（MAZESTATE_CPU）。
    CPU対戦中にもう一方の席に座ろうとすると「交代して対戦しますか？」と聞き、はい＝CPUを外して人対人にする。
    CMD_MAZESTATE は、座っている人と台の近くにいる人（観戦。席が空の待機中の台も）に、台ごとに送る）
    CMD_MAZEKEY: クライアント→サーバー。座っている間の操作。サーバーが検証し、不正なら無視して状態を送り直す */
@@ -4458,13 +4479,13 @@ typedef struct _CMDPARA_MAZESTATE {
 	BYTE		byWallLeft[2];										/* 各自の壁の残り枚数 */
 	BYTE		byWallCount;										/* 置かれた壁の数（0〜MAZEPARA_WALL_MAX） */
 	MAZEWALLPARA	aWall[MAZEPARA_WALL_MAX];						/* 置かれた壁（置いた順。byWallCount 個だけ有効） */
-	short		sBoardX;											/* 盤の左上（マップのドット座標。10×10 タイル＝320×320 ドット。台の座標と台詞から決める） */
+	short		sBoardX;											/* 盤の左上（マップのドット座標。10×10 タイル＝320×320 ドット。台の座標とサブゲーム情報から決める） */
 	short		sBoardY;
 	DWORD		dwNpc;												/* 台NPCのテーブルID（盤を見分ける印。受け取る側は台ごとに盤を覚える） */
 	DWORD		dwChar[2];											/* 2 人分の座っているキャラのテーブルID。[0]=席 1（プレイヤー 0）・[1]=席 2（プレイヤー 1）。座っていない側は MAZE_NOCHAR。
 																			   受け取った本人がどちらの席かは、自分のテーブルIDがどちらにあるかで分かる（MAZESTATE_SEAT は座っているかだけ） */
-	WORD		wFloor[2];											/* 床に使うマップパーツID（市松の A・B。B が 0 なら A だけの単色。両方 0 ならコード描画。台詞の床A・床B） */
-	WORD		wGap;												/* 壁の通り道（隙間）の地に使うマップパーツID（0 ならコード描画。台詞の隙間） */
+	WORD		wFloor[2];											/* 床に使うマップパーツID（市松の A・B。B が 0 なら A だけの単色。両方 0 ならコード描画。サブゲーム情報の床A・床B） */
+	WORD		wGap;												/* 壁の通り道（隙間）の地に使うマップパーツID（0 ならコード描画。サブゲーム情報の隙間） */
 	/* ここから 2 人対戦用（旧クライアントは後ろを無視する。ひとり練習・待機中は byCount・byTimeLeft・byTimeouts が 0） */
 	BYTE		byCount;											/* 対戦開始までのカウントダウン残り秒（3・2・1。0=カウントダウン中でない。0 以外の間は MAZESTATE_COUNT も立つ。この間は操作できない） */
 	BYTE		byTimeLeft;											/* 手番の人の残り秒（対戦中でカウントダウン・勝ち表示中でない時だけ 30〜1。0=出さない）。1 秒ごとにサーバーが FULL を送り直す */
@@ -4472,6 +4493,10 @@ typedef struct _CMDPARA_MAZESTATE {
 	BYTE		byHasName[2];										/* 各席に名前を出せる人がいるか（1=dwChar[i] のキャラがいる・0=空席） */
 	DWORD		dwTurnChar;											/* 手番の人のキャラのテーブルID（その席が空なら MAZE_NOCHAR。残り秒を出す相手の見分けに使う） */
 	BYTE		byCpuLevel;											/* この台のCPU強さ（0=CPUなしの台・1=よわい・2=ふつう・3=つよい。待機中の台にも入る。CPU対戦中かは MAZESTATE_CPU） */
+	short		sSeatX[2];											/* 席 1・席 2 の座る場所（マップのタイル座標。クライアントが S キーで座れる場所か調べるのに使う。台の設定は送らない） */
+	short		sSeatY[2];
+	WORD		wCpuGrpID;											/* CPUのコマに使うキャラ画像（NPCの wGrpID と同じ意味。0=今までの色付きの丸。台のサブゲーム情報の wCpuGrpID） */
+	char		szCpuName[MAX_CHARNAMEBUF];							/* CPUの名前表示（空ならクライアントは「CPU」） */
 } CMDPARA_MAZESTATE, *PCMDPARA_MAZESTATE;
 /* CMD_MAZEKEY の中身（クライアント→サーバー。使わない欄は 0） */
 typedef struct _CMDPARA_MAZEKEY {

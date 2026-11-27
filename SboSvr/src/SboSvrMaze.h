@@ -9,8 +9,8 @@
 /* ========================================================================= */
 /* 関数プロトタイプ宣言														 */
 /* ========================================================================= */
-extern BOOL MazeIsTableNpc(PCHARINFO pNpc);									/* 台詞が "@k" で始まる迷路の台NPCか（依頼NPCの "@q" とは別） */
-extern BOOL MazeOnSeatCell(PCHARINFO pChar, PCHARINFO pNpc);				/* pChar が台NPCの「座る場所」（席 1＝台詞の 3・4 番目・既定は台NPCの 1 つ下／席 2＝台詞の 8・9 番目・既定は (0,-10)）のマスの上にいるか（同じマップ・空間） */
+extern BOOL MazeIsTableNpc(PCHARINFO pNpc);									/* 台詞が "@k<番号>" で、番号がサブゲーム情報の迷路対戦の台（SUBGAMEID_MAZETABLE）を指す台NPCか（依頼NPCの "@q" とは別。番号が無い・種別違いなら FALSE） */
+extern BOOL MazeOnSeatCell(PCHARINFO pChar, PCHARINFO pNpc);				/* pChar が台NPCの「座る場所」（席 1＝サブゲーム情報の座る場所1・既定は台NPCの 1 つ下／席 2＝座る場所2・既定は (0,-10)）のマスの上にいるか（同じマップ・空間） */
 extern void MazeSit(PCHARINFO pChar, PCHARINFO pNpc, int nChoice = 0);		/* 台の座る場所のマスで席に座る（座る場所以外では何もしない）。無料の台のみ。Sキー。
 																				   もう一方の席でひとりが遊んでいれば「乱入しますか？」、CPU強さ>0 の台にひとりで座るなら「CPUと対戦しますか？」、CPU対戦中のCPU側の席なら「交代して対戦しますか？」を聞く
 																				   （nChoice: 0=まだ聞いていない 1=はい 2=いいえ） */

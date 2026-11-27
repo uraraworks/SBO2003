@@ -3072,6 +3072,10 @@ void SendCmdSUBGAMEINFO(DWORD pIDSend, int nNo)
 		}
 		break;
 
+	case SUBGAMEID_MAZETABLE:	/* 迷路対戦の台（保存用と実行用が同じ中身） */
+		CopyMemory (pData + sizeof (CMDPARA_DATA1), pInfo->pInfo, sizeof (SUBGAME_MAZETABLEINFOSAVE));
+		break;
+
 	case SUBGAMEID_SUGOROKU:	/* すごろく */
 		{
 			PSUBGAME_SUGOROKUINFO pInfoTmp = (PSUBGAME_SUGOROKUINFO)pInfo->pInfo;

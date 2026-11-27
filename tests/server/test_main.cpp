@@ -1954,7 +1954,7 @@ static void TestWorld(void)
 	TestPuzzleSeat(aLogin);
 	/* AV5. 落ち物パズルの INSERT COIN の案内（座る場所に立つと本人にだけ）・連勝・ハイスコアと連勝記録（保存・掲示板 @h・API） */
 	TestPuzzleRecord(aLogin);
-	/* AW. 迷路対戦の台（台詞 @k・座る・進む・壁・不正な操作・勝ち・やり直し・席を立つ・観戦・片付け） */
+	/* AW. 迷路対戦の台（サブゲーム情報＋台詞 @k<番号>・座る・進む・壁・不正な操作・勝ち・やり直し・席を立つ・観戦・片付け） */
 	TestMaze(aLogin);
 	g_aItemInfo[1]->byType = byCoinTypeBack;
 	g_aItemInfo[1]->byFlg = byCoinFlgBack;
@@ -18964,13 +18964,50 @@ static void TestPuzzleRecord(const std::vector<int> &aLogin)
 }
 
 /* ------------------------------------------------------------------------- */
-/* AW. 迷路対戦の台（台詞 "@k<dx>,<dy>,<sdx>,<sdy>,…,<sdx2>,<sdy2>" の NPC。ひとり練習と 2 人対戦）				 */
-/*     台詞の解析（既定・省略・負の値・依頼の見えるNPCは台でない）・座る場所で S → 座る・		 */
+/* AW. 迷路対戦の台（サブゲーム情報 SUBGAMEID_MAZETABLE を作り、NPC の台詞 "@k<番号>" で指す。ひとり練習と 2 人対戦）	 */
+/*     台詞の番号の読み方・設定の既定と範囲の丸め・番号なし／種別違い／依頼の見えるNPCは台でない・座る場所で S → 座る・	 */
 /*     隣では座れない・使用中は座れない・座っている間は歩けない・進む・壁を置く・				 */
 /*     不正な操作（壁の重なり・十字・範囲外・進めない向き・知らない操作）は無視して状態を送り直す・	 */
 /*     勝つと 3 秒盤を見せて（その間は操作を受けない）座ったまま戻る・やり直し・席を立つ・		 */
 /*     近くの人（観戦）への盤の送り始め・消す距離・離れる／切断で片付く						 */
 /* ------------------------------------------------------------------------- */
+/* 迷路対戦の台のサブゲーム情報を 1 つ足して番号を返す（pInfo の中身を写す。既定値は MazeTableInfoDefault で作る） */
+static int MazeInfoAdd(const SUBGAME_MAZETABLEINFO &Info)
+{
+	PSUBGAMEINFO pSub = new SUBGAMEINFO;
+	ZeroMemory(pSub, sizeof(SUBGAMEINFO));
+	pSub->byType = SUBGAMEID_MAZETABLE;
+	BYTE *pNew = new BYTE[sizeof(SUBGAME_MAZETABLEINFO)];
+	memcpy(pNew, &Info, sizeof(Info));
+	pSub->pInfo = pNew;
+	g_aSubaGameInfo.Add(pSub);
+	return g_aSubaGameInfo.GetSize() - 1;
+}
+
+/* 既定の台（盤 -5,-9・席 0,1 と 0,-10・CPUなし）を足して番号を返す */
+static int MazeInfoDefault(void)
+{
+	SUBGAME_MAZETABLEINFO Info;
+	MazeTableInfoDefault(&Info);
+	return MazeInfoAdd(Info);
+}
+
+/* 台NPCを近くに置く（台詞は "@k<番号>"） */
+static void MazeNpcOpen(PCHARINFO p, int nNo)
+{
+	char szSpeech[32];
+	sprintf(szSpeech, "@k%d", nNo);
+	NearNpcOpen(p, szSpeech);
+}
+
+/* 台NPC pNpc の席 nSeat（0=席 1・1=席 2）の座る場所（台NPCからの相対）をサブゲーム情報から読む */
+static void MazeSeatOffset(PCHARINFO pNpc, int nSeat, int *pnSdx, int *pnSdy)
+{
+	PSUBGAME_MAZETABLEINFO pInfo = (PSUBGAME_MAZETABLEINFO)g_aSubaGameInfo[MazeSpeechNo(pNpc->pszNpcSpeech)]->pInfo;
+	*pnSdx = nSeat ? pInfo->chSdx2 : pInfo->chSdx;
+	*pnSdy = nSeat ? pInfo->chSdy2 : pInfo->chSdy;
+}
+
 static void MazePackets(int nConn, std::vector<std::vector<BYTE> > &aOut)
 {
 	char *psz = MockCmdAll(nConn, CMD_MAZESTATE);
@@ -19028,8 +19065,8 @@ static void MazeKeySend(PCHARINFO p, BYTE byAct, BYTE byDir = 0, BYTE byX = 0, B
 /* 台の座る場所のマスに立って S キーで話しかける */
 static void MazeTalk(PCHARINFO p, PCHARINFO pNpc)
 {
-	int nDx, nDy, nSdx, nSdy;
-	MazeParseTable(pNpc->pszNpcSpeech, &nDx, &nDy, &nSdx, &nSdy);
+	int nSdx, nSdy;
+	MazeSeatOffset(pNpc, 0, &nSdx, &nSdy);
 	PuzzlePlace(p, pNpc, (DWORD)((int)pNpc->dwX + nSdx), (DWORD)((int)pNpc->dwY + nSdy));
 	PuzzleKeyS(p, pNpc);
 }
@@ -19062,10 +19099,9 @@ static std::string MazeVsBrief(int nConn, DWORD dwNpc, PCHARINFO pA, PCHARINFO p
 /* 座る場所（nSeat=0 が席 1・1 が席 2）のマスへ置いて S キー。聞かれたら「maze ask」を出して bYes で答える */
 static void MazeSitSeat(PCHARINFO p, PCHARINFO pNpc, int nSeat, BOOL bYes = TRUE)
 {
-	int nDx, nDy, nSdx, nSdy;
+	int nSdx, nSdy;
 	int nConn = DgTestConn(p);
-	MazeParseTable(pNpc->pszNpcSpeech, &nDx, &nDy, &nSdx, &nSdy);
-	if (nSeat == 1) MazeParseSeat2(pNpc->pszNpcSpeech, &nSdx, &nSdy);
+	MazeSeatOffset(pNpc, nSeat, &nSdx, &nSdy);
 	PuzzlePlace(p, pNpc, (DWORD)((int)pNpc->dwX + nSdx), (DWORD)((int)pNpc->dwY + nSdy));
 	int nBefore = MockCmdCount(nConn, CMD_TALKMSG);
 	PuzzleKeyS(p, pNpc);
@@ -19085,10 +19121,9 @@ static void MazeAdvance(DWORD dwMs)
 /* 座る場所（nSeat=0 が席 1・1 が席 2）のマスへ置いて S キー。聞かれたら「maze cpuask」に種類（CPU/乱入/交代）を出して bYes で答える。聞かれたかを返す */
 static BOOL MazeSitAsk(PCHARINFO p, PCHARINFO pNpc, int nSeat, BOOL bYes, const char *pszTag)
 {
-	int nDx, nDy, nSdx, nSdy;
+	int nSdx, nSdy;
 	int nConn = DgTestConn(p);
-	MazeParseTable(pNpc->pszNpcSpeech, &nDx, &nDy, &nSdx, &nSdy);
-	if (nSeat == 1) MazeParseSeat2(pNpc->pszNpcSpeech, &nSdx, &nSdy);
+	MazeSeatOffset(pNpc, nSeat, &nSdx, &nSdy);
 	PuzzlePlace(p, pNpc, (DWORD)((int)pNpc->dwX + nSdx), (DWORD)((int)pNpc->dwY + nSdy));
 	int nBefore = MockCmdCount(nConn, CMD_TALKMSG);
 	PuzzleKeyS(p, pNpc);
@@ -19134,62 +19169,86 @@ static void TestMaze(const std::vector<int> &aLogin)
 	QuestMovePC(pB, (int)pA->dwMapID, (int)pA->dwX + 40, (int)pA->dwY);			/* B は同じマップの遠く */
 	DWORD dwMap = pA->dwMapID, dwX = pA->dwX, dwY = pA->dwY;
 
-	/* 1. 台詞の解析：既定・全部指定・空欄・上限・後ろの省略。台でない NPC（@p・依頼の見えるNPC）は台として扱わない */
+	int nSubBase = g_aSubaGameInfo.GetSize();								/* このテストで足したサブゲーム情報は nSubBase 以降（終わりに外す） */
+
+	/* 1. 台詞の番号の読み方・設定の既定と範囲の丸め。台でない NPC（番号なし・存在しない番号・種別違い・中身なし・@p・依頼の見えるNPC）は台として扱わない */
 	{
-		int dx, dy, sdx, sdy;
-		MazeParseTable("@k", &dx, &dy, &sdx, &sdy);
-		printf("maze parse default %d,%d,%d,%d\n", dx, dy, sdx, sdy);
-		MazeParseTable("@k3,-4,5,-2", &dx, &dy, &sdx, &sdy);
-		printf("maze parse all %d,%d,%d,%d\n", dx, dy, sdx, sdy);
-		MazeParseTable("@k,,3", &dx, &dy, &sdx, &sdy);
-		printf("maze parse blank %d,%d,%d,%d\n", dx, dy, sdx, sdy);
-		MazeParseTable("@k999,-999,x,2", &dx, &dy, &sdx, &sdy);
-		printf("maze parse clamp %d,%d,%d,%d\n", dx, dy, sdx, sdy);
-		{
-			unsigned short wA, wB, wG;
-			MazeParseParts("@k", &wA, &wB, &wG);
-			printf("maze parts default %d,%d,%d\n", wA, wB, wG);
-			MazeParseParts("@k,,,,5,6,7", &wA, &wB, &wG);
-			printf("maze parts all %d,%d,%d\n", wA, wB, wG);
-			MazeParseParts("@k1,2,3,4,9", &wA, &wB, &wG);
-			printf("maze parts floorA only %d,%d,%d\n", wA, wB, wG);
-			MazeParseParts("@k,,,,,,12", &wA, &wB, &wG);
-			printf("maze parts gap only %d,%d,%d\n", wA, wB, wG);
-			MazeParseParts("@k,,,,-3,70000,x", &wA, &wB, &wG);
-			printf("maze parts clamp %d,%d,%d\n", wA, wB, wG);
-			MazeParseTable("@k3,-4,5,-2,8,9,10", &dx, &dy, &sdx, &sdy);
-			printf("maze parts with pos %d,%d,%d,%d\n", dx, dy, sdx, sdy);
-			MazeParseSeat2("@k", &sdx, &sdy);
-			printf("maze seat2 default %d,%d\n", sdx, sdy);
-			MazeParseSeat2("@k3,-4,5,-2,8,9,10,4,-7", &sdx, &sdy);
-			printf("maze seat2 all %d,%d\n", sdx, sdy);
-			MazeParseSeat2("@k,,,,,,,,3", &sdx, &sdy);
-			printf("maze seat2 blank %d,%d\n", sdx, sdy);
-			MazeParseSeat2("@k,,,,,,,999,-999", &sdx, &sdy);
-			printf("maze seat2 clamp %d,%d\n", sdx, sdy);
-			MazeParseSeat2("@k,,3,-4", &sdx, &sdy);
-			printf("maze seat2 omitted %d,%d\n", sdx, sdy);
-		}
+		printf("maze speech no %d %d %d %d %d %d %d %d\n", MazeSpeechNo("@k0"), MazeSpeechNo("@k12"), MazeSpeechNo("@k"), MazeSpeechNo("@k3,-4,5,-2"),
+			MazeSpeechNo("@kx"), MazeSpeechNo("@k100001"), MazeSpeechNo("@p3"), MazeSpeechNo("@k-1"));
+		SUBGAME_MAZETABLEINFO Info;
+		MazeTableInfoDefault(&Info);
+		printf("maze info default %d,%d seat1=%d,%d seat2=%d,%d parts=%d,%d,%d cpu=%d grp=%d name=[%s] cpuname=[%s]\n", Info.chDx, Info.chDy, Info.chSdx, Info.chSdy,
+			Info.chSdx2, Info.chSdy2, Info.wFloorA, Info.wFloorB, Info.wGap, Info.byCpuLevel, Info.wCpuGrpID, Info.szName, Info.szCpuName);
+		Info.chDx = 100; Info.chDy = -100; Info.chSdx = 61; Info.chSdy = -61; Info.chSdx2 = 60; Info.chSdy2 = -60; Info.byCpuLevel = 9;
+		memset(Info.szName, 'x', sizeof(Info.szName));
+		memset(Info.szCpuName, 'y', sizeof(Info.szCpuName));
+		MazeTableInfoFix(&Info);
+		printf("maze info clamp %d,%d seat1=%d,%d seat2=%d,%d cpu=%d nameEnd=%d cpunameEnd=%d\n", Info.chDx, Info.chDy, Info.chSdx, Info.chSdy, Info.chSdx2, Info.chSdy2,
+			Info.byCpuLevel, Info.szName[sizeof(Info.szName) - 1] == '\0', Info.szCpuName[sizeof(Info.szCpuName) - 1] == '\0');
+		int nOK = MazeInfoDefault();
+		/* 種別違い（爆弾ゲーム）・中身なし（迷路対戦の台なのに pInfo が無い） */
+		PSUBGAMEINFO pBomb = new SUBGAMEINFO;
+		ZeroMemory(pBomb, sizeof(SUBGAMEINFO));
+		pBomb->byType = SUBGAMEID_BOMB;
+		pBomb->pInfo = new BYTE[sizeof(SUBGAME_BOMBINFO)];
+		ZeroMemory(pBomb->pInfo, sizeof(SUBGAME_BOMBINFO));
+		g_aSubaGameInfo.Add(pBomb);
+		int nBomb = g_aSubaGameInfo.GetSize() - 1;
+		PSUBGAMEINFO pEmpty = new SUBGAMEINFO;
+		ZeroMemory(pEmpty, sizeof(SUBGAMEINFO));
+		pEmpty->byType = SUBGAMEID_MAZETABLE;
+		g_aSubaGameInfo.Add(pEmpty);
+		int nEmpty = g_aSubaGameInfo.GetSize() - 1;
+		char szTmp[32];
+		MazeNpcOpen(pA, nOK);
 		NearNpcOpen(pA, "@k");
-		PCHARINFO pPlain = s_aNearNpc.back();
+		NearNpcOpen(pA, "@k3,-4,5,-2");								/* 旧書式は台ではない */
+		sprintf(szTmp, "@k%d", g_aSubaGameInfo.GetSize() + 50);
+		NearNpcOpen(pA, szTmp);											/* 存在しない番号 */
+		MazeNpcOpen(pA, nBomb);
+		MazeNpcOpen(pA, nEmpty);
 		NearNpcOpen(pA, "@p");
-		PCHARINFO pPuzzleNpc = s_aNearNpc.back();
 		NearNpcOpen(pA, "@q");
 		PCHARINFO pQuest = s_aNearNpc.back();
 		pQuest->byNpcType = NPCTYPE_QUESTNPC;
-		printf("maze isTable q=%d puzzle=%d questnpc=%d\n", MazeIsTableNpc(pPlain), MazeIsTableNpc(pPuzzleNpc), MazeIsTableNpc(pQuest));
+		MazeNpcOpen(pA, nOK);
+		PCHARINFO pQuestK = s_aNearNpc.back();
+		pQuestK->byNpcType = NPCTYPE_QUESTNPC;							/* 依頼の見えるNPCは番号が正しくても台ではない */
+		const int nNpc = 9;
+		printf("maze isTable ok=%d none=%d old=%d missing=%d bomb=%d empty=%d puzzle=%d questnpc-q=%d questnpc-k=%d\n",
+			MazeIsTableNpc(s_aNearNpc[s_aNearNpc.size() - nNpc]), MazeIsTableNpc(s_aNearNpc[s_aNearNpc.size() - nNpc + 1]),
+			MazeIsTableNpc(s_aNearNpc[s_aNearNpc.size() - nNpc + 2]), MazeIsTableNpc(s_aNearNpc[s_aNearNpc.size() - nNpc + 3]),
+			MazeIsTableNpc(s_aNearNpc[s_aNearNpc.size() - nNpc + 4]), MazeIsTableNpc(s_aNearNpc[s_aNearNpc.size() - nNpc + 5]),
+			MazeIsTableNpc(s_aNearNpc[s_aNearNpc.size() - nNpc + 6]), MazeIsTableNpc(pQuest), MazeIsTableNpc(pQuestK));
+		/* 台でない NPC に話しかけて座る場所に立っても座れない（落ちない） */
+		PCHARINFO pNot = s_aNearNpc[s_aNearNpc.size() - nNpc + 3];
+		PuzzlePlace(pA, pNot, pNot->dwX, pNot->dwY + 1);
+		PuzzleKeyS(pA, pNot);
+		printf("maze notTable talk seated=%d seats=%d\n", MazeIsSeated(pA), MazeSeatCount());
 		pQuest->byNpcType = NPCTYPE_NOMOVE;
-		for (int i = 0; i < 3; i ++) {
+		pQuestK->byNpcType = NPCTYPE_NOMOVE;
+		for (int i = 0; i < nNpc; i ++) {
 			PCHARINFO pNpc = s_aNearNpc[s_aNearNpc.size() - 1 - i];
 			delete [] pNpc->pszNpcSpeech;
 			pNpc->pszNpcSpeech = new char[1];
 			pNpc->pszNpcSpeech[0] = '\0';
 		}
+		/* 数を戻す（種別違い・中身なしの 2 件は、この後の番号を数えやすくするため外す） */
+		g_aSubaGameInfo.RemoveAt(nEmpty);
+		g_aSubaGameInfo.RemoveAt(nBomb);
+		delete pEmpty;
+		delete [] pBomb->pInfo;
+		delete pBomb;
 	}
 
 	/* 台（既定：盤の左上 -5,-9・座る場所は台NPCの 1 つ下）。A のマスに置く */
 	QuestMovePC(pA, (int)dwMap, (int)dwX, (int)dwY);
-	NearNpcOpen(pA, "@k,,,,5,6,7");											/* 見た目のパーツID（床A=5・床B=6・隙間=7）つきの台 */
+	{
+		SUBGAME_MAZETABLEINFO Info;
+		MazeTableInfoDefault(&Info);
+		Info.wFloorA = 5; Info.wFloorB = 6; Info.wGap = 7;				/* 見た目のパーツID（床A=5・床B=6・隙間=7）つきの台 */
+		MazeNpcOpen(pA, MazeInfoAdd(Info));
+	}
 	PCHARINFO pNpc = s_aNearNpc.back();
 	DWORD dwNpc = pNpc->dwTblID;
 	MockTrace(1);
@@ -19220,6 +19279,8 @@ static void TestMaze(const std::vector<int> &aLogin)
 			bOK ? St.sBoardY == (short)(((int)dwY - 9) * 32) : -1, (int)sizeof(CMDPARA_MAZESTATE));
 		printf("maze sit %s\n", MazeBrief(nConnA, dwNpc).c_str());
 		printf("maze sit parts floor=%d,%d gap=%d\n", bOK ? St.wFloor[0] : -1, bOK ? St.wFloor[1] : -1, bOK ? St.wGap : -1);
+		printf("maze sit seats %d,%d %d,%d cpugrp=%d cpuname=[%s]\n", bOK ? St.sSeatX[0] - (int)dwX : -99, bOK ? St.sSeatY[0] - (int)dwY : -99,
+			bOK ? St.sSeatX[1] - (int)dwX : -99, bOK ? St.sSeatY[1] - (int)dwY : -99, bOK ? St.wCpuGrpID : -1, bOK ? St.szCpuName : "-");
 	}
 
 	/* 4. 使用中の台には座れない（B を座る場所へ呼ぶ）・座っている間は歩けない */
@@ -19412,10 +19473,10 @@ static void TestMaze(const std::vector<int> &aLogin)
 		PuzzleOnLeave(pA);
 	}
 
-	/* 18. 2 人対戦（席 2 は台詞の 8・9 番目。既定は台NPCの (0,-10)）。A が席 2・B が席 1 に座る */
+	/* 18. 2 人対戦（席 2 は座る場所2。既定は台NPCの (0,-10)）。A が席 2・B が席 1 に座る */
 	{
 		QuestMovePC(pA, (int)dwMap, (int)dwX + 3, (int)dwY);
-		NearNpcOpen(pA, "@k");
+		MazeNpcOpen(pA, MazeInfoDefault());
 		PCHARINFO pV = s_aNearNpc.back();
 		DWORD dwV = pV->dwTblID;
 		std::string strWinB = std::string(pB->szName) + "の勝ち！", strWinA = std::string(pA->szName) + "の勝ち！";
@@ -19581,22 +19642,27 @@ static void TestMaze(const std::vector<int> &aLogin)
 		MazeOnLeave(pB);
 	}
 
-	/* 19. CPU対戦（台詞の 10 番目＝CPU強さ。1=よわい）。席 1 に A が座る＝CPUは席 2 */
+	/* 19. CPU対戦（サブゲーム情報のCPU強さ 1=よわい・CPUのキャラ画像 321・名前「ロボ」）。席 1 に A が座る＝CPUは席 2 */
 	{
 		int nBefore, nBeforeB;
 		std::string strWinA = std::string(pA->szName) + "の勝ち！";
 		QuestMovePC(pA, (int)dwMap, (int)dwX + 6, (int)dwY);
-		NearNpcOpen(pA, "@k,,,,,,,,,1");
+		{
+			SUBGAME_MAZETABLEINFO Info;
+			MazeTableInfoDefault(&Info);
+			Info.byCpuLevel = 1;
+			Info.wCpuGrpID = 321;
+			strcpy(Info.szCpuName, "ロボ");
+			MazeNpcOpen(pA, MazeInfoAdd(Info));
+		}
 		PCHARINFO pC = s_aNearNpc.back();
 		DWORD dwC = pC->dwTblID;
-		printf("maze cpu parse %d %d %d %d %d\n", MazeParseCpuLevel("@k"), MazeParseCpuLevel("@k,,,,,,,,,2"), MazeParseCpuLevel("@k,,,,,,,,,9"),
-			MazeParseCpuLevel("@k,,,,,,,,,-1"), MazeParseCpuLevel("@k,,,,,,,,,x"));
 		g_dwTime = (s_dwFakeNow += 1000);
 		MazeProc();
 
 		/* 19a. CPU強さ 0 の台は聞かない（従来のひとり練習） */
 		QuestMovePC(pA, (int)dwMap, (int)dwX + 9, (int)dwY);
-		NearNpcOpen(pA, "@k");
+		MazeNpcOpen(pA, MazeInfoDefault());
 		PCHARINFO pP = s_aNearNpc.back();
 		MazeSitAsk(pA, pP, 0, TRUE, "plain");
 		printf("maze cpu plain seated=%d %s\n", MazeIsSeated(pA), MazeCpuBrief(nConnA, pP->dwTblID).c_str());
@@ -19619,6 +19685,11 @@ static void TestMaze(const std::vector<int> &aLogin)
 		printf("maze cpu count locked %s\n", MazeCpuBrief(nConnA, dwC).c_str());
 		MazeAdvance(3000);
 		printf("maze cpu go %s\n", MazeCpuBrief(nConnA, dwC).c_str());
+		{
+			CMDPARA_MAZESTATE St;
+			BOOL bOK = MazeLast(nConnA, dwC, &St);
+			printf("maze cpu look grp=%d name=[%s]\n", bOK ? St.wCpuGrpID : -1, bOK ? St.szCpuName : "-");
+		}
 
 		/* 19d. 人の手のあと、CPU は 1.0〜2.0 秒考えてから自分で指す（CPU の手番は残り秒なし） */
 		MazeKeySend(pA, MAZEACT_MOVE, MAZE_UP);
@@ -19640,7 +19711,7 @@ static void TestMaze(const std::vector<int> &aLogin)
 			nBefore = MockCmdCount(nConnA, CMD_SYSMSG);
 			MazeKeySend(pA, MAZEACT_MOVE, MAZE_UP);
 			printf("maze cpu human win %s msg=%d cpuwin=%d\n", MazeCpuBrief(nConnA, dwC).c_str(), MockHasText(nConnA, CMD_SYSMSG, strWinA.c_str()),
-				MockHasText(nConnA, CMD_SYSMSG, "CPUの勝ち！"));
+				MockHasText(nConnA, CMD_SYSMSG, "ロボの勝ち！"));
 			MazeAdvance(2900);
 			printf("maze cpu win shown %s\n", MazeCpuBrief(nConnA, dwC).c_str());
 			MazeAdvance(100);
@@ -19659,7 +19730,7 @@ static void TestMaze(const std::vector<int> &aLogin)
 			for (int i = 0; i < 160 && !nCpuMsg; i ++) {
 				MazeAdvance(1000);
 				nSteps ++;
-				nCpuMsg = MockHasText(nConnA, CMD_SYSMSG, "CPUの勝ち！");
+				nCpuMsg = MockHasText(nConnA, CMD_SYSMSG, "ロボの勝ち！");
 			}
 			printf("maze cpu timeout loss steps=%d cpuwin=%d forfeit=%d %s\n", nSteps >= 90 && nSteps <= 100, nCpuMsg, MockHasText(nConnA, CMD_SYSMSG, "時間切れが続いた"),
 				MazeCpuBrief(nConnA, dwC).c_str());
@@ -19713,6 +19784,63 @@ static void TestMaze(const std::vector<int> &aLogin)
 		MazeOnLeave(pB);
 	}
 
+	/* 20. データAPI（subGame の byType 6）：足す（detail 省略で既定値）・読む・変える・範囲外と種別違いの断り・保存と読み直し・消す */
+	{
+		int nAdd = g_aSubaGameInfo.GetSize();
+		std::string strAdd = FlagGroupApi("subGame", nAdd, "{\"byType\":6}");
+		const char *pszGet = SboWebDataGet("subGame", nAdd);
+		std::string strGet = pszGet ? pszGet : "";
+		PSUBGAME_MAZETABLEINFO pT = (g_aSubaGameInfo.GetSize() == nAdd + 1 && g_aSubaGameInfo[nAdd]->byType == SUBGAMEID_MAZETABLE) ?
+			(PSUBGAME_MAZETABLEINFO)g_aSubaGameInfo[nAdd]->pInfo : NULL;
+		printf("maze api add ok=%d size+1=%d defaults=%d,%d,%d,%d,%d,%d cpu=%d name=[%s]\n", (int)(strAdd.find("\"ok\":true") != std::string::npos), g_aSubaGameInfo.GetSize() == nAdd + 1,
+			pT ? pT->chDx : -99, pT ? pT->chDy : -99, pT ? pT->chSdx : -99, pT ? pT->chSdy : -99, pT ? pT->chSdx2 : -99, pT ? pT->chSdy2 : -99,
+			pT ? pT->byCpuLevel : -1, pT ? pT->szCpuName : "-");
+		printf("maze api get typeName=%d chDx=%d chSdy2=%d cpuName=%d\n", (int)(strGet.find("迷路対戦の台") != std::string::npos), (int)(strGet.find("\"chDx\":-5") != std::string::npos),
+			(int)(strGet.find("\"chSdy2\":-10") != std::string::npos), (int)(strGet.find("\"szCpuName\":\"CPU\"") != std::string::npos));
+		std::string strSet = FlagGroupApi("subGame", nAdd, "{\"detail\":{\"szName\":\"テスト台\",\"chDx\":-3,\"chSdx\":2,\"chSdy2\":-8,\"wFloorA\":11,\"wFloorB\":12,\"wGap\":13,\"byCpuLevel\":2,\"wCpuGrpID\":123,\"szCpuName\":\"ロボ\"}}");
+		printf("maze api set ok=%d chDx=%d chDy=%d seat1=%d,%d seat2=%d,%d parts=%d,%d,%d cpu=%d grp=%d cpuname=[%s] name=[%s]\n", (int)(strSet.find("\"ok\":true") != std::string::npos),
+			pT ? pT->chDx : -99, pT ? pT->chDy : -99, pT ? pT->chSdx : -99, pT ? pT->chSdy : -99, pT ? pT->chSdx2 : -99, pT ? pT->chSdy2 : -99,
+			pT ? pT->wFloorA : -1, pT ? pT->wFloorB : -1, pT ? pT->wGap : -1, pT ? pT->byCpuLevel : -1, pT ? pT->wCpuGrpID : -1, pT ? pT->szCpuName : "-", pT ? pT->szName : "-");
+		std::string strNg1 = FlagGroupApi("subGame", nAdd, "{\"detail\":{\"chDx\":100}}");
+		std::string strNg2 = FlagGroupApi("subGame", nAdd, "{\"detail\":{\"byCpuLevel\":4}}");
+		std::string strNg3 = FlagGroupApi("subGame", nAdd, "{\"detail\":{\"dwMapID\":1}}");
+		std::string strNg4 = FlagGroupApi("subGame", nAdd, "{\"byType\":5}");
+		printf("maze api reject dx100=%d cpu4=%d unknown=%d type5=%d kept=%d,%d\n", (int)(strNg1.find("\"ok\":true") == std::string::npos), (int)(strNg2.find("\"ok\":true") == std::string::npos),
+			(int)(strNg3.find("\"ok\":true") == std::string::npos), (int)(strNg4.find("\"ok\":true") == std::string::npos), pT ? pT->chDx : -99, pT ? pT->byCpuLevel : -1);
+		/* 保存の列 → 読み直しで戻る（読み込みは空の表に入れる作りなので、今の表を退避して空にしてから読む） */
+		{
+			std::vector<PSUBGAMEINFO> aOrig;
+			for (int i = 0; i < g_aSubaGameInfo.GetSize(); i ++) aOrig.push_back(g_aSubaGameInfo[i]);
+			SaveSubGameInfo();
+			g_aSubaGameInfo.RemoveAll();
+			LoadSubGameInfo();
+			PSUBGAMEINFO pLoad = ((int)aOrig.size() == g_aSubaGameInfo.GetSize()) ? g_aSubaGameInfo[nAdd] : NULL;
+			PSUBGAME_MAZETABLEINFO pL = (pLoad && pLoad->byType == SUBGAMEID_MAZETABLE) ? (PSUBGAME_MAZETABLEINFO)pLoad->pInfo : NULL;
+			printf("maze api reload count=%d same=%d dx=%d seat1=%d,%d seat2=%d,%d parts=%d,%d,%d cpu=%d grp=%d cpuname=[%s] name=[%s]\n", g_aSubaGameInfo.GetSize() == (int)aOrig.size(),
+				pL ? (int)(memcmp(pL, pT, sizeof(SUBGAME_MAZETABLEINFO)) == 0) : -1, pL ? pL->chDx : -99, pL ? pL->chSdx : -99, pL ? pL->chSdy : -99, pL ? pL->chSdx2 : -99,
+				pL ? pL->chSdy2 : -99, pL ? pL->wFloorA : -1, pL ? pL->wFloorB : -1, pL ? pL->wGap : -1, pL ? pL->byCpuLevel : -1, pL ? pL->wCpuGrpID : -1,
+				pL ? pL->szCpuName : "-", pL ? pL->szName : "-");
+			for (int i = 0; i < g_aSubaGameInfo.GetSize(); i ++) {
+				PSUBGAMEINFO pDel = g_aSubaGameInfo[i];
+				SAFE_DELETE_ARRAY(pDel->pInfo);
+				delete pDel;
+			}
+			g_aSubaGameInfo.RemoveAll();
+			for (size_t i = 0; i < aOrig.size(); i ++) g_aSubaGameInfo.Add(aOrig[i]);
+		}
+		/* 消す（byType 0）。設定は無くなり、その番号を指す台NPCは台でなくなる */
+		MazeNpcOpen(pA, nAdd);
+		PCHARINFO pGone = s_aNearNpc.back();
+		int nBeforeGone = MazeIsTableNpc(pGone);
+		std::string strDel = FlagGroupApi("subGame", nAdd, "{\"byType\":0}");
+		printf("maze api erase ok=%d type=%d info=%d table before=%d after=%d\n", (int)(strDel.find("\"ok\":true") != std::string::npos), g_aSubaGameInfo[nAdd]->byType,
+			g_aSubaGameInfo[nAdd]->pInfo != NULL, nBeforeGone, MazeIsTableNpc(pGone));
+		/* 種類 0 の枠は台にして使い回せる */
+		std::string strReuse = FlagGroupApi("subGame", nAdd, "{\"byType\":6,\"detail\":{\"byCpuLevel\":3}}");
+		printf("maze api reuse ok=%d size=%d type=%d table=%d\n", (int)(strReuse.find("\"ok\":true") != std::string::npos), g_aSubaGameInfo.GetSize() == nAdd + 1,
+			g_aSubaGameInfo[nAdd]->byType, MazeIsTableNpc(pGone));
+	}
+
 	/* 片付け */
 	MockTrace(0);
 	MazeOnLeave(pA);
@@ -19729,6 +19857,12 @@ static void TestMaze(const std::vector<int> &aLogin)
 	g_dwTime = (s_dwFakeNow += 300);
 	MazeProc();									/* 台 NPC が無くなった待機中の台を表から消す */
 	PuzzleProc();
+	while (g_aSubaGameInfo.GetSize() > nSubBase) {				/* このテストで足したサブゲーム情報を外す */
+		PSUBGAMEINFO pDel = g_aSubaGameInfo[g_aSubaGameInfo.GetSize() - 1];
+		g_aSubaGameInfo.RemoveAt(g_aSubaGameInfo.GetSize() - 1);
+		SAFE_DELETE_ARRAY(pDel->pInfo);
+		delete pDel;
+	}
 	QuestMovePC(pB, (int)dwMapB, (int)dwXB, (int)dwYB);
 	QuestMovePC(pA, (int)dwMapA, (int)dwXA, (int)dwYA);
 	pA->byCharState = byStateA; pA->wHP = wHPA;

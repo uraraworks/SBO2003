@@ -20,6 +20,7 @@ SboCli/src/AdminWindowOld/AdminDlgEtcSubGameEdit.cpp
 SboCli/src/AdminWindowOld/AdminDlgEtcSubGameEditBomb.cpp
 SboCli/src/AdminWindowOld/AdminDlgEtcSubGameEditDungeon.cpp
 SboCli/src/AdminWindowOld/AdminDlgEtcSubGameEditMaze.cpp
+SboCli/src/AdminWindowOld/AdminDlgEtcSubGameEditMazeTable.cpp
 SboCli/src/AdminWindowOld/AdminDlgEtcSubGameEditSugoroku.cpp
 SboCli/src/AdminWindowOld/AdminDlgEtcSubGameEditWar.cpp
 SboCli/src/AdminWindowOld/AdminDlgJobInfo.cpp

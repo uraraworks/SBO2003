@@ -9,6 +9,7 @@
 #include "../../../Common/Info/SubGame/InfoSubGameWAR.h"
 #include "../Proc/SubGame/ProcSubGameWAR.h"
 #include "../Proc/ProcSubGame.h"
+#include "../../../common/MazeTable.h"
 
 /* ========================================================================= */
 /* 定数定義																	 */
@@ -172,6 +173,46 @@ static const char *s_aszNameSUGOROKU[] = {
 	"z"
 };
 
+/* ラベル名テーブル(迷路対戦の台)。並びは s_aMazeTableCol と同じ */
+static const char *s_aszNameMAZETABLE[] = {
+	"szName",			/* 台の名前 */
+	"chDx",				/* 盤の位置X */
+	"chDy",				/* 盤の位置Y */
+	"chSdx",			/* 座る場所1 X */
+	"chSdy",			/* 座る場所1 Y */
+	"chSdx2",			/* 座る場所2 X */
+	"chSdy2",			/* 座る場所2 Y */
+	"wFloorA",			/* 床パーツA */
+	"wFloorB",			/* 床パーツB */
+	"wGap",				/* 隙間パーツ */
+	"byCpuLevel",		/* CPU強さ */
+	"wCpuGrpID",		/* CPUのキャラ画像 */
+	"szCpuName",		/* CPUの名前表示 */
+	"z"
+};
+
+/* 迷路対戦の台の列の型（0=1バイト・1=WORD・2=文字列(終端まで)）と構造体内の位置。s_aszNameMAZETABLE と同じ並び */
+typedef struct _MAZETABLECOL {
+	int			nKind;
+	size_t		nOffset;
+	size_t		nMax;				/* 文字列の欄の大きさ（終端込み） */
+} MAZETABLECOL;
+static const MAZETABLECOL s_aMazeTableCol[] = {
+	{ 2, offsetof (SUBGAME_MAZETABLEINFO, szName),		sizeof (((SUBGAME_MAZETABLEINFO *)0)->szName) },
+	{ 0, offsetof (SUBGAME_MAZETABLEINFO, chDx),		1 },
+	{ 0, offsetof (SUBGAME_MAZETABLEINFO, chDy),		1 },
+	{ 0, offsetof (SUBGAME_MAZETABLEINFO, chSdx),		1 },
+	{ 0, offsetof (SUBGAME_MAZETABLEINFO, chSdy),		1 },
+	{ 0, offsetof (SUBGAME_MAZETABLEINFO, chSdx2),		1 },
+	{ 0, offsetof (SUBGAME_MAZETABLEINFO, chSdy2),		1 },
+	{ 1, offsetof (SUBGAME_MAZETABLEINFO, wFloorA),		2 },
+	{ 1, offsetof (SUBGAME_MAZETABLEINFO, wFloorB),		2 },
+	{ 1, offsetof (SUBGAME_MAZETABLEINFO, wGap),		2 },
+	{ 0, offsetof (SUBGAME_MAZETABLEINFO, byCpuLevel),	1 },
+	{ 1, offsetof (SUBGAME_MAZETABLEINFO, wCpuGrpID),	2 },
+	{ 2, offsetof (SUBGAME_MAZETABLEINFO, szCpuName),	sizeof (((SUBGAME_MAZETABLEINFO *)0)->szCpuName) },
+};
+
 /* ========================================================================= */
 /* 関数プロトタイプ宣言														 */
 /* ========================================================================= */
@@ -183,11 +224,13 @@ static PBYTE GetInfoMaze(PSUBGAME_MAZEINFO, PDWORD);			/* 保存用サブゲー�
 static PBYTE GetInfoBomb(PSUBGAME_BOMBINFO, PDWORD);			/* 保存用サブゲーム情報取得(爆弾ゲーム) */
 static PBYTE GetInfoWar(PSUBGAME_WARINFO, PDWORD);				/* 保存用サブゲーム情報取得(戦場ゲーム) */
 static PBYTE GetInfoSugoroku(PSUBGAME_SUGOROKUINFO, PDWORD);	/* 保存用サブゲーム情報取得(すごろく) */
+static PBYTE GetInfoMazeTable(PSUBGAME_MAZETABLEINFO, PDWORD);	/* 保存用サブゲーム情報取得(迷路対戦の台) */
 static PBYTE PetInfoDungeon(PBYTE, PDWORD);						/* サブゲーム情報作成(ダンジョン) */
 static PBYTE PetInfoMaze(PBYTE, PDWORD);						/* サブゲーム情報作成(迷路) */
 static PBYTE PetInfoWar(PBYTE, PDWORD);							/* サブゲーム情報作成(戦場ゲーム) */
 static PBYTE PetInfoBomb(PBYTE, PDWORD);						/* サブゲーム情報作成(爆弾ゲーム) */
 static PBYTE PetInfoSugoroku(PBYTE, PDWORD);					/* サブゲーム情報作成(すごろく) */
+static PBYTE PetInfoMazeTable(PBYTE, PDWORD);					/* サブゲーム情報作成(迷路対戦の台) */
 
 
 /* ========================================================================= */
@@ -293,6 +336,9 @@ BOOL SaveSubGameInfo(void)
 				case SUBGAMEID_SUGOROKU:		/* すごろく */
 					pTmp = GetInfoSugoroku ((PSUBGAME_SUGOROKUINFO)pInfo->pInfo, &dwTmp);
 					break;
+				case SUBGAMEID_MAZETABLE:		/* 迷路対戦の台 */
+					pTmp = GetInfoMazeTable ((PSUBGAME_MAZETABLEINFO)pInfo->pInfo, &dwTmp);
+					break;
 				}
 				SAFE_DELETE_ARRAY (pTmp);
 				dwDataSizeTmp += dwTmp;
@@ -369,6 +415,9 @@ BOOL SaveSubGameInfo(void)
 					break;
 				case SUBGAMEID_SUGOROKU:		/* すごろく */
 					pTmp = GetInfoSugoroku ((PSUBGAME_SUGOROKUINFO)pInfo->pInfo, &dwTmp);
+					break;
+				case SUBGAMEID_MAZETABLE:		/* 迷路対戦の台 */
+					pTmp = GetInfoMazeTable ((PSUBGAME_MAZETABLEINFO)pInfo->pInfo, &dwTmp);
 					break;
 				}
 				if (pTmp) {
@@ -545,6 +594,9 @@ BOOL LoadSubGameInfo(void)
 					break;
 				case SUBGAMEID_SUGOROKU:		/* すごろく */
 					pTmp = PetInfoSugoroku (&pData[dwOffsetTmp], &dwTmp);
+					break;
+				case SUBGAMEID_MAZETABLE:		/* 迷路対戦の台 */
+					pTmp = PetInfoMazeTable (&pData[dwOffsetTmp], &dwTmp);
 					break;
 				}
 
@@ -2450,3 +2502,169 @@ static PBYTE PetInfoSugoroku(PBYTE pData, PDWORD pdwSize)
 }
 
 /* Copyright(C)URARA-works 2003-2005 */
+
+/* ========================================================================= */
+/* 関数名：GetInfoMazeTable													 */
+/* 内容：保存用サブゲーム情報取得(迷路対戦の台)								 */
+/* 日付：2026/11/27															 */
+/* ========================================================================= */
+static PBYTE GetInfoMazeTable(PSUBGAME_MAZETABLEINFO pInfo, PDWORD pdwSize)
+{
+	PBYTE pData;
+	DWORD i, dwColumnCount, dwHeaderSize, dwDataSize, dwOffset;
+	DWORD adwSize[32];
+	CmyArray<HEADERINFO, HEADERINFO>aHeaderInfo;
+
+	pData = NULL;
+	*pdwSize = 0;
+	if (pInfo == NULL) {
+		return NULL;
+	}
+
+	/* ヘッダ情報の作成（他の種別と同じ書式） */
+	dwHeaderSize = sizeof (DWORD) * 2;
+	for (i = 0; s_aszNameMAZETABLE[i][0] != 'z'; i ++) {
+		HEADERINFO Info;
+
+		strcpy (Info.szName, s_aszNameMAZETABLE[i]);
+		dwHeaderSize += (strlen (Info.szName) + 1);
+		dwHeaderSize += sizeof (DWORD);
+		Info.dwOffset = 0;
+		Info.dwDataSize = 0;
+		aHeaderInfo.Add (Info);
+	}
+
+	/* データサイズを計算（文字列は終端までの長さ。欄より長くは書かない） */
+	dwColumnCount = aHeaderInfo.GetSize ();
+	dwDataSize = 0;
+	for (i = 0; i < dwColumnCount; i ++) {
+		const MAZETABLECOL &Col = s_aMazeTableCol[i];
+
+		if (i > 0) {
+			aHeaderInfo[i].dwOffset = dwDataSize;
+		}
+		if (Col.nKind == 2) {
+			const char *psz = (const char *)pInfo + Col.nOffset;
+			size_t nLen = 0;
+			while ((nLen < Col.nMax - 1) && psz[nLen]) {
+				nLen ++;
+			}
+			adwSize[i] = (DWORD)(nLen + 1);
+		} else {
+			adwSize[i] = (Col.nKind == 1) ? sizeof (WORD) : sizeof (BYTE);
+		}
+		aHeaderInfo[i].dwDataSize = adwSize[i];
+		dwDataSize += adwSize[i];
+	}
+
+	/* 保存用データを作成 */
+	pData = new BYTE[dwHeaderSize + dwDataSize];
+	*pdwSize = dwHeaderSize + dwDataSize;
+	ZeroMemory (pData, dwHeaderSize + dwDataSize);
+	dwOffset = 0;
+
+	CopyMemory (&pData[dwOffset], &dwColumnCount, sizeof (dwColumnCount));
+	dwOffset += sizeof (dwColumnCount);
+	for (i = 0; i < dwColumnCount; i ++) {
+		LPHEADERINFO pInfoTmp = &aHeaderInfo[i];
+		DWORD dwTmp;
+
+		strcpy ((LPSTR)&pData[dwOffset], pInfoTmp->szName);
+		dwOffset += (strlen (pInfoTmp->szName) + 1);
+
+		dwTmp = dwHeaderSize + pInfoTmp->dwOffset;
+		CopyMemory (&pData[dwOffset], &dwTmp, sizeof (dwTmp));
+		dwOffset += sizeof (dwTmp);
+	}
+	for (i = 0; i < dwColumnCount; i ++) {
+		const MAZETABLECOL &Col = s_aMazeTableCol[i];
+
+		if (Col.nKind == 2) {
+			CopyMemory (&pData[dwOffset], (const BYTE *)pInfo + Col.nOffset, adwSize[i] - 1);
+			pData[dwOffset + adwSize[i] - 1] = 0;
+		} else {
+			CopyMemory (&pData[dwOffset], (const BYTE *)pInfo + Col.nOffset, adwSize[i]);
+		}
+		dwOffset += adwSize[i];
+	}
+
+	return pData;
+}
+
+/* ========================================================================= */
+/* 関数名：PetInfoMazeTable													 */
+/* 内容：サブゲーム情報作成(迷路対戦の台)									 */
+/* 日付：2026/11/27															 */
+/* ========================================================================= */
+static PBYTE PetInfoMazeTable(PBYTE pData, PDWORD pdwSize)
+{
+	DWORD i, j, dwOffset, dwOffsetData, dwColumnCount;
+	PSUBGAME_MAZETABLEINFO pInfo;
+	CmyArray<HEADERINFO, HEADERINFO>aHeaderInfo;
+	CmyArray<int, int>aColNo;
+
+	dwOffset = 0;
+
+	/* ヘッダ情報の読み込み */
+	CopyMemory (&dwColumnCount, &pData[dwOffset], sizeof (dwColumnCount));
+	dwOffset += sizeof (dwColumnCount);
+	dwOffsetData = dwOffset;
+
+	for (i = 0; i < dwColumnCount; i ++) {
+		HEADERINFO Info;
+		int nCol;
+
+		strcpy (Info.szName, (LPSTR)&pData[dwOffset]);
+		dwOffset += (strlen (Info.szName) + 1);
+
+		CopyMemory (&Info.dwOffset, &pData[dwOffset], sizeof (Info.dwOffset));
+		Info.dwOffset -= dwOffsetData;
+		dwOffset += sizeof (Info.dwOffset);
+
+		nCol = -1;
+		for (j = 0; s_aszNameMAZETABLE[j][0] != 'z'; j ++) {
+			if (strcmp (Info.szName, s_aszNameMAZETABLE[j]) == 0) {
+				nCol = (int)j;
+				break;
+			}
+		}
+		if (nCol < 0) {
+			continue;
+		}
+		Info.dwDataSize = 0;
+		aHeaderInfo.Add (Info);
+		aColNo.Add (nCol);
+	}
+
+	/* データ部分の読み込み（足りない列は既定値） */
+	pInfo = new SUBGAME_MAZETABLEINFO;
+	ZeroMemory (pInfo, sizeof (SUBGAME_MAZETABLEINFO));
+	MazeTableInfoDefault (pInfo);
+
+	dwColumnCount = aHeaderInfo.GetSize ();
+	for (i = 0; i < dwColumnCount; i ++) {
+		const MAZETABLECOL &Col = s_aMazeTableCol[aColNo[i]];
+		DWORD dwOffsetTmp = aHeaderInfo[i].dwOffset;
+
+		if (Col.nKind == 2) {
+			char *pszDst = (char *)pInfo + Col.nOffset;
+			size_t nLen = strlen ((LPCSTR)&pData[dwOffsetTmp]);
+
+			if (nLen > Col.nMax - 1) {
+				CopyMemory (pszDst, &pData[dwOffsetTmp], Col.nMax - 1);
+				pszDst[Col.nMax - 1] = 0;
+			} else {
+				strcpy (pszDst, (LPCSTR)&pData[dwOffsetTmp]);
+			}
+			dwOffsetTmp += (DWORD)(nLen + 1);
+		} else {
+			DWORD dwSize = (Col.nKind == 1) ? sizeof (WORD) : sizeof (BYTE);
+			CopyMemory ((BYTE *)pInfo + Col.nOffset, &pData[dwOffsetTmp], dwSize);
+			dwOffsetTmp += dwSize;
+		}
+		dwOffset = dwOffsetTmp;
+	}
+
+	*pdwSize = dwOffsetData + dwOffset;
+	return (PBYTE)pInfo;
+}

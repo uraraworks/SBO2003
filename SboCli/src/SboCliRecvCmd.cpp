@@ -613,6 +613,7 @@ int GetSubGameDataSize(BYTE byType)
 	case SUBGAMEID_DUNGEON:		nSize = sizeof (SUBGAME_DUNGEONINFOSAVE);	break;
 	case SUBGAMEID_WAR:			nSize = sizeof (SUBGAME_WARINFOSAVE);		break;
 	case SUBGAMEID_SUGOROKU:	nSize = sizeof (SUBGAME_SUGOROKUINFOSAVE);	break;
+	case SUBGAMEID_MAZETABLE:	nSize = sizeof (SUBGAME_MAZETABLEINFOSAVE);	break;
 	}
 	return nSize;
 }
@@ -7867,6 +7868,14 @@ void RecvDataProcSUBGAMEINFO(BYTE *pData, DWORD dwDataSize)
 				PSUBGAME_WARINFOSAVE pInfoRecv = (PSUBGAME_WARINFOSAVE)(pRecv + 1);
 
 				CopyMemory (pInfo, pInfoRecv, sizeof (SUBGAME_WARINFOSAVE));
+			}
+			break;
+
+		case SUBGAMEID_MAZETABLE:	/* 迷路対戦の台 */
+			{
+				PSUBGAME_MAZETABLEINFOSAVE pInfo = (PSUBGAME_MAZETABLEINFOSAVE)g_pSubGameInfo->pInfo;
+
+				CopyMemory (pInfo, pRecv + 1, sizeof (SUBGAME_MAZETABLEINFOSAVE));
 			}
 			break;
 

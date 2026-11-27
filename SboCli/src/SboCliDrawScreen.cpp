@@ -970,26 +970,132 @@ static void MazeCircle(HDC hDC, int cx, int cy, int nR, COLORREF cl, COLORREF cl
 	}
 }
 
-/* コマの絵：座っているキャラの通常グラフィックを、そのマスに描く（向きは、下側スタートのプレイヤー 0 が上向き・上側スタートのプレイヤー 1 が下向き）。描けない種類のキャラなら NULL を返す */
-static CImg32 *MazePieceImage(PCHARINFO pChar, int nPlayer, int *pxx, int *pyy)
+/* コマの絵（転送元の画像と範囲） */
+typedef struct _MAZEPIECE {
+	CImg32		*pDib;											/* 転送元の画像 */
+	int			xx, yy;											/* 転送元の左上 */
+	int			cx, cy;											/* 転送する大きさ（32×32 のキャラ以外は大きい） */
+} MAZEPIECE;
+
+/* キャラの絵（通常・横16縦32・戦場ゲーム・横32縦32・横48縦48）から、向き nDir（0=上・1=下）・アニメ 0 コマ目の転送元を求める。
+   DrawCharLine がキャラを描く時と同じ絵の探し方。描けない種類・範囲外なら FALSE */
+static BOOL MazeGrpSource(WORD wGrpID, WORD wGrpMain, WORD wGrpSub, int nDir, MAZEPIECE *pOut)
 {
-	WORD wGrpID = pChar->wGrpID, wGrpMain = pChar->wGrpMain;
 	int no;
+
+	switch (wGrpMain) {
+	case CHARGRP_MAIN_NORMAL:
+		no = wGrpID / 16;
+		if (no >= g_wCountCharGrp) {
+			return FALSE;
+		}
+		pOut->pDib = g_apDibChar[no];
+		pOut->xx = nDir * 64;
+		pOut->yy = 32 * (wGrpID % 16);
+		pOut->cx = 32;
+		pOut->cy = 32;
+		return TRUE;
+	case CHARGRP_MAIN_1632:
+		no = wGrpID / 8;
+		if (no >= g_wCountCharGrp1632) {
+			return FALSE;
+		}
+		pOut->pDib = g_apDibChar1632[no];
+		pOut->xx = nDir * 64;
+		pOut->yy = 64 * (wGrpID % 16);
+		pOut->cx = 32;
+		pOut->cy = 64;
+		return TRUE;
+	case CHARGRP_MAIN_SUBWAR:
+		if (g_pDibWChar == NULL) {
+			return FALSE;
+		}
+		pOut->pDib = g_pDibWChar;
+		pOut->xx = wGrpSub * 64;
+		pOut->yy = wGrpID * 32;
+		pOut->cx = 32;
+		pOut->cy = 32;
+		return TRUE;
+	case CHARGRP_MAIN_3232:
+		no = wGrpID / 8;
+		if (no >= g_wCountCharGrp3232) {
+			return FALSE;
+		}
+		pOut->pDib = g_apDibChar3232[no];
+		pOut->xx = nDir * 128;
+		pOut->yy = 64 * (wGrpID % 16);
+		pOut->cx = 64;
+		pOut->cy = 64;
+		return TRUE;
+	case CHARGRP_MAIN_4848:
+		no = wGrpID / 8;
+		if (no >= g_wCountCharGrp4848) {
+			return FALSE;
+		}
+		pOut->pDib = g_apDibChar4848[no];
+		pOut->xx = nDir * 192;
+		pOut->yy = 96 * (wGrpID % 16);
+		pOut->cx = 96;
+		pOut->cy = 96;
+		return TRUE;
+	}
+	return FALSE;
+}
+
+/* コマの絵：座っているキャラの、その人が普段描かれる絵（変身中は変身後の絵。特殊なグラフィックも含む）。向きは、下側スタートのプレイヤー 0 が上向き・上側スタートのプレイヤー 1 が下向き。描けなければ FALSE */
+static BOOL MazePieceImage(PCHARINFO pChar, int nPlayer, MAZEPIECE *pOut)
+{
+	WORD wGrpID = pChar->wGrpID, wGrpMain = pChar->wGrpMain, wGrpSub = pChar->wGrpSub;
 
 	if (!((pChar->wGrpTmpID == 0) && (pChar->wGrpTmpMain == 0) && (pChar->wGrpTmpSub == 0))) {
 		wGrpID = pChar->wGrpTmpID;
 		wGrpMain = pChar->wGrpTmpMain;
+		wGrpSub = pChar->wGrpTmpSub;
 	}
-	if (wGrpMain != CHARGRP_MAIN_NORMAL) {
-		return NULL;
+	return MazeGrpSource (wGrpID, wGrpMain, wGrpSub, (nPlayer == 0) ? 0 : 1, pOut);
+}
+
+/* CPUのコマの絵：台の設定のキャラ画像（wCpuGrpID。NPC と同じ通常グラフィック）。向きは盤の進行方向（人と同じ）。0 や範囲外なら FALSE（色付きの丸） */
+static BOOL MazeCpuImage(const CMDPARA_MAZESTATE &St, int nPlayer, MAZEPIECE *pOut)
+{
+	if (St.wCpuGrpID == 0) {
+		return FALSE;
 	}
-	no = wGrpID / 16;
-	if (no >= g_wCountCharGrp) {
-		return NULL;
+	return MazeGrpSource (St.wCpuGrpID, CHARGRP_MAIN_NORMAL, 0, (nPlayer == 0) ? 0 : 1, pOut);
+}
+
+/* コマの絵を、マス (x, y)（左上）を基準に描く。32×32 より大きい絵は、マスの中央・足元をマスの下端に合わせる。切り取り範囲（s_nPz*）にかかる所は切る */
+static void MazeBltPiece(int x, int y, const MAZEPIECE &Pc)
+{
+	int dx = x + (MAZE_CELL_DOT - Pc.cx) / 2, dy = y + MAZE_CELL_DOT - Pc.cy;
+	int sx = Pc.xx, sy = Pc.yy, cx = Pc.cx, cy = Pc.cy;
+
+	if (dx < s_nPzL) { sx += s_nPzL - dx; cx -= s_nPzL - dx; dx = s_nPzL; }
+	if (dy < s_nPzT) { sy += s_nPzT - dy; cy -= s_nPzT - dy; dy = s_nPzT; }
+	if (dx + cx > s_nPzR) { cx = s_nPzR - dx; }
+	if (dy + cy > s_nPzB) { cy = s_nPzB - dy; }
+	if ((cx <= 0) || (cy <= 0)) {
+		return;
 	}
-	*pxx = ((nPlayer == 0) ? 0 : 1) * 64;	/* 向きは上（0）／下（1）・アニメ 0 コマ目 */
-	*pyy = 32 * (wGrpID % 16);
-	return g_apDibChar[no];
+	g_pDibDrawMap->Blt (dx, dy, cx, cy, Pc.pDib, sx, sy, TRUE);
+}
+
+/* CPUの名前表示（空なら「CPU」。強さの数だけ ★ を添える） */
+static void MazeCpuName(const CMDPARA_MAZESTATE &St, char *pszOut, int nSize)
+{
+	int k, nLen;
+
+	lstrcpyn (pszOut, St.szCpuName, nSize);
+	if (pszOut[0] == '\0') {
+		lstrcpyn (pszOut, "CPU", nSize);
+	}
+	for (k = 0; (k < (int)St.byCpuLevel) && (k < 3); k ++) {
+		nLen = lstrlen (pszOut);
+		if (nLen + 3 >= nSize) {
+			break;
+		}
+		lstrcat (pszOut, "★");
+	}
 }
 
 /* コマ（台NPCのマスに盤の下の行が重なるので、キャラより前に描く） */
@@ -999,6 +1105,8 @@ static void DrawMazePieces(const CMDPARA_MAZESTATE &St, int sx, int sy)
 	int x, y, p;
 	HDC hDC;
 	HFONT hFontOld;
+	MAZEPIECE aPiece[2];
+	BOOL abPiece[2] = { FALSE, FALSE };		/* 絵で描くコマか */
 
 	s_nPzL = s_nMazeL;
 	s_nPzT = s_nMazeT;
@@ -1014,23 +1122,24 @@ static void DrawMazePieces(const CMDPARA_MAZESTATE &St, int sx, int sy)
 		BOOL bHave = (St.dwChar[p] != MAZE_NOCHAR);
 		BOOL bCpu = (!bHave && (St.byState & MAZESTATE_CPU)) ? TRUE : FALSE;		/* CPU対戦中の、人のいない側＝CPU */
 		int nNo = bHave ? GetCharNo2 (St.dwChar[p]) : -1;
-		int xx, yy;
 		if (St.byPosX[p] >= MAZE_SIZE || St.byPosY[p] >= MAZE_SIZE) {
 			continue;
 		}
 		if (bCpu) {
-			/* CPU：色付きの丸と名前「CPU」（強さの数だけ ★ を添える） */
-			char szCpu[16] = "CPU";
-			int k;
-			for (k = 0; (k < (int)St.byCpuLevel) && (k < 3); k ++) {
-				lstrcat (szCpu, "★");
+			/* CPU：キャラ画像の指定があればその絵（名前は絵の後に描く）。無ければ色付きの丸と名前 */
+			char szCpu[64];
+			if (MazeCpuImage (St, p, &aPiece[p])) {
+				abPiece[p] = TRUE;
+				continue;
 			}
+			MazeCpuName (St, szCpu, sizeof (szCpu));
 			MazeCircle (hDC, cx, cy, 11, clPiece[p], RGB (40, 30, 20), 255);
 			PuzText (hDC, cx, cy - 6, (LPSTR)"C", RGB (40, 30, 20), 14, TRUE);
 			PuzText (hDC, cx, cy + 12, szCpu, RGB (255, 255, 255), 14, TRUE);
 			continue;
 		}
-		if ((nNo >= 0) && MazePieceImage (g_aCharInfo[nNo], p, &xx, &yy)) {
+		if ((nNo >= 0) && MazePieceImage (g_aCharInfo[nNo], p, &aPiece[p])) {
+			abPiece[p] = TRUE;
 			continue;		/* 絵は下の層を閉じてから描く */
 		}
 		if (bHave && (nNo >= 0)) {
@@ -1048,24 +1157,40 @@ static void DrawMazePieces(const CMDPARA_MAZESTATE &St, int sx, int sy)
 	SelectObject (hDC, hFontOld);
 	g_pDibDrawMap->Unlock ();
 
-	/* キャラの絵のコマ */
+	/* キャラの絵のコマ（参加者本人の絵・CPUの絵） */
 	for (p = 0; p < 2; p ++) {
-		int nNo = (St.dwChar[p] != MAZE_NOCHAR) ? GetCharNo2 (St.dwChar[p]) : -1;
-		int xx, yy;
-		CImg32 *pDib;
-		if ((nNo < 0) || (St.byPosX[p] >= MAZE_SIZE) || (St.byPosY[p] >= MAZE_SIZE)) {
+		if (!abPiece[p] || (St.byPosX[p] >= MAZE_SIZE) || (St.byPosY[p] >= MAZE_SIZE)) {
 			continue;
 		}
-		pDib = MazePieceImage (g_aCharInfo[nNo], p, &xx, &yy);
-		if (pDib == NULL) {
-			continue;
-		}
-		x = sx + (int)St.byPosX[p] * MAZE_PITCH_DOT;		/* マスの左上から 32 ドット四方（ずらさない） */
+		x = sx + (int)St.byPosX[p] * MAZE_PITCH_DOT;		/* マスの左上から（32 ドット四方のキャラはずらさない） */
 		y = sy + (int)St.byPosY[p] * MAZE_PITCH_DOT;
-		if ((x < s_nPzL) || (x + 32 > s_nPzR) || (y < s_nPzT) || (y + 32 > s_nPzB)) {
-			continue;
+		MazeBltPiece (x, y, aPiece[p]);
+	}
+
+	/* 絵で出したCPUの名前（絵に隠れないよう、絵のあとで描く） */
+	if (St.byState & MAZESTATE_CPU) {
+		BOOL bAny = FALSE;
+		for (p = 0; p < 2; p ++) {
+			if (abPiece[p] && (St.dwChar[p] == MAZE_NOCHAR) && (St.byPosX[p] < MAZE_SIZE) && (St.byPosY[p] < MAZE_SIZE)) {
+				bAny = TRUE;
+			}
 		}
-		g_pDibDrawMap->Blt (x, y, 32, 32, pDib, xx, yy, TRUE);
+		if (bAny) {
+			hDC = g_pDibDrawMap->Lock ();
+			hFontOld = (HFONT)SelectObject (hDC, g_hFont14);
+			SetBkMode (hDC, TRANSPARENT);
+			for (p = 0; p < 2; p ++) {
+				char szCpu[64];
+				if (!abPiece[p] || (St.dwChar[p] != MAZE_NOCHAR) || (St.byPosX[p] >= MAZE_SIZE) || (St.byPosY[p] >= MAZE_SIZE)) {
+					continue;
+				}
+				MazeCpuName (St, szCpu, sizeof (szCpu));
+				PuzText (hDC, sx + (int)St.byPosX[p] * MAZE_PITCH_DOT + MAZE_CELL_DOT / 2,
+					sy + (int)St.byPosY[p] * MAZE_PITCH_DOT + MAZE_CELL_DOT + 1, szCpu, RGB (255, 255, 255), 14, TRUE);
+			}
+			SelectObject (hDC, hFontOld);
+			g_pDibDrawMap->Unlock ();
+		}
 	}
 
 	/* 手番の側のコマにだけ、頭の上で点滅する小さな三角（2 人対戦中。カウントダウン・勝ち表示中は出さない） */

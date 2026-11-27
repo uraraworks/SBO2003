@@ -31,6 +31,7 @@
 #include "SboSvrMapSwapEdit.h"
 #include "CharProc/CharProcMERCENARY.h"
 #include "SboSvrMagicProc.h"
+#include "../../common/MazeTable.h"
 #include <map>
 #include <unordered_map>
 #include <vector>
@@ -1435,6 +1436,7 @@ int GetSubGameDataSize(BYTE byType)
 	case SUBGAMEID_DUNGEON:		nSize = sizeof (SUBGAME_DUNGEONINFO);	break;
 	case SUBGAMEID_WAR:			nSize = sizeof (SUBGAME_WARINFO);		break;
 	case SUBGAMEID_SUGOROKU:	nSize = sizeof (SUBGAME_SUGOROKUINFO);	break;
+	case SUBGAMEID_MAZETABLE:	nSize = sizeof (SUBGAME_MAZETABLEINFO);	break;
 	}
 
 	return nSize;
@@ -9981,6 +9983,19 @@ void RecvDataProcSUBGAMEINFO(PBYTE pData, DWORD dwDataSize)
 			pInfo->byCastle1X = pInfoRecv->byCastle1X;
 			pInfo->byCastle2X = pInfoRecv->byCastle2X;
 			pInfo->byCastleY = pInfoRecv->byCastleY;
+		}
+		break;
+
+	case SUBGAMEID_MAZETABLE:	/* 迷路対戦の台（保存用と実行用が同じ中身。範囲外の値は直す。届いた量が足りなければ既定値） */
+		{
+			PSUBGAME_MAZETABLEINFO pInfo = (PSUBGAME_MAZETABLEINFO)g_aSubaGameInfo[pRecv->dwTblID]->pInfo;
+
+			if (dwDataSize >= sizeof (CMDPARA_DATA1) + sizeof (SUBGAME_MAZETABLEINFOSAVE)) {
+				CopyMemory (pInfo, pRecv + 1, sizeof (SUBGAME_MAZETABLEINFO));
+				MazeTableInfoFix (pInfo);
+			} else {
+				MazeTableInfoDefault (pInfo);
+			}
 		}
 		break;
 

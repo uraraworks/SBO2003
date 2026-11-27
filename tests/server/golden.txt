@@ -2608,27 +2608,17 @@ board empty text=2
 board full counts=10,10 len<max=1 tenth=2 end=1
 record done seats=0
 == AW. Maze attack table ==
-maze parse default -5,-9,0,1
-maze parse all 3,-4,5,-2
-maze parse blank -5,-9,3,1
-maze parse clamp 60,-60,0,1
-maze parts default 0,0,0
-maze parts all 5,6,7
-maze parts floorA only 9,0,0
-maze parts gap only 0,0,12
-maze parts clamp 0,65535,0
-maze parts with pos 3,-4,5,-2
-maze seat2 default 0,-10
-maze seat2 all 4,-7
-maze seat2 blank 0,3
-maze seat2 clamp 60,-60
-maze seat2 omitted 0,-10
-maze isTable q=1 puzzle=0 questnpc=0
+maze speech no 0 12 -1 -1 -1 -1 -1 -1
+maze info default -5,-9 seat1=0,1 seat2=0,-10 parts=0,0,0 cpu=0 grp=0 name=[] cpuname=[CPU]
+maze info clamp 60,-60 seat1=60,-60 seat2=60,-60 cpu=3 nameEnd=1 cpunameEnd=1
+maze isTable ok=1 none=0 old=0 missing=0 bomb=0 empty=0 puzzle=0 questnpc-q=0 questnpc-k=0
+maze notTable talk seated=0 seats=0
 maze other cells seated=0 state=0
 maze sit seated=1 seats=1 got=1 kind=1 seat=1 idle=0 c0=1 c1=1
-maze sit board x=1 y=1 size=93
+maze sit board x=1 y=1 size=167
 maze sit p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2
 maze sit parts floor=5,6 gap=7
+maze sit seats 0,1 0,-10 cpugrp=0 cpuname=[CPU]
 maze busy seatedB=0 msg=1
 maze nowalk moved=0
 maze move up p0=3,5 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2 +1
@@ -2707,7 +2697,6 @@ maze ask shown seated=0 answer=0
 maze vs ask expired seatedB=0 seats=1
 maze vs emptied seats=0
 maze vs exclusive puzzle=1 maze=0
-maze cpu parse 0 2 3 0 0
 maze cpuask plain asked=0 seated=1
 maze cpu plain seated=1 cpu=0 lv=0 vs=0 count=0(0) left=0 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
 maze cpuask no asked=1 cpu=1 swap=0 yes=0 seated(before)=0
@@ -2718,6 +2707,7 @@ maze cpuask yes asked=1 cpu=1 swap=0 yes=1 seated(before)=0
 maze cpu start seated=1 seats=1 msg=1 cpu=1 lv=1 vs=1 count=1(3) left=0 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
 maze cpu count locked cpu=1 lv=1 vs=1 count=1(3) left=0 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
 maze cpu go cpu=1 lv=1 vs=1 count=0(0) left=30 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpu look grp=321 name=[ロボ]
 maze cpu after A cpu=1 lv=1 vs=1 count=0(0) left=0 turn=1 name=10 c1=1 win=0 idle=0 p0=3,5 p1=3,0 walls=6/6
 maze cpu thinking cpu=1 lv=1 vs=1 count=0(0) left=0 turn=1 name=10 c1=1 win=0 idle=0 p0=3,5 p1=3,0 walls=6/6
 maze cpu not my turn cpu=1 lv=1 vs=1 count=0(0) left=0 turn=1 name=10 c1=1 win=0 idle=0 p0=3,5 p1=3,0 walls=6/6
@@ -2726,8 +2716,8 @@ maze cpu human win cpu=1 lv=1 vs=1 count=0(0) left=0 turn=0 name=10 c1=1 win=1 i
 maze cpu win shown cpu=1 lv=1 vs=1 count=0(0) left=0 turn=0 name=10 c1=1 win=1 idle=0 p0=3,0 p1=0,3 walls=6/6
 maze cpu next game cpu=1 lv=1 vs=1 count=1(3) left=0 turn=1 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
 maze cpu second game cpu=1 lv=1 vs=1 count=0(0) left=0 turn=1 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
-maze cpu first move cpu=1 lv=1 vs=1 count=0(0) left=29 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,1 walls=6/6
-maze cpu timeout loss steps=1 cpuwin=1 forfeit=1 cpu=1 lv=1 vs=1 count=0(0) left=0 turn=0 name=10 c1=1 win=1 idle=0 p0=3,6 p1=4,1 walls=6/5
+maze cpu first move cpu=1 lv=1 vs=1 count=0(0) left=29 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=2,0 walls=6/6
+maze cpu timeout loss steps=1 cpuwin=1 forfeit=1 cpu=1 lv=1 vs=1 count=0(0) left=0 turn=0 name=10 c1=1 win=1 idle=0 p0=3,6 p1=3,1 walls=6/6
 maze cpu esc seated=0 seats=0 cpu=0 lv=1 vs=0 count=0(0) left=0 turn=0 name=00 c1=1 win=0 idle=1 p0=3,6 p1=3,0 walls=6/6
 maze cpu esc after wait cpu=0 lv=1 vs=0 count=0(0) left=0 turn=0 name=00 c1=1 win=0 idle=1 p0=3,6 p1=3,0 walls=6/6
 maze cpuask yes2 asked=1 cpu=1 swap=0 yes=1 seated(before)=0
@@ -2745,5 +2735,12 @@ maze cpu human vs human idle cpu=0 lv=1 vs=1 count=0(0) left=25 turn=0 name=11 c
 maze cpu after swap B left seatedA=1 cpu=0 lv=1 vs=0 count=0(0) left=0 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
 maze cpuask expire asked=1 cpu=1 swap=0 yes=1 seated(before)=0
 maze cpu ask expired seated=0 seats=0
+maze api add ok=1 size+1=1 defaults=-5,-9,0,1,0,-10 cpu=0 name=[CPU]
+maze api get typeName=1 chDx=1 chSdy2=1 cpuName=1
+maze api set ok=1 chDx=-3 chDy=-9 seat1=2,1 seat2=0,-8 parts=11,12,13 cpu=2 grp=123 cpuname=[ロボ] name=[テスト台]
+maze api reject dx100=1 cpu4=1 unknown=1 type5=1 kept=-3,2
+maze api reload count=1 same=1 dx=-3 seat1=2,1 seat2=0,-8 parts=11,12,13 cpu=2 grp=123 cpuname=[ロボ] name=[テスト台]
+maze api erase ok=1 type=0 info=0 table before=1 after=0
+maze api reuse ok=1 size=1 type=6 table=1
 maze done seats=0 idleTables=0
 == done ==

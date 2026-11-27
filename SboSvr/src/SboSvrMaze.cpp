@@ -4,13 +4,16 @@
 /* 作成日：		2026/11/26													 */
 /* ========================================================================= */
 /*
- * 盤面ロジックは common/MazeAttack.h、台詞の読み方は common/MazeTable.h。台の作りは落ち物パズル（SboSvrPuzzle.cpp）にならう。
- * 台は、台詞が "@k" で始まる NPC（"@q" は依頼NPCの印なので使わない）:
- *     @k<dx>,<dy>,<sdx>,<sdy>,<床A>,<床B>,<隙間>,<sdx2>,<sdy2>,<CPU強さ>      後ろは省略でき、空欄も既定になる
- *   dx, dy   … 盤（10×10 タイル＝320 ドット）の左上が、台NPCのマスの左上から何タイルか。省略は -5,-9
- *   sdx, sdy … 席 1（プレイヤー 0＝下側）の座る場所：台NPCのマスからの相対位置（マス）。省略は (0,+1)
- *   sdx2, sdy2 … 席 2（プレイヤー 1＝上側）の座る場所。省略は (0,-10)（盤の真上の 1 つ上）
- *   CPU強さ … 0・省略＝CPUなし、1=よわい・2=ふつう・3=つよい
+ * 盤面ロジックは common/MazeAttack.h、台の設定の読み方は common/MazeTable.h。台の作りは落ち物パズル（SboSvrPuzzle.cpp）にならう。
+ * 台は、台詞が "@k<サブゲーム情報の番号>" の NPC（"@q" は依頼NPCの印なので使わない。番号はダンジョン受付 @d と同じ 0 から）。
+ *   番号の指すサブゲーム情報が SUBGAMEID_MAZETABLE（SUBGAME_MAZETABLEINFO）でない・存在しない時は台ではないものとして無視する。
+ *   設定（管理者がサブゲーム情報で決める）:
+ *   chDx, chDy   … 盤（10×10 タイル＝320 ドット）の左上が、台NPCのマスの左上から何タイルか。既定 -5,-9
+ *   chSdx, chSdy … 席 1（プレイヤー 0＝下側）の座る場所：台NPCのマスからの相対位置（マス）。既定 (0,+1)
+ *   chSdx2, chSdy2 … 席 2（プレイヤー 1＝上側）の座る場所。既定 (0,-10)（盤の真上の 1 つ上）
+ *   wFloorA, wFloorB, wGap … 床の市松・隙間のマップパーツID（0 ならクライアントがコード描画）
+ *   byCpuLevel   … 0＝CPUなし、1=よわい・2=ふつう・3=つよい
+ *   wCpuGrpID, szCpuName … CPUのコマのキャラ画像（0＝丸）・名前表示（空なら「CPU」）
  * 台は席が 2 つで盤は 1 枚を共有する。コインは無く、座る場所のマスに立って S キーで座る（無料の台）。
  *   片方だけが座っている間はひとり練習：座るとゲームを初期化し、相手（不在）の手番は 1 手指すたびに自動で飛ばす
  *   （MazeGame::Pass は「相手が動けない時」しか成立しないので、手番は直接座っている人に戻す）。
@@ -19,7 +22,7 @@
  *   対戦：手番はプレイヤー 0 から始まり 1 手ごとに交代。手番でない人の操作は無視。1 手 MAZE_TURN_MS で、時間切れはその手番を飛ばし、
  *   連続 MAZE_TIMEOUT_MAX 回で不戦敗。勝敗が決まると両者へ「○○の勝ち！」、盤を MAZE_OVER_SHOW_MS 見せて初期化し、
  *   続けて対戦（先手を交代）。席を立つ・切断・マップ移動・倒れた時は残った側の勝ちで、残った人はひとり練習に戻る。
- *   CPU対戦（CPU強さ>0 の台）：人がひとりで座る時（相手の席が空）、先に座る本人へ「CPUと対戦しますか？」（@y。30 秒で無効）。
+ *   CPU対戦（byCpuLevel>0 の台）：人がひとりで座る時（相手の席が空）、先に座る本人へ「CPUと対戦しますか？」（@y。30 秒で無効）。
  *   はい＝空いている側の席をCPU（仮想プレイヤー。席の dwChar は空のまま。bCpu）が受け持ち、カウントダウンのあと交互に指す。
  *   いいえ＝従来のひとり練習。CPUの手番は MAZE_CPU_THINK_MIN〜MAX_MS 考えたあと MazeCpuChoose の 1 手を Move/PlaceWall/Pass と同じ検証で指す
  *   （時間切れはCPUには無い）。勝敗は「CPUの勝ち！」「○○の勝ち！」、見せたあと次の対戦（先手交代・CPU継続）。人が席を立つ・切断・マップ移動・倒れた
@@ -76,7 +79,9 @@ typedef struct _MAZETABLE {
 	BOOL		bIdle;						/* 待機中（席に誰もいない） */
 	BOOL		bVs;						/* 2 人対戦中（両方の席に人がいて、乱入で始めた） */
 	BOOL		bCount;						/* 対戦開始前のカウントダウン中 */
-	int			nCpuLevel;					/* 台詞のCPU強さ（0=CPUなし・1〜3） */
+	int			nCpuLevel;					/* 設定のCPU強さ（0=CPUなし・1〜3） */
+	WORD		wCpuGrpID;					/* 設定のCPUのキャラ画像（0=丸） */
+	char		szCpuName[MAX_CHARNAMEBUF];	/* 設定のCPUの名前表示（空なら「CPU」） */
 	BOOL		bCpu;						/* CPU対戦中（bVs も立つ。CPUは nCpuSeat 側） */
 	int			nCpuSeat;					/* CPUが受け持つ席（0 / 1） */
 	DWORD		dwCpuMove;					/* CPUが指す時刻（0=まだ決めていない。CPUの手番になって最初に決める） */
@@ -163,16 +168,57 @@ static BOOL FindSeat(PCHARINFO pChar, int *pnTable, int *pnSeat = NULL)
 	return FALSE;
 }
 
-/* pChar が台NPCの座る場所のマスに立っている席（0=席 1・1=席 2。どちらでもなければ -1）。台が使う座る場所の位置は台詞から読む */
+/* 台NPCの台詞 "@k<番号>" が指すサブゲーム情報（台でなければ NULL。番号が無い・種別違い・中身が無い時も NULL） */
+static const SUBGAME_MAZETABLEINFO *InfoOf(PCHARINFO pNpc)
+{
+	int nNo;
+	PSUBGAMEINFO pSub;
+
+	if (!pNpc || (pNpc->byNpcType == NPCTYPE_INIT) || (pNpc->byNpcType == NPCTYPE_QUESTNPC) || !pNpc->pszNpcSpeech) {
+		return NULL;
+	}
+	nNo = MazeSpeechNo (pNpc->pszNpcSpeech);
+	if ((nNo < 0) || (nNo >= g_aSubaGameInfo.GetSize ())) {
+		return NULL;
+	}
+	pSub = g_aSubaGameInfo[nNo];
+	if ((pSub == NULL) || (pSub->byType != SUBGAMEID_MAZETABLE) || (pSub->pInfo == NULL)) {
+		return NULL;
+	}
+	return (const SUBGAME_MAZETABLEINFO *)pSub->pInfo;
+}
+
+/* 台の設定の写しを、サブゲーム情報の今の値にそろえる（盤の位置・席・見た目・CPU。座っている人や盤面は触らない） */
+static void ApplyInfo(MAZETABLE *pTable, const SUBGAME_MAZETABLEINFO *pInfo)
+{
+	pTable->nDx = pInfo->chDx;
+	pTable->nDy = pInfo->chDy;
+	pTable->anSdx[0] = pInfo->chSdx;
+	pTable->anSdy[0] = pInfo->chSdy;
+	pTable->anSdx[1] = pInfo->chSdx2;
+	pTable->anSdy[1] = pInfo->chSdy2;
+	pTable->wFloorA = pInfo->wFloorA;
+	pTable->wFloorB = pInfo->wFloorB;
+	pTable->wGap = pInfo->wGap;
+	pTable->nCpuLevel = (pInfo->byCpuLevel > MAZE_CPU_LEVEL_MAX) ? MAZE_CPU_LEVEL_MAX : pInfo->byCpuLevel;
+	pTable->wCpuGrpID = pInfo->wCpuGrpID;
+	strncpy (pTable->szCpuName, pInfo->szCpuName[0] ? pInfo->szCpuName : "CPU", sizeof (pTable->szCpuName) - 1);
+	pTable->szCpuName[sizeof (pTable->szCpuName) - 1] = '\0';
+}
+
+/* pChar が台NPCの座る場所のマスに立っている席（0=席 1・1=席 2。どちらでもなければ -1）。座る場所の位置はサブゲーム情報から読む */
 static int SeatIndexAt(PCHARINFO pChar, PCHARINFO pNpc)
 {
-	int nDx, nDy, anSdx[2], anSdy[2], i;
+	const SUBGAME_MAZETABLEINFO *pInfo = InfoOf (pNpc);
+	int anSdx[2], anSdy[2], i;
 
-	if (!MazeIsTableNpc (pNpc) || (pChar->dwMapID != pNpc->dwMapID) || !IsSameSpace (pNpc, pChar)) {
+	if ((pInfo == NULL) || (pChar->dwMapID != pNpc->dwMapID) || !IsSameSpace (pNpc, pChar)) {
 		return -1;
 	}
-	MazeParseTable (pNpc->pszNpcSpeech, &nDx, &nDy, &anSdx[0], &anSdy[0]);
-	MazeParseSeat2 (pNpc->pszNpcSpeech, &anSdx[1], &anSdy[1]);
+	anSdx[0] = pInfo->chSdx;
+	anSdy[0] = pInfo->chSdy;
+	anSdx[1] = pInfo->chSdx2;
+	anSdy[1] = pInfo->chSdy2;
 	for (i = 0; i < 2; i ++) {
 		if (((int)pChar->dwX == (int)pNpc->dwX + anSdx[i]) && ((int)pChar->dwY == (int)pNpc->dwY + anSdy[i])) {
 			return i;
@@ -312,7 +358,13 @@ static void BuildState(const MAZETABLE &Table, BYTE byKind, CMDPARA_MAZESTATE *p
 	pOut->wFloor[0] = Table.wFloorA;
 	pOut->wFloor[1] = Table.wFloorB;
 	pOut->wGap = Table.wGap;
+	pOut->wCpuGrpID = Table.wCpuGrpID;
+	strncpy (pOut->szCpuName, Table.szCpuName, sizeof (pOut->szCpuName) - 1);
 	if (pNpc) {
+		for (i = 0; i < 2; i ++) {
+			pOut->sSeatX[i] = (short)((int)pNpc->dwX + Table.anSdx[i]);
+			pOut->sSeatY[i] = (short)((int)pNpc->dwY + Table.anSdy[i]);
+		}
 		MazeBoardPos ((int)pNpc->dwX, (int)pNpc->dwY, Table.nDx, Table.nDy, &nX, &nY);
 		pOut->sBoardX = (short)nX;
 		pOut->sBoardY = (short)nY;
@@ -471,7 +523,7 @@ static void Decided(int nTable)
 	if (!Table.bVs) {
 		return;
 	}
-	sprintf (szMsg, "%sの勝ち！", Table.bCpu && (Table.Game.nWinner == Table.nCpuSeat) ? "CPU" : pWin ? pWin->szName : "だれか");
+	sprintf (szMsg, "%sの勝ち！", Table.bCpu && (Table.Game.nWinner == Table.nCpuSeat) ? Table.szCpuName : pWin ? pWin->szName : "だれか");
 	for (i = 0; i < 2; i ++) {
 		PCHARINFO pChar = SeatChar (Table, i);
 		if (pChar) {
@@ -532,15 +584,17 @@ static void InitTable(MAZETABLE *pTable, PCHARINFO pNpc, DWORD dwMapID)
 {
 	pTable->dwNpc = pNpc->dwTblID;
 	pTable->dwMapID = dwMapID;
-	MazeParseTable (pNpc->pszNpcSpeech, &pTable->nDx, &pTable->nDy, &pTable->anSdx[0], &pTable->anSdy[0]);
-	MazeParseSeat2 (pNpc->pszNpcSpeech, &pTable->anSdx[1], &pTable->anSdy[1]);
-	MazeParseParts (pNpc->pszNpcSpeech, &pTable->wFloorA, &pTable->wFloorB, &pTable->wGap);
+	pTable->nCpuLevel = 0;
+	pTable->wCpuGrpID = 0;
+	pTable->szCpuName[0] = '\0';
+	if (InfoOf (pNpc)) {
+		ApplyInfo (pTable, InfoOf (pNpc));
+	}
 	pTable->dwChar[0] = pTable->dwChar[1] = MAZE_NOSEAT;
 	pTable->dwPID[0] = pTable->dwPID[1] = 0;
 	pTable->bIdle = TRUE;
 	pTable->bVs = FALSE;
 	pTable->bCount = FALSE;
-	pTable->nCpuLevel = MazeParseCpuLevel (pNpc->pszNpcSpeech);
 	pTable->bCpu = FALSE;
 	pTable->nCpuSeat = 1;
 	pTable->dwCpuMove = 0;
@@ -566,8 +620,7 @@ static void InitTable(MAZETABLE *pTable, PCHARINFO pNpc, DWORD dwMapID)
 
 BOOL MazeIsTableNpc(PCHARINFO pNpc)
 {
-	return pNpc && (pNpc->byNpcType != NPCTYPE_INIT) && (pNpc->byNpcType != NPCTYPE_QUESTNPC) && pNpc->pszNpcSpeech &&
-		(pNpc->pszNpcSpeech[0] == '@') && (pNpc->pszNpcSpeech[1] == 'k');
+	return InfoOf (pNpc) != NULL;
 }
 
 BOOL MazeOnSeatCell(PCHARINFO pChar, PCHARINFO pNpc)
@@ -677,7 +730,7 @@ static void SitMain(PCHARINFO pChar, PCHARINFO pNpc, int nChoice, int nKind)
 		return;
 	}
 	/* 今の状況で聞くこと：CPUの席なら交代、もう一方の席でひとりが遊んでいれば乱入、ひとりで座るなら（CPUのある台は）CPU対戦 */
-	nLevel = MazeParseCpuLevel (pNpc->pszNpcSpeech);
+	nLevel = InfoOf (pNpc)->byCpuLevel;
 	if (nTable >= 0) {
 		pOther = SeatChar (s_aTable[nTable], 1 - nSeat);
 	}
@@ -932,6 +985,7 @@ void MazeProc(void)
 				s_aTable.erase (s_aTable.begin () + i);
 				continue;
 			}
+			ApplyInfo (&Table, InfoOf (pNpc));		/* 待機中は、管理者の設定変更をすぐ反映する */
 			if ((DWORD)(g_dwTime - Table.dwLastWatch) >= MAZE_WATCH_MS) {
 				WatchRefresh (i);
 			}

@@ -9943,45 +9943,26 @@ static int PuzzleSeatNpcHere(PCHARINFO pChar)
 /* ========================================================================= */
 /* 関数名：MazeSeatNpcHere													 */
 /* 内容：迷路対戦の台の「座る場所」のマスに立っているか						 */
-/*		 台NPC（台詞 @k…）の台詞の 3・4 番目（席 1。sdx,sdy。省略は台NPCの 1 つ下）と、	 */
-/*		 8・9 番目（席 2。sdx2,sdy2。省略は台NPCの 10 マス上）で決まる					 */
-/*		 どちらかの席のマスに立って S キーを押せば座れる（向きは問わない。どちらの席かはサーバーが決める）	 */
+/*		 クライアントは台の設定（サブゲーム情報）を持たないので、サーバーから届いている	 */
+/*		 盤の状態（CMD_MAZESTATE）の席の位置（sSeatX/Y。席1・席2）で調べる			 */
+/*		 どちらかの席のマスに立って S キーを押せば座れる（向きは問わない。どちらの席かはサーバーが決める。	 */
+/*		 座れるかどうかを決めるのもサーバー）											 */
 /*		 戻り値：座る場所なら TRUE（*pdwTblID に台NPCのテーブルID）						 */
 /* ========================================================================= */
 static BOOL MazeSeatNpcHere(PCHARINFO pChar, DWORD *pdwTblID)
 {
-	int i, nCount = g_aCharInfo.GetSize (), nDx, nDy, nSdx, nSdy;
+	int i, j;
 	CMDPARA_MAZESTATE St;
 
-	for (i = 0; i < nCount; i ++) {
-		PCHARINFO pNpc = (PCHARINFO)g_aCharInfo[i];
-		if ((pNpc == pChar) || (pNpc->byNpcType == NPCTYPE_INIT) || (pNpc->byNpcType == NPCTYPE_QUESTNPC) || !pNpc->pszNpcSpeech ||
-			(pNpc->pszNpcSpeech[0] != '@') || (pNpc->pszNpcSpeech[1] != 'k')) {
-			continue;
-		}
-		MazeParseTable (pNpc->pszNpcSpeech, &nDx, &nDy, &nSdx, &nSdy);
-		if (((int)pNpc->dwX + nSdx == (int)pChar->dwX) && ((int)pNpc->dwY + nSdy == (int)pChar->dwY)) {
-			*pdwTblID = pNpc->dwTblID;
-			return TRUE;
-		}
-		/* 席 2（プレイヤー 1＝上側）の座る場所 */
-		MazeParseSeat2 (pNpc->pszNpcSpeech, &nSdx, &nSdy);
-		if (((int)pNpc->dwX + nSdx == (int)pChar->dwX) && ((int)pNpc->dwY + nSdy == (int)pChar->dwY)) {
-			*pdwTblID = pNpc->dwTblID;
-			return TRUE;
-		}
-	}
-	/* 席 2 は台NPCから既定で 10 マス上にあり、画面（15×15）に台NPCが入らないので、NPC が見つからない。
-	   そこで、サーバーから届いている盤（CMD_MAZESTATE）の位置から、既定の席 2（盤の上端の 1 行上・盤の中央の列）を割り出す。
-	   座れるかどうかを決めるのはサーバー（座る場所でなければ何も起きない） */
 	for (i = 0; i < MAZE_VIEW_MAX; i ++) {
 		if (!GetMazeState (i, &St)) {
 			continue;
 		}
-		if (((int)pChar->dwX == (int)St.sBoardX / MAZE_TABLE_TILE_DOT + MAZE_TABLE_TILES / 2) &&
-			((int)pChar->dwY == (int)St.sBoardY / MAZE_TABLE_TILE_DOT - 1)) {
-			*pdwTblID = St.dwNpc;
-			return TRUE;
+		for (j = 0; j < 2; j ++) {
+			if (((int)pChar->dwX == (int)St.sSeatX[j]) && ((int)pChar->dwY == (int)St.sSeatY[j])) {
+				*pdwTblID = St.dwNpc;
+				return TRUE;
+			}
 		}
 	}
 	return FALSE;
