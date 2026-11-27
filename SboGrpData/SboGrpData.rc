@@ -69,6 +69,10 @@ IDP_EFC04               PNG     MOVEABLE PURE   "grp\\efc04.png"
 IDP_LOGO                PNG     MOVEABLE PURE   "grp\\URARA-worksロゴ.png"
 IDP_TITLE               PNG     MOVEABLE PURE   "grp\\タイトル.png"
 IDP_SUBG_BOMB           PNG     MOVEABLE PURE   "grp\\SubGame_bomb.png"
+#ifdef SBO_PINBALL_ART
+IDP_PINBALL_BG          PNG     MOVEABLE PURE   "grp\\pinball_bg.png"
+IDP_PINBALL_PARTS       PNG     MOVEABLE PURE   "grp\\pinball_parts.png"
+#endif
 IDP_CHAR08              PNG     MOVEABLE PURE   "grp\\char08.png"
 IDP_CHAR09              PNG     MOVEABLE PURE   "grp\\char09.png"
 IDP_MAP03               PNG     MOVEABLE PURE   "grp\\map03.png"

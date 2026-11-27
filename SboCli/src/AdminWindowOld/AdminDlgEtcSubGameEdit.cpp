@@ -15,6 +15,8 @@
 #include "AdminDlgEtcSubGameEditDungeon.h"
 #include "AdminDlgEtcSubGameEditWar.h"
 #include "AdminDlgEtcSubGameEditSugoroku.h"
+#include "AdminDlgEtcSubGameEditPinball.h"
+#include "../../../common/PinballInfo.h"
 #include "AdminDlgEtcSubGameEditJanjan.h"
 #include "../../../common/Janjan.h"
 
@@ -177,6 +179,8 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 		case SUBGAMEID_SUGOROKU:
 			GetDataDlgEtcSubGameEditSugoroku ();
 			break;
+		case SUBGAMEID_PINBALL:
+			GetDataDlgEtcSubGameEditPinball ();
 		case SUBGAMEID_JANJAN:
 			GetDataDlgEtcSubGameEditJanjan ();
 			break;
@@ -206,6 +210,7 @@ static void OnInitEnd(HWND hWnd, WPARAM wParam, LPARAM lParam)
 	CloseDlgEtcSubGameEditDungeon ();
 	CloseDlgEtcSubGameEditWar ();
 	CloseDlgEtcSubGameEditSugoroku ();
+	CloseDlgEtcSubGameEditPinball ();
 	CloseDlgEtcSubGameEditJanjan ();
 
 	hWndTmp = GetDlgItem (hWnd, IDC_INFO);
@@ -226,6 +231,8 @@ static void OnInitEnd(HWND hWnd, WPARAM wParam, LPARAM lParam)
 	case SUBGAMEID_SUGOROKU:
 		ShowDlgEtcSubGameEditSugoroku (hWndTmp);
 		break;
+	case SUBGAMEID_PINBALL:
+		ShowDlgEtcSubGameEditPinball (hWndTmp);
 	case SUBGAMEID_JANJAN:
 		ShowDlgEtcSubGameEditJanjan (hWndTmp);
 		break;
@@ -263,6 +270,10 @@ static void ChgSubGameType(BYTE byType)
 	nSize = GetSubGameDataSize (byType);
 	g_pSubGameInfo->pInfo = new BYTE[nSize];
 	ZeroMemory (g_pSubGameInfo->pInfo, nSize);
+	/* ピンボールは 0 のままでは遊べない値（球 0・席が台の上）なので、既定値で始める */
+	if ((byType == SUBGAMEID_PINBALL) && (nSize >= (int)sizeof (SUBGAME_PINBALLINFOSAVE))) {
+		PinballInfoSetDefault ((PSUBGAME_PINBALLINFOSAVE)g_pSubGameInfo->pInfo);
+	}
 	/* SBOじゃんは、既定値（CPU強さ 2・無料）で始める */
 	if ((byType == SUBGAMEID_JANJAN) && (nSize >= (int)sizeof (SUBGAME_JANJANINFOSAVE))) {
 		JanjanInfoSetDefault ((PSUBGAME_JANJANINFOSAVE)g_pSubGameInfo->pInfo);

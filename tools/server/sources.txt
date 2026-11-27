@@ -68,6 +68,7 @@ SboSvr/src/SboSvrDungeonDaily.cpp
 SboSvr/src/SboSvrTalk.cpp
 SboSvr/src/SboSvrJan.cpp
 SboSvr/src/SboSvrPuzzle.cpp
+SboSvr/src/SboSvrPinball.cpp
 SboSvr/src/SboSvrRecvCmd.cpp
 SboSvr/src/SboSvrSendCmd.cpp
 SboSvr/src/SboSvrSubGameProc.cpp

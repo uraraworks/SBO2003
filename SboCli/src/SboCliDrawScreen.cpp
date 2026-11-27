@@ -9,6 +9,8 @@
 #include "stdafx.h"
 #include "common/BowFlight.h"
 #include "common/FallingPuzzle.h"
+#include "common/Pinball.h"
+#include "SboCliPinball.h"
 #include "common/Janjan.h"
 #include "Glbldata.h"
 #include "SboCliDrawWindow.h"
@@ -789,6 +791,500 @@ static void DrawPuzzle(int nX, int nY, BOOL bTop)
 			SetBkMode (hDC, TRANSPARENT);
 		}
 		DrawPuzzleOne (hDC, St, pBoard, bOver, sx, sy, bTop);
+	}
+	if (hDC) {
+		SelectObject (hDC, hFontOld);
+		g_pDibDrawMap->Unlock ();
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：DrawPinball														 */
+/* 内容：ピンボール（見えている台すべて＝自分の台・近くの台）の重ね描き				 */
+/*		 落ち物パズルと同じ 2 層：bTop=FALSE（盤本体：壁・アーチ・バンパー・ターゲット・	 */
+/*		 フリッパー・ボール。キャラの前）、bTop=TRUE（帯・文字。ウィンドウの下）。		 */
+/*		 盤の位置は台NPCの座標からサーバーが決めて送る（sFieldX/Y）。					 */
+/*		 絵は図形（円・線・矩形）だけ。台の形は common/Pinball.h の PinballTable			 */
+/* ========================================================================= */
+static void PbFillCircle(HDC hDC, int cx, int cy, int r, COLORREF cl)
+{
+	int dy;
+
+	for (dy = -r; dy <= r; dy ++) {
+		int nHalf = (int)PbIsqrt ((unsigned long long)(r * r - dy * dy));
+		PuzSpan (hDC, cx - nHalf, cy + dy, nHalf * 2 + 1, cl, 255);
+	}
+}
+
+/* 太さ nThick の線（四角い筆で、1 ドットずつ） */
+static void PbLine(HDC hDC, int x1, int y1, int x2, int y2, int nThick, COLORREF cl)
+{
+	int dx = abs (x2 - x1), dy = abs (y2 - y1);
+	int sx = (x1 < x2) ? 1 : -1, sy = (y1 < y2) ? 1 : -1;
+	int err = dx - dy, ty;
+
+	for (;;) {
+		for (ty = 0; ty < nThick; ty ++) {
+			PuzSpan (hDC, x1 - nThick / 2, y1 - nThick / 2 + ty, nThick, cl, 255);
+		}
+		if ((x1 == x2) && (y1 == y2)) {
+			break;
+		}
+		{
+			int e2 = err * 2;
+			if (e2 > -dy) { err -= dy; x1 += sx; }
+			if (e2 < dx) { err += dx; y1 += sy; }
+		}
+	}
+}
+
+static int PbPx(int nFp) { return (nFp + PB_FP / 2) / PB_FP; }
+
+/* ---- 差し替え絵（docs/pinball-art.md）。黒(0,0,0)は透明。描く範囲は切り取り範囲（s_nPz*）の中だけ ---- */
+/* 絵の一部を (dx,dy) へ写す（切り取り範囲に合わせて削る） */
+static void PbArtBlt(CImg32 *pSrc, int sx, int sy, int cx, int cy, int dx, int dy)
+{
+	if (dx < s_nPzL) { sx += s_nPzL - dx; cx -= s_nPzL - dx; dx = s_nPzL; }
+	if (dy < s_nPzT) { sy += s_nPzT - dy; cy -= s_nPzT - dy; dy = s_nPzT; }
+	if (dx + cx > s_nPzR) { cx = s_nPzR - dx; }
+	if (dy + cy > s_nPzB) { cy = s_nPzB - dy; }
+	if ((cx <= 0) || (cy <= 0)) {
+		return;
+	}
+	g_pDibDrawMap->Blt (dx, dy, cx, cy, pSrc, sx, sy, TRUE);
+}
+
+/* 絵のドット (x,y) の色（上下逆の DIB を読む。範囲外・透明は FALSE） */
+static BOOL PbArtPixel(CImg32 *pSrc, int x, int y, DWORD *pdwCl)
+{
+	DWORD dw;
+
+	if ((x < 0) || (y < 0) || (x >= pSrc->Width ()) || (y >= pSrc->Height ())) {
+		return FALSE;
+	}
+	dw = ((PDWORD)(pSrc->GetBits () + (size_t)(pSrc->Height () - 1 - y) * pSrc->Width () * 4))[x];
+	if ((dw & 0x00FFFFFF) == 0) {
+		return FALSE;
+	}
+	*pdwCl = dw;
+	return TRUE;
+}
+
+/* 軸 (px,py)（画面）を中心に、絵（セルの左上 sx,sy・軸の位置 pivx,pivy）を nDeg 度回して描く。bMirror で左右反転（右のフリッパー）。
+   回転は逆向きに写して（最近傍）取る。角度は PbFlipDeg と同じ向き（水平から下向きが正） */
+static void PbArtBltRot(CImg32 *pSrc, int sx, int sy, int nPivX, int nPivY, int px, int py, int nDeg, BOOL bMirror, int nRadius)
+{
+	int dxx, dyy, nCos = PbCos (nDeg), nSin = PbSin (nDeg);
+	DWORD dwCl;
+	PDWORD pDst;
+
+	for (dyy = -nRadius; dyy <= nRadius; dyy ++) {
+		int y = py + dyy;
+		if ((y < s_nPzT) || (y >= s_nPzB)) {
+			continue;
+		}
+		for (dxx = -nRadius; dxx <= nRadius; dxx ++) {
+			int x = px + dxx, rx = bMirror ? -dxx : dxx, ux, uy, ix, iy;
+			if ((x < s_nPzL) || (x >= s_nPzR)) {
+				continue;
+			}
+			/* 画面の (rx,dyy) を -nDeg 回して、絵の軸からの位置 (ux,uy) にする */
+			ux = (rx * nCos + dyy * nSin) / PB_TRIG;
+			uy = (-rx * nSin + dyy * nCos) / PB_TRIG;
+			ix = sx + nPivX + ux;
+			iy = sy + nPivY + uy;
+			if ((ix < sx) || (iy < sy) || (ix >= sx + PBART_FLIP_S) || (iy >= sy + PBART_FLIP_S)) {
+				continue;
+			}
+			if (PbArtPixel (pSrc, ix, iy, &dwCl)) {
+				pDst = (PDWORD)(g_pDibDrawMap->GetBits () + (size_t)(g_pDibDrawMap->Height () - 1 - y) * g_pDibDrawMap->Width () * 4);
+				pDst[x] = dwCl;
+			}
+		}
+	}
+}
+
+/* 絵（w×h）を縦だけ dh 行に伸び縮みして (dx,dy) へ（最近傍。切り取り範囲の中だけ） */
+static void PbArtBltStretchV(CImg32 *pSrc, int sx, int sy, int w, int h, int dx, int dy, int dh)
+{
+	int r, i;
+	DWORD dwCl;
+
+	for (r = 0; r < dh; r ++) {
+		int y = dy + r, ys = sy + r * h / dh;
+		PDWORD pDst;
+		if ((y < s_nPzT) || (y >= s_nPzB)) {
+			continue;
+		}
+		pDst = (PDWORD)(g_pDibDrawMap->GetBits () + (size_t)(g_pDibDrawMap->Height () - 1 - y) * g_pDibDrawMap->Width () * 4);
+		for (i = 0; i < w; i ++) {
+			int x = dx + i;
+			if ((x < s_nPzL) || (x >= s_nPzR)) {
+				continue;
+			}
+			if (PbArtPixel (pSrc, sx + i, ys, &dwCl)) {
+				pDst[x] = dwCl;
+			}
+		}
+	}
+}
+
+/* 打ち出しのバネ（見た目だけ）：レーンの床の下に穴（暗い箱）を重ね、頭（受け皿）を nSpring ドット沈めて、コイルを縮める。
+   休み位置の球は頭の上に乗って一緒に沈む。絵（部品シートのバネ）が無ければ、頭は横棒・コイルは線のジグザグ。
+   穴は盤の下端より下へはみ出すので、切り取り範囲の下端を穴の深さまで広げて描く */
+static void PbDrawSpring(HDC hDC, const PINBALLDRAW &D, int sx, int sy, int ty0, CImg32 *pParts, const int nScrL, const int nScrT, const int nScrR, const int nScrB)
+{
+	const PinballTable &T = PinballGetTable ();
+	const int nSaveL = s_nPzL, nSaveT = s_nPzT, nSaveR = s_nPzR, nSaveB = s_nPzB;		/* 窓に切り取った範囲（終わりに戻す） */
+	const int nFloor = ty0 + PB_LANE_FLOOR, nBottom = nFloor + PBART_SPRING_WELL_H;
+	const int cx = sx + PbPx (T.nStartX), nHeadY = nFloor + D.nSpring, nCoilTop = nHeadY + PBART_SPRING_HEAD_H;
+	const int nWellL = sx + PB_LANE_L, nWellR = sx + PB_WALL_R + 2;
+	int yy, i;
+
+	/* 床が窓の外（窓が上へ動いている間）は描かない。窓の下端より下へは穴の深さまで */
+	const BOOL bVis = ((nFloor >= s_nPzT) && (nFloor < sy + PB_VIEW_H)) ? TRUE : FALSE;
+
+	if (bVis) {
+	s_nPzL = max (nScrL, nWellL);			/* 画面の範囲（窓ではなく）に、穴の範囲を重ねる */
+	s_nPzR = min (nScrR, nWellR);
+	s_nPzT = max (nScrT, nFloor);
+	s_nPzB = min (nScrB, nBottom);
+	/* 穴（床の絵を隠す暗い箱。左右と底に細い縁） */
+	for (yy = nFloor; yy < nBottom; yy ++) {
+		PuzSpan (hDC, nWellL, yy, nWellR - nWellL, RGB (20, 20, 38), 255);
+		if (yy >= nBottom - 2) {
+			PuzSpan (hDC, nWellL, yy, nWellR - nWellL, RGB (84, 70, 76), 255);
+		} else {
+			PuzSpan (hDC, nWellL, yy, 2, RGB (84, 70, 76), 255);
+			PuzSpan (hDC, nWellR - 2, yy, 2, RGB (84, 70, 76), 255);
+		}
+	}
+	{
+		const int nCoilBottom = nBottom - 2;
+		const int nCoilH = nCoilBottom - nCoilTop;
+		if (pParts) {
+			if (nCoilH > 0) {
+				PbArtBltStretchV (pParts, PBART_SPRING_X, PBART_SPRING_COIL_Y, PBART_SPRING_COIL_W, PBART_SPRING_COIL_H,
+					cx - PBART_SPRING_COIL_W / 2, nCoilTop, nCoilH);
+			}
+			PbArtBlt (pParts, PBART_SPRING_X, PBART_SPRING_HEAD_Y, PBART_SPRING_HEAD_W, PBART_SPRING_HEAD_H, cx - PBART_SPRING_HEAD_W / 2, nHeadY);
+		} else {
+			/* コイル：線のジグザグ（縮むと細かくなる） */
+			if (nCoilH > 0) {
+				int nZig = 6, nPrevX = cx, nPrevY = nCoilTop;
+				for (i = 1; i <= nZig; i ++) {
+					int zx = cx + ((i & 1) ? 5 : -5), zy = nCoilTop + nCoilH * i / nZig;
+					if (i == nZig) { zx = cx; }
+					PbLine (hDC, nPrevX, nPrevY, zx, zy, 1, RGB (200, 200, 215));
+					nPrevX = zx; nPrevY = zy;
+				}
+			}
+			/* 頭：横棒 */
+			for (yy = 0; yy < PBART_SPRING_HEAD_H / 2; yy ++) {
+				PuzSpan (hDC, cx - 6, nHeadY + yy, 12, RGB (235, 235, 245), 255);
+			}
+		}
+	}
+	/* 球は床の上から穴の中まで（下端だけ穴の深さまで広げる） */
+	s_nPzL = nSaveL; s_nPzR = nSaveR; s_nPzT = nSaveT; s_nPzB = min (nScrB, nBottom);
+	}
+	/* 休み位置の球（頭の上に乗って沈む） */
+	if (D.bBallShow && D.bBallReady) {
+		int bx = sx + PbPx (D.nBallX), by = ty0 + PbPx (D.nBallY) + D.nSpring;
+		if (pParts) {
+			PbArtBlt (pParts, PBART_BALL_X, PBART_BALL_Y, PBART_BALL_S, PBART_BALL_S, bx - PBART_BALL_S / 2, by - PBART_BALL_S / 2);
+		} else {
+			PbFillCircle (hDC, bx, by, PbPx (PB_BALL_R), RGB (235, 235, 235));
+			PbFillCircle (hDC, bx - 1, by - 1, 1, RGB (255, 255, 255));
+		}
+	}
+	s_nPzL = nSaveL; s_nPzT = nSaveT; s_nPzR = nSaveR; s_nPzB = nSaveB;
+}
+
+static void DrawPinballOne(HDC hDC, const PINBALLDRAW &D, int sx, int sy, BOOL bTop)
+{
+	const PinballTable &T = PinballGetTable ();
+	const CMDPARA_PINBALLSTATE &St = D.St;
+	const int nW = PB_W, nH = PB_VIEW_H;		/* 見える窓の大きさ（盤全体は PB_H。窓が D.nCamY の高さに映す） */
+	const int ty0 = sy - D.nCamY;			/* 盤の上端の画面上の位置（盤の座標 y は ty0 + y に描く） */
+	char szTmp[64];
+	int i;
+
+	if (!bTop) {
+		const COLORREF clWall = RGB (150, 190, 255);
+		const int nClipL = s_nPzL, nClipT = s_nPzT, nClipR = s_nPzR, nClipB = s_nPzB;
+		CImg32 *pArtBg = NULL, *pArtParts = NULL;
+		const BOOL bArt = GetPinballArt (&pArtBg, &pArtParts);		/* 差し替え絵があれば、図形の代わりにそれで描く */
+		/* 背景と枠（窓の大きさ。待機中は盤の下端を映す。差し替え絵の時は絵に任せる） */
+		if (!bArt) {
+			PuzFrame (hDC, sx - 1, sy - 1, nW + 2, nH + 2, RGB (200, 200, 200), 170);
+		}
+		/* 盤の絵は窓の中だけに切り取る（盤が窓より高い時、窓の外にはみ出さない） */
+		s_nPzL = max (s_nPzL, sx);
+		s_nPzR = min (s_nPzR, sx + nW);
+		s_nPzT = max (s_nPzT, sy);
+		s_nPzB = min (s_nPzB, sy + nH);
+		if (bArt) {
+			/* 背景（盤全体 160×PB_H の、窓が映している範囲） */
+			PbArtBlt (pArtBg, 0, D.nCamY, nW, nH, sx, sy);
+			/* ターゲット（セルの中心＝線分の中心） */
+			for (i = 0; i < T.nSeg; i ++) {
+				const PBSEG &S = T.aSeg[i];
+				int nCellX, cx, cy;
+				if (S.nTarget < 0) {
+					continue;
+				}
+				if (D.dwFlashAge[PB_BUMPERS + S.nTarget] < PINBALL_FLASH_MS) {
+					nCellX = PBART_TARGET_HIT_X;
+				} else if (D.nTargetMask & (1u << S.nTarget)) {
+					nCellX = PBART_TARGET_DOWN_X;
+				} else {
+					nCellX = PBART_TARGET_UP_X;
+				}
+				cx = sx + PbPx ((S.x1 + S.x2) / 2);
+				cy = ty0 + PbPx ((S.y1 + S.y2) / 2);
+				PbArtBlt (pArtParts, nCellX, PBART_TARGET_Y, PBART_TARGET_W, PBART_TARGET_H, cx - PBART_TARGET_W / 2, cy - PBART_TARGET_H / 2);
+			}
+			/* バンパー */
+			for (i = 0; i < PB_BUMPERS; i ++) {
+				int cx = sx + PbPx (T.aBumper[i].x), cy = ty0 + PbPx (T.aBumper[i].y);
+				BOOL bFlash = D.dwFlashAge[i] < PINBALL_FLASH_MS;
+				PbArtBlt (pArtParts, bFlash ? PBART_BUMPER_HIT_X : PBART_BUMPER_X, PBART_BUMPER_Y, PBART_BUMPER_S, PBART_BUMPER_S,
+					cx - PBART_BUMPER_S / 2, cy - PBART_BUMPER_S / 2);
+			}
+			/* 打ち出しレーンの溜めは、バネの沈み込み（PbDrawSpring）で見せる。強さの棒は描かない */
+			/* フリッパー：近い方の姿（下がり・上がり）の絵を、今の角度との差だけ回して描く。右は左右反転 */
+			for (i = 0; i < 2; i ++) {
+				int nAng = i ? D.nAngR : D.nAngL, bUp = (nAng * 2 >= PB_FLIP_STEPS) ? 1 : 0;
+				int nPoseDeg = PbFlipDeg (bUp ? PB_FLIP_STEPS : 0);
+				PbArtBltRot (pArtParts, bUp ? PBART_FLIP_UP_X : PBART_FLIP_REST_X, PBART_FLIP_Y, PBART_FLIP_PX, PBART_FLIP_PY,
+					sx + PbPx (i ? T.nPivotRx : T.nPivotLx), ty0 + PbPx (T.nPivotY), PbFlipDeg (nAng) - nPoseDeg, i ? TRUE : FALSE, 46);
+			}
+			/* 打ち出しのバネ（絵にバネが無い古い部品シートなら図形のバネ）と、休み位置の球 */
+			if (!St.byIdle) {
+				PbDrawSpring (hDC, D, sx, sy, ty0, PinballArtHasSpring () ? pArtParts : NULL, nClipL, nClipT, nClipR, nClipB);
+			}
+			/* ボール */
+			if (D.bBallShow && !St.byIdle && !D.bBallReady) {
+				PbArtBlt (pArtParts, PBART_BALL_X, PBART_BALL_Y, PBART_BALL_S, PBART_BALL_S,
+					sx + PbPx (D.nBallX) - PBART_BALL_S / 2, ty0 + PbPx (D.nBallY) - PBART_BALL_S / 2);
+			}
+		}
+		if (!bArt) {		/* 図形で描く（差し替え絵が無い時） */
+		/* 壁・斜め壁・仕切り・床（ターゲット以外の線分） */
+		for (i = 0; i < T.nSeg; i ++) {
+			const PBSEG &S = T.aSeg[i];
+			if (S.nTarget >= 0) {
+				continue;
+			}
+			PbLine (hDC, sx + PbPx (S.x1), ty0 + PbPx (S.y1), sx + PbPx (S.x2), ty0 + PbPx (S.y2), 2, clWall);
+		}
+		/* 上部のアーチ（半円。5 度刻みの点をつなぐ） */
+		{
+			int nDeg, nPrevX = 0, nPrevY = 0;
+			int cx = sx + PbPx (T.nArchCx), cy = ty0 + PbPx (T.nArchCy), r = PbPx (T.nArchR);
+			for (nDeg = 180; nDeg <= 360; nDeg += 5) {
+				int ax = cx + r * PbCos (nDeg) / PB_TRIG, ay = cy + r * PbSin (nDeg) / PB_TRIG;
+				if (nDeg > 180) {
+					PbLine (hDC, nPrevX, nPrevY, ax, ay, 2, clWall);
+				}
+				nPrevX = ax;
+				nPrevY = ay;
+			}
+		}
+		/* ターゲット（立っている間は黄色、倒れたら暗い） */
+		for (i = 0; i < T.nSeg; i ++) {
+			const PBSEG &S = T.aSeg[i];
+			BOOL bDown, bFlash;
+			if (S.nTarget < 0) {
+				continue;
+			}
+			bDown = (D.nTargetMask & (1u << S.nTarget)) ? TRUE : FALSE;
+			bFlash = D.dwFlashAge[PB_BUMPERS + S.nTarget] < PINBALL_FLASH_MS;
+			PbLine (hDC, sx + PbPx (S.x1), ty0 + PbPx (S.y1), sx + PbPx (S.x2), ty0 + PbPx (S.y2), 4,
+				bFlash ? RGB (255, 255, 255) : (bDown ? RGB (90, 80, 40) : RGB (255, 215, 60)));
+		}
+		/* バンパー（丸い反発。当たると光る） */
+		for (i = 0; i < PB_BUMPERS; i ++) {
+			int bx = sx + PbPx (T.aBumper[i].x), by = ty0 + PbPx (T.aBumper[i].y), r = PbPx (PB_BUMPER_R);
+			BOOL bFlash = D.dwFlashAge[i] < PINBALL_FLASH_MS;
+			PbFillCircle (hDC, bx, by, r, bFlash ? RGB (255, 255, 255) : RGB (240, 110, 70));
+			PbFillCircle (hDC, bx, by, r - 3, bFlash ? RGB (255, 235, 150) : RGB (150, 40, 40));
+			PbFillCircle (hDC, bx, by, 2, RGB (255, 220, 160));
+		}
+		/* 打ち出しレーンの溜めは、バネの沈み込み（PbDrawSpring）で見せる。強さの棒は描かない */
+		/* フリッパー（回る線分。太く） */
+		for (i = 0; i < 2; i ++) {
+			int nAng = i ? D.nAngR : D.nAngL, tx, ty, px = PbPx (i ? T.nPivotRx : T.nPivotLx), py = PbPx (T.nPivotY);
+			PinballFlipperTip (T, i, nAng, &tx, &ty);
+			PbLine (hDC, sx + px, ty0 + py, sx + PbPx (tx), ty0 + PbPx (ty), 5, RGB (235, 235, 245));
+			PbFillCircle (hDC, sx + px, ty0 + py, 3, RGB (235, 235, 245));
+			PbFillCircle (hDC, sx + PbPx (tx), ty0 + PbPx (ty), 3, RGB (235, 235, 245));
+			PbFillCircle (hDC, sx + px, ty0 + py, 1, RGB (90, 90, 120));
+		}
+		/* 打ち出しのバネ（図形）と、休み位置の球 */
+		if (!bArt && !St.byIdle) {
+			PbDrawSpring (hDC, D, sx, sy, ty0, NULL, nClipL, nClipT, nClipR, nClipB);
+		}
+		/* ボール */
+		if (D.bBallShow && !St.byIdle && !D.bBallReady) {
+			int bx = sx + PbPx (D.nBallX), by = ty0 + PbPx (D.nBallY);
+			PbFillCircle (hDC, bx, by, PbPx (PB_BALL_R), RGB (235, 235, 235));
+			PbFillCircle (hDC, bx - 1, by - 1, 1, RGB (255, 255, 255));
+		}
+		}
+		/* 窓の位置の目印（盤が窓より高い時。左端の細い縦線で、盤全体のどこを映しているか） */
+		if ((PB_YOFS > 0) && !St.byIdle) {
+			int nThumbH = max (8, nH * nH / PB_H), nThumbY = (int)((long long)(nH - nThumbH) * D.nCamY / PB_YOFS), yy;
+			for (yy = 0; yy < nH; yy ++) {
+				PuzSpan (hDC, sx + 1, sy + yy, 2, ((yy >= nThumbY) && (yy < nThumbY + nThumbH)) ? RGB (230, 230, 120) : RGB (90, 90, 90), 160);
+			}
+		}
+		s_nPzL = nClipL; s_nPzT = nClipT; s_nPzR = nClipR; s_nPzB = nClipB;
+		return;
+	}
+
+	/* 上の層：横の帯（落ち物の帯と同じ作り：盤の横・盤と同じ高さの上端・半透明の枠・黄色の見出しと白い値）。
+	   座っている本人の台にだけ。待機中・ほかの人の台には出さない。帯の側は台の設定（bySide）。
+	   ペアの台は、隣の盤と重ならないよう、左の台を左(1)・右の台を右(0)にして帯が外側へ出るようにする */
+	if (!St.byIdle && St.byMine) {
+		const int nPanelW = 96, nPanelH = 156;
+		int px = (St.bySide == PUZZLESIDE_LEFT) ? (sx - 6 - nPanelW) : (sx + nW + 6), py = sy, ty = py + 4;
+		int nBallsMax = ((int)St.byBallsMax >= 1) ? min ((int)St.byBallsMax, PB_BALLS_MAX) : PB_BALLS;
+		int nBallStep = (nBallsMax <= 6) ? 14 : max (6, (nPanelW - 24) / (nBallsMax - 1));
+		PuzFrame (hDC, px, py, nPanelW, nPanelH, RGB (200, 200, 200), 150);
+		PuzText (hDC, px + 8, ty, (LPSTR)"SCORE", RGB (255, 235, 120), 16, FALSE);
+		wsprintf (szTmp, "%u", (unsigned int)St.dwScore);
+		PuzText (hDC, px + 8, ty + 18, szTmp, RGB (255, 255, 255), 16, FALSE);
+		if (St.byVs) {
+			/* 対戦：球は減らない。残り時間と相手の得点を出す */
+			PuzText (hDC, px + 8, ty + 40, (LPSTR)"TIME", RGB (255, 235, 120), 16, FALSE);
+			wsprintf (szTmp, "%d", (int)((St.wVsRemain + 9) / 10));
+			PuzText (hDC, px + 8, ty + 58, szTmp, RGB (255, 255, 255), 16, FALSE);
+			PuzText (hDC, px + 8, ty + 80, (LPSTR)"VS", RGB (255, 235, 120), 16, FALSE);
+			wsprintf (szTmp, "%u", (unsigned int)St.dwOppScore);
+			PuzText (hDC, px + 8, ty + 98, szTmp, RGB (255, 255, 255), 16, FALSE);
+		} else {
+			PuzText (hDC, px + 8, ty + 40, (LPSTR)"BALLS", RGB (255, 235, 120), 16, FALSE);
+			/* 球の数は台の設定（サーバーが送ってくる。多い台は間隔をつめて帯に収める） */
+			for (i = 0; i < nBallsMax; i ++) {
+				int bx = px + 14 + i * nBallStep, by = ty + 66;
+				PbFillCircle (hDC, bx, by, 4, (i < (int)St.byBalls) ? RGB (235, 235, 235) : RGB (70, 70, 80));
+			}
+		}
+		if (St.byCombo >= 2) {
+			wsprintf (szTmp, "COMBO %d", (int)St.byCombo);
+			PuzText (hDC, px + 8, ty + (St.byVs ? 116 : 80), szTmp, RGB (255, 150, 90), 16, FALSE);
+		}
+		if ((St.bySave > 0) && (St.byPhase == PB_PHASE_PLAY)) {
+			wsprintf (szTmp, "SAVE %d", (int)St.bySave);
+			PuzText (hDC, px + 8, ty + (St.byVs ? 134 : 98), szTmp, RGB (120, 230, 255), 16, FALSE);		/* コンボの下 */
+		}
+	}
+
+	/* 遊んでいる台を見ている人（座っている本人以外）には、得点・残り球（対戦中は相手の得点・残り時間）を盤の上端に小さく出す
+	   （落ち物の観戦者向けの表示と同じ）。盤の幅の中に収め（隣の盤と重ならない）、盤が画面の上へ出ていく間は画面の上端に張り付いて、
+	   盤と一緒に見えなくなる（盤から離れて浮かない）。画面の外・盤の外にかかる分は描かない（PuzText の切り取り） */
+	if (!St.byMine && !St.byIdle) {
+		SIZE sz1, sz2;
+		int tw, tx, ty;
+		char szLine1[48], szLine2[48];
+
+		wsprintf (szLine1, "SCORE %u", (unsigned int)St.dwScore);
+		if (St.byVs) {
+			wsprintf (szLine2, "VS %u  TIME %d", (unsigned int)St.dwOppScore, (int)((St.wVsRemain + 9) / 10));
+		} else {
+			wsprintf (szLine2, "BALL %d", (int)St.byBalls);
+		}
+		GetTextExtentPoint32 (hDC, szLine1, strlen (szLine1), &sz1);
+		GetTextExtentPoint32 (hDC, szLine2, strlen (szLine2), &sz2);
+		tw = min (max (sz1.cx, sz2.cx) + 8, nW);
+		tx = sx + (nW - tw) / 2;
+		ty = max (sy + 2, s_nPzT + 2);
+		ty = min (ty, sy + nH - 40);		/* 盤の下端より下へは出ない */
+		PuzFrame (hDC, tx, ty, tw, 38, RGB (200, 200, 200), 150);
+		PuzTextClip (hDC, tx + 4, ty + 3, szLine1, RGB (255, 235, 120), 16);
+		PuzTextClip (hDC, tx + 4, ty + 20, szLine2, RGB (255, 255, 255), 16);
+	}
+
+	/* 勝ち残りの連勝数（2 連勝以上。帯と反対側の上の方に小さく。観戦者にも見える。落ち物と同じ） */
+	if (!St.byIdle && (St.byStreak >= 2)) {
+		SIZE size;
+		int tx, ty = sy + 2;
+		wsprintf (szTmp, "%d連勝", (int)St.byStreak);
+		GetTextExtentPoint32 (hDC, szTmp, strlen (szTmp), &size);
+		tx = (St.bySide == PUZZLESIDE_LEFT) ? (sx + nW + 6 + 4) : (sx - 6 - 4 - size.cx);
+		PuzFrame (hDC, tx - 3, ty - 2, size.cx + 6, size.cy + 4, RGB (240, 200, 60), 150);
+		PuzText (hDC, tx, ty, szTmp, RGB (255, 235, 120), size.cy, FALSE);
+	}
+	/* 対戦開始前のカウントダウン（盤の真ん中に大きく。3・2・1） */
+	if ((St.byCount > 0) && !St.byIdle) {
+		wsprintf (szTmp, "%d", (int)St.byCount);
+		SelectObject (hDC, g_hFont32);
+		PuzText (hDC, sx + nW / 2, sy + nH / 2 - 16, szTmp, RGB (255, 255, 255), 32, TRUE);
+		SelectObject (hDC, g_hFont14);
+		g_bDraw = TRUE;
+	}
+	/* 座る場所に立っている時の案内（待機中の台の、本人にだけ） */
+	if ((St.byIdle & PINBALLIDLE_SEAT) && !D.bOver) {
+		g_bDraw = TRUE;
+		if (((timeGetTime () / 500) & 1) == 0) {
+			BOOL bFree = (St.byIdle & PINBALLIDLE_FREE) ? TRUE : FALSE;
+			PuzText (hDC, sx + nW / 2, sy + nH / 2 - 18, (LPSTR)(bFree ? "PUSH START" : "INSERT COIN"), RGB (255, 235, 120), 16, TRUE);
+			if (bFree) {
+				PuzText (hDC, sx + nW / 2, sy + nH / 2 + 2, (LPSTR)"（Sキー）", RGB (255, 255, 255), 16, TRUE);
+			} else {
+				PuzText (hDC, sx + nW / 2, sy + nH / 2 + 4, (LPSTR)"道具→コイン", RGB (255, 255, 255), 14, TRUE);
+			}
+		}
+	}
+	/* 打ち出し待ちの案内（本人の台：レーンで球が待っている間） */
+	if (!St.byIdle && St.byMine && (St.byPhase == PB_PHASE_READY) && !D.bOver) {
+		PuzText (hDC, sx + nW / 2, sy + nH - 56, (LPSTR)"↓を押して離すと発射", RGB (255, 255, 255), 14, TRUE);
+	}
+	if (D.bOver) {
+		PuzText (hDC, sx + nW / 2, sy + nH / 2 - 8, (LPSTR)"GAME OVER", RGB (255, 120, 110), 16, TRUE);		/* 落ち物と同じ位置 */
+		wsprintf (szTmp, "SCORE %u", (unsigned int)St.dwScore);
+		PuzText (hDC, sx + nW / 2, sy + nH / 2 + 10, szTmp, RGB (255, 255, 255), 16, TRUE);
+	}
+}
+
+static void DrawPinball(int nX, int nY, BOOL bTop)
+{
+	PINBALLDRAW D;
+	PCHARINFO pChar;
+	HDC hDC = NULL;
+	HFONT hFontOld = NULL;
+	int i, sx, sy;
+
+	if ((g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ())) {
+		return;
+	}
+	pChar = g_aCharInfo[g_nMyCharID];
+	for (i = 0; i < PINBALL_VIEW_MAX; i ++) {
+		if (!GetPinballView (i, &D)) {
+			continue;
+		}
+		/* マップのドット座標 → 描画用の画面（落ち物パズルの DrawPuzzle と同じ） */
+		sx = (DRAW_PARTS_X + 1) * 32 + (int)D.St.sFieldX - (int)pChar->dwX * 32;
+		sy = (DRAW_PARTS_Y + 1) * 32 + (int)D.St.sFieldY - (int)pChar->dwY * 32;
+		{
+			int nExtra = (D.St.byIdle ? 0 : 110) + 6;
+			if ((sx + PB_W + nExtra <= nX) || (sx - nExtra >= nX + SCRSIZEX) ||
+				(sy + PB_VIEW_H + 6 <= nY) || (sy - 24 >= nY + SCRSIZEY)) {
+				continue;
+			}
+		}
+		s_nPzL = nX;
+		s_nPzT = nY;
+		s_nPzR = nX + SCRSIZEX;
+		s_nPzB = nY + SCRSIZEY;
+		if (hDC == NULL) {
+			hDC = g_pDibDrawMap->Lock ();
+			hFontOld = (HFONT)SelectObject (hDC, g_hFont14);
+			SetBkMode (hDC, TRANSPARENT);
+		}
+		DrawPinballOne (hDC, D, sx, sy, bTop);
 	}
 	if (hDC) {
 		SelectObject (hDC, hFontOld);
@@ -2066,6 +2562,7 @@ void DrawScreen(HWND hWnd, HDC hDC)
 
 				/* 落ち物パズルの帯・待ちお邪魔のバー・文字（盤面本体は DrawScreenMOVE でキャラの前に描いてある。ウィンドウの下に敷く） */
 				DrawPuzzle (32 - x, 32 - y, TRUE);
+				DrawPinball (32 - x, 32 - y, TRUE);
 
 				/* SBOじゃんの名前札・結果・本人の手牌の別枠（卓本体は DrawScreenMOVE でキャラの前に描いてある。ウィンドウの下に敷く） */
 				DrawJan (32 - x, 32 - y, TRUE);
@@ -2285,6 +2782,7 @@ BOOL DrawScreenMOVE(void)
 	{
 		PCHARINFO pMyChar = g_aCharInfo[g_nMyCharID];
 		DrawPuzzle (32 - BowOffsetX (pMyChar), 32 - BowOffsetY (pMyChar), FALSE);
+		DrawPinball (32 - BowOffsetX (pMyChar), 32 - BowOffsetY (pMyChar), FALSE);
 		/* SBOじゃんの卓本体（面・手牌・川）も同じ重なり順 */
 		DrawJan (32 - BowOffsetX (pMyChar), 32 - BowOffsetY (pMyChar), FALSE);
 	}
@@ -3858,9 +4356,9 @@ void DrawChar3(void)
 			}
 		}
 
-		/* 落ち物パズル・SBOじゃんの台NPC（台詞が @p・@j。サーバーが byGhost=CHARGHOST_NAMEONLY で送ってくる）は体も名前も描かない（見えない台） */
+		/* 落ち物パズルの台NPC（台詞が @p。サーバーが byGhost=CHARGHOST_NAMEONLY で送ってくる）は体も名前も描かない（見えない台） */
 		BOOL bPuzzleTable = (pChar->byGhost == CHARGHOST_NAMEONLY) && (pChar->byNpcType != NPCTYPE_INIT) && pChar->pszNpcSpeech &&
-				(pChar->pszNpcSpeech[0] == '@') && ((pChar->pszNpcSpeech[1] == 'p') || (pChar->pszNpcSpeech[1] == 'j'));
+				(pChar->pszNpcSpeech[0] == '@') && ((pChar->pszNpcSpeech[1] == 'p') || (pChar->pszNpcSpeech[1] == 'i') || (pChar->pszNpcSpeech[1] == 'j'));
 		if (!bPuzzleTable && ((g_byViewMode == 1) || (g_byViewMode == 3))) {
 			cl = RGB(255, 255, 255);
 			if (pChar->clName) {

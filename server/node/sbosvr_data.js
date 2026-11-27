@@ -744,7 +744,7 @@ Module['sboData'] = (function () {
 			return { deleted: true };
 		}
 		if (kind === 'subGame') {
-			return { byType: 0 };		/* 追加した迷路・SBOじゃんは止める（枠は「無し」で残る） */
+			return { byType: 0 };		/* 追加した迷路・ピンボール・SBOじゃんは止める（枠は「無し」で残る） */
 		}
 		return null;
 	}
@@ -1799,7 +1799,7 @@ Module['sboData'] = (function () {
 		},
 		{
 			name: 'sbo_add', write: true,
-			description: 'データを末尾に追加する。省いた項目は 0 や空になる。追加した NPC は元に戻すと消え、作り手・レシピは削除（byState=0）、迷路・SBOじゃん（subGame の byType 2・8）は止まる（byType=0）。' +
+			description: 'データを末尾に追加する。省いた項目は 0 や空になる。追加した NPC は元に戻すと消え、作り手・レシピは削除（byState=0）、迷路・ピンボール・SBOじゃん（subGame の byType 2・6・8）は止まる（byType=0）。' +
 				'それ以外の種類の追加は元に戻せない。NPC は dwMapID・dwX・dwY が要る。2 段階は sbo_update と同じ。',
 			inputSchema: {
 				type: 'object', required: ['kind', 'records'],
@@ -1854,7 +1854,7 @@ Module['sboData'] = (function () {
 		{
 			name: 'sbo_rollback', write: true,
 			description: 'しおりの後の変更をまとめて元に戻す（種類をまたいで。マス目は新しい順に）。追加した NPC は消し、消した NPC は同じ npcId で足し直す。' +
-				'追加した作り手・レシピは削除（byState=0）、追加した迷路・SBOじゃんは止める（byType=0）。' +
+				'追加した作り手・レシピは削除（byState=0）、追加した迷路・ピンボール・SBOじゃんは止める（byType=0）。' +
 				'AI 以外からも変わったデータがあると force を付けない限り戻さない。2 段階は sbo_update と同じ。',
 			inputSchema: {
 				type: 'object', required: ['bookmarkId'],

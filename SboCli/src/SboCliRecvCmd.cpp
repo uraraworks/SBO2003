@@ -10,6 +10,7 @@
 #include "../../common/DungeonReception.h"
 #include "common/BowFlight.h"
 #include "common/FallingPuzzle.h"
+#include "SboCliPinball.h"
 #include "common/Janjan.h"
 #include <string>
 #include <vector>
@@ -181,6 +182,7 @@ void	RecvDataProcDGDEFSTATUS				(PBYTE, DWORD);			/* 受信データ処理(拠�
 void	RecvDataProcDGSTATUS				(PBYTE, DWORD);			/* 受信データ処理(番外編ダンジョンの状況パネル) */
 void	RecvDataProcPUZZLESE				(PBYTE, DWORD);			/* 受信データ処理(落ち物パズルの効果音) */
 void	RecvDataProcPUZZLESTATE				(PBYTE, DWORD);			/* 受信データ処理(落ち物パズルの盤面・落ち物・得点) */
+void	RecvDataProcPINBALLSTATE			(PBYTE, DWORD);			/* 受信データ処理(ピンボールのボール・フリッパー・得点。SboCliPinball.cpp) */
 void	RecvDataProcJANSTATE				(PBYTE, DWORD);			/* 受信データ処理(SBOじゃんの卓の状態) */
 void	RecvDataProcCHARBUFF				(PBYTE, DWORD);			/* 受信データ処理(攻撃力・守備力アップの残り) */
 void	RecvDataProcMAKERINFO				(PBYTE, DWORD);			/* 受信データ処理(作り手情報) */
@@ -485,6 +487,8 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	NULL,								/* CMD_PUZZLEKEY(クライアント→サーバーのみ) */
 	RecvDataProcPUZZLESTATE,			/* CMD_PUZZLESTATE */
 	RecvDataProcPUZZLESE,				/* CMD_PUZZLESE */
+	NULL,								/* CMD_PINBALLKEY(クライアント→サーバーのみ) */
+	RecvDataProcPINBALLSTATE,			/* CMD_PINBALLSTATE */
 	RecvDataProcJANSTATE,				/* CMD_JANSTATE */
 	NULL,								/* CMD_JANKEY(クライアント→サーバーのみ) */
 	RecvDataProcADMINTRIALROOM,			/* CMD_ADMINTRIALROOM */
@@ -615,6 +619,7 @@ int GetSubGameDataSize(BYTE byType)
 	case SUBGAMEID_DUNGEON:		nSize = sizeof (SUBGAME_DUNGEONINFOSAVE);	break;
 	case SUBGAMEID_WAR:			nSize = sizeof (SUBGAME_WARINFOSAVE);		break;
 	case SUBGAMEID_SUGOROKU:	nSize = sizeof (SUBGAME_SUGOROKUINFOSAVE);	break;
+	case SUBGAMEID_PINBALL:		nSize = sizeof (SUBGAME_PINBALLINFOSAVE);	break;
 	case SUBGAMEID_JANJAN:		nSize = sizeof (SUBGAME_JANJANINFOSAVE);	break;
 	}
 	return nSize;
@@ -7889,6 +7894,8 @@ void RecvDataProcSUBGAMEINFO(BYTE *pData, DWORD dwDataSize)
 			}
 			break;
 
+		case SUBGAMEID_PINBALL:		/* ピンボール */
+			CopyMemory (g_pSubGameInfo->pInfo, pRecv + 1, sizeof (SUBGAME_PINBALLINFOSAVE));
 		case SUBGAMEID_JANJAN:		/* SBOじゃん */
 			CopyMemory (g_pSubGameInfo->pInfo, pRecv + 1, sizeof (SUBGAME_JANJANINFOSAVE));
 			break;
@@ -8933,6 +8940,10 @@ BOOL IsPuzzleSeated(void)
 
 	if (g_byGameState != GAMESTATE_MOVE) {
 		return FALSE;
+	}
+	/* ピンボールの席も同じ扱い（座っている間は歩かない・ショートカットや仮想パッドの扱いが落ち物と同じ） */
+	if (IsPinballSeated ()) {
+		return TRUE;
 	}
 	for (i = 0; i < PUZZLE_VIEW_MAX; i ++) {
 		if (s_aPuzView[i].bUse && s_aPuzView[i].bBoard && s_aPuzView[i].St.byMine &&

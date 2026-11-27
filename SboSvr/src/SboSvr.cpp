@@ -30,6 +30,7 @@
 #include "SboSvrMarket.h"
 #include "SboSvrRecycle.h"
 #include "SboSvrPuzzle.h"
+#include "SboSvrPinball.h"
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #endif
@@ -809,6 +810,7 @@ void OnDecPlayer(int nNo)
 	MercenaryOwnerLogout (pChar);	/* 傭兵に持たせた道具を返してもらい、傭兵は帰る */
 	QuestOnDecPlayer (pChar);		/* 依頼の見えるNPCを消す（持ち主がいなくなる時） */
 	PuzzleOnLeave (pChar);			/* 落ち物パズルの席に座っていたら台の状態を片付ける */
+	PinballOnLeave (pChar);			/* ピンボールの席に座っていたら台の状態を片付ける */
 	JanOnLeave (pChar);				/* SBOじゃんの席に座っていたら卓を片付ける */
 
 
@@ -1109,6 +1111,7 @@ void TimerProc(void)
 	}
 	g_ProcSubGame.Proc ();
 	PuzzleProc ();					/* 落ち物パズルの台（落下を経過時間で進める） */
+	PinballProc ();					/* ピンボールの台（固定ステップを経過時間で進める） */
 	JanProc ();						/* SBOじゃんの卓（CPU の手番・手番の制限時間を経過時間で進める） */
 }
 

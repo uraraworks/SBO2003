@@ -714,8 +714,8 @@ BOOL PuzzleOnSeatCell(PCHARINFO pChar, PCHARINFO pNpc)
 
 BYTE PuzzleGhostForSend(PCHARINFO pChar)
 {
-	/* 台NPC（@p・SBOじゃんの @j）は体を描かない（名前だけの目印と同じ扱い）。データは書き換えず、送る時だけそうする */
-	return (PuzzleIsTableNpc (pChar) || JanIsTableNpc (pChar)) ? (BYTE)CHARGHOST_NAMEONLY : pChar->byGhost;
+	/* 台NPC（@p・ピンボールの @i・SBOじゃんの @j）は体を描かない（名前だけの目印と同じ扱い）。データは書き換えず、送る時だけそうする */
+	return (PuzzleIsTableNpc (pChar) || PinballIsTableNpc (pChar) || JanIsTableNpc (pChar)) ? (BYTE)CHARGHOST_NAMEONLY : pChar->byGhost;
 }
 
 BOOL PuzzleIsSeated(PCHARINFO pChar)
@@ -980,7 +980,7 @@ void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed, int nChoice)
 	DWORD dwPartnerNpc;
 	char szMsg[96];
 
-	if (!PuzzleIsTableNpc (pNpc) || (pChar->byNpcType != NPCTYPE_INIT) || PuzzleIsSeated (pChar) || JanIsSeated (pChar)) {
+	if (!PuzzleIsTableNpc (pNpc) || (pChar->byNpcType != NPCTYPE_INIT) || PuzzleIsSeated (pChar) || PinballIsSeated (pChar) || JanIsSeated (pChar)) {
 		return;
 	}
 	/* 座れるのは、台の座る場所のマスの上だけ（同じマップ・同じ空間。向きは問わない。隣のマスから台NPC越しには座らない） */

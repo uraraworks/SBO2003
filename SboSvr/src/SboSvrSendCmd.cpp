@@ -1923,6 +1923,16 @@ void SendCmdPUZZLESTATE(DWORD pIDSend, PBYTE pData, DWORD dwSize)
 }
 
 /* ========================================================================= */
+/* 関数名：SendCmdPINBALLSTATE												 */
+/* 内容：コマンド送信(ピンボールのボール・フリッパー・得点。pData は先頭が CMDPARA_PINBALLSTATE) */
+/* ========================================================================= */
+void SendCmdPINBALLSTATE(DWORD pIDSend, PBYTE pData, DWORD dwSize)
+{
+	((PCMDPARA_PINBALLSTATE)pData)->byCmd = CMD_PINBALLSTATE;
+	svrSock.SendTo (pIDSend, pData, dwSize, SENDTIMEOUT);
+}
+
+/* ========================================================================= */
 /* 関数名：SendCmdJANSTATE													 */
 /* 内容：コマンド送信(SBOじゃんの卓の状態。受取人ごとに作ったもの)			 */
 /*		 pData は先頭が CMDPARA_JANSTATE										 */
@@ -3073,6 +3083,8 @@ void SendCmdSUBGAMEINFO(DWORD pIDSend, int nNo)
 		}
 		break;
 
+	case SUBGAMEID_PINBALL:		/* ピンボール（INFO と INFOSAVE は同じ並び） */
+		CopyMemory (pData + sizeof (CMDPARA_DATA1), pInfo->pInfo, sizeof (SUBGAME_PINBALLINFOSAVE));
 	case SUBGAMEID_JANJAN:		/* SBOじゃん（INFO と INFOSAVE は同じ並び） */
 		CopyMemory (pData + sizeof (CMDPARA_DATA1), pInfo->pInfo, sizeof (SUBGAME_JANJANINFOSAVE));
 		break;

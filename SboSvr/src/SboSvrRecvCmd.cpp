@@ -9,6 +9,7 @@
 #include "include.h"
 #include "Glbldata.h"
 #include "common/BowFlight.h"
+#include "common/PinballInfo.h"
 #include "common/Janjan.h"
 #include "CharProc/CharProcBase.h"
 #include "CharProc/CharProcPUT.h"
@@ -177,6 +178,7 @@ void	RecvDataProcGETACC						(PBYTE, DWORD);				/* アカウント・パスワ�
 void	RecvDataProcCHGACC						(PBYTE, DWORD);				/* アカウント・パスワード更新 */
 void	RecvDataProcTALKRAND					(PBYTE, DWORD);				/* 話してランダム要求 */
 void	RecvDataProcPUZZLEKEY					(PBYTE, DWORD);				/* 落ち物パズルのキー入力 */
+void	RecvDataProcPINBALLKEY					(PBYTE, DWORD);				/* ピンボールのキー入力 */
 void	RecvDataProcJANKEY						(PBYTE, DWORD);				/* SBOじゃんの操作 */
 void	RecvDataProcSTOPRAND					(PBYTE, DWORD);				/* 止まるかランダム切り替え */
 void	RecvDataProcGETACCINFO					(PBYTE, DWORD);				/* アカウント情報要求 */
@@ -536,6 +538,8 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcPUZZLEKEY,				/* CMD_PUZZLEKEY */
 	NULL,								/* CMD_PUZZLESTATE(サーバー→クライアントのみ) */
 	NULL,								/* CMD_PUZZLESE(サーバー→クライアントのみ) */
+	RecvDataProcPINBALLKEY,				/* CMD_PINBALLKEY */
+	NULL,								/* CMD_PINBALLSTATE(サーバー→クライアントのみ) */
 	NULL,								/* CMD_JANSTATE(サーバー→クライアントのみ) */
 	RecvDataProcJANKEY,					/* CMD_JANKEY */
 	RecvDataProcADMINTRIALROOM,			/* CMD_ADMINTRIALROOM */
@@ -1440,6 +1444,7 @@ int GetSubGameDataSize(BYTE byType)
 	case SUBGAMEID_DUNGEON:		nSize = sizeof (SUBGAME_DUNGEONINFO);	break;
 	case SUBGAMEID_WAR:			nSize = sizeof (SUBGAME_WARINFO);		break;
 	case SUBGAMEID_SUGOROKU:	nSize = sizeof (SUBGAME_SUGOROKUINFO);	break;
+	case SUBGAMEID_PINBALL:		nSize = sizeof (SUBGAME_PINBALLINFO);	break;
 	case SUBGAMEID_JANJAN:		nSize = sizeof (SUBGAME_JANJANINFO);	break;
 	}
 
@@ -3923,7 +3928,7 @@ void RecvDataProc(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	/* 管理者用のコマンド（管理者ウィンドウからしか送らないもの）は管理者だけ */
-	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_APPRAISE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_DUNGEONSEL) && (byCmd != CMD_DUNGEONMAP) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && (byCmd != CMD_TALKANSWER) && (byCmd != CMD_PUZZLEKEY) && (byCmd != CMD_JANKEY) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET)) && ((byCmd < CMD_RECYCLELIST) || (byCmd > CMD_RECYCLECLOSE))) ||
+	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_APPRAISE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_DUNGEONSEL) && (byCmd != CMD_DUNGEONMAP) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && (byCmd != CMD_TALKANSWER) && (byCmd != CMD_PUZZLEKEY) && (byCmd != CMD_PINBALLKEY) && (byCmd != CMD_JANKEY) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET)) && ((byCmd < CMD_RECYCLELIST) || (byCmd > CMD_RECYCLECLOSE))) ||
 			(byCmd == CMD_CHARITEM)) {
 		if (!CheckAdminBan (nNo)) {
 			SAFE_DELETE_ARRAY (pData);
@@ -4869,7 +4874,7 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 			return;
 		}
 		/* 落ち物パズルの席に座っている間は歩けない。今の位置を送り返す */
-		if (PuzzleIsSeated (pChar) || JanIsSeated (pChar)) {
+		if (PuzzleIsSeated (pChar) || PinballIsSeated (pChar) || JanIsSeated (pChar)) {
 			SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
 			return;
 		}
@@ -8392,6 +8397,17 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 		}
 		return;
 	}
+	/* ピンボールの台（台詞が「@i<サブゲーム情報の番号>」）？ 座る場所のマスに立っていれば座る（落ち物パズルの台と同じ作り） */
+	if (PinballIsTableNpc (pChar)) {
+		if (s_nCharNoRecv >= 0) {
+			PinballSit (g_aCharInfo[s_nCharNoRecv], pChar);
+		}
+		return;
+	}
+	/* 台詞が「@i」で始まるのに台にならない（番号が無い・情報が無い・種別が違う）NPC は、何も言わない（台詞を読み上げない） */
+	if (PinballIsMarkedNpc (pChar)) {
+		return;
+	}
 	/* SBOじゃんの台（台詞が「@j」で始まる）？ 4 つの座る場所のどれかのマスに立っていれば、そのマスの席に座る（無料の台だけ始まる。有料の台は道具のコインを使う案内だけ。コイン使用は ItemProc → JanUseItem）
 	   （台NPCは見えず目の前でなくてよい。座る場所かどうかは JanSit が見る） */
 	if (JanIsTableNpc (pChar)) {
@@ -8453,6 +8469,21 @@ void RecvDataProcPUZZLEKEY(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	PuzzleKey (g_aCharInfo[s_nCharNoRecv], pPara->byData, (dwDataSize >= sizeof (CMDPARA_PUZZLEKEY)) ? ((PCMDPARA_PUZZLEKEY)pData)->dwSerial : 0);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcPINBALLKEY											 */
+/* 内容：受信データ処理(ピンボールのキー入力。押した時・離した時だけ届く)			 */
+/*		 座っている本人のものだけ受ける（座っていなければ何もしない）			 */
+/* ========================================================================= */
+void RecvDataProcPINBALLKEY(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_PINBALLKEY pPara = (PCMDPARA_PINBALLKEY)pData;
+
+	if ((dwDataSize < sizeof (CMDPARA_PINBALLKEY)) || (s_nCharNoRecv < 0) || (pPara->dwTblID != (DWORD)s_nCharNoRecv)) {
+		return;
+	}
+	PinballKey (g_aCharInfo[s_nCharNoRecv], pPara->byData, pPara->dwSerial);
 }
 
 /* ========================================================================= */
@@ -10038,6 +10069,20 @@ void RecvDataProcSUBGAMEINFO(PBYTE pData, DWORD dwDataSize)
 		}
 		break;
 
+	case SUBGAMEID_PINBALL:		/* ピンボール（実行中の値を持たないので、そのまま写して範囲に丸める） */
+		{
+			PSUBGAME_PINBALLINFO pPinball = (PSUBGAME_PINBALLINFO)g_aSubaGameInfo[pRecv->dwTblID]->pInfo;
+			PSUBGAME_PINBALLINFOSAVE pPinballRecv = (PSUBGAME_PINBALLINFOSAVE)(pRecv + 1);
+
+			if (s_dwRecvSize >= sizeof (CMDPARA_DATA1) + sizeof (SUBGAME_PINBALLINFOSAVE)) {
+				CopyMemory (pPinball, pPinballRecv, sizeof (SUBGAME_PINBALLINFOSAVE));
+			} else {
+				PinballInfoSetDefault (pPinball);
+			}
+			PinballInfoClamp (pPinball);
+			pPinball->byVersion = PINBALLINFO_VERSION;
+		}
+		break;
 	case SUBGAMEID_JANJAN:		/* SBOじゃん（実行中の値を持たないので、そのまま写して範囲に丸める。届いた量が足りなければ既定値） */
 		{
 			PSUBGAME_JANJANINFO pJanjan = (PSUBGAME_JANJANINFO)g_aSubaGameInfo[pRecv->dwTblID]->pInfo;
@@ -15006,7 +15051,7 @@ BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, 
 	/* 管理者用のコマンドだけ（ログインや「元に戻す」自体は通さない） */
 	if ((byCmd >= CMD_MAX) || (RecvDataProcTbl[byCmd] == NULL) ||
 			((byCmd < CMD_MAPPARTSADD) && (byCmd != CMD_CHARITEM)) ||
-			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_ADMINVIEWALL) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_APPRAISE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_DUNGEONSEL) || (byCmd == CMD_DUNGEONMAP) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || (byCmd == CMD_PUZZLEKEY) || (byCmd == CMD_JANKEY) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET)) || ((byCmd >= CMD_RECYCLELIST) && (byCmd <= CMD_RECYCLECLOSE))) {
+			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_ADMINVIEWALL) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_APPRAISE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_DUNGEONSEL) || (byCmd == CMD_DUNGEONMAP) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || (byCmd == CMD_PUZZLEKEY) || (byCmd == CMD_PINBALLKEY) || (byCmd == CMD_JANKEY) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET)) || ((byCmd >= CMD_RECYCLELIST) && (byCmd <= CMD_RECYCLECLOSE))) {
 		return FALSE;
 	}
 
@@ -16356,8 +16401,11 @@ void RecvDataProcTALKANSWER(PBYTE pData, DWORD dwDataSize)
 	if (TrialRoomAnswer (g_aCharInfo[s_nCharNoRecv], pPara->dwTblID, pPara->byData ? TRUE : FALSE)) {
 		return;
 	}
-	/* 落ち物パズル・SBOじゃんのチケットの「始めますか？」への答えなら、そちらで受ける */
+	/* 落ち物パズル・ピンボール・SBOじゃんの「始めますか？」「乱入しますか？」への答えなら、そちらで受ける */
 	if (PuzzleAnswer (g_aCharInfo[s_nCharNoRecv], pPara->dwTblID, pPara->byData ? TRUE : FALSE)) {
+		return;
+	}
+	if (PinballAnswer (g_aCharInfo[s_nCharNoRecv], pPara->dwTblID, pPara->byData ? TRUE : FALSE)) {
 		return;
 	}
 	if (JanAnswer (g_aCharInfo[s_nCharNoRecv], pPara->dwTblID, pPara->byData ? TRUE : FALSE)) {

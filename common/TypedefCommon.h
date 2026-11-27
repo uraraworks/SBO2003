@@ -413,10 +413,13 @@ enum {
 	CMD_PUZZLEKEY,													/* 落ち物パズルのキー入力（クライアント→サーバー。CMDPARA_PUZZLEKEY の byData が PUZZLEKEY_*、dwTblID=本人、dwSerial=連番） */
 	CMD_PUZZLESTATE,												/* 落ち物パズルの盤面・操作中の落ち物・得点（サーバー→座っている人・対戦相手・台の近くの人。CMDPARA_PUZZLESTATE） */
 	CMD_PUZZLESE,												/* 落ち物パズルの効果音（サーバー→台の近くの人。CMDPARA_PUZZLESE。盤面が見える距離にいる人だけに届く） */
+/* 以下、プレイヤー用（ピンボール。CMD_PINBALLKEY はクライアント→サーバーも受ける。管理者用の判定から外すこと） */
+	CMD_PINBALLKEY,													/* ピンボールのキー入力（クライアント→サーバー。CMDPARA_PINBALLKEY の byData が PINBALLKEY_*、dwTblID=本人、dwSerial=連番） */
+	CMD_PINBALLSTATE,												/* ピンボールのボール・フリッパー・得点・残り球（サーバー→座っている人・台の近くの人。CMDPARA_PINBALLSTATE） */
 /* 以下、プレイヤー用（SBOじゃん。CMD_JANKEY はクライアント→サーバーも受ける。管理者用の判定から外すこと） */
 	CMD_JANSTATE,													/* SBOじゃんの卓の状態（サーバー→座っている人・卓の近くの人。受取人ごとに作る。CMDPARA_JANSTATE） */
 	CMD_JANKEY,														/* SBOじゃんの操作（クライアント→サーバー。CMDPARA_JANKEY。byAct が JAN_ACT_*） */
-/* 以下、管理者用（CMD_MAPPARTSADD 以上は自動で管理者専用になる。CMD_PUZZLESE より後ろに足す） */
+/* 以下、管理者用（CMD_MAPPARTSADD 以上は自動で管理者専用になる。CMD_JANKEY より後ろに足す） */
 	CMD_ADMINTRIALROOM,												/* 管理者ウィンドウのお試し個室の編集（一覧・書き込み。結果はサーバー→クライアント） */
 	CMD_MAX
 };
@@ -1208,7 +1211,9 @@ enum {
 	SUBGAMEID_DUNGEON,											/* ダンジョン */
 	SUBGAMEID_WAR,												/* 戦場ゲーム */
 	SUBGAMEID_SUGOROKU,											/* すごろく */
-	SUBGAMEID_JANJAN = 8,										/* SBOじゃんの台（台NPCの台詞 @j<このサブゲームの番号> で使う。docs/janjan.md）。6・7 は迷路対戦の台・ピンボール（別の変更）が使う番号なので空けてある */
+	SUBGAMEID_PINBALL,											/* ピンボール（台の設定。台NPCの台詞 @i<このサブゲームの番号> で使う。docs/pinball.md） */
+	SUBGAMEID_MAZETABLE = 7,									/* 迷路対戦の台（別PR #374 用に予約。迷路ダンジョン SUBGAMEID_MAZE とは別物） */
+	SUBGAMEID_JANJAN = 8,										/* SBOじゃんの台（台NPCの台詞 @j<このサブゲームの番号> で使う。docs/janjan.md）。6=ピンボール・7=迷路対戦の台（別PR #374）の番号なので 8 から */
 	SUBGAMEID_MAX
 };
 
@@ -1774,6 +1779,54 @@ typedef struct _SUBGAME_SUGOROKUINFOSAVE {
 	CmyArray<SUGOROKUEVENTINFO, SUGOROKUEVENTINFO>	aEventInfo;		/* イベント情報 */
 	CmyArray<SUGOROKUPARTSINFO, SUGOROKUPARTSINFO>	aPartsInfo;		/* パーツ情報 */
 } SUBGAME_SUGOROKUINFOSAVE, *PSUBGAME_SUGOROKUINFOSAVE;
+
+/* サブゲーム：ピンボール情報（台1つぶんの設定。台NPCの台詞 "@i<サブゲーム情報の番号>" がこの情報を指す）
+ *   実行中の値を持たない（遊んでいる最中の状態は SboSvrPinball.cpp の台の表に持つ）ので、INFO と INFOSAVE は同じ並び。
+ *   既定値・範囲の丸めは common/PinballInfo.h。0 のままでも遊べるよう、サーバーは範囲に丸めて使う。
+ *   項目を足す時は、末尾の abyReserved から切り出すか、この構造体の最後に足す（保存は項目名つきの列なので、
+ *   足した項目は SboSvrSaveLoadSubGameInfo.cpp の s_aPinballField に 1 行足すだけ。前の版のサーバーはその項目を読み飛ばす） */
+#define PINBALLINFO_VERSION		(2)								/* 保存の版（項目を足したら上げる。読む側は未知の項目を読み飛ばすので、上げなくても壊れない） */
+#define PINBALLINFO_RESERVED	(13)							/* 将来の項目用に空けてある保存領域（バイト） */
+typedef struct _SUBGAME_PINBALLINFO {
+	WORD		wCoinItem;											/* コインのアイテム番号（0=無料） */
+	BYTE		byCoinCount;										/* 必要な枚数（0=無料） */
+	BYTE		byBalls;											/* 球数（1〜9。既定 3） */
+	BYTE		bySaveSec;											/* ボールセーブの秒数（0=なし。既定 8） */
+	BYTE		byBandSide;											/* 得点・残り球の帯の側（0=盤の右・1=盤の左） */
+	WORD		wScoreBumper;										/* バンパーの得点（既定 100） */
+	WORD		wScoreTarget;										/* ターゲットの得点（既定 300） */
+	WORD		wScoreBonus;										/* ターゲットを全部倒した時のボーナス（既定 1000） */
+	WORD		wComboMs;											/* コンボが続く時間（ミリ秒。既定 2000） */
+	signed char	cDx;												/* 盤の左上が台NPCのマスの左上から何マスか（横。負は左。既定 -2） */
+	signed char	cDy;												/* 同（縦。負は上。既定 -6） */
+	signed char	cSeatDx;											/* 座る場所の、台NPCのマスからの相対位置（横。既定 0） */
+	signed char	cSeatDy;											/* 同（縦。既定 1） */
+	WORD		wVsSec;												/* 対戦の時間（秒。10〜600。既定 90。版 2 で追加） */
+	BYTE		byPair;												/* ペア番号（同じマップ・同じ番号の台 2 台が対戦できる。0=ペアなし。版 2 で追加） */
+	BYTE		byVersion;											/* 保存の版（PINBALLINFO_VERSION） */
+	BYTE		abyReserved[PINBALLINFO_RESERVED];					/* 将来用（0 で保存する） */
+} SUBGAME_PINBALLINFO, *PSUBGAME_PINBALLINFO;
+
+/* サブゲーム：ピンボール情報(保存データ。管理者ウィンドウとの通信にも使う。INFO と同じ並び) */
+typedef struct _SUBGAME_PINBALLINFOSAVE {
+	WORD		wCoinItem;											/* コインのアイテム番号（0=無料） */
+	BYTE		byCoinCount;										/* 必要な枚数（0=無料） */
+	BYTE		byBalls;											/* 球数 */
+	BYTE		bySaveSec;											/* ボールセーブの秒数（0=なし） */
+	BYTE		byBandSide;											/* 帯の側（0=右・1=左） */
+	WORD		wScoreBumper;										/* バンパーの得点 */
+	WORD		wScoreTarget;										/* ターゲットの得点 */
+	WORD		wScoreBonus;										/* ターゲット全部のボーナス */
+	WORD		wComboMs;											/* コンボが続く時間（ミリ秒） */
+	signed char	cDx;												/* 盤の左上（横） */
+	signed char	cDy;												/* 盤の左上（縦） */
+	signed char	cSeatDx;											/* 座る場所（横） */
+	signed char	cSeatDy;											/* 座る場所（縦） */
+	WORD		wVsSec;												/* 対戦の時間（秒） */
+	BYTE		byPair;												/* ペア番号（0=ペアなし） */
+	BYTE		byVersion;											/* 保存の版 */
+	BYTE		abyReserved[PINBALLINFO_RESERVED];					/* 将来用 */
+} SUBGAME_PINBALLINFOSAVE, *PSUBGAME_PINBALLINFOSAVE;
 
 /* サブゲーム：SBOじゃんの台の情報（台1つぶんの設定。台NPCの台詞 "@j<サブゲーム情報の番号>" がこの情報を指す）
  *   実行中の値を持たない（遊んでいる最中の状態は SboSvrJan.cpp の卓の表に持つ）ので、INFO と INFOSAVE は同じ並び。
@@ -4479,6 +4532,86 @@ typedef struct _CMDPARA_PUZZLESE {
 	DWORD		dwNpc;												/* 台NPCのテーブルID（その台の盤面を持っている人だけが鳴らす） */
 } CMDPARA_PUZZLESE, *PCMDPARA_PUZZLESE;
 #pragma pack(pop)
+
+/* ピンボール（台に座って遊ぶ。ロジックは common/Pinball.h。台詞が "@i<サブゲーム情報の番号>" の台NPC。設定は SUBGAME_PINBALLINFO。docs/pinball.md）
+   CMD_PINBALLKEY: クライアント→サーバー。押した時と離した時だけ送る（CMDPARA_PINBALLKEY の byData に PINBALLKEY_*）
+   CMD_PINBALLSTATE: サーバー→座っている人と台の近くの人。約 0.1 秒ごとと、状態が変わった時 */
+enum {
+	PINBALLKEY_LEFT_DOWN = 1,										/* 左のフリッパーを上げる（←を押した） */
+	PINBALLKEY_LEFT_UP,												/* 左のフリッパーを下ろす（←を離した） */
+	PINBALLKEY_RIGHT_DOWN,											/* 右のフリッパーを上げる（→を押した） */
+	PINBALLKEY_RIGHT_UP,											/* 右のフリッパーを下ろす（→を離した） */
+	PINBALLKEY_LAUNCH_DOWN,											/* 打ち出しを溜め始める（↓を押した） */
+	PINBALLKEY_LAUNCH_UP,											/* 打ち出す（↓を離した。押していた時間が強さ） */
+	PINBALLKEY_LEAVE,												/* 席を立つ（ESC） */
+};
+/* CMD_PINBALLSTATE の byKind */
+enum {
+	PINBALLSTATE_NONE = 0,											/* 席を立った・片付いた（クライアントは重ね描きを消す） */
+	PINBALLSTATE_FULL,												/* 状態（盤面は決まった形なので、ボール・フリッパー・得点などだけ） */
+	PINBALLSTATE_OVER,												/* ゲームオーバー（本人に。しばらく残して見せ、席を立ったら NONE が届く） */
+};
+/* CMDPARA_PINBALLSTATE の byIdle のビット（落ち物パズルの PUZZLEIDLE_* と同じ意味） */
+#define PINBALLIDLE_ON		(0x01)									/* 待機中（席が空） */
+#define PINBALLIDLE_SEAT	(0x02)									/* 受け取った本人が座る場所のマスに立っている */
+#define PINBALLIDLE_FREE	(0x04)									/* この台は必要な枚数が 0（SEAT と一緒に付く） */
+#pragma pack(push, 1)
+typedef struct _CMDPARA_PINBALLSTATE {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byKind;												/* PINBALLSTATE_* */
+	BYTE		bySide;												/* 帯をどちら側に出すか（PUZZLESIDE_*） */
+	BYTE		byMine;												/* 受け取った本人が、この台の席に座っているか（1=本人の台・0=観戦の台） */
+	BYTE		byIdle;												/* 待機中の台（PINBALLIDLE_*。盤の枠だけ描く） */
+	BYTE		byOver;												/* 1=ゲームオーバーの「GAME OVER」を盤の上に出す間（待機中の台に付く。消える時にサーバーが 0 を送る） */
+	BYTE		byPhase;											/* PB_PHASE_*（common/Pinball.h） */
+	BYTE		byBalls;											/* 残り球（今の球を含む） */
+	BYTE		byTargets;											/* 倒れたターゲットの印（ビット i がターゲット i） */
+	WORD		wFlash;											/* 前回の通知から当たった印（バンパー・ターゲット。光らせる） */
+	BYTE		byCombo;											/* 連続ヒット数 */
+	BYTE		byAngL;												/* 左フリッパーの段階（0〜PB_FLIP_STEPS） */
+	BYTE		byAngR;												/* 右フリッパーの段階 */
+	BYTE		byHeld;												/* bit0=左を上げている・bit1=右を上げている・bit2=打ち出しを溜めている */
+	BYTE		byCharge;											/* 溜めている打ち出しの強さ（0〜100 ％） */
+	BYTE		bySave;												/* ボールセーブの残り秒（0=なし） */
+	short		sFieldX;											/* 盤の左上（マップのドット座標。台の席の座標から決める） */
+	short		sFieldY;
+	int			nBallX;												/* ボールの中心（1/256 ドット） */
+	int			nBallY;
+	short		sVx;												/* ボールの速度（1/120 秒あたりの 1/256 ドット） */
+	short		sVy;
+	DWORD		dwScore;											/* 得点 */
+	DWORD		dwNpc;												/* 台NPCのテーブルID（盤を見分ける印） */
+	DWORD		dwStep;												/* サーバーの固定ステップ数（先読みの巻き直しの目印） */
+	DWORD		dwAck;												/* この台の席の人のキーを、ここまで処理した（CMDPARA_PINBALLKEY の dwSerial） */
+	/* ここから台の設定（サブゲーム情報 SUBGAME_PINBALLINFO から。クライアントの先読み・帯の表示・座る場所の判定に使う） */
+	BYTE		byBallsMax;											/* 球数（帯の球の数。先読みでも使う） */
+	BYTE		bySaveSecMax;										/* ボールセーブの秒数 */
+	signed char	cSeatDx;											/* 座る場所（台NPCのマスからの相対位置。S キーで座れるマスの判定） */
+	signed char	cSeatDy;
+	WORD		wComboMs;											/* コンボが続く時間（ミリ秒） */
+	WORD		wScoreBumper;										/* バンパーの得点 */
+	WORD		wScoreTarget;										/* ターゲットの得点 */
+	WORD		wScoreBonus;										/* ターゲット全部のボーナス */
+	/* ここから対戦（ペアの 2 台。時間制）。対戦でない台は byVs=0 で、ほかは 0 */
+	BYTE		byVs;												/* 0=対戦なし・1=対戦中・2=カウントダウン中（操作できない） */
+	BYTE		byCount;											/* カウントダウンの数（3・2・1。それ以外は 0。盤の真ん中に大きく出す） */
+	WORD		wVsRemain;											/* 対戦の残り時間（1/10 秒。カウントダウン中は対戦の長さ） */
+	DWORD		dwOppScore;											/* 相手の得点（盤の上に小さく出す） */
+	BYTE		byStreak;											/* この席の連勝数（2 以上の時だけ「N連勝」を出す） */
+	BYTE		byBallNo;											/* 対戦で穴に落ちた球の数（先読みのボールセーブ判定用） */
+	BYTE		byLaunchNo;											/* 対戦で打ち出した回数の下位 8 ビット（先読みの乱数列の位置） */
+	DWORD		dwSeed;												/* 対戦の乱数の種（ペアの 2 台で同じ） */
+} CMDPARA_PINBALLSTATE, *PCMDPARA_PINBALLSTATE;
+#pragma pack(pop)
+
+/* CMD_PINBALLKEY の中身（CMDPARA_PUZZLEKEY と同じ並び） */
+typedef struct _CMDPARA_PINBALLKEY {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byData;												/* PINBALLKEY_* */
+	DWORD		pID;												/* プレイヤーID */
+	DWORD		dwTblID;											/* テーブルID */
+	DWORD		dwSerial;											/* キーごとの連番（1 から。サーバーは処理した最後の連番を CMDPARA_PINBALLSTATE の dwAck で返す） */
+} CMDPARA_PINBALLKEY, *PCMDPARA_PINBALLKEY;
 
 /* SBOじゃん（台詞が "@j<コイン番号>,<枚数>,<CPUの強さ>" の台NPCが卓の中心。盤面ロジックは common/Janjan.h。
    段階 1 は人間 1 人＋CPU 3 人。CMD_JANSTATE は、座っている人・卓の近くにいる人（観戦。席が空の待機中の卓も）に、受取人ごとに作って送る） */

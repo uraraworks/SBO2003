@@ -70,7 +70,10 @@ static const SUBGAMEPROC SubGameProcTbl[] = {
 	SubGameProc_MAZE,				/* 迷路 */
 	SubGameProc_DUNGEON,			/* ダンジョン */
 	SubGameProc_WAR,				/* 戦場ゲーム */
-	SubGameProc_SUGOROKU			/* すごろく */
+	SubGameProc_SUGOROKU,			/* すごろく */
+	NULL,							/* ピンボール（台の周期処理は SboSvrPinball 側。ここでは何もしない） */
+	NULL,							/* 迷路対戦（別PR #374 用に予約） */
+	NULL							/* SBOじゃん（卓の周期処理は SboSvrJan 側。ここでは何もしない） */
 };
 
 /* ========================================================================= */
@@ -82,8 +85,11 @@ void SubGameProc(DWORD dwID)
 {
 	PSUBGAMEINFO pInfo = g_aSubaGameInfo[dwID];
 
-	/* 種類別に処理 */
-	if ((pInfo->byType < sizeof (SubGameProcTbl) / sizeof (SubGameProcTbl[0])) && SubGameProcTbl[pInfo->byType]) {
+	/* 種類別に処理（表の範囲外の種別は何もしない。表に無い種別でサーバーが落ちないように） */
+	if (pInfo == NULL || pInfo->byType >= (sizeof (SubGameProcTbl) / sizeof (SubGameProcTbl[0]))) {
+		return;
+	}
+	if (SubGameProcTbl[pInfo->byType]) {
 		SubGameProcTbl[pInfo->byType] (pInfo);
 	}
 }

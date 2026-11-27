@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>スクラップブックオンライン</title>
+<!-- ホーム画面の背景は最初のページで要るので、本文を読む前から取り始める（CSS の背景と同じ URL・同じ切り替え条件） -->
+<link rel="preload" as="image" type="image/webp" href="/login/loginbg-mobile.webp?v=@@SBO_BUILD_COMMIT@@" media="not all and (min-width: 900px) and (min-height: 560px) and (min-aspect-ratio: 5/4)">
+<link rel="preload" as="image" type="image/webp" href="/login/loginbg-wide.webp?v=@@SBO_BUILD_COMMIT@@" media="(min-width: 900px) and (min-height: 560px) and (min-aspect-ratio: 5/4)">
 <style>
 	:root {
 		--bg: #1d1f24;
@@ -86,23 +89,6 @@
 		color: var(--sub);
 		min-height: 1.4em;
 	}
-	/* 読み込みの進み具合（ゲームデータのダウンロード中だけ出す） */
-	.sbo-load-bar {
-		width: min(320px, 80%);
-		height: 8px;
-		margin: 6px auto 0;
-		border: 1px solid var(--border);
-		border-radius: 4px;
-		background: rgba(0, 0, 0, 0.35);
-		overflow: hidden;
-	}
-	.sbo-load-bar > div {
-		height: 100%;
-		width: 0;
-		background: var(--accent);
-		transition: width 0.2s linear;
-	}
-
 	/* 切断された時にゲーム画面に出す「つなぎ直す」ボタン（押すと読み込み直す）。
 	   真ん中の「接続が途切れました」の窓の少し下に置く */
 	#sbo-reconnect {
@@ -1567,7 +1553,112 @@
 	body.sbo-loginscr #sbo-quick .sbo-btn.sbo-play {
 		min-height: 60px;
 	}
-	/* ---- ログイン前ホーム画面の背景（ロゴ入り・人物なしの 1 枚絵）。#sbo-quick が出てから読まれる。版はビルドのコミット ----
+	/* ---- ホーム画面（ページを開いた直後から出す）。ゲームの準備ができるまで（body.sbo-booting）は、
+	   ログインを始めるボタンを押せなくして、起動の進み具合（.sbo-boot）をボタンの下に出す ---- */
+	body.sbo-booting #sbo-quick .sbo-btn,
+	body.sbo-booting #sbo-quick .sbo-acc-gear {
+		opacity: 0.55;
+		filter: saturate(0.6);
+		pointer-events: none;
+		cursor: default;
+	}
+	/* 起動の進み具合はボタンの下の文言の位置（.sbo-boot）に出すので、画面下の #sbo-status は使わない */
+	body.sbo-booting #sbo-status {
+		display: none;
+	}
+	/* ---- 起動の進み具合（.sbo-boot）。ボタンの下の文言（.sbo-note）の場所に重ねる。
+	   ページを開いてから約 0.9 秒たっても準備できていない時だけ body.sbo-boot-on を付けて出す
+	   （キャッシュ済みで一瞬の時はチラつかせない）。準備できたら 0.3 秒で文言に戻る ---- */
+	.sbo-home .sbo-note {
+		position: relative;
+		transition: color 0.3s ease;
+	}
+	body.sbo-boot-on .sbo-home .sbo-note {
+		color: transparent;
+		text-shadow: none;
+	}
+	.sbo-boot {
+		display: block;
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: 50%;
+		transform: translateY(-50%);
+		opacity: 0;
+		pointer-events: none;
+		color: #12351f;
+		text-shadow: 0 0 4px #fff, 0 1px 0 #fff;
+		transition: opacity 0.3s ease;
+	}
+	body.sbo-boot-on .sbo-boot {
+		opacity: 1;
+	}
+	/* 「時間がかかっています」は 2 行になるので、上端をそろえて下へ伸ばす（ボタンに被せない）。白い下地で読みやすく */
+	body.sbo-boot-on .sbo-boot.sbo-warn {
+		top: 0;
+		transform: none;
+		padding: 4px 6px 6px;
+		border-radius: 10px;
+		background: rgba(255, 255, 255, 0.92);
+		box-shadow: 0 2px 8px rgba(40, 110, 80, 0.3);
+		z-index: 2;
+		pointer-events: auto;
+	}
+	.sbo-boot-text {
+		display: block;
+		font-size: 14px;
+		font-weight: bold;
+		line-height: 1.4;
+	}
+	.sbo-boot-bar {
+		display: block;
+		height: 12px;
+		margin: 4px 6px 0;
+		border: 2px solid #2a6b49;
+		border-radius: 6px;
+		background: rgba(255, 255, 255, 0.8);
+		overflow: hidden;
+	}
+	.sbo-boot-fill {
+		display: block;
+		height: 100%;
+		width: 0;
+		background-color: #f0b84a;
+		transition: width 0.25s linear;
+	}
+	/* 進み具合が測れない待ち（プログラムの読み込み・ゲームの準備）は、斜めの縞を流して「動いている」ことを見せる */
+	.sbo-boot.sbo-ind .sbo-boot-fill {
+		background-image: repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.55) 0 7px, rgba(255, 255, 255, 0) 7px 14px);
+		background-size: 19.8px 19.8px;
+		animation: sbo-boot-stripe 0.7s linear infinite;
+	}
+	@keyframes sbo-boot-stripe {
+		from { background-position: 0 0; }
+		to { background-position: 19.8px 0; }
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.sbo-boot.sbo-ind .sbo-boot-fill {
+			animation: none;
+		}
+	}
+	.sbo-boot.sbo-warn .sbo-boot-text {
+		color: #8a1d1d;
+	}
+	.sbo-boot-reload {
+		display: none;
+		margin: 4px auto 0;
+		padding: 2px 12px;
+		border: 1px solid #8a1d1d;
+		border-radius: 999px;
+		background: #fff;
+		color: #8a1d1d;
+		font: bold 12px/1.4 sans-serif;
+		cursor: pointer;
+	}
+	.sbo-boot.sbo-warn .sbo-boot-reload {
+		display: inline-block;
+	}
+	/* ---- ログイン前ホーム画面の背景（ロゴ入り・人物なしの 1 枚絵）。ページの <head> で先読みする。版はビルドのコミット ----
 	   既定＝スマホ縦（幅 900px 未満、または縦長）：ページ全体が縦スクロール。絵は幅いっぱいで上端から敷き（絵ごとスクロール）、
 	   絵より下は絵の最下行の色（--bg-end）。絵の上〜 --town-bottom（ロゴと町）はスペーサーで空け、遊ぶボタンはそのすぐ下。
 	   絵の差し替え（1024x2048 = 1:2）はここの変数だけ：
@@ -2561,7 +2652,7 @@
 	}
 </style>
 </head>
-<body>
+<body class="sbo-loginscr sbo-booting">
 <!-- ボタンのアイコン（24×24 の線画。使う所は <svg class="sbo-ic"><use href="#sbo-ic-…"/></svg>） -->
 <svg id="sbo-icons" width="0" height="0" style="position:absolute" aria-hidden="true">
 	<symbol id="sbo-ic-camera" viewBox="0 0 24 24"><path d="M4 8h3l1.5-2.5h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></symbol>
@@ -2600,14 +2691,14 @@
 		<button type="button" id="sbo-gp-open" title="ゲームパッドのボタン割当"><svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-gamepad"/></svg><span class="sbo-pad-txt">パッド</span></button>
 		<div id="sbo-rec-badge">REC <span id="sbo-rec-time">0:00</span></div>
 		<!-- ログイン画面のボタン。ID・パスワードの入力欄は「ID・パスワードでログイン」を押した時だけ見せる -->
-		<div id="sbo-quick" data-sbo-ui="1">
+		<div id="sbo-quick" class="sbo-show" data-sbo-ui="1">
 			<!-- この端末で前にログインしていた -->
 			<div class="sbo-card sbo-home" id="sbo-quick-back">
 				<div class="sbo-hero"><h1 class="sbo-sr">スクラップブックオンライン</h1></div>
 				<div class="sbo-col-play">
 					<!-- いちばん新しく使ったアカウント（大きな金色ボタン） -->
 					<div id="sbo-quick-main"></div>
-					<p class="sbo-note">おかえりなさい！ 前回のアカウントで、すぐに冒険を再開できます。</p>
+					<p class="sbo-note">おかえりなさい！ 前回のアカウントで、すぐに冒険を再開できます。<span class="sbo-boot" role="progressbar" aria-valuemin="0" aria-valuemax="100"><span class="sbo-boot-text"></span><span class="sbo-boot-bar"><span class="sbo-boot-fill"></span></span><button type="button" class="sbo-boot-reload">ページを再読み込み</button></span></p>
 				</div>
 				<div class="sbo-col-acc">
 					<!-- この端末で覚えているほかのアカウント（新しく使った順。2 つ以上ある時は右の ⚙ で設定） -->
@@ -2663,7 +2754,7 @@
 				<div class="sbo-hero"><h1 class="sbo-sr">スクラップブックオンライン</h1></div>
 				<div class="sbo-col-play">
 					<button type="button" class="sbo-btn sbo-play" id="sbo-quick-newstart">すぐにはじめる</button>
-					<p class="sbo-note">アカウントは自動で作ります。<br>次からはこの端末でボタンを押すだけで入れます。</p>
+					<p class="sbo-note">アカウントは自動で作ります。<br>次からはこの端末でボタンを押すだけで入れます。<span class="sbo-boot" role="progressbar" aria-valuemin="0" aria-valuemax="100"><span class="sbo-boot-text"></span><span class="sbo-boot-bar"><span class="sbo-boot-fill"></span></span><button type="button" class="sbo-boot-reload">ページを再読み込み</button></span></p>
 				</div>
 				<div class="sbo-col-acc">
 					<div class="sbo-sec">
@@ -3027,71 +3118,144 @@
 <script>
 (function () {
 	var canvas = document.getElementById('canvas');
-	var status = document.getElementById('sbo-status');
 	/*
-	 * 読み込み中の表示。Emscripten の setStatus は英語で "Downloading data... (読んだバイト数/全体)" などを
-	 * 渡してくるので、ダウンロード中はプログレスバーと割合に、ほかは日本語にして出す。
-	 * 2 回目からはゲームデータをブラウザに保存してあるので、ダウンロードの表示は出ない。
+	 * 起動の進み具合（ボタンの下の .sbo-boot に出す 1 本のバー）。起動は次の 3 段階で進む:
+	 *   program … HTML → .js → .wasm のダウンロードと組み立て（進み具合は取れない。縞のバーで待つ）
+	 *   data    … ゲームデータ（.data）のダウンロード。Emscripten の setStatus が
+	 *             "Downloading data... (読んだバイト数/全体)" を渡してくるので、これだけ割合が取れる
+	 *             （2 回目からはブラウザに保存してあるので、この段階は飛ばす）
+	 *   prepare … ゲームデータの展開・保存データ（IndexedDB）の読み込み・ゲームの初期化 →
+	 *             ログイン状態（SboWebLoginState）が 1 になって body.sbo-booting が外れるまで（縞のバー）
+	 * バーは「0〜12% program ／ 12〜92% data（実際の割合）／ 92〜98% prepare」で、戻らずに進む。
 	 */
-	var loadBar = null;
-	var loadText = null;
-	/* ダウンロードが終わると、すぐ次の表示（準備中・空）が来てバーが消え、100% が見えないまま
-	   タイトルへ進んでしまう。終わった時は 100% を少しの間（LOAD_FULL_MS）見せてから次の表示にする */
-	var LOAD_FULL_MS = 600;
-	var loadHoldUntil = 0;		/* この時刻までは 100% のまま見せる */
-	var loadHoldTimer = null;
-	var loadHoldText = null;	/* 100% を見せている間に来た次の表示（最後の 1 つだけ覚える） */
-	function setLoadFull() {
-		loadText.textContent = 'ゲームデータを読み込み中... 100%';
-		loadBar.style.width = '100%';
-		if (!loadHoldUntil) {
-			/* バーは 0.2 秒かけて伸びるので、伸びきってから見せる時間を数える */
-			loadHoldUntil = Date.now() + 200 + LOAD_FULL_MS;
+	var bootStage = 'program';
+	var bootStageAt = 0;		/* 今の段階に入った時刻（performance.now()） */
+	var bootDataPct = 0;		/* data の割合（0〜100） */
+	var bootHadData = false;
+	var bootPct = 0;
+	var bootMarks = {};
+	var bootEls = document.querySelectorAll('.sbo-boot');
+	var BOOT_SHOW_MS = 900;		/* ページを開いてからこれだけたっても準備できていない時だけバーを出す */
+	var BOOT_WARN_MS = 30000;	/* この間まったく進まなければ「時間がかかっています」を出す */
+	function bootMark(name) {
+		if (bootMarks[name] === undefined) {
+			bootMarks[name] = Math.round(performance.now());
+			console.log('[sbo] 起動: ' + name + ' ' + bootMarks[name] + 'ms');
 		}
 	}
+	function setBootStage(stage) {
+		if (bootStage === stage) {
+			return;
+		}
+		bootStage = stage;
+		bootStageAt = performance.now();
+		bootMark(stage === 'data' ? 'データのダウンロード開始' : '準備開始（データ展開・初期化）');
+	}
+	/* Emscripten の setStatus から呼ばれる。ダウンロード中は割合を覚え、それ以外は準備中に進める */
 	function setLoadStatus(text) {
-		text = text || '';
-		var m = /^Downloading data\.\.\. \((\d+)\/(\d+)\)/.exec(text);
+		var m = /^Downloading data\.\.\. \((\d+)\/(\d+)\)/.exec(text || '');
 		if (!m) {
-			/* ダウンロードの表示から別の表示に変わる時は、まず 100% にする */
-			if (loadBar && status.contains(loadBar)) {
-				setLoadFull();
-			}
-			var wait = loadHoldUntil - Date.now();
-			if (wait > 0) {
-				loadHoldText = text;
-				if (!loadHoldTimer) {
-					loadHoldTimer = setTimeout(function () {
-						loadHoldTimer = null;
-						setLoadStatus(loadHoldText);
-					}, wait);
+			/* "Downloading data..."（割合なし）はダウンロードの始まり。"Downloading..."（データを受け取り終えて展開）・
+			   "Running..."・空は、その次の準備中 */
+			if (/^Downloading data\.\.\.$/.test(text || '')) {
+				bootHadData = true;
+				if (bootStage === 'program') {
+					setBootStage('data');
 				}
-				return;
+			} else {
+				setBootStage('prepare');
 			}
-			loadBar = loadText = null;
-			status.textContent = !text ? '' : (/^(Downloading|Preparing|Running)/.test(text) ? '準備中...' : text);
 			return;
 		}
 		var done = Number(m[1]);
 		var total = Math.max(Number(m[2]), done, 1);
-		if (!loadBar || !status.contains(loadBar)) {
-			status.textContent = '';
-			loadText = document.createElement('div');
-			var bar = document.createElement('div');
-			bar.className = 'sbo-load-bar';
-			loadBar = document.createElement('div');
-			bar.appendChild(loadBar);
-			status.appendChild(loadText);
-			status.appendChild(bar);
+		bootHadData = true;
+		bootDataPct = done * 100 / total;
+		if (bootStage === 'program') {
+			setBootStage('data');
 		}
-		/* バイト数は展開後の大きさ（実際に届くのは圧縮した約半分）なので、割合だけ出す */
 		if (done >= total) {
-			setLoadFull();
+			/* バイト数は展開後の大きさ（実際に届くのは圧縮した約半分）。割合だけ使う */
+			bootDataPct = 100;
+			setBootStage('prepare');
+		}
+	}
+	var bootLastSig = '';
+	var bootLastMove = performance.now();
+	var bootWarned = false;
+	var bootShown = false;
+	var bootTimer = 0;
+	function bootRender(pct, label, indeterminate, warn) {
+		bootEls.forEach(function (el) {
+			el.classList.toggle('sbo-ind', indeterminate);
+			el.classList.toggle('sbo-warn', warn);
+			el.setAttribute('aria-valuenow', String(Math.round(pct)));
+			el.setAttribute('aria-valuetext', label);
+			el.querySelector('.sbo-boot-text').textContent = label;
+			el.querySelector('.sbo-boot-fill').style.width = pct.toFixed(1) + '%';
+		});
+	}
+	function bootTick() {
+		var now = performance.now();
+		var body = document.body;
+		if (!body.classList.contains('sbo-booting')) {
+			/* 準備ができた：100% にして、0.3 秒かけて文言に戻す */
+			clearInterval(bootTimer);
+			bootMark('準備完了');
+			console.log('[sbo] 起動の内訳: ' + JSON.stringify(bootMarks));
+			if (bootShown) {
+				bootRender(100, 'ゲームの準備ができました', false, false);
+			}
+			body.classList.remove('sbo-boot-on');
 			return;
 		}
-		loadText.textContent = 'ゲームデータを読み込み中... ' + Math.floor(done * 100 / total) + '%';
-		loadBar.style.width = (done * 100 / total) + '%';
+		var pct;
+		var label;
+		var indeterminate = true;
+		var inStage = (now - bootStageAt) / 1000;
+		if (bootStage === 'program') {
+			pct = 10 * (1 - Math.exp(-now / 5000));
+			label = 'プログラムを読み込み中…';
+		} else if (bootStage === 'data') {
+			pct = 12 + 80 * bootDataPct / 100;
+			label = 'ゲームデータを読み込み中… ' + Math.floor(bootDataPct) + '%';
+			indeterminate = false;
+		} else {
+			var base = bootHadData ? 92 : 50;
+			pct = base + (98 - base) * (1 - Math.exp(-inStage / 4));
+			label = inStage > 6 ? 'もう少しです…' : 'ゲームを準備中…';
+		}
+		bootPct = Math.max(bootPct, pct);
+		/* 進みが見えない時間の保険：段階が変わらず割合も動かないまま BOOT_WARN_MS たったら知らせる */
+		var sig = bootStage + ':' + Math.floor(bootDataPct * 2);
+		if (sig !== bootLastSig) {
+			bootLastSig = sig;
+			bootLastMove = now;
+		}
+		var stalled = now - bootLastMove > BOOT_WARN_MS;
+		if (stalled && !bootWarned) {
+			bootWarned = true;
+			console.warn('[sbo] 起動に時間がかかっています: 段階=' + bootStage + '、データ ' + Math.floor(bootDataPct) +
+				'%、' + Math.round((now - bootLastMove) / 1000) + ' 秒動いていません（経過 ' + Math.round(now / 1000) + ' 秒）。通信が止まったか、' +
+				'.wasm / .data の読み込み・ゲームの初期化が終わっていない可能性があります。段階ごとの時刻: ' + JSON.stringify(bootMarks));
+		}
+		if (stalled) {
+			label = '読み込みに時間がかかっています。ページを再読み込みしてください';
+		}
+		if (!bootShown && now >= BOOT_SHOW_MS) {
+			bootShown = true;
+			body.classList.add('sbo-boot-on');
+		}
+		bootRender(bootPct, label, indeterminate || stalled, stalled);
 	}
+	bootMark('ホーム画面の表示');
+	bootTimer = setInterval(bootTick, 100);
+	bootTick();
+	bootEls.forEach(function (el) {
+		el.querySelector('.sbo-boot-reload').addEventListener('click', function () {
+			location.reload();
+		});
+	});
 	var params = new URLSearchParams(location.search);
 	/* 古い版から読み込み直した時に付けた印（sboOnNewVersion）はアドレス欄から消しておく */
 	if (params.has('sbo_reload') && window.history && history.replaceState) {
@@ -3437,11 +3601,17 @@
 	/* 入力欄が出ている間は、キャンセル(Z)を ESC、決定(X)を Enter としてその入力欄に渡す。
 	   元の Windows 版は入力欄を ESC でしか閉じられず、スマホにはそのキーが無いため */
 	var PAD_INPUT_KEY = {90: 27, 88: 13};
-	/* SBOじゃんの席に座っている間（SboWebGetPadState が 256 を返す）は、キャンセル（Z）を ESC（席を立つ）に変える */
+	/* SBOじゃんの席に座っている間（SboWebGetPadState のビット 512）は、キャンセル（Z）を ESC（席を立つ）に変える */
 	var padJanSeated = false;
 	function padTarget(vk) {
 		if (padJanSeated && vk === 90) {
 			vk = 27;
+		}
+		/* ピンボールの席（SboWebGetPadState のビット 256）の間だけ、決定(X)を → （右フリッパー）に差し替える。
+		   キーボードでは X が左フリッパー・→ が右フリッパーなので、決定ボタンは → を送って右にする（左は十字キーの ←）。
+		   ほかの画面・ゲームでは今まで通り X */
+		if (vk === 88 && sboReady && Module['_SboWebGetPadState'] && (Module['_SboWebGetPadState']() & 256)) {
+			return {vk: 39, id: 0};
 		}
 		var input = PAD_INPUT_KEY[vk] ? gameInputShown() : null;
 		/* ゲームがゲーム画面にフォーカスを戻した後（キャラ作成の名前欄を残したまま性別選択を
@@ -5264,9 +5434,10 @@
 	   1=調べる 2=表示 4=戦闘 のビットで返す。
 	   8 は目の前に話せる相手がいる時で、S（調べる）ボタンの名前を「話す」にする。
 	   32 は目の前に得点板（雪合戦場の HP パネル）がある時で、Z（キャンセル）ボタンの名前を「名前」にする。
+	   256 はピンボールの席（128 と一緒に付く）で、X（決定）を「右（フリッパー）」と出して → を送り、Z（キャンセル）は隠す（十字キーの ←＝左フリッパー・→＝右フリッパー・下＝打ち出しもそのまま効く）。
 	   128 は落ち物パズルの席に座っている時で、S（調べる）は隠し（席を立つのはゲームオーバーか ESC）、X（決定）を「右回し」、Z（キャンセル）を「左回し」にする
 	   （表示・戦闘・地図はゲーム側が効かない扱いにして隠す）。
-	   256 は SBOじゃんの席に座っている時で、「決定(X)」と「席を立つ(Z。ESC を送る)」と十字キーだけ出し、ほかは隠す。
+	   512 は SBOじゃんの席に座っている時で、「決定(X)」と「席を立つ(Z。ESC を送る)」と十字キーだけ出し、ほかは隠す。
 	   （十字キーは左右で手牌のカーソル、上で手牌の行と操作の行の行き来）
 	   64 は探索マップが使える場所（テーマで作った気まぐれダンジョンの範囲）で、「地図」（M キー）を出す。
 	   16 は戦闘モード中で、決定を「攻撃」、キャンセルを「構え」（長押しで構える）と出し、
@@ -5279,6 +5450,7 @@
 		var sLabel = document.getElementById('sbo-pad-s-label');
 		var xLabel = document.getElementById('sbo-pad-x-label');
 		var zLabel = document.getElementById('sbo-pad-z-label');
+		var zBtn = zLabel ? zLabel.parentNode : null;
 		var lastState = -1;
 		setInterval(function () {
 			if (!document.body.classList.contains('sbo-pad')) {
@@ -5293,7 +5465,7 @@
 			}
 			lastState = state;
 			var battle = (state & 16) !== 0;
-			padJanSeated = (state & 256) !== 0;
+			padJanSeated = (state & 512) !== 0;
 			document.body.classList.toggle('sbo-battle', battle);
 			for (var i = 0; i < needButtons.length; i ++) {
 				var need = parseInt(needButtons[i].dataset.padNeed, 10);
@@ -5309,10 +5481,13 @@
 				sLabel.textContent = (state & 128) ? '回す' : ((state & 8) ? '話す' : '調べる');
 			}
 			if (xLabel) {
-				xLabel.textContent = (state & 128) ? '右回し' : (battle ? '攻撃' : '決定');	/* 256（じゃん）は「決定」のまま */
+				xLabel.textContent = (state & 256) ? '右（フリッパー）' : ((state & 128) ? '右回し' : (battle ? '攻撃' : '決定'));
+			}
+			if (zBtn) {
+				zBtn.classList.toggle('sbo-pad-off', (state & 256) !== 0);
 			}
 			if (zLabel) {
-				zLabel.textContent = battle ? '構え(長押し)' : ((state & 256) ? '席を立つ' : ((state & 128) ? '左回し' : ((state & 32) ? '名前' : 'キャンセル')));
+				zLabel.textContent = battle ? '構え(長押し)' : ((state & 256) ? '左（フリッパー）' : (state & 512) ? '席を立つ' : (state & 128) ? '左回し' : ((state & 32) ? '名前' : 'キャンセル'));
 			}
 		}, 100);
 	})();
@@ -6582,6 +6757,9 @@
 		var fn = window.Module && window.Module['_SboWebLoginState'];
 		return typeof fn === 'function' ? fn() : 0;
 	}
+	/* ゲーム（ブラウザ版はロゴ・タイトルを飛ばして最初からログイン画面）の準備ができて、
+	   ログインを受け付けるまで true。この間もホーム画面は出し、ログインを始めるボタンだけ押せなくする */
+	var bBoot = true;
 
 	/* 覚えているアカウントのボタンを並べる（中身が変わった時だけ作り直す） */
 	var strListSig = null;
@@ -6637,11 +6815,14 @@
 			endQuickFade();
 		}
 	});
-	setInterval(function () {
+	function watchQuick() {
 		var state = loginState();
+		if (state !== 0) {
+			bBoot = false;
+		}
 		var list = loadList();
 		var bHave = list.length > 0;
-		var bShow = state === 1 && !recover.classList.contains('sbo-show');
+		var bShow = (state === 1 || bBoot) && !recover.classList.contains('sbo-show');
 		if (bShow && fadingQuick()) {
 			/* フェード中にログインが失敗して戻ってきた：中断して即、通常表示に */
 			clearTimeout(tmFade);
@@ -6678,8 +6859,11 @@
 		forgot.classList.toggle('sbo-show', state === 1 && !bShow);
 		/* ログインするまで（接続を始めるまで）は、スマホの仮想パッドなど下の部品を隠して画面いっぱいにする
 		   （フェード中は、フェードが終わるまで保つ） */
-		document.body.classList.toggle('sbo-loginscr', state === 1 || bFading);
-	}, 250);
+		document.body.classList.toggle('sbo-loginscr', state === 1 || bFading || bBoot);
+		document.body.classList.toggle('sbo-booting', bBoot);
+	}
+	watchQuick();
+	setInterval(watchQuick, 250);
 
 	function focusCanvas() {
 		var cv = document.getElementById('canvas');
@@ -6886,7 +7070,7 @@
 	document.getElementById('sbo-quick-id').addEventListener('submit', function (ev) {
 		ev.preventDefault();
 		var M = window.Module;
-		if (!M || !M['_SboWebPasLogin']) {
+		if (!M || !M['_SboWebPasLogin'] || loginState() !== 1) {
 			return;
 		}
 		/* 出たばかりの Enter の押しっぱなしでは送らない */
@@ -6919,7 +7103,7 @@
 
 	function tokenLogin(token) {
 		var M = window.Module;
-		if (!isToken(token) || !M || !M['_SboWebTokenLogin']) {
+		if (!isToken(token) || !M || !M['_SboWebTokenLogin'] || loginState() !== 1) {
 			return;
 		}
 		selectToken(token);
@@ -6957,7 +7141,7 @@
 	}
 	document.getElementById('sbo-quick-newstart').addEventListener('click', function () {
 		var M = window.Module;
-		if (!M || !M['_SboWebNewLogin']) {
+		if (!M || !M['_SboWebNewLogin'] || loginState() !== 1) {
 			return;
 		}
 		/* 見間違えやすい文字（0/o・1/l/i）は使わない。アカウント名は 11 文字、パスワードは 12 文字 */
