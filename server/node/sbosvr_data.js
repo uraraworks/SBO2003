@@ -1797,7 +1797,7 @@ Module['sboData'] = (function () {
 		},
 		{
 			name: 'sbo_add', write: true,
-			description: 'データを末尾に追加する。省いた項目は 0 や空になる。追加した NPC は元に戻すと消え、作り手・レシピは削除（byState=0）、迷路・迷路対戦の台（subGame の byType 2・6）は止まる／消える（byType=0）。' +
+			description: 'データを末尾に追加する。省いた項目は 0 や空になる。追加した NPC は元に戻すと消え、作り手・レシピは削除（byState=0）、迷路・迷路対戦の台（subGame の byType 2・7）は止まる／消える（byType=0）。' +
 				'それ以外の種類の追加は元に戻せない。NPC は dwMapID・dwX・dwY が要る。2 段階は sbo_update と同じ。',
 			inputSchema: {
 				type: 'object', required: ['kind', 'records'],

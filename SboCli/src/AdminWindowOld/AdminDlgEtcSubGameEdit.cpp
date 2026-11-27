@@ -130,9 +130,14 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 	hWndTmp = GetDlgItem (hWnd, IDC_TYPE);
 	for (i = 0; ; i ++) {
 		if (aSubGameNameTbl[i][0] == 'z') { break; }
-		SendMessage (hWndTmp, CB_ADDSTRING, 0, (LPARAM)aSubGameNameTbl[i]);
+		if (aSubGameNameTbl[i][0] == '\0') { continue; }		/* 空き番号は出さない */
+		/* 項目の並びと種別番号がずれるので、種別番号は項目データに持つ */
+		int nIdx = (int)SendMessage (hWndTmp, CB_ADDSTRING, 0, (LPARAM)aSubGameNameTbl[i]);
+		SendMessage (hWndTmp, CB_SETITEMDATA, (WPARAM)nIdx, (LPARAM)i);
+		if (i == g_pSubGameInfo->byType) {
+			SendMessage (hWndTmp, CB_SETCURSEL, (WPARAM)nIdx, 0);
+		}
 	}
-	SendMessage (GetDlgItem (hWnd, IDC_TYPE), CB_SETCURSEL, (WPARAM)g_pSubGameInfo->byType, 0);
 
 	PostMessage (hWnd, WM_INITEND, 0, 0);
 	return FALSE;
@@ -153,7 +158,7 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 			hWndTmp = GetDlgItem (s_hWndDlg, IDC_TYPE);
 			switch (nCodeNotify) {
 			case CBN_SELCHANGE:		/* 選択項目が変更された */
-				ChgSubGameType ((BYTE)SendMessage (hWndTmp, CB_GETCURSEL, 0, 0));
+				ChgSubGameType ((BYTE)SendMessage (hWndTmp, CB_GETITEMDATA, (WPARAM)SendMessage (hWndTmp, CB_GETCURSEL, 0, 0), 0));
 				PostMessage (hWnd, WM_INITEND, 0, 0);
 				break;
 			}

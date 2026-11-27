@@ -19784,10 +19784,10 @@ static void TestMaze(const std::vector<int> &aLogin)
 		MazeOnLeave(pB);
 	}
 
-	/* 20. データAPI（subGame の byType 6）：足す（detail 省略で既定値）・読む・変える・範囲外と種別違いの断り・保存と読み直し・消す */
+	/* 20. データAPI（subGame の byType 7）：足す（detail 省略で既定値）・読む・変える・範囲外と種別違いの断り・保存と読み直し・消す */
 	{
 		int nAdd = g_aSubaGameInfo.GetSize();
-		std::string strAdd = FlagGroupApi("subGame", nAdd, "{\"byType\":6}");
+		std::string strAdd = FlagGroupApi("subGame", nAdd, "{\"byType\":7}");
 		const char *pszGet = SboWebDataGet("subGame", nAdd);
 		std::string strGet = pszGet ? pszGet : "";
 		PSUBGAME_MAZETABLEINFO pT = (g_aSubaGameInfo.GetSize() == nAdd + 1 && g_aSubaGameInfo[nAdd]->byType == SUBGAMEID_MAZETABLE) ?
@@ -19836,7 +19836,7 @@ static void TestMaze(const std::vector<int> &aLogin)
 		printf("maze api erase ok=%d type=%d info=%d table before=%d after=%d\n", (int)(strDel.find("\"ok\":true") != std::string::npos), g_aSubaGameInfo[nAdd]->byType,
 			g_aSubaGameInfo[nAdd]->pInfo != NULL, nBeforeGone, MazeIsTableNpc(pGone));
 		/* 種類 0 の枠は台にして使い回せる */
-		std::string strReuse = FlagGroupApi("subGame", nAdd, "{\"byType\":6,\"detail\":{\"byCpuLevel\":3}}");
+		std::string strReuse = FlagGroupApi("subGame", nAdd, "{\"byType\":7,\"detail\":{\"byCpuLevel\":3}}");
 		printf("maze api reuse ok=%d size=%d type=%d table=%d\n", (int)(strReuse.find("\"ok\":true") != std::string::npos), g_aSubaGameInfo.GetSize() == nAdd + 1,
 			g_aSubaGameInfo[nAdd]->byType, MazeIsTableNpc(pGone));
 	}

@@ -47,7 +47,7 @@
 #define IDD_FLAGGROUP                   241
 #define IDD_CHARCHEST                   242
 #define IDD_ADMINSWAP                   243
-#define IDD_ETC_SUBGAME_EDIT_MAZETABLE  244
+#define IDD_ETC_SUBGAME_EDIT_MAZETABLE  260
 #define IDC_BUTTON1                     1000
 #define IDC_BUTTON2                     1001
 #define IDC_BUTTON3                     1002
@@ -582,36 +582,36 @@
 #define IDC_DGVIEW_Y1                      1522
 #define IDC_DGVIEW_X2                      1523
 #define IDC_DGVIEW_Y2                      1524
-#define IDC_MT_LEVEL                       1525
-#define IDC_MT_DX                          1526
-#define IDC_MT_DY                          1527
-#define IDC_MT_SDX                         1528
-#define IDC_MT_SDY                         1529
-#define IDC_MT_SDX2                        1530
-#define IDC_MT_SDY2                        1531
-#define IDC_MT_CPUNAME                     1532
-#define IDC_MT_CPUGRP                      1533
-#define IDC_MT_SELCPU                      1534
-#define IDC_MT_PVCPU                       1535
-#define IDC_MT_FLOORA                      1536
-#define IDC_MT_SELA                        1537
-#define IDC_MT_PVA                         1538
-#define IDC_MT_FLOORB                      1539
-#define IDC_MT_SELB                        1540
-#define IDC_MT_PVB                         1541
-#define IDC_MT_GAP                         1542
-#define IDC_MT_SELGAP                      1543
-#define IDC_MT_PVGAP                       1544
-#define IDC_MT_TICKET                      1545
-#define IDC_MT_TICKETNUM                   1546
+#define IDC_MT_LEVEL                       1600
+#define IDC_MT_DX                          1601
+#define IDC_MT_DY                          1602
+#define IDC_MT_SDX                         1603
+#define IDC_MT_SDY                         1604
+#define IDC_MT_SDX2                        1605
+#define IDC_MT_SDY2                        1606
+#define IDC_MT_CPUNAME                     1607
+#define IDC_MT_CPUGRP                      1608
+#define IDC_MT_SELCPU                      1609
+#define IDC_MT_PVCPU                       1610
+#define IDC_MT_FLOORA                      1611
+#define IDC_MT_SELA                        1612
+#define IDC_MT_PVA                         1613
+#define IDC_MT_FLOORB                      1614
+#define IDC_MT_SELB                        1615
+#define IDC_MT_PVB                         1616
+#define IDC_MT_GAP                         1617
+#define IDC_MT_SELGAP                      1618
+#define IDC_MT_PVGAP                       1619
+#define IDC_MT_TICKET                      1620
+#define IDC_MT_TICKETNUM                   1621
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        245
+#define _APS_NEXT_RESOURCE_VALUE        261
 #define _APS_NEXT_COMMAND_VALUE         40037
-#define _APS_NEXT_CONTROL_VALUE         1547
+#define _APS_NEXT_CONTROL_VALUE         1622
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

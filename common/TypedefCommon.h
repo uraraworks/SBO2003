@@ -1198,7 +1198,7 @@ enum {
 	SUBGAMEID_DUNGEON,											/* ダンジョン */
 	SUBGAMEID_WAR,												/* 戦場ゲーム */
 	SUBGAMEID_SUGOROKU,											/* すごろく */
-	SUBGAMEID_MAZETABLE,										/* 迷路対戦の台（迷路ダンジョン SUBGAMEID_MAZE とは別物。NPC台詞 @k<サブゲーム番号> で使う） */
+	SUBGAMEID_MAZETABLE = 7,									/* 迷路対戦の台（迷路ダンジョン SUBGAMEID_MAZE とは別物。NPC台詞 @k<サブゲーム番号> で使う）。6 はピンボール（別の変更）が使う番号なので空けてある */
 	SUBGAMEID_MAX
 };
 

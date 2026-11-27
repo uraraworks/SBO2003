@@ -2741,7 +2741,7 @@ maze api set ok=1 chDx=-3 chDy=-9 seat1=2,1 seat2=0,-8 parts=11,12,13 cpu=2 grp=
 maze api reject dx100=1 cpu4=1 unknown=1 type5=1 kept=-3,2
 maze api reload count=1 same=1 dx=-3 seat1=2,1 seat2=0,-8 parts=11,12,13 cpu=2 grp=123 cpuname=[ロボ] name=[テスト台]
 maze api erase ok=1 type=0 info=0 table before=1 after=0
-maze api reuse ok=1 size=1 type=6 table=1
+maze api reuse ok=1 size=1 type=7 table=1
 maze ticket none seated=0 guide=1 sysmsg+1
 maze ticket short seated=0 tk=1 msg=1
 maze ticket skey seated=0 tk=2 sysmsg+1

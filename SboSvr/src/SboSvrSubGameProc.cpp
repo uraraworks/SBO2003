@@ -82,8 +82,8 @@ void SubGameProc(DWORD dwID)
 {
 	PSUBGAMEINFO pInfo = g_aSubaGameInfo[dwID];
 
-	/* 種類別に処理 */
-	if (SubGameProcTbl[pInfo->byType]) {
+	/* 種類別に処理（表の外の種別（迷路対戦の台など）は処理なし） */
+	if ((pInfo->byType < sizeof (SubGameProcTbl) / sizeof (SubGameProcTbl[0])) && SubGameProcTbl[pInfo->byType]) {
 		SubGameProcTbl[pInfo->byType] (pInfo);
 	}
 }

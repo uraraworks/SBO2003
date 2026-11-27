@@ -4230,7 +4230,13 @@ void AdminOnCommandItemList(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 						break;
 					}
 					PITEMINFO_SUBGAME pInfo = (PITEMINFO_SUBGAME)pItem->pData;
-					SendMessage (m_hWndCombo3, CB_SETCURSEL, pInfo->byType, 0);
+					int nCnt = (int)SendMessage (m_hWndCombo3, CB_GETCOUNT, 0, 0);
+					for (int k = 0; k < nCnt; k ++) {
+						if ((BYTE)SendMessage (m_hWndCombo3, CB_GETITEMDATA, (WPARAM)k, 0) == pInfo->byType) {
+							SendMessage (m_hWndCombo3, CB_SETCURSEL, (WPARAM)k, 0);
+							break;
+						}
+					}
 				}
 				break;
 
@@ -4732,7 +4738,7 @@ void AdminOnCommandItemList(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 					PITEMINFO_SUBGAME pInfo = (PITEMINFO_SUBGAME)pItem->pData;
 
 					/* 種類 */
-					pInfo->byType = (BYTE)SendMessage (m_hWndCombo3, CB_GETCURSEL, 0, 0);
+					pInfo->byType = (BYTE)SendMessage (m_hWndCombo3, CB_GETITEMDATA, (WPARAM)SendMessage (m_hWndCombo3, CB_GETCURSEL, 0, 0), 0);
 				}
 				break;
 
@@ -10199,7 +10205,11 @@ void MakeItemEditWindow(BYTE byType)
 				if (aSubGameNameTbl[i][0] == 'z') {
 					break;
 				}
-				SendMessage (m_hWndCombo3, CB_ADDSTRING, (WPARAM)0, (LPARAM)aSubGameNameTbl[i]);
+				if (aSubGameNameTbl[i][0] == '\0') {
+					continue;		/* 空き番号は出さない */
+				}
+				int nIdx = (int)SendMessage (m_hWndCombo3, CB_ADDSTRING, (WPARAM)0, (LPARAM)aSubGameNameTbl[i]);
+				SendMessage (m_hWndCombo3, CB_SETITEMDATA, (WPARAM)nIdx, (LPARAM)i);	/* 種別番号は項目データに持つ */
 			}
 		}
 		break;

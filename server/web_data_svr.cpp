@@ -2230,7 +2230,16 @@ static const DATAFIELD s_aFieldSgMazeTable[] = {
 	FLD (SUBGAME_MAZETABLEINFO, byTicketNum,"チケットの必要枚数",	FT_U8, 0, "0=無料（Sキーで座る・既定）。1〜99=有料。チケットを配る方法は docs/maze-attack.md（配布係NPC）"),
 };
 
-static const char *s_apszSubGameName[] = { "なし", "爆弾ゲーム", "迷路", "ダンジョン", "戦場ゲーム", "すごろく", "迷路対戦の台" };
+static const char *s_apszSubGameName[] = { "なし", "爆弾ゲーム", "迷路", "ダンジョン", "戦場ゲーム", "すごろく", "", "迷路対戦の台" };
+
+/* 種別の名前（番号 6 のような空き番号・範囲外は "?"） */
+static const char *SubGameTypeName(int nType)
+{
+	if (nType < 0 || nType >= SUBGAMEID_MAX || s_apszSubGameName[nType][0] == '\0') {
+		return "?";
+	}
+	return s_apszSubGameName[nType];
+}
 
 static const DATAFIELD *SubGameFields(int nType, int *pnCount)
 {
@@ -2249,7 +2258,7 @@ static const DATAFIELD *SubGameFields(int nType, int *pnCount)
 static std::string SubGameJson(PSUBGAMEINFO pInfo)
 {
 	std::string out = "\"byType\":" + JsonNum(pInfo->byType);
-	out += std::string(",\"typeName\":\"") + ((pInfo->byType < SUBGAMEID_MAX) ? s_apszSubGameName[pInfo->byType] : "?") + "\"";
+	out += std::string(",\"typeName\":\"") + SubGameTypeName(pInfo->byType) + "\"";
 	int nCount = 0;
 	const DATAFIELD *paField = SubGameFields(pInfo->byType, &nCount);
 	out += ",\"detail\":{";
@@ -2443,11 +2452,12 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataSchema(void)
 			out += "[{\"name\":\"byUse\",\"type\":\"u8\",\"label\":\"使用中なら1\"},{\"name\":\"dwGold\",\"type\":\"u32\",\"label\":\"預けたお金\"},{\"name\":\"items\",\"type\":\"object[]\",\"label\":\"預けたアイテム（item=item の番号・count=個数）\"}]";
 			break;
 		case KIND_SUBGAME:
-			out += "[{\"name\":\"byType\",\"type\":\"u8\",\"label\":\"種別\",\"note\":\"0=無し 1=爆弾ゲーム 2=迷路 3=ダンジョン 4=戦場ゲーム 5=すごろく 6=迷路対戦の台。足せるのは迷路(2)と迷路対戦の台(6)だけ（byType と detail を指定。台は detail 省略で既定値）。変えられるのは 迷路・迷路対戦の台⇔無し(0) だけで、0 にすると迷路が止まる（台は設定が消え、台NPCが台でなくなる）。迷路対戦の台は、NPC の台詞 @k<このサブゲームの番号> で使う\"},{\"name\":\"typeName\",\"type\":\"string\",\"label\":\"種別の名前\",\"readonly\":true},{\"name\":\"detail\",\"type\":\"object\",\"label\":\"種別ごとの設定（detailByType）。すごろくは events・parts も\"}]";
+			out += "[{\"name\":\"byType\",\"type\":\"u8\",\"label\":\"種別\",\"note\":\"0=無し 1=爆弾ゲーム 2=迷路 3=ダンジョン 4=戦場ゲーム 5=すごろく 7=迷路対戦の台（6 は空き）。足せるのは迷路(2)と迷路対戦の台(7)だけ（byType と detail を指定。台は detail 省略で既定値）。変えられるのは 迷路・迷路対戦の台⇔無し(0) だけで、0 にすると迷路が止まる（台は設定が消え、台NPCが台でなくなる）。迷路対戦の台は、NPC の台詞 @k<このサブゲームの番号> で使う\"},{\"name\":\"typeName\",\"type\":\"string\",\"label\":\"種別の名前\",\"readonly\":true},{\"name\":\"detail\",\"type\":\"object\",\"label\":\"種別ごとの設定（detailByType）。すごろくは events・parts も\"}]";
 			out += ",\"detailByType\":{";
 			for (int t = SUBGAMEID_BOMB; t < SUBGAMEID_MAX; t ++) {
 				int nCount = 0;
 				const DATAFIELD *paField = SubGameFields(t, &nCount);
+				if (paField == NULL) continue;		/* 空き番号は出さない */
 				if (t > SUBGAMEID_BOMB) out += ",";
 				out += "\"" + JsonNum(t) + "\":" + FieldSchemaJson(paField, nCount);
 			}
@@ -4465,7 +4475,7 @@ static bool CheckMazeDetail(const SUBGAME_MAZEINFO *p, std::string &strErr)
 
 /*
  * サブゲームを変える・足す
- *   足せるのは迷路（byType 2）と迷路対戦の台（byType 6）だけ。byType 0 にすると止まる・消える（元に戻す時の「消す」）。
+ *   足せるのは迷路（byType 2）と迷路対戦の台（byType 7）だけ。byType 0 にすると止まる・消える（元に戻す時の「消す」）。
  *   種類が 0 の枠は迷路か迷路対戦の台にして使い回せる。
  */
 static bool SubGameAddable(int nType)
@@ -4520,17 +4530,17 @@ static bool SubGameApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::
 		bool bOk = (nTypeNow == SUBGAMEID_NONE && SubGameAddable(nTypeNew)) ||
 				   (SubGameAddable(nTypeNow) && nTypeNew == SUBGAMEID_NONE);
 		if (!bOk) {
-			strErr = bAdd ? "足せるのは迷路（byType 2）と迷路対戦の台（byType 6）だけです" :
-					"種類（byType）は 迷路(2)・迷路対戦の台(6)⇔無し(0) だけ変えられます（ほかは管理者ウィンドウで）";
+			strErr = bAdd ? "足せるのは迷路（byType 2）と迷路対戦の台（byType 7）だけです" :
+					"種類（byType）は 迷路(2)・迷路対戦の台(7)⇔無し(0) だけ変えられます（ほかは管理者ウィンドウで）";
 			return false;
 		}
 	}
 	if (bAdd && !SubGameAddable(nTypeNew)) {
-		strErr = "足せるのは迷路（byType 2）と迷路対戦の台（byType 6）だけです。byType と detail を指定してください";
+		strErr = "足せるのは迷路（byType 2）と迷路対戦の台（byType 7）だけです。byType と detail を指定してください";
 		return false;
 	}
 	const JVal *pName = chg.Get("typeName");
-	if (pName && !(pName->t == JVal::STR && pName->s == ((nTypeNew < SUBGAMEID_MAX) ? s_apszSubGameName[nTypeNew] : "?"))) {
+	if (pName && !(pName->t == JVal::STR && pName->s == SubGameTypeName(nTypeNew))) {
 		strErr = "typeName は変えられません";
 		return false;
 	}
