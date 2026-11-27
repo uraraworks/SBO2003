@@ -807,6 +807,10 @@ static void DrawPuzzle(int nX, int nY, BOOL bTop)
 /*		 素材（land_cells.png のコマ絵・land_ui.png の枠・旗・ポインタ・サイコロ）が読めていれば		 */
 /*		 コマの背景に絵、帯HUD に 9 スライス枠・ポインタ・サイコロの目を描く。読めない時は単色と文字だけ	 */
 /* ========================================================================= */
+/* 上段（土地名・値段）の暗い帯の濃さ（0〜255）。ドット絵と anime2（g_bLandArtStyle。細かい絵なので文字が埋もれやすい）で別々に決める */
+static const int s_nLandTopAlphaDot = 140;
+static const int s_nLandTopAlphaArt = 140;
+
 static const COLORREF s_aclLandPlayer[LAND_MAX_PLAYERS] = {
 	RGB (235, 80, 70),		/* 1 人目 赤 */
 	RGB (80, 140, 240),		/* 2 人目 青 */
@@ -955,7 +959,7 @@ static void DrawLand(int nX, int nY, BOOL bTop)
 						break;
 					}
 					if (yy < 32) {
-						PuzSpan (hDC, sx, sy + yy, nCell, RGB (0, 0, 0), 140);
+						PuzSpan (hDC, sx, sy + yy, nCell, RGB (0, 0, 0), g_bLandArtStyle ? s_nLandTopAlphaArt : s_nLandTopAlphaDot);
 					} else if ((yy < 64) && bOwned) {
 						PuzSpan (hDC, sx, sy + yy, nCell, cl, 70);
 					} else if (yy >= 64) {

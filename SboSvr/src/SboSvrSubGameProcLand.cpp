@@ -860,6 +860,13 @@ static void LandDrain(PSUBGAME_SUGOROKUINFO pSugoroku, DWORD dwTime)
 				wsprintf (szMsg, "%sのサイコロ！[%d][%d]で%dが出ました。", pszWho, E.nOther / 10, E.nOther % 10, E.nValue);
 			}
 			break;
+		case LANDEV_ARRIVE:
+			/* 止まったマスの名前を全員へ。町のマスは、続く「空き地です」「自分の土地」「〜の土地。通行料」が
+			   土地名を出すのでここでは出さない（重複を避ける）。四隅・渡し舟・酒場・迷いの森は名前が出ないので出す */
+			if (G.Board.aCell[(E.nCell >= 0) && (E.nCell < LAND_CELLS) ? E.nCell : 0].nKind != LANDCELL_TOWN) {
+				wsprintf (szMsg, "%sは「%s」に着きました。", pszWho, pszCell);
+			}
+			break;
 		case LANDEV_BONUS:
 			wsprintf (szMsg, "%sは%d周目。周回ボーナス%dGをもらいました。", pszWho, E.nOther, E.nValue);
 			break;

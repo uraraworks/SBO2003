@@ -19139,6 +19139,9 @@ static void TestLandSugoroku(const std::vector<int> &aLogin)
 	printf("land A arrive phase=%d state=%d ask=%d pos=%d charAtCenter=%d state+%d\n", pG->nPhase, pSg->byState, pG->nAskCell, pG->aPlayer[0].nPos,
 		pA->dwX == dwOriginX + nCellX && pA->dwY == dwOriginY + nCellY, MockCmdCount(nConnA, CMD_LANDSTATE) - nStateA1);
 
+	/* 町のマスに止まった時は「着きました」は出さず、続く「空き地です」が土地名を出す（観戦者の C にも届く）。四隅などでは出る */
+	printf("land A arrive msg town=%d ask=%d\n", MockHasText(nConnA, CMD_SYSMSG, "に着きました"), MockHasText(nConnA, CMD_SYSMSG, "は空き地です"));
+
 	/* B が買うと返事しても無視される。A が「いいえ」→ 買わない。もう一度同じ土地へ来て「はい」で買う */
 	LandSend(pB, CMDSUBSUGOROKU_LANDBUY, 1);
 	printf("land B buy ignored owner=%d phase=%d\n", pG->anOwner[12], pG->nPhase);
