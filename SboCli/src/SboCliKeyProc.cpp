@@ -10433,7 +10433,7 @@ std::string W32TextToUtf8Str(const char *psz, int nLen);		/* ゲーム内の文�
 #define PADSTATE_BATTLEMODE	(0x10)	/* 戦闘モード中（「決定」を「攻撃」、「キャンセル」を「構え」と表示） */
 #define PADSTATE_SCORE		(0x20)	/* 目の前に得点板がある（「キャンセル」を「名前」と表示。Z で名前を付ける） */
 #define PADSTATE_MAP		(0x40)	/* 探索マップが使える場所（テーマで作ったダンジョンの範囲の中。「地図」ボタンを出す） */
-#define PADSTATE_PINBALL	(0x100)	/* PADSTATE_PUZZLE と一緒に付く：ピンボールの席（十字キーの左右＝フリッパー・下＝打ち出し。決定(X)＝右フリッパー、キャンセル(Z)＝左フリッパーとして表示） */
+#define PADSTATE_PINBALL	(0x100)	/* PADSTATE_PUZZLE と一緒に付く：ピンボールの席（十字キーの左右＝フリッパー・下＝打ち出し。決定ボタンは → を送って右フリッパー（sbocli.html の padTarget。キーボードの X は左フリッパー）、キャンセル(Z)は隠す） */
 #define PADSTATE_PUZZLE		(0x80)	/* 落ち物パズルの席に座っている（「調べる(S)」は隠し、「決定(X)」を「右回し」、「キャンセル(Z)」を「左回し」と表示。表示・戦闘・地図は隠す） */
 
 static int SboWebGetPadStateBase(void)

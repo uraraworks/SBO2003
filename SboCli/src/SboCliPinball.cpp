@@ -403,8 +403,10 @@ void PinballKeyPoll(const BYTE *abyKeyState)
 		s_bL = s_bR = s_bD = s_bEsc = FALSE;
 		return;
 	}
-	bL = ((abyKeyState[VK_LEFT] & 0x80) || (abyKeyState['Z'] & 0x80)) ? TRUE : FALSE;
-	bR = ((abyKeyState[VK_RIGHT] & 0x80) || (abyKeyState['X'] & 0x80)) ? TRUE : FALSE;
+	/* X ＝ 左フリッパー（左手）・→ ＝ 右フリッパー（右手）。← も左（Z は使わない）。左右同時押しは両方上がる。
+	   スマホの決定ボタンは、ピンボールの席の間だけ → を送る（web/shell/sbocli.html の padTarget） */
+	bL = ((abyKeyState[VK_LEFT] & 0x80) || (abyKeyState['X'] & 0x80)) ? TRUE : FALSE;
+	bR = (abyKeyState[VK_RIGHT] & 0x80) ? TRUE : FALSE;
 	bD = (abyKeyState[VK_DOWN] & 0x80) ? TRUE : FALSE;
 	bEsc = (abyKeyState[VK_ESCAPE] & 0x80) ? TRUE : FALSE;
 	/* ゲームオーバー後の少しの間（座っている扱いのまま）は何も送らない */

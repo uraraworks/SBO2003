@@ -1014,7 +1014,7 @@ void PinballSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed, int nChoice)
 		}
 	}
 	if (nPartner < 0) {
-		sprintf (szMsg, "ピンボール開始！ %d球。↓を押して離すと打ち出し、←→でフリッパー。", Param.Cfg.nBalls);
+		sprintf (szMsg, "ピンボール開始！ %d球。↓を押して離すと打ち出し、Xで左・→で右のフリッパー。", Param.Cfg.nBalls);
 		SendCmdSYSMSG (pChar->pID, szMsg);
 	} else {
 		/* 対戦開始：両方の盤を最初に戻し、同じ乱数の種でカウントダウンのあと同時にスタート（球は落ちても次が出る時間制） */
