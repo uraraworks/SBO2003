@@ -72,6 +72,9 @@
 #define MAX_RECIPEMAT		4										/* レシピの材料の種類 */
 #define MAX_MAKERNAME		64										/* 作り手の名前の欄のバイト数（終端含む） */
 #define MAX_MAKERMSG		256										/* 作り手の台詞の欄のバイト数（終端含む） */
+#define MAX_TRIALROOM		100										/* お試し個室の最大数 */
+#define MAX_TRIALROOMNAME	64										/* お試し個室の名前の欄のバイト数（終端含む） */
+#define MAX_TRIALROOMDESC	512										/* お試し個室の説明文の欄のバイト数（終端含む） */
 #define MAX_AFFIX			1000									/* 付与（接頭辞・接尾辞）の最大数 */
 #define MAX_AFFIXNAME		32										/* 付与の名前の欄のバイト数（終端含む） */
 #define MAX_ITEMDERIVE		(65535 - 16384)							/* 派生アイテムの最大数（番号は 16384 から） */
@@ -413,6 +416,8 @@ enum {
 /* 以下、プレイヤー用（SBOじゃん。CMD_JANKEY はクライアント→サーバーも受ける。管理者用の判定から外すこと） */
 	CMD_JANSTATE,													/* SBOじゃんの卓の状態（サーバー→座っている人・卓の近くの人。受取人ごとに作る。CMDPARA_JANSTATE） */
 	CMD_JANKEY,														/* SBOじゃんの操作（クライアント→サーバー。CMDPARA_JANKEY。byAct が JAN_ACT_*） */
+/* 以下、管理者用（CMD_MAPPARTSADD 以上は自動で管理者専用になる。CMD_PUZZLESE より後ろに足す） */
+	CMD_ADMINTRIALROOM,												/* 管理者ウィンドウのお試し個室の編集（一覧・書き込み。結果はサーバー→クライアント） */
 	CMD_MAX
 };
 
@@ -3058,6 +3063,22 @@ typedef struct _MAKERINFO {
 	char		szMsgEnd[MAX_MAKERMSG];								/* 鑑定屋：鑑定した後、もう鑑定する物が無い時に続ける台詞 */
 } MAKERINFO, *PMAKERINFO;
 
+/* お試し個室の状態 */
+enum {
+	TRIALROOMSTATE_CLOSED = 0,									/* 閉じている（入れない） */
+	TRIALROOMSTATE_OPEN,										/* 開いている */
+};
+
+/* お試し個室（試し中の新機能を遊べる部屋。入口のNPCの台詞 "@xNN"（NN=番号 2 桁）。サーバーだけが持ち、クライアントへは送らない） */
+typedef struct _TRIALROOMINFO {
+	BYTE		byState;											/* 状態(TRIALROOMSTATE_*) */
+	char		szName[MAX_TRIALROOMNAME];							/* 名前 */
+	char		szDesc[MAX_TRIALROOMDESC];							/* 入口で出す説明文（改行可） */
+	WORD		wLoanStTmp;											/* 貸すステータステンプレートの番号 */
+	DWORD		dwMapID, dwX, dwY;									/* 入るマップ・座標 */
+	DWORD		dwX1, dwY1, dwX2, dwY2;								/* 個室の範囲の四角（入るマップの中。この外に出ると出たことにする） */
+} TRIALROOMINFO, *PTRIALROOMINFO;
+
 /* レシピ情報 */
 typedef struct _RECIPEINFO {
 	BYTE		byState;											/* 状態(RECIPESTATE_*) */
@@ -3636,6 +3657,30 @@ typedef struct _CMDPARA_ADMINQUEST {
 	QUESTINFO	Info;												/* 依頼（ITEM・SET） */
 	char		szMsg[MAX_ADMINQUESTMSG];							/* 結果の文（RESULT。うまくいかなかった理由） */
 } CMDPARA_ADMINQUEST, *PCMDPARA_ADMINQUEST;
+#pragma pack(pop)
+
+/* 管理者ウィンドウのお試し個室の編集（CMD_ADMINTRIALROOM の byCmdSub） */
+enum {
+	ADMINTRIALROOM_LISTREQ = 0,									/* 一覧の問い合わせ（クライアント→サーバー） */
+	ADMINTRIALROOM_ITEM,										/* 一覧の 1 件（サーバー→クライアント。nNo 番目・全部で wCount 件。0 件なら wCount=0 だけ届く） */
+	ADMINTRIALROOM_SET,											/* 書き込み（クライアント→サーバー。nNo=-1 なら足す。削除は無く、止めるのは byState=0。データAPIと同じ確認を通す） */
+	ADMINTRIALROOM_RESULT,										/* 書き込みの結果（サーバー→クライアント。byResult・szMsg。うまくいった時は続けて ITEM も届く） */
+};
+
+#define MAX_ADMINTRIALROOMMSG	256									/* お試し個室の書き込みの結果の文（UTF-8） */
+
+#pragma pack(push, 1)
+/* 管理者ウィンドウのお試し個室の編集（送受信とも同じ形） */
+typedef struct _CMDPARA_ADMINTRIALROOM {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byCmdSub;											/* サブコマンド(ADMINTRIALROOM_*) */
+	BYTE		byResult;											/* 結果（RESULT: 1=書き込んだ 0=書き込めなかった） */
+	BYTE		byReserve;											/* 予備 */
+	WORD		wCount;												/* お試し個室の全部の件数（ITEM・RESULT） */
+	int			nNo;												/* お試し個室の配列の番号（ITEM・SET・RESULT。SET の -1 は足す） */
+	TRIALROOMINFO	Info;											/* お試し個室（ITEM・SET） */
+	char		szMsg[MAX_ADMINTRIALROOMMSG];						/* 結果の文（RESULT。うまくいかなかった理由） */
+} CMDPARA_ADMINTRIALROOM, *PCMDPARA_ADMINTRIALROOM;
 #pragma pack(pop)
 
 /* 管理者ウィンドウの思い出の本の編集（CMD_ADMINSTORY の byCmdSub） */

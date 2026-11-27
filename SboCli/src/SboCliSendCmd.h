@@ -117,6 +117,7 @@ extern void SendCmdADMINSPACE		(BYTE, DWORD);							/* 管理者の空間の切�
 extern void SendCmdADMINQUEST		(BYTE, int, const QUESTINFO *);			/* 管理者ウィンドウのギルドの依頼の編集 */
 extern void SendCmdADMINSTORY		(BYTE, int, const STORYINFO *);			/* 管理者ウィンドウの思い出の本の編集 */
 extern void SendCmdADMINFLAGGROUP	(BYTE, int, const FLAGGROUPINFO *);		/* 管理者ウィンドウのフラグのグループの編集 */
+extern void SendCmdADMINTRIALROOM	(BYTE, int, const TRIALROOMINFO *);	/* 管理者ウィンドウのお試し個室の編集 */
 extern void SendCmdADMINFLAGNAME	(BYTE, int, const FLAGNAMEINFO *);		/* 管理者ウィンドウのフラグの名前表の編集 */
 extern void SendCmdADMINTALK		(BYTE, int, const TALKINFO *);			/* 管理者ウィンドウの会話データの編集 */
 extern void SendCmdADMINCHARFLAG	(BYTE, DWORD, BYTE, WORD, WORD);		/* 管理者ウィンドウのキャラのフラグの取得・変更 */

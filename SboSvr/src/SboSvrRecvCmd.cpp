@@ -28,6 +28,7 @@
 #include "SboSvrRecycle.h"
 #include "SboSvrAffix.h"
 #include "SboSvrQuest.h"
+#include "SboSvrTrialRoom.h"
 #include "SboSvrMapSwapEdit.h"
 #include "CharProc/CharProcMERCENARY.h"
 #include "SboSvrMagicProc.h"
@@ -56,6 +57,7 @@ extern void SboWebSendLoginNotice	(DWORD);	/* ログインした人に、覚え�
 extern void SboDataFlagNameApplyInfo	(int, const FLAGNAMEINFO *, int &, std::string &);	/* 管理者ウィンドウからフラグの名前表を書き込む(server/web_data_svr.cpp) */
 extern void SboDataTalkApplyInfo		(int, const TALKINFO *, int &, std::string &);		/* 管理者ウィンドウから会話データを書き込む(server/web_data_svr.cpp) */
 extern void SboDataStoryApplyInfo		(int, const STORYINFO *, int &, std::string &);		/* 管理者ウィンドウから思い出の本のシナリオを書き込む(server/web_data_svr.cpp) */
+extern void SboDataTrialRoomApplyInfo	(int, const TRIALROOMINFO *, int &, std::string &);	/* 管理者ウィンドウからお試し個室を書き込む(server/web_data_svr.cpp) */
 extern void SboDataFlagGroupApplyInfo	(int, const FLAGGROUPINFO *, int &, std::string &);	/* 管理者ウィンドウからフラグのグループを書き込む(server/web_data_svr.cpp) */
 PCHARINFO AddChar					(PCHARINFO, BOOL bCheck=TRUE);					/* キャラ追加 */
 void	CharNpcIdEnsure				(PCHARINFO);									/* NPC番号がまだ無ければ振る(SboSvrSaveLoadChar.cpp) */
@@ -249,6 +251,7 @@ void	RecvDataProcADMINTALK					(PBYTE, DWORD);				/* 管理者ウィンドウの
 void	RecvDataProcADMINCHARFLAG				(PBYTE, DWORD);				/* 管理者ウィンドウのキャラのフラグの取得・変更 */
 void	RecvDataProcADMINSTORY					(PBYTE, DWORD);				/* 管理者ウィンドウの思い出の本の編集 */
 void	RecvDataProcADMINFLAGGROUP				(PBYTE, DWORD);				/* 管理者ウィンドウのフラグのグループの編集 */
+void	RecvDataProcADMINTRIALROOM				(PBYTE, DWORD);				/* 管理者ウィンドウのお試し個室の編集 */
 void	RecvDataProcSORTITEM					(PBYTE, DWORD);				/* 道具欄・預かり所の並べ替え */
 void	RecvDataProcLEAVEITEMDISPOSE			(PBYTE, DWORD);				/* 預かり所の品を売る・捨てる */
 void	RecvDataProcBATTLEMODE					(PBYTE, DWORD);				/* 戦闘モードの切り替え通知 */
@@ -534,6 +537,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	NULL,								/* CMD_PUZZLESE(サーバー→クライアントのみ) */
 	NULL,								/* CMD_JANSTATE(サーバー→クライアントのみ) */
 	RecvDataProcJANKEY,					/* CMD_JANKEY */
+	RecvDataProcADMINTRIALROOM,			/* CMD_ADMINTRIALROOM */
 
 	NULL
 };
@@ -8364,6 +8368,13 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 		}
 		return;
 	}
+	/* お試し個室の入口（台詞が「@x番号」）？ 説明を出して「入りますか？」を聞く */
+	if (TrialRoomIsNpc (pChar)) {
+		if ((s_nCharNoRecv >= 0) && IsNearRecvChar (pChar, 2)) {
+			TrialRoomTalk (g_aCharInfo[s_nCharNoRecv], pChar);
+		}
+		return;
+	}
 	/* ダンジョンの受付（台詞が「@d番号」）？ 姿選びを始める */
 	if (DungeonIsReceptionNpc (pChar)) {
 		if ((s_nCharNoRecv >= 0) && IsNearRecvChar (pChar, 2)) {
@@ -9570,7 +9581,7 @@ static BOOL QuestChallengeBlock(PCHARINFO pChar)
 	if (!QuestInChallenge (pChar)) {
 		return FALSE;
 	}
-	SendCmdSYSMSG (pChar->pID, QuestInDungeon (pChar) ? (LPSTR)DungeonBlockedText (pChar).c_str () : "討伐チャレンジ中はできません。", SPEECHCMD_BATTLE1);
+	SendCmdSYSMSG (pChar->pID, QuestInDungeon (pChar) ? (LPSTR)DungeonBlockedText (pChar).c_str () : (LPSTR)TrialRoomBlockedText (pChar), SPEECHCMD_BATTLE1);
 	return TRUE;
 }
 
@@ -11168,7 +11179,7 @@ void RecvDataProcTRADE(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	if (QuestInChallenge (g_aCharInfo[pRecv->dwData])) {
-		SendCmdSYSMSG (g_aCharInfo[pRecv->dwTblID]->pID, QuestInDungeon (g_aCharInfo[pRecv->dwData]) ? "相手はダンジョンの中なので取り引きできません。" : "相手は討伐チャレンジ中なので取り引きできません。", SPEECHCMD_BATTLE1);
+		SendCmdSYSMSG (g_aCharInfo[pRecv->dwTblID]->pID, QuestInDungeon (g_aCharInfo[pRecv->dwData]) ? "相手はダンジョンの中なので取り引きできません。" : TrialRoomIs (g_aCharInfo[pRecv->dwData]) ? "相手はお試し個室の中なので取り引きできません。" : "相手は討伐チャレンジ中なので取り引きできません。", SPEECHCMD_BATTLE1);
 		TradeRefuse (g_aCharInfo[pRecv->dwTblID]);
 		return;
 	}
@@ -14245,6 +14256,78 @@ void RecvDataProcADMINFLAGGROUP(PBYTE pData, DWORD dwDataSize)
 }
 
 /* ========================================================================= */
+/* 関数名：SendAdminTrialRoomItem											 */
+/* 内容：管理者ウィンドウへお試し個室 1 件を送る（nNo が範囲外なら件数だけ）	 */
+/* ========================================================================= */
+static void SendAdminTrialRoomItem(DWORD pID, int nNo)
+{
+	PCMDPARA_ADMINTRIALROOM pPara = new CMDPARA_ADMINTRIALROOM;
+
+	ZeroMemory (pPara, sizeof (CMDPARA_ADMINTRIALROOM));
+	pPara->byCmd	= CMD_ADMINTRIALROOM;
+	pPara->byCmdSub	= ADMINTRIALROOM_ITEM;
+	pPara->wCount	= (WORD)g_aTrialRoomInfo.GetSize ();
+	pPara->nNo		= nNo;
+	if ((nNo >= 0) && (nNo < g_aTrialRoomInfo.GetSize ()) && g_aTrialRoomInfo[nNo]) {
+		pPara->Info = *g_aTrialRoomInfo[nNo];
+	} else {
+		pPara->nNo = -1;
+	}
+	svrSock.SendTo (pID, (PBYTE)pPara, sizeof (CMDPARA_ADMINTRIALROOM));
+	SAFE_DELETE (pPara);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcADMINTRIALROOM										 */
+/* 内容：受信データ処理(管理者ウィンドウのお試し個室の編集)					 */
+/*       LISTREQ : お試し個室を 1 件ずつ ITEM で送る（0 件なら件数 0 の ITEM だけ）*/
+/*       SET     : データAPI（SboWebDataApply）と同じ確認を通して書き込み、	 */
+/*                 RESULT と、うまくいけばその個室の ITEM を返す				 */
+/*       管理者でない人のコマンドは、受け取る前に弾かれる					 */
+/* ========================================================================= */
+void RecvDataProcADMINTRIALROOM(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINTRIALROOM pPara = (PCMDPARA_ADMINTRIALROOM)pData;
+	PCMDPARA_ADMINTRIALROOM pRes;
+	DWORD pID = s_pIDRecv;
+	int i, nNoOut = -1;
+	std::string strErr;
+
+	if (s_dwRecvSize < sizeof (CMDPARA_ADMINTRIALROOM)) {
+		return;
+	}
+
+	switch (pPara->byCmdSub) {
+	case ADMINTRIALROOM_LISTREQ:	/* 一覧の問い合わせ */
+		if (g_aTrialRoomInfo.GetSize () == 0) {
+			SendAdminTrialRoomItem (pID, -1);
+			break;
+		}
+		for (i = 0; i < g_aTrialRoomInfo.GetSize (); i ++) {
+			SendAdminTrialRoomItem (pID, i);
+		}
+		break;
+
+	case ADMINTRIALROOM_SET:		/* 書き込み */
+		SboDataTrialRoomApplyInfo (pPara->nNo, &pPara->Info, nNoOut, strErr);
+		pRes = new CMDPARA_ADMINTRIALROOM;
+		ZeroMemory (pRes, sizeof (CMDPARA_ADMINTRIALROOM));
+		pRes->byCmd		= CMD_ADMINTRIALROOM;
+		pRes->byCmdSub	= ADMINTRIALROOM_RESULT;
+		pRes->byResult	= strErr.empty () ? 1 : 0;
+		pRes->wCount	= (WORD)g_aTrialRoomInfo.GetSize ();
+		pRes->nNo		= strErr.empty () ? nNoOut : pPara->nNo;
+		SboTextCopy (pRes->szMsg, sizeof (pRes->szMsg), strErr.c_str ());
+		svrSock.SendTo (pID, (PBYTE)pRes, sizeof (CMDPARA_ADMINTRIALROOM));
+		SAFE_DELETE (pRes);
+		if (strErr.empty ()) {
+			SendAdminTrialRoomItem (pID, nNoOut);
+		}
+		break;
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：SendAdminCharFlagInfo											 */
 /* 内容：管理者ウィンドウへキャラのフラグ（印・数値）を全部送る				 */
 /* ========================================================================= */
@@ -16252,6 +16335,10 @@ void RecvDataProcTALKANSWER(PBYTE pData, DWORD dwDataSize)
 	PCMDPARA_DATA1 pPara = (PCMDPARA_DATA1)pData;
 
 	if ((dwDataSize < sizeof (CMDPARA_DATA1)) || (s_nCharNoRecv < 0) || (s_nCharNoRecv >= g_aCharInfo.GetSize ())) {
+		return;
+	}
+	/* お試し個室の「入りますか？」への答えなら、そちらで受ける */
+	if (TrialRoomAnswer (g_aCharInfo[s_nCharNoRecv], pPara->dwTblID, pPara->byData ? TRUE : FALSE)) {
 		return;
 	}
 	/* 落ち物パズルの「乱入しますか？」への答えなら、そちらで受ける */

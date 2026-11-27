@@ -1216,12 +1216,18 @@
 		left: 0; top: 0; right: 0; bottom: 0;
 		align-items: center;
 		justify-content: center;
-		background: rgba(10, 12, 16, 0.72);
+		background: #e4e7c3;
 		line-height: 1.4;
 		z-index: 50;
 	}
 	#sbo-quick.sbo-show {
 		display: flex;
+	}
+	/* ログインを始めて隠れる時は、すぐ消さずに 0.4 秒かけて薄くする（終わってから非表示。JS が外す） */
+	#sbo-quick.sbo-fadeout {
+		opacity: 0;
+		transition: opacity 0.4s ease;
+		pointer-events: none;
 	}
 	.sbo-card {
 		background: var(--panel);
@@ -1238,10 +1244,508 @@
 		display: none;
 		text-align: center;
 		width: 320px;
+		/* 小さい画面（横持ちのスマホなど）で上下が切れないように、はみ出す分は中でスクロール */
+		max-height: calc(100% - 16px);
+		overflow-y: auto;
 	}
-	#sbo-quick.sbo-back #sbo-quick-back,
-	#sbo-quick.sbo-new #sbo-quick-new {
+	#sbo-quick.sbo-back:not(.sbo-id) #sbo-quick-back,
+	#sbo-quick.sbo-new:not(.sbo-id) #sbo-quick-new,
+	#sbo-quick.sbo-id #sbo-quick-id {
 		display: block;
+	}
+	/* ---- ホーム画面（おかえりなさい・はじめて） ---- */
+	#sbo-quick .sbo-card.sbo-home {
+		width: 440px;
+		max-width: 100%;
+		height: 100%;
+		max-height: 100%;
+		background: none;
+		border: none;
+		box-shadow: none;
+		border-radius: 0;
+		padding: 12px 14px;
+		box-sizing: border-box;
+		overflow-y: auto;
+		overscroll-behavior: contain;
+	}
+	#sbo-quick.sbo-back:not(.sbo-id) #sbo-quick-back,
+	#sbo-quick.sbo-new:not(.sbo-id) #sbo-quick-new {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+	/* 中身が少ない時は上下中央に、多い時は上から（margin:auto で中央寄せしつつ切れないように） */
+	.sbo-home > :first-child {
+		margin-top: auto;
+	}
+	.sbo-home > :last-child {
+		margin-bottom: auto;
+	}
+	.sbo-home > * {
+		flex: none;
+	}
+	/* タイトルロゴは背景の絵に入っている。見出しは読み上げ用に画面外へ */
+	.sbo-hero {
+		text-align: center;
+		line-height: 1.1;
+		user-select: none;
+	}
+	.sbo-sr {
+		position: absolute;
+		width: 1px; height: 1px;
+		margin: -1px; padding: 0;
+		overflow: hidden;
+		clip: rect(0 0 0 0);
+		white-space: nowrap;
+		border: 0;
+	}
+	.sbo-sec {
+		background: rgba(255, 255, 255, 0.72);
+		border: 1px solid rgba(255, 255, 255, 0.85);
+		border-radius: 16px;
+		box-shadow: 0 4px 14px rgba(20, 70, 50, 0.25);
+		padding: 10px 12px;
+		color: #23402f;
+		text-align: left;
+		box-sizing: border-box;
+	}
+	.sbo-card .sbo-sec-h {
+		margin: 0 0 8px;
+		font-size: 14px;
+		font-weight: bold;
+		color: #2a6b49;
+	}
+	/* 主役の大きな金色ボタン */
+	.sbo-btn.sbo-play,
+	.sbo-acc-row.sbo-main .sbo-btn {
+		font-size: clamp(15px, 5vw, 20px);
+		padding: clamp(10px, 3vw, 16px) 10px;
+		border-radius: 999px;
+		color: #5a3b00;
+		background: linear-gradient(180deg, #ffe98f 0%, #ffc531 55%, #f0a516 100%);
+		border: 2px solid #fff3b8;
+		box-shadow: 0 5px 0 #b57a14, 0 8px 16px rgba(80, 50, 0, 0.35), inset 0 2px 0 rgba(255, 255, 255, 0.7);
+		text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+		position: relative;
+	}
+	.sbo-btn.sbo-play::before,
+	.sbo-acc-row.sbo-main .sbo-btn::before {
+		content: "\25B6\FE0E\A0";
+		font-size: 0.8em;
+	}
+	.sbo-btn.sbo-play:active,
+	.sbo-acc-row.sbo-main .sbo-btn:active {
+		transform: translateY(3px);
+		box-shadow: 0 2px 0 #b57a14, 0 4px 8px rgba(80, 50, 0, 0.35);
+	}
+	.sbo-acc-row.sbo-main .sbo-acc-gear {
+		width: 48px;
+		border-radius: 999px;
+		background: rgba(255, 255, 255, 0.85);
+		border-color: #fff;
+		color: #2a6b49;
+	}
+	/* 補助のボタン（白っぽい丸み） */
+	#sbo-quick .sbo-home .sbo-btn-sub {
+		color: #23402f;
+		background: rgba(255, 255, 255, 0.85);
+		border: 1px solid #fff;
+		border-radius: 12px;
+		box-shadow: 0 2px 0 rgba(40, 110, 80, 0.35);
+		font-size: 14px;
+		font-weight: bold;
+		margin-top: 0;
+		padding: 10px;
+	}
+	.sbo-sec .sbo-btn-sub + .sbo-btn-sub {
+		margin-top: 6px;
+	}
+	.sbo-home .sbo-note {
+		margin: 0;
+		text-align: center;
+		color: #12351f;
+		font-size: 12px;
+		font-weight: bold;
+		line-height: 1.5;
+		text-shadow: 0 0 4px #fff, 0 1px 0 #fff;
+	}
+	/* 覚えているアカウント（2つ目以降） */
+	#sbo-quick-accs {
+		display: none;
+	}
+	#sbo-quick-back.sbo-multi #sbo-quick-accs {
+		display: block;
+	}
+	#sbo-quick-accs .sbo-acc-row .sbo-btn {
+		background: #fff;
+		color: #23402f;
+		font-size: 14px;
+		padding: 9px 12px;
+		border: 1px solid #cfe6d6;
+		text-align: left;
+	}
+	#sbo-quick-accs .sbo-acc-gear {
+		background: #fff;
+		color: #2a6b49;
+		border-color: #cfe6d6;
+		border-radius: 10px;
+	}
+	/* アカウント管理（小ボタンのグリッド） */
+	.sbo-manage {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 6px;
+	}
+	.sbo-manage .sbo-mbtn,
+	.sbo-links .sbo-link {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 4px;
+		text-align: center;
+	}
+	.sbo-manage .sbo-mbtn {
+		background: #fff;
+		border: 1px solid #cfe6d6;
+		border-radius: 10px;
+		color: #23402f;
+		font: bold 12px/1.3 "BIZ UDGothic", "Hiragino Sans", "Meiryo", sans-serif;
+		padding: 8px 4px;
+		margin: 0;
+		text-decoration: none;
+		cursor: pointer;
+	}
+	.sbo-manage .sbo-mbtn.sbo-danger {
+		color: #b03a3a;
+	}
+	.sbo-manage .sbo-ic2,
+	.sbo-links .sbo-ic2 {
+		flex: none;
+		font-size: 14px;
+		line-height: 1;
+		width: 1.3em;
+		height: 1.3em;
+		vertical-align: middle;
+	}
+	.sbo-sec-h .sbo-ic2 {
+		margin-right: 4px;
+		vertical-align: -0.2em;
+	}
+	/* お知らせ */
+	.sbo-news {
+		display: none;
+	}
+	.sbo-news.sbo-has {
+		display: block;
+	}
+	.sbo-news-h {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 4px;
+	}
+	.sbo-card .sbo-news-h .sbo-sec-h {
+		margin: 0;
+	}
+	.sbo-home .sbo-news-more {
+		color: #2a6b49;
+		font-size: 12px;
+		font-weight: bold;
+		margin: 0;
+	}
+	.sbo-news-item {
+		display: grid;
+		grid-template-columns: auto 1fr;
+		gap: 2px 8px;
+		align-items: center;
+		padding: 6px 0;
+		border-top: 1px solid rgba(42, 107, 73, 0.2);
+		font-size: 12px;
+	}
+	.sbo-news-date {
+		color: #5d7a69;
+		font-size: 11px;
+	}
+	.sbo-kind {
+		display: inline-block;
+		padding: 0 6px;
+		border-radius: 999px;
+		font-size: 10px;
+		font-weight: bold;
+		line-height: 16px;
+		color: #fff;
+		background: #3a9bd5;
+		margin-right: 4px;
+	}
+	.sbo-kind.k-new {
+		background: #2fa766;
+	}
+	.sbo-kind.k-fix {
+		background: #8a5fc9;
+	}
+	.sbo-news-body {
+		grid-column: 1 / -1;
+		color: #23402f;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.sbo-news-item .sbo-new-mark {
+		margin: 0;
+		justify-self: start;
+		background: #ff5a4e;
+		color: #fff;
+	}
+	/* 下の小さなリンク */
+	.sbo-links {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: center;
+		gap: 2px 4px;
+		background: rgba(255, 255, 255, 0.55);
+		border-radius: 14px;
+		padding: 4px;
+	}
+	.sbo-links .sbo-link {
+		color: #23402f;
+		font-size: 12px;
+		text-decoration: none;
+		margin: 0;
+		padding: 6px 8px;
+		border-radius: 8px;
+	}
+	/* ===================================================================
+	   ログインするまで（#sbo-quick が出ている間 = body.sbo-loginscr）は、
+	   スマホ・タブレットでも仮想パッドなど下の部品を隠し、ホーム画面をビューポート全体に広げる。
+	   カードは指で直接押せるのでパッドは要らない。visibility なのでレイアウト（ゲーム画面の大きさ）は動かさない
+	   =================================================================== */
+	body.sbo-loginscr #sbo-pad,
+	body.sbo-loginscr #sbo-pad *,
+	body.sbo-loginscr #sbo-chat-box,
+	body.sbo-loginscr #sbo-chat-open,
+	body.sbo-loginscr #sbo-chat-sheet,
+	body.sbo-loginscr #sbo-chat-panel,
+	body.sbo-loginscr #sbo-shot-pad,
+	body.sbo-loginscr #sbo-rec-pad,
+	body.sbo-loginscr #sbo-gp-open,
+	body.sbo-loginscr #sbo-rec-badge {
+		visibility: hidden !important;
+		pointer-events: none !important;
+	}
+	body.sbo-loginscr #sbo-quick {
+		position: fixed;
+		left: 0; top: 0; right: 0; bottom: 0;
+		width: 100%;
+		height: 100vh;
+		height: 100dvh;
+		z-index: 900;
+	}
+	body.sbo-loginscr #sbo-quick .sbo-card.sbo-home {
+		padding: calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
+		gap: 14px;
+	}
+	/* 指で押しやすい大きさ（44px 以上） */
+	body.sbo-loginscr #sbo-quick .sbo-btn,
+	body.sbo-loginscr #sbo-quick .sbo-acc-gear,
+	body.sbo-loginscr #sbo-quick .sbo-manage .sbo-mbtn,
+	body.sbo-loginscr #sbo-quick .sbo-links .sbo-link,
+	body.sbo-loginscr #sbo-quick .sbo-news-more {
+		min-height: 44px;
+		box-sizing: border-box;
+	}
+	body.sbo-loginscr #sbo-quick #sbo-id-forgot {
+		min-height: 44px;
+	}
+	body.sbo-loginscr #sbo-quick .sbo-links .sbo-link,
+	body.sbo-loginscr #sbo-quick .sbo-news-more {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding-left: 10px;
+		padding-right: 10px;
+	}
+	body.sbo-loginscr #sbo-quick .sbo-btn.sbo-play {
+		min-height: 60px;
+	}
+	/* ---- ログイン前ホーム画面の背景（ロゴ入り・人物なしの 1 枚絵）。#sbo-quick が出てから読まれる。版はビルドのコミット ----
+	   既定＝スマホ縦（幅 900px 未満、または縦長）：ページ全体が縦スクロール。絵は幅いっぱいで上端から敷き（絵ごとスクロール）、
+	   絵より下は絵の最下行の色（--bg-end）。絵の上〜 --town-bottom（ロゴと町）はスペーサーで空け、遊ぶボタンはそのすぐ下。
+	   絵の差し替え（1024x2048 = 1:2）はここの変数だけ：
+	     今（1024x2048 = 1:2）  --bg-ratio: 2;    --town-bottom: 0.42;  --bg-w: max(100vw, calc(100dvh / 2));（= cover・横幅いっぱい・上端そろえ）
+	     以前（1024x1536）      --bg-ratio: 1.5;  --town-bottom: 0.52;  --bg-w: 100vw;
+	   --bg-w = 絵の表示幅、--bg-h = 表示高さ、--town-bottom = 町の下端（絵の高さに対する割合）。絵の最下行の色が変わったら --bg-end も。
+	   画像が読めない間・失敗時は、絵の背後のうす緑のグラデーションが見える。 */
+	body.sbo-loginscr #sbo-quick.sbo-show {
+		--bg-ratio: 2;
+		--town-bottom: 0.42;
+		--bg-w: max(100vw, calc(100dvh / 2));
+		--bg-end: #afcb54;
+		--bg-h: calc(var(--bg-w) * var(--bg-ratio));
+		display: block;
+		overflow-x: hidden;
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		-webkit-overflow-scrolling: touch;
+		background:
+			url(/login/loginbg-mobile.webp?v=@@SBO_BUILD_COMMIT@@) top center / var(--bg-w) auto no-repeat local,
+			linear-gradient(180deg, #f4f8de 0%, #dfe9bd 40%, var(--bg-end) 100%) top center / var(--bg-w) var(--bg-h) no-repeat local,
+			var(--bg-end);
+	}
+	body.sbo-loginscr #sbo-quick .sbo-card.sbo-home {
+		height: auto;
+		max-height: none;
+		min-height: 100%;
+		overflow: visible;
+		margin: 0 auto;
+		padding: 0 calc(16px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
+	}
+	body.sbo-loginscr .sbo-home > :first-child,
+	body.sbo-loginscr .sbo-home > :last-child {
+		margin: 0;
+	}
+	/* スペーサー：絵の町の下端（--town-bottom）まで。キャラ用の帯は無し。ここには何も置かない */
+	body.sbo-loginscr .sbo-hero {
+		height: calc(var(--bg-h) * var(--town-bottom));
+		pointer-events: none;
+	}
+	/* ID・パスワードのカードは、ロゴの下の中央に */
+	body.sbo-loginscr #sbo-quick #sbo-quick-id {
+		margin: calc(40vw + env(safe-area-inset-top)) auto 24px;
+	}
+	body.sbo-loginscr #sbo-quick .sbo-sec {
+		background: rgba(255, 255, 255, 0.92);
+	}
+	/* リンク群：画面最下部に固定のフッターバー（アイコン＋短いラベルを横並び）。PC・横長でも同じで、下の @media で列幅 W・中央に */
+	body.sbo-loginscr #sbo-quick.sbo-show {
+		--sbo-foot: calc(56px + env(safe-area-inset-bottom));
+	}
+	body.sbo-loginscr #sbo-quick .sbo-card.sbo-home {
+		padding-bottom: calc(24px + var(--sbo-foot));
+	}
+	body.sbo-loginscr #sbo-quick .sbo-home .sbo-links {
+		position: fixed;
+		left: 0; right: 0; bottom: 0;
+		z-index: 3;
+		flex-wrap: nowrap;
+		gap: 0;
+		padding: 2px 4px env(safe-area-inset-bottom);
+		border-radius: 0;
+		background: rgba(255, 255, 255, 0.94);
+		box-shadow: 0 -2px 8px rgba(30, 70, 40, 0.18);
+		box-sizing: border-box;
+	}
+	body.sbo-loginscr #sbo-quick .sbo-home .sbo-links .sbo-link {
+		flex: 1 1 0;
+		min-width: 0;
+		flex-direction: column;
+		gap: 1px;
+		min-height: 52px;
+		padding: 4px 2px;
+		font-size: 10px;
+		line-height: 1.2;
+		overflow-wrap: anywhere;
+	}
+	body.sbo-loginscr #sbo-quick .sbo-home .sbo-links .sbo-ic2 {
+		font-size: 17px;
+	}
+	/* ログイン前ホームの一番下（お知らせの下・固定フッターの上）の小さな文字リンク。固定フッターぶんの余白は card の padding-bottom */
+	.sbo-minilinks {
+		display: none;
+	}
+	body.sbo-loginscr #sbo-quick .sbo-minilinks {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: center;
+		align-items: center;
+		gap: 2px 12px;
+		padding: 8px 10px;
+		border-radius: 12px;
+		background: rgba(255, 255, 255, 0.7);
+		text-align: center;
+		font-size: 12px;
+		line-height: 1.4;
+		color: #3b5a48;
+	}
+	body.sbo-loginscr #sbo-quick .sbo-minilinks a,
+	body.sbo-loginscr #sbo-quick .sbo-minilinks button {
+		display: inline-block;
+		margin: 0;
+		padding: 4px 2px;
+		border: 0;
+		background: none;
+		font: inherit;
+		color: #2a6b49;
+		text-decoration: underline;
+		cursor: pointer;
+	}
+	/* PC・横長（幅 900px 以上・高さ 560px 以上・横長）：スマホ縦のレイアウトをそのまま、幅 W の列にして画面中央に置く。
+	   左右は絵（loginbg-wide.webp 2240x1280 = 7:4）で埋める。絵の中央 512/1792 がスマホ絵と同じ内容の列なので、
+	   絵の表示幅を W×3.5（高さ W×2）にして上端・水平中央に敷けば、中央の列がスマホ絵（幅 W・高さ 2W）にぴったり重なる。
+	   絵より下・さらに左右の余りは --bg-end。絵が画面より縦長なら、スマホと同じく縦スクロール（local）。 */
+	@media (min-width: 900px) and (min-height: 560px) and (min-aspect-ratio: 5/4) {
+		body.sbo-loginscr #sbo-quick.sbo-show {
+			--col-w: clamp(390px, 50dvh, 540px);
+			--bg-w: var(--col-w);
+			/* 列の外側はゲーム画面と同じ暗い色（--bg）で隠す（フェードせずすぱっと切る）（一番上のグラデーション。列の端の少し外から） */
+			background:
+				linear-gradient(90deg,
+					var(--bg) calc(50% - var(--col-w) / 2),
+					rgba(29, 31, 36, 0) calc(50% - var(--col-w) / 2),
+					rgba(29, 31, 36, 0) calc(50% + var(--col-w) / 2),
+					var(--bg) calc(50% + var(--col-w) / 2)) 0 0 / 100% 100% no-repeat scroll,
+				url(/login/loginbg-wide.webp?v=@@SBO_BUILD_COMMIT@@) top center / calc(var(--col-w) * 3.5) auto no-repeat local,
+				var(--bg-end);
+		}
+		/* 中身は幅 W の列（中央寄せ）に収める */
+		body.sbo-loginscr #sbo-quick .sbo-card.sbo-home {
+			width: var(--col-w);
+			max-width: var(--col-w);
+		}
+		body.sbo-loginscr #sbo-quick #sbo-quick-id {
+			width: min(320px, calc(var(--col-w) - 32px));
+		}
+		/* 固定フッターも列幅 W で中央に */
+		body.sbo-loginscr #sbo-quick .sbo-home .sbo-links {
+			left: 50%; right: auto;
+			width: var(--col-w);
+			transform: translateX(-50%);
+		}
+	}
+	.sbo-col-acc,
+	.sbo-col-play {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+	/* ID・パスワードでログインするカード（ゲーム内の入力窓の代わり） */
+	#sbo-quick-id label {
+		display: block;
+		text-align: left;
+		margin-top: 10px;
+		font-size: 12px;
+		color: var(--sub);
+	}
+	#sbo-quick-id input {
+		display: block;
+		width: 100%;
+		box-sizing: border-box;
+		margin-top: 4px;
+		padding: 8px 10px;
+		font-size: 16px;	/* 16px 未満だと iPhone が入力時に拡大する */
+		border-radius: 8px;
+		border: 1px solid var(--border);
+		background: var(--bg, #0e1116);
+		color: var(--fg);
+	}
+	#sbo-quick-id input:focus {
+		outline: 2px solid var(--accent);
+		outline-offset: 1px;
+	}
+	#sbo-id-msg {
+		min-height: 1.4em;
+		margin: 8px 0 0;
+		font-size: 12px;
+		color: #ff8a8a;
 	}
 	.sbo-quick-note {
 		margin: 8px 0 4px;
@@ -1293,21 +1797,24 @@
 	a.sbo-link {
 		display: inline-block;
 	}
-	#sbo-forgot, #sbo-quick-return {
+	#sbo-forgot {
 		display: none;
 		font-size: 13px;
 	}
-	#sbo-forgot.sbo-show, #sbo-quick-return.sbo-show {
+	#sbo-forgot.sbo-show {
 		display: block;
 	}
 	/* 覚えているアカウントの一覧（多い時は中だけスクロール） */
 	#sbo-quick-list {
-		max-height: 220px;
+		max-height: 168px;
 		overflow-y: auto;
 		/* 中だけスクロールする箱は外にはみ出す枠を切ってしまうので、
 		   キーボードで選んだ時の枠（3px＋すき間2px）が見える分だけ内側に余白を取り、外へ広げて見た目を合わせる */
 		padding: 6px;
 		margin: -6px;
+	}
+	#sbo-quick-main:empty {
+		display: none;
 	}
 	.sbo-acc-row {
 		display: flex;
@@ -1347,8 +1854,22 @@
 		outline: 3px solid #fff;
 		outline-offset: 2px;
 	}
+	/* 明るいホーム画面では、白い枠だと見えないので濃い青の枠にする */
+	#sbo-quick .sbo-home .sbo-btn:focus-visible,
+	#sbo-quick .sbo-home .sbo-link:focus-visible,
+	#sbo-quick .sbo-home .sbo-acc-gear:focus-visible,
+	body.sbo-padnav #sbo-quick .sbo-home .sbo-btn:focus,
+	body.sbo-padnav #sbo-quick .sbo-home .sbo-link:focus,
+	body.sbo-padnav #sbo-quick .sbo-home .sbo-acc-gear:focus {
+		outline: 3px solid #0b57d0;
+		outline-offset: 2px;
+		box-shadow: 0 0 0 5px #fff;
+	}
 	#sbo-quick-back.sbo-multi #sbo-quick-settings,
 	#sbo-quick-back:not(.sbo-multi) .sbo-acc-gear {
+		display: none;
+	}
+	#sbo-quick-back.sbo-multi .sbo-mbtn#sbo-quick-settings {
 		display: none;
 	}
 	#sbo-recover {
@@ -2051,6 +2572,16 @@
 	<symbol id="sbo-ic-chat" viewBox="0 0 24 24"><path d="M5 4.5h14a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2h-8l-4.5 3.5V17H5a2 2 0 0 1-2-2V6.5a2 2 0 0 1 2-2z"/></symbol>
 	<symbol id="sbo-ic-gamepad" viewBox="0 0 24 24"><path d="M7 7h10a4.5 4.5 0 0 1 4.4 5.4l-.8 4A2.6 2.6 0 0 1 16 17.6l-1-1.6H9l-1 1.6A2.6 2.6 0 0 1 3.4 16.4l-.8-4A4.5 4.5 0 0 1 7 7zM8 10v4M6 12h4M16 11v.5M18 13v.5"/></symbol>
 	<symbol id="sbo-ic-smile" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 14a4.2 4.2 0 0 0 7 0M9.3 9.5v.5M14.7 9.5v.5"/></symbol>
+	<symbol id="sbo-ic-book" viewBox="0 0 24 24"><path d="M12 6.5C10.5 5 8 4.5 4 4.5v14c4 0 6.5.5 8 2 1.5-1.5 4-2 8-2v-14c-4 0-6.5.5-8 2zM12 6.5v14"/></symbol>
+	<symbol id="sbo-ic-mail" viewBox="0 0 24 24"><rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="M3.5 7.5l8.5 6 8.5-6"/></symbol>
+	<symbol id="sbo-ic-palette" viewBox="0 0 24 24"><path d="M12 3.5a8.5 8.5 0 1 0 0 17c1.4 0 2-1 1.5-2.2-.5-1.2.2-2.3 1.5-2.3H17a3.5 3.5 0 0 0 3.5-3.5C20.5 7 16.7 3.5 12 3.5zM7.5 11.5v.5M10 7.8v.5M14.5 7.8v.5"/></symbol>
+	<symbol id="sbo-ic-star" viewBox="0 0 24 24"><path d="M12 3.5l2.7 5.5 6 .9-4.4 4.2 1 6L12 17.2 6.7 20.1l1-6L3.3 9.9l6-.9z"/></symbol>
+	<symbol id="sbo-ic-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+	<symbol id="sbo-ic-key" viewBox="0 0 24 24"><circle cx="8" cy="15.5" r="4"/><path d="M10.8 12.7L20 3.5M16.5 7l3 3"/></symbol>
+	<symbol id="sbo-ic-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.8"/><circle cx="12" cy="12" r="5.7"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></symbol>
+	<symbol id="sbo-ic-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l.8 12.5h9.4l.8-12.5M10 11v5M14 11v5"/></symbol>
+	<symbol id="sbo-ic-megaphone" viewBox="0 0 24 24"><path d="M4 10v4h3l8 4.5v-13L7 10zM18 9.5a3.5 3.5 0 0 1 0 5M7 14l1.2 5h2.3l-1-3.5"/></symbol>
+	<symbol id="sbo-ic-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.6a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2-2.4 3.5M12 16.8v.5"/></symbol>
 </svg>
 <header class="site-header">
 	<h1>スクラップブックオンライン</h1>
@@ -2071,35 +2602,97 @@
 		<!-- ログイン画面のボタン。ID・パスワードの入力欄は「ID・パスワードでログイン」を押した時だけ見せる -->
 		<div id="sbo-quick" data-sbo-ui="1">
 			<!-- この端末で前にログインしていた -->
-			<div class="sbo-card" id="sbo-quick-back">
-				<h2>おかえりなさい！</h2>
-				<!-- この端末で覚えているアカウント（新しく使った順。2 つ以上ある時は右の ⚙ で設定） -->
-				<div id="sbo-quick-list"></div>
-				<button type="button" class="sbo-btn sbo-btn-sub" data-quick-other="1">別のアカウントを追加（ID・パスワード）</button>
-				<button type="button" class="sbo-link" id="sbo-quick-add-code">復旧キーで追加</button>
-				<button type="button" class="sbo-link" id="sbo-quick-settings">アカウント設定</button>
-				<button type="button" class="sbo-link" id="sbo-gp-link2">ゲームパッド設定</button>
-				<a class="sbo-link" href="https://github.com/uraraworks/SBO2003/wiki" target="_blank" rel="noopener">取扱説明書（遊び方ガイド）</a>
-				<a class="sbo-link" href="/feedback" target="_blank" rel="noopener">ご意見箱（要望・不具合はこちら）</a>
-				<a class="sbo-link" href="/kobo" target="_blank" rel="noopener">ドット絵工房（みんなでドット絵を描く）</a>
-				<a class="sbo-link" href="/changes" target="_blank" rel="noopener">更新履歴（何が変わったか）<span class="sbo-new-mark" hidden>NEW</span></a>
-				<a class="sbo-link" href="/credits" target="_blank" rel="noopener">クレジット（音楽・効果音など）</a>
-				<button type="button" class="sbo-link" id="sbo-quick-forget">この端末の記憶を消す</button>
+			<div class="sbo-card sbo-home" id="sbo-quick-back">
+				<div class="sbo-hero"><h1 class="sbo-sr">スクラップブックオンライン</h1></div>
+				<div class="sbo-col-play">
+					<!-- いちばん新しく使ったアカウント（大きな金色ボタン） -->
+					<div id="sbo-quick-main"></div>
+					<p class="sbo-note">おかえりなさい！ 前回のアカウントで、すぐに冒険を再開できます。</p>
+				</div>
+				<div class="sbo-col-acc">
+					<!-- この端末で覚えているほかのアカウント（新しく使った順。2 つ以上ある時は右の ⚙ で設定） -->
+					<div class="sbo-sec" id="sbo-quick-accs">
+						<h2 class="sbo-sec-h">記憶しているアカウント</h2>
+						<div id="sbo-quick-list"></div>
+					</div>
+					<div class="sbo-sec">
+						<h2 class="sbo-sec-h">アカウント管理</h2>
+						<div class="sbo-manage">
+							<button type="button" class="sbo-link sbo-mbtn" data-quick-other="1"><svg class="sbo-ic sbo-ic2" aria-hidden="true"><use href="#sbo-ic-plus"/></svg>別のアカウントを追加（ID・パスワード）</button>
+							<button type="button" class="sbo-link sbo-mbtn" id="sbo-quick-add-code"><svg class="sbo-ic sbo-ic2" aria-hidden="true"><use href="#sbo-ic-key"/></svg>復旧キーで追加</button>
+							<button type="button" class="sbo-link sbo-mbtn" id="sbo-quick-settings"><svg class="sbo-ic sbo-ic2" aria-hidden="true"><use href="#sbo-ic-gear"/></svg>アカウント設定</button>
+							<button type="button" class="sbo-link sbo-mbtn sbo-danger" id="sbo-quick-forget"><svg class="sbo-ic sbo-ic2" aria-hidden="true"><use href="#sbo-ic-trash"/></svg>この端末の記憶を消す</button>
+						</div>
+					</div>
+				</div>
+				<div class="sbo-sec sbo-news">
+					<div class="sbo-news-h"><h2 class="sbo-sec-h"><svg class="sbo-ic sbo-ic2" aria-hidden="true"><use href="#sbo-ic-megaphone"/></svg>お知らせ</h2><a class="sbo-link sbo-news-more" href="/changes" target="_blank" rel="noopener">もっと見る<span class="sbo-new-mark" hidden>NEW</span></a></div>
+					<div class="sbo-news-list"></div>
+				</div>
+				<div class="sbo-minilinks">
+					<a href="/kobo" target="_blank" rel="noopener">ドット絵工房</a>
+					<button type="button" id="sbo-gp-link2">ゲームパッド設定</button>
+					<a href="/status" target="_blank" rel="noopener" class="sbo-site-status-mini">サーバー状況</a>
+					<a href="https://github.com/uraraworks/SBO2003" target="_blank" rel="noopener">GitHubで見る</a>
+					<a href="https://www.urara-works.jp/" target="_blank" rel="noopener">© URARA-works</a>
+					<span class="sbo-minibuild" title="反映したコミット"><a href="https://github.com/uraraworks/SBO2003/commit/@@SBO_BUILD_COMMIT@@" target="_blank" rel="noopener">@@SBO_BUILD_COMMIT@@</a></span>
+				</div>
+				<div class="sbo-links">
+					<a class="sbo-link" href="https://github.com/uraraworks/SBO2003/wiki" target="_blank" rel="noopener"><svg class="sbo-ic sbo-ic2" aria-hidden="true"><use href="#sbo-ic-book"/></svg>取扱説明書</a>
+					<a class="sbo-link" href="/about" target="_blank" rel="noopener"><svg class="sbo-ic sbo-ic2" aria-hidden="true"><use href="#sbo-ic-help"/></svg>どんなゲーム？</a>
+					<a class="sbo-link" href="/feedback" target="_blank" rel="noopener"><svg class="sbo-ic sbo-ic2" aria-hidden="true"><use href="#sbo-ic-mail"/></svg>ご意見箱</a>
+					<a class="sbo-link" href="/credits" target="_blank" rel="noopener"><svg class="sbo-ic sbo-ic2" aria-hidden="true"><use href="#sbo-ic-star"/></svg>クレジット</a>
+				</div>
 			</div>
+			<!-- ID・パスワードでログイン（前に遊んでいた方・別のアカウントを追加） -->
+			<form class="sbo-card" id="sbo-quick-id" autocomplete="on">
+				<h2>ID・パスワードでログイン</h2>
+				<label for="sbo-id-acc">アカウント名（半角英数字）</label>
+				<input type="text" id="sbo-id-acc" name="username" maxlength="13" autocomplete="username"
+					autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="next">
+				<label for="sbo-id-pas">パスワード</label>
+				<input type="password" id="sbo-id-pas" name="password" maxlength="13" autocomplete="current-password"
+					autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go">
+				<p id="sbo-id-msg" role="alert"></p>
+				<button type="submit" class="sbo-btn" id="sbo-id-go">ログインする</button>
+				<button type="button" class="sbo-btn sbo-btn-sub" id="sbo-quick-return">← ボタンでログインに戻る</button>
+				<button type="button" class="sbo-link" id="sbo-id-forgot">昔のアカウントを忘れてしまった方はこちら</button>
+			</form>
 			<!-- はじめての端末 -->
-			<div class="sbo-card" id="sbo-quick-new">
-				<h2>ようこそ！</h2>
-				<button type="button" class="sbo-btn" id="sbo-quick-newstart">すぐにはじめる</button>
-				<p class="sbo-quick-note">アカウントは自動で作ります。次からはこの端末でボタンを押すだけで入れます。</p>
-				<button type="button" class="sbo-btn sbo-btn-sub" data-quick-other="1">ID・パスワードでログイン（前に遊んでいた方）</button>
-				<a class="sbo-link" href="https://github.com/uraraworks/SBO2003/wiki" target="_blank" rel="noopener">取扱説明書（遊び方ガイド）</a>
-				<a class="sbo-link" href="/about" target="_blank" rel="noopener">どんなゲーム？（紹介ページ）</a>
-				<button type="button" class="sbo-link" id="sbo-quick-redeem">復旧キーをお持ちの方はこちら</button>
-				<button type="button" class="sbo-link" data-quick-recover="1">昔のアカウントを忘れてしまった方はこちら</button>
+			<div class="sbo-card sbo-home" id="sbo-quick-new">
+				<div class="sbo-hero"><h1 class="sbo-sr">スクラップブックオンライン</h1></div>
+				<div class="sbo-col-play">
+					<button type="button" class="sbo-btn sbo-play" id="sbo-quick-newstart">すぐにはじめる</button>
+					<p class="sbo-note">アカウントは自動で作ります。<br>次からはこの端末でボタンを押すだけで入れます。</p>
+				</div>
+				<div class="sbo-col-acc">
+					<div class="sbo-sec">
+						<button type="button" class="sbo-btn sbo-btn-sub" data-quick-other="1">ID・パスワードでログイン<br><small>前に遊んでいた方</small></button>
+						<button type="button" class="sbo-btn sbo-btn-sub" id="sbo-quick-redeem">復旧キーをお持ちの方</button>
+						<button type="button" class="sbo-btn sbo-btn-sub" data-quick-recover="1">昔のアカウントを忘れてしまった方</button>
+					</div>
+				</div>
+				<div class="sbo-sec sbo-news">
+					<div class="sbo-news-h"><h2 class="sbo-sec-h"><svg class="sbo-ic sbo-ic2" aria-hidden="true"><use href="#sbo-ic-megaphone"/></svg>お知らせ</h2><a class="sbo-link sbo-news-more" href="/changes" target="_blank" rel="noopener">もっと見る<span class="sbo-new-mark" hidden>NEW</span></a></div>
+					<div class="sbo-news-list"></div>
+				</div>
+				<div class="sbo-minilinks">
+					<a href="/kobo" target="_blank" rel="noopener">ドット絵工房</a>
+					<button type="button" id="sbo-gp-link3">ゲームパッド設定</button>
+					<a href="/status" target="_blank" rel="noopener" class="sbo-site-status-mini">サーバー状況</a>
+					<a href="https://github.com/uraraworks/SBO2003" target="_blank" rel="noopener">GitHubで見る</a>
+					<a href="https://www.urara-works.jp/" target="_blank" rel="noopener">© URARA-works</a>
+					<span class="sbo-minibuild" title="反映したコミット"><a href="https://github.com/uraraworks/SBO2003/commit/@@SBO_BUILD_COMMIT@@" target="_blank" rel="noopener">@@SBO_BUILD_COMMIT@@</a></span>
+				</div>
+				<div class="sbo-links">
+					<a class="sbo-link" href="https://github.com/uraraworks/SBO2003/wiki" target="_blank" rel="noopener"><svg class="sbo-ic sbo-ic2" aria-hidden="true"><use href="#sbo-ic-book"/></svg>取扱説明書</a>
+					<a class="sbo-link" href="/about" target="_blank" rel="noopener"><svg class="sbo-ic sbo-ic2" aria-hidden="true"><use href="#sbo-ic-help"/></svg>どんなゲーム？</a>
+					<a class="sbo-link" href="/feedback" target="_blank" rel="noopener"><svg class="sbo-ic sbo-ic2" aria-hidden="true"><use href="#sbo-ic-mail"/></svg>ご意見箱</a>
+					<a class="sbo-link" href="/credits" target="_blank" rel="noopener"><svg class="sbo-ic sbo-ic2" aria-hidden="true"><use href="#sbo-ic-star"/></svg>クレジット</a>
+				</div>
 			</div>
 		</div>
 	</div>
-	<button type="button" class="sbo-link" id="sbo-quick-return" data-sbo-ui="1">← ボタンでログインに戻る</button>
 	<button type="button" class="sbo-link" id="sbo-forgot" data-sbo-ui="1">昔のアカウントを忘れてしまった方はこちら</button>
 	<!-- 仮想パッド：タッチ操作の端末だけ出す（?pad=1 で PC でも出せる） -->
 	<div id="sbo-pad">
@@ -2161,18 +2754,22 @@
 <script>
 	/* フッターの「サーバー状況」にオンライン数を添える（/health は server/node/sbosvr_status.js） */
 	(function () {
-		var link = document.getElementById('sbo-site-status');
-		if (!link || location.protocol.indexOf('http') !== 0) {
+		var links = [document.getElementById('sbo-site-status')].concat(
+			Array.prototype.slice.call(document.querySelectorAll('.sbo-site-status-mini')));
+		if (!links[0] || location.protocol.indexOf('http') !== 0) {
 			return;
+		}
+		function setText(t) {
+			links.forEach(function (a) { a.textContent = t; });
 		}
 		function update() {
 			fetch('/health', { cache: 'no-store' }).then(function (res) {
 				return res.ok ? res.json() : null;
 			}).then(function (data) {
-				link.textContent = (data && typeof data.onlinePlayers === 'number') ?
-					'サーバー状況（オンライン ' + data.onlinePlayers + ' 人）' : 'サーバー状況';
+				setText((data && typeof data.onlinePlayers === 'number') ?
+					'サーバー状況（オンライン ' + data.onlinePlayers + ' 人）' : 'サーバー状況');
 			}).catch(function () {
-				link.textContent = 'サーバー状況';
+				setText('サーバー状況');
 			});
 		}
 		update();
@@ -2197,11 +2794,51 @@
 			Array.prototype.forEach.call(document.querySelectorAll('.sbo-new-mark'), function (e) {
 				e.hidden = !bNew;
 			});
+			/* ログイン画面のお知らせは、項目ごとに見た日付より新しいものへ NEW */
+			Array.prototype.forEach.call(document.querySelectorAll('.sbo-news-item .sbo-new-mark'), function (e) {
+				e.hidden = !(e.parentNode.dataset.date > seen());
+			});
+		}
+		/* ログイン画面のお知らせ欄（新しい方から 3 件。取れない・0 件なら欄ごと隠したまま） */
+		function showNews(items) {
+			var a = (items || []).slice(0, 3);
+			Array.prototype.forEach.call(document.querySelectorAll('.sbo-news'), function (box) {
+				var list = box.querySelector('.sbo-news-list');
+				list.textContent = '';
+				a.forEach(function (it) {
+					var row = document.createElement('div');
+					row.className = 'sbo-news-item';
+					row.dataset.date = it.date || '';
+					var head = document.createElement('span');
+					var kind = document.createElement('span');
+					kind.className = 'sbo-kind' + (it.kind === '新機能' ? ' k-new' : it.kind === '修正' ? ' k-fix' : '');
+					kind.textContent = it.kind || '';
+					head.appendChild(kind);
+					var d = document.createElement('span');
+					d.className = 'sbo-news-date';
+					d.textContent = String(it.date || '').replace(/-/g, '/');
+					head.appendChild(d);
+					var mk = document.createElement('span');
+					mk.className = 'sbo-new-mark';
+					mk.textContent = 'NEW';
+					mk.hidden = true;
+					row.appendChild(head);
+					row.appendChild(mk);
+					var body = document.createElement('div');
+					body.className = 'sbo-news-body';
+					body.textContent = it.text || '';
+					body.title = it.text || '';
+					row.appendChild(body);
+					list.appendChild(row);
+				});
+				box.classList.toggle('sbo-has', a.length > 0);
+			});
 		}
 		fetch('/api/changes', { cache: 'no-store' }).then(function (res) {
 			return res.ok ? res.json() : null;
 		}).then(function (data) {
 			strLatest = (data && data.latest) || '';
+			showNews(data && data.items);
 			mark();
 		}).catch(function () { /* 出せなくても困らない */ });
 		/* 別のタブで更新履歴を見たら消す */
@@ -3096,7 +3733,7 @@
 		openBtn.addEventListener('click', openSet);
 		/* 入口：PC はフッター、スマホはゲーム画面右上のスクショ・録画の隣のボタンとログイン前の「おかえりなさい」の画面
 		   （スマホはフッターが出ないため）。つながっている間は右上の小さなボタンからも開ける */
-		['sbo-gp-link', 'sbo-gp-link2', 'sbo-gp-open'].forEach(function (id) {
+		['sbo-gp-link', 'sbo-gp-link2', 'sbo-gp-link3', 'sbo-gp-open'].forEach(function (id) {
 			var link = document.getElementById(id);
 			if (link) {
 				link.addEventListener('click', function (ev) {
@@ -5783,6 +6420,7 @@
 	var MAX_ACCOUNTS = 10;		/* 1 つの端末で覚えておくアカウントの数 */
 	var quick = document.getElementById('sbo-quick');
 	var quickList = document.getElementById('sbo-quick-list');
+	var quickMain = document.getElementById('sbo-quick-main');
 	var quickBack = document.getElementById('sbo-quick-back');
 	var quickReturn = document.getElementById('sbo-quick-return');
 	var forgot = document.getElementById('sbo-forgot');
@@ -5954,9 +6592,11 @@
 		}
 		strListSig = sig;
 		quickList.textContent = '';
-		list.forEach(function (e) {
+		quickMain.textContent = '';
+		list.forEach(function (e, idx) {
 			var row = document.createElement('div');
-			row.className = 'sbo-acc-row';
+			/* いちばん新しく使ったアカウントは大きな金色ボタン、残りは下の一覧 */
+			row.className = 'sbo-acc-row' + (idx === 0 ? ' sbo-main' : '');
 			var btn = document.createElement('button');
 			btn.type = 'button';
 			btn.className = 'sbo-btn';
@@ -5965,30 +6605,62 @@
 			var gear = document.createElement('button');
 			gear.type = 'button';
 			gear.className = 'sbo-acc-gear';
-			gear.textContent = '⚙';
+			gear.innerHTML = '<svg class="sbo-ic" aria-hidden="true"><use href="#sbo-ic-gear"/></svg>';
 			gear.title = '「' + entryName(e) + '」の設定';
 			gear.setAttribute('aria-label', gear.title);
 			gear.addEventListener('click', function () { openSettings(e.t); });
 			row.appendChild(btn);
 			row.appendChild(gear);
-			quickList.appendChild(row);
+			(idx === 0 ? quickMain : quickList).appendChild(row);
 		});
 		quickBack.classList.toggle('sbo-multi', list.length > 1);
 	}
 
 	/* ログイン画面にいる間だけボタンを出す */
 	var bQuickShown = false;
+	var tmFade = 0;
+	function fadingQuick() {
+		return quick.classList.contains('sbo-fadeout');
+	}
+	function endQuickFade() {
+		clearTimeout(tmFade);
+		tmFade = 0;
+		if (!fadingQuick()) {
+			return;
+		}
+		quick.classList.remove('sbo-fadeout');
+		quick.classList.remove('sbo-show');
+		document.body.classList.toggle('sbo-loginscr', loginState() === 1);
+	}
+	quick.addEventListener('transitionend', function (ev) {
+		if (ev.target === quick && ev.propertyName === 'opacity') {
+			endQuickFade();
+		}
+	});
 	setInterval(function () {
 		var state = loginState();
 		var list = loadList();
 		var bHave = list.length > 0;
-		var bShow = state === 1 && !bDismissed && !recover.classList.contains('sbo-show');
+		var bShow = state === 1 && !recover.classList.contains('sbo-show');
+		if (bShow && fadingQuick()) {
+			/* フェード中にログインが失敗して戻ってきた：中断して即、通常表示に */
+			clearTimeout(tmFade);
+			tmFade = 0;
+			quick.classList.remove('sbo-fadeout');
+		}
+		if (!bShow && bQuickShown && !fadingQuick() &&
+			!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+			quick.classList.add('sbo-fadeout');
+			tmFade = setTimeout(endQuickFade, 450);
+		}
+		var bFading = fadingQuick();
 		quick.classList.toggle('sbo-back', bHave);
 		quick.classList.toggle('sbo-new', !bHave);
+		quick.classList.toggle('sbo-id', bDismissed);
 		if (bShow && bHave) {
 			renderList(list);
 		}
-		quick.classList.toggle('sbo-show', bShow);
+		quick.classList.toggle('sbo-show', bShow || bFading);
 		if (bShow && !bQuickShown) {
 			tmQuickShow = Date.now();
 		}
@@ -6004,9 +6676,9 @@
 			focusCanvas();
 		}
 		forgot.classList.toggle('sbo-show', state === 1 && !bShow);
-		/* ID・パスワードの入力中は、ボタンの画面へ戻れるようにする（はじめての端末なら「ようこそ」へ） */
-		quickReturn.classList.toggle('sbo-show', state === 1 && bDismissed &&
-			!recover.classList.contains('sbo-show'));
+		/* ログインするまで（接続を始めるまで）は、スマホの仮想パッドなど下の部品を隠して画面いっぱいにする
+		   （フェード中は、フェードが終わるまで保つ） */
+		document.body.classList.toggle('sbo-loginscr', state === 1 || bFading);
 	}, 250);
 
 	function focusCanvas() {
@@ -6028,7 +6700,8 @@
 			});
 	}
 	function shownQuickCard() {
-		return quick.querySelector('#sbo-quick.sbo-back #sbo-quick-back, #sbo-quick.sbo-new #sbo-quick-new');
+		return quick.querySelector('#sbo-quick.sbo-id #sbo-quick-id, ' +
+			'#sbo-quick.sbo-back:not(.sbo-id) #sbo-quick-back, #sbo-quick.sbo-new:not(.sbo-id) #sbo-quick-new');
 	}
 	function focusQuickIfLost() {
 		var card = shownQuickCard();
@@ -6187,14 +6860,9 @@
 			ev.stopPropagation();
 		}
 	}, true);
-	/* ID・パスワードの入力中に Esc を押したら、ボタンの画面へ戻る
-	   （入力欄のキーはゲームに渡すので、先回りして受け取る） */
+	/* ID・パスワードの入力中に Esc を押したら、ボタンの画面へ戻る */
 	document.addEventListener('keydown', function (ev) {
-		if (ev.key !== 'Escape' || ev.isComposing || !quickReturn.classList.contains('sbo-show')) {
-			return;
-		}
-		var t = ev.target;
-		if (!(t && t.dataset && t.dataset.w32Id && t.closest && t.closest('#sbo-overlay'))) {
+		if (ev.key !== 'Escape' || ev.isComposing || !bDismissed || !quick.classList.contains('sbo-show')) {
 			return;
 		}
 		ev.preventDefault();
@@ -6203,15 +6871,51 @@
 	}, true);
 
 	/* 「ID・パスワードでログイン」を押したら、アカウント名（入っていればパスワード）の欄へ */
+	var idAcc = document.getElementById('sbo-id-acc');
+	var idPas = document.getElementById('sbo-id-pas');
+	var idMsg = document.getElementById('sbo-id-msg');
 	function focusLoginInput() {
-		var a = Array.prototype.filter.call(document.querySelectorAll('#sbo-overlay input[data-w32-id]'),
-			function (el) { return el.style.display !== 'none' && !el.disabled; });
-		if (a.length === 0) {
+		(idAcc.value ? idPas : idAcc).focus({ preventScroll: true });
+	}
+	/* 全角の英数字・記号（日本語入力のまま打った時など）は半角にそろえる */
+	function toHalf(str) {
+		return str.replace(/[\uFF01-\uFF5E]/g, function (c) {
+			return String.fromCharCode(c.charCodeAt(0) - 0xFEE0);
+		}).replace(/\u3000/g, ' ');
+	}
+	document.getElementById('sbo-quick-id').addEventListener('submit', function (ev) {
+		ev.preventDefault();
+		var M = window.Module;
+		if (!M || !M['_SboWebPasLogin']) {
 			return;
 		}
-		var el = (a.length > 1 && a[0].value) ? a[1] : a[0];
-		el.focus();
-	}
+		/* 出たばかりの Enter の押しっぱなしでは送らない */
+		if (Date.now() - tmQuickShow < QUICK_KEY_GUARD_MS) {
+			return;
+		}
+		var acc = toHalf(idAcc.value).replace(/^\s+|\s+$/g, '').toLowerCase();
+		var pas = toHalf(idPas.value);
+		if (!acc) {
+			idMsg.textContent = 'アカウント名を入力してください';
+			idAcc.focus();
+			return;
+		}
+		if (!/^[\x21-\x7e]+$/.test(acc) || !/^[\x20-\x7e]*$/.test(pas)) {
+			idMsg.textContent = 'アカウント名・パスワードは半角英数字で入力してください';
+			(/^[\x21-\x7e]+$/.test(acc) ? idPas : idAcc).focus();
+			return;
+		}
+		idMsg.textContent = '';
+		var pA = M['stringToNewUTF8'](acc), pP = M['stringToNewUTF8'](pas);
+		M['_SboWebPasLogin'](pA, pP);
+		M['_free'](pA);
+		M['_free'](pP);
+		/* パスワードは残さない（失敗したら入れ直してもらう） */
+		idPas.value = '';
+	});
+	document.getElementById('sbo-id-forgot').addEventListener('click', function () {
+		forgot.click();
+	});
 
 	function tokenLogin(token) {
 		var M = window.Module;
@@ -6227,7 +6931,8 @@
 	Array.prototype.forEach.call(document.querySelectorAll('[data-quick-other]'), function (el) {
 		el.addEventListener('click', function () {
 			bDismissed = true;
-			quick.classList.remove('sbo-show');
+			idMsg.textContent = '';
+			quick.classList.add('sbo-id');
 			setTimeout(focusLoginInput, 0);
 		});
 	});

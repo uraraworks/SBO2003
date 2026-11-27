@@ -23,6 +23,11 @@ OBJ="$OUT/obj-$MODE"
 DIST="$OUT/dist"
 GEN="$OUT/gen"
 
+# Windows（Git Bash）の時だけ python3 と長いパスを直す。Mac / Linux では何もしない
+# shellcheck disable=SC1091
+. "$ROOT/tools/sbo-env.sh"
+sbo_env_init "tools/web/build.sh" "$@"
+
 if ! command -v em++ >/dev/null 2>&1; then
 	if [ -f "$HOME/emsdk/emsdk_env.sh" ]; then
 		# shellcheck disable=SC1091
@@ -241,5 +246,9 @@ cp "$ROOT/web/credits/credits.json" "$DIST/credits.json"
 sed "s/@@SBO_BUILD_DATE@@/$BUILD_DATE/g; s/@@SBO_BUILD_COMMIT@@/$BUILD_COMMIT/g" "$ROOT/web/about/about.html" > "$DIST/about.html"
 mkdir -p "$DIST/about"
 cp "$ROOT"/web/about/img/*.png "$DIST/about/"
+
+# ブラウザ版ログイン前ホーム画面の背景（web/shell/img/*.webp。sbocli.html が /login/ から読む）
+mkdir -p "$DIST/login"
+cp "$ROOT"/web/shell/img/*.webp "$DIST/login/"
 
 echo "[build] 完了: $DIST/sbocli.html"

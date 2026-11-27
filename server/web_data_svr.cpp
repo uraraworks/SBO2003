@@ -46,6 +46,7 @@ extern BOOL SaveMagicInfo(void);
 extern BOOL SaveMagicUserInfo(void);
 extern BOOL SaveEquUserInfo(void);
 extern BOOL SaveMakerInfo(void);
+extern BOOL SaveTrialRoomInfo(void);
 extern BOOL SaveAffixInfo(void);
 extern BOOL SaveRecipeInfo(void);
 extern BOOL SaveQuestInfo(void);
@@ -461,6 +462,21 @@ static const DATAFIELD s_aFieldItemDerive[] = {
 	FLD (ITEMDERIVEINFO, wPre,			"前の付与",				FT_U16, FF_READONLY, "affix の wID（0=なし）"),
 	FLD (ITEMDERIVEINFO, wSuf,			"後ろの付与",			FT_U16, FF_READONLY, "affix の wID（0=なし）"),
 	FLD (ITEMDERIVEINFO, byUnknown,		"未鑑定",				FT_U8, FF_READONLY, "1=未鑑定（付与の効果は出ない）"),
+};
+
+/* お試し個室（試し中の新機能を遊べる部屋。入口のNPCの台詞 "@xNN" の NN がこの番号） */
+static const DATAFIELD s_aFieldTrialRoom[] = {
+	FLD (TRIALROOMINFO, byState,		"状態",					FT_U8, 0, "0=閉じている（入れない） 1=開いている"),
+	FLDS(TRIALROOMINFO, szName,			"名前",					FT_STR, 0, "例: 新しい装備の試着室"),
+	FLDS(TRIALROOMINFO, szDesc,			"入口で出す説明文",		FT_STR, FF_MULTILINE, "入口のNPCに話しかけると会話窓に出る（改行は台詞と同じ @1 に直る。@0 でページ送りも使える）。この後に「入りますか？」のはい・いいえが出る"),
+	FLD (TRIALROOMINFO, wLoanStTmp,		"貸すテンプレート",		FT_U16, 0, "stTmp の番号。中ではこのステータステンプレートの姿（持ち物・特技・強さ）になる。経験値・お金・手に入れた物は中だけで、出ると元に戻る"),
+	FLD (TRIALROOMINFO, dwMapID,		"入るマップ",			FT_U32, 0, "map の番号"),
+	FLD (TRIALROOMINFO, dwX,			"入るX",				FT_U32, 0, "個室の範囲の中の座標"),
+	FLD (TRIALROOMINFO, dwY,			"入るY",				FT_U32, 0, "個室の範囲の中の座標"),
+	FLD (TRIALROOMINFO, dwX1,			"範囲の左",				FT_U32, 0, "個室の範囲（入るマップの中の四角）。この外に出る（出口のワープに入る）と元の姿・元の場所に戻る。出口はマップのイベントで作る"),
+	FLD (TRIALROOMINFO, dwY1,			"範囲の上",				FT_U32, 0, NULL),
+	FLD (TRIALROOMINFO, dwX2,			"範囲の右",				FT_U32, 0, NULL),
+	FLD (TRIALROOMINFO, dwY2,			"範囲の下",				FT_U32, 0, NULL),
 };
 
 /* レシピ情報（作り手に頼んで、材料からアイテムを作ってもらう） */
@@ -1043,6 +1059,7 @@ enum {
 	KIND_STORY,
 	KIND_FLAGGROUP,
 	KIND_AFFIX,
+	KIND_TRIALROOM,
 	/* ここから下は読むだけ */
 	KIND_CHAR,
 	KIND_MAP,
@@ -1063,9 +1080,9 @@ static bool KindWritable(int nKind)
 	return (nKind < KIND_MAX) && (nKind != KIND_LEAVE) && (nKind != KIND_ITEMDERIVE);
 }
 
-static const char *s_apszKindName[] = { "magic", "magicUser", "equUser", "job", "stTmp", "item", "maker", "recipe", "quest", "flag", "talk", "story", "flagGroup", "affix", "char", "map", "mapParts", "efc", "comEfc", "leave", "subGame", "itemDerive" };
+static const char *s_apszKindName[] = { "magic", "magicUser", "equUser", "job", "stTmp", "item", "maker", "recipe", "quest", "flag", "talk", "story", "flagGroup", "affix", "trialRoom", "char", "map", "mapParts", "efc", "comEfc", "leave", "subGame", "itemDerive" };
 static const char *s_apszKindLabel[] = {
-	"特技（魔法）情報", "特技を使える職業", "装備できる職業", "職業情報とレベルアップ情報", "ステータステンプレート（NPC・敵のひな形）", "アイテム情報", "作り手（料理人など）", "レシピ（作り手に頼んで作ってもらう物）", "ギルドの仕事依頼", "フラグの名前表（印・数値に付ける名前）", "会話データ（フラグで台詞を出し分ける）", "思い出の本のシナリオ（クリア済みのミニシナリオをやり直す）", "フラグのグループ（印・数値の番号の帯に「メイン-サブ」の名前を付ける）", "付与（装備に付く接頭辞・接尾辞）",
+	"特技（魔法）情報", "特技を使える職業", "装備できる職業", "職業情報とレベルアップ情報", "ステータステンプレート（NPC・敵のひな形）", "アイテム情報", "作り手（料理人など）", "レシピ（作り手に頼んで作ってもらう物）", "ギルドの仕事依頼", "フラグの名前表（印・数値に付ける名前）", "会話データ（フラグで台詞を出し分ける）", "思い出の本のシナリオ（クリア済みのミニシナリオをやり直す）", "フラグのグループ（印・数値の番号の帯に「メイン-サブ」の名前を付ける）", "付与（装備に付く接頭辞・接尾辞）", "お試し個室（試し中の新機能を遊べる部屋）",
 	"キャラ情報（プレイヤー・NPC）", "マップ情報", "マップパーツ", "エフェクト情報", "吹き出し情報", "預かり所", "サブゲーム情報", "派生アイテム（付与付き・未鑑定の番号）"
 };
 static const char *s_apszKindNote[] = {
@@ -1083,6 +1100,7 @@ static const char *s_apszKindNote[] = {
 	"思い出の本（読み書き。削除なし。止めるのは byState=0）。goals（いまの目的。条件に合う最初の行の文をコマンド窓の「目的」に出す）も持つ。NPC の台詞を \"@r\" にすると語り部になり、話すと、そのキャラがクリアしたシナリオ（byState=1 で、クリアした印 wClearFlag が立っている）の一覧が wSort 順に開く。選んで確認すると、そのシナリオと、wPrevStory をたどってそれにつながる後のシナリオ全部について、印の範囲（awFlagFrom〜awFlagTo）を消し、数値（abyNum）を 0 に戻し、依頼（awQuest）のクリア済みの印を消して、最初からやり直せる（byCountNum の数値は選んだシナリオだけ +1）。awTakeItem の持ち物（大事な物欄と手持ちの装備していない分。預かり所は触らない）も全部取り上げ、awTakeChest の宝箱（0〜2047。65535=無し）は開けた記録を消して、もう一度開けられるように戻す（宝箱の見た目も閉じた絵に戻る）。それ以外の宝箱は戻さない。依頼の報酬は初回だけ（もらい済みの印は消えない）。そのキャラが戻す依頼のどれかを受けている間と、語り部から離れている時は断る。足す時のシナリオ番号（wID 1〜255）は自動。印・数値の「無し」は 65535・255。ファイルが無い時は 0 件",
 	"フラグのグループ（読み書き。削除は byState=0）。キャラのフラグの印（0〜1023）・数値（0〜127）の番号の帯（bands。1 グループ 16 本まで。互換で帯 1 は wFrom・wTo でも読み書きできる）に「メイン名」szName を付けて、「メイン-サブ」で管理するための層（例: ルシー＝印 100〜139。後から番号が飛んだ場所に続きの帯 300〜319 を足せる）。番号 n が有効なグループのどれかの帯に入る時、メイン=そのグループ・サブ=帯の順に続けて数えた番号（1 始まり。ルシー=100〜139＋300〜319 なら 100〜139 がサブ 1〜40・300〜319 がサブ 41〜60）で、「ルシー-3（103）」のように呼べる（flag の一覧にも計算した group・sub が出る。読むだけ）。見せ方・入力・絞り込みだけの層で、会話データ・依頼・NPC の見える条件・思い出の本などが覚えている番号は一切変わらない。同じ種類で有効なグループのすべての帯（同じグループの帯同士も）が重なるのは不可。足す時のグループ番号（wID 1〜255）は自動。ファイルが無い時は 0 件",
 	"装備に付く「鋭い」「の加護」などの付与表（読み書き。足す・直すだけで消せない）。位置 byPos（0=前・1=後ろ）・名前 szName・付く装備種別 wEquMask（ビット）・主の値（item の byData）への% chRate と固定加算 chAdd・魔防加算 chDFMagic・格 byRank（1〜3）・出やすさ wWeight（0 なら出ない）・売値の倍率 wGoldRate（100=そのまま）・ハズレ印 byBad。足す時の付与番号（wID。1〜）は自動で、派生アイテムがこの番号で指すので変わらない・使い回さない。敵（stTmp）の byAffixRate・byAffixRank で、ドロップした装備に付く。ファイルが無い時は 0 件（0 件なら付与は付かない）。詳しくは docs/item-affix.md",
+	"お試し個室（読み書き。実験場などで、試し中の新機能をテンプレートのキャラで遊べる部屋）。NPC の台詞を \"@xNN\"（NN は番号 2 桁、例 @x01）にすると、話しかけた時に説明文 szDesc を会話窓に出して「入りますか？」を聞き、はいなら wLoanStTmp のステータステンプレートの姿を借りて dwMapID の (dwX, dwY) へ移る。個室の範囲 dwX1,dwY1〜dwX2,dwY2（同じマップの四角）の外に出ると（出口は通常のマップのイベントで作る）元の姿・元の場所に戻る。倒れて復活を選んだ時・切断・サーバー停止でも元に戻る。経験値・お金・手に入れた物は中だけ。範囲の中から話す・傭兵と一緒・戦闘中・すでに借りている時は断る（パーティのままでも入れる。各自が受付に話して個別に入り、仲間と同じ部屋で会える）。削除は無く、止めるのは byState=0。ファイルが無い時は 0 件（SBODATA/SboDataTrialRoom.dat）",
 	"プレイヤーと NPC（敵・町の人・発生元など）の全キャラ。番号（id）はキャラのテーブル番号で再起動で変わることがある。NPC は npcId（変わらない番号）で指す。isPlayer でプレイヤーか分かる。書き換えられるのは保存される NPC だけ（プレイヤー・発生した敵は不可）。足す時は dwMapID・dwX・dwY が要る。消す時は変更に {\"deleted\": true}。アカウント名・パスワード・IP は出さない",
 	"マップの情報・イベント・店・メッセージ・アイテム配置。番号は配列の番号（dwID はマップID で、キャラの dwMapID はこちら）。events・shops・messages は配列で丸ごと置き換え。マス目のパーツは sbo_map_tiles で読み、sbo_map_tiles_set で書く。大きさの変更・マップの追加はできない",
 	"マップパーツ（マス目の parts に入る番号）の表示・当たり判定。byHitType 0 なら通れる。anime は配列で丸ごと置き換え（コマ数 byAnimeCount も変わる）。追加できる（消せない）",
@@ -1092,7 +1110,7 @@ static const char *s_apszKindNote[] = {
 	"爆弾ゲーム・迷路・ダンジョン・戦場ゲーム・すごろくの設定。detail は byType ごとに項目が違う（省いた項目は前の値のまま）。種別（byType）の変更・追加・すごろくのマス（events・parts）は管理者ウィンドウで",
 	"読むだけ。付与が付いた装備のアイテム番号の表（番号 = 16384 + id）。{元のアイテム wBase・前の付与 wPre・後ろの付与 wSuf（affix の wID。0=なし）・未鑑定 byUnknown}。同じ組み合わせは同じ番号で、ドロップや鑑定で初めて出た組み合わせが自動で足される（SBODATA/SboDataItemDerive.dat）。プレイヤーの持ち物・預かり所・取引所などはこの番号で持つ"
 };
-static const int s_anKindMax[] = { 256, 256, 256, 256, 65535, 65535, MAX_MAKER, MAX_RECIPE, MAX_QUEST - 1, MAX_FLAGNAMEINFO, MAX_TALK - 1, MAX_STORY - 1, MAX_FLAGGROUP - 1, MAX_AFFIX, 0, 0, 65535, 255, MAX_COMEFC, 0, 0, MAX_ITEMDERIVE };
+static const int s_anKindMax[] = { 256, 256, 256, 256, 65535, 65535, MAX_MAKER, MAX_RECIPE, MAX_QUEST - 1, MAX_FLAGNAMEINFO, MAX_TALK - 1, MAX_STORY - 1, MAX_FLAGGROUP - 1, MAX_AFFIX, MAX_TRIALROOM, 0, 0, 65535, 255, MAX_COMEFC, 0, 0, MAX_ITEMDERIVE };
 
 static int KindFromName(const char *pszKind)
 {
@@ -1121,6 +1139,7 @@ static int KindCount(int nKind)
 	case KIND_STORY:		return g_aStoryInfo.GetSize();
 	case KIND_FLAGGROUP:	return g_aFlagGroupInfo.GetSize();
 	case KIND_AFFIX:		return g_aAffixInfo.GetSize();
+	case KIND_TRIALROOM:	return g_aTrialRoomInfo.GetSize();
 	case KIND_ITEMDERIVE:	return g_aItemDerive.GetSize();
 	case KIND_CHAR:			return g_aCharInfo.GetSize();
 	case KIND_MAP:			return g_aMapInfo.GetSize();
@@ -2333,6 +2352,9 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataSchema(void)
 		case KIND_MAKER:
 			out += FieldSchemaJson(s_aFieldMaker, COUNTOF(s_aFieldMaker));
 			break;
+		case KIND_TRIALROOM:
+			out += FieldSchemaJson(s_aFieldTrialRoom, COUNTOF(s_aFieldTrialRoom));
+			break;
 		case KIND_RECIPE:
 			out += FieldSchemaJson(s_aFieldRecipe, COUNTOF(s_aFieldRecipe));
 			break;
@@ -2500,6 +2522,9 @@ static std::string RecordJson(int nKind, int nID)
 		break;
 	case KIND_MAKER:
 		out += FieldsJson((const BYTE *)g_aMakerInfo[nID], s_aFieldMaker, COUNTOF(s_aFieldMaker));
+		break;
+	case KIND_TRIALROOM:
+		out += FieldsJson((const BYTE *)g_aTrialRoomInfo[nID], s_aFieldTrialRoom, COUNTOF(s_aFieldTrialRoom));
 		break;
 	case KIND_RECIPE:
 		out += FieldsJson((const BYTE *)g_aRecipeInfo[nID], s_aFieldRecipe, COUNTOF(s_aFieldRecipe));
@@ -4924,6 +4949,60 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataApply(const char *pszKind,
 		}
 		break;
 
+	case KIND_TRIALROOM:
+		{
+			TRIALROOMINFO Info;
+			memset(&Info, 0, sizeof(Info));
+			if (!bAdd) {
+				Info = *g_aTrialRoomInfo[nID];
+			} else {
+				Info.byState = TRIALROOMSTATE_CLOSED;		/* 足す時に状態を省いたら閉じておく（設定が済むまで入れない） */
+			}
+			if (!CheckKnownKeys(chg, s_aFieldTrialRoom, COUNTOF(s_aFieldTrialRoom), NULL, strErr) ||
+					!ApplyFields((BYTE *)&Info, s_aFieldTrialRoom, COUNTOF(s_aFieldTrialRoom), chg, strErr, "")) {
+				goto Exit;
+			}
+			if (Info.byState > TRIALROOMSTATE_OPEN) {
+				strErr = "byState は 0（閉じている）か 1（開いている）で指定してください";
+				goto Exit;
+			}
+			if (Info.szName[0] == 0) {
+				strErr = "szName（名前）は空にできません";
+				goto Exit;
+			}
+			/* 開けるのは、行き先が全部そろっている時だけ（閉じたままなら途中の設定でもよい） */
+			if (Info.byState == TRIALROOMSTATE_OPEN) {
+				if (Info.wLoanStTmp >= g_aStTmpInfo.GetSize()) {
+					strErr = "wLoanStTmp は stTmp の番号（0〜" + JsonNum(g_aStTmpInfo.GetSize() - 1) + "）で指定してください";
+					goto Exit;
+				}
+				if (Info.dwMapID >= (DWORD)g_aMapInfo.GetSize()) {
+					strErr = "dwMapID は map の番号（0〜" + JsonNum(g_aMapInfo.GetSize() - 1) + "）で指定してください";
+					goto Exit;
+				}
+				if (Info.dwX1 > Info.dwX2 || Info.dwY1 > Info.dwY2) {
+					strErr = "個室の範囲は dwX1<=dwX2・dwY1<=dwY2 で指定してください";
+					goto Exit;
+				}
+				if (Info.dwX < Info.dwX1 || Info.dwX > Info.dwX2 || Info.dwY < Info.dwY1 || Info.dwY > Info.dwY2) {
+					strErr = "入る座標（dwX・dwY）は個室の範囲の中にしてください";
+					goto Exit;
+				}
+			}
+			strRecord = FieldsJson((const BYTE *)&Info, s_aFieldTrialRoom, COUNTOF(s_aFieldTrialRoom));
+			if (bApply) {
+				if (bAdd) {
+					PTRIALROOMINFO pNew = new TRIALROOMINFO;
+					*pNew = Info;
+					g_aTrialRoomInfo.Add(pNew);
+				} else {
+					*g_aTrialRoomInfo[nID] = Info;
+				}
+				SaveTrialRoomInfo();
+			}
+		}
+		break;
+
 	case KIND_RECIPE:
 		{
 			RECIPEINFO Info;
@@ -6187,6 +6266,33 @@ void SboDataFlagGroupApplyInfo(int nNo, const FLAGGROUPINFO *pInfo, int &nNoOut,
 	strJson += "]}";
 	const char *pszRes = SboWebDataApply("flagGroup", bAdd ? g_aFlagGroupInfo.GetSize() : nNo, strJson.c_str(), 1, "管理者ウィンドウ");
 	ApplyResultToErr(pszRes, bAdd ? g_aFlagGroupInfo.GetSize() - 1 : nNo, nNoOut, strErr);
+}
+
+/*
+ * 管理者ウィンドウからお試し個室を書き込む（フラグのグループと同じ作り）。
+ *   nNo: お試し個室の配列の番号（-1 なら足す。削除は無く、止めるのは byState=0）。
+ *   届いた TRIALROOMINFO を JSON にして SboWebDataApply を通すので、
+ *   確認（貸すテンプレート・マップ・範囲）・履歴・保存はデータAPIと同じ。
+ *   結果: strErr が空ならうまくいった（nNoOut に書き込んだ番号）
+ */
+void SboDataTrialRoomApplyInfo(int nNo, const TRIALROOMINFO *pInfo, int &nNoOut, std::string &strErr)
+{
+	TRIALROOMINFO Info;
+	bool bAdd = (nNo < 0);
+
+	nNoOut = -1;
+	strErr.clear();
+	if (!bAdd && nNo >= g_aTrialRoomInfo.GetSize()) {
+		strErr = "お試し個室の番号が範囲外です（ほかの人が変えたかもしれません。取得し直してください）";
+		return;
+	}
+	Info = *pInfo;
+	/* 文字の欄は必ず終端させる */
+	Info.szName[sizeof(Info.szName) - 1] = 0;
+	Info.szDesc[sizeof(Info.szDesc) - 1] = 0;
+	std::string strJson = "{" + FieldsJson((const BYTE *)&Info, s_aFieldTrialRoom, COUNTOF(s_aFieldTrialRoom)) + "}";
+	const char *pszRes = SboWebDataApply("trialRoom", bAdd ? g_aTrialRoomInfo.GetSize() : nNo, strJson.c_str(), 1, "管理者ウィンドウ");
+	ApplyResultToErr(pszRes, bAdd ? g_aTrialRoomInfo.GetSize() - 1 : nNo, nNoOut, strErr);
 }
 
 /*

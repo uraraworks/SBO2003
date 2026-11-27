@@ -104,6 +104,7 @@ BEGIN
         MENUITEM "フラグのグループ(&G)",        IDM_ETC_FLAGGROUP
         MENUITEM "会話データ(&T)",              IDM_ETC_TALK
         MENUITEM "思い出の本(&B)",              IDM_ETC_STORY
+        MENUITEM "お試し個室(&R)",              IDM_ETC_TRIALROOM
     END
     POPUP "編集(&Z)"
     BEGIN
@@ -1115,6 +1116,61 @@ BEGIN
     LTEXT           "例 100-139, 300-319, 500-509（「,」で区切る・16 本まで・端も含む）。サブは帯の順に続けて数える",
                     IDC_STATIC,7,164,209,16
     LTEXT           "",IDC_FG_MSG,7,182,209,16
+END
+
+IDD_TRIALROOM DIALOGEX 0, 0, 223, 167
+STYLE WS_CHILD
+EXSTYLE WS_EX_STATICEDGE
+FONT 9, "ＭＳ Ｐゴシック", 0, 0, 0x1
+BEGIN
+    PUSHBUTTON      "取得",IDC_GET,7,7,38,14
+    PUSHBUTTON      "編集",IDC_EDIT,53,7,38,14
+    PUSHBUTTON      "追加",IDC_ADD,100,7,38,14
+    LTEXT           "お試し個室一覧（入口のNPCの台詞を@xNN（NNは番号2桁）にする）：",IDC_STATIC,7,26,209,8
+    CONTROL         "List2",IDC_LIST,"SysListView32",LVS_REPORT | 
+                    LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_BORDER | 
+                    WS_TABSTOP,7,37,209,119
+END
+
+IDD_TRIALROOM_EDIT DIALOGEX 0, 0, 330, 196
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+EXSTYLE WS_EX_CONTROLPARENT
+CAPTION "お試し個室の編集"
+FONT 9, "ＭＳ Ｐゴシック", 0, 0, 0x1
+BEGIN
+    GROUPBOX        "お試し個室",IDC_STATIC,4,2,322,92
+    LTEXT           "",IDC_TR_ID,9,12,300,8
+    LTEXT           "名前",IDC_STATIC,9,27,18,8
+    EDITTEXT        IDC_TR_NAME,30,25,150,12,ES_AUTOHSCROLL
+    LTEXT           "状態",IDC_STATIC,188,27,18,8
+    COMBOBOX        IDC_TR_STATE,208,25,70,60,CBS_DROPDOWNLIST | WS_VSCROLL | 
+                    WS_TABSTOP
+    LTEXT           "入口で出す説明文（改行は台詞と同じ @1。この後に「入りますか？」が出る）",IDC_STATIC,9,42,310,8
+    EDITTEXT        IDC_TR_DESC,9,52,308,38,ES_MULTILINE | ES_AUTOVSCROLL | 
+                    ES_WANTRETURN | WS_VSCROLL
+    GROUPBOX        "行き先と範囲",IDC_STATIC,4,96,322,76
+    LTEXT           "貸すテンプレート(stTmp番号)",IDC_STATIC,9,109,115,8
+    EDITTEXT        IDC_TR_STTMP,126,107,30,12,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "入るマップ(map番号)",IDC_STATIC,172,109,90,8
+    EDITTEXT        IDC_TR_MAPID,266,107,30,12,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "入る座標",IDC_STATIC,9,127,32,8
+    LTEXT           "X",IDC_STATIC,46,127,8,8
+    EDITTEXT        IDC_TR_X,54,125,30,12,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "Y",IDC_STATIC,92,127,8,8
+    EDITTEXT        IDC_TR_Y,100,125,30,12,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "個室の範囲",IDC_STATIC,9,145,40,8
+    LTEXT           "左",IDC_STATIC,54,145,8,8
+    EDITTEXT        IDC_TR_X1,62,143,30,12,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "上",IDC_STATIC,98,145,8,8
+    EDITTEXT        IDC_TR_Y1,106,143,30,12,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "右",IDC_STATIC,142,145,8,8
+    EDITTEXT        IDC_TR_X2,150,143,30,12,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "下",IDC_STATIC,186,145,8,8
+    EDITTEXT        IDC_TR_Y2,194,143,30,12,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "範囲の外に出ると元の姿・元の場所に戻ります。開く時は行き先が必要です。",
+                    IDC_STATIC,9,159,310,12
+    DEFPUSHBUTTON   "OK",IDOK,214,178,52,14
+    PUSHBUTTON      "キャンセル",IDCANCEL,270,178,52,14
 END
 
 IDD_TALKINFO DIALOGEX 0, 0, 223, 167

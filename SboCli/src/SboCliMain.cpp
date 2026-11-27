@@ -572,6 +572,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			case MSG3SEC_ACC:
 				EnableWindow (g_hWndCon, TRUE);
 				/* 入力待ちに戻るので、隠していたログイン窓を出す */
+#ifndef __EMSCRIPTEN__	/* ブラウザ版は HTML のカードで入力するので、ゲーム内のログイン窓は出さない */
 				if (g_bLoginHide) {
 					g_bLoginHide = FALSE;
 					int nLogin = GetWindowID (g_dwMsgIDLogin);
@@ -579,6 +580,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 						g_WndInfo[nLogin]->dwTimeDrawStart = 0;
 					}
 				}
+#endif
 				break;
 			}
 			EraseWindow (g_WndInfo[nNo]);
@@ -1089,7 +1091,9 @@ void OnCommand(HWND hWnd, int nID)
 		}
 		/* ID・パスワードで入るので、端末トークンは使わない */
 		ZeroMemory (g_szWebToken, sizeof (g_szWebToken));
+#ifndef __EMSCRIPTEN__
 		g_bLoginHide = FALSE;
+#endif
 		{
 			char szAccTmp[MAX_ACCNAME];
 			ZeroMemory (szAccTmp, sizeof (szAccTmp));

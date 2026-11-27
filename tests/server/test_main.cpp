@@ -43,6 +43,7 @@
 #include "SboSvrCharInfoTimerProc.h"
 #include "SboSvrItemProc.h"
 #include "SboSvrTalk.h"
+#include "SboSvrTrialRoom.h"
 #include "SboSvrMarket.h"
 #include "SboSvrRecycle.h"
 #include "SboSvrAffix.h"
@@ -1315,6 +1316,7 @@ static void TestSpamLimit(const std::vector<int> &aLogin);
 static void TestLeaveDispose(const std::vector<int> &aLogin);
 static void TestNpcNear(const std::vector<int> &aLogin);
 static void TestChallenge(const std::vector<int> &aLogin);
+static void TestTrialRoom(const std::vector<int> &aLogin);
 static void TestStatusUp(const std::vector<int> &aLogin);
 static void TestMagicWall(const std::vector<int> &aLogin);
 static void TestSpace(const std::vector<int> &aLogin);
@@ -1854,6 +1856,8 @@ static void TestWorld(void)
 	TestNpcNear(aLogin);
 	/* Q. 討伐チャレンジ */
 	TestChallenge(aLogin);
+	/* AX. お試し個室 */
+	TestTrialRoom(aLogin);
 	/* R. 攻撃力・守備力アップ */
 	TestStatusUp(aLogin);
 	/* S. 前方・周囲の特技が壁越しに届かない */
@@ -19829,4 +19833,369 @@ static void TestJan(const std::vector<int> &aLogin)
 	}
 	g_dwTime = dwTimeBack;
 	printf("jan done seats=%d idle=%d\n", JanSeatCount(), JanIdleCount());
+}
+
+/* ========================================================================= */
+/* AX. お試し個室（入口で説明→はい→テンプレートの姿→出口・倒れる・切断で元に戻る）	 */
+/* ========================================================================= */
+extern BOOL SaveTrialRoomInfo(void);
+extern BOOL LoadTrialRoomInfo(void);
+
+/* 入口への「入りますか？」の答え（CMD_TALKANSWER） */
+static void TrialAnswerSend(PCHARINFO p, PCHARINFO pNpc, BOOL bYes)
+{
+	CMDPARA_DATA1 Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_TALKANSWER;
+	Para.byData = bYes ? 1 : 0;
+	Para.dwTblID = pNpc->dwTblID;
+	TestRecv(p, &Para, sizeof(Para));
+}
+
+/* 入口に話して、はいで入る。聞かれた（TALKMSG が出た）ら 1 を返す */
+static int TrialTalkYes(PCHARINFO p, PCHARINFO pNpc, BOOL bYes = TRUE)
+{
+	int nConn = DgTestConn(p);
+	int nTalk0 = MockCmdCount(nConn, CMD_TALKMSG);
+	DgTestTalk(p, pNpc->dwTblID);
+	int nAsked = (MockCmdCount(nConn, CMD_TALKMSG) > nTalk0) && DgTestText(p, CMD_TALKMSG, "入りますか？@y");
+	TrialAnswerSend(p, pNpc, bYes);
+	return nAsked;
+}
+
+/* 管理者ウィンドウのお試し個室（CMD_ADMINTRIALROOM）を送り、最初に返ってきた 1 件を Res に取る。nSize は送るバイト数（0=全部） */
+static BOOL AdminTrialRoomSend(PCHARINFO p, BYTE bySub, int nNo, const TRIALROOMINFO *pInfo, CMDPARA_ADMINTRIALROOM &Res, int nSize = 0)
+{
+	PCMDPARA_ADMINTRIALROOM pPara = new CMDPARA_ADMINTRIALROOM;
+	std::vector<BYTE> aCap;
+	BOOL bRet;
+
+	ZeroMemory(pPara, sizeof(*pPara));
+	pPara->byCmd = CMD_ADMINTRIALROOM;
+	pPara->byCmdSub = bySub;
+	pPara->nNo = nNo;
+	if (pInfo) pPara->Info = *pInfo;
+	SvrSendCaptureBegin();
+	TestRecv(p, pPara, nSize ? nSize : sizeof(CMDPARA_ADMINTRIALROOM));
+	bRet = SvrSendCaptureEnd(aCap);
+	delete pPara;
+	ZeroMemory(&Res, sizeof(Res));
+	if (!bRet || aCap.size() < sizeof(CMDPARA_ADMINTRIALROOM)) return FALSE;
+	memcpy(&Res, &aCap[0], sizeof(Res));
+	return TRUE;
+}
+
+static void TestTrialRoom(const std::vector<int> &aLogin)
+{
+	printf("== AX. TrialRoom ==\n");
+	if (aLogin.size() < 2) {
+		return;
+	}
+	s_pSpLogin = &aLogin;
+	PCHARINFO pA = g_aCharInfo[aLogin[0]], pB = g_aCharInfo[aLogin[1]];
+	PCHARINFO apPC[2] = { pA, pB };
+	int nMap = (int)pA->dwMapID;
+	PMAPINFO pMap = g_aMapInfo[nMap];
+	if (pMap->nCX < 10 || pMap->nCY < 10) {
+		printf("trialroom map too small\n");
+		return;
+	}
+
+	/* 本物の状態（テスト用に決める。最後に戻す） */
+	CHARINFO aBack[2];
+	for (int i = 0; i < 2; i ++) {
+		TestCharBackup(&aBack[i], apPC[i]);
+		PCHARINFO p = apPC[i];
+		p->byAdminLV = ADMINLV_USER;
+		p->dwPartyID = 0;
+		p->byLevel = 30; p->byPW = 99; p->wMaxHP = 500; p->wHP = 480; p->wMaxMana = 90; p->wMana = 80; p->dwGold = 5000; p->dwExp = 777;
+		ZeroMemory(p->waItem, sizeof(p->waItem));
+		for (int k = 0; k < MAX_EQUTYPE; k ++) p->waEqu[k] = 0xFFFF;
+	}
+	WORD wWeapon = 0;
+	for (int i = 1; i < g_aItemInfo.GetSize(); i ++) {
+		if (g_aItemInfo[i]->szName[0] && g_aItemInfo[i]->byType == ITEMTYPE_WEAPON) { wWeapon = (WORD)i; break; }
+	}
+
+	/* 貸すテンプレート */
+	int nSt = g_aStTmpInfo.GetSize();
+	{
+		PSTATUSTEMPLATEINFO t = new STATUSTEMPLATEINFO;
+		ZeroMemory(t, sizeof(*t));
+		strcpy(t->szName, "試着");
+		t->byLevel = 9; t->byPW = 21; t->byDEX = 22; t->byST = 23; t->byIT = 24; t->byLK = 25;
+		t->wMaxHP = 77; t->wMaxMana = 33; t->dwGold = 4; t->dwExp = 999;
+		t->waItem[0] = wWeapon;
+		g_aStTmpInfo.Add(t);
+	}
+
+	/* データAPI：足す（閉じたままの途中の設定も足せる）・直す・不正は断る・保存して読み直せる */
+	int nRoom = g_aTrialRoomInfo.GetSize();
+	char szJson[1024];
+	snprintf(szJson, sizeof(szJson), "{\"szName\":\"試着室\",\"szDesc\":\"ようこそ。\\n新しい装備を試せます。\",\"wLoanStTmp\":%d,\"dwMapID\":%d,\"dwX\":2,\"dwY\":2,"
+		"\"dwX1\":1,\"dwY1\":1,\"dwX2\":3,\"dwY2\":3}", nSt, nMap);
+	const char *psz = SboWebDataApply("trialRoom", nRoom, szJson, 1, "テスト");
+	printf("trialroom api add ok=%d count=%d state=%u\n", (int)(psz && strstr(psz, "\"ok\":true") != NULL), g_aTrialRoomInfo.GetSize() - nRoom, g_aTrialRoomInfo.GetSize() > nRoom ? g_aTrialRoomInfo[nRoom]->byState : 99);
+	psz = SboWebDataApply("trialRoom", nRoom, "{\"byState\":1,\"dwX\":9}", 1, "テスト");
+	printf("trialroom api bad entry ok=%d state=%u\n", (int)(psz && strstr(psz, "\"ok\":true") != NULL), g_aTrialRoomInfo[nRoom]->byState);
+	psz = SboWebDataApply("trialRoom", nRoom, "{\"byState\":1,\"wLoanStTmp\":65000}", 1, "テスト");
+	printf("trialroom api bad tmpl ok=%d\n", (int)(psz && strstr(psz, "\"ok\":true") != NULL));
+	psz = SboWebDataApply("trialRoom", nRoom, "{\"nothing\":1}", 1, "テスト");
+	printf("trialroom api unknown key ok=%d\n", (int)(psz && strstr(psz, "\"ok\":true") != NULL));
+	psz = SboWebDataApply("trialRoom", nRoom, "{\"byState\":1}", 1, "テスト");
+	printf("trialroom api open ok=%d state=%u\n", (int)(psz && strstr(psz, "\"ok\":true") != NULL), g_aTrialRoomInfo[nRoom]->byState);
+	{
+		SaveTrialRoomInfo();
+		int nKeep = g_aTrialRoomInfo.GetSize();
+		for (int i = 0; i < nKeep; i ++) SAFE_DELETE(g_aTrialRoomInfo[i]);
+		g_aTrialRoomInfo.RemoveAll();
+		LoadTrialRoomInfo();
+		PTRIALROOMINFO r = (g_aTrialRoomInfo.GetSize() > nRoom) ? g_aTrialRoomInfo[nRoom] : NULL;
+		printf("trialroom reload count=%d same=%d name=%s tmpl=%d rect=%u,%u-%u,%u desc_nl=%d\n", g_aTrialRoomInfo.GetSize() == nKeep, r ? 1 : 0, r ? r->szName : "-",
+			r ? (int)(r->wLoanStTmp == nSt) : -1, r ? r->dwX1 : 0, r ? r->dwY1 : 0, r ? r->dwX2 : 0, r ? r->dwY2 : 0, r ? (int)(strchr(r->szDesc, '\n') != NULL) : -1);
+		psz = SboWebDataGet("trialRoom", nRoom);
+		printf("trialroom get has_desc=%d\n", (int)(psz && strstr(psz, "\"szDesc\"") != NULL));
+	}
+
+	/* 管理者ウィンドウ：一覧が届く・直す（データAPIと同じ確認を通す）・足す・不正は断って中身を変えない・管理者でない人と短いパケットは弾く */
+	{
+		CMDPARA_ADMINTRIALROOM Res;
+		TRIALROOMINFO Info, Orig = *g_aTrialRoomInfo[nRoom];
+		int nCount0 = g_aTrialRoomInfo.GetSize();
+		pA->byAdminLV = ADMINLV_ADMINISTRATOR;
+		BOOL bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_LISTREQ, 0, NULL, Res);
+		printf("admintrialroom list got=%d sub=%d count_ok=%d first=%d\n", bGot, Res.byCmdSub, (int)(Res.wCount == nCount0), Res.nNo);
+		Info = Orig;
+		strcpy(Info.szName, "管理者の個室");
+		bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_SET, nRoom, &Info, Res);
+		printf("admintrialroom edit got=%d sub=%d result=%d no_ok=%d name=%s\n", bGot, Res.byCmdSub, Res.byResult, (int)(Res.nNo == nRoom), g_aTrialRoomInfo[nRoom]->szName);
+		Info.byState = TRIALROOMSTATE_OPEN; Info.wLoanStTmp = 65000;
+		bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_SET, nRoom, &Info, Res);
+		printf("admintrialroom bad tmpl got=%d result=%d msg_ok=%d same=%d\n", bGot, Res.byResult, (int)(strstr(Res.szMsg, "wLoanStTmp") != NULL), (int)(strcmp(g_aTrialRoomInfo[nRoom]->szName, "管理者の個室") == 0 && g_aTrialRoomInfo[nRoom]->wLoanStTmp == Orig.wLoanStTmp));
+		Info = Orig; Info.szName[0] = 0;
+		bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_SET, nRoom, &Info, Res);
+		printf("admintrialroom empty name got=%d result=%d\n", bGot, Res.byResult);
+		Info = Orig;
+		bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_SET, nRoom, &Info, Res);
+		printf("admintrialroom restore got=%d result=%d name_ok=%d desc_ok=%d\n", bGot, Res.byResult, (int)(strcmp(g_aTrialRoomInfo[nRoom]->szName, Orig.szName) == 0), (int)(strcmp(g_aTrialRoomInfo[nRoom]->szDesc, Orig.szDesc) == 0));
+		bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_SET, nCount0 + 50, &Info, Res);
+		printf("admintrialroom range got=%d result=%d count_same=%d\n", bGot, Res.byResult, (int)(g_aTrialRoomInfo.GetSize() == nCount0));
+		/* 足す（閉じたまま。番号は末尾） */
+		ZeroMemory(&Info, sizeof(Info));
+		strcpy(Info.szName, "足した個室"); Info.byState = TRIALROOMSTATE_CLOSED;
+		bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_SET, -1, &Info, Res);
+		printf("admintrialroom add got=%d result=%d no_ok=%d count_up=%d state=%u\n", bGot, Res.byResult, (int)(Res.nNo == nCount0), g_aTrialRoomInfo.GetSize() - nCount0, g_aTrialRoomInfo.GetSize() > nCount0 ? g_aTrialRoomInfo[nCount0]->byState : 99);
+		/* 開く時に範囲がおかしければ断る（足した個室はそのまま） */
+		Info.byState = TRIALROOMSTATE_OPEN; Info.dwX1 = 5; Info.dwX2 = 1;
+		bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_SET, nCount0, &Info, Res);
+		printf("admintrialroom open bad rect got=%d result=%d state=%u\n", bGot, Res.byResult, g_aTrialRoomInfo[nCount0]->byState);
+		/* 管理者でない人・短いパケットは何も変えない */
+		int nCount1 = g_aTrialRoomInfo.GetSize();
+		Info.byState = TRIALROOMSTATE_CLOSED; strcpy(Info.szName, "ユーザーの個室");
+		pA->byAdminLV = ADMINLV_USER;
+		bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_SET, -1, &Info, Res);
+		printf("admintrialroom user got=%d count_same=%d\n", bGot, (int)(g_aTrialRoomInfo.GetSize() == nCount1));
+		pA->byAdminLV = ADMINLV_ADMINISTRATOR;
+		bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_SET, -1, &Info, Res, 8);
+		printf("admintrialroom short got=%d count_same=%d\n", bGot, (int)(g_aTrialRoomInfo.GetSize() == nCount1));
+		pA->byAdminLV = ADMINLV_USER;
+		/* 足した個室は片付ける（本物のデータに残さない） */
+		for (int i = nCount0; i < g_aTrialRoomInfo.GetSize(); i ++) SAFE_DELETE(g_aTrialRoomInfo[i]);
+		while (g_aTrialRoomInfo.GetSize() > nCount0) g_aTrialRoomInfo.RemoveAt(g_aTrialRoomInfo.GetSize() - 1);
+		SaveTrialRoomInfo();
+	}
+
+	/* 入口の NPC（台詞 @x番号）と、入口の手前に立つ A・B */
+	int nStartX = pMap->nCX - 4, nStartY = pMap->nCY - 4;
+	PCHARINFO pNpc = new CHARINFO;
+	ZeroMemory((PBYTE)pNpc, sizeof(CHARINFO));
+	pNpc->byNpcType = NPCTYPE_NOMOVE;
+	SetInitCharData(pNpc);
+	pNpc->byGameState = GAMESTATE_NPC;
+	pNpc->byCharState = CHARSTATE_MOVE;
+	pNpc->dwMapID = nMap;
+	pNpc->dwX = pNpc->dwXBack = pNpc->dwStartX = (DWORD)nStartX + 1;
+	pNpc->dwY = pNpc->dwYBack = pNpc->dwStartY = (DWORD)nStartY;
+	strcpy(pNpc->szName, "個室の受付");
+	pNpc->pszNpcSpeech = new char[16];
+	snprintf(pNpc->pszNpcSpeech, 16, "@x%02d", nRoom);
+	pNpc = AddChar(pNpc);
+	pNpc->pID = pNpc->dwTblID + 1;
+	{
+		CCharProcBase CharProcBase;
+		CharProcBase.SetProc(pNpc);
+	}
+	DWORD dwNpc = pNpc->dwTblID;
+	printf("trialroom npc is=%d\n", (int)TrialRoomIsNpc(pNpc));
+	QuestMovePC(pA, nMap, nStartX, nStartY);
+	QuestMovePC(pB, nMap, nStartX, nStartY + 1);
+
+	/* 閉じている部屋は入れない（聞かれない・答えても入らない） */
+	SboWebDataApply("trialRoom", nRoom, "{\"byState\":0}", 1, "テスト");
+	int nAsk = TrialTalkYes(pA, pNpc);
+	printf("trialroom closed asked=%d in=%d\n", nAsk, (int)QuestInChallenge(pA));
+	SboWebDataApply("trialRoom", nRoom, "{\"byState\":1}", 1, "テスト");
+
+	/* 「いいえ」なら入らない */
+	nAsk = TrialTalkYes(pA, pNpc, FALSE);
+	printf("trialroom no asked=%d in=%d\n", nAsk, (int)QuestInChallenge(pA));
+	/* 話さずに「はい」だけ送っても入れない */
+	TrialAnswerSend(pA, pNpc, TRUE);
+	printf("trialroom answer without ask in=%d\n", (int)QuestInChallenge(pA));
+	/* パーティのままでも入れる（各自が個別に借りた姿で入り、出ると元に戻る） */
+	QuestSendParty(pA, pB, CMDPARTY_JOIN);
+	QuestSendParty(pB, pA, CMDPARTY_JOINOK);
+	DWORD dwPartyLv = pA->byLevel;
+	nAsk = TrialTalkYes(pA, pNpc);
+	int nAsk2 = TrialTalkYes(pB, pNpc);
+	printf("trialroom party asked=%d,%d in=%d,%d trial=%d,%d party_kept=%d\n", nAsk, nAsk2, (int)QuestInChallenge(pA), (int)QuestInChallenge(pB),
+		(int)TrialRoomIs(pA), (int)TrialRoomIs(pB), (int)(pA->dwPartyID != 0 && pA->dwPartyID == pB->dwPartyID));
+	{
+		EVENTINFO Event;
+		EVENTINFO_MOVE Move;
+		ZeroMemory(&Event, sizeof(Event));
+		ZeroMemory(&Move, sizeof(Move));
+		Move.dwX = (DWORD)(pMap->nCX - 6);
+		Move.dwY = (DWORD)(pMap->nCY - 6);
+		Event.byType = EVENTTYPE_MOVE;
+		Event.pData = &Move;
+		EventProc(pA, &Event, 0);
+		EventProc(pB, &Event, 0);
+		TrialRoomProc();
+		printf("trialroom party out trial=%d,%d lv_back=%d,%d\n", (int)TrialRoomIs(pA), (int)TrialRoomIs(pB), (int)(pA->byLevel == dwPartyLv), (int)(pB->byLevel == dwPartyLv));
+		QuestMovePC(pA, nMap, nStartX, nStartY);
+		QuestMovePC(pB, nMap, nStartX, nStartY + 1);
+	}
+	QuestSendParty(pB, pA, CMDPARTY_BREAK);
+	pA->dwPartyID = 0; pB->dwPartyID = 0;
+
+	/* はい：借りて個室の入る座標へ。経験値・お金・持ち物はテンプレートのもの */
+	DWORD dwBackX = pA->dwX, dwBackY = pA->dwY;
+	nAsk = TrialTalkYes(pA, pNpc);
+	printf("trialroom enter asked=%d in=%d trial=%d at_entry=%d lv=%u pw=%u hp=%u/%u gold=%u exp=%u weapon_equ=%d\n", nAsk, (int)QuestInChallenge(pA), (int)TrialRoomIs(pA),
+		(int)(pA->dwX == 2 && pA->dwY == 2), pA->byLevel, pA->byPW, pA->wHP, pA->wMaxHP, pA->dwGold, pA->dwExp,
+		(int)(pA->waEqu[0] < MAX_MYITEM && pA->waItem[pA->waEqu[0]] == wWeapon));
+	/* すでに借りている人は聞かれない */
+	QuestMovePC(pA, nMap, 2, 3);
+	printf("trialroom inside asked=%d\n", TrialTalkYes(pA, pNpc));
+	QuestMovePC(pA, nMap, 2, 2);
+
+	/* 中は貸し出しの制限（預かり所に入れられない・保存の間だけ本物） */
+	{
+		CMDPARA_DATA1 Para;
+		ZeroMemory(&Para, sizeof(Para));
+		Para.byCmd = CMD_LEAVEITEM;
+		Para.pID = pA->pID;
+		Para.dwTblID = pA->dwTblID;
+		Para.byData = 0;
+		TestRecv(pA, &Para, sizeof(Para));
+		printf("trialroom leave blocked item0=%d msg=%s\n", (int)(pA->waItem[0] == wWeapon), TrialRoomBlockedText(pA));
+	}
+	QuestChallengeSaveSwap(TRUE);
+	printf("trialroom saving lv=%u gold=%u exp=%u at_start=%d\n", pA->byLevel, pA->dwGold, pA->dwExp, (int)(pA->dwX == dwBackX && pA->dwY == dwBackY));
+	QuestChallengeSaveSwap(FALSE);
+	printf("trialroom saved lv=%u gold=%u at_entry=%d\n", pA->byLevel, pA->dwGold, (int)(pA->dwX == 2 && pA->dwY == 2));
+
+	/* 中で増えた経験値・お金は、出ると捨てられる */
+	pA->dwGold += 100; pA->dwExp += 100;
+	TrialRoomProc();
+	printf("trialroom proc inside in=%d\n", (int)QuestInChallenge(pA));
+
+	/* 出口（同じマップの中のワープ）を踏む：範囲の外へ出たので元の姿・入る前の場所へ戻る */
+	{
+		EVENTINFO Event;
+		EVENTINFO_MOVE Move;
+		ZeroMemory(&Event, sizeof(Event));
+		ZeroMemory(&Move, sizeof(Move));
+		Move.dwX = (DWORD)(pMap->nCX - 6);
+		Move.dwY = (DWORD)(pMap->nCY - 6);
+		Event.byType = EVENTTYPE_MOVE;
+		Event.pData = &Move;
+		EventProc(pA, &Event, 0);
+		printf("trialroom exit stepped in=%d\n", (int)QuestInChallenge(pA));
+		TrialRoomProc();
+		printf("trialroom exit in=%d lv=%u pw=%u hp=%u gold=%u exp=%u at_back=%d item0=%d\n", (int)QuestInChallenge(pA), pA->byLevel, pA->byPW, pA->wHP, pA->dwGold, pA->dwExp,
+			(int)(pA->dwX == dwBackX && pA->dwY == dwBackY), (int)(pA->waItem[0] == 0));
+	}
+
+	/* 個室の中でワープのイベントに乗る（イベントは範囲の中・行き先は範囲の外）：行き先へは飛ばず、直接元の姿・入る前の場所へ戻る */
+	{
+		QuestMovePC(pA, nMap, nStartX, nStartY);
+		TrialTalkYes(pA, pNpc);
+		QuestMovePC(pA, nMap, 2, 3);
+		EVENTINFO Event;
+		EVENTINFO_MOVE Move;
+		ZeroMemory(&Event, sizeof(Event));
+		ZeroMemory(&Move, sizeof(Move));
+		Move.dwX = (DWORD)(pMap->nCX - 6);
+		Move.dwY = (DWORD)(pMap->nCY - 6);
+		Event.byType = EVENTTYPE_MOVE;
+		Event.pData = &Move;
+		int nIn = (int)TrialRoomIs(pA);
+		EventProc(pA, &Event, 0);
+		printf("trialroom event exit before=%d in=%d trial=%d lv=%u pw=%u gold=%u exp=%u at_back=%d at_dest=%d item0=%d\n", nIn, (int)QuestInChallenge(pA), (int)TrialRoomIs(pA),
+			pA->byLevel, pA->byPW, pA->dwGold, pA->dwExp, (int)(pA->dwX == (DWORD)nStartX && pA->dwY == (DWORD)nStartY),
+			(int)(pA->dwX == Move.dwX && pA->dwY == Move.dwY), (int)(pA->waItem[0] == 0));
+	}
+
+	/* 再び入る→倒れる→復活を選ぶとすぐ戻る（お金は減らない・倒れたままにならない） */
+	QuestMovePC(pA, nMap, nStartX, nStartY);
+	TrialTalkYes(pA, pNpc);
+	printf("trialroom reenter in=%d\n", (int)QuestInChallenge(pA));
+	pA->wHP = 0;
+	pA->byCharState = CHARSTATE_DEAD;
+	TrialRoomProc();
+	printf("trialroom dead before resurrect in=%d\n", (int)QuestInChallenge(pA));
+	{
+		CMDPARA_DATA1 Para;
+		ZeroMemory(&Para, sizeof(Para));
+		Para.byCmd = CMD_RESURRECTION;
+		Para.pID = pA->pID;
+		Para.dwTblID = pA->dwTblID;
+		TestRecv(pA, &Para, sizeof(Para));
+		printf("trialroom dead in=%d state=%u hp=%u gold=%u at_back=%d lv=%u\n", (int)QuestInChallenge(pA), pA->byCharState, pA->wHP, pA->dwGold,
+			(int)(pA->dwX == (DWORD)nStartX && pA->dwY == (DWORD)nStartY), pA->byLevel);
+	}
+
+	/* 入って切断：その場で元の姿。戻り位置はログインの時に反映 */
+	TrialTalkYes(pA, pNpc);
+	printf("trialroom reenter2 in=%d\n", (int)QuestInChallenge(pA));
+	QuestOnDecPlayer(pA);
+	printf("trialroom logout in=%d lv=%u gold=%u\n", (int)QuestInChallenge(pA), pA->byLevel, pA->dwGold);
+	DeleteTblNoPC((int)pA->dwTblID);
+	QuestOnLogin(pA);
+	AddTblNoPC((int)pA->dwTblID);
+	printf("trialroom relogin at_back=%d\n", (int)(pA->dwX == (DWORD)nStartX && pA->dwY == (DWORD)nStartY));
+
+	/* 切断した人の戻り位置は、サーバー保存の時にも本物として書かれる（ログイン前に保存が走る場合） */
+	TrialTalkYes(pA, pNpc);
+	QuestOnDecPlayer(pA);
+	DeleteTblNoPC((int)pA->dwTblID);
+	pA->pID = 0;
+	QuestChallengeSaveSwap(TRUE);
+	printf("trialroom save offline at_back=%d lv=%u\n", (int)(pA->dwX == (DWORD)nStartX && pA->dwY == (DWORD)nStartY), pA->byLevel);
+	QuestChallengeSaveSwap(FALSE);
+
+	/* 片付け */
+	DeleteChar(dwNpc);
+	for (int i = 0; i < 2; i ++) {
+		PCHARINFO p = apPC[i];
+		DWORD dwPID = aBack[i].pID;
+		DeleteTblNoPC((int)p->dwTblID);
+		p->pID = dwPID;
+		p->dwMapID = aBack[i].dwMapID; p->dwX = p->dwXBack = aBack[i].dwX; p->dwY = p->dwYBack = aBack[i].dwY;
+		p->byCharState = aBack[i].byCharState; p->wHP = aBack[i].wHP; p->wMaxHP = aBack[i].wMaxHP;
+		p->byLevel = aBack[i].byLevel; p->byPW = aBack[i].byPW; p->wMaxMana = aBack[i].wMaxMana; p->wMana = aBack[i].wMana;
+		p->dwGold = aBack[i].dwGold; p->dwExp = aBack[i].dwExp;
+		CopyMemory(p->waItem, aBack[i].waItem, sizeof(p->waItem));
+		CopyMemory(p->waEqu, aBack[i].waEqu, sizeof(p->waEqu));
+		p->dwPartyID = aBack[i].dwPartyID;
+		AddTblNoPC((int)p->dwTblID);
+	}
+	for (int i = nRoom; i < g_aTrialRoomInfo.GetSize(); i ++) SAFE_DELETE(g_aTrialRoomInfo[i]);
+	while (g_aTrialRoomInfo.GetSize() > nRoom) g_aTrialRoomInfo.RemoveAt(g_aTrialRoomInfo.GetSize() - 1);
+	SaveTrialRoomInfo();
+	delete g_aStTmpInfo[nSt];
+	g_aStTmpInfo.RemoveAt(nSt);
+	printf("trialroom done rooms=%d\n", g_aTrialRoomInfo.GetSize());
 }

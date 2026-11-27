@@ -13,6 +13,11 @@ MODE="${1:-debug}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
+# Windows（Git Bash）の時だけ python3 と長いパスを直す。Mac / Linux では何もしない
+# shellcheck disable=SC1091
+. "$ROOT/tools/sbo-env.sh"
+sbo_env_init "tools/server/build.sh" "$@"
+
 if [ -z "${EMSDK:-}" ] || ! command -v em++ >/dev/null 2>&1; then
 	if [ -f "$HOME/emsdk/emsdk_env.sh" ]; then
 		# shellcheck disable=SC1091
@@ -30,5 +35,15 @@ case "$MODE" in
 esac
 
 JOBS="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"
-cmake --preset "$PRESET" >/dev/null
+# make が無い環境（Windows など）では Ninja を使う。make があれば従来どおり（プリセットのまま）
+GEN_OPT=()
+if ! command -v make >/dev/null 2>&1; then
+	if command -v ninja >/dev/null 2>&1; then
+		GEN_OPT=(-G Ninja)
+	else
+		echo "[server] make も ninja も見つかりません。どちらかを入れてください" >&2
+		exit 1
+	fi
+fi
+cmake --preset "$PRESET" ${GEN_OPT[@]+"${GEN_OPT[@]}"} >/dev/null
 cmake --build --preset "$PRESET" -j "$JOBS"
