@@ -10988,7 +10988,8 @@ void MakeAdminWndSubGameInfo(void)
 	SendMessage (m_hWndButton6, WM_SETFONT, (WPARAM)GetStockObject (DEFAULT_GUI_FONT), 0);
 
 	int i;
-	LPCTSTR liststr[] = {"未設定", "爆弾ゲーム", "迷路", "ダンジョン"};
+	LPCTSTR liststr[] = {"未設定", "爆弾ゲーム", "迷路", "ダンジョン", "戦場ゲーム", "すごろく", "(予約)", "(予約)", "SBOじゃん"};
+	static_assert (sizeof (liststr) / sizeof (liststr[0]) == SUBGAMEID_MAX, "liststr");
 
 	for (i = 0; i < SUBGAMEID_MAX; i ++) {
 		SendMessage (m_hWndCombo1, CB_ADDSTRING, (WPARAM)0, (LPARAM)liststr[i]);

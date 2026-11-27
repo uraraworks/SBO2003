@@ -12,14 +12,16 @@
 #define JAN_TURN_MS			(20000)		/* 人間の手番（捨てる）の制限時間。時間切れは引いた牌を捨てる */
 #define JAN_CLAIM_MS		(8000)		/* 人間がロン・鳴きできる時の待ち。時間切れは見送り */
 #define JAN_OVER_MS			(6000)		/* 局が終わってから席を立たせるまで */
+#define JAN_ASK_TIMEOUT_MS	(30000)		/* 「チケットを使って始めますか？」の問いが有効な時間(ms) */
 
 /* ========================================================================= */
 /* 関数プロトタイプ宣言														 */
 /* ========================================================================= */
 extern BOOL JanIsTableNpc(PCHARINFO pNpc);									/* 台詞が "@j" で始まる台NPCか */
 extern BOOL JanOnSeatCell(PCHARINFO pChar, PCHARINFO pNpc, int *pnSeat);	/* pChar が台NPCの 4 つの座る場所のどれかのマスの上にいるか（同じマップ・空間）。いれば席番号 0〜3 を *pnSeat に入れる（NULL 可） */
-extern void JanSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed = FALSE);	/* 座る場所のマスで席に座る（座る場所以外では何もしない）。Sキー：無料の台だけ始まる。bCoinUsed=TRUE（道具のコインから）：コインを使って始まる */
-extern BOOL JanUseItem(PCHARINFO pChar, WORD wItem);						/* 道具を使った時の処理。座る場所のマスでその台のコインなら座って始める（TRUE）。当てはまらなければ FALSE */
+extern void JanSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed = FALSE);	/* 座る場所のマスで席に座る（座る場所以外では何もしない）。Sキー：無料の台だけ始まる。bCoinUsed=TRUE（道具のチケットの確認で「はい」）：チケットを取り上げて始まる */
+extern BOOL JanUseItem(PCHARINFO pChar, WORD wItem);						/* 道具を使った時の処理。座る場所のマスでその台のチケットなら「始めますか？」と聞く（TRUE。取り上げは JanAnswer の「はい」のあと）。当てはまらなければ FALSE */
+extern BOOL JanAnswer(PCHARINFO pChar, DWORD dwNpcTblID, BOOL bYes);		/* 「チケットを使って始めますか？」への答え（CMD_TALKANSWER から。問いを出していなければ FALSE） */
 extern BOOL JanIsSeated(PCHARINFO pChar);									/* 席に座っているか（座っている間は歩けない） */
 extern void JanKey(PCHARINFO pChar, BYTE byAct, BYTE byParam);				/* 座っている人の操作（JAN_ACT_*。反則・手番外は黙って捨てる） */
 extern void JanProc(void);													/* 周期処理（g_dwTime の経過時間で卓を進める。メインループから毎回呼ぶ） */

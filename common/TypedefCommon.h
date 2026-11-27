@@ -1208,6 +1208,7 @@ enum {
 	SUBGAMEID_DUNGEON,											/* ダンジョン */
 	SUBGAMEID_WAR,												/* 戦場ゲーム */
 	SUBGAMEID_SUGOROKU,											/* すごろく */
+	SUBGAMEID_JANJAN = 8,										/* SBOじゃんの台（台NPCの台詞 @j<このサブゲームの番号> で使う。docs/janjan.md）。6・7 は迷路対戦の台・ピンボール（別の変更）が使う番号なので空けてある */
 	SUBGAMEID_MAX
 };
 
@@ -1773,6 +1774,19 @@ typedef struct _SUBGAME_SUGOROKUINFOSAVE {
 	CmyArray<SUGOROKUEVENTINFO, SUGOROKUEVENTINFO>	aEventInfo;		/* イベント情報 */
 	CmyArray<SUGOROKUPARTSINFO, SUGOROKUPARTSINFO>	aPartsInfo;		/* パーツ情報 */
 } SUBGAME_SUGOROKUINFOSAVE, *PSUBGAME_SUGOROKUINFOSAVE;
+
+/* サブゲーム：SBOじゃんの台の情報（台1つぶんの設定。台NPCの台詞 "@j<サブゲーム情報の番号>" がこの情報を指す）
+ *   実行中の値を持たない（遊んでいる最中の状態は SboSvrJan.cpp の卓の表に持つ）ので、INFO と INFOSAVE は同じ並び。
+ *   チケットは迷路対戦の台（SUBGAME_MAZETABLEINFO）と同じ欄名・同じ意味。既定値・範囲の丸めは common/Janjan.h の JanjanInfoSetDefault / JanjanInfoClamp。
+ *   項目を足す時は、この構造体の最後に足し、SboSvrSaveLoadSubGameInfo.cpp の s_aszNameJANJAN と s_aJanjanCol に 1 行ずつ足す（保存は項目名つきの列。足りない項目は既定値） */
+typedef struct _SUBGAME_JANJANINFO {
+	BYTE		byCpuLevel;										/* CPU強さ（1=よわい・2=ふつう・3=つよい。0=既定の 2） */
+	WORD		wTicketItemID;									/* 参加チケットのアイテム番号（byTicketNum が 0 なら使わない） */
+	BYTE		byTicketNum;									/* 座る時に使うチケットの枚数（0=無料。席のマスでコマンド→道具→チケットを使って「はい」で座る。無料ならSキー） */
+} SUBGAME_JANJANINFO, *PSUBGAME_JANJANINFO;
+
+/* サブゲーム：SBOじゃんの台の情報(保存データ。管理者ウィンドウとの通信にも使う。実行用と同じ中身) */
+typedef SUBGAME_JANJANINFO SUBGAME_JANJANINFOSAVE, *PSUBGAME_JANJANINFOSAVE;
 
 /* サブステータス情報(すごろく) */
 typedef struct _SUBSTATUS_SUGOROKU {

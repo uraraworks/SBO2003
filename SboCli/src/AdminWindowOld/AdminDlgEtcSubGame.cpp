@@ -328,6 +328,21 @@ static void MakeInfo(LPSTR pszInfo)
 					pInfo->byX, pInfo->byY);
 		}
 		break;
+
+	case SUBGAMEID_JANJAN:		/* SBOじゃん */
+		{
+			PSUBGAME_JANJANINFOSAVE pInfo = (PSUBGAME_JANJANINFOSAVE)g_pSubGameInfo->pInfo;
+			static const char *apszLevel[] = { "既定(ふつう)", "よわい", "ふつう", "つよい" };
+
+			wsprintf (szTmp,
+					"チケット:%d x%d\n"
+					"CPU:%s\n"
+					"台詞:@j%d\n",
+					pInfo->wTicketItemID, pInfo->byTicketNum,
+					apszLevel[(pInfo->byCpuLevel > 3) ? 3 : pInfo->byCpuLevel],
+					g_nSelectSubGameID);
+		}
+		break;
 	}
 
 	strcat (pszInfo, szTmp);

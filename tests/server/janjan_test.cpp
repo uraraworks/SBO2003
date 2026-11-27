@@ -1,6 +1,7 @@
 /* SBOじゃんの盤面ロジック（common/Janjan.h）の native テスト
    g++ -std=c++11 -O1 -I. tests/server/janjan_test.cpp -o /tmp/jt && /tmp/jt */
 #include <stdio.h>
+#include <string.h>
 #include "common/Janjan.h"
 
 static int g_nNg = 0;
@@ -351,6 +352,37 @@ int main()
 				CHECK (n > 0);
 			}
 		}
+	}
+
+	/* 台詞：数字だけなら番号（サブゲーム情報）・カンマがあれば旧形式・"@j" だけや数字以外は番号なし */
+	{
+		int an[JANJAN_PARAM_COUNT];
+		CHECK (JanjanSpeechInfoNo ("@j3") == 3);
+		CHECK (JanjanSpeechInfoNo ("@j0") == 0);
+		CHECK (JanjanSpeechInfoNo ("@j314,1") == -1);
+		CHECK (JanjanSpeechInfoNo ("@j314,1,3") == -1);
+		CHECK (JanjanSpeechInfoNo ("@j") == -1);
+		CHECK (JanjanSpeechInfoNo ("@jx") == -1);
+		CHECK (JanjanSpeechInfoNo ("@j3x") == -1);
+		CHECK (JanjanSpeechInfoNo ("@j3,") == -1);
+		CHECK (JanjanSpeechInfoNo ("@j999999") == -1);
+		CHECK (JanjanSpeechInfoNo ("@i3") == -1);
+		CHECK (JanjanSpeechInfoNo (NULL) == -1);
+		JanjanParseSpeech ("@j314,1,3", an);		/* 旧形式はこれまでどおり */
+		CHECK (an[0] == 314 && an[1] == 1 && an[2] == 3);
+	}
+	/* サブゲーム情報の既定値と丸め（CPU 強さ 0 は 2・上限・チケット枚数の上限） */
+	{
+		struct { unsigned char byCpuLevel; unsigned short wTicketItemID; unsigned char byTicketNum; } Info;		/* SUBGAME_JANJANINFO と同じ欄（TypedefCommon.h は入れない） */
+		memset (&Info, 0xFF, sizeof (Info));
+		JanjanInfoSetDefault (&Info);
+		CHECK (Info.byCpuLevel == JANJAN_STRENGTH_DEFAULT && Info.wTicketItemID == 0 && Info.byTicketNum == 0);
+		Info.byCpuLevel = 0; Info.byTicketNum = 200;
+		JanjanInfoClamp (&Info);
+		CHECK (Info.byCpuLevel == JANJAN_STRENGTH_DEFAULT && Info.byTicketNum == JANJAN_TICKET_MAX);
+		Info.byCpuLevel = 9;
+		JanjanInfoClamp (&Info);
+		CHECK (Info.byCpuLevel == JANJAN_CPU_LEVEL_MAX);
 	}
 
 	printf (g_nNg ? "NG %d 件\n" : "一致\n", g_nNg);

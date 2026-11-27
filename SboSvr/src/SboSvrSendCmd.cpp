@@ -3073,6 +3073,10 @@ void SendCmdSUBGAMEINFO(DWORD pIDSend, int nNo)
 		}
 		break;
 
+	case SUBGAMEID_JANJAN:		/* SBOじゃん（INFO と INFOSAVE は同じ並び） */
+		CopyMemory (pData + sizeof (CMDPARA_DATA1), pInfo->pInfo, sizeof (SUBGAME_JANJANINFOSAVE));
+		break;
+
 	case SUBGAMEID_SUGOROKU:	/* すごろく */
 		{
 			PSUBGAME_SUGOROKUINFO pInfoTmp = (PSUBGAME_SUGOROKUINFO)pInfo->pInfo;

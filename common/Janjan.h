@@ -535,10 +535,13 @@ static inline int JanjanCpuClaim (JanjanGame &g, int nSeat, int nStrength, int *
 }
 
 /* ========================================================================= */
-/* 台の台詞・席の位置（サーバーとクライアントで同じ読み方をする）			 */
-/*   台詞 "@j<コイン番号>,<枚数>,<CPUの強さ>"（後ろは省略可。枚数 0=無料。強さの省略は 2）	 */
-/*   台NPCのマスが卓の中心 (cx,cy)。盤は 7×7 マス（cx-3〜cx+3, cy-3〜cy+3）。			 */
-/*   座る場所のマスは 席0=(cx,cy+4) 席1=(cx+4,cy) 席2=(cx,cy-4) 席3=(cx-4,cy)			 */
+/* 台の台詞・席の位置（サーバーとクライアントで同じ読み方をする）
+ *   台詞 "@j<サブゲーム情報の番号>"（数字 1 つだけ。設定は SUBGAME_JANJANINFO。番号の指す情報が SUBGAMEID_JANJAN でなければ設定は既定=無料・強さ 2）
+ *   旧形式 "@j<コイン番号>,<枚数>,<CPUの強さ>"（後ろは省略可。枚数 0=無料。強さの省略は 2）も、移行のため当面は読む。
+ *   数字だけ（カンマなし）なら番号、カンマがあれば旧形式。旧形式で数字 1 つだけの台詞は枚数 0（＝無料）で意味が無かったので、番号として読んで困らない
+ *   台NPCのマスが卓の中心 (cx,cy)。盤は 7×7 マス（cx-3〜cx+3, cy-3〜cy+3）。
+ *   座る場所のマスは 席0=(cx,cy+4) 席1=(cx+4,cy) 席2=(cx,cy-4) 席3=(cx-4,cy)
+ */
 /* ========================================================================= */
 #define JANJAN_PARAM_NONE		(-99999)	/* 省略・空欄 */
 #define JANJAN_PARAM_COUNT		(3)			/* 台詞の数値の数 */
@@ -577,6 +580,54 @@ static inline void JanjanParseSpeech (const char *pszSpeech, int anVal[JANJAN_PA
 			break;
 		}
 		p ++;
+	}
+}
+
+#define JANJAN_SPEECH_NO_MAX	(100000)	/* 台詞の番号の上限（これを超えたら番号ではない） */
+#define JANJAN_TICKET_MAX		(99)		/* チケット必要枚数の上限 */
+#define JANJAN_CPU_LEVEL_MAX	(3)			/* CPU強さの最大（1=よわい・2=ふつう・3=つよい） */
+
+/* 台詞 "@j<番号>" の番号（サブゲーム情報の番号）。"@j" の後ろが数字だけの時の番号・そうでなければ（空・旧形式のカンマ区切り・数字以外）-1 */
+static inline int JanjanSpeechInfoNo (const char *pszSpeech)
+{
+	const char *p;
+	int nNo = 0;
+
+	if (!pszSpeech || (pszSpeech[0] != '@') || (pszSpeech[1] != 'j')) {
+		return -1;
+	}
+	p = pszSpeech + 2;
+	if ((*p < '0') || (*p > '9')) {
+		return -1;
+	}
+	while ((*p >= '0') && (*p <= '9')) {
+		nNo = nNo * 10 + (*p - '0');
+		if (nNo > JANJAN_SPEECH_NO_MAX) {
+			return -1;
+		}
+		p ++;
+	}
+	return (*p == '\0') ? nNo : -1;
+}
+
+/* 台の設定（SUBGAME_JANJANINFO / INFOSAVE。同じ並び）を既定値にする（新しい台・保存に無い項目。無料・強さ 2） */
+template<class T> static inline void JanjanInfoSetDefault (T *p)
+{
+	p->byCpuLevel		= (unsigned char)JANJAN_STRENGTH_DEFAULT;
+	p->wTicketItemID	= 0;
+	p->byTicketNum		= 0;
+}
+
+/* 範囲に丸める（保存データ・管理者の入力・データ API が範囲外でも遊べる値にする。CPU強さ 0 は既定の 2） */
+template<class T> static inline void JanjanInfoClamp (T *p)
+{
+	if (p->byCpuLevel == 0) {
+		p->byCpuLevel = (unsigned char)JANJAN_STRENGTH_DEFAULT;
+	} else if (p->byCpuLevel > JANJAN_CPU_LEVEL_MAX) {
+		p->byCpuLevel = (unsigned char)JANJAN_CPU_LEVEL_MAX;
+	}
+	if (p->byTicketNum > JANJAN_TICKET_MAX) {
+		p->byTicketNum = (unsigned char)JANJAN_TICKET_MAX;
 	}
 }
 

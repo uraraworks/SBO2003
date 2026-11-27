@@ -9,6 +9,7 @@
 #include "../../../Common/Info/SubGame/InfoSubGameWAR.h"
 #include "../Proc/SubGame/ProcSubGameWAR.h"
 #include "../Proc/ProcSubGame.h"
+#include "../../../common/Janjan.h"
 
 /* ========================================================================= */
 /* 定数定義																	 */
@@ -172,6 +173,25 @@ static const char *s_aszNameSUGOROKU[] = {
 	"z"
 };
 
+/* ラベル名テーブル(SBOじゃんの台)。並びは s_aJanjanCol と同じ */
+static const char *s_aszNameJANJAN[] = {
+	"byCpuLevel",		/* CPU強さ */
+	"wTicketItemID",	/* チケットのアイテム番号 */
+	"byTicketNum",		/* チケットの必要枚数 */
+	"z"
+};
+
+/* SBOじゃんの台の列の型（0=1バイト・1=WORD）と構造体内の位置。s_aszNameJANJAN と同じ並び */
+typedef struct _JANJANCOL {
+	int			nKind;
+	size_t		nOffset;
+} JANJANCOL;
+static const JANJANCOL s_aJanjanCol[] = {
+	{ 0, offsetof (SUBGAME_JANJANINFO, byCpuLevel) },
+	{ 1, offsetof (SUBGAME_JANJANINFO, wTicketItemID) },
+	{ 0, offsetof (SUBGAME_JANJANINFO, byTicketNum) },
+};
+
 /* ========================================================================= */
 /* 関数プロトタイプ宣言														 */
 /* ========================================================================= */
@@ -183,11 +203,13 @@ static PBYTE GetInfoMaze(PSUBGAME_MAZEINFO, PDWORD);			/* 保存用サブゲー�
 static PBYTE GetInfoBomb(PSUBGAME_BOMBINFO, PDWORD);			/* 保存用サブゲーム情報取得(爆弾ゲーム) */
 static PBYTE GetInfoWar(PSUBGAME_WARINFO, PDWORD);				/* 保存用サブゲーム情報取得(戦場ゲーム) */
 static PBYTE GetInfoSugoroku(PSUBGAME_SUGOROKUINFO, PDWORD);	/* 保存用サブゲーム情報取得(すごろく) */
+static PBYTE GetInfoJanjan(PSUBGAME_JANJANINFO, PDWORD);		/* 保存用サブゲーム情報取得(SBOじゃん) */
 static PBYTE PetInfoDungeon(PBYTE, PDWORD);						/* サブゲーム情報作成(ダンジョン) */
 static PBYTE PetInfoMaze(PBYTE, PDWORD);						/* サブゲーム情報作成(迷路) */
 static PBYTE PetInfoWar(PBYTE, PDWORD);							/* サブゲーム情報作成(戦場ゲーム) */
 static PBYTE PetInfoBomb(PBYTE, PDWORD);						/* サブゲーム情報作成(爆弾ゲーム) */
 static PBYTE PetInfoSugoroku(PBYTE, PDWORD);					/* サブゲーム情報作成(すごろく) */
+static PBYTE PetInfoJanjan(PBYTE, PDWORD);						/* サブゲーム情報作成(SBOじゃん) */
 
 
 /* ========================================================================= */
@@ -293,6 +315,9 @@ BOOL SaveSubGameInfo(void)
 				case SUBGAMEID_SUGOROKU:		/* すごろく */
 					pTmp = GetInfoSugoroku ((PSUBGAME_SUGOROKUINFO)pInfo->pInfo, &dwTmp);
 					break;
+				case SUBGAMEID_JANJAN:			/* SBOじゃん */
+					pTmp = GetInfoJanjan ((PSUBGAME_JANJANINFO)pInfo->pInfo, &dwTmp);
+					break;
 				}
 				SAFE_DELETE_ARRAY (pTmp);
 				dwDataSizeTmp += dwTmp;
@@ -369,6 +394,9 @@ BOOL SaveSubGameInfo(void)
 					break;
 				case SUBGAMEID_SUGOROKU:		/* すごろく */
 					pTmp = GetInfoSugoroku ((PSUBGAME_SUGOROKUINFO)pInfo->pInfo, &dwTmp);
+					break;
+				case SUBGAMEID_JANJAN:			/* SBOじゃん */
+					pTmp = GetInfoJanjan ((PSUBGAME_JANJANINFO)pInfo->pInfo, &dwTmp);
 					break;
 				}
 				if (pTmp) {
@@ -545,6 +573,9 @@ BOOL LoadSubGameInfo(void)
 					break;
 				case SUBGAMEID_SUGOROKU:		/* すごろく */
 					pTmp = PetInfoSugoroku (&pData[dwOffsetTmp], &dwTmp);
+					break;
+				case SUBGAMEID_JANJAN:			/* SBOじゃん */
+					pTmp = PetInfoJanjan (&pData[dwOffsetTmp], &dwTmp);
 					break;
 				}
 
@@ -2446,6 +2477,110 @@ static PBYTE PetInfoSugoroku(PBYTE pData, PDWORD pdwSize)
 	}
 
 	*pdwSize = dwOffsetData + dwOffset;
+	return (PBYTE)pInfo;
+}
+
+/* ========================================================================= */
+/* 関数名：GetInfoJanjan													 */
+/* 内容：保存用サブゲーム情報取得(SBOじゃんの台)								 */
+/* 日付：2026/11/27															 */
+/* ========================================================================= */
+static PBYTE GetInfoJanjan(PSUBGAME_JANJANINFO pInfo, PDWORD pdwSize)
+{
+	PBYTE pData;
+	DWORD i, dwColumnCount, dwHeaderSize, dwDataSize, dwOffset, dwDataOffset, dwSize;
+
+	pData = NULL;
+	*pdwSize = 0;
+	if (pInfo == NULL) {
+		return NULL;
+	}
+
+	/* ヘッダ（列の名前と、データの位置。他の種別と同じ書式）とデータの大きさ */
+	dwColumnCount = 0;
+	dwHeaderSize = sizeof (DWORD) * 2;		/* 他の種別と同じ数え方（データの位置は、列数の分を引いて読む） */
+	dwDataSize = 0;
+	for (i = 0; s_aszNameJANJAN[i][0] != 'z'; i ++) {
+		dwHeaderSize += (strlen (s_aszNameJANJAN[i]) + 1) + sizeof (DWORD);
+		dwDataSize += (s_aJanjanCol[i].nKind == 1) ? sizeof (WORD) : sizeof (BYTE);
+		dwColumnCount ++;
+	}
+
+	pData = new BYTE[dwHeaderSize + dwDataSize];
+	*pdwSize = dwHeaderSize + dwDataSize;
+	ZeroMemory (pData, dwHeaderSize + dwDataSize);
+	dwOffset = 0;
+	dwDataOffset = dwHeaderSize;
+
+	CopyMemory (&pData[dwOffset], &dwColumnCount, sizeof (dwColumnCount));
+	dwOffset += sizeof (dwColumnCount);
+	for (i = 0; i < dwColumnCount; i ++) {
+		strcpy ((LPSTR)&pData[dwOffset], s_aszNameJANJAN[i]);
+		dwOffset += (strlen (s_aszNameJANJAN[i]) + 1);
+		CopyMemory (&pData[dwOffset], &dwDataOffset, sizeof (dwDataOffset));
+		dwOffset += sizeof (dwDataOffset);
+		dwDataOffset += (s_aJanjanCol[i].nKind == 1) ? sizeof (WORD) : sizeof (BYTE);
+	}
+	for (i = 0; i < dwColumnCount; i ++) {
+		dwSize = (s_aJanjanCol[i].nKind == 1) ? sizeof (WORD) : sizeof (BYTE);
+		CopyMemory (&pData[dwOffset], (const BYTE *)pInfo + s_aJanjanCol[i].nOffset, dwSize);
+		dwOffset += dwSize;
+	}
+
+	return pData;
+}
+
+/* ========================================================================= */
+/* 関数名：PetInfoJanjan													 */
+/* 内容：サブゲーム情報作成(SBOじゃんの台)									 */
+/*       保存に無い列は既定値、知らない列は読み飛ばす。範囲に丸めて返す		 */
+/* 日付：2026/11/27															 */
+/* ========================================================================= */
+static PBYTE PetInfoJanjan(PBYTE pData, PDWORD pdwSize)
+{
+	DWORD i, j, dwOffset, dwOffsetData, dwColumnCount, dwEnd;
+	PSUBGAME_JANJANINFO pInfo;
+
+	dwOffset = 0;
+	CopyMemory (&dwColumnCount, &pData[dwOffset], sizeof (dwColumnCount));
+	dwOffset += sizeof (dwColumnCount);
+	dwOffsetData = dwOffset;
+
+	pInfo = new SUBGAME_JANJANINFO;
+	ZeroMemory (pInfo, sizeof (SUBGAME_JANJANINFO));
+	JanjanInfoSetDefault (pInfo);
+
+	dwEnd = 0;
+	for (i = 0; i < dwColumnCount; i ++) {
+		char szName[64];
+		DWORD dwPos, dwSize;
+		int nCol = -1;
+
+		strncpy (szName, (LPSTR)&pData[dwOffset], sizeof (szName) - 1);
+		szName[sizeof (szName) - 1] = 0;
+		dwOffset += (strlen ((LPSTR)&pData[dwOffset]) + 1);
+		CopyMemory (&dwPos, &pData[dwOffset], sizeof (dwPos));
+		dwPos -= dwOffsetData;
+		dwOffset += sizeof (dwPos);
+
+		for (j = 0; s_aszNameJANJAN[j][0] != 'z'; j ++) {
+			if (strcmp (szName, s_aszNameJANJAN[j]) == 0) {
+				nCol = (int)j;
+				break;
+			}
+		}
+		if (nCol < 0) {
+			continue;
+		}
+		dwSize = (s_aJanjanCol[nCol].nKind == 1) ? sizeof (WORD) : sizeof (BYTE);
+		CopyMemory ((BYTE *)pInfo + s_aJanjanCol[nCol].nOffset, &pData[dwPos], dwSize);
+		if (dwPos + dwSize > dwEnd) {
+			dwEnd = dwPos + dwSize;
+		}
+	}
+	JanjanInfoClamp (pInfo);
+
+	*pdwSize = dwOffsetData + dwEnd;
 	return (PBYTE)pInfo;
 }
 

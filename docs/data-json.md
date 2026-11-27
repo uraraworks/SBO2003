@@ -33,7 +33,7 @@ node tools/data/sbo-data.mjs import --target staging --note "料理のレシピ�
 | magic・magicUser・equUser・job・stTmp・item・maker・recipe・quest・flag・talk | できる |
 
 | char（保存される NPC だけ） | できる（`npcId` で突き合わせ。下の「NPC」） |
-| map（マス目は除く）・mapParts・efc・comEfc・subGame | できる（subGame は `detail` の項目だけ） |
+| map（マス目は除く）・mapParts・efc・comEfc・subGame | できる（subGame は `detail` の項目だけ。種別 8 の SBOじゃんの台の設定も `detail` にある。項目は `docs/ai-data.md` の「SBOじゃん」） |
 | leave | 書き出さない（プレイヤーの預かり所） |
 
 マップのマス目はこのツールでは扱いません（大きいので）。AI に頼むか、API の `/api/data/tiles/set` を使います。

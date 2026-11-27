@@ -5,7 +5,10 @@
 /* ========================================================================= */
 /*
  * 仕様は docs/janjan.md。盤面ロジックは common/Janjan.h（通信・時計を知らない）。落ち物パズル（SboSvrPuzzle.cpp）の作りを写している。
- * 台は、台詞が "@j<コイン番号>,<枚数>,<CPUの強さ>" の NPC（枚数 0・コイン番号 0 は無料。強さの省略は 2）。
+ * 台は、台詞が "@j<サブゲーム情報の番号>" の NPC。設定（チケットのアイテム番号・枚数・CPU強さ）はサブゲーム情報 SUBGAME_JANJANINFO（SUBGAMEID_JANJAN）から読む。
+ *   番号の指す情報が無い・種別が違う時は、無料・強さ 2 の台。旧形式 "@j<コイン番号>,<枚数>,<CPUの強さ>" も移行のため当面は読む（枚数 0・コイン番号 0 は無料。強さの省略は 2）。
+ *   チケット（枚数 1 以上）の台は S キーでは座れず、座る場所のマスでコマンド→道具→チケットを使うと「始めますか？」と聞き（CMD_TALKANSWER。JanAnswer）、
+ *   「はい」を受けてから必要枚数を取り上げて座る（いいえ・30 秒切れ・使用中・足りない時は減らさない）。
  *   台NPCのマスが卓の中心 (cx,cy)。盤は 7×7 マス。座る場所は 席0=(cx,cy+4) 席1=(cx+4,cy) 席2=(cx,cy-4) 席3=(cx-4,cy)。
  *   台NPCは見えない（CMD_CHARINFO の byGhost を送る時だけ CHARGHOST_NAMEONLY にする。PuzzleGhostForSend）。
  *   どの席かは、立っているマスで決まる。座るとキャラは歩かない。
@@ -31,6 +34,7 @@
 #include <stdlib.h>
 #include <string>
 #include <vector>
+#include <map>
 
 #define JAN_NOCHAR			((DWORD)-1)
 #define JAN_NEAR			(3)			/* 座る場所のマスからこれ以上離れたら席を立たせる（マス） */
@@ -94,10 +98,35 @@ DWORD g_dwJanSeedOverride = 0;
 /* 内部関数																	 */
 /* ========================================================================= */
 
+/* 「チケットを使って始めますか？」の問い（座ろうとした人ごとに 1 つ。答えは JanAnswer。時間がたったら捨てる） */
+typedef struct _JANASK {
+	DWORD	dwNpc;							/* 座ろうとした台NPCのテーブルID */
+	DWORD	dwTime;							/* 問いを出した時刻 */
+} JANASK;
+static std::map<DWORD, JANASK> s_mapAsk;
+
+/* 台の設定を読む。台詞が "@j<番号>"（数字だけ）ならサブゲーム情報から（無い・種別が違えば既定=無料・強さ 2）。
+   それ以外（"@j" だけ・旧形式 "@j<コイン番号>,<枚数>,<強さ>"）は台詞の数値から */
 static void ParseParam(LPCSTR pszSpeech, JANPARAM *pParam)
 {
 	int anVal[JANJAN_PARAM_COUNT];
+	int nNo = JanjanSpeechInfoNo (pszSpeech);
 
+	if (nNo >= 0) {
+		SUBGAME_JANJANINFO Info;
+		PSUBGAMEINFO pSub = (nNo < g_aSubaGameInfo.GetSize ()) ? g_aSubaGameInfo[nNo] : NULL;
+
+		memset (&Info, 0, sizeof (Info));
+		JanjanInfoSetDefault (&Info);
+		if (pSub && (pSub->byType == SUBGAMEID_JANJAN) && pSub->pInfo) {
+			memcpy (&Info, pSub->pInfo, sizeof (Info));
+		}
+		JanjanInfoClamp (&Info);
+		pParam->wCoinItem	= Info.wTicketItemID;
+		pParam->nCoinCount	= Info.byTicketNum;
+		pParam->nStrength	= Info.byCpuLevel;
+		return;
+	}
 	JanjanParseSpeech (pszSpeech, anVal);
 	pParam->wCoinItem	= ((anVal[0] < 0) || (anVal[0] > 65535)) ? 0 : (WORD)anVal[0];
 	pParam->nCoinCount	= (anVal[1] < 0) ? 0 : (anVal[1] > 99) ? 99 : anVal[1];
@@ -800,15 +829,15 @@ void JanSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed)
 		SendCmdSYSMSG (pChar->pID, "この台は今、使われています。");
 		return;
 	}
-	/* 有料の台（必要枚数 1 以上）は S キーでは始まらない。道具のコインを使って始める（無料の台は S キーで始まる） */
+	/* チケットの台（必要枚数 1 以上）は S キーでは始まらない。道具のチケットを使って始める（無料の台は S キーで始まる） */
 	if (!bCoinUsed && (Param.wCoinItem != 0) && (Param.nCoinCount > 0)) {
-		SendCmdSYSMSG (pChar->pID, "コインを使って始めます。コマンドの道具からコインを使ってください。");
+		SendCmdSYSMSG (pChar->pID, "チケットを使って始めます。コマンドの道具からチケットを使ってください。");
 		return;
 	}
-	/* コイン（無料の台は何も使わない）。足りなければ座らせない */
+	/* チケット（無料の台は何も使わない）。足りなければ座らせない。ここまで来たら座る（確認の「はい」を受けた後） */
 	if ((Param.wCoinItem != 0) && (Param.nCoinCount > 0)) {
 		if (CountCoin (pChar, Param.wCoinItem) < Param.nCoinCount) {
-			SendCmdSYSMSG (pChar->pID, "コインがありません。");
+			SendCmdSYSMSG (pChar->pID, "チケットがありません。");
 			return;
 		}
 		for (i = 0; i < Param.nCoinCount; i ++) {
@@ -816,7 +845,7 @@ void JanSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed)
 		}
 		/* 取り上げた分を本人の画面の持ち物に反映する（送らないと、座った後も画面にコインが残り、捨てると切断になる） */
 		SendCmdCHARITEM (pChar->pID, pChar->dwTblID);
-		sprintf (szMsg, "コインを%d枚使いました。", Param.nCoinCount);
+		sprintf (szMsg, "チケットを%d枚使いました。", Param.nCoinCount);
 		SendCmdSYSMSG (pChar->pID, szMsg);
 	}
 
@@ -876,11 +905,56 @@ BOOL JanUseItem(PCHARINFO pChar, WORD wItem)
 		if ((Param.wCoinItem != wItem) || (Param.nCoinCount <= 0)) {
 			continue;
 		}
-		/* 卓が使われていても JanSit が「この台は今、使われています。」を伝える（コインは減らさない） */
-		JanSit (pChar, pNpc, TRUE);
+		/* 使えない時（座っている・倒れている・卓が使用中・足りない）は何もしない・案内だけで、問いは出さずチケットは減らさない */
+		if (JanIsSeated (pChar) || PuzzleIsSeated (pChar) || (pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0) || (pChar->abySubStatus[0] != 0)) {
+			return TRUE;
+		}
+		{
+			int nTable = FindTable (pNpc->dwTblID, pNpc->dwMapID);
+			JANASK Ask;
+			char szAsk[96];
+
+			if ((nTable >= 0) && (s_aTable[nTable].nMode != JANMODE_IDLE)) {
+				SendCmdSYSMSG (pChar->pID, "この台は今、使われています。");
+				return TRUE;
+			}
+			if (CountCoin (pChar, Param.wCoinItem) < Param.nCoinCount) {
+				SendCmdSYSMSG (pChar->pID, "チケットがありません。");
+				return TRUE;
+			}
+			/* 確認（はい／いいえ）。取り上げは「はい」を受けてから（JanAnswer → JanSit） */
+			Ask.dwNpc = pNpc->dwTblID;
+			Ask.dwTime = g_dwTime;
+			s_mapAsk[pChar->dwTblID] = Ask;
+			sprintf (szAsk, "チケットを%d枚使って始めますか？@y", Param.nCoinCount);
+			SendCmdTALKMSG (pChar->pID, pNpc->dwTblID, szAsk);
+		}
 		return TRUE;
 	}
 	return FALSE;
+}
+
+BOOL JanAnswer(PCHARINFO pChar, DWORD dwNpcTblID, BOOL bYes)
+{
+	std::map<DWORD, JANASK>::iterator it;
+	JANASK Ask;
+
+	if ((pChar == NULL) || (pChar->pID == 0)) {
+		return FALSE;
+	}
+	it = s_mapAsk.find (pChar->dwTblID);
+	if ((it == s_mapAsk.end ()) || (it->second.dwNpc != dwNpcTblID)) {
+		return FALSE;
+	}
+	Ask = it->second;
+	s_mapAsk.erase (it);
+	/* 30 秒たった問い・いいえ・台が消えた時は何もしない（チケットは減らさない） */
+	if (((DWORD)(g_dwTime - Ask.dwTime) > (DWORD)JAN_ASK_TIMEOUT_MS) || !bYes || (dwNpcTblID >= (DWORD)g_aCharInfo.GetSize ())) {
+		return TRUE;
+	}
+	/* 座る条件（座る場所のマス・使用中でない・チケットが足りる）は JanSit が改めて確かめる */
+	JanSit (pChar, g_aCharInfo[dwNpcTblID], TRUE);
+	return TRUE;
 }
 
 void JanKey(PCHARINFO pChar, BYTE byAct, BYTE byParam)
@@ -1116,6 +1190,7 @@ void JanOnLeave(PCHARINFO pChar)
 {
 	int nTable;
 
+	s_mapAsk.erase (pChar->dwTblID);
 	if (FindSeat (pChar, &nTable)) {
 		Leave (nTable, FALSE);
 	}

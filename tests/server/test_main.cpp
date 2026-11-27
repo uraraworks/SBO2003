@@ -19234,8 +19234,11 @@ static void TestPuzzleRecord(const std::vector<int> &aLogin)
 }
 
 /* ------------------------------------------------------------------------- */
-/* AW. SBOじゃん（台詞 "@j<コイン>,<枚数>,<CPUの強さ>" の NPC。卓は 7×7 マス・席は 4 つ・段階 1 は人間 1 人＋CPU 3 人）	 */
-/*     座る場所（席ごとのマス）・コインが減る・座る場所以外と使用中は座れない・手牌が本人にだけ表で他席は裏・	 */
+/* AW. SBOじゃん（台詞 "@j<サブゲーム番号>" の NPC。設定はサブゲーム情報。旧形式 "@j<コイン>,<枚数>,<強さ>" も読む。	 */
+/*     卓は 7×7 マス・席は 4 つ・段階 1 は人間 1 人＋CPU 3 人）						 */
+/*     サブゲーム情報（データAPIで足す・直す・不正は断る・止める・保存して読み直す）・チケットは確認で「はい」のあとに減る		 */
+/*     （いいえ・30 秒切れ・使用中・座る場所以外・足りない時は減らない）・旧形式の台詞・番号の情報が無い台は無料・		 */
+/*     座る場所（席ごとのマス）・座る場所以外と使用中は座れない・手牌が本人にだけ表で他席は裏・	 */
 /*     観戦者には全員分・CPU が自動で進む・人間が捨てる／ツモ／ロン／鳴き／見送り・時間切れ・流局・	 */
 /*     局が終わると席を立つ・席を立つ／離れる／マップ移動／切断で片付く・近づく／離れる・空卓の案内。	 */
 /*     盤面ロジック単体は janjan_test.cpp											 */
@@ -19327,13 +19330,25 @@ static void JanSitFree(PCHARINFO p, PCHARINFO pNpc, int nSeat)
 	PuzzleKeyS(p, pNpc);
 }
 
-/* 席 nSeat の座る場所に立って、持ち物のコインを使う（有料の台。持っていなければ何もしない） */
-static void JanSitCoin(PCHARINFO p, PCHARINFO pNpc, int nSeat, WORD wCoin)
+/* 席 nSeat の座る場所に立って、持ち物のチケットを使う（チケットの台。持っていなければ何もしない）。
+   確認（「始めますか？」）が出たら nAnswer で答える（1=はい・0=いいえ・-1=答えない）。出なければ答えは送らない */
+static void JanSitCoin(PCHARINFO p, PCHARINFO pNpc, int nSeat, WORD wCoin, int nAnswer = 1)
 {
 	int nDx, nDy;
 	JanjanSeatOffset(nSeat, &nDx, &nDy);
 	PuzzlePlace(p, pNpc, (DWORD)((int)pNpc->dwX + nDx), (DWORD)((int)pNpc->dwY + nDy));
+	int nConn = DgTestConn(p);
+	int nTalk0 = MockCmdCount(nConn, CMD_TALKMSG);
 	PuzzleUseCoin(p, wCoin);
+	if ((nAnswer >= 0) && (MockCmdCount(nConn, CMD_TALKMSG) > nTalk0)) {
+		PuzzleAnswerSend(p, pNpc, nAnswer ? TRUE : FALSE);
+	}
+}
+
+/* 確認（TALKMSG）が出た回数 */
+static int JanAskCount(PCHARINFO p)
+{
+	return MockCmdCount(DgTestConn(p), CMD_TALKMSG);
 }
 
 /* 手牌を決めた並びにする（昇順）。山の次に引く牌も決められる（nDraw<0 なら変えない） */
@@ -19380,8 +19395,18 @@ static void TestJan(const std::vector<int> &aLogin)
 	/* 3 人とも卓の中心（台NPCのマス）に集める。席のマス（中心から 4 マス）が地図の外に出ないように中心は (6,6) 以上にする */
 	DWORD dwCx = max(pA->dwX, (DWORD)6), dwCy = max(pA->dwY, (DWORD)6);
 	for (i = 0; i < 3; i ++) PuzzlePlace(apP[i], apP[0], dwCx, dwCy);
-	/* 台：コイン 1 を 2 枚・CPU の強さ 2 */
-	NearNpcOpen(pA, "@j1,2");
+	/* 台：サブゲーム情報（データAPIで足す。チケット＝アイテム 1 を 2 枚・CPU の強さ 2）の番号を台詞にする */
+	int nSubBase = g_aSubaGameInfo.GetSize();
+	{
+		std::string strRes = FlagGroupApi("subGame", nSubBase, "{\"byType\":8,\"detail\":{\"wTicketItemID\":1,\"byTicketNum\":2}}");
+		PSUBGAMEINFO pSub = (g_aSubaGameInfo.GetSize() == nSubBase + 1) ? g_aSubaGameInfo[nSubBase] : NULL;
+		PSUBGAME_JANJANINFO pJ = (pSub && pSub->byType == SUBGAMEID_JANJAN) ? (PSUBGAME_JANJANINFO)pSub->pInfo : NULL;
+		printf("jan subgame add ok=%d info=%d ticket=%d x%d cpu=%d\n", strRes.find("\"ok\":true") != std::string::npos, pJ != NULL, pJ ? pJ->wTicketItemID : -1, pJ ? pJ->byTicketNum : -1, pJ ? pJ->byCpuLevel : -1);
+	}
+	char szSpeech[16];
+	sprintf(szSpeech, "@j%d", nSubBase);
+	printf("jan speech no=%d old=%d none=%d\n", JanjanSpeechInfoNo(szSpeech) == nSubBase, JanjanSpeechInfoNo("@j1,2"), JanjanSpeechInfoNo("@j"));
+	NearNpcOpen(pA, szSpeech);
 	PCHARINFO pT = s_aNearNpc.back();
 	pT->dwX = pT->dwXBack = pT->dwStartX = dwCx;
 	pT->dwY = pT->dwYBack = pT->dwStartY = dwCy;
@@ -19428,17 +19453,17 @@ static void TestJan(const std::vector<int> &aLogin)
 		PuzzlePlace(pA, pT, (DWORD)((int)dwCx + nDx), (DWORD)((int)dwCy + nDy));
 		PuzzleKeyS(pA, pT);
 		printf("jan skey paid seated=%d coin=%d msg=%d\n", JanIsSeated(pA), PuzzleCoinCount(pA, wCoin),
-			MockHasText(anConn[0], CMD_SYSMSG, "コマンドの道具からコインを使ってください"));
+			MockHasText(anConn[0], CMD_SYSMSG, "コマンドの道具からチケットを使ってください"));
 		JanSetCoins(pA, wCoin, 1);
 		JanSitCoin(pA, pT, 2, wCoin);
-		printf("jan short seated=%d coin=%d msg=%d\n", JanIsSeated(pA), PuzzleCoinCount(pA, wCoin), MockHasText(anConn[0], CMD_SYSMSG, "コインがありません"));
+		printf("jan short seated=%d coin=%d msg=%d\n", JanIsSeated(pA), PuzzleCoinCount(pA, wCoin), MockHasText(anConn[0], CMD_SYSMSG, "チケットがありません"));
 	}
 	/* 2 枚で座る（席 2＝中心の上 4 マス）。2 枚減って、状態が届く */
 	JanSetCoins(pA, wCoin, 2);
 	int nItem0 = MockCmdCount(anConn[0], CMD_CHARITEM), nA0 = JanCount(anConn[0]);
 	JanSitCoin(pA, pT, 2, wCoin);
 	printf("jan sit seated=%d seat=%d coin=%d used=%d charitem+%d packets+%d\n", JanIsSeated(pA), JanGetSeat(pA), PuzzleCoinCount(pA, wCoin),
-		MockHasText(anConn[0], CMD_SYSMSG, "コインを2枚使いました"), MockCmdCount(anConn[0], CMD_CHARITEM) - nItem0, JanCount(anConn[0]) - nA0);
+		MockHasText(anConn[0], CMD_SYSMSG, "チケットを2枚使いました"), MockCmdCount(anConn[0], CMD_CHARITEM) - nItem0, JanCount(anConn[0]) - nA0);
 	JanLast(anConn[0], pT->dwTblID, &st);
 	JanLast(anConn[2], pT->dwTblID, &stC);
 	printf("jan sit state A kind=%d myseat=%d idle=%d phase=%d states=%d%d%d%d names=%s,%s,%d,%s hand=%d\n", st.byKind, st.byMySeat, st.byIdle, st.byPhase,
@@ -19549,6 +19574,138 @@ static void TestJan(const std::vector<int> &aLogin)
 		JanKeySend(pA, JAN_ACT_DISCARD, 0);
 		JanKeySend(pA, JAN_ACT_TSUMO);
 		printf("jan after leave packets+%d\n", JanCount(anConn[0]) - nA1);
+	}
+
+	/* 13. チケットの確認・サブゲーム情報・旧形式の台詞・番号の情報が無い台。ここまでの卓は片付けてから始める */
+	JanOnLeave(pA);
+	JanOnLeave(pB);
+	JanOnLeave(pC);
+	JanTick(300);
+	{
+		/* (a) 座る場所でチケットを使うと確認が出る。答えるまでチケットは減らず、座らない */
+		JanSetCoins(pA, wCoin, 2);
+		int nAsk0 = JanAskCount(pA);
+		JanSitCoin(pA, pT, 2, wCoin, -1);
+		printf("jan ticket ask shown=+%d text=%d seated=%d coin=%d\n", JanAskCount(pA) - nAsk0,
+			DgTestText(pA, CMD_TALKMSG, "チケットを2枚使って始めますか？@y"), JanIsSeated(pA), PuzzleCoinCount(pA, wCoin));
+		/* (b) 「いいえ」：座らず減らない。もう一度「はい」を送っても（問いは消えている）何も起きない */
+		PuzzleAnswerSend(pA, pT, FALSE);
+		int nNo = JanIsSeated(pA), nCoinNo = PuzzleCoinCount(pA, wCoin);
+		PuzzleAnswerSend(pA, pT, TRUE);
+		printf("jan ticket no seated=%d coin=%d again seated=%d coin=%d\n", nNo, nCoinNo, JanIsSeated(pA), PuzzleCoinCount(pA, wCoin));
+		/* (c) 30 秒たってから「はい」：無効（座らず減らない） */
+		JanSitCoin(pA, pT, 2, wCoin, -1);
+		JanTick(JAN_ASK_TIMEOUT_MS + 1);
+		PuzzleAnswerSend(pA, pT, TRUE);
+		printf("jan ticket timeout seated=%d coin=%d\n", JanIsSeated(pA), PuzzleCoinCount(pA, wCoin));
+		/* (d) 座る場所を離れてから「はい」：座らず減らない */
+		JanSitCoin(pA, pT, 2, wCoin, -1);
+		PuzzlePlace(pA, pT, dwCx + 1, dwCy);
+		PuzzleAnswerSend(pA, pT, TRUE);
+		printf("jan ticket moved seated=%d coin=%d\n", JanIsSeated(pA), PuzzleCoinCount(pA, wCoin));
+		/* (e) 29 秒以内の「はい」：座って 2 枚取り上げる（持ち物も本人に送る） */
+		int nItem0 = MockCmdCount(anConn[0], CMD_CHARITEM);
+		JanSitCoin(pA, pT, 2, wCoin, -1);
+		JanTick(JAN_ASK_TIMEOUT_MS - 1000);
+		PuzzleAnswerSend(pA, pT, TRUE);
+		printf("jan ticket yes seated=%d seat=%d coin=%d charitem+%d used=%d\n", JanIsSeated(pA), JanGetSeat(pA), PuzzleCoinCount(pA, wCoin),
+			MockCmdCount(anConn[0], CMD_CHARITEM) - nItem0, MockHasText(anConn[0], CMD_SYSMSG, "チケットを2枚使いました"));
+		/* (f) 使用中の台では確認も出さず、減らさない。座っている人が別のチケットを使っても確認は出ない */
+		JanSetCoins(pB, wCoin, 2);
+		int nAskB = JanAskCount(pB);
+		JanSitCoin(pB, pT, 0, wCoin);
+		printf("jan ticket busy ask=+%d seatedB=%d coinB=%d msg=%d\n", JanAskCount(pB) - nAskB, JanIsSeated(pB), PuzzleCoinCount(pB, wCoin),
+			MockHasText(anConn[1], CMD_SYSMSG, "この台は今、使われています"));
+		JanSetCoins(pA, wCoin, 2);
+		nAsk0 = JanAskCount(pA);
+		PuzzleUseCoin(pA, wCoin);
+		printf("jan ticket seated use ask=+%d coin=%d\n", JanAskCount(pA) - nAsk0, PuzzleCoinCount(pA, wCoin));
+		/* 問いが無いのに届いた答えは何も起こさない */
+		JanKeySend(pA, JAN_ACT_LEAVE);
+		JanOnLeave(pA);
+		PuzzleAnswerSend(pB, pT, TRUE);
+		printf("jan ticket stray seatedB=%d coinB=%d\n", JanIsSeated(pB), PuzzleCoinCount(pB, wCoin));
+	}
+	{
+		/* サブゲーム情報の変更が台に効く：範囲外はデータAPIが断る・直すと次から効く（枚数 3 だと 2 枚では足りない） */
+		std::string strNg1 = FlagGroupApi("subGame", nSubBase, "{\"detail\":{\"byTicketNum\":100}}");
+		std::string strNg2 = FlagGroupApi("subGame", nSubBase, "{\"detail\":{\"byCpuLevel\":4}}");
+		std::string strNg3 = FlagGroupApi("subGame", nSubBase, "{\"detail\":{\"byUnknown\":1}}");
+		std::string strOk = FlagGroupApi("subGame", nSubBase, "{\"detail\":{\"byTicketNum\":3,\"byCpuLevel\":3}}");
+		PSUBGAME_JANJANINFO pJ = (PSUBGAME_JANJANINFO)g_aSubaGameInfo[nSubBase]->pInfo;
+		printf("jan subgame edit ng=%d%d%d ok=%d num=%d cpu=%d\n", strNg1.find("\"ok\":false") != std::string::npos, strNg2.find("\"ok\":false") != std::string::npos,
+			strNg3.find("\"ok\":false") != std::string::npos, strOk.find("\"ok\":true") != std::string::npos, pJ->byTicketNum, pJ->byCpuLevel);
+		JanSetCoins(pA, wCoin, 2);
+		int nAsk0 = JanAskCount(pA);
+		JanSitCoin(pA, pT, 2, wCoin);
+		printf("jan subgame edit short seated=%d coin=%d msg=%d\n", JanIsSeated(pA), PuzzleCoinCount(pA, wCoin), MockHasText(anConn[0], CMD_SYSMSG, "チケットがありません"));
+		/* 保存して読み直しても同じ（読み込みは空の表に入れる作りなので、今の表を退避して空にしてから読む） */
+		SaveSubGameInfo();
+		std::vector<PSUBGAMEINFO> aOrig;
+		for (int i = 0; i < g_aSubaGameInfo.GetSize(); i ++) aOrig.push_back(g_aSubaGameInfo[i]);
+		int nBase = (int)aOrig.size();
+		g_aSubaGameInfo.RemoveAll();
+		LoadSubGameInfo();
+		PSUBGAMEINFO pLoad = (g_aSubaGameInfo.GetSize() == nBase) ? g_aSubaGameInfo[nBase - 1] : NULL;
+		PSUBGAME_JANJANINFO pL = (pLoad && pLoad->byType == SUBGAMEID_JANJAN) ? (PSUBGAME_JANJANINFO)pLoad->pInfo : NULL;
+		printf("jan subgame load ok=%d ticket=%d x%d cpu=%d\n", pL != NULL, pL ? pL->wTicketItemID : -1, pL ? pL->byTicketNum : -1, pL ? pL->byCpuLevel : -1);
+		for (int i = 0; i < g_aSubaGameInfo.GetSize(); i ++) {
+			PSUBGAMEINFO pDel = g_aSubaGameInfo[i];
+			SAFE_DELETE_ARRAY(pDel->pInfo);
+			delete pDel;
+		}
+		g_aSubaGameInfo.RemoveAll();
+		for (int i = 0; i < nBase; i ++) g_aSubaGameInfo.Add(aOrig[i]);
+		/* 直して 2 枚に戻すと、2 枚で座れる */
+		FlagGroupApi("subGame", nSubBase, "{\"detail\":{\"byTicketNum\":2,\"byCpuLevel\":2}}");
+		JanSitCoin(pA, pT, 2, wCoin);
+		printf("jan subgame edit back seated=%d coin=%d\n", JanIsSeated(pA), PuzzleCoinCount(pA, wCoin));
+		JanOnLeave(pA);
+		/* 止める（byType 0）と、番号の情報が無い台＝無料で S キーで座れる。チケットは使えない */
+		std::string strStop = FlagGroupApi("subGame", nSubBase, "{\"byType\":0}");
+		JanSetCoins(pA, wCoin, 2);
+		nAsk0 = JanAskCount(pA);
+		JanSitCoin(pA, pT, 2, wCoin);
+		printf("jan subgame stop ok=%d type=%d ticket ask=+%d seated=%d coin=%d\n", strStop.find("\"ok\":true") != std::string::npos,
+			g_aSubaGameInfo[nSubBase]->byType, JanAskCount(pA) - nAsk0, JanIsSeated(pA), PuzzleCoinCount(pA, wCoin));
+		JanSitFree(pA, pT, 2);
+		printf("jan subgame stop free skey seated=%d coin=%d\n", JanIsSeated(pA), PuzzleCoinCount(pA, wCoin));
+		JanOnLeave(pA);
+	}
+	{
+		/* 旧形式 "@j1,2"（コイン 1 を 2 枚）も読む：確認が出て「はい」で 2 枚取り上げる */
+		NearNpcOpen(pA, "@j1,2");
+		PCHARINFO pO = s_aNearNpc.back();
+		pO->dwX = pO->dwXBack = pO->dwStartX = dwCx + 12;
+		pO->dwY = pO->dwYBack = pO->dwStartY = dwCy;
+		JanSetCoins(pA, wCoin, 2);
+		int nAsk0 = JanAskCount(pA);
+		JanSitCoin(pA, pO, 2, wCoin, 1);
+		printf("jan old speech ask=+%d seated=%d coin=%d\n", JanAskCount(pA) - nAsk0, JanIsSeated(pA), PuzzleCoinCount(pA, wCoin));
+		JanOnLeave(pA);
+		/* 番号の情報が無い・種別が違う "@j<番号>" は、無料の台（S キーで座れて、チケットは使えない） */
+		const char *apszNone[2] = { "@j9999", "@j0" };
+		int nSeated = 0;
+		for (int k = 0; k < 2; k ++) {
+			NearNpcOpen(pA, apszNone[k]);
+			PCHARINFO pN = s_aNearNpc.back();
+			pN->dwX = pN->dwXBack = pN->dwStartX = dwCx + 24 + k * 12;
+			pN->dwY = pN->dwYBack = pN->dwStartY = dwCy;
+			JanSitFree(pA, pN, 2);
+			nSeated += JanIsSeated(pA);
+			JanOnLeave(pA);
+		}
+		printf("jan none info free seated=%d type0 janjan=%d\n", nSeated, (g_aSubaGameInfo.GetSize() > 0) && (g_aSubaGameInfo[0]->byType == SUBGAMEID_JANJAN));
+		/* 使い終わった台は台でなくす */
+		for (size_t k = 0; k < s_aNearNpc.size(); k ++) {
+			PCHARINFO pNpc = s_aNearNpc[k];
+			if ((pNpc != pT) && JanIsTableNpc(pNpc) && (pNpc->dwX > dwCx + 8)) {
+				delete [] pNpc->pszNpcSpeech;
+				pNpc->pszNpcSpeech = new char[1];
+				pNpc->pszNpcSpeech[0] = '\0';
+			}
+		}
+		JanTick(300);
 	}
 
 	/* ここから無料の台（コイン不要）で、手牌を決めた場面を作る */
@@ -19821,6 +19978,13 @@ static void TestJan(const std::vector<int> &aLogin)
 			pNpc->pszNpcSpeech = new char[1];
 			pNpc->pszNpcSpeech[0] = '\0';
 		}
+	}
+	/* 足したサブゲーム情報（最後の 1 件）を消す */
+	if (g_aSubaGameInfo.GetSize() == nSubBase + 1) {
+		PSUBGAMEINFO pDel = g_aSubaGameInfo[nSubBase];
+		SAFE_DELETE_ARRAY(pDel->pInfo);
+		delete pDel;
+		g_aSubaGameInfo.RemoveAt(nSubBase);
 	}
 	NearNpcClose();
 	g_dwTime = (s_dwFakeNow += 300);

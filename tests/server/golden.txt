@@ -2632,6 +2632,8 @@ board empty text=2
 board full counts=10,10 len<max=1 tenth=2 end=1
 record done seats=0
 == AW. SBO Janjan table ==
+jan subgame add ok=1 info=1 ticket=1 x2 cpu=2
+jan speech no=1 old=-1 none=-1
 jan packet size=385 npc=1 ghost=1 free=0
 jan seat cells ok=4
 jan idle A idle=3 phase=0 myseat=255 empty=4 | C idle=1
@@ -2656,6 +2658,22 @@ jan human discard river2=1 hand2=8 logic=0 lastseat=2
 jan human discard tile=1
 jan leave seated=0 seats=0 packets A+1 C+1 idleA=3 idleC=1 phaseA=0
 jan after leave packets+0
+jan ticket ask shown=+1 text=1 seated=0 coin=2
+jan ticket no seated=0 coin=2 again seated=0 coin=2
+jan ticket timeout seated=0 coin=2
+jan ticket moved seated=0 coin=2
+jan ticket yes seated=1 seat=2 coin=0 charitem+1 used=1
+jan ticket busy ask=+0 seatedB=0 coinB=2 msg=1
+jan ticket seated use ask=+0 coin=2
+jan ticket stray seatedB=0 coinB=2
+jan subgame edit ng=111 ok=1 num=3 cpu=3
+jan subgame edit short seated=0 coin=2 msg=1
+jan subgame load ok=1 ticket=1 x3 cpu=3
+jan subgame edit back seated=1 coin=0
+jan subgame stop ok=1 type=0 ticket ask=+0 seated=0 coin=2
+jan subgame stop free skey seated=1 coin=2
+jan old speech ask=+1 seated=1 coin=0
+jan none info free seated=2 type0 janjan=0
 jan ron wait can=26 gumi=1,12,13 last=0/15 limit>0=1
 jan ron illegal packets+0
 jan ron result=1 winner=1 how=1 phase=2 score=1 hidden=0,0,0,0 msg=1 seated=1

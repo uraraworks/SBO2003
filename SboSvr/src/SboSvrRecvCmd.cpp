@@ -9,6 +9,7 @@
 #include "include.h"
 #include "Glbldata.h"
 #include "common/BowFlight.h"
+#include "common/Janjan.h"
 #include "CharProc/CharProcBase.h"
 #include "CharProc/CharProcPUT.h"
 #include "../Common/Info/InfoJob.h"
@@ -1439,6 +1440,7 @@ int GetSubGameDataSize(BYTE byType)
 	case SUBGAMEID_DUNGEON:		nSize = sizeof (SUBGAME_DUNGEONINFO);	break;
 	case SUBGAMEID_WAR:			nSize = sizeof (SUBGAME_WARINFO);		break;
 	case SUBGAMEID_SUGOROKU:	nSize = sizeof (SUBGAME_SUGOROKUINFO);	break;
+	case SUBGAMEID_JANJAN:		nSize = sizeof (SUBGAME_JANJANINFO);	break;
 	}
 
 	return nSize;
@@ -10035,6 +10037,19 @@ void RecvDataProcSUBGAMEINFO(PBYTE pData, DWORD dwDataSize)
 			}
 		}
 		break;
+
+	case SUBGAMEID_JANJAN:		/* SBOじゃん（実行中の値を持たないので、そのまま写して範囲に丸める。届いた量が足りなければ既定値） */
+		{
+			PSUBGAME_JANJANINFO pJanjan = (PSUBGAME_JANJANINFO)g_aSubaGameInfo[pRecv->dwTblID]->pInfo;
+
+			if (s_dwRecvSize >= sizeof (CMDPARA_DATA1) + sizeof (SUBGAME_JANJANINFOSAVE)) {
+				CopyMemory (pJanjan, pRecv + 1, sizeof (SUBGAME_JANJANINFO));
+			} else {
+				JanjanInfoSetDefault (pJanjan);
+			}
+			JanjanInfoClamp (pJanjan);
+		}
+		break;
 	}
 Exit:
 	SAFE_DELETE_ARRAY (pInfoBack);
@@ -16341,8 +16356,11 @@ void RecvDataProcTALKANSWER(PBYTE pData, DWORD dwDataSize)
 	if (TrialRoomAnswer (g_aCharInfo[s_nCharNoRecv], pPara->dwTblID, pPara->byData ? TRUE : FALSE)) {
 		return;
 	}
-	/* 落ち物パズルの「乱入しますか？」への答えなら、そちらで受ける */
+	/* 落ち物パズル・SBOじゃんのチケットの「始めますか？」への答えなら、そちらで受ける */
 	if (PuzzleAnswer (g_aCharInfo[s_nCharNoRecv], pPara->dwTblID, pPara->byData ? TRUE : FALSE)) {
+		return;
+	}
+	if (JanAnswer (g_aCharInfo[s_nCharNoRecv], pPara->dwTblID, pPara->byData ? TRUE : FALSE)) {
 		return;
 	}
 	TalkAnswer (g_aCharInfo[s_nCharNoRecv], pPara->dwTblID, pPara->byData ? TRUE : FALSE);
