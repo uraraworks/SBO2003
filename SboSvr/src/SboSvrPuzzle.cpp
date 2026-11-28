@@ -313,7 +313,7 @@ static BYTE SeatFlag(const PUZZLETABLE &Table, PCHARINFO pChar)
 	PCHARINFO pNpc = (Table.dwNpc < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[Table.dwNpc] : NULL;
 
 	if (!Table.bIdle || (pNpc == NULL) || (pChar->byNpcType != NPCTYPE_INIT) || (pChar->byGameState < GAMESTATE_MOVE) ||
-		(pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0) || (pChar->abySubStatus[0] != 0) || PuzzleIsSeated (pChar) || PinballIsSeated (pChar) || MazeIsSeated (pChar) ||
+		(pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0) || (pChar->abySubStatus[0] != 0) || PuzzleIsSeated (pChar) || PinballIsSeated (pChar) || MazeIsSeated (pChar) || JanIsSeated (pChar) ||
 		(pChar->dwMapID != Table.dwMapID) || !IsSameSpace (pNpc, pChar) ||
 		((int)pChar->dwX != (int)pNpc->dwX + Table.Param.nSdx) || ((int)pChar->dwY != (int)pNpc->dwY + Table.Param.nSdy)) {
 		return 0;
@@ -714,8 +714,8 @@ BOOL PuzzleOnSeatCell(PCHARINFO pChar, PCHARINFO pNpc)
 
 BYTE PuzzleGhostForSend(PCHARINFO pChar)
 {
-	/* 台NPC（@p）は体を描かない（名前だけの目印と同じ扱い）。データは書き換えず、送る時だけそうする */
-	return (PuzzleIsTableNpc (pChar) || PinballIsTableNpc (pChar)) ? (BYTE)CHARGHOST_NAMEONLY : pChar->byGhost;
+	/* 台NPC（@p・ピンボールの @i・SBOじゃんの @j）は体を描かない（名前だけの目印と同じ扱い）。データは書き換えず、送る時だけそうする */
+	return (PuzzleIsTableNpc (pChar) || PinballIsTableNpc (pChar) || JanIsTableNpc (pChar)) ? (BYTE)CHARGHOST_NAMEONLY : pChar->byGhost;
 }
 
 BOOL PuzzleIsSeated(PCHARINFO pChar)
@@ -980,7 +980,7 @@ void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed, int nChoice)
 	DWORD dwPartnerNpc;
 	char szMsg[96];
 
-	if (!PuzzleIsTableNpc (pNpc) || (pChar->byNpcType != NPCTYPE_INIT) || PuzzleIsSeated (pChar) || PinballIsSeated (pChar) || MazeIsSeated (pChar)) {
+	if (!PuzzleIsTableNpc (pNpc) || (pChar->byNpcType != NPCTYPE_INIT) || PuzzleIsSeated (pChar) || PinballIsSeated (pChar) || JanIsSeated (pChar) || MazeIsSeated (pChar)) {
 		return;
 	}
 	/* 座れるのは、台の座る場所のマスの上だけ（同じマップ・同じ空間。向きは問わない。隣のマスから台NPC越しには座らない） */

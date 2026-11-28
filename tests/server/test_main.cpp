@@ -24,6 +24,7 @@
 #include "../../common/FallingPuzzle.h"
 #include "../../common/MazeAttack.h"
 #include "../../common/MazeTable.h"
+#include "../../common/Janjan.h"
 #include "../../common/DungeonText.h"
 #include <algorithm>
 #pragma push_macro("max")
@@ -1366,6 +1367,7 @@ static void TestPuzzleIdle(const std::vector<int> &aLogin);
 static void TestPuzzleSeat(const std::vector<int> &aLogin);
 static void TestPuzzleRecord(const std::vector<int> &aLogin);
 static void TestMaze(const std::vector<int> &aLogin);
+static void TestJan(const std::vector<int> &aLogin);
 static void TestEmptyMapCheck(const std::vector<int> &aLogin);
 static void TestPutFill(void);
 static void TestDungeonTheme(void);
@@ -1958,6 +1960,8 @@ static void TestWorld(void)
 	TestPuzzleSeat(aLogin);
 	/* AV5. 落ち物パズルの INSERT COIN の案内（座る場所に立つと本人にだけ）・連勝・ハイスコアと連勝記録（保存・掲示板 @h・API） */
 	TestPuzzleRecord(aLogin);
+	/* AW. SBOじゃん（座る場所・コイン・手牌の出し分け・CPU の進行・ロン／鳴き・時間切れ・流局・片付け・観戦） */
+	TestJan(aLogin);
 	/* AW. 迷路対戦の台（サブゲーム情報＋台詞 @k<番号>・座る・進む・壁・不正な操作・勝ち・やり直し・席を立つ・観戦・片付け） */
 	TestMaze(aLogin);
 	g_aItemInfo[1]->byType = byCoinTypeBack;
@@ -2847,6 +2851,7 @@ static void TestRecv(PCHARINFO pChar, const void *pData, DWORD dwSize)
 /* 店・預かり所・転職所・着せ替えの人（台詞の印 "@6" "@7" "@5" "@a" "@"）を、p と同じ場所に置く／片付ける。
    サーバーは、これらの人が近くにいる時だけ買う・売る・預ける・転職・着せ替えを受ける */
 static std::vector<PCHARINFO> s_aNearNpc;
+void RenewTblNoChar(void);
 static void NearNpcOpen(PCHARINFO p, const char *pszSpeech, WORD wGrp = 0)
 {
 	PCHARINFO pNpc = new CHARINFO;
@@ -2874,6 +2879,7 @@ static void NearNpcOpen(PCHARINFO p)
 static void NearNpcClose(void)
 {
 	/* 後から作った順に消す（番号がずれないように最後の要素だけ） */
+	BOOL bRemoved = FALSE;
 	while (!s_aNearNpc.empty()) {
 		PCHARINFO pNpc = s_aNearNpc.back();
 		if (g_aCharInfo.GetSize() == 0 || g_aCharInfo[g_aCharInfo.GetSize() - 1] != pNpc) {
@@ -2883,7 +2889,10 @@ static void NearNpcClose(void)
 		delete [] pNpc->pszNpcSpeech;
 		delete pNpc;
 		s_aNearNpc.pop_back();
+		bRemoved = TRUE;
 	}
+	/* マップの NPC 番号表に消した NPC の番号が残ると、後のテスト（道具を使う処理など）が範囲外を読むので作り直す */
+	if (bRemoved) RenewTblNoChar();
 }
 
 static BYTE ItemSum(PCHARINFO p)
@@ -20239,6 +20248,1048 @@ static void TestMaze(const std::vector<int> &aLogin)
 	pB->byCharState = byStateB; pB->wHP = wHPB;
 	g_dwTime = dwTimeBack;
 	printf("maze done seats=%d idleTables=%d\n", MazeSeatCount(), MazeIdleCount());
+}
+
+/* ------------------------------------------------------------------------- */
+/* AW. SBOじゃん（台詞 "@j<サブゲーム番号>" の NPC。設定はサブゲーム情報。旧形式 "@j<コイン>,<枚数>,<強さ>" も読む。	 */
+/*     卓は 7×7 マス・席は 4 つ・段階 1 は人間 1 人＋CPU 3 人）						 */
+/*     サブゲーム情報（データAPIで足す・直す・不正は断る・止める・保存して読み直す）・チケットは確認で「はい」のあとに減る		 */
+/*     （いいえ・30 秒切れ・使用中・座る場所以外・足りない時は減らない）・旧形式の台詞・番号の情報が無い台は無料・		 */
+/*     座る場所（席ごとのマス）・座る場所以外と使用中は座れない・手牌が本人にだけ表で他席は裏・	 */
+/*     観戦者には全員分・CPU が自動で進む・人間が捨てる／ツモ／ロン／鳴き／見送り・時間切れ・流局・	 */
+/*     局が終わると席を立つ・席を立つ／離れる／マップ移動／切断で片付く・近づく／離れる・空卓の案内。	 */
+/*     盤面ロジック単体は janjan_test.cpp											 */
+/* ------------------------------------------------------------------------- */
+static void JanKeySend(PCHARINFO p, BYTE byAct, BYTE byParam = 0)
+{
+	CMDPARA_JANKEY Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_JANKEY;
+	Para.dwTblID = p->dwTblID;
+	Para.byAct = byAct;
+	Para.byParam = byParam;
+	TestRecv(p, &Para, sizeof(Para));
+}
+
+/* 覚えたパケットのうち CMD_JANSTATE を順番に取り出す */
+static void JanPackets(int nConn, std::vector<std::vector<BYTE> > &aOut)
+{
+	char *psz = MockCmdAll(nConn, CMD_JANSTATE);
+	size_t nLen = strlen(psz), nPos = 0;
+	aOut.clear();
+	while (nPos < nLen) {
+		size_t nEnd = nPos;
+		while (nEnd < nLen && psz[nEnd] != ',') nEnd ++;
+		std::vector<BYTE> a((nEnd - nPos) / 2, 0);
+		for (size_t i = 0; i < a.size(); i ++) {
+			unsigned int u = 0;
+			sscanf(psz + nPos + i * 2, "%2x", &u);
+			a[i] = (BYTE)u;
+		}
+		aOut.push_back(a);
+		nPos = nEnd + 1;
+	}
+	free(psz);
+}
+
+static int JanCount(int nConn)
+{
+	std::vector<std::vector<BYTE> > aP;
+	JanPackets(nConn, aP);
+	return (int)aP.size();
+}
+
+/* その人が最後に受けた、卓 dwNpc の CMD_JANSTATE（無ければ FALSE） */
+static BOOL JanLast(int nConn, DWORD dwNpc, CMDPARA_JANSTATE *pOut)
+{
+	std::vector<std::vector<BYTE> > aP;
+	JanPackets(nConn, aP);
+	for (int i = (int)aP.size() - 1; i >= 0; i --) {
+		if (aP[i].size() != sizeof(CMDPARA_JANSTATE)) continue;
+		memcpy(pOut, &aP[i][0], sizeof(*pOut));
+		if (pOut->dwNpc == dwNpc) return TRUE;
+	}
+	ZeroMemory(pOut, sizeof(*pOut));
+	return FALSE;
+}
+
+/* 席の手牌のうち、表（0xFF でない）の数・裏の数 */
+static void JanHandCount(const JANSEATWIRE &s, int *pnOpen, int *pnHidden)
+{
+	*pnOpen = *pnHidden = 0;
+	for (int i = 0; i < s.byHandNum; i ++) {
+		if (s.abyHand[i] == JAN_TILE_HIDDEN) (*pnHidden) ++; else (*pnOpen) ++;
+	}
+}
+
+/* 持っているコインを n 枚にする */
+static void JanSetCoins(PCHARINFO p, WORD wCoin, int n)
+{
+	for (int k = 0; k < MAX_MYITEM; k ++) {
+		for (int j = 0; j < MAX_MYITEM; j ++) if (p->waItem[j] == wCoin) { DelCharItem(p->dwTblID, (BYTE)j); break; }
+	}
+	for (int j = 0; j < n; j ++) AddCharItem(p->dwTblID, wCoin);
+}
+
+/* 時計を進めて卓を 1 回回す（JanProc は 1 回に 1 動作） */
+static void JanTick(int nMs)
+{
+	g_dwTime = (s_dwFakeNow += nMs);
+	JanProc();
+}
+
+/* 席 nSeat の座る場所のマスに立って S キーで話しかける（無料の台） */
+static void JanSitFree(PCHARINFO p, PCHARINFO pNpc, int nSeat)
+{
+	int nDx, nDy;
+	JanjanSeatOffset(nSeat, &nDx, &nDy);
+	PuzzlePlace(p, pNpc, (DWORD)((int)pNpc->dwX + nDx), (DWORD)((int)pNpc->dwY + nDy));
+	PuzzleKeyS(p, pNpc);
+}
+
+/* 席 nSeat の座る場所に立って、持ち物のチケットを使う（チケットの台。持っていなければ何もしない）。
+   確認（「始めますか？」）が出たら nAnswer で答える（1=はい・0=いいえ・-1=答えない）。出なければ答えは送らない */
+static void JanSitCoin(PCHARINFO p, PCHARINFO pNpc, int nSeat, WORD wCoin, int nAnswer = 1)
+{
+	int nDx, nDy;
+	JanjanSeatOffset(nSeat, &nDx, &nDy);
+	PuzzlePlace(p, pNpc, (DWORD)((int)pNpc->dwX + nDx), (DWORD)((int)pNpc->dwY + nDy));
+	int nConn = DgTestConn(p);
+	int nTalk0 = MockCmdCount(nConn, CMD_TALKMSG);
+	PuzzleUseCoin(p, wCoin);
+	if ((nAnswer >= 0) && (MockCmdCount(nConn, CMD_TALKMSG) > nTalk0)) {
+		PuzzleAnswerSend(p, pNpc, nAnswer ? TRUE : FALSE);
+	}
+}
+
+/* 確認（TALKMSG）が出た回数 */
+static int JanAskCount(PCHARINFO p)
+{
+	return MockCmdCount(DgTestConn(p), CMD_TALKMSG);
+}
+
+/* 手牌を決めた並びにする（昇順）。山の次に引く牌も決められる（nDraw<0 なら変えない） */
+static void JanRig(JanjanGame *g, const int *a0, const int *a1, const int *a2, const int *a3, int nDraw)
+{
+	const int *aSrc[4] = { a0, a1, a2, a3 };
+	for (int s = 0; s < 4; s ++) {
+		g->anHand[s] = 8;
+		for (int i = 0; i < 8; i ++) g->aHand[s][i] = aSrc[s][i];
+		std::sort(g->aHand[s], g->aHand[s] + 8);
+	}
+	if (nDraw >= 0) g->aPile[g->nPileTop] = nDraw;
+}
+
+/* 参加募集の待ち時間（サブゲーム情報の既定 60 秒）。この時間たつと開始する */
+#define JAN_TEST_WAIT_MS	(JANJAN_WAIT_DEFAULT * 1000)
+
+/* 座って（1 人で）募集の待ち時間まで進めて配牌させる（種を決める）。座れていれば配牌後のゲームを返す */
+static JanjanGame *JanDeal(PCHARINFO p, PCHARINFO pNpc, int nSeat)
+{
+	JanSitFree(p, pNpc, nSeat);
+	JanTick(JAN_TEST_WAIT_MS);
+	return JanGetGame(p);
+}
+
+static void TestJan(const std::vector<int> &aLogin)
+{
+	printf("== AW. SBO Janjan table ==\n");
+	if (aLogin.size() < 3) return;
+	s_pSpLogin = &aLogin;
+	PCHARINFO pA = g_aCharInfo[aLogin[0]], pB = g_aCharInfo[aLogin[1]], pC = g_aCharInfo[aLogin[2]];
+	PCHARINFO apP[3] = { pA, pB, pC };
+	int anConn[3] = { DgTestConn(pA), DgTestConn(pB), DgTestConn(pC) };
+	struct { DWORD dwMap, dwX, dwY; BYTE byState; WORD wHP; } aBack[3];
+	WORD wCoin = 1;
+	DWORD dwTimeBack = g_dwTime;
+	int i;
+	CMDPARA_JANSTATE st, stC;
+
+	for (i = 0; i < 3; i ++) {
+		aBack[i].dwMap = apP[i]->dwMapID; aBack[i].dwX = apP[i]->dwX; aBack[i].dwY = apP[i]->dwY;
+		aBack[i].byState = apP[i]->byCharState; aBack[i].wHP = apP[i]->wHP;
+		apP[i]->byCharState = CHARSTATE_MOVE;
+		if (apP[i]->wHP == 0) apP[i]->wHP = 10;
+		for (int j = 0; j < MAX_MYITEM; j ++) if (apP[i]->waItem[j] == wCoin) DelCharItem(apP[i]->dwTblID, (BYTE)j);
+	}
+	/* 3 人とも卓の中心（台NPCのマス）に集める。席のマス（中心から 4 マス）が地図の外に出ないように中心は (6,6) 以上にする */
+	DWORD dwCx = max(pA->dwX, (DWORD)6), dwCy = max(pA->dwY, (DWORD)6);
+	for (i = 0; i < 3; i ++) PuzzlePlace(apP[i], apP[0], dwCx, dwCy);
+	/* 台：サブゲーム情報（データAPIで足す。チケット＝アイテム 1 を 2 枚・CPU の強さ 2）の番号を台詞にする */
+	int nSubBase = g_aSubaGameInfo.GetSize();
+	{
+		std::string strRes = FlagGroupApi("subGame", nSubBase, "{\"byType\":8,\"detail\":{\"wTicketItemID\":1,\"byTicketNum\":2}}");
+		PSUBGAMEINFO pSub = (g_aSubaGameInfo.GetSize() == nSubBase + 1) ? g_aSubaGameInfo[nSubBase] : NULL;
+		PSUBGAME_JANJANINFO pJ = (pSub && pSub->byType == SUBGAMEID_JANJAN) ? (PSUBGAME_JANJANINFO)pSub->pInfo : NULL;
+		printf("jan subgame add ok=%d info=%d ticket=%d x%d cpu=%d\n", strRes.find("\"ok\":true") != std::string::npos, pJ != NULL, pJ ? pJ->wTicketItemID : -1, pJ ? pJ->byTicketNum : -1, pJ ? pJ->byCpuLevel : -1);
+	}
+	char szSpeech[16];
+	sprintf(szSpeech, "@j%d", nSubBase);
+	printf("jan speech no=%d old=%d none=%d\n", JanjanSpeechInfoNo(szSpeech) == nSubBase, JanjanSpeechInfoNo("@j1,2"), JanjanSpeechInfoNo("@j"));
+	NearNpcOpen(pA, szSpeech);
+	PCHARINFO pT = s_aNearNpc.back();
+	pT->dwX = pT->dwXBack = pT->dwStartX = dwCx;
+	pT->dwY = pT->dwYBack = pT->dwStartY = dwCy;
+	MockTrace(1);
+	g_dwTime = (s_dwFakeNow = max(s_dwFakeNow, g_dwTime) + 1000);
+	g_dwJanSeedOverride = 20261126;
+	printf("jan packet size=%d npc=%d ghost=%d free=%d\n", (int)sizeof(CMDPARA_JANSTATE), JanIsTableNpc(pT), PuzzleGhostForSend(pT) == CHARGHOST_NAMEONLY, JanSeatCount());
+	{
+		/* 席のマスは中心から (0,+4) (+4,0) (0,-4) (-4,0) */
+		int nOk = 0;
+		for (int s = 0; s < 4; s ++) {
+			int nDx, nDy, nSeat = -1;
+			JanjanSeatOffset(s, &nDx, &nDy);
+			PuzzlePlace(pA, pT, (DWORD)((int)dwCx + nDx), (DWORD)((int)dwCy + nDy));
+			nOk += JanOnSeatCell(pA, pT, &nSeat) && nSeat == s;
+		}
+		printf("jan seat cells ok=%d\n", nOk);
+	}
+	/* 座る場所の案内（空卓）：A は座る場所、C は台NPCのマス（座る場所ではない）に立っている */
+	JanTick(300);
+	JanLast(anConn[0], pT->dwTblID, &st);
+	JanLast(anConn[2], pT->dwTblID, &stC);
+	printf("jan idle A idle=%d phase=%d myseat=%d empty=%d | C idle=%d\n", st.byIdle, st.byPhase, st.byMySeat,
+		(st.aSeat[0].byState == 0) + (st.aSeat[1].byState == 0) + (st.aSeat[2].byState == 0) + (st.aSeat[3].byState == 0), stC.byIdle);
+	printf("jan idle field x=%d y=%d tables idle=%d\n", st.nFieldX == ((int)dwCx - 3) * 32, st.nFieldY == ((int)dwCy - 3) * 32, JanIdleCount());
+
+	/* 座る場所以外（台NPCのマス・座る場所の隣）では座れず、コインも減らない */
+	JanSetCoins(pA, wCoin, 2);
+	{
+		int anCell[3][2] = { {0, 0}, {1, 4}, {-1, 1} };
+		int nSeated = 0;
+		for (i = 0; i < 3; i ++) {
+			PuzzlePlace(pA, pT, (DWORD)((int)dwCx + anCell[i][0]), (DWORD)((int)dwCy + anCell[i][1]));
+			PuzzleUseCoin(pA, wCoin);
+			PuzzleKeyS(pA, pT);
+			nSeated += JanIsSeated(pA);
+		}
+		printf("jan other cells seated=%d coin=%d\n", nSeated, PuzzleCoinCount(pA, wCoin));
+	}
+	/* 有料の台で S キー：コインを使わず案内だけ。コインが足りない：座れず減らない */
+	{
+		int nDx, nDy;
+		JanjanSeatOffset(2, &nDx, &nDy);
+		PuzzlePlace(pA, pT, (DWORD)((int)dwCx + nDx), (DWORD)((int)dwCy + nDy));
+		PuzzleKeyS(pA, pT);
+		printf("jan skey paid seated=%d coin=%d msg=%d\n", JanIsSeated(pA), PuzzleCoinCount(pA, wCoin),
+			MockHasText(anConn[0], CMD_SYSMSG, "コマンドの道具からチケットを使ってください"));
+		JanSetCoins(pA, wCoin, 1);
+		JanSitCoin(pA, pT, 2, wCoin);
+		printf("jan short seated=%d coin=%d msg=%d\n", JanIsSeated(pA), PuzzleCoinCount(pA, wCoin), MockHasText(anConn[0], CMD_SYSMSG, "チケットがありません"));
+	}
+	/* 2 枚で座る（席 2＝中心の上 4 マス）。2 枚減って、状態が届く */
+	JanSetCoins(pA, wCoin, 2);
+	int nItem0 = MockCmdCount(anConn[0], CMD_CHARITEM), nA0 = JanCount(anConn[0]);
+	JanSitCoin(pA, pT, 2, wCoin);
+	printf("jan sit seated=%d seat=%d coin=%d used=%d charitem+%d packets+%d\n", JanIsSeated(pA), JanGetSeat(pA), PuzzleCoinCount(pA, wCoin),
+		MockHasText(anConn[0], CMD_SYSMSG, "チケットを2枚使いました"), MockCmdCount(anConn[0], CMD_CHARITEM) - nItem0, JanCount(anConn[0]) - nA0);
+	JanLast(anConn[0], pT->dwTblID, &st);
+	JanLast(anConn[2], pT->dwTblID, &stC);
+	printf("jan sit state A kind=%d myseat=%d idle=%d phase=%d states=%d%d%d%d names=%s,%s,%d,%s hand=%d\n", st.byKind, st.byMySeat, st.byIdle, st.byPhase,
+		st.aSeat[0].byState, st.aSeat[1].byState, st.aSeat[2].byState, st.aSeat[3].byState,
+		st.aSeat[0].szName, st.aSeat[1].szName, strcmp(st.aSeat[2].szName, pA->szName) == 0, st.aSeat[3].szName, st.aSeat[2].byHandNum);
+	printf("jan sit state C myseat=%d idle=%d phase=%d\n", stC.byMySeat, stC.byIdle, stC.byPhase);
+
+	/* 募集中：A の席（席 2）には他の人は座れない。コインは減らない。観戦はそのまま届く。募集中の状態（待ち時間・席の埋まり方）も確かめる */
+	JanSetCoins(pB, wCoin, 2);
+	JanSitCoin(pB, pT, 2, wCoin);
+	printf("jan busy seatedB=%d coinB=%d msg=%d\n", JanIsSeated(pB), PuzzleCoinCount(pB, wCoin), MockHasText(anConn[1], CMD_SYSMSG, "その席は今、使われています"));
+	JanLast(anConn[0], pT->dwTblID, &st);
+	printf("jan recruit A phase=%d idle=%d limit=%d seats=%d%d%d%d hand=%d mine=%d\n", st.byPhase, st.byIdle, (int)st.dwLimitMs, st.aSeat[0].byState, st.aSeat[1].byState, st.aSeat[2].byState, st.aSeat[3].byState,
+		st.aSeat[2].byHandNum, st.byMySeat);
+	/* 座っている間は歩けない */
+	{
+		CMDPARA_CHARPOS Pos;
+		ZeroMemory(&Pos, sizeof(Pos));
+		Pos.byCmd = CMD_CHARPOS;
+		Pos.dwTblID = pA->dwTblID;
+		Pos.dwMapID = pA->dwMapID;
+		Pos.byX = (BYTE)(pA->dwX + 1);
+		Pos.byY = (BYTE)pA->dwY;
+		Pos.byDirection = 3;
+		DWORD dwX0 = pA->dwX;
+		TestRecv(pA, &Pos, sizeof(Pos));
+		printf("jan nowalk moved=%d\n", pA->dwX != dwX0);
+	}
+	/* 他人（座っていない）の操作は無視 */
+	{
+		int nB0 = JanCount(anConn[1]), nA1 = JanCount(anConn[0]);
+		JanKeySend(pB, JAN_ACT_DISCARD, 0);
+		JanKeySend(pB, JAN_ACT_LEAVE);
+		printf("jan otherkey seatedA=%d packets A+%d B+%d\n", JanIsSeated(pA), JanCount(anConn[0]) - nA1, JanCount(anConn[1]) - nB0);
+	}
+
+	/* 配牌：本人（席 2）は自分の手牌だけ表・他席は裏。観戦者 C には全員分が表。同じ内容は送り直さない */
+	{
+		int nA1 = JanCount(anConn[0]), nC1 = JanCount(anConn[2]);
+		JanTick(JAN_TEST_WAIT_MS - 1000);
+		JanLast(anConn[0], pT->dwTblID, &st);
+		printf("jan recruit still phase=%d\n", st.byPhase);
+		JanTick(1000);
+		JanLast(anConn[0], pT->dwTblID, &st);
+		JanLast(anConn[2], pT->dwTblID, &stC);
+		int o[4], h[4], oc[4], hc[4];
+		for (int s = 0; s < 4; s ++) { JanHandCount(st.aSeat[s], &o[s], &h[s]); JanHandCount(stC.aSeat[s], &oc[s], &hc[s]); }
+		printf("jan deal A packets+%d phase=%d turn=%d pile=%d open=%d,%d,%d,%d hidden=%d,%d,%d,%d\n", JanCount(anConn[0]) - nA1, st.byPhase, st.byTurn, st.byPileLeft,
+			o[0], o[1], o[2], o[3], h[0], h[1], h[2], h[3]);
+		printf("jan deal C packets+%d myseat=%d open=%d,%d,%d,%d hidden=%d,%d,%d,%d\n", JanCount(anConn[2]) - nC1, stC.byMySeat, oc[0], oc[1], oc[2], oc[3], hc[0], hc[1], hc[2], hc[3]);
+		/* 変わっていなければ何度回しても送らない（見直しの間隔をまたいでも） */
+		nA1 = JanCount(anConn[0]); nC1 = JanCount(anConn[2]);
+		JanProc();
+		JanTick(10);
+		JanTick(280);
+		printf("jan nochange packets A+%d C+%d\n", JanCount(anConn[0]) - nA1, JanCount(anConn[2]) - nC1);
+	}
+	/* CPU が自動で進む：700ms ごとに 1 動作（席 0 が引く→捨てる） */
+	{
+		int nA1 = JanCount(anConn[0]);
+		JanTick(300);
+		int nEarly = JanCount(anConn[0]) - nA1;
+		JanTick(200);
+		JanLast(anConn[0], pT->dwTblID, &st);
+		printf("jan cpu draw early+%d turn=%d logic=%d hand0=%d pile=%d\n", nEarly, st.byTurn, st.byLogicPhase, st.aSeat[0].byHandNum, st.byPileLeft);
+		JanTick(JAN_CPU_MS);
+		JanLast(anConn[0], pT->dwTblID, &st);
+		printf("jan cpu discard river0=%d hand0=%d lastseat=%d\n", st.aSeat[0].byRiverNum, st.aSeat[0].byHandNum, st.byLastSeat);
+	}
+	/* 人間の手番まで進める（人間がロン・鳴きできる時は見送る）。反則・手番外の操作は黙って捨てる */
+	{
+		int nSteps = 0;
+		for (; nSteps < 60; nSteps ++) {
+			JanTick(JAN_CPU_MS);
+			if (!JanLast(anConn[0], pT->dwTblID, &st) || st.byPhase != JANPHASE_PLAY) break;
+			if (st.byCanAct & JAN_CAN_PASS) JanKeySend(pA, JAN_ACT_PASS);
+			if ((st.byTurn == 2) && (st.byLogicPhase == JANJAN_PHASE_DISCARD)) break;
+		}
+		JanLast(anConn[0], pT->dwTblID, &st);
+		printf("jan to human turn=%d logic=%d phase=%d hand=%d limit>0=%d limit<=20000=%d\n", st.byTurn, st.byLogicPhase, st.byPhase, st.aSeat[2].byHandNum,
+			st.dwLimitMs > 0, st.dwLimitMs <= JAN_TURN_MS);
+		/* 引いた牌は最後。本人にだけ見える */
+		int nA1 = JanCount(anConn[0]);
+		JanKeySend(pA, JAN_ACT_DISCARD, 0xFE);					/* 持っていない牌 */
+		JanKeySend(pA, JAN_ACT_RON);							/* ロンできない時 */
+		JanKeySend(pA, JAN_ACT_SOROI);
+		JanKeySend(pA, JAN_ACT_GUMI, 0);
+		JanKeySend(pA, JAN_ACT_PASS);							/* 手番では PASS は効かない */
+		JanKeySend(pA, 99, 0);									/* 知らない操作 */
+		printf("jan illegal ignored packets+%d\n", JanCount(anConn[0]) - nA1);
+		BYTE byDrawn = st.aSeat[2].abyHand[st.aSeat[2].byHandNum - 1];
+		/* 人間が引いた牌を捨てる（上がれる時はツモ） */
+		if (st.byCanAct & JAN_CAN_TSUMO) {
+			JanKeySend(pA, JAN_ACT_TSUMO);
+		} else {
+			JanKeySend(pA, JAN_ACT_DISCARD, byDrawn);
+		}
+		JanLast(anConn[0], pT->dwTblID, &st);
+		printf("jan human discard river2=%d hand2=%d logic=%d lastseat=%d\n", st.aSeat[2].byRiverNum, st.aSeat[2].byHandNum, st.byLogicPhase, st.byLastSeat);
+		printf("jan human discard tile=%d\n", st.byResult == JANJAN_RESULT_NONE ? (st.aSeat[2].abyRiver[0] == byDrawn) : -1);
+	}
+	/* 席を立つ（ESC 相当）：片付いて空卓。本人・観戦者へ空卓の状態が届く */
+	{
+		int nA1 = JanCount(anConn[0]), nC1 = JanCount(anConn[2]);
+		JanKeySend(pA, JAN_ACT_LEAVE);
+		JanLast(anConn[0], pT->dwTblID, &st);
+		JanLast(anConn[2], pT->dwTblID, &stC);
+		printf("jan leave seated=%d seats=%d packets A+%d C+%d idleA=%d idleC=%d phaseA=%d\n", JanIsSeated(pA), JanSeatCount(), JanCount(anConn[0]) - nA1, JanCount(anConn[2]) - nC1,
+			st.byIdle, stC.byIdle, st.byPhase);
+	}
+	/* 立った後の操作は無視 */
+	{
+		int nA1 = JanCount(anConn[0]);
+		JanKeySend(pA, JAN_ACT_DISCARD, 0);
+		JanKeySend(pA, JAN_ACT_TSUMO);
+		printf("jan after leave packets+%d\n", JanCount(anConn[0]) - nA1);
+	}
+
+	/* 13. チケットの確認・サブゲーム情報・旧形式の台詞・番号の情報が無い台。ここまでの卓は片付けてから始める */
+	JanOnLeave(pA);
+	JanOnLeave(pB);
+	JanOnLeave(pC);
+	JanTick(300);
+	{
+		/* (a) 座る場所でチケットを使うと確認が出る。答えるまでチケットは減らず、座らない */
+		JanSetCoins(pA, wCoin, 2);
+		int nAsk0 = JanAskCount(pA);
+		JanSitCoin(pA, pT, 2, wCoin, -1);
+		printf("jan ticket ask shown=+%d text=%d seated=%d coin=%d\n", JanAskCount(pA) - nAsk0,
+			DgTestText(pA, CMD_TALKMSG, "チケットを2枚使って始めますか？@y"), JanIsSeated(pA), PuzzleCoinCount(pA, wCoin));
+		/* (b) 「いいえ」：座らず減らない。もう一度「はい」を送っても（問いは消えている）何も起きない */
+		PuzzleAnswerSend(pA, pT, FALSE);
+		int nNo = JanIsSeated(pA), nCoinNo = PuzzleCoinCount(pA, wCoin);
+		PuzzleAnswerSend(pA, pT, TRUE);
+		printf("jan ticket no seated=%d coin=%d again seated=%d coin=%d\n", nNo, nCoinNo, JanIsSeated(pA), PuzzleCoinCount(pA, wCoin));
+		/* (c) 30 秒たってから「はい」：無効（座らず減らない） */
+		JanSitCoin(pA, pT, 2, wCoin, -1);
+		JanTick(JAN_ASK_TIMEOUT_MS + 1);
+		PuzzleAnswerSend(pA, pT, TRUE);
+		printf("jan ticket timeout seated=%d coin=%d\n", JanIsSeated(pA), PuzzleCoinCount(pA, wCoin));
+		/* (d) 座る場所を離れてから「はい」：座らず減らない */
+		JanSitCoin(pA, pT, 2, wCoin, -1);
+		PuzzlePlace(pA, pT, dwCx + 1, dwCy);
+		PuzzleAnswerSend(pA, pT, TRUE);
+		printf("jan ticket moved seated=%d coin=%d\n", JanIsSeated(pA), PuzzleCoinCount(pA, wCoin));
+		/* (e) 29 秒以内の「はい」：座って 2 枚取り上げる（持ち物も本人に送る） */
+		int nItem0 = MockCmdCount(anConn[0], CMD_CHARITEM);
+		JanSitCoin(pA, pT, 2, wCoin, -1);
+		JanTick(JAN_ASK_TIMEOUT_MS - 1000);
+		PuzzleAnswerSend(pA, pT, TRUE);
+		printf("jan ticket yes seated=%d seat=%d coin=%d charitem+%d used=%d\n", JanIsSeated(pA), JanGetSeat(pA), PuzzleCoinCount(pA, wCoin),
+			MockCmdCount(anConn[0], CMD_CHARITEM) - nItem0, MockHasText(anConn[0], CMD_SYSMSG, "チケットを2枚使いました"));
+		/* (f) 募集中でも人が座っている席では確認も出さず、減らさない。座っている人が別のチケットを使っても確認は出ない */
+		JanSetCoins(pB, wCoin, 2);
+		int nAskB = JanAskCount(pB);
+		JanSitCoin(pB, pT, 2, wCoin);
+		printf("jan ticket busy ask=+%d seatedB=%d coinB=%d msg=%d\n", JanAskCount(pB) - nAskB, JanIsSeated(pB), PuzzleCoinCount(pB, wCoin),
+			MockHasText(anConn[1], CMD_SYSMSG, "その席は今、使われています"));
+		JanSetCoins(pA, wCoin, 2);
+		nAsk0 = JanAskCount(pA);
+		PuzzleUseCoin(pA, wCoin);
+		printf("jan ticket seated use ask=+%d coin=%d\n", JanAskCount(pA) - nAsk0, PuzzleCoinCount(pA, wCoin));
+		/* 問いが無いのに届いた答えは何も起こさない */
+		JanKeySend(pA, JAN_ACT_LEAVE);
+		JanOnLeave(pA);
+		PuzzleAnswerSend(pB, pT, TRUE);
+		printf("jan ticket stray seatedB=%d coinB=%d\n", JanIsSeated(pB), PuzzleCoinCount(pB, wCoin));
+	}
+	{
+		/* サブゲーム情報の変更が台に効く：範囲外はデータAPIが断る・直すと次から効く（枚数 3 だと 2 枚では足りない） */
+		std::string strNg1 = FlagGroupApi("subGame", nSubBase, "{\"detail\":{\"byTicketNum\":100}}");
+		std::string strNg2 = FlagGroupApi("subGame", nSubBase, "{\"detail\":{\"byCpuLevel\":4}}");
+		std::string strNg3 = FlagGroupApi("subGame", nSubBase, "{\"detail\":{\"byUnknown\":1}}");
+		std::string strNgW1 = FlagGroupApi("subGame", nSubBase, "{\"detail\":{\"wWaitSec\":3}}");
+		std::string strNgW2 = FlagGroupApi("subGame", nSubBase, "{\"detail\":{\"wWaitSec\":601}}");
+		printf("jan subgame wait ng=%d%d default=%d\n", strNgW1.find("\"ok\":false") != std::string::npos, strNgW2.find("\"ok\":false") != std::string::npos,
+			((PSUBGAME_JANJANINFO)g_aSubaGameInfo[nSubBase]->pInfo)->wWaitSec);
+		std::string strOk = FlagGroupApi("subGame", nSubBase, "{\"detail\":{\"byTicketNum\":3,\"byCpuLevel\":3,\"wWaitSec\":20}}");
+		PSUBGAME_JANJANINFO pJ = (PSUBGAME_JANJANINFO)g_aSubaGameInfo[nSubBase]->pInfo;
+		printf("jan subgame edit ng=%d%d%d ok=%d num=%d cpu=%d\n", strNg1.find("\"ok\":false") != std::string::npos, strNg2.find("\"ok\":false") != std::string::npos,
+			strNg3.find("\"ok\":false") != std::string::npos, strOk.find("\"ok\":true") != std::string::npos, pJ->byTicketNum, pJ->byCpuLevel);
+		JanSetCoins(pA, wCoin, 2);
+		int nAsk0 = JanAskCount(pA);
+		JanSitCoin(pA, pT, 2, wCoin);
+		printf("jan subgame edit short seated=%d coin=%d msg=%d\n", JanIsSeated(pA), PuzzleCoinCount(pA, wCoin), MockHasText(anConn[0], CMD_SYSMSG, "チケットがありません"));
+		/* 保存して読み直しても同じ（読み込みは空の表に入れる作りなので、今の表を退避して空にしてから読む） */
+		SaveSubGameInfo();
+		std::vector<PSUBGAMEINFO> aOrig;
+		for (int i = 0; i < g_aSubaGameInfo.GetSize(); i ++) aOrig.push_back(g_aSubaGameInfo[i]);
+		int nBase = (int)aOrig.size();
+		g_aSubaGameInfo.RemoveAll();
+		LoadSubGameInfo();
+		PSUBGAMEINFO pLoad = (g_aSubaGameInfo.GetSize() == nBase) ? g_aSubaGameInfo[nBase - 1] : NULL;
+		PSUBGAME_JANJANINFO pL = (pLoad && pLoad->byType == SUBGAMEID_JANJAN) ? (PSUBGAME_JANJANINFO)pLoad->pInfo : NULL;
+		printf("jan subgame load ok=%d ticket=%d x%d cpu=%d wait=%d\n", pL != NULL, pL ? pL->wTicketItemID : -1, pL ? pL->byTicketNum : -1, pL ? pL->byCpuLevel : -1, pL ? pL->wWaitSec : -1);
+		for (int i = 0; i < g_aSubaGameInfo.GetSize(); i ++) {
+			PSUBGAMEINFO pDel = g_aSubaGameInfo[i];
+			SAFE_DELETE_ARRAY(pDel->pInfo);
+			delete pDel;
+		}
+		g_aSubaGameInfo.RemoveAll();
+		for (int i = 0; i < nBase; i ++) g_aSubaGameInfo.Add(aOrig[i]);
+		/* 直して 2 枚に戻すと、2 枚で座れる */
+		FlagGroupApi("subGame", nSubBase, "{\"detail\":{\"byTicketNum\":2,\"byCpuLevel\":2}}");
+		JanSitCoin(pA, pT, 2, wCoin);
+		printf("jan subgame edit back seated=%d coin=%d\n", JanIsSeated(pA), PuzzleCoinCount(pA, wCoin));
+		/* 募集の待ち時間はサブゲーム情報の wWaitSec（20 秒）。待ち時間のあいだは始まらず、20 秒で始まる */
+		JanLast(anConn[0], pT->dwTblID, &st);
+		int nWaitLimit = (int)st.dwLimitMs;
+		JanTick(19000);
+		int nWaitPhase = JanLast(anConn[0], pT->dwTblID, &st) ? st.byPhase : -1;
+		JanTick(1000);
+		JanLast(anConn[0], pT->dwTblID, &st);
+		printf("jan subgame wait limit=%d phase19s=%d phase20s=%d\n", nWaitLimit, nWaitPhase, st.byPhase);
+		JanOnLeave(pA);
+		/* 止める（byType 0）と、番号の情報が無い台＝無料で S キーで座れる。チケットは使えない */
+		std::string strStop = FlagGroupApi("subGame", nSubBase, "{\"byType\":0}");
+		JanSetCoins(pA, wCoin, 2);
+		nAsk0 = JanAskCount(pA);
+		JanSitCoin(pA, pT, 2, wCoin);
+		printf("jan subgame stop ok=%d type=%d ticket ask=+%d seated=%d coin=%d\n", strStop.find("\"ok\":true") != std::string::npos,
+			g_aSubaGameInfo[nSubBase]->byType, JanAskCount(pA) - nAsk0, JanIsSeated(pA), PuzzleCoinCount(pA, wCoin));
+		JanSitFree(pA, pT, 2);
+		printf("jan subgame stop free skey seated=%d coin=%d\n", JanIsSeated(pA), PuzzleCoinCount(pA, wCoin));
+		JanOnLeave(pA);
+	}
+	{
+		/* 旧形式 "@j1,2"（コイン 1 を 2 枚）も読む：確認が出て「はい」で 2 枚取り上げる */
+		NearNpcOpen(pA, "@j1,2");
+		PCHARINFO pO = s_aNearNpc.back();
+		pO->dwX = pO->dwXBack = pO->dwStartX = dwCx + 12;
+		pO->dwY = pO->dwYBack = pO->dwStartY = dwCy;
+		JanSetCoins(pA, wCoin, 2);
+		int nAsk0 = JanAskCount(pA);
+		JanSitCoin(pA, pO, 2, wCoin, 1);
+		printf("jan old speech ask=+%d seated=%d coin=%d\n", JanAskCount(pA) - nAsk0, JanIsSeated(pA), PuzzleCoinCount(pA, wCoin));
+		JanOnLeave(pA);
+		/* 番号の情報が無い・種別が違う "@j<番号>" は、無料の台（S キーで座れて、チケットは使えない） */
+		const char *apszNone[2] = { "@j9999", "@j0" };
+		int nSeated = 0;
+		for (int k = 0; k < 2; k ++) {
+			NearNpcOpen(pA, apszNone[k]);
+			PCHARINFO pN = s_aNearNpc.back();
+			pN->dwX = pN->dwXBack = pN->dwStartX = dwCx + 24 + k * 12;
+			pN->dwY = pN->dwYBack = pN->dwStartY = dwCy;
+			JanSitFree(pA, pN, 2);
+			nSeated += JanIsSeated(pA);
+			JanOnLeave(pA);
+		}
+		printf("jan none info free seated=%d type0 janjan=%d\n", nSeated, (g_aSubaGameInfo.GetSize() > 0) && (g_aSubaGameInfo[0]->byType == SUBGAMEID_JANJAN));
+		/* 使い終わった台は台でなくす */
+		for (size_t k = 0; k < s_aNearNpc.size(); k ++) {
+			PCHARINFO pNpc = s_aNearNpc[k];
+			if ((pNpc != pT) && JanIsTableNpc(pNpc) && (pNpc->dwX > dwCx + 8)) {
+				delete [] pNpc->pszNpcSpeech;
+				pNpc->pszNpcSpeech = new char[1];
+				pNpc->pszNpcSpeech[0] = '\0';
+			}
+		}
+		JanTick(300);
+	}
+
+	/* ここから無料の台（コイン不要）で、手牌を決めた場面を作る */
+	NearNpcOpen(pA, "@j");
+	PCHARINFO pF = s_aNearNpc.back();
+	pF->dwX = pF->dwXBack = pF->dwStartX = dwCx;
+	pF->dwY = pF->dwYBack = pF->dwStartY = dwCy;
+	/* 先の台は台でなくす（座る場所が重なるため。続く場面は無料の台だけ） */
+	delete [] pT->pszNpcSpeech;
+	pT->pszNpcSpeech = new char[1];
+	pT->pszNpcSpeech[0] = '\0';
+	JanTick(300);
+	/* 牌の id は絵の種類 0〜15（同じ組＝id/4 が同じ。組そろいは同じ組の違う絵 3 枚）。捨て牌は 15（組 3） */
+	const int aSet12[8]  = { 0, 0, 0, 4, 4, 4, 8, 8 };			/* 席 0 の手牌。引く牌 15 は孤立牌なので CPU はこれを捨てる */
+	const int aRonH[8]   = { 1, 1, 1, 5, 5, 5, 12, 13 };		/* 15 で上がれる（12,13,15 が組そろい）。12,13 で組そろいもできる */
+	const int aNeutA[8]  = { 2, 2, 3, 6, 6, 7, 10, 10 };		/* 15 に関われない手牌 */
+	const int aNeutB[8]  = { 2, 3, 3, 6, 7, 7, 10, 11 };
+	const int aSoroiH[8] = { 15, 15, 1, 2, 5, 6, 9, 10 };		/* 15 をそろいで鳴ける（上がれない・組そろいもない） */
+	const int aGumiH[8]  = { 12, 13, 1, 2, 5, 6, 9, 10 };		/* 15 を 12,13 で組そろいにできる（上がれない） */
+	const int aFar[8]    = { 1, 2, 3, 5, 6, 7, 9, 10 };
+
+	/* 1. 人間（席 1）が席 0 の捨て牌でロン：待ち（8 秒）の表示・できない操作は無視・ロンで局が終わり全手牌が表・結果メッセージ・6 秒後に席を立つ */
+	{
+		JanjanGame *g = JanDeal(pA, pF, 1);
+		JanRig(g, aSet12, aRonH, aNeutA, aNeutB, 15);
+		JanTick(JAN_CPU_MS);									/* 席 0 が引く */
+		JanTick(JAN_CPU_MS);									/* 席 0 が 12 を捨てる→人間が待たれる */
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan ron wait can=%d gumi=%d,%d,%d last=%d/%d limit>0=%d\n", st.byCanAct, st.byGumiNum, st.abyGumi[0][0], st.abyGumi[0][1], st.byLastSeat, st.byLastTile,
+			(st.dwLimitMs > 0) && (st.dwLimitMs <= JAN_CLAIM_MS));
+		int nA1 = JanCount(anConn[0]);
+		JanKeySend(pA, JAN_ACT_SOROI);							/* そろいはできない */
+		JanKeySend(pA, JAN_ACT_GUMI, 1);						/* 組そろいの選び方は 1 つだけ */
+		JanKeySend(pA, JAN_ACT_DISCARD, 16);					/* 捨てる番ではない */
+		printf("jan ron illegal packets+%d\n", JanCount(anConn[0]) - nA1);
+		JanKeySend(pA, JAN_ACT_RON);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		JanLast(anConn[2], pF->dwTblID, &stC);
+		int o[4], h[4];
+		for (int s = 0; s < 4; s ++) { int oo, hh; JanHandCount(st.aSeat[s], &oo, &hh); o[s] = oo; h[s] = hh; }
+		char szMsg[96];
+		sprintf(szMsg, "%sの上がり！", pA->szName);
+		printf("jan ron result=%d winner=%d how=%d phase=%d score=%d hidden=%d,%d,%d,%d msg=%d seated=%d\n", st.byResult, st.byWinner, st.byWinHow, st.byPhase, st.aSeat[1].sScore,
+			h[0], h[1], h[2], h[3], MockHasText(anConn[0], CMD_SYSMSG, szMsg), JanIsSeated(pA));
+		printf("jan ron watcher msg=%d phase=%d lasttile=%d\n", MockHasText(anConn[2], CMD_SYSMSG, szMsg), stC.byPhase, st.byLastTile);
+		JanKeySend(pA, JAN_ACT_DISCARD, 16);					/* 終局表示の間の操作は効かない */
+		JanTick(JAN_OVER_MS - 100);
+		printf("jan ron over before seated=%d\n", JanIsSeated(pA));
+		JanTick(200);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan ron over after seated=%d idle=%d phase=%d\n", JanIsSeated(pA), st.byIdle, st.byPhase);
+	}
+	/* 2. 組そろい：選んだ組で鳴いて、捨てる番になる。見送りの時間切れ。そろい。時間切れの捨て */
+	{
+		JanjanGame *g = JanDeal(pA, pF, 1);
+		JanRig(g, aSet12, aGumiH, aNeutA, aNeutB, 15);
+		JanTick(JAN_CPU_MS);
+		JanTick(JAN_CPU_MS);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan gumi wait can=%d gumi=%d,%d,%d\n", st.byCanAct, st.byGumiNum, st.abyGumi[0][0], st.abyGumi[0][1]);
+		JanKeySend(pA, JAN_ACT_GUMI, 0);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan gumi done melds=%d kind=%d tiles=%d,%d,%d hand=%d turn=%d logic=%d river0=%d\n", st.aSeat[1].byMeldNum, st.aSeat[1].aMeld[0].byKind,
+			st.aSeat[1].aMeld[0].abyTile[0], st.aSeat[1].aMeld[0].abyTile[1], st.aSeat[1].aMeld[0].abyTile[2],
+			st.aSeat[1].byHandNum, st.byTurn, st.byLogicPhase, st.aSeat[0].byRiverNum);
+		/* 鳴いた後は引かずに捨てる番。20 秒で時間切れ（手牌の最後を捨てる） */
+		JanTick(JAN_TURN_MS - 100);
+		int nR = st.aSeat[1].byRiverNum;
+		JanTick(200);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan gumi timeout river1 %d->%d turn=%d\n", nR, st.aSeat[1].byRiverNum, st.byTurn);
+		JanKeySend(pA, JAN_ACT_LEAVE);
+	}
+	{
+		JanjanGame *g = JanDeal(pA, pF, 1);
+		JanRig(g, aSet12, aSoroiH, aNeutA, aNeutB, 15);
+		JanTick(JAN_CPU_MS);
+		JanTick(JAN_CPU_MS);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan soroi wait can=%d\n", st.byCanAct);
+		/* 8 秒見送り（何もしない）：時間切れで PASS。席 1 が引いて続く */
+		JanTick(JAN_CLAIM_MS - 100);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		int nCan = st.byCanAct;
+		JanTick(200);
+		JanTick(JAN_CPU_MS);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan soroi timeout before=%d after can=%d turn=%d logic=%d hand=%d melds=%d\n", nCan, st.byCanAct, st.byTurn, st.byLogicPhase, st.aSeat[1].byHandNum, st.aSeat[1].byMeldNum);
+		JanKeySend(pA, JAN_ACT_LEAVE);
+	}
+	{
+		JanjanGame *g = JanDeal(pA, pF, 1);
+		JanRig(g, aSet12, aSoroiH, aNeutA, aNeutB, 15);
+		JanTick(JAN_CPU_MS);
+		JanTick(JAN_CPU_MS);
+		JanKeySend(pA, JAN_ACT_SOROI);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan soroi done melds=%d kind=%d tiles=%d,%d,%d hand=%d turn=%d logic=%d\n", st.aSeat[1].byMeldNum, st.aSeat[1].aMeld[0].byKind,
+			st.aSeat[1].aMeld[0].abyTile[0], st.aSeat[1].aMeld[0].abyTile[1], st.aSeat[1].aMeld[0].abyTile[2], st.aSeat[1].byHandNum, st.byTurn, st.byLogicPhase);
+		JanKeySend(pA, JAN_ACT_LEAVE);
+	}
+	/* 3. 見送り（PASS）：続けて席 1（本人）が引く */
+	{
+		JanjanGame *g = JanDeal(pA, pF, 1);
+		JanRig(g, aSet12, aRonH, aNeutA, aNeutB, 15);
+		JanTick(JAN_CPU_MS);
+		JanTick(JAN_CPU_MS);
+		JanKeySend(pA, JAN_ACT_PASS);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan pass can=%d turn=%d logic=%d\n", st.byCanAct, st.byTurn, st.byLogicPhase);
+		JanTick(JAN_CPU_MS);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan pass draw turn=%d logic=%d hand=%d\n", st.byTurn, st.byLogicPhase, st.aSeat[1].byHandNum);
+		JanKeySend(pA, JAN_ACT_LEAVE);
+	}
+	/* 4. CPU の申し出：席 2 がそろいで鳴く／席 3 が CPU のロンで上がる（名前は席名 CPU3） */
+	{
+		const int aCpuSoroi[8] = { 15, 15, 2, 3, 6, 7, 10, 11 };
+		JanjanGame *g = JanDeal(pA, pF, 1);
+		JanRig(g, aSet12, aFar, aCpuSoroi, aNeutB, 15);
+		JanTick(JAN_CPU_MS);
+		JanTick(JAN_CPU_MS);									/* 席 0 が捨てる→人間は申し出できないので CPU の確定へ */
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan cpu claim wait can=%d lastseat=%d\n", st.byCanAct, st.byLastSeat);
+		JanTick(JAN_CPU_MS);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan cpu soroi melds2=%d turn=%d logic=%d river0=%d hand2=%d\n", st.aSeat[2].byMeldNum, st.byTurn, st.byLogicPhase, st.aSeat[0].byRiverNum, st.aSeat[2].byHandNum);
+		JanKeySend(pA, JAN_ACT_LEAVE);
+	}
+	{
+		JanjanGame *g = JanDeal(pA, pF, 1);
+		JanRig(g, aSet12, aFar, aNeutA, aRonH, 15);
+		JanTick(JAN_CPU_MS);
+		JanTick(JAN_CPU_MS);
+		JanTick(JAN_CPU_MS);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		char szMsg[96];
+		sprintf(szMsg, "%sの上がり！", st.aSeat[3].szName);
+		printf("jan cpu ron result=%d winner=%d how=%d phase=%d name=%s msg=%d\n", st.byResult, st.byWinner, st.byWinHow, st.byPhase, st.aSeat[3].szName,
+			MockHasText(anConn[0], CMD_SYSMSG, szMsg));
+		JanTick(JAN_OVER_MS + 100);
+		printf("jan cpu ron after seated=%d\n", JanIsSeated(pA));
+	}
+	/* 5. ツモ（人間が最初に引く席 0）：引いた牌が最後・TSUMO できる・上がる */
+	{
+		JanjanGame *g = JanDeal(pA, pF, 0);
+		JanRig(g, aRonH, aNeutA, aNeutB, aFar, 15);
+		JanTick(JAN_CPU_MS);									/* 席 0（人間）が引く */
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan tsumo can=%d last=%d hand=%d limit>0=%d\n", st.byCanAct, st.aSeat[0].abyHand[st.aSeat[0].byHandNum - 1], st.aSeat[0].byHandNum, st.dwLimitMs > 0);
+		JanKeySend(pA, JAN_ACT_TSUMO);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan tsumo result=%d winner=%d how=%d phase=%d\n", st.byResult, st.byWinner, st.byWinHow, st.byPhase);
+		JanKeySend(pA, JAN_ACT_LEAVE);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan tsumo leave seated=%d idle=%d\n", JanIsSeated(pA), st.byIdle);
+	}
+	/* 6. 人間の手番の時間切れ：引いた牌を捨てる */
+	{
+		JanjanGame *g = JanDeal(pA, pF, 0);
+		JanRig(g, aSoroiH, aNeutA, aNeutB, aFar, 15);
+		JanTick(JAN_CPU_MS);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		BYTE byDrawn = st.aSeat[0].abyHand[st.aSeat[0].byHandNum - 1];
+		JanTick(JAN_TURN_MS - 100);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		int nR = st.aSeat[0].byRiverNum;
+		JanTick(200);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan timeout drawn=%d river0 %d->%d first=%d lastseat=%d\n", byDrawn, nR, st.aSeat[0].byRiverNum, st.aSeat[0].abyRiver[0] == byDrawn, st.byLastSeat);
+		JanKeySend(pA, JAN_ACT_LEAVE);
+	}
+	/* 7. 流局：山が尽きている（席 0 が引けない）と流局メッセージ・6 秒後に席を立つ */
+	{
+		JanjanGame *g = JanDeal(pA, pF, 3);
+		JanRig(g, aSet12, aNeutA, aNeutB, aFar, -1);
+		g->nPileTop = JANJAN_TILES;
+		JanTick(JAN_CPU_MS);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan draw result=%d phase=%d pile=%d msg=%d\n", st.byResult, st.byPhase, st.byPileLeft, MockHasText(anConn[0], CMD_SYSMSG, "流局"));
+		JanTick(JAN_OVER_MS + 100);
+		printf("jan draw after seated=%d\n", JanIsSeated(pA));
+	}
+	/* 8. 離れる：座る場所から離れると席を立たせる。席の近く（2 マス）では立たない */
+	{
+		JanDeal(pA, pF, 0);
+		DeleteTblNoPC((int)pA->dwTblID);
+		pA->dwX += 2;
+		AddTblNoPC((int)pA->dwTblID);
+		JanTick(10);
+		int nNear = JanIsSeated(pA);
+		DeleteTblNoPC((int)pA->dwTblID);
+		pA->dwX += 10;
+		AddTblNoPC((int)pA->dwTblID);
+		JanTick(10);
+		printf("jan away near=%d far=%d seats=%d\n", nNear, JanIsSeated(pA), JanSeatCount());
+	}
+	/* 9. マップ移動：席のマップを離れると片付く */
+	{
+		JanDeal(pA, pF, 3);
+		int nSeated = JanIsSeated(pA);
+		DWORD dwMapA = pA->dwMapID;
+		DeleteTblNoPC((int)pA->dwTblID);
+		pA->dwMapID = (dwMapA == 0) ? 1 : 0;
+		AddTblNoPC((int)pA->dwTblID);
+		JanTick(10);
+		printf("jan mapmove before=%d after=%d seats=%d\n", nSeated, JanIsSeated(pA), JanSeatCount());
+		DeleteTblNoPC((int)pA->dwTblID);
+		pA->dwMapID = dwMapA;
+		AddTblNoPC((int)pA->dwTblID);
+	}
+	/* 10. 切断：本人へは何も送らず、観戦者へ空卓が届く */
+	{
+		JanDeal(pA, pF, 2);
+		int nA1 = JanCount(anConn[0]), nC1 = JanCount(anConn[2]);
+		JanOnLeave(pA);
+		JanLast(anConn[2], pF->dwTblID, &stC);
+		printf("jan logout seated=%d seats=%d packets A+%d C+%d idleC=%d phaseC=%d\n", JanIsSeated(pA), JanSeatCount(), JanCount(anConn[0]) - nA1, JanCount(anConn[2]) - nC1, stC.byIdle, stC.byPhase);
+	}
+	/* 11. 空卓の案内：無料の台の座る場所に立つ（SEAT|FREE）・立つ場所を変えて見直しで変わる・席の途中参加の観戦 */
+	{
+		PuzzlePlace(pA, pF, dwCx, (DWORD)((int)dwCy + 4));
+		JanTick(300);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		JanLast(anConn[2], pF->dwTblID, &stC);
+		printf("jan idle free A idle=%d C idle=%d\n", st.byIdle, stC.byIdle);
+		int nA1 = JanCount(anConn[0]);
+		JanTick(300);
+		JanTick(300);
+		printf("jan idle resend A+%d\n", JanCount(anConn[0]) - nA1);
+		PuzzlePlace(pA, pF, dwCx, dwCy);
+		JanTick(300);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan idle left cell A idle=%d\n", st.byIdle);
+	}
+	/* 12. 観戦：遠くへ離れると NONE・近づくと状態（途中の卓の状態）が届く。座っていない観戦者には全員の手牌が表 */
+	{
+		JanjanGame *g = JanDeal(pA, pF, 1);
+		JanRig(g, aSet12, aNeutA, aNeutB, aFar, 15);
+		JanTick(JAN_CPU_MS);
+		JanTick(10);
+		PuzzlePlace(pC, pF, dwCx + 40, dwCy);
+		int nC1 = JanCount(anConn[2]);
+		JanTick(300);
+		JanLast(anConn[2], pF->dwTblID, &stC);
+		printf("jan view far packets+%d kind=%d\n", JanCount(anConn[2]) - nC1, stC.byKind);
+		JanTick(300);
+		nC1 = JanCount(anConn[2]);
+		JanTick(300);
+		printf("jan view far again packets+%d\n", JanCount(anConn[2]) - nC1);
+		PuzzlePlace(pC, pF, dwCx + 2, dwCy);
+		nC1 = JanCount(anConn[2]);
+		JanTick(300);
+		JanLast(anConn[2], pF->dwTblID, &stC);
+		int oc, hc;
+		JanHandCount(stC.aSeat[3], &oc, &hc);
+		printf("jan view near packets+%d kind=%d myseat=%d phase=%d open3=%d hidden3=%d hand0=%d\n", JanCount(anConn[2]) - nC1, stC.byKind, stC.byMySeat, stC.byPhase, oc, hc, stC.aSeat[0].byHandNum);
+		JanKeySend(pA, JAN_ACT_LEAVE);
+	}
+
+	/* 14. 人間同士（2〜4 人）：参加募集・待ち時間で開始（空き席は CPU）・4 席で即開始・開始後は座れない・同時の申し出・抜ける・3 回時間切れ */
+	{
+		PCHARINFO pD = (aLogin.size() >= 4) ? g_aCharInfo[aLogin[3]] : NULL;
+		DWORD dwMapD = 0, dwXD = 0, dwYD = 0;
+		BYTE byStD = 0;
+		WORD wHPD = 0;
+		CMDPARA_JANSTATE sA, sB, sD;
+		char szMsg[96], szJoin[96];
+		int oA[4], hA[4], oB[4], hB[4], oC[4], hC[4];
+		if (pD) {
+			dwMapD = pD->dwMapID; dwXD = pD->dwX; dwYD = pD->dwY; byStD = pD->byCharState; wHPD = pD->wHP;
+			pD->byCharState = CHARSTATE_MOVE;
+			if (pD->wHP == 0) pD->wHP = 10;
+		}
+		int nConnD = pD ? DgTestConn(pD) : -1;
+		/* 全員を席から外して、卓を空にし、C を台の真ん中（観戦）へ戻す */
+		#define JAN_MULTI_RESET() do { JanOnLeave(pA); JanOnLeave(pB); JanOnLeave(pC); if (pD) JanOnLeave(pD); JanTick(300); \
+			PuzzlePlace(pA, pF, dwCx, dwCy); PuzzlePlace(pB, pF, dwCx, dwCy); PuzzlePlace(pC, pF, dwCx, dwCy); JanTick(300); } while (0)
+		/* 席 s の手牌を（表, 裏）の数で */
+		#define JAN_MULTI_HANDS(st, o, h) do { for (int s_ = 0; s_ < 4; s_ ++) JanHandCount((st).aSeat[s_], &(o)[s_], &(h)[s_]); } while (0)
+		sprintf(szJoin, "%sさんが参加しました。", pB->szName);
+
+		/* (a) 募集中に 2 人目が空いている席に座れる：参加のメッセージは先に座っている人・観戦者へ（本人へは出さない）。人の席には座れない */
+		JAN_MULTI_RESET();
+		JanSitFree(pA, pF, 1);
+		JanSitFree(pB, pF, 3);
+		int nMsgC = MockHasText(anConn[2], CMD_SYSMSG, szJoin);
+		JanSitFree(pC, pF, 1);
+		JanLast(anConn[0], pF->dwTblID, &sA);
+		JanLast(anConn[1], pF->dwTblID, &sB);
+		printf("jan multi join seated=%d%d%d seat=%d,%d tables=%d msgA=%d msgB=%d denied=%d\n", JanIsSeated(pA), JanIsSeated(pB), JanIsSeated(pC), JanGetSeat(pA), JanGetSeat(pB), JanSeatCount(),
+			MockHasText(anConn[0], CMD_SYSMSG, szJoin), MockHasText(anConn[1], CMD_SYSMSG, szJoin), MockHasText(anConn[2], CMD_SYSMSG, "その席は今、使われています"));
+		printf("jan multi join watcher msgC=%d\n", nMsgC);
+		printf("jan multi recruit A phase=%d my=%d states=%d%d%d%d names=%d,%d limit=%d | B phase=%d my=%d\n", sA.byPhase, sA.byMySeat, sA.aSeat[0].byState, sA.aSeat[1].byState, sA.aSeat[2].byState, sA.aSeat[3].byState,
+			strcmp(sA.aSeat[1].szName, pA->szName) == 0, strcmp(sA.aSeat[3].szName, pB->szName) == 0, (int)sA.dwLimitMs, sB.byPhase, sB.byMySeat);
+		/* 募集中に A が席を立つ：席が空く。B は座ったまま。B も立つと卓は空卓に戻る */
+		JanKeySend(pA, JAN_ACT_LEAVE);
+		JanLast(anConn[1], pF->dwTblID, &sB);
+		printf("jan multi recruit leave A=%d B=%d states=%d%d%d%d phase=%d\n", JanIsSeated(pA), JanIsSeated(pB), sB.aSeat[0].byState, sB.aSeat[1].byState, sB.aSeat[2].byState, sB.aSeat[3].byState, sB.byPhase);
+		JanKeySend(pB, JAN_ACT_LEAVE);
+		JanLast(anConn[1], pF->dwTblID, &sB);
+		JanLast(anConn[2], pF->dwTblID, &sD);
+		printf("jan multi recruit empty tables=%d phaseB=%d phaseC=%d\n", JanSeatCount(), sB.byPhase, sD.byPhase);
+
+		/* (b) 待ち時間で開始：座っている 2 人＋CPU 2 人。待つ間は牌なし。お互いの手牌は裏・観戦者には全員表。開始後は座れない */
+		JAN_MULTI_RESET();
+		JanSitFree(pA, pF, 1);
+		JanSitFree(pB, pF, 3);
+		JanTick(JAN_TEST_WAIT_MS - 1000);
+		JanLast(anConn[0], pF->dwTblID, &sA);
+		printf("jan multi wait phase=%d hand=%d seated=%d%d\n", sA.byPhase, sA.aSeat[1].byHandNum, JanIsSeated(pA), JanIsSeated(pB));
+		JanTick(1000);
+		JanLast(anConn[0], pF->dwTblID, &sA);
+		JanLast(anConn[1], pF->dwTblID, &sB);
+		JanLast(anConn[2], pF->dwTblID, &sD);
+		JAN_MULTI_HANDS(sA, oA, hA);
+		JAN_MULTI_HANDS(sB, oB, hB);
+		JAN_MULTI_HANDS(sD, oC, hC);
+		printf("jan multi start phase=%d,%d,%d my=%d,%d,%d states=%d%d%d%d names=%s,%s,%d,%d\n", sA.byPhase, sB.byPhase, sD.byPhase, sA.byMySeat, sB.byMySeat, sD.byMySeat,
+			sA.aSeat[0].byState, sA.aSeat[1].byState, sA.aSeat[2].byState, sA.aSeat[3].byState, sA.aSeat[0].szName, sA.aSeat[2].szName,
+			strcmp(sA.aSeat[1].szName, pA->szName) == 0, strcmp(sA.aSeat[3].szName, pB->szName) == 0);
+		printf("jan multi hands A open=%d,%d,%d,%d hidden=%d,%d,%d,%d\n", oA[0], oA[1], oA[2], oA[3], hA[0], hA[1], hA[2], hA[3]);
+		printf("jan multi hands B open=%d,%d,%d,%d hidden=%d,%d,%d,%d\n", oB[0], oB[1], oB[2], oB[3], hB[0], hB[1], hB[2], hB[3]);
+		printf("jan multi hands C open=%d,%d,%d,%d hidden=%d,%d,%d,%d\n", oC[0], oC[1], oC[2], oC[3], hC[0], hC[1], hC[2], hC[3]);
+		/* 開始後は CPU の席にも座れない（ゲーム中）。観戦は届いたまま */
+		JanSitFree(pC, pF, 0);
+		printf("jan multi late seated=%d msg=%d seats=%d\n", JanIsSeated(pC), MockHasText(anConn[2], CMD_SYSMSG, "ゲーム中です"), JanSeatCount());
+		JanKeySend(pA, JAN_ACT_LEAVE);
+		JanKeySend(pB, JAN_ACT_LEAVE);
+
+		/* (c) 同時の申し出：席 1（A）と席 2（B）が席 0 の捨て牌でロンできる。全員が返事するまで待ち、頭ハネ（席 0 の次の A）が勝つ */
+		const int aRonH2[8] = { 2, 2, 2, 6, 6, 6, 12, 13 };		/* 15 で上がれる（12,13,15 が組そろい） */
+		JAN_MULTI_RESET();
+		JanSitFree(pA, pF, 1);
+		JanSitFree(pB, pF, 2);
+		JanTick(JAN_TEST_WAIT_MS);
+		JanjanGame *g = JanGetGame(pA);
+		JanRig(g, aSet12, aRonH, aRonH2, aNeutB, 15);
+		JanTick(JAN_CPU_MS);
+		JanTick(JAN_CPU_MS);
+		JanLast(anConn[0], pF->dwTblID, &sA);
+		JanLast(anConn[1], pF->dwTblID, &sB);
+		printf("jan multi claim wait A can=%d limit=%d B can=%d limit=%d last=%d/%d\n", sA.byCanAct, (sA.dwLimitMs > 0) && (sA.dwLimitMs <= JAN_CLAIM_MS), sB.byCanAct,
+			(sB.dwLimitMs > 0) && (sB.dwLimitMs <= JAN_CLAIM_MS), sA.byLastSeat, sA.byLastTile);
+		JanKeySend(pB, JAN_ACT_RON);
+		JanLast(anConn[0], pF->dwTblID, &sA);
+		JanLast(anConn[1], pF->dwTblID, &sB);
+		printf("jan multi claim B first result=%d logic=%d Bcan=%d Acan=%d\n", sA.byResult, sA.byLogicPhase, sB.byCanAct, sA.byCanAct);
+		JanKeySend(pA, JAN_ACT_RON);
+		JanLast(anConn[0], pF->dwTblID, &sA);
+		JanLast(anConn[1], pF->dwTblID, &sB);
+		JAN_MULTI_HANDS(sB, oB, hB);
+		sprintf(szMsg, "%sの上がり！", pA->szName);
+		printf("jan multi claim both ron result=%d winner=%d how=%d phase=%d score=%d,%d msgA=%d msgB=%d Bopen0=%d\n", sA.byResult, sA.byWinner, sA.byWinHow, sA.byPhase, sA.aSeat[1].sScore, sA.aSeat[2].sScore,
+			MockHasText(anConn[0], CMD_SYSMSG, szMsg), MockHasText(anConn[1], CMD_SYSMSG, szMsg), oB[0]);
+		/* 終局表示の間も座れない。6 秒後に全員が席を立つ */
+		JanSitFree(pC, pF, 0);
+		printf("jan multi over late seated=%d msg=%d\n", JanIsSeated(pC), MockHasText(anConn[2], CMD_SYSMSG, "ゲーム中です"));
+		JanTick(JAN_OVER_MS + 100);
+		printf("jan multi over after seated=%d%d seats=%d\n", JanIsSeated(pA), JanIsSeated(pB), JanSeatCount());
+
+		/* (d) 片方が返事しない：B だけロンして A は返事なし。8 秒待って、時間切れ（返事なし＝見送り）で B のロンが通る */
+		JAN_MULTI_RESET();
+		JanSitFree(pA, pF, 1);
+		JanSitFree(pB, pF, 2);
+		JanTick(JAN_TEST_WAIT_MS);
+		g = JanGetGame(pA);
+		JanRig(g, aSet12, aRonH, aRonH2, aNeutB, 15);
+		JanTick(JAN_CPU_MS);
+		JanTick(JAN_CPU_MS);
+		JanKeySend(pB, JAN_ACT_RON);
+		JanTick(JAN_CLAIM_MS - 700);
+		JanLast(anConn[1], pF->dwTblID, &sB);
+		printf("jan multi timeout waiting result=%d\n", sB.byResult);
+		JanTick(800);
+		JanLast(anConn[0], pF->dwTblID, &sA);
+		printf("jan multi timeout result=%d winner=%d how=%d phase=%d\n", sA.byResult, sA.byWinner, sA.byWinHow, sA.byPhase);
+		/* A だけ見送り・B は返事なし：時間切れで流れて次の席が引く */
+		JAN_MULTI_RESET();
+		JanSitFree(pA, pF, 1);
+		JanSitFree(pB, pF, 2);
+		JanTick(JAN_TEST_WAIT_MS);
+		g = JanGetGame(pA);
+		JanRig(g, aSet12, aRonH, aRonH2, aNeutB, 15);
+		JanTick(JAN_CPU_MS);
+		JanTick(JAN_CPU_MS);
+		JanKeySend(pA, JAN_ACT_PASS);
+		JanLast(anConn[0], pF->dwTblID, &sA);
+		printf("jan multi pass one waiting result=%d acan=%d\n", sA.byResult, sA.byCanAct);
+		JanTick(JAN_CLAIM_MS);
+		JanLast(anConn[0], pF->dwTblID, &sA);
+		printf("jan multi pass one after result=%d turn=%d logic=%d\n", sA.byResult, sA.byTurn, sA.byLogicPhase);
+
+		/* (e) 抜ける：B が席を立つと、その席は元の名前の CPU に戻って局は続く。本人には観戦者として全員の手牌が届く */
+		JAN_MULTI_RESET();
+		JanSitFree(pA, pF, 1);
+		JanSitFree(pB, pF, 3);
+		JanTick(JAN_TEST_WAIT_MS);
+		g = JanGetGame(pA);
+		JanRig(g, aSet12, aNeutA, aNeutB, aFar, 15);
+		JanTick(JAN_CPU_MS);
+		int nB1 = JanCount(anConn[1]);
+		JanKeySend(pB, JAN_ACT_LEAVE);
+		JanLast(anConn[0], pF->dwTblID, &sA);
+		JanLast(anConn[1], pF->dwTblID, &sB);
+		JAN_MULTI_HANDS(sB, oB, hB);
+		printf("jan multi leave B=%d A=%d seats=%d A.seat3=%d name=%s phase=%d | B my=%d open=%d,%d,%d,%d packets+%d\n", JanIsSeated(pB), JanIsSeated(pA), JanSeatCount(), sA.aSeat[3].byState, sA.aSeat[3].szName, sA.byPhase,
+			sB.byMySeat, oB[0], oB[1], oB[2], oB[3], JanCount(anConn[1]) - nB1);
+		int nTurn0 = sA.byTurn, nHand0 = sA.aSeat[0].byHandNum, nRiv0 = sA.aSeat[0].byRiverNum;
+		JanTick(JAN_CPU_MS);
+		JanTick(JAN_CPU_MS);
+		JanTick(JAN_CPU_MS);
+		JanLast(anConn[0], pF->dwTblID, &sA);
+		printf("jan multi leave goes on turn %d->%d river0 %d->%d\n", nTurn0, sA.byTurn, nRiv0, sA.aSeat[0].byRiverNum);
+		(void)nHand0;
+		/* 切断でも同じ（本人へは何も送らない）。最後の 1 人が抜けると卓を片付ける */
+		JanSitFree(pB, pF, 3);
+		printf("jan multi late rejoin seated=%d\n", JanIsSeated(pB));
+		nB1 = JanCount(anConn[1]);
+		JanOnLeave(pA);
+		JanLast(anConn[2], pF->dwTblID, &sD);
+		printf("jan multi logout A=%d seats=%d phaseC=%d idleC=%d\n", JanIsSeated(pA), JanSeatCount(), sD.byPhase, sD.byIdle);
+		/* マップ移動：A と B が座っていて A が別マップへ→A の席だけ CPU に戻る。B も動くと片付く */
+		JAN_MULTI_RESET();
+		JanSitFree(pA, pF, 1);
+		JanSitFree(pB, pF, 3);
+		JanTick(JAN_TEST_WAIT_MS);
+		{
+			DWORD dwMapA = pA->dwMapID;
+			DeleteTblNoPC((int)pA->dwTblID);
+			pA->dwMapID = (dwMapA == 0) ? 1 : 0;
+			AddTblNoPC((int)pA->dwTblID);
+			JanTick(10);
+			JanLast(anConn[1], pF->dwTblID, &sB);
+			printf("jan multi mapmove A=%d B=%d seats=%d states=%d%d%d%d\n", JanIsSeated(pA), JanIsSeated(pB), JanSeatCount(), sB.aSeat[0].byState, sB.aSeat[1].byState, sB.aSeat[2].byState, sB.aSeat[3].byState);
+			DeleteTblNoPC((int)pA->dwTblID);
+			pA->dwMapID = dwMapA;
+			AddTblNoPC((int)pA->dwTblID);
+			JanKeySend(pB, JAN_ACT_LEAVE);
+			printf("jan multi mapmove all gone seats=%d\n", JanSeatCount());
+		}
+
+		/* (f) 3 回続けて時間切れで CPU に戻る（A は何もしない・B は打つ）。申し出の待ちの時間切れは数えない */
+		JAN_MULTI_RESET();
+		JanSitFree(pA, pF, 0);
+		JanSitFree(pB, pF, 2);
+		JanTick(JAN_TEST_WAIT_MS);
+		{
+			int nTurns = 0, nLastTurn = -1, nEnded = 0;
+			for (int k = 0; k < 600 && JanIsSeated(pA); k ++) {
+				JanTick(1000);
+				if (JanLast(anConn[1], pF->dwTblID, &sB) && (sB.byPhase == JANPHASE_PLAY)) {
+					if (sB.byCanAct & JAN_CAN_PASS) {
+						JanKeySend(pB, JAN_ACT_PASS);
+					} else if ((sB.byTurn == 2) && (sB.byLogicPhase == JANJAN_PHASE_DISCARD)) {
+						if (sB.byCanAct & JAN_CAN_TSUMO) JanKeySend(pB, JAN_ACT_TSUMO);
+						else JanKeySend(pB, JAN_ACT_DISCARD, sB.aSeat[2].abyHand[sB.aSeat[2].byHandNum - 1]);
+					}
+				}
+				if (JanLast(anConn[0], pF->dwTblID, &sA) && (sA.byTurn == 0) && (sA.byLogicPhase == JANJAN_PHASE_DISCARD) && (nLastTurn != k - 1)) nTurns ++;
+				nLastTurn = k;
+				if (sA.byPhase == JANPHASE_OVER) { nEnded = 1; break; }
+			}
+			JanLast(anConn[0], pF->dwTblID, &sA);
+			JanLast(anConn[1], pF->dwTblID, &sB);
+			printf("jan multi kick A=%d B=%d msg=%d seats=%d over=%d seat0=%d name=%s phaseA=%d my=%d\n", JanIsSeated(pA), JanIsSeated(pB), MockHasText(anConn[0], CMD_SYSMSG, "離席扱いになりました"), JanSeatCount(), nEnded,
+				sB.aSeat[0].byState, sB.aSeat[0].szName, sA.byPhase, sA.byMySeat);
+			(void)nTurns;
+			/* 席に戻った CPU が打って局は続く */
+			int nTurn1 = sB.byTurn, nPile1 = sB.byPileLeft;
+			for (int k = 0; k < 10; k ++) {
+				JanTick(JAN_CPU_MS);
+				if (JanLast(anConn[1], pF->dwTblID, &sB) && (sB.byCanAct & JAN_CAN_PASS)) JanKeySend(pB, JAN_ACT_PASS);
+			}
+			JanLast(anConn[1], pF->dwTblID, &sB);
+			printf("jan multi kick goes on pile %d->%d\n", nPile1, sB.byPileLeft);
+			(void)nTurn1;
+		}
+		/* 全員が抜けたら片付ける */
+		JanKeySend(pB, JAN_ACT_LEAVE);
+		JanLast(anConn[2], pF->dwTblID, &sD);
+		printf("jan multi all gone seats=%d phaseC=%d\n", JanSeatCount(), sD.byPhase);
+
+		/* (g) 4 席が全部人間で埋まったら待たずにすぐ開始（4 人目が座った時点で配牌）。お互いの手牌は裏 */
+		if (pD) {
+			JAN_MULTI_RESET();
+			PuzzlePlace(pD, pF, dwCx, dwCy);
+			JanSitFree(pA, pF, 0);
+			JanSitFree(pB, pF, 1);
+			JanSitFree(pC, pF, 2);
+			JanLast(anConn[0], pF->dwTblID, &sA);
+			int nPhaseBefore = sA.byPhase;
+			JanSitFree(pD, pF, 3);
+			JanLast(anConn[0], pF->dwTblID, &sA);
+			JanLast(anConn[1], pF->dwTblID, &sB);
+			JanLast(anConn[2], pF->dwTblID, &sD);
+			JAN_MULTI_HANDS(sA, oA, hA);
+			JAN_MULTI_HANDS(sB, oB, hB);
+			JAN_MULTI_HANDS(sD, oC, hC);
+			printf("jan multi full before=%d now=%d seated=%d%d%d%d states=%d%d%d%d tables=%d\n", nPhaseBefore, sA.byPhase, JanIsSeated(pA), JanIsSeated(pB), JanIsSeated(pC), JanIsSeated(pD),
+				sA.aSeat[0].byState, sA.aSeat[1].byState, sA.aSeat[2].byState, sA.aSeat[3].byState, JanSeatCount());
+			printf("jan multi full hands A open=%d,%d,%d,%d B open=%d,%d,%d,%d C open=%d,%d,%d,%d hidden A=%d,%d,%d,%d\n", oA[0], oA[1], oA[2], oA[3], oB[0], oB[1], oB[2], oB[3], oC[0], oC[1], oC[2], oC[3], hA[0], hA[1], hA[2], hA[3]);
+			JanLast(nConnD >= 0 ? nConnD : anConn[2], pF->dwTblID, &sD);
+			printf("jan multi full D my=%d phase=%d\n", sD.byMySeat, sD.byPhase);
+		}
+		JAN_MULTI_RESET();
+		if (pD) {
+			QuestMovePC(pD, (int)dwMapD, (int)dwXD, (int)dwYD);
+			pD->byCharState = byStD;
+			pD->wHP = wHPD;
+		}
+		#undef JAN_MULTI_RESET
+		#undef JAN_MULTI_HANDS
+	}
+
+	/* 片付け */
+	MockTrace(0);
+	g_dwJanSeedOverride = 0;
+	JanOnLeave(pA);
+	JanOnLeave(pB);
+	for (size_t k = 0; k < s_aNearNpc.size(); k ++) {
+		PCHARINFO pNpc = s_aNearNpc[k];
+		if (JanIsTableNpc(pNpc)) {
+			delete [] pNpc->pszNpcSpeech;
+			pNpc->pszNpcSpeech = new char[1];
+			pNpc->pszNpcSpeech[0] = '\0';
+		}
+	}
+	/* 足したサブゲーム情報（最後の 1 件）を消す */
+	if (g_aSubaGameInfo.GetSize() == nSubBase + 1) {
+		PSUBGAMEINFO pDel = g_aSubaGameInfo[nSubBase];
+		SAFE_DELETE_ARRAY(pDel->pInfo);
+		delete pDel;
+		g_aSubaGameInfo.RemoveAt(nSubBase);
+	}
+	NearNpcClose();
+	g_dwTime = (s_dwFakeNow += 300);
+	JanProc();										/* 台 NPC が無くなった待機中の卓を表から消す */
+	for (i = 0; i < 3; i ++) {
+		for (int j = 0; j < MAX_MYITEM; j ++) if (apP[i]->waItem[j] == wCoin) DelCharItem(apP[i]->dwTblID, (BYTE)j);
+		QuestMovePC(apP[i], (int)aBack[i].dwMap, (int)aBack[i].dwX, (int)aBack[i].dwY);
+		apP[i]->byCharState = aBack[i].byState;
+		apP[i]->wHP = aBack[i].wHP;
+	}
+	g_dwTime = dwTimeBack;
+	printf("jan done seats=%d idle=%d\n", JanSeatCount(), JanIdleCount());
 }
 
 /* ========================================================================= */

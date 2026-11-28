@@ -26,6 +26,7 @@
 #define IDD_ETC_SUBGAME_EDIT_SUGOROKU   216
 #define IDD_ETC_SUBGAME                 217
 #define IDD_ETC_SUBGAME_EDIT_PINBALL    246
+#define IDD_ETC_SUBGAME_EDIT_JANJAN     247
 #define IDD_SUGOROKU_PARTS              223
 #define IDD_SUGOROKU_PARTS_EDIT         224
 #define IDD_SUGOROKU_EVENT              225
@@ -620,6 +621,10 @@
 #define IDC_PB_BANDSIDE                    1556
 #define IDC_PB_PAIR                        1557
 #define IDC_PB_VSSEC                       1558
+#define IDC_JJ_LEVEL                       1559
+#define IDC_JJ_TICKET                      1560
+#define IDC_JJ_TICKETNUM                   1561
+#define IDC_JJ_WAITSEC                     1562
 #define IDC_MT_LEVEL                       1600
 #define IDC_MT_DX                          1601
 #define IDC_MT_DY                          1602

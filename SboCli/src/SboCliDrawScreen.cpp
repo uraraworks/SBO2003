@@ -11,6 +11,7 @@
 #include "common/FallingPuzzle.h"
 #include "common/Pinball.h"
 #include "SboCliPinball.h"
+#include "common/Janjan.h"
 #include "common/MazeAttack.h"
 #include "common/MazeTable.h"
 #include "Glbldata.h"
@@ -1301,6 +1302,1012 @@ static void DrawPinball(int nX, int nY, BOOL bTop)
 }
 
 /* ========================================================================= */
+/* 関数名：DrawJan															 */
+/* 内容：SBOじゃんの卓（見えている卓すべて。待機中の空卓・観戦も）の重ね描き				 */
+/*		 卓の左上（nFieldX,nFieldY。マップのドット座標）・描く座標・画面外の切り取り・重なり順は	 */
+/*		 落ち物パズル（DrawPuzzle）と同じ。2 層に分けて描く：							 */
+/*		 下の層（bTop=FALSE。キャラより前＝地図のパーツの後）は卓の面・枠・座る場所の目印・	 */
+/*		 手牌・鳴いた組・川（捨て牌）。上の層（bTop=TRUE。ウィンドウの下）は名前札・得点・	 */
+/*		 山の残り・「上がり！」「流局」・座る場所の案内・座っている本人の手牌の別枠（画面下に固定）	 */
+/*		 卓は 7×7 マス = 224 ドット四方。牌は 16 ドット（回転しない）。4 席とも同じ向きの格子で	 */
+/*		 川を並べ、持ち主は枠の色と名前札の色で見分ける。							 */
+/*		 配置（卓の左上が原点。JAN_BAND=20）：									 */
+/*		   各辺に手牌の帯（席0=下 席1=右 席2=上 席3=左。牌の列は辺の中央そろえ）、			 */
+/*		   内側 184 四方を 4 つの箱（席0=右下 席1=右上 席2=左上 席3=左下。92 四方）に分け、	 */
+/*		   箱の上に名前札（高さ 14）、その下に川（5 列×4 行）。上の 2 箱は上詰め・下の 2 箱は下詰めにして、	 */
+/*		   真ん中に帯（高さ 28）を空ける（山の残り・手番・案内・結果の文字）。				 */
+/*		 牌の絵は 16 個の絵（s_aJanTileGrp。組＝id/4）。卓・牌の台・裏面・枠・ボタン・名前札などは	 */
+/*		 SboGrpData/grp/janjan/jan_*.png の素材を透明度つきで重ねる（読めない物は単色＋縁の描画にもどる）	 */
+/* ========================================================================= */
+#define JAN_TBL			(224)		/* 卓の大きさ（7×7 マス） */
+#define JAN_T			(16)		/* 卓の上の牌の大きさ */
+#define JAN_BAND		(20)		/* 辺の手牌の帯の厚み（牌 16＋手前の線） */
+#define JAN_BOX			(92)		/* 川の箱の大きさ（内側 184 四方の 4 分の 1） */
+#define JAN_HEAD		(14)		/* 名前札の高さ */
+#define JAN_RCOL		(5)			/* 川の列数 */
+#define JAN_RROW		(4)			/* 川の行数 */
+#define JAN_BIG			(32)		/* 自分の手牌の牌の大きさ */
+#define JAN_PIC			(28)		/* 32 の台に重ねる牌の絵の大きさ */
+#define JAN_BIG_STEP	(34)		/* 自分の手牌の牌の間隔 */
+#define JAN_PANEL_W		(448)		/* 自分の手牌の別枠の幅（画面 480 の縦持ちでも収まる） */
+#define JAN_PANEL_H		(124)		/* 別枠の高さ（素材は 96。上下の枠・文字・バー・操作・牌の間を 6 ドット以上あけるため縦に伸ばす） */
+#define JAN_OP_H		(24)		/* 操作の行のボタンの高さ */
+#define JAN_VIEW_DRAW_MAX	(16)	/* GetJanState の添字の数（SboCliRecvCmd.cpp の JAN_VIEW_MAX と同じ） */
+
+/* 牌の絵の割り当て（牌id 0〜15 → SboGrpData/grp/char<ファイル番号>.png の<行>行目の「正面・立ち止まり」のコマ）。
+   仮の割り当て。後で差し替える時はこの表だけを変える（組＝id/4。同じ組の 4 つは仲間の絵にする）。
+   選んだ理由と一覧は docs/janjan.md の末尾。 */
+typedef struct _JANTILEGRP {
+	BYTE		byFile;				/* char<NN>.png の NN（1〜16） */
+	BYTE		byRow;				/* その絵の行（0〜15。キャラの絵 ID の 16 で割った余り） */
+} JANTILEGRP;
+static const JANTILEGRP s_aJanTileGrp[JANJAN_KINDS] = {
+	/* 組0：町の子どもたち */
+	{ 1,  2}, { 1,  3}, { 1,  5}, { 1,  7},
+	/* 組1：町のおとなたち */
+	{ 1,  4}, { 1,  6}, { 1,  8}, { 1,  9},
+	/* 組2：町の女の子・エルフ */
+	{ 1, 10}, { 1, 11}, { 1, 13}, { 1, 14},
+	/* 組3：プヨンなどのスライム・小さな魔物 */
+	{ 5,  6}, { 5,  7}, { 5, 11}, { 5, 12},
+};
+
+/* 席の色（席0=赤 席1=青 席2=緑 席3=黄） */
+static const COLORREF s_aclJanSeat[JANJAN_SEATS] = {
+	RGB (235, 95, 85), RGB (95, 150, 245), RGB (100, 205, 115), RGB (240, 205, 75),
+};
+
+static CImg32 *s_pJanSheetR[4];		/* 16 ドット版を回した物（添字は回転 JAN_ROT_*。0 は使わない） */
+static CImg32 *s_pJanSheet16;		/* 牌の絵 16 ドット版（横に 16 個。キャラの絵を 1/2 にしたもの） */
+static CImg32 *s_pJanSheet32;		/* 牌の絵 32 ドット版（横に 16 個） */
+static CImg32 *s_pJanSheet28;		/* 牌の絵 28 ドット版（32 の台の中央に重ねる。32 版を縮めたもの） */
+
+/* ---- 見た目の素材（SboGrpData/grp/janjan/jan_*.png。透明度つき。読めない時は単色の描画にもどる） ---- */
+BOOL ReadGrpDataRgba(LPSTR pszName, int *pnWidth, int *pnHeight, BYTE **ppRgba);		/* SboCliMain.cpp */
+
+enum {
+	JIMG_TABLE, JIMG_FRONT, JIMG_FRONT16, JIMG_BACK, JIMG_BACK16, JIMG_SEL, JIMG_PANEL,
+	JIMG_BTN, JIMG_NAMEPLATE, JIMG_RIVERBOX, JIMG_SEATMARK, JIMG_BANNER, JIMG_TURN, JIMG_MAX
+};
+typedef struct _JANIMG {
+	const char	*pszRes;			/* リソース名（SboGrpData.rc） */
+	int			nW, nH;				/* 決まった大きさ（違う画像は使わない） */
+	BYTE		*pRgba;				/* 読み込んだ絵（上の行から R,G,B,A）。NULL なら使えない */
+} JANIMG;
+static JANIMG s_aJanImg[JIMG_MAX] = {
+	{"IDP_JAN_TABLE", 224, 224, NULL}, {"IDP_JAN_TILE_FRONT", 32, 32, NULL}, {"IDP_JAN_TILE_FRONT16", 16, 16, NULL},
+	{"IDP_JAN_TILE_BACK", 32, 32, NULL}, {"IDP_JAN_TILE_BACK16", 16, 16, NULL}, {"IDP_JAN_TILE_SEL32", 36, 36, NULL},
+	{"IDP_JAN_PANEL", 448, 96, NULL}, {"IDP_JAN_BTN", 192, 24, NULL}, {"IDP_JAN_NAMEPLATE", 92, 14, NULL},
+	{"IDP_JAN_RIVERBOX", 92, 78, NULL}, {"IDP_JAN_SEATMARK", 26, 26, NULL}, {"IDP_JAN_BANNER", 200, 48, NULL},
+	{"IDP_JAN_TURN", 16, 16, NULL},
+};
+#define JAN_NOTINT		((COLORREF)0xFFFFFFFF)		/* 色を掛けない */
+/* 他席の牌の回転（牌の絵の上が卓の中央を向くように。時計回りに 90 度ずつ） */
+#define JAN_ROT_0		(0)
+#define JAN_ROT_CW		(1)		/* 右に 90 度（席3＝左の辺：絵の上が右＝中央を向く） */
+#define JAN_ROT_180		(2)		/* 席2＝上の辺 */
+#define JAN_ROT_CCW		(3)		/* 左に 90 度（席1＝右の辺：絵の上が左＝中央を向く） */
+static const int s_anJanSeatRot[4] = { JAN_ROT_0, JAN_ROT_CCW, JAN_ROT_180, JAN_ROT_CW };	/* 席 0〜3 の牌の向き */
+
+/* 素材を読む（最初に描く時に 1 回。1 枚ずつ、読めた物だけ使う） */
+static void JanArtInit(void)
+{
+	static BOOL s_bTried = FALSE;
+	int i, nW, nH;
+	BYTE *pRgba;
+
+	if (s_bTried) {
+		return;
+	}
+	s_bTried = TRUE;
+	for (i = 0; i < JIMG_MAX; i ++) {
+		pRgba = NULL;
+		if (!ReadGrpDataRgba ((LPSTR)s_aJanImg[i].pszRes, &nW, &nH, &pRgba)) {
+			continue;
+		}
+		if ((nW != s_aJanImg[i].nW) || (nH != s_aJanImg[i].nH)) {
+			delete [] pRgba;		/* 大きさが違う素材は使わない（単色の描画にもどる） */
+			continue;
+		}
+		s_aJanImg[i].pRgba = pRgba;
+	}
+}
+
+/* 素材 nImg の (sx,sy,sw,sh) を、画面 (dx,dy) へ幅 dw に伸ばして透明度つきで重ねる（切り取り範囲の中だけ）。
+   nCap > 0 なら左右 nCap ドットはそのまま、真ん中だけ伸ばす（3 分割）。
+   clTint を指定すると nTint(0〜255) の強さで色を掛ける（乗算。白〜灰色の絵に色をつける）。nOpa は全体の不透明度 */
+static void JanArtEx(int nImg, int dx, int dy, int sx, int sy, int sw, int sh, int dw, int nCap, COLORREF clTint, int nTint, int nOpa)
+{
+	const JANIMG &Im = s_aJanImg[nImg];
+	CImg32 *pDst = g_pDibDrawMap;
+	int xx, yy, x0, x1, y0, y1, nDW, nDH, nSrcX, nSrcY, a, tr, tg, tb;
+	BYTE *pBits, *pS, *pD;
+
+	if ((Im.pRgba == NULL) || (pDst == NULL) || (dw <= 0)) {
+		return;
+	}
+	nDW = pDst->Width ();
+	nDH = pDst->Height ();
+	pBits = pDst->GetBits ();
+	x0 = max (max (dx, s_nPzL), 0);
+	x1 = min (min (dx + dw, s_nPzR), nDW);
+	y0 = max (max (dy, s_nPzT), 0);
+	y1 = min (min (dy + sh, s_nPzB), nDH);
+	if (clTint != JAN_NOTINT) {
+		/* 乗算の強さ nTint：255 で完全に掛ける、0 で掛けない */
+		tr = 255 - nTint + GetRValue (clTint) * nTint / 255;
+		tg = 255 - nTint + GetGValue (clTint) * nTint / 255;
+		tb = 255 - nTint + GetBValue (clTint) * nTint / 255;
+	} else {
+		tr = tg = tb = 255;
+	}
+	for (yy = y0; yy < y1; yy ++) {
+		nSrcY = sy + (yy - dy);
+		for (xx = x0; xx < x1; xx ++) {
+			if ((nCap > 0) && (dw != sw)) {
+				if (xx - dx < nCap) {
+					nSrcX = sx + (xx - dx);
+				} else if (xx - dx >= dw - nCap) {
+					nSrcX = sx + sw - (dx + dw - xx);
+				} else {
+					nSrcX = sx + nCap + (xx - dx - nCap) * (sw - nCap * 2) / max (dw - nCap * 2, 1);
+				}
+			} else {
+				nSrcX = sx + (xx - dx);
+			}
+			pS = Im.pRgba + (nSrcY * Im.nW + nSrcX) * 4;
+			a = pS[3] * nOpa / 255;
+			if (a <= 0) {
+				continue;
+			}
+			pD = pBits + ((nDH - 1 - yy) * nDW + xx) * 4;		/* 下の行から並ぶ B,G,R,X */
+			pD[0] = (BYTE)((pD[0] * (255 - a) + (pS[2] * tb / 255) * a) / 255);
+			pD[1] = (BYTE)((pD[1] * (255 - a) + (pS[1] * tg / 255) * a) / 255);
+			pD[2] = (BYTE)((pD[2] * (255 - a) + (pS[0] * tr / 255) * a) / 255);
+		}
+	}
+}
+
+/* 素材をそのまま重ねる */
+static void JanArt(int nImg, int dx, int dy, COLORREF clTint, int nTint, int nOpa)
+{
+	JanArtEx (nImg, dx, dy, 0, 0, s_aJanImg[nImg].nW, s_aJanImg[nImg].nH, s_aJanImg[nImg].nW, 0, clTint, nTint, nOpa);
+}
+
+/* 回転 nRot（JAN_ROT_*）した 16×16 の絵の (x,y) に入る元の絵の位置 */
+static void JanRotSrc(int nRot, int x, int y, int *pnSx, int *pnSy)
+{
+	switch (nRot) {
+	case JAN_ROT_CW:	*pnSx = y;				*pnSy = JAN_T - 1 - x;	break;		/* 右に 90 度 */
+	case JAN_ROT_180:	*pnSx = JAN_T - 1 - x;	*pnSy = JAN_T - 1 - y;	break;
+	case JAN_ROT_CCW:	*pnSx = JAN_T - 1 - y;	*pnSy = x;				break;		/* 左に 90 度 */
+	default:			*pnSx = x;				*pnSy = y;				break;
+	}
+}
+
+/* 16×16 の素材を nRot 回して重ねる（回転なしは JanArt と同じ。色は掛けない） */
+static void JanArtRot16(int nImg, int dx, int dy, int nRot)
+{
+	const JANIMG &Im = s_aJanImg[nImg];
+	CImg32 *pDst = g_pDibDrawMap;
+	int xx, yy, nSx, nSy, a, nDW, nDH;
+	BYTE *pBits, *pS, *pD;
+
+	if (nRot == JAN_ROT_0) {
+		JanArt (nImg, dx, dy, JAN_NOTINT, 0, 255);
+		return;
+	}
+	if ((Im.pRgba == NULL) || (pDst == NULL)) {
+		return;
+	}
+	nDW = pDst->Width ();
+	nDH = pDst->Height ();
+	pBits = pDst->GetBits ();
+	for (yy = 0; yy < JAN_T; yy ++) {
+		for (xx = 0; xx < JAN_T; xx ++) {
+			if ((dx + xx < max (s_nPzL, 0)) || (dx + xx >= min (s_nPzR, nDW)) || (dy + yy < max (s_nPzT, 0)) || (dy + yy >= min (s_nPzB, nDH))) {
+				continue;
+			}
+			JanRotSrc (nRot, xx, yy, &nSx, &nSy);
+			pS = Im.pRgba + (nSy * Im.nW + nSx) * 4;
+			a = pS[3];
+			if (a <= 0) {
+				continue;
+			}
+			pD = pBits + ((nDH - 1 - (dy + yy)) * nDW + dx + xx) * 4;
+			pD[0] = (BYTE)((pD[0] * (255 - a) + pS[2] * a) / 255);
+			pD[1] = (BYTE)((pD[1] * (255 - a) + pS[1] * a) / 255);
+			pD[2] = (BYTE)((pD[2] * (255 - a) + pS[0] * a) / 255);
+		}
+	}
+}
+
+/* 正方形の素材を nRot 回して、色（clTint）を掛けて重ねる（座る場所の目印の矢印用。席の方向＝卓の中央を向く） */
+static void JanArtRotTint(int nImg, int dx, int dy, int nRot, COLORREF clTint, int nOpa)
+{
+	const JANIMG &Im = s_aJanImg[nImg];
+	CImg32 *pDst = g_pDibDrawMap;
+	int xx, yy, nSx, nSy, a, nDW, nDH, nN = Im.nW, tr, tg, tb;
+	BYTE *pBits, *pS, *pD;
+
+	if ((Im.pRgba == NULL) || (pDst == NULL) || (Im.nW != Im.nH)) {
+		return;
+	}
+	tr = GetRValue (clTint);
+	tg = GetGValue (clTint);
+	tb = GetBValue (clTint);
+	nDW = pDst->Width ();
+	nDH = pDst->Height ();
+	pBits = pDst->GetBits ();
+	for (yy = 0; yy < nN; yy ++) {
+		for (xx = 0; xx < nN; xx ++) {
+			if ((dx + xx < max (s_nPzL, 0)) || (dx + xx >= min (s_nPzR, nDW)) || (dy + yy < max (s_nPzT, 0)) || (dy + yy >= min (s_nPzB, nDH))) {
+				continue;
+			}
+			switch (nRot) {
+			case JAN_ROT_CW:	nSx = yy;			nSy = nN - 1 - xx;	break;
+			case JAN_ROT_180:	nSx = nN - 1 - xx;	nSy = nN - 1 - yy;	break;
+			case JAN_ROT_CCW:	nSx = nN - 1 - yy;	nSy = xx;			break;
+			default:			nSx = xx;			nSy = yy;			break;
+			}
+			pS = Im.pRgba + (nSy * Im.nW + nSx) * 4;
+			a = pS[3] * nOpa / 255;
+			if (a <= 0) {
+				continue;
+			}
+			pD = pBits + ((nDH - 1 - (dy + yy)) * nDW + dx + xx) * 4;
+			pD[0] = (BYTE)((pD[0] * (255 - a) + (pS[2] * tb / 255) * a) / 255);
+			pD[1] = (BYTE)((pD[1] * (255 - a) + (pS[1] * tg / 255) * a) / 255);
+			pD[2] = (BYTE)((pD[2] * (255 - a) + (pS[0] * tr / 255) * a) / 255);
+		}
+	}
+}
+
+/* 牌の絵の一覧を作る（最初に描く時に 1 回）。キャラの絵は 2 倍に拡大して持っているので、
+   16 ドット版は 1 ドットおきに取り出す。取り出せなければ FALSE（その間は牌の絵なしで描く） */
+static BOOL JanSheetInit(void)
+{
+	int i, xx, yy, no, sx, sy;
+	CImg32 *p16, *p32, *p28;
+
+	if (s_pJanSheet16 && s_pJanSheet32 && s_pJanSheet28) {
+		return TRUE;
+	}
+	if ((g_apDibCharBack == NULL) || (g_wCountCharGrp < 16)) {
+		return FALSE;
+	}
+	p16 = new CImg32;
+	p32 = new CImg32;
+	p28 = new CImg32;
+	if (!p16->Create (JANJAN_KINDS * JAN_T, JAN_T) || !p32->Create (JANJAN_KINDS * JAN_BIG, JAN_BIG)
+			|| !p28->Create (JANJAN_KINDS * JAN_PIC, JAN_PIC)) {
+		delete p16;
+		delete p32;
+		delete p28;
+		return FALSE;
+	}
+	p16->Clear ();
+	p32->Clear ();
+	p28->Clear ();
+	for (i = 0; i < JANJAN_KINDS; i ++) {
+		no = (int)s_aJanTileGrp[i].byFile - 1;
+		if ((no < 0) || (no >= g_wCountCharGrp) || (g_apDibCharBack[no] == NULL)) {
+			continue;
+		}
+		sx = 1 * 64;							/* 向き「下」の 1 コマ目（立ち止まり） */
+		sy = 32 * (int)s_aJanTileGrp[i].byRow;
+		p32->Blt (i * JAN_BIG, 0, JAN_BIG, JAN_BIG, g_apDibCharBack[no], sx, sy, TRUE);
+		for (yy = 0; yy < JAN_T; yy ++) {
+			for (xx = 0; xx < JAN_T; xx ++) {
+				p16->Blt (i * JAN_T + xx, yy, 1, 1, g_apDibCharBack[no], sx + xx * 2, sy + yy * 2, TRUE);
+			}
+		}
+	}
+	/* 28 ドット版：32 版を 1 ドットずつ取り出して縮める（台の中央に収める） */
+	for (i = 0; i < JANJAN_KINDS; i ++) {
+		for (yy = 0; yy < JAN_PIC; yy ++) {
+			for (xx = 0; xx < JAN_PIC; xx ++) {
+				p28->Blt (i * JAN_PIC + xx, yy, 1, 1, p32, i * JAN_BIG + xx * JAN_BIG / JAN_PIC, yy * JAN_BIG / JAN_PIC, TRUE);
+			}
+		}
+	}
+	/* 他席の牌の向き用に、16 ドット版を 90 度単位で回した物を作る（最近傍の回転なのでドットは崩れない） */
+	for (i = 1; i < 4; i ++) {
+		CImg32 *pR = new CImg32;
+		int nSrcX, nSrcY, t;
+
+		if (!pR->Create (JANJAN_KINDS * JAN_T, JAN_T)) {
+			delete pR;
+			continue;
+		}
+		pR->Clear ();
+		for (t = 0; t < JANJAN_KINDS; t ++) {
+			for (yy = 0; yy < JAN_T; yy ++) {
+				for (xx = 0; xx < JAN_T; xx ++) {
+					JanRotSrc (i, xx, yy, &nSrcX, &nSrcY);
+					pR->Blt (t * JAN_T + xx, yy, 1, 1, p16, t * JAN_T + nSrcX, nSrcY, TRUE);
+				}
+			}
+		}
+		s_pJanSheetR[i] = pR;
+	}
+	s_pJanSheet16 = p16;
+	s_pJanSheet32 = p32;
+	s_pJanSheet28 = p28;
+	return TRUE;
+}
+
+/* 切り取り範囲（s_nPz*）の中だけ、牌の絵を貼る */
+static void JanBlt(int x, int y, int w, int h, CImg32 *pSrc, int sx, int sy)
+{
+	int x1 = x + w, y1 = y + h;
+
+	if (pSrc == NULL) {
+		return;
+	}
+	if (x < s_nPzL) {
+		sx += s_nPzL - x;
+		x = s_nPzL;
+	}
+	if (y < s_nPzT) {
+		sy += s_nPzT - y;
+		y = s_nPzT;
+	}
+	x1 = min (x1, s_nPzR);
+	y1 = min (y1, s_nPzB);
+	if ((x1 <= x) || (y1 <= y)) {
+		return;
+	}
+	g_pDibDrawMap->Blt (x, y, x1 - x, y1 - y, pSrc, sx, sy, TRUE);
+}
+
+/* 四角を塗る */
+static void JanRect(HDC hDC, int x, int y, int w, int h, COLORREF cl, int nAlpha)
+{
+	int yy;
+
+	if ((y >= s_nPzB) || (y + h <= s_nPzT) || (x >= s_nPzR) || (x + w <= s_nPzL)) {
+		return;
+	}
+	for (yy = max (0, s_nPzT - y); yy < h; yy ++) {
+		if (y + yy >= s_nPzB) {
+			break;
+		}
+		PuzSpan (hDC, x, y + yy, w, cl, nAlpha);
+	}
+}
+
+/* 1 ドットの縁 */
+static void JanEdge(HDC hDC, int x, int y, int w, int h, COLORREF cl)
+{
+	int yy;
+
+	if ((y >= s_nPzB) || (y + h <= s_nPzT) || (x >= s_nPzR) || (x + w <= s_nPzL)) {
+		return;
+	}
+	PuzSpan (hDC, x, y, w, cl, 255);
+	PuzSpan (hDC, x, y + h - 1, w, cl, 255);
+	for (yy = max (1, s_nPzT - y); yy < h - 1; yy ++) {
+		if (y + yy >= s_nPzB) {
+			break;
+		}
+		PuzSpan (hDC, x, y + yy, 1, cl, 255);
+		PuzSpan (hDC, x + w - 1, y + yy, 1, cl, 255);
+	}
+}
+
+/* 右向きの小さな三角（手番の目印） */
+static void JanTriRight(HDC hDC, int x, int y, int h, COLORREF cl)
+{
+	int yy, w;
+
+	for (yy = 0; yy < h; yy ++) {
+		w = (yy <= h / 2) ? (yy + 1) : (h - yy);
+		JanRect (hDC, x, y + yy, w, 1, cl, 255);
+	}
+}
+
+/* 下向きの小さな三角（手牌のカーソルの目印） */
+static void JanTriDown(HDC hDC, int x, int y, int w, COLORREF cl)
+{
+	int xx, h;
+
+	for (xx = 0; xx < w; xx ++) {
+		h = (xx <= w / 2) ? (xx + 1) : (w - xx);
+		JanRect (hDC, x + xx, y, 1, h, cl, 255);
+	}
+}
+
+/* 卓の上の牌（16 ドット）。nTile が範囲外なら絵なし。clEdge は縁の色 */
+static void JanTileSmall(HDC hDC, int x, int y, int nTile, COLORREF clEdge, BOOL bMark = FALSE, int nRot = JAN_ROT_0)
+{
+	BOOL bArt = (s_aJanImg[JIMG_FRONT16].pRgba != NULL) ? TRUE : FALSE;
+
+	if (bArt) {
+		JanArtRot16 (JIMG_FRONT16, x, y, nRot);
+	} else {
+		JanRect (hDC, x, y, JAN_T, JAN_T, RGB (245, 240, 220), 255);
+	}
+	if ((nTile >= 0) && (nTile < JANJAN_KINDS)) {
+		JanBlt (x, y, JAN_T, JAN_T, ((nRot != JAN_ROT_0) && s_pJanSheetR[nRot]) ? s_pJanSheetR[nRot] : s_pJanSheet16, nTile * JAN_T, 0);
+	}
+	/* 素材の台には縁があるので、色の縁は鳴いた組の目印（bMark）の時だけ重ねる */
+	if (!bArt || bMark) {
+		JanEdge (hDC, x, y, JAN_T, JAN_T, clEdge);
+	}
+}
+
+/* 卓の上の牌の裏面（16 ドット） */
+static void JanTileBackSmall(HDC hDC, int x, int y, int nRot = JAN_ROT_0)
+{
+	if (s_aJanImg[JIMG_BACK16].pRgba != NULL) {
+		JanArtRot16 (JIMG_BACK16, x, y, nRot);
+		return;
+	}
+	JanRect (hDC, x, y, JAN_T, JAN_T, RGB (55, 70, 160), 255);
+	JanEdge (hDC, x + 3, y + 3, JAN_T - 6, JAN_T - 6, RGB (120, 135, 215));
+	JanEdge (hDC, x, y, JAN_T, JAN_T, RGB (200, 205, 235));
+}
+
+/* 自分の手牌の牌（32 ドット） */
+static void JanTileBig(HDC hDC, int x, int y, int nTile)
+{
+	if (s_aJanImg[JIMG_FRONT].pRgba != NULL) {
+		/* 素材の台（32）の中央に、牌の絵（28）を重ねる */
+		JanArt (JIMG_FRONT, x, y, JAN_NOTINT, 0, 255);
+		if ((nTile >= 0) && (nTile < JANJAN_KINDS)) {
+			JanBlt (x + (JAN_BIG - JAN_PIC) / 2, y + (JAN_BIG - JAN_PIC) / 2, JAN_PIC, JAN_PIC, s_pJanSheet28, nTile * JAN_PIC, 0);
+		}
+		return;
+	}
+	JanRect (hDC, x, y, JAN_BIG, JAN_BIG, RGB (245, 240, 220), 255);
+	if ((nTile >= 0) && (nTile < JANJAN_KINDS)) {
+		JanBlt (x, y, JAN_BIG, JAN_BIG, s_pJanSheet32, nTile * JAN_BIG, 0);
+	}
+	JanEdge (hDC, x, y, JAN_BIG, JAN_BIG, RGB (90, 70, 40));
+}
+
+/* 席の手牌の行（列）の並び：手牌（引いた牌は少し離す）→ 鳴いた組（公開）。
+   aHandOff / aMeldOff は帯の先頭からの距離（ドット）。戻り値は全体の長さ */
+static int JanStripLayout(const JANSEATWIRE &Seat, BOOL bGap, int nStep, int nGap, int nMeldGap, int *aHandOff, int *aMeldOff)
+{
+	int i, m, k, nAlong = 0, nHand = min ((int)Seat.byHandNum, JAN_HAND_WIRE), nMeld = min ((int)Seat.byMeldNum, JAN_MELD_WIRE);
+
+	for (i = 0; i < nHand; i ++) {
+		if (bGap && (i == nHand - 1) && (nHand > 1)) {
+			nAlong += nGap;
+		}
+		aHandOff[i] = nAlong;
+		nAlong += nStep;
+	}
+	if (nMeld > 0) {
+		nAlong += nMeldGap;
+	}
+	for (m = 0; m < nMeld; m ++) {
+		for (k = 0; k < JANJAN_SET_SIZE; k ++) {
+			aMeldOff[m * JANJAN_SET_SIZE + k] = nAlong;
+			nAlong += nStep;
+		}
+		if (m + 1 < nMeld) {
+			nAlong += 3;
+		}
+	}
+	return nAlong;
+}
+
+/* 席の手牌の帯の先頭の位置（卓の左上からの距離）。席0=下 席1=右 席2=上 席3=左。牌の列は辺の中央そろえ */
+static void JanStripOrigin(int nSeat, int nLen, int *pnX, int *pnY, BOOL *pbHoriz)
+{
+	switch (nSeat) {
+	case 0:		*pnX = (JAN_TBL - nLen) / 2;	*pnY = JAN_TBL - JAN_BAND + 2;	*pbHoriz = TRUE;	break;
+	case 1:		*pnX = JAN_TBL - JAN_BAND + 2;	*pnY = (JAN_TBL - nLen) / 2;	*pbHoriz = FALSE;	break;
+	case 2:		*pnX = (JAN_TBL - nLen) / 2;	*pnY = 2;						*pbHoriz = TRUE;	break;
+	default:	*pnX = 2;						*pnY = (JAN_TBL - nLen) / 2;	*pbHoriz = FALSE;	break;
+	}
+}
+
+/* 川の箱の左上（卓の左上からの距離）。席0=右下 席1=右上 席2=左上 席3=左下。上の箱は上詰め・下の箱は下詰め */
+static void JanBoxOrigin(int nSeat, int *pnX, int *pnY)
+{
+	const int nInner = JAN_TBL - JAN_BAND * 2;				/* 184 */
+	const int nH = JAN_HEAD + JAN_RROW * JAN_T;				/* 箱の中身の高さ 78 */
+
+	*pnX = ((nSeat == 0) || (nSeat == 1)) ? (JAN_BAND + nInner / 2) : JAN_BAND;
+	*pnY = ((nSeat == 1) || (nSeat == 2)) ? JAN_BAND : (JAN_TBL - JAN_BAND - nH);
+}
+
+/* 席名を幅に収まるように縮める（全角の途中で切らない） */
+static void JanFitText(HDC hDC, const char *pszSrc, int nMaxW, char *pszOut, int nOutSize)
+{
+	int nLen = (int)strlen (pszSrc);
+	SIZE size;
+
+	if (nLen > nOutSize - 1) {
+		nLen = nOutSize - 1;
+	}
+	for (;;) {
+		memcpy (pszOut, pszSrc, nLen);
+		pszOut[nLen] = '\0';
+		GetTextExtentPoint32 (hDC, pszOut, nLen, &size);
+		if ((size.cx <= nMaxW) || (nLen <= 0)) {
+			break;
+		}
+		/* 末尾を 1 文字（全角なら 2 バイト）落とす */
+		{
+			int i = 0, nLast = 0;
+			while (i < nLen) {
+				nLast = i;
+				i += (((BYTE)pszOut[i] >= 0x81 && (BYTE)pszOut[i] <= 0x9F) || ((BYTE)pszOut[i] >= 0xE0 && (BYTE)pszOut[i] <= 0xFC)) ? 2 : 1;
+			}
+			nLen = nLast;
+		}
+	}
+}
+
+/* 卓 1 つ。sx, sy は画面上の卓の左上。nMyX, nMyY は自分のマス（座る場所の案内用） */
+static void DrawJanOne(HDC hDC, const JANDRAW &D, int sx, int sy, int nMyX, int nMyY, BOOL bTop)
+{
+	const CMDPARA_JANSTATE &St = D.St;
+	BOOL bIdle = (St.byPhase == JANPHASE_IDLE) ? TRUE : FALSE;
+	BOOL bOver = (St.byPhase == JANPHASE_OVER) ? TRUE : FALSE;
+	BOOL bRecruit = (St.byPhase == JANPHASE_RECRUIT) ? TRUE : FALSE;		/* 参加募集中（残りはサーバーの dwLimitMs をクライアントが減らす） */
+	DWORD dwNow = timeGetTime ();
+	BOOL bBlink = (((dwNow / 400) & 1) == 0) ? TRUE : FALSE;
+	int s, i, nX, nY, nLen, nDx, nDy, aHandOff[JAN_HAND_WIRE + 1], aMeldOff[JAN_MELD_WIRE * JANJAN_SET_SIZE + 1];
+	BOOL bHoriz;
+
+	if (!bTop) {
+		/* ---- 下の層：卓の面・枠 ---- */
+		if (s_aJanImg[JIMG_TABLE].pRgba != NULL) {
+			/* 卓の素材（面は明るいので、真ん中の帯だけ暗く敷いて白い文字を読めるようにする） */
+			JanArt (JIMG_TABLE, sx, sy, JAN_NOTINT, 0, 255);
+			JanRect (hDC, sx + JAN_BAND, sy + JAN_BAND + JAN_HEAD + JAN_RROW * JAN_T + 1, JAN_TBL - JAN_BAND * 2,
+				JAN_TBL - (JAN_BAND * 2) - (JAN_HEAD + JAN_RROW * JAN_T) * 2 - 2, RGB (20, 45, 32), 190);
+		} else {
+			JanRect (hDC, sx, sy, JAN_TBL, JAN_TBL, RGB (26, 88, 56), 242);
+			JanRect (hDC, sx + JAN_BAND, sy + JAN_BAND + JAN_HEAD + JAN_RROW * JAN_T + 1, JAN_TBL - JAN_BAND * 2,
+				JAN_TBL - (JAN_BAND * 2) - (JAN_HEAD + JAN_RROW * JAN_T) * 2 - 2, RGB (0, 0, 0), 55);		/* 真ん中の帯 */
+			JanEdge (hDC, sx, sy, JAN_TBL, JAN_TBL, RGB (80, 50, 25));
+			JanEdge (hDC, sx + 1, sy + 1, JAN_TBL - 2, JAN_TBL - 2, RGB (170, 125, 60));
+		}
+
+		/* 座る場所の目印（卓の外の 4 マス。誰かが立っていればその下に敷かれる） */
+		for (s = 0; s < JANJAN_SEATS; s ++) {
+			JanjanSeatOffset (s, &nDx, &nDy);
+			nX = sx + (JANJAN_TABLE_HALF + nDx) * 32;
+			nY = sy + (JANJAN_TABLE_HALF + nDy) * 32;
+			if (s_aJanImg[JIMG_SEATMARK].pRgba != NULL) {
+				JanArtRotTint (JIMG_SEATMARK, nX + 3, nY + 3, s_anJanSeatRot[s & 3], s_aclJanSeat[s], (bIdle || bRecruit) ? 255 : 190);		/* 白〜灰色の絵に席の色を掛ける */
+			} else {
+				JanRect (hDC, nX + 3, nY + 3, 26, 26, s_aclJanSeat[s], (bIdle || bRecruit) ? 90 : 60);
+				JanEdge (hDC, nX + 3, nY + 3, 26, 26, s_aclJanSeat[s]);
+			}
+		}
+
+		/* 各席の川・手牌・鳴いた組 */
+		for (s = 0; s < JANJAN_SEATS; s ++) {
+			const JANSEATWIRE &Seat = St.aSeat[s];
+			COLORREF clSeat = s_aclJanSeat[s];
+			int nHand = min ((int)Seat.byHandNum, JAN_HAND_WIRE), nMeld = min ((int)Seat.byMeldNum, JAN_MELD_WIRE);
+			int nRiver = min ((int)Seat.byRiverNum, JAN_RIVER_WIRE), nFrom, bx, by;
+			BOOL bGap = (!bIdle && !bRecruit && (St.byLogicPhase == JANJAN_PHASE_DISCARD) && (St.byTurn == s) && (nHand % 3 == 0)) ? TRUE : FALSE;
+			BOOL bTurn = (!bIdle && !bRecruit && !bOver && (St.byTurn == s) && (St.byLogicPhase != JANJAN_PHASE_END)) ? TRUE : FALSE;
+
+			/* 川の箱の縁（手番の席は黄色で強調） */
+			JanBoxOrigin (s, &bx, &by);
+			if (s_aJanImg[JIMG_RIVERBOX].pRgba != NULL) {
+				/* 箱の素材（92×78）に席の色を薄く掛ける。手番の席は黄色の線を内側に足す */
+				JanArt (JIMG_RIVERBOX, sx + bx, sy + by, clSeat, bTurn ? 90 : 150, 255);
+				if (bTurn) {
+					JanEdge (hDC, sx + bx + 1, sy + by + 1, JAN_BOX - 2, JAN_HEAD + JAN_RROW * JAN_T - 2, RGB (255, 240, 120));
+				}
+			} else {
+				JanEdge (hDC, sx + bx, sy + by, JAN_BOX, JAN_HEAD + JAN_RROW * JAN_T, bTurn ? RGB (255, 240, 120) : clSeat);
+			}
+
+			if (Seat.byState == JANSEAT_EMPTY) {
+				/* 空席：手牌の置き場所だけうすく見せる */
+				nLen = JANJAN_HAND * JAN_T;
+				JanStripOrigin (s, nLen, &nX, &nY, &bHoriz);
+				for (i = 0; i < 8; i ++) {
+					JanEdge (hDC, sx + nX + (bHoriz ? i * JAN_T : 0), sy + nY + (bHoriz ? 0 : i * JAN_T), JAN_T, JAN_T, RGB (60, 120, 80));
+				}
+				continue;
+			}
+
+			/* 手牌の帯（内側に席の色の線。手番の席は太く黄色） */
+			nLen = JanStripLayout (Seat, bGap, JAN_T, 4, 6, aHandOff, aMeldOff);
+			JanStripOrigin (s, nLen, &nX, &nY, &bHoriz);
+			{
+				COLORREF clBar = bTurn ? RGB (255, 240, 120) : clSeat;
+				int nBarW = bTurn ? 3 : 2;
+				if (bHoriz) {
+					int by2 = (s == 0) ? (sy + nY - nBarW) : (sy + nY + JAN_T);
+					JanRect (hDC, sx + nX - 2, by2, nLen + 4, nBarW, clBar, 255);
+				} else {
+					int bx2 = (s == 3) ? (sx + nX + JAN_T) : (sx + nX - nBarW);
+					JanRect (hDC, bx2, sy + nY - 2, nBarW, nLen + 4, clBar, 255);
+				}
+			}
+			for (i = 0; i < nHand; i ++) {
+				int tx = sx + nX + (bHoriz ? aHandOff[i] : 0), ty = sy + nY + (bHoriz ? 0 : aHandOff[i]);
+				if (Seat.abyHand[i] < JANJAN_KINDS) {
+					JanTileSmall (hDC, tx, ty, Seat.abyHand[i], RGB (90, 70, 40), FALSE, s_anJanSeatRot[s & 3]);
+				} else {
+					JanTileBackSmall (hDC, tx, ty, s_anJanSeatRot[s & 3]);
+				}
+			}
+			for (i = 0; i < nMeld * JANJAN_SET_SIZE; i ++) {
+				int tx = sx + nX + (bHoriz ? aMeldOff[i] : 0), ty = sy + nY + (bHoriz ? 0 : aMeldOff[i]);
+				JanTileSmall (hDC, tx, ty, Seat.aMeld[i / JANJAN_SET_SIZE].abyTile[i % JANJAN_SET_SIZE],
+					(Seat.aMeld[i / JANJAN_SET_SIZE].byKind == JANJAN_MELD_SOROI) ? RGB (60, 160, 70) : RGB (70, 110, 220), TRUE, s_anJanSeatRot[s & 3]);
+			}
+
+			/* 川（捨て牌。上向きのまま、4 席とも左から右・上から下の同じ向き。多い時は新しい方を残す） */
+			nFrom = max (0, nRiver - JAN_RCOL * JAN_RROW);
+			for (i = nFrom; i < nRiver; i ++) {
+				int nIdx = i - nFrom;
+				int tx = sx + bx + (JAN_BOX - JAN_RCOL * JAN_T) / 2 + (nIdx % JAN_RCOL) * JAN_T;
+				int ty = sy + by + JAN_HEAD + (nIdx / JAN_RCOL) * JAN_T;
+				JanTileSmall (hDC, tx, ty, Seat.abyRiver[i], clSeat);		/* 素材の台の時、席の色は箱の色で見せる */
+				/* 最後の捨て牌（ロン・鳴きの対象。ロンで終わった時は上がり牌）を目立たせる */
+				if ((i == nRiver - 1) && (St.byLastTile < JANJAN_KINDS) && (St.byLastSeat == s) && (Seat.abyRiver[i] == St.byLastTile)) {
+					COLORREF clHi = bBlink ? RGB (255, 245, 90) : RGB (255, 255, 255);
+					JanEdge (hDC, tx, ty, JAN_T, JAN_T, clHi);
+					JanEdge (hDC, tx + 1, ty + 1, JAN_T - 2, JAN_T - 2, clHi);
+					g_bDraw = TRUE;
+				}
+			}
+		}
+		return;
+	}
+
+	/* ---- 上の層：名前札・得点・真ん中の帯・結果・案内・自分の手牌の別枠 ---- */
+	{
+		int nBandY = sy + JAN_BAND + JAN_HEAD + JAN_RROW * JAN_T;		/* 真ん中の帯の上端 */
+		int nBandH = JAN_TBL - JAN_BAND * 2 - (JAN_HEAD + JAN_RROW * JAN_T) * 2;
+		int nBandCX = sx + JAN_TBL / 2;
+		char szTmp[64], szFit[JAN_NAME_LEN + 4];
+
+		/* 名前札と得点 */
+		for (s = 0; s < JANJAN_SEATS; s++) {
+			const JANSEATWIRE &Seat = St.aSeat[s];
+			BOOL bTurn = (!bIdle && !bRecruit && !bOver && (St.byTurn == s) && (St.byLogicPhase != JANJAN_PHASE_END)) ? TRUE : FALSE;
+			BOOL bWin = (bOver && (St.byResult == JANJAN_RESULT_WIN) && (St.byWinner == s)) ? TRUE : FALSE;
+			int bx, by, nNameW, nScoreW = 0;
+			SIZE size;
+
+			JanBoxOrigin (s, &bx, &by);
+			bx += sx;
+			by += sy;
+			BOOL bPlate = (s_aJanImg[JIMG_NAMEPLATE].pRgba != NULL) ? TRUE : FALSE;
+			if (Seat.byState == JANSEAT_EMPTY) {
+				if (bPlate) {
+					JanArt (JIMG_NAMEPLATE, bx, by, RGB (110, 110, 110), 255, 255);
+				} else {
+					JanRect (hDC, bx, by, JAN_BOX, JAN_HEAD, RGB (90, 90, 90), 110);
+				}
+				PuzText (hDC, bx + (bPlate ? 11 : 4), by, (LPSTR)"空席", RGB (225, 225, 225), JAN_HEAD, FALSE);
+				continue;
+			}
+			if (bPlate) {
+				/* 名前札の素材に席の色を掛ける。字は明るい色＋黒縁（席の色は札の下地で見せる）。手番の席は左端に目印を出す */
+				JanArt (JIMG_NAMEPLATE, bx, by, s_aclJanSeat[s], 215, 255);
+				if (bTurn && (s_aJanImg[JIMG_TURN].pRgba != NULL)) {
+					JanArt (JIMG_TURN, bx - 1, by - 1, JAN_NOTINT, 0, 255);
+				}
+			} else {
+				JanRect (hDC, bx, by, JAN_BOX, JAN_HEAD, s_aclJanSeat[s], bTurn ? 245 : 140);
+				if (bTurn) {
+					JanTriRight (hDC, bx + 2, by + 3, 8, RGB (40, 30, 0));
+				}
+			}
+			/* 得点（右）と名前（左。得点の分を空けて縮める） */
+			wsprintf (szTmp, "%d", (int)Seat.sScore);
+			GetTextExtentPoint32 (hDC, szTmp, strlen (szTmp), &size);
+			nScoreW = size.cx;
+			if (bPlate) {
+				/* 札の両端の飾りを避ける（手番の時は左の目印の分も空ける） */
+				int nL = bTurn ? 16 : 9;
+				nNameW = JAN_BOX - nL - 9 - nScoreW - 3;
+				JanFitText (hDC, D.aszName[s], nNameW, szFit, sizeof (szFit));
+				PuzText (hDC, bx + nL, by, szFit, RGB (255, 250, 225), JAN_HEAD, FALSE);
+				PuzText (hDC, bx + JAN_BOX - 9 - nScoreW, by, szTmp, RGB (255, 240, 170), JAN_HEAD, FALSE);
+			} else {
+				nNameW = JAN_BOX - (bTurn ? 12 : 5) - nScoreW - 6;
+				JanFitText (hDC, D.aszName[s], nNameW, szFit, sizeof (szFit));
+				PuzText (hDC, bx + (bTurn ? 11 : 4), by, szFit, bTurn ? RGB (20, 20, 20) : RGB (255, 255, 255), JAN_HEAD, FALSE);
+				PuzText (hDC, bx + JAN_BOX - 3 - nScoreW, by, szTmp, bTurn ? RGB (20, 20, 20) : RGB (255, 245, 170), JAN_HEAD, FALSE);
+			}
+			if (bWin) {
+				/* 上がった席は金色の枠を点滅 */
+				COLORREF clWin = bBlink ? RGB (255, 225, 60) : RGB (255, 255, 255);
+				JanEdge (hDC, bx - 1, by - 1, JAN_BOX + 2, JAN_HEAD + JAN_RROW * JAN_T + 2, clWin);
+				JanEdge (hDC, bx, by, JAN_BOX, JAN_HEAD + JAN_RROW * JAN_T, clWin);
+				g_bDraw = TRUE;
+			}
+		}
+
+		/* 真ん中の帯：山の残りと手番（待機中は案内） */
+		if (bIdle) {
+			PuzText (hDC, nBandCX, nBandY, (LPSTR)"SBOじゃん", RGB (255, 240, 150), 14, TRUE);
+			if ((St.byIdle & JANIDLE_SEAT) == 0) {
+				PuzText (hDC, nBandCX, nBandY + 14, (LPSTR)"空き卓", RGB (210, 230, 210), 14, TRUE);
+			}
+		} else if (bRecruit) {
+			/* 参加募集中：残り時間（座れる席の座る場所に立っている人には、下で案内を点滅させる） */
+			if (!((St.byIdle & JANIDLE_SEAT) && bBlink)) {
+				PuzText (hDC, nBandCX, nBandY, (LPSTR)"参加者を募集中", RGB (255, 240, 150), 14, TRUE);
+				if (D.nLeftMs > 0) {
+					wsprintf (szTmp, "残り %d 秒", (D.nLeftMs + 999) / 1000);
+				} else {
+					strcpy (szTmp, "まもなく開始");
+				}
+				PuzText (hDC, nBandCX, nBandY + 14, szTmp, RGB (255, 255, 255), 14, TRUE);
+			}
+		} else if (!bOver) {
+			wsprintf (szTmp, "山 %d", (int)St.byPileLeft);
+			PuzText (hDC, nBandCX, nBandY, szTmp, RGB (255, 255, 255), 14, TRUE);
+			if (St.byTurn < JANJAN_SEATS) {
+				JanFitText (hDC, D.aszName[St.byTurn], JAN_TBL - JAN_BAND * 2 - 40, szFit, sizeof (szFit));
+				wsprintf (szTmp, "%sの番", szFit);
+				PuzText (hDC, nBandCX, nBandY + 14, szTmp, s_aclJanSeat[St.byTurn], 14, TRUE);
+			}
+		}
+
+		/* 座る場所に立っている時の案内（待機中の卓の、本人にだけ。サーバーが JANIDLE_SEAT を付ける）。
+		   帯に「INSERT COIN」「道具→コイン」（無料の台は「PUSH START」「（Sキー）」）を点滅させ、立っている席の目印も点滅させる */
+		if ((bIdle || bRecruit) && (St.byIdle & JANIDLE_SEAT)) {
+			int nCellX = St.nFieldX / 32 + JANJAN_TABLE_HALF, nCellY = St.nFieldY / 32 + JANJAN_TABLE_HALF;
+			g_bDraw = TRUE;		/* 点滅のため、出ている間は描き続ける */
+			for (s = 0; s < JANJAN_SEATS; s ++) {
+				JanjanSeatOffset (s, &nDx, &nDy);
+				if ((nCellX + nDx == nMyX) && (nCellY + nDy == nMyY) && bBlink) {
+					int nX2 = sx + (JANJAN_TABLE_HALF + nDx) * 32, nY2 = sy + (JANJAN_TABLE_HALF + nDy) * 32;
+					JanEdge (hDC, nX2 + 1, nY2 + 1, 30, 30, RGB (255, 245, 90));
+					JanEdge (hDC, nX2 + 2, nY2 + 2, 28, 28, RGB (255, 245, 90));
+				}
+			}
+			if (bBlink) {
+				BOOL bFree = (St.byIdle & JANIDLE_FREE) ? TRUE : FALSE;
+				PuzText (hDC, nBandCX, nBandY, (LPSTR)(bFree ? "PUSH START" : "INSERT COIN"), RGB (255, 235, 120), 14, TRUE);
+				PuzText (hDC, nBandCX, nBandY + 14, (LPSTR)(bFree ? "（Sキー）" : "道具→コイン"), RGB (255, 255, 255), 14, TRUE);
+			}
+		}
+
+		/* 終局：「上がり！」「流局」を卓の上（真ん中）に出す */
+		if (bOver && ((St.byResult == JANJAN_RESULT_WIN) || (St.byResult == JANJAN_RESULT_DRAW))) {
+			BOOL bWin = (St.byResult == JANJAN_RESULT_WIN) ? TRUE : FALSE;
+			BOOL bBan = (s_aJanImg[JIMG_BANNER].pRgba != NULL) ? TRUE : FALSE;
+			int bw = 160, bh = bWin ? 54 : 40, bxx = nBandCX - bw / 2, byy = nBandY + nBandH / 2 - bh / 2;
+
+			if (bBan) {
+				/* 帯の素材（200×48。中の明るい面は 28 の高さ）の上に大きな字。名前の行は帯の下に暗く敷いて出す */
+				bw = 200;
+				bh = bWin ? 48 + 16 : 48;
+				byy = nBandY + nBandH / 2 - bh / 2;
+				bxx = nBandCX - bw / 2;
+				JanArt (JIMG_BANNER, bxx, byy, JAN_NOTINT, 0, 255);
+				SelectObject (hDC, g_hFont32);
+				PuzText (hDC, nBandCX, byy + 3, (LPSTR)(bWin ? "上がり！" : "流局"), bWin ? RGB (185, 50, 30) : RGB (50, 70, 130), 32, TRUE);
+				SelectObject (hDC, g_hFont14);
+				if (bWin && (St.byWinner < JANJAN_SEATS)) {
+					JanRect (hDC, nBandCX - 80, byy + 46, 160, 17, RGB (30, 22, 20), 215);
+					JanEdge (hDC, nBandCX - 80, byy + 46, 160, 17, s_aclJanSeat[St.byWinner]);
+					JanFitText (hDC, D.aszName[St.byWinner], 160 - 50, szFit, sizeof (szFit));
+					wsprintf (szTmp, "%s（%s）", szFit, (St.byWinHow == JANJAN_HOW_RON) ? "ロン" : "ツモ");
+					PuzText (hDC, nBandCX, byy + 47, szTmp, RGB (255, 255, 255), 14, TRUE);
+				}
+			} else {
+				PuzFrame (hDC, bxx, byy, bw, bh, bWin ? RGB (255, 225, 60) : RGB (170, 190, 230), 215);
+				SelectObject (hDC, g_hFont32);
+				PuzText (hDC, nBandCX, byy + 4, (LPSTR)(bWin ? "上がり！" : "流局"), bWin ? RGB (255, 235, 90) : RGB (190, 210, 255), 32, TRUE);
+				SelectObject (hDC, g_hFont14);
+				if (bWin && (St.byWinner < JANJAN_SEATS)) {
+					JanFitText (hDC, D.aszName[St.byWinner], bw - 50, szFit, sizeof (szFit));
+					wsprintf (szTmp, "%s（%s）", szFit, (St.byWinHow == JANJAN_HOW_RON) ? "ロン" : "ツモ");
+					PuzText (hDC, nBandCX, byy + 37, szTmp, s_aclJanSeat[St.byWinner], 14, TRUE);
+				}
+			}
+		}
+	}
+}
+
+/* 座っている本人の手牌の別枠（画面の下に固定。落ち物の帯と同じ最前面）。
+   手牌（牌 32 ドット×最大 9 枚）・鳴いた組・カーソル・操作の行（ロン／そろい／組そろい／ツモ上がり／見送り）・残り時間 */
+static void DrawJanPanel(HDC hDC, const JANDRAW &D, int nX, int nY)
+{
+	const CMDPARA_JANSTATE &St = D.St;
+	const JANSEATWIRE &Seat = St.aSeat[St.byMySeat];
+	int px = nX + (SCRSIZEX - JAN_PANEL_W) / 2, py = nY + SCRSIZEY - JAN_PANEL_H - 6;
+	int nHand = min ((int)Seat.byHandNum, JAN_HAND_WIRE), nMeld = min ((int)Seat.byMeldNum, JAN_MELD_WIRE);
+	int i, nLen, nStartX, nTileY, aHandOff[JAN_HAND_WIRE + 1], aMeldOff[JAN_MELD_WIRE * JANJAN_SET_SIZE + 1];
+	BOOL bGap = (!(St.byPhase == JANPHASE_IDLE) && (St.byLogicPhase == JANJAN_PHASE_DISCARD) && (St.byTurn == St.byMySeat) && (nHand % 3 == 0)) ? TRUE : FALSE;
+	BOOL bBlink = (((timeGetTime () / 400) & 1) == 0) ? TRUE : FALSE;
+	char szTmp[96], szFit[JAN_NAME_LEN + 4];
+	const char *pszMsg;
+	SIZE size;
+
+	/* 別枠の素材（448×96。枠の厚みは 7）。素材がある時は、中身を枠の内側に収まるよう少しずらす */
+	BOOL bPnl = (s_aJanImg[JIMG_PANEL].pRgba != NULL) ? TRUE : FALSE;
+	int nPadX = bPnl ? 4 : 0;
+	/* 縦の並び（枠の内側は py+8 から py+H-8。各段のあいだは 6 ドット以上あける）：
+	   案内文 py+14〜28／残り時間バー py+34〜38／操作行 py+44〜68／牌 py+76〜108（カーソルは上下 2 はみ出す） */
+	const int nYMsg = 14, nYBar = 34, nYOp = 44, nYTile = 76;
+
+	if (bPnl) {
+		/* 席の色を乗算で薄く掛け、内側に席の色の細い線も足す（4 席を見分けるため） */
+		/* 素材は高さ 96。上半分と下半分を上下に置き、あいだは真ん中の 1 行を繰り返して伸ばす */
+		JanArtEx (JIMG_PANEL, px, py, 0, 0, 448, 48, 448, 0, s_aclJanSeat[St.byMySeat], 120, 255);
+		JanArtEx (JIMG_PANEL, px, py + JAN_PANEL_H - 48, 0, 48, 448, 48, 448, 0, s_aclJanSeat[St.byMySeat], 120, 255);
+		for (i = 48; i < JAN_PANEL_H - 48; i ++) {
+			JanArtEx (JIMG_PANEL, px, py + i, 0, 47, 448, 1, 448, 0, s_aclJanSeat[St.byMySeat], 120, 255);
+		}
+		JanEdge (hDC, px + 7, py + 7, JAN_PANEL_W - 14, JAN_PANEL_H - 14, s_aclJanSeat[St.byMySeat]);
+		nPadX += 3;
+	} else {
+		PuzFrame (hDC, px, py, JAN_PANEL_W, JAN_PANEL_H, s_aclJanSeat[St.byMySeat], 200);
+	}
+
+	/* 1 行目：状況の案内（左）と待ち時間の残り（右） */
+	if (St.byPhase == JANPHASE_OVER) {
+		if (St.byResult == JANJAN_RESULT_WIN) {
+			JanFitText (hDC, D.aszName[St.byWinner < JANJAN_SEATS ? St.byWinner : 0], 150, szFit, sizeof (szFit));
+			wsprintf (szTmp, "%sの上がり！", szFit);
+			pszMsg = szTmp;
+		} else {
+			pszMsg = "流局";
+		}
+	} else if (D.bCanDiscard) {
+		pszMsg = (St.byCanAct & JAN_CAN_TSUMO) ? "ツモ上がりできます" : "捨てる牌を選んで 決定";
+	} else if (D.nOpNum > 0) {
+		pszMsg = "どうしますか？";
+	} else if (St.byPhase == JANPHASE_RECRUIT) {
+		pszMsg = "参加者を募集中（ESCで席を立つ）";
+	} else if (nHand <= 0) {
+		pszMsg = "配牌をまっています";
+	} else {
+		pszMsg = "ほかの人の番です";
+	}
+	PuzText (hDC, px + 10 + nPadX, py + nYMsg, (LPSTR)pszMsg, RGB (255, 235, 120), 14, FALSE);
+	if (D.nLeftMs > 0) {
+		int nSec = (D.nLeftMs + 999) / 1000;
+		int nBarW = JAN_PANEL_W - 20 - nPadX * 2, nFill = (D.nLimitMax > 0) ? (nBarW * min (D.nLeftMs, D.nLimitMax) / D.nLimitMax) : nBarW;
+		COLORREF clBar = (D.nLimitMax > 0 && D.nLeftMs * 4 < D.nLimitMax) ? RGB (235, 80, 70) : RGB (240, 215, 60);
+
+		wsprintf (szTmp, "残り %d 秒", nSec);
+		GetTextExtentPoint32 (hDC, szTmp, strlen (szTmp), &size);
+		PuzText (hDC, px + JAN_PANEL_W - 10 - nPadX - size.cx, py + nYMsg, szTmp, RGB (255, 255, 255), 14, FALSE);
+		JanRect (hDC, px + 10 + nPadX, py + nYBar, nBarW, 4, RGB (70, 70, 70), 255);
+		JanRect (hDC, px + 10 + nPadX, py + nYBar, nFill, 4, clBar, 255);
+	}
+
+	/* 操作の行（ある時だけ。手牌の上） */
+	if (D.nOpNum > 0) {
+		int bx = px + 10 + nPadX, by = py + nYOp, bw, nTextW;
+		static const char *s_apszOp[] = { "離席", "捨てる", "ツモ上がり", "ロン", "そろい", "組", "見送り" };	/* JAN_ACT_* の順 */
+
+		for (i = 0; i < D.nOpNum; i ++) {
+			const JANOP &Op = D.aOp[i];
+			BOOL bSel = ((D.nFocus == 1) && (D.nOpSel == i)) ? TRUE : FALSE;
+			const char *pszText = s_apszOp[Op.byAct <= JAN_ACT_PASS ? Op.byAct : 0];
+
+			GetTextExtentPoint32 (hDC, pszText, strlen (pszText), &size);
+			nTextW = size.cx;
+			bw = nTextW + 16;
+			if (Op.byAct == JAN_ACT_GUMI) {
+				bw += JAN_T * 2 + 6;
+			}
+			if (s_aJanImg[JIMG_BTN].pRgba != NULL) {
+				/* ボタンの素材（左=ふつう 中=選択中 右=選べない。各 64×24）を、左右 8 ドットを残して横に伸ばす */
+				JanArtEx (JIMG_BTN, bx, by, bSel ? 64 : 0, 0, 64, JAN_OP_H, bw, 8, JAN_NOTINT, 0, 255);
+			} else {
+				PuzFrame (hDC, bx, by, bw, JAN_OP_H, bSel ? RGB (255, 240, 120) : RGB (150, 150, 150), bSel ? 235 : 170);
+				if (bSel) {
+					JanRect (hDC, bx + 1, by + 1, bw - 2, JAN_OP_H - 2, RGB (120, 100, 20), 200);
+					JanEdge (hDC, bx + 1, by + 1, bw - 2, JAN_OP_H - 2, RGB (255, 240, 120));
+				}
+			}
+			PuzText (hDC, bx + 8, by + 5, (LPSTR)pszText, (s_aJanImg[JIMG_BTN].pRgba != NULL) ? (bSel ? RGB (255, 255, 255) : RGB (60, 40, 25)) : (bSel ? RGB (255, 255, 255) : RGB (210, 210, 210)), 14, FALSE);
+			if ((Op.byAct == JAN_ACT_GUMI) && (Op.byParam < JAN_GUMI_WIRE)) {
+				/* 組そろいは、手牌から出す 2 枚を並べて見せる */
+				int tx = bx + 8 + nTextW + 4;
+				JanTileSmall (hDC, tx, by + 4, St.abyGumi[Op.byParam][0], RGB (70, 110, 220), TRUE);
+				JanTileSmall (hDC, tx + JAN_T + 2, by + 4, St.abyGumi[Op.byParam][1], RGB (70, 110, 220), TRUE);
+			}
+			bx += bw + 6;
+		}
+	}
+
+	/* 手牌の行（牌 32 ドット。引いた牌は少し離す。鳴いた組は右に公開） */
+	nLen = JanStripLayout (Seat, bGap, JAN_BIG_STEP, 8, 14, aHandOff, aMeldOff);
+	nStartX = px + (JAN_PANEL_W - nLen) / 2;
+	nTileY = py + nYTile;
+	for (i = 0; i < nHand; i ++) {
+		JanTileBig (hDC, nStartX + aHandOff[i], nTileY, Seat.abyHand[i]);
+	}
+	for (i = 0; i < nMeld * JANJAN_SET_SIZE; i ++) {
+		JanTileBig (hDC, nStartX + aMeldOff[i], nTileY, Seat.aMeld[i / JANJAN_SET_SIZE].abyTile[i % JANJAN_SET_SIZE]);
+		JanEdge (hDC, nStartX + aMeldOff[i] - 1, nTileY - 1, JAN_BIG + 2, JAN_BIG + 2,
+			(Seat.aMeld[i / JANJAN_SET_SIZE].byKind == JANJAN_MELD_SOROI) ? RGB (60, 160, 70) : RGB (70, 110, 220));
+	}
+	/* 手牌のカーソル（手牌の行にいる時は黄色の太枠と▼。操作の行にいる時は細い灰色の枠） */
+	if ((D.nCursor >= 0) && (D.nCursor < nHand)) {
+		int cx = nStartX + aHandOff[D.nCursor];
+		BOOL bSelArt = (s_aJanImg[JIMG_SEL].pRgba != NULL) ? TRUE : FALSE;
+		if (D.nFocus == 0) {
+			COLORREF clCur = D.bCanDiscard ? (bBlink ? RGB (255, 245, 90) : RGB (255, 200, 40)) : RGB (215, 215, 215);
+			if (bSelArt) {
+				/* 選択カーソルの素材（36×36）。捨てられる時は点滅、捨てられない時は薄く */
+				JanArt (JIMG_SEL, cx - 2, nTileY - 2, JAN_NOTINT, 0, D.bCanDiscard ? (bBlink ? 255 : 150) : 120);
+			} else {
+				JanEdge (hDC, cx - 1, nTileY - 1, JAN_BIG + 2, JAN_BIG + 2, clCur);
+				JanEdge (hDC, cx - 2, nTileY - 2, JAN_BIG + 4, JAN_BIG + 4, clCur);
+				JanTriDown (hDC, cx + JAN_BIG / 2 - 5, nTileY - 8, 11, clCur);
+			}
+			if (D.bCanDiscard) {
+				g_bDraw = TRUE;
+			}
+		} else if (bSelArt) {
+			JanArt (JIMG_SEL, cx - 2, nTileY - 2, JAN_NOTINT, 0, 100);
+		} else {
+			JanEdge (hDC, cx - 1, nTileY - 1, JAN_BIG + 2, JAN_BIG + 2, RGB (130, 130, 130));
+		}
+	}
+}
+
+/* 見えている卓すべて。bTop=FALSE は卓本体（地図のパーツ・NPC の後でキャラの前）、bTop=TRUE は文字と本人の別枠（ウィンドウの下） */
+static void DrawJan(int nX, int nY, BOOL bTop)
+{
+	JANDRAW D;
+	PCHARINFO pChar;
+	HDC hDC = NULL;
+	HFONT hFontOld = NULL;
+	BOOL bOff;
+	int i, sx, sy;
+
+	if ((g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ())) {
+		return;
+	}
+	pChar = g_aCharInfo[g_nMyCharID];
+	for (i = 0; i < JAN_VIEW_DRAW_MAX; i ++) {
+		if (!GetJanState (i, &D)) {
+			continue;
+		}
+		/* マップのドット座標 → 描画用の画面（DrawPuzzle と同じ。自分のマスが (DRAW_PARTS_X+1)*32） */
+		sx = (DRAW_PARTS_X + 1) * 32 + D.St.nFieldX - CamTileX () * 32;
+		sy = (DRAW_PARTS_Y + 1) * 32 + D.St.nFieldY - CamTileY () * 32;
+		/* 画面に少しもかからない卓は描かない（座る場所の目印が卓の外 1 マスに出るぶん広く見る） */
+		bOff = ((sx + JAN_TBL + 32 <= nX) || (sx - 32 >= nX + SCRSIZEX) || (sy + JAN_TBL + 32 <= nY) || (sy - 32 >= nY + SCRSIZEY)) ? TRUE : FALSE;
+		/* 座っている本人の別枠は、卓が画面の外でも画面の下に出す */
+		if (bOff && !(bTop && (D.St.byMySeat < JANJAN_SEATS))) {
+			continue;
+		}
+		s_nPzL = nX;
+		s_nPzT = nY;
+		s_nPzR = nX + SCRSIZEX;
+		s_nPzB = nY + SCRSIZEY;
+		if (hDC == NULL) {
+			JanSheetInit ();
+			JanArtInit ();
+			hDC = g_pDibDrawMap->Lock ();
+			hFontOld = (HFONT)SelectObject (hDC, g_hFont14);
+			SetBkMode (hDC, TRANSPARENT);
+		}
+		if (!bOff) {
+			DrawJanOne (hDC, D, sx, sy, (int)pChar->dwX, (int)pChar->dwY, bTop);
+		}
+		if (bTop && (D.St.byMySeat < JANJAN_SEATS)) {
+			DrawJanPanel (hDC, D, nX, nY);
+		}
+	}
+	if (hDC) {
+		SelectObject (hDC, hFontOld);
+		g_pDibDrawMap->Unlock ();
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：DrawMaze															 */
 /* 内容：迷路対戦の盤（320×320 ドット）の重ね描き								 */
 /*		 マス 32 ドット（市松の明るい床。左上は盤ドット (48x, 48y)）、マスの間の通り道 16 ドット＝暗い溝、	 */
@@ -2253,6 +3260,8 @@ void DrawScreen(HWND hWnd, HDC hDC)
 				DrawPuzzle (32 - x, 32 - y, TRUE);
 				DrawPinball (32 - x, 32 - y, TRUE);
 
+				/* SBOじゃんの名前札・結果・本人の手牌の別枠（卓本体は DrawScreenMOVE でキャラの前に描いてある。ウィンドウの下に敷く） */
+				DrawJan (32 - x, 32 - y, TRUE);
 				/* 迷路対戦の手番・壁の残り・勝敗の文字（盤本体は DrawScreenMOVE で描いてある） */
 				DrawMaze (32 - x, 32 - y, TRUE);
 
@@ -2472,6 +3481,8 @@ BOOL DrawScreenMOVE(void)
 		DrawPuzzle (32 - CamOfsX (), 32 - CamOfsY (), FALSE);
 		DrawPinball (32 - CamOfsX (), 32 - CamOfsY (), FALSE);
 		DrawMaze (32 - CamOfsX (), 32 - CamOfsY (), FALSE);
+		/* SBOじゃんの卓本体（面・手牌・川）も同じ重なり順 */
+		DrawJan (32 - CamOfsX (), 32 - CamOfsY (), FALSE);
 	}
 	for (i = 0; i < DRAW_PARTS_Y * 2 + 3; i ++) {
 		DrawCharLine (i);
@@ -4039,7 +5050,7 @@ void DrawChar3(void)
 
 		/* 落ち物パズルの台NPC（台詞が @p。サーバーが byGhost=CHARGHOST_NAMEONLY で送ってくる）は体も名前も描かない（見えない台） */
 		BOOL bPuzzleTable = (pChar->byGhost == CHARGHOST_NAMEONLY) && (pChar->byNpcType != NPCTYPE_INIT) && pChar->pszNpcSpeech &&
-				(pChar->pszNpcSpeech[0] == '@') && ((pChar->pszNpcSpeech[1] == 'p') || (pChar->pszNpcSpeech[1] == 'i'));
+				(pChar->pszNpcSpeech[0] == '@') && ((pChar->pszNpcSpeech[1] == 'p') || (pChar->pszNpcSpeech[1] == 'i') || (pChar->pszNpcSpeech[1] == 'j'));
 		if (!bPuzzleTable && ((g_byViewMode == 1) || (g_byViewMode == 3))) {
 			cl = RGB(255, 255, 255);
 			if (pChar->clName) {

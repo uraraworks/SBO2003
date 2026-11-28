@@ -61,6 +61,7 @@ void SendCmdCHGACC			(DWORD, LPSTR, LPSTR);					/* アカウント・パスワ�
 void SendCmdTALKRAND		(DWORD);								/* 話してランダム要求 */
 DWORD SendCmdPUZZLEKEY		(BYTE);									/* 落ち物パズルのキー入力 */
 DWORD SendCmdPINBALLKEY		(BYTE);									/* ピンボールのキー入力 */
+void SendCmdJANKEY			(BYTE, BYTE);							/* SBOじゃんの操作 */
 void SendCmdTALKANSWER		(DWORD, BOOL);							/* 会話データの「はい・いいえ」の答え */
 void SendCmdSTOPRAND		(DWORD);								/* 止まるかランダム切り替え */
 void SendCmdGETACCINFO		(DWORD);								/* アカウント情報要求 */
@@ -1308,6 +1309,27 @@ void SendCmdMAZEKEY(BYTE byAct, BYTE byDir, BYTE byX, BYTE byY, BYTE byOrient)
 }
 
 /* ========================================================================= */
+/* 関数名：SendCmdJANKEY													 */
+/* 内容：SBOじゃんの操作送信（byAct=JAN_ACT_*。byParam=DISCARD は牌id・GUMI は組の添字）	 */
+/*		 dwTblID はクライアントの配列番号ではなく、キャラのテーブルID				 */
+/* ========================================================================= */
+void SendCmdJANKEY(BYTE byAct, BYTE byParam)
+{
+	CMDPARA_JANKEY SendData;
+
+	if ((g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ())) {
+		return;
+	}
+	ZeroMemory (&SendData, sizeof (SendData));
+	SendData.byCmd = CMD_JANKEY;
+	SendData.dwTblID = g_aCharInfo[g_nMyCharID]->dwTblID;
+	SendData.byAct = byAct;
+	SendData.byParam = byParam;
+
+	cliSock.Send ((PBYTE)&SendData, sizeof (CMDPARA_JANKEY));
+}
+
+/* ========================================================================= */
 /* 関数名：SendCmdTALKRAND													 */
 /* 内容：コマンド送信(話してランダム要求)									 */
 /* 日付：2003/08/28															 */
@@ -2304,6 +2326,9 @@ void SendCmdSUBGAMEINFO(int nNo)
 		}
 		break;
 
+	case SUBGAMEID_JANJAN:		/* SBOじゃん */
+		CopyMemory (pData + sizeof (CMDPARA_DATA1), g_pSubGameInfo->pInfo, sizeof (SUBGAME_JANJANINFOSAVE));
+		break;
 	case SUBGAMEID_MAZETABLE:	/* 迷路対戦の台 */
 		CopyMemory (pData + sizeof (CMDPARA_DATA1), g_pSubGameInfo->pInfo, sizeof (SUBGAME_MAZETABLEINFOSAVE));
 		break;

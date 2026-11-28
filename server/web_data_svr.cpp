@@ -28,6 +28,7 @@
 #include "SboSvrPuzzle.h"
 #include "../common/FallingPuzzle.h"
 #include "../common/PinballInfo.h"
+#include "../common/Janjan.h"
 #include "SboSvrMarket.h"
 #include "SboSvrMapSwapEdit.h"
 #include "SboSvrDungeonDaily.h"
@@ -1109,7 +1110,7 @@ static const char *s_apszKindNote[] = {
 	"エフェクト情報（特技の byTargetEfectID などから参照される）。anime は配列で丸ごと置き換え。追加できる（消せない・255 番まで）",
 	"吹き出しの種類（番号 0 から、ゲーム内の吹き出し番号は 1 から。99 個で固定）。anime はコマごとの待ち時間（×10ミリ秒）と画像ID で、配列で丸ごと置き換え",
 	"読むだけ。プレイヤーごとの預かり所（キャラの dwLeaveID がこの番号）。items は item の番号と個数",
-	"爆弾ゲーム・迷路・ダンジョン・戦場ゲーム・すごろくの設定。detail は byType ごとに項目が違う（省いた項目は前の値のまま）。種別（byType）の変更・追加・すごろくのマス（events・parts）は管理者ウィンドウで",
+	"爆弾ゲーム・迷路・ダンジョン・戦場ゲーム・すごろく・SBOじゃんの設定。detail は byType ごとに項目が違う（省いた項目は前の値のまま）。種別（byType）の変更・追加・すごろくのマス（events・parts）は管理者ウィンドウで",
 	"読むだけ。付与が付いた装備のアイテム番号の表（番号 = 16384 + id）。{元のアイテム wBase・前の付与 wPre・後ろの付与 wSuf（affix の wID。0=なし）・未鑑定 byUnknown}。同じ組み合わせは同じ番号で、ドロップや鑑定で初めて出た組み合わせが自動で足される（SBODATA/SboDataItemDerive.dat）。プレイヤーの持ち物・預かり所・取引所などはこの番号で持つ"
 };
 static const int s_anKindMax[] = { 256, 256, 256, 256, 65535, 65535, MAX_MAKER, MAX_RECIPE, MAX_QUEST - 1, MAX_FLAGNAMEINFO, MAX_TALK - 1, MAX_STORY - 1, MAX_FLAGGROUP - 1, MAX_AFFIX, MAX_TRIALROOM, 0, 0, 65535, 255, MAX_COMEFC, 0, 0, MAX_ITEMDERIVE };
@@ -2271,7 +2272,15 @@ static const DATAFIELD s_aFieldSgPinball[] = {
 	FLD (SUBGAME_PINBALLINFO, wVsSec,		"対戦の時間(秒)",		FT_U16, 0, "10〜600。対戦は時間制（球数の上限なし）で、時間切れで得点が高い方の勝ち。既定 90"),
 };
 
-static const char *s_apszSubGameName[] = { "なし", "爆弾ゲーム", "迷路", "ダンジョン", "戦場ゲーム", "すごろく", "ピンボール", "迷路対戦の台" };
+static const DATAFIELD s_aFieldSgJanjan[] = {
+	FLD (SUBGAME_JANJANINFO, wTicketItemID,	"チケットのアイテム番号",	FT_U16, 0, "item の番号。byTicketNum が 0 なら使わない。台に座る時に byTicketNum 枚使う（座る場所に立って、道具のチケットを使い、確認で「はい」を選ぶと始まる）"),
+	FLD (SUBGAME_JANJANINFO, byTicketNum,	"必要なチケットの枚数",		FT_U8, 0, "0〜99。0=無料（S キーで始まる）"),
+	FLD (SUBGAME_JANJANINFO, byCpuLevel,	"CPUの強さ",				FT_U8, 0, "1=よわい 2=ふつう 3=つよい。0=既定の 2"),
+	FLD (SUBGAME_JANJANINFO, wWaitSec,		"参加募集の待ち時間(秒)",	FT_U16, 0, "最初の人が座ってから開始までの秒数（その間に別の人が空いている席に座れる。空き席は CPU が埋める）。5〜600。0=既定の 60"),
+};
+
+static const char *s_apszSubGameName[] = { "なし", "爆弾ゲーム", "迷路", "ダンジョン", "戦場ゲーム", "すごろく", "ピンボール", "迷路対戦の台", "SBOじゃん" };
+static_assert(sizeof(s_apszSubGameName) / sizeof(s_apszSubGameName[0]) == SUBGAMEID_MAX, "s_apszSubGameName");
 
 /* 種別の名前（範囲外・名前が空の番号は "?"） */
 static const char *SubGameTypeName(int nType)
@@ -2292,6 +2301,7 @@ static const DATAFIELD *SubGameFields(int nType, int *pnCount)
 	case SUBGAMEID_SUGOROKU:	*pnCount = COUNTOF(s_aFieldSgSugoroku);	return s_aFieldSgSugoroku;
 	case SUBGAMEID_PINBALL:		*pnCount = COUNTOF(s_aFieldSgPinball);	return s_aFieldSgPinball;
 	case SUBGAMEID_MAZETABLE:	*pnCount = COUNTOF(s_aFieldSgMazeTable);	return s_aFieldSgMazeTable;
+	case SUBGAMEID_JANJAN:		*pnCount = COUNTOF(s_aFieldSgJanjan);	return s_aFieldSgJanjan;
 	}
 	*pnCount = 0;
 	return NULL;
@@ -2497,7 +2507,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataSchema(void)
 			out += "[{\"name\":\"byUse\",\"type\":\"u8\",\"label\":\"使用中なら1\"},{\"name\":\"dwGold\",\"type\":\"u32\",\"label\":\"預けたお金\"},{\"name\":\"items\",\"type\":\"object[]\",\"label\":\"預けたアイテム（item=item の番号・count=個数）\"}]";
 			break;
 		case KIND_SUBGAME:
-			out += "[{\"name\":\"byType\",\"type\":\"u8\",\"label\":\"種別\",\"note\":\"0=無し 1=爆弾ゲーム 2=迷路 3=ダンジョン 4=戦場ゲーム 5=すごろく 6=ピンボール 7=迷路対戦の台。足せるのは迷路(2)・ピンボール(6)・迷路対戦の台(7)だけ（byType と detail を指定。ピンボール・迷路対戦の台は detail を省くと全部既定値）。変えられるのは 迷路・ピンボール・迷路対戦の台⇔無し(0) だけで、0 にすると迷路が止まる・ピンボールの台が台でなくなる・迷路対戦の台は設定が消え、台NPCが台でなくなる。迷路対戦の台は、NPC の台詞 @k<このサブゲームの番号> で使う\"},{\"name\":\"typeName\",\"type\":\"string\",\"label\":\"種別の名前\",\"readonly\":true},{\"name\":\"detail\",\"type\":\"object\",\"label\":\"種別ごとの設定（detailByType）。すごろくは events・parts も\"}]";
+			out += "[{\"name\":\"byType\",\"type\":\"u8\",\"label\":\"種別\",\"note\":\"0=無し 1=爆弾ゲーム 2=迷路 3=ダンジョン 4=戦場ゲーム 5=すごろく 6=ピンボール 7=迷路対戦の台 8=SBOじゃん。足せるのは迷路(2)・ピンボール(6)・迷路対戦の台(7)だけ（byType と detail を指定。ピンボール・迷路対戦の台は detail を省くと全部既定値）。変えられるのは 迷路・ピンボール・迷路対戦の台⇔無し(0) だけで、0 にすると迷路が止まる・ピンボールの台が台でなくなる・迷路対戦の台は設定が消え、台NPCが台でなくなる。迷路対戦の台は、NPC の台詞 @k<このサブゲームの番号> で使う\"},{\"name\":\"typeName\",\"type\":\"string\",\"label\":\"種別の名前\",\"readonly\":true},{\"name\":\"detail\",\"type\":\"object\",\"label\":\"種別ごとの設定（detailByType）。すごろくは events・parts も\"}]";
 			out += ",\"detailByType\":{";
 			for (int t = SUBGAMEID_BOMB; t < SUBGAMEID_MAX; t ++) {
 				int nCount = 0;
@@ -4560,17 +4570,36 @@ static bool CheckPinballDetail(const SUBGAME_PINBALLINFO *p, std::string &strErr
 	return true;
 }
 
+/* SBOじゃんの設定が範囲に収まっているか確かめる（管理者ウィンドウ・保存データはサーバーが範囲に丸めるが、データ API は断る） */
+static bool CheckJanjanDetail(const SUBGAME_JANJANINFO *p, std::string &strErr)
+{
+	if (p->byTicketNum > JANJAN_TICKET_MAX) {
+		strErr = "detail.byTicketNum は 0〜" + JsonNum(JANJAN_TICKET_MAX) + " にしてください";
+		return false;
+	}
+	if (p->byCpuLevel > JANJAN_CPU_LEVEL_MAX) {
+		strErr = "detail.byCpuLevel は 0〜" + JsonNum(JANJAN_CPU_LEVEL_MAX) + " にしてください";
+		return false;
+	}
+	if (p->wWaitSec != 0 && (p->wWaitSec < JANJAN_WAIT_MIN || p->wWaitSec > JANJAN_WAIT_MAX)) {
+		strErr = "detail.wWaitSec は 0（既定 " + JsonNum(JANJAN_WAIT_DEFAULT) + "）または " + JsonNum(JANJAN_WAIT_MIN) + "〜" + JsonNum(JANJAN_WAIT_MAX) + " にしてください";
+		return false;
+	}
+	return true;
+}
+
 /* データ API で足せる・止められるサブゲーム（迷路・ピンボール・迷路対戦の台） */
 static bool IsApiSubGame(int nType)
 {
-	return nType == SUBGAMEID_MAZE || nType == SUBGAMEID_PINBALL || nType == SUBGAMEID_MAZETABLE;
+	return nType == SUBGAMEID_MAZE || nType == SUBGAMEID_PINBALL || nType == SUBGAMEID_MAZETABLE || nType == SUBGAMEID_JANJAN;
 }
 
 /*
  * サブゲームを変える・足す
- *   足せるのは迷路（byType 2）・ピンボール（byType 6）・迷路対戦の台（byType 7）だけ。byType 0 にすると止まる・消える（元に戻す時の「消す」）。
- *   種類が 0 の枠は迷路・ピンボール・迷路対戦の台にして使い回せる。
+ *   足せるのは迷路（byType 2）・ピンボール（byType 6）・迷路対戦の台（byType 7）・SBOじゃん（byType 8）だけ。byType 0 にすると止まる・消える（元に戻す時の「消す」）。
+ *   種類が 0 の枠は迷路・ピンボール・迷路対戦の台・SBOじゃんにして使い回せる。
  *   ピンボールは実行中の値を持たないので、止める時は枠を空にするだけ（台は、台詞の番号の情報が無くなると台でなくなる）。
+ *   SBOじゃんは実行中の値を持たないので、止める時は枠を空にするだけ（台は、台詞の番号の情報が無くなると既定の台になる）。
  */
 /* 迷路対戦の台の値の範囲（位置は ±MAZE_PARAM_LIMIT、CPU強さは 0〜3） */
 static bool CheckMazeTableDetail(const SUBGAME_MAZETABLEINFO *p, std::string &strErr)
@@ -4619,13 +4648,13 @@ static bool SubGameApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::
 		bool bOk = (nTypeNow == SUBGAMEID_NONE && IsApiSubGame(nTypeNew)) ||
 				   (IsApiSubGame(nTypeNow) && nTypeNew == SUBGAMEID_NONE);
 		if (!bOk) {
-			strErr = bAdd ? "足せるのは迷路（byType 2）・ピンボール（byType 6）・迷路対戦の台（byType 7）だけです" :
-					"種類（byType）は 迷路(2)・ピンボール(6)・迷路対戦の台(7)⇔無し(0) だけ変えられます（ほかは管理者ウィンドウで）";
+			strErr = bAdd ? "足せるのは迷路（byType 2）・ピンボール（byType 6）・迷路対戦の台（byType 7）・SBOじゃん（byType 8）だけです" :
+					"種類（byType）は 迷路(2)・ピンボール(6)・迷路対戦の台(7)・SBOじゃん(8)⇔無し(0) だけ変えられます（ほかは管理者ウィンドウで）";
 			return false;
 		}
 	}
 	if (bAdd && !IsApiSubGame(nTypeNew)) {
-		strErr = "足せるのは迷路（byType 2）・ピンボール（byType 6）・迷路対戦の台（byType 7）だけです。byType と detail を指定してください";
+		strErr = "足せるのは迷路（byType 2）・ピンボール（byType 6）・迷路対戦の台（byType 7）・SBOじゃん（byType 8）だけです。byType と detail を指定してください";
 		return false;
 	}
 	const JVal *pName = chg.Get("typeName");
@@ -4635,7 +4664,7 @@ static bool SubGameApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::
 	}
 	const JVal *pDetail = chg.Get("detail");
 
-	/* 迷路・ピンボール・迷路対戦の台を止める／消す（迷路対戦の台は、台NPCの台詞 @k<番号> が台でなくなる。座っている人の片付けは周期処理が行う）（種類を 0 に） */
+	/* 迷路・ピンボール・迷路対戦の台・SBOじゃんを止める／消す（迷路対戦の台は、台NPCの台詞 @k<番号> が台でなくなる。座っている人の片付けは周期処理が行う）（種類を 0 に） */
 	if (nTypeNew == SUBGAMEID_NONE && IsApiSubGame(nTypeNow)) {
 		SUBGAMEINFO Tmp;
 		ZeroMemory(&Tmp, sizeof(Tmp));
@@ -4662,7 +4691,7 @@ static bool SubGameApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::
 	int nCount = 0;
 	const DATAFIELD *paField = SubGameFields(nTypeNew, &nCount);
 	int nSize = GetSubGameDataSize(nTypeNew);
-	bool bNew = (nTypeNew != nTypeNow);		/* 足す・空き枠を迷路・ピンボールにする */
+	bool bNew = (nTypeNew != nTypeNow);		/* 足す・空き枠を迷路・ピンボール・SBOじゃんにする */
 	if (pDetail) {
 		if (paField == NULL || nSize <= 0 || (!bNew && pInfo->pInfo == NULL)) {
 			strErr = "このサブゲームには設定がありません";
@@ -4695,6 +4724,9 @@ static bool SubGameApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::
 	if (bNew && nTypeNew == SUBGAMEID_PINBALL && nSize > 0) {
 		PinballInfoSetDefault((PSUBGAME_PINBALLINFO)&aWork[0]);		/* 省いた項目は既定値（0 のままでは遊べない） */
 	}
+	if (bNew && nTypeNew == SUBGAMEID_JANJAN && nSize > 0) {
+		JanjanInfoSetDefault((PSUBGAME_JANJANINFO)&aWork[0]);		/* 省いた項目は既定値（CPU強さは 2） */
+	}
 	if (pDetail && !ApplyFields(&aWork[0], paField, nCount, *pDetail, strErr, "detail.")) {
 		return false;
 	}
@@ -4708,6 +4740,9 @@ static bool SubGameApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::
 		return false;
 	}
 	if (nTypeNew == SUBGAMEID_PINBALL && !CheckPinballDetail((const SUBGAME_PINBALLINFO *)&aWork[0], strErr)) {
+		return false;
+	}
+	if (nTypeNew == SUBGAMEID_JANJAN && !CheckJanjanDetail((const SUBGAME_JANJANINFO *)&aWork[0], strErr)) {
 		return false;
 	}
 
@@ -4736,7 +4771,7 @@ static bool SubGameApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::
 	}
 
 	if (bNew) {
-		/* 新しい迷路・ピンボール・迷路対戦の台の枠を作る */
+		/* 新しい迷路・ピンボール・迷路対戦の台・SBOじゃんの枠を作る */
 		BYTE *pNew = new BYTE[nSize];
 		CopyMemory(pNew, &aWork[0], nSize);
 		if (nTypeNew == SUBGAMEID_MAZE) {

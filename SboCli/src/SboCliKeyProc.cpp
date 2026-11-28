@@ -19,6 +19,7 @@
 #include "common/FallingPuzzle.h"
 #include "common/Pinball.h"
 #include "SboCliPinball.h"
+#include "common/Janjan.h"
 #include "common/MazeAttack.h"
 #include "common/MazeTable.h"
 
@@ -511,6 +512,55 @@ static void PuzzleKeyProc(BYTE byEvent, BYTE byCode)
 }
 
 /* ========================================================================= */
+/* 関数名：JanKeyProc														 */
+/* 内容：SBOじゃんの席に座っている間のキー入力（歩かず、他のキー・ショートカットも使えない）	 */
+/*		 左右＝手牌のカーソル（操作の行にいる時は操作を選ぶ）、上＝手牌の行と操作の行を行き来、	 */
+/*		 下＝手牌の行へ、X＝決定（牌を捨てる・選んだ操作）、ESC＝席を立つ（落ち物と同じ。Z では立たない）	 */
+/*		 左右は押し続けると繰り返す。ほかのキーは押し続けても 1 回だけ				 */
+/* ========================================================================= */
+#define JAN_REPEAT_DELAY	(300)		/* 左右を押し続けて繰り返し始めるまで(ms) */
+#define JAN_REPEAT_MS		(120)		/* 左右の繰り返し間隔(ms) */
+static void JanKeyProc(BYTE byEvent, BYTE byCode)
+{
+	static DWORD s_dwHoldStart[256];		/* 押し始めた時刻（0=押していない） */
+	static DWORD s_dwSent[256];				/* 最後に動かした時刻 */
+	DWORD dwNow = timeGetTime ();
+	int nKey = 0;
+
+	if (byEvent == KEY_UP) {
+		s_dwHoldStart[byCode] = 0;
+		return;
+	}
+	if (byEvent != KEY_DOWN) {
+		return;
+	}
+	switch (byCode) {
+	case VK_LEFT:		nKey = JANKEY_LEFT;		break;
+	case VK_RIGHT:		nKey = JANKEY_RIGHT;	break;
+	case VK_UP:			nKey = JANKEY_UP;		break;
+	case VK_DOWN:		nKey = JANKEY_DOWN;		break;
+	case 'A':			nKey = JANKEY_DECIDE;	break;		/* X キー（スマホの決定） */
+	case VK_ESCAPE:		nKey = JANKEY_LEAVE;	break;		/* ESC キー（スマホのキャンセルも ESC を送る） */
+	}
+	if (nKey == 0) {
+		return;
+	}
+	if (s_dwHoldStart[byCode] == 0) {
+		s_dwHoldStart[byCode] = (dwNow == 0) ? 1 : dwNow;
+	} else {
+		/* 押し続けている間：左右だけ間隔をあけて繰り返す */
+		if ((nKey != JANKEY_LEFT) && (nKey != JANKEY_RIGHT)) {
+			return;
+		}
+		if ((dwNow - s_dwHoldStart[byCode] < JAN_REPEAT_DELAY) || (dwNow - s_dwSent[byCode] < JAN_REPEAT_MS)) {
+			return;
+		}
+	}
+	s_dwSent[byCode] = dwNow;
+	JanKeyInput (nKey);
+}
+
+/* ========================================================================= */
 /* 関数名：MazeKeyProc														 */
 /* 内容：迷路対戦の席に座っている間のキー入力（歩かず、すべてゲーム側へ送る）		 */
 /*		 MOVE モード：矢印＝コマを 1 マス動かす、X＝壁モードへ、ESC＝席を立つ			 */
@@ -599,6 +649,11 @@ static void MazeKeyProc(BYTE byEvent, BYTE byCode)
 
 static void KeyProcDispatch(BYTE byEvent, BYTE byCode)
 {
+	/* SBOじゃんの席に座っている間も、キーを全部ゲーム側へ送る */
+	if (IsJanSeated ()) {
+		JanKeyProc (byEvent, byCode);
+		return;
+	}
 	/* 迷路対戦の席に座っている間も、キーを全部ゲーム側へ送る（歩かない・ショートカットも使えない） */
 	if (IsMazeSeated ()) {
 		MazeKeyProc (byEvent, byCode);
@@ -987,7 +1042,7 @@ void KeyProcMoveNext(void)
 	if ((g_FadeInOutInfo.byFadeIn != 0) || (g_FadeInOutInfo.byFadeOut != 0)) {
 		return;
 	}
-	if (IsPuzzleSeated () || IsMazeSeated ()) {
+	if (IsPuzzleSeated () || IsJanSeated () || IsMazeSeated ()) {
 		return;
 	}
 
@@ -9761,7 +9816,7 @@ void CmdProcHanasu(PWNDINFO pWnd)
 		return;
 
 	/* 落ち物パズルの台（@p）？ コインを使って座るのはサーバーが決める（座ると CMD_PUZZLESTATE が届く） */
-	} else if (pChar2->pszNpcSpeech[0] == '@' && ((pChar2->pszNpcSpeech[1] == 'p') || (pChar2->pszNpcSpeech[1] == 'i'))) {
+	} else if (pChar2->pszNpcSpeech[0] == '@' && ((pChar2->pszNpcSpeech[1] == 'p') || (pChar2->pszNpcSpeech[1] == 'i') || (pChar2->pszNpcSpeech[1] == 'j'))) {
 		SendCmdTALKRAND (pChar2->dwTblID);
 		pChar2->byDirection = abyDirectionTbl[pChar->byDirection];
 		int nNo = GetWindowID (g_dwMsgIDCommand);
@@ -10060,6 +10115,33 @@ static int PuzzleSeatNpcHere(PCHARINFO pChar)
 }
 
 /* ========================================================================= */
+/* 関数名：JanSeatNpcHere													 */
+/* 内容：SBOじゃんの台（台詞 @j…）の「座る場所」のマスに立っているか				 */
+/*		 座る場所は台NPCのマスから common/Janjan.h の JanjanSeatOffset の 4 か所		 */
+/*		 （台NPCは見えない。台NPCの前に立たなくても、座る場所のマスで S キーを押せば座れる）	 */
+/*		 戻り値：見つけた台NPCの配列番号（無ければ -1）							 */
+/* ========================================================================= */
+static int JanSeatNpcHere(PCHARINFO pChar)
+{
+	int i, nSeat, nCount = g_aCharInfo.GetSize (), nSdx, nSdy;
+
+	for (i = 0; i < nCount; i ++) {
+		PCHARINFO pNpc = (PCHARINFO)g_aCharInfo[i];
+		if ((pNpc == pChar) || (pNpc->byNpcType == NPCTYPE_INIT) || !pNpc->pszNpcSpeech ||
+			(pNpc->pszNpcSpeech[0] != '@') || (pNpc->pszNpcSpeech[1] != 'j')) {
+			continue;
+		}
+		for (nSeat = 0; nSeat < JANJAN_SEATS; nSeat ++) {
+			JanjanSeatOffset (nSeat, &nSdx, &nSdy);
+			if (((int)pNpc->dwX + nSdx == (int)pChar->dwX) && ((int)pNpc->dwY + nSdy == (int)pChar->dwY)) {
+				return i;
+			}
+		}
+	}
+	return -1;
+}
+
+/* ========================================================================= */
 /* 関数名：MazeSeatNpcHere													 */
 /* 内容：迷路対戦の台の「座る場所」のマスに立っているか						 */
 /*		 クライアントは台の設定（サブゲーム情報）を持たないので、サーバーから届いている	 */
@@ -10111,6 +10193,12 @@ BOOL CmdProcSKey(void)
 	/* 落ち物パズルの台の座る場所に立っている時は、座る（コインを使うのはサーバーが決める。台NPCは目の前でなくてよい） */
 	if (g_aCharInfo.GetSize () > 0) {
 		int nPuzzle = PuzzleSeatNpcHere (pChar);
+		if (nPuzzle >= 0) {
+			SendCmdTALKRAND (((PCHARINFO)g_aCharInfo[nPuzzle])->dwTblID);
+			return TRUE;
+		}
+		/* SBOじゃんの台の座る場所に立っている時も座る（座ると CMD_JANSTATE が届く） */
+		nPuzzle = JanSeatNpcHere (pChar);
 		if (nPuzzle >= 0) {
 			SendCmdTALKRAND (((PCHARINFO)g_aCharInfo[nPuzzle])->dwTblID);
 			return TRUE;
@@ -10683,6 +10771,7 @@ std::string W32TextToUtf8Str(const char *psz, int nLen);		/* ゲーム内の文�
 #define PADSTATE_SCORE		(0x20)	/* 目の前に得点板がある（「キャンセル」を「名前」と表示。Z で名前を付ける） */
 #define PADSTATE_MAP		(0x40)	/* 探索マップが使える場所（テーマで作ったダンジョンの範囲の中。「地図」ボタンを出す） */
 #define PADSTATE_PINBALL	(0x100)	/* PADSTATE_PUZZLE と一緒に付く：ピンボールの席（十字キーの左右＝フリッパー・下＝打ち出し。決定ボタンは → を送って右フリッパー（sbocli.html の padTarget。キーボードの X は左フリッパー）、キャンセル(Z)は隠す） */
+#define PADSTATE_JAN		(0x200)	/* SBOじゃんの席に座っている（「決定(X)」と「キャンセル(席を立つ)」と十字キーだけ出す。キャンセルは ESC を送る） */
 #define PADSTATE_MAZE		(0x400)	/* 迷路対戦の席に座っている（「調べる(S)」を「やめる」、「決定(X)」を「かべ」（壁モードでは「おく」）、「キャンセル(Z)」を壁モードの時だけ「向き」と表示） */
 #define PADSTATE_MAZEWALL	(0x800)	/* 迷路対戦で壁を置く場所を選んでいる（PADSTATE_MAZE と一緒に付く） */
 #define PADSTATE_PUZZLE		(0x80)	/* 落ち物パズルの席に座っている（「調べる(S)」は隠し、「決定(X)」を「右回し」、「キャンセル(Z)」を「左回し」と表示。表示・戦闘・地図は隠す） */
@@ -10709,6 +10798,10 @@ static int SboWebGetPadStateBase(void)
 	/* 落ち物パズルの席に座っている間は、右回し(X)・左回し(Z)だけ */
 	if (IsPuzzleSeated ()) {
 		return IsPinballSeated () ? (PADSTATE_PUZZLE | PADSTATE_PINBALL) : PADSTATE_PUZZLE;
+	}
+	/* SBOじゃんの席に座っている間は、決定(X)・席を立つ・十字キーだけ */
+	if (IsJanSeated ()) {
+		return PADSTATE_JAN;
 	}
 	/* 迷路対戦の席に座っている間は、矢印・かべ(X)・向き(Z)・やめる(S は ESC として送る) */
 	if (IsMazeSeated ()) {
@@ -10867,7 +10960,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebGetMagicKeyState(void)
 	}
 	pChar = g_aCharInfo[g_nMyCharID];
 	/* ミニゲームに参加中（落ち物パズルの席を含む）は登録の列もショートカットのボタンも出さない */
-	if ((pChar->abySubStatus[0] != 0) || IsPuzzleSeated () || IsMazeSeated ()) {
+	if ((pChar->abySubStatus[0] != 0) || IsPuzzleSeated () || IsJanSeated () || IsMazeSeated ()) {
 		return strRet.c_str ();
 	}
 	if (IsMagicListOpen ()) {
@@ -11099,7 +11192,7 @@ BOOL IsMagicBandShown(PCHARINFO pChar)
 	if (!g_bMagicBar || (g_pMapInfo == NULL)) {
 		return FALSE;
 	}
-	if ((pChar->abySubStatus[0] != 0) || (pChar->byCharState == CHARSTATE_DEAD) || IsPuzzleSeated () || IsMazeSeated ()) {
+	if ((pChar->abySubStatus[0] != 0) || (pChar->byCharState == CHARSTATE_DEAD) || IsPuzzleSeated () || IsJanSeated () || IsMazeSeated ()) {
 		return FALSE;
 	}
 	/* 戦闘モード中は出す。戦闘モードでない時は、装備品・道具の枠が1つでもある時だけ出す（特技だけなら今まで通り出さない） */

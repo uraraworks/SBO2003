@@ -117,6 +117,10 @@ void ItemProc(DWORD dwTblID, BYTE byNo, DWORD dwUseTblID)
 	if ((dwTblID == dwUseTblID) && (PuzzleUseItem (pChar, pChar->waItem[byNo]) || PinballUseItem (pChar, pChar->waItem[byNo]))) {
 		return;
 	}
+	/* SBOじゃんの台の座る場所のマスで、その台のコインを自分に使った？（同じ。当てはまらなければ通常の処理） */
+	if ((dwTblID == dwUseTblID) && JanUseItem (pChar, pChar->waItem[byNo])) {
+		return;
+	}
 	/* 迷路対戦の台の座る場所のマスで、その台のチケットを自分に使った？ 同じく座る（チケットは台の処理が座る時に取り上げる） */
 	if ((dwTblID == dwUseTblID) && MazeUseItem (pChar, pChar->waItem[byNo])) {
 		return;

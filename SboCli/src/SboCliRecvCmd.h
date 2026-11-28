@@ -21,6 +21,33 @@ extern int	GetCharNo2				(DWORD);													/* キャラ番号取得2 */
 extern BOOL		IsPuzzleSeated			(void);														/* 落ち物パズルの席に座って遊んでいるか */
 extern void		PuzzlePredictKey		(BYTE byKey, DWORD dwSerial);																	/* 落ち物パズルの先読み（キーを送った時に、座っている本人の落ち物を先に動かす） */
 extern BOOL		GetPuzzleState			(int nIdx, PCMDPARA_PUZZLESTATE pOut, const BYTE **ppBoard, BOOL *pbOver);			/* 落ち物パズルの重ね描きの状態（nIdx は 0〜PUZZLE_VIEW_MAX-1。見えている台とゲームオーバー後の少しの間だけ TRUE） */
+/* SBOじゃん（クライアント側の卓の状態・操作） */
+#define JAN_OP_MAX			(8)			/* 操作の行のボタンの最大数（ツモ・ロン・そろい・組そろい3・見送り） */
+#define JANKEY_LEFT			(1)			/* JanKeyInput の引数 */
+#define JANKEY_RIGHT		(2)
+#define JANKEY_UP			(3)
+#define JANKEY_DOWN			(4)
+#define JANKEY_DECIDE		(5)
+#define JANKEY_LEAVE		(6)
+typedef struct _JANOP {
+	BYTE		byAct;					/* JAN_ACT_* */
+	BYTE		byParam;				/* GUMI の時は abyGumi の添字 */
+} JANOP;
+typedef struct _JANDRAW {
+	CMDPARA_JANSTATE	St;				/* 最後に届いた状態 */
+	char		aszName[4][JAN_NAME_LEN + 1];	/* 席名（ゲーム内の文字コード） */
+	int			nCursor;				/* 自分の手牌のカーソル（0〜手牌の枚数-1。引いた牌も選べる） */
+	int			nFocus;					/* 0=手牌の行 1=操作の行 */
+	int			nOpSel;					/* 操作の行で選んでいるボタン */
+	int			nOpNum;					/* 操作の行のボタンの数（0=操作の行なし） */
+	JANOP		aOp[JAN_OP_MAX];
+	int			nLeftMs;				/* 自分の待ち時間の残り（ms。待ちが無ければ 0） */
+	int			nLimitMax;				/* この待ちの最初の長さ（ms。バーの割合用） */
+	BOOL		bCanDiscard;			/* 今、自分が牌を捨てる番か */
+} JANDRAW;
+extern BOOL		IsJanSeated				(void);														/* SBOじゃんの席に座っているか */
+extern BOOL		GetJanState				(int nIdx, JANDRAW *pOut);									/* SBOじゃんの重ね描きの状態（nIdx は 0〜15。見えている卓だけ TRUE） */
+extern void		JanKeyInput				(int nKey);													/* SBOじゃんの操作（JANKEY_*。カーソルはクライアントだけで動かし、決定・席を立つだけサーバーへ送る） */
 #define MAZE_VIEW_MAX			(8)															/* 迷路対戦で同時に覚える台の数 */
 #define MAZEMODE_MOVE			(0)															/* 迷路対戦の操作：コマを動かす */
 #define MAZEMODE_WALL			(1)															/* 迷路対戦の操作：壁を置く場所を選ぶ */
