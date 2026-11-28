@@ -56,6 +56,8 @@ CImg32	*g_pDibPrimary,												/* プライマリビットマップ */
 		*g_pDibAnime,												/* アニメーション用ビットマップ */
 		*g_pDibSubgBomb,											/* サブゲーム（爆弾ゲーム）用ビットマップ */
 		*g_pDibWChar,												/* サブゲーム（戦場ゲーム）用ビットマップ */
+		*g_pDibLandCells,										/* 土地取りすごろくのコマ絵 */
+		*g_pDibLandUi,											/* 土地取りすごろくのUI部品 */
 		pDibDrawTmp;												/* 描画テンポラリ */
 
 HMODULE g_hDll,														/* リソースDLLハンドル */
@@ -269,6 +271,7 @@ PCMDPARA_WARSELECTMAGICTARGET g_pWarMagicTarget;					/* 戦場ゲーム魔法対
 PTARGETSELECTINFO g_pTargetSelectInfo;								/* ターゲット選択情報 */
 BYTE g_abyMagicKey[MAX_MAGICKEY];									/* 特技ショートカットに登録した特技ID(0=空。サーバーに保存) */
 WORD g_awKeyItem[MAX_MAGICKEY];										/* ショートカットに登録した装備品・道具のアイテムの種類ID(0=特技の枠か空き。サーバーに保存) */
+BOOL g_bLandArtStyle = TRUE;											/* 土地取りのコマ絵を anime2 にする（既定はアニメ絵。ブラウザ版は URL に ?landart=dot、他は環境変数 SBO_LAND_ART=dot でドット絵に戻す） */
 BOOL g_bLoginHide = FALSE;											/* ボタンでログインして接続中なので、ログイン窓（アカウント名・パスワード）を隠す（ブラウザ版） */
 BOOL g_bMagicBar = TRUE;											/* 特技ショートカットの帯を出すか(アカウントごとにサーバーに保存) */
 CmyArray<PWNDINFO, PWNDINFO> g_WndInfo;								/* ウィンドウ情報 */
@@ -695,7 +698,8 @@ const char *aMsgCmdTbl[] = {
 /* すごろくルール */
 const char *aSugorokuRuleTbl[] = {
 	"ゴール(ぴったり)",
-	"ゴール(通過)"
+	"ゴール(通過)",
+	"土地取り(周回)"
 };
 
 /* すごろくパーツ */

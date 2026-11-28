@@ -3743,6 +3743,27 @@ void SendCmdSubSUGOROKUDICE(void)
 	delete pSendData;
 }
 
+/* ========================================================================= */
+/* 関数名：SendCmdSubSUGOROKULANDBUY										 */
+/* 内容：サブゲーム用コマンド送信(すごろく・土地取り：空き地を買うかの返事)	 */
+/* 日付：2026/11/26															 */
+/* ========================================================================= */
+void SendCmdSubSUGOROKULANDBUY(BOOL bYes)
+{
+	PSUBCMDPARA_DATA1 pSendData;
+	pSendData = new SUBCMDPARA_DATA1;
+	ZeroMemory (pSendData, sizeof (SUBCMDPARA_DATA1));
+	pSendData->byCmd = CMD_SUBGAME;
+	pSendData->bySubGameID = SUBGAMEID_SUGOROKU;
+	pSendData->byCmdSub = CMDSUBSUGOROKU_LANDBUY;
+	pSendData->byData = bYes ? 1 : 0;
+	pSendData->pID = g_pMyID;
+	pSendData->dwTblID = g_aCharInfo[g_nMyCharID]->dwTblID;
+
+	cliSock.Send ((PBYTE)pSendData, sizeof (SUBCMDPARA_DATA1));
+	delete pSendData;
+}
+
 
 /* ========================================================================= */
 /* 関数名：	SendCmdCHAR_TAIL												 */

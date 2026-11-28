@@ -7,6 +7,8 @@
 
 #pragma once
 
+#include "LandSugoroku.h"										/* 土地取りすごろくの定数（通信の構造体 CMDPARA_LANDSTATE が使う） */
+
 /* ========================================================================= */
 /* マクロ定義																 */
 /* ========================================================================= */
@@ -424,6 +426,8 @@ enum {
 	CMD_JANKEY,														/* SBOじゃんの操作（クライアント→サーバー。CMDPARA_JANKEY。byAct が JAN_ACT_*） */
 /* 以下、管理者用（CMD_MAPPARTSADD 以上は自動で管理者専用になる。CMD_JANKEY より後ろに足す） */
 	CMD_ADMINTRIALROOM,												/* 管理者ウィンドウのお試し個室の編集（一覧・書き込み。結果はサーバー→クライアント） */
+/* 以下、プレイヤー用（土地取りすごろく。サーバー→遊んでいる人と観戦者のみ。クライアントは送らない） */
+	CMD_LANDSTATE,												/* 土地取りすごろくの盤の状態（各マスの持ち主・各自の所持金・周回・手番。CMDPARA_LANDSTATE） */
 	CMD_MAX
 };
 
@@ -479,6 +483,7 @@ enum {
 	CMDSUBSUGOROKU_QUIT,										/* ゲームから抜ける */
 	CMDSUBSUGOROKU_DICE,										/* サイコロ振る */
 	CMDSUBSUGOROKU_MSG,											/* メッセージ */
+	CMDSUBSUGOROKU_LANDBUY,										/* 土地取り：空き地を買うかの返事（クライアント→サーバー。byData=1 買う・0 やめる） */
 };
 
 /* 戦場ゲーム：参加人数 */
@@ -538,6 +543,7 @@ enum {
 enum {
 	SUBGAME_SUGOROKU_RULE_GOAL_STOP = 0,						/* ゴール(ぴったり) */
 	SUBGAME_SUGOROKU_RULE_GOAL_NONSTOP,							/* ゴール(通過) */
+	SUBGAME_SUGOROKU_RULE_LAND,									/* 土地取り（周回型。ロジックは common/LandSugoroku.h・docs/land-sugoroku.md） */
 	SUBGAME_SUGOROKU_RULE_MAX
 };
 
@@ -586,6 +592,7 @@ enum {
 	SUBGAME_SUGOROKU_STATE_MOVE,								/* 移動中 */
 	SUBGAME_SUGOROKU_STATE_WAIT,								/* 待ち状態 */
 	SUBGAME_SUGOROKU_STATE_GOAL,								/* ゴール後の後処理状態 */
+	SUBGAME_SUGOROKU_STATE_LANDBUY,								/* 土地取り：空き地を買うかの返事待ち（サーバー側だけの状態。クライアントへは送らない） */
 };
 
 /* 取り引きコマンド */
@@ -1770,6 +1777,7 @@ typedef struct _SUBGAME_SUGOROKUINFO {
 	CmyArray<SUGOROKUEVENTINFO, SUGOROKUEVENTINFO>	aEventInfo;		/* イベント情報 */
 	CmyArray<SUGOROKUPARTSINFO, SUGOROKUPARTSINFO>	aPartsInfo;		/* パーツ情報 */
 	CmyArray<SUGOROKUPLAYERINFO, SUGOROKUPLAYERINFO>	aPlayerInfo;	/* プレイヤー情報 */
+	LPVOID		pLand;												/* 土地取り(SUBGAME_SUGOROKU_RULE_LAND)の進行（SboSvrSubGameProcLand.cpp の LANDSVR。ゲームが始まってから終わるまでだけ持つ。保存しない） */
 } SUBGAME_SUGOROKUINFO, *PSUBGAME_SUGOROKUINFO;
 
 /* サブゲーム：すごろく情報(保存データ) */
@@ -4568,6 +4576,62 @@ typedef struct _CMDPARA_PUZZLESE {
 	BYTE		bySe;												/* PUZZLESE_* */
 	DWORD		dwNpc;												/* 台NPCのテーブルID（その台の盤面を持っている人だけが鳴らす） */
 } CMDPARA_PUZZLESE, *PCMDPARA_PUZZLESE;
+#pragma pack(pop)
+
+/* 土地取りすごろく（周回型。ロジックは common/LandSugoroku.h、仕様は docs/land-sugoroku.md）
+   CMD_LANDSTATE は、遊んでいる人と観戦者に、状態が変わるたびに盤の全体を 1 通で送る
+   （28 コマの持ち主と名前・値段・各自の所持金と周回・手番・サイコロ・購入の問い合わせ）。
+   クライアントは盤の各コマ（マップ 3×3 マス＝96×96 ドット）の上に「土地名・値段・持ち主の色・開発段階の場所」を重ね描きし、
+   帯に各自の所持金と 28 コマの一覧を出す。
+   盤の左上のマップ座標は wOriginX・wOriginY（盤 24×24 マスの左上＝スタートのコマの左上のマス）。コマ番号 → 盤の位置は LandCellOffset・LandCellTile */
+enum {
+	LANDSTATE_NONE = 0,												/* 重ね描きを消す（ゲームが終わった・抜けた） */
+	LANDSTATE_FULL,													/* 盤の全体 */
+};
+#define LANDSTATE_OWNER_NONE	(255)								/* byOwner: 空き地（銀行） */
+#define LANDSTATE_ME_VIEWER		(255)								/* byMe: 観戦者 */
+#define LANDSTATE_NAME_LEN		(32)								/* 遊んでいる人の名前の欄（UTF-8・終端含む。長い名前は文字の途中で切って送る） */
+#pragma pack(push, 1)
+typedef struct _CMDPARA_LANDSTATE_PLAYER {
+	char		szName[LANDSTATE_NAME_LEN];							/* キャラ名 */
+	int			nGold;												/* 所持金(G) */
+	int			nAssets;											/* 総資産（現金＋土地の値段） */
+	BYTE		byLaps;												/* 周回数 */
+	BYTE		byAlive;											/* 遊んでいるか（0=脱落） */
+	BYTE		bySkip;												/* 残りの休み回数 */
+	BYTE		byLands;											/* 持っている土地の数 */
+	BYTE		byPos;												/* いるコマ番号（帯の一覧に駒の位置を出す） */
+} CMDPARA_LANDSTATE_PLAYER;
+typedef struct _CMDPARA_LANDSTATE_CELL {
+	BYTE		byKind;												/* LANDCELL_* */
+	BYTE		byOwner;											/* 持ち主の番号（LANDSTATE_OWNER_NONE=空き地） */
+	WORD		wPrice;												/* 値段(G)（土地だけ） */
+	char		szShort[LAND_SHORT_BUF];							/* 短い名前（UTF-8。全名が 1 コマ（96 ドット）に収まらない時に使う） */
+	char		szName[LAND_NAME_BUF];								/* 土地の名前（UTF-8。収まる時はこれを出す） */
+} CMDPARA_LANDSTATE_CELL;
+typedef struct _CMDPARA_LANDSTATE {
+	BYTE		byCmd;												/* コマンドID */
+	BYTE		byKind;												/* LANDSTATE_*（NONE の時は後ろは意味を持たない） */
+	BYTE		byPlayers;											/* 遊んでいる人の数（脱落者も数える。1〜LAND_MAX_PLAYERS） */
+	BYTE		byMe;												/* 受け取った本人の番号（観戦者は LANDSTATE_ME_VIEWER。本人の色・「あなたの番」に使う） */
+	BYTE		byTurn;												/* 手番の人の番号 */
+	BYTE		byPhase;											/* LANDPHASE_*（0=サイコロ待ち 1=移動中 2=購入待ち 3=終了） */
+	BYTE		byAsk;												/* 1=本人に「買いますか？」を出す（byMe == byTurn で購入待ちの時だけ 1。本人にだけ付く） */
+	BYTE		byAskCell;											/* 問い合わせるマス */
+	BYTE		byDice1;											/* 最後の出目（0=まだ） */
+	BYTE		byDice2;
+	BYTE		byWinMask;											/* 終了した時の勝者（ビット = 番号。同点は複数） */
+	BYTE		byOverReason;										/* LANDOVER_* */
+	WORD		wOriginX;											/* 盤の左上（スタートのコマの左上のマス）のマップ座標 */
+	WORD		wOriginY;
+	WORD		wSecLeft;											/* 手番の制限時間の残り秒（サイコロ・購入待ちの時。届いた時刻から減らして見せる） */
+	WORD		wRound;												/* 何周目の手番か（1 から） */
+	WORD		wMaxLaps;											/* 終了する周回数 */
+	WORD		wAskPrice;											/* 問い合わせる土地の値段(G) */
+	char		szAskName[LAND_NAME_BUF];							/* 問い合わせる土地の名前 */
+	CMDPARA_LANDSTATE_PLAYER	aPlayer[LAND_MAX_PLAYERS];
+	CMDPARA_LANDSTATE_CELL		aCell[LAND_CELLS];
+} CMDPARA_LANDSTATE, *PCMDPARA_LANDSTATE;
 #pragma pack(pop)
 
 /* ピンボール（台に座って遊ぶ。ロジックは common/Pinball.h。台詞が "@i<サブゲーム情報の番号>" の台NPC。設定は SUBGAME_PINBALLINFO。docs/pinball.md）

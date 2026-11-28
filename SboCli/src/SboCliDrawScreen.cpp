@@ -2995,6 +2995,393 @@ static void DrawMaze(int nX, int nY, BOOL bTop)
 }
 
 /* ========================================================================= */
+/* 関数名：DrawLand															 */
+/* 内容：土地取りすごろく（遊んでいる間・観戦中）の重ね描き					 */
+/*		 サーバーが CMD_LANDSTATE で送ってくる盤（左上のマップ座標＋外周 28 コマ。1 コマ＝3×3 マス）の	 */
+/*		 各コマの上に、上段「土地名・値段」・中段「持ち主の色の帯」・下段「開発段階の場所」を、		 */
+/*		 地図のマスと同じ座標で描く。帯HUD には 28 コマの小さな一覧（持ち主の色・駒の位置）も出す。	 */
+/*		 下の層（bTop=FALSE。キャラより前＝地図のパーツの後）がマスの上の重ね描き、					 */
+/*		 上の層（bTop=TRUE。ウィンドウの下）が帯HUD（各自の所持金・周回・手番・残り時間）。		 */
+/*		 切り取りは落ち物パズルと同じ（画面にかかる分だけ描く）。									 */
+/*		 素材（land_cells.png のコマ絵・land_ui.png の枠・旗・ポインタ・サイコロ）が読めていれば		 */
+/*		 コマの背景に絵、帯HUD に 9 スライス枠・ポインタ・サイコロの目を描く。読めない時は単色と文字だけ	 */
+/* ========================================================================= */
+/* 上段（土地名・値段）の暗い帯の濃さ（0〜255）。ドット絵と anime2（g_bLandArtStyle。細かい絵なので文字が埋もれやすい）で別々に決める */
+static const int s_nLandTopAlphaDot = 140;
+static const int s_nLandTopAlphaArt = 165;
+
+static const COLORREF s_aclLandPlayer[LAND_MAX_PLAYERS] = {
+	RGB (235, 80, 70),		/* 1 人目 赤 */
+	RGB (80, 140, 240),		/* 2 人目 青 */
+	RGB (80, 200, 100),		/* 3 人目 緑 */
+	RGB (240, 210, 70),		/* 4 人目 黄 */
+};
+
+/* 土地取りの素材（コマ絵・UI部品）が読めているか（大きさも確かめる。読めなければ単色のまま描く） */
+static BOOL LandArtReady(void)
+{
+	return g_pDibLandCells && g_pDibLandUi && g_pDibLandCells->GetBits () && g_pDibLandUi->GetBits ()
+		&& (g_pDibLandCells->Width () == 7 * 96) && (g_pDibLandCells->Height () == 4 * 96)
+		&& (g_pDibLandUi->Width () == 256) && (g_pDibLandUi->Height () == 128);
+}
+
+/* UI部品（land_ui.png）の矩形を描く（透明は抜ける） */
+static void LandUiBlt(int dx, int dy, int cx, int cy, int sx, int sy)
+{
+	g_pDibDrawMap->Blt (dx, dy, cx, cy, g_pDibLandUi, sx, sy, TRUE);
+}
+
+/* 9 スライス枠（24×24。四隅 6 ドット固定・辺と中央の 12 ドットを繰り返して伸ばす）。bMine=自分の手番の明るい縁 */
+static void LandUiFrame(int x, int y, int cx, int cy, BOOL bMine)
+{
+	const int sx0 = bMine ? 24 : 0, c = 6, m = 12;
+	int i, j, w, h;
+
+	for (j = c; j < cy - c; j += m) {
+		h = min (m, cy - c - j);
+		/* 中央は描かない（半透明の塗りを文字の描画側で敷き、背景のマップを少し透かす） */
+		LandUiBlt (x, y + j, c, h, sx0, c);
+		LandUiBlt (x + cx - c, y + j, c, h, sx0 + 24 - c, c);
+	}
+	for (i = c; i < cx - c; i += m) {
+		w = min (m, cx - c - i);
+		LandUiBlt (x + i, y, w, c, sx0 + c, 0);
+		LandUiBlt (x + i, y + cy - c, w, c, sx0 + c, 24 - c);
+	}
+	LandUiBlt (x, y, c, c, sx0, 0);
+	LandUiBlt (x + cx - c, y, c, c, sx0 + 24 - c, 0);
+	LandUiBlt (x, y + cy - c, c, c, sx0, 24 - c);
+	LandUiBlt (x + cx - c, y + cy - c, c, c, sx0 + 24 - c, 24 - c);
+}
+
+/* コマ i の左上の描画座標。画面にかからなければ FALSE */
+static BOOL LandCellScreen(const CMDPARA_LANDSTATE &St, PCHARINFO pChar, int i, int nX, int nY, int *psx, int *psy)
+{
+	const int nCell = LAND_CELL_TILES * 32;
+	int nDx, nDy;
+
+	LandCellOffset (i, &nDx, &nDy);
+	*psx = (DRAW_PARTS_X + 1) * 32 + ((int)St.wOriginX + nDx * LAND_CELL_TILES - (int)pChar->dwX) * 32;
+	*psy = (DRAW_PARTS_Y + 1) * 32 + ((int)St.wOriginY + nDy * LAND_CELL_TILES - (int)pChar->dwY) * 32;
+	return !((*psx + nCell <= nX) || (*psx >= nX + SCRSIZEX) || (*psy + nCell <= nY) || (*psy >= nY + SCRSIZEY));
+}
+
+static void DrawLand(int nX, int nY, BOOL bTop)
+{
+	CMDPARA_LANDSTATE St;
+	PCHARINFO pChar;
+	HDC hDC;
+	HFONT hFontOld;
+	DWORD dwRecv, dwNow = timeGetTime ();
+	char szTmp[160];
+	int i, nDx, nDy, sx, sy, yy, nSec;
+	BOOL bArt;
+	/* 帯HUD の位置と大きさ（素材がある時は 9 スライス枠の分だけ内側を広げる） */
+	const int nTextW = 336;						/* 文字の欄の幅。その右に 28 コマの一覧（輪）を置く */
+	const int nRing = 9;						/* 一覧の 1 コマの大きさ（8 ドットの四角＋すきま 1） */
+	int nWidth, x0, y0, nPad, nTitleH, nHeight;
+	BOOL bMyTurn;
+
+	if ((g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ()) || !GetLandState (&St, &dwRecv)) {
+		return;
+	}
+	pChar = g_aCharInfo[g_nMyCharID];
+	s_nPzL = nX;
+	s_nPzT = nY;
+	s_nPzR = nX + SCRSIZEX;
+	s_nPzB = nY + SCRSIZEY;
+	nSec = (int)St.wSecLeft - (int)((dwNow - dwRecv) / 1000);
+	if (nSec < 0) {
+		nSec = 0;
+	}
+
+	bArt = LandArtReady ();
+	bMyTurn = (St.byMe == St.byTurn) && (St.byPhase == LANDPHASE_ROLL);
+	nPad = bArt ? 6 : 4;
+	nTitleH = bArt ? 24 : 16;
+	nWidth = nTextW + 8 * nRing + 5 + (bArt ? 4 : 0);
+	x0 = nX + (SCRSIZEX - nWidth) / 2;
+	y0 = nY + 6;
+	nHeight = max (nPad + nTitleH + (int)St.byPlayers * 16 + (bMyTurn ? 16 : 0) + (bArt ? 6 : 4), nPad + 8 * nRing + (bArt ? 6 : 4));
+
+	/* 素材を描く部分は、文字の描画（Lock）の前後に分ける（Lock 中は DC を通さずに絵を転送しない） */
+	if (bArt) {
+		if (!bTop) {
+			/* 各コマの背景のコマ絵（96×96。コマ番号 i は 7 列×4 行の i%7 列・i/7 行。透明の四隅は地面が見える） */
+			for (i = 0; i < LAND_CELLS; i ++) {
+				if (LandCellScreen (St, pChar, i, nX, nY, &sx, &sy)) {
+					g_pDibDrawMap->Blt (sx, sy, 96, 96, g_pDibLandCells, (i % 7) * 96, (i / 7) * 96, TRUE);
+				}
+			}
+		} else {
+			/* 帯HUD の 9 スライス枠（普通は暗い縁、自分の手番でサイコロ待ちの間は明るい縁） */
+			LandUiFrame (x0, y0, nWidth, nHeight, bMyTurn);
+		}
+	}
+
+	hDC = g_pDibDrawMap->Lock ();
+	hFontOld = (HFONT)SelectObject (hDC, bTop ? g_hFont14 : g_hFont12);
+	SetBkMode (hDC, TRANSPARENT);
+
+	if (bArt && bTop) {
+		/* 帯HUD の中の塗り（枠の内側）。背景のマップが少し透ける（濃さ 0〜255） */
+		const int nAlpha = 170, c = 6;
+		for (i = c; i < nHeight - c; i ++) {
+			W32ShadeSpan (hDC, x0 + c, y0 + i, nWidth - c * 2, 0, RGB (34, 35, 55), nAlpha);
+		}
+	}
+
+	if (!bTop) {
+		/* 盤の各コマ（マップ 3×3 マス＝96×96 ドット）。自分のマスが (DRAW_PARTS_X+1)*32 の描画用の画面に合わせる（落ち物パズルと同じ）。
+		   上段（32 ドット）＝土地名と値段、中段＝持ち主の色の帯（中央のマスが駒の代表位置）、下段＝開発段階の場所（段階 1 は未開発なので空の枠だけ） */
+		const int nCell = LAND_CELL_TILES * 32;
+
+		for (i = 0; i < LAND_CELLS; i ++) {
+			const CMDPARA_LANDSTATE_CELL &C = St.aCell[i];
+			BOOL bTown = (C.byKind == LANDCELL_TOWN);
+			BOOL bOwned = bTown && (C.byOwner < St.byPlayers);
+			COLORREF cl = bOwned ? s_aclLandPlayer[C.byOwner] : RGB (255, 255, 255);
+			LPSTR pszName;
+			SIZE size;
+
+			LandCellOffset (i, &nDx, &nDy);
+			sx = (DRAW_PARTS_X + 1) * 32 + ((int)St.wOriginX + nDx * LAND_CELL_TILES - (int)pChar->dwX) * 32;
+			sy = (DRAW_PARTS_Y + 1) * 32 + ((int)St.wOriginY + nDy * LAND_CELL_TILES - (int)pChar->dwY) * 32;
+			if ((sx + nCell <= nX) || (sx >= nX + SCRSIZEX) || (sy + nCell <= nY) || (sy >= nY + SCRSIZEY)) {
+				continue;
+			}
+			/* 上段と下段は暗く敷いて字を読みやすく（四隅のコマは少し濃く）。中段は持ち主の色の帯（空き地は敷かない）。
+			   絵がある時は、絵を見せるため上段（文字の帯）だけを濃く、中段の帯は薄く、下段は枠が見える程度に。四隅のコマは名前の所だけ（下で） */
+			for (yy = 0; yy < nCell; yy ++) {
+				if (bArt) {
+					if (!bTown) {
+						break;
+					}
+					if (yy < 32) {
+						PuzSpan (hDC, sx, sy + yy, nCell, RGB (0, 0, 0), g_bLandArtStyle ? s_nLandTopAlphaArt : s_nLandTopAlphaDot);
+					} else if ((yy < 64) && bOwned) {
+						PuzSpan (hDC, sx, sy + yy, nCell, cl, 70);
+					} else if (yy >= 64) {
+						PuzSpan (hDC, sx, sy + yy, nCell, RGB (0, 0, 0), 60);
+					}
+				} else if ((yy >= 32) && (yy < 64)) {
+					if (bOwned) {
+						PuzSpan (hDC, sx, sy + yy, nCell, cl, 120);
+					}
+				} else {
+					PuzSpan (hDC, sx, sy + yy, nCell, RGB (0, 0, 0), bTown ? 90 : 125);
+				}
+			}
+			/* コマの枠（持ち主がいれば持ち主の色で 2 ドット。いなければ薄い 1 ドット） */
+			for (yy = 0; yy < nCell; yy ++) {
+				int nW = bOwned ? 2 : 1;
+
+				if ((yy < nW) || (yy >= nCell - nW)) {
+					PuzSpan (hDC, sx, sy + yy, nCell, bOwned ? cl : RGB (200, 200, 200), bOwned ? 255 : 90);
+				} else {
+					PuzSpan (hDC, sx, sy + yy, nW, bOwned ? cl : RGB (200, 200, 200), bOwned ? 255 : 90);
+					PuzSpan (hDC, sx + nCell - nW, sy + yy, nW, bOwned ? cl : RGB (200, 200, 200), bOwned ? 255 : 90);
+				}
+			}
+			/* 土地名は短縮せずに 1 コマに収まれば全名、収まらなければ短い名前 */
+			pszName = (LPSTR)C.szName;
+			GetTextExtentPoint32 (hDC, pszName, strlen (pszName), &size);
+			if ((size.cx > nCell - 6) || (pszName[0] == 0)) {
+				pszName = (LPSTR)C.szShort;
+			}
+			if (bTown) {
+				PuzText (hDC, sx + nCell / 2, sy + 3, pszName, RGB (255, 255, 255), 12, TRUE);
+				_snprintf (szTmp, sizeof (szTmp) - 1, "%dG", (int)C.wPrice);
+				szTmp[sizeof (szTmp) - 1] = 0;
+				PuzText (hDC, sx + nCell / 2, sy + 17, szTmp, bOwned ? RGB (255, 255, 160) : RGB (180, 255, 180), 12, TRUE);
+				/* 下段：開発段階の場所（段階 1 は未開発。3 段階ぶんの空の枠を薄く出す）。
+				   素材がある時は旗（持ち主の目印）を左下の角に出すので、枠は 16×16（宿・店・城のアイコンと同じ大きさ）で右寄せ */
+				for (nDx = 0; nDx < 3; nDx ++) {
+					int bx = bArt ? (sx + 30 + nDx * 20) : (sx + nCell / 2 - 33 + nDx * 24 + 3);
+					int by = bArt ? (sy + 74) : (sy + 64 + 11);
+					int bw = bArt ? 16 : 18, bh = bArt ? 16 : 12;
+
+					for (yy = 0; yy < bh; yy ++) {
+						if ((yy == 0) || (yy == bh - 1)) {
+							PuzSpan (hDC, bx, by + yy, bw, RGB (255, 255, 255), 70);
+						} else {
+							PuzSpan (hDC, bx, by + yy, 1, RGB (255, 255, 255), 70);
+							PuzSpan (hDC, bx + bw - 1, by + yy, 1, RGB (255, 255, 255), 70);
+						}
+					}
+				}
+			} else {
+				/* 四隅のコマ：駒（四隅と中央に立つ。絵は立つマスの上に 10 ドットほどはみ出し、名前札も下に出る）が名前に重ならないよう、
+				   名前は 3 段のうち駒の立つマスが一番少ない段に出す（誰もいない段があればそこ。同数なら 中段→下段→上段）。
+				   段ごとの字の高さは、上段 y=3・中段 y=38（上の段の駒の名前札の下）・下段 y=70（中央の駒の名前札の下） */
+				int aRow[3] = {0, 0, 0}, nBest = 1, nTx, nTy, k;
+				static const int s_anRowY[3] = {3, 38, 70};
+
+				LandCellOffset (i, &nDx, &nDy);
+				for (k = 0; k < g_aCharInfo.GetSize (); k ++) {
+					PCHARINFO pOther = g_aCharInfo[k];
+					int tx = (int)pOther->dwX - ((int)St.wOriginX + nDx * LAND_CELL_TILES);
+					int ty = (int)pOther->dwY - ((int)St.wOriginY + nDy * LAND_CELL_TILES);
+
+					if ((pOther->dwMapID == pChar->dwMapID) && (tx >= 0) && (tx < LAND_CELL_TILES) && (ty >= 0) && (ty < LAND_CELL_TILES)) {
+						aRow[ty] ++;
+					}
+				}
+				if (aRow[2] < aRow[nBest]) {
+					nBest = 2;
+				}
+				if (aRow[0] < aRow[nBest]) {
+					nBest = 0;
+				}
+				nTx = sx + nCell / 2;
+				nTy = sy + s_anRowY[nBest];
+				if (bArt) {
+					/* 絵の上でも名前が読めるよう、名前の行だけ暗い帯を敷く */
+					for (yy = -2; yy < 15; yy ++) {
+						PuzSpan (hDC, sx, nTy + yy, nCell, RGB (0, 0, 0), 140);
+					}
+				}
+				PuzText (hDC, nTx, nTy, pszName, RGB (255, 220, 120), 12, TRUE);
+			}
+		}
+	} else {
+		/* 帯HUD：1 行目に題・手番・残り時間・出目、その下に各自の所持金・周回・土地数（位置・大きさは上で決めてある） */
+		if (!bArt) {
+			PuzFrame (hDC, x0, y0, nWidth, nHeight, RGB (230, 200, 120), 150);
+		}
+		if (St.byPhase == LANDPHASE_OVER) {
+			_snprintf (szTmp, sizeof (szTmp) - 1, "土地取り　ゲーム終了！");
+		} else {
+			_snprintf (szTmp, sizeof (szTmp) - 1, "土地取り　%d周で終了　%sの番", (int)St.wMaxLaps, St.aPlayer[St.byTurn].szName);
+		}
+		szTmp[sizeof (szTmp) - 1] = 0;
+		PuzText (hDC, x0 + 8, y0 + nPad + (bArt ? 5 : 0), szTmp, RGB (255, 235, 120), 14, FALSE);
+		if ((St.byPhase == LANDPHASE_ROLL) || (St.byPhase == LANDPHASE_BUY)) {
+			_snprintf (szTmp, sizeof (szTmp) - 1, "残り%d秒", nSec);
+			szTmp[sizeof (szTmp) - 1] = 0;
+			PuzText (hDC, x0 + nTextW - 8 - 60, y0 + nPad + (bArt ? 5 : 0), szTmp, (nSec <= 10) ? RGB (255, 130, 110) : RGB (255, 255, 255), 14, FALSE);
+		} else if ((St.byPhase == LANDPHASE_MOVE) && (St.byDice1 > 0) && !bArt) {
+			/* 素材がある時は出目をサイコロの絵で出す（下で）。ない時は文字 */
+			_snprintf (szTmp, sizeof (szTmp) - 1, "出目 %d+%d", (int)St.byDice1, (int)St.byDice2);
+			szTmp[sizeof (szTmp) - 1] = 0;
+			PuzText (hDC, x0 + nTextW - 8 - 66, y0 + nPad, szTmp, RGB (255, 255, 255), 14, FALSE);
+		}
+		for (i = 0; i < (int)St.byPlayers; i ++) {
+			const CMDPARA_LANDSTATE_PLAYER &P = St.aPlayer[i];
+			COLORREF clText = P.byAlive ? RGB (255, 255, 255) : RGB (150, 150, 150);
+			int yy0 = y0 + nPad + nTitleH + i * 16;
+
+			/* 手番の印と持ち主の色の四角 */
+			if ((i == (int)St.byTurn) && (St.byPhase != LANDPHASE_OVER) && P.byAlive) {
+				PuzText (hDC, x0 + 4, yy0, (LPSTR)">", RGB (255, 235, 120), 14, FALSE);
+			}
+			for (yy = 0; (yy < 10) && !bArt; yy ++) {		/* 素材がある時は色のポインタを絵で出す（下で） */
+				PuzSpan (hDC, x0 + 16, yy0 + 3 + yy, 10, s_aclLandPlayer[i], 255);
+			}
+			_snprintf (szTmp, sizeof (szTmp) - 1, "%s%s", P.szName, (i == (int)St.byMe) ? "(あなた)" : "");
+			szTmp[sizeof (szTmp) - 1] = 0;
+			PuzText (hDC, x0 + 32, yy0, szTmp, clText, 14, FALSE);
+			if (P.byAlive) {
+				_snprintf (szTmp, sizeof (szTmp) - 1, "%dG　%d周　土地%d%s", P.nGold, (int)P.byLaps, (int)P.byLands, P.bySkip ? "　休" : "");
+			} else {
+				_snprintf (szTmp, sizeof (szTmp) - 1, "脱落");
+			}
+			szTmp[sizeof (szTmp) - 1] = 0;
+			PuzText (hDC, x0 + 168, yy0, szTmp, clText, 14, FALSE);
+			/* 終了後は勝者の印 */
+			if ((St.byPhase == LANDPHASE_OVER) && (St.byWinMask & (1 << i))) {
+				PuzText (hDC, x0 + nTextW - 8 - 28, yy0, (LPSTR)"勝ち", RGB (255, 235, 120), 14, FALSE);
+			}
+		}
+		if (bMyTurn) {
+			PuzText (hDC, x0 + 8, y0 + nPad + nTitleH + (int)St.byPlayers * 16, (LPSTR)"あなたの番です。コマンドでサイコロを振る", RGB (160, 255, 160), 14, FALSE);
+		}
+		/* 28 コマの一覧：盤と同じ並びの輪。1 コマ＝8 ドットの四角（持ち主の色・空き地は灰・四隅は金色の枠）、
+		   駒の位置は人の色の点（同じコマに複数人いれば四隅に分ける）。観戦者にも出す */
+		{
+			int rx = x0 + nTextW + 2, ry = y0 + nPad, c, k, px, py;
+
+			for (c = 0; c < LAND_CELLS; c ++) {
+				const CMDPARA_LANDSTATE_CELL &C = St.aCell[c];
+				BOOL bTown = (C.byKind == LANDCELL_TOWN);
+				BOOL bOwned = bTown && (C.byOwner < St.byPlayers);
+				COLORREF clFill = bOwned ? s_aclLandPlayer[C.byOwner] : (bTown ? RGB (120, 120, 120) : RGB (200, 170, 80));
+
+				LandCellOffset (c, &nDx, &nDy);
+				px = rx + nDx * nRing;
+				py = ry + nDy * nRing;
+				for (yy = 0; yy < 8; yy ++) {
+					PuzSpan (hDC, px, py + yy, 8, clFill, bOwned ? 255 : 200);
+				}
+			}
+			for (k = 0; k < (int)St.byPlayers; k ++) {
+				const CMDPARA_LANDSTATE_PLAYER &P = St.aPlayer[k];
+				int ox = 2, oy = 2, nShare = 0, nOrder = 0, j;
+
+				if (!P.byAlive || (P.byPos >= LAND_CELLS)) {
+					continue;
+				}
+				for (j = 0; j < (int)St.byPlayers; j ++) {
+					if (St.aPlayer[j].byAlive && (St.aPlayer[j].byPos == P.byPos)) {
+						nShare ++;
+						if (j < k) {
+							nOrder ++;
+						}
+					}
+				}
+				if (nShare > 1) {
+					ox = (nOrder & 1) ? 4 : 0;
+					oy = (nOrder & 2) ? 4 : 0;
+				}
+				LandCellOffset (P.byPos, &nDx, &nDy);
+				px = rx + nDx * nRing + ox;
+				py = ry + nDy * nRing + oy;
+				for (yy = 0; yy < 4; yy ++) {
+					PuzSpan (hDC, px, py + yy, 4, RGB (0, 0, 0), 255);
+				}
+				for (yy = 1; yy < 3; yy ++) {
+					PuzSpan (hDC, px + 1, py + yy, 2, s_aclLandPlayer[k], 255);
+				}
+			}
+		}
+		/* 残り秒が減るので、秒が変わったら次も描き直す（毎フレームは描かない） */
+		{
+			static int s_nLandSec = -1;
+			if (((St.byPhase == LANDPHASE_ROLL) || (St.byPhase == LANDPHASE_BUY)) && (nSec != s_nLandSec)) {
+				g_bDraw = TRUE;
+			}
+			s_nLandSec = nSec;
+		}
+	}
+	SelectObject (hDC, hFontOld);
+	g_pDibDrawMap->Unlock ();
+
+	/* 文字の後に重ねる絵 */
+	if (bArt) {
+		if (!bTop) {
+			/* 持ち主の旗（16×16・プレイヤー順に赤・青・緑・黄）を、コマの左下の角に */
+			for (i = 0; i < LAND_CELLS; i ++) {
+				const CMDPARA_LANDSTATE_CELL &C = St.aCell[i];
+
+				if ((C.byKind == LANDCELL_TOWN) && (C.byOwner < St.byPlayers) && (C.byOwner < LAND_MAX_PLAYERS) && LandCellScreen (St, pChar, i, nX, nY, &sx, &sy)) {
+					LandUiBlt (sx + 6, sy + 74, 16, 16, C.byOwner * 16, 24);
+				}
+			}
+		} else {
+			/* 各自の行の頭に、持ち主の色の三角ポインタ（16×16） */
+			for (i = 0; i < (int)St.byPlayers; i ++) {
+				LandUiBlt (x0 + 14, y0 + nPad + nTitleH + i * 16, 16, 16, i * 16, 40);
+			}
+			/* 出目（移動中）を、1 行目の右端にサイコロの絵（24×24）2 つで */
+			if ((St.byPhase == LANDPHASE_MOVE) && (St.byDice1 >= 1) && (St.byDice1 <= 6) && (St.byDice2 >= 1) && (St.byDice2 <= 6)) {
+				LandUiBlt (x0 + nTextW - 8 - 52, y0 + nPad, 24, 24, (St.byDice1 - 1) * 24, 56);
+				LandUiBlt (x0 + nTextW - 8 - 26, y0 + nPad, 24, 24, (St.byDice2 - 1) * 24, 56);
+			}
+		}
+	}
+}
+
+/* ========================================================================= */
 /* 関数名：DrawDefenseBand													 */
 /* 内容：番外編の拠点防衛の挑戦中だけ、画面の上の中央にパネルを出す			 */
 /*		 1行目「拠点HP [バー] 720/1000」（残り割合で緑→黄(50%以下)→赤(25%以下)）	 */
@@ -3265,6 +3652,9 @@ void DrawScreen(HWND hWnd, HDC hDC)
 				/* 迷路対戦の手番・壁の残り・勝敗の文字（盤本体は DrawScreenMOVE で描いてある） */
 				DrawMaze (32 - x, 32 - y, TRUE);
 
+				/* 土地取りすごろくの帯HUD（各自の所持金・周回・手番・残り時間。ウィンドウの下に敷く） */
+				DrawLand (32 - x, 32 - y, TRUE);
+
 				hDCPrimary = g_pDibDrawMap->Lock ();
 				HFONT hFontOld = (HFONT)SelectObject (hDCPrimary, g_hFont14);
 				SetBkMode (hDCPrimary, TRANSPARENT);
@@ -3483,6 +3873,8 @@ BOOL DrawScreenMOVE(void)
 		DrawMaze (32 - CamOfsX (), 32 - CamOfsY (), FALSE);
 		/* SBOじゃんの卓本体（面・手牌・川）も同じ重なり順 */
 		DrawJan (32 - CamOfsX (), 32 - CamOfsY (), FALSE);
+	/* 土地取りすごろくの各マスの上の重ね描き（短い土地名・値段・持ち主の色枠）。キャラの下 */
+	DrawLand (32 - CamOfsX (), 32 - CamOfsY (), FALSE);
 	}
 	for (i = 0; i < DRAW_PARTS_Y * 2 + 3; i ++) {
 		DrawCharLine (i);

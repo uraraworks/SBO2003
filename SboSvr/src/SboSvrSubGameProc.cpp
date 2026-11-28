@@ -995,6 +995,17 @@ static void SubGameProc_SUGOROKU(PSUBGAMEINFO pInfo)
 
 	dwTime = timeGetTime ();
 
+	/* 土地取りルール：ゲームが始まってからの手番・駒の移動・制限時間は SboSvrSubGameProcLand.cpp が受け持つ */
+	if ((pSugoroku->byRule == SUBGAME_SUGOROKU_RULE_LAND) &&
+		((pSugoroku->byState == SUBGAME_SUGOROKU_STATE_COMMAND) ||
+		 (pSugoroku->byState == SUBGAME_SUGOROKU_STATE_WAIT) ||
+		 (pSugoroku->byState == SUBGAME_SUGOROKU_STATE_MOVE) ||
+		 (pSugoroku->byState == SUBGAME_SUGOROKU_STATE_GOAL) ||
+		 (pSugoroku->byState == SUBGAME_SUGOROKU_STATE_LANDBUY))) {
+		SubLand_Proc (pSugoroku, dwTime);
+		return;
+	}
+
 	switch (pSugoroku->byState) {
 	case SUBGAME_SUGOROKU_STATE_INIT:		/* 初期状態 */
 		pSugoroku->byState = SUBGAME_SUGOROKU_STATE_CLEAN;
@@ -1036,8 +1047,11 @@ static void SubGameProc_SUGOROKU(PSUBGAMEINFO pInfo)
 			SubSugoroku_GetStartPos (pSugoroku, &pSugoroku->dwStartX, &pSugoroku->dwStartY);
 			SubSugoroku_GetGoalPos (pSugoroku, &pSugoroku->dwGoalX, &pSugoroku->dwGoalY);
 
-			/* 状態遷移 */
+			/* 状態遷移（土地取りは SubLand_Start が状態も決める） */
 			pSugoroku->byState = SUBGAME_SUGOROKU_STATE_COMMAND;
+			if (pSugoroku->byRule == SUBGAME_SUGOROKU_RULE_LAND) {
+				SubLand_Start (pSugoroku);
+			}
 
 		} else {
 			char szMsg[256];

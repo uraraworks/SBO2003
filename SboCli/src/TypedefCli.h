@@ -277,6 +277,7 @@ enum {
 	IDCONFIRMTYPE_STORYRESET,									/* 思い出の本：シナリオを最初からやり直す確認 */
 	IDCONFIRMTYPE_DGLEAVE,										/* 番外編ダンジョン：開始マスを踏んだ「抜けますか？」（dwData=出した時刻。nData2=出した時の座標 x<<16|y） */
 	IDCONFIRMTYPE_TALKASK,										/* 会話データの「はい・いいえ」（台詞の最後の @y。pParent=会話の窓。dwData=話しかけた NPC のテーブルID） */
+	IDCONFIRMTYPE_LANDBUY,										/* 土地取りすごろく：空き地を「買いますか？」（nData2=問い合わせたマス。dwData=出した時刻） */
 };
 
 

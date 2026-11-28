@@ -8,6 +8,7 @@
 #include "include.h"
 #include "Glbldata.h"
 #include "SboSvrRecvCmd.h"
+#include "SboSvrSubGameProcSugoroku.h"
 
 /* ========================================================================= */
 /* 定数定義																	 */
@@ -98,6 +99,11 @@ void SubSugoroku_Remove(PSUBGAME_SUGOROKUINFO pSugoroku, DWORD dwTblID)
 			if (pSugoroku->adwPlayerTblID[i] == dwTblID) {
 				pSugoroku->adwPlayerTblID.RemoveAt (i);
 				pSugoroku->aPlayerInfo.RemoveAt (i);
+				/* 土地取り：手番は LandGame が持つので、表から外した後に脱落させる（土地は銀行へ・1 人なら残りの人の勝ち） */
+				if (SubLand_Active (pSugoroku)) {
+					SubLand_OnLeave (pSugoroku, dwTblID);
+					break;
+				}
 				/* 行動中のキャラ？ */
 				if (pSugoroku->byProcNo == i) {
 					pSugoroku->byProcNo --;
@@ -154,9 +160,13 @@ void SubSugoroku_RemoveAndMove(PSUBGAME_SUGOROKUINFO pSugoroku, DWORD dwTblID)
 	/* 状態遷移 */
 	pSubStatus->byState = SUBGAME_SUGOROKU_STATE_INIT;
 	SendCmdSubSugorokuCHGSTATE (pChar->pID, pSubStatus->byState);
+	/* 土地取り：盤の重ね描きを消す */
+	if (pSugoroku->byRule == SUBGAME_SUGOROKU_RULE_LAND) {
+		SubLand_SendNone (pChar);
+	}
 
-	/* 参加者がいなくなった？ */
-	if (pSugoroku->adwPlayerTblID.GetSize () < 2) {
+	/* 参加者がいなくなった？（土地取りは、始まってからは LandGame が勝敗を決め、結果を見せてから SubLand_Proc が終わらせる） */
+	if ((pSugoroku->adwPlayerTblID.GetSize () < 2) && !SubLand_Active (pSugoroku)) {
 		SubSugoroku_Quit (pSugoroku);
 	}
 
@@ -282,6 +292,7 @@ void SubSugoroku_Quit(PSUBGAME_SUGOROKUINFO pSugoroku)
 
 	/* 状態遷移 */
 	pSugoroku->byState = SUBGAME_SUGOROKU_STATE_INIT;
+	SubLand_Stop (pSugoroku);
 
 	nCount = pSugoroku->adwPlayerTblID.GetSize ();
 	for (i = 0; i < nCount; i ++) {
@@ -292,6 +303,7 @@ void SubSugoroku_Quit(PSUBGAME_SUGOROKUINFO pSugoroku)
 		SubSugoroku_RemoveAndMove (pSugoroku, pSugoroku->adwViewerTblID[0]);
 	}
 	pSugoroku->aPlayerInfo.RemoveAll ();
+	SubLand_Release (pSugoroku);
 }
 
 /* ========================================================================= */

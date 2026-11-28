@@ -168,6 +168,7 @@ extern void SendCmdSubWARUSEMAGIC	(BYTE, BYTE);							/* 戦場ゲーム：魔�
 extern void SendCmdSubSUGOROKUJOINMODE	(BYTE);								/* すごろく：参加モード選択 */
 extern void SendCmdSubSUGOROKUQUIT		(void);								/* すごろく：ゲームから抜ける */
 extern void SendCmdSubSUGOROKUDICE		(void);								/* すごろく：サイコロを振る */
+void SendCmdSubSUGOROKULANDBUY	(BOOL);								/* すごろく(土地取り)：空き地を買うかの返事 */
 
 extern void SendCmdCHAR_TAIL			(DWORD dwTblIDTarget);				/* キャラ系:ついていく要求 */
 /* Copyright(C)URARA-works 2003-2005 */

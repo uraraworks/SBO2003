@@ -20,6 +20,7 @@ extern void	QuestStoryGreetEnd		(DWORD);													/* 語り部の台詞が終
 extern int	GetCharNo2				(DWORD);													/* キャラ番号取得2 */
 extern BOOL		IsPuzzleSeated			(void);														/* 落ち物パズルの席に座って遊んでいるか */
 extern void		PuzzlePredictKey		(BYTE byKey, DWORD dwSerial);																	/* 落ち物パズルの先読み（キーを送った時に、座っている本人の落ち物を先に動かす） */
+extern BOOL		GetLandState			(PCMDPARA_LANDSTATE pOut, DWORD *pdwRecvTime);												/* 土地取りすごろくの重ね描きの状態（遊んでいる間・観戦中だけ TRUE。pdwRecvTime=届いた時刻） */
 extern BOOL		GetPuzzleState			(int nIdx, PCMDPARA_PUZZLESTATE pOut, const BYTE **ppBoard, BOOL *pbOver);			/* 落ち物パズルの重ね描きの状態（nIdx は 0〜PUZZLE_VIEW_MAX-1。見えている台とゲームオーバー後の少しの間だけ TRUE） */
 /* SBOじゃん（クライアント側の卓の状態・操作） */
 #define JAN_OP_MAX			(8)			/* 操作の行のボタンの最大数（ツモ・ロン・そろい・組そろい3・見送り） */

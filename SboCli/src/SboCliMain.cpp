@@ -75,6 +75,7 @@ void	ChgState					(int nState);						/* 状態変更 */
 BOOL	ReadData					();									/* 各データの読み込み */
 void	ReadGrpData					(LPSTR, CImg32**, int);				/* グラフィックデータの読み込み */
 void	ReadGrpData2				(LPSTR, CImg32**, int);				/* グラフィックデータの読み込み */
+static void LandArtStyleInit	(void);								/* 土地取りのコマ絵を anime2 に差し替える（比較用） */
 void	WriteGrpData				(LPSTR, CImg32 *);					/* 画像をファイルに出力 */
 void	WriteGrpData2				(LPSTR, CImg32 *);					/* 画像をファイルに出力 */
 void	DeleteChar					(int);								/* キャラ削除 */
@@ -1353,6 +1354,11 @@ BOOL ReadData(void)
 	/* サブゲーム（戦場ゲーム）グラフィックの読み込み */
 	ReadGrpData2 ("IDP_WCHAR01", &g_pDibWChar, 2);
 
+	/* 土地取りすごろくのコマ絵・UI部品の読み込み（透明つきPNG。透明は黒＝カラーキーにして読む。読めなくても重ね描きは単色にフォールバック） */
+	ReadGrpData2 ("IDP_LAND_CELLS", &g_pDibLandCells, 1);
+	LandArtStyleInit ();
+	ReadGrpData2 ("IDP_LAND_UI", &g_pDibLandUi, 1);
+
 	/* 吹き出しグラフィックの読み込み */
 	ReadGrpData2 ("IDP_EFC01", &g_pDibComEfc, 2);
 
@@ -1550,13 +1556,21 @@ void ReadGrpData2(LPSTR pszName, CImg32 **pDib, int nSize)
 
 	png_set_bgr(Png);
 
+	/* 透明つき（RGBA）のPNG（土地取りの素材）は 8 ビット BGRA に揃えて読む。透明のドットは黒（カラーキー）にする */
+	BOOL bRgba = (ColorType == PNG_COLOR_TYPE_RGB_ALPHA);
+	BOOL bRgb = (ColorType == PNG_COLOR_TYPE_RGB);			/* 透明なしのフルカラー（anime2 のコマ絵）。3 バイト/ドットで読む */
+	if (bRgba || bRgb) {
+		png_set_strip_16 (Png);
+		png_read_update_info (Png, Info);
+	}
+
 	png_colorp Palette = NULL;
 	int PaletteCount = 0;
-	if (BitDepth == 8) {
+	if ((BitDepth == 8) && !bRgba && !bRgb) {
 		png_get_PLTE (Png, Info, &Palette, &PaletteCount);
 	}
 
-	png_byte *LineBuf = new png_byte[Width * BitDepth / 8];
+	png_byte *LineBuf = new png_byte[Width * 4];
 
 	pDibTmp->Create (Width, Height);
 	pDibNew->CreateWithoutGdi (Width * nSize, Height * nSize);
@@ -1569,7 +1583,23 @@ void ReadGrpData2(LPSTR pszName, CImg32 **pDib, int nSize)
 		pTmp = pData + (Height - y - 1) * Width * 4;
 		   for (int x = 0; x < (int)Width; x ++) {
 			BYTE *Src = LineBuf + x * BitDepth / 8;
-			if (BitDepth == 8) {
+			if (bRgba) {
+				Src = LineBuf + x * 4;
+				if (Src[3] < 128) {
+					pTmp[0] = pTmp[1] = pTmp[2] = 0;
+				} else {
+					/* 不透明の黒はカラーキーに化けないよう、ほんの少し明るくする */
+					pTmp[0] = (Src[0] > 1) ? Src[0] : 1;
+					pTmp[1] = (Src[1] > 1) ? Src[1] : 1;
+					pTmp[2] = (Src[2] > 1) ? Src[2] : 1;
+				}
+			} else if (bRgb) {
+				Src = LineBuf + x * 3;
+				/* 黒はカラーキーに化けないよう、ほんの少し明るくする */
+				pTmp[0] = (Src[0] > 1) ? Src[0] : 1;
+				pTmp[1] = (Src[1] > 1) ? Src[1] : 1;
+				pTmp[2] = (Src[2] > 1) ? Src[2] : 1;
+			} else if (BitDepth == 8) {
 				pTmp[1] = Palette[*Src].green;
 				pTmp[0] = Palette[*Src].blue;
 				pTmp[2] = Palette[*Src].red;
@@ -1598,6 +1628,66 @@ void ReadGrpData2(LPSTR pszName, CImg32 **pDib, int nSize)
 
 	delete pDibTmp;
 	delete pDibTmp2;
+}
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+/* ブラウザ版：URL に ?landart=dot があれば 0（ドット絵に戻す）、無ければ 1（アニメ絵）。文字列リテラルは前処理で SJIS 化されるので正規表現で調べる */
+EM_JS(int, SboJsLandArtStyle, (void), {
+	return /[?&]landart=dot/.test (location.search) ? 0 : 1;
+});
+#endif
+
+/* ========================================================================= */
+/* 関数名：LandArtStyleInit													 */
+/* 内容：土地取りのコマ絵の比較用の切り替え。g_bLandArtStyle が立つ時（既定。ブラウザ版は URL ?landart=dot、	 */
+/*		 他は環境変数 SBO_LAND_ART=dot でドット絵に戻す）、anime2（192×192 ×7×4＝1344×768）を読み、	 */
+/*		 2×2 の平均で 96×96 に縮小した絵（672×384）で g_pDibLandCells を置き換える。	 */
+/*		 読めない・大きさが違う時はドット絵のまま									 */
+/* ========================================================================= */
+static void LandArtStyleInit(void)
+{
+	CImg32 *pBig = NULL, *pSmall;
+	LPBYTE pS, pD;
+	int x, y, c, nPitchS, nPitchD;
+
+#ifdef __EMSCRIPTEN__
+	g_bLandArtStyle = SboJsLandArtStyle () ? TRUE : FALSE;
+#else
+	{
+		const char *pszEnv = getenv ("SBO_LAND_ART");
+		g_bLandArtStyle = (pszEnv && (strcmp (pszEnv, "dot") == 0)) ? FALSE : TRUE;
+	}
+#endif
+	if (!g_bLandArtStyle) {
+		return;
+	}
+	ReadGrpData2 ("IDP_LAND_CELLS_ART", &pBig, 1);
+	if ((pBig == NULL) || (pBig->GetBits () == NULL) || (pBig->Width () != 7 * 192) || (pBig->Height () != 4 * 192)) {
+		SAFE_DELETE (pBig);
+		return;
+	}
+	pSmall = new CImg32;
+	pSmall->CreateWithoutGdi (7 * 96, 4 * 96);
+	pS = pBig->GetBits ();
+	pD = pSmall->GetBits ();
+	nPitchS = pBig->Width () * 4;
+	nPitchD = pSmall->Width () * 4;
+	for (y = 0; y < pSmall->Height (); y ++) {
+		for (x = 0; x < pSmall->Width (); x ++) {
+			LPBYTE p = pS + (y * 2) * nPitchS + (x * 2) * 4;
+			LPBYTE d = pD + y * nPitchD + x * 4;
+
+			for (c = 0; c < 3; c ++) {
+				int n = (p[c] + p[4 + c] + p[nPitchS + c] + p[nPitchS + 4 + c] + 2) / 4;
+				d[c] = (BYTE)((n > 1) ? n : 1);			/* 黒（カラーキー）にならないように */
+			}
+			d[3] = 0;
+		}
+	}
+	SAFE_DELETE (pBig);
+	SAFE_DELETE (g_pDibLandCells);
+	g_pDibLandCells = pSmall;
 }
 
 /* ========================================================================= */

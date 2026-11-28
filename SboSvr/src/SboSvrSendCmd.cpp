@@ -1954,6 +1954,16 @@ void SendCmdMAZESTATE(DWORD pIDSend, PCMDPARA_MAZESTATE pPara)
 }
 
 /* ========================================================================= */
+/* 関数名：SendCmdLANDSTATE													 */
+/* 内容：コマンド送信(土地取りすごろくの盤の状態。遊んでいる人・観戦者に)	 */
+/* ========================================================================= */
+void SendCmdLANDSTATE(DWORD pIDSend, PCMDPARA_LANDSTATE pPara)
+{
+	pPara->byCmd = CMD_LANDSTATE;
+	svrSock.SendTo (pIDSend, (PBYTE)pPara, sizeof (CMDPARA_LANDSTATE), SENDTIMEOUT);
+}
+
+/* ========================================================================= */
 /* 関数名：SendCmdPUZZLESE													 */
 /* 内容：コマンド送信(落ち物パズルの効果音。台の盤面を見ている人に)			 */
 /* ========================================================================= */
