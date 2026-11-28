@@ -1615,7 +1615,12 @@
 				return;
 			}
 			$('online-at').textContent = dateText(data.at || Date.now()) + ' 時点';
-			setMsg($('online-msg'), data.players.length ? 'ログイン中 ' + data.players.length + ' 人' : '今はだれもログインしていません。', true);
+			/* BOT宣言をした接続は人数に入れず、別に数える（一覧には並べて「BOT」の印を付ける） */
+			var botCount = data.players.filter(function (p) { return p.bot; }).length;
+			var humanCount = data.players.length - botCount;
+			setMsg($('online-msg'), data.players.length ?
+				'ログイン中 ' + humanCount + ' 人' + (botCount ? '（BOT ' + botCount + ' 体）' : '') :
+				'今はだれもログインしていません。', true);
 			var box = $('online-list');
 			box.textContent = '';
 			if (!data.players.length) {
@@ -1637,6 +1642,9 @@
 				head.appendChild(el('span', 'sub-text', 'Lv ' + p.level));
 				if (p.admin) {
 					head.appendChild(el('span', 'tag admin', '管理者'));
+				}
+				if (p.bot) {
+					head.appendChild(el('span', 'tag', 'BOT'));
 				}
 				if (p.env) {
 					head.appendChild(el('span', 'online-env', envLabel('osBrowser', p.env.os + '+' + p.env.browser)));
