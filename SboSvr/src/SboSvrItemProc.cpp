@@ -11,6 +11,8 @@
 #include "Proc/ProcSubGame.h"
 #include "SboSvrRecvCmd.h"
 #include "SboSvrPuzzle.h"
+#include "SboSvrPinball.h"
+#include "SboSvrMaze.h"
 #include "SboSvrBattleProc.h"
 #include "SboSvrMagicProc.h"
 #include "SboSvrCharInfoTimerProc.h"
@@ -112,7 +114,15 @@ void ItemProc(DWORD dwTblID, BYTE byNo, DWORD dwUseTblID)
 
 	/* 落ち物パズルの台の座る場所のマスで、その台のコインを自分に使った？ 種別にかかわらず先に調べ、座って始める（コインは台の処理が取り上げる）。
 	   当てはまらなければ、以下の通常の処理（効果なしなら説明文）になる */
-	if ((dwTblID == dwUseTblID) && PuzzleUseItem (pChar, pChar->waItem[byNo])) {
+	if ((dwTblID == dwUseTblID) && (PuzzleUseItem (pChar, pChar->waItem[byNo]) || PinballUseItem (pChar, pChar->waItem[byNo]))) {
+		return;
+	}
+	/* SBOじゃんの台の座る場所のマスで、その台のコインを自分に使った？（同じ。当てはまらなければ通常の処理） */
+	if ((dwTblID == dwUseTblID) && JanUseItem (pChar, pChar->waItem[byNo])) {
+		return;
+	}
+	/* 迷路対戦の台の座る場所のマスで、その台のチケットを自分に使った？ 同じく座る（チケットは台の処理が座る時に取り上げる） */
+	if ((dwTblID == dwUseTblID) && MazeUseItem (pChar, pChar->waItem[byNo])) {
 		return;
 	}
 

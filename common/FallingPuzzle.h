@@ -22,7 +22,9 @@
 #define PUZZLE_LOCK_RESET_MAX	(15)		/* 床に着いたまま動かして、固定までの猶予を測り直せる回数（1 つの落ち物ごと） */
 #define PUZZLE_DROP_MS_BASE	(1000)		/* レベル 0 の落下間隔(ms)。1 秒に 1 段 */
 #define PUZZLE_DROP_MS_STEP	(80)		/* レベルが 1 上がるごとに短くなる量(ms) */
-#define PUZZLE_DROP_MS_MIN	(100)		/* 落下間隔の下限(ms) */
+#define PUZZLE_DROP_MS_MIN	(100)		/* 一定の速さで縮める間の落下間隔の下限(ms)。このあとは最高速度へ徐々に近づく */
+#define PUZZLE_DROP_MS_FAST	(55)		/* 最高速度の落下間隔(ms)。下キー押しっぱなし（約 55ms/段）と同じ */
+#define PUZZLE_DROP_FAST_LEVEL	(20)		/* 最高速度になるレベル（PUZZLE_DROP_MS_MIN に着いたレベルから、ここまで直線に縮める） */
 #define PUZZLE_LINES_PER_LEVEL	(10)	/* このライン数ごとにレベルが上がる */
 #define PUZZLE_SOFTDROP_SCORE	(1)		/* 下キーで 1 段落とすごとの得点 */
 
@@ -414,7 +416,16 @@ struct PuzzleGame {
 	static int DropMs(int nLv)
 	{
 		int n = PUZZLE_DROP_MS_BASE - nLv * PUZZLE_DROP_MS_STEP;
-		return (n < PUZZLE_DROP_MS_MIN) ? PUZZLE_DROP_MS_MIN : n;
+		int nMinLv = (PUZZLE_DROP_MS_BASE - PUZZLE_DROP_MS_MIN + PUZZLE_DROP_MS_STEP - 1) / PUZZLE_DROP_MS_STEP;	/* 100ms に着くレベル（12） */
+
+		if (nLv < nMinLv) {
+			return n;
+		}
+		if (nLv >= PUZZLE_DROP_FAST_LEVEL) {
+			return PUZZLE_DROP_MS_FAST;
+		}
+		/* 100ms に着いたレベルから最高速度のレベルまで、直線に縮める */
+		return PUZZLE_DROP_MS_MIN - (PUZZLE_DROP_MS_MIN - PUZZLE_DROP_MS_FAST) * (nLv - nMinLv) / (PUZZLE_DROP_FAST_LEVEL - nMinLv);
 	}
 
 	/* 床・積んだブロックに着いているか（もう 1 段下に動けないか） */

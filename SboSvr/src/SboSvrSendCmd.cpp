@@ -1923,6 +1923,37 @@ void SendCmdPUZZLESTATE(DWORD pIDSend, PBYTE pData, DWORD dwSize)
 }
 
 /* ========================================================================= */
+/* 関数名：SendCmdPINBALLSTATE												 */
+/* 内容：コマンド送信(ピンボールのボール・フリッパー・得点。pData は先頭が CMDPARA_PINBALLSTATE) */
+/* ========================================================================= */
+void SendCmdPINBALLSTATE(DWORD pIDSend, PBYTE pData, DWORD dwSize)
+{
+	((PCMDPARA_PINBALLSTATE)pData)->byCmd = CMD_PINBALLSTATE;
+	svrSock.SendTo (pIDSend, pData, dwSize, SENDTIMEOUT);
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdJANSTATE													 */
+/* 内容：コマンド送信(SBOじゃんの卓の状態。受取人ごとに作ったもの)			 */
+/*		 pData は先頭が CMDPARA_JANSTATE										 */
+/* ========================================================================= */
+void SendCmdJANSTATE(DWORD pIDSend, PBYTE pData, DWORD dwSize)
+{
+	((PCMDPARA_JANSTATE)pData)->byCmd = CMD_JANSTATE;
+	svrSock.SendTo (pIDSend, pData, dwSize, SENDTIMEOUT);
+}
+
+/* ========================================================================= */
+/* 関数名：SendCmdMAZESTATE													 */
+/* 内容：コマンド送信(迷路対戦の盤面・コマ・壁。席に座っている人と台の近くの人に)	 */
+/* ========================================================================= */
+void SendCmdMAZESTATE(DWORD pIDSend, PCMDPARA_MAZESTATE pPara)
+{
+	pPara->byCmd = CMD_MAZESTATE;
+	svrSock.SendTo (pIDSend, (PBYTE)pPara, sizeof (CMDPARA_MAZESTATE), SENDTIMEOUT);
+}
+
+/* ========================================================================= */
 /* 関数名：SendCmdLANDSTATE													 */
 /* 内容：コマンド送信(土地取りすごろくの盤の状態。遊んでいる人・観戦者に)	 */
 /* ========================================================================= */
@@ -3070,6 +3101,16 @@ void SendCmdSUBGAMEINFO(DWORD pIDSend, int nNo)
 			pInfoSend->byCastle2X = pInfoTmp->byCastle2X;
 			pInfoSend->byCastleY = pInfoTmp->byCastleY;
 		}
+		break;
+
+	case SUBGAMEID_PINBALL:		/* ピンボール（INFO と INFOSAVE は同じ並び） */
+		CopyMemory (pData + sizeof (CMDPARA_DATA1), pInfo->pInfo, sizeof (SUBGAME_PINBALLINFOSAVE));
+	case SUBGAMEID_JANJAN:		/* SBOじゃん（INFO と INFOSAVE は同じ並び） */
+		CopyMemory (pData + sizeof (CMDPARA_DATA1), pInfo->pInfo, sizeof (SUBGAME_JANJANINFOSAVE));
+		break;
+
+	case SUBGAMEID_MAZETABLE:	/* 迷路対戦の台（保存用と実行用が同じ中身） */
+		CopyMemory (pData + sizeof (CMDPARA_DATA1), pInfo->pInfo, sizeof (SUBGAME_MAZETABLEINFOSAVE));
 		break;
 
 	case SUBGAMEID_SUGOROKU:	/* すごろく */

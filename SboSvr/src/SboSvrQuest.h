@@ -93,6 +93,10 @@ extern BOOL QuestIsRewarded(PCHARINFO pChar, WORD wQuestID);	/* 報酬をもう�
 extern void StoryTalk(PCHARINFO pChar, PCHARINFO pNpc);			/* 語り部（台詞 "@r"）に話しかけた（思い出の本の一覧を送る） */
 extern BOOL StoryIsNpc(PCHARINFO pNpc);							/* 台詞が "@r" で始まるか */
 extern BOOL QuestFlagOk(PCHARINFO pChar, const QUESTINFO *pQuest);	/* 依頼を受ける条件の印（wNeedFlag・wNotFlag）に合うか */
+extern BOOL QuestIsKillQuest(const QUESTINFO *pQuest);			/* 討伐依頼（倒した数で達成。wKillNeed が 1 以上で討伐チャレンジでない）か */
+extern void QuestOnKill(PCHARINFO pChar, PCHARINFO pEnemy);		/* 敵を倒した時、報酬をもらう人ごとに呼ぶ（討伐依頼の数を数える。空間 0 どうしの時だけ） */
+extern void QuestClearTimeSet(PCHARINFO pChar, WORD wQuestID, DWORD dwNow);	/* 依頼の達成時刻を覚える（直近 MAX_QUESTCLEAR 件） */
+extern DWORD QuestRepeatWaitSec(PCHARINFO pChar, const QUESTINFO *pQuest, DWORD dwNow);	/* 再び受けられるまでの残り秒（0=受けられる。dwRepeatHours が 0 なら常に 0） */
 extern BOOL QuestLevelOk(PCHARINFO pChar, const QUESTINFO *pQuest);	/* 依頼を受ける最低レベル（byLevelMin）に合うか（管理者は常に TRUE） */
 extern BOOL QuestGiveItemNotice(PCHARINFO pChar, WORD wItem, QUESTNOTICEVEC *pvLater = NULL);	/* 会話データからアイテムを 1 つ渡して知らせる（持ち物がいっぱいなら預かり所へ。渡せたら TRUE。pvLater があれば知らせは送らず溜める） */
 extern void QuestNoticeFlush(PCHARINFO pChar, QUESTNOTICEVEC *pvLater);	/* 溜めた知らせを、溜めた順に送って空にする（セリフの窓を送った直後に呼ぶ） */

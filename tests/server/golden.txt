@@ -1184,6 +1184,20 @@ quest lvmin api set {"ok":true,"id":2,"added":false,...} now=50 get=1
 quest lvmin api max {"ok":true,"id":2,"added":false,...} now=99
 quest lvmin api over {"ok":false,"error":"byLevelMin（最低レベル）は 0〜99 で指定してください（0=制限なし）"} now=99
 quest lvmin api zero {"ok":true,"id":2,"added":false,...} now=0
+quest kill accept id=3 count=0 tmp7=1 tmp5=1 tmp9=2 goal=1 space=2 early_id=3 gold=0 parent=3 cap=3
+quest kill battle count=1 noquest=0 other=0
+quest kill handin id=0 gold=60 count=0 cleared=1 | wait24 list=1 accept=0 msg=1 | wait30m list=1 sec=30 wait22h sec=79200 | passed sec=0 accept=3 | nolimit sec=0 | slots has10=0 has18=1 t12=5000
+quest kill reload tmp=7,9,65535,65535 need=3 hours=24 q2=0/0
+quest kill api get need=1 tmp=1 hours=1
+quest kill api set {"ok":true,"id":2,"added":false,...} now=15,7,65535,12,0,0
+quest kill api over {"ok":false,"error":"wKillNeed（討伐の必要数）は 0〜999 で指定してください（0=討伐依頼ではない）"}
+quest kill api hours {"ok":false,"error":"dwRepeatHours（再び受けられるまでの時間）は 0〜8760 で指定してください（0=制限なし）"}
+quest kill api notmp {"ok":false,"error":"wKillNeed が 1 以上の時は、awKillStTmp に数える敵の stTmp の id を 1 つ以上入れてください"}
+quest kill api challenge {"ok":false,"error":"討伐依頼（wKillNeed が 1 以上）は討伐チャレンジ（byChallenge）と一緒にできません"}
+quest kill api zero {"ok":true,"id":2,"added":false,...} now=0
+quest kill id0 api {"ok":true,"id":2,"added":false,...} now=0,65535,65535,65535 get=1
+quest kill id0 range {"ok":false,"error":"awKillStTmp[0] は stTmp の id（0 から）か 65535（空き）で指定してください"}
+quest kill id0 reload tmp=0,65535,65535,65535 need=2 kill0=1 kill1=1
 flagtalk quest cond none=1 q2s0=1 q2s1=0 q2s2=0 q2s3=1 q3s1=1 any s200=0
 talk give first item+=1 flag=1 talkmsg=1 sysmsg=1 order_window_first=1 second item+=0 sysmsg=0 quest item+=0 flag=0 full item+=1 leave=0
 talk take ok ticket-1 prize+1 flag=1 num=1 sysmsg=2 talkmsg=1 none prize+0 flag=0 num=0 sysmsg=0 talkmsg=1 equ prize+0 ticket=1 flag=0 equ2 slot0=1 slot1=0 equ=0 order bag=0 imp=1 full ticket=1 prize=0 flag=0 num=0 sysmsg=1 talkmsg=1
@@ -1198,6 +1212,7 @@ quest info reload count=3 same=1
 quest char save=1 load=1
 quest char reload id=2 step=1 flg=4660 counts=1,22,333,4444 time=1700000000 done=06,80
 quest char reload rewarded=02,80
+quest char reload clear=3@1700001234,0@0,511@4000000000
 quest char reload viewcond show=0 hide=0
 quest npc loaded=0
 quest leave questitem=1 sell=1 gold+=0 full=1 res=2,1,0 after=0
@@ -1286,6 +1301,7 @@ speech normal len=5
 speech long len=256
 speech url len=1020
 speech edit len=600
+speech edit at=[ 5xx 6a t001@2 c01 ]
 speech burst accepted=8 of 12
 speech after window accepted=1
 speech every 1.2s accepted=20 of 20
@@ -2517,6 +2533,7 @@ puzzle logout before=1 after=0 count=0
 puzzle free seated=1
 puzzle done seats=0
 == AV2. Falling puzzle versus ==
+puzzle ask shown seated=0 answer=1
 vs solo seatedA=1 vsA=0 coinA=0
 vs spectate near packets=1
 vs spectate nochange packets=3
@@ -2549,6 +2566,10 @@ vs nopair seated=11 vs=00
 vs nocoin seatedB=0 vsA=0
 puzzle ask shown seated=0 answer=0
 vs decline seatedB=1 vs=00 coinB=0
+puzzle ask shown seated=0 answer=0
+puzzle ask shown seated=0 answer=1
+vs denyvs seated=11 vs=00 msgB+2 deny=1
+puzzle ask shown seated=0 answer=1
 vs spectate leave packets=1 seats=0
 vs done seats=0
 == AV3. Falling puzzle idle table ==
@@ -2583,6 +2604,7 @@ insert leave off=1 packets=1 back=3
 insert notcell seatedB=0 coinB=1
 insert free near=1 seatedNear=0 back=7 seated=1 idleAfter=0
 insert free esc seated=0 idle=7
+puzzle ask shown seated=0 answer=1
 insert sit nocoin=0 still=3 seated=1 A:idle=0 B:idle=0
 puzzle ask shown seated=0 answer=1
 streak vs=11 start=0
@@ -2593,10 +2615,13 @@ streak win2 A=2 msgA=1 msgB=1 msgNew=1 pktC=2 pktA=2
 streak rec scoreB=1500 n=1 streaks=0
 puzzle ask shown seated=0 answer=1
 streak lose A seated=0 streakA=0 B=1 recStreak=1(A:2 20261125) recScore=A:5000,B:1500
+puzzle ask shown seated=0 answer=1
 streak esc recStreak=1 sitAgain=0
 puzzle ask shown seated=0 answer=1
 puzzle ask shown seated=0 answer=1
+puzzle ask shown seated=0 answer=1
 streak logout B=2 recStreak=2 first=A second=B values=2,2 seatedB=0
+puzzle ask shown seated=0 answer=1
 solo over seatedA=0 scores=2 top=5000
 board talk A=1 B=0 head=1 streakHead=1 name=1 cut=1 noat0=1
 board parts A=1 B=0 head=1 score=1 plain=1
@@ -2607,7 +2632,272 @@ record api scores=1 streaks=1 max=1 top=1 date=1
 board empty text=2
 board full counts=10,10 len<max=1 tenth=2 end=1
 record done seats=0
-== AW. Land sugoroku ==
+== AW. SBO Janjan table ==
+jan subgame add ok=1 info=1 ticket=1 x2 cpu=2
+jan speech no=1 old=-1 none=-1
+jan packet size=385 npc=1 ghost=1 free=0
+jan seat cells ok=4
+jan idle A idle=3 phase=0 myseat=255 empty=4 | C idle=1
+jan idle field x=1 y=1 tables idle=1
+jan other cells seated=0 coin=2
+jan skey paid seated=0 coin=2 msg=1
+jan short seated=0 coin=1 msg=1
+jan sit seated=1 seat=2 coin=0 used=1 charitem+1 packets+1
+jan sit state A kind=1 myseat=2 idle=0 phase=3 states=0010 names=,,1, hand=0
+jan sit state C myseat=255 idle=0 phase=3
+jan busy seatedB=0 coinB=2 msg=1
+jan recruit A phase=3 idle=0 limit=60000 seats=0010 hand=0 mine=2
+jan nowalk moved=0
+jan otherkey seatedA=1 packets A+0 B+0
+jan recruit still phase=3
+jan deal A packets+1 phase=1 turn=0 pile=32 open=0,0,8,0 hidden=8,8,0,8
+jan deal C packets+1 myseat=255 open=8,8,8,8 hidden=0,0,0,0
+jan nochange packets A+0 C+0
+jan cpu draw early+0 turn=0 logic=1 hand0=9 pile=31
+jan cpu discard river0=1 hand0=8 lastseat=0
+jan to human turn=2 logic=1 phase=1 hand=9 limit>0=1 limit<=20000=1
+jan illegal ignored packets+0
+jan human discard river2=1 hand2=8 logic=0 lastseat=2
+jan human discard tile=1
+jan leave seated=0 seats=0 packets A+1 C+1 idleA=3 idleC=1 phaseA=0
+jan after leave packets+0
+jan ticket ask shown=+1 text=1 seated=0 coin=2
+jan ticket no seated=0 coin=2 again seated=0 coin=2
+jan ticket timeout seated=0 coin=2
+jan ticket moved seated=0 coin=2
+jan ticket yes seated=1 seat=2 coin=0 charitem+1 used=1
+jan ticket busy ask=+0 seatedB=0 coinB=2 msg=1
+jan ticket seated use ask=+0 coin=2
+jan ticket stray seatedB=0 coinB=2
+jan subgame wait ng=11 default=60
+jan subgame edit ng=111 ok=1 num=3 cpu=3
+jan subgame edit short seated=0 coin=2 msg=1
+jan subgame load ok=1 ticket=1 x3 cpu=3 wait=20
+jan subgame edit back seated=1 coin=0
+jan subgame wait limit=20000 phase19s=3 phase20s=1
+jan subgame stop ok=1 type=0 ticket ask=+0 seated=0 coin=2
+jan subgame stop free skey seated=1 coin=2
+jan old speech ask=+1 seated=1 coin=0
+jan none info free seated=2 type0 janjan=0
+jan ron wait can=26 gumi=1,12,13 last=0/15 limit>0=1
+jan ron illegal packets+0
+jan ron result=1 winner=1 how=1 phase=2 score=1 hidden=0,0,0,0 msg=1 seated=1
+jan ron watcher msg=1 phase=2 lasttile=15
+jan ron over before seated=1
+jan ron over after seated=0 idle=7 phase=0
+jan gumi wait can=24 gumi=1,12,13
+jan gumi done melds=1 kind=1 tiles=12,13,15 hand=6 turn=1 logic=1 river0=0
+jan gumi timeout river1 0->1 turn=2
+jan soroi wait can=20
+jan soroi timeout before=20 after can=0 turn=1 logic=1 hand=9 melds=0
+jan soroi done melds=1 kind=0 tiles=15,15,15 hand=6 turn=1 logic=1
+jan pass can=0 turn=1 logic=0
+jan pass draw turn=1 logic=1 hand=9
+jan cpu claim wait can=0 lastseat=0
+jan cpu soroi melds2=1 turn=2 logic=1 river0=0 hand2=6
+jan cpu ron result=1 winner=3 how=1 phase=2 name=CPU3 msg=1
+jan cpu ron after seated=0
+jan tsumo can=1 last=15 hand=9 limit>0=1
+jan tsumo result=1 winner=0 how=0 phase=2
+jan tsumo leave seated=0 idle=7
+jan timeout drawn=15 river0 0->1 first=1 lastseat=0
+jan draw result=2 phase=2 pile=0 msg=1
+jan draw after seated=0
+jan away near=1 far=0 seats=0
+jan mapmove before=1 after=0 seats=0
+jan logout seated=0 seats=0 packets A+0 C+1 idleC=1 phaseC=0
+jan idle free A idle=7 C idle=1
+jan idle resend A+0
+jan idle left cell A idle=1
+jan view far packets+1 kind=0
+jan view far again packets+0
+jan view near packets+1 kind=1 myseat=255 phase=1 open3=8 hidden3=0 hand0=8
+jan multi join seated=110 seat=1,3 tables=1 msgA=1 msgB=0 denied=1
+jan multi join watcher msgC=1
+jan multi recruit A phase=3 my=1 states=0101 names=1,1 limit=60000 | B phase=3 my=3
+jan multi recruit leave A=0 B=1 states=0001 phase=3
+jan multi recruit empty tables=0 phaseB=0 phaseC=0
+jan multi wait phase=3 hand=0 seated=11
+jan multi start phase=1,1,1 my=1,3,255 states=2121 names=CPU1,CPU2,1,1
+jan multi hands A open=0,8,0,0 hidden=8,0,8,8
+jan multi hands B open=0,0,0,8 hidden=8,8,8,0
+jan multi hands C open=8,8,8,8 hidden=0,0,0,0
+jan multi late seated=0 msg=1 seats=1
+jan multi claim wait A can=26 limit=1 B can=18 limit=1 last=0/15
+jan multi claim B first result=0 logic=0 Bcan=0 Acan=26
+jan multi claim both ron result=1 winner=1 how=1 phase=2 score=1,0 msgA=1 msgB=1 Bopen0=8
+jan multi over late seated=0 msg=1
+jan multi over after seated=00 seats=0
+jan multi timeout waiting result=0
+jan multi timeout result=1 winner=2 how=1 phase=2
+jan multi pass one waiting result=0 acan=0
+jan multi pass one after result=0 turn=1 logic=0
+jan multi leave B=0 A=1 seats=1 A.seat3=2 name=CPU4 phase=1 | B my=255 open=9,8,8,8 packets+1
+jan multi leave goes on turn 0->1 river0 0->1
+jan multi late rejoin seated=0
+jan multi logout A=0 seats=0 phaseC=0 idleC=1
+jan multi mapmove A=0 B=1 seats=1 states=2221
+jan multi mapmove all gone seats=0
+jan multi kick A=0 B=1 msg=1 seats=1 over=0 seat0=2 name=CPU3 phaseA=1 my=255
+jan multi kick goes on pile 23->21
+jan multi all gone seats=0 phaseC=0
+jan multi full before=3 now=1 seated=1111 states=1111 tables=1
+jan multi full hands A open=8,0,0,0 B open=0,8,0,0 C open=0,0,8,0 hidden A=0,8,8,8
+jan multi full D my=3 phase=1
+jan done seats=0 idle=0
+== AW. Maze attack table ==
+maze speech no 0 12 -1 -1 -1 -1 -1 -1
+maze info default -5,-9 seat1=0,1 seat2=0,-10 parts=0,0,0 cpu=0 grp=0 name=[] cpuname=[CPU]
+maze info clamp 60,-60 seat1=60,-60 seat2=60,-60 cpu=3 nameEnd=1 cpunameEnd=1
+maze isTable ok=1 none=0 old=0 missing=0 bomb=0 empty=0 puzzle=0 questnpc-q=0 questnpc-k=0
+maze notTable talk seated=0 seats=0
+maze other cells seated=0 state=0
+maze sit seated=1 seats=1 got=1 kind=1 seat=1 idle=0 c0=1 c1=1
+maze sit board x=1 y=1 size=167
+maze sit p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2
+maze sit parts floor=5,6 gap=7
+maze sit seats 0,1 0,-10 cpugrp=0 cpuname=[CPU]
+maze busy seatedB=0 msg=1
+maze nowalk moved=0
+maze move up p0=3,5 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2 +1
+maze move right p0=6,5 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2 +4
+maze move invalid p0=3,5 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2 +2
+maze wall p0=3,5 p1=3,0 left=5/6 walls=1 turn=0 win=-1 st=2 +1 wall0=3,4,0
+maze blocked p0=3,5 p1=3,0 left=5/6 walls=1 turn=0 win=-1 st=2 +1
+maze badwall overlapL p0=3,5 p1=3,0 left=5/6 walls=1 turn=0 win=-1 st=2 +1
+maze badwall overlapR p0=3,5 p1=3,0 left=5/6 walls=1 turn=0 win=-1 st=2 +1
+maze badwall cross p0=3,5 p1=3,0 left=5/6 walls=1 turn=0 win=-1 st=2 +1
+maze badwall outX p0=3,5 p1=3,0 left=5/6 walls=1 turn=0 win=-1 st=2 +1
+maze badwall outY p0=3,5 p1=3,0 left=5/6 walls=1 turn=0 win=-1 st=2 +1
+maze badwall orient p0=3,5 p1=3,0 left=5/6 walls=1 turn=0 win=-1 st=2 +1
+maze win p0=2,0 p1=3,0 left=5/6 walls=1 turn=0 win=0 st=6
+maze win locked p0=2,0 p1=3,0 left=5/6 walls=1 turn=0 win=0 st=6 +3 seated=1
+maze win reset early=[p0=2,0 p1=3,0 left=5/6 walls=1 turn=0 win=0 st=6] later=[p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2] seated=1
+maze restart p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2
+maze after restart p0=3,5 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2
+maze nopath p0=0,6 p1=3,0 left=5/6 walls=1 turn=0 win=-1 st=2 +1
+maze otherkey packets=0 p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2
+maze leave seated=0 seats=0 p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=1 +1
+maze leave then key packets=0
+maze watch approach 18=0 17=[p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=1] +1 idleTables=1
+maze watch hysteresis packets=0
+maze watch leave none +1
+maze watch sit p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=0 seat=0 idle=0 chA=1
+maze watch move B=p0=3,5 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=0
+maze watch Bkey A=p0=3,5 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2
+maze away seated=0 seats=0 B=p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=1
+maze dead before=1 after=0
+maze logout before=1 after=0 seats=0 A+0 B+1 B=p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=1
+maze exclusive puzzle=1 maze=0
+maze vs solo2 seated=1 seats=1 p0=3,6 p1=3,0 left=6/6 walls=0 turn=1 win=-1 st=2 | vs=0 count=0(0) left=0 to=0,0 turn=A1 name=01 win=0 seat=-A
+maze vs solo2 move p0=3,6 p1=3,1 left=6/6 walls=0 turn=1 win=-1 st=2
+maze vs solo2 up p0=3,6 p1=3,0 left=6/6 walls=0 turn=1 win=-1 st=2
+maze vs busy2 seatedB=0 msg=1
+maze ask shown seated=0 answer=0
+maze vs no seatedB=0 seats=1 p0=3,6 p1=3,0 left=6/6 walls=0 turn=1 win=-1 st=2
+maze vs stray answer seatedB=0
+maze ask shown seated=0 answer=1
+maze vs start seatedB=1 seats=2 A: p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=26 | vs=1 count=1(3) left=0 to=0,0 turn=B0 name=11 win=0 seat=BA
+maze vs start B: p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=26 | vs=1 count=1(3) left=0 to=0,0 turn=B0 name=11 win=0 seat=BA
+maze vs start msg A=1 B=1
+maze vs count locked p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=26
+maze vs count2 vs=1 count=1(2) left=0 to=0,0 turn=B0 name=11 win=0 seat=BA
+maze vs count1 vs=1 count=1(1) left=0 to=0,0 turn=B0 name=11 win=0 seat=BA
+maze vs go p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=10 | vs=1 count=0(0) left=30 to=0,0 turn=B0 name=11 win=0 seat=BA
+maze vs notturn A p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=10 +1
+maze vs B up A: p0=3,5 p1=3,0 left=6/6 walls=0 turn=1 win=-1 st=10 | vs=1 count=0(0) left=30 to=0,0 turn=A1 name=11 win=0 seat=BA
+maze vs notturn B p0=3,5 p1=3,0 left=6/6 walls=0 turn=1 win=-1 st=10
+maze vs A wall p0=3,5 p1=3,0 left=6/5 walls=1 turn=0 win=-1 st=10
+maze vs restart ignored p0=3,5 p1=3,0 left=6/5 walls=1 turn=0 win=-1 st=10
+maze vs left vs=1 count=0(0) left=29 to=0,0 turn=B0 name=11 win=0 seat=BA
+maze vs left1 vs=1 count=0(0) left=1 to=0,0 turn=B0 name=11 win=0 seat=BA
+maze vs timeout1 p0=3,5 p1=3,0 left=6/5 walls=1 turn=1 win=-1 st=10 | vs=1 count=0(0) left=30 to=1,0 turn=A1 name=11 win=0 seat=BA msg=1
+maze vs timeout2 vs=1 count=0(0) left=30 to=1,1 turn=B0 name=11 win=0 seat=BA
+maze vs timeouts reset vs=1 count=0(0) left=30 to=0,0 turn=B0 name=11 win=0 seat=BA
+maze vs before forfeit vs=1 count=0(0) left=30 to=0,2 turn=A1 name=11 win=0 seat=BA
+maze vs forfeit p0=1,5 p1=3,1 left=6/5 walls=1 turn=1 win=0 st=14 | vs=1 count=0(0) left=0 to=0,3 turn=A1 name=11 win=1 seat=BA msgA=1 msgB=1 new A=2 B=1
+maze vs win locked +0
+maze vs reset early=[p0=1,5 p1=3,1 left=6/5 walls=1 turn=1 win=0 st=14] later=p0=3,6 p1=3,0 left=6/6 walls=0 turn=1 win=-1 st=26 | vs=1 count=1(3) left=0 to=0,0 turn=A1 name=11 win=0 seat=BA
+maze vs second game vs=1 count=0(0) left=30 to=0,0 turn=A1 name=11 win=0 seat=BA
+maze vs second B first ignored p0=3,6 p1=3,0 left=6/6 walls=0 turn=1 win=-1 st=10
+maze vs win p0=3,0 p1=2,5 left=6/6 walls=0 turn=0 win=0 st=14 | vs=1 count=0(0) left=0 to=0,0 turn=B0 name=11 win=1 seat=BA msgA=1 msgB=1
+maze vs third game p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=26 | vs=1 count=1(3) left=0 to=0,0 turn=B0 name=11 win=0 seat=BA
+maze vs esc seatedA=0 seatedB=1 seats=1 msgA=1 msgB=1 | p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2 | vs=0 count=0(0) left=0 to=0,0 turn=B0 name=10 win=0 seat=B-
+maze vs solo after p0=3,5 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2
+maze ask shown seated=0 answer=1
+maze vs logout seatedA=1 seatedB=0 msgA=1 | p0=3,6 p1=3,0 left=6/6 walls=0 turn=1 win=-1 st=2 | vs=0 count=0(0) left=0 to=0,0 turn=A1 name=01 win=0 seat=-A
+maze ask shown seated=0 answer=1
+maze vs again vs=1 count=1(3) left=0 to=0,0 turn=B0 name=11 win=0 seat=BA
+maze vs away seatedA=0 seatedB=1 | vs=0 count=0(0) left=0 to=0,0 turn=B0 name=10 win=0 seat=B-
+maze ask shown seated=0 answer=1
+maze vs dead seatedA=1 seatedB=0 | vs=0 count=0(0) left=0 to=0,0 turn=A1 name=01 win=0 seat=-A
+maze ask shown seated=0 answer=0
+maze vs ask expired seatedB=0 seats=1
+maze vs emptied seats=0
+maze vs exclusive puzzle=1 maze=0
+maze cpuask plain asked=0 seated=1
+maze cpu plain seated=1 cpu=0 lv=0 vs=0 count=0(0) left=0 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpuask no asked=1 cpu=1 swap=0 yes=0 seated(before)=0
+maze cpu no seated=1 cpu=0 lv=1 vs=0 count=0(0) left=0 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpu practice move p0=3,5 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2
+maze cpu left seats=0 cpu=0 lv=1 vs=0 count=0(0) left=0 turn=0 name=00 c1=1 win=0 idle=1 p0=3,6 p1=3,0 walls=6/6
+maze cpuask yes asked=1 cpu=1 swap=0 yes=1 seated(before)=0
+maze cpu start seated=1 seats=1 msg=1 cpu=1 lv=1 vs=1 count=1(3) left=0 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpu count locked cpu=1 lv=1 vs=1 count=1(3) left=0 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpu go cpu=1 lv=1 vs=1 count=0(0) left=30 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpu look grp=321 name=[ロボ]
+maze cpu after A cpu=1 lv=1 vs=1 count=0(0) left=0 turn=1 name=10 c1=1 win=0 idle=0 p0=3,5 p1=3,0 walls=6/6
+maze cpu thinking cpu=1 lv=1 vs=1 count=0(0) left=0 turn=1 name=10 c1=1 win=0 idle=0 p0=3,5 p1=3,0 walls=6/6
+maze cpu not my turn cpu=1 lv=1 vs=1 count=0(0) left=0 turn=1 name=10 c1=1 win=0 idle=0 p0=3,5 p1=3,0 walls=6/6
+maze cpu moved cpu=1 lv=1 vs=1 count=0(0) left=30 turn=0 name=10 c1=1 win=0 idle=0 p0=3,5 p1=3,1 walls=6/6
+maze cpu human win cpu=1 lv=1 vs=1 count=0(0) left=0 turn=0 name=10 c1=1 win=1 idle=0 p0=3,0 p1=0,3 walls=6/6 msg=1 cpuwin=0
+maze cpu win shown cpu=1 lv=1 vs=1 count=0(0) left=0 turn=0 name=10 c1=1 win=1 idle=0 p0=3,0 p1=0,3 walls=6/6
+maze cpu next game cpu=1 lv=1 vs=1 count=1(3) left=0 turn=1 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpu second game cpu=1 lv=1 vs=1 count=0(0) left=0 turn=1 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpu first move cpu=1 lv=1 vs=1 count=0(0) left=29 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=2,0 walls=6/6
+maze cpu timeout loss steps=1 cpuwin=1 forfeit=1 cpu=1 lv=1 vs=1 count=0(0) left=0 turn=0 name=10 c1=1 win=1 idle=0 p0=3,6 p1=2,1 walls=6/5
+maze cpu esc seated=0 seats=0 cpu=0 lv=1 vs=0 count=0(0) left=0 turn=0 name=00 c1=1 win=0 idle=1 p0=3,6 p1=3,0 walls=6/6
+maze cpu esc after wait cpu=0 lv=1 vs=0 count=0(0) left=0 turn=0 name=00 c1=1 win=0 idle=1 p0=3,6 p1=3,0 walls=6/6
+maze cpuask yes2 asked=1 cpu=1 swap=0 yes=1 seated(before)=0
+maze cpu away seated=0 seats=0 cpu=0 lv=1 vs=0 count=0(0) left=0 turn=0 name=00 c1=1 win=0 idle=1 p0=3,6 p1=3,0 walls=6/6
+maze cpuask yes3 asked=1 cpu=1 swap=0 yes=1 seated(before)=0
+maze cpu logout seated=0 seats=0
+maze cpuask yes4 asked=1 cpu=1 swap=0 yes=1 seated(before)=0
+maze cpuask swapno asked=1 cpu=0 swap=1 yes=0 seated(before)=0
+maze cpu swap no seatedA=1 seatedB=0 askedA=0 cpu=1 lv=1 vs=1 count=0(0) left=30 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpuask swapyes asked=1 cpu=0 swap=1 yes=1 seated(before)=0
+maze cpu swap yes seatedA=1 seatedB=1 seats=2 msgA=1 msgB=1
+maze cpu swap A cpu=0 lv=1 vs=1 count=1(3) left=0 turn=0 name=11 c1=0 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpu swap B cpu=0 lv=1 vs=1 count=1(3) left=0 turn=0 name=11 c1=0 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpu human vs human idle cpu=0 lv=1 vs=1 count=0(0) left=25 turn=0 name=11 c1=0 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpu after swap B left seatedA=1 cpu=0 lv=1 vs=0 count=0(0) left=0 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpuask expire asked=1 cpu=1 swap=0 yes=1 seated(before)=0
+maze cpu ask expired seated=0 seats=0
+maze api add ok=1 size+1=1 defaults=-5,-9,0,1,0,-10 cpu=0 name=[CPU]
+maze api get typeName=1 chDx=1 chSdy2=1 cpuName=1
+maze api set ok=1 chDx=-3 chDy=-9 seat1=2,1 seat2=0,-8 parts=11,12,13 cpu=2 grp=123 cpuname=[ロボ] name=[テスト台]
+maze api reject dx100=1 cpu4=1 unknown=1 type5=1 kept=-3,2
+maze api reload count=1 same=1 dx=-3 seat1=2,1 seat2=0,-8 parts=11,12,13 cpu=2 grp=123 cpuname=[ロボ] name=[テスト台]
+maze api erase ok=1 type=0 info=0 table before=1 after=0
+maze api reuse ok=1 size=1 type=7 table=1
+maze ticket none seated=0 guide=1 sysmsg+1
+maze ticket short seated=0 tk=1 msg=1
+maze ticket skey seated=0 tk=2 sysmsg+1
+maze ticket elsewhere seated=0 tk=2 sysmsg+1
+maze ticket ask asked=1 cpu=1 seated=0 tk=2
+maze ticket cpu no seated=0 tk=2 seats=0
+maze ticket expire seated=0 tk=2
+maze ticket before-yes tk=2
+maze ticket yes seated=1 tk=0 used=1 charitem+1 cpu=1 lv=1 vs=1 count=1(3) left=0 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze ticket solo seated=1 tk=0
+maze ticket join asked=1 join=1 seatedB=0 tkB=2
+maze ticket join no seatedB=0 tkB=2
+maze ticket join yes seatedB=1 tkB=0 vs=1 count=1(3) left=0 to=0,0 turn=A0 name=11 win=0 seat=AB
+maze ticket api ok=1 item=3 num=5
+maze ticket api over ok=0 num=5
+maze ticket fix num=99
+maze done seats=0 idleTables=0
+== AY. Land sugoroku ==
 land join players=2 state=3
 land recruiting state=3 land=0
 land start land=1 state=8 turn=0 phase=0 players=2 gold=1500,1500

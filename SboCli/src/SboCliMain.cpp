@@ -573,6 +573,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			case MSG3SEC_ACC:
 				EnableWindow (g_hWndCon, TRUE);
 				/* 入力待ちに戻るので、隠していたログイン窓を出す */
+#ifndef __EMSCRIPTEN__	/* ブラウザ版は HTML のカードで入力するので、ゲーム内のログイン窓は出さない */
 				if (g_bLoginHide) {
 					g_bLoginHide = FALSE;
 					int nLogin = GetWindowID (g_dwMsgIDLogin);
@@ -580,6 +581,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 						g_WndInfo[nLogin]->dwTimeDrawStart = 0;
 					}
 				}
+#endif
 				break;
 			}
 			EraseWindow (g_WndInfo[nNo]);
@@ -1036,7 +1038,14 @@ void OnInitEnd(HWND hWnd)
 	}
 
 	/* タイトルスキップモード？ */
+#ifdef __EMSCRIPTEN__
+	/* ブラウザ版：ロゴ・タイトルはシェル HTML のホーム画面が代わりに担うので、最初からログイン画面にする */
+	/* 画素比較テスト（tests/client/pixels.js）だけ、?logo=1 でこれまでどおりロゴ・タイトルから始める */
+	if (!EM_ASM_INT({ return /[?&]logo=1(&|$)/.test(location.search) ? 1 : 0; })) {
+#else
 	if (g_bTitleSkip) {
+#endif
+
 		ChgState (GAMESTATE_LOGIN);
 
 	} else {
@@ -1090,7 +1099,9 @@ void OnCommand(HWND hWnd, int nID)
 		}
 		/* ID・パスワードで入るので、端末トークンは使わない */
 		ZeroMemory (g_szWebToken, sizeof (g_szWebToken));
+#ifndef __EMSCRIPTEN__
 		g_bLoginHide = FALSE;
+#endif
 		{
 			char szAccTmp[MAX_ACCNAME];
 			ZeroMemory (szAccTmp, sizeof (szAccTmp));
@@ -1530,6 +1541,17 @@ void ReadGrpData2(LPSTR pszName, CImg32 **pDib, int nSize)
 	int CompressionType;
 	int FilterType;
 	png_get_IHDR (Png, Info, &Width, &Height, &BitDepth, &ColorType, &InterlaceType, &CompressionType, &FilterType);
+	/* パレット（インデックスカラー）の PNG だけ読める（色数が少ないと 1・2・4 ビットで保存されるので、8 ビットに広げて読む）。
+	   RGB・RGBA・16 ビット・インターレースは読み出しで壊れるので、読まずに空の絵のまま返す
+	   （ピンボールの差し替え絵など、後から人が置く PNG の取り違え対策） */
+	if ((BitDepth > 8) || (ColorType != PNG_COLOR_TYPE_PALETTE) || (InterlaceType != PNG_INTERLACE_NONE)) {
+		png_destroy_read_struct (&Png, &Info, NULL);
+		delete pDibTmp;
+		return;
+	}
+	if (BitDepth < 8) {
+		png_set_packing (Png);
+	}
 	BitDepth = 8;
 
 	png_set_bgr(Png);
@@ -1666,6 +1688,65 @@ static void LandArtStyleInit(void)
 	SAFE_DELETE (pBig);
 	SAFE_DELETE (g_pDibLandCells);
 	g_pDibLandCells = pSmall;
+}
+
+/* ========================================================================= */
+/* 関数名：ReadGrpDataRgba													 */
+/* 内容：PNG を透明度つき（上の行から R,G,B,A の順）で読み込む（SBOじゃんの素材用）	 */
+/*		 成功すると new BYTE[] の領域を返す（呼び出し側が delete [] する）。失敗は FALSE	 */
+/* ========================================================================= */
+BOOL ReadGrpDataRgba(LPSTR pszName, int *pnWidth, int *pnHeight, BYTE **ppRgba)
+{
+	HRSRC hFind = FindResource (g_hDllGrpData, pszName, "PNG");
+	HGLOBAL hRes = (hFind != NULL) ? LoadResource (g_hDllGrpData, hFind) : NULL;
+	if (hRes == NULL) {
+		return FALSE;
+	}
+	png_struct *Png = png_create_read_struct (PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+	png_info *Info = png_create_info_struct (Png);
+	TPngFileBuffer PngFileBuffer = {(BYTE *)LockResource (hRes), 0};
+	png_set_read_fn (Png, (png_voidp)&PngFileBuffer, (png_rw_ptr)PngReadFunc);
+	png_read_info (Png, Info);
+
+	png_uint_32 Width, Height;
+	int BitDepth, ColorType;
+	png_get_IHDR (Png, Info, &Width, &Height, &BitDepth, &ColorType, NULL, NULL, NULL);
+	if ((Width == 0) || (Height == 0) || (Width > 4096) || (Height > 4096)) {
+		png_destroy_read_struct (&Png, &Info, NULL);
+		return FALSE;
+	}
+	/* どの形式でも 8bit RGBA にそろえる */
+	if (ColorType == PNG_COLOR_TYPE_PALETTE) {
+		png_set_palette_to_rgb (Png);
+	}
+	if ((ColorType == PNG_COLOR_TYPE_GRAY) && (BitDepth < 8)) {
+		png_set_expand_gray_1_2_4_to_8 (Png);
+	}
+	if (png_get_valid (Png, Info, PNG_INFO_tRNS)) {
+		png_set_tRNS_to_alpha (Png);
+	}
+	if (BitDepth == 16) {
+		png_set_strip_16 (Png);
+	}
+	if ((ColorType == PNG_COLOR_TYPE_GRAY) || (ColorType == PNG_COLOR_TYPE_GRAY_ALPHA)) {
+		png_set_gray_to_rgb (Png);
+	}
+	png_set_filler (Png, 0xFF, PNG_FILLER_AFTER);
+	png_read_update_info (Png, Info);
+
+	BYTE *pRgba = new BYTE[Width * Height * 4];
+	png_bytep *pRows = new png_bytep[Height];
+	for (png_uint_32 y = 0; y < Height; y ++) {
+		pRows[y] = pRgba + y * Width * 4;
+	}
+	png_read_image (Png, pRows);
+	png_destroy_read_struct (&Png, &Info, NULL);
+	delete [] pRows;
+
+	*pnWidth = (int)Width;
+	*pnHeight = (int)Height;
+	*ppRgba = pRgba;
+	return TRUE;
 }
 
 /* ========================================================================= */

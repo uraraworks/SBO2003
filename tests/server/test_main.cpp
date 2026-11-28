@@ -22,6 +22,9 @@
 #include "stdafx.h"
 #include "../../common/DungeonReception.h"
 #include "../../common/FallingPuzzle.h"
+#include "../../common/MazeAttack.h"
+#include "../../common/MazeTable.h"
+#include "../../common/Janjan.h"
 #include "../../common/DungeonText.h"
 #include <algorithm>
 #pragma push_macro("max")
@@ -42,6 +45,7 @@
 #include "SboSvrCharInfoTimerProc.h"
 #include "SboSvrItemProc.h"
 #include "SboSvrTalk.h"
+#include "SboSvrTrialRoom.h"
 #include "SboSvrMarket.h"
 #include "SboSvrRecycle.h"
 #include "SboSvrAffix.h"
@@ -1314,6 +1318,7 @@ static void TestSpamLimit(const std::vector<int> &aLogin);
 static void TestLeaveDispose(const std::vector<int> &aLogin);
 static void TestNpcNear(const std::vector<int> &aLogin);
 static void TestChallenge(const std::vector<int> &aLogin);
+static void TestTrialRoom(const std::vector<int> &aLogin);
 static void TestStatusUp(const std::vector<int> &aLogin);
 static void TestMagicWall(const std::vector<int> &aLogin);
 static void TestSpace(const std::vector<int> &aLogin);
@@ -1361,6 +1366,8 @@ static void TestPuzzleVs(const std::vector<int> &aLogin);
 static void TestPuzzleIdle(const std::vector<int> &aLogin);
 static void TestPuzzleSeat(const std::vector<int> &aLogin);
 static void TestPuzzleRecord(const std::vector<int> &aLogin);
+static void TestMaze(const std::vector<int> &aLogin);
+static void TestJan(const std::vector<int> &aLogin);
 static void TestLandSugoroku(const std::vector<int> &aLogin);
 static void TestEmptyMapCheck(const std::vector<int> &aLogin);
 static void TestPutFill(void);
@@ -1853,6 +1860,8 @@ static void TestWorld(void)
 	TestNpcNear(aLogin);
 	/* Q. 討伐チャレンジ */
 	TestChallenge(aLogin);
+	/* AX. お試し個室 */
+	TestTrialRoom(aLogin);
 	/* R. 攻撃力・守備力アップ */
 	TestStatusUp(aLogin);
 	/* S. 前方・周囲の特技が壁越しに届かない */
@@ -1952,7 +1961,11 @@ static void TestWorld(void)
 	TestPuzzleSeat(aLogin);
 	/* AV5. 落ち物パズルの INSERT COIN の案内（座る場所に立つと本人にだけ）・連勝・ハイスコアと連勝記録（保存・掲示板 @h・API） */
 	TestPuzzleRecord(aLogin);
-	/* AW. 土地取りすごろく（参加→開始→サイコロ→購入→通行料→時間切れの自動→観戦→脱落→終了。ルールの単体は land_sugoroku_test.cpp） */
+	/* AW. SBOじゃん（座る場所・コイン・手牌の出し分け・CPU の進行・ロン／鳴き・時間切れ・流局・片付け・観戦） */
+	TestJan(aLogin);
+	/* AW. 迷路対戦の台（サブゲーム情報＋台詞 @k<番号>・座る・進む・壁・不正な操作・勝ち・やり直し・席を立つ・観戦・片付け） */
+	TestMaze(aLogin);
+	/* AY. 土地取りすごろく（参加→開始→サイコロ→購入→通行料→時間切れの自動→観戦→脱落→終了。ルールの単体は land_sugoroku_test.cpp） */
 	TestLandSugoroku(aLogin);
 	g_aItemInfo[1]->byType = byCoinTypeBack;
 	g_aItemInfo[1]->byFlg = byCoinFlgBack;
@@ -2841,6 +2854,7 @@ static void TestRecv(PCHARINFO pChar, const void *pData, DWORD dwSize)
 /* 店・預かり所・転職所・着せ替えの人（台詞の印 "@6" "@7" "@5" "@a" "@"）を、p と同じ場所に置く／片付ける。
    サーバーは、これらの人が近くにいる時だけ買う・売る・預ける・転職・着せ替えを受ける */
 static std::vector<PCHARINFO> s_aNearNpc;
+void RenewTblNoChar(void);
 static void NearNpcOpen(PCHARINFO p, const char *pszSpeech, WORD wGrp = 0)
 {
 	PCHARINFO pNpc = new CHARINFO;
@@ -2868,6 +2882,7 @@ static void NearNpcOpen(PCHARINFO p)
 static void NearNpcClose(void)
 {
 	/* 後から作った順に消す（番号がずれないように最後の要素だけ） */
+	BOOL bRemoved = FALSE;
 	while (!s_aNearNpc.empty()) {
 		PCHARINFO pNpc = s_aNearNpc.back();
 		if (g_aCharInfo.GetSize() == 0 || g_aCharInfo[g_aCharInfo.GetSize() - 1] != pNpc) {
@@ -2877,7 +2892,10 @@ static void NearNpcClose(void)
 		delete [] pNpc->pszNpcSpeech;
 		delete pNpc;
 		s_aNearNpc.pop_back();
+		bRemoved = TRUE;
 	}
+	/* マップの NPC 番号表に消した NPC の番号が残ると、後のテスト（道具を使う処理など）が範囲外を読むので作り直す */
+	if (bRemoved) RenewTblNoChar();
 }
 
 static BYTE ItemSum(PCHARINFO p)
@@ -3916,6 +3934,31 @@ static void QuestSendTalk(PCHARINFO p, DWORD dwNpcTbl)
 	Para.pID = p->pID;
 	Para.dwTblID = dwNpcTbl;
 	TestRecv(p, &Para, sizeof(Para));
+}
+
+/* 討伐依頼のテスト用の敵（ふつうの世界のマップ上に置く。dwStTmp=-1 なら番号なし） */
+extern void AddBattleDamage(PCHARINFO, PCHARINFO, int);
+extern BOOL DamageAfterProcNPC(PCHARINFO, PCHARINFO);
+static PCHARINFO KillTestEnemy(PCHARINFO pPC, DWORD dwStTmp, DWORD dwSpace)
+{
+	PCHARINFO pE = new CHARINFO;
+	ZeroMemory((PBYTE)pE, sizeof(CHARINFO));
+	pE->byNpcType = NPCTYPE_BATTLE1;
+	SetInitCharData(pE);
+	pE->byGameState = GAMESTATE_NPC;
+	pE->dwMapID = pPC->dwMapID;
+	pE->dwXBack = pE->dwX = pPC->dwX + 1;
+	pE->dwYBack = pE->dwY = pPC->dwY;
+	pE->dwSpaceID = dwSpace;
+	pE->dwStTmplateID = dwStTmp;
+	pE->wGrpMain = CHARGRP_MAIN_NORMAL;
+	pE->wMaxHP = pE->wHP = 10;
+	pE->dwGold = 0;
+	pE->dwExp = 0;
+	strcpy(pE->szName, "テスト敵");
+	pE = AddChar(pE, TRUE);
+	pE->pID = pE->dwTblID + 1;
+	return pE;
 }
 
 static void QuestSendParty(PCHARINFO pFrom, PCHARINFO pTo, BYTE bySub)
@@ -5595,6 +5638,228 @@ static void TestQuest(const std::vector<int> &aLogin)
 		}
 	}
 
+	/* 討伐依頼（wKillNeed・awKillStTmp・dwRepeatHours）：受けた時に数が 0・対象の敵だけ数える（空間 0 どうしだけ・必要数で頭打ち）・
+	   必要数に届くまで報告できない・報告で報酬と達成時刻・待ちの間は一覧の名前に残り時間が付いて受けられない・保存と読み直し */
+	{
+		PQUESTINFO pQ3 = NULL;
+		for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) if (g_aQuestInfo[i]->wID == 3) pQ3 = g_aQuestInfo[i];
+		if (pQ3) {
+			QUESTINFO Q3Bak = *pQ3;
+			BYTE byLvBack = pOwner->byLevel, byAdBack = pOwner->byAdminLV;
+			DWORD dwSpaceBack = pOwner->dwSpaceID, dwGoldBack = pOwner->dwGold;
+			WORD awClearIDBak[MAX_QUESTCLEAR];
+			DWORD adwClearTimeBak[MAX_QUESTCLEAR];
+			memcpy(awClearIDBak, pOwner->awQuestClearID, sizeof(awClearIDBak));
+			memcpy(adwClearTimeBak, pOwner->adwQuestClearTime, sizeof(adwClearTimeBak));
+			ZeroMemory(pOwner->awQuestClearID, sizeof(pOwner->awQuestClearID));
+			ZeroMemory(pOwner->adwQuestClearTime, sizeof(pOwner->adwQuestClearTime));
+			QuestMovePC(pOwner, nMap, aCell[4].first, aCell[4].second + 1);
+			pOwner->wQuestID = 0;
+			pOwner->byAdminLV = ADMINLV_USER;
+			pOwner->byLevel = 30;
+			pOwner->dwSpaceID = 0;
+			pOwner->dwGold = 0;
+			pQ3->byState = QUESTSTATE_ON;
+			pQ3->byLevelMin = 0;
+			pQ3->byOnce = 0;
+			pQ3->byChallenge = QUESTCHALLENGE_NONE;
+			pQ3->wQuestItem = 0;
+			pQ3->wRewardItem = 0;
+			pQ3->byStepCount = 1;
+			pQ3->dwGold = 60;
+			pQ3->dwExp = 0;
+			pQ3->awKillStTmp[0] = 7; pQ3->awKillStTmp[1] = 9; pQ3->awKillStTmp[2] = QUEST_KILLTMP_NONE; pQ3->awKillStTmp[3] = QUEST_KILLTMP_NONE;
+			pQ3->wKillNeed = 3;
+			pQ3->dwRepeatHours = 24;
+			strcpy(pQ3->aszGoal[0], "プヨンを倒す");
+			/* 一覧の最初の 1 件だけ取れるので、この依頼を先頭にする（ほかの並び順は後で戻す） */
+			WORD wSortBak3 = pQ3->wSort;
+			std::vector<std::pair<PQUESTINFO, WORD> > aSortBak;
+			pQ3->wSort = 0;
+			for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) {
+				if (g_aQuestInfo[i] != pQ3) {
+					aSortBak.push_back(std::make_pair(g_aQuestInfo[i], g_aQuestInfo[i]->wSort));
+					g_aQuestInfo[i]->wSort = 100;
+				}
+			}
+			std::vector<BYTE> aCap;
+			std::string strCap;
+			/* 受けた時に数を 0 に戻す */
+			pOwner->awQuestCount[0] = 2;
+			QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 3, dwGuild);
+			printf("quest kill accept id=%u count=%u", pOwner->wQuestID, pOwner->awQuestCount[0]);
+			/* 数える：対象 7・9 は +1、対象外 5 は数えない、発生元の番号で数える敵も +1、必要数で頭打ち */
+			PCHARINFO pE = KillTestEnemy(pOwner, 7, 0);
+			QuestOnKill(pOwner, pE);
+			printf(" tmp7=%u", pOwner->awQuestCount[0]);
+			pE->dwStTmplateID = 5;
+			QuestOnKill(pOwner, pE);
+			printf(" tmp5=%u", pOwner->awQuestCount[0]);
+			pE->dwStTmplateID = 9;
+			QuestOnKill(pOwner, pE);
+			printf(" tmp9=%u", pOwner->awQuestCount[0]);
+			/* 目的の文に進み具合が付く */
+			SvrSendCaptureBegin();
+			QuestSendTalk(pOwner, dwGuild);
+			SvrSendCaptureEnd(aCap);
+			strCap.assign((const char *)(aCap.empty() ? (const BYTE *)"" : &aCap[0]), aCap.size());
+			printf(" goal=%d", (int)(strCap.find("プヨンを倒す（2/3）") != std::string::npos));
+			/* 異空間（敵・本人のどちらが空間 0 以外でも）は数えない */
+			pE->dwStTmplateID = 7;
+			pE->dwSpaceID = 5;
+			QuestOnKill(pOwner, pE);
+			pE->dwSpaceID = 0;
+			pOwner->dwSpaceID = 5;
+			QuestOnKill(pOwner, pE);
+			pOwner->dwSpaceID = 0;
+			printf(" space=%u", pOwner->awQuestCount[0]);
+			/* 数が足りない間は報告できない */
+			QuestSendCmd(pOwner, QUESTCMD_HANDIN, 0, dwGuild);
+			printf(" early_id=%u gold=%u", pOwner->wQuestID, pOwner->dwGold);
+			/* 発生元の番号で数える敵（自分は番号なし） */
+			PCHARINFO pChild = KillTestEnemy(pOwner, (DWORD)-1, 0);
+			pChild->dwParentTblID = pE->dwTblID;
+			QuestOnKill(pOwner, pChild);
+			printf(" parent=%u", pOwner->awQuestCount[0]);
+			QuestOnKill(pOwner, pE);
+			printf(" cap=%u\n", pOwner->awQuestCount[0]);
+			DeleteChar(pChild->dwTblID);
+			/* 実際の討伐（戦闘の報酬の処理）でも数える・依頼を受けていない人・別の依頼の人は数えない */
+			pOwner->awQuestCount[0] = 0;
+			pE->wHP = 0;
+			AddBattleDamage(pOwner, pE, 5);
+			DamageAfterProcNPC(pOwner, pE);
+			printf("quest kill battle count=%u", pOwner->awQuestCount[0]);
+			pOwner->wQuestID = 0;
+			pOwner->awQuestCount[0] = 0;
+			pE = KillTestEnemy(pOwner, 7, 0);
+			QuestOnKill(pOwner, pE);
+			printf(" noquest=%u", pOwner->awQuestCount[0]);
+			pOwner->wQuestID = 2;
+			QuestOnKill(pOwner, pE);
+			printf(" other=%u\n", pOwner->awQuestCount[0]);
+			pOwner->wQuestID = 0;
+			pOwner->awQuestCount[0] = 0;
+			/* 必要数に届いたら報告できて、報酬が出て、依頼が終わり、達成時刻が残る */
+			QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 3, dwGuild);
+			for (int k = 0; k < 5; k ++) QuestOnKill(pOwner, pE);
+			SvrSendCaptureBegin();
+			QuestSendCmd(pOwner, QUESTCMD_HANDIN, 0, dwGuild);
+			SvrSendCaptureEnd(aCap);
+			DWORD dwNow = (DWORD)time(NULL);
+			printf("quest kill handin id=%u gold=%u count=%u cleared=%d", pOwner->wQuestID, pOwner->dwGold, pOwner->awQuestCount[0],
+				(int)(pOwner->awQuestClearID[0] == 3 && pOwner->adwQuestClearTime[0] + 5 >= dwNow && pOwner->adwQuestClearTime[0] <= dwNow));
+			/* 達成から 24 時間は受けられず、一覧の名前に残り時間が付く・断りの文が出る */
+			SvrSendCaptureBegin();
+			QuestSendTalk(pOwner, dwGuild);
+			SvrSendCaptureEnd(aCap);
+			strCap.assign((const char *)(aCap.empty() ? (const BYTE *)"" : &aCap[0]), aCap.size());
+			printf(" | wait24 list=%d", (int)(strCap.find("（あと24時間）") != std::string::npos));
+			SvrSendCaptureBegin();
+			QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 3, dwGuild);
+			SvrSendCaptureEnd(aCap);
+			strCap.assign((const char *)(aCap.empty() ? (const BYTE *)"" : &aCap[0]), aCap.size());
+			printf(" accept=%u msg=%d", pOwner->wQuestID, (int)(strCap.find("この依頼は、あと24時間たつとまた受けられるよ。") != std::string::npos));
+			/* 23 時間 30 分前に達成していたら「あと30分」、25 時間前なら受けられる */
+			pOwner->adwQuestClearTime[0] = dwNow - 23 * 3600 - 30 * 60;
+			SvrSendCaptureBegin();
+			QuestSendTalk(pOwner, dwGuild);
+			SvrSendCaptureEnd(aCap);
+			strCap.assign((const char *)(aCap.empty() ? (const BYTE *)"" : &aCap[0]), aCap.size());
+			printf(" | wait30m list=%d sec=%d", (int)(strCap.find("（あと30分）") != std::string::npos),
+				(int)(QuestRepeatWaitSec(pOwner, pQ3, dwNow) / 60));
+			pOwner->adwQuestClearTime[0] = dwNow - 2 * 3600;
+			printf(" wait22h sec=%u", (unsigned)QuestRepeatWaitSec(pOwner, pQ3, dwNow));
+			pOwner->adwQuestClearTime[0] = dwNow - 25 * 3600;
+			printf(" | passed sec=%u", (unsigned)QuestRepeatWaitSec(pOwner, pQ3, dwNow));
+			QuestSendCmd(pOwner, QUESTCMD_ACCEPT, 3, dwGuild);
+			printf(" accept=%u", pOwner->wQuestID);
+			/* 制限なし（0）なら達成直後でも受けられる */
+			QuestSendCmd(pOwner, QUESTCMD_CANCEL, 0, dwGuild);
+			pOwner->adwQuestClearTime[0] = dwNow;
+			pQ3->dwRepeatHours = 0;
+			printf(" | nolimit sec=%u", (unsigned)QuestRepeatWaitSec(pOwner, pQ3, dwNow));
+			pQ3->dwRepeatHours = 24;
+			/* 達成時刻は 8 件まで。9 件目は一番古いものを押し出す */
+			ZeroMemory(pOwner->awQuestClearID, sizeof(pOwner->awQuestClearID));
+			ZeroMemory(pOwner->adwQuestClearTime, sizeof(pOwner->adwQuestClearTime));
+			for (int k = 0; k < MAX_QUESTCLEAR + 1; k ++) QuestClearTimeSet(pOwner, (WORD)(10 + k), 1000 + k);
+			QuestClearTimeSet(pOwner, 12, 5000);
+			int nHas10 = 0, nHas18 = 0;
+			for (int k = 0; k < MAX_QUESTCLEAR; k ++) { if (pOwner->awQuestClearID[k] == 10) nHas10 = 1; if (pOwner->awQuestClearID[k] == 18) nHas18 = 1; }
+			printf(" | slots has10=%d has18=%d t12=%u\n", nHas10, nHas18, pOwner->adwQuestClearTime[2]);
+			pOwner->wQuestID = 0;
+			pQ3->wSort = wSortBak3;
+			for (size_t k = 0; k < aSortBak.size(); k ++) aSortBak[k].first->wSort = aSortBak[k].second;
+			/* 保存して読み直しても残る（古いファイルは 0） */
+			SaveQuestInfo();
+			for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) delete g_aQuestInfo[i];
+			g_aQuestInfo.RemoveAll();
+			LoadQuestInfo();
+			pQ3 = NULL;
+			int nIdx3 = 0;
+			for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) if (g_aQuestInfo[i]->wID == 3) { pQ3 = g_aQuestInfo[i]; nIdx3 = i; }
+			if (pQ3) {
+				printf("quest kill reload tmp=%u,%u,%u,%u need=%u hours=%u", pQ3->awKillStTmp[0], pQ3->awKillStTmp[1], pQ3->awKillStTmp[2], pQ3->awKillStTmp[3],
+					pQ3->wKillNeed, (unsigned)pQ3->dwRepeatHours);
+				for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) if (g_aQuestInfo[i]->wID == 2) printf(" q2=%u/%u", g_aQuestInfo[i]->wKillNeed, (unsigned)g_aQuestInfo[i]->dwRepeatHours);
+				printf("\n");
+				/* データAPI：取得に出る・範囲外や空の敵の拒否・討伐チャレンジとは一緒にできない */
+				const char *pszGet = SboWebDataGet("quest", nIdx3);
+				printf("quest kill api get need=%d tmp=%d hours=%d\n", pszGet && strstr(pszGet, "\"wKillNeed\":3") ? 1 : 0,
+					pszGet && strstr(pszGet, "\"awKillStTmp\":[7,9,65535,65535]") ? 1 : 0, pszGet && strstr(pszGet, "\"dwRepeatHours\":24") ? 1 : 0);
+				printf("quest kill api set %s", FlagGroupApi("quest", nIdx3, "{\"wKillNeed\":15,\"awKillStTmp\":[7],\"dwRepeatHours\":12}").c_str());
+				printf(" now=%u,%u,%u,%u,%u,%u\n", pQ3->wKillNeed, pQ3->awKillStTmp[0], pQ3->awKillStTmp[1], (unsigned)pQ3->dwRepeatHours, 0u, 0u);
+				printf("quest kill api over %s\n", FlagGroupApi("quest", nIdx3, "{\"wKillNeed\":1000}").c_str());
+				printf("quest kill api hours %s\n", FlagGroupApi("quest", nIdx3, "{\"dwRepeatHours\":8761}").c_str());
+				printf("quest kill api notmp %s\n", FlagGroupApi("quest", nIdx3, "{\"awKillStTmp\":[65535,65535,65535,65535]}").c_str());
+				printf("quest kill api challenge %s\n", FlagGroupApi("quest", nIdx3, "{\"byChallenge\":1}").c_str());
+				printf("quest kill api zero %s", FlagGroupApi("quest", nIdx3, "{\"wKillNeed\":0}").c_str());
+				printf(" now=%u\n", pQ3->wKillNeed);
+				/* stTmp id 0 の敵（プヨン）も数えられる：API で指定・範囲外の拒否・保存して読み直しても id 0 のまま・古い 0 は空き */
+				printf("quest kill id0 api %s", FlagGroupApi("quest", nIdx3, "{\"wKillNeed\":2,\"awKillStTmp\":[0]}").c_str());
+				printf(" now=%u,%u,%u,%u", pQ3->awKillStTmp[0], pQ3->awKillStTmp[1], pQ3->awKillStTmp[2], pQ3->awKillStTmp[3]);
+				pszGet = SboWebDataGet("quest", nIdx3);
+				printf(" get=%d\n", pszGet && strstr(pszGet, "\"awKillStTmp\":[0,65535,65535,65535]") ? 1 : 0);
+				printf("quest kill id0 range %s\n", FlagGroupApi("quest", nIdx3, "{\"awKillStTmp\":[60000]}").c_str());
+				SaveQuestInfo();
+				for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) delete g_aQuestInfo[i];
+				g_aQuestInfo.RemoveAll();
+				LoadQuestInfo();
+				pQ3 = NULL;
+				for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) if (g_aQuestInfo[i]->wID == 3) { pQ3 = g_aQuestInfo[i]; nIdx3 = i; }
+				if (pQ3) {
+					printf("quest kill id0 reload tmp=%u,%u,%u,%u need=%u", pQ3->awKillStTmp[0], pQ3->awKillStTmp[1], pQ3->awKillStTmp[2], pQ3->awKillStTmp[3], pQ3->wKillNeed);
+					WORD wQBak = pOwner->wQuestID;
+					pOwner->wQuestID = 3;
+					pOwner->awQuestCount[0] = 0;
+					PCHARINFO pE0 = KillTestEnemy(pOwner, 0, 0);
+					QuestOnKill(pOwner, pE0);
+					printf(" kill0=%u", pOwner->awQuestCount[0]);
+					pE0->dwStTmplateID = 1;
+					QuestOnKill(pOwner, pE0);
+					printf(" kill1=%u\n", pOwner->awQuestCount[0]);
+					DeleteChar(pE0->dwTblID);
+					pOwner->wQuestID = wQBak;
+					pOwner->awQuestCount[0] = 0;
+				}
+				if (pQ3) *pQ3 = Q3Bak;
+				pQ3 = NULL;
+				for (int i = 0; i < g_aQuestInfo.GetSize(); i ++) if (g_aQuestInfo[i]->wID == 3) pQ3 = g_aQuestInfo[i];
+			}
+			if (pQ3) {
+				*pQ3 = Q3Bak;
+			}
+			memcpy(pOwner->awQuestClearID, awClearIDBak, sizeof(awClearIDBak));
+			memcpy(pOwner->adwQuestClearTime, adwClearTimeBak, sizeof(adwClearTimeBak));
+			pOwner->byLevel = byLvBack;
+			pOwner->byAdminLV = byAdBack;
+			pOwner->dwSpaceID = dwSpaceBack;
+			pOwner->dwGold = dwGoldBack;
+			DeleteChar(pE->dwTblID);
+		}
+	}
+
 	/* 会話の行：受けている依頼の条件・アイテムを渡す（一度きりは「立てる印」と「いけない印」で組む） */
 	{
 		PTALKINFO pTalk = new TALKINFO;
@@ -6034,6 +6299,10 @@ static void TestQuest(const std::vector<int> &aLogin)
 	pOther->wQuestID = 2; pOther->byQuestStep = 1; pOther->wQuestFlg = 0x1234;
 	pOther->awQuestCount[0] = 1; pOther->awQuestCount[1] = 22; pOther->awQuestCount[2] = 333; pOther->awQuestCount[3] = 4444;
 	pOther->dwQuestAcceptTime = 1700000000;
+	ZeroMemory(pOther->awQuestClearID, sizeof(pOther->awQuestClearID));
+	ZeroMemory(pOther->adwQuestClearTime, sizeof(pOther->adwQuestClearTime));
+	pOther->awQuestClearID[0] = 3; pOther->adwQuestClearTime[0] = 1700001234;
+	pOther->awQuestClearID[7] = 511; pOther->adwQuestClearTime[7] = 4000000000u;
 	ZeroMemory(pOther->abyQuestDone, sizeof(pOther->abyQuestDone));
 	ZeroMemory(pOther->abyQuestRewarded, sizeof(pOther->abyQuestRewarded));
 	pOther->abyQuestDone[0] = 0x06; pOther->abyQuestDone[63] = 0x80;
@@ -6056,6 +6325,8 @@ static void TestQuest(const std::vector<int> &aLogin)
 			pLoaded->wQuestFlg, pLoaded->awQuestCount[0], pLoaded->awQuestCount[1], pLoaded->awQuestCount[2], pLoaded->awQuestCount[3],
 			pLoaded->dwQuestAcceptTime, pLoaded->abyQuestDone[0], pLoaded->abyQuestDone[63]);
 		printf("quest char reload rewarded=%02x,%02x\n", pLoaded->abyQuestRewarded[0], pLoaded->abyQuestRewarded[63]);
+		printf("quest char reload clear=%u@%u,%u@%u,%u@%u\n", pLoaded->awQuestClearID[0], pLoaded->adwQuestClearTime[0], pLoaded->awQuestClearID[1], pLoaded->adwQuestClearTime[1],
+			pLoaded->awQuestClearID[7], pLoaded->adwQuestClearTime[7]);
 	} else {
 		printf("quest char reload not found\n");
 	}
@@ -13783,6 +14054,9 @@ static void TestSpamLimit(const std::vector<int> &aLogin)
 		printf("speech url len=%d\n", (int)strlen(pA->pszSpeech));
 		SpamSpeech(pA, sEdit.c_str(), SPEECHCMD_SPEECHEDIT);
 		printf("speech edit len=%d\n", (int)strlen(pA->pszNpcSpeech));
+		/* 自己紹介の「@」：@0〜@2 以外は空白にする（NPC 用の印を使わせない） */
+		SpamSpeech(pA, "@5xx@6a@t001@2@c01@", SPEECHCMD_SPEECHEDIT);
+		printf("speech edit at=[%s]\n", pA->pszNpcSpeech);
 	}
 
 	/* 連投：5 秒に 8 回まで。1.2 秒おきの自動分割は通る */
@@ -18176,6 +18450,20 @@ static void TestPuzzleVs(const std::vector<int> &aLogin)
 	printf("vs decline seatedB=%d vs=%d%d coinB=%d\n", PuzzleIsSeated(pB), PuzzleIsVersus(pA), PuzzleIsVersus(pB), PuzzleCoinCount(pB, wCoin));
 	PuzzleOnLeave(pB);
 
+	/* 11c. A が座る前の「乱入されてもよいですか？」に「いいえ」と答えると、あとから台 2 に座った B は乱入できず、ひとりで遊ぶ（相手が受け付けていない旨が出る） */
+	PuzzleOnLeave(pA);
+	AddCharItem(pA->dwTblID, wCoin);
+	PuzzleTalk(pA, pT1, FALSE);
+	AddCharItem(pB->dwTblID, wCoin);
+	int nMsgDeny = MockCmdCount(anConn[1], CMD_SYSMSG);
+	PuzzleTalk(pB, pT2);
+	printf("vs denyvs seated=%d%d vs=%d%d msgB+%d deny=%d\n", PuzzleIsSeated(pA), PuzzleIsSeated(pB), PuzzleIsVersus(pA), PuzzleIsVersus(pB),
+		MockCmdCount(anConn[1], CMD_SYSMSG) - nMsgDeny, MockHasText(anConn[1], CMD_SYSMSG, "乱入を受け付けていません"));
+	PuzzleOnLeave(pB);
+	PuzzleOnLeave(pA);
+	AddCharItem(pA->dwTblID, wCoin);
+	PuzzleTalk(pA, pT1);
+
 	/* 12. 台が空になった時、観戦の C に NONE（OVER）が届く */
 	nC2 = MockCmdCount(anConn[2], CMD_PUZZLESTATE);
 	g_dwTime = (s_dwFakeNow += 300);
@@ -18756,7 +19044,7 @@ static void TestPuzzleRecord(const std::vector<int> &aLogin)
 	PuzzleTalkRaw(pA, pT1);
 	int nNoCoin = PuzzleIsSeated(pA), nStill = PuzzleLastIdle(anConn[0], pT1->dwTblID);
 	AddCharItem(pA->dwTblID, wCoin);
-	PuzzleTalkRaw(pA, pT1);
+	PuzzleTalk(pA, pT1)	/* ペアの台なので「乱入されてもよいか」を聞かれる。はいで座る */;
 	PuzzlePlace(pB, pT1, dwX, dwY + 1);
 	g_dwTime = (s_dwFakeNow += 300);
 	PuzzleProc();
@@ -18961,9 +19249,2419 @@ static void TestPuzzleRecord(const std::vector<int> &aLogin)
 	printf("record done seats=%d\n", PuzzleSeatCount());
 }
 
+/* ------------------------------------------------------------------------- */
+/* AW. 迷路対戦の台（サブゲーム情報 SUBGAMEID_MAZETABLE を作り、NPC の台詞 "@k<番号>" で指す。ひとり練習と 2 人対戦）	 */
+/*     台詞の番号の読み方・設定の既定と範囲の丸め・番号なし／種別違い／依頼の見えるNPCは台でない・座る場所で S → 座る・	 */
+/*     隣では座れない・使用中は座れない・座っている間は歩けない・進む・壁を置く・				 */
+/*     不正な操作（壁の重なり・十字・範囲外・進めない向き・知らない操作）は無視して状態を送り直す・	 */
+/*     勝つと 3 秒盤を見せて（その間は操作を受けない）座ったまま戻る・やり直し・席を立つ・		 */
+/*     近くの人（観戦）への盤の送り始め・消す距離・離れる／切断で片付く						 */
+/* ------------------------------------------------------------------------- */
+/* 迷路対戦の台のサブゲーム情報を 1 つ足して番号を返す（pInfo の中身を写す。既定値は MazeTableInfoDefault で作る） */
+static int MazeInfoAdd(const SUBGAME_MAZETABLEINFO &Info)
+{
+	PSUBGAMEINFO pSub = new SUBGAMEINFO;
+	ZeroMemory(pSub, sizeof(SUBGAMEINFO));
+	pSub->byType = SUBGAMEID_MAZETABLE;
+	BYTE *pNew = new BYTE[sizeof(SUBGAME_MAZETABLEINFO)];
+	memcpy(pNew, &Info, sizeof(Info));
+	pSub->pInfo = pNew;
+	g_aSubaGameInfo.Add(pSub);
+	return g_aSubaGameInfo.GetSize() - 1;
+}
+
+/* 既定の台（盤 -5,-9・席 0,1 と 0,-10・CPUなし）を足して番号を返す */
+static int MazeInfoDefault(void)
+{
+	SUBGAME_MAZETABLEINFO Info;
+	MazeTableInfoDefault(&Info);
+	return MazeInfoAdd(Info);
+}
+
+/* 台NPCを近くに置く（台詞は "@k<番号>"） */
+static void MazeNpcOpen(PCHARINFO p, int nNo)
+{
+	char szSpeech[32];
+	sprintf(szSpeech, "@k%d", nNo);
+	NearNpcOpen(p, szSpeech);
+}
+
+/* 台NPC pNpc の席 nSeat（0=席 1・1=席 2）の座る場所（台NPCからの相対）をサブゲーム情報から読む */
+static void MazeSeatOffset(PCHARINFO pNpc, int nSeat, int *pnSdx, int *pnSdy)
+{
+	PSUBGAME_MAZETABLEINFO pInfo = (PSUBGAME_MAZETABLEINFO)g_aSubaGameInfo[MazeSpeechNo(pNpc->pszNpcSpeech)]->pInfo;
+	*pnSdx = nSeat ? pInfo->chSdx2 : pInfo->chSdx;
+	*pnSdy = nSeat ? pInfo->chSdy2 : pInfo->chSdy;
+}
+
+static void MazePackets(int nConn, std::vector<std::vector<BYTE> > &aOut)
+{
+	char *psz = MockCmdAll(nConn, CMD_MAZESTATE);
+	size_t nLen = strlen(psz), nPos = 0;
+	aOut.clear();
+	while (nPos < nLen) {
+		size_t nEnd = nPos;
+		while (nEnd < nLen && psz[nEnd] != ',') nEnd ++;
+		std::vector<BYTE> a((nEnd - nPos) / 2, 0);
+		for (size_t i = 0; i < a.size(); i ++) {
+			unsigned int u = 0;
+			sscanf(psz + nPos + i * 2, "%2x", &u);
+			a[i] = (BYTE)u;
+		}
+		aOut.push_back(a);
+		nPos = nEnd + 1;
+	}
+	free(psz);
+}
+
+/* 覚えた CMD_MAZESTATE の数 */
+static int MazeCount(int nConn)
+{
+	std::vector<std::vector<BYTE> > aP;
+	MazePackets(nConn, aP);
+	return (int)aP.size();
+}
+
+/* 最後に受けた CMD_MAZESTATE（無ければ FALSE。台 dwNpc のものだけ見る） */
+static BOOL MazeLast(int nConn, DWORD dwNpc, CMDPARA_MAZESTATE *pOut)
+{
+	std::vector<std::vector<BYTE> > aP;
+	MazePackets(nConn, aP);
+	for (int i = (int)aP.size() - 1; i >= 0; i --) {
+		if (aP[i].size() != sizeof(CMDPARA_MAZESTATE)) continue;
+		memcpy(pOut, &aP[i][0], sizeof(CMDPARA_MAZESTATE));
+		if (pOut->dwNpc == dwNpc) return TRUE;
+	}
+	return FALSE;
+}
+
+static void MazeKeySend(PCHARINFO p, BYTE byAct, BYTE byDir = 0, BYTE byX = 0, BYTE byY = 0, BYTE byOrient = 0)
+{
+	CMDPARA_MAZEKEY Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_MAZEKEY;
+	Para.byAct = byAct;
+	Para.byDir = byDir;
+	Para.byX = byX;
+	Para.byY = byY;
+	Para.byOrient = byOrient;
+	TestRecv(p, &Para, sizeof(Para));
+}
+
+/* 台の座る場所のマスに立って S キーで話しかける */
+static void MazeTalk(PCHARINFO p, PCHARINFO pNpc)
+{
+	int nSdx, nSdy;
+	MazeSeatOffset(pNpc, 0, &nSdx, &nSdy);
+	PuzzlePlace(p, pNpc, (DWORD)((int)pNpc->dwX + nSdx), (DWORD)((int)pNpc->dwY + nSdy));
+	PuzzleKeyS(p, pNpc);
+}
+
+/* 駒の位置・残りの壁・手番・勝者・状態ビットを 1 つの文字列にして見やすくする */
+static std::string MazeBrief(int nConn, DWORD dwNpc)
+{
+	CMDPARA_MAZESTATE St;
+	char sz[160];
+	if (!MazeLast(nConn, dwNpc, &St)) return "-";
+	if (St.byKind == MAZEKIND_NONE) return "none";
+	sprintf(sz, "p0=%d,%d p1=%d,%d left=%d/%d walls=%d turn=%d win=%d st=%d", St.byPosX[0], St.byPosY[0], St.byPosX[1], St.byPosY[1],
+		St.byWallLeft[0], St.byWallLeft[1], St.byWallCount, St.byTurn, St.cWinner, St.byState);
+	return sz;
+}
+
+/* 2 人対戦の状態：対戦中か・カウントダウン残り・手番の残り秒・連続時間切れ・手番の人（A/B/-）・名前の有無・勝敗の表示 */
+static std::string MazeVsBrief(int nConn, DWORD dwNpc, PCHARINFO pA, PCHARINFO pB)
+{
+	CMDPARA_MAZESTATE St;
+	char sz[160];
+	if (!MazeLast(nConn, dwNpc, &St) || St.byKind == MAZEKIND_NONE) return "-";
+	const char *pszTurn = (St.dwTurnChar == pA->dwTblID) ? "A" : (St.dwTurnChar == pB->dwTblID) ? "B" : "-";
+	sprintf(sz, "vs=%d count=%d(%d) left=%d to=%d,%d turn=%s%d name=%d%d win=%d seat=%c%c", (St.byState & MAZESTATE_VS) != 0, (St.byState & MAZESTATE_COUNT) != 0,
+		St.byCount, St.byTimeLeft, St.byTimeouts[0], St.byTimeouts[1], pszTurn, St.byTurn, St.byHasName[0], St.byHasName[1], (St.byState & MAZESTATE_WIN) != 0,
+		St.dwChar[0] == pA->dwTblID ? 'A' : St.dwChar[0] == pB->dwTblID ? 'B' : '-', St.dwChar[1] == pA->dwTblID ? 'A' : St.dwChar[1] == pB->dwTblID ? 'B' : '-');
+	return sz;
+}
+
+/* 座る場所（nSeat=0 が席 1・1 が席 2）のマスへ置いて S キー。聞かれたら「maze ask」を出して bYes で答える */
+static void MazeSitSeat(PCHARINFO p, PCHARINFO pNpc, int nSeat, BOOL bYes = TRUE)
+{
+	int nSdx, nSdy;
+	int nConn = DgTestConn(p);
+	MazeSeatOffset(pNpc, nSeat, &nSdx, &nSdy);
+	PuzzlePlace(p, pNpc, (DWORD)((int)pNpc->dwX + nSdx), (DWORD)((int)pNpc->dwY + nSdy));
+	int nBefore = MockCmdCount(nConn, CMD_TALKMSG);
+	PuzzleKeyS(p, pNpc);
+	if (MockCmdCount(nConn, CMD_TALKMSG) > nBefore && MockHasText(nConn, CMD_TALKMSG, "乱入")) {
+		printf("maze ask shown seated=%d answer=%d\n", MazeIsSeated(p), bYes ? 1 : 0);
+		PuzzleAnswerSend(p, pNpc, bYes);
+	}
+}
+
+/* 時間を進めて周期処理 */
+static void MazeAdvance(DWORD dwMs)
+{
+	g_dwTime = (s_dwFakeNow += dwMs);
+	MazeProc();
+}
+
+/* 座る場所（nSeat=0 が席 1・1 が席 2）のマスへ置いて S キー。聞かれたら「maze cpuask」に種類（CPU/乱入/交代）を出して bYes で答える。聞かれたかを返す */
+static BOOL MazeSitAsk(PCHARINFO p, PCHARINFO pNpc, int nSeat, BOOL bYes, const char *pszTag)
+{
+	int nSdx, nSdy;
+	int nConn = DgTestConn(p);
+	MazeSeatOffset(pNpc, nSeat, &nSdx, &nSdy);
+	PuzzlePlace(p, pNpc, (DWORD)((int)pNpc->dwX + nSdx), (DWORD)((int)pNpc->dwY + nSdy));
+	int nBefore = MockCmdCount(nConn, CMD_TALKMSG);
+	PuzzleKeyS(p, pNpc);
+	if (MockCmdCount(nConn, CMD_TALKMSG) <= nBefore) {
+		printf("maze cpuask %s asked=0 seated=%d\n", pszTag, MazeIsSeated(p));
+		return FALSE;
+	}
+	printf("maze cpuask %s asked=1 cpu=%d swap=%d yes=%d seated(before)=%d\n", pszTag, MockHasText(nConn, CMD_TALKMSG, "CPUと対戦しますか"),
+		MockHasText(nConn, CMD_TALKMSG, "CPUと対戦中です。交代して対戦しますか"), bYes ? 1 : 0, MazeIsSeated(p));
+	PuzzleAnswerSend(p, pNpc, bYes);
+	return TRUE;
+}
+
+/* CPU対戦の状態：CPU対戦中か・強さ・対戦中か・カウントダウン・残り秒・手番・名前の有無・勝敗・待機中・コマ・壁 */
+static std::string MazeCpuBrief(int nConn, DWORD dwNpc)
+{
+	CMDPARA_MAZESTATE St;
+	char sz[200];
+	if (!MazeLast(nConn, dwNpc, &St) || St.byKind == MAZEKIND_NONE) return "-";
+	sprintf(sz, "cpu=%d lv=%d vs=%d count=%d(%d) left=%d turn=%d name=%d%d c1=%d win=%d idle=%d p0=%d,%d p1=%d,%d walls=%d/%d", (St.byState & MAZESTATE_CPU) != 0, St.byCpuLevel,
+		(St.byState & MAZESTATE_VS) != 0, (St.byState & MAZESTATE_COUNT) != 0, St.byCount, St.byTimeLeft, St.byTurn, St.byHasName[0], St.byHasName[1],
+		St.dwChar[1] == MAZE_NOCHAR, (St.byState & MAZESTATE_WIN) != 0, (St.byState & MAZESTATE_IDLE) != 0, St.byPosX[0], St.byPosY[0], St.byPosX[1], St.byPosY[1],
+		St.byWallLeft[0], St.byWallLeft[1]);
+	return sz;
+}
+
+static void TestMaze(const std::vector<int> &aLogin)
+{
+	printf("== AW. Maze attack table ==\n");
+	if (aLogin.size() < 2) return;
+	s_pSpLogin = &aLogin;
+	PCHARINFO pA = g_aCharInfo[aLogin[0]], pB = g_aCharInfo[aLogin[1]];
+	int nConnA = DgTestConn(pA), nConnB = DgTestConn(pB);
+	DWORD dwMapA = pA->dwMapID, dwXA = pA->dwX, dwYA = pA->dwY, dwMapB = pB->dwMapID, dwXB = pB->dwX, dwYB = pB->dwY;
+	BYTE byStateA = pA->byCharState, byStateB = pB->byCharState;
+	WORD wHPA = pA->wHP, wHPB = pB->wHP;
+	DWORD dwTimeBack = g_dwTime;
+
+	pA->byCharState = CHARSTATE_MOVE;
+	pB->byCharState = CHARSTATE_MOVE;
+	if (pA->wHP == 0) pA->wHP = 10;
+	if (pB->wHP == 0) pB->wHP = 10;
+	QuestMovePC(pB, (int)pA->dwMapID, (int)pA->dwX + 40, (int)pA->dwY);			/* B は同じマップの遠く */
+	DWORD dwMap = pA->dwMapID, dwX = pA->dwX, dwY = pA->dwY;
+
+	int nSubBase = g_aSubaGameInfo.GetSize();								/* このテストで足したサブゲーム情報は nSubBase 以降（終わりに外す） */
+
+	/* 1. 台詞の番号の読み方・設定の既定と範囲の丸め。台でない NPC（番号なし・存在しない番号・種別違い・中身なし・@p・依頼の見えるNPC）は台として扱わない */
+	{
+		printf("maze speech no %d %d %d %d %d %d %d %d\n", MazeSpeechNo("@k0"), MazeSpeechNo("@k12"), MazeSpeechNo("@k"), MazeSpeechNo("@k3,-4,5,-2"),
+			MazeSpeechNo("@kx"), MazeSpeechNo("@k100001"), MazeSpeechNo("@p3"), MazeSpeechNo("@k-1"));
+		SUBGAME_MAZETABLEINFO Info;
+		MazeTableInfoDefault(&Info);
+		printf("maze info default %d,%d seat1=%d,%d seat2=%d,%d parts=%d,%d,%d cpu=%d grp=%d name=[%s] cpuname=[%s]\n", Info.chDx, Info.chDy, Info.chSdx, Info.chSdy,
+			Info.chSdx2, Info.chSdy2, Info.wFloorA, Info.wFloorB, Info.wGap, Info.byCpuLevel, Info.wCpuGrpID, Info.szName, Info.szCpuName);
+		Info.chDx = 100; Info.chDy = -100; Info.chSdx = 61; Info.chSdy = -61; Info.chSdx2 = 60; Info.chSdy2 = -60; Info.byCpuLevel = 9;
+		memset(Info.szName, 'x', sizeof(Info.szName));
+		memset(Info.szCpuName, 'y', sizeof(Info.szCpuName));
+		MazeTableInfoFix(&Info);
+		printf("maze info clamp %d,%d seat1=%d,%d seat2=%d,%d cpu=%d nameEnd=%d cpunameEnd=%d\n", Info.chDx, Info.chDy, Info.chSdx, Info.chSdy, Info.chSdx2, Info.chSdy2,
+			Info.byCpuLevel, Info.szName[sizeof(Info.szName) - 1] == '\0', Info.szCpuName[sizeof(Info.szCpuName) - 1] == '\0');
+		int nOK = MazeInfoDefault();
+		/* 種別違い（爆弾ゲーム）・中身なし（迷路対戦の台なのに pInfo が無い） */
+		PSUBGAMEINFO pBomb = new SUBGAMEINFO;
+		ZeroMemory(pBomb, sizeof(SUBGAMEINFO));
+		pBomb->byType = SUBGAMEID_BOMB;
+		pBomb->pInfo = new BYTE[sizeof(SUBGAME_BOMBINFO)];
+		ZeroMemory(pBomb->pInfo, sizeof(SUBGAME_BOMBINFO));
+		g_aSubaGameInfo.Add(pBomb);
+		int nBomb = g_aSubaGameInfo.GetSize() - 1;
+		PSUBGAMEINFO pEmpty = new SUBGAMEINFO;
+		ZeroMemory(pEmpty, sizeof(SUBGAMEINFO));
+		pEmpty->byType = SUBGAMEID_MAZETABLE;
+		g_aSubaGameInfo.Add(pEmpty);
+		int nEmpty = g_aSubaGameInfo.GetSize() - 1;
+		char szTmp[32];
+		MazeNpcOpen(pA, nOK);
+		NearNpcOpen(pA, "@k");
+		NearNpcOpen(pA, "@k3,-4,5,-2");								/* 旧書式は台ではない */
+		sprintf(szTmp, "@k%d", g_aSubaGameInfo.GetSize() + 50);
+		NearNpcOpen(pA, szTmp);											/* 存在しない番号 */
+		MazeNpcOpen(pA, nBomb);
+		MazeNpcOpen(pA, nEmpty);
+		NearNpcOpen(pA, "@p");
+		NearNpcOpen(pA, "@q");
+		PCHARINFO pQuest = s_aNearNpc.back();
+		pQuest->byNpcType = NPCTYPE_QUESTNPC;
+		MazeNpcOpen(pA, nOK);
+		PCHARINFO pQuestK = s_aNearNpc.back();
+		pQuestK->byNpcType = NPCTYPE_QUESTNPC;							/* 依頼の見えるNPCは番号が正しくても台ではない */
+		const int nNpc = 9;
+		printf("maze isTable ok=%d none=%d old=%d missing=%d bomb=%d empty=%d puzzle=%d questnpc-q=%d questnpc-k=%d\n",
+			MazeIsTableNpc(s_aNearNpc[s_aNearNpc.size() - nNpc]), MazeIsTableNpc(s_aNearNpc[s_aNearNpc.size() - nNpc + 1]),
+			MazeIsTableNpc(s_aNearNpc[s_aNearNpc.size() - nNpc + 2]), MazeIsTableNpc(s_aNearNpc[s_aNearNpc.size() - nNpc + 3]),
+			MazeIsTableNpc(s_aNearNpc[s_aNearNpc.size() - nNpc + 4]), MazeIsTableNpc(s_aNearNpc[s_aNearNpc.size() - nNpc + 5]),
+			MazeIsTableNpc(s_aNearNpc[s_aNearNpc.size() - nNpc + 6]), MazeIsTableNpc(pQuest), MazeIsTableNpc(pQuestK));
+		/* 台でない NPC に話しかけて座る場所に立っても座れない（落ちない） */
+		PCHARINFO pNot = s_aNearNpc[s_aNearNpc.size() - nNpc + 3];
+		PuzzlePlace(pA, pNot, pNot->dwX, pNot->dwY + 1);
+		PuzzleKeyS(pA, pNot);
+		printf("maze notTable talk seated=%d seats=%d\n", MazeIsSeated(pA), MazeSeatCount());
+		pQuest->byNpcType = NPCTYPE_NOMOVE;
+		pQuestK->byNpcType = NPCTYPE_NOMOVE;
+		for (int i = 0; i < nNpc; i ++) {
+			PCHARINFO pNpc = s_aNearNpc[s_aNearNpc.size() - 1 - i];
+			delete [] pNpc->pszNpcSpeech;
+			pNpc->pszNpcSpeech = new char[1];
+			pNpc->pszNpcSpeech[0] = '\0';
+		}
+		/* 数を戻す（種別違い・中身なしの 2 件は、この後の番号を数えやすくするため外す） */
+		g_aSubaGameInfo.RemoveAt(nEmpty);
+		g_aSubaGameInfo.RemoveAt(nBomb);
+		delete pEmpty;
+		delete [] pBomb->pInfo;
+		delete pBomb;
+	}
+
+	/* 台（既定：盤の左上 -5,-9・座る場所は台NPCの 1 つ下）。A のマスに置く */
+	QuestMovePC(pA, (int)dwMap, (int)dwX, (int)dwY);
+	{
+		SUBGAME_MAZETABLEINFO Info;
+		MazeTableInfoDefault(&Info);
+		Info.wFloorA = 5; Info.wFloorB = 6; Info.wGap = 7;				/* 見た目のパーツID（床A=5・床B=6・隙間=7）つきの台 */
+		MazeNpcOpen(pA, MazeInfoAdd(Info));
+	}
+	PCHARINFO pNpc = s_aNearNpc.back();
+	DWORD dwNpc = pNpc->dwTblID;
+	MockTrace(1);
+	g_dwTime = (s_dwFakeNow = max(s_dwFakeNow, g_dwTime) + 1000);
+
+	/* 2. 座る場所以外（台NPCのマス・横の隣・2 つ下）では座れない。座る場所では向きを問わず座れる */
+	{
+		int anCell[3][2] = { {0, 0}, {1, 1}, {0, 2} };
+		int nSeated = 0;
+		for (int i = 0; i < 3; i ++) {
+			PuzzlePlace(pA, pNpc, (DWORD)((int)dwX + anCell[i][0]), (DWORD)((int)dwY + anCell[i][1]));
+			PuzzleKeyS(pA, pNpc);
+			nSeated += MazeIsSeated(pA);
+		}
+		printf("maze other cells seated=%d state=%d\n", nSeated, MazeCount(nConnA));
+	}
+
+	/* 3. 座る：盤全体 FULL が届く（本人=SEAT ビット・待機でない・A がプレイヤー 0・相手は不在・盤の左上は台から決まる） */
+	pA->byDirection = 3;
+	MazeTalk(pA, pNpc);
+	{
+		CMDPARA_MAZESTATE St;
+		BOOL bOK = MazeLast(nConnA, dwNpc, &St);
+		printf("maze sit seated=%d seats=%d got=%d kind=%d seat=%d idle=%d c0=%d c1=%d\n", MazeIsSeated(pA), MazeSeatCount(), bOK,
+			bOK ? St.byKind : -1, bOK ? (St.byState & MAZESTATE_SEAT) != 0 : -1, bOK ? (St.byState & MAZESTATE_IDLE) != 0 : -1,
+			bOK ? St.dwChar[0] == pA->dwTblID : -1, bOK ? St.dwChar[1] == MAZE_NOCHAR : -1);
+		printf("maze sit board x=%d y=%d size=%d\n", bOK ? St.sBoardX == (short)(((int)dwX - 5) * 32) : -1,
+			bOK ? St.sBoardY == (short)(((int)dwY - 9) * 32) : -1, (int)sizeof(CMDPARA_MAZESTATE));
+		printf("maze sit %s\n", MazeBrief(nConnA, dwNpc).c_str());
+		printf("maze sit parts floor=%d,%d gap=%d\n", bOK ? St.wFloor[0] : -1, bOK ? St.wFloor[1] : -1, bOK ? St.wGap : -1);
+		printf("maze sit seats %d,%d %d,%d cpugrp=%d cpuname=[%s]\n", bOK ? St.sSeatX[0] - (int)dwX : -99, bOK ? St.sSeatY[0] - (int)dwY : -99,
+			bOK ? St.sSeatX[1] - (int)dwX : -99, bOK ? St.sSeatY[1] - (int)dwY : -99, bOK ? St.wCpuGrpID : -1, bOK ? St.szCpuName : "-");
+	}
+
+	/* 4. 使用中の台には座れない（B を座る場所へ呼ぶ）・座っている間は歩けない */
+	QuestMovePC(pB, (int)dwMap, (int)dwX, (int)dwY + 1);
+	PuzzleKeyS(pB, pNpc);
+	printf("maze busy seatedB=%d msg=%d\n", MazeIsSeated(pB), MockHasText(nConnB, CMD_SYSMSG, "この台は今、使われています"));
+	QuestMovePC(pB, (int)dwMap, (int)dwX + 40, (int)dwY);
+	{
+		CMDPARA_CHARPOS Pos;
+		ZeroMemory(&Pos, sizeof(Pos));
+		Pos.byCmd = CMD_CHARPOS;
+		Pos.dwTblID = pA->dwTblID;
+		Pos.dwMapID = pA->dwMapID;
+		Pos.byX = (BYTE)(pA->dwX + 1);
+		Pos.byY = (BYTE)pA->dwY;
+		Pos.byDirection = 3;
+		DWORD dwX0 = pA->dwX;
+		TestRecv(pA, &Pos, sizeof(Pos));
+		printf("maze nowalk moved=%d\n", pA->dwX != dwX0);
+	}
+
+	/* 5. 進む：上へ 1 マス。手番は自動で戻る（turn=0）。進めない向き（盤の外）は無視して状態を送り直す */
+	int n0 = MazeCount(nConnA);
+	MazeKeySend(pA, MAZEACT_MOVE, MAZE_UP);
+	printf("maze move up %s +%d\n", MazeBrief(nConnA, dwNpc).c_str(), MazeCount(nConnA) - n0);
+	n0 = MazeCount(nConnA);
+	MazeKeySend(pA, MAZEACT_MOVE, MAZE_RIGHT);
+	MazeKeySend(pA, MAZEACT_MOVE, MAZE_RIGHT);
+	MazeKeySend(pA, MAZEACT_MOVE, MAZE_RIGHT);
+	MazeKeySend(pA, MAZEACT_MOVE, MAZE_RIGHT);									/* 3 回目で右端 (6,5)、4 回目は盤の外 */
+	printf("maze move right %s +%d\n", MazeBrief(nConnA, dwNpc).c_str(), MazeCount(nConnA) - n0);
+	for (int i = 0; i < 3; i ++) MazeKeySend(pA, MAZEACT_MOVE, MAZE_LEFT);			/* 真ん中の列へ戻る (3,5) */
+	n0 = MazeCount(nConnA);
+	MazeKeySend(pA, MAZEACT_MOVE, 9);											/* 知らない向き */
+	MazeKeySend(pA, 77);														/* 知らない操作 */
+	printf("maze move invalid %s +%d\n", MazeBrief(nConnA, dwNpc).c_str(), MazeCount(nConnA) - n0);
+
+	/* 6. 壁を置く：残りが 1 枚減り、手番は戻る。置いた壁の向こうへは進めない */
+	n0 = MazeCount(nConnA);
+	MazeKeySend(pA, MAZEACT_WALL, 0, 3, 4, MAZE_H);								/* (3,5) の真上の境目（x=3〜4 列） */
+	{
+		CMDPARA_MAZESTATE St;
+		BOOL bOK = MazeLast(nConnA, dwNpc, &St);
+		printf("maze wall %s +%d wall0=%d,%d,%d\n", MazeBrief(nConnA, dwNpc).c_str(), MazeCount(nConnA) - n0,
+			bOK ? St.aWall[0].byX : -1, bOK ? St.aWall[0].byY : -1, bOK ? St.aWall[0].byOrient : -1);
+	}
+	n0 = MazeCount(nConnA);
+	MazeKeySend(pA, MAZEACT_MOVE, MAZE_UP);
+	printf("maze blocked %s +%d\n", MazeBrief(nConnA, dwNpc).c_str(), MazeCount(nConnA) - n0);
+
+	/* 7. 不正な壁（どれも無視して状態を送り直す。壁の数・残りは変わらない）：同じ向きで重なる／十字／盤の外／知らない向き */
+	{
+		int anWall[6][3] = { {2, 4, MAZE_H}, {4, 4, MAZE_H}, {3, 4, MAZE_V}, {6, 0, MAZE_H}, {0, 6, MAZE_V}, {1, 1, 2} };
+		const char *apName[6] = { "overlapL", "overlapR", "cross", "outX", "outY", "orient" };
+		for (int i = 0; i < 6; i ++) {
+			n0 = MazeCount(nConnA);
+			MazeKeySend(pA, MAZEACT_WALL, 0, (BYTE)anWall[i][0], (BYTE)anWall[i][1], (BYTE)anWall[i][2]);
+			printf("maze badwall %s %s +%d\n", apName[i], MazeBrief(nConnA, dwNpc).c_str(), MazeCount(nConnA) - n0);
+		}
+	}
+
+	/* 8. 勝つ：(3,5) から左へ 1・上へ 5 で最上段へ着く。勝ちを見せている間（WIN ビット）は操作を受けない */
+	MazeKeySend(pA, MAZEACT_MOVE, MAZE_LEFT);
+	for (int i = 0; i < 5; i ++) MazeKeySend(pA, MAZEACT_MOVE, MAZE_UP);
+	printf("maze win %s\n", MazeBrief(nConnA, dwNpc).c_str());
+	n0 = MazeCount(nConnA);
+	MazeKeySend(pA, MAZEACT_MOVE, MAZE_DOWN);
+	MazeKeySend(pA, MAZEACT_RESTART);
+	MazeKeySend(pA, MAZEACT_WALL, 0, 0, 3, MAZE_V);
+	printf("maze win locked %s +%d seated=%d\n", MazeBrief(nConnA, dwNpc).c_str(), MazeCount(nConnA) - n0, MazeIsSeated(pA));
+	/* 3 秒たつ前は戻らず、過ぎると座ったまま盤が初期状態に戻る（WIN ビットが消え、勝者は未決着）。S キーは要らない */
+	g_dwTime = (s_dwFakeNow += 2000);
+	MazeProc();
+	std::string strBefore = MazeBrief(nConnA, dwNpc);
+	g_dwTime = (s_dwFakeNow += 1100);
+	MazeProc();
+	printf("maze win reset early=[%s] later=[%s] seated=%d\n", strBefore.c_str(), MazeBrief(nConnA, dwNpc).c_str(), MazeIsSeated(pA));
+
+	/* 9. やり直し（途中で盤を初期状態へ）。戻した後も続けて指せる */
+	MazeKeySend(pA, MAZEACT_MOVE, MAZE_UP);
+	MazeKeySend(pA, MAZEACT_WALL, 0, 0, 3, MAZE_V);
+	MazeKeySend(pA, MAZEACT_RESTART);
+	printf("maze restart %s\n", MazeBrief(nConnA, dwNpc).c_str());
+	MazeKeySend(pA, MAZEACT_MOVE, MAZE_UP);
+	printf("maze after restart %s\n", MazeBrief(nConnA, dwNpc).c_str());
+
+	/* 9b. 自分のコマの行き場をなくす壁は置けない：左下の隅 (0,6) へ行って上に横壁 (0,5)・右に縦壁 (1,5) を置くと、
+	   (0,6)(1,6) の 2 マスに閉じ込められる（最後の 1 枚は経路が無くなるので無視され、状態が送り直される） */
+	MazeKeySend(pA, MAZEACT_RESTART);
+	for (int i = 0; i < 3; i ++) MazeKeySend(pA, MAZEACT_MOVE, MAZE_LEFT);
+	MazeKeySend(pA, MAZEACT_WALL, 0, 0, 5, MAZE_H);
+	n0 = MazeCount(nConnA);
+	MazeKeySend(pA, MAZEACT_WALL, 0, 1, 5, MAZE_V);
+	printf("maze nopath %s +%d\n", MazeBrief(nConnA, dwNpc).c_str(), MazeCount(nConnA) - n0);
+	MazeKeySend(pA, MAZEACT_RESTART);
+
+	/* 10. 座っていない人（B）の操作は無視（何も送られない・盤も変わらない） */
+	n0 = MazeCount(nConnB);
+	MazeKeySend(pB, MAZEACT_MOVE, MAZE_UP);
+	MazeKeySend(pB, MAZEACT_RESTART);
+	printf("maze otherkey packets=%d %s\n", MazeCount(nConnB) - n0, MazeBrief(nConnA, dwNpc).c_str());
+
+	/* 11. 席を立つ（ESC）→ 片付く（待機中の盤が本人に届く）。立った後の操作は無視 */
+	n0 = MazeCount(nConnA);
+	MazeKeySend(pA, MAZEACT_LEAVE);
+	printf("maze leave seated=%d seats=%d %s +%d\n", MazeIsSeated(pA), MazeSeatCount(), MazeBrief(nConnA, dwNpc).c_str(), MazeCount(nConnA) - n0);
+	n0 = MazeCount(nConnA);
+	MazeKeySend(pA, MAZEACT_MOVE, MAZE_UP);
+	printf("maze leave then key packets=%d\n", MazeCount(nConnA) - n0);
+
+	/* 12. 待機中の台は近くの人に初期配置の盤（IDLE ビット）を送る。送り始めは 17 マス（盤の中心から。盤の半分 5＋余白 9＋3）・消すのは 20 マスの外 */
+	{
+		int nB0 = MazeCount(nConnB);
+		QuestMovePC(pB, (int)dwMap, (int)dwX + 18, (int)dwY);
+		g_dwTime = (s_dwFakeNow += 300);
+		MazeProc();
+		int nFar = MazeCount(nConnB) - nB0;
+		QuestMovePC(pB, (int)dwMap, (int)dwX + 17, (int)dwY);
+		g_dwTime = (s_dwFakeNow += 300);
+		MazeProc();
+		printf("maze watch approach 18=%d 17=[%s] +%d idleTables=%d\n", nFar, MazeBrief(nConnB, dwNpc).c_str(), MazeCount(nConnB) - nB0 - nFar, MazeIdleCount());
+		/* 境目（18〜20）をうろうろしても送ったり消したりしない・21 マスで NONE */
+		nB0 = MazeCount(nConnB);
+		for (int i = 18; i <= 20; i ++) {
+			QuestMovePC(pB, (int)dwMap, (int)dwX + i, (int)dwY);
+			g_dwTime = (s_dwFakeNow += 300);
+			MazeProc();
+		}
+		printf("maze watch hysteresis packets=%d\n", MazeCount(nConnB) - nB0);
+		QuestMovePC(pB, (int)dwMap, (int)dwX + 21, (int)dwY);
+		g_dwTime = (s_dwFakeNow += 300);
+		MazeProc();
+		printf("maze watch leave %s +%d\n", MazeBrief(nConnB, dwNpc).c_str(), MazeCount(nConnB) - nB0);
+	}
+
+	/* 13. 観戦：B が近くにいる間に A が座ると、B に始まった盤（SEAT でない・A のキャラ）が届き、A の手が B にも届く */
+	QuestMovePC(pB, (int)dwMap, (int)dwX + 5, (int)dwY);
+	g_dwTime = (s_dwFakeNow += 300);
+	MazeProc();
+	MazeTalk(pA, pNpc);
+	{
+		CMDPARA_MAZESTATE St;
+		BOOL bOK = MazeLast(nConnB, dwNpc, &St);
+		printf("maze watch sit %s seat=%d idle=%d chA=%d\n", MazeBrief(nConnB, dwNpc).c_str(), bOK ? (St.byState & MAZESTATE_SEAT) != 0 : -1,
+			bOK ? (St.byState & MAZESTATE_IDLE) != 0 : -1, bOK ? St.dwChar[0] == pA->dwTblID : -1);
+	}
+	MazeKeySend(pA, MAZEACT_MOVE, MAZE_UP);
+	printf("maze watch move B=%s\n", MazeBrief(nConnB, dwNpc).c_str());
+	/* 観戦中の B の操作は受けない */
+	MazeKeySend(pB, MAZEACT_MOVE, MAZE_UP);
+	printf("maze watch Bkey A=%s\n", MazeBrief(nConnA, dwNpc).c_str());
+
+	/* 14. 座る場所から離れる（マップ移動など）と周期処理で片付く（A への NONE は無く待機の盤）。B は待機の盤を受ける */
+	QuestMovePC(pA, (int)dwMap, (int)dwX + 8, (int)dwY);
+	g_dwTime = (s_dwFakeNow += 300);
+	MazeProc();
+	printf("maze away seated=%d seats=%d B=%s\n", MazeIsSeated(pA), MazeSeatCount(), MazeBrief(nConnB, dwNpc).c_str());
+
+	/* 15. 倒れたら片付く */
+	QuestMovePC(pA, (int)dwMap, (int)dwX, (int)dwY + 1);
+	MazeTalk(pA, pNpc);
+	int nSeatedBeforeDead = MazeIsSeated(pA);
+	pA->byCharState = CHARSTATE_DEAD;
+	g_dwTime = (s_dwFakeNow += 300);
+	MazeProc();
+	printf("maze dead before=%d after=%d\n", nSeatedBeforeDead, MazeIsSeated(pA));
+	pA->byCharState = CHARSTATE_MOVE;
+
+	/* 16. 切断（OnLeave）で片付く。本人には何も送らない。見ている B には待機の盤が届く */
+	QuestMovePC(pA, (int)dwMap, (int)dwX, (int)dwY + 1);
+	MazeTalk(pA, pNpc);
+	{
+		int nSeatedBefore = MazeIsSeated(pA);
+		int nA1 = MazeCount(nConnA), nB1 = MazeCount(nConnB);
+		MazeOnLeave(pA);
+		printf("maze logout before=%d after=%d seats=%d A+%d B+%d B=%s\n", nSeatedBefore, MazeIsSeated(pA), MazeSeatCount(),
+			MazeCount(nConnA) - nA1, MazeCount(nConnB) - nB1, MazeBrief(nConnB, dwNpc).c_str());
+	}
+
+	/* 17. 落ち物パズルの席に座っている人は迷路に座れない（ふたつの席に同時に座らない） */
+	{
+		QuestMovePC(pA, (int)dwMap, (int)dwX, (int)dwY);
+		NearNpcOpen(pA, "@p");
+		PCHARINFO pPuz = s_aNearNpc.back();
+		QuestMovePC(pA, (int)dwMap, (int)dwX, (int)dwY + 1);
+		PuzzleKeyS(pA, pPuz);
+		int nPuz = PuzzleIsSeated(pA);
+		PuzzleKeyS(pA, pNpc);
+		printf("maze exclusive puzzle=%d maze=%d\n", nPuz, MazeIsSeated(pA));
+		PuzzleOnLeave(pA);
+	}
+
+	/* 18. 2 人対戦（席 2 は座る場所2。既定は台NPCの (0,-10)）。A が席 2・B が席 1 に座る */
+	{
+		QuestMovePC(pA, (int)dwMap, (int)dwX + 3, (int)dwY);
+		MazeNpcOpen(pA, MazeInfoDefault());
+		PCHARINFO pV = s_aNearNpc.back();
+		DWORD dwV = pV->dwTblID;
+		std::string strWinB = std::string(pB->szName) + "の勝ち！", strWinA = std::string(pA->szName) + "の勝ち！";
+		int n0, nBefore, nBeforeB;
+		g_dwTime = (s_dwFakeNow += 1000);
+		MazeProc();
+
+		/* 18a. 席 2 だけ座るとひとり練習（プレイヤー 1。相手＝プレイヤー 0 の手番は飛ばす） */
+		MazeSitSeat(pA, pV, 1);
+		printf("maze vs solo2 seated=%d seats=%d %s | %s\n", MazeIsSeated(pA), MazeSeatCount(), MazeBrief(nConnA, dwV).c_str(), MazeVsBrief(nConnA, dwV, pA, pB).c_str());
+		MazeKeySend(pA, MAZEACT_MOVE, MAZE_DOWN);
+		printf("maze vs solo2 move %s\n", MazeBrief(nConnA, dwV).c_str());
+		MazeKeySend(pA, MAZEACT_MOVE, MAZE_UP);
+		MazeKeySend(pA, MAZEACT_MOVE, MAZE_UP);										/* 上は盤の外 */
+		printf("maze vs solo2 up %s\n", MazeBrief(nConnA, dwV).c_str());
+		/* 席 2 が使用中なら別の人は席 2 に座れない */
+		nBefore = MockCmdCount(nConnB, CMD_SYSMSG);
+		MazeSitSeat(pB, pV, 1);
+		printf("maze vs busy2 seatedB=%d msg=%d\n", MazeIsSeated(pB), MockCmdCount(nConnB, CMD_SYSMSG) - nBefore);
+
+		/* 18b. 席 1 へ座ろうとすると乱入を聞かれる。「いいえ」なら座らない（A はそのまま） */
+		MazeSitSeat(pB, pV, 0, FALSE);
+		printf("maze vs no seatedB=%d seats=%d %s\n", MazeIsSeated(pB), MazeSeatCount(), MazeBrief(nConnA, dwV).c_str());
+		PuzzleAnswerSend(pB, pV, TRUE);												/* 問いが無い答えは何も起きない */
+		printf("maze vs stray answer seatedB=%d\n", MazeIsSeated(pB));
+		/* はい → 乱入して対戦（盤は初期化・カウントダウン中・先手はプレイヤー 0） */
+		MazeSitSeat(pB, pV, 0, TRUE);
+		printf("maze vs start seatedB=%d seats=%d A: %s | %s\n", MazeIsSeated(pB), MazeSeatCount(), MazeBrief(nConnA, dwV).c_str(), MazeVsBrief(nConnA, dwV, pA, pB).c_str());
+		printf("maze vs start B: %s | %s\n", MazeBrief(nConnB, dwV).c_str(), MazeVsBrief(nConnB, dwV, pA, pB).c_str());
+		printf("maze vs start msg A=%d B=%d\n", MockHasText(nConnA, CMD_SYSMSG, "対戦開始"), MockHasText(nConnB, CMD_SYSMSG, "対戦開始"));
+
+		/* 18c. カウントダウン中（3・2・1）は操作できない。1 秒ごとに残りを知らせ、3 秒で開始 */
+		MazeKeySend(pB, MAZEACT_MOVE, MAZE_UP);
+		printf("maze vs count locked %s\n", MazeBrief(nConnB, dwV).c_str());
+		MazeAdvance(1000);
+		printf("maze vs count2 %s\n", MazeVsBrief(nConnB, dwV, pA, pB).c_str());
+		MazeAdvance(1000);
+		printf("maze vs count1 %s\n", MazeVsBrief(nConnB, dwV, pA, pB).c_str());
+		MazeAdvance(1000);
+		printf("maze vs go %s | %s\n", MazeBrief(nConnA, dwV).c_str(), MazeVsBrief(nConnA, dwV, pA, pB).c_str());
+
+		/* 18d. 手番はプレイヤー 0（B）から。手番でない人の入力は無視。1 手ごとに交代 */
+		n0 = MazeCount(nConnA);
+		MazeKeySend(pA, MAZEACT_MOVE, MAZE_DOWN);
+		printf("maze vs notturn A %s +%d\n", MazeBrief(nConnA, dwV).c_str(), MazeCount(nConnA) - n0);
+		MazeKeySend(pB, MAZEACT_MOVE, MAZE_UP);
+		printf("maze vs B up A: %s | %s\n", MazeBrief(nConnA, dwV).c_str(), MazeVsBrief(nConnA, dwV, pA, pB).c_str());
+		MazeKeySend(pB, MAZEACT_MOVE, MAZE_UP);
+		printf("maze vs notturn B %s\n", MazeBrief(nConnB, dwV).c_str());
+		MazeKeySend(pA, MAZEACT_WALL, 0, 3, 4, MAZE_H);
+		printf("maze vs A wall %s\n", MazeBrief(nConnA, dwV).c_str());
+		MazeKeySend(pB, MAZEACT_RESTART);
+		printf("maze vs restart ignored %s\n", MazeBrief(nConnB, dwV).c_str());
+
+		/* 18e. 残り秒は 1 秒ごとに知らせる。時間切れで手番を飛ばし（連続回数が増える）、指すと回数は 0 に戻る */
+		MazeAdvance(1000);
+		printf("maze vs left %s\n", MazeVsBrief(nConnA, dwV, pA, pB).c_str());
+		MazeAdvance(28000);
+		printf("maze vs left1 %s\n", MazeVsBrief(nConnA, dwV, pA, pB).c_str());
+		MazeAdvance(1000);
+		printf("maze vs timeout1 %s | %s msg=%d\n", MazeBrief(nConnA, dwV).c_str(), MazeVsBrief(nConnA, dwV, pA, pB).c_str(), MockHasText(nConnB, CMD_SYSMSG, "時間切れです"));
+		MazeAdvance(MAZE_TURN_MS);
+		printf("maze vs timeout2 %s\n", MazeVsBrief(nConnA, dwV, pA, pB).c_str());		/* B も A も 1 回ずつ */
+		MazeKeySend(pB, MAZEACT_MOVE, MAZE_LEFT);
+		MazeKeySend(pA, MAZEACT_MOVE, MAZE_DOWN);
+		printf("maze vs timeouts reset %s\n", MazeVsBrief(nConnA, dwV, pA, pB).c_str());
+
+		/* 18f. 連続 3 回の時間切れは不戦敗：A が指したあと、A の手番を 3 回放置する → B の勝ち */
+		MazeKeySend(pB, MAZEACT_MOVE, MAZE_LEFT);
+		MazeAdvance(MAZE_TURN_MS);												/* A 1 回目 → B の手番 */
+		MazeKeySend(pB, MAZEACT_MOVE, MAZE_RIGHT);
+		MazeAdvance(MAZE_TURN_MS);												/* A 2 回目 */
+		MazeKeySend(pB, MAZEACT_MOVE, MAZE_LEFT);
+		printf("maze vs before forfeit %s\n", MazeVsBrief(nConnA, dwV, pA, pB).c_str());
+		nBefore = MockCmdCount(nConnA, CMD_SYSMSG);
+		nBeforeB = MockCmdCount(nConnB, CMD_SYSMSG);
+		MazeAdvance(MAZE_TURN_MS);												/* A 3 回目 → 不戦敗 */
+		printf("maze vs forfeit %s | %s msgA=%d msgB=%d new A=%d B=%d\n", MazeBrief(nConnA, dwV).c_str(), MazeVsBrief(nConnA, dwV, pA, pB).c_str(),
+			MockHasText(nConnA, CMD_SYSMSG, strWinB.c_str()), MockHasText(nConnB, CMD_SYSMSG, strWinB.c_str()),
+			MockCmdCount(nConnA, CMD_SYSMSG) - nBefore, MockCmdCount(nConnB, CMD_SYSMSG) - nBeforeB);
+		n0 = MazeCount(nConnA);
+		MazeKeySend(pB, MAZEACT_MOVE, MAZE_UP);
+		printf("maze vs win locked +%d\n", MazeCount(nConnA) - n0);
+		/* 3 秒見せたあと自動で初期化して、先手を交代して（プレイヤー 1＝A から）カウントダウン → 続けて対戦 */
+		MazeAdvance(2000);
+		std::string strEarly = MazeBrief(nConnA, dwV);
+		MazeAdvance(1100);
+		printf("maze vs reset early=[%s] later=%s | %s\n", strEarly.c_str(), MazeBrief(nConnA, dwV).c_str(), MazeVsBrief(nConnA, dwV, pA, pB).c_str());
+		MazeAdvance(3000);
+		printf("maze vs second game %s\n", MazeVsBrief(nConnA, dwV, pA, pB).c_str());
+		MazeKeySend(pB, MAZEACT_MOVE, MAZE_LEFT);
+		printf("maze vs second B first ignored %s\n", MazeBrief(nConnB, dwV).c_str());
+
+		/* 18g. 勝敗：A は左へ 1・下へ、B は上へ。B が先に最上段へ着く → B の勝ち（両者へメッセージ）。次は先手が B に戻る */
+		MazeKeySend(pA, MAZEACT_MOVE, MAZE_LEFT);
+		for (int i = 0; i < 5; i ++) {
+			MazeKeySend(pB, MAZEACT_MOVE, MAZE_UP);
+			MazeKeySend(pA, MAZEACT_MOVE, MAZE_DOWN);
+		}
+		MazeKeySend(pB, MAZEACT_MOVE, MAZE_UP);
+		printf("maze vs win %s | %s msgA=%d msgB=%d\n", MazeBrief(nConnA, dwV).c_str(), MazeVsBrief(nConnA, dwV, pA, pB).c_str(),
+			MockHasText(nConnA, CMD_SYSMSG, strWinB.c_str()), MockHasText(nConnB, CMD_SYSMSG, strWinB.c_str()));
+		MazeAdvance(3100);
+		printf("maze vs third game %s | %s\n", MazeBrief(nConnA, dwV).c_str(), MazeVsBrief(nConnA, dwV, pA, pB).c_str());
+		MazeAdvance(3000);
+
+		/* 18h. 席を立つ（ESC）：残った B の勝ち（両者へメッセージ）で、B はそのままひとり練習（プレイヤー 0）に戻る */
+		nBefore = MockCmdCount(nConnA, CMD_SYSMSG);
+		MazeKeySend(pB, MAZEACT_MOVE, MAZE_UP);
+		MazeKeySend(pA, MAZEACT_LEAVE);
+		printf("maze vs esc seatedA=%d seatedB=%d seats=%d msgA=%d msgB=%d | %s | %s\n", MazeIsSeated(pA), MazeIsSeated(pB), MazeSeatCount(),
+			MockHasText(nConnA, CMD_SYSMSG, strWinB.c_str()), MockHasText(nConnB, CMD_SYSMSG, strWinB.c_str()),
+			MazeBrief(nConnB, dwV).c_str(), MazeVsBrief(nConnB, dwV, pA, pB).c_str());
+		MazeKeySend(pB, MAZEACT_MOVE, MAZE_UP);
+		printf("maze vs solo after %s\n", MazeBrief(nConnB, dwV).c_str());
+
+		/* 18i. 切断：A が席 2 に乱入して対戦 → B が切断（MazeOnLeave）→ A の勝ちでひとり練習（プレイヤー 1）へ。A へは盤が届く */
+		MazeSitSeat(pA, pV, 1, TRUE);
+		MazeAdvance(3000);
+		nBefore = MockCmdCount(nConnA, CMD_SYSMSG);
+		MazeOnLeave(pB);
+		printf("maze vs logout seatedA=%d seatedB=%d msgA=%d | %s | %s\n", MazeIsSeated(pA), MazeIsSeated(pB), MockHasText(nConnA, CMD_SYSMSG, strWinA.c_str()),
+			MazeBrief(nConnA, dwV).c_str(), MazeVsBrief(nConnA, dwV, pA, pB).c_str());
+
+		/* 18j. マップ移動（座る場所から離れる）：B が席 1 に乱入 → カウントダウン中に A が離れる → B の勝ちでひとり練習 */
+		MazeSitSeat(pB, pV, 0, TRUE);
+		printf("maze vs again %s\n", MazeVsBrief(nConnB, dwV, pA, pB).c_str());
+		QuestMovePC(pA, (int)dwMap, (int)dwX + 40, (int)dwY);
+		MazeAdvance(300);
+		printf("maze vs away seatedA=%d seatedB=%d | %s\n", MazeIsSeated(pA), MazeIsSeated(pB), MazeVsBrief(nConnB, dwV, pA, pB).c_str());
+
+		/* 18k. 倒れた：A が席 2 に乱入 → 開始後に B が倒れる → A の勝ちでひとり練習（プレイヤー 1） */
+		MazeSitSeat(pA, pV, 1, TRUE);
+		MazeAdvance(3000);
+		pB->byCharState = CHARSTATE_DEAD;
+		MazeAdvance(300);
+		printf("maze vs dead seatedA=%d seatedB=%d | %s\n", MazeIsSeated(pA), MazeIsSeated(pB), MazeVsBrief(nConnA, dwV, pA, pB).c_str());
+		pB->byCharState = CHARSTATE_MOVE;
+
+		/* 18l. 乱入の問いは 30 秒で無効（答えても座らない）。座っている人が席を立てば台は空になる */
+		MazeSitSeat(pB, pV, 0, FALSE);												/* 問いを出して「いいえ」（座らない） */
+		PuzzlePlace(pB, pV, (DWORD)((int)pV->dwX), (DWORD)((int)pV->dwY + 1));
+		PuzzleKeyS(pB, pV);															/* もう一度問いを出す */
+		MazeAdvance(31000);
+		PuzzleAnswerSend(pB, pV, TRUE);
+		printf("maze vs ask expired seatedB=%d seats=%d\n", MazeIsSeated(pB), MazeSeatCount());
+		MazeKeySend(pA, MAZEACT_LEAVE);
+		printf("maze vs emptied seats=%d\n", MazeSeatCount());
+
+		/* 18m. 落ち物パズルの席に座っている人は迷路の席 2 にも座れない */
+		{
+			QuestMovePC(pA, (int)dwMap, (int)dwX, (int)dwY);
+			NearNpcOpen(pA, "@p");
+			PCHARINFO pPuz = s_aNearNpc.back();
+			QuestMovePC(pA, (int)dwMap, (int)dwX, (int)dwY + 1);
+			PuzzleKeyS(pA, pPuz);
+			int nPuz = PuzzleIsSeated(pA);
+			MazeSitSeat(pA, pV, 1);
+			printf("maze vs exclusive puzzle=%d maze=%d\n", nPuz, MazeIsSeated(pA));
+			PuzzleOnLeave(pA);
+		}
+		MazeOnLeave(pA);
+		MazeOnLeave(pB);
+	}
+
+	/* 19. CPU対戦（サブゲーム情報のCPU強さ 1=よわい・CPUのキャラ画像 321・名前「ロボ」）。席 1 に A が座る＝CPUは席 2 */
+	{
+		int nBefore, nBeforeB;
+		std::string strWinA = std::string(pA->szName) + "の勝ち！";
+		QuestMovePC(pA, (int)dwMap, (int)dwX + 6, (int)dwY);
+		{
+			SUBGAME_MAZETABLEINFO Info;
+			MazeTableInfoDefault(&Info);
+			Info.byCpuLevel = 1;
+			Info.wCpuGrpID = 321;
+			strcpy(Info.szCpuName, "ロボ");
+			MazeNpcOpen(pA, MazeInfoAdd(Info));
+		}
+		PCHARINFO pC = s_aNearNpc.back();
+		DWORD dwC = pC->dwTblID;
+		g_dwTime = (s_dwFakeNow += 1000);
+		MazeProc();
+
+		/* 19a. CPU強さ 0 の台は聞かない（従来のひとり練習） */
+		QuestMovePC(pA, (int)dwMap, (int)dwX + 9, (int)dwY);
+		MazeNpcOpen(pA, MazeInfoDefault());
+		PCHARINFO pP = s_aNearNpc.back();
+		MazeSitAsk(pA, pP, 0, TRUE, "plain");
+		printf("maze cpu plain seated=%d %s\n", MazeIsSeated(pA), MazeCpuBrief(nConnA, pP->dwTblID).c_str());
+		MazeKeySend(pA, MAZEACT_LEAVE);
+
+		/* 19b. CPU のある台：座ると聞かれる。「いいえ」はひとり練習 */
+		MazeSitAsk(pA, pC, 0, FALSE, "no");
+		printf("maze cpu no seated=%d %s\n", MazeIsSeated(pA), MazeCpuBrief(nConnA, dwC).c_str());
+		MazeKeySend(pA, MAZEACT_MOVE, MAZE_UP);
+		printf("maze cpu practice move %s\n", MazeBrief(nConnA, dwC).c_str());
+		MazeKeySend(pA, MAZEACT_LEAVE);
+		printf("maze cpu left seats=%d %s\n", MazeSeatCount(), MazeCpuBrief(nConnA, dwC).c_str());
+
+		/* 19c. 「はい」：CPU対戦（席 2 はCPU・名前なし・カウントダウン中は操作できない） */
+		nBefore = MockCmdCount(nConnA, CMD_SYSMSG);
+		MazeSitAsk(pA, pC, 0, TRUE, "yes");
+		printf("maze cpu start seated=%d seats=%d msg=%d %s\n", MazeIsSeated(pA), MazeSeatCount(), MockCmdCount(nConnA, CMD_SYSMSG) - nBefore,
+			MazeCpuBrief(nConnA, dwC).c_str());
+		MazeKeySend(pA, MAZEACT_MOVE, MAZE_UP);
+		printf("maze cpu count locked %s\n", MazeCpuBrief(nConnA, dwC).c_str());
+		MazeAdvance(3000);
+		printf("maze cpu go %s\n", MazeCpuBrief(nConnA, dwC).c_str());
+		{
+			CMDPARA_MAZESTATE St;
+			BOOL bOK = MazeLast(nConnA, dwC, &St);
+			printf("maze cpu look grp=%d name=[%s]\n", bOK ? St.wCpuGrpID : -1, bOK ? St.szCpuName : "-");
+		}
+
+		/* 19d. 人の手のあと、CPU は 1.0〜2.0 秒考えてから自分で指す（CPU の手番は残り秒なし） */
+		MazeKeySend(pA, MAZEACT_MOVE, MAZE_UP);
+		printf("maze cpu after A %s\n", MazeCpuBrief(nConnA, dwC).c_str());
+		MazeAdvance(500);
+		MazeAdvance(400);
+		printf("maze cpu thinking %s\n", MazeCpuBrief(nConnA, dwC).c_str());
+		MazeKeySend(pA, MAZEACT_MOVE, MAZE_UP);
+		printf("maze cpu not my turn %s\n", MazeCpuBrief(nConnA, dwC).c_str());
+		MazeAdvance(1700);
+		printf("maze cpu moved %s\n", MazeCpuBrief(nConnA, dwC).c_str());
+
+		/* 19e. 人が勝つ（ゴールの 1 手前に置いて進む）。「○○の勝ち！」・3 秒見せて次の対戦（先手はCPU） */
+		{
+			MazeGame *pG = MazeGetGame(pA);
+			if (pG) {
+				pG->nPosX[0] = 3; pG->nPosY[0] = 1; pG->nPosX[1] = 0; pG->nPosY[1] = 3; pG->byTurn = 0;
+			}
+			nBefore = MockCmdCount(nConnA, CMD_SYSMSG);
+			MazeKeySend(pA, MAZEACT_MOVE, MAZE_UP);
+			printf("maze cpu human win %s msg=%d cpuwin=%d\n", MazeCpuBrief(nConnA, dwC).c_str(), MockHasText(nConnA, CMD_SYSMSG, strWinA.c_str()),
+				MockHasText(nConnA, CMD_SYSMSG, "ロボの勝ち！"));
+			MazeAdvance(2900);
+			printf("maze cpu win shown %s\n", MazeCpuBrief(nConnA, dwC).c_str());
+			MazeAdvance(100);
+			printf("maze cpu next game %s\n", MazeCpuBrief(nConnA, dwC).c_str());
+			MazeAdvance(3000);
+			printf("maze cpu second game %s\n", MazeCpuBrief(nConnA, dwC).c_str());
+		}
+
+		/* 19f. 2 局目はCPUが先手：考えたあと指す。人が時間切れを 3 回続けると「CPUの勝ち！」（時間切れは人だけ） */
+		{
+			int nSteps = 0, nCpuMsg = 0;
+			for (int i = 0; i < 4; i ++) {
+				MazeAdvance(1000);
+			}
+			printf("maze cpu first move %s\n", MazeCpuBrief(nConnA, dwC).c_str());
+			for (int i = 0; i < 160 && !nCpuMsg; i ++) {
+				MazeAdvance(1000);
+				nSteps ++;
+				nCpuMsg = MockHasText(nConnA, CMD_SYSMSG, "ロボの勝ち！");
+			}
+			printf("maze cpu timeout loss steps=%d cpuwin=%d forfeit=%d %s\n", nSteps >= 90 && nSteps <= 100, nCpuMsg, MockHasText(nConnA, CMD_SYSMSG, "時間切れが続いた"),
+				MazeCpuBrief(nConnA, dwC).c_str());
+		}
+
+		/* 19g. 人が席を立つとCPU対戦は終わり、盤は初期化されて待機中に戻る */
+		MazeKeySend(pA, MAZEACT_LEAVE);
+		printf("maze cpu esc seated=%d seats=%d %s\n", MazeIsSeated(pA), MazeSeatCount(), MazeCpuBrief(nConnA, dwC).c_str());
+		MazeAdvance(3000);
+		printf("maze cpu esc after wait %s\n", MazeCpuBrief(nConnA, dwC).c_str());
+
+		/* 19h. 座る場所から離れた（マップ移動の代わり）・切断でも終わる */
+		MazeSitAsk(pA, pC, 0, TRUE, "yes2");
+		MazeAdvance(3000);
+		QuestMovePC(pA, (int)dwMap, (int)dwX + 60, (int)dwY);
+		MazeAdvance(300);
+		printf("maze cpu away seated=%d seats=%d %s\n", MazeIsSeated(pA), MazeSeatCount(), MazeCpuBrief(nConnA, dwC).c_str());
+		MazeSitAsk(pA, pC, 0, TRUE, "yes3");
+		MazeOnLeave(pA);
+		printf("maze cpu logout seated=%d seats=%d\n", MazeIsSeated(pA), MazeSeatCount());
+
+		/* 19i. CPU 対戦中にもう一方（CPU 側）の席へ座ろうとすると、座ろうとした B が聞かれる。「いいえ」なら座らない */
+		MazeSitAsk(pA, pC, 0, TRUE, "yes4");
+		MazeAdvance(3000);
+		nBeforeB = MockCmdCount(nConnB, CMD_SYSMSG);
+		MazeSitAsk(pB, pC, 1, FALSE, "swapno");
+		printf("maze cpu swap no seatedA=%d seatedB=%d askedA=%d %s\n", MazeIsSeated(pA), MazeIsSeated(pB), MockHasText(nConnA, CMD_TALKMSG, "CPUと対戦中です"),
+			MazeCpuBrief(nConnA, dwC).c_str());
+		MazeSitAsk(pB, pC, 1, TRUE, "swapyes");
+		printf("maze cpu swap yes seatedA=%d seatedB=%d seats=%d msgA=%d msgB=%d\n", MazeIsSeated(pA), MazeIsSeated(pB), MazeSeatCount(),
+			MockHasText(nConnA, CMD_SYSMSG, pB->szName), MockCmdCount(nConnB, CMD_SYSMSG) - nBeforeB);
+		printf("maze cpu swap A %s\n", MazeCpuBrief(nConnA, dwC).c_str());
+		printf("maze cpu swap B %s\n", MazeCpuBrief(nConnB, dwC).c_str());
+		MazeAdvance(3000);
+		MazeAdvance(5000);
+		printf("maze cpu human vs human idle %s\n", MazeCpuBrief(nConnA, dwC).c_str());	/* CPU は指さない */
+		/* B が席を立つと A はひとり練習へ（CPU には戻らない） */
+		MazeKeySend(pB, MAZEACT_LEAVE);
+		printf("maze cpu after swap B left seatedA=%d %s\n", MazeIsSeated(pA), MazeCpuBrief(nConnA, dwC).c_str());
+		MazeKeySend(pA, MAZEACT_LEAVE);
+
+		/* 19j. 問いは 30 秒で無効（答えても座らない） */
+		MazeSitAsk(pA, pC, 0, TRUE, "expire");
+		MazeKeySend(pA, MAZEACT_LEAVE);
+		PuzzlePlace(pA, pC, (DWORD)((int)pC->dwX), (DWORD)((int)pC->dwY + 1));
+		PuzzleKeyS(pA, pC);
+		MazeAdvance(31000);
+		PuzzleAnswerSend(pA, pC, TRUE);
+		printf("maze cpu ask expired seated=%d seats=%d\n", MazeIsSeated(pA), MazeSeatCount());
+		MazeOnLeave(pA);
+		MazeOnLeave(pB);
+	}
+
+	/* 20. データAPI（subGame の byType 7）：足す（detail 省略で既定値）・読む・変える・範囲外と種別違いの断り・保存と読み直し・消す */
+	{
+		int nAdd = g_aSubaGameInfo.GetSize();
+		std::string strAdd = FlagGroupApi("subGame", nAdd, "{\"byType\":7}");
+		const char *pszGet = SboWebDataGet("subGame", nAdd);
+		std::string strGet = pszGet ? pszGet : "";
+		PSUBGAME_MAZETABLEINFO pT = (g_aSubaGameInfo.GetSize() == nAdd + 1 && g_aSubaGameInfo[nAdd]->byType == SUBGAMEID_MAZETABLE) ?
+			(PSUBGAME_MAZETABLEINFO)g_aSubaGameInfo[nAdd]->pInfo : NULL;
+		printf("maze api add ok=%d size+1=%d defaults=%d,%d,%d,%d,%d,%d cpu=%d name=[%s]\n", (int)(strAdd.find("\"ok\":true") != std::string::npos), g_aSubaGameInfo.GetSize() == nAdd + 1,
+			pT ? pT->chDx : -99, pT ? pT->chDy : -99, pT ? pT->chSdx : -99, pT ? pT->chSdy : -99, pT ? pT->chSdx2 : -99, pT ? pT->chSdy2 : -99,
+			pT ? pT->byCpuLevel : -1, pT ? pT->szCpuName : "-");
+		printf("maze api get typeName=%d chDx=%d chSdy2=%d cpuName=%d\n", (int)(strGet.find("迷路対戦の台") != std::string::npos), (int)(strGet.find("\"chDx\":-5") != std::string::npos),
+			(int)(strGet.find("\"chSdy2\":-10") != std::string::npos), (int)(strGet.find("\"szCpuName\":\"CPU\"") != std::string::npos));
+		std::string strSet = FlagGroupApi("subGame", nAdd, "{\"detail\":{\"szName\":\"テスト台\",\"chDx\":-3,\"chSdx\":2,\"chSdy2\":-8,\"wFloorA\":11,\"wFloorB\":12,\"wGap\":13,\"byCpuLevel\":2,\"wCpuGrpID\":123,\"szCpuName\":\"ロボ\"}}");
+		printf("maze api set ok=%d chDx=%d chDy=%d seat1=%d,%d seat2=%d,%d parts=%d,%d,%d cpu=%d grp=%d cpuname=[%s] name=[%s]\n", (int)(strSet.find("\"ok\":true") != std::string::npos),
+			pT ? pT->chDx : -99, pT ? pT->chDy : -99, pT ? pT->chSdx : -99, pT ? pT->chSdy : -99, pT ? pT->chSdx2 : -99, pT ? pT->chSdy2 : -99,
+			pT ? pT->wFloorA : -1, pT ? pT->wFloorB : -1, pT ? pT->wGap : -1, pT ? pT->byCpuLevel : -1, pT ? pT->wCpuGrpID : -1, pT ? pT->szCpuName : "-", pT ? pT->szName : "-");
+		std::string strNg1 = FlagGroupApi("subGame", nAdd, "{\"detail\":{\"chDx\":100}}");
+		std::string strNg2 = FlagGroupApi("subGame", nAdd, "{\"detail\":{\"byCpuLevel\":4}}");
+		std::string strNg3 = FlagGroupApi("subGame", nAdd, "{\"detail\":{\"dwMapID\":1}}");
+		std::string strNg4 = FlagGroupApi("subGame", nAdd, "{\"byType\":5}");
+		printf("maze api reject dx100=%d cpu4=%d unknown=%d type5=%d kept=%d,%d\n", (int)(strNg1.find("\"ok\":true") == std::string::npos), (int)(strNg2.find("\"ok\":true") == std::string::npos),
+			(int)(strNg3.find("\"ok\":true") == std::string::npos), (int)(strNg4.find("\"ok\":true") == std::string::npos), pT ? pT->chDx : -99, pT ? pT->byCpuLevel : -1);
+		/* 保存の列 → 読み直しで戻る（読み込みは空の表に入れる作りなので、今の表を退避して空にしてから読む） */
+		{
+			std::vector<PSUBGAMEINFO> aOrig;
+			for (int i = 0; i < g_aSubaGameInfo.GetSize(); i ++) aOrig.push_back(g_aSubaGameInfo[i]);
+			SaveSubGameInfo();
+			g_aSubaGameInfo.RemoveAll();
+			LoadSubGameInfo();
+			PSUBGAMEINFO pLoad = ((int)aOrig.size() == g_aSubaGameInfo.GetSize()) ? g_aSubaGameInfo[nAdd] : NULL;
+			PSUBGAME_MAZETABLEINFO pL = (pLoad && pLoad->byType == SUBGAMEID_MAZETABLE) ? (PSUBGAME_MAZETABLEINFO)pLoad->pInfo : NULL;
+			printf("maze api reload count=%d same=%d dx=%d seat1=%d,%d seat2=%d,%d parts=%d,%d,%d cpu=%d grp=%d cpuname=[%s] name=[%s]\n", g_aSubaGameInfo.GetSize() == (int)aOrig.size(),
+				pL ? (int)(memcmp(pL, pT, sizeof(SUBGAME_MAZETABLEINFO)) == 0) : -1, pL ? pL->chDx : -99, pL ? pL->chSdx : -99, pL ? pL->chSdy : -99, pL ? pL->chSdx2 : -99,
+				pL ? pL->chSdy2 : -99, pL ? pL->wFloorA : -1, pL ? pL->wFloorB : -1, pL ? pL->wGap : -1, pL ? pL->byCpuLevel : -1, pL ? pL->wCpuGrpID : -1,
+				pL ? pL->szCpuName : "-", pL ? pL->szName : "-");
+			for (int i = 0; i < g_aSubaGameInfo.GetSize(); i ++) {
+				PSUBGAMEINFO pDel = g_aSubaGameInfo[i];
+				SAFE_DELETE_ARRAY(pDel->pInfo);
+				delete pDel;
+			}
+			g_aSubaGameInfo.RemoveAll();
+			for (size_t i = 0; i < aOrig.size(); i ++) g_aSubaGameInfo.Add(aOrig[i]);
+		}
+		/* 消す（byType 0）。設定は無くなり、その番号を指す台NPCは台でなくなる */
+		MazeNpcOpen(pA, nAdd);
+		PCHARINFO pGone = s_aNearNpc.back();
+		int nBeforeGone = MazeIsTableNpc(pGone);
+		std::string strDel = FlagGroupApi("subGame", nAdd, "{\"byType\":0}");
+		printf("maze api erase ok=%d type=%d info=%d table before=%d after=%d\n", (int)(strDel.find("\"ok\":true") != std::string::npos), g_aSubaGameInfo[nAdd]->byType,
+			g_aSubaGameInfo[nAdd]->pInfo != NULL, nBeforeGone, MazeIsTableNpc(pGone));
+		/* 種類 0 の枠は台にして使い回せる */
+		std::string strReuse = FlagGroupApi("subGame", nAdd, "{\"byType\":7,\"detail\":{\"byCpuLevel\":3}}");
+		printf("maze api reuse ok=%d size=%d type=%d table=%d\n", (int)(strReuse.find("\"ok\":true") != std::string::npos), g_aSubaGameInfo.GetSize() == nAdd + 1,
+			g_aSubaGameInfo[nAdd]->byType, MazeIsTableNpc(pGone));
+	}
+
+	/* 20. チケットの台（byTicketNum>0）：席のマスでコマンド→道具→チケットを使うと座る。Sキーは案内だけ。チケットは座る時（確認の「はい」の後）に取り上げる */
+	{
+		const WORD wTk = 1;
+		auto ClearTk = [&](PCHARINFO p) { for (int i = 0; i < MAX_MYITEM; i ++) if (p->waItem[i] == wTk) DelCharItem(p->dwTblID, (BYTE)i); };
+		auto GiveTk = [&](PCHARINFO p, int n) { for (int i = 0; i < n; i ++) AddCharItem(p->dwTblID, wTk); };
+		auto UseAt = [&](PCHARINFO p, PCHARINFO pT, int nSeat, int nDx) {			/* 席のマス（nDx ずらせる）に立って、チケットを使う */
+			int nSdx, nSdy;
+			MazeSeatOffset(pT, nSeat, &nSdx, &nSdy);
+			PuzzlePlace(p, pT, (DWORD)((int)pT->dwX + nSdx + nDx), (DWORD)((int)pT->dwY + nSdy));
+			PuzzleUseCoin(p, wTk);
+		};
+		ClearTk(pA); ClearTk(pB);
+		QuestMovePC(pA, (int)dwMap, (int)dwX + 18, (int)dwY);
+		SUBGAME_MAZETABLEINFO Info;
+		MazeTableInfoDefault(&Info);
+		Info.wTicketItemID = wTk; Info.byTicketNum = 2; Info.byCpuLevel = 1;
+		MazeNpcOpen(pA, MazeInfoAdd(Info));
+		PCHARINFO pT = s_aNearNpc.back();
+		DWORD dwT = pT->dwTblID;
+		int nConnAT = nConnA;
+		/* 20a. チケット無し：Sキーは案内だけ（座れない） */
+		int nMsg = MockCmdCount(nConnAT, CMD_SYSMSG);
+		MazeTalk(pA, pT);
+		printf("maze ticket none seated=%d guide=%d sysmsg+%d\n", MazeIsSeated(pA), MockHasText(nConnAT, CMD_SYSMSG, "チケットを使って始めます。コマンドの道具からチケットを使ってください。"),
+			MockCmdCount(nConnAT, CMD_SYSMSG) - nMsg);
+		/* 20b. 1 枚（2 枚必要）：席で使っても座れず、「チケットがありません。」・減らない */
+		GiveTk(pA, 1);
+		UseAt(pA, pT, 0, 0);
+		printf("maze ticket short seated=%d tk=%d msg=%d\n", MazeIsSeated(pA), PuzzleCoinCount(pA, wTk), MockHasText(nConnAT, CMD_SYSMSG, "チケットがありません。"));
+		/* 20c. 2 枚持ってSキー：座れず、減らず、案内だけ */
+		GiveTk(pA, 1);
+		nMsg = MockCmdCount(nConnAT, CMD_SYSMSG);
+		MazeTalk(pA, pT);
+		printf("maze ticket skey seated=%d tk=%d sysmsg+%d\n", MazeIsSeated(pA), PuzzleCoinCount(pA, wTk), MockCmdCount(nConnAT, CMD_SYSMSG) - nMsg);
+		/* 20d. 席以外（席の 1 つ隣）で使う：座れず、減らず、案内も出ない（効果なしの説明のまま） */
+		nMsg = MockCmdCount(nConnAT, CMD_SYSMSG);
+		UseAt(pA, pT, 0, 1);
+		printf("maze ticket elsewhere seated=%d tk=%d sysmsg+%d\n", MazeIsSeated(pA), PuzzleCoinCount(pA, wTk), MockCmdCount(nConnAT, CMD_SYSMSG) - nMsg);
+		/* 20e. 席で使う → CPU確認が出る。「いいえ」は座らず、減らない（チケットの台は、いいえでひとり練習にはならない） */
+		int nTalk = MockCmdCount(nConnAT, CMD_TALKMSG);
+		UseAt(pA, pT, 0, 0);
+		printf("maze ticket ask asked=%d cpu=%d seated=%d tk=%d\n", MockCmdCount(nConnAT, CMD_TALKMSG) > nTalk, MockHasText(nConnAT, CMD_TALKMSG, "CPUと対戦しますか"), MazeIsSeated(pA), PuzzleCoinCount(pA, wTk));
+		PuzzleAnswerSend(pA, pT, FALSE);
+		printf("maze ticket cpu no seated=%d tk=%d seats=%d\n", MazeIsSeated(pA), PuzzleCoinCount(pA, wTk), MazeSeatCount());
+		/* 20f. 確認が 30 秒を過ぎたら無効：座らず、減らない */
+		UseAt(pA, pT, 0, 0);
+		MazeAdvance(31000);
+		PuzzleAnswerSend(pA, pT, TRUE);
+		printf("maze ticket expire seated=%d tk=%d\n", MazeIsSeated(pA), PuzzleCoinCount(pA, wTk));
+		/* 20g. 席で使う → 「はい」で座る：2 枚取り上げ、持ち物を本人へ送り直し、CPU対戦が始まる */
+		int nItem0 = MockCmdCount(nConnAT, CMD_CHARITEM);
+		UseAt(pA, pT, 0, 0);
+		printf("maze ticket before-yes tk=%d\n", PuzzleCoinCount(pA, wTk));
+		PuzzleAnswerSend(pA, pT, TRUE);
+		printf("maze ticket yes seated=%d tk=%d used=%d charitem+%d %s\n", MazeIsSeated(pA), PuzzleCoinCount(pA, wTk), MockHasText(nConnAT, CMD_SYSMSG, "チケットを2枚使いました。"),
+			MockCmdCount(nConnAT, CMD_CHARITEM) - nItem0, MazeCpuBrief(nConnAT, dwT).c_str());
+		MazeKeySend(pA, MAZEACT_LEAVE);
+		ClearTk(pA);
+
+		/* 20h. 乱入：CPUなしの台。A がチケットで座ってひとり練習、B が席 2 でチケットを使うと乱入の確認。「いいえ」は座らず減らない、「はい」で対戦・2 枚減る */
+		QuestMovePC(pA, (int)dwMap, (int)dwX + 22, (int)dwY);
+		MazeTableInfoDefault(&Info);
+		Info.wTicketItemID = wTk; Info.byTicketNum = 2;
+		MazeNpcOpen(pA, MazeInfoAdd(Info));
+		PCHARINFO pT2 = s_aNearNpc.back();
+		GiveTk(pA, 2);
+		UseAt(pA, pT2, 0, 0);
+		printf("maze ticket solo seated=%d tk=%d\n", MazeIsSeated(pA), PuzzleCoinCount(pA, wTk));
+		GiveTk(pB, 2);
+		nTalk = MockCmdCount(nConnB, CMD_TALKMSG);
+		UseAt(pB, pT2, 1, 0);
+		printf("maze ticket join asked=%d join=%d seatedB=%d tkB=%d\n", MockCmdCount(nConnB, CMD_TALKMSG) > nTalk, MockHasText(nConnB, CMD_TALKMSG, "乱入"), MazeIsSeated(pB), PuzzleCoinCount(pB, wTk));
+		PuzzleAnswerSend(pB, pT2, FALSE);
+		printf("maze ticket join no seatedB=%d tkB=%d\n", MazeIsSeated(pB), PuzzleCoinCount(pB, wTk));
+		UseAt(pB, pT2, 1, 0);
+		PuzzleAnswerSend(pB, pT2, TRUE);
+		printf("maze ticket join yes seatedB=%d tkB=%d %s\n", MazeIsSeated(pB), PuzzleCoinCount(pB, wTk), MazeVsBrief(nConnA, pT2->dwTblID, pA, pB).c_str());
+		MazeKeySend(pB, MAZEACT_LEAVE);
+		MazeKeySend(pA, MAZEACT_LEAVE);
+		ClearTk(pA); ClearTk(pB);
+
+		/* 20i. データAPI：チケットの項目が読み書きでき、範囲外（100 枚）は断る */
+		{
+			int nApi = MazeInfoAdd(Info);
+			std::string strOK = FlagGroupApi("subGame", nApi, "{\"detail\":{\"wTicketItemID\":3,\"byTicketNum\":5}}");
+			PSUBGAME_MAZETABLEINFO pI = (PSUBGAME_MAZETABLEINFO)g_aSubaGameInfo[nApi]->pInfo;
+			printf("maze ticket api ok=%d item=%d num=%d\n", (int)(strOK.find("\"ok\":true") != std::string::npos), pI->wTicketItemID, pI->byTicketNum);
+			std::string strNG = FlagGroupApi("subGame", nApi, "{\"detail\":{\"byTicketNum\":100}}");
+			printf("maze ticket api over ok=%d num=%d\n", (int)(strNG.find("\"ok\":true") != std::string::npos), pI->byTicketNum);
+			SUBGAME_MAZETABLEINFO Fix = *pI;
+			Fix.byTicketNum = 200;
+			MazeTableInfoFix(&Fix);
+			printf("maze ticket fix num=%d\n", Fix.byTicketNum);
+		}
+	}
+
+	/* 片付け */
+	MockTrace(0);
+	MazeOnLeave(pA);
+	MazeOnLeave(pB);
+	PuzzleRetireNpcs();
+	for (size_t i = 0; i < s_aNearNpc.size(); i ++) {
+		if (MazeIsTableNpc(s_aNearNpc[i])) {
+			delete [] s_aNearNpc[i]->pszNpcSpeech;
+			s_aNearNpc[i]->pszNpcSpeech = new char[1];
+			s_aNearNpc[i]->pszNpcSpeech[0] = '\0';
+		}
+	}
+	NearNpcClose();
+	g_dwTime = (s_dwFakeNow += 300);
+	MazeProc();									/* 台 NPC が無くなった待機中の台を表から消す */
+	PuzzleProc();
+	while (g_aSubaGameInfo.GetSize() > nSubBase) {				/* このテストで足したサブゲーム情報を外す */
+		PSUBGAMEINFO pDel = g_aSubaGameInfo[g_aSubaGameInfo.GetSize() - 1];
+		g_aSubaGameInfo.RemoveAt(g_aSubaGameInfo.GetSize() - 1);
+		SAFE_DELETE_ARRAY(pDel->pInfo);
+		delete pDel;
+	}
+	QuestMovePC(pB, (int)dwMapB, (int)dwXB, (int)dwYB);
+	QuestMovePC(pA, (int)dwMapA, (int)dwXA, (int)dwYA);
+	pA->byCharState = byStateA; pA->wHP = wHPA;
+	pB->byCharState = byStateB; pB->wHP = wHPB;
+	g_dwTime = dwTimeBack;
+	printf("maze done seats=%d idleTables=%d\n", MazeSeatCount(), MazeIdleCount());
+}
 
 /* ------------------------------------------------------------------------- */
-/* AW. 土地取りすごろく（common/LandSugoroku.h のルールを、実サーバーの状態機械・通信で確かめる）	 */
+/* AW. SBOじゃん（台詞 "@j<サブゲーム番号>" の NPC。設定はサブゲーム情報。旧形式 "@j<コイン>,<枚数>,<強さ>" も読む。	 */
+/*     卓は 7×7 マス・席は 4 つ・段階 1 は人間 1 人＋CPU 3 人）						 */
+/*     サブゲーム情報（データAPIで足す・直す・不正は断る・止める・保存して読み直す）・チケットは確認で「はい」のあとに減る		 */
+/*     （いいえ・30 秒切れ・使用中・座る場所以外・足りない時は減らない）・旧形式の台詞・番号の情報が無い台は無料・		 */
+/*     座る場所（席ごとのマス）・座る場所以外と使用中は座れない・手牌が本人にだけ表で他席は裏・	 */
+/*     観戦者には全員分・CPU が自動で進む・人間が捨てる／ツモ／ロン／鳴き／見送り・時間切れ・流局・	 */
+/*     局が終わると席を立つ・席を立つ／離れる／マップ移動／切断で片付く・近づく／離れる・空卓の案内。	 */
+/*     盤面ロジック単体は janjan_test.cpp											 */
+/* ------------------------------------------------------------------------- */
+static void JanKeySend(PCHARINFO p, BYTE byAct, BYTE byParam = 0)
+{
+	CMDPARA_JANKEY Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_JANKEY;
+	Para.dwTblID = p->dwTblID;
+	Para.byAct = byAct;
+	Para.byParam = byParam;
+	TestRecv(p, &Para, sizeof(Para));
+}
+
+/* 覚えたパケットのうち CMD_JANSTATE を順番に取り出す */
+static void JanPackets(int nConn, std::vector<std::vector<BYTE> > &aOut)
+{
+	char *psz = MockCmdAll(nConn, CMD_JANSTATE);
+	size_t nLen = strlen(psz), nPos = 0;
+	aOut.clear();
+	while (nPos < nLen) {
+		size_t nEnd = nPos;
+		while (nEnd < nLen && psz[nEnd] != ',') nEnd ++;
+		std::vector<BYTE> a((nEnd - nPos) / 2, 0);
+		for (size_t i = 0; i < a.size(); i ++) {
+			unsigned int u = 0;
+			sscanf(psz + nPos + i * 2, "%2x", &u);
+			a[i] = (BYTE)u;
+		}
+		aOut.push_back(a);
+		nPos = nEnd + 1;
+	}
+	free(psz);
+}
+
+static int JanCount(int nConn)
+{
+	std::vector<std::vector<BYTE> > aP;
+	JanPackets(nConn, aP);
+	return (int)aP.size();
+}
+
+/* その人が最後に受けた、卓 dwNpc の CMD_JANSTATE（無ければ FALSE） */
+static BOOL JanLast(int nConn, DWORD dwNpc, CMDPARA_JANSTATE *pOut)
+{
+	std::vector<std::vector<BYTE> > aP;
+	JanPackets(nConn, aP);
+	for (int i = (int)aP.size() - 1; i >= 0; i --) {
+		if (aP[i].size() != sizeof(CMDPARA_JANSTATE)) continue;
+		memcpy(pOut, &aP[i][0], sizeof(*pOut));
+		if (pOut->dwNpc == dwNpc) return TRUE;
+	}
+	ZeroMemory(pOut, sizeof(*pOut));
+	return FALSE;
+}
+
+/* 席の手牌のうち、表（0xFF でない）の数・裏の数 */
+static void JanHandCount(const JANSEATWIRE &s, int *pnOpen, int *pnHidden)
+{
+	*pnOpen = *pnHidden = 0;
+	for (int i = 0; i < s.byHandNum; i ++) {
+		if (s.abyHand[i] == JAN_TILE_HIDDEN) (*pnHidden) ++; else (*pnOpen) ++;
+	}
+}
+
+/* 持っているコインを n 枚にする */
+static void JanSetCoins(PCHARINFO p, WORD wCoin, int n)
+{
+	for (int k = 0; k < MAX_MYITEM; k ++) {
+		for (int j = 0; j < MAX_MYITEM; j ++) if (p->waItem[j] == wCoin) { DelCharItem(p->dwTblID, (BYTE)j); break; }
+	}
+	for (int j = 0; j < n; j ++) AddCharItem(p->dwTblID, wCoin);
+}
+
+/* 時計を進めて卓を 1 回回す（JanProc は 1 回に 1 動作） */
+static void JanTick(int nMs)
+{
+	g_dwTime = (s_dwFakeNow += nMs);
+	JanProc();
+}
+
+/* 席 nSeat の座る場所のマスに立って S キーで話しかける（無料の台） */
+static void JanSitFree(PCHARINFO p, PCHARINFO pNpc, int nSeat)
+{
+	int nDx, nDy;
+	JanjanSeatOffset(nSeat, &nDx, &nDy);
+	PuzzlePlace(p, pNpc, (DWORD)((int)pNpc->dwX + nDx), (DWORD)((int)pNpc->dwY + nDy));
+	PuzzleKeyS(p, pNpc);
+}
+
+/* 席 nSeat の座る場所に立って、持ち物のチケットを使う（チケットの台。持っていなければ何もしない）。
+   確認（「始めますか？」）が出たら nAnswer で答える（1=はい・0=いいえ・-1=答えない）。出なければ答えは送らない */
+static void JanSitCoin(PCHARINFO p, PCHARINFO pNpc, int nSeat, WORD wCoin, int nAnswer = 1)
+{
+	int nDx, nDy;
+	JanjanSeatOffset(nSeat, &nDx, &nDy);
+	PuzzlePlace(p, pNpc, (DWORD)((int)pNpc->dwX + nDx), (DWORD)((int)pNpc->dwY + nDy));
+	int nConn = DgTestConn(p);
+	int nTalk0 = MockCmdCount(nConn, CMD_TALKMSG);
+	PuzzleUseCoin(p, wCoin);
+	if ((nAnswer >= 0) && (MockCmdCount(nConn, CMD_TALKMSG) > nTalk0)) {
+		PuzzleAnswerSend(p, pNpc, nAnswer ? TRUE : FALSE);
+	}
+}
+
+/* 確認（TALKMSG）が出た回数 */
+static int JanAskCount(PCHARINFO p)
+{
+	return MockCmdCount(DgTestConn(p), CMD_TALKMSG);
+}
+
+/* 手牌を決めた並びにする（昇順）。山の次に引く牌も決められる（nDraw<0 なら変えない） */
+static void JanRig(JanjanGame *g, const int *a0, const int *a1, const int *a2, const int *a3, int nDraw)
+{
+	const int *aSrc[4] = { a0, a1, a2, a3 };
+	for (int s = 0; s < 4; s ++) {
+		g->anHand[s] = 8;
+		for (int i = 0; i < 8; i ++) g->aHand[s][i] = aSrc[s][i];
+		std::sort(g->aHand[s], g->aHand[s] + 8);
+	}
+	if (nDraw >= 0) g->aPile[g->nPileTop] = nDraw;
+}
+
+/* 参加募集の待ち時間（サブゲーム情報の既定 60 秒）。この時間たつと開始する */
+#define JAN_TEST_WAIT_MS	(JANJAN_WAIT_DEFAULT * 1000)
+
+/* 座って（1 人で）募集の待ち時間まで進めて配牌させる（種を決める）。座れていれば配牌後のゲームを返す */
+static JanjanGame *JanDeal(PCHARINFO p, PCHARINFO pNpc, int nSeat)
+{
+	JanSitFree(p, pNpc, nSeat);
+	JanTick(JAN_TEST_WAIT_MS);
+	return JanGetGame(p);
+}
+
+static void TestJan(const std::vector<int> &aLogin)
+{
+	printf("== AW. SBO Janjan table ==\n");
+	if (aLogin.size() < 3) return;
+	s_pSpLogin = &aLogin;
+	PCHARINFO pA = g_aCharInfo[aLogin[0]], pB = g_aCharInfo[aLogin[1]], pC = g_aCharInfo[aLogin[2]];
+	PCHARINFO apP[3] = { pA, pB, pC };
+	int anConn[3] = { DgTestConn(pA), DgTestConn(pB), DgTestConn(pC) };
+	struct { DWORD dwMap, dwX, dwY; BYTE byState; WORD wHP; } aBack[3];
+	WORD wCoin = 1;
+	DWORD dwTimeBack = g_dwTime;
+	int i;
+	CMDPARA_JANSTATE st, stC;
+
+	for (i = 0; i < 3; i ++) {
+		aBack[i].dwMap = apP[i]->dwMapID; aBack[i].dwX = apP[i]->dwX; aBack[i].dwY = apP[i]->dwY;
+		aBack[i].byState = apP[i]->byCharState; aBack[i].wHP = apP[i]->wHP;
+		apP[i]->byCharState = CHARSTATE_MOVE;
+		if (apP[i]->wHP == 0) apP[i]->wHP = 10;
+		for (int j = 0; j < MAX_MYITEM; j ++) if (apP[i]->waItem[j] == wCoin) DelCharItem(apP[i]->dwTblID, (BYTE)j);
+	}
+	/* 3 人とも卓の中心（台NPCのマス）に集める。席のマス（中心から 4 マス）が地図の外に出ないように中心は (6,6) 以上にする */
+	DWORD dwCx = max(pA->dwX, (DWORD)6), dwCy = max(pA->dwY, (DWORD)6);
+	for (i = 0; i < 3; i ++) PuzzlePlace(apP[i], apP[0], dwCx, dwCy);
+	/* 台：サブゲーム情報（データAPIで足す。チケット＝アイテム 1 を 2 枚・CPU の強さ 2）の番号を台詞にする */
+	int nSubBase = g_aSubaGameInfo.GetSize();
+	{
+		std::string strRes = FlagGroupApi("subGame", nSubBase, "{\"byType\":8,\"detail\":{\"wTicketItemID\":1,\"byTicketNum\":2}}");
+		PSUBGAMEINFO pSub = (g_aSubaGameInfo.GetSize() == nSubBase + 1) ? g_aSubaGameInfo[nSubBase] : NULL;
+		PSUBGAME_JANJANINFO pJ = (pSub && pSub->byType == SUBGAMEID_JANJAN) ? (PSUBGAME_JANJANINFO)pSub->pInfo : NULL;
+		printf("jan subgame add ok=%d info=%d ticket=%d x%d cpu=%d\n", strRes.find("\"ok\":true") != std::string::npos, pJ != NULL, pJ ? pJ->wTicketItemID : -1, pJ ? pJ->byTicketNum : -1, pJ ? pJ->byCpuLevel : -1);
+	}
+	char szSpeech[16];
+	sprintf(szSpeech, "@j%d", nSubBase);
+	printf("jan speech no=%d old=%d none=%d\n", JanjanSpeechInfoNo(szSpeech) == nSubBase, JanjanSpeechInfoNo("@j1,2"), JanjanSpeechInfoNo("@j"));
+	NearNpcOpen(pA, szSpeech);
+	PCHARINFO pT = s_aNearNpc.back();
+	pT->dwX = pT->dwXBack = pT->dwStartX = dwCx;
+	pT->dwY = pT->dwYBack = pT->dwStartY = dwCy;
+	MockTrace(1);
+	g_dwTime = (s_dwFakeNow = max(s_dwFakeNow, g_dwTime) + 1000);
+	g_dwJanSeedOverride = 20261126;
+	printf("jan packet size=%d npc=%d ghost=%d free=%d\n", (int)sizeof(CMDPARA_JANSTATE), JanIsTableNpc(pT), PuzzleGhostForSend(pT) == CHARGHOST_NAMEONLY, JanSeatCount());
+	{
+		/* 席のマスは中心から (0,+4) (+4,0) (0,-4) (-4,0) */
+		int nOk = 0;
+		for (int s = 0; s < 4; s ++) {
+			int nDx, nDy, nSeat = -1;
+			JanjanSeatOffset(s, &nDx, &nDy);
+			PuzzlePlace(pA, pT, (DWORD)((int)dwCx + nDx), (DWORD)((int)dwCy + nDy));
+			nOk += JanOnSeatCell(pA, pT, &nSeat) && nSeat == s;
+		}
+		printf("jan seat cells ok=%d\n", nOk);
+	}
+	/* 座る場所の案内（空卓）：A は座る場所、C は台NPCのマス（座る場所ではない）に立っている */
+	JanTick(300);
+	JanLast(anConn[0], pT->dwTblID, &st);
+	JanLast(anConn[2], pT->dwTblID, &stC);
+	printf("jan idle A idle=%d phase=%d myseat=%d empty=%d | C idle=%d\n", st.byIdle, st.byPhase, st.byMySeat,
+		(st.aSeat[0].byState == 0) + (st.aSeat[1].byState == 0) + (st.aSeat[2].byState == 0) + (st.aSeat[3].byState == 0), stC.byIdle);
+	printf("jan idle field x=%d y=%d tables idle=%d\n", st.nFieldX == ((int)dwCx - 3) * 32, st.nFieldY == ((int)dwCy - 3) * 32, JanIdleCount());
+
+	/* 座る場所以外（台NPCのマス・座る場所の隣）では座れず、コインも減らない */
+	JanSetCoins(pA, wCoin, 2);
+	{
+		int anCell[3][2] = { {0, 0}, {1, 4}, {-1, 1} };
+		int nSeated = 0;
+		for (i = 0; i < 3; i ++) {
+			PuzzlePlace(pA, pT, (DWORD)((int)dwCx + anCell[i][0]), (DWORD)((int)dwCy + anCell[i][1]));
+			PuzzleUseCoin(pA, wCoin);
+			PuzzleKeyS(pA, pT);
+			nSeated += JanIsSeated(pA);
+		}
+		printf("jan other cells seated=%d coin=%d\n", nSeated, PuzzleCoinCount(pA, wCoin));
+	}
+	/* 有料の台で S キー：コインを使わず案内だけ。コインが足りない：座れず減らない */
+	{
+		int nDx, nDy;
+		JanjanSeatOffset(2, &nDx, &nDy);
+		PuzzlePlace(pA, pT, (DWORD)((int)dwCx + nDx), (DWORD)((int)dwCy + nDy));
+		PuzzleKeyS(pA, pT);
+		printf("jan skey paid seated=%d coin=%d msg=%d\n", JanIsSeated(pA), PuzzleCoinCount(pA, wCoin),
+			MockHasText(anConn[0], CMD_SYSMSG, "コマンドの道具からチケットを使ってください"));
+		JanSetCoins(pA, wCoin, 1);
+		JanSitCoin(pA, pT, 2, wCoin);
+		printf("jan short seated=%d coin=%d msg=%d\n", JanIsSeated(pA), PuzzleCoinCount(pA, wCoin), MockHasText(anConn[0], CMD_SYSMSG, "チケットがありません"));
+	}
+	/* 2 枚で座る（席 2＝中心の上 4 マス）。2 枚減って、状態が届く */
+	JanSetCoins(pA, wCoin, 2);
+	int nItem0 = MockCmdCount(anConn[0], CMD_CHARITEM), nA0 = JanCount(anConn[0]);
+	JanSitCoin(pA, pT, 2, wCoin);
+	printf("jan sit seated=%d seat=%d coin=%d used=%d charitem+%d packets+%d\n", JanIsSeated(pA), JanGetSeat(pA), PuzzleCoinCount(pA, wCoin),
+		MockHasText(anConn[0], CMD_SYSMSG, "チケットを2枚使いました"), MockCmdCount(anConn[0], CMD_CHARITEM) - nItem0, JanCount(anConn[0]) - nA0);
+	JanLast(anConn[0], pT->dwTblID, &st);
+	JanLast(anConn[2], pT->dwTblID, &stC);
+	printf("jan sit state A kind=%d myseat=%d idle=%d phase=%d states=%d%d%d%d names=%s,%s,%d,%s hand=%d\n", st.byKind, st.byMySeat, st.byIdle, st.byPhase,
+		st.aSeat[0].byState, st.aSeat[1].byState, st.aSeat[2].byState, st.aSeat[3].byState,
+		st.aSeat[0].szName, st.aSeat[1].szName, strcmp(st.aSeat[2].szName, pA->szName) == 0, st.aSeat[3].szName, st.aSeat[2].byHandNum);
+	printf("jan sit state C myseat=%d idle=%d phase=%d\n", stC.byMySeat, stC.byIdle, stC.byPhase);
+
+	/* 募集中：A の席（席 2）には他の人は座れない。コインは減らない。観戦はそのまま届く。募集中の状態（待ち時間・席の埋まり方）も確かめる */
+	JanSetCoins(pB, wCoin, 2);
+	JanSitCoin(pB, pT, 2, wCoin);
+	printf("jan busy seatedB=%d coinB=%d msg=%d\n", JanIsSeated(pB), PuzzleCoinCount(pB, wCoin), MockHasText(anConn[1], CMD_SYSMSG, "その席は今、使われています"));
+	JanLast(anConn[0], pT->dwTblID, &st);
+	printf("jan recruit A phase=%d idle=%d limit=%d seats=%d%d%d%d hand=%d mine=%d\n", st.byPhase, st.byIdle, (int)st.dwLimitMs, st.aSeat[0].byState, st.aSeat[1].byState, st.aSeat[2].byState, st.aSeat[3].byState,
+		st.aSeat[2].byHandNum, st.byMySeat);
+	/* 座っている間は歩けない */
+	{
+		CMDPARA_CHARPOS Pos;
+		ZeroMemory(&Pos, sizeof(Pos));
+		Pos.byCmd = CMD_CHARPOS;
+		Pos.dwTblID = pA->dwTblID;
+		Pos.dwMapID = pA->dwMapID;
+		Pos.byX = (BYTE)(pA->dwX + 1);
+		Pos.byY = (BYTE)pA->dwY;
+		Pos.byDirection = 3;
+		DWORD dwX0 = pA->dwX;
+		TestRecv(pA, &Pos, sizeof(Pos));
+		printf("jan nowalk moved=%d\n", pA->dwX != dwX0);
+	}
+	/* 他人（座っていない）の操作は無視 */
+	{
+		int nB0 = JanCount(anConn[1]), nA1 = JanCount(anConn[0]);
+		JanKeySend(pB, JAN_ACT_DISCARD, 0);
+		JanKeySend(pB, JAN_ACT_LEAVE);
+		printf("jan otherkey seatedA=%d packets A+%d B+%d\n", JanIsSeated(pA), JanCount(anConn[0]) - nA1, JanCount(anConn[1]) - nB0);
+	}
+
+	/* 配牌：本人（席 2）は自分の手牌だけ表・他席は裏。観戦者 C には全員分が表。同じ内容は送り直さない */
+	{
+		int nA1 = JanCount(anConn[0]), nC1 = JanCount(anConn[2]);
+		JanTick(JAN_TEST_WAIT_MS - 1000);
+		JanLast(anConn[0], pT->dwTblID, &st);
+		printf("jan recruit still phase=%d\n", st.byPhase);
+		JanTick(1000);
+		JanLast(anConn[0], pT->dwTblID, &st);
+		JanLast(anConn[2], pT->dwTblID, &stC);
+		int o[4], h[4], oc[4], hc[4];
+		for (int s = 0; s < 4; s ++) { JanHandCount(st.aSeat[s], &o[s], &h[s]); JanHandCount(stC.aSeat[s], &oc[s], &hc[s]); }
+		printf("jan deal A packets+%d phase=%d turn=%d pile=%d open=%d,%d,%d,%d hidden=%d,%d,%d,%d\n", JanCount(anConn[0]) - nA1, st.byPhase, st.byTurn, st.byPileLeft,
+			o[0], o[1], o[2], o[3], h[0], h[1], h[2], h[3]);
+		printf("jan deal C packets+%d myseat=%d open=%d,%d,%d,%d hidden=%d,%d,%d,%d\n", JanCount(anConn[2]) - nC1, stC.byMySeat, oc[0], oc[1], oc[2], oc[3], hc[0], hc[1], hc[2], hc[3]);
+		/* 変わっていなければ何度回しても送らない（見直しの間隔をまたいでも） */
+		nA1 = JanCount(anConn[0]); nC1 = JanCount(anConn[2]);
+		JanProc();
+		JanTick(10);
+		JanTick(280);
+		printf("jan nochange packets A+%d C+%d\n", JanCount(anConn[0]) - nA1, JanCount(anConn[2]) - nC1);
+	}
+	/* CPU が自動で進む：700ms ごとに 1 動作（席 0 が引く→捨てる） */
+	{
+		int nA1 = JanCount(anConn[0]);
+		JanTick(300);
+		int nEarly = JanCount(anConn[0]) - nA1;
+		JanTick(200);
+		JanLast(anConn[0], pT->dwTblID, &st);
+		printf("jan cpu draw early+%d turn=%d logic=%d hand0=%d pile=%d\n", nEarly, st.byTurn, st.byLogicPhase, st.aSeat[0].byHandNum, st.byPileLeft);
+		JanTick(JAN_CPU_MS);
+		JanLast(anConn[0], pT->dwTblID, &st);
+		printf("jan cpu discard river0=%d hand0=%d lastseat=%d\n", st.aSeat[0].byRiverNum, st.aSeat[0].byHandNum, st.byLastSeat);
+	}
+	/* 人間の手番まで進める（人間がロン・鳴きできる時は見送る）。反則・手番外の操作は黙って捨てる */
+	{
+		int nSteps = 0;
+		for (; nSteps < 60; nSteps ++) {
+			JanTick(JAN_CPU_MS);
+			if (!JanLast(anConn[0], pT->dwTblID, &st) || st.byPhase != JANPHASE_PLAY) break;
+			if (st.byCanAct & JAN_CAN_PASS) JanKeySend(pA, JAN_ACT_PASS);
+			if ((st.byTurn == 2) && (st.byLogicPhase == JANJAN_PHASE_DISCARD)) break;
+		}
+		JanLast(anConn[0], pT->dwTblID, &st);
+		printf("jan to human turn=%d logic=%d phase=%d hand=%d limit>0=%d limit<=20000=%d\n", st.byTurn, st.byLogicPhase, st.byPhase, st.aSeat[2].byHandNum,
+			st.dwLimitMs > 0, st.dwLimitMs <= JAN_TURN_MS);
+		/* 引いた牌は最後。本人にだけ見える */
+		int nA1 = JanCount(anConn[0]);
+		JanKeySend(pA, JAN_ACT_DISCARD, 0xFE);					/* 持っていない牌 */
+		JanKeySend(pA, JAN_ACT_RON);							/* ロンできない時 */
+		JanKeySend(pA, JAN_ACT_SOROI);
+		JanKeySend(pA, JAN_ACT_GUMI, 0);
+		JanKeySend(pA, JAN_ACT_PASS);							/* 手番では PASS は効かない */
+		JanKeySend(pA, 99, 0);									/* 知らない操作 */
+		printf("jan illegal ignored packets+%d\n", JanCount(anConn[0]) - nA1);
+		BYTE byDrawn = st.aSeat[2].abyHand[st.aSeat[2].byHandNum - 1];
+		/* 人間が引いた牌を捨てる（上がれる時はツモ） */
+		if (st.byCanAct & JAN_CAN_TSUMO) {
+			JanKeySend(pA, JAN_ACT_TSUMO);
+		} else {
+			JanKeySend(pA, JAN_ACT_DISCARD, byDrawn);
+		}
+		JanLast(anConn[0], pT->dwTblID, &st);
+		printf("jan human discard river2=%d hand2=%d logic=%d lastseat=%d\n", st.aSeat[2].byRiverNum, st.aSeat[2].byHandNum, st.byLogicPhase, st.byLastSeat);
+		printf("jan human discard tile=%d\n", st.byResult == JANJAN_RESULT_NONE ? (st.aSeat[2].abyRiver[0] == byDrawn) : -1);
+	}
+	/* 席を立つ（ESC 相当）：片付いて空卓。本人・観戦者へ空卓の状態が届く */
+	{
+		int nA1 = JanCount(anConn[0]), nC1 = JanCount(anConn[2]);
+		JanKeySend(pA, JAN_ACT_LEAVE);
+		JanLast(anConn[0], pT->dwTblID, &st);
+		JanLast(anConn[2], pT->dwTblID, &stC);
+		printf("jan leave seated=%d seats=%d packets A+%d C+%d idleA=%d idleC=%d phaseA=%d\n", JanIsSeated(pA), JanSeatCount(), JanCount(anConn[0]) - nA1, JanCount(anConn[2]) - nC1,
+			st.byIdle, stC.byIdle, st.byPhase);
+	}
+	/* 立った後の操作は無視 */
+	{
+		int nA1 = JanCount(anConn[0]);
+		JanKeySend(pA, JAN_ACT_DISCARD, 0);
+		JanKeySend(pA, JAN_ACT_TSUMO);
+		printf("jan after leave packets+%d\n", JanCount(anConn[0]) - nA1);
+	}
+
+	/* 13. チケットの確認・サブゲーム情報・旧形式の台詞・番号の情報が無い台。ここまでの卓は片付けてから始める */
+	JanOnLeave(pA);
+	JanOnLeave(pB);
+	JanOnLeave(pC);
+	JanTick(300);
+	{
+		/* (a) 座る場所でチケットを使うと確認が出る。答えるまでチケットは減らず、座らない */
+		JanSetCoins(pA, wCoin, 2);
+		int nAsk0 = JanAskCount(pA);
+		JanSitCoin(pA, pT, 2, wCoin, -1);
+		printf("jan ticket ask shown=+%d text=%d seated=%d coin=%d\n", JanAskCount(pA) - nAsk0,
+			DgTestText(pA, CMD_TALKMSG, "チケットを2枚使って始めますか？@y"), JanIsSeated(pA), PuzzleCoinCount(pA, wCoin));
+		/* (b) 「いいえ」：座らず減らない。もう一度「はい」を送っても（問いは消えている）何も起きない */
+		PuzzleAnswerSend(pA, pT, FALSE);
+		int nNo = JanIsSeated(pA), nCoinNo = PuzzleCoinCount(pA, wCoin);
+		PuzzleAnswerSend(pA, pT, TRUE);
+		printf("jan ticket no seated=%d coin=%d again seated=%d coin=%d\n", nNo, nCoinNo, JanIsSeated(pA), PuzzleCoinCount(pA, wCoin));
+		/* (c) 30 秒たってから「はい」：無効（座らず減らない） */
+		JanSitCoin(pA, pT, 2, wCoin, -1);
+		JanTick(JAN_ASK_TIMEOUT_MS + 1);
+		PuzzleAnswerSend(pA, pT, TRUE);
+		printf("jan ticket timeout seated=%d coin=%d\n", JanIsSeated(pA), PuzzleCoinCount(pA, wCoin));
+		/* (d) 座る場所を離れてから「はい」：座らず減らない */
+		JanSitCoin(pA, pT, 2, wCoin, -1);
+		PuzzlePlace(pA, pT, dwCx + 1, dwCy);
+		PuzzleAnswerSend(pA, pT, TRUE);
+		printf("jan ticket moved seated=%d coin=%d\n", JanIsSeated(pA), PuzzleCoinCount(pA, wCoin));
+		/* (e) 29 秒以内の「はい」：座って 2 枚取り上げる（持ち物も本人に送る） */
+		int nItem0 = MockCmdCount(anConn[0], CMD_CHARITEM);
+		JanSitCoin(pA, pT, 2, wCoin, -1);
+		JanTick(JAN_ASK_TIMEOUT_MS - 1000);
+		PuzzleAnswerSend(pA, pT, TRUE);
+		printf("jan ticket yes seated=%d seat=%d coin=%d charitem+%d used=%d\n", JanIsSeated(pA), JanGetSeat(pA), PuzzleCoinCount(pA, wCoin),
+			MockCmdCount(anConn[0], CMD_CHARITEM) - nItem0, MockHasText(anConn[0], CMD_SYSMSG, "チケットを2枚使いました"));
+		/* (f) 募集中でも人が座っている席では確認も出さず、減らさない。座っている人が別のチケットを使っても確認は出ない */
+		JanSetCoins(pB, wCoin, 2);
+		int nAskB = JanAskCount(pB);
+		JanSitCoin(pB, pT, 2, wCoin);
+		printf("jan ticket busy ask=+%d seatedB=%d coinB=%d msg=%d\n", JanAskCount(pB) - nAskB, JanIsSeated(pB), PuzzleCoinCount(pB, wCoin),
+			MockHasText(anConn[1], CMD_SYSMSG, "その席は今、使われています"));
+		JanSetCoins(pA, wCoin, 2);
+		nAsk0 = JanAskCount(pA);
+		PuzzleUseCoin(pA, wCoin);
+		printf("jan ticket seated use ask=+%d coin=%d\n", JanAskCount(pA) - nAsk0, PuzzleCoinCount(pA, wCoin));
+		/* 問いが無いのに届いた答えは何も起こさない */
+		JanKeySend(pA, JAN_ACT_LEAVE);
+		JanOnLeave(pA);
+		PuzzleAnswerSend(pB, pT, TRUE);
+		printf("jan ticket stray seatedB=%d coinB=%d\n", JanIsSeated(pB), PuzzleCoinCount(pB, wCoin));
+	}
+	{
+		/* サブゲーム情報の変更が台に効く：範囲外はデータAPIが断る・直すと次から効く（枚数 3 だと 2 枚では足りない） */
+		std::string strNg1 = FlagGroupApi("subGame", nSubBase, "{\"detail\":{\"byTicketNum\":100}}");
+		std::string strNg2 = FlagGroupApi("subGame", nSubBase, "{\"detail\":{\"byCpuLevel\":4}}");
+		std::string strNg3 = FlagGroupApi("subGame", nSubBase, "{\"detail\":{\"byUnknown\":1}}");
+		std::string strNgW1 = FlagGroupApi("subGame", nSubBase, "{\"detail\":{\"wWaitSec\":3}}");
+		std::string strNgW2 = FlagGroupApi("subGame", nSubBase, "{\"detail\":{\"wWaitSec\":601}}");
+		printf("jan subgame wait ng=%d%d default=%d\n", strNgW1.find("\"ok\":false") != std::string::npos, strNgW2.find("\"ok\":false") != std::string::npos,
+			((PSUBGAME_JANJANINFO)g_aSubaGameInfo[nSubBase]->pInfo)->wWaitSec);
+		std::string strOk = FlagGroupApi("subGame", nSubBase, "{\"detail\":{\"byTicketNum\":3,\"byCpuLevel\":3,\"wWaitSec\":20}}");
+		PSUBGAME_JANJANINFO pJ = (PSUBGAME_JANJANINFO)g_aSubaGameInfo[nSubBase]->pInfo;
+		printf("jan subgame edit ng=%d%d%d ok=%d num=%d cpu=%d\n", strNg1.find("\"ok\":false") != std::string::npos, strNg2.find("\"ok\":false") != std::string::npos,
+			strNg3.find("\"ok\":false") != std::string::npos, strOk.find("\"ok\":true") != std::string::npos, pJ->byTicketNum, pJ->byCpuLevel);
+		JanSetCoins(pA, wCoin, 2);
+		int nAsk0 = JanAskCount(pA);
+		JanSitCoin(pA, pT, 2, wCoin);
+		printf("jan subgame edit short seated=%d coin=%d msg=%d\n", JanIsSeated(pA), PuzzleCoinCount(pA, wCoin), MockHasText(anConn[0], CMD_SYSMSG, "チケットがありません"));
+		/* 保存して読み直しても同じ（読み込みは空の表に入れる作りなので、今の表を退避して空にしてから読む） */
+		SaveSubGameInfo();
+		std::vector<PSUBGAMEINFO> aOrig;
+		for (int i = 0; i < g_aSubaGameInfo.GetSize(); i ++) aOrig.push_back(g_aSubaGameInfo[i]);
+		int nBase = (int)aOrig.size();
+		g_aSubaGameInfo.RemoveAll();
+		LoadSubGameInfo();
+		PSUBGAMEINFO pLoad = (g_aSubaGameInfo.GetSize() == nBase) ? g_aSubaGameInfo[nBase - 1] : NULL;
+		PSUBGAME_JANJANINFO pL = (pLoad && pLoad->byType == SUBGAMEID_JANJAN) ? (PSUBGAME_JANJANINFO)pLoad->pInfo : NULL;
+		printf("jan subgame load ok=%d ticket=%d x%d cpu=%d wait=%d\n", pL != NULL, pL ? pL->wTicketItemID : -1, pL ? pL->byTicketNum : -1, pL ? pL->byCpuLevel : -1, pL ? pL->wWaitSec : -1);
+		for (int i = 0; i < g_aSubaGameInfo.GetSize(); i ++) {
+			PSUBGAMEINFO pDel = g_aSubaGameInfo[i];
+			SAFE_DELETE_ARRAY(pDel->pInfo);
+			delete pDel;
+		}
+		g_aSubaGameInfo.RemoveAll();
+		for (int i = 0; i < nBase; i ++) g_aSubaGameInfo.Add(aOrig[i]);
+		/* 直して 2 枚に戻すと、2 枚で座れる */
+		FlagGroupApi("subGame", nSubBase, "{\"detail\":{\"byTicketNum\":2,\"byCpuLevel\":2}}");
+		JanSitCoin(pA, pT, 2, wCoin);
+		printf("jan subgame edit back seated=%d coin=%d\n", JanIsSeated(pA), PuzzleCoinCount(pA, wCoin));
+		/* 募集の待ち時間はサブゲーム情報の wWaitSec（20 秒）。待ち時間のあいだは始まらず、20 秒で始まる */
+		JanLast(anConn[0], pT->dwTblID, &st);
+		int nWaitLimit = (int)st.dwLimitMs;
+		JanTick(19000);
+		int nWaitPhase = JanLast(anConn[0], pT->dwTblID, &st) ? st.byPhase : -1;
+		JanTick(1000);
+		JanLast(anConn[0], pT->dwTblID, &st);
+		printf("jan subgame wait limit=%d phase19s=%d phase20s=%d\n", nWaitLimit, nWaitPhase, st.byPhase);
+		JanOnLeave(pA);
+		/* 止める（byType 0）と、番号の情報が無い台＝無料で S キーで座れる。チケットは使えない */
+		std::string strStop = FlagGroupApi("subGame", nSubBase, "{\"byType\":0}");
+		JanSetCoins(pA, wCoin, 2);
+		nAsk0 = JanAskCount(pA);
+		JanSitCoin(pA, pT, 2, wCoin);
+		printf("jan subgame stop ok=%d type=%d ticket ask=+%d seated=%d coin=%d\n", strStop.find("\"ok\":true") != std::string::npos,
+			g_aSubaGameInfo[nSubBase]->byType, JanAskCount(pA) - nAsk0, JanIsSeated(pA), PuzzleCoinCount(pA, wCoin));
+		JanSitFree(pA, pT, 2);
+		printf("jan subgame stop free skey seated=%d coin=%d\n", JanIsSeated(pA), PuzzleCoinCount(pA, wCoin));
+		JanOnLeave(pA);
+	}
+	{
+		/* 旧形式 "@j1,2"（コイン 1 を 2 枚）も読む：確認が出て「はい」で 2 枚取り上げる */
+		NearNpcOpen(pA, "@j1,2");
+		PCHARINFO pO = s_aNearNpc.back();
+		pO->dwX = pO->dwXBack = pO->dwStartX = dwCx + 12;
+		pO->dwY = pO->dwYBack = pO->dwStartY = dwCy;
+		JanSetCoins(pA, wCoin, 2);
+		int nAsk0 = JanAskCount(pA);
+		JanSitCoin(pA, pO, 2, wCoin, 1);
+		printf("jan old speech ask=+%d seated=%d coin=%d\n", JanAskCount(pA) - nAsk0, JanIsSeated(pA), PuzzleCoinCount(pA, wCoin));
+		JanOnLeave(pA);
+		/* 番号の情報が無い・種別が違う "@j<番号>" は、無料の台（S キーで座れて、チケットは使えない） */
+		const char *apszNone[2] = { "@j9999", "@j0" };
+		int nSeated = 0;
+		for (int k = 0; k < 2; k ++) {
+			NearNpcOpen(pA, apszNone[k]);
+			PCHARINFO pN = s_aNearNpc.back();
+			pN->dwX = pN->dwXBack = pN->dwStartX = dwCx + 24 + k * 12;
+			pN->dwY = pN->dwYBack = pN->dwStartY = dwCy;
+			JanSitFree(pA, pN, 2);
+			nSeated += JanIsSeated(pA);
+			JanOnLeave(pA);
+		}
+		printf("jan none info free seated=%d type0 janjan=%d\n", nSeated, (g_aSubaGameInfo.GetSize() > 0) && (g_aSubaGameInfo[0]->byType == SUBGAMEID_JANJAN));
+		/* 使い終わった台は台でなくす */
+		for (size_t k = 0; k < s_aNearNpc.size(); k ++) {
+			PCHARINFO pNpc = s_aNearNpc[k];
+			if ((pNpc != pT) && JanIsTableNpc(pNpc) && (pNpc->dwX > dwCx + 8)) {
+				delete [] pNpc->pszNpcSpeech;
+				pNpc->pszNpcSpeech = new char[1];
+				pNpc->pszNpcSpeech[0] = '\0';
+			}
+		}
+		JanTick(300);
+	}
+
+	/* ここから無料の台（コイン不要）で、手牌を決めた場面を作る */
+	NearNpcOpen(pA, "@j");
+	PCHARINFO pF = s_aNearNpc.back();
+	pF->dwX = pF->dwXBack = pF->dwStartX = dwCx;
+	pF->dwY = pF->dwYBack = pF->dwStartY = dwCy;
+	/* 先の台は台でなくす（座る場所が重なるため。続く場面は無料の台だけ） */
+	delete [] pT->pszNpcSpeech;
+	pT->pszNpcSpeech = new char[1];
+	pT->pszNpcSpeech[0] = '\0';
+	JanTick(300);
+	/* 牌の id は絵の種類 0〜15（同じ組＝id/4 が同じ。組そろいは同じ組の違う絵 3 枚）。捨て牌は 15（組 3） */
+	const int aSet12[8]  = { 0, 0, 0, 4, 4, 4, 8, 8 };			/* 席 0 の手牌。引く牌 15 は孤立牌なので CPU はこれを捨てる */
+	const int aRonH[8]   = { 1, 1, 1, 5, 5, 5, 12, 13 };		/* 15 で上がれる（12,13,15 が組そろい）。12,13 で組そろいもできる */
+	const int aNeutA[8]  = { 2, 2, 3, 6, 6, 7, 10, 10 };		/* 15 に関われない手牌 */
+	const int aNeutB[8]  = { 2, 3, 3, 6, 7, 7, 10, 11 };
+	const int aSoroiH[8] = { 15, 15, 1, 2, 5, 6, 9, 10 };		/* 15 をそろいで鳴ける（上がれない・組そろいもない） */
+	const int aGumiH[8]  = { 12, 13, 1, 2, 5, 6, 9, 10 };		/* 15 を 12,13 で組そろいにできる（上がれない） */
+	const int aFar[8]    = { 1, 2, 3, 5, 6, 7, 9, 10 };
+
+	/* 1. 人間（席 1）が席 0 の捨て牌でロン：待ち（8 秒）の表示・できない操作は無視・ロンで局が終わり全手牌が表・結果メッセージ・6 秒後に席を立つ */
+	{
+		JanjanGame *g = JanDeal(pA, pF, 1);
+		JanRig(g, aSet12, aRonH, aNeutA, aNeutB, 15);
+		JanTick(JAN_CPU_MS);									/* 席 0 が引く */
+		JanTick(JAN_CPU_MS);									/* 席 0 が 12 を捨てる→人間が待たれる */
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan ron wait can=%d gumi=%d,%d,%d last=%d/%d limit>0=%d\n", st.byCanAct, st.byGumiNum, st.abyGumi[0][0], st.abyGumi[0][1], st.byLastSeat, st.byLastTile,
+			(st.dwLimitMs > 0) && (st.dwLimitMs <= JAN_CLAIM_MS));
+		int nA1 = JanCount(anConn[0]);
+		JanKeySend(pA, JAN_ACT_SOROI);							/* そろいはできない */
+		JanKeySend(pA, JAN_ACT_GUMI, 1);						/* 組そろいの選び方は 1 つだけ */
+		JanKeySend(pA, JAN_ACT_DISCARD, 16);					/* 捨てる番ではない */
+		printf("jan ron illegal packets+%d\n", JanCount(anConn[0]) - nA1);
+		JanKeySend(pA, JAN_ACT_RON);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		JanLast(anConn[2], pF->dwTblID, &stC);
+		int o[4], h[4];
+		for (int s = 0; s < 4; s ++) { int oo, hh; JanHandCount(st.aSeat[s], &oo, &hh); o[s] = oo; h[s] = hh; }
+		char szMsg[96];
+		sprintf(szMsg, "%sの上がり！", pA->szName);
+		printf("jan ron result=%d winner=%d how=%d phase=%d score=%d hidden=%d,%d,%d,%d msg=%d seated=%d\n", st.byResult, st.byWinner, st.byWinHow, st.byPhase, st.aSeat[1].sScore,
+			h[0], h[1], h[2], h[3], MockHasText(anConn[0], CMD_SYSMSG, szMsg), JanIsSeated(pA));
+		printf("jan ron watcher msg=%d phase=%d lasttile=%d\n", MockHasText(anConn[2], CMD_SYSMSG, szMsg), stC.byPhase, st.byLastTile);
+		JanKeySend(pA, JAN_ACT_DISCARD, 16);					/* 終局表示の間の操作は効かない */
+		JanTick(JAN_OVER_MS - 100);
+		printf("jan ron over before seated=%d\n", JanIsSeated(pA));
+		JanTick(200);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan ron over after seated=%d idle=%d phase=%d\n", JanIsSeated(pA), st.byIdle, st.byPhase);
+	}
+	/* 2. 組そろい：選んだ組で鳴いて、捨てる番になる。見送りの時間切れ。そろい。時間切れの捨て */
+	{
+		JanjanGame *g = JanDeal(pA, pF, 1);
+		JanRig(g, aSet12, aGumiH, aNeutA, aNeutB, 15);
+		JanTick(JAN_CPU_MS);
+		JanTick(JAN_CPU_MS);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan gumi wait can=%d gumi=%d,%d,%d\n", st.byCanAct, st.byGumiNum, st.abyGumi[0][0], st.abyGumi[0][1]);
+		JanKeySend(pA, JAN_ACT_GUMI, 0);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan gumi done melds=%d kind=%d tiles=%d,%d,%d hand=%d turn=%d logic=%d river0=%d\n", st.aSeat[1].byMeldNum, st.aSeat[1].aMeld[0].byKind,
+			st.aSeat[1].aMeld[0].abyTile[0], st.aSeat[1].aMeld[0].abyTile[1], st.aSeat[1].aMeld[0].abyTile[2],
+			st.aSeat[1].byHandNum, st.byTurn, st.byLogicPhase, st.aSeat[0].byRiverNum);
+		/* 鳴いた後は引かずに捨てる番。20 秒で時間切れ（手牌の最後を捨てる） */
+		JanTick(JAN_TURN_MS - 100);
+		int nR = st.aSeat[1].byRiverNum;
+		JanTick(200);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan gumi timeout river1 %d->%d turn=%d\n", nR, st.aSeat[1].byRiverNum, st.byTurn);
+		JanKeySend(pA, JAN_ACT_LEAVE);
+	}
+	{
+		JanjanGame *g = JanDeal(pA, pF, 1);
+		JanRig(g, aSet12, aSoroiH, aNeutA, aNeutB, 15);
+		JanTick(JAN_CPU_MS);
+		JanTick(JAN_CPU_MS);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan soroi wait can=%d\n", st.byCanAct);
+		/* 8 秒見送り（何もしない）：時間切れで PASS。席 1 が引いて続く */
+		JanTick(JAN_CLAIM_MS - 100);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		int nCan = st.byCanAct;
+		JanTick(200);
+		JanTick(JAN_CPU_MS);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan soroi timeout before=%d after can=%d turn=%d logic=%d hand=%d melds=%d\n", nCan, st.byCanAct, st.byTurn, st.byLogicPhase, st.aSeat[1].byHandNum, st.aSeat[1].byMeldNum);
+		JanKeySend(pA, JAN_ACT_LEAVE);
+	}
+	{
+		JanjanGame *g = JanDeal(pA, pF, 1);
+		JanRig(g, aSet12, aSoroiH, aNeutA, aNeutB, 15);
+		JanTick(JAN_CPU_MS);
+		JanTick(JAN_CPU_MS);
+		JanKeySend(pA, JAN_ACT_SOROI);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan soroi done melds=%d kind=%d tiles=%d,%d,%d hand=%d turn=%d logic=%d\n", st.aSeat[1].byMeldNum, st.aSeat[1].aMeld[0].byKind,
+			st.aSeat[1].aMeld[0].abyTile[0], st.aSeat[1].aMeld[0].abyTile[1], st.aSeat[1].aMeld[0].abyTile[2], st.aSeat[1].byHandNum, st.byTurn, st.byLogicPhase);
+		JanKeySend(pA, JAN_ACT_LEAVE);
+	}
+	/* 3. 見送り（PASS）：続けて席 1（本人）が引く */
+	{
+		JanjanGame *g = JanDeal(pA, pF, 1);
+		JanRig(g, aSet12, aRonH, aNeutA, aNeutB, 15);
+		JanTick(JAN_CPU_MS);
+		JanTick(JAN_CPU_MS);
+		JanKeySend(pA, JAN_ACT_PASS);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan pass can=%d turn=%d logic=%d\n", st.byCanAct, st.byTurn, st.byLogicPhase);
+		JanTick(JAN_CPU_MS);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan pass draw turn=%d logic=%d hand=%d\n", st.byTurn, st.byLogicPhase, st.aSeat[1].byHandNum);
+		JanKeySend(pA, JAN_ACT_LEAVE);
+	}
+	/* 4. CPU の申し出：席 2 がそろいで鳴く／席 3 が CPU のロンで上がる（名前は席名 CPU3） */
+	{
+		const int aCpuSoroi[8] = { 15, 15, 2, 3, 6, 7, 10, 11 };
+		JanjanGame *g = JanDeal(pA, pF, 1);
+		JanRig(g, aSet12, aFar, aCpuSoroi, aNeutB, 15);
+		JanTick(JAN_CPU_MS);
+		JanTick(JAN_CPU_MS);									/* 席 0 が捨てる→人間は申し出できないので CPU の確定へ */
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan cpu claim wait can=%d lastseat=%d\n", st.byCanAct, st.byLastSeat);
+		JanTick(JAN_CPU_MS);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan cpu soroi melds2=%d turn=%d logic=%d river0=%d hand2=%d\n", st.aSeat[2].byMeldNum, st.byTurn, st.byLogicPhase, st.aSeat[0].byRiverNum, st.aSeat[2].byHandNum);
+		JanKeySend(pA, JAN_ACT_LEAVE);
+	}
+	{
+		JanjanGame *g = JanDeal(pA, pF, 1);
+		JanRig(g, aSet12, aFar, aNeutA, aRonH, 15);
+		JanTick(JAN_CPU_MS);
+		JanTick(JAN_CPU_MS);
+		JanTick(JAN_CPU_MS);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		char szMsg[96];
+		sprintf(szMsg, "%sの上がり！", st.aSeat[3].szName);
+		printf("jan cpu ron result=%d winner=%d how=%d phase=%d name=%s msg=%d\n", st.byResult, st.byWinner, st.byWinHow, st.byPhase, st.aSeat[3].szName,
+			MockHasText(anConn[0], CMD_SYSMSG, szMsg));
+		JanTick(JAN_OVER_MS + 100);
+		printf("jan cpu ron after seated=%d\n", JanIsSeated(pA));
+	}
+	/* 5. ツモ（人間が最初に引く席 0）：引いた牌が最後・TSUMO できる・上がる */
+	{
+		JanjanGame *g = JanDeal(pA, pF, 0);
+		JanRig(g, aRonH, aNeutA, aNeutB, aFar, 15);
+		JanTick(JAN_CPU_MS);									/* 席 0（人間）が引く */
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan tsumo can=%d last=%d hand=%d limit>0=%d\n", st.byCanAct, st.aSeat[0].abyHand[st.aSeat[0].byHandNum - 1], st.aSeat[0].byHandNum, st.dwLimitMs > 0);
+		JanKeySend(pA, JAN_ACT_TSUMO);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan tsumo result=%d winner=%d how=%d phase=%d\n", st.byResult, st.byWinner, st.byWinHow, st.byPhase);
+		JanKeySend(pA, JAN_ACT_LEAVE);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan tsumo leave seated=%d idle=%d\n", JanIsSeated(pA), st.byIdle);
+	}
+	/* 6. 人間の手番の時間切れ：引いた牌を捨てる */
+	{
+		JanjanGame *g = JanDeal(pA, pF, 0);
+		JanRig(g, aSoroiH, aNeutA, aNeutB, aFar, 15);
+		JanTick(JAN_CPU_MS);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		BYTE byDrawn = st.aSeat[0].abyHand[st.aSeat[0].byHandNum - 1];
+		JanTick(JAN_TURN_MS - 100);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		int nR = st.aSeat[0].byRiverNum;
+		JanTick(200);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan timeout drawn=%d river0 %d->%d first=%d lastseat=%d\n", byDrawn, nR, st.aSeat[0].byRiverNum, st.aSeat[0].abyRiver[0] == byDrawn, st.byLastSeat);
+		JanKeySend(pA, JAN_ACT_LEAVE);
+	}
+	/* 7. 流局：山が尽きている（席 0 が引けない）と流局メッセージ・6 秒後に席を立つ */
+	{
+		JanjanGame *g = JanDeal(pA, pF, 3);
+		JanRig(g, aSet12, aNeutA, aNeutB, aFar, -1);
+		g->nPileTop = JANJAN_TILES;
+		JanTick(JAN_CPU_MS);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan draw result=%d phase=%d pile=%d msg=%d\n", st.byResult, st.byPhase, st.byPileLeft, MockHasText(anConn[0], CMD_SYSMSG, "流局"));
+		JanTick(JAN_OVER_MS + 100);
+		printf("jan draw after seated=%d\n", JanIsSeated(pA));
+	}
+	/* 8. 離れる：座る場所から離れると席を立たせる。席の近く（2 マス）では立たない */
+	{
+		JanDeal(pA, pF, 0);
+		DeleteTblNoPC((int)pA->dwTblID);
+		pA->dwX += 2;
+		AddTblNoPC((int)pA->dwTblID);
+		JanTick(10);
+		int nNear = JanIsSeated(pA);
+		DeleteTblNoPC((int)pA->dwTblID);
+		pA->dwX += 10;
+		AddTblNoPC((int)pA->dwTblID);
+		JanTick(10);
+		printf("jan away near=%d far=%d seats=%d\n", nNear, JanIsSeated(pA), JanSeatCount());
+	}
+	/* 9. マップ移動：席のマップを離れると片付く */
+	{
+		JanDeal(pA, pF, 3);
+		int nSeated = JanIsSeated(pA);
+		DWORD dwMapA = pA->dwMapID;
+		DeleteTblNoPC((int)pA->dwTblID);
+		pA->dwMapID = (dwMapA == 0) ? 1 : 0;
+		AddTblNoPC((int)pA->dwTblID);
+		JanTick(10);
+		printf("jan mapmove before=%d after=%d seats=%d\n", nSeated, JanIsSeated(pA), JanSeatCount());
+		DeleteTblNoPC((int)pA->dwTblID);
+		pA->dwMapID = dwMapA;
+		AddTblNoPC((int)pA->dwTblID);
+	}
+	/* 10. 切断：本人へは何も送らず、観戦者へ空卓が届く */
+	{
+		JanDeal(pA, pF, 2);
+		int nA1 = JanCount(anConn[0]), nC1 = JanCount(anConn[2]);
+		JanOnLeave(pA);
+		JanLast(anConn[2], pF->dwTblID, &stC);
+		printf("jan logout seated=%d seats=%d packets A+%d C+%d idleC=%d phaseC=%d\n", JanIsSeated(pA), JanSeatCount(), JanCount(anConn[0]) - nA1, JanCount(anConn[2]) - nC1, stC.byIdle, stC.byPhase);
+	}
+	/* 11. 空卓の案内：無料の台の座る場所に立つ（SEAT|FREE）・立つ場所を変えて見直しで変わる・席の途中参加の観戦 */
+	{
+		PuzzlePlace(pA, pF, dwCx, (DWORD)((int)dwCy + 4));
+		JanTick(300);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		JanLast(anConn[2], pF->dwTblID, &stC);
+		printf("jan idle free A idle=%d C idle=%d\n", st.byIdle, stC.byIdle);
+		int nA1 = JanCount(anConn[0]);
+		JanTick(300);
+		JanTick(300);
+		printf("jan idle resend A+%d\n", JanCount(anConn[0]) - nA1);
+		PuzzlePlace(pA, pF, dwCx, dwCy);
+		JanTick(300);
+		JanLast(anConn[0], pF->dwTblID, &st);
+		printf("jan idle left cell A idle=%d\n", st.byIdle);
+	}
+	/* 12. 観戦：遠くへ離れると NONE・近づくと状態（途中の卓の状態）が届く。座っていない観戦者には全員の手牌が表 */
+	{
+		JanjanGame *g = JanDeal(pA, pF, 1);
+		JanRig(g, aSet12, aNeutA, aNeutB, aFar, 15);
+		JanTick(JAN_CPU_MS);
+		JanTick(10);
+		PuzzlePlace(pC, pF, dwCx + 40, dwCy);
+		int nC1 = JanCount(anConn[2]);
+		JanTick(300);
+		JanLast(anConn[2], pF->dwTblID, &stC);
+		printf("jan view far packets+%d kind=%d\n", JanCount(anConn[2]) - nC1, stC.byKind);
+		JanTick(300);
+		nC1 = JanCount(anConn[2]);
+		JanTick(300);
+		printf("jan view far again packets+%d\n", JanCount(anConn[2]) - nC1);
+		PuzzlePlace(pC, pF, dwCx + 2, dwCy);
+		nC1 = JanCount(anConn[2]);
+		JanTick(300);
+		JanLast(anConn[2], pF->dwTblID, &stC);
+		int oc, hc;
+		JanHandCount(stC.aSeat[3], &oc, &hc);
+		printf("jan view near packets+%d kind=%d myseat=%d phase=%d open3=%d hidden3=%d hand0=%d\n", JanCount(anConn[2]) - nC1, stC.byKind, stC.byMySeat, stC.byPhase, oc, hc, stC.aSeat[0].byHandNum);
+		JanKeySend(pA, JAN_ACT_LEAVE);
+	}
+
+	/* 14. 人間同士（2〜4 人）：参加募集・待ち時間で開始（空き席は CPU）・4 席で即開始・開始後は座れない・同時の申し出・抜ける・3 回時間切れ */
+	{
+		PCHARINFO pD = (aLogin.size() >= 4) ? g_aCharInfo[aLogin[3]] : NULL;
+		DWORD dwMapD = 0, dwXD = 0, dwYD = 0;
+		BYTE byStD = 0;
+		WORD wHPD = 0;
+		CMDPARA_JANSTATE sA, sB, sD;
+		char szMsg[96], szJoin[96];
+		int oA[4], hA[4], oB[4], hB[4], oC[4], hC[4];
+		if (pD) {
+			dwMapD = pD->dwMapID; dwXD = pD->dwX; dwYD = pD->dwY; byStD = pD->byCharState; wHPD = pD->wHP;
+			pD->byCharState = CHARSTATE_MOVE;
+			if (pD->wHP == 0) pD->wHP = 10;
+		}
+		int nConnD = pD ? DgTestConn(pD) : -1;
+		/* 全員を席から外して、卓を空にし、C を台の真ん中（観戦）へ戻す */
+		#define JAN_MULTI_RESET() do { JanOnLeave(pA); JanOnLeave(pB); JanOnLeave(pC); if (pD) JanOnLeave(pD); JanTick(300); \
+			PuzzlePlace(pA, pF, dwCx, dwCy); PuzzlePlace(pB, pF, dwCx, dwCy); PuzzlePlace(pC, pF, dwCx, dwCy); JanTick(300); } while (0)
+		/* 席 s の手牌を（表, 裏）の数で */
+		#define JAN_MULTI_HANDS(st, o, h) do { for (int s_ = 0; s_ < 4; s_ ++) JanHandCount((st).aSeat[s_], &(o)[s_], &(h)[s_]); } while (0)
+		sprintf(szJoin, "%sさんが参加しました。", pB->szName);
+
+		/* (a) 募集中に 2 人目が空いている席に座れる：参加のメッセージは先に座っている人・観戦者へ（本人へは出さない）。人の席には座れない */
+		JAN_MULTI_RESET();
+		JanSitFree(pA, pF, 1);
+		JanSitFree(pB, pF, 3);
+		int nMsgC = MockHasText(anConn[2], CMD_SYSMSG, szJoin);
+		JanSitFree(pC, pF, 1);
+		JanLast(anConn[0], pF->dwTblID, &sA);
+		JanLast(anConn[1], pF->dwTblID, &sB);
+		printf("jan multi join seated=%d%d%d seat=%d,%d tables=%d msgA=%d msgB=%d denied=%d\n", JanIsSeated(pA), JanIsSeated(pB), JanIsSeated(pC), JanGetSeat(pA), JanGetSeat(pB), JanSeatCount(),
+			MockHasText(anConn[0], CMD_SYSMSG, szJoin), MockHasText(anConn[1], CMD_SYSMSG, szJoin), MockHasText(anConn[2], CMD_SYSMSG, "その席は今、使われています"));
+		printf("jan multi join watcher msgC=%d\n", nMsgC);
+		printf("jan multi recruit A phase=%d my=%d states=%d%d%d%d names=%d,%d limit=%d | B phase=%d my=%d\n", sA.byPhase, sA.byMySeat, sA.aSeat[0].byState, sA.aSeat[1].byState, sA.aSeat[2].byState, sA.aSeat[3].byState,
+			strcmp(sA.aSeat[1].szName, pA->szName) == 0, strcmp(sA.aSeat[3].szName, pB->szName) == 0, (int)sA.dwLimitMs, sB.byPhase, sB.byMySeat);
+		/* 募集中に A が席を立つ：席が空く。B は座ったまま。B も立つと卓は空卓に戻る */
+		JanKeySend(pA, JAN_ACT_LEAVE);
+		JanLast(anConn[1], pF->dwTblID, &sB);
+		printf("jan multi recruit leave A=%d B=%d states=%d%d%d%d phase=%d\n", JanIsSeated(pA), JanIsSeated(pB), sB.aSeat[0].byState, sB.aSeat[1].byState, sB.aSeat[2].byState, sB.aSeat[3].byState, sB.byPhase);
+		JanKeySend(pB, JAN_ACT_LEAVE);
+		JanLast(anConn[1], pF->dwTblID, &sB);
+		JanLast(anConn[2], pF->dwTblID, &sD);
+		printf("jan multi recruit empty tables=%d phaseB=%d phaseC=%d\n", JanSeatCount(), sB.byPhase, sD.byPhase);
+
+		/* (b) 待ち時間で開始：座っている 2 人＋CPU 2 人。待つ間は牌なし。お互いの手牌は裏・観戦者には全員表。開始後は座れない */
+		JAN_MULTI_RESET();
+		JanSitFree(pA, pF, 1);
+		JanSitFree(pB, pF, 3);
+		JanTick(JAN_TEST_WAIT_MS - 1000);
+		JanLast(anConn[0], pF->dwTblID, &sA);
+		printf("jan multi wait phase=%d hand=%d seated=%d%d\n", sA.byPhase, sA.aSeat[1].byHandNum, JanIsSeated(pA), JanIsSeated(pB));
+		JanTick(1000);
+		JanLast(anConn[0], pF->dwTblID, &sA);
+		JanLast(anConn[1], pF->dwTblID, &sB);
+		JanLast(anConn[2], pF->dwTblID, &sD);
+		JAN_MULTI_HANDS(sA, oA, hA);
+		JAN_MULTI_HANDS(sB, oB, hB);
+		JAN_MULTI_HANDS(sD, oC, hC);
+		printf("jan multi start phase=%d,%d,%d my=%d,%d,%d states=%d%d%d%d names=%s,%s,%d,%d\n", sA.byPhase, sB.byPhase, sD.byPhase, sA.byMySeat, sB.byMySeat, sD.byMySeat,
+			sA.aSeat[0].byState, sA.aSeat[1].byState, sA.aSeat[2].byState, sA.aSeat[3].byState, sA.aSeat[0].szName, sA.aSeat[2].szName,
+			strcmp(sA.aSeat[1].szName, pA->szName) == 0, strcmp(sA.aSeat[3].szName, pB->szName) == 0);
+		printf("jan multi hands A open=%d,%d,%d,%d hidden=%d,%d,%d,%d\n", oA[0], oA[1], oA[2], oA[3], hA[0], hA[1], hA[2], hA[3]);
+		printf("jan multi hands B open=%d,%d,%d,%d hidden=%d,%d,%d,%d\n", oB[0], oB[1], oB[2], oB[3], hB[0], hB[1], hB[2], hB[3]);
+		printf("jan multi hands C open=%d,%d,%d,%d hidden=%d,%d,%d,%d\n", oC[0], oC[1], oC[2], oC[3], hC[0], hC[1], hC[2], hC[3]);
+		/* 開始後は CPU の席にも座れない（ゲーム中）。観戦は届いたまま */
+		JanSitFree(pC, pF, 0);
+		printf("jan multi late seated=%d msg=%d seats=%d\n", JanIsSeated(pC), MockHasText(anConn[2], CMD_SYSMSG, "ゲーム中です"), JanSeatCount());
+		JanKeySend(pA, JAN_ACT_LEAVE);
+		JanKeySend(pB, JAN_ACT_LEAVE);
+
+		/* (c) 同時の申し出：席 1（A）と席 2（B）が席 0 の捨て牌でロンできる。全員が返事するまで待ち、頭ハネ（席 0 の次の A）が勝つ */
+		const int aRonH2[8] = { 2, 2, 2, 6, 6, 6, 12, 13 };		/* 15 で上がれる（12,13,15 が組そろい） */
+		JAN_MULTI_RESET();
+		JanSitFree(pA, pF, 1);
+		JanSitFree(pB, pF, 2);
+		JanTick(JAN_TEST_WAIT_MS);
+		JanjanGame *g = JanGetGame(pA);
+		JanRig(g, aSet12, aRonH, aRonH2, aNeutB, 15);
+		JanTick(JAN_CPU_MS);
+		JanTick(JAN_CPU_MS);
+		JanLast(anConn[0], pF->dwTblID, &sA);
+		JanLast(anConn[1], pF->dwTblID, &sB);
+		printf("jan multi claim wait A can=%d limit=%d B can=%d limit=%d last=%d/%d\n", sA.byCanAct, (sA.dwLimitMs > 0) && (sA.dwLimitMs <= JAN_CLAIM_MS), sB.byCanAct,
+			(sB.dwLimitMs > 0) && (sB.dwLimitMs <= JAN_CLAIM_MS), sA.byLastSeat, sA.byLastTile);
+		JanKeySend(pB, JAN_ACT_RON);
+		JanLast(anConn[0], pF->dwTblID, &sA);
+		JanLast(anConn[1], pF->dwTblID, &sB);
+		printf("jan multi claim B first result=%d logic=%d Bcan=%d Acan=%d\n", sA.byResult, sA.byLogicPhase, sB.byCanAct, sA.byCanAct);
+		JanKeySend(pA, JAN_ACT_RON);
+		JanLast(anConn[0], pF->dwTblID, &sA);
+		JanLast(anConn[1], pF->dwTblID, &sB);
+		JAN_MULTI_HANDS(sB, oB, hB);
+		sprintf(szMsg, "%sの上がり！", pA->szName);
+		printf("jan multi claim both ron result=%d winner=%d how=%d phase=%d score=%d,%d msgA=%d msgB=%d Bopen0=%d\n", sA.byResult, sA.byWinner, sA.byWinHow, sA.byPhase, sA.aSeat[1].sScore, sA.aSeat[2].sScore,
+			MockHasText(anConn[0], CMD_SYSMSG, szMsg), MockHasText(anConn[1], CMD_SYSMSG, szMsg), oB[0]);
+		/* 終局表示の間も座れない。6 秒後に全員が席を立つ */
+		JanSitFree(pC, pF, 0);
+		printf("jan multi over late seated=%d msg=%d\n", JanIsSeated(pC), MockHasText(anConn[2], CMD_SYSMSG, "ゲーム中です"));
+		JanTick(JAN_OVER_MS + 100);
+		printf("jan multi over after seated=%d%d seats=%d\n", JanIsSeated(pA), JanIsSeated(pB), JanSeatCount());
+
+		/* (d) 片方が返事しない：B だけロンして A は返事なし。8 秒待って、時間切れ（返事なし＝見送り）で B のロンが通る */
+		JAN_MULTI_RESET();
+		JanSitFree(pA, pF, 1);
+		JanSitFree(pB, pF, 2);
+		JanTick(JAN_TEST_WAIT_MS);
+		g = JanGetGame(pA);
+		JanRig(g, aSet12, aRonH, aRonH2, aNeutB, 15);
+		JanTick(JAN_CPU_MS);
+		JanTick(JAN_CPU_MS);
+		JanKeySend(pB, JAN_ACT_RON);
+		JanTick(JAN_CLAIM_MS - 700);
+		JanLast(anConn[1], pF->dwTblID, &sB);
+		printf("jan multi timeout waiting result=%d\n", sB.byResult);
+		JanTick(800);
+		JanLast(anConn[0], pF->dwTblID, &sA);
+		printf("jan multi timeout result=%d winner=%d how=%d phase=%d\n", sA.byResult, sA.byWinner, sA.byWinHow, sA.byPhase);
+		/* A だけ見送り・B は返事なし：時間切れで流れて次の席が引く */
+		JAN_MULTI_RESET();
+		JanSitFree(pA, pF, 1);
+		JanSitFree(pB, pF, 2);
+		JanTick(JAN_TEST_WAIT_MS);
+		g = JanGetGame(pA);
+		JanRig(g, aSet12, aRonH, aRonH2, aNeutB, 15);
+		JanTick(JAN_CPU_MS);
+		JanTick(JAN_CPU_MS);
+		JanKeySend(pA, JAN_ACT_PASS);
+		JanLast(anConn[0], pF->dwTblID, &sA);
+		printf("jan multi pass one waiting result=%d acan=%d\n", sA.byResult, sA.byCanAct);
+		JanTick(JAN_CLAIM_MS);
+		JanLast(anConn[0], pF->dwTblID, &sA);
+		printf("jan multi pass one after result=%d turn=%d logic=%d\n", sA.byResult, sA.byTurn, sA.byLogicPhase);
+
+		/* (e) 抜ける：B が席を立つと、その席は元の名前の CPU に戻って局は続く。本人には観戦者として全員の手牌が届く */
+		JAN_MULTI_RESET();
+		JanSitFree(pA, pF, 1);
+		JanSitFree(pB, pF, 3);
+		JanTick(JAN_TEST_WAIT_MS);
+		g = JanGetGame(pA);
+		JanRig(g, aSet12, aNeutA, aNeutB, aFar, 15);
+		JanTick(JAN_CPU_MS);
+		int nB1 = JanCount(anConn[1]);
+		JanKeySend(pB, JAN_ACT_LEAVE);
+		JanLast(anConn[0], pF->dwTblID, &sA);
+		JanLast(anConn[1], pF->dwTblID, &sB);
+		JAN_MULTI_HANDS(sB, oB, hB);
+		printf("jan multi leave B=%d A=%d seats=%d A.seat3=%d name=%s phase=%d | B my=%d open=%d,%d,%d,%d packets+%d\n", JanIsSeated(pB), JanIsSeated(pA), JanSeatCount(), sA.aSeat[3].byState, sA.aSeat[3].szName, sA.byPhase,
+			sB.byMySeat, oB[0], oB[1], oB[2], oB[3], JanCount(anConn[1]) - nB1);
+		int nTurn0 = sA.byTurn, nHand0 = sA.aSeat[0].byHandNum, nRiv0 = sA.aSeat[0].byRiverNum;
+		JanTick(JAN_CPU_MS);
+		JanTick(JAN_CPU_MS);
+		JanTick(JAN_CPU_MS);
+		JanLast(anConn[0], pF->dwTblID, &sA);
+		printf("jan multi leave goes on turn %d->%d river0 %d->%d\n", nTurn0, sA.byTurn, nRiv0, sA.aSeat[0].byRiverNum);
+		(void)nHand0;
+		/* 切断でも同じ（本人へは何も送らない）。最後の 1 人が抜けると卓を片付ける */
+		JanSitFree(pB, pF, 3);
+		printf("jan multi late rejoin seated=%d\n", JanIsSeated(pB));
+		nB1 = JanCount(anConn[1]);
+		JanOnLeave(pA);
+		JanLast(anConn[2], pF->dwTblID, &sD);
+		printf("jan multi logout A=%d seats=%d phaseC=%d idleC=%d\n", JanIsSeated(pA), JanSeatCount(), sD.byPhase, sD.byIdle);
+		/* マップ移動：A と B が座っていて A が別マップへ→A の席だけ CPU に戻る。B も動くと片付く */
+		JAN_MULTI_RESET();
+		JanSitFree(pA, pF, 1);
+		JanSitFree(pB, pF, 3);
+		JanTick(JAN_TEST_WAIT_MS);
+		{
+			DWORD dwMapA = pA->dwMapID;
+			DeleteTblNoPC((int)pA->dwTblID);
+			pA->dwMapID = (dwMapA == 0) ? 1 : 0;
+			AddTblNoPC((int)pA->dwTblID);
+			JanTick(10);
+			JanLast(anConn[1], pF->dwTblID, &sB);
+			printf("jan multi mapmove A=%d B=%d seats=%d states=%d%d%d%d\n", JanIsSeated(pA), JanIsSeated(pB), JanSeatCount(), sB.aSeat[0].byState, sB.aSeat[1].byState, sB.aSeat[2].byState, sB.aSeat[3].byState);
+			DeleteTblNoPC((int)pA->dwTblID);
+			pA->dwMapID = dwMapA;
+			AddTblNoPC((int)pA->dwTblID);
+			JanKeySend(pB, JAN_ACT_LEAVE);
+			printf("jan multi mapmove all gone seats=%d\n", JanSeatCount());
+		}
+
+		/* (f) 3 回続けて時間切れで CPU に戻る（A は何もしない・B は打つ）。申し出の待ちの時間切れは数えない */
+		JAN_MULTI_RESET();
+		JanSitFree(pA, pF, 0);
+		JanSitFree(pB, pF, 2);
+		JanTick(JAN_TEST_WAIT_MS);
+		{
+			int nTurns = 0, nLastTurn = -1, nEnded = 0;
+			for (int k = 0; k < 600 && JanIsSeated(pA); k ++) {
+				JanTick(1000);
+				if (JanLast(anConn[1], pF->dwTblID, &sB) && (sB.byPhase == JANPHASE_PLAY)) {
+					if (sB.byCanAct & JAN_CAN_PASS) {
+						JanKeySend(pB, JAN_ACT_PASS);
+					} else if ((sB.byTurn == 2) && (sB.byLogicPhase == JANJAN_PHASE_DISCARD)) {
+						if (sB.byCanAct & JAN_CAN_TSUMO) JanKeySend(pB, JAN_ACT_TSUMO);
+						else JanKeySend(pB, JAN_ACT_DISCARD, sB.aSeat[2].abyHand[sB.aSeat[2].byHandNum - 1]);
+					}
+				}
+				if (JanLast(anConn[0], pF->dwTblID, &sA) && (sA.byTurn == 0) && (sA.byLogicPhase == JANJAN_PHASE_DISCARD) && (nLastTurn != k - 1)) nTurns ++;
+				nLastTurn = k;
+				if (sA.byPhase == JANPHASE_OVER) { nEnded = 1; break; }
+			}
+			JanLast(anConn[0], pF->dwTblID, &sA);
+			JanLast(anConn[1], pF->dwTblID, &sB);
+			printf("jan multi kick A=%d B=%d msg=%d seats=%d over=%d seat0=%d name=%s phaseA=%d my=%d\n", JanIsSeated(pA), JanIsSeated(pB), MockHasText(anConn[0], CMD_SYSMSG, "離席扱いになりました"), JanSeatCount(), nEnded,
+				sB.aSeat[0].byState, sB.aSeat[0].szName, sA.byPhase, sA.byMySeat);
+			(void)nTurns;
+			/* 席に戻った CPU が打って局は続く */
+			int nTurn1 = sB.byTurn, nPile1 = sB.byPileLeft;
+			for (int k = 0; k < 10; k ++) {
+				JanTick(JAN_CPU_MS);
+				if (JanLast(anConn[1], pF->dwTblID, &sB) && (sB.byCanAct & JAN_CAN_PASS)) JanKeySend(pB, JAN_ACT_PASS);
+			}
+			JanLast(anConn[1], pF->dwTblID, &sB);
+			printf("jan multi kick goes on pile %d->%d\n", nPile1, sB.byPileLeft);
+			(void)nTurn1;
+		}
+		/* 全員が抜けたら片付ける */
+		JanKeySend(pB, JAN_ACT_LEAVE);
+		JanLast(anConn[2], pF->dwTblID, &sD);
+		printf("jan multi all gone seats=%d phaseC=%d\n", JanSeatCount(), sD.byPhase);
+
+		/* (g) 4 席が全部人間で埋まったら待たずにすぐ開始（4 人目が座った時点で配牌）。お互いの手牌は裏 */
+		if (pD) {
+			JAN_MULTI_RESET();
+			PuzzlePlace(pD, pF, dwCx, dwCy);
+			JanSitFree(pA, pF, 0);
+			JanSitFree(pB, pF, 1);
+			JanSitFree(pC, pF, 2);
+			JanLast(anConn[0], pF->dwTblID, &sA);
+			int nPhaseBefore = sA.byPhase;
+			JanSitFree(pD, pF, 3);
+			JanLast(anConn[0], pF->dwTblID, &sA);
+			JanLast(anConn[1], pF->dwTblID, &sB);
+			JanLast(anConn[2], pF->dwTblID, &sD);
+			JAN_MULTI_HANDS(sA, oA, hA);
+			JAN_MULTI_HANDS(sB, oB, hB);
+			JAN_MULTI_HANDS(sD, oC, hC);
+			printf("jan multi full before=%d now=%d seated=%d%d%d%d states=%d%d%d%d tables=%d\n", nPhaseBefore, sA.byPhase, JanIsSeated(pA), JanIsSeated(pB), JanIsSeated(pC), JanIsSeated(pD),
+				sA.aSeat[0].byState, sA.aSeat[1].byState, sA.aSeat[2].byState, sA.aSeat[3].byState, JanSeatCount());
+			printf("jan multi full hands A open=%d,%d,%d,%d B open=%d,%d,%d,%d C open=%d,%d,%d,%d hidden A=%d,%d,%d,%d\n", oA[0], oA[1], oA[2], oA[3], oB[0], oB[1], oB[2], oB[3], oC[0], oC[1], oC[2], oC[3], hA[0], hA[1], hA[2], hA[3]);
+			JanLast(nConnD >= 0 ? nConnD : anConn[2], pF->dwTblID, &sD);
+			printf("jan multi full D my=%d phase=%d\n", sD.byMySeat, sD.byPhase);
+		}
+		JAN_MULTI_RESET();
+		if (pD) {
+			QuestMovePC(pD, (int)dwMapD, (int)dwXD, (int)dwYD);
+			pD->byCharState = byStD;
+			pD->wHP = wHPD;
+		}
+		#undef JAN_MULTI_RESET
+		#undef JAN_MULTI_HANDS
+	}
+
+	/* 片付け */
+	MockTrace(0);
+	g_dwJanSeedOverride = 0;
+	JanOnLeave(pA);
+	JanOnLeave(pB);
+	for (size_t k = 0; k < s_aNearNpc.size(); k ++) {
+		PCHARINFO pNpc = s_aNearNpc[k];
+		if (JanIsTableNpc(pNpc)) {
+			delete [] pNpc->pszNpcSpeech;
+			pNpc->pszNpcSpeech = new char[1];
+			pNpc->pszNpcSpeech[0] = '\0';
+		}
+	}
+	/* 足したサブゲーム情報（最後の 1 件）を消す */
+	if (g_aSubaGameInfo.GetSize() == nSubBase + 1) {
+		PSUBGAMEINFO pDel = g_aSubaGameInfo[nSubBase];
+		SAFE_DELETE_ARRAY(pDel->pInfo);
+		delete pDel;
+		g_aSubaGameInfo.RemoveAt(nSubBase);
+	}
+	NearNpcClose();
+	g_dwTime = (s_dwFakeNow += 300);
+	JanProc();										/* 台 NPC が無くなった待機中の卓を表から消す */
+	for (i = 0; i < 3; i ++) {
+		for (int j = 0; j < MAX_MYITEM; j ++) if (apP[i]->waItem[j] == wCoin) DelCharItem(apP[i]->dwTblID, (BYTE)j);
+		QuestMovePC(apP[i], (int)aBack[i].dwMap, (int)aBack[i].dwX, (int)aBack[i].dwY);
+		apP[i]->byCharState = aBack[i].byState;
+		apP[i]->wHP = aBack[i].wHP;
+	}
+	g_dwTime = dwTimeBack;
+	printf("jan done seats=%d idle=%d\n", JanSeatCount(), JanIdleCount());
+}
+
+/* ========================================================================= */
+/* AX. お試し個室（入口で説明→はい→テンプレートの姿→出口・倒れる・切断で元に戻る）	 */
+/* ========================================================================= */
+extern BOOL SaveTrialRoomInfo(void);
+extern BOOL LoadTrialRoomInfo(void);
+
+/* 入口への「入りますか？」の答え（CMD_TALKANSWER） */
+static void TrialAnswerSend(PCHARINFO p, PCHARINFO pNpc, BOOL bYes)
+{
+	CMDPARA_DATA1 Para;
+	ZeroMemory(&Para, sizeof(Para));
+	Para.byCmd = CMD_TALKANSWER;
+	Para.byData = bYes ? 1 : 0;
+	Para.dwTblID = pNpc->dwTblID;
+	TestRecv(p, &Para, sizeof(Para));
+}
+
+/* 入口に話して、はいで入る。聞かれた（TALKMSG が出た）ら 1 を返す */
+static int TrialTalkYes(PCHARINFO p, PCHARINFO pNpc, BOOL bYes = TRUE)
+{
+	int nConn = DgTestConn(p);
+	int nTalk0 = MockCmdCount(nConn, CMD_TALKMSG);
+	DgTestTalk(p, pNpc->dwTblID);
+	int nAsked = (MockCmdCount(nConn, CMD_TALKMSG) > nTalk0) && DgTestText(p, CMD_TALKMSG, "入りますか？@y");
+	TrialAnswerSend(p, pNpc, bYes);
+	return nAsked;
+}
+
+/* 管理者ウィンドウのお試し個室（CMD_ADMINTRIALROOM）を送り、最初に返ってきた 1 件を Res に取る。nSize は送るバイト数（0=全部） */
+static BOOL AdminTrialRoomSend(PCHARINFO p, BYTE bySub, int nNo, const TRIALROOMINFO *pInfo, CMDPARA_ADMINTRIALROOM &Res, int nSize = 0)
+{
+	PCMDPARA_ADMINTRIALROOM pPara = new CMDPARA_ADMINTRIALROOM;
+	std::vector<BYTE> aCap;
+	BOOL bRet;
+
+	ZeroMemory(pPara, sizeof(*pPara));
+	pPara->byCmd = CMD_ADMINTRIALROOM;
+	pPara->byCmdSub = bySub;
+	pPara->nNo = nNo;
+	if (pInfo) pPara->Info = *pInfo;
+	SvrSendCaptureBegin();
+	TestRecv(p, pPara, nSize ? nSize : sizeof(CMDPARA_ADMINTRIALROOM));
+	bRet = SvrSendCaptureEnd(aCap);
+	delete pPara;
+	ZeroMemory(&Res, sizeof(Res));
+	if (!bRet || aCap.size() < sizeof(CMDPARA_ADMINTRIALROOM)) return FALSE;
+	memcpy(&Res, &aCap[0], sizeof(Res));
+	return TRUE;
+}
+
+static void TestTrialRoom(const std::vector<int> &aLogin)
+{
+	printf("== AX. TrialRoom ==\n");
+	if (aLogin.size() < 2) {
+		return;
+	}
+	s_pSpLogin = &aLogin;
+	PCHARINFO pA = g_aCharInfo[aLogin[0]], pB = g_aCharInfo[aLogin[1]];
+	PCHARINFO apPC[2] = { pA, pB };
+	int nMap = (int)pA->dwMapID;
+	PMAPINFO pMap = g_aMapInfo[nMap];
+	if (pMap->nCX < 10 || pMap->nCY < 10) {
+		printf("trialroom map too small\n");
+		return;
+	}
+
+	/* 本物の状態（テスト用に決める。最後に戻す） */
+	CHARINFO aBack[2];
+	for (int i = 0; i < 2; i ++) {
+		TestCharBackup(&aBack[i], apPC[i]);
+		PCHARINFO p = apPC[i];
+		p->byAdminLV = ADMINLV_USER;
+		p->dwPartyID = 0;
+		p->byLevel = 30; p->byPW = 99; p->wMaxHP = 500; p->wHP = 480; p->wMaxMana = 90; p->wMana = 80; p->dwGold = 5000; p->dwExp = 777;
+		ZeroMemory(p->waItem, sizeof(p->waItem));
+		for (int k = 0; k < MAX_EQUTYPE; k ++) p->waEqu[k] = 0xFFFF;
+	}
+	WORD wWeapon = 0;
+	for (int i = 1; i < g_aItemInfo.GetSize(); i ++) {
+		if (g_aItemInfo[i]->szName[0] && g_aItemInfo[i]->byType == ITEMTYPE_WEAPON) { wWeapon = (WORD)i; break; }
+	}
+
+	/* 貸すテンプレート */
+	int nSt = g_aStTmpInfo.GetSize();
+	{
+		PSTATUSTEMPLATEINFO t = new STATUSTEMPLATEINFO;
+		ZeroMemory(t, sizeof(*t));
+		strcpy(t->szName, "試着");
+		t->byLevel = 9; t->byPW = 21; t->byDEX = 22; t->byST = 23; t->byIT = 24; t->byLK = 25;
+		t->wMaxHP = 77; t->wMaxMana = 33; t->dwGold = 4; t->dwExp = 999;
+		t->waItem[0] = wWeapon;
+		g_aStTmpInfo.Add(t);
+	}
+
+	/* データAPI：足す（閉じたままの途中の設定も足せる）・直す・不正は断る・保存して読み直せる */
+	int nRoom = g_aTrialRoomInfo.GetSize();
+	char szJson[1024];
+	snprintf(szJson, sizeof(szJson), "{\"szName\":\"試着室\",\"szDesc\":\"ようこそ。\\n新しい装備を試せます。\",\"wLoanStTmp\":%d,\"dwMapID\":%d,\"dwX\":2,\"dwY\":2,"
+		"\"dwX1\":1,\"dwY1\":1,\"dwX2\":3,\"dwY2\":3}", nSt, nMap);
+	const char *psz = SboWebDataApply("trialRoom", nRoom, szJson, 1, "テスト");
+	printf("trialroom api add ok=%d count=%d state=%u\n", (int)(psz && strstr(psz, "\"ok\":true") != NULL), g_aTrialRoomInfo.GetSize() - nRoom, g_aTrialRoomInfo.GetSize() > nRoom ? g_aTrialRoomInfo[nRoom]->byState : 99);
+	psz = SboWebDataApply("trialRoom", nRoom, "{\"byState\":1,\"dwX\":9}", 1, "テスト");
+	printf("trialroom api bad entry ok=%d state=%u\n", (int)(psz && strstr(psz, "\"ok\":true") != NULL), g_aTrialRoomInfo[nRoom]->byState);
+	psz = SboWebDataApply("trialRoom", nRoom, "{\"byState\":1,\"wLoanStTmp\":65000}", 1, "テスト");
+	printf("trialroom api bad tmpl ok=%d\n", (int)(psz && strstr(psz, "\"ok\":true") != NULL));
+	psz = SboWebDataApply("trialRoom", nRoom, "{\"nothing\":1}", 1, "テスト");
+	printf("trialroom api unknown key ok=%d\n", (int)(psz && strstr(psz, "\"ok\":true") != NULL));
+	psz = SboWebDataApply("trialRoom", nRoom, "{\"byState\":1}", 1, "テスト");
+	printf("trialroom api open ok=%d state=%u\n", (int)(psz && strstr(psz, "\"ok\":true") != NULL), g_aTrialRoomInfo[nRoom]->byState);
+	{
+		SaveTrialRoomInfo();
+		int nKeep = g_aTrialRoomInfo.GetSize();
+		for (int i = 0; i < nKeep; i ++) SAFE_DELETE(g_aTrialRoomInfo[i]);
+		g_aTrialRoomInfo.RemoveAll();
+		LoadTrialRoomInfo();
+		PTRIALROOMINFO r = (g_aTrialRoomInfo.GetSize() > nRoom) ? g_aTrialRoomInfo[nRoom] : NULL;
+		printf("trialroom reload count=%d same=%d name=%s tmpl=%d rect=%u,%u-%u,%u desc_nl=%d\n", g_aTrialRoomInfo.GetSize() == nKeep, r ? 1 : 0, r ? r->szName : "-",
+			r ? (int)(r->wLoanStTmp == nSt) : -1, r ? r->dwX1 : 0, r ? r->dwY1 : 0, r ? r->dwX2 : 0, r ? r->dwY2 : 0, r ? (int)(strchr(r->szDesc, '\n') != NULL) : -1);
+		psz = SboWebDataGet("trialRoom", nRoom);
+		printf("trialroom get has_desc=%d\n", (int)(psz && strstr(psz, "\"szDesc\"") != NULL));
+	}
+
+	/* 管理者ウィンドウ：一覧が届く・直す（データAPIと同じ確認を通す）・足す・不正は断って中身を変えない・管理者でない人と短いパケットは弾く */
+	{
+		CMDPARA_ADMINTRIALROOM Res;
+		TRIALROOMINFO Info, Orig = *g_aTrialRoomInfo[nRoom];
+		int nCount0 = g_aTrialRoomInfo.GetSize();
+		pA->byAdminLV = ADMINLV_ADMINISTRATOR;
+		BOOL bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_LISTREQ, 0, NULL, Res);
+		printf("admintrialroom list got=%d sub=%d count_ok=%d first=%d\n", bGot, Res.byCmdSub, (int)(Res.wCount == nCount0), Res.nNo);
+		Info = Orig;
+		strcpy(Info.szName, "管理者の個室");
+		bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_SET, nRoom, &Info, Res);
+		printf("admintrialroom edit got=%d sub=%d result=%d no_ok=%d name=%s\n", bGot, Res.byCmdSub, Res.byResult, (int)(Res.nNo == nRoom), g_aTrialRoomInfo[nRoom]->szName);
+		Info.byState = TRIALROOMSTATE_OPEN; Info.wLoanStTmp = 65000;
+		bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_SET, nRoom, &Info, Res);
+		printf("admintrialroom bad tmpl got=%d result=%d msg_ok=%d same=%d\n", bGot, Res.byResult, (int)(strstr(Res.szMsg, "wLoanStTmp") != NULL), (int)(strcmp(g_aTrialRoomInfo[nRoom]->szName, "管理者の個室") == 0 && g_aTrialRoomInfo[nRoom]->wLoanStTmp == Orig.wLoanStTmp));
+		Info = Orig; Info.szName[0] = 0;
+		bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_SET, nRoom, &Info, Res);
+		printf("admintrialroom empty name got=%d result=%d\n", bGot, Res.byResult);
+		Info = Orig;
+		bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_SET, nRoom, &Info, Res);
+		printf("admintrialroom restore got=%d result=%d name_ok=%d desc_ok=%d\n", bGot, Res.byResult, (int)(strcmp(g_aTrialRoomInfo[nRoom]->szName, Orig.szName) == 0), (int)(strcmp(g_aTrialRoomInfo[nRoom]->szDesc, Orig.szDesc) == 0));
+		bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_SET, nCount0 + 50, &Info, Res);
+		printf("admintrialroom range got=%d result=%d count_same=%d\n", bGot, Res.byResult, (int)(g_aTrialRoomInfo.GetSize() == nCount0));
+		/* 足す（閉じたまま。番号は末尾） */
+		ZeroMemory(&Info, sizeof(Info));
+		strcpy(Info.szName, "足した個室"); Info.byState = TRIALROOMSTATE_CLOSED;
+		bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_SET, -1, &Info, Res);
+		printf("admintrialroom add got=%d result=%d no_ok=%d count_up=%d state=%u\n", bGot, Res.byResult, (int)(Res.nNo == nCount0), g_aTrialRoomInfo.GetSize() - nCount0, g_aTrialRoomInfo.GetSize() > nCount0 ? g_aTrialRoomInfo[nCount0]->byState : 99);
+		/* 開く時に範囲がおかしければ断る（足した個室はそのまま） */
+		Info.byState = TRIALROOMSTATE_OPEN; Info.dwX1 = 5; Info.dwX2 = 1;
+		bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_SET, nCount0, &Info, Res);
+		printf("admintrialroom open bad rect got=%d result=%d state=%u\n", bGot, Res.byResult, g_aTrialRoomInfo[nCount0]->byState);
+		/* 管理者でない人・短いパケットは何も変えない */
+		int nCount1 = g_aTrialRoomInfo.GetSize();
+		Info.byState = TRIALROOMSTATE_CLOSED; strcpy(Info.szName, "ユーザーの個室");
+		pA->byAdminLV = ADMINLV_USER;
+		bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_SET, -1, &Info, Res);
+		printf("admintrialroom user got=%d count_same=%d\n", bGot, (int)(g_aTrialRoomInfo.GetSize() == nCount1));
+		pA->byAdminLV = ADMINLV_ADMINISTRATOR;
+		bGot = AdminTrialRoomSend(pA, ADMINTRIALROOM_SET, -1, &Info, Res, 8);
+		printf("admintrialroom short got=%d count_same=%d\n", bGot, (int)(g_aTrialRoomInfo.GetSize() == nCount1));
+		pA->byAdminLV = ADMINLV_USER;
+		/* 足した個室は片付ける（本物のデータに残さない） */
+		for (int i = nCount0; i < g_aTrialRoomInfo.GetSize(); i ++) SAFE_DELETE(g_aTrialRoomInfo[i]);
+		while (g_aTrialRoomInfo.GetSize() > nCount0) g_aTrialRoomInfo.RemoveAt(g_aTrialRoomInfo.GetSize() - 1);
+		SaveTrialRoomInfo();
+	}
+
+	/* 入口の NPC（台詞 @x番号）と、入口の手前に立つ A・B */
+	int nStartX = pMap->nCX - 4, nStartY = pMap->nCY - 4;
+	PCHARINFO pNpc = new CHARINFO;
+	ZeroMemory((PBYTE)pNpc, sizeof(CHARINFO));
+	pNpc->byNpcType = NPCTYPE_NOMOVE;
+	SetInitCharData(pNpc);
+	pNpc->byGameState = GAMESTATE_NPC;
+	pNpc->byCharState = CHARSTATE_MOVE;
+	pNpc->dwMapID = nMap;
+	pNpc->dwX = pNpc->dwXBack = pNpc->dwStartX = (DWORD)nStartX + 1;
+	pNpc->dwY = pNpc->dwYBack = pNpc->dwStartY = (DWORD)nStartY;
+	strcpy(pNpc->szName, "個室の受付");
+	pNpc->pszNpcSpeech = new char[16];
+	snprintf(pNpc->pszNpcSpeech, 16, "@x%02d", nRoom);
+	pNpc = AddChar(pNpc);
+	pNpc->pID = pNpc->dwTblID + 1;
+	{
+		CCharProcBase CharProcBase;
+		CharProcBase.SetProc(pNpc);
+	}
+	DWORD dwNpc = pNpc->dwTblID;
+	printf("trialroom npc is=%d\n", (int)TrialRoomIsNpc(pNpc));
+	QuestMovePC(pA, nMap, nStartX, nStartY);
+	QuestMovePC(pB, nMap, nStartX, nStartY + 1);
+
+	/* 閉じている部屋は入れない（聞かれない・答えても入らない） */
+	SboWebDataApply("trialRoom", nRoom, "{\"byState\":0}", 1, "テスト");
+	int nAsk = TrialTalkYes(pA, pNpc);
+	printf("trialroom closed asked=%d in=%d\n", nAsk, (int)QuestInChallenge(pA));
+	SboWebDataApply("trialRoom", nRoom, "{\"byState\":1}", 1, "テスト");
+
+	/* 「いいえ」なら入らない */
+	nAsk = TrialTalkYes(pA, pNpc, FALSE);
+	printf("trialroom no asked=%d in=%d\n", nAsk, (int)QuestInChallenge(pA));
+	/* 話さずに「はい」だけ送っても入れない */
+	TrialAnswerSend(pA, pNpc, TRUE);
+	printf("trialroom answer without ask in=%d\n", (int)QuestInChallenge(pA));
+	/* パーティのままでも入れる（各自が個別に借りた姿で入り、出ると元に戻る） */
+	QuestSendParty(pA, pB, CMDPARTY_JOIN);
+	QuestSendParty(pB, pA, CMDPARTY_JOINOK);
+	DWORD dwPartyLv = pA->byLevel;
+	nAsk = TrialTalkYes(pA, pNpc);
+	int nAsk2 = TrialTalkYes(pB, pNpc);
+	printf("trialroom party asked=%d,%d in=%d,%d trial=%d,%d party_kept=%d\n", nAsk, nAsk2, (int)QuestInChallenge(pA), (int)QuestInChallenge(pB),
+		(int)TrialRoomIs(pA), (int)TrialRoomIs(pB), (int)(pA->dwPartyID != 0 && pA->dwPartyID == pB->dwPartyID));
+	{
+		EVENTINFO Event;
+		EVENTINFO_MOVE Move;
+		ZeroMemory(&Event, sizeof(Event));
+		ZeroMemory(&Move, sizeof(Move));
+		Move.dwX = (DWORD)(pMap->nCX - 6);
+		Move.dwY = (DWORD)(pMap->nCY - 6);
+		Event.byType = EVENTTYPE_MOVE;
+		Event.pData = &Move;
+		EventProc(pA, &Event, 0);
+		EventProc(pB, &Event, 0);
+		TrialRoomProc();
+		printf("trialroom party out trial=%d,%d lv_back=%d,%d\n", (int)TrialRoomIs(pA), (int)TrialRoomIs(pB), (int)(pA->byLevel == dwPartyLv), (int)(pB->byLevel == dwPartyLv));
+		QuestMovePC(pA, nMap, nStartX, nStartY);
+		QuestMovePC(pB, nMap, nStartX, nStartY + 1);
+	}
+	QuestSendParty(pB, pA, CMDPARTY_BREAK);
+	pA->dwPartyID = 0; pB->dwPartyID = 0;
+
+	/* はい：借りて個室の入る座標へ。経験値・お金・持ち物はテンプレートのもの */
+	DWORD dwBackX = pA->dwX, dwBackY = pA->dwY;
+	nAsk = TrialTalkYes(pA, pNpc);
+	printf("trialroom enter asked=%d in=%d trial=%d at_entry=%d lv=%u pw=%u hp=%u/%u gold=%u exp=%u weapon_equ=%d\n", nAsk, (int)QuestInChallenge(pA), (int)TrialRoomIs(pA),
+		(int)(pA->dwX == 2 && pA->dwY == 2), pA->byLevel, pA->byPW, pA->wHP, pA->wMaxHP, pA->dwGold, pA->dwExp,
+		(int)(pA->waEqu[0] < MAX_MYITEM && pA->waItem[pA->waEqu[0]] == wWeapon));
+	/* すでに借りている人は聞かれない */
+	QuestMovePC(pA, nMap, 2, 3);
+	printf("trialroom inside asked=%d\n", TrialTalkYes(pA, pNpc));
+	QuestMovePC(pA, nMap, 2, 2);
+
+	/* 中は貸し出しの制限（預かり所に入れられない・保存の間だけ本物） */
+	{
+		CMDPARA_DATA1 Para;
+		ZeroMemory(&Para, sizeof(Para));
+		Para.byCmd = CMD_LEAVEITEM;
+		Para.pID = pA->pID;
+		Para.dwTblID = pA->dwTblID;
+		Para.byData = 0;
+		TestRecv(pA, &Para, sizeof(Para));
+		printf("trialroom leave blocked item0=%d msg=%s\n", (int)(pA->waItem[0] == wWeapon), TrialRoomBlockedText(pA));
+	}
+	QuestChallengeSaveSwap(TRUE);
+	printf("trialroom saving lv=%u gold=%u exp=%u at_start=%d\n", pA->byLevel, pA->dwGold, pA->dwExp, (int)(pA->dwX == dwBackX && pA->dwY == dwBackY));
+	QuestChallengeSaveSwap(FALSE);
+	printf("trialroom saved lv=%u gold=%u at_entry=%d\n", pA->byLevel, pA->dwGold, (int)(pA->dwX == 2 && pA->dwY == 2));
+
+	/* 中で増えた経験値・お金は、出ると捨てられる */
+	pA->dwGold += 100; pA->dwExp += 100;
+	TrialRoomProc();
+	printf("trialroom proc inside in=%d\n", (int)QuestInChallenge(pA));
+
+	/* 出口（同じマップの中のワープ）を踏む：範囲の外へ出たので元の姿・入る前の場所へ戻る */
+	{
+		EVENTINFO Event;
+		EVENTINFO_MOVE Move;
+		ZeroMemory(&Event, sizeof(Event));
+		ZeroMemory(&Move, sizeof(Move));
+		Move.dwX = (DWORD)(pMap->nCX - 6);
+		Move.dwY = (DWORD)(pMap->nCY - 6);
+		Event.byType = EVENTTYPE_MOVE;
+		Event.pData = &Move;
+		EventProc(pA, &Event, 0);
+		printf("trialroom exit stepped in=%d\n", (int)QuestInChallenge(pA));
+		TrialRoomProc();
+		printf("trialroom exit in=%d lv=%u pw=%u hp=%u gold=%u exp=%u at_back=%d item0=%d\n", (int)QuestInChallenge(pA), pA->byLevel, pA->byPW, pA->wHP, pA->dwGold, pA->dwExp,
+			(int)(pA->dwX == dwBackX && pA->dwY == dwBackY), (int)(pA->waItem[0] == 0));
+	}
+
+	/* 個室の中でワープのイベントに乗る（イベントは範囲の中・行き先は範囲の外）：行き先へは飛ばず、直接元の姿・入る前の場所へ戻る */
+	{
+		QuestMovePC(pA, nMap, nStartX, nStartY);
+		TrialTalkYes(pA, pNpc);
+		QuestMovePC(pA, nMap, 2, 3);
+		EVENTINFO Event;
+		EVENTINFO_MOVE Move;
+		ZeroMemory(&Event, sizeof(Event));
+		ZeroMemory(&Move, sizeof(Move));
+		Move.dwX = (DWORD)(pMap->nCX - 6);
+		Move.dwY = (DWORD)(pMap->nCY - 6);
+		Event.byType = EVENTTYPE_MOVE;
+		Event.pData = &Move;
+		int nIn = (int)TrialRoomIs(pA);
+		EventProc(pA, &Event, 0);
+		printf("trialroom event exit before=%d in=%d trial=%d lv=%u pw=%u gold=%u exp=%u at_back=%d at_dest=%d item0=%d\n", nIn, (int)QuestInChallenge(pA), (int)TrialRoomIs(pA),
+			pA->byLevel, pA->byPW, pA->dwGold, pA->dwExp, (int)(pA->dwX == (DWORD)nStartX && pA->dwY == (DWORD)nStartY),
+			(int)(pA->dwX == Move.dwX && pA->dwY == Move.dwY), (int)(pA->waItem[0] == 0));
+	}
+
+	/* 再び入る→倒れる→復活を選ぶとすぐ戻る（お金は減らない・倒れたままにならない） */
+	QuestMovePC(pA, nMap, nStartX, nStartY);
+	TrialTalkYes(pA, pNpc);
+	printf("trialroom reenter in=%d\n", (int)QuestInChallenge(pA));
+	pA->wHP = 0;
+	pA->byCharState = CHARSTATE_DEAD;
+	TrialRoomProc();
+	printf("trialroom dead before resurrect in=%d\n", (int)QuestInChallenge(pA));
+	{
+		CMDPARA_DATA1 Para;
+		ZeroMemory(&Para, sizeof(Para));
+		Para.byCmd = CMD_RESURRECTION;
+		Para.pID = pA->pID;
+		Para.dwTblID = pA->dwTblID;
+		TestRecv(pA, &Para, sizeof(Para));
+		printf("trialroom dead in=%d state=%u hp=%u gold=%u at_back=%d lv=%u\n", (int)QuestInChallenge(pA), pA->byCharState, pA->wHP, pA->dwGold,
+			(int)(pA->dwX == (DWORD)nStartX && pA->dwY == (DWORD)nStartY), pA->byLevel);
+	}
+
+	/* 入って切断：その場で元の姿。戻り位置はログインの時に反映 */
+	TrialTalkYes(pA, pNpc);
+	printf("trialroom reenter2 in=%d\n", (int)QuestInChallenge(pA));
+	QuestOnDecPlayer(pA);
+	printf("trialroom logout in=%d lv=%u gold=%u\n", (int)QuestInChallenge(pA), pA->byLevel, pA->dwGold);
+	DeleteTblNoPC((int)pA->dwTblID);
+	QuestOnLogin(pA);
+	AddTblNoPC((int)pA->dwTblID);
+	printf("trialroom relogin at_back=%d\n", (int)(pA->dwX == (DWORD)nStartX && pA->dwY == (DWORD)nStartY));
+
+	/* 切断した人の戻り位置は、サーバー保存の時にも本物として書かれる（ログイン前に保存が走る場合） */
+	TrialTalkYes(pA, pNpc);
+	QuestOnDecPlayer(pA);
+	DeleteTblNoPC((int)pA->dwTblID);
+	pA->pID = 0;
+	QuestChallengeSaveSwap(TRUE);
+	printf("trialroom save offline at_back=%d lv=%u\n", (int)(pA->dwX == (DWORD)nStartX && pA->dwY == (DWORD)nStartY), pA->byLevel);
+	QuestChallengeSaveSwap(FALSE);
+
+	/* 片付け */
+	DeleteChar(dwNpc);
+	for (int i = 0; i < 2; i ++) {
+		PCHARINFO p = apPC[i];
+		DWORD dwPID = aBack[i].pID;
+		DeleteTblNoPC((int)p->dwTblID);
+		p->pID = dwPID;
+		p->dwMapID = aBack[i].dwMapID; p->dwX = p->dwXBack = aBack[i].dwX; p->dwY = p->dwYBack = aBack[i].dwY;
+		p->byCharState = aBack[i].byCharState; p->wHP = aBack[i].wHP; p->wMaxHP = aBack[i].wMaxHP;
+		p->byLevel = aBack[i].byLevel; p->byPW = aBack[i].byPW; p->wMaxMana = aBack[i].wMaxMana; p->wMana = aBack[i].wMana;
+		p->dwGold = aBack[i].dwGold; p->dwExp = aBack[i].dwExp;
+		CopyMemory(p->waItem, aBack[i].waItem, sizeof(p->waItem));
+		CopyMemory(p->waEqu, aBack[i].waEqu, sizeof(p->waEqu));
+		p->dwPartyID = aBack[i].dwPartyID;
+		AddTblNoPC((int)p->dwTblID);
+	}
+	for (int i = nRoom; i < g_aTrialRoomInfo.GetSize(); i ++) SAFE_DELETE(g_aTrialRoomInfo[i]);
+	while (g_aTrialRoomInfo.GetSize() > nRoom) g_aTrialRoomInfo.RemoveAt(g_aTrialRoomInfo.GetSize() - 1);
+	SaveTrialRoomInfo();
+	delete g_aStTmpInfo[nSt];
+	g_aStTmpInfo.RemoveAt(nSt);
+	printf("trialroom done rooms=%d\n", g_aTrialRoomInfo.GetSize());
+}
+
+/* ------------------------------------------------------------------------- */
+/* AY. 土地取りすごろく（common/LandSugoroku.h のルールを、実サーバーの状態機械・通信で確かめる）	 */
 /*     受付で参加（JOINMODE）→60 秒の募集→開始→サイコロ→歩く→購入の確認→通行料→	 */
 /*     手番の時間切れ（自動サイコロ・購入は「やめる」）→途中から観戦→抜けて脱落・1 人残りの勝ち→	 */
 /*     結果のあと受付へ戻る。既存のすごろく（byRule が土地取りでない）の観戦参加（G）は別。	 */
@@ -19017,7 +21715,7 @@ static void LandRollTo(PSUBGAME_SUGOROKUINFO pSg, DWORD nID, PCHARINFO p, int nW
 
 static void TestLandSugoroku(const std::vector<int> &aLogin)
 {
-	printf("== AW. Land sugoroku ==\n");
+	printf("== AY. Land sugoroku ==\n");
 	if (aLogin.size() < 3) return;
 	s_pSpLogin = &aLogin;
 	PCHARINFO pA = g_aCharInfo[aLogin[0]], pB = g_aCharInfo[aLogin[1]], pC = g_aCharInfo[aLogin[2]];

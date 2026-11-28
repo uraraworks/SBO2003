@@ -1,0 +1,194 @@
+{
+ "board": {
+  "W": 160,
+  "H": 448,
+  "VIEW_H": 224,
+  "YOFS": 224,
+  "BALL_R": 5,
+  "BUMPER_R": 9,
+  "TARGET_R": 2,
+  "FLIP_LEN": 28,
+  "FLIP_R": 3,
+  "FLIP_REST_DEG": 30,
+  "FLIP_UP_DEG": -30,
+  "BUMPERS": 8,
+  "TARGETS": 6,
+  "arch": {
+   "cx": 81,
+   "cy": 80,
+   "r": 75
+  },
+  "pivot": {
+   "lx": 38,
+   "rx": 109,
+   "y": 424
+  },
+  "lane_left": 141,
+  "start": {
+   "x": 148.5,
+   "y": 435.996
+  },
+  "drain_y": 446,
+  "walls": [
+   [
+    6,
+    80,
+    6,
+    396
+   ],
+   [
+    6,
+    396,
+    38,
+    424
+   ],
+   [
+    141,
+    396,
+    109,
+    424
+   ],
+   [
+    141,
+    84,
+    141,
+    440
+   ],
+   [
+    156,
+    80,
+    156,
+    440
+   ],
+   [
+    141,
+    440,
+    156,
+    440
+   ],
+   [
+    38,
+    424,
+    38,
+    458
+   ],
+   [
+    109,
+    424,
+    109,
+    458
+   ]
+  ],
+  "targets": [
+   [
+    28,
+    354,
+    44,
+    354,
+    0
+   ],
+   [
+    66,
+    354,
+    82,
+    354,
+    1
+   ],
+   [
+    104,
+    354,
+    120,
+    354,
+    2
+   ],
+   [
+    28,
+    150,
+    44,
+    150,
+    3
+   ],
+   [
+    66,
+    150,
+    82,
+    150,
+    4
+   ],
+   [
+    104,
+    150,
+    120,
+    150,
+    5
+   ]
+  ],
+  "bumpers": [
+   [
+    58,
+    286
+   ],
+   [
+    100,
+    286
+   ],
+   [
+    79,
+    316
+   ],
+   [
+    58,
+    62
+   ],
+   [
+    100,
+    62
+   ],
+   [
+    79,
+    92
+   ],
+   [
+    34,
+    252
+   ],
+   [
+    124,
+    252
+   ]
+  ]
+ },
+ "parts_sheet": {
+  "PBART_PARTS_W": 128,
+  "PBART_PARTS_H": 96,
+  "PBART_BALL_X": 0,
+  "PBART_BALL_Y": 0,
+  "PBART_BALL_S": 16,
+  "PBART_TARGET_Y": 0,
+  "PBART_TARGET_UP_X": 16,
+  "PBART_TARGET_DOWN_X": 48,
+  "PBART_TARGET_HIT_X": 80,
+  "PBART_TARGET_W": 32,
+  "PBART_TARGET_H": 16,
+  "PBART_BUMPER_Y": 16,
+  "PBART_BUMPER_X": 0,
+  "PBART_BUMPER_HIT_X": 32,
+  "PBART_BUMPER_S": 32,
+  "PBART_FLIP_Y": 48,
+  "PBART_FLIP_REST_X": 0,
+  "PBART_FLIP_UP_X": 48,
+  "PBART_FLIP_S": 48,
+  "PBART_FLIP_PX": 12,
+  "PBART_FLIP_PY": 24,
+  "PBART_SPRING_X": 96,
+  "PBART_SPRING_HEAD_Y": 16,
+  "PBART_SPRING_HEAD_W": 16,
+  "PBART_SPRING_HEAD_H": 8,
+  "PBART_SPRING_COIL_Y": 32,
+  "PBART_SPRING_COIL_W": 16,
+  "PBART_SPRING_COIL_H": 16,
+  "PBART_SPRING_DEPTH": 12,
+  "PBART_SPRING_WELL_H": 24,
+  "PBART_SPRING_BACK_MS": 100
+ }
+}

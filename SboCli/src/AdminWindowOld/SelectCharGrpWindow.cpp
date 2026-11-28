@@ -44,6 +44,37 @@ static void OnRButtonDown(HWND hWnd, BOOL fDoubleClick, int x, int y,
 					UINT keyFlags);												/* メッセージハンドラ(WM_RBUTTONDOWN) */
 static void OnVScroll(HWND hWnd, HWND hWndCtl, UINT code, int pos);				/* メッセージハンドラ(WM_VSCROLL) */
 static void OnCommand(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify);		/* メッセージハンドラ(WM_COMMAND) */
+static int GetCharGrpCount(void);												/* 選んでいる種別の画像の数 */
+static int GetScrollMax(void);													/* 選んでいる種別の最大スクロール位置 */
+
+/* ========================================================================= */
+/* 関数名：GetCharGrpCount													 */
+/* 内容：選んでいる種別の画像の数（OnPaint の nCount と同じ）				 */
+/* 日付：2026/11/27															 */
+/* ========================================================================= */
+static int GetCharGrpCount(void)
+{
+	switch (s_nSelect) {
+	case 0:		return g_wCountCharGrp * 16;
+	case 1:		return 16;
+	case 2:		return g_wCountCharGrp1632 * 8;
+	case 3:		return g_wCountCharGrp3232 * 8;
+	case 4:		return g_wCountCharGrp4848 * 8;
+	}
+	return 0;
+}
+
+/* ========================================================================= */
+/* 関数名：GetScrollMax														 */
+/* 内容：選んでいる種別の最大スクロール位置（8 個ずつ 1 行。7 行ほど見える）	 */
+/* 日付：2026/11/27															 */
+/* ========================================================================= */
+static int GetScrollMax(void)
+{
+	int nRow = (GetCharGrpCount () + 7) / 8;
+
+	return max (0, nRow - 7);
+}
 
 /* ========================================================================= */
 /* 関数名：ShowSelectCharGrpWindow											 */
@@ -155,7 +186,7 @@ static BOOL OnCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct)
 
 	s_hWndScrBar = CreateWindow ("SCROLLBAR", "", WS_CHILD | WS_VISIBLE | SBS_VERT,
 			32 * 8, 0, 16, 32 * 8, hWnd, (HMENU)IDC_SCRBAR, g_hInstance, NULL);
-	SetScrollRange (s_hWndScrBar, SB_CTL, 0, g_wCountCharGrp * 2, FALSE);
+	SetScrollRange (s_hWndScrBar, SB_CTL, 0, GetScrollMax (), FALSE);
 
 	s_hWndCombo = CreateWindow ("COMBOBOX", "", WS_CHILD | WS_VISIBLE | WS_VSCROLL | CBS_DROPDOWNLIST,
 			0, 0, 12 * 10, 12 * 10, hWnd, (HMENU)IDC_COMBO, g_hInstance, NULL);
@@ -288,7 +319,7 @@ static void OnLButtonDown(HWND hWnd, BOOL fDoubleClick, int x, int y, UINT keyFl
 	nCode = x / 32 + ((y - 24) / 32) * 8;
 	nCode += (GetScrollPos (s_hWndScrBar, SB_CTL) * 8);
 
-	if (nCode >= g_wCountMapParts) {
+	if ((y < 24) || (nCode >= GetCharGrpCount ())) {
 		return;
 	}
 
@@ -331,7 +362,7 @@ static void OnVScroll(HWND hWnd, HWND hWndCtl, UINT code, int pos)
 	default:
 		return;
 	}
-	pos = min (MAPPARTSSCRMAX, pos);
+	pos = min (GetScrollMax (), pos);
 	pos = max (0, pos);
 
 	SetScrollPos (hWndCtl, SB_CTL, pos, TRUE);
@@ -348,15 +379,9 @@ static void OnCommand(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
 	switch (id) {
 	case IDC_COMBO:		/* 種別コンボボックス */
 		s_nSelect = (int)SendMessage (s_hWndCombo, CB_GETCURSEL, 0, 0);
-		switch (s_nSelect) {
-		case 0:
-			SetScrollRange (s_hWndScrBar, SB_CTL, 0, g_wCountCharGrp * 2, FALSE);
-			break;
-
-		case 1:
-			SetScrollRange (s_hWndScrBar, SB_CTL, 0, 1, FALSE);
-			break;
-		}
+		/* 種別ごとに画像の数が違うので、スクロール範囲を取り直して先頭へ戻す */
+		SetScrollRange (s_hWndScrBar, SB_CTL, 0, GetScrollMax (), FALSE);
+		SetScrollPos (s_hWndScrBar, SB_CTL, 0, TRUE);
 
 		InvalidateRect (hWnd, NULL, TRUE);
 		break;

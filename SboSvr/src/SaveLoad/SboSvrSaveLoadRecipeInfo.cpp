@@ -5,7 +5,7 @@
 /* 作成日：		2026/11/07													 */
 /* ========================================================================= */
 /*
- * 保存先は SBODATA/SboDataMakerInfo.dat・SboDataRecipeInfo.dat。
+ * 保存先は SBODATA/SboDataMakerInfo.dat・SboDataRecipeInfo.dat（お試し個室は SboDataTrialRoom.dat）。
  * ほかの SboData*.dat と同じ「カラム単位」の形式（[カラム数][データ数]、
  * 続けて カラム名\0＋開始位置、その後にカラムごとの全件分のデータ）で、
  * 項目の表（s_aMakerCol・s_aRecipeCol）に従って書き読みする。
@@ -67,6 +67,21 @@ static const COLINFO s_aMakerCol[] = {
 	COLS(MAKERINFO, szMsgEnd,	COL_STR, MAX_MAKERMSG),
 };
 
+/* お試し個室のカラム */
+static const COLINFO s_aTrialRoomCol[] = {
+	COL (TRIALROOMINFO, byState,		COL_U8),
+	COLS(TRIALROOMINFO, szName,			COL_STR, MAX_TRIALROOMNAME),
+	COLS(TRIALROOMINFO, szDesc,			COL_STR, MAX_TRIALROOMDESC),
+	COL (TRIALROOMINFO, wLoanStTmp,		COL_U16),
+	COL (TRIALROOMINFO, dwMapID,		COL_U32),
+	COL (TRIALROOMINFO, dwX,			COL_U32),
+	COL (TRIALROOMINFO, dwY,			COL_U32),
+	COL (TRIALROOMINFO, dwX1,			COL_U32),
+	COL (TRIALROOMINFO, dwY1,			COL_U32),
+	COL (TRIALROOMINFO, dwX2,			COL_U32),
+	COL (TRIALROOMINFO, dwY2,			COL_U32),
+};
+
 /* レシピ情報のカラム */
 static const COLINFO s_aRecipeCol[] = {
 	COL (RECIPEINFO, byState,		COL_U8),
@@ -88,6 +103,8 @@ static const COLINFO s_aRecipeCol[] = {
 /* ========================================================================= */
 BOOL SaveMakerInfo(void);										/* 作り手情報保存 */
 BOOL LoadMakerInfo(void);										/* 作り手情報読み込み */
+BOOL SaveTrialRoomInfo(void);									/* お試し個室保存 */
+BOOL LoadTrialRoomInfo(void);									/* お試し個室読み込み */
 BOOL SaveRecipeInfo(void);										/* レシピ情報保存 */
 BOOL LoadRecipeInfo(void);										/* レシピ情報読み込み */
 static void MakeFileName(char *pszOut, const char *pszName);	/* 保存先のファイル名を作る */
@@ -360,6 +377,53 @@ BOOL LoadMakerInfo(void)
 		PMAKERINFO pInfo = new MAKERINFO;
 		memcpy (pInfo, &aData[sizeof (MAKERINFO) * i], sizeof (MAKERINFO));
 		g_aMakerInfo.Add (pInfo);
+	}
+	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：SaveTrialRoomInfo												 */
+/* 内容：お試し個室保存（SBODATA/SboDataTrialRoom.dat。ファイルが無く 0 件なら作らない） */
+/* ========================================================================= */
+BOOL SaveTrialRoomInfo(void)
+{
+	char szFile[MAX_PATH + 1];
+	std::vector<BYTE> aData;
+	int i, nCount = g_aTrialRoomInfo.GetSize ();
+
+	MakeFileName (szFile, "SboDataTrialRoom.dat");
+	if (nCount == 0) {
+		HANDLE hFile = CreateFile (szFile, GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+		if (hFile == INVALID_HANDLE_VALUE) {
+			return TRUE;
+		}
+		CloseHandle (hFile);
+	}
+	aData.assign (sizeof (TRIALROOMINFO) * (nCount ? nCount : 1), 0);
+	for (i = 0; i < nCount; i ++) {
+		memcpy (&aData[sizeof (TRIALROOMINFO) * i], g_aTrialRoomInfo[i], sizeof (TRIALROOMINFO));
+	}
+	return SaveColumns (szFile, s_aTrialRoomCol, sizeof (s_aTrialRoomCol) / sizeof (s_aTrialRoomCol[0]), &aData[0], sizeof (TRIALROOMINFO), nCount);
+}
+
+/* ========================================================================= */
+/* 関数名：LoadTrialRoomInfo												 */
+/* 内容：お試し個室読み込み													 */
+/* ========================================================================= */
+BOOL LoadTrialRoomInfo(void)
+{
+	char szFile[MAX_PATH + 1];
+	std::vector<BYTE> aData;
+	int i, nCount = 0;
+
+	MakeFileName (szFile, "SboDataTrialRoom.dat");
+	if (!LoadColumns (szFile, s_aTrialRoomCol, sizeof (s_aTrialRoomCol) / sizeof (s_aTrialRoomCol[0]), sizeof (TRIALROOMINFO), MAX_TRIALROOM, aData, &nCount)) {
+		return FALSE;
+	}
+	for (i = 0; i < nCount; i ++) {
+		PTRIALROOMINFO pInfo = new TRIALROOMINFO;
+		memcpy (pInfo, &aData[sizeof (TRIALROOMINFO) * i], sizeof (TRIALROOMINFO));
+		g_aTrialRoomInfo.Add (pInfo);
 	}
 	return TRUE;
 }

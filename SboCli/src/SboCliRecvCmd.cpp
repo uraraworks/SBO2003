@@ -10,6 +10,10 @@
 #include "../../common/DungeonReception.h"
 #include "common/BowFlight.h"
 #include "common/FallingPuzzle.h"
+#include "SboCliPinball.h"
+#include "common/Janjan.h"
+#include "common/MazeAttack.h"
+#include "common/MazeTable.h"
 #include <string>
 #include <vector>
 #include "SboCliRecvCmd.h"
@@ -29,6 +33,7 @@
 #include "AdminWindowOld/AdminDlgMapSwap.h"
 #include "AdminWindowOld/AdminDlgQuestInfo.h"
 #include "AdminWindowOld/AdminDlgStoryInfo.h"
+#include "AdminWindowOld/AdminDlgTrialRoom.h"
 #include "AdminWindowOld/AdminFlagTalk.h"
 #include "SboCliDebugWindow.h"
 #include "SboCliMsgLogWindow.h"
@@ -170,6 +175,7 @@ void	RecvDataProcADMINFLAGNAME			(PBYTE, DWORD);			/* 受信データ処理(管�
 void	RecvDataProcADMINTALK				(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウの会話データの編集) */
 void	RecvDataProcADMINSTORY				(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウの思い出の本の編集) */
 void	RecvDataProcADMINFLAGGROUP			(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのフラグのグループの編集) */
+void	RecvDataProcADMINTRIALROOM			(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのお試し個室の編集) */
 void	RecvDataProcADMINCHARFLAG			(PBYTE, DWORD);			/* 受信データ処理(管理者ウィンドウのキャラのフラグ) */
 void	RecvDataProcTALKMSG					(PBYTE, DWORD);			/* 受信データ処理(会話データで選ばれた台詞) */
 void	RecvDataProcMAPSWAP					(PBYTE, DWORD);			/* 受信データ処理(印で変わるマスの差し替え一覧) */
@@ -178,6 +184,9 @@ void	RecvDataProcDGDEFSTATUS				(PBYTE, DWORD);			/* 受信データ処理(拠�
 void	RecvDataProcDGSTATUS				(PBYTE, DWORD);			/* 受信データ処理(番外編ダンジョンの状況パネル) */
 void	RecvDataProcPUZZLESE				(PBYTE, DWORD);			/* 受信データ処理(落ち物パズルの効果音) */
 void	RecvDataProcPUZZLESTATE				(PBYTE, DWORD);			/* 受信データ処理(落ち物パズルの盤面・落ち物・得点) */
+void	RecvDataProcPINBALLSTATE			(PBYTE, DWORD);			/* 受信データ処理(ピンボールのボール・フリッパー・得点。SboCliPinball.cpp) */
+void	RecvDataProcJANSTATE				(PBYTE, DWORD);			/* 受信データ処理(SBOじゃんの卓の状態) */
+void	RecvDataProcMAZESTATE				(PBYTE, DWORD);			/* 受信データ処理(迷路対戦の盤面・コマ・壁。今は空のスタブ。クライアント担当が実装する) */
 void	RecvDataProcLANDSTATE				(PBYTE, DWORD);			/* 受信データ処理(土地取りすごろくの盤の状態) */
 void	RecvDataProcCHARBUFF				(PBYTE, DWORD);			/* 受信データ処理(攻撃力・守備力アップの残り) */
 void	RecvDataProcMAKERINFO				(PBYTE, DWORD);			/* 受信データ処理(作り手情報) */
@@ -482,6 +491,13 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	NULL,								/* CMD_PUZZLEKEY(クライアント→サーバーのみ) */
 	RecvDataProcPUZZLESTATE,			/* CMD_PUZZLESTATE */
 	RecvDataProcPUZZLESE,				/* CMD_PUZZLESE */
+	NULL,								/* CMD_PINBALLKEY(クライアント→サーバーのみ) */
+	RecvDataProcPINBALLSTATE,			/* CMD_PINBALLSTATE */
+	NULL,								/* CMD_MAZEKEY(クライアント→サーバーのみ) */
+	RecvDataProcMAZESTATE,				/* CMD_MAZESTATE */
+	RecvDataProcJANSTATE,				/* CMD_JANSTATE */
+	NULL,								/* CMD_JANKEY(クライアント→サーバーのみ) */
+	RecvDataProcADMINTRIALROOM,			/* CMD_ADMINTRIALROOM */
 	RecvDataProcLANDSTATE,				/* CMD_LANDSTATE */
 	NULL
 };
@@ -610,6 +626,9 @@ int GetSubGameDataSize(BYTE byType)
 	case SUBGAMEID_DUNGEON:		nSize = sizeof (SUBGAME_DUNGEONINFOSAVE);	break;
 	case SUBGAMEID_WAR:			nSize = sizeof (SUBGAME_WARINFOSAVE);		break;
 	case SUBGAMEID_SUGOROKU:	nSize = sizeof (SUBGAME_SUGOROKUINFOSAVE);	break;
+	case SUBGAMEID_PINBALL:		nSize = sizeof (SUBGAME_PINBALLINFOSAVE);	break;
+	case SUBGAMEID_JANJAN:		nSize = sizeof (SUBGAME_JANJANINFOSAVE);	break;
+	case SUBGAMEID_MAZETABLE:	nSize = sizeof (SUBGAME_MAZETABLEINFOSAVE);	break;
 	}
 	return nSize;
 }
@@ -4525,6 +4544,22 @@ void RecvDataProcADMINFLAGGROUP(PBYTE pData, DWORD dwDataSize)
 }
 
 /* ========================================================================= */
+/* 関数名：RecvDataProcADMINTRIALROOM										 */
+/* 内容：受信データ処理(管理者ウィンドウのお試し個室の編集)					 */
+/*       一覧の 1 件・書き込みの結果が届く									 */
+/* ========================================================================= */
+void RecvDataProcADMINTRIALROOM(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_ADMINTRIALROOM pPara = (PCMDPARA_ADMINTRIALROOM)pData;
+
+	if (dwDataSize < sizeof (CMDPARA_ADMINTRIALROOM)) {
+		return;
+	}
+	pPara->szMsg[sizeof (pPara->szMsg) - 1] = 0;
+	AdminTrialRoomOnRecv (pPara);
+}
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcADMINFLAGNAME										 */
 /* 内容：受信データ処理(管理者ウィンドウのフラグの名前表の編集)				 */
 /*       一覧の続き・書き込みの結果が届く（画面は無いので覚えておくだけ）		 */
@@ -7867,6 +7902,20 @@ void RecvDataProcSUBGAMEINFO(BYTE *pData, DWORD dwDataSize)
 			}
 			break;
 
+		case SUBGAMEID_PINBALL:		/* ピンボール */
+			CopyMemory (g_pSubGameInfo->pInfo, pRecv + 1, sizeof (SUBGAME_PINBALLINFOSAVE));
+		case SUBGAMEID_JANJAN:		/* SBOじゃん */
+			CopyMemory (g_pSubGameInfo->pInfo, pRecv + 1, sizeof (SUBGAME_JANJANINFOSAVE));
+			break;
+
+		case SUBGAMEID_MAZETABLE:	/* 迷路対戦の台 */
+			{
+				PSUBGAME_MAZETABLEINFOSAVE pInfo = (PSUBGAME_MAZETABLEINFOSAVE)g_pSubGameInfo->pInfo;
+
+				CopyMemory (pInfo, pRecv + 1, sizeof (SUBGAME_MAZETABLEINFOSAVE));
+			}
+			break;
+
 		case SUBGAMEID_SUGOROKU:	/* すごろく */
 			{
 				PSUBGAME_SUGOROKUINFOSAVE pInfo = (PSUBGAME_SUGOROKUINFOSAVE)g_pSubGameInfo->pInfo;
@@ -8655,6 +8704,195 @@ BOOL GetDungeonStatus(PCMDPARA_DGSTATUS pOut)
 }
 
 /* ========================================================================= */
+/* 関数名：RecvDataProcMAZESTATE / IsMazeSeated / GetMazeState				 */
+/* 内容：受信データ処理(迷路対戦の盤面・コマ・壁)							 */
+/*		 サーバーは、変わるたびに盤面全体(FULL)を台ごとに送る（小さいので差分なし）。	 */
+/*		 台は dwNpc で見分け、MAZE_VIEW_MAX 台ぶんを覚える。						 */
+/*		 NONE はその台から離れた（見えなくなった）時で、その台の重ね描きを消す。		 */
+/*		 席を立った時は、待機中(IDLE)の FULL が本人にも届く（SEAT の bit が消える）。	 */
+/* ========================================================================= */
+typedef struct _MAZEVIEW {
+	BOOL					bUse;									/* 使っているか */
+	CMDPARA_MAZESTATE		St;										/* 最後に届いた状態 */
+} MAZEVIEW;
+static MAZEVIEW				s_aMazeView[MAZE_VIEW_MAX];
+/* 壁を置くカーソル（本人の操作状態。座るたびに MOVE・中央・横壁に戻す。キー処理が書き、描画が読む） */
+static int					s_nMazeMode = MAZEMODE_MOVE;
+static int					s_nMazeCurX = 2, s_nMazeCurY = 2, s_nMazeCurOrient = MAZE_H;
+
+void RecvDataProcMAZESTATE(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_MAZESTATE pPara = (PCMDPARA_MAZESTATE)pData;
+	int i, nFree = -1, nFind = -1;
+
+	if (dwDataSize < sizeof (CMDPARA_MAZESTATE)) {
+		return;
+	}
+	for (i = 0; i < MAZE_VIEW_MAX; i ++) {
+		if (s_aMazeView[i].bUse && (s_aMazeView[i].St.dwNpc == pPara->dwNpc)) {
+			nFind = i;
+			break;
+		}
+		if (!s_aMazeView[i].bUse && (nFree < 0)) {
+			nFree = i;
+		}
+	}
+	switch (pPara->byKind) {
+	case MAZEKIND_NONE:
+		if (nFind >= 0) {
+			s_aMazeView[nFind].bUse = FALSE;
+		}
+		break;
+	case MAZEKIND_FULL:
+		if ((pPara->byWallCount > MAZEPARA_WALL_MAX) || (pPara->byTurn > 1)) {
+			return;
+		}
+		if (nFind < 0) {
+			nFind = (nFree >= 0) ? nFree : 0;		/* 空きが無ければ先頭を上書き */
+		}
+		/* 新しく座った（この台で SEAT が付いていなかった）ら、操作の状態を初期に戻す */
+		if (!(s_aMazeView[nFind].bUse && (s_aMazeView[nFind].St.byState & MAZESTATE_SEAT)) && (pPara->byState & MAZESTATE_SEAT)) {
+			s_nMazeMode = MAZEMODE_MOVE;
+			s_nMazeCurX = s_nMazeCurY = 2;
+			s_nMazeCurOrient = MAZE_H;
+		}
+		memcpy (&s_aMazeView[nFind].St, pData, sizeof (CMDPARA_MAZESTATE));
+		s_aMazeView[nFind].bUse = TRUE;
+		break;
+	default:
+		return;
+	}
+	g_bDraw = TRUE;
+}
+
+/* 自分がこの台のどちらの席か（0=席 1=プレイヤー 0・1=席 2=プレイヤー 1・-1=どちらでもない）。dwChar に自分のキャラのテーブルIDがあるかで決める */
+int GetMazeMySeat(const CMDPARA_MAZESTATE *pSt)
+{
+	DWORD dwMe;
+
+	if ((g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ())) {
+		return -1;
+	}
+	dwMe = ((PCHARINFO)g_aCharInfo[g_nMyCharID])->dwTblID;
+	if (pSt->dwChar[0] == dwMe) {
+		return 0;
+	}
+	if (pSt->dwChar[1] == dwMe) {
+		return 1;
+	}
+	return (pSt->byState & MAZESTATE_SEAT) ? 0 : -1;		/* 座っているのに見つからない時（古いサーバー）は席 1 */
+}
+
+/* 席に座って遊んでいるか（座っている間は歩かず、キーはゲーム側へ送る） */
+BOOL IsMazeSeated(void)
+{
+	int i;
+
+	if (g_byGameState != GAMESTATE_MOVE) {
+		return FALSE;
+	}
+	for (i = 0; i < MAZE_VIEW_MAX; i ++) {
+		if (s_aMazeView[i].bUse && (s_aMazeView[i].St.byState & MAZESTATE_SEAT)) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* 重ね描きする状態を取得（nIdx は 0〜MAZE_VIEW_MAX-1。見えている台だけ TRUE） */
+BOOL GetMazeState(int nIdx, PCMDPARA_MAZESTATE pOut)
+{
+	if ((nIdx < 0) || (nIdx >= MAZE_VIEW_MAX) || (g_byGameState != GAMESTATE_MOVE) || !s_aMazeView[nIdx].bUse) {
+		return FALSE;
+	}
+	*pOut = s_aMazeView[nIdx].St;
+	return TRUE;
+}
+
+/* 座っている台の状態を取得（座っていなければ FALSE） */
+BOOL GetMazeSeatState(PCMDPARA_MAZESTATE pOut)
+{
+	int i;
+
+	for (i = 0; i < MAZE_VIEW_MAX; i ++) {
+		if (GetMazeState (i, pOut) && (pOut->byState & MAZESTATE_SEAT)) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* 壁を置くカーソルの状態（キー処理と描画で共有） */
+void GetMazeCursor(int *pnMode, int *pnX, int *pnY, int *pnOrient)
+{
+	*pnMode = s_nMazeMode;
+	*pnX = s_nMazeCurX;
+	*pnY = s_nMazeCurY;
+	*pnOrient = s_nMazeCurOrient;
+}
+
+void SetMazeCursor(int nMode, int nX, int nY, int nOrient)
+{
+	s_nMazeMode = nMode;
+	s_nMazeCurX = nX;
+	s_nMazeCurY = nY;
+	s_nMazeCurOrient = nOrient;
+	g_bDraw = TRUE;
+}
+
+/* 状態から盤面（MazeGame）を作って、(x, y, orient) に壁を置けるか調べる（common/MazeAttack.h の CanPlaceWall。サーバーと同じ判定） */
+BOOL MazeCanPlaceWall(const CMDPARA_MAZESTATE *pSt, int nX, int nY, int nOrient)
+{
+	MazeGame Game;
+	int i;
+
+	Game.Init ();
+	for (i = 0; i < 2; i ++) {
+		Game.nPosX[i] = pSt->byPosX[i];
+		Game.nPosY[i] = pSt->byPosY[i];
+		Game.nWallLeft[i] = pSt->byWallLeft[i];
+	}
+	Game.nWallCount = (pSt->byWallCount > MAZE_WALL_MAX) ? MAZE_WALL_MAX : pSt->byWallCount;
+	for (i = 0; i < Game.nWallCount; i ++) {
+		Game.aWall[i].nX = pSt->aWall[i].byX;
+		Game.aWall[i].nY = pSt->aWall[i].byY;
+		Game.aWall[i].nOrient = pSt->aWall[i].byOrient;
+	}
+	Game.byTurn = pSt->byTurn;
+	Game.nWinner = pSt->cWinner;
+	return Game.CanPlaceWall (nX, nY, nOrient);
+}
+
+/* 画面の基準点（カメラ）。通常は自分のキャラのマス＋歩きずれ。迷路対戦の席に座っている間は
+   盤の中央（盤ドット(160,160)）で固定。画面の中央はタイルの中心なので、タイル(5,5)の左上＝盤の中央に合わせるため歩きずれ +16 で画面の中身を右下へ 16 ドット寄せる。地図・キャラ・NPC・盤・天気などの描画は全部これを基準にする。
+   pnX, pnY=基準のマス座標 / pnOfsX, pnOfsY=歩きずれ(ドット。座っている間は盤の中央に合わせる固定値) */
+void GetCameraBase(int *pnX, int *pnY, int *pnOfsX, int *pnOfsY)
+{
+	PCHARINFO pMy = NULL;
+	CMDPARA_MAZESTATE St;
+
+	if ((g_nMyCharID >= 0) && (g_nMyCharID < g_aCharInfo.GetSize ())) {
+		pMy = g_aCharInfo[g_nMyCharID];
+	}
+	if (pMy == NULL) {
+		*pnX = *pnY = *pnOfsX = *pnOfsY = 0;
+		return;
+	}
+	if (GetMazeSeatState (&St)) {
+		/* 盤の左上はタイル単位（32 ドットの倍数）。盤の中央（ドット 160）はタイル 5 の左上＝その中心より 16 ドット左上 */
+		*pnX = ((int)St.sBoardX >> 5) + MAZE_TABLE_TILES / 2;
+		*pnY = ((int)St.sBoardY >> 5) + MAZE_TABLE_TILES / 2;
+		*pnOfsX = *pnOfsY = MAZE_TABLE_TILE_DOT / 2;
+		return;
+	}
+	*pnX = (int)pMy->dwX;
+	*pnY = (int)pMy->dwY;
+	*pnOfsX = BowOffsetX (pMy);
+	*pnOfsY = BowOffsetY (pMy);
+}
+
+
+/* ========================================================================= */
 /* 関数名：RecvDataProcPUZZLESTATE / IsPuzzleSeated / GetPuzzleState		 */
 /* 内容：受信データ処理(落ち物パズル)										 */
 /*		 サーバーは、盤面・次の落ち物・得点・待ちお邪魔が変わった時に盤面全体(FULL)を、	 */
@@ -9024,6 +9262,10 @@ BOOL IsPuzzleSeated(void)
 	if (g_byGameState != GAMESTATE_MOVE) {
 		return FALSE;
 	}
+	/* ピンボールの席も同じ扱い（座っている間は歩かない・ショートカットや仮想パッドの扱いが落ち物と同じ） */
+	if (IsPinballSeated ()) {
+		return TRUE;
+	}
 	for (i = 0; i < PUZZLE_VIEW_MAX; i ++) {
 		if (s_aPuzView[i].bUse && s_aPuzView[i].bBoard && s_aPuzView[i].St.byMine &&
 			((s_aPuzView[i].dwOverTime == 0) || ((int)(timeGetTime () - s_aPuzView[i].dwOverTime) < PUZZLE_OVER_LOCK_MS))) {
@@ -9076,6 +9318,268 @@ BOOL GetPuzzleState(int nIdx, PCMDPARA_PUZZLESTATE pOut, const BYTE **ppBoard, B
 	*ppBoard = pView->abyBoard;
 	*pbOver = (pView->dwOverTime != 0) || (pView->St.byOver != 0);
 	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcJANSTATE / IsJanSeated / GetJanState / JanKeyInput	 */
+/* 内容：SBOじゃんの卓の状態の受信と、座っている本人の操作					 */
+/*		 卓は dwNpc で見分け、JAN_VIEW_MAX 台ぶん（近くの台）覚える。				 */
+/*		 JANSTATE_NONE で消す。CMD_JANSTATE は毎回全体の上書きなので、届いたものを丸ごと置き換える。	 */
+/*		 手牌のカーソル・操作の行のカーソルはクライアントだけで動かす（サーバーへは送らない）。	 */
+/*		 サーバーへ送るのは「牌を捨てる・上がる・鳴く・見送る・席を立つ」だけ。			 */
+/*		 状況（手番・段階・できる操作・直前の捨て牌）が変わった時だけ、カーソルを既定の位置へ戻す	 */
+/*		 （自分が捨てる番は手牌の行・引いた牌、他人の捨て牌への申し出待ちは操作の行）			 */
+/* ========================================================================= */
+#define JAN_VIEW_MAX		(16)
+static_assert (sizeof (CMDPARA_JANSTATE) == 385, "CMDPARA_JANSTATE");
+typedef struct _JANVIEW {
+	BOOL			bUse;
+	DWORD			dwRecv;				/* 最後に受け取った時刻（待ち残りを減らす・古い順に捨てる） */
+	DWORD			dwLimitMax;			/* この待ちの最初の長さ(ms) */
+	JANDRAW			Draw;				/* 状態（St）・席名・カーソル */
+} JANVIEW;
+static JANVIEW			s_aJanView[JAN_VIEW_MAX];
+
+static JANVIEW *JanViewFind(DWORD dwNpc, BOOL bAlloc)
+{
+	int i, nFree = -1, nOld = 0;
+
+	for (i = 0; i < JAN_VIEW_MAX; i ++) {
+		if (s_aJanView[i].bUse && (s_aJanView[i].Draw.St.dwNpc == dwNpc)) {
+			return &s_aJanView[i];
+		}
+		if (!s_aJanView[i].bUse && (nFree < 0)) {
+			nFree = i;
+		}
+		if ((int)(s_aJanView[nOld].dwRecv - s_aJanView[i].dwRecv) > 0) {
+			nOld = i;
+		}
+	}
+	if (!bAlloc) {
+		return NULL;
+	}
+	if (nFree < 0) {
+		nFree = nOld;		/* 満杯なら一番古いものを捨てる */
+	}
+	ZeroMemory (&s_aJanView[nFree], sizeof (JANVIEW));
+	s_aJanView[nFree].bUse = TRUE;
+	return &s_aJanView[nFree];
+}
+
+/* 自分が座っている卓（無ければ NULL） */
+static JANVIEW *JanViewMine(void)
+{
+	int i;
+
+	for (i = 0; i < JAN_VIEW_MAX; i ++) {
+		if (s_aJanView[i].bUse && (s_aJanView[i].Draw.St.byKind == JANSTATE_STATE) && (s_aJanView[i].Draw.St.byMySeat < JANJAN_SEATS)) {
+			return &s_aJanView[i];
+		}
+	}
+	return NULL;
+}
+
+/* 今できる操作を、操作の行のボタンの並び（ツモ・ロン・そろい・組そろい（選び方ごと）・見送り）にする */
+static int JanBuildOps(const CMDPARA_JANSTATE &St, JANOP *pOp)
+{
+	int n = 0, i, nGumi;
+
+	if (St.byMySeat >= JANJAN_SEATS) {
+		return 0;
+	}
+	if (St.byCanAct & JAN_CAN_TSUMO) {
+		pOp[n].byAct = JAN_ACT_TSUMO;	pOp[n].byParam = 0;	n ++;
+	}
+	if (St.byCanAct & JAN_CAN_RON) {
+		pOp[n].byAct = JAN_ACT_RON;		pOp[n].byParam = 0;	n ++;
+	}
+	if (St.byCanAct & JAN_CAN_SOROI) {
+		pOp[n].byAct = JAN_ACT_SOROI;	pOp[n].byParam = 0;	n ++;
+	}
+	if (St.byCanAct & JAN_CAN_GUMI) {
+		nGumi = min ((int)St.byGumiNum, JAN_GUMI_WIRE);
+		for (i = 0; i < nGumi; i ++) {		/* 組そろいは選び方ごとに別々のボタン */
+			pOp[n].byAct = JAN_ACT_GUMI;	pOp[n].byParam = (BYTE)i;	n ++;
+		}
+	}
+	if (St.byCanAct & JAN_CAN_PASS) {
+		pOp[n].byAct = JAN_ACT_PASS;	pOp[n].byParam = 0;	n ++;
+	}
+	return n;
+}
+
+/* 自分が今、牌を捨てる番か */
+static BOOL JanCanDiscard(const CMDPARA_JANSTATE &St)
+{
+	return (St.byKind == JANSTATE_STATE) && (St.byMySeat < JANJAN_SEATS) && (St.byPhase == JANPHASE_PLAY) &&
+		(St.byLogicPhase == JANJAN_PHASE_DISCARD) && (St.byTurn == St.byMySeat);
+}
+
+/* 状況が変わったか（変わったらカーソルの既定の位置へ戻す） */
+static BOOL JanSituationChanged(const CMDPARA_JANSTATE &Old, const CMDPARA_JANSTATE &New)
+{
+	return (Old.byKind != New.byKind) || (Old.byMySeat != New.byMySeat) || (Old.byPhase != New.byPhase) ||
+		(Old.byTurn != New.byTurn) || (Old.byLogicPhase != New.byLogicPhase) || (Old.byCanAct != New.byCanAct) ||
+		(Old.byGumiNum != New.byGumiNum) || (Old.byLastSeat != New.byLastSeat) || (Old.byLastTile != New.byLastTile) ||
+		(Old.byResult != New.byResult);
+}
+
+void RecvDataProcJANSTATE(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_JANSTATE pPara = (PCMDPARA_JANSTATE)pData;
+	JANVIEW *pView;
+	CMDPARA_JANSTATE Old;
+	BOOL bOld, bChanged;
+	int i, nOldHand = 0, nHand = 0;
+
+	if (dwDataSize != sizeof (CMDPARA_JANSTATE)) {
+		return;
+	}
+	if (pPara->byKind == JANSTATE_NONE) {
+		pView = JanViewFind (pPara->dwNpc, FALSE);
+		if (pView) {
+			pView->bUse = FALSE;
+		}
+		g_bDraw = TRUE;
+		return;
+	}
+	if (pPara->byKind != JANSTATE_STATE) {
+		return;
+	}
+	pView = JanViewFind (pPara->dwNpc, FALSE);
+	bOld = (pView != NULL);
+	pView = JanViewFind (pPara->dwNpc, TRUE);
+	if (bOld) {
+		Old = pView->Draw.St;
+		if (Old.byMySeat < JANJAN_SEATS) {
+			nOldHand = Old.aSeat[Old.byMySeat].byHandNum;
+		}
+	}
+	memcpy (&pView->Draw.St, pData, sizeof (CMDPARA_JANSTATE));
+	pView->dwRecv = timeGetTime ();
+	for (i = 0; i < JANJAN_SEATS; i ++) {
+		pView->Draw.St.aSeat[i].szName[JAN_NAME_LEN - 1] = '\0';
+		/* 席名はサーバーが UTF-8 で送ってくる。ゲーム内の文字コードにしておく */
+		W32Utf8ToSjis (pView->Draw.St.aSeat[i].szName, pView->Draw.aszName[i], sizeof (pView->Draw.aszName[i]));
+		pView->Draw.aszName[i][JAN_NAME_LEN] = '\0';
+	}
+	/* 手牌・組・捨て牌の枚数は、欄の大きさを超えないようにしておく（描く側が欄を越えて読まない） */
+	for (i = 0; i < JANJAN_SEATS; i ++) {
+		JANSEATWIRE &Seat = pView->Draw.St.aSeat[i];
+		Seat.byHandNum = (BYTE)min ((int)Seat.byHandNum, JAN_HAND_WIRE);
+		Seat.byMeldNum = (BYTE)min ((int)Seat.byMeldNum, JAN_MELD_WIRE);
+		Seat.byRiverNum = (BYTE)min ((int)Seat.byRiverNum, JAN_RIVER_WIRE);
+	}
+	pView->Draw.St.byGumiNum = (BYTE)min ((int)pView->Draw.St.byGumiNum, JAN_GUMI_WIRE);
+
+	/* カーソル：状況が変わった時だけ既定の位置へ。待ちの長さは、状況が変わった時の最初の値を覚える */
+	pView->Draw.nOpNum = JanBuildOps (pView->Draw.St, pView->Draw.aOp);
+	bChanged = !bOld || JanSituationChanged (Old, pView->Draw.St);
+	if (pView->Draw.St.byMySeat < JANJAN_SEATS) {
+		nHand = pView->Draw.St.aSeat[pView->Draw.St.byMySeat].byHandNum;
+	}
+	if (bChanged) {
+		pView->Draw.nOpSel = 0;
+		/* 自分の捨てる番は手牌の行、他人の捨て牌への申し出待ちは操作の行が既定 */
+		pView->Draw.nFocus = ((pView->Draw.nOpNum > 0) && !JanCanDiscard (pView->Draw.St)) ? 1 : 0;
+		pView->dwLimitMax = pView->Draw.St.dwLimitMs;
+	} else if (pView->Draw.St.dwLimitMs > pView->dwLimitMax) {
+		pView->dwLimitMax = pView->Draw.St.dwLimitMs;
+	}
+	if (pView->Draw.nOpNum <= 0) {
+		pView->Draw.nFocus = 0;
+	}
+	pView->Draw.nOpSel = max (0, min (pView->Draw.nOpSel, pView->Draw.nOpNum - 1));
+	/* 引いた牌（最後）が増えた時は、そこへカーソルを置く。それ以外は今の位置を保つ */
+	if (!bOld || (nHand > nOldHand)) {
+		pView->Draw.nCursor = max (0, nHand - 1);
+	}
+	pView->Draw.nCursor = max (0, min (pView->Draw.nCursor, nHand - 1));
+	g_bDraw = TRUE;
+}
+
+/* 席に座っているか（座っている間は歩かず、キーはゲーム側へ送る） */
+BOOL IsJanSeated(void)
+{
+	if (g_byGameState != GAMESTATE_MOVE) {
+		return FALSE;
+	}
+	return JanViewMine () != NULL;
+}
+
+/* 重ね描きする状態を取得（nIdx は 0〜JAN_VIEW_MAX-1。見えている卓だけ TRUE） */
+BOOL GetJanState(int nIdx, JANDRAW *pOut)
+{
+	JANVIEW *pView;
+	DWORD dwNow = timeGetTime ();
+
+	if ((nIdx < 0) || (nIdx >= JAN_VIEW_MAX)) {
+		return FALSE;
+	}
+	pView = &s_aJanView[nIdx];
+	if (!pView->bUse || (g_byGameState != GAMESTATE_MOVE)) {
+		return FALSE;
+	}
+	*pOut = pView->Draw;
+	pOut->bCanDiscard = JanCanDiscard (pView->Draw.St);
+	pOut->nLeftMs = 0;
+	pOut->nLimitMax = (int)pView->dwLimitMax;
+	if (pView->Draw.St.dwLimitMs > 0) {
+		int nElapsed = (int)(dwNow - pView->dwRecv);
+		pOut->nLeftMs = max (0, (int)pView->Draw.St.dwLimitMs - nElapsed);
+		g_bDraw = TRUE;		/* 残り時間を減らして描き続ける */
+	}
+	return TRUE;
+}
+
+/* 座っている本人の操作。左右＝手牌（操作の行にいる時は操作）のカーソル、上＝手牌の行と操作の行を行き来、
+   下＝手牌の行へ、決定＝牌を捨てる／選んだ操作をする、席を立つ。カーソルを動かすだけならサーバーへは送らない */
+void JanKeyInput(int nKey)
+{
+	JANVIEW *pView = JanViewMine ();
+	JANDRAW *pD;
+	int nHand;
+
+	if (pView == NULL) {
+		return;
+	}
+	pD = &pView->Draw;
+	nHand = pD->St.aSeat[pD->St.byMySeat].byHandNum;
+	switch (nKey) {
+	case JANKEY_LEFT:
+	case JANKEY_RIGHT:
+		{
+			int nDir = (nKey == JANKEY_LEFT) ? -1 : 1;
+			if (pD->nFocus == 1) {
+				pD->nOpSel = max (0, min (pD->nOpSel + nDir, pD->nOpNum - 1));
+			} else {
+				pD->nCursor = max (0, min (pD->nCursor + nDir, nHand - 1));
+			}
+		}
+		break;
+	case JANKEY_UP:
+		if (pD->nOpNum > 0) {
+			pD->nFocus = 1 - pD->nFocus;
+		}
+		break;
+	case JANKEY_DOWN:
+		pD->nFocus = 0;
+		break;
+	case JANKEY_DECIDE:
+		if ((pD->nFocus == 1) && (pD->nOpNum > 0)) {
+			SendCmdJANKEY (pD->aOp[pD->nOpSel].byAct, pD->aOp[pD->nOpSel].byParam);
+		} else if (JanCanDiscard (pD->St) && (pD->nCursor >= 0) && (pD->nCursor < nHand)) {
+			BYTE byTile = pD->St.aSeat[pD->St.byMySeat].abyHand[pD->nCursor];
+			if (byTile < JANJAN_KINDS) {
+				SendCmdJANKEY (JAN_ACT_DISCARD, byTile);
+			}
+		}
+		break;
+	case JANKEY_LEAVE:
+		SendCmdJANKEY (JAN_ACT_LEAVE, 0);
+		break;
+	}
+	g_bDraw = TRUE;
 }
 
 /* ========================================================================= */

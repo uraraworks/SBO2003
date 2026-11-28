@@ -41,6 +41,15 @@ cd ~/emsdk
 ./emsdk activate latest
 ```
 
+### Windows（Git Bash）でビルドする場合
+
+`tools/web/build.sh` と `tools/server/build.sh` は Git Bash でも動きます。
+Mac / Linux では何も変わらず、Windows の時だけ次を自動で直します（`tools/sbo-env.sh`）。
+
+- `python3` が Microsoft Store のスタブで動かない時は、本物の Python（`python` か `py -3`）を使います。
+- フォルダのパスが長くて `Argument list too long` になる時は、`C:\s`（ジャンクション）から呼び直します。場所は `SBO_SHORT_ROOT` で変えられます。
+- `make` が無い時は、サーバーのビルドに Ninja（`-G Ninja`）を使います。CMake と Ninja を入れておいてください（`winget install Kitware.CMake Ninja-build.Ninja`）。
+
 ## VSCode でのやり方
 
 リポジトリのフォルダを VSCode で開き、コマンドパレットの「タスク: タスクの実行」から選びます。

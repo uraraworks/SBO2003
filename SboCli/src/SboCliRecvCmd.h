@@ -22,6 +22,44 @@ extern BOOL		IsPuzzleSeated			(void);														/* 落ち物パズルの席�
 extern void		PuzzlePredictKey		(BYTE byKey, DWORD dwSerial);																	/* 落ち物パズルの先読み（キーを送った時に、座っている本人の落ち物を先に動かす） */
 extern BOOL		GetLandState			(PCMDPARA_LANDSTATE pOut, DWORD *pdwRecvTime);												/* 土地取りすごろくの重ね描きの状態（遊んでいる間・観戦中だけ TRUE。pdwRecvTime=届いた時刻） */
 extern BOOL		GetPuzzleState			(int nIdx, PCMDPARA_PUZZLESTATE pOut, const BYTE **ppBoard, BOOL *pbOver);			/* 落ち物パズルの重ね描きの状態（nIdx は 0〜PUZZLE_VIEW_MAX-1。見えている台とゲームオーバー後の少しの間だけ TRUE） */
+/* SBOじゃん（クライアント側の卓の状態・操作） */
+#define JAN_OP_MAX			(8)			/* 操作の行のボタンの最大数（ツモ・ロン・そろい・組そろい3・見送り） */
+#define JANKEY_LEFT			(1)			/* JanKeyInput の引数 */
+#define JANKEY_RIGHT		(2)
+#define JANKEY_UP			(3)
+#define JANKEY_DOWN			(4)
+#define JANKEY_DECIDE		(5)
+#define JANKEY_LEAVE		(6)
+typedef struct _JANOP {
+	BYTE		byAct;					/* JAN_ACT_* */
+	BYTE		byParam;				/* GUMI の時は abyGumi の添字 */
+} JANOP;
+typedef struct _JANDRAW {
+	CMDPARA_JANSTATE	St;				/* 最後に届いた状態 */
+	char		aszName[4][JAN_NAME_LEN + 1];	/* 席名（ゲーム内の文字コード） */
+	int			nCursor;				/* 自分の手牌のカーソル（0〜手牌の枚数-1。引いた牌も選べる） */
+	int			nFocus;					/* 0=手牌の行 1=操作の行 */
+	int			nOpSel;					/* 操作の行で選んでいるボタン */
+	int			nOpNum;					/* 操作の行のボタンの数（0=操作の行なし） */
+	JANOP		aOp[JAN_OP_MAX];
+	int			nLeftMs;				/* 自分の待ち時間の残り（ms。待ちが無ければ 0） */
+	int			nLimitMax;				/* この待ちの最初の長さ（ms。バーの割合用） */
+	BOOL		bCanDiscard;			/* 今、自分が牌を捨てる番か */
+} JANDRAW;
+extern BOOL		IsJanSeated				(void);														/* SBOじゃんの席に座っているか */
+extern BOOL		GetJanState				(int nIdx, JANDRAW *pOut);									/* SBOじゃんの重ね描きの状態（nIdx は 0〜15。見えている卓だけ TRUE） */
+extern void		JanKeyInput				(int nKey);													/* SBOじゃんの操作（JANKEY_*。カーソルはクライアントだけで動かし、決定・席を立つだけサーバーへ送る） */
+#define MAZE_VIEW_MAX			(8)															/* 迷路対戦で同時に覚える台の数 */
+#define MAZEMODE_MOVE			(0)															/* 迷路対戦の操作：コマを動かす */
+#define MAZEMODE_WALL			(1)															/* 迷路対戦の操作：壁を置く場所を選ぶ */
+extern BOOL		IsMazeSeated			(void);														/* 迷路対戦の席に座って遊んでいるか */
+extern BOOL		GetMazeState			(int nIdx, PCMDPARA_MAZESTATE pOut);							/* 迷路対戦の重ね描きの状態（nIdx は 0〜MAZE_VIEW_MAX-1。見えている台だけ TRUE） */
+extern int		GetMazeMySeat			(const CMDPARA_MAZESTATE *pSt);									/* 自分がどちらの席か（0/1。どちらでもなければ -1） */
+extern BOOL		GetMazeSeatState		(PCMDPARA_MAZESTATE pOut);										/* 迷路対戦の座っている台の状態（座っていなければ FALSE） */
+extern void		GetMazeCursor			(int *pnMode, int *pnX, int *pnY, int *pnOrient);				/* 壁を置くカーソルの状態（MAZEMODE_*・交点 0〜5・向き 0=横 1=縦） */
+extern void		SetMazeCursor			(int nMode, int nX, int nY, int nOrient);						/* 壁を置くカーソルの状態を変える */
+extern BOOL		MazeCanPlaceWall		(const CMDPARA_MAZESTATE *pSt, int nX, int nY, int nOrient);	/* 状態から盤面を復元して、壁を置けるか（サーバーと同じ判定） */
+extern void		GetCameraBase			(int *pnX, int *pnY, int *pnOfsX, int *pnOfsY);				/* 描画の基準点（通常は自分のマス＋歩きずれ。迷路対戦の席に座っている間は盤の中央・ずれ 0） */
 extern BOOL		GetDungeonStatus		(PCMDPARA_DGSTATUS pOut);									/* 番外編ダンジョン（拠点防衛以外）の状況（パネルを出す時だけ TRUE。しばらく届かなければ消える） */
 extern BOOL		GetDefenseStatus		(PCMDPARA_DGDEFSTATUS pOut);								/* 拠点防衛の状態（帯を出す時だけ TRUE。しばらく届かなければ消える） */
 extern DWORD	GetCharBuffRest			(DWORD dwTblID, int nType);									/* 攻撃力(0)・守備力(1)アップの残り(ms)。0=かかっていない */

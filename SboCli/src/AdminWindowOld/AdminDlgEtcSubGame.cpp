@@ -328,6 +328,60 @@ static void MakeInfo(LPSTR pszInfo)
 					pInfo->byX, pInfo->byY);
 		}
 		break;
+
+	case SUBGAMEID_PINBALL:			/* ピンボール */
+		{
+			PSUBGAME_PINBALLINFOSAVE pInfo = (PSUBGAME_PINBALLINFOSAVE)g_pSubGameInfo->pInfo;
+
+			wsprintf (szTmp,
+					"球数:%d 帯:%s\n"
+					"コイン:%d x%d\n"
+					"盤位置 X:%d Y:%d\n"
+					"席 X:%d Y:%d\n"
+					"台詞:@i%d\n",
+					pInfo->byBalls, pInfo->byBandSide ? "左" : "右",
+					pInfo->wCoinItem, pInfo->byCoinCount,
+					pInfo->cDx, pInfo->cDy,
+					pInfo->cSeatDx, pInfo->cSeatDy,
+					g_nSelectSubGameID);
+		}
+		break;
+	case SUBGAMEID_JANJAN:		/* SBOじゃん */
+		{
+			PSUBGAME_JANJANINFOSAVE pInfo = (PSUBGAME_JANJANINFOSAVE)g_pSubGameInfo->pInfo;
+			static const char *apszLevel[] = { "既定(ふつう)", "よわい", "ふつう", "つよい" };
+
+			wsprintf (szTmp,
+					"チケット:%d x%d\n"
+					"CPU:%s\n"
+					"募集:%d秒\n"
+					"台詞:@j%d\n",
+					pInfo->wTicketItemID, pInfo->byTicketNum,
+					apszLevel[(pInfo->byCpuLevel > 3) ? 3 : pInfo->byCpuLevel],
+					pInfo->wWaitSec,
+					g_nSelectSubGameID);
+		}
+		break;
+	case SUBGAMEID_MAZETABLE:	/* 迷路対戦の台 */
+		{
+			PSUBGAME_MAZETABLEINFOSAVE pInfo = (PSUBGAME_MAZETABLEINFOSAVE)g_pSubGameInfo->pInfo;
+			static const char *apszLevel[] = { "なし", "よわい", "ふつう", "つよい" };
+
+			wsprintf (szTmp,
+					"名前:%s\n"
+					"盤の位置 X:%d Y:%d\n"
+					"座る場所1 X:%d Y:%d\n"
+					"座る場所2 X:%d Y:%d\n"
+					"床パーツ A:%d B:%d 隙間:%d\n"
+					"CPU:%s 絵:%d 名前:%s\n",
+					pInfo->szName,
+					pInfo->chDx, pInfo->chDy,
+					pInfo->chSdx, pInfo->chSdy,
+					pInfo->chSdx2, pInfo->chSdy2,
+					pInfo->wFloorA, pInfo->wFloorB, pInfo->wGap,
+					apszLevel[(pInfo->byCpuLevel > 3) ? 3 : pInfo->byCpuLevel], pInfo->wCpuGrpID, pInfo->szCpuName);
+		}
+		break;
 	}
 
 	strcat (pszInfo, szTmp);

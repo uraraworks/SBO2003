@@ -113,7 +113,7 @@ jobs:
           name: ${{ steps.zip.outputs.name }}
           path: ${{ steps.zip.outputs.path }}
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 7
 
   smoke:
     needs: build
