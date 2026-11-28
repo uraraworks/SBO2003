@@ -34,7 +34,8 @@ WORD g_wPort,														/* 待ち受けポート番号 */
 	 g_wCountMapParts;												/* 使用マップパーツ数 */
 
 DWORD g_dwTime,														/* 現在時刻 */
-	  g_dwOnline,													/* オンライン数 */
+	  g_dwOnline,													/* オンライン数（BOT を除く） */
+	  g_dwBotOnline,												/* BOT のオンライン数（BOT宣言をしたキャラ） */
 	  g_dwOnlineBack[24],											/* 時間毎の最大人数(稼動中) */
 	  g_dwOnlineBackMax[24],										/* 時間毎の最大人数(最大) */
 	  g_dwServerStartTime,											/* 稼動開始時間 */

@@ -181,6 +181,10 @@ void	RecvDataProcTALKRAND					(PBYTE, DWORD);				/* 話してランダム要求 
 void	RecvDataProcPUZZLEKEY					(PBYTE, DWORD);				/* 落ち物パズルのキー入力 */
 void	RecvDataProcPINBALLKEY					(PBYTE, DWORD);				/* ピンボールのキー入力 */
 void	RecvDataProcJANKEY						(PBYTE, DWORD);				/* SBOじゃんの操作 */
+void	RecvDataProcBOTDECLARE					(PBYTE, DWORD);				/* BOT宣言 */
+BOOL	BotDeclare								(PCHARINFO);				/* BOT宣言を受ける */
+void	BotOnlineEnter							(PCHARINFO);				/* ゲームに入った時の人数 */
+void	BotOnlineLeave							(PCHARINFO);				/* ゲームから出た時の人数 */
 void	RecvDataProcMAZEKEY						(PBYTE, DWORD);				/* 迷路対戦の操作 */
 void	RecvDataProcSTOPRAND					(PBYTE, DWORD);				/* 止まるかランダム切り替え */
 void	RecvDataProcGETACCINFO					(PBYTE, DWORD);				/* アカウント情報要求 */
@@ -549,6 +553,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcJANKEY,					/* CMD_JANKEY */
 	RecvDataProcADMINTRIALROOM,			/* CMD_ADMINTRIALROOM */
 	NULL,								/* CMD_LANDSTATE(サーバー→クライアントのみ) */
+	RecvDataProcBOTDECLARE,				/* CMD_BOTDECLARE */
 
 	NULL
 };
@@ -3937,7 +3942,7 @@ void RecvDataProc(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	/* 管理者用のコマンド（管理者ウィンドウからしか送らないもの）は管理者だけ */
-	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_APPRAISE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_DUNGEONSEL) && (byCmd != CMD_DUNGEONMAP) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && (byCmd != CMD_TALKANSWER) && (byCmd != CMD_PUZZLEKEY) && (byCmd != CMD_PINBALLKEY) && (byCmd != CMD_MAZEKEY) && (byCmd != CMD_JANKEY) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET)) && ((byCmd < CMD_RECYCLELIST) || (byCmd > CMD_RECYCLECLOSE))) ||
+	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_APPRAISE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_DUNGEONSEL) && (byCmd != CMD_DUNGEONMAP) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && (byCmd != CMD_TALKANSWER) && (byCmd != CMD_PUZZLEKEY) && (byCmd != CMD_PINBALLKEY) && (byCmd != CMD_MAZEKEY) && (byCmd != CMD_JANKEY) && (byCmd != CMD_BOTDECLARE) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET)) && ((byCmd < CMD_RECYCLELIST) || (byCmd > CMD_RECYCLECLOSE))) ||
 			(byCmd == CMD_CHARITEM)) {
 		if (!CheckAdminBan (nNo)) {
 			SAFE_DELETE_ARRAY (pData);
@@ -4235,7 +4240,8 @@ void RecvDataProcLOGINREQ(PBYTE pData, DWORD dwDataSize)
 			SendCmdLOGINRES (pPara->pID, 0, 6);
 			return;
 		}
-		if ((pCharTmp->byAdminLV == ADMINLV_USER) && (g_dwOnline >= MAX_CONNECTCOUNT)) {
+		/* 満員の判定は BOT も含めた人数で見る（宣言はゲームに入る前なので、ここでは BOT かどうか分からない） */
+		if ((pCharTmp->byAdminLV == ADMINLV_USER) && (g_dwOnline + g_dwBotOnline >= MAX_CONNECTCOUNT)) {
 			SendCmdLOGINRES (pPara->pID, 0, 4);
 			return;
 		}
@@ -4244,6 +4250,7 @@ void RecvDataProcLOGINREQ(PBYTE pData, DWORD dwDataSize)
 			return;
 		}
 		pCharTmp->pID = pPara->pID;
+		pCharTmp->byBot = 0;		/* BOT宣言はログインのたびにやり直し */
 		pCharTmp->dwLastIPAddress = svrSock.GetIPAddress (pPara->pID);
 		/* 向きはログアウトした時のまま(立体交差の橋の上か下かは向きで決まる) */
 		if (pCharTmp->byDirection >= 4) {
@@ -4458,15 +4465,15 @@ void RecvDataProcCHGSTATE(PBYTE pData, DWORD dwDataSize)
 		SendCmdSUBGAMEINFOALL (s_pIDRecv);
 	}
 
-	g_dwOnline ++;
+	BotOnlineEnter (pChar);		/* BOT は g_dwOnline でなく g_dwBotOnline に数える */
 	if (pChar->byAccState & ACCSTATE_ADMINON) {
 		g_byAdminCount ++;
 	}
 
-	/* 時間毎の最大人数を更新 */
+	/* 時間毎の最大人数を更新（BOT は数えない） */
 	SYSTEMTIME sysTime;
 	GetLocalTime (&sysTime);
-	if (g_dwOnline > g_dwOnlineBack[sysTime.wHour]) {
+	if (!pChar->byBot && (g_dwOnline > g_dwOnlineBack[sysTime.wHour])) {
 		g_dwOnlineBack[sysTime.wHour] = g_dwOnline;
 		if (g_dwOnline > g_dwOnlineBackMax[sysTime.wHour]) {
 			g_dwOnlineBackMax[sysTime.wHour] = g_dwOnline;
@@ -4482,7 +4489,7 @@ void RecvDataProcCHGSTATE(PBYTE pData, DWORD dwDataSize)
 	wsprintf (szBuf, "SYSTEM:最新ｸﾗｲｱﾝﾄﾊﾞｰｼﾞｮﾝ:%s", g_szCliVer);
 	SendCmdSYSMSG (s_pIDRecv, szBuf);
 
-	if (g_dwOnline % 10 == 0) {
+	if (!pChar->byBot && (g_dwOnline % 10 == 0)) {
 		wsprintf (szBuf, "SYSTEM:オンライン数が%d人になりました。", g_dwOnline);
 		SendCmdSYSMSG (URARASOCK_SENDALL, szBuf);
 	}
@@ -8521,6 +8528,57 @@ void RecvDataProcMAZEKEY(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	MazeKey (g_aCharInfo[s_nCharNoRecv], pPara->byAct, pPara->byDir, pPara->byX, pPara->byY, pPara->byOrient);
+}
+
+/* ========================================================================= */
+/* 関数名：BotDeclare														 */
+/* 内容：BOT宣言を受ける（ゲームに入る前だけ。入った後・NPC は無視。戻せない）	 */
+/* 戻り値：BOT 扱いにした(TRUE)／無視した(FALSE)							 */
+/* ========================================================================= */
+BOOL BotDeclare(PCHARINFO pChar)
+{
+	if ((pChar == NULL) || (pChar->byNpcType != 0) || (pChar->byGameState >= GAMESTATE_MOVE)) {
+		return FALSE;
+	}
+	pChar->byBot = 1;
+	return TRUE;
+}
+
+/* ========================================================================= */
+/* 関数名：BotOnlineEnter / BotOnlineLeave									 */
+/* 内容：ゲームに入った・出た時のオンライン人数（BOT は g_dwBotOnline、それ以外は g_dwOnline） */
+/* ========================================================================= */
+void BotOnlineEnter(PCHARINFO pChar)
+{
+	if (pChar->byBot) {
+		g_dwBotOnline ++;
+	} else {
+		g_dwOnline ++;
+	}
+}
+
+void BotOnlineLeave(PCHARINFO pChar)
+{
+	if (pChar->byBot) {
+		if (g_dwBotOnline > 0) {
+			g_dwBotOnline --;
+		}
+	} else {
+		g_dwOnline --;
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcBOTDECLARE											 */
+/* 内容：受信データ処理(BOT宣言)											 */
+/*		 ゲームに入る前（GAMESTATE_MOVE 未満）だけ受ける。入った後の宣言は黙って捨てる */
+/* ========================================================================= */
+void RecvDataProcBOTDECLARE(PBYTE pData, DWORD dwDataSize)
+{
+	if ((dwDataSize < sizeof (CMDPARA_BOTDECLARE)) || (s_nCharNoRecv < 0)) {
+		return;
+	}
+	BotDeclare (g_aCharInfo[s_nCharNoRecv]);
 }
 
 /* ========================================================================= */
@@ -15180,7 +15238,7 @@ BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, 
 	/* 管理者用のコマンドだけ（ログインや「元に戻す」自体は通さない） */
 	if ((byCmd >= CMD_MAX) || (RecvDataProcTbl[byCmd] == NULL) ||
 			((byCmd < CMD_MAPPARTSADD) && (byCmd != CMD_CHARITEM)) ||
-			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_ADMINVIEWALL) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_APPRAISE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_DUNGEONSEL) || (byCmd == CMD_DUNGEONMAP) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || (byCmd == CMD_PUZZLEKEY) || (byCmd == CMD_PINBALLKEY) || (byCmd == CMD_MAZEKEY) || (byCmd == CMD_JANKEY) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET)) || ((byCmd >= CMD_RECYCLELIST) && (byCmd <= CMD_RECYCLECLOSE))) {
+			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_ADMINVIEWALL) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_APPRAISE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_DUNGEONSEL) || (byCmd == CMD_DUNGEONMAP) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || (byCmd == CMD_PUZZLEKEY) || (byCmd == CMD_PINBALLKEY) || (byCmd == CMD_MAZEKEY) || (byCmd == CMD_JANKEY) || (byCmd == CMD_BOTDECLARE) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET)) || ((byCmd >= CMD_RECYCLELIST) && (byCmd <= CMD_RECYCLECLOSE))) {
 		return FALSE;
 	}
 

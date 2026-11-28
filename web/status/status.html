@@ -383,7 +383,7 @@
 		$('st-dot').className = 'dot is-online';
 		$('st-text').textContent = '稼働中';
 		$('st-online').textContent = data.onlinePlayers;
-		$('st-online-note').textContent = '定員 ' + data.maxConnect + ' 人';
+		$('st-online-note').textContent = '定員 ' + data.maxConnect + ' 人' + (data.bots ? '・BOT ' + data.bots + '体' : '');
 		$('st-uptime').textContent = uptimeText(data.uptimeSec);
 		$('st-started').textContent = jstText(data.startedAt) + ' から';
 		$('st-chars').textContent = data.playerChars;

@@ -499,6 +499,7 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	NULL,								/* CMD_JANKEY(クライアント→サーバーのみ) */
 	RecvDataProcADMINTRIALROOM,			/* CMD_ADMINTRIALROOM */
 	RecvDataProcLANDSTATE,				/* CMD_LANDSTATE */
+	NULL,								/* CMD_BOTDECLARE(クライアント→サーバーのみ) */
 	NULL
 };
 /* 番号とテーブルの並びがずれていないか */

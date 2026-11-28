@@ -1369,6 +1369,7 @@ static void TestPuzzleRecord(const std::vector<int> &aLogin);
 static void TestMaze(const std::vector<int> &aLogin);
 static void TestJan(const std::vector<int> &aLogin);
 static void TestLandSugoroku(const std::vector<int> &aLogin);
+static void TestBotDeclare(const std::vector<int> &aLogin);
 static void TestEmptyMapCheck(const std::vector<int> &aLogin);
 static void TestPutFill(void);
 static void TestDungeonTheme(void);
@@ -1833,6 +1834,110 @@ static void TestWorld(void)
 		pNpc->dwY = dwNpcY;
 	}
 
+	/* H2. 他人に送るキャラ情報は、管理権限・ついていく列の相手も消す（本人と管理者には残す）。
+	       CHARINFO2 は管理権限だけ。MAPINFO は管理者以外にだけ、クライアントが読まない値を 0 にする */
+	{
+		printf("== H2. CHARINFO mask (admin/tail/mapinfo) ==\n");
+		PCHARINFO pMe = g_aCharInfo[aLogin[0]];
+		PCHARINFO pOther = g_aCharInfo[aLogin[1]];
+		pOther->dwX = pMe->dwX;
+		pOther->dwY = pMe->dwY;
+		BYTE byAdminBackMe = pMe->byAdminLV, byAdminBackOther = pOther->byAdminLV;
+		DWORD dwTailBack = pOther->dwTailTblID, dwTailBackBack = pOther->dwTailBackTblID;
+		DWORD dwMeTail = pMe->dwTailTblID, dwMeTailBack = pMe->dwTailBackTblID;
+		pOther->byAdminLV = ADMINLV_ADMINISTRATOR;
+		pOther->dwTailTblID = 5;
+		pOther->dwTailBackTblID = 6;
+		pMe->dwTailTblID = 7;
+		pMe->dwTailBackTblID = 8;
+		struct { const char *pszLabel; PCHARINFO pChar; int nNo; BYTE byAdmin; } aCase[] = {
+			{"self",        pMe,    aLogin[0], ADMINLV_USER},
+			{"other",       pOther, aLogin[1], ADMINLV_USER},
+			{"other-admin", pOther, aLogin[1], ADMINLV_ADMINISTRATOR},
+		};
+		for (size_t c = 0; c < sizeof(aCase) / sizeof(aCase[0]); c ++) {
+			/* 送る相手 pMe の管理権限。self の時は pMe 自身の権限が送られる値になる */
+			pMe->byAdminLV = aCase[c].byAdmin;
+			if (aCase[c].pChar == pMe) {
+				pMe->byAdminLV = ADMINLV_USER;
+			}
+			SvrSendCaptureBegin();
+			SendCmdCHARINFO(pMe->pID, aCase[c].nNo);
+			std::vector<BYTE> aCap;
+			BOOL bRet = SvrSendCaptureEnd(aCap);
+			CMDPARA_CHARINFO Para;
+			ZeroMemory(&Para, sizeof(Para));
+			if (bRet) {
+				SboPackGetCHARINFO(&Para, &aCap[0], &aCap[0] + aCap.size());
+			}
+			/* tail は -1 が「なし」。tail=値 のときはその値が届いた */
+			printf("charinfo-admin %s ret=%d adminlv=%d tail=%d tailback=%d\n", aCase[c].pszLabel, bRet, (int)Para.byAdminLV,
+				(int)Para.dwTailTblID, (int)Para.dwTailBackTblID);
+
+			SvrSendCaptureBegin();
+			SendCmdCHARINFO2(pMe->pID, 0, aCase[c].nNo);
+			aCap.clear();
+			bRet = SvrSendCaptureEnd(aCap);
+			CMDPARA_CHARINFO2 Para2;
+			ZeroMemory(&Para2, sizeof(Para2));
+			if (bRet) {
+				SboPackGetCHARINFO2(&Para2, &aCap[0], &aCap[0] + aCap.size());
+			}
+			printf("charinfo2-admin %s ret=%d adminlv=%d hp=%d tbl=%d\n", aCase[c].pszLabel, bRet, (int)Para2.byAdminLV,
+				(int)(Para2.wHP == aCase[c].pChar->wHP), (int)(Para2.dwTblID == aCase[c].pChar->dwTblID));
+		}
+		/* 同画面内へ配る版（SendCmdCHARINFO3）：pOther を、pMe（一般）にだけ見える状態で送る */
+		pMe->byAdminLV = ADMINLV_USER;
+		for (int a = 0; a < 2; a ++) {
+			pMe->byAdminLV = a ? ADMINLV_ADMINISTRATOR : ADMINLV_USER;
+			SvrSendCaptureBegin();
+			SendCmdCHARINFO3(aLogin[1]);
+			std::vector<BYTE> aCap;
+			BOOL bRet = SvrSendCaptureEnd(aCap);
+			CMDPARA_CHARINFO Para;
+			ZeroMemory(&Para, sizeof(Para));
+			if (bRet) {
+				SboPackGetCHARINFO(&Para, &aCap[0], &aCap[0] + aCap.size());
+			}
+			printf("charinfo3-admin %s ret=%d adminlv=%d tail=%d tailback=%d\n", a ? "admin" : "user", bRet, (int)Para.byAdminLV,
+				(int)Para.dwTailTblID, (int)Para.dwTailBackTblID);
+		}
+		/* マップ情報：管理者以外には読まれない値を 0 にし、読まれる値（大きさ・イベント数）は残す */
+		{
+			PMAPINFO pMap = g_aMapInfo[GetMapNo(pMe->dwMapID)];
+			int nItemBack = pMap->nItemCount, nProcBack = pMap->nProcEvent;
+			WORD wChestBack = pMap->wChestHigh;
+			pMap->nItemCount = 3;
+			pMap->nProcEvent = 2;
+			pMap->wChestHigh = 9;
+			for (int a = 0; a < 2; a ++) {
+				pMe->byAdminLV = a ? ADMINLV_ADMINISTRATOR : ADMINLV_USER;
+				SvrSendCaptureBegin();
+				SendCmdMAPINFO(pMe->pID, pMe->dwMapID);
+				std::vector<BYTE> aCap;
+				BOOL bRet = SvrSendCaptureEnd(aCap);
+				if (bRet && aCap.size() >= sizeof(CMDPARA_MAPINFO) && aCap[0] == CMD_MAPINFO) {
+					PMAPINFO pInfo = &((PCMDPARA_MAPINFO)&aCap[0])->MapInfo;
+					printf("mapinfo-mask %s item=%d proc=%d chest=%d ptr=%d size=%d events=%d\n", a ? "admin" : "user",
+						pInfo->nItemCount, pInfo->nProcEvent, (int)pInfo->wChestHigh,
+						(int)(pInfo->pwMap != NULL || pInfo->pdwMapChar != NULL || pInfo->paTblNoPC != NULL),
+						(int)(pInfo->nCX == pMap->nCX && pInfo->nCY == pMap->nCY), (int)(pInfo->nEventCount == pMap->nEventCount));
+				} else {
+					printf("mapinfo-mask %s none\n", a ? "admin" : "user");
+				}
+			}
+			pMap->nItemCount = nItemBack;
+			pMap->nProcEvent = nProcBack;
+			pMap->wChestHigh = wChestBack;
+		}
+		pMe->byAdminLV = byAdminBackMe;
+		pOther->byAdminLV = byAdminBackOther;
+		pOther->dwTailTblID = dwTailBack;
+		pOther->dwTailBackTblID = dwTailBackBack;
+		pMe->dwTailTblID = dwMeTail;
+		pMe->dwTailBackTblID = dwMeTailBack;
+	}
+
 	/* I. 町転送の行き先帳（教会で記録した町を覚える・選んだ町へ飛ぶ） */
 	TestTownWarp(aLogin);
 	/* J. 船で目覚めるベッドがばらける */
@@ -1967,6 +2072,8 @@ static void TestWorld(void)
 	TestMaze(aLogin);
 	/* AY. 土地取りすごろく（参加→開始→サイコロ→購入→通行料→時間切れの自動→観戦→脱落→終了。ルールの単体は land_sugoroku_test.cpp） */
 	TestLandSugoroku(aLogin);
+	/* AZ. BOT宣言（宣言→入場で g_dwBotOnline・ゲーム後の宣言は無視・切断で戻る） */
+	TestBotDeclare(aLogin);
 	g_aItemInfo[1]->byType = byCoinTypeBack;
 	g_aItemInfo[1]->byFlg = byCoinFlgBack;
 	g_aItemInfo[1]->byEraseProbability = byCoinEraseBack;
@@ -21951,4 +22058,88 @@ static void TestLandSugoroku(const std::vector<int> &aLogin)
 	g_dwTime = dwTimeBack;
 	s_dwFakeNow = max(dwFakeBack, s_dwFakeNow);
 	(void)nConnB;
+}
+
+/* ------------------------------------------------------------------------- */
+/* AZ. BOT宣言：ゲームに入る前の宣言で g_dwBotOnline に数える（g_dwOnline は増えない）。	 */
+/*     ゲームに入った後の宣言・NPC への宣言は無視。切断で人数もフラグも戻る			 */
+/* ------------------------------------------------------------------------- */
+extern void OnDecPlayer(int nNo);
+static void TestBotDeclare(const std::vector<int> &aLogin)
+{
+	printf("== AZ. BotDeclare ==\n");
+	if (aLogin.empty()) {
+		return;
+	}
+	PCHARINFO pBase = g_aCharInfo[aLogin[0]];
+	/* ログインしていない PC を 2 人（A=BOT になる・B=ふつうの人） */
+	PCHARINFO apChar[2] = {NULL, NULL};
+	int nFound = 0, nCount = g_aCharInfo.GetSize();
+	for (int i = 0; i < nCount && nFound < 2; i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+		if (p->byNpcType == 0 && p->byGameState == GAMESTATE_LOGOFF && p->pID == 0 && (i % 200) == 11) {
+			apChar[nFound ++] = p;
+		}
+	}
+	if (nFound < 2) {
+		printf("bot skip (no char)\n");
+		return;
+	}
+	DWORD dwOnline0 = g_dwOnline, dwBot0 = g_dwBotOnline;
+	for (int k = 0; k < 2; k ++) {
+		PCHARINFO p = apChar[k];
+		int nSlot = Connect(2000 + k, TRUE);
+		p->pID = URARASOCK_IDBASE + nSlot;
+		p->dwMapID = pBase->dwMapID;
+		p->dwX = pBase->dwX;
+		p->dwY = pBase->dwY;
+		p->byGameState = GAMESTATE_LOGIN;
+		if (p->wHP == 0) {
+			p->wHP = 10;
+		}
+	}
+	PCHARINFO pA = apChar[0], pB = apChar[1];
+
+	/* 入る前の宣言：A だけ BOT。2 回目も同じ（戻せない） */
+	printf("bot declare A=%d again=%d B(not declared) bot=%d\n", (int)BotDeclare(pA), (int)BotDeclare(pA), (int)pB->byBot);
+	/* 入る（SboSvrRecvCmd.cpp の入場と同じ人数の振り分け） */
+	for (int k = 0; k < 2; k ++) {
+		PCHARINFO p = apChar[k];
+		p->byGameState = GAMESTATE_MOVE;
+		p->byCharState = CHARSTATE_MOVE;
+		BotOnlineEnter(p);
+		AddTblNoPC(p->dwTblID);
+	}
+	printf("bot enter online+%d bots+%d\n", (int)(g_dwOnline - dwOnline0), (int)(g_dwBotOnline - dwBot0));
+
+	/* 入った後の宣言は無視（B はふつうのまま）・NPC には効かない */
+	printf("bot declare after game B=%d bot=%d\n", (int)BotDeclare(pB), (int)pB->byBot);
+	PCHARINFO pNpc = NULL;
+	for (int i = 0; i < nCount; i ++) {
+		if (g_aCharInfo[i]->byNpcType != 0) {
+			pNpc = g_aCharInfo[i];
+			break;
+		}
+	}
+	if (pNpc) {
+		BYTE byBotBack = pNpc->byBot;
+		printf("bot declare npc=%d bot=%d\n", (int)BotDeclare(pNpc), (int)pNpc->byBot);
+		pNpc->byBot = byBotBack;
+	}
+
+	/* 切断：B（ふつう）→A（BOT）の順に。人数もフラグも戻る */
+	OnDecPlayer((int)pB->dwTblID);
+	printf("bot leave B online+%d bots+%d botFlag=%d\n", (int)(g_dwOnline - dwOnline0), (int)(g_dwBotOnline - dwBot0), (int)pB->byBot);
+	OnDecPlayer((int)pA->dwTblID);
+	printf("bot leave A online+%d bots+%d botFlag=%d state=%d\n", (int)(g_dwOnline - dwOnline0), (int)(g_dwBotOnline - dwBot0), (int)pA->byBot, (int)pA->byGameState);
+
+	/* ゲームに入る前に切断した BOT：人数は動かず、フラグだけ消える */
+	{
+		int nSlot = Connect(2002, TRUE);
+		pA->pID = URARASOCK_IDBASE + nSlot;
+		pA->byGameState = GAMESTATE_LOGIN;
+		BotDeclare(pA);
+		OnDecPlayer((int)pA->dwTblID);
+		printf("bot leave before game online+%d bots+%d botFlag=%d\n", (int)(g_dwOnline - dwOnline0), (int)(g_dwBotOnline - dwBot0), (int)pA->byBot);
+	}
 }

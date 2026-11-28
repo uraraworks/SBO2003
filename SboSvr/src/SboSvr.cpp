@@ -392,6 +392,7 @@ BOOL OnCreate(HWND hWnd)
 
 	g_pServerInfoUploadInfo = NULL;
 	g_dwOnline = 0;
+	g_dwBotOnline = 0;
 	g_dwNewMapID = 0;
 	g_byAdminCount = 0;
 	g_nProcChar = 0;
@@ -841,7 +842,7 @@ void OnDecPlayer(int nNo)
 
 	if ((pChar->byGameState >= GAMESTATE_MOVE) &&
 		(pChar->byGameState != GAMESTATE_NPC)) {
-		g_dwOnline --;
+		BotOnlineLeave (pChar);
 		if (pChar->byAdminLV > ADMINLV_USER) {
 			if (pChar->byAccState & ACCSTATE_ADMINON) {
 				g_byAdminCount --;
@@ -906,6 +907,7 @@ void OnDecPlayer(int nNo)
 	}
 
 	pChar->pID				= 0;
+	pChar->byBot			= 0;		/* BOT宣言はログアウト・切断で消える（人数の戻しは上の BotOnlineLeave） */
 	pChar->byGameState		= GAMESTATE_LOGOFF;
 	pChar->byCharState		= CHARSTATE_LOGOFF;
 	pChar->byDirection		= byDirectionLogoff;

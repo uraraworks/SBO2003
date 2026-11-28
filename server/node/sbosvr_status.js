@@ -125,6 +125,8 @@ Module['sboStatus'] = (function () {
 			status: 'ok',
 			updatedAt: new Date().toISOString(),
 			onlinePlayers: st.online,
+			/* BOT宣言をした接続の数（onlinePlayers には含まない） */
+			bots: st.bots || 0,
 			maxConnect: st.maxConnect,
 			playerChars: st.playerChars,
 			chars: st.chars,
@@ -164,7 +166,7 @@ Module['sboStatus'] = (function () {
 			return true;
 		}
 		if (url === '/health') {
-			reply(res, 200, { status: 'ok', onlinePlayers: st.online }, req.method);
+			reply(res, 200, { status: 'ok', onlinePlayers: st.online, bots: st.bots || 0 }, req.method);
 			return true;
 		}
 		try {
