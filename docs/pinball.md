@@ -134,6 +134,8 @@
 - クライアント：`SboCliPinball.cpp`（受信・先読み・補間・キー・座る場所の判定 `PinballSeatNpcHere`）・`SboCliDrawScreen.cpp`（`DrawPinball`。盤本体はキャラの前・帯と文字はウィンドウの下。落ち物と同じ 2 層）・`SboCliKeyProc.cpp`（`KeyProc` の先頭で `PinballKeyPoll`・座る場所の S キー・仮想パッドの `PADSTATE_PINBALL`）・`SboCliRecvCmd.cpp`（`IsPuzzleSeated` がピンボールの席も真にするので、歩行止め・ショートカット止め・仮想パッドの扱いは落ち物と同じ）。Web 版のビルド対象は `tools/web/sources.txt`、サーバーは `tools/server/sources.txt`。
 - 絵の色・太さ・光る長さ（`PINBALL_FLASH_MS`）・補間の遅れ・見えるまでの距離は、それぞれ `SboCliDrawScreen.cpp`・`SboCliPinball.cpp`・`SboSvrPinball.cpp` の先頭の定数。
 
+- サブゲームの種別を足す時の注意：`SboSvrSubGameProc.cpp` の周期処理の表 `SubGameProcTbl`（`SUBGAMEID_*` の並びと同じ順）にも、その種別の項目（周期処理が無ければ NULL）を足す。表が足りないと、情報が1件あるだけで表の外を読んで、サーバーが落ちる恐れがある（ピンボール=種別6 の追加時に起きた。`SubGameProc` に範囲チェックも入れてある）。
+
 ## 後で足す所
 
 - 記録（ランキング）：結果（得点・勝敗・連勝）はサーバーの `FinishResult` の 1 か所に集まる（ひとり用のゲームオーバー・対戦の勝ち・負け・引き分け）。落ち物の `PuzzleRecordScore`・`PuzzleRecordStreak` と同じ作りの記録をここで足す。
