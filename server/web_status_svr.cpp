@@ -33,7 +33,8 @@ static std::string HourArrayJson(const DWORD *pdw)
 
 /*
  * サーバー状況
- *   online          ゲームに入っている人数（Windows 版の「接続数」と同じ g_dwOnline）
+ *   online          ゲームに入っている人数（Windows 版の「接続数」と同じ g_dwOnline。BOT宣言をした接続は含まない）
+ *   bots            ゲームに入っている BOT の数（g_dwBotOnline）
  *   maxConnect      入れる人数の上限（管理者は上限を超えても入れる）
  *   playerChars     作られたプレイヤーキャラの数（NPC を除く）
  *   chars / maps    処理キャラ数・処理マップ数（Windows 版の画面と同じ）
@@ -52,8 +53,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboSvrStatusJson(void)
 	}
 	char sz[256];
 	snprintf(sz, sizeof(sz),
-			"{\"online\":%u,\"maxConnect\":%d,\"playerChars\":%d,\"chars\":%d,\"maps\":%d,\"uptimeSec\":%u",
-			(unsigned)g_dwOnline, MAX_CONNECTCOUNT, nPlayer, nCount, g_aMapInfo.GetSize(),
+			"{\"online\":%u,\"bots\":%u,\"maxConnect\":%d,\"playerChars\":%d,\"chars\":%d,\"maps\":%d,\"uptimeSec\":%u",
+			(unsigned)g_dwOnline, (unsigned)g_dwBotOnline, MAX_CONNECTCOUNT, nPlayer, nCount, g_aMapInfo.GetSize(),
 			(unsigned)((timeGetTime() - g_dwServerStartTime) / 1000));
 	s_strStatus = sz;
 	s_strStatus += ",\"hourRecord\":" + HourArrayJson(g_dwOnlineBackMax);

@@ -1369,6 +1369,7 @@ static void TestPuzzleRecord(const std::vector<int> &aLogin);
 static void TestMaze(const std::vector<int> &aLogin);
 static void TestJan(const std::vector<int> &aLogin);
 static void TestLandSugoroku(const std::vector<int> &aLogin);
+static void TestBotDeclare(const std::vector<int> &aLogin);
 static void TestEmptyMapCheck(const std::vector<int> &aLogin);
 static void TestPutFill(void);
 static void TestDungeonTheme(void);
@@ -2071,6 +2072,8 @@ static void TestWorld(void)
 	TestMaze(aLogin);
 	/* AY. 土地取りすごろく（参加→開始→サイコロ→購入→通行料→時間切れの自動→観戦→脱落→終了。ルールの単体は land_sugoroku_test.cpp） */
 	TestLandSugoroku(aLogin);
+	/* AZ. BOT宣言（宣言→入場で g_dwBotOnline・ゲーム後の宣言は無視・切断で戻る） */
+	TestBotDeclare(aLogin);
 	g_aItemInfo[1]->byType = byCoinTypeBack;
 	g_aItemInfo[1]->byFlg = byCoinFlgBack;
 	g_aItemInfo[1]->byEraseProbability = byCoinEraseBack;
@@ -22055,4 +22058,88 @@ static void TestLandSugoroku(const std::vector<int> &aLogin)
 	g_dwTime = dwTimeBack;
 	s_dwFakeNow = max(dwFakeBack, s_dwFakeNow);
 	(void)nConnB;
+}
+
+/* ------------------------------------------------------------------------- */
+/* AZ. BOT宣言：ゲームに入る前の宣言で g_dwBotOnline に数える（g_dwOnline は増えない）。	 */
+/*     ゲームに入った後の宣言・NPC への宣言は無視。切断で人数もフラグも戻る			 */
+/* ------------------------------------------------------------------------- */
+extern void OnDecPlayer(int nNo);
+static void TestBotDeclare(const std::vector<int> &aLogin)
+{
+	printf("== AZ. BotDeclare ==\n");
+	if (aLogin.empty()) {
+		return;
+	}
+	PCHARINFO pBase = g_aCharInfo[aLogin[0]];
+	/* ログインしていない PC を 2 人（A=BOT になる・B=ふつうの人） */
+	PCHARINFO apChar[2] = {NULL, NULL};
+	int nFound = 0, nCount = g_aCharInfo.GetSize();
+	for (int i = 0; i < nCount && nFound < 2; i ++) {
+		PCHARINFO p = g_aCharInfo[i];
+		if (p->byNpcType == 0 && p->byGameState == GAMESTATE_LOGOFF && p->pID == 0 && (i % 200) == 11) {
+			apChar[nFound ++] = p;
+		}
+	}
+	if (nFound < 2) {
+		printf("bot skip (no char)\n");
+		return;
+	}
+	DWORD dwOnline0 = g_dwOnline, dwBot0 = g_dwBotOnline;
+	for (int k = 0; k < 2; k ++) {
+		PCHARINFO p = apChar[k];
+		int nSlot = Connect(2000 + k, TRUE);
+		p->pID = URARASOCK_IDBASE + nSlot;
+		p->dwMapID = pBase->dwMapID;
+		p->dwX = pBase->dwX;
+		p->dwY = pBase->dwY;
+		p->byGameState = GAMESTATE_LOGIN;
+		if (p->wHP == 0) {
+			p->wHP = 10;
+		}
+	}
+	PCHARINFO pA = apChar[0], pB = apChar[1];
+
+	/* 入る前の宣言：A だけ BOT。2 回目も同じ（戻せない） */
+	printf("bot declare A=%d again=%d B(not declared) bot=%d\n", (int)BotDeclare(pA), (int)BotDeclare(pA), (int)pB->byBot);
+	/* 入る（SboSvrRecvCmd.cpp の入場と同じ人数の振り分け） */
+	for (int k = 0; k < 2; k ++) {
+		PCHARINFO p = apChar[k];
+		p->byGameState = GAMESTATE_MOVE;
+		p->byCharState = CHARSTATE_MOVE;
+		BotOnlineEnter(p);
+		AddTblNoPC(p->dwTblID);
+	}
+	printf("bot enter online+%d bots+%d\n", (int)(g_dwOnline - dwOnline0), (int)(g_dwBotOnline - dwBot0));
+
+	/* 入った後の宣言は無視（B はふつうのまま）・NPC には効かない */
+	printf("bot declare after game B=%d bot=%d\n", (int)BotDeclare(pB), (int)pB->byBot);
+	PCHARINFO pNpc = NULL;
+	for (int i = 0; i < nCount; i ++) {
+		if (g_aCharInfo[i]->byNpcType != 0) {
+			pNpc = g_aCharInfo[i];
+			break;
+		}
+	}
+	if (pNpc) {
+		BYTE byBotBack = pNpc->byBot;
+		printf("bot declare npc=%d bot=%d\n", (int)BotDeclare(pNpc), (int)pNpc->byBot);
+		pNpc->byBot = byBotBack;
+	}
+
+	/* 切断：B（ふつう）→A（BOT）の順に。人数もフラグも戻る */
+	OnDecPlayer((int)pB->dwTblID);
+	printf("bot leave B online+%d bots+%d botFlag=%d\n", (int)(g_dwOnline - dwOnline0), (int)(g_dwBotOnline - dwBot0), (int)pB->byBot);
+	OnDecPlayer((int)pA->dwTblID);
+	printf("bot leave A online+%d bots+%d botFlag=%d state=%d\n", (int)(g_dwOnline - dwOnline0), (int)(g_dwBotOnline - dwBot0), (int)pA->byBot, (int)pA->byGameState);
+
+	/* ゲームに入る前に切断した BOT：人数は動かず、フラグだけ消える */
+	{
+		int nSlot = Connect(2002, TRUE);
+		pA->pID = URARASOCK_IDBASE + nSlot;
+		pA->byGameState = GAMESTATE_LOGIN;
+		BotDeclare(pA);
+		OnDecPlayer((int)pA->dwTblID);
+		printf("bot leave before game online+%d bots+%d botFlag=%d\n", (int)(g_dwOnline - dwOnline0), (int)(g_dwBotOnline - dwBot0), (int)pA->byBot);
+	}
 }

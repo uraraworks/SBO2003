@@ -59,7 +59,7 @@
  *   /api/admin/search         {session, q}                 → {results:[...（lastIp＝最終IPアドレス）], more}
  *                               q が数字とドットだけなら最終IPアドレスでも探す（完全一致。末尾が "." か "*" なら前方一致）
  *   /api/admin/rename         {session, account, name, check} → {result:"ok", from, to} / {result:<理由>}
- *   /api/admin/online         {session}                    → {players:[{name, account, level, mapID, mapName, x, y, ip, ...}], online}
+ *   /api/admin/online         {session}                    → {players:[{name, account, level, mapID, mapName, x, y, ip, bot, ...}], online（BOT を除く）, bots}
  *
  * 5. 管理ページのログイン
  *    ログインすると、ランダムな値を HttpOnly・SameSite=Strict の Cookie（sbo_admin、https なら Secure）

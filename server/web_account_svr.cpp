@@ -526,6 +526,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebAdminSearch(const char *pszKey
 /*
  * 管理ページの「ログイン中のプレイヤー」一覧
  *   オンライン数（g_dwOnline）と同じ数え方で、ゲームに入っている人だけを出す。
+ *   BOT宣言をした人も並べる（"bot":true）。"online" は BOT を除いた人数、"bots" は BOT の数。
  *   結果: {"players":[{"account","name","slot"（接続の番号。Node.js 側で利用環境を引く）,"ip"（今の接続の IPv4。IPv6 などで分からなければ空）,"level","admin","mapID","mapName","x","y","playMinutes","loginMs"}],"online":N}
  *   並びはマップ ID 順、同じマップの中はキャラ名順。
  */
@@ -563,7 +564,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebAdminOnline(void)
 		}
 		info.dwMapID = pChar->dwMapID;
 		info.strName = W32TextToUtf8Str(pChar->szName);
-		info.strJson = "{\"account\":" + JsonStr(pChar->szAcc) + ",\"name\":" + JsonStr(info.strName);
+		info.strJson = "{\"account\":" + JsonStr(pChar->szAcc) + ",\"name\":" + JsonStr(info.strName) + ",\"bot\":" + (pChar->byBot ? "true" : "false");
 		snprintf(sz, sizeof(sz),
 				",\"slot\":%d,\"level\":%d,\"admin\":%s,\"mapID\":%u,\"x\":%u,\"y\":%u,\"playMinutes\":%u,\"loginMs\":%u",
 				(int)(pChar->pID - URARASOCK_IDBASE), pChar->byLevel, (pChar->byAdminLV != ADMINLV_USER) ? "true" : "false",
@@ -588,7 +589,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebAdminOnline(void)
 		}
 		s_strResult += aInfo[n].strJson;
 	}
-	snprintf(sz, sizeof(sz), "],\"online\":%u}", (unsigned)g_dwOnline);
+	snprintf(sz, sizeof(sz), "],\"online\":%u,\"bots\":%u}", (unsigned)g_dwOnline, (unsigned)g_dwBotOnline);
 	s_strResult += sz;
 	return s_strResult.c_str();
 }

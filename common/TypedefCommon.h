@@ -428,6 +428,8 @@ enum {
 	CMD_ADMINTRIALROOM,												/* 管理者ウィンドウのお試し個室の編集（一覧・書き込み。結果はサーバー→クライアント） */
 /* 以下、プレイヤー用（土地取りすごろく。サーバー→遊んでいる人と観戦者のみ。クライアントは送らない） */
 	CMD_LANDSTATE,												/* 土地取りすごろくの盤の状態（各マスの持ち主・各自の所持金・周回・手番。CMDPARA_LANDSTATE） */
+/* 以下、プレイヤー用（BOT宣言。クライアント→サーバーのみ。公式クライアントは送らない。管理者用の判定から外すこと） */
+	CMD_BOTDECLARE,												/* BOT宣言（ゲームに入る前に送る。以後その接続のキャラは BOT 扱い。CMDPARA_BOTDECLARE） */
 	CMD_MAX
 };
 
@@ -2674,6 +2676,7 @@ typedef struct _CHARINFO {
 	DWORD		adwRateLast[RATE_MAX];								/* コマンド種別ごとに最後に受け付けた時間（0=まだ。サーバーだけ。保存しない） */
 	DWORD		dwSpeechWinStart;									/* 発言の数え始めの時間（サーバーだけ。保存しない） */
 	BYTE		bySpeechWinCount;									/* その間に受け付けた発言の数 */
+	BYTE		byBot;												/* BOT宣言をした(1)（CMD_BOTDECLARE。サーバーだけ。保存・送信しない。ログアウト・切断で 0 に戻る） */
 } CHARINFO, *PCHARINFO;
 
 /* キャラ情報通知 */
@@ -4875,6 +4878,10 @@ typedef struct _CMDPARA_JANKEY {
 	BYTE		byAct;												/* JAN_ACT_* */
 	BYTE		byParam;											/* DISCARD=牌id・GUMI=選んだ組の番号（abyGumi の添字） */
 } CMDPARA_JANKEY, *PCMDPARA_JANKEY;
+/* CMD_BOTDECLARE の中身（クライアント→サーバー。byCmd だけの 1 バイト。誰が送ったかは接続で決まるので、本人の番号などは持たない） */
+typedef struct _CMDPARA_BOTDECLARE {
+	BYTE		byCmd;												/* コマンドID(CMD_BOTDECLARE) */
+} CMDPARA_BOTDECLARE, *PCMDPARA_BOTDECLARE;
 #pragma pack(pop)
 
 /* 並べ替えの対象(CMDPARA_SORTITEM の byTarget) */
