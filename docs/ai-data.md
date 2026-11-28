@@ -238,7 +238,7 @@ BGM・暗さはマップの設定（`map` の `byBGM`・`byLightLevel`）なの�
 - 足す: `sbo_add` で `{"kind":"subGame","records":[{"byType":7,"detail":{...}}]}`（`detail` を省くと全部既定値）。消す: `sbo_update` で `{"byType":0}`。元に戻す・しおりで戻すと、足した台は消えます。
 - 台NPC（`char`）の台詞を `@k<このサブゲームの番号>` にすると、その NPC が台になります（`@d<番号>` と同じ指し方。番号が無い・種別違いなら台にならない）。旧書式 `@k5,-3,…` は使えません。
 - `detail`: `szName`（台の名前）・`chDx`/`chDy`（盤の左上が台NPCのマスから何タイルか。既定 -5,-9）・`chSdx`/`chSdy`（席1の座る場所。既定 0,1）・`chSdx2`/`chSdy2`（席2。既定 0,-10）
-  （位置は -60〜60）・`wFloorA`/`wFloorB`（床のマップパーツ。0=既定の単色。Bが0ならAだけ）・`wGap`（壁の通り道のパーツ。0=既定）・`byCpuLevel`（0〜3。0=CPUなし）・`wCpuGrpID`（CPUのキャラ画像。NPCの `wGrpID` と同じ意味。0=丸）・`szCpuName`（CPUの名前表示。空=「CPU」）
+  （位置は -60〜60）・`wFloorA`/`wFloorB`（床のマップパーツ。0=既定の単色。Bが0ならAだけ）・`wGap`（壁の通り道のパーツ。0=既定）・`byCpuLevel`（0〜3。0=CPUなし）・`wCpuGrpID`（CPUのキャラ画像。NPCの `wGrpID` と同じ意味。0=丸）・`szCpuName`（CPUの名前表示。空=「CPU」）・`wTicketItemID`/`byTicketNum`（参加チケットのアイテム番号と必要枚数 0〜99。0枚=無料でSキー。有料の台は席のマスで道具のチケットを使って座る）
 
 ## SBOじゃん（`subGame` の `byType` 8）
 
