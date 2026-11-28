@@ -420,6 +420,34 @@ void SendCmdCHGSTATE(DWORD pIDSend, DWORD dwTblID, BYTE byData)
 }
 
 /* ========================================================================= */
+/* 関数名：MaskMapInfoForOther												 */
+/* 内容：管理者以外に送るマップ情報から、クライアントが読まない値を0にする	 */
+/*       （サーバー内の生ポインタ・登録アイテム数・メッセージ数・イベント処理 */
+/*         位置・PC/NPC 番号表・宝箱の番号の覚え）。						 */
+/*       構造体の大きさ・並びは変えない。nEventCount と pEvent は			 */
+/*       クライアントの弓の判定（IsBowWall）が読むので残す。				 */
+/*       地形・店・フラグの領域はクライアントが受信後に作り直す			 */
+/* ========================================================================= */
+static void MaskMapInfoForOther(PMAPINFO pMapSend)
+{
+	pMapSend->pwMap				= NULL;
+	pMapSend->pdwMapChar		= NULL;
+	pMapSend->pbyFlg			= NULL;
+	pMapSend->pShopInfo			= NULL;
+	pMapSend->nItemCount		= 0;
+	pMapSend->nMsgCount			= 0;
+	pMapSend->nProcEvent		= 0;
+	pMapSend->pItem				= NULL;
+	pMapSend->pMsg				= NULL;
+	pMapSend->paTblNoPC			= NULL;
+	pMapSend->paTblNoNPC		= NULL;
+	pMapSend->dwCountTblNoPC	= 0;
+	pMapSend->dwCountTblNoNPC	= 0;
+	pMapSend->wBoxHigh			= 0;
+	pMapSend->wChestHigh		= 0;
+}
+
+/* ========================================================================= */
 /* 関数名：SendCmdMAPINFO													 */
 /* 内容：コマンド送信(マップ情報通知)										 */
 /* 日付：2003/05/04															 */
@@ -467,6 +495,13 @@ void SendCmdMAPINFO(DWORD pIDSend, DWORD dwID)
 	/* 印で変わるマス（調べた時の文・渡す品を含む）はクライアントへ送らない。その人の分は CMD_MAPSWAP で別に送る */
 	pMapSend->bySwapCount = 0;
 	ZeroMemory (pMapSend->aSwap, sizeof (pMapSend->aSwap));
+	/* 管理者以外には、クライアントが読まない値を送らない（管理者の窓はメッセージ数などを読む） */
+	{
+		int nRecv = GetCharNo (pIDSend);
+		if ((nRecv < 0) || (g_aCharInfo[nRecv]->byAdminLV == ADMINLV_USER)) {
+			MaskMapInfoForOther (pMapSend);
+		}
+	}
 	CopyMemory (pSendData + sizeof (CMDPARA_MAPINFO), pMap->pwMap, (pMap->nCX * pMap->nCY) * sizeof (WORD));
 
 	pSendTmp = pSendData + sizeof (CMDPARA_MAPINFO) + (pMap->nCX * pMap->nCY) * sizeof (WORD);
@@ -604,6 +639,20 @@ static void MaskCharInfoForOther(PCMDPARA_CHARINFO pSendData)
 	pSendData->dwNpcID				= 0;
 	pSendData->wShowFlagNo			= 0;
 	pSendData->wHideFlagNo			= 0;
+	/* 管理権限・アカウント状態・ついていく列の相手は、クライアントでは本人のものしか読まない */
+	pSendData->byAdminLV			= ADMINLV_USER;
+	pSendData->byAccState			= 0;
+	pSendData->dwTailTblID			= (DWORD)-1;
+	pSendData->dwTailBackTblID		= (DWORD)-1;
+}
+
+/* ========================================================================= */
+/* 関数名：MaskCharInfo2ForOther											 */
+/* 内容：他人に送るキャラ情報2から、管理権限を消す							 */
+/* ========================================================================= */
+static void MaskCharInfo2ForOther(PCMDPARA_CHARINFO2 pSendData)
+{
+	pSendData->byAdminLV			= ADMINLV_USER;
 }
 
 /* ========================================================================= */
@@ -835,6 +884,11 @@ void SendCmdCHARINFO2(DWORD pIDSend, DWORD dwID, int nNo)
 					pSendData->clName			= pChar->clName;
 					pSendData->clSpeech			= pChar->clSpeech;
 					CopyMemory (pSendData->szName, pChar->szName, sizeof (pSendData->szName));
+
+					/* 本人と管理者以外には、管理権限を送らない */
+					if (!IsCharInfoFullRecv (pIDSend, pChar)) {
+						MaskCharInfo2ForOther (pSendData);
+					}
 
 					/* 名前は可変長に詰めて送る（後ろに NPC 発言） */
 					{
