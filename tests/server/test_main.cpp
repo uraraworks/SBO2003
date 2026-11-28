@@ -2851,6 +2851,7 @@ static void TestRecv(PCHARINFO pChar, const void *pData, DWORD dwSize)
 /* 店・預かり所・転職所・着せ替えの人（台詞の印 "@6" "@7" "@5" "@a" "@"）を、p と同じ場所に置く／片付ける。
    サーバーは、これらの人が近くにいる時だけ買う・売る・預ける・転職・着せ替えを受ける */
 static std::vector<PCHARINFO> s_aNearNpc;
+void RenewTblNoChar(void);
 static void NearNpcOpen(PCHARINFO p, const char *pszSpeech, WORD wGrp = 0)
 {
 	PCHARINFO pNpc = new CHARINFO;
@@ -2878,6 +2879,7 @@ static void NearNpcOpen(PCHARINFO p)
 static void NearNpcClose(void)
 {
 	/* 後から作った順に消す（番号がずれないように最後の要素だけ） */
+	BOOL bRemoved = FALSE;
 	while (!s_aNearNpc.empty()) {
 		PCHARINFO pNpc = s_aNearNpc.back();
 		if (g_aCharInfo.GetSize() == 0 || g_aCharInfo[g_aCharInfo.GetSize() - 1] != pNpc) {
@@ -2887,7 +2889,10 @@ static void NearNpcClose(void)
 		delete [] pNpc->pszNpcSpeech;
 		delete pNpc;
 		s_aNearNpc.pop_back();
+		bRemoved = TRUE;
 	}
+	/* マップの NPC 番号表に消した NPC の番号が残ると、後のテスト（道具を使う処理など）が範囲外を読むので作り直す */
+	if (bRemoved) RenewTblNoChar();
 }
 
 static BYTE ItemSum(PCHARINFO p)
