@@ -811,6 +811,7 @@ void OnDecPlayer(int nNo)
 	QuestOnDecPlayer (pChar);		/* 依頼の見えるNPCを消す（持ち主がいなくなる時） */
 	PuzzleOnLeave (pChar);			/* 落ち物パズルの席に座っていたら台の状態を片付ける */
 	PinballOnLeave (pChar);			/* ピンボールの席に座っていたら台の状態を片付ける */
+	MazeOnLeave (pChar);			/* 迷路対戦の席に座っていたら台の状態を片付ける */
 
 
 	pChar->dwLastBattle		= 0;
@@ -1111,6 +1112,7 @@ void TimerProc(void)
 	g_ProcSubGame.Proc ();
 	PuzzleProc ();					/* 落ち物パズルの台（落下を経過時間で進める） */
 	PinballProc ();					/* ピンボールの台（固定ステップを経過時間で進める） */
+	MazeProc ();					/* 迷路対戦の台（勝ちの表示・席を離れた人の片付け・近くの人への盤） */
 }
 
 

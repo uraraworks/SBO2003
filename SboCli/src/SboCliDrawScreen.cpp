@@ -11,6 +11,8 @@
 #include "common/FallingPuzzle.h"
 #include "common/Pinball.h"
 #include "SboCliPinball.h"
+#include "common/MazeAttack.h"
+#include "common/MazeTable.h"
 #include "Glbldata.h"
 #include "SboCliDrawWindow.h"
 #include "SboCliRecvCmd.h"
@@ -20,6 +22,15 @@
 #include "AdminWindowOld/AdminDlgMapLight.h"
 #include "AdminWindowOld/AdminDlgMapSwap.h"
 #include <math.h>
+
+/* ========================================================================= */
+/* 描画の基準点（カメラ）。通常は自分のキャラのマス＋歩きずれ。迷路対戦の席に座っている間は盤の中央・ずれ 0	 */
+/* 実体は SboCliRecvCmd.cpp の GetCameraBase。地図・キャラ・NPC・盤・天気の描画は全部これを基準にする		 */
+/* ========================================================================= */
+static int CamTileX(void) { int x, y, ox, oy; GetCameraBase (&x, &y, &ox, &oy); return x; }
+static int CamTileY(void) { int x, y, ox, oy; GetCameraBase (&x, &y, &ox, &oy); return y; }
+static int CamOfsX(void)  { int x, y, ox, oy; GetCameraBase (&x, &y, &ox, &oy); return ox; }
+static int CamOfsY(void)  { int x, y, ox, oy; GetCameraBase (&x, &y, &ox, &oy); return oy; }
 
 /* ========================================================================= */
 /* 関数プロトタイプ宣言														 */
@@ -78,7 +89,7 @@ static void DrawBridgeOverHead(int nLine)
 		if (GetCharBridgeLayer (pChar) != 2) {
 			continue;
 		}
-		x = (int)pChar->dwX - (int)pMyChar->dwX + (DRAW_PARTS_X + 1);
+		x = (int)pChar->dwX - CamTileX () + (DRAW_PARTS_X + 1);
 		for (int k = x - 1; k <= x + 1; k ++) {
 			if ((k >= 0) && (k < nXMax)) {
 				s_abyBridgeCol[k] = 1;
@@ -770,8 +781,8 @@ static void DrawPuzzle(int nX, int nY, BOOL bTop)
 		/* マップのドット座標 → 描画用の画面（地図のパーツ・キャラと同じ座標。自分のマスが (DRAW_PARTS_X+1)*32）。
 		   歩きのずれ（nX,nY = 32 - BowOffset）は画面の切り取り範囲だけに効かせ、盤面の位置には足さない
 		   （以前は盤面の位置に nX を足していたため歩きのずれが地図と合わず、1 マスごとにカクカクした） */
-		sx = (DRAW_PARTS_X + 1) * 32 + (int)St.sFieldX - (int)pChar->dwX * 32;
-		sy = (DRAW_PARTS_Y + 1) * 32 + (int)St.sFieldY - (int)pChar->dwY * 32;
+		sx = (DRAW_PARTS_X + 1) * 32 + (int)St.sFieldX - CamTileX () * 32;
+		sy = (DRAW_PARTS_Y + 1) * 32 + (int)St.sFieldY - CamTileY () * 32;
 		/* 画面に少しもかからない台は描かない（帯・バーが出る台はそのぶん広く見る。画面にかかる分だけ切り取って描く） */
 		{
 			int nExtra = (St.byIdle ? 0 : 110) + 6;
@@ -1251,7 +1262,6 @@ static void DrawPinballOne(HDC hDC, const PINBALLDRAW &D, int sx, int sy, BOOL b
 static void DrawPinball(int nX, int nY, BOOL bTop)
 {
 	PINBALLDRAW D;
-	PCHARINFO pChar;
 	HDC hDC = NULL;
 	HFONT hFontOld = NULL;
 	int i, sx, sy;
@@ -1259,14 +1269,13 @@ static void DrawPinball(int nX, int nY, BOOL bTop)
 	if ((g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ())) {
 		return;
 	}
-	pChar = g_aCharInfo[g_nMyCharID];
 	for (i = 0; i < PINBALL_VIEW_MAX; i ++) {
 		if (!GetPinballView (i, &D)) {
 			continue;
 		}
 		/* マップのドット座標 → 描画用の画面（落ち物パズルの DrawPuzzle と同じ） */
-		sx = (DRAW_PARTS_X + 1) * 32 + (int)D.St.sFieldX - (int)pChar->dwX * 32;
-		sy = (DRAW_PARTS_Y + 1) * 32 + (int)D.St.sFieldY - (int)pChar->dwY * 32;
+		sx = (DRAW_PARTS_X + 1) * 32 + (int)D.St.sFieldX - CamTileX () * 32;
+		sy = (DRAW_PARTS_Y + 1) * 32 + (int)D.St.sFieldY - CamTileY () * 32;
 		{
 			int nExtra = (D.St.byIdle ? 0 : 110) + 6;
 			if ((sx + PB_W + nExtra <= nX) || (sx - nExtra >= nX + SCRSIZEX) ||
@@ -1288,6 +1297,693 @@ static void DrawPinball(int nX, int nY, BOOL bTop)
 	if (hDC) {
 		SelectObject (hDC, hFontOld);
 		g_pDibDrawMap->Unlock ();
+	}
+}
+
+/* ========================================================================= */
+/* 関数名：DrawMaze															 */
+/* 内容：迷路対戦の盤（320×320 ドット）の重ね描き								 */
+/*		 マス 32 ドット（市松の明るい床。左上は盤ドット (48x, 48y)）、マスの間の通り道 16 ドット＝暗い溝、	 */
+/*		 置かれた壁＝レンガ色（太さ 16・長さ 80。交差点の 16×16 も壁の一部）。					 */
+/*		 bTop=FALSE：盤の床・壁・カーソル（地面の上・キャラの下）					 */
+/*		 bTop=TRUE ：コマ（台NPCに隠れないよう前に）・手番・壁の残り・勝敗・操作ヒント（最前面）	 */
+/*		 盤の左上はサーバーが台の座標から決めた（マップのドット座標）				 */
+/* ========================================================================= */
+static int s_nMazeL, s_nMazeT, s_nMazeR, s_nMazeB;		/* 迷路対戦の重ね描きを切り取る範囲（DrawMaze が決める） */
+#define MAZE_BOARD_DOT		(MAZE_BOARD_DOTS)		/* 盤の一辺（ドット。320） */
+
+/* 塗りつぶし（切り取り範囲の中だけ） */
+static void MazeRect(HDC hDC, int x, int y, int cx, int cy, COLORREF cl, int nAlpha)
+{
+	int yy;
+
+	if ((y >= s_nPzB) || (y + cy <= s_nPzT) || (x >= s_nPzR) || (x + cx <= s_nPzL)) {
+		return;
+	}
+	for (yy = max (0, s_nPzT - y); yy < cy; yy ++) {
+		if (y + yy >= s_nPzB) {
+			break;
+		}
+		PuzSpan (hDC, x, y + yy, cx, cl, nAlpha);
+	}
+}
+
+/* レンガ 1 枚分の長方形（段の高さ 8 ドット。段ごとに継ぎ目を半分ずらす） */
+static void MazeBrick(HDC hDC, int x, int y, int cx, int cy)
+{
+	const COLORREF clBase = RGB (178, 86, 58), clMortar = RGB (104, 52, 40), clLight = RGB (214, 128, 92);
+	int r, xs, nRow = 0, nH;
+
+	MazeRect (hDC, x, y, cx, cy, clBase, 255);
+	for (r = 0; r < cy; r += 8, nRow ++) {
+		nH = min (8, cy - r);
+		MazeRect (hDC, x, y + r, cx, 1, clLight, 255);							/* 段の上の明るい線 */
+		MazeRect (hDC, x, y + r + nH - 1, cx, 1, clMortar, 255);					/* 段の下の目地 */
+		for (xs = (nRow & 1) ? 16 : 0; xs < cx; xs += 32) {
+			if (xs > 0) {
+				MazeRect (hDC, x + xs, y + r, 1, nH, clMortar, 255);				/* 縦の継ぎ目 */
+			}
+		}
+	}
+	/* 外枠（暗く縁取る） */
+	MazeRect (hDC, x, y, cx, 1, clMortar, 255);
+	MazeRect (hDC, x, y + cy - 1, cx, 1, clMortar, 255);
+	MazeRect (hDC, x, y, 1, cy, clMortar, 255);
+	MazeRect (hDC, x + cx - 1, y, 1, cy, clMortar, 255);
+}
+
+/* 壁 1 枚（交点 (wx, wy)・向き）を盤の左上 (bx, by) を基準に描く。マスの間の通り道（16 ドット）にぴったり置く。
+   横壁：縦 48y+32〜+48・横 48x〜48x+80（2 マス＋隙間 1 つ分）／縦壁はその縦横を入れ替えた形 */
+static void MazeWallRect(int wx, int wy, int nOrient, int bx, int by, int *px, int *py, int *pcx, int *pcy)
+{
+	const int P = MAZE_PITCH_DOT;
+
+	if (nOrient == MAZE_H) {
+		*px = bx + wx * P;
+		*py = by + wy * P + MAZE_CELL_DOT;
+		*pcx = MAZE_CELL_DOT * 2 + MAZE_GAP_DOT;
+		*pcy = MAZE_GAP_DOT;
+	} else {
+		*px = bx + wx * P + MAZE_CELL_DOT;
+		*py = by + wy * P;
+		*pcx = MAZE_GAP_DOT;
+		*pcy = MAZE_CELL_DOT * 2 + MAZE_GAP_DOT;
+	}
+}
+
+/* ---- 迷路対戦の見た目の素材 ----------------------------------------------------------------
+   壁の絵：system.png の右端に 16×16 を 14 枚描き足してある（プレイヤー 0＝茶のレンガ・プレイヤー 1＝灰の石レンガ）。
+	 x=224 がプレイヤー 0、x=240 がプレイヤー 1。y は上から
+	   128 横壁の左端 / 144 横壁の中 / 160 横壁の右端 / 176 縦壁の上端 / 208 縦壁の中 / 224 縦壁の下端 / 240 交差点（壁の真ん中の石）
+	 （y=192〜207 は元からある絵があるので飛ばしてある。ほかの使用済みの場所は docs/maze-attack.md）
+	 横壁（80×16）は 左端・中・交差点・中・右端 の 5 枚、縦壁（16×80）は 上端・中・交差点・中・下端 の 5 枚で組む。
+	 黒 (0,0,0) は透過色なので、描き足した絵に黒は使っていない。
+   床・隙間：台詞のパーツID（マップパーツ。(wMap%16*32, wMap/16*32) の 32×32）から描く。隙間は中央の 16×16 をタイル状に敷く */
+#define MAZEART_X0			224		/* system.png の壁の絵の左（プレイヤー 0）。プレイヤー 1 は +16 */
+#define MAZEART_HL			0		/* 絵の番号：横壁の左端 */
+#define MAZEART_HM			1		/* 横壁の中 */
+#define MAZEART_HR			2		/* 横壁の右端 */
+#define MAZEART_VT			3		/* 縦壁の上端 */
+#define MAZEART_VM			4		/* 縦壁の中 */
+#define MAZEART_VB			5		/* 縦壁の下端 */
+#define MAZEART_X			6		/* 交差点（壁の真ん中） */
+static const int s_anMazeArtY[7] = { 128, 144, 160, 176, 208, 224, 240 };	/* 絵の番号ごとの system.png の y */
+
+/* 壁の絵が使えるか（system.png を読めていて、描き足した場所が透明でない） */
+static BOOL MazeWallArtOk(void)
+{
+	int p, k;
+
+	if ((g_pDibSystem == NULL) || (g_pDibSystem->Width () < 256) || (g_pDibSystem->Height () < 256)) {
+		return FALSE;
+	}
+	for (p = 0; p < 2; p ++) {
+		for (k = 0; k < 7; k ++) {
+			int x = MAZEART_X0 + p * 16 + 8, y = s_anMazeArtY[k] + 8;
+			DWORD dwPix = *(PDWORD)(g_pDibSystem->GetBits () + (size_t)(g_pDibSystem->Width () * 4) * (g_pDibSystem->Height () - 1 - y) + x * 4);
+			if ((dwPix & 0x00FFFFFF) == 0) {
+				return FALSE;
+			}
+		}
+	}
+	return TRUE;
+}
+
+/* マップパーツIDが使えるか（0 は「指定なし」、パーツ数以上は範囲外。どちらもコード描画に戻す） */
+static BOOL MazePartOk(WORD wMap)
+{
+	return (g_pDibMapParts != NULL) && (wMap != 0) && (wMap < g_wCountMapParts);
+}
+
+/* 切り取り範囲（s_nPz*）の中だけ矩形転送する。nAlpha が 100 未満なら半透明 */
+static void MazeBlt(int dx, int dy, int cx, int cy, CImg32 *pSrc, int sx, int sy, BOOL bColorKey, int nAlpha)
+{
+	int l = max (dx, s_nPzL), t = max (dy, s_nPzT), r = min (dx + cx, s_nPzR), b = min (dy + cy, s_nPzB);
+
+	if ((r <= l) || (b <= t)) {
+		return;
+	}
+	sx += l - dx;
+	sy += t - dy;
+	if (nAlpha >= 100) {
+		g_pDibDrawMap->Blt (l, t, r - l, b - t, pSrc, sx, sy, bColorKey);
+	} else {
+		g_pDibDrawMap->BltAlpha (l, t, r - l, b - t, pSrc, sx, sy, (BYTE)nAlpha, bColorKey);
+	}
+}
+
+/* 壁 1 枚を system.png の絵で描く（Lock していない状態で呼ぶ。nOwner=0/1 で色違い。nAlpha<100 で半透明） */
+static void MazeWallArt(int wx, int wy, int nOrient, int nOwner, int nAlpha)
+{
+	static const int anH[5] = { MAZEART_HL, MAZEART_HM, MAZEART_X, MAZEART_HM, MAZEART_HR };
+	static const int anV[5] = { MAZEART_VT, MAZEART_VM, MAZEART_X, MAZEART_VM, MAZEART_VB };
+	const int *pn = (nOrient == MAZE_H) ? anH : anV;
+	int k, sx = MAZEART_X0 + ((nOwner == 1) ? 16 : 0);
+
+	for (k = 0; k < 5; k ++) {
+		int x = (nOrient == MAZE_H) ? wx + k * 16 : wx;
+		int y = (nOrient == MAZE_H) ? wy : wy + k * 16;
+		MazeBlt (x, y, 16, 16, g_pDibSystem, sx, s_anMazeArtY[pn[k]], TRUE, nAlpha);
+	}
+}
+
+/* 色付きの丸（半径 nR。中心 cx, cy） */
+static void MazeCircle(HDC hDC, int cx, int cy, int nR, COLORREF cl, COLORREF clEdge, int nAlpha)
+{
+	int dy, nHalf;
+
+	for (dy = -nR; dy <= nR; dy ++) {
+		nHalf = (int)(sqrtf ((float)(nR * nR - dy * dy)) + 0.5f);
+		if ((cy + dy < s_nPzT) || (cy + dy >= s_nPzB)) {
+			continue;
+		}
+		PuzSpan (hDC, cx - nHalf, cy + dy, nHalf * 2 + 1, clEdge, nAlpha);
+		if (nHalf > 2) {
+			PuzSpan (hDC, cx - nHalf + 2, cy + dy, nHalf * 2 - 3, cl, nAlpha);
+		}
+	}
+}
+
+/* コマの絵（転送元の画像と範囲） */
+typedef struct _MAZEPIECE {
+	CImg32		*pDib;											/* 転送元の画像 */
+	int			xx, yy;											/* 転送元の左上 */
+	int			cx, cy;											/* 転送する大きさ（32×32 のキャラ以外は大きい） */
+} MAZEPIECE;
+
+/* キャラの絵（通常・横16縦32・戦場ゲーム・横32縦32・横48縦48）から、向き nDir（0=上・1=下）・アニメ 0 コマ目の転送元を求める。
+   DrawCharLine がキャラを描く時と同じ絵の探し方。描けない種類・範囲外なら FALSE */
+static BOOL MazeGrpSource(WORD wGrpID, WORD wGrpMain, WORD wGrpSub, int nDir, MAZEPIECE *pOut)
+{
+	int no;
+
+	switch (wGrpMain) {
+	case CHARGRP_MAIN_NORMAL:
+		no = wGrpID / 16;
+		if (no >= g_wCountCharGrp) {
+			return FALSE;
+		}
+		pOut->pDib = g_apDibChar[no];
+		pOut->xx = nDir * 64;
+		pOut->yy = 32 * (wGrpID % 16);
+		pOut->cx = 32;
+		pOut->cy = 32;
+		return TRUE;
+	case CHARGRP_MAIN_1632:
+		no = wGrpID / 8;
+		if (no >= g_wCountCharGrp1632) {
+			return FALSE;
+		}
+		pOut->pDib = g_apDibChar1632[no];
+		pOut->xx = nDir * 64;
+		pOut->yy = 64 * (wGrpID % 16);
+		pOut->cx = 32;
+		pOut->cy = 64;
+		return TRUE;
+	case CHARGRP_MAIN_SUBWAR:
+		if (g_pDibWChar == NULL) {
+			return FALSE;
+		}
+		pOut->pDib = g_pDibWChar;
+		pOut->xx = wGrpSub * 64;
+		pOut->yy = wGrpID * 32;
+		pOut->cx = 32;
+		pOut->cy = 32;
+		return TRUE;
+	case CHARGRP_MAIN_3232:
+		no = wGrpID / 8;
+		if (no >= g_wCountCharGrp3232) {
+			return FALSE;
+		}
+		pOut->pDib = g_apDibChar3232[no];
+		pOut->xx = nDir * 128;
+		pOut->yy = 64 * (wGrpID % 16);
+		pOut->cx = 64;
+		pOut->cy = 64;
+		return TRUE;
+	case CHARGRP_MAIN_4848:
+		no = wGrpID / 8;
+		if (no >= g_wCountCharGrp4848) {
+			return FALSE;
+		}
+		pOut->pDib = g_apDibChar4848[no];
+		pOut->xx = nDir * 192;
+		pOut->yy = 96 * (wGrpID % 16);
+		pOut->cx = 96;
+		pOut->cy = 96;
+		return TRUE;
+	}
+	return FALSE;
+}
+
+/* コマの絵：座っているキャラの、その人が普段描かれる絵（変身中は変身後の絵。特殊なグラフィックも含む）。向きは、下側スタートのプレイヤー 0 が上向き・上側スタートのプレイヤー 1 が下向き。描けなければ FALSE */
+static BOOL MazePieceImage(PCHARINFO pChar, int nPlayer, MAZEPIECE *pOut)
+{
+	WORD wGrpID = pChar->wGrpID, wGrpMain = pChar->wGrpMain, wGrpSub = pChar->wGrpSub;
+
+	if (!((pChar->wGrpTmpID == 0) && (pChar->wGrpTmpMain == 0) && (pChar->wGrpTmpSub == 0))) {
+		wGrpID = pChar->wGrpTmpID;
+		wGrpMain = pChar->wGrpTmpMain;
+		wGrpSub = pChar->wGrpTmpSub;
+	}
+	return MazeGrpSource (wGrpID, wGrpMain, wGrpSub, (nPlayer == 0) ? 0 : 1, pOut);
+}
+
+/* CPUのコマの絵：台の設定のキャラ画像（wCpuGrpID。NPC と同じ通常グラフィック）。向きは盤の進行方向（人と同じ）。0 や範囲外なら FALSE（色付きの丸） */
+static BOOL MazeCpuImage(const CMDPARA_MAZESTATE &St, int nPlayer, MAZEPIECE *pOut)
+{
+	if (St.wCpuGrpID == 0) {
+		return FALSE;
+	}
+	return MazeGrpSource (St.wCpuGrpID, CHARGRP_MAIN_NORMAL, 0, (nPlayer == 0) ? 0 : 1, pOut);
+}
+
+/* コマの絵を、マス (x, y)（左上）を基準に描く。32×32 より大きい絵は、マスの中央・足元をマスの下端に合わせる。切り取り範囲（s_nPz*）にかかる所は切る */
+static void MazeBltPiece(int x, int y, const MAZEPIECE &Pc)
+{
+	int dx = x + (MAZE_CELL_DOT - Pc.cx) / 2, dy = y + MAZE_CELL_DOT - Pc.cy;
+	int sx = Pc.xx, sy = Pc.yy, cx = Pc.cx, cy = Pc.cy;
+
+	if (dx < s_nPzL) { sx += s_nPzL - dx; cx -= s_nPzL - dx; dx = s_nPzL; }
+	if (dy < s_nPzT) { sy += s_nPzT - dy; cy -= s_nPzT - dy; dy = s_nPzT; }
+	if (dx + cx > s_nPzR) { cx = s_nPzR - dx; }
+	if (dy + cy > s_nPzB) { cy = s_nPzB - dy; }
+	if ((cx <= 0) || (cy <= 0)) {
+		return;
+	}
+	g_pDibDrawMap->Blt (dx, dy, cx, cy, Pc.pDib, sx, sy, TRUE);
+}
+
+/* CPUの名前表示（空なら「CPU」。強さの数だけ ★ を添える） */
+static void MazeCpuName(const CMDPARA_MAZESTATE &St, char *pszOut, int nSize)
+{
+	int k, nLen;
+
+	lstrcpyn (pszOut, St.szCpuName, nSize);
+	if (pszOut[0] == '\0') {
+		lstrcpyn (pszOut, "CPU", nSize);
+	}
+	for (k = 0; (k < (int)St.byCpuLevel) && (k < 3); k ++) {
+		nLen = lstrlen (pszOut);
+		if (nLen + 3 >= nSize) {
+			break;
+		}
+		lstrcat (pszOut, "★");
+	}
+}
+
+/* コマ（台NPCのマスに盤の下の行が重なるので、キャラより前に描く） */
+static void DrawMazePieces(const CMDPARA_MAZESTATE &St, int sx, int sy)
+{
+	const COLORREF clPiece[2] = { RGB (255, 210, 70), RGB (110, 190, 255) };
+	int x, y, p;
+	HDC hDC;
+	HFONT hFontOld;
+	MAZEPIECE aPiece[2];
+	BOOL abPiece[2] = { FALSE, FALSE };		/* 絵で描くコマか */
+
+	s_nPzL = s_nMazeL;
+	s_nPzT = s_nMazeT;
+	s_nPzR = s_nMazeR;
+	s_nPzB = s_nMazeB;
+	hDC = g_pDibDrawMap->Lock ();
+	hFontOld = (HFONT)SelectObject (hDC, g_hFont14);
+	SetBkMode (hDC, TRANSPARENT);
+	/* コマ（絵が使えない時と不在の側は色付きの丸） */
+	for (p = 0; p < 2; p ++) {
+		int cx = sx + (int)St.byPosX[p] * MAZE_PITCH_DOT + MAZE_CELL_DOT / 2;
+		int cy = sy + (int)St.byPosY[p] * MAZE_PITCH_DOT + MAZE_CELL_DOT / 2;
+		BOOL bHave = (St.dwChar[p] != MAZE_NOCHAR);
+		BOOL bCpu = (!bHave && (St.byState & MAZESTATE_CPU)) ? TRUE : FALSE;		/* CPU対戦中の、人のいない側＝CPU */
+		int nNo = bHave ? GetCharNo2 (St.dwChar[p]) : -1;
+		if (St.byPosX[p] >= MAZE_SIZE || St.byPosY[p] >= MAZE_SIZE) {
+			continue;
+		}
+		if (bCpu) {
+			/* CPU：キャラ画像の指定があればその絵（名前は絵の後に描く）。無ければ色付きの丸と名前 */
+			char szCpu[64];
+			if (MazeCpuImage (St, p, &aPiece[p])) {
+				abPiece[p] = TRUE;
+				continue;
+			}
+			MazeCpuName (St, szCpu, sizeof (szCpu));
+			MazeCircle (hDC, cx, cy, 11, clPiece[p], RGB (40, 30, 20), 255);
+			PuzText (hDC, cx, cy - 6, (LPSTR)"C", RGB (40, 30, 20), 14, TRUE);
+			PuzText (hDC, cx, cy + 12, szCpu, RGB (255, 255, 255), 14, TRUE);
+			continue;
+		}
+		if ((nNo >= 0) && MazePieceImage (g_aCharInfo[nNo], p, &aPiece[p])) {
+			abPiece[p] = TRUE;
+			continue;		/* 絵は下の層を閉じてから描く */
+		}
+		if (bHave && (nNo >= 0)) {
+			PCHARINFO pChar = g_aCharInfo[nNo];
+			MazeCircle (hDC, cx, cy, 11, clPiece[p], RGB (40, 30, 20), 255);
+			PuzText (hDC, cx, cy + 12, pChar->szName, RGB (255, 255, 255), 14, TRUE);
+		} else if (bHave) {
+			/* 座っている人が画面の外にいて（キャラ情報が届いていない）絵も名前も出せない時は、色付きの丸に「相手」 */
+			MazeCircle (hDC, cx, cy, 11, clPiece[p], RGB (40, 30, 20), 255);
+			PuzText (hDC, cx, cy + 12, (LPSTR)"相手", RGB (255, 255, 255), 14, TRUE);
+		} else {
+			MazeCircle (hDC, cx, cy, 11, clPiece[p], RGB (40, 30, 20), 110);		/* 不在：薄い丸 */
+		}
+	}
+	SelectObject (hDC, hFontOld);
+	g_pDibDrawMap->Unlock ();
+
+	/* キャラの絵のコマ（参加者本人の絵・CPUの絵） */
+	for (p = 0; p < 2; p ++) {
+		if (!abPiece[p] || (St.byPosX[p] >= MAZE_SIZE) || (St.byPosY[p] >= MAZE_SIZE)) {
+			continue;
+		}
+		x = sx + (int)St.byPosX[p] * MAZE_PITCH_DOT;		/* マスの左上から（32 ドット四方のキャラはずらさない） */
+		y = sy + (int)St.byPosY[p] * MAZE_PITCH_DOT;
+		MazeBltPiece (x, y, aPiece[p]);
+	}
+
+	/* 絵で出したCPUの名前（絵に隠れないよう、絵のあとで描く） */
+	if (St.byState & MAZESTATE_CPU) {
+		BOOL bAny = FALSE;
+		for (p = 0; p < 2; p ++) {
+			if (abPiece[p] && (St.dwChar[p] == MAZE_NOCHAR) && (St.byPosX[p] < MAZE_SIZE) && (St.byPosY[p] < MAZE_SIZE)) {
+				bAny = TRUE;
+			}
+		}
+		if (bAny) {
+			hDC = g_pDibDrawMap->Lock ();
+			hFontOld = (HFONT)SelectObject (hDC, g_hFont14);
+			SetBkMode (hDC, TRANSPARENT);
+			for (p = 0; p < 2; p ++) {
+				char szCpu[64];
+				if (!abPiece[p] || (St.dwChar[p] != MAZE_NOCHAR) || (St.byPosX[p] >= MAZE_SIZE) || (St.byPosY[p] >= MAZE_SIZE)) {
+					continue;
+				}
+				MazeCpuName (St, szCpu, sizeof (szCpu));
+				PuzText (hDC, sx + (int)St.byPosX[p] * MAZE_PITCH_DOT + MAZE_CELL_DOT / 2,
+					sy + (int)St.byPosY[p] * MAZE_PITCH_DOT + MAZE_CELL_DOT + 1, szCpu, RGB (255, 255, 255), 14, TRUE);
+			}
+			SelectObject (hDC, hFontOld);
+			g_pDibDrawMap->Unlock ();
+		}
+	}
+
+	/* 手番の側のコマにだけ、頭の上で点滅する小さな三角（2 人対戦中。カウントダウン・勝ち表示中は出さない） */
+	if ((St.byState & MAZESTATE_VS) && !(St.byState & (MAZESTATE_COUNT | MAZESTATE_WIN)) && (St.byTurn < 2) &&
+		(St.byPosX[St.byTurn] < MAZE_SIZE) && (St.byPosY[St.byTurn] < MAZE_SIZE) && ((timeGetTime () / 350) % 2)) {
+		int cx = sx + (int)St.byPosX[St.byTurn] * MAZE_PITCH_DOT + MAZE_CELL_DOT / 2;
+		int cy = sy + (int)St.byPosY[St.byTurn] * MAZE_PITCH_DOT - 7;		/* マスの上の縁の少し上（盤の隙間にかかる） */
+		hDC = g_pDibDrawMap->Lock ();
+		for (y = 0; y < 7; y ++) {
+			PuzSpan (hDC, cx - 6 + y, cy + y - 6, 13 - y * 2, RGB (255, 235, 60), 255);
+		}
+		g_pDibDrawMap->Unlock ();
+	}
+	if (St.byState & MAZESTATE_VS) {
+		g_bDraw = TRUE;		/* 点滅・残り秒のために描き続ける */
+	}
+}
+
+/* 盤（床・隙間・壁・カーソル）。GDI の描画（Lock 中）と絵の転送（Lock していない時）を分けて順に描く */
+static void DrawMazeBoard(const CMDPARA_MAZESTATE &St, int sx, int sy)
+{
+	BOOL bSeat = (St.byState & MAZESTATE_SEAT) ? TRUE : FALSE;
+	BOOL bWin = (St.byState & MAZESTATE_WIN) ? TRUE : FALSE;
+	BOOL bGapPart = MazePartOk (St.wGap);
+	BOOL bWallArt = MazeWallArtOk ();
+	BOOL bNeedCode = FALSE;
+	BOOL bVs = (St.byState & MAZESTATE_VS) ? TRUE : FALSE;
+	int nSeat = bSeat ? max (0, GetMazeMySeat (&St)) : 0;
+	BOOL bMyTurn = (!bVs || ((int)St.byTurn == nSeat)) && !(St.byState & MAZESTATE_COUNT);
+	int nMode, nCurX, nCurY, nCurO;
+	int i, x, y;
+	HDC hDC;
+
+	GetMazeCursor (&nMode, &nCurX, &nCurY, &nCurO);
+	s_nPzL = s_nMazeL;
+	s_nPzT = s_nMazeT;
+	s_nPzR = s_nMazeR;
+	s_nPzB = s_nMazeB;
+
+	/* 盤の縁と、隙間の地（パーツ指定が無ければ暗い単色） */
+	hDC = g_pDibDrawMap->Lock ();
+	MazeRect (hDC, sx - 4, sy - 4, MAZE_BOARD_DOT + 8, MAZE_BOARD_DOT + 8, RGB (36, 28, 24), 255);
+	if (!bGapPart) {
+		MazeRect (hDC, sx, sy, MAZE_BOARD_DOT, MAZE_BOARD_DOT, RGB (58, 48, 44), 255);
+	}
+	g_pDibDrawMap->Unlock ();
+	if (bGapPart) {
+		/* 隙間：パーツの中央 16×16 を、通り道（16 ドット幅の溝と交差点）にだけ敷く（盤を 16 ドットで割った格子のうち、マスにかからない所） */
+		int nSx = (St.wGap % 16) * 32 + 8, nSy = (St.wGap / 16) * 32 + 8;
+		for (y = 0; y < MAZE_BOARD_DOT / MAZE_GAP_DOT; y ++) {
+			for (x = 0; x < MAZE_BOARD_DOT / MAZE_GAP_DOT; x ++) {
+				if ((x % 3 != 2) && (y % 3 != 2)) {
+					continue;		/* マスの上（床が覆う） */
+				}
+				MazeBlt (sx + x * MAZE_GAP_DOT, sy + y * MAZE_GAP_DOT, MAZE_GAP_DOT, MAZE_GAP_DOT, g_pDibMapParts, nSx, nSy, FALSE, 100);
+			}
+		}
+	}
+
+	/* 床：マスごとに、市松で床A・床B のパーツ（B が無ければ A だけ。どちらも使えないマスはコード描画） */
+	for (y = 0; y < MAZE_BOARD_CELLS; y ++) {
+		for (x = 0; x < MAZE_BOARD_CELLS; x ++) {
+			WORD wA = St.wFloor[0], wB = St.wFloor[1];
+			WORD wMap = ((x + y) & 1) ? wB : wA, wOther = ((x + y) & 1) ? wA : wB;
+			if (!MazePartOk (wMap)) {
+				wMap = wOther;
+			}
+			if (MazePartOk (wMap)) {
+				MazeBlt (sx + x * MAZE_PITCH_DOT, sy + y * MAZE_PITCH_DOT, MAZE_CELL_DOT, MAZE_CELL_DOT, g_pDibMapParts,
+					(wMap % 16) * 32, (wMap / 16) * 32, FALSE, 100);
+			} else {
+				bNeedCode = TRUE;
+			}
+		}
+	}
+	hDC = g_pDibDrawMap->Lock ();
+	if (bNeedCode) {
+		for (y = 0; y < MAZE_BOARD_CELLS; y ++) {
+			for (x = 0; x < MAZE_BOARD_CELLS; x ++) {
+				int cx0 = sx + x * MAZE_PITCH_DOT, cy0 = sy + y * MAZE_PITCH_DOT;
+				WORD wMap = ((x + y) & 1) ? St.wFloor[1] : St.wFloor[0], wOther = ((x + y) & 1) ? St.wFloor[0] : St.wFloor[1];
+				COLORREF cl = ((x + y) & 1) ? RGB (200, 188, 158) : RGB (226, 216, 186);
+				if (MazePartOk (wMap) || MazePartOk (wOther)) {
+					continue;
+				}
+				MazeRect (hDC, cx0, cy0, MAZE_CELL_DOT, MAZE_CELL_DOT, cl, 255);
+				MazeRect (hDC, cx0, cy0, MAZE_CELL_DOT, 1, RGB (244, 238, 214), 255);							/* マスの上の縁を明るく */
+				MazeRect (hDC, cx0, cy0 + MAZE_CELL_DOT - 1, MAZE_CELL_DOT, 1, RGB (150, 138, 110), 255);		/* 下の縁を暗く */
+			}
+		}
+	}
+	/* ゴール行（プレイヤー 0 は盤の上端、プレイヤー 1 は下端のマスの行）をうっすら色づける。
+	   座っている本人は自分のゴールだけ、2 人対戦を見ている人は両方（コマと同じ色）。勝ちを見せている間は勝者のゴールを光らせる */
+	if (bSeat) {
+		MazeRect (hDC, sx, sy + ((nSeat == 0) ? 0 : (MAZE_BOARD_DOT - MAZE_CELL_DOT)), MAZE_BOARD_DOT, MAZE_CELL_DOT, RGB (255, 200, 40), 90);
+	} else if (bVs) {
+		MazeRect (hDC, sx, sy, MAZE_BOARD_DOT, MAZE_CELL_DOT, RGB (255, 210, 70), 70);
+		MazeRect (hDC, sx, sy + MAZE_BOARD_DOT - MAZE_CELL_DOT, MAZE_BOARD_DOT, MAZE_CELL_DOT, RGB (110, 190, 255), 70);
+	}
+	if (bWin && (St.cWinner >= 0) && ((timeGetTime () / 250) % 2)) {
+		MazeRect (hDC, sx, sy + ((St.cWinner == 0) ? 0 : (MAZE_BOARD_DOT - MAZE_CELL_DOT)), MAZE_BOARD_DOT, MAZE_CELL_DOT, RGB (255, 255, 200), 150);
+	}
+	g_pDibDrawMap->Unlock ();
+
+	/* 置かれた壁（絵が使えなければコード描画のレンガ） */
+	if (bWallArt) {
+		for (i = 0; i < St.byWallCount && i < MAZEPARA_WALL_MAX; i ++) {
+			int wx, wy, wcx, wcy;
+			MazeWallRect (St.aWall[i].byX, St.aWall[i].byY, St.aWall[i].byOrient, sx, sy, &wx, &wy, &wcx, &wcy);
+			MazeWallArt (wx, wy, St.aWall[i].byOrient, St.aWall[i].byOwner, 100);
+		}
+	} else if (St.byWallCount > 0) {
+		hDC = g_pDibDrawMap->Lock ();
+		for (i = 0; i < St.byWallCount && i < MAZEPARA_WALL_MAX; i ++) {
+			int wx, wy, wcx, wcy;
+			MazeWallRect (St.aWall[i].byX, St.aWall[i].byY, St.aWall[i].byOrient, sx, sy, &wx, &wy, &wcx, &wcy);
+			MazeBrick (hDC, wx, wy, wcx, wcy);
+		}
+		g_pDibDrawMap->Unlock ();
+	}
+
+	/* 壁を置くカーソル（半透明の壁。置けない位置は赤い壁と ✕）。自分の番の時だけ */
+	if (bSeat && (nMode == MAZEMODE_WALL) && !bWin && bMyTurn) {
+		int wx, wy, wcx, wcy;
+		BOOL bOk = (St.byWallLeft[nSeat] > 0) && MazeCanPlaceWall (&St, nCurX, nCurY, nCurO);
+		MazeWallRect (nCurX, nCurY, nCurO, sx, sy, &wx, &wy, &wcx, &wcy);
+		if (bWallArt) {
+			MazeWallArt (wx, wy, nCurO, nSeat, 100);		/* 壁の絵に明るい色を重ねて、置いた壁と見分ける（半透明だと隙間の土に紛れる） */
+		}
+		hDC = g_pDibDrawMap->Lock ();
+		if (bOk) {
+			MazeRect (hDC, wx, wy, wcx, wcy, RGB (255, 235, 150), bWallArt ? 120 : 150);
+		} else {
+			MazeRect (hDC, wx, wy, wcx, wcy, RGB (255, 70, 60), 120);
+			int mx = wx + wcx / 2, my = wy + wcy / 2, k;
+			for (k = -6; k <= 6; k ++) {
+				MazeRect (hDC, mx + k - 1, my + k - 1, 3, 3, RGB (255, 40, 40), 255);
+				MazeRect (hDC, mx + k - 1, my - k - 1, 3, 3, RGB (255, 40, 40), 255);
+			}
+		}
+		g_pDibDrawMap->Unlock ();
+	}
+}
+
+static void DrawMazeOne(const CMDPARA_MAZESTATE &St, int sx, int sy, BOOL bTop)
+{
+	BOOL bSeat = (St.byState & MAZESTATE_SEAT) ? TRUE : FALSE;
+	BOOL bWin = (St.byState & MAZESTATE_WIN) ? TRUE : FALSE;
+	BOOL bVs = (St.byState & MAZESTATE_VS) ? TRUE : FALSE;
+	BOOL bCpuMatch = (St.byState & MAZESTATE_CPU) ? TRUE : FALSE;
+	int nMode, nCurX, nCurY, nCurO;
+	HDC hDC;
+	HFONT hFontOld;
+	char szTmp[96];
+
+	if (!bTop) {
+		DrawMazeBoard (St, sx, sy);
+		return;
+	}
+	GetMazeCursor (&nMode, &nCurX, &nCurY, &nCurO);
+	s_nPzL = s_nMazeL;
+	s_nPzT = s_nMazeT;
+	s_nPzR = s_nMazeR;
+	s_nPzB = s_nMazeB;
+
+	hDC = g_pDibDrawMap->Lock ();
+	hFontOld = (HFONT)SelectObject (hDC, g_hFont14);
+	SetBkMode (hDC, TRANSPARENT);
+
+	/* ここから最前面の文字。2 人対戦中は、座っている人にも見ている人にも手番・残り秒・壁の残りを出す。
+	   ひとり練習は座っている本人だけ（待機中や、片方だけ座っている間の見ている人には従来どおり盤だけ） */
+	if (bSeat || bVs) {
+		SIZE size;
+		int nSeat = bSeat ? max (0, GetMazeMySeat (&St)) : 0;
+		BOOL bMyTurn = (!bVs || ((int)St.byTurn == nSeat)) && !(St.byState & MAZESTATE_COUNT);
+		char szWho[64];
+		const char *pszOpp = bCpuMatch ? "CPU" : "相手";
+		PCHARINFO pTurn = NULL;
+		int nNo;
+
+		/* 手番の人の名前（dwTurnChar のキャラ。いなければ「相手」。CPU対戦中のCPUの手番は「CPU」） */
+		lstrcpy (szWho, bCpuMatch ? "CPU" : "相手");
+		nNo = (St.dwTurnChar != MAZE_NOCHAR) ? GetCharNo2 (St.dwTurnChar) : -1;
+		if (nNo >= 0) {
+			pTurn = g_aCharInfo[nNo];
+			wsprintf (szWho, "%.20s", pTurn->szName);
+		}
+		/* 手番と残り秒（盤の上）。壁の残りは自分側・相手側の順（見ている人はプレイヤー 0・1 の順） */
+		if (bVs && (St.byState & MAZESTATE_COUNT)) {
+			wsprintf (szTmp, "まもなく対戦開始");
+		} else if (bVs && (St.byState & MAZESTATE_WIN)) {
+			wsprintf (szTmp, "勝負あり");
+		} else {
+			char szTime[24] = "";
+			if (bVs && (St.byTimeLeft > 0)) {
+				wsprintf (szTime, "  残り %d 秒", (int)St.byTimeLeft);
+			}
+			if (bSeat) {
+				wsprintf (szTmp, "%s%s   壁 あなた %d / %s %d", bMyTurn ? "あなたの番" : "", szTime, (int)St.byWallLeft[nSeat], pszOpp, (int)St.byWallLeft[1 - nSeat]);
+				if (!bMyTurn) {
+					wsprintf (szTmp, "%sの番%s   壁 あなた %d / %s %d", szWho, szTime, (int)St.byWallLeft[nSeat], pszOpp, (int)St.byWallLeft[1 - nSeat]);
+				}
+			} else {
+				wsprintf (szTmp, "%sの番%s   壁 %d / %d", szWho, szTime, (int)St.byWallLeft[0], (int)St.byWallLeft[1]);
+			}
+		}
+		GetTextExtentPoint32 (hDC, szTmp, strlen (szTmp), &size);
+		PuzFrame (hDC, sx + (MAZE_BOARD_DOT - size.cx) / 2 - 6, sy - 38, size.cx + 12, size.cy + 4, RGB (200, 200, 200), 170);
+		PuzText (hDC, sx + MAZE_BOARD_DOT / 2, sy - 36, szTmp, (bSeat && bMyTurn && bVs) ? RGB (150, 255, 160) : RGB (255, 235, 120), size.cy, TRUE);
+
+		/* 操作ヒント（盤の下。座っている人だけ） */
+		if (bSeat) {
+			const char *pszHint = (bVs && !bMyTurn) ? (bCpuMatch ? "CPUの番です  ESC：やめる" : "相手の番です  ESC：やめる") :
+				(nMode == MAZEMODE_WALL) ? "矢印：ばしょ  Z：むき  X：おく  ESC：もどる" : "矢印：うごく  X：かべ  ESC：やめる";
+			if (bVs && (St.byState & MAZESTATE_COUNT)) {
+				pszHint = "じゅんびしてね  ESC：やめる";
+			}
+			GetTextExtentPoint32 (hDC, pszHint, strlen (pszHint), &size);
+			PuzFrame (hDC, sx + (MAZE_BOARD_DOT - size.cx) / 2 - 6, sy + MAZE_BOARD_DOT + 6, size.cx + 12, size.cy + 4, RGB (200, 200, 200), 170);
+			PuzText (hDC, sx + MAZE_BOARD_DOT / 2, sy + MAZE_BOARD_DOT + 8, (LPSTR)pszHint, RGB (255, 255, 255), size.cy, TRUE);
+		}
+	}
+	/* CPU対戦の台の案内（盤の外の上に小さく。待機中と、CPU対戦中を見ている人に。座っている人には手番表示があるので出さない） */
+	if ((St.byCpuLevel >= 1) && (St.byCpuLevel <= 3) && ((St.byState & MAZESTATE_IDLE) || (bCpuMatch && !bSeat))) {
+		static const char *s_apszLv[4] = { "", "よわい", "ふつう", "つよい" };
+		SIZE size;
+		int yy = bCpuMatch ? (sy + MAZE_BOARD_DOT + 6) : (sy - 24);		/* 対戦中は手番表示が上にあるので下に */
+		wsprintf (szTmp, "CPU対戦（%s）", s_apszLv[St.byCpuLevel]);
+		GetTextExtentPoint32 (hDC, szTmp, strlen (szTmp), &size);
+		PuzFrame (hDC, sx + (MAZE_BOARD_DOT - size.cx) / 2 - 6, yy, size.cx + 12, size.cy + 4, RGB (200, 200, 200), 150);
+		PuzText (hDC, sx + MAZE_BOARD_DOT / 2, yy + 2, szTmp, RGB (190, 230, 255), size.cy, TRUE);
+	}
+	/* 開始前のカウントダウン（盤の真ん中に大きく 3・2・1） */
+	if ((St.byState & MAZESTATE_COUNT) && (St.byCount > 0)) {
+		wsprintf (szTmp, "%d", (int)St.byCount);
+		SelectObject (hDC, g_hFont32);
+		PuzFrame (hDC, sx + MAZE_BOARD_DOT / 2 - 40, sy + MAZE_BOARD_DOT / 2 - 36, 80, 72, RGB (255, 235, 120), 190);
+		PuzText (hDC, sx + MAZE_BOARD_DOT / 2, sy + MAZE_BOARD_DOT / 2 - 16, szTmp, RGB (255, 235, 120), 32, TRUE);
+		SelectObject (hDC, g_hFont14);
+	}
+	/* 勝敗（盤の真ん中に大きく。座っている人には勝ち・負け、見ている人には勝者の名前） */
+	if (bWin && (St.cWinner >= 0)) {
+		char szWin[64];
+		BOOL bWon;
+		int nSeat = bSeat ? max (0, GetMazeMySeat (&St)) : 0;
+		if (bSeat && bVs) {
+			bWon = ((int)St.cWinner == nSeat);
+			lstrcpy (szWin, bWon ? "WIN!" : "LOSE...");
+		} else if (bSeat) {
+			bWon = ((int)St.cWinner == nSeat);
+			lstrcpy (szWin, bWon ? "勝ち！" : "負け…");
+		} else {
+			int nNo = (St.dwChar[St.cWinner] != MAZE_NOCHAR) ? GetCharNo2 (St.dwChar[St.cWinner]) : -1;
+			bWon = TRUE;
+			if (bCpuMatch && (St.dwChar[St.cWinner] == MAZE_NOCHAR)) {
+				lstrcpy (szWin, "CPU WIN!");
+			} else if (nNo >= 0) {
+				wsprintf (szWin, "%.16s WIN!", g_aCharInfo[nNo]->szName);
+			} else {
+				lstrcpy (szWin, "WIN!");
+			}
+		}
+		SelectObject (hDC, g_hFont32);
+		PuzFrame (hDC, sx + MAZE_BOARD_DOT / 2 - 100, sy + MAZE_BOARD_DOT / 2 - 28, 200, 56, RGB (255, 235, 120), 190);
+		PuzText (hDC, sx + MAZE_BOARD_DOT / 2, sy + MAZE_BOARD_DOT / 2 - 16, szWin, bWon ? RGB (255, 235, 120) : RGB (255, 120, 110), 32, TRUE);
+		SelectObject (hDC, g_hFont14);
+	}
+	SelectObject (hDC, hFontOld);
+	g_pDibDrawMap->Unlock ();
+}
+
+static void DrawMaze(int nX, int nY, BOOL bTop)
+{
+	CMDPARA_MAZESTATE St;
+	int i, sx, sy;
+
+	if ((g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ())) {
+		return;
+	}
+	for (i = 0; i < MAZE_VIEW_MAX; i ++) {
+		if (!GetMazeState (i, &St)) {
+			continue;
+		}
+		/* マップのドット座標 → 描画用の画面（地図のパーツ・キャラと同じ座標。基準のマスが (DRAW_PARTS_X+1)*32） */
+		sx = (DRAW_PARTS_X + 1) * 32 + (int)St.sBoardX - CamTileX () * 32;
+		sy = (DRAW_PARTS_Y + 1) * 32 + (int)St.sBoardY - CamTileY () * 32;
+		/* 画面に少しもかからない台は描かない */
+		if ((sx + MAZE_BOARD_DOT + 8 <= nX) || (sx - 8 >= nX + SCRSIZEX) ||
+			(sy + MAZE_BOARD_DOT + 40 <= nY) || (sy - 42 >= nY + SCRSIZEY)) {
+			continue;
+		}
+		s_nMazeL = nX;
+		s_nMazeT = nY;
+		s_nMazeR = nX + SCRSIZEX;
+		s_nMazeB = nY + SCRSIZEY;
+		if (bTop) {
+			DrawMazePieces (St, sx, sy);
+		}
+		DrawMazeOne (St, sx, sy, bTop);
 	}
 }
 
@@ -1535,8 +2231,8 @@ void DrawScreen(HWND hWnd, HDC hDC)
 			if (bRet) {
 				pChar = g_aCharInfo[g_nMyCharID];
 				nCount = g_SysMsgInfo.GetSize ();
-				x = BowOffsetX(pChar);
-				y = BowOffsetY(pChar);
+				x = CamOfsX ();
+				y = CamOfsY ();
 
 				/* 拠点が危ない時の赤い縁（ウィンドウの下に敷く） */
 				DrawDefenseDanger (32 - x, 32 - y);
@@ -1556,6 +2252,9 @@ void DrawScreen(HWND hWnd, HDC hDC)
 				/* 落ち物パズルの帯・待ちお邪魔のバー・文字（盤面本体は DrawScreenMOVE でキャラの前に描いてある。ウィンドウの下に敷く） */
 				DrawPuzzle (32 - x, 32 - y, TRUE);
 				DrawPinball (32 - x, 32 - y, TRUE);
+
+				/* 迷路対戦の手番・壁の残り・勝敗の文字（盤本体は DrawScreenMOVE で描いてある） */
+				DrawMaze (32 - x, 32 - y, TRUE);
 
 				hDCPrimary = g_pDibDrawMap->Lock ();
 				HFONT hFontOld = (HFONT)SelectObject (hDCPrimary, g_hFont14);
@@ -1770,9 +2469,9 @@ BOOL DrawScreenMOVE(void)
 	/* 落ち物パズルの盤面本体（井戸・枠・ブロック）は、地面のパーツの上・キャラの下に描く。
 	   台の下に立つキャラの頭が盤面に隠れないように（帯・文字は最前面で DrawScreen が描く） */
 	{
-		PCHARINFO pMyChar = g_aCharInfo[g_nMyCharID];
-		DrawPuzzle (32 - BowOffsetX (pMyChar), 32 - BowOffsetY (pMyChar), FALSE);
-		DrawPinball (32 - BowOffsetX (pMyChar), 32 - BowOffsetY (pMyChar), FALSE);
+		DrawPuzzle (32 - CamOfsX (), 32 - CamOfsY (), FALSE);
+		DrawPinball (32 - CamOfsX (), 32 - CamOfsY (), FALSE);
+		DrawMaze (32 - CamOfsX (), 32 - CamOfsY (), FALSE);
 	}
 	for (i = 0; i < DRAW_PARTS_Y * 2 + 3; i ++) {
 		DrawCharLine (i);
@@ -1917,8 +2616,8 @@ static void DrawMapLight(const char *pMapDark)
 				continue;
 			}
 		}
-		xTmp = (int)pMyChar->dwX - (int)pChar->dwX;
-		yTmp = (int)pMyChar->dwY - (int)pChar->dwY;
+		xTmp = CamTileX () - (int)pChar->dwX;
+		yTmp = CamTileY () - (int)pChar->dwY;
 		if ((abs (xTmp) > DRAW_PARTS_X + 1) || (abs (yTmp) > DRAW_PARTS_Y + 1)) {
 			continue;
 		}
@@ -1951,7 +2650,7 @@ static void DrawMapLight(const char *pMapDark)
 		int mx, my;
 		/* 画面の外にある灯りでも、照らす範囲が画面に入っていれば使う */
 		for (y = -(DRAW_PARTS_Y + 1 + MAPLIGHT_RANGE_MAX); y <= DRAW_PARTS_Y + 1 + MAPLIGHT_RANGE_MAX; y ++) {
-			my = (int)pMyChar->dwY + y;
+			my = CamTileY () + y;
 			if ((my < 0) || (my >= g_pMapInfo->nCY)) {
 				continue;
 			}
@@ -1963,7 +2662,7 @@ static void DrawMapLight(const char *pMapDark)
 				if (nLight >= MAPLIGHT_MAX) {
 					break;
 				}
-				mx = (int)pMyChar->dwX + x;
+				mx = CamTileX () + x;
 				if ((mx < 0) || (mx >= g_pMapInfo->nCX)) {
 					continue;
 				}
@@ -2015,8 +2714,8 @@ static void DrawMapLight(const char *pMapDark)
 	}
 
 	/* 画面に見えている範囲だけ処理する */
-	nSX = 32 - anPosAddTblX[pMyChar->byDirection] * pMyChar->byDotMove;
-	nSY = 32 - anPosAddTblY[pMyChar->byDirection] * pMyChar->byDotMove;
+	nSX = 32 - CamOfsX ();
+	nSY = 32 - CamOfsY ();
 	nCX = SCRSIZEX;
 	nCY = SCRSIZEY;
 	if (nSX < 0) { nCX += nSX; nSX = 0; }
@@ -2195,8 +2894,8 @@ static void DrawCharLightGlow(void)
 		if (pChar->byLightLevel == 0) {
 			continue;
 		}
-		xTmp = (int)pMyChar->dwX - (int)pChar->dwX;
-		yTmp = (int)pMyChar->dwY - (int)pChar->dwY;
+		xTmp = CamTileX () - (int)pChar->dwX;
+		yTmp = CamTileY () - (int)pChar->dwY;
 		if ((abs (xTmp) > DRAW_PARTS_X + 1) || (abs (yTmp) > DRAW_PARTS_Y + 1)) {
 			continue;
 		}
@@ -2291,8 +2990,8 @@ void DrawMapLine(int nLine, int nType)
 		wViewHide = g_pMapInfo->wViewHideParts;
 	}
 
-	mx = pMyChar->dwX;
-	my = pMyChar->dwY;
+	mx = CamTileX ();
+	my = CamTileY ();
 	j = my - (DRAW_PARTS_Y + 1) + y;
 	xMax = DRAW_PARTS_X * 2 + 3;
 	for (x = 0; x < xMax; x ++) {
@@ -2486,8 +3185,8 @@ void DrawCharLine(int nLine)
 
 	pCharMyChar	= g_aCharInfo[g_nMyCharID];
 	dwMapID		= pCharMyChar->dwMapID;
-	dwMyX		= pCharMyChar->dwX;
-	dwMyY		= pCharMyChar->dwY;
+	dwMyX		= CamTileX ();
+	dwMyY		= CamTileY ();
 	pMapInfo	= g_pMapInfo;
 	byMapGrpCountX = g_byMapGrpCountX;
 	byMapGrpCountY = g_byMapGrpCountY;
@@ -2966,8 +3665,8 @@ void DrawChar2(void)
 		return;
 	}
 
-	DWORD dwMyX = g_aCharInfo[g_nMyCharID]->dwX,
-		  dwMyY = g_aCharInfo[g_nMyCharID]->dwY;
+	DWORD dwMyX = CamTileX (),
+		  dwMyY = CamTileY ();
 
 	xBack = yBack = -1;
 	/* 吹き出しエフェクト表示 */
@@ -3002,10 +3701,8 @@ void DrawChar2(void)
 
 		x = 256;
 		y = 256 - 32;
-		if (i != g_nMyCharID) {
-			x -= (xTmp * 32);
-			y -= (yTmp * 32);
-		}
+		x -= (xTmp * 32);		/* 自分も視点（盤の中央に固定中は自分が中央とは限らない）からの位置で描く */
+		y -= (yTmp * 32);
 		x -= (BowOffsetX(pChar));
 		y -= (BowOffsetY(pChar));
 
@@ -3089,10 +3786,8 @@ void DrawChar2(void)
 
 		x = 256;
 		y = 256;
-		if (i != g_nMyCharID) {
-			x -= (xTmp * 32);
-			y -= (yTmp * 32);
-		}
+		x -= (xTmp * 32);		/* 自分も視点（盤の中央に固定中は自分が中央とは限らない）からの位置で描く */
+		y -= (yTmp * 32);
 		x -= (BowOffsetX(pChar));
 		y -= (BowOffsetY(pChar));
 		x += (GetCharCenterX (pChar) - 16);
@@ -3173,8 +3868,8 @@ void DrawChar3(void)
 		return;
 	}
 
-	DWORD dwMyX = g_aCharInfo[g_nMyCharID]->dwX,
-		  dwMyY = g_aCharInfo[g_nMyCharID]->dwY;
+	DWORD dwMyX = CamTileX (),
+		  dwMyY = CamTileY ();
 
 	hDC = g_pDibDrawMap->Lock ();
 	hFontOld = (HFONT)SelectObject (hDC, g_hFont12);
@@ -3204,10 +3899,8 @@ void DrawChar3(void)
 
 		x = 256;
 		y = 256;
-		if (i != g_nMyCharID) {
-			x -= (xTmp * 32);
-			y -= (yTmp * 32);
-		}
+		x -= (xTmp * 32);		/* 自分も視点（盤の中央に固定中は自分が中央とは限らない）からの位置で描く */
+		y -= (yTmp * 32);
 		x -= (BowOffsetX(pChar));
 		y -= (BowOffsetY(pChar));
 
@@ -3496,8 +4189,8 @@ static void DrawDropEffects(void)
 		g_bDraw = TRUE;
 
 		/* 敵がいた場所の画面位置(絵の真ん中と足元の高さ) */
-		int x = 256 + p->nWorldX - (int)pMy->dwX * 32 + 16;
-		int y = 256 + p->nWorldY - (int)pMy->dwY * 32 - 8;
+		int x = 256 + p->nWorldX - CamTileX () * 32 + 16;
+		int y = 256 + p->nWorldY - CamTileY () * 32 - 8;
 		float fHopY = 0.0f;
 		int nSparkX, nSparkY;
 		BYTE byLevel = 0;
@@ -3519,16 +4212,16 @@ static void DrawDropEffects(void)
 			int nNo = GetCharNo (p->dwOwnerID);
 			if (nNo >= 0) {
 				PCHARINFO pOwner = g_aCharInfo[nNo];
-				int tx = 256 + ((int)pOwner->dwX - (int)pMy->dwX) * 32 - BowOffsetX (pOwner) + GetCharCenterX (pOwner);
-				int ty = 256 + ((int)pOwner->dwY - (int)pMy->dwY) * 32 - BowOffsetY (pOwner) - 8 - 20;
+				int tx = 256 + ((int)pOwner->dwX - CamTileX ()) * 32 - BowOffsetX (pOwner) + GetCharCenterX (pOwner);
+				int ty = 256 + ((int)pOwner->dwY - CamTileY ()) * 32 - BowOffsetY (pOwner) - 8 - 20;
 				DWORD dwMoveTime = dwNow - p->dwMoveStart;
 				if ((int)dwMoveTime < 0) {
 					dwMoveTime = 0;
 				}
 				float r = (dwMoveTime >= DROPFX_MOVE) ? 1.0f : ((float)dwMoveTime / DROPFX_MOVE);
 				r = r * (2.0f - r);	/* 最初が速く、最後がゆっくり */
-				int nFromX = 256 + p->nWorldX - (int)pMy->dwX * 32 + 26;
-				int nFromY = 256 + p->nWorldY - (int)pMy->dwY * 32 - 16;
+				int nFromX = 256 + p->nWorldX - CamTileX () * 32 + 26;
+				int nFromY = 256 + p->nWorldY - CamTileY () * 32 - 16;
 				x = nFromX + (int)((tx - nFromX) * r);
 				y = nFromY + (int)((ty - nFromY) * r);
 			}
@@ -3592,8 +4285,8 @@ void DrawETC(void)
 	}
 
 	pChar = g_aCharInfo[g_nMyCharID];
-	x -= (BowOffsetX(pChar));
-	y -= (BowOffsetY(pChar));
+	x -= CamOfsX ();
+	y -= CamOfsY ();
 
 	/* 表示していい？ */
 	if (g_byViewMode >= 2) {
@@ -3682,8 +4375,8 @@ void DrawETC(void)
 	pChar = g_aCharInfo[g_nMyCharID];
 	/* 魔法ターンゲージ表示 */
 	if (pChar->dwTimeTurnMagicLV) {
-		x = 256;
-		y = 256;
+		x = 256 - (CamTileX () - (int)pChar->dwX) * 32;
+		y = 256 - (CamTileY () - (int)pChar->dwY) * 32;
 		x -= (BowOffsetX(pChar));
 		y -= (BowOffsetY(pChar));
 		x -= 3;
@@ -3698,8 +4391,8 @@ void DrawETC(void)
 
 	/* ターンゲージ表示 */
 	} else if (pChar->dwTimeTurnLV) {
-		x = 256;
-		y = 256;
+		x = 256 - (CamTileX () - (int)pChar->dwX) * 32;
+		y = 256 - (CamTileY () - (int)pChar->dwY) * 32;
 		x -= (BowOffsetX(pChar));
 		y -= (BowOffsetY(pChar));
 		x -= 3;
@@ -3755,8 +4448,8 @@ void DrawETC(void)
 	/* 構えている間：ゲージの横に盾マーク(吹き出しが消えた後も構えているのが分かるように)。
 	   ゲージが出ている時は、止まっているのが分かるようにゲージを青い枠で囲む */
 	if (g_bGuard) {
-		x = 256;
-		y = 256;
+		x = 256 - (CamTileX () - (int)pChar->dwX) * 32;
+		y = 256 - (CamTileY () - (int)pChar->dwY) * 32;
 		x -= (BowOffsetX(pChar));
 		y -= (BowOffsetY(pChar));
 		x -= 3;
@@ -3843,7 +4536,7 @@ void DrawObj(void)
 	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
 
 	int i, x, y, xx, yy, xTmp, yTmp, sizeX, sizeY,
-		nMyX = pChar->dwX, nMyY = pChar->dwY;
+		nMyX = CamTileX (), nMyY = CamTileY ();
 	for (i = 0; i < nCount; i ++) {
 		POBJINFO pObj = g_aObjInfo[i];
 
@@ -3906,8 +4599,8 @@ void DrawEvent(void)
 	}
 
 	pChar = g_aCharInfo[g_nMyCharID];
-	xTmp = (int)pChar->dwX;
-	yTmp = (int)pChar->dwY;
+	xTmp = CamTileX ();
+	yTmp = CamTileY ();
 
 	for (y = yTmp - DRAW_PARTS_Y; y <= yTmp + DRAW_PARTS_Y; y ++) {
 		if (y < 0 || y >= g_pMapInfo->nCY) {
@@ -3954,8 +4647,8 @@ void DrawMapEdit(void)
 	}
 
 	pChar = g_aCharInfo[g_nMyCharID];
-	xTmp = (int)pChar->dwX;
-	yTmp = (int)pChar->dwY;
+	xTmp = CamTileX ();
+	yTmp = CamTileY ();
 
 	for (y = yTmp - DRAW_PARTS_Y; y <= yTmp + DRAW_PARTS_Y; y ++) {
 		if (y < 0 || y >= g_pMapInfo->nCY) {
@@ -4101,8 +4794,8 @@ void DrawNpcRoute(void)
 	NpcRouteTick ();
 
 	pChar = g_aCharInfo[g_nMyCharID];
-	xTmp = (int)pChar->dwX;
-	yTmp = (int)pChar->dwY;
+	xTmp = CamTileX ();
+	yTmp = CamTileY ();
 	dwSel = NpcRouteGetSelTblID ();
 	nW = (DRAW_PARTS_X * 2 + 1) * 32;
 	nH = (DRAW_PARTS_Y * 2 + 1) * 32;
@@ -4187,8 +4880,8 @@ void DrawMapLightEdit(void)
 	}
 
 	pChar = g_aCharInfo[g_nMyCharID];
-	xTmp = ((int)pChar->dwX - DRAW_PARTS_X - 1) * 32;		/* マップのドット座標から画像の座標へ */
-	yTmp = ((int)pChar->dwY - DRAW_PARTS_Y - 1) * 32;
+	xTmp = (CamTileX () - DRAW_PARTS_X - 1) * 32;		/* マップのドット座標から画像の座標へ */
+	yTmp = (CamTileY () - DRAW_PARTS_Y - 1) * 32;
 
 	/* 範囲の枠（選んでいるのは最後に太く） */
 	nSel = MapLightDlgGetSelArea ();
@@ -4290,8 +4983,8 @@ void DrawMapSwapEdit(void)
 		return;
 	}
 	pChar = g_aCharInfo[g_nMyCharID];
-	xTmp = ((int)pChar->dwX - DRAW_PARTS_X - 1) * 32;		/* マップのドット座標から画像の座標へ */
-	yTmp = ((int)pChar->dwY - DRAW_PARTS_Y - 1) * 32;
+	xTmp = (CamTileX () - DRAW_PARTS_X - 1) * 32;		/* マップのドット座標から画像の座標へ */
+	yTmp = (CamTileY () - DRAW_PARTS_Y - 1) * 32;
 	nSel = MapSwapDlgGetSel ();
 	for (i = 0; i < MapSwapDlgGetCount (); i ++) {
 		const ADMINSWAPROW *pRow = MapSwapDlgGetRow (i);
@@ -4499,11 +5192,11 @@ static void DrawSnowFall(void)
 	nWidth	= g_pDibDrawMap->Width ();
 	nHeight	= g_pDibDrawMap->Height ();
 	/* 画面に見えている所の左上(歩き中はずれる) */
-	nSX = 32 - anPosAddTblX[pMyChar->byDirection] * pMyChar->byDotMove;
-	nSY = 32 - anPosAddTblY[pMyChar->byDirection] * pMyChar->byDotMove;
+	nSX = 32 - CamOfsX ();
+	nSY = 32 - CamOfsY ();
 	/* 見ている場所(ドット)。歩くと雪が後ろへ流れる */
-	nCamX = (int)pMyChar->dwX * 32 - anPosAddTblX[pMyChar->byDirection] * pMyChar->byDotMove;
-	nCamY = (int)pMyChar->dwY * 32 - anPosAddTblY[pMyChar->byDirection] * pMyChar->byDotMove;
+	nCamX = CamTileX () * 32 - CamOfsX ();
+	nCamY = CamTileY () * 32 - CamOfsY ();
 
 	fTime = (float)(timeGetTime () % 3600000) / 1000.0f;
 	fW = (float)(SCRSIZEX + 32);
@@ -4640,10 +5333,10 @@ static void DrawRainFall(void)
 	pMyChar	= g_aCharInfo[g_nMyCharID];
 	nWidth	= g_pDibDrawMap->Width ();
 	nHeight	= g_pDibDrawMap->Height ();
-	nSX = 32 - anPosAddTblX[pMyChar->byDirection] * pMyChar->byDotMove;
-	nSY = 32 - anPosAddTblY[pMyChar->byDirection] * pMyChar->byDotMove;
-	nCamX = (int)pMyChar->dwX * 32 - anPosAddTblX[pMyChar->byDirection] * pMyChar->byDotMove;
-	nCamY = (int)pMyChar->dwY * 32 - anPosAddTblY[pMyChar->byDirection] * pMyChar->byDotMove;
+	nSX = 32 - CamOfsX ();
+	nSY = 32 - CamOfsY ();
+	nCamX = CamTileX () * 32 - CamOfsX ();
+	nCamY = CamTileY () * 32 - CamOfsY ();
 
 	fTime = (float)(timeGetTime () % 3600000) / 1000.0f;
 	fW = (float)(SCRSIZEX + 64);
@@ -4745,8 +5438,8 @@ void DrawWeather(void)
 	nTmp = min (nTmp, 100);
 	byLight = (BYTE)nTmp;
 
-	mx = pMyChar->dwX;
-	my = pMyChar->dwY;
+	mx = CamTileX ();
+	my = CamTileY ();
 	xMax = DRAW_PARTS_X * 2 + 3;
 	for (y = 0; y < DRAW_PARTS_Y * 2 + 3; y ++) {
 		j = my - (DRAW_PARTS_Y + 1) + y;

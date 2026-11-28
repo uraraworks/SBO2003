@@ -11,6 +11,8 @@
 #include "common/BowFlight.h"
 #include "common/FallingPuzzle.h"
 #include "SboCliPinball.h"
+#include "common/MazeAttack.h"
+#include "common/MazeTable.h"
 #include <string>
 #include <vector>
 #include "SboCliRecvCmd.h"
@@ -182,6 +184,7 @@ void	RecvDataProcDGSTATUS				(PBYTE, DWORD);			/* 受信データ処理(番外�
 void	RecvDataProcPUZZLESE				(PBYTE, DWORD);			/* 受信データ処理(落ち物パズルの効果音) */
 void	RecvDataProcPUZZLESTATE				(PBYTE, DWORD);			/* 受信データ処理(落ち物パズルの盤面・落ち物・得点) */
 void	RecvDataProcPINBALLSTATE			(PBYTE, DWORD);			/* 受信データ処理(ピンボールのボール・フリッパー・得点。SboCliPinball.cpp) */
+void	RecvDataProcMAZESTATE				(PBYTE, DWORD);			/* 受信データ処理(迷路対戦の盤面・コマ・壁。今は空のスタブ。クライアント担当が実装する) */
 void	RecvDataProcCHARBUFF				(PBYTE, DWORD);			/* 受信データ処理(攻撃力・守備力アップの残り) */
 void	RecvDataProcMAKERINFO				(PBYTE, DWORD);			/* 受信データ処理(作り手情報) */
 void	RecvDataProcRECIPEINFO				(PBYTE, DWORD);			/* 受信データ処理(レシピ情報) */
@@ -487,6 +490,8 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	RecvDataProcPUZZLESE,				/* CMD_PUZZLESE */
 	NULL,								/* CMD_PINBALLKEY(クライアント→サーバーのみ) */
 	RecvDataProcPINBALLSTATE,			/* CMD_PINBALLSTATE */
+	NULL,								/* CMD_MAZEKEY(クライアント→サーバーのみ) */
+	RecvDataProcMAZESTATE,				/* CMD_MAZESTATE */
 	RecvDataProcADMINTRIALROOM,			/* CMD_ADMINTRIALROOM */
 	NULL
 };
@@ -616,6 +621,7 @@ int GetSubGameDataSize(BYTE byType)
 	case SUBGAMEID_WAR:			nSize = sizeof (SUBGAME_WARINFOSAVE);		break;
 	case SUBGAMEID_SUGOROKU:	nSize = sizeof (SUBGAME_SUGOROKUINFOSAVE);	break;
 	case SUBGAMEID_PINBALL:		nSize = sizeof (SUBGAME_PINBALLINFOSAVE);	break;
+	case SUBGAMEID_MAZETABLE:	nSize = sizeof (SUBGAME_MAZETABLEINFOSAVE);	break;
 	}
 	return nSize;
 }
@@ -7893,6 +7899,14 @@ void RecvDataProcSUBGAMEINFO(BYTE *pData, DWORD dwDataSize)
 			CopyMemory (g_pSubGameInfo->pInfo, pRecv + 1, sizeof (SUBGAME_PINBALLINFOSAVE));
 			break;
 
+		case SUBGAMEID_MAZETABLE:	/* 迷路対戦の台 */
+			{
+				PSUBGAME_MAZETABLEINFOSAVE pInfo = (PSUBGAME_MAZETABLEINFOSAVE)g_pSubGameInfo->pInfo;
+
+				CopyMemory (pInfo, pRecv + 1, sizeof (SUBGAME_MAZETABLEINFOSAVE));
+			}
+			break;
+
 		case SUBGAMEID_SUGOROKU:	/* すごろく */
 			{
 				PSUBGAME_SUGOROKUINFOSAVE pInfo = (PSUBGAME_SUGOROKUINFOSAVE)g_pSubGameInfo->pInfo;
@@ -8679,6 +8693,195 @@ BOOL GetDungeonStatus(PCMDPARA_DGSTATUS pOut)
 	}
 	return TRUE;
 }
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcMAZESTATE / IsMazeSeated / GetMazeState				 */
+/* 内容：受信データ処理(迷路対戦の盤面・コマ・壁)							 */
+/*		 サーバーは、変わるたびに盤面全体(FULL)を台ごとに送る（小さいので差分なし）。	 */
+/*		 台は dwNpc で見分け、MAZE_VIEW_MAX 台ぶんを覚える。						 */
+/*		 NONE はその台から離れた（見えなくなった）時で、その台の重ね描きを消す。		 */
+/*		 席を立った時は、待機中(IDLE)の FULL が本人にも届く（SEAT の bit が消える）。	 */
+/* ========================================================================= */
+typedef struct _MAZEVIEW {
+	BOOL					bUse;									/* 使っているか */
+	CMDPARA_MAZESTATE		St;										/* 最後に届いた状態 */
+} MAZEVIEW;
+static MAZEVIEW				s_aMazeView[MAZE_VIEW_MAX];
+/* 壁を置くカーソル（本人の操作状態。座るたびに MOVE・中央・横壁に戻す。キー処理が書き、描画が読む） */
+static int					s_nMazeMode = MAZEMODE_MOVE;
+static int					s_nMazeCurX = 2, s_nMazeCurY = 2, s_nMazeCurOrient = MAZE_H;
+
+void RecvDataProcMAZESTATE(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_MAZESTATE pPara = (PCMDPARA_MAZESTATE)pData;
+	int i, nFree = -1, nFind = -1;
+
+	if (dwDataSize < sizeof (CMDPARA_MAZESTATE)) {
+		return;
+	}
+	for (i = 0; i < MAZE_VIEW_MAX; i ++) {
+		if (s_aMazeView[i].bUse && (s_aMazeView[i].St.dwNpc == pPara->dwNpc)) {
+			nFind = i;
+			break;
+		}
+		if (!s_aMazeView[i].bUse && (nFree < 0)) {
+			nFree = i;
+		}
+	}
+	switch (pPara->byKind) {
+	case MAZEKIND_NONE:
+		if (nFind >= 0) {
+			s_aMazeView[nFind].bUse = FALSE;
+		}
+		break;
+	case MAZEKIND_FULL:
+		if ((pPara->byWallCount > MAZEPARA_WALL_MAX) || (pPara->byTurn > 1)) {
+			return;
+		}
+		if (nFind < 0) {
+			nFind = (nFree >= 0) ? nFree : 0;		/* 空きが無ければ先頭を上書き */
+		}
+		/* 新しく座った（この台で SEAT が付いていなかった）ら、操作の状態を初期に戻す */
+		if (!(s_aMazeView[nFind].bUse && (s_aMazeView[nFind].St.byState & MAZESTATE_SEAT)) && (pPara->byState & MAZESTATE_SEAT)) {
+			s_nMazeMode = MAZEMODE_MOVE;
+			s_nMazeCurX = s_nMazeCurY = 2;
+			s_nMazeCurOrient = MAZE_H;
+		}
+		memcpy (&s_aMazeView[nFind].St, pData, sizeof (CMDPARA_MAZESTATE));
+		s_aMazeView[nFind].bUse = TRUE;
+		break;
+	default:
+		return;
+	}
+	g_bDraw = TRUE;
+}
+
+/* 自分がこの台のどちらの席か（0=席 1=プレイヤー 0・1=席 2=プレイヤー 1・-1=どちらでもない）。dwChar に自分のキャラのテーブルIDがあるかで決める */
+int GetMazeMySeat(const CMDPARA_MAZESTATE *pSt)
+{
+	DWORD dwMe;
+
+	if ((g_nMyCharID < 0) || (g_nMyCharID >= g_aCharInfo.GetSize ())) {
+		return -1;
+	}
+	dwMe = ((PCHARINFO)g_aCharInfo[g_nMyCharID])->dwTblID;
+	if (pSt->dwChar[0] == dwMe) {
+		return 0;
+	}
+	if (pSt->dwChar[1] == dwMe) {
+		return 1;
+	}
+	return (pSt->byState & MAZESTATE_SEAT) ? 0 : -1;		/* 座っているのに見つからない時（古いサーバー）は席 1 */
+}
+
+/* 席に座って遊んでいるか（座っている間は歩かず、キーはゲーム側へ送る） */
+BOOL IsMazeSeated(void)
+{
+	int i;
+
+	if (g_byGameState != GAMESTATE_MOVE) {
+		return FALSE;
+	}
+	for (i = 0; i < MAZE_VIEW_MAX; i ++) {
+		if (s_aMazeView[i].bUse && (s_aMazeView[i].St.byState & MAZESTATE_SEAT)) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* 重ね描きする状態を取得（nIdx は 0〜MAZE_VIEW_MAX-1。見えている台だけ TRUE） */
+BOOL GetMazeState(int nIdx, PCMDPARA_MAZESTATE pOut)
+{
+	if ((nIdx < 0) || (nIdx >= MAZE_VIEW_MAX) || (g_byGameState != GAMESTATE_MOVE) || !s_aMazeView[nIdx].bUse) {
+		return FALSE;
+	}
+	*pOut = s_aMazeView[nIdx].St;
+	return TRUE;
+}
+
+/* 座っている台の状態を取得（座っていなければ FALSE） */
+BOOL GetMazeSeatState(PCMDPARA_MAZESTATE pOut)
+{
+	int i;
+
+	for (i = 0; i < MAZE_VIEW_MAX; i ++) {
+		if (GetMazeState (i, pOut) && (pOut->byState & MAZESTATE_SEAT)) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/* 壁を置くカーソルの状態（キー処理と描画で共有） */
+void GetMazeCursor(int *pnMode, int *pnX, int *pnY, int *pnOrient)
+{
+	*pnMode = s_nMazeMode;
+	*pnX = s_nMazeCurX;
+	*pnY = s_nMazeCurY;
+	*pnOrient = s_nMazeCurOrient;
+}
+
+void SetMazeCursor(int nMode, int nX, int nY, int nOrient)
+{
+	s_nMazeMode = nMode;
+	s_nMazeCurX = nX;
+	s_nMazeCurY = nY;
+	s_nMazeCurOrient = nOrient;
+	g_bDraw = TRUE;
+}
+
+/* 状態から盤面（MazeGame）を作って、(x, y, orient) に壁を置けるか調べる（common/MazeAttack.h の CanPlaceWall。サーバーと同じ判定） */
+BOOL MazeCanPlaceWall(const CMDPARA_MAZESTATE *pSt, int nX, int nY, int nOrient)
+{
+	MazeGame Game;
+	int i;
+
+	Game.Init ();
+	for (i = 0; i < 2; i ++) {
+		Game.nPosX[i] = pSt->byPosX[i];
+		Game.nPosY[i] = pSt->byPosY[i];
+		Game.nWallLeft[i] = pSt->byWallLeft[i];
+	}
+	Game.nWallCount = (pSt->byWallCount > MAZE_WALL_MAX) ? MAZE_WALL_MAX : pSt->byWallCount;
+	for (i = 0; i < Game.nWallCount; i ++) {
+		Game.aWall[i].nX = pSt->aWall[i].byX;
+		Game.aWall[i].nY = pSt->aWall[i].byY;
+		Game.aWall[i].nOrient = pSt->aWall[i].byOrient;
+	}
+	Game.byTurn = pSt->byTurn;
+	Game.nWinner = pSt->cWinner;
+	return Game.CanPlaceWall (nX, nY, nOrient);
+}
+
+/* 画面の基準点（カメラ）。通常は自分のキャラのマス＋歩きずれ。迷路対戦の席に座っている間は
+   盤の中央（盤ドット(160,160)）で固定。画面の中央はタイルの中心なので、タイル(5,5)の左上＝盤の中央に合わせるため歩きずれ +16 で画面の中身を右下へ 16 ドット寄せる。地図・キャラ・NPC・盤・天気などの描画は全部これを基準にする。
+   pnX, pnY=基準のマス座標 / pnOfsX, pnOfsY=歩きずれ(ドット。座っている間は盤の中央に合わせる固定値) */
+void GetCameraBase(int *pnX, int *pnY, int *pnOfsX, int *pnOfsY)
+{
+	PCHARINFO pMy = NULL;
+	CMDPARA_MAZESTATE St;
+
+	if ((g_nMyCharID >= 0) && (g_nMyCharID < g_aCharInfo.GetSize ())) {
+		pMy = g_aCharInfo[g_nMyCharID];
+	}
+	if (pMy == NULL) {
+		*pnX = *pnY = *pnOfsX = *pnOfsY = 0;
+		return;
+	}
+	if (GetMazeSeatState (&St)) {
+		/* 盤の左上はタイル単位（32 ドットの倍数）。盤の中央（ドット 160）はタイル 5 の左上＝その中心より 16 ドット左上 */
+		*pnX = ((int)St.sBoardX >> 5) + MAZE_TABLE_TILES / 2;
+		*pnY = ((int)St.sBoardY >> 5) + MAZE_TABLE_TILES / 2;
+		*pnOfsX = *pnOfsY = MAZE_TABLE_TILE_DOT / 2;
+		return;
+	}
+	*pnX = (int)pMy->dwX;
+	*pnY = (int)pMy->dwY;
+	*pnOfsX = BowOffsetX (pMy);
+	*pnOfsY = BowOffsetY (pMy);
+}
+
 
 /* ========================================================================= */
 /* 関数名：RecvDataProcPUZZLESTATE / IsPuzzleSeated / GetPuzzleState		 */

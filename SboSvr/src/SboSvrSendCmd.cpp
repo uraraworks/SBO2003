@@ -1933,6 +1933,16 @@ void SendCmdPINBALLSTATE(DWORD pIDSend, PBYTE pData, DWORD dwSize)
 }
 
 /* ========================================================================= */
+/* 関数名：SendCmdMAZESTATE													 */
+/* 内容：コマンド送信(迷路対戦の盤面・コマ・壁。席に座っている人と台の近くの人に)	 */
+/* ========================================================================= */
+void SendCmdMAZESTATE(DWORD pIDSend, PCMDPARA_MAZESTATE pPara)
+{
+	pPara->byCmd = CMD_MAZESTATE;
+	svrSock.SendTo (pIDSend, (PBYTE)pPara, sizeof (CMDPARA_MAZESTATE), SENDTIMEOUT);
+}
+
+/* ========================================================================= */
 /* 関数名：SendCmdPUZZLESE													 */
 /* 内容：コマンド送信(落ち物パズルの効果音。台の盤面を見ている人に)			 */
 /* ========================================================================= */
@@ -3074,6 +3084,10 @@ void SendCmdSUBGAMEINFO(DWORD pIDSend, int nNo)
 
 	case SUBGAMEID_PINBALL:		/* ピンボール（INFO と INFOSAVE は同じ並び） */
 		CopyMemory (pData + sizeof (CMDPARA_DATA1), pInfo->pInfo, sizeof (SUBGAME_PINBALLINFOSAVE));
+		break;
+
+	case SUBGAMEID_MAZETABLE:	/* 迷路対戦の台（保存用と実行用が同じ中身） */
+		CopyMemory (pData + sizeof (CMDPARA_DATA1), pInfo->pInfo, sizeof (SUBGAME_MAZETABLEINFOSAVE));
 		break;
 
 	case SUBGAMEID_SUGOROKU:	/* すごろく */

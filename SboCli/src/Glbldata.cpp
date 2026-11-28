@@ -593,6 +593,7 @@ const char *aSubGameNameTbl[] = {
 	"戦場ゲーム",
 	"すごろく",
 	"ピンボール",
+	"迷路対戦の台",					/* 7 SUBGAMEID_MAZETABLE */
 	"z"
 };
 
