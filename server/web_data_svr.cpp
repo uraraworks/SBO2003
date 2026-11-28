@@ -33,6 +33,7 @@
 #include "SboSvrMapSwapEdit.h"
 #include "SboSvrDungeonDaily.h"
 #include "SboSvrSubGameProc.h"
+#include "../common/MazeTable.h"
 #include "CharProc/IncludeCharProc.h"
 
 #include <emscripten.h>
@@ -2235,6 +2236,23 @@ static const DATAFIELD s_aFieldSgSugoroku[] = {
 	FLD (SUBGAME_SUGOROKUINFO, byRule,	"ルール",				FT_U8, 0, NULL),
 	FLD (SUBGAME_SUGOROKUINFO, byMaxCount,"最大参加人数",		FT_U8, 0, NULL),
 };
+static const DATAFIELD s_aFieldSgMazeTable[] = {
+	FLDS(SUBGAME_MAZETABLEINFO, szName,	"台の名前",				FT_STR, 0, "管理用の呼び名（ゲーム中は使わない）"),
+	FLD (SUBGAME_MAZETABLEINFO, chDx,	"盤の位置X",			FT_S8, 0, "盤（10×10 タイル）の左上が、台NPCのマスの左上から何タイルか（-60〜60。負は左）。既定 -5"),
+	FLD (SUBGAME_MAZETABLEINFO, chDy,	"盤の位置Y",			FT_S8, 0, "同（負は上）。既定 -9"),
+	FLD (SUBGAME_MAZETABLEINFO, chSdx,	"座る場所1のX",			FT_S8, 0, "席1（プレイヤー0＝下側）。台NPC（台詞 @k<このサブゲームの番号>）のマスからの相対位置（マス。-60〜60）。そのマスに立って S キーで座る。既定 0"),
+	FLD (SUBGAME_MAZETABLEINFO, chSdy,	"座る場所1のY",			FT_S8, 0, "席1。既定 1（台NPCの1つ下）"),
+	FLD (SUBGAME_MAZETABLEINFO, chSdx2,	"座る場所2のX",			FT_S8, 0, "席2（プレイヤー1＝上側）。台NPCからの相対位置（マス）。既定 0"),
+	FLD (SUBGAME_MAZETABLEINFO, chSdy2,	"座る場所2のY",			FT_S8, 0, "席2。既定 -10（既定の盤の真上の1つ上）"),
+	FLD (SUBGAME_MAZETABLEINFO, wFloorA,"床パーツA",			FT_U16, 0, "mapParts の番号（マスの床。市松の片方）。0=既定のコード描画の単色"),
+	FLD (SUBGAME_MAZETABLEINFO, wFloorB,"床パーツB",			FT_U16, 0, "mapParts の番号（市松のもう片方）。0=Aだけの単色"),
+	FLD (SUBGAME_MAZETABLEINFO, wGap,	"隙間パーツ",			FT_U16, 0, "mapParts の番号（壁の通り道の地。パーツの中央 16×16 を敷く）。0=既定"),
+	FLD (SUBGAME_MAZETABLEINFO, byCpuLevel,"CPU強さ",			FT_U8, 0, "0=CPUなし（ひとり練習だけ）・1=よわい・2=ふつう・3=つよい。1以上だと、ひとりで座った人に「CPUと対戦しますか？」と聞く"),
+	FLD (SUBGAME_MAZETABLEINFO, wCpuGrpID,"CPUのキャラ画像",	FT_U16, 0, "NPC・キャラの見た目の画像ID（NPC の wGrpID と同じ意味）。0=色付きの丸"),
+	FLDS(SUBGAME_MAZETABLEINFO, szCpuName,"CPUの名前表示",		FT_STR, 0, "空なら「CPU」。対戦中の名前表示と勝敗のお知らせに使う"),
+	FLD (SUBGAME_MAZETABLEINFO, wTicketItemID,"チケットのアイテム番号",	FT_U16, 0, "item の番号。必要枚数（byTicketNum）が 1 以上の台は、席のマスでコマンド→道具→このチケットを使うと座る（Sキーでは座れない）。座る時（CPU・乱入の確認で「はい」の後）に取り上げる"),
+	FLD (SUBGAME_MAZETABLEINFO, byTicketNum,"チケットの必要枚数",	FT_U8, 0, "0=無料（Sキーで座る・既定）。1〜99=有料。チケットを配る方法は docs/maze-attack.md（配布係NPC）"),
+};
 
 static const DATAFIELD s_aFieldSgPinball[] = {
 	FLD (SUBGAME_PINBALLINFO, wCoinItem,	"コインのアイテム番号",	FT_U16, 0, "item の番号。0=無料。台に座る時に byCoinCount 枚使う（座る場所に立って、道具のコインを使うと始まる）"),
@@ -2261,9 +2279,17 @@ static const DATAFIELD s_aFieldSgJanjan[] = {
 	FLD (SUBGAME_JANJANINFO, wWaitSec,		"参加募集の待ち時間(秒)",	FT_U16, 0, "最初の人が座ってから開始までの秒数（その間に別の人が空いている席に座れる。空き席は CPU が埋める）。5〜600。0=既定の 60"),
 };
 
-/* 7 は迷路対戦の台（別PR #374）用の予約 */
-static const char *s_apszSubGameName[] = { "なし", "爆弾ゲーム", "迷路", "ダンジョン", "戦場ゲーム", "すごろく", "ピンボール", "(予約)", "SBOじゃん" };
+static const char *s_apszSubGameName[] = { "なし", "爆弾ゲーム", "迷路", "ダンジョン", "戦場ゲーム", "すごろく", "ピンボール", "迷路対戦の台", "SBOじゃん" };
 static_assert(sizeof(s_apszSubGameName) / sizeof(s_apszSubGameName[0]) == SUBGAMEID_MAX, "s_apszSubGameName");
+
+/* 種別の名前（範囲外・名前が空の番号は "?"） */
+static const char *SubGameTypeName(int nType)
+{
+	if (nType < 0 || nType >= SUBGAMEID_MAX || s_apszSubGameName[nType][0] == '\0') {
+		return "?";
+	}
+	return s_apszSubGameName[nType];
+}
 
 static const DATAFIELD *SubGameFields(int nType, int *pnCount)
 {
@@ -2274,6 +2300,7 @@ static const DATAFIELD *SubGameFields(int nType, int *pnCount)
 	case SUBGAMEID_WAR:			*pnCount = COUNTOF(s_aFieldSgWar);		return s_aFieldSgWar;
 	case SUBGAMEID_SUGOROKU:	*pnCount = COUNTOF(s_aFieldSgSugoroku);	return s_aFieldSgSugoroku;
 	case SUBGAMEID_PINBALL:		*pnCount = COUNTOF(s_aFieldSgPinball);	return s_aFieldSgPinball;
+	case SUBGAMEID_MAZETABLE:	*pnCount = COUNTOF(s_aFieldSgMazeTable);	return s_aFieldSgMazeTable;
 	case SUBGAMEID_JANJAN:		*pnCount = COUNTOF(s_aFieldSgJanjan);	return s_aFieldSgJanjan;
 	}
 	*pnCount = 0;
@@ -2283,7 +2310,7 @@ static const DATAFIELD *SubGameFields(int nType, int *pnCount)
 static std::string SubGameJson(PSUBGAMEINFO pInfo)
 {
 	std::string out = "\"byType\":" + JsonNum(pInfo->byType);
-	out += std::string(",\"typeName\":\"") + ((pInfo->byType < SUBGAMEID_MAX) ? s_apszSubGameName[pInfo->byType] : "?") + "\"";
+	out += std::string(",\"typeName\":\"") + SubGameTypeName(pInfo->byType) + "\"";
 	int nCount = 0;
 	const DATAFIELD *paField = SubGameFields(pInfo->byType, &nCount);
 	out += ",\"detail\":{";
@@ -2480,11 +2507,12 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebDataSchema(void)
 			out += "[{\"name\":\"byUse\",\"type\":\"u8\",\"label\":\"使用中なら1\"},{\"name\":\"dwGold\",\"type\":\"u32\",\"label\":\"預けたお金\"},{\"name\":\"items\",\"type\":\"object[]\",\"label\":\"預けたアイテム（item=item の番号・count=個数）\"}]";
 			break;
 		case KIND_SUBGAME:
-			out += "[{\"name\":\"byType\",\"type\":\"u8\",\"label\":\"種別\",\"note\":\"0=無し 1=爆弾ゲーム 2=迷路 3=ダンジョン 4=戦場ゲーム 5=すごろく 6=ピンボール 8=SBOじゃん。足せるのは迷路(2)・ピンボール(6)・SBOじゃん(8)だけ（byType と detail を指定。ピンボール・SBOじゃんは detail を省くと全部既定値）。変えられるのは 迷路・ピンボール・SBOじゃん⇔無し(0) だけで、0 にすると迷路が止まる・ピンボール・SBOじゃんの台が台でなくなる\"},{\"name\":\"typeName\",\"type\":\"string\",\"label\":\"種別の名前\",\"readonly\":true},{\"name\":\"detail\",\"type\":\"object\",\"label\":\"種別ごとの設定（detailByType）。すごろくは events・parts も\"}]";
+			out += "[{\"name\":\"byType\",\"type\":\"u8\",\"label\":\"種別\",\"note\":\"0=無し 1=爆弾ゲーム 2=迷路 3=ダンジョン 4=戦場ゲーム 5=すごろく 6=ピンボール 7=迷路対戦の台 8=SBOじゃん。足せるのは迷路(2)・ピンボール(6)・迷路対戦の台(7)だけ（byType と detail を指定。ピンボール・迷路対戦の台は detail を省くと全部既定値）。変えられるのは 迷路・ピンボール・迷路対戦の台⇔無し(0) だけで、0 にすると迷路が止まる・ピンボールの台が台でなくなる・迷路対戦の台は設定が消え、台NPCが台でなくなる。迷路対戦の台は、NPC の台詞 @k<このサブゲームの番号> で使う\"},{\"name\":\"typeName\",\"type\":\"string\",\"label\":\"種別の名前\",\"readonly\":true},{\"name\":\"detail\",\"type\":\"object\",\"label\":\"種別ごとの設定（detailByType）。すごろくは events・parts も\"}]";
 			out += ",\"detailByType\":{";
 			for (int t = SUBGAMEID_BOMB; t < SUBGAMEID_MAX; t ++) {
 				int nCount = 0;
 				const DATAFIELD *paField = SubGameFields(t, &nCount);
+				if (paField == NULL) continue;		/* 空き番号は出さない */
 				if (t > SUBGAMEID_BOMB) out += ",";
 				out += "\"" + JsonNum(t) + "\":" + FieldSchemaJson(paField, nCount);
 			}
@@ -4560,19 +4588,41 @@ static bool CheckJanjanDetail(const SUBGAME_JANJANINFO *p, std::string &strErr)
 	return true;
 }
 
-/* データ API で足せる・止められるサブゲーム（迷路・ピンボール・SBOじゃん） */
+/* データ API で足せる・止められるサブゲーム（迷路・ピンボール・迷路対戦の台） */
 static bool IsApiSubGame(int nType)
 {
-	return nType == SUBGAMEID_MAZE || nType == SUBGAMEID_PINBALL || nType == SUBGAMEID_JANJAN;
+	return nType == SUBGAMEID_MAZE || nType == SUBGAMEID_PINBALL || nType == SUBGAMEID_MAZETABLE || nType == SUBGAMEID_JANJAN;
 }
 
 /*
  * サブゲームを変える・足す
- *   足せるのは迷路（byType 2）・ピンボール（byType 6）・SBOじゃん（byType 8）だけ。byType 0 にすると止まる（元に戻す時の「消す」）。
- *   種類が 0 の枠は迷路・ピンボール・SBOじゃんにして使い回せる。
+ *   足せるのは迷路（byType 2）・ピンボール（byType 6）・迷路対戦の台（byType 7）・SBOじゃん（byType 8）だけ。byType 0 にすると止まる・消える（元に戻す時の「消す」）。
+ *   種類が 0 の枠は迷路・ピンボール・迷路対戦の台・SBOじゃんにして使い回せる。
  *   ピンボールは実行中の値を持たないので、止める時は枠を空にするだけ（台は、台詞の番号の情報が無くなると台でなくなる）。
  *   SBOじゃんは実行中の値を持たないので、止める時は枠を空にするだけ（台は、台詞の番号の情報が無くなると既定の台になる）。
  */
+/* 迷路対戦の台の値の範囲（位置は ±MAZE_PARAM_LIMIT、CPU強さは 0〜3） */
+static bool CheckMazeTableDetail(const SUBGAME_MAZETABLEINFO *p, std::string &strErr)
+{
+	const char *apszName[6] = { "chDx", "chDy", "chSdx", "chSdy", "chSdx2", "chSdy2" };
+	const char ach[6] = { p->chDx, p->chDy, p->chSdx, p->chSdy, p->chSdx2, p->chSdy2 };
+	for (int i = 0; i < 6; i ++) {
+		if (ach[i] < -MAZE_PARAM_LIMIT || ach[i] > MAZE_PARAM_LIMIT) {
+			strErr = std::string(apszName[i]) + " は " + JsonNum(-MAZE_PARAM_LIMIT) + "〜" + JsonNum(MAZE_PARAM_LIMIT) + " の範囲で指定してください";
+			return false;
+		}
+	}
+	if (p->byCpuLevel > MAZE_CPU_LEVEL_MAX) {
+		strErr = "byCpuLevel は 0〜3 で指定してください";
+		return false;
+	}
+	if (p->byTicketNum > MAZE_TICKET_MAX) {
+		strErr = "byTicketNum は 0〜" + JsonNum(MAZE_TICKET_MAX) + " で指定してください";
+		return false;
+	}
+	return true;
+}
+
 static bool SubGameApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::string &strErr, std::string &strRecord)
 {
 	static const char *apszKnown[] = { "byType", "typeName", "detail", NULL };
@@ -4598,23 +4648,23 @@ static bool SubGameApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::
 		bool bOk = (nTypeNow == SUBGAMEID_NONE && IsApiSubGame(nTypeNew)) ||
 				   (IsApiSubGame(nTypeNow) && nTypeNew == SUBGAMEID_NONE);
 		if (!bOk) {
-			strErr = bAdd ? "足せるのは迷路（byType 2）・ピンボール（byType 6）・SBOじゃん（byType 8）だけです" :
-					"種類（byType）は 迷路(2)・ピンボール(6)・SBOじゃん(8)⇔無し(0) だけ変えられます（ほかは管理者ウィンドウで）";
+			strErr = bAdd ? "足せるのは迷路（byType 2）・ピンボール（byType 6）・迷路対戦の台（byType 7）・SBOじゃん（byType 8）だけです" :
+					"種類（byType）は 迷路(2)・ピンボール(6)・迷路対戦の台(7)・SBOじゃん(8)⇔無し(0) だけ変えられます（ほかは管理者ウィンドウで）";
 			return false;
 		}
 	}
 	if (bAdd && !IsApiSubGame(nTypeNew)) {
-		strErr = "足せるのは迷路（byType 2）・ピンボール（byType 6）・SBOじゃん（byType 8）だけです。byType と detail を指定してください";
+		strErr = "足せるのは迷路（byType 2）・ピンボール（byType 6）・迷路対戦の台（byType 7）・SBOじゃん（byType 8）だけです。byType と detail を指定してください";
 		return false;
 	}
 	const JVal *pName = chg.Get("typeName");
-	if (pName && !(pName->t == JVal::STR && pName->s == ((nTypeNew < SUBGAMEID_MAX) ? s_apszSubGameName[nTypeNew] : "?"))) {
+	if (pName && !(pName->t == JVal::STR && pName->s == SubGameTypeName(nTypeNew))) {
 		strErr = "typeName は変えられません";
 		return false;
 	}
 	const JVal *pDetail = chg.Get("detail");
 
-	/* 迷路・ピンボール・SBOじゃんを止める（種類を 0 に） */
+	/* 迷路・ピンボール・迷路対戦の台・SBOじゃんを止める／消す（迷路対戦の台は、台NPCの台詞 @k<番号> が台でなくなる。座っている人の片付けは周期処理が行う）（種類を 0 に） */
 	if (nTypeNew == SUBGAMEID_NONE && IsApiSubGame(nTypeNow)) {
 		SUBGAMEINFO Tmp;
 		ZeroMemory(&Tmp, sizeof(Tmp));
@@ -4668,6 +4718,8 @@ static bool SubGameApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::
 	std::vector<BYTE> aWork(nSize > 0 ? nSize : 0, 0);
 	if (!bNew && pInfo->pInfo && nSize > 0) {
 		CopyMemory(&aWork[0], pInfo->pInfo, nSize);
+	} else if (bNew && nTypeNew == SUBGAMEID_MAZETABLE) {
+		MazeTableInfoDefault((PSUBGAME_MAZETABLEINFO)&aWork[0]);		/* 省いた項目は既定値（盤の位置 -5,-9 など） */
 	}
 	if (bNew && nTypeNew == SUBGAMEID_PINBALL && nSize > 0) {
 		PinballInfoSetDefault((PSUBGAME_PINBALLINFO)&aWork[0]);		/* 省いた項目は既定値（0 のままでは遊べない） */
@@ -4679,6 +4731,9 @@ static bool SubGameApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::
 		return false;
 	}
 	if (nTypeNew == SUBGAMEID_MAZE && pDetail && !CheckMazeDetail((const SUBGAME_MAZEINFO *)&aWork[0], strErr)) {
+		return false;
+	}
+	if (nTypeNew == SUBGAMEID_MAZETABLE && pDetail && !CheckMazeTableDetail((const SUBGAME_MAZETABLEINFO *)&aWork[0], strErr)) {
 		return false;
 	}
 	if (nTypeNew == SUBGAMEID_DUNGEON && pDetail && !CheckDungeonDetail((const SUBGAME_DUNGEONINFO *)&aWork[0], strErr)) {
@@ -4716,7 +4771,7 @@ static bool SubGameApply(int nID, bool bAdd, const JVal &chg, bool bApply, std::
 	}
 
 	if (bNew) {
-		/* 新しい迷路・ピンボール・SBOじゃんの枠を作る */
+		/* 新しい迷路・ピンボール・迷路対戦の台・SBOじゃんの枠を作る */
 		BYTE *pNew = new BYTE[nSize];
 		CopyMemory(pNew, &aWork[0], nSize);
 		if (nTypeNew == SUBGAMEID_MAZE) {

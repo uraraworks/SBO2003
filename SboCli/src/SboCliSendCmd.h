@@ -55,6 +55,7 @@ extern void SendCmdTALKRAND			(DWORD);								/* 話してランダム要求 */
 extern DWORD SendCmdPUZZLEKEY		(BYTE);									/* 落ち物パズルのキー入力(PUZZLEKEY_*) */
 extern DWORD SendCmdPINBALLKEY		(BYTE);									/* ピンボールのキー入力(PINBALLKEY_*。押した時・離した時) */
 extern void SendCmdJANKEY			(BYTE, BYTE);							/* SBOじゃんの操作(JAN_ACT_*、牌id・組の添字) */
+extern void SendCmdMAZEKEY		(BYTE, BYTE, BYTE, BYTE, BYTE);			/* 迷路対戦の操作(MAZEACT_*, 向き, 壁の列, 壁の行, 壁の向き) */
 extern void SendCmdTALKANSWER		(DWORD, BOOL);							/* 会話データの「はい・いいえ」の答え(NPCのテーブルID・はいならTRUE) */
 extern void SendCmdSTOPRAND			(DWORD);								/* 止まるかランダム切り替え */
 extern void SendCmdGETACCINFO		(DWORD);								/* アカウント情報要求 */
@@ -86,6 +87,7 @@ extern void SendCmdCHGEQU			(DWORD, BYTE);							/* 装備変更 */
 extern void SendCmdSTTMPLATE		(DWORD, BYTE);							/* ステータステンプレート情報 */
 extern void SendCmdLEAVEITEM		(BYTE);									/* アイテム預ける */
 extern void SendCmdLEAVEITEMGET		(DWORD);								/* 預けてるアイテム取得 */
+extern void SendCmdLEAVEITEMTAKE	(DWORD, int);							/* 預けてるアイテムを個数指定で引き取る */
 extern void SendCmdSUBGAMEINFOGET	(DWORD);								/* サブゲーム情報取得 */
 extern void SendCmdSUBGAMEINFOADD	(void);									/* サブゲーム情報追加 */
 extern void SendCmdSUBGAMEINFO		(int);									/* サブゲーム情報通知 */
@@ -129,7 +131,7 @@ extern void SendCmdADMINRESURRECT	(DWORD dwTblID);						/* 管理者ウィンド
 extern void SendCmdMAGICKEY			(BYTE byNo, BYTE byMagicID, WORD wItemID);	/* ショートカットの登録（特技・装備品・道具） */
 void SendCmdNPCROUTE		(BYTE, DWORD, DWORD, BYTE, BYTE, BYTE, const BYTE *, const BYTE *);	/* NPCの巡回ルート */
 extern void SendCmdNPCROUTE		(BYTE, DWORD, DWORD, BYTE, BYTE, BYTE, const BYTE *, const BYTE *);	/* NPCの巡回ルート */
-extern void SendCMDSHOPBUY			(DWORD, DWORD);							/* アイテム購入 */
+extern void SendCMDSHOPBUY			(DWORD, DWORD, int);							/* アイテム購入 */
 extern void SendCMDDIFENCE			(void);									/* 防御 */
 extern void SendCMDTHROWSNOW		(void);									/* 雪を投げる */
 extern void SendCmdEFECTCHG			(BYTE, BOOL);							/* エフェクト変更 */

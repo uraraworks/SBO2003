@@ -20,6 +20,8 @@
 #include "common/Pinball.h"
 #include "SboCliPinball.h"
 #include "common/Janjan.h"
+#include "common/MazeAttack.h"
+#include "common/MazeTable.h"
 
 /* 装備品の装備職業情報の番号を返す（装備品でなければ 0xFFFF） */
 static WORD ShopGetItemEquNo(PITEMINFO pItem)
@@ -55,6 +57,51 @@ static void ShopAddEquWarn(LPSTR pszMsg, int nSize, PITEMINFO pItem, PCHARINFO p
 		strcat (pszMsg, "@1※今の職業では装備できません。");
 	}
 	pszMsg[nSize - 1] = 0;
+}
+
+/* お店で一度に買える最大個数（所持金/単価・手持ちの空き・99 の一番小さい数。大事な物は大事な物の欄の空き） */
+static int ShopBuyMaxCount(PSHOPINFO pShop, int nSel, PCHARINFO pChar)
+{
+	WORD wItem = pShop->awItem[nSel];
+	if (!ItemIDValid (wItem)) {
+		return 1;
+	}
+	PITEMINFO pItem = g_aItemInfo[wItem];
+	int nMax = 99;
+	if (pItem->dwGold > 0) {
+		nMax = min (nMax, (int)min (pChar->dwGold / pItem->dwGold, (DWORD)99));
+	}
+	int nSpace = (pItem->byFlg & ITEMFLG_IMPORTANT) ?
+			(MAX_IMPORTANT - GetImportantCount (g_nMyCharID)) : (MAX_MYITEM - GetItemCount (g_nMyCharID));
+	nMax = min (nMax, nSpace);
+	return max (nMax, 0);
+}
+
+/* お店の「買う」確認窓（はい・いいえ＋確認文）を出す。確認文の品名には個数を、金額には合計を入れる */
+static void ShopMakeBuyConfirm(PSHOPINFO pShop, int nSel, int nCount, BOOL bSellShop, PCHARINFO pChar)
+{
+	PWNDINFO pWndTmp = MakeWindowSHOP_CONF ();
+	if (bSellShop) {
+		pWndTmp->nType = WNDTYPE_SHOPSELL;
+	}
+	g_WndInfo.Add (pWndTmp);
+	g_dwActiveMsgID = pWndTmp->dwID;
+	g_nProcShopSelect = nSel;
+	g_nProcShopBuyCount = nCount;
+
+	char szMsgTmp[2048], szName[256];
+	PITEMINFO pItem = g_aItemInfo[pShop->awItem[nSel]];
+	if (nCount > 1) {
+		wsprintf (szName, "%s×%d個", ItemNameOf (pShop->awItem[nSel]), nCount);
+	} else {
+		wsprintf (szName, "%s", ItemNameOf (pShop->awItem[nSel]));
+	}
+	wsprintf (szMsgTmp, pShop->apMsg[SHOPMSG_BUYCONF], szName, pItem->dwGold * nCount);
+	ShopAddEquWarn (szMsgTmp, sizeof (szMsgTmp), pItem, pChar);
+	PWNDINFO pWndNew = MakeWindowMSG (szMsgTmp, TRUE);
+	pWndNew->pParent = pWndTmp;
+	pWndTmp->pChild = pWndNew;
+	g_WndInfo.Add (pWndNew);
 }
 
 /* ========================================================================= */
@@ -513,11 +560,103 @@ static void JanKeyProc(BYTE byEvent, BYTE byCode)
 	JanKeyInput (nKey);
 }
 
+/* ========================================================================= */
+/* 関数名：MazeKeyProc														 */
+/* 内容：迷路対戦の席に座っている間のキー入力（歩かず、すべてゲーム側へ送る）		 */
+/*		 MOVE モード：矢印＝コマを 1 マス動かす、X＝壁モードへ、ESC＝席を立つ			 */
+/*		 WALL モード：矢印＝カーソル（6×6 の交点）、Z＝向き（横/縦）、X＝その位置に壁を置く	 */
+/*					 （置けない位置・壁が残っていない時は送らず音も鳴らさない。置いたら MOVE に戻る）、	 */
+/*					 ESC＝MOVE に戻る											 */
+/*		 スマホの仮想パッドには ESC が無いので、S（調べる。コード 'Y'）も ESC と同じに扱う	 */
+/*		 矢印は押し続けている間 KEY_DOWN が何度も来るので、最初の一回はすぐ、それからは間隔をあけて処理する */
+/* ========================================================================= */
+#define MAZE_REPEAT_DELAY		(220)		/* 矢印を押し続けて繰り返し始めるまで(ms) */
+#define MAZE_REPEAT_MS			(110)		/* 矢印の繰り返し間隔(ms) */
+static void MazeKeyProc(BYTE byEvent, BYTE byCode)
+{
+	static DWORD s_dwHoldStart[256];		/* 押し始めた時刻（0=押していない） */
+	static DWORD s_dwSent[256];				/* 最後に処理した時刻 */
+	DWORD dwNow = timeGetTime ();
+	CMDPARA_MAZESTATE St;
+	int nMode, nCurX, nCurY, nCurO, nDir = -1, nSeat;
+	BOOL bEsc = FALSE;
+
+	if (byEvent == KEY_UP) {
+		s_dwHoldStart[byCode] = 0;
+		return;
+	}
+	if (byEvent != KEY_DOWN) {
+		return;
+	}
+	if (!GetMazeSeatState (&St)) {
+		return;
+	}
+	switch (byCode) {
+	case VK_UP:			nDir = MAZE_UP;		break;
+	case VK_DOWN:		nDir = MAZE_DOWN;	break;
+	case VK_LEFT:		nDir = MAZE_LEFT;	break;
+	case VK_RIGHT:		nDir = MAZE_RIGHT;	break;
+	case VK_ESCAPE:		bEsc = TRUE;		break;
+	case 'Y':			bEsc = TRUE;		break;		/* S キー（スマホの「やめる」） */
+	case 'A':			break;							/* X キー（スマホの決定） */
+	case 'B':			break;							/* Z キー（スマホのキャンセル） */
+	default:			return;
+	}
+	if (nDir >= 0) {
+		if (s_dwHoldStart[byCode] == 0) {
+			s_dwHoldStart[byCode] = (dwNow == 0) ? 1 : dwNow;
+		} else {
+			if ((dwNow - s_dwHoldStart[byCode] < MAZE_REPEAT_DELAY) || (dwNow - s_dwSent[byCode] < MAZE_REPEAT_MS)) {
+				return;
+			}
+		}
+		s_dwSent[byCode] = dwNow;
+	}
+	/* 勝ちを見せている間・開始前のカウントダウン中・2 人対戦で相手の番の間は操作を受けない（ESC で席を立つのだけ通す。
+	   壁モードの途中で相手の番になった時は、カーソルを消して MOVE に戻す） */
+	nSeat = max (0, GetMazeMySeat (&St));
+	if (!bEsc && ((St.byState & (MAZESTATE_WIN | MAZESTATE_COUNT)) || ((St.byState & MAZESTATE_VS) && ((int)St.byTurn != nSeat)))) {
+		return;
+	}
+	GetMazeCursor (&nMode, &nCurX, &nCurY, &nCurO);
+	if (nMode == MAZEMODE_WALL) {
+		if (nDir >= 0) {
+			nCurX = max (0, min (MAZE_SIZE - 2, nCurX + g_anMazeDx[nDir]));
+			nCurY = max (0, min (MAZE_SIZE - 2, nCurY + g_anMazeDy[nDir]));
+			SetMazeCursor (nMode, nCurX, nCurY, nCurO);
+		} else if (byCode == 'B') {
+			SetMazeCursor (nMode, nCurX, nCurY, (nCurO == MAZE_H) ? MAZE_V : MAZE_H);		/* 向き（横/縦）切り替え */
+		} else if (byCode == 'A') {
+			/* 置けない位置・壁が残っていない時は、送らず効果音もなし */
+			if ((St.byWallLeft[nSeat] > 0) && MazeCanPlaceWall (&St, nCurX, nCurY, nCurO)) {
+				SendCmdMAZEKEY (MAZEACT_WALL, 0, (BYTE)nCurX, (BYTE)nCurY, (BYTE)nCurO);
+				SetMazeCursor (MAZEMODE_MOVE, nCurX, nCurY, nCurO);
+			}
+		} else if (bEsc) {
+			SetMazeCursor (MAZEMODE_MOVE, nCurX, nCurY, nCurO);
+		}
+		return;
+	}
+	/* MOVE モード */
+	if (nDir >= 0) {
+		SendCmdMAZEKEY (MAZEACT_MOVE, (BYTE)nDir, 0, 0, 0);
+	} else if (byCode == 'A') {
+		SetMazeCursor (MAZEMODE_WALL, nCurX, nCurY, nCurO);
+	} else if (bEsc) {
+		SendCmdMAZEKEY (MAZEACT_LEAVE, 0, 0, 0, 0);
+	}
+}
+
 static void KeyProcDispatch(BYTE byEvent, BYTE byCode)
 {
 	/* SBOじゃんの席に座っている間も、キーを全部ゲーム側へ送る */
 	if (IsJanSeated ()) {
 		JanKeyProc (byEvent, byCode);
+		return;
+	}
+	/* 迷路対戦の席に座っている間も、キーを全部ゲーム側へ送る（歩かない・ショートカットも使えない） */
+	if (IsMazeSeated ()) {
+		MazeKeyProc (byEvent, byCode);
 		return;
 	}
 	/* 落ち物パズルの席に座っている間は、キーを全部ゲーム側へ送る（歩かない・ショートカットも使えない） */
@@ -903,7 +1042,7 @@ void KeyProcMoveNext(void)
 	if ((g_FadeInOutInfo.byFadeIn != 0) || (g_FadeInOutInfo.byFadeOut != 0)) {
 		return;
 	}
-	if (IsPuzzleSeated () || IsJanSeated ()) {
+	if (IsPuzzleSeated () || IsJanSeated () || IsMazeSeated ()) {
 		return;
 	}
 
@@ -4157,35 +4296,31 @@ void KeyProcSHOP(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 
 			/* 初回表示？ */
 			if (g_bProcShopConfirm == FALSE) {
-				pWndTmp = MakeWindowSHOP_CONF ();
-				g_WndInfo.Add (pWndTmp);
-				g_dwActiveMsgID = pWndTmp->dwID;
 				g_nProcShopSelect = nTmp;
-
-				char szMsgTmp[2048];
-				PITEMINFO pItem = g_aItemInfo[pShop->awItem[nTmp]];
-				wsprintf (szMsgTmp, pShop->apMsg[SHOPMSG_BUYCONF], ItemNameOf (pShop->awItem[nTmp]), pItem->dwGold);
-				ShopAddEquWarn (szMsgTmp, sizeof (szMsgTmp), pItem, pChar);
-				pWndNew = MakeWindowMSG (szMsgTmp, TRUE);
-				pWndNew->pParent = pWndTmp;
-				pWndTmp->pChild = pWndNew;
-				g_WndInfo.Add (pWndNew);
+				/* 2個以上買えるなら、先に個数を聞く（1個しか買えない時は聞かない） */
+				if (ShopBuyMaxCount (pShop, nTmp, pChar) >= 2) {
+					pWndTmp = MakeWindowSHOP_COUNT (ShopBuyMaxCount (pShop, nTmp, pChar), FALSE);
+					g_WndInfo.Add (pWndTmp);
+					g_dwActiveMsgID = pWndTmp->dwID;
+				} else {
+					ShopMakeBuyConfirm (pShop, nTmp, 1, FALSE, pChar);
+				}
 
 			/* 買う確認中 */
 			} else {
 				/* はい */
 				if (nTmp == 0) {
 					PITEMINFO pItem = g_aItemInfo[pShop->awItem[g_nProcShopSelect]];
-					/* お金が足りない？ */
-					if (pChar->dwGold < pItem->dwGold) {
+					/* お金が足りない？（合計金額で見る） */
+					if (pChar->dwGold < pItem->dwGold * (DWORD)g_nProcShopBuyCount) {
 						pWndTmp = MakeWindowSHOP (g_nProcShopID, SHOPMSG_BUYGOLD);
 
 					/* もう持てない？ */
-					} else if (GetItemCount (g_nMyCharID) >= MAX_MYITEM) {
+					} else if (ShopBuyMaxCount (pShop, g_nProcShopSelect, pChar) < g_nProcShopBuyCount) {
 						pWndTmp = MakeWindowSHOP (g_nProcShopID, SHOPMSG_BUYTAKE);
 
 					} else {
-						SendCMDSHOPBUY ((DWORD)g_nProcShopID, (DWORD)g_nProcShopSelect);
+						SendCMDSHOPBUY ((DWORD)g_nProcShopID, (DWORD)g_nProcShopSelect, g_nProcShopBuyCount);
 						pWndTmp = MakeWindowSHOP (g_nProcShopID, SHOPMSG_BUYCLOSE);
 					}
 					g_WndInfo.Add (pWndTmp);
@@ -4368,20 +4503,15 @@ void KeyProcSHOPSELL(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 
 			/* 初回表示？ */
 			if (g_bProcShopConfirm == FALSE) {
-				pWndTmp = MakeWindowSHOP_CONF ();
-				pWndTmp->nType = WNDTYPE_SHOPSELL;
-				g_WndInfo.Add (pWndTmp);
-				g_dwActiveMsgID = pWndTmp->dwID;
 				g_nProcShopSelect = nTmp;
-
-				char szMsgTmp[2048];
-				PITEMINFO pItem = g_aItemInfo[pShop->awItem[nTmp]];
-				wsprintf (szMsgTmp, pShop->apMsg[SHOPMSG_BUYCONF], ItemNameOf (pShop->awItem[nTmp]), pItem->dwGold);
-				ShopAddEquWarn (szMsgTmp, sizeof (szMsgTmp), pItem, pChar);
-				pWndNew = MakeWindowMSG (szMsgTmp, TRUE);
-				pWndNew->pParent = pWndTmp;
-				pWndTmp->pChild = pWndNew;
-				g_WndInfo.Add (pWndNew);
+				/* 2個以上買えるなら、先に個数を聞く（1個しか買えない時は聞かない） */
+				if (ShopBuyMaxCount (pShop, nTmp, pChar) >= 2) {
+					pWndTmp = MakeWindowSHOP_COUNT (ShopBuyMaxCount (pShop, nTmp, pChar), TRUE);
+					g_WndInfo.Add (pWndTmp);
+					g_dwActiveMsgID = pWndTmp->dwID;
+				} else {
+					ShopMakeBuyConfirm (pShop, nTmp, 1, TRUE, pChar);
+				}
 
 			/* 買う確認中 */
 			} else {
@@ -4389,16 +4519,16 @@ void KeyProcSHOPSELL(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 				/* はい */
 				if (nTmp == 0) {
 					PITEMINFO pItem = g_aItemInfo[pShop->awItem[g_nProcShopSelect]];
-					/* お金が足りない？ */
-					if (pChar->dwGold < pItem->dwGold) {
+					/* お金が足りない？（合計金額で見る） */
+					if (pChar->dwGold < pItem->dwGold * (DWORD)g_nProcShopBuyCount) {
 						pWndTmp = MakeWindowSHOP_BUY (SHOPMSG_BUYGOLD);
 
 					/* もう持てない？ */
-					} else if (GetItemCount (g_nMyCharID) >= MAX_MYITEM) {
+					} else if (ShopBuyMaxCount (pShop, g_nProcShopSelect, pChar) < g_nProcShopBuyCount) {
 						pWndTmp = MakeWindowSHOP_BUY (SHOPMSG_BUYTAKE);
 
 					} else {
-						SendCMDSHOPBUY ((DWORD)g_nProcShopID, (DWORD)g_nProcShopSelect);
+						SendCMDSHOPBUY ((DWORD)g_nProcShopID, (DWORD)g_nProcShopSelect, g_nProcShopBuyCount);
 						pWndTmp = MakeWindowSHOP_BUY (SHOPMSG_BUYCLOSE);
 					}
 					pWndTmp->nType = WNDTYPE_SHOPSELL;
@@ -4799,7 +4929,39 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 		case LEAVESTATE_DISPOSECOUNT:
 			{
 				BYTE byMode = pWnd->byData1;
+				BOOL bSellShop = (pWnd->nType2 == 1);
 				EraseWindow (pWnd);
+				/* 店で買う個数の窓：買う品を選び直す前の画面（店の最初／売るだけの店の一覧）へ戻る */
+				if (byMode == LEAVEDISPOSE_BUY) {
+					PSHOPINFO pShop = &g_pMapInfo->pShopInfo[g_nProcShopID];
+					g_bProcShopConfirm = FALSE;
+					if (bSellShop) {
+						pWndTmp = MakeWindowSHOP_BUY (SHOPMSG_CONTINUE);
+						pWndTmp->nType = WNDTYPE_SHOPSELL;
+						g_WndInfo.Add (pWndTmp);
+						if (pShop->awItem[0] > 0) {
+							PWNDINFO pWndItemInfo = MakeWindowITEMINFO (16 * 19, 16 * (pShop->byCountItem + 5));
+							pWndTmp->pWndTmp = pWndItemInfo;
+							pWndItemInfo->nData1 = pShop->awItem[0];
+							g_WndInfo.Add (pWndItemInfo);
+						}
+					} else {
+						pWndTmp = MakeWindowSHOP (g_nProcShopID, SHOPMSG_CONTINUE);
+						g_WndInfo.Add (pWndTmp);
+					}
+					g_dwActiveMsgID = pWndTmp->dwID;
+					g_bDraw = TRUE;
+					break;
+				}
+				/* 引き取る個数の窓：引き取る品の一覧へ戻る（一覧を頼み直す。返ってきたら窓を作る） */
+				if (byMode == LEAVEDISPOSE_TAKE) {
+					g_nProcShopState = LEAVESTATE_ITEMSELECTGET;
+					g_nLeaveListPos = g_nProcShopSelect;
+					SAFE_DELETE (g_pLeaveInfo);
+					SendCmdLEAVEITEMGET (-1);
+					g_bEnableMove = FALSE;
+					break;
+				}
 				pWndTmp = MakeWindowLEAVE_DISPOSEMENU ();
 				pWndTmp->nData1 = (byMode == LEAVEDISPOSE_SELL) ? 0 : 1;
 				g_WndInfo.Add (pWndTmp);
@@ -5020,7 +5182,26 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 
 		/* 手放す：個数を決めた → サーバーへ頼む。結果は預かり所の一覧で返ってくる */
 		case LEAVESTATE_DISPOSECOUNT:
-			if ((g_pLeaveInfo == NULL) || (pWnd->nData1 <= 0)) {
+			if (((g_pLeaveInfo == NULL) && (pWnd->byData1 != LEAVEDISPOSE_BUY)) || (pWnd->nData1 <= 0)) {
+				break;
+			}
+			/* 店で買う個数を決めた → 合計金額の入った確認窓へ */
+			if (pWnd->byData1 == LEAVEDISPOSE_BUY) {
+				int nCount = pWnd->nData1;
+				BOOL bSellShop = (pWnd->nType2 == 1);
+				EraseWindow (pWnd);
+				g_nProcShopState = SHOPMSG_BUY;
+				ShopMakeBuyConfirm (&g_pMapInfo->pShopInfo[g_nProcShopID], g_nProcShopSelect, nCount, bSellShop, pChar);
+				g_bDraw = TRUE;
+				break;
+			}
+			/* 引き取る個数を決めた → 個数を付けて頼む（結果は手持ちの更新で返る） */
+			if (pWnd->byData1 == LEAVEDISPOSE_TAKE) {
+				SendCmdLEAVEITEMTAKE ((DWORD)g_nProcShopSelect, pWnd->nData1);
+				EraseWindow (pWnd);
+				g_nProcShopState = LEAVESTATE_ITEMSELECTGET;
+				SAFE_DELETE (g_pLeaveInfo);
+				pWndTmp = MakeWindowLEAVE (1);
 				break;
 			}
 			{
@@ -5048,14 +5229,33 @@ void KeyProcLEAVE(PWNDINFO pWnd, BYTE byEvent, BYTE byCode)
 			if (g_pLeaveInfo == NULL) {
 				break;
 			}
-			if (GetItemCount (g_nMyCharID) == MAX_MYITEM) {
-				EraseWindow (pWnd);
-				pWndTmp = MakeWindowLEAVE (5);
+			{
+				int nNo = pWnd->nData1 + pWnd->byData1;
+				if ((nNo < 0) || (nNo >= g_pLeaveInfo->byCount) || (nNo >= MAX_LEAVEITEM) ||
+						!ItemIDValid (g_pLeaveInfo->waItem[nNo])) {
+					break;
+				}
+				/* 受け取れる数：大事な物は大事な物の欄、他は手持ちの空き枠 */
+				int nSpace = (g_aItemInfo[g_pLeaveInfo->waItem[nNo]]->byFlg & ITEMFLG_IMPORTANT) ?
+						(MAX_IMPORTANT - GetImportantCount (g_nMyCharID)) : (MAX_MYITEM - GetItemCount (g_nMyCharID));
+				int nMax = min ((int)g_pLeaveInfo->byItemCount[nNo], nSpace);
 
-			} else {
-				SendCmdLEAVEITEMGET (pWnd->nData1 + pWnd->byData1);
-				EraseWindow (pWnd);
-				pWndTmp = MakeWindowLEAVE (1);
+				if (nMax <= 0) {
+					EraseWindow (pWnd);
+					pWndTmp = MakeWindowLEAVE (5);
+
+				} else if (nMax == 1) {
+					/* 1個だけ：従来どおりすぐ引き取る */
+					SendCmdLEAVEITEMGET (nNo);
+					EraseWindow (pWnd);
+					pWndTmp = MakeWindowLEAVE (1);
+
+				} else {
+					/* 2個以上：個数を聞く（手放す時と同じ窓） */
+					EraseWindow (pWnd);
+					g_nProcShopSelect = nNo;
+					pWndTmp = MakeWindowLEAVE_DISPOSECOUNT (LEAVEDISPOSE_TAKE);
+				}
 			}
 			break;
 
@@ -9627,6 +9827,18 @@ void CmdProcHanasu(PWNDINFO pWnd)
 		}
 		return;
 
+	/* 迷路対戦の台（@k）？ 座るのはサーバーが決める（座ると CMD_MAZESTATE が届く） */
+	} else if ((pChar2->byNpcType != NPCTYPE_QUESTNPC) && pChar2->pszNpcSpeech[0] == '@' && pChar2->pszNpcSpeech[1] == 'k') {
+		SendCmdTALKRAND (pChar2->dwTblID);
+		pChar2->byDirection = abyDirectionTbl[pChar->byDirection];
+		int nNo = GetWindowID (g_dwMsgIDCommand);
+		if (nNo >= 0) {
+			EraseWindow ((PWNDINFO)g_WndInfo[nNo]);
+			g_dwMsgIDCommand = 0;
+			g_bDraw = TRUE;
+		}
+		return;
+
 	/* 落ち物パズルの掲示板（@h）？ ハイスコアと連勝記録はサーバーが本人にだけ会話の窓で送る */
 	} else if (pChar2->pszNpcSpeech[0] == '@' && pChar2->pszNpcSpeech[1] == 'h') {
 		SendCmdTALKRAND (pChar2->dwTblID);
@@ -9930,6 +10142,34 @@ static int JanSeatNpcHere(PCHARINFO pChar)
 }
 
 /* ========================================================================= */
+/* 関数名：MazeSeatNpcHere													 */
+/* 内容：迷路対戦の台の「座る場所」のマスに立っているか						 */
+/*		 クライアントは台の設定（サブゲーム情報）を持たないので、サーバーから届いている	 */
+/*		 盤の状態（CMD_MAZESTATE）の席の位置（sSeatX/Y。席1・席2）で調べる			 */
+/*		 どちらかの席のマスに立って S キーを押せば座れる（向きは問わない。どちらの席かはサーバーが決める。	 */
+/*		 座れるかどうかを決めるのもサーバー）											 */
+/*		 戻り値：座る場所なら TRUE（*pdwTblID に台NPCのテーブルID）						 */
+/* ========================================================================= */
+static BOOL MazeSeatNpcHere(PCHARINFO pChar, DWORD *pdwTblID)
+{
+	int i, j;
+	CMDPARA_MAZESTATE St;
+
+	for (i = 0; i < MAZE_VIEW_MAX; i ++) {
+		if (!GetMazeState (i, &St)) {
+			continue;
+		}
+		for (j = 0; j < 2; j ++) {
+			if (((int)pChar->dwX == (int)St.sSeatX[j]) && ((int)pChar->dwY == (int)St.sSeatY[j])) {
+				*pdwTblID = St.dwNpc;
+				return TRUE;
+			}
+		}
+	}
+	return FALSE;
+}
+
+/* ========================================================================= */
 /* 関数名：CmdProcSKey														 */
 /* 内容：Sキーの処理（調べる・話す・扉）									 */
 /*		 足元にイベントがある時は今まで通り調べる。							 */
@@ -9940,6 +10180,15 @@ static int JanSeatNpcHere(PCHARINFO pChar)
 BOOL CmdProcSKey(void)
 {
 	PCHARINFO pChar = g_aCharInfo[g_nMyCharID];
+
+	/* 迷路対戦の台の座る場所に立っている時は、座る（無料の台。チケットの台は案内が出るだけで、チケットを使うのはサーバーが決める。台NPCは目の前でなくてよい。座ると CMD_MAZESTATE が届く） */
+	if (g_aCharInfo.GetSize () > 0) {
+		DWORD dwMazeNpc;
+		if (MazeSeatNpcHere (pChar, &dwMazeNpc)) {
+			SendCmdTALKRAND (dwMazeNpc);
+			return TRUE;
+		}
+	}
 
 	/* 落ち物パズルの台の座る場所に立っている時は、座る（コインを使うのはサーバーが決める。台NPCは目の前でなくてよい） */
 	if (g_aCharInfo.GetSize () > 0) {
@@ -10523,6 +10772,8 @@ std::string W32TextToUtf8Str(const char *psz, int nLen);		/* ゲーム内の文�
 #define PADSTATE_MAP		(0x40)	/* 探索マップが使える場所（テーマで作ったダンジョンの範囲の中。「地図」ボタンを出す） */
 #define PADSTATE_PINBALL	(0x100)	/* PADSTATE_PUZZLE と一緒に付く：ピンボールの席（十字キーの左右＝フリッパー・下＝打ち出し。決定ボタンは → を送って右フリッパー（sbocli.html の padTarget。キーボードの X は左フリッパー）、キャンセル(Z)は隠す） */
 #define PADSTATE_JAN		(0x200)	/* SBOじゃんの席に座っている（「決定(X)」と「キャンセル(席を立つ)」と十字キーだけ出す。キャンセルは ESC を送る） */
+#define PADSTATE_MAZE		(0x400)	/* 迷路対戦の席に座っている（「調べる(S)」を「やめる」、「決定(X)」を「かべ」（壁モードでは「おく」）、「キャンセル(Z)」を壁モードの時だけ「向き」と表示） */
+#define PADSTATE_MAZEWALL	(0x800)	/* 迷路対戦で壁を置く場所を選んでいる（PADSTATE_MAZE と一緒に付く） */
 #define PADSTATE_PUZZLE		(0x80)	/* 落ち物パズルの席に座っている（「調べる(S)」は隠し、「決定(X)」を「右回し」、「キャンセル(Z)」を「左回し」と表示。表示・戦闘・地図は隠す） */
 
 static int SboWebGetPadStateBase(void)
@@ -10551,6 +10802,12 @@ static int SboWebGetPadStateBase(void)
 	/* SBOじゃんの席に座っている間は、決定(X)・席を立つ・十字キーだけ */
 	if (IsJanSeated ()) {
 		return PADSTATE_JAN;
+	}
+	/* 迷路対戦の席に座っている間は、矢印・かべ(X)・向き(Z)・やめる(S は ESC として送る) */
+	if (IsMazeSeated ()) {
+		int nMode, nX, nY, nO;
+		GetMazeCursor (&nMode, &nX, &nY, &nO);
+		return PADSTATE_MAZE | PADSTATE_SIRABERU | ((nMode == MAZEMODE_WALL) ? PADSTATE_MAZEWALL : 0);
 	}
 
 	/* ウィンドウ（コマンド・道具・お店など）を開いている間は、そのウィンドウにキーが渡る。
@@ -10703,7 +10960,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *SboWebGetMagicKeyState(void)
 	}
 	pChar = g_aCharInfo[g_nMyCharID];
 	/* ミニゲームに参加中（落ち物パズルの席を含む）は登録の列もショートカットのボタンも出さない */
-	if ((pChar->abySubStatus[0] != 0) || IsPuzzleSeated () || IsJanSeated ()) {
+	if ((pChar->abySubStatus[0] != 0) || IsPuzzleSeated () || IsJanSeated () || IsMazeSeated ()) {
 		return strRet.c_str ();
 	}
 	if (IsMagicListOpen ()) {
@@ -10935,7 +11192,7 @@ BOOL IsMagicBandShown(PCHARINFO pChar)
 	if (!g_bMagicBar || (g_pMapInfo == NULL)) {
 		return FALSE;
 	}
-	if ((pChar->abySubStatus[0] != 0) || (pChar->byCharState == CHARSTATE_DEAD) || IsPuzzleSeated () || IsJanSeated ()) {
+	if ((pChar->abySubStatus[0] != 0) || (pChar->byCharState == CHARSTATE_DEAD) || IsPuzzleSeated () || IsJanSeated () || IsMazeSeated ()) {
 		return FALSE;
 	}
 	/* 戦闘モード中は出す。戦闘モードでない時は、装備品・道具の枠が1つでもある時だけ出す（特技だけなら今まで通り出さない） */

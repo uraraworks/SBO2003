@@ -72,7 +72,7 @@ static const SUBGAMEPROC SubGameProcTbl[] = {
 	SubGameProc_WAR,				/* 戦場ゲーム */
 	SubGameProc_SUGOROKU,			/* すごろく */
 	NULL,							/* ピンボール（台の周期処理は SboSvrPinball 側。ここでは何もしない） */
-	NULL,							/* 迷路対戦（別PR #374 用に予約） */
+	NULL,							/* 迷路対戦の台（周期処理は SboSvrMaze 側。ここでは何もしない） */
 	NULL							/* SBOじゃん（卓の周期処理は SboSvrJan 側。ここでは何もしない） */
 };
 

@@ -381,7 +381,7 @@ static BYTE SeatFlag(const PINBALLTABLE &Table, PCHARINFO pChar)
 
 	if (!Table.bIdle || (pNpc == NULL) || (pChar->byNpcType != NPCTYPE_INIT) || (pChar->byGameState < GAMESTATE_MOVE) ||
 		(pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0) || (pChar->abySubStatus[0] != 0) ||
-		PuzzleIsSeated (pChar) || PinballIsSeated (pChar) ||
+		PuzzleIsSeated (pChar) || PinballIsSeated (pChar) || MazeIsSeated (pChar) || JanIsSeated (pChar) ||
 		(pChar->dwMapID != Table.dwMapID) || !IsSameSpace (pNpc, pChar) ||
 		((int)pChar->dwX != (int)pNpc->dwX + Table.Param.nSdx) || ((int)pChar->dwY != (int)pNpc->dwY + Table.Param.nSdy)) {
 		return 0;
@@ -897,7 +897,7 @@ void PinballSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed, int nChoice)
 	DWORD dwPartnerNpc;
 	char szMsg[128];
 
-	if (!LoadParam (pNpc, &Param) || (pChar->byNpcType != NPCTYPE_INIT) || PinballIsSeated (pChar) || PuzzleIsSeated (pChar)) {
+	if (!LoadParam (pNpc, &Param) || (pChar->byNpcType != NPCTYPE_INIT) || PinballIsSeated (pChar) || PuzzleIsSeated (pChar) || MazeIsSeated (pChar) || JanIsSeated (pChar)) {
 		return;
 	}
 	/* 座れるのは、台の座る場所のマスの上だけ */

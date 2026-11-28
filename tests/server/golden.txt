@@ -1301,6 +1301,7 @@ speech normal len=5
 speech long len=256
 speech url len=1020
 speech edit len=600
+speech edit at=[ 5xx 6a t001@2 c01 ]
 speech burst accepted=8 of 12
 speech after window accepted=1
 speech every 1.2s accepted=20 of 20
@@ -2744,4 +2745,156 @@ jan multi full before=3 now=1 seated=1111 states=1111 tables=1
 jan multi full hands A open=8,0,0,0 B open=0,8,0,0 C open=0,0,8,0 hidden A=0,8,8,8
 jan multi full D my=3 phase=1
 jan done seats=0 idle=0
+== AW. Maze attack table ==
+maze speech no 0 12 -1 -1 -1 -1 -1 -1
+maze info default -5,-9 seat1=0,1 seat2=0,-10 parts=0,0,0 cpu=0 grp=0 name=[] cpuname=[CPU]
+maze info clamp 60,-60 seat1=60,-60 seat2=60,-60 cpu=3 nameEnd=1 cpunameEnd=1
+maze isTable ok=1 none=0 old=0 missing=0 bomb=0 empty=0 puzzle=0 questnpc-q=0 questnpc-k=0
+maze notTable talk seated=0 seats=0
+maze other cells seated=0 state=0
+maze sit seated=1 seats=1 got=1 kind=1 seat=1 idle=0 c0=1 c1=1
+maze sit board x=1 y=1 size=167
+maze sit p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2
+maze sit parts floor=5,6 gap=7
+maze sit seats 0,1 0,-10 cpugrp=0 cpuname=[CPU]
+maze busy seatedB=0 msg=1
+maze nowalk moved=0
+maze move up p0=3,5 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2 +1
+maze move right p0=6,5 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2 +4
+maze move invalid p0=3,5 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2 +2
+maze wall p0=3,5 p1=3,0 left=5/6 walls=1 turn=0 win=-1 st=2 +1 wall0=3,4,0
+maze blocked p0=3,5 p1=3,0 left=5/6 walls=1 turn=0 win=-1 st=2 +1
+maze badwall overlapL p0=3,5 p1=3,0 left=5/6 walls=1 turn=0 win=-1 st=2 +1
+maze badwall overlapR p0=3,5 p1=3,0 left=5/6 walls=1 turn=0 win=-1 st=2 +1
+maze badwall cross p0=3,5 p1=3,0 left=5/6 walls=1 turn=0 win=-1 st=2 +1
+maze badwall outX p0=3,5 p1=3,0 left=5/6 walls=1 turn=0 win=-1 st=2 +1
+maze badwall outY p0=3,5 p1=3,0 left=5/6 walls=1 turn=0 win=-1 st=2 +1
+maze badwall orient p0=3,5 p1=3,0 left=5/6 walls=1 turn=0 win=-1 st=2 +1
+maze win p0=2,0 p1=3,0 left=5/6 walls=1 turn=0 win=0 st=6
+maze win locked p0=2,0 p1=3,0 left=5/6 walls=1 turn=0 win=0 st=6 +3 seated=1
+maze win reset early=[p0=2,0 p1=3,0 left=5/6 walls=1 turn=0 win=0 st=6] later=[p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2] seated=1
+maze restart p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2
+maze after restart p0=3,5 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2
+maze nopath p0=0,6 p1=3,0 left=5/6 walls=1 turn=0 win=-1 st=2 +1
+maze otherkey packets=0 p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2
+maze leave seated=0 seats=0 p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=1 +1
+maze leave then key packets=0
+maze watch approach 18=0 17=[p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=1] +1 idleTables=1
+maze watch hysteresis packets=0
+maze watch leave none +1
+maze watch sit p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=0 seat=0 idle=0 chA=1
+maze watch move B=p0=3,5 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=0
+maze watch Bkey A=p0=3,5 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2
+maze away seated=0 seats=0 B=p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=1
+maze dead before=1 after=0
+maze logout before=1 after=0 seats=0 A+0 B+1 B=p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=1
+maze exclusive puzzle=1 maze=0
+maze vs solo2 seated=1 seats=1 p0=3,6 p1=3,0 left=6/6 walls=0 turn=1 win=-1 st=2 | vs=0 count=0(0) left=0 to=0,0 turn=A1 name=01 win=0 seat=-A
+maze vs solo2 move p0=3,6 p1=3,1 left=6/6 walls=0 turn=1 win=-1 st=2
+maze vs solo2 up p0=3,6 p1=3,0 left=6/6 walls=0 turn=1 win=-1 st=2
+maze vs busy2 seatedB=0 msg=1
+maze ask shown seated=0 answer=0
+maze vs no seatedB=0 seats=1 p0=3,6 p1=3,0 left=6/6 walls=0 turn=1 win=-1 st=2
+maze vs stray answer seatedB=0
+maze ask shown seated=0 answer=1
+maze vs start seatedB=1 seats=2 A: p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=26 | vs=1 count=1(3) left=0 to=0,0 turn=B0 name=11 win=0 seat=BA
+maze vs start B: p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=26 | vs=1 count=1(3) left=0 to=0,0 turn=B0 name=11 win=0 seat=BA
+maze vs start msg A=1 B=1
+maze vs count locked p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=26
+maze vs count2 vs=1 count=1(2) left=0 to=0,0 turn=B0 name=11 win=0 seat=BA
+maze vs count1 vs=1 count=1(1) left=0 to=0,0 turn=B0 name=11 win=0 seat=BA
+maze vs go p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=10 | vs=1 count=0(0) left=30 to=0,0 turn=B0 name=11 win=0 seat=BA
+maze vs notturn A p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=10 +1
+maze vs B up A: p0=3,5 p1=3,0 left=6/6 walls=0 turn=1 win=-1 st=10 | vs=1 count=0(0) left=30 to=0,0 turn=A1 name=11 win=0 seat=BA
+maze vs notturn B p0=3,5 p1=3,0 left=6/6 walls=0 turn=1 win=-1 st=10
+maze vs A wall p0=3,5 p1=3,0 left=6/5 walls=1 turn=0 win=-1 st=10
+maze vs restart ignored p0=3,5 p1=3,0 left=6/5 walls=1 turn=0 win=-1 st=10
+maze vs left vs=1 count=0(0) left=29 to=0,0 turn=B0 name=11 win=0 seat=BA
+maze vs left1 vs=1 count=0(0) left=1 to=0,0 turn=B0 name=11 win=0 seat=BA
+maze vs timeout1 p0=3,5 p1=3,0 left=6/5 walls=1 turn=1 win=-1 st=10 | vs=1 count=0(0) left=30 to=1,0 turn=A1 name=11 win=0 seat=BA msg=1
+maze vs timeout2 vs=1 count=0(0) left=30 to=1,1 turn=B0 name=11 win=0 seat=BA
+maze vs timeouts reset vs=1 count=0(0) left=30 to=0,0 turn=B0 name=11 win=0 seat=BA
+maze vs before forfeit vs=1 count=0(0) left=30 to=0,2 turn=A1 name=11 win=0 seat=BA
+maze vs forfeit p0=1,5 p1=3,1 left=6/5 walls=1 turn=1 win=0 st=14 | vs=1 count=0(0) left=0 to=0,3 turn=A1 name=11 win=1 seat=BA msgA=1 msgB=1 new A=2 B=1
+maze vs win locked +0
+maze vs reset early=[p0=1,5 p1=3,1 left=6/5 walls=1 turn=1 win=0 st=14] later=p0=3,6 p1=3,0 left=6/6 walls=0 turn=1 win=-1 st=26 | vs=1 count=1(3) left=0 to=0,0 turn=A1 name=11 win=0 seat=BA
+maze vs second game vs=1 count=0(0) left=30 to=0,0 turn=A1 name=11 win=0 seat=BA
+maze vs second B first ignored p0=3,6 p1=3,0 left=6/6 walls=0 turn=1 win=-1 st=10
+maze vs win p0=3,0 p1=2,5 left=6/6 walls=0 turn=0 win=0 st=14 | vs=1 count=0(0) left=0 to=0,0 turn=B0 name=11 win=1 seat=BA msgA=1 msgB=1
+maze vs third game p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=26 | vs=1 count=1(3) left=0 to=0,0 turn=B0 name=11 win=0 seat=BA
+maze vs esc seatedA=0 seatedB=1 seats=1 msgA=1 msgB=1 | p0=3,6 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2 | vs=0 count=0(0) left=0 to=0,0 turn=B0 name=10 win=0 seat=B-
+maze vs solo after p0=3,5 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2
+maze ask shown seated=0 answer=1
+maze vs logout seatedA=1 seatedB=0 msgA=1 | p0=3,6 p1=3,0 left=6/6 walls=0 turn=1 win=-1 st=2 | vs=0 count=0(0) left=0 to=0,0 turn=A1 name=01 win=0 seat=-A
+maze ask shown seated=0 answer=1
+maze vs again vs=1 count=1(3) left=0 to=0,0 turn=B0 name=11 win=0 seat=BA
+maze vs away seatedA=0 seatedB=1 | vs=0 count=0(0) left=0 to=0,0 turn=B0 name=10 win=0 seat=B-
+maze ask shown seated=0 answer=1
+maze vs dead seatedA=1 seatedB=0 | vs=0 count=0(0) left=0 to=0,0 turn=A1 name=01 win=0 seat=-A
+maze ask shown seated=0 answer=0
+maze vs ask expired seatedB=0 seats=1
+maze vs emptied seats=0
+maze vs exclusive puzzle=1 maze=0
+maze cpuask plain asked=0 seated=1
+maze cpu plain seated=1 cpu=0 lv=0 vs=0 count=0(0) left=0 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpuask no asked=1 cpu=1 swap=0 yes=0 seated(before)=0
+maze cpu no seated=1 cpu=0 lv=1 vs=0 count=0(0) left=0 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpu practice move p0=3,5 p1=3,0 left=6/6 walls=0 turn=0 win=-1 st=2
+maze cpu left seats=0 cpu=0 lv=1 vs=0 count=0(0) left=0 turn=0 name=00 c1=1 win=0 idle=1 p0=3,6 p1=3,0 walls=6/6
+maze cpuask yes asked=1 cpu=1 swap=0 yes=1 seated(before)=0
+maze cpu start seated=1 seats=1 msg=1 cpu=1 lv=1 vs=1 count=1(3) left=0 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpu count locked cpu=1 lv=1 vs=1 count=1(3) left=0 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpu go cpu=1 lv=1 vs=1 count=0(0) left=30 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpu look grp=321 name=[ロボ]
+maze cpu after A cpu=1 lv=1 vs=1 count=0(0) left=0 turn=1 name=10 c1=1 win=0 idle=0 p0=3,5 p1=3,0 walls=6/6
+maze cpu thinking cpu=1 lv=1 vs=1 count=0(0) left=0 turn=1 name=10 c1=1 win=0 idle=0 p0=3,5 p1=3,0 walls=6/6
+maze cpu not my turn cpu=1 lv=1 vs=1 count=0(0) left=0 turn=1 name=10 c1=1 win=0 idle=0 p0=3,5 p1=3,0 walls=6/6
+maze cpu moved cpu=1 lv=1 vs=1 count=0(0) left=30 turn=0 name=10 c1=1 win=0 idle=0 p0=3,5 p1=3,1 walls=6/6
+maze cpu human win cpu=1 lv=1 vs=1 count=0(0) left=0 turn=0 name=10 c1=1 win=1 idle=0 p0=3,0 p1=0,3 walls=6/6 msg=1 cpuwin=0
+maze cpu win shown cpu=1 lv=1 vs=1 count=0(0) left=0 turn=0 name=10 c1=1 win=1 idle=0 p0=3,0 p1=0,3 walls=6/6
+maze cpu next game cpu=1 lv=1 vs=1 count=1(3) left=0 turn=1 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpu second game cpu=1 lv=1 vs=1 count=0(0) left=0 turn=1 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpu first move cpu=1 lv=1 vs=1 count=0(0) left=29 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=2,0 walls=6/6
+maze cpu timeout loss steps=1 cpuwin=1 forfeit=1 cpu=1 lv=1 vs=1 count=0(0) left=0 turn=0 name=10 c1=1 win=1 idle=0 p0=3,6 p1=2,1 walls=6/5
+maze cpu esc seated=0 seats=0 cpu=0 lv=1 vs=0 count=0(0) left=0 turn=0 name=00 c1=1 win=0 idle=1 p0=3,6 p1=3,0 walls=6/6
+maze cpu esc after wait cpu=0 lv=1 vs=0 count=0(0) left=0 turn=0 name=00 c1=1 win=0 idle=1 p0=3,6 p1=3,0 walls=6/6
+maze cpuask yes2 asked=1 cpu=1 swap=0 yes=1 seated(before)=0
+maze cpu away seated=0 seats=0 cpu=0 lv=1 vs=0 count=0(0) left=0 turn=0 name=00 c1=1 win=0 idle=1 p0=3,6 p1=3,0 walls=6/6
+maze cpuask yes3 asked=1 cpu=1 swap=0 yes=1 seated(before)=0
+maze cpu logout seated=0 seats=0
+maze cpuask yes4 asked=1 cpu=1 swap=0 yes=1 seated(before)=0
+maze cpuask swapno asked=1 cpu=0 swap=1 yes=0 seated(before)=0
+maze cpu swap no seatedA=1 seatedB=0 askedA=0 cpu=1 lv=1 vs=1 count=0(0) left=30 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpuask swapyes asked=1 cpu=0 swap=1 yes=1 seated(before)=0
+maze cpu swap yes seatedA=1 seatedB=1 seats=2 msgA=1 msgB=1
+maze cpu swap A cpu=0 lv=1 vs=1 count=1(3) left=0 turn=0 name=11 c1=0 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpu swap B cpu=0 lv=1 vs=1 count=1(3) left=0 turn=0 name=11 c1=0 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpu human vs human idle cpu=0 lv=1 vs=1 count=0(0) left=25 turn=0 name=11 c1=0 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpu after swap B left seatedA=1 cpu=0 lv=1 vs=0 count=0(0) left=0 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze cpuask expire asked=1 cpu=1 swap=0 yes=1 seated(before)=0
+maze cpu ask expired seated=0 seats=0
+maze api add ok=1 size+1=1 defaults=-5,-9,0,1,0,-10 cpu=0 name=[CPU]
+maze api get typeName=1 chDx=1 chSdy2=1 cpuName=1
+maze api set ok=1 chDx=-3 chDy=-9 seat1=2,1 seat2=0,-8 parts=11,12,13 cpu=2 grp=123 cpuname=[ロボ] name=[テスト台]
+maze api reject dx100=1 cpu4=1 unknown=1 type5=1 kept=-3,2
+maze api reload count=1 same=1 dx=-3 seat1=2,1 seat2=0,-8 parts=11,12,13 cpu=2 grp=123 cpuname=[ロボ] name=[テスト台]
+maze api erase ok=1 type=0 info=0 table before=1 after=0
+maze api reuse ok=1 size=1 type=7 table=1
+maze ticket none seated=0 guide=1 sysmsg+1
+maze ticket short seated=0 tk=1 msg=1
+maze ticket skey seated=0 tk=2 sysmsg+1
+maze ticket elsewhere seated=0 tk=2 sysmsg+1
+maze ticket ask asked=1 cpu=1 seated=0 tk=2
+maze ticket cpu no seated=0 tk=2 seats=0
+maze ticket expire seated=0 tk=2
+maze ticket before-yes tk=2
+maze ticket yes seated=1 tk=0 used=1 charitem+1 cpu=1 lv=1 vs=1 count=1(3) left=0 turn=0 name=10 c1=1 win=0 idle=0 p0=3,6 p1=3,0 walls=6/6
+maze ticket solo seated=1 tk=0
+maze ticket join asked=1 join=1 seatedB=0 tkB=2
+maze ticket join no seatedB=0 tkB=2
+maze ticket join yes seatedB=1 tkB=0 vs=1 count=1(3) left=0 to=0,0 turn=A0 name=11 win=0 seat=AB
+maze ticket api ok=1 item=3 num=5
+maze ticket api over ok=0 num=5
+maze ticket fix num=99
+maze done seats=0 idleTables=0
 == done ==

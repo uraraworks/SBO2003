@@ -362,6 +362,26 @@ static void MakeInfo(LPSTR pszInfo)
 					g_nSelectSubGameID);
 		}
 		break;
+	case SUBGAMEID_MAZETABLE:	/* 迷路対戦の台 */
+		{
+			PSUBGAME_MAZETABLEINFOSAVE pInfo = (PSUBGAME_MAZETABLEINFOSAVE)g_pSubGameInfo->pInfo;
+			static const char *apszLevel[] = { "なし", "よわい", "ふつう", "つよい" };
+
+			wsprintf (szTmp,
+					"名前:%s\n"
+					"盤の位置 X:%d Y:%d\n"
+					"座る場所1 X:%d Y:%d\n"
+					"座る場所2 X:%d Y:%d\n"
+					"床パーツ A:%d B:%d 隙間:%d\n"
+					"CPU:%s 絵:%d 名前:%s\n",
+					pInfo->szName,
+					pInfo->chDx, pInfo->chDy,
+					pInfo->chSdx, pInfo->chSdy,
+					pInfo->chSdx2, pInfo->chSdy2,
+					pInfo->wFloorA, pInfo->wFloorB, pInfo->wGap,
+					apszLevel[(pInfo->byCpuLevel > 3) ? 3 : pInfo->byCpuLevel], pInfo->wCpuGrpID, pInfo->szCpuName);
+		}
+		break;
 	}
 
 	strcat (pszInfo, szTmp);

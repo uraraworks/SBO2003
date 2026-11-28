@@ -335,7 +335,7 @@ static BYTE SeatFlag(const JANTABLE &Table, PCHARINFO pChar)
 
 	if (((Table.nMode != JANMODE_IDLE) && (Table.nMode != JANMODE_RECRUIT)) || (pNpc == NULL) || (pChar->byNpcType != NPCTYPE_INIT) || (pChar->byGameState < GAMESTATE_MOVE) ||
 		(pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0) || (pChar->abySubStatus[0] != 0) || JanIsSeated (pChar) ||
-		PuzzleIsSeated (pChar) || (pChar->dwMapID != Table.dwMapID) || !IsSameSpace (pNpc, pChar) || !JanOnSeatCell (pChar, pNpc, &nSeat)) {
+		PuzzleIsSeated (pChar) || PinballIsSeated (pChar) || MazeIsSeated (pChar) || (pChar->dwMapID != Table.dwMapID) || !IsSameSpace (pNpc, pChar) || !JanOnSeatCell (pChar, pNpc, &nSeat)) {
 		return 0;
 	}
 	if ((Table.nMode == JANMODE_RECRUIT) && IsHumanSeat (Table, nSeat)) {
@@ -994,7 +994,7 @@ void JanSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed)
 	BOOL bNew;
 	char szMsg[96];
 
-	if (!JanIsTableNpc (pNpc) || (pChar->byNpcType != NPCTYPE_INIT) || JanIsSeated (pChar) || PuzzleIsSeated (pChar)) {
+	if (!JanIsTableNpc (pNpc) || (pChar->byNpcType != NPCTYPE_INIT) || JanIsSeated (pChar) || PuzzleIsSeated (pChar) || PinballIsSeated (pChar) || MazeIsSeated (pChar)) {
 		return;
 	}
 	/* 座れるのは、台の 4 つの座る場所のマスの上だけ（同じマップ・同じ空間。向きは問わない）。どの席かはマスで決まる */
@@ -1105,7 +1105,7 @@ BOOL JanUseItem(PCHARINFO pChar, WORD wItem)
 		nSeatCell = 0;
 		JanOnSeatCell (pChar, pNpc, &nSeatCell);
 		/* 使えない時（座っている・倒れている・卓が使用中・足りない）は何もしない・案内だけで、問いは出さずチケットは減らさない */
-		if (JanIsSeated (pChar) || PuzzleIsSeated (pChar) || (pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0) || (pChar->abySubStatus[0] != 0)) {
+		if (JanIsSeated (pChar) || PuzzleIsSeated (pChar) || PinballIsSeated (pChar) || MazeIsSeated (pChar) || (pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0) || (pChar->abySubStatus[0] != 0)) {
 			return TRUE;
 		}
 		{

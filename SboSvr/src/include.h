@@ -33,6 +33,7 @@
 #include "SboSvrPuzzle.h"
 #include "SboSvrPinball.h"
 #include "SboSvrJan.h"
+#include "SboSvrMaze.h"
 
 extern long genrand();				/* 乱数取得 */
 

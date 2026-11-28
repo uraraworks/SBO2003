@@ -744,7 +744,7 @@ Module['sboData'] = (function () {
 			return { deleted: true };
 		}
 		if (kind === 'subGame') {
-			return { byType: 0 };		/* 追加した迷路・ピンボール・SBOじゃんは止める（枠は「無し」で残る） */
+			return { byType: 0 };		/* 追加した迷路・ピンボール・迷路対戦の台・SBOじゃんは止める／消す（枠は「無し」で残る） */
 		}
 		return null;
 	}
@@ -1799,7 +1799,7 @@ Module['sboData'] = (function () {
 		},
 		{
 			name: 'sbo_add', write: true,
-			description: 'データを末尾に追加する。省いた項目は 0 や空になる。追加した NPC は元に戻すと消え、作り手・レシピは削除（byState=0）、迷路・ピンボール・SBOじゃん（subGame の byType 2・6・8）は止まる（byType=0）。' +
+			description: 'データを末尾に追加する。省いた項目は 0 や空になる。追加した NPC は元に戻すと消え、作り手・レシピは削除（byState=0）、迷路・ピンボール・迷路対戦の台・SBOじゃん（subGame の byType 2・6・7・8）は止まる／消える（byType=0）。' +
 				'それ以外の種類の追加は元に戻せない。NPC は dwMapID・dwX・dwY が要る。2 段階は sbo_update と同じ。',
 			inputSchema: {
 				type: 'object', required: ['kind', 'records'],

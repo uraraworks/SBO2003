@@ -313,7 +313,7 @@ static BYTE SeatFlag(const PUZZLETABLE &Table, PCHARINFO pChar)
 	PCHARINFO pNpc = (Table.dwNpc < (DWORD)g_aCharInfo.GetSize ()) ? g_aCharInfo[Table.dwNpc] : NULL;
 
 	if (!Table.bIdle || (pNpc == NULL) || (pChar->byNpcType != NPCTYPE_INIT) || (pChar->byGameState < GAMESTATE_MOVE) ||
-		(pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0) || (pChar->abySubStatus[0] != 0) || PuzzleIsSeated (pChar) ||
+		(pChar->byCharState == CHARSTATE_DEAD) || (pChar->wHP == 0) || (pChar->abySubStatus[0] != 0) || PuzzleIsSeated (pChar) || PinballIsSeated (pChar) || MazeIsSeated (pChar) || JanIsSeated (pChar) ||
 		(pChar->dwMapID != Table.dwMapID) || !IsSameSpace (pNpc, pChar) ||
 		((int)pChar->dwX != (int)pNpc->dwX + Table.Param.nSdx) || ((int)pChar->dwY != (int)pNpc->dwY + Table.Param.nSdy)) {
 		return 0;
@@ -980,7 +980,7 @@ void PuzzleSit(PCHARINFO pChar, PCHARINFO pNpc, BOOL bCoinUsed, int nChoice)
 	DWORD dwPartnerNpc;
 	char szMsg[96];
 
-	if (!PuzzleIsTableNpc (pNpc) || (pChar->byNpcType != NPCTYPE_INIT) || PuzzleIsSeated (pChar) || PinballIsSeated (pChar) || JanIsSeated (pChar)) {
+	if (!PuzzleIsTableNpc (pNpc) || (pChar->byNpcType != NPCTYPE_INIT) || PuzzleIsSeated (pChar) || PinballIsSeated (pChar) || JanIsSeated (pChar) || MazeIsSeated (pChar)) {
 		return;
 	}
 	/* 座れるのは、台の座る場所のマスの上だけ（同じマップ・同じ空間。向きは問わない。隣のマスから台NPC越しには座らない） */

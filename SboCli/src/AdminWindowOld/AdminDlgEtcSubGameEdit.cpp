@@ -19,6 +19,8 @@
 #include "../../../common/PinballInfo.h"
 #include "AdminDlgEtcSubGameEditJanjan.h"
 #include "../../../common/Janjan.h"
+#include "AdminDlgEtcSubGameEditMazeTable.h"
+#include "common/MazeTable.h"
 
 /* ========================================================================= */
 /* グローバル変数定義														 */
@@ -73,6 +75,7 @@ void CloseDlgEtcSubGameEdit(void)
 	CloseDlgEtcSubGameEditWar ();
 	CloseDlgEtcSubGameEditSugoroku ();
 	CloseDlgEtcSubGameEditJanjan ();
+	CloseDlgEtcSubGameEditMazeTable ();
 	EnableWindow (s_hWndParent, TRUE);
 	DestroyWindow (s_hWndDlg);
 	s_hWndDlg = NULL;
@@ -132,9 +135,14 @@ static BOOL OnInitDialog(HWND hWnd, HWND hWndFocus, LPARAM lParam)
 	hWndTmp = GetDlgItem (hWnd, IDC_TYPE);
 	for (i = 0; ; i ++) {
 		if (aSubGameNameTbl[i][0] == 'z') { break; }
-		SendMessage (hWndTmp, CB_ADDSTRING, 0, (LPARAM)aSubGameNameTbl[i]);
+		if (aSubGameNameTbl[i][0] == '\0') { continue; }		/* 空き番号は出さない */
+		/* 項目の並びと種別番号がずれるので、種別番号は項目データに持つ */
+		int nIdx = (int)SendMessage (hWndTmp, CB_ADDSTRING, 0, (LPARAM)aSubGameNameTbl[i]);
+		SendMessage (hWndTmp, CB_SETITEMDATA, (WPARAM)nIdx, (LPARAM)i);
+		if (i == g_pSubGameInfo->byType) {
+			SendMessage (hWndTmp, CB_SETCURSEL, (WPARAM)nIdx, 0);
+		}
 	}
-	SendMessage (GetDlgItem (hWnd, IDC_TYPE), CB_SETCURSEL, (WPARAM)g_pSubGameInfo->byType, 0);
 
 	PostMessage (hWnd, WM_INITEND, 0, 0);
 	return FALSE;
@@ -155,7 +163,7 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 			hWndTmp = GetDlgItem (s_hWndDlg, IDC_TYPE);
 			switch (nCodeNotify) {
 			case CBN_SELCHANGE:		/* 選択項目が変更された */
-				ChgSubGameType ((BYTE)SendMessage (hWndTmp, CB_GETCURSEL, 0, 0));
+				ChgSubGameType ((BYTE)SendMessage (hWndTmp, CB_GETITEMDATA, (WPARAM)SendMessage (hWndTmp, CB_GETCURSEL, 0, 0), 0));
 				PostMessage (hWnd, WM_INITEND, 0, 0);
 				break;
 			}
@@ -183,6 +191,9 @@ static void OnCommand(HWND hWnd, int nID, HWND hWndCtl, UINT nCodeNotify)
 			GetDataDlgEtcSubGameEditPinball ();
 		case SUBGAMEID_JANJAN:
 			GetDataDlgEtcSubGameEditJanjan ();
+			break;
+		case SUBGAMEID_MAZETABLE:
+			GetDataDlgEtcSubGameEditMazeTable ();
 			break;
 		}
 
@@ -212,6 +223,7 @@ static void OnInitEnd(HWND hWnd, WPARAM wParam, LPARAM lParam)
 	CloseDlgEtcSubGameEditSugoroku ();
 	CloseDlgEtcSubGameEditPinball ();
 	CloseDlgEtcSubGameEditJanjan ();
+	CloseDlgEtcSubGameEditMazeTable ();
 
 	hWndTmp = GetDlgItem (hWnd, IDC_INFO);
 
@@ -235,6 +247,9 @@ static void OnInitEnd(HWND hWnd, WPARAM wParam, LPARAM lParam)
 		ShowDlgEtcSubGameEditPinball (hWndTmp);
 	case SUBGAMEID_JANJAN:
 		ShowDlgEtcSubGameEditJanjan (hWndTmp);
+		break;
+	case SUBGAMEID_MAZETABLE:
+		ShowDlgEtcSubGameEditMazeTable (hWndTmp);
 		break;
 	}
 }
@@ -277,6 +292,10 @@ static void ChgSubGameType(BYTE byType)
 	/* SBOじゃんは、既定値（CPU強さ 2・無料）で始める */
 	if ((byType == SUBGAMEID_JANJAN) && (nSize >= (int)sizeof (SUBGAME_JANJANINFOSAVE))) {
 		JanjanInfoSetDefault ((PSUBGAME_JANJANINFOSAVE)g_pSubGameInfo->pInfo);
+	}
+	if (byType == SUBGAMEID_MAZETABLE) {
+		/* 迷路対戦の台は、新規の既定値（盤の位置 -5,-9・座る場所 0,1 と 0,-10・CPU名「CPU」）にする */
+		MazeTableInfoDefault ((PSUBGAME_MAZETABLEINFO)g_pSubGameInfo->pInfo);
 	}
 }
 

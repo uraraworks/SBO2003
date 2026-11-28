@@ -34,6 +34,7 @@
 #include "SboSvrMapSwapEdit.h"
 #include "CharProc/CharProcMERCENARY.h"
 #include "SboSvrMagicProc.h"
+#include "../../common/MazeTable.h"
 #include <map>
 #include <unordered_map>
 #include <vector>
@@ -180,6 +181,7 @@ void	RecvDataProcTALKRAND					(PBYTE, DWORD);				/* 話してランダム要求 
 void	RecvDataProcPUZZLEKEY					(PBYTE, DWORD);				/* 落ち物パズルのキー入力 */
 void	RecvDataProcPINBALLKEY					(PBYTE, DWORD);				/* ピンボールのキー入力 */
 void	RecvDataProcJANKEY						(PBYTE, DWORD);				/* SBOじゃんの操作 */
+void	RecvDataProcMAZEKEY						(PBYTE, DWORD);				/* 迷路対戦の操作 */
 void	RecvDataProcSTOPRAND					(PBYTE, DWORD);				/* 止まるかランダム切り替え */
 void	RecvDataProcGETACCINFO					(PBYTE, DWORD);				/* アカウント情報要求 */
 void	RecvDataProcCHGACCSTATE					(PBYTE, DWORD);				/* アカウント状態更新 */
@@ -540,6 +542,8 @@ const RECVDATAPROC RecvDataProcTbl[] = {
 	NULL,								/* CMD_PUZZLESE(サーバー→クライアントのみ) */
 	RecvDataProcPINBALLKEY,				/* CMD_PINBALLKEY */
 	NULL,								/* CMD_PINBALLSTATE(サーバー→クライアントのみ) */
+	RecvDataProcMAZEKEY,				/* CMD_MAZEKEY */
+	NULL,								/* CMD_MAZESTATE(サーバー→クライアントのみ) */
 	NULL,								/* CMD_JANSTATE(サーバー→クライアントのみ) */
 	RecvDataProcJANKEY,					/* CMD_JANKEY */
 	RecvDataProcADMINTRIALROOM,			/* CMD_ADMINTRIALROOM */
@@ -1445,6 +1449,7 @@ int GetSubGameDataSize(BYTE byType)
 	case SUBGAMEID_WAR:			nSize = sizeof (SUBGAME_WARINFO);		break;
 	case SUBGAMEID_SUGOROKU:	nSize = sizeof (SUBGAME_SUGOROKUINFO);	break;
 	case SUBGAMEID_PINBALL:		nSize = sizeof (SUBGAME_PINBALLINFO);	break;
+	case SUBGAMEID_MAZETABLE:	nSize = sizeof (SUBGAME_MAZETABLEINFO);	break;
 	case SUBGAMEID_JANJAN:		nSize = sizeof (SUBGAME_JANJANINFO);	break;
 	}
 
@@ -3928,7 +3933,7 @@ void RecvDataProc(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	/* 管理者用のコマンド（管理者ウィンドウからしか送らないもの）は管理者だけ */
-	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_APPRAISE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_DUNGEONSEL) && (byCmd != CMD_DUNGEONMAP) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && (byCmd != CMD_TALKANSWER) && (byCmd != CMD_PUZZLEKEY) && (byCmd != CMD_PINBALLKEY) && (byCmd != CMD_JANKEY) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET)) && ((byCmd < CMD_RECYCLELIST) || (byCmd > CMD_RECYCLECLOSE))) ||
+	if (((byCmd >= CMD_MAPPARTSADD) && (byCmd != CMD_WEBACCOUNT) && (byCmd != CMD_REQ_GUARD) && (byCmd != CMD_RECIPEMAKE) && (byCmd != CMD_APPRAISE) && (byCmd != CMD_BATTLEMODE) && (byCmd != CMD_QUEST) && (byCmd != CMD_DUNGEONSEL) && (byCmd != CMD_DUNGEONMAP) && (byCmd != CMD_SORTITEM) && (byCmd != CMD_LEAVEITEMDISPOSE) && (byCmd != CMD_MAGICKEY) && (byCmd != CMD_TALKANSWER) && (byCmd != CMD_PUZZLEKEY) && (byCmd != CMD_PINBALLKEY) && (byCmd != CMD_MAZEKEY) && (byCmd != CMD_JANKEY) && ((byCmd < CMD_MARKETLIST) || (byCmd > CMD_MARKETGOLDGET)) && ((byCmd < CMD_RECYCLELIST) || (byCmd > CMD_RECYCLECLOSE))) ||
 			(byCmd == CMD_CHARITEM)) {
 		if (!CheckAdminBan (nNo)) {
 			SAFE_DELETE_ARRAY (pData);
@@ -4873,8 +4878,8 @@ void RecvDataProcCHARPOS(PBYTE pData, DWORD dwDataSize)
 		if (pChar->dwTargetTblID3 != -1) {
 			return;
 		}
-		/* 落ち物パズルの席に座っている間は歩けない。今の位置を送り返す */
-		if (PuzzleIsSeated (pChar) || PinballIsSeated (pChar) || JanIsSeated (pChar)) {
+		/* 落ち物パズル・ピンボール・迷路対戦・SBOじゃんの席に座っている間は歩けない。今の位置を送り返す */
+		if (PuzzleIsSeated (pChar) || PinballIsSeated (pChar) || MazeIsSeated (pChar) || JanIsSeated (pChar)) {
 			SendCmdCHARPOS (pChar->pID, pChar->dwTblID, 0, 0);
 			return;
 		}
@@ -5085,6 +5090,12 @@ void RecvDataProcSPEECH(PBYTE pData, DWORD dwDataSize)
 	if (pPara->byType == SPEECHCMD_SPEECHEDIT) {
 		/* 自己紹介 */
 		RecvCutStr (pszTmp, SPEECH_MAX_EDIT);
+		/* NPC の会話データ用の「@」の印は使わせない（公式クライアントと同じく @0・@1・@2 以外は空白にする） */
+		for (LPSTR pszAt = pszTmp; *pszAt; pszAt ++) {
+			if ((*pszAt == '@') && (pszAt[1] != '0') && (pszAt[1] != '1') && (pszAt[1] != '2')) {
+				*pszAt = ' ';
+			}
+		}
 	} else if ((pChar->byAdminLV <= ADMINLV_USER) && (strlen (pszTmp) > SPEECH_MAX_NORMAL) &&
 			(strstr (pszTmp, "http://") == NULL) && (strstr (pszTmp, "https://") == NULL)) {
 		RecvCutStr (pszTmp, SPEECH_MAX_NORMAL);
@@ -8408,6 +8419,13 @@ void RecvDataProcTALKRAND(PBYTE pData, DWORD dwDataSize)
 	if (PinballIsMarkedNpc (pChar)) {
 		return;
 	}
+	/* 迷路対戦の台（台詞が「@k」で始まる。依頼の見えるNPCは上で処理済み）？ 座る場所のマスに立っていれば座る（無料の台だけ始まる。チケットの台は道具のチケットを使う案内だけ。チケット使用は ItemProc → MazeUseItem） */
+	if (MazeIsTableNpc (pChar)) {
+		if (s_nCharNoRecv >= 0) {
+			MazeSit (g_aCharInfo[s_nCharNoRecv], pChar);
+		}
+		return;
+	}
 	/* SBOじゃんの台（台詞が「@j」で始まる）？ 4 つの座る場所のどれかのマスに立っていれば、そのマスの席に座る（無料の台だけ始まる。有料の台は道具のコインを使う案内だけ。コイン使用は ItemProc → JanUseItem）
 	   （台NPCは見えず目の前でなくてよい。座る場所かどうかは JanSit が見る） */
 	if (JanIsTableNpc (pChar)) {
@@ -8484,6 +8502,21 @@ void RecvDataProcPINBALLKEY(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	PinballKey (g_aCharInfo[s_nCharNoRecv], pPara->byData, pPara->dwSerial);
+}
+
+/* ========================================================================= */
+/* 関数名：RecvDataProcMAZEKEY												 */
+/* 内容：受信データ処理(迷路対戦の操作)										 */
+/*		 座っている本人のものだけ受ける（座っていなければ何もしない）			 */
+/* ========================================================================= */
+void RecvDataProcMAZEKEY(PBYTE pData, DWORD dwDataSize)
+{
+	PCMDPARA_MAZEKEY pPara = (PCMDPARA_MAZEKEY)pData;
+
+	if ((dwDataSize < sizeof (CMDPARA_MAZEKEY)) || (s_nCharNoRecv < 0)) {
+		return;
+	}
+	MazeKey (g_aCharInfo[s_nCharNoRecv], pPara->byAct, pPara->byDir, pPara->byX, pPara->byY, pPara->byOrient);
 }
 
 /* ========================================================================= */
@@ -9785,20 +9818,33 @@ void RecvDataProcLEAVEITEMGET(PBYTE pData, DWORD dwDataSize)
 			(pPara->dwData >= MAX_LEAVEITEM) || (pInfo->byItemCount[pPara->dwData] == 0)) {
 		return;
 	}
-	/* もう持てない？（大事な物は大事な物の欄の空きを見る） */
-	if (!CanAddCharItem (pChar->dwTblID, pInfo->waItem[pPara->dwData])) {
+
+	/* 引き取る個数（個数が付かない古い形は1個。付いていても 1〜預かり数 に収める） */
+	DWORD dwNo = pPara->dwData;
+	int nWant = 1;
+	if (s_dwRecvSize >= sizeof (CMDPARA_LEAVEITEMTAKE)) {
+		DWORD dwCount = ((PCMDPARA_LEAVEITEMTAKE)pData)->dwCount;
+		nWant = (dwCount == 0) ? 1 : (int)min (dwCount, (DWORD)pInfo->byItemCount[dwNo]);
+	}
+	nWant = min (nWant, (int)pInfo->byItemCount[dwNo]);
+
+	/* 入る分だけ追加する（大事な物は大事な物の欄の空きを見る）。入らなかった分は預かり所に残す */
+	int nGot = 0;
+	WORD wItem = pInfo->waItem[dwNo];
+	while ((nGot < nWant) && CanAddCharItem (pChar->dwTblID, wItem)) {
+		AddCharItem (pChar->dwTblID, wItem);
+		nGot ++;
+	}
+	/* 1個も持てない？ */
+	if (nGot == 0) {
 		return;
 	}
-
-	AddCharItem (pChar->dwTblID, pInfo->waItem[pPara->dwData]);
 	SendCmdCHARITEM (s_pIDRecv, pPara->dwTblID);
 
-	if (pInfo->byItemCount[pPara->dwData] >= 1) {
-		pInfo->byItemCount[pPara->dwData] --;
-	}
-	if (pInfo->byItemCount[pPara->dwData] == 0) {
+	pInfo->byItemCount[dwNo] -= (BYTE)nGot;
+	if (pInfo->byItemCount[dwNo] == 0) {
 		int i;
-		for (i = pPara->dwData; i < MAX_LEAVEITEM - 1; i ++) {
+		for (i = dwNo; i < MAX_LEAVEITEM - 1; i ++) {
 			pInfo->waItem[i] = pInfo->waItem[i + 1];
 			pInfo->byItemCount[i] = pInfo->byItemCount[i + 1];
 		}
@@ -10026,6 +10072,19 @@ void RecvDataProcSUBGAMEINFO(PBYTE pData, DWORD dwDataSize)
 			pInfo->byCastle1X = pInfoRecv->byCastle1X;
 			pInfo->byCastle2X = pInfoRecv->byCastle2X;
 			pInfo->byCastleY = pInfoRecv->byCastleY;
+		}
+		break;
+
+	case SUBGAMEID_MAZETABLE:	/* 迷路対戦の台（保存用と実行用が同じ中身。範囲外の値は直す。届いた量が足りなければ既定値） */
+		{
+			PSUBGAME_MAZETABLEINFO pInfo = (PSUBGAME_MAZETABLEINFO)g_aSubaGameInfo[pRecv->dwTblID]->pInfo;
+
+			if (dwDataSize >= sizeof (CMDPARA_DATA1) + sizeof (SUBGAME_MAZETABLEINFOSAVE)) {
+				CopyMemory (pInfo, pRecv + 1, sizeof (SUBGAME_MAZETABLEINFO));
+				MazeTableInfoFix (pInfo);
+			} else {
+				MazeTableInfoDefault (pInfo);
+			}
 		}
 		break;
 
@@ -10965,19 +11024,36 @@ void RecvDataProcSHOPBUY(PBYTE pData, DWORD dwDataSize)
 	}
 	pItem = g_aItemInfo[dwItemID];
 
-	/* お金が足りない？ */
-	if (pChar->dwGold < pItem->dwGold) {
+	/* 買う個数（個数が付かない古い形は1個。1〜99 以外は受け付けない） */
+	DWORD dwCount = 1;
+	if (s_dwRecvSize >= sizeof (CMDPARA_SHOPBUY)) {
+		dwCount = ((PCMDPARA_SHOPBUY)pData)->dwCount;
+		if ((dwCount < 1) || (dwCount > 99)) {
+			return;
+		}
+	}
+
+	/* お金が足りない？（合計金額で見る） */
+	if (pChar->dwGold < pItem->dwGold * dwCount) {
 		return;
 	}
-	/* もう持てない？（大事な物は大事な物の欄の空きを見る） */
-	if (!CanAddCharItem (pChar->dwTblID, dwItemID)) {
+	/* もう持てない？（大事な物は大事な物の欄の空きを見る。全部入る時だけ買える） */
+	DWORD dwSpace;
+	if ((dwItemID < 0x10000) && IsImportantItem ((WORD)dwItemID)) {
+		dwSpace = (DWORD)max (MAX_IMPORTANT - GetImportantCount (pChar->dwTblID), 0);
+	} else {
+		dwSpace = (DWORD)max (MAX_MYITEM - GetItemCount (pChar->dwTblID), 0);
+	}
+	if (dwSpace < dwCount) {
 		return;
 	}
 
-	pChar->dwGold -= pItem->dwGold;
+	pChar->dwGold -= pItem->dwGold * dwCount;
 	SendCmdCHARSTATUSGOLDEXP (s_pIDRecv, pPara->dwTblID);
 
-	AddCharItem (pChar->dwTblID, dwItemID);
+	for (DWORD i = 0; i < dwCount; i ++) {
+		AddCharItem (pChar->dwTblID, dwItemID);
+	}
 	SendCmdCHARITEM (pChar->pID, pChar->dwTblID);
 }
 
@@ -15051,7 +15127,7 @@ BOOL RecvCmdApplyAdminPacket(const BYTE *pData, DWORD dwSize, LPCSTR pszSource, 
 	/* 管理者用のコマンドだけ（ログインや「元に戻す」自体は通さない） */
 	if ((byCmd >= CMD_MAX) || (RecvDataProcTbl[byCmd] == NULL) ||
 			((byCmd < CMD_MAPPARTSADD) && (byCmd != CMD_CHARITEM)) ||
-			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_ADMINVIEWALL) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_APPRAISE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_DUNGEONSEL) || (byCmd == CMD_DUNGEONMAP) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || (byCmd == CMD_PUZZLEKEY) || (byCmd == CMD_PINBALLKEY) || (byCmd == CMD_JANKEY) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET)) || ((byCmd >= CMD_RECYCLELIST) && (byCmd <= CMD_RECYCLECLOSE))) {
+			(byCmd == CMD_WEBACCOUNT) || (byCmd == CMD_ADMINUNDO) || (byCmd == CMD_ADMINSPACE) || (byCmd == CMD_ADMINVIEWALL) || (byCmd == CMD_REQ_GUARD) || (byCmd == CMD_RECIPEMAKE) || (byCmd == CMD_APPRAISE) || (byCmd == CMD_BATTLEMODE) || (byCmd == CMD_QUEST) || (byCmd == CMD_DUNGEONSEL) || (byCmd == CMD_DUNGEONMAP) || (byCmd == CMD_SORTITEM) || (byCmd == CMD_LEAVEITEMDISPOSE) || (byCmd == CMD_MAGICKEY) || (byCmd == CMD_TALKANSWER) || (byCmd == CMD_PUZZLEKEY) || (byCmd == CMD_PINBALLKEY) || (byCmd == CMD_MAZEKEY) || (byCmd == CMD_JANKEY) || ((byCmd >= CMD_MARKETLIST) && (byCmd <= CMD_MARKETGOLDGET)) || ((byCmd >= CMD_RECYCLELIST) && (byCmd <= CMD_RECYCLECLOSE))) {
 		return FALSE;
 	}
 
@@ -16406,6 +16482,10 @@ void RecvDataProcTALKANSWER(PBYTE pData, DWORD dwDataSize)
 		return;
 	}
 	if (PinballAnswer (g_aCharInfo[s_nCharNoRecv], pPara->dwTblID, pPara->byData ? TRUE : FALSE)) {
+		return;
+	}
+	/* 迷路対戦の「乱入しますか？」への答えなら、そちらで受ける */
+	if (MazeAnswer (g_aCharInfo[s_nCharNoRecv], pPara->dwTblID, pPara->byData ? TRUE : FALSE)) {
 		return;
 	}
 	if (JanAnswer (g_aCharInfo[s_nCharNoRecv], pPara->dwTblID, pPara->byData ? TRUE : FALSE)) {

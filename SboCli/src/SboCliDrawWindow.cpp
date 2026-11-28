@@ -367,7 +367,7 @@ void DrawWindow(CImg32 *pDib, int x, int y)
 		if ((pWnd->nType == WNDTYPE_LOGIN) && g_bLoginHide) {
 			continue;
 		}
-		if ((pWnd->nType == WNDTYPE_ITEMINFO) && (pWnd->nType2 == ITEMINFOPOS_LIST) && ((pWnd->nData1 <= 0) || (pWnd->nData1 >= g_aItemInfo.GetSize ()))) {
+		if ((pWnd->nType == WNDTYPE_ITEMINFO) && (pWnd->nType2 == ITEMINFOPOS_LIST) && ((pWnd->nData1 <= 0) || (pWnd->nData1 > 0xFFFF) || !ItemIDValid ((WORD)pWnd->nData1))) {
 			continue;
 		}
 		pDib->BltAlpha2 (pWnd->nX + x, pWnd->nY + y, pWnd->nCx, pWnd->nCy, pWnd->pDib, 0, 0, 15, TRUE);
@@ -2830,6 +2830,17 @@ void DrawWindowLEAVE_DISPOSECOUNT(PWNDINFO pWnd)
 			}
 		}
 		wsprintf (szTmp, "%7uG", dwSell * pWnd->nData1);
+		TextOut2 (hDC, 16, 32, szTmp, RGB (255, 255, 0));
+	} else if (pWnd->byData1 == LEAVEDISPOSE_BUY) {
+		/* 買う合計金額 */
+		DWORD dwPrice = 0;
+		if ((g_nProcShopID >= 0) && (g_nProcShopSelect >= 0) && (g_nProcShopSelect < MAX_SHOPITEM)) {
+			WORD wItem = g_pMapInfo->pShopInfo[g_nProcShopID].awItem[g_nProcShopSelect];
+			if (ItemIDValid (wItem)) {
+				dwPrice = g_aItemInfo[wItem]->dwGold;
+			}
+		}
+		wsprintf (szTmp, "%7uG", dwPrice * pWnd->nData1);
 		TextOut2 (hDC, 16, 32, szTmp, RGB (255, 255, 0));
 	}
 
